@@ -2864,9 +2864,9 @@ static void ath11k_peer_assoc_h_phymode(struct ath11k *ar,
 		} else if (sta->deflink.vht_cap.vht_supported &&
 			   !ath11k_peer_assoc_h_vht_masked(vht_mcs_mask)) {
 			if (sta->deflink.bandwidth == IEEE80211_STA_RX_BW_40)
-				phymode = MODE_11AC_VHT40;
+				phymode = MODE_11AC_VHT40_2G;
 			else
-				phymode = MODE_11AC_VHT20;
+				phymode = MODE_11AC_VHT20_2G;
 		} else if (sta->deflink.ht_cap.ht_supported &&
 			   !ath11k_peer_assoc_h_ht_masked(ht_mcs_mask)) {
 			if (sta->deflink.bandwidth == IEEE80211_STA_RX_BW_40)
@@ -5555,6 +5555,9 @@ static void ath11k_mac_setup_ht_vht_cap(struct ath11k *ar,
 			*ht_cap_info = ht_cap;
 		band->ht_cap = ath11k_create_ht_cap(ar, ht_cap,
 						    rate_cap_rx_chainmask);
+
+		band->vht_cap = ath11k_create_vht_cap(ar, rate_cap_tx_chainmask,
+						      rate_cap_rx_chainmask);
 	}
 
 	if (cap->supported_bands & WMI_HOST_WLAN_5G_CAP &&

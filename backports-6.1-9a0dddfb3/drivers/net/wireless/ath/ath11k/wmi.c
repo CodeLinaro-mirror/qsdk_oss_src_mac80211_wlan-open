@@ -411,6 +411,8 @@ ath11k_pull_mac_phy_cap_svc_ready_ext(struct ath11k_pdev_wmi *wmi_handle,
 	 * handled.
 	 */
 	if (mac_phy_caps->supported_bands & WMI_HOST_WLAN_2G_CAP) {
+		pdev_cap->vht_cap = mac_phy_caps->vht_cap_info_2g;
+		pdev_cap->vht_mcs = mac_phy_caps->vht_supp_mcs_2g;
 		pdev_cap->tx_chain_mask = mac_phy_caps->tx_chain_mask_2g;
 		pdev_cap->rx_chain_mask = mac_phy_caps->rx_chain_mask_2g;
 	}
