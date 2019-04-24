@@ -1574,8 +1574,10 @@ static int ath11k_htt_pull_ppdu_stats(struct ath11k_base *ab,
 		goto out;
 	}
 
-	if (ath11k_debugfs_is_pktlog_lite_mode_enabled(ar))
+	if (ath11k_debugfs_is_pktlog_lite_mode_enabled(ar)) {
 		trace_ath11k_htt_ppdu_stats(ar, skb->data, len);
+		ath11k_htt_ppdu_pktlog_process(ar, (u8 *)skb->data, DP_RX_BUFFER_SIZE);
+	}
 
 	spin_lock_bh(&ar->data_lock);
 	ppdu_info = ath11k_dp_htt_get_ppdu_desc(ar, ppdu_id);
@@ -1621,7 +1623,7 @@ static void ath11k_htt_pktlog(struct ath11k_base *ab, struct sk_buff *skb)
 
 	trace_ath11k_htt_pktlog(ar, data->payload, hdr->size,
 				ar->ab->pktlog_defs_checksum);
-
+	ath11k_htt_pktlog_process(ar, (u8 *)data->payload);
 out:
 	rcu_read_unlock();
 }
@@ -5267,6 +5269,8 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 		} else if (ath11k_debugfs_is_pktlog_rx_stats_enabled(ar)) {
 			log_type = ATH11K_PKTLOG_TYPE_RX_STATBUF;
 			rx_buf_sz = DP_RX_BUFFER_SIZE;
+			ath11k_rx_stats_buf_pktlog_process(ar, skb->data,
+							   log_type, rx_buf_sz);
 		} else {
 			log_type = ATH11K_PKTLOG_TYPE_INVALID;
 			rx_buf_sz = 0;
@@ -5311,8 +5315,11 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 		arsta = ath11k_sta_to_arsta(peer->sta);
 		ath11k_dp_rx_update_peer_stats(arsta, ppdu_info);
 
-		if (ath11k_debugfs_is_pktlog_peer_valid(ar, peer->addr))
+		if (ath11k_debugfs_is_pktlog_peer_valid(ar, peer->addr)) {
 			trace_ath11k_htt_rxdesc(ar, skb->data, log_type, rx_buf_sz);
+			ath11k_rx_stats_buf_pktlog_process(ar, skb->data,
+							   log_type, rx_buf_sz);
+		}
 
 next_skb:
 		spin_unlock_bh(&ab->base_lock);

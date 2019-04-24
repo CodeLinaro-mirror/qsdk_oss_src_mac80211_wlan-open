@@ -16,6 +16,7 @@
 #include "debugfs_htt_stats.h"
 #include "peer.h"
 #include "hif.h"
+#include "pktlog.h"
 
 static const char *htt_bp_umac_ring[HTT_SW_UMAC_RING_IDX_MAX] = {
 	"REO2SW1_RING",
@@ -1612,6 +1613,7 @@ int ath11k_debugfs_register(struct ath11k *ar)
 	ath11k_debugfs_htt_stats_init(ar);
 
 	ath11k_debugfs_fw_stats_init(ar);
+	ath11k_init_pktlog(ar);
 
 	debugfs_create_file("ext_tx_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,
@@ -1673,6 +1675,8 @@ void ath11k_debugfs_unregister(struct ath11k *ar)
 		kfree(dbr_debug);
 		ar->debug.dbr_debug[i] = NULL;
 	}
+
+	ath11k_deinit_pktlog(ar);
 }
 
 static ssize_t ath11k_write_twt_add_dialog(struct file *file,

@@ -19,6 +19,7 @@
 
 #include "qmi.h"
 #include "htc.h"
+#include "pktlog.h"
 #include "wmi.h"
 #include "hal.h"
 #include "dp.h"
@@ -624,6 +625,11 @@ struct ath11k_debug {
 	u32 pktlog_mode;
 	u32 pktlog_peer_valid;
 	u8 pktlog_peer_addr[ETH_ALEN];
+#ifdef CPTCFG_ATH11K_PKTLOG
+	struct dentry *debugfs_pktlog;
+	struct ath_pktlog pktlog;
+	bool is_pkt_logging;
+#endif
 	u32 rx_filter;
 	u32 mem_offset;
 	u32 module_id_bitmap[MAX_MODULE_ID_BITMAP_WORDS];

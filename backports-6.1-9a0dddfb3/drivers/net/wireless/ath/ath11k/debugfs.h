@@ -396,4 +396,38 @@ ath11k_debugfs_add_dbring_entry(struct ath11k *ar,
 }
 #endif /* CPTCFG_ATH11K_DEBUGFS*/
 
+#ifdef CPTCFG_ATH11K_PKTLOG
+void ath11k_init_pktlog(struct ath11k *ar);
+void ath11k_deinit_pktlog(struct ath11k *ar);
+void ath11k_htt_pktlog_process(struct ath11k *ar, u8 *data);
+void ath11k_htt_ppdu_pktlog_process(struct ath11k *ar, u8 *data, u32 len);
+void ath11k_rx_stats_buf_pktlog_process(struct ath11k *ar, u8 *data, u16 log_type, u32 len);
+
+#else /* CPTCFG_ATH11K_PKTLOG */
+static inline void ath11k_init_pktlog(struct ath11k *ar)
+{
+}
+
+static inline void ath11k_deinit_pktlog(struct ath11k *ar)
+{
+}
+
+static inline void ath11k_htt_pktlog_process(struct ath11k *ar,
+					     u8 *data)
+{
+}
+
+static inline void ath11k_htt_ppdu_pktlog_process(struct ath11k *ar,
+						  u8 *data, u32 len)
+{
+}
+
+static inline void ath11k_pktlog_rx(struct ath11k *ar, struct sk_buff_head *amsdu)
+{
+}
+static inline void ath11k_rx_stats_buf_pktlog_process(struct ath11k *ar,
+						       u8 *data, u16 log_type, u32 len)
+{
+}
+#endif /* CONFIG_ATH11K_PKTLOG */
 #endif /* _ATH11K_DEBUGFS_H_ */

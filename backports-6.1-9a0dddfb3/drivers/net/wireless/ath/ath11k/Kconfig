@@ -62,3 +62,12 @@ config ATH11K_SPECTRAL
 	  Enable ath11k spectral scan support
 
 	  Say Y to enable access to the FFT/spectral data via debugfs.
+
+config ATH11K_PKTLOG
+	bool "ath11k packet logging support"
+	depends on ATH11K_DEBUGFS
+	help
+	  Say Y to dump frame information during frame transmission
+	  and reception, rate information and ani state. The packet
+	  log uses ring buffer to dump the data. The buffer size,
+	  frame filters can be alterted by debugfs entries.
