@@ -19,7 +19,8 @@ ath11k-y += core.o \
 	    hw.o \
 	    pcic.o \
 	    fw.o \
-	    p2p.o
+	    p2p.o \
+	    vendor.o
 
 ath11k-$(CPTCFG_ATH11K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o
 ath11k-$(CPTCFG_NL80211_TESTMODE) += testmode.o

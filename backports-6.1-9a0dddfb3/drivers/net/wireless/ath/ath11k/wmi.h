@@ -5286,6 +5286,79 @@ struct wmi_wmm_params_arg {
 	u8 no_ack;
 };
 
+enum wmi_coex_config_type {
+	WMI_COEX_CONFIG_PAGE_P2P_TDM		= 1,
+	WMI_COEX_CONFIG_PAGE_STA_TDM		= 2,
+	WMI_COEX_CONFIG_PAGE_SAP_TDM		= 3,
+	WMI_COEX_CONFIG_DURING_WLAN_CONN	= 4,
+	WMI_COEX_CONFIG_BTC_ENABLE		= 5,
+	WMI_COEX_CONFIG_COEX_DBG		= 6,
+	WMI_COEX_CONFIG_PAGE_P2P_STA_TDM	= 7,
+	WMI_COEX_CONFIG_INQUIRY_P2P_TDM		= 8,
+	WMI_COEX_CONFIG_INQUIRY_STA_TDM		= 9,
+	WMI_COEX_CONFIG_INQUIRY_SAP_TDM		= 10,
+	WMI_COEX_CONFIG_INQUIRY_P2P_STA_TDM	= 11,
+	WMI_COEX_CONFIG_TX_POWER		= 12,
+	WMI_COEX_CONFIG_PTA_CONFIG		= 13,
+	WMI_COEX_CONFIG_AP_TDM			= 14,
+	WMI_COEX_CONFIG_WLAN_SCAN_PRIORITY	= 15,
+	WMI_COEX_CONFIG_WLAN_PKT_PRIORITY	= 16,
+	WMI_COEX_CONFIG_PTA_INTERFACE		= 17,
+};
+
+struct coex_config_arg {
+	u32 vdev_id;
+        u32 config_type;
+	union {
+		struct {
+			u32 coex_enable;
+		};
+
+		struct {
+			u32 pta_num;
+			u32 coex_mode;
+			u32 bt_txrx_time;
+			u32 bt_priority_time;
+			u32 pta_algorithm;
+			u32 pta_priority;
+		};
+
+		struct {
+			u32 wlan_pkt_type;
+			u32 wlan_pkt_type_continued;
+			u32 wlan_pkt_weight;
+			u32 bt_pkt_weight;
+		};
+	};
+};
+
+struct wmi_coex_config_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+        u32 config_type;
+	union {
+		struct {
+			u32 coex_enable;
+		} __packed;
+
+		struct {
+			u32 pta_num;
+			u32 coex_mode;
+			u32 bt_txrx_time;
+			u32 bt_priority_time;
+			u32 pta_algorithm;
+			u32 pta_priority;
+		} __packed;
+
+		struct {
+			u32 wlan_pkt_type;
+			u32 wlan_pkt_type_continued;
+			u32 wlan_pkt_weight;
+			u32 bt_pkt_weight;
+		} __packed;
+	} __packed;
+} __packed;
+
 struct wmi_vdev_set_wmm_params_cmd {
 	u32 tlv_header;
 	u32 vdev_id;
@@ -6493,6 +6566,8 @@ int ath11k_wmi_pdev_non_srg_obss_color_enable_bitmap(struct ath11k *ar,
 						     u32 *bitmap);
 int ath11k_wmi_pdev_non_srg_obss_bssid_enable_bitmap(struct ath11k *ar,
 						     u32 *bitmap);
+int ath11k_send_coex_config_cmd(struct ath11k *ar,
+			       struct coex_config_arg *coex_config);
 int ath11k_wmi_send_obss_color_collision_cfg_cmd(struct ath11k *ar, u32 vdev_id,
 						 u8 bss_color, u32 period,
 						 bool enable);

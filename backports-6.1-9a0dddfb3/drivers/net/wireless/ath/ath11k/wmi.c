@@ -1616,6 +1616,71 @@ int ath11k_wmi_vdev_set_param_cmd(struct ath11k *ar, u32 vdev_id,
 	return ret;
 }
 
+static void ath11k_wmi_copy_coex_config(struct ath11k *ar, struct wmi_coex_config_cmd *cmd,
+				       struct coex_config_arg *coex_config)
+{
+	if (coex_config->config_type == WMI_COEX_CONFIG_BTC_ENABLE) {
+		cmd->coex_enable = coex_config->coex_enable;
+		ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+			   "WMI coex config type %u vdev id %d  coex_enable %u\n",
+			   coex_config->config_type, coex_config->vdev_id,
+			   coex_config->coex_enable);
+	}
+
+	if (coex_config->config_type == WMI_COEX_CONFIG_WLAN_PKT_PRIORITY) {
+		cmd->wlan_pkt_type = coex_config->wlan_pkt_type;
+		cmd->wlan_pkt_weight = coex_config->wlan_pkt_weight;
+		ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+			   "WMI coex config type %u vdev id %d  wlan pkt type 0x%x wlan pkt weight %u\n",
+			   coex_config->config_type, coex_config->vdev_id,
+			   coex_config->wlan_pkt_type, coex_config->wlan_pkt_weight);
+	}
+
+	if (coex_config->config_type == WMI_COEX_CONFIG_PTA_INTERFACE) {
+		cmd->pta_num = coex_config->pta_num;
+		cmd->coex_mode = coex_config->coex_mode;
+		cmd->bt_txrx_time = coex_config->bt_txrx_time;
+		cmd->bt_priority_time = coex_config->bt_priority_time;
+		cmd->pta_algorithm = coex_config->pta_algorithm;
+		cmd->pta_priority = coex_config->pta_priority;
+		ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+			   "WMI coex config type %u vdev id %d  pta num %u coex mode %u bt_txrx_time %u bt_priority_time %u pta alogrithm %u pta priority %u\n",
+			   coex_config->config_type, coex_config->vdev_id,
+			   coex_config->pta_num, coex_config->coex_mode,
+			   coex_config->bt_txrx_time, coex_config->bt_priority_time,
+			   coex_config->pta_algorithm, coex_config->pta_priority);
+	}
+}
+
+int ath11k_send_coex_config_cmd(struct ath11k *ar,
+				struct coex_config_arg *coex_config)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_coex_config_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_coex_config_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_COEX_CONFIG_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+
+	cmd->vdev_id = coex_config->vdev_id;
+	cmd->config_type = coex_config->config_type;
+	ath11k_wmi_copy_coex_config(ar, cmd, coex_config);
+
+	ret = ath11k_wmi_cmd_send(wmi, skb, WMI_COEX_CONFIG_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab, "failed to send WMI_COEX_CONFIG_CMD cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath11k_wmi_send_stats_request_cmd(struct ath11k *ar,
 				      struct stats_request_params *param)
 {

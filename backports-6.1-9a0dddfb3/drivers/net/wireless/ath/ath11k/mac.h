@@ -151,8 +151,9 @@ void __ath11k_mac_scan_finish(struct ath11k *ar);
 void ath11k_mac_scan_finish(struct ath11k *ar);
 
 struct ath11k_vif *ath11k_mac_get_arvif(struct ath11k *ar, u32 vdev_id);
-struct ath11k_vif *ath11k_mac_get_arvif_by_vdev_id(struct ath11k_base *ab,
-						   u32 vdev_id);
+struct ath11k_vif *ath11k_mac_get_arvif_by_vdev_id(struct ath11k_base *ab, u32 vdev_id);
+int ath11k_mac_coex_config(struct ath11k *ar, struct ath11k_vif *arvif,
+			   int coex, u32 wlan_prio_mask, u8 wlan_weight);
 u8 ath11k_mac_get_target_pdev_id(struct ath11k *ar);
 u8 ath11k_mac_get_target_pdev_id_from_vif(struct ath11k_vif *arvif);
 struct ath11k_vif *ath11k_mac_get_vif_up(struct ath11k_base *ab);

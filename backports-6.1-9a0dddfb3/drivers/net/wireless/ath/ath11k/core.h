@@ -651,6 +651,16 @@ struct ath11k_per_peer_tx_stats {
 #define ATH11K_FLUSH_TIMEOUT (5 * HZ)
 #define ATH11K_VDEV_DELETE_TIMEOUT_HZ (5 * HZ)
 
+struct ath11k_coex_info {
+	bool coex_support;
+	u32 pta_num;
+	u32 coex_mode;
+	u32 bt_active_time_slot;
+	u32 bt_priority_time_slot;
+	u32 coex_algo_type;
+	u32 pta_priority;
+};
+
 struct ath11k {
 	struct ath11k_base *ab;
 	struct ath11k_pdev *pdev;
@@ -772,6 +782,8 @@ struct ath11k {
 	struct ath11k_per_peer_tx_stats cached_stats;
 	u32 last_ppdu_id;
 	u32 cached_ppdu_id;
+
+	struct ath11k_coex_info coex;
 	int monitor_vdev_id;
 	struct completion fw_mode_reset;
 	u8 ftm_msgref;
