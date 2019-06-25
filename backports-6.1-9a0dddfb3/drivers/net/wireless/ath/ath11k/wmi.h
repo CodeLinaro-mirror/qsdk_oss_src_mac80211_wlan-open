@@ -3076,6 +3076,12 @@ struct set_fwtest_params {
 	u32 value;
 };
 
+struct wmi_pdev_ap_ps_cmd {
+	u32 tlv_header;
+	u32 pdev_id;
+	u32 param_value;
+} __packed;
+
 struct wmi_fwtest_set_param_cmd_param {
 	u32 tlv_header;
 	u32 param_id;
@@ -6568,6 +6574,7 @@ int ath11k_wmi_pdev_non_srg_obss_bssid_enable_bitmap(struct ath11k *ar,
 						     u32 *bitmap);
 int ath11k_send_coex_config_cmd(struct ath11k *ar,
 			       struct coex_config_arg *coex_config);
+int ath11k_wmi_pdev_ap_ps_cmd_send(struct ath11k *ar, u8 pdev_id, u32 value);
 int ath11k_wmi_send_obss_color_collision_cfg_cmd(struct ath11k *ar, u32 vdev_id,
 						 u8 bss_color, u32 period,
 						 bool enable);

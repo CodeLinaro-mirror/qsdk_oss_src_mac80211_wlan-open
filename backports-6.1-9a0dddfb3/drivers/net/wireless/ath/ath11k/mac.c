@@ -6372,6 +6372,7 @@ static void ath11k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 
 	clear_bit(ATH11K_CAC_RUNNING, &ar->dev_flags);
 	ar->state = ATH11K_STATE_OFF;
+	ar->ap_ps_state = ATH11K_AP_PS_STATE_OFF;
 	mutex_unlock(&ar->conf_mutex);
 
 	cancel_delayed_work_sync(&ar->scan.timeout);
@@ -6795,7 +6796,6 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 			    arvif->vdev_id, ret);
 		goto err;
 	}
-
 	ar->num_created_vdevs++;
 	ath11k_dbg(ab, ATH11K_DBG_MAC, "vdev %pM created, vdev_id %d\n",
 		   vif->addr, arvif->vdev_id);
@@ -7028,6 +7028,7 @@ err_vdev_del:
 
 	/* Recalc txpower for remaining vdev */
 	ath11k_mac_txpower_recalc(ar);
+	ath11k_mac_ap_ps_recalc(ar);
 
 	/* TODO: recalc traffic pause state based on the available vdevs */
 
@@ -9561,6 +9562,33 @@ err_fallback:
 	return 0;
 }
 
+int ath11k_mac_ap_ps_recalc(struct ath11k *ar)
+{
+	struct ath11k_vif *arvif;
+	bool has_sta_iface = false;
+	enum ath11k_ap_ps_state state = ATH11K_AP_PS_STATE_OFF;
+	int ret = 0;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->vdev_type == WMI_VDEV_TYPE_STA) {
+			has_sta_iface = true;
+			break;
+		}
+	}
+
+	if (!has_sta_iface && !ar->num_stations && ar->ap_ps_enabled)
+		state = ATH11K_AP_PS_STATE_ON;
+
+	if (ar->ap_ps_state == state)
+		return ret;
+
+	ret = ath11k_wmi_pdev_ap_ps_cmd_send(ar, ar->pdev->pdev_id, state);
+	if (!ret)
+		ar->ap_ps_state = state;
+
+	return ret;
+}
+
 static int ath11k_mac_station_add(struct ath11k *ar,
 				  struct ieee80211_vif *vif,
 				  struct ieee80211_sta *sta)
@@ -9599,6 +9627,12 @@ static int ath11k_mac_station_add(struct ath11k *ar,
 
 	ath11k_dbg(ab, ATH11K_DBG_MAC, "Added peer: %pM for VDEV: %d\n",
 		   sta->addr, arvif->vdev_id);
+
+	ret = ath11k_mac_ap_ps_recalc(ar);
+	if (ret) {
+		ath11k_warn(ar->ab, "failed to send ap ps ret %d\n", ret);
+		goto exit;
+	}
 
 	if (ath11k_debugfs_is_extd_tx_stats_enabled(ar)) {
 		arsta->tx_stats = kzalloc(sizeof(*arsta->tx_stats), GFP_KERNEL);
@@ -9827,6 +9861,10 @@ static int ath11k_mac_op_sta_state(struct ieee80211_hw *hw,
 			ath11k_warn(ar->ab, "Failed to disassociate station: %pM\n",
 				    sta->addr);
 	}
+
+	ret = ath11k_mac_ap_ps_recalc(ar);
+	if (ret)
+		ath11k_warn(ar->ab, "failed to set ap ps ret %d\n", ret);
 
 	mutex_unlock(&ar->conf_mutex);
 	return ret;

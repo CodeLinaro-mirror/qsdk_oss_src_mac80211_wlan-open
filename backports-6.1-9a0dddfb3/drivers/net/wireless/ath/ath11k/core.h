@@ -34,6 +34,7 @@
 #include "wow.h"
 #include "fw.h"
 #include "coredump.h"
+#include "vendor.h"
 
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
@@ -661,6 +662,11 @@ struct ath11k_coex_info {
 	u32 pta_priority;
 };
 
+enum ath11k_ap_ps_state {
+	ATH11K_AP_PS_STATE_OFF,
+	ATH11K_AP_PS_STATE_ON,
+};
+
 struct ath11k {
 	struct ath11k_base *ab;
 	struct ath11k_pdev *pdev;
@@ -787,6 +793,8 @@ struct ath11k {
 	int monitor_vdev_id;
 	struct completion fw_mode_reset;
 	u8 ftm_msgref;
+	int ap_ps_enabled;
+	enum ath11k_ap_ps_state ap_ps_state;
 #ifdef CPTCFG_ATH11K_DEBUGFS
 	struct ath11k_debug debug;
 #endif

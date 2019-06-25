@@ -136,6 +136,7 @@ void ath11k_mac_11d_scan_start(struct ath11k *ar, u32 vdev_id);
 void ath11k_mac_11d_scan_stop(struct ath11k *ar);
 void ath11k_mac_11d_scan_stop_all(struct ath11k_base *ab);
 
+int ath11k_mac_ap_ps_recalc(struct ath11k *ar);
 void ath11k_mac_destroy(struct ath11k_base *ab);
 void ath11k_mac_unregister(struct ath11k_base *ab);
 int ath11k_mac_register(struct ath11k_base *ab);
