@@ -9,6 +9,7 @@
 #include <linux/remoteproc.h>
 #include <linux/firmware.h>
 #include <linux/of.h>
+#include <linux/of_platform.h>
 
 #include "core.h"
 #include "dp_tx.h"
@@ -36,6 +37,16 @@ MODULE_PARM_DESC(frame_mode,
 bool ath11k_ftm_mode;
 module_param_named(ftm_mode, ath11k_ftm_mode, bool, 0444);
 MODULE_PARM_DESC(ftm_mode, "Boots up in factory test mode");
+
+#ifdef CONFIG_QCOM_QMI_HELPERS
+wait_queue_head_t ath11k_ssr_dump_wq;
+EXPORT_SYMBOL(ath11k_ssr_dump_wq);
+
+bool ath11k_collect_dump = false;
+EXPORT_SYMBOL(ath11k_collect_dump);
+#endif
+
+struct ath11k_base *ath11k_soc[MAX_SOCS];
 
 static const struct ath11k_hw_params ath11k_hw_params[] = {
 	{
@@ -1942,6 +1953,127 @@ static int ath11k_core_start_firmware(struct ath11k_base *ab,
 	return ret;
 }
 
+void ath11k_core_dump_bp_stats(struct ath11k_base *ab)
+{
+	int len = 0;
+	const int size = 4096;
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return;
+
+	len = ath11k_debugfs_dump_soc_ring_bp_stats(ab, buf, size - 1);
+
+	buf[len] = '\0';
+
+	ath11k_info(ab, "ATH11K Driver Stats\n%s\n", buf);
+
+	kfree(buf);
+}
+
+#ifdef CONFIG_QCOM_QMI_HELPERS
+
+#define ATH11K_COLLECT_DUMP_TIMEOUT	(90 * HZ)
+
+void ath11k_core_wait_dump_collect(struct ath11k_base *ab)
+{
+	int timeout;
+
+	if (ath11k_collect_dump) {
+		timeout = wait_event_timeout(ath11k_ssr_dump_wq,
+					     (ath11k_collect_dump == false),
+					     ATH11K_COLLECT_DUMP_TIMEOUT);
+		if (timeout <= 0)
+			ath11k_warn(ab, "dump collection timed out\n");
+	}
+	return;
+}
+
+/* Print the driver stats and crash the system on receiving this notification */
+int ath11k_core_ssr_notifier_cb(struct notifier_block *nb, unsigned long event,
+				void *data)
+{
+	struct ath11k_qmi *qmi = container_of(nb, struct ath11k_qmi, ssr_nb);
+	struct ath11k_base *ab = qmi->ab;
+	struct device *dev = ab->dev;
+	bool multi_pd_arch = false;
+#if LINUX_VERSION_IS_LESS(5, 4, 0)
+	const char *name;
+#else
+	phandle rproc_phandle;
+	struct device_node *rproc_node = NULL;
+	struct platform_device *pdev = NULL;
+	struct platform_device *ssr_pdev = (struct platform_device *)data;
+#endif
+
+	if (test_bit(ATH11K_FLAG_FW_RESTART_FOR_HOST, &qmi->ab->dev_flags)) {
+		return 0;
+	}
+
+#if LINUX_VERSION_IS_GEQ(5,4,0)
+	if (ath11k_collect_dump && event == QCOM_SSR_AFTER_POWERUP) {
+		ath11k_collect_dump = false;
+		wake_up(&ath11k_ssr_dump_wq);
+		return 0;
+	}
+
+	if (event != QCOM_SSR_NOTIFY_CRASH)
+		return 0;
+	ath11k_collect_dump = true;
+#else
+	if (!test_bit(ATH11K_FLAG_REGISTERED, &ab->dev_flags))
+		return 0;
+#endif
+
+	/* Print the stats only if notification is received for expected PD*/
+	multi_pd_arch = of_property_read_bool(dev->of_node, "qcom,multipd_arch");
+	if (multi_pd_arch) {
+#if LINUX_VERSION_IS_LESS(5, 4, 0)
+		if (of_property_read_string(dev->of_node, "qcom,userpd-subsys-name", &name))
+			return 0;
+
+		if (strcmp((char*)data, name) != 0)
+			return 0;
+#else
+		if (of_property_read_u32(dev->of_node, "qcom,rproc",
+					 &rproc_phandle))
+			return 0;
+		rproc_node = of_find_node_by_phandle(rproc_phandle);
+		if (!rproc_node) {
+			ath11k_warn(ab, "ssr notification failed to get rproc_node\n");
+			return 0;
+		}
+		pdev = of_find_device_by_node(rproc_node);
+		if (!pdev) {
+			ath11k_warn(ab, "Failed to get pdev from device node\n");
+			return 0;
+		}
+		if (strcmp(ssr_pdev->name, pdev->name) != 0) {
+			ath11k_warn(ab, "SSR notification mismatch %s  pdev name:%s\n",
+				    (char *)data, pdev->name);
+			return 0;
+		}
+#endif
+	}
+
+	ath11k_core_dump_bp_stats(qmi->ab);
+	ath11k_hal_dump_srng_stats(qmi->ab);
+	/* TODO Add more driver stats */
+
+	/* Crash the system once all the stats are dumped */
+	BUG_ON(1);
+
+	return 0;
+}
+#else
+void ath11k_core_wait_dump_collect(struct ath11k_base *ab)
+{
+	return;
+}
+#endif
+EXPORT_SYMBOL(ath11k_core_wait_dump_collect);
+
 int ath11k_core_qmi_firmware_ready(struct ath11k_base *ab)
 {
 	int ret;
@@ -1993,6 +2125,7 @@ int ath11k_core_qmi_firmware_ready(struct ath11k_base *ab)
 		ath11k_err(ab, "failed to create pdev core: %d\n", ret);
 		goto err_core_stop;
 	}
+
 	ath11k_hif_irq_enable(ab);
 	mutex_unlock(&ab->core_lock);
 
@@ -2329,6 +2462,14 @@ int ath11k_core_init(struct ath11k_base *ab)
 {
 	int ret;
 
+#ifdef CONFIG_QCOM_QMI_HELPERS
+	/* Register a notifier after core init
+	 * to be called on fw crash
+	 */
+	ab->qmi.ssr_nb.notifier_call = ath11k_core_ssr_notifier_cb;
+	ath11k_hif_ssr_notifier_reg(ab);
+#endif
+
 	ret = ath11k_core_soc_create(ab);
 	if (ret) {
 		ath11k_err(ab, "failed to create soc core: %d\n", ret);
@@ -2351,6 +2492,14 @@ void ath11k_core_deinit(struct ath11k_base *ab)
 	ath11k_hif_power_down(ab);
 	ath11k_mac_destroy(ab);
 	ath11k_core_soc_destroy(ab);
+
+#ifdef CONFIG_QCOM_QMI_HELPERS
+	/* Unregister the ssr notifier as we are not intersted
+	 * in receving these notifications after mac is unregistered.
+	 */
+	ath11k_hif_ssr_notifier_unreg(ab);
+
+#endif
 }
 EXPORT_SYMBOL(ath11k_core_deinit);
 
@@ -2367,6 +2516,8 @@ struct ath11k_base *ath11k_core_alloc(struct device *dev, size_t priv_size,
 				      enum ath11k_bus bus)
 {
 	struct ath11k_base *ab;
+	static atomic_t num_soc = ATOMIC_INIT(0);
+	int soc_idx = 0;
 
 	ab = kzalloc(sizeof(*ab) + priv_size, GFP_KERNEL);
 	if (!ab)
@@ -2394,6 +2545,9 @@ struct ath11k_base *ath11k_core_alloc(struct device *dev, size_t priv_size,
 	init_waitqueue_head(&ab->peer_mapping_wq);
 	init_waitqueue_head(&ab->wmi_ab.tx_credits_wq);
 	init_waitqueue_head(&ab->qmi.cold_boot_waitq);
+#ifdef CONFIG_QCOM_QMI_HELPERS
+	init_waitqueue_head(&ath11k_ssr_dump_wq);
+#endif
 	INIT_WORK(&ab->restart_work, ath11k_core_restart);
 	INIT_WORK(&ab->update_11d_work, ath11k_update_11d);
 	INIT_WORK(&ab->reset_work, ath11k_core_reset);
@@ -2404,6 +2558,10 @@ struct ath11k_base *ath11k_core_alloc(struct device *dev, size_t priv_size,
 
 	ab->dev = dev;
 	ab->hif.bus = bus;
+	soc_idx = atomic_inc_return(&num_soc);
+	/* dec soc_idx to start from 0 */
+	if (--soc_idx < MAX_SOCS)
+		ath11k_soc[soc_idx] = ab;
 
 	return ab;
 

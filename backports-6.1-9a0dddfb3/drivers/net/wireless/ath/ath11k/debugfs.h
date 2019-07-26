@@ -273,6 +273,8 @@ void ath11k_debugfs_unregister(struct ath11k *ar);
 void ath11k_debugfs_fw_stats_process(struct ath11k *ar, struct ath11k_fw_stats *stats);
 
 void ath11k_debugfs_fw_stats_init(struct ath11k *ar);
+ssize_t ath11k_debugfs_dump_soc_ring_bp_stats(struct ath11k_base *ab,
+					      char *buf, int size);
 int ath11k_debugfs_get_fw_stats(struct ath11k *ar, u32 pdev_id,
 				u32 vdev_id, u32 stats_id);
 
@@ -315,6 +317,12 @@ void ath11k_debugfs_add_dbring_entry(struct ath11k *ar,
 				     struct hal_srng *srng);
 
 #else
+ssize_t ath11k_debugfs_dump_soc_ring_bp_stats(struct ath11k_base *ab,
+					      char *buf, int size)
+{
+	return 0;
+}
+
 static inline int ath11k_debugfs_soc_create(struct ath11k_base *ab)
 {
 	return 0;

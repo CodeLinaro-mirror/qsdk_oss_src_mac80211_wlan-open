@@ -731,8 +731,8 @@ static int ath11k_fill_bp_stats(struct ath11k_base *ab,
 	return len;
 }
 
-static ssize_t ath11k_debugfs_dump_soc_ring_bp_stats(struct ath11k_base *ab,
-						     char *buf, int size)
+ssize_t ath11k_debugfs_dump_soc_ring_bp_stats(struct ath11k_base *ab,
+					      char *buf, int size)
 {
 	struct ath11k_bp_stats *bp_stats;
 	bool stats_rxd = false;

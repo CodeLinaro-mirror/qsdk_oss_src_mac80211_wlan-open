@@ -36,6 +36,11 @@
 #include "coredump.h"
 #include "vendor.h"
 
+#ifdef CONFIG_QCOM_QMI_HELPERS
+extern wait_queue_head_t ath11k_ssr_dump_wq;
+extern bool ath11k_collect_dump;
+#endif
+
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
 #define ATH11K_TX_MGMT_NUM_PENDING_MAX	512
@@ -69,6 +74,8 @@ extern bool ath11k_ftm_mode;
 #define ATH11K_RESET_FAIL_TIMEOUT_HZ (20 * HZ)
 #define ATH11K_RECONFIGURE_TIMEOUT_HZ (10 * HZ)
 #define ATH11K_RECOVER_START_TIMEOUT_HZ (20 * HZ)
+
+#define MAX_SOCS	3
 
 enum ath11k_supported_bw {
 	ATH11K_BW_20	= 0,
@@ -1287,6 +1294,7 @@ bool ath11k_core_coldboot_cal_support(struct ath11k_base *ab);
 
 const struct firmware *ath11k_core_firmware_request(struct ath11k_base *ab,
 						    const char *filename);
+void ath11k_core_wait_dump_collect(struct ath11k_base *ab);
 
 static inline const char *ath11k_scan_state_str(enum ath11k_scan_state state)
 {

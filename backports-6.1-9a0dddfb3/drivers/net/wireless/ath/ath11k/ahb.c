@@ -406,6 +406,7 @@ static int ath11k_ahb_power_up(struct ath11k_base *ab)
 	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
 	int ret;
 
+	ath11k_core_wait_dump_collect(ab);
 	ret = rproc_boot(ab_ahb->tgt_rproc);
 	if (ret)
 		ath11k_err(ab, "failed to boot the remote processor Q6\n");
@@ -417,6 +418,7 @@ static void ath11k_ahb_power_down(struct ath11k_base *ab)
 {
 	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
 
+	ath11k_core_wait_dump_collect(ab);
 	rproc_shutdown(ab_ahb->tgt_rproc);
 }
 
@@ -771,6 +773,31 @@ static int ath11k_ahb_hif_resume(struct ath11k_base *ab)
 	return 0;
 }
 
+#ifdef CONFIG_QCOM_QMI_HELPERS
+static void ath11k_ahb_ssr_notifier_reg(struct ath11k_base *ab)
+{
+#if LINUX_VERSION_IS_LESS(5, 4, 0)
+	qcom_register_ssr_notifier(&ab->qmi.ssr_nb);
+#else
+	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
+	rproc_register_subsys_notifier(ab_ahb->tgt_rproc->name,
+				       &ab->qmi.ssr_nb, &ab->qmi.ssr_nb);
+#endif
+}
+
+static void ath11k_ahb_ssr_notifier_unreg(struct ath11k_base *ab)
+{
+#if LINUX_VERSION_IS_LESS(5, 4, 0)
+	qcom_unregister_ssr_notifier(&ab->qmi.ssr_nb);
+#else
+	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
+	rproc_unregister_subsys_notifier(ab_ahb->tgt_rproc->name,
+					 &ab->qmi.ssr_nb,
+					 &ab->qmi.ssr_nb);
+#endif
+}
+#endif
+
 static const struct ath11k_hif_ops ath11k_ahb_hif_ops_ipq8074 = {
 	.start = ath11k_ahb_start,
 	.stop = ath11k_ahb_stop,
@@ -782,6 +809,10 @@ static const struct ath11k_hif_ops ath11k_ahb_hif_ops_ipq8074 = {
 	.map_service_to_pipe = ath11k_ahb_map_service_to_pipe,
 	.power_down = ath11k_ahb_power_down,
 	.power_up = ath11k_ahb_power_up,
+#ifdef CONFIG_QCOM_QMI_HELPERS
+	.ssr_notifier_reg = ath11k_ahb_ssr_notifier_reg,
+	.ssr_notifier_unreg = ath11k_ahb_ssr_notifier_unreg,
+#endif
 };
 
 static const struct ath11k_hif_ops ath11k_ahb_hif_ops_wcn6750 = {

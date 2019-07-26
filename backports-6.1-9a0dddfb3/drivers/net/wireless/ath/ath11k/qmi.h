@@ -8,7 +8,9 @@
 #define ATH11K_QMI_H
 
 #include <linux/mutex.h>
+#include <linux/notifier.h>
 #include <linux/soc/qcom/qmi.h>
+#include <linux/remoteproc/qcom_rproc.h>
 
 #define ATH11K_HOST_VERSION_STRING		"WIN"
 #define ATH11K_QMI_WLANFW_TIMEOUT_MS		10000
@@ -135,6 +137,7 @@ struct ath11k_qmi {
 	struct workqueue_struct *event_wq;
 	struct list_head event_list;
 	spinlock_t event_lock; /* spinlock for qmi event list */
+	struct notifier_block ssr_nb;
 	struct ath11k_qmi_ce_cfg ce_cfg;
 	struct target_mem_chunk target_mem[ATH11K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
 	u32 mem_seg_count;

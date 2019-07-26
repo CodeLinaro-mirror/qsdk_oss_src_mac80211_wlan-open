@@ -32,6 +32,10 @@ struct ath11k_hif_ops {
 	void (*ce_irq_disable)(struct ath11k_base *ab);
 	void (*get_ce_msi_idx)(struct ath11k_base *ab, u32 ce_id, u32 *msi_idx);
 	void (*coredump_download)(struct ath11k_base *ab);
+#ifdef CONFIG_QCOM_QMI_HELPERS
+	void (*ssr_notifier_reg)(struct ath11k_base *ab);
+	void (*ssr_notifier_unreg)(struct ath11k_base *ab);
+#endif
 };
 
 static inline void ath11k_hif_ce_irq_enable(struct ath11k_base *ab)
@@ -153,4 +157,21 @@ static inline void ath11k_hif_coredump_download(struct ath11k_base *ab)
 		ab->hif.ops->coredump_download(ab);
 }
 
+#ifdef CONFIG_QCOM_QMI_HELPERS
+static inline void ath11k_hif_ssr_notifier_reg(struct ath11k_base *ab)
+{
+	if (!ab->hif.ops->ssr_notifier_reg)
+		return;
+
+	ab->hif.ops->ssr_notifier_reg(ab);
+}
+
+static inline void ath11k_hif_ssr_notifier_unreg(struct ath11k_base *ab)
+{
+	if (!ab->hif.ops->ssr_notifier_unreg)
+		return;
+
+	ab->hif.ops->ssr_notifier_unreg(ab);
+}
+#endif
 #endif /* _HIF_H_ */
