@@ -64,8 +64,6 @@ struct wmi_tlv {
 #define WLAN_SCAN_PARAMS_MAX_BSSID   4
 #define WLAN_SCAN_PARAMS_MAX_IE_LEN  512
 
-#define WMI_APPEND_TO_EXISTING_CHAN_LIST_FLAG 1
-
 #define MAX_WMI_UTF_LEN 252
 #define WMI_BA_MODE_BUFFER_SIZE_256  3
 /*
@@ -3179,6 +3177,8 @@ enum scan_dwelltime_adaptive_mode {
 	SCAN_DWELL_MODE_STATIC = 4
 };
 
+#define WLAN_SCAN_MAX_NUM_CHANNELS	60
+
 #define WLAN_SSID_MAX_LEN 32
 
 struct element_info {
@@ -3227,6 +3227,12 @@ struct wmi_vdev_set_tpc_power_cmd {
 } __packed;
 
 #define WMI_IE_BITMAP_SIZE             8
+#define PROBE_REQ_MAX_OUIS	       16
+
+struct wmi_vendor_oui {
+	u32 tlv_header;
+	u32 oui_type_subtype; /* vendor OUI type and subtype */
+};
 
 /* prefix used by scan requestor ids on the host */
 #define WMI_HOST_SCAN_REQUESTOR_ID_PREFIX 0xA000
@@ -3360,6 +3366,22 @@ struct hint_bssid {
 	struct wmi_mac_addr bssid;
 };
 
+struct chan_info {
+	u32 freq;
+	u32 phymode;
+};
+
+struct chan_list {
+	u32 num_chan;
+	struct chan_info chan[WLAN_SCAN_MAX_NUM_CHANNELS];
+};
+
+struct probe_req_whitelist {
+	u32 ie_bitmap[WMI_IE_BITMAP_SIZE];
+	u32 num_vendor_oui;
+	u32 voui[PROBE_REQ_MAX_OUIS];
+};
+
 struct scan_req_params {
 	u32 scan_id;
 	u32 scan_req_id;
@@ -3416,7 +3438,7 @@ struct scan_req_params {
 	    scan_f_forced:1,
 	    scan_f_2ghz:1,
 	    scan_f_5ghz:1,
-	    scan_f_80mhz:1;
+	    scan_f_wide_band:1;
 	enum scan_dwelltime_adaptive_mode adaptive_dwell_time_mode;
 	u32 burst_duration;
 	u32 num_chan;
@@ -3424,6 +3446,8 @@ struct scan_req_params {
 	u32 num_ssids;
 	u32 n_probes;
 	u32 *chan_list;
+	struct chan_list channel_list;
+	struct cfg80211_chan_def *chandef;
 	u32 notify_scan_events;
 	struct wlan_ssid ssid[WLAN_SCAN_PARAMS_MAX_SSID];
 	struct wmi_mac_addr bssid_list[WLAN_SCAN_PARAMS_MAX_BSSID];
@@ -3434,6 +3458,7 @@ struct scan_req_params {
 	u32 num_hint_bssid;
 	struct hint_short_ssid hint_s_ssid[WLAN_SCAN_MAX_HINT_S_SSID];
 	struct hint_bssid hint_bssid[WLAN_SCAN_MAX_HINT_BSSID];
+	struct probe_req_whitelist ie_whitelist;
 	struct wmi_mac_addr mac_addr;
 	struct wmi_mac_addr mac_mask;
 };
@@ -3827,8 +3852,11 @@ struct scan_chan_list_params {
 	struct list_head list;
 	u32 pdev_id;
 	u16 nallchans;
+	bool append_chan_list;
 	struct channel_param ch_param[];
 };
+
+#define WMI_APPEND_TO_EXISTING_CHAN_LIST_FLAG BIT(0)
 
 struct wmi_scan_chan_list_cmd {
 	u32 tlv_header;
@@ -6485,6 +6513,8 @@ int ath11k_wmi_vdev_delete(struct ath11k *ar, u8 vdev_id);
 void ath11k_wmi_start_scan_init(struct ath11k *ar, struct scan_req_params *arg);
 int ath11k_wmi_send_scan_start_cmd(struct ath11k *ar,
 				   struct scan_req_params *params);
+int ath11k_wmi_update_scan_chan_list(struct ath11k *ar,
+				     struct scan_req_params *params);
 int ath11k_wmi_send_scan_stop_cmd(struct ath11k *ar,
 				  struct scan_cancel_param *param);
 int ath11k_wmi_send_wmm_update_cmd_tlv(struct ath11k *ar, u32 vdev_id,

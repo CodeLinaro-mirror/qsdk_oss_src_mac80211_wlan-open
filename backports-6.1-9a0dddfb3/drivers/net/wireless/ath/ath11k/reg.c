@@ -117,109 +117,36 @@ ath11k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
 
 int ath11k_reg_update_chan_list(struct ath11k *ar, bool wait)
 {
-	struct ieee80211_supported_band **bands;
-	struct scan_chan_list_params *params;
-	struct ieee80211_channel *channel;
-	struct ieee80211_hw *hw = ar->hw;
-	struct channel_param *ch;
-	enum nl80211_band band;
-	int num_channels = 0;
-	int i, ret = 0;
+	int left;
+
+	if (wait && ar->state_11d != ATH11K_11D_IDLE) {
+		left = wait_for_completion_timeout(&ar->completed_11d_scan,
+						   ATH11K_SCAN_TIMEOUT_HZ);
+		if (!left) {
+			ath11k_dbg(ar->ab, ATH11K_DBG_REG,
+				   "failed to receive 11d scan complete: timed out\n");
+			ar->state_11d = ATH11K_11D_IDLE;
+		}
+		ath11k_dbg(ar->ab, ATH11K_DBG_REG,
+			   "11d scan wait left time %d\n", left);
+	}
+
+	if (wait &&
+	    (ar->scan.state == ATH11K_SCAN_STARTING ||
+	     ar->scan.state == ATH11K_SCAN_RUNNING)) {
+		left = wait_for_completion_timeout(&ar->scan.completed,
+						   ATH11K_SCAN_TIMEOUT_HZ);
+		if (!left)
+			ath11k_dbg(ar->ab, ATH11K_DBG_REG,
+				   "failed to receive hw scan complete: timed out\n");
+
+		ath11k_dbg(ar->ab, ATH11K_DBG_REG,
+			   "hw scan wait left time %d\n", left);
+	}
 
 	if (ar->state == ATH11K_STATE_RESTARTING)
 		return 0;
-
-	bands = hw->wiphy->bands;
-	for (band = 0; band < NUM_NL80211_BANDS; band++) {
-		if (!bands[band])
-			continue;
-
-		for (i = 0; i < bands[band]->n_channels; i++) {
-			if (bands[band]->channels[i].flags &
-			    IEEE80211_CHAN_DISABLED)
-				continue;
-
-			num_channels++;
-		}
-	}
-
-	if (WARN_ON(!num_channels))
-		return -EINVAL;
-
-	params = kzalloc(struct_size(params, ch_param, num_channels),
-			 GFP_KERNEL);
-	if (!params)
-		return -ENOMEM;
-
-	params->pdev_id = ar->pdev->pdev_id;
-	params->nallchans = num_channels;
-
-	ch = params->ch_param;
-
-	for (band = 0; band < NUM_NL80211_BANDS; band++) {
-		if (!bands[band])
-			continue;
-
-		for (i = 0; i < bands[band]->n_channels; i++) {
-			channel = &bands[band]->channels[i];
-
-			if (channel->flags & IEEE80211_CHAN_DISABLED)
-				continue;
-
-			/* TODO: Set to true/false based on some condition? */
-			ch->allow_ht = true;
-			ch->allow_vht = true;
-			ch->allow_he = true;
-
-			ch->dfs_set =
-				!!(channel->flags & IEEE80211_CHAN_RADAR);
-			ch->is_chan_passive = !!(channel->flags &
-						IEEE80211_CHAN_NO_IR);
-			ch->is_chan_passive |= ch->dfs_set;
-			ch->mhz = channel->center_freq;
-			ch->cfreq1 = channel->center_freq;
-			ch->minpower = 0;
-			ch->maxpower = channel->max_power * 2;
-			ch->maxregpower = channel->max_reg_power * 2;
-			ch->antennamax = channel->max_antenna_gain * 2;
-
-			/* TODO: Use appropriate phymodes */
-			if (channel->band == NL80211_BAND_2GHZ)
-				ch->phy_mode = MODE_11G;
-			else
-				ch->phy_mode = MODE_11A;
-
-			if (channel->band == NL80211_BAND_6GHZ &&
-			    cfg80211_channel_is_psc(channel))
-				ch->psc_channel = true;
-
-			ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
-				   "mac channel [%d/%d] freq %d maxpower %d regpower %d antenna %d mode %d\n",
-				   i, params->nallchans,
-				   ch->mhz, ch->maxpower, ch->maxregpower,
-				   ch->antennamax, ch->phy_mode);
-
-			ch++;
-			/* TODO: use quarrter/half rate, cfreq12, dfs_cfreq2
-			 * set_agile, reg_class_idx
-			 */
-		}
-	}
-
-	if (wait) {
-		spin_lock_bh(&ar->data_lock);
-		list_add_tail(&params->list, &ar->channel_update_queue);
-		spin_unlock_bh(&ar->data_lock);
-
-		queue_work(ar->ab->workqueue, &ar->channel_update_work);
-
-		return 0;
-	}
-
-	ret = ath11k_wmi_send_scan_chan_list_cmd(ar, params);
-	kfree(params);
-
-	return ret;
+	return ath11k_wmi_update_scan_chan_list(ar, NULL);
 }
 
 static void ath11k_copy_regd(struct ieee80211_regdomain *regd_orig,

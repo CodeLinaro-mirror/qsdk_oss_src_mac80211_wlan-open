@@ -4026,6 +4026,28 @@ static int ath11k_start_scan(struct ath11k *ar,
 	return 0;
 }
 
+static void ath11k_mac_update_scan_params(struct cfg80211_scan_request *req,
+					  struct scan_req_params *arg)
+{
+	int i;
+	struct chan_info *chan = &arg->channel_list.chan[0];
+	enum nl80211_band band;
+	enum nl80211_chan_width width;
+
+	if (req->chandef) {
+		band = req->chandef->chan->band;
+		width = req->chandef->width;
+	}
+
+	arg->channel_list.num_chan = req->n_channels;
+	for (i = 0; i < arg->channel_list.num_chan; i++) {
+		if (req->channels[i])
+			chan[i].freq = req->channels[i]->center_freq;
+		if (req->chandef)
+			chan[i].phymode = ath11k_phymodes[band][width];
+	}
+}
+
 static int ath11k_mac_op_hw_scan(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_scan_request *hw_req)
@@ -4107,15 +4129,17 @@ static int ath11k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		arg->scan_f_passive = 1;
 	}
 
-	if (req->n_channels) {
-		arg->num_chan = req->n_channels;
-		arg->chan_list = kcalloc(arg->num_chan, sizeof(*arg->chan_list),
-					 GFP_KERNEL);
+	if (req->n_channels)
+		ath11k_mac_update_scan_params(req, arg);
 
-		if (!arg->chan_list) {
-			ret = -ENOMEM;
+	if (req->chandef) {
+		arg->scan_f_wide_band = true;
+		arg->scan_f_passive = true;
+		arg->chandef = req->chandef;
+		ret = ath11k_wmi_update_scan_chan_list(ar, arg);
+		if (ret)
 			goto exit;
-		}
+	}
 
 		for (i = 0; i < arg->num_chan; i++) {
 			if (test_bit(WMI_TLV_SERVICE_SCAN_CONFIG_PER_CHANNEL,
@@ -4140,7 +4164,6 @@ static int ath11k_mac_op_hw_scan(struct ieee80211_hw *hw,
 				arg->chan_list[i] = req->channels[i]->center_freq;
 			}
 		}
-	}
 
 	if (req->flags & NL80211_SCAN_FLAG_RANDOM_ADDR) {
 		arg->scan_f_add_spoofed_mac_in_probe = 1;
@@ -4181,7 +4204,6 @@ static int ath11k_mac_op_hw_scan(struct ieee80211_hw *hw,
 
 exit:
 	if (arg) {
-		kfree(arg->chan_list);
 		kfree(arg->extraie.ptr);
 		kfree(arg);
 	}
@@ -9366,6 +9388,8 @@ static int ath11k_mac_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
 	return 0;
 }
 
+//TODO Author has to correct the below api as per wide band scan
+#if 0
 static int ath11k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 					   struct ieee80211_vif *vif,
 					   struct ieee80211_channel *chan,
@@ -9412,17 +9436,10 @@ static int ath11k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		goto exit;
 	}
 	ath11k_wmi_start_scan_init(ar, arg);
-	arg->num_chan = 1;
-	arg->chan_list = kcalloc(arg->num_chan, sizeof(*arg->chan_list),
-				 GFP_KERNEL);
-	if (!arg->chan_list) {
-		ret = -ENOMEM;
-		goto free_arg;
-	}
-
+	arg.chan_list.num_chan = 1;
 	arg->vdev_id = arvif->vdev_id;
 	arg->scan_id = ATH11K_SCAN_ID;
-	arg->chan_list[0] = chan->center_freq;
+	arg.chan_list = chan->center_freq;
 	arg->dwell_time_active = scan_time_msec;
 	arg->dwell_time_passive = scan_time_msec;
 	arg->max_scan_time = scan_time_msec;
@@ -9439,7 +9456,7 @@ static int ath11k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		spin_lock_bh(&ar->data_lock);
 		ar->scan.state = ATH11K_SCAN_IDLE;
 		spin_unlock_bh(&ar->data_lock);
-		goto free_chan_list;
+		goto exit;
 	}
 
 	ret = wait_for_completion_timeout(&ar->scan.on_channel, 3 * HZ);
@@ -9449,7 +9466,7 @@ static int ath11k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		if (ret)
 			ath11k_warn(ar->ab, "failed to stop scan: %d\n", ret);
 		ret = -ETIMEDOUT;
-		goto free_chan_list;
+		goto exit;
 	}
 
 	ieee80211_queue_delayed_work(ar->hw, &ar->scan.timeout,
@@ -9457,14 +9474,13 @@ static int ath11k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 
 	ret = 0;
 
-free_chan_list:
-	kfree(arg->chan_list);
 free_arg:
 	kfree(arg);
 exit:
 	mutex_unlock(&ar->conf_mutex);
 	return ret;
 }
+#endif
 
 static int ath11k_fw_stats_request(struct ath11k *ar,
 				   struct stats_request_params *req_param)
@@ -10012,7 +10028,7 @@ static const struct ieee80211_ops ath11k_ops = {
 	.get_txpower                    = ath11k_mac_op_get_txpower,
 
 	.set_sar_specs			= ath11k_mac_op_set_bios_sar_specs,
-	.remain_on_channel		= ath11k_mac_op_remain_on_channel,
+//	.remain_on_channel		= ath11k_mac_op_remain_on_channel,
 	.cancel_remain_on_channel	= ath11k_mac_op_cancel_remain_on_channel,
 };
 
@@ -10533,6 +10549,11 @@ static int __ath11k_mac_register(struct ath11k *ar)
 				      NL80211_EXT_FEATURE_BSS_COLOR);
 		ieee80211_hw_set(ar->hw, DETECTS_COLOR_COLLISION);
 	}
+
+	if (test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT,
+		     ar->ab->wmi_ab.svc_map))
+		wiphy_ext_feature_set(ar->hw->wiphy,
+				      NL80211_EXT_FEATURE_WIDE_BAND_SCAN);
 
 	ar->hw->wiphy->cipher_suites = cipher_suites;
 	ar->hw->wiphy->n_cipher_suites = ARRAY_SIZE(cipher_suites);

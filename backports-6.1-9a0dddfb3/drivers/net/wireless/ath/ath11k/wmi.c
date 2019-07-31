@@ -2215,6 +2215,110 @@ int ath11k_wmi_send_peer_assoc_cmd(struct ath11k *ar,
 	return ret;
 }
 
+int ath11k_wmi_update_scan_chan_list(struct ath11k *ar,
+				     struct scan_req_params *arg)
+{
+	struct ieee80211_supported_band **bands;
+	struct scan_chan_list_params *params;
+	struct channel_param *ch;
+	struct cfg80211_chan_def *chandef;
+	struct ieee80211_channel *channel, *req_channel;
+	enum nl80211_band band;
+	int num_channels = 0;
+	int params_len, i, ret;
+	bool found = false;
+
+	bands = ar->hw->wiphy->bands;
+	for (band = 0; band < NUM_NL80211_BANDS; band++) {
+		if (!bands[band])
+			continue;
+		for (i = 0; i < bands[band]->n_channels; i++) {
+			if (bands[band]->channels[i].flags &
+			    IEEE80211_CHAN_DISABLED)
+				continue;
+
+			num_channels++;
+		}
+	}
+
+	if (WARN_ON(!num_channels))
+		return -EINVAL;
+
+	params_len = sizeof(struct scan_chan_list_params) +
+			    num_channels * sizeof(struct channel_param);
+	params = kzalloc(params_len, GFP_KERNEL);
+
+	if (!params)
+		return -ENOMEM;
+
+	params->pdev_id = ar->pdev->pdev_id;
+	params->nallchans = num_channels;
+
+	ch = params->ch_param;
+	chandef = arg ? arg->chandef : NULL;
+	req_channel = chandef ? chandef->chan : NULL;
+
+	for (band = 0; band < NUM_NL80211_BANDS; band++) {
+		if (!bands[band])
+			continue;
+
+		for (i = 0; i < bands[band]->n_channels; i++) {
+			channel = &bands[band]->channels[i];
+
+			if (channel->flags & IEEE80211_CHAN_DISABLED)
+				continue;
+
+			if (req_channel && !found &&
+			    req_channel->center_freq == channel->center_freq) {
+				ch->mhz = arg->channel_list.chan[0].freq;
+				ch->cfreq1 = chandef->center_freq1;
+				ch->cfreq2 = chandef->center_freq2;
+
+				ch->phy_mode = arg->channel_list.chan[0].phymode;
+				channel = req_channel;
+				found = true;
+			} else {
+				ch->mhz = channel->center_freq;
+				ch->cfreq1 = channel->center_freq;
+				ch->phy_mode = (channel->band == NL80211_BAND_2GHZ) ?
+						MODE_11G : MODE_11A;
+			}
+
+			/* TODO: Set to true/false based on some condition? */
+			ch->allow_ht = true;
+			ch->allow_vht = true;
+			ch->allow_he = true;
+
+			ch->dfs_set =
+				!!(channel->flags & IEEE80211_CHAN_RADAR);
+			ch->is_chan_passive = !!(channel->flags &
+				IEEE80211_CHAN_NO_IR);
+			ch->is_chan_passive |= ch->dfs_set;
+			ch->minpower = 0;
+			ch->maxpower = channel->max_power * 2;
+			ch->maxregpower = channel->max_reg_power * 2;
+			ch->antennamax = channel->max_antenna_gain * 2;
+
+			if (channel->band == NL80211_BAND_6GHZ &&
+			    cfg80211_channel_is_psc(channel))
+				ch->psc_channel = true;
+
+			ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+				   "mac channel [%d/%d] freq %d maxpower %d regpower %d antenna %d mode %d flag 0x%x chandef: %pk\n",
+				   i, params->nallchans,
+				   ch->mhz, ch->maxpower, ch->maxregpower,
+				   ch->antennamax, ch->phy_mode, channel->flags,
+				   chandef);
+			ch++;
+		}
+	}
+
+	ret = ath11k_wmi_send_scan_chan_list_cmd(ar, params);
+	kfree(params);
+
+	return ret;
+}
+
 void ath11k_wmi_start_scan_init(struct ath11k *ar,
 				struct scan_req_params *arg)
 {
@@ -2345,15 +2449,17 @@ int ath11k_wmi_send_scan_start_cmd(struct ath11k *ar,
 	void *ptr;
 	int i, ret, len;
 	u32 *tmp_ptr;
+	u8 *phy_ptr;
 	u16 extraie_len_with_pad = 0;
 	struct hint_short_ssid *s_ssid = NULL;
 	struct hint_bssid *hint_bssid = NULL;
+	u8 phymode_roundup = 0;
 
 	len = sizeof(*cmd);
 
 	len += TLV_HDR_SIZE;
-	if (params->num_chan)
-		len += params->num_chan * sizeof(u32);
+	if (params->channel_list.num_chan)
+		len += params->channel_list.num_chan * sizeof(u32);
 
 	len += TLV_HDR_SIZE;
 	if (params->num_ssids)
@@ -2376,6 +2482,19 @@ int ath11k_wmi_send_scan_start_cmd(struct ath11k *ar,
 	if (params->num_hint_s_ssid)
 		len += TLV_HDR_SIZE +
 		       params->num_hint_s_ssid * sizeof(struct hint_short_ssid);
+
+	len += TLV_HDR_SIZE;
+	if (params->scan_f_en_ie_whitelist_in_probe)
+		len += params->ie_whitelist.num_vendor_oui *
+				sizeof(struct wmi_vendor_oui);
+
+	len += TLV_HDR_SIZE;
+	if (params->scan_f_wide_band)
+		phymode_roundup =
+			roundup(params->channel_list.num_chan * sizeof(u8),
+				sizeof(u32));
+
+	len += phymode_roundup;
 
 	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -2408,7 +2527,7 @@ int ath11k_wmi_send_scan_start_cmd(struct ath11k *ar,
 	cmd->max_scan_time = params->max_scan_time;
 	cmd->probe_delay = params->probe_delay;
 	cmd->burst_duration = params->burst_duration;
-	cmd->num_chan = params->num_chan;
+	cmd->num_chan = params->channel_list.num_chan;
 	cmd->num_bssid = params->num_bssid;
 	cmd->num_ssids = params->num_ssids;
 	cmd->ie_len = params->extraie.len;
@@ -2418,7 +2537,7 @@ int ath11k_wmi_send_scan_start_cmd(struct ath11k *ar,
 
 	ptr += sizeof(*cmd);
 
-	len = params->num_chan * sizeof(u32);
+	len = params->channel_list.num_chan * sizeof(u32);
 
 	tlv = ptr;
 	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_UINT32) |
@@ -2426,8 +2545,8 @@ int ath11k_wmi_send_scan_start_cmd(struct ath11k *ar,
 	ptr += TLV_HDR_SIZE;
 	tmp_ptr = ptr;
 
-	for (i = 0; i < params->num_chan; ++i)
-		tmp_ptr[i] = params->chan_list[i];
+	for (i = 0; i < params->channel_list.num_chan; ++i)
+		tmp_ptr[i] = params->channel_list.chan[i].freq;
 
 	ptr += len;
 
@@ -2468,6 +2587,7 @@ int ath11k_wmi_send_scan_start_cmd(struct ath11k *ar,
 	ptr += params->num_bssid * sizeof(*bssid);
 
 	len = extraie_len_with_pad;
+
 	tlv = ptr;
 	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_BYTE) |
 		      FIELD_PREP(WMI_TLV_LEN, len);
@@ -2478,6 +2598,36 @@ int ath11k_wmi_send_scan_start_cmd(struct ath11k *ar,
 		       params->extraie.len);
 
 	ptr += extraie_len_with_pad;
+
+	len = params->ie_whitelist.num_vendor_oui * sizeof(struct wmi_vendor_oui);
+	tlv = ptr;
+	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
+		      FIELD_PREP(WMI_TLV_LEN, len);
+	ptr += TLV_HDR_SIZE;
+
+	if (params->scan_f_en_ie_whitelist_in_probe) {
+		/* TODO: fill vendor OUIs for probe req ie whitelisting */
+		/* currently added for FW TLV validation */
+	}
+
+	ptr += cmd->num_vendor_oui * sizeof(struct wmi_vendor_oui);
+
+	len = phymode_roundup;
+	tlv = ptr;
+	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_BYTE) |
+		      FIELD_PREP(WMI_TLV_LEN, len);
+	ptr += TLV_HDR_SIZE;
+
+	/* Wide Band Scan */
+	if (params->scan_f_wide_band) {
+		phy_ptr = ptr;
+		/* Add PHY mode TLV for wide band scan with phymode + 1 value
+		 * so that phymode '0' is ignored by FW as default value.
+		 */
+		for (i = 0; i < params->channel_list.num_chan; ++i)
+			phy_ptr[i] = params->channel_list.chan[i].phymode + 1;
+	}
+	ptr += phymode_roundup;
 
 	if (params->num_hint_s_ssid) {
 		len = params->num_hint_s_ssid * sizeof(struct hint_short_ssid);
@@ -2673,7 +2823,7 @@ int ath11k_wmi_send_scan_chan_list_cmd(struct ath11k *ar,
 			FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
 		cmd->pdev_id = chan_list->pdev_id;
 		cmd->num_scan_chans = num_send_chans;
-		if (num_sends)
+		if (num_sends || chan_list->append_chan_list)
 			cmd->flags |= WMI_APPEND_TO_EXISTING_CHAN_LIST_FLAG;
 
 		ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
