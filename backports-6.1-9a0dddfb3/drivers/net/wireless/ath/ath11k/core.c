@@ -2127,6 +2127,9 @@ int ath11k_core_qmi_firmware_ready(struct ath11k_base *ab)
 	}
 
 	ath11k_hif_irq_enable(ab);
+
+	ath11k_config_qdss(ab);
+
 	mutex_unlock(&ab->core_lock);
 
 	return 0;

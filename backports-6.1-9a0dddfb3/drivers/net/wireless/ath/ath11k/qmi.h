@@ -30,6 +30,8 @@
 #define ATH11K_QMI_CALDB_SIZE			0x480000
 #define ATH11K_QMI_BDF_EXT_STR_LENGTH		0x20
 #define ATH11K_QMI_FW_MEM_REQ_SEGMENT_CNT	5
+#define ATH11K_QMI_MAX_QDSS_CONFIG_FILE_NAME_SIZE 64
+#define ATH11K_QMI_DEFAULT_QDSS_CONFIG_FILE_NAME "qdss_trace_config.bin"
 
 #define QMI_WLFW_REQUEST_MEM_IND_V01		0x0035
 #define QMI_WLFW_FW_MEM_READY_IND_V01		0x0037
@@ -150,7 +152,51 @@ struct ath11k_qmi {
 	wait_queue_head_t cold_boot_waitq;
 };
 
-#define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		261
+#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_REQ_MSG_V01_MAX_LEN 6167
+#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_RESP_MSG_V01_MAX_LEN 7
+#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_REQ_V01 0x0044
+#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_RESP_V01 0x0044
+
+struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01 {
+	u8 total_size_valid;
+	u32 total_size;
+	u8 seg_id_valid;
+	u32 seg_id;
+	u8 data_valid;
+	u32 data_len;
+	u8 data[QMI_WLANFW_MAX_DATA_SIZE_V01];
+	u8 end_valid;
+	u8 end;
+};
+
+struct qmi_wlanfw_qdss_trace_config_download_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
+#define QMI_WLANFW_QDSS_TRACE_MODE_REQ_V01 0x0045
+#define QMI_WLANFW_QDSS_TRACE_MODE_REQ_MSG_V01_MAX_LEN 18
+#define QMI_WLANFW_QDSS_TRACE_MODE_RESP_MSG_V01_MAX_LEN 7
+#define QMI_WLANFW_QDSS_TRACE_MODE_RESP_V01 0x0045
+
+enum wlfw_qdss_trace_mode_enum_v01 {
+	WLFW_QDSS_TRACE_MODE_ENUM_MIN_VAL_V01 = INT_MIN,
+	QMI_WLANFW_QDSS_TRACE_OFF_V01 = 0,
+	QMI_WLANFW_QDSS_TRACE_ON_V01 = 1,
+	WLFW_QDSS_TRACE_MODE_ENUM_MAX_VAL_V01 = INT_MAX,
+};
+
+struct qmi_wlanfw_qdss_trace_mode_req_msg_v01 {
+	u8 mode_valid;
+	enum wlfw_qdss_trace_mode_enum_v01 mode;
+	u8 option_valid;
+	u64 option;
+};
+
+struct qmi_wlanfw_qdss_trace_mode_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
+#define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		194
 #define QMI_WLANFW_HOST_CAP_REQ_V01			0x0034
 #define QMI_WLANFW_HOST_CAP_RESP_MSG_V01_MAX_LEN	7
 #define QMI_WLFW_HOST_CAP_RESP_V01			0x0034
@@ -190,13 +236,15 @@ struct qmi_wlanfw_host_cap_req_msg_v01 {
 	u32 mem_bucket;
 	u8 mem_cfg_mode_valid;
 	u8 mem_cfg_mode;
+	u8 cal_duration_valid;
+	u16 cal_duration;
 };
 
 struct qmi_wlanfw_host_cap_resp_msg_v01 {
 	struct qmi_response_type_v01 resp;
 };
 
-#define QMI_WLANFW_IND_REGISTER_REQ_MSG_V01_MAX_LEN		54
+#define QMI_WLANFW_IND_REGISTER_REQ_MSG_V01_MAX_LEN		66
 #define QMI_WLANFW_IND_REGISTER_REQ_V01				0x0020
 #define QMI_WLANFW_IND_REGISTER_RESP_MSG_V01_MAX_LEN		18
 #define QMI_WLANFW_IND_REGISTER_RESP_V01			0x0020
@@ -227,6 +275,12 @@ struct qmi_wlanfw_ind_register_req_msg_v01 {
 	u8 xo_cal_enable;
 	u8 cal_done_enable_valid;
 	u8 cal_done_enable;
+	u8 qdss_trace_req_mem_enable_valid;
+	u8 qdss_trace_req_mem_enable;
+	u8 qdss_trace_save_enable_valid;
+	u8 qdss_trace_save_enable;
+	u8 qdss_trace_free_enable_valid;
+	u8 qdss_trace_free_enable;
 };
 
 struct qmi_wlanfw_ind_register_resp_msg_v01 {
@@ -525,5 +579,8 @@ void ath11k_qmi_deinit_service(struct ath11k_base *ab);
 int ath11k_qmi_init_service(struct ath11k_base *ab);
 void ath11k_qmi_free_resource(struct ath11k_base *ab);
 int ath11k_qmi_fwreset_from_cold_boot(struct ath11k_base *ab);
-
+int wlfw_send_qdss_trace_config_download_req(struct ath11k_base *ab,
+		const u8 *buffer, unsigned int len);
+int ath11k_send_qdss_trace_mode_req(struct ath11k_base *ab,
+		enum wlfw_qdss_trace_mode_enum_v01 mode);
 #endif
