@@ -1244,9 +1244,10 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 					   void *data)
 {
 	struct htt_ppdu_stats_info *ppdu_info;
-	struct htt_ppdu_user_stats *user_stats;
+	struct htt_ppdu_user_stats *user_stats = NULL;
 	int cur_user;
 	u16 peer_id;
+	u32 frame_type;
 
 	ppdu_info = data;
 
@@ -1259,6 +1260,26 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 		}
 		memcpy((void *)&ppdu_info->ppdu_stats.common, ptr,
 		       sizeof(struct htt_ppdu_stats_common));
+		frame_type =
+			FIELD_GET(HTT_PPDU_STATS_CMN_FLAGS_FRAME_TYPE_M,
+				  ppdu_info->ppdu_stats.common.flags);
+		switch (frame_type) {
+		case HTT_STATS_FTYPE_TIDQ_DATA_SU:
+		case HTT_STATS_FTYPE_TIDQ_DATA_MU:
+			if (HTT_STATS_GET_FRAME_CTRL_TYPE(ppdu_info->frame_ctrl) <= HTT_STATS_FRAME_CTRL_TYPE_CTRL)
+				ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_CTRL;
+			else
+				ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_DATA;
+		break;
+		case HTT_STATS_FTYPE_SGEN_MU_BAR:
+		case HTT_STATS_FTYPE_SGEN_BAR:
+			ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_BAR;
+		break;
+		default:
+			ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_CTRL;
+		break;
+		}
+
 		break;
 	case HTT_PPDU_STATS_TAG_USR_RATE:
 		if (len < sizeof(struct htt_ppdu_stats_user_rate)) {
@@ -1291,6 +1312,7 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 						      peer_id);
 		if (cur_user < 0)
 			return -EINVAL;
+		ppdu_info->bar_num_users += 1;
 		user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
 		user_stats->peer_id = peer_id;
 		user_stats->is_valid_peer_id = true;
@@ -1319,44 +1341,30 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 		       sizeof(struct htt_ppdu_stats_usr_cmpltn_ack_ba_status));
 		user_stats->tlv_flags |= BIT(tag);
 		break;
-	}
-	return 0;
-}
-
-int ath11k_dp_htt_tlv_iter(struct ath11k_base *ab, const void *ptr, size_t len,
-			   int (*iter)(struct ath11k_base *ar, u16 tag, u16 len,
-				       const void *ptr, void *data),
-			   void *data)
-{
-	const struct htt_tlv *tlv;
-	const void *begin = ptr;
-	u16 tlv_tag, tlv_len;
-	int ret = -EINVAL;
-
-	while (len > 0) {
-		if (len < sizeof(*tlv)) {
-			ath11k_err(ab, "htt tlv parse failure at byte %zd (%zu bytes left, %zu expected)\n",
-				   ptr - begin, len, sizeof(*tlv));
+	case HTT_PPDU_STATS_TAG_USR_COMMON:
+		if (len < sizeof(struct htt_ppdu_stats_user_common)) {
+			ath11k_warn(ab, "Invalid len %d for the tag 0x%x\n",
+				    len, tag);
 			return -EINVAL;
 		}
-		tlv = (struct htt_tlv *)ptr;
-		tlv_tag = FIELD_GET(HTT_TLV_TAG, tlv->header);
-		tlv_len = FIELD_GET(HTT_TLV_LEN, tlv->header);
-		ptr += sizeof(*tlv);
-		len -= sizeof(*tlv);
-
-		if (tlv_len > len) {
-			ath11k_err(ab, "htt tlv parse failure of tag %u at byte %zd (%zu bytes left, %u expected)\n",
-				   tlv_tag, ptr - begin, len, tlv_len);
+		peer_id = ((struct htt_ppdu_stats_user_common *)ptr)->sw_peer_id;
+		cur_user = ath11k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
+						      peer_id);
+		if (cur_user < 0)
 			return -EINVAL;
-		}
-		ret = iter(ab, tlv_tag, tlv_len, ptr, data);
-		if (ret == -ENOMEM)
-			return ret;
-
-		ptr += tlv_len;
-		len -= tlv_len;
+		user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
+		memcpy(&user_stats->common, ptr,
+		       sizeof(struct htt_ppdu_stats_user_common));
+		ppdu_info->frame_ctrl = FIELD_GET(HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL,
+						  user_stats->common.ctrl);
+		user_stats->delay_ba = FIELD_GET(HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA,
+						  user_stats->common.info);
+		ppdu_info->delay_ba = user_stats->delay_ba;
+		break;
+	default:
+		break;
 	}
+	ppdu_info->tlv_bitmap |= BIT(tag);
 	return 0;
 }
 
@@ -1374,8 +1382,8 @@ ath11k_update_per_peer_tx_stats(struct ath11k *ar,
 	struct htt_ppdu_stats_common *common = &ppdu_stats->common;
 	int ret;
 	u8 flags, mcs, nss, bw, sgi, dcm, rate_idx = 0;
-	u32 succ_bytes = 0;
-	u16 rate = 0, succ_pkts = 0;
+	u32 succ_bytes = 0, ppdu_type, mu_grpid, mu_pos;
+	u16 rate = 0, succ_pkts = 0, ru_tone, ru_start;
 	u32 tx_duration = 0;
 	u8 tid = HTT_PPDU_STATS_NON_QOS_TID;
 	bool is_ampdu = false;
@@ -1406,6 +1414,11 @@ ath11k_update_per_peer_tx_stats(struct ath11k *ar,
 	mcs = HTT_USR_RATE_MCS(user_rate->rate_flags);
 	sgi = HTT_USR_RATE_GI(user_rate->rate_flags);
 	dcm = HTT_USR_RATE_DCM(user_rate->rate_flags);
+	ppdu_type = HTT_USR_RATE_PPDU_TYPE(user_rate->info1);
+	mu_grpid = HTT_USR_RATE_MU_GRPID(user_rate->info0);
+	mu_pos = HTT_USR_RATE_USR_POS(user_rate->info0);
+	ru_start = user_rate->ru_start;
+	ru_tone = user_rate->ru_end;
 
 	/* Note: If host configured fixed rates and in some other special
 	 * cases, the broadcast/management frames are sent in different rates.
@@ -1500,6 +1513,12 @@ ath11k_update_per_peer_tx_stats(struct ath11k *ar,
 		peer_stats->ba_fails =
 			HTT_USR_CMPLTN_LONG_RETRY(usr_stats->cmpltn_cmn.flags) +
 			HTT_USR_CMPLTN_SHORT_RETRY(usr_stats->cmpltn_cmn.flags);
+		peer_stats->ppdu_type = ppdu_type;
+		peer_stats->ru_tones = ru_tone;
+		peer_stats->ru_start = ru_start;
+		peer_stats->mu_grpid = mu_grpid;
+		peer_stats->mu_pos   = mu_pos;
+		peer_stats->ru_tones = arsta->txrate.he_ru_alloc;
 
 		if (ath11k_debugfs_is_extd_tx_stats_enabled(ar))
 			ath11k_debugfs_sta_add_tx_stats(arsta, peer_stats, rate_idx);
@@ -1552,13 +1571,87 @@ struct htt_ppdu_stats_info *ath11k_dp_htt_get_ppdu_desc(struct ath11k *ar,
 	return ppdu_info;
 }
 
+void ath11k_copy_to_delay_stats(struct ath11k_peer *peer,
+				  struct htt_ppdu_user_stats* usr_stats)
+{
+	peer->ppdu_stats_delayba.reserved0 = usr_stats->rate.reserved0;
+	peer->ppdu_stats_delayba.sw_peer_id = usr_stats->rate.sw_peer_id;
+	peer->ppdu_stats_delayba.info0 = usr_stats->rate.info0;
+	peer->ppdu_stats_delayba.ru_end = usr_stats->rate.ru_end;
+	peer->ppdu_stats_delayba.ru_start = usr_stats->rate.ru_start;
+	peer->ppdu_stats_delayba.info1 = usr_stats->rate.info1;
+	peer->ppdu_stats_delayba.rate_flags = usr_stats->rate.rate_flags;
+	peer->ppdu_stats_delayba.resp_rate_flags = usr_stats->rate.resp_rate_flags;
+
+	peer->delayba_flag = true;
+}
+
+void ath11k_copy_to_bar(struct ath11k_peer *peer,
+			struct htt_ppdu_user_stats* usr_stats)
+{
+	usr_stats->rate.reserved0 = peer->ppdu_stats_delayba.reserved0;
+	usr_stats->rate.sw_peer_id = peer->ppdu_stats_delayba.sw_peer_id;
+	usr_stats->rate.info0 = peer->ppdu_stats_delayba.info0;
+	usr_stats->rate.ru_end = peer->ppdu_stats_delayba.ru_end;
+	usr_stats->rate.ru_start = peer->ppdu_stats_delayba.ru_start;
+	usr_stats->rate.info1 = peer->ppdu_stats_delayba.info1;
+	usr_stats->rate.rate_flags = peer->ppdu_stats_delayba.rate_flags;
+	usr_stats->rate.resp_rate_flags = peer->ppdu_stats_delayba.resp_rate_flags;
+
+	peer->delayba_flag = false;
+}
+
+int ath11k_dp_htt_tlv_iter(struct ath11k_base *ab, const void *ptr, size_t len,
+			   int (*iter)(struct ath11k_base *ar, u16 tag, u16 len,
+				       const void *ptr, void *data),
+			   void *data)
+{
+	const struct htt_tlv *tlv;
+	const void *begin = ptr;
+	u16 tlv_tag, tlv_len;
+	int ret = -EINVAL;
+	struct htt_ppdu_stats_info * ppdu_info = NULL;
+
+	ppdu_info = (struct htt_ppdu_stats_info *)data;
+	ppdu_info->tlv_bitmap = 0;
+	while (len > 0) {
+		if (len < sizeof(*tlv)) {
+			ath11k_err(ab, "htt tlv parse failure at byte %zd (%zu bytes left, %zu expected)\n",
+				   ptr - begin, len, sizeof(*tlv));
+			return -EINVAL;
+		}
+		tlv = (struct htt_tlv *)ptr;
+		tlv_tag = FIELD_GET(HTT_TLV_TAG, tlv->header);
+		tlv_len = FIELD_GET(HTT_TLV_LEN, tlv->header);
+		ptr += sizeof(*tlv);
+		len -= sizeof(*tlv);
+
+		if (tlv_len > len) {
+			ath11k_err(ab, "htt tlv parse failure of tag %hhu at byte %zd (%zu bytes left, %hhu expected)\n",
+				   tlv_tag, ptr - begin, len, tlv_len);
+			return -EINVAL;
+		}
+
+		ret = iter(ab, tlv_tag, tlv_len, ptr, ppdu_info);
+		if (ret == -ENOMEM)
+			return ret;
+
+		ptr += tlv_len;
+		len -= tlv_len;
+	}
+	return 0;
+}
+
 static int ath11k_htt_pull_ppdu_stats(struct ath11k_base *ab,
 				      struct sk_buff *skb)
 {
 	struct ath11k_htt_ppdu_stats_msg *msg;
 	struct htt_ppdu_stats_info *ppdu_info;
+	struct ath11k_peer *peer = NULL;
+	struct htt_ppdu_user_stats* usr_stats = NULL;
+	u32 peer_id = 0;
 	struct ath11k *ar;
-	int ret;
+	int ret, i;
 	u8 pdev_id;
 	u32 ppdu_id, len;
 
@@ -1593,6 +1686,47 @@ static int ath11k_htt_pull_ppdu_stats(struct ath11k_base *ab,
 	if (ret) {
 		ath11k_warn(ab, "Failed to parse tlv %d\n", ret);
 		goto out_unlock_data;
+	}
+
+	/* back up data rate tlv for all peers */
+	if (ppdu_info->frame_type == HTT_STATS_PPDU_FTYPE_DATA &&
+	    (ppdu_info->tlv_bitmap & (1 << HTT_PPDU_STATS_TAG_USR_COMMON)) &&
+	    ppdu_info->delay_ba) {
+
+		for (i = 0; i < ppdu_info->ppdu_stats.common.num_users; i++) {
+			peer_id = ppdu_info->ppdu_stats.user_stats[i].peer_id;
+			spin_lock_bh(&ab->base_lock);
+			peer = ath11k_peer_find_by_id(ab, peer_id);
+			if (!peer) {
+				spin_unlock_bh(&ab->base_lock);
+				continue;
+			}
+
+			usr_stats = &ppdu_info->ppdu_stats.user_stats[i];
+			if (usr_stats->delay_ba)
+				ath11k_copy_to_delay_stats(peer, usr_stats);
+			spin_unlock_bh(&ab->base_lock);
+		}
+	}
+
+	/* restore all peers' data rate tlv to mu-bar tlv */
+	if (ppdu_info->frame_type == HTT_STATS_PPDU_FTYPE_BAR &&
+	    (ppdu_info->tlv_bitmap & (1 << HTT_PPDU_STATS_TAG_USR_COMMON))) {
+
+		for (i = 0; i < ppdu_info->bar_num_users; i++) {
+			peer_id = ppdu_info->ppdu_stats.user_stats[i].peer_id;
+			spin_lock_bh(&ab->base_lock);
+			peer = ath11k_peer_find_by_id(ab, peer_id);
+			if (!peer) {
+				spin_unlock_bh(&ab->base_lock);
+				continue;
+			}
+
+			usr_stats = &ppdu_info->ppdu_stats.user_stats[i];
+			if (peer->delayba_flag)
+				ath11k_copy_to_bar(peer, usr_stats);
+			spin_unlock_bh(&ab->base_lock);
+		}
 	}
 
 out_unlock_data:

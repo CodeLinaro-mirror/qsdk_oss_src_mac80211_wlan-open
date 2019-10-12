@@ -14,13 +14,39 @@
 #include "dp_rx.h"
 #include "debugfs_htt_stats.h"
 
+static inline u32 ath11k_he_tones_in_ru_to_nl80211_he_ru_alloc(u16 ru_tones)
+{
+	u32 ret = 0;
+	switch (ru_tones) {
+	case 26:
+		ret = NL80211_RATE_INFO_HE_RU_ALLOC_26;
+		break;
+	case 52:
+		ret = NL80211_RATE_INFO_HE_RU_ALLOC_52;
+		break;
+	case 106:
+		ret = NL80211_RATE_INFO_HE_RU_ALLOC_106;
+		break;
+	case 242:
+		ret = NL80211_RATE_INFO_HE_RU_ALLOC_242;
+		break;
+	case 484:
+		ret = NL80211_RATE_INFO_HE_RU_ALLOC_484;
+		break;
+	case 996:
+		ret = NL80211_RATE_INFO_HE_RU_ALLOC_996;
+		break;
+	}
+	return ret;
+}
+
 void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 				     struct ath11k_per_peer_tx_stats *peer_stats,
 				     u8 legacy_rate_idx)
 {
 	struct rate_info *txrate = &arsta->txrate;
 	struct ath11k_htt_tx_stats *tx_stats;
-	int gi, mcs, bw, nss;
+	int gi, mcs, bw, nss, ru_type, ppdu_type;
 
 	if (!arsta->tx_stats)
 		return;
@@ -63,6 +89,43 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 		STATS_OP_FMT(FAIL).legacy[1][mcs] += peer_stats->failed_pkts;
 		STATS_OP_FMT(RETRY).legacy[0][mcs] += peer_stats->retry_bytes;
 		STATS_OP_FMT(RETRY).legacy[1][mcs] += peer_stats->retry_pkts;
+	}
+
+	ppdu_type = peer_stats->ppdu_type;
+	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
+	    ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
+	    (txrate->flags & RATE_INFO_FLAGS_HE_MCS)){
+		ru_type = peer_stats->ru_tones;
+
+		if (ru_type <= NL80211_RATE_INFO_HE_RU_ALLOC_996) {
+			STATS_OP_FMT(SUCC).ru_loc[0][ru_type] += peer_stats->succ_bytes;
+			STATS_OP_FMT(SUCC).ru_loc[1][ru_type] += peer_stats->succ_pkts;
+			STATS_OP_FMT(FAIL).ru_loc[0][ru_type] += peer_stats->failed_bytes;
+			STATS_OP_FMT(FAIL).ru_loc[1][ru_type] += peer_stats->failed_pkts;
+			STATS_OP_FMT(RETRY).ru_loc[0][ru_type] += peer_stats->retry_bytes;
+			STATS_OP_FMT(RETRY).ru_loc[1][ru_type] += peer_stats->retry_pkts;
+			if (peer_stats->is_ampdu) {
+				STATS_OP_FMT(AMPDU).ru_loc[0][ru_type] +=
+					peer_stats->succ_bytes + peer_stats->retry_bytes;
+				STATS_OP_FMT(AMPDU).ru_loc[1][ru_type] +=
+					peer_stats->succ_pkts + peer_stats->retry_pkts;
+			}
+		}
+	}
+
+	if (ppdu_type < HTT_PPDU_STATS_PPDU_TYPE_MAX) {
+		STATS_OP_FMT(SUCC).transmit_type[0][ppdu_type] += peer_stats->succ_bytes;
+		STATS_OP_FMT(SUCC).transmit_type[1][ppdu_type] += peer_stats->succ_pkts;
+		STATS_OP_FMT(FAIL).transmit_type[0][ppdu_type] += peer_stats->failed_bytes;
+		STATS_OP_FMT(FAIL).transmit_type[1][ppdu_type] += peer_stats->failed_pkts;
+		STATS_OP_FMT(RETRY).transmit_type[0][ppdu_type] += peer_stats->retry_bytes;
+		STATS_OP_FMT(RETRY).transmit_type[1][ppdu_type] += peer_stats->retry_pkts;
+		if (peer_stats->is_ampdu) {
+			STATS_OP_FMT(AMPDU).transmit_type[0][ppdu_type] +=
+				peer_stats->succ_bytes + peer_stats->retry_bytes;
+			STATS_OP_FMT(AMPDU).transmit_type[1][ppdu_type] +=
+				peer_stats->succ_pkts + peer_stats->retry_pkts;
+		}
 	}
 
 	if (peer_stats->is_ampdu) {
@@ -125,6 +188,17 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 	STATS_OP_FMT(RETRY).gi[1][gi] += peer_stats->retry_pkts;
 
 	tx_stats->tx_duration += peer_stats->duration;
+
+	tx_stats->ru_start = peer_stats->ru_start;
+	tx_stats->ru_tones = peer_stats->ru_tones;
+
+	if (peer_stats->mu_grpid <= MAX_MU_GROUP_ID &&
+	    peer_stats->ppdu_type != HTT_PPDU_STATS_PPDU_TYPE_SU) {
+		if (peer_stats->mu_grpid & (MAX_MU_GROUP_ID - 1))
+			tx_stats->mu_group[peer_stats->mu_grpid] =
+						(peer_stats->mu_pos + 1);
+	}
+
 }
 
 void ath11k_debugfs_sta_update_txcompl(struct ath11k *ar,
@@ -141,12 +215,13 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct ath11k *ar = arsta->arvif->ar;
 	struct ath11k_htt_data_stats *stats;
-	static const char *str_name[ATH11K_STATS_TYPE_MAX] = {"succ", "fail",
+	static const char *str_name[ATH11K_STATS_TYPE_MAX] = {"success", "fail",
 							      "retry", "ampdu"};
 	static const char *str[ATH11K_COUNTER_TYPE_MAX] = {"bytes", "packets"};
 	int len = 0, i, j, k, retval = 0;
 	const int size = 2 * 4096;
-	char *buf;
+	char *buf, mu_group_id[MAX_MU_GROUP_LENGTH] = {0};
+	u32 index;
 
 	if (!arsta->tx_stats)
 		return -ENOENT;
@@ -164,45 +239,46 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 			len += scnprintf(buf + len, size - len, "%s_%s\n",
 					 str_name[k],
 					 str[j]);
+			len += scnprintf(buf + len, size - len, "==========\n");
 			len += scnprintf(buf + len, size - len,
-					 " HE MCS %s\n",
+					 " HE MCS %s\n\t",
 					 str[j]);
 			for (i = 0; i < ATH11K_HE_MCS_NUM; i++)
 				len += scnprintf(buf + len, size - len,
-						 "  %llu ",
+						 "%llu ",
 						 stats->he[j][i]);
 			len += scnprintf(buf + len, size - len, "\n");
 			len += scnprintf(buf + len, size - len,
-					 " VHT MCS %s\n",
+					 " VHT MCS %s\n\t",
 					 str[j]);
 			for (i = 0; i < ATH11K_VHT_MCS_NUM; i++)
 				len += scnprintf(buf + len, size - len,
-						 "  %llu ",
+						 "%llu ",
 						 stats->vht[j][i]);
 			len += scnprintf(buf + len, size - len, "\n");
-			len += scnprintf(buf + len, size - len, " HT MCS %s\n",
+			len += scnprintf(buf + len, size - len, " HT MCS %s\n\t",
 					 str[j]);
 			for (i = 0; i < ATH11K_HT_MCS_NUM; i++)
 				len += scnprintf(buf + len, size - len,
-						 "  %llu ", stats->ht[j][i]);
+						 "%llu ", stats->ht[j][i]);
 			len += scnprintf(buf + len, size - len, "\n");
 			len += scnprintf(buf + len, size - len,
 					" BW %s (20,40,80,160 MHz)\n", str[j]);
 			len += scnprintf(buf + len, size - len,
-					 "  %llu %llu %llu %llu\n",
+					 "\t%llu %llu %llu %llu\n",
 					 stats->bw[j][0], stats->bw[j][1],
 					 stats->bw[j][2], stats->bw[j][3]);
 			len += scnprintf(buf + len, size - len,
 					 " NSS %s (1x1,2x2,3x3,4x4)\n", str[j]);
 			len += scnprintf(buf + len, size - len,
-					 "  %llu %llu %llu %llu\n",
+					 "\t%llu %llu %llu %llu\n",
 					 stats->nss[j][0], stats->nss[j][1],
 					 stats->nss[j][2], stats->nss[j][3]);
 			len += scnprintf(buf + len, size - len,
 					 " GI %s (0.4us,0.8us,1.6us,3.2us)\n",
 					 str[j]);
 			len += scnprintf(buf + len, size - len,
-					 "  %llu %llu %llu %llu\n",
+					 "\t%llu %llu %llu %llu\n",
 					 stats->gi[j][0], stats->gi[j][1],
 					 stats->gi[j][2], stats->gi[j][3]);
 			len += scnprintf(buf + len, size - len,
@@ -211,9 +287,67 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 			for (i = 0; i < ATH11K_LEGACY_NUM; i++)
 				len += scnprintf(buf + len, size - len, "%llu ",
 						 stats->legacy[j][i]);
-			len += scnprintf(buf + len, size - len, "\n");
+
+			len += scnprintf(buf + len, size - len, "\n ru %s: \n", str[j]);
+			len += scnprintf(buf + len, size - len,
+					 "\tru 26: %llu\n", stats->ru_loc[j][0]);
+			len += scnprintf(buf + len, size - len,
+					 "\tru 52: %llu \n", stats->ru_loc[j][1]);
+			len += scnprintf(buf + len, size - len,
+					 "\tru 106: %llu \n", stats->ru_loc[j][2]);
+			len += scnprintf(buf + len, size - len,
+					 "\tru 242: %llu \n", stats->ru_loc[j][3]);
+			len += scnprintf(buf + len, size - len,
+					 "\tru 484: %llu \n", stats->ru_loc[j][4]);
+			len += scnprintf(buf + len, size - len,
+					 "\tru 996: %llu \n", stats->ru_loc[j][5]);
+
+			len += scnprintf(buf + len, size - len,
+					 " ppdu type %s: \n", str[j]);
+			if (k == ATH11K_STATS_TYPE_FAIL ||
+			    k == ATH11K_STATS_TYPE_RETRY) {
+				len += scnprintf(buf + len, size - len,
+						 "\tSU/MIMO: %llu\n",
+						 stats->transmit_type[j][0]);
+				len += scnprintf(buf + len, size - len,
+						 "\tOFDMA/OFDMA_MIMO: %llu\n",
+				 		 stats->transmit_type[j][2]);
+			} else {
+				len += scnprintf(buf + len, size - len,
+						 "\tSU: %llu\n",
+						 stats->transmit_type[j][0]);
+				len += scnprintf(buf + len, size - len,
+						 "\tMIMO: %llu\n",
+						 stats->transmit_type[j][1]);
+				len += scnprintf(buf + len, size - len,
+						 "\tOFDMA: %llu\n",
+				 		 stats->transmit_type[j][2]);
+				len += scnprintf(buf + len, size - len,
+						 "\tOFDMA_MIMO: %llu\n",
+						 stats->transmit_type[j][3]);
+			}
 		}
 	}
+
+	len += scnprintf(buf + len, size - len, "\n");
+
+	for (i = 0; i < MAX_MU_GROUP_ID;) {
+		index = 0;
+		for (j = 0; j < MAX_MU_GROUP_SHOW && i < MAX_MU_GROUP_ID;
+		     j++) {
+			index += snprintf(&mu_group_id[index],
+					     MAX_MU_GROUP_LENGTH - index,
+					     " %d",
+					     arsta->tx_stats->mu_group[i]);
+			i++;
+		}
+		len += scnprintf(buf + len, size - len,
+				  "User position list for GID %02d->%d: [%s]\n",
+				  i - MAX_MU_GROUP_SHOW, i - 1, mu_group_id);
+	}
+	len += scnprintf(buf + len, size - len,
+			  "\nLast Packet RU index [%d], Size [%d]\n",
+			  arsta->tx_stats->ru_start, arsta->tx_stats->ru_tones);
 
 	len += scnprintf(buf + len, size - len,
 			 "\nTX duration\n %llu usecs\n",
@@ -222,6 +356,7 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 			"BA fails\n %llu\n", arsta->tx_stats->ba_fails);
 	len += scnprintf(buf + len, size - len,
 			"ack fails\n %llu\n", arsta->tx_stats->ack_fails);
+
 	spin_unlock_bh(&ar->data_lock);
 
 	if (len > size)

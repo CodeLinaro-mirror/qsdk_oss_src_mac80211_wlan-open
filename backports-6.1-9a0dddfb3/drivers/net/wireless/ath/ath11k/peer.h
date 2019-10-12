@@ -7,6 +7,17 @@
 #ifndef ATH11K_PEER_H
 #define ATH11K_PEER_H
 
+struct ppdu_user_delayba {
+	u8 reserved0;
+	u16 sw_peer_id;
+	u32 info0;
+	u16 ru_end;
+	u16 ru_start;
+	u32 info1;
+	u32 rate_flags;
+	u32 resp_rate_flags;
+};
+
 struct ath11k_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
@@ -36,6 +47,8 @@ struct ath11k_peer {
 	u16 sec_type_grp;
 	bool is_authorized;
 	bool dp_setup_done;
+	struct ppdu_user_delayba ppdu_stats_delayba;
+	bool delayba_flag;
 };
 
 void ath11k_peer_unmap_event(struct ath11k_base *ab, u16 peer_id);

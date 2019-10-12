@@ -1495,6 +1495,11 @@ struct hal_rx_desc {
 	} u;
 } __packed;
 
+#define MAX_USER_POS 8
+#define MAX_MU_GROUP_ID 64
+#define MAX_MU_GROUP_SHOW 16
+#define MAX_MU_GROUP_LENGTH (6 * MAX_MU_GROUP_SHOW)
+
 #define HAL_RX_RU_ALLOC_TYPE_MAX 6
 #define RU_26  1
 #define RU_52  2

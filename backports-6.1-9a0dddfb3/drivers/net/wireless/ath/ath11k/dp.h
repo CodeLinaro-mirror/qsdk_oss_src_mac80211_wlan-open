@@ -596,6 +596,45 @@ enum htt_ppdu_stats_tag_type {
 				    BIT(HTT_PPDU_STATS_TAG_TX_MGMTCTRL_PAYLOAD) | \
 				    HTT_PPDU_STATS_TAG_DEFAULT)
 
+#define HTT_STATS_FRAMECTRL_TYPE_MASK 0x0C
+#define HTT_STATS_GET_FRAME_CTRL_TYPE(_val)	\
+		(((_val) & HTT_STATS_FRAMECTRL_TYPE_MASK) >> 2)
+#define HTT_STATS_FRAME_CTRL_TYPE_MGMT	0x0
+#define HTT_STATS_FRAME_CTRL_TYPE_CTRL	0x1
+#define HTT_STATS_FRAME_CTRL_TYPE_DATA	0x2
+#define HTT_STATS_FRAME_CTRL_TYPE_RESV	0x3
+
+enum htt_stats_frametype {
+	HTT_STATS_FTYPE_SGEN_NDPA = 0,
+	HTT_STATS_FTYPE_SGEN_NDP,
+	HTT_STATS_FTYPE_SGEN_BRP,
+	HTT_STATS_FTYPE_SGEN_BAR,
+	HTT_STATS_FTYPE_SGEN_RTS,
+	HTT_STATS_FTYPE_SGEN_CTS,
+	HTT_STATS_FTYPE_SGEN_CFEND,
+	HTT_STATS_FTYPE_SGEN_AX_NDPA,
+	HTT_STATS_FTYPE_SGEN_AX_NDP,
+	HTT_STATS_FTYPE_SGEN_MU_TRIG,
+	HTT_STATS_FTYPE_SGEN_MU_BAR,
+	HTT_STATS_FTYPE_SGEN_MU_BRP,
+	HTT_STATS_FTYPE_SGEN_MU_RTS,
+	HTT_STATS_FTYPE_SGEN_MU_BSR,
+	HTT_STATS_FTYPE_SGEN_UL_BSR,
+	HTT_STATS_FTYPE_SGEN_UL_BSR_TRIGGER = HTT_STATS_FTYPE_SGEN_UL_BSR,
+	HTT_STATS_FTYPE_TIDQ_DATA_SU,
+	HTT_STATS_FTYPE_TIDQ_DATA_MU,
+	HTT_STATS_FTYPE_SGEN_UL_BSR_RESP,
+	HTT_STATS_FTYPE_SGEN_QOS_NULL,
+	HTT_STATS_FTYPE_MAX,
+};
+
+enum htt_stats_internal_ppdu_frametype {
+	HTT_STATS_PPDU_FTYPE_CTRL,
+	HTT_STATS_PPDU_FTYPE_DATA,
+	HTT_STATS_PPDU_FTYPE_BAR,
+	HTT_STATS_PPDU_FTYPE_MAX
+};
+
 /* HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG Message
  *
  * details:
@@ -1235,6 +1274,19 @@ enum htt_ppdu_stats_gi {
 #define HTT_PPDU_STATS_USER_RATE_INFO0_USER_POS_M	GENMASK(3, 0)
 #define HTT_PPDU_STATS_USER_RATE_INFO0_MU_GROUP_ID_M	GENMASK(11, 4)
 
+enum HTT_PPDU_STATS_PPDU_TYPE {
+	HTT_PPDU_STATS_PPDU_TYPE_SU,
+	HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO,
+	HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA,
+	HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA,
+	HTT_PPDU_STATS_PPDU_TYPE_UL_TRIG,
+	HTT_PPDU_STATS_PPDU_TYPE_BURST_BCN,
+	HTT_PPDU_STATS_PPDU_TYPE_UL_BSR_RESP,
+	HTT_PPDU_STATS_PPDU_TYPE_UL_BSR_TRIG,
+	HTT_PPDU_STATS_PPDU_TYPE_UL_RESP,
+	HTT_PPDU_STATS_PPDU_TYPE_MAX
+};
+
 #define HTT_PPDU_STATS_USER_RATE_INFO1_RESP_TYPE_VALD_M	BIT(0)
 #define HTT_PPDU_STATS_USER_RATE_INFO1_PPDU_TYPE_M	GENMASK(5, 1)
 
@@ -1262,6 +1314,12 @@ enum htt_ppdu_stats_gi {
 		FIELD_GET(HTT_PPDU_STATS_USER_RATE_FLAGS_GI_M, _val)
 #define HTT_USR_RATE_DCM(_val) \
 		FIELD_GET(HTT_PPDU_STATS_USER_RATE_FLAGS_DCM_M, _val)
+#define HTT_USR_RATE_PPDU_TYPE(_val) \
+		FIELD_GET(HTT_PPDU_STATS_USER_RATE_INFO1_PPDU_TYPE_M, _val)
+#define HTT_USR_RATE_MU_GRPID(_val) \
+		FIELD_GET(HTT_PPDU_STATS_USER_RATE_INFO0_MU_GROUP_ID_M, _val)
+#define HTT_USR_RATE_USR_POS(_val) \
+		FIELD_GET(HTT_PPDU_STATS_USER_RATE_INFO0_USER_POS_M, _val)
 
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_LTF_SIZE_M		GENMASK(1, 0)
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_STBC_M		BIT(2)
@@ -1353,16 +1411,33 @@ struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	u32 success_bytes;
 } __packed;
 
+#define HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA    BIT(14)
+#define HTT_PPDU_STATS_USR_CMN_HDR_SW_PEERID   GENMASK(31, 16)
+#define HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL    GENMASK(15, 0)
+
+struct htt_ppdu_stats_user_common {
+	u8 tid_num;
+	u8 vdev_id;
+	u16 sw_peer_id;
+	u32 info;
+	u32 ctrl;
+	u32 buffer_paddr_31_0;
+	u32 buffer_paddr_39_32;
+	u32 host_opaque_cookie;
+} __packed;
+
 struct htt_ppdu_user_stats {
 	u16 peer_id;
+	u16 delay_ba;
 	u32 tlv_flags;
 	bool is_valid_peer_id;
 	struct htt_ppdu_stats_user_rate rate;
 	struct htt_ppdu_stats_usr_cmpltn_cmn cmpltn_cmn;
 	struct htt_ppdu_stats_usr_cmpltn_ack_ba_status ack_ba;
+	struct htt_ppdu_stats_user_common common;
 };
 
-#define HTT_PPDU_STATS_MAX_USERS	8
+#define HTT_PPDU_STATS_MAX_USERS	37
 #define HTT_PPDU_DESC_MAX_DEPTH	16
 
 struct htt_ppdu_stats {
@@ -1371,7 +1446,7 @@ struct htt_ppdu_stats {
 };
 
 struct htt_ppdu_stats_info {
-	u32 ppdu_id;
+	u32 tlv_bitmap, ppdu_id, frame_type, frame_ctrl, delay_ba, bar_num_users;
 	struct htt_ppdu_stats ppdu_stats;
 	struct list_head list;
 };
