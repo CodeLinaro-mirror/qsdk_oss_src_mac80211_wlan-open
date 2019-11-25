@@ -1480,6 +1480,7 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 				       ab->wmi_ab.svc_map);
 		struct hal_rx_phyrx_rssi_legacy_info *rssi =
 			(struct hal_rx_phyrx_rssi_legacy_info *)tlv_data;
+		u32 reception_type = 0;
 
 		/* TODO: Please note that the combined rssi will not be accurate
 		 * in MU case. Rssi in MU needs to be retrieved from
@@ -1488,6 +1489,22 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		ppdu_info->rssi_comb =
 			FIELD_GET(HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RSSI_COMB,
 				  __le32_to_cpu(rssi->info0));
+
+		reception_type =
+			FIELD_GET(HAL_RX_PHYRX_RSSI_LEGACY_INFO_RSVD1_RECEPTION,
+				  __le32_to_cpu(rssi->rsvd[0]));
+
+		switch (reception_type) {
+		case HAL_RECEPTION_TYPE_ULOFMDA:
+			ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_MU_OFDMA;
+			break;
+		case HAL_RECEPTION_TYPE_ULMIMO:
+			ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_MU_MIMO;
+			break;
+		default:
+			ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_SU;
+			break;
+		}
 
 		if (db2dbm) {
 			for (i = 0; i < ARRAY_SIZE(rssi->preamble); i++) {
