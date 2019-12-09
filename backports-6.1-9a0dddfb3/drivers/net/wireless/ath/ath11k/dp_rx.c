@@ -5515,8 +5515,11 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 			goto next_skb;
 		}
 
-		arsta = ath11k_sta_to_arsta(peer->sta);
-		ath11k_dp_rx_update_peer_stats(arsta, ppdu_info);
+		if ((ppdu_info.fc_valid) &&
+				(ppdu_info.ast_index != HAL_AST_IDX_INVALID)) {
+			arsta = (struct ath11k_sta *)peer->sta->drv_priv;
+			ath11k_dp_rx_update_peer_stats(arsta, &ppdu_info);
+		}
 
 		if (ath11k_debugfs_is_pktlog_peer_valid(ar, peer->addr)) {
 			trace_ath11k_htt_rxdesc(ar, skb->data, log_type, rx_buf_sz);

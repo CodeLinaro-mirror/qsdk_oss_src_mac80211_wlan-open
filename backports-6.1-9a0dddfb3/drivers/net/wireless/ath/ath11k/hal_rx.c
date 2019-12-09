@@ -902,6 +902,9 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		ppdu_info->ast_index =
 			FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO2_AST_INDEX,
 				  __le32_to_cpu(eu_stats->info2));
+		ppdu_info->fc_valid =
+			FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO1_FC_VALID,
+				  __le32_to_cpu(eu_stats->info1));
 		ppdu_info->tid =
 			ffs(FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO7_TID_BITMAP,
 				      __le32_to_cpu(eu_stats->info7))) - 1;

@@ -71,6 +71,7 @@ enum hal_rx_reception_type {
 };
 
 #define HAL_RX_FCS_LEN                          4
+#define HAL_AST_IDX_INVALID                     0xFFFF
 
 enum hal_rx_mon_status {
 	HAL_RX_MON_STATUS_PPDU_NOT_DONE,
@@ -172,6 +173,7 @@ struct hal_rx_mon_ppdu_info {
 	u8 rssi_comb;
 	u8 rssi_chain_pri20[HAL_RX_MAX_NSS];
 	u16 tid;
+	u8 fc_valid;
 	u16 ht_flags;
 	u16 vht_flags;
 	u16 he_flags;
