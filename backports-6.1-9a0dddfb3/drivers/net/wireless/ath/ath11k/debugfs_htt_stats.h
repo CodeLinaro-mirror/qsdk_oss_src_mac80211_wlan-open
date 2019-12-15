@@ -103,6 +103,14 @@ enum htt_tlv_tag_t {
 	HTT_STATS_PDEV_OBSS_PD_TAG                          = 88,
 	HTT_STATS_HW_WAR_TAG				    = 89,
 	HTT_STATS_RING_BACKPRESSURE_STATS_TAG		    = 90,
+	HTT_STATS_LATENCY_PROF_STATS_TAG                    = 91,
+	HTT_STATS_LATENCY_CTX_TAG                           = 92,
+	HTT_STATS_LATENCY_CNT_TAG                           = 93,
+	HTT_STATS_RX_PDEV_UL_TRIG_STATS_TAG                 = 94,
+	HTT_STATS_RX_PDEV_UL_OFDMA_USER_STATS_TAG           = 95,
+	HTT_STATS_RX_PDEV_UL_MIMO_USER_STATS_TAG            = 96,
+	HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_STATS_TAG          = 97,
+	HTT_STATS_RX_FSE_STATS_TAG                          = 98,
 	HTT_STATS_PEER_CTRL_PATH_TXRX_STATS_TAG		    = 101,
 	HTT_STATS_PDEV_TX_RATE_TXBF_STATS_TAG		    = 108,
 	HTT_STATS_TXBF_OFDMA_NDPA_STATS_TAG		    = 113,
@@ -1325,13 +1333,17 @@ struct htt_tx_pdev_rate_stats_tlv {
 #define HTT_RX_PDEV_STATS_NUM_LEGACY_CCK_STATS     4
 #define HTT_RX_PDEV_STATS_NUM_LEGACY_OFDM_STATS    8
 #define HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS        12
+#define HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS	   2
 #define HTT_RX_PDEV_STATS_NUM_GI_COUNTERS          4
 #define HTT_RX_PDEV_STATS_NUM_DCM_COUNTERS         5
 #define HTT_RX_PDEV_STATS_NUM_BW_COUNTERS          4
 #define HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS      8
+#define HTT_RX_PDEV_STATS_ULNUM_SPATIAL_STREAMS	   8
 #define HTT_RX_PDEV_STATS_NUM_PREAMBLE_TYPES       HTT_STATS_PREAM_COUNT
 #define HTT_RX_PDEV_MAX_OFDMA_NUM_USER             8
+#define HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER	   8
 #define HTT_RX_PDEV_STATS_RXEVM_MAX_PILOTS_PER_NSS 16
+#define HTT_RX_PDEV_STATS_NUM_RU_SIZE_160MHZ_CNTRS 7
 #define HTT_RX_PDEV_STATS_NUM_RU_SIZE_COUNTERS     6
 #define HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER          8
 
@@ -1810,6 +1822,105 @@ struct htt_ring_backpressure_stats_tlv {
 	 * continuously in backpressure state beyond 500ms.
 	 */
 	u32 backpressure_hist[5];
+};
+
+#define HTT_LATENCY_PROFILE_MAX_HIST		3
+#define HTT_STATS_MAX_PROF_STATS_NAME_LEN	32
+
+struct htt_latency_prof_stats_tlv {
+	u32 print_header;
+	u8 latency_prof_name[HTT_STATS_MAX_PROF_STATS_NAME_LEN];
+	u32 cnt;
+	u32 min;
+	u32 max;
+	u32 last;
+	u32 tot;
+	u32 avg;
+	u32 hist_intvl;
+	u32 hist[HTT_LATENCY_PROFILE_MAX_HIST];
+};
+
+struct htt_latency_prof_ctx_tlv {
+	u32 duration;
+	u32 tx_msdu_cnt;
+	u32 tx_mpdu_cnt;
+	u32 tx_ppdu_cnt;
+	u32 rx_msdu_cnt;
+	u32 rx_mpdu_cnt;
+};
+
+struct htt_latency_prof_cnt_tlv {
+	u32 prof_enable_cnt;
+};
+
+struct htt_rx_pdev_ul_ofdma_user_stats_tlv {
+	u32 user_index;
+	u32 rx_ulofdma_non_data_ppdu;
+	u32 rx_ulofdma_data_ppdu;
+	u32 rx_ulofdma_mpdu_ok;
+	u32 rx_ulofdma_mpdu_fail;
+	u32 rx_ulofdma_non_data_nusers;
+	u32 rx_ulofdma_data_nusers;
+};
+
+struct htt_rx_pdev_ul_trigger_stats_tlv {
+	u32 mac_id__word;
+	u32 rx_11ax_ul_ofdma;
+	u32 ul_ofdma_rx_mcs[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS];
+	u32 ul_ofdma_rx_gi[HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
+						     [HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS];
+	u32 ul_ofdma_rx_nss[HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS];
+	u32 ul_ofdma_rx_bw[HTT_RX_PDEV_STATS_NUM_BW_COUNTERS];
+	u32 ul_ofdma_rx_stbc;
+	u32 ul_ofdma_rx_ldpc;
+	u32 rx_ulofdma_data_ru_size_ppdu[HTT_RX_PDEV_STATS_NUM_RU_SIZE_160MHZ_CNTRS];
+	u32 rx_ulofdma_non_data_ru_size_ppdu[HTT_RX_PDEV_STATS_NUM_RU_SIZE_160MHZ_CNTRS];
+	u32 ul_ofdma_rx_mcs_ext[HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS];
+	u32 ul_ofdma_rx_gie[HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
+						    [HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS];
+};
+
+struct htt_rx_pdev_ul_mumimo_trig_stats_tlv {
+	u32 mac_id__word;
+	u32 rx_11ax_ul_mumimo;
+	u32 ul_mumimo_rx_mcs[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS];
+	u32 ul_mumimo_rx_gi[HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
+						     [HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS];
+	u32 ul_mumimo_rx_nss[HTT_RX_PDEV_STATS_ULNUM_SPATIAL_STREAMS];
+	u32 ul_mumimo_rx_bw[HTT_RX_PDEV_STATS_NUM_BW_COUNTERS];
+	u32 ul_mumimo_rx_stbc;
+	u32 ul_mumimo_rx_ldpc;
+	u32 ul_mumimo_rx_mcs_ext[HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS];
+	u32 ul_mumimo_rx_gie[HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
+						    [HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS];
+};
+
+struct htt_rx_pdev_ul_mimo_user_stats_tlv {
+	u32 user_index;
+	u32 rx_ulmumimo_non_data_ppdu;
+	u32 rx_ulmumimo_data_ppdu;
+	u32 rx_ulmumimo_mpdu_ok;
+	u32 rx_ulmumimo_mpdu_fail;
+};
+
+#define HTT_RX_MAX_PEAK_OCCUPANCY_INDEX		10
+#define HTT_RX_MAX_CURRENT_OCCUPANCY_INDEX	10
+#define HTT_RX_SQUARE_INDEX			6
+#define HTT_RX_MAX_PEAK_SEARCH_INDEX		4
+#define HTT_RX_MAX_PENDING_SEARCH_INDEX		4
+
+struct htt_rx_fse_stats_tlv {
+	u32 fse_enable_cnt;
+	u32 fse_disable_cnt;
+	u32 fse_cache_invalidate_entry_cnt;
+	u32 fse_full_cache_invalidate_cnt;
+	u32 fse_num_cache_hits_cnt;
+	u32 fse_num_searches_cnt;
+	u32 fse_cache_occupancy_peak_cnt[HTT_RX_MAX_PEAK_OCCUPANCY_INDEX];
+	u32 fse_cache_occupancy_curr_cnt[HTT_RX_MAX_CURRENT_OCCUPANCY_INDEX];
+	u32 fse_search_stat_square_cnt[HTT_RX_SQUARE_INDEX];
+	u32 fse_search_stat_peak_cnt[HTT_RX_MAX_PEAK_SEARCH_INDEX];
+	u32 fse_search_stat_search_pending_cnt[HTT_RX_MAX_PENDING_SEARCH_INDEX];
 };
 
 #define HTT_TX_TXBF_RATE_STATS_NUM_MCS_COUNTERS 14
