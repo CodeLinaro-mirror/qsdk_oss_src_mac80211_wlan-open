@@ -322,6 +322,8 @@ ath11k_dp_tx_htt_tx_complete_buf(struct ath11k_base *ab,
 	struct ath11k_skb_cb *skb_cb;
 	struct ath11k *ar;
 	struct ath11k_peer *peer;
+	struct ieee80211_vif *vif;
+	u8 flags = 0;
 
 	spin_lock(&tx_ring->tx_idr_lock);
 	msdu = idr_remove(&tx_ring->txbuf_idr, ts->msdu_id);
@@ -347,6 +349,14 @@ ath11k_dp_tx_htt_tx_complete_buf(struct ath11k_base *ab,
 		ieee80211_free_txskb(ar->hw, msdu);
 		return;
 	}
+
+	if (!skb_cb->vif) {
+		dev_kfree_skb_any(msdu);
+		return;
+	}
+
+	flags = skb_cb->flags;
+	vif = skb_cb->vif;
 
 	memset(&info->status, 0, sizeof(info->status));
 
@@ -559,6 +569,8 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 	struct ath11k_peer *peer;
 	struct ath11k_sta *arsta;
 	struct rate_info rate;
+	struct ieee80211_vif *vif;
+	u8 flags = 0;
 
 	if (WARN_ON_ONCE(ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM)) {
 		/* Must not happen */
@@ -578,6 +590,9 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 		ieee80211_free_txskb(ar->hw, msdu);
 		return;
 	}
+
+	flags = skb_cb->flags;
+	vif = skb_cb->vif;
 
 	info = IEEE80211_SKB_CB(msdu);
 	memset(&info->status, 0, sizeof(info->status));
@@ -649,7 +664,10 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 
 	spin_unlock_bh(&ab->base_lock);
 
-	ieee80211_tx_status_ext(ar->hw, &status);
+	if (flags & ATH11K_SKB_HW_80211_ENCAP)
+		ieee80211_tx_status_8023(ar->hw, vif, msdu);
+	else
+		ieee80211_tx_status_ext(ar->hw, &status);
 }
 
 static inline void ath11k_dp_tx_status_parse(struct ath11k_base *ab,
