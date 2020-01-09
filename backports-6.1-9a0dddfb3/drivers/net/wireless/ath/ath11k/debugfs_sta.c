@@ -386,13 +386,11 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 	int len = 0, i, retval = 0;
 	const int size = 4 * 4096;
 	char *buf;
-	int he_rates_avail = (rx_stats->pream_cnt[HAL_RX_PREAMBLE_11AX] > 1) ? 1 : 0;
-	int rate_table_len = he_rates_avail ? ATH11K_RX_RATE_TABLE_11AX_NUM :
-					      ATH11K_RX_RATE_TABLE_NUM;
+	int he_rates_avail;
+	int rate_table_len;
 	char *legacy_rate_str[] = {"1Mbps", "2Mbps", "5.5Mbps", "6Mbps",
 				   "9Mbps", "11Mbps", "12Mbps", "18Mbps",
 				   "24Mbps", "36 Mbps", "48Mbps", "54Mbps"};
-
 	if (!rx_stats)
 		return -ENOENT;
 
@@ -400,6 +398,9 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
+	he_rates_avail = (rx_stats->pream_cnt[HAL_RX_PREAMBLE_11AX] > 1) ? 1 : 0;
+	rate_table_len = he_rates_avail ? ATH11K_RX_RATE_TABLE_11AX_NUM :
+					      ATH11K_RX_RATE_TABLE_NUM;
 	mutex_lock(&ar->conf_mutex);
 	spin_lock_bh(&ar->ab->base_lock);
 
