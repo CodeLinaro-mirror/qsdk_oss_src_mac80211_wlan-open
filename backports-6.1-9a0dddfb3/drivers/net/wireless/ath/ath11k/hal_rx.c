@@ -806,7 +806,6 @@ void ath11k_hal_reo_init_cmd_ring(struct ath11k_base *ab,
 	}
 }
 
-#define HAL_MAX_UL_MU_USERS	37
 static inline void
 ath11k_hal_rx_handle_ofdma_info(void *rx_tlv,
 				struct hal_rx_user_status *rx_user_status)
@@ -838,6 +837,8 @@ ath11k_hal_rx_populate_mu_user_info(void *rx_tlv, struct hal_rx_mon_ppdu_info *p
 {
 	rx_user_status->ast_index = ppdu_info->ast_index;
 	rx_user_status->tid = ppdu_info->tid;
+	rx_user_status->tcp_ack_msdu_count =
+		ppdu_info->tcp_ack_msdu_count;
 	rx_user_status->tcp_msdu_count =
 		ppdu_info->tcp_msdu_count;
 	rx_user_status->udp_msdu_count =
@@ -861,6 +862,9 @@ ath11k_hal_rx_populate_mu_user_info(void *rx_tlv, struct hal_rx_mon_ppdu_info *p
 		ppdu_info->num_mpdu_fcs_ok;
 	rx_user_status->mpdu_cnt_fcs_err =
 		ppdu_info->num_mpdu_fcs_err;
+	memcpy(&rx_user_status->mpdu_fcs_ok_bitmap[0], &ppdu_info->mpdu_fcs_ok_bitmap[0],
+	       HAL_RX_NUM_WORDS_PER_PPDU_BITMAP *
+	       sizeof(ppdu_info->mpdu_fcs_ok_bitmap[0]));
 
 	ath11k_hal_rx_populate_byte_count(rx_tlv, ppdu_info, rx_user_status);
 }
@@ -890,6 +894,14 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 				  __le32_to_cpu(ppdu_start->info0));
 		ppdu_info->chan_num = __le32_to_cpu(ppdu_start->chan_num);
 		ppdu_info->ppdu_ts = __le32_to_cpu(ppdu_start->ppdu_start_ts);
+
+		if (ppdu_info->ppdu_id != ppdu_info->last_ppdu_id) {
+			ppdu_info->last_ppdu_id = ppdu_info->ppdu_id;
+			ppdu_info->num_users = 0;
+			memset(&ppdu_info->mpdu_fcs_ok_bitmap, 0,
+			       HAL_RX_NUM_WORDS_PER_PPDU_BITMAP *
+			       sizeof(ppdu_info->mpdu_fcs_ok_bitmap[0]));
+		}
 		break;
 	}
 	case HAL_RX_PPDU_END_USER_STATS: {
@@ -944,15 +956,16 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 
 		if (userid < HAL_MAX_UL_MU_USERS) {
 			struct hal_rx_user_status *rxuser_stats =
-				&ppdu_info->userstats;
+				&ppdu_info->userstats[userid];
+			ppdu_info->num_users += 1;
 
 			ath11k_hal_rx_handle_ofdma_info(tlv_data, rxuser_stats);
 			ath11k_hal_rx_populate_mu_user_info(tlv_data, ppdu_info,
 							    rxuser_stats);
 		}
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[0] =
+		ppdu_info->mpdu_fcs_ok_bitmap[0] =
 					__le32_to_cpu(eu_stats->rsvd1[0]);
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[1] =
+		ppdu_info->mpdu_fcs_ok_bitmap[1] =
 					__le32_to_cpu(eu_stats->rsvd1[1]);
 
 		break;
@@ -960,12 +973,12 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 	case HAL_RX_PPDU_END_USER_STATS_EXT: {
 		struct hal_rx_ppdu_end_user_stats_ext *eu_stats =
 			(struct hal_rx_ppdu_end_user_stats_ext *)tlv_data;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[2] = eu_stats->info1;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[3] = eu_stats->info2;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[4] = eu_stats->info3;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[5] = eu_stats->info4;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[6] = eu_stats->info5;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[7] = eu_stats->info6;
+		ppdu_info->mpdu_fcs_ok_bitmap[2] = eu_stats->info1;
+		ppdu_info->mpdu_fcs_ok_bitmap[3] = eu_stats->info2;
+		ppdu_info->mpdu_fcs_ok_bitmap[4] = eu_stats->info3;
+		ppdu_info->mpdu_fcs_ok_bitmap[5] = eu_stats->info4;
+		ppdu_info->mpdu_fcs_ok_bitmap[6] = eu_stats->info5;
+		ppdu_info->mpdu_fcs_ok_bitmap[7] = eu_stats->info6;
 		break;
 	}
 	case HAL_PHYRX_HT_SIG: {

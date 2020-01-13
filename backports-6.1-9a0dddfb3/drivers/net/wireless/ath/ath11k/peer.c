@@ -93,6 +93,20 @@ struct ath11k_peer *ath11k_peer_find_by_vdev_id(struct ath11k_base *ab,
 	return NULL;
 }
 
+struct ath11k_peer *ath11k_peer_find_by_ast(struct ath11k_base *ab,
+					   int ast_hash)
+{
+	struct ath11k_peer *peer;
+
+	lockdep_assert_held(&ab->base_lock);
+
+	list_for_each_entry(peer, &ab->peers, list)
+		if (ast_hash == peer->ast_hash)
+			return peer;
+
+	return NULL;
+}
+
 void ath11k_peer_unmap_event(struct ath11k_base *ab, u16 peer_id)
 {
 	struct ath11k_peer *peer;

@@ -526,6 +526,12 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 		len += scnprintf(buf + len, size - len, "%10llu%s",
 				rx_stats->byte_stats.rx_rate[i],
 				(i + 1) % (he_rates_avail ? 12 : 8) ? "\t" : "\n");
+	len += scnprintf(buf + len, size - len,
+			 "\nDCM: %llu\nRU26:  %llu \nRU52:  %llu \nRU106: %llu \nRU242: %llu \nRU484: %llu \nRU996: %llu\n",
+			 rx_stats->dcm_count, rx_stats->ru_alloc_cnt[0],
+			 rx_stats->ru_alloc_cnt[1], rx_stats->ru_alloc_cnt[2],
+			 rx_stats->ru_alloc_cnt[3], rx_stats->ru_alloc_cnt[4],
+			 rx_stats->ru_alloc_cnt[5]);
 
 	len += scnprintf(buf + len, size - len, "\n");
 

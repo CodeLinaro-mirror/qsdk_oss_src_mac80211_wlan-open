@@ -73,6 +73,10 @@ enum hal_rx_reception_type {
 #define HAL_RX_FCS_LEN                          4
 #define HAL_AST_IDX_INVALID                     0xFFFF
 
+#define HAL_MAX_UL_MU_USERS                     37
+#define HAL_RX_MAX_MPDU                         256
+#define HAL_RX_NUM_WORDS_PER_PPDU_BITMAP        (HAL_RX_MAX_MPDU >> 5)
+
 enum hal_rx_mon_status {
 	HAL_RX_MON_STATUS_PPDU_NOT_DONE,
 	HAL_RX_MON_STATUS_PPDU_DONE,
@@ -83,14 +87,15 @@ struct hal_rx_user_status {
 	u32 mcs:4,
 	nss:3,
 	ofdma_info_valid:1,
-	dl_ofdma_ru_start_index:7,
-	dl_ofdma_ru_width:7,
-	dl_ofdma_ru_size:8;
+	ul_ofdma_ru_start_index:7,
+	ul_ofdma_ru_width:7,
+	ul_ofdma_ru_size:8;
 	u32 ul_ofdma_user_v0_word0;
 	u32 ul_ofdma_user_v0_word1;
 	u32 ast_index;
 	u32 tid;
 	u16 tcp_msdu_count;
+	u16 tcp_ack_msdu_count;
 	u16 udp_msdu_count;
 	u16 other_msdu_count;
 	u16 frame_control;
@@ -104,7 +109,7 @@ struct hal_rx_user_status {
 	u8 rs_flags;
 	u32 mpdu_cnt_fcs_ok;
 	u32 mpdu_cnt_fcs_err;
-	u32 mpdu_fcs_ok_bitmap[8];
+	u32 mpdu_fcs_ok_bitmap[HAL_RX_NUM_WORDS_PER_PPDU_BITMAP];
 	u32 mpdu_ok_byte_count;
 	u32 mpdu_err_byte_count;
 };
@@ -145,6 +150,7 @@ struct hal_sw_mon_ring_entries {
 
 struct hal_rx_mon_ppdu_info {
 	u32 ppdu_id;
+	u32 last_ppdu_id;
 	u32 ppdu_ts;
 	u32 num_mpdu_fcs_ok;
 	u32 num_mpdu_fcs_err;
@@ -213,8 +219,19 @@ struct hal_rx_mon_ppdu_info {
 	u8 ltf_size;
 	u8 rxpcu_filter_pass;
 	char rssi_chain[8][8];
-	struct hal_rx_user_status userstats;
+	u32 num_users;
+	u32 mpdu_fcs_ok_bitmap[HAL_RX_NUM_WORDS_PER_PPDU_BITMAP];
+	struct hal_rx_user_status userstats[HAL_MAX_UL_MU_USERS];
 };
+
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W0_VALID			BIT(30)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W0_VER			BIT(31)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_NSS			GENMASK(2, 0)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_MCS			GENMASK(6, 3)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_LDPC			BIT(7)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_DCM			BIT(8)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_RU_START		GENMASK(15, 9)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_RU_SIZE			GENMASK(18, 16)
 
 #define HAL_RX_PPDU_START_INFO0_PPDU_ID		GENMASK(15, 0)
 
