@@ -1594,6 +1594,247 @@ static const struct file_operations fops_ps_state_enable = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_write_btcoex(struct file *file,
+				   const char __user *ubuf,
+				   size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif;
+	struct ath11k *ar = file->private_data;
+	char buf[256];
+	size_t buf_size;
+	int ret,coex = -1;
+	enum qca_wlan_priority_type wlan_prio_mask = 0;
+	int wlan_weight = 0;
+
+	if (!ar)
+		return -EINVAL;
+
+	buf_size = min(count, (sizeof(buf) - 1));
+	if (copy_from_user(buf, ubuf, buf_size))
+		return -EFAULT;
+
+	buf[buf_size] = '\0';
+	ret = sscanf(buf, "%d %u %d" , &coex, &wlan_prio_mask, &wlan_weight);
+	if (!ret)
+		return -EINVAL;
+
+	if (wlan_weight == -1)
+		wlan_weight = 0;
+
+	if(wlan_prio_mask == -1)
+		wlan_prio_mask =0;
+
+	if(wlan_weight < 0 || wlan_prio_mask < 0)
+		return -EINVAL;
+
+	if(coex != 1 &&  coex != -1 && coex)
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+	arvif = list_first_entry(&ar->arvifs, typeof(*arvif), list);
+	if (!arvif->is_started) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if(coex == 1 && !test_bit(ATH11K_FLAG_BTCOEX, &ar->dev_flags))
+		set_bit(ATH11K_FLAG_BTCOEX, &ar->dev_flags);
+
+	if(coex == -1 && !test_bit(ATH11K_FLAG_BTCOEX, &ar->dev_flags)){
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (!coex)
+		clear_bit(ATH11K_FLAG_BTCOEX, &ar->dev_flags);
+
+	ret = ath11k_mac_coex_config(ar, arvif, coex, wlan_prio_mask, wlan_weight);
+	if (ret)
+		goto exit;
+
+	ar->coex.wlan_prio_mask = wlan_prio_mask;
+	ar->coex.wlan_weight = wlan_weight;
+	ret = count;
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static ssize_t ath11k_read_btcoex(struct file *file, char __user *ubuf,
+				  size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	char buf[256];
+	int  len=0;
+
+	if (!ar)
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+	len = scnprintf(buf, sizeof(buf) - len, "%d %d %d\n",
+			test_bit(ATH11K_FLAG_BTCOEX, &ar->dev_flags),
+			ar->coex.wlan_prio_mask,
+			ar->coex.wlan_weight);
+	mutex_unlock(&ar->conf_mutex);
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops__btcoex = {
+	.read = ath11k_read_btcoex,
+	.write = ath11k_write_btcoex,
+	.open = simple_open
+};
+
+
+static ssize_t ath11k_write_btcoex_duty_cycle(struct file *file,
+					      const char __user *ubuf,
+					      size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif;
+	struct ath11k *ar = file->private_data;
+	struct coex_config_arg coex_config;
+	char buf[256];
+	size_t buf_size;
+	u32 duty_cycle,wlan_duration;
+	int ret;
+
+	if (!ar)
+		return -EINVAL;
+
+	if (!test_bit(ATH11K_FLAG_BTCOEX, &ar->dev_flags))
+		return -EINVAL;
+
+	if (ar->coex.coex_algo_type != COEX_ALGO_OCS) {
+		ath11k_err(ar->ab,"duty cycle algo is not enabled");
+		return -EINVAL;
+	}
+
+	buf_size = min(count, (sizeof(buf) - 1));
+	if (copy_from_user(buf, ubuf, buf_size))
+		return -EFAULT;
+
+	buf[buf_size] = '\0';
+	ret = sscanf(buf, "%d %d" , &duty_cycle, &wlan_duration);
+
+	if (!ret)
+		return -EINVAL;
+
+	/*Maximum duty_cycle period allowed is 100 Miliseconds*/
+	if (duty_cycle < wlan_duration || !duty_cycle || !wlan_duration || duty_cycle > 100000)
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+	arvif = list_first_entry(&ar->arvifs, typeof(*arvif), list);
+	if (!arvif->is_started) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	coex_config.vdev_id = arvif->vdev_id;
+	coex_config.config_type = WMI_COEX_CONFIG_AP_TDM;
+	coex_config.duty_cycle = duty_cycle;
+	coex_config.wlan_duration = wlan_duration;
+
+	ret = ath11k_send_coex_config_cmd(ar, &coex_config);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to set coex config vdev_id %d ret %d\n",
+			    coex_config.vdev_id, ret);
+		goto exit;
+	}
+
+	ar->coex.duty_cycle = duty_cycle;
+	ar->coex.wlan_duration = wlan_duration;
+	ret = count;
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+
+}
+
+static ssize_t ath11k_read_btcoex_duty_cycle(struct file *file, char __user *ubuf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	char buf[256];
+	int len =0;
+
+	if (!ar)
+		return -EINVAL;
+
+	len = scnprintf(buf, sizeof(buf) - len, "%d %d\n",
+			ar->coex.duty_cycle,ar->coex.wlan_duration);
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+
+static const struct file_operations fops__btcoex_duty_cycle = {
+	.read = ath11k_read_btcoex_duty_cycle,
+	.write = ath11k_write_btcoex_duty_cycle,
+	.open = simple_open
+};
+
+static ssize_t ath11k_write_btcoex_algo(struct file *file,
+					const char __user *ubuf,
+					size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif;
+	struct ath11k *ar = file->private_data;
+	unsigned int coex_algo;
+	struct coex_config_arg coex_config;
+	int ret;
+
+	if (kstrtouint_from_user(ubuf, count, 0, &coex_algo))
+		return -EINVAL;
+
+	if (coex_algo >= COEX_ALGO_MAX_SUPPORTED)
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+
+	arvif = list_first_entry(&ar->arvifs, typeof(*arvif), list);
+	if (!arvif->is_started) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	ar->coex.coex_algo_type = coex_algo;
+	coex_config.vdev_id = arvif->vdev_id;
+	coex_config.config_type = WMI_COEX_CONFIG_FORCED_ALGO;
+	coex_config.coex_algo = coex_algo;
+
+	ret = ath11k_send_coex_config_cmd(ar, &coex_config);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to set coex algorithm vdev_id %d ret %d\n",
+			    coex_config.vdev_id, ret);
+		goto exit;
+	}
+
+	ret = count;
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static ssize_t ath11k_read_btcoex_algo(struct file *file, char __user *ubuf,
+				       size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	char buf[32];
+	int len = 0;
+
+	len = scnprintf(buf, sizeof(buf) - len, "%d\n",
+			ar->coex.coex_algo_type);
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_btcoex_algo = {
+	.read = ath11k_read_btcoex_algo,
+	.write = ath11k_write_btcoex_algo,
+	.open = simple_open
+};
+
 int ath11k_debugfs_register(struct ath11k *ar)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -1627,6 +1868,15 @@ int ath11k_debugfs_register(struct ath11k *ar)
 	debugfs_create_file("fw_dbglog_config", 0600,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_fw_dbglog);
+	debugfs_create_file("btcoex", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops__btcoex);
+	debugfs_create_file("btcoex_duty_cycle", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops__btcoex_duty_cycle);
+	debugfs_create_file("btcoex_algorithm", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_btcoex_algo);
 
 	if (ar->hw->wiphy->bands[NL80211_BAND_5GHZ]) {
 		debugfs_create_file("dfs_simulate_radar", 0200,

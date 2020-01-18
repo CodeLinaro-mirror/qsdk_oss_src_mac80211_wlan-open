@@ -5338,6 +5338,11 @@ enum wmi_coex_config_type {
 	WMI_COEX_CONFIG_WLAN_SCAN_PRIORITY	= 15,
 	WMI_COEX_CONFIG_WLAN_PKT_PRIORITY	= 16,
 	WMI_COEX_CONFIG_PTA_INTERFACE		= 17,
+	/* WMI_COEX_CONFIG_FORCED_ALGO
+	 * config to select coex algorithm
+	 * coex_algo: select fixed coex algorithm
+	 */
+	WMI_COEX_CONFIG_FORCED_ALGO		= 47,
 };
 
 struct coex_config_arg {
@@ -5362,6 +5367,13 @@ struct coex_config_arg {
 			u32 wlan_pkt_type_continued;
 			u32 wlan_pkt_weight;
 			u32 bt_pkt_weight;
+		};
+		struct {
+			u32 duty_cycle;
+			u32 wlan_duration;
+		};
+		struct {
+			u32 coex_algo;
 		};
 	};
 };
@@ -5389,6 +5401,15 @@ struct wmi_coex_config_cmd {
 			u32 wlan_pkt_type_continued;
 			u32 wlan_pkt_weight;
 			u32 bt_pkt_weight;
+		} __packed;
+
+		struct {
+			u32 duty_cycle;
+			u32 wlan_duration;
+		} __packed;
+
+		struct {
+			u32 coex_algo;
 		} __packed;
 	} __packed;
 } __packed;

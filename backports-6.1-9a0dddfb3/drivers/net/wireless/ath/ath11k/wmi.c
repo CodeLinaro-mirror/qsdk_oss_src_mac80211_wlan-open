@@ -1682,6 +1682,26 @@ static void ath11k_wmi_copy_coex_config(struct ath11k *ar, struct wmi_coex_confi
 			   coex_config->bt_txrx_time, coex_config->bt_priority_time,
 			   coex_config->pta_algorithm, coex_config->pta_priority);
 	}
+
+	if (coex_config->config_type == WMI_COEX_CONFIG_AP_TDM) {
+		cmd->duty_cycle = coex_config->duty_cycle;
+		cmd->wlan_duration = coex_config->wlan_duration;
+		ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+			   "WMI coex config type %u vdev id %d  duty_cycle %u wlan_duration %u\n",
+			    coex_config->config_type,
+			    coex_config->vdev_id,
+			    coex_config->duty_cycle,
+			    coex_config->wlan_duration);
+        }
+
+	if (coex_config->config_type == WMI_COEX_CONFIG_FORCED_ALGO) {
+		cmd->coex_algo = coex_config->coex_algo;
+		ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+			   "WMI coex config type %u vdev id %d coex_algorithm %u\n",
+			   coex_config->config_type,
+			   coex_config->vdev_id,
+			   coex_config->coex_algo);
+	}
 }
 
 int ath11k_send_coex_config_cmd(struct ath11k *ar,

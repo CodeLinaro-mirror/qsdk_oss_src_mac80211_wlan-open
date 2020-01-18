@@ -690,11 +690,22 @@ struct ath11k_coex_info {
 	u32 bt_priority_time_slot;
 	u32 coex_algo_type;
 	u32 pta_priority;
+	u32 wlan_prio_mask;
+	u32 wlan_weight;
+	u32 duty_cycle;
+	u32 wlan_duration;
 };
 
 enum ath11k_ap_ps_state {
 	ATH11K_AP_PS_STATE_OFF,
 	ATH11K_AP_PS_STATE_ON,
+};
+
+enum coex_algo {
+	COEX_ALGO_UNCONS_FREERUN = 0,
+	COEX_ALGO_FREERUN,
+	COEX_ALGO_OCS,
+	COEX_ALGO_MAX_SUPPORTED,
 };
 
 struct ath11k {

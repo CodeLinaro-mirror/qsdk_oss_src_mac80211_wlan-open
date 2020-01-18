@@ -10301,6 +10301,11 @@ static void ath11k_mac_fetch_coex_info(struct ath11k *ar)
 		ath11k_err(ab, "No qcom,pta-priority entry in dev-tree.\n");
 	}
 
+	if (ar->coex.coex_algo_type == COEX_ALGO_OCS) {
+		ar->coex.duty_cycle = 100000;
+		ar->coex.wlan_duration = 80000;
+	}
+
 	ath11k_dbg(ar->ab, ATH11K_DBG_MAC, "coex pta_num %u coex_mode %u"
 		   " bt_active_time_slot %u bt_priority_time_slot %u"
 		   " coex_algorithm %u pta_priority %u\n", ar->coex.pta_num,
