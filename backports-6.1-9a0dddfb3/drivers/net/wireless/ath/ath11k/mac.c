@@ -6930,12 +6930,8 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 	ath11k_dp_vdev_tx_attach(ar, arvif);
 
 	if (vif->type != NL80211_IFTYPE_MONITOR &&
-	    test_bit(ATH11K_FLAG_MONITOR_CONF_ENABLED, &ar->monitor_flags)) {
-		ret = ath11k_mac_monitor_vdev_create(ar);
-		if (ret)
-			ath11k_warn(ar->ab, "failed to create monitor vdev during add interface: %d",
-				    ret);
-	}
+	    test_bit(ATH11K_FLAG_MONITOR_CONF_ENABLED, &ar->monitor_flags))
+		ath11k_mac_monitor_vdev_create(ar);
 
 	if (ath11k_wmi_supports_6ghz_cc_ext(ar)) {
 		struct cur_regulatory_info *reg_info;
