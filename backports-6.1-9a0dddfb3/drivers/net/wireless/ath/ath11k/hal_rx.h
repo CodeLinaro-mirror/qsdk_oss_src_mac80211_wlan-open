@@ -107,6 +107,7 @@ struct hal_rx_user_status {
 	u16 vht_flags;
 	u16 he_flags;
 	u8 rs_flags;
+	u8 ldpc;
 	u32 mpdu_cnt_fcs_ok;
 	u32 mpdu_cnt_fcs_err;
 	u32 mpdu_fcs_ok_bitmap[HAL_RX_NUM_WORDS_PER_PPDU_BITMAP];

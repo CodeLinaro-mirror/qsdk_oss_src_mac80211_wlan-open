@@ -5601,7 +5601,8 @@ void ath11k_dp_rx_mon_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info)
 	uint32_t mu_ul_user_v0_word1;
 	uint32_t ru_size;
 
-	if (!(ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_OFDMA ||
+	if (!(ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_MIMO ||
+	      ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_OFDMA ||
 	      ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO))
 		return;
 
@@ -5637,7 +5638,10 @@ void ath11k_dp_rx_mon_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info)
 			rx_user_status->ul_ofdma_ru_width = ru_size;
 			rx_user_status->ul_ofdma_ru_size = ru_size;
 		}
+		rx_user_status->ldpc = FIELD_GET(HAL_RX_UL_OFDMA_USER_INFO_V0_W1_LDPC,
+						 mu_ul_user_v0_word1);
 	}
+	ppdu_info->ldpc = 1;
 
 }
 

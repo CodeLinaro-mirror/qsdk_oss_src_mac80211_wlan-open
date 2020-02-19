@@ -423,8 +423,8 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 			 rx_stats->num_mpdu_fcs_ok);
 	len += scnprintf(buf + len, size - len, "Num of MPDUs with FCS error: %llu\n",
 			 rx_stats->num_mpdu_fcs_err);
-	len += scnprintf(buf + len, size - len, "BCC %llu LDPC %llu\n",
-			 rx_stats->coding_count[0], rx_stats->coding_count[1]);
+	/* len += scnprintf(buf + len, size - len, "BCC %llu LDPC %llu\n",
+			 rx_stats->coding_count[0], rx_stats->coding_count[1]); */
 	len += scnprintf(buf + len, size - len,
 			 "preamble: 11A %llu 11B %llu 11N %llu 11AC %llu 11AX %llu\n",
 			 rx_stats->pream_cnt[0], rx_stats->pream_cnt[1],
