@@ -5488,7 +5488,7 @@ mon_deliver_fail:
  */
 #define MON_DEST_RING_STUCK_MAX_CNT 16
 
-static void ath11k_dp_rx_mon_dest_process(struct ath11k *ar, int mac_id,
+void ath11k_dp_rx_mon_dest_process(struct ath11k *ar, int mac_id,
 					  u32 quota, struct napi_struct *napi)
 {
 	struct ath11k_pdev_dp *dp = &ar->dp;
@@ -5725,10 +5725,10 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 				(ppdu_info.ast_index != HAL_AST_IDX_INVALID)) {
 			if (ppdu_info.reception_type == HAL_RX_RECEPTION_TYPE_SU) {
 				arsta = (struct ath11k_sta *)peer->sta->drv_priv;
-				ath11k_dp_rx_update_peer_su_stats(arsta, &ppdu_info);
+				ath11k_dp_rx_update_peer_su_stats(arsta, ppdu_info);
 			} else {
-				ath11k_dp_rx_mon_process_ulofdma(&ppdu_info);
-				ath11k_dp_rx_update_peer_mu_stats(ar, &ppdu_info);
+				ath11k_dp_rx_mon_process_ulofdma(ppdu_info);
+				ath11k_dp_rx_update_peer_mu_stats(ar, ppdu_info);
 			}
 		}
 
