@@ -458,6 +458,7 @@ int ath11k_peer_create(struct ath11k *ar, struct ath11k_vif *arvif,
 
 	peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
+	peer->vif = arvif->vif;
 
 	if (sta) {
 		arsta = ath11k_sta_to_arsta(sta);

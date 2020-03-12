@@ -372,6 +372,16 @@ struct ath11k_reg_tpc_power_info {
 	struct ath11k_chan_power_info chan_power_info[ATH11K_NUM_PWR_LEVELS];
 };
 
+#define ATH11K_STATS_MGMT_FRM_TYPE_MAX 16
+
+struct ath11k_mgmt_frame_stats {
+	u32 tx_succ_cnt[ATH11K_STATS_MGMT_FRM_TYPE_MAX];
+	u32 tx_fail_cnt[ATH11K_STATS_MGMT_FRM_TYPE_MAX];
+	u32 rx_cnt[ATH11K_STATS_MGMT_FRM_TYPE_MAX];
+	u32 tx_compl_succ[ATH11K_STATS_MGMT_FRM_TYPE_MAX];
+	u32 tx_compl_fail[ATH11K_STATS_MGMT_FRM_TYPE_MAX];
+};
+
 struct ath11k_vif {
 	u32 vdev_id;
 	enum wmi_vdev_type vdev_type;
@@ -435,6 +445,8 @@ struct ath11k_vif {
 	 * especially because it has a flexible array. Find a better way.
 	 */
 	struct ieee80211_chanctx_conf chanctx;
+
+	struct ath11k_mgmt_frame_stats mgmt_stats;
 };
 
 struct ath11k_vif_iter {

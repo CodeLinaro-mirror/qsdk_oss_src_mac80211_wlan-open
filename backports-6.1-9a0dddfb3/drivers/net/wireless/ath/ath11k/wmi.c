@@ -6211,6 +6211,12 @@ static int wmi_process_mgmt_tx_comp(struct ath11k *ar,
 	struct sk_buff *msdu;
 	struct ieee80211_tx_info *info;
 	struct ath11k_skb_cb *skb_cb;
+	struct ieee80211_hdr *hdr;
+	struct ath11k_peer *peer;
+	struct ieee80211_vif *vif;
+	struct ath11k_vif *arvif;
+	struct ath11k_mgmt_frame_stats *mgmt_stats;
+	u16 frm_type;
 	int num_mgmt;
 
 	spin_lock_bh(&ar->txmgmt_idr_lock);
@@ -6238,6 +6244,31 @@ static int wmi_process_mgmt_tx_comp(struct ath11k *ar,
 			info->status.ack_signal = tx_compl_param->ack_rssi;
 	}
 
+	hdr = (struct ieee80211_hdr *)msdu->data;
+	frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
+
+	spin_lock_bh(&ar->ab->base_lock);
+	peer = ath11k_peer_find_by_addr(ar->ab, hdr->addr2);
+	if (!peer) {
+		spin_unlock_bh(&ar->ab->base_lock);
+		ath11k_warn(ar->ab, "failed to find peer to update txcompl mgmt stats\n");
+		goto skip_mgmt_stats;
+	}
+
+	vif = peer->vif;
+	spin_unlock_bh(&ar->ab->base_lock);
+
+	spin_lock_bh(&ar->data_lock);
+	arvif = ath11k_vif_to_arvif(vif);
+	mgmt_stats = &arvif->mgmt_stats;
+
+	if (!status)
+		mgmt_stats->tx_compl_succ[frm_type]++;
+	else
+		mgmt_stats->tx_compl_fail[frm_type]++;
+	spin_unlock_bh(&ar->data_lock);
+
+skip_mgmt_stats:
 	ieee80211_tx_status_irqsafe(ar->hw, msdu);
 
 	num_mgmt = atomic_dec_if_positive(&ar->num_pending_mgmt_tx);
@@ -7817,6 +7848,11 @@ static void ath11k_mgmt_rx_event(struct ath11k_base *ab, struct sk_buff *skb)
 	struct ieee80211_hdr *hdr;
 	u16 fc;
 	struct ieee80211_supported_band *sband;
+	struct ath11k_peer *peer;
+	struct ieee80211_vif *vif;
+	struct ath11k_vif *arvif;
+	struct ath11k_mgmt_frame_stats *mgmt_stats;
+	u16 frm_type = 0;
 
 	if (ath11k_pull_mgmt_rx_params_tlv(ab, skb, &rx_ev) != 0) {
 		ath11k_warn(ab, "failed to extract mgmt rx event");
@@ -7882,7 +7918,34 @@ static void ath11k_mgmt_rx_event(struct ath11k_base *ab, struct sk_buff *skb)
 
 	hdr = (struct ieee80211_hdr *)skb->data;
 	fc = le16_to_cpu(hdr->frame_control);
+	frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
 
+	spin_lock_bh(&ab->base_lock);
+
+	peer = ath11k_peer_find_by_addr(ab, hdr->addr1);
+	if(!peer)
+		peer = ath11k_peer_find_by_addr(ab, hdr->addr3);
+	if (!peer) {
+		spin_unlock_bh(&ab->base_lock);
+		goto skip_mgmt_stats;
+	}
+
+	vif = peer->vif;
+
+	spin_unlock_bh(&ab->base_lock);
+
+	if (!vif)
+		goto skip_mgmt_stats;
+
+	spin_lock_bh(&ar->data_lock);
+
+	arvif = ath11k_vif_to_arvif(vif);
+	mgmt_stats = &arvif->mgmt_stats;
+	mgmt_stats->rx_cnt[frm_type]++;
+
+	spin_unlock_bh(&ar->data_lock);
+
+skip_mgmt_stats:
 	/* Firmware is guaranteed to report all essential management frames via
 	 * WMI while it can deliver some extra via HTT. Since there can be
 	 * duplicates split the reporting wrt monitor/sniffing.

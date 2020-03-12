@@ -1841,6 +1841,87 @@ static const struct file_operations fops_btcoex_algo = {
 	.open = simple_open
 };
 
+static ssize_t ath11k_dump_mgmt_stats(struct file *file, char __user *ubuf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	struct ath11k_vif *arvif = NULL;
+	struct ath11k_mgmt_frame_stats *mgmt_stats;
+	int len = 0, ret, i;
+	int size = (TARGET_NUM_VDEVS - 1) * 1500;
+	char *buf;
+	const char *mgmt_frm_type[ATH11K_STATS_MGMT_FRM_TYPE_MAX-1] = {"assoc_req", "assoc_resp",
+								       "reassoc_req", "reassoc_resp",
+								       "probe_req", "probe_resp",
+								       "timing_advertisement", "reserved",
+								       "beacon", "atim", "disassoc",
+								       "auth", "deauth", "action", "action_no_ack"};
+
+	if (ar->state != ATH11K_STATE_ON)
+		return -ENETDOWN;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&ar->conf_mutex);
+	spin_lock_bh(&ar->data_lock);
+
+	list_for_each_entry (arvif, &ar->arvifs, list) {
+		if (!arvif)
+			break;
+
+		if (arvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+			continue;
+
+		mgmt_stats = &arvif->mgmt_stats;
+		len += scnprintf(buf + len, size - len, "MGMT frame stats for vdev %u :\n",
+				 arvif->vdev_id);
+		len += scnprintf(buf + len, size - len, "  TX stats :\n ");
+		len += scnprintf(buf + len, size - len, "  Success frames:\n");
+		for (i = 0; i < ATH11K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "	%s: %d\n", mgmt_frm_type[i],
+					 mgmt_stats->tx_succ_cnt[i]);
+
+		len += scnprintf(buf + len, size - len, "  Failed frames:\n");
+
+		for (i = 0; i < ATH11K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "	%s: %d\n", mgmt_frm_type[i],
+					 mgmt_stats->tx_fail_cnt[i]);
+
+		len += scnprintf(buf + len, size - len, "  RX stats :\n");
+		len += scnprintf(buf + len, size - len, "  Success frames:\n");
+		for (i = 0; i < ATH11K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "	%s: %d\n", mgmt_frm_type[i],
+					 mgmt_stats->rx_cnt[i]);
+
+		len += scnprintf(buf + len, size - len, " Tx completion stats :\n");
+		len += scnprintf(buf + len, size - len, " success completions:\n");
+		for (i = 0; i < ATH11K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "       %s: %d\n", mgmt_frm_type[i],
+					 mgmt_stats->tx_compl_succ[i]);
+		len += scnprintf(buf + len, size - len, " failure completions:\n");
+		for (i = 0; i < ATH11K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "       %s: %d\n", mgmt_frm_type[i],
+					 mgmt_stats->tx_compl_fail[i]);
+	}
+
+	spin_unlock_bh(&ar->data_lock);
+
+	if (len > size)
+		len = size;
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	mutex_unlock(&ar->conf_mutex);
+	kfree(buf);
+	return ret;
+}
+
+static const struct file_operations fops_dump_mgmt_stats = {
+	.read = ath11k_dump_mgmt_stats,
+	.open = simple_open
+};
+
 int ath11k_debugfs_register(struct ath11k *ar)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -1883,6 +1964,9 @@ int ath11k_debugfs_register(struct ath11k *ar)
 	debugfs_create_file("btcoex_algorithm", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_btcoex_algo);
+	debugfs_create_file("dump_mgmt_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_dump_mgmt_stats);
 
 	if (ar->hw->wiphy->bands[NL80211_BAND_5GHZ]) {
 		debugfs_create_file("dfs_simulate_radar", 0200,

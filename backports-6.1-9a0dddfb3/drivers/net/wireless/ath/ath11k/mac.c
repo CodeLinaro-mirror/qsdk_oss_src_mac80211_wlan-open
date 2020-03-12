@@ -6123,9 +6123,9 @@ static int ath11k_mac_mgmt_tx(struct ath11k *ar, struct sk_buff *skb,
 	 */
 	if (is_prb_rsp &&
 	    atomic_read(&ar->num_pending_mgmt_tx) > ATH11K_PRB_RSP_DROP_THRESHOLD) {
-		ath11k_warn(ar->ab,
+		ath11k_dbg(ar->ab, ATH11K_DBG_MAC,
 			    "dropping probe response as pending queue is almost full\n");
-		return -ENOSPC;
+		return -EBUSY;
 	}
 
 	if (skb_queue_len_lockless(q) >= ATH11K_TX_MGMT_NUM_PENDING_MAX) {
@@ -6151,9 +6151,11 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_key_conf *key = info->control.hw_key;
+	struct ath11k_mgmt_frame_stats *mgmt_stats = &arvif->mgmt_stats;
 	struct ath11k_sta *arsta = NULL;
 	u32 info_flags = info->flags;
 	bool is_prb_rsp;
+	u16 frm_type = 0;
 	int ret;
 
 	memset(skb_cb, 0, sizeof(*skb_cb));
@@ -6167,12 +6169,21 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP) {
 		skb_cb->flags |= ATH11K_SKB_HW_80211_ENCAP;
 	} else if (ieee80211_is_mgmt(hdr->frame_control)) {
+		frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 		is_prb_rsp = ieee80211_is_probe_resp(hdr->frame_control);
 		ret = ath11k_mac_mgmt_tx(ar, skb, is_prb_rsp);
 		if (ret) {
-			ath11k_warn(ar->ab, "failed to queue management frame %d\n",
-				    ret);
+			if (ret != -EBUSY)
+				ath11k_warn(ar->ab, "failed to queue management frame %d\n",
+					    ret);
 			ieee80211_free_txskb(ar->hw, skb);
+			spin_lock_bh(&ar->data_lock);
+			mgmt_stats->tx_fail_cnt[frm_type]++;
+			spin_unlock_bh(&ar->data_lock);
+		} else {
+			spin_lock_bh(&ar->data_lock);
+			mgmt_stats->tx_succ_cnt[frm_type]++;
+			spin_unlock_bh(&ar->data_lock);
 		}
 		return;
 	}
