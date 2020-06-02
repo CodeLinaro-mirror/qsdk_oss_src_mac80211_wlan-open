@@ -9364,6 +9364,36 @@ int ath11k_wmi_fw_dbglog_cfg(struct ath11k *ar, u32 *module_id_bitmap,
 	return ret;
 }
 
+int ath11k_wmi_pdev_m3_dump_enable(struct ath11k *ar, u32 enable) {
+	struct ath11k_vif *arvif;
+	u32 m3_args[WMI_M3_MAX_TEST_ARGS];
+	struct wmi_unit_test_cmd wmi_ut;
+	bool arvif_found = false;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->is_started) {
+			arvif_found = true;
+			break;
+		}
+	}
+
+	if (!arvif_found)
+		return -EINVAL;
+
+	m3_args[WMI_M3_TEST_CMDID] = WMI_DBG_ENABLE_M3_SSR;
+	m3_args[WMI_M3_TEST_ENABLE] = enable;
+
+	wmi_ut.vdev_id = arvif->vdev_id;
+	wmi_ut.module_id = WMI_M3_UNIT_TEST_MODULE;
+	wmi_ut.num_args = WMI_M3_MAX_TEST_ARGS;
+	wmi_ut.diag_token = WMI_M3_UNIT_TEST_TOKEN;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI, "%s M3 SSR dump\n",
+		   enable ? "Enabling" : "Disabling");
+
+	return ath11k_wmi_send_unit_test_cmd(ar, wmi_ut, m3_args);
+}
+
 int ath11k_wmi_connect(struct ath11k_base *ab)
 {
 	u32 i;

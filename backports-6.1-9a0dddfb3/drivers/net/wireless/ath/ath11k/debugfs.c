@@ -1940,6 +1940,68 @@ static const struct file_operations fops_dump_mgmt_stats = {
 	.open = simple_open
 };
 
+static ssize_t ath11k_write_enable_m3_dump(struct file *file,
+					   const char __user *ubuf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	bool enable;
+	int ret;
+
+	if (kstrtobool_from_user(ubuf, count, &enable))
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	if (enable == ar->debug.enable_m3_dump) {
+		ret = count;
+		goto exit;
+	}
+
+	ret = ath11k_wmi_pdev_m3_dump_enable(ar, enable);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to enable m3 ssr dump %d\n",
+			    ret);
+		goto exit;
+	}
+
+	ar->debug.enable_m3_dump = enable;
+	ret = count;
+
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static ssize_t ath11k_read_enable_m3_dump(struct file *file,
+					  char __user *ubuf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	char buf[32];
+	size_t len = 0;
+
+	mutex_lock(&ar->conf_mutex);
+	len = scnprintf(buf, sizeof(buf) - len, "%d\n",
+			ar->debug.enable_m3_dump);
+	mutex_unlock(&ar->conf_mutex);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+}
+
+static const struct file_operations fops_enable_m3_dump = {
+	.read = ath11k_read_enable_m3_dump,
+	.write = ath11k_write_enable_m3_dump,
+	.open = simple_open
+};
+
 int ath11k_debugfs_register(struct ath11k *ar)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -2012,6 +2074,10 @@ int ath11k_debugfs_register(struct ath11k *ar)
 				    ar->debug.debugfs_pdev, ar,
 				    &fops_reset_ps_duration);
 	}
+
+	debugfs_create_file("enable_m3_dump", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_enable_m3_dump);
 
 	return 0;
 }

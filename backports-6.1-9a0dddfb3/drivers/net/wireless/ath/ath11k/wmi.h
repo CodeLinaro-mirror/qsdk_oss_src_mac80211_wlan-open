@@ -2137,6 +2137,11 @@ enum wmi_tlv_service {
 	WMI_MAX_EXT2_SERVICE = 384
 };
 
+enum wmi_unit_test_cmdid {
+	/* TODO: Add the remaining cmd ids if needed */
+	WMI_DBG_ENABLE_M3_SSR = 36,
+};
+
 enum {
 	WMI_SMPS_FORCED_MODE_NONE = 0,
 	WMI_SMPS_FORCED_MODE_DISABLED,
@@ -4137,6 +4142,15 @@ struct wmi_dfs_unit_test_arg {
 	u32 cmd_id;
 	u32 pdev_id;
 	u32 radar_param;
+};
+
+#define WMI_M3_UNIT_TEST_MODULE	0x22
+#define WMI_M3_UNIT_TEST_TOKEN	0
+
+enum wmi_m3_test_args_idx {
+	WMI_M3_TEST_CMDID,
+	WMI_M3_TEST_ENABLE,
+	WMI_M3_MAX_TEST_ARGS,
 };
 
 struct wmi_unit_test_cmd {
@@ -6648,6 +6662,7 @@ int ath11k_wmi_set_hw_mode(struct ath11k_base *ab,
 			   enum wmi_host_hw_mode_config_type mode);
 int ath11k_wmi_wow_host_wakeup_ind(struct ath11k *ar);
 int ath11k_wmi_wow_enable(struct ath11k *ar);
+int ath11k_wmi_pdev_m3_dump_enable(struct ath11k *ar, u32 enable);
 int ath11k_wmi_scan_prob_req_oui(struct ath11k *ar,
 				 const u8 mac_addr[ETH_ALEN]);
 int ath11k_wmi_fw_dbglog_cfg(struct ath11k *ar, u32 *module_id_bitmap,

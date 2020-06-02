@@ -202,6 +202,7 @@ struct ath11k_hw_params {
 	const struct ath11k_hw_hal_params *hal_params;
 	bool supports_dynamic_smps_6ghz;
 	bool alloc_cacheable_memory;
+	u32 m3_addr;
 	bool supports_rssi_stats;
 	bool fw_wmi_diag_event;
 	bool current_cc_support;
