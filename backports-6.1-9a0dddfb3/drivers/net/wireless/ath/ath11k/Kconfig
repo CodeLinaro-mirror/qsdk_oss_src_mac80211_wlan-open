@@ -13,6 +13,16 @@ config ATH11K
 
 	  If you choose to build a module, it'll be called ath11k.
 
+config ATH11K_NSS_SUPPORT
+	bool "QCA ath11k nss support"
+	depends on ATH11K
+	default n
+	select MAC80211_NSS_SUPPORT
+	---help---
+	  Enables NSS offload support for ATH11K driver
+
+	  If unsure, say Y to enable NSS offload support.
+
 config ATH11K_AHB
 	tristate "Atheros ath11k AHB support"
 	depends on m

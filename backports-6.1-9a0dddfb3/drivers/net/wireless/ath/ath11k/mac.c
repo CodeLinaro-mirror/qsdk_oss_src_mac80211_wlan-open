@@ -6354,6 +6354,16 @@ static int ath11k_mac_op_start(struct ieee80211_hw *hw)
 		}
 	}
 
+	/* nss offload requires eapol packets to be routed to wbm release ring */
+	if (ab->nss.enabled) {
+		ret = ath11k_dp_rx_pkt_type_filter(ar, ATH11K_PKT_TYPE_EAP,
+						   ATH11K_ROUTE_EAP_METADATA);
+		if (ret) {
+			ath11k_err(ar->ab, "failed to configure EAP pkt route: %d\n", ret);
+			goto err;
+		}
+	}
+
 	__ath11k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask);
 
 	/* TODO: Do we need to enable ANI? */

@@ -1177,6 +1177,44 @@ int ath11k_wmi_send_pdev_set_regdomain(struct ath11k *ar,
 	return ret;
 }
 
+int ath11k_wmi_send_pdev_pkt_route(struct ath11k *ar, struct ath11k_wmi_pkt_route_param *param)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_pdev_pkt_route_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_pkt_route_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_PDEV_UPDATE_PKT_ROUTING_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+
+	cmd->pdev_id = ar->pdev->pdev_id;
+	cmd->opcode = param->opcode;
+	cmd->route_type_bmap = param->route_type_bmap;
+	cmd->dst_ring = param->dst_ring;
+	cmd->meta_data = param->meta_data;
+	cmd->dst_ring_handler = param->dst_ring_handler;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+		   "WMI pdev pkt route opcode %d route_bmap %d dst_ring %d meta_datan %d dst_ringg_handler %d\n",
+		   param->opcode, param->route_type_bmap,
+		   param->dst_ring, param->meta_data, param->dst_ring_handler);
+
+	ret = ath11k_wmi_cmd_send(wmi, skb, WMI_PDEV_UPDATE_PKT_ROUTING_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to send WMI_PDEV_UPDATE_PKT_ROUTING cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath11k_wmi_set_peer_param(struct ath11k *ar, const u8 *peer_addr,
 			      u32 vdev_id, u32 param_id, u32 param_val)
 {

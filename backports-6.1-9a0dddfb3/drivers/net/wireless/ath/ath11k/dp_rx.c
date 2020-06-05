@@ -994,6 +994,29 @@ unlock_exit:
 	spin_unlock_bh(&ab->base_lock);
 }
 
+/* Sends WMI config to filter packets to route packets to WBM release ring */
+int ath11k_dp_rx_pkt_type_filter(struct ath11k *ar, enum ath11k_routing_pkt_type pkt_type, u32 meta_data)
+{
+	struct ath11k_wmi_pkt_route_param param;
+	int ret;
+
+	/* Routing Eapol packets to CCE is only allowed now */
+	if (pkt_type != ATH11K_PKT_TYPE_EAP)
+		return -EINVAL;
+
+	param.opcode = ATH11K_WMI_PKTROUTE_ADD;
+	param.meta_data = meta_data;
+	param.dst_ring = ATH11K_ROUTE_WBM_RELEASE;
+	param.dst_ring_handler = ATH11K_WMI_PKTROUTE_USE_CCE;
+	param.route_type_bmap = 1 << pkt_type;
+
+	ret = ath11k_wmi_send_pdev_pkt_route(ar, &param);
+	if (ret)
+		ath11k_warn(ar->ab, "failed to configure pkt route %d", ret);
+
+	return ret;
+}
+
 int ath11k_peer_rx_tid_setup(struct ath11k *ar, const u8 *peer_mac, int vdev_id,
 			     u8 tid, u32 ba_win_sz, u16 ssn,
 			     enum hal_pn_type pn_type)

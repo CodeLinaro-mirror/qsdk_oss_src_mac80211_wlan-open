@@ -21,6 +21,34 @@
 #define DP_RX_MPDU_ERR_MPDU_LEN			BIT(6)
 #define DP_RX_MPDU_ERR_UNENCRYPTED_FRAME	BIT(7)
 
+/* different supported pkt types for routing */
+enum ath11k_routing_pkt_type {
+	ATH11K_PKT_TYPE_ARP_IPV4,
+	ATH11K_PKT_TYPE_NS_IPV6,
+	ATH11K_PKT_TYPE_IGMP_IPV4,
+	ATH11K_PKT_TYPE_MLD_IPV6,
+	ATH11K_PKT_TYPE_DHCP_IPV4,
+	ATH11K_PKT_TYPE_DHCP_IPV6,
+	ATH11K_PKT_TYPE_DNS_TCP_IPV4,
+	ATH11K_PKT_TYPE_DNS_TCP_IPV6,
+	ATH11K_PKT_TYPE_DNS_UDP_IPV4,
+	ATH11K_PKT_TYPE_DNS_UDP_IPV6,
+	ATH11K_PKT_TYPE_ICMP_IPV4,
+	ATH11K_PKT_TYPE_ICMP_IPV6,
+	ATH11K_PKT_TYPE_TCP_IPV4,
+	ATH11K_PKT_TYPE_TCP_IPV6,
+	ATH11K_PKT_TYPE_UDP_IPV4,
+	ATH11K_PKT_TYPE_UDP_IPV6,
+	ATH11K_PKT_TYPE_IPV4,
+	ATH11K_PKT_TYPE_IPV6,
+	ATH11K_PKT_TYPE_EAP,
+	ATH11K_PKT_TYPE_MAX
+};
+
+#define ATH11K_RX_PROTOCOL_TAG_START_OFFSET  128
+#define ATH11K_ROUTE_WBM_RELEASE	5
+#define ATH11K_ROUTE_EAP_METADATA	(ATH11K_RX_PROTOCOL_TAG_START_OFFSET + ATH11K_PKT_TYPE_EAP)
+
 enum dp_rx_decap_type {
 	DP_RX_DECAP_TYPE_RAW,
 	DP_RX_DECAP_TYPE_NATIVE_WIFI,
@@ -76,6 +104,9 @@ void ath11k_peer_rx_tid_delete(struct ath11k *ar,
 int ath11k_peer_rx_tid_setup(struct ath11k *ar, const u8 *peer_mac, int vdev_id,
 			     u8 tid, u32 ba_win_sz, u16 ssn,
 			     enum hal_pn_type pn_type);
+int ath11k_dp_rx_pkt_type_filter(struct ath11k *ar,
+				  enum ath11k_routing_pkt_type pkt_type,
+				  u32 meta_data);
 void ath11k_dp_htt_htc_t2h_msg_handler(struct ath11k_base *ab,
 				       struct sk_buff *skb);
 int ath11k_dp_pdev_reo_setup(struct ath11k_base *ab);

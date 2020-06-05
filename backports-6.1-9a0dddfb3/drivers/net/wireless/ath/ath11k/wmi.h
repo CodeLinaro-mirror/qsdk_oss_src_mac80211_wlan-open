@@ -2904,6 +2904,27 @@ struct pdev_set_regdomain_params {
 	u32 pdev_id;
 };
 
+ /* Defines various options for routing policy */
+enum wmi_pdev_dest_ring_handler_type {
+	ATH11K_WMI_PKTROUTE_USE_CCE  = 0,
+	ATH11K_WMI_PKTROUTE_USE_ASPT = 1,
+	ATH11K_WMI_PKTROUTE_USE_FSE  = 2,
+	ATH11K_WMI_PKTROUTE_USE_CCE2 = 3,
+};
+
+enum ath11k_wmi_pkt_route_opcode {
+	ATH11K_WMI_PKTROUTE_ADD,
+	ATH11K_WMI_PKTROUTE_DEL,
+};
+
+struct ath11k_wmi_pkt_route_param {
+	enum ath11k_wmi_pkt_route_opcode opcode;
+	u32 route_type_bmap;
+	u32 dst_ring_handler;
+	u32 dst_ring;
+	u32 meta_data;
+};
+
 struct rx_reorder_queue_remove_params {
 	u8 *peer_macaddr;
 	u16 vdev_id;
@@ -3156,6 +3177,16 @@ struct wmi_pdev_set_regdomain_cmd {
 	u32 conformance_test_limit_2g;
 	u32 conformance_test_limit_5g;
 	u32 dfs_domain;
+} __packed;
+
+struct wmi_pdev_pkt_route_cmd {
+	u32 tlv_header;
+	u32 pdev_id;
+	u32 opcode;
+	u32 route_type_bmap;
+	u32 dst_ring;
+	u32 meta_data;
+	u32 dst_ring_handler;
 } __packed;
 
 struct wmi_peer_set_param_cmd {
@@ -6726,6 +6757,8 @@ int ath11k_wmi_send_peer_create_cmd(struct ath11k *ar,
 int ath11k_wmi_vdev_set_param_cmd(struct ath11k *ar, u32 vdev_id,
 				  u32 param_id, u32 param_value);
 
+int ath11k_wmi_send_pdev_pkt_route(struct ath11k *ar,
+				   struct ath11k_wmi_pkt_route_param *param);
 int ath11k_wmi_set_sta_ps_param(struct ath11k *ar, u32 vdev_id,
 				u32 param, u32 param_value);
 int ath11k_wmi_force_fw_hang_cmd(struct ath11k *ar, u32 type, u32 delay_time_ms);

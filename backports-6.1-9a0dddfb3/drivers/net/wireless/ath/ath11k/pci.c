@@ -72,6 +72,20 @@ static u32 ath11k_pci_get_window_start(struct ath11k_base *ab, u32 offset)
 		return ATH11K_PCI_WINDOW_START;
 }
 
+static inline u32 ath11k_pci_get_window_offset(struct ath11k_base *ab,
+					       u32 offset)
+{
+	u32 window_start;
+
+	if (ab->hw_params.static_window_map) {
+		window_start = ath11k_pci_get_window_start(ab, offset);
+
+		if (window_start)
+			offset = window_start + (offset & ATH11K_PCI_WINDOW_RANGE_MASK);
+	}
+	return offset;
+}
+
 static inline void ath11k_pci_select_window(struct ath11k_pci *ab_pci, u32 offset)
 {
 	struct ath11k_base *ab = ab_pci->ab;
@@ -723,6 +737,7 @@ static const struct ath11k_hif_ops ath11k_pci_hif_ops = {
 	.map_service_to_pipe = ath11k_pcic_map_service_to_pipe,
 	.ce_irq_enable = ath11k_pci_hif_ce_irq_enable,
 	.ce_irq_disable = ath11k_pci_hif_ce_irq_disable,
+	.get_window_offset = ath11k_pci_get_window_offset,
 	.get_ce_msi_idx = ath11k_pcic_get_ce_msi_idx,
 };
 

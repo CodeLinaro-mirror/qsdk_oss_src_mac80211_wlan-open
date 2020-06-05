@@ -31,6 +31,7 @@ ath11k-$(CPTCFG_ATH11K_SPECTRAL) += spectral.o
 ath11k-$(CONFIG_PM) += wow.o
 ath11k-$(CONFIG_DEV_COREDUMP) += coredump.o
 ath11k-$(CPTCFG_ATH11K_PKTLOG) += pktlog.o
+ath11k-$(CPTCFG_ATH11K_NSS_SUPPORT) += nss.o
 
 obj-$(CPTCFG_ATH11K_AHB) += ath11k_ahb.o
 ath11k_ahb-y += ahb.o
