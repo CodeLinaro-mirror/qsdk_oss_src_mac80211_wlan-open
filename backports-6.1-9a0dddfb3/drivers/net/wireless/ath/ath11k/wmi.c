@@ -4443,6 +4443,7 @@ ath11k_wmi_copy_resource_config(struct wmi_resource_config *wmi_cfg,
 	wmi_cfg->max_bssid_rx_filters = tg_cfg->max_bssid_rx_filters;
 	wmi_cfg->use_pdev_id = tg_cfg->use_pdev_id;
 	wmi_cfg->flag1 = tg_cfg->flag1;
+	wmi_cfg->flag1 |= WMI_RSRC_CFG_FLAG1_ACK_RSSI;
 	wmi_cfg->peer_map_unmap_v2_support = tg_cfg->peer_map_unmap_v2_support;
 	wmi_cfg->sched_params = tg_cfg->sched_params;
 	wmi_cfg->twt_ap_pdev_count = tg_cfg->twt_ap_pdev_count;
@@ -6262,7 +6263,7 @@ static int wmi_process_mgmt_tx_comp(struct ath11k *ar,
 	arvif = ath11k_vif_to_arvif(vif);
 	mgmt_stats = &arvif->mgmt_stats;
 
-	if (!status)
+	if (!tx_compl_param->status)
 		mgmt_stats->tx_compl_succ[frm_type]++;
 	else
 		mgmt_stats->tx_compl_fail[frm_type]++;
