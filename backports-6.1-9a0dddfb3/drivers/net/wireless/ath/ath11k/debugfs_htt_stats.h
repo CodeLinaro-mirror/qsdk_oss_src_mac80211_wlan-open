@@ -111,7 +111,10 @@ enum htt_tlv_tag_t {
 	HTT_STATS_RX_PDEV_UL_MIMO_USER_STATS_TAG            = 96,
 	HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_STATS_TAG          = 97,
 	HTT_STATS_RX_FSE_STATS_TAG                          = 98,
+	HTT_STATS_SCHED_TXQ_SUPERCYCLE_TRIGGER_TAG	    = 100,
 	HTT_STATS_PEER_CTRL_PATH_TXRX_STATS_TAG		    = 101,
+	HTT_STATS_PDEV_CTRL_PATH_TX_STATS_TAG		    = 102,
+	HTT_STATS_RX_PDEV_RATE_EXT_STATS_TAG		    = 103,
 	HTT_STATS_PDEV_TX_RATE_TXBF_STATS_TAG		    = 108,
 	HTT_STATS_TXBF_OFDMA_NDPA_STATS_TAG		    = 113,
 	HTT_STATS_TXBF_OFDMA_NDP_STATS_TAG		    = 114,
@@ -458,6 +461,12 @@ enum htt_stats_param_type {
 #define HTT_TX_PEER_STATS_NUM_MCS_COUNTERS        12
 #define HTT_TX_PEER_STATS_NUM_GI_COUNTERS          4
 #define HTT_TX_PEER_STATS_NUM_DCM_COUNTERS         5
+/* HTT_TX_PEER_STATS_NUM_BW_COUNTERS:
+  * bw index 0: rssi_pri20_chain0
+  * bw index 1: rssi_ext20_chain0
+  * bw index 2: rssi_ext40_low20_chain0
+  * bw index 3: rssi_ext40_high20_chain0
+  */
 #define HTT_TX_PEER_STATS_NUM_BW_COUNTERS          4
 #define HTT_TX_PEER_STATS_NUM_SPATIAL_STREAMS      8
 #define HTT_TX_PEER_STATS_NUM_PREAMBLE_TYPES       HTT_STATS_PREAM_COUNT
@@ -2152,5 +2161,36 @@ static inline int ath11k_debugfs_htt_stats_req(struct ath11k *ar)
 }
 
 #endif /* CPTCFG_ATH11K_DEBUGFS */
+
+/* == PDEV RX RATE EXT STATS == */
+#define HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT 14
+/* HTT_RX_PEER_STATS_NUM_BW_EXT_COUNTERS:
+ * bw index 4 (bw ext index 0): rssi_ext80_low20_chain0
+ * bw index 5 (bw ext index 1): rssi_ext80_low_high20_chain0
+ * bw index 6 (bw ext index 2): rssi_ext80_high_low20_chain0
+ * bw index 7 (bw ext index 3): rssi_ext80_high20_chain0
+ */
+#define HTT_RX_PEER_STATS_NUM_BW_EXT_COUNTERS 4
+#define HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS 4
+
+struct htt_rx_pdev_rate_ext_stats_tlv {
+	u8 rssi_chain_ext[HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS]
+		         [HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS];
+					/* units = dB above noise floor */
+	s8 rx_per_chain_rssi_ext_in_dbm[HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS]
+				       [HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS];
+	s32 rssi_mcast; /* rx mcast signal strength value in dBm unit */
+	s32 rssi_mgmt; /* rx mgmt packet signal strength value in dBm unit */
+	u32 rx_mcs_ext[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT];
+	u32 rx_stbc_ext[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT];
+	u32 rx_gi_ext[HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
+		     [HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT];
+	u32 ul_ofdma_rx_mcs_ext[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT];
+	u32 ul_ofdma_rx_gi_ext[HTT_TX_PDEV_STATS_NUM_GI_COUNTERS]
+			      [HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT];
+	u32 rx_11ax_su_txbf_mcs_ext[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT];
+	u32 rx_11ax_mu_txbf_mcs_ext[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT];
+	u32 rx_11ax_dl_ofdma_mcs_ext[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT];
+};
 
 #endif
