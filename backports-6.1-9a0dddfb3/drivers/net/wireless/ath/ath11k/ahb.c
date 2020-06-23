@@ -1164,10 +1164,12 @@ static int ath11k_ahb_fw_resource_deinit(struct ath11k_base *ab)
 static int ath11k_ahb_probe(struct platform_device *pdev)
 {
 	struct ath11k_base *ab;
+	struct device *dev = &pdev->dev;
 	const struct ath11k_hif_ops *hif_ops;
 	const struct ath11k_pci_ops *pci_ops;
 	enum ath11k_hw_rev hw_rev;
 	int ret;
+	u32 hw_mode_id;
 
 	hw_rev = (uintptr_t)device_get_match_data(&pdev->dev);
 
@@ -1204,6 +1206,7 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 	ab->pdev = pdev;
 	ab->hw_rev = hw_rev;
 	ab->fw_mode = ATH11K_FIRMWARE_MODE_NORMAL;
+	ab->enable_cold_boot_cal = ath11k_cold_boot_cal;
 	platform_set_drvdata(pdev, ab);
 
 	ret = ath11k_pcic_register_pci_ops(ab, pci_ops);
@@ -1262,8 +1265,12 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 		goto err_ce_free;
 	}
 
+	/* TODO
+	 * below 4 lines can be removed once fw changes available
+	 */
+	of_property_read_u32(dev->of_node, "wlan-hw-mode",
+			&hw_mode_id);
 	ath11k_qmi_fwreset_from_cold_boot(ab);
-
 	return 0;
 
 err_ce_free:

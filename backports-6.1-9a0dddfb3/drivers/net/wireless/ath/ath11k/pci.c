@@ -836,6 +836,7 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 			goto err_pci_free_region;
 		}
 		ab->hw_rev = ATH11K_HW_QCN9074_HW10;
+		ab->enable_cold_boot_cal = ath11k_cold_boot_cal;
 		break;
 	case WCN6855_DEVICE_ID:
 		ret = ath11k_pcic_register_pci_ops(ab, &ath11k_pci_ops_qca6390);

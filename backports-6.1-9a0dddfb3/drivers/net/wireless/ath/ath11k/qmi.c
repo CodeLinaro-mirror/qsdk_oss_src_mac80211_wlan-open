@@ -3414,6 +3414,33 @@ int ath11k_qmi_fwreset_from_cold_boot(struct ath11k_base *ab)
 }
 EXPORT_SYMBOL(ath11k_qmi_fwreset_from_cold_boot);
 
+int ath11k_qmi_fwreset_from_cold_boot(struct ath11k_base *ab)
+{
+	int timeout;
+
+	if (ab->enable_cold_boot_cal == 0 || ab->qmi.cal_done)
+		return 0;
+
+	ath11k_dbg(ab, ATH11K_DBG_QMI, "wait for cold boot done\n");
+
+	timeout = wait_event_timeout(ab->qmi.cold_boot_waitq, (ab->qmi.cal_done  == 1),
+				     ATH11K_COLD_BOOT_FW_RESET_DELAY);
+	if (timeout <= 0) {
+		ath11k_warn(ab, "Coldboot Calibration timed out\n");
+		return -ETIMEDOUT;
+	}
+
+	/* reset the firmware */
+	ath11k_info(ab, "power down to restart firmware in mission mode\n");
+	ath11k_qmi_firmware_stop(ab);
+	ath11k_hif_power_down(ab);
+	ath11k_info(ab, "power up to restart firmware in mission mode\n");
+	ath11k_hif_power_up(ab);
+	ath11k_dbg(ab, ATH11K_DBG_QMI, "exit wait for cold boot done\n");
+	return 0;
+}
+EXPORT_SYMBOL(ath11k_qmi_fwreset_from_cold_boot);
+
 static int ath11k_qmi_process_coldboot_calibration(struct ath11k_base *ab)
 {
 	long time_left;
@@ -3679,7 +3706,7 @@ static void ath11k_qmi_msg_mem_request_cb(struct qmi_handle *qmi_hdl,
 				    ret);
 			return;
 		}
-	} else if (msg->mem_seg_len > 3) {
+	} else {
 		ret = ath11k_qmi_alloc_target_mem_chunk(ab);
 		if (ret) {
 			ath11k_warn(ab, "failed to allocate qmi target memory: %d\n",
