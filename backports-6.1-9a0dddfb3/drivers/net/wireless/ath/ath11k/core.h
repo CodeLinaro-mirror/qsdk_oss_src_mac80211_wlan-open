@@ -1049,6 +1049,7 @@ struct ath11k_base {
 	bool enable_cold_boot_cal;
 
 	struct ath11k_hw_params hw_params;
+	bool is_qdss_tracing;
 
 	const struct firmware *cal_file;
 
@@ -1340,6 +1341,8 @@ int ath11k_core_suspend(struct ath11k_base *ab);
 void ath11k_core_pre_reconfigure_recovery(struct ath11k_base *ab);
 bool ath11k_core_coldboot_cal_support(struct ath11k_base *ab);
 
+void ath11k_coredump_qdss_dump(struct ath11k_base *ab,
+			       struct ath11k_qmi_event_qdss_trace_save_data *event_data);
 const struct firmware *ath11k_core_firmware_request(struct ath11k_base *ab,
 						    const char *filename);
 void ath11k_core_wait_dump_collect(struct ath11k_base *ab);

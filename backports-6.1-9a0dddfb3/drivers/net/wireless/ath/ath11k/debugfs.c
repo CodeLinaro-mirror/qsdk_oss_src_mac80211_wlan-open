@@ -564,6 +564,79 @@ static const struct file_operations fops_simulate_fw_crash = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_read_trace_qdss(struct file *file,
+				      char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	const char buf[] =
+	"'1` - this will start qdss trace collection\n"
+	"`0` - this will stop and save the qdss trace collection\n";
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, strlen(buf));
+}
+
+static ssize_t
+ath11k_write_trace_qdss(struct file *file,
+			const char __user *user_buf,
+			size_t count, loff_t *ppos)
+{
+	struct ath11k_base *ab = file->private_data;
+	struct ath11k_pdev *pdev;
+	struct ath11k *ar;
+	int i, ret, radioup = 0;
+	bool qdss_enable;
+
+	if (kstrtobool_from_user(user_buf, count, &qdss_enable))
+		return -EINVAL;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		ar = pdev->ar;
+		if (ar && ar->state == ATH11K_STATE_ON) {
+			radioup = 1;
+			break;
+		}
+	}
+	if (radioup == 0) {
+		ath11k_err(ab, "radio is not up\n");
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	if (qdss_enable) {
+		if (ab->is_qdss_tracing) {
+			ret = count;
+			goto exit;
+		}
+		ath11k_config_qdss(ab);
+	} else {
+		if (!ab->is_qdss_tracing) {
+			ret = count;
+			goto exit;
+		}
+		if (!ab->hw_params.fixed_bdf_addr) {
+			ret = ath11k_send_qdss_trace_mode_req(ab,
+							      QMI_WLANFW_QDSS_TRACE_OFF_V01);
+			if (ret < 0)
+				ath11k_warn(ab,
+					    "Failed to trace QDSS: %d\n", ret);
+		}
+	}
+
+	ret = count;
+
+exit:
+	return ret;
+}
+
+static const struct file_operations fops_trace_qdss = {
+	.read = ath11k_read_trace_qdss,
+	.write = ath11k_write_trace_qdss,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath11k_write_enable_extd_tx_stats(struct file *file,
 						 const char __user *ubuf,
 						 size_t count, loff_t *ppos)
@@ -992,6 +1065,10 @@ int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 
 	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
 			    &fops_simulate_fw_crash);
+
+	if (ab->hw_params.is_qdss_support)
+		debugfs_create_file("trace_qdss", 0600, ab->debugfs_soc, ab,
+			 	    &fops_trace_qdss);
 
 	debugfs_create_file("soc_dp_stats", 0400, ab->debugfs_soc, ab,
 			    &fops_soc_dp_stats);
