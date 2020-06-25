@@ -660,6 +660,8 @@ enum wmi_tlv_event_id {
 	WMI_PDEV_RAP_INFO_EVENTID,
 	WMI_CHAN_RF_CHARACTERIZATION_INFO_EVENTID,
 	WMI_SERVICE_READY_EXT2_EVENTID,
+	WMI_PDEV_MULTIPLE_VDEV_RESTART_RESP_EVENTID,
+	WMI_PDEV_GET_TPC_STATS_EVENTID,
 	WMI_VDEV_START_RESP_EVENTID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_STOPPED_EVENTID,
 	WMI_VDEV_INSTALL_KEY_COMPLETE_EVENTID,
@@ -1139,6 +1141,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_ARRAY_BYTE,
 	WMI_TAG_ARRAY_STRUCT,
 	WMI_TAG_ARRAY_FIXED_STRUCT,
+	WMI_TAG_ARRAY_INT16,
 	WMI_TAG_LAST_ARRAY_ENUM = 31,
 	WMI_TAG_SERVICE_READY_EVENT,
 	WMI_TAG_HAL_REG_CAPABILITIES,
@@ -1892,6 +1895,12 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_NON_SRG_OBSS_BSSID_ENABLE_BITMAP_CMD,
 	WMI_TAG_REGULATORY_RULE_EXT_STRUCT = 0x3A9,
 	WMI_TAG_REG_CHAN_LIST_CC_EXT_EVENT,
+	WMI_TAG_TPC_STATS_GET_CMD = 0x38B,
+	WMI_TAG_TPC_STATS_EVENT_FIXED_PARAM,
+	WMI_TAG_TPC_STATS_CONFIG_EVENT,
+	WMI_TAG_TPC_STATS_REG_PWR_ALLOWED,
+	WMI_TAG_TPC_STATS_RATES_ARRAY,
+	WMI_TAG_TPC_STATS_CTL_PWR_TABLE_EVENT,
 	WMI_TAG_VDEV_SET_TPC_POWER_CMD = 0x3B5,
 	WMI_TAG_VDEV_CH_POWER_INFO,
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
@@ -5890,6 +5899,183 @@ struct wmi_debug_log_config_cmd_fixed_param {
 	u32 value;
 } __packed;
 
+enum wmi_tpc_pream_bw {
+	WMI_TPC_PREAM_CCK,
+	WMI_TPC_PREAM_OFDM,
+	WMI_TPC_PREAM_HT20,
+	WMI_TPC_PREAM_HT40,
+	WMI_TPC_PREAM_VHT20,
+	WMI_TPC_PREAM_VHT40,
+	WMI_TPC_PREAM_VHT80,
+	WMI_TPC_PREAM_VHT160,
+	WMI_TPC_PREAM_HE20,
+	WMI_TPC_PREAM_HE40,
+	WMI_TPC_PREAM_HE80,
+	WMI_TPC_PREAM_HE160,
+	WMI_TPC_PREAM_MAX
+};
+#define ATH11K_2G_MAX_FREQUENCY		2495
+#define WMI_TPC_CONFIG			BIT(1)
+#define WMI_TPC_REG_PWR_ALLOWED		BIT(2)
+#define WMI_TPC_RATES_ARRAY1		BIT(3)
+#define WMI_TPC_RATES_ARRAY2		BIT(4)
+#define WMI_TPC_RATES_DL_OFDMA_ARRAY	BIT(5)
+#define WMI_TPC_CTL_PWR_ARRAY		BIT(6)
+#define WMI_TPC_CTL_PWR_160ARRAY	BIT(7)
+#define WMI_TPC_CTL_PWR_DL_OFDMA	BIT(8)
+#define WMI_TPC_CONFIG_PARAM		0x1
+#define ATH11K_TPC_RATE_ARRAY_MU	GENMASK(15, 8)
+#define ATH11K_TPC_RATE_ARRAY_SU	GENMASK(7, 0)
+#define ATH11K_HW_PREAMBLE(_rcode) (((_rcode) >> 8) & 0x7)
+#define ATH11K_HW_NSS(_rcode) (((_rcode) >> 5) & 0x7)
+#define MODULATION_LIMIT 		126
+#define TPC_STATS_REG_PWR_ALLOWED_TYPE	0
+#define HE_EXTRA_MCS_SUPPORT		GENMASK(31, 16)
+
+struct wmi_tpc_stats_cmd {
+	u32 tlv_header;
+	u32 pdev_id;
+	u32 param;
+} __packed;
+
+struct wmi_tpc_stats_event_fixed_param {
+	u32 pdev_id;
+	/* Message will be split into smaller chunks to fit in the WMI
+	 * svc msg size limit
+	 */
+	u32 end_of_event;
+	/*Incremented for every event chunk for Host to know the sequence */
+	u32 event_count;
+	/* wmi_tpc_configs TLV to follow
+	 * wmi_max_reg_power_allowed TLV to follow
+	 * wmi_tpc_rates_array
+	 * wmi_tpc_ctl_pwr_table
+	 */
+} __packed;
+
+struct wmi_tpc_configs {
+	u32 reg_domain;
+	/* current channel in MHz */
+	u32 chan_freq;
+	/* current phy mode */
+	u32 phy_mode;
+	/* Max antenna gain for current regulatory in 0.25 dBm steps */
+	u32 twice_antenna_reduction;
+	/* Max transmit power allowed in regulatory domain in 0.25 dBm steps */
+	u32 twice_max_reg_power;
+	/* User specified antenna gain in 0.25 dBm steps */
+	s32 twice_antenna_gain;
+	/* The overall power limit in 0.25 dBm steps */
+	u32 power_limit;
+	/* The total number of rates supported */
+	u32 rate_max;
+	/* The total number of active chains */
+	u32 num_tx_chain;
+	/* not used for now */
+	u32 ctl;
+	u32 flags;
+} __packed;
+
+struct wmi_max_reg_power_allowed {
+	/* 0: maxRegAllowedPower[TX_NUM_CHAIN];
+	 * 1:maxRegPowerAGCDD[TX_NUM_CHAIN - 1][TX_NUM_CHAIN - 1],
+	 * 2:maxRegPowerAGSTBC[TX_NUM_CHAIN - 1][TX_NUM_CHAIN - 1],
+	 * 3:maxRegPowerAGTXBF([TX_NUM_CHAIN - 1][TX_NUM_CHAIN - 1]
+	 * type 1-3 no used, for future use
+	 */
+	u32 reg_power_type;
+	/* Length of the regulatory power array being sent in bytes */
+	u32 reg_array_len;
+	/* dimensions below
+	 * d1 - [TX_NUM_CHAIN - 1]
+	 * d2- [TX_NUM_CHAIN - 1] for cdd, stbc, txbf
+	 * d2 = 1 for maxRegAllowedPower
+	 * d3 = 1  d4 = 1
+	 */
+	u32 d1;
+	u32 d2;
+	u32 d3;
+	u32 d4;
+	s16 *reg_pwr_array;
+} __packed;
+
+struct wmi_tpc_rates_array {
+	/* 0: ratesArray[TPC_RATE_MAX],
+	 * 1: ratesArray2[TPC_RATE_MAX] (for chain > 4),
+	 * 2: dl_ofdma rate array. Type 2 unsed, for future use
+	 */
+	u32 rate_array_type;
+	u32 rate_array_len;
+	s16 *rate_array;
+} __packed;
+
+struct wmi_tpc_ctl_pwr_table {
+	/* 0: ctl_array; 1: ctl_160 array; 2: ctl_dlOfdma array
+	 * Type 2 unsed, for future use
+	 */
+	u32 ctl_array_type;
+	/* Length of the CTL array being sent in bytes */
+	u32 ctl_array_len;
+	/* Message MAY be split into smaller chunks to fit in the WMI svc msg
+	 * not used for now
+	 */
+	u32 end_of_ctl_pwr;
+	/* Incremented for every event chunk for Host to know the sequence
+	 * not used for now
+	 */
+	u32 ctl_pwr_count;
+	/* Dimensions below
+	 * For ctl_array
+	 * d4 = No of chains
+	 * d3 = BF on/off = 2
+	 * d2 = 10 which the number of different tx modes-legacy, HT20, HT40 etc
+	 * d1 = NSS  number of spatial streams
+	 * s8 ctl_160array[WHAL_MAX_NUM_CHAINS][pri_or_sec][bf][nss].
+	 * For ctl_160 array
+	 * d4 = No of chains	d3 = primary/secondary channel
+	 * d2 = BF on/off	d1 = NSS
+	 */
+	u32 d1;
+	u32 d2;
+	u32 d3;
+	u32 d4;
+	s8 *ctl_pwr_table;
+} __packed;
+
+struct wmi_tpc_stats_event {
+	u32 pdev_id;
+	u32 event_count;
+	u32 end_of_event;
+	/* Bitmap to set and use the received tlvs alone. Not all tlvs are
+	 * supported for all chipset. For eg ctl_160 is not present for chipset
+	 * which does not have 160Mhz support
+	 */
+	u32 tlvs_rcvd;
+	struct wmi_max_reg_power_allowed max_reg_allowed_power;
+	struct wmi_tpc_rates_array rates_array1;
+	struct wmi_tpc_rates_array rates_array2;
+	struct wmi_tpc_configs tpc_config;
+	struct wmi_tpc_ctl_pwr_table ctl_array;
+	struct wmi_tpc_ctl_pwr_table ctl_160array;
+};
+
+enum ath11k_wmi_tpc_stats_events {
+	ATH11K_TPC_STATS_CONFIG_REG_PWR_EVENT,
+	ATH11K_TPC_STATS_RATES_EVENT1,
+	ATH11K_TPC_STATS_RATES_EVENT2,
+	ATH11K_TPC_STATS_CTL_TABLE_EVENT
+};
+
+enum ath11k_wmi_tpc_stats_rates_array {
+	ATH11K_TPC_STATS_RATES_ARRAY1,
+	ATH11K_TPC_STATS_RATES_ARRAY2,
+};
+
+enum ath11k_wmi_tpc_stats_ctl_array {
+	ATH11K_TPC_STATS_CTL_ARRAY,
+	ATH11K_TPC_STATS_CTL_160ARRAY,
+};
+
 #define MAX_RADIOS 3
 
 #define WMI_SERVICE_READY_TIMEOUT_HZ (5 * HZ)
@@ -6692,5 +6878,7 @@ bool ath11k_wmi_supports_6ghz_cc_ext(struct ath11k *ar);
 int ath11k_wmi_send_vdev_set_tpc_power(struct ath11k *ar,
 				       u32 vdev_id,
 				       struct ath11k_reg_tpc_power_info *param);
+int ath11k_wmi_pdev_get_tpc_table_cmdid(struct ath11k *ar);
+void ath11k_wmi_free_tpc_stats_mem(struct ath11k *ar);
 
 #endif

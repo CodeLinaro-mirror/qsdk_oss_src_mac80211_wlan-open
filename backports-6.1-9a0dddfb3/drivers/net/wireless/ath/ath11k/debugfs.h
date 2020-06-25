@@ -83,6 +83,43 @@ struct ath11k_debug_dbr {
 	bool dbr_debug_enabled;
 };
 
+#define ATH11K_CCK_RATES			4
+#define ATH11K_OFDM_RATES			8
+#define AT11K_HT_RATES				8
+/* VHT rates includes extra MCS. sent by FW */
+#define ATH11K_VHT_RATES			12
+#define ATH11K_HE_RATES				12
+#define ATH11K_HE_RATES_WITH_EXTRA_MCS		14
+#define ATH11K_NSS_1				1
+#define ATH11K_NSS_4				4
+#define ATH11K_NSS_8				8
+#define TPC_STATS_WAIT_TIME			(1 * HZ)
+#define MAX_TPC_PREAM_STR_LEN			7
+/* Max negative power value to indicate error */
+#define TPC_INVAL				-128
+#define TPC_MAX					127
+#define TPC_STATS_TOT_ROW			700
+#define TPC_STATS_TOT_COLUMN			100
+#define ATH11K_TPC_STATS_BUF_SIZE   (TPC_STATS_TOT_ROW * TPC_STATS_TOT_COLUMN)
+
+enum ath11k_debug_tpc_stats_type {
+	ATH11K_DBG_TPC_STATS_SU,
+	ATH11K_DBG_TPC_STATS_SU_WITH_TXBF,
+	ATH11K_DBG_TPC_STATS_MU,
+	ATH11K_DBG_TPC_STATS_MU_WITH_TXBF,
+	/*last*/
+	ATH11K_DBG_TPC_MAX_STATS,
+};
+
+enum ath11k_debug_tpc_stats_ctl_mode {
+	ATH11K_TPC_STATS_CTL_MODE_CCK,
+	ATH11K_TPC_STATS_CTL_MODE_OFDM,
+	ATH11K_TPC_STATS_CTL_MODE_BW_20,
+	ATH11K_TPC_STATS_CTL_MODE_BW_40,
+	ATH11K_TPC_STATS_CTL_MODE_BW_80,
+	ATH11K_TPC_STATS_CTL_MODE_BW_160,
+};
+
 struct debug_htt_stats_req {
 	bool done;
 	u8 pdev_id;

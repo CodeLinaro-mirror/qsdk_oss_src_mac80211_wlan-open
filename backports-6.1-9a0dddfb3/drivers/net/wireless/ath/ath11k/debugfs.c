@@ -2079,6 +2079,588 @@ static const struct file_operations fops_enable_m3_dump = {
 	.open = simple_open
 };
 
+static int ath11k_get_tpc_ctl_mode(struct wmi_tpc_stats_event *tpc_stats,
+				   u32 pream_idx, int *mode)
+{
+	switch (pream_idx) {
+	case WMI_TPC_PREAM_CCK:
+		*mode = ATH11K_TPC_STATS_CTL_MODE_CCK;
+		break;
+	case WMI_TPC_PREAM_OFDM:
+		*mode = ATH11K_TPC_STATS_CTL_MODE_OFDM;
+		break;
+	case WMI_TPC_PREAM_HT20:
+	case WMI_TPC_PREAM_VHT20:
+	case WMI_TPC_PREAM_HE20:
+		*mode = ATH11K_TPC_STATS_CTL_MODE_BW_20;
+		break;
+	case WMI_TPC_PREAM_HT40:
+	case WMI_TPC_PREAM_VHT40:
+	case WMI_TPC_PREAM_HE40:
+		*mode = ATH11K_TPC_STATS_CTL_MODE_BW_40;
+		break;
+	case WMI_TPC_PREAM_VHT80:
+	case WMI_TPC_PREAM_HE80:
+		*mode = ATH11K_TPC_STATS_CTL_MODE_BW_80;
+		break;
+	case WMI_TPC_PREAM_VHT160:
+	case WMI_TPC_PREAM_HE160:
+		*mode = ATH11K_TPC_STATS_CTL_MODE_BW_160;
+		break;
+	default:
+		return -EINVAL;
+	}
+
+	if (tpc_stats->tpc_config.chan_freq >= 5180) {
+		/* Index of 5G is one less than 2.4G due to absence of CCK */
+		*mode -= 1;
+	}
+
+	return 0;
+}
+
+static s16 ath11k_tpc_get_rate(struct ath11k *ar,
+			       struct wmi_tpc_stats_event *tpc_stats,
+			       u32 rate_idx, u32 num_chains, u32 rate_code,
+			       u32 pream_idx, u8 type)
+{
+	s8 rates_ctl_min, tpc_ctl, tpc_ctl_pri, tpc_ctl_sec;
+	u8 chain_idx, stm_idx, num_streams;
+	s16 rates, tpc, reg_pwr;
+	u32 tot_nss, tot_modes, txbf_on_off, chan_pri_sec;
+	u32 index_offset1, index_offset2, index_offset3;
+	int mode, ret, txbf_enabled;
+	bool is_mu;
+
+	num_streams = 1 + ATH11K_HW_NSS(rate_code);
+	chain_idx = num_chains - 1;
+	stm_idx = num_streams - 1;
+	mode = -1;
+
+	ret = ath11k_get_tpc_ctl_mode(tpc_stats, pream_idx, &mode);
+	if (ret) {
+		ath11k_warn(ar->ab, "Invalid mode index received\n");
+		tpc = TPC_INVAL;
+		goto out;
+	}
+
+	if (num_chains < num_streams) {
+		tpc = TPC_INVAL;
+		goto out;
+	}
+
+	if (__le32_to_cpu(tpc_stats->tpc_config.num_tx_chain) <= 1) {
+		tpc = TPC_INVAL;
+		goto out;
+	}
+
+	if (type == ATH11K_DBG_TPC_STATS_MU_WITH_TXBF ||
+	    type == ATH11K_DBG_TPC_STATS_SU_WITH_TXBF)
+		txbf_enabled = 1;
+	else
+		txbf_enabled = 0;
+
+	if (type == ATH11K_DBG_TPC_STATS_MU_WITH_TXBF ||
+	    type == ATH11K_DBG_TPC_STATS_MU) {
+		is_mu = true;
+	} else {
+		is_mu = false;
+	}
+
+	/* Below is the min calculation of ctl array, rates array and
+	 * regulator power table. tpc is minimum of all 3
+	 */
+	if (chain_idx < 4) {
+		if (is_mu) {
+			rates = FIELD_GET(ATH11K_TPC_RATE_ARRAY_MU,
+					  tpc_stats->rates_array1.rate_array[rate_idx]);
+		} else {
+			rates = FIELD_GET(ATH11K_TPC_RATE_ARRAY_SU,
+					  tpc_stats->rates_array1.rate_array[rate_idx]);
+		}
+	} else {
+		if (is_mu) {
+			rates = FIELD_GET(ATH11K_TPC_RATE_ARRAY_MU,
+					  tpc_stats->rates_array2.rate_array[rate_idx]);
+		} else {
+			rates = FIELD_GET(ATH11K_TPC_RATE_ARRAY_SU,
+					  tpc_stats->rates_array2.rate_array[rate_idx]);
+		}
+	}
+
+	/* ctl_160 array is accessed for BW 160. Mode is subtracted by -1 as
+	 * 5G index is one less than 2G due to absence of CCK
+	 * ctl array are 4 dimension array which is packed linearly, hence
+	 * needs to be stitched back based on the dimension values.
+	 * formula : when buf[i][j][k][l] values can be taken as
+	 * buf[i*d3*d2*d1 + j*d2*d1 + k*d1 + l]
+	 */
+	if (tpc_stats->tlvs_rcvd & WMI_TPC_CTL_PWR_160ARRAY &&
+	    mode == ATH11K_TPC_STATS_CTL_MODE_BW_160 - 1) {
+		tot_nss = tpc_stats->ctl_160array.d1;
+		txbf_on_off = tpc_stats->ctl_160array.d2;
+		chan_pri_sec = tpc_stats->ctl_160array.d3;
+		index_offset1 = chan_pri_sec * txbf_on_off * tot_nss;
+		index_offset2 = txbf_on_off * tot_nss;
+		index_offset3 = tot_nss;
+
+		if (num_streams < 2)
+			num_streams = 2;
+
+		tpc_ctl_pri = *(tpc_stats->ctl_160array.ctl_pwr_table +
+				((num_chains / 2) - 1) * index_offset1 +
+				0 + txbf_enabled * index_offset3 +
+				(((num_streams) / 2) - 1));
+
+		tpc_ctl_sec = *(tpc_stats->ctl_160array.ctl_pwr_table +
+				((num_chains / 2) - 1) * index_offset1 +
+				1 * index_offset2 + txbf_enabled * index_offset3 +
+				(((num_streams) / 2) - 1));
+		/* Taking min of pri and sec channel for 160 Mhz */
+		tpc_ctl = min_t(s8, tpc_ctl_pri, tpc_ctl_sec);
+	} else if (tpc_stats->tlvs_rcvd & WMI_TPC_CTL_PWR_ARRAY) {
+		tot_nss = tpc_stats->ctl_array.d1;
+		tot_modes = tpc_stats->ctl_array.d2;
+		txbf_on_off = tpc_stats->ctl_array.d3;
+		index_offset1 = txbf_on_off * tot_modes * tot_nss;
+		index_offset2 = tot_modes * tot_nss;
+		index_offset3 = tot_nss;
+
+		tpc_ctl = *(tpc_stats->ctl_array.ctl_pwr_table +
+			    chain_idx * index_offset1 + txbf_enabled * index_offset2
+			    + mode * index_offset3 + stm_idx);
+	} else {
+		tpc_ctl = TPC_MAX;
+		ath11k_info(ar->ab,
+			    "ctl array for tpc stats not received from fw\n");
+	}
+
+	rates_ctl_min = min_t(s16, rates, tpc_ctl);
+
+	reg_pwr = tpc_stats->max_reg_allowed_power.reg_pwr_array[chain_idx];
+	tpc = min_t(s16, rates_ctl_min, reg_pwr);
+
+	/* MODULATION_LIMIT is the maximum power limit,tpc should not exceed
+	 * modulation limt even if min tpc of all three array is greater
+	 * modulation limit
+	 */
+	tpc = min_t(s16, tpc, MODULATION_LIMIT);
+
+out:
+	return tpc;
+}
+
+static bool ath11k_he_supports_extra_mcs(struct ath11k *ar, int freq)
+{
+	struct ath11k_pdev_cap *cap = &ar->pdev->cap;
+	struct ath11k_band_cap *cap_band;
+	bool extra_mcs_supported;
+
+	if (freq <= ATH11K_2G_MAX_FREQUENCY)
+		cap_band = &cap->band[NL80211_BAND_2GHZ];
+	else
+		cap_band = &cap->band[NL80211_BAND_5GHZ];
+
+	extra_mcs_supported = FIELD_GET(HE_EXTRA_MCS_SUPPORT, cap_band->he_cap_info[1]);
+	return extra_mcs_supported;
+}
+
+static int ath11k_tpc_fill_pream(struct ath11k *ar, char *buf, int buf_len, int len,
+				 int pream_idx, int max_nss, int max_rates,
+				 int pream_type, int tpc_type, int rate_idx)
+{
+	int nss, rates, chains;
+	u8 active_tx_chains;
+	u16 rate_code, tpc;
+	struct wmi_tpc_stats_event *tpc_stats = ar->tpc_stats;
+
+	static const char pream_str[WMI_TPC_PREAM_MAX][MAX_TPC_PREAM_STR_LEN] = {
+				     "CCK",
+				     "OFDM",
+				     "HT20",
+				     "HT40",
+				     "VHT20",
+				     "VHT40",
+				     "VHT80",
+				     "VHT160",
+				     "HE20",
+				     "HE40",
+				     "HE80",
+				     "HE160"};
+
+	active_tx_chains = ar->num_tx_chains;
+
+	for (nss = 0; nss < max_nss; nss++) {
+		for (rates = 0; rates < max_rates; rates++, rate_idx++) {
+			/* FW send extra MCS(10&11) for VHT and HE rates,
+			 *  this is not used. Hence skipping it here
+			 */
+			if (pream_type == WMI_RATE_PREAMBLE_VHT &&
+			    rates > ATH11K_VHT_MCS_MAX)
+				continue;
+
+			if (pream_type == WMI_RATE_PREAMBLE_HE &&
+			    rates > ATH11K_HE_MCS_MAX)
+				continue;
+
+			rate_code = ATH11K_HW_RATE_CODE(rates, nss, pream_type);
+			len += scnprintf(buf + len, buf_len - len,
+				 "%d\t %s\t 0x%03x\t", rate_idx,
+				 pream_str[pream_idx], rate_code);
+
+			for (chains = 0; chains < active_tx_chains; chains++) {
+				/* check for 160Mhz where two chains requires to
+				 * support one spatial stream.
+				 */
+				if ((pream_idx == WMI_TPC_PREAM_VHT160 ||
+				     pream_idx == WMI_TPC_PREAM_HE160) &&
+				    (((chains + 1) / 2) < nss + 1)) {
+					len += scnprintf(buf + len,
+							 buf_len - len,
+							 "\t%s", "NA");
+				} else if (nss > chains) {
+					len += scnprintf(buf + len,
+							 buf_len - len,
+							 "\t%s", "NA");
+				} else {
+					tpc = ath11k_tpc_get_rate(ar, tpc_stats, rate_idx,
+								  chains + 1, rate_code,
+								  pream_idx, tpc_type);
+
+					if (tpc == TPC_INVAL) {
+						len += scnprintf(buf + len,
+						       buf_len - len, "\tNA");
+					} else {
+						len += scnprintf(buf + len,
+						       buf_len - len, "\t%d",
+						       tpc);
+					}
+				}
+			}
+			len += scnprintf(buf + len, buf_len - len, "\n");
+		}
+	}
+	return len;
+}
+
+static int ath11k_tpc_stats_print(struct ath11k *ar,
+				  struct wmi_tpc_stats_event *tpc_stats,
+				  char *buf, size_t len, u8 type)
+{
+	u32 i, pream_idx = 0, rate_pream_idx = 0, total_rates = 0;
+	u8 nss, active_tx_chains;
+	size_t buf_len = ATH11K_TPC_STATS_BUF_SIZE;
+	bool he_ext_mcs;
+	static const char type_str[ATH11K_DBG_TPC_MAX_STATS][13] = {"SU",
+					   "SU WITH TXBF",
+					   "MU",
+					   "MU WITH TXBF"};
+
+	u8 max_rates[WMI_TPC_PREAM_MAX] = {ATH11K_CCK_RATES,
+					   ATH11K_OFDM_RATES,
+					   AT11K_HT_RATES,
+					   AT11K_HT_RATES,
+					   ATH11K_VHT_RATES,
+					   ATH11K_VHT_RATES,
+					   ATH11K_VHT_RATES,
+					   ATH11K_VHT_RATES,
+					   ATH11K_HE_RATES,
+					   ATH11K_HE_RATES,
+					   ATH11K_HE_RATES,
+					   ATH11K_HE_RATES};
+
+	u8 max_nss[WMI_TPC_PREAM_MAX] = {ATH11K_NSS_1, ATH11K_NSS_1,
+					 ATH11K_NSS_4, ATH11K_NSS_4,
+					 ATH11K_NSS_8, ATH11K_NSS_8,
+					 ATH11K_NSS_8, ATH11K_NSS_4,
+					 ATH11K_NSS_8, ATH11K_NSS_8,
+					 ATH11K_NSS_8, ATH11K_NSS_4};
+
+	u16 rate_idx[WMI_TPC_PREAM_MAX] = {0};
+
+	u8 pream_type[WMI_TPC_PREAM_MAX] = {WMI_RATE_PREAMBLE_CCK,
+					    WMI_RATE_PREAMBLE_OFDM,
+					    WMI_RATE_PREAMBLE_HT,
+					    WMI_RATE_PREAMBLE_HT,
+					    WMI_RATE_PREAMBLE_VHT,
+					    WMI_RATE_PREAMBLE_VHT,
+					    WMI_RATE_PREAMBLE_VHT,
+					    WMI_RATE_PREAMBLE_VHT,
+					    WMI_RATE_PREAMBLE_HE,
+					    WMI_RATE_PREAMBLE_HE,
+					    WMI_RATE_PREAMBLE_HE,
+					    WMI_RATE_PREAMBLE_HE};
+
+	active_tx_chains = ar->num_tx_chains;
+	he_ext_mcs = ath11k_he_supports_extra_mcs(ar, tpc_stats->tpc_config.chan_freq);
+
+	/* mcs 12&13 is sent by FW for qcn9000 in rate array, skipping it as
+	 * it is not supported
+	 */
+	if (he_ext_mcs) {
+		for (i = WMI_TPC_PREAM_HE20; i <= WMI_TPC_PREAM_HE160;  ++i)
+			max_rates[i] = ATH11K_HE_RATES_WITH_EXTRA_MCS;
+	}
+
+	if (type == ATH11K_DBG_TPC_STATS_MU ||
+	    type == ATH11K_DBG_TPC_STATS_MU_WITH_TXBF)
+		pream_idx = WMI_TPC_PREAM_VHT20;
+
+	/* Enumerate all the rate indices */
+	for (i = rate_pream_idx + 1 ; i < WMI_TPC_PREAM_MAX; i++) {
+		nss = (max_nss[i - 1] < tpc_stats->tpc_config.num_tx_chain ?
+		       max_nss[i - 1] : tpc_stats->tpc_config.num_tx_chain);
+
+		if ((i == WMI_TPC_PREAM_VHT160 || i == WMI_TPC_PREAM_HE160) &&
+		    (!(tpc_stats->tlvs_rcvd & WMI_TPC_CTL_PWR_160ARRAY))) {
+			/* ratesarray doesnot hold any 160Mhz power info,
+			 * so skipping here
+			 */
+			rate_idx[i] = rate_idx[i - 1] + max_rates[i - 1] * nss;
+			max_rates[i] = 0;
+			max_nss[i] = 0;
+			continue;
+		}
+
+		rate_idx[i] = rate_idx[i - 1] + max_rates[i - 1] * nss;
+	}
+
+	for (i = 0 ; i < WMI_TPC_PREAM_MAX; i++) {
+		nss = (max_nss[i] < tpc_stats->tpc_config.num_tx_chain ?
+		       max_nss[i] : tpc_stats->tpc_config.num_tx_chain);
+		total_rates += max_rates[i] * nss;
+	}
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "No.of rates-%d\n", total_rates);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "**************** %s ****************\n",
+			 type_str[type]);
+	len += scnprintf(buf + len, buf_len - len,
+			 "\t\t\t\tTPC values for Active chains\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "Rate idx Preamble Rate code");
+
+	for (i = 1; i <= active_tx_chains; ++i) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "\t%d-Chain", i);
+	}
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	for (i = pream_idx; i < WMI_TPC_PREAM_MAX; i++) {
+		if (tpc_stats->tpc_config.chan_freq <= 2483) {
+			if (i == WMI_TPC_PREAM_VHT80 ||
+			    i == WMI_TPC_PREAM_VHT160 ||
+			    i == WMI_TPC_PREAM_HE80 ||
+			    i == WMI_TPC_PREAM_HE160) {
+				continue;
+			}
+		} else {
+			if (i == WMI_TPC_PREAM_CCK)
+				continue;
+		}
+
+		nss = (max_nss[i] < ar->num_tx_chains ? max_nss[i] : ar->num_tx_chains);
+
+		if (i == WMI_TPC_PREAM_VHT160 || i == WMI_TPC_PREAM_HE160) {
+			/* Skip 160MHz in power table if not supported */
+			if (!(tpc_stats->tlvs_rcvd & WMI_TPC_CTL_PWR_160ARRAY))
+				continue;
+		}
+
+		len = ath11k_tpc_fill_pream(ar, buf, buf_len, len, i, nss,
+					    max_rates[i], pream_type[i],
+					    type, rate_idx[i]);
+	}
+	return len;
+}
+
+static void ath11k_tpc_stats_fill(struct ath11k *ar,
+				  struct wmi_tpc_stats_event *tpc_stats,
+				  char *buf)
+{
+	struct wmi_tpc_configs *tpc;
+	size_t len = 0;
+	size_t buf_len = ATH11K_TPC_STATS_BUF_SIZE;
+
+	spin_lock_bh(&ar->data_lock);
+	if (!tpc_stats) {
+		ath11k_warn(ar->ab, "failed to find tpc stats\n");
+		goto unlock;
+	}
+
+	tpc = &tpc_stats->tpc_config;
+	len += scnprintf(buf + len, buf_len - len, "\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "*************** TPC config **************\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "* powers are in 0.25 dBm steps\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "reg domain-%d\t\tchan freq-%d\n",
+			 tpc->reg_domain, tpc->chan_freq);
+	len += scnprintf(buf + len, buf_len - len,
+			 "power limit-%d\t\tmax reg-domain Power-%d\n",
+			 (tpc->twice_max_reg_power) / 2, tpc->power_limit);
+	len += scnprintf(buf + len, buf_len - len,
+			 "No.of tx chain-%d\t",
+			 ar->num_tx_chains);
+
+	ath11k_tpc_stats_print(ar, tpc_stats, buf, len,
+			       ar->tpc_stats_type);
+
+unlock:
+	spin_unlock_bh(&ar->data_lock);
+}
+
+static int ath11k_debug_tpc_stats_request(struct ath11k *ar)
+{
+	int ret;
+	unsigned long time_left;
+	struct ath11k_base *ab = ar->ab;
+
+	lockdep_assert_held(&ar->conf_mutex);
+
+	reinit_completion(&ar->tpc_complete);
+
+	ret = ath11k_wmi_pdev_get_tpc_table_cmdid(ar);
+	if (ret) {
+		ath11k_warn(ab, "failed to request tpc table cmdid: %d\n", ret);
+		return ret;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	ar->tpc_request = true;
+	spin_unlock_bh(&ar->data_lock);
+
+	time_left = wait_for_completion_timeout(&ar->tpc_complete,
+						TPC_STATS_WAIT_TIME);
+	spin_lock_bh(&ar->data_lock);
+	ar->tpc_request = false;
+	spin_unlock_bh(&ar->data_lock);
+
+	if (time_left == 0)
+		return -ETIMEDOUT;
+
+	return 0;
+}
+
+static int ath11k_tpc_stats_open(struct inode *inode, struct file *file)
+{
+	struct ath11k *ar = inode->i_private;
+	void *buf;
+	int ret;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "Interface not up\n");
+		ret = -ENETDOWN;
+		goto err_unlock;
+	}
+
+	buf = vmalloc(ATH11K_TPC_STATS_BUF_SIZE);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto err_unlock;
+	}
+
+	ret = ath11k_debug_tpc_stats_request(ar);
+	if (ret) {
+		ath11k_warn(ar->ab, "failed to request tpc stats: %d\n",
+			    ret);
+		spin_lock_bh(&ar->data_lock);
+		ath11k_wmi_free_tpc_stats_mem(ar);
+		spin_unlock_bh(&ar->data_lock);
+		goto err_free;
+	}
+
+	ath11k_tpc_stats_fill(ar, ar->tpc_stats, buf);
+	file->private_data = buf;
+
+	spin_lock_bh(&ar->data_lock);
+	ath11k_wmi_free_tpc_stats_mem(ar);
+	spin_unlock_bh(&ar->data_lock);
+	mutex_unlock(&ar->conf_mutex);
+
+	return 0;
+
+err_free:
+	vfree(buf);
+
+err_unlock:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static int ath11k_tpc_stats_release(struct inode *inode,
+				    struct file *file)
+{
+	vfree(file->private_data);
+	return 0;
+}
+
+static ssize_t ath11k_tpc_stats_read(struct file *file,
+				     char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	const char *buf = file->private_data;
+	unsigned int len = strlen(buf);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath11k_read_tpc_stats_type(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	char buf[32];
+	size_t len;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", ar->tpc_stats_type);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath11k_write_tpc_stats_type(struct file *file,
+					   const char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	u8 type;
+	int ret;
+
+	ret = kstrtou8_from_user(user_buf, count, 0, &type);
+	if (ret)
+		return ret;
+
+	if (type >= ATH11K_DBG_TPC_MAX_STATS)
+		return -E2BIG;
+
+	ar->tpc_stats_type = type;
+
+	ret = count;
+
+	return ret;
+}
+
+static const struct file_operations fops_tpc_stats_type = {
+	.read = ath11k_read_tpc_stats_type,
+	.write = ath11k_write_tpc_stats_type,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations fops_tpc_stats = {
+	.open = ath11k_tpc_stats_open,
+	.release = ath11k_tpc_stats_release,
+	.read = ath11k_tpc_stats_read,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath11k_debugfs_register(struct ath11k *ar)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -2099,6 +2681,7 @@ int ath11k_debugfs_register(struct ath11k *ar)
 
 	ath11k_debugfs_fw_stats_init(ar);
 	ath11k_init_pktlog(ar);
+	init_completion(&ar->tpc_complete);
 
 	debugfs_create_file("ext_tx_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,
@@ -2155,6 +2738,10 @@ int ath11k_debugfs_register(struct ath11k *ar)
 	debugfs_create_file("enable_m3_dump", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_enable_m3_dump);
+	debugfs_create_file("tpc_stats", 0400, ar->debug.debugfs_pdev,
+			    ar, &fops_tpc_stats);
+	debugfs_create_file("tpc_stats_type", 0600, ar->debug.debugfs_pdev,
+			    ar, &fops_tpc_stats_type);
 
 	return 0;
 }

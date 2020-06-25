@@ -849,6 +849,11 @@ struct ath11k {
 	u8 ftm_msgref;
 	int ap_ps_enabled;
 	enum ath11k_ap_ps_state ap_ps_state;
+	u8 tpc_stats_type;
+	/* tpc_stats ptr is protected by data lock */
+	struct wmi_tpc_stats_event *tpc_stats;
+	struct completion tpc_complete;
+	bool tpc_request;
 #ifdef CPTCFG_ATH11K_DEBUGFS
 	struct ath11k_debug debug;
 #endif

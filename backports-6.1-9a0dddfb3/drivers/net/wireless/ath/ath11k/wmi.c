@@ -95,6 +95,10 @@ static const struct wmi_tlv_policy wmi_tlv_policies[] = {
 		= { .min_len = 0 },
 	[WMI_TAG_ARRAY_UINT32]
 		= { .min_len = 0 },
+	[WMI_TAG_ARRAY_STRUCT]
+		= { .min_len = 0 },
+	[WMI_TAG_ARRAY_INT16]
+		= { .min_len = 0 },
 	[WMI_TAG_SERVICE_READY_EVENT]
 		= { .min_len = sizeof(struct wmi_service_ready_event) },
 	[WMI_TAG_SERVICE_READY_EXT_EVENT]
@@ -155,6 +159,8 @@ static const struct wmi_tlv_policy wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_per_chain_rssi_stats) },
 	[WMI_TAG_TWT_ADD_DIALOG_COMPLETE_EVENT] = {
 		.min_len = sizeof(struct wmi_twt_add_dialog_event) },
+	[WMI_TAG_TPC_STATS_EVENT_FIXED_PARAM]
+		= { .min_len = sizeof(struct wmi_tpc_stats_event_fixed_param) },
 	[WMI_TAG_P2P_NOA_INFO] = {
 		.min_len = sizeof(struct ath11k_wmi_p2p_noa_info) },
 	[WMI_TAG_P2P_NOA_EVENT] = {
@@ -9039,6 +9045,444 @@ out:
 	kfree(tb);
 }
 
+static int ath11k_tpc_get_reg_pwr(struct ath11k_base *ab,
+				  struct wmi_tpc_stats_event *tpc_stats,
+				  struct wmi_max_reg_power_allowed *ev)
+{
+	struct wmi_max_reg_power_allowed *reg_pwr = NULL;
+
+	ath11k_dbg(ab, ATH11K_DBG_WMI,
+		   "Received reg power array type %d length %d for tpc stats\n",
+		   ev->reg_power_type, ev->reg_array_len);
+
+	switch (ev->reg_power_type) {
+	case TPC_STATS_REG_PWR_ALLOWED_TYPE:
+		reg_pwr = &tpc_stats->max_reg_allowed_power;
+		break;
+	default:
+		goto out;
+	}
+
+	memcpy(reg_pwr, ev, sizeof(struct wmi_max_reg_power_allowed));
+
+	reg_pwr->reg_pwr_array = kzalloc(reg_pwr->reg_array_len,
+					 GFP_ATOMIC);
+	if (!reg_pwr->reg_pwr_array)
+		return -ENOMEM;
+
+	tpc_stats->tlvs_rcvd |= WMI_TPC_REG_PWR_ALLOWED;
+out:
+	return 0;
+}
+
+static int ath11k_tpc_get_rate_array(struct ath11k_base *ab,
+				     struct wmi_tpc_stats_event *tpc_stats,
+				     struct wmi_tpc_rates_array *ev)
+{
+	u32 flag = 0;
+	struct wmi_tpc_rates_array *rates_array = NULL;
+
+	ath11k_dbg(ab, ATH11K_DBG_WMI,
+		   "Received rates array type %d length %d for tpc stats\n",
+		   ev->rate_array_type, ev->rate_array_len);
+
+	switch (ev->rate_array_type) {
+	case ATH11K_TPC_STATS_RATES_ARRAY1:
+		rates_array = &tpc_stats->rates_array1;
+		flag = WMI_TPC_RATES_ARRAY1;
+		break;
+	case ATH11K_TPC_STATS_RATES_ARRAY2:
+		rates_array = &tpc_stats->rates_array2;
+		flag = WMI_TPC_RATES_ARRAY2;
+		break;
+	default:
+		ath11k_warn(ab,
+			    "Received invalid type of rates array for tpc stats\n");
+		return -EINVAL;
+	}
+	memcpy(rates_array, ev, sizeof(struct wmi_tpc_rates_array));
+	rates_array->rate_array = kzalloc(rates_array->rate_array_len,
+					  GFP_ATOMIC);
+	if (!rates_array->rate_array)
+		return -ENOMEM;
+
+	tpc_stats->tlvs_rcvd |= flag;
+	return 0;
+}
+
+static int ath11k_tpc_get_ctl_pwr_tbl(struct ath11k_base *ab,
+				      struct wmi_tpc_stats_event *tpc_stats,
+				      struct wmi_tpc_ctl_pwr_table *ev)
+{
+	int total_size, ret = 0;
+	u32 flag = 0;
+	struct wmi_tpc_ctl_pwr_table *ctl_array = NULL;
+
+	ath11k_dbg(ab, ATH11K_DBG_WMI,
+		   "Received ctl array type %d length %d for tpc stats\n",
+		   ev->ctl_array_type, ev->ctl_array_len);
+
+	switch (ev->ctl_array_type) {
+	case ATH11K_TPC_STATS_CTL_ARRAY:
+		ctl_array = &tpc_stats->ctl_array;
+		flag = WMI_TPC_CTL_PWR_ARRAY;
+		break;
+	case ATH11K_TPC_STATS_CTL_160ARRAY:
+		ctl_array = &tpc_stats->ctl_160array;
+		flag = WMI_TPC_CTL_PWR_160ARRAY;
+		break;
+	default:
+		ath11k_warn(ab,
+			    "Received invalid type of ctl pwr table for tpc stats\n");
+		return -EINVAL;
+	}
+	memcpy(ctl_array, ev, sizeof(struct wmi_tpc_ctl_pwr_table));
+	total_size = (ctl_array->d1 * ctl_array->d2 *
+		      ctl_array->d3 * ctl_array->d4);
+
+	if (ctl_array->ctl_array_len != total_size) {
+		ath11k_warn(ab,
+			    "Total size and ctl_array_len doesn't match for tpc stats\n");
+		return -EINVAL;
+	}
+
+	ctl_array->ctl_pwr_table = kzalloc(ctl_array->ctl_array_len,
+					   GFP_ATOMIC);
+	if (!ctl_array->ctl_pwr_table)
+		return -ENOMEM;
+
+	tpc_stats->tlvs_rcvd |= flag;
+	return ret;
+}
+
+static int ath11k_wmi_tpc_stats_subtlv_parser(struct ath11k_base *ab,
+					      u16 tag, u16 len,
+					      const void *ptr, void *data)
+{
+	int ret = 0;
+	struct wmi_tpc_stats_event *tpc_stats = (struct wmi_tpc_stats_event *)data;
+	struct wmi_tpc_configs *tpc_config;
+	struct wmi_max_reg_power_allowed *reg_pwr;
+	struct wmi_tpc_rates_array *rates_array;
+	struct wmi_tpc_ctl_pwr_table *ctl_tbl;
+
+	if (!tpc_stats) {
+		ath11k_warn(ab, "tpc stats memory unavailable\n");
+		return -EINVAL;
+	}
+
+	switch (tag) {
+	case WMI_TAG_TPC_STATS_CONFIG_EVENT:
+		tpc_config = (struct wmi_tpc_configs *)ptr;
+		memcpy(&tpc_stats->tpc_config, tpc_config,
+		       sizeof(struct wmi_tpc_configs));
+		break;
+
+	case WMI_TAG_TPC_STATS_REG_PWR_ALLOWED:
+		reg_pwr = (struct wmi_max_reg_power_allowed *)ptr;
+		ret = ath11k_tpc_get_reg_pwr(ab, tpc_stats, reg_pwr);
+		break;
+
+	case WMI_TAG_TPC_STATS_RATES_ARRAY:
+		rates_array = (struct wmi_tpc_rates_array *)ptr;
+		ret = ath11k_tpc_get_rate_array(ab, tpc_stats, rates_array);
+		break;
+
+	case WMI_TAG_TPC_STATS_CTL_PWR_TABLE_EVENT:
+		ctl_tbl = (struct wmi_tpc_ctl_pwr_table *)ptr;
+		ret = ath11k_tpc_get_ctl_pwr_tbl(ab, tpc_stats, ctl_tbl);
+		break;
+
+	default:
+		ath11k_warn(ab,
+			    "Received invalid tag for tpc stats in subtlvs\n");
+		return -EINVAL;
+	}
+	return ret;
+}
+
+static int ath11k_wmi_tpc_stats_copy_buffer(struct ath11k_base *ab,
+					    const void *ptr, u16 tag, u16 len,
+					    struct wmi_tpc_stats_event *tpc_stats)
+{
+	s16 *reg_rates_src;
+	s8 *ctl_src;
+	s16 *dst_ptr;
+	s8 *dst_ptr_ctl;
+	int ret = 0;
+
+	if (tag == WMI_TAG_ARRAY_INT16)
+		reg_rates_src = (s16 *)ptr;
+	else
+		ctl_src = (s8 *)ptr;
+
+	switch (tpc_stats->event_count) {
+	case ATH11K_TPC_STATS_CONFIG_REG_PWR_EVENT:
+		if (tpc_stats->tlvs_rcvd & WMI_TPC_REG_PWR_ALLOWED) {
+			dst_ptr = tpc_stats->max_reg_allowed_power.reg_pwr_array;
+			memcpy(dst_ptr, reg_rates_src,
+			       tpc_stats->max_reg_allowed_power.reg_array_len);
+			reg_rates_src += tpc_stats->max_reg_allowed_power.reg_array_len;
+		}
+		break;
+	case ATH11K_TPC_STATS_RATES_EVENT1:
+		if (tpc_stats->tlvs_rcvd & WMI_TPC_RATES_ARRAY1) {
+			dst_ptr = tpc_stats->rates_array1.rate_array;
+			memcpy(dst_ptr, reg_rates_src,
+			       tpc_stats->rates_array1.rate_array_len);
+			reg_rates_src += tpc_stats->rates_array1.rate_array_len;
+		}
+		break;
+	case ATH11K_TPC_STATS_RATES_EVENT2:
+		if (tpc_stats->tlvs_rcvd & WMI_TPC_RATES_ARRAY2) {
+			dst_ptr = tpc_stats->rates_array2.rate_array;
+			memcpy(dst_ptr, reg_rates_src,
+			       tpc_stats->rates_array2.rate_array_len);
+			reg_rates_src += tpc_stats->rates_array2.rate_array_len;
+		}
+		break;
+	case ATH11K_TPC_STATS_CTL_TABLE_EVENT:
+		if (tpc_stats->tlvs_rcvd & WMI_TPC_CTL_PWR_ARRAY) {
+			dst_ptr_ctl = tpc_stats->ctl_array.ctl_pwr_table;
+			memcpy(dst_ptr_ctl, ctl_src,
+			       tpc_stats->ctl_array.ctl_array_len);
+			ctl_src += tpc_stats->ctl_array.ctl_array_len;
+		}
+		if (tpc_stats->tlvs_rcvd & WMI_TPC_CTL_PWR_160ARRAY) {
+			dst_ptr_ctl = tpc_stats->ctl_160array.ctl_pwr_table;
+			memcpy(dst_ptr_ctl, ctl_src,
+			       tpc_stats->ctl_160array.ctl_array_len);
+			ctl_src += tpc_stats->ctl_160array.ctl_array_len;
+		}
+		break;
+	}
+	return ret;
+}
+
+static int ath11k_wmi_tpc_stats_event_parser(struct ath11k_base *ab,
+					     u16 tag, u16 len,
+					     const void *ptr, void *data)
+{
+	struct wmi_tpc_stats_event *tpc_stats = (struct wmi_tpc_stats_event *)data;
+	int ret = 0;
+
+	ath11k_dbg(ab, ATH11K_DBG_WMI, "tpc stats tag 0x%x of len %d rcvd\n",
+		   tag, len);
+	switch (tag) {
+	case WMI_TAG_TPC_STATS_EVENT_FIXED_PARAM:
+		/* Fixed param is already processed*/
+		break;
+
+	case WMI_TAG_ARRAY_STRUCT:
+		/* len 0 is expected for array of struct when there
+		 * is no content of that type to pack inside that tlv
+		 */
+		if (len == 0)
+			return 0;
+		ret = ath11k_wmi_tlv_iter(ab, ptr, len,
+					  ath11k_wmi_tpc_stats_subtlv_parser,
+					  tpc_stats);
+		break;
+
+	case WMI_TAG_ARRAY_INT16:
+		if (len == 0)
+			return 0;
+		ret = ath11k_wmi_tpc_stats_copy_buffer(ab, ptr,
+						       WMI_TAG_ARRAY_INT16,
+						       len, tpc_stats);
+		break;
+
+	case WMI_TAG_ARRAY_BYTE:
+		if (len == 0)
+			return 0;
+		ret = ath11k_wmi_tpc_stats_copy_buffer(ab, ptr,
+						       WMI_TAG_ARRAY_BYTE,
+						       len, tpc_stats);
+		break;
+
+	default:
+		ath11k_warn(ab, "Received invalid tag for tpc stats\n");
+		ret = -EINVAL;
+		break;
+	}
+	return ret;
+}
+
+void ath11k_wmi_free_tpc_stats_mem(struct ath11k *ar)
+{
+	struct wmi_tpc_stats_event *tpc_stats = ar->tpc_stats;
+
+	lockdep_assert_held(&ar->data_lock);
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI, "tpc stats mem free\n");
+	if (tpc_stats) {
+		kfree(tpc_stats->max_reg_allowed_power.reg_pwr_array);
+		kfree(tpc_stats->rates_array1.rate_array);
+		kfree(tpc_stats->rates_array2.rate_array);
+		kfree(tpc_stats->ctl_array.ctl_pwr_table);
+		kfree(tpc_stats->ctl_160array.ctl_pwr_table);
+		kfree(tpc_stats);
+		ar->tpc_stats = NULL;
+	}
+}
+
+static struct ath11k *ath11k_wmi_tpc_process_fixed_param(struct ath11k_base *ab,
+							 u8 *ptr, size_t len)
+{
+	struct ath11k *ar = NULL;
+	const struct wmi_tlv *tlv;
+	struct wmi_tpc_stats_event_fixed_param *fixed_param;
+	struct wmi_tpc_stats_event *tpc_stats = NULL;
+	u16 tlv_tag;
+
+	if (!ptr) {
+		ath11k_warn(ab, "No data present in tpc stats event\n");
+		return NULL;
+	}
+
+	if (len < (sizeof(*fixed_param) + TLV_HDR_SIZE)) {
+		ath11k_warn(ab, "tpc stats event size invalid\n");
+		return NULL;
+	}
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv_tag = FIELD_GET(WMI_TLV_TAG, tlv->header);
+	ptr += sizeof(*tlv);
+
+	if (tlv_tag == WMI_TAG_TPC_STATS_EVENT_FIXED_PARAM) {
+		fixed_param = (struct wmi_tpc_stats_event_fixed_param *)ptr;
+		ar = ath11k_mac_get_ar_by_pdev_id(ab, fixed_param->pdev_id);
+		if (!ar) {
+			ath11k_warn(ab, "Failed to get ar for tpc stats\n");
+			return NULL;
+		}
+	} else {
+		ath11k_warn(ab, "TPC Stats received without fixed param tlv at start\n");
+		return NULL;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	if (!ar->tpc_request) {
+		/* Event is received either without request or the
+		 * timeout, if memory is already allocated free it
+		 */
+		if (ar->tpc_stats) {
+			ath11k_warn(ab, "Freeing memory for tpc_stats\n");
+			ath11k_wmi_free_tpc_stats_mem(ar);
+		}
+		spin_unlock_bh(&ar->data_lock);
+		return NULL;
+	}
+
+	if (fixed_param->event_count == 0) {
+		if (ar->tpc_stats) {
+			ath11k_warn(ab,
+				    "Invalid tpc memory present\n");
+			spin_unlock_bh(&ar->data_lock);
+			return NULL;
+		}
+		ar->tpc_stats =
+			    kzalloc(sizeof(struct wmi_tpc_stats_event),
+				    GFP_ATOMIC);
+	}
+
+	if (!ar->tpc_stats) {
+		ath11k_warn(ab,
+			    "Failed to allocate memory for tpc stats\n");
+		spin_unlock_bh(&ar->data_lock);
+		return NULL;
+	}
+
+	tpc_stats = ar->tpc_stats;
+
+	if (!(fixed_param->event_count == 0)) {
+		if (fixed_param->event_count != tpc_stats->event_count + 1) {
+			ath11k_warn(ab,
+				    "Invalid tpc event received\n");
+			spin_unlock_bh(&ar->data_lock);
+			return NULL;
+		}
+	}
+	tpc_stats->pdev_id = fixed_param->pdev_id;
+	tpc_stats->event_count = fixed_param->event_count;
+	tpc_stats->end_of_event = fixed_param->end_of_event;
+	ath11k_dbg(ab, ATH11K_DBG_WMI,
+		   "tpc stats event_count %d\n",
+		   tpc_stats->event_count);
+
+	spin_unlock_bh(&ar->data_lock);
+
+	return ar;
+}
+
+static void ath11k_process_tpc_stats(struct ath11k_base *ab,
+				     struct sk_buff *skb)
+{
+	int ret;
+	struct ath11k *ar;
+	struct wmi_tpc_stats_event *tpc_stats = NULL;
+
+	rcu_read_lock();
+	ar = ath11k_wmi_tpc_process_fixed_param(ab, skb->data, skb->len);
+	if (!ar) {
+		ath11k_warn(ab, "Failed to get ar for tpc event\n");
+		goto exit;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	tpc_stats = ar->tpc_stats;
+	ret = ath11k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath11k_wmi_tpc_stats_event_parser,
+				  tpc_stats);
+	if (ret) {
+		if (tpc_stats) {
+			ath11k_warn(ab, "Freeing memory for tpc_stats\n");
+			ath11k_wmi_free_tpc_stats_mem(ar);
+		}
+		spin_unlock_bh(&ar->data_lock);
+		ath11k_warn(ab, "failed to parse tpc_stats tlv: %d\n", ret);
+		goto exit;
+	}
+
+	if (tpc_stats && tpc_stats->end_of_event)
+		complete(&ar->tpc_complete);
+
+	spin_unlock_bh(&ar->data_lock);
+
+exit:
+	rcu_read_unlock();
+}
+
+int ath11k_wmi_pdev_get_tpc_table_cmdid(struct ath11k *ar)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_tpc_stats_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	spin_lock_bh(&ar->data_lock);
+	ar->tpc_stats = NULL;
+	spin_unlock_bh(&ar->data_lock);
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+	cmd = (struct wmi_tpc_stats_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_TPC_STATS_GET_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->pdev_id = ar->pdev->pdev_id;
+	cmd->param = WMI_TPC_CONFIG_PARAM;
+	ret = ath11k_wmi_cmd_send(wmi, skb, WMI_PDEV_GET_TPC_STATS_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to submit WMI_PDEV_GET_TPC_STATS_CMDID\n");
+		dev_kfree_skb(skb);
+		return ret;
+	}
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI, "WMI get TPC STATS sent on pdev %d\n",
+		   ar->pdev->pdev_id);
+
+	return ret;
+}
+
 static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_cmd_hdr *cmd_hdr;
@@ -9168,6 +9612,9 @@ static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_P2P_NOA_EVENTID:
 		ath11k_wmi_p2p_noa_event(ab, skb);
+		break;
+	case WMI_PDEV_GET_TPC_STATS_EVENTID:
+		ath11k_process_tpc_stats(ab, skb);
 		break;
 	default:
 		ath11k_dbg(ab, ATH11K_DBG_WMI, "unsupported event id 0x%x\n", id);
