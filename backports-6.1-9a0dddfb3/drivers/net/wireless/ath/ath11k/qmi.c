@@ -2195,9 +2195,11 @@ out:
 
 static int ath11k_qmi_request_target_cap(struct ath11k_base *ab)
 {
+	struct device *dev = ab->dev;
 	struct qmi_wlanfw_cap_req_msg_v01 req;
 	struct qmi_wlanfw_cap_resp_msg_v01 resp;
 	struct qmi_txn txn;
+	unsigned int board_id;
 	int ret = 0;
 	int r;
 	char *fw_build_id;
@@ -2242,10 +2244,13 @@ static int ath11k_qmi_request_target_cap(struct ath11k_base *ab)
 		ab->qmi.target.chip_family = resp.chip_info.chip_family;
 	}
 
-	if (resp.board_info_valid)
+	if (!of_property_read_u32(dev->of_node, "qcom,board_id", &board_id) && board_id != 0xFF) {
+		ab->qmi.target.board_id = board_id;
+	} else if (resp.board_info_valid) {
 		ab->qmi.target.board_id = resp.board_info.board_id;
-	else
+	} else {
 		ab->qmi.target.board_id = 0xFF;
+	}
 
 	if (resp.soc_info_valid)
 		ab->qmi.target.soc_id = resp.soc_info.soc_id;
