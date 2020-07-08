@@ -859,6 +859,7 @@ enum wmi_tlv_event_id {
 	WMI_READ_DATA_FROM_FLASH_EVENTID,
 	WMI_REPORT_RX_AGGR_FAILURE_EVENTID,
 	WMI_PKGID_EVENTID,
+	WMI_MUEDCA_PARAMS_CONFIG_EVENTID = 0x1d01e,
 	WMI_GPIO_INPUT_EVENTID = WMI_TLV_CMD(WMI_GRP_GPIO),
 	WMI_UPLOADH_EVENTID,
 	WMI_CAPTUREH_EVENTID,
@@ -1981,6 +1982,7 @@ enum wmi_tlv_tag {
 	/* TODO add all the missing cmds */
 	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_CMD = 0x301,
 	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_INFO,
+	WMI_TAG_MUEDCA_PARAMS_CONFIG_EVENT = 0x32a,
 	WMI_TAG_SERVICE_READY_EXT2_EVENT = 0x334,
 	WMI_TAG_FILS_DISCOVERY_TMPL_CMD = 0x344,
 	WMI_TAG_PEER_CREATE_RESP_EVENT = 0x364,
@@ -4551,6 +4553,20 @@ struct wmi_pdev_temperature_event {
 	/* temperature value in Celsius degree */
 	a_sle32 temp;
 	__le32 pdev_id;
+} __packed;
+
+#define WMI_AC_BE				0
+#define WMI_AC_BK				1
+#define WMI_AC_VI				2
+#define WMI_AC_VO				3
+#define WMI_AC_MAX				4
+
+struct wmi_pdev_update_muedca_event {
+	u32 pdev_id;
+	u32 aifsn[WMI_AC_MAX];
+	u32 ecwmin[WMI_AC_MAX];
+	u32 ecwmax[WMI_AC_MAX];
+	u32 muedca_expiration_time[WMI_AC_MAX];
 } __packed;
 
 #define WMI_RX_STATUS_OK			0x00

@@ -206,6 +206,8 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_11d_new_cc_event) },
 	[WMI_TAG_PEER_CREATE_RESP_EVENT] = {
 		.min_len = sizeof(struct ath12k_wmi_peer_create_conf_ev) },
+	[WMI_TAG_MUEDCA_PARAMS_CONFIG_EVENT] = {
+		.min_len = sizeof(struct wmi_pdev_update_muedca_event) },
 };
 
 __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len)
@@ -4778,6 +4780,78 @@ static void ath12k_wmi_pdev_dma_ring_buf_release_event(struct ath12k_base *ab,
 		ath12k_warn(ab, "failed to handle dma buf release event %d\n", ret);
 		return;
 	}
+}
+
+#define make_min_max(max,min) (u32_encode_bits(max, 0xf0) | u32_encode_bits(min, 0xf))
+
+static void
+ath12k_wmi_pdev_update_muedca_params_status_event(struct ath12k_base *ab,
+						  struct sk_buff *skb)
+{
+	const void **tb;
+	const struct wmi_pdev_update_muedca_event *ev;
+	struct ieee80211_mu_edca_param_set *params;
+	struct ath12k *ar;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_MUEDCA_PARAMS_CONFIG_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch pdev update muedca params ev");
+		goto mem_free;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "Update MU-EDCA parameters for pdev:%d\n", ev->pdev_id);
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, ev->pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "MU-EDCA parameter change in invalid pdev %d\n",
+			    ev->pdev_id);
+		goto unlock;
+	}
+
+	params = kzalloc(sizeof(*params), GFP_ATOMIC);
+	if (!params) {
+		ath12k_warn(ab,
+			    "Failed to allocate memory for updated MU-EDCA Parameters");
+		goto unlock;
+	}
+
+	params->ac_be.aifsn = ev->aifsn[WMI_AC_BE];
+	params->ac_be.ecw_min_max = make_min_max(ev->ecwmax[WMI_AC_BE],
+						 ev->ecwmin[WMI_AC_BE]);
+	params->ac_be.mu_edca_timer = ev->muedca_expiration_time[WMI_AC_BE];
+
+	params->ac_bk.aifsn = ev->aifsn[WMI_AC_BK];
+	params->ac_bk.ecw_min_max = make_min_max(ev->ecwmax[WMI_AC_BK],
+						 ev->ecwmin[WMI_AC_BK]);
+	params->ac_bk.mu_edca_timer = ev->muedca_expiration_time[WMI_AC_BK];
+
+	params->ac_vi.aifsn = ev->aifsn[WMI_AC_VI];
+	params->ac_vi.ecw_min_max = make_min_max(ev->ecwmax[WMI_AC_VI],
+						 ev->ecwmin[WMI_AC_VI]);
+	params->ac_vi.mu_edca_timer = ev->muedca_expiration_time[WMI_AC_VI];
+
+	params->ac_vo.aifsn = ev->aifsn[WMI_AC_VO];
+	params->ac_vo.ecw_min_max = make_min_max(ev->ecwmax[WMI_AC_VO],
+						 ev->ecwmin[WMI_AC_VO]);
+	params->ac_vo.mu_edca_timer = ev->muedca_expiration_time[WMI_AC_VO];
+
+	cfg80211_update_muedca_params_event(ar->ah->hw->wiphy, params, GFP_ATOMIC);
+
+	kfree(params);
+unlock:
+	rcu_read_unlock();
+mem_free:
+	kfree(tb);
 }
 
 static int ath12k_wmi_hw_mode_caps_parse(struct ath12k_base *soc,
@@ -9966,6 +10040,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 			ath12k_tm_wmi_event_segmented(ab, id, skb);
 		else
 			ath12k_tm_wmi_event_unsegmented(ab, id, skb);
+		break;
+	case WMI_MUEDCA_PARAMS_CONFIG_EVENTID:
+		ath12k_wmi_pdev_update_muedca_params_status_event(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
