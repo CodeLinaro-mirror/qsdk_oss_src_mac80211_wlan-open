@@ -163,13 +163,16 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 	fw_img = mhi_ctrl->fbc_image;
 
 	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
-		if (ab->qmi.target_mem[i].type == HOST_DDR_REGION_TYPE)
+		if (ab->qmi.target_mem[i].type == HOST_DDR_REGION_TYPE ||
+		    ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE ||
+			ab->qmi.target_mem[i].type == M3_DUMP_REGION_TYPE)
 			rem_seg_cnt++;
 	}
 
 	num_seg = fw_img->entries + rddm_img->entries + rem_seg_cnt;
 	if (ab->is_qdss_tracing)
 		num_seg += qdss_seg_cnt;
+
 	len = num_seg * sizeof(*segment);
 
 	seg_info = segment = (struct ath11k_dump_segment *)vzalloc(len);
@@ -196,29 +199,44 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 		ath11k_info(ab, "seg vaddr is %px len is 0x%x type %d\n",
 			    seg_info->vaddr, seg_info->len, seg_info->type);
 		seg_info->type = ATH11K_FW_CRASH_RDDM_DATA;
+		ath11k_info(ab, "seg vaddr is %px len is 0x%x type %d\n",
+			    seg_info->vaddr, seg_info->len, seg_info->type);
 		seg_info++;
 	}
 
 	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
-		if (ab->qmi.target_mem[i].type != HOST_DDR_REGION_TYPE)
-			continue;
-		seg_info->len = ab->qmi.target_mem[i].size;
-		seg_info->addr = ab->qmi.target_mem[i].paddr;
-		seg_info->vaddr = ab->qmi.target_mem[i].vaddr;
-		ath11k_info(ab, "seg vaddr is %px len is 0x%x type %d\n",
-			    seg_info->vaddr, seg_info->len, seg_info->type);
-		seg_info->type = ATH11K_FW_REMOTE_MEM_DATA;
-		seg_info++;
+		if (ab->qmi.target_mem[i].type == HOST_DDR_REGION_TYPE ||
+		    ab->qmi.target_mem[i].type == M3_DUMP_REGION_TYPE) {
+			seg_info->len = ab->qmi.target_mem[i].size;
+			seg_info->addr = ab->qmi.target_mem[i].paddr;
+			seg_info->vaddr = ab->qmi.target_mem[i].vaddr;
+			seg_info->type = ATH11K_FW_REMOTE_MEM_DATA;
+			ath11k_info(ab, "seg vaddr is %px len is 0x%x type %d\n",
+				    seg_info->vaddr, seg_info->len, seg_info->type);
+			seg_info++;
+		}
 	}
 
 	if (ab->is_qdss_tracing) {
 		seg_info->len = ab->qmi.qdss_mem[0].size;
 		seg_info->addr = ab->qmi.qdss_mem[0].paddr;
 		seg_info->vaddr = ab->qmi.qdss_mem[0].vaddr;
-		ath11k_dbg(ab, ATH11K_DBG_QMI, "seg vaddr is %px len is 0x%x type %d\n",
-			   seg_info->vaddr, seg_info->len, seg_info->type);
-		seg_info->type = ATH11K_FW_QDSS_DATA;
+		seg_info->type = ATH11K_FW_REMOTE_MEM_DATA;
+		ath11k_info(ab, "seg vaddr is %px len is 0x%x type %d\n",
+			    seg_info->vaddr, seg_info->len, seg_info->type);
 		seg_info++;
+	}
+
+	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
+		if (ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE) {
+			seg_info->len = ab->qmi.target_mem[i].size;
+			seg_info->addr = ab->qmi.target_mem[i].paddr;
+			seg_info->vaddr = ab->qmi.target_mem[i].vaddr;
+			seg_info->type = ATH11K_FW_REMOTE_MEM_DATA;
+			ath11k_info(ab, "seg vaddr is %px len is 0x%x type %d\n",
+				    seg_info->vaddr, seg_info->len, seg_info->type);
+			seg_info++;
+		}
 	}
 
 	/* Crash the system once all the stats are dumped */

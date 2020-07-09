@@ -774,6 +774,8 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	ab->hif.ops = &ath11k_pci_hif_ops;
 	ab->fw_mode = ATH11K_FIRMWARE_MODE_NORMAL;
 	pci_set_drvdata(pdev, ab);
+	ab->fw_recovery_support = false;
+
 	spin_lock_init(&ab_pci->window_lock);
 
 	/* Set fixed_mem_region to true for platforms support reserved memory

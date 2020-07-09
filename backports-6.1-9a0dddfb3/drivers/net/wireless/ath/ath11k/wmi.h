@@ -984,6 +984,7 @@ enum wmi_tlv_pdev_param {
 	WMI_PDEV_PARAM_SET_CMD_OBSS_PD_THRESHOLD = 0xbc,
 	WMI_PDEV_PARAM_SET_CMD_OBSS_PD_PER_AC = 0xbe,
 	WMI_PDEV_PARAM_ENABLE_SR_PROHIBIT = 0xc6,
+	WMI_PDEV_PARAM_MPD_USERPD_SSR = 0xce,
 };
 
 enum wmi_tlv_vdev_param {

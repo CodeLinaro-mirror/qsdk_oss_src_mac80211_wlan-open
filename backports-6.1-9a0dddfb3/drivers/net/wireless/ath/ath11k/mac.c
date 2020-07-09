@@ -6262,6 +6262,7 @@ static int ath11k_mac_op_start(struct ieee80211_hw *hw)
 	struct ath11k *ar = hw->priv;
 	struct ath11k_base *ab = ar->ab;
 	struct ath11k_pdev *pdev = ar->pdev;
+	struct device *dev = ab->dev;
 	int ret;
 
 	if (ath11k_ftm_mode) {
@@ -6340,6 +6341,17 @@ static int ath11k_mac_op_start(struct ieee80211_hw *hw)
 	if (ret) {
 		ath11k_err(ar->ab, "failed to enable MESH MCAST ENABLE: (%d\n", ret);
 		goto err;
+	}
+
+	if (ab->fw_recovery_support &&
+	    of_property_read_bool(dev->of_node, "qcom,multipd_arch"))
+	{
+		ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_MPD_USERPD_SSR,
+					  1, pdev->pdev_id);
+		if (ret) {
+			ath11k_err(ab, "failed to enable firmware SSR"
+				   "recovery:%d\n", ret);
+		}
 	}
 
 	__ath11k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask);

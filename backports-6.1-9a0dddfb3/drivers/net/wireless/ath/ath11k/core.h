@@ -1149,6 +1149,8 @@ struct ath11k_base {
 	} testmode;
 #endif
 
+	bool fw_recovery_support;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -1311,6 +1313,14 @@ void ath11k_fw_stats_vdevs_free(struct list_head *head);
 void ath11k_fw_stats_bcn_free(struct list_head *head);
 void ath11k_fw_stats_free(struct ath11k_fw_stats *stats);
 
+enum ath11k_fw_recovery_option {
+	ATH11K_FW_RECOVERY_DISABLE = 0,
+	ATH11K_FW_RECOVERY_ENABLE_AUTO, /* Automatically recover after FW assert */
+	/* Enable only recovery. Send MPD SSR WMI */
+	/* command to unlink UserPD assert from RootPD */
+	ATH11K_FW_RECOVERY_ENABLE_SSR_ONLY,
+};
+
 extern const struct ce_pipe_config ath11k_target_ce_config_wlan_ipq8074[];
 extern const struct service_to_pipe ath11k_target_service_to_ce_map_wlan_ipq8074[];
 extern const struct service_to_pipe ath11k_target_service_to_ce_map_wlan_ipq6018[];
@@ -1346,6 +1356,7 @@ int ath11k_core_suspend(struct ath11k_base *ab);
 void ath11k_core_pre_reconfigure_recovery(struct ath11k_base *ab);
 bool ath11k_core_coldboot_cal_support(struct ath11k_base *ab);
 
+void ath11k_core_dump_bp_stats(struct ath11k_base *ab);
 void ath11k_coredump_qdss_dump(struct ath11k_base *ab,
 			       struct ath11k_qmi_event_qdss_trace_save_data *event_data);
 const struct firmware *ath11k_core_firmware_request(struct ath11k_base *ab,

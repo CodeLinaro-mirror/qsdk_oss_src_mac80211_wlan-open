@@ -2065,7 +2065,8 @@ int ath11k_core_ssr_notifier_cb(struct notifier_block *nb, unsigned long event,
 	/* TODO Add more driver stats */
 
 	/* Crash the system once all the stats are dumped */
-	BUG_ON(1);
+	if(!qmi->ab->fw_recovery_support)
+		BUG_ON(1);
 
 	return 0;
 }

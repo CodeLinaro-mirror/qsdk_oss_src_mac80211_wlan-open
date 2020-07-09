@@ -3,6 +3,7 @@
  * Copyright (c) 2018-2020 The Linux Foundation. All rights reserved.
  * Copyright (c) 2021-2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
+#include <linux/of.h>
 
 #include <linux/vmalloc.h>
 
@@ -1058,6 +1059,73 @@ static const struct file_operations fops_sram_dump = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_debug_write_fw_recovery(struct file *file,
+                                              char __user *user_buf,
+                                              size_t count, loff_t *ppos)
+{
+       struct ath11k_base *ab = file->private_data;
+       struct ath11k *ar;
+       struct ath11k_pdev *pdev;
+       struct device *dev = ab->dev;
+       bool multi_pd_arch = false;
+       unsigned int value;
+       int ret, i;
+
+       if (kstrtouint_from_user(user_buf, count, 0, &value))
+                return -EINVAL;
+
+       if (value < ATH11K_FW_RECOVERY_DISABLE ||
+	   value > ATH11K_FW_RECOVERY_ENABLE_SSR_ONLY) {
+		ath11k_warn(ab, "Please enter: 0 = Disable, 1 = Enable (auto recover),"
+			    "2 = Enable SSR only");
+		ret = -EINVAL;
+		goto exit;
+       }
+
+       for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		ar = pdev->ar;
+		if (ar && ar->state == ATH11K_STATE_ON)
+			break;
+       }
+
+       multi_pd_arch = of_property_read_bool(dev->of_node, "qcom,multipd_arch");
+       if (multi_pd_arch) {
+	       if (value == ATH11K_FW_RECOVERY_DISABLE ||
+		   value == ATH11K_FW_RECOVERY_ENABLE_SSR_ONLY) {
+		       ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_MPD_USERPD_SSR,
+						 0, ar->pdev->pdev_id);
+	       } else if (value == ATH11K_FW_RECOVERY_ENABLE_AUTO)
+		       ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_MPD_USERPD_SSR,
+						 1, ar->pdev->pdev_id);
+       }
+       ab->fw_recovery_support = value ? true : false;
+
+       ret = count;
+
+exit:
+       return ret;
+}
+
+static ssize_t ath11k_debug_read_fw_recovery(struct file *file,
+                                          char __user *user_buf,
+                                          size_t count, loff_t *ppos)
+{
+       struct ath11k_base *ab = file->private_data;
+       char buf[32];
+       size_t len;
+
+       len = scnprintf(buf, sizeof(buf), "%u\n", ab->fw_recovery_support);
+
+       return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_fw_recovery = {
+       .read = ath11k_debug_read_fw_recovery,
+       .write = ath11k_debug_write_fw_recovery,
+       .open = simple_open,
+};
+
 int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 {
 	if (test_bit(ATH11K_FLAG_REGISTERED, &ab->dev_flags))
@@ -1076,6 +1144,10 @@ int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 	if (ab->hw_params.sram_dump.start != 0)
 		debugfs_create_file("sram", 0400, ab->debugfs_soc, ab,
 				    &fops_sram_dump);
+
+	debugfs_create_file("set_fw_recovery", 0600, ab->debugfs_soc, ab,
+			    &fops_fw_recovery);
+
 
 	return 0;
 }
