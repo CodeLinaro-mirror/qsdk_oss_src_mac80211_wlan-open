@@ -36,6 +36,7 @@
 #include "coredump.h"
 #include "vendor.h"
 #include "rx_desc.h"
+#include "nss.h"
 
 #ifdef CONFIG_QCOM_QMI_HELPERS
 extern wait_queue_head_t ath11k_ssr_dump_wq;
@@ -447,6 +448,9 @@ struct ath11k_vif {
 	struct ieee80211_chanctx_conf chanctx;
 
 	struct ath11k_mgmt_frame_stats mgmt_stats;
+#ifdef CPTCFG_ATH11K_NSS_SUPPORT
+	struct arvif_nss nss;
+#endif
 };
 
 struct ath11k_vif_iter {
@@ -600,6 +604,9 @@ struct ath11k_sta {
 #endif
 
 	bool use_4addr_set;
+#ifdef CPTCFG_ATH11K_NSS_SUPPORT
+	struct ath11k_nss_sta_stats *nss_stats;
+#endif
 	u16 tcl_metadata;
 
 	/* Protected with ar->data_lock */
@@ -726,6 +733,9 @@ struct ath11k {
 	struct ath11k_pdev *pdev;
 	struct ieee80211_hw *hw;
 	struct ath11k_pdev_wmi *wmi;
+#ifdef CPTCFG_ATH11K_NSS_SUPPORT
+	struct ath11k_nss nss;
+#endif
 	struct ath11k_pdev_dp dp;
 	u8 mac_addr[ETH_ALEN];
 	struct ath11k_he ar_he;
@@ -1001,9 +1011,11 @@ struct ath11k_base {
 	struct ath11k_htc htc;
 
 	struct ath11k_dp dp;
+	struct ath11k_soc_nss nss;
 
 	void __iomem *mem;
 	void __iomem *mem_ce;
+	dma_addr_t mem_pa;
 	unsigned long mem_len;
 
 	struct {

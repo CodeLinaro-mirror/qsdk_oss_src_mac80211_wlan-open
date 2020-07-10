@@ -7,6 +7,7 @@
 #include "core.h"
 #include "peer.h"
 #include "debug.h"
+#include "nss.h"
 
 static struct ath11k_peer *ath11k_peer_find_list_by_id(struct ath11k_base *ab,
 						       int peer_id)
@@ -150,6 +151,8 @@ void ath11k_peer_map_event(struct ath11k_base *ab, u8 vdev_id, u16 peer_id,
 		ether_addr_copy(peer->addr, mac_addr);
 		list_add(&peer->list, &ab->peers);
 		wake_up(&ab->peer_mapping_wq);
+		if (ab->nss.enabled)
+			ath11k_nss_peer_create(ab, peer);
 	}
 
 	ath11k_dbg(ab, ATH11K_DBG_DP_HTT, "peer map vdev %d peer %pM id %d\n",
@@ -345,6 +348,8 @@ static int __ath11k_peer_delete(struct ath11k *ar, u32 vdev_id, const u8 *addr)
 	mutex_unlock(&ab->tbl_mtx_lock);
 
 	reinit_completion(&ar->peer_delete_done);
+
+	ath11k_nss_peer_delete(ar->ab, addr);
 
 	ret = ath11k_wmi_send_peer_delete_cmd(ar, addr, vdev_id);
 	if (ret) {

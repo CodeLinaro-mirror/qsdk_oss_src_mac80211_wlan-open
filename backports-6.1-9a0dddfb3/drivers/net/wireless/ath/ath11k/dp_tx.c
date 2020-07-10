@@ -12,7 +12,7 @@
 #include "peer.h"
 #include "mac.h"
 
-static enum hal_tcl_encap_type
+enum hal_tcl_encap_type
 ath11k_dp_tx_get_encap_type(struct ath11k_vif *arvif, struct sk_buff *skb)
 {
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);

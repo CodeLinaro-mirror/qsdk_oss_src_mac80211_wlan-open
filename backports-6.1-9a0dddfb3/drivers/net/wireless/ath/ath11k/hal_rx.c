@@ -940,6 +940,12 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		ppdu_info->num_mpdu_fcs_err =
 			FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO0_MPDU_CNT_FCS_ERR,
 				  info0);
+
+		if (ppdu_info->fc_valid)
+			ppdu_info->frame_control =
+				FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO2_FRAME_CTRL,
+						__le32_to_cpu(eu_stats->info2));
+
 		switch (ppdu_info->preamble_type) {
 		case HAL_RX_PREAMBLE_11N:
 			ppdu_info->ht_flags = 1;

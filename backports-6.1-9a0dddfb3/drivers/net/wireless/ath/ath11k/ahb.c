@@ -532,6 +532,12 @@ static int ath11k_ahb_config_ext_irq(struct ath11k_base *ab)
 	int i, j;
 	int irq;
 	int ret;
+	bool nss_offload;
+
+	/* TCL Completion, REO Dest, ERR, Exception and h2rxdma rings are offloaded
+	 * to nss when its enabled, hence don't enable these interrupts
+	 */
+	nss_offload = ab->nss.enabled;
 
 	for (i = 0; i < ATH11K_EXT_IRQ_GRP_NUM_MAX; i++) {
 		struct ath11k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
@@ -554,20 +560,20 @@ static int ath11k_ahb_config_ext_irq(struct ath11k_base *ab)
 			       ath11k_ahb_ext_grp_napi_poll);
 
 		for (j = 0; j < ATH11K_EXT_IRQ_NUM_MAX; j++) {
-			if (ab->hw_params.ring_mask->tx[i] & BIT(j)) {
+			if (!nss_offload && ab->hw_params.ring_mask->tx[i] & BIT(j)) {
 				irq_grp->irqs[num_irq++] =
 					wbm2host_tx_completions_ring1 - j;
 			}
 
-			if (ab->hw_params.ring_mask->rx[i] & BIT(j)) {
+			if (!nss_offload && ab->hw_params.ring_mask->rx[i] & BIT(j)) {
 				irq_grp->irqs[num_irq++] =
 					reo2host_destination_ring1 - j;
 			}
 
-			if (ab->hw_params.ring_mask->rx_err[i] & BIT(j))
+			if (!nss_offload && ab->hw_params.ring_mask->rx_err[i] & BIT(j))
 				irq_grp->irqs[num_irq++] = reo2host_exception;
 
-			if (ab->hw_params.ring_mask->rx_wbm_rel[i] & BIT(j))
+			if (!nss_offload && ab->hw_params.ring_mask->rx_wbm_rel[i] & BIT(j))
 				irq_grp->irqs[num_irq++] = wbm2host_rx_release;
 
 			if (ab->hw_params.ring_mask->reo_status[i] & BIT(j))
@@ -580,7 +586,7 @@ static int ath11k_ahb_config_ext_irq(struct ath11k_base *ab)
 						ath11k_hw_get_mac_from_pdev_id(hw, j);
 				}
 
-				if (ab->hw_params.ring_mask->host2rxdma[i] & BIT(j)) {
+				if (!nss_offload && ab->hw_params.ring_mask->host2rxdma[i] & BIT(j)) {
 					irq_grp->irqs[num_irq++] =
 						host2rxdma_host_buf_ring_mac1 -
 						ath11k_hw_get_mac_from_pdev_id(hw, j);
@@ -950,6 +956,7 @@ static int ath11k_ahb_setup_resources(struct ath11k_base *ab)
 	}
 
 	ab->mem = mem;
+	ab->mem_pa = mem_res->start;
 	ab->mem_len = resource_size(mem_res);
 
 	return 0;

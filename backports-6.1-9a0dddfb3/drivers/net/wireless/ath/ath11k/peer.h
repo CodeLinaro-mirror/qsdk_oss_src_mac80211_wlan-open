@@ -28,6 +28,7 @@ struct ath11k_peer {
 	u16 ast_hash;
 	u8 pdev_idx;
 	u16 hw_peer_id;
+	struct ath11k_nss_peer nss;
 
 	/* protected by ab->data_lock */
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];

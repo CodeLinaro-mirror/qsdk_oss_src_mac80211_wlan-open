@@ -424,6 +424,8 @@ enum hal_srng_ring_id {
 #define HAL_SRNG_RING_ID_MAX    (HAL_SRNG_RING_ID_UMAC_ID_END + \
 				 HAL_SRNG_NUM_LMAC_RINGS)
 
+#define HAL_SRNG_REO_ALTERNATE_SELECT 0x7
+
 enum hal_ring_type {
 	HAL_REO_DST,
 	HAL_REO_EXCEPTION,

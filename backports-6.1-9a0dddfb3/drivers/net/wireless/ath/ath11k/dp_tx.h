@@ -39,6 +39,8 @@ int ath11k_dp_tx_htt_rx_filter_setup(struct ath11k_base *ab, u32 ring_id,
 				     int mac_id, enum hal_ring_type ring_type,
 				     int rx_buf_size,
 				     struct htt_rx_ring_tlv_filter *tlv_filter);
+enum hal_tcl_encap_type
+ath11k_dp_tx_get_encap_type(struct ath11k_vif *arvif, struct sk_buff *skb);
 
 int ath11k_dp_tx_htt_rx_full_mon_setup(struct ath11k_base *ab, int mac_id,
 				       bool config);

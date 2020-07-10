@@ -26,6 +26,7 @@
 #include "hif.h"
 #include "wow.h"
 #include "vendor.h"
+#include "nss.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -1692,6 +1693,11 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 	lockdep_assert_held(&arvif->ar->conf_mutex);
 
 	if (!info->enable_beacon) {
+
+		ret = ath11k_nss_vdev_down(arvif);
+		if(ret)
+			ath11k_warn(ar->ab, "failure in nss vdev down %d\r\n",ret);
+
 		ret = ath11k_wmi_vdev_down(ar, arvif->vdev_id);
 		if (ret)
 			ath11k_warn(ar->ab, "failed to down vdev_id %i: %d\n",
@@ -1726,6 +1732,12 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 	}
 
 	arvif->is_up = true;
+
+	ret = ath11k_nss_vdev_up(arvif);
+	if(ret) {
+		ath11k_warn(ar->ab, "failure in nss vdev up %d\r\n",ret);
+		return;
+	}
 
 	ath11k_dbg(ar->ab, ATH11K_DBG_MAC, "vdev %d up\n", arvif->vdev_id);
 }
@@ -3165,6 +3177,12 @@ static void ath11k_bss_assoc(struct ieee80211_hw *hw,
 		   "vdev %d up (associated) bssid %pM aid %d\n",
 		   arvif->vdev_id, bss_conf->bssid, vif->cfg.aid);
 
+	ret = ath11k_nss_vdev_up(arvif);
+	if(ret) {
+		ath11k_warn(ar->ab, "failure in nss vdev up %d\r\n",ret);
+		return;
+	}
+
 	spin_lock_bh(&ar->ab->base_lock);
 
 	peer = ath11k_peer_find(ar->ab, arvif->vdev_id, arvif->bssid);
@@ -3206,6 +3224,10 @@ static void ath11k_bss_disassoc(struct ieee80211_hw *hw,
 	int ret;
 
 	lockdep_assert_held(&ar->conf_mutex);
+
+	ret = ath11k_nss_vdev_down(arvif);
+	if(ret)
+		ath11k_warn(ar->ab, "failure in nss vdev down %d\r\n",ret);
 
 	ath11k_dbg(ar->ab, ATH11K_DBG_MAC, "vdev %i disassoc bssid %pM\n",
 		   arvif->vdev_id, arvif->bssid);
@@ -3497,6 +3519,28 @@ static bool ath11k_mac_supports_station_tpc(struct ath11k *ar,
 		arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE &&
 		chandef->chan &&
 		chandef->chan->band == NL80211_BAND_6GHZ;
+}
+
+static void ath11k_mac_op_nss_bss_info_changed(struct ieee80211_hw *hw,
+					   struct ieee80211_vif *vif,
+					   u32 changed)
+{
+	struct ath11k *ar = hw->priv;
+	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
+	int ret = 0;
+
+	mutex_lock(&ar->conf_mutex);
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_MAC, "Setting ap_isolate %d to NSS\n",
+		   arvif->vif->bss_conf.nss_ap_isolate);
+	if (changed & BSS_CHANGED_NSS_AP_ISOLATE) {
+		ret = ath11k_nss_vdev_set_cmd(arvif, ATH11K_NSS_WIFI_VDEV_CFG_AP_BRIDGE_CMD,
+					      !arvif->vif->bss_conf.nss_ap_isolate);
+		if(ret)
+			ath11k_warn(ar->ab, "failed to set ap_isolate in nss %d\n", ret);
+	}
+
+	mutex_unlock(&ar->conf_mutex);
 }
 
 static void ath11k_mac_op_bss_info_changed(struct ieee80211_hw *hw,
@@ -4422,6 +4466,26 @@ static int ath11k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 
 	spin_lock_bh(&ab->base_lock);
 	peer = ath11k_peer_find(ab, arvif->vdev_id, peer_addr);
+
+	/* TODO: Check if vdev specific security cfg is mandatory */
+	ret = ath11k_nss_vdev_set_cmd(arvif, ATH11K_NSS_WIFI_VDEV_SECURITY_TYPE_CMD, key->cipher);
+	if (ret) {
+		ath11k_warn(ab, "failure to set vdev security type in nss");
+		goto unlock;
+	}
+
+	ret = ath11k_nss_set_peer_sec_type(ar, peer, key);
+	if (ret) {
+		ath11k_warn(ab, "failure to set peer security type in nss");
+		goto unlock;
+	}
+
+	ret = ath11k_nss_set_peer_authorize(ar, peer->peer_id);
+	if (ret) {
+		ath11k_warn(ab, "failure to authorize peer in nss");
+		goto unlock;
+	}
+
 	if (peer && cmd == SET_KEY) {
 		peer->keys[key->keyidx] = key;
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
@@ -4460,9 +4524,8 @@ static int ath11k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			break;
 		}
 	}
-
+unlock:
 	spin_unlock_bh(&ab->base_lock);
-
 exit:
 	mutex_unlock(&ar->conf_mutex);
 	return ret;
@@ -6191,10 +6254,14 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	if (control->sta)
 		arsta = ath11k_sta_to_arsta(control->sta);
 
-	ret = ath11k_dp_tx(ar, arvif, arsta, skb);
+	if (ar->ab->nss.enabled)
+		ret = ath11k_nss_tx(arvif,skb);
+	else
+		ret = ath11k_dp_tx(ar, arvif, arsta, skb);
 	if (unlikely(ret)) {
 		ath11k_warn(ar->ab, "failed to transmit frame %d\n", ret);
 		ieee80211_free_txskb(ar->hw, skb);
+		return;
 	}
 }
 
@@ -6216,6 +6283,8 @@ static int ath11k_mac_config_mon_status_default(struct ath11k *ar, bool enable)
 
 	if (enable) {
 		tlv_filter = ath11k_mac_mon_status_filter_default;
+		ath11k_nss_ext_rx_stats(ar->ab, &tlv_filter);
+
 		if (ath11k_debugfs_rx_filter(ar))
 			tlv_filter.rx_filter = ath11k_debugfs_rx_filter(ar);
 	}
@@ -6535,7 +6604,7 @@ static int ath11k_mac_setup_vdev_create_params(struct ath11k_vif *arvif,
 	return 0;
 }
 
-static void ath11k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
+static int ath11k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 					     struct ieee80211_vif *vif)
 {
 	struct ath11k *ar = hw->priv;
@@ -6581,6 +6650,8 @@ static void ath11k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 			    arvif->vdev_id, ret);
 		vif->offload_flags &= ~IEEE80211_OFFLOAD_DECAP_ENABLED;
 	}
+
+	return ret;
 }
 
 static bool ath11k_mac_vif_ap_active_any(struct ath11k_base *ab)
@@ -6710,6 +6781,8 @@ static int ath11k_mac_vdev_delete(struct ath11k *ar, struct ath11k_vif *arvif)
 	lockdep_assert_held(&ar->conf_mutex);
 
 	reinit_completion(&ar->vdev_delete_done);
+
+	ath11k_nss_vdev_delete(arvif);
 
 	ret = ath11k_wmi_vdev_delete(ar, arvif->vdev_id);
 	if (ret) {
@@ -6863,7 +6936,34 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 	list_add(&arvif->list, &ar->arvifs);
 	spin_unlock_bh(&ar->data_lock);
 
-	ath11k_mac_op_update_vif_offload(hw, vif);
+	ret = ath11k_nss_vdev_create(arvif);
+	if(ret) {
+		ath11k_warn(ab, "failed to create nss vdev %d\n", ret);
+		goto err_vdev_del;
+	}
+
+	if (ath11k_mac_op_update_vif_offload(hw, vif))
+		goto err_vdev_del;
+
+	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
+		param_value = ATH11K_HW_TXRX_ETHERNET;
+	else if (test_bit(ATH11K_FLAG_RAW_MODE, &ab->dev_flags))
+		param_value = ATH11K_HW_TXRX_RAW;
+	else
+		param_value = ATH11K_HW_TXRX_NATIVE_WIFI;
+
+	ret = ath11k_nss_vdev_set_cmd(arvif, ATH11K_NSS_WIFI_VDEV_ENCAP_TYPE_CMD, param_value);
+
+	if(ret) {
+		ath11k_warn(ab, "failed to set encap type in nss %d\n", ret);
+		goto err_vdev_del;
+	}
+
+	ret = ath11k_nss_vdev_set_cmd(arvif, ATH11K_NSS_WIFI_VDEV_DECAP_TYPE_CMD, param_value);
+	if(ret) {
+		ath11k_warn(ab, "failed to set decap type in nss %d\n", ret);
+		goto err_vdev_del;
+	}
 
 	nss = get_num_chains(ar->cfg_tx_chainmask) ? : 1;
 	ret = ath11k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
@@ -6989,6 +7089,7 @@ err_peer_del:
 	}
 
 err_vdev_del:
+	ath11k_nss_vdev_delete(arvif);
 	ath11k_mac_vdev_delete(ar, arvif);
 	spin_lock_bh(&ar->data_lock);
 	list_del(&arvif->list);
@@ -7506,6 +7607,10 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 				    arvif->vdev_id, ret);
 			continue;
 		}
+
+		ret = ath11k_nss_vdev_up(arvif);
+		if(ret)
+			ath11k_warn(ar->ab, "failure in nss vdev up %d\r\n",ret);
 	}
 
 	/* Restart the internal monitor vdev on new channel */
@@ -9199,6 +9304,8 @@ static void ath11k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		sinfo->signal_avg += ATH11K_DEFAULT_NOISE_FLOOR;
 
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
+
+	ath11k_nss_update_sta_stats(sinfo, sta, arsta);
 }
 
 #if IS_ENABLED(CONFIG_IPV6)
@@ -10013,6 +10120,7 @@ static const struct ieee80211_ops ath11k_ops = {
 	.update_vif_offload		= ath11k_mac_op_update_vif_offload,
 	.config                         = ath11k_mac_op_config,
 	.bss_info_changed               = ath11k_mac_op_bss_info_changed,
+	.nss_bss_info_changed           = ath11k_mac_op_nss_bss_info_changed,
 	.configure_filter		= ath11k_mac_op_configure_filter,
 	.hw_scan                        = ath11k_mac_op_hw_scan,
 	.cancel_hw_scan                 = ath11k_mac_op_cancel_hw_scan,
@@ -10507,7 +10615,8 @@ static int __ath11k_mac_register(struct ath11k *ar)
 		ieee80211_hw_set(ar->hw, TX_AMPDU_SETUP_IN_HW);
 		ieee80211_hw_set(ar->hw, SUPPORTS_REORDERING_BUFFER);
 		ieee80211_hw_set(ar->hw, SUPPORTS_AMSDU_IN_AMPDU);
-		ieee80211_hw_set(ar->hw, USES_RSS);
+		if(!ab->nss.enabled)
+			ieee80211_hw_set(ar->hw, USES_RSS);
 	}
 
 	ar->hw->wiphy->features |= NL80211_FEATURE_STATIC_SMPS;
@@ -10627,6 +10736,9 @@ static int __ath11k_mac_register(struct ath11k *ar)
 	if (test_bit(WMI_TLV_SERVICE_BIOS_SAR_SUPPORT, ar->ab->wmi_ab.svc_map) &&
 	    ab->hw_params.bios_sar_capa)
 		ar->hw->wiphy->sar_capa = ab->hw_params.bios_sar_capa;
+
+	if (ab->nss.enabled)
+		ieee80211_hw_set(ar->hw, SUPPORTS_NSS_OFFLOAD);
 
 	ret = ieee80211_register_hw(ar->hw);
 	if (ret) {

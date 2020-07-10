@@ -751,6 +751,7 @@ static ssize_t ath11k_write_extd_rx_stats(struct file *file,
 			HTT_RX_FP_DATA_FILTER_FLASG3;
 	} else {
 		tlv_filter = ath11k_mac_mon_status_filter_default;
+		ath11k_nss_ext_rx_stats(ar->ab, &tlv_filter);
 	}
 
 	ar->debug.rx_filter = tlv_filter.rx_filter;
@@ -2151,6 +2152,75 @@ static const struct file_operations fops_enable_m3_dump = {
 	.open = simple_open
 };
 
+static ssize_t ath11k_write_nss_stats(struct file *file,
+				      const char __user *ubuf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	struct ath11k_base *ab = ar->ab;
+	u32 nss_stats;
+	int ret;
+
+	if (!ab->nss.enabled) {
+		ath11k_warn(ab, "nss offload not enabled\n");
+		return -EINVAL;
+	}
+
+	if (kstrtouint_from_user(ubuf, count, 0, &nss_stats))
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ret = -ENETDOWN;
+		goto out;
+	}
+
+	if (nss_stats == ab->nss.stats_enabled) {
+		ret = count;
+		goto out;
+	}
+
+	if (nss_stats > 0) {
+		ab->nss.stats_enabled = 1;
+		ath11k_nss_peer_stats_enable(ar);
+	} else {
+		ab->nss.stats_enabled = 0;
+		ath11k_nss_peer_stats_disable(ar);
+	}
+
+	ret = count;
+out:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static ssize_t ath11k_read_nss_stats(struct file *file,
+				     char __user *ubuf,
+				     size_t count, loff_t *ppos)
+
+{
+	char buf[32] = {0};
+	struct ath11k *ar = file->private_data;
+	struct ath11k_base *ab = ar->ab;
+	int len = 0;
+
+	mutex_lock(&ar->conf_mutex);
+	len = scnprintf(buf, sizeof(buf) - len, "%08x\n",
+			ab->nss.stats_enabled);
+	mutex_unlock(&ar->conf_mutex);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_nss_stats = {
+	.read = ath11k_read_nss_stats,
+	.write = ath11k_write_nss_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static int ath11k_get_tpc_ctl_mode(struct wmi_tpc_stats_event *tpc_stats,
 				   u32 pream_idx, int *mode)
 {
@@ -2814,6 +2884,10 @@ int ath11k_debugfs_register(struct ath11k *ar)
 			    ar, &fops_tpc_stats);
 	debugfs_create_file("tpc_stats_type", 0600, ar->debug.debugfs_pdev,
 			    ar, &fops_tpc_stats_type);
+
+	if (ab->nss.enabled)
+		debugfs_create_file("nss_peer_stats_config", 0644,
+				    ar->debug.debugfs_pdev, ar, &fops_nss_stats);
 
 	return 0;
 }

@@ -609,6 +609,12 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 		netif_napi_add(napi_ndev, &irq_grp->napi,
 			       ath11k_pcic_ext_grp_napi_poll);
 
+		/* tcl, reo, rx_err, wbm release, rxdma rings are offloaded to nss. */
+		if (ab->nss.enabled &&
+		    !(ab->hw_params.ring_mask->reo_status[i] ||
+		      ab->hw_params.ring_mask->rx_mon_status[i]))
+			continue;
+
 		if (ab->hw_params.ring_mask->tx[i] ||
 		    ab->hw_params.ring_mask->rx[i] ||
 		    ab->hw_params.ring_mask->rx_err[i] ||

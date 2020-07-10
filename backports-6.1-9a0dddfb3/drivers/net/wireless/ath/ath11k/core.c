@@ -20,6 +20,12 @@
 #include "wow.h"
 #include "fw.h"
 
+unsigned int nss_offload;
+#ifdef CPTCFG_ATH11K_NSS_SUPPORT
+module_param_named(nss_offload, nss_offload, uint, 0644);
+MODULE_PARM_DESC(nss_offload, "Enable NSS Offload support");
+#endif
+
 unsigned int ath11k_debug_mask;
 EXPORT_SYMBOL(ath11k_debug_mask);
 module_param_named(debug_mask, ath11k_debug_mask, uint, 0644);
@@ -1749,10 +1755,16 @@ static int ath11k_core_pdev_create(struct ath11k_base *ab)
 		goto err_pdev_debug;
 	}
 
+	ret = ath11k_nss_setup(ab);
+	if (ret) {
+		ath11k_err(ab, "failed to setup nss driver interface%d", ret);
+		goto err_dp_pdev_free;
+	}
+
 	ret = ath11k_mac_register(ab);
 	if (ret) {
 		ath11k_err(ab, "failed register the radio with mac80211: %d\n", ret);
-		goto err_dp_pdev_free;
+		goto err_nss_tear;
 	}
 
 	ret = ath11k_thermal_register(ab);
@@ -1774,6 +1786,8 @@ err_thermal_unregister:
 	ath11k_thermal_unregister(ab);
 err_mac_unregister:
 	ath11k_mac_unregister(ab);
+err_nss_tear:
+	ath11k_nss_teardown(ab);
 err_dp_pdev_free:
 	ath11k_dp_pdev_free(ab);
 err_pdev_debug:
@@ -1822,6 +1836,10 @@ static void ath11k_core_pdev_destroy(struct ath11k_base *ab)
 	ath11k_spectral_deinit(ab);
 	ath11k_thermal_unregister(ab);
 	ath11k_mac_unregister(ab);
+
+	ath11k_nss_teardown(ab);
+	ab->nss.enabled = false;
+
 	ath11k_core_pdev_suspend_target(ab);
 	ath11k_hif_irq_disable(ab);
 	ath11k_dp_pdev_free(ab);
@@ -2155,6 +2173,10 @@ static int ath11k_core_reconfigure_on_crash(struct ath11k_base *ab)
 	int ret;
 
 	mutex_lock(&ab->core_lock);
+
+	ath11k_nss_teardown(ab);
+	ab->nss.enabled = false;
+
 	ath11k_thermal_unregister(ab);
 	ath11k_dp_pdev_free(ab);
 	ath11k_spectral_deinit(ab);
@@ -2462,6 +2484,10 @@ int ath11k_core_pre_init(struct ath11k_base *ab)
 		ath11k_err(ab, "failed to pre init firmware: %d", ret);
 		return ret;
 	}
+	ab->nss.enabled = nss_offload;
+
+	if (nss_offload)
+		ab->nss.stats_enabled = 1;
 
 	return 0;
 }
