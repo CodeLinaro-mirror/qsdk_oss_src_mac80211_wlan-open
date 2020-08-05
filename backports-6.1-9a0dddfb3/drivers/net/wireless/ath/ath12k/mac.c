@@ -1557,7 +1557,9 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)bcn->data;
 	const struct element *elem, *nontx, *index, *nie;
+	struct ieee80211_vht_cap *vht_cap;
 	const u8 *start, *tail;
+	const u8 *vht_cap_ie;
 	u16 rem_len;
 	u8 i;
 
@@ -1573,6 +1575,11 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 	if (cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT, WLAN_OUI_TYPE_MICROSOFT_WPA,
 				    start, rem_len))
 		arvif->wpaie_present = true;
+	vht_cap_ie = cfg80211_find_ie(WLAN_EID_VHT_CAPABILITY, start, rem_len);
+	if (vht_cap_ie && vht_cap_ie[1] >= sizeof(*vht_cap)) {
+		vht_cap = (void *)(vht_cap_ie + 2);
+		arvif->vht_cap = vht_cap->vht_cap_info;
+	}
 
 	/* Return from here for the transmitted profile */
 	if (!bssid_index)
@@ -10471,6 +10478,71 @@ ath12k_mac_mlo_get_vdev_args(struct ath12k_link_vif *arvif,
 	}
 }
 
+static bool
+ath12k_mac_check_fixed_rate_settings_for_mumimo(struct ath12k_link_vif *arvif,
+						const u16 *vht_mcs_mask,
+						const u16 *he_mcs_mask)
+{
+	struct ieee80211_he_cap_elem he_cap_elem = {0};
+	struct ieee80211_bss_conf *link_conf;
+	struct ath12k *ar = arvif->ar;
+	int nss_idx;
+	int he_nss;
+	int vht_nss;
+
+	rcu_read_lock();
+
+	link_conf = rcu_dereference(arvif->ahvif->vif->link_conf[arvif->link_id]);
+
+	if (!link_conf) {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	vht_nss =  ath12k_mac_max_vht_nss(vht_mcs_mask);
+
+	if (vht_nss != 1) {
+		for (nss_idx = vht_nss-1; nss_idx >= 0; nss_idx--) {
+			if (vht_mcs_mask[nss_idx])
+				continue;
+
+			if (arvif->vht_cap & IEEE80211_VHT_CAP_MU_BEAMFORMER_CAPABLE) {
+				rcu_read_unlock();
+				ath12k_warn(ar->ab, "vht fixed NSS rate is allowed only when MU MIMO is disabled\n");
+				return false;
+			}
+		}
+	}
+
+	if (!link_conf->he_support) {
+		rcu_read_unlock();
+		return true;
+	}
+
+	he_nss =  ath12k_mac_max_he_nss(he_mcs_mask);
+
+	if (he_nss == 1) {
+		rcu_read_unlock();
+		return true;
+	}
+
+	memcpy(&he_cap_elem, &link_conf->he_cap_elem, sizeof(he_cap_elem));
+
+	for (nss_idx = he_nss-1; nss_idx >= 0; nss_idx--) {
+		if (he_mcs_mask[nss_idx])
+			continue;
+
+		if ((he_cap_elem.phy_cap_info[2] & IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO) ||
+		     (he_cap_elem.phy_cap_info[4] & IEEE80211_HE_PHY_CAP4_MU_BEAMFORMER)) {
+			rcu_read_unlock();
+			ath12k_warn(ar->ab, "he fixed NSS rate is allowed only when MU MIMO is disabled\n");
+			return false;
+		}
+	}
+	rcu_read_unlock();
+	return true;
+}
+
 static int
 ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 			      struct ieee80211_chanctx_conf *ctx,
@@ -12089,6 +12161,9 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 						  arvif);
 	} else {
 		rate = WMI_FIXED_RATE_NONE;
+
+		if (!ath12k_mac_check_fixed_rate_settings_for_mumimo(arvif, vht_mcs_mask, he_mcs_mask))
+			return -EINVAL;
 
 		if (!ath12k_mac_validate_fixed_rate_settings(ar, band,
 							     mask, arvif->link_id))

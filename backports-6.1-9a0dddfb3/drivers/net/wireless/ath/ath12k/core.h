@@ -366,6 +366,7 @@ struct ath12k_link_vif {
 	u32 key_cipher;
 	bool nawds_support;
 	bool spectral_enabled;
+	u32 vht_cap;
 };
 
 struct ath12k_dp_link_vif {
