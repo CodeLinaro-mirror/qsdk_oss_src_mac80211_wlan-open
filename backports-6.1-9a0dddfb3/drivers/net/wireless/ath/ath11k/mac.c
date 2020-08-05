@@ -1486,8 +1486,10 @@ static int ath11k_mac_set_vif_params(struct ath11k_vif *arvif,
 {
 	struct ath11k_base *ab = arvif->ar->ab;
 	struct ieee80211_mgmt *mgmt;
+	struct ieee80211_vht_cap *vht_cap;
 	int ret = 0;
 	u8 *ies;
+	const u8 *vht_cap_ie;
 
 	ies = bcn->data + ieee80211_get_hdrlen_from_skb(bcn);
 	mgmt = (struct ieee80211_mgmt *)bcn->data;
@@ -1497,6 +1499,12 @@ static int ath11k_mac_set_vif_params(struct ath11k_vif *arvif,
 		arvif->rsnie_present = true;
 	else
 		arvif->rsnie_present = false;
+
+	vht_cap_ie = cfg80211_find_ie(WLAN_EID_VHT_CAPABILITY, ies, (skb_tail_pointer(bcn) - ies));
+	if (vht_cap_ie && vht_cap_ie[1] >= sizeof(*vht_cap)) {
+		vht_cap = (void *)(vht_cap_ie + 2);
+		arvif->vht_cap = vht_cap->vht_cap_info;
+	}
 
 	if (cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,
 				    WLAN_OUI_TYPE_MICROSOFT_WPA,
@@ -8904,6 +8912,53 @@ out:
 	return ret;
 }
 
+static bool
+ath11k_mac_check_fixed_rate_settings_for_mumimo(struct ath11k_vif *arvif, const u16 *vht_mcs_mask, const u16 *he_mcs_mask)
+{
+	struct ath11k *ar = arvif->ar;
+	struct ieee80211_he_cap_elem he_cap_elem = {0};
+	int nss_idx;
+	int he_nss;
+	int vht_nss;
+
+	vht_nss =  ath11k_mac_max_vht_nss(vht_mcs_mask);
+
+	if (vht_nss != 1) {
+               for (nss_idx = vht_nss-1; nss_idx >= 0; nss_idx--) {
+			if (vht_mcs_mask[nss_idx])
+				continue;
+
+			if (arvif->vht_cap & IEEE80211_VHT_CAP_MU_BEAMFORMER_CAPABLE) {
+				ath11k_warn(ar->ab, "vht fixed NSS rate is allowed only when MU MIMO is disabled\n");
+				return false;
+			}
+		}
+	}
+
+	if (!arvif->vif->bss_conf.he_support)
+		return true;
+
+	he_nss =  ath11k_mac_max_he_nss(he_mcs_mask);
+
+	if (he_nss == 1)
+		return true;
+
+	memcpy(&he_cap_elem, &arvif->vif->bss_conf.he_cap_elem, sizeof(he_cap_elem));
+
+	for (nss_idx = he_nss-1; nss_idx >= 0; nss_idx--) {
+		if (he_mcs_mask[nss_idx])
+			continue;
+
+		if ((he_cap_elem.phy_cap_info[HECAP_PHYDWORD_2] & IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO) ||
+		    (he_cap_elem.phy_cap_info[HECAP_PHYDWORD_4] & IEEE80211_HE_PHY_CAP4_MU_BEAMFORMER)) {
+			ath11k_warn(ar->ab, "he fixed NSS rate is allowed only when MU MIMO is disabled\n");
+			return false;
+		}
+	}
+
+	return true;
+}
+
 static int
 ath11k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif,
@@ -8996,6 +9051,9 @@ ath11k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 		mutex_unlock(&ar->conf_mutex);
 	} else {
 		rate = WMI_FIXED_RATE_NONE;
+
+		if(!ath11k_mac_check_fixed_rate_settings_for_mumimo(arvif, vht_mcs_mask, he_mcs_mask))
+                       return -EINVAL;
 
 		if (!ath11k_mac_validate_vht_he_fixed_rate_settings(ar, band, mask))
 			ath11k_warn(ar->ab,
