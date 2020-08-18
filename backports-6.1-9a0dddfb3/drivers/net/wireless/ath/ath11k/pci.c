@@ -376,6 +376,7 @@ static void ath11k_pci_sw_reset(struct ath11k_base *ab, bool power_on)
 static void ath11k_pci_init_qmi_ce_config(struct ath11k_base *ab)
 {
 	struct ath11k_qmi_ce_cfg *cfg = &ab->qmi.ce_cfg;
+	int ret, node_id;
 
 	cfg->tgt_ce = ab->hw_params.target_ce_config;
 	cfg->tgt_ce_len = ab->hw_params.target_ce_count;
@@ -384,6 +385,9 @@ static void ath11k_pci_init_qmi_ce_config(struct ath11k_base *ab)
 	cfg->svc_to_ce_map_len = ab->hw_params.svc_to_ce_map_len;
 	ab->qmi.service_ins_id = ab->hw_params.qmi_service_ins_id;
 
+	ret = of_property_read_u32(ab->dev->of_node, "qrtr_instance_id", &node_id);
+	if (!ret)
+		ab->qmi.service_ins_id += node_id;
 	ath11k_ce_get_shadow_config(ab, &cfg->shadow_reg_v2,
 				    &cfg->shadow_reg_v2_len);
 }
@@ -425,7 +429,7 @@ static int ath11k_pci_alloc_msi(struct ath11k_pci *ab_pci)
 	num_vectors = pci_alloc_irq_vectors(pci_dev,
 					    msi_config->total_vectors,
 					    msi_config->total_vectors,
-					    PCI_IRQ_MSI);
+					    PCI_IRQ_NOMSIX);
 	if (num_vectors == msi_config->total_vectors) {
 		set_bit(ATH11K_FLAG_MULTI_MSI_VECTORS, &ab->dev_flags);
 	} else {
@@ -801,6 +805,7 @@ static int ath11k_pci_power_up(struct ath11k_base *ab)
 {
 	struct ath11k_pci *ab_pci = ath11k_pci_priv(ab);
 	int ret;
+	u32 addr;
 
 	ab_pci->register_window = 0;
 	clear_bit(ATH11K_FLAG_DEVICE_INIT_DONE, &ab->dev_flags);
@@ -962,6 +967,14 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	ret = of_property_read_u32(ab->dev->of_node, "memory-region", &addr);
 	if (!ret)
 		set_bit(ATH11K_FLAG_FIXED_MEM_RGN, &ab->dev_flags);
+
+	/* IPQ8074 reserves memory for FW, ath11k does not need to
+	 * allocate memory for FW in DDR, set fixed_mem_region to true for
+	 * these pltforms supports reserved memory.
+	 */
+	ret = of_property_read_u32(ab->dev->of_node, "base-addr", &addr);
+	if (ret == 0)
+		ab->hw_params.fixed_mem_region = true;
 
 	ret = ath11k_pci_claim(ab_pci, pdev);
 	if (ret) {

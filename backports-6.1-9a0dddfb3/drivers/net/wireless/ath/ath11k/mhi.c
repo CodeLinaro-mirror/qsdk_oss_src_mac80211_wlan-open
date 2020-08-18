@@ -35,6 +35,7 @@ static const struct mhi_channel_config ath11k_mhi_channels_qca6390[] = {
 		.offload_channel = false,
 		.doorbell_mode_switch = false,
 		.auto_queue = false,
+		.auto_start = false,
 	},
 	{
 		.num = 21,
@@ -100,6 +101,7 @@ static const struct mhi_channel_config ath11k_mhi_channels_qcn9074[] = {
 		.offload_channel = false,
 		.doorbell_mode_switch = false,
 		.auto_queue = false,
+		.auto_start = false,
 	},
 	{
 		.num = 21,
@@ -114,6 +116,7 @@ static const struct mhi_channel_config ath11k_mhi_channels_qcn9074[] = {
 		.offload_channel = false,
 		.doorbell_mode_switch = false,
 		.auto_queue = true,
+		.auto_start = true,
 	},
 };
 
@@ -381,6 +384,9 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 		mhi_ctrl->iova_start = 0;
 		mhi_ctrl->iova_stop = ab_pci->dma_mask;
 	}
+
+	ath11k_info(ab, "mhi_ctrl start addr %llx end addr %llx\n",
+		    (u64)mhi_ctrl->iova_start, (u64)mhi_ctrl->iova_stop);
 
 	mhi_ctrl->rddm_size = RDDM_DUMP_SIZE;
 	mhi_ctrl->sbl_size = SZ_512K;

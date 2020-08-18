@@ -3424,7 +3424,7 @@ static void ath11k_qmi_msg_mem_request_cb(struct qmi_handle *qmi_hdl,
 				    ret);
 			return;
 		}
-	} else {
+	} else if (msg->mem_seg_len > 3) {
 		ret = ath11k_qmi_alloc_target_mem_chunk(ab);
 		if (ret) {
 			ath11k_warn(ab, "failed to allocate qmi target memory: %d\n",
