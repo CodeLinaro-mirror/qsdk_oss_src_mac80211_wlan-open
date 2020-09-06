@@ -18,6 +18,8 @@
 #include "hif.h"
 #include "pktlog.h"
 
+struct dentry *debugfs_ath11k;
+
 static const char *htt_bp_umac_ring[HTT_SW_UMAC_RING_IDX_MAX] = {
 	"REO2SW1_RING",
 	"REO2SW2_RING",
@@ -1003,8 +1005,6 @@ int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 
 void ath11k_debugfs_pdev_destroy(struct ath11k_base *ab)
 {
-	debugfs_remove_recursive(ab->debugfs_soc);
-	ab->debugfs_soc = NULL;
 }
 
 int ath11k_debugfs_soc_create(struct ath11k_base *ab)
@@ -1056,6 +1056,24 @@ void ath11k_debugfs_soc_destroy(struct ath11k_base *ab)
 	 */
 }
 EXPORT_SYMBOL(ath11k_debugfs_soc_destroy);
+
+int ath11k_debugfs_create()
+{
+	debugfs_ath11k = debugfs_create_dir("ath11k", NULL);
+	if (IS_ERR_OR_NULL(debugfs_ath11k)) {
+		if (IS_ERR(debugfs_ath11k))
+			return PTR_ERR(debugfs_ath11k);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+void ath11k_debugfs_destroy()
+{
+	debugfs_remove_recursive(debugfs_ath11k);
+	debugfs_ath11k = NULL;
+}
 
 void ath11k_debugfs_fw_stats_init(struct ath11k *ar)
 {
@@ -2017,6 +2035,8 @@ void ath11k_debugfs_unregister(struct ath11k *ar)
 	}
 
 	ath11k_deinit_pktlog(ar);
+	debugfs_remove_recursive(ar->debug.debugfs_pdev);
+	ar->debug.debugfs_pdev = NULL;
 }
 
 static ssize_t ath11k_write_twt_add_dialog(struct file *file,

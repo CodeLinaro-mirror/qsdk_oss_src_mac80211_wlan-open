@@ -268,6 +268,8 @@ struct ath11k_fw_dbglog {
 };
 
 #ifdef CPTCFG_ATH11K_DEBUGFS
+int ath11k_debugfs_create(void);
+void ath11k_debugfs_destroy(void);
 int ath11k_debugfs_soc_create(struct ath11k_base *ab);
 void ath11k_debugfs_soc_destroy(struct ath11k_base *ab);
 int ath11k_debugfs_pdev_create(struct ath11k_base *ab);
@@ -321,7 +323,16 @@ void ath11k_debugfs_add_dbring_entry(struct ath11k *ar,
 				     struct hal_srng *srng);
 
 #else
-ssize_t ath11k_debugfs_dump_soc_ring_bp_stats(struct ath11k_base *ab,
+static inline int ath11k_debugfs_create(void)
+{
+	return 0;
+}
+
+static inline void ath11k_debugfs_destroy(void)
+{
+}
+
+static inline ssize_t ath11k_debugfs_dump_soc_ring_bp_stats(struct ath11k_base *ab,
 					      char *buf, int size)
 {
 	return 0;
