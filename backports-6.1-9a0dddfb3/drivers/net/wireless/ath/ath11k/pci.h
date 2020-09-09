@@ -24,6 +24,7 @@
 
 /* register used for handshake mechanism to validate UMAC is awake */
 #define PCIE_SOC_WAKE_PCIE_LOCAL_REG		0x3004
+#define ATH11K_MAX_PCI_DOMAINS 2
 
 #define PCIE_PCIE_PARF_LTSSM			0x1e081b0
 #define PARM_LTSSM_VALUE			0x111

@@ -354,6 +354,7 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 #if LINUX_VERSION_IS_GEQ(5,15,0)
 	mhi_ctrl->reg_len = ab->mem_len;
 #endif
+	mhi_ctrl->rddm_size = ATH11K_PCI_FW_RDDM_SZ;
 
 	if (ab->fw.amss_data && ab->fw.amss_len > 0) {
 		/* use MHI firmware file from firmware-N.bin */
