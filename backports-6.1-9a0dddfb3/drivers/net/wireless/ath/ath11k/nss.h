@@ -16,12 +16,14 @@ struct ath11k_base;
 struct ath11k_vif;
 struct ath11k_peer;
 struct ath11k_sta;
+enum ath11k_ast_entry_type;
 struct hal_rx_mon_ppdu_info;
 struct hal_rx_user_status;
 
 /* NSS DBG macro is not included as part of debug enum to avoid
  * frequent changes during upgrade*/
-#define ATH11K_DBG_NSS	0x80000000
+#define ATH11K_DBG_NSS	0x40000000
+#define ATH11K_DBG_NSS_WDS	0x80000000
 
 /* WIFILI Supported Target Types */
 #define ATH11K_WIFILI_TARGET_TYPE_UNKNOWN   0xFF
@@ -202,11 +204,19 @@ int ath11k_nss_vdev_create(struct ath11k_vif *arvif);
 void ath11k_nss_vdev_delete(struct ath11k_vif *arvif);
 int ath11k_nss_vdev_up(struct ath11k_vif *arvif);
 int ath11k_nss_vdev_down(struct ath11k_vif *arvif);
-int ath11k_nss_peer_delete(struct ath11k_base *ab, u8 *addr);
+int ath11k_nss_peer_delete(struct ath11k_base *ab, u32 vdev_id, u8 *addr);
 int ath11k_nss_set_peer_authorize(struct ath11k *ar, u16 peer_id);
-int ath11k_nss_peer_create(struct ath11k_base *ab, struct ath11k_peer *peer);
+int ath11k_nss_peer_create(struct ath11k *ar, struct ath11k_peer *peer);
 void ath11k_nss_peer_stats_enable(struct ath11k *ar);
 void ath11k_nss_peer_stats_disable(struct ath11k *ar);
+int ath11k_nss_add_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
+			    u8 *dest_mac, enum ath11k_ast_entry_type type);
+int ath11k_nss_update_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
+			       u8 *dest_mac);
+int ath11k_nss_map_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
+			    u8 *dest_mac, enum ath11k_ast_entry_type type);
+int ath11k_nss_del_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
+			    u8 *dest_mac);
 int ath11k_nss_set_peer_sec_type(struct ath11k *ar, struct ath11k_peer *peer,
 				 struct ieee80211_key_conf *key_conf);
 void ath11k_nss_update_sta_stats(struct station_info *sinfo,
@@ -268,12 +278,37 @@ static inline int ath11k_nss_vdev_down(struct ath11k_vif *arvif)
 	return 0;
 }
 
-static inline int ath11k_nss_peer_delete(struct ath11k_base *ab, u8 *addr)
+static inline int ath11k_nss_peer_delete(struct ath11k_base *ab, u32 vdev_id,
+					 u8 *addr)
 {
 	return 0;
 }
 
-static inline int ath11k_nss_peer_create(struct ath11k_base *ab, struct ath11k_peer *peer)
+static inline int ath11k_nss_add_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
+					  u8 *dest_mac, int type)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_update_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
+					     u8 *dest_mac)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_map_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
+					  u8 *dest_mac, int type)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_del_wds_peer(struct ath11k_vif *arvif, struct ath11k_peer *peer,
+			    u8 *dest_mac)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_peer_create(struct ath11k *ar, struct ath11k_peer *peer)
 {
 	return 0;
 }
