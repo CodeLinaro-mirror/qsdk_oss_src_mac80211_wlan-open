@@ -1164,6 +1164,7 @@ struct ath11k_base {
 #endif
 
 	bool fw_recovery_support;
+	atomic_t num_max_allowed;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

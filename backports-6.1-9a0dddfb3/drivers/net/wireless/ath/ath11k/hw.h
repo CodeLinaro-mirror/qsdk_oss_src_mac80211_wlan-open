@@ -11,11 +11,30 @@
 #include "wmi.h"
 
 /* Target configuration defines */
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
 
+#define TARGET_NUM_VDEVS	8
+#define TARGET_NUM_PEERS_PDEV	(128 + TARGET_NUM_VDEVS)
+/* Max num of stations (per radio) */
+#define TARGET_NUM_STATIONS	128
+#define ATH11K_QMI_TARGET_MEM_MODE	ATH11K_QMI_TARGET_MEM_MODE_512M
+#define ATH11K_DP_TX_COMP_RING_SIZE	8192
+#define ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE	512
+#define ATH11K_DP_RXDMA_MONITOR_BUF_RING_SIZE	128
+#define ATH11K_DP_RXDMA_MONITOR_DST_RING_SIZE	128
+#else
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS(ab)	(ab->hw_params.num_vdevs)
 
 #define TARGET_NUM_PEERS_PDEV(ab) (ab->hw_params.num_peers + TARGET_NUM_VDEVS(ab))
+/* Max num of stations (per radio) */
+#define TARGET_NUM_STATIONS(ab) (ab->hw_params.num_peers)
+#define ATH11K_QMI_TARGET_MEM_MODE		ATH11K_QMI_TARGET_MEM_MODE_DEFAULT
+#define ATH11K_DP_TX_COMP_RING_SIZE		32768
+#define ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE	1024
+#define ATH11K_DP_RXDMA_MONITOR_BUF_RING_SIZE	4096
+#define ATH11K_DP_RXDMA_MONITOR_DST_RING_SIZE	2048
+#endif
 
 /* Num of peers for Single Radio mode */
 #define TARGET_NUM_PEERS_SINGLE(ab) (TARGET_NUM_PEERS_PDEV(ab))
@@ -25,9 +44,6 @@
 
 /* Num of peers for DBS_SBS */
 #define TARGET_NUM_PEERS_DBS_SBS(ab)	(3 * TARGET_NUM_PEERS_PDEV(ab))
-
-/* Max num of stations (per radio) */
-#define TARGET_NUM_STATIONS(ab)	(ab->hw_params.num_peers)
 
 #define TARGET_NUM_PEERS(ab, x)	TARGET_NUM_PEERS_##x(ab)
 #define TARGET_NUM_PEER_KEYS	2

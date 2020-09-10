@@ -334,6 +334,7 @@ tcl_ring_sel:
 			skb->data, skb->len);
 
 	atomic_inc(&ar->dp.num_tx_pending);
+	atomic_inc(&ab->num_max_allowed);
 
 	return 0;
 
@@ -380,6 +381,7 @@ static void ath11k_dp_tx_free_txbuf(struct ath11k_base *ab, u8 mac_id,
 	ar = ab->pdevs[mac_id].ar;
 	if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 		wake_up(&ar->dp.tx_empty_waitq);
+	atomic_dec(&ab->num_max_allowed);
 }
 
 static void
@@ -413,6 +415,7 @@ ath11k_dp_tx_htt_tx_complete_buf(struct ath11k_base *ab,
 
 	if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 		wake_up(&ar->dp.tx_empty_waitq);
+	atomic_dec(&ab->num_max_allowed);
 
 	dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 
@@ -851,6 +854,7 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 			wake_up(&ar->dp.tx_empty_waitq);
 
 		ath11k_dp_tx_complete_msdu(ar, msdu, &ts);
+		atomic_dec(&ab->num_max_allowed);
 	}
 }
 

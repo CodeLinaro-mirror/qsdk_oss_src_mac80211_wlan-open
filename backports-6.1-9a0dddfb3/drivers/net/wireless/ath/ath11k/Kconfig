@@ -81,3 +81,10 @@ config ATH11K_PKTLOG
 	  and reception, rate information and ani state. The packet
 	  log uses ring buffer to dump the data. The buffer size,
 	  frame filters can be alterted by debugfs entries.
+
+config ATH11K_MEM_PROFILE_512M
+	bool "ath11k enable 512MB memory profile"
+	depends on ATH11K
+	default n
+	help
+	  Enables 512MB memory profile for ath11k
