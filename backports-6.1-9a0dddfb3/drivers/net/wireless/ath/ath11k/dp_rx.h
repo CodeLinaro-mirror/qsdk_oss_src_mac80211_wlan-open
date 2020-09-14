@@ -131,16 +131,14 @@ int ath11k_dp_htt_tlv_iter(struct ath11k_base *ab, const void *ptr, size_t len,
 			   int (*iter)(struct ath11k_base *ar, u16 tag, u16 len,
 				       const void *ptr, void *data),
 			   void *data);
-int ath11k_dp_rx_process_mon_rings(struct ath11k_base *ab, int mac_id,
-				   struct napi_struct *napi, int budget);
-int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
-				    struct napi_struct *napi, int budget);
 int ath11k_dp_rx_mon_status_bufs_replenish(struct ath11k_base *ab, int mac_id,
 					   struct dp_rxdma_ring *rx_ring,
 					   int req_entries,
 					   enum hal_rx_buf_return_buf_manager mgr);
 void ath11k_dp_rx_mon_dest_process(struct ath11k *ar, int mac_id, u32 quota,
 				   struct napi_struct *napi);
+int ath11k_dp_rx_process_mon_rings(struct ath11k_base *ab, int mac_id,
+				   struct napi_struct *napi, int budget);
 int ath11k_dp_rx_pdev_mon_detach(struct ath11k *ar);
 int ath11k_dp_rx_pdev_mon_attach(struct ath11k *ar);
 int ath11k_peer_rx_frag_setup(struct ath11k *ar, const u8 *peer_mac, int vdev_id);

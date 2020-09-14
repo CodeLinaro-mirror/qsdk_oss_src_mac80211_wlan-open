@@ -841,9 +841,10 @@ int ath11k_dp_service_srng(struct ath11k_base *ab,
 				if (ab->hw_params.ring_mask->rx_mon_status[grp_id] &
 					BIT(id)) {
 					work_done =
-					ath11k_dp_rx_process_mon_rings(ab,
-								       id,
-								       napi, budget);
+						ath11k_dp_rx_process_mon_rings(ab,
+									       id,
+									       napi,
+									       budget);
 					budget -= work_done;
 					tot_work_done += work_done;
 

@@ -129,6 +129,7 @@ enum ath11k_bus {
 
 struct hal_rx_desc;
 struct hal_tcl_data_cmd;
+struct napi_struct;
 
 struct ath11k_hw_ring_mask {
 	u8 tx[ATH11K_EXT_IRQ_GRP_NUM_MAX];

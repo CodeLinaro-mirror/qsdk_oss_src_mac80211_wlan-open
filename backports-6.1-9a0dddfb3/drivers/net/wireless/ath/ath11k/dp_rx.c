@@ -535,6 +535,8 @@ static void ath11k_dp_rx_pdev_srng_free(struct ath11k *ar)
 	}
 
 	ath11k_dp_srng_cleanup(ab, &dp->rxdma_mon_buf_ring.refill_buf_ring);
+	ath11k_dp_srng_cleanup(ar->ab, &dp->rxdma_mon_dst_ring);
+	ath11k_dp_srng_cleanup(ar->ab, &dp->rxdma_mon_desc_ring);
 }
 
 void ath11k_dp_pdev_reo_cleanup(struct ath11k_base *ab)
@@ -5727,18 +5729,6 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 		ppdu_info->peer_id = HAL_INVALID_PEERID;
 		hal_status = ath11k_hal_rx_parse_mon_status(ab, ppdu_info, skb);
 
-		if (test_bit(ATH11K_FLAG_MONITOR_STARTED, &ar->monitor_flags) &&
-		    pmon->mon_ppdu_status == DP_PPDU_STATUS_START &&
-		    hal_status == HAL_TLV_STATUS_PPDU_DONE) {
-			rx_mon_stats->status_ppdu_done++;
-			pmon->mon_ppdu_status = DP_PPDU_STATUS_DONE;
-			if (!ab->hw_params.full_monitor_mode) {
-				ath11k_dp_rx_mon_dest_process(ar, mac_id,
-							      budget, napi);
-				pmon->mon_ppdu_status = DP_PPDU_STATUS_START;
-			}
-		}
-
 		if (ppdu_info->peer_id == HAL_INVALID_PEERID ||
 		    hal_status != HAL_RX_MON_STATUS_PPDU_DONE) {
 			dev_kfree_skb_any(skb);
@@ -5775,7 +5765,6 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 next_skb:
 		spin_unlock_bh(&ab->base_lock);
 		rcu_read_unlock();
-
 		dev_kfree_skb_any(skb);
 		memset(ppdu_info, 0, sizeof(*ppdu_info));
 		ppdu_info->peer_id = HAL_INVALID_PEERID;
@@ -6146,12 +6135,10 @@ int ath11k_dp_rx_process_mon_rings(struct ath11k_base *ab, int mac_id,
 	struct ath11k *ar = ath11k_ab_to_ar(ab, mac_id);
 	int ret = 0;
 
-	if (test_bit(ATH11K_FLAG_MONITOR_STARTED, &ar->monitor_flags) &&
-	    ab->hw_params.full_monitor_mode)
-		ret = ath11k_dp_full_mon_process_rx(ab, mac_id, napi, budget);
+	if (ab->hw_params.full_monitor_mode)
+		return ath11k_dp_full_mon_process_rx(ab, mac_id, napi, budget);
 	else
-		ret = ath11k_dp_rx_process_mon_status(ab, mac_id, napi, budget);
-
+		return ath11k_dp_rx_process_mon_status(ab, mac_id, napi, budget);
 	return ret;
 }
 
