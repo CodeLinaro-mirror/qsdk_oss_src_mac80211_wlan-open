@@ -509,7 +509,7 @@ ath11k_dp_tx_process_htt_tx_complete(struct ath11k_base *ab,
 		break;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY:
 		/* This event is to be handled only when the driver decides to
-		 * use WDS offload functionality.
+		 * use WDS offload functionality on NSS disabled case.
 		 */
 		break;
 	default:

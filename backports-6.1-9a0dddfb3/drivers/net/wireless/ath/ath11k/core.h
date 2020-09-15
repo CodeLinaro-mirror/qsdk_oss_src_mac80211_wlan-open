@@ -737,6 +737,7 @@ struct ath11k {
 	struct ath11k_pdev_wmi *wmi;
 #ifdef CPTCFG_ATH11K_NSS_SUPPORT
 	struct ath11k_nss nss;
+	struct ath11k_peer *bss_peer;
 #endif
 	struct ath11k_pdev_dp dp;
 	u8 mac_addr[ETH_ALEN];
@@ -1165,6 +1166,8 @@ struct ath11k_base {
 
 	bool fw_recovery_support;
 	atomic_t num_max_allowed;
+	u32 max_ast_index;
+	u32 num_ast_entries;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

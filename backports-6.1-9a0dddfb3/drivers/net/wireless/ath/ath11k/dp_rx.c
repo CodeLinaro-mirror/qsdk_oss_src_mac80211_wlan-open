@@ -1851,6 +1851,8 @@ void ath11k_dp_htt_htc_t2h_msg_handler(struct ath11k_base *ab,
 	u16 peer_mac_h16;
 	u16 ast_hash;
 	u16 hw_peer_id;
+	u32 free_wds_count;
+	bool is_wds = false;
 
 	ath11k_dbg(ab, ATH11K_DBG_DP_HTT, "dp_htt rx msg type :0x%0x\n", type);
 
@@ -1886,14 +1888,28 @@ void ath11k_dp_htt_htc_t2h_msg_handler(struct ath11k_base *ab,
 				     resp->peer_map_ev.info2);
 		hw_peer_id = FIELD_GET(HTT_T2H_PEER_MAP_INFO1_HW_PEER_ID,
 				       resp->peer_map_ev.info1);
-		ath11k_peer_map_event(ab, vdev_id, peer_id, mac_addr, ast_hash,
-				      hw_peer_id);
+		is_wds = FIELD_GET(HTT_T2H_PEER_MAP_INFO2_NEXT_HOP_M,
+				   resp->peer_map_ev.info2);
+		ath11k_peer_map_v2_event(ab, vdev_id, peer_id, mac_addr, ast_hash,
+				         hw_peer_id, is_wds);
 		break;
 	case HTT_T2H_MSG_TYPE_PEER_UNMAP:
-	case HTT_T2H_MSG_TYPE_PEER_UNMAP2:
 		peer_id = FIELD_GET(HTT_T2H_PEER_UNMAP_INFO_PEER_ID,
 				    resp->peer_unmap_ev.info);
 		ath11k_peer_unmap_event(ab, peer_id);
+		break;
+	case HTT_T2H_MSG_TYPE_PEER_UNMAP2:
+		peer_id = FIELD_GET(HTT_T2H_PEER_UNMAP_INFO_PEER_ID,
+				    resp->peer_unmap_ev.info);
+		peer_mac_h16 = FIELD_GET(HTT_T2H_PEER_UNMAP_INFO1_MAC_ADDR_H16,
+					 resp->peer_unmap_ev.info1);
+		ath11k_dp_get_mac_addr(resp->peer_map_ev.mac_addr_l32,
+				       peer_mac_h16, mac_addr);
+		is_wds = FIELD_GET(HTT_T2H_PEER_UNMAP_INFO1_NEXT_HOP_M,
+				   resp->peer_unmap_ev.info1);
+		free_wds_count = FIELD_GET(HTT_T2H_PEER_UNMAP_INFO3_WDS_FREE_COUNT,
+					   resp->peer_unmap_ev.info3);
+		ath11k_peer_unmap_v2_event(ab, peer_id, mac_addr, is_wds, free_wds_count);
 		break;
 	case HTT_T2H_MSG_TYPE_PPDU_STATS_IND:
 		ath11k_htt_pull_ppdu_stats(ab, skb);

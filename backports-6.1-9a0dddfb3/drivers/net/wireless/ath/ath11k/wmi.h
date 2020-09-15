@@ -3040,6 +3040,21 @@ struct wmi_peer_delete_cmd {
 	struct wmi_mac_addr peer_macaddr;
 } __packed;
 
+#define WMI_WDS_FLAG_STATIC    0x1    /* Disable aging & learning */
+struct wmi_add_wds_entry_cmd {
+	u32 tlv_header;
+	struct wmi_mac_addr peer_macaddr;
+	struct wmi_mac_addr wds_macaddr;
+	u32 flags;
+	u32 vdev_id;
+} __packed;
+
+struct wmi_remove_wds_entry_cmd {
+	u32 tlv_header;
+	struct wmi_mac_addr wds_macaddr;
+	u32 vdev_id;
+} __packed;
+
 struct wmi_peer_reorder_queue_setup_cmd {
 	u32 tlv_header;
 	u32 vdev_id;
@@ -4697,6 +4712,21 @@ struct wmi_fils_discovery_event {
 struct wmi_probe_resp_tx_status_event {
 	u32 vdev_id;
 	u32 tx_status;
+} __packed;
+
+#define WMI_NUM_WDS_EVENTS 4
+struct wmi_wds_addr_arg {
+	u32 event_type[WMI_NUM_WDS_EVENTS];
+	const u8 *peer_macaddr;
+	const u8 *dst_macaddr;
+	u32 vdev_id;
+};
+
+struct wmi_wds_addr_event {
+	u32 event_type[WMI_NUM_WDS_EVENTS];
+	struct wmi_mac_addr peer_macaddr;
+	struct wmi_mac_addr dst_macaddr;
+	u32 vdev_id;
 } __packed;
 
 /*
@@ -6764,6 +6794,9 @@ int ath11k_wmi_set_sta_ps_param(struct ath11k *ar, u32 vdev_id,
 int ath11k_wmi_force_fw_hang_cmd(struct ath11k *ar, u32 type, u32 delay_time_ms);
 int ath11k_wmi_send_peer_delete_cmd(struct ath11k *ar,
 				    const u8 *peer_addr, u8 vdev_id);
+int ath11k_wmi_send_add_update_wds_entry_cmd(struct ath11k *ar,
+				      const u8 *peer_addr, const u8 *wds_addr,
+				      u8 vdev_id, bool add_wds);
 int ath11k_wmi_vdev_delete(struct ath11k *ar, u8 vdev_id);
 void ath11k_wmi_start_scan_init(struct ath11k *ar, struct scan_req_params *arg);
 int ath11k_wmi_send_scan_start_cmd(struct ath11k *ar,

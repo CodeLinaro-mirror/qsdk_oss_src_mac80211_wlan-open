@@ -165,6 +165,8 @@ static const struct wmi_tlv_policy wmi_tlv_policies[] = {
 		.min_len = sizeof(struct ath11k_wmi_p2p_noa_info) },
 	[WMI_TAG_P2P_NOA_EVENT] = {
 		.min_len = sizeof(struct wmi_p2p_noa_event) },
+	[WMI_TAG_WDS_ADDR_EVENT]
+		= { .min_len = sizeof(struct wmi_wds_addr_event) },
 };
 
 #define PRIMAP(_hw_mode_) \
@@ -1133,6 +1135,51 @@ int ath11k_wmi_send_peer_delete_cmd(struct ath11k *ar,
 	ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
 		   "cmd peer delete vdev_id %d peer_addr %pM\n",
 		   vdev_id,  peer_addr);
+
+	return ret;
+}
+
+int ath11k_wmi_send_add_update_wds_entry_cmd(struct ath11k *ar,
+					     const u8 *peer_addr,
+					     const u8 *wds_addr, u8 vdev_id,
+					     bool add_wds)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_add_wds_entry_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_add_wds_entry_cmd *)skb->data;
+	if (add_wds)
+		cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_PEER_ADD_WDS_ENTRY_CMD) |
+				  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	else
+		cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_PEER_UPDATE_WDS_ENTRY_CMD) |
+				  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+
+	ether_addr_copy(cmd->peer_macaddr.addr, peer_addr);
+	ether_addr_copy(cmd->wds_macaddr.addr, wds_addr);
+	cmd->vdev_id = vdev_id;
+	cmd->flags = WMI_WDS_FLAG_STATIC;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+		   "WMI add WDS entry vdev_id %d peer_addr %pM, wds_addr %pM flags %x\n",
+		   vdev_id, peer_addr, wds_addr, cmd->flags);
+
+	if (add_wds)
+		ret = ath11k_wmi_cmd_send(wmi, skb, WMI_PEER_ADD_WDS_ENTRY_CMDID);
+	else
+		ret = ath11k_wmi_cmd_send(wmi, skb, WMI_PEER_UPDATE_WDS_ENTRY_CMDID);
+
+	if (ret) {
+		ath11k_warn(ar->ab, "failed to send WMI_PEER_%s_WDS_ENTRY cmd\n",
+			    add_wds ? "ADD" : "UPDATE");
+		dev_kfree_skb(skb);
+	}
 
 	return ret;
 }
@@ -6755,6 +6802,36 @@ static int ath11k_pull_peer_assoc_conf_ev(struct ath11k_base *ab, struct sk_buff
 	return 0;
 }
 
+static int ath11k_pull_wds_addr_ev(struct ath11k_base *ab, struct sk_buff *skb,
+				   struct wmi_wds_addr_arg *wds_addr_arg)
+{
+	const void **tb;
+	const struct wmi_wds_addr_event *ev;
+	int ret;
+
+	tb = ath11k_wmi_tlv_parse_alloc(ab, skb->data, skb->len, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath11k_warn(ab, "failed to parse tlv: %d\n", ret);
+		return ret;
+	}
+
+	ev = tb[WMI_TAG_WDS_ADDR_EVENT];
+	if (!ev) {
+		ath11k_warn(ab, "failed to fetch wds peer ev");
+		kfree(tb);
+		return -EPROTO;
+	}
+
+	memcpy(wds_addr_arg->event_type, ev->event_type, WMI_NUM_WDS_EVENTS);
+	wds_addr_arg->vdev_id = ev->vdev_id;
+	wds_addr_arg->peer_macaddr = ev->peer_macaddr.addr;
+	wds_addr_arg->dst_macaddr = ev->dst_macaddr.addr;
+
+	kfree(tb);
+	return 0;
+}
+
 static void ath11k_wmi_pull_pdev_stats_base(const struct wmi_pdev_stats_base *src,
 					    struct ath11k_fw_stats_pdev *dst)
 {
@@ -7579,6 +7656,7 @@ static int ath11k_wmi_tlv_rdy_parse(struct ath11k_base *ab, u16 tag, u16 len,
 
 		ether_addr_copy(ab->mac_addr,
 				fixed_param.ready_event_min.mac_addr.addr);
+		ab->max_ast_index = fixed_param.max_ast_index + 1;
 		ab->pktlog_defs_checksum = fixed_param.pktlog_defs_checksum;
 		break;
 	case WMI_TAG_ARRAY_FIXED_STRUCT:
@@ -9521,6 +9599,22 @@ int ath11k_wmi_pdev_get_tpc_table_cmdid(struct ath11k *ar)
 	return ret;
 }
 
+static void ath11k_wmi_wds_peer_event(struct ath11k_base *ab,
+				      struct sk_buff *skb)
+{
+	struct wmi_wds_addr_arg wds_addr_arg = {0};
+
+	if (ath11k_pull_wds_addr_ev(ab, skb, &wds_addr_arg) != 0) {
+		ath11k_warn(ab, "failed to extract wds addr event");
+		return;
+	}
+
+	ath11k_dbg(ab, ATH11K_DBG_WMI,
+		   "wds addr event vdev id %d peer macaddr %pM dst macaddr %pM\n",
+		   wds_addr_arg.vdev_id, wds_addr_arg.peer_macaddr,
+		   wds_addr_arg.dst_macaddr);
+}
+
 static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_cmd_hdr *cmd_hdr;
@@ -9654,6 +9748,10 @@ static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 	case WMI_PDEV_GET_TPC_STATS_EVENTID:
 		ath11k_process_tpc_stats(ab, skb);
 		break;
+	case WMI_WDS_PEER_EVENTID:
+		ath11k_wmi_wds_peer_event(ab, skb);
+		break;
+
 	default:
 		ath11k_dbg(ab, ATH11K_DBG_WMI, "unsupported event id 0x%x\n", id);
 		break;
