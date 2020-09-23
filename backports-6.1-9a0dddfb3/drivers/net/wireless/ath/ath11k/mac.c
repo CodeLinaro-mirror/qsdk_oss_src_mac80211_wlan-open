@@ -10,6 +10,7 @@
 #include <linux/bitfield.h>
 #include <linux/inetdevice.h>
 #include <linux/of.h>
+#include <linux/module.h>
 #include <net/if_inet6.h>
 #include <net/ipv6.h>
 
@@ -54,6 +55,10 @@
 	.max_antenna_gain       = 0, \
 	.max_power              = 30, \
 }
+
+unsigned int color_collision_enable = 0;
+module_param_named(color_collision_detect, color_collision_enable, uint, 0644);
+MODULE_PARM_DESC(color_collision_detect, "BSS color collision detecion: 0-disable 1-enable");
 
 static const struct ieee80211_channel ath11k_2ghz_channels[] = {
 	CHAN2G(1, 2412, 0),
@@ -3832,7 +3837,7 @@ static void ath11k_mac_op_bss_info_changed(struct ieee80211_hw *hw,
 			ret = ath11k_wmi_send_obss_color_collision_cfg_cmd(
 				ar, arvif->vdev_id, info->he_bss_color.color,
 				ATH11K_BSS_COLOR_COLLISION_DETECTION_AP_PERIOD_MS,
-				info->he_bss_color.enabled);
+				(info->he_bss_color.enabled & color_collision_enable));
 			if (ret)
 				ath11k_warn(ar->ab, "failed to set bss color collision on vdev %i: %d\n",
 					    arvif->vdev_id,  ret);
