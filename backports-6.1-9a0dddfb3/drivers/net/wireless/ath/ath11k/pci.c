@@ -806,8 +806,7 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	 * allocate memory for FW in DDR, set fixed_mem_region to true for
 	 * these pltforms supports reserved memory.
 	 */
-	ret = of_property_read_u32(ab->dev->of_node, "base-addr", &addr);
-	if (ret == 0)
+	if (ath11k_host_ddr_addr || !ret)
 		ab->hw_params.fixed_mem_region = true;
 
 	ret = ath11k_pci_claim(ab_pci, pdev);

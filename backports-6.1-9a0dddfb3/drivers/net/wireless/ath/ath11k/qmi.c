@@ -2665,7 +2665,7 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 	struct device *dev = ab->dev;
 	struct device_node *hremote_node = NULL;
 	struct resource res;
-	u32 host_ddr_sz;
+	u32 host_ddr_sz, addr;
 	int i, idx, ret;
 
 	for (i = 0, idx = 0; i < ab->qmi.mem_seg_count; i++) {
@@ -2692,7 +2692,17 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 				return -EINVAL;
 			}
 
-			ab->qmi.target_mem[idx].paddr = res.start;
+			/* This is HACK
+			 * QCN9074 Firmware needs contiguous 60MB HOST DDR memory
+			 * use reserve memory from bootargs x86
+			 * HACK reserve memory using memmap=60M$0x70000000
+			 */
+
+			if (ath11k_host_ddr_addr)
+				ab->qmi.target_mem[idx].paddr = ath11k_host_ddr_addr;
+			else
+				ab->qmi.target_mem[idx].paddr = res.start;
+
 			ab->qmi.target_mem[idx].iaddr =
 				ioremap(ab->qmi.target_mem[idx].paddr,
 					ab->qmi.target_mem[i].size);
@@ -2721,16 +2731,20 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 				if (hremote_node) {
 					ab->qmi.target_mem[idx].paddr =
 							res.start + host_ddr_sz;
-					ab->qmi.target_mem[idx].iaddr =
-						ioremap(ab->qmi.target_mem[idx].paddr,
-							ab->qmi.target_mem[i].size);
-					if (!ab->qmi.target_mem[idx].iaddr)
+				} else if (ath11k_host_ddr_addr) {
+					ab->qmi.target_mem[idx].paddr = ath11k_host_ddr_addr +
+									ATH11K_HOST_DDR_CALDB_OFFSET;
+					if (!ab->qmi.target_mem[idx].paddr)
 						return -EIO;
 				} else {
 					ab->qmi.target_mem[idx].paddr =
 						ATH11K_QMI_CALDB_ADDRESS;
 					ab->qmi.target_mem[idx].iaddr = NULL;
 				}
+
+				 ab->qmi.target_mem[idx].iaddr =
+					ioremap(ab->qmi.target_mem[idx].paddr,
+						ab->qmi.target_mem[i].size);
 			} else {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].iaddr = NULL;
@@ -3795,7 +3809,9 @@ int ath11k_qmi_pci_alloc_qdss_mem(struct ath11k_qmi *qmi)
 {
 	struct ath11k_base *ab = qmi->ab;
 	struct device *dev = ab->dev;
-	int i;
+	struct device_node *hremote_node = NULL;
+	struct resource res;
+	int i, ret;
 	u32 addr = 0;
 
 	if (ab->qmi.qdss_mem_seg_len  > 1) {
@@ -3813,11 +3829,33 @@ int ath11k_qmi_pci_alloc_qdss_mem(struct ath11k_qmi *qmi)
 				return -ENOMEM;
 			}
 
-			if (of_property_read_u32(dev->of_node,
-						 "etr-addr", &addr)) {
-				ath11k_warn(ab, "qmi fail to get etr-addr in dt\n");
-				return -ENOMEM;
+			hremote_node = of_parse_phandle(dev->of_node, "memory-region", 0);
+			if (!hremote_node) {
+				ath11k_dbg(ab, ATH11K_DBG_QMI,
+					   "qmi fail to get hremote_node\n");
+				return -ENODEV;
 			}
+
+			ret = of_address_to_resource(hremote_node, 0, &res);
+			of_node_put(hremote_node);
+			if (ret) {
+				ath11k_dbg(ab, ATH11K_DBG_QMI,
+					   "qmi fail to get reg from hremote\n");
+				return ret;
+			}
+
+			if (res.end - res.start + 1 < ab->qmi.target_mem[i].size) {
+				ath11k_dbg(ab, ATH11K_DBG_QMI,
+					   "qmi fail to assign memory of sz\n");
+				return -EINVAL;
+			}
+
+			if (ath11k_host_ddr_addr)
+				addr = ath11k_host_ddr_addr +
+					ATH11K_HOST_DDR_QDSS_OFFSET;
+			else
+				addr = res.start + ATH11K_HOST_DDR_QDSS_OFFSET;
+
 			ab->qmi.qdss_mem[i].paddr = (phys_addr_t)addr;
 			ab->qmi.qdss_mem[i].vaddr =
 				ioremap(ab->qmi.qdss_mem[i].paddr,
