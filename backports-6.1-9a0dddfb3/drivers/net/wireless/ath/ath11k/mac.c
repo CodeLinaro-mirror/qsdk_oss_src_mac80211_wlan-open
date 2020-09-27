@@ -3370,7 +3370,8 @@ static int ath11k_mac_config_obss_pd(struct ath11k *ar,
 {
 	u32 bitmap[2], param_id, param_val, pdev_id;
 	int ret;
-	s8 non_srg_th = 0, srg_th = 0;
+	s8 non_srg_th = ATH11K_OBSS_PD_THRESHOLD_DISABLED;
+	s8 srg_th = 0;
 
 	pdev_id = ar->pdev->pdev_id;
 
@@ -3399,8 +3400,6 @@ static int ath11k_mac_config_obss_pd(struct ath11k *ar,
 		if (he_obss_pd->sr_ctrl & IEEE80211_HE_SPR_NON_SRG_OFFSET_PRESENT)
 			non_srg_th = (ATH11K_OBSS_PD_MAX_THRESHOLD +
 				      he_obss_pd->non_srg_max_offset);
-		else
-			non_srg_th = ATH11K_OBSS_PD_NON_SRG_MAX_THRESHOLD;
 
 		param_val |= ATH11K_OBSS_PD_NON_SRG_EN;
 	}
@@ -3415,7 +3414,8 @@ static int ath11k_mac_config_obss_pd(struct ath11k *ar,
 		param_val |= ATH11K_OBSS_PD_THRESHOLD_IN_DBM;
 		param_val |= FIELD_PREP(GENMASK(15, 8), srg_th);
 	} else {
-		non_srg_th -= ATH11K_DEFAULT_NOISE_FLOOR;
+		if ((non_srg_th & 0xff) != ATH11K_OBSS_PD_THRESHOLD_DISABLED)
+			non_srg_th -= ATH11K_DEFAULT_NOISE_FLOOR;
 		/* SRG not supported and threshold in dB */
 		param_val &= ~(ATH11K_OBSS_PD_SRG_EN |
 			       ATH11K_OBSS_PD_THRESHOLD_IN_DBM);
