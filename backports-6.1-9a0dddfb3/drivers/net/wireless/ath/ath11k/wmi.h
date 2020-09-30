@@ -374,6 +374,7 @@ enum wmi_tlv_cmd_id {
 	WMI_BSS_COLOR_CHANGE_ENABLE_CMDID,
 	WMI_VDEV_BCN_OFFLOAD_QUIET_CONFIG_CMDID,
 	WMI_FILS_DISCOVERY_TMPL_CMDID,
+	WMI_QOS_NULL_FRAME_TX_SEND_CMDID,
 	WMI_ADDBA_CLEAR_RESP_CMDID = WMI_TLV_CMD(WMI_GRP_BA_NEG),
 	WMI_ADDBA_SEND_CMDID,
 	WMI_ADDBA_STATUS_CMDID,
@@ -706,6 +707,8 @@ enum wmi_tlv_event_id {
 	WMI_TBTTOFFSET_EXT_UPDATE_EVENTID,
 	WMI_OFFCHAN_DATA_TX_COMPLETION_EVENTID,
 	WMI_HOST_FILS_DISCOVERY_EVENTID,
+	WMI_HOST_SWBA_V2_EVENTID,
+	WMI_QOS_NULL_FRAME_TX_COMPLETION_EVENTID,
 	WMI_TX_DELBA_COMPLETE_EVENTID = WMI_TLV_CMD(WMI_GRP_BA_NEG),
 	WMI_TX_ADDBA_COMPLETE_EVENTID,
 	WMI_BA_RSP_SSN_EVENTID,
@@ -1902,6 +1905,9 @@ enum wmi_tlv_tag {
 	WMI_TAG_TPC_STATS_REG_PWR_ALLOWED,
 	WMI_TAG_TPC_STATS_RATES_ARRAY,
 	WMI_TAG_TPC_STATS_CTL_PWR_TABLE_EVENT,
+	/* TODO add all the missing cmds */
+	WMI_TAG_QOS_NULL_FRAME_TX_SEND = 0x3A6,
+	WMI_TAG_QOS_NULL_FRAME_TX_STATUS,
 	WMI_TAG_VDEV_SET_TPC_POWER_CMD = 0x3B5,
 	WMI_TAG_VDEV_CH_POWER_INFO,
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
@@ -2133,7 +2139,17 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_PEER_POWER_SAVE_DURATION_SUPPORT = 246,
 	WMI_TLV_SERVICE_SRG_SRP_SPATIAL_REUSE_SUPPORT = 249,
 	WMI_TLV_SERVICE_MBSS_PARAM_IN_VDEV_START_SUPPORT = 253,
+	WMI_TLV_SERVICE_CONFIGURE_ROAM_TRIGGER_PARAM_SUPPORT = 254,
+	WMI_TLV_SERVICE_CFR_TA_RA_AS_FP_SUPPORT = 255,
+	WMI_TLV_SERVICE_CFR_CAPTURE_COUNT_SUPPORT = 256,
+	WMI_TLV_SERVICE_OCV_SUPPORT = 257,
+	WMI_TLV_SERVICE_LL_STATS_PER_CHAN_RX_TX_TIME_SUPPORT = 258,
+	WMI_TLV_SERVICE_THERMAL_MULTI_CLIENT_SUPPORT = 259,
+	WMI_TLV_SERVICE_NAN_SEND_NAN_ENABLE_RESPONSE_TO_HOST = 260,
+	WMI_TLV_SERVICE_UNIFIED_LL_GET_STA_CMD_SUPPORT = 261,
+	WMI_TLV_SERVICE_FSE_CMEM_ALLOC_SUPPORT = 262,
 	WMI_TLV_SERVICE_PASSIVE_SCAN_START_TIME_ENHANCE = 263,
+	WMI_TLV_SERVICE_QOS_NULL_FRAME_TX_OVER_WMI = 264,
 
 	/* The second 128 bits */
 	WMI_MAX_EXT_SERVICE = 256,
@@ -3932,6 +3948,7 @@ struct wmi_scan_prob_req_oui_cmd {
 }  __packed;
 
 #define WMI_MGMT_SEND_DOWNLD_LEN	64
+#define WMI_QOS_NULL_SEND_BUF_LEN	64
 
 #define WMI_TX_PARAMS_DWORD0_POWER		GENMASK(7, 0)
 #define WMI_TX_PARAMS_DWORD0_MCS_MASK		GENMASK(19, 8)
@@ -3942,9 +3959,10 @@ struct wmi_scan_prob_req_oui_cmd {
 #define WMI_TX_PARAMS_DWORD1_BW_MASK		GENMASK(14, 8)
 #define WMI_TX_PARAMS_DWORD1_PREAMBLE_TYPE	GENMASK(19, 15)
 #define WMI_TX_PARAMS_DWORD1_FRAME_TYPE		BIT(20)
-#define WMI_TX_PARAMS_DWORD1_RSVD		GENMASK(31, 21)
+#define WMI_TX_PARAMS_DWORD1_CFR_CAPTURE	BIT(21)
+#define WMI_TX_PARAMS_DWORD1_RSVD		GENMASK(31, 22)
 
-struct wmi_mgmt_send_params {
+struct wmi_tx_send_params {
 	u32 tlv_header;
 	u32 tx_params_dword0;
 	u32 tx_params_dword1;
@@ -5035,7 +5053,7 @@ struct wmi_rssi_ctl_ext {
 	u32 rssi_ctl_ext[MAX_ANTENNA_EIGHT - ATH_MAX_ANTENNA];
 };
 
-struct wmi_mgmt_tx_compl_event {
+struct wmi_tx_compl_event {
 	u32 desc_id;
 	u32 status;
 	u32 pdev_id;
@@ -6188,6 +6206,17 @@ enum ath11k_wmi_tpc_stats_ctl_array {
 	ATH11K_TPC_STATS_CTL_160ARRAY,
 };
 
+struct wmi_qos_null_tx_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	u32 desc_id;
+	u32 paddr_lo;
+	u32 paddr_hi;
+	u32 frame_len;
+	u32 buf_len;
+	u32 tx_params_valid;
+} __packed;
+
 #define MAX_RADIOS 3
 
 #define WMI_SERVICE_READY_TIMEOUT_HZ (5 * HZ)
@@ -6800,6 +6829,8 @@ int ath11k_wmi_cmd_send(struct ath11k_pdev_wmi *wmi, struct sk_buff *skb,
 struct sk_buff *ath11k_wmi_alloc_skb(struct ath11k_wmi_base *wmi_sc, u32 len);
 int ath11k_wmi_mgmt_send(struct ath11k *ar, u32 vdev_id, u32 buf_id,
 			 struct sk_buff *frame);
+int ath11k_wmi_qos_null_send(struct ath11k *ar, u32 vdev_id, u32 buf_id,
+			     struct sk_buff *frame);
 int ath11k_wmi_p2p_go_bcn_ie(struct ath11k *ar, u32 vdev_id,
 			     const u8 *p2p_ie);
 int ath11k_wmi_bcn_tmpl(struct ath11k *ar, u32 vdev_id,

@@ -122,7 +122,7 @@ static const struct wmi_tlv_policy wmi_tlv_policies[] = {
 	[WMI_TAG_MGMT_RX_HDR]
 		= { .min_len = sizeof(struct wmi_mgmt_rx_hdr) },
 	[WMI_TAG_MGMT_TX_COMPL_EVENT]
-		= { .min_len = sizeof(struct wmi_mgmt_tx_compl_event) },
+		= { .min_len = sizeof(struct wmi_tx_compl_event) },
 	[WMI_TAG_SCAN_EVENT]
 		= { .min_len = sizeof(struct wmi_scan_event) },
 	[WMI_TAG_PEER_STA_KICKOUT_EVENT]
@@ -709,6 +709,55 @@ int ath11k_wmi_mgmt_send(struct ath11k *ar, u32 vdev_id, u32 buf_id,
 
 	ath11k_dbg(ar->ab, ATH11K_DBG_WMI, "cmd mgmt tx send");
 
+	return ret;
+}
+
+int ath11k_wmi_qos_null_send(struct ath11k *ar, u32 vdev_id, u32 buf_id,
+			     struct sk_buff *frame)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_qos_null_tx_cmd *cmd;
+	struct wmi_tlv *frame_tlv;
+	struct sk_buff *skb;
+	u32 buf_len;
+	int len, ret = 0;
+
+	buf_len = frame->len < WMI_QOS_NULL_SEND_BUF_LEN ?
+		  frame->len : WMI_QOS_NULL_SEND_BUF_LEN;
+
+	len = sizeof(*cmd) + sizeof(*frame_tlv) + roundup(buf_len, 4);
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_qos_null_tx_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_QOS_NULL_FRAME_TX_SEND) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->vdev_id = vdev_id;
+	cmd->desc_id = buf_id;
+	cmd->paddr_lo = lower_32_bits(ATH11K_SKB_CB(frame)->paddr);
+	cmd->paddr_hi = upper_32_bits(ATH11K_SKB_CB(frame)->paddr);
+	cmd->frame_len = frame->len;
+	cmd->buf_len = buf_len;
+
+	frame_tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
+	frame_tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_BYTE) |
+			    FIELD_PREP(WMI_TLV_LEN, buf_len);
+
+	memcpy(frame_tlv->value, frame->data, buf_len);
+
+	ath11k_ce_byte_swap(frame_tlv->value, buf_len);
+
+	ret = ath11k_wmi_cmd_send(wmi, skb, WMI_QOS_NULL_FRAME_TX_SEND_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to submit WMI_QOS_NULL_FRAME_TX_SEND_CMDID cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+		   "wmi QOS null tx send cmd sent successfully\n");
 	return ret;
 }
 
@@ -6349,7 +6398,7 @@ static int ath11k_pull_mgmt_rx_params_tlv(struct ath11k_base *ab,
 	return 0;
 }
 
-static int wmi_process_mgmt_tx_comp(struct ath11k *ar,
+static int wmi_process_tx_comp(struct ath11k *ar,
 				    struct wmi_mgmt_tx_compl_event *tx_compl_param)
 {
 	struct sk_buff *msdu;
@@ -6388,6 +6437,11 @@ static int wmi_process_mgmt_tx_comp(struct ath11k *ar,
 			info->status.ack_signal = tx_compl_param->ack_rssi;
 	}
 
+	/* dont update rates in this path, qos null data tx completions also can
+	 * take this path in case of nss offload and can update invalid rates.
+	 */
+	info->status.rates[0].idx = -1;
+
 	hdr = (struct ieee80211_hdr *)msdu->data;
 	frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 
@@ -6406,10 +6460,13 @@ static int wmi_process_mgmt_tx_comp(struct ath11k *ar,
 	arvif = ath11k_vif_to_arvif(vif);
 	mgmt_stats = &arvif->mgmt_stats;
 
-	if (!tx_compl_param->status)
-		mgmt_stats->tx_compl_succ[frm_type]++;
-	else
-		mgmt_stats->tx_compl_fail[frm_type]++;
+	if (ieee80211_is_mgmt(hdr->frame_control)) {
+		if (!tx_compl_param->status)
+			mgmt_stats->tx_compl_succ[frm_type]++;
+		else
+			mgmt_stats->tx_compl_fail[frm_type]++;
+	}
+
 	spin_unlock_bh(&ar->data_lock);
 
 skip_mgmt_stats:
@@ -6431,12 +6488,13 @@ skip_mgmt_stats:
 	return 0;
 }
 
-static int ath11k_pull_mgmt_tx_compl_param_tlv(struct ath11k_base *ab,
-					       struct sk_buff *skb,
-					       struct wmi_mgmt_tx_compl_event *param)
+static int ath11k_pull_tx_compl_param_tlv(struct ath11k_base *ab,
+					  struct sk_buff *skb,
+					  struct wmi_tx_compl_event *param,
+					  int event_id)
 {
 	const void **tb;
-	const struct wmi_mgmt_tx_compl_event *ev;
+	const struct wmi_tx_compl_event *ev;
 	int ret;
 
 	tb = ath11k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
@@ -6446,7 +6504,7 @@ static int ath11k_pull_mgmt_tx_compl_param_tlv(struct ath11k_base *ab,
 		return ret;
 	}
 
-	ev = tb[WMI_TAG_MGMT_TX_COMPL_EVENT];
+	ev = tb[event_id];
 	if (!ev) {
 		ath11k_warn(ab, "failed to fetch mgmt tx compl ev");
 		kfree(tb);
@@ -8164,10 +8222,11 @@ exit:
 
 static void ath11k_mgmt_tx_compl_event(struct ath11k_base *ab, struct sk_buff *skb)
 {
-	struct wmi_mgmt_tx_compl_event tx_compl_param = {0};
+	struct wmi_tx_compl_event tx_compl_param = {0};
 	struct ath11k *ar;
 
-	if (ath11k_pull_mgmt_tx_compl_param_tlv(ab, skb, &tx_compl_param) != 0) {
+	if (ath11k_pull_tx_compl_param_tlv(ab, skb, &tx_compl_param,
+					   WMI_TAG_MGMT_TX_COMPL_EVENT) != 0) {
 		ath11k_warn(ab, "failed to extract mgmt tx compl event");
 		return;
 	}
@@ -8180,12 +8239,42 @@ static void ath11k_mgmt_tx_compl_event(struct ath11k_base *ab, struct sk_buff *s
 		goto exit;
 	}
 
-	wmi_process_mgmt_tx_comp(ar, &tx_compl_param);
+	wmi_process_tx_comp(ar, &tx_compl_param);
 
 	ath11k_dbg(ab, ATH11K_DBG_MGMT,
 		   "event mgmt tx compl ev pdev_id %d, desc_id %d, status %d ack_rssi %d",
 		   tx_compl_param.pdev_id, tx_compl_param.desc_id,
 		   tx_compl_param.status, tx_compl_param.ack_rssi);
+
+exit:
+	rcu_read_unlock();
+}
+
+static void ath11k_qos_null_compl_event(struct ath11k_base *ab, struct sk_buff *skb)
+{
+	struct wmi_tx_compl_event tx_compl_param = {0};
+	struct ath11k *ar;
+
+	if (ath11k_pull_tx_compl_param_tlv(ab, skb, &tx_compl_param,
+					   WMI_TAG_QOS_NULL_FRAME_TX_STATUS) != 0) {
+		ath11k_warn(ab, "failed to extract qos null tx compl event");
+		return;
+	}
+
+	rcu_read_lock();
+	ar = ath11k_mac_get_ar_by_pdev_id(ab, tx_compl_param.pdev_id);
+	if (!ar) {
+		ath11k_warn(ab, "invalid pdev id %d in qos_null_tx_compl_event\n",
+			    tx_compl_param.pdev_id);
+		goto exit;
+	}
+
+	wmi_process_tx_comp(ar, &tx_compl_param);
+
+	ath11k_dbg(ab, ATH11K_DBG_WMI,
+		   "QOS null tx compl ev pdev_id %d, desc_id %d, status %d",
+		   tx_compl_param.pdev_id, tx_compl_param.desc_id,
+		   tx_compl_param.status);
 
 exit:
 	rcu_read_unlock();
@@ -9802,6 +9891,9 @@ static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_WDS_PEER_EVENTID:
 		ath11k_wmi_wds_peer_event(ab, skb);
+		break;
+	case WMI_QOS_NULL_FRAME_TX_COMPLETION_EVENTID:
+		ath11k_qos_null_compl_event(ab, skb);
 		break;
 
 	default:

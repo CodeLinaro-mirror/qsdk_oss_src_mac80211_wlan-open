@@ -6131,6 +6131,16 @@ static int ath11k_mac_mgmt_tx_wmi(struct ath11k *ar, struct ath11k_vif *arvif,
 
 	ATH11K_SKB_CB(skb)->paddr = paddr;
 
+	if (ieee80211_is_qos_nullfunc(hdr->frame_control)) {
+		ret = ath11k_wmi_qos_null_send(ar, arvif->vdev_id, buf_id, skb);
+		if (ret) {
+			ath11k_warn(ar->ab, "failed to send qos null frame over wmi: %d\n", ret);
+			goto err_unmap_buf;
+		}
+
+		return 0;
+	}
+
 	ret = ath11k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb);
 	if (ret) {
 		ath11k_warn(ar->ab, "failed to send mgmt frame: %d\n", ret);
@@ -6198,8 +6208,8 @@ static void ath11k_mgmt_over_wmi_tx_work(struct work_struct *work)
 	}
 }
 
-static int ath11k_mac_mgmt_tx(struct ath11k *ar, struct sk_buff *skb,
-			      bool is_prb_rsp)
+static int ath11k_mac_tx_over_wmi(struct ath11k *ar, struct sk_buff *skb,
+				  bool is_prb_rsp)
 {
 	struct sk_buff_head *q = &ar->wmi_mgmt_tx_queue;
 
@@ -6261,7 +6271,7 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	} else if (ieee80211_is_mgmt(hdr->frame_control)) {
 		frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 		is_prb_rsp = ieee80211_is_probe_resp(hdr->frame_control);
-		ret = ath11k_mac_mgmt_tx(ar, skb, is_prb_rsp);
+		ret = ath11k_mac_tx_over_wmi(ar, skb, is_prb_rsp);
 		if (ret) {
 			if (ret != -EBUSY)
 				ath11k_warn(ar->ab, "failed to queue management frame %d\n",
@@ -6274,6 +6284,20 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 			spin_lock_bh(&ar->data_lock);
 			mgmt_stats->tx_succ_cnt[frm_type]++;
 			spin_unlock_bh(&ar->data_lock);
+		}
+		return;
+	} else if (ar->ab->nss.enabled &&
+		   ieee80211_is_qos_nullfunc(hdr->frame_control) &&
+		   test_bit(WMI_TLV_SERVICE_QOS_NULL_FRAME_TX_OVER_WMI,
+			    ar->ab->wmi_ab.svc_map)) {
+		/* NSS driver does not support tx qos null pkt hence it is offload
+		 * to fw via wmi path similar to mgmt frames
+		 */
+		ret = ath11k_mac_tx_over_wmi(ar, skb, false);
+		if (ret) {
+			ath11k_warn(ar->ab, "failed to queue qos null frame %d\n",
+				    ret);
+			ieee80211_free_txskb(ar->hw, skb);
 		}
 		return;
 	}
