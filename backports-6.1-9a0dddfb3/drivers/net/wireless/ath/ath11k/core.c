@@ -126,6 +126,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.hal_params = &ath11k_hw_hal_params_ipq8074,
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = true,
+		.ce_fwlog_enable = false,
 		.supports_rssi_stats = false,
 		.fw_wmi_diag_event = false,
 		.current_cc_support = false,
@@ -211,6 +212,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.hal_params = &ath11k_hw_hal_params_ipq8074,
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = true,
+		.ce_fwlog_enable = false,
 		.supports_rssi_stats = false,
 		.fw_wmi_diag_event = false,
 		.current_cc_support = false,
@@ -298,6 +300,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.hal_params = &ath11k_hw_hal_params_qca6390,
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = false,
+		.ce_fwlog_enable = false,
 		.supports_rssi_stats = true,
 		.fw_wmi_diag_event = true,
 		.current_cc_support = true,
@@ -385,6 +388,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.hal_params = &ath11k_hw_hal_params_ipq8074,
 		.supports_dynamic_smps_6ghz = true,
 		.alloc_cacheable_memory = true,
+		.ce_fwlog_enable = true,
 		.supports_rssi_stats = false,
 		.fw_wmi_diag_event = false,
 		.current_cc_support = false,
@@ -472,6 +476,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.hal_params = &ath11k_hw_hal_params_qca6390,
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = false,
+		.ce_fwlog_enable = false,
 		.supports_rssi_stats = true,
 		.fw_wmi_diag_event = true,
 		.current_cc_support = true,
@@ -560,6 +565,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.hal_params = &ath11k_hw_hal_params_qca6390,
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = false,
+		.ce_fwlog_enable = false,
 		.supports_rssi_stats = true,
 		.fw_wmi_diag_event = true,
 		.current_cc_support = true,
@@ -646,6 +652,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.hal_params = &ath11k_hw_hal_params_wcn6750,
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = false,
+		.ce_fwlog_enable = false,
 		.supports_rssi_stats = true,
 		.fw_wmi_diag_event = true,
 		.current_cc_support = true,
@@ -729,6 +736,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.fix_l1ss = true,
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = true,
+		.ce_fwlog_enable = true,
 		.supports_rssi_stats = false,
 		.fw_wmi_diag_event = false,
 		.current_cc_support = false,
@@ -2032,7 +2040,6 @@ int ath11k_core_ssr_notifier_cb(struct notifier_block *nb, unsigned long event,
 	struct platform_device *pdev = NULL;
 	struct platform_device *ssr_pdev = (struct platform_device *)data;
 #endif
-
 	if (test_bit(ATH11K_FLAG_FW_RESTART_FOR_HOST, &qmi->ab->dev_flags)) {
 		return 0;
 	}
@@ -2101,6 +2108,10 @@ void ath11k_core_wait_dump_collect(struct ath11k_base *ab)
 #endif
 EXPORT_SYMBOL(ath11k_core_wait_dump_collect);
 
+unsigned int ce_fwlog = 1;
+module_param_named(ce_fwlog, ce_fwlog, uint, 0644);
+MODULE_PARM_DESC(ce_fwlog, "Enable/Disable CE based FW logging");
+
 int ath11k_core_qmi_firmware_ready(struct ath11k_base *ab)
 {
 	int ret;
@@ -2156,6 +2167,14 @@ int ath11k_core_qmi_firmware_ready(struct ath11k_base *ab)
 	ath11k_hif_irq_enable(ab);
 
 	ath11k_config_qdss(ab);
+
+	if (ab->hw_params.ce_fwlog_enable && ce_fwlog) {
+		ret = ath11k_enable_fwlog(ab);
+		if (ret < 0) {
+			ath11k_err(ab, "failed to enable fwlog: %d\n", ret);
+			goto err_core_stop;
+		}
+	}
 
 	mutex_unlock(&ab->core_lock);
 

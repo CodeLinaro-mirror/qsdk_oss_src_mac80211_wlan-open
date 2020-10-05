@@ -246,6 +246,7 @@ struct ath11k_hw_params {
 	bool support_fw_mac_sequence;
 	bool support_dual_stations;
 	bool pdev_suspend;
+	bool ce_fwlog_enable;
 };
 
 struct ath11k_hw_ops {

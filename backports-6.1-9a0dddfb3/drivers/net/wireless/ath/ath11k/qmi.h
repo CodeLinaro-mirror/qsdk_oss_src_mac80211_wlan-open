@@ -224,6 +224,18 @@ struct qmi_wlanfw_m3_dump_upload_done_resp_msg_v01 {
 	struct qmi_response_type_v01 resp;
 };
 
+struct wlfw_ini_req_msg_v01 {
+	u8 enablefwlog_valid;
+	u8 enablefwlog;
+};
+
+struct wlfw_ini_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
+#define QMI_WLFW_INI_REQ_V01 0x002F
+#define WLFW_INI_REQ_MSG_V01_MAX_MSG_LEN 4
+
 #define QMI_WLANFW_QDSS_TRACE_MODE_REQ_V01 0x0045
 #define QMI_WLANFW_QDSS_TRACE_MODE_REQ_MSG_V01_MAX_LEN 18
 #define QMI_WLANFW_QDSS_TRACE_MODE_RESP_MSG_V01_MAX_LEN 7
@@ -672,4 +684,5 @@ int wlfw_send_qdss_trace_config_download_req(struct ath11k_base *ab,
 		const u8 *buffer, unsigned int len);
 int ath11k_send_qdss_trace_mode_req(struct ath11k_base *ab,
 		enum wlfw_qdss_trace_mode_enum_v01 mode);
+int ath11k_enable_fwlog(struct ath11k_base *ab);
 #endif

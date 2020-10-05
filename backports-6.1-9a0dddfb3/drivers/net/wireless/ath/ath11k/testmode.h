@@ -12,6 +12,7 @@ void ath11k_tm_wmi_event(struct ath11k_base *ab, u32 cmd_id, struct sk_buff *skb
 int ath11k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		  void *data, int len);
 
+void ath11k_fwlog_write(struct ath11k_base *ab,  u8 *data, int len);
 #else
 
 static inline void ath11k_tm_wmi_event(struct ath11k_base *ab, u32 cmd_id,
@@ -26,4 +27,9 @@ static inline int ath11k_tm_cmd(struct ieee80211_hw *hw,
 	return 0;
 }
 
+static inline void ath11k_fwlog_write(struct ath11k_base *ab,  u8 *data,
+				     int len)
+{
+
+}
 #endif
