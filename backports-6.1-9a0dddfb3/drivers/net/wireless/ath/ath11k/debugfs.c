@@ -3138,6 +3138,94 @@ static const struct file_operations ath11k_fops_twt_resume_dialog = {
 	.open = simple_open
 };
 
+static ssize_t ath11k_write_ampdu_aggr_size(struct file *file,
+					    const char __user *ubuf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif = file->private_data;
+	struct ath11k_base *ab = arvif->ar->ab;
+	unsigned int tx_aggr_size = 0;
+	int ret;
+	struct set_custom_aggr_size_params params = {0};
+
+	if (kstrtouint_from_user(ubuf, count, 0, &tx_aggr_size))
+		return -EINVAL;
+
+	if (tx_aggr_size > ATH11K_CONFIG_AGGR_MAX_AMPDU_SIZE) {
+		ath11k_warn(ab, "Valid AMPDU Aggregation Size is in the range 0-255");
+		return -EINVAL;
+	}
+
+	params.aggr_type = WMI_VDEV_CUSTOM_AGGR_TYPE_AMPDU;
+	params.tx_aggr_size = tx_aggr_size;
+	params.rx_aggr_size_disable = true;
+	params.vdev_id = arvif->vdev_id;
+
+	ret = ath11k_wmi_send_aggr_size_cmd(arvif->ar, &params);
+	if (ret)
+		ath11k_warn(ab, "Failed to set ampdu config vdev_id %d"
+			   "ret %d \n",params.vdev_id, ret);
+
+	return ret ? ret : count;
+}
+
+static const struct file_operations fops_ampdu_aggr_size = {
+        .write = ath11k_write_ampdu_aggr_size,
+        .open = simple_open,
+	.owner = THIS_MODULE,
+        .llseek = default_llseek,
+};
+
+static ssize_t ath11k_write_amsdu_aggr_size(struct file *file,
+					    const char __user *ubuf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif = file->private_data;
+	struct ath11k_base *ab = arvif->ar->ab;
+	unsigned int tx_aggr_size = 0;
+	int ret;
+	struct set_custom_aggr_size_params params = {0};
+
+	if (kstrtouint_from_user(ubuf, count, 0, &tx_aggr_size))
+		return -EINVAL;
+
+	if (tx_aggr_size > ATH11K_CONFIG_AGGR_MAX_AMSDU_SIZE) {
+		ath11k_warn(ab, "Valid AMSDU Aggregation size is in the range 0-7");
+		return -EINVAL;
+	}
+
+	params.aggr_type = WMI_VDEV_CUSTOM_AGGR_TYPE_AMSDU;
+	params.tx_aggr_size = tx_aggr_size;
+	params.rx_aggr_size_disable = true;
+	params.vdev_id = arvif->vdev_id;
+
+	ret = ath11k_wmi_send_aggr_size_cmd(arvif->ar, &params);
+	if (ret)
+		ath11k_warn(ab, "Failed to set amsdu config vdev_id %d"
+			   "ret %d \n",params.vdev_id, ret);
+
+	return ret ? ret : count;
+}
+
+static const struct file_operations fops_amsdu_aggr_size = {
+	.write = ath11k_write_amsdu_aggr_size,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+void ath11k_debug_aggr_size_config_init(struct ath11k_vif *arvif)
+{
+	arvif->ampdu_aggr_size = debugfs_create_file("ampdu_aggr_size", 0644,
+						     arvif->vif->debugfs_dir,
+						     arvif,
+						     &fops_ampdu_aggr_size);
+	arvif->amsdu_aggr_size = debugfs_create_file("amsdu_aggr_size", 0644,
+						     arvif->vif->debugfs_dir,
+						     arvif,
+						     &fops_amsdu_aggr_size);
+}
+
 void ath11k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif)
 {

@@ -5695,6 +5695,56 @@ struct wmi_pdev_obss_pd_bitmap_cmd {
 	u32 bitmap[2];
 } __packed;
 
+#define WMI_VDEV_AGGR_AC			GENMASK(2, 0)
+#define WMI_VDEV_AGGR_TYPE			GENMASK(3, 2)
+#define WMI_VDEV_TX_AGGR_SZ_DISABLE		GENMASK(4, 3)
+#define WMI_VDEV_RX_AGGR_SZ_DISABLE		GENMASK(5, 4)
+#define WMI_VDEV_AGGR_AC_ENABLE			GENMASK(6, 5)
+
+struct set_custom_aggr_size_params {
+	u32 vdev_id;
+	u32 tx_aggr_size;
+	u32 rx_aggr_size;
+	u32 ac;
+	u32 aggr_type;
+	u32 tx_aggr_size_disable;
+	u32 rx_aggr_size_disable;
+	u32 tx_ac_enable;
+};
+
+struct wmi_set_custom_aggr_size_params_cmd {
+	u32 tlv_header;   /* TLV tag and len */
+	u32 vdev_id;      /* vdev id indicating to which aggregation size will be applied. */
+	/* Size for tx aggregation for the vdev mentioned in vdev id
+	 * (max MPDUs per A-MPDU or max MSDUs per A-MSDU based on aggr_type field)
+	 */
+	u32 tx_aggr_size;
+
+	u32 rx_aggr_size; /* Size for rx aggregation (block ack window size limit)for vdev id */
+
+	/* To set TX aggregation size limits per VDEV per AC
+	 * bits 1:0 (ac):
+	 * Access Category (0x0=BE, 0x1=BK, 0x2=VI, 0x3=VO)
+	 * If tx_ac_enable bit is not set, tx_aggr_size is applied
+	 * for all Access Categories
+	 * bit 2 (aggr_type):		 TX Aggregation Type (0=A-MPDU, 1=A-MSDU)
+	 * bit 3 (tx_aggr_size_disable): If set tx_aggr_size is invalid
+	 * bit 4 (rx_aggr_size_disable): If set rx_aggr_size is invalid
+	 * bit 5 (tx_ac_enable):	 If set, above ac bitmap is valid.
+	 * bits 31:6:			 Reserved bits. should be set to zero.
+	 */
+	u32 enable_bitmap;
+} __packed;
+
+enum wmi_vdev_aggr_type {
+	WMI_VDEV_CUSTOM_AGGR_TYPE_AMPDU = 0,
+	WMI_VDEV_CUSTOM_AGGR_TYPE_AMSDU = 1,
+	WMI_VDEV_CUSTOM_AGGR_TYPE_MAX,
+};
+
+#define ATH11K_CONFIG_AGGR_MAX_AMPDU_SIZE	255 /* Maximum Frames for Custom AMPDU Size */
+#define ATH11K_CONFIG_AGGR_MAX_AMSDU_SIZE	7   /* Maximum Frames for Custom AMSDU Size */
+
 #define ATH11K_BSS_COLOR_COLLISION_SCAN_PERIOD_MS		200
 #define ATH11K_OBSS_COLOR_COLLISION_DETECTION_DISABLE		0
 #define ATH11K_OBSS_COLOR_COLLISION_DETECTION			1
@@ -6947,5 +6997,7 @@ int ath11k_wmi_send_vdev_set_tpc_power(struct ath11k *ar,
 				       struct ath11k_reg_tpc_power_info *param);
 int ath11k_wmi_pdev_get_tpc_table_cmdid(struct ath11k *ar);
 void ath11k_wmi_free_tpc_stats_mem(struct ath11k *ar);
+int ath11k_wmi_send_aggr_size_cmd(struct ath11k *ar,
+				  struct set_custom_aggr_size_params *params);
 
 #endif

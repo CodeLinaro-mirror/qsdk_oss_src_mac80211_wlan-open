@@ -449,6 +449,11 @@ struct ath11k_vif {
 	 */
 	struct ieee80211_chanctx_conf chanctx;
 
+#ifdef CPTCFG_ATH11K_DEBUGFS
+	struct dentry *ampdu_aggr_size;
+	struct dentry *amsdu_aggr_size;
+#endif /* CPTCFG_ATH11K_DEBUGFS */
+
 	struct ath11k_mgmt_frame_stats mgmt_stats;
 #ifdef CPTCFG_ATH11K_NSS_SUPPORT
 	struct arvif_nss nss;

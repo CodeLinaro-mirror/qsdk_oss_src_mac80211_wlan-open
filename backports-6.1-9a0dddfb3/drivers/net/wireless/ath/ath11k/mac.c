@@ -6494,6 +6494,8 @@ static int ath11k_mac_op_start(struct ieee80211_hw *hw)
 		}
 	}
 
+	ath11k_debug_aggr_size_config_init(arvif);
+
 	mutex_unlock(&ar->conf_mutex);
 
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx],
@@ -7100,6 +7102,13 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 		ath11k_dbg(ab, ATH11K_DBG_MAC, "interface added to change reg rules\n");
 		ath11k_reg_handle_chan_list(ab, reg_info, IEEE80211_REG_LPI_AP);
 	}
+
+	/* Remove A-MPDU, A-MSDU aggr size files */
+	debugfs_remove(arvif->ampdu_aggr_size);
+	arvif->ampdu_aggr_size = NULL;
+
+	debugfs_remove(arvif->amsdu_aggr_size);
+	arvif->amsdu_aggr_size = NULL;
 
 	mutex_unlock(&ar->conf_mutex);
 

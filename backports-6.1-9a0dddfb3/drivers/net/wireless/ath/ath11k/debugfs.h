@@ -305,6 +305,8 @@ struct ath11k_fw_dbglog {
 	};
 };
 
+void ath11k_debug_aggr_size_config_init(struct ath11k_vif *arvif);
+
 #ifdef CPTCFG_ATH11K_DEBUGFS
 int ath11k_debugfs_create(void);
 void ath11k_debugfs_destroy(void);
