@@ -4546,6 +4546,7 @@ ath11k_mac_bitrate_mask_num_ht_rates(struct ath11k *ar,
 {
 	int num_rates = 0;
 	int i;
+	u32 scan_timeout;
 
 	for (i = 0; i < ARRAY_SIZE(mask->control[band].ht_mcs); i++)
 		num_rates += hweight8(mask->control[band].ht_mcs[i]);
@@ -10787,6 +10788,11 @@ static int __ath11k_mac_register(struct ath11k *ar)
 				      NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT);
 
 	wiphy_ext_feature_set(ar->hw->wiphy, NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT);
+
+	if (test_bit(WMI_TLV_SERVICE_PASSIVE_SCAN_START_TIME_ENHANCE,
+                     ar->ab->wmi_ab.svc_map))
+		 wiphy_ext_feature_set(ar->hw->wiphy,
+				       NL80211_EXT_FEATURE_SET_SCAN_DWELL);
 
 	ar->hw->queues = ATH11K_HW_MAX_QUEUES;
 	ar->hw->wiphy->tx_queue_len = ATH11K_QUEUE_LEN;

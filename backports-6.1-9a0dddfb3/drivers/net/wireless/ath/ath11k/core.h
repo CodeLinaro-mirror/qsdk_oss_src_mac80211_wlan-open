@@ -49,6 +49,8 @@ extern bool ath11k_collect_dump;
 
 #define ATH11K_TX_MGMT_TARGET_MAX_SUPPORT_WMI 64
 
+#define ATH11K_SCAN_CHANNEL_SWITCH_WMI_EVT_OVERHEAD 10 /* msec */
+
 /* Pending management packets threshold for dropping probe responses */
 #define ATH11K_PRB_RSP_DROP_THRESHOLD ((ATH11K_TX_MGMT_TARGET_MAX_SUPPORT_WMI * 3) / 4)
 
