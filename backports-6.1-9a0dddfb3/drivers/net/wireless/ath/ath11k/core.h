@@ -689,6 +689,7 @@ struct ath11k_debug {
 	u32 module_id_bitmap[MAX_MODULE_ID_BITMAP_WORDS];
 	struct ath11k_debug_dbr *dbr_debug[WMI_DIRECT_BUF_MAX];
 	bool enable_m3_dump;
+	u32 mem_addr;
 };
 
 struct ath11k_per_peer_tx_stats {

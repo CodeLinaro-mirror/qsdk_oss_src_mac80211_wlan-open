@@ -18,6 +18,7 @@
 #include "peer.h"
 #include "hif.h"
 #include "pktlog.h"
+#include "qmi.h"
 
 struct dentry *debugfs_ath11k;
 
@@ -2221,6 +2222,103 @@ static const struct file_operations fops_nss_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_athdiag_read(struct file *file,
+				   char __user *user_buf,
+				   size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	u8 *buf;
+	int ret;
+
+	if (*ppos <= 0)
+		return -EINVAL;
+
+	if (!count)
+		return 0;
+
+	mutex_lock(&ar->conf_mutex);
+
+	buf = vmalloc(count);
+	if (!buf) {
+		ret = -ENOMEM;
+		 goto exit;
+	}
+
+	ret = ath11k_qmi_mem_read(ar->ab, *ppos, buf, count);
+	if (ret < 0) {
+		ath11k_warn(ar->ab, "failed to read address 0x%08x via diagnose window from debugfs: %d\n",
+			    (u32)(*ppos), ret);
+		 goto exit;
+	}
+
+	ret = copy_to_user(user_buf, buf, count);
+	if (ret) {
+		ret = -EFAULT;
+		goto exit;
+	}
+
+	count -= ret;
+	*ppos += count;
+	ret = count;
+exit:
+	vfree(buf);
+	mutex_unlock(&ar->conf_mutex);
+
+	return ret;
+}
+
+static ssize_t ath11k_athdiag_write(struct file *file,
+				    const char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	u8 *buf;
+	int ret;
+
+	if (*ppos <= 0)
+		return -EINVAL;
+
+	if (!count)
+		return 0;
+
+	mutex_lock(&ar->conf_mutex);
+
+	buf = vmalloc(count);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto exit;
+	}
+
+	ret = copy_from_user(buf, user_buf, count);
+	if (ret) {
+		ret = -EFAULT;
+		goto exit;
+	}
+
+	ret = ath11k_qmi_mem_write(ar->ab, *ppos, buf, count);
+	if (ret < 0) {
+		ath11k_warn(ar->ab, "failed to write address 0x%08x via diagnose window from debugfs: %d\n",
+			    (u32)(*ppos), ret);
+		goto exit;
+	}
+
+	*ppos += count;
+	ret = count;
+
+exit:
+	vfree(buf);
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static const struct file_operations fops_athdiag = {
+	.read = ath11k_athdiag_read,
+	.write = ath11k_athdiag_write,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static int ath11k_get_tpc_ctl_mode(struct wmi_tpc_stats_event *tpc_stats,
 				   u32 pream_idx, int *mode)
 {
@@ -2888,6 +2986,10 @@ int ath11k_debugfs_register(struct ath11k *ar)
 	if (ab->nss.enabled)
 		debugfs_create_file("nss_peer_stats_config", 0644,
 				    ar->debug.debugfs_pdev, ar, &fops_nss_stats);
+
+	debugfs_create_file("athdiag", S_IRUSR | S_IWUSR,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_athdiag);
 
 	return 0;
 }
