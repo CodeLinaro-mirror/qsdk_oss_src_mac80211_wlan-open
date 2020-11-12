@@ -8,58 +8,28 @@
 #include "pcic.h"
 #include "debug.h"
 
-static const char *irq_name[ATH11K_IRQ_NUM_MAX] = {
-	"bhi",
-	"mhi-er0",
-	"mhi-er1",
-	"ce0",
-	"ce1",
-	"ce2",
-	"ce3",
-	"ce4",
-	"ce5",
-	"ce6",
-	"ce7",
-	"ce8",
-	"ce9",
-	"ce10",
-	"ce11",
-	"host2wbm-desc-feed",
-	"host2reo-re-injection",
-	"host2reo-command",
-	"host2rxdma-monitor-ring3",
-	"host2rxdma-monitor-ring2",
-	"host2rxdma-monitor-ring1",
-	"reo2ost-exception",
-	"wbm2host-rx-release",
-	"reo2host-status",
-	"reo2host-destination-ring4",
-	"reo2host-destination-ring3",
-	"reo2host-destination-ring2",
-	"reo2host-destination-ring1",
-	"rxdma2host-monitor-destination-mac3",
-	"rxdma2host-monitor-destination-mac2",
-	"rxdma2host-monitor-destination-mac1",
-	"ppdu-end-interrupts-mac3",
-	"ppdu-end-interrupts-mac2",
-	"ppdu-end-interrupts-mac1",
-	"rxdma2host-monitor-status-ring-mac3",
-	"rxdma2host-monitor-status-ring-mac2",
-	"rxdma2host-monitor-status-ring-mac1",
-	"host2rxdma-host-buf-ring-mac3",
-	"host2rxdma-host-buf-ring-mac2",
-	"host2rxdma-host-buf-ring-mac1",
-	"rxdma2host-destination-ring-mac3",
-	"rxdma2host-destination-ring-mac2",
-	"rxdma2host-destination-ring-mac1",
-	"host2tcl-input-ring4",
-	"host2tcl-input-ring3",
-	"host2tcl-input-ring2",
-	"host2tcl-input-ring1",
-	"wbm2host-tx-completions-ring3",
-	"wbm2host-tx-completions-ring2",
-	"wbm2host-tx-completions-ring1",
-	"tcl2host-status-ring",
+const char *ce_irq_name[ATH11K_MAX_PCI_DOMAINS + 1][CE_COUNT_MAX] = {
+	{
+		ATH11K_PCI_CE_IRQS_NAME(0)
+	},
+	{
+		ATH11K_PCI_CE_IRQS_NAME(1)
+	},
+	{
+		ATH11K_PCI_CE_IRQS_NAME()
+	},
+};
+
+const char *dp_irq_name[ATH11K_MAX_PCI_DOMAINS + 1][ATH11K_EXT_IRQ_GRP_NUM_MAX] = {
+	{
+		ATH11K_PCI_DP_IRQS_NAME(0)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME(1)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME()
+	},
 };
 
 static const struct ath11k_msi_config ath11k_msi_config[] = {
@@ -577,6 +547,11 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 	struct ath11k_ext_irq_grp *irq_grp;
 	unsigned long irq_flags;
 	struct net_device *napi_ndev;
+	struct ath11k_pci *ar_pci = ath11k_pci_priv(ab);
+	u8 domain_id = pci_domain_nr(ar_pci->pdev->bus);
+
+	if (domain_id > ATH11K_MAX_PCI_DOMAINS)
+		domain_id = ATH11K_MAX_PCI_DOMAINS;
 
 	ret = ath11k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
 						  &user_base_data,
@@ -646,7 +621,8 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 
 			irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 			ret = request_irq(irq, ath11k_pcic_ext_interrupt_handler,
-					  irq_flags, "DP_EXT_IRQ", irq_grp);
+					  irq_flags,
+					  dp_irq_name[domain_id][i], irq_grp);
 			if (ret) {
 				ath11k_err(ab, "failed request irq %d: %d\n",
 					   vector, ret);
@@ -685,6 +661,11 @@ int ath11k_pcic_config_irq(struct ath11k_base *ab)
 	unsigned int msi_data;
 	int irq, i, ret, irq_idx;
 	unsigned long irq_flags;
+	struct ath11k_pci *ar_pci = ath11k_pci_priv(ab);
+	u8 domain_id = pci_domain_nr(ar_pci->pdev->bus);
+
+	if (domain_id > ATH11K_MAX_PCI_DOMAINS)
+		domain_id = ATH11K_MAX_PCI_DOMAINS;
 
 	ret = ath11k_pcic_get_user_msi_assignment(ab, "CE", &msi_data_count,
 						  &msi_data_start, &msi_irq_start);
@@ -712,7 +693,7 @@ int ath11k_pcic_config_irq(struct ath11k_base *ab)
 		tasklet_setup(&ce_pipe->intr_tq, ath11k_pcic_ce_tasklet);
 
 		ret = request_irq(irq, ath11k_pcic_ce_interrupt_handler,
-				  irq_flags, irq_name[irq_idx], ce_pipe);
+				  irq_flags, ce_irq_name[domain_id][i], ce_pipe);
 		if (ret) {
 			ath11k_err(ab, "failed to request irq %d: %d\n",
 				   irq_idx, ret);

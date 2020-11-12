@@ -26,6 +26,36 @@
  */
 #define ATH11K_PCI_ACCESS_ALWAYS_OFF 0xFE0
 
+#define STR_CONV(str) #str
+
+#define ATH11K_PCI_DP_IRQS_NAME(x) \
+	STR_CONV(pci##x##_wbm2host_tx_completions_ring1),\
+	STR_CONV(pci##x##_wbm2host_tx_completions_ring2),\
+	STR_CONV(pci##x##_wbm2host_tx_completions_ring3),\
+	STR_CONV(pci##x##_lmac_reo_misc_irq),\
+	STR_CONV(pci##x##_reo2host_destination_ring1),\
+	STR_CONV(pci##x##_reo2host_destination_ring2),\
+	STR_CONV(pci##x##_reo2host_destination_ring3),\
+	STR_CONV(pci##x##_reo2host_destination_ring4),\
+	/* Currently only 8 msi are registered */ \
+	STR_CONV(pci##x##_dp_res1),\
+	STR_CONV(pci##x##_dp_res2),\
+	STR_CONV(pci##x##_dp_res3),\
+
+#define ATH11K_PCI_CE_IRQS_NAME(x) \
+	STR_CONV(pci##x##_ce0),\
+	STR_CONV(pci##x##_ce1),\
+	STR_CONV(pci##x##_ce2),\
+	STR_CONV(pci##x##_ce3),\
+	STR_CONV(pci##x##_ce4),\
+	STR_CONV(pci##x##_ce5),\
+	STR_CONV(pci##x##_ce6),\
+	STR_CONV(pci##x##_ce7),\
+	STR_CONV(pci##x##_ce8),\
+	STR_CONV(pci##x##_ce9),\
+	STR_CONV(pci##x##_ce10),\
+	STR_CONV(pci##x##_ce11),\
+
 int ath11k_pcic_get_user_msi_assignment(struct ath11k_base *ab, char *user_name,
 					int *num_vectors, u32 *user_base_data,
 					u32 *base_vector);
