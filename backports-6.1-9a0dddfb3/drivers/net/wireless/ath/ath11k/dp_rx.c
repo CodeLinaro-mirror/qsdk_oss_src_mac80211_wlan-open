@@ -2772,7 +2772,8 @@ static void ath11k_dp_rx_h_mpdu(struct ath11k *ar,
 
 	/* PN for multicast packets will be checked in mac80211 */
 	rxcb = ATH11K_SKB_RXCB(msdu);
-	fill_crypto_hdr = ath11k_dp_rx_h_attn_is_mcbc(ar->ab, rx_desc);
+	if (!ar->ab->nss.enabled)
+		fill_crypto_hdr = ath11k_dp_rx_h_attn_is_mcbc(ar->ab, rx_desc);
 	rxcb->is_mcbc = fill_crypto_hdr;
 
 	if (rxcb->is_mcbc) {

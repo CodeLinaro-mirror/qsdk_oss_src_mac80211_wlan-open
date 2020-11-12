@@ -606,7 +606,7 @@ static int ath11k_nss_undecap_nwifi(struct ath11k_vif *arvif, struct sk_buff *sk
 
 static void ath11k_nss_wds_type_rx(struct ath11k *ar, struct net_device *dev,
 				   u8* src_mac, u8 is_sa_valid, u8 addr4_valid,
-				   u16 peer_id, bool *drop)
+				   u16 peer_id)
 {
 	struct ath11k_base *ab = ar->ab;
 	struct ath11k_ast_entry *ast_entry = NULL;
@@ -641,9 +641,6 @@ static void ath11k_nss_wds_type_rx(struct ath11k *ar, struct net_device *dev,
 				ath11k_nss_update_wds_peer(ar, ta_peer, src_mac);
 			}
 		}
-
-		if (!ta_peer->nss.ext_vdev_up)
-			drop = true;
 	}
 
 	spin_unlock_bh(&ab->base_lock);
@@ -687,8 +684,7 @@ static void ath11k_nss_mec_handler(struct ath11k *ar, u8* mec_mac_addr)
 
 static void ath11k_nss_vdev_spl_receive_ext_wdsdata(struct ath11k_vif *arvif,
 						    struct sk_buff *skb,
-						    struct nss_wifi_vdev_wds_per_packet_metadata *wds_metadata,
-						    bool *drop)
+						    struct nss_wifi_vdev_wds_per_packet_metadata *wds_metadata)
 {
 	struct ath11k *ar = arvif->ar;
 	struct ath11k_base *ab = ar->ab;
@@ -710,7 +706,7 @@ static void ath11k_nss_vdev_spl_receive_ext_wdsdata(struct ath11k_vif *arvif,
 	switch (wds_type) {
 		case NSS_WIFI_VDEV_WDS_TYPE_RX:
 			ath11k_nss_wds_type_rx(ar, skb->dev, src_mac, is_sa_valid,
-					       addr4_valid, peer_id, &drop);
+					       addr4_valid, peer_id);
 			break;
 		case NSS_WIFI_VDEV_WDS_TYPE_MEC:
 			ath11k_nss_mec_handler(ar, (u8 *)(skb->data));
@@ -773,12 +769,14 @@ ath11k_nss_vdev_special_data_receive(struct net_device *dev, struct sk_buff *skb
 {
 	struct nss_wifi_vdev_per_packet_metadata *wifi_metadata = NULL;
 	struct nss_wifi_vdev_wds_per_packet_metadata *wds_metadata = NULL;
+	struct nss_wifi_vdev_addr4_data_metadata *addr4_metadata = NULL;
 	struct ath11k_vif *arvif;
 	struct ath11k_base *ab;
-	bool drop = false;
+	struct ath11k_skb_rxcb *rxcb;
 	bool eth_decap = false;
 	int data_offs = 0;
 	int ret = 0;
+	struct ath11k_peer *ta_peer = NULL;
 
 	arvif = ath11k_nss_get_arvif_from_dev(dev);
 	if (!arvif) {
@@ -810,15 +808,50 @@ ath11k_nss_vdev_special_data_receive(struct net_device *dev, struct sk_buff *skb
 		return;
 	}
 
-	if (eth_decap && wifi_metadata->pkt_type ==
-	    NSS_WIFI_VDEV_EXT_DATA_PKT_TYPE_WDS_LEARN) {
-		wds_metadata = &wifi_metadata->metadata.wds_metadata;
-		ath11k_nss_vdev_spl_receive_ext_wdsdata(arvif, skb,
-							wds_metadata, &drop);
-	}
+	switch(wifi_metadata->pkt_type) {
+	case NSS_WIFI_VDEV_EXT_DATA_PKT_TYPE_WDS_LEARN:
+		if (eth_decap) {
+			wds_metadata = &wifi_metadata->metadata.wds_metadata;
+			ath11k_nss_vdev_spl_receive_ext_wdsdata(arvif, skb,
+								wds_metadata);
+		}
+		dev_kfree_skb_any(skb);
+	break;
+	case NSS_WIFI_VDEV_EXT_DATA_PKT_TYPE_MCBC_RX:
+		ath11k_dbg_dump(ab, ATH11K_DBG_DP_RX, "",
+			        "mcbc packet exception from nss: ",
+			        skb->data, skb->len);
+		rxcb = ATH11K_SKB_RXCB(skb);
+		rxcb->rx_desc = (struct hal_rx_desc *)skb->head;
+		rxcb->is_first_msdu = rxcb->is_last_msdu = true;
+		rxcb->is_continuation = false;
+		rxcb->is_mcbc = true;
+		ath11k_dp_rx_from_nss(arvif->ar, skb, napi);
+	break;
+	case NSS_WIFI_VDEV_EXT_DATA_PKT_TYPE_4ADDR:
+		if (eth_decap) {
+			addr4_metadata = &wifi_metadata->metadata.addr4_metadata;
 
-	if (!drop)
-		ath11k_nss_deliver_rx(arvif->vif, skb, eth_decap, data_offs, napi);
+			spin_lock_bh(&ab->base_lock);
+			ta_peer = ath11k_peer_find_by_id(ab, addr4_metadata->peer_id);
+			if (!ta_peer) {
+				spin_unlock_bh(&ab->base_lock);
+				dev_kfree_skb_any(skb);
+				return;
+			}
+
+			ath11k_dbg(ab, ATH11K_DBG_NSS_WDS, "4addr exception ta_peer %pM\n",
+				   ta_peer->addr);
+			if (!ta_peer->nss.ext_vdev_up && addr4_metadata->addr4_valid)
+			    ieee80211_rx_nss_notify_4addr(dev, ta_peer->addr);
+			spin_unlock_bh(&ab->base_lock);
+		}
+		dev_kfree_skb_any(skb);
+	break;
+	default:
+		ath11k_warn(ab, "unsupported pkt_type %d from nss\n", wifi_metadata->pkt_type);
+		dev_kfree_skb_any(skb);
+	}
 }
 
 static void
@@ -2010,6 +2043,7 @@ ath11k_nss_mesh_link_vdev_special_data_receive(void *dev,
 		rxcb->rx_desc = (struct hal_rx_desc *)skb->head;
 		rxcb->is_first_msdu = rxcb->is_last_msdu = true;
 		rxcb->is_continuation = false;
+		rxcb->is_mcbc = true;
 		ath11k_dp_rx_from_nss(arvif->ar, skb, napi);
 		break;
 	case NSS_WIFI_VDEV_EXT_DATA_PKT_TYPE_MESH:
@@ -2133,6 +2167,9 @@ int ath11k_nss_vdev_set_cmd(struct ath11k_vif *arvif, enum ath11k_nss_vdev_cmd n
 		break;
 	case ATH11K_NSS_WIFI_VDEV_CFG_WDS_BACKHAUL_CMD:
 		cmd = NSS_WIFI_VDEV_CFG_WDS_BACKHAUL_CMD;
+		break;
+	case ATH11K_NSS_WIFI_VDEV_CFG_MCBC_EXC_TO_HOST_CMD:
+		cmd = NSS_WIFI_VDEV_CFG_MCBC_EXC_TO_HOST_CMD;
 		break;
 	default:
 		return -EINVAL;
@@ -2647,12 +2684,31 @@ int ath11k_nss_vdev_create(struct ath11k_vif *arvif)
 		goto free_vdev;
 
 	switch (arvif->vif->type) {
-	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_STATION:
 		ret = ath11k_nss_vdev_configure(arvif);
 		if (ret)
 			goto unregister_vdev;
 
+		ret = ath11k_nss_vdev_set_cmd(arvif,
+					      ATH11K_NSS_WIFI_VDEV_CFG_MCBC_EXC_TO_HOST_CMD,
+					      ATH11K_NSS_ENABLE_MCBC_EXC);
+		if (ret) {
+			ath11k_err(ab, "failed to set MCBC in nss %d\n", ret);
+			goto unregister_vdev;
+		}
+		break;
+	case NL80211_IFTYPE_AP:
+		ret = ath11k_nss_vdev_configure(arvif);
+		if (ret)
+			goto unregister_vdev;
+
+		ret = ath11k_nss_vdev_set_cmd(arvif,
+					      ATH11K_NSS_WIFI_VDEV_CFG_WDS_BACKHAUL_CMD,
+					      true);
+		if (ret) {
+			ath11k_warn(ab, "failed to cfg wds backhaul in nss %d\n", ret);
+			goto unregister_vdev;
+		}
 		break;
 	case NL80211_IFTYPE_MESH_POINT:
 		ret = ath11k_nss_mesh_alloc_register(arvif, wdev->netdev);
@@ -2674,7 +2730,7 @@ int ath11k_nss_vdev_create(struct ath11k_vif *arvif)
 		}
 
 		ret = ath11k_nss_vdev_set_cmd(arvif,
-					      NSS_WIFI_VDEV_CFG_MCBC_EXC_TO_HOST_CMD, 1);
+					      ATH11K_NSS_WIFI_VDEV_CFG_MCBC_EXC_TO_HOST_CMD, 1);
 		if (ret) {
 			ath11k_warn(ab, "failed to enable mcast/bcast exception %d\n", ret);
 			goto unregister_vdev;
