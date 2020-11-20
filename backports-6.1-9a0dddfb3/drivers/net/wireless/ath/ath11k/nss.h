@@ -151,6 +151,7 @@ enum ath11k_nss_peer_sec_type {
 struct ath11k_nss_peer {
 	uint32_t *vaddr;
 	dma_addr_t paddr;
+	bool ext_vdev_up;
 	struct peer_stats *nss_stats;
 	struct completion complete;
 };
@@ -165,6 +166,16 @@ struct arvif_nss {
 	int encap;
 	/* Keep the copy of decap type for nss */
 	int decap;
+	/* AP_VLAN vif context obtained on ext vdev register */
+	void* ctx;
+	/* Parent AP vif stored in case of AP_VLAN vif */
+	struct ath11k_vif *ap_vif;
+	/* Flag to notify if vlan arvif object is added to arvif list*/
+	bool added;
+	/* Flag to notify if ext vdev is up/down */
+	bool ext_vdev_up;
+	/* WDS cfg should be done only once for ext vdev */
+	bool wds_cfg_done;
 	bool created;
 };
 
@@ -218,11 +229,21 @@ int ath11k_nss_map_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
 			    u8 *dest_mac, enum ath11k_ast_entry_type type);
 int ath11k_nss_del_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
 			    u8 *dest_mac);
+int ath11k_nss_ext_vdev_cfg_wds_peer(struct ath11k_vif *arvif,
+				     u8 *wds_addr, u32 wds_peer_id);
+int ath11k_nss_ext_vdev_wds_4addr_allow(struct ath11k_vif *arvif,
+					u32 wds_peer_id);
+int ath11k_nss_ext_vdev_create(struct ath11k_vif *arvif);
+int ath11k_nss_ext_vdev_configure(struct ath11k_vif *arvif);
+void ath11k_nss_ext_vdev_unregister(struct ath11k_vif *arvif);
+int ath11k_nss_ext_vdev_up(struct ath11k_vif *arvif);
+int ath11k_nss_ext_vdev_down(struct ath11k_vif *arvif);
+void ath11k_nss_ext_vdev_delete(struct ath11k_vif *arvif);
 int ath11k_nss_set_peer_sec_type(struct ath11k *ar, struct ath11k_peer *peer,
 				 struct ieee80211_key_conf *key_conf);
-void ath11k_nss_update_sta_stats(struct station_info *sinfo,
-				 struct ieee80211_sta *sta,
-				 struct ath11k_sta *arsta);
+void ath11k_nss_update_sta_stats(struct ath11k_vif *arvif,
+				 struct station_info *sinfo,
+				 struct ieee80211_sta *sta);
 void ath11k_nss_update_sta_rxrate(struct hal_rx_mon_ppdu_info *ppdu_info,
 				  struct ath11k_peer *peer,
 				  struct hal_rx_user_status *user_stats);
@@ -255,9 +276,9 @@ static inline void ath11k_nss_vdev_delete(struct ath11k_vif *arvif)
 {
 }
 
-static inline void ath11k_nss_update_sta_stats(struct station_info *sinfo,
-					       struct ieee80211_sta *sta,
-					       struct ath11k_sta *arsta)
+static inline void ath11k_nss_update_sta_stats(struct ath11k_vif *arvif,
+					       struct station_info *sinfo,
+					       struct ieee80211_sta *sta)
 {
 	return;
 }
@@ -314,6 +335,43 @@ static inline int ath11k_nss_peer_create(struct ath11k *ar, struct ath11k_peer *
 	return 0;
 }
 
+static inline int ath11k_nss_ext_vdev_cfg_wds_peer(struct ath11k_vif *arvif,
+				     u8 *wds_addr, u32 wds_peer_id)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_ext_vdev_wds_4addr_allow(struct ath11k_vif *arvif,
+					u32 wds_peer_id)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_ext_vdev_create(struct ath11k_vif *arvif)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_ext_vdev_configure(struct ath11k_vif *arvif)
+{
+	return 0;
+}
+
+static inline void ath11k_nss_ext_vdev_unregister(struct ath11k_vif *arvif)
+{
+	return;
+}
+
+static inline int ath11k_nss_ext_vdev_up(struct ath11k_vif *arvif)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_ext_vdev_down(struct ath11k_vif *arvif)
+{
+	return 0;
+}
+
 static inline void ath11k_nss_peer_stats_enable(struct ath11k *ar)
 {
 	return;
@@ -333,6 +391,11 @@ static inline int ath11k_nss_set_peer_sec_type(struct ath11k *ar, struct ath11k_
 static inline int ath11k_nss_setup(struct ath11k_base *ab)
 {
 	return 0;
+}
+
+static inline void ath11k_nss_ext_vdev_delete(struct ath11k_vif *arvif)
+{
+	return;
 }
 
 static inline int ath11k_nss_teardown(struct ath11k_base *ab)
