@@ -124,7 +124,10 @@ static void ath11k_nss_get_peer_stats(struct ath11k_base *ab, struct nss_wifili_
 
 		peer->nss.nss_stats->tx_failed += tx_dropped;
 
-		ATH11K_NSS_TXRX_NETDEV_STATS(tx, peer->vif, tx_bytes, tx_packets);
+		if (peer->nss.ext_vdev_up)
+			ATH11K_NSS_TXRX_NETDEV_STATS(tx, peer->nss.ext_vif, tx_bytes, tx_packets);
+		else
+			ATH11K_NSS_TXRX_NETDEV_STATS(tx, peer->vif, tx_bytes, tx_packets);
 
 		rx_packets = pstats->rx.rx_recvd;
 		peer->nss.nss_stats->rx_packets += rx_packets;
@@ -134,7 +137,10 @@ static void ath11k_nss_get_peer_stats(struct ath11k_base *ab, struct nss_wifili_
 			pstats->rx.err.decrypt_err;
 		peer->nss.nss_stats->rx_dropped += rx_dropped;
 
-		ATH11K_NSS_TXRX_NETDEV_STATS(rx, peer->vif, rx_bytes, rx_packets);
+		if (peer->nss.ext_vdev_up)
+			ATH11K_NSS_TXRX_NETDEV_STATS(tx, peer->nss.ext_vif, tx_bytes, tx_packets);
+		else
+			ATH11K_NSS_TXRX_NETDEV_STATS(rx, peer->vif, rx_bytes, rx_packets);
 
 		spin_unlock_bh(&ab->base_lock);
 		rcu_read_unlock();
@@ -995,6 +1001,9 @@ int ath11k_nss_vdev_set_cmd(struct ath11k_vif *arvif, enum ath11k_nss_vdev_cmd n
 		break;
 	case ATH11K_NSS_WIFI_VDEV_DECAP_TYPE_CMD:
 		cmd = NSS_WIFI_VDEV_DECAP_TYPE_CMD;
+		break;
+	case ATH11K_NSS_WIFI_VDEV_CFG_WDS_BACKHAUL_CMD:
+		cmd = NSS_WIFI_VDEV_CFG_WDS_BACKHAUL_CMD;
 		break;
 	default:
 		return -EINVAL;

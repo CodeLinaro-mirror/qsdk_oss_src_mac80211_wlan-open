@@ -140,6 +140,24 @@ struct ath11k_ast_entry *ath11k_peer_ast_find_by_addr(struct ath11k_base *ab,
 	return NULL;
 }
 
+struct ath11k_ast_entry *ath11k_peer_ast_find_by_pdev_idx(struct ath11k *ar,
+							  u8* addr)
+{
+	struct ath11k_base *ab = ar->ab;
+	struct ath11k_ast_entry *ast_entry;
+	struct ath11k_peer *peer;
+
+	lockdep_assert_held(&ab->base_lock);
+
+	list_for_each_entry(peer, &ab->peers, list)
+		list_for_each_entry(ast_entry, &peer->ast_entry_list, ase_list)
+			if (ether_addr_equal(ast_entry->addr, addr) &&
+			    ast_entry->pdev_idx == ar->pdev_idx)
+				return ast_entry;
+
+	return NULL;
+}
+
 void ath11k_peer_ast_wds_wmi_wk(struct work_struct *wk)
 {
 	struct ath11k_ast_entry *ast_entry = container_of(wk,
@@ -200,8 +218,8 @@ int ath11k_peer_add_ast(struct ath11k *ar, struct ath11k_peer *peer,
 	}
 
 	if (type != ATH11K_AST_TYPE_STATIC) {
-		ast_entry = ath11k_peer_ast_find_by_addr(ab, mac_addr);
-		if (ast_entry) {
+		ast_entry = ath11k_peer_ast_find_by_pdev_idx(ar, mac_addr);
+		if (ast_entry && ast_entry->type != ATH11K_AST_TYPE_STATIC) {
 			ath11k_dbg(ab, ATH11K_DBG_MAC, "ast_entry %pM already present on peer %pM\n",
 				   mac_addr, ast_entry->peer->addr);
 			return 0;
@@ -298,7 +316,6 @@ int ath11k_peer_update_ast(struct ath11k *ar, struct ath11k_peer *peer,
 	ath11k_dbg(ab, ATH11K_DBG_MAC, "ath11k_peer_update_ast old peer %pM new peer %pM ast_entry %pM\n",
 		   old_peer->addr, peer->addr, ast_entry->addr);
 
-	flush_work(&ast_entry->wds_wmi_wk);
 	ast_entry->action = ATH11K_WDS_WMI_UPDATE;
 	ieee80211_queue_work(ar->hw, &ast_entry->wds_wmi_wk);
 
@@ -343,8 +360,8 @@ void ath11k_peer_del_ast(struct ath11k *ar, struct ath11k_ast_entry *ast_entry)
 
 	peer = ast_entry->peer;
 
-	ath11k_dbg(ab, ATH11K_DBG_MAC, "ath11k_peer_del_ast peer %pM ast_entry %pM\n",
-		   peer->addr, ast_entry->addr);
+	ath11k_dbg(ab, ATH11K_DBG_MAC, "ath11k_peer_del_ast pdev:%d peer %pM ast_entry %pM\n",
+		   ar->pdev->pdev_id, peer->addr, ast_entry->addr);
 
 	if (ast_entry->is_mapped)
 		list_del(&ast_entry->ase_list);

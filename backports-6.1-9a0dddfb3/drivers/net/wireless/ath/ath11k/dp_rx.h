@@ -89,9 +89,9 @@ static inline u32 ath11k_he_gi_to_nl80211_he_gi(u8 sgi)
         return ret;
 }
 
-int ath11k_dp_rx_ampdu_start(struct ath11k *ar,
+int ath11k_dp_rx_ampdu_start(struct ath11k_vif *arvif,
 			     struct ieee80211_ampdu_params *params);
-int ath11k_dp_rx_ampdu_stop(struct ath11k *ar,
+int ath11k_dp_rx_ampdu_stop(struct ath11k_vif *arvif,
 			    struct ieee80211_ampdu_params *params);
 int ath11k_dp_peer_rx_pn_replay_config(struct ath11k_vif *arvif,
 				       const u8 *peer_addr,

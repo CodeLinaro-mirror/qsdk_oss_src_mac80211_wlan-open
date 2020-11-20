@@ -34,6 +34,7 @@ enum ath11k_ast_entry_type {
 enum ath11k_wds_wmi_action {
 	ATH11K_WDS_WMI_ADD = 1,
 	ATH11K_WDS_WMI_UPDATE,
+	ATH11K_WDS_WMI_REMOVE,
 
 	ATH11K_WDS_WMI_MAX
 };
@@ -127,6 +128,8 @@ int ath11k_peer_rhash_delete(struct ath11k_base *ab, struct ath11k_peer *peer);
 #ifdef CPTCFG_ATH11K_NSS_SUPPORT
 struct ath11k_ast_entry *ath11k_peer_ast_find_by_addr(struct ath11k_base *ab,
 						      u8* addr);
+struct ath11k_ast_entry *ath11k_peer_ast_find_by_pdev_idx(struct ath11k *ar,
+							  u8* addr);
 int ath11k_peer_add_ast(struct ath11k *ar, struct ath11k_peer *peer,
 			u8* mac_addr, enum ath11k_ast_entry_type type);
 int ath11k_peer_update_ast(struct ath11k *ar, struct ath11k_peer *peer,
@@ -143,6 +146,12 @@ struct ath11k_ast_entry *ath11k_peer_ast_find_by_peer(struct ath11k_base *ab,
 #else
 static inline struct ath11k_ast_entry *ath11k_peer_ast_find_by_addr(struct ath11k_base *ab,
 								    u8* addr)
+{
+	return NULL;
+}
+
+static inline struct ath11k_ast_entry *ath11k_peer_ast_find_by_pdev_idx(struct ath11k *ar,
+									u8* addr)
 {
 	return NULL;
 }

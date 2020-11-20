@@ -5168,6 +5168,8 @@ enum wmi_vdev_subtype {
 	WMI_VDEV_SUBTYPE_MESH_11S,
 };
 
+#define MIN_IDLE_INACTIVE_TIME_SECS 256
+
 enum wmi_sta_powersave_param {
 	WMI_STA_PS_PARAM_RX_WAKE_POLICY = 0,
 	WMI_STA_PS_PARAM_TX_WAKE_THRESHOLD = 1,

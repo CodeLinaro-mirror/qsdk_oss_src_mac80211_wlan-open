@@ -462,9 +462,8 @@ struct ath11k_vif {
 #endif /* CPTCFG_ATH11K_DEBUGFS */
 
 	struct ath11k_mgmt_frame_stats mgmt_stats;
-#ifdef CPTCFG_ATH11K_NSS_SUPPORT
 	struct arvif_nss nss;
-#endif
+	struct list_head ap_vlan_arvifs;
 };
 
 struct ath11k_vif_iter {

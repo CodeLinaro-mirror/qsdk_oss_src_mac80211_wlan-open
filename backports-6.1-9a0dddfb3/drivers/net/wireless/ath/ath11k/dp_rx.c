@@ -1150,12 +1150,13 @@ int ath11k_peer_rx_tid_setup(struct ath11k *ar, const u8 *peer_mac, int vdev_id,
 	return ret;
 }
 
-int ath11k_dp_rx_ampdu_start(struct ath11k *ar,
+int ath11k_dp_rx_ampdu_start(struct ath11k_vif *arvif,
 			     struct ieee80211_ampdu_params *params)
 {
+	struct ath11k *ar = arvif->ar;
 	struct ath11k_base *ab = ar->ab;
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(params->sta);
-	int vdev_id = arsta->arvif->vdev_id;
+	int vdev_id = arvif->vdev_id;
 	int ret;
 
 	ret = ath11k_peer_rx_tid_setup(ar, params->sta->addr, vdev_id,
@@ -1167,13 +1168,13 @@ int ath11k_dp_rx_ampdu_start(struct ath11k *ar,
 	return ret;
 }
 
-int ath11k_dp_rx_ampdu_stop(struct ath11k *ar,
+int ath11k_dp_rx_ampdu_stop(struct ath11k_vif *arvif,
 			    struct ieee80211_ampdu_params *params)
 {
+	struct ath11k *ar = arvif->ar;
 	struct ath11k_base *ab = ar->ab;
 	struct ath11k_peer *peer;
-	struct ath11k_sta *arsta = ath11k_sta_to_arsta(params->sta);
-	int vdev_id = arsta->arvif->vdev_id;
+	int vdev_id = arvif->vdev_id;
 	dma_addr_t paddr;
 	bool active;
 	int ret;
@@ -3157,11 +3158,11 @@ ath11k_dp_rx_update_peer_rate_table_stats(struct ath11k_rx_peer_stats *rx_stats,
 		rx_stats->byte_stats.rx_rate[rate_idx] += ppdu_info->mpdu_len;
 }
 
-static void ath11k_dp_rx_update_peer_su_stats(struct ath11k_sta *arsta,
-					   struct hal_rx_mon_ppdu_info *ppdu_info)
+static void ath11k_dp_rx_update_peer_su_stats(struct ath11k *ar,
+					      struct ath11k_sta *arsta,
+					      struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct ath11k_rx_peer_stats *rx_stats = arsta->rx_stats;
-	struct ath11k *ar = arsta->arvif->ar;
 	u32 num_msdu;
 	int i;
 
@@ -5979,7 +5980,7 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 
 		if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
 			arsta = (struct ath11k_sta *)peer->sta->drv_priv;
-			ath11k_dp_rx_update_peer_su_stats(arsta, ppdu_info);
+			ath11k_dp_rx_update_peer_su_stats(ar, arsta, ppdu_info);
 			ath11k_nss_update_sta_rxrate(ppdu_info, peer, NULL);
 		} else if ((ppdu_info->fc_valid) &&
 				(ppdu_info->ast_index != HAL_AST_IDX_INVALID)) {

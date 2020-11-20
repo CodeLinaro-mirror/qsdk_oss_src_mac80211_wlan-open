@@ -108,6 +108,7 @@ enum ath11k_nss_vdev_cmd {
 	ATH11K_NSS_WIFI_VDEV_SECURITY_TYPE_CMD,
 	ATH11K_NSS_WIFI_VDEV_ENCAP_TYPE_CMD,
 	ATH11K_NSS_WIFI_VDEV_DECAP_TYPE_CMD,
+	ATH11K_NSS_WIFI_VDEV_CFG_WDS_BACKHAUL_CMD,
 };
 
 enum ath11k_nss_opmode {
@@ -152,6 +153,7 @@ struct ath11k_nss_peer {
 	uint32_t *vaddr;
 	dma_addr_t paddr;
 	bool ext_vdev_up;
+	struct ieee80211_vif *ext_vif;
 	struct peer_stats *nss_stats;
 	struct completion complete;
 };
