@@ -674,7 +674,8 @@ u32 *ath11k_hal_srng_dst_get_next_entry(struct ath11k_base *ab,
 
 	desc = srng->ring_base_vaddr + srng->u.dst_ring.tp;
 
-	srng->u.dst_ring.tp += srng->entry_size;
+	srng->u.dst_ring.tp = (srng->u.dst_ring.tp + srng->entry_size) %
+			      srng->ring_size;
 
 	/* wrap around to start of ring*/
 	if (srng->u.dst_ring.tp == srng->ring_size)
@@ -687,8 +688,63 @@ u32 *ath11k_hal_srng_dst_get_next_entry(struct ath11k_base *ab,
 	return desc;
 }
 
+u32 *ath11k_hal_srng_dst_get_next_cache_entry(struct ath11k_base *ab,
+					      struct hal_srng *srng)
+{
+	u32 *desc,*desc_next;
+	lockdep_assert_held(&srng->lock);
+
+	if (srng->u.dst_ring.tp == srng->u.dst_ring.cached_hp)
+		return NULL;
+
+	desc = srng->ring_base_vaddr + srng->u.dst_ring.tp;
+
+	srng->u.dst_ring.tp = (srng->u.dst_ring.tp + srng->entry_size) %
+		srng->ring_size;
+
+	/* Try to prefetch the next descriptor in the ring */
+	if (srng->u.dst_ring.tp != srng->u.dst_ring.cached_hp) {
+		/* prefetch only if desc is available */
+		desc_next = srng->ring_base_vaddr + srng->u.dst_ring.tp;
+		prefetch(desc_next);
+	}
+	return desc;
+}
+
+void ath11k_hal_srng_dst_invalidate_entry(struct ath11k_base *ab,
+					struct hal_srng *srng, int entries)
+{
+	u32 *desc;
+	u32 tp, hp;
+
+	lockdep_assert_held(&srng->lock);
+
+	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED) || !entries)
+		return;
+
+	tp = srng->u.dst_ring.tp;
+	hp = srng->u.dst_ring.cached_hp;
+
+	desc = srng->ring_base_vaddr + tp;
+	if (hp > tp) {
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
+				entries * srng->entry_size * sizeof(u32),
+				DMA_FROM_DEVICE);
+	} else {
+		entries = srng->ring_size - tp;
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
+				entries * sizeof(u32),
+				DMA_FROM_DEVICE);
+
+		entries = hp;
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(srng->ring_base_vaddr),
+				entries * sizeof(u32),
+				DMA_FROM_DEVICE);
+	}
+}
+
 int ath11k_hal_srng_dst_num_free(struct ath11k_base *ab, struct hal_srng *srng,
-				 bool sync_hw_ptr)
+				bool sync_hw_ptr)
 {
 	u32 tp, hp;
 

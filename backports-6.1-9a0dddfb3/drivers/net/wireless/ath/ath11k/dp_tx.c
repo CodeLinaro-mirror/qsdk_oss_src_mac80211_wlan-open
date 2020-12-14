@@ -787,6 +787,7 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 	struct sk_buff *msdu;
 	struct hal_tx_status ts = { 0 };
 	struct dp_tx_ring *tx_ring = &dp->tx_ring[ring_id];
+	int valid_entries;
 	u32 *desc;
 	u32 msdu_id;
 	u8 mac_id;
@@ -795,9 +796,18 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 
 	ath11k_hal_srng_access_begin(ab, status_ring);
 
+	valid_entries = ath11k_hal_srng_dst_num_free(ab, status_ring, false);
+	if (!valid_entries) {
+		ath11k_hal_srng_access_end(ab, status_ring);
+		spin_unlock_bh(&status_ring->lock);
+		return;
+	}
+
+	ath11k_hal_srng_dst_invalidate_entry(ab, status_ring, valid_entries);
+
 	while ((ATH11K_TX_COMPL_NEXT(tx_ring->tx_status_head) !=
 		tx_ring->tx_status_tail) &&
-	       (desc = ath11k_hal_srng_dst_get_next_entry(ab, status_ring))) {
+	       (desc = ath11k_hal_srng_dst_get_next_cache_entry(ab, status_ring))) {
 		memcpy(&tx_ring->tx_status[tx_ring->tx_status_head],
 		       desc, sizeof(struct hal_wbm_release_ring));
 		tx_ring->tx_status_head =
