@@ -1066,6 +1066,55 @@ static const struct file_operations fops_sram_dump = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_write_rx_hash(struct file *file,
+				    const char __user *ubuf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath11k_base *ab = file->private_data;
+	struct ath11k_pdev *pdev;
+	u32 rx_hash;
+	u8 buf[128] = {0};
+	int ret, i, radioup = 0;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		if (pdev && pdev->ar) {
+			radioup = 1;
+			break;
+		}
+	}
+
+	if (radioup == 0) {
+		ath11k_err(ab, "radio is not up\n");
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
+	if (ret < 0)
+		goto exit;
+
+	buf[ret] = '\0';
+	ret = sscanf(buf, "%x", &rx_hash);
+	if (!ret) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (rx_hash != ab->rx_hash) {
+		ab->rx_hash = rx_hash;
+		if (rx_hash)
+			ath11k_hal_reo_hash_setup(ab, rx_hash);
+	}
+	ret = count;
+exit:
+	return ret;
+}
+static const struct file_operations fops_soc_rx_hash = {
+	.open = simple_open,
+	.write = ath11k_write_rx_hash,
+};
+
 static ssize_t ath11k_debug_write_fw_recovery(struct file *file,
                                               char __user *user_buf,
                                               size_t count, loff_t *ppos)
@@ -1350,6 +1399,9 @@ int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 
 	debugfs_create_file("ce_latency_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_ce_latency_stats);
+
+	debugfs_create_file("rx_hash", 0600, ab->debugfs_soc, ab,
+			    &fops_soc_rx_hash);
 
 	return 0;
 }

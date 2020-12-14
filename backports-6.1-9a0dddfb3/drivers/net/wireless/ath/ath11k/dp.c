@@ -50,7 +50,7 @@ int ath11k_dp_peer_setup(struct ath11k *ar, int vdev_id, const u8 *addr)
 	bool rx_hash_enable = DP_RX_HASH_ENABLE;
 
 	/* RX Hash based steering is disabled for NSS Offload */
-	if (ar->ab->nss.enabled)
+	if (ar->ab->nss.enabled || !ab->rx_hash)
 		rx_hash_enable = DP_RX_HASH_DISABLE;
 
 	/* NOTE: reo_dest ring id starts from 1 unlike mac_id which starts from 0 */

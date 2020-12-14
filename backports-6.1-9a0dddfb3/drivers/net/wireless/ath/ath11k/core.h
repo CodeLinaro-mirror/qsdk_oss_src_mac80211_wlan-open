@@ -1261,6 +1261,8 @@ struct ath11k_base {
 	struct ath11k_num_vdevs_peers *num_vdevs_peers;
 	bool enable_memory_stats;
 
+	u32 rx_hash;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };

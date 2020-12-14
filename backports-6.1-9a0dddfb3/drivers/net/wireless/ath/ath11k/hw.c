@@ -102,6 +102,23 @@ static void ath11k_init_wmi_config_qca6390(struct ath11k_base *ab,
 	config->flag1 |= WMI_RSRC_CFG_FLAG1_BSS_CHANNEL_INFO_64;
 }
 
+void ath11k_hal_reo_hash_setup(struct ath11k_base *ab, u32 ring_hash_map)
+{
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u8 reo_dest_hash_shift = ab->hw_params.reo_dest_ring_map_shift;
+
+	ab->rx_hash = ring_hash_map;
+
+	/* These registers use only 24bits(3 bits x 8 hash values) for
+	 * mapping the dest rings and remaining bits are reserved/not used
+	 * so its safe to write them completely.
+	 */
+	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_2,
+			   ring_hash_map << reo_dest_hash_shift);
+	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_3,
+			   ring_hash_map << reo_dest_hash_shift);
+}
+
 static void ath11k_hw_ipq8074_reo_setup(struct ath11k_base *ab)
 {
 	u8 frag_dest_ring = HAL_SRNG_RING_ID_REO2SW1;
@@ -143,18 +160,7 @@ static void ath11k_hw_ipq8074_reo_setup(struct ath11k_base *ab)
 	if (ab->nss.enabled)
 		return;
 
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0,
-			   FIELD_PREP(HAL_REO_DEST_RING_CTRL_HASH_RING_MAP,
-				      ring_hash_map));
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_1,
-			   FIELD_PREP(HAL_REO_DEST_RING_CTRL_HASH_RING_MAP,
-				      ring_hash_map));
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_2,
-			   FIELD_PREP(HAL_REO_DEST_RING_CTRL_HASH_RING_MAP,
-				      ring_hash_map));
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_3,
-			   FIELD_PREP(HAL_REO_DEST_RING_CTRL_HASH_RING_MAP,
-				      ring_hash_map));
+	ath11k_hal_reo_hash_setup(ab, ring_hash_map);
 }
 
 static void ath11k_init_wmi_config_ipq8074(struct ath11k_base *ab,
@@ -925,10 +931,7 @@ static void ath11k_hw_wcn6855_reo_setup(struct ath11k_base *ab)
 	if (ab->nss.enabled)
 		return;
 
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_2,
-			   ring_hash_map);
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_3,
-			   ring_hash_map);
+	ath11k_hal_reo_hash_setup(ab, ring_hash_map);
 }
 
 static void ath11k_hw_ipq5018_reo_setup(struct ath11k_base *ab)
@@ -963,15 +966,7 @@ static void ath11k_hw_ipq5018_reo_setup(struct ath11k_base *ab)
 			   HAL_DEFAULT_REO_TIMEOUT_USEC);
 	ath11k_hif_write32(ab, reo_base + HAL_REO1_AGING_THRESH_IX_3(ab),
 			   HAL_DEFAULT_REO_TIMEOUT_USEC);
-
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0,
-			   ring_hash_map);
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_1,
-			   ring_hash_map);
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_2,
-			   ring_hash_map);
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_3,
-			   ring_hash_map);
+	ath11k_hal_reo_hash_setup(ab, ring_hash_map);
 }
 
 static u16
