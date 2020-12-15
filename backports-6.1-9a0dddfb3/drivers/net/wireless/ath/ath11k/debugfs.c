@@ -1115,6 +1115,79 @@ static const struct file_operations fops_soc_rx_hash = {
 	.write = ath11k_write_rx_hash,
 };
 
+static void ath11k_debug_config_mon_status(struct ath11k *ar, bool enable)
+{
+	struct htt_rx_ring_tlv_filter tlv_filter = {0};
+	struct ath11k_base *ab = ar->ab;
+	int i;
+	u32 ring_id;
+
+	if (enable)
+		tlv_filter = ath11k_mac_mon_status_filter_default;
+
+	for (i = 0; i < ab->hw_params.num_rxmda_per_pdev; i++) {
+		ring_id = ar->dp.rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
+		ath11k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id,
+						 ar->dp.mac_id + i,
+						 HAL_RXDMA_MONITOR_STATUS,
+						 DP_RX_BUFFER_SIZE,
+						 &tlv_filter);
+	}
+}
+
+static ssize_t ath11k_write_stats_disable(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath11k_base *ab = file->private_data;
+	struct ath11k_pdev *pdev;
+	bool disable;
+	int ret, i, radioup = 0;
+	u32 mask = 0;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		if (pdev && pdev->ar) {
+			radioup = 1;
+			break;
+		}
+	}
+
+	if (radioup == 0) {
+		ath11k_err(ab, "radio is not up\n");
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	if (kstrtobool_from_user(user_buf, count, &disable))
+		 return -EINVAL;
+
+	 if (disable != ab->stats_disable) {
+		ab->stats_disable = disable;
+		for (i = 0; i < ab->num_radios; i++) {
+			pdev = &ab->pdevs[i];
+			if (pdev && pdev->ar) {
+				ath11k_debug_config_mon_status(pdev->ar, !disable);
+
+				if (!disable)
+					mask = HTT_PPDU_STATS_TAG_DEFAULT;
+
+				ath11k_dp_tx_htt_h2t_ppdu_stats_req(pdev->ar, mask);
+			}
+		}
+	 }
+
+	ret = count;
+
+exit:
+	return ret;
+}
+
+static const struct file_operations fops_soc_stats_disable = {
+	.open = simple_open,
+	.write = ath11k_write_stats_disable,
+};
+
 static ssize_t ath11k_debug_write_fw_recovery(struct file *file,
                                               char __user *user_buf,
                                               size_t count, loff_t *ppos)
@@ -1468,6 +1541,9 @@ int ath11k_debugfs_create()
 			return PTR_ERR(debugfs_ath11k);
 		return -ENOMEM;
 	}
+
+	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
+			    &fops_soc_stats_disable);
 
 	return 0;
 }

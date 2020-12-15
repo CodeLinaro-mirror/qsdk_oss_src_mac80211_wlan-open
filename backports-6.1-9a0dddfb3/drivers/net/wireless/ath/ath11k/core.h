@@ -163,6 +163,7 @@ struct ath11k_skb_rxcb {
 	u8 tid;
 	u16 peer_id;
 	u16 seq_no;
+	struct napi_struct *napi;
 };
 
 enum ath11k_hw_rev {
@@ -1262,6 +1263,7 @@ struct ath11k_base {
 	bool enable_memory_stats;
 
 	u32 rx_hash;
+	bool stats_disable;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

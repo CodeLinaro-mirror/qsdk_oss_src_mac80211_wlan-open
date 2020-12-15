@@ -376,6 +376,12 @@ static int ath11k_dp_purge_mon_ring(struct ath11k_base *ab)
 	return -ETIMEDOUT;
 }
 
+static inline u8 ath11k_dp_rx_h_msdu_start_ip_valid(struct ath11k_base *ab,
+						     struct hal_rx_desc *desc)
+{
+	return ab->hw_params.hw_ops->rx_desc_get_ip_valid(desc);
+}
+
 /* Returns number of Rx buffers replenished */
 int ath11k_dp_rxbufs_replenish(struct ath11k_base *ab, int mac_id,
 			       struct dp_rxdma_ring *rx_ring,
@@ -2554,10 +2560,60 @@ ath11k_dp_rx_h_find_peer(struct ath11k_base *ab, struct sk_buff *msdu)
 	return peer;
 }
 
+static bool ath11k_dp_rx_check_fast_rx(struct ath11k *ar,
+				       struct sk_buff *msdu,
+				       struct hal_rx_desc *rx_desc,
+				       struct ath11k_peer *peer)
+{
+	struct ethhdr *ehdr;
+	struct ath11k_peer *f_peer;
+	struct ath11k_skb_rxcb *rxcb;
+	u8 decap;
+
+	lockdep_assert_held(&ar->ab->base_lock);
+
+	decap = ath11k_dp_rx_h_msdu_start_decap_type(ar->ab, rx_desc);
+	rxcb = ATH11K_SKB_RXCB(msdu);
+
+	if (!ar->ab->stats_disable ||
+	    decap != DP_RX_DECAP_TYPE_ETHERNET2_DIX ||
+	    peer->vif->type != NL80211_IFTYPE_AP)
+		return false;
+
+	/* mcbc packets go through mac80211 for PN validation */
+	if (rxcb->is_mcbc)
+		return false;
+
+	if (!peer->is_authorized)
+		return false;
+
+	if (!ath11k_dp_rx_h_msdu_start_ip_valid(ar->ab, rx_desc))
+		return false;
+
+	/* fast rx is supported only on ethernet decap, so
+	 * we can directly gfet the ethernet header
+	 */
+	ehdr = (struct ethhdr *)msdu->data;
+
+	/* requires rebroadcast from mac80211 */
+	if (is_multicast_ether_addr(ehdr->h_dest))
+		return false;
+
+	/* check if the msdu needs to be bridged to our connected peer */
+	f_peer = ath11k_peer_find_by_addr(ar->ab, ehdr->h_dest);
+
+	if (f_peer && f_peer != peer)
+		return false;
+
+	/* allow direct rx */
+	return true;
+}
+
 static void ath11k_dp_rx_h_mpdu(struct ath11k *ar,
 				struct sk_buff *msdu,
 				struct hal_rx_desc *rx_desc,
-				struct ieee80211_rx_status *rx_status)
+				struct ieee80211_rx_status *rx_status,
+				bool *fast_rx)
 {
 	bool  fill_crypto_hdr;
 	enum hal_encrypt_type enctype;
@@ -2567,7 +2623,8 @@ static void ath11k_dp_rx_h_mpdu(struct ath11k *ar,
 	struct ath11k_peer *peer;
 	struct rx_attention *rx_attention;
 	u32 err_bitmap;
-
+	struct wireless_dev *wdev = NULL;
+	struct ath11k_sta *arsta = NULL;
 
 	/* PN for multicast packets will be checked in mac80211 */
 	rxcb = ATH11K_SKB_RXCB(msdu);
@@ -2582,6 +2639,30 @@ static void ath11k_dp_rx_h_mpdu(struct ath11k *ar,
 	spin_lock_bh(&ar->ab->base_lock);
 	peer = ath11k_dp_rx_h_find_peer(ar->ab, msdu);
 	if (peer) {
+		/* If the pkt is a valid IP packet and peer supports
+		 * fast rx, deliver directly to net, also note that
+		 * pkts with crypto error are not expected to arrive in this
+		 * path, so its safe to skip checking errors here */
+		if (*fast_rx &&
+		    ath11k_dp_rx_check_fast_rx(ar, msdu, rx_desc, peer)) {
+			wdev = ieee80211_vif_to_wdev(peer->vif);
+			if (wdev) {
+		        	spin_unlock_bh(&ar->ab->base_lock);
+				ath11k_dp_rx_h_csum_offload(ar, msdu);
+				msdu->dev = wdev->netdev;
+				msdu->protocol = eth_type_trans(msdu, msdu->dev);
+				napi_gro_receive(rxcb->napi, msdu);
+				if (peer->sta)
+					arsta =
+					(struct ath11k_sta *)peer->sta->drv_priv;
+				if (arsta)
+					atomic_inc(&arsta->drv_rx_pkts.pkts_out_to_netif);
+				return;
+			}
+		}
+
+		*fast_rx = false;
+
 		if (rxcb->is_mcbc)
 			enctype = peer->sec_type_grp;
 		else
@@ -2865,7 +2946,8 @@ static void ath11k_dp_rx_deliver_msdu(struct ath11k *ar, struct napi_struct *nap
 static int ath11k_dp_rx_process_msdu(struct ath11k *ar,
 				     struct sk_buff *msdu,
 				     struct sk_buff_head *msdu_list,
-				     struct ieee80211_rx_status *rx_status)
+				     struct ieee80211_rx_status *rx_status,
+				     bool *fast_rx)
 {
 	struct ath11k_base *ab = ar->ab;
 	struct hal_rx_desc *rx_desc, *lrx_desc;
@@ -2947,8 +3029,13 @@ static int ath11k_dp_rx_process_msdu(struct ath11k *ar,
 		}
 	}
 
+	ath11k_dp_rx_h_mpdu(ar, msdu, rx_desc, rx_status, fast_rx);
+	if (*fast_rx) {
+		ab->soc_stats.invalid_rbm++;
+		return 0;
+	}
+
 	ath11k_dp_rx_h_ppdu(ar, rx_desc, rx_status);
-	ath11k_dp_rx_h_mpdu(ar, msdu, rx_desc, rx_status);
 
 	rx_status->flag |= RX_FLAG_SKIP_MONITOR | RX_FLAG_DUP_VALIDATED;
 
@@ -2963,10 +3050,12 @@ static void ath11k_dp_rx_process_received_packets(struct ath11k_base *ab,
 						  struct sk_buff_head *msdu_list,
 						  int mac_id)
 {
+	struct ath11k_skb_rxcb *rxcb;
 	struct sk_buff *msdu;
 	struct ath11k *ar;
 	struct ieee80211_rx_status rx_status = {0};
 	int ret;
+	bool fast_rx;
 
 	if (skb_queue_empty(msdu_list))
 		return;
@@ -2983,7 +3072,12 @@ static void ath11k_dp_rx_process_received_packets(struct ath11k_base *ab,
 	}
 
 	while ((msdu = __skb_dequeue(msdu_list))) {
-		ret = ath11k_dp_rx_process_msdu(ar, msdu, msdu_list, &rx_status);
+		rxcb = ATH11K_SKB_RXCB(msdu);
+		/* Enable fast rx by default, the value will cahnge based on peer cap
+		 * and packet type */
+		fast_rx = true;
+		rxcb->napi = napi;
+		ret = ath11k_dp_rx_process_msdu(ar, msdu, msdu_list, &rx_status, &fast_rx);
 		if (unlikely(ret)) {
 			ath11k_dbg(ab, ATH11K_DBG_DATA,
 				   "Unable to process msdu %d", ret);
@@ -2991,7 +3085,10 @@ static void ath11k_dp_rx_process_received_packets(struct ath11k_base *ab,
 			continue;
 		}
 
-		ath11k_dp_rx_deliver_msdu(ar, napi, msdu, &rx_status);
+		/* msdu is already delivered directectly */
+		if (!fast_rx)
+			ath11k_dp_rx_deliver_msdu(ar, napi, msdu, &rx_status);
+
 	}
 }
 
@@ -4552,6 +4649,7 @@ static int ath11k_dp_rx_h_null_q_desc(struct ath11k *ar, struct sk_buff *msdu,
 	struct ath11k_sta *arsta = NULL;
 	u32 hal_rx_desc_sz = ar->ab->hw_params.hal_desc_sz;
 	u32 peer_id;
+	bool fast_rx;
 
 	msdu_len = ath11k_dp_rx_h_msdu_start_msdu_len(ar->ab, desc);
 
@@ -4595,7 +4693,8 @@ static int ath11k_dp_rx_h_null_q_desc(struct ath11k *ar, struct sk_buff *msdu,
 	}
 	ath11k_dp_rx_h_ppdu(ar, desc, status);
 
-	ath11k_dp_rx_h_mpdu(ar, msdu, desc, status);
+	fast_rx = false;
+	ath11k_dp_rx_h_mpdu(ar, msdu, desc, status, &fast_rx);
 
 	rxcb->tid = ath11k_dp_rx_h_mpdu_start_tid(ar->ab, desc);
 
