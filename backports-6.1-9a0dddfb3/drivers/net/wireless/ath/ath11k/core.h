@@ -454,6 +454,7 @@ struct ath11k_vif {
 #ifdef CPTCFG_ATH11K_DEBUGFS
 	struct dentry *ampdu_aggr_size;
 	struct dentry *amsdu_aggr_size;
+	struct dentry *wmi_ctrl_stat;
 #endif /* CPTCFG_ATH11K_DEBUGFS */
 
 	struct ath11k_mgmt_frame_stats mgmt_stats;
@@ -690,6 +691,9 @@ struct ath11k_debug {
 	struct ath11k_debug_dbr *dbr_debug[WMI_DIRECT_BUF_MAX];
 	bool enable_m3_dump;
 	u32 mem_addr;
+	struct list_head wmi_list;
+	struct completion wmi_ctrl_path_stats_rcvd;
+	u32 wmi_ctrl_path_stats_tagid;
 };
 
 struct ath11k_per_peer_tx_stats {

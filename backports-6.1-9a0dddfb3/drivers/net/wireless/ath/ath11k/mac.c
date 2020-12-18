@@ -6525,6 +6525,7 @@ static int ath11k_mac_op_start(struct ieee80211_hw *hw)
 	}
 
 	ath11k_debug_aggr_size_config_init(arvif);
+	ath11k_debugfs_wmi_ctrl_stats(arvif);
 
 	mutex_unlock(&ar->conf_mutex);
 
@@ -7139,6 +7140,10 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 
 	debugfs_remove(arvif->amsdu_aggr_size);
 	arvif->amsdu_aggr_size = NULL;
+
+	/* Remove wmi ctrl stats file */
+	debugfs_remove(arvif->wmi_ctrl_stat);
+	arvif->wmi_ctrl_stat = NULL;
 
 	mutex_unlock(&ar->conf_mutex);
 
