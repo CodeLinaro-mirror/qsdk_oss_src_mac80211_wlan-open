@@ -127,6 +127,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = true,
 		.ce_fwlog_enable = false,
+		.fwmem_mode_change = false,
 		.supports_rssi_stats = false,
 		.fw_wmi_diag_event = false,
 		.current_cc_support = false,
@@ -213,6 +214,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = true,
 		.ce_fwlog_enable = false,
+		.fwmem_mode_change = false,
 		.supports_rssi_stats = false,
 		.fw_wmi_diag_event = false,
 		.current_cc_support = false,
@@ -301,6 +303,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = false,
 		.ce_fwlog_enable = false,
+		.fwmem_mode_change = false,
 		.supports_rssi_stats = true,
 		.fw_wmi_diag_event = true,
 		.current_cc_support = true,
@@ -389,6 +392,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.supports_dynamic_smps_6ghz = true,
 		.alloc_cacheable_memory = true,
 		.ce_fwlog_enable = true,
+		.fwmem_mode_change = true,
 		.supports_rssi_stats = false,
 		.fw_wmi_diag_event = false,
 		.current_cc_support = false,
@@ -477,6 +481,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = false,
 		.ce_fwlog_enable = false,
+		.fwmem_mode_change = false,
 		.supports_rssi_stats = true,
 		.fw_wmi_diag_event = true,
 		.current_cc_support = true,
@@ -566,6 +571,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = false,
 		.ce_fwlog_enable = false,
+		.fwmem_mode_change = false,
 		.supports_rssi_stats = true,
 		.fw_wmi_diag_event = true,
 		.current_cc_support = true,
@@ -653,6 +659,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = false,
 		.ce_fwlog_enable = false,
+		.fwmem_mode_change = false,
 		.supports_rssi_stats = true,
 		.fw_wmi_diag_event = true,
 		.current_cc_support = true,
@@ -937,6 +944,21 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.support_fw_mac_sequence = true,
 		.support_dual_stations = true,
 		.pdev_suspend = false,
+	},
+};
+
+static const struct ath11k_num_vdevs_peers ath11k_vdevs_peers[] = {
+	{
+		.num_vdevs = (16 + 1),
+		.num_peers = 512,
+	},
+	{
+		.num_vdevs = (8 + 1),
+		.num_peers = 128,
+	},
+	{
+		.num_vdevs = 8,
+		.num_peers = 128,
 	},
 };
 
@@ -1716,6 +1738,8 @@ static int ath11k_core_soc_create(struct ath11k_base *ab)
 		ab->fw_mode = ATH11K_FIRMWARE_MODE_FTM;
 		ath11k_info(ab, "Booting in factory test mode\n");
 	}
+
+	ab->num_vdevs_peers = &ath11k_vdevs_peers;
 
 	ret = ath11k_qmi_init_service(ab);
 	if (ret) {

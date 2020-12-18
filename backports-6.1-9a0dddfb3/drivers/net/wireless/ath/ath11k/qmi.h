@@ -71,6 +71,12 @@
 struct ath11k_base;
 extern unsigned int ath11k_host_ddr_addr;
 
+enum ath11k_target_mem_mode {
+ 	ATH11K_QMI_TARGET_MEM_MODE_DEFAULT = 0,
+ 	ATH11K_QMI_TARGET_MEM_MODE_512M,
+	ATH11K_QMI_TARGET_MEM_MODE_256M,
+};
+
 enum ath11k_qmi_file_type {
 	ATH11K_QMI_FILE_TYPE_BDF_GOLDEN,
 	ATH11K_QMI_FILE_TYPE_CALDATA = 2,

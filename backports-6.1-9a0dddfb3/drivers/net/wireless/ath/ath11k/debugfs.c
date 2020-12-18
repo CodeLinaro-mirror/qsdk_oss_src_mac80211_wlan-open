@@ -2014,6 +2014,9 @@ static ssize_t ath11k_dump_mgmt_stats(struct file *file, char __user *ubuf,
 				      size_t count, loff_t *ppos)
 {
 	struct ath11k *ar = file->private_data;
+#ifndef CPTCFG_ATH11K_MEM_PROFILE_512M
+	struct ath11k_base *ab = ar->ab;
+#endif
 	struct ath11k_vif *arvif = NULL;
 	struct ath11k_mgmt_frame_stats *mgmt_stats;
 	int len = 0, ret, i;

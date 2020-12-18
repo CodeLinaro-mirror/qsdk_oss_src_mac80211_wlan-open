@@ -31,6 +31,10 @@ module_param_named(cold_boot_cal, ath11k_cold_boot_cal, bool, 0644);
 MODULE_PARM_DESC(cold_boot_cal,
 		 "Decrease the channel switch time but increase the driver load time (Default: true)");
 
+unsigned int fwmem_mode = ATH11K_QMI_TARGET_MEM_MODE_256M;
+module_param_named(fwmem_mode, fwmem_mode, uint, 0644);
+MODULE_PARM_DESC(fwmem_mode, "Firmware mem mode (applicable only for qcn9074)");
+
 static struct qmi_elem_info qmi_wlanfw_qdss_trace_config_download_req_msg_v01_ei[] = {
 	{
 		.data_type	= QMI_OPT_FLAG,
@@ -4858,6 +4862,17 @@ int ath11k_qmi_init_service(struct ath11k_base *ab)
 	ab->qmi.ab = ab;
 
 	ab->qmi.target_mem_mode = ab->hw_params.fw_mem_mode;
+
+	if (ab->hw_params.fwmem_mode_change) {
+		ab->qmi.target_mem_mode = fwmem_mode;
+		if (ab->qmi.target_mem_mode == ATH11K_QMI_TARGET_MEM_MODE_256M &&
+		    ath11k_ftm_mode)
+			ab->enable_cold_boot_cal = 1;
+		else if(ab->qmi.target_mem_mode == ATH11K_QMI_TARGET_MEM_MODE_256M)
+			ab->enable_cold_boot_cal = 0;
+	}
+	ath11k_dbg(ab, ATH11K_DBG_QMI, "qmi target mem mode %d\n", ab->qmi.target_mem_mode);
+
 	ret = qmi_handle_init(&ab->qmi.handle, ATH11K_QMI_RESP_LEN_MAX,
 			      &ath11k_qmi_ops, ath11k_qmi_msg_handlers);
 	if (ret < 0) {

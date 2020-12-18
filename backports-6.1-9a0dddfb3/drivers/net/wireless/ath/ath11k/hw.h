@@ -247,6 +247,7 @@ struct ath11k_hw_params {
 	bool support_dual_stations;
 	bool pdev_suspend;
 	bool ce_fwlog_enable;
+	bool fwmem_mode_change;
 };
 
 struct ath11k_hw_ops {

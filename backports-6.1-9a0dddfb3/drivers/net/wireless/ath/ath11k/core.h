@@ -1002,6 +1002,11 @@ struct ath11k_msi_config {
 	u16 hw_rev;
 };
 
+struct ath11k_num_vdevs_peers {
+	u32 num_vdevs;
+	u32 num_peers;
+};
+
 /* Master structure to hold the hw data which may be used in core module */
 struct ath11k_base {
 	enum ath11k_hw_rev hw_rev;
@@ -1176,6 +1181,7 @@ struct ath11k_base {
 	atomic_t num_max_allowed;
 	u32 max_ast_index;
 	u32 num_ast_entries;
+	struct ath11k_num_vdevs_peers *num_vdevs_peers;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

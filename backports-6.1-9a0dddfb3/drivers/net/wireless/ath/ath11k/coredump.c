@@ -164,7 +164,7 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 
 	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
 		if (ab->qmi.target_mem[i].type == HOST_DDR_REGION_TYPE ||
-		    ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE ||
+		    (ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE && ab->enable_cold_boot_cal && ab->hw_params.cold_boot_calib) ||
 			ab->qmi.target_mem[i].type == M3_DUMP_REGION_TYPE)
 			rem_seg_cnt++;
 	}
@@ -228,7 +228,7 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 	}
 
 	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
-		if (ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE) {
+		if (ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE && ab->enable_cold_boot_cal && ab->hw_params.cold_boot_calib) {
 			seg_info->len = ab->qmi.target_mem[i].size;
 			seg_info->addr = ab->qmi.target_mem[i].paddr;
 			seg_info->vaddr = ab->qmi.target_mem[i].vaddr;
