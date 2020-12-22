@@ -37,6 +37,9 @@ static const struct of_device_id ath11k_ahb_of_match[] = {
 	{ .compatible = "qcom,ipq5018-wifi",
 	  .data = (void *)ATH11K_HW_IPQ5018_HW10,
 	},
+	{ .compatible = "qcom,qcn6122-wifi",
+	  .data = (void *)ATH11K_HW_QCN6122,
+	},
 	{ }
 };
 
@@ -142,46 +145,35 @@ enum ext_irq_num {
 };
 
 static int
-ath11k_ahb_get_msi_irq_wcn6750(struct ath11k_base *ab, unsigned int vector)
+ath11k_ahb_get_msi_irq(struct ath11k_base *ab, unsigned int vector)
 {
 	return ab->pci.msi.irqs[vector];
 }
 
-static inline u32
-ath11k_ahb_get_window_start_wcn6750(struct ath11k_base *ab, u32 offset)
+static u32 ath11k_ahb_get_window_start(struct ath11k_base *ab, u32 offset)
 {
-	u32 window_start = 0;
-
-	/* If offset lies within DP register range, use 1st window */
-	if ((offset ^ HAL_SEQ_WCSS_UMAC_OFFSET) < ATH11K_PCI_WINDOW_RANGE_MASK)
-		window_start = ATH11K_PCI_WINDOW_START;
-	/* If offset lies within CE register range, use 2nd window */
-	else if ((offset ^ HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(ab)) <
-		 ATH11K_PCI_WINDOW_RANGE_MASK)
-		window_start = 2 * ATH11K_PCI_WINDOW_START;
-
-	return window_start;
+	return ath11k_pcic_get_window_start(ab, offset, ATH11K_BUS_AHB);
 }
 
 static void
-ath11k_ahb_window_write32_wcn6750(struct ath11k_base *ab, u32 offset, u32 value)
+ath11k_ahb_window_write32(struct ath11k_base *ab, u32 offset, u32 value)
 {
 	u32 window_start;
 
 	/* WCN6750 uses static window based register access*/
-	window_start = ath11k_ahb_get_window_start_wcn6750(ab, offset);
+	window_start = ath11k_ahb_get_window_start(ab, offset);
 
 	iowrite32(value, ab->mem + window_start +
 		  (offset & ATH11K_PCI_WINDOW_RANGE_MASK));
 }
 
-static u32 ath11k_ahb_window_read32_wcn6750(struct ath11k_base *ab, u32 offset)
+static u32 ath11k_ahb_window_read32(struct ath11k_base *ab, u32 offset)
 {
 	u32 window_start;
 	u32 val;
 
 	/* WCN6750 uses static window based register access */
-	window_start = ath11k_ahb_get_window_start_wcn6750(ab, offset);
+	window_start = ath11k_ahb_get_window_start(ab, offset);
 
 	val = ioread32(ab->mem + window_start +
 		       (offset & ATH11K_PCI_WINDOW_RANGE_MASK));
@@ -191,10 +183,19 @@ static u32 ath11k_ahb_window_read32_wcn6750(struct ath11k_base *ab, u32 offset)
 static const struct ath11k_pci_ops ath11k_ahb_pci_ops_wcn6750 = {
 	.wakeup = NULL,
 	.release = NULL,
-	.get_msi_irq = ath11k_ahb_get_msi_irq_wcn6750,
-	.window_write32 = ath11k_ahb_window_write32_wcn6750,
-	.window_read32 = ath11k_ahb_window_read32_wcn6750,
+	.get_msi_irq = ath11k_ahb_get_msi_irq,
+	.window_write32 = ath11k_ahb_window_write32,
+	.window_read32 = ath11k_ahb_window_read32,
 };
+
+static const struct ath11k_pci_ops ath11k_ahb_pci_ops_qcn6122 = {
+	.wakeup = NULL,
+	.release = NULL,
+	.get_msi_irq = ath11k_ahb_get_msi_irq,
+	.window_write32 = ath11k_ahb_window_write32,
+	.window_read32 = ath11k_ahb_window_read32,
+};
+
 
 static inline u32 ath11k_ahb_read32(struct ath11k_base *ab, u32 offset)
 {
@@ -431,6 +432,7 @@ static void ath11k_ahb_init_qmi_ce_config(struct ath11k_base *ab)
 	cfg->svc_to_ce_map_len = ab->hw_params.svc_to_ce_map_len;
 	cfg->svc_to_ce_map = ab->hw_params.svc_to_ce_map;
 	ab->qmi.service_ins_id = ab->hw_params.qmi_service_ins_id;
+	ab->qmi.service_ins_id += ab->userpd_id;
 }
 
 static void ath11k_ahb_free_ext_irq(struct ath11k_base *ab)
@@ -454,6 +456,9 @@ static void ath11k_ahb_free_irq(struct ath11k_base *ab)
 {
 	int irq_idx;
 	int i;
+
+	if (ab->hw_params.internal_pci)
+		return ath11k_pcic_ipci_free_irq(ab);
 
 	if (ab->hw_params.hybrid_bus_type)
 		return ath11k_pcic_free_irq(ab);
@@ -628,6 +633,9 @@ static int ath11k_ahb_config_irq(struct ath11k_base *ab)
 {
 	int irq, irq_idx, i;
 	int ret;
+
+	if (ab->hw_params.internal_pci)
+		return ath11k_pcic_ipci_config_irq(ab);
 
 	if (ab->hw_params.hybrid_bus_type)
 		return ath11k_pcic_config_irq(ab);
@@ -840,6 +848,27 @@ static const struct ath11k_hif_ops ath11k_ahb_hif_ops_wcn6750 = {
 	.ce_irq_disable = ath11k_pci_disable_ce_irqs_except_wake_irq,
 };
 
+static const struct ath11k_hif_ops ath11k_ahb_hif_ops_qcn6122 = {
+	.start = ath11k_pcic_start,
+	.stop = ath11k_pcic_stop,
+	.read32 = ath11k_pcic_read32,
+	.write32 = ath11k_pcic_write32,
+	.power_down = ath11k_ahb_power_down,
+	.power_up = ath11k_ahb_power_up,
+	.irq_enable = ath11k_pcic_ext_irq_enable,
+	.irq_disable = ath11k_pcic_ext_irq_disable,
+	.get_msi_address =  ath11k_pcic_get_msi_address,
+	.get_user_msi_vector = ath11k_pcic_get_user_msi_assignment,
+	.map_service_to_pipe = ath11k_pcic_map_service_to_pipe,
+	.get_ce_msi_idx = ath11k_pcic_get_ce_msi_idx,
+	.config_static_window = ath11k_pcic_config_static_window,
+	.get_window_offset = ath11k_pci_get_window_offset,
+#ifdef CONFIG_QCOM_QMI_HELPERS
+	.ssr_notifier_reg = ath11k_ahb_ssr_notifier_reg,
+	.ssr_notifier_unreg = ath11k_ahb_ssr_notifier_unreg,
+#endif
+};
+
 static int ath11k_core_get_rproc(struct ath11k_base *ab)
 {
 	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
@@ -945,6 +974,11 @@ static int ath11k_ahb_setup_resources(struct ath11k_base *ab)
 	struct platform_device *pdev = ab->pdev;
 	struct resource *mem_res;
 	void __iomem *mem;
+
+	if (ab->hw_params.internal_pci) {
+		set_bit(ATH11K_FLAG_MULTI_MSI_VECTORS, &ab->dev_flags);
+		return 0;
+	}
 
 	if (ab->hw_params.hybrid_bus_type)
 		return ath11k_ahb_setup_msi_resources(ab);
@@ -1168,6 +1202,28 @@ static int ath11k_ahb_fw_resource_deinit(struct ath11k_base *ab)
 	return 0;
 }
 
+static int ath11k_get_userpd_id(struct device *dev)
+{
+	int ret;
+	int userpd_id = 0;
+	const char *subsys_name;
+
+	ret = of_property_read_string(dev->of_node,
+				      "qcom,userpd-subsys-name",
+				      &subsys_name);
+	if (ret) {
+		dev_err(dev, "Not multipd architecture");
+		return 0;
+	}
+
+	if (strcmp(subsys_name, "q6v5_wcss_userpd2") == 0)
+		userpd_id = QCN6122_USERPD_0;
+	else if (strcmp(subsys_name, "q6v5_wcss_userpd3") == 0)
+		userpd_id = QCN6122_USERPD_1;
+
+	return userpd_id;
+}
+
 static int ath11k_ahb_probe(struct platform_device *pdev)
 {
 	struct ath11k_base *ab;
@@ -1175,7 +1231,7 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 	const struct ath11k_hif_ops *hif_ops;
 	const struct ath11k_pci_ops *pci_ops;
 	enum ath11k_hw_rev hw_rev;
-	int ret;
+	int ret, userpd_id;
 	u32 hw_mode_id;
 
 	hw_rev = (uintptr_t)device_get_match_data(&pdev->dev);
@@ -1191,11 +1247,16 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 		hif_ops = &ath11k_ahb_hif_ops_wcn6750;
 		pci_ops = &ath11k_ahb_pci_ops_wcn6750;
 		break;
+	case ATH11K_HW_QCN6122:
+		hif_ops = &ath11k_ahb_hif_ops_qcn6122;
+		pci_ops = &ath11k_ahb_pci_ops_qcn6122;
+		break;
 	default:
 		dev_err(&pdev->dev, "unsupported device type %d\n", hw_rev);
 		return -EOPNOTSUPP;
 	}
 
+	userpd_id = ath11k_get_userpd_id(dev);
 	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 	if (ret) {
 		dev_err(&pdev->dev, "failed to set 32-bit consistent dma\n");
@@ -1212,6 +1273,7 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 	ab->hif.ops = hif_ops;
 	ab->pdev = pdev;
 	ab->hw_rev = hw_rev;
+	ab->userpd_id = userpd_id;
 	ab->fw_mode = ATH11K_FIRMWARE_MODE_NORMAL;
 	ab->enable_cold_boot_cal = ath11k_cold_boot_cal;
 	platform_set_drvdata(pdev, ab);

@@ -93,9 +93,12 @@
 #define ATH11K_BOARD_API2_FILE		"board-2.bin"
 #define ATH11K_DEFAULT_BOARD_FILE	"board.bin"
 #define ATH11K_DEFAULT_CAL_FILE		"caldata.bin"
+#define ATH11K_QMI_DEF_CAL_FILE_PREFIX	"caldata_"
+#define ATH11K_QMI_DEF_CAL_FILE_SUFFIX	".bin"
 #define ATH11K_AMSS_FILE		"amss.bin"
 #define ATH11K_M3_FILE			"m3.bin"
 #define ATH11K_REGDB_FILE_NAME		"regdb.bin"
+#define NODE_ID_BASE                   	0x27
 
 #define ATH11K_CE_OFFSET(ab)	(ab->mem_ce - ab->mem)
 
@@ -126,6 +129,7 @@ enum ath11k_bus {
 };
 
 #define ATH11K_EXT_IRQ_GRP_NUM_MAX 11
+#define ATH11K_EXT_MSI_IRQ_GRP_MAX 8
 
 struct hal_rx_desc;
 struct hal_tcl_data_cmd;
@@ -248,6 +252,9 @@ struct ath11k_hw_params {
 	bool pdev_suspend;
 	bool ce_fwlog_enable;
 	bool fwmem_mode_change;
+	bool internal_pci;
+	u8 ce_window;
+	u8 dp_window;
 };
 
 struct ath11k_hw_ops {
@@ -301,11 +308,13 @@ extern const struct ath11k_hw_ops qcn9074_ops;
 extern const struct ath11k_hw_ops wcn6855_ops;
 extern const struct ath11k_hw_ops wcn6750_ops;
 extern const struct ath11k_hw_ops ipq5018_ops;
+extern const struct ath11k_hw_ops qcn6122_ops;
 
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_ipq8074;
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_qca6390;
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_qcn9074;
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_wcn6750;
+extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_qcn6122;
 
 extern const struct ce_ie_addr ath11k_ce_ie_addr_ipq8074;
 extern const struct ce_ie_addr ath11k_ce_ie_addr_ipq5018;
@@ -442,6 +451,7 @@ extern const struct ath11k_hw_regs qcn9074_regs;
 extern const struct ath11k_hw_regs wcn6855_regs;
 extern const struct ath11k_hw_regs wcn6750_regs;
 extern const struct ath11k_hw_regs ipq5018_regs;
+extern const struct ath11k_hw_regs qcn6122_regs;
 
 static inline const char *ath11k_bd_ie_type_str(enum ath11k_bd_ie_type type)
 {

@@ -7,6 +7,10 @@
 #include "core.h"
 #include "pcic.h"
 #include "debug.h"
+#include "pci.h"
+#include <linux/msi.h>
+#include <linux/platform_device.h>
+#include <linux/pci.h>
 
 const char *ce_irq_name[ATH11K_MAX_PCI_DOMAINS + 1][CE_COUNT_MAX] = {
 	{
@@ -106,6 +110,15 @@ static const struct ath11k_msi_config ath11k_msi_config[] = {
 			{ .name = "DP", .num_vectors = 18, .base_vector = 14 },
 		},
 		.hw_rev = ATH11K_HW_QCA6698AQ_HW21,
+	},
+	{
+		.total_vectors = 13,
+		.total_users = 2,
+		.users = (struct ath11k_msi_user[]) {
+			{ .name = "CE", .num_vectors = 5, .base_vector = 0 },
+			{ .name = "DP", .num_vectors = 8, .base_vector = 5 },
+		},
+		.hw_rev = ATH11K_HW_QCN6122,
 	},
 };
 
@@ -317,6 +330,15 @@ void ath11k_pcic_free_irq(struct ath11k_base *ab)
 	ath11k_pcic_free_ext_irq(ab);
 }
 EXPORT_SYMBOL(ath11k_pcic_free_irq);
+
+void ath11k_pcic_ipci_free_irq(struct ath11k_base *ab)
+{
+	struct platform_device *pdev = ab->pdev;
+
+	ath11k_pcic_free_irq(ab);
+	platform_msi_domain_free_irqs(&pdev->dev);
+}
+EXPORT_SYMBOL(ath11k_pcic_ipci_free_irq);
 
 static void ath11k_pcic_ce_irq_enable(struct ath11k_base *ab, u16 ce_id)
 {
@@ -759,7 +781,8 @@ EXPORT_SYMBOL(ath11k_pcic_stop);
 
 int ath11k_pcic_start(struct ath11k_base *ab)
 {
-	set_bit(ATH11K_FLAG_DEVICE_INIT_DONE, &ab->dev_flags);
+	if (!ab->hw_params.internal_pci)
+		set_bit(ATH11K_FLAG_DEVICE_INIT_DONE, &ab->dev_flags);
 
 	ath11k_pcic_ce_irqs_enable(ab);
 	ath11k_ce_rx_post_buf(ab);
@@ -819,7 +842,7 @@ int ath11k_pcic_register_pci_ops(struct ath11k_base *ab,
 		return 0;
 
 	/* Return error if mandatory pci_ops callbacks are missing */
-	if (!pci_ops->get_msi_irq || !pci_ops->window_write32 ||
+	if (!pci_ops->window_write32 ||
 	    !pci_ops->window_read32)
 		return -EINVAL;
 
@@ -861,3 +884,258 @@ void ath11k_pci_disable_ce_irqs_except_wake_irq(struct ath11k_base *ab)
 	}
 }
 EXPORT_SYMBOL(ath11k_pci_disable_ce_irqs_except_wake_irq);
+
+void ath11k_pcic_select_static_window(struct ath11k_base *ab)
+{
+	u32 umac_window = FIELD_GET(ATH11K_PCI_WINDOW_VALUE_MASK, HAL_SEQ_WCSS_UMAC_OFFSET);
+	u32 ce_window = FIELD_GET(ATH11K_PCI_WINDOW_VALUE_MASK, HAL_CE_WFSS_CE_REG_BASE);
+	u32 window;
+
+	window = (umac_window << 12) | (ce_window << 6);
+
+	iowrite32(ATH11K_PCI_WINDOW_ENABLE_BIT | window,
+		  ab->mem + ATH11K_PCI_WINDOW_REG_ADDRESS);
+}
+
+void ath11k_pcic_config_static_window(struct ath11k_base *ab)
+{
+	if (ab->hw_params.static_window_map)
+		ath11k_pcic_select_static_window(ab);
+}
+EXPORT_SYMBOL(ath11k_pcic_config_static_window);
+
+int ath11k_pcic_ext_config_gic_msi_irq(struct ath11k_base *ab, struct platform_device *pdev,
+				      struct msi_desc *msi_desc, int i)
+{
+	u32 user_base_data = 0, base_vector = 0, base_idx;
+	struct ath11k_ext_irq_grp *irq_grp;
+	int j, ret = 0, num_vectors = 0;
+	u32 num_irq = 0;
+
+	base_idx = ATH11K_PCI_IRQ_CE0_OFFSET + CE_COUNT_MAX;
+	ret = ath11k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
+						 &user_base_data, &base_vector);
+	if (ret < 0)
+		return ret;
+
+	irq_grp = &ab->ext_irq_grp[i];
+	irq_grp->ab = ab;
+	irq_grp->grp_id = i;
+	init_dummy_netdev(&irq_grp->napi_ndev);
+	netif_napi_add(&irq_grp->napi_ndev, &irq_grp->napi,
+		       ath11k_pcic_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+
+	if (ab->hw_params.ring_mask->tx[i] ||
+	    ab->hw_params.ring_mask->rx[i] ||
+	    ab->hw_params.ring_mask->rx_err[i] ||
+	    ab->hw_params.ring_mask->rx_wbm_rel[i] ||
+	    ab->hw_params.ring_mask->reo_status[i] ||
+	    ab->hw_params.ring_mask->rxdma2host[i] ||
+	    ab->hw_params.ring_mask->host2rxdma[i] ||
+	    ab->hw_params.ring_mask->rx_mon_status[i]) {
+		num_irq = 1;
+	}
+
+	irq_grp->num_irq = num_irq;
+	irq_grp->irqs[0] = base_idx + i;
+
+	for (j = 0; j < irq_grp->num_irq; j++) {
+		int irq_idx = irq_grp->irqs[j];
+		int vector = (i % num_vectors);
+
+		irq_set_status_flags(msi_desc->irq, IRQ_DISABLE_UNLAZY);
+		ret = devm_request_irq(&pdev->dev, msi_desc->irq,
+				       ath11k_pcic_ext_interrupt_handler,
+				       IRQF_SHARED, dp_irq_name[ab->userpd_id][i],
+				       irq_grp);
+		if (ret) {
+			ath11k_err(ab, "failed request irq %d: %d\n",
+				   irq_idx, ret);
+			return ret;
+		}
+		ab->irq_num[irq_idx] = msi_desc->irq;
+		ab->ipci.dp_irq_num[vector] = msi_desc->irq;
+		ab->ipci.dp_msi_data[i] = msi_desc->msg.data;
+		disable_irq_nosync(ab->irq_num[irq_idx]);
+	}
+	return ret;
+}
+
+int ath11k_pcic_config_gic_msi_irq(struct ath11k_base *ab, struct platform_device *pdev,
+				  struct msi_desc *msi_desc, int i)
+{
+	struct ath11k_ce_pipe *ce_pipe = &ab->ce.ce_pipe[i];
+	int irq_idx, ret;
+
+	tasklet_setup(&ce_pipe->intr_tq, ath11k_pcic_ce_tasklet);
+	irq_idx = ATH11K_PCI_IRQ_CE0_OFFSET + i;
+
+	ret = devm_request_irq(&pdev->dev, msi_desc->irq,
+			       ath11k_pcic_ce_interrupt_handler,
+			       IRQF_SHARED, ce_irq_name[ab->userpd_id][i],
+			       ce_pipe);
+	if (ret) {
+		ath11k_warn(ab, "failed to request irq %d: %d\n",
+			    irq_idx, ret);
+		return ret;
+	}
+	ab->irq_num[irq_idx] = msi_desc->irq;
+	ab->ipci.ce_msi_data[i] = msi_desc->msg.data;
+	ath11k_pcic_ce_irq_disable(ab, i);
+
+	return ret;
+}
+
+static void ath11k_msi_msg_handler(struct msi_desc *desc, struct msi_msg *msg)
+{
+	desc->msg.address_lo = msg->address_lo;
+	desc->msg.address_hi = msg->address_hi;
+	desc->msg.data = msg->data;
+}
+
+int ath11k_pcic_ipci_config_irq(struct ath11k_base *ab)
+{
+	int ret;
+	struct platform_device *pdev = ab->pdev;
+	struct msi_desc *msi_desc;
+	bool ce_done = false;
+	int i = 0;
+
+	if (ab->userpd_id != QCN6122_USERPD_0 &&
+	    ab->userpd_id != QCN6122_USERPD_1) {
+		ath11k_warn(ab, "ath11k userpd invalid %d\n", ab->userpd_id);
+		return -ENODEV;
+	}
+
+	ret = ath11k_pcic_init_msi_config(ab);
+	if (ret) {
+		ath11k_err(ab, "failed to fetch msi config: %d\n", ret);
+		return ret;
+	}
+
+	ret = platform_msi_domain_alloc_irqs(&pdev->dev, ab->pci.msi.config->total_vectors,
+					     ath11k_msi_msg_handler);
+	if (ret) {
+		ath11k_warn(ab, "failed to alloc irqs %d ab %pM\n", ret, ab);
+		return ret;
+	}
+
+	for_each_msi_entry(msi_desc, &pdev->dev) {
+		if (!ce_done && i == ab->hw_params.ce_count) {
+			i = 0;
+			ce_done = true;
+		}
+
+		if (!ce_done && i < ab->hw_params.ce_count) {
+			if (ath11k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
+				i++;
+
+			ret = ath11k_pcic_config_gic_msi_irq(ab, pdev, msi_desc, i);
+			if (ret) {
+				ath11k_warn(ab, "failed to request irq %d\n", ret);
+				return ret;
+			}
+		} else {
+			ret = ath11k_pcic_ext_config_gic_msi_irq(ab, pdev, msi_desc, i);
+			if (ret) {
+				ath11k_warn(ab, "failed to config ext msi irq %d\n", ret);
+				return ret;
+			}
+		}
+
+		i++;
+		ab->pci.msi.addr_lo = msi_desc->msg.address_lo;
+		ab->pci.msi.addr_hi = msi_desc->msg.address_hi;
+
+		if (i == 0 && !ce_done)
+			ab->pci.msi.ep_base_data = msi_desc->msg.data;
+	}
+
+	for_each_msi_entry(msi_desc, &pdev->dev) {
+		u32 user_base_data = 0, base_vector = 0;
+		int vector, num_vectors = 0;
+
+		ret = ath11k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
+							 &user_base_data, &base_vector);
+		if (ret < 0)
+			return ret;
+
+		vector = (i % num_vectors);
+
+		if (i >= ATH11K_EXT_IRQ_GRP_NUM_MAX)
+			break;
+
+		if (ab->ipci.dp_irq_num[vector] != msi_desc->irq)
+			continue;
+
+		ret = ath11k_pcic_ext_config_gic_msi_irq(ab, pdev, msi_desc, i);
+		if (ret) {
+			ath11k_warn(ab, "failed to config ext msi irq %d\n", ret);
+			return ret;
+		}
+
+		i++;
+	}
+
+	ab->ipci.gic_enabled = 1;
+	wake_up(&ab->ipci.gic_msi_waitq);
+	return ret;
+}
+EXPORT_SYMBOL(ath11k_pcic_ipci_config_irq);
+
+u32 ath11k_pcic_get_window_start(struct ath11k_base *ab, u32 offset,
+				 enum ath11k_bus bus)
+{
+	u32 window_start = 0;
+
+	if (bus == ATH11K_BUS_PCI) {
+        	if (!ab->hw_params.static_window_map)
+        		return ATH11K_PCI_WINDOW_START;
+
+		/* if offset lies within DP register range, use 3rd window */
+		if ((offset ^ HAL_SEQ_WCSS_UMAC_OFFSET) <
+		    ATH11K_PCI_WINDOW_RANGE_MASK)
+			window_start = 3 * ATH11K_PCI_WINDOW_START;
+		/* if offset lies within CE register range, use 2nd window */
+		else if ((offset ^ HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(ab)) <
+			 ATH11K_PCI_WINDOW_RANGE_MASK)
+			window_start = 2 * ATH11K_PCI_WINDOW_START;
+		else
+			window_start = ATH11K_PCI_WINDOW_START;
+	} else if (bus == ATH11K_BUS_AHB) {
+		/* If offset lies within DP register range, use 1st window */
+		if ((offset ^ HAL_SEQ_WCSS_UMAC_OFFSET) <
+		    ATH11K_PCI_WINDOW_RANGE_MASK)
+			window_start =
+			      ab->hw_params.dp_window * ATH11K_PCI_WINDOW_START;
+		/* If offset lies within CE register range, use 2nd window */
+		else if ((offset ^ HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(ab)) <
+			 ATH11K_PCI_WINDOW_RANGE_MASK)
+			window_start =
+			      ab->hw_params.ce_window * ATH11K_PCI_WINDOW_START;
+		else
+			window_start = ATH11K_PCI_WINDOW_START;
+	}
+	else {
+		/* Must not come here */
+		WARN_ON(1);
+	}
+
+	return window_start;
+}
+EXPORT_SYMBOL(ath11k_pcic_get_window_start);
+
+u32 ath11k_pci_get_window_offset(struct ath11k_base *ab, u32 offset)
+{
+	u32 window_start;
+
+	if (ab->hw_params.static_window_map) {
+		window_start = ath11k_pcic_get_window_start(ab, offset,
+			       ATH11K_BUS_PCI);
+
+		if (window_start)
+			offset = window_start + (offset & ATH11K_PCI_WINDOW_RANGE_MASK);
+	}
+	return offset;
+}
+EXPORT_SYMBOL(ath11k_pci_get_window_offset);

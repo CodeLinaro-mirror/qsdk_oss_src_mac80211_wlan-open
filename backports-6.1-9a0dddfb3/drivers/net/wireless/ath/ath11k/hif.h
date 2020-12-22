@@ -37,6 +37,7 @@ struct ath11k_hif_ops {
 	void (*ssr_notifier_unreg)(struct ath11k_base *ab);
 #endif
 	u32 (*get_window_offset)(struct ath11k_base *ab, u32 offset);
+	void (*config_static_window)(struct ath11k_base *ab);
 };
 
 static inline void ath11k_hif_ce_irq_enable(struct ath11k_base *ab)
@@ -183,4 +184,12 @@ static inline void ath11k_hif_ssr_notifier_unreg(struct ath11k_base *ab)
 	ab->hif.ops->ssr_notifier_unreg(ab);
 }
 #endif
+
+static inline void ath11k_hif_config_static_window(struct ath11k_base *ab)
+{
+	if (!ab->hif.ops->config_static_window)
+		return;
+
+	ab->hif.ops->config_static_window(ab);
+}
 #endif /* _HIF_H_ */

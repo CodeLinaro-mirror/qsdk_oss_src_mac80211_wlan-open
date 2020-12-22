@@ -58,32 +58,7 @@ static void ath11k_pci_bus_release(struct ath11k_base *ab)
 
 static u32 ath11k_pci_get_window_start(struct ath11k_base *ab, u32 offset)
 {
-	if (!ab->hw_params.static_window_map)
-		return ATH11K_PCI_WINDOW_START;
-
-	if ((offset ^ HAL_SEQ_WCSS_UMAC_OFFSET) < ATH11K_PCI_WINDOW_RANGE_MASK)
-		/* if offset lies within DP register range, use 3rd window */
-		return 3 * ATH11K_PCI_WINDOW_START;
-	else if ((offset ^ HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(ab)) <
-		 ATH11K_PCI_WINDOW_RANGE_MASK)
-		 /* if offset lies within CE register range, use 2nd window */
-		return 2 * ATH11K_PCI_WINDOW_START;
-	else
-		return ATH11K_PCI_WINDOW_START;
-}
-
-static inline u32 ath11k_pci_get_window_offset(struct ath11k_base *ab,
-					       u32 offset)
-{
-	u32 window_start;
-
-	if (ab->hw_params.static_window_map) {
-		window_start = ath11k_pci_get_window_start(ab, offset);
-
-		if (window_start)
-			offset = window_start + (offset & ATH11K_PCI_WINDOW_RANGE_MASK);
-	}
-	return offset;
+	return ath11k_pcic_get_window_start(ab, offset, ATH11K_BUS_PCI);
 }
 
 static inline void ath11k_pci_select_window(struct ath11k_pci *ab_pci, u32 offset)
@@ -176,20 +151,6 @@ static const struct ath11k_msi_config msi_config_one_msi = {
 		{ .name = "DP", .num_vectors = 1, .base_vector = 0 },
 	},
 };
-
-static inline void ath11k_pci_select_static_window(struct ath11k_pci *ab_pci)
-{
-	u32 umac_window;
-	u32 ce_window;
-	u32 window;
-
-	umac_window = FIELD_GET(ATH11K_PCI_WINDOW_VALUE_MASK, HAL_SEQ_WCSS_UMAC_OFFSET);
-	ce_window = FIELD_GET(ATH11K_PCI_WINDOW_VALUE_MASK, HAL_CE_WFSS_CE_REG_BASE);
-	window = (umac_window << 12) | (ce_window << 6);
-
-	iowrite32(ATH11K_PCI_WINDOW_ENABLE_BIT | window,
-		  ab_pci->ab->mem + ATH11K_PCI_WINDOW_REG_ADDRESS);
-}
 
 static void ath11k_pci_soc_global_reset(struct ath11k_base *ab)
 {
@@ -659,7 +620,7 @@ static int ath11k_pci_power_up(struct ath11k_base *ab)
 	}
 
 	if (ab->hw_params.static_window_map)
-		ath11k_pci_select_static_window(ab_pci);
+		ath11k_pcic_config_static_window(ab);
 
 	return 0;
 }

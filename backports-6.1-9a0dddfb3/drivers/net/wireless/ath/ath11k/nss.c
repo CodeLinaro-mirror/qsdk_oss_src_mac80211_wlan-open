@@ -2164,6 +2164,8 @@ static int ath11k_nss_get_target_type(struct ath11k_base *ab)
 		return ATH11K_WIFILI_TARGET_TYPE_QCN9074;
 	case ATH11K_HW_IPQ5018:
 		return ATH11K_WIFILI_TARGET_TYPE_QCA5018;
+	case ATH11K_HW_QCN6122:
+		return ATH11K_WIFILI_TARGET_TYPE_QCN6122;
 	default:
 		ath11k_warn(ab, "NSS Offload not supported for this HW\n");
 		return ATH11K_WIFILI_TARGET_TYPE_UNKNOWN;
@@ -2178,6 +2180,7 @@ static int ath11k_nss_get_interface_type(struct ath11k_base *ab)
 	case ATH11K_HW_IPQ5018:
 		return NSS_WIFILI_INTERNAL_INTERFACE;
 	case ATH11K_HW_QCN9074_HW10:
+	case ATH11K_HW_QCN6122:
 		return nss_get_available_wifili_external_if();
 	default:
 		/* This can't happen since we validated target type earlier */

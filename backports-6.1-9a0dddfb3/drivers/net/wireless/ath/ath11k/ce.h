@@ -8,6 +8,7 @@
 #define ATH11K_CE_H
 
 #define CE_COUNT_MAX 12
+#define ATH11K_QCN6122_CE_COUNT	6
 
 /* Byte swap data words */
 #define CE_ATTR_BYTE_SWAP_DATA 2

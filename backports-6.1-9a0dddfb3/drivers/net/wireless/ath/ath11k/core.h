@@ -59,6 +59,9 @@ extern bool ath11k_collect_dump;
 #define ATH11K_RX_RATE_TABLE_NUM 320
 #define ATH11K_RX_RATE_TABLE_11AX_NUM 576
 
+#define QCN6122_USERPD_0               1
+#define QCN6122_USERPD_1               2
+
 /* SMBIOS type containing Board Data File Name Extension */
 #define ATH11K_SMBIOS_BDF_EXT_TYPE 0xF8
 
@@ -164,6 +167,7 @@ enum ath11k_hw_rev {
 	ATH11K_HW_WCN6855_HW21,
 	ATH11K_HW_WCN6750_HW10,
 	ATH11K_HW_IPQ5018_HW10,
+	ATH11K_HW_QCN6122,
 	ATH11K_HW_QCA2066_HW21,
 	ATH11K_HW_QCA6698AQ_HW21,
 };
@@ -1011,6 +1015,14 @@ struct ath11k_num_vdevs_peers {
 	u32 num_peers;
 };
 
+struct ath11k_internal_pci {
+	bool gic_enabled;
+	wait_queue_head_t gic_msi_waitq;
+	u32 dp_msi_data[ATH11K_EXT_IRQ_GRP_NUM_MAX];
+	u32 ce_msi_data[ATH11K_QCN6122_CE_COUNT];
+	u32 dp_irq_num[8];
+};
+
 /* Master structure to hold the hw data which may be used in core module */
 struct ath11k_base {
 	enum ath11k_hw_rev hw_rev;
@@ -1077,6 +1089,8 @@ struct ath11k_base {
 
 	struct list_head peers;
 	wait_queue_head_t peer_mapping_wq;
+	int userpd_id;
+	struct ath11k_internal_pci ipci;
 	u8 mac_addr[ETH_ALEN];
 	int irq_num[ATH11K_IRQ_NUM_MAX];
 	struct ath11k_ext_irq_grp ext_irq_grp[ATH11K_EXT_IRQ_GRP_NUM_MAX];

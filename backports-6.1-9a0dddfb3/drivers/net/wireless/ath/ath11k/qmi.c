@@ -7,7 +7,7 @@
 #include <linux/elf.h>
 
 #include "qmi.h"
-#include "core.h"
+#include "hif.h"
 #include "debug.h"
 #include "hif.h"
 #include <linux/of.h>
@@ -2914,6 +2914,10 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 			idx++;
 			break;
 		case BDF_MEM_REGION_TYPE:
+			if (!of_property_read_u32(ab->dev->of_node, "qcom,bdf-addr",
+						  &addr))
+				ab->hw_params.bdf_addr = (u32)addr;
+
 			ab->qmi.target_mem[idx].paddr = ab->hw_params.bdf_addr;
 			ab->qmi.target_mem[idx].iaddr = NULL;
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
@@ -2933,8 +2937,10 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 				} else if (ath11k_host_ddr_addr) {
 					ab->qmi.target_mem[idx].paddr = ath11k_host_ddr_addr +
 									ATH11K_HOST_DDR_CALDB_OFFSET;
-					if (!ab->qmi.target_mem[idx].paddr)
-						return -EIO;
+				} else if (of_property_read_u32(ab->dev->of_node,
+								"qcom,caldb-addr",
+								&addr)) {
+					ab->qmi.target_mem[idx].paddr = (u32)addr;
 				} else {
 					ab->qmi.target_mem[idx].paddr =
 						ATH11K_QMI_CALDB_ADDRESS;
@@ -2944,6 +2950,9 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 				 ab->qmi.target_mem[idx].iaddr =
 					ioremap(ab->qmi.target_mem[idx].paddr,
 						ab->qmi.target_mem[i].size);
+
+				if (!ab->qmi.target_mem[idx].iaddr)
+					return -EIO;
 			} else {
 				ab->qmi.target_mem[idx].paddr = 0;
 				ab->qmi.target_mem[idx].iaddr = NULL;
@@ -2999,7 +3008,7 @@ static int ath11k_qmi_request_device_info(struct ath11k_base *ab)
 	int ret;
 
 	/* device info message req is only sent for hybrid bus devices */
-	if (!ab->hw_params.hybrid_bus_type)
+	if (!ab->hw_params.hybrid_bus_type && !ab->hw_params.internal_pci)
 		return 0;
 
 	ret = qmi_txn_init(&ab->qmi.handle, &txn,
@@ -3057,7 +3066,14 @@ static int ath11k_qmi_request_device_info(struct ath11k_base *ab)
 	}
 
 	ab->mem = bar_addr_va;
+	ab->mem_pa = resp.bar_addr;
 	ab->mem_len = resp.bar_size;
+
+	if (ab->hw_params.internal_pci)
+		ath11k_hif_config_static_window(ab);
+
+	ath11k_dbg(ab, ATH11K_DBG_QMI, "Device BAR Info pa: %pad, size: 0x%lx\n",
+		   &ab->mem_pa, ab->mem_len);
 
 	if (!ab->hw_params.ce_remap)
 		ab->mem_ce = ab->mem;
@@ -3339,10 +3355,27 @@ static int ath11k_qmi_load_bdf_qmi(struct ath11k_base *ab,
 		fw_size = ATH11K_QMI_MAX_BDF_FILE_NAME_SIZE;
 	} else {
 		file_type = ATH11K_QMI_FILE_TYPE_CALDATA;
-
 		/* cal-<bus>-<id>.bin */
 		snprintf(filename, sizeof(filename), "cal-%s-%s.bin",
 			 ath11k_bus_str(ab->hif.bus), dev_name(dev));
+
+		if (ab->hw_params.fixed_bdf_addr) {
+			snprintf(filename, sizeof(filename), "%s",
+				 ATH11K_DEFAULT_CAL_FILE);
+
+			if (ab->hw_params.internal_pci) {
+				snprintf(filename, sizeof(filename), "%s%d%s",
+					 ATH11K_QMI_DEF_CAL_FILE_PREFIX,
+					 ab->userpd_id,
+					 ATH11K_QMI_DEF_CAL_FILE_SUFFIX);
+			}
+		} else {
+			snprintf(filename, sizeof(filename), "%s%d%s",
+				 ATH11K_QMI_DEF_CAL_FILE_PREFIX,
+				 ab->qmi.service_ins_id - (NODE_ID_BASE - 1),
+				 ATH11K_QMI_DEF_CAL_FILE_SUFFIX);
+		}
+
 		fw_entry = ath11k_core_firmware_request(ab, filename);
 		if (!IS_ERR(fw_entry))
 			goto success;
@@ -4073,6 +4106,25 @@ int ath11k_qmi_pci_alloc_qdss_mem(struct ath11k_qmi *qmi)
 	return 0;
 }
 
+static
+struct device_node *ath11k_get_etr_dev_node(struct ath11k_base *ab)
+{
+	struct device_node *dev_node = NULL;
+
+	if (ab->userpd_id) {
+		if (ab->userpd_id == QCN6122_USERPD_0)
+			dev_node = of_find_node_by_name(NULL,
+							"q6_qcn6122_etr_1");
+		else if (ab->userpd_id == QCN6122_USERPD_1)
+			dev_node = of_find_node_by_name(NULL,
+							"q6_qcn6122_etr_2");
+	} else {
+		dev_node = of_find_node_by_name(NULL, "q6_etr_dump");
+	}
+
+	return dev_node;
+}
+
 int ath11k_qmi_qdss_mem_alloc(struct ath11k_qmi *qmi)
 {
 	int ret, i;
@@ -4081,7 +4133,7 @@ int ath11k_qmi_qdss_mem_alloc(struct ath11k_qmi *qmi)
 	struct resource q6_etr;
 
 	if (ab->hw_params.fixed_bdf_addr) {
-		dev_node = of_find_node_by_name(NULL, "q6_etr_dump");
+		dev_node = ath11k_get_etr_dev_node(ab);
 		if (!dev_node) {
 			ath11k_err(ab, "No q6_etr_dump available in dts\n");
 			return -ENOMEM;
@@ -4096,6 +4148,19 @@ int ath11k_qmi_qdss_mem_alloc(struct ath11k_qmi *qmi)
 			ab->qmi.qdss_mem[i].paddr = q6_etr.start;
 			ab->qmi.qdss_mem[i].size = resource_size(&q6_etr);
 			ab->qmi.qdss_mem[i].type = QDSS_ETR_MEM_REGION_TYPE;
+			if (ab->hw_rev == ATH11K_HW_QCN6122) {
+				ab->qmi.qdss_mem[i].vaddr =
+					ioremap(ab->qmi.qdss_mem[i].paddr,
+						ab->qmi.qdss_mem[i].size);
+				if (!ab->qmi.qdss_mem[i].vaddr) {
+					ath11k_err(ab, "Error: etr-addr remap failed\n");
+					return -ENOMEM;
+				}
+			}
+			ath11k_dbg(ab, ATH11K_DBG_QMI, "QDSS mem addr pa 0x%x va 0x%p, size 0x%x",
+				   (unsigned int)ab->qmi.qdss_mem[i].paddr,
+				   ab->qmi.qdss_mem[i].vaddr,
+				   (unsigned int)ab->qmi.qdss_mem[i].size);
 		}
 	} else {
 		ret = ath11k_qmi_pci_alloc_qdss_mem(qmi);
@@ -4689,6 +4754,23 @@ static const struct qmi_ops ath11k_qmi_ops = {
 	.del_server = ath11k_qmi_ops_del_server,
 };
 
+static int ath11k_wait_for_gic_msi(struct ath11k_base *ab)
+{
+	int timeout;
+
+	if (ab->hw_rev != ATH11K_HW_QCN6122)
+		return 0;
+
+	timeout = wait_event_timeout(ab->ipci.gic_msi_waitq,
+				     (ab->ipci.gic_enabled == 1),
+				     ATH11K_RCV_GIC_MSI_HDLR_DELAY);
+	if (timeout <= 0) {
+		ath11k_warn(ab, "Receive gic msi handler timed out\n");
+		return -ETIMEDOUT;
+	}
+	return 0;
+}
+
 static void ath11k_qmi_driver_event_work(struct work_struct *work)
 {
 	struct ath11k_qmi *qmi = container_of(work, struct ath11k_qmi,
@@ -4758,6 +4840,14 @@ static void ath11k_qmi_driver_event_work(struct work_struct *work)
 				clear_bit(ATH11K_FLAG_CRASH_FLUSH,
 					  &ab->dev_flags);
 				clear_bit(ATH11K_FLAG_RECOVERY, &ab->dev_flags);
+				ret = ath11k_wait_for_gic_msi(ab);
+				if (ret) {
+					ath11k_warn(ab,
+					"Failed to get qgic handler for dev %d ret: %d\n",
+						    ab->hw_rev, ret);
+					break;
+				}
+
 				ret = ath11k_core_qmi_firmware_ready(ab);
 				if (ret) {
 					set_bit(ATH11K_FLAG_QMI_FAIL, &ab->dev_flags);
@@ -4899,6 +4989,7 @@ int ath11k_qmi_init_service(struct ath11k_base *ab)
 		return ret;
 	}
 
+	init_waitqueue_head(&ab->ipci.gic_msi_waitq);
 	return ret;
 }
 
