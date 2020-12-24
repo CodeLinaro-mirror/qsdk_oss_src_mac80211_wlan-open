@@ -477,7 +477,15 @@ static void ath11k_ahb_ce_tasklet(struct tasklet_struct *t)
 {
 	struct ath11k_ce_pipe *ce_pipe = from_tasklet(ce_pipe, t, intr_tq);
 
+	if (ce_pipe->ab->ce_latency_stats_enable)
+		ce_pipe->tasklet_ts.exec_entry_ts = ktime_get_boottime();
+
 	ath11k_ce_per_engine_service(ce_pipe->ab, ce_pipe->pipe_num);
+
+	if (ce_pipe->ab->ce_latency_stats_enable) {
+		ce_pipe->tasklet_ts.exec_complete_ts = ktime_get_boottime();
+		ce_update_tasklet_time_duration_stats(ce_pipe);
+	}
 
 	ath11k_ahb_ce_irq_enable(ce_pipe->ab, ce_pipe->pipe_num);
 }
@@ -492,6 +500,9 @@ static irqreturn_t ath11k_ahb_ce_interrupt_handler(int irq, void *arg)
 	ath11k_ahb_ce_irq_disable(ce_pipe->ab, ce_pipe->pipe_num);
 
 	tasklet_schedule(&ce_pipe->intr_tq);
+
+	if (ce_pipe->ab->ce_latency_stats_enable)
+		ce_pipe->tasklet_ts.sched_entry_ts = ktime_get_boottime();
 
 	return IRQ_HANDLED;
 }

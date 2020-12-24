@@ -1059,6 +1059,8 @@ int ath11k_ce_alloc_pipes(struct ath11k_base *ab)
 	int ret;
 	const struct ce_attr *attr;
 
+	ab->ce_latency_stats_enable = 1;
+
 	spin_lock_init(&ab->ce.ce_lock);
 
 	for (i = 0; i < ab->hw_params.ce_count; i++) {
@@ -1107,3 +1109,30 @@ int ath11k_ce_get_attr_flags(struct ath11k_base *ab, int ce_id)
 	return ab->hw_params.host_ce_config[ce_id].flags;
 }
 EXPORT_SYMBOL(ath11k_ce_get_attr_flags);
+
+void ce_update_tasklet_time_duration_stats(struct ath11k_ce_pipe *ce_pipe)
+{
+	s64 sched_us, exec_us;
+
+	sched_us = (ce_pipe->tasklet_ts.exec_entry_ts.tv64 -
+		    ce_pipe->tasklet_ts.sched_entry_ts.tv64);
+	exec_us = (ce_pipe->tasklet_ts.exec_complete_ts.tv64 -
+		   ce_pipe->tasklet_ts.exec_entry_ts.tv64);
+
+	sched_us = div_s64(sched_us, CE_TIME_DURATION_USEC * NSEC_PER_USEC);
+	if (sched_us > CE_TIME_DURATION_USEC_500) {
+	        ce_pipe->sched_delay_gt_500US++;
+	} else if (sched_us >= 0){
+	        ce_pipe->tracker[sched_us].sched_count++;
+	        ce_pipe->tracker[sched_us].sched_last_update = jiffies;
+	}
+
+	exec_us = div_s64(exec_us, CE_TIME_DURATION_USEC * NSEC_PER_USEC);
+	if (exec_us > CE_TIME_DURATION_USEC_500) {
+	        ce_pipe->exec_delay_gt_500US++;
+	} else if (exec_us >= 0){
+	        ce_pipe->tracker[exec_us].exec_count++;
+	        ce_pipe->tracker[exec_us].exec_last_update = jiffies;
+	}
+}
+EXPORT_SYMBOL(ce_update_tasklet_time_duration_stats);

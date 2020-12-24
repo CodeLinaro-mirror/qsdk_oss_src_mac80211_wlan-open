@@ -62,6 +62,12 @@ void ath11k_ce_byte_swap(void *mem, u32 len);
 
 #define ATH11K_CE_RX_POST_RETRY_JIFFIES 50
 
+#define CE_TIME_DURATION_USEC	100
+
+#define CE_TIME_DURATION_USEC_500	4
+
+#define CE_TIME_DURATION_MAX	5
+
 struct ath11k_base;
 
 /*
@@ -166,6 +172,19 @@ struct ath11k_ce_ring {
 	struct sk_buff *skb[];
 };
 
+struct ce_tasklet_time {
+	u64 sched_count;
+	u64 exec_count;
+	u64 sched_last_update;
+	u64 exec_last_update;
+};
+
+struct ce_tasklet_entry_ts {
+	ktime_t sched_entry_ts;
+	ktime_t exec_entry_ts;
+	ktime_t exec_complete_ts;
+};
+
 struct ath11k_ce_pipe {
 	struct ath11k_base *ab;
 	u16 pipe_num;
@@ -181,6 +200,11 @@ struct ath11k_ce_pipe {
 	struct ath11k_ce_ring *dest_ring;
 	struct ath11k_ce_ring *status_ring;
 	u64 timestamp;
+
+	struct ce_tasklet_entry_ts tasklet_ts;
+	struct ce_tasklet_time tracker[CE_TIME_DURATION_MAX];
+	u32 sched_delay_gt_500US;
+	u32 exec_delay_gt_500US;
 };
 
 struct ath11k_ce {
@@ -208,5 +232,5 @@ void ath11k_ce_poll_send_completed(struct ath11k_base *ab, u8 pipe_id);
 void ath11k_ce_get_shadow_config(struct ath11k_base *ab,
 				 u32 **shadow_cfg, u32 *shadow_cfg_len);
 void ath11k_ce_stop_shadow_timers(struct ath11k_base *ab);
-
+void ce_update_tasklet_time_duration_stats(struct ath11k_ce_pipe *ce_pipe);
 #endif

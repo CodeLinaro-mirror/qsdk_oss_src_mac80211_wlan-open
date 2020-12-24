@@ -1366,7 +1366,11 @@ void ath11k_hal_dump_srng_stats(struct ath11k_base *ab)
 	struct hal_srng *srng;
 	struct ath11k_ext_irq_grp *irq_grp;
 	struct ath11k_ce_pipe *ce_pipe;
-	int i;
+	int i, j;
+	unsigned int last_sched, last_exec;
+	char *ce_time_dur[CE_TIME_DURATION_MAX] = {
+		"ce_time_dur_100US", "ce_time_dur_200US", "ce_time_dur_300US",
+		"ce_time_dur_400US", "ce_time_dur_500US"};
 
 	ath11k_err(ab, "Last interrupt received for each CE:\n");
 	for (i = 0; i < ab->hw_params.ce_count; i++) {
@@ -1375,9 +1379,23 @@ void ath11k_hal_dump_srng_stats(struct ath11k_base *ab)
 		if (ath11k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
 			continue;
 
-		ath11k_err(ab, "CE_id %d pipe_num %d %ums before\n",
+		ath11k_info(ab, "CE_id %d pipe_num %d %ums before, sched_delay_gt_500US %u, exec_delay_gt_500US %u\n",
 			   i, ce_pipe->pipe_num,
-			   jiffies_to_msecs(jiffies - ce_pipe->timestamp));
+			   jiffies_to_msecs(jiffies - ce_pipe->timestamp),
+			   ce_pipe->sched_delay_gt_500US, ce_pipe->exec_delay_gt_500US);
+
+		for (j = 0; j < CE_TIME_DURATION_MAX; j++) {
+			last_sched = jiffies_to_msecs(jiffies -
+						      ce_pipe->tracker[j].sched_last_update);
+			last_exec = jiffies_to_msecs(jiffies -
+						     ce_pipe->tracker[j].exec_last_update);
+			ath11k_info(ab, "%-17s,\t last_sched_before %10ums,\t tot_sched_cnt %20llu,\t last_exec_before %10ums,\t tot_exec_cnt %20llu\n",
+				    ce_time_dur[j],
+				    ((ce_pipe->tracker[j].sched_last_update > 0) ? last_sched : 0),
+				    ce_pipe->tracker[j].sched_count,
+				    ((ce_pipe->tracker[j].exec_last_update > 0) ? last_exec : 0),
+				    ce_pipe->tracker[j].exec_count);
+		}
 	}
 
 	ath11k_err(ab, "\nLast interrupt received for each group:\n");

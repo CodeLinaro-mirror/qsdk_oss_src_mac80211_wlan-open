@@ -907,6 +907,7 @@ struct ath11k {
 	bool ps_state_enable;
 	bool ps_timekeeper_enable;
 	s8 max_allowed_tx_power;
+	bool ce_latency_stats_enable;
 };
 
 struct ath11k_band_cap {

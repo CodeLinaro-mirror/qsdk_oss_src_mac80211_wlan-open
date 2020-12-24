@@ -1232,6 +1232,93 @@ static const struct file_operations fops_memory_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_write_ce_latency_stats(struct file *file,
+				       const char __user *user_buf,
+				       size_t count, loff_t *ppos)
+{
+       struct ath11k_base *ab = file->private_data;
+       bool enable;
+       int ret;
+
+       if (kstrtobool_from_user(user_buf, count, &enable))
+                return -EINVAL;
+
+       if (enable == ab->ce_latency_stats_enable) {
+                ret = count;
+                goto exit;
+       }
+
+       ab->ce_latency_stats_enable = enable;
+       ret = count;
+
+exit:
+	return ret;
+}
+
+static ssize_t ath11k_read_ce_latency_stats(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath11k_base *ab = file->private_data;
+	int len = 0, retval;
+	const int size = 12288;
+	char *buf;
+	struct ath11k_ce_pipe *ce_pipe;
+	int i, j;
+	unsigned int last_sched, last_exec;
+	char *ce_time_dur[CE_TIME_DURATION_MAX] = {
+		"ce_time_dur_100US", "ce_time_dur_200US", "ce_time_dur_300US",
+		"ce_time_dur_400US", "ce_time_dur_500US"};
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len += scnprintf(buf + len, size - len, "CE_LATENCY_STATS:\n");
+	for (i = 0; i < ab->hw_params.ce_count; i++) {
+		ce_pipe = &ab->ce.ce_pipe[i];
+
+		len += scnprintf(buf + len, size - len, "CE_id  %u ", i);
+		len += scnprintf(buf + len, size - len, "pipe_num  %d ",
+				 ce_pipe->pipe_num);
+		len += scnprintf(buf + len, size - len, "%ums before, ",
+				 jiffies_to_msecs(jiffies - ce_pipe->timestamp));
+		len += scnprintf(buf + len, size - len, "sched_delay_gt_500US %u, ",
+				 ce_pipe->sched_delay_gt_500US);
+		len += scnprintf(buf + len, size - len, "exec_delay_gt_500US %u,\n",
+				 ce_pipe->sched_delay_gt_500US);
+
+		for (j = 0; j < CE_TIME_DURATION_MAX; j++) {
+			last_sched = jiffies_to_msecs(jiffies -
+						      ce_pipe->tracker[j].sched_last_update);
+			last_exec = jiffies_to_msecs(jiffies -
+						     ce_pipe->tracker[j].exec_last_update);
+
+			len += scnprintf(buf + len, size - len, "%-17s,\t ", ce_time_dur[j]);
+			len += scnprintf(buf + len, size - len, "last_sched_before %10ums,\t ",
+					 ((ce_pipe->tracker[j].sched_last_update > 0) ? last_sched : 0));
+			len += scnprintf(buf + len, size - len, "tot_sched_cnt %20llu,\t ",
+					 ce_pipe->tracker[j].sched_count);
+			len += scnprintf(buf + len, size - len, "last_exec_before %10ums,\t ",
+					 ((ce_pipe->tracker[j].exec_last_update > 0) ? last_exec : 0));
+			len += scnprintf(buf + len, size - len, "tot_exec_cnt %20llu\n",
+					 ce_pipe->tracker[j].exec_count);
+		}
+	}
+	if (len > size)
+		len = size;
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_ce_latency_stats = {
+	.write = ath11k_write_ce_latency_stats,
+	.open = simple_open,
+	.read = ath11k_read_ce_latency_stats,
+};
+
 int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 {
 	if (test_bit(ATH11K_FLAG_REGISTERED, &ab->dev_flags))
@@ -1260,6 +1347,8 @@ int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 	debugfs_create_file("memory_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_memory_stats);
 
+	debugfs_create_file("ce_latency_stats", 0600, ab->debugfs_soc, ab,
+			    &fops_ce_latency_stats);
 
 	return 0;
 }
