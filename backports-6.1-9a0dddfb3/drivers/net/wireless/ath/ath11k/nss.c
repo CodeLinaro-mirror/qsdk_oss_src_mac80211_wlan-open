@@ -2261,7 +2261,7 @@ static int ath11k_nss_init(struct ath11k_base *ab)
 
 	/* fill rx parameters to initialize rx context */
 	wim->wrip.tlv_size = ab->hw_params.hal_desc_sz;
-	wim->wrip.rx_buf_len = DP_RX_BUFFER_SIZE;
+	wim->wrip.rx_buf_len = DP_RXDMA_NSS_REFILL_RING_SIZE;
 
 	/* fill hal srng message */
 	wim->hssm.dev_base_addr = (u32)ab->mem_pa;

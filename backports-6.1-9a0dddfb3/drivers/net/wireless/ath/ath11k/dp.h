@@ -220,7 +220,8 @@ struct ath11k_pdev_dp {
 #define DP_REO_CMD_RING_SIZE		256
 #define DP_REO_STATUS_RING_SIZE		2048
 #define DP_RXDMA_BUF_RING_SIZE		4096
-#define DP_RXDMA_REFILL_RING_SIZE	2048
+#define DP_RXDMA_REFILL_RING_SIZE	ATH11K_DP_RXDMA_REFILL_RING_SIZE
+#define DP_RXDMA_NSS_REFILL_RING_SIZE	ATH11K_DP_RXDMA_NSS_REFILL_RING_SIZE
 #define DP_RXDMA_ERR_DST_RING_SIZE	1024
 #define DP_RXDMA_MON_STATUS_RING_SIZE	ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE	ATH11K_DP_RXDMA_MONITOR_BUF_RING_SIZE
@@ -649,7 +650,7 @@ enum htt_stats_internal_ppdu_frametype {
  *
  *    |31       26|25|24|23            16|15             8|7             0|
  *    |-----------------+----------------+----------------+---------------|
- *    |   rsvd1   |PS|SS|     ring_id    |     pdev_id    |    msg_type   |
+ *    |   rsvd1|OV|PS|SS|     ring_id    |     pdev_id    |    msg_type   |
  *    |-------------------------------------------------------------------|
  *    |              rsvd2               |           ring_buffer_size     |
  *    |-------------------------------------------------------------------|
@@ -662,6 +663,14 @@ enum htt_stats_internal_ppdu_frametype {
  *    |                        packet_type_enable_flags_3                 |
  *    |-------------------------------------------------------------------|
  *    |                         tlv_filter_in_flags                       |
+ *    |-------------------------------------------------------------------|
+ *    |         rx_header_offset         |       rx_packet_offset         |
+ *    |-------------------------------------------------------------------|
+ *    |       rx_mpdu_start_offset       |      rx_mpdu_end_offset        |
+ *    |-------------------------------------------------------------------|
+ *    |       rx_msdu_start_offset       |      rx_msdu_end_offset        |
+ *    |-------------------------------------------------------------------|
+ *    |              rsvd3               |      rx_attention_offset       |
  *    |-------------------------------------------------------------------|
  * Where:
  *     PS = pkt_swap
@@ -676,7 +685,9 @@ enum htt_stats_internal_ppdu_frametype {
  *                    More details can be got from enum htt_srng_ring_id
  *          b'24    - status_swap: 1 is to swap status TLV
  *          b'25    - pkt_swap:  1 is to swap packet TLV
- *          b'26:31 - rsvd1:  reserved for future use
+ *          b'26    - rx_offset_valid (OV): flag to indicate rx offsets
+ *
+ *          b'27:31 - rsvd1:  reserved for future use
  * dword1 - b'0:16  - ring_buffer_size: size of buffers referenced by rx ring,
  *                    in byte units.
  *                    Valid only for HW_TO_SW_RING and SW_TO_HW_RING
@@ -705,6 +716,42 @@ enum htt_stats_internal_ppdu_frametype {
  * dword6 - b'0:31 -  tlv_filter_in_flags:
  *                    Filter in Attention/MPDU/PPDU/Header/User tlvs
  *                    Refer to CFG_TLV_FILTER_IN_FLAG defs
+ * dword7 - b'0:15 -  rx_packet_offset: rx_packet_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_1 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ *	  - b'16:31 - rx_header_offset: rx_header_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_1 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ * dword8 - b'0:15 -  rx_mpdu_end_offset: rx_mpdu_end_offset in byte units
+ *	              Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_2 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ *	  - b'16:31 - rx_mpdu_start_offset: rx_mpdu_start_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_2 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ * dword9 - b'0:15 -  rx_msdu_end_offset: rx_msdu_end_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_3 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ *	  - b'16:31 - rx_msdu_start_offset: rx_msdu_start_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_3 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ * dword10- b'0:15  - rx_attention_offset: rx_attention_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_4 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ *	  - b'16:31 - rsvd3 for future use
  */
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_MSG_TYPE	GENMASK(7, 0)
@@ -712,8 +759,16 @@ enum htt_stats_internal_ppdu_frametype {
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_RING_ID	GENMASK(23, 16)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_SS		BIT(24)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PS		BIT(25)
+#define HTT_RX_RING_SELECTION_CFG_CMD_OFFSET_VALID      BIT(26)
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE	GENMASK(15, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_PACKET_OFFSET      GENMASK(15, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_HEADER_OFFSET      GENMASK(31, 16)
+#define HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_OFFSET    GENMASK(15, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_MPDU_START_OFFSET  GENMASK(31, 16)
+#define HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_OFFSET    GENMASK(15, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_MSDU_START_OFFSET  GENMASK(31, 16)
+#define HTT_RX_RING_SELECTION_CFG_RX_ATTENTION_OFFSET   GENMASK(15, 0)
 
 enum htt_rx_filter_tlv_flags {
 	HTT_RX_FILTER_TLV_FLAGS_MPDU_START		= BIT(0),
@@ -1017,6 +1072,14 @@ enum htt_rx_data_pkt_filter_tlv_flasg3 {
 		HTT_RX_FILTER_TLV_FLAGS_PER_MSDU_HEADER | \
 		HTT_RX_FILTER_TLV_FLAGS_ATTENTION)
 
+#define HTT_RX_RXDMA_FILTER_TLV_FLAGS_BUF_RING \
+		(HTT_RX_FILTER_TLV_FLAGS_MPDU_START | \
+		HTT_RX_FILTER_TLV_FLAGS_MSDU_START | \
+		HTT_RX_FILTER_TLV_FLAGS_RX_PACKET | \
+		HTT_RX_FILTER_TLV_FLAGS_MSDU_END | \
+		HTT_RX_FILTER_TLV_FLAGS_MPDU_END | \
+		HTT_RX_FILTER_TLV_FLAGS_ATTENTION)
+
 struct htt_rx_ring_selection_cfg_cmd {
 	u32 info0;
 	u32 info1;
@@ -1025,6 +1088,10 @@ struct htt_rx_ring_selection_cfg_cmd {
 	u32 pkt_type_en_flags2;
 	u32 pkt_type_en_flags3;
 	u32 rx_filter_tlv;
+	u32 rx_packet_offset;
+	u32 rx_mpdu_offset;
+	u32 rx_msdu_offset;
+	u32 rx_attn_offset;
 } __packed;
 
 struct htt_rx_ring_tlv_filter {
@@ -1033,6 +1100,14 @@ struct htt_rx_ring_tlv_filter {
 	u32 pkt_filter_flags1; /* MGMT */
 	u32 pkt_filter_flags2; /* CTRL */
 	u32 pkt_filter_flags3; /* DATA */
+	bool offset_valid;
+	u16 rx_packet_offset;
+	u16 rx_header_offset;
+	u16 rx_mpdu_end_offset;
+	u16 rx_mpdu_start_offset;
+	u16 rx_msdu_end_offset;
+	u16 rx_msdu_start_offset;
+	u16 rx_attn_offset;
 };
 
 #define HTT_RX_FULL_MON_MODE_CFG_CMD_INFO0_MSG_TYPE	GENMASK(7, 0)

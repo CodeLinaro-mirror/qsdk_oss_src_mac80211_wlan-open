@@ -756,6 +756,7 @@ static ssize_t ath11k_write_extd_rx_stats(struct file *file,
 	}
 
 	ar->debug.rx_filter = tlv_filter.rx_filter;
+	tlv_filter.offset_valid = false;
 
 	for (i = 0; i < ab->hw_params.num_rxdma_per_pdev; i++) {
 		ring_id = ar->dp.rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
@@ -1491,6 +1492,7 @@ static ssize_t ath11k_write_pktlog_filter(struct file *file,
 	}
 
 	/* Clear rx filter set for monitor mode and rx status */
+	tlv_filter.offset_valid = false;
 	for (i = 0; i < ab->hw_params.num_rxdma_per_pdev; i++) {
 		ring_id = ar->dp.rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
 		ret = ath11k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id, ar->dp.mac_id,

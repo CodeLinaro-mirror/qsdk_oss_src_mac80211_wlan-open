@@ -1209,6 +1209,8 @@ int ath11k_dp_tx_htt_rx_filter_setup(struct ath11k_base *ab, u32 ring_id,
 				 !!(params.flags & HAL_SRNG_FLAGS_MSI_SWAP));
 	cmd->info0 |= FIELD_PREP(HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PS,
 				 !!(params.flags & HAL_SRNG_FLAGS_DATA_TLV_SWAP));
+	cmd->info0 |= FIELD_PREP(HTT_RX_RING_SELECTION_CFG_CMD_OFFSET_VALID,
+				tlv_filter->offset_valid);
 
 	cmd->info1 = FIELD_PREP(HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE,
 				rx_buf_size);
@@ -1217,6 +1219,26 @@ int ath11k_dp_tx_htt_rx_filter_setup(struct ath11k_base *ab, u32 ring_id,
 	cmd->pkt_type_en_flags2 = tlv_filter->pkt_filter_flags2;
 	cmd->pkt_type_en_flags3 = tlv_filter->pkt_filter_flags3;
 	cmd->rx_filter_tlv = tlv_filter->rx_filter;
+
+	if (tlv_filter->offset_valid) {
+		cmd->rx_packet_offset = FIELD_PREP(HTT_RX_RING_SELECTION_CFG_RX_PACKET_OFFSET,
+						   tlv_filter->rx_packet_offset);
+		cmd->rx_packet_offset |= FIELD_PREP(HTT_RX_RING_SELECTION_CFG_RX_HEADER_OFFSET,
+						    tlv_filter->rx_header_offset);
+
+		cmd->rx_mpdu_offset = FIELD_PREP(HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_OFFSET,
+						 tlv_filter->rx_mpdu_end_offset);
+		cmd->rx_mpdu_offset |= FIELD_PREP(HTT_RX_RING_SELECTION_CFG_RX_MPDU_START_OFFSET,
+						  tlv_filter->rx_mpdu_start_offset);
+
+		cmd->rx_msdu_offset = FIELD_PREP(HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_OFFSET,
+						 tlv_filter->rx_msdu_end_offset);
+		cmd->rx_msdu_offset |= FIELD_PREP(HTT_RX_RING_SELECTION_CFG_RX_MSDU_START_OFFSET,
+						  tlv_filter->rx_msdu_start_offset);
+
+		cmd->rx_attn_offset = FIELD_PREP(HTT_RX_RING_SELECTION_CFG_RX_ATTENTION_OFFSET,
+						 tlv_filter->rx_attn_offset);
+	}
 
 	ret = ath11k_htc_send(&ab->htc, ab->dp.eid, skb);
 	if (ret)
@@ -1296,6 +1318,7 @@ int ath11k_dp_tx_htt_monitor_mode_ring_config(struct ath11k *ar, bool reset)
 	}
 
 	ring_id = dp->rxdma_mon_buf_ring.refill_buf_ring.ring_id;
+	tlv_filter.offset_valid = false;
 
 	if (!reset) {
 		tlv_filter.rx_filter = HTT_RX_MON_FILTER_TLV_FLAGS_MON_BUF_RING;

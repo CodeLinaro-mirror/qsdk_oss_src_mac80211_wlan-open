@@ -22,6 +22,11 @@
 #define ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE	512
 #define ATH11K_DP_RXDMA_MONITOR_BUF_RING_SIZE	128
 #define ATH11K_DP_RXDMA_MONITOR_DST_RING_SIZE	128
+#define ATH11K_DP_RXDMA_REFILL_RING_SIZE	2048
+/* 256b desc TLV + 4b(rounded) Pad + 30byte max nwifi header +
+ * 18byte mesh hdr + 8byte snap + 1500 eth payload
+ */
+#define ATH11K_DP_RXDMA_NSS_REFILL_RING_SIZE	1816
 #else
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS(ab)	(ab->hw_params.num_vdevs)
@@ -34,6 +39,8 @@
 #define ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE	1024
 #define ATH11K_DP_RXDMA_MONITOR_BUF_RING_SIZE	4096
 #define ATH11K_DP_RXDMA_MONITOR_DST_RING_SIZE	2048
+#define ATH11K_DP_RXDMA_REFILL_RING_SIZE	2048
+#define ATH11K_DP_RXDMA_NSS_REFILL_RING_SIZE	2048
 #endif
 
 /* Num of peers for Single Radio mode */
@@ -134,6 +141,8 @@ enum ath11k_bus {
 struct hal_rx_desc;
 struct hal_tcl_data_cmd;
 struct napi_struct;
+struct htt_rx_ring_tlv_filter;
+enum hal_encrypt_type;
 
 struct ath11k_hw_ring_mask {
 	u8 tx[ATH11K_EXT_IRQ_GRP_NUM_MAX];
@@ -298,7 +307,16 @@ struct ath11k_hw_ops {
 	bool (*rx_desc_mac_addr2_valid)(struct hal_rx_desc *desc);
 	u8* (*rx_desc_mpdu_start_addr2)(struct hal_rx_desc *desc);
 	u32 (*get_ring_selector)(struct sk_buff *skb);
-	u32 (*rx_desc_get_hal_mpdu_len)(struct hal_rx_mpdu_info *mpdu_info);
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
+	void (*rx_desc_get_offset)(struct htt_rx_ring_tlv_filter *tlv_filter);
+#endif
+	u16 (*rx_desc_get_mpdu_frame_ctl)(struct hal_rx_desc *desc);
+	bool (*rx_desc_dot11_hdr_fields_valid)(struct hal_rx_desc *desc);
+	void (*rx_desc_get_dot11_hdr)(struct hal_rx_desc *desc,
+				      struct ieee80211_hdr *hdr);
+	void (*rx_desc_get_crypto_header)(struct hal_rx_desc *desc,
+					  u8 *crypto_hdr,
+					  enum hal_encrypt_type enctype);
 };
 
 extern const struct ath11k_hw_ops ipq8074_ops;

@@ -260,7 +260,11 @@ static u8 ath11k_hw_ipq8074_rx_desc_get_l3_pad_bytes(struct hal_rx_desc *desc)
 
 static u8 *ath11k_hw_ipq8074_rx_desc_get_hdr_status(struct hal_rx_desc *desc)
 {
+#ifndef CPTCFG_ATH11K_MEM_PROFILE_512M
 	return desc->u.ipq8074.hdr_status;
+#else
+	return NULL;
+#endif
 }
 
 static bool ath11k_hw_ipq8074_rx_desc_encrypt_valid(struct hal_rx_desc *desc)
@@ -395,17 +399,6 @@ static void ath11k_hw_ipq8074_rx_desc_set_msdu_len(struct hal_rx_desc *desc, u16
 	desc->u.ipq8074.msdu_start.info1 = __cpu_to_le32(info);
 }
 
-static bool ath11k_hw_ipq8074_rx_desc_mac_addr2_valid(struct hal_rx_desc *desc)
-{
-	return __le32_to_cpu(desc->u.ipq8074.mpdu_start.info1) &
-	       RX_MPDU_START_INFO1_MAC_ADDR2_VALID;
-}
-
-static u8 *ath11k_hw_ipq8074_rx_desc_mpdu_start_addr2(struct hal_rx_desc *desc)
-{
-	return desc->u.ipq8074.mpdu_start.addr2;
-}
-
 static
 struct rx_attention *ath11k_hw_ipq8074_rx_desc_get_attention(struct hal_rx_desc *desc)
 {
@@ -415,6 +408,123 @@ struct rx_attention *ath11k_hw_ipq8074_rx_desc_get_attention(struct hal_rx_desc 
 static u8 *ath11k_hw_ipq8074_rx_desc_get_msdu_payload(struct hal_rx_desc *desc)
 {
 	return &desc->u.ipq8074.msdu_payload[0];
+}
+
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
+static void ath11k_hw_ipq8074_rx_desc_get_offset(struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	tlv_filter->rx_mpdu_end_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_ipq8074, mpdu_end_tag));
+	tlv_filter->rx_mpdu_start_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_ipq8074, mpdu_start_tag));
+	tlv_filter->rx_msdu_end_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_ipq8074, msdu_end_tag));
+	tlv_filter->rx_msdu_start_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_ipq8074, msdu_start_tag));
+	tlv_filter->rx_attn_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_ipq8074, rx_attn_tag));
+}
+#endif
+
+static u16 ath11k_hw_ipq8074_rx_desc_get_mpdu_frame_ctl(struct hal_rx_desc *desc)
+{
+	return __le16_to_cpu(desc->u.ipq8074.mpdu_start.frame_ctrl);
+}
+
+static bool ath11k_hw_ipq8074_rx_desc_mac_addr2_valid(struct hal_rx_desc *desc)
+{
+	return __le32_to_cpu(desc->u.ipq8074.mpdu_start.info1) &
+	       RX_MPDU_START_INFO1_MAC_ADDR2_VALID;
+}
+
+static u8* ath11k_hw_ipq8074_rx_desc_mpdu_start_addr2(struct hal_rx_desc *desc)
+{
+	return desc->u.ipq8074.mpdu_start.addr2;
+}
+
+static bool ath11k_hw_ipq8074_rx_desc_dot11_hdr_fields_valid(struct hal_rx_desc *desc)
+{
+	if ((ath11k_hw_ipq8074_rx_desc_get_mpdu_seq_ctl_vld(desc) &&
+	     ath11k_hw_ipq8074_rx_desc_get_mpdu_fc_valid(desc) &&
+	     __le32_to_cpu(desc->u.ipq8074.mpdu_start.info1) &
+			   RX_MPDU_START_INFO1_MAC_ADDR1_VALID &&
+	     ath11k_hw_ipq8074_rx_desc_mac_addr2_valid(desc) &&
+	     __le32_to_cpu(desc->u.ipq8074.mpdu_start.info1) &
+			   RX_MPDU_START_INFO1_MAC_ADDR3_VALID &&
+	     FIELD_GET((RX_MPDU_START_INFO1_MPDU_DUR_VALID),
+			__le32_to_cpu(desc->u.ipq8074.mpdu_start.info1)))) {
+		return true;
+	}
+	return false;
+}
+
+static void ath11k_hw_ipq8074_rx_desc_get_dot11_hdr(struct hal_rx_desc *desc,
+						    struct ieee80211_hdr *hdr)
+{
+	hdr->frame_control = __le16_to_cpu(desc->u.ipq8074.mpdu_start.frame_ctrl);
+	hdr->duration_id = __le16_to_cpu(desc->u.ipq8074.mpdu_start.duration);
+	ether_addr_copy(hdr->addr1, desc->u.ipq8074.mpdu_start.addr1);
+	ether_addr_copy(hdr->addr2, desc->u.ipq8074.mpdu_start.addr2);
+	ether_addr_copy(hdr->addr3, desc->u.ipq8074.mpdu_start.addr3);
+	if (__le32_to_cpu(desc->u.ipq8074.mpdu_start.info1) &
+			RX_MPDU_START_INFO1_MAC_ADDR4_VALID) {
+		ether_addr_copy(hdr->addr4, desc->u.ipq8074.mpdu_start.addr4);
+	}
+	hdr->seq_ctrl = __le16_to_cpu(desc->u.ipq8074.mpdu_start.seq_ctrl);
+}
+
+static void ath11k_hw_ipq8074_rx_desc_get_crypto_hdr(struct hal_rx_desc *desc,
+						     u8 *crypto_hdr,
+						     enum hal_encrypt_type enctype)
+{
+	unsigned int key_id;
+
+	switch (enctype) {
+	case HAL_ENCRYPT_TYPE_OPEN:
+		return;
+	case HAL_ENCRYPT_TYPE_TKIP_NO_MIC:
+	case HAL_ENCRYPT_TYPE_TKIP_MIC:
+		crypto_hdr[0] =
+			HAL_RX_MPDU_INFO_PN_GET_BYTE2(desc->u.ipq8074.mpdu_start.pn[0]);
+		crypto_hdr[1] = 0;
+		crypto_hdr[2] =
+			HAL_RX_MPDU_INFO_PN_GET_BYTE1(desc->u.ipq8074.mpdu_start.pn[0]);
+		break;
+	case HAL_ENCRYPT_TYPE_CCMP_128:
+	case HAL_ENCRYPT_TYPE_CCMP_256:
+	case HAL_ENCRYPT_TYPE_GCMP_128:
+	case HAL_ENCRYPT_TYPE_AES_GCMP_256:
+		crypto_hdr[0] =
+			HAL_RX_MPDU_INFO_PN_GET_BYTE1(desc->u.ipq8074.mpdu_start.pn[0]);
+		crypto_hdr[1] =
+			HAL_RX_MPDU_INFO_PN_GET_BYTE2(desc->u.ipq8074.mpdu_start.pn[0]);
+		crypto_hdr[2] = 0;
+		break;
+	case HAL_ENCRYPT_TYPE_WEP_40:
+	case HAL_ENCRYPT_TYPE_WEP_104:
+	case HAL_ENCRYPT_TYPE_WEP_128:
+	case HAL_ENCRYPT_TYPE_WAPI_GCM_SM4:
+	case HAL_ENCRYPT_TYPE_WAPI:
+		return;
+	}
+	key_id        = FIELD_GET(RX_MPDU_START_INFO5_KEY_ID,
+				  __le32_to_cpu(desc->u.ipq8074.mpdu_start.info5));
+	crypto_hdr[3] = 0x20 | (key_id << 6);
+	crypto_hdr[4] = HAL_RX_MPDU_INFO_PN_GET_BYTE3(desc->u.ipq8074.mpdu_start.pn[0]);
+	crypto_hdr[5] = HAL_RX_MPDU_INFO_PN_GET_BYTE4(desc->u.ipq8074.mpdu_start.pn[0]);
+	crypto_hdr[6] = HAL_RX_MPDU_INFO_PN_GET_BYTE1(desc->u.ipq8074.mpdu_start.pn[1]);
+	crypto_hdr[7] = HAL_RX_MPDU_INFO_PN_GET_BYTE2(desc->u.ipq8074.mpdu_start.pn[1]);
+}
+
+static bool ath11k_hw_qcn9074_rx_desc_mac_addr2_valid(struct hal_rx_desc *desc)
+{
+        return __le32_to_cpu(desc->u.qcn9074.mpdu_start.info11) &
+	       RX_MPDU_START_INFO11_MAC_ADDR2_VALID;
+}
+
+static u8* ath11k_hw_qcn9074_rx_desc_mpdu_start_addr2(struct hal_rx_desc *desc)
+{
+        return desc->u.qcn9074.mpdu_start.addr2;
 }
 
 static bool ath11k_hw_qcn9074_rx_desc_get_first_msdu(struct hal_rx_desc *desc)
@@ -437,7 +547,11 @@ static u8 ath11k_hw_qcn9074_rx_desc_get_l3_pad_bytes(struct hal_rx_desc *desc)
 
 static u8 *ath11k_hw_qcn9074_rx_desc_get_hdr_status(struct hal_rx_desc *desc)
 {
+#ifndef CPTCFG_ATH11K_MEM_PROFILE_512M
 	return desc->u.qcn9074.hdr_status;
+#else
+	return NULL;
+#endif
 }
 
 static bool ath11k_hw_qcn9074_rx_desc_encrypt_valid(struct hal_rx_desc *desc)
@@ -614,7 +728,11 @@ static u8 ath11k_hw_wcn6855_rx_desc_get_l3_pad_bytes(struct hal_rx_desc *desc)
 
 static u8 *ath11k_hw_wcn6855_rx_desc_get_hdr_status(struct hal_rx_desc *desc)
 {
+#ifndef CPTCFG_ATH11K_MEM_PROFILE_512M
 	return desc->u.wcn6855.hdr_status;
+#else
+	return NULL;
+#endif
 }
 
 static bool ath11k_hw_wcn6855_rx_desc_encrypt_valid(struct hal_rx_desc *desc)
@@ -929,6 +1047,98 @@ static u32 ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_len(struct hal_rx_mpdu_info *m
 	return FIELD_GET(HAL_RX_MPDU_INFO_INFO1_MPDU_LEN,
 			 __le32_to_cpu(mpdu_info->u.qcn9074.info1));
 }
+
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
+static void ath11k_hw_qcn9074_rx_desc_get_offset(struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	tlv_filter->rx_mpdu_end_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_qcn9074, mpdu_end_tag));
+	tlv_filter->rx_mpdu_start_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_qcn9074, mpdu_start_tag));
+	tlv_filter->rx_msdu_end_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_qcn9074, msdu_end_tag));
+	tlv_filter->rx_msdu_start_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_qcn9074, msdu_start_tag));
+	tlv_filter->rx_attn_offset = __le16_to_cpu(offsetof
+			(struct hal_rx_desc_qcn9074, rx_attn_tag));
+}
+#endif
+
+static u16 ath11k_hw_qcn9074_rx_desc_get_mpdu_frame_ctl(struct hal_rx_desc *desc)
+{
+	return __le16_to_cpu(desc->u.qcn9074.mpdu_start.frame_ctrl);
+}
+
+static bool ath11k_hw_qcn9074_rx_desc_dot11_hdr_fields_valid(struct hal_rx_desc *desc)
+{
+	if ((ath11k_hw_qcn9074_rx_desc_get_mpdu_seq_ctl_vld(desc) &&
+	     ath11k_hw_qcn9074_rx_desc_get_mpdu_fc_valid(desc) &&
+	     (__le32_to_cpu(desc->u.qcn9074.mpdu_start.info11) &
+			     RX_MPDU_START_INFO11_MAC_ADDR1_VALID) &&
+	     ath11k_hw_qcn9074_rx_desc_mac_addr2_valid(desc) &&
+	     (__le32_to_cpu(desc->u.qcn9074.mpdu_start.info11) &
+			    RX_MPDU_START_INFO11_MAC_ADDR3_VALID) &&
+	     FIELD_GET((RX_MPDU_START_INFO11_MPDU_DUR_VALID),
+			__le32_to_cpu(desc->u.qcn9074.mpdu_start.info11)))) {
+		return true;
+	}
+	return false;
+}
+
+static void ath11k_hw_qcn9074_rx_desc_get_dot11_hdr(struct hal_rx_desc *desc,
+						    struct ieee80211_hdr *hdr)
+{
+	hdr->frame_control = __le16_to_cpu(desc->u.qcn9074.mpdu_start.frame_ctrl);
+	hdr->duration_id = __le16_to_cpu(desc->u.qcn9074.mpdu_start.duration);
+	ether_addr_copy(hdr->addr1, desc->u.qcn9074.mpdu_start.addr1);
+	ether_addr_copy(hdr->addr2, desc->u.qcn9074.mpdu_start.addr2);
+	ether_addr_copy(hdr->addr3, desc->u.qcn9074.mpdu_start.addr3);
+	if (__le32_to_cpu(desc->u.qcn9074.mpdu_start.info11) &
+			  RX_MPDU_START_INFO11_MAC_ADDR4_VALID) {
+		ether_addr_copy(hdr->addr4, desc->u.qcn9074.mpdu_start.addr4);
+	}
+	hdr->seq_ctrl = __le16_to_cpu(desc->u.qcn9074.mpdu_start.seq_ctrl);
+}
+
+static void ath11k_hw_qcn9074_rx_desc_get_crypto_hdr(struct hal_rx_desc *desc,
+						     u8 *crypto_hdr,
+						     enum hal_encrypt_type enctype)
+{
+	unsigned int key_id;
+
+	switch (enctype) {
+	case HAL_ENCRYPT_TYPE_OPEN:
+		return;
+	case HAL_ENCRYPT_TYPE_TKIP_NO_MIC:
+	case HAL_ENCRYPT_TYPE_TKIP_MIC:
+		crypto_hdr[0] = HAL_RX_MPDU_INFO_PN_GET_BYTE2(desc->u.qcn9074.mpdu_start.pn[0]);
+		crypto_hdr[1] = 0;
+		crypto_hdr[2] = HAL_RX_MPDU_INFO_PN_GET_BYTE1(desc->u.qcn9074.mpdu_start.pn[0]);
+		break;
+	case HAL_ENCRYPT_TYPE_CCMP_128:
+	case HAL_ENCRYPT_TYPE_CCMP_256:
+	case HAL_ENCRYPT_TYPE_GCMP_128:
+	case HAL_ENCRYPT_TYPE_AES_GCMP_256:
+		crypto_hdr[0] = HAL_RX_MPDU_INFO_PN_GET_BYTE1(desc->u.qcn9074.mpdu_start.pn[0]);
+		crypto_hdr[1] = HAL_RX_MPDU_INFO_PN_GET_BYTE2(desc->u.qcn9074.mpdu_start.pn[0]);
+		crypto_hdr[2] = 0;
+		break;
+	case HAL_ENCRYPT_TYPE_WEP_40:
+	case HAL_ENCRYPT_TYPE_WEP_104:
+	case HAL_ENCRYPT_TYPE_WEP_128:
+	case HAL_ENCRYPT_TYPE_WAPI_GCM_SM4:
+	case HAL_ENCRYPT_TYPE_WAPI:
+		return;
+	}
+	key_id        = FIELD_GET(RX_MPDU_START_INFO12_KEY_ID,
+				  __le32_to_cpu(desc->u.qcn9074.mpdu_start.info12));
+	crypto_hdr[3] = 0x20 | (key_id << 6);
+	crypto_hdr[4] = HAL_RX_MPDU_INFO_PN_GET_BYTE3(desc->u.qcn9074.mpdu_start.pn[0]);
+	crypto_hdr[5] = HAL_RX_MPDU_INFO_PN_GET_BYTE4(desc->u.qcn9074.mpdu_start.pn[0]);
+	crypto_hdr[6] = HAL_RX_MPDU_INFO_PN_GET_BYTE1(desc->u.qcn9074.mpdu_start.pn[1]);
+	crypto_hdr[7] = HAL_RX_MPDU_INFO_PN_GET_BYTE2(desc->u.qcn9074.mpdu_start.pn[1]);
+}
+
 const struct ath11k_hw_ops ipq8074_ops = {
 	.get_hw_mac_from_pdev_id = ath11k_hw_ipq8074_mac_from_pdev_id,
 	.wmi_init_config = ath11k_init_wmi_config_ipq8074,
@@ -1009,6 +1219,13 @@ const struct ath11k_hw_ops ipq6018_ops = {
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq8074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
 	.rx_desc_get_hal_mpdu_len = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len,
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
+	.rx_desc_get_offset = ath11k_hw_ipq8074_rx_desc_get_offset,
+#endif
+	.rx_desc_get_mpdu_frame_ctl = ath11k_hw_ipq8074_rx_desc_get_mpdu_frame_ctl,
+	.rx_desc_dot11_hdr_fields_valid = ath11k_hw_ipq8074_rx_desc_dot11_hdr_fields_valid,
+	.rx_desc_get_dot11_hdr = ath11k_hw_ipq8074_rx_desc_get_dot11_hdr,
+	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
 };
 
 const struct ath11k_hw_ops qca6390_ops = {
@@ -1050,6 +1267,13 @@ const struct ath11k_hw_ops qca6390_ops = {
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq8074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
 	.rx_desc_get_hal_mpdu_len = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len,
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
+	.rx_desc_get_offset = ath11k_hw_ipq8074_rx_desc_get_offset,
+#endif
+	.rx_desc_get_mpdu_frame_ctl = ath11k_hw_ipq8074_rx_desc_get_mpdu_frame_ctl,
+	.rx_desc_dot11_hdr_fields_valid = ath11k_hw_ipq8074_rx_desc_dot11_hdr_fields_valid,
+	.rx_desc_get_dot11_hdr = ath11k_hw_ipq8074_rx_desc_get_dot11_hdr,
+	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
 };
 
 const struct ath11k_hw_ops qcn9074_ops = {
@@ -1132,6 +1356,13 @@ const struct ath11k_hw_ops wcn6855_ops = {
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_wcn6855_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
 	.rx_desc_get_hal_mpdu_len = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len,
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
+	.rx_desc_get_offset = ath11k_hw_ipq8074_rx_desc_get_offset,
+#endif
+	.rx_desc_get_mpdu_frame_ctl = ath11k_hw_ipq8074_rx_desc_get_mpdu_frame_ctl,
+	.rx_desc_dot11_hdr_fields_valid = ath11k_hw_ipq8074_rx_desc_dot11_hdr_fields_valid,
+	.rx_desc_get_dot11_hdr = ath11k_hw_ipq8074_rx_desc_get_dot11_hdr,
+	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
 };
 
 const struct ath11k_hw_ops wcn6750_ops = {
@@ -1181,6 +1412,8 @@ const struct ath11k_hw_ops ipq5018_ops = {
 	.wmi_init_config = ath11k_init_wmi_config_ipq8074,
 	.mac_id_to_pdev_id = ath11k_hw_mac_id_to_pdev_id_ipq8074,
 	.mac_id_to_srng_id = ath11k_hw_mac_id_to_srng_id_ipq8074,
+	.rx_desc_mac_addr2_valid = ath11k_hw_qcn9074_rx_desc_mac_addr2_valid,
+	.rx_desc_mpdu_start_addr2 = ath11k_hw_qcn9074_rx_desc_mpdu_start_addr2,
 	.tx_mesh_enable = ath11k_hw_qcn9074_tx_mesh_enable,
 	.rx_desc_get_first_msdu = ath11k_hw_qcn9074_rx_desc_get_first_msdu,
 	.rx_desc_get_last_msdu = ath11k_hw_qcn9074_rx_desc_get_last_msdu,
@@ -1215,6 +1448,13 @@ const struct ath11k_hw_ops ipq5018_ops = {
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq9074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
 	.rx_desc_get_hal_mpdu_len = ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_len,
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
+	.rx_desc_get_offset = ath11k_hw_qcn9074_rx_desc_get_offset,
+#endif
+	.rx_desc_get_mpdu_frame_ctl = ath11k_hw_qcn9074_rx_desc_get_mpdu_frame_ctl,
+	.rx_desc_dot11_hdr_fields_valid = ath11k_hw_qcn9074_rx_desc_dot11_hdr_fields_valid,
+	.rx_desc_get_dot11_hdr = ath11k_hw_qcn9074_rx_desc_get_dot11_hdr,
+	.rx_desc_get_crypto_header = ath11k_hw_qcn9074_rx_desc_get_crypto_hdr,
 };
 
 const struct ath11k_hw_ops qcn6122_ops = {
