@@ -4,6 +4,7 @@
  */
 
 #include <linux/devcoredump.h>
+#include <linux/platform_device.h>
 #include <linux/dma-direction.h>
 #include <linux/mhi.h>
 #include <linux/pci.h>
@@ -93,13 +94,15 @@ static void ath11k_coredump_free_q6dump(void *data)
 	complete(&dump_state->dump_done);
 }
 
-void ath11k_coredump_build_inline(struct ath11k_pci *ar_pci,
+void ath11k_coredump_build_inline(struct ath11k_base *ab,
 				  struct ath11k_dump_segment *segments, int num_seg)
 {
 	struct ath11k_coredump_state *dump_state;
 	struct timespec64 timestamp;
 	struct ath11k_dump_file_data *file_data;
 	size_t header_size;
+	struct ath11k_pci *ar_pci = (struct ath11k_pci *)ab->drv_priv;
+	struct device dev;
 	u8 *buf;
 
 	header_size = sizeof(struct ath11k_dump_file_data);
@@ -116,9 +119,17 @@ void ath11k_coredump_build_inline(struct ath11k_pci *ar_pci,
 	        sizeof(file_data->df_magic));
 	file_data->len = cpu_to_le32(header_size);
 	file_data->version = cpu_to_le32(ATH11K_FW_CRASH_DUMP_VERSION);
-	file_data->chip_id = ar_pci->dev_id;
-	file_data->qrtr_id = ar_pci->ab->qmi.service_ins_id;
-	file_data->bus_id = pci_domain_nr(ar_pci->pdev->bus);
+	if (ab->hw_rev == ATH11K_HW_QCN6122) {
+		file_data->chip_id = ab->qmi.target.chip_id;
+		file_data->qrtr_id = ab->qmi.service_ins_id;
+		file_data->bus_id = ab->userpd_id;
+		dev = ab->pdev->dev;
+	} else {
+		file_data->chip_id = ar_pci->dev_id;
+		file_data->qrtr_id = ar_pci->ab->qmi.service_ins_id;
+		file_data->bus_id = pci_domain_nr(ar_pci->pdev->bus);
+		dev = ar_pci->pdev->dev;
+	}
 	if (file_data->bus_id > ATH11K_MAX_PCI_DOMAINS)
 		file_data->bus_id = ATH11K_MAX_PCI_DOMAINS;
 	guid_gen(&file_data->guid);
@@ -144,7 +155,7 @@ void ath11k_coredump_build_inline(struct ath11k_pci *ar_pci,
 	dump_state->segments = segments;
 	init_completion(&dump_state->dump_done);
 
-	dev_coredumpm(&ar_pci->pdev->dev, NULL, dump_state, header_size, GFP_KERNEL,
+	dev_coredumpm(&dev, NULL, dump_state, header_size, GFP_KERNEL,
 		      ath11k_coredump_read_q6dump, ath11k_coredump_free_q6dump);
 
 	/* Wait until the dump is read and free is called */
@@ -258,7 +269,7 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 
 		BUG_ON(1);
 	} else {
-		ath11k_coredump_build_inline(ar_pci, segment, num_seg);
+		ath11k_coredump_build_inline(ab, segment, num_seg);
 	}
 
 	vfree(segment);
@@ -267,7 +278,6 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 void ath11k_coredump_qdss_dump(struct ath11k_base *ab,
 			       struct ath11k_qmi_event_qdss_trace_save_data *event_data)
 {
-	struct ath11k_pci *ar_pci = (struct ath11k_pci *)ab->drv_priv;
 	struct ath11k_dump_segment *segment;
 	int len, num_seg;
 	void *dump;
@@ -348,7 +358,7 @@ void ath11k_coredump_qdss_dump(struct ath11k_base *ab,
 			   segment->vaddr, segment->len);
 		segment->type = ATH11K_FW_QDSS_DATA;
 	}
-	ath11k_coredump_build_inline(ar_pci, segment, 1);
+	ath11k_coredump_build_inline(ab, segment, 1);
 out:
 	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, event_data->total_size);
 	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, len);

@@ -264,6 +264,7 @@ struct ath11k_hw_params {
 	bool internal_pci;
 	u8 ce_window;
 	u8 dp_window;
+	bool is_qdss_support;
 };
 
 struct ath11k_hw_ops {
