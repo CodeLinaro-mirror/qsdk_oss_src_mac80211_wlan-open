@@ -920,6 +920,9 @@ int ath11k_nss_vdev_set_cmd(struct ath11k_vif *arvif, enum ath11k_nss_vdev_cmd n
 	default:
 		return -EINVAL;
 	}
+
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size, sizeof(*vdev_msg));
+
 	/* TODO: Convert to function for conversion in case of many
 	 * such commands
 	 */
@@ -950,6 +953,7 @@ int ath11k_nss_vdev_set_cmd(struct ath11k_vif *arvif, enum ath11k_nss_vdev_cmd n
 	ath11k_dbg(ar->ab, ATH11K_DBG_NSS, "nss vdev set cmd success cmd:%d val:%d\n",
 		   cmd, val);
 free:
+	ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size, sizeof(*vdev_msg));
 	kfree(vdev_msg);
 	return status;
 }
@@ -965,6 +969,9 @@ static int ath11k_nss_vdev_configure(struct ath11k_vif *arvif)
 	vdev_msg = kzalloc(sizeof(struct nss_wifi_vdev_msg), GFP_ATOMIC);
 	if (!vdev_msg)
 		return -ENOMEM;
+
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size,
+				sizeof(struct nss_wifi_vdev_msg));
 
 	vdev_cfg = &vdev_msg->msg.vdev_config;
 
@@ -1001,6 +1008,8 @@ static int ath11k_nss_vdev_configure(struct ath11k_vif *arvif)
 
 	ret = 0;
 free:
+	ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size,
+				sizeof(struct nss_wifi_vdev_msg));
 	kfree(vdev_msg);
 
 	return ret;
@@ -1224,6 +1233,9 @@ int ath11k_nss_vdev_up(struct ath11k_vif *arvif)
 	if (!vdev_msg)
 		return -ENOMEM;
 
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size,
+				sizeof(struct nss_wifi_vdev_msg));
+
 	vdev_en = &vdev_msg->msg.vdev_enable;
 
 	ether_addr_copy(vdev_en->mac_addr, arvif->vif->addr);
@@ -1242,6 +1254,8 @@ int ath11k_nss_vdev_up(struct ath11k_vif *arvif)
 
 	ath11k_dbg(ar->ab, ATH11K_DBG_NSS, "nss vdev up tx msg success\n");
 free:
+	ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size,
+				sizeof(struct nss_wifi_vdev_msg));
 	kfree(vdev_msg);
 	return ret;
 }
@@ -1264,6 +1278,8 @@ int ath11k_nss_vdev_down(struct ath11k_vif *arvif)
 	if (!vdev_msg)
 		return -ENOMEM;
 
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size,
+				sizeof(struct nss_wifi_vdev_msg));
 	nss_wifi_vdev_msg_init(vdev_msg, arvif->nss.if_num,
 			       NSS_WIFI_VDEV_INTERFACE_DOWN_MSG,
 			       sizeof(struct nss_wifi_vdev_disable_msg),
@@ -1278,6 +1294,8 @@ int ath11k_nss_vdev_down(struct ath11k_vif *arvif)
 
 	ath11k_dbg(ar->ab, ATH11K_DBG_NSS, "nss vdev down tx msg success\n");
 free:
+	ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size,
+				sizeof(struct nss_wifi_vdev_msg));
 	kfree(vdev_msg);
 	return ret;
 }
@@ -1300,6 +1318,9 @@ int ath11k_nss_set_peer_sec_type(struct ath11k *ar,
 	wlmsg = kzalloc(sizeof(struct nss_wifili_msg), GFP_ATOMIC);
 	if (!wlmsg)
 		return -ENOMEM;
+
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size,
+				sizeof(struct nss_wifili_msg));
 
 	sec_msg = &wlmsg->msg.securitymsg;
 	sec_msg->peer_id = peer->peer_id;
@@ -1332,6 +1353,8 @@ int ath11k_nss_set_peer_sec_type(struct ath11k *ar,
 	ath11k_dbg(ar->ab, ATH11K_DBG_NSS, "nss peer id %d security cfg complete\n",
 		   peer->peer_id);
 free:
+	ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size,
+				sizeof(struct nss_wifili_msg));
 	kfree(wlmsg);
 	return status;
 }
@@ -2020,6 +2043,7 @@ static void ath11k_nss_tx_desc_mem_free(struct ath11k_base *ab)
 				  ab->nss.tx_desc_vaddr[i],
 				  ab->nss.tx_desc_paddr[i]);
 		ab->nss.tx_desc_vaddr[i] = NULL;
+		ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, ab->nss.tx_desc_size[i]);
 	}
 
 	ath11k_dbg(ab, ATH11K_DBG_NSS, "allocated tx desc mem freed\n");
@@ -2050,6 +2074,8 @@ static int ath11k_nss_tx_desc_mem_alloc(struct ath11k_base *ab, u32 required_siz
 
 		ab->nss.tx_desc_size[curr_page_idx] = alloc_size;
 		curr_page_idx++;
+
+		ATH11K_MEMORY_STATS_INC(ab, dma_alloc, alloc_size);
 
 		ath11k_dbg(ab, ATH11K_DBG_NSS,
 			   "curr page %d, allocated %d, total allocated %d\n",
@@ -2227,6 +2253,8 @@ static int ath11k_nss_init(struct ath11k_base *ab)
 	if (!wlmsg)
 		return -ENOMEM;
 
+	ATH11K_MEMORY_STATS_INC(ab, malloc_size, sizeof(struct nss_wifili_msg));
+
 	wim = &wlmsg->msg.init;
 
 	wim->target_type = target_type;
@@ -2344,6 +2372,7 @@ unregister:
 	nss_unregister_wifili_if(ab->nss.if_num);
 free:
 	ath11k_nss_tx_desc_mem_free(ab);
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, sizeof(struct nss_wifili_msg));
 	kfree(wlmsg);
 	return -EINVAL;
 }
@@ -2450,6 +2479,8 @@ int ath11k_nss_pdev_init(struct ath11k_base *ab, int radio_id)
 		goto unregister;
 	}
 
+	ATH11K_MEMORY_STATS_INC(ab, malloc_size, sizeof(struct nss_wifili_msg));
+
 	pdevmsg = &wlmsg->msg.pdevmsg;
 
 	pdevmsg->radio_id = radio_id;
@@ -2495,6 +2526,8 @@ int ath11k_nss_pdev_init(struct ath11k_base *ab, int radio_id)
 		goto free;
 	}
 
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, sizeof(struct nss_wifili_msg));
+
 	kfree(wlmsg);
 
 	/* Disable nss sojourn stats by default */
@@ -2513,6 +2546,7 @@ int ath11k_nss_pdev_init(struct ath11k_base *ab, int radio_id)
 	return 0;
 
 free:
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, sizeof(struct nss_wifili_msg));
 	kfree(wlmsg);
 unregister:
 	nss_unregister_wifili_radio_if(ar->nss.if_num);
@@ -2534,6 +2568,8 @@ int ath11k_nss_start(struct ath11k_base *ab)
 	wlmsg = kzalloc(sizeof(struct nss_wifili_msg), GFP_ATOMIC);
 	if (!wlmsg)
 		return -ENOMEM;
+
+	ATH11K_MEMORY_STATS_INC(ab, malloc_size, sizeof(struct nss_wifili_msg));
 
 	msg_cb = (nss_wifili_msg_callback_t)ath11k_nss_wifili_event_receive;
 
@@ -2575,6 +2611,7 @@ int ath11k_nss_start(struct ath11k_base *ab)
 	ath11k_dbg(ab, ATH11K_DBG_NSS, "nss start success\n");
 
 free:
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, sizeof(struct nss_wifili_msg));
 	kfree(wlmsg);
 	return ret;
 }
@@ -2592,6 +2629,8 @@ static void ath11k_nss_reset(struct ath11k_base *ab)
 		ath11k_warn(ab, "mem allocation failure during nss reset\n");
 		return;
 	}
+
+	ATH11K_MEMORY_STATS_INC(ab, malloc_size, sizeof(struct nss_wifili_msg));
 
 	msg_cb = (nss_wifili_msg_callback_t)ath11k_nss_wifili_event_receive;
 
@@ -2631,6 +2670,7 @@ static void ath11k_nss_reset(struct ath11k_base *ab)
 	nss_unregister_wifili_if(ab->nss.if_num);
 
 free:
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, sizeof(struct nss_wifili_msg));
 	kfree(wlmsg);
 }
 
@@ -2645,6 +2685,8 @@ static int ath11k_nss_stop(struct ath11k_base *ab)
 	wlmsg = kzalloc(sizeof(struct nss_wifili_msg), GFP_ATOMIC);
 	if (!wlmsg)
 		return -ENOMEM;
+
+	ATH11K_MEMORY_STATS_INC(ab, malloc_size, sizeof(struct nss_wifili_msg));
 
 	msg_cb = (nss_wifili_msg_callback_t)ath11k_nss_wifili_event_receive;
 
@@ -2685,6 +2727,8 @@ static int ath11k_nss_stop(struct ath11k_base *ab)
 	/* NSS Stop success */
 	ret = 0;
 free:
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, sizeof(struct nss_wifili_msg));
+
 	kfree(wlmsg);
 	return ret;
 }
@@ -2709,6 +2753,8 @@ int ath11k_nss_pdev_deinit(struct ath11k_base *ab, int radio_id)
 	wlmsg = kzalloc(sizeof(struct nss_wifili_msg), GFP_ATOMIC);
 	if (!wlmsg)
 		return -ENOMEM;
+
+	ATH11K_MEMORY_STATS_INC(ab, malloc_size, sizeof(struct nss_wifili_msg));
 
 	deinit = &wlmsg->msg.pdevdeinit;
 	deinit->ifnum = radio_id;
@@ -2752,6 +2798,7 @@ int ath11k_nss_pdev_deinit(struct ath11k_base *ab, int radio_id)
 	nss_dynamic_interface_dealloc_node(ar->nss.if_num, dyn_if_type);
 	nss_unregister_wifili_radio_if(ar->nss.if_num);
 free:
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, sizeof(struct nss_wifili_msg));
 	kfree(wlmsg);
 	return ret;
 }

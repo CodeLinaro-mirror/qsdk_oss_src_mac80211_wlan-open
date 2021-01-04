@@ -1023,6 +1023,23 @@ struct ath11k_internal_pci {
 	u32 dp_irq_num[8];
 };
 
+struct ath11k_memory_stats {
+	/* Account kzalloc and valloc */
+	atomic_t malloc_size;
+	/* Account dma_alloc in dp.c & hal.c */
+	atomic_t dma_alloc;
+	/* Account memory used in ce rings */
+	atomic_t ce_ring_alloc;
+	/* Account memory used in htc_send */
+	atomic_t htc_skb_alloc;
+	/* Account memory used in wmi tx skb alloc */
+	atomic_t wmi_tx_skb_alloc;
+	/* Account memory consumed for peer object */
+	atomic_t per_peer_object;
+	/* Account memory used in ce rx pipe */
+	atomic_t ce_rx_pipe;
+};
+
 /* Master structure to hold the hw data which may be used in core module */
 struct ath11k_base {
 	enum ath11k_hw_rev hw_rev;
@@ -1119,6 +1136,7 @@ struct ath11k_base {
 	enum ath11k_dfs_region dfs_region;
 #ifdef CPTCFG_ATH11K_DEBUGFS
 	struct dentry *debugfs_soc;
+	struct ath11k_memory_stats memory_stats;
 #endif
 	struct ath11k_soc_dp_stats soc_stats;
 
@@ -1200,6 +1218,7 @@ struct ath11k_base {
 	u32 max_ast_index;
 	u32 num_ast_entries;
 	struct ath11k_num_vdevs_peers *num_vdevs_peers;
+	bool enable_memory_stats;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

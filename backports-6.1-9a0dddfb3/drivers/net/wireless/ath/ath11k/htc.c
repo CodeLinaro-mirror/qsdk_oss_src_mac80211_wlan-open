@@ -29,6 +29,7 @@ struct sk_buff *ath11k_htc_alloc_skb(struct ath11k_base *ab, int size)
 static void ath11k_htc_control_tx_complete(struct ath11k_base *ab,
 					   struct sk_buff *skb)
 {
+	ATH11K_MEMORY_STATS_DEC(ab, htc_skb_alloc, skb->truesize);
 	kfree_skb(skb);
 }
 
@@ -610,6 +611,7 @@ int ath11k_htc_connect_service(struct ath11k_htc *htc,
 	bool disable_credit_flow_ctrl = false;
 	u16 message_id, service_id, flags = 0;
 	u8 tx_alloc = 0;
+	size_t truesize;
 
 	/* special case for HTC pseudo control service */
 	if (conn_req->service_id == ATH11K_HTC_SVC_ID_RSVD_CTRL) {
@@ -633,6 +635,7 @@ int ath11k_htc_connect_service(struct ath11k_htc *htc,
 		return -ENOMEM;
 	}
 
+	truesize = skb->truesize;
 	length = sizeof(*req_msg);
 	skb_put(skb, length);
 	memset(skb->data, 0, length);
@@ -667,6 +670,8 @@ int ath11k_htc_connect_service(struct ath11k_htc *htc,
 		kfree_skb(skb);
 		return status;
 	}
+
+	ATH11K_MEMORY_STATS_INC(ab, htc_skb_alloc, truesize);
 
 	/* wait for response */
 	time_left = wait_for_completion_timeout(&htc->ctl_resp,
@@ -769,11 +774,13 @@ int ath11k_htc_start(struct ath11k_htc *htc)
 	int status = 0;
 	struct ath11k_base *ab = htc->ab;
 	struct ath11k_htc_setup_complete_extended *msg;
+	size_t truesize;
 
 	skb = ath11k_htc_build_tx_ctrl_skb(htc->ab);
 	if (!skb)
 		return -ENOMEM;
 
+	truesize = skb->truesize;
 	skb_put(skb, sizeof(*msg));
 	memset(skb->data, 0, skb->len);
 
@@ -791,6 +798,8 @@ int ath11k_htc_start(struct ath11k_htc *htc)
 		kfree_skb(skb);
 		return status;
 	}
+
+	 ATH11K_MEMORY_STATS_INC(ab, htc_skb_alloc, truesize);
 
 	return 0;
 }

@@ -790,6 +790,9 @@ int ath11k_peer_delete(struct ath11k *ar, u32 vdev_id, u8 *addr)
 	if (ret)
 		return ret;
 
+	ATH11K_MEMORY_STATS_DEC(ar->ab, per_peer_object,
+				sizeof(struct ath11k_peer));
+
 	ar->num_peers--;
 
 	return 0;
@@ -896,6 +899,8 @@ int ath11k_peer_create(struct ath11k *ar, struct ath11k_vif *arvif,
 		/* set HTT extension valid bit to 0 by default */
 		arsta->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
 	}
+
+	ATH11K_MEMORY_STATS_INC(ar->ab, per_peer_object, sizeof(*peer));
 
 	ar->num_peers++;
 

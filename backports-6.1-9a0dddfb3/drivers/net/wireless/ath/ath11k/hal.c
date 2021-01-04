@@ -201,6 +201,8 @@ static int ath11k_hal_alloc_cont_rdp(struct ath11k_base *ab)
 	if (!hal->rdp.vaddr)
 		return -ENOMEM;
 
+	ATH11K_MEMORY_STATS_INC(ab, dma_alloc, size);
+
 	return 0;
 }
 
@@ -215,6 +217,7 @@ static void ath11k_hal_free_cont_rdp(struct ath11k_base *ab)
 	size = sizeof(u32) * HAL_SRNG_RING_ID_MAX;
 	dma_free_coherent(ab->dev, size,
 			  hal->rdp.vaddr, hal->rdp.paddr);
+	ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, size);
 	hal->rdp.vaddr = NULL;
 }
 
@@ -228,6 +231,8 @@ static int ath11k_hal_alloc_cont_wrp(struct ath11k_base *ab)
 					    GFP_KERNEL);
 	if (!hal->wrp.vaddr)
 		return -ENOMEM;
+
+	ATH11K_MEMORY_STATS_INC(ab, dma_alloc, size);
 
 	return 0;
 }
@@ -243,6 +248,7 @@ static void ath11k_hal_free_cont_wrp(struct ath11k_base *ab)
 	size = sizeof(u32) * HAL_SRNG_NUM_LMAC_RINGS;
 	dma_free_coherent(ab->dev, size,
 			  hal->wrp.vaddr, hal->wrp.paddr);
+	ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, size);
 	hal->wrp.vaddr = NULL;
 }
 

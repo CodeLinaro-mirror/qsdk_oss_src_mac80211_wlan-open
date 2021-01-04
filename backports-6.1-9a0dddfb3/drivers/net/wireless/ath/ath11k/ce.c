@@ -359,6 +359,9 @@ static int ath11k_ce_rx_post_pipe(struct ath11k_ce_pipe *pipe)
 			dev_kfree_skb_any(skb);
 			goto exit;
 		}
+
+		ATH11K_MEMORY_STATS_INC(ab, ce_rx_pipe, skb->truesize);
+
 	}
 
 exit:
@@ -427,6 +430,9 @@ static void ath11k_ce_recv_process_cb(struct ath11k_ce_pipe *pipe)
 	__skb_queue_head_init(&list);
 	while (ath11k_ce_completed_recv_next(pipe, &skb, &nbytes) == 0) {
 		max_nbytes = skb->len + skb_tailroom(skb);
+
+		ATH11K_MEMORY_STATS_DEC(ab, ce_rx_pipe, skb->truesize);
+
 		dma_unmap_single(ab->dev, ATH11K_SKB_RXCB(skb)->paddr,
 				 max_nbytes, DMA_FROM_DEVICE);
 
@@ -624,6 +630,9 @@ ath11k_ce_alloc_ring(struct ath11k_base *ab, int nentries, int desc_sz)
 	if (ce_ring == NULL)
 		return ERR_PTR(-ENOMEM);
 
+	ATH11K_MEMORY_STATS_INC(ab, ce_ring_alloc,
+				struct_size(ce_ring, skb, nentries));
+
 	ce_ring->nentries = nentries;
 	ce_ring->nentries_mask = nentries - 1;
 
@@ -638,6 +647,9 @@ ath11k_ce_alloc_ring(struct ath11k_base *ab, int nentries, int desc_sz)
 		kfree(ce_ring);
 		return ERR_PTR(-ENOMEM);
 	}
+
+	ATH11K_MEMORY_STATS_INC(ab, ce_ring_alloc,
+				nentries * desc_sz + CE_DESC_RING_ALIGN);
 
 	ce_ring->base_addr_ce_space_unaligned = base_addr;
 
@@ -818,6 +830,9 @@ static void ath11k_ce_rx_pipe_cleanup(struct ath11k_ce_pipe *pipe)
 			continue;
 
 		ring->skb[i] = NULL;
+
+		ATH11K_MEMORY_STATS_DEC(ab, ce_rx_pipe, skb->truesize);
+
 		dma_unmap_single(ab->dev, ATH11K_SKB_RXCB(skb)->paddr,
 				 skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
 		dev_kfree_skb_any(skb);
@@ -996,6 +1011,9 @@ void ath11k_ce_free_pipes(struct ath11k_base *ab)
 					  CE_DESC_RING_ALIGN,
 					  ce_ring->base_addr_owner_space_unaligned,
 					  ce_ring->base_addr_ce_space_unaligned);
+			ATH11K_MEMORY_STATS_DEC(ab, ce_ring_alloc,
+						pipe->src_ring->nentries * desc_sz +
+						CE_DESC_RING_ALIGN);
 			kfree(pipe->src_ring);
 			pipe->src_ring = NULL;
 		}
@@ -1008,6 +1026,9 @@ void ath11k_ce_free_pipes(struct ath11k_base *ab)
 					  CE_DESC_RING_ALIGN,
 					  ce_ring->base_addr_owner_space_unaligned,
 					  ce_ring->base_addr_ce_space_unaligned);
+			ATH11K_MEMORY_STATS_DEC(ab, ce_ring_alloc,
+						pipe->dest_ring->nentries * desc_sz +
+						CE_DESC_RING_ALIGN);
 			kfree(pipe->dest_ring);
 			pipe->dest_ring = NULL;
 		}
@@ -1021,6 +1042,9 @@ void ath11k_ce_free_pipes(struct ath11k_base *ab)
 					  CE_DESC_RING_ALIGN,
 					  ce_ring->base_addr_owner_space_unaligned,
 					  ce_ring->base_addr_ce_space_unaligned);
+			ATH11K_MEMORY_STATS_DEC(ab, ce_ring_alloc,
+						pipe->status_ring->nentries * desc_sz +
+						CE_DESC_RING_ALIGN);
 			kfree(pipe->status_ring);
 			pipe->status_ring = NULL;
 		}

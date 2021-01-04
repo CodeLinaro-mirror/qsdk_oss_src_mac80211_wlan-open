@@ -890,6 +890,8 @@ static ssize_t ath11k_debugfs_dump_soc_dp_stats(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
+	ATH11K_MEMORY_STATS_INC(ab, malloc_size, size);
+
 	len += scnprintf(buf + len, size - len, "SOC RX STATS:\n\n");
 	len += scnprintf(buf + len, size - len, "err ring pkts: %u\n",
 			 soc_stats->err_ring_pkts);
@@ -930,6 +932,8 @@ static ssize_t ath11k_debugfs_dump_soc_dp_stats(struct file *file,
 		len = size;
 	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 	kfree(buf);
+
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, size);
 
 	return retval;
 }
@@ -1128,6 +1132,106 @@ static const struct file_operations fops_fw_recovery = {
        .open = simple_open,
 };
 
+static ssize_t
+ath11k_debug_read_enable_memory_stats(struct file *file,
+				      char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath11k_base *ab = file->private_data;
+	char buf[10];
+	size_t len;
+
+	len = scnprintf(buf, sizeof(buf), "%d\n", ab->enable_memory_stats);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t
+ath11k_debug_write_enable_memory_stats(struct file *file,
+				       char __user *ubuf,
+				       size_t count, loff_t *ppos)
+{
+	struct ath11k_base *ab = file->private_data;
+	bool enable;
+	int ret;
+
+	if (kstrtobool_from_user(ubuf, count, &enable))
+		return -EINVAL;
+
+	if (enable == ab->enable_memory_stats) {
+		ret = count;
+		goto exit;
+	}
+
+	ab->enable_memory_stats = enable;
+	ret = count;
+exit:
+	return ret;
+}
+
+static const struct file_operations fops_enable_memory_stats = {
+	.read = ath11k_debug_read_enable_memory_stats,
+	.write = ath11k_debug_write_enable_memory_stats,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+	.open = simple_open,
+};
+
+static ssize_t ath11k_debug_dump_memory_stats(struct file *file,
+					      char __user *user_buf,
+					      size_t count, loff_t *ppos)
+{
+	struct ath11k_base *ab = file->private_data;
+	struct ath11k_memory_stats *memory_stats = &ab->memory_stats;
+	int len = 0, retval;
+	const int size = 4096;
+
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len += scnprintf(buf + len, size - len, "MEMORY STATS IN BYTES:\n");
+	len += scnprintf(buf + len, size - len, "malloc size : %u\n",
+			 atomic_read(&memory_stats->malloc_size));
+	len += scnprintf(buf + len, size - len, "ce_ring_alloc size: %u\n",
+			 atomic_read(&memory_stats->ce_ring_alloc));
+	len += scnprintf(buf + len, size - len, "dma_alloc size:: %u\n",
+			 atomic_read(&memory_stats->dma_alloc));
+	len += scnprintf(buf + len, size - len, "htc_skb_alloc size: %u\n",
+			 atomic_read(&memory_stats->htc_skb_alloc));
+	len += scnprintf(buf + len, size - len, "wmi tx skb alloc size: %u\n",
+			 atomic_read(&memory_stats->wmi_tx_skb_alloc));
+	len += scnprintf(buf + len, size - len, "per peer object: %u\n",
+			 atomic_read(&memory_stats->per_peer_object));
+	len += scnprintf(buf + len, size - len, "rx_post_buf size: %u\n",
+			 atomic_read(&memory_stats->ce_rx_pipe));
+	len += scnprintf(buf + len, size - len, "Total size: %u\n\n",
+			 (atomic_read(&memory_stats->malloc_size) +
+			 atomic_read(&memory_stats->ce_ring_alloc) +
+			 atomic_read(&memory_stats->dma_alloc) +
+			 atomic_read(&memory_stats->htc_skb_alloc) +
+			 atomic_read(&memory_stats->wmi_tx_skb_alloc) +
+			 atomic_read(&memory_stats->per_peer_object) +
+			 atomic_read(&memory_stats->ce_rx_pipe)));
+
+	if (len > size)
+		len = size;
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_memory_stats = {
+	.read = ath11k_debug_dump_memory_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 {
 	if (test_bit(ATH11K_FLAG_REGISTERED, &ab->dev_flags))
@@ -1149,6 +1253,12 @@ int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 
 	debugfs_create_file("set_fw_recovery", 0600, ab->debugfs_soc, ab,
 			    &fops_fw_recovery);
+
+	debugfs_create_file("enable_memory_stats", 0600, ab->debugfs_soc,
+			    ab, &fops_enable_memory_stats);
+
+	debugfs_create_file("memory_stats", 0600, ab->debugfs_soc, ab,
+			    &fops_memory_stats);
 
 
 	return 0;
@@ -2036,6 +2146,8 @@ static ssize_t ath11k_dump_mgmt_stats(struct file *file, char __user *ubuf,
 	if (!buf)
 		return -ENOMEM;
 
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size, size);
+
 	mutex_lock(&ar->conf_mutex);
 	spin_lock_bh(&ar->data_lock);
 
@@ -2086,6 +2198,9 @@ static ssize_t ath11k_dump_mgmt_stats(struct file *file, char __user *ubuf,
 	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
 	mutex_unlock(&ar->conf_mutex);
 	kfree(buf);
+
+	ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size, size);
+
 	return ret;
 }
 

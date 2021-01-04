@@ -142,6 +142,7 @@ static int ath11k_dbring_fill_bufs(struct ath11k *ar,
 			break;
 		}
 		num_remain--;
+		ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size, size);
 	}
 
 	spin_unlock_bh(&srng->lock);
@@ -391,6 +392,8 @@ void ath11k_dbring_buf_cleanup(struct ath11k *ar, struct ath11k_dbring *ring)
 		idr_remove(&ring->bufs_idr, buf_id);
 		dma_unmap_single(ar->ab->dev, buff->paddr,
 				 ring->buf_sz, DMA_FROM_DEVICE);
+		ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size, sizeof(*buff) +
+					ring->buf_sz + ring->buf_align - 1);
 		kfree(buff->payload);
 		kfree(buff);
 	}

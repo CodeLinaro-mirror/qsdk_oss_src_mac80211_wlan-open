@@ -2609,6 +2609,8 @@ int ath11k_core_pre_init(struct ath11k_base *ab)
 	if (nss_offload)
 		ab->nss.stats_enabled = 1;
 
+	ab->enable_memory_stats = ATH11K_DEBUG_ENABLE_MEMORY_STATS;
+
 	return 0;
 }
 EXPORT_SYMBOL(ath11k_core_pre_init);

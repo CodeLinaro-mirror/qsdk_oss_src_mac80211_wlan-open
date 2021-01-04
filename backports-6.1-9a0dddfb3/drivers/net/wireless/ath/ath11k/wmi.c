@@ -636,6 +636,8 @@ struct sk_buff *ath11k_wmi_alloc_skb(struct ath11k_wmi_base *wmi_ab, u32 len)
 	if (!skb)
 		return NULL;
 
+	ATH11K_MEMORY_STATS_INC(ab, wmi_tx_skb_alloc, skb->truesize);
+
 	skb_reserve(skb, WMI_SKB_HEADROOM);
 	if (!IS_ALIGNED((unsigned long)skb->data, 4))
 		ath11k_warn(ab, "unaligned WMI skb data\n");
@@ -7787,6 +7789,7 @@ static void ath11k_wmi_htc_tx_complete(struct ath11k_base *ab,
 	u8 eid;
 
 	eid = ATH11K_SKB_CB(skb)->eid;
+	ATH11K_MEMORY_STATS_DEC(ab, wmi_tx_skb_alloc, skb->truesize);
 	dev_kfree_skb(skb);
 
 	if (eid >= ATH11K_HTC_EP_COUNT)
@@ -10190,6 +10193,7 @@ static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 	}
 
 out:
+	ATH11K_MEMORY_STATS_DEC(ab, wmi_tx_skb_alloc, skb->truesize);
 	dev_kfree_skb(skb);
 }
 

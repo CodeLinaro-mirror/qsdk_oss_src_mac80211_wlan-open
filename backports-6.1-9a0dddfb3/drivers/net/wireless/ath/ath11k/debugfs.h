@@ -11,6 +11,7 @@
 
 #define ATH11K_TX_POWER_MAX_VAL	70
 #define ATH11K_TX_POWER_MIN_VAL	0
+#define ATH11K_DEBUG_ENABLE_MEMORY_STATS 1
 
 /* htt_dbg_ext_stats_type */
 enum ath11k_dbg_htt_ext_stats_type {
@@ -310,6 +311,24 @@ void ath11k_debugfs_wmi_ctrl_stats(struct ath11k_vif *arvif);
 void ath11k_wmi_crl_path_stats_list_free(struct list_head *head);
 
 #ifdef CPTCFG_ATH11K_DEBUGFS
+#define ATH11K_MEMORY_STATS_INC(_struct, _field, _size)			\
+do {									\
+	if (ath11k_debug_is_memory_stats_enabled(_struct)) 		\
+		atomic_add(_size, &_struct->memory_stats._field);	\
+} while(0)
+
+#define ATH11K_MEMORY_STATS_DEC(_struct, _field, _size)			\
+do {									\
+	if (ath11k_debug_is_memory_stats_enabled(_struct))		\
+		atomic_sub(_size, &_struct->memory_stats._field);	\
+} while(0)
+
+#else
+#define ATH11K_MEMORY_STATS_INC(_struct, _field, _size)
+#define ATH11K_MEMORY_STATS_DEC(_struct, _field, _size)
+#endif
+
+#ifdef CPTCFG_ATH11K_DEBUGFS
 int ath11k_debugfs_create(void);
 void ath11k_debugfs_destroy(void);
 int ath11k_debugfs_soc_create(struct ath11k_base *ab);
@@ -363,6 +382,11 @@ void ath11k_debugfs_add_dbring_entry(struct ath11k *ar,
 				     enum wmi_direct_buffer_module id,
 				     enum ath11k_dbg_dbr_event event,
 				     struct hal_srng *srng);
+
+static inline int ath11k_debug_is_memory_stats_enabled(struct ath11k_base *ab)
+{
+	return ab->enable_memory_stats;
+}
 
 #else
 static inline int ath11k_debugfs_create(void)
@@ -439,6 +463,11 @@ static inline bool ath11k_debugfs_is_pktlog_rx_stats_enabled(struct ath11k *ar)
 static inline bool ath11k_debugfs_is_pktlog_peer_valid(struct ath11k *ar, u8 *addr)
 {
 	return false;
+}
+
+static inline int ath11k_debug_is_memory_stats_enabled(struct ath11k_base *ab)
+{
+	return 0;
 }
 
 static inline int ath11k_debugfs_rx_filter(struct ath11k *ar)

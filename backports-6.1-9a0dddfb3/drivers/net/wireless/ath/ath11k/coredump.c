@@ -109,6 +109,8 @@ void ath11k_coredump_build_inline(struct ath11k_pci *ar_pci,
 	if (!buf)
 		return;
 
+	ATH11K_MEMORY_STATS_INC(ab, malloc_size, header_size);
+
 	file_data = (struct ath11k_dump_file_data *)buf;
 	strlcpy(file_data->df_magic, "ATH11K-FW-DUMP",
 	        sizeof(file_data->df_magic));
@@ -132,8 +134,10 @@ void ath11k_coredump_build_inline(struct ath11k_pci *ar_pci,
 	memcpy(file_data->seg, segments, num_seg * sizeof(*segments));
 
 	dump_state = vzalloc(sizeof(*dump_state));
-	if(!dump_state)
+	if(!dump_state) {
+		ATH11K_MEMORY_STATS_DEC(ab, malloc_size, header_size);
 		return;
+	}
 
 	dump_state->header = file_data;
 	dump_state->num_seg = num_seg;
@@ -145,6 +149,8 @@ void ath11k_coredump_build_inline(struct ath11k_pci *ar_pci,
 
 	/* Wait until the dump is read and free is called */
 	wait_for_completion(&dump_state->dump_done);
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, sizeof(*dump_state));
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, header_size);
 	vfree(dump_state);
 	vfree(file_data);
 }
@@ -274,13 +280,18 @@ void ath11k_coredump_qdss_dump(struct ath11k_base *ab,
 		return;
 	}
 
+	ATH11K_MEMORY_STATS_INC(ab, malloc_size, len);
+
 	if (event_data->total_size &&
 	    event_data->total_size <= ab->qmi.qdss_mem[0].size)
 		dump = vzalloc(event_data->total_size);
 	if (!dump) {
+		ATH11K_MEMORY_STATS_DEC(ab, malloc_size, len);
 		vfree(segment);
 		return;
 	}
+
+	 ATH11K_MEMORY_STATS_INC(ab, malloc_size, event_data->total_size);
 
 	if (num_seg == 1) {
 		segment->len = event_data->mem_seg[0].size;
@@ -339,6 +350,8 @@ void ath11k_coredump_qdss_dump(struct ath11k_base *ab,
 	}
 	ath11k_coredump_build_inline(ar_pci, segment, 1);
 out:
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, event_data->total_size);
+	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, len);
 	vfree(segment);
 	vfree(dump);
 }

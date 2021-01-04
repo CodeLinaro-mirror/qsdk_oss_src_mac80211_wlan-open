@@ -398,6 +398,8 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 	if (!buf)
 		return -ENOMEM;
 
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size, size);
+
 	he_rates_avail = (rx_stats->pream_cnt[HAL_RX_PREAMBLE_11AX] > 1) ? 1 : 0;
 	rate_table_len = he_rates_avail ? ATH11K_RX_RATE_TABLE_11AX_NUM :
 					      ATH11K_RX_RATE_TABLE_NUM;
@@ -541,6 +543,8 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 		len = size;
 	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 	kfree(buf);
+
+	ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size, size);
 
 	mutex_unlock(&ar->conf_mutex);
 	return retval;

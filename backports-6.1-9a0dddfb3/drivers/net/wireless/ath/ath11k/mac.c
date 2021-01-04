@@ -4159,6 +4159,8 @@ static int ath11k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		goto exit;
 	}
 
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size, sizeof(*arg));
+
 	ath11k_wmi_start_scan_init(ar, arg);
 	arg->vdev_id = arvif->vdev_id;
 	arg->scan_id = ATH11K_SCAN_ID;
@@ -4174,6 +4176,8 @@ static int ath11k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		}
 		arg->extraie.len = req->ie_len;
 	}
+
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size, req->ie_len);
 
 	if (req->n_ssids) {
 		arg->num_ssids = req->n_ssids;
@@ -4261,7 +4265,13 @@ static int ath11k_mac_op_hw_scan(struct ieee80211_hw *hw,
 
 exit:
 	if (arg) {
-		kfree(arg->extraie.ptr);
+		if (arg->extraie.ptr) {
+			ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size, req->ie_len);
+			kfree(arg->extraie.ptr);
+		}
+
+		ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size, sizeof(*arg));
+
 		kfree(arg);
 	}
 
@@ -7722,12 +7732,16 @@ ath11k_mac_update_active_vif_chan(struct ath11k *ar,
 	if (!arg.vifs)
 		return;
 
+	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size, sizeof(arg.vifs[0]));
+
 	ieee80211_iterate_active_interfaces_atomic(ar->hw,
 						   IEEE80211_IFACE_ITER_NORMAL,
 						   ath11k_mac_change_chanctx_fill_iter,
 						   &arg);
 
 	ath11k_mac_update_vif_chan(ar, arg.vifs, arg.n_vifs);
+
+	ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size, sizeof(arg.vifs[0]));
 
 	kfree(arg.vifs);
 }

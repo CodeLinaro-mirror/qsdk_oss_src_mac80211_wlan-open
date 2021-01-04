@@ -116,6 +116,8 @@ void ath11k_dp_srng_cleanup(struct ath11k_base *ab, struct dp_srng *ring)
 		dma_free_coherent(ab->dev, ring->size, ring->vaddr_unaligned,
 				  ring->paddr_unaligned);
 
+	ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, ring->size);
+
 	ring->vaddr_unaligned = NULL;
 }
 
@@ -282,6 +284,8 @@ int ath11k_dp_srng_setup(struct ath11k_base *ab, struct dp_srng *ring,
 
 	if (!ring->vaddr_unaligned)
 		return -ENOMEM;
+
+	ATH11K_MEMORY_STATS_INC(ab, dma_alloc, ring->size);
 
 	ring->vaddr = PTR_ALIGN(ring->vaddr_unaligned, HAL_RING_BASE_ALIGN);
 	ring->paddr = ring->paddr_unaligned + ((unsigned long)ring->vaddr -
@@ -519,6 +523,7 @@ static void ath11k_dp_scatter_idle_link_desc_cleanup(struct ath11k_base *ab)
 		dma_free_coherent(ab->dev, HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
 				  slist[i].vaddr, slist[i].paddr);
 		slist[i].vaddr = NULL;
+		ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX);
 	}
 }
 
@@ -556,6 +561,7 @@ static int ath11k_dp_scatter_idle_link_desc_setup(struct ath11k_base *ab,
 			ret = -ENOMEM;
 			goto err;
 		}
+		ATH11K_MEMORY_STATS_INC(ab, dma_alloc, HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX);
 	}
 
 	scatter_idx = 0;
@@ -610,6 +616,7 @@ ath11k_dp_link_desc_bank_free(struct ath11k_base *ab,
 					  link_desc_banks[i].vaddr_unaligned,
 					  link_desc_banks[i].paddr_unaligned);
 			link_desc_banks[i].vaddr_unaligned = NULL;
+			ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, link_desc_banks[i].size);
 		}
 	}
 }
@@ -643,6 +650,7 @@ static int ath11k_dp_link_desc_bank_alloc(struct ath11k_base *ab,
 				     ((unsigned long)desc_bank[i].vaddr -
 				      (unsigned long)desc_bank[i].vaddr_unaligned);
 		desc_bank[i].size = desc_sz;
+		ATH11K_MEMORY_STATS_INC(ab, dma_alloc, desc_bank[i].size);
 	}
 
 	return 0;
@@ -1047,7 +1055,10 @@ static int ath11k_dp_tx_pending_cleanup(int buf_id, void *skb, void *ctx)
 void ath11k_dp_free(struct ath11k_base *ab)
 {
 	struct ath11k_dp *dp = &ab->dp;
+	size_t size = 0;
 	int i;
+
+	size = sizeof(struct hal_wbm_release_ring) * DP_TX_COMP_RING_SIZE;
 
 	ath11k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
@@ -1062,6 +1073,7 @@ void ath11k_dp_free(struct ath11k_base *ab)
 			     ath11k_dp_tx_pending_cleanup, ab);
 		idr_destroy(&dp->tx_ring[i].txbuf_idr);
 		spin_unlock_bh(&dp->tx_ring[i].tx_idr_lock);
+		ATH11K_MEMORY_STATS_DEC(ab, malloc_size, size);
 		kfree(dp->tx_ring[i].tx_status);
 	}
 
@@ -1119,6 +1131,7 @@ int ath11k_dp_alloc(struct ath11k_base *ab)
 			ret = -ENOMEM;
 			goto fail_cmn_srng_cleanup;
 		}
+		ATH11K_MEMORY_STATS_INC(ab, malloc_size, size);
 	}
 
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
