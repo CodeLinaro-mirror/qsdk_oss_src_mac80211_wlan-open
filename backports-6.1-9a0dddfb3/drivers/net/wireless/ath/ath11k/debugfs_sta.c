@@ -223,9 +223,6 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 	char *buf, mu_group_id[MAX_MU_GROUP_LENGTH] = {0};
 	u32 index;
 
-	if (!arsta->tx_stats)
-		return -ENOENT;
-
 	buf = kzalloc(size, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
@@ -233,6 +230,12 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 	mutex_lock(&ar->conf_mutex);
 
 	spin_lock_bh(&ar->data_lock);
+
+	if (!arsta->tx_stats) {
+		retval = -ENOENT;
+		goto end;
+	}
+
 	for (k = 0; k < ATH11K_STATS_TYPE_MAX; k++) {
 		for (j = 0; j < ATH11K_COUNTER_TYPE_MAX; j++) {
 			stats = &arsta->tx_stats->stats[k];
@@ -365,6 +368,11 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 	kfree(buf);
 
 	mutex_unlock(&ar->conf_mutex);
+	return retval;
+end:
+	spin_unlock_bh(&ar->data_lock);
+	mutex_unlock(&ar->conf_mutex);
+	kfree(buf);
 	return retval;
 }
 
@@ -1089,6 +1097,9 @@ static ssize_t ath11k_dbg_sta_reset_rx_stats(struct file *file,
 
 	spin_lock_bh(&ar->ab->base_lock);
 	memset(arsta->rx_stats, 0, sizeof(*arsta->rx_stats));
+	atomic_set(&arsta->drv_rx_pkts.pkts_frm_hw, 0);
+	atomic_set(&arsta->drv_rx_pkts.pkts_out, 0);
+	atomic_set(&arsta->drv_rx_pkts.pkts_out_to_netif, 0);
 	spin_unlock_bh(&ar->ab->base_lock);
 
 	ret = count;
@@ -1102,19 +1113,173 @@ static const struct file_operations fops_reset_rx_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t
+ath11k_dbg_sta_dump_driver_tx_pkts_flow(struct file *file,
+					const char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath11k_sta *arsta = (struct ath11k_sta *)sta->drv_priv;
+	struct ath11k *ar = arsta->arvif->ar;
+	int len = 0, ret_val;
+	const int size = ATH11K_DRV_TX_STATS_SIZE;
+	char *buf;
+
+	buf = kzalloc(ATH11K_DRV_TX_STATS_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&ar->conf_mutex);
+	spin_lock_bh(&ar->ab->base_lock);
+
+	if (!arsta->tx_stats) {
+		ret_val = -ENOENT;
+		goto end;
+	}
+
+	len += scnprintf(buf + len, size - len,
+			 "Tx packets inflow from mac80211: %u\n",
+			 atomic_read(&arsta->drv_tx_pkts.pkts_in));
+	len += scnprintf(buf + len, size - len,
+			 "Tx packets outflow to HW: %u\n",
+			 atomic_read(&arsta->drv_tx_pkts.pkts_out));
+	spin_unlock_bh(&ar->ab->base_lock);
+
+	if (len > size)
+		len = size;
+
+	ret_val = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	mutex_unlock(&ar->conf_mutex);
+	return ret_val;
+end:
+	spin_unlock_bh(&ar->ab->base_lock);
+	mutex_unlock(&ar->conf_mutex);
+	kfree(buf);
+	return ret_val;
+}
+
+static const struct file_operations fops_driver_tx_pkts_flow = {
+	.read = ath11k_dbg_sta_dump_driver_tx_pkts_flow,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath11k_dbg_sta_reset_tx_stats(struct file *file,
+					     const char __user *buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath11k_sta *arsta = (struct ath11k_sta *)sta->drv_priv;
+	struct ath11k *ar = arsta->arvif->ar;
+	int ret, reset;
+
+	ret = kstrtoint_from_user(buf, count, 0, &reset);
+	if (ret)
+		return ret;
+
+	if (!reset || reset > 1)
+		return -EINVAL;
+
+	spin_lock_bh(&ar->ab->base_lock);
+
+	if (!arsta->tx_stats) {
+		spin_unlock_bh(&ar->ab->base_lock);
+		return -ENOENT;
+	}
+
+	memset(arsta->tx_stats, 0, sizeof(*arsta->tx_stats));
+	atomic_set(&arsta->drv_tx_pkts.pkts_in, 0);
+	atomic_set(&arsta->drv_tx_pkts.pkts_out, 0);
+	spin_unlock_bh(&ar->ab->base_lock);
+
+	ret = count;
+	return ret;
+}
+
+static const struct file_operations fops_reset_tx_stats = {
+	.write = ath11k_dbg_sta_reset_tx_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t
+ath11k_dbg_sta_dump_driver_rx_pkts_flow(struct file *file,
+					char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath11k_sta *arsta = (struct ath11k_sta *)sta->drv_priv;
+	struct ath11k *ar = arsta->arvif->ar;
+	struct ath11k_rx_peer_stats *rx_stats = arsta->rx_stats;
+	int len = 0, ret_val = 0;
+	const int size = 1024;
+	char *buf;
+
+	if (!rx_stats)
+		return -ENOENT;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&ar->conf_mutex);
+	spin_lock_bh(&ar->ab->base_lock);
+
+	len += scnprintf(buf + len, size - len,
+			 "Rx packets inflow from HW: %u\n",
+			 atomic_read(&arsta->drv_rx_pkts.pkts_frm_hw));
+	len += scnprintf(buf + len, size - len,
+			 "Rx packets outflow from driver: %u\n",
+			 atomic_read(&arsta->drv_rx_pkts.pkts_out));
+	len += scnprintf(buf + len, size - len,
+			 "Rx packets outflow from driver to netif in Fast rx: %u\n",
+			 atomic_read(&arsta->drv_rx_pkts.pkts_out_to_netif));
+
+	len += scnprintf(buf + len, size - len, "\n");
+
+	spin_unlock_bh(&ar->ab->base_lock);
+
+	if (len > size)
+		len = size;
+
+	ret_val = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	mutex_unlock(&ar->conf_mutex);
+	return ret_val;
+}
+
+static const struct file_operations fops_driver_rx_pkts_flow = {
+	.read = ath11k_dbg_sta_dump_driver_rx_pkts_flow,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath11k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			       struct ieee80211_sta *sta, struct dentry *dir)
 {
 	struct ath11k *ar = hw->priv;
 
-	if (ath11k_debugfs_is_extd_tx_stats_enabled(ar))
+	if (ath11k_debugfs_is_extd_tx_stats_enabled(ar)) {
 		debugfs_create_file("tx_stats", 0400, dir, sta,
 				    &fops_tx_stats);
+		debugfs_create_file("reset_tx_stats", 0600, dir, sta,
+				    &fops_reset_tx_stats);
+		debugfs_create_file("driver_tx_pkts_flow", 0400, dir, sta,
+				    &fops_driver_tx_pkts_flow);
+	}
 	if (ath11k_debugfs_is_extd_rx_stats_enabled(ar)) {
 		debugfs_create_file("rx_stats", 0400, dir, sta,
 				    &fops_rx_stats);
 		debugfs_create_file("reset_rx_stats", 0600, dir, sta,
 				    &fops_reset_rx_stats);
+		debugfs_create_file("driver_rx_pkts_flow", 0400, dir, sta,
+				    &fops_driver_rx_pkts_flow);
 	}
 
 	debugfs_create_file("htt_peer_stats", 0400, dir, sta,

@@ -2567,6 +2567,7 @@ static void ath11k_dp_rx_h_mpdu(struct ath11k *ar,
 	struct rx_attention *rx_attention;
 	u32 err_bitmap;
 
+
 	/* PN for multicast packets will be checked in mac80211 */
 	rxcb = ATH11K_SKB_RXCB(msdu);
 	fill_crypto_hdr = ath11k_dp_rx_h_attn_is_mcbc(ar->ab, rx_desc);
@@ -2760,6 +2761,7 @@ static void ath11k_dp_rx_deliver_msdu(struct ath11k *ar, struct napi_struct *nap
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_radiotap_he *he = NULL;
 	struct ieee80211_sta *pubsta = NULL;
+	struct ath11k_sta *arsta = NULL;
 	struct ath11k_peer *peer;
 	struct ath11k_skb_rxcb *rxcb = ATH11K_SKB_RXCB(msdu);
 	u8 decap = DP_RX_DECAP_TYPE_RAW;
@@ -2825,6 +2827,18 @@ static void ath11k_dp_rx_deliver_msdu(struct ath11k *ar, struct napi_struct *nap
 		rx_status->flag |= RX_FLAG_8023;
 
 	ieee80211_rx_napi(ar->hw, pubsta, msdu, napi);
+
+	if (ath11k_debugfs_is_extd_rx_stats_enabled(ar)) {
+		if (!(status->flag & RX_FLAG_ONLY_MONITOR)) {
+			spin_lock_bh(&ar->ab->base_lock);
+			if (peer && peer->sta)
+				arsta =
+				(struct ath11k_sta *)peer->sta->drv_priv;
+			spin_unlock_bh(&ar->ab->base_lock);
+			if (arsta)
+				atomic_inc(&arsta->drv_rx_pkts.pkts_out);
+		}
+	}
 }
 
 static int ath11k_dp_rx_process_msdu(struct ath11k *ar,
@@ -2971,6 +2985,8 @@ int ath11k_dp_process_rx(struct ath11k_base *ab, int ring_id,
 	int total_msdu_reaped = 0;
 	struct hal_srng *srng;
 	struct sk_buff *msdu;
+	struct ath11k_peer *peer = NULL;
+	struct ath11k_sta *arsta = NULL;
 	bool done = false;
 	int buf_id, mac_id;
 	struct ath11k *ar;
@@ -3043,6 +3059,19 @@ try_again:
 					 desc->rx_mpdu_info.info0);
 		rxcb->tid = FIELD_GET(HAL_REO_DEST_RING_INFO0_RX_QUEUE_NUM,
 				      desc->info0);
+
+		if (ath11k_debugfs_is_extd_rx_stats_enabled(ar) && rxcb->peer_id) {
+			rcu_read_lock();
+			spin_lock_bh(&ab->base_lock);
+			peer = ath11k_peer_find_by_id(ab, rxcb->peer_id);
+			if (peer && peer->sta)
+				arsta =
+				(struct ath11k_sta *)peer->sta->drv_priv;
+			spin_unlock_bh(&ab->base_lock);
+			if (arsta)
+				atomic_inc(&arsta->drv_rx_pkts.pkts_frm_hw);
+			rcu_read_unlock();
+		}
 
 		rxcb->mac_id = mac_id;
 		__skb_queue_tail(&msdu_list[mac_id], msdu);
@@ -4492,7 +4521,10 @@ static int ath11k_dp_rx_h_null_q_desc(struct ath11k *ar, struct sk_buff *msdu,
 	struct rx_attention *rx_attention;
 	u8 l3pad_bytes;
 	struct ath11k_skb_rxcb *rxcb = ATH11K_SKB_RXCB(msdu);
+	struct ath11k_peer *peer = NULL;
+	struct ath11k_sta *arsta = NULL;
 	u32 hal_rx_desc_sz = ar->ab->hw_params.hal_desc_sz;
+	u32 peer_id;
 
 	msdu_len = ath11k_dp_rx_h_msdu_start_msdu_len(ar->ab, desc);
 
@@ -4543,6 +4575,18 @@ static int ath11k_dp_rx_h_null_q_desc(struct ath11k *ar, struct sk_buff *msdu,
 	/* Please note that caller will having the access to msdu and completing
 	 * rx with mac80211. Need not worry about cleaning up amsdu_list.
 	 */
+
+	if (ath11k_debugfs_is_extd_rx_stats_enabled(ar)) {
+		peer_id = ath11k_dp_rx_h_mpdu_start_peer_id(ar->ab, desc);
+		spin_lock_bh(&ar->ab->base_lock);
+		if (peer_id)
+			peer = ath11k_peer_find_by_id(ar->ab, rxcb->peer_id);
+		if (peer && peer->sta)
+			arsta = (struct ath11k_sta *)peer->sta->drv_priv;
+		spin_unlock_bh(&ar->ab->base_lock);
+		if (arsta)
+			atomic_inc(&arsta->drv_rx_pkts.pkts_frm_hw);
+	}
 
 	return 0;
 }

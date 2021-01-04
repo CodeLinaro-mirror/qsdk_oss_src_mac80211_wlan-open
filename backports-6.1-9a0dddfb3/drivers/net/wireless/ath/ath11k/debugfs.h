@@ -103,6 +103,8 @@ struct ath11k_debug_dbr {
 #define TPC_STATS_TOT_COLUMN			100
 #define ATH11K_TPC_STATS_BUF_SIZE   (TPC_STATS_TOT_ROW * TPC_STATS_TOT_COLUMN)
 
+#define ATH11K_DRV_TX_STATS_SIZE      1024
+
 enum ath11k_debug_tpc_stats_type {
 	ATH11K_DBG_TPC_STATS_SU,
 	ATH11K_DBG_TPC_STATS_SU_WITH_TXBF,

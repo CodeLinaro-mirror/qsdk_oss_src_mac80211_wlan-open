@@ -6270,6 +6270,7 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath11k_mgmt_frame_stats *mgmt_stats = &arvif->mgmt_stats;
 	struct ath11k_sta *arsta = NULL;
 	u32 info_flags = info->flags;
+	struct ieee80211_sta *sta = control->sta;
 	bool is_prb_rsp;
 	u16 frm_type = 0;
 	int ret;
@@ -6329,6 +6330,15 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 		ath11k_warn(ar->ab, "failed to transmit frame %d\n", ret);
 		ieee80211_free_txskb(ar->hw, skb);
 		return;
+	}
+
+	if (ath11k_debugfs_is_extd_tx_stats_enabled(ar) && sta) {
+		arsta = (struct ath11k_sta *)sta->drv_priv;
+		if (arsta) {
+			atomic_inc(&arsta->drv_tx_pkts.pkts_in);
+			if (!ret)
+				atomic_inc(&arsta->drv_tx_pkts.pkts_out);
+		}
 	}
 }
 

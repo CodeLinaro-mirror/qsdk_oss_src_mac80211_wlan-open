@@ -588,6 +588,17 @@ struct ath11k_per_ppdu_tx_stats {
 
 DECLARE_EWMA(avg_rssi, 10, 8)
 
+struct ath11k_driver_tx_pkts_flow {
+	atomic_t pkts_in;
+	atomic_t pkts_out;
+};
+
+struct ath11k_driver_rx_pkts_flow {
+	atomic_t pkts_frm_hw;
+	atomic_t pkts_out;
+	atomic_t pkts_out_to_netif;
+};
+
 struct ath11k_sta {
 	struct ath11k_vif *arvif;
 
@@ -621,6 +632,8 @@ struct ath11k_sta {
 #ifdef CPTCFG_ATH11K_NSS_SUPPORT
 	struct ath11k_nss_sta_stats *nss_stats;
 #endif
+	struct ath11k_driver_tx_pkts_flow drv_tx_pkts;
+	struct ath11k_driver_rx_pkts_flow drv_rx_pkts;
 	u16 tcl_metadata;
 
 	/* Protected with ar->data_lock */
