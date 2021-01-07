@@ -128,22 +128,12 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.supports_regdb = false,
 		.fix_l1ss = true,
 		.credit_flow = false,
-		.max_tx_ring = DP_TCL_NUM_RING_MAX,
 		.hal_params = &ath11k_hw_hal_params_ipq8074,
 		.supports_dynamic_smps_6ghz = false,
 		.alloc_cacheable_memory = true,
 		.ce_fwlog_enable = false,
 		.fwmem_mode_change = false,
 		.is_qdss_support = false,
-		.cfr_support = true,
-		.cfr_dma_hdr_size = sizeof(struct ath11k_cfir_enh_dma_hdr),
-		.cfr_num_stream_bufs = 255,
-		/* sizeof (ath11k_csi_cfr_header) + max cfr header(200 bytes) +
-		 * max cfr payload(16384 bytes)
-		 */
-		.cfr_stream_buf_size = sizeof(struct ath11k_csi_cfr_header) +
-					(CFR_HDR_MAX_LEN_WORDS_QCN9074 *4) +
-					CFR_DATA_MAX_LEN_QCN9074,
 		.supports_rssi_stats = false,
 		.fw_wmi_diag_event = false,
 		.current_cc_support = false,
@@ -166,6 +156,8 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.smp2p_wow_exit = false,
 		.support_dual_stations = false,
 		.pdev_suspend = false,
+		/* In addition to TCL ring use TCL_CMD ring also for tx */
+		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 	},
 	{
 		.hw_rev = ATH11K_HW_IPQ6018_HW10,
@@ -255,6 +247,8 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.support_fw_mac_sequence = false,
 		.support_dual_stations = false,
 		.pdev_suspend = false,
+		/* In addition to TCL ring use TCL_CMD ring also for tx */
+		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 	},
 	{
 		.name = "qca6390 hw2.0",
@@ -405,7 +399,6 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.supports_regdb = false,
 		.fix_l1ss = true,
 		.credit_flow = false,
-		.max_tx_ring = DP_TCL_NUM_RING_MAX,
 		.hal_params = &ath11k_hw_hal_params_ipq8074,
 		.supports_dynamic_smps_6ghz = true,
 		.alloc_cacheable_memory = true,
@@ -435,6 +428,17 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.support_fw_mac_sequence = false,
 		.support_dual_stations = false,
 		.pdev_suspend = false,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath11k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 255,
+		/* sizeof (ath11k_csi_cfr_header) + max cfr header(200 bytes)
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath11k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN9074 *4) +
+					CFR_DATA_MAX_LEN_QCN9074,
+		/* In addition to TCL ring use TCL_CMD ring also for tx */
+		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 	},
 	{
 		.name = "wcn6855 hw2.0",
@@ -973,6 +977,8 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.cfr_num_stream_bufs = 255,
 		/* csi_cfr_header + cfr header + max cfr payload */
 		.cfr_stream_buf_size = 8500,
+		/* In addition to TCL ring use TCL_CMD ring also for tx */
+		.max_tx_ring = DP_TCL_NUM_RING_MAX,
 	},
 	{
 		.hw_rev = ATH11K_HW_QCN6122,
@@ -1044,6 +1050,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.m3_offset = ATH11K_QMI_QCN6122_M3_OFFSET,
 		.qdss_offset = ATH11K_QMI_QCN6122_QDSS_OFFSET,
 		.caldb_offset = ATH11K_QMI_QCN6122_CALDB_OFFSET,
+		.max_tx_ring = DP_TCL_NUM_RING_MAX,
  	},
 };
 
@@ -2648,6 +2655,9 @@ int ath11k_core_pre_init(struct ath11k_base *ab)
 		ab->nss.stats_enabled = 1;
 
 	ab->enable_memory_stats = ATH11K_DEBUG_ENABLE_MEMORY_STATS;
+
+	if (ab->nss.enabled && ab->hw_params.max_tx_ring > DP_TCL_NUM_RING_MAX)
+		ab->hw_params.max_tx_ring = DP_TCL_NUM_RING_MAX;
 
 	return 0;
 }

@@ -37,18 +37,18 @@ static const u8 dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE] = {
 void ath11k_hal_tx_cmd_desc_setup(struct ath11k_base *ab, void *cmd,
 				  struct hal_tx_info *ti)
 {
-	struct hal_tcl_data_cmd *tcl_cmd = cmd;
+	struct hal_tcl_data_cmd tcl_cmd, *tcl_desc = (struct hal_tcl_data_cmd *)cmd;
 
-	tcl_cmd->buf_addr_info.info0 =
+	tcl_cmd.buf_addr_info.info0 =
 		FIELD_PREP(BUFFER_ADDR_INFO0_ADDR, ti->paddr);
-	tcl_cmd->buf_addr_info.info1 =
+	tcl_cmd.buf_addr_info.info1 =
 		FIELD_PREP(BUFFER_ADDR_INFO1_ADDR,
 			   ((uint64_t)ti->paddr >> HAL_ADDR_MSB_REG_SHIFT));
-	tcl_cmd->buf_addr_info.info1 |=
+	tcl_cmd.buf_addr_info.info1 |=
 		FIELD_PREP(BUFFER_ADDR_INFO1_RET_BUF_MGR, ti->rbm_id) |
 		FIELD_PREP(BUFFER_ADDR_INFO1_SW_COOKIE, ti->desc_id);
 
-	tcl_cmd->info0 =
+	tcl_cmd.info0 =
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_DESC_TYPE, ti->type) |
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_ENCAP_TYPE, ti->encap_type) |
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_ENCRYPT_TYPE,
@@ -60,24 +60,26 @@ void ath11k_hal_tx_cmd_desc_setup(struct ath11k_base *ab, void *cmd,
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_CMD_NUM,
 			   ti->meta_data_flags);
 
-	tcl_cmd->info1 = ti->flags0 |
+	tcl_cmd.info1 = ti->flags0 |
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_DATA_LEN, ti->data_len) |
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_PKT_OFFSET, ti->pkt_offset);
 
-	tcl_cmd->info2 = ti->flags1 |
+	tcl_cmd.info2 = ti->flags1 |
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TID, ti->tid) |
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_LMAC_ID, ti->lmac_id);
 
-	tcl_cmd->info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_DSCP_TID_TABLE_IDX,
+	tcl_cmd.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_DSCP_TID_TABLE_IDX,
 				    ti->dscp_tid_tbl_idx) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_SEARCH_INDEX,
 				    ti->bss_ast_idx) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_CACHE_SET_NUM,
 				    ti->bss_ast_hash);
-	tcl_cmd->info4 = 0;
+	tcl_cmd.info4 = 0;
 
 	if (ti->enable_mesh)
-		ab->hw_params.hw_ops->tx_mesh_enable(ab, tcl_cmd);
+		ab->hw_params.hw_ops->tx_mesh_enable(ab, &tcl_cmd);
+
+	*tcl_desc = tcl_cmd;
 }
 
 void ath11k_hal_tx_set_dscp_tid_map(struct ath11k_base *ab, int id)
@@ -137,7 +139,9 @@ void ath11k_hal_tx_set_dscp_tid_map(struct ath11k_base *ab, int id)
 			   ctrl_reg_val);
 }
 
-void ath11k_hal_tx_init_data_ring(struct ath11k_base *ab, struct hal_srng *srng)
+void ath11k_hal_tx_init_data_ring(struct ath11k_base *ab, struct hal_srng *srng,
+				enum hal_ring_type type)
+
 {
 	struct hal_srng_params params;
 	struct hal_tlv_hdr *tlv;
@@ -146,7 +150,7 @@ void ath11k_hal_tx_init_data_ring(struct ath11k_base *ab, struct hal_srng *srng)
 
 	memset(&params, 0, sizeof(params));
 
-	entry_size = ath11k_hal_srng_get_entrysize(ab, HAL_TCL_DATA);
+	entry_size = ath11k_hal_srng_get_entrysize(ab, type);
 	ath11k_hal_srng_get_params(ab, srng, &params);
 	desc = (u8 *)params.ring_base_vaddr;
 

@@ -923,9 +923,21 @@ static ssize_t ath11k_debugfs_dump_soc_dp_stats(struct file *file,
 		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
 				 i, soc_stats->tx_err.desc_na[i]);
 
+	len += scnprintf(buf + len, size - len, "\nTCL Ring idr Failures:\n");
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
+				 i, soc_stats->tx_err.idr_na[i]);
+
+	len += scnprintf(buf + len, size - len, "\nMax Transmit Failures: %d\n",
+			 atomic_read(&soc_stats->tx_err.max_fail));
+
 	len += scnprintf(buf + len, size - len,
 			 "\nMisc Transmit Failures: %d\n",
 			 atomic_read(&soc_stats->tx_err.misc_fail));
+
+	len += scnprintf(buf + len, size - len,
+			 "\nNSS Transmit Failures: %d\n",
+			 atomic_read(&soc_stats->tx_err.nss_tx_fail));
 
 	len += ath11k_debugfs_dump_soc_ring_bp_stats(ab, buf + len, size - len);
 

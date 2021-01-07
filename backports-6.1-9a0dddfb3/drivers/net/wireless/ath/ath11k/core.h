@@ -136,6 +136,7 @@ static inline enum wme_ac ath11k_tid_to_ac(u32 tid)
 enum ath11k_skb_flags {
 	ATH11K_SKB_HW_80211_ENCAP = BIT(0),
 	ATH11K_SKB_CIPHER_SET = BIT(1),
+	ATH11K_SKB_TX_STATUS = BIT(2),
 };
 
 struct ath11k_skb_cb {
@@ -1038,10 +1039,16 @@ struct ath11k_dp_ring_bp_stats {
 struct ath11k_soc_dp_tx_err_stats {
 	/* TCL Ring Descriptor unavailable */
 	u32 desc_na[DP_TCL_NUM_RING_MAX];
+	/* TCL Ring IDR unavailable */
+	u32 idr_na[DP_TCL_NUM_RING_MAX];
+
 	/* Other failures during dp_tx due to mem allocation failure
 	 * idr unavailable etc.
 	 */
 	atomic_t misc_fail;
+	atomic_t max_fail;
+	/* Tx failures due to NSS Tx error status */
+	atomic_t nss_tx_fail;
 };
 
 struct ath11k_soc_dp_stats {

@@ -6631,12 +6631,22 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	if (control->sta)
 		arsta = ath11k_sta_to_arsta(control->sta);
 
+	/* Must call mac80211 tx status handler, else when stats is disabled we free
+	 * the skb from driver. Own tx packets on monitor will also be disabled.
+	 */
+	if ((info->flags & (IEEE80211_TX_CTL_REQ_TX_STATUS | IEEE80211_TX_INTFL_NL80211_FRAME_TX)) ||
+	    info->status_data || vif->type == NL80211_IFTYPE_MESH_POINT ||
+	    test_bit(ATH11K_FLAG_MONITOR_VDEV_CREATED, &ar->monitor_flags))
+		skb_cb->flags |= ATH11K_SKB_TX_STATUS;
+
 	if (ar->ab->nss.enabled)
 		ret = ath11k_nss_tx(arvif,skb);
 	else
 		ret = ath11k_dp_tx(ar, arvif, arsta, skb);
+
 	if (unlikely(ret)) {
-		ath11k_warn(ar->ab, "failed to transmit frame %d\n", ret);
+		if (!ar->ab->nss.enabled && ret != -ENOSPC && ret != -ENOMEM)
+			ath11k_warn(ar->ab, "failed to transmit frame %d\n", ret);
 		ieee80211_free_txskb(ar->hw, skb);
 		return;
 	}
@@ -7645,7 +7655,7 @@ err_vdev_del:
 	idr_for_each(&ar->txmgmt_idr,
 		     ath11k_mac_vif_txmgmt_idr_remove, vif);
 
-	for (i = 0; i < ab->hw_params.max_tx_ring; i++) {
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 		spin_lock_bh(&ab->dp.tx_ring[i].tx_idr_lock);
 		idr_for_each(&ab->dp.tx_ring[i].txbuf_idr,
 			     ath11k_mac_vif_unref, vif);

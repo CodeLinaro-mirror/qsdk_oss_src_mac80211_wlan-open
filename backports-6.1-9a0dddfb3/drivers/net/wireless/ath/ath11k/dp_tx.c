@@ -134,7 +134,7 @@ int ath11k_dp_tx(struct ath11k *ar, struct ath11k_vif *arvif,
 	u32 ring_selector = 0;
 	u8 ring_map = 0;
 	bool tcl_ring_retry, is_diff_encap = false;
-	u8 align_pad, htt_meta_size = 0;
+	u8 align_pad, htt_meta_size = 0, max_tx_ring, tcl_ring_id, ring_id;
 
 	if (unlikely(test_bit(ATH11K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return -ESHUTDOWN;
@@ -143,19 +143,30 @@ int ath11k_dp_tx(struct ath11k *ar, struct ath11k_vif *arvif,
 		     !ieee80211_is_data(hdr->frame_control)))
 		return -EOPNOTSUPP;
 
+	max_tx_ring = ab->hw_params.max_tx_ring;
 	pool_id = skb_get_queue_mapping(skb) & (ATH11K_HW_MAX_QUEUES - 1);
 
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
+	if (unlikely(atomic_read(&ab->num_max_allowed) > DP_TX_COMP_MAX_ALLOWED)) {
+		atomic_inc(&ab->soc_stats.tx_err.max_fail);
+		return -ENOSPC;
+	}
+#endif
 	ring_selector = ab->hw_params.hw_ops->get_ring_selector(skb);
 
 tcl_ring_sel:
 	tcl_ring_retry = false;
 
-	ti.ring_id = ring_selector % ab->hw_params.max_tx_ring;
+	ring_id = ring_selector % max_tx_ring;
+	tcl_ring_id = (ring_id == DP_TCL_NUM_RING_MAX) ?
+				  DP_TCL_NUM_RING_MAX - 1 : ring_id;
+
 	ti.rbm_id = ab->hw_params.hal_params->tcl2wbm_rbm_map[ti.ring_id].rbm_id;
 
-	ring_map |= BIT(ti.ring_id);
+	ring_map |= BIT(ring_id);
 
-	tx_ring = &dp->tx_ring[ti.ring_id];
+	ti.buf_id = tcl_ring_id + HAL_RX_BUF_RBM_SW0_BM;
+	tx_ring = &dp->tx_ring[tcl_ring_id];
 
 	spin_lock_bh(&tx_ring->tx_idr_lock);
 	ret = idr_alloc(&tx_ring->txbuf_idr, skb, 0,
@@ -163,9 +174,9 @@ tcl_ring_sel:
 	spin_unlock_bh(&tx_ring->tx_idr_lock);
 
 	if (unlikely(ret < 0)) {
-		if (ring_map == (BIT(ab->hw_params.max_tx_ring) - 1) ||
+		if (ring_map == (BIT(max_tx_ring) - 1) ||
 		    !ab->hw_params.tcl_ring_retry) {
-			atomic_inc(&ab->soc_stats.tx_err.misc_fail);
+			ab->soc_stats.tx_err.idr_na[tcl_ring_id]++;
 			return -ENOSPC;
 		}
 
@@ -276,6 +287,11 @@ tcl_ring_sel:
 		ti.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
 	}
 
+	ti.data_len = skb->len - ti.pkt_offset;
+	skb_cb->pkt_offset = ti.pkt_offset;
+	skb_cb->vif = arvif->vif;
+	skb_cb->ar = ar;
+
 	ti.paddr = dma_map_single(ab->dev, skb->data, skb->len, DMA_TO_DEVICE);
 	if (unlikely(dma_mapping_error(ab->dev, ti.paddr))) {
 		atomic_inc(&ab->soc_stats.tx_err.misc_fail);
@@ -284,13 +300,13 @@ tcl_ring_sel:
 		goto fail_remove_idr;
 	}
 
-	ti.data_len = skb->len - ti.pkt_offset;
-	skb_cb->pkt_offset = ti.pkt_offset;
 	skb_cb->paddr = ti.paddr;
-	skb_cb->vif = arvif->vif;
-	skb_cb->ar = ar;
 
-	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
+	if (ring_id == DP_TCL_NUM_RING_MAX)
+		hal_ring_id = dp->tcl_cmd_ring.ring_id;
+	else
+		hal_ring_id = tx_ring->tcl_data_ring.ring_id;
+
 	tcl_ring = &ab->hal.srng_list[hal_ring_id];
 
 	spin_lock_bh(&tcl_ring->lock);
@@ -303,7 +319,7 @@ tcl_ring_sel:
 		 * desc because the desc is directly enqueued onto hw queue.
 		 */
 		ath11k_hal_srng_access_end(ab, tcl_ring);
-		ab->soc_stats.tx_err.desc_na[ti.ring_id]++;
+		ab->soc_stats.tx_err.desc_na[tcl_ring_id]++;
 		spin_unlock_bh(&tcl_ring->lock);
 		ret = -ENOMEM;
 
@@ -312,8 +328,8 @@ tcl_ring_sel:
 		 * checking this ring earlier for each pkt tx.
 		 * Restart ring selection if some rings are not checked yet.
 		 */
-		if (unlikely(ring_map != (BIT(ab->hw_params.max_tx_ring)) - 1) &&
-		    ab->hw_params.tcl_ring_retry && ab->hw_params.max_tx_ring > 1) {
+		if (unlikely(ring_map != (BIT(max_tx_ring)) - 1) &&
+		    ab->hw_params.tcl_ring_retry && max_tx_ring > 1) {
 			tcl_ring_retry = true;
 			ring_selector++;
 		}
@@ -324,17 +340,17 @@ tcl_ring_sel:
 	ath11k_hal_tx_cmd_desc_setup(ab, hal_tcl_desc +
 					 sizeof(struct hal_tlv_hdr), &ti);
 
+	atomic_inc(&ar->dp.num_tx_pending);
+	atomic_inc(&ab->num_max_allowed);
 	ath11k_hal_srng_access_end(ab, tcl_ring);
 
-	ath11k_dp_shadow_start_timer(ab, tcl_ring, &dp->tx_ring_timer[ti.ring_id]);
+	ath11k_dp_shadow_start_timer(ab, tcl_ring, &dp->tx_ring_timer[ti.buf_id]);
 
 	spin_unlock_bh(&tcl_ring->lock);
 
 	ath11k_dbg_dump(ab, ATH11K_DBG_DP_TX, NULL, "dp tx msdu: ",
 			skb->data, skb->len);
 
-	atomic_inc(&ar->dp.num_tx_pending);
-	atomic_inc(&ab->num_max_allowed);
 
 	return 0;
 
@@ -381,7 +397,6 @@ static void ath11k_dp_tx_free_txbuf(struct ath11k_base *ab, u8 mac_id,
 	ar = ab->pdevs[mac_id].ar;
 	if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 		wake_up(&ar->dp.tx_empty_waitq);
-	atomic_dec(&ab->num_max_allowed);
 }
 
 static void
@@ -415,17 +430,30 @@ ath11k_dp_tx_htt_tx_complete_buf(struct ath11k_base *ab,
 
 	if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 		wake_up(&ar->dp.tx_empty_waitq);
-	atomic_dec(&ab->num_max_allowed);
 
 	dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 
-	if (!skb_cb->vif) {
-		ieee80211_free_txskb(ar->hw, msdu);
+	flags = skb_cb->flags;
+	/* Free skb here if stats is disabled */
+	if (ab->stats_disable && !(flags & ATH11K_SKB_TX_STATUS)) {
+		if (msdu->destructor) {
+			msdu->wifi_acked_valid = 1;
+			msdu->wifi_acked = ts->acked;
+		}
+		if (skb_has_frag_list(msdu)) {
+			kfree_skb_list(skb_shinfo(msdu)->frag_list);
+			skb_shinfo(msdu)->frag_list = NULL;
+		}
+		dev_kfree_skb(msdu);
+		return;
+	}
+	if (unlikely(!skb_cb->vif)) {
+		dev_kfree_skb_any(msdu);
 		return;
 	}
 
 	if (!skb_cb->vif) {
-		dev_kfree_skb_any(msdu);
+		ieee80211_free_txskb(ar->hw, msdu);
 		return;
 	}
 
@@ -658,6 +686,20 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 
 	dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 
+	/* Free skb here if stats is disabled */
+	if (ab->stats_disable && !(flags & ATH11K_SKB_TX_STATUS)) {
+		if (msdu->destructor) {
+			msdu->wifi_acked_valid = 1;
+			msdu->wifi_acked = ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED;
+		}
+		if (skb_has_frag_list(msdu)) {
+			kfree_skb_list(skb_shinfo(msdu)->frag_list);
+			skb_shinfo(msdu)->frag_list = NULL;
+		}
+		dev_kfree_skb(msdu);
+		return;
+	}
+
 	if (unlikely(!rcu_access_pointer(ab->pdevs_active[ar->pdev_idx]))) {
 		ieee80211_free_txskb(ar->hw, msdu);
 		return;
@@ -719,7 +761,7 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 
 	spin_lock_bh(&ab->base_lock);
 	peer = ath11k_peer_find_by_id(ab, ts->peer_id);
-	if (!peer || !peer->sta) {
+	if (unlikely(!peer || !peer->sta)) {
 		ath11k_dbg(ab, ATH11K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n",
 			    ts->peer_id);
@@ -778,19 +820,36 @@ static inline void ath11k_dp_tx_status_parse(struct ath11k_base *ab,
 		ts->rate_stats = 0;
 }
 
+static inline bool ath11k_dp_tx_completion_valid(struct hal_wbm_release_ring *desc)
+{
+	struct htt_tx_wbm_completion *status_desc;
+
+	if (FIELD_GET(HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE, desc->info0) ==
+	    HAL_WBM_REL_SRC_MODULE_FW) {
+		status_desc = ((u8 *)desc) + HTT_TX_WBM_COMP_STATUS_OFFSET;
+
+		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
+		if (FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS, status_desc->info0) ==
+		    HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY)
+			return false;
+	}
+	return true;
+}
+
 void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 {
 	struct ath11k *ar;
 	struct ath11k_dp *dp = &ab->dp;
-	int hal_ring_id = dp->tx_ring[ring_id].tcl_comp_ring.ring_id;
+	int hal_ring_id = dp->tx_ring[ring_id].tcl_comp_ring.ring_id, count = 0, i = 0;
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
 	struct sk_buff *msdu;
 	struct hal_tx_status ts = { 0 };
 	struct dp_tx_ring *tx_ring = &dp->tx_ring[ring_id];
 	int valid_entries;
 	u32 *desc;
-	u32 msdu_id;
+	u32 msdu_id, desc_id;
 	u8 mac_id;
+	struct hal_wbm_release_ring *tx_status;
 
 	spin_lock_bh(&status_ring->lock);
 
@@ -805,33 +864,27 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 
 	ath11k_hal_srng_dst_invalidate_entry(ab, status_ring, valid_entries);
 
-	while ((ATH11K_TX_COMPL_NEXT(tx_ring->tx_status_head) !=
-		tx_ring->tx_status_tail) &&
-	       (desc = ath11k_hal_srng_dst_get_next_cache_entry(ab, status_ring))) {
-		memcpy(&tx_ring->tx_status[tx_ring->tx_status_head],
-		       desc, sizeof(struct hal_wbm_release_ring));
-		tx_ring->tx_status_head =
-			ATH11K_TX_COMPL_NEXT(tx_ring->tx_status_head);
-	}
+	while ((desc = ath11k_hal_srng_dst_get_next_cache_entry(ab, status_ring))) {
+		if (!ath11k_dp_tx_completion_valid(desc))
+			continue;
 
-	if (unlikely((ath11k_hal_srng_dst_peek(ab, status_ring) != NULL) &&
-		     (ATH11K_TX_COMPL_NEXT(tx_ring->tx_status_head) ==
-		      tx_ring->tx_status_tail))) {
-		/* TODO: Process pending tx_status messages when kfifo_is_full() */
-		ath11k_warn(ab, "Unable to process some of the tx_status ring desc because status_fifo is full\n");
+		memcpy(&tx_ring->tx_status[count],
+		       desc, sizeof(struct hal_wbm_release_ring));
+		count++;
 	}
 
 	ath11k_hal_srng_access_end(ab, status_ring);
 
 	spin_unlock_bh(&status_ring->lock);
 
-	while (ATH11K_TX_COMPL_NEXT(tx_ring->tx_status_tail) != tx_ring->tx_status_head) {
-		struct hal_wbm_release_ring *tx_status;
-		u32 desc_id;
+	if (atomic_sub_return(count, &ab->num_max_allowed) < 0) {
+		ath11k_warn(ab, "tx completion mismatch count %d ring id %d max_num %d\n",
+			    count, tx_ring->tcl_data_ring_id,
+			    atomic_read(&ab->num_max_allowed));
+	}
 
-		tx_ring->tx_status_tail =
-			ATH11K_TX_COMPL_NEXT(tx_ring->tx_status_tail);
-		tx_status = &tx_ring->tx_status[tx_ring->tx_status_tail];
+	while (count--) {
+		tx_status = &tx_ring->tx_status[i++];
 		ath11k_dp_tx_status_parse(ab, tx_status, &ts);
 
 		desc_id = FIELD_GET(BUFFER_ADDR_INFO1_SW_COOKIE,
@@ -864,7 +917,6 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 			wake_up(&ar->dp.tx_empty_waitq);
 
 		ath11k_dp_tx_complete_msdu(ar, msdu, &ts);
-		atomic_dec(&ab->num_max_allowed);
 	}
 }
 
