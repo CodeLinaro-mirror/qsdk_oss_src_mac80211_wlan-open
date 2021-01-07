@@ -3809,6 +3809,7 @@ struct wmi_vdev_install_key_arg {
 	u32 vdev_id;
 	const u8 *macaddr;
 	u32 key_idx;
+	u32 group_key_idx;
 	u32 key_flags;
 	u32 key_cipher;
 	u32 key_len;
@@ -6267,6 +6268,7 @@ struct target_resource_config {
 	u32 bpf_instruction_size;
 	u32 max_bssid_rx_filters;
 	u32 use_pdev_id;
+	u32 max_num_group_keys;
 	u32 peer_map_unmap_v2_support;
 	u32 sched_params;
 	u32 twt_ap_pdev_count;

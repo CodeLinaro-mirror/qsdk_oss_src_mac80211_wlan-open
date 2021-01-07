@@ -119,6 +119,11 @@ enum ath11k_crypt_mode {
 	ATH11K_CRYPT_MODE_SW,
 };
 
+#define ATH11K_GROUP_KEYS_NUM_MAX	128
+#define ATH11K_FREE_GROUP_IDX_MAP_BITS	(BITS_PER_BYTE * (sizeof(long)))
+#define ATH11K_FREE_GROUP_IDX_MAP_MAX	(ATH11K_GROUP_KEYS_NUM_MAX /	\
+					 ATH11K_FREE_GROUP_IDX_MAP_BITS)
+
 static inline enum wme_ac ath11k_tid_to_ac(u32 tid)
 {
 	return (((tid == 0) || (tid == 3)) ? WME_AC_BE :
@@ -392,6 +397,20 @@ struct ath11k_mgmt_frame_stats {
 	u32 tx_compl_fail[ATH11K_STATS_MGMT_FRM_TYPE_MAX];
 };
 
+/**
+ *struct ath11k_dyn_vlan_cfg - dynamic vlan config state info container.
+ *                             will be used during ieee80211_reconfig
+ *			       nss offload case
+ *@arvif: driver's data for the corresponding AP_VLAN ieee80211_vif
+ *@sta: ieee80211_sta which is getting associated to AP_VLAN
+ *@cfg_list: list to hold all associated sta's state
+ */
+struct ath11k_dyn_vlan_cfg {
+	struct ath11k_vif *arvif;
+	struct ieee80211_sta *sta;
+	struct list_head cfg_list;
+};
+
 struct ath11k_vif {
 	u32 vdev_id;
 	enum wmi_vdev_type vdev_type;
@@ -466,6 +485,11 @@ struct ath11k_vif {
 	struct ath11k_mgmt_frame_stats mgmt_stats;
 	struct arvif_nss nss;
 	struct list_head ap_vlan_arvifs;
+	/* list required by Dynamic VLAN during fw_recovery */
+	struct list_head dyn_vlan_cfg;
+	/* VLAN keyidx map required for Dynamic VLAN */
+	u16 *vlan_keyid_map;
+	DECLARE_BITMAP(free_groupidx_map, ATH11K_GROUP_KEYS_NUM_MAX);
 };
 
 struct ath11k_vif_iter {

@@ -2107,6 +2107,7 @@ int ath11k_wmi_vdev_install_key(struct ath11k *ar,
 	cmd->key_len = arg->key_len;
 	cmd->key_txmic_len = arg->key_txmic_len;
 	cmd->key_rxmic_len = arg->key_rxmic_len;
+	cmd->group_key_id = arg->group_key_idx;
 
 	if (arg->key_rsc_counter)
 		memcpy(&cmd->key_rsc_counter, &arg->key_rsc_counter,
@@ -4745,6 +4746,7 @@ ath11k_wmi_copy_resource_config(struct wmi_resource_config *wmi_cfg,
 	wmi_cfg->flags2 = WMI_RSRC_CFG_FLAG2_CALC_NEXT_DTIM_COUNT_SET;
 	wmi_cfg->ema_max_vap_cnt = tg_cfg->ema_max_vap_cnt;
 	wmi_cfg->ema_max_profile_period = tg_cfg->ema_max_profile_period;
+	wmi_cfg->max_num_group_keys = tg_cfg->max_num_group_keys;
 }
 
 static int ath11k_init_cmd_send(struct ath11k_pdev_wmi *wmi,
@@ -4966,6 +4968,9 @@ int ath11k_wmi_cmd_init(struct ath11k_base *ab)
 
 	memset(&init_param, 0, sizeof(init_param));
 	memset(&config, 0, sizeof(config));
+
+	if (ab->nss.enabled)
+		config.max_num_group_keys = ATH11K_GROUP_KEYS_NUM_MAX;
 
 	ab->hw_params.hw_ops->wmi_init_config(ab, &config);
 

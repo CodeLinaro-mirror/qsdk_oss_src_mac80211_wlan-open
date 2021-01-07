@@ -350,6 +350,10 @@ enum nl80211_he_gi ath11k_mac_he_gi_to_nl80211_he_gi(u8 sgi)
 	return ret;
 }
 
+static int ath11k_mac_cfg_dyn_vlan(struct ath11k_base *ab,
+				   struct ath11k_vif *ap_vlan_arvif,
+				   struct ieee80211_sta *sta);
+
 u8 ath11k_mac_bw_to_mac80211_bw(u8 bw)
 {
 	u8 ret = 0;
@@ -720,6 +724,33 @@ u8 ath11k_mac_get_target_pdev_id(struct ath11k *ar)
 		return ath11k_mac_get_target_pdev_id_from_vif(arvif);
 	else
 		return ar->ab->target_pdev_ids[0].pdev_id;
+}
+
+struct ath11k_vif *ath11k_mac_get_ap_arvif_by_addr(struct ath11k_base *ab,
+						   const u8 *addr)
+{
+	int i;
+	struct ath11k_pdev *pdev;
+	struct ath11k_vif *arvif;
+	struct ath11k *ar;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = rcu_dereference(ab->pdevs_active[i]);
+		if (pdev && pdev->ar) {
+			ar = pdev->ar;
+
+			spin_lock_bh(&ar->data_lock);
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				if (arvif->vif->type == NL80211_IFTYPE_AP &&
+				    ether_addr_equal(arvif->vif->addr, addr)) {
+					spin_unlock_bh(&ar->data_lock);
+					return arvif;
+				}
+			}
+			spin_unlock_bh(&ar->data_lock);
+		}
+	}
+	return NULL;
 }
 
 static void ath11k_pdev_caps_update(struct ath11k *ar)
@@ -4323,6 +4354,9 @@ static int ath11k_install_key(struct ath11k_vif *arvif,
 	if (test_bit(ATH11K_FLAG_HW_CRYPTO_DISABLED, &ar->ab->dev_flags))
 		return 0;
 
+	if (key->vlan_id)
+		arg.group_key_idx = key->hw_key_idx;
+
 	if (cmd == DISABLE_KEY) {
 		arg.key_cipher = WMI_CIPHER_NONE;
 		arg.key_data = NULL;
@@ -4411,15 +4445,40 @@ static int ath11k_clear_peer_keys(struct ath11k_vif *arvif,
 	return first_errno;
 }
 
+static int ath11k_get_vlan_groupkey_index(struct ath11k_vif *arvif,
+					  struct ieee80211_key_conf *key)
+{
+	struct ath11k *ar = arvif->ar;
+	int map_idx = 0;
+	int free_bit;
+
+	for (map_idx = 0; map_idx < ATH11K_FREE_GROUP_IDX_MAP_MAX; map_idx++)
+		if (arvif->free_groupidx_map[map_idx] != 0)
+			break;
+
+	if (map_idx == ATH11K_FREE_GROUP_IDX_MAP_MAX)
+		return -ENOSPC;
+
+	spin_lock_bh(&ar->data_lock);
+	/* select the first free key index */
+	free_bit = __ffs64(arvif->free_groupidx_map[map_idx]);
+	key->hw_key_idx = (map_idx * ATH11K_FREE_GROUP_IDX_MAP_BITS) + free_bit;
+	/* clear the selected bit from free index map */
+	clear_bit(key->hw_key_idx, arvif->free_groupidx_map);
+	spin_unlock_bh(&ar->data_lock);
+
+	return 0;
+}
+
 static int ath11k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 				 struct ieee80211_vif *vif, struct ieee80211_sta *sta,
 				 struct ieee80211_key_conf *key)
 {
 	struct ath11k *ar = hw->priv;
 	struct ath11k_base *ab = ar->ab;
-	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
+	struct ath11k_vif *arvif, *ap_vlan_arvif = NULL;
 	struct ath11k_peer *peer;
-	struct ath11k_sta *arsta;
+	struct ath11k_sta *arsta = NULL;
 	const u8 *peer_addr;
 	int ret = 0;
 	u32 flags = 0;
@@ -4437,16 +4496,37 @@ static int ath11k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	if (key->keyidx > WMI_MAX_KEY_INDEX)
 		return -ENOSPC;
 
-	mutex_lock(&ar->conf_mutex);
+	arvif = ath11k_vif_to_arvif(vif);
 
-	if (sta)
+	mutex_lock(&ar->conf_mutex);
+	if (sta) {
 		peer_addr = sta->addr;
-	else if (arvif->vdev_type == WMI_VDEV_TYPE_STA)
+		arsta = (struct ath11k_sta *)sta->drv_priv;
+	} else if (arvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		peer_addr = vif->bss_conf.bssid;
-	else
+	} else {
 		peer_addr = vif->addr;
+	}
 
 	key->hw_key_idx = key->keyidx;
+
+	if (ab->nss.enabled && vif->type == NL80211_IFTYPE_AP_VLAN) {
+		ap_vlan_arvif = arvif;
+		if (arsta) {
+			ap_vlan_arvif->nss.ap_vif = arsta->arvif;
+			arvif = arsta->arvif;
+		} else {
+			rcu_read_lock();
+			arvif = ath11k_mac_get_ap_arvif_by_addr(ab, peer_addr);
+			if (!arvif) {
+				rcu_read_unlock();
+				ret = -EINVAL;
+				goto exit;
+			}
+			ap_vlan_arvif->nss.ap_vif = arvif;
+			rcu_read_unlock();
+		}
+	}
 
 	/* the peer should not disappear in mid-way (unless FW goes awry) since
 	 * we already hold conf_mutex. we just make sure its there now.
@@ -4492,6 +4572,74 @@ static int ath11k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		goto exit;
 	}
 
+	/* VLAN ID is updated non-zero only for AP_VLAN vif */
+	if (key->vlan_id && !(key->flags & IEEE80211_KEY_FLAG_PAIRWISE) &&
+	    ap_vlan_arvif) {
+		if (arvif->vlan_keyid_map)
+			key->hw_key_idx = arvif->vlan_keyid_map[key->vlan_id];
+		else
+			key->hw_key_idx = 0;
+		switch (cmd) {
+		case SET_KEY:
+			/* If the group key idx is already available,
+			 * no need to find the free index again.
+			 * This happens during GTK rekey. It uses
+			 * the same index after rekey also.
+			 */
+			if (!key->hw_key_idx)
+				ret = ath11k_get_vlan_groupkey_index(arvif, key);
+			break;
+		case DISABLE_KEY:
+			/* If the group key idx is already 0,
+			 * no need of freeing the index.
+			 */
+			if (key->hw_key_idx) {
+				spin_lock_bh(&ar->data_lock);
+				/* make the group index as available */
+				set_bit(key->hw_key_idx, arvif->free_groupidx_map);
+				spin_unlock_bh(&ar->data_lock);
+			}
+			break;
+		default:
+			ret = -EINVAL;
+		}
+
+		if (ret) {
+			ath11k_warn(ab, "failed to set group key index for vlan %u : %d\n",
+				    key->vlan_id, ret);
+			goto exit;
+		}
+
+		ret = ath11k_nss_ext_vdev_configure(ap_vlan_arvif);
+		if (ret) {
+			ath11k_warn(ab, "failed to nss cfg ext vdev %pM: %d\n",
+				    ap_vlan_arvif->vif->addr, ret);
+			goto exit;
+		}
+
+		ret = ath11k_nss_ext_vdev_cfg_dyn_vlan(ap_vlan_arvif,
+						       key->vlan_id);
+		if (ret) {
+			ath11k_warn(ab, "failed to cfg dynamic vlan %d\n", ret);
+			goto exit;
+		}
+
+		ret = ath11k_nss_dyn_vlan_set_group_key(ap_vlan_arvif->nss.ap_vif,
+							key->vlan_id,
+							key->hw_key_idx);
+		if (ret) {
+			ath11k_warn(ab, "failed to set dynamic vlan group key %d\n",
+				    ret);
+			goto exit;
+		}
+
+		ret = ath11k_nss_ext_vdev_up(ap_vlan_arvif);
+		if (ret) {
+			ath11k_warn(ab, "failed to set dyn vlan UP %d\n", ret);
+			goto exit;
+		}
+	}
+
 	spin_lock_bh(&ab->base_lock);
 	peer = ath11k_peer_find(ab, arvif->vdev_id, peer_addr);
 
@@ -4514,6 +4662,27 @@ static int ath11k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		goto unlock;
 	}
 
+	spin_unlock_bh(&ar->ab->base_lock);
+	if (ap_vlan_arvif && ar->state == ATH11K_STATE_RESTARTED) {
+		/* Keys are getting installed during ieee80211_reconfig(). Configuring
+		 * dynamic vlan is pending and the state is saved in the ap_vlan
+		 * arvif dyn_vlan_cfg list. We will configure it now since nss peer is authorised */
+		struct ath11k_dyn_vlan_cfg *dyn_vlan_cfg, *tmp;
+
+		list_for_each_entry_safe(dyn_vlan_cfg, tmp, &ap_vlan_arvif->dyn_vlan_cfg, cfg_list) {
+			struct ieee80211_sta *vlan_sta = dyn_vlan_cfg->sta;
+
+			ret = ath11k_mac_cfg_dyn_vlan(ar->ab, ap_vlan_arvif, vlan_sta);
+			if (ret)
+				ath11k_warn(ar->ab, "failed to cfg dyn vlan for peer %pM: %d\n",
+					    vlan_sta->addr, ret);
+			/* Configuration is used. Free up space */
+			list_del(&dyn_vlan_cfg->cfg_list);
+			kfree(dyn_vlan_cfg);
+		}
+	}
+
+	spin_lock_bh(&ar->ab->base_lock);
 	if (peer && cmd == SET_KEY) {
 		peer->keys[key->keyidx] = key;
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
@@ -4523,17 +4692,23 @@ static int ath11k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			peer->mcast_keyidx = key->keyidx;
 			peer->sec_type_grp = ath11k_dp_tx_get_encrypt_type(key->cipher);
 		}
+		/* storing group key idx which will be used during rekey */
+		if (key->vlan_id)
+			arvif->vlan_keyid_map[key->vlan_id] = key->hw_key_idx;
 	} else if (peer && cmd == DISABLE_KEY) {
 		peer->keys[key->keyidx] = NULL;
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)
 			peer->ucast_keyidx = 0;
 		else
 			peer->mcast_keyidx = 0;
-	} else if (!peer)
+		if (key->vlan_id)
+			arvif->vlan_keyid_map[key->vlan_id] = 0;
+
+	} else if (!peer) {
 		/* impossible unless FW goes crazy */
 		ath11k_warn(ab, "peer %pM disappeared!\n", peer_addr);
-
-	if (sta) {
+	}
+	if (arsta) {
 		arsta = ath11k_sta_to_arsta(sta);
 
 		switch (key->cipher) {
@@ -7085,6 +7260,7 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 					    vif->addr, ret);
 				goto err;
 			}
+			INIT_LIST_HEAD(&arvif->dyn_vlan_cfg);
 			mutex_unlock(&ar->conf_mutex);
 			return ret;
 		}
@@ -7109,6 +7285,20 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 
 	arvif->vdev_id = bit;
 	arvif->vdev_subtype = WMI_VDEV_SUBTYPE_NONE;
+
+	spin_lock_bh(&ar->data_lock);
+	/* Configure vlan specific parameters */
+	for (i = 0; i < ATH11K_FREE_GROUP_IDX_MAP_MAX; i++)
+		arvif->free_groupidx_map[i] = 0xFFFFFFFFL;
+	/* Group idx 0 is not valid for VLAN*/
+	arvif->free_groupidx_map[0] &= ~(1L);
+	spin_unlock_bh(&ar->data_lock);
+
+	arvif->vlan_keyid_map = kzalloc(4096, GFP_KERNEL);
+	if (!arvif->vlan_keyid_map) {
+		ret = -ENOMEM;
+		goto err;
+	}
 
 	switch (vif->type) {
 	case NL80211_IFTYPE_UNSPECIFIED:
@@ -7159,7 +7349,7 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 	if (ret) {
 		ath11k_warn(ab, "failed to create WMI vdev %d: %d\n",
 			    arvif->vdev_id, ret);
-		goto err;
+		goto err_keyid;
 	}
 	ar->num_created_vdevs++;
 	ath11k_dbg(ab, ATH11K_DBG_MAC, "vdev %pM created, vdev_id %d\n",
@@ -7330,7 +7520,7 @@ err_peer_del:
 		if (fbret) {
 			ath11k_warn(ar->ab, "fallback fail to delete peer addr %pM vdev_id %d ret %d\n",
 				    vif->addr, arvif->vdev_id, fbret);
-			goto err;
+			goto err_keyid;
 		}
 	}
 
@@ -7341,6 +7531,8 @@ err_vdev_del:
 	list_del(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
 
+err_keyid:
+	kfree(arvif->vlan_keyid_map);
 err:
 	mutex_unlock(&ar->conf_mutex);
 
@@ -7440,6 +7632,7 @@ err_vdev_del:
 	list_del(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
 
+	kfree(arvif->vlan_keyid_map);
 	ath11k_peer_cleanup(ar, arvif->vdev_id);
 
 	idr_for_each(&ar->txmgmt_idr,
@@ -10213,6 +10406,33 @@ static int ath11k_mac_station_remove(struct ath11k *ar,
 	return ret;
 }
 
+static int ath11k_mac_cfg_dyn_vlan(struct ath11k_base *ab,
+				   struct ath11k_vif *ap_vlan_arvif,
+				   struct ieee80211_sta *sta)
+{
+	struct ath11k_peer *peer;
+	int peer_id, ret;
+
+	spin_lock_bh(&ab->base_lock);
+	peer = ath11k_peer_find_by_addr(ab, sta->addr);
+	if (!peer) {
+		ath11k_warn(ab, "failed to find peer for %pM\n", sta->addr);
+		spin_unlock_bh(&ab->base_lock);
+		return -EINVAL;
+	}
+	peer_id = peer->peer_id;
+	spin_unlock_bh(&ab->base_lock);
+
+	ret = ath11k_nss_ext_vdev_wds_4addr_allow(ap_vlan_arvif, peer_id);
+	if (ret) {
+		ath11k_warn(ab, "failed to set 4addr allow for %pM:%d\n",
+			    sta->addr, ret);
+		return ret;
+	}
+
+	return ret;
+}
+
 static int ath11k_mac_op_sta_state(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   struct ieee80211_sta *sta,
@@ -10302,6 +10522,34 @@ static int ath11k_mac_op_sta_state(struct ieee80211_hw *hw,
 			if (ret)
 				ath11k_warn(ar->ab, "Unable to authorize peer %pM vdev %d: %d\n",
 					    sta->addr, arvif->vdev_id, ret);
+		} else if (ar->ab->nss.enabled &&
+			   vif->type == NL80211_IFTYPE_AP_VLAN &&
+			   !arsta->use_4addr_set) {
+
+			if (ar->state == ATH11K_STATE_RESTARTED) {
+				/* During ieee80211_reconfig(), at this point, nss ext vdev peer is not
+				 * authorized. Hence ath11k_mac_cfg_dyn_vlan() will return error. We save
+				 * the state vars here and use it later once nss ext vdev is authorized
+				 * in ath11k_mac_op_set_key() */
+				struct ath11k_dyn_vlan_cfg *ar_dyn_vlan_cfg;
+				ar_dyn_vlan_cfg = kzalloc(sizeof(*ar_dyn_vlan_cfg), GFP_ATOMIC);
+
+				if (!ar_dyn_vlan_cfg) {
+					ath11k_warn(ar->ab, "failed to save state for dynamic AP_VLAN configuration (%d)",
+						    -ENOSPC);
+				} else {
+					INIT_LIST_HEAD(&ar_dyn_vlan_cfg->cfg_list);
+					ar_dyn_vlan_cfg->arvif = arvif;
+					ar_dyn_vlan_cfg->sta = sta;
+					/* save it to arvif (AP_VLAN) list */
+					list_add_tail(&ar_dyn_vlan_cfg->cfg_list, &arvif->dyn_vlan_cfg);
+				}
+			} else {
+				ret = ath11k_mac_cfg_dyn_vlan(ar->ab, arvif, sta);
+				if (ret)
+					ath11k_warn(ar->ab, "failed to cfg dyn vlan for peer %pM: %d\n",
+						    sta->addr, ret);
+			}
 		}
 
 		if (!ret &&
@@ -11096,8 +11344,11 @@ static int __ath11k_mac_register(struct ath11k *ar)
 	    ab->hw_params.bios_sar_capa)
 		ar->hw->wiphy->sar_capa = ab->hw_params.bios_sar_capa;
 
-	if (ab->nss.enabled)
+	if (ab->nss.enabled) {
 		ieee80211_hw_set(ar->hw, SUPPORTS_NSS_OFFLOAD);
+		wiphy_ext_feature_set(ar->hw->wiphy,
+				      NL80211_EXT_FEATURE_VLAN_OFFLOAD);
+	}
 
 	ret = ieee80211_register_hw(ar->hw);
 	if (ret) {
