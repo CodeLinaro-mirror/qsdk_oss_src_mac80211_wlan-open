@@ -176,6 +176,10 @@ struct arvif_nss {
 	bool added;
 	/* Flag to notify if ext vdev is up/down */
 	bool ext_vdev_up;
+#ifdef CPTCFG_ATH11K_NSS_SUPPORT
+	/* Keep the copy of di_type for nss */
+	enum nss_dynamic_interface_type di_type;
+#endif
 	/* WDS cfg should be done only once for ext vdev */
 	bool wds_cfg_done;
 	bool created;
@@ -241,6 +245,9 @@ void ath11k_nss_ext_vdev_unregister(struct ath11k_vif *arvif);
 int ath11k_nss_ext_vdev_up(struct ath11k_vif *arvif);
 int ath11k_nss_ext_vdev_down(struct ath11k_vif *arvif);
 void ath11k_nss_ext_vdev_delete(struct ath11k_vif *arvif);
+int ath11k_nss_ext_vdev_cfg_dyn_vlan(struct ath11k_vif *arvif, u16 vlan_id);
+int ath11k_nss_dyn_vlan_set_group_key(struct ath11k_vif *arvif, u16 vlan_id,
+				      u16 group_key);
 int ath11k_nss_set_peer_sec_type(struct ath11k *ar, struct ath11k_peer *peer,
 				 struct ieee80211_key_conf *key_conf);
 void ath11k_nss_update_sta_stats(struct ath11k_vif *arvif,
@@ -370,6 +377,18 @@ static inline int ath11k_nss_ext_vdev_up(struct ath11k_vif *arvif)
 }
 
 static inline int ath11k_nss_ext_vdev_down(struct ath11k_vif *arvif)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_ext_vdev_cfg_dyn_vlan(struct ath11k_vif *arvif,
+						   u16 vlan_id)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_dyn_vlan_set_group_key(struct ath11k_vif *arvif,
+						    u16 vlan_id, u16 group_key)
 {
 	return 0;
 }

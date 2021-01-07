@@ -1544,13 +1544,10 @@ static int ath11k_nss_ext_vdev_register(struct ath11k_vif *arvif,
 	struct ath11k *ar = arvif->ar;
 	struct ath11k_base *ab = ar->ab;
 	nss_tx_status_t status;
-	enum nss_dynamic_interface_type di_type;
 	u32 features = 0;
 
 	if (arvif->vif->type != NL80211_IFTYPE_AP_VLAN || arvif->nss.ctx)
 		return -EINVAL;
-
-	di_type = NSS_DYNAMIC_INTERFACE_TYPE_WIFI_EXT_VDEV_WDS;
 
 	arvif->nss.ctx = nss_wifi_ext_vdev_register_if(arvif->nss.if_num,
 						       ath11k_nss_ext_vdev_data_receive,
@@ -1579,7 +1576,8 @@ static void ath11k_nss_ext_vdev_free(struct ath11k_vif *arvif)
 
 	status = nss_dynamic_interface_dealloc_node(
 					arvif->nss.if_num,
-					NSS_DYNAMIC_INTERFACE_TYPE_WIFI_EXT_VDEV_WDS);
+					arvif->nss.di_type);
+
 	if (status != NSS_TX_SUCCESS)
 		ath11k_warn(ab, "failed to free nss ext vdev err:%d\n",
 			    status);
@@ -1588,14 +1586,19 @@ static void ath11k_nss_ext_vdev_free(struct ath11k_vif *arvif)
 			   "nss ext vdev interface deallocated\n");
 }
 
-static int ath11k_nss_ext_vdev_alloc(struct ath11k_vif *arvif)
+static int ath11k_nss_ext_vdev_alloc(struct ath11k_vif *arvif,
+				     struct wireless_dev *wdev)
 {
 	struct ath11k_base *ab = arvif->ar->ab;
 	enum nss_dynamic_interface_type di_type;
 	int if_num;
 
-	di_type = NSS_DYNAMIC_INTERFACE_TYPE_WIFI_EXT_VDEV_WDS;
+	if (wdev->use_4addr)
+		di_type = NSS_DYNAMIC_INTERFACE_TYPE_WIFI_EXT_VDEV_WDS;
+	else
+		di_type = NSS_DYNAMIC_INTERFACE_TYPE_WIFI_EXT_VDEV_VLAN;
 
+	arvif->nss.di_type = di_type;
 	if_num = nss_dynamic_interface_alloc_node(di_type);
 	if (if_num < 0) {
 		ath11k_warn(ab, "failed to allocate nss ext vdev\n");
@@ -1604,8 +1607,8 @@ static int ath11k_nss_ext_vdev_alloc(struct ath11k_vif *arvif)
 
 	arvif->nss.if_num = if_num;
 	ath11k_dbg(ab, ATH11K_DBG_NSS_WDS,
-		   "nss ext vdev interface %pM allocated if_num %d\n",
-		   arvif->vif->addr, if_num);
+		   "nss ext vdev interface %pM di_type %d allocated if_num %d\n",
+		   arvif->vif->addr, di_type, if_num);
 
 	return 0;
 }
@@ -1634,7 +1637,7 @@ int ath11k_nss_ext_vdev_create(struct ath11k_vif *arvif)
 		return -EINVAL;
 	}
 
-	ret = ath11k_nss_ext_vdev_alloc(arvif);
+	ret = ath11k_nss_ext_vdev_alloc(arvif, wdev);
 	if (ret)
 		return ret;
 
@@ -1745,6 +1748,86 @@ int ath11k_nss_ext_vdev_down(struct ath11k_vif *arvif)
 free:
 	kfree(ext_vdev_msg);
 	return ret;
+}
+
+int ath11k_nss_ext_vdev_cfg_dyn_vlan(struct ath11k_vif *arvif, u16 vlan_id)
+{
+	struct ath11k *ar = arvif->ar;
+	struct nss_wifi_ext_vdev_msg *ext_vdev_msg = NULL;
+	struct nss_wifi_ext_vdev_vlan_msg *cfg_dyn_vlan_msg = NULL;
+	nss_tx_status_t status;
+	int ret;
+
+	if (!ar->ab->nss.enabled)
+		return 0;
+
+	if (arvif->vif->type != NL80211_IFTYPE_AP_VLAN)
+		return -EINVAL;
+
+	ext_vdev_msg = kzalloc(sizeof(struct nss_wifi_ext_vdev_msg), GFP_ATOMIC);
+	if (!ext_vdev_msg)
+		return -ENOMEM;
+
+	cfg_dyn_vlan_msg = &ext_vdev_msg->msg.vmsg;
+	cfg_dyn_vlan_msg->vlan_id = vlan_id;
+
+	nss_wifi_ext_vdev_msg_init(ext_vdev_msg, arvif->nss.if_num,
+				   NSS_WIFI_EXT_VDEV_MSG_CONFIGURE_VLAN,
+				   sizeof(struct nss_wifi_ext_vdev_vlan_msg),
+				   NULL, arvif);
+
+	status = nss_wifi_ext_vdev_tx_msg_sync(arvif->nss.ctx, ext_vdev_msg);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ar->ab, "failed to configure dyn vlan nss_err:%d\n",
+			    status);
+		ret = -EINVAL;
+		goto free;
+	}
+
+	ret = 0;
+free:
+	kfree(ext_vdev_msg);
+
+	return ret;
+}
+
+int ath11k_nss_dyn_vlan_set_group_key(struct ath11k_vif *arvif, u16 vlan_id,
+				      u16 group_key)
+{
+	struct nss_wifi_vdev_msg *vdev_msg = NULL;
+	struct nss_wifi_vdev_set_vlan_group_key *vlan_group_key;
+	struct ath11k *ar = arvif->ar;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	if (!ar->ab->nss.enabled)
+		return 0;
+
+	vdev_msg = kzalloc(sizeof(struct nss_wifi_vdev_msg), GFP_ATOMIC);
+	if (!vdev_msg)
+		return -ENOMEM;
+
+	vlan_group_key = &vdev_msg->msg.vlan_group_key;
+	vlan_group_key->vlan_id = vlan_id;
+	vlan_group_key->group_key = group_key;
+
+	nss_wifi_vdev_msg_init(vdev_msg, arvif->nss.if_num,
+			       NSS_WIFI_VDEV_SET_GROUP_KEY,
+			       sizeof(struct nss_wifi_vdev_set_vlan_group_key),
+			       NULL, NULL);
+
+	status = nss_wifi_vdev_tx_msg(ar->nss.ctx, vdev_msg);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ar->ab, "nss vdev set vlan group key error %d\n", status);
+		ret = -EINVAL;
+		goto free;
+	}
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_NSS_WDS, "nss vdev set vlan group key success\n");
+free:
+	kfree(vdev_msg);
+	return ret;
+
 }
 
 /*----------------------------Peer Setup/Config -----------------------------*/
