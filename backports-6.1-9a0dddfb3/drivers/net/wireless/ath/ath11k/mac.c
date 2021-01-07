@@ -10331,6 +10331,28 @@ static void ath11k_mac_update_ch_list(struct ath11k *ar,
 	}
 }
 
+#define ATH11k_5_DOT_9_MIN_FREQ	5845
+#define ATH11k_5_DOT_9_MAX_FREQ	5885
+
+static void ath11k_mac_update_5_dot_9_ch_list(struct ath11k *ar,
+				      struct ieee80211_supported_band *band)
+{
+	int i;
+
+	if (test_bit(WMI_TLV_SERVICE_5_DOT_9GHZ_SUPPORT,
+				ar->ab->wmi_ab.svc_map))
+		return;
+
+	if (ar->ab->dfs_region != ATH11K_DFS_REG_FCC)
+		return;
+
+	for (i = 0; i < band->n_channels; i++) {
+		if (band->channels[i].center_freq >= ATH11k_5_DOT_9_MIN_FREQ &&
+		    band->channels[i].center_freq <= ATH11k_5_DOT_9_MAX_FREQ)
+			band->channels[i].flags |= IEEE80211_CHAN_DISABLED;
+	}
+}
+
 static u32 ath11k_get_phy_id(struct ath11k *ar, u32 band)
 {
 	struct ath11k_pdev *pdev = ar->pdev;
@@ -10441,6 +10463,8 @@ static int ath11k_mac_setup_channels_rates(struct ath11k *ar,
 			ath11k_mac_update_ch_list(ar, band,
 						  temp_reg_cap->low_5ghz_chan,
 						  temp_reg_cap->high_5ghz_chan);
+
+			ath11k_mac_update_5_dot_9_ch_list(ar, band);
 		}
 	}
 
