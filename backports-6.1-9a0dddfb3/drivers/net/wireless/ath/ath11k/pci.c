@@ -33,6 +33,11 @@
 
 #define TCSR_SOC_HW_SUB_VER	0x1910010
 
+unsigned int ath11k_fw_mem_seg;
+EXPORT_SYMBOL(ath11k_fw_mem_seg);
+module_param_named(fw_mem_seg, ath11k_fw_mem_seg, uint, 0644);
+MODULE_PARM_DESC(fw_mem_seg, "Enable/Disable FW segmentted memory");
+
 static const struct pci_device_id ath11k_pci_id_table[] = {
 	{ PCI_VDEVICE(QCOM, QCA6390_DEVICE_ID) },
 	{ PCI_VDEVICE(QCOM, WCN6855_DEVICE_ID) },
@@ -769,6 +774,10 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	 */
 	if (ath11k_host_ddr_addr || !ret)
 		ab->hw_params.fixed_mem_region = true;
+
+	/* This is HACK to bring up the QCN9074 with segemnted memory */
+	if (ath11k_fw_mem_seg)
+		ab->hw_params.fixed_mem_region = false;
 
 	ret = ath11k_pci_claim(ab_pci, pdev);
 	if (ret) {

@@ -2818,6 +2818,16 @@ static int ath11k_qmi_alloc_target_mem_chunk(struct ath11k_base *ab)
 	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
 		chunk = &ab->qmi.target_mem[i];
 
+		/*
+		 * Ignore the memory request from FW if size is more than 2MB
+		 * if host sends failure, FW reqesut for 2MB segments in mode-0
+		 * and 1MB segments in mode-1 and mode-2
+		 */
+		if (chunk->size > 2*1024*1024) {
+			ab->qmi.target_mem_delayed = true;
+			return 0;
+		}
+
 		/* Firmware reloads in coldboot/firmware recovery.
 		 * in such case, no need to allocate memory for FW again.
 		 */
