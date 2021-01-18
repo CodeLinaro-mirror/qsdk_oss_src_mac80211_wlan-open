@@ -58,6 +58,12 @@ EXPORT_SYMBOL(ath11k_host_ddr_addr);
 module_param_named(host_ddr_addr, ath11k_host_ddr_addr, uint, 0644);
 MODULE_PARM_DESC(host_ddr_addr, "host ddr addr for FW");
 
+module_param_named(skip_radio_bmap, ath11k_skip_radio, uint, 0644);
+MODULE_PARM_DESC(skip_radio_bmap, "Bitmap to skip device probe");
+unsigned int ath11k_skip_radio;
+EXPORT_SYMBOL(ath11k_skip_radio);
+
+
 struct ath11k_base *ath11k_soc[MAX_SOCS];
 
 static const struct ath11k_hw_params ath11k_hw_params[] = {

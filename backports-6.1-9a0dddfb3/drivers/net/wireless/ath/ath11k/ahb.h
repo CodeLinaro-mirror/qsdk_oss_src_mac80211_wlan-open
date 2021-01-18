@@ -13,6 +13,8 @@
 #define ATH11K_AHB_SMP2P_SMEM_MSG		GENMASK(15, 0)
 #define ATH11K_AHB_SMP2P_SMEM_SEQ_NO		GENMASK(31, 16)
 #define ATH11K_AHB_SMP2P_SMEM_VALUE_MASK	0xFFFFFFFF
+#define SKIP_QCN6122_0              0x2
+#define SKIP_QCN6122_1              0x4
 
 enum ath11k_ahb_smp2p_msg_id {
 	ATH11K_AHB_POWER_SAVE_ENTER = 1,

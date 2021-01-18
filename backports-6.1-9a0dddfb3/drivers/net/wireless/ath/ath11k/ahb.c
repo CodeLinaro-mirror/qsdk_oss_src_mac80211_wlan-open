@@ -1235,15 +1235,39 @@ static int ath11k_get_userpd_id(struct device *dev)
 	return userpd_id;
 }
 
+static bool ath11k_skip_target_probe(int userpd_id, const struct of_device_id *of_id)
+{
+	int hw_rev = (enum ath11k_hw_rev)of_id->data;
+
+	if (ath11k_skip_radio & SKIP_QCN6122_0) {
+		if (hw_rev == ATH11K_HW_QCN6122 &&
+		    userpd_id == QCN6122_USERPD_0)
+			return true;
+	} else if (ath11k_skip_radio & SKIP_QCN6122_1) {
+		if (hw_rev == ATH11K_HW_QCN6122 &&
+		    userpd_id == QCN6122_USERPD_1)
+			return true;
+	}
+
+	return false;
+}
+
 static int ath11k_ahb_probe(struct platform_device *pdev)
 {
 	struct ath11k_base *ab;
 	struct device *dev = &pdev->dev;
+	const struct of_device_id *of_id;
 	const struct ath11k_hif_ops *hif_ops;
 	const struct ath11k_pci_ops *pci_ops;
 	enum ath11k_hw_rev hw_rev;
-	int ret, userpd_id;
+	int ret = 0, userpd_id;
 	u32 hw_mode_id;
+
+	of_id = of_match_device(ath11k_ahb_of_match, &pdev->dev);
+	if (!of_id) {
+		dev_err(&pdev->dev, "failed to find matching device tree id\n");
+		return -EINVAL;
+	}
 
 	hw_rev = (uintptr_t)device_get_match_data(&pdev->dev);
 
@@ -1268,6 +1292,9 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 	}
 
 	userpd_id = ath11k_get_userpd_id(dev);
+	if (ath11k_skip_target_probe(userpd_id, of_id))
+		goto end;
+
 	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 	if (ret) {
 		dev_err(&pdev->dev, "failed to set 32-bit consistent dma\n");
@@ -1370,8 +1397,8 @@ err_ce_unmap:
 
 err_core_free:
 	ath11k_core_free(ab);
+end:
 	platform_set_drvdata(pdev, NULL);
-
 	return ret;
 }
 
@@ -1413,6 +1440,9 @@ static int ath11k_ahb_remove(struct platform_device *pdev)
 #endif
 {
 	struct ath11k_base *ab = platform_get_drvdata(pdev);
+
+	if (!ab)
+		return 0;
 
 	if (test_bit(ATH11K_FLAG_QMI_FAIL, &ab->dev_flags)) {
 		ath11k_ahb_power_down(ab);

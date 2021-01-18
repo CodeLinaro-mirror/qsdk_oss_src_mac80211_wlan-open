@@ -43,6 +43,8 @@ extern wait_queue_head_t ath11k_ssr_dump_wq;
 extern bool ath11k_collect_dump;
 #endif
 
+extern unsigned int ath11k_skip_radio;
+
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
 #define ATH11K_TX_MGMT_NUM_PENDING_MAX	512
