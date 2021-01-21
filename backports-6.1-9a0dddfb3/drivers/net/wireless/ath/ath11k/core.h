@@ -736,6 +736,7 @@ struct ath11k_debug {
 	struct list_head wmi_list;
 	struct completion wmi_ctrl_path_stats_rcvd;
 	u32 wmi_ctrl_path_stats_tagid;
+	bool disable_dynamic_bw;
 };
 
 struct ath11k_per_peer_tx_stats {

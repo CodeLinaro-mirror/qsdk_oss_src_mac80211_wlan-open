@@ -3110,6 +3110,68 @@ static const struct file_operations fops_tpc_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_write_disable_dynamic_bw(struct file *file,
+					       const char __user *ubuf,
+					       size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	u32 filter;
+	int ret;
+
+	if (kstrtouint_from_user(ubuf, count, 0, &filter))
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ret = -ENETDOWN;
+		goto out;
+	}
+
+	if (filter == ar->debug.disable_dynamic_bw) {
+		ret = count;
+		goto out;
+	}
+
+	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_DYNAMIC_BW, !filter,
+					ar->pdev->pdev_id);
+	if (ret) {
+		ath11k_err(ar->ab, "failed to %s dynamic bw: %d\n",
+			   filter ? "disable" : "enable", ret);
+		goto out;
+	}
+
+	ar->debug.disable_dynamic_bw = filter;
+	ret = count;
+
+out:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static ssize_t ath11k_read_disable_dynamic_bw(struct file *file,
+					      char __user *ubuf,
+					      size_t count, loff_t *ppos)
+
+{
+	char buf[32] = {0};
+	struct ath11k *ar = file->private_data;
+	int len = 0;
+
+	mutex_lock(&ar->conf_mutex);
+	len = scnprintf(buf, sizeof(buf) - len, "%08x\n",
+			ar->debug.disable_dynamic_bw);
+	mutex_unlock(&ar->conf_mutex);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_disable_dyn_bw = {
+	.read = ath11k_read_disable_dynamic_bw,
+	.write = ath11k_write_disable_dynamic_bw,
+	.open = simple_open
+};
+
 int ath11k_debugfs_register(struct ath11k *ar)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -3156,6 +3218,9 @@ int ath11k_debugfs_register(struct ath11k *ar)
 	debugfs_create_file("dump_mgmt_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_dump_mgmt_stats);
+	debugfs_create_file("disable_dynamic_bw", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_disable_dyn_bw);
 
 	if (ar->hw->wiphy->bands[NL80211_BAND_5GHZ]) {
 		debugfs_create_file("dfs_simulate_radar", 0200,
