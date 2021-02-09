@@ -4099,6 +4099,177 @@ static int ath12k_mac_fils_discovery(struct ath12k_link_vif *arvif,
 	return ret;
 }
 
+
+static void ath12k_mac_non_srg_th_config(struct ath12k *ar,
+					 struct ieee80211_he_obss_pd *he_obss_pd,
+					 u32 *param_val)
+{
+	s8 non_srg_th = ATH12K_OBSS_PD_THRESHOLD_DISABLED;
+
+	if (he_obss_pd->sr_ctrl &
+	    IEEE80211_HE_SPR_NON_SRG_OBSS_PD_SR_DISALLOWED) {
+		non_srg_th = ATH12K_OBSS_PD_MAX_THRESHOLD;
+	} else {
+		if (he_obss_pd->sr_ctrl &
+		    IEEE80211_HE_SPR_NON_SRG_OFFSET_PRESENT)
+			non_srg_th = (ATH12K_OBSS_PD_MAX_THRESHOLD +
+				      he_obss_pd->non_srg_max_offset);
+
+		*param_val |= ATH12K_OBSS_PD_NON_SRG_EN;
+	}
+
+	if (!test_bit(WMI_TLV_SERVICE_SRG_SRP_SPATIAL_REUSE_SUPPORT,
+		      ar->ab->wmi_ab.svc_map)) {
+		if (non_srg_th != ATH12K_OBSS_PD_THRESHOLD_DISABLED)
+			non_srg_th -= ATH12K_DEFAULT_NOISE_FLOOR;
+	}
+
+	*param_val |= (non_srg_th & GENMASK(7, 0));
+}
+
+static void ath12k_mac_srg_th_config(struct ath12k *ar,
+				     struct ieee80211_he_obss_pd *he_obss_pd,
+				     u32 *param_val)
+{
+	s8 srg_th = 0;
+
+	if (he_obss_pd->sr_ctrl & IEEE80211_HE_SPR_SRG_INFORMATION_PRESENT) {
+		srg_th = ATH12K_OBSS_PD_MAX_THRESHOLD + he_obss_pd->max_offset;
+		*param_val |= ATH12K_OBSS_PD_SRG_EN;
+	}
+
+	if (test_bit(WMI_TLV_SERVICE_SRG_SRP_SPATIAL_REUSE_SUPPORT,
+		     ar->ab->wmi_ab.svc_map)) {
+		*param_val |= ATH12K_OBSS_PD_THRESHOLD_IN_DBM;
+		*param_val |= FIELD_PREP(GENMASK(15, 8), srg_th);
+	} else {
+		/* SRG not supported and threshold in dB */
+		*param_val &= ~(ATH12K_OBSS_PD_SRG_EN |
+				ATH12K_OBSS_PD_THRESHOLD_IN_DBM);
+	}
+}
+
+static int ath12k_mac_config_obss_pd(struct ath12k *ar,
+				     struct ieee80211_he_obss_pd *he_obss_pd)
+{
+	u32 bitmap[2], param_id, param_val, pdev_id;
+	int ret;
+
+	pdev_id = ar->pdev->pdev_id;
+
+	/* Set and enable SRG/non-SRG OBSS PD Threshold */
+	param_id = WMI_PDEV_PARAM_SET_CMD_OBSS_PD_THRESHOLD;
+
+	/* TODO: Set threshold as 0 if monitor vdev is enabled */
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "OBSS PD Params: sr_ctrl %x non_srg_thres %u srg_max %u\n",
+		   he_obss_pd->sr_ctrl, he_obss_pd->non_srg_max_offset,
+		   he_obss_pd->max_offset);
+
+	param_val = 0;
+
+	/* Preparing non-SRG OBSS PD Threshold Configurations */
+	ath12k_mac_non_srg_th_config(ar, he_obss_pd, &param_val);
+
+	/* Preparing SRG OBSS PD Threshold Configurations */
+	ath12k_mac_srg_th_config(ar, he_obss_pd, &param_val);
+
+	ret = ath12k_wmi_pdev_set_param(ar, param_id, param_val, pdev_id);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Failed to set obss_pd_threshold for pdev: %u\n",
+			    pdev_id);
+		return ret;
+	}
+
+	/* Enable OBSS PD for all access category */
+	param_id  = WMI_PDEV_PARAM_SET_CMD_OBSS_PD_PER_AC;
+	param_val = 0xf;
+	ret = ath12k_wmi_pdev_set_param(ar, param_id, param_val, pdev_id);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Failed to set obss_pd_per_ac for pdev: %u\n",
+			    pdev_id);
+		return ret;
+	}
+
+	/* Set SR Prohibit */
+	param_id  = WMI_PDEV_PARAM_ENABLE_SR_PROHIBIT;
+	param_val = !!(he_obss_pd->sr_ctrl &
+		       IEEE80211_HE_SPR_HESIGA_SR_VAL15_ALLOWED);
+	ret = ath12k_wmi_pdev_set_param(ar, param_id, param_val, pdev_id);
+	if (ret) {
+		ath12k_warn(ar->ab, "Failed to set sr_prohibit for pdev: %u\n",
+			    pdev_id);
+		return ret;
+	}
+
+	if (!test_bit(WMI_TLV_SERVICE_SRG_SRP_SPATIAL_REUSE_SUPPORT,
+		      ar->ab->wmi_ab.svc_map))
+		return 0;
+
+	/* Set SRG BSS Color Bitmap */
+	memcpy(bitmap, he_obss_pd->bss_color_bitmap, sizeof(bitmap));
+	ret = ath12k_wmi_pdev_set_srg_bss_color_bitmap(ar, bitmap);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Failed to set bss_color_bitmap for pdev: %u\n",
+			    pdev_id);
+		return ret;
+	}
+
+	/* Set SRG Partial BSSID Bitmap */
+	memcpy(bitmap, he_obss_pd->partial_bssid_bitmap, sizeof(bitmap));
+	ret = ath12k_wmi_pdev_set_srg_patial_bssid_bitmap(ar, bitmap);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Failed to set partial_bssid_bitmap for pdev: %u\n",
+			    pdev_id);
+		return ret;
+	}
+
+	memset(bitmap, 0xff, sizeof(bitmap));
+
+	/* Enable all BSS Colors for SRG */
+	ret = ath12k_wmi_pdev_srg_obss_color_enable_bitmap(ar, bitmap);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Failed to set srg_color_en_bitmap pdev: %u\n",
+			    pdev_id);
+		return ret;
+	}
+
+	/* Enable all patial BSSID mask for SRG */
+	ret = ath12k_wmi_pdev_srg_obss_bssid_enable_bitmap(ar, bitmap);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Failed to set srg_bssid_en_bitmap pdev: %u\n",
+			    pdev_id);
+		return ret;
+	}
+
+	/* Enable all BSS Colors for non-SRG */
+	ret = ath12k_wmi_pdev_non_srg_obss_color_enable_bitmap(ar, bitmap);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Failed to set non_srg_color_en_bitmap pdev: %u\n",
+			    pdev_id);
+		return ret;
+	}
+
+	/* Enable all patial BSSID mask for non-SRG */
+	ret = ath12k_wmi_pdev_non_srg_obss_bssid_enable_bitmap(ar, bitmap);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "Failed to set non_srg_bssid_en_bitmap pdev: %u\n",
+			    pdev_id);
+		return ret;
+	}
+
+	return 0;
+}
+
 void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   u64 changed)
@@ -4459,8 +4630,7 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 	}
 
 	if (changed & BSS_CHANGED_HE_OBSS_PD)
-		ath12k_wmi_send_obss_spr_cmd(ar, arvif->vdev_id,
-					     &info->he_obss_pd);
+		ath12k_mac_config_obss_pd(ar, &info->he_obss_pd);
 
 	if (changed & BSS_CHANGED_HE_BSS_COLOR) {
 		if (vif->type == NL80211_IFTYPE_AP) {
