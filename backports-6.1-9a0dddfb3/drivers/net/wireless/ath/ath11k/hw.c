@@ -1809,6 +1809,14 @@ const struct ce_pipe_config ath11k_target_ce_config_wlan_ipq8074[] = {
 	},
 
 	/* CE11 Not used */
+	{
+		.pipenum = __cpu_to_le32(11),
+		.pipedir = __cpu_to_le32(0),
+		.nentries = __cpu_to_le32(0),
+		.nbytes_max = __cpu_to_le32(0),
+		.flags = __cpu_to_le32(CE_ATTR_FLAGS | CE_ATTR_DIS_INTR),
+		.reserved = __cpu_to_le32(0),
+	},
 };
 
 /* Map from service/endpoint to Copy Engine.
