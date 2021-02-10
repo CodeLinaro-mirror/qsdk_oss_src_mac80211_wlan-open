@@ -265,6 +265,10 @@ struct ath11k_hw_params {
 	u8 ce_window;
 	u8 dp_window;
 	bool is_qdss_support;
+	bool cfr_support;
+	u32 cfr_dma_hdr_size;
+	u32 cfr_num_stream_bufs;
+	u32 cfr_stream_buf_size;
 };
 
 struct ath11k_hw_ops {

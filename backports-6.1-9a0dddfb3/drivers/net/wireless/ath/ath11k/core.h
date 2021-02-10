@@ -37,6 +37,7 @@
 #include "vendor.h"
 #include "rx_desc.h"
 #include "nss.h"
+#include "cfr.h"
 
 #ifdef CONFIG_QCOM_QMI_HELPERS
 extern wait_queue_head_t ath11k_ssr_dump_wq;
@@ -603,6 +604,13 @@ struct ath11k_htt_tx_stats {
 	u32 mu_group[MAX_MU_GROUP_ID];
 };
 
+struct ath11k_per_peer_cfr_capture {
+	u32 cfr_enable;
+	u32 cfr_period;
+	u32 cfr_bandwidth;
+	u32 cfr_method;
+};
+
 struct ath11k_per_ppdu_tx_stats {
 	u16 succ_pkts;
 	u16 failed_pkts;
@@ -670,6 +678,9 @@ struct ath11k_sta {
 	bool peer_current_ps_valid;
 
 	u32 bw_prev;
+#ifdef CPTCFG_ATH11K_CFR
+	struct ath11k_per_peer_cfr_capture cfr_capture;
+#endif
 };
 
 #define ATH11K_MIN_5G_FREQ 4150
@@ -949,6 +960,10 @@ struct ath11k {
 	s8 max_allowed_tx_power;
 	bool ce_latency_stats_enable;
 	int cookie_pdev_id;
+#ifdef CPTCFG_ATH11K_CFR
+	struct ath11k_cfr cfr;
+#endif
+	u8 cfr_enabled;
 };
 
 struct ath11k_band_cap {

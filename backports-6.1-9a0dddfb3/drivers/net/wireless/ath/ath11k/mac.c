@@ -6409,6 +6409,7 @@ static int ath11k_mac_mgmt_tx_wmi(struct ath11k *ar, struct ath11k_vif *arvif,
 	enum hal_encrypt_type enctype;
 	unsigned int mic_len;
 	dma_addr_t paddr;
+	bool tx_params_valid = false;
 	int buf_id;
 	int ret;
 
@@ -6459,7 +6460,13 @@ static int ath11k_mac_mgmt_tx_wmi(struct ath11k *ar, struct ath11k_vif *arvif,
 		return 0;
 	}
 
-	ret = ath11k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb);
+	if (ar->cfr_enabled &&
+	    ieee80211_is_probe_resp(hdr->frame_control) &&
+	    peer_is_in_cfr_unassoc_pool(ar, hdr->addr1))
+		tx_params_valid = true;
+
+	ret = ath11k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb,
+				   tx_params_valid);
 	if (ret) {
 		ath11k_warn(ar->ab, "failed to send mgmt frame: %d\n", ret);
 		goto err_unmap_buf;
@@ -10487,6 +10494,9 @@ static int ath11k_mac_op_sta_state(struct ieee80211_hw *hw,
 			kfree(peer);
 			ar->num_peers--;
 		}
+
+		ath11k_cfr_decrement_peer_count(ar, arsta);
+
 		spin_unlock_bh(&ar->ab->base_lock);
 		mutex_unlock(&ar->ab->tbl_mtx_lock);
 	} else if (old_state == IEEE80211_STA_AUTH &&
