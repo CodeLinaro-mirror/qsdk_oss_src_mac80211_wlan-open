@@ -191,6 +191,18 @@ static int ath11k_cfr_correlate_and_relay(struct ath11k *ar,
 					   jiffies_to_msecs(diff));
 			}
 
+			if (ar->ab->hw_rev == ATH11K_HW_QCN9074_HW10) {
+				if (lut->header_length > CFR_HDR_MAX_LEN_WORDS_QCN9074 ||
+				    lut->payload_length > CFR_DATA_MAX_LEN_QCN9074) {
+					cfr->invalid_dma_length_cnt++;
+					ath11k_dbg(ar->ab, ATH11K_DBG_CFR,
+						   "Invalid hdr/payload len hdr %u payload %u\n",
+						   lut->header_length,
+						   lut->payload_length);
+					return ATH11K_CORRELATE_STATUS_ERR;
+				}
+			}
+
 			ath11k_cfr_free_pending_dbr_events(ar);
 
 			cfr->release_cnt++;
@@ -213,6 +225,167 @@ static int ath11k_cfr_correlate_and_relay(struct ath11k *ar,
 	} else {
 		return ATH11K_CORRELATE_STATUS_HOLD;
 	}
+}
+
+static u8 freeze_reason_to_capture_type(void *freeze_tlv)
+{
+	struct macrx_freeze_capture_channel *freeze =
+		(struct macrx_freeze_capture_channel_v3 *)freeze_tlv;
+	u8 capture_reason = FIELD_GET(MACRX_FREEZE_CC_INFO0_CAPTURE_REASON,
+				      freeze->info0);
+
+	switch (capture_reason) {
+	case FREEZE_REASON_TM:
+		return CFR_CAPTURE_METHOD_TM;
+	case FREEZE_REASON_FTM:
+		return CFR_CAPTURE_METHOD_FTM;
+	case FREEZE_REASON_TA_RA_TYPE_FILTER:
+		return CFR_CAPTURE_METHOD_TA_RA_TYPE_FILTER;
+	case FREEZE_REASON_NDPA_NDP:
+		return CFR_CAPTURE_METHOD_NDPA_NDP;
+	case FREEZE_REASON_ALL_PACKET:
+		return CFR_CAPTURE_METHOD_ALL_PACKET;
+	case FREEZE_REASON_ACK_RESP_TO_TM_FTM:
+		return CFR_CAPTURE_METHOD_ACK_RESP_TO_TM_FTM;
+	default:
+		return CFR_CAPTURE_METHOD_AUTO;
+	}
+
+	return CFR_CAPTURE_METHOD_AUTO;
+}
+
+static void
+extract_peer_mac_from_freeze_tlv(void *freeze_tlv, uint8_t *peermac)
+{
+	struct macrx_freeze_capture_channel_v3 *freeze =
+		(struct macrx_freeze_capture_channel_v3 *)freeze_tlv;
+
+	peermac[0] = freeze->packet_ta_lower_16 & 0x00FF;
+	peermac[1] = (freeze->packet_ta_lower_16 & 0xFF00) >> 8;
+	peermac[2] = freeze->packet_ta_mid_16 & 0x00FF;
+	peermac[3] = (freeze->packet_ta_mid_16 & 0xFF00) >> 8;
+	peermac[4] = freeze->packet_ta_upper_16 & 0x00FF;
+	peermac[5] = (freeze->packet_ta_upper_16 & 0xFF00) >> 8;
+}
+
+static int ath11k_cfr_enh_process_data(struct ath11k *ar,
+				       struct ath11k_dbring_data *param)
+{
+	struct ath11k_base *ab = ar->ab;
+	struct ath11k_cfr *cfr = &ar->cfr;
+	struct ath11k_cfr_look_up_table *lut;
+	struct ath11k_csi_cfr_header *header;
+	struct ath11k_cfir_enh_dma_hdr dma_hdr;
+	struct cfr_metadata_version_3 *meta;
+	void *mu_rx_user_info = NULL, *freeze_tlv = NULL;
+	u8 *peer_macaddr;
+	u8 *data;
+	u32 buf_id;
+	u32 length;
+	u32 freeze_tlv_len = 0;
+	u32 end_magic = ATH11K_CFR_END_MAGIC;
+	u8 freeze_tlv_ver;
+	u8 capture_type;
+	int ret = 0;
+	int status;
+
+	data = param->data;
+	buf_id = param->buf_id;
+
+	memcpy(&dma_hdr, data, sizeof(struct ath11k_cfir_enh_dma_hdr));
+
+	freeze_tlv_ver = FIELD_GET(CFIR_DMA_HDR_INFO2_FREEZ_TLV_VER, dma_hdr.info2);
+
+	if (FIELD_GET(CFIR_DMA_HDR_INFO2_FREEZ_DATA_INC, dma_hdr.info2)) {
+		freeze_tlv = data + sizeof(struct ath11k_cfir_enh_dma_hdr);
+		capture_type = freeze_reason_to_capture_type(freeze_tlv);
+	}
+
+	if (FIELD_GET(CFIR_DMA_HDR_INFO2_MURX_DATA_INC, dma_hdr.info2)) {
+		if (freeze_tlv_ver == MACRX_FREEZE_TLV_VERSION_3)
+			freeze_tlv_len = sizeof(struct macrx_freeze_capture_channel_v3);
+		else
+			freeze_tlv_len = sizeof(struct macrx_freeze_capture_channel);
+
+		mu_rx_user_info = data + sizeof(struct ath11k_cfir_enh_dma_hdr) +
+				  freeze_tlv_len;
+	}
+
+	length = FIELD_GET(CFIR_DMA_HDR_INFO0_LEN, dma_hdr.hdr.info0) * 4;
+	length += dma_hdr.total_bytes;
+
+	spin_lock_bh(&cfr->lut_lock);
+
+	if (!cfr->lut) {
+		spin_unlock_bh(&cfr->lut_lock);
+		return -EINVAL;
+	}
+
+	lut = &cfr->lut[buf_id];
+	if (!lut) {
+		ath11k_dbg(ab, ATH11K_DBG_CFR,
+			   "lut failure to process cfr data id:%d\n", buf_id);
+		spin_unlock_bh(&cfr->lut_lock);
+		return -EINVAL;
+	}
+
+
+	ath11k_dbg_dump(ab, ATH11K_DBG_CFR_DUMP,"data_from_buf_rel:", "",
+			data, length);
+
+	lut->buff = param->buff;
+	lut->data = data;
+	lut->data_len = length;
+	lut->dbr_ppdu_id = dma_hdr.hdr.phy_ppdu_id;
+	lut->dbr_tstamp = jiffies;
+	lut->header_length = FIELD_GET(CFIR_DMA_HDR_INFO0_LEN, dma_hdr.hdr.info0);
+	lut->payload_length = dma_hdr.total_bytes;
+	memcpy(&lut->dma_hdr.enh_hdr, &dma_hdr, sizeof(struct ath11k_cfir_enh_dma_hdr));
+
+	header = &lut->header;
+	meta = &header->u.meta_v3;
+	meta->channel_bw = FIELD_GET(CFIR_DMA_HDR_INFO1_UPLOAD_PKT_BW,
+				     dma_hdr.hdr.info1);
+	meta->num_rx_chain =
+		NUM_CHAINS_FW_TO_HOST(FIELD_GET(CFIR_DMA_HDR_INFO1_NUM_CHAINS,
+						dma_hdr.hdr.info1));
+	meta->length = length;
+
+	if (capture_type != CFR_CAPTURE_METHOD_ACK_RESP_TO_TM_FTM) {
+		meta->capture_type = capture_type;
+		meta->sts_count = FIELD_GET(CFIR_DMA_HDR_INFO1_NSS, dma_hdr.hdr.info1) + 1;
+		if (FIELD_GET(CFIR_DMA_HDR_INFO2_MURX_DATA_INC, dma_hdr.info2)) {
+			peer_macaddr = meta->peer_addr.su_peer_addr;
+			if (freeze_tlv)
+				extract_peer_mac_from_freeze_tlv(freeze_tlv, peer_macaddr);
+		}
+	}
+
+	status = ath11k_cfr_correlate_and_relay(ar, lut,
+						ATH11K_CORRELATE_DBR_EVENT);
+
+	if (status == ATH11K_CORRELATE_STATUS_RELEASE) {
+		ath11k_dbg(ab, ATH11K_DBG_CFR,
+			   "releasing CFR data to user space");
+		ath11k_cfr_rfs_write(ar, &lut->header,
+				sizeof(struct ath11k_csi_cfr_header),
+				lut->data, lut->data_len,
+				&end_magic, sizeof(u32));
+		ath11k_cfr_release_lut_entry(lut);
+		ret = ATH11K_CORRELATE_STATUS_RELEASE;
+	} else if (status == ATH11K_CORRELATE_STATUS_HOLD) {
+		ret = ATH11K_CORRELATE_STATUS_HOLD;
+		ath11k_dbg(ab, ATH11K_DBG_CFR,
+				"tx event is not yet received holding the buf");
+	} else {
+		ath11k_cfr_release_lut_entry(lut);
+		ret = ATH11K_CORRELATE_STATUS_ERR;
+		ath11k_err(ab, "error in processing buf rel event");
+	}
+
+	spin_unlock_bh(&cfr->lut_lock);
+
+	return ret;
 }
 
 static int ath11k_cfr_process_data(struct ath11k *ar,
@@ -274,7 +447,7 @@ static int ath11k_cfr_process_data(struct ath11k *ar,
 	lut->dbr_ppdu_id = dma_hdr.phy_ppdu_id;
 	lut->dbr_tstamp = jiffies;
 
-	memcpy(&lut->hdr, &dma_hdr, sizeof(struct ath11k_cfir_dma_hdr));
+	memcpy(&lut->dma_hdr.hdr, &dma_hdr, sizeof(struct ath11k_cfir_dma_hdr));
 
 	header = &lut->header;
 	header->u.meta_v2.channel_bw = FIELD_GET(CFIR_DMA_HDR_INFO1_UPLOAD_PKT_BW,
@@ -305,38 +478,6 @@ static int ath11k_cfr_process_data(struct ath11k *ar,
 	spin_unlock_bh(&cfr->lut_lock);
 
 	return ret;
-}
-
-static void ath11k_cfr_fill_hdr_info(struct ath11k *ar,
-				     struct ath11k_csi_cfr_header *header,
-				     struct ath11k_cfr_peer_tx_param *params)
-{
-	header->cfr_metadata_version = ATH11K_CFR_META_VERSION_2;
-	header->cfr_data_version = ATH11K_CFR_DATA_VERSION_1;
-	/* TODO: can we add this chip_type to hw param table */
-	header->chip_type = ATH11K_CFR_RADIO_IPQ8074;
-	header->u.meta_v2.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
-			params->status);
-	header->u.meta_v2.capture_bw = params->bandwidth;
-	header->u.meta_v2.phy_mode = params->phy_mode;
-	header->u.meta_v2.prim20_chan = params->primary_20mhz_chan;
-	header->u.meta_v2.center_freq1 = params->band_center_freq1;
-	header->u.meta_v2.center_freq2 = params->band_center_freq2;
-
-	/* Currently CFR data is captured on ACK of a Qos NULL frame.
-	 * For 20 MHz, ACK is Legacy and for 40/80/160, ACK is DUP Legacy.
-	 */
-	header->u.meta_v2.capture_mode = params->bandwidth ?
-		ATH11K_CFR_CAPTURE_DUP_LEGACY_ACK : ATH11K_CFR_CAPTURE_LEGACY_ACK;
-	header->u.meta_v2.capture_type = params->capture_method;
-	header->u.meta_v2.num_rx_chain = ar->num_rx_chains;
-	header->u.meta_v2.sts_count    = params->spatial_streams;
-	header->u.meta_v2.timestamp    = params->timestamp_us;
-	memcpy(header->u.meta_v2.peer_addr, params->peer_mac_addr, ETH_ALEN);
-	memcpy(header->u.meta_v2.chain_rssi, params->chain_rssi,
-	       sizeof(params->chain_rssi));
-	memcpy(header->u.meta_v2.chain_phase, params->chain_phase,
-	       sizeof(params->chain_phase));
 }
 
 int ath11k_process_cfr_capture_event(struct ath11k_base *ab,
@@ -431,7 +572,7 @@ int ath11k_process_cfr_capture_event(struct ath11k_base *ab,
 	header->vendorid = VENDOR_QCA;
 	header->pltform_type = PLATFORM_TYPE_ARM;
 
-	ath11k_cfr_fill_hdr_info(ar, header, params);
+	ab->hw_params.hw_ops->fill_cfr_hdr_info(ar, header, params);
 
 	status = ath11k_cfr_correlate_and_relay(ar, lut,
 						ATH11K_CORRELATE_TX_EVENT);
@@ -451,7 +592,10 @@ int ath11k_process_cfr_capture_event(struct ath11k_base *ab,
 		ath11k_dbg(ab, ATH11K_DBG_CFR,
 			   "dbr event is not yet received holding buf\n");
 	} else {
+		buff = lut->buff;
 		ath11k_cfr_release_lut_entry(lut);
+		ath11k_dbring_bufs_replenish(ar, &cfr->rx_ring, buff,
+					     WMI_DIRECT_BUF_CFR);
 		ret = -EINVAL;
 	}
 
@@ -758,7 +902,9 @@ static int ath11k_cfr_ring_alloc(struct ath11k *ar,
 	ath11k_dbring_set_cfg(ar, &cfr->rx_ring,
 			      ATH11K_CFR_NUM_RESP_PER_EVENT,
 			      ATH11K_CFR_EVENT_TIMEOUT_MS,
-			      ath11k_cfr_process_data);
+			      ((ar->ab->hw_rev == ATH11K_HW_IPQ8074) ?
+			       ath11k_cfr_process_data :
+			       ath11k_cfr_enh_process_data));
 
 	ret = ath11k_dbring_buf_setup(ar, &cfr->rx_ring, db_cap);
 	if (ret) {

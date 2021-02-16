@@ -135,6 +135,15 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.ce_fwlog_enable = false,
 		.fwmem_mode_change = false,
 		.is_qdss_support = false,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath11k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 255,
+		/* sizeof (ath11k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath11k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN9074 *4) +
+					CFR_DATA_MAX_LEN_QCN9074,
 		.supports_rssi_stats = false,
 		.fw_wmi_diag_event = false,
 		.current_cc_support = false,

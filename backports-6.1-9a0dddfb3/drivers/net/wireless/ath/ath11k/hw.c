@@ -1154,6 +1154,66 @@ static void ath11k_hw_qcn9074_rx_desc_get_crypto_hdr(struct hal_rx_desc *desc,
 	crypto_hdr[7] = HAL_RX_MPDU_INFO_PN_GET_BYTE2(desc->u.qcn9074.mpdu_start.pn[1]);
 }
 
+void ath11k_hw_ipq8074_fill_cfr_hdr_info(struct ath11k *ar,
+					 struct ath11k_csi_cfr_header *header,
+					 struct ath11k_cfr_peer_tx_param *params)
+{
+	header->cfr_metadata_version = ATH11K_CFR_META_VERSION_2;
+	header->cfr_data_version = ATH11K_CFR_DATA_VERSION_1;
+	/* TODO: can we add this chip_type to hw param table */
+	header->chip_type = ATH11K_CFR_RADIO_IPQ8074;
+	header->u.meta_v2.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
+					     params->status);
+	header->u.meta_v2.capture_bw = params->bandwidth;
+	header->u.meta_v2.phy_mode = params->phy_mode;
+	header->u.meta_v2.prim20_chan = params->primary_20mhz_chan;
+	header->u.meta_v2.center_freq1 = params->band_center_freq1;
+	header->u.meta_v2.center_freq2 = params->band_center_freq2;
+
+	/* Currently CFR data is captured on ACK of a Qos NULL frame.
+	 * For 20 MHz, ACK is Legacy and for 40/80/160, ACK is DUP Legacy.
+	 */
+	header->u.meta_v2.capture_mode = params->bandwidth ?
+		ATH11K_CFR_CAPTURE_DUP_LEGACY_ACK : ATH11K_CFR_CAPTURE_LEGACY_ACK;
+	header->u.meta_v2.capture_type = params->capture_method;
+	header->u.meta_v2.num_rx_chain = ar->cfg_rx_chainmask;
+	header->u.meta_v2.sts_count = params->spatial_streams;
+	header->u.meta_v2.timestamp = params->timestamp_us;
+	memcpy(header->u.meta_v2.peer_addr, params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->u.meta_v2.chain_rssi, params->chain_rssi,
+	       sizeof(params->chain_rssi));
+	memcpy(header->u.meta_v2.chain_phase, params->chain_phase,
+	       sizeof(params->chain_phase));
+}
+
+void ath11k_hw_qcn9074_fill_cfr_hdr_info(struct ath11k *ar,
+					 struct ath11k_csi_cfr_header *header,
+					 struct ath11k_cfr_peer_tx_param *params)
+{
+	header->cfr_metadata_version = ATH11K_CFR_META_VERSION_3;
+	header->cfr_data_version = ATH11K_CFR_DATA_VERSION_1;
+	header->chip_type = ATH11K_CFR_RADIO_QCN9074;
+	header->u.meta_v3.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
+					     params->status);
+	header->u.meta_v3.capture_bw = params->bandwidth;
+	header->u.meta_v3.phy_mode = params->phy_mode;
+	header->u.meta_v3.prim20_chan = params->primary_20mhz_chan;
+	header->u.meta_v3.center_freq1 = params->band_center_freq1;
+	header->u.meta_v3.center_freq2 = params->band_center_freq2;
+	header->u.meta_v3.capture_mode = params->bandwidth ?
+		ATH11K_CFR_CAPTURE_DUP_LEGACY_ACK : ATH11K_CFR_CAPTURE_LEGACY_ACK;
+	header->u.meta_v3.capture_type = params->capture_method;
+	header->u.meta_v3.num_rx_chain = ar->cfg_rx_chainmask;
+	header->u.meta_v3.sts_count = params->spatial_streams;
+	header->u.meta_v3.timestamp = params->timestamp_us;
+	memcpy(header->u.meta_v3.peer_addr.su_peer_addr,
+	       params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->u.meta_v3.chain_rssi, params->chain_rssi,
+	       sizeof(params->chain_rssi));
+	memcpy(header->u.meta_v3.chain_phase, params->chain_phase,
+	       sizeof(params->chain_phase));
+}
+
 const struct ath11k_hw_ops ipq8074_ops = {
 	.get_hw_mac_from_pdev_id = ath11k_hw_ipq8074_mac_from_pdev_id,
 	.wmi_init_config = ath11k_init_wmi_config_ipq8074,
@@ -1242,6 +1302,7 @@ const struct ath11k_hw_ops ipq6018_ops = {
 	.rx_desc_dot11_hdr_fields_valid = ath11k_hw_ipq8074_rx_desc_dot11_hdr_fields_valid,
 	.rx_desc_get_dot11_hdr = ath11k_hw_ipq8074_rx_desc_get_dot11_hdr,
 	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
+	.fill_cfr_hdr_info = ath11k_hw_ipq8074_fill_cfr_hdr_info,
 };
 
 const struct ath11k_hw_ops qca6390_ops = {
@@ -1474,6 +1535,7 @@ const struct ath11k_hw_ops ipq5018_ops = {
 	.rx_desc_dot11_hdr_fields_valid = ath11k_hw_qcn9074_rx_desc_dot11_hdr_fields_valid,
 	.rx_desc_get_dot11_hdr = ath11k_hw_qcn9074_rx_desc_get_dot11_hdr,
 	.rx_desc_get_crypto_header = ath11k_hw_qcn9074_rx_desc_get_crypto_hdr,
+	.fill_cfr_hdr_info = ath11k_hw_qcn9074_fill_cfr_hdr_info,
 };
 
 const struct ath11k_hw_ops qcn6122_ops = {

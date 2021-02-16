@@ -21,9 +21,14 @@
 #define ATH11K_CFR_END_MAGIC 0xBEAFDEAD
 
 #define ATH11K_CFR_RADIO_IPQ8074 23
+#define ATH11K_CFR_RADIO_QCN9074 26
+
+#define CFR_HDR_MAX_LEN_WORDS_QCN9074 50
+#define CFR_DATA_MAX_LEN_QCN9074 16384
 
 #define VENDOR_QCA 0x8cfdf0
 #define PLATFORM_TYPE_ARM 2
+#define NUM_CHAINS_FW_TO_HOST(n) ((1 << ((n) + 1)) - 1)
 
 enum ath11k_cfr_meta_version {
 	ATH11K_CFR_META_VERSION_NONE,
@@ -92,6 +97,7 @@ struct cfr_metadata_version_1 {
 } __packed;
 
 #define HOST_MAX_CHAINS 8
+#define MAX_CFR_MU_USERS 4
 
 struct cfr_metadata_version_2 {
 	u8 peer_addr[ETH_ALEN];
@@ -112,6 +118,30 @@ struct cfr_metadata_version_2 {
 	u16 chain_phase[HOST_MAX_CHAINS];
 } __packed;
 
+struct cfr_metadata_version_3 {
+	u8 status;
+	u8 capture_bw;
+	u8 channel_bw;
+	u8 phy_mode;
+	u16 prim20_chan;
+	u16 center_freq1;
+	u16 center_freq2;
+	u8 capture_mode;
+	u8 capture_type;
+	u8 sts_count;
+	u8 num_rx_chain;
+	u64 timestamp;
+	u32 length;
+	u8 is_mu_ppdu;
+	u8 num_mu_users;
+	union {
+		u8 su_peer_addr[ETH_ALEN];
+		u8 mu_peer_addr[MAX_CFR_MU_USERS][ETH_ALEN];
+	} peer_addr;
+	u32 chain_rssi[HOST_MAX_CHAINS];
+	u16 chain_phase[HOST_MAX_CHAINS];
+} __packed;
+
 struct ath11k_csi_cfr_header {
 	u32 start_magic_num;
 	u32 vendorid;
@@ -123,6 +153,7 @@ struct ath11k_csi_cfr_header {
 	union {
 		struct cfr_metadata_version_1 meta_v1;
 		struct cfr_metadata_version_2 meta_v2;
+		struct cfr_metadata_version_3 meta_v3;
 	} u;
 } __packed;
 
@@ -156,6 +187,26 @@ struct ath11k_cfir_dma_hdr {
 	u16 phy_ppdu_id;
 };
 
+#define CFIR_DMA_HDR_INFO2_HDR_VER GENMASK(3, 0)
+#define CFIR_DMA_HDR_INFO2_TARGET_ID GENMASK(7, 4)
+#define CFIR_DMA_HDR_INFO2_CFR_FMT BIT(8)
+#define CFIR_DMA_HDR_INFO2_RSVD BIT(9)
+#define CFIR_DMA_HDR_INFO2_MURX_DATA_INC BIT(10)
+#define CFIR_DMA_HDR_INFO2_FREEZ_DATA_INC BIT(11)
+#define CFIR_DMA_HDR_INFO2_FREEZ_TLV_VER GENMASK(15, 12)
+
+#define CFIR_DMA_HDR_INFO3_MU_RX_NUM_USERS GENMASK(7, 0)
+#define CFIR_DMA_HDR_INFO3_DECIMATION_FACT GENMASK(11, 8)
+#define CFIR_DMA_HDR_INFO3_RSVD GENMASK(15, 12)
+
+struct ath11k_cfir_enh_dma_hdr {
+	struct ath11k_cfir_dma_hdr hdr;
+	u16 total_bytes;
+	u16 info2;
+	u16 info3;
+	u16 rsvd;
+};
+
 #define CFR_MAX_LUT_ENTRIES 136
 
 struct ath11k_cfr_look_up_table {
@@ -169,7 +220,10 @@ struct ath11k_cfr_look_up_table {
 	u32 tx_address1;
 	u32 tx_address2;
 	struct ath11k_csi_cfr_header header;
-	struct ath11k_cfir_dma_hdr hdr;
+	union {
+		struct ath11k_cfir_dma_hdr hdr;
+		struct ath11k_cfir_enh_dma_hdr enh_hdr;
+	} dma_hdr;
 	u64 txrx_tstamp;
 	u64 dbr_tstamp;
 	u32 header_length;
@@ -191,6 +245,85 @@ enum cfr_capture_type {
 	CFR_CAPTURE_METHOD_LAST_VALID,
 	CFR_CAPTURE_METHOD_AUTO = 0xff,
 	CFR_CAPTURE_METHOD_MAX,
+};
+
+/* enum macrx_freeze_tlv_version: Reported by uCode in enh_dma_header
+ * MACRX_FREEZE_TLV_VERSION_1: Single MU UL user info reported by MAC
+ * MACRX_FREEZE_TLV_VERSION_2: Upto 4 MU UL user info reported by MAC
+ * MACRX_FREEZE_TLV_VERSION_3: Upto 37 MU UL user info reported by MAC
+ */
+enum macrx_freeze_tlv_version {
+	MACRX_FREEZE_TLV_VERSION_1 = 1,
+	MACRX_FREEZE_TLV_VERSION_2 = 2,
+	MACRX_FREEZE_TLV_VERSION_3 = 3,
+	MACRX_FREEZE_TLV_VERSION_MAX
+};
+
+enum mac_freeze_capture_reason {
+	FREEZE_REASON_TM = 0,
+	FREEZE_REASON_FTM,
+	FREEZE_REASON_ACK_RESP_TO_TM_FTM,
+	FREEZE_REASON_TA_RA_TYPE_FILTER,
+	FREEZE_REASON_NDPA_NDP,
+	FREEZE_REASON_ALL_PACKET,
+	FREEZE_REASON_MAX,
+};
+
+#define MACRX_FREEZE_CC_INFO0_FREEZE GENMASK(0, 0)
+#define MACRX_FREEZE_CC_INFO0_CAPTURE_REASON GENMASK(3, 1)
+#define MACRX_FREEZE_CC_INFO0_PKT_TYPE GENMASK(5, 4)
+#define MACRX_FREEZE_CC_INFO0_PKT_SUB_TYPE GENMASK(9, 6)
+#define MACRX_FREEZE_CC_INFO0_RSVD GENMASK(14, 10)
+#define MACRX_FREEZE_CC_INFO0_SW_PEER_ID_VALID GENMASK(15, 15)
+
+#define MACRX_FREEZE_CC_INFO1_USER_MASK GENMASK(5, 0)
+#define MACRX_FREEZE_CC_INFO1_DIRECTED GENMASK(6, 6)
+#define MACRX_FREEZE_CC_INFO1_RSVD GENMASK(15, 7)
+
+struct macrx_freeze_capture_channel {
+	u16 info0;
+	u16 sw_peer_id;
+	u16 phy_ppdu_id;
+	u16 packet_ta_lower_16;
+	u16 packet_ta_mid_16;
+	u16 packet_ta_upper_16;
+	u16 packet_ra_lower_16;
+	u16 packet_ra_mid_16;
+	u16 packet_ra_upper_16;
+	u16 tsf_timestamp_15_0;
+	u16 tsf_timestamp_31_16;
+	u16 tsf_timestamp_47_32;
+	u16 tsf_timestamp_63_48;
+	u16 info1;
+};
+
+#define MACRX_FREEZE_CC_V3_INFO0_FREEZE GENMASK(0, 0)
+#define MACRX_FREEZE_CC_V3_INFO0_CAPTURE_REASON GENMASK(3, 1)
+#define MACRX_FREEZE_CC_V3_INFO0_PKT_TYPE GENMASK(5, 4)
+#define MACRX_FREEZE_CC_V3_INFO0_PKT_SUB_TYPE GENMASK(9, 6)
+#define MACRX_FREEZE_CC_V3_INFO0_DIRECTED GENMASK(10, 10)
+#define MACRX_FREEZE_CC_V3_INFO0_RSVD GENMASK(14, 11)
+#define MACRX_FREEZE_CC_V3_INFO0_SW_PEER_ID_VALID GENMASK(15, 15)
+
+/*
+ * freeze_tlv v3 used by qcn9074
+ */
+struct macrx_freeze_capture_channel_v3 {
+	u16 info0;
+	u16 sw_peer_id;
+	u16 phy_ppdu_id;
+	u16 packet_ta_lower_16;
+	u16 packet_ta_mid_16;
+	u16 packet_ta_upper_16;
+	u16 packet_ra_lower_16;
+	u16 packet_ra_mid_16;
+	u16 packet_ra_upper_16;
+	u16 tsf_timestamp_15_0;
+	u16 tsf_timestamp_31_16;
+	u16 tsf_timestamp_47_32;
+	u16 tsf_63_48_or_user_mask_36_32;
+	u16 user_index_or_user_mask_15_0;
+	u16 user_mask_31_16;
 };
 
 struct cfr_unassoc_pool_entry {
@@ -238,7 +371,6 @@ struct ath11k_dbring *ath11k_cfr_get_dbring(struct ath11k *ar);
 int ath11k_process_cfr_capture_event(struct ath11k_base *ab,
 				     struct ath11k_cfr_peer_tx_param *params);
 bool peer_is_in_cfr_unassoc_pool(struct ath11k *ar, u8 *peer_mac);
-void ath11k_cfr_relase_lut_entry(struct ath11k_cfr_look_up_table *lut);
 void ath11k_cfr_lut_update_paddr(struct ath11k *ar, dma_addr_t paddr,
 				 u32 buf_id);
 void ath11k_cfr_decrement_peer_count(struct ath11k *ar,
@@ -259,10 +391,6 @@ struct ath11k_dbring *ath11k_cfr_get_dbring(struct ath11k *ar)
 static inline bool peer_is_in_cfr_unassoc_pool(struct ath11k *ar, u8 *peer_mac)
 {
 	return false;
-}
-static inline
-void ath11k_cfr_relase_lut_entry(struct ath11k_cfr_look_up_table *lut)
-{
 }
 static inline
 int ath11k_process_cfr_capture_event(struct ath11k_base *ab,

@@ -10,6 +10,9 @@
 #include "hal.h"
 #include "wmi.h"
 
+struct ath11k_csi_cfr_header;
+struct ath11k_cfr_peer_tx_param;
+
 /* Target configuration defines */
 #ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
 
@@ -323,6 +326,9 @@ struct ath11k_hw_ops {
 	void (*rx_desc_get_crypto_header)(struct hal_rx_desc *desc,
 					  u8 *crypto_hdr,
 					  enum hal_encrypt_type enctype);
+	void (*fill_cfr_hdr_info)(struct ath11k *ar,
+				  struct ath11k_csi_cfr_header *header,
+				  struct ath11k_cfr_peer_tx_param *params);
 };
 
 extern const struct ath11k_hw_ops ipq8074_ops;
