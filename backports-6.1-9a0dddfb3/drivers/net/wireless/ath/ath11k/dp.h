@@ -1506,15 +1506,29 @@ struct htt_ppdu_stats_user_common {
 	u32 host_opaque_cookie;
 } __packed;
 
+#define HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_FLOW_TYPE GENMASK(7, 0)
+#define HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_NUM_MPDU GENMASK(16, 8)
+#define HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_NUM_MSDU GENMASK(30, 17)
+
+struct htt_ppdu_stats_cmpltn_flush {
+	u32 drop_reason;
+	u32 info;
+	u8 tid_num;
+	u8 queue_type;
+	u16 sw_peer_id;
+} __packed;
+
 struct htt_ppdu_user_stats {
 	u16 peer_id;
 	u16 delay_ba;
 	u32 tlv_flags;
 	bool is_valid_peer_id;
+	bool rate_stats_updated;
 	struct htt_ppdu_stats_user_rate rate;
 	struct htt_ppdu_stats_usr_cmpltn_cmn cmpltn_cmn;
 	struct htt_ppdu_stats_usr_cmpltn_ack_ba_status ack_ba;
 	struct htt_ppdu_stats_user_common common;
+	struct htt_ppdu_stats_cmpltn_flush cmpltn_flush;
 };
 
 #define HTT_PPDU_STATS_MAX_USERS	37

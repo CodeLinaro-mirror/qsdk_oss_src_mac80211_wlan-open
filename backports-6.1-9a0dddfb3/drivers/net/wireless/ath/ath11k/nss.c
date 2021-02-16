@@ -5,6 +5,7 @@
 
 #include "mac.h"
 #include "nss.h"
+#include "debug_nss.h"
 #include "core.h"
 #include "peer.h"
 #include "dp_tx.h"
@@ -13,6 +14,9 @@
 #include "hif.h"
 #include "wmi.h"
 #include "../../../../../net/mac80211/sta_info.h"
+
+enum nss_wifi_mesh_mpp_learning_mode mpp_mode = NSS_WIFI_MESH_MPP_LEARNING_MODE_INDEPENDENT_NSS;
+LIST_HEAD(mesh_vaps);
 
 /*-----------------------------ATH11K-NSS Helpers--------------------------*/
 
@@ -30,6 +34,30 @@ ath11k_nss_get_vdev_opmode(struct ath11k_vif *arvif)
 	}
 
 	return ATH11K_NSS_OPMODE_UNKNOWN;
+}
+
+static struct ath11k_vif *ath11k_nss_get_arvif_from_dev(struct net_device *dev)
+{
+	struct wireless_dev *wdev;
+	struct ieee80211_vif *vif;
+	struct ath11k_vif *arvif;
+
+	if (!dev)
+		return NULL;
+
+	wdev = dev->ieee80211_ptr;
+	if (!wdev)
+		return NULL;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return NULL;
+
+	arvif = (struct ath11k_vif *)vif->drv_priv;
+	if (!arvif)
+		return NULL;
+
+	return arvif;
 }
 
 static void ath11k_nss_wifili_stats_sync(struct ath11k_base *ab,
@@ -254,6 +282,9 @@ void ath11k_nss_wifili_event_receive(struct ath11k_base *ab, struct nss_wifili_m
 
 	switch (msg_type) {
 	case NSS_WIFILI_INIT_MSG:
+		ab->nss.response = response;
+		complete(&ab->nss.complete);
+		break;
 	case NSS_WIFILI_PDEV_INIT_MSG:
 	case NSS_WIFILI_START_MSG:
 	case NSS_WIFILI_SOC_RESET_MSG:
@@ -262,7 +293,6 @@ void ath11k_nss_wifili_event_receive(struct ath11k_base *ab, struct nss_wifili_m
 		ab->nss.response = response;
 		complete(&ab->nss.complete);
 		break;
-
 	case NSS_WIFILI_PEER_CREATE_MSG:
 		if (response != NSS_CMN_RESPONSE_EMSG)
 			break;
@@ -331,6 +361,13 @@ void ath11k_nss_wifili_event_receive(struct ath11k_base *ab, struct nss_wifili_m
 	case NSS_WIFILI_PEER_4ADDR_EVENT_MSG:
 		ath11k_dbg(ab, ATH11K_DBG_NSS_WDS, "nss wifili peer 4addr event received %d response %d error %d\n",
 			   msg_type, response, error);
+		break;
+	case NSS_WIFILI_SEND_MESH_CAPABILITY_INFO:
+		complete(&ab->nss.complete);
+		if (response != NSS_CMN_RESPONSE_EMSG)
+			ab->nss.mesh_nss_offload_enabled = true;
+		ath11k_dbg(ab, ATH11K_DBG_NSS_MESH, "nss wifili mesh capability response %d\n",
+			   ab->nss.mesh_nss_offload_enabled);
 		break;
 	default:
 		ath11k_dbg(ab, ATH11K_DBG_NSS, "unhandled event %d\n", msg_type);
@@ -419,7 +456,9 @@ ath11k_nss_wifili_ext_callback_fn(struct ath11k_base *ab, struct sk_buff *skb,
 		ath11k_nss_process_mic_error(ab, skb);
 		break;
 	default:
-		kfree(skb);
+		ath11k_dbg(ab, ATH11K_DBG_NSS, "unknown packet type received in wifili ext cb %d",
+			    wepm->pkt_type);
+		dev_kfree_skb_any(skb);
 		break;
 	}
 }
@@ -734,8 +773,6 @@ ath11k_nss_vdev_special_data_receive(struct net_device *dev, struct sk_buff *skb
 {
 	struct nss_wifi_vdev_per_packet_metadata *wifi_metadata = NULL;
 	struct nss_wifi_vdev_wds_per_packet_metadata *wds_metadata = NULL;
-	struct wireless_dev *wdev;
-	struct ieee80211_vif *vif;
 	struct ath11k_vif *arvif;
 	struct ath11k_base *ab;
 	bool drop = false;
@@ -743,24 +780,7 @@ ath11k_nss_vdev_special_data_receive(struct net_device *dev, struct sk_buff *skb
 	int data_offs = 0;
 	int ret = 0;
 
-	if (!dev) {
-		dev_kfree_skb_any(skb);
-		return;
-	}
-
-	wdev = dev->ieee80211_ptr;
-	if (!wdev) {
-		dev_kfree_skb_any(skb);
-		return;
-	}
-
-	vif = wdev_to_ieee80211_vif(wdev);
-	if (!vif) {
-		dev_kfree_skb_any(skb);
-		return;
-	}
-
-	arvif = (struct ath11k_vif *)vif->drv_priv;
+	arvif = ath11k_nss_get_arvif_from_dev(dev);
 	if (!arvif) {
 		dev_kfree_skb_any(skb);
 		return;
@@ -923,14 +943,1098 @@ ath11k_nss_ext_vdev_data_receive(struct net_device *dev, struct sk_buff *skb,
 	ath11k_nss_deliver_rx(arvif->vif, skb, eth_decap, data_offs, napi);
 }
 
+/*------Mesh offload------*/
+
+void ath11k_nss_mesh_wifili_event_receive(void *app_data,
+					  struct nss_cmn_msg *cmn_msg)
+{
+	struct nss_wifi_mesh_msg *msg = (struct nss_wifi_mesh_msg *)cmn_msg;
+	struct ath11k_base *ab = app_data;
+	u32 msg_type = msg->cm.type;
+	enum nss_cmn_response response = msg->cm.response;
+	u32 error =  msg->cm.error;
+
+	if (!ab)
+		return;
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS_MESH, "nss mesh event received %d response %d error %d\n",
+		   msg_type, response, error);
+
+	switch (msg_type) {
+	case NSS_WIFI_MESH_MSG_MPATH_ADD:
+		if (response == NSS_CMN_RESPONSE_EMSG)
+			ath11k_warn(ab,"failed to add an entry to mpath table mesh_da %pM vdev_id %d\n",
+				    (&msg->msg.mpath_add)->dest_mac_addr,
+				    (&msg->msg.mpath_add)->link_vap_id);
+		break;
+	case NSS_WIFI_MESH_MSG_MPATH_UPDATE:
+		if (response == NSS_CMN_RESPONSE_EMSG)
+			ath11k_warn(ab, "failed to update mpath entry mesh_da %pM vdev_id %d"
+				    "next_hop %pM old_next_hop %pM metric %d flags 0x%u hop_count %d"
+				    "exp_time %u mesh_gate %u\n",
+				    (&msg->msg.mpath_update)->dest_mac_addr,
+				    (&msg->msg.mpath_update)->link_vap_id,
+				    (&msg->msg.mpath_update)->next_hop_mac_addr,
+				    (&msg->msg.mpath_update)->old_next_hop_mac_addr,
+				    (&msg->msg.mpath_update)->metric,
+				    (&msg->msg.mpath_update)->path_flags,
+				    (&msg->msg.mpath_update)->hop_count,
+				    (&msg->msg.mpath_update)->expiry_time,
+				    (&msg->msg.mpath_update)->is_mesh_gate);
+		break;
+	case NSS_WIFI_MESH_MSG_MPATH_DELETE:
+		if (response == NSS_CMN_RESPONSE_EMSG)
+			ath11k_warn(ab,"failed to remove mpath entry mesh_da %pM"
+				    "vdev_id %d\n",
+				    (&msg->msg.mpath_del)->mesh_dest_mac_addr,
+				    (&msg->msg.mpath_del)->link_vap_id);
+		break;
+	case NSS_WIFI_MESH_MSG_PROXY_PATH_ADD:
+		if (response == NSS_CMN_RESPONSE_EMSG)
+			ath11k_warn(ab,"failed to add proxy entry da %pM mesh_da %pM \n",
+				    (&msg->msg.proxy_add_msg)->dest_mac_addr,
+				    (&msg->msg.proxy_add_msg)->mesh_dest_mac);
+		break;
+	case NSS_WIFI_MESH_MSG_PROXY_PATH_UPDATE:
+		if (response == NSS_CMN_RESPONSE_EMSG)
+			ath11k_warn(ab,"failed to update proxy path da %pM mesh_da %pM\n",
+				    (&msg->msg.proxy_update_msg)->dest_mac_addr,
+				    (&msg->msg.proxy_update_msg)->mesh_dest_mac);
+		break;
+	case NSS_WIFI_MESH_MSG_PROXY_PATH_DELETE:
+		if (response == NSS_CMN_RESPONSE_EMSG)
+			ath11k_warn(ab,"failed to remove proxy path entry da %pM mesh_da %pM\n",
+				    (&msg->msg.proxy_del_msg)->dest_mac_addr,
+				    (&msg->msg.proxy_del_msg)->mesh_dest_mac_addr);
+		break;
+	case NSS_WIFI_MESH_MSG_EXCEPTION_FLAG:
+		if (response == NSS_CMN_RESPONSE_EMSG)
+			ath11k_warn(ab,"failed to add the exception  da %pM\n",
+				    (&msg->msg.exception_msg)->dest_mac_addr);
+		break;
+	default:
+		ath11k_dbg(ab, ATH11K_DBG_NSS_MESH, "unhandled event %d\n", msg_type);
+		break;
+	}
+}
+
+static void nss_mesh_convert_path_flags(u16 *dest, u16 *src, bool to_nss)
+{
+	if (to_nss) {
+		if (*src & IEEE80211_MESH_PATH_ACTIVE)
+			*dest |= NSS_WIFI_MESH_PATH_FLAG_ACTIVE;
+		if (*src & IEEE80211_MESH_PATH_RESOLVING)
+			*dest |= NSS_WIFI_MESH_PATH_FLAG_RESOLVING;
+		if (*src & IEEE80211_MESH_PATH_RESOLVED)
+			*dest |= NSS_WIFI_MESH_PATH_FLAG_RESOLVED;
+		if (*src & IEEE80211_MESH_PATH_FIXED)
+			*dest |= NSS_WIFI_MESH_PATH_FLAG_FIXED;
+	} else {
+		if (*src & NSS_WIFI_MESH_PATH_FLAG_ACTIVE)
+			*dest |= IEEE80211_MESH_PATH_ACTIVE;
+		if (*src & NSS_WIFI_MESH_PATH_FLAG_RESOLVING)
+			*dest |= IEEE80211_MESH_PATH_RESOLVING;
+		if (*src & NSS_WIFI_MESH_PATH_FLAG_RESOLVED)
+			*dest |= IEEE80211_MESH_PATH_RESOLVED;
+		if (*src & NSS_WIFI_MESH_PATH_FLAG_FIXED)
+			*dest |= IEEE80211_MESH_PATH_FIXED;
+	}
+}
+
+static void ath11k_nss_mesh_mpath_refresh(struct ath11k_vif *arvif,
+					  struct nss_wifi_mesh_msg *msg)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct nss_wifi_mesh_path_refresh_msg *refresh_msg;
+	struct ieee80211_mesh_path_offld path = {0};
+	int ret;
+
+	refresh_msg = &msg->msg.path_refresh_msg;
+	ether_addr_copy(path.mesh_da, refresh_msg->dest_mac_addr);
+	ether_addr_copy(path.next_hop, refresh_msg->next_hop_mac_addr);
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS,
+		   "Mesh path refresh event from nss, mDA %pM next_hop %pM link_vdev %d\n",
+		   refresh_msg->dest_mac_addr, refresh_msg->next_hop_mac_addr,
+		   refresh_msg->link_vap_id);
+
+
+	if (ab->nss.debug_mode)
+		return;
+
+	ret = ieee80211_mesh_path_offld_change_notify(arvif->vif, &path,
+			IEEE80211_MESH_PATH_OFFLD_ACTION_MPATH_REFRESH);
+	if (ret)
+		ath11k_warn(ab, "failed to notify mpath refresh nss event %d\n", ret);
+}
+
+static void ath11k_nss_mesh_path_not_found(struct ath11k_vif *arvif,
+					   struct nss_wifi_mesh_msg *msg)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct nss_wifi_mesh_mpath_not_found_msg *err_msg;
+	struct ieee80211_mesh_path_offld path = {0};
+	int ret;
+
+	err_msg = &msg->msg.mpath_not_found_msg;
+	ether_addr_copy(path.da, err_msg->dest_mac_addr);
+	if (err_msg->is_mesh_forward_path)
+		ether_addr_copy(path.ta, err_msg->transmitter_mac_addr);
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS,
+		   "Mesh path not found event from nss, (m)DA %pM ta %pM link vap %d\n",
+		   err_msg->dest_mac_addr, err_msg->transmitter_mac_addr, err_msg->link_vap_id);
+
+
+	if (ab->nss.debug_mode)
+		return;
+
+	ret = ieee80211_mesh_path_offld_change_notify(arvif->vif, &path,
+			IEEE80211_MESH_PATH_OFFLD_ACTION_PATH_NOT_FOUND);
+	if (ret)
+		ath11k_warn(ab, "failed to notify mpath not found nss event %d\n", ret);
+}
+
+static void ath11k_nss_mesh_path_delete(struct ath11k_vif *arvif,
+					struct nss_wifi_mesh_msg *msg)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct nss_wifi_mesh_mpath_del_msg *del_msg = &msg->msg.mpath_del;
+	struct ieee80211_mesh_path_offld path = {0};
+	int ret;
+
+	ether_addr_copy(path.mesh_da, del_msg->mesh_dest_mac_addr);
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS,
+		   "Mesh path delete event from nss, mDA %pM vap_id %d\n",
+		   del_msg->mesh_dest_mac_addr, del_msg->link_vap_id);
+
+	ret = ieee80211_mesh_path_offld_change_notify(arvif->vif, &path,
+			IEEE80211_MESH_PATH_OFFLD_ACTION_MPATH_DEL);
+	if (ret)
+		ath11k_warn(ab, "failed to notify mpath delete nss event %d\n", ret);
+}
+
+static void ath11k_nss_mesh_path_expiry(struct ath11k_vif *arvif,
+					struct nss_wifi_mesh_msg *msg)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct nss_wifi_mesh_path_expiry_msg *exp_msg = &msg->msg.path_expiry_msg;
+	struct ieee80211_mesh_path_offld path = {0};
+	int ret;
+
+	ether_addr_copy(path.mesh_da, exp_msg->mesh_dest_mac_addr);
+	ether_addr_copy(path.next_hop, exp_msg->next_hop_mac_addr);
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS,
+		   "Mesh path delete event from nss, mDA %pM next_hop %pM if_num %d\n",
+		   exp_msg->mesh_dest_mac_addr, exp_msg->next_hop_mac_addr,
+		   arvif->nss.if_num);
+
+	ret = ieee80211_mesh_path_offld_change_notify(arvif->vif, &path,
+			IEEE80211_MESH_PATH_OFFLD_ACTION_MPATH_EXP);
+	if (ret)
+		ath11k_warn(ab, "failed to notify mpath expiry nss event %d\n", ret);
+}
+
+static void ath11k_nss_mesh_mpp_learn(struct ath11k_vif *arvif,
+				      struct nss_wifi_mesh_msg *msg)
+ {
+	 struct ath11k_base *ab = arvif->ar->ab;
+	 struct nss_wifi_mesh_proxy_path_learn_msg *learn_msg;
+	 struct ieee80211_mesh_path_offld path = {0};
+	 int ret;
+
+	 learn_msg = &msg->msg.proxy_learn_msg;
+
+	 ether_addr_copy(path.mesh_da, learn_msg->mesh_dest_mac);
+	 ether_addr_copy(path.da, learn_msg->dest_mac_addr);
+	 nss_mesh_convert_path_flags(&path.flags, &learn_msg->path_flags, false);
+
+	 ath11k_dbg(ab, ATH11K_DBG_NSS,
+		    "Mesh proxy learn event from nss, mDA %pM da %pM flags 0x%x if_num %d\n",
+		    learn_msg->mesh_dest_mac, learn_msg->dest_mac_addr,
+		    learn_msg->path_flags, arvif->nss.if_num);
+
+	 ret = ieee80211_mesh_path_offld_change_notify(arvif->vif, &path,
+			 IEEE80211_MESH_PATH_OFFLD_ACTION_MPP_LEARN);
+	 if (ret)
+		 ath11k_warn(ab, "failed to notify proxy learn event %d\n", ret);
+}
+
+static void ath11k_nss_mesh_mpp_add(struct ath11k_vif *arvif,
+				    struct nss_wifi_mesh_msg *msg)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct nss_wifi_mesh_proxy_path_add_msg *add_msg = &msg->msg.proxy_add_msg;
+	struct ieee80211_mesh_path_offld path = {0};
+	int ret;
+
+	ether_addr_copy(path.mesh_da, add_msg->mesh_dest_mac);
+	ether_addr_copy(path.da, add_msg->dest_mac_addr);
+	nss_mesh_convert_path_flags(&path.flags, &add_msg->path_flags, false);
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS,
+		   "Mesh proxy add event from nss, mDA %pM da %pM flags 0x%x if_num %d\n",
+		   add_msg->mesh_dest_mac, add_msg->dest_mac_addr, add_msg->path_flags,
+		   arvif->nss.if_num);
+
+	ret = ieee80211_mesh_path_offld_change_notify(arvif->vif, &path,
+				IEEE80211_MESH_PATH_OFFLD_ACTION_MPP_ADD);
+	if (ret)
+		ath11k_warn(ab, "failed to notify proxy add event %d\n", ret);
+}
+
+static void ath11k_nss_mesh_mpp_update(struct ath11k_vif *arvif,
+				       struct nss_wifi_mesh_msg *msg)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct nss_wifi_mesh_proxy_path_update_msg *umsg;
+	struct ieee80211_mesh_path_offld path = {0};
+	int ret;
+
+	umsg = &msg->msg.proxy_update_msg;
+	ether_addr_copy(path.mesh_da, umsg->mesh_dest_mac);
+	ether_addr_copy(path.da, umsg->dest_mac_addr);
+	nss_mesh_convert_path_flags(&path.flags, &umsg->path_flags, false);
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS,
+		   "Mesh proxy update event from nss, mDA %pM da %pM flags 0x%x if_num %d\n",
+		   umsg->mesh_dest_mac, umsg->dest_mac_addr, umsg->path_flags, arvif->nss.if_num);
+
+	ret = ieee80211_mesh_path_offld_change_notify(arvif->vif, &path,
+				IEEE80211_MESH_PATH_OFFLD_ACTION_MPP_UPDATE);
+	if (ret)
+		ath11k_warn(ab, "failed to notify proxy update event %d\n", ret);
+}
+
+static int
+ath11k_nss_mesh_process_path_table_dump_msg(struct ath11k_vif *arvif,
+				     struct nss_wifi_mesh_msg *msg)
+{
+	struct nss_wifi_mesh_path_table_dump *mpath_dump = &msg->msg.mpath_table_dump;
+	struct ath11k_nss_mpath_entry *entry;
+	struct ath11k *ar = arvif->ar;
+	ssize_t len;
+
+	len = sizeof(struct nss_wifi_mesh_path_dump_entry) * mpath_dump->num_entries;
+	entry = kzalloc(sizeof(*entry) + len, GFP_ATOMIC);
+	if (!entry)
+		return -ENOMEM;
+
+	memcpy(entry->mpath, mpath_dump->path_entry, len);
+	entry->num_entries = mpath_dump->num_entries;
+	spin_lock_bh(&ar->nss.dump_lock);
+	list_add_tail(&entry->list, &arvif->nss.mpath_dump);
+	arvif->nss.mpath_dump_num_entries += mpath_dump->num_entries;
+	spin_unlock_bh(&ar->nss.dump_lock);
+
+	if (!mpath_dump->more_events)
+		complete(&arvif->nss.dump_mpath_complete);
+
+	return 0;
+}
+
+static int
+ath11k_nss_mesh_process_mpp_table_dump_msg(struct ath11k_vif *arvif,
+				    struct nss_wifi_mesh_msg *msg)
+{
+	struct nss_wifi_mesh_proxy_path_table_dump *mpp_dump;
+	struct ath11k_nss_mpp_entry *entry, *tmp;
+	struct ath11k *ar = arvif->ar;
+	struct arvif_nss *nss = &arvif->nss;
+	ssize_t len;
+	LIST_HEAD(local_entry_exp_update);
+
+	mpp_dump = &msg->msg.proxy_path_table_dump;
+
+	if (!mpp_dump->num_entries)
+		return 0;
+
+	len = sizeof(struct nss_wifi_mesh_proxy_path_dump_entry) * mpp_dump->num_entries;
+	entry = kzalloc(sizeof(*entry) + len, GFP_ATOMIC);
+	if (!entry)
+		return -ENOMEM;
+
+	memcpy(entry->mpp, mpp_dump->path_entry, len);
+	entry->num_entries = mpp_dump->num_entries;
+	spin_lock_bh(&ar->nss.dump_lock);
+	list_add_tail(&entry->list, &arvif->nss.mpp_dump);
+	arvif->nss.mpp_dump_num_entries += mpp_dump->num_entries;
+	spin_unlock_bh(&ar->nss.dump_lock);
+
+	if (!mpp_dump->more_events) {
+		if (arvif->nss.mpp_aging) {
+			arvif->nss.mpp_aging = false;
+			spin_lock_bh(&ar->nss.dump_lock);
+			list_splice_tail_init(&nss->mpp_dump, &local_entry_exp_update);
+			spin_unlock_bh(&ar->nss.dump_lock);
+
+			list_for_each_entry_safe(entry, tmp, &local_entry_exp_update, list) {
+				if (entry->mpp->time_diff > ATH11K_MPP_EXPIRY_TIMER_INTERVAL_MS)
+					continue;
+				mesh_nss_offld_proxy_path_exp_update(arvif->vif,
+								     entry->mpp->dest_mac_addr,
+								     entry->mpp->mesh_dest_mac,
+								     entry->mpp->time_diff);
+			}
+			/* If mpp_dump_req is true dont free the entry
+			 * since it will get freed in debug_nss_fill_mpp_dump
+			 * both mpp_aging and mpp_dump_req will be true during
+			 * simultaneous accessing of mpp dump entry. So this will
+			 * gain the reuse of same dump result for both mpp_aging
+			 * and mpp_dump_req */
+			if (!arvif->nss.mpp_dump_req) {
+				list_for_each_entry_safe(entry, tmp, &local_entry_exp_update, list)
+					kfree(entry);
+			} else {
+				/* Adding back to global nss dump tbl to reuse the same
+				 * tbl for mpp dump request
+				 */
+				spin_lock_bh(&ar->nss.dump_lock);
+				list_splice_tail_init(&local_entry_exp_update, &nss->mpp_dump);
+				spin_unlock_bh(&ar->nss.dump_lock);
+			}
+		}
+
+		if (arvif->nss.mpp_dump_req) {
+			complete(&arvif->nss.dump_mpp_complete);
+			arvif->nss.mpp_dump_req = false;
+		}
+	}
+
+	return 0;
+}
+
+int ath11k_nss_mesh_exception_flags(struct ath11k_vif *arvif,
+			       struct nss_wifi_mesh_exception_flag_msg *nss_msg)
+{
+	nss_wifi_mesh_msg_callback_t msg_cb;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	msg_cb = (nss_wifi_mesh_msg_callback_t)ath11k_nss_mesh_wifili_event_receive;
+
+	status = nss_wifi_meshmgr_mesh_path_exception(arvif->nss.mesh_handle, nss_msg,
+			msg_cb, arvif->ar->ab);
+
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(arvif->ar->ab, "failed to set the exception flags\n");
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
+int ath11k_nss_exc_rate_config(struct ath11k_vif *arvif,
+					struct nss_wifi_mesh_rate_limit_config *nss_exc_cfg)
+{
+	nss_tx_status_t status;
+	int ret = 0;
+
+	status = nss_wifi_meshmgr_config_mesh_exception_sync(arvif->nss.mesh_handle, nss_exc_cfg);
+
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(arvif->ar->ab, "failed to set the exception rate ctrl\n");
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
+static void ath11k_nss_mesh_obj_vdev_event_receive(struct net_device *dev,
+						   struct nss_wifi_mesh_msg *msg)
+{
+	struct ath11k_base *ab;
+	struct ath11k_vif *arvif;
+	int ret;
+
+	arvif = ath11k_nss_get_arvif_from_dev(dev);
+	if (!arvif)
+		return;
+
+	ab = arvif->ar->ab;
+
+	switch (msg->cm.type) {
+	case NSS_WIFI_MESH_MSG_PATH_REFRESH:
+		ath11k_nss_mesh_mpath_refresh(arvif, msg);
+		break;
+	case NSS_WIFI_MESH_MSG_PATH_NOT_FOUND:
+		ath11k_nss_mesh_path_not_found(arvif, msg);
+		break;
+	case NSS_WIFI_MESH_MSG_MPATH_DELETE:
+		ath11k_nss_mesh_path_delete(arvif, msg);
+		break;
+	case NSS_WIFI_MESH_MSG_PATH_EXPIRY:
+		ath11k_nss_mesh_path_expiry(arvif, msg);
+		break;
+	case NSS_WIFI_MESH_MSG_PROXY_PATH_LEARN:
+		ath11k_nss_mesh_mpp_learn(arvif, msg);
+		break;
+	case NSS_WIFI_MESH_MSG_PROXY_PATH_ADD:
+		ath11k_nss_mesh_mpp_add(arvif, msg);
+		break;
+	case NSS_WIFI_MESH_MSG_PROXY_PATH_UPDATE:
+		ath11k_nss_mesh_mpp_update(arvif, msg);
+		break;
+	case NSS_WIFI_MESH_MSG_PATH_TABLE_DUMP:
+		ret = ath11k_nss_mesh_process_path_table_dump_msg(arvif, msg);
+		if (ret)
+			ath11k_warn(arvif->ar->ab, "failed mpath table dump message %d\n",
+				    ret);
+		break;
+	case NSS_WIFI_MESH_MSG_PROXY_PATH_TABLE_DUMP:
+		ret = ath11k_nss_mesh_process_mpp_table_dump_msg(arvif, msg);
+		if (ret)
+			ath11k_warn(arvif->ar->ab, "failed mpp table dump message %d\n",
+				    ret);
+		break;
+	default:
+		ath11k_dbg(ab, ATH11K_DBG_NSS, "unknown message type on mesh obj vap %d\n",
+			   msg->cm.type);
+		break;
+	}
+}
+
+static int ath11k_nss_mesh_mpath_add(struct ath11k_vif *arvif,
+			      struct ieee80211_mesh_path_offld *path)
+{
+	nss_wifi_mesh_msg_callback_t msg_cb;
+	struct nss_wifi_mesh_mpath_add_msg *msg;
+	struct ath11k *ar = arvif->ar;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_NSS_MESH, "add mpath for mesh_da %pM on radio %d\n",
+		   path->mesh_da, ar->pdev->pdev_id);
+
+	msg = kzalloc(sizeof(struct nss_wifi_mesh_mpath_add_msg), GFP_ATOMIC);
+	if (!msg)
+		return -ENOMEM;
+
+	msg_cb = (nss_wifi_mesh_msg_callback_t)ath11k_nss_mesh_wifili_event_receive;
+
+	ether_addr_copy(msg->dest_mac_addr, path->mesh_da);
+	ether_addr_copy(msg->next_hop_mac_addr, path->next_hop);
+	msg->hop_count = path->hop_count;
+	msg->metric = path->metric;
+	nss_mesh_convert_path_flags(&msg->path_flags, &path->flags, true);
+	msg->link_vap_id = arvif->nss.if_num;
+	msg->block_mesh_fwd = path->block_mesh_fwd;
+	msg->metadata_type = path->metadata_type ? NSS_WIFI_MESH_PRE_HEADER_80211: NSS_WIFI_MESH_PRE_HEADER_NONE;
+
+	status = nss_wifi_meshmgr_mesh_path_add(arvif->nss.mesh_handle, msg,
+					        msg_cb, ar->ab);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ar->ab,
+			    "failed to add mpath entry mesh_da %pM radio_id %d status %d\n",
+			    path->mesh_da, arvif->nss.if_num, status);
+		ret = -EINVAL;
+	}
+
+	kfree(msg);
+
+	return ret;
+}
+
+static int ath11k_nss_mesh_mpath_update(struct ath11k_vif *arvif,
+			      struct ieee80211_mesh_path_offld *path)
+{
+	nss_wifi_mesh_msg_callback_t msg_cb;
+	struct nss_wifi_mesh_mpath_update_msg *msg;
+	struct ath11k *ar = arvif->ar;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_NSS_MESH,
+		   "update mpath  mesh_da %pM radio %d next_hop %pM old_next_hop %pM "
+		   "metric %d flags 0x%x hop_count %d "
+		   "exp_time %lu mesh_gate %d\n",
+		   path->mesh_da, ar->pdev->pdev_id, path->next_hop, path->old_next_hop,
+		   path->metric, path->flags, path->hop_count, path->exp_time,
+		   path->mesh_gate);
+
+	msg = kzalloc(sizeof(struct nss_wifi_mesh_mpath_update_msg), GFP_ATOMIC);
+	if (!msg)
+		return -ENOMEM;
+
+	msg_cb = (nss_wifi_mesh_msg_callback_t)ath11k_nss_mesh_wifili_event_receive;
+
+	ether_addr_copy(msg->dest_mac_addr, path->mesh_da);
+	ether_addr_copy(msg->next_hop_mac_addr, path->next_hop);
+	ether_addr_copy(msg->old_next_hop_mac_addr, path->old_next_hop);
+	msg->hop_count = path->hop_count;
+	msg->metric = path->metric;
+	nss_mesh_convert_path_flags(&msg->path_flags, &path->flags, true);
+	msg->link_vap_id = arvif->nss.if_num;
+	msg->is_mesh_gate = path->mesh_gate;
+	msg->expiry_time = path->exp_time;
+	msg->block_mesh_fwd = path->block_mesh_fwd;
+	msg->metadata_type = path->metadata_type ? NSS_WIFI_MESH_PRE_HEADER_80211: NSS_WIFI_MESH_PRE_HEADER_NONE;
+
+	msg->update_flags = NSS_WIFI_MESH_PATH_UPDATE_FLAG_NEXTHOP |
+		     NSS_WIFI_MESH_PATH_UPDATE_FLAG_HOPCOUNT |
+		     NSS_WIFI_MESH_PATH_UPDATE_FLAG_METRIC |
+		     NSS_WIFI_MESH_PATH_UPDATE_FLAG_MESH_FLAGS |
+		     NSS_WIFI_MESH_PATH_UPDATE_FLAG_BLOCK_MESH_FWD |
+		     NSS_WIFI_MESH_PATH_UPDATE_FLAG_METADATA_ENABLE_VALID;
+
+	status = nss_wifi_meshmgr_mesh_path_update(arvif->nss.mesh_handle, msg,
+						    msg_cb, ar->ab);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ar->ab,
+			    "failed to update mpath entry mesh_da %pM radio_id %d status %d\n",
+			    path->mesh_da, arvif->nss.if_num, status);
+		ret = -EINVAL;
+	}
+
+	kfree(msg);
+
+	return ret;
+}
+
+static int ath11k_nss_mesh_mpath_del(struct ath11k_vif *arvif,
+			      struct ieee80211_mesh_path_offld *path)
+{
+	nss_wifi_mesh_msg_callback_t msg_cb;
+	struct nss_wifi_mesh_mpath_del_msg *msg;
+	struct ath11k *ar = arvif->ar;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_NSS_MESH, "del mpath for mesh_da %pM on radio %d\n",
+		   path->mesh_da, ar->pdev->pdev_id);
+
+	msg = kzalloc(sizeof(struct nss_wifi_mesh_mpath_del_msg), GFP_ATOMIC);
+	if (!msg)
+		return -ENOMEM;
+
+	msg_cb = (nss_wifi_mesh_msg_callback_t)ath11k_nss_mesh_wifili_event_receive;
+
+	ether_addr_copy(msg->mesh_dest_mac_addr, path->mesh_da);
+	ether_addr_copy(msg->next_hop_mac_addr, path->next_hop);
+	msg->link_vap_id = arvif->nss.if_num;
+
+	status = nss_wifi_meshmgr_mesh_path_delete(arvif->nss.mesh_handle,
+						   msg, msg_cb, ar->ab);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ar->ab,
+			    "failed to del mpath entry mesh_da %pM radio_id %d status %d\n",
+			    path->mesh_da, arvif->nss.if_num, status);
+		ret = -EINVAL;
+	}
+
+	kfree(msg);
+
+	return ret;
+}
+
+static int ath11k_nss_mesh_mpp_add_cmd(struct ath11k_vif *arvif,
+			      struct ieee80211_mesh_path_offld *path)
+{
+	nss_wifi_mesh_msg_callback_t msg_cb;
+	struct nss_wifi_mesh_proxy_path_add_msg *msg;
+	struct ath11k *ar = arvif->ar;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_NSS_MESH, "add mpp mesh_da %pM da %pM\n",
+		   path->mesh_da, path->da);
+
+	msg = kzalloc(sizeof(struct nss_wifi_mesh_proxy_path_add_msg), GFP_ATOMIC);
+	if (!msg)
+		return -ENOMEM;
+
+	msg_cb = (nss_wifi_mesh_msg_callback_t)ath11k_nss_mesh_wifili_event_receive;
+
+	ether_addr_copy(msg->dest_mac_addr, path->da);
+	ether_addr_copy(msg->mesh_dest_mac, path->mesh_da);
+	nss_mesh_convert_path_flags(&msg->path_flags, &path->flags, true);
+
+	status = nss_wifi_meshmgr_mesh_proxy_path_add(arvif->nss.mesh_handle,
+						      msg, msg_cb, ar->ab);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ar->ab,
+			    "failed to add mpp entry da %pM mesh_da %pM status %d\n",
+			    path->da, path->mesh_da, status);
+		ret = -EINVAL;
+	}
+
+	kfree(msg);
+
+	return ret;
+}
+
+static int ath11k_nss_mesh_mpp_update_cmd(struct ath11k_vif *arvif,
+			      struct ieee80211_mesh_path_offld *path)
+{
+	nss_wifi_mesh_msg_callback_t msg_cb;
+	struct nss_wifi_mesh_proxy_path_update_msg *msg;
+	struct ath11k *ar = arvif->ar;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_NSS_MESH, "update mpp da %pM mesh_da %pM on vap_id %d\n",
+		   path->da, path->mesh_da, arvif->nss.if_num);
+
+	msg = kzalloc(sizeof(struct nss_wifi_mesh_proxy_path_update_msg), GFP_ATOMIC);
+	if (!msg)
+		return -ENOMEM;
+
+	msg_cb = (nss_wifi_mesh_msg_callback_t)ath11k_nss_mesh_wifili_event_receive;
+
+	ether_addr_copy(msg->dest_mac_addr, path->da);
+	ether_addr_copy(msg->mesh_dest_mac, path->mesh_da);
+	nss_mesh_convert_path_flags(&msg->path_flags, &path->flags, true);
+	msg->bitmap = NSS_WIFI_MESH_PATH_UPDATE_FLAG_NEXTHOP |
+			NSS_WIFI_MESH_PATH_UPDATE_FLAG_HOPCOUNT;
+
+	status = nss_wifi_meshmgr_mesh_proxy_path_update(arvif->nss.mesh_handle,
+							 msg, msg_cb, ar->ab);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ar->ab,
+			    "failed to update mpp da %pM mesh_da %pM status %d\n",
+			    path->da, path->mesh_da, status);
+		ret = -EINVAL;
+	}
+
+	kfree(msg);
+
+	return ret;
+}
+
+static int ath11k_nss_mesh_mpp_del_cmd(struct ath11k_vif *arvif,
+			      struct ieee80211_mesh_path_offld *path)
+{
+	nss_wifi_mesh_msg_callback_t msg_cb;
+	struct nss_wifi_mesh_proxy_path_del_msg *msg;
+	struct ath11k *ar = arvif->ar;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_NSS_MESH, "del mpath for mesh_da %pM\n",
+		   path->mesh_da);
+
+	msg = kzalloc(sizeof(struct nss_wifi_mesh_proxy_path_del_msg), GFP_ATOMIC);
+	if (!msg)
+		return -ENOMEM;
+
+	msg_cb = (nss_wifi_mesh_msg_callback_t)ath11k_nss_mesh_wifili_event_receive;
+
+	ether_addr_copy(msg->dest_mac_addr, path->da);
+	ether_addr_copy(msg->mesh_dest_mac_addr, path->mesh_da);
+
+	status = nss_wifi_meshmgr_mesh_proxy_path_delete(arvif->nss.mesh_handle, msg,
+							 msg_cb, ar->ab);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ar->ab,
+			    "failed to add mpath entry mesh_da %pM status %d\n",
+			    path->mesh_da, status);
+		ret = -EINVAL;
+	}
+
+	kfree(msg);
+
+	return ret;
+}
+
+int ath11k_nss_mesh_config_path(struct ath11k *ar, struct ath11k_vif *arvif,
+				enum ieee80211_mesh_path_offld_cmd cmd,
+				struct ieee80211_mesh_path_offld *path)
+{
+	int ret;
+
+
+	if (!ar->ab->nss.enabled)
+		return 0;
+
+	switch (cmd) {
+	case IEEE80211_MESH_PATH_OFFLD_CMD_ADD_MPATH:
+		ret = ath11k_nss_mesh_mpath_add(arvif, path);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_CMD_UPDATE_MPATH:
+		ret = ath11k_nss_mesh_mpath_update(arvif, path);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_CMD_DELETE_MPATH:
+		ret = ath11k_nss_mesh_mpath_del(arvif, path);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_CMD_ADD_MPP:
+		ret = ath11k_nss_mesh_mpp_add_cmd(arvif, path);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_CMD_UPDATE_MPP:
+		ret = ath11k_nss_mesh_mpp_update_cmd(arvif, path);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_CMD_DELETE_MPP:
+		ret = ath11k_nss_mesh_mpp_del_cmd(arvif, path);
+		break;
+	default:
+		ath11k_warn(ar->ab, "unknown mesh path table command type %d\n", cmd);
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+int ath11k_nss_mesh_config_update(struct ieee80211_vif *vif, int changed)
+{
+	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct nss_wifi_mesh_config_msg *nss_msg;
+	struct arvif_nss *nss = &arvif->nss;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	if (!ab->nss.enabled)
+		return 0;
+
+	if (!ab->nss.mesh_nss_offload_enabled)
+		return -ENOTSUPP;
+
+	if (!changed)
+		return 0;
+
+	nss_msg = kzalloc(sizeof(*nss_msg), GFP_KERNEL);
+	if (!nss_msg)
+		return -ENOMEM;
+
+	if (changed & BSS_CHANGED_NSS_MESH_TTL) {
+		nss_msg->ttl = vif->bss_conf.nss_offld_ttl;
+		nss->mesh_ttl = vif->bss_conf.nss_offld_ttl;
+		nss_msg->config_flags |= NSS_WIFI_MESH_CONFIG_FLAG_TTL_VALID;
+	}
+
+	if (changed & BSS_CHANGED_NSS_MESH_REFRESH_TIME) {
+		nss_msg->mesh_path_refresh_time =
+			vif->bss_conf.nss_offld_mpath_refresh_time;
+		nss->mpath_refresh_time =
+			vif->bss_conf.nss_offld_mpath_refresh_time;
+		nss_msg->config_flags |= NSS_WIFI_MESH_CONFIG_FLAG_MPATH_REFRESH_VALID;
+	}
+
+	if (changed & BSS_CHANGED_NSS_MESH_FWD_ENABLED) {
+		nss_msg->block_mesh_forwarding =
+			vif->bss_conf.nss_offld_mesh_forward_enabled;
+		nss->mesh_forward_enabled =
+			vif->bss_conf.nss_offld_mesh_forward_enabled;
+		nss_msg->config_flags |= NSS_WIFI_MESH_CONFIG_FLAG_BLOCK_MESH_FWD_VALID;
+		nss_msg->metadata_type = arvif->nss.metadata_type;
+		nss_msg->config_flags |= NSS_WIFI_MESH_CONFIG_FLAG_METADATA_ENABLE_VALID;
+	}
+
+	status = nss_wifi_meshmgr_mesh_config_update_sync(arvif->nss.mesh_handle,
+							  nss_msg);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ab, "failed to configure nss mesh obj vdev nss_err:%d\n",
+				status);
+		ret = -EINVAL;
+	}
+
+	kfree(nss_msg);
+
+	return ret;
+}
+
+int ath11k_nss_dump_mpath_request(struct ath11k_vif *arvif)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct ath11k *ar = arvif->ar;
+	struct arvif_nss *nss = &arvif->nss;
+	struct ath11k_nss_mpath_entry *entry, *tmp;
+	LIST_HEAD(local_entry);
+	nss_tx_status_t status;
+
+	/* Clean up any stale entries from old events */
+	spin_lock_bh(&ar->nss.dump_lock);
+	list_splice_tail(&nss->mpath_dump, &local_entry);
+	arvif->nss.mpath_dump_num_entries = 0;
+	spin_unlock_bh(&ar->nss.dump_lock);
+
+	list_for_each_entry_safe(entry, tmp, &local_entry, list)
+		kfree(entry);
+
+	status = nss_wifi_meshmgr_dump_mesh_path_sync(arvif->nss.mesh_handle);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ab, "failed to send mpath dump command on mesh obj vdev nss_err:%d\n",
+				status);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int ath11k_nss_dump_mpp_request(struct ath11k_vif *arvif)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct ath11k *ar = arvif->ar;
+	struct arvif_nss *nss = &arvif->nss;
+	struct ath11k_nss_mpp_entry *entry, *tmp;
+	LIST_HEAD(local_entry);
+	nss_wifi_meshmgr_status_t status;
+
+	if (!arvif->nss.mpp_aging) {
+		/* Clean up any stale entries from old events */
+		spin_lock_bh(&ar->nss.dump_lock);
+		list_splice_tail_init(&nss->mpp_dump, &local_entry);
+		arvif->nss.mpp_dump_num_entries = 0;
+		spin_unlock_bh(&ar->nss.dump_lock);
+
+		list_for_each_entry_safe(entry, tmp, &local_entry, list) {
+			list_del(&entry->list);
+			kfree(entry);
+		}
+	}
+
+	arvif->nss.mpp_dump_req = true;
+
+	status = nss_wifi_meshmgr_dump_mesh_proxy_path_sync(arvif->nss.mesh_handle);
+	if (status != NSS_WIFI_MESHMGR_SUCCESS) {
+		if (status == NSS_WIFI_MESHMGR_FAILURE_ONESHOT_ALREADY_ATTACHED)
+			return 0;
+		ath11k_warn(ab, "failed to send mpp dump command on mesh obj vdev nss_err:%d\n",
+			    status);
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+int ath11k_nss_mpp_timer_cb(struct timer_list *timer)
+{
+	nss_wifi_mesh_msg_callback_t msg_cb;
+	struct arvif_nss *nss = from_timer(nss, timer,mpp_expiry_timer);
+	struct ath11k_vif *arvif = container_of(nss, struct ath11k_vif, nss);
+	struct ath11k_base *ab = arvif->ar->ab;
+	LIST_HEAD(local_entry);
+	nss_tx_status_t status;
+
+	msg_cb = (nss_wifi_mesh_msg_callback_t)ath11k_nss_mesh_wifili_event_receive;
+
+	if (!arvif->nss.mpp_dump_req)
+		arvif->nss.mpp_dump_num_entries = 0;
+	arvif->nss.mpp_aging = true;
+
+	status = nss_wifi_meshmgr_dump_mesh_proxy_path(arvif->nss.mesh_handle, msg_cb, ab);
+	if (status != NSS_TX_SUCCESS)
+		ath11k_warn(ab, "failed to send mpp dump command from timer nss_err:%d\n",
+				status);
+
+	mod_timer(&nss->mpp_expiry_timer,
+		 jiffies + msecs_to_jiffies(ATH11K_MPP_EXPIRY_TIMER_INTERVAL_MS));
+
+	return 0;
+}
+
+static void
+ath11k_nss_mesh_obj_vdev_data_receive(struct net_device *dev, struct sk_buff *skb,
+				      struct napi_struct *napi)
+{
+	struct ath11k_vif *arvif;
+	struct ath11k_base *ab;
+	char dump_msg[100] = {0};
+	struct nss_wifi_mesh_per_packet_metadata *wifi_metadata = NULL;
+
+	arvif = ath11k_nss_get_arvif_from_dev(dev);
+	if (!arvif) {
+		dev_kfree_skb_any(skb);
+		return;
+	}
+
+	ab = arvif->ar->ab;
+
+	skb->dev = dev;
+
+	snprintf(dump_msg, sizeof(dump_msg), "nss mesh obj vdev: link id %d ",
+		 arvif->nss.if_num);
+
+	ath11k_dbg_dump(ab, ATH11K_DBG_DP_RX, "dp rx msdu from nss", dump_msg,
+			skb->data, skb->len);
+
+	if (arvif->nss.metadata_type == NSS_WIFI_MESH_PRE_HEADER_80211) {
+		wifi_metadata = (struct nss_wifi_mesh_per_packet_metadata *)(skb->data -
+				(sizeof(struct nss_wifi_mesh_per_packet_metadata)));
+
+		ath11k_dbg(ab, ATH11K_DBG_NSS_MESH,
+				"exception from nss on mesh obj vap: pkt_type %d\n",
+				wifi_metadata->pkt_type);
+		switch (wifi_metadata->pkt_type) {
+		case NSS_WIFI_MESH_PRE_HEADER_80211:
+			ath11k_dbg_dump(ab, ATH11K_DBG_DP_RX, "",
+					"wifi header from nss on mesh obj vdev: ",
+					skb->data - sizeof(*wifi_metadata), sizeof(*wifi_metadata) + skb->len);
+			dev_kfree_skb_any(skb);
+		break;
+		default:
+			dev_kfree_skb_any(skb);
+		}
+
+		return;
+	}
+
+	ath11k_nss_deliver_rx(arvif->vif, skb, true, 0, napi);
+}
+
+static void
+ath11k_nss_mesh_obj_ext_data_callback(struct net_device *dev, struct sk_buff *skb,
+				      __attribute__((unused)) struct napi_struct *napi)
+{
+	struct ath11k_vif *arvif;
+	struct ath11k_base *ab;
+	struct nss_wifi_mesh_encap_ext_pkt_metadata *wifi_metadata = NULL;
+	int metadata_len;
+
+	arvif = ath11k_nss_get_arvif_from_dev(dev);
+	if (!arvif) {
+		dev_kfree_skb_any(skb);
+		return;
+	}
+
+	ab = arvif->ar->ab;
+
+	skb->dev = dev;
+
+	metadata_len = NSS_WIFI_MESH_ENCAP_METADATA_OFFSET_TYPE +
+		sizeof(struct nss_wifi_mesh_encap_ext_pkt_metadata);
+
+	/* msdu from nss should contain metadata in headroom
+	 * any msdu which has invalid or not contains metadata
+	 * will be treated as invalid msdu and dropping it.
+	 */
+	if (!(metadata_len < skb_headroom(skb))) {
+		ath11k_warn(ab, "msdu from nss is having invalid headroom %d\n", skb_headroom(skb));
+		dev_kfree_skb_any(skb);
+		return;
+	}
+
+	dma_unmap_single(ab->dev, virt_to_phys(skb->head),
+			metadata_len,
+			DMA_FROM_DEVICE);
+
+	wifi_metadata = (struct nss_wifi_mesh_encap_ext_pkt_metadata *)(skb->head +
+			NSS_WIFI_MESH_ENCAP_METADATA_OFFSET_TYPE);
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS_MESH, "msdu from nss ext_data _cb on mesh obj vdev");
+
+	switch (wifi_metadata->pkt_type) {
+		case NSS_WIFI_MESH_ENCAP_EXT_DATA_PKT_TYPE_MPATH_NOT_FOUND_EXC:
+			ath11k_dbg_dump(ab, ATH11K_DBG_DP_RX, "", "msdu from nss ext_data for mpath not found : ",
+					skb->data, skb->len);
+			skb->protocol = eth_type_trans(skb, dev);
+			skb_reset_network_header(skb);
+			dev_queue_xmit(skb);
+		break;
+		default:
+			ath11k_warn(ab, "unknown packet type received in mesh obj ext data %d",
+					wifi_metadata->pkt_type);
+			dev_kfree_skb_any(skb);
+	}
+}
+
+static void
+ath11k_nss_mesh_link_vdev_data_receive(void *dev,
+				       struct sk_buff *skb,
+				       struct napi_struct *napi)
+{
+	struct ieee80211_vif *vif;
+	struct ath11k_vif *arvif;
+	struct ath11k_base *ab;
+	struct wireless_dev *wdev = (struct wireless_dev *)dev;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif) {
+		dev_kfree_skb_any(skb);
+		return;
+	}
+
+	arvif = (struct ath11k_vif *)vif->drv_priv;
+	if (!arvif) {
+		dev_kfree_skb_any(skb);
+		return;
+	}
+
+	ab = arvif->ar->ab;
+	ath11k_dbg_dump(ab, ATH11K_DBG_DP_RX, "", "msdu from nss data_receive_cb on mesh link vdev: ",
+			skb->data, skb->len);
+	/* data callback for mesh link vap is not expected */
+	dev_kfree_skb_any(skb);
+}
+
+static void
+ath11k_nss_mesh_link_vdev_special_data_receive(void *dev,
+				struct sk_buff *skb,
+				__attribute__((unused)) struct napi_struct *napi)
+{
+	struct ieee80211_vif *vif;
+	struct ath11k_base *ab;
+	struct nss_wifi_vdev_per_packet_metadata *wifi_metadata = NULL;
+	struct ath11k_skb_rxcb *rxcb;
+	struct ath11k_vif *arvif;
+	struct wireless_dev *wdev = (struct wireless_dev *)dev;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif) {
+		dev_kfree_skb_any(skb);
+		return;
+	}
+
+	arvif = (struct ath11k_vif *)vif->drv_priv;
+	if (!arvif) {
+		dev_kfree_skb_any(skb);
+		return;
+	}
+
+	ab = arvif->ar->ab;
+
+	wifi_metadata = (struct nss_wifi_vdev_per_packet_metadata *)(skb->head +
+			NSS_WIFI_VDEV_PER_PACKET_METADATA_OFFSET);
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS_MESH,
+		   "dp special data from nss on mesh link vap: pkt_type %d\n",
+		   wifi_metadata->pkt_type);
+
+	switch (wifi_metadata->pkt_type) {
+	case NSS_WIFI_VDEV_MESH_EXT_DATA_PKT_TYPE_RX_SPL_PACKET:
+		ath11k_dbg_dump(ab, ATH11K_DBG_DP_RX, "",
+				"special packet meta data from nss on mesh link vdev: ",
+				wifi_metadata,
+				sizeof(struct nss_wifi_vdev_per_packet_metadata));
+		ath11k_dbg_dump(ab, ATH11K_DBG_DP_RX, "",
+				"special packet payload from nss on mesh link vdev: ",
+				skb->data, skb->len);
+		dev_kfree_skb_any(skb);
+		break;
+	case NSS_WIFI_VDEV_EXT_DATA_PKT_TYPE_MCBC_RX:
+		ath11k_dbg_dump(ab, ATH11K_DBG_DP_RX, "",
+				"mcast packet exception from nss on mesh link vdev: ",
+				skb->data, skb->len);
+		rxcb = ATH11K_SKB_RXCB(skb);
+		rxcb->rx_desc = (struct hal_rx_desc *)skb->head;
+		rxcb->is_first_msdu = rxcb->is_last_msdu = true;
+		rxcb->is_continuation = false;
+		ath11k_dp_rx_from_nss(arvif->ar, skb, napi);
+		break;
+	case NSS_WIFI_VDEV_EXT_DATA_PKT_TYPE_MESH:
+		ath11k_dbg_dump(ab, ATH11K_DBG_DP_RX, "",
+				"static exception path from nss on mesh link vdev: ",
+				skb->data, skb->len);
+		dev_kfree_skb_any(skb);
+		break;
+	default:
+		ath11k_warn(ab, "unknown packet type received in mesh link vdev %d",
+			    wifi_metadata->pkt_type);
+		dev_kfree_skb_any(skb);
+		break;
+	}
+}
+
 int ath11k_nss_tx(struct ath11k_vif *arvif, struct sk_buff *skb)
 {
 	struct ath11k *ar = arvif->ar;
 	nss_tx_status_t status;
 	int encap_type = ath11k_dp_tx_get_encap_type(arvif, skb);
 	struct ath11k_soc_dp_stats *soc_stats = &ar->ab->soc_stats;
+	char dump_msg[100] = {0};
 
-	if(encap_type != arvif->nss.encap) {
+	if (!arvif->ar->ab->nss.debug_mode && encap_type != arvif->nss.encap) {
 		ath11k_warn(ar->ab, "encap mismatch in nss tx skb encap type %d" \
 			    "vif encap type %d\n", encap_type, arvif->nss.encap);
 		goto drop;
@@ -945,16 +2049,41 @@ int ath11k_nss_tx(struct ath11k_vif *arvif, struct sk_buff *skb)
 		ath11k_nss_tx_encap_nwifi(skb);
 
 send:
-	ath11k_dbg_dump(ar->ab, ATH11K_DBG_DP_TX,
-			arvif->vif->type == NL80211_IFTYPE_AP_VLAN ? "ext vdev" : "",
-			"nss tx msdu: ", skb->data, skb->len);
-
-	if (arvif->vif->type == NL80211_IFTYPE_AP_VLAN)
+	if (arvif->vif->type == NL80211_IFTYPE_AP_VLAN) {
+		ath11k_dbg_dump(ar->ab, ATH11K_DBG_DP_TX, "ext vdev",
+				"nss tx msdu: ", skb->data, skb->len);
 		status = nss_wifi_ext_vdev_tx_buf(arvif->nss.ctx, skb,
 						  arvif->nss.if_num);
-	else
-		status = nss_wifi_vdev_tx_buf(arvif->ar->nss.ctx, skb,
-					      arvif->nss.if_num);
+	} else {
+		if (arvif->ar->ab->nss.debug_mode) {
+			if (encap_type == HAL_TCL_ENCAP_TYPE_ETHERNET &&
+			    !is_multicast_ether_addr(skb->data)) {
+				snprintf(dump_msg, sizeof(dump_msg),
+					 "nss tx ucast msdu: %d ",
+					 arvif->nss.mesh_handle);
+				ath11k_dbg_dump(ar->ab, ATH11K_DBG_DP_TX, "mesh",
+						dump_msg, skb->data, skb->len);
+				status = nss_wifi_meshmgr_tx_buf(arvif->nss.mesh_handle,
+								 skb);
+			} else {
+				snprintf(dump_msg, sizeof(dump_msg),
+					 "nss tx mcast msdu: %d ",
+					 arvif->nss.if_num);
+				ath11k_dbg_dump(ar->ab, ATH11K_DBG_DP_TX, "mesh",
+						dump_msg, skb->data, skb->len);
+				status = nss_wifi_vdev_tx_buf(arvif->ar->nss.ctx, skb,
+							      arvif->nss.if_num);
+			}
+		} else {
+			snprintf(dump_msg, sizeof(dump_msg),
+				 "nss tx msdu: %d ",
+				 arvif->nss.if_num);
+			ath11k_dbg_dump(ar->ab, ATH11K_DBG_DP_TX, "",
+					dump_msg, skb->data, skb->len);
+			status = nss_wifi_vdev_tx_buf(arvif->ar->nss.ctx, skb,
+						      arvif->nss.if_num);
+		}
+	}
 
 	if (status != NSS_TX_SUCCESS) {
 		ath11k_dbg(ar->ab, (ATH11K_DBG_NSS | ATH11K_DBG_DP_TX),
@@ -1063,6 +2192,9 @@ static int ath11k_nss_vdev_configure(struct ath11k_vif *arvif)
 
 	vdev_cfg = &vdev_msg->msg.vdev_config;
 
+	if (arvif->vif->type == NL80211_IFTYPE_MESH_POINT)
+		vdev_cfg->vap_ext_mode = WIFI_VDEV_EXT_MODE_MESH_LINK;
+
 	vdev_cfg->radio_ifnum = ar->nss.if_num;
 	vdev_cfg->vdev_id = arvif->vdev_id;
 
@@ -1103,6 +2235,37 @@ free:
 	return ret;
 }
 
+static int ath11k_nss_mesh_obj_assoc_link_vap(struct ath11k_vif *arvif)
+{
+	struct nss_wifi_mesh_assoc_link_vap *msg;
+	struct ath11k_base *ab = arvif->ar->ab;
+	nss_tx_status_t status;
+	int ret;
+
+	msg = kzalloc(sizeof(struct nss_wifi_mesh_assoc_link_vap), GFP_ATOMIC);
+	if (!msg)
+		return -ENOMEM;
+
+	msg->link_vap_id = arvif->nss.if_num;
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS_MESH, "nss mesh assoc link vap %d, mesh handle %d\n",
+		   arvif->nss.if_num, arvif->nss.mesh_handle);
+
+	status = nss_wifi_meshmgr_assoc_link_vap_sync(arvif->nss.mesh_handle, msg);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ab, "failed mesh obj vdev tx msg for assoc link vap nss_err:%d\n",
+			    status);
+		ret = -EINVAL;
+		goto free;
+	}
+
+	ret = 0;
+free:
+	kfree(msg);
+
+	return ret;
+}
+
 static void ath11k_nss_vdev_unregister(struct ath11k_vif *arvif)
 {
 	struct ath11k_base *ab = arvif->ar->ab;
@@ -1114,11 +2277,87 @@ static void ath11k_nss_vdev_unregister(struct ath11k_vif *arvif)
 		ath11k_dbg(ab, ATH11K_DBG_NSS, "unregistered nss vdev %d \n",
 			   arvif->nss.if_num);
 		break;
+	case NL80211_IFTYPE_MESH_POINT:
+		nss_unregister_wifi_vdev_if(arvif->nss.if_num);
+		ath11k_dbg(ab, ATH11K_DBG_NSS,
+			   "unregistered nss mesh vdevs mesh link %d\n",
+			   arvif->nss.if_num);
+		break;
 	default:
 		ath11k_warn(ab, "unsupported interface type %d for nss vdev unregister\n",
 			    arvif->vif->type);
 		return;
 	}
+}
+
+static int ath11k_nss_mesh_alloc_register(struct ath11k_vif *arvif,
+					 struct net_device *netdev)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct nss_wifi_mesh_config_msg *nss_msg;
+	struct arvif_nss *nss = &arvif->nss;
+	int ret = 0;
+
+	nss->mesh_ttl = ATH11K_MESH_DEFAULT_ELEMENT_TTL;
+	nss->mpath_refresh_time = 1000; /* msecs */
+	nss->mesh_forward_enabled = true;
+
+	nss_msg = kzalloc(sizeof(*nss_msg), GFP_KERNEL);
+	if (!nss_msg)
+		return -ENOMEM;
+
+	nss_msg->ttl = nss->mesh_ttl;
+	nss_msg->mesh_path_refresh_time = nss->mpath_refresh_time;
+	nss_msg->mpp_learning_mode = mpp_mode;
+	nss_msg->block_mesh_forwarding = 0;
+	ether_addr_copy(nss_msg->local_mac_addr, arvif->vif->addr);
+	nss_msg->config_flags =
+			 NSS_WIFI_MESH_CONFIG_FLAG_TTL_VALID		|
+			 NSS_WIFI_MESH_CONFIG_FLAG_MPATH_REFRESH_VALID	|
+			 NSS_WIFI_MESH_CONFIG_FLAG_MPP_LEARNING_MODE_VALID |
+			 NSS_WIFI_MESH_CONFIG_FLAG_BLOCK_MESH_FWD_VALID |
+			 NSS_WIFI_MESH_CONFIG_FLAG_LOCAL_MAC_VALID;
+
+	arvif->nss.mesh_handle = nss_wifi_meshmgr_if_create_sync(netdev, nss_msg,
+								 ath11k_nss_mesh_obj_vdev_data_receive,
+								 ath11k_nss_mesh_obj_ext_data_callback,
+								 ath11k_nss_mesh_obj_vdev_event_receive);
+	if (arvif->nss.mesh_handle == NSS_WIFI_MESH_HANDLE_INVALID) {
+		ath11k_warn(ab, "failed to create meshmgr\n");
+		ret = -EINVAL;
+	}
+
+	kfree(nss_msg);
+
+	return ret;
+}
+
+static int ath11k_nss_mesh_vdev_register(struct ath11k_vif *arvif,
+					 struct net_device *netdev)
+{
+	struct ath11k *ar = arvif->ar;
+	struct ath11k_base *ab = ar->ab;
+	nss_tx_status_t status;
+	u32 features = 0;
+
+	status = nss_register_wifi_vdev_if(ar->nss.ctx,
+				arvif->nss.if_num,
+				ath11k_nss_mesh_link_vdev_data_receive,
+				ath11k_nss_mesh_link_vdev_special_data_receive,
+				ath11k_nss_vdev_event_receive,
+				(struct net_device *)netdev->ieee80211_ptr,
+				features);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ab, "failed to register nss mesh link vdev if_num %d nss_err:%d\n",
+			    arvif->nss.if_num, status);
+		nss_unregister_wifi_vdev_if(arvif->nss.if_num);
+		return -EINVAL;
+	}
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS, "registered nss mesh link vdev if_num %d\n",
+		   arvif->nss.if_num);
+
+	return 0;
 }
 
 static int ath11k_nss_vdev_register(struct ath11k_vif *arvif,
@@ -1148,6 +2387,13 @@ static int ath11k_nss_vdev_register(struct ath11k_vif *arvif,
 			   arvif->nss.if_num);
 
 		break;
+	case NL80211_IFTYPE_MESH_POINT:
+		if (!ab->nss.mesh_nss_offload_enabled)
+			return -ENOTSUPP;
+
+		if (ath11k_nss_mesh_vdev_register(arvif, netdev))
+			return -EINVAL;
+		break;
 	default:
 		ath11k_warn(ab, "unsupported interface type %d for nss vdev register\n",
 			    arvif->vif->type);
@@ -1155,6 +2401,60 @@ static int ath11k_nss_vdev_register(struct ath11k_vif *arvif,
 	}
 
 	return 0;
+}
+
+static void ath11k_nss_mesh_vdev_free(struct ath11k_vif *arvif)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct ath11k *ar = arvif->ar;
+	struct ath11k_nss_mpath_entry *mpath_entry, *mpath_tmp;
+	struct ath11k_nss_mpp_entry *mpp_entry, *mpp_tmp;
+	struct arvif_nss *nss = &arvif->nss, *nss_entry, *nss_tmp;
+	LIST_HEAD(mpath_local_entry);
+	LIST_HEAD(mpp_local_entry);
+	nss_tx_status_t status;
+
+	del_timer_sync(&nss->mpp_expiry_timer);
+
+	spin_lock_bh(&ar->nss.dump_lock);
+	list_splice_tail_init(&nss->mpath_dump, &mpath_local_entry);
+	spin_unlock_bh(&ar->nss.dump_lock);
+
+	list_for_each_entry_safe(mpath_entry, mpath_tmp, &mpath_local_entry, list) {
+		list_del(&mpath_entry->list);
+		kfree(mpath_entry);
+	}
+
+	spin_lock_bh(&ar->nss.dump_lock);
+	list_splice_tail_init(&nss->mpp_dump, &mpp_local_entry);
+	spin_unlock_bh(&ar->nss.dump_lock);
+
+	list_for_each_entry_safe(mpp_entry, mpp_tmp, &mpp_local_entry, list) {
+		list_del(&mpp_entry->list);
+		kfree(mpp_entry);
+	}
+
+	list_for_each_entry_safe(nss_entry, nss_tmp, &mesh_vaps, list)
+		list_del(&nss_entry->list);
+
+	status = nss_dynamic_interface_dealloc_node(
+						arvif->nss.if_num,
+						NSS_DYNAMIC_INTERFACE_TYPE_VAP);
+	if (status != NSS_TX_SUCCESS)
+		ath11k_warn(ab, "failed to free nss mesh link vdev nss_err:%d\n",
+			    status);
+	else
+		ath11k_dbg(ab, ATH11K_DBG_NSS,
+			   "nss mesh link vdev interface deallocated\n");
+
+	status = nss_wifi_meshmgr_if_destroy_sync(arvif->nss.mesh_handle);
+
+	if (status != NSS_TX_SUCCESS)
+		ath11k_warn(ab, "failed to free nss mesh object vdev nss_err:%d\n",
+			    status);
+	else
+		ath11k_dbg(ab, ATH11K_DBG_NSS,
+			   "nss mesh object vdev interface deallocated\n");
 }
 
 void ath11k_nss_vdev_free(struct ath11k_vif *arvif)
@@ -1176,6 +2476,9 @@ void ath11k_nss_vdev_free(struct ath11k_vif *arvif)
 				   "nss vdev interface deallocated\n");
 
 		return;
+	case NL80211_IFTYPE_MESH_POINT:
+		ath11k_nss_mesh_vdev_free(arvif);
+		return;
 	default:
 		ath11k_warn(ab, "unsupported interface type %d for nss vdev dealloc\n",
 			    arvif->vif->type);
@@ -1183,11 +2486,92 @@ void ath11k_nss_vdev_free(struct ath11k_vif *arvif)
 	}
 }
 
-static int ath11k_nss_vdev_alloc(struct ath11k_vif *arvif)
+struct arvif_nss *ath11k_nss_find_arvif_by_if_num(int if_num)
+{
+	struct arvif_nss *nss;
+
+	list_for_each_entry(nss, &mesh_vaps, list) {
+		if (if_num == nss->if_num)
+			return nss;
+	}
+	return NULL;
+}
+
+int ath11k_nss_assoc_link_arvif_to_ifnum(struct ath11k_vif *arvif, int if_num)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	struct ath11k_vif *arvif_link;
+	struct wireless_dev *wdev;
+	struct arvif_nss *nss;
+	int ret;
+
+	wdev = ieee80211_vif_to_wdev_relaxed(arvif->vif);
+	if (!wdev) {
+		ath11k_warn(ab, "ath11k_nss: wdev is null\n");
+		return -EINVAL;
+	}
+
+	if (!wdev->netdev) {
+		ath11k_warn(ab, "ath11k_nss: netdev is null\n");
+		return -EINVAL;
+	}
+
+	nss = ath11k_nss_find_arvif_by_if_num(if_num);
+	if (!nss) {
+		ath11k_warn(ab, "ath11k_nss: unable to find if_num %d\n",if_num);
+		return -EINVAL;
+	}
+
+	arvif_link = container_of(nss, struct ath11k_vif, nss);
+
+	ath11k_dbg(ab, ATH11K_DBG_NSS_MESH,
+		   "assoc link vap ifnum %d to mesh handle of link id %d\n",
+		   arvif_link->nss.if_num, arvif->nss.if_num);
+
+	arvif_link->nss.mesh_handle = arvif->nss.mesh_handle;
+
+	ret = ath11k_nss_mesh_obj_assoc_link_vap(arvif_link);
+	if (ret)
+		ath11k_warn(ab, "failed to associate link vap to mesh vap %d\n", ret);
+
+	return 0;
+}
+
+static int ath11k_nss_mesh_vdev_alloc(struct ath11k_vif *arvif,
+		struct net_device *netdev)
+{
+	struct ath11k_base *ab = arvif->ar->ab;
+	int if_num;
+
+	if (!ab->nss.mesh_nss_offload_enabled)
+		return -ENOTSUPP;
+
+	if_num = nss_dynamic_interface_alloc_node(NSS_DYNAMIC_INTERFACE_TYPE_VAP);
+	if (if_num < 0) {
+		ath11k_warn(ab, "failed to allocate nss mesh link vdev\n");
+		return -EINVAL;
+	}
+
+	arvif->nss.if_num = if_num;
+
+	INIT_LIST_HEAD(&arvif->nss.list);
+	list_add_tail(&arvif->nss.list, &mesh_vaps);
+
+	INIT_LIST_HEAD(&arvif->nss.mpath_dump);
+	init_completion(&arvif->nss.dump_mpath_complete);
+	INIT_LIST_HEAD(&arvif->nss.mpp_dump);
+	init_completion(&arvif->nss.dump_mpp_complete);
+
+	return 0;
+}
+
+static int ath11k_nss_vdev_alloc(struct ath11k_vif *arvif,
+		struct net_device *netdev)
 {
 	struct ath11k_base *ab = arvif->ar->ab;
 	enum nss_dynamic_interface_type if_type;
 	int if_num;
+	int ret;
 
 	/* Initialize completion for verifying NSS message response */
 	init_completion(&arvif->nss.complete);
@@ -1208,6 +2592,14 @@ static int ath11k_nss_vdev_alloc(struct ath11k_vif *arvif)
 		ath11k_dbg(ab, ATH11K_DBG_NSS, "allocated nss vdev if_num %d\n",
 			   arvif->nss.if_num);
 
+		break;
+	case NL80211_IFTYPE_MESH_POINT:
+		ret = ath11k_nss_mesh_vdev_alloc(arvif, netdev);
+		if (ret) {
+			ath11k_warn(ab, "failed to allocate nss vdev of mesh type %d\n",
+				    ret);
+			return ret;
+		}
 		break;
 	default:
 		ath11k_warn(ab, "unsupported interface type %d for nss vdev alloc\n",
@@ -1246,7 +2638,7 @@ int ath11k_nss_vdev_create(struct ath11k_vif *arvif)
 		return -EINVAL;
 	}
 
-	ret = ath11k_nss_vdev_alloc(arvif);
+	ret = ath11k_nss_vdev_alloc(arvif, wdev->netdev);
 	if (ret)
 		return ret;
 
@@ -1261,6 +2653,43 @@ int ath11k_nss_vdev_create(struct ath11k_vif *arvif)
 		if (ret)
 			goto unregister_vdev;
 
+		break;
+	case NL80211_IFTYPE_MESH_POINT:
+		ret = ath11k_nss_mesh_alloc_register(arvif, wdev->netdev);
+		if (ret) {
+			ath11k_warn(ab, "failed to alloc and register mesh vap %d\n", ret);
+			goto unregister_vdev;
+		}
+
+		ret = ath11k_nss_vdev_configure(arvif);
+		if (ret) {
+			ath11k_warn(ab, "failed to configure nss mesh link vdev\n");
+			goto unregister_vdev;
+		}
+
+		ret = ath11k_nss_mesh_obj_assoc_link_vap(arvif);
+		if (ret) {
+			ath11k_warn(ab, "failed to associate link vap to mesh vap %d\n", ret);
+			goto unregister_vdev;
+		}
+
+		ret = ath11k_nss_vdev_set_cmd(arvif,
+					      NSS_WIFI_VDEV_CFG_MCBC_EXC_TO_HOST_CMD, 1);
+		if (ret) {
+			ath11k_warn(ab, "failed to enable mcast/bcast exception %d\n", ret);
+			goto unregister_vdev;
+		}
+
+		ath11k_debugfs_nss_mesh_vap_create(arvif);
+
+		/* This timer cb is called at specified
+		 * interval to update mpp exp timeout */
+		timer_setup(&arvif->nss.mpp_expiry_timer,
+				ath11k_nss_mpp_timer_cb, 0);
+
+		/* Start the initial timer in 2 secs */
+		mod_timer(&arvif->nss.mpp_expiry_timer,
+				jiffies + msecs_to_jiffies(2 * HZ));
 		break;
 	default:
 		ret = -ENOTSUPP;
@@ -1318,6 +2747,14 @@ int ath11k_nss_vdev_up(struct ath11k_vif *arvif)
 	if (arvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
 		return 0;
 
+	if (arvif->vif->type == NL80211_IFTYPE_MESH_POINT) {
+		status = nss_wifi_meshmgr_if_up(arvif->nss.mesh_handle);
+		if (status != NSS_TX_SUCCESS) {
+			ath11k_warn(ar->ab, "nss mesh vdev up error %d\n", status);
+			return -EINVAL;
+		}
+	}
+
 	vdev_msg = kzalloc(sizeof(struct nss_wifi_vdev_msg), GFP_ATOMIC);
 	if (!vdev_msg)
 		return -ENOMEM;
@@ -1369,6 +2806,14 @@ int ath11k_nss_vdev_down(struct ath11k_vif *arvif)
 	/* Monitor interface is not offloaded to nss */
 	if (arvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
 		return 0;
+
+	if (arvif->vif->type == NL80211_IFTYPE_MESH_POINT) {
+		status = nss_wifi_meshmgr_if_down(arvif->nss.mesh_handle);
+		if (status != NSS_TX_SUCCESS) {
+			ath11k_warn(ar->ab, "nss mesh vdev up error %d\n", status);
+			return -EINVAL;
+		}
+	}
 
 	vdev_msg = kzalloc(sizeof(struct nss_wifi_vdev_msg), GFP_ATOMIC);
 	if (!vdev_msg)
@@ -2759,6 +4204,49 @@ static int ath11k_nss_get_dynamic_interface_type(struct ath11k_base *ab)
 	}
 }
 
+static int ath11k_nss_mesh_capability(struct ath11k_base *ab)
+{
+	struct nss_wifili_msg *wlmsg = NULL;
+	nss_wifili_msg_callback_t msg_cb;
+	nss_tx_status_t status;
+	int ret = 0;
+
+	wlmsg = kzalloc(sizeof(struct nss_wifili_msg), GFP_ATOMIC);
+	if (!wlmsg)
+		return -ENOMEM;
+
+	msg_cb = (nss_wifili_msg_callback_t)ath11k_nss_wifili_event_receive;
+
+	reinit_completion(&ab->nss.complete);
+
+	nss_cmn_msg_init(&wlmsg->cm, ab->nss.if_num,
+			 NSS_WIFILI_SEND_MESH_CAPABILITY_INFO,
+			 sizeof(struct nss_wifili_mesh_capability_info),
+			 msg_cb, NULL);
+
+	status = nss_wifili_tx_msg(ab->nss.ctx, wlmsg);
+	if (status != NSS_TX_SUCCESS) {
+		ath11k_warn(ab, "nss failed to get mesh capability msg %d\n", status);
+		ret = -EINVAL;
+		goto free;
+	}
+
+	ret = wait_for_completion_timeout(&ab->nss.complete,
+					  msecs_to_jiffies(ATH11K_NSS_MSG_TIMEOUT_MS));
+	if (!ret) {
+		ath11k_warn(ab, "timeout while waiting for mesh capability check\n");
+		ret = -ETIMEDOUT;
+		goto free;
+	}
+
+	kfree(wlmsg);
+	return 0;
+
+free:
+	kfree(wlmsg);
+	return ret;
+}
+
 static int ath11k_nss_init(struct ath11k_base *ab)
 {
 	struct nss_wifili_init_msg *wim = NULL;
@@ -2892,6 +4380,15 @@ static int ath11k_nss_init(struct ath11k_base *ab)
 		goto unregister;
 
 	kfree(wlmsg);
+
+	/* Create a mesh links read debugfs entry */
+	ath11k_debugfs_nss_soc_create(ab);
+
+	/* Check for mesh capability */
+	ret = ath11k_nss_mesh_capability(ab);
+
+	if (ret)
+		ath11k_err(ab, "Mesh offload is not enabled %d\n", ret);
 
 	ath11k_dbg(ab, ATH11K_DBG_NSS, "NSS Init Message TX Success %p %d\n",
 		   ab->nss.ctx, ab->nss.if_num);

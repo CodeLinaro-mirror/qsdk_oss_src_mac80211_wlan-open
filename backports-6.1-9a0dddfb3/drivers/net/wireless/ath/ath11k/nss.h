@@ -9,8 +9,10 @@
 #ifdef CPTCFG_ATH11K_NSS_SUPPORT
 #include <nss_api_if.h>
 #include <nss_cmn.h>
-
+#include <nss_wifi_meshmgr.h>
 #endif
+#include "../../../../../net/mac80211/mesh.h"
+
 struct ath11k;
 struct ath11k_base;
 struct ath11k_vif;
@@ -22,8 +24,9 @@ struct hal_rx_user_status;
 
 /* NSS DBG macro is not included as part of debug enum to avoid
  * frequent changes during upgrade*/
-#define ATH11K_DBG_NSS	0x40000000
-#define ATH11K_DBG_NSS_WDS	0x80000000
+#define ATH11K_DBG_NSS		0x20000000
+#define ATH11K_DBG_NSS_WDS	0x40000000
+#define ATH11K_DBG_NSS_MESH	0x80000000
 
 /* WIFILI Supported Target Types */
 #define ATH11K_WIFILI_TARGET_TYPE_UNKNOWN   0xFF
@@ -60,6 +63,7 @@ struct hal_rx_user_status;
 /* Timeout for waiting for response from NSS on TX msg */
 #define ATH11K_NSS_MSG_TIMEOUT_MS 5000
 
+#define ATH11K_MESH_DEFAULT_ELEMENT_TTL	31
 /* Init Flags */
 #define WIFILI_NSS_CCE_DISABLED 0x1
 #define WIFILI_ADDTL_MEM_SEG_SET 0x000000002
@@ -111,6 +115,8 @@ enum ath11k_nss_vdev_cmd {
 	ATH11K_NSS_WIFI_VDEV_CFG_WDS_BACKHAUL_CMD,
 };
 
+#define ATH11K_MPP_EXPIRY_TIMER_INTERVAL_MS	60 * HZ
+
 enum ath11k_nss_opmode {
 	ATH11K_NSS_OPMODE_UNKNOWN,
 	ATH11K_NSS_OPMODE_AP,
@@ -158,10 +164,30 @@ struct ath11k_nss_peer {
 	struct completion complete;
 };
 
+struct ath11k_nss_mpath_entry {
+	struct list_head list;
+	u32 num_entries;
+#ifdef CPTCFG_ATH11K_NSS_SUPPORT
+	struct nss_wifi_mesh_path_dump_entry mpath[0];
+#endif
+};
+
+struct ath11k_nss_mpp_entry {
+	struct list_head list;
+	u32 num_entries;
+#ifdef CPTCFG_ATH11K_NSS_SUPPORT
+	struct nss_wifi_mesh_proxy_path_dump_entry mpp[0];
+#endif
+};
+
 /* Structure to hold the vif related info for nss offload support */
 struct arvif_nss {
 	/* dynamic ifnum allocated by nss driver for vif */
 	int if_num;
+#ifdef CPTCFG_ATH11K_NSS_SUPPORT
+	/* mesh handle for mesh obj vap */
+	nss_wifi_mesh_handle_t mesh_handle;
+#endif
 	/* Used for completion status for vdev config nss messages */
 	struct completion complete;
 	/* Keep the copy of encap type for nss */
@@ -183,6 +209,25 @@ struct arvif_nss {
 	/* WDS cfg should be done only once for ext vdev */
 	bool wds_cfg_done;
 	bool created;
+
+	bool mpp_aging;
+	bool mpp_dump_req;
+	struct timer_list mpp_expiry_timer;
+	u8 mesh_ttl;
+	bool mesh_forward_enabled;
+	u32 metadata_type;
+	u32 mpath_refresh_time;
+
+	struct list_head list;
+	struct list_head mpath_dump;
+	/* total number of mpath entries in all of the mpath_dump list */
+	u32 mpath_dump_num_entries;
+	struct completion dump_mpath_complete;
+
+	struct list_head mpp_dump;
+	/* total number of mpp entries in all of the mpp_dump list */
+	u32 mpp_dump_num_entries;
+	struct completion dump_mpp_complete;
 };
 
 /* Structure to hold the pdev/radio related info for nss offload support */
@@ -191,6 +236,8 @@ struct ath11k_nss {
 	int if_num;
 	/* Radio/pdev Context obtained on pdev register */
 	void* ctx;
+	/* protects stats from nss */
+	spinlock_t dump_lock;
 };
 
 /* Structure to hold the soc related info for nss offload support */
@@ -199,10 +246,14 @@ struct ath11k_soc_nss {
 	bool enabled;
 	/* turn on/off nss stats support in ath11k */
 	bool stats_enabled;
+	/* Mesh offload support as advertised by nss */
+	bool mesh_nss_offload_enabled;
 	/* soc nss ctx */
 	void* ctx;
 	/* if_num to be used for soc related nss messages */
 	int if_num;
+	/* debug mode to disable the regular mesh configuration from mac80211 */
+	bool debug_mode;
 	/* Completion to nss message response */
 	struct completion complete;
 	/* Response to nss messages are stored here on msg callback
@@ -259,6 +310,19 @@ void ath11k_nss_update_sta_rxrate(struct hal_rx_mon_ppdu_info *ppdu_info,
 int ath11k_nss_setup(struct ath11k_base *ab);
 int ath11k_nss_teardown(struct ath11k_base *ab);
 void ath11k_nss_ext_rx_stats(struct ath11k_base *ab, struct htt_rx_ring_tlv_filter *tlv_filter);
+int ath11k_nss_dump_mpath_request(struct ath11k_vif *arvif);
+int ath11k_nss_dump_mpp_request(struct ath11k_vif *arvif);
+#ifdef CPTCFG_MAC80211_MESH
+int ath11k_nss_mesh_config_path(struct ath11k *ar, struct ath11k_vif *arvif,
+				enum ieee80211_mesh_path_offld_cmd cmd,
+				struct ieee80211_mesh_path_offld *path);
+#endif
+int ath11k_nss_mesh_config_update(struct ieee80211_vif *vif, int changed);
+int ath11k_nss_assoc_link_arvif_to_ifnum(struct ath11k_vif *arvif, int if_num);
+int ath11k_nss_mesh_exception_flags(struct ath11k_vif *arvif,
+			       struct nss_wifi_mesh_exception_flag_msg *nss_msg);
+int ath11k_nss_exc_rate_config(struct ath11k_vif *arvif,
+					struct nss_wifi_mesh_rate_limit_config *nss_exc_cfg);
 #else
 static inline int ath11k_nss_tx(struct ath11k_vif *arvif, struct sk_buff *skb)
 {
@@ -428,6 +492,39 @@ static inline void ath11k_nss_ext_rx_stats(struct ath11k_base *ab,
 					   struct htt_rx_ring_tlv_filter *tlv_filter)
 {
 	return;
+}
+
+#ifdef CPTCFG_MAC80211_MESH
+static inline int
+ath11k_nss_mesh_config_path(struct ath11k *ar, struct ath11k_vif *arvif,
+			    enum ieee80211_mesh_path_offld_cmd cmd,
+			    struct ieee80211_mesh_path_offld *path)
+{
+	return 0;
+}
+#endif
+static inline int
+ath11k_nss_mesh_config_update(struct ieee80211_vif *vif, int changed)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_assoc_link_arvif_to_ifnum(struct ath11k_vif *arvif,
+						       int if_num)
+{
+	return 0;
+}
+
+static inline int ath11k_nss_mesh_exception_flags(struct ath11k_vif *arvif,
+						  void *nss_msg)
+{
+	return 0;
+}
+
+static inline int
+ath11k_nss_exc_rate_config(struct ath11k_vif *arvif, void *nss_exc_cfg)
+{
+	return 0;
 }
 #endif /* CPTCFG_ATH11K_NSS_SUPPORT */
 #endif

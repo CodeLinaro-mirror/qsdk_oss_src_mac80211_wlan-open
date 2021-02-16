@@ -10,6 +10,7 @@
 #include "trace.h"
 #include "debugfs.h"
 
+extern struct dentry *debugfs_ath11k;
 enum ath11k_debug_mask {
 	ATH11K_DBG_AHB		= 0x00000001,
 	ATH11K_DBG_WMI		= 0x00000002,

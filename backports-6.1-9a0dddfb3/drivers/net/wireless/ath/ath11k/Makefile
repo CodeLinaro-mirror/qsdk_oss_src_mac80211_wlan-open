@@ -22,7 +22,7 @@ ath11k-y += core.o \
 	    p2p.o \
 	    vendor.o
 
-ath11k-$(CPTCFG_ATH11K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o
+ath11k-$(CPTCFG_ATH11K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o debug_nss.o
 ath11k-$(CPTCFG_NL80211_TESTMODE) += testmode.o
 ath11k-$(CPTCFG_ATH11K_TRACING) += trace.o
 ath11k-$(CONFIG_THERMAL) += thermal.o

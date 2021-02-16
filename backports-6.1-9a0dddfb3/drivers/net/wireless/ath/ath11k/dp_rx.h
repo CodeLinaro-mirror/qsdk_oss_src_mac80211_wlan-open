@@ -160,4 +160,6 @@ bool ath11k_dp_rx_h_attn_is_mcbc(struct ath11k_base *ab,
 				 struct hal_rx_desc *desc);
 u16 ath11k_dp_rx_h_mpdu_start_peer_id(struct ath11k_base *ab,
 				      struct hal_rx_desc *desc);
+void ath11k_dp_rx_from_nss(struct ath11k *ar, struct sk_buff *msdu,
+                           struct napi_struct *napi);
 #endif /* ATH11K_DP_RX_H */
