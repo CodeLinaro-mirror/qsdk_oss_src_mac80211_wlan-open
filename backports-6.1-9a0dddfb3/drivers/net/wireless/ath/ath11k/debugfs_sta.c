@@ -1315,14 +1315,7 @@ static ssize_t ath11k_dbg_sta_write_cfr_capture(struct file *file,
 	if (cfr_capture_enable > WMI_PEER_CFR_CAPTURE_ENABLE ||
 	    cfr_capture_bw > sta->deflink.bandwidth ||
 	    cfr_capture_method > CFR_CAPURE_METHOD_NULL_FRAME_WITH_PHASE ||
-	    cfr_capture_period > WMI_PEER_CFR_PERIODICITY_MAX) {
-		ret = -EINVAL;
-		goto out;
-	}
-
-	/* Target expects cfr period in multiple of 10 */
-	if (cfr_capture_period % 10) {
-		ath11k_err(ar->ab, "periodicity should be 10x\n");
+	     cfr_capture_period > WMI_PEER_CFR_PERIODICITY_MAX) {
 		ret = -EINVAL;
 		goto out;
 	}

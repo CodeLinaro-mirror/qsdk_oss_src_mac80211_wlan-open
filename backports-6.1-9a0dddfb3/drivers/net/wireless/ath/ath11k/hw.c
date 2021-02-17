@@ -1158,60 +1158,70 @@ void ath11k_hw_ipq8074_fill_cfr_hdr_info(struct ath11k *ar,
 					 struct ath11k_csi_cfr_header *header,
 					 struct ath11k_cfr_peer_tx_param *params)
 {
-	header->cfr_metadata_version = ATH11K_CFR_META_VERSION_2;
+	header->cfr_metadata_version = ATH11K_CFR_META_VERSION_4;
 	header->cfr_data_version = ATH11K_CFR_DATA_VERSION_1;
+	header->cfr_metadata_len =sizeof(struct cfr_metadata_version_4);
 	/* TODO: can we add this chip_type to hw param table */
 	header->chip_type = ATH11K_CFR_RADIO_IPQ8074;
-	header->u.meta_v2.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
+	header->u.meta_v4.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
 					     params->status);
-	header->u.meta_v2.capture_bw = params->bandwidth;
-	header->u.meta_v2.phy_mode = params->phy_mode;
-	header->u.meta_v2.prim20_chan = params->primary_20mhz_chan;
-	header->u.meta_v2.center_freq1 = params->band_center_freq1;
-	header->u.meta_v2.center_freq2 = params->band_center_freq2;
+	header->u.meta_v4.capture_bw = params->bandwidth;
+	header->u.meta_v4.phy_mode = params->phy_mode;
+	header->u.meta_v4.prim20_chan = params->primary_20mhz_chan;
+	header->u.meta_v4.center_freq1 = params->band_center_freq1;
+	header->u.meta_v4.center_freq2 = params->band_center_freq2;
 
 	/* Currently CFR data is captured on ACK of a Qos NULL frame.
 	 * For 20 MHz, ACK is Legacy and for 40/80/160, ACK is DUP Legacy.
 	 */
-	header->u.meta_v2.capture_mode = params->bandwidth ?
+	header->u.meta_v4.capture_mode = params->bandwidth ?
 		ATH11K_CFR_CAPTURE_DUP_LEGACY_ACK : ATH11K_CFR_CAPTURE_LEGACY_ACK;
-	header->u.meta_v2.capture_type = params->capture_method;
-	header->u.meta_v2.num_rx_chain = ar->cfg_rx_chainmask;
-	header->u.meta_v2.sts_count = params->spatial_streams;
-	header->u.meta_v2.timestamp = params->timestamp_us;
-	memcpy(header->u.meta_v2.peer_addr, params->peer_mac_addr, ETH_ALEN);
-	memcpy(header->u.meta_v2.chain_rssi, params->chain_rssi,
+	header->u.meta_v4.capture_type = params->capture_method;
+	header->u.meta_v4.num_rx_chain = ar->cfg_rx_chainmask;
+	header->u.meta_v4.sts_count = params->spatial_streams;
+	header->u.meta_v4.timestamp = params->timestamp_us;
+	header->u.meta_v4.cfo_measurement = params->cfo_measurement;
+	header->u.meta_v4.rx_start_ts = params->rx_start_ts;
+	memcpy(header->u.meta_v4.peer_addr, params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->u.meta_v4.chain_rssi, params->chain_rssi,
 	       sizeof(params->chain_rssi));
-	memcpy(header->u.meta_v2.chain_phase, params->chain_phase,
+	memcpy(header->u.meta_v4.chain_phase, params->chain_phase,
 	       sizeof(params->chain_phase));
+	memcpy(header->u.meta_v4.agc_gain, params->agc_gain,
+	       sizeof(params->agc_gain));
 }
 
 void ath11k_hw_qcn9074_fill_cfr_hdr_info(struct ath11k *ar,
 					 struct ath11k_csi_cfr_header *header,
 					 struct ath11k_cfr_peer_tx_param *params)
 {
-	header->cfr_metadata_version = ATH11K_CFR_META_VERSION_3;
+	header->cfr_metadata_version = ATH11K_CFR_META_VERSION_5;
 	header->cfr_data_version = ATH11K_CFR_DATA_VERSION_1;
 	header->chip_type = ATH11K_CFR_RADIO_QCN9074;
-	header->u.meta_v3.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
+	header->cfr_metadata_len = sizeof(struct cfr_metadata_version_5);
+	header->u.meta_v5.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
 					     params->status);
-	header->u.meta_v3.capture_bw = params->bandwidth;
-	header->u.meta_v3.phy_mode = params->phy_mode;
-	header->u.meta_v3.prim20_chan = params->primary_20mhz_chan;
-	header->u.meta_v3.center_freq1 = params->band_center_freq1;
-	header->u.meta_v3.center_freq2 = params->band_center_freq2;
-	header->u.meta_v3.capture_mode = params->bandwidth ?
+	header->u.meta_v5.capture_bw = params->bandwidth;
+	header->u.meta_v5.phy_mode = params->phy_mode;
+	header->u.meta_v5.prim20_chan = params->primary_20mhz_chan;
+	header->u.meta_v5.center_freq1 = params->band_center_freq1;
+	header->u.meta_v5.center_freq2 = params->band_center_freq2;
+	header->u.meta_v5.capture_mode = params->bandwidth ?
 		ATH11K_CFR_CAPTURE_DUP_LEGACY_ACK : ATH11K_CFR_CAPTURE_LEGACY_ACK;
-	header->u.meta_v3.capture_type = params->capture_method;
-	header->u.meta_v3.num_rx_chain = ar->cfg_rx_chainmask;
-	header->u.meta_v3.sts_count = params->spatial_streams;
-	header->u.meta_v3.timestamp = params->timestamp_us;
-	memcpy(header->u.meta_v3.peer_addr.su_peer_addr,
+	header->u.meta_v5.capture_type = params->capture_method;
+	header->u.meta_v5.num_rx_chain = ar->cfg_rx_chainmask;
+	header->u.meta_v5.sts_count = params->spatial_streams;
+	header->u.meta_v5.timestamp = params->timestamp_us;
+	header->u.meta_v5.cfo_measurement = params->cfo_measurement;
+	header->u.meta_v5.rx_start_ts = params->rx_start_ts;
+	memcpy(header->u.meta_v5.peer_addr.su_peer_addr,
 	       params->peer_mac_addr, ETH_ALEN);
-	memcpy(header->u.meta_v3.chain_rssi, params->chain_rssi,
+	memcpy(header->u.meta_v5.chain_rssi, params->chain_rssi,
 	       sizeof(params->chain_rssi));
-	memcpy(header->u.meta_v3.chain_phase, params->chain_phase,
+	memcpy(header->u.meta_v5.chain_phase, params->chain_phase,
 	       sizeof(params->chain_phase));
+	memcpy(header->u.meta_v5.agc_gain, params->agc_gain,
+	       sizeof(params->agc_gain));
 }
 
 const struct ath11k_hw_ops ipq8074_ops = {
@@ -1302,7 +1312,6 @@ const struct ath11k_hw_ops ipq6018_ops = {
 	.rx_desc_dot11_hdr_fields_valid = ath11k_hw_ipq8074_rx_desc_dot11_hdr_fields_valid,
 	.rx_desc_get_dot11_hdr = ath11k_hw_ipq8074_rx_desc_get_dot11_hdr,
 	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
-	.fill_cfr_hdr_info = ath11k_hw_ipq8074_fill_cfr_hdr_info,
 };
 
 const struct ath11k_hw_ops qca6390_ops = {
@@ -1442,6 +1451,7 @@ const struct ath11k_hw_ops wcn6855_ops = {
 	.rx_desc_dot11_hdr_fields_valid = ath11k_hw_ipq8074_rx_desc_dot11_hdr_fields_valid,
 	.rx_desc_get_dot11_hdr = ath11k_hw_ipq8074_rx_desc_get_dot11_hdr,
 	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
+	.fill_cfr_hdr_info = ath11k_hw_ipq8074_fill_cfr_hdr_info,
 };
 
 const struct ath11k_hw_ops wcn6750_ops = {

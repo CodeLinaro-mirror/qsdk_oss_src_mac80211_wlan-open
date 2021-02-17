@@ -276,7 +276,7 @@ static int ath11k_cfr_enh_process_data(struct ath11k *ar,
 	struct ath11k_cfr_look_up_table *lut;
 	struct ath11k_csi_cfr_header *header;
 	struct ath11k_cfir_enh_dma_hdr dma_hdr;
-	struct cfr_metadata_version_3 *meta;
+	struct cfr_metadata_version_5 *meta;
 	void *mu_rx_user_info = NULL, *freeze_tlv = NULL;
 	u8 *peer_macaddr;
 	u8 *data;
@@ -343,7 +343,7 @@ static int ath11k_cfr_enh_process_data(struct ath11k *ar,
 	memcpy(&lut->dma_hdr.enh_hdr, &dma_hdr, sizeof(struct ath11k_cfir_enh_dma_hdr));
 
 	header = &lut->header;
-	meta = &header->u.meta_v3;
+	meta = &header->u.meta_v5;
 	meta->channel_bw = FIELD_GET(CFIR_DMA_HDR_INFO1_UPLOAD_PKT_BW,
 				     dma_hdr.hdr.info1);
 	meta->num_rx_chain =
@@ -450,9 +450,9 @@ static int ath11k_cfr_process_data(struct ath11k *ar,
 	memcpy(&lut->dma_hdr.hdr, &dma_hdr, sizeof(struct ath11k_cfir_dma_hdr));
 
 	header = &lut->header;
-	header->u.meta_v2.channel_bw = FIELD_GET(CFIR_DMA_HDR_INFO1_UPLOAD_PKT_BW,
+	header->u.meta_v4.channel_bw = FIELD_GET(CFIR_DMA_HDR_INFO1_UPLOAD_PKT_BW,
 						 dma_hdr.info1);
-	header->u.meta_v2.length = length;
+	header->u.meta_v4.length = length;
 
 	status = ath11k_cfr_correlate_and_relay(ar, lut,
 						ATH11K_CORRELATE_DBR_EVENT);

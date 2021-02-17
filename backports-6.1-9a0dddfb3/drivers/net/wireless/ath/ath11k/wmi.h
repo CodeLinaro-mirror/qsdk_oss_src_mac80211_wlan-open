@@ -3602,7 +3602,7 @@ struct wmi_peer_cfr_capture_cmd_fixed_param {
 #define WMI_CFR_CORRELATION_INFO2_BUF_ADDR_HIGH GENMASK(3, 0)
 #define WMI_CFR_CORRELATION_INFO2_PPDU_ID GENMASK(31, 16)
 
-#define WMI_CFR_CFO_MEASUREMENT_VALID GENMASK(0, 0)
+#define WMI_CFR_CFO_MEASUREMENT_VALID BIT(0)
 #define WMI_CFR_CFO_MEASUREMENT_RAW_DATA GENMASK(14, 1)
 
 struct ath11k_wmi_cfr_peer_tx_event_param {
@@ -3622,10 +3622,13 @@ struct ath11k_wmi_cfr_peer_tx_event_param {
 	u32 counter;
 	u32 chain_rssi[WMI_MAX_CHAINS];
 	u32 cfo_measurement;
+	u32 rx_start_ts;
+	u32 rx_ts_reset;
 } __packed;
 
 struct ath11k_wmi_cfr_peer_tx_event_phase_param {
 	u32 chain_phase[WMI_MAX_CHAINS];
+	u8 agc_gain[WMI_MAX_CHAINS];
 } __packed;
 
 enum ath11k_wmi_cfr_capture_bw {

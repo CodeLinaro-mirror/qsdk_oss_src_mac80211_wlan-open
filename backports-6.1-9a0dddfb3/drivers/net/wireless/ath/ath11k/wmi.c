@@ -10120,6 +10120,15 @@ static void ath11k_wmi_tlv_cfr_cpature_event_fixed_param(const void *ptr,
 	tx_params->counter = params->counter;
 	memcpy(tx_params->chain_rssi, params->chain_rssi,
 		 sizeof(tx_params->chain_rssi));
+
+	if (WMI_CFR_CFO_MEASUREMENT_VALID & params->cfo_measurement)
+		tx_params->cfo_measurement = FIELD_GET(WMI_CFR_CFO_MEASUREMENT_RAW_DATA,
+						       params->cfo_measurement);
+	else
+		tx_params->cfo_measurement = 0;
+
+	tx_params->rx_start_ts = params->rx_start_ts;
+	tx_params->rx_ts_reset = params->rx_ts_reset;
 }
 
 static void ath11k_wmi_tlv_cfr_cpature_phase_fixed_param(const void *ptr,
@@ -10131,8 +10140,10 @@ static void ath11k_wmi_tlv_cfr_cpature_phase_fixed_param(const void *ptr,
 			(struct ath11k_wmi_cfr_peer_tx_event_phase_param *)ptr;
 	int i;
 
-	for (i = 0; i < WMI_MAX_CHAINS; i++)
+	for (i = 0; i < WMI_MAX_CHAINS; i++) {
 		tx_params->chain_phase[i] = params->chain_phase[i];
+		tx_params->agc_gain[i] = params->agc_gain[i];
+	}
 }
 
 static int ath11k_wmi_tlv_cfr_capture_evt_parse(struct ath11k_base *ab,

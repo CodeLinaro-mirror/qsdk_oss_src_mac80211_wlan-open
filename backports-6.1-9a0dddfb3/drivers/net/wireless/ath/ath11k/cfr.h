@@ -35,6 +35,8 @@ enum ath11k_cfr_meta_version {
 	ATH11K_CFR_META_VERSION_1,
 	ATH11K_CFR_META_VERSION_2,
 	ATH11K_CFR_META_VERSION_3,
+	ATH11K_CFR_META_VERSION_4,
+	ATH11K_CFR_META_VERSION_5,
 	ATH11K_CFR_META_VERSION_MAX = 0xFF,
 };
 
@@ -77,6 +79,10 @@ struct ath11k_cfr_peer_tx_param {
         u32 counter;
         u32 chain_rssi[WMI_MAX_CHAINS];
         u16 chain_phase[WMI_MAX_CHAINS];
+	u32 cfo_measurement;
+	u8 agc_gain[WMI_MAX_CHAINS];
+	u32 rx_start_ts;
+	u32 rx_ts_reset;
 };
 
 struct cfr_metadata_version_1 {
@@ -142,6 +148,55 @@ struct cfr_metadata_version_3 {
 	u16 chain_phase[HOST_MAX_CHAINS];
 } __packed;
 
+struct cfr_metadata_version_4 {
+	u8 peer_addr[ETH_ALEN];
+	u8 status;
+	u8 capture_bw;
+	u8 channel_bw;
+	u8 phy_mode;
+	u16 prim20_chan;
+	u16 center_freq1;
+	u16 center_freq2;
+	u8 capture_mode;
+	u8 capture_type;
+	u8 sts_count;
+	u8 num_rx_chain;
+	u32 timestamp;
+	u32 length;
+	u32 chain_rssi[HOST_MAX_CHAINS];
+	u16 chain_phase[HOST_MAX_CHAINS];
+	u32 cfo_measurement;
+	u8 agc_gain[HOST_MAX_CHAINS];
+	u32 rx_start_ts;
+} __packed;
+
+struct cfr_metadata_version_5 {
+        u8 status;
+        u8 capture_bw;
+        u8 channel_bw;
+        u8 phy_mode;
+        u16 prim20_chan;
+        u16 center_freq1;
+        u16 center_freq2;
+        u8 capture_mode;
+        u8 capture_type;
+        u8 sts_count;
+        u8 num_rx_chain;
+        u64 timestamp;
+        u32 length;
+        u8 is_mu_ppdu;
+        u8 num_mu_users;
+        union {
+                u8 su_peer_addr[ETH_ALEN];
+                u8 mu_peer_addr[MAX_CFR_MU_USERS][ETH_ALEN];
+        } peer_addr;
+        u32 chain_rssi[HOST_MAX_CHAINS];
+        u16 chain_phase[HOST_MAX_CHAINS];
+	u32 cfo_measurement;
+	u8 agc_gain[HOST_MAX_CHAINS];
+	u32 rx_start_ts;
+} __packed;
+
 struct ath11k_csi_cfr_header {
 	u32 start_magic_num;
 	u32 vendorid;
@@ -149,11 +204,13 @@ struct ath11k_csi_cfr_header {
 	u8 cfr_data_version;
 	u8 chip_type;
 	u8 pltform_type;
-	u32 Reserved;
+	u32 cfr_metadata_len;
 	union {
 		struct cfr_metadata_version_1 meta_v1;
 		struct cfr_metadata_version_2 meta_v2;
 		struct cfr_metadata_version_3 meta_v3;
+		struct cfr_metadata_version_4 meta_v4;
+		struct cfr_metadata_version_5 meta_v5;
 	} u;
 } __packed;
 
