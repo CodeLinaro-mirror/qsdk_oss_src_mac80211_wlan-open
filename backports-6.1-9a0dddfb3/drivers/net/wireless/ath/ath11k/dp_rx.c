@@ -2959,6 +2959,7 @@ static void ath11k_dp_rx_h_ppdu(struct ath11k *ar, struct hal_rx_desc *rx_desc,
 		no_chan_info = 1;
 	} else if (channel_num >= 36 && channel_num <= 177) {
 		rx_status->band = NL80211_BAND_5GHZ;
+		no_chan_info = 1;
 	} else {
 		no_chan_info = 1;
 	}

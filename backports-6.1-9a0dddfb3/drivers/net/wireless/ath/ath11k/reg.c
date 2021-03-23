@@ -556,6 +556,17 @@ ath11k_reg_ap_pwr_convert(enum ieee80211_ap_reg_power power_type)
 	}
 }
 
+static void ath11k_copy_reg_rule(struct ath11k_reg_rule *ath11k_reg_rule,
+				 struct cur_reg_rule *reg_rule)
+{
+	if (!ath11k_reg_rule->start_freq)
+		ath11k_reg_rule->start_freq = reg_rule->start_freq;
+
+	if ((!ath11k_reg_rule->end_freq) ||
+	    (ath11k_reg_rule->end_freq < reg_rule->end_freq))
+		ath11k_reg_rule->end_freq = reg_rule->end_freq;
+}
+
 struct ieee80211_regdomain *
 ath11k_reg_build_regd(struct ath11k_base *ab,
 		      struct cur_regulatory_info *reg_info, bool intersect,
@@ -636,6 +647,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 			max_bw = min_t(u16, reg_rule->max_bw,
 				       reg_info->max_bw_2ghz);
 			flags = 0;
+			ath11k_copy_reg_rule(&ab->reg_rule_2g, reg_rule);
 		} else if (reg_info->num_5ghz_reg_rules &&
 			   (j < reg_info->num_5ghz_reg_rules)) {
 			reg_rule = reg_info->reg_rules_5ghz_ptr + j++;
@@ -649,11 +661,18 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 			 * per other BW rule flags we pass from here
 			 */
 			flags = NL80211_RRF_AUTO_BW;
+
+			if (reg_rule->end_freq <= ATH11K_MAX_5G_FREQ)
+				ath11k_copy_reg_rule(&ab->reg_rule_5g, reg_rule);
+			else if (reg_rule->start_freq >= ATH11K_MIN_6G_FREQ)
+				ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
+
 		} else if (reg_info->is_ext_reg_event && reg_6ghz_number &&
 			   k < reg_6ghz_number) {
 			reg_rule = reg_rule_6ghz + k++;
 			max_bw = min_t(u16, reg_rule->max_bw, max_bw_6ghz);
 			flags = NL80211_RRF_AUTO_BW;
+			ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
 			if (reg_rule->psd_flag)
 				flags |= NL80211_RRF_PSD;
 		} else {

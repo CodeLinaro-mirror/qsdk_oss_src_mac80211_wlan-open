@@ -10879,6 +10879,7 @@ static u32 ath11k_get_phy_id(struct ath11k *ar, u32 band)
 static int ath11k_mac_setup_channels_rates(struct ath11k *ar,
 					   u32 supported_bands)
 {
+	struct ath11k_base *ab = ar->ab;
 	struct ieee80211_supported_band *band;
 	struct ath11k_hal_reg_capabilities_ext *reg_cap, *temp_reg_cap;
 	void *channels;
@@ -10889,7 +10890,7 @@ static int ath11k_mac_setup_channels_rates(struct ath11k *ar,
 		      ARRAY_SIZE(ath11k_6ghz_channels)) !=
 		     ATH11K_NUM_CHANS);
 
-	reg_cap = &ar->ab->hal_reg_cap[ar->pdev_idx];
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
 	temp_reg_cap = reg_cap;
 
 	if (supported_bands & WMI_HOST_WLAN_2G_CAP) {
@@ -10907,17 +10908,53 @@ static int ath11k_mac_setup_channels_rates(struct ath11k *ar,
 		band->bitrates = ath11k_g_rates;
 		ar->hw->wiphy->bands[NL80211_BAND_2GHZ] = band;
 
-		if (ar->ab->hw_params.single_pdev_only) {
+		if (ab->hw_params.single_pdev_only) {
 			phy_id = ath11k_get_phy_id(ar, WMI_HOST_WLAN_2G_CAP);
-			temp_reg_cap = &ar->ab->hal_reg_cap[phy_id];
+			temp_reg_cap = &ab->hal_reg_cap[phy_id];
 		}
 		ath11k_mac_update_ch_list(ar, band,
-					  temp_reg_cap->low_2ghz_chan,
-					  temp_reg_cap->high_2ghz_chan);
+					  max(temp_reg_cap->low_2ghz_chan,
+						  ab->reg_rule_2g.start_freq),
+					  min(temp_reg_cap->high_2ghz_chan,
+						  ab->reg_rule_2g.end_freq));
 	}
 
 	if (supported_bands & WMI_HOST_WLAN_5G_CAP) {
-		if (reg_cap->high_5ghz_chan >= ATH11K_MIN_6G_FREQ) {
+		/* If 5g end and 6g start overlaps, decide band based on
+		 * the difference between target limit and ATH11K_5G_MAX_CENTER.
+		 */
+		if ((reg_cap->low_5ghz_chan >= ATH11K_MIN_5G_FREQ) &&
+		    ((reg_cap->high_5ghz_chan < ATH11K_MAX_5G_FREQ) ||
+		    ((reg_cap->high_5ghz_chan - ATH11K_5G_MAX_CENTER) < (ATH11K_HALF_20MHZ_BW * 2)))) {
+			channels = kmemdup(ath11k_5ghz_channels,
+					   sizeof(ath11k_5ghz_channels),
+					   GFP_KERNEL);
+			if (!channels) {
+				kfree(ar->mac.sbands[NL80211_BAND_6GHZ].channels);
+				return -ENOMEM;
+			}
+
+			band = &ar->mac.sbands[NL80211_BAND_5GHZ];
+			band->band = NL80211_BAND_5GHZ;
+			band->n_channels = ARRAY_SIZE(ath11k_5ghz_channels);
+			band->channels = channels;
+			band->n_bitrates = ath11k_a_rates_size;
+			band->bitrates = ath11k_a_rates;
+			ar->hw->wiphy->bands[NL80211_BAND_5GHZ] = band;
+
+			if (ab->hw_params.single_pdev_only) {
+				phy_id = ath11k_get_phy_id(ar, WMI_HOST_WLAN_5G_CAP);
+				temp_reg_cap = &ar->ab->hal_reg_cap[phy_id];
+			}
+
+			ath11k_mac_update_ch_list(ar, band,
+						  max(temp_reg_cap->low_5ghz_chan,
+							  ab->reg_rule_5g.start_freq),
+						  min(temp_reg_cap->high_5ghz_chan,
+							  ab->reg_rule_5g.end_freq));
+			ath11k_mac_update_5_dot_9_ch_list(ar, band);
+		} else if (reg_cap->low_5ghz_chan >= ATH11K_MIN_6G_FREQ &&
+		    	   reg_cap->high_5ghz_chan <= ATH11K_MAX_6G_FREQ) {
 			channels = kmemdup(ath11k_6ghz_channels,
 					   sizeof(ath11k_6ghz_channels), GFP_KERNEL);
 			if (!channels) {
@@ -10932,44 +10969,13 @@ static int ath11k_mac_setup_channels_rates(struct ath11k *ar,
 			band->channels = channels;
 			band->n_bitrates = ath11k_a_rates_size;
 			band->bitrates = ath11k_a_rates;
+
 			ar->hw->wiphy->bands[NL80211_BAND_6GHZ] = band;
-
-			if (ar->ab->hw_params.single_pdev_only) {
-				phy_id = ath11k_get_phy_id(ar, WMI_HOST_WLAN_5G_CAP);
-				temp_reg_cap = &ar->ab->hal_reg_cap[phy_id];
-			}
-
 			ath11k_mac_update_ch_list(ar, band,
-						  temp_reg_cap->low_5ghz_chan,
-						  temp_reg_cap->high_5ghz_chan);
-		}
-
-		if (reg_cap->low_5ghz_chan < ATH11K_MIN_6G_FREQ) {
-			channels = kmemdup(ath11k_5ghz_channels,
-					   sizeof(ath11k_5ghz_channels),
-					   GFP_KERNEL);
-			if (!channels) {
-				kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
-				kfree(ar->mac.sbands[NL80211_BAND_6GHZ].channels);
-				return -ENOMEM;
-			}
-
-			band = &ar->mac.sbands[NL80211_BAND_5GHZ];
-			band->band = NL80211_BAND_5GHZ;
-			band->n_channels = ARRAY_SIZE(ath11k_5ghz_channels);
-			band->channels = channels;
-			band->n_bitrates = ath11k_a_rates_size;
-			band->bitrates = ath11k_a_rates;
-			ar->hw->wiphy->bands[NL80211_BAND_5GHZ] = band;
-
-			if (ar->ab->hw_params.single_pdev_only) {
-				phy_id = ath11k_get_phy_id(ar, WMI_HOST_WLAN_5G_CAP);
-				temp_reg_cap = &ar->ab->hal_reg_cap[phy_id];
-			}
-
-			ath11k_mac_update_ch_list(ar, band,
-						  temp_reg_cap->low_5ghz_chan,
-						  temp_reg_cap->high_5ghz_chan);
+						  max(reg_cap->low_5ghz_chan,
+						      ab->reg_rule_6g.start_freq),
+						  min(reg_cap->high_5ghz_chan,
+						      ab->reg_rule_6g.end_freq));
 
 			ath11k_mac_update_5_dot_9_ch_list(ar, band);
 		}

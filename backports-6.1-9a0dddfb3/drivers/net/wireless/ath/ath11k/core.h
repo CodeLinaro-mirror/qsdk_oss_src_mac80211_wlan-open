@@ -684,9 +684,15 @@ struct ath11k_sta {
 #endif
 };
 
-#define ATH11K_MIN_5G_FREQ 4150
-#define ATH11K_MIN_6G_FREQ 5925
-#define ATH11K_MAX_6G_FREQ 7115
+#define ATH11K_HALF_20MHZ_BW 10
+#define ATH11K_5G_MIN_CENTER 4900
+#define ATH11K_5G_MAX_CENTER 5920
+#define ATH11K_6G_MIN_CENTER 5935
+#define ATH11K_6G_MAX_CENTER 7115
+#define ATH11K_MIN_5G_FREQ (ATH11K_5G_MIN_CENTER - ATH11K_HALF_20MHZ_BW)
+#define ATH11K_MAX_5G_FREQ (ATH11K_5G_MAX_CENTER + ATH11K_HALF_20MHZ_BW)
+#define ATH11K_MIN_6G_FREQ (ATH11K_6G_MIN_CENTER - ATH11K_HALF_20MHZ_BW)
+#define ATH11K_MAX_6G_FREQ (ATH11K_6G_MAX_CENTER + ATH11K_HALF_20MHZ_BW)
 #define ATH11K_NUM_CHANS 102
 #define ATH11K_MAX_5G_CHAN 177
 
@@ -1105,6 +1111,11 @@ struct ath11k_memory_stats {
 	atomic_t ce_rx_pipe;
 };
 
+struct ath11k_reg_rule {
+	u32 start_freq;
+	u32 end_freq;
+};
+
 /* Master structure to hold the hw data which may be used in core module */
 struct ath11k_base {
 	enum ath11k_hw_rev hw_rev;
@@ -1199,6 +1210,9 @@ struct ath11k_base {
 
 	/* Current DFS Regulatory */
 	enum ath11k_dfs_region dfs_region;
+	struct ath11k_reg_rule reg_rule_2g;
+	struct ath11k_reg_rule reg_rule_5g;
+	struct ath11k_reg_rule reg_rule_6g;
 #ifdef CPTCFG_ATH11K_DEBUGFS
 	struct dentry *debugfs_soc;
 	struct ath11k_memory_stats memory_stats;
