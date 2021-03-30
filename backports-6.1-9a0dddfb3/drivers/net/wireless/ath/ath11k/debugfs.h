@@ -396,7 +396,12 @@ static inline int ath11k_debug_is_memory_stats_enabled(struct ath11k_base *ab)
 	return ab->enable_memory_stats;
 }
 
+void ath11k_debugfs_dbg_mac_filter(struct ath11k_vif *arvif);
 #else
+
+static void ath11k_debugfs_dbg_mac_filter(struct ath11k_vif *arvif)
+{
+}
 static inline int ath11k_debugfs_create(void)
 {
 	return 0;

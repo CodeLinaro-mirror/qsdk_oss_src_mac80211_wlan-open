@@ -4197,6 +4197,117 @@ static const struct file_operations ath11k_fops_wmi_ctrl_stats = {
 	.read = ath11k_read_wmi_ctrl_path_stats,
 };
 
+static ssize_t ath11k_write_mac_filter(struct file *file,
+				       const char __user *ubuf,
+				       size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif = file->private_data;
+	struct ath11k_mac_filter *mac_filter;
+	struct ath11k_mac_filter *i;
+	struct ath11k *ar = arvif->ar;
+	struct ath11k_peer *peer;
+	bool found = false;
+	u8 buf[64] = {0};
+	int ret;
+	unsigned int val;
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
+	if (ret < 0)
+		return ret;
+
+	mac_filter = kzalloc(sizeof(*mac_filter), GFP_ATOMIC);
+	if (!mac_filter)
+		return -ENOMEM;
+
+	buf[ret] = '\0';
+	ret = sscanf(buf, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx %u",
+		     &mac_filter->peer_mac[0], &mac_filter->peer_mac[1],
+		     &mac_filter->peer_mac[2], &mac_filter->peer_mac[3],
+		     &mac_filter->peer_mac[4], &mac_filter->peer_mac[5],
+		     &val);
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (!list_empty(&arvif->mac_filters)) {
+		list_for_each_entry(i, &arvif->mac_filters, list) {
+			if (ether_addr_equal(i->peer_mac, mac_filter->peer_mac)) {
+				found = true;
+				break;
+			}
+		}
+	}
+
+	spin_lock_bh(&ar->ab->base_lock);
+	peer = ath11k_peer_find_by_addr(ar->ab, mac_filter->peer_mac);
+	if (!found && val) {
+		list_add(&mac_filter->list, &arvif->mac_filters);
+		arvif->mac_filter_count++;
+		if (peer)
+			peer->peer_logging_enabled = true;
+	} else if (found && !val) {
+		list_del(&i->list);
+		kfree(i);
+		arvif->mac_filter_count--;
+		if (peer)
+			peer->peer_logging_enabled = false;
+	}
+
+	spin_unlock_bh(&ar->ab->base_lock);
+	mutex_unlock(&ar->conf_mutex);
+	return count;
+}
+
+static ssize_t ath11k_read_mac_filter(struct file *file, char __user *ubuf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif = file->private_data;
+	struct ath11k *ar = arvif->ar;
+	struct ath11k_mac_filter *i;
+	int len = 0, ret;
+	char *buf;
+	int size;
+
+	size = (arvif->mac_filter_count * 20) + 25;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (list_empty(&arvif->mac_filters)) {
+		len += scnprintf(buf + len, size - len, "List is Empty\n");
+		goto exit;
+	}
+
+	len += scnprintf(buf + len, size - len, "Mac address entries :\n");
+	list_for_each_entry(i, &arvif->mac_filters, list) {
+		len += scnprintf(buf + len, size - len, "%pM\n", i->peer_mac);
+	}
+
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+	return ret;
+
+}
+
+static const struct file_operations fops_mac_filter = {
+	.read = ath11k_read_mac_filter,
+	.write = ath11k_write_mac_filter,
+	.open = simple_open
+};
+
+void ath11k_debugfs_dbg_mac_filter(struct ath11k_vif *arvif)
+{
+	arvif->mac_filter = debugfs_create_file("mac_filter",
+						0644,
+						arvif->vif->debugfs_dir, arvif,
+						&fops_mac_filter);
+	INIT_LIST_HEAD(&arvif->mac_filters);
+}
+
 void ath11k_debugfs_wmi_ctrl_stats(struct ath11k_vif *arvif)
 {
 	arvif->wmi_ctrl_stat = debugfs_create_file("wmi_ctrl_stats", 0644,

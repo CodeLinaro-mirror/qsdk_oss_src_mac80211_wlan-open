@@ -419,8 +419,10 @@ void ath11k_peer_unmap_event(struct ath11k_base *ab, u16 peer_id)
 		goto exit;
 	}
 
-	ath11k_dbg(ab, ATH11K_DBG_DP_HTT, "peer unmap vdev %d peer %pM id %d\n",
-		   peer->vdev_id, peer->addr, peer_id);
+	if (peer->peer_logging_enabled)
+		ath11k_dbg(ab, ATH11K_DBG_PEER, "peer unmap vdev %d peer %pM
+id %d\n",
+			   peer->vdev_id, peer->addr, peer_id);
 
 	list_del(&peer->list);
 	kfree(peer);
@@ -509,8 +511,9 @@ void ath11k_peer_map_event(struct ath11k_base *ab, u8 vdev_id, u16 peer_id,
 			ath11k_nss_peer_create(ar, peer);
 	}
 
-	ath11k_dbg(ab, ATH11K_DBG_DP_HTT, "peer map vdev %d peer %pM id %d\n",
-		   vdev_id, mac_addr, peer_id);
+	if (peer->peer_logging_enabled)
+		ath11k_dbg(ab, ATH11K_DBG_PEER, "peer map vdev %d peer %pM id %d\n",
+			   vdev_id, mac_addr, peer_id);
 
 exit:
 	spin_unlock_bh(&ab->base_lock);
@@ -564,8 +567,9 @@ void ath11k_peer_map_v2_event(struct ath11k_base *ab, u8 vdev_id, u16 peer_id,
 	if (ab->nss.enabled && ar)
 		ath11k_peer_map_ast(ar, peer, mac_addr, hw_peer_id, ast_hash);
 
-	ath11k_dbg(ab, ATH11K_DBG_DP_HTT, "htt peer map vdev %d peer %pM id %d is_wds %d\n",
-		   vdev_id, mac_addr, peer_id, is_wds);
+	if (peer->peer_logging_enabled)
+		ath11k_dbg(ab, ATH11K_DBG_PEER, "peer map vdev %d peer %pM id %d is_wds %d\n",
+			   vdev_id, mac_addr, peer_id, is_wds);
 
 	spin_unlock_bh(&ab->base_lock);
 	goto exit;
@@ -920,6 +924,11 @@ int ath11k_peer_create(struct ath11k *ar, struct ath11k_vif *arvif,
 	ATH11K_MEMORY_STATS_INC(ar->ab, per_peer_object, sizeof(*peer));
 
 	ar->num_peers++;
+
+	if (ath11k_mac_sta_level_info(arvif, sta)) {
+		ath11k_dbg(ar->ab, ATH11K_DBG_PEER, "peer created %pM\n", param->peer_addr);
+		peer->peer_logging_enabled = true;
+	}
 
 	spin_unlock_bh(&ar->ab->base_lock);
 	mutex_unlock(&ar->ab->tbl_mtx_lock);

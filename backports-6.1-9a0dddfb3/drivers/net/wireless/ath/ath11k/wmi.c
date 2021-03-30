@@ -8969,9 +8969,9 @@ static void ath11k_peer_sta_kickout_event(struct ath11k_base *ab, struct sk_buff
 		goto exit;
 	}
 
-	ath11k_dbg(ab, ATH11K_DBG_WMI, "event peer sta kickout %pM",
-		   arg.mac_addr);
-
+	if (peer->peer_logging_enabled)
+		ath11k_dbg(ab, ATH11K_DBG_PEER, "wmi sta kickout event for %pM\n",
+			   sta->addr);
 	ieee80211_report_low_ack(sta, 10);
 
 exit:

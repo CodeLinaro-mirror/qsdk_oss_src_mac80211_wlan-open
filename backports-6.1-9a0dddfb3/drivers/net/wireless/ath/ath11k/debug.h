@@ -30,6 +30,7 @@ enum ath11k_debug_mask {
 	ATH11K_DBG_CE		= 0x00008000,
 	ATH11K_DBG_CFR          = 0x00010000,
 	ATH11K_DBG_CFR_DUMP     = 0x00020000,
+	ATH11K_DBG_PEER         = 0x00040000,
 	ATH11K_DBG_TEST         = 0x00080000,
 };
 

@@ -414,6 +414,11 @@ struct ath11k_dyn_vlan_cfg {
 	struct list_head cfg_list;
 };
 
+struct ath11k_mac_filter {
+	struct list_head list;
+	u8 peer_mac[ETH_ALEN];
+};
+
 struct ath11k_vif {
 	u32 vdev_id;
 	enum wmi_vdev_type vdev_type;
@@ -483,9 +488,13 @@ struct ath11k_vif {
 	struct dentry *ampdu_aggr_size;
 	struct dentry *amsdu_aggr_size;
 	struct dentry *wmi_ctrl_stat;
+	struct dentry *mac_filter;
 #endif /* CPTCFG_ATH11K_DEBUGFS */
 
 	struct ath11k_mgmt_frame_stats mgmt_stats;
+	/* protected by conf_mutex */
+	struct list_head mac_filters;
+	u32 mac_filter_count;
 	struct arvif_nss nss;
 	struct list_head ap_vlan_arvifs;
 	/* list required by Dynamic VLAN during fw_recovery */
