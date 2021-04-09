@@ -3836,7 +3836,8 @@ int ath11k_qmi_fwreset_from_cold_boot(struct ath11k_base *ab)
 {
 	int timeout;
 
-	if (ab->enable_cold_boot_cal == 0 || ab->qmi.cal_done)
+	if (ab->enable_cold_boot_cal == 0 ||
+ 	    ab->hw_params.cold_boot_calib == 0)
 		return 0;
 
 	ath11k_dbg(ab, ATH11K_DBG_QMI, "wait for cold boot done\n");
