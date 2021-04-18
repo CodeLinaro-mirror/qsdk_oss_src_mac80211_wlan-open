@@ -3312,6 +3312,302 @@ static const struct file_operations fops_disable_dyn_bw = {
 	.open = simple_open
 };
 
+static ssize_t ath11k_read_ani_enable(struct file *file, char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	int len = 0;
+	char buf[32];
+
+	len = scnprintf(buf, sizeof(buf) - len, "%d\n",ar->ani_enabled);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath11k_write_ani_enable(struct file *file,
+				       const char __user *user_buf,
+				       size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	int ret;
+	u8 enable;
+
+	if (kstrtou8_from_user(user_buf, count, 0, &enable))
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (ar->ani_enabled == enable) {
+		ret = count;
+		goto exit;
+	}
+
+	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ANI_ENABLE,
+					enable, ar->pdev->pdev_id);
+	if (ret) {
+		ath11k_warn(ar, "ani_enable failed from debugfs: %d\n", ret);
+		goto exit;
+	}
+	ar->ani_enabled = enable;
+	ret = count;
+
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static const struct file_operations fops_ani_enable = {
+	.read = ath11k_read_ani_enable,
+	.write = ath11k_write_ani_enable,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath11k_read_ani_poll_period(struct file *file,
+					   char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	int len = 0;
+	char buf[32];
+
+	len = scnprintf(buf, sizeof(buf) - len, "%u\n", ar->ab->ani_poll_period);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath11k_write_ani_poll_period(struct file *file,
+					    const char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	int ret;
+	u32 ani_poll_period;
+
+	if (kstrtou32_from_user(user_buf, count, 0, &ani_poll_period))
+		return -EINVAL;
+
+	if(ani_poll_period > ATH11K_ANI_POLL_PERIOD_MAX)
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+
+	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ANI_POLL_PERIOD,
+			ani_poll_period, ar->pdev->pdev_id);
+	if (ret) {
+		ath11k_warn(ar, "ani poll period write failed in debugfs: %d\n", ret);
+		goto exit;
+	}
+	ar->ab->ani_poll_period = ani_poll_period;
+	ret = count;
+
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static const struct file_operations fops_ani_poll_period = {
+	.read = ath11k_read_ani_poll_period,
+	.write = ath11k_write_ani_poll_period,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath11k_read_ani_listen_period(struct file *file,
+					     char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	int len = 0;
+	char buf[32];
+
+	len = scnprintf(buf, sizeof(buf) - len, "%u\n", ar->ab->ani_listen_period);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath11k_write_ani_listen_period(struct file *file,
+					      const char __user *user_buf,
+					      size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	int ret;
+	u32 ani_listen_period = 0;
+
+	if (kstrtou32_from_user(user_buf, count, 0, &ani_listen_period))
+		return -EINVAL;
+
+	if(ani_listen_period > ATH11K_ANI_LISTEN_PERIOD_MAX)
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+
+	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ANI_LISTEN_PERIOD,
+					ani_listen_period, ar->pdev->pdev_id);
+	if (ret) {
+		ath11k_warn(ar, "ani listen period write failed in debugfs: %d\n", ret);
+		goto exit;
+	}
+	ar->ab->ani_listen_period = ani_listen_period;
+	ret = count;
+
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static const struct file_operations fops_ani_listen_period = {
+	.read = ath11k_read_ani_listen_period,
+	.write = ath11k_write_ani_listen_period,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static int ath11k_debug_get_ani_level(struct ath11k *ar)
+{
+	unsigned long time_left;
+	int ret;
+
+	lockdep_assert_held(&ar->conf_mutex);
+
+	reinit_completion(&(ar->ab->ani_ofdm_event));
+
+	ret = ath11k_wmi_pdev_get_ani_level(ar, WMI_PDEV_GET_ANI_OFDM_CONFIG_CMDID,
+					    ar->pdev->pdev_id);
+	if (ret) {
+		ath11k_warn(ar, "failed to request ofdm ani level: %d\n", ret);
+		return ret;
+	}
+	time_left = wait_for_completion_timeout(&ar->ab->ani_ofdm_event, 1 * HZ);
+	if (time_left == 0)
+		return -ETIMEDOUT;
+
+	if (ar->ab->target_caps.phy_capability & WHAL_WLAN_11G_CAPABILITY) {
+		reinit_completion(&(ar->ab->ani_cck_event));
+		ret = ath11k_wmi_pdev_get_ani_level(ar, WMI_PDEV_GET_ANI_CCK_CONFIG_CMDID,
+						    ar->pdev->pdev_id);
+		if (ret) {
+			ath11k_warn(ar, "failed to request cck ani level: %d\n", ret);
+			return ret;
+		}
+		time_left = wait_for_completion_timeout(&ar->ab->ani_cck_event, 1 * HZ);
+		if (time_left == 0)
+			return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
+static ssize_t ath11k_read_ani_level(struct file *file, char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	char buf[128];
+	int ret, len = 0;
+
+	mutex_lock(&ar->conf_mutex);
+	if (ar->state != ATH11K_STATE_ON) {
+		ret = -ENETDOWN;
+		goto unlock;
+	}
+
+	if(!ar->ani_enabled) {
+		len += scnprintf(buf, sizeof(buf), "ANI is disabled\n");
+	} else {
+		ret = ath11k_debug_get_ani_level(ar);
+		if (ret) {
+			ath11k_warn(ar, "failed to request ani level: %d\n", ret);
+			goto unlock;
+		}
+		len += scnprintf(buf, sizeof(buf), "ofdm level %d cck level %d\n",
+				ar->ab->ani_ofdm_level, ar->ab->ani_cck_level);
+	}
+	mutex_unlock(&ar->conf_mutex);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+unlock:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static ssize_t ath11k_write_ani_level(struct file *file,
+				      const char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	char buf[32] = {0};
+	ssize_t rc;
+	u32 ofdm_param = 0, cck_param = 0;
+	int ofdm_level, cck_level;
+	int ret;
+
+	rc = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+	if (rc < 0)
+		return rc;
+
+	buf[*ppos - 1] = '\0';
+
+	ret = sscanf(buf, "%d %d", &ofdm_level, &cck_level);
+
+	if (ret != 2)
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON && ar->state != ATH11K_STATE_RESTARTED) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	if ((ofdm_level >= ATH11K_ANI_LEVEL_MIN && ofdm_level <= ATH11K_ANI_LEVEL_MAX) ||
+	   (ofdm_level == ATH11K_ANI_LEVEL_AUTO)) {
+		ofdm_param = WMI_PDEV_PARAM_ANI_OFDM_LEVEL;
+	} else {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if((ar->ab->target_caps.phy_capability & WHAL_WLAN_11G_CAPABILITY)) {
+		if ((cck_level >= ATH11K_ANI_LEVEL_MIN &&
+		   cck_level <= ATH11K_ANI_LEVEL_MAX) ||
+		   (cck_level == ATH11K_ANI_LEVEL_AUTO)) {
+			cck_param = WMI_PDEV_PARAM_ANI_CCK_LEVEL;
+		} else {
+			ret = -EINVAL;
+			goto exit;
+		}
+	}
+
+	ret = ath11k_wmi_pdev_set_param(ar, ofdm_param, ofdm_level, ar->pdev->pdev_id);
+	if (ret) {
+		ath11k_warn(ar, "failed to set ANI ofdm level :%d\n", ret);
+		goto exit;
+	}
+
+	if (cck_param) {
+		ret = ath11k_wmi_pdev_set_param(ar, cck_param, cck_level,
+						ar->pdev->pdev_id);
+		if (ret) {
+			ath11k_warn(ar, "failed to set ANI cck level :%d\n", ret);
+			goto exit;
+		}
+	}
+
+	ret = count;
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static const struct file_operations fops_ani_level = {
+	.write = ath11k_write_ani_level,
+	.read = ath11k_read_ani_level,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath11k_debugfs_register(struct ath11k *ar)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -3333,6 +3629,8 @@ int ath11k_debugfs_register(struct ath11k *ar)
 	ath11k_debugfs_fw_stats_init(ar);
 	ath11k_init_pktlog(ar);
 	init_completion(&ar->tpc_complete);
+        init_completion(&ab->ani_ofdm_event);
+        init_completion(&ab->ani_cck_event);
 
 	debugfs_create_file("ext_tx_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,
@@ -3405,6 +3703,14 @@ int ath11k_debugfs_register(struct ath11k *ar)
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_athdiag);
 
+	debugfs_create_file("ani_enable", S_IRUSR | S_IWUSR,
+			    ar->debug.debugfs_pdev, ar, &fops_ani_enable);
+	debugfs_create_file("ani_level", S_IRUSR | S_IWUSR,
+			    ar->debug.debugfs_pdev, ar, &fops_ani_level);
+	debugfs_create_file("ani_poll_period", S_IRUSR | S_IWUSR,
+			    ar->debug.debugfs_pdev, ar, &fops_ani_poll_period);
+	debugfs_create_file("ani_listen_period", S_IRUSR | S_IWUSR,
+			    ar->debug.debugfs_pdev, ar, &fops_ani_listen_period);
 	return 0;
 }
 

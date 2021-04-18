@@ -330,6 +330,12 @@ do {									\
 #define ATH11K_MEMORY_STATS_DEC(_struct, _field, _size)
 #endif
 
+#define ATH11K_ANI_LEVEL_MAX         30
+#define ATH11K_ANI_LEVEL_MIN         -5
+#define ATH11K_ANI_LEVEL_AUTO        0x80
+#define ATH11K_ANI_POLL_PERIOD_MAX   3000
+#define ATH11K_ANI_LISTEN_PERIOD_MAX 3000
+
 #ifdef CPTCFG_ATH11K_DEBUGFS
 int ath11k_debugfs_create(void);
 void ath11k_debugfs_destroy(void);

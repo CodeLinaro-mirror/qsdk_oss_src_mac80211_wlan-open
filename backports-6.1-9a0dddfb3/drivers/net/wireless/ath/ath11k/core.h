@@ -965,6 +965,7 @@ struct ath11k {
 	struct ath11k_cfr cfr;
 #endif
 	u8 cfr_enabled;
+	bool ani_enabled;
 };
 
 struct ath11k_band_cap {
@@ -1286,6 +1287,13 @@ struct ath11k_base {
 
 	u32 rx_hash;
 	bool stats_disable;
+
+	u32 ani_poll_period;
+	u32 ani_listen_period;
+	int ani_ofdm_level;
+	int ani_cck_level;
+	struct completion ani_ofdm_event;
+	struct completion ani_cck_event;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

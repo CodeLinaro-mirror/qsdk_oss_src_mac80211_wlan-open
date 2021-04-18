@@ -6889,6 +6889,9 @@ static int ath11k_mac_op_start(struct ieee80211_hw *hw)
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx],
 			   &ab->pdevs[ar->pdev_idx]);
 
+	/*ani is enabled by default*/
+	ar->ani_enabled = true;
+
 	return 0;
 
 err:

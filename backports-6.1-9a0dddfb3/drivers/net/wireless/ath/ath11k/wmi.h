@@ -118,6 +118,12 @@ enum WMI_HOST_WLAN_BAND {
 	WMI_HOST_WLAN_2G_5G_CAP	= WMI_HOST_WLAN_2G_CAP | WMI_HOST_WLAN_5G_CAP,
 };
 
+enum wlan_mode_capability {
+	WHAL_WLAN_11A_CAPABILITY   = 0x1,
+	WHAL_WLAN_11G_CAPABILITY   = 0x2,
+	WHAL_WLAN_11AG_CAPABILITY  = 0x3,
+};
+
 /* Parameters used for WMI_VDEV_PARAM_AUTORATE_MISC_CFG command.
  * Used only for HE auto rate mode.
  */
@@ -2753,6 +2759,11 @@ struct wmi_p2p_noa_descriptor {
 	u32 start_time;
 };
 
+struct wmi_pdev_ani_event {
+	u32 tlv_header;
+	u32 ani_level;
+} __packed;
+
 struct channel_param {
 	u8 chan_id;
 	u8 pwr;
@@ -3168,6 +3179,12 @@ struct wmi_fwtest_set_param_cmd_param {
 	u32 param_id;
 	u32 param_value;
 };
+
+struct wmi_pdev_get_ani_level_cmd {
+	u32 tlv_header;
+	u32 pdev_id;
+	u32 param_id;
+} __packed;
 
 struct wmi_pdev_set_param_cmd {
 	u32 tlv_header;
@@ -7390,4 +7407,5 @@ int ath11k_wmi_peer_set_cfr_capture_conf(struct ath11k *ar,
 					 u32 vdev_id, const u8 *mac,
 					 struct wmi_peer_cfr_capture_conf_arg
 *arg);
+int ath11k_wmi_pdev_get_ani_level(struct ath11k *ar, u32 param_id, u8 pdev_id);
 #endif

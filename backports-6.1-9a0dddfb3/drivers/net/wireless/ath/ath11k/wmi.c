@@ -9250,6 +9250,74 @@ ath11k_wmi_pdev_csa_switch_count_status_event(struct ath11k_base *ab,
 	kfree(tb);
 }
 
+int ath11k_wmi_pdev_get_ani_level(struct ath11k *ar, u32 cmd_id, u8 pdev_id)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_pdev_get_ani_level_cmd *cmd = NULL;
+	struct sk_buff *skb;
+	int ret;
+	enum wmi_tlv_tag temp_tlv_tag;
+
+	switch(cmd_id) {
+	case WMI_PDEV_GET_ANI_OFDM_CONFIG_CMDID:
+		temp_tlv_tag = WMI_TAG_PDEV_GET_ANI_OFDM_CONFIG_CMD;
+		break;
+	case WMI_PDEV_GET_ANI_CCK_CONFIG_CMDID:
+		temp_tlv_tag = WMI_TAG_PDEV_GET_ANI_CCK_CONFIG_CMD;
+		break;
+	default:
+		ath11k_warn(ar->ab, "Invalid cmd %d\n", cmd_id);
+		return -EINVAL;
+	}
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_get_ani_level_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, temp_tlv_tag) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->pdev_id = pdev_id;
+
+	ret = ath11k_wmi_cmd_send(wmi, skb, cmd_id);
+	if (ret) {
+		ath11k_warn(ar->ab, "failed to send WMI_PDEV_SET_PARAM cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI, "WMI pdev pdev id %d\n", pdev_id);
+
+	return ret;
+}
+
+static int ath11k_wmi_event_ani_ofdm_level(struct ath11k_base *ab,
+					   struct sk_buff *skb)
+{
+	const struct wmi_pdev_ani_event *ev;
+
+	ev = (struct wmi_pdev_ani_event *)skb->data;
+	if (WARN_ON(skb->len < sizeof(*ev)))
+		return -EPROTO;
+
+	ab->ani_ofdm_level = ev->ani_level;
+	complete(&ab->ani_ofdm_event);
+	return 0;
+}
+
+static int ath11k_wmi_event_ani_cck_level(struct ath11k_base *ab,
+					  struct sk_buff *skb)
+{
+	const struct wmi_pdev_ani_event *ev;
+
+	ev = (struct wmi_pdev_ani_event *)skb->data;
+	if (WARN_ON(skb->len < sizeof(*ev)))
+		return -EPROTO;
+
+	ab->ani_cck_level = ev->ani_level;
+	complete(&(ab->ani_cck_event));
+	return 0;
+}
+
 static void
 ath11k_wmi_pdev_dfs_radar_detected_event(struct ath11k_base *ab, struct sk_buff *skb)
 {
@@ -10334,6 +10402,12 @@ static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PEER_CFR_CAPTURE_EVENTID:
 		ath11k_wmi_parse_cfr_capture_event(ab, skb);
+		break;
+	case WMI_PDEV_ANI_CCK_LEVEL_EVENTID:
+		ath11k_wmi_event_ani_cck_level(ab, skb);
+		break;
+	case WMI_PDEV_ANI_OFDM_LEVEL_EVENTID:
+		ath11k_wmi_event_ani_ofdm_level(ab, skb);
 		break;
 
 	default:
