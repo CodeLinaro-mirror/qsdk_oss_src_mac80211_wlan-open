@@ -7947,7 +7947,7 @@ static void ath11k_mac_op_remove_chanctx(struct ieee80211_hw *hw,
 static int
 ath11k_mac_vdev_start_restart(struct ath11k_vif *arvif,
 			      struct ieee80211_chanctx_conf *ctx,
-			      bool restart)
+			      bool restart, bool radar_enabled)
 {
 	struct ath11k *ar = arvif->ar;
 	struct ath11k_base *ab = ar->ab;
@@ -7998,7 +7998,7 @@ ath11k_mac_vdev_start_restart(struct ath11k_vif *arvif,
 		arg.channel.chan_radar =
 			!!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
 
-		arg.channel.freq2_radar = ctx->radar_enabled;
+		arg.channel.freq2_radar = radar_enabled;
 
 		arg.channel.passive = arg.channel.chan_radar;
 
@@ -8109,15 +8109,17 @@ err:
 }
 
 static int ath11k_mac_vdev_start(struct ath11k_vif *arvif,
-				 struct ieee80211_chanctx_conf *ctx)
+				 struct ieee80211_chanctx_conf *ctx,
+				 bool radar_enabled)
 {
-	return ath11k_mac_vdev_start_restart(arvif, ctx, false);
+	return ath11k_mac_vdev_start_restart(arvif, ctx, false, radar_enabled);
 }
 
 static int ath11k_mac_vdev_restart(struct ath11k_vif *arvif,
-				   struct ieee80211_chanctx_conf *ctx)
+				   struct ieee80211_chanctx_conf *ctx,
+				   bool radar_enabled)
 {
-	return ath11k_mac_vdev_start_restart(arvif, ctx, true);
+	return ath11k_mac_vdev_start_restart(arvif, ctx, true, radar_enabled);
 }
 
 struct ath11k_mac_change_chanctx_arg {
@@ -8192,7 +8194,8 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 		 * If vdev is down then it expect vdev_stop->vdev_start.
 		 */
 		if (arvif->is_up) {
-			ret = ath11k_mac_vdev_restart(arvif, vifs[i].new_ctx);
+			ret = ath11k_mac_vdev_restart(arvif, &vifs[i].new_ctx->def,
+						      vifs[i].new_ctx->radar_enabled);
 			if (ret) {
 				ath11k_warn(ab, "failed to restart vdev %d: %d\n",
 					    arvif->vdev_id, ret);
@@ -8206,7 +8209,8 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 				continue;
 			}
 
-			ret = ath11k_mac_vdev_start(arvif, vifs[i].new_ctx);
+			ret = ath11k_mac_vdev_start(arvif, &vifs[i].new_ctx->def,
+						    vifs[i].new_ctx->radar_enabled);
 			if (ret)
 				ath11k_warn(ab, "failed to start vdev %d: %d\n",
 					    arvif->vdev_id, ret);
@@ -8328,7 +8332,8 @@ static int ath11k_mac_start_vdev_delay(struct ieee80211_hw *hw,
 	if (WARN_ON(arvif->is_started))
 		return -EBUSY;
 
-	ret = ath11k_mac_vdev_start(arvif, &arvif->chanctx);
+	ret = ath11k_mac_vdev_start(arvif, &arvif->chanctx.def,
+				    arvif->chanctx.radar_enabled);
 	if (ret) {
 		ath11k_warn(ab, "failed to start vdev %i addr %pM on freq %d: %d\n",
 			    arvif->vdev_id, vif->addr,
@@ -8838,7 +8843,7 @@ ath11k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	}
 
 	if (!arvif->is_started) {
-		ret = ath11k_mac_vdev_start(arvif, ctx);
+		ret = ath11k_mac_vdev_start(arvif, &ctx->def, ctx->radar_enabled);
 		if (ret) {
 			ath11k_warn(ab, "failed to start vdev %i addr %pM on freq %d: %d\n",
 				    arvif->vdev_id, vif->addr,
