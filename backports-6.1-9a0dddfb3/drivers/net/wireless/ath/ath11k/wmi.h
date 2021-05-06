@@ -1932,6 +1932,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_VDEV_SET_TPC_POWER_CMD = 0x3B5,
 	WMI_TAG_VDEV_CH_POWER_INFO,
 	WMI_CTRL_PATH_CAL_STATS = 0x3BC,
+	WMI_TAG_DCS_AWGN_INT_TYPE = 0x3C5,
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
 	WMI_TAG_PDEV_SET_BIOS_GEO_TABLE_CMD,
 	WMI_TAG_MAX
@@ -2178,6 +2179,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_SCAN_CONFIG_PER_CHANNEL = 265,
 	WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT = 280,
 	WMI_TLV_SERVICE_REG_CC_EXT_EVENT_SUPPORT = 281,
+	WMI_TLV_SERVICE_DCS_AWGN_INT_SUPPORT = 286,
 	WMI_TLV_SERVICE_BIOS_SAR_SUPPORT = 326,
 	WMI_TLV_SERVICE_SUPPORT_11D_FOR_HOST_SCAN = 357,
 
@@ -4334,6 +4336,17 @@ struct wmi_dfs_unit_test_arg {
 	u32 radar_param;
 };
 
+#define WMI_AWGN_UNIT_TEST_MODULE 0x18
+#define WMI_AWGN_UNIT_TEST_TOKEN  0
+#define WMI_UNIT_TEST_AWGN_INTF_TYPE 1
+#define WMI_UNIT_TEST_AWGN_PRIMARY_20 0x01
+
+enum wmi_awgn_test_args_idx {
+	WMI_AWGN_TEST_AWGN_INT,
+	WMI_AWGN_TEST_BITMAP,
+	WMI_AWGN_MAX_TEST_ARGS,
+};
+
 #define WMI_M3_UNIT_TEST_MODULE	0x22
 #define WMI_M3_UNIT_TEST_TOKEN	0
 
@@ -5113,6 +5126,42 @@ struct wmi_pdev_radar_ev {
 	s32 freq_offset;
 	s32 sidx;
 } __packed;
+
+#define WMI_DCS_AWGN_INTF	0x04
+
+struct wmi_dcs_awgn_info {
+	u32 channel_width;
+	u32 chan_freq;
+	u32 center_freq0;
+	u32 center_freq1;
+	u32 chan_bw_interference_bitmap;
+} __packed;
+
+struct wmi_dcs_interference_ev {
+	u32 interference_type;
+	u32 pdev_id;
+} __packed;
+
+enum wmi_host_channel_width {
+	WMI_HOST_CHAN_WIDTH_20    = 0,
+	WMI_HOST_CHAN_WIDTH_40    = 1,
+	WMI_HOST_CHAN_WIDTH_80    = 2,
+	WMI_HOST_CHAN_WIDTH_160   = 3,
+	WMI_HOST_CHAN_WIDTH_80P80 = 4,
+};
+
+enum wmi_dcs_interference_chan_segment {
+	WMI_DCS_SEG_PRI20             =  0x1,
+	WMI_DCS_SEG_SEC20             =  0x2,
+	WMI_DCS_SEG_SEC40_LOWER       =  0x4,
+	WMI_DCS_SEG_SEC40_UPPER       =  0x8,
+	WMI_DCS_SEG_SEC40             =  0xC,
+	WMI_DCS_SEG_SEC80_LOWER       = 0x10,
+	WMI_DCS_SEG_SEC80_LOWER_UPPER = 0x20,
+	WMI_DCS_SEG_SEC80_UPPER_LOWER = 0x40,
+	WMI_DCS_SEG_SEC80_UPPER       = 0x80,
+	WMI_DCS_SEG_SEC80             = 0xF0,
+};
 
 struct wmi_pdev_temperature_event {
 	/* temperature value in Celsius degree */
@@ -7318,6 +7367,7 @@ void ath11k_wmi_fw_stats_fill(struct ath11k *ar,
 			      struct ath11k_fw_stats *fw_stats, u32 stats_id,
 			      char *buf);
 int ath11k_wmi_simulate_radar(struct ath11k *ar);
+int ath11k_wmi_simulate_awgn(struct ath11k *ar);
 void ath11k_wmi_fill_default_twt_params(struct wmi_twt_enable_params *twt_params);
 int ath11k_wmi_send_twt_enable_cmd(struct ath11k *ar, u32 pdev_id,
 				   struct wmi_twt_enable_params *params);

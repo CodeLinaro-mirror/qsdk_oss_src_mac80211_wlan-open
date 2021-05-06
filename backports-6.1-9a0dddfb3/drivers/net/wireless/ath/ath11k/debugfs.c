@@ -2110,6 +2110,35 @@ static const struct file_operations fops_ps_state_enable = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_write_simulate_awgn(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	int ret;
+
+	mutex_lock(&ar->conf_mutex);
+	if (ar->state != ATH11K_STATE_ON) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	ret = ath11k_wmi_simulate_awgn(ar);
+	if (ret)
+		goto exit;
+
+	ret = count;
+
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static const struct file_operations fops_simulate_awgn = {
+	.write = ath11k_write_simulate_awgn,
+	.open = simple_open
+};
+
 static ssize_t ath11k_write_btcoex(struct file *file,
 				   const char __user *ubuf,
 				   size_t count, loff_t *ppos)
@@ -3685,6 +3714,12 @@ int ath11k_debugfs_register(struct ath11k *ar)
 		debugfs_create_file("reset_ps_duration", 0200,
 				    ar->debug.debugfs_pdev, ar,
 				    &fops_reset_ps_duration);
+	}
+
+	if (ar->hw->wiphy->bands[NL80211_BAND_6GHZ]) {
+		debugfs_create_file("simulate_awgn", 0200,
+				    ar->debug.debugfs_pdev, ar,
+				    &fops_simulate_awgn);
 	}
 
 	debugfs_create_file("enable_m3_dump", 0644,
