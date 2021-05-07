@@ -5958,6 +5958,46 @@ ath12k_mac_set_peer_ht_fixed_rate(struct ath12k_link_vif *arvif,
 	return ret;
 }
 
+static int ath12k_mac_set_6g_nonht_dup_conf(struct ath12k_link_vif *arvif,
+					    const struct cfg80211_chan_def *chandef)
+{
+	struct ath12k *ar = arvif->ar;
+	int param_id, ret = 0;
+	uint8_t value = 0;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_bss_conf *link_conf;
+	bool is_psc = cfg80211_channel_is_psc(chandef->chan);
+	enum wmi_phy_mode mode = ath12k_phymodes[chandef->chan->band][chandef->width];
+	bool nontransmitted;
+
+        rcu_read_lock();
+        link_conf = ath12k_mac_get_link_bss_conf(arvif);
+
+        if (!link_conf) {
+                rcu_read_unlock();
+                return -EINVAL;
+        }
+
+	nontransmitted = link_conf->nontransmitted;
+	rcu_read_unlock();
+
+	if ((ahvif->vdev_type == WMI_VDEV_TYPE_AP) &&
+	    !nontransmitted &&
+	    (chandef->chan->band == NL80211_BAND_6GHZ)) {
+		param_id = WMI_VDEV_PARAM_6GHZ_PARAMS;
+		if (mode > MODE_11AX_HE20 && !is_psc) {
+			value |= WMI_VDEV_6GHZ_BITMAP_NON_HT_DUPLICATE_BEACON;
+			value |= WMI_VDEV_6GHZ_BITMAP_NON_HT_DUPLICATE_BCAST_PROBE_RSP;
+			value |= WMI_VDEV_6GHZ_BITMAP_NON_HT_DUPLICATE_FD_FRAME;
+		}
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		           "Set 6GHz non-ht dup params for vdev %pM ,vdev_id %d param %d value %d\n",
+		           ahvif->vif->addr, arvif->vdev_id, param_id, value);
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param_id, value);
+	}
+	return ret;
+}
+
 static int
 ath12k_mac_set_peer_he_fixed_rate(struct ath12k_link_vif *arvif,
 				  struct ath12k_link_sta *arsta,
@@ -10284,6 +10324,11 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	if (ret)
 		ath12k_warn(ab, "failed to set txbf conf for vdev %d: %d\n",
 			    arvif->vdev_id, ret);
+
+	ret = ath12k_mac_set_6g_nonht_dup_conf(arvif, chandef);
+	if (ret)
+		ath12k_warn(ab, "failed to set 6G non-ht dup conf for vdev %d: %d\n",
+		            arvif->vdev_id, ret);
 
 	return 0;
 }
