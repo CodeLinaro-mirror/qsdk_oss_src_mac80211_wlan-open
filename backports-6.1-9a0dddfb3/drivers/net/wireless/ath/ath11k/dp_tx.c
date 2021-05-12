@@ -945,6 +945,10 @@ int ath11k_dp_tx_send_reo_cmd(struct ath11k_base *ab, struct dp_rx_tid *rx_tid,
 	if (cmd_num == 0)
 		return -EINVAL;
 
+	/* Trigger reo status polling if required */
+	if (cmd->flag & HAL_REO_CMD_FLG_NEED_STATUS)
+		ath11k_dp_start_reo_status_timer(ab);
+
 	if (!cb)
 		return 0;
 

@@ -373,12 +373,66 @@ void ath11k_dp_stop_shadow_timers(struct ath11k_base *ab)
 	ath11k_dp_shadow_stop_timer(ab, &ab->dp.reo_cmd_timer);
 }
 
+static void ath11k_dp_handle_reo_status_timer(struct timer_list *timer)
+{
+	struct ath11k_dp *dp = from_timer(dp, timer, reo_status_timer);
+	struct ath11k_base *ab = dp->ab;
+
+	spin_lock_bh(&dp->reo_cmd_lock);
+	dp->reo_status_timer_running = false;
+	spin_unlock_bh(&dp->reo_cmd_lock);
+
+	ath11k_dp_process_reo_status(ab);
+}
+
+void ath11k_dp_start_reo_status_timer(struct ath11k_base *ab)
+{
+	struct ath11k_dp *dp = &ab->dp;
+
+	if (!ab->hw_params.reo_status_poll)
+		return;
+
+	spin_lock_bh(&dp->reo_cmd_lock);
+	if (dp->reo_status_timer_running) {
+		spin_unlock_bh(&dp->reo_cmd_lock);
+		return;
+	}
+	dp->reo_status_timer_running = true;
+	spin_unlock_bh(&dp->reo_cmd_lock);
+
+	mod_timer(&dp->reo_status_timer, jiffies +
+		  msecs_to_jiffies(ATH11K_REO_STATUS_POLL_TIMEOUT_MS));
+}
+
+static void ath11k_dp_stop_reo_status_timer(struct ath11k_base *ab)
+{
+	struct ath11k_dp *dp = &ab->dp;
+
+	if (!ab->hw_params.reo_status_poll)
+		return;
+
+	del_timer_sync(&dp->reo_status_timer);
+	dp->reo_status_timer_running = false;
+}
+
+static void ath11k_dp_init_reo_status_timer(struct ath11k_base *ab)
+{
+	struct ath11k_dp *dp = &ab->dp;
+
+	if (!ab->hw_params.reo_status_poll)
+		return;
+
+	timer_setup(&dp->reo_status_timer,
+		    ath11k_dp_handle_reo_status_timer, 0);
+}
+
 static void ath11k_dp_srng_common_cleanup(struct ath11k_base *ab)
 {
 	struct ath11k_dp *dp = &ab->dp;
 	int i;
 
 	ath11k_dp_stop_shadow_timers(ab);
+	ath11k_dp_stop_reo_status_timer(ab);
 	ath11k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
 	ath11k_dp_srng_cleanup(ab, &dp->tcl_cmd_ring);
 	ath11k_dp_srng_cleanup(ab, &dp->tcl_status_ring);
@@ -399,6 +453,8 @@ static int ath11k_dp_srng_common_setup(struct ath11k_base *ab)
 	struct hal_srng *srng;
 	int i, ret;
 	u8 tcl_num, wbm_num;
+
+	ath11k_dp_init_reo_status_timer(ab);
 
 	ret = ath11k_dp_srng_setup(ab, &dp->wbm_desc_rel_ring,
 				   HAL_SW2WBM_RELEASE, 0, 0,

@@ -46,6 +46,8 @@ struct dp_rx_tid {
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
 
+#define ATH11K_REO_STATUS_POLL_TIMEOUT_MS 10
+
 struct dp_reo_cache_flush_elem {
 	struct list_head list;
 	struct dp_rx_tid data;
@@ -290,6 +292,10 @@ struct ath11k_dp {
 	spinlock_t reo_cmd_lock;
 	struct ath11k_hp_update_timer reo_cmd_timer;
 	struct ath11k_hp_update_timer tx_ring_timer[DP_TCL_NUM_RING_MAX];
+
+	/* reo status timer and flags */
+	struct timer_list reo_status_timer;
+	bool reo_status_timer_running;
 };
 
 /* HTT definitions */
@@ -1859,5 +1865,6 @@ void ath11k_dp_shadow_init_timer(struct ath11k_base *ab,
 				 struct ath11k_hp_update_timer *update_timer,
 				 u32 interval, u32 ring_id);
 void ath11k_dp_stop_shadow_timers(struct ath11k_base *ab);
+void ath11k_dp_start_reo_status_timer(struct ath11k_base *ab);
 
 #endif

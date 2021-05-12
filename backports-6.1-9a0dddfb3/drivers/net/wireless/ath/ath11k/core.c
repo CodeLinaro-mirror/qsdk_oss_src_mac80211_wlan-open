@@ -158,6 +158,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.pdev_suspend = false,
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
+		.reo_status_poll = false,
 	},
 	{
 		.hw_rev = ATH11K_HW_IPQ6018_HW10,
@@ -249,6 +250,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.pdev_suspend = false,
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
+		.reo_status_poll = false,
 	},
 	{
 		.name = "qca6390 hw2.0",
@@ -342,6 +344,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.support_fw_mac_sequence = true,
 		.support_dual_stations = true,
 		.pdev_suspend = false,
+		.reo_status_poll = false,
 	},
 	{
 		.name = "qcn9074 hw1.0",
@@ -439,6 +442,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 					CFR_DATA_MAX_LEN_QCN9074,
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
+		.reo_status_poll = false,
 	},
 	{
 		.name = "wcn6855 hw2.0",
@@ -710,6 +714,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.pdev_suspend = true,
 		.ce_window = 2,
 		.dp_window = 1,
+		.reo_status_poll = false,
 	},
 	{
 		.hw_rev = ATH11K_HW_IPQ5018_HW10,
@@ -979,6 +984,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.cfr_stream_buf_size = 8500,
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX,
+		.reo_status_poll = false,
 	},
 	{
 		.hw_rev = ATH11K_HW_QCN6122,
@@ -1051,6 +1057,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.qdss_offset = ATH11K_QMI_QCN6122_QDSS_OFFSET,
 		.caldb_offset = ATH11K_QMI_QCN6122_CALDB_OFFSET,
 		.max_tx_ring = DP_TCL_NUM_RING_MAX,
+		.reo_status_poll = false,
  	},
 };
 
