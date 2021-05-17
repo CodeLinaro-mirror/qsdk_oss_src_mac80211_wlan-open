@@ -1166,7 +1166,7 @@ void ath11k_hw_ipq8074_fill_cfr_hdr_info(struct ath11k *ar,
 	header->u.meta_v4.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
 					     params->status);
 	header->u.meta_v4.capture_bw = params->bandwidth;
-	header->u.meta_v4.phy_mode = params->phy_mode;
+	header->u.meta_v4.phy_mode = ar->cfr_phymode;
 	header->u.meta_v4.prim20_chan = params->primary_20mhz_chan;
 	header->u.meta_v4.center_freq1 = params->band_center_freq1;
 	header->u.meta_v4.center_freq2 = params->band_center_freq2;
@@ -1202,7 +1202,7 @@ void ath11k_hw_qcn9074_fill_cfr_hdr_info(struct ath11k *ar,
 	header->u.meta_v5.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
 					     params->status);
 	header->u.meta_v5.capture_bw = params->bandwidth;
-	header->u.meta_v5.phy_mode = params->phy_mode;
+	header->u.meta_v5.phy_mode = ar->cfr_phymode;
 	header->u.meta_v5.prim20_chan = params->primary_20mhz_chan;
 	header->u.meta_v5.center_freq1 = params->band_center_freq1;
 	header->u.meta_v5.center_freq2 = params->band_center_freq2;

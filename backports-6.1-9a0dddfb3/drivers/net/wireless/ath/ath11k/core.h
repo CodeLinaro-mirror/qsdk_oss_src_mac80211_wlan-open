@@ -972,6 +972,7 @@ struct ath11k {
 #endif
 	u8 cfr_enabled;
 	bool ani_enabled;
+	enum wmi_phy_mode cfr_phymode;
 };
 
 struct ath11k_band_cap {

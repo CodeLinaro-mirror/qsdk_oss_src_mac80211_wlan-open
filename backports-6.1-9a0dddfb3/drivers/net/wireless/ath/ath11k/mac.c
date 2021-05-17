@@ -771,6 +771,124 @@ static void ath11k_pdev_caps_update(struct ath11k *ar)
 	ar->txpower_scale = WMI_HOST_TP_SCALE_MAX;
 }
 
+static inline enum wmi_phy_mode
+ath11k_cfr_chan_to_phymode(struct ath11k_vif *arvif)
+{
+	struct cfg80211_chan_def def;
+	enum wmi_phy_mode phymode = MODE_UNKNOWN;
+
+	if (ath11k_mac_vif_chan(arvif->vif, &def))
+		return -EPERM;
+
+	switch (def.chan->band) {
+	case NL80211_BAND_2GHZ:
+		switch (def.width) {
+		case NL80211_CHAN_WIDTH_20_NOHT:
+			if (def.chan->flags & IEEE80211_CHAN_NO_OFDM)
+				phymode = MODE_11B;
+			else
+				phymode = MODE_11G;
+			break;
+		case NL80211_CHAN_WIDTH_20:
+			if (arvif->vif->bss_conf.he_support)
+				phymode = MODE_11AX_HE20_2G;
+			else {
+				if (arvif->vht_cap)
+					phymode = MODE_11AC_VHT20_2G;
+				else
+					phymode = MODE_11NG_HT20;
+			}
+			break;
+		case NL80211_CHAN_WIDTH_40:
+			if (arvif->vif->bss_conf.he_support)
+				phymode =  MODE_11AX_HE40_2G;
+			else {
+				if (arvif->vht_cap)
+					phymode = MODE_11AC_VHT40_2G;
+				else
+					phymode = MODE_11NG_HT40;
+			}
+			break;
+		default:
+			break;
+		}
+		break;
+	case NL80211_BAND_5GHZ:
+		switch (def.width) {
+		case NL80211_CHAN_WIDTH_20_NOHT:
+			phymode = MODE_11A;
+			break;
+		case NL80211_CHAN_WIDTH_20:
+			if (arvif->vif->bss_conf.he_support)
+				phymode = MODE_11AX_HE20;
+			else {
+				if (arvif->vht_cap)
+					phymode = MODE_11AC_VHT20;
+				else
+					phymode = MODE_11NA_HT20;
+			}
+			break;
+		case NL80211_CHAN_WIDTH_40:
+			if (arvif->vif->bss_conf.he_support)
+				phymode = MODE_11AX_HE40;
+			else {
+				if (arvif->vht_cap)
+					phymode = MODE_11AC_VHT40;
+				else
+					phymode = MODE_11NA_HT40;
+			}
+			break;
+		case NL80211_CHAN_WIDTH_80:
+			if (arvif->vif->bss_conf.he_support)
+				phymode = MODE_11AX_HE80;
+			else
+				phymode = MODE_11AC_VHT80;
+			break;
+		case NL80211_CHAN_WIDTH_160:
+			if (arvif->vif->bss_conf.he_support)
+				phymode = MODE_11AX_HE160;
+			else
+				phymode = MODE_11AC_VHT160;
+			break;
+		case NL80211_CHAN_WIDTH_80P80:
+			if (arvif->vif->bss_conf.he_support)
+				phymode = MODE_11AX_HE80_80;
+			else
+				phymode = MODE_11AC_VHT80_80;
+			break;
+		default:
+			break;
+		}
+		break;
+	case NL80211_BAND_6GHZ:
+		switch (def.width) {
+		case NL80211_CHAN_WIDTH_20:
+			phymode = MODE_11AX_HE20;
+			break;
+		case NL80211_CHAN_WIDTH_40:
+			phymode = MODE_11AX_HE40;
+			break;
+		case NL80211_CHAN_WIDTH_80:
+			phymode = MODE_11AX_HE80;
+			break;
+		case NL80211_CHAN_WIDTH_160:
+			phymode = MODE_11AX_HE160;
+			break;
+		case NL80211_CHAN_WIDTH_80P80:
+			phymode = MODE_11AX_HE80_80;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+
+	WARN_ON(phymode == MODE_UNKNOWN);
+	return phymode;
+}
+
 static int ath11k_mac_txpower_recalc(struct ath11k *ar)
 {
 	struct ath11k_pdev *pdev = ar->pdev;
@@ -1541,6 +1659,7 @@ static int ath11k_mac_set_vif_params(struct ath11k_vif *arvif,
 		vht_cap = (void *)(vht_cap_ie + 2);
 		arvif->vht_cap = vht_cap->vht_cap_info;
 	}
+	ar->cfr_phymode = ath11k_cfr_chan_to_phymode(arvif);
 
 	if (cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,
 				    WLAN_OUI_TYPE_MICROSOFT_WPA,
