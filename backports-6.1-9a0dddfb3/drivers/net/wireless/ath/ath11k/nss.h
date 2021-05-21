@@ -67,6 +67,7 @@ struct hal_rx_user_status;
 /* Init Flags */
 #define WIFILI_NSS_CCE_DISABLED 0x1
 #define WIFILI_ADDTL_MEM_SEG_SET 0x000000002
+#define WIFILI_MULTISOC_THREAD_MAP_ENABLE 0x10
 
 /* ATH11K NSS PEER Info */
 /* Host memory allocated for peer info storage in nss */
@@ -120,6 +121,8 @@ enum ath11k_nss_vdev_cmd {
 
 /* Enables the MCBC exception in NSS fw, 1 = enable */
 #define ATH11K_NSS_ENABLE_MCBC_EXC	1
+
+#define WIFILI_SCHEME_ID_INVALID	-1
 
 enum ath11k_nss_opmode {
 	ATH11K_NSS_OPMODE_UNKNOWN,

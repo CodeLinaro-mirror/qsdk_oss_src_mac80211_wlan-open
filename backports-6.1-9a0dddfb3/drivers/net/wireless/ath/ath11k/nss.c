@@ -2,6 +2,7 @@
 /*
  * Copyright (c) 2020 The Linux Foundation. All rights reserved.
  */
+#include <linux/of.h>
 
 #include "mac.h"
 #include "nss.h"
@@ -4314,6 +4315,7 @@ static int ath11k_nss_init(struct ath11k_base *ab)
 	nss_tx_status_t status;
 	struct ath11k_dp *dp;
 	int i, ret;
+	struct device *dev = ab->dev;
 
 	dp = &ab->dp;
 
@@ -4335,6 +4337,8 @@ static int ath11k_nss_init(struct ath11k_base *ab)
 	/* fill rx parameters to initialize rx context */
 	wim->wrip.tlv_size = ab->hw_params.hal_desc_sz;
 	wim->wrip.rx_buf_len = DP_RXDMA_NSS_REFILL_RING_SIZE;
+	if (of_property_read_bool(dev->of_node, "nss-radio-priority"))
+		wim->flags |= WIFILI_MULTISOC_THREAD_MAP_ENABLE;
 
 	/* fill hal srng message */
 	wim->hssm.dev_base_addr = (u32)ab->mem_pa;
@@ -4522,11 +4526,13 @@ int ath11k_nss_pdev_init(struct ath11k_base *ab, int radio_id)
 	struct nss_wifili_msg *wlmsg = NULL;
 	nss_wifili_msg_callback_t msg_cb;
 	nss_tx_status_t status;
+	struct device *dev = ab->dev;
 	int radio_if_num = -1;
 	int refill_ring_id;
 	int features = 0;
 	int dyn_if_type;
-	int ret, i;
+	int ret, i, scheme_id = 0;
+	u32 nss_radio_priority;
 
 	dyn_if_type = ath11k_nss_get_dynamic_interface_type(ab);
 
@@ -4555,6 +4561,15 @@ int ath11k_nss_pdev_init(struct ath11k_base *ab, int radio_id)
 	ath11k_dbg(ab, ATH11K_DBG_NSS, "nss pdev init - id:%d init ctxt:%p ifnum:%d\n",
 		   ar->pdev->pdev_id, ar->nss.ctx, ar->nss.if_num);
 
+	if (!of_property_read_u32(dev->of_node, "nss-radio-priority", &nss_radio_priority)) {
+		scheme_id = nss_wifili_thread_scheme_alloc(ab->nss.ctx, ar->nss.if_num, nss_radio_priority);
+		if (scheme_id == WIFILI_SCHEME_ID_INVALID) {
+			ath11k_warn(ab, "received invalid scheme_id, configuring default value\n");
+			scheme_id = 0;
+		}
+	}
+	ath11k_dbg(ab, ATH11K_DBG_NSS, "ifnum: %d scheme_id: %d nss_radio_priority: %d\n", ar->nss.if_num, scheme_id, nss_radio_priority);
+
 	wlmsg = kzalloc(sizeof(struct nss_wifili_msg), GFP_ATOMIC);
 	if (!wlmsg) {
 		ret = -ENOMEM;
@@ -4569,6 +4584,7 @@ int ath11k_nss_pdev_init(struct ath11k_base *ab, int radio_id)
 	pdevmsg->lmac_id = ar->lmac_id;
 	pdevmsg->target_pdev_id = ar->pdev->pdev_id;
 	pdevmsg->num_rx_swdesc = WIFILI_RX_DESC_POOL_WEIGHT * DP_RXDMA_BUF_RING_SIZE;
+	pdevmsg->scheme_id = scheme_id;
 
 	/* Store rxdma ring info to the message */
 	refill_ring_id = ar->dp.rx_refill_buf_ring.refill_buf_ring.ring_id;
@@ -4876,6 +4892,9 @@ int ath11k_nss_pdev_deinit(struct ath11k_base *ab, int radio_id)
 
 	/* pdev deinit msg success, dealloc, deregister and return */
 	ret = 0;
+
+	/* reset thread scheme*/
+	nss_wifili_thread_scheme_dealloc(ab->nss.ctx, ar->nss.if_num);
 
 	nss_dynamic_interface_dealloc_node(ar->nss.if_num, dyn_if_type);
 	nss_unregister_wifili_radio_if(ar->nss.if_num);
