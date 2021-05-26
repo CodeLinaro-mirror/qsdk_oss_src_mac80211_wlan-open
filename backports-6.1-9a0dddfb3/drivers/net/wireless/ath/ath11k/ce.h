@@ -205,6 +205,7 @@ struct ath11k_ce_pipe {
 	struct ce_tasklet_time tracker[CE_TIME_DURATION_MAX];
 	u32 sched_delay_gt_500US;
 	u32 exec_delay_gt_500US;
+	u32 msi_data;
 };
 
 struct ath11k_ce {

@@ -5,9 +5,9 @@
  */
 
 #include <linux/module.h>
-#include <linux/msi.h>
 #include <linux/pci.h>
 #include <linux/of.h>
+#include <linux/msi.h>
 #include <linux/time.h>
 #include <linux/vmalloc.h>
 
