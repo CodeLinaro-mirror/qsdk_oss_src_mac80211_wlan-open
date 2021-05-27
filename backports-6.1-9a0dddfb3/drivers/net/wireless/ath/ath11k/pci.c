@@ -409,7 +409,11 @@ static int ath11k_pci_alloc_msi(struct ath11k_pci *ab_pci)
 	num_vectors = pci_alloc_irq_vectors(pci_dev,
 					    msi_config->total_vectors,
 					    msi_config->total_vectors,
-					    PCI_IRQ_NOMSIX);
+#if LINUX_VERSION_IS_LESS(5,4,0)
+ 					    PCI_IRQ_NOMSIX);
+#elif LINUX_VERSION_IS_GEQ(5,4,0)
+					    PCI_IRQ_LEGACY|PCI_IRQ_MSI);
+#endif
 	if (num_vectors == msi_config->total_vectors) {
 		set_bit(ATH11K_FLAG_MULTI_MSI_VECTORS, &ab->dev_flags);
 	} else {

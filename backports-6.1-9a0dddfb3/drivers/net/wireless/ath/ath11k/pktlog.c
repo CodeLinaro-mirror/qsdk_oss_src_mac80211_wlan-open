@@ -157,7 +157,11 @@ static char *ath_pktlog_getbuf(struct ath_pktlog *pl_info,
 
 static int  pktlog_pgfault(struct vm_area_struct *vma, struct vm_fault *vmf)
 {
+#if LINUX_VERSION_IS_LESS(5,4,0)
 	unsigned long address = (unsigned long)vmf->virtual_address;
+#elif LINUX_VERSION_IS_GEQ(5,4,0)
+	unsigned long address = vmf->address;
+#endif
 
 	if (address == 0UL)
 		return VM_FAULT_NOPAGE;
@@ -165,9 +169,13 @@ static int  pktlog_pgfault(struct vm_area_struct *vma, struct vm_fault *vmf)
 	if (vmf->pgoff > vma->vm_end)
 		return VM_FAULT_SIGBUS;
 
-	get_page(virt_to_page(address));
-	vmf->page = virt_to_page(address);
+	get_page(virt_to_page((void *)address));
+	vmf->page = virt_to_page((void *)address);
+#if LINUX_VERSION_IS_LESS(5,4,0)
 	return VM_FAULT_MINOR;
+#elif LINUX_VERSION_IS_GEQ(5,4,0)
+	return 0;
+#endif
 }
 
 static struct vm_operations_struct pktlog_vmops = {

@@ -174,7 +174,11 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 	struct ath11k_dump_segment *segment, *seg_info;
 	int i, rem_seg_cnt = 0, len, num_seg, seg_sz, qdss_seg_cnt = 1;
 
+#if LINUX_VERSION_IS_LESS(5,4,0)
 	mhi_download_rddm_img(mhi_ctrl, false);
+#elif LINUX_VERSION_IS_GEQ(5,4,0)
+	mhi_download_rddm_image(mhi_ctrl, false);
+#endif
 
 	rddm_img = mhi_ctrl->rddm_image;
 	fw_img = mhi_ctrl->fbc_image;

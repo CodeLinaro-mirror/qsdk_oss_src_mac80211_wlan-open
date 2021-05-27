@@ -374,8 +374,10 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 		goto free_controller;
 	}
 
+#if LINUX_VERSION_IS_GEQ(5,15,0)
 	if (!test_bit(ATH11K_FLAG_MULTI_MSI_VECTORS, &ab->dev_flags))
 		mhi_ctrl->irq_flags = IRQF_SHARED | IRQF_NOBALANCING;
+#endif
 
 	if (test_bit(ATH11K_FLAG_FIXED_MEM_RGN, &ab->dev_flags)) {
 		ret = ath11k_mhi_read_addr_from_dt(mhi_ctrl);

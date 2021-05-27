@@ -1114,10 +1114,17 @@ void ce_update_tasklet_time_duration_stats(struct ath11k_ce_pipe *ce_pipe)
 {
 	s64 sched_us, exec_us;
 
+#if LINUX_VERSION_IS_LESS(5,4,0)
 	sched_us = (ce_pipe->tasklet_ts.exec_entry_ts.tv64 -
 		    ce_pipe->tasklet_ts.sched_entry_ts.tv64);
 	exec_us = (ce_pipe->tasklet_ts.exec_complete_ts.tv64 -
 		   ce_pipe->tasklet_ts.exec_entry_ts.tv64);
+#elif LINUX_VERSION_IS_GEQ(5,4,0)
+	sched_us = (ce_pipe->tasklet_ts.exec_entry_ts -
+		    ce_pipe->tasklet_ts.sched_entry_ts);
+	exec_us = (ce_pipe->tasklet_ts.exec_complete_ts -
+		   ce_pipe->tasklet_ts.exec_entry_ts);
+#endif
 
 	sched_us = div_s64(sched_us, CE_TIME_DURATION_USEC * NSEC_PER_USEC);
 	if (sched_us > CE_TIME_DURATION_USEC_500) {

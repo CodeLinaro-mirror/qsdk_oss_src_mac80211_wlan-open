@@ -886,17 +886,36 @@ static int ath11k_core_get_rproc(struct ath11k_base *ab)
 	struct device *dev = ab->dev;
 	struct rproc *prproc;
 	phandle rproc_phandle;
+#if LINUX_VERSION_IS_LESS(5,4,0)
+	bool multi_pd_arch;
+	const char *name;
+#endif
 
-	if (of_property_read_u32(dev->of_node, "qcom,rproc", &rproc_phandle)) {
-		ath11k_err(ab, "failed to get q6_rproc handle\n");
-		return -ENOENT;
+#if LINUX_VERSION_IS_LESS(5,4,0)
+	multi_pd_arch = of_property_read_bool(dev->of_node, "qcom,multipd_arch");
+	if (multi_pd_arch) {
+		if (of_property_read_string(dev->of_node, "qcom,userpd-subsys-name",
+					&name))
+			return -EINVAL;
+		prproc = rproc_get_by_name(name);
+		if (!prproc) {
+			ath11k_err(ab, "failed to get rproc\n");
+			return -EINVAL;
+		}
+	} else {
+#endif
+		if (of_property_read_u32(dev->of_node, "qcom,rproc", &rproc_phandle)) {
+			ath11k_err(ab, "failed to get q6_rproc handle\n");
+			return -ENOENT;
+		}
+		prproc = rproc_get_by_phandle(rproc_phandle);
+		if (!prproc) {
+			ath11k_dbg(ab, ATH11K_DBG_AHB, "failed to get rproc, deferring\n");
+			return -EPROBE_DEFER;
+		}
+#if LINUX_VERSION_IS_LESS(5,4,0)
 	}
-
-	prproc = rproc_get_by_phandle(rproc_phandle);
-	if (!prproc) {
-		ath11k_dbg(ab, ATH11K_DBG_AHB, "failed to get rproc, deferring\n");
-		return -EPROBE_DEFER;
-	}
+#endif
 	ab_ahb->tgt_rproc = prproc;
 
 	return 0;
