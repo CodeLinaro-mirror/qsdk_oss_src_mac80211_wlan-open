@@ -2390,7 +2390,7 @@ static ssize_t ath11k_dump_mgmt_stats(struct file *file, char __user *ubuf,
 	struct ath11k_vif *arvif = NULL;
 	struct ath11k_mgmt_frame_stats *mgmt_stats;
 	int len = 0, ret, i;
-	int size = (TARGET_NUM_VDEVS - 1) * 1500;
+	int size = (TARGET_NUM_VDEVS(ab) - 1) * 1500;
 	char *buf;
 	const char *mgmt_frm_type[ATH11K_STATS_MGMT_FRM_TYPE_MAX-1] = {"assoc_req", "assoc_resp",
 								       "reassoc_req", "reassoc_resp",

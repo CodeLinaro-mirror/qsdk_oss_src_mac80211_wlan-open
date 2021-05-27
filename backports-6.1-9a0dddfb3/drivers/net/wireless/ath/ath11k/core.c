@@ -63,8 +63,10 @@ MODULE_PARM_DESC(skip_radio_bmap, "Bitmap to skip device probe");
 unsigned int ath11k_skip_radio;
 EXPORT_SYMBOL(ath11k_skip_radio);
 
-
 struct ath11k_base *ath11k_soc[MAX_SOCS];
+
+static const struct ath11k_num_vdevs_peers ath11k_vdevs_peers[];
+static const struct ath11k_num_vdevs_peers ath11k_vdevs_peers_ipq5018[];
 
 static const struct ath11k_hw_params ath11k_hw_params[] = {
 	{
@@ -159,6 +161,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 		.reo_status_poll = false,
+		.num_vdevs_peers = ath11k_vdevs_peers,
 	},
 	{
 		.hw_rev = ATH11K_HW_IPQ6018_HW10,
@@ -251,6 +254,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 		.reo_status_poll = false,
+		.num_vdevs_peers = ath11k_vdevs_peers,
 	},
 	{
 		.name = "qca6390 hw2.0",
@@ -443,6 +447,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 		.reo_status_poll = false,
+		.num_vdevs_peers = ath11k_vdevs_peers,
 	},
 	{
 		.name = "wcn6855 hw2.0",
@@ -536,6 +541,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.support_fw_mac_sequence = true,
 		.support_dual_stations = true,
 		.pdev_suspend = false,
+		.num_vdevs_peers = ath11k_vdevs_peers,
 	},
 	{
 		.name = "wcn6855 hw2.1",
@@ -627,6 +633,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.support_fw_mac_sequence = true,
 		.support_dual_stations = true,
 		.pdev_suspend = false,
+		.num_vdevs_peers = ath11k_vdevs_peers,
 	},
 	{
 		.name = "wcn6750 hw1.0",
@@ -715,6 +722,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.ce_window = 2,
 		.dp_window = 1,
 		.reo_status_poll = false,
+		.num_vdevs_peers = ath11k_vdevs_peers,
 	},
 	{
 		.hw_rev = ATH11K_HW_IPQ5018_HW10,
@@ -985,6 +993,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX,
 		.reo_status_poll = false,
+		.num_vdevs_peers = ath11k_vdevs_peers_ipq5018,
 	},
 	{
 		.hw_rev = ATH11K_HW_QCN6122,
@@ -1058,7 +1067,23 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.caldb_offset = ATH11K_QMI_QCN6122_CALDB_OFFSET,
 		.max_tx_ring = DP_TCL_NUM_RING_MAX,
 		.reo_status_poll = false,
+		.num_vdevs_peers = ath11k_vdevs_peers_ipq5018,
  	},
+};
+
+static const struct ath11k_num_vdevs_peers ath11k_vdevs_peers_ipq5018[] = {
+	{
+		.num_vdevs = (8 + 1),
+		.num_peers = 128,
+	},
+	{
+		.num_vdevs = (8 + 1),
+		.num_peers = 128,
+	},
+	{
+		.num_vdevs = 8,
+		.num_peers = 128,
+	}
 };
 
 static const struct ath11k_num_vdevs_peers ath11k_vdevs_peers[] = {
@@ -1852,8 +1877,6 @@ static int ath11k_core_soc_create(struct ath11k_base *ab)
 		ab->fw_mode = ATH11K_FIRMWARE_MODE_FTM;
 		ath11k_info(ab, "Booting in factory test mode\n");
 	}
-
-	ab->num_vdevs_peers = &ath11k_vdevs_peers;
 
 	ret = ath11k_qmi_init_service(ab);
 	if (ret) {

@@ -16,10 +16,10 @@ struct ath11k_cfr_peer_tx_param;
 /* Target configuration defines */
 #ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
 
-#define TARGET_NUM_VDEVS	8
-#define TARGET_NUM_PEERS_PDEV	(128 + TARGET_NUM_VDEVS)
+#define TARGET_NUM_VDEVS(ab)	8
+#define TARGET_NUM_PEERS_PDEV(ab)	(128 + TARGET_NUM_VDEVS(ab))
 /* Max num of stations (per radio) */
-#define TARGET_NUM_STATIONS	128
+#define TARGET_NUM_STATIONS(ab)	128
 #define ATH11K_QMI_TARGET_MEM_MODE	ATH11K_QMI_TARGET_MEM_MODE_512M
 #define ATH11K_DP_TX_COMP_RING_SIZE	8192
 #define ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE	512
@@ -32,11 +32,10 @@ struct ath11k_cfr_peer_tx_param;
 #define ATH11K_DP_RXDMA_NSS_REFILL_RING_SIZE	1816
 #else
 /* Num VDEVS per radio */
-#define TARGET_NUM_VDEVS(ab)	(ab->hw_params.num_vdevs)
-
-#define TARGET_NUM_PEERS_PDEV(ab) (ab->hw_params.num_peers + TARGET_NUM_VDEVS(ab))
+#define TARGET_NUM_VDEVS(ab)	(ab->hw_params.num_vdevs_peers[ab->qmi.target_mem_mode].num_vdevs)
+#define TARGET_NUM_PEERS_PDEV(ab) (ab->hw_params.num_vdevs_peers[ab->qmi.target_mem_mode].num_peers + TARGET_NUM_VDEVS(ab))
 /* Max num of stations (per radio) */
-#define TARGET_NUM_STATIONS(ab) (ab->hw_params.num_peers)
+#define TARGET_NUM_STATIONS(ab) (ab->hw_params.num_vdevs_peers[ab->qmi.target_mem_mode].num_peers)
 #define ATH11K_QMI_TARGET_MEM_MODE		ATH11K_QMI_TARGET_MEM_MODE_DEFAULT
 #define ATH11K_DP_TX_COMP_RING_SIZE		32768
 #define ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE	1024
@@ -273,6 +272,7 @@ struct ath11k_hw_params {
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;
 	bool reo_status_poll;
+	const struct ath11k_num_vdevs_peers *num_vdevs_peers;
 };
 
 struct ath11k_hw_ops {

@@ -1306,7 +1306,6 @@ struct ath11k_base {
 	atomic_t num_max_allowed;
 	u32 max_ast_index;
 	u32 num_ast_entries;
-	struct ath11k_num_vdevs_peers *num_vdevs_peers;
 	bool enable_memory_stats;
 
 	u32 rx_hash;
