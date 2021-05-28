@@ -223,6 +223,8 @@ struct hal_rx_mon_ppdu_info {
 	u32 num_users;
 	u32 mpdu_fcs_ok_bitmap[HAL_RX_NUM_WORDS_PER_PPDU_BITMAP];
 	struct hal_rx_user_status userstats[HAL_MAX_UL_MU_USERS];
+	u8 userid;
+	u16 ampdu_id[HAL_MAX_UL_MU_USERS];
 };
 
 #define HAL_RX_UL_OFDMA_USER_INFO_V0_W0_VALID			BIT(30)
@@ -471,10 +473,11 @@ struct hal_rx_mpdu_info_ipq8074 {
 } __packed;
 
 struct hal_rx_mpdu_info_qcn9074 {
-	__le32 rsvd0[10];
+	__le32 rsvd0[9];
 	__le32 info0;
-	__le32 rsvd1[2];
 	__le32 info1;
+	__le32 rsvd1[2];
+	__le32 info2;
 	__le32 rsvd2[9];
 } __packed;
 

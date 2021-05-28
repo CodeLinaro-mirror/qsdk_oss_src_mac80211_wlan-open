@@ -890,6 +890,13 @@ static u16 ath11k_hal_rx_mpduinfo_get_peerid(struct ath11k_base *ab,
 	return ab->hw_params.hw_ops->mpdu_info_get_peerid(mpdu_info);
 }
 
+static
+u16 ath11k_hal_rxdesc_get_hal_mpdu_ppdu_id(struct ath11k_base *ab,
+					   struct hal_rx_mpdu_info *mpdu_info)
+{
+	return ab->hw_params.hw_ops->rx_desc_get_hal_ppdu_id(mpdu_info);
+}
+
 static enum hal_rx_mon_status
 ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 				   struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -1562,6 +1569,12 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 			ppdu_info->peer_id = peer_id;
 
 		ppdu_info->mpdu_len += ab->hw_params.hw_ops->rx_desc_get_hal_mpdu_len(mpdu_info);
+
+		if (userid < HAL_MAX_UL_MU_USERS) {
+			ppdu_info->userid = userid;
+			ppdu_info->ampdu_id[userid] =
+				ath11k_hal_rxdesc_get_hal_mpdu_ppdu_id(ab, mpdu_info);
+		}
 
 		break;
 	}

@@ -5948,12 +5948,18 @@ static void ath11k_update_radiotap(struct ath11k *ar,
 {
 	struct ieee80211_supported_band *sband;
 	u8 *ptr = NULL;
+	u16 ampdu_id = ppduinfo->ampdu_id[ppduinfo->userid];
 
 	rxs->flag |= RX_FLAG_MACTIME_START;
 	rxs->signal = ppduinfo->rssi_comb + ATH11K_DEFAULT_NOISE_FLOOR;
 
 	if (ppduinfo->nss)
 		rxs->nss = ppduinfo->nss;
+
+	if (ampdu_id) {
+		rxs->flag |= RX_FLAG_AMPDU_DETAILS;
+		rxs->ampdu_reference = ampdu_id;
+	}
 
 	if (ppduinfo->he_mu_flags) {
 		rxs->flag |= RX_FLAG_RADIOTAP_HE_MU;

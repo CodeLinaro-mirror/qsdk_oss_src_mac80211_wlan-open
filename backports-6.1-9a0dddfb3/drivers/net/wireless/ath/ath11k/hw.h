@@ -330,6 +330,7 @@ struct ath11k_hw_ops {
 	void (*fill_cfr_hdr_info)(struct ath11k *ar,
 				  struct ath11k_csi_cfr_header *header,
 				  struct ath11k_cfr_peer_tx_param *params);
+	u16 (*rx_desc_get_hal_ppdu_id) (struct hal_rx_mpdu_info *mpdu_info);
 };
 
 extern const struct ath11k_hw_ops ipq8074_ops;

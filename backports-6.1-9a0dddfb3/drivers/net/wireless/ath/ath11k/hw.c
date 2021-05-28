@@ -13,6 +13,7 @@
 #include "hif.h"
 #include "hal.h"
 #include "hw.h"
+#include "hal_rx.h"
 
 /* Map from pdev index to hw mac index */
 static u8 ath11k_hw_ipq8074_mac_from_pdev_id(int pdev_idx)
@@ -990,12 +991,31 @@ static void ath11k_hw_ipq5018_reo_setup(struct ath11k_base *ab)
 }
 
 static u16
+ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id(u8 *tlv_data)
+{
+	struct hal_rx_mpdu_info *mpdu_info =
+		(struct hal_rx_mpdu_info *)tlv_data;
+
+	return FIELD_GET(HAL_RX_MPDU_INFO_INFO0_PPDU_ID,
+			 __le32_to_cpu(u.ipq8074.info0));
+}
+
+static
+u16 ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_ppdu_id(u8 *tlv_data)
+{
+	struct hal_rx_mpdu_info_qcn9074 *mpdu_info =
+		(struct hal_rx_mpdu_info_ipq9074 *)tlv_data;
+
+	return FIELD_GET(HAL_RX_MPDU_INFO_INFO0_PPDU_ID,
+			 __le32_to_cpu(mpdu_info->info0));
+}
+
+static u16
 ath11k_hw_ipq8074_mpdu_info_get_peerid(struct hal_rx_mpdu_info *mpdu_info)
 {
 	u16 peer_id = 0;
-
 	peer_id = FIELD_GET(HAL_RX_MPDU_INFO_INFO0_PEERID,
-			    __le32_to_cpu(mpdu_info->u.ipq8074.info0));
+			    __le32_to_cpu(mpdu_info->u.ipq8074.info1));
 
 	return peer_id;
 }
@@ -1263,6 +1283,7 @@ const struct ath11k_hw_ops ipq8074_ops = {
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq8074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
 	.rx_desc_get_hal_mpdu_len = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len,
+	.rx_desc_get_hal_ppdu_id = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id,
 };
 
 const struct ath11k_hw_ops ipq6018_ops = {
@@ -1312,6 +1333,7 @@ const struct ath11k_hw_ops ipq6018_ops = {
 	.rx_desc_dot11_hdr_fields_valid = ath11k_hw_ipq8074_rx_desc_dot11_hdr_fields_valid,
 	.rx_desc_get_dot11_hdr = ath11k_hw_ipq8074_rx_desc_get_dot11_hdr,
 	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
+	.rx_desc_get_hal_ppdu_id = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id,
 };
 
 const struct ath11k_hw_ops qca6390_ops = {
@@ -1362,6 +1384,7 @@ const struct ath11k_hw_ops qca6390_ops = {
 	.rx_desc_get_dot11_hdr = ath11k_hw_ipq8074_rx_desc_get_dot11_hdr,
 	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
 	.rx_desc_get_ip_valid = ath11k_hw_ipq8074_rx_desc_get_ip_valid,
+	.rx_desc_get_hal_ppdu_id = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id,
 };
 
 const struct ath11k_hw_ops qcn9074_ops = {
@@ -1403,6 +1426,7 @@ const struct ath11k_hw_ops qcn9074_ops = {
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq9074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
 	.rx_desc_get_hal_mpdu_len = ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_len,
+	.rx_desc_get_hal_ppdu_id = ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_ppdu_id,
 };
 
 const struct ath11k_hw_ops wcn6855_ops = {
@@ -1452,6 +1476,7 @@ const struct ath11k_hw_ops wcn6855_ops = {
 	.rx_desc_get_dot11_hdr = ath11k_hw_ipq8074_rx_desc_get_dot11_hdr,
 	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
 	.fill_cfr_hdr_info = ath11k_hw_ipq8074_fill_cfr_hdr_info,
+	.rx_desc_get_hal_ppdu_id = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id,
 };
 
 const struct ath11k_hw_ops wcn6750_ops = {
@@ -1494,6 +1519,7 @@ const struct ath11k_hw_ops wcn6750_ops = {
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq9074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_wcn6750_get_tcl_ring_selector,
 	.rx_desc_set_msdu_len = ath11k_hw_qcn9074_rx_desc_set_msdu_len,
+	.rx_desc_get_hal_ppdu_id = ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_ppdu_id,
 };
 
 /* IPQ5018 hw ops is similar to QCN9074 except for the dest ring remap */
@@ -1546,6 +1572,7 @@ const struct ath11k_hw_ops ipq5018_ops = {
 	.rx_desc_get_dot11_hdr = ath11k_hw_qcn9074_rx_desc_get_dot11_hdr,
 	.rx_desc_get_crypto_header = ath11k_hw_qcn9074_rx_desc_get_crypto_hdr,
 	.fill_cfr_hdr_info = ath11k_hw_qcn9074_fill_cfr_hdr_info,
+	.rx_desc_get_hal_ppdu_id = ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_ppdu_id,
 };
 
 const struct ath11k_hw_ops qcn6122_ops = {
