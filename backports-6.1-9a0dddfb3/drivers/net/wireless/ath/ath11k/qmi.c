@@ -3314,6 +3314,28 @@ err_free_req:
 	return ret;
 }
 
+static const struct firmware *ath11k_qmi_load_caldata(struct ath11k_base *ab,
+						      const char *file)
+{
+	const struct firmware *fw;
+	char path[100];
+	int ret;
+
+	if (file == NULL)
+		return ERR_PTR(-ENOENT);
+
+	snprintf(path, sizeof(path), "%s/%s", ath11k_caldata_bin_path, file);
+
+	ret = firmware_request_nowarn(&fw, path, ab->dev);
+	if (ret)
+		return ERR_PTR(ret);
+
+	ath11k_dbg(ab, ATH11K_DBG_BOOT, "boot firmware request %s size %zu\n",
+		   path, fw->size);
+
+	return fw;
+}
+
 static int ath11k_qmi_load_bdf_qmi(struct ath11k_base *ab,
 				   bool regdb)
 {
@@ -3386,7 +3408,10 @@ static int ath11k_qmi_load_bdf_qmi(struct ath11k_base *ab,
 				 ATH11K_QMI_DEF_CAL_FILE_SUFFIX);
 		}
 
-		fw_entry = ath11k_core_firmware_request(ab, filename);
+		if (ath11k_caldata_bin_path)
+			fw_entry = ath11k_qmi_load_caldata(ab, filename);
+		else
+			fw_entry = ath11k_core_firmware_request(ab, filename);
 		if (!IS_ERR(fw_entry))
 			goto success;
 

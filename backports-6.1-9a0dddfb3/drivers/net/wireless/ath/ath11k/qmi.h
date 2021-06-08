@@ -73,6 +73,7 @@
 
 struct ath11k_base;
 extern unsigned int ath11k_host_ddr_addr;
+extern char *ath11k_caldata_bin_path;
 
 enum ath11k_target_mem_mode {
  	ATH11K_QMI_TARGET_MEM_MODE_DEFAULT = 0,

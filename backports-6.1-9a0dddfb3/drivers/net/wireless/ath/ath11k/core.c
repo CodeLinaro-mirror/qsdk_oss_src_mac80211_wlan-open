@@ -63,6 +63,12 @@ MODULE_PARM_DESC(skip_radio_bmap, "Bitmap to skip device probe");
 unsigned int ath11k_skip_radio;
 EXPORT_SYMBOL(ath11k_skip_radio);
 
+char *ath11k_caldata_bin_path = NULL;
+EXPORT_SYMBOL(ath11k_caldata_bin_path);
+module_param(ath11k_caldata_bin_path, charp, 0644);
+MODULE_PARM_DESC(ath11k_caldata_bin_path,
+		"Caldata bin path for loading");
+
 wait_queue_head_t ath11k_radio_prb_wq;
 EXPORT_SYMBOL(ath11k_radio_prb_wq);
 
