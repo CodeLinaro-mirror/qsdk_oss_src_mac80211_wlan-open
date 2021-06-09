@@ -6758,13 +6758,13 @@ static int wmi_process_tx_comp(struct ath11k *ar,
 	struct ieee80211_tx_info *info;
 	struct ath11k_skb_cb *skb_cb;
 	struct ieee80211_hdr *hdr;
-	struct ath11k_peer *peer;
 	struct ieee80211_vif *vif;
 	struct ath11k_vif *arvif;
 	struct ath11k_mgmt_frame_stats *mgmt_stats;
 	u16 frm_type;
 	int num_mgmt;
 
+	spin_lock_bh(&ar->data_lock);
 	spin_lock_bh(&ar->txmgmt_idr_lock);
 	msdu = idr_find(&ar->txmgmt_idr, tx_compl_param->desc_id);
 
@@ -6772,6 +6772,7 @@ static int wmi_process_tx_comp(struct ath11k *ar,
 		ath11k_warn(ar->ab, "received mgmt tx compl for invalid msdu_id: %d\n",
 			    tx_compl_param->desc_id);
 		spin_unlock_bh(&ar->txmgmt_idr_lock);
+		spin_unlock_bh(&ar->data_lock);
 		return -ENOENT;
 	}
 
@@ -6780,6 +6781,28 @@ static int wmi_process_tx_comp(struct ath11k *ar,
 
 	skb_cb = ATH11K_SKB_CB(msdu);
 	dma_unmap_single(ar->ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
+	hdr = (struct ieee80211_hdr *)msdu->data;
+
+	if (ieee80211_is_mgmt(hdr->frame_control)) {
+		frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
+		vif = skb_cb->vif;
+
+		if (!vif) {
+			ath11k_warn(ar->ab, "failed to find vif to update txcompl mgmt stats\n");
+			goto skip_mgmt_stats;
+		}
+
+		arvif = ath11k_vif_to_arvif(vif);
+		mgmt_stats = &arvif->mgmt_stats;
+
+		if (!tx_compl_param->status)
+			mgmt_stats->tx_compl_succ[frm_type]++;
+		else
+			mgmt_stats->tx_compl_fail[frm_type]++;
+	}
+
+skip_mgmt_stats:
+	spin_unlock_bh(&ar->data_lock);
 
 	info = IEEE80211_SKB_CB(msdu);
 	if ((!(info->flags & IEEE80211_TX_CTL_NO_ACK)) &&
@@ -6795,34 +6818,6 @@ static int wmi_process_tx_comp(struct ath11k *ar,
 	 */
 	info->status.rates[0].idx = -1;
 
-	hdr = (struct ieee80211_hdr *)msdu->data;
-	frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
-
-	spin_lock_bh(&ar->ab->base_lock);
-	peer = ath11k_peer_find_by_addr(ar->ab, hdr->addr2);
-	if (!peer) {
-		spin_unlock_bh(&ar->ab->base_lock);
-		ath11k_warn(ar->ab, "failed to find peer to update txcompl mgmt stats\n");
-		goto skip_mgmt_stats;
-	}
-
-	vif = peer->vif;
-	spin_unlock_bh(&ar->ab->base_lock);
-
-	spin_lock_bh(&ar->data_lock);
-	arvif = ath11k_vif_to_arvif(vif);
-	mgmt_stats = &arvif->mgmt_stats;
-
-	if (ieee80211_is_mgmt(hdr->frame_control)) {
-		if (!tx_compl_param->status)
-			mgmt_stats->tx_compl_succ[frm_type]++;
-		else
-			mgmt_stats->tx_compl_fail[frm_type]++;
-	}
-
-	spin_unlock_bh(&ar->data_lock);
-
-skip_mgmt_stats:
 	ieee80211_tx_status_irqsafe(ar->hw, msdu);
 
 	num_mgmt = atomic_dec_if_positive(&ar->num_pending_mgmt_tx);

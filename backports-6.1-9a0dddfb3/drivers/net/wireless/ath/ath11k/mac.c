@@ -7839,8 +7839,10 @@ err_vdev_del:
 	kfree(arvif->vlan_keyid_map);
 	ath11k_peer_cleanup(ar, arvif->vdev_id);
 
+	spin_lock_bh(&ar->data_lock);
 	idr_for_each(&ar->txmgmt_idr,
 		     ath11k_mac_vif_txmgmt_idr_remove, vif);
+	spin_unlock_bh(&ar->data_lock);
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 		spin_lock_bh(&ab->dp.tx_ring[i].tx_idr_lock);
