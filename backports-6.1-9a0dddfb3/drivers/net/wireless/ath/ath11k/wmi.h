@@ -12,6 +12,10 @@
 
 struct ath11k_base;
 struct ath11k;
+struct ath11k_vif;
+struct ath11k_smart_ant_info;
+struct ath11k_smart_ant_node_config_params;
+struct ath11k_smart_ant_train_info;
 struct ath11k_fw_stats;
 struct ath11k_fw_dbglog;
 struct ath11k_vif;
@@ -7245,6 +7249,101 @@ enum wmi_wmm_params_type {
 	WMI_WMM_PARAM_TYPE_11AX_MU_EDCA = 1,
 };
 
+/*Smart antenna related defs */
+
+#define WMI_SMART_ANT_MODE_SERIAL        0
+#define WMI_SMART_ANT_MODE_PARALLEL      1
+#define WMI_SMART_ANTENNA_HAL_MAX        4
+#define WMI_SMART_ANT_MAX_SERIAL_ANTENNA 2
+#define WMI_SMART_MAX_RATE_SERIES        2
+
+#define WMI_CCK_OFDM_RATES_MAX           12
+#define WMI_MCS_RATES_MAX                96
+#define WMI_RATE_COUNT_MAX               4
+
+struct wmi_peer_ratecode_list_fixed_param {
+	struct wmi_mac_addr macaddr;
+	u32 ratecount;
+	u32 vdev_id;
+	u32 pdev_id;
+} __packed;
+
+struct wmi_peer_cck_ofdm_rate_info {
+	u32 ratecode_legacy;
+} __packed;
+
+struct wmi_peer_mcs_rate_info {
+	u32 rt_code_20;
+	u32 rt_code_40;
+	u32 rt_code_80;
+} __packed;
+
+struct wmi_pdev_set_smart_ant_cmd {
+	u32 tlv_header;
+	union {
+		u32 mac_id;
+		u32 pdev_id;
+	};
+	u32 enable;
+	u32 mode;
+	u32 rx_antenna;
+	u32 tx_default_antenna;
+} __packed;
+
+struct wmi_pdev_smart_ant_gpio_handle_cmd {
+	u32 tlv_header;
+	u32 gpio_pin;
+	u32 gpio_func;
+	u32 pdev_id;
+} __packed;
+
+struct wmi_pdev_set_rx_antenna_cmd {
+	u32 tlv_header;
+	union {
+		u32 mac_id;
+		u32 pdev_id;
+	};
+	u32 rx_antenna;
+} __packed;
+
+struct wmi_pdev_set_tx_antenna_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	struct wmi_mac_addr macaddr;
+} __packed;
+
+struct wmi_peer_set_smart_tx_ant_series_cmd {
+	u32 tlv_header;
+	u32 ant_series;
+} __packed;
+
+struct wmi_peer_set_smart_ant_train_ant_fixed_param_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	struct wmi_mac_addr macaddr;
+	u32 numpkts;
+} __packed;
+
+struct wmi_peer_set_smart_ant_train_ant_param {
+	u32 tlv_header;
+	union {
+		u32 train_rate_series;
+		u32 train_rate_series_lo;
+	};
+	u32 train_antenna_series;
+	/* Rate control flags for future use */
+	u32 rc_flags;
+	u32 train_rate_series_hi;
+} __packed;
+
+struct wmi_peer_set_smart_ant_node_config_ops_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	struct wmi_mac_addr mac_addr;
+	u32 cmd_id;
+	u32 args_count;
+} __packed;
+
 const void **ath11k_wmi_tlv_parse_alloc(struct ath11k_base *ab,
 					struct sk_buff *skb, gfp_t gfp);
 int ath11k_wmi_cmd_send(struct ath11k_pdev_wmi *wmi, struct sk_buff *skb,
@@ -7461,4 +7560,22 @@ int ath11k_wmi_peer_set_cfr_capture_conf(struct ath11k *ar,
 					 struct wmi_peer_cfr_capture_conf_arg
 *arg);
 int ath11k_wmi_pdev_get_ani_level(struct ath11k *ar, u32 param_id, u8 pdev_id);
+int ath11k_wmi_pdev_enable_smart_ant(struct ath11k *ar,
+				     struct ath11k_smart_ant_info *info);
+int ath11k_wmi_pdev_disable_smart_ant(struct ath11k *ar,
+				      struct ath11k_smart_ant_info *info);
+int ath11k_wmi_peer_set_smart_tx_ant(struct ath11k *ar, u32 vdev_id,
+				     const u8 *macaddr, const u32 *tx_antenna);
+int ath11k_wmi_pdev_set_rx_ant(struct ath11k *ar, u32 antenna);
+int
+ath11k_wmi_peer_set_smart_ant_node_config(struct ath11k *ar, u8 *mac,
+					  struct ath11k_smart_ant_node_config_params *param);
+int
+ath11k_wmi_peer_set_smart_ant_train_info(struct ath11k *ar, u32 vdev_id,
+					 u8 *mac,
+					 struct ath11k_smart_ant_train_info *param);
+int
+ath11k_wmi_peer_set_smart_ant_train_ant_param_cmd(struct ath11k *ar,
+						  u32 vdev_id, const u8 *macaddr,
+						  const struct wmi_peer_set_smart_ant_train_ant_fixed_param_cmd *arg);
 #endif

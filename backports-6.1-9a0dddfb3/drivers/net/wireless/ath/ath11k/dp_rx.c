@@ -10,6 +10,7 @@
 #include <crypto/hash.h>
 #include "core.h"
 #include "debug.h"
+#include "smart_ant.h"
 #include "debugfs_htt_stats.h"
 #include "debugfs_sta.h"
 #include "hal_desc.h"
@@ -1392,6 +1393,7 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 		memcpy((void *)&user_stats->cmpltn_cmn, ptr,
 		       sizeof(struct htt_ppdu_stats_usr_cmpltn_cmn));
 		user_stats->tlv_flags |= BIT(tag);
+		ath11k_smart_ant_proc_tx_feedback(ab, ptr, peer_id);
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS:
 		if (len <
@@ -6312,6 +6314,8 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 			ath11k_rx_stats_buf_pktlog_process(ar, skb->data,
 							   log_type, rx_buf_sz);
 		}
+
+		ar->rx_antenna = ppdu_info->rx_antenna;
 
 next_skb:
 		spin_unlock_bh(&ab->base_lock);

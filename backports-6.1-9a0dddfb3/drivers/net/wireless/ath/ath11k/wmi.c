@@ -167,6 +167,8 @@ static const struct wmi_tlv_policy wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_p2p_noa_event) },
 	[WMI_TAG_WDS_ADDR_EVENT]
 		= { .min_len = sizeof(struct wmi_wds_addr_event) },
+	[WMI_TAG_PEER_RATECODE_LIST_EVENT]
+		= { .min_len = sizeof(struct wmi_peer_ratecode_list_fixed_param) },
 };
 
 #define PRIMAP(_hw_mode_) \
@@ -4998,6 +5000,7 @@ ath11k_wmi_copy_resource_config(struct wmi_resource_config *wmi_cfg,
 	wmi_cfg->ema_max_vap_cnt = tg_cfg->ema_max_vap_cnt;
 	wmi_cfg->ema_max_profile_period = tg_cfg->ema_max_profile_period;
 	wmi_cfg->max_num_group_keys = tg_cfg->max_num_group_keys;
+	wmi_cfg->smart_ant_cap = 1;
 }
 
 static int ath11k_init_cmd_send(struct ath11k_pdev_wmi *wmi,
@@ -10470,6 +10473,165 @@ static void ath11k_wmi_parse_cfr_capture_event(struct ath11k_base *ab,
 			   "failed to process cfr cpature ret = %d\n", ret);
 }
 
+static int ath11k_wmi_peer_ratecode_subtlv_parser(struct ath11k_base *ab,
+						  u16 tag, u16 len,
+						  const void *ptr, void *data)
+{
+	struct wmi_peer_cck_ofdm_rate_info *ofdm_rate;
+	struct wmi_peer_mcs_rate_info *mcs_rate;
+	struct ath11k_peer_rate_code_list_cap *rate_cap = data;
+	int ret = 0;
+	static int i = 0, j = 0;
+
+	switch (tag) {
+	case WMI_TAG_PEER_CCK_OFDM_RATE_INFO:
+		ofdm_rate = (struct wmi_peer_cck_ofdm_rate_info *)ptr;
+		if (i == ATH11K_SMART_ANT_LEGACY_RATE_WORDS)
+			i = 0;
+		rate_cap->rtcode_legacy[i] = ofdm_rate->ratecode_legacy;
+		i++;
+		break;
+	case WMI_TAG_PEER_MCS_RATE_INFO:
+		mcs_rate = (struct wmi_peer_mcs_rate_info *)ptr;
+		if (j == ATH11K_SMART_ANT_MAX_HT_RATE_WORDS)
+			j = 0;
+		rate_cap->rtcode_20[j] = mcs_rate->rt_code_20;
+		rate_cap->rtcode_40[j] = mcs_rate->rt_code_40;
+		rate_cap->rtcode_80[j] = mcs_rate->rt_code_80;
+		j++;
+		break;
+	default:
+		ath11k_warn(ab,
+			    "Received invalid tag for wmi peer ratecode in subtlvs\n");
+		return -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+static int ath11k_wmi_peer_ratecode_event_parser(struct ath11k_base *ab,
+						 u16 tag, u16 len,
+						 const void *ptr, void *data)
+{
+	int ret = 0;
+
+	ath11k_dbg(ab, ATH11K_DBG_WMI, "wmi peer ratecode event tag 0x%x of len %d rcvd\n",
+		   tag, len);
+
+	switch (tag) {
+	case WMI_TAG_PEER_RATECODE_LIST_EVENT:
+		/* Fixed param is already processed*/
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		 /* len 0 is expected for array of struct when there
+		  * is no content of that type to pack inside that tlv
+		  */
+		if (len == 0)
+			return 0;
+		ret = ath11k_wmi_tlv_iter(ab, ptr, len,
+					  ath11k_wmi_peer_ratecode_subtlv_parser,
+					  data);
+		break;
+	default:
+		ath11k_warn(ab, "Received invalid tag for wmi peer ratecode event\n");
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+static void ath11k_wmi_event_peer_ratecode_list(struct ath11k_base *ab,
+						struct sk_buff *skb)
+{
+	const struct wmi_peer_ratecode_list_fixed_param *fixed_param;
+	const struct wmi_tlv *tlv;
+	struct ath11k_peer *peer = NULL;
+	struct ieee80211_sta *sta;
+	struct ath11k_sta *arsta;
+	u16 tlv_tag;
+	u8 *ptr;
+	int ret;
+
+	ptr = skb->data;
+	if (skb->len < (sizeof(*fixed_param) + TLV_HDR_SIZE)) {
+		ath11k_warn(ab, "peer ratecode list event size invalid\n");
+		return;
+	}
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv_tag = FIELD_GET(WMI_TLV_TAG, tlv->header);
+	ptr += sizeof(*tlv);
+
+	if (tlv_tag == WMI_TAG_PEER_RATECODE_LIST_EVENT) {
+		fixed_param = (struct wmi_peer_ratecode_list_fixed_param *)ptr;
+
+		ath11k_dbg(ab, ATH11K_DBG_WMI,
+			   "pdev peer ratecode list on pdev: %d of peer: %pM ratecount: %d\n",
+			   fixed_param->pdev_id, fixed_param->macaddr.addr, fixed_param->ratecount);
+	} else {
+		ath11k_warn(ab, "peer ratecode list event received with wrong tag\n");
+		return;
+	}
+
+	rcu_read_lock();
+	spin_lock_bh(&ab->base_lock);
+
+	peer = ath11k_peer_find_by_addr(ab, fixed_param->macaddr.addr);
+	if (!peer) {
+		ath11k_warn(ab, "peer not found %pM\n", fixed_param->macaddr.addr);
+		spin_unlock_bh(&ab->base_lock);
+		rcu_read_unlock();
+		return;
+	}
+
+ 	sta = peer->sta;
+
+ 	if (!sta) {
+ 		ath11k_warn(ab, "failed to find station entry %pM\n",
+ 			    fixed_param->macaddr.addr);
+		spin_unlock_bh(&ab->base_lock);
+		rcu_read_unlock();
+ 		return;
+ 	}
+
+ 	arsta = (struct ath11k_sta *)sta->drv_priv;
+
+	spin_unlock_bh(&ab->base_lock);
+	rcu_read_unlock();
+
+	if (!arsta)
+		return;
+
+	if (!arsta->smart_ant_sta) {
+		ath11k_dbg(ab, ATH11K_DBG_SMART_ANT,
+			   "arsta->smart_ant_sta is null for the peer: %pM\n",
+			   fixed_param->macaddr.addr);
+ 		return;
+ 	}
+
+	ret = ath11k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath11k_wmi_peer_ratecode_event_parser,
+				  &arsta->smart_ant_sta->rate_cap);
+	if (ret) {
+		ath11k_warn(ab, "failed to parse cck ofdm_rate tlv %d\n", ret);
+		return;
+	}
+
+	ret = ath11k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath11k_wmi_peer_ratecode_event_parser,
+				  &arsta->smart_ant_sta->rate_cap);
+	if (ret) {
+		ath11k_warn(ab, "failed to parse mcs_rate tlv %d\n", ret);
+		return;
+	}
+
+	ether_addr_copy(arsta->smart_ant_sta->mac_addr, fixed_param->macaddr.addr);
+
+	return;
+}
+
 static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_cmd_hdr *cmd_hdr;
@@ -10623,6 +10785,9 @@ static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PDEV_ANI_OFDM_LEVEL_EVENTID:
 		ath11k_wmi_event_ani_ofdm_level(ab, skb);
+		break;
+	case WMI_PEER_RATECODE_LIST_EVENTID:
+		ath11k_wmi_event_peer_ratecode_list(ab, skb);
 		break;
 
 	default:
@@ -11716,4 +11881,394 @@ bool ath11k_wmi_supports_6ghz_cc_ext(struct ath11k *ar)
 {
 	return test_bit(WMI_TLV_SERVICE_REG_CC_EXT_EVENT_SUPPORT,
 			ar->ab->wmi_ab.svc_map) && ar->supports_6ghz;
+}
+
+void
+ath11k_wmi_sa_set_gpio_param(struct ath11k *ar,
+			     struct smart_ant_enable_params *params)
+{
+	params->gpio_pin[0] = ATH11K_SMART_ANT_PIN0;
+	params->gpio_func[0] = ATH11K_SMART_ANT_FUNC0;
+	params->gpio_pin[1] = ATH11K_SMART_ANT_PIN1;
+	params->gpio_func[1] = ATH11K_SMART_ANT_FUNC1;
+	params->gpio_pin[2] = 0;
+	params->gpio_func[2] = 0;
+	params->gpio_pin[3] = 0;
+	params->gpio_func[3] = 0;
+}
+
+int ath11k_wmi_pdev_set_rx_ant(struct ath11k *ar, u32 rx_antenna)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_pdev_set_rx_antenna_cmd *cmd;
+	struct sk_buff *skb;
+	void *ptr;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+
+	cmd = ptr;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_PDEV_SMART_ANT_SET_RX_ANTENNA_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->rx_antenna = rx_antenna;
+	cmd->pdev_id = ar->pdev->pdev_id;
+
+	ret = ath11k_wmi_cmd_send(wmi, skb, WMI_PDEV_SMART_ANT_SET_RX_ANTENNA_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab, "failed to submit WMI_PDEV_SMART_ANT_SET_RX_ANTENNA_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI, "WMI pdev rx set smart antenna pdev_id %d rx_antenna: %d\n",
+		   ar->pdev->pdev_id, rx_antenna);
+
+	return ret;
+}
+
+int ath11k_wmi_peer_set_smart_tx_ant(struct ath11k *ar,
+				     u32 vdev_id, const u8 *macaddr,
+				     const u32 *tx_antenna)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_pdev_set_tx_antenna_cmd *cmd;
+	struct wmi_peer_set_smart_tx_ant_series_cmd *tx_ant_series;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	void *ptr;
+	int i, ret, len;
+
+	len = sizeof(*cmd) + WMI_TLV_HDR_SIZE;
+	len += WMI_SMART_MAX_RATE_SERIES *
+	       sizeof(struct wmi_peer_set_smart_tx_ant_series_cmd);
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+
+	cmd = ptr;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_PEER_SMART_ANT_SET_TX_ANTENNA_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->vdev_id = vdev_id;
+	ether_addr_copy(cmd->macaddr.addr, macaddr);
+
+	ptr = skb->data + sizeof(*cmd);
+
+	len = WMI_SMART_MAX_RATE_SERIES *
+	      sizeof(struct wmi_peer_set_smart_tx_ant_series_cmd);
+
+	tlv = ptr;
+	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
+		      FIELD_PREP(WMI_TLV_LEN, len);
+	ptr += TLV_HDR_SIZE;
+
+	tx_ant_series = ptr;
+
+	for (i = 0; i < WMI_SMART_MAX_RATE_SERIES; i++) {
+		tx_ant_series->tlv_header =
+			FIELD_PREP(WMI_TLV_TAG,
+				   WMI_TAG_PEER_SMART_ANT_SET_TX_ANTENNA_SERIES) |
+			FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
+		tx_ant_series->ant_series = tx_antenna[i];
+		tx_ant_series++;
+	}
+
+	ret = ath11k_wmi_cmd_send(wmi, skb, WMI_PEER_SMART_ANT_SET_TX_ANTENNA_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to send WMI_PEER_SMART_ANT_SET_TX_ANTENNA_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI, "WMI peer set tx smart antenna peer %pM\n",
+		   macaddr);
+
+	return ret;
+}
+
+int
+ath11k_wmi_pdev_disable_smart_ant(struct ath11k *ar,
+				  struct ath11k_smart_ant_info *info)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_pdev_set_smart_ant_cmd *cmd;
+	struct wmi_pdev_smart_ant_gpio_handle_cmd *gpio_param;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	void *ptr;
+	int i, ret, len;
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE +
+	      WMI_SMART_ANTENNA_HAL_MAX * sizeof(*gpio_param);
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+
+	cmd = ptr;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_PDEV_SMART_ANT_ENABLE_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->pdev_id = ar->pdev->pdev_id;
+	cmd->mode = 0;
+	cmd->enable = info->enabled;
+	cmd->rx_antenna = 0;
+	cmd->tx_default_antenna = 0;
+
+	ptr = skb->data + sizeof(*cmd);
+
+	len = WMI_SMART_ANTENNA_HAL_MAX * sizeof(*gpio_param);
+
+	tlv = ptr;
+	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
+		      FIELD_PREP(WMI_TLV_LEN, len);
+	ptr += TLV_HDR_SIZE;
+	gpio_param = ptr;
+
+	for (i = 0; i < WMI_SMART_ANTENNA_HAL_MAX; i++) {
+		gpio_param->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+						    WMI_TAG_PDEV_SMART_ANT_GPIO_HANDLE) |
+					 FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
+
+		/* Set back the gpio pin and func values to 0 for ath11k chipsets. */
+
+		gpio_param->gpio_pin = 0;
+		gpio_param->gpio_func = 0;
+		gpio_param->pdev_id = ar->pdev->pdev_id;
+		gpio_param++;
+	}
+
+	ret = ath11k_wmi_cmd_send(wmi, skb, WMI_PDEV_SMART_ANT_ENABLE_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to send WMI_PDEV_SMART_ANT_ENABLE_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int
+ath11k_wmi_peer_set_smart_ant_node_config(struct ath11k *ar,
+					  u8 mac_addr[ETH_ALEN],
+					  struct ath11k_smart_ant_node_config_params *param)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_peer_set_smart_ant_node_config_ops_cmd *cmd;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	void *ptr;
+	int ret, len, args_tlv_len;
+	u32 *node_config_args;
+
+	args_tlv_len = TLV_HDR_SIZE + param->arg_count * sizeof(u32);
+	len = sizeof(*cmd) + args_tlv_len;
+
+	if (param->arg_count == 0) {
+		ath11k_warn(ar->ab, "Argument count is 0\n");
+		return -EINVAL;
+	}
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_peer_set_smart_ant_node_config_ops_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_PEER_SMART_ANT_SET_NODE_CONFIG_OPS_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->vdev_id = param->vdev_id;
+	cmd->args_count = param->arg_count;
+	cmd->cmd_id = param->cmd_id;
+	ether_addr_copy(cmd->mac_addr.addr, mac_addr);
+
+	ptr = skb->data + sizeof(struct wmi_peer_set_smart_ant_node_config_ops_cmd);
+
+	tlv = ptr;
+	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_UINT32) |
+		      FIELD_PREP(WMI_TLV_LEN,  param->arg_count * sizeof(u32));
+
+	ptr += TLV_HDR_SIZE;
+
+	node_config_args = (u32 *)ptr;
+
+	node_config_args = param->arg_arr;
+
+	ret = ath11k_wmi_cmd_send(wmi, skb,
+				  WMI_PEER_SMART_ANT_SET_NODE_CONFIG_OPS_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab, "failed to send WMI_PEER_SMART_ANT_SET_NODE_CONFIG_OPS CMD :%d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+		   "WMI peer smart ant set node config ops: vdev_id: %d n_args: %d\n",
+		   cmd->vdev_id, cmd->args_count);
+
+	return ret;
+}
+
+int
+ath11k_wmi_peer_set_smart_ant_train_info(struct ath11k *ar,
+					 u32 vdev_id,
+					 u8 mac_addr[ETH_ALEN],
+					 struct ath11k_smart_ant_train_info *param)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_peer_set_smart_ant_train_ant_fixed_param_cmd *cmd;
+	struct wmi_peer_set_smart_ant_train_ant_param *train_param;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	void *ptr;
+	int i, ret, len, itr = 0;
+
+	len = sizeof(*cmd) + WMI_TLV_HDR_SIZE;
+	len += WMI_SMART_MAX_RATE_SERIES *
+	       sizeof(struct wmi_peer_set_smart_ant_train_ant_param);
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+
+	cmd = ptr;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_PEER_SMART_ANT_SET_TRAIN_ANTENNA_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->vdev_id = vdev_id;
+	ether_addr_copy(cmd->macaddr.addr, mac_addr);
+	cmd->numpkts = param->numpkts;
+
+	ptr = skb->data + sizeof(*cmd);
+
+	len = WMI_SMART_MAX_RATE_SERIES *
+	      sizeof(struct wmi_peer_set_smart_ant_train_ant_param);
+
+	tlv = ptr;
+	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
+		      FIELD_PREP(WMI_TLV_LEN, len);
+	ptr += TLV_HDR_SIZE;
+
+	train_param = ptr;
+
+	for (i = 0; i < WMI_SMART_MAX_RATE_SERIES; i++) {
+		train_param->tlv_header =
+			FIELD_PREP(WMI_TLV_TAG,
+				   WMI_TAG_PEER_SMART_ANT_SET_TRAIN_ANTENNA_PARAM) |
+			FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
+		train_param->train_rate_series_lo =
+			((param->rate_array[itr] & ATH11K_SMART_ANT_MASK_RCODE) |
+			 (param->rate_array[itr] & (ATH11K_SMART_ANT_MASK_RCODE << 16)));
+		train_param->train_rate_series_hi =
+			((param->rate_array[itr + 1] & ATH11K_SMART_ANT_MASK_RCODE) |
+			 (param->rate_array[itr + 1] & (ATH11K_SMART_ANT_MASK_RCODE << 16)));
+		itr += 2;
+		train_param->train_antenna_series = param->antenna_array[i];
+		train_param->rc_flags = 0;
+		train_param++;
+	}
+
+	ret = ath11k_wmi_cmd_send(wmi, skb, WMI_PEER_SMART_ANT_SET_TRAIN_INFO_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to send WMI_PEER_SMART_ANT_SET_TRAIN_INFO_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int
+ath11k_wmi_pdev_enable_smart_ant(struct ath11k *ar,
+				 struct ath11k_smart_ant_info *info)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_pdev_set_smart_ant_cmd *cmd;
+	struct wmi_pdev_smart_ant_gpio_handle_cmd *gpio_param;
+	struct wmi_tlv *tlv;
+	struct smart_ant_enable_params *params = NULL;
+	struct sk_buff *skb;
+	void *ptr;
+	int i;
+	int ret, len;
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE +
+	      WMI_SMART_ANTENNA_HAL_MAX * sizeof(*gpio_param);
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	params = kzalloc(sizeof(struct smart_ant_enable_params),
+			 GFP_ATOMIC);
+	if (!params)
+		return -ENOMEM;
+
+	ath11k_wmi_sa_set_gpio_param(ar, params);
+
+	ptr = skb->data;
+
+	cmd = ptr;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_PDEV_SMART_ANT_ENABLE_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->pdev_id = ar->pdev->pdev_id;
+	cmd->mode = WMI_SMART_ANT_MODE_PARALLEL;
+	cmd->enable = info->enabled;
+	cmd->rx_antenna = info->default_ant;
+	cmd->tx_default_antenna = info->default_ant;
+
+	ptr = skb->data + sizeof(*cmd);
+
+	len = WMI_SMART_ANTENNA_HAL_MAX * sizeof(*gpio_param);
+
+	tlv = ptr;
+	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
+		      FIELD_PREP(WMI_TLV_LEN, len);
+	ptr += TLV_HDR_SIZE;
+
+	gpio_param = ptr;
+
+	for (i = 0; i < WMI_SMART_ANTENNA_HAL_MAX; i++) {
+		gpio_param->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+						    WMI_TAG_PDEV_SMART_ANT_GPIO_HANDLE) |
+					 FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
+		if (info->mode == WMI_SMART_ANT_MODE_SERIAL) {
+			if (i < WMI_SMART_ANT_MAX_SERIAL_ANTENNA) {
+				gpio_param->gpio_pin = params->gpio_pin[i];
+				gpio_param->gpio_func = params->gpio_func[i];
+			} else {
+				gpio_param->gpio_pin = 0;
+				gpio_param->gpio_func = 0;
+			}
+		} else if (info->mode == WMI_SMART_ANT_MODE_PARALLEL) {
+			gpio_param->gpio_pin = params->gpio_pin[i];
+			gpio_param->gpio_func = params->gpio_func[i];
+		}
+		gpio_param->pdev_id = ar->pdev->pdev_id;
+		gpio_param++;
+	}
+
+	ret = ath11k_wmi_cmd_send(wmi, skb, WMI_PDEV_SMART_ANT_ENABLE_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to send WMI_PDEV_SMART_ANT_ENABLE_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	kfree(params);
+	return ret;
 }

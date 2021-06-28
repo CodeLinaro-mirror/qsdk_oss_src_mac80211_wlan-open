@@ -1470,6 +1470,9 @@ enum  htt_ppdu_stats_usr_compln_status {
 #define HTT_USR_CMPLTN_SHORT_RETRY(_val) \
 	    FIELD_GET(HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_SHORT_RETRY_M, _val)
 
+#define HTT_STATS_NUM_SUPPORTED_BW_SMART_ANTENNA 4
+#define HTT_STATS_MAX_CHAINS 8
+
 struct htt_ppdu_stats_usr_cmpltn_cmn {
 	u8 status;
 	u8 tid_num;
@@ -1478,7 +1481,29 @@ struct htt_ppdu_stats_usr_cmpltn_cmn {
 	u32 ack_rssi;
 	u16 mpdu_tried;
 	u16 mpdu_success;
-	u32 flags; /* %HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_LONG_RETRIES*/
+	/* %HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_LONG_RETRIES
+	 * BIT [3 : 0] - long retries
+	 * BIT [7 : 4] - short_retries
+	 * BIT [8 : 8] - is_ampdu
+	 * BIT [12 : 9] - resp_type
+	 * BIT [15 : 13] - mprot_type
+	 * BIT [16 : 16] - rts_success
+	 * BIT [17 : 17] - rts_failure
+	 * BIT [18 : 18] - pream_punc_tx
+	 * BIT [31 : 19] - reserved0
+	 */
+	u32 flags;
+	u32 chain_rssi[HTT_STATS_MAX_CHAINS];
+	u32 tx_antenna_mask;
+	/* For SmartAntenna: Holds number of pending training packets during training. */
+	u16 pending_training_pkts;
+	/* BIT [0 : 0] - is_training: This flag indicates if peer is under training.
+	 * BIT [15 : 1] - reserved1:
+	 */
+	u16 is_training;
+	u32 max_rates[HTT_STATS_NUM_SUPPORTED_BW_SMART_ANTENNA];
+	u32 current_rate_per;
+	u32 sw_rts;
 } __packed;
 
 #define HTT_PPDU_STATS_ACK_BA_INFO_NUM_MPDU_M	GENMASK(8, 0)
@@ -1500,7 +1525,6 @@ struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 #define HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA    BIT(14)
 #define HTT_PPDU_STATS_USR_CMN_HDR_SW_PEERID   GENMASK(31, 16)
 #define HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL    GENMASK(15, 0)
-#define HTT_STATS_MAX_CHAINS 8
 #define HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32 4
 #define HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE HTT_STATS_MAX_CHAINS / \
 						HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32

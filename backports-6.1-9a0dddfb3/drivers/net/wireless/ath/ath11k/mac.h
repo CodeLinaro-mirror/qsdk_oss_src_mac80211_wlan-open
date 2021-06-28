@@ -143,6 +143,7 @@ int ath11k_mac_register(struct ath11k_base *ab);
 int ath11k_mac_allocate(struct ath11k_base *ab);
 int ath11k_mac_hw_ratecode_to_legacy_rate(u8 hw_rc, u8 preamble, u8 *rateidx,
 					  u16 *rate);
+int get_num_chains(u32 mask);
 u8 ath11k_mac_bitrate_to_idx(const struct ieee80211_supported_band *sband,
 			     u32 bitrate);
 u8 ath11k_mac_hw_rate_to_idx(const struct ieee80211_supported_band *sband,

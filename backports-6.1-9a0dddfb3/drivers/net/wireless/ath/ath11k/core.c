@@ -69,6 +69,12 @@ module_param(ath11k_caldata_bin_path, charp, 0644);
 MODULE_PARM_DESC(ath11k_caldata_bin_path,
 		"Caldata bin path for loading");
 
+bool ath11k_enable_smart_antenna = false;
+module_param_named(enable_smart_antenna, ath11k_enable_smart_antenna, uint,
+		   0644);
+MODULE_PARM_DESC(enable_smart_antenna, "Enable smart antenna supprot in fw");
+EXPORT_SYMBOL(ath11k_enable_smart_antenna);
+
 wait_queue_head_t ath11k_radio_prb_wq;
 EXPORT_SYMBOL(ath11k_radio_prb_wq);
 

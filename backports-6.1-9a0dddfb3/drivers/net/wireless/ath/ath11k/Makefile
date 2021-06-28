@@ -33,6 +33,7 @@ ath11k-$(CONFIG_DEV_COREDUMP) += coredump.o
 ath11k-$(CPTCFG_ATH11K_PKTLOG) += pktlog.o
 ath11k-$(CPTCFG_ATH11K_NSS_SUPPORT) += nss.o
 ath11k-$(CPTCFG_ATH11K_CFR) += cfr.o
+ath11k-$(CPTCFG_ATH11K_SMART_ANT_ALG) += smart_ant_api.o
 
 obj-$(CPTCFG_ATH11K_AHB) += ath11k_ahb.o
 ath11k_ahb-y += ahb.o

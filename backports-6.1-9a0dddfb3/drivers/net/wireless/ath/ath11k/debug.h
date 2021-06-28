@@ -32,6 +32,7 @@ enum ath11k_debug_mask {
 	ATH11K_DBG_CFR_DUMP     = 0x00020000,
 	ATH11K_DBG_PEER         = 0x00040000,
 	ATH11K_DBG_TEST         = 0x00080000,
+	ATH11K_DBG_SMART_ANT    = 0x00100000,
 };
 
 static inline const char *ath11k_dbg_str(enum ath11k_debug_mask mask)

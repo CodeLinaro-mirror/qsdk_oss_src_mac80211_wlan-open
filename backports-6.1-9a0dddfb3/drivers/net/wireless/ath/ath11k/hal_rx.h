@@ -225,6 +225,7 @@ struct hal_rx_mon_ppdu_info {
 	struct hal_rx_user_status userstats[HAL_MAX_UL_MU_USERS];
 	u8 userid;
 	u16 ampdu_id[HAL_MAX_UL_MU_USERS];
+	u32 rx_antenna;
 };
 
 #define HAL_RX_UL_OFDMA_USER_INFO_V0_W0_VALID			BIT(30)
@@ -496,10 +497,13 @@ struct hal_rx_mpdu_info {
 } __packed;
 
 #define HAL_RX_PPDU_END_DURATION	GENMASK(23, 0)
+#define HAL_RX_PPDU_END_DURATION_INFO0_RX_ANTENNA	GENMASK(23, 0)
 struct hal_rx_ppdu_end_duration {
-	__le32 rsvd0[9];
+	__le32 rsvd0[2];
 	__le32 info0;
-	__le32 rsvd1[4];
+	__le32 rsvd1[6];
+	__le32 info1;
+	__le32 rsvd2[4];
 } __packed;
 
 struct hal_rx_rxpcu_classification_overview {

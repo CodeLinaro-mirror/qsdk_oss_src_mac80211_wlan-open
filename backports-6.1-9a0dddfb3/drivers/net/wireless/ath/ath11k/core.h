@@ -38,6 +38,7 @@
 #include "rx_desc.h"
 #include "nss.h"
 #include "cfr.h"
+#include "smart_ant.h"
 
 #ifdef CONFIG_QCOM_QMI_HELPERS
 extern wait_queue_head_t ath11k_ssr_dump_wq;
@@ -681,6 +682,7 @@ struct ath11k_sta {
 	s8 chain_signal[IEEE80211_MAX_CHAINS];
 	struct ath11k_htt_tx_stats *tx_stats;
 	struct ath11k_rx_peer_stats *rx_stats;
+	struct ath11k_smart_ant_sta *smart_ant_sta;
 
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	/* protected by conf_mutex */
@@ -1008,6 +1010,8 @@ struct ath11k {
 	u8 cfr_enabled;
 	bool ani_enabled;
 	enum wmi_phy_mode cfr_phymode;
+	struct ath11k_smart_ant_info smart_ant_info;
+	u32 rx_antenna;
 };
 
 struct ath11k_band_cap {
@@ -1513,6 +1517,24 @@ enum ath11k_fw_recovery_option {
 	/* command to unlink UserPD assert from RootPD */
 	ATH11K_FW_RECOVERY_ENABLE_SSR_ONLY,
 };
+
+extern bool ath11k_enable_smart_antenna;
+
+static inline bool ath11k_smart_ant_enabled(struct ath11k *ar)
+{
+	if (!test_bit(WMI_TLV_SERVICE_SMART_ANTENNA_SW_SUPPORT,
+	    ar->ab->wmi_ab.svc_map))
+		return false;
+
+	if (!test_bit(WMI_TLV_SERVICE_SMART_ANTENNA_HW_SUPPORT,
+	    ar->ab->wmi_ab.svc_map))
+		return false;
+
+	if (!ath11k_enable_smart_antenna)
+		return false;
+
+	return true;
+}
 
 extern const struct ce_pipe_config ath11k_target_ce_config_wlan_ipq8074[];
 extern const struct service_to_pipe ath11k_target_service_to_ce_map_wlan_ipq8074[];

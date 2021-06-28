@@ -417,7 +417,7 @@ int ath11k_mac_hw_ratecode_to_legacy_rate(u8 hw_rc, u8 preamble, u8 *rateidx,
 	return -EINVAL;
 }
 
-static int get_num_chains(u32 mask)
+int get_num_chains(u32 mask)
 {
 	int num_chains = 0;
 
@@ -8311,6 +8311,8 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 			continue;
 		}
 
+		ath11k_smart_ant_disable(arvif);
+
 		ret = ath11k_mac_setup_bcn_tmpl(arvif);
 		if (ret)
 			ath11k_warn(ab, "failed to update bcn tmpl during csa: %d\n",
@@ -8945,6 +8947,21 @@ ath11k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 		}
 
 		arvif->is_started = true;
+	}
+
+	ret = ath11k_smart_ant_enable(arvif);
+	if (ret) {
+		ath11k_warn(ab, "failed to enable smart antenna algorithm %d\n",
+			    ret);
+		goto out;
+	}
+
+	ret = ath11k_smart_ant_set_default(arvif);
+	if (ret) {
+		ath11k_warn(ab, "failed to set default smart antenna configuration %d\n",
+			    ret);
+		ath11k_smart_ant_disable(arvif);
+		goto out;
 	}
 
 	if (arvif->vdev_type != WMI_VDEV_TYPE_MONITOR &&
@@ -10774,6 +10791,13 @@ static int ath11k_mac_op_sta_state(struct ieee80211_hw *hw,
 		arsta->bw = ath11k_mac_ieee80211_sta_bw_to_wmi(ar, sta);
 		arsta->bw_prev = arsta->bw;
 		spin_unlock_bh(&ar->data_lock);
+
+		if (vif->type == NL80211_IFTYPE_AP &&
+		    ath11k_smart_ant_enabled(ar)) {
+			if (ath11k_smart_ant_sta_connect(ar, arvif, sta))
+				ath11k_warn(ar->ab, "Smart antenna station connect failed, disabling smart antenna for %pM\n",
+					    sta->addr);
+		}
 	} else if (old_state == IEEE80211_STA_ASSOC &&
 		   new_state == IEEE80211_STA_AUTHORIZED) {
 		spin_lock_bh(&ar->ab->base_lock);
@@ -10866,6 +10890,8 @@ static int ath11k_mac_op_sta_state(struct ieee80211_hw *hw,
 		   (vif->type == NL80211_IFTYPE_AP ||
 		    vif->type == NL80211_IFTYPE_MESH_POINT ||
 		    vif->type == NL80211_IFTYPE_ADHOC)) {
+		ath11k_smart_ant_sta_disconnect(ar, sta);
+
 		ret = ath11k_station_disassoc(ar, vif, sta);
 		if (ret)
 			ath11k_warn(ar->ab, "Failed to disassociate station: %pM\n",

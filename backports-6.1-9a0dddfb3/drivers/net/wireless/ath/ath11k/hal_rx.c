@@ -1581,9 +1581,12 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 	case HAL_RXPCU_PPDU_END_INFO: {
 		struct hal_rx_ppdu_end_duration *ppdu_rx_duration =
 			(struct hal_rx_ppdu_end_duration *)tlv_data;
+		ppdu_info->rx_antenna =
+			FIELD_GET(HAL_RX_PPDU_END_DURATION_INFO0_RX_ANTENNA,
+				  __le32_to_cpu(ppdu_rx_duration->info0));
 		ppdu_info->rx_duration =
 			FIELD_GET(HAL_RX_PPDU_END_DURATION,
-				  __le32_to_cpu(ppdu_rx_duration->info0));
+				  __le32_to_cpu(ppdu_rx_duration->info1));
 		ppdu_info->tsft = __le32_to_cpu(ppdu_rx_duration->rsvd0[1]);
 		ppdu_info->tsft = (ppdu_info->tsft << 32) |
 					__le32_to_cpu(ppdu_rx_duration->rsvd0[0]);

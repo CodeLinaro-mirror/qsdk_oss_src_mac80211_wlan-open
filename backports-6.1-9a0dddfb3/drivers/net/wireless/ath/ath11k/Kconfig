@@ -97,3 +97,10 @@ config ATH11K_CFR
 	  Enable ath11k cfr dump support
 
 	  Say Y to enable access to collect cfr data dump via debugfs.
+
+config ATH11K_SMART_ANT_ALG
+	bool "Smart antenna algorithm support"
+	depends on ATH11K
+	default y
+	---help---
+	This option enables smart antenna algorithm.
