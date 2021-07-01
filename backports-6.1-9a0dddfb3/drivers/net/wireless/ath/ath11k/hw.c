@@ -1712,6 +1712,7 @@ const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_qca6390 = {
 		ATH11K_RX_WBM_REL_RING_MASK_0,
 	},
 	.reo_status = {
+		0, 0, 0,
 		ATH11K_REO_STATUS_RING_MASK_0,
 	},
 	.rxdma2host = {
