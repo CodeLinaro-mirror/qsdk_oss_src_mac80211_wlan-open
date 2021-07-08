@@ -308,6 +308,7 @@ struct ath11k_fw_dbglog {
 	};
 };
 
+void ath11k_debugfs_wbm_tx_comp_stats(struct ath11k_vif *arvif);
 void ath11k_debug_aggr_size_config_init(struct ath11k_vif *arvif);
 void ath11k_debugfs_wmi_ctrl_stats(struct ath11k_vif *arvif);
 void ath11k_wmi_crl_path_stats_list_free(struct list_head *head);

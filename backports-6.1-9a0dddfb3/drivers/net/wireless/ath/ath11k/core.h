@@ -489,12 +489,14 @@ struct ath11k_vif {
 	struct dentry *amsdu_aggr_size;
 	struct dentry *wmi_ctrl_stat;
 	struct dentry *mac_filter;
+	struct dentry *wbm_tx_completion_stats;
 #endif /* CPTCFG_ATH11K_DEBUGFS */
 
 	struct ath11k_mgmt_frame_stats mgmt_stats;
 	/* protected by conf_mutex */
 	struct list_head mac_filters;
 	u32 mac_filter_count;
+	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 	struct arvif_nss nss;
 	struct list_head ap_vlan_arvifs;
 	/* list required by Dynamic VLAN during fw_recovery */
@@ -604,6 +606,10 @@ struct ath11k_htt_data_stats {
 	u64 ru_loc[ATH11K_COUNTER_TYPE_MAX][HAL_RX_RU_ALLOC_TYPE_MAX];
 };
 
+struct ath11k_wbm_tx_stats {
+	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
+};
+
 struct ath11k_htt_tx_stats {
 	struct ath11k_htt_data_stats stats[ATH11K_STATS_TYPE_MAX];
 	u64 tx_duration;
@@ -688,6 +694,7 @@ struct ath11k_sta {
 	bool peer_current_ps_valid;
 
 	u32 bw_prev;
+	struct ath11k_wbm_tx_stats *wbm_tx_stats;
 #ifdef CPTCFG_ATH11K_CFR
 	struct ath11k_per_peer_cfr_capture cfr_capture;
 #endif

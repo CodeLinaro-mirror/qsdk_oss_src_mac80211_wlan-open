@@ -4344,6 +4344,81 @@ void ath11k_debugfs_wmi_ctrl_stats(struct ath11k_vif *arvif)
 	init_completion(&arvif->ar->debug.wmi_ctrl_path_stats_rcvd);
 }
 
+static ssize_t ath11k_wbm_tx_comp_stats_read(struct file *file,
+					       char __user *user_buf,
+					       size_t count,
+					       loff_t *ppos)
+{
+	struct ath11k_vif *arvif = file->private_data;
+	struct ath11k *ar = arvif->ar;
+	char buf[256] = {0};
+	int len = 0;
+	char *fields[] = {[HAL_WBM_REL_HTT_TX_COMP_STATUS_OK] = "Acked pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL] = "Status ttl pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP] = "Dropped pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ] = "Reinj pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT] = "Inspect pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY] = "MEC notify pkt count"};
+	int idx;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (!arvif->is_started) {
+		len += scnprintf(buf + len, sizeof(buf) - len, "vif not started\n");
+		goto out;
+	}
+
+	len += scnprintf(buf + len, sizeof(buf) - len, "WBM tx completion stats of data pkts :\n");
+	for(idx = 0; idx <= HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY; idx++) {
+		len += scnprintf(buf + len, sizeof(buf) - len,
+				 "%-23s :  %llu\n",
+				 fields[idx],
+				 arvif->wbm_tx_comp_stats[idx]);
+	}
+
+out:
+	mutex_unlock(&ar->conf_mutex);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath11k_wbm_tx_comp_stats_write(struct file *file,
+						const char __user *user_buf,
+						size_t count, loff_t *ppos)
+{
+	struct ath11k_vif *arvif = file->private_data;
+	struct ath11k *ar = arvif->ar;
+	u8 reset;
+	int ret;
+
+	ret = kstrtou8_from_user(user_buf, count, 0, &reset);
+
+	if (ret || reset != 1)
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+	if (arvif->is_started)
+		memset(arvif->wbm_tx_comp_stats, 0, sizeof(arvif->wbm_tx_comp_stats));
+	mutex_unlock(&ar->conf_mutex);
+
+	return count;
+}
+
+static const struct file_operations fops_wbm_tx_comp_stats = {
+	.write = ath11k_wbm_tx_comp_stats_write,
+	.read = ath11k_wbm_tx_comp_stats_read,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+void ath11k_debugfs_wbm_tx_comp_stats(struct ath11k_vif *arvif)
+{
+	arvif->wbm_tx_completion_stats =
+		debugfs_create_file("wbm_tx_completion_stats",
+				    S_IRUSR | S_IWUSR, arvif->vif->debugfs_dir,
+				    arvif, &fops_wbm_tx_comp_stats);
+}
+
 static ssize_t ath11k_write_ampdu_aggr_size(struct file *file,
 					    const char __user *ubuf,
 					    size_t count, loff_t *ppos)

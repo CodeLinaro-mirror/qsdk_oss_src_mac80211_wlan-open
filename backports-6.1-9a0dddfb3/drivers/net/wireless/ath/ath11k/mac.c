@@ -7503,6 +7503,7 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 	}
 
 	ath11k_debugfs_dbg_mac_filter(arvif);
+	ath11k_debugfs_wbm_tx_comp_stats(arvif);
 
 	switch (vif->type) {
 	case NL80211_IFTYPE_UNSPECIFIED:
@@ -7885,6 +7886,10 @@ static void ath11k_mac_op_configure_filter(struct ieee80211_hw *hw,
 	/* Remove the mac filter file */
 	debugfs_remove(arvif->mac_filter);
 	arvif->mac_filter = NULL;
+
+	/* Remove the wbm tx compl stats file */
+	debugfs_remove(arvif->wbm_tx_completion_stats);
+	arvif->wbm_tx_completion_stats = NULL;
 
 unlock:
 	mutex_unlock(&ar->conf_mutex);
@@ -10535,6 +10540,11 @@ static int ath11k_mac_station_add(struct ath11k *ar,
 			ret = -ENOMEM;
 			goto free_peer;
 		}
+		arsta->wbm_tx_stats = kzalloc(sizeof(*arsta->wbm_tx_stats), GFP_KERNEL);
+		if(!arsta->wbm_tx_stats) {
+			ret = -ENOMEM;
+			goto free_peer;
+		}
 	}
 
 	if (ieee80211_vif_is_mesh(vif)) {
@@ -10574,6 +10584,8 @@ static int ath11k_mac_station_add(struct ath11k *ar,
 free_tx_stats:
 	kfree(arsta->tx_stats);
 	arsta->tx_stats = NULL;
+	kfree(arsta->wbm_tx_stats);
+	arsta->wbm_tx_stats = NULL;
 free_peer:
 	ath11k_peer_delete(ar, arvif->vdev_id, sta->addr);
 free_rx_stats:
@@ -10824,6 +10836,8 @@ static int ath11k_mac_op_sta_state(struct ieee80211_hw *hw,
 				    sta->addr);
 	}
 
+	kfree(arsta->wbm_tx_stats);
+	arsta->wbm_tx_stats = NULL;
 	ret = ath11k_mac_ap_ps_recalc(ar);
 	if (ret)
 		ath11k_warn(ar->ab, "failed to set ap ps ret %d\n", ret);

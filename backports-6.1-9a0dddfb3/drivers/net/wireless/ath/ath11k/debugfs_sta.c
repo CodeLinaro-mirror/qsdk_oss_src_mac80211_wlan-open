@@ -222,6 +222,13 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 	const int size = 2 * 4096;
 	char *buf, mu_group_id[MAX_MU_GROUP_LENGTH] = {0};
 	u32 index;
+	char *fields[] = {[HAL_WBM_REL_HTT_TX_COMP_STATUS_OK] = "Acked pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL] = "Status ttl pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP] = "Dropped pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ] = "Reinj pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT] = "Inspect pkt count",
+			  [HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY] = "MEC notify pkt count"};
+	int idx;
 
 	buf = kzalloc(size, GFP_KERNEL);
 	if (!buf)
@@ -231,7 +238,7 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 
 	spin_lock_bh(&ar->data_lock);
 
-	if (!arsta->tx_stats) {
+	if (!arsta->tx_stats || !arsta->wbm_tx_stats) {
 		retval = -ENOENT;
 		goto end;
 	}
@@ -358,7 +365,15 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 	len += scnprintf(buf + len, size - len,
 			"BA fails\n %llu\n", arsta->tx_stats->ba_fails);
 	len += scnprintf(buf + len, size - len,
-			"ack fails\n %llu\n", arsta->tx_stats->ack_fails);
+			"ack fails\n %llu\n\n", arsta->tx_stats->ack_fails);
+
+	len += scnprintf(buf + len, size - len, "WBM tx completion stats of data pkts :\n");
+	for (idx = 0; idx <= HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY; idx++) {
+		len += scnprintf(buf + len, size - len,
+				 "%-23s :  %llu\n",
+				 fields[idx],
+				 arsta->wbm_tx_stats->wbm_tx_comp_stats[idx]);
+	}
 
 	spin_unlock_bh(&ar->data_lock);
 
@@ -1185,7 +1200,7 @@ static ssize_t ath11k_dbg_sta_reset_tx_stats(struct file *file,
 
 	spin_lock_bh(&ar->ab->base_lock);
 
-	if (!arsta->tx_stats) {
+	if (!arsta->tx_stats || !arsta->wbm_tx_stats) {
 		spin_unlock_bh(&ar->ab->base_lock);
 		return -ENOENT;
 	}
@@ -1193,6 +1208,7 @@ static ssize_t ath11k_dbg_sta_reset_tx_stats(struct file *file,
 	memset(arsta->tx_stats, 0, sizeof(*arsta->tx_stats));
 	atomic_set(&arsta->drv_tx_pkts.pkts_in, 0);
 	atomic_set(&arsta->drv_tx_pkts.pkts_out, 0);
+	memset(arsta->wbm_tx_stats->wbm_tx_comp_stats, 0, sizeof(*arsta->wbm_tx_stats));
 	spin_unlock_bh(&ar->ab->base_lock);
 
 	ret = count;
@@ -1458,4 +1474,5 @@ void ath11k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		debugfs_create_file("cfr_capture", 0400, dir, sta,
 				    &fops_peer_cfr_capture);
 #endif/* CPTCFG_ATH11K_CFR */
+
 }

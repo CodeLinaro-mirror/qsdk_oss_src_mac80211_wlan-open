@@ -664,7 +664,8 @@ err_out:
 
 static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 				       struct sk_buff *msdu,
-				       struct hal_tx_status *ts)
+				       struct hal_tx_status *ts,
+				       enum hal_wbm_htt_tx_comp_status wbm_status)
 {
 	struct ieee80211_tx_status status = { 0 };
 	struct ieee80211_rate_status status_rate = { 0 };
@@ -674,7 +675,8 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 	struct ath11k_peer *peer;
 	struct ath11k_sta *arsta;
 	struct rate_info rate;
-	struct ieee80211_vif *vif;
+	struct ieee80211_vif *vif = NULL;
+	struct ath11k_vif *arvif = NULL;
 	u8 flags = 0;
 
 	if (WARN_ON_ONCE(ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM)) {
@@ -712,6 +714,9 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 
 	flags = skb_cb->flags;
 	vif = skb_cb->vif;
+	arvif = (void *)vif->drv_priv;
+	if(arvif && wbm_status < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX)
+		arvif->wbm_tx_comp_stats[wbm_status]++;
 
 	info = IEEE80211_SKB_CB(msdu);
 	memset(&info->status, 0, sizeof(info->status));
@@ -781,6 +786,11 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 	status.rates = &status_rate;
 	status.n_rates = 1;
 
+	if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar))) {
+		if(arsta->wbm_tx_stats && wbm_status < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX)
+			arsta->wbm_tx_stats->wbm_tx_comp_stats[wbm_status]++;
+	}
+
 	spin_unlock_bh(&ab->base_lock);
 
 	if (flags & ATH11K_SKB_HW_80211_ENCAP)
@@ -846,6 +856,7 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 	struct hal_tx_status ts = { 0 };
 	struct dp_tx_ring *tx_ring = &dp->tx_ring[ring_id];
 	int valid_entries;
+	enum hal_wbm_htt_tx_comp_status wbm_status;
 	u32 *desc;
 	u32 msdu_id, desc_id;
 	u8 mac_id;
@@ -892,6 +903,9 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 		mac_id = FIELD_GET(DP_TX_DESC_ID_MAC_ID, desc_id);
 		msdu_id = FIELD_GET(DP_TX_DESC_ID_MSDU_ID, desc_id);
 
+		wbm_status = FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS,
+				       tx_status->info0);
+
 		if (unlikely(ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
 			ath11k_dp_tx_process_htt_tx_complete(ab,
 							     (void *)tx_status,
@@ -916,7 +930,7 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 		if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 			wake_up(&ar->dp.tx_empty_waitq);
 
-		ath11k_dp_tx_complete_msdu(ar, msdu, &ts);
+		ath11k_dp_tx_complete_msdu(ar, msdu, &ts, wbm_status);
 	}
 }
 

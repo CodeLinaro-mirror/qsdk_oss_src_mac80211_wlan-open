@@ -1654,8 +1654,7 @@ ath11k_update_per_peer_tx_stats(struct ath11k *ar,
 		peer_stats->mu_grpid = mu_grpid;
 		peer_stats->mu_pos   = mu_pos;
 		peer_stats->ru_tones = arsta->txrate.he_ru_alloc;
-
-		if (ath11k_debugfs_is_extd_tx_stats_enabled(ar))
+		if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar)))
 			ath11k_debugfs_sta_add_tx_stats(arsta, peer_stats, rate_idx);
 	}
 
