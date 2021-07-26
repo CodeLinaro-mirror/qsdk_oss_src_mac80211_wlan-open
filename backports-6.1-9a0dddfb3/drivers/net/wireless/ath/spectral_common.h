@@ -118,6 +118,7 @@ struct fft_sample_ath11k {
 	u8 chan_width_mhz;
 	s8 max_index;
 	u8 max_exp;
+	bool is_primary;
 	__be16 freq1;
 	__be16 freq2;
 	__be16 max_magnitude;
