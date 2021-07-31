@@ -46,6 +46,10 @@ extern bool ath11k_collect_dump;
 
 extern unsigned int ath11k_skip_radio;
 
+extern wait_queue_head_t ath11k_radio_prb_wq;
+extern bool dev_init_progress;
+extern struct mutex dev_init_lock;
+
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
 #define ATH11K_TX_MGMT_NUM_PENDING_MAX	512
@@ -88,6 +92,8 @@ extern bool ath11k_ftm_mode;
 #define ATH11K_RECOVER_START_TIMEOUT_HZ (20 * HZ)
 
 #define MAX_SOCS	3
+
+#define ATH11K_AHB_PROBE_SEQ_TIMEOUT   (2 * HZ)
 
 enum ath11k_supported_bw {
 	ATH11K_BW_20	= 0,

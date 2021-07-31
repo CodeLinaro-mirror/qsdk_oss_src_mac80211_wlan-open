@@ -742,6 +742,7 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	u32 soc_hw_version_major, soc_hw_version_minor, addr;
 	int ret;
 	u32 sub_version;
+	unsigned long left;
 
 	ab = ath11k_core_alloc(&pdev->dev, sizeof(*ab_pci), ATH11K_BUS_PCI);
 
@@ -760,6 +761,15 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	ab->fw_mode = ATH11K_FIRMWARE_MODE_NORMAL;
 	pci_set_drvdata(pdev, ab);
 	ab->fw_recovery_support = false;
+
+	mutex_lock(&dev_init_lock);
+	left = wait_event_timeout(ath11k_radio_prb_wq, dev_init_progress == false,
+				  ATH11K_AHB_PROBE_SEQ_TIMEOUT);
+	dev_init_progress = true;
+	if (!left)
+		ath11k_dbg(ab, ATH11K_DBG_PCI, "dev init is concurrently processing"
+			   " this may cause random phy#\n");
+	mutex_unlock(&dev_init_lock);
 
 	spin_lock_init(&ab_pci->window_lock);
 

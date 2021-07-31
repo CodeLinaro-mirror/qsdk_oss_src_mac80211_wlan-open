@@ -63,6 +63,15 @@ MODULE_PARM_DESC(skip_radio_bmap, "Bitmap to skip device probe");
 unsigned int ath11k_skip_radio;
 EXPORT_SYMBOL(ath11k_skip_radio);
 
+wait_queue_head_t ath11k_radio_prb_wq;
+EXPORT_SYMBOL(ath11k_radio_prb_wq);
+
+bool dev_init_progress = false;
+EXPORT_SYMBOL(dev_init_progress);
+
+struct mutex dev_init_lock;
+EXPORT_SYMBOL(dev_init_lock);
+
 struct ath11k_base *ath11k_soc[MAX_SOCS];
 
 static const struct ath11k_num_vdevs_peers ath11k_vdevs_peers[];
@@ -2809,6 +2818,9 @@ EXPORT_SYMBOL(ath11k_core_alloc);
 
 int ath11k_init(void)
 {
+	mutex_init(&dev_init_lock);
+	init_waitqueue_head(&ath11k_radio_prb_wq);
+
 	return ath11k_debugfs_create();
 }
 module_init(ath11k_init);

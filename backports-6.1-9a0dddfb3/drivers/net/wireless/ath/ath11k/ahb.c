@@ -1281,6 +1281,7 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 	enum ath11k_hw_rev hw_rev;
 	int ret = 0, userpd_id;
 	u32 hw_mode_id;
+	unsigned long left;
 
 	of_id = of_match_device(ath11k_ahb_of_match, &pdev->dev);
 	if (!of_id) {
@@ -1333,6 +1334,15 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 	ab->userpd_id = userpd_id;
 	ab->fw_mode = ATH11K_FIRMWARE_MODE_NORMAL;
 	ab->enable_cold_boot_cal = ath11k_cold_boot_cal;
+	mutex_lock(&dev_init_lock);
+	left = wait_event_timeout(ath11k_radio_prb_wq, dev_init_progress == false,
+				  ATH11K_AHB_PROBE_SEQ_TIMEOUT);
+	dev_init_progress = true;
+	if (!left)
+		ath11k_dbg(ab, ATH11K_DBG_AHB, "dev init is concurrently processing"
+			   " this may cause random phy#\n");
+	mutex_unlock(&dev_init_lock);
+
 	platform_set_drvdata(pdev, ab);
 
 	ret = ath11k_pcic_register_pci_ops(ab, pci_ops);

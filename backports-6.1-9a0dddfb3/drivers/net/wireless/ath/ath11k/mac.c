@@ -11801,6 +11801,8 @@ int ath11k_mac_allocate(struct ath11k_base *ab)
 			ret = -ENOMEM;
 			goto err_free_mac;
 		}
+		dev_init_progress = false;
+		wake_up(&ath11k_radio_prb_wq);
 
 		ar = hw->priv;
 		ar->hw = hw;
