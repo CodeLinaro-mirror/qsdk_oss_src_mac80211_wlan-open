@@ -7317,7 +7317,7 @@ int ath11k_wmi_pdev_suspend(struct ath11k *ar, u32 suspend_opt,
 int ath11k_wmi_pdev_resume(struct ath11k *ar, u32 pdev_id);
 
 int ath11k_wmi_send_peer_assoc_cmd(struct ath11k *ar,
-				   struct peer_assoc_params *param);
+				   struct peer_assoc_params *param, bool debug);
 int ath11k_wmi_vdev_install_key(struct ath11k *ar,
 				struct wmi_vdev_install_key_arg *arg);
 int ath11k_wmi_pdev_bss_chan_info_request(struct ath11k *ar,

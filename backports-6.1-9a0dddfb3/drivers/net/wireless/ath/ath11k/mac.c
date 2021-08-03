@@ -3093,12 +3093,17 @@ static void ath11k_peer_assoc_h_phymode(struct ath11k *ar,
 	WARN_ON(phymode == MODE_UNKNOWN);
 }
 
-static void ath11k_peer_assoc_prepare(struct ath11k *ar,
+static bool ath11k_peer_assoc_prepare(struct ath11k *ar,
 				      struct ieee80211_vif *vif,
 				      struct ieee80211_sta *sta,
 				      struct peer_assoc_params *arg,
 				      bool reassoc)
 {
+	struct ath11k_vif *arvif = (void *)vif->drv_priv;
+	struct cfg80211_chan_def def;
+	enum nl80211_band band;
+	struct cfg80211_bitrate_mask *vif_mask;
+	struct ieee80211_he_cap_elem *he_cap;
 	struct ath11k_sta *arsta;
 
 	lockdep_assert_held(&ar->conf_mutex);
@@ -3123,7 +3128,35 @@ static void ath11k_peer_assoc_prepare(struct ath11k *ar,
 
 	arsta->peer_nss = arg->peer_nss;
 
+	if (arg->he_flag && (arg->peer_phymode < MODE_11AX_HE20)) {
+
+		if (WARN_ON(ath11k_mac_vif_chan(vif, &def)))
+			return false;
+
+	        band = def.chan->band;
+		ath11k_warn(ar->ab, "Invalid phymode - peer flag combination\n"
+			    "band = %d phymode = 0x%x reassoc %d Flags he %d vht %d ht %d bw40 %d bw80 %d bw160 %d",
+			     band, arg->peer_phymode, reassoc, arg->he_flag, arg->vht_flag, arg->ht_flag,
+			     arg->bw_40, arg->bw_80, arg->bw_160);
+
+		ath11k_warn(ar->ab, "STA(%pM) Capabilities:\nhe %d vht %d ht %d bw %d",
+			    sta->addr, sta->deflink.he_cap.has_he, sta->deflink.vht_cap.vht_supported,
+			    sta->deflink.ht_cap.ht_supported, sta->deflink.bandwidth);
+		ath11k_warn(ar->ab, "ht cap = 0x%x vht cap = 0x%x", sta->deflink.ht_cap.cap, sta->deflink.vht_cap.cap);
+		he_cap = &sta->deflink.he_cap.he_cap_elem;
+		print_hex_dump(KERN_ERR, "he_cap: ", DUMP_PREFIX_ADDRESS, 16, 1,
+			       he_cap, sizeof(struct ieee80211_he_cap_elem), false);
+
+		vif_mask = &arvif->bitrate_mask;
+		ath11k_warn(ar->ab, "arvif bit rate masked: he %d vht %d ht %d",
+			    ath11k_peer_assoc_h_he_masked(vif_mask->control[band].he_mcs),
+			    ath11k_peer_assoc_h_he_masked(vif_mask->control[band].vht_mcs),
+			    ath11k_peer_assoc_h_he_masked(vif_mask->control[band].ht_mcs));
+		WARN_ON_ONCE(1);
+		return true;
+	}
 	/* TODO: amsdu_disable req? */
+	return false;
 }
 
 static int ath11k_setup_peer_smps(struct ath11k *ar, struct ath11k_vif *arvif,
@@ -3274,6 +3307,7 @@ static void ath11k_bss_assoc(struct ieee80211_hw *hw,
 	bool is_auth = false;
 	struct ieee80211_sta_he_cap  he_cap;
 	int ret;
+	bool debug;
 
 	lockdep_assert_held(&ar->conf_mutex);
 
@@ -3293,7 +3327,7 @@ static void ath11k_bss_assoc(struct ieee80211_hw *hw,
 	/* he_cap here is updated at assoc success for sta mode only */
 	he_cap  = ap_sta->deflink.he_cap;
 
-	ath11k_peer_assoc_prepare(ar, vif, ap_sta, &peer_arg, false);
+	debug = ath11k_peer_assoc_prepare(ar, vif, ap_sta, &peer_arg, false);
 
 	rcu_read_unlock();
 
@@ -3305,7 +3339,7 @@ static void ath11k_bss_assoc(struct ieee80211_hw *hw,
 
 	peer_arg.is_assoc = true;
 
-	ret = ath11k_wmi_send_peer_assoc_cmd(ar, &peer_arg);
+	ret = ath11k_wmi_send_peer_assoc_cmd(ar, &peer_arg, debug);
 	if (ret) {
 		ath11k_warn(ar->ab, "failed to run peer assoc for %pM vdev %i: %d\n",
 			    bss_conf->bssid, arvif->vdev_id, ret);
@@ -5107,7 +5141,7 @@ static int ath11k_station_assoc(struct ath11k *ar,
 	enum nl80211_band band;
 	struct cfg80211_bitrate_mask *mask;
 	u8 num_ht_rates, num_vht_rates, num_he_rates;
-	bool peer_dbg_info;
+	bool peer_dbg_info, debug;
 
 	lockdep_assert_held(&ar->conf_mutex);
 
@@ -5122,10 +5156,10 @@ static int ath11k_station_assoc(struct ath11k *ar,
 	band = def.chan->band;
 	mask = &arvif->bitrate_mask;
 
-	ath11k_peer_assoc_prepare(ar, vif, sta, &peer_arg, reassoc);
+	debug = ath11k_peer_assoc_prepare(ar, vif, sta, &peer_arg, reassoc);
 
 	peer_arg.is_assoc = true;
-	ret = ath11k_wmi_send_peer_assoc_cmd(ar, &peer_arg);
+	ret = ath11k_wmi_send_peer_assoc_cmd(ar, &peer_arg, debug);
 	if (ret) {
 		ath11k_warn(ar->ab, "failed to run peer assoc for STA %pM vdev %i: %d\n",
 			    sta->addr, arvif->vdev_id, ret);
@@ -5253,7 +5287,7 @@ static void ath11k_sta_rc_update_wk(struct work_struct *wk)
 	const struct cfg80211_bitrate_mask *mask;
 	struct peer_assoc_params peer_arg;
 	enum wmi_phy_mode peer_phymode;
-	bool peer_dbg_info;
+	bool peer_dbg_info, debug;
 
 	arsta = container_of(wk, struct ath11k_sta, update_wk);
 	sta = container_of((void *)arsta, struct ieee80211_sta, drv_priv);
@@ -5420,11 +5454,11 @@ static void ath11k_sta_rc_update_wk(struct work_struct *wk)
 					    "failed to disable peer fixed rate for sta %pM: %d\n",
 					    sta->addr, err);
 
-			ath11k_peer_assoc_prepare(ar, arvif->vif, sta,
+			debug = ath11k_peer_assoc_prepare(ar, arvif->vif, sta,
 						  &peer_arg, true);
 
 			peer_arg.is_assoc = false;
-			err = ath11k_wmi_send_peer_assoc_cmd(ar, &peer_arg);
+			err = ath11k_wmi_send_peer_assoc_cmd(ar, &peer_arg, debug);
 			if (err)
 				ath11k_warn(ar->ab, "failed to run peer assoc for STA %pM vdev %i: %d\n",
 					    sta->addr, arvif->vdev_id, err);
