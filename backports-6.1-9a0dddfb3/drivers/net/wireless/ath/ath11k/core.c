@@ -2371,11 +2371,11 @@ static int ath11k_core_reconfigure_on_crash(struct ath11k_base *ab)
 	ath11k_nss_teardown(ab);
 	ab->nss.enabled = false;
 
+	ath11k_cfr_deinit(ab);
+	ath11k_spectral_deinit(ab);
 	ath11k_thermal_unregister(ab);
 	ath11k_dp_pdev_free(ab);
-	ath11k_spectral_deinit(ab);
 	ath11k_ce_cleanup_pipes(ab);
-	ath11k_cfr_deinit(ab);
 	ath11k_wmi_detach(ab);
 	ath11k_dp_pdev_reo_cleanup(ab);
 	mutex_unlock(&ab->core_lock);
