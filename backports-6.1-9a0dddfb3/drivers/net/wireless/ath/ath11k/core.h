@@ -695,6 +695,7 @@ struct ath11k_sta {
 
 	u32 bw_prev;
 	struct ath11k_wbm_tx_stats *wbm_tx_stats;
+	u8 num_spatial_strm_mask;
 #ifdef CPTCFG_ATH11K_CFR
 	struct ath11k_per_peer_cfr_capture cfr_capture;
 #endif

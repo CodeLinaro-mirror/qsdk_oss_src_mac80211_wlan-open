@@ -1021,6 +1021,65 @@ static const struct file_operations fops_peer_ps_state = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_num_spatial_strm_read(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath11k_sta *arsta = (struct ath11k_sta *)sta->drv_priv;
+	struct ath11k *ar = arsta->arvif->ar;
+	char buf[20];
+	int len = 0;
+
+	mutex_lock(&ar->conf_mutex);
+	len = scnprintf(buf, sizeof(buf) - len, "%d\n",
+			arsta->num_spatial_strm_mask);
+	mutex_unlock(&ar->conf_mutex);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath11k_num_spatial_strm_write(struct file *file,
+					     const char __user *buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath11k_sta *arsta = (struct ath11k_sta *)sta->drv_priv;
+	struct ath11k *ar = arsta->arvif->ar;
+	int ret;
+	u8 num_spatial_strm_mask;
+
+	ret = kstrtou8_from_user(buf, count, 0, &num_spatial_strm_mask);
+	if (ret || num_spatial_strm_mask > GENMASK(sta->deflink.rx_nss - 1, 0))
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+	if(arsta->num_spatial_strm_mask == num_spatial_strm_mask) {
+		ret = count;
+		goto out;
+	}
+	ret = ath11k_wmi_set_peer_param(ar, sta->addr, arsta->arvif->vdev_id,
+					WMI_PEER_PARAM_DYN_NSS_EN_MASK, num_spatial_strm_mask);
+	if(ret) {
+		ath11k_warn(ar->ab, "failed to send nss mask STA %pM vdev_id : %d nss_mask : %d",
+			    sta->addr, arsta->arvif->vdev_id, num_spatial_strm_mask);
+		goto out;
+	}
+	arsta->num_spatial_strm_mask = num_spatial_strm_mask;
+	ret = count;
+out:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static const struct file_operations fops_config_num_spatial_strm = {
+	.open = simple_open,
+	.read = ath11k_num_spatial_strm_read,
+	.write = ath11k_num_spatial_strm_write,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath11k_dbg_sta_read_current_ps_duration(struct file *file,
 						       char __user *user_buf,
 						       size_t count,
@@ -1475,4 +1534,8 @@ void ath11k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 				    &fops_peer_cfr_capture);
 #endif/* CPTCFG_ATH11K_CFR */
 
+	if(test_bit(WMI_TLV_SERVICE_DYN_NSS_MASK_SUPPORT,
+		    ar->ab->wmi_ab.svc_map))
+		debugfs_create_file("config_nss", 0600, dir, sta,
+				    &fops_config_num_spatial_strm);
 }
