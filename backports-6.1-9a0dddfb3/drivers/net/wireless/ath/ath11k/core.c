@@ -447,12 +447,12 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.cfr_support = true,
 		.cfr_dma_hdr_size = sizeof(struct ath11k_cfir_enh_dma_hdr),
 		.cfr_num_stream_bufs = 255,
+		.cfr_max_header_len_words = 50,
+		.cfr_max_data_len = 16384,
 		/* sizeof (ath11k_csi_cfr_header) + max cfr header(200 bytes)
 		 * max cfr payload(16384 bytes)
 		 */
-		.cfr_stream_buf_size = sizeof(struct ath11k_csi_cfr_header) +
-					(CFR_HDR_MAX_LEN_WORDS_QCN9074 *4) +
-					CFR_DATA_MAX_LEN_QCN9074,
+		.cfr_stream_buf_size = 16716,
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 		.reo_status_poll = false,
@@ -994,15 +994,19 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.support_dual_stations = true,
 		.pdev_suspend = false,
 		.is_qdss_support = false,
-		.cfr_support = true,
-		.cfr_dma_hdr_size = sizeof(struct ath11k_cfir_dma_hdr),
-		.cfr_num_stream_bufs = 255,
-		/* csi_cfr_header + cfr header + max cfr payload */
-		.cfr_stream_buf_size = 8500,
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
 		.max_tx_ring = DP_TCL_NUM_RING_MAX,
 		.reo_status_poll = false,
 		.num_vdevs_peers = ath11k_vdevs_peers_ipq5018,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath11k_cfir_dma_hdr),
+		.cfr_num_stream_bufs = 255,
+		.cfr_max_header_len_words = 16,
+		.cfr_max_data_len = 4096,
+		/* sizeof (ath11k_csi_cfr_header) + cfr uCode header(64 bytes) +
+		 * max cfr payload(4096 bytes)
+		 */
+		.cfr_stream_buf_size = 4292,
 	},
 	{
 		.hw_rev = ATH11K_HW_QCN6122,
@@ -1077,6 +1081,15 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.max_tx_ring = DP_TCL_NUM_RING_MAX,
 		.reo_status_poll = false,
 		.num_vdevs_peers = ath11k_vdevs_peers_ipq5018,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath11k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 255,
+		.cfr_max_header_len_words = 16,
+		.cfr_max_data_len = 16384,
+		/* sizeof (ath11k_csi_cfr_header) + cfr uCode header(64 bytes) +
+		 * cfr payload(16384 bytes)
+		*/
+		.cfr_stream_buf_size = 16580,
  	},
 };
 

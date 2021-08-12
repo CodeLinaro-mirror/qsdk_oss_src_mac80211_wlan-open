@@ -270,6 +270,8 @@ struct ath11k_hw_params {
 	bool cfr_support;
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
+	u32 cfr_max_header_len_words;
+	u32 cfr_max_data_len;
 	u32 cfr_stream_buf_size;
 	bool reo_status_poll;
 	const struct ath11k_num_vdevs_peers *num_vdevs_peers;

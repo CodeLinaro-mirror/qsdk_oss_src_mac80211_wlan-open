@@ -190,10 +190,11 @@ static int ath11k_cfr_correlate_and_relay(struct ath11k *ar,
 					   "dbr event -> txrx event delay = %u ms",
 					   jiffies_to_msecs(diff));
 			}
-
-			if (ar->ab->hw_rev == ATH11K_HW_QCN9074_HW10) {
-				if (lut->header_length > CFR_HDR_MAX_LEN_WORDS_QCN9074 ||
-				    lut->payload_length > CFR_DATA_MAX_LEN_QCN9074) {
+			 /* Skip for IPQ8074, since its header length and data
+			    length are calculated in host itself */
+			if (ar->ab->hw_rev != ATH11K_HW_IPQ8074) {
+				if (lut->header_length > ar->ab->hw_params.cfr_max_header_len_words ||
+				    lut->payload_length > ar->ab->hw_params.cfr_max_data_len) {
 					cfr->invalid_dma_length_cnt++;
 					ath11k_dbg(ar->ab, ATH11K_DBG_CFR,
 						   "Invalid hdr/payload len hdr %u payload %u\n",
@@ -202,7 +203,6 @@ static int ath11k_cfr_correlate_and_relay(struct ath11k *ar,
 					return ATH11K_CORRELATE_STATUS_ERR;
 				}
 			}
-
 			ath11k_cfr_free_pending_dbr_events(ar);
 
 			cfr->release_cnt++;
@@ -652,7 +652,7 @@ static ssize_t ath11k_write_file_enable_cfr(struct file *file,
 	u8 enable_cfr;
 	int ret;
 
-	if (kstrtouint_from_user(ubuf, count, 0, &enable_cfr))
+	if (kstrtou8_from_user(ubuf, count, 0, &enable_cfr))
 		return -EINVAL;
 
 	mutex_lock(&ar->conf_mutex);
