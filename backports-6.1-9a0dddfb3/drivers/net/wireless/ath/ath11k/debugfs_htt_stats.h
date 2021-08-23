@@ -111,6 +111,7 @@ enum htt_tlv_tag_t {
 	HTT_STATS_RX_PDEV_UL_MIMO_USER_STATS_TAG            = 96,
 	HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_STATS_TAG          = 97,
 	HTT_STATS_RX_FSE_STATS_TAG                          = 98,
+	HTT_STATS_PEER_SCHED_STATS_TAG						= 99,
 	HTT_STATS_SCHED_TXQ_SUPERCYCLE_TRIGGER_TAG	    = 100,
 	HTT_STATS_PEER_CTRL_PATH_TXRX_STATS_TAG		    = 101,
 	HTT_STATS_PDEV_CTRL_PATH_TX_STATS_TAG		    = 102,
@@ -215,6 +216,27 @@ struct htt_tx_pdev_stats_cmn_tlv {
 
 	u32 tx_active_dur_us_low;
 	u32 tx_active_dur_us_high;
+	u32 remove_mpdus_max_retries;
+	u32 comp_delivered;
+	u32 ppdu_ok;
+	u32 self_triggers;
+	u32 tx_time_dur_data;
+	u32 seq_qdepth_repost_stop;
+	u32 mu_seq_min_msdu_repost_stop;
+	u32 seq_min_msdu_repost_stop;
+	u32 seq_txop_repost_stop;
+	u32 next_seq_cancel;
+	u32 fes_offsets_err_cnt;
+	u32 num_mu_peer_blacklisted;
+	u32 mu_ofdma_seq_posted;
+	u32 ul_mumimo_seq_posted;
+	u32 ul_ofdma_seq_posted;
+
+	u32 thermal_suspend_cnt;
+	u32 dfs_suspend_cnt;
+	u32 tx_abort_suspend_cnt;
+	u32 tgt_specific_opaque_txq_suspend_info;
+	u32 last_suspend_reason;
 };
 
 /* NOTE: Variable length TLV, use length spec to infer array size */
@@ -302,6 +324,33 @@ struct htt_hw_stats_pdev_errs_tlv {
 	u32    tx_glb_reset;
 	u32    tx_txq_reset;
 	u32    rx_timeout_reset;
+	u32    mac_cold_reset_restore_cal;
+	u32    mac_cold_reset;
+	u32    mac_warm_reset;
+	u32    mac_only_reset;
+	u32    phy_warm_reset;
+	u32    phy_warm_reset_ucode_trig;
+	u32    mac_warm_reset_restore_cal;
+	u32    mac_sfm_reset;
+	u32    phy_warm_reset_m3_ssr;
+	u32    phy_warm_reset_reason_phy_m3;
+	u32    phy_warm_reset_reason_tx_hw_stuck;
+	u32    phy_warm_reset_reason_num_cca_rx_frame_stuck;
+	u32    phy_warm_reset_reason_wal_rx_recovery_rst_rx_busy;
+	u32    phy_warm_reset_reason_wal_rx_recovery_rst_mac_hang;
+	u32    phy_warm_reset_reason_mac_reset_converted_phy_reset;
+	u32    wal_rx_recovery_rst_mac_hang_count;
+	u32    wal_rx_recovery_rst_known_sig_count;
+	u32    wal_rx_recovery_rst_no_rx_count;
+	u32    wal_rx_recovery_rst_no_rx_consecutive_count;
+	u32    wal_rx_recovery_rst_rx_busy_count;
+	u32    wal_rx_recovery_rst_phy_mac_hang_count;
+	u32    rx_flush_cnt;
+	u32    phy_warm_reset_reason_tx_lifetime_expiry_cca_stuck;
+	u32    phy_warm_reset_reason_tx_consecutive_flush9_war;
+	u32    phy_warm_reset_reason_tx_hwsch_reset_war;
+	u32    phy_warm_reset_reason_hwsch_wdog_or_cca_wdog_war;
+	u32    fw_rx_rings_reset;
 };
 
 struct htt_hw_stats_whal_tx_tlv {
@@ -431,6 +480,7 @@ struct htt_peer_stats_cmn_tlv {
 	u32 ppdu_transmitted_bytes_high;
 	u32 peer_ttl_removed_count;
 	u32 inactive_time;
+	u32 remove_mpdus_max_retries;
 };
 
 #define HTT_PEER_DETAILS_VDEV_ID	GENMASK(7, 0)
@@ -459,6 +509,7 @@ enum htt_stats_param_type {
 };
 
 #define HTT_TX_PEER_STATS_NUM_MCS_COUNTERS        12
+#define HTT_TX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS   2
 #define HTT_TX_PEER_STATS_NUM_GI_COUNTERS          4
 #define HTT_TX_PEER_STATS_NUM_DCM_COUNTERS         5
 /* HTT_TX_PEER_STATS_NUM_BW_COUNTERS:
@@ -468,6 +519,8 @@ enum htt_stats_param_type {
   * bw index 3: rssi_ext40_high20_chain0
   */
 #define HTT_TX_PEER_STATS_NUM_BW_COUNTERS          4
+#define HTT_RX_PEER_STATS_NUM_BW_EXT_COUNTERS      4
+#define HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS      4
 #define HTT_TX_PEER_STATS_NUM_SPATIAL_STREAMS      8
 #define HTT_TX_PEER_STATS_NUM_PREAMBLE_TYPES       HTT_STATS_PREAM_COUNT
 
@@ -497,6 +550,7 @@ struct htt_tx_peer_rate_stats_tlv {
 };
 
 #define HTT_RX_PEER_STATS_NUM_MCS_COUNTERS        12
+#define HTT_RX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS   2
 #define HTT_RX_PEER_STATS_NUM_GI_COUNTERS          4
 #define HTT_RX_PEER_STATS_NUM_DCM_COUNTERS         5
 #define HTT_RX_PEER_STATS_NUM_BW_COUNTERS          4
@@ -529,6 +583,27 @@ struct htt_rx_peer_rate_stats_tlv {
 	/* Counters to track number of rx packets in each GI in each mcs (0-11) */
 	u32 rx_gi[HTT_RX_PEER_STATS_NUM_GI_COUNTERS]
 		 [HTT_RX_PEER_STATS_NUM_MCS_COUNTERS];
+	u32 rx_ulofdma_non_data_ppdu;
+	u32 rx_ulofdma_data_ppdu;
+	u32 rx_ulofdma_mpdu_ok;
+	u32 rx_ulofdma_mpdu_fail;
+	s8  rx_ul_fd_rssi[HTT_RX_PEER_STATS_NUM_SPATIAL_STREAMS];
+
+	u32 per_chain_rssi_pkt_type;
+	s8  rx_per_chain_rssi_in_dbm[HTT_RX_PEER_STATS_NUM_SPATIAL_STREAMS]
+				    [HTT_RX_PEER_STATS_NUM_BW_COUNTERS];
+	u32 rx_ulmumimo_non_data_ppdu;
+	u32 rx_ulmumimo_data_ppdu;
+	u32 rx_ulmumimo_mpdu_ok;
+	u32 rx_ulmumimo_mpdu_fail;
+	u8  rssi_chain_ext[HTT_RX_PEER_STATS_NUM_SPATIAL_STREAMS]
+			  [HTT_RX_PEER_STATS_NUM_BW_EXT_COUNTERS];
+
+	/* Stats for MCS 12/13 */
+	u32 rx_mcs_ext[HTT_RX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS];
+	u32 rx_stbc_ext[HTT_RX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS];
+	u32 rx_gi_ext[HTT_RX_PEER_STATS_NUM_GI_COUNTERS]
+		     [HTT_RX_PEER_STATS_NUM_EXTRA_MCS_COUNTERS];
 };
 
 enum htt_peer_stats_req_mode {
@@ -545,6 +620,7 @@ enum htt_peer_stats_tlv_enum {
 	HTT_TX_TID_STATS_TLV         = 4,
 	HTT_RX_TID_STATS_TLV         = 5,
 	HTT_MSDU_FLOW_STATS_TLV      = 6,
+	HTT_PEER_SCHED_STATS_TLV     = 7,
 
 	HTT_PEER_STATS_MAX_TLV       = 31,
 };
@@ -665,6 +741,11 @@ struct htt_tx_hwq_txop_used_cnt_hist_tlv_v {
 };
 
 /* == TX SELFGEN STATS == */
+#define HTT_TX_PDEV_STATS_NUM_AC_MUMIMO_USER_STATS    4
+#define HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS    8
+#define HTT_TX_PDEV_STATS_NUM_OFDMA_USER_STATS       74
+#define HTT_TX_PDEV_STATS_NUM_UL_MUMIMO_USER_STATS    8
+
 struct htt_tx_selfgen_cmn_stats_tlv {
 	u32 mac_id__word;
 	u32 su_bar;
@@ -678,6 +759,13 @@ struct htt_tx_selfgen_cmn_stats_tlv {
 	u32 delayed_bar_5; /* MU user 5 */
 	u32 delayed_bar_6; /* MU user 6 */
 	u32 delayed_bar_7; /* MU user 7 */
+	u32 bar_with_tqm_head_seq_num;
+	u32 bar_with_tid_seq_num;
+	u32 su_sw_rts_queued;
+	u32 su_sw_rts_tried;
+	u32 su_sw_rts_err;
+	u32 su_sw_rts_flushed;
+	u32 su_sw_rts_rcvd_cts_diff_bw;
 };
 
 struct htt_tx_selfgen_ac_stats_tlv {
@@ -686,9 +774,16 @@ struct htt_tx_selfgen_ac_stats_tlv {
 	u32 ac_su_ndp;
 	u32 ac_mu_mimo_ndpa;
 	u32 ac_mu_mimo_ndp;
-	u32 ac_mu_mimo_brpoll_1; /* MU user 1 */
-	u32 ac_mu_mimo_brpoll_2; /* MU user 2 */
-	u32 ac_mu_mimo_brpoll_3; /* MU user 3 */
+	u32 ac_mu_mimo_brpoll_1;
+	u32 ac_mu_mimo_brpoll_2;
+	u32 ac_mu_mimo_brpoll_3;
+	u32 ac_su_ndpa_queued;
+	u32 ac_su_ndp_queued;
+	u32 ac_mu_mimo_ndpa_queued;
+	u32 ac_mu_mimo_ndp_queued;
+	u32 ac_mu_mimo_brpoll_1_queued;
+	u32 ac_mu_mimo_brpoll_2_queued;
+	u32 ac_mu_mimo_brpoll_3_queued;
 };
 
 struct htt_tx_selfgen_ax_stats_tlv {
@@ -697,18 +792,30 @@ struct htt_tx_selfgen_ax_stats_tlv {
 	u32 ax_su_ndp;
 	u32 ax_mu_mimo_ndpa;
 	u32 ax_mu_mimo_ndp;
-	u32 ax_mu_mimo_brpoll_1; /* MU user 1 */
-	u32 ax_mu_mimo_brpoll_2; /* MU user 2 */
-	u32 ax_mu_mimo_brpoll_3; /* MU user 3 */
-	u32 ax_mu_mimo_brpoll_4; /* MU user 4 */
-	u32 ax_mu_mimo_brpoll_5; /* MU user 5 */
-	u32 ax_mu_mimo_brpoll_6; /* MU user 6 */
-	u32 ax_mu_mimo_brpoll_7; /* MU user 7 */
+	union {
+		struct {
+			/* deprecated old names */
+			u32 ax_mu_mimo_brpoll_1;
+			u32 ax_mu_mimo_brpoll_2;
+			u32 ax_mu_mimo_brpoll_3;
+			u32 ax_mu_mimo_brpoll_4;
+			u32 ax_mu_mimo_brpoll_5;
+			u32 ax_mu_mimo_brpoll_6;
+			u32 ax_mu_mimo_brpoll_7;
+		};
+		u32 ax_mu_mimo_brpoll[HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS - 1];
+	};
 	u32 ax_basic_trigger;
 	u32 ax_bsr_trigger;
 	u32 ax_mu_bar_trigger;
 	u32 ax_mu_rts_trigger;
 	u32 ax_ulmumimo_trigger;
+	u32 ax_su_ndpa_queued;
+	u32 ax_su_ndp_queued;
+	u32 ax_mu_mimo_ndpa_queued;
+	u32 ax_mu_mimo_ndp_queued;
+	u32 ax_mu_mimo_brpoll_queued[HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS - 1];
+	u32 ax_ul_mumimo_trigger[HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS];
 };
 
 struct htt_tx_selfgen_ac_err_stats_tlv {
@@ -720,6 +827,13 @@ struct htt_tx_selfgen_ac_err_stats_tlv {
 	u32 ac_mu_mimo_brp1_err;
 	u32 ac_mu_mimo_brp2_err;
 	u32 ac_mu_mimo_brp3_err;
+	u32 ac_su_ndp_flushed;
+	u32 ac_su_ndpa_flushed;
+	u32 ac_mu_mimo_ndpa_flushed;
+	u32 ac_mu_mimo_ndp_flushed;
+	u32 ac_mu_mimo_brp1_flushed;
+	u32 ac_mu_mimo_brp2_flushed;
+	u32 ac_mu_mimo_brp3_flushed;
 };
 
 struct htt_tx_selfgen_ax_err_stats_tlv {
@@ -728,18 +842,31 @@ struct htt_tx_selfgen_ax_err_stats_tlv {
 	u32 ax_su_ndpa_err;
 	u32 ax_mu_mimo_ndpa_err;
 	u32 ax_mu_mimo_ndp_err;
-	u32 ax_mu_mimo_brp1_err;
-	u32 ax_mu_mimo_brp2_err;
-	u32 ax_mu_mimo_brp3_err;
-	u32 ax_mu_mimo_brp4_err;
-	u32 ax_mu_mimo_brp5_err;
-	u32 ax_mu_mimo_brp6_err;
-	u32 ax_mu_mimo_brp7_err;
+	union {
+		struct {
+			/* deprecated old names */
+			u32 ax_mu_mimo_brp1_err;
+			u32 ax_mu_mimo_brp2_err;
+			u32 ax_mu_mimo_brp3_err;
+			u32 ax_mu_mimo_brp4_err;
+			u32 ax_mu_mimo_brp5_err;
+			u32 ax_mu_mimo_brp6_err;
+			u32 ax_mu_mimo_brp7_err;
+		};
+		u32 ax_mu_mimo_brp_err[HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS - 1];
+	};
 	u32 ax_basic_trigger_err;
 	u32 ax_bsr_trigger_err;
 	u32 ax_mu_bar_trigger_err;
 	u32 ax_mu_rts_trigger_err;
 	u32 ax_ulmumimo_trigger_err;
+	u32 ax_mu_mimo_brp_err_num_cbf_received[HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS];
+	u32 ax_su_ndpa_flushed;
+	u32 ax_su_ndp_flushed;
+	u32 ax_mu_mimo_ndpa_flushed;
+	u32 ax_mu_mimo_ndp_flushed;
+	u32 ax_mu_mimo_brpoll_flushed[HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS - 1];
+	u32 ax_ul_mumimo_trigger_err[HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS];
 };
 
 /* == TX MU STATS == */
@@ -898,6 +1025,14 @@ struct htt_tx_pdev_stats_sched_per_txq_tlv {
 	u32 num_tqm_sched_algo_trigger;
 	u32 notify_sched;
 	u32 dur_based_sendn_term;
+	u32 su_notify2_sched;
+	u32 su_optimal_queued_msdus_sched;
+	u32 su_delay_timeout_sched;
+	u32 su_min_txtime_sched_delay;
+	u32 su_no_delay;
+	u32 num_supercycles;
+	u32 num_subcycles_with_sort;
+	u32 num_subcycles_no_sort;
 };
 
 struct htt_stats_tx_sched_cmn_tlv {
@@ -989,6 +1124,11 @@ struct htt_tx_tqm_cmn_stats_tlv {
 	u32 q_not_empty;
 	u32 drop_notification;
 	u32 desc_threshold;
+	u32 hwsch_tqm_invalid_status;
+	u32 missed_tqm_gen_mpdus;
+	u32 tqm_active_tids;
+	u32 tqm_inactive_tids;
+	u32 tqm_active_msduq_flows;
 };
 
 struct htt_tx_tqm_error_stats_tlv {
@@ -996,6 +1136,24 @@ struct htt_tx_tqm_error_stats_tlv {
 	u32 q_empty_failure;
 	u32 q_not_empty_failure;
 	u32 add_msdu_failure;
+	/* TQM reset debug stats */
+	u32 tqm_cache_ctl_err;
+	u32 tqm_soft_reset;
+	u32 tqm_reset_total_num_in_use_link_descs;
+	u32 tqm_reset_worst_case_num_lost_link_descs;
+	u32 tqm_reset_worst_case_num_lost_host_tx_bufs_count;
+	u32 tqm_reset_num_in_use_link_descs_internal_tqm;
+	u32 tqm_reset_num_in_use_link_descs_wbm_idle_link_ring;
+	u32 tqm_reset_time_to_tqm_hang_delta_ms;
+	u32 tqm_reset_recovery_time_ms;
+	u32 tqm_reset_num_peers_hdl;
+	u32 tqm_reset_cumm_dirty_hw_mpduq_proc_cnt;
+	u32 tqm_reset_cumm_dirty_hw_msduq_proc;
+	u32 tqm_reset_flush_cache_cmd_su_cnt;
+	u32 tqm_reset_flush_cache_cmd_other_cnt;
+	u32 tqm_reset_flush_cache_cmd_trig_type;
+	u32 tqm_reset_flush_cache_cmd_trig_cfg;
+	u32 tqm_reset_flush_cache_cmd_skip_cmd_status_null;
 };
 
 /* == TQM CMDQ stats == */
@@ -1026,6 +1184,11 @@ struct htt_tx_de_eapol_packets_stats_tlv {
 	u32 m4_packets;
 	u32 g1_packets;
 	u32 g2_packets;
+	u32 rc4_packets;
+	u32 eap_packets;
+	u32 eapol_start_packets;
+	u32 eapol_logoff_packets;
+	u32 eapol_encap_asf_packets;
 };
 
 struct htt_tx_de_classify_failed_stats_tlv {
@@ -1042,6 +1205,12 @@ struct htt_tx_de_classify_failed_stats_tlv {
 	u32 fse_tid_override;
 	u32 ipv6_jumbogram_zero_length;
 	u32 qos_to_non_qos_in_prog;
+	u32 ap_bcast_mcast_eapol;
+	u32 unicast_on_ap_bss_peer;
+	u32 ap_vdev_invalid;
+	u32 incomplete_llc;
+	u32 eapol_duplicate_m3;
+	u32 eapol_duplicate_m4;
 };
 
 struct htt_tx_de_classify_stats_tlv {
@@ -1141,6 +1310,9 @@ struct htt_tx_de_cmn_stats_tlv {
 	u32   tcl_res_invalid_addrx;
 	u32   wbm2fw_entry_count;
 	u32   invalid_pdev;
+	u32   tcl_res_addrx_timeout;
+	u32   invalid_vdev;
+	u32   invalid_tcl_exp_frame_desc;
 };
 
 /* == RING-IF STATS == */
@@ -1250,6 +1422,8 @@ struct htt_sring_cmn_tlv {
 
 /* == PDEV TX RATE CTRL STATS == */
 #define HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS        12
+#define HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS   2
+#define HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS  2
 #define HTT_TX_PDEV_STATS_NUM_GI_COUNTERS          4
 #define HTT_TX_PDEV_STATS_NUM_DCM_COUNTERS         5
 #define HTT_TX_PDEV_STATS_NUM_BW_COUNTERS          4
@@ -1258,10 +1432,20 @@ struct htt_sring_cmn_tlv {
 #define HTT_TX_PDEV_STATS_NUM_LEGACY_CCK_STATS     4
 #define HTT_TX_PDEV_STATS_NUM_LEGACY_OFDM_STATS    8
 #define HTT_TX_PDEV_STATS_NUM_LTF                  4
+#define HTT_TX_PDEV_STATS_NUM_11AX_TRIGGER_TYPES   6
 
 #define HTT_TX_NUM_OF_SOUNDING_STATS_WORDS \
 	(HTT_TX_PDEV_STATS_NUM_BW_COUNTERS * \
 	 HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS)
+
+enum HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_TYPE {
+	HTT_TX_PDEV_STATS_PUNCTURED_NONE = 0,
+	HTT_TX_PDEV_STATS_PUNCTURED_20 = 1,
+	HTT_TX_PDEV_STATS_PUNCTURED_40 = 2,
+	HTT_TX_PDEV_STATS_PUNCTURED_80 = 3,
+	HTT_TX_PDEV_STATS_PUNCTURED_120 = 4,
+	HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS = 5
+};
 
 struct htt_tx_pdev_rate_stats_tlv {
 	u32 mac_id__word;
@@ -1336,25 +1520,52 @@ struct htt_tx_pdev_rate_stats_tlv {
 			    [HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS];
 	u32 ofdma_tx_gi[HTT_TX_PDEV_STATS_NUM_GI_COUNTERS]
 		       [HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS];
+	u32 trigger_type_11ax[HTT_TX_PDEV_STATS_NUM_11AX_TRIGGER_TYPES];
+	u32 tx_11ax_su_ext;
+
+	/* Stats for MCS 12/13 */
+	u32 tx_mcs_ext[HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+	u32 tx_stbc_ext[HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+	u32 tx_gi_ext[HTT_TX_PDEV_STATS_NUM_GI_COUNTERS]
+		     [HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+	u32 ax_mu_mimo_tx_mcs_ext[HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+	u32 ofdma_tx_mcs_ext[HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+	u32 ax_mu_mimo_tx_gi_ext[HTT_TX_PDEV_STATS_NUM_GI_COUNTERS]
+				[HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+	u32 ofdma_tx_gi_ext[HTT_TX_PDEV_STATS_NUM_GI_COUNTERS]
+			   [HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+
+	/* Stats for MCS 14/15 */
+	u32 tx_mcs_ext_2[HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS];
+	u32 tx_bw_320mhz;
+	u32 tx_gi_ext_2[HTT_TX_PDEV_STATS_NUM_GI_COUNTERS]
+		       [HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS];
+	u32 tx_su_punctured_mode[HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
 };
 
 /* == PDEV RX RATE CTRL STATS == */
-#define HTT_RX_PDEV_STATS_NUM_LEGACY_CCK_STATS     4
-#define HTT_RX_PDEV_STATS_NUM_LEGACY_OFDM_STATS    8
-#define HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS        12
-#define HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS	   2
-#define HTT_RX_PDEV_STATS_NUM_GI_COUNTERS          4
-#define HTT_RX_PDEV_STATS_NUM_DCM_COUNTERS         5
-#define HTT_RX_PDEV_STATS_NUM_BW_COUNTERS          4
-#define HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS      8
-#define HTT_RX_PDEV_STATS_ULNUM_SPATIAL_STREAMS	   8
-#define HTT_RX_PDEV_STATS_NUM_PREAMBLE_TYPES       HTT_STATS_PREAM_COUNT
-#define HTT_RX_PDEV_MAX_OFDMA_NUM_USER             8
-#define HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER	   8
-#define HTT_RX_PDEV_STATS_RXEVM_MAX_PILOTS_PER_NSS 16
-#define HTT_RX_PDEV_STATS_NUM_RU_SIZE_160MHZ_CNTRS 7
-#define HTT_RX_PDEV_STATS_NUM_RU_SIZE_COUNTERS     6
-#define HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER          8
+#define HTT_RX_PDEV_STATS_NUM_LEGACY_CCK_STATS         4
+#define HTT_RX_PDEV_STATS_NUM_LEGACY_OFDM_STATS        8
+#define HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS            12
+#define HTT_RX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS       2
+#define HTT_RX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS      2
+#define HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT        14
+#define HTT_RX_PDEV_STATS_NUM_GI_COUNTERS              4
+#define HTT_RX_PDEV_STATS_NUM_DCM_COUNTERS             5
+#define HTT_RX_PDEV_STATS_NUM_BW_COUNTERS              4
+#define HTT_RX_PDEV_STATS_TOTAL_BW_COUNTERS \
+	(HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS + HTT_RX_PDEV_STATS_NUM_BW_COUNTERS)
+#define HTT_RX_PDEV_STATS_NUM_BW_EXT2_COUNTERS         5
+#define HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS          8
+#define HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS 8
+#define HTT_RX_PDEV_STATS_NUM_PREAMBLE_TYPES           HTT_STATS_PREAM_COUNT
+#define HTT_RX_PDEV_MAX_OFDMA_NUM_USER                 8
+#define HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER              8
+#define HTT_RX_PDEV_STATS_RXEVM_MAX_PILOTS_PER_NSS    16
+#define HTT_RX_PDEV_STATS_NUM_RU_SIZE_160MHZ_CNTRS     7
+#define HTT_RX_PDEV_STATS_NUM_RU_SIZE_COUNTERS         6
+#define HTT_RX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES       2
+
 
 struct htt_rx_pdev_rate_stats_tlv {
 	u32 mac_id__word;
@@ -1872,6 +2083,8 @@ struct htt_rx_pdev_ul_ofdma_user_stats_tlv {
 	u32 rx_ulofdma_data_nusers;
 };
 
+#define HTT_RX_UL_MAX_UPLINK_RSSI_TRACK 5
+
 struct htt_rx_pdev_ul_trigger_stats_tlv {
 	u32 mac_id__word;
 	u32 rx_11ax_ul_ofdma;
@@ -1884,9 +2097,13 @@ struct htt_rx_pdev_ul_trigger_stats_tlv {
 	u32 ul_ofdma_rx_ldpc;
 	u32 rx_ulofdma_data_ru_size_ppdu[HTT_RX_PDEV_STATS_NUM_RU_SIZE_160MHZ_CNTRS];
 	u32 rx_ulofdma_non_data_ru_size_ppdu[HTT_RX_PDEV_STATS_NUM_RU_SIZE_160MHZ_CNTRS];
-	u32 ul_ofdma_rx_mcs_ext[HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS];
-	u32 ul_ofdma_rx_gie[HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
-						    [HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS];
+	u32 uplink_sta_aid[HTT_RX_UL_MAX_UPLINK_RSSI_TRACK];
+	u32 uplink_sta_target_rssi[HTT_RX_UL_MAX_UPLINK_RSSI_TRACK];
+	u32 uplink_sta_fd_rssi[HTT_RX_UL_MAX_UPLINK_RSSI_TRACK];
+	u32 uplink_sta_power_headroom[HTT_RX_UL_MAX_UPLINK_RSSI_TRACK];
+	u32 reduced_ul_ofdma_rx_bw[HTT_RX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES]
+				  [HTT_RX_PDEV_STATS_NUM_BW_COUNTERS];
+
 };
 
 struct htt_rx_pdev_ul_mumimo_trig_stats_tlv {
@@ -1894,14 +2111,24 @@ struct htt_rx_pdev_ul_mumimo_trig_stats_tlv {
 	u32 rx_11ax_ul_mumimo;
 	u32 ul_mumimo_rx_mcs[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS];
 	u32 ul_mumimo_rx_gi[HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
-						     [HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS];
-	u32 ul_mumimo_rx_nss[HTT_RX_PDEV_STATS_ULNUM_SPATIAL_STREAMS];
+			   [HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS];
+	u32 ul_mumimo_rx_nss[HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS];
 	u32 ul_mumimo_rx_bw[HTT_RX_PDEV_STATS_NUM_BW_COUNTERS];
 	u32 ul_mumimo_rx_stbc;
 	u32 ul_mumimo_rx_ldpc;
-	u32 ul_mumimo_rx_mcs_ext[HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS];
-	u32 ul_mumimo_rx_gie[HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
-						    [HTT_RX_PDEV_STATS_NUM_EMCS_COUNTERS];
+	u32 ul_mumimo_rx_mcs_ext[HTT_RX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+	u32 ul_mumimo_rx_gi_ext[HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
+			       [HTT_RX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
+	s8  rx_ul_mumimo_chain_rssi_in_dbm[HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS]
+					  [HTT_RX_PDEV_STATS_TOTAL_BW_COUNTERS];
+	s8  rx_ul_mumimo_target_rssi[HTT_TX_PDEV_STATS_NUM_UL_MUMIMO_USER_STATS]
+				    [HTT_RX_PDEV_STATS_NUM_BW_COUNTERS];
+	s8  rx_ul_mumimo_fd_rssi[HTT_TX_PDEV_STATS_NUM_UL_MUMIMO_USER_STATS]
+				[HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS];
+	s8  rx_ulmumimo_pilot_evm_dB_mean[HTT_TX_PDEV_STATS_NUM_UL_MUMIMO_USER_STATS]
+					 [HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS];
+	u32 reduced_ul_mumimo_rx_bw[HTT_RX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES]
+				   [HTT_RX_PDEV_STATS_NUM_BW_COUNTERS];
 };
 
 struct htt_rx_pdev_ul_mimo_user_stats_tlv {
@@ -1934,7 +2161,8 @@ struct htt_rx_fse_stats_tlv {
 
 #define HTT_TX_TXBF_RATE_STATS_NUM_MCS_COUNTERS 14
 #define HTT_TX_TXBF_RATE_STATS_NUM_BW_COUNTERS 5
-#define HTT_TX_PDEV_STATS_NUM_SPATIAL_STREAMS 8
+
+#define HTT_TX_TXBF_RATE_STATS_NUM_REDUCED_CHAN_TYPES 2
 
 struct htt_pdev_txrate_txbf_stats_tlv {
 	/* SU TxBF TX MCS stats */
@@ -1955,6 +2183,13 @@ struct htt_pdev_txrate_txbf_stats_tlv {
 	u32 tx_su_ibf_bw[HTT_TX_TXBF_RATE_STATS_NUM_BW_COUNTERS];
 	/* Open loop TX BW stats */
 	u32 tx_su_ol_bw[HTT_TX_TXBF_RATE_STATS_NUM_BW_COUNTERS];
+	u32 tx_legacy_ofdm_rate[HTT_TX_PDEV_STATS_NUM_LEGACY_OFDM_STATS];
+	u32 reduced_tx_su_txbf_bw[HTT_TX_TXBF_RATE_STATS_NUM_REDUCED_CHAN_TYPES]
+				 [HTT_TX_TXBF_RATE_STATS_NUM_BW_COUNTERS];
+	u32 reduced_tx_su_ibf_bw[HTT_TX_TXBF_RATE_STATS_NUM_REDUCED_CHAN_TYPES]
+				[HTT_TX_TXBF_RATE_STATS_NUM_BW_COUNTERS];
+	u32 reduced_tx_su_ol_bw[HTT_TX_TXBF_RATE_STATS_NUM_REDUCED_CHAN_TYPES]
+			       [HTT_TX_TXBF_RATE_STATS_NUM_BW_COUNTERS];
 };
 
 struct htt_txbf_ofdma_ndpa_stats_tlv {
@@ -2070,7 +2305,6 @@ struct htt_phy_counters_tlv {
 };
 
 struct htt_phy_stats_tlv {
-	/* per chain hw noise floor values in dBm */
 	s32 nf_chain[HTT_STATS_MAX_CHAINS];
 	/* number of false radars detected */
 	u32 false_radar_cnt;
@@ -2135,6 +2369,45 @@ struct htt_peer_ctrl_path_txrx_stats_tlv {
 	u32 peer_tx_mgmt_subtype[ATH11K_STATS_MGMT_FRM_TYPE_MAX];
 	/* Num of rx mgmt frames with subtype on peer level */
 	u32 peer_rx_mgmt_subtype[ATH11K_STATS_MGMT_FRM_TYPE_MAX];
+};
+
+
+struct htt_pdev_ctrl_path_tx_stats_tlv {
+	/* Num MGMT MPDU transmitted by the target */
+	u32 fw_tx_mgmt_subtype[HTT_STATS_SUBTYPE_MAX];
+};
+
+enum htt_sched_txq_supercycle_triggers_tlv_enum {
+	HTT_SCHED_SUPERCYCLE_TRIGGER_NONE = 0,
+	HTT_SCHED_SUPERCYCLE_TRIGGER_FORCED,
+	HTT_SCHED_SUPERCYCLE_TRIGGER_LESS_NUM_TIDQ_ENTRIES,
+	HTT_SCHED_SUPERCYCLE_TRIGGER_LESS_NUM_ACTIVE_TIDS,
+	HTT_SCHED_SUPERCYCLE_TRIGGER_MAX_ITR_REACHED,
+	HTT_SCHED_SUPERCYCLE_TRIGGER_DUR_THRESHOLD_REACHED,
+	HTT_SCHED_SUPERCYCLE_TRIGGER_TWT_TRIGGER,
+
+	HTT_SCHED_SUPERCYCLE_TRIGGER_MAX,
+};
+
+/* NOTE: Variable length TLV, use length spec to infer array size */
+struct htt_sched_txq_supercycle_triggers_tlv {
+	u32  supercycle_triggers[0];  /*HTT_SCHED_SUPERCYCLE_TRIGGER_MAX*/
+};
+
+struct htt_hw_war_stats_tlv {
+	u32 mac_id__word;
+	u32 hw_wars[1];
+};
+
+struct htt_peer_sched_stats_tlv {
+	u32 peer_id;
+	u32 num_sched_dl;
+	u32 num_sched_ul;
+	u32 peer_tx_active_dur_us_low;
+	u32 peer_tx_active_dur_us_high;
+	u32 peer_rx_active_dur_us_low;
+	u32 peer_rx_active_dur_us_high;
+	u32 peer_curr_rate_kbps;
 };
 
 #ifdef CPTCFG_ATH11K_DEBUGFS

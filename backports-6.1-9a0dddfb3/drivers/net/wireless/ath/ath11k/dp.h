@@ -1725,12 +1725,13 @@ struct htt_ext_stats_cfg_cmd {
  *   4 bit htt_tx_tid_stats_tlv/htt_tx_tid_stats_v1_tlv
  *   5 bit htt_rx_tid_stats_tlv
  *   6 bit htt_msdu_flow_stats_tlv
+ *   7 bit htt_peer_sched_stats_tlv
  * @config_param2: [Bit31 : Bit0] mac_addr31to0
  * @config_param3: [Bit15 : Bit0] mac_addr47to32
  *                [Bit31 : Bit16] reserved
  */
 #define HTT_STAT_PEER_INFO_MAC_ADDR BIT(0)
-#define HTT_STAT_DEFAULT_PEER_REQ_TYPE 0x7f
+#define HTT_STAT_DEFAULT_PEER_REQ_TYPE 0xff
 
 /* Used to set different configs to the specified stats type.*/
 struct htt_ext_stats_cfg_params {
