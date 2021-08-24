@@ -307,8 +307,18 @@ int ath11k_dp_srng_setup(struct ath11k_base *ab, struct dp_srng *ring,
 	case HAL_RXDMA_MONITOR_STATUS:
 		params.low_threshold = num_entries >> 3;
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
-		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
+		/* In case of PCI chipsets, we dont have PPDU end interrupts,
+		 * so MONITOR STATUS ring is reaped by receiving MSI from srng.
+		 * Keep batch threshold as 8 so that an interrupt is received for
+		 * every 4 frames in MONITOR_STATUS ring.
+		 */
+		if ((type == HAL_RXDMA_MONITOR_STATUS) &&
+				(params.flags & HAL_SRNG_FLAGS_MSI_INTR))
+			params.intr_batch_cntr_thres_entries = 4;
+		else
+			params.intr_batch_cntr_thres_entries = 0;
+
 		break;
 	case HAL_WBM2SW_RELEASE:
 		if (ring_num < 3) {
