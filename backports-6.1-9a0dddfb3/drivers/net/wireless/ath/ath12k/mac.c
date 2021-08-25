@@ -3217,6 +3217,18 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 
 	arg->eht_flag = true;
 
+	if (link_sta->bandwidth >= IEEE80211_STA_RX_BW_40)
+		arg->bw_40 = true;
+
+	if (link_sta->bandwidth >= IEEE80211_STA_RX_BW_80)
+		arg->bw_80 = true;
+
+	if (link_sta->bandwidth >= IEEE80211_STA_RX_BW_160)
+		arg->bw_160 = true;
+
+	if (link_sta->bandwidth == IEEE80211_STA_RX_BW_320)
+		arg->bw_320 = true;
+
 	if ((eht_cap->eht_cap_elem.phy_cap_info[5] &
 	     IEEE80211_EHT_PHY_CAP5_PPE_THRESHOLD_PRESENT) &&
 	    eht_cap->eht_ppe_thres[0] != 0)
