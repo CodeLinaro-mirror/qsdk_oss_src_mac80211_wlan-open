@@ -117,10 +117,17 @@ enum htt_tlv_tag_t {
 	HTT_STATS_PDEV_CTRL_PATH_TX_STATS_TAG		    = 102,
 	HTT_STATS_RX_PDEV_RATE_EXT_STATS_TAG		    = 103,
 	HTT_STATS_PDEV_TX_RATE_TXBF_STATS_TAG		    = 108,
+	HTT_STATS_UNSUPPORTED_ERROR_STATS_TAG               = 109,
+	HTT_STATS_UNAVAILABLE_ERROR_STATS_TAG               = 110,
+	HTT_STATS_TX_SELFGEN_AC_SCHED_STATUS_STATS_TAG      = 111,
+	HTT_STATS_TX_SELFGEN_AX_SCHED_STATUS_STATS_TAG      = 112,
 	HTT_STATS_TXBF_OFDMA_NDPA_STATS_TAG		    = 113,
 	HTT_STATS_TXBF_OFDMA_NDP_STATS_TAG		    = 114,
 	HTT_STATS_TXBF_OFDMA_BRP_STATS_TAG		    = 115,
 	HTT_STATS_TXBF_OFDMA_STEER_STATS_TAG		    = 116,
+	HTT_STATS_VDEV_RTT_RESP_STATS_TAG                   = 118,
+	HTT_STATS_PKTLOG_AND_HTT_RING_STATS_TAG             = 119,
+	HTT_STATS_DLPAGER_STATS_TAG                         = 120,
 	HTT_STATS_PHY_COUNTERS_TAG			    = 121,
 	HTT_STATS_PHY_STATS_TAG				    = 122,
 	HTT_STATS_PHY_RESET_COUNTERS_TAG		    = 123,
@@ -874,6 +881,35 @@ struct htt_tx_selfgen_ax_err_stats_tlv {
 #define HTT_TX_PDEV_STATS_NUM_AX_MUMIMO_USER_STATS 8
 #define HTT_TX_PDEV_STATS_NUM_OFDMA_USER_STATS    74
 #define HTT_TX_PDEV_STATS_NUM_UL_MUMIMO_USER_STATS 8
+
+enum htt_tx_err_status_t {
+	HTT_TXERR_NONE,
+	HTT_TXERR_RESP,
+
+	HTT_TXERR_FILT,
+	HTT_TXERR_FIFO,
+	HTT_TXERR_SWABORT,
+
+	HTT_TXERR_RESERVED1,
+	HTT_TXERR_RESERVED2,
+	HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS = 7,
+
+	HTT_TXERR_INVALID = 0xff,
+};
+
+enum htt_tx_selfgen_sch_tsflag_error_stats {
+	HTT_TX_SELFGEN_SCH_TSFLAG_FLUSH_RCVD_ERR,
+	HTT_TX_SELFGEN_SCH_TSFLAG_FILT_SCHED_CMD_ERR,
+	HTT_TX_SELFGEN_SCH_TSFLAG_RESP_MISMATCH_ERR,
+	HTT_TX_SELFGEN_SCH_TSFLAG_RESP_CBF_MIMO_CTRL_MISMATCH_ERR,
+	HTT_TX_SELFGEN_SCH_TSFLAG_RESP_CBF_BW_MISMATCH_ERR,
+	HTT_TX_SELFGEN_SCH_TSFLAG_RETRY_COUNT_FAIL_ERR,
+	HTT_TX_SELFGEN_SCH_TSFLAG_RESP_TOO_LATE_RECEIVED_ERR,
+	HTT_TX_SELFGEN_SCH_TSFLAG_SIFS_STALL_NO_NEXT_CMD_ERR,
+
+	HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS = 8,
+	HTT_TX_SELFGEN_SCH_TSFLAG_ERROR_STATS_VALID = 8
+};
 
 struct htt_tx_pdev_mu_mimo_sch_stats_tlv {
 	/* mu-mimo sw sched cmd stats */
@@ -2466,4 +2502,112 @@ struct htt_rx_pdev_rate_ext_stats_tlv {
 	u32 rx_11ax_dl_ofdma_mcs_ext[HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT];
 };
 
+
+struct htt_tx_selfgen_ac_sched_status_stats_tlv {
+	u32 ac_su_ndpa_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ac_su_ndp_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ac_su_ndp_sch_flag_err[HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS];
+	u32 ac_mu_mimo_ndpa_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ac_mu_mimo_ndp_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ac_mu_mimo_ndp_sch_flag_err[HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS];
+	u32 ac_mu_mimo_brp_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ac_mu_mimo_brp_sch_flag_err[HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS];
+};
+
+struct htt_tx_selfgen_ax_sched_status_stats_tlv {
+	u32 ax_su_ndpa_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ax_su_ndp_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ax_su_ndp_sch_flag_err[HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS];
+	u32 ax_mu_mimo_ndpa_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ax_mu_mimo_ndp_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ax_mu_mimo_ndp_sch_flag_err[HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS];
+	u32 ax_mu_brp_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ax_mu_brp_sch_flag_err[HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS];
+	u32 ax_mu_bar_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ax_mu_bar_sch_flag_err[HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS];
+	u32 ax_basic_trig_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ax_basic_trig_sch_flag_err[HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS];
+	u32 ax_ulmumimo_trig_sch_status[HTT_TX_PDEV_STATS_NUM_TX_ERR_STATUS];
+	u32 ax_ulmumimo_trig_sch_flag_err[HTT_TX_SELFGEN_NUM_SCH_TSFLAG_ERROR_STATS];
+};
+
+struct htt_stats_error_tlv {
+	u32 htt_stats_type;
+};
+
+struct htt_vdev_rtt_resp_stats_tlv {
+	u32 tx_ftm_suc;
+	u32 tx_ftm_suc_retry;
+	u32 tx_ftm_fail;
+	u32 rx_ftmr_cnt;
+	u32 rx_ftmr_dup_cnt;
+	u32 rx_iftmr_cnt;
+	u32 rx_iftmr_dup_cnt;
+	u32 initiator_active_responder_rejected_cnt;
+	u32 responder_terminate_cnt;
+	u32 vdev_id;
+};
+
+struct htt_pktlog_and_htt_ring_stats_tlv {
+	u32 pktlog_lite_drop_cnt;
+	u32 pktlog_tqm_drop_cnt;
+	u32 pktlog_ppdu_stats_drop_cnt;
+	u32 pktlog_ppdu_ctrl_drop_cnt;
+	u32 pktlog_sw_events_drop_cnt;
+};
+
+#define HTT_DLPAGER_STATS_MAX_HIST              10
+#define HTT_DLPAGER_ASYNC_LOCKED_PAGE_COUNT_M   0x000000FF
+#define HTT_DLPAGER_ASYNC_LOCKED_PAGE_COUNT_S   0
+#define HTT_DLPAGER_SYNC_LOCKED_PAGE_COUNT_M    0x0000FF00
+#define HTT_DLPAGER_SYNC_LOCKED_PAGE_COUNT_S    8
+#define HTT_DLPAGER_TOTAL_LOCKED_PAGES_M        0x0000FFFF
+#define HTT_DLPAGER_TOTAL_LOCKED_PAGES_S        0
+#define HTT_DLPAGER_TOTAL_FREE_PAGES_M          0xFFFF0000
+#define HTT_DLPAGER_TOTAL_FREE_PAGES_S          16
+#define HTT_DLPAGER_LAST_LOCKED_PAGE_IDX_M      0x0000FFFF
+#define HTT_DLPAGER_LAST_LOCKED_PAGE_IDX_S      0
+#define HTT_DLPAGER_LAST_UNLOCKED_PAGE_IDX_M    0xFFFF0000
+#define HTT_DLPAGER_LAST_UNLOCKED_PAGE_IDX_S    16
+
+#define HTT_DLPAGER_ASYNC_LOCK_PAGE_COUNT_GET(_var) \
+	(((_var) & HTT_DLPAGER_ASYNC_LOCKED_PAGE_COUNT_M) >> \
+	HTT_DLPAGER_ASYNC_LOCKED_PAGE_COUNT_S)
+#define HTT_DLPAGER_SYNC_LOCK_PAGE_COUNT_GET(_var) \
+	(((_var) & HTT_DLPAGER_SYNC_LOCKED_PAGE_COUNT_M) >> \
+	HTT_DLPAGER_SYNC_LOCKED_PAGE_COUNT_S)
+#define HTT_DLPAGER_TOTAL_LOCKED_PAGES_GET(_var)  \
+	(((_var) & HTT_DLPAGER_TOTAL_LOCKED_PAGES_M) >> \
+	HTT_DLPAGER_TOTAL_LOCKED_PAGES_S)
+#define HTT_DLPAGER_TOTAL_FREE_PAGES_GET(_var) \
+	(((_var) & HTT_DLPAGER_TOTAL_FREE_PAGES_M) >> \
+	HTT_DLPAGER_TOTAL_FREE_PAGES_S)
+#define HTT_DLPAGER_LAST_LOCKED_PAGE_IDX_GET(_var) \
+	(((_var) & HTT_DLPAGER_LAST_LOCKED_PAGE_IDX_M) >> \
+	HTT_DLPAGER_LAST_LOCKED_PAGE_IDX_S)
+#define HTT_DLPAGER_LAST_UNLOCKED_PAGE_IDX_GET(_var) \
+	(((_var) & HTT_DLPAGER_LAST_UNLOCKED_PAGE_IDX_M) >> \
+	HTT_DLPAGER_LAST_UNLOCKED_PAGE_IDX_S)
+
+enum htt_dl_pager_stats_tlv_enum {
+	HTT_STATS_PAGE_LOCKED,
+	HTT_STATS_PAGE_UNLOCKED,
+	HTT_STATS_NUM_PAGE_LOCK_STATES
+};
+
+struct dl_pager_last_pages_info {
+	u32 page_num;
+	u32 num_of_pages;
+	/* timestamp is in microsecond units, from SoC timer clock */
+	u32 timestamp_lsbs;
+	u32 timestamp_msbs;
+} __packed;
+
+struct htt_dl_pager_stats_tlv {
+	u32 msg_dword_1;
+	u32 msg_dword_2;
+	u32 msg_dword_3;
+	struct dl_pager_last_pages_info last_pages_info[HTT_STATS_NUM_PAGE_LOCK_STATES]
+						       [HTT_DLPAGER_STATS_MAX_HIST];
+} __packed;
 #endif
