@@ -3681,6 +3681,7 @@ int ath11k_debugfs_register(struct ath11k *ar)
 
 	ath11k_debugfs_fw_stats_init(ar);
 	ath11k_init_pktlog(ar);
+	ath11k_smart_ant_debugfs_init(ar);
 	init_completion(&ar->tpc_complete);
         init_completion(&ab->ani_ofdm_event);
         init_completion(&ab->ani_cck_event);
