@@ -1478,6 +1478,45 @@ static const struct file_operations fops_peer_cfr_capture = {
 };
 #endif /* CPTCFG_ATH11K_CFR */
 
+#define GET_PER_CHAIN_TX_PWR_FRM_U32(arr, chain_idx) \
+				((arr[chain_idx/4] >> (chain_idx % 4) * 8) & 0xFF)
+
+static ssize_t ath11k_dbg_sta_read_htt_comm_stats(struct file *file,
+						  char __user *user_buf,
+						  size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath11k_sta *arsta = (struct ath11k_sta *)sta->drv_priv;
+	struct ath11k *ar = arsta->arvif->ar;
+	char buf[512] = {0};
+	int len = 0;
+	int i;
+	s8 tx_pwr;
+
+	mutex_lock(&ar->conf_mutex);
+	spin_lock_bh(&ar->ab->base_lock);
+	for(i = 0; i < (HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE * 4); i++) {
+		if(arsta->tx_pwr_multiplier && (arsta->chain_enable_bits & (1 << i))) {
+			tx_pwr = GET_PER_CHAIN_TX_PWR_FRM_U32(arsta->tx_pwr, i);
+			tx_pwr = tx_pwr/arsta->tx_pwr_multiplier;
+		} else
+			tx_pwr = 0;
+		len += scnprintf(buf + len, sizeof(buf) - len,
+				 "tx_pwr[%d] : %d\n", i, tx_pwr);
+	}
+	spin_unlock_bh(&ar->ab->base_lock);
+	mutex_unlock(&ar->conf_mutex);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_htt_comm_stats = {
+	.read = ath11k_dbg_sta_read_htt_comm_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath11k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			       struct ieee80211_sta *sta, struct dentry *dir)
 {
@@ -1538,4 +1577,5 @@ void ath11k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		    ar->ab->wmi_ab.svc_map))
 		debugfs_create_file("config_nss", 0600, dir, sta,
 				    &fops_config_num_spatial_strm);
+	debugfs_create_file("htt_comm_stats", 0400, dir, sta, &fops_htt_comm_stats);
 }

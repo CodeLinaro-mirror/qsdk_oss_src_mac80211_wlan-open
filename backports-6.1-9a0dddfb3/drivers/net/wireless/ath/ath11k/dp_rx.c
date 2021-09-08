@@ -1315,9 +1315,12 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 {
 	struct htt_ppdu_stats_info *ppdu_info;
 	struct htt_ppdu_user_stats *user_stats = NULL;
+	struct ath11k_sta *arsta;
+	struct ath11k_peer *peer;
 	int cur_user;
 	u16 peer_id;
 	u32 frame_type;
+	int i;
 
 	ppdu_info = data;
 
@@ -1430,6 +1433,18 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 		user_stats->delay_ba = FIELD_GET(HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA,
 						  user_stats->common.info);
 		ppdu_info->delay_ba = user_stats->delay_ba;
+		rcu_read_lock();
+		spin_lock_bh(&ab->base_lock);
+		peer = ath11k_peer_find_by_id(ab, peer_id);
+		if(peer && peer->sta) {
+			arsta = (struct ath11k_sta *)peer->sta->drv_priv;
+			arsta->tx_pwr_multiplier = user_stats->common.tx_pwr_multiplier;
+			arsta->chain_enable_bits = user_stats->common.chain_enable_bits;
+			for(i = 0; i < HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE; i++)
+				arsta->tx_pwr[i] = user_stats->common.tx_pwr[i];
+		}
+		spin_unlock_bh(&ab->base_lock);
+		rcu_read_unlock();
 		break;
 	default:
 		break;

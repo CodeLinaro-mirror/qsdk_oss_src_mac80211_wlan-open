@@ -1500,6 +1500,10 @@ struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 #define HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA    BIT(14)
 #define HTT_PPDU_STATS_USR_CMN_HDR_SW_PEERID   GENMASK(31, 16)
 #define HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL    GENMASK(15, 0)
+#define HTT_STATS_MAX_CHAINS 8
+#define HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32 4
+#define HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE HTT_STATS_MAX_CHAINS / \
+						HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32
 
 struct htt_ppdu_stats_user_common {
 	u8 tid_num;
@@ -1510,6 +1514,18 @@ struct htt_ppdu_stats_user_common {
 	u32 buffer_paddr_31_0;
 	u32 buffer_paddr_39_32;
 	u32 host_opaque_cookie;
+	u32 qdepth_bytes;
+	u32 full_aid;
+	u32 data_frm_ppdu_id;
+	u32 sw_rts_prot_dur_us;
+	u8 tx_pwr_multiplier;
+	u8 chain_enable_bits;
+	u16 reserved;
+	/*
+	 *tx_pwr is applicable for each radio chain
+	 *tx_pwr for each radio chain is a 8 bit value
+	 */
+	u32 tx_pwr[HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE];
 } __packed;
 
 #define HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_FLOW_TYPE GENMASK(7, 0)

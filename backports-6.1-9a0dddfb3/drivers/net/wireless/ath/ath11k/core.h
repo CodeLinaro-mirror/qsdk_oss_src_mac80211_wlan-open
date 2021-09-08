@@ -702,6 +702,9 @@ struct ath11k_sta {
 	u32 bw_prev;
 	struct ath11k_wbm_tx_stats *wbm_tx_stats;
 	u8 num_spatial_strm_mask;
+	u8 tx_pwr_multiplier;
+	u8 chain_enable_bits;
+	u32 tx_pwr[HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE];
 #ifdef CPTCFG_ATH11K_CFR
 	struct ath11k_per_peer_cfr_capture cfr_capture;
 #endif
