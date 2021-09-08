@@ -343,6 +343,7 @@ extern const struct ath11k_hw_ops wcn6855_ops;
 extern const struct ath11k_hw_ops wcn6750_ops;
 extern const struct ath11k_hw_ops ipq5018_ops;
 extern const struct ath11k_hw_ops qcn6122_ops;
+extern const struct ath11k_hw_ops ipq9574_ops;
 
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_ipq8074;
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_qca6390;

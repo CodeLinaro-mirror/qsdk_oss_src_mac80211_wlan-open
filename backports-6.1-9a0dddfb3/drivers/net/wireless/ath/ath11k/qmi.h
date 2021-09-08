@@ -71,6 +71,8 @@
 #define ATH11K_RCV_GIC_MSI_HDLR_DELAY 		(3 * HZ)
 #define ATH11K_QMI_QCN6122_M3_DUMP_ADDRESS	0x4E200000
 
+#define ATH11K_QMI_IPQ9574_M3_DUMP_ADDRESS      0x4D600000
+
 struct ath11k_base;
 extern unsigned int ath11k_host_ddr_addr;
 extern char *ath11k_caldata_bin_path;

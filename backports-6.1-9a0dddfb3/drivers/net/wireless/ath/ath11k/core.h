@@ -186,6 +186,7 @@ enum ath11k_hw_rev {
 	ATH11K_HW_QCN6122,
 	ATH11K_HW_QCA2066_HW21,
 	ATH11K_HW_QCA6698AQ_HW21,
+	ATH11K_HW_IPQ9574,
 };
 
 enum ath11k_firmware_mode {
@@ -1517,6 +1518,10 @@ extern const struct service_to_pipe ath11k_target_service_to_ce_map_wlan_ipq5018
 
 extern const struct ce_pipe_config ath11k_target_ce_config_wlan_qcn9074[];
 extern const struct service_to_pipe ath11k_target_service_to_ce_map_wlan_qcn9074[];
+
+extern const struct ce_pipe_config ath11k_target_ce_config_wlan_ipq9574[];
+extern const struct service_to_pipe ath11k_target_service_to_ce_map_wlan_ipq9574[];
+
 int ath11k_core_qmi_firmware_ready(struct ath11k_base *ab);
 int ath11k_core_pre_init(struct ath11k_base *ab);
 int ath11k_core_init(struct ath11k_base *ath11k);

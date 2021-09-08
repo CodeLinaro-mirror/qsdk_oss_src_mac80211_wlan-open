@@ -40,6 +40,9 @@ static const struct of_device_id ath11k_ahb_of_match[] = {
 	{ .compatible = "qcom,qcn6122-wifi",
 	  .data = (void *)ATH11K_HW_QCN6122,
 	},
+	{ .compatible = "qcom,ipq9574-wifi",
+	  .data = (void *)ATH11K_HW_IPQ9574,
+	},
 	{ }
 };
 
@@ -1295,6 +1298,7 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 	case ATH11K_HW_IPQ8074:
 	case ATH11K_HW_IPQ6018_HW10:
 	case ATH11K_HW_IPQ5018_HW10:
+	case ATH11K_HW_IPQ9574:
 		hif_ops = &ath11k_ahb_hif_ops_ipq8074;
 		pci_ops = NULL;
 		break;
