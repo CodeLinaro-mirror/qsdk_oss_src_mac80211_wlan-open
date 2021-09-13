@@ -1510,7 +1510,12 @@ static ssize_t ath11k_dbg_sta_read_htt_comm_stats(struct file *file,
 			 arsta->succ_pkts);
 	len += scnprintf(buf + len, sizeof(buf) - len, "PER          : %lu\n",
 			 ewma_sta_per_read(&arsta->per));
-
+	len += scnprintf(buf + len, sizeof(buf) - len, "fail_bytes   : %llu\n",
+			 arsta->fail_bytes);
+	len += scnprintf(buf + len, sizeof(buf) - len, "succ_bytes   : %llu\n",
+			 arsta->succ_bytes);
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "BER          : %lu\n", ewma_sta_ber_read(&arsta->ber));
 	spin_unlock_bh(&ar->ab->base_lock);
 	mutex_unlock(&ar->conf_mutex);
 
@@ -1540,6 +1545,12 @@ static ssize_t ath11k_dbg_sta_write_htt_comm_stats(struct file *file,
 	arsta->per_succ_pkts = 0;
 	ewma_sta_per_init(&arsta->per);
 	ewma_sta_per_add(&arsta->per, 1);
+	ewma_sta_ber_init(&arsta->ber);
+	ewma_sta_ber_add(&arsta->ber, 1);
+	arsta->succ_bytes = 0;
+	arsta->fail_bytes = 0;
+	arsta->ber_succ_bytes = 0;
+	arsta->ber_fail_bytes = 0;
 	spin_unlock_bh(&ab->base_lock);
 	mutex_unlock(&ar->conf_mutex);
 

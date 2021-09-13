@@ -12,6 +12,7 @@
 
 #define ATH11K_NUM_PKTS_THRSHLD_FOR_PER  50
 #define ATH11K_GET_PERCENTAGE(value, total_value) (((value)*100)/(total_value))
+#define ATH11K_NUM_BYTES_THRSHLD_FOR_BER 25000
 
 struct ath11k_dp_htt_wbm_tx_status {
 	u32 msdu_id;
@@ -259,4 +260,16 @@ static inline void ath11k_sta_stats_update_per(struct ath11k_sta *arsta) {
 	arsta->per_succ_pkts = 0;
 }
 
+static inline void ath11k_sta_stats_update_ber(struct ath11k_sta *arsta) {
+	int ber;
+
+	if(!arsta)
+		return;
+
+	ber = ATH11K_GET_PERCENTAGE(arsta->ber_fail_bytes,
+				    arsta->ber_fail_bytes + arsta->ber_succ_bytes);
+	ewma_sta_ber_add(&arsta->ber, ber);
+	arsta->ber_fail_bytes = 0;
+	arsta->ber_succ_bytes = 0;
+}
 #endif

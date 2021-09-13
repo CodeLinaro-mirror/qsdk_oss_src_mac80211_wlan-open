@@ -1673,9 +1673,14 @@ ath11k_update_per_peer_tx_stats(struct ath11k *ar,
 		peer_stats->ru_tones = arsta->txrate.he_ru_alloc;
 		arsta->succ_pkts  += succ_pkts;
 		arsta->per_succ_pkts += succ_pkts;
+		arsta->succ_bytes += succ_bytes;
+		arsta->ber_succ_bytes += succ_bytes;
 		if(arsta->per_fail_pkts + arsta->per_succ_pkts >=
 		   ATH11K_NUM_PKTS_THRSHLD_FOR_PER)
 			ath11k_sta_stats_update_per(arsta);
+		if(arsta->ber_fail_bytes + arsta->ber_succ_bytes >=
+		   ATH11K_NUM_BYTES_THRSHLD_FOR_BER)
+			ath11k_sta_stats_update_ber(arsta);
 
 		if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar)))
 			ath11k_debugfs_sta_add_tx_stats(arsta, peer_stats, rate_idx);

@@ -618,6 +618,8 @@ struct ath11k_wbm_tx_stats {
 	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 };
 
+DECLARE_EWMA(sta_ber, 8, 16)
+
 struct ath11k_htt_tx_stats {
 	struct ath11k_htt_data_stats stats[ATH11K_STATS_TYPE_MAX];
 	u64 tx_duration;
@@ -716,6 +718,12 @@ struct ath11k_sta {
 	/* pkt count for packet error rate computation*/
 	u32 per_fail_pkts;
 	u32 per_succ_pkts;
+	struct ewma_sta_ber ber;
+	u64 succ_bytes;
+	u64 fail_bytes;
+	/*bytes count for bit error rate computation*/
+	u32 ber_succ_bytes;
+	u32 ber_fail_bytes;
 #ifdef CPTCFG_ATH11K_CFR
 	struct ath11k_per_peer_cfr_capture cfr_capture;
 #endif
