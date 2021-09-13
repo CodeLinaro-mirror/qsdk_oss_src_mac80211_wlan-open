@@ -656,6 +656,8 @@ struct ath11k_driver_rx_pkts_flow {
 	atomic_t pkts_out_to_netif;
 };
 
+DECLARE_EWMA(sta_per, 8, 16)
+
 struct ath11k_sta {
 	struct ath11k_vif *arvif;
 
@@ -706,6 +708,12 @@ struct ath11k_sta {
 	u8 tx_pwr_multiplier;
 	u8 chain_enable_bits;
 	u32 tx_pwr[HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE];
+	struct ewma_sta_per per;
+	u64 fail_pkts;
+	u64 succ_pkts;
+	/* pkt count for packet error rate computation*/
+	u32 per_fail_pkts;
+	u32 per_succ_pkts;
 #ifdef CPTCFG_ATH11K_CFR
 	struct ath11k_per_peer_cfr_capture cfr_capture;
 #endif

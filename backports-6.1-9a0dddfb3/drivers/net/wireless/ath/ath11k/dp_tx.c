@@ -786,6 +786,14 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 	status.rates = &status_rate;
 	status.n_rates = 1;
 
+	if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		arsta->fail_pkts += 1;
+		arsta->per_fail_pkts += 1;
+		if(arsta->per_fail_pkts + arsta->per_succ_pkts >=
+		   ATH11K_NUM_PKTS_THRSHLD_FOR_PER)
+			ath11k_sta_stats_update_per(arsta);
+	}
+
 	if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar))) {
 		if(arsta->wbm_tx_stats && wbm_status < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX)
 			arsta->wbm_tx_stats->wbm_tx_comp_stats[wbm_status]++;

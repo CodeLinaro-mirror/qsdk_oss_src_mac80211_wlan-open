@@ -10612,6 +10612,8 @@ static int ath11k_mac_station_add(struct ath11k *ar,
 		}
 	}
 
+	ewma_sta_per_init(&arsta->per);
+	ewma_sta_per_add(&arsta->per, 1);
 	ewma_avg_rssi_init(&arsta->avg_rssi);
 	return 0;
 

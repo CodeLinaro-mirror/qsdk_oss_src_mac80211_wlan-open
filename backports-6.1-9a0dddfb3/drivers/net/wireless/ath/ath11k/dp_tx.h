@@ -10,6 +10,9 @@
 #include "core.h"
 #include "hal_tx.h"
 
+#define ATH11K_NUM_PKTS_THRSHLD_FOR_PER  50
+#define ATH11K_GET_PERCENTAGE(value, total_value) (((value)*100)/(total_value))
+
 struct ath11k_dp_htt_wbm_tx_status {
 	u32 msdu_id;
 	bool acked;
@@ -242,4 +245,18 @@ ath11k_dp_tx_get_encap_type(struct ath11k_vif *arvif, struct sk_buff *skb);
 
 int ath11k_dp_tx_htt_rx_full_mon_setup(struct ath11k_base *ab, int mac_id,
 				       bool config);
+
+static inline void ath11k_sta_stats_update_per(struct ath11k_sta *arsta) {
+	int per;
+
+	if(!arsta)
+		return;
+
+	per = ATH11K_GET_PERCENTAGE(arsta->per_fail_pkts,
+				    arsta->per_fail_pkts + arsta->per_succ_pkts);
+	ewma_sta_per_add(&arsta->per, per);
+	arsta->per_fail_pkts = 0;
+	arsta->per_succ_pkts = 0;
+}
+
 #endif

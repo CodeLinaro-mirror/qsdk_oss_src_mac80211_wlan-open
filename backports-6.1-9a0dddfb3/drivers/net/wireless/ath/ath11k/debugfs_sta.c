@@ -1502,16 +1502,53 @@ static ssize_t ath11k_dbg_sta_read_htt_comm_stats(struct file *file,
 		} else
 			tx_pwr = 0;
 		len += scnprintf(buf + len, sizeof(buf) - len,
-				 "tx_pwr[%d] : %d\n", i, tx_pwr);
+				 "tx_pwr[%d]    : %d\n", i, tx_pwr);
 	}
+	len += scnprintf(buf + len, sizeof(buf) - len, "fail_pkts    : %llu\n",
+			 arsta->fail_pkts);
+	len += scnprintf(buf + len, sizeof(buf) - len, "succ_pkts    : %llu\n",
+			 arsta->succ_pkts);
+	len += scnprintf(buf + len, sizeof(buf) - len, "PER          : %lu\n",
+			 ewma_sta_per_read(&arsta->per));
+
 	spin_unlock_bh(&ar->ab->base_lock);
 	mutex_unlock(&ar->conf_mutex);
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
+static ssize_t ath11k_dbg_sta_write_htt_comm_stats(struct file *file,
+						   const char __user *user_buf,
+						   size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath11k_sta *arsta = (struct ath11k_sta *)sta->drv_priv;
+	struct ath11k *ar = arsta->arvif->ar;
+	struct ath11k_base *ab = ar->ab;
+	int ret;
+	u8 val;
+
+	ret = kstrtou8_from_user(user_buf, count, 0, &val);
+	if (ret || val != 1)
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+	spin_lock_bh(&ab->base_lock);
+	arsta->fail_pkts = 0;
+	arsta->succ_pkts = 0;
+	arsta->per_fail_pkts = 0;
+	arsta->per_succ_pkts = 0;
+	ewma_sta_per_init(&arsta->per);
+	ewma_sta_per_add(&arsta->per, 1);
+	spin_unlock_bh(&ab->base_lock);
+	mutex_unlock(&ar->conf_mutex);
+
+	return count;
+}
+
 static const struct file_operations fops_htt_comm_stats = {
 	.read = ath11k_dbg_sta_read_htt_comm_stats,
+	.write = ath11k_dbg_sta_write_htt_comm_stats,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -1577,5 +1614,5 @@ void ath11k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 		    ar->ab->wmi_ab.svc_map))
 		debugfs_create_file("config_nss", 0600, dir, sta,
 				    &fops_config_num_spatial_strm);
-	debugfs_create_file("htt_comm_stats", 0400, dir, sta, &fops_htt_comm_stats);
+	debugfs_create_file("htt_comm_stats", 0600, dir, sta, &fops_htt_comm_stats);
 }
