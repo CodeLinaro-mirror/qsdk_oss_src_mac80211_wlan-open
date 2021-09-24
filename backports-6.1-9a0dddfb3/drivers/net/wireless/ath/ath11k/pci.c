@@ -1002,6 +1002,7 @@ static void ath11k_pci_remove(struct pci_dev *pdev)
 	}
 
 	set_bit(ATH11K_FLAG_UNREGISTERING, &ab->dev_flags);
+	cancel_work_sync(&ab->wmi_ast_work);
 
 	cancel_work_sync(&ab->reset_work);
 	cancel_work_sync(&ab->dump_work);

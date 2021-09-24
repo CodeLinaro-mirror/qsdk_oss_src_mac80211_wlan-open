@@ -42,9 +42,7 @@ enum ath11k_wds_wmi_action {
 struct ath11k_ast_entry {
 	u16 ast_idx;
 	u8 addr[ETH_ALEN];
-	u8 next_node_mac[ETH_ALEN];
 	enum ath11k_wds_wmi_action action;
-	struct work_struct wds_wmi_wk;
 	struct ath11k_peer *peer;
 	struct ath11k *ar;
 	bool next_hop;
@@ -58,6 +56,7 @@ struct ath11k_ast_entry {
 	bool delete_in_progress;
 	void *cookie;
 	struct list_head ase_list;
+	struct list_head wmi_list;
 };
 
 struct ath11k_peer {
@@ -98,6 +97,7 @@ struct ath11k_peer {
 	struct ppdu_user_delayba ppdu_stats_delayba;
 	bool delayba_flag;
 	bool peer_logging_enabled;
+	bool delete_in_progress;
 };
 
 void ath11k_peer_unmap_event(struct ath11k_base *ab, u16 peer_id);

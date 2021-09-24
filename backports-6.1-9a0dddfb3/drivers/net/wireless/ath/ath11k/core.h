@@ -39,6 +39,7 @@
 #include "nss.h"
 #include "cfr.h"
 #include "smart_ant.h"
+#include "peer.h"
 
 #ifdef CONFIG_QCOM_QMI_HELPERS
 extern wait_queue_head_t ath11k_ssr_dump_wq;
@@ -1356,6 +1357,9 @@ struct ath11k_base {
 	int ani_cck_level;
 	struct completion ani_ofdm_event;
 	struct completion ani_cck_event;
+	struct mutex base_ast_lock;
+	struct work_struct wmi_ast_work;
+	struct list_head wmi_ast_list;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

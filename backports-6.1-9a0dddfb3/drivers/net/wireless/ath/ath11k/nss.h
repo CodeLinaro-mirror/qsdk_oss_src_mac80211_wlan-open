@@ -291,8 +291,8 @@ int ath11k_nss_update_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
 			       u8 *dest_mac);
 int ath11k_nss_map_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
 			    u8 *dest_mac, enum ath11k_ast_entry_type type);
-int ath11k_nss_del_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
-			    u8 *dest_mac);
+int ath11k_nss_del_wds_peer(struct ath11k *ar, u8 *peer_addr,
+			    int peer_id, u8 *dest_mac);
 int ath11k_nss_ext_vdev_cfg_wds_peer(struct ath11k_vif *arvif,
 				     u8 *wds_addr, u32 wds_peer_id);
 int ath11k_nss_ext_vdev_wds_4addr_allow(struct ath11k_vif *arvif,
@@ -404,8 +404,8 @@ static inline int ath11k_nss_map_wds_peer(struct ath11k *ar, struct ath11k_peer 
 	return 0;
 }
 
-static inline int ath11k_nss_del_wds_peer(struct ath11k_vif *arvif, struct ath11k_peer *peer,
-			    u8 *dest_mac)
+static inline int ath11k_nss_del_wds_peer(struct ath11k *ar, u8 *peer_addr,
+					  int peer_id, u8 *dest_mac)
 {
 	return 0;
 }

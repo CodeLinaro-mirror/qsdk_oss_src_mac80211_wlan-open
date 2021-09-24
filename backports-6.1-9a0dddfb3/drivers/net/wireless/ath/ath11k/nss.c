@@ -647,8 +647,9 @@ static void ath11k_nss_wds_type_rx(struct ath11k *ar, struct net_device *dev,
 	spin_unlock_bh(&ab->base_lock);
 }
 
-static void ath11k_nss_mec_handler(struct ath11k *ar, u8* mec_mac_addr)
+static void ath11k_nss_mec_handler(struct ath11k_vif *arvif, u8* mec_mac_addr)
 {
+	struct ath11k *ar = arvif->ar;
 	struct ath11k_base *ab = ar->ab;
 	struct ath11k_peer *peer = ar->bss_peer;
 	u8 mac_addr[ETH_ALEN];
@@ -675,7 +676,7 @@ static void ath11k_nss_mec_handler(struct ath11k *ar, u8* mec_mac_addr)
 	memcpy(mac_addr, mac_addr_h16, ETH_ALEN - 4);
 	memcpy(mac_addr + 2, mac_addr_l32, 4);
 
-	if (!ether_addr_equal(ar->mac_addr, mac_addr)) {
+	if (!ether_addr_equal(arvif->vif->addr, mac_addr)) {
 		spin_lock_bh(&ab->base_lock);
 		ath11k_peer_add_ast(ar, peer, mac_addr,
 				    ATH11K_AST_TYPE_MEC);
@@ -710,7 +711,7 @@ static void ath11k_nss_vdev_spl_receive_ext_wdsdata(struct ath11k_vif *arvif,
 					       addr4_valid, peer_id);
 			break;
 		case NSS_WIFI_VDEV_WDS_TYPE_MEC:
-			ath11k_nss_mec_handler(ar, (u8 *)(skb->data));
+			ath11k_nss_mec_handler(arvif, (u8 *)(skb->data));
 			break;
 		default:
 			ath11k_warn(ab, "unsupported wds_type %d\n", wds_type);
@@ -3804,11 +3805,7 @@ int ath11k_nss_add_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
 	wds_peer_msg->ast_type = type;
 	wds_peer_msg->peer_id = peer->peer_id;
 
-	if (type == ATH11K_AST_TYPE_MEC)
-		ether_addr_copy(wds_peer_msg->peer_mac, ar->mac_addr);
-	else
-		ether_addr_copy(wds_peer_msg->peer_mac, peer->addr);
-
+	ether_addr_copy(wds_peer_msg->peer_mac, peer->addr);
 	ether_addr_copy(wds_peer_msg->dest_mac, dest_mac);
 
 	msg_cb = (nss_wifili_msg_callback_t)ath11k_nss_wifili_event_receive;
@@ -3931,7 +3928,7 @@ msg_free:
 	return ret;
 }
 
-int ath11k_nss_del_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
+int ath11k_nss_del_wds_peer(struct ath11k *ar, u8 *peer_addr, int peer_id,
 			    u8 *dest_mac)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -3949,8 +3946,8 @@ int ath11k_nss_del_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
 
 	wds_peer_msg->pdev_id = ar->pdev->pdev_id;
 	wds_peer_msg->ast_type = ATH11K_AST_TYPE_NONE;
-	wds_peer_msg->peer_id = peer->peer_id;
-	ether_addr_copy(wds_peer_msg->peer_mac, peer->addr);
+	wds_peer_msg->peer_id = peer_id;
+	ether_addr_copy(wds_peer_msg->peer_mac, peer_addr);
 	ether_addr_copy(wds_peer_msg->dest_mac, dest_mac);
 
 	msg_cb = (nss_wifili_msg_callback_t)ath11k_nss_wifili_event_receive;

@@ -1449,6 +1449,7 @@ static void ath11k_ahb_remove_prepare(struct ath11k_base *ab)
 	set_bit(ATH11K_FLAG_UNREGISTERING, &ab->dev_flags);
 	cancel_work_sync(&ab->restart_work);
 	cancel_work_sync(&ab->qmi.event_work);
+	cancel_work_sync(&ab->wmi_ast_work);
 }
 
 static void ath11k_ahb_free_resources(struct ath11k_base *ab)
