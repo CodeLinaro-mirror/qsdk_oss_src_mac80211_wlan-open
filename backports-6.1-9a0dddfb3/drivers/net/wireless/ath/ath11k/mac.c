@@ -3779,6 +3779,19 @@ static void ath11k_mac_op_bss_info_changed(struct ieee80211_hw *hw,
 
 	mutex_lock(&ar->conf_mutex);
 
+	if (changed & BSS_CHANGED_FTM_RESPONDER &&
+	    arvif->ftm_responder != info->ftm_responder &&
+	    (vif->type == NL80211_IFTYPE_AP ||
+	     vif->type == NL80211_IFTYPE_MESH_POINT)) {
+		arvif->ftm_responder = info->ftm_responder;
+		param = WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_RESPONDER_ROLE;
+		ret =  ath11k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param,
+						     arvif->ftm_responder);
+		if (ret)
+			ath11k_warn(ar->ab, "Failed to set ftm responder %i: %d\n",
+				    arvif->vdev_id, ret);
+	}
+
 	if (changed & BSS_CHANGED_BEACON_INT) {
 		arvif->beacon_interval = info->beacon_int;
 
@@ -11675,6 +11688,9 @@ static int __ath11k_mac_register(struct ath11k *ar)
 
 	ar->hw->wiphy->mbssid_max_interfaces = TARGET_NUM_VDEVS(ab);
 	ar->hw->wiphy->ema_max_profile_periodicity = TARGET_EMA_MAX_PROFILE_PERIOD;
+
+	wiphy_ext_feature_set(ar->hw->wiphy,
+			      NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER);
 
 	ath11k_reg_init(ar);
 	ath11k_vendor_register(ar);
