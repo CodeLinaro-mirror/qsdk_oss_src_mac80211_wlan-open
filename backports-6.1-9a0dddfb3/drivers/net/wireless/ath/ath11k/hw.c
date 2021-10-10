@@ -231,6 +231,10 @@ static void ath11k_init_wmi_config_ipq8074(struct ath11k_base *ab,
 	config->ema_max_vap_cnt = ab->num_radios;
 	config->ema_max_profile_period = TARGET_EMA_MAX_PROFILE_PERIOD;
 	config->beacon_tx_offload_max_vdev += config->ema_max_vap_cnt;
+	if (test_bit(WMI_TLV_SERVICE_EXT_PEER_TID_CONFIGS_SUPPORT,
+		     ab->wmi_ab.svc_map)) {
+		config->peer_tid_ext |= WMI_RSRC_CFG_FLAG_PEER_TID_EXT;
+	}
 }
 
 static int ath11k_hw_mac_id_to_pdev_id_ipq8074(struct ath11k_hw_params *hw,

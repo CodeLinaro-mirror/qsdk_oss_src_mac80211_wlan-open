@@ -776,6 +776,55 @@ int ath11k_wmi_qos_null_send(struct ath11k *ar, u32 vdev_id, u32 buf_id,
 	return ret;
 }
 
+int ath11k_wmi_set_per_peer_per_tid_cfg(struct ath11k *ar,
+					const struct wmi_per_peer_per_tid_cfg_arg *arg)
+{
+	struct ath11k_pdev_wmi *wmi = ar->wmi;
+	struct wmi_peer_per_tid_cfg_cmd *cmd;
+	struct sk_buff *skb = NULL;
+	int ret = 0;
+
+	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	memset(skb->data, 0, sizeof(*cmd));
+
+	cmd = (struct wmi_peer_per_tid_cfg_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_PEER_TID_CONFIGURATIONS_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->vdev_id = arg->vdev_id;
+	ether_addr_copy(cmd->peer_macaddr.addr, arg->peer_macaddr.addr);
+	cmd->tid = arg->tid;
+	cmd->ack_policy = arg->ack_policy;
+	cmd->aggr_control = arg->aggr_control;
+	cmd->rate_control = arg->rate_ctrl;
+	cmd->retry_count = arg->retry_count;
+	cmd->rcode_flags = arg->rcode_flags;
+	cmd->ext_tid_cfg_bitmap = arg->ext_tid_cfg_bitmap;
+	cmd->rtscts_ctrl = arg->rtscts_ctrl;
+	cmd->max_num_mpdu_in_ppdu = arg->max_num_mpdu_in_ppdu;
+	cmd->max_num_msdu_in_mpdu = arg->max_num_msdu_in_mpdu;
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+		   "wmi noack tid %d vdev id %d ack_policy %d aggr %u rate_ctrl %u rcflag 0x%x retry_count %d\n rtscts %d ext_tid_cfg_bitmap %d mac_addr %pM ampdu_count %d amsdu count %d\n",
+		   arg->tid, arg->vdev_id, arg->ack_policy, arg->aggr_control,
+		   arg->rate_ctrl, arg->rcode_flags, arg->retry_count, arg->rtscts_ctrl,
+		   arg->ext_tid_cfg_bitmap, arg->peer_macaddr.addr,
+		   arg->max_num_mpdu_in_ppdu, arg->max_num_msdu_in_mpdu);
+
+	ret = ath11k_wmi_cmd_send(ar->wmi, skb, WMI_PEER_TID_CONFIGURATIONS_CMDID);
+	if (ret) {
+		ath11k_warn(ar->ab,
+			    "failed to submit WMI_PEER_TID_CONFIGURATIONS_CMDID cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+		   "wmi peer tid configuration cmd sent successfully\n");
+	return ret;
+}
+
 int ath11k_wmi_vdev_create(struct ath11k *ar, u8 *macaddr,
 			   struct vdev_create_params *param)
 {
@@ -5001,6 +5050,7 @@ ath11k_wmi_copy_resource_config(struct wmi_resource_config *wmi_cfg,
 	wmi_cfg->ema_max_profile_period = tg_cfg->ema_max_profile_period;
 	wmi_cfg->max_num_group_keys = tg_cfg->max_num_group_keys;
 	wmi_cfg->smart_ant_cap = 1;
+	wmi_cfg->flag1 |= tg_cfg->peer_tid_ext;
 }
 
 static int ath11k_init_cmd_send(struct ath11k_pdev_wmi *wmi,

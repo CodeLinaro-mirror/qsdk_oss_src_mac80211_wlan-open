@@ -466,7 +466,8 @@ ath11k_dp_tx_htt_tx_complete_buf(struct ath11k_base *ab,
 	memset(&info->status, 0, sizeof(info->status));
 
 	if (ts->acked) {
-		if (!(info->flags & IEEE80211_TX_CTL_NO_ACK)) {
+		if (!(info->flags & IEEE80211_TX_CTL_NO_ACK) &&
+		    !(flags & ATH11K_SKB_F_NOACK_TID)) {
 			info->flags |= IEEE80211_TX_STAT_ACK;
 			info->status.ack_signal = ts->ack_rssi;
 
@@ -725,7 +726,8 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 	info->status.rates[0].idx = -1;
 
 	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
-	    !(info->flags & IEEE80211_TX_CTL_NO_ACK)) {
+	    !(info->flags & IEEE80211_TX_CTL_NO_ACK) &&
+	    !(flags & ATH11K_SKB_F_NOACK_TID)) {
 		info->flags |= IEEE80211_TX_STAT_ACK;
 		info->status.ack_signal = ts->ack_rssi;
 
@@ -737,7 +739,8 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 	}
 
 	if (ts->status == HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX &&
-	    (info->flags & IEEE80211_TX_CTL_NO_ACK))
+	    (info->flags & IEEE80211_TX_CTL_NO_ACK) &&
+	    (flags & ATH11K_SKB_F_NOACK_TID))
 		info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
 
 	if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar)) ||

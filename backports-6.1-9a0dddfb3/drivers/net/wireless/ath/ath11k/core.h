@@ -120,6 +120,7 @@ enum wme_ac {
 #define ATH11K_HT_MCS_MAX	7
 #define ATH11K_VHT_MCS_MAX	9
 #define ATH11K_HE_MCS_MAX	11
+#define ATH11K_TID_MAX 8
 
 enum ath11k_crypt_mode {
 	/* Only use hardware crypto engine */
@@ -132,6 +133,7 @@ enum ath11k_crypt_mode {
 #define ATH11K_FREE_GROUP_IDX_MAP_BITS	(BITS_PER_BYTE * (sizeof(long)))
 #define ATH11K_FREE_GROUP_IDX_MAP_MAX	(ATH11K_GROUP_KEYS_NUM_MAX /	\
 					 ATH11K_FREE_GROUP_IDX_MAP_BITS)
+#define ATH11K_MAX_RETRY_COUNT		30
 
 static inline enum wme_ac ath11k_tid_to_ac(u32 tid)
 {
@@ -145,6 +147,7 @@ enum ath11k_skb_flags {
 	ATH11K_SKB_HW_80211_ENCAP = BIT(0),
 	ATH11K_SKB_CIPHER_SET = BIT(1),
 	ATH11K_SKB_TX_STATUS = BIT(2),
+	ATH11K_SKB_F_NOACK_TID = BIT(3),
 };
 
 struct ath11k_skb_cb {
@@ -428,6 +431,18 @@ struct ath11k_mac_filter {
 	u8 peer_mac[ETH_ALEN];
 };
 
+struct ath11k_tid_qos_config {
+	int noack;
+	int retry_long;
+	int aggr_ctrl;
+	int amsdu_count;
+	int ampdu_count;
+	u8 rate_ctrl;
+	u32 rate_code;
+	int rtscts;
+	int ext_tid_cfg_bitmap;
+};
+
 struct ath11k_vif {
 	u32 vdev_id;
 	enum wmi_vdev_type vdev_type;
@@ -512,6 +527,9 @@ struct ath11k_vif {
 	struct list_head dyn_vlan_cfg;
 	/* VLAN keyidx map required for Dynamic VLAN */
 	u16 *vlan_keyid_map;
+	u32 tid_conf_changed[ATH11K_TID_MAX];
+	struct ath11k_tid_qos_config tid_cfg[ATH11K_TID_MAX];
+	u32 tids_rst;
 	DECLARE_BITMAP(free_groupidx_map, ATH11K_GROUP_KEYS_NUM_MAX);
 };
 
@@ -725,6 +743,8 @@ struct ath11k_sta {
 	/*bytes count for bit error rate computation*/
 	u32 ber_succ_bytes;
 	u32 ber_fail_bytes;
+	struct work_struct tid_config_wk;
+	struct ath11k_tid_qos_config tid_cfg[ATH11K_TID_MAX];
 #ifdef CPTCFG_ATH11K_CFR
 	struct ath11k_per_peer_cfr_capture cfr_capture;
 #endif

@@ -2185,6 +2185,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_REG_CC_EXT_EVENT_SUPPORT = 281,
 	WMI_TLV_SERVICE_DCS_AWGN_INT_SUPPORT = 286,
 	WMI_TLV_SERVICE_DYN_NSS_MASK_SUPPORT = 303,
+	WMI_TLV_SERVICE_RTSCTS_FOR_UNICAST_MGMT_SUPPORT = 309,
 	WMI_TLV_SERVICE_BIOS_SAR_SUPPORT = 326,
 	WMI_TLV_SERVICE_SUPPORT_11D_FOR_HOST_SCAN = 357,
 
@@ -2228,6 +2229,7 @@ enum {
 #define WMI_PEER_SET_MIN_TX_RATE                        0x12
 #define WMI_PEER_SET_DEFAULT_ROUTING                    0x13
 #define WMI_PEER_PARAM_DYN_NSS_EN_MASK                  0x24
+#define WMI_PEER_PARAM_EN_RTSCTS_FOR_UNICAST_MGMT	0x25
 
 /* slot time long */
 #define WMI_VDEV_SLOT_TIME_LONG         0x1
@@ -2409,6 +2411,7 @@ struct wmi_init_cmd {
 #define WMI_RSRC_CFG_FLAG1_BSS_CHANNEL_INFO_64 BIT(5)
 #define WMI_RSRC_CFG_FLAG2_CALC_NEXT_DTIM_COUNT_SET BIT(9)
 #define WMI_RSRC_CFG_FLAG1_ACK_RSSI BIT(18)
+#define WMI_RSRC_CFG_FLAG_PEER_TID_EXT BIT(22)
 
 #define WMI_CFG_HOST_SERVICE_FLAG_REG_CC_EXT 4
 
@@ -6402,6 +6405,7 @@ struct target_resource_config {
 	u32 num_msdu_desc;
 	u32 max_frag_entries;
 	u32 max_peer_ext_stats;
+	u32 peer_tid_ext;
 	u32 smart_ant_cap;
 	u32 bk_minfree;
 	u32 be_minfree;
@@ -6641,6 +6645,78 @@ struct wmi_qos_null_tx_cmd {
 	u32 frame_len;
 	u32 buf_len;
 	u32 tx_params_valid;
+} __packed;
+
+enum wmi_tid_aggr_control_conf {
+	WMI_TID_CONFIG_AGGR_CONTROL_IGNORE,
+	WMI_TID_CONFIG_AGGR_CONTROL_ENABLE,
+	WMI_TID_CONFIG_AGGR_CONTROL_DISABLE,
+};
+
+enum wmi_noack_tid_conf {
+	WMI_NOACK_TID_CONFIG_IGNORE_ACK_POLICY,
+	WMI_PEER_TID_CONFIG_ACK,
+	WMI_PEER_TID_CONFIG_NOACK,
+};
+
+enum wmi_tid_rate_ctrl_conf {
+	WMI_TID_CONFIG_RATE_CONTROL_IGNORE,
+	WMI_TID_CONFIG_RATE_CONTROL_AUTO,
+	WMI_TID_CONFIG_RATE_CONTROL_FIXED_RATE,
+	WMI_TID_CONFIG_RATE_CONTROL_DEFAULT_LOWEST_RATE,
+	WMI_PEER_TID_CONFIG_RATE_UPPER_CAP,
+};
+
+enum wmi_tid_rtscts_control_conf {
+	WMI_TID_CONFIG_RTSCTS_CTRL_RESET,
+	WMI_TID_CONFIG_RTSCTS_CTRL_DISABLE,
+	WMI_TID_CONFIG_RTSCTS_CTRL_ENABLE,
+};
+
+enum wmi_ext_tid_config_map {
+	WMI_EXT_TID_RTS_CTS_CONFIG =			BIT(0),
+	WMI_PEER_TID_MAX_NUM_MPDU_IN_PPDU_VALID =	BIT(1),
+	WMI_PEER_TID_MAX_NUM_MSDU_IN_MPDU_VALID =	BIT(2),
+};
+
+struct wmi_per_peer_per_tid_cfg_arg {
+	u32 vdev_id;
+	struct wmi_mac_addr peer_macaddr;
+	u32 tid;
+	enum wmi_noack_tid_conf ack_policy;
+	enum wmi_tid_aggr_control_conf aggr_control;
+	enum wmi_tid_aggr_control_conf aggr_control_ampdu;
+	enum wmi_tid_aggr_control_conf aggr_control_amsdu;
+	u8 rate_ctrl;
+	u32 rcode_rcflags;
+	u32 retry_count;
+	u32 rcode_flags;
+	u32 ext_tid_cfg_bitmap;
+	u32 rtscts_ctrl;
+	u32 max_num_mpdu_in_ppdu;
+	u32 max_num_msdu_in_mpdu;
+};
+
+struct wmi_peer_per_tid_cfg_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	struct wmi_mac_addr peer_macaddr;
+	u32 tid;
+
+	/* see enum wmi_noack_tid_conf */
+	u32 ack_policy;
+	/* see enum wmi_tid_aggr_control_conf */
+	u32 aggr_control;
+	/* see enum wmi_tid_rate_ctrl_conf */
+	u32 rate_control;
+	u32 rcode_flags;
+	u32 retry_count;
+	/* See enum wmi_ext_tid_config_map */
+	u32 ext_tid_cfg_bitmap;
+	/* see enum wmi_tid_rtscts_control_conf */
+	u32 rtscts_ctrl;
+	u32 max_num_mpdu_in_ppdu;
+	u32 max_num_msdu_in_mpdu;
 } __packed;
 
 #define MAX_RADIOS 3
@@ -7353,6 +7429,8 @@ int ath11k_wmi_mgmt_send(struct ath11k *ar, u32 vdev_id, u32 buf_id,
 			 struct sk_buff *frame, bool tx_params_valid);
 int ath11k_wmi_qos_null_send(struct ath11k *ar, u32 vdev_id, u32 buf_id,
 			     struct sk_buff *frame);
+int ath11k_wmi_set_per_peer_per_tid_cfg(struct ath11k *ar,
+					const struct wmi_per_peer_per_tid_cfg_arg *arg);
 int ath11k_wmi_p2p_go_bcn_ie(struct ath11k *ar, u32 vdev_id,
 			     const u8 *p2p_ie);
 int ath11k_wmi_bcn_tmpl(struct ath11k *ar, u32 vdev_id,
