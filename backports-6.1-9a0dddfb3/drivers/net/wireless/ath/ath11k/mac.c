@@ -8435,6 +8435,15 @@ ath11k_mac_vdev_start_restart(struct ath11k_vif *arvif,
 						   &arvif->reg_tpc_info);
 	}
 
+	if (ar->supports_6ghz &&
+	    chandef->chan->band == NL80211_BAND_6GHZ &&
+	    (arvif->vdev_type == WMI_VDEV_TYPE_STA || arvif->vdev_type == WMI_VDEV_TYPE_AP) &&
+	    test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map)) {
+		ath11k_mac_fill_reg_tpc_info(ar, arvif->vif, &arvif->chanctx);
+		ath11k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id,
+						   &arvif->reg_tpc_info);
+	}
+
 	if (!restart)
 		ar->num_started_vdevs++;
 
@@ -9342,6 +9351,7 @@ ath11k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 		if (power_type == IEEE80211_REG_UNSET_AP)
 			power_type = IEEE80211_REG_LPI_AP;
 
+		arvif->chanctx = *ctx;
 		if (arvif->vdev_type == WMI_VDEV_TYPE_STA)
 			ath11k_mac_parse_tx_pwr_env(ar, vif, ctx);
 	}
