@@ -926,6 +926,7 @@ struct ath11k {
 	u32 max_tx_power;
 	u32 txpower_limit_2g;
 	u32 txpower_limit_5g;
+	u32 txpower_limit_6g;
 	u32 txpower_scale;
 	u32 power_scale;
 	u32 chan_tx_pwr;
