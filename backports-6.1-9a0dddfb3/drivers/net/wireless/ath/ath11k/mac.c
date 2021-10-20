@@ -9295,6 +9295,7 @@ ath11k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	struct ath11k_base *ab = ar->ab;
 	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
 	int ret;
+	enum ieee80211_ap_reg_power power_type;
 
 	mutex_lock(&ar->conf_mutex);
 
@@ -9307,6 +9308,16 @@ ath11k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	    arvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		arvif->chanctx = *ctx;
 		ath11k_mac_parse_tx_pwr_env(ar, vif, ctx);
+	}
+
+	if (ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
+	    (arvif->vdev_type == WMI_VDEV_TYPE_STA ||
+	     arvif->vdev_type == WMI_VDEV_TYPE_AP)) {
+		power_type = vif->bss_conf.power_type;
+		ath11k_dbg(ab, ATH11K_DBG_MAC, "mac chanctx power type %d\n",
+			   power_type);
+		if (power_type == IEEE80211_REG_UNSET_AP)
+			power_type = IEEE80211_REG_LPI_AP;
 	}
 
 	/* for QCA6390 bss peer must be created before vdev_start */
