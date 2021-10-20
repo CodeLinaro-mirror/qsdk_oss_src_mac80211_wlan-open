@@ -991,9 +991,6 @@ void ath11k_reg_free(struct ath11k_base *ab)
 {
 	int i;
 
-	for (i = 0; i < ab->num_radios; i++)
-		ath11k_reg_reset_info(&ab->reg_info_store[i]);
-
 	kfree(ab->reg_info_store);
 	ab->reg_info_store = NULL;
 
