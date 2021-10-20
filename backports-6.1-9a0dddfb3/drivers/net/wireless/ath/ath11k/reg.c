@@ -567,6 +567,38 @@ static void ath11k_copy_reg_rule(struct ath11k_reg_rule *ath11k_reg_rule,
 		ath11k_reg_rule->end_freq = reg_rule->end_freq;
 }
 
+static struct cur_reg_rule
+*ath11k_get_active_6g_reg_rule(struct cur_regulatory_info *reg_info,
+			       u32 *max_bw_6g, int *max_elements)
+{
+	struct cur_reg_rule *reg_rule = NULL;
+	u8 i = 0, j = 0;
+
+	for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++) {
+		if (reg_info->num_6g_reg_rules_ap[i]) {
+			*max_elements = reg_info->num_6g_reg_rules_ap[i];
+			reg_rule = reg_info->reg_rules_6g_ap_ptr[i];
+			*max_bw_6g = reg_info->max_bw_6g_ap[i];
+			reg_info->num_6g_reg_rules_ap[i] = 0;
+			return reg_rule;
+		}
+	}
+
+	for (i = 0; i < WMI_REG_MAX_CLIENT_TYPE; i++) {
+		for (j = 0; j < WMI_REG_CURRENT_MAX_AP_TYPE; j++) {
+			if (reg_info->num_6g_reg_rules_client[j][i]) {
+				*max_elements = reg_info->num_6g_reg_rules_client[j][i];
+				reg_rule = reg_info->reg_rules_6g_client_ptr[j][i];
+				*max_bw_6g = reg_info->max_bw_6g_client[j][i];
+				reg_info->num_6g_reg_rules_client[j][i] = 0;
+				return reg_rule;
+			}
+		}
+	}
+
+	return reg_rule;
+}
+
 struct ieee80211_regdomain *
 ath11k_reg_build_regd(struct ath11k_base *ab,
 		      struct cur_regulatory_info *reg_info, bool intersect,
@@ -575,45 +607,31 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 {
 	struct ieee80211_regdomain *tmp_regd, *default_regd, *new_regd = NULL;
 	struct cur_reg_rule *reg_rule, *reg_rule_6ghz;
-	u8 i = 0, j = 0, k = 0;
+	u8 i = 0, j = 0, k = 0, max_elements = 0;
 	u8 num_rules;
 	u16 max_bw;
-	u32 flags, reg_6ghz_number, max_bw_6ghz;
+	u32 flags, reg_6g_number = 0, max_bw_6g = 0;
 	char alpha2[3];
+	bool reg_6g_itr_set = false;
 
 	num_rules = reg_info->num_5ghz_reg_rules + reg_info->num_2ghz_reg_rules;
 
+	/* FIXME: Currently updating all 9 possible regulatory rules for 6G.
+	 * For space optimization, logic can be enhanced to store reg rules
+	 * dynamically from power, AP and STA mode combination.
+	 */
+
 	if (reg_info->is_ext_reg_event) {
-		if (vdev_type == WMI_VDEV_TYPE_STA) {
-			enum wmi_reg_6ghz_ap_type ap_type;
-
-			ap_type = ath11k_reg_ap_pwr_convert(power_type);
-
-			if (ap_type == WMI_REG_MAX_AP_TYPE)
-				ap_type = WMI_REG_INDOOR_AP;
-
-			reg_6ghz_number = reg_info->num_6ghz_rules_client
-					[ap_type][WMI_REG_DEFAULT_CLIENT];
-
-			if (reg_6ghz_number == 0) {
-				ap_type = WMI_REG_INDOOR_AP;
-				reg_6ghz_number = reg_info->num_6ghz_rules_client
-						[ap_type][WMI_REG_DEFAULT_CLIENT];
-			}
-
-			reg_rule_6ghz = reg_info->reg_rules_6ghz_client_ptr
-					[ap_type][WMI_REG_DEFAULT_CLIENT];
-			max_bw_6ghz = reg_info->max_bw_6ghz_client
-					[ap_type][WMI_REG_DEFAULT_CLIENT];
-		} else {
-			reg_6ghz_number = reg_info->num_6ghz_rules_ap[WMI_REG_INDOOR_AP];
-			reg_rule_6ghz =
-				reg_info->reg_rules_6ghz_ap_ptr[WMI_REG_INDOOR_AP];
-			max_bw_6ghz = reg_info->max_bw_6ghz_ap[WMI_REG_INDOOR_AP];
+		/* All 6G APs - (LP, SP, VLP) */
+		for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++)
+			reg_6g_number += reg_info->num_6ghz_rules_ap[i];
+		/* All 6G STAs - (LP_DEF, LP_SUB, SP_DEF, SP_SUB, VLP_DEF, VLP_SUB) */
+		for (i = 0; i < WMI_REG_MAX_CLIENT_TYPE; i++) {
+			for (j = 0; j < WMI_REG_CURRENT_MAX_AP_TYPE; j++)
+				reg_6g_number += reg_info->num_6ghz_rules_client[j][i];
 		}
-
-		num_rules += reg_6ghz_number;
 	}
+	num_rules += reg_6g_number;
 
 	if (!num_rules)
 		goto ret;
@@ -640,7 +658,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 	/* Update reg_rules[] below. Firmware is expected to
 	 * send these rules in order(2 GHz rules first and then 5 GHz)
 	 */
-	for (; i < num_rules; i++) {
+	for (i = 0, j = 0; i < num_rules; i++) {
 		if (reg_info->num_2ghz_reg_rules &&
 		    (i < reg_info->num_2ghz_reg_rules)) {
 			reg_rule = reg_info->reg_rules_2ghz_ptr + i;
@@ -666,17 +684,40 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 				ath11k_copy_reg_rule(&ab->reg_rule_5g, reg_rule);
 			else if (reg_rule->start_freq >= ATH11K_MIN_6G_FREQ)
 				ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
+		} else if (reg_info->is_ext_reg_event && reg_6g_number) {
+			if (!reg_6g_itr_set) {
+				reg_rule_6g = ath11k_get_active_6g_reg_rule(reg_info,
+									    &max_bw_6g,
+									    &max_elements);
 
-		} else if (reg_info->is_ext_reg_event && reg_6ghz_number &&
-			   k < reg_6ghz_number) {
-			reg_rule = reg_rule_6ghz + k++;
-			max_bw = min_t(u16, reg_rule->max_bw, max_bw_6ghz);
-			flags = NL80211_RRF_AUTO_BW;
-			if (reg_rule->psd_flag)
-				flags |= NL80211_RRF_PSD;
-			ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
-			if (reg_rule->psd_flag)
-				flags |= NL80211_RRF_PSD;
+				if (!reg_rule_6g) {
+					ath11k_warn(ab,
+						    "\nFetching a valid reg_rule_6g_ptr failed."
+						    "This shouldn't happen normally. Be carefull"
+						    "with the regulatory domain settings\n");
+					break;
+				}
+				reg_6g_itr_set = true;
+			}
+			if (reg_6g_itr_set && k < max_elements) {
+				reg_rule = reg_rule_6g + k++;
+				max_bw = min_t(u16, reg_rule->max_bw, max_bw_6g);
+				flags = NL80211_RRF_AUTO_BW;
+
+				if (reg_rule->psd_flag)
+					flags |= NL80211_RRF_PSD;
+
+				ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
+			}
+
+			if (reg_6g_itr_set && k >= max_elements) {
+				reg_6g_itr_set = false;
+				reg_rule_6g = NULL;
+				max_bw_6g = 0;
+				max_elements = 0;
+				k = 0;
+			}
+			reg_6g_number--;
 		} else {
 			break;
 		}

@@ -6265,6 +6265,27 @@ ath11k_invalid_5ghz_reg_ext_rules_from_wmi(u32 num_reg_rules,
 	return num_invalid_5ghz_rules;
 }
 
+static u8
+ath11k_invalid_5g_reg_ext_rules_from_wmi(u32 num_reg_rules,
+					 struct wmi_regulatory_ext_rule_struct *wmi_reg_rule)
+{
+	u8 num_invalid_5g_rules = 0;
+	u32 count, start_freq, end_freq;
+
+	for (count = 0; count < num_reg_rules; count++) {
+		start_freq = FIELD_GET(REG_RULE_START_FREQ,
+				       wmi_reg_rule[count].freq_info);
+		end_freq = FIELD_GET(REG_RULE_END_FREQ,
+				     wmi_reg_rule[count].freq_info);
+
+		if (start_freq >= ATH11K_MIN_6G_FREQ &&
+		    end_freq <= ATH11K_MAX_6G_FREQ)
+			num_invalid_5g_rules++;
+	}
+
+	return num_invalid_5g_rules;
+}
+
 static int ath11k_pull_reg_chan_list_ext_update_ev(struct ath11k_base *ab,
 						   struct sk_buff *skb,
 						   struct cur_regulatory_info *reg_info)
