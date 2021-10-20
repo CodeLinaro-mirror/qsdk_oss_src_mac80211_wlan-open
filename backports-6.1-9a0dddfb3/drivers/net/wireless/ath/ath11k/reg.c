@@ -672,6 +672,8 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 			reg_rule = reg_rule_6ghz + k++;
 			max_bw = min_t(u16, reg_rule->max_bw, max_bw_6ghz);
 			flags = NL80211_RRF_AUTO_BW;
+			if (reg_rule->psd_flag)
+				flags |= NL80211_RRF_PSD;
 			ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
 			if (reg_rule->psd_flag)
 				flags |= NL80211_RRF_PSD;
