@@ -12225,10 +12225,23 @@ static void ath11k_mac_update_ch_list(struct ath11k *ar,
 				      struct ieee80211_supported_band *band,
 				      u32 freq_low, u32 freq_high)
 {
-	int i;
+	struct ieee80211_6ghz_channel *chan_6g;
+	int i, j;
 
 	if (!(freq_low && freq_high))
 		return;
+
+	if (band->band == NL80211_BAND_6GHZ) {
+		for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+			chan_6g = band->chan_6g[i];
+			for (j = 0; j < chan_6g->n_channels; j++) {
+				if (chan_6g->channels[j].center_freq < freq_low ||
+				    chan_6g->channels[j].center_freq > freq_high)
+					chan_6g->channels[j].flags |= IEEE80211_CHAN_DISABLED;
+			}
+		}
+		return;
+	}
 
 	for (i = 0; i < band->n_channels; i++) {
 		if (band->channels[i].center_freq < freq_low ||
@@ -12284,7 +12297,9 @@ static int ath11k_mac_setup_channels_rates(struct ath11k *ar,
 	struct ieee80211_supported_band *band;
 	struct ath11k_hal_reg_capabilities_ext *reg_cap, *temp_reg_cap;
 	void *channels;
+	struct ieee80211_6ghz_channel *chan_6g;
 	u32 phy_id;
+	int i = 0;
 
 	BUILD_BUG_ON((ARRAY_SIZE(ath11k_2ghz_channels) +
 		      ARRAY_SIZE(ath11k_5ghz_channels) +
@@ -12331,7 +12346,10 @@ static int ath11k_mac_setup_channels_rates(struct ath11k *ar,
 					   sizeof(ath11k_5ghz_channels),
 					   GFP_KERNEL);
 			if (!channels) {
-				kfree(ar->mac.sbands[NL80211_BAND_6GHZ].channels);
+				kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
+				for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++)
+					 kfree(ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i]);
+
 				return -ENOMEM;
 			}
 
@@ -12356,18 +12374,35 @@ static int ath11k_mac_setup_channels_rates(struct ath11k *ar,
 			ath11k_mac_update_5_dot_9_ch_list(ar, band);
 		} else if (reg_cap->low_5ghz_chan >= ATH11K_MIN_6G_FREQ &&
 		    	   reg_cap->high_5ghz_chan <= ATH11K_MAX_6G_FREQ) {
-			channels = kmemdup(ath11k_6ghz_channels,
-					   sizeof(ath11k_6ghz_channels), GFP_KERNEL);
-			if (!channels) {
-				kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
-				return -ENOMEM;
-			}
-
-			ar->supports_6ghz = true;
 			band = &ar->mac.sbands[NL80211_BAND_6GHZ];
 			band->band = NL80211_BAND_6GHZ;
-			band->n_channels = ARRAY_SIZE(ath11k_6ghz_channels);
-			band->channels = channels;
+			for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+				channels = kmemdup(ath11k_6ghz_channels,
+						sizeof(ath11k_6ghz_channels),
+						GFP_KERNEL);
+				chan_6g = kzalloc(sizeof(*chan_6g), GFP_ATOMIC);
+
+				if (!channels || !chan_6g) {
+					kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
+					break;
+				}
+
+				chan_6g->channels = channels;
+				chan_6g->n_channels = ARRAY_SIZE(ath11k_6ghz_channels);
+				band->chan_6g[i] = chan_6g;
+				channels = NULL;
+				chan_6g = NULL;
+			}
+
+			if (i < NL80211_REG_NUM_POWER_MODES) {
+				for (i = i - 1; i >= 0; i--) {
+					chan_6g = band->chan_6g[i];
+					kfree(chan_6g->channels);
+					kfree(chan_6g);
+				}
+				return -ENOMEM;
+			}
+			ar->supports_6ghz = true;
 			band->n_bitrates = ath11k_a_rates_size;
 			band->bitrates = ath11k_a_rates;
 
@@ -12377,6 +12412,14 @@ static int ath11k_mac_setup_channels_rates(struct ath11k *ar,
 						      ab->reg_rule_6g.start_freq),
 						  min(reg_cap->high_5ghz_chan,
 						      ab->reg_rule_6g.end_freq));
+			/* For 6G sband, the strcut channels and int numchannels will
+			 * have the default value. During ieee80211_hw_register(),
+			 * all sbands are parsed and at that time code can crash while
+			 * dereferencing the NULL pointer struct channel. Hence, we
+			 * assign the LPI AP channel to the default sband channel
+			 * to prevent APIs from breaking */
+			band->n_channels = band->chan_6g[0]->n_channels;
+			band->channels = band->chan_6g[0]->channels;
 
 			ath11k_mac_update_5_dot_9_ch_list(ar, band);
 		}

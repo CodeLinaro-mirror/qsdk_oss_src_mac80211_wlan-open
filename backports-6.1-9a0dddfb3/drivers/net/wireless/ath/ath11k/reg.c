@@ -449,13 +449,15 @@ ath11k_reg_adjust_bw(u16 start_freq, u16 end_freq, u16 max_bw)
 static void
 ath11k_reg_update_rule(struct ieee80211_reg_rule *reg_rule, u32 start_freq,
 		       u32 end_freq, u32 bw, u32 ant_gain, u32 reg_pwr,
-		       s8 psd, u32 reg_flags)
+		       s8 psd, u32 reg_flags,
+		       enum nl80211_regulatory_power_modes pwr_mode)
 {
 	reg_rule->freq_range.start_freq_khz = MHZ_TO_KHZ(start_freq);
 	reg_rule->freq_range.end_freq_khz = MHZ_TO_KHZ(end_freq);
 	reg_rule->freq_range.max_bandwidth_khz = MHZ_TO_KHZ(bw);
 	reg_rule->power_rule.max_antenna_gain = DBI_TO_MBI(ant_gain);
 	reg_rule->power_rule.max_eirp = DBM_TO_MBM(reg_pwr);
+	reg_rule->mode = pwr_mode;
 	reg_rule->psd = psd;
 	reg_rule->flags = reg_flags;
 }
@@ -486,7 +488,7 @@ ath11k_reg_update_weather_radar_band(struct ath11k_base *ab,
 				       reg_rule->start_freq,
 				       ETSI_WEATHER_RADAR_BAND_LOW, bw,
 				       reg_rule->ant_gain, reg_rule->reg_power,
-				       reg_rule->psd_eirp, flags);
+				       reg_rule->psd_eirp, flags, 0);
 
 		ath11k_dbg(ab, ATH11K_DBG_REG,
 			   "\t%d. (%d - %d @ %d) (%d, %d) (%d ms) (FLAGS %d)\n",
@@ -507,7 +509,7 @@ ath11k_reg_update_weather_radar_band(struct ath11k_base *ab,
 
 		ath11k_reg_update_rule(regd->reg_rules + i, start_freq,
 				       end_freq, bw, reg_rule->ant_gain,
-				       reg_rule->reg_power, reg_rule->psd_eirp, flags);
+				       reg_rule->reg_power, reg_rule->psd_eirp, flags, 0);
 
 		regd->reg_rules[i].dfs_cac_ms = ETSI_WEATHER_RADAR_BAND_CAC_TIMEOUT;
 
@@ -528,7 +530,7 @@ ath11k_reg_update_weather_radar_band(struct ath11k_base *ab,
 				       ETSI_WEATHER_RADAR_BAND_HIGH,
 				       reg_rule->end_freq, bw,
 				       reg_rule->ant_gain, reg_rule->reg_power,
-				       reg_rule->psd_eirp, flags);
+				       reg_rule->psd_eirp, flags, 0);
 
 		ath11k_dbg(ab, ATH11K_DBG_REG,
 			   "\t%d. (%d - %d @ %d) (%d, %d) (%d ms) (FLAGS %d)\n",
@@ -569,7 +571,8 @@ static void ath11k_copy_reg_rule(struct ath11k_reg_rule *ath11k_reg_rule,
 
 static struct cur_reg_rule
 *ath11k_get_active_6g_reg_rule(struct cur_regulatory_info *reg_info,
-			       u32 *max_bw_6g, int *max_elements)
+			       u32 *max_bw_6g, int *max_elements,
+			       enum nl80211_regulatory_power_modes *pwr_mode)
 {
 	struct cur_reg_rule *reg_rule = NULL;
 	u8 i = 0, j = 0;
@@ -580,6 +583,7 @@ static struct cur_reg_rule
 			reg_rule = reg_info->reg_rules_6g_ap_ptr[i];
 			*max_bw_6g = reg_info->max_bw_6g_ap[i];
 			reg_info->num_6g_reg_rules_ap[i] = 0;
+			*pwr_mode = i;
 			return reg_rule;
 		}
 	}
@@ -591,6 +595,7 @@ static struct cur_reg_rule
 				reg_rule = reg_info->reg_rules_6g_client_ptr[j][i];
 				*max_bw_6g = reg_info->max_bw_6g_client[j][i];
 				reg_info->num_6g_reg_rules_client[j][i] = 0;
+				*pwr_mode = WMI_REG_CURRENT_MAX_AP_TYPE * (i + 1)  + j;
 				return reg_rule;
 			}
 		}
@@ -613,6 +618,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 	u32 flags, reg_6g_number = 0, max_bw_6g = 0;
 	char alpha2[3];
 	bool reg_6g_itr_set = false;
+	enum nl80211_regulatory_power_modes pwr_mode;
 
 	num_rules = reg_info->num_5ghz_reg_rules + reg_info->num_2ghz_reg_rules;
 
@@ -665,6 +671,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 			max_bw = min_t(u16, reg_rule->max_bw,
 				       reg_info->max_bw_2ghz);
 			flags = 0;
+			pwr_mode = 0;
 			ath11k_copy_reg_rule(&ab->reg_rule_2g, reg_rule);
 		} else if (reg_info->num_5ghz_reg_rules &&
 			   (j < reg_info->num_5ghz_reg_rules)) {
@@ -679,6 +686,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 			 * per other BW rule flags we pass from here
 			 */
 			flags = NL80211_RRF_AUTO_BW;
+			pwr_mode = 0;
 
 			if (reg_rule->end_freq <= ATH11K_MAX_5G_FREQ)
 				ath11k_copy_reg_rule(&ab->reg_rule_5g, reg_rule);
@@ -686,9 +694,8 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 				ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
 		} else if (reg_info->is_ext_reg_event && reg_6g_number) {
 			if (!reg_6g_itr_set) {
-				reg_rule_6g = ath11k_get_active_6g_reg_rule(reg_info,
-									    &max_bw_6g,
-									    &max_elements);
+				reg_rule_6g = ath11k_get_active_6g_reg_rule(reg_info, &max_bw_6g,
+									    &max_elements, &pwr_mode);
 
 				if (!reg_rule_6g) {
 					ath11k_warn(ab,
@@ -707,7 +714,10 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 				if (reg_rule->psd_flag)
 					flags |= NL80211_RRF_PSD;
 
-				ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
+				if (reg_rule->end_freq <= ATH11K_MAX_6G_FREQ)
+					ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
+				else if (reg_rule->start_freq >= ATH11K_MIN_6G_FREQ)
+					ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
 			}
 
 			if (reg_6g_itr_set && k >= max_elements) {
@@ -729,7 +739,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 				       reg_rule->start_freq,
 				       reg_rule->end_freq, max_bw,
 				       reg_rule->ant_gain, reg_rule->reg_power,
-				       reg_rule->psd_eirp, flags);
+				       reg_rule->psd_eirp, flags, pwr_mode);
 
 		/* Update dfs cac timeout if the dfs domain is ETSI and the
 		 * new rule covers weather radar band.
