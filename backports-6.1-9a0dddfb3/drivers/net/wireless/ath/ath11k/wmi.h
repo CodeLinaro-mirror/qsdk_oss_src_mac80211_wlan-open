@@ -332,21 +332,35 @@ enum wmi_tlv_cmd_id {
 	WMI_VDEV_SET_CUSTOM_AGGR_SIZE_CMDID,
 	WMI_VDEV_ENCRYPT_DECRYPT_DATA_REQ_CMDID,
 	WMI_VDEV_ADD_MAC_ADDR_TO_RX_FILTER_CMDID,
+	/** WMI commands related to dbg arp stats */
 	WMI_VDEV_SET_ARP_STAT_CMDID,
 	WMI_VDEV_GET_ARP_STAT_CMDID,
+	/** get tx power for the current vdev */
 	WMI_VDEV_GET_TX_POWER_CMDID,
+	/* limit STA offchannel activity */
 	WMI_VDEV_LIMIT_OFFCHAN_CMDID,
+	/** To set custom software retries per-AC for vdev */
 	WMI_VDEV_SET_CUSTOM_SW_RETRY_TH_CMDID,
+	/** To set chainmask configuration for vdev */
 	WMI_VDEV_CHAINMASK_CONFIG_CMDID,
 	WMI_VDEV_GET_BCN_RECEPTION_STATS_CMDID,
+	/* request LTE-Coex info */
 	WMI_VDEV_GET_MWS_COEX_INFO_CMDID,
+	/** delete all peer (excluding bss peer) */
 	WMI_VDEV_DELETE_ALL_PEER_CMDID,
+	/* To set bss max idle time related parameters */
 	WMI_VDEV_BSS_MAX_IDLE_TIME_CMDID,
+	 /** Indicates FW to trigger Audio sync  */
 	WMI_VDEV_AUDIO_SYNC_TRIGGER_CMDID,
+	/** Gives Qtimer value  to FW  */
 	WMI_VDEV_AUDIO_SYNC_QTIMER_CMDID,
+	/** Preferred channel list for each vdev */
 	WMI_VDEV_SET_PCL_CMDID,
+	/** VDEV_GET_BIG_DATA_CMD IS DEPRECATED - DO NOT USE */
 	WMI_VDEV_GET_BIG_DATA_CMDID,
+	/** Get per vdev BIG DATA stats phase 2 */
 	WMI_VDEV_GET_BIG_DATA_P2_CMDID,
+	/** set TPC PSD/non-PSD power */
 	WMI_VDEV_SET_TPC_POWER_CMDID,
 	WMI_PEER_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_PEER),
 	WMI_PEER_DELETE_CMDID,
@@ -1924,6 +1938,7 @@ enum wmi_tlv_tag {
 	WMI_CTRL_PATH_PDEV_STATS,
 	WMI_TAG_REGULATORY_RULE_EXT_STRUCT = 0x3A9,
 	WMI_TAG_REG_CHAN_LIST_CC_EXT_EVENT,
+
 	WMI_TAG_TPC_STATS_GET_CMD = 0x38B,
 	WMI_TAG_TPC_STATS_EVENT_FIXED_PARAM,
 	WMI_TAG_TPC_STATS_CONFIG_EVENT,
@@ -7656,4 +7671,8 @@ int
 ath11k_wmi_peer_set_smart_ant_train_ant_param_cmd(struct ath11k *ar,
 						  u32 vdev_id, const u8 *macaddr,
 						  const struct wmi_peer_set_smart_ant_train_ant_fixed_param_cmd *arg);
+int
+ath11k_wmi_send_vdev_set_tpc_power(struct ath11k *ar,
+				       u32 vdev_id,
+				       struct ath11k_reg_tpc_power_info *param);
 #endif
