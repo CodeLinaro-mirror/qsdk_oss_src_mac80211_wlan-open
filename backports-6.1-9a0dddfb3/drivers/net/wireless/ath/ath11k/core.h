@@ -382,26 +382,6 @@ struct ath11k_chan_power_info {
 /* ath11k only deals with 160 MHz, so 8 subchannels */
 #define ATH11K_NUM_PWR_LEVELS	8
 
-/**
- * struct ath11k_reg_tpc_power_info - regulatory TPC power info
- * @is_psd_power: is PSD power or not
- * @eirp_power: Maximum EIRP power (dBm), valid only if power is PSD
- * @ap_power_type: type of power (SP/LPI/VLP)
- * @num_pwr_levels: number of power levels
- * @reg_max: Array of maximum TX power (dBm) per PSD value
- * @tpe: TPE values processed from TPE IE
- * @chan_power_info: power info to send to firmware
- */
-struct ath11k_reg_tpc_power_info {
-	bool is_psd_power;
-	u8 eirp_power;
-	enum wmi_reg_6ghz_ap_type ap_power_type;
-	u8 num_pwr_levels;
-	u8 reg_max[ATH11K_NUM_PWR_LEVELS];
-	s8 tpe[ATH11K_NUM_PWR_LEVELS];
-	struct ath11k_chan_power_info chan_power_info[ATH11K_NUM_PWR_LEVELS];
-};
-
 #define ATH11K_STATS_MGMT_FRM_TYPE_MAX 16
 
 struct ath11k_mgmt_frame_stats {
@@ -441,6 +421,43 @@ struct ath11k_tid_qos_config {
 	u32 rate_code;
 	int rtscts;
 	int ext_tid_cfg_bitmap;
+};
+
+/**
+ * struct chan_power_info - TPE containing power info per channel chunk
+ * @chan_cfreq: channel center freq (MHz)
+ * e.g.
+ * channel 37/20MHz,  it is 6135
+ * channel 37/40MHz,  it is 6125
+ * channel 37/80MHz,  it is 6145
+ * channel 37/160MHz, it is 6185
+ * @tx_power: transmit power (dBm)
+ */
+struct chan_power_info {
+	u16 chan_cfreq;
+	s8 tx_power;
+};
+
+/**
+ * struct reg_tpc_power_info - regulatory TPC power info
+ * @is_psd_power: is PSD power or not
+ * @eirp_power: Maximum EIRP power (dBm), valid only if power is PSD
+ * @power_type_6g: type of power (SP/LPI/VLP)
+ * @num_pwr_levels: number of power levels
+ * @reg_max: Array of maximum TX power (dBm) per PSD value
+ * @ap_constraint_power: AP constraint power (dBm)
+ * @tpe: TPE values processed from TPE IE
+ * @chan_power_info: power info to send to FW
+ */
+struct ath11k_reg_tpc_power_info {
+	bool is_psd_power;
+	u8 eirp_power;
+	enum wmi_reg_6g_ap_type power_type_6g;
+	u8 num_pwr_levels;
+	u8 reg_max[IEEE80211_MAX_NUM_PWR_LEVEL];
+	u8 ap_constraint_power;
+	s8 tpe[IEEE80211_MAX_NUM_PWR_LEVEL];
+	struct chan_power_info chan_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
 };
 
 struct ath11k_vif {
@@ -498,7 +515,6 @@ struct ath11k_vif {
 	u32 vht_cap;
 	struct ath11k_arp_ns_offload arp_ns_offload;
 	struct ath11k_rekey_data rekey_data;
-
 	struct ath11k_reg_tpc_power_info reg_tpc_info;
 
 	/* Must be last - ends in a flexible-array member.
