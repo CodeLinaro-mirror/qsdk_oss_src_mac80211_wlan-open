@@ -6015,6 +6015,47 @@ static void ath11k_update_radiotap(struct ath11k *ar,
 	rxs->mactime = ppduinfo->tsft;
 }
 
+void ath11k_dp_rx_cbf_pktlog_process(struct ath11k *ar, struct sk_buff *mon_skb,
+				     u32 mac_id,
+				     struct hal_rx_mon_ppdu_info *ppduinfo) {
+	uint32_t skb_len, len_align;
+	void *skb_data;
+	uint8_t  type, subtype;
+	struct ieee80211_hdr *data_hdr;
+	struct htt_t2h_ppdu_stats_ind_hdr ppdu_stats_ind_hdr;
+	struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv mgmtctrl_pld_tlv;
+
+	skb_data = mon_skb->data;
+	data_hdr = (struct ieee80211_hdr *)skb_data;
+	type = data_hdr->frame_control & IEEE80211_FCTL_FTYPE;
+	subtype = data_hdr->frame_control & IEEE80211_FCTL_STYPE;
+
+	if (type != IEEE80211_FTYPE_MGMT || subtype != IEEE80211_STYPE_ACTION_NO_ACK)
+		return;
+
+	skb_len = mon_skb->len;
+	len_align = ALIGN(skb_len +
+			   sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv), PKTLOG_ALIGN);
+	ppdu_stats_ind_hdr.header = HTT_T2H_MSG_TYPE_PPDU_STATS_IND |
+				    (mac_id << PPDU_STATS_IND_MAC_ID_SHIFT) |
+				    (ar->pdev->pdev_id << PPDU_STATS_IND_PDEV_ID_SHIFT) |
+				    len_align << PPDU_STATS_PAYLOAD_LEN_SHIFT;
+	ppdu_stats_ind_hdr.ppdu_id = ppduinfo->ppdu_id;
+	ppdu_stats_ind_hdr.timestamp_us = (uint32_t)ppduinfo->tsft;
+	ppdu_stats_ind_hdr.rsvd = 0;
+
+	len_align = ALIGN(skb_len - sizeof(mgmtctrl_pld_tlv.header) +
+		     	   sizeof(struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv), PKTLOG_ALIGN);
+	mgmtctrl_pld_tlv.header = HTT_PPDU_STATS_TAG_RX_MGMTCTRL_PAYLOAD
+				  | len_align << MGMT_STATS_PAYLOAD_LEN_SHIFT;
+	mgmtctrl_pld_tlv.frame_length = mon_skb->len;
+	mgmtctrl_pld_tlv.rsvd1 = 0;
+	mgmtctrl_pld_tlv.rsvd2 = 0;
+
+	ath11k_cbf_pktlog_process(ar, skb_data, skb_len, &ppdu_stats_ind_hdr,
+					  &mgmtctrl_pld_tlv);
+}
+
 static int ath11k_dp_rx_mon_deliver(struct ath11k *ar, u32 mac_id,
 				    struct sk_buff *head_msdu,
 				    struct hal_rx_mon_ppdu_info *ppduinfo,
@@ -6031,6 +6072,12 @@ static int ath11k_dp_rx_mon_deliver(struct ath11k *ar, u32 mac_id,
 
 	if (!mon_skb)
 		goto mon_deliver_fail;
+
+	if (ath11k_debug_is_pktlog_cbf_mode_enabled(ar)) {
+		ath11k_dp_rx_cbf_pktlog_process(ar, mon_skb, mac_id, ppduinfo);
+		dev_kfree_skb_any(mon_skb);
+		return 0;
+	}
 
 	header = mon_skb;
 

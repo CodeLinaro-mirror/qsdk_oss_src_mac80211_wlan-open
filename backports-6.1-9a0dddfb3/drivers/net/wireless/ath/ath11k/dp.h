@@ -583,6 +583,7 @@ enum htt_ppdu_stats_tag_type {
 	HTT_PPDU_STATS_TAG_USR_COMMON_ARRAY,
 	HTT_PPDU_STATS_TAG_INFO,
 	HTT_PPDU_STATS_TAG_TX_MGMTCTRL_PAYLOAD,
+	HTT_PPDU_STATS_TAG_RX_MGMTCTRL_PAYLOAD = 17,
 
 	/* New TLV's are added above to this line */
 	HTT_PPDU_STATS_TAG_MAX,
@@ -1871,6 +1872,37 @@ static inline void ath11k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 	memcpy(addr, &addr_l32, 4);
 	memcpy(addr + 4, &addr_h16, ETH_ALEN - 4);
 }
+
+#define IEEE80211_STYPE_ACTION_NO_ACK	0xE0
+#define PPDU_STATS_IND_MAC_ID_SHIFT	8
+#define PPDU_STATS_IND_PDEV_ID_SHIFT	10
+#define PKTLOG_ALIGN	4
+#define PPDU_STATS_PAYLOAD_LEN_SHIFT	16
+#define MGMT_STATS_PAYLOAD_LEN_SHIFT	12
+
+struct htt_t2h_ppdu_stats_ind_hdr {
+	/* bits[7:0] = msg_type
+	 * bits[9:8] = mac_id
+	 * bits[11:10] = pdev_id
+	 * bits[15:12] = rsvd
+	 * bits 31:16 = payload_size */
+	u32 header;
+	u32 ppdu_id;
+	u32 timestamp_us;
+	u32 rsvd;
+};
+
+struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv {
+	u32 header;
+	/*
+	 * BIT [ 15 :   0]   :- frame_length (in bytes)
+	 * BIT [ 31 :  16]   :- reserved1
+	 */
+	u32 frame_length;
+	u32 rsvd1; /* set to 0x0 */
+	u32 rsvd2; /* set to 0x0 */
+	u8 payload[];
+};
 
 int ath11k_dp_service_srng(struct ath11k_base *ab,
 			   struct ath11k_ext_irq_grp *irq_grp,

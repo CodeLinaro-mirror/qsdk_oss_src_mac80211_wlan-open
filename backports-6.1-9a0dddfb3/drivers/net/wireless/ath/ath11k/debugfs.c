@@ -1137,7 +1137,7 @@ static void ath11k_debug_config_mon_status(struct ath11k *ar, bool enable)
 	if (enable)
 		tlv_filter = ath11k_mac_mon_status_filter_default;
 
-	for (i = 0; i < ab->hw_params.num_rxmda_per_pdev; i++) {
+	for (i = 0; i < ab->hw_params.num_rxdma_per_pdev; i++) {
 		ring_id = ar->dp.rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
 		ath11k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id,
 						 ar->dp.mac_id + i,
@@ -1590,11 +1590,14 @@ static ssize_t ath11k_write_pktlog_filter(struct file *file,
 {
 	struct ath11k *ar = file->private_data;
 	struct ath11k_base *ab = ar->ab;
-	struct htt_rx_ring_tlv_filter tlv_filter = {0};
+	struct htt_rx_ring_tlv_filter tlv_filter = {0}, cbf_tlv_filter = {0};
 	u32 rx_filter = 0, ring_id, filter, mode;
 	u8 buf[128] = {0};
 	int i, ret, rx_buf_sz = 0;
 	ssize_t rc;
+	char *pktlog_mode[ATH11K_PKTLOG_MODE_CBF_FULL] = {"lite", "full",
+							  "cbf lite",
+							  "cbf full"};
 
 	mutex_lock(&ar->conf_mutex);
 	if (ar->state != ATH11K_STATE_ON) {
@@ -1610,7 +1613,7 @@ static ssize_t ath11k_write_pktlog_filter(struct file *file,
 	buf[rc] = '\0';
 
 	ret = sscanf(buf, "0x%x %u", &filter, &mode);
-	if (ret != 2) {
+	if (ret != 2 || !mode || mode >= ATH11K_PKTLOG_MODE_MAX) {
 		ret = -EINVAL;
 		goto out;
 	}
@@ -1635,6 +1638,16 @@ static ssize_t ath11k_write_pktlog_filter(struct file *file,
 	tlv_filter.offset_valid = false;
 	for (i = 0; i < ab->hw_params.num_rxdma_per_pdev; i++) {
 		ring_id = ar->dp.rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
+		if (mode == ATH11K_PKTLOG_MODE_CBF_LITE ||
+		    mode == ATH11K_PKTLOG_MODE_CBF_FULL) {
+			ret = ath11k_dp_tx_htt_rx_filter_setup(ab, ring_id, ar->dp.mac_id,
+							       HAL_RXDMA_MONITOR_BUF,
+							       rx_buf_sz, &cbf_tlv_filter);
+			if (ret) {
+				ath11k_warn(ab, "failed to set rx filter for monitor buffer ring\n");
+				goto out;
+			}
+		}
 		ret = ath11k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id, ar->dp.mac_id,
 						       HAL_RXDMA_MONITOR_STATUS,
 						       rx_buf_sz, &tlv_filter);
@@ -1643,6 +1656,15 @@ static ssize_t ath11k_write_pktlog_filter(struct file *file,
 			goto out;
 		}
 	}
+	if (mode == ATH11K_PKTLOG_MODE_CBF_LITE ||
+	    mode == ATH11K_PKTLOG_MODE_CBF_FULL) {
+		cbf_tlv_filter.pkt_filter_flags0 = 0;
+		cbf_tlv_filter.pkt_filter_flags1 = HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS1_ACTION_NOACK;
+		cbf_tlv_filter.pkt_filter_flags2 = 0;
+		cbf_tlv_filter.pkt_filter_flags3 = 0;
+		cbf_tlv_filter.rx_filter = HTT_RX_RXDMA_FILTER_TLV_FLAGS_BUF_RING;
+	}
+
 #define HTT_RX_FILTER_TLV_LITE_MODE \
 			(HTT_RX_FILTER_TLV_FLAGS_PPDU_START | \
 			HTT_RX_FILTER_TLV_FLAGS_PPDU_END | \
@@ -1651,7 +1673,8 @@ static ssize_t ath11k_write_pktlog_filter(struct file *file,
 			HTT_RX_FILTER_TLV_FLAGS_PPDU_END_STATUS_DONE | \
 			HTT_RX_FILTER_TLV_FLAGS_MPDU_START)
 
-	if (mode == ATH11K_PKTLOG_MODE_FULL) {
+	if (mode == ATH11K_PKTLOG_MODE_FULL ||
+	    mode == ATH11K_PKTLOG_MODE_CBF_FULL) {
 		rx_filter = HTT_RX_FILTER_TLV_LITE_MODE |
 			    HTT_RX_FILTER_TLV_FLAGS_MSDU_START |
 			    HTT_RX_FILTER_TLV_FLAGS_MSDU_END |
@@ -1659,7 +1682,8 @@ static ssize_t ath11k_write_pktlog_filter(struct file *file,
 			    HTT_RX_FILTER_TLV_FLAGS_PACKET_HEADER |
 			    HTT_RX_FILTER_TLV_FLAGS_ATTENTION;
 		rx_buf_sz = DP_RX_BUFFER_SIZE;
-	} else if (mode == ATH11K_PKTLOG_MODE_LITE) {
+	} else if (mode == ATH11K_PKTLOG_MODE_LITE ||
+		   mode == ATH11K_PKTLOG_MODE_CBF_LITE) {
 		ret = ath11k_dp_tx_htt_h2t_ppdu_stats_req(ar,
 							  HTT_PPDU_STATS_TAG_PKTLOG);
 		if (ret) {
@@ -1694,6 +1718,18 @@ static ssize_t ath11k_write_pktlog_filter(struct file *file,
 
 	for (i = 0; i < ab->hw_params.num_rxdma_per_pdev; i++) {
 		ring_id = ar->dp.rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
+		if (mode == ATH11K_PKTLOG_MODE_CBF_LITE ||
+		    mode == ATH11K_PKTLOG_MODE_CBF_FULL) {
+			ret = ath11k_dp_tx_htt_rx_filter_setup(ab, ring_id,
+							       ar->dp.mac_id + i,
+							       HAL_RXDMA_MONITOR_BUF,
+							       rx_buf_sz, &cbf_tlv_filter);
+			if (ret) {
+				ath11k_warn(ab, "failed to set rx filter for monitor buffer ring\n");
+				goto out;
+			}
+		}
+
 		ret = ath11k_dp_tx_htt_rx_filter_setup(ab, ring_id,
 						       ar->dp.mac_id + i,
 						       HAL_RXDMA_MONITOR_STATUS,
@@ -1705,8 +1741,7 @@ static ssize_t ath11k_write_pktlog_filter(struct file *file,
 		}
 	}
 
-	ath11k_info(ab, "pktlog mode %s\n",
-		    ((mode == ATH11K_PKTLOG_MODE_FULL) ? "full" : "lite"));
+	ath11k_info(ar->ab, "pktlog mode %s\n", pktlog_mode[mode - 1]);
 
 	ar->debug.pktlog_filter = filter;
 	ar->debug.pktlog_mode = mode;

@@ -165,6 +165,9 @@ enum ath11k_pktlog_filter {
 enum ath11k_pktlog_mode {
 	ATH11K_PKTLOG_MODE_LITE = 1,
 	ATH11K_PKTLOG_MODE_FULL = 2,
+	ATH11K_PKTLOG_MODE_CBF_LITE = 3,
+	ATH11K_PKTLOG_MODE_CBF_FULL = 4,
+	ATH11K_PKTLOG_MODE_MAX = 5,
 };
 
 enum ath11k_pktlog_enum {
@@ -361,7 +364,12 @@ int ath11k_debugfs_get_fw_stats(struct ath11k *ar, u32 pdev_id,
 
 static inline bool ath11k_debugfs_is_pktlog_lite_mode_enabled(struct ath11k *ar)
 {
-	return (ar->debug.pktlog_mode == ATH11K_PKTLOG_MODE_LITE);
+	return ((ar->debug.pktlog_mode == ATH11K_PKTLOG_MODE_LITE) || (ar->debug.pktlog_mode == ATH11K_PKTLOG_MODE_CBF_LITE));
+}
+
+static inline bool ath11k_debug_is_pktlog_cbf_mode_enabled(struct ath11k *ar)
+{
+	return (ar->debug.pktlog_mode >= ATH11K_PKTLOG_MODE_CBF_LITE);
 }
 
 static inline bool ath11k_debugfs_is_pktlog_rx_stats_enabled(struct ath11k *ar)
@@ -474,6 +482,11 @@ static inline bool ath11k_debugfs_is_pktlog_lite_mode_enabled(struct ath11k *ar)
 	return false;
 }
 
+static inline bool ath11k_debug_is_pktlog_cbf_mode_enabled(struct ath11k *ar)
+{
+	return false;
+}
+
 static inline bool ath11k_debugfs_is_pktlog_rx_stats_enabled(struct ath11k *ar)
 {
 	return false;
@@ -518,6 +531,9 @@ void ath11k_deinit_pktlog(struct ath11k *ar);
 void ath11k_htt_pktlog_process(struct ath11k *ar, u8 *data);
 void ath11k_htt_ppdu_pktlog_process(struct ath11k *ar, u8 *data, u32 len);
 void ath11k_rx_stats_buf_pktlog_process(struct ath11k *ar, u8 *data, u16 log_type, u32 len);
+void ath11k_cbf_pktlog_process(struct ath11k *ar, u8 *data, u32 len,
+			       struct htt_t2h_ppdu_stats_ind_hdr *ind_hdr,
+			       struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv *tlv_hdr);
 
 #else /* CPTCFG_ATH11K_PKTLOG */
 static inline void ath11k_init_pktlog(struct ath11k *ar)
@@ -543,6 +559,11 @@ static inline void ath11k_pktlog_rx(struct ath11k *ar, struct sk_buff_head *amsd
 }
 static inline void ath11k_rx_stats_buf_pktlog_process(struct ath11k *ar,
 						       u8 *data, u16 log_type, u32 len)
+{
+}
+void ath11k_cbf_pktlog_process(struct ath11k *ar, u8 *data, u32 len,
+			       struct htt_t2h_ppdu_stats_ind_hdr *ind_hdr,
+			       struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv *tlv_hdr)
 {
 }
 #endif /* CONFIG_ATH11K_PKTLOG */
