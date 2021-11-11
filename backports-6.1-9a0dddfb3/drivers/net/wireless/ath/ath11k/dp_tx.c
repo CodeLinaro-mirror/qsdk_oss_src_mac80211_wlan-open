@@ -663,158 +663,6 @@ err_out:
 	spin_unlock_bh(&ab->base_lock);
 }
 
-static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
-				       struct sk_buff *msdu,
-				       struct hal_tx_status *ts,
-				       enum hal_wbm_htt_tx_comp_status wbm_status)
-{
-	struct ieee80211_tx_status status = { 0 };
-	struct ieee80211_rate_status status_rate = { 0 };
-	struct ath11k_base *ab = ar->ab;
-	struct ieee80211_tx_info *info;
-	struct ath11k_skb_cb *skb_cb;
-	struct ath11k_peer *peer;
-	struct ath11k_sta *arsta;
-	struct rate_info rate;
-	struct ieee80211_vif *vif = NULL;
-	struct ath11k_vif *arvif = NULL;
-	u8 flags = 0;
-
-	if (WARN_ON_ONCE(ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM)) {
-		/* Must not happen */
-		return;
-	}
-
-	skb_cb = ATH11K_SKB_CB(msdu);
-
-	dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
-
-	/* Free skb here if stats is disabled */
-	if (ab->stats_disable && !(flags & ATH11K_SKB_TX_STATUS)) {
-		if (msdu->destructor) {
-			msdu->wifi_acked_valid = 1;
-			msdu->wifi_acked = ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED;
-		}
-		if (skb_has_frag_list(msdu)) {
-			kfree_skb_list(skb_shinfo(msdu)->frag_list);
-			skb_shinfo(msdu)->frag_list = NULL;
-		}
-		dev_kfree_skb(msdu);
-		return;
-	}
-
-	if (unlikely(!rcu_access_pointer(ab->pdevs_active[ar->pdev_idx]))) {
-		ieee80211_free_txskb(ar->hw, msdu);
-		return;
-	}
-
-	if (unlikely(!skb_cb->vif)) {
-		ieee80211_free_txskb(ar->hw, msdu);
-		return;
-	}
-
-	flags = skb_cb->flags;
-	vif = skb_cb->vif;
-	arvif = (void *)vif->drv_priv;
-	if(arvif && wbm_status < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX)
-		arvif->wbm_tx_comp_stats[wbm_status]++;
-
-	info = IEEE80211_SKB_CB(msdu);
-	memset(&info->status, 0, sizeof(info->status));
-
-	/* skip tx rate update from ieee80211_status*/
-	info->status.rates[0].idx = -1;
-
-	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
-	    !(info->flags & IEEE80211_TX_CTL_NO_ACK) &&
-	    !(flags & ATH11K_SKB_F_NOACK_TID)) {
-		info->flags |= IEEE80211_TX_STAT_ACK;
-		info->status.ack_signal = ts->ack_rssi;
-
-		if (!test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
-			      ab->wmi_ab.svc_map))
-			info->status.ack_signal += ATH11K_DEFAULT_NOISE_FLOOR;
-
-		info->status.flags |= IEEE80211_TX_STATUS_ACK_SIGNAL_VALID;
-	}
-
-	if (ts->status == HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX &&
-	    (info->flags & IEEE80211_TX_CTL_NO_ACK) &&
-	    (flags & ATH11K_SKB_F_NOACK_TID))
-		info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
-
-	if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar)) ||
-	    ab->hw_params.single_pdev_only) {
-		if (ts->flags & HAL_TX_STATUS_FLAGS_FIRST_MSDU) {
-			if (ar->last_ppdu_id == 0) {
-				ar->last_ppdu_id = ts->ppdu_id;
-			} else if (ar->last_ppdu_id == ts->ppdu_id ||
-				   ar->cached_ppdu_id == ar->last_ppdu_id) {
-				ar->cached_ppdu_id = ar->last_ppdu_id;
-				ar->cached_stats.is_ampdu = true;
-				ath11k_dp_tx_update_txcompl(ar, ts);
-				memset(&ar->cached_stats, 0,
-				       sizeof(struct ath11k_per_peer_tx_stats));
-			} else {
-				ar->cached_stats.is_ampdu = false;
-				ath11k_dp_tx_update_txcompl(ar, ts);
-				memset(&ar->cached_stats, 0,
-				       sizeof(struct ath11k_per_peer_tx_stats));
-			}
-			ar->last_ppdu_id = ts->ppdu_id;
-		}
-
-		ath11k_dp_tx_cache_peer_stats(ar, msdu, ts);
-	}
-
-	spin_lock_bh(&ab->base_lock);
-	peer = ath11k_peer_find_by_id(ab, ts->peer_id);
-	if (unlikely(!peer || !peer->sta)) {
-		ath11k_dbg(ab, ATH11K_DBG_DATA,
-			   "dp_tx: failed to find the peer with peer_id %d\n",
-			    ts->peer_id);
-		spin_unlock_bh(&ab->base_lock);
-		ieee80211_free_txskb(ar->hw, msdu);
-		return;
-	}
-	arsta = ath11k_sta_to_arsta(peer->sta);
-	status.sta = peer->sta;
-	status.skb = msdu;
-	status.info = info;
-	rate = arsta->last_txrate;
-
-	status_rate.rate_idx = rate;
-	status_rate.try_count = 1;
-
-	status.rates = &status_rate;
-	status.n_rates = 1;
-
-	if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
-		arsta->fail_pkts += 1;
-		arsta->per_fail_pkts += 1;
-		arsta->fail_bytes += msdu->len;
-		arsta->ber_fail_bytes += msdu->len;
-		if(arsta->per_fail_pkts + arsta->per_succ_pkts >=
-		   ATH11K_NUM_PKTS_THRSHLD_FOR_PER)
-			ath11k_sta_stats_update_per(arsta);
-		if(arsta->ber_fail_bytes + arsta->ber_succ_bytes >=
-		   ATH11K_NUM_BYTES_THRSHLD_FOR_BER)
-			ath11k_sta_stats_update_ber(arsta);
-	}
-
-	if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar))) {
-		if(arsta->wbm_tx_stats && wbm_status < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX)
-			arsta->wbm_tx_stats->wbm_tx_comp_stats[wbm_status]++;
-	}
-
-	spin_unlock_bh(&ab->base_lock);
-
-	if (flags & ATH11K_SKB_HW_80211_ENCAP)
-		ieee80211_tx_status_8023(ar->hw, vif, msdu);
-	else
-		ieee80211_tx_status_ext(ar->hw, &status);
-}
-
 static inline void ath11k_dp_tx_status_parse(struct ath11k_base *ab,
 					     struct hal_wbm_release_ring *desc,
 					     struct hal_tx_status *ts)
@@ -846,6 +694,169 @@ static inline void ath11k_dp_tx_status_parse(struct ath11k_base *ab,
 		ts->rate_stats = 0;
 }
 
+static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
+				       struct sk_buff *msdu,
+				       struct hal_wbm_release_ring *tx_status,
+				       enum hal_wbm_rel_src_module buf_rel_source)
+{
+	struct ieee80211_tx_status status = { 0 };
+	struct ieee80211_rate_status status_rate = { 0 };
+	struct ath11k_base *ab = ar->ab;
+	struct ieee80211_tx_info *info;
+	struct ath11k_skb_cb *skb_cb;
+	struct ath11k_peer *peer;
+	struct ath11k_sta *arsta;
+	struct rate_info rate;
+	struct ieee80211_vif *vif = NULL;
+	struct ath11k_vif *arvif = NULL;
+	struct hal_tx_status ts = { 0 };
+	enum hal_wbm_htt_tx_comp_status wbm_status;
+	enum hal_wbm_tqm_rel_reason rel_status;
+	u8 flags = 0;
+
+	if (unlikely(WARN_ON_ONCE(buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM))) {
+		/* Must not happen */
+		return;
+	}
+
+	skb_cb = ATH11K_SKB_CB(msdu);
+
+	dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
+
+	rel_status = FIELD_GET(HAL_WBM_RELEASE_INFO0_TQM_RELEASE_REASON,
+			       tx_status->info0);
+
+ 	/* Free skb here if stats is disabled */
+	if (ab->stats_disable && !(flags & ATH11K_SKB_TX_STATUS)) {
+		if (msdu->destructor) {
+			msdu->wifi_acked_valid = 1;
+			msdu->wifi_acked = rel_status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED;
+		}
+		if (skb_has_frag_list(msdu)) {
+			kfree_skb_list(skb_shinfo(msdu)->frag_list);
+			skb_shinfo(msdu)->frag_list = NULL;
+		}
+		dev_kfree_skb(msdu);
+		return;
+	}
+
+	ath11k_dp_tx_status_parse(ab, tx_status, &ts);
+
+	if (unlikely(!rcu_access_pointer(ab->pdevs_active[ar->pdev_idx]))) {
+		ieee80211_free_txskb(ar->hw, msdu);
+		return;
+	}
+
+	if (unlikely(!skb_cb->vif)) {
+		ieee80211_free_txskb(ar->hw, msdu);
+		return;
+	}
+
+	wbm_status = FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS,
+			       tx_status->info0);
+
+	flags = skb_cb->flags;
+	vif = skb_cb->vif;
+	arvif = (void *)vif->drv_priv;
+	if(arvif && wbm_status < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX)
+		arvif->wbm_tx_comp_stats[wbm_status]++;
+
+	info = IEEE80211_SKB_CB(msdu);
+	memset(&info->status, 0, sizeof(info->status));
+
+	/* skip tx rate update from ieee80211_status*/
+	info->status.rates[0].idx = -1;
+
+	if (ts.status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
+	    !(info->flags & IEEE80211_TX_CTL_NO_ACK) &&
+	    !(flags & ATH11K_SKB_F_NOACK_TID)) {
+		info->flags |= IEEE80211_TX_STAT_ACK;
+		info->status.ack_signal = ts.ack_rssi;
+
+		if (!test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
+			      ab->wmi_ab.svc_map))
+			info->status.ack_signal += ATH11K_DEFAULT_NOISE_FLOOR;
+
+		info->status.flags |= IEEE80211_TX_STATUS_ACK_SIGNAL_VALID;
+	}
+
+	if (ts.status == HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX &&
+	    (info->flags & IEEE80211_TX_CTL_NO_ACK) &&
+	    (flags & ATH11K_SKB_F_NOACK_TID))
+		info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
+
+	if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar)) ||
+	    ab->hw_params.single_pdev_only) {
+		if (ts.flags & HAL_TX_STATUS_FLAGS_FIRST_MSDU) {
+			if (ar->last_ppdu_id == 0) {
+				ar->last_ppdu_id = ts.ppdu_id;
+			} else if (ar->last_ppdu_id == ts.ppdu_id ||
+				   ar->cached_ppdu_id == ar->last_ppdu_id) {
+				ar->cached_ppdu_id = ar->last_ppdu_id;
+				ar->cached_stats.is_ampdu = true;
+				ath11k_dp_tx_update_txcompl(ar, &ts);
+				memset(&ar->cached_stats, 0,
+				       sizeof(struct ath11k_per_peer_tx_stats));
+			} else {
+				ar->cached_stats.is_ampdu = false;
+				ath11k_dp_tx_update_txcompl(ar, &ts);
+				memset(&ar->cached_stats, 0,
+				       sizeof(struct ath11k_per_peer_tx_stats));
+			}
+			ar->last_ppdu_id = ts.ppdu_id;
+		}
+
+		ath11k_dp_tx_cache_peer_stats(ar, msdu, &ts);
+	}
+
+	spin_lock_bh(&ab->base_lock);
+	peer = ath11k_peer_find_by_id(ab, ts.peer_id);
+	if (unlikely(!peer || !peer->sta)) {
+		ath11k_dbg(ab, ATH11K_DBG_DATA,
+			   "dp_tx: failed to find the peer with peer_id %d\n",
+			    ts.peer_id);
+		spin_unlock_bh(&ab->base_lock);
+		ieee80211_free_txskb(ar->hw, msdu);
+		return;
+	}
+	arsta = ath11k_sta_to_arsta(peer->sta);
+	status.sta = peer->sta;
+	status.skb = msdu;
+	status.info = info;
+	rate = arsta->last_txrate;
+
+	status_rate.rate_idx = rate;
+	status_rate.try_count = 1;
+
+	status.rates = &status_rate;
+	status.n_rates = 1;
+
+	if (ts.status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		arsta->fail_pkts += 1;
+		arsta->per_fail_pkts += 1;
+		arsta->fail_bytes += msdu->len;
+		arsta->ber_fail_bytes += msdu->len;
+		if(arsta->per_fail_pkts + arsta->per_succ_pkts >=
+		   ATH11K_NUM_PKTS_THRSHLD_FOR_PER)
+			ath11k_sta_stats_update_per(arsta);
+		if(arsta->ber_fail_bytes + arsta->ber_succ_bytes >=
+		   ATH11K_NUM_BYTES_THRSHLD_FOR_BER)
+			ath11k_sta_stats_update_ber(arsta);
+	}
+
+	if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar))) {
+		if(arsta->wbm_tx_stats && wbm_status < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX)
+			arsta->wbm_tx_stats->wbm_tx_comp_stats[wbm_status]++;
+	}
+
+	spin_unlock_bh(&ab->base_lock);
+
+	if (flags & ATH11K_SKB_HW_80211_ENCAP)
+		ieee80211_tx_status_8023(ar->hw, vif, msdu);
+	else
+		ieee80211_tx_status_ext(ar->hw, &status);
+}
+
 static inline bool ath11k_dp_tx_completion_valid(struct hal_wbm_release_ring *desc)
 {
 	struct htt_tx_wbm_completion *status_desc;
@@ -869,10 +880,9 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 	int hal_ring_id = dp->tx_ring[ring_id].tcl_comp_ring.ring_id, count = 0, i = 0;
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
 	struct sk_buff *msdu;
-	struct hal_tx_status ts = { 0 };
 	struct dp_tx_ring *tx_ring = &dp->tx_ring[ring_id];
 	int valid_entries;
-	enum hal_wbm_htt_tx_comp_status wbm_status;
+	enum hal_wbm_rel_src_module buf_rel_source;
 	u32 *desc;
 	u32 msdu_id, desc_id;
 	u8 mac_id;
@@ -912,17 +922,16 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 
 	while (count--) {
 		tx_status = &tx_ring->tx_status[i++];
-		ath11k_dp_tx_status_parse(ab, tx_status, &ts);
 
 		desc_id = FIELD_GET(BUFFER_ADDR_INFO1_SW_COOKIE,
 				    tx_status->buf_addr_info.info1);
 		mac_id = FIELD_GET(DP_TX_DESC_ID_MAC_ID, desc_id);
 		msdu_id = FIELD_GET(DP_TX_DESC_ID_MSDU_ID, desc_id);
 
-		wbm_status = FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS,
-				       tx_status->info0);
+		buf_rel_source = FIELD_GET(HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE,
+					   tx_status->info0);
 
-		if (unlikely(ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
+		if (unlikely(buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
 			ath11k_dp_tx_process_htt_tx_complete(ab,
 							     (void *)tx_status,
 							     mac_id, msdu_id,
@@ -946,7 +955,7 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 		if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 			wake_up(&ar->dp.tx_empty_waitq);
 
-		ath11k_dp_tx_complete_msdu(ar, msdu, &ts, wbm_status);
+		ath11k_dp_tx_complete_msdu(ar, msdu, tx_status, buf_rel_source);
 	}
 }
 
