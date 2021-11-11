@@ -814,6 +814,8 @@ struct ath11k_dbg_htt_stats {
 
 #define MAX_MODULE_ID_BITMAP_WORDS	16
 
+#define ATH11K_MAX_COEX_PRIORITY_LEVEL           3
+
 struct ath11k_debug {
 	struct dentry *debugfs_pdev;
 	struct ath11k_dbg_htt_stats htt_stats;
@@ -839,6 +841,7 @@ struct ath11k_debug {
 	u32 wmi_ctrl_path_stats_tagid;
 	bool disable_dynamic_bw;
 	struct dentry *debugfs_smartant;
+	u32 coex_priority_level[ATH11K_MAX_COEX_PRIORITY_LEVEL];
 };
 
 struct ath11k_per_peer_tx_stats {

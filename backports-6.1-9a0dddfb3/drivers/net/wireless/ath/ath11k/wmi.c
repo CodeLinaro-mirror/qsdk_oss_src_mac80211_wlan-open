@@ -1906,6 +1906,18 @@ static void ath11k_wmi_copy_coex_config(struct ath11k *ar, struct wmi_coex_confi
 			   coex_config->vdev_id,
 			   coex_config->coex_algo);
 	}
+
+	if (coex_config->config_type == WMI_COEX_CONFIG_THREE_WAY_COEX_START ||
+	    coex_config->config_type == WMI_COEX_CONFIG_THREE_WAY_COEX_RESET) {
+		cmd->priority0 = coex_config->priority0;
+		cmd->priority1 = coex_config->priority1;
+		cmd->priority2 = coex_config->priority2;
+		ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+			   "WMI coex config type %u vdev id %d priority0 : %u"
+			   " priority1 : %u priority2 : %u", coex_config->config_type,
+			   coex_config->vdev_id, coex_config->priority0,
+			   coex_config->priority1, coex_config->priority2);
+	}
 }
 
 int ath11k_send_coex_config_cmd(struct ath11k *ar,
@@ -4251,6 +4263,7 @@ ath11k_wmi_send_wmi_ctrl_stats_cmd(struct ath11k *ar,
 		num_pdev_idx++;
 		break;
 	case WMI_REQ_CTRL_PATH_CAL_STAT:
+	case WMI_REQ_CTRL_PATH_BTCOEX_STAT:
 		pdev_id_array[num_pdev_idx] = ar->pdev->pdev_id;
 		stats_id = (1 << param->stats_id);
 		num_pdev_idx++;
@@ -5078,7 +5091,9 @@ static int ath11k_init_cmd_send(struct ath11k_pdev_wmi *wmi,
 	struct wmi_pdev_band_to_mac *band_to_mac;
 	struct wlan_host_mem_chunk *host_mem_chunks;
 	struct wmi_tlv *tlv;
+	struct device *dev = ab->dev;
 	size_t ret, len;
+	bool three_way_coex_enabled = false;
 	void *ptr;
 	u32 hw_mode_len = 0;
 	u16 idx;
@@ -5104,6 +5119,9 @@ static int ath11k_init_cmd_send(struct ath11k_pdev_wmi *wmi,
 
 	ath11k_wmi_copy_resource_config(cfg, param->res_cfg);
 
+	three_way_coex_enabled = of_property_read_bool(dev->of_node, "qcom,btcoex");
+	if (three_way_coex_enabled)
+		cfg->flag1 |= WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT;
 	cfg->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_RESOURCE_CONFIG) |
 			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cfg) - TLV_HDR_SIZE);
 
@@ -8780,6 +8798,42 @@ int wmi_print_ctrl_path_cal_stats_tlv(struct ath11k_base *ab, u16 len,
 	return 0;
 }
 
+int wmi_print_ctrl_path_btcoex_stats_tlv(struct ath11k_base *ab, u16 len,
+					 const void *ptr, void *data)
+{
+	struct wmi_ctrl_path_stats_ev_parse_param *stats_buff =
+				(struct wmi_ctrl_path_stats_ev_parse_param *)data;
+	struct wmi_ctrl_path_btcoex_stats *btcoex_stats_skb =
+				(struct wmi_ctrl_path_btcoex_stats *)ptr;
+	struct wmi_ctrl_path_btcoex_stats *btcoex_stats = NULL;
+	struct wmi_ctrl_path_stats_list *stats;
+	struct ath11k *ar = NULL;
+
+	stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
+	if (!stats)
+		return -ENOMEM;
+
+	btcoex_stats = kzalloc(sizeof(*btcoex_stats), GFP_ATOMIC);
+	if (!btcoex_stats) {
+		kfree(stats);
+		return -ENOMEM;
+	}
+
+	memcpy(btcoex_stats, btcoex_stats_skb, sizeof(*btcoex_stats));
+	stats->stats_ptr = btcoex_stats;
+	list_add_tail(&stats->list, &stats_buff->list);
+
+	ar = ath11k_mac_get_ar_by_pdev_id(ab, btcoex_stats_skb->pdev_id + 1);
+	if (!ar) {
+		ath11k_warn(ab, "Failed to get ar for wmi ctrl cal stats\n");
+		return -EINVAL;
+	}
+
+	ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_BTCOEX_STATS;
+	stats_buff->ar = ar;
+	return 0;
+}
+
 static int ath11k_wmi_ctrl_stats_subtlv_parser(struct ath11k_base *ab,
 					      u16 tag, u16 len,
 					      const void *ptr, void *data)
@@ -8795,10 +8849,14 @@ static int ath11k_wmi_ctrl_stats_subtlv_parser(struct ath11k_base *ab,
 	case WMI_CTRL_PATH_CAL_STATS:
 		ret = wmi_print_ctrl_path_cal_stats_tlv(ab, len, ptr, data);
 		break;
+	case WMI_CTRL_PATH_BTCOEX_STATS:
+		ret = wmi_print_ctrl_path_btcoex_stats_tlv(ab, len, ptr, data);
+		break;
 	/* Add case for newly wmi ctrl path added stats here */
 	default:
 		ath11k_warn(ab,
-			    "Received invalid tag for wmi ctrl path stats in subtlvs\n");
+			    "Received invalid tag for wmi ctrl path stats in subtlvs, tag : 0x%x\n",
+			    tag);
 		return -EINVAL;
 		break;
 	}

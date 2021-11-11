@@ -3700,6 +3700,93 @@ static const struct file_operations fops_medium_busy = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_coex_priority_read(struct file *file,
+					 char __user *user_buf,
+					 size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	u8 buf[128];
+	size_t len = 0;
+	int i;
+
+	mutex_lock(&ar->conf_mutex);
+	for (i = 0; i < ATH11K_MAX_COEX_PRIORITY_LEVEL; i++) {
+		len += scnprintf(buf + len, sizeof(buf) - len,
+				 "priority[%d] :  %u\n", i,
+				 ar->debug.coex_priority_level[0]);
+	}
+	mutex_unlock(&ar->conf_mutex);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath11k_coex_priority_write(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	struct ath11k_vif *arvif = NULL;
+	struct coex_config_arg coex_config;
+	char buf[128] = {0};
+	int ret;
+	u32 temp_priority[ATH11K_MAX_COEX_PRIORITY_LEVEL] = {0};
+	u32 config_type = 0xFF;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON &&
+	    ar->state != ATH11K_STATE_RESTARTED) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+	if (ret < 0)
+		goto exit;
+
+	ret = sscanf(buf, "%x %x %x %x", &config_type, &temp_priority[0],
+		     &temp_priority[1], &temp_priority[2]);
+	if ((config_type == 1 && ret != 4) || (config_type > 1)) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		coex_config.vdev_id = arvif->vdev_id;
+		if (config_type == 1) {
+			coex_config.config_type = WMI_COEX_CONFIG_THREE_WAY_COEX_START;
+			coex_config.priority0 = temp_priority[0];
+			coex_config.priority1 = temp_priority[1];
+			coex_config.priority2 = temp_priority[2];
+		} else {
+			coex_config.config_type = WMI_COEX_CONFIG_THREE_WAY_COEX_RESET;
+		}
+		ret = ath11k_send_coex_config_cmd(ar, &coex_config);
+		if (ret) {
+			ath11k_warn(ar->ab,
+				    "failed to set coex config vdev_id %d ret %d\n",
+				    coex_config.vdev_id, ret);
+			goto exit;
+		}
+	}
+
+	memcpy(ar->debug.coex_priority_level, temp_priority,
+	       sizeof(ar->debug.coex_priority_level));
+
+	ret = count;
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+static const struct file_operations fops_coex_priority = {
+	.read = ath11k_coex_priority_read,
+	.write = ath11k_coex_priority_write,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath11k_debugfs_register(struct ath11k *ar)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -3812,6 +3899,8 @@ int ath11k_debugfs_register(struct ath11k *ar)
 			    ar->debug.debugfs_pdev, ar, &fops_ani_listen_period);
 	debugfs_create_file("medium_busy", S_IRUSR, ar->debug.debugfs_pdev, ar,
 			    &fops_medium_busy);
+	debugfs_create_file("coex_priority", 0600,
+			    ar->debug.debugfs_pdev, ar, &fops_coex_priority);
 	return 0;
 }
 
@@ -4231,6 +4320,68 @@ int wmi_ctrl_path_cal_stat(struct ath11k_vif *arvif, const char __user *ubuf,
 	return ret_val;
 }
 
+int wmi_ctrl_path_btcoex_stat(struct ath11k_vif *arvif, const char __user *ubuf,
+			      size_t count, loff_t *ppos)
+{
+	struct wmi_ctrl_path_stats_list *stats;
+	struct wmi_ctrl_path_btcoex_stats *btcoex_stats;
+	const int size = 2048;
+	int len = 0, ret_val;
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	list_for_each_entry(stats, &arvif->ar->debug.wmi_list, list) {
+		if (!stats)
+			break;
+
+		btcoex_stats = stats->stats_ptr;
+
+		len += scnprintf(buf + len, size - len,
+				 "WMI_CTRL_PATH_BTCOEX_STATS:\n");
+		len += scnprintf(buf + len, size - len,
+				 "pdev_id = %u\n",
+				 btcoex_stats->pdev_id);
+		len += scnprintf(buf + len, size - len,
+				 "bt_tx_req_cntr = %u\n",
+				 btcoex_stats->bt_tx_req_cntr);
+		len += scnprintf(buf + len, size - len,
+				 "bt_rx_req_cntr = %u\n",
+				 btcoex_stats->bt_rx_req_cntr);
+		len += scnprintf(buf + len, size - len,
+				 "bt_req_nack_cntr = %u\n",
+				 btcoex_stats->bt_req_nack_cntr);
+		len += scnprintf(buf + len, size - len,
+				 "wl_tx_req_nack_schd_bt_reason_cntr = %u\n",
+				 btcoex_stats->wl_tx_req_nack_schd_bt_reason_cntr);
+		len += scnprintf(buf + len, size - len,
+				 "wl_tx_req_nack_current_bt_reason_cntr = %u\n",
+				 btcoex_stats->wl_tx_req_nack_current_bt_reason_cntr);
+		len += scnprintf(buf + len, size - len,
+				 "wl_tx_req_nack_other_wlan_tx_reason_cntr = %u\n",
+				 btcoex_stats->wl_tx_req_nack_other_wlan_tx_reason_cntr);
+		len += scnprintf(buf + len, size - len,
+				 "wl_in_tx_abort_cntr = %u\n",
+				 btcoex_stats->wl_in_tx_abort_cntr);
+		len += scnprintf(buf + len, size - len,
+				 "wl_tx_auto_resp_req_cntr = %u\n",
+				 btcoex_stats->wl_tx_auto_resp_req_cntr);
+		len += scnprintf(buf + len, size - len,
+				 "wl_tx_req_ack_cntr = %u\n",
+				 btcoex_stats->wl_tx_req_ack_cntr);
+		len += scnprintf(buf + len, size - len,
+				 "wl_tx_req_cntr = %u\n",
+				 btcoex_stats->wl_tx_req_cntr);
+	}
+
+	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	ath11k_wmi_crl_path_stats_list_free(&arvif->ar->debug.wmi_list);
+	kfree(buf);
+	return ret_val;
+}
+
 static ssize_t ath11k_read_wmi_ctrl_path_stats(struct file *file,
 		const char __user *ubuf,
 		size_t count, loff_t *ppos)
@@ -4247,6 +4398,9 @@ static ssize_t ath11k_read_wmi_ctrl_path_stats(struct file *file,
 		break;
 	case WMI_CTRL_PATH_CAL_STATS:
 		ret_val = wmi_ctrl_path_cal_stat(arvif, ubuf, count, ppos);
+		break;
+	case WMI_CTRL_PATH_BTCOEX_STATS:
+		ret_val = wmi_ctrl_path_btcoex_stat(arvif, ubuf, count, ppos);
 		break;
 	/* Add case for newly wmi ctrl path added stats here */
 	default :

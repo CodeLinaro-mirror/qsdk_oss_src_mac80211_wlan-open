@@ -1954,6 +1954,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_DCS_AWGN_INT_TYPE = 0x3C5,
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
 	WMI_TAG_PDEV_SET_BIOS_GEO_TABLE_CMD,
+	WMI_CTRL_PATH_BTCOEX_STATS = 0x3FD,
 	WMI_TAG_MAX
 };
 
@@ -2427,6 +2428,8 @@ struct wmi_init_cmd {
 #define WMI_RSRC_CFG_FLAG2_CALC_NEXT_DTIM_COUNT_SET BIT(9)
 #define WMI_RSRC_CFG_FLAG1_ACK_RSSI BIT(18)
 #define WMI_RSRC_CFG_FLAG_PEER_TID_EXT BIT(22)
+#define WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT BIT(25)
+
 
 #define WMI_CFG_HOST_SERVICE_FLAG_REG_CC_EXT 4
 
@@ -5633,6 +5636,8 @@ enum wmi_coex_config_type {
 	WMI_COEX_CONFIG_WLAN_SCAN_PRIORITY	= 15,
 	WMI_COEX_CONFIG_WLAN_PKT_PRIORITY	= 16,
 	WMI_COEX_CONFIG_PTA_INTERFACE		= 17,
+	WMI_COEX_CONFIG_THREE_WAY_COEX_RESET    = 32,
+	WMI_COEX_CONFIG_THREE_WAY_COEX_START    = 34,
 	/* WMI_COEX_CONFIG_FORCED_ALGO
 	 * config to select coex algorithm
 	 * coex_algo: select fixed coex algorithm
@@ -5670,6 +5675,14 @@ struct coex_config_arg {
 		struct {
 			u32 coex_algo;
 		};
+		struct {
+			u32 priority0;
+			u32 priority1;
+			u32 priority2;
+			u32 config_arg4;
+			u32 config_arg5;
+			u32 config_arg6;
+		};
 	};
 };
 
@@ -5705,6 +5718,15 @@ struct wmi_coex_config_cmd {
 
 		struct {
 			u32 coex_algo;
+		} __packed;
+
+		struct {
+			u32 priority0;
+			u32 priority1;
+			u32 priority2;
+			u32 config_arg4;
+			u32 config_arg5;
+			u32 config_arg6;
 		} __packed;
 	} __packed;
 } __packed;
@@ -6105,7 +6127,6 @@ struct  wmi_ctrl_path_stats_cmd_param {
 	u32 action;
 };
 
-
 struct wmi_ctrl_path_stats_ev_param {
 	u32 req_id;
 	/* more flag
@@ -6131,6 +6152,7 @@ enum  wmi_ctrl_path_stats_id {
 	WMI_REQ_CTRL_PATH_VDEV_EXTD_STAT = 2,
 	WMI_REQ_CTRL_PATH_MEM_STAT       = 3,
 	WMI_REQ_CTRL_PATH_CAL_STAT       = 5,
+	WMI_REQ_CTRL_PATH_BTCOEX_STAT    = 8,
 };
 
 enum wmi_ctrl_path_stats_action {
@@ -6139,6 +6161,20 @@ enum wmi_ctrl_path_stats_action {
 	WMI_REQ_CTRL_PATH_STAT_RESET = 2,
 	WMI_REQ_CTRL_PATH_STAT_START = 3,
 	WMI_REQ_CTRL_PATH_STAT_STOP  = 4,
+};
+
+struct wmi_ctrl_path_btcoex_stats {
+	u32 pdev_id;
+	u32 bt_tx_req_cntr;
+	u32 bt_rx_req_cntr;
+	u32 bt_req_nack_cntr;
+	u32 wl_tx_req_nack_schd_bt_reason_cntr;
+	u32 wl_tx_req_nack_current_bt_reason_cntr;
+	u32 wl_tx_req_nack_other_wlan_tx_reason_cntr;
+	u32 wl_in_tx_abort_cntr;
+	u32 wl_tx_auto_resp_req_cntr;
+	u32 wl_tx_req_ack_cntr;
+	u32 wl_tx_req_cntr;
 };
 
 struct wmi_obss_spatial_reuse_params_cmd {
