@@ -1007,7 +1007,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.pdev_suspend = false,
 		.is_qdss_support = false,
 		/* In addition to TCL ring use TCL_CMD ring also for tx */
-		.max_tx_ring = DP_TCL_NUM_RING_MAX,
+		.max_tx_ring = 1,
 		.reo_status_poll = false,
 		.num_vdevs_peers = ath11k_vdevs_peers_ipq5018,
 		.cfr_support = true,
@@ -1090,7 +1090,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.m3_offset = ATH11K_QMI_QCN6122_M3_OFFSET,
 		.qdss_offset = ATH11K_QMI_QCN6122_QDSS_OFFSET,
 		.caldb_offset = ATH11K_QMI_QCN6122_CALDB_OFFSET,
-		.max_tx_ring = DP_TCL_NUM_RING_MAX,
+		.max_tx_ring = 1,
 		.reo_status_poll = false,
 		.num_vdevs_peers = ath11k_vdevs_peers_ipq5018,
 		.cfr_support = true,
