@@ -8,6 +8,7 @@
 #define ATH11K_DP_H
 
 #include "hal_rx.h"
+#include "hw.h"
 
 #define MAX_RXDMA_PER_PDEV     2
 
@@ -82,6 +83,13 @@ struct dp_rxdma_ring {
 
 #define ATH11K_TX_COMPL_NEXT(x)	(((x) + 1) % DP_TX_COMP_RING_SIZE)
 
+struct idr_entry {
+	int id;
+	void *buf;
+};
+
+#define DP_TX_IDR_SIZE	ATH11K_DP_TX_COMP_RING_SIZE
+
 struct dp_tx_ring {
 	u8 tcl_data_ring_id;
 	struct dp_srng tcl_data_ring;
@@ -92,6 +100,8 @@ struct dp_tx_ring {
 	struct hal_wbm_release_ring *tx_status;
 	int tx_status_head;
 	int tx_status_tail;
+	DECLARE_BITMAP(idrs, DP_TX_IDR_SIZE);
+	struct idr_entry *idr_pool;
 };
 
 enum dp_mon_status_buf_state {
@@ -210,7 +220,6 @@ struct ath11k_pdev_dp {
 #define DP_TCL_DATA_RING_SIZE		512
 #define DP_TCL_DATA_RING_SIZE_WCN6750	2048
 #define DP_TX_COMP_RING_SIZE		ATH11K_DP_TX_COMP_RING_SIZE
-#define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
 #define DP_TX_COMP_MAX_ALLOWED         DP_TX_COMP_RING_SIZE
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32

@@ -135,6 +135,7 @@ int ath11k_dp_tx(struct ath11k *ar, struct ath11k_vif *arvif,
 	u8 ring_map = 0;
 	bool tcl_ring_retry, is_diff_encap = false;
 	u8 align_pad, htt_meta_size = 0, max_tx_ring, tcl_ring_id, ring_id;
+	u32 idr;
 
 	if (unlikely(test_bit(ATH11K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return -ESHUTDOWN;
@@ -169,24 +170,28 @@ tcl_ring_sel:
 	tx_ring = &dp->tx_ring[tcl_ring_id];
 
 	spin_lock_bh(&tx_ring->tx_idr_lock);
-	ret = idr_alloc(&tx_ring->txbuf_idr, skb, 0,
-			DP_TX_IDR_SIZE - 1, GFP_ATOMIC);
-	spin_unlock_bh(&tx_ring->tx_idr_lock);
-
-	if (unlikely(ret < 0)) {
+	idr = find_first_zero_bit(tx_ring->idrs, DP_TX_IDR_SIZE);
+	if (unlikely(idr >= DP_TX_IDR_SIZE)) {
 		if (ring_map == (BIT(max_tx_ring) - 1) ||
 		    !ab->hw_params.tcl_ring_retry) {
+			spin_unlock_bh(&tx_ring->tx_idr_lock);
 			ab->soc_stats.tx_err.idr_na[tcl_ring_id]++;
 			return -ENOSPC;
 		}
 
 		/* Check if the next ring is available */
+		spin_unlock_bh(&tx_ring->tx_idr_lock);
 		ring_selector++;
 		goto tcl_ring_sel;
 	}
 
+	set_bit(idr, tx_ring->idrs);
+	tx_ring->idr_pool[idr].id = idr;
+	tx_ring->idr_pool[idr].buf = skb;
+	spin_unlock_bh(&tx_ring->tx_idr_lock);
+
 	ti.desc_id = FIELD_PREP(DP_TX_DESC_ID_MAC_ID, ar->pdev_idx) |
-		     FIELD_PREP(DP_TX_DESC_ID_MSDU_ID, ret) |
+		     FIELD_PREP(DP_TX_DESC_ID_MSDU_ID, idr) |
 		     FIELD_PREP(DP_TX_DESC_ID_POOL_ID, pool_id);
 	ti.encap_type = ath11k_dp_tx_get_encap_type(arvif, skb);
 
@@ -360,10 +365,9 @@ fail_unmap_dma:
 fail_remove_idr:
 	if (ti.pkt_offset)
 		skb_pull(skb, ti.pkt_offset);
-	spin_lock_bh(&tx_ring->tx_idr_lock);
-	idr_remove(&tx_ring->txbuf_idr,
-		   FIELD_GET(DP_TX_DESC_ID_MSDU_ID, ti.desc_id));
-	spin_unlock_bh(&tx_ring->tx_idr_lock);
+
+	tx_ring->idr_pool[idr].id = -1;
+	clear_bit(idr, tx_ring->idrs);
 
 	if (tcl_ring_retry)
 		goto tcl_ring_sel;
@@ -372,16 +376,19 @@ fail_remove_idr:
 }
 
 static void ath11k_dp_tx_free_txbuf(struct ath11k_base *ab, u8 mac_id,
-				    int msdu_id,
+				    u32 msdu_id,
 				    struct dp_tx_ring *tx_ring)
 {
 	struct ath11k *ar;
-	struct sk_buff *msdu;
+	struct sk_buff *msdu = NULL;
 	struct ath11k_skb_cb *skb_cb;
 
-	spin_lock(&tx_ring->tx_idr_lock);
-	msdu = idr_remove(&tx_ring->txbuf_idr, msdu_id);
-	spin_unlock(&tx_ring->tx_idr_lock);
+	if (msdu_id < DP_TX_IDR_SIZE &&
+	    tx_ring->idr_pool[msdu_id].id == msdu_id) {
+		msdu = tx_ring->idr_pool[msdu_id].buf;
+		tx_ring->idr_pool[msdu_id].id = -1;
+		clear_bit(msdu_id, tx_ring->idrs);
+	}
 
 	if (unlikely(!msdu)) {
 		ath11k_warn(ab, "tx completion for unknown msdu_id %d\n",
@@ -405,17 +412,21 @@ ath11k_dp_tx_htt_tx_complete_buf(struct ath11k_base *ab,
 				 struct ath11k_dp_htt_wbm_tx_status *ts)
 {
 	struct ieee80211_tx_status status = { 0 };
-	struct sk_buff *msdu;
+	struct sk_buff *msdu = NULL;
 	struct ieee80211_tx_info *info;
 	struct ath11k_skb_cb *skb_cb;
 	struct ath11k *ar;
 	struct ath11k_peer *peer;
 	struct ieee80211_vif *vif;
+	u32 msdu_id = ts->msdu_id;
 	u8 flags = 0;
 
-	spin_lock(&tx_ring->tx_idr_lock);
-	msdu = idr_remove(&tx_ring->txbuf_idr, ts->msdu_id);
-	spin_unlock(&tx_ring->tx_idr_lock);
+	if (msdu_id < DP_TX_IDR_SIZE &&
+	    tx_ring->idr_pool[msdu_id].id == msdu_id) {
+		msdu = tx_ring->idr_pool[msdu_id].buf;
+		tx_ring->idr_pool[msdu_id].id = -1;
+		clear_bit(msdu_id, tx_ring->idrs);
+	}
 
 	if (unlikely(!msdu)) {
 		ath11k_warn(ab, "htt tx completion for unknown msdu_id %d\n",
@@ -921,6 +932,7 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 	}
 
 	while (count--) {
+		msdu=NULL;
 		tx_status = &tx_ring->tx_status[i++];
 
 		desc_id = FIELD_GET(BUFFER_ADDR_INFO1_SW_COOKIE,
@@ -939,16 +951,18 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 			continue;
 		}
 
-		spin_lock(&tx_ring->tx_idr_lock);
-		msdu = idr_remove(&tx_ring->txbuf_idr, msdu_id);
+		if (msdu_id < DP_TX_IDR_SIZE &&
+		    tx_ring->idr_pool[msdu_id].id == msdu_id) {
+			msdu = tx_ring->idr_pool[msdu_id].buf;
+			tx_ring->idr_pool[msdu_id].id = -1;
+			clear_bit(msdu_id, tx_ring->idrs);
+		}
+
 		if (unlikely(!msdu)) {
 			ath11k_warn(ab, "tx completion for unknown msdu_id %d\n",
 				    msdu_id);
-			spin_unlock(&tx_ring->tx_idr_lock);
 			continue;
 		}
-
-		spin_unlock(&tx_ring->tx_idr_lock);
 
 		ar = ab->pdevs[mac_id].ar;
 

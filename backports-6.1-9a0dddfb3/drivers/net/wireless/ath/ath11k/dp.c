@@ -449,6 +449,8 @@ static void ath11k_dp_srng_common_cleanup(struct ath11k_base *ab)
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 		ath11k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_data_ring);
 		ath11k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_comp_ring);
+		kfree(dp->tx_ring[i].idr_pool);
+		dp->tx_ring[i].idr_pool = NULL;
 	}
 	ath11k_dp_srng_cleanup(ab, &dp->reo_reinject_ring);
 	ath11k_dp_srng_cleanup(ab, &dp->rx_rel_ring);
@@ -461,7 +463,7 @@ static int ath11k_dp_srng_common_setup(struct ath11k_base *ab)
 {
 	struct ath11k_dp *dp = &ab->dp;
 	struct hal_srng *srng;
-	int i, ret;
+	int i, ret, j;
 	u8 tcl_num, wbm_num;
 
 	ath11k_dp_init_reo_status_timer(ab);
@@ -522,6 +524,18 @@ static int ath11k_dp_srng_common_setup(struct ath11k_base *ab)
 		ath11k_dp_shadow_init_timer(ab, &dp->tx_ring_timer[i],
 					    ATH11K_SHADOW_DP_TIMER_INTERVAL,
 					    dp->tx_ring[i].tcl_data_ring.ring_id);
+
+		dp->tx_ring[i].idr_pool = kcalloc(DP_TX_IDR_SIZE,
+						  sizeof(struct idr_entry), GFP_KERNEL);
+		if (!dp->tx_ring[i].idr_pool) {
+			ath11k_warn(ab, "failed to allocate memory for idr pool ring(%d)\n", i);
+			ret = -ENOMEM;
+			goto err;
+		}
+
+		/* Reset id to default */
+		for (j = 0; j < DP_TX_IDR_SIZE; j++)
+			dp->tx_ring[i].idr_pool[j].id = -1;
 	}
 
 	ret = ath11k_dp_srng_setup(ab, &dp->reo_reinject_ring, HAL_REO_REINJECT,
@@ -1110,9 +1124,8 @@ void ath11k_dp_vdev_tx_attach(struct ath11k *ar, struct ath11k_vif *arvif)
 	ath11k_dp_update_vdev_search(arvif);
 }
 
-static int ath11k_dp_tx_pending_cleanup(int buf_id, void *skb, void *ctx)
+static int ath11k_dp_tx_pending_cleanup(struct ath11k_base *ab, void *skb)
 {
-	struct ath11k_base *ab = ctx;
 	struct sk_buff *msdu = skb;
 
 	dma_unmap_single(ab->dev, ATH11K_SKB_CB(msdu)->paddr, msdu->len,
@@ -1127,23 +1140,30 @@ void ath11k_dp_free(struct ath11k_base *ab)
 {
 	struct ath11k_dp *dp = &ab->dp;
 	size_t size = 0;
-	int i;
+	int i, j;
 
 	size = sizeof(struct hal_wbm_release_ring) * DP_TX_COMP_RING_SIZE;
 
 	ath11k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
 
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		struct dp_tx_ring *tx_ring = &dp->tx_ring[i];
+		spin_lock_bh(&tx_ring->tx_idr_lock);
+		for(j = 0; j < DP_TX_IDR_SIZE; j++) {
+
+			if (test_and_clear_bit(j, tx_ring->idrs))
+				ath11k_dp_tx_pending_cleanup(ab, tx_ring->idr_pool[j].buf);
+		}
+
+		spin_unlock_bh(&tx_ring->tx_idr_lock);
+	}
+
 	ath11k_dp_srng_common_cleanup(ab);
 
 	ath11k_dp_reo_cmd_list_cleanup(ab);
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
-		spin_lock_bh(&dp->tx_ring[i].tx_idr_lock);
-		idr_for_each(&dp->tx_ring[i].txbuf_idr,
-			     ath11k_dp_tx_pending_cleanup, ab);
-		idr_destroy(&dp->tx_ring[i].txbuf_idr);
-		spin_unlock_bh(&dp->tx_ring[i].tx_idr_lock);
 		ATH11K_MEMORY_STATS_DEC(ab, malloc_size, size);
 		kfree(dp->tx_ring[i].tx_status);
 	}
