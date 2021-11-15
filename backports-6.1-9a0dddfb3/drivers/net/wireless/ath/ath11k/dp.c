@@ -975,7 +975,7 @@ int ath11k_dp_service_srng(struct ath11k_base *ab,
 
 				hal_params = ab->hw_params.hal_params;
 				ath11k_dp_rxbufs_replenish(ab, id, rx_ring, 0,
-							   hal_params->rx_buf_rbm);
+							   hal_params->rx_buf_rbm, NULL);
 			}
 		}
 	}

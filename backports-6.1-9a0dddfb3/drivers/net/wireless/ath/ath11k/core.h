@@ -890,6 +890,11 @@ enum coex_algo {
 	COEX_ALGO_MAX_SUPPORTED,
 };
 
+struct ath11k_rx_buf_id {
+	struct list_head list;
+	int used_buf_id;
+};
+
 struct ath11k {
 	struct ath11k_base *ab;
 	struct ath11k_pdev *pdev;
@@ -1062,6 +1067,7 @@ struct ath11k {
 	bool ani_enabled;
 	enum wmi_phy_mode cfr_phymode;
 	struct ath11k_smart_ant_info smart_ant_info;
+	struct ath11k_rx_buf_id rx_buf_id;
 	u32 rx_antenna;
 	struct cfg80211_chan_def awgn_chandef;
 	u32 chan_bw_interference_bitmap;

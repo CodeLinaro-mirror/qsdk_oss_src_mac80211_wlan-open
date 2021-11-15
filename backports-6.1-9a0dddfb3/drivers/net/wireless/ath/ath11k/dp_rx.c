@@ -387,7 +387,8 @@ static inline u8 ath11k_dp_rx_h_msdu_start_ip_valid(struct ath11k_base *ab,
 int ath11k_dp_rxbufs_replenish(struct ath11k_base *ab, int mac_id,
 			       struct dp_rxdma_ring *rx_ring,
 			       int req_entries,
-			       enum hal_rx_buf_return_buf_manager mgr)
+			       enum hal_rx_buf_return_buf_manager mgr,
+				   u32 *buf_ids)
 {
 	struct hal_srng *srng;
 	u32 *desc;
@@ -395,8 +396,14 @@ int ath11k_dp_rxbufs_replenish(struct ath11k_base *ab, int mac_id,
 	int num_free;
 	int num_remain;
 	int buf_id;
+	int buf_id_index;
 	u32 cookie;
 	dma_addr_t paddr;
+
+	if (!buf_ids)
+		buf_id_index = 0;
+	else
+		buf_id_index = min(req_entries, DP_RX_MAX_IDR_BUF);
 
 	req_entries = min(req_entries, rx_ring->bufs_max);
 
@@ -433,8 +440,14 @@ int ath11k_dp_rxbufs_replenish(struct ath11k_base *ab, int mac_id,
 			goto fail_free_skb;
 
 		spin_lock_bh(&rx_ring->idr_lock);
-		buf_id = idr_alloc(&rx_ring->bufs_idr, skb, 1,
-				   (rx_ring->bufs_max * 3) + 1, GFP_ATOMIC);
+		if (buf_ids && buf_id_index) {
+			buf_id_index--;
+			buf_id = buf_ids[buf_id_index];
+			idr_replace(&rx_ring->bufs_idr, skb, buf_id);
+		} else {
+			buf_id = idr_alloc(&rx_ring->bufs_idr, skb, 0,
+					rx_ring->bufs_max * 3, GFP_ATOMIC);
+		}
 		spin_unlock_bh(&rx_ring->idr_lock);
 		if (buf_id <= 0)
 			goto fail_dma_unmap;
@@ -456,6 +469,12 @@ int ath11k_dp_rxbufs_replenish(struct ath11k_base *ab, int mac_id,
 	ath11k_hal_srng_access_end(ab, srng);
 
 	spin_unlock_bh(&srng->lock);
+
+	while (buf_id_index--) {
+		spin_lock_bh(&rx_ring->idr_lock);
+		idr_remove(&rx_ring->bufs_idr, buf_ids[buf_id_index]);
+		spin_unlock_bh(&rx_ring->idr_lock);
+	}
 
 	return req_entries - num_remain;
 
@@ -531,7 +550,7 @@ static int ath11k_dp_rxdma_ring_buf_setup(struct ath11k *ar,
 
 	rx_ring->bufs_max = num_entries;
 	ath11k_dp_rxbufs_replenish(ar->ab, dp->mac_id, rx_ring, num_entries,
-				   ar->ab->hw_params.hal_params->rx_buf_rbm);
+				   ar->ab->hw_params.hal_params->rx_buf_rbm, NULL);
 	return 0;
 }
 
@@ -3300,11 +3319,14 @@ int ath11k_dp_process_rx(struct ath11k_base *ab, int ring_id,
 	struct ath11k *ar;
 	struct hal_reo_dest_ring *desc;
 	enum hal_reo_dest_ring_push_reason push_reason;
+	u32 *rx_buf_id[MAX_RADIOS];
 	u32 cookie;
 	int i;
 
-	for (i = 0; i < MAX_RADIOS; i++)
+	for (i = 0; i < MAX_RADIOS; i++) {
 		__skb_queue_head_init(&msdu_list[i]);
+		rx_buf_id[i] = kzalloc(sizeof(u32) * DP_RX_MAX_IDR_BUF, GFP_ATOMIC);
+	}
 
 	srng = &ab->hal.srng_list[dp->reo_dst_ring[ring_id].ring_id];
 
@@ -3327,8 +3349,15 @@ try_again:
 
 		ar = ab->pdevs[mac_id].ar;
 		rx_ring = &ar->dp.rx_refill_buf_ring;
+		i = num_buffs_reaped[mac_id];
+
 		spin_lock_bh(&rx_ring->idr_lock);
-		msdu = idr_remove(&rx_ring->bufs_idr, buf_id);
+		if (rx_buf_id[mac_id] && i < DP_RX_MAX_IDR_BUF) {
+			msdu = idr_find(&rx_ring->bufs_idr, buf_id);
+			rx_buf_id[mac_id][i] = buf_id;
+		} else {
+			msdu = idr_remove(&rx_ring->bufs_idr, buf_id);
+		}
 		spin_unlock_bh(&rx_ring->idr_lock);
 		if (unlikely(!msdu)) {
 			ath11k_warn(ab, "frame rx with invalid buf_id %d\n",
@@ -3421,9 +3450,12 @@ try_again:
 		rx_ring = &ar->dp.rx_refill_buf_ring;
 
 		ath11k_dp_rxbufs_replenish(ab, i, rx_ring, num_buffs_reaped[i],
-					   ab->hw_params.hal_params->rx_buf_rbm);
+					   ab->hw_params.hal_params->rx_buf_rbm, rx_buf_id[i]);
 	}
 exit:
+	for (i = 0; i < MAX_RADIOS; i++)
+		kfree(rx_buf_id[i]);
+
 	return total_msdu_reaped;
 }
 
@@ -4791,7 +4823,7 @@ exit:
 		rx_ring = &ar->dp.rx_refill_buf_ring;
 
 		ath11k_dp_rxbufs_replenish(ab, i, rx_ring, n_bufs_reaped[i],
-					   ab->hw_params.hal_params->rx_buf_rbm);
+					   ab->hw_params.hal_params->rx_buf_rbm, NULL);
 	}
 
 	return tot_n_bufs_reaped;
@@ -5022,14 +5054,17 @@ int ath11k_dp_rx_process_wbm_err(struct ath11k_base *ab,
 	struct sk_buff *msdu;
 	struct sk_buff_head msdu_list[MAX_RADIOS];
 	struct ath11k_skb_rxcb *rxcb;
+	u32 *wbm_err_buf_id[MAX_RADIOS];
 	u32 *rx_desc;
 	int buf_id, mac_id;
 	int num_buffs_reaped[MAX_RADIOS] = {0};
 	int total_num_buffs_reaped = 0;
 	int ret, i;
 
-	for (i = 0; i < ab->num_radios; i++)
+	for (i = 0; i < ab->num_radios; i++) {
 		__skb_queue_head_init(&msdu_list[i]);
+		wbm_err_buf_id[i] = kzalloc(sizeof(u32) * DP_RX_MAX_IDR_BUF, GFP_ATOMIC);
+	}
 
 	srng = &ab->hal.srng_list[dp->rx_rel_ring.ring_id];
 
@@ -5055,9 +5090,15 @@ int ath11k_dp_rx_process_wbm_err(struct ath11k_base *ab,
 
 		ar = ab->pdevs[mac_id].ar;
 		rx_ring = &ar->dp.rx_refill_buf_ring;
+		i = num_buffs_reaped[mac_id];
 
 		spin_lock_bh(&rx_ring->idr_lock);
- 		msdu = idr_remove(&rx_ring->bufs_idr, buf_id);
+		if (wbm_err_buf_id[mac_id] && i < DP_RX_MAX_IDR_BUF) {
+			msdu = idr_find(&rx_ring->bufs_idr, buf_id);
+			wbm_err_buf_id[mac_id][i] = buf_id;
+		} else {
+			msdu = idr_remove(&rx_ring->bufs_idr, buf_id);
+		}
 		spin_unlock_bh(&rx_ring->idr_lock);
 		if (!msdu) {
 			ath11k_warn(ab, "frame rx with invalid buf_id %d pdev %d\n",
@@ -5102,7 +5143,7 @@ int ath11k_dp_rx_process_wbm_err(struct ath11k_base *ab,
 		rx_ring = &ar->dp.rx_refill_buf_ring;
 
 		ath11k_dp_rxbufs_replenish(ab, i, rx_ring, num_buffs_reaped[i],
-					   ab->hw_params.hal_params->rx_buf_rbm);
+					   ab->hw_params.hal_params->rx_buf_rbm, wbm_err_buf_id[i]);
 	}
 
 	rcu_read_lock();
@@ -5124,6 +5165,8 @@ int ath11k_dp_rx_process_wbm_err(struct ath11k_base *ab,
 	}
 	rcu_read_unlock();
 done:
+	for (i = 0; i < ab->num_radios; i++)
+		kfree(wbm_err_buf_id[i]);
 	return total_num_buffs_reaped;
 }
 
@@ -5209,7 +5252,7 @@ int ath11k_dp_process_rxdma_err(struct ath11k_base *ab, int mac_id, int budget)
 
 	if (num_buf_freed)
 		ath11k_dp_rxbufs_replenish(ab, mac_id, rx_ring, num_buf_freed,
-					   ab->hw_params.hal_params->rx_buf_rbm);
+					   ab->hw_params.hal_params->rx_buf_rbm, NULL);
 
 	return budget - quota;
 }
@@ -6216,12 +6259,12 @@ void ath11k_dp_rx_mon_dest_process(struct ath11k *ar, int mac_id,
 			ath11k_dp_rxbufs_replenish(ar->ab, dp->mac_id,
 						   &dp->rxdma_mon_buf_ring,
 						   rx_bufs_used,
-						   hal_params->rx_buf_rbm);
+						   hal_params->rx_buf_rbm, NULL);
 		else
 			ath11k_dp_rxbufs_replenish(ar->ab, dp->mac_id,
 						   &dp->rx_refill_buf_ring,
 						   rx_bufs_used,
-						   hal_params->rx_buf_rbm);
+						   hal_params->rx_buf_rbm, NULL);
 	}
 }
 
@@ -6715,7 +6758,7 @@ next_entry:
 		ath11k_dp_rxbufs_replenish(ar->ab, dp->mac_id,
 					   &dp->rxdma_mon_buf_ring,
 					   rx_bufs_used,
-					   HAL_RX_BUF_RBM_SW3_BM);
+					   HAL_RX_BUF_RBM_SW3_BM, NULL);
 	}
 
 reap_status_ring:
