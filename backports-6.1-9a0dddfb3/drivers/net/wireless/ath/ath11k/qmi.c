@@ -2998,6 +2998,34 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 					ab->qmi.target_mem[i].size);
 			idx++;
 			break;
+		case PAGEABLE_MEM_REGION_TYPE:
+			if (hremote_node) {
+				addr = res.start + ATH11K_HOST_DDR_PAGEABLE_OFFSET;
+			} else if (ath11k_host_ddr_addr) {
+				addr = ath11k_host_ddr_addr +
+				       ATH11K_HOST_DDR_PAGEABLE_OFFSET;
+			} else {
+				ath11k_dbg(ab, ATH11K_DBG_QMI,
+					   "pageable-addr is not in dt\n");
+			}
+
+			ab->qmi.target_mem[idx].paddr =  (phys_addr_t)addr;
+			ab->qmi.target_mem[idx].vaddr =
+					ioremap(ab->qmi.target_mem[idx].paddr,
+							ab->qmi.target_mem[i].size);
+			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+
+			ret = ath11k_coredump_mhi_update_bhie_table(ab,
+						ab->qmi.target_mem[idx].vaddr,
+						ab->qmi.target_mem[idx].paddr,
+						ab->qmi.target_mem[idx].size);
+			if (ret < 0)
+				ath11k_warn(ab, "qmi fail to update BHI table %d\n",
+					    ret);
+
+			idx++;
+			break;
 		default:
 			ath11k_warn(ab, "qmi ignore invalid mem req type %d\n",
 				    ab->qmi.target_mem[i].type);

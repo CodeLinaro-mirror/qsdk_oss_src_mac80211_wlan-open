@@ -186,7 +186,8 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
 		if (ab->qmi.target_mem[i].type == HOST_DDR_REGION_TYPE ||
 		    (ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE && ab->enable_cold_boot_cal && ab->hw_params.cold_boot_calib) ||
-			ab->qmi.target_mem[i].type == M3_DUMP_REGION_TYPE)
+			ab->qmi.target_mem[i].type == M3_DUMP_REGION_TYPE ||
+			ab->qmi.target_mem[i].type == PAGEABLE_MEM_REGION_TYPE)
 			rem_seg_cnt++;
 	}
 
@@ -201,6 +202,8 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 		ath11k_warn(ab, "fail to alloc memory for rddm\n");
 
 	for (i = 0; i < fw_img->entries ; i++) {
+		if (!fw_img->mhi_buf[i].buf)
+			continue;
 		seg_sz = fw_img->mhi_buf[i].len;
 		seg_info->len = PAGE_ALIGN(seg_sz);
 		seg_info->addr = fw_img->mhi_buf[i].dma_addr;
@@ -213,12 +216,12 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 	}
 
 	for (i = 0; i < rddm_img->entries; i++) {
+		if (!rddm_img->mhi_buf[i].buf)
+			continue;
 		seg_sz = rddm_img->mhi_buf[i].len;
 		seg_info->len = PAGE_ALIGN(seg_sz);
 		seg_info->addr = rddm_img->mhi_buf[i].dma_addr;
 		seg_info->vaddr = rddm_img->mhi_buf[i].buf;
-		ath11k_info(ab, "seg vaddr is %px len is 0x%x type %d\n",
-			    seg_info->vaddr, seg_info->len, seg_info->type);
 		seg_info->type = ATH11K_FW_CRASH_RDDM_DATA;
 		ath11k_info(ab, "seg vaddr is %px len is 0x%x type %d\n",
 			    seg_info->vaddr, seg_info->len, seg_info->type);
@@ -249,7 +252,8 @@ void ath11k_coredump_download_rddm(struct ath11k_base *ab)
 	}
 
 	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
-		if (ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE && ab->enable_cold_boot_cal && ab->hw_params.cold_boot_calib) {
+		if ((ab->qmi.target_mem[i].type == CALDB_MEM_REGION_TYPE &&
+		     ab->enable_cold_boot_cal && ab->hw_params.cold_boot_calib)) {
 			seg_info->len = ab->qmi.target_mem[i].size;
 			seg_info->addr = ab->qmi.target_mem[i].paddr;
 			seg_info->vaddr = ab->qmi.target_mem[i].vaddr;
@@ -368,4 +372,23 @@ out:
 	ATH11K_MEMORY_STATS_DEC(ab, malloc_size, len);
 	vfree(segment);
 	vfree(dump);
+}
+
+int ath11k_coredump_mhi_update_bhie_table(struct ath11k_base *ab, void *va,
+					  phys_addr_t pa, size_t size)
+{
+
+	struct ath11k_pci *ar_pci = (struct ath11k_pci *)ab->drv_priv;
+	struct mhi_controller *mhi_ctrl = ar_pci->mhi_ctrl;
+	int ret;
+
+	/* Attach Pageable region to MHI buffer so that it is
+	 * included as part of pageable region in dumps
+	 */
+	ret = mhi_update_bhie_table_for_dyn_paging(mhi_ctrl, va, pa, size);
+	if (ret)
+		ath11k_dbg(ab, ATH11K_DBG_QMI,
+				"failed to add Dynamic Paging region to MHI Buffer table %d\n", ret);
+
+	return ret;
 }
