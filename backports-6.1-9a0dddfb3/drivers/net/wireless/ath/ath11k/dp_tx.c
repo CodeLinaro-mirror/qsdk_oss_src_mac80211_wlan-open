@@ -103,6 +103,128 @@ static int ath11k_dp_prepare_htt_metadata(struct sk_buff *skb,
 	return 0;
 }
 
+int ath11k_dp_tx_simple(struct ath11k *ar, struct ath11k_vif *arvif,
+			struct sk_buff *skb, struct ath11k_sta *arsta)
+{
+	struct ath11k_base *ab = ar->ab;
+	struct ath11k_dp *dp = &ab->dp;
+	struct ath11k_skb_cb *skb_cb = ATH11K_SKB_CB(skb);
+	struct hal_srng *tcl_ring;
+	struct dp_tx_ring *tx_ring;
+	struct hal_tcl_data_cmd *tcl_desc;
+	void *hal_tcl_desc;
+	dma_addr_t paddr;
+	u8 pool_id;
+	u8 hal_ring_id;
+	int ret;
+	u32 idr;
+	u8 tcl_ring_id, ring_id, max_tx_ring;
+	u8 buf_id;
+	u32 desc_id;
+	u8 ring_selector;
+
+	max_tx_ring = ab->hw_params.max_tx_ring;
+
+	if (unlikely(atomic_read(&ab->num_max_allowed) > DP_TX_COMP_MAX_ALLOWED)) {
+		atomic_inc(&ab->soc_stats.tx_err.max_fail);
+		ret = -EINVAL;
+	}
+
+	ring_selector = smp_processor_id();
+	pool_id = ring_selector;
+
+	if (max_tx_ring == 1) {
+		ring_id = 0;
+		tcl_ring_id = 0;
+	} else {
+		ring_id = ring_selector % max_tx_ring;
+		tcl_ring_id = (ring_id == DP_TCL_NUM_RING_MAX) ?
+			      DP_TCL_NUM_RING_MAX - 1 : ring_id;
+	}
+
+	buf_id = tcl_ring_id + HAL_RX_BUF_RBM_SW0_BM;
+	tx_ring = &dp->tx_ring[tcl_ring_id];
+
+	spin_lock_bh(&tx_ring->tx_idr_lock);
+	idr = find_first_zero_bit(tx_ring->idrs, DP_TX_IDR_SIZE);
+	if (unlikely(idr >= DP_TX_IDR_SIZE)) {
+		spin_unlock_bh(&tx_ring->tx_idr_lock);
+		return -ENOSPC;
+	}
+
+	set_bit(idr, tx_ring->idrs);
+	tx_ring->idr_pool[idr].id = idr;
+	tx_ring->idr_pool[idr].buf = skb;
+	spin_unlock_bh(&tx_ring->tx_idr_lock);
+
+	desc_id = FIELD_PREP(DP_TX_DESC_ID_MAC_ID, ar->pdev_idx) |
+		  FIELD_PREP(DP_TX_DESC_ID_MSDU_ID, idr) |
+		  FIELD_PREP(DP_TX_DESC_ID_POOL_ID, pool_id);
+
+	skb_cb->vif = arvif->vif;
+	skb_cb->ar = ar;
+
+	paddr = dma_map_single(ab->dev, skb->data, skb->len, DMA_TO_DEVICE);
+	if (unlikely(dma_mapping_error(ab->dev, paddr))) {
+		atomic_inc(&ab->soc_stats.tx_err.misc_fail);
+		ath11k_warn(ab, "failed to DMA map data Tx buffer\n");
+		ret = -ENOMEM;
+		goto fail_remove_idr;
+	}
+
+	skb_cb->paddr = paddr;
+
+	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
+	tcl_ring = &ab->hal.srng_list[hal_ring_id];
+
+	spin_lock_bh(&tcl_ring->lock);
+	ath11k_hal_srng_access_begin(ab, tcl_ring);
+
+	hal_tcl_desc = (void *)ath11k_hal_srng_src_get_next_entry(ab, tcl_ring);
+	if (unlikely(!hal_tcl_desc)) {
+		ath11k_hal_srng_access_end(ab, tcl_ring);
+		spin_unlock_bh(&tcl_ring->lock);
+		ab->soc_stats.tx_err.desc_na[tcl_ring_id]++;
+		ret = -ENOMEM;
+		goto fail_remove_idr;
+	}
+
+	tcl_desc = (struct hal_tcl_data_cmd *)(hal_tcl_desc + sizeof(struct hal_tlv_hdr));
+	tcl_desc->info3 = 0;
+	tcl_desc->info4 = 0;
+
+	tcl_desc->buf_addr_info.info0 = FIELD_PREP(BUFFER_ADDR_INFO0_ADDR, paddr);
+	tcl_desc->buf_addr_info.info1 = FIELD_PREP(BUFFER_ADDR_INFO1_ADDR,
+			((uint64_t)paddr >> HAL_ADDR_MSB_REG_SHIFT));
+	tcl_desc->buf_addr_info.info1 |= FIELD_PREP(BUFFER_ADDR_INFO1_RET_BUF_MGR, buf_id) |
+		FIELD_PREP(BUFFER_ADDR_INFO1_SW_COOKIE, desc_id);
+	tcl_desc->info0 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_SEARCH_TYPE,
+			arvif->search_type) |
+		FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_ENCAP_TYPE, HAL_TCL_ENCAP_TYPE_ETHERNET) |
+		FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_ADDR_EN, arvif->hal_addr_search_flags) |
+		FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_CMD_NUM, arvif->tcl_metadata);
+
+	tcl_desc->info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_DATA_LEN, skb->len);
+
+	if (likely(skb->ip_summed == CHECKSUM_PARTIAL))
+		tcl_desc->info1 |= TX_IP_CHECKSUM;
+
+	tcl_desc->info2 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_LMAC_ID, ar->lmac_id);
+
+	ath11k_hal_srng_access_end(ab, tcl_ring);
+	spin_unlock_bh(&tcl_ring->lock);
+
+	atomic_inc(&ar->dp.num_tx_pending);
+	atomic_inc(&ab->num_max_allowed);
+
+	return 0;
+
+fail_remove_idr:
+	tx_ring->idr_pool[idr].id = -1;
+	clear_bit(idr, tx_ring->idrs);
+	return ret;
+}
+
 int ath11k_dp_tx(struct ath11k *ar, struct ath11k_vif *arvif,
 		 struct ath11k_sta *arsta, struct sk_buff *skb)
 {

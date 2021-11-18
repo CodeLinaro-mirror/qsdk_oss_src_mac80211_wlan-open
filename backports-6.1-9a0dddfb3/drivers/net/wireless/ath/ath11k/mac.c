@@ -7147,6 +7147,9 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 
 	if (ar->ab->nss.enabled)
 		ret = ath11k_nss_tx(arvif, skb);
+	else if (info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
+		ret = ath11k_dp_tx_simple(ar, arvif, skb,
+					  (control->sta) ? control->sta->drv_priv : NULL);
 	else
 		ret = ath11k_dp_tx(ar, arvif, arsta, skb);
 
