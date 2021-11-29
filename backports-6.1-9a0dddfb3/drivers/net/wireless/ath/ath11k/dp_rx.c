@@ -3878,14 +3878,14 @@ ath11k_dp_rx_mon_update_status_buf_state(struct ath11k_mon_data *pmon,
 	}
 }
 
-static enum dp_mon_status_buf_state
-ath11k_dp_rx_mon_buf_done(struct ath11k_base *ab, struct hal_srng *srng,
-			  struct dp_rxdma_ring *rx_ring)
+enum dp_mon_status_buf_state
+dp_rx_mon_handle_status_buf_done(struct ath11k_base *ab, struct hal_srng *srng,
+				 struct dp_rxdma_ring *rx_ring)
 {
+	void *status_desc;
+	struct sk_buff *skb;
 	struct ath11k_skb_rxcb *rxcb;
 	struct hal_tlv_hdr *tlv;
-	struct sk_buff *skb;
-	void *status_desc;
 	dma_addr_t paddr;
 	u32 cookie;
 	int buf_id;
@@ -3908,8 +3908,8 @@ ath11k_dp_rx_mon_buf_done(struct ath11k_base *ab, struct hal_srng *srng,
 
 	rxcb = ATH11K_SKB_RXCB(skb);
 	dma_sync_single_for_cpu(ab->dev, rxcb->paddr,
-				skb->len + skb_tailroom(skb),
-				DMA_FROM_DEVICE);
+			skb->len + skb_tailroom(skb),
+			DMA_FROM_DEVICE);
 
 	tlv = (struct hal_tlv_hdr *)skb->data;
 	if (FIELD_GET(HAL_TLV_HDR_TAG, tlv->tl) != HAL_RX_STATUS_BUFFER_DONE)
@@ -3951,8 +3951,7 @@ static int ath11k_dp_rx_reap_mon_status_ring(struct ath11k_base *ab, int mac_id,
 	ath11k_hal_srng_access_begin(ab, srng);
 	while (*budget) {
 		*budget -= 1;
-		rx_mon_status_desc =
-			ath11k_hal_srng_src_peek(ab, srng);
+		rx_mon_status_desc = ath11k_hal_srng_src_peek(ab, srng);
 		if (!rx_mon_status_desc) {
 			pmon->buf_state = DP_MON_STATUS_REPLINISH;
 			break;
@@ -3989,9 +3988,6 @@ static int ath11k_dp_rx_reap_mon_status_ring(struct ath11k_base *ab, int mac_id,
 			tlv = (struct hal_tlv_hdr *)skb->data;
 			if (FIELD_GET(HAL_TLV_HDR_TAG, tlv->tl) !=
 					HAL_RX_STATUS_BUFFER_DONE) {
-				ath11k_warn(ab, "mon status DONE not set %lx, buf_id %d\n",
-					    FIELD_GET(HAL_TLV_HDR_TAG,
-						      tlv->tl), buf_id);
 				/* RxDMA status done bit might not be set even
 				 * though tp is moved by HW.
 				 */
@@ -4008,22 +4004,27 @@ static int ath11k_dp_rx_reap_mon_status_ring(struct ath11k_base *ab, int mac_id,
 				 *    dp_rx_mon_status_srng_process
 				 */
 
-				reap_status = ath11k_dp_rx_mon_buf_done(ab, srng,
-									rx_ring);
-				if (reap_status == DP_MON_STATUS_NO_DMA)
+				reap_status = dp_rx_mon_handle_status_buf_done(ab, srng,
+									       rx_ring);
+				if (reap_status == DP_MON_STATUS_NO_DMA) {
 					continue;
+				} else if (reap_status == DP_MON_STATUS_REPLINISH) {
+					ath11k_warn(ab, "mon status DONE not set %lx, buf_id %d\n",
+						    FIELD_GET(HAL_TLV_HDR_TAG, tlv->tl),
+						    buf_id);
 
-				spin_lock_bh(&rx_ring->idr_lock);
-				idr_remove(&rx_ring->bufs_idr, buf_id);
-				spin_unlock_bh(&rx_ring->idr_lock);
+					spin_lock_bh(&rx_ring->idr_lock);
+					idr_remove(&rx_ring->bufs_idr, buf_id);
+					spin_unlock_bh(&rx_ring->idr_lock);
 
-				dma_unmap_single(ab->dev, rxcb->paddr,
-						 skb->len + skb_tailroom(skb),
-						 DMA_FROM_DEVICE);
+					dma_unmap_single(ab->dev, rxcb->paddr,
+							 skb->len + skb_tailroom(skb),
+							 DMA_FROM_DEVICE);
 
-				dev_kfree_skb_any(skb);
-				pmon->buf_state = DP_MON_STATUS_REPLINISH;
-				goto move_next;
+					dev_kfree_skb_any(skb);
+					pmon->buf_state = DP_MON_STATUS_REPLINISH;
+					goto move_next;
+				}
 			}
 
 			spin_lock_bh(&rx_ring->idr_lock);
