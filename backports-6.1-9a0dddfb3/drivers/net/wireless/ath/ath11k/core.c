@@ -2522,6 +2522,9 @@ void ath11k_core_halt(struct ath11k *ar)
 
 	ar->num_created_vdevs = 0;
 	ar->allocated_vdev_map = 0;
+	spin_lock_bh(&ar->data_lock);
+	ar->num_mesh_vdevs = 0;
+	spin_unlock_bh(&ar->data_lock);
 
 	ath11k_mac_scan_finish(ar);
 	ath11k_mac_peer_cleanup_all(ar);

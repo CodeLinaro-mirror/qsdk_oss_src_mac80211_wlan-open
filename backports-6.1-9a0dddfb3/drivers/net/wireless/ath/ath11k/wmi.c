@@ -2095,8 +2095,8 @@ ath11k_wmi_dcs_awgn_interference_event(struct ath11k_base *ab,
 {
 	const struct wmi_dcs_interference_ev *dcs_intf_ev;
 	struct wmi_dcs_awgn_info awgn_info = {};
+	struct cfg80211_chan_def *chandef = NULL;
 	struct ath11k *ar;
-	struct ath11k_vif *arvif;
 	const struct wmi_tlv *tlv;
 	u16 tlv_tag;
 	u8 *ptr;
@@ -2155,20 +2155,35 @@ ath11k_wmi_dcs_awgn_interference_event(struct ath11k_base *ab,
 		goto exit;
 	}
 
+	if (ar->awgn_intf_handling_in_prog)
+		goto exit;
+
 	if (!ath11k_wmi_validate_dcs_awgn_info(ar, &awgn_info)) {
 		ath11k_warn(ab, "Invalid DCS AWGN TLV - Skipping event");
 		goto exit;
 	}
 
-	ath11k_info(ab, "Interface(pdev %d) will be disabled because of AWGN interference\n",
+	ath11k_info(ab, "Interface(pdev %d) : AWGN interference detected\n",
 		    dcs_intf_ev->pdev_id);
 
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (arvif->is_started && arvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			ieee80211_awgn_detected(arvif->vif);
-		}
+	ieee80211_iter_chan_contexts_atomic(ar->hw, ath11k_mac_get_any_chandef_iter,
+					    &chandef);
+	if (!chandef) {
+		ath11k_warn(ab, "chandef is not available\n");
+		goto exit;
 	}
+	ar->awgn_chandef = *chandef;
 
+	ieee80211_awgn_detected(ar->hw, awgn_info.chan_bw_interference_bitmap, NULL);
+
+	spin_lock_bh(&ar->data_lock);
+	/* Incase of mesh intf presence, dont set in prog as there will be no
+	   Channel/BW change happening. */
+	ar->awgn_intf_handling_in_prog = (ar->num_mesh_vdevs ? false : true);
+	ar->chan_bw_interference_bitmap = awgn_info.chan_bw_interference_bitmap;
+	spin_unlock_bh(&ar->data_lock);
+
+	ath11k_dbg(ab, ATH11K_DBG_WMI, "AWGN : Interference handling started\n");
 exit:
 	rcu_read_unlock();
 }
@@ -11038,7 +11053,7 @@ int ath11k_wmi_fw_dbglog_cfg(struct ath11k *ar, u32 *module_id_bitmap,
 }
 
 
-int ath11k_wmi_simulate_awgn(struct ath11k *ar)
+int ath11k_wmi_simulate_awgn(struct ath11k *ar, u32 chan_bw_interference_bitmap)
 {
 	struct ath11k_vif *arvif;
 	u32 awgn_args[WMI_AWGN_MAX_TEST_ARGS];
@@ -11061,14 +11076,16 @@ int ath11k_wmi_simulate_awgn(struct ath11k *ar)
 		return -EINVAL;
 
 	awgn_args[WMI_AWGN_TEST_AWGN_INT] = WMI_UNIT_TEST_AWGN_INTF_TYPE;
-	awgn_args[WMI_AWGN_TEST_BITMAP] = WMI_UNIT_TEST_AWGN_PRIMARY_20;
+	awgn_args[WMI_AWGN_TEST_BITMAP] = chan_bw_interference_bitmap;
 
 	wmi_ut.vdev_id = arvif->vdev_id;
 	wmi_ut.module_id = WMI_AWGN_UNIT_TEST_MODULE;
 	wmi_ut.num_args = WMI_AWGN_MAX_TEST_ARGS;
 	wmi_ut.diag_token = WMI_AWGN_UNIT_TEST_TOKEN;
 
-	ath11k_dbg(ar->ab, ATH11K_DBG_WMI, "Triggering AWGN Simulation\n");
+	ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
+		   "Triggering AWGN Simulation, interference bitmap : 0x%x\n",
+		   chan_bw_interference_bitmap);
 
 	return ath11k_wmi_send_unit_test_cmd(ar, wmi_ut, awgn_args);
 }

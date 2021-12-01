@@ -183,4 +183,7 @@ bool ath11k_mac_sta_level_info(struct ath11k_vif *arvif, struct ieee80211_sta *s
 void ath11k_mac_fill_reg_tpc_info(struct ath11k *ar,
 				  struct ieee80211_vif *vif,
 				  struct ieee80211_chanctx_conf *ctx);
+void ath11k_mac_get_any_chandef_iter(struct ieee80211_hw *hw,
+				     struct ieee80211_chanctx_conf *conf,
+				     void *data);
 #endif

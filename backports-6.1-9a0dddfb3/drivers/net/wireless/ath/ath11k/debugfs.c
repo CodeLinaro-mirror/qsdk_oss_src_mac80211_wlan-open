@@ -2151,6 +2151,7 @@ static ssize_t ath11k_write_simulate_awgn(struct file *file,
 {
 	struct ath11k *ar = file->private_data;
 	int ret;
+	u32 chan_bw_interference_bitmap;
 
 	mutex_lock(&ar->conf_mutex);
 	if (ar->state != ATH11K_STATE_ON) {
@@ -2158,7 +2159,10 @@ static ssize_t ath11k_write_simulate_awgn(struct file *file,
 		goto exit;
 	}
 
-	ret = ath11k_wmi_simulate_awgn(ar);
+	if (kstrtou32_from_user(user_buf, count, 0, &chan_bw_interference_bitmap))
+		return -EINVAL;
+
+	ret = ath11k_wmi_simulate_awgn(ar, chan_bw_interference_bitmap);
 	if (ret)
 		goto exit;
 

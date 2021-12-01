@@ -954,6 +954,7 @@ struct ath11k {
 	int max_num_peers;
 	u32 num_started_vdevs;
 	u32 num_created_vdevs;
+	u32 num_mesh_vdevs;
 	unsigned long long allocated_vdev_map;
 
 	struct idr txmgmt_idr;
@@ -1042,6 +1043,9 @@ struct ath11k {
 	enum wmi_phy_mode cfr_phymode;
 	struct ath11k_smart_ant_info smart_ant_info;
 	u32 rx_antenna;
+	struct cfg80211_chan_def awgn_chandef;
+	u32 chan_bw_interference_bitmap;
+	bool awgn_intf_handling_in_prog;
 };
 
 struct ath11k_band_cap {
