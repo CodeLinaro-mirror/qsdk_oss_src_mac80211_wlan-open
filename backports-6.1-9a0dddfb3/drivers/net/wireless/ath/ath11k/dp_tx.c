@@ -246,9 +246,6 @@ int ath11k_dp_tx(struct ath11k *ar, struct ath11k_vif *arvif,
 	u8 align_pad, htt_meta_size = 0, max_tx_ring, tcl_ring_id, ring_id;
 	u32 idr;
 
-	if (unlikely(test_bit(ATH11K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
-		return -ESHUTDOWN;
-
 	if (unlikely(!(info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP) &&
 		     !ieee80211_is_data(hdr->frame_control)))
 		return -EOPNOTSUPP;

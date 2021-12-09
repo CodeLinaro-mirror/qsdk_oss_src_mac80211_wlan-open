@@ -7067,6 +7067,11 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	bool noack = false;
 	int ret;
 
+	if (unlikely(test_bit(ATH11K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))) {
+		ieee80211_free_txskb(ar->hw, skb);
+		return;
+	}
+
 	memset(skb_cb, 0, sizeof(*skb_cb));
 	skb_cb->vif = vif;
 
