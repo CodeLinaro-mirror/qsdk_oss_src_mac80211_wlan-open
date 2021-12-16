@@ -18,6 +18,17 @@
 
 #define HTT_TLV_HDR_LEN 4
 
+#define ARRAY_TO_BUF_EXT(out, buflen, arr, len, ext_len)                       \
+	do {                                                                   \
+		int index = 0; u8 i;                                           \
+		for (i = 0; i < len; i++) {                                    \
+			index += scnprintf((out + buflen) + index,             \
+				(ATH11K_HTT_STATS_BUF_SIZE - buflen) - index,  \
+					  " %u:%u,", i + ext_len, arr[i]);     \
+		}                                                              \
+		buflen += index;                                               \
+	} while (0)
+
 #define ARRAY_TO_BUF(out, buflen, arr, len)                                    \
         do {                                                                   \
                 int index = 0; u8 i;                                           \
@@ -3139,8 +3150,9 @@ static inline void htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf,
 	PRINT_ARRAY_TO_BUF(buf, len, htt_stats_buf->tx_mcs, "tx_mcs",
 			   HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS, "\n");
 	len += HTT_DBG_OUT(buf + len, buf_len - len, " ");
-	ARRAY_TO_BUF(buf, len, htt_stats_buf->tx_mcs_ext,
-		     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS);
+	ARRAY_TO_BUF_EXT(buf, len, htt_stats_buf->tx_stbc_ext,
+		     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS,
+		     HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS);
 	PRINT_ARRAY_TO_BUF(buf, len, htt_stats_buf->ac_mu_mimo_tx_mcs,
 			   "ac_mu_mimo_tx_mcs", HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS, "\n");
 	len += HTT_DBG_OUT(buf + len, buf_len - len, " ");
@@ -3154,8 +3166,9 @@ static inline void htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf,
 	PRINT_ARRAY_TO_BUF(buf, len, htt_stats_buf->ofdma_tx_mcs, "ofdma_tx_mcs",
 			   HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS, "\n");
 	len += HTT_DBG_OUT(buf + len, buf_len - len, " ");
-	ARRAY_TO_BUF(buf, len, htt_stats_buf->ofdma_tx_mcs_ext,
-		     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS);
+	ARRAY_TO_BUF_EXT(buf, len, htt_stats_buf->tx_mcs_ext,
+		     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS,
+		     HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS);
 	PRINT_ARRAY_TO_BUF(buf, len, htt_stats_buf->tx_nss, "tx_nss",
 			   HTT_TX_PDEV_STATS_NUM_SPATIAL_STREAMS, "\n");
 	PRINT_ARRAY_TO_BUF(buf, len, htt_stats_buf->ac_mu_mimo_tx_nss,
@@ -3198,8 +3211,9 @@ static inline void htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf,
 		PRINT_ARRAY_TO_BUF(buf, len, htt_stats_buf->tx_gi[j], NULL,
 				   HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS, "\n");
 		len += HTT_DBG_OUT(buf + len, buf_len - len, " ");
-		ARRAY_TO_BUF(buf, len, htt_stats_buf->tx_gi_ext[j],
-			     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS);
+		ARRAY_TO_BUF_EXT(buf, len, htt_stats_buf->tx_gi_ext[j],
+			     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS,
+			     HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS);
 	}
 
 	/* AC MU-MIMO GI Stats */
@@ -3217,8 +3231,9 @@ static inline void htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf,
 		PRINT_ARRAY_TO_BUF(buf, len, htt_stats_buf->ax_mu_mimo_tx_gi[j],
 				   NULL, HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS, "\n");
 		len += HTT_DBG_OUT(buf + len, buf_len - len, " ");
-		ARRAY_TO_BUF(buf, len, htt_stats_buf->ax_mu_mimo_tx_gi_ext[j],
-			     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS);
+		ARRAY_TO_BUF_EXT(buf, len, htt_stats_buf->ax_mu_mimo_tx_gi_ext[j],
+			     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS,
+			     HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS);
 	}
 
 	/* DL OFDMA GI Stats */
@@ -3228,8 +3243,9 @@ static inline void htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf,
 		PRINT_ARRAY_TO_BUF(buf, len, htt_stats_buf->ofdma_tx_gi[j], NULL,
 				   HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS, "\n");
 		len += HTT_DBG_OUT(buf + len, buf_len - len, " ");
-		ARRAY_TO_BUF(buf, len, htt_stats_buf->ofdma_tx_gi_ext[j],
-			     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS);
+		ARRAY_TO_BUF_EXT(buf, len, htt_stats_buf->ofdma_tx_gi_ext[j],
+			     HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS,
+			     HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS);
 	}
 
 	PRINT_ARRAY_TO_BUF(buf, len, htt_stats_buf->tx_dcm, "tx_dcm",
@@ -4316,6 +4332,11 @@ static inline void htt_print_ul_mumimo_trig_stats(const void *tag_buf,
 			      htt_ul_mumimo_trig_stats_buf->ul_mumimo_rx_gi[j],
 				   NULL, HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS,
 				   "\n");
+		len += scnprintf(buf + len, buf_len - len,
+				 "ul_mumimo_rx_gi_ext[%u] = ", j);
+		ARRAY_TO_BUF_EXT(buf, len, htt_ul_mumimo_trig_stats_buf->ul_mumimo_rx_gi_ext[j],
+			     HTT_RX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS,
+			     HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS);
 	}
 
 	PRINT_ARRAY_TO_BUF(buf, len,
