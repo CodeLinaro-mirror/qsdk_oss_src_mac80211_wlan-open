@@ -6368,12 +6368,23 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 		ppdu_info->peer_id = HAL_INVALID_PEERID;
 		hal_status = ath11k_hal_rx_parse_mon_status(ab, ppdu_info, skb);
 
-		if (ppdu_info->peer_id == HAL_INVALID_PEERID ||
-		    hal_status != HAL_RX_MON_STATUS_PPDU_DONE) {
+		if (test_bit(ATH11K_FLAG_MONITOR_STARTED, &ar->monitor_flags) &&
+		    hal_status == HAL_RX_MON_STATUS_PPDU_DONE &&
+		    pmon->mon_ppdu_status == DP_PPDU_STATUS_START) {
+			rx_mon_stats->status_ppdu_done++;
+			pmon->mon_ppdu_status = DP_PPDU_STATUS_DONE;
+
+			if (!ab->hw_params.full_monitor_mode) {
+				ath11k_dp_rx_mon_dest_process(ar, mac_id, budget, napi);
+				pmon->mon_ppdu_status = DP_PPDU_STATUS_START;
+			}
+		}
+
+		if ((ppdu_info->peer_id == HAL_INVALID_PEERID ||
+		    hal_status != HAL_RX_MON_STATUS_PPDU_DONE)) {
 			dev_kfree_skb_any(skb);
 			continue;
 		}
-
 		rcu_read_lock();
 		spin_lock_bh(&ab->base_lock);
 		peer = ath11k_peer_find_by_id(ab, ppdu_info->peer_id);
@@ -6697,6 +6708,13 @@ static int ath11k_dp_full_mon_process_rx(struct ath11k_base *ab, int mac_id,
 
 	spin_lock_bh(&pmon->mon_lock);
 
+	pmon->mon_ppdu_status = DP_PPDU_STATUS_START;
+	if (!test_bit(ATH11K_FLAG_MONITOR_STARTED, &ar->monitor_flags)) {
+		quota = ath11k_dp_rx_process_mon_status(ab, mac_id, napi, budget);
+		spin_unlock_bh(&pmon->mon_lock);
+		return quota;
+	}
+
 	sw_mon_entries = &pmon->sw_mon_entries;
 	rx_mon_stats = &pmon->rx_mon_stats;
 
@@ -6739,7 +6757,6 @@ static int ath11k_dp_full_mon_process_rx(struct ath11k_base *ab, int mac_id,
 		}
 
 		rx_mon_stats->dest_ppdu_done++;
-		pmon->mon_ppdu_status = DP_PPDU_STATUS_START;
 		pmon->buf_state = DP_MON_STATUS_LAG;
 		pmon->mon_status_paddr = sw_mon_entries->mon_status_paddr;
 		pmon->hold_mon_dst_ring = true;
@@ -6771,14 +6788,10 @@ reap_status_ring:
 int ath11k_dp_rx_process_mon_rings(struct ath11k_base *ab, int mac_id,
 				   struct napi_struct *napi, int budget)
 {
-	struct ath11k *ar = ath11k_ab_to_ar(ab, mac_id);
-	int ret = 0;
-
 	if (ab->hw_params.full_monitor_mode)
 		return ath11k_dp_full_mon_process_rx(ab, mac_id, napi, budget);
 	else
 		return ath11k_dp_rx_process_mon_status(ab, mac_id, napi, budget);
-	return ret;
 }
 
 static int ath11k_dp_rx_pdev_mon_status_attach(struct ath11k *ar)
