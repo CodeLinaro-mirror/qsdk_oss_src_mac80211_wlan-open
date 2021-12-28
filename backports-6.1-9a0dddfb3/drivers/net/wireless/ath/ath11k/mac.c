@@ -8116,6 +8116,11 @@ static void ath11k_mac_op_remove_interface(struct ieee80211_hw *hw,
 
 	mutex_lock(&ar->conf_mutex);
 
+	ret = ath11k_spectral_vif_stop(arvif);
+	if (ret)
+		ath11k_warn(ab, "failed to stop spectral for vdev %i: %d\n",
+			    arvif->vdev_id, ret);
+
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		ath11k_nss_ext_vdev_delete(arvif);
 
