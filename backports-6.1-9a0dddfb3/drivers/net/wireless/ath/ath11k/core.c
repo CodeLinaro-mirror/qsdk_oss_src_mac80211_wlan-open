@@ -2501,6 +2501,11 @@ static int ath11k_core_reconfigure_on_crash(struct ath11k_base *ab)
 
 	clear_bit(ATH11K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 
+	/* We have disabled NSS Offload support in the starting.
+	 * Re-enabling it if it was originally enabled in the MODULE_PARM_DESC.
+	 */
+	ab->nss.enabled = nss_offload;
+
 	ret = ath11k_core_qmi_firmware_ready(ab);
 	if (ret)
 		goto err_hal_srng_deinit;
