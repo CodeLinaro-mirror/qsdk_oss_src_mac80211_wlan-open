@@ -84,6 +84,8 @@ int ath11k_dbring_bufs_replenish(struct ath11k *ar,
 
 	buff->paddr = paddr;
 
+	dma_sync_single_for_device(ab->dev, paddr, ring->buf_sz, DMA_FROM_DEVICE);
+
 	cookie = FIELD_PREP(DP_RXDMA_BUF_COOKIE_PDEV_ID, ar->pdev_idx) |
 		 FIELD_PREP(DP_RXDMA_BUF_COOKIE_BUF_ID, buf_id);
 
