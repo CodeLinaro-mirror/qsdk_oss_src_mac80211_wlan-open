@@ -6225,6 +6225,13 @@ static ssize_t ath11k_write_htt_stats_reset(struct file *file,
 		return -E2BIG;
 
 	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
+
 	cfg_params.cfg0 = HTT_STAT_DEFAULT_RESET_START_OFFSET;
 	cfg_params.cfg1 = 1 << (cfg_params.cfg0 + type);
 	ret = ath11k_dp_tx_htt_h2t_ext_stats_req(ar,

@@ -7847,8 +7847,12 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 		goto err;
 	}
 
-	ath11k_debugfs_dbg_mac_filter(arvif);
-	ath11k_debugfs_wbm_tx_comp_stats(arvif);
+	if (ar->state != ATH11K_STATE_RESTARTED) {
+		ath11k_debugfs_dbg_mac_filter(arvif);
+		ath11k_debugfs_wbm_tx_comp_stats(arvif);
+	} else {
+		INIT_LIST_HEAD(&arvif->mac_filters);
+	}
 
 	switch (vif->type) {
 	case NL80211_IFTYPE_UNSPECIFIED:
@@ -8061,6 +8065,14 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 	/* Remove wmi ctrl stats file */
 	debugfs_remove(arvif->wmi_ctrl_stat);
 	arvif->wmi_ctrl_stat = NULL;
+
+	if (ar->state != ATH11K_STATE_RESTARTED) {
+		ath11k_debug_aggr_size_config_init(arvif);
+		ath11k_debugfs_wmi_ctrl_stats(arvif);
+	} else {
+		INIT_LIST_HEAD(&arvif->ar->debug.wmi_list);
+		init_completion(&arvif->ar->debug.wmi_ctrl_path_stats_rcvd);
+	}
 
 	mutex_unlock(&ar->conf_mutex);
 

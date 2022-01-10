@@ -21,6 +21,7 @@
 #include "qmi.h"
 
 struct dentry *debugfs_ath11k;
+struct dentry *debugfs_debug_infra;
 
 static const char *htt_bp_umac_ring[HTT_SW_UMAC_RING_IDX_MAX] = {
 	"REO2SW1_RING",
@@ -1564,6 +1565,7 @@ void ath11k_debugfs_destroy()
 {
 	debugfs_remove_recursive(debugfs_ath11k);
 	debugfs_ath11k = NULL;
+	debugfs_debug_infra = NULL;
 }
 
 void ath11k_debugfs_fw_stats_init(struct ath11k *ar)
@@ -1782,6 +1784,12 @@ static ssize_t ath11k_write_simulate_radar(struct file *file,
 {
 	struct ath11k *ar = file->private_data;
 	int ret;
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
 
 	ret = ath11k_wmi_simulate_radar(ar);
 	if (ret)
@@ -2091,6 +2099,12 @@ static ssize_t ath11k_write_ps_state_enable(struct file *file,
 
 	mutex_lock(&ar->conf_mutex);
 
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
 	ps_state_enable = !!ps_state_enable;
 
 	if (ar->ps_state_enable == ps_state_enable) {
@@ -2193,6 +2207,14 @@ static ssize_t ath11k_write_btcoex(struct file *file,
 	if (!ar)
 		return -EINVAL;
 
+	mutex_lock(&ar->conf_mutex);
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
+	mutex_unlock(&ar->conf_mutex);
+
 	buf_size = min(count, (sizeof(buf) - 1));
 	if (copy_from_user(buf, ubuf, buf_size))
 		return -EFAULT;
@@ -2285,6 +2307,14 @@ static ssize_t ath11k_write_btcoex_duty_cycle(struct file *file,
 	if (!ar)
 		return -EINVAL;
 
+	mutex_lock(&ar->conf_mutex);
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
+	mutex_unlock(&ar->conf_mutex);
+
 	if (!test_bit(ATH11K_FLAG_BTCOEX, &ar->dev_flags))
 		return -EINVAL;
 
@@ -2375,6 +2405,12 @@ static ssize_t ath11k_write_btcoex_algo(struct file *file,
 		return -EINVAL;
 
 	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
 
 	arvif = list_first_entry(&ar->arvifs, typeof(*arvif), list);
 	if (!arvif->is_started) {
@@ -2654,6 +2690,12 @@ static ssize_t ath11k_athdiag_read(struct file *file,
 		return 0;
 
 	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
 
 	buf = vmalloc(count);
 	if (!buf) {
@@ -3404,6 +3446,12 @@ static ssize_t ath11k_write_ani_enable(struct file *file,
 
 	mutex_lock(&ar->conf_mutex);
 
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
+
 	if (ar->ani_enabled == enable) {
 		ret = count;
 		goto exit;
@@ -3459,6 +3507,12 @@ static ssize_t ath11k_write_ani_poll_period(struct file *file,
 
 	mutex_lock(&ar->conf_mutex);
 
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
+
 	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ANI_POLL_PERIOD,
 			ani_poll_period, ar->pdev->pdev_id);
 	if (ret) {
@@ -3508,6 +3562,12 @@ static ssize_t ath11k_write_ani_listen_period(struct file *file,
 		return -EINVAL;
 
 	mutex_lock(&ar->conf_mutex);
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
 
 	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ANI_LISTEN_PERIOD,
 					ani_listen_period, ar->pdev->pdev_id);
@@ -4156,8 +4216,17 @@ static ssize_t ath11k_write_wmi_ctrl_path_stats(struct file *file,
 {
 	struct ath11k_vif *arvif = file->private_data;
 	struct wmi_ctrl_path_stats_cmd_param param = {0};
+	struct ath11k *ar = arvif->ar;
 	u8 buf[128] = {0};
 	int ret;
+
+	mutex_lock(&ar->conf_mutex);
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
+	mutex_unlock(&ar->conf_mutex);
 
 	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
 	if (ret < 0) {
@@ -4619,9 +4688,18 @@ static ssize_t ath11k_write_ampdu_aggr_size(struct file *file,
 {
 	struct ath11k_vif *arvif = file->private_data;
 	struct ath11k_base *ab = arvif->ar->ab;
+	struct ath11k *ar = arvif->ar;
 	unsigned int tx_aggr_size = 0;
 	int ret;
 	struct set_custom_aggr_size_params params = {0};
+
+	mutex_lock(&ar->conf_mutex);
+	if (ar->state != ATH11K_STATE_ON) {
+		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
+	mutex_unlock(&ar->conf_mutex);
 
 	if (kstrtouint_from_user(ubuf, count, 0, &tx_aggr_size))
 		return -EINVAL;

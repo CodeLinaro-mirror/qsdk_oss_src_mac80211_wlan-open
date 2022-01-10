@@ -1922,7 +1922,7 @@ void ath11k_dp_free(struct ath11k_base *ab);
 int ath11k_dp_alloc(struct ath11k_base *ab);
 int ath11k_dp_pdev_alloc(struct ath11k_base *ab);
 void ath11k_dp_pdev_pre_alloc(struct ath11k_base *ab);
-void ath11k_dp_pdev_free(struct ath11k_base *ab);
+void ath11k_dp_pdev_free(struct ath11k_base *ab, bool ureg_dbgfs);
 int ath11k_dp_tx_htt_srng_setup(struct ath11k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);
 int ath11k_dp_peer_setup(struct ath11k *ar, int vdev_id, const u8 *addr);

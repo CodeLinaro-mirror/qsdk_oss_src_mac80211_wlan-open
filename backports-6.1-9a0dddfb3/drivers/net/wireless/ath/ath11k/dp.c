@@ -986,7 +986,7 @@ done:
 }
 EXPORT_SYMBOL(ath11k_dp_service_srng);
 
-void ath11k_dp_pdev_free(struct ath11k_base *ab)
+void ath11k_dp_pdev_free(struct ath11k_base *ab, bool ureg_dbgfs)
 {
 	struct ath11k *ar;
 	int i;
@@ -996,7 +996,8 @@ void ath11k_dp_pdev_free(struct ath11k_base *ab)
 	for (i = 0; i < ab->num_radios; i++) {
 		ar = ab->pdevs[i].ar;
 		ath11k_dp_rx_pdev_free(ab, i);
-		ath11k_debugfs_unregister(ar);
+		if (ureg_dbgfs)
+			ath11k_debugfs_unregister(ar);
 		ath11k_dp_rx_pdev_mon_detach(ar);
 	}
 }
@@ -1051,7 +1052,7 @@ int ath11k_dp_pdev_alloc(struct ath11k_base *ab)
 	return 0;
 
 err:
-	ath11k_dp_pdev_free(ab);
+	ath11k_dp_pdev_free(ab, true);
 
 	return ret;
 }

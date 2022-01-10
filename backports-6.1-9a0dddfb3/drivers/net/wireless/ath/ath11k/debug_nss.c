@@ -11,6 +11,8 @@
 #include "debug.h"
 #include "debug_nss.h"
 
+extern struct dentry *debugfs_debug_infra;
+
 static unsigned int
 debug_nss_fill_mpp_dump(struct ath11k_vif *arvif, char *buf, ssize_t size)
 {
@@ -908,16 +910,17 @@ void ath11k_debugfs_nss_mesh_vap_create(struct ath11k_vif *arvif)
 
 void ath11k_debugfs_nss_soc_create(struct ath11k_base *ab)
 {
-	struct dentry *debugfs_dbg_infra;
+	if (debugfs_debug_infra)
+		return;
 
-	debugfs_dbg_infra = debugfs_create_dir("dbg_infra", debugfs_ath11k);
+	debugfs_debug_infra = debugfs_create_dir("dbg_infra", debugfs_ath11k);
 
 	debugfs_create_file("links", 0200,
-			debugfs_dbg_infra, ab,
+			debugfs_debug_infra, ab,
 			&fops_nss_links);
 
 	debugfs_create_file("mpp_mode", 0600,
-			debugfs_dbg_infra, ab,
+			debugfs_debug_infra, ab,
 			&fops_nss_mpp_mode);
 }
 
