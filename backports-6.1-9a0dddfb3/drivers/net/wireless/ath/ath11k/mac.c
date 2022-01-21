@@ -1881,6 +1881,9 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 	struct vdev_up_params params = { 0 };
 	int ret = 0;
 
+	if (arvif->vif->mbssid_tx_vif)
+		tx_arvif = (void *)arvif->vif->mbssid_tx_vif->drv_priv;
+
 	lockdep_assert_held(&arvif->ar->conf_mutex);
 
 	if (!info->enable_beacon) {
@@ -1895,6 +1898,9 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 				    arvif->vdev_id, ret);
 
 		arvif->is_up = false;
+		if (tx_arvif)
+			tx_arvif->nontransmitting_vif_count = 0;
+
 		return;
 	}
 
@@ -1915,6 +1921,13 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 	params.vdev_id = arvif->vdev_id;
 	params.aid = arvif->aid;
 	params.bssid = arvif->bssid;
+	if (tx_arvif) {
+		params.tx_bssid = tx_arvif->bssid;
+		params.profile_idx = info->bssid_index;
+		if (params.profile_idx >= tx_arvif->nontransmitting_vif_count)
+			tx_arvif->nontransmitting_vif_count = params.profile_idx;
+		params.profile_count = tx_arvif->nontransmitting_vif_count;
+	}
 	ret = ath11k_wmi_vdev_up(arvif->ar, &params);
 	if (ret) {
 		ath11k_warn(ar->ab, "failed to bring up vdev %d: %i\n",
@@ -3474,6 +3487,11 @@ static void ath11k_bss_disassoc(struct ieee80211_hw *hw,
 
 	arvif->is_up = false;
 
+	if (arvif->vif->mbssid_tx_vif) {
+		tx_arvif = (void *)arvif->vif->mbssid_tx_vif->drv_priv;
+		if (tx_arvif != arvif)
+			tx_arvif->nontransmitting_vif_count--;
+	}
 	memset(&arvif->rekey_data, 0, sizeof(arvif->rekey_data));
 
 	cancel_delayed_work_sync(&arvif->connection_loss_work);
@@ -4086,6 +4104,8 @@ static void ath11k_mac_op_bss_info_changed(struct ieee80211_hw *hw,
 			ret = ath11k_wmi_send_obss_color_collision_cfg_cmd(
 				ar, arvif->vdev_id, info->he_bss_color.color,
 				ATH11K_BSS_COLOR_COLLISION_DETECTION_AP_PERIOD_MS,
+				arvif->vif->bss_conf.nontransmitted ?
+				0 :
 				(info->he_bss_color.enabled & color_collision_enable));
 			if (ret)
 				ath11k_warn(ar->ab, "failed to set bss color collision on vdev %i: %d\n",
@@ -8754,6 +8774,13 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 		params.vdev_id = arvif->vdev_id;
 		params.aid = arvif->aid;
 		params.bssid = arvif->bssid;
+
+		if (arvif->vif->mbssid_tx_vif) {
+			tx_arvif = (void *)arvif->vif->mbssid_tx_vif->drv_priv;
+			params.tx_bssid = tx_arvif->bssid;
+			params.profile_idx = arvif->vif->bss_conf.bssid_index;
+			params.profile_count = tx_arvif->nontransmitting_vif_count;
+		}
 		ret = ath11k_wmi_vdev_up(arvif->ar, &params);
 		if (ret) {
 			ath11k_warn(ab, "failed to bring vdev up %d: %d\n",
@@ -12139,7 +12166,7 @@ ath11k_mac_op_config_mesh_offload_path(struct ieee80211_hw *hw,
 				       struct ieee80211_mesh_path_offld *path)
 {
 	struct ath11k *ar = hw->priv;
-	struct ath11k_vif *arvif = (void *)vif->drv_priv;
+	struct ath11k_vif *arvif = (void *)vif->drv_priv, *tx_arvif;
 	int ret;
 
 	if (arvif->ar->ab->nss.debug_mode) {

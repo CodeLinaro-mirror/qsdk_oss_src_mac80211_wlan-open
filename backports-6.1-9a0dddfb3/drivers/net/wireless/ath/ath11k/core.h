@@ -547,6 +547,7 @@ struct ath11k_vif {
 	struct ath11k_tid_qos_config tid_cfg[ATH11K_TID_MAX];
 	u32 tids_rst;
 	u64 tbtt_offset;
+	u8 nontransmitting_vif_count;
 	DECLARE_BITMAP(free_groupidx_map, ATH11K_GROUP_KEYS_NUM_MAX);
 };
 
