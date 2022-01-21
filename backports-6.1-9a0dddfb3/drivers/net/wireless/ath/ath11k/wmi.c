@@ -1133,8 +1133,7 @@ int ath11k_wmi_vdev_start(struct ath11k *ar, struct wmi_vdev_start_req_arg *arg,
 	return ret;
 }
 
-int ath11k_wmi_vdev_up(struct ath11k *ar, u32 vdev_id, u32 aid, const u8 *bssid,
-		       u8 *tx_bssid, u32 nontx_profile_idx, u32 nontx_profile_cnt)
+int ath11k_wmi_vdev_up(struct ath11k *ar, struct vdev_up_params *params)
 {
 	struct ath11k_pdev_wmi *wmi = ar->wmi;
 	struct wmi_vdev_up_cmd *cmd;
@@ -1153,10 +1152,13 @@ int ath11k_wmi_vdev_up(struct ath11k *ar, u32 vdev_id, u32 aid, const u8 *bssid,
 
 	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_VDEV_UP_CMD) |
 			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
-	cmd->vdev_id = vdev_id;
-	cmd->vdev_assoc_id = aid;
-
-	ether_addr_copy(cmd->vdev_bssid.addr, bssid);
+	cmd->vdev_id = params->vdev_id;
+	cmd->vdev_assoc_id = params->aid;
+	ether_addr_copy(cmd->vdev_bssid.addr, params->bssid);
+	cmd->profile_idx = params->profile_idx;
+	cmd->profile_count = params->profile_count;
+	if (params->tx_bssid)
+		ether_addr_copy(cmd->tx_vdev_bssid.addr, params->tx_bssid);
 
 	cmd->nontx_profile_idx = nontx_profile_idx;
 	cmd->nontx_profile_cnt = nontx_profile_cnt;
@@ -1182,7 +1184,7 @@ int ath11k_wmi_vdev_up(struct ath11k *ar, u32 vdev_id, u32 aid, const u8 *bssid,
 
 	ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
 		   "cmd vdev up id 0x%x assoc id %d bssid %pM\n",
-		   vdev_id, aid, bssid);
+		   params->vdev_id, params->aid, params->bssid);
 
 	return ret;
 }

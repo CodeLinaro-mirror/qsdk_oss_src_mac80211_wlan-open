@@ -1104,6 +1104,7 @@ static int ath11k_mac_monitor_vdev_start(struct ath11k *ar, int vdev_id,
 	struct ieee80211_channel *channel;
 	struct wmi_vdev_start_req_arg arg = {};
 	int ret;
+	struct vdev_up_params params = { 0 };
 
 	lockdep_assert_held(&ar->conf_mutex);
 
@@ -1144,7 +1145,9 @@ static int ath11k_mac_monitor_vdev_start(struct ath11k *ar, int vdev_id,
 		return ret;
 	}
 
-	ret = ath11k_wmi_vdev_up(ar, vdev_id, 0, ar->mac_addr, NULL, 0, 0);
+	params.vdev_id = vdev_id,
+	params.bssid = ar->mac_addr,
+	ret = ath11k_wmi_vdev_up(ar, &params);
 	if (ret) {
 		ath11k_warn(ar->ab, "failed to put up monitor vdev %i: %d\n",
 			    vdev_id, ret);
@@ -1467,6 +1470,7 @@ static int ath11k_mac_op_config(struct ieee80211_hw *hw, u32 changed)
 	struct ath11k *ar = hw->priv;
 	struct ieee80211_conf *conf = &hw->conf;
 	int ret = 0;
+	struct vdev_up_params params = { 0 };
 
 	mutex_lock(&ar->conf_mutex);
 
@@ -1874,6 +1878,7 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 {
 	struct ath11k *ar = arvif->ar;
 	struct ath11k_vif *tx_arvif;
+	struct vdev_up_params params = { 0 };
 	int ret = 0;
 
 	lockdep_assert_held(&arvif->ar->conf_mutex);
@@ -1906,11 +1911,11 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 	ether_addr_copy(arvif->bssid, info->bssid);
 
 	tx_arvif = ath11k_mac_get_tx_arvif(arvif);
-	ret = ath11k_wmi_vdev_up(arvif->ar, arvif->vdev_id, arvif->aid,
-				 arvif->bssid,
-				 tx_arvif ? tx_arvif->bssid : NULL,
-				 info->bssid_index,
-				 1 << info->bssid_indicator);
+
+	params.vdev_id = arvif->vdev_id;
+	params.aid = arvif->aid;
+	params.bssid = arvif->bssid;
+	ret = ath11k_wmi_vdev_up(arvif->ar, &params);
 	if (ret) {
 		ath11k_warn(ar->ab, "failed to bring up vdev %d: %i\n",
 			    arvif->vdev_id, ret);
@@ -3331,6 +3336,7 @@ static void ath11k_bss_assoc(struct ieee80211_hw *hw,
 	struct ieee80211_sta_he_cap  he_cap;
 	int ret;
 	bool debug;
+	struct vdev_up_params params = { 0 };
 
 	lockdep_assert_held(&ar->conf_mutex);
 
@@ -3389,8 +3395,10 @@ static void ath11k_bss_assoc(struct ieee80211_hw *hw,
 	arvif->aid = vif->cfg.aid;
 	ether_addr_copy(arvif->bssid, bss_conf->bssid);
 
-	ret = ath11k_wmi_vdev_up(ar, arvif->vdev_id, arvif->aid, arvif->bssid,
-				 NULL, 0, 0);
+	params.vdev_id = arvif->vdev_id;
+	params.aid = arvif->aid;
+	params.bssid = arvif->bssid;
+	ret = ath11k_wmi_vdev_up(ar, &params);
 	if (ret) {
 		ath11k_warn(ar->ab, "failed to set vdev %d up: %d\n",
 			    arvif->vdev_id, ret);
@@ -8695,6 +8703,8 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 	ath11k_mac_update_rx_channel(ar, NULL, vifs, n_vifs);
 
 	for (i = 0; i < n_vifs; i++) {
+		struct vdev_up_params params = { 0 };
+
 		arvif = ath11k_vif_to_arvif(vifs[i].vif);
 
 		if (WARN_ON(!arvif->is_started))
@@ -8740,11 +8750,11 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 				    ret);
 
 		tx_arvif = ath11k_mac_get_tx_arvif(arvif);
-		ret = ath11k_wmi_vdev_up(arvif->ar, arvif->vdev_id, arvif->aid,
-					 arvif->bssid,
-					 tx_arvif ? tx_arvif->bssid : NULL,
-					 arvif->vif->bss_conf.bssid_index,
-					 1 << arvif->vif->bss_conf.bssid_indicator);
+
+		params.vdev_id = arvif->vdev_id;
+		params.aid = arvif->aid;
+		params.bssid = arvif->bssid;
+		ret = ath11k_wmi_vdev_up(arvif->ar, &params);
 		if (ret) {
 			ath11k_warn(ab, "failed to bring vdev up %d: %d\n",
 				    arvif->vdev_id, ret);
@@ -8876,6 +8886,7 @@ static int ath11k_mac_start_vdev_delay(struct ieee80211_hw *hw,
 	struct ath11k_base *ab = ar->ab;
 	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
 	int ret;
+	struct vdev_up_params params = { 0 };
 
 	if (WARN_ON(arvif->is_started))
 		return -EBUSY;
@@ -8903,8 +8914,9 @@ static int ath11k_mac_start_vdev_delay(struct ieee80211_hw *hw,
 	}
 
 	if (arvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
-		ret = ath11k_wmi_vdev_up(ar, arvif->vdev_id, 0, ar->mac_addr,
-					 NULL, 0, 0);
+		params.vdev_id = arvif->vdev_id,
+		params.bssid = ar->mac_addr,
+		ret = ath11k_wmi_vdev_up(ar, &params);
 		if (ret) {
 			ath11k_warn(ab, "failed put monitor up: %d\n", ret);
 			return ret;
