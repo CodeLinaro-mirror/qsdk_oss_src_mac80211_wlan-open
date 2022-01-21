@@ -111,6 +111,9 @@ static void ath11k_init_wmi_config_qca6390(struct ath11k_base *ab,
 	config->num_keep_alive_pattern = 0;
 	config->flag1 |= WMI_RSRC_CFG_FLAG1_BSS_CHANNEL_INFO_64;
 	config->smart_ant_cap = 1;
+	config->ema_max_vap_cnt = ab->num_radios;
+	config->ema_max_profile_period = TARGET_EMA_MAX_PROFILE_PERIOD;
+	config->beacon_tx_offload_max_vdev += config->ema_max_vap_cnt;
 }
 
 void ath11k_hal_reo_hash_setup(struct ath11k_base *ab, u32 ring_hash_map)
