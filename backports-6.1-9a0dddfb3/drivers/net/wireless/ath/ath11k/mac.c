@@ -1695,6 +1695,14 @@ static int ath11k_mac_set_vif_params(struct ath11k_vif *arvif,
 	else
 		arvif->wpaie_present = false;
 
+	/* Make the TSF offset negative so beacons in the same
+	 * staggered batch have the same TSF.
+	 */
+	if (arvif->tbtt_offset) {
+		adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
+		memcpy(&mgmt->u.beacon.timestamp, &adjusted_tsf, sizeof(adjusted_tsf));
+	}
+
 	if (arvif->vdev_subtype != WMI_VDEV_SUBTYPE_P2P_GO)
 		return ret;
 
@@ -1840,10 +1848,10 @@ static int ath11k_mac_setup_bcn_tmpl(struct ath11k_vif *arvif)
 	 */
 	tx_arvif = ath11k_mac_get_tx_arvif(arvif);
 	if (tx_arvif) {
-		if (arvif != tx_arvif && arvif->is_up)
+		if (vif->bss_conf.mbssid_tx_vif && arvif != tx_arvif && arvif->is_up)
 			return 0;
 
-		if (vif->bss_conf.ema_ap)
+		if (vif->bss_conf.ema_ap && vif->bss_conf.mbssid_tx_vif)
 			return ath11k_mac_setup_bcn_tmpl_ema(arvif, tx_arvif);
 	} else {
 		tx_arvif = arvif;
