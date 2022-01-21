@@ -1606,6 +1606,26 @@ static bool ath11k_mac_set_nontx_vif_params(struct ath11k_vif *tx_arvif,
 	return false;
 }
 
+static int __ath11k_mac_setup_bcn_tmpl(struct ath11k_vif *arvif,
+				       struct sk_buff *bcn,
+				       struct ieee80211_mutable_offsets offs,
+				       int ema_idx, int ema_cnt)
+{
+	struct ath11k *ar = arvif->ar;
+	u32 ema_param = 0;
+
+	if (ema_cnt) {
+		ema_param = (ema_cnt << WMI_BEACON_EMA_PARAM_PERIODICITY_SHIFT);
+		ema_param |= (ema_idx << WMI_BEACON_EMA_PARAM_TMPL_IDX_SHIFT);
+		ema_param |= ((!ema_idx ? 1 : 0) <<
+			      WMI_BEACON_EMA_PARAM_FIRST_TMPL_SHIFT);
+		ema_param |= ((ema_idx + 1 == ema_cnt ? 1 : 0) <<
+			      WMI_BEACON_EMA_PARAM_LAST_TMPL_SHIFT);
+	}
+
+	return ath11k_wmi_bcn_tmpl(ar, arvif->vdev_id, &offs, bcn, ema_param);
+}
+
 static int ath11k_mac_setup_bcn_p2p_ie(struct ath11k_vif *arvif,
 				       struct sk_buff *bcn)
 {
@@ -1686,7 +1706,7 @@ static int ath11k_mac_set_vif_params(struct ath11k_vif *arvif,
 		vht_cap = (void *)(vht_cap_ie + 2);
 		arvif->vht_cap = vht_cap->vht_cap_info;
 	}
-	ar->cfr_phymode = ath11k_cfr_chan_to_phymode(arvif);
+	arvif->ar->cfr_phymode = ath11k_cfr_chan_to_phymode(arvif);
 
 	if (cfg80211_find_vendor_ie(WLAN_OUI_MICROSOFT,
 				    WLAN_OUI_TYPE_MICROSOFT_WPA,
@@ -1745,9 +1765,10 @@ static int ath11k_mac_setup_bcn_tmpl_ema(struct ath11k_vif *arvif,
 {
 	struct ieee80211_ema_beacons *beacons;
 	int ret = 0;
-	bool nontx_vif_params_set = false;
-	u32 params = 0;
 	u8 i = 0;
+
+	if (!arvif->vif->mbssid_tx_vif)
+		return -1;
 
 	beacons = ieee80211_beacon_get_template_ema_list(tx_arvif->ar->hw,
 							 tx_arvif->vif, 0);
@@ -1765,19 +1786,9 @@ static int ath11k_mac_setup_bcn_tmpl_ema(struct ath11k_vif *arvif,
 	}
 
 	for (i = 0; i < beacons->cnt; i++) {
-		if (tx_arvif != arvif && !nontx_vif_params_set)
-			nontx_vif_params_set =
-				ath11k_mac_set_nontx_vif_params(tx_arvif, arvif,
-								beacons->bcn[i].skb);
-
-		params = beacons->cnt;
-		params |= (i << WMI_EMA_TMPL_IDX_SHIFT);
-		params |= ((!i ? 1 : 0) << WMI_EMA_FIRST_TMPL_SHIFT);
-		params |= ((i + 1 == beacons->cnt ? 1 : 0) << WMI_EMA_LAST_TMPL_SHIFT);
-
-		ret = ath11k_wmi_bcn_tmpl(tx_arvif->ar, tx_arvif->vdev_id,
-					  &beacons->bcn[i].offs,
-					  beacons->bcn[i].skb, params);
+		ret = __ath11k_mac_setup_bcn_tmpl(tx_arvif, beacons->bcn[i].skb,
+						  beacons->bcn[i].offs,
+						  i, beacons->cnt);
 		if (ret) {
 			ath11k_warn(tx_arvif->ar->ab,
 				    "failed to set ema beacon template id %i error %d\n",
@@ -1788,8 +1799,6 @@ static int ath11k_mac_setup_bcn_tmpl_ema(struct ath11k_vif *arvif,
 
 	ieee80211_beacon_free_ema_list(beacons);
 
-	if (tx_arvif != arvif && !nontx_vif_params_set)
-		return -EINVAL; /* Profile not found in the beacons */
 
 	return ret;
 }
@@ -1825,7 +1834,7 @@ static int ath11k_mac_setup_bcn_tmpl_mbssid(struct ath11k_vif *arvif,
 		return -EINVAL;
 	}
 
-	ret = ath11k_wmi_bcn_tmpl(ar, arvif->vdev_id, &offs, bcn, 0);
+	ret = __ath11k_mac_setup_bcn_tmpl(tx_arvif, bcn, offs, 0, 0);
 	kfree_skb(bcn);
 
 	if (ret)

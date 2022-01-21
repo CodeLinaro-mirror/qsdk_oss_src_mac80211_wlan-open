@@ -3902,6 +3902,11 @@ struct ath11k_wmi_p2p_noa_info {
 #define WMI_EMA_FIRST_TMPL_SHIFT          16
 #define WMI_EMA_LAST_TMPL_SHIFT           24
 
+#define WMI_BEACON_EMA_PARAM_PERIODICITY_SHIFT         0
+#define WMI_BEACON_EMA_PARAM_TMPL_IDX_SHIFT            8
+#define WMI_BEACON_EMA_PARAM_FIRST_TMPL_SHIFT          16
+#define WMI_BEACON_EMA_PARAM_LAST_TMPL_SHIFT           24
+
 struct wmi_bcn_tmpl_cmd {
 	u32 tlv_header;
 	u32 vdev_id;
