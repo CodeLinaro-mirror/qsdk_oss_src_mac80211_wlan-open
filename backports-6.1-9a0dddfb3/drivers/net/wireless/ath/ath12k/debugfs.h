@@ -32,6 +32,9 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif);
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab);
 
+void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif);
+void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif);
+
 #define ATH12K_CCK_RATES			4
 #define ATH12K_OFDM_RATES			8
 #define ATH12K_HT_RATES				8
@@ -181,6 +184,15 @@ static inline void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 }
 
 static inline void ath12k_debugfs_pdev_create(struct ath12k_base *ab)
+{
+}
+
+static inline void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
+{
+	return 0;
+}
+
+static inline void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 {
 }
 #endif /* CPTCFG_ATH12K_DEBUGFS */

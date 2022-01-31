@@ -368,6 +368,9 @@ struct ath12k_link_vif {
 	bool spectral_enabled;
 	u32 vht_cap;
 	bool mvr_processing;
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	struct dentry *debugfs_twt;
+#endif /* CPTCFG_ATH12K_DEBUGFS */
 };
 
 struct ath12k_dp_link_vif {

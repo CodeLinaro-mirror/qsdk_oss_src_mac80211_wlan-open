@@ -1660,6 +1660,7 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k *ar;
 	struct ath12k_hw *ah;
+	struct ath12k_link_vif *arvif;
 	int i, j;
 
 	spin_lock_bh(&ab->base_lock);
@@ -1691,6 +1692,14 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 
 		for (j = 0; j < ah->num_radio; j++) {
 			ar = &ah->radio[j];
+
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				if (arvif->is_started)
+					ath12k_debugfs_remove_interface(arvif);
+				arvif->is_started = false;
+				arvif->is_created = false;
+				arvif->is_up = false;
+			}
 
 			ath12k_mac_drain_tx(ar);
 			ar->state_11d = ATH12K_11D_IDLE;

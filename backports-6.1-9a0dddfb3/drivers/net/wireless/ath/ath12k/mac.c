@@ -4138,6 +4138,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 				    "num_peers: %d",
 				    arvif->vdev_id, arvif->link_id, ret, ar->num_peers);
 	}
+
+	ath12k_debugfs_remove_interface(arvif);
 	ath12k_mac_vdev_delete(ar, arvif);
 	ath12k_mac_ap_ps_recalc(ar);
 }
@@ -9778,6 +9780,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	ret = ath12k_mac_txpower_recalc(ar);
 	if (ret)
 		goto err_peer_del;
+
+	ath12k_debugfs_add_interface(arvif);
 
 	param_id = WMI_VDEV_PARAM_RTS_THRESHOLD;
 	param_value = hw->wiphy->rts_threshold;
