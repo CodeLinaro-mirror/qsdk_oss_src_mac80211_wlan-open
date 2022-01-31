@@ -208,6 +208,8 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct ath12k_wmi_peer_create_conf_ev) },
 	[WMI_TAG_MUEDCA_PARAMS_CONFIG_EVENT] = {
 		.min_len = sizeof(struct wmi_pdev_update_muedca_event) },
+	[WMI_TAG_TWT_ADD_DIALOG_COMPLETE_EVENT] = {
+		.min_len = sizeof(struct wmi_twt_add_dialog_event) },
 };
 
 __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len)
@@ -3769,11 +3771,12 @@ ath12k_wmi_send_twt_enable_cmd(struct ath12k *ar, u32 pdev_id)
 	/* TODO add MBSSID support */
 	cmd->mbss_support = 0;
 
-	ret = ath12k_wmi_cmd_send(wmi, skb,
-				  WMI_TWT_ENABLE_CMDID);
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_ENABLE_CMDID);
 	if (ret) {
 		ath12k_warn(ab, "Failed to send WMI_TWT_ENABLE_CMDID");
 		dev_kfree_skb(skb);
+	} else {
+		ar->twt_enabled = 1;
 	}
 	return ret;
 }
@@ -3798,14 +3801,184 @@ ath12k_wmi_send_twt_disable_cmd(struct ath12k *ar, u32 pdev_id)
 						 len);
 	cmd->pdev_id = cpu_to_le32(pdev_id);
 
-	ret = ath12k_wmi_cmd_send(wmi, skb,
-				  WMI_TWT_DISABLE_CMDID);
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_DISABLE_CMDID);
 	if (ret) {
 		ath12k_warn(ab, "Failed to send WMI_TWT_DISABLE_CMDID");
+		dev_kfree_skb(skb);
+	} else {
+		ar->twt_enabled = 0;
+	}
+	return ret;
+}
+
+int ath12k_wmi_send_twt_add_dialog_cmd(struct ath12k *ar,
+				       struct wmi_twt_add_dialog_params *params)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_twt_add_dialog_params_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_twt_add_dialog_params_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_TWT_ADD_DIALOG_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
+
+	cmd->vdev_id = params->vdev_id;
+	ether_addr_copy(cmd->peer_macaddr.addr, params->peer_macaddr);
+	cmd->dialog_id = params->dialog_id;
+	cmd->wake_intvl_us = params->wake_intvl_us;
+	cmd->wake_intvl_mantis = params->wake_intvl_mantis;
+	cmd->wake_dura_us = params->wake_dura_us;
+	cmd->sp_offset_us = params->sp_offset_us;
+	cmd->flags = params->twt_cmd;
+	if (params->flag_bcast)
+		cmd->flags |= WMI_TWT_ADD_DIALOG_FLAG_BCAST;
+	if (params->flag_trigger)
+		cmd->flags |= WMI_TWT_ADD_DIALOG_FLAG_TRIGGER;
+	if (params->flag_flow_type)
+		cmd->flags |= WMI_TWT_ADD_DIALOG_FLAG_FLOW_TYPE;
+	if (params->flag_protection)
+		cmd->flags |= WMI_TWT_ADD_DIALOG_FLAG_PROTECTION;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi add twt dialog vdev %u dialog id %u wake interval %u mantissa %u wake duration %u service period offset %u flags 0x%x\n",
+		   cmd->vdev_id, cmd->dialog_id, cmd->wake_intvl_us,
+		   cmd->wake_intvl_mantis, cmd->wake_dura_us, cmd->sp_offset_us,
+		   cmd->flags);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_ADD_DIALOG_CMDID);
+
+	if (ret) {
+		ath12k_warn(ab,
+			    "failed to send wmi command to add twt dialog: %d",
+			    ret);
 		dev_kfree_skb(skb);
 	}
 	return ret;
 }
+
+int ath12k_wmi_send_twt_del_dialog_cmd(struct ath12k *ar,
+				       struct wmi_twt_del_dialog_params *params)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_twt_del_dialog_params_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_twt_del_dialog_params_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_TWT_DEL_DIALOG_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
+
+	cmd->vdev_id = params->vdev_id;
+	ether_addr_copy(cmd->peer_macaddr.addr, params->peer_macaddr);
+	cmd->dialog_id = params->dialog_id;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi delete twt dialog vdev %u dialog id %u\n",
+		   cmd->vdev_id, cmd->dialog_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_DEL_DIALOG_CMDID);
+	if (ret) {
+		ath12k_warn(ab,
+			    "failed to send wmi command to delete twt dialog: %d",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
+int ath12k_wmi_send_twt_pause_dialog_cmd(struct ath12k *ar,
+					 struct wmi_twt_pause_dialog_params *params)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_twt_pause_dialog_params_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_twt_pause_dialog_params_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_TWT_PAUSE_DIALOG_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
+
+	cmd->vdev_id = params->vdev_id;
+	ether_addr_copy(cmd->peer_macaddr.addr, params->peer_macaddr);
+	cmd->dialog_id = params->dialog_id;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi pause twt dialog vdev %u dialog id %u\n",
+		   cmd->vdev_id, cmd->dialog_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_PAUSE_DIALOG_CMDID);
+	if (ret) {
+		ath12k_warn(ab,
+			    "failed to send wmi command to pause twt dialog: %d",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
+int ath12k_wmi_send_twt_resume_dialog_cmd(struct ath12k *ar,
+					  struct wmi_twt_resume_dialog_params *params)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_twt_resume_dialog_params_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_twt_resume_dialog_params_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_TWT_RESUME_DIALOG_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, len - TLV_HDR_SIZE);
+
+	cmd->vdev_id = params->vdev_id;
+	ether_addr_copy(cmd->peer_macaddr.addr, params->peer_macaddr);
+	cmd->dialog_id = params->dialog_id;
+	cmd->sp_offset_us = params->sp_offset_us;
+	cmd->next_twt_size = params->next_twt_size;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi resume twt dialog vdev %u dialog id %u service period offset %u next twt subfield size %u\n",
+		   cmd->vdev_id, cmd->dialog_id, cmd->sp_offset_us,
+		   cmd->next_twt_size);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_RESUME_DIALOG_CMDID);
+	if (ret) {
+		ath12k_warn(ab,
+			    "failed to send wmi command to resume twt dialog: %d",
+			    ret);
+		dev_kfree_skb(skb);
+ 	}
+ 	return ret;
+ }
 
 int
 ath12k_wmi_send_obss_spr_cmd(struct ath12k *ar, u32 vdev_id,
@@ -10288,6 +10461,66 @@ ath12k_wmi_spectral_capabilities_event(struct ath12k_base *ab,
 
 }
 
+static const char *ath12k_wmi_twt_add_dialog_event_status(u32 status)
+{
+	switch (status) {
+	case WMI_ADD_TWT_STATUS_OK:
+		return "ok";
+	case WMI_ADD_TWT_STATUS_TWT_NOT_ENABLED:
+		return "twt disabled";
+	case WMI_ADD_TWT_STATUS_USED_DIALOG_ID:
+		return "dialog id in use";
+	case WMI_ADD_TWT_STATUS_INVALID_PARAM:
+		return "invalid parameters";
+	case WMI_ADD_TWT_STATUS_NOT_READY:
+		return "not ready";
+	case WMI_ADD_TWT_STATUS_NO_RESOURCE:
+		return "resource unavailable";
+	case WMI_ADD_TWT_STATUS_NO_ACK:
+		return "no ack";
+	case WMI_ADD_TWT_STATUS_NO_RESPONSE:
+		return "no response";
+	case WMI_ADD_TWT_STATUS_DENIED:
+		return "denied";
+	case WMI_ADD_TWT_STATUS_UNKNOWN_ERROR:
+		fallthrough;
+	default:
+		return "unknown error";
+	}
+}
+
+static void ath12k_wmi_twt_add_dialog_event(struct ath12k_base *ab,
+					    struct sk_buff *skb)
+{
+	const void **tb;
+	const struct wmi_twt_add_dialog_event *ev;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab,
+			    "failed to parse wmi twt add dialog status event tlv: %d\n",
+			    ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_TWT_ADD_DIALOG_COMPLETE_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch twt add dialog wmi event\n");
+		goto exit;
+	}
+
+	if (ev->status)
+		ath12k_warn(ab,
+			    "wmi add twt dialog event vdev %d dialog id %d status %s\n",
+			    ev->vdev_id, ev->dialog_id,
+			    ath12k_wmi_twt_add_dialog_event_status(ev->status));
+
+exit:
+	kfree(tb);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_cmd_hdr *cmd_hdr;
@@ -10436,6 +10669,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID:
 	case WMI_MGMT_RX_FW_CONSUMED_EVENTID:
 	case WMI_OBSS_COLOR_COLLISION_DETECTION_EVENTID:
+	case WMI_TWT_DEL_DIALOG_EVENTID:
+	case WMI_TWT_PAUSE_DIALOG_EVENTID:
+	case WMI_TWT_RESUME_DIALOG_EVENTID:
 		/* debug might flood hence silently ignore (no-op) */
 		break;
 	case WMI_PDEV_SSCAN_FW_PARAM_EVENTID:
@@ -10458,6 +10694,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PDEV_MULTIPLE_VDEV_RESTART_RESP_EVENTID:
 		ath12k_wmi_event_mvr_response(ab, skb);
+		break;
+	case WMI_TWT_ADD_DIALOG_EVENTID:
+		ath12k_wmi_twt_add_dialog_event(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);

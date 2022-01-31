@@ -851,6 +851,7 @@ struct ath12k {
 	bool awgn_intf_handling_in_prog;
 
 	struct completion mvr_complete;
+	bool twt_enabled;
 };
 
 struct ath12k_hw {
