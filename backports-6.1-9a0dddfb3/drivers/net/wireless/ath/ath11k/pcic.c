@@ -20,6 +20,15 @@ const char *ce_irq_name[ATH11K_MAX_PCI_DOMAINS + 1][CE_COUNT_MAX] = {
 		ATH11K_PCI_CE_IRQS_NAME(1)
 	},
 	{
+		ATH11K_PCI_CE_IRQS_NAME(2)
+	},
+	{
+		ATH11K_PCI_CE_IRQS_NAME(3)
+	},
+	{
+		ATH11K_PCI_CE_IRQS_NAME(4)
+	},
+	{
 		ATH11K_PCI_CE_IRQS_NAME()
 	},
 };
@@ -30,6 +39,15 @@ const char *dp_irq_name[ATH11K_MAX_PCI_DOMAINS + 1][ATH11K_EXT_IRQ_GRP_NUM_MAX] 
 	},
 	{
 		ATH11K_PCI_DP_IRQS_NAME(1)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME(2)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME(3)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME(4)
 	},
 	{
 		ATH11K_PCI_DP_IRQS_NAME()
