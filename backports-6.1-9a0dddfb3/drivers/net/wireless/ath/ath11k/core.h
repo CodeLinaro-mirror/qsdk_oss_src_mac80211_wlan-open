@@ -856,6 +856,7 @@ struct ath11k_debug {
 	bool disable_dynamic_bw;
 	struct dentry *debugfs_smartant;
 	u32 coex_priority_level[ATH11K_MAX_COEX_PRIORITY_LEVEL];
+	enum wmi_bss_chan_info_req_type bss_survey_mode;
 };
 
 struct ath11k_per_peer_tx_stats {

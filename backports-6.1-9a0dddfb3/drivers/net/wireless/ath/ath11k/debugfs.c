@@ -3985,6 +3985,53 @@ static const struct file_operations fops_coex_priority = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_bss_survey_mode_read(struct file *file,
+					   char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	char buf[32] = {0};
+	size_t len = 0;
+
+	mutex_lock(&ar->conf_mutex);
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "%u\n",
+			 ar->debug.bss_survey_mode);
+	mutex_unlock(&ar->conf_mutex);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath11k_bss_survey_mode_write(struct file *file,
+					    const char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	u8 survey_mode;
+
+	if (kstrtouint_from_user(user_buf, count, 0, &survey_mode))
+		return -EINVAL;
+
+	if ((survey_mode != WMI_BSS_SURVEY_REQ_TYPE_READ) &&
+	    (survey_mode != WMI_BSS_SURVEY_REQ_TYPE_READ_CLEAR))
+		return -EINVAL;
+
+	mutex_lock(&ar->conf_mutex);
+
+	ar->debug.bss_survey_mode = survey_mode;
+
+	mutex_unlock(&ar->conf_mutex);
+	return count;
+}
+
+static const struct file_operations fops_bss_survey_mode = {
+	.read = ath11k_bss_survey_mode_read,
+	.write = ath11k_bss_survey_mode_write,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath11k_debugfs_register(struct ath11k *ar)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -4100,6 +4147,9 @@ int ath11k_debugfs_register(struct ath11k *ar)
 			    &fops_medium_busy);
 	debugfs_create_file("coex_priority", 0600,
 			    ar->debug.debugfs_pdev, ar, &fops_coex_priority);
+	debugfs_create_file("bss_survey_mode", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_bss_survey_mode);
 	return 0;
 }
 

@@ -10972,9 +10972,14 @@ ath11k_mac_update_bss_chan_survey(struct ath11k *ar,
 				  struct ieee80211_channel *channel)
 {
 	int ret;
-	enum wmi_bss_chan_info_req_type type = WMI_BSS_SURVEY_REQ_TYPE_READ;
+	enum wmi_bss_chan_info_req_type type = WMI_BSS_SURVEY_REQ_TYPE_READ_CLEAR;
 
 	lockdep_assert_held(&ar->conf_mutex);
+
+#ifdef CPTCFG_ATH11K_DEBUGFS
+	if (ar->debug.bss_survey_mode)
+		type = ar->debug.bss_survey_mode;
+#endif
 
 	if (!test_bit(WMI_TLV_SERVICE_BSS_CHANNEL_INFO_64, ar->ab->wmi_ab.svc_map) ||
 	    ar->rx_channel != channel)
