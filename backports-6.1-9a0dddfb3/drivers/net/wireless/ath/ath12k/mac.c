@@ -7866,6 +7866,13 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant)
 	ar->cfg_tx_chainmask = tx_ant;
 	ar->cfg_rx_chainmask = rx_ant;
 
+	ar->num_tx_chains = hweight32(tx_ant);
+	ar->num_rx_chains = hweight32(rx_ant);
+
+	/* Reload HT/VHT/HE capability */
+	ath12k_mac_setup_ht_vht_cap(ar, &ar->pdev->cap, NULL);
+	ath12k_mac_setup_sband_iftype_data(ar, &ar->pdev->cap);
+
 	if (ah->state != ATH12K_HW_STATE_ON &&
 	    ah->state != ATH12K_HW_STATE_RESTARTED)
 		return 0;
@@ -7873,26 +7880,18 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant)
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_TX_CHAIN_MASK,
 					tx_ant, ar->pdev->pdev_id);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to set tx-chainmask: %d, req 0x%x\n",
+		ath12k_err(ar->ab, "failed to set tx-chainmask: %d, req 0x%x\n",
 			    ret, tx_ant);
 		return ret;
 	}
 
-	ar->num_tx_chains = hweight32(tx_ant);
-
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_RX_CHAIN_MASK,
 					rx_ant, ar->pdev->pdev_id);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to set rx-chainmask: %d, req 0x%x\n",
+		ath12k_err(ar->ab, "failed to set rx-chainmask: %d, req 0x%x\n",
 			    ret, rx_ant);
 		return ret;
 	}
-
-	ar->num_rx_chains = hweight32(rx_ant);
-
-	/* Reload HT/VHT/HE capability */
-	ath12k_mac_setup_ht_vht_cap(ar, &ar->pdev->cap, NULL);
-	ath12k_mac_setup_sband_iftype_data(ar, &ar->pdev->cap);
 
 	return 0;
 }
