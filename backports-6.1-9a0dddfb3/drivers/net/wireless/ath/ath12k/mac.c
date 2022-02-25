@@ -7356,6 +7356,8 @@ static void ath12k_mac_setup_ht_vht_cap(struct ath12k *ar,
 			*ht_cap_info = ht_cap;
 		band->ht_cap = ath12k_create_ht_cap(ar, ht_cap,
 						    rate_cap_rx_chainmask);
+		band->vht_cap = ath12k_create_vht_cap(ar, rate_cap_tx_chainmask,
+						    rate_cap_rx_chainmask);
 	}
 
 	if (cap->supported_bands & WMI_HOST_WLAN_5GHZ_CAP &&
