@@ -4756,6 +4756,24 @@ struct wmi_regulatory_rule_struct {
 	u32  flag_info;
 };
 
+struct wmi_tbtt_offset_info {
+	u32 vdev_id;
+	u32 tbtt_offset;
+	u32 tbtt_qtime_low_us;
+	u32 tbtt_qtime_high_us;
+} __packed;
+
+struct wmi_tbtt_offset_event {
+	u32 num_vdevs;
+} __packed;
+
+struct wmi_tbtt_offset_ev_arg {
+	u32 vdev_id;
+	u32 tbtt_offset;
+	u32 tbtt_qtime_low_us;
+	u32 tbtt_qtime_high_us;
+} __packed;
+
 #define WMI_REG_CLIENT_MAX 4
 
 struct wmi_reg_chan_list_cc_ext_event {

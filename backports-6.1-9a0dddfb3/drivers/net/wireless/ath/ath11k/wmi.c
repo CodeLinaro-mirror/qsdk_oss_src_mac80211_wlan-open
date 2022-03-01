@@ -10580,6 +10580,144 @@ static void ath11k_wmi_tlv_cfr_cpature_phase_fixed_param(const void *ptr,
 	}
 }
 
+static int ath11k_wmi_tbtt_offset_subtlv_parser(struct ath11k_base *ab, u16 tag,
+						u16 len, const void *ptr,
+						void *data)
+{
+	int ret;
+	struct ath11k *ar;
+	u64 tx_delay = 0;
+	struct sk_buff *bcn;
+	u64 adjusted_tsf;
+	struct ieee80211_mgmt *mgmt;
+	struct wmi_tbtt_offset_info *tbtt_offset_info;
+	struct ieee80211_chanctx_conf *conf;
+	struct ath11k_vif *arvif;
+	struct ieee80211_mutable_offsets offs = {};
+
+	tbtt_offset_info = (struct wmi_tbtt_offset_info *)ptr;
+
+	rcu_read_lock();
+	ar = ath11k_mac_get_ar_by_vdev_id(ab, tbtt_offset_info->vdev_id);
+	if (!ar) {
+		ath11k_warn(ab, "ar not found, vdev_id %d\n", tbtt_offset_info->vdev_id);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	arvif = ath11k_mac_get_arvif(ar, tbtt_offset_info->vdev_id);
+	if (!arvif) {
+		ath11k_warn(ab, "arvif not found, vdev_id %d\n",
+			    tbtt_offset_info->vdev_id);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (!arvif->is_up || (arvif->vdev_type != WMI_VDEV_TYPE_AP)) {
+		ret = 0;
+		goto exit;
+	}
+
+	arvif->tbtt_offset = tbtt_offset_info->tbtt_offset;
+
+	conf = rcu_dereference(arvif->vif->bss_conf.chanctx_conf);
+	if (conf && conf->def.chan->band == NL80211_BAND_2GHZ) {
+		/* 1Mbps Beacon: */
+		/* 144 us ( LPREAMBLE) + 48 (PLCP Header)
+		 * + 192 (1Mbps, 24 ytes)
+		 * = 384 us + 2us(MAC/BB DELAY
+		 */
+		tx_delay = 386;
+	} else if (conf && (conf->def.chan->band == NL80211_BAND_5GHZ ||
+			    conf->def.chan->band == NL80211_BAND_6GHZ)) {
+		/* 6Mbps Beacon: */
+		/*20(lsig)+2(service)+32(6mbps, 24 bytes)
+		 *= 54us + 2us(MAC/BB DELAY)
+		 */
+		tx_delay = 56;
+	}
+	arvif->tbtt_offset -= tx_delay;
+
+	/* Make the TSF offset negative so beacons in the same
+	 * staggered batch have the same TSF.
+	 */
+	adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
+	bcn = ieee80211_beacon_get_template(ar->hw, arvif->vif, &offs);
+	if (!bcn) {
+		ath11k_warn(ab, "failed to get beacon template from mac80211\n");
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	mgmt = (void *)bcn->data;
+	memcpy(&mgmt->u.beacon.timestamp, &adjusted_tsf, sizeof(adjusted_tsf));
+	ret = ath11k_wmi_bcn_tmpl(ar, arvif->vdev_id, &offs, bcn);
+	kfree_skb(bcn);
+
+	if (ret)
+		ath11k_warn(ab, "failed to submit beacon template command: %d\n",
+			    ret);
+exit:
+	rcu_read_unlock();
+	return ret;
+}
+
+static int ath11k_wmi_tbtt_offset_event_parser(struct ath11k_base *ab,
+					       u16 tag, u16 len,
+					       const void *ptr, void *data)
+{
+	int ret = 0;
+
+	ath11k_dbg(ab, ATH11K_DBG_WMI, "wmi tbtt offset event tag 0x%x of len %d rcvd\n",
+		   tag, len);
+
+	if (tag == WMI_TAG_ARRAY_STRUCT) {
+		ret = ath11k_wmi_tlv_iter(ab, ptr, len,
+					  ath11k_wmi_tbtt_offset_subtlv_parser,
+					  data);
+	}
+
+	return ret;
+}
+
+static int ath11k_wmi_pull_tbtt_offset(struct ath11k_base *ab, struct sk_buff *skb,
+				       struct wmi_tbtt_offset_ev_arg *arg)
+{
+	struct wmi_tbtt_offset_event *ev = NULL;
+	struct wmi_tbtt_offset_info tbtt_offset_info = {0};
+	struct wmi_tlv *tlv;
+	int ret;
+	u8 *ptr;
+	u16 tlv_tag;
+
+	ptr = skb->data;
+
+	if (skb->len < (sizeof(*ev) + TLV_HDR_SIZE)) {
+		ath11k_warn(ab, "wmi_tbtt_offset event size invalid\n");
+		return -EINVAL;
+	}
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv_tag = FIELD_GET(WMI_TLV_TAG, tlv->header);
+	ptr += sizeof(*tlv);
+
+	if (tlv_tag == WMI_TAG_TBTT_OFFSET_EXT_EVENT) {
+		ev = (struct wmi_tbtt_offset_event *)ptr;
+	} else {
+		ath11k_warn(ab, "tbtt event received with invalid tag\n");
+		return -EINVAL;
+	}
+
+	ret = ath11k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath11k_wmi_tbtt_offset_event_parser,
+				  &tbtt_offset_info);
+	if (ret) {
+		ath11k_warn(ab, "failed to parse tbtt tlv %d\n", ret);
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static int ath11k_wmi_tlv_cfr_capture_evt_parse(struct ath11k_base *ab,
 						u16 tag, u16 len,
 						const void *ptr, void *data)
@@ -10622,6 +10760,16 @@ static void ath11k_wmi_parse_cfr_capture_event(struct ath11k_base *ab,
 	if (ret)
 		ath11k_dbg(ab, ATH11K_DBG_CFR,
 			   "failed to process cfr cpature ret = %d\n", ret);
+}
+
+void ath11k_wmi_event_tbttoffset_update(struct ath11k_base *ab, struct sk_buff *skb)
+{
+	struct wmi_tbtt_offset_ev_arg arg = {};
+	int ret;
+
+	ret = ath11k_wmi_pull_tbtt_offset(ab, skb, &arg);
+	if (ret)
+		ath11k_warn(ab, "failed to parse tbtt offset event: %d\n", ret);
 }
 
 static int ath11k_wmi_peer_ratecode_subtlv_parser(struct ath11k_base *ab,
@@ -10939,6 +11087,9 @@ static void ath11k_wmi_tlv_op_rx(struct ath11k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PEER_RATECODE_LIST_EVENTID:
 		ath11k_wmi_event_peer_ratecode_list(ab, skb);
+		break;
+	case WMI_TBTTOFFSET_EXT_UPDATE_EVENTID:
+		ath11k_wmi_event_tbttoffset_update(ab, skb);
 		break;
 
 	default:

@@ -1666,6 +1666,7 @@ static int ath11k_mac_set_vif_params(struct ath11k_vif *arvif,
 	int ret = 0;
 	u8 *ies;
 	const u8 *vht_cap_ie;
+	u64 adjusted_tsf;
 
 	ies = bcn->data + ieee80211_get_hdrlen_from_skb(bcn);
 	mgmt = (struct ieee80211_mgmt *)bcn->data;
@@ -7059,6 +7060,7 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	struct ieee80211_key_conf *key = info->control.hw_key;
 	struct ath11k_mgmt_frame_stats *mgmt_stats = &arvif->mgmt_stats;
 	struct ath11k_sta *arsta = NULL;
+	struct ieee80211_mgmt *mgmt;
 	u32 info_flags = info->flags;
 	struct ieee80211_sta *sta = control->sta;
 	bool is_prb_rsp;
@@ -7066,6 +7068,7 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	u8 tid, *qos_ctl;
 	bool noack = false;
 	int ret;
+	u64 adjusted_tsf;
 
 	if (unlikely(test_bit(ATH11K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))) {
 		ieee80211_free_txskb(ar->hw, skb);
@@ -7085,6 +7088,12 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	} else if (ieee80211_is_mgmt(hdr->frame_control)) {
 		frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 		is_prb_rsp = ieee80211_is_probe_resp(hdr->frame_control);
+		if (is_prb_rsp && arvif->tbtt_offset) {
+			mgmt = (struct ieee80211_mgmt *)skb->data;
+			adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
+			memcpy(&mgmt->u.probe_resp.timestamp, &adjusted_tsf,
+			       sizeof(adjusted_tsf));
+		}
 		ret = ath11k_mac_tx_over_wmi(ar, skb, is_prb_rsp);
 		if (ret) {
 			if (ret != -EBUSY)
