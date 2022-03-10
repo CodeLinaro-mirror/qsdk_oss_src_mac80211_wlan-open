@@ -842,6 +842,18 @@ struct wlanfw_cfg_download_resp_msg_v01 {
 int ath12k_qmi_mem_read(struct ath12k_base *ab, u32 mem_addr, void *mem_value,size_t count);
 int ath12k_qmi_mem_write(struct ath12k_base *ab, u32 mem_addr, void* mem_value, size_t count);
 
+#define QMI_WLFW_INI_REQ_V01 0x002F
+#define WLFW_INI_REQ_MSG_V01_MAX_MSG_LEN 4
+
+struct wlfw_ini_req_msg_v01 {
+	u8 enablefwlog_valid;
+	u8 enablefwlog;
+};
+
+struct wlfw_ini_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			      u32 mode);
 void ath12k_qmi_firmware_stop(struct ath12k_base *ab);
@@ -855,4 +867,5 @@ int ath12k_qmi_m3_dump_upload_done_ind_send(struct ath12k_base *ab,
                                             u32 pdev_id, int status);
 int ath12k_send_qdss_trace_mode_req(struct ath12k_base *ab,
 				    enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode);
+int ath12k_enable_fwlog(struct ath12k_base *ab);
 #endif

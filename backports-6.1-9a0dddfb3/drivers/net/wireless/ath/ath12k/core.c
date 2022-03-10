@@ -1365,6 +1365,9 @@ core_pdev_create:
 			goto err;
 		}
 
+		if (ath12k_enable_fwlog(ab))
+			ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
+
 		mutex_unlock(&ab->core_lock);
 	}
 

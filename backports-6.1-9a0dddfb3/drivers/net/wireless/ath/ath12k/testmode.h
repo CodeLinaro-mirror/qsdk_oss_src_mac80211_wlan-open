@@ -16,6 +16,7 @@ void ath12k_tm_process_event(struct ath12k_base *ab, u32 cmd_id,
 			     u16 length);
 int ath12k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		  u8 link_id, void *data, int len);
+void ath12k_fwlog_write(struct ath12k_base *ab, u8 *data, int len);
 
 #else
 
@@ -38,4 +39,8 @@ static inline int ath12k_tm_cmd(struct ieee80211_hw *hw,
 	return 0;
 }
 
+static inline void ath12k_fwlog_write(struct ath12k_base *ab, u8 *data, int len)
+{
+
+}
 #endif

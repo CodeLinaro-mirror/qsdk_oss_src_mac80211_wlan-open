@@ -152,13 +152,15 @@ struct ath12k_skb_rxcb {
 };
 
 enum ath12k_hw_rev {
-	ATH12K_HW_QCN9274_HW10,
+	ATH12K_HW_QCN9274_HW10 = 0,
 	ATH12K_HW_QCN9274_HW20,
 	ATH12K_HW_WCN7850_HW20,
 	ATH12K_HW_IPQ5332_HW10,
 	ATH12K_HW_IPQ5424_HW10,
 	ATH12K_HW_QCN6432_HW10,
 };
+
+#define ATH12K_DIAG_HW_ID_OFFSET	16
 
 enum ath12k_firmware_mode {
 	/* the default mode, standard 802.11 functionality */

@@ -2521,6 +2521,50 @@ static const struct qmi_elem_info qmi_wlanfw_fw_ready_ind_msg_v01_ei[] = {
 	},
 };
 
+struct qmi_elem_info wlfw_ini_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct wlfw_ini_req_msg_v01,
+					   enablefwlog_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct wlfw_ini_req_msg_v01,
+					   enablefwlog),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info wlfw_ini_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct wlfw_ini_resp_msg_v01,
+					   resp),
+		.ei_array       = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
 static const struct qmi_elem_info qmi_wlanfw_wlan_ini_req_msg_v01_ei[] = {
 	{
 		.data_type	= QMI_OPT_FLAG,
@@ -5598,6 +5642,52 @@ static void ath12k_wlfw_qdss_trace_save_ind_cb(struct qmi_handle *qmi_hdl,
 
 free_event_data:
 	kfree(event_data);
+}
+
+int ath12k_enable_fwlog(struct ath12k_base *ab)
+{
+	struct wlfw_ini_req_msg_v01 *req;
+	struct wlfw_ini_resp_msg_v01 resp = {};
+	struct qmi_txn txn = {};
+	int ret = 0;
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	req->enablefwlog_valid = 1;
+	req->enablefwlog = 1;
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn, wlfw_ini_resp_msg_v01_ei, &resp);
+	if (ret < 0)
+		goto out;
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLFW_INI_REQ_V01,
+			       WLFW_INI_REQ_MSG_V01_MAX_MSG_LEN,
+			       wlfw_ini_req_msg_v01_ei, req);
+
+	if (ret < 0) {
+		ath12k_warn(ab, "Failed to send init request for enabling fwlog = %d\n",
+			    ret);
+		qmi_txn_cancel(&txn);
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+	if (ret < 0) {
+		ath12k_warn(ab, "fwlog enable wait for resp failed: %d\n", ret);
+		goto out;
+	}
+
+	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
+		ath12k_warn(ab, "fwlog enable request failed, result: %d, err: %d\n",
+			    resp.resp.result, resp.resp.error);
+		ret = -EINVAL;
+	}
+out:
+	kfree(req);
+	return ret;
 }
 
 static const struct qmi_msg_handler ath12k_qmi_msg_handlers[] = {
