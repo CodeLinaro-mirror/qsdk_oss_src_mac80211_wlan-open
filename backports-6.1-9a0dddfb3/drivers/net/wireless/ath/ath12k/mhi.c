@@ -247,6 +247,8 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 		}
 	}
 
+	mhi_ctrl->rddm_size = ATH12K_PCI_FW_RDDM_SZ;
+
 	ret = ath12k_mhi_get_msi(ab_pci);
 	if (ret) {
 		ath12k_err(ab, "failed to get msi for mhi\n");

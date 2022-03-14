@@ -13,6 +13,7 @@
 #include <linux/of_graph.h>
 #include "ahb.h"
 #include "core.h"
+#include "coredump.h"
 #include "dp_tx.h"
 #include "dp_rx.h"
 #include "debug.h"
@@ -39,6 +40,8 @@ MODULE_PARM_DESC(frame_mode,
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 
 static DEFINE_MUTEX(ath12k_hw_group_mutex);
+
+extern struct ath12k_coredump_info ath12k_coredump_ram_info;
 
 static int ath12k_core_rfkill_config(struct ath12k_base *ab)
 {
@@ -1664,6 +1667,9 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset starting\n");
 
 	ab->is_reset = true;
+	/* prepare coredump */
+	ath12k_coredump_download_rddm(ab);
+
 	atomic_set(&ab->recovery_count, 0);
 
 	ath12k_coredump_collect(ab);
@@ -1693,14 +1699,12 @@ static void ath12k_core_reset(struct work_struct *work)
 		return;
 	}
 
-	/* Prepare MLO global memory region for power up */
-	ath12k_qmi_reset_mlo_mem(ag);
-
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
 		if (!ab)
 			continue;
 
+		ath12k_qmi_free_resource(ab);
 		ath12k_hif_power_up(ab);
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset started\n");
 	}
@@ -2245,5 +2249,30 @@ err_sc_free:
 	return NULL;
 }
 
+void ath12k_core_issue_bug_on(struct ath12k_base *ab)
+{
+        struct ath12k_hw_group *ag = ab->ag;
+
+        if (ab->in_panic)
+                goto out;
+
+        /* set in_panic to true to avoid multiple rddm download during
+         * firmware crash
+         */
+        ab->in_panic = true;
+
+        if (!ag->mlo_capable)
+                BUG_ON(1);
+
+        if (atomic_read(&ath12k_coredump_ram_info.num_chip) >= ab->ag->num_started)
+                BUG_ON(1);
+        else
+                goto out;
+
+out:
+        ath12k_info(ab,
+                    "%d chip dump collected and waiting for partner chips\n",
+                    atomic_read(&ath12k_coredump_ram_info.num_chip));
+}
 MODULE_DESCRIPTION("Driver support for Qualcomm Technologies WLAN devices");
 MODULE_LICENSE("Dual BSD/GPL");

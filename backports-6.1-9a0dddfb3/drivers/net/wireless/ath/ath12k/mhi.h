@@ -16,6 +16,7 @@
 #define MHISTATUS				0x48
 #define MHICTRL					0x38
 #define MHICTRL_RESET_MASK			0x2
+#define ATH12K_PCI_FW_RDDM_SZ			0x600000
 
 enum ath12k_mhi_state {
 	ATH12K_MHI_INIT,

@@ -681,6 +681,13 @@ struct ath12k_per_peer_tx_stats {
 	bool is_ampdu;
 };
 
+enum ath12k_fw_recovery_option {
+	 ATH12K_FW_RECOVERY_DISABLE = 0,
+	 ATH12K_FW_RECOVERY_ENABLE_AUTO, /* Automatically recover after FW assert */
+	 /* Enable only recovery. Send MPD SSR WMI */
+	 /* command to unlink UserPD assert from RootPD */
+};
+
 #define ATH12K_FLUSH_TIMEOUT (5 * HZ)
 #define ATH12K_VDEV_DELETE_TIMEOUT_HZ (5 * HZ)
 
@@ -1138,6 +1145,8 @@ struct ath12k_base {
 
 	struct completion htc_suspend;
 
+	bool fw_recovery_support;
+
 	u64 fw_soc_drop_count;
 	bool static_window_map;
 
@@ -1214,6 +1223,8 @@ struct ath12k_base {
                 u32 addr_lo;
                 u32 addr_hi;
         } msi;
+	bool in_panic;
+	bool is_qdss_tracing;
 	struct ath12k_internal_pci ipci;
 	bool ce_pipe_init_done;
 	/* must be last */
@@ -1338,6 +1349,7 @@ u8 ath12k_get_num_partner_link(struct ath12k *ar);
 
 const struct firmware *ath12k_core_firmware_request(struct ath12k_base *ab,
 						    const char *filename);
+void ath12k_core_issue_bug_on(struct ath12k_base *ab);
 u32 ath12k_core_get_max_station_per_radio(struct ath12k_base *ab);
 u32 ath12k_core_get_max_peers_per_radio(struct ath12k_base *ab);
 u32 ath12k_core_get_max_num_tids(struct ath12k_base *ab);
