@@ -7541,6 +7541,21 @@ err:
 	return ret;
 }
 
+static void ath11k_update_bcn_template_work(struct work_struct *work)
+{
+	struct ath11k_vif *arvif = container_of(work, struct ath11k_vif,
+						update_bcn_template_work);
+	struct ath11k *ar = arvif->ar;
+	int ret;
+
+	mutex_lock(&ar->conf_mutex);
+	ret = ath11k_mac_setup_bcn_tmpl(arvif);
+	mutex_unlock(&ar->conf_mutex);
+	if (ret)
+		ath11k_warn(ar->ab, "failed to submit beacon template for vdev_id : %d ret : %d\n",
+			    arvif->vdev_id, ret);
+}
+
 static void ath11k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 {
 	struct ath11k *ar = hw->priv;
@@ -7954,6 +7969,7 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 	INIT_WORK(&arvif->bcn_tx_work, ath11k_mac_bcn_tx_work);
 	INIT_DELAYED_WORK(&arvif->connection_loss_work,
 			  ath11k_mac_vif_sta_connection_loss_work);
+	INIT_WORK(&arvif->update_bcn_template_work, ath11k_update_bcn_template_work);
 
 	for (i = 0; i < ARRAY_SIZE(arvif->bitrate_mask.control); i++) {
 		arvif->bitrate_mask.control[i].legacy = 0xffffffff;
@@ -8288,6 +8304,7 @@ static void ath11k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	}
 
 	cancel_delayed_work_sync(&arvif->connection_loss_work);
+	cancel_work_sync(&arvif->update_bcn_template_work);
 
 	ath11k_dbg(ab, ATH11K_DBG_MAC, "remove interface (vdev %d)\n",
 		   arvif->vdev_id);

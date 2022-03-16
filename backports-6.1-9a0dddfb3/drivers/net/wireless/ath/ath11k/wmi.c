@@ -10585,16 +10585,12 @@ static int ath11k_wmi_tbtt_offset_subtlv_parser(struct ath11k_base *ab, u16 tag,
 						u16 len, const void *ptr,
 						void *data)
 {
-	int ret;
+	int ret = 0;
 	struct ath11k *ar;
 	u64 tx_delay = 0;
-	struct sk_buff *bcn;
-	u64 adjusted_tsf;
-	struct ieee80211_mgmt *mgmt;
 	struct wmi_tbtt_offset_info *tbtt_offset_info;
 	struct ieee80211_chanctx_conf *conf;
 	struct ath11k_vif *arvif;
-	struct ieee80211_mutable_offsets offs = {};
 
 	tbtt_offset_info = (struct wmi_tbtt_offset_info *)ptr;
 
@@ -10639,25 +10635,7 @@ static int ath11k_wmi_tbtt_offset_subtlv_parser(struct ath11k_base *ab, u16 tag,
 	}
 	arvif->tbtt_offset -= tx_delay;
 
-	/* Make the TSF offset negative so beacons in the same
-	 * staggered batch have the same TSF.
-	 */
-	adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
-	bcn = ieee80211_beacon_get_template(ar->hw, arvif->vif, &offs);
-	if (!bcn) {
-		ath11k_warn(ab, "failed to get beacon template from mac80211\n");
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	mgmt = (void *)bcn->data;
-	memcpy(&mgmt->u.beacon.timestamp, &adjusted_tsf, sizeof(adjusted_tsf));
-	ret = ath11k_wmi_bcn_tmpl(ar, arvif->vdev_id, &offs, bcn);
-	kfree_skb(bcn);
-
-	if (ret)
-		ath11k_warn(ab, "failed to submit beacon template command: %d\n",
-			    ret);
+	ieee80211_queue_work(ar->hw, &arvif->update_bcn_template_work);
 exit:
 	rcu_read_unlock();
 	return ret;
