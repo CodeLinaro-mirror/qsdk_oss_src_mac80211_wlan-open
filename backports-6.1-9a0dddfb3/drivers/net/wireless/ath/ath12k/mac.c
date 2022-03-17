@@ -4010,8 +4010,11 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 		/* mac80211 wants to add link but driver already has the
 		 * link. This should not happen ideally.
 		 */
-		if (WARN_ON(arvif))
+		if (arvif && arvif->ar &&
+		    !test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags)) {
+			WARN_ON(1);
 			return -EINVAL;
+		}
 
 		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id);
 		if (WARN_ON(!arvif))
@@ -9298,7 +9301,8 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 
 	if (arvif->ar) {
 		/* This is not expected really */
-		if (WARN_ON(!arvif->is_created)) {
+		if (!test_bit(ATH12K_FLAG_RECOVERY,&arvif->ar->ab->dev_flags) && !arvif->is_created) {
+			WARN_ON(1);
 			arvif->ar = NULL;
 			return NULL;
 		}

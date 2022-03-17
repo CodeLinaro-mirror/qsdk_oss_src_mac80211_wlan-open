@@ -1138,7 +1138,7 @@ struct ath12k_base {
 
 	struct completion htc_suspend;
 
-	bool fw_recovery_support;
+	enum ath12k_fw_recovery_option fw_recovery_support;
 
 	u64 fw_soc_drop_count;
 	bool static_window_map;

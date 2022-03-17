@@ -30,6 +30,7 @@ static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 
 void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif);
+void ath12k_debugfs_pdev_create(struct ath12k_base *ab);
 
 #define ATH12K_CCK_RATES			4
 #define ATH12K_OFDM_RATES			8
@@ -176,6 +177,10 @@ static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 
 static inline void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 					     struct ieee80211_vif *vif)
+{
+}
+
+static inline void ath12k_debugfs_pdev_create(struct ath12k_base *ab)
 {
 }
 #endif /* CPTCFG_ATH12K_DEBUGFS */

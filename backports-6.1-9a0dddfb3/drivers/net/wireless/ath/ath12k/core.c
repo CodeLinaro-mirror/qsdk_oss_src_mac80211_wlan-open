@@ -1350,6 +1350,8 @@ core_pdev_create:
 			goto err;
 		}
 
+		ath12k_debugfs_pdev_create(ab);
+
 		ath12k_hif_irq_enable(ab);
 
 		if (ab->hw_params->en_qdsslog) {
@@ -1582,8 +1584,6 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 	ret = ath12k_core_qmi_firmware_ready(ab);
 	if (ret)
 		goto err_hal_srng_deinit;
-
-	clear_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
 
 	return 0;
 

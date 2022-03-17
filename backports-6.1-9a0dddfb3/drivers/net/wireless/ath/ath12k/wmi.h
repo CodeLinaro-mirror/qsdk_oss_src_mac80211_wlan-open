@@ -3660,6 +3660,12 @@ enum wmi_sta_ps_mode {
 #define ATH12K_WMI_FW_HANG_ASSERT_TYPE 1
 #define ATH12K_WMI_FW_HANG_DELAY 0
 
+enum wmi_fw_hang_recovery_mode_type {
+	ATH12K_WMI_DISABLE_FW_RECOVERY = 200,
+	ATH12K_WMI_FW_HANG_RECOVERY_MODE0,
+	ATH12K_WMI_FW_HANG_RECOVERY_MODE1,
+};
+
 /* type, 0:unused 1: ASSERT 2: not respond detect command
  * delay_time_ms, the simulate will delay time
  */
