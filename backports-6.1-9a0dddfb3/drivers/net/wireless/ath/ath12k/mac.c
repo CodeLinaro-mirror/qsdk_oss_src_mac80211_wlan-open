@@ -12505,6 +12505,7 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	u8 link_id = link_conf->link_id;
 	struct ath12k_link_vif *arvif;
 	int ret;
+	enum ieee80211_ap_reg_power power_type;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -12533,6 +12534,16 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 		   ctx, arvif->vdev_id);
 
 	arvif->punct_bitmap = ctx->def.punctured;
+
+	if (ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
+            (ahvif->vdev_type == WMI_VDEV_TYPE_STA ||
+             ahvif->vdev_type == WMI_VDEV_TYPE_AP)) {
+                power_type = vif->bss_conf.power_type;
+                ath12k_dbg(ab, ATH12K_DBG_MAC, "mac chanctx power type %d\n",
+                           power_type);
+                if (power_type == IEEE80211_REG_UNSET_AP)
+                        power_type = IEEE80211_REG_LPI_AP;
+        }
 
 	/* for some targets bss peer must be created before vdev_start */
 	if (ab->hw_params->vdev_start_delay &&
