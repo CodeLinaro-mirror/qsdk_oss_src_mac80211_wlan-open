@@ -969,6 +969,7 @@ struct ath12k {
 	 */
 	u32 scan_min_rest_time;
 	u32 scan_max_rest_time;
+	s8 max_allowed_tx_power;
 };
 
 struct ath12k_hw {
