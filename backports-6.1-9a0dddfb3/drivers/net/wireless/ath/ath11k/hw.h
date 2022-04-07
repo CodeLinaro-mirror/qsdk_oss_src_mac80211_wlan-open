@@ -275,6 +275,11 @@ struct ath11k_hw_params {
 	u32 cfr_stream_buf_size;
 	bool reo_status_poll;
 	const struct ath11k_num_vdevs_peers *num_vdevs_peers;
+	u32 bdf_offset;
+	u32 m3_offset;
+	u32 caldb_offset;
+	u32 qdss_offset;
+	u32 pageable_offset;
 };
 
 struct ath11k_hw_ops {

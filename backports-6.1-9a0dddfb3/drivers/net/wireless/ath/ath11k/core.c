@@ -183,6 +183,9 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 		.reo_status_poll = false,
 		.num_vdevs_peers = ath11k_vdevs_peers,
+		.m3_offset = ATH11K_QMI_IPQ8074_M3_DUMP_OFFSET,
+		.caldb_offset = ATH11K_QMI_IPQ8074_CALDB_OFFSET,
+		.bdf_offset = ATH11K_QMI_IPQ8074_BDF_OFFSET,
 	},
 	{
 		.hw_rev = ATH11K_HW_IPQ6018_HW10,
@@ -276,6 +279,9 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 		.reo_status_poll = false,
 		.num_vdevs_peers = ath11k_vdevs_peers,
+		.m3_offset = ATH11K_QMI_IPQ6018_M3_DUMP_OFFSET,
+		.caldb_offset = ATH11K_QMI_IPQ6018_CALDB_OFFSET,
+		.bdf_offset = ATH11K_QMI_IPQ6018_BDF_OFFSET,
 	},
 	{
 		.name = "qca6390 hw2.0",
@@ -469,6 +475,10 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 		.reo_status_poll = false,
 		.num_vdevs_peers = ath11k_vdevs_peers,
+		.m3_offset = ATH11K_QMI_QCN9074_M3_OFFSET,
+		.caldb_offset = ATH11K_QMI_QCN9074_CALDB_OFFSET,
+		.qdss_offset = ATH11K_QMI_QCN9074_QDSS_OFFSET,
+		.pageable_offset = ATH11K_QMI_QCN9074_PAGEABLE_OFFSET,
 	},
 	{
 		.name = "wcn6855 hw2.0",
@@ -1019,6 +1029,9 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		 * max cfr payload(4096 bytes)
 		 */
 		.cfr_stream_buf_size = 4292,
+		.m3_offset = ATH11K_QMI_IPQ5018_M3_OFFSET,
+		.qdss_offset = ATH11K_QMI_IPQ5018_QDSS_OFFSET,
+		.caldb_offset = ATH11K_QMI_IPQ5018_CALDB_OFFSET,
 	},
 	{
 		.hw_rev = ATH11K_HW_QCN6122,
@@ -1178,6 +1191,9 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.hybrid_bus_type = false,
 		.fixed_fw_mem = false,
 		.support_off_channel_tx = false,
+		.m3_offset = ATH11K_QMI_IPQ9574_M3_OFFSET,
+		.caldb_offset = ATH11K_QMI_IPQ9574_CALDB_OFFSET,
+		.bdf_offset = ATH11K_QMI_IPQ9574_BDF_OFFSET,
 	},
 };
 

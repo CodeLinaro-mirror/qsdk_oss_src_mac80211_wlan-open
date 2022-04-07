@@ -2877,22 +2877,25 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 	u32 host_ddr_sz, addr;
 	int i, idx, ret;
 
+	hremote_node = of_parse_phandle(dev->of_node, "memory-region", 0);
+	if (hremote_node) {
+		ret = of_address_to_resource(hremote_node, 0, &res);
+		of_node_put(hremote_node);
+		if (ret)
+			ath11k_dbg(ab, ATH11K_DBG_QMI,
+				   "qmi fail to get reg from hremote\n");
+	} else {
+		ath11k_dbg(ab, ATH11K_DBG_QMI,
+			   "qmi fail to get hremote_node\n");
+	}
+
 	for (i = 0, idx = 0; i < ab->qmi.mem_seg_count; i++) {
 		switch (ab->qmi.target_mem[i].type) {
 		case HOST_DDR_REGION_TYPE:
-			hremote_node = of_parse_phandle(dev->of_node, "memory-region", 0);
 			if (!hremote_node) {
 				ath11k_dbg(ab, ATH11K_DBG_QMI,
 					   "fail to get hremote_node\n");
 				return -ENODEV;
-			}
-
-			ret = of_address_to_resource(hremote_node, 0, &res);
-			of_node_put(hremote_node);
-			if (ret) {
-				ath11k_dbg(ab, ATH11K_DBG_QMI,
-					   "fail to get reg from hremote\n");
-				return ret;
 			}
 
 			if (res.end - res.start + 1 < ab->qmi.target_mem[i].size) {
@@ -2924,6 +2927,9 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 			idx++;
 			break;
 		case BDF_MEM_REGION_TYPE:
+			if (hremote_node)
+				ab->hw_params.bdf_addr =
+					res.start + ab->hw_params.bdf_offset;
 			if (!of_property_read_u32(ab->dev->of_node, "qcom,bdf-addr",
 						  &addr))
 				ab->hw_params.bdf_addr = (u32)addr;
@@ -2943,10 +2949,10 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 			if (ath11k_core_coldboot_cal_support(ab)) {
 				if (hremote_node) {
 					ab->qmi.target_mem[idx].paddr =
-							res.start + host_ddr_sz;
+							res.start + ab->hw_params.caldb_offset;
 				} else if (ath11k_host_ddr_addr) {
-					ab->qmi.target_mem[idx].paddr = ath11k_host_ddr_addr +
-									ATH11K_HOST_DDR_CALDB_OFFSET;
+					ab->qmi.target_mem[idx].paddr =
+						ath11k_host_ddr_addr + ab->hw_params.caldb_offset;
 				} else if (of_property_read_u32(ab->dev->of_node,
 								"qcom,caldb-addr",
 								&addr)) {
@@ -2957,11 +2963,11 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 					ab->qmi.target_mem[idx].iaddr = NULL;
 				}
 
-				 ab->qmi.target_mem[idx].iaddr =
+				 ab->qmi.target_mem[idx].vaddr =
 					ioremap(ab->qmi.target_mem[idx].paddr,
 						ab->qmi.target_mem[i].size);
 
-				if (!ab->qmi.target_mem[idx].iaddr)
+				if (!ab->qmi.target_mem[idx].vaddr)
 					return -EIO;
 			} else {
 				ab->qmi.target_mem[idx].paddr = 0;
@@ -2985,10 +2991,10 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			if (hremote_node) {
 				ab->qmi.target_mem[idx].paddr =
-					res.start + ATH11K_HOST_DDR_M3_OFFSET;
+					res.start + ab->hw_params.m3_offset;
 			} else if (ath11k_host_ddr_addr) {
 				ab->qmi.target_mem[idx].paddr =
-					ath11k_host_ddr_addr + ATH11K_HOST_DDR_M3_OFFSET;
+					ath11k_host_ddr_addr + ab->hw_params.m3_offset;
 			} else {
 				ab->qmi.target_mem[idx].paddr = ab->hw_params.m3_addr;
 			}
@@ -3000,10 +3006,10 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 			break;
 		case PAGEABLE_MEM_REGION_TYPE:
 			if (hremote_node) {
-				addr = res.start + ATH11K_HOST_DDR_PAGEABLE_OFFSET;
+				addr = res.start + ab->hw_params.pageable_offset;
 			} else if (ath11k_host_ddr_addr) {
 				addr = ath11k_host_ddr_addr +
-				       ATH11K_HOST_DDR_PAGEABLE_OFFSET;
+				       ab->hw_params.pageable_offset;
 			} else {
 				ath11k_dbg(ab, ATH11K_DBG_QMI,
 					   "pageable-addr is not in dt\n");
@@ -4147,10 +4153,9 @@ int ath11k_qmi_pci_alloc_qdss_mem(struct ath11k_qmi *qmi)
 			}
 
 			if (ath11k_host_ddr_addr)
-				addr = ath11k_host_ddr_addr +
-					ATH11K_HOST_DDR_QDSS_OFFSET;
+				addr = ath11k_host_ddr_addr + ab->hw_params.qdss_offset;
 			else
-				addr = res.start + ATH11K_HOST_DDR_QDSS_OFFSET;
+				addr = res.start + ab->hw_params.qdss_offset;
 
 			ab->qmi.qdss_mem[i].paddr = (phys_addr_t)addr;
 			ab->qmi.qdss_mem[i].vaddr =
