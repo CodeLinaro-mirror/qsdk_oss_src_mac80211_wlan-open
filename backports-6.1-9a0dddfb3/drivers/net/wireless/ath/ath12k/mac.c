@@ -6896,7 +6896,8 @@ static void ath12k_mac_get_psd_channel(struct ath12k *ar,
                                       u16 *center_freq,
                                       u8 i,
                                       struct ieee80211_channel **temp_chan,
-                                      s8 *tx_power)
+                                      s8 *tx_power,
+				      u8 reg_6g_power_mode)
 {
        /* It is to get the the center frequency for each 20MHz.
         * For example, if the chan is 160MHz and center frequency is 6025,
@@ -6909,8 +6910,10 @@ static void ath12k_mac_get_psd_channel(struct ath12k *ar,
         * after get the center frequency of each channel, it is easy to find the
         * struct ieee80211_channel of it and get the max_reg_power.
         */
-       *center_freq = *start_freq + i * step_freq;
-       *temp_chan = ieee80211_get_channel(ar->ah->hw->wiphy, *center_freq);
+	*center_freq = *start_freq + i * step_freq;
+	/* -1 to reg_6g_power_mode to make it 0 based indexing */
+	*temp_chan = ieee80211_get_6g_channel_khz(ar->ah->hw->wiphy, MHZ_TO_KHZ(*center_freq),
+						  reg_6g_power_mode - 1);
 	if (*temp_chan) {
 		*tx_power = (*temp_chan)->max_reg_power;
 	} else {
@@ -6925,9 +6928,10 @@ static void ath12k_mac_get_eirp_power(struct ath12k *ar,
                                      u8 i,
                                      struct ieee80211_channel **temp_chan,
                                      struct cfg80211_chan_def *def,
-                                     s8 *tx_power)
+                                     s8 *tx_power,
+				     u8 reg_6g_power_mode)
 {
-       /* It is to get the the center frequency for 20MHz/40MHz/80MHz/
+       /* It is to get the the center frequency for 40MHz/80MHz/
         * 160MHz&80P80 bandwidth, and then plus 10 to the center frequency,
         * it is the center frequency of a channel number.
         * For example, when configured channel number is 1.
@@ -6940,9 +6944,14 @@ static void ath12k_mac_get_eirp_power(struct ath12k *ar,
         * after get the center frequency of each channel, it is easy to find the
         * struct ieee80211_channel of it and get the max_reg_power.
         */
-       *center_freq = ath12k_mac_get_seg_freq(def, *start_freq, i);
-       *center_freq += 10;
-       *temp_chan = ieee80211_get_channel(ar->ah->hw->wiphy, *center_freq);
+	*center_freq = ath12k_mac_get_seg_freq(def, *start_freq, i);
+	/* For 20 MHz, no +10 offset is required */
+	if (i != 0)
+		*center_freq += 10;
+
+	/* -1 to reg_6g_power_mode to make it 0 based indexing */
+	*temp_chan = ieee80211_get_6g_channel_khz(ar->ah->hw->wiphy, MHZ_TO_KHZ(*center_freq),
+						  reg_6g_power_mode - 1);
 	if (*temp_chan) {
 		*tx_power = (*temp_chan)->max_reg_power;
 	} else {
@@ -6965,6 +6974,26 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
         s8 max_tx_power[IEEE80211_MAX_NUM_PWR_LEVEL],
                 psd_power, tx_power = 0, eirp_power = 0;
         u16 oper_freq = 0, start_freq = 0, center_freq = 0;
+	u8 reg_6g_power_mode;
+
+       /* For STA, 6g power mode will be present in the beacon, but for AP,
+        * AP cant parse its own beacon. Hence, we get the 6g power mode
+        * from the wdev corresponding to the struct ieee80211_vif
+        */
+       if (arvif->vdev_type == WMI_VDEV_TYPE_STA)
+               reg_6g_power_mode = vif->bss_conf.power_type;
+       else if (arvif->vdev_type == WMI_VDEV_TYPE_AP) {
+               struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+               /* With respect to ieee80211, the 6G AP power mode starts from index
+                * 1 while the power type stored in struct wireless_dev is based on
+                * nl80211 power type indexing which starts from 0. Hence 1 is appended
+                */
+               if (wdev)
+                       reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
+               else
+                       reg_6g_power_mode = 1;
+       } else
+               reg_6g_power_mode = 1;
 
         chan = ctx->def.chan;
         oper_freq = ctx->def.chan->center_freq;
@@ -6992,7 +7021,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                                    &center_freq,
                                                                    pwr_lvl_idx,
                                                                    &temp_chan,
-                                                                   &tx_power);
+                                                                   &tx_power,
+								   reg_6g_power_mode);
                                         eirp_power = tx_power;
 					if (temp_chan) {
 						psd_power = temp_chan->psd;
@@ -7012,7 +7042,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                                   pwr_lvl_idx,
                                                                   &temp_chan,
                                                                   &ctx->def,
-                                                                  &tx_power);
+                                                                  &tx_power,
+								  reg_6g_power_mode);
 					if (temp_chan) {
 						psd_power = temp_chan->psd;
 						/* convert psd power to EIRP power based
@@ -7037,7 +7068,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                                    &center_freq,
                                                                    pwr_lvl_idx,
                                                                    &temp_chan,
-                                                                   &tx_power);
+                                                                   &tx_power,
+								   reg_6g_power_mode);
                                         eirp_power = tx_power;
                                         max_tx_power[pwr_lvl_idx] =
                                                 reg_tpc_info->tpe[pwr_lvl_idx];
@@ -7049,7 +7081,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                                   pwr_lvl_idx,
                                                                   &temp_chan,
                                                                   &ctx->def,
-                                                                  &tx_power);
+                                                                  &tx_power,
+								  reg_6g_power_mode);
                                         max_tx_power[pwr_lvl_idx] =
                                                 min_t(s8,
                                                       tx_power,
@@ -7066,7 +7099,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                            &center_freq,
                                                            pwr_lvl_idx,
                                                            &temp_chan,
-                                                           &tx_power);
+                                                           &tx_power,
+							   reg_6g_power_mode);
                                 eirp_power = tx_power;
 				if (temp_chan) {
 					psd_power = temp_chan->psd;
@@ -7081,7 +7115,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                           pwr_lvl_idx,
                                                           &temp_chan,
                                                           &ctx->def,
-                                                          &tx_power);
+                                                          &tx_power,
+							  reg_6g_power_mode);
                                 max_tx_power[pwr_lvl_idx] = tx_power;
                         }
                 }
@@ -7126,7 +7161,7 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
         reg_tpc_info->is_psd_power = is_psd_power;
         reg_tpc_info->eirp_power = eirp_power;
         reg_tpc_info->power_type_6g =
-                ath12k_ieee80211_ap_pwr_type_convert(vif->bss_conf.power_type);
+                ath12k_ieee80211_ap_pwr_type_convert(reg_6g_power_mode);
 }
 
 static void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
@@ -7142,8 +7177,12 @@ static void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
         u8 pwr_count, pwr_interpret, pwr_category;
         u8 psd_index = 0, non_psd_index = 0, local_tpe_count = 0, reg_tpe_count = 0;
         bool use_local_tpe, non_psd_set = false, psd_set = false;
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 
-        client_type = WMI_REG_DEFAULT_CLIENT;
+        if (wdev)
+                client_type = wdev->reg_6g_power_mode;
+        else
+                client_type = WMI_REG_DEFAULT_CLIENT;
 
         for (i = 0; i < bss_conf->tx_pwr_env_num; i++) {
                 single_tpe = &bss_conf->tx_pwr_env[i];
