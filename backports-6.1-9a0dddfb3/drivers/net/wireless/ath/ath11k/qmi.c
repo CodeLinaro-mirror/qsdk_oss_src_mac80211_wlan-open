@@ -35,6 +35,10 @@ unsigned int fwmem_mode = ATH11K_QMI_TARGET_MEM_MODE_256M;
 module_param_named(fwmem_mode, fwmem_mode, uint, 0644);
 MODULE_PARM_DESC(fwmem_mode, "Firmware mem mode (applicable only for qcn9074)");
 
+static bool ath11k_skip_caldata;
+module_param_named(skip_caldata, ath11k_skip_caldata, bool, 0444);
+MODULE_PARM_DESC(ath11k_skip_caldata, "Skip caldata download");
+
 static struct qmi_elem_info qmi_wlanfw_qdss_trace_config_download_req_msg_v01_ei[] = {
 	{
 		.data_type	= QMI_OPT_FLAG,
@@ -3414,6 +3418,16 @@ static int ath11k_qmi_load_bdf_qmi(struct ath11k_base *ab,
 	/* QCA6390/WCN6855 does not support cal data, skip it */
 	if (bdf_type == ATH11K_QMI_BDF_TYPE_ELF || bdf_type == ATH11K_QMI_BDF_TYPE_REGDB)
 		goto out;
+
+	if (ath11k_skip_caldata) {
+		if (ath11k_ftm_mode) {
+			ath11k_warn(ab, "Skipping caldata download in FTM mode\n");
+			goto out;
+		}
+		ath11k_err(ab, "failed to skip caldata download. FTM mode is not enabled\n");
+		ret = -EOPNOTSUPP;
+		goto out;
+	}
 
 	if (ab->qmi.target.eeprom_caldata) {
 		file_type = ATH11K_QMI_FILE_TYPE_EEPROM;
