@@ -2590,6 +2590,7 @@ void ath11k_core_pre_reconfigure_recovery(struct ath11k_base *ab)
 {
 	struct ath11k *ar;
 	struct ath11k_pdev *pdev;
+	struct ath11k_vif *arvif;
 	int i;
 
 	spin_lock_bh(&ab->base_lock);
@@ -2602,6 +2603,9 @@ void ath11k_core_pre_reconfigure_recovery(struct ath11k_base *ab)
 		if (!ar || ar->state == ATH11K_STATE_OFF ||
 		    ar->state == ATH11K_STATE_FTM)
 			continue;
+
+		list_for_each_entry(arvif, &ar->arvifs, list)
+			ath11k_mac_debugfs_remove_stats_file(arvif);
 
 		ieee80211_stop_queues(ar->hw);
 		ath11k_mac_drain_tx(ar);

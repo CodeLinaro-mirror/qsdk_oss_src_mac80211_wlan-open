@@ -189,4 +189,5 @@ void ath11k_mac_fill_reg_tpc_info(struct ath11k *ar,
 void ath11k_mac_get_any_chandef_iter(struct ieee80211_hw *hw,
 				     struct ieee80211_chanctx_conf *conf,
 				     void *data);
+void ath11k_mac_debugfs_remove_stats_file(struct ath11k_vif *arvif);
 #endif

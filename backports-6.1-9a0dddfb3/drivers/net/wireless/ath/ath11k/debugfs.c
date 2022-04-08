@@ -4406,17 +4406,8 @@ static ssize_t ath11k_write_wmi_ctrl_path_stats(struct file *file,
 {
 	struct ath11k_vif *arvif = file->private_data;
 	struct wmi_ctrl_path_stats_cmd_param param = {0};
-	struct ath11k *ar = arvif->ar;
 	u8 buf[128] = {0};
 	int ret;
-
-	mutex_lock(&ar->conf_mutex);
-	if (ar->state != ATH11K_STATE_ON) {
-		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
-		mutex_unlock(&ar->conf_mutex);
-		return -ENETDOWN;
-	}
-	mutex_unlock(&ar->conf_mutex);
 
 	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
 	if (ret < 0) {
@@ -4878,18 +4869,9 @@ static ssize_t ath11k_write_ampdu_aggr_size(struct file *file,
 {
 	struct ath11k_vif *arvif = file->private_data;
 	struct ath11k_base *ab = arvif->ar->ab;
-	struct ath11k *ar = arvif->ar;
 	unsigned int tx_aggr_size = 0;
 	int ret;
 	struct set_custom_aggr_size_params params = {0};
-
-	mutex_lock(&ar->conf_mutex);
-	if (ar->state != ATH11K_STATE_ON) {
-		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
-		mutex_unlock(&ar->conf_mutex);
-		return -ENETDOWN;
-	}
-	mutex_unlock(&ar->conf_mutex);
 
 	if (kstrtouint_from_user(ubuf, count, 0, &tx_aggr_size))
 		return -EINVAL;

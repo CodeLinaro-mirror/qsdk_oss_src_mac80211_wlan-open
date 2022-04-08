@@ -7904,6 +7904,14 @@ static void ath11k_mac_bcn_tx_work(struct work_struct *work)
 	mutex_unlock(&arvif->ar->conf_mutex);
 }
 
+void ath11k_debugfs_per_arvif(struct ath11k_vif *arvif)
+{
+	ath11k_debugfs_dbg_mac_filter(arvif);
+	ath11k_debugfs_wbm_tx_comp_stats(arvif);
+	ath11k_debug_aggr_size_config_init(arvif);
+	ath11k_debugfs_wmi_ctrl_stats(arvif);
+}
+
 static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif)
 {
@@ -7999,13 +8007,6 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 	if (!arvif->vlan_keyid_map) {
 		ret = -ENOMEM;
 		goto err;
-	}
-
-	if (ar->state != ATH11K_STATE_RESTARTED) {
-		ath11k_debugfs_dbg_mac_filter(arvif);
-		ath11k_debugfs_wbm_tx_comp_stats(arvif);
-	} else {
-		INIT_LIST_HEAD(&arvif->mac_filters);
 	}
 
 	switch (vif->type) {
@@ -8220,13 +8221,8 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 	debugfs_remove(arvif->wmi_ctrl_stat);
 	arvif->wmi_ctrl_stat = NULL;
 
-	if (ar->state != ATH11K_STATE_RESTARTED) {
-		ath11k_debug_aggr_size_config_init(arvif);
-		ath11k_debugfs_wmi_ctrl_stats(arvif);
-	} else {
-		INIT_LIST_HEAD(&arvif->ar->debug.wmi_list);
-		init_completion(&arvif->ar->debug.wmi_ctrl_path_stats_rcvd);
-	}
+	if (arvif->vif->debugfs_dir)
+		ath11k_debugfs_per_arvif(arvif);
 
 	mutex_unlock(&ar->conf_mutex);
 
@@ -8266,6 +8262,32 @@ static int ath11k_mac_vif_unref(int buf_id, void *skb, void *ctx)
 		skb_cb->vif = NULL;
 
 	return 0;
+}
+
+void ath11k_mac_debugfs_remove_stats_file(struct ath11k_vif *arvif)
+{
+	/* Remove TWT related files and directory */
+	debugfs_remove_recursive(arvif->debugfs_twt);
+	arvif->debugfs_twt = NULL;
+
+	/* Remove A-MPDU, A-MSDU aggr size files */
+	debugfs_remove(arvif->ampdu_aggr_size);
+	arvif->ampdu_aggr_size = NULL;
+
+	debugfs_remove(arvif->amsdu_aggr_size);
+	arvif->amsdu_aggr_size = NULL;
+
+	/* Remove wmi ctrl stats file */
+	debugfs_remove(arvif->wmi_ctrl_stat);
+	arvif->wmi_ctrl_stat = NULL;
+
+	/* Remove the mac filter file */
+	debugfs_remove(arvif->mac_filter);
+	arvif->mac_filter = NULL;
+
+	/* Remove the wbm tx compl stats file */
+	debugfs_remove(arvif->wbm_tx_completion_stats);
+	arvif->wbm_tx_completion_stats = NULL;
 }
 
 static void ath11k_mac_op_remove_interface(struct ieee80211_hw *hw,
@@ -8376,6 +8398,8 @@ err_vdev_del:
 	ath11k_mac_ap_ps_recalc(ar);
 
 	/* TODO: recalc traffic pause state based on the available vdevs */
+	if (arvif->vif->debugfs_dir)
+		ath11k_mac_debugfs_remove_stats_file(arvif);
 
 	mutex_unlock(&ar->conf_mutex);
 }
