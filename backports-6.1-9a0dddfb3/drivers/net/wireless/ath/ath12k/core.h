@@ -1252,6 +1252,9 @@ struct ath12k_base {
 
 	/* Current DFS Regulatory */
 	enum ath12k_dfs_region dfs_region;
+	struct ath12k_reg_rule reg_rule_2g;
+	struct ath12k_reg_rule reg_rule_5g;
+	struct ath12k_reg_rule reg_rule_6g;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_soc;
 #endif

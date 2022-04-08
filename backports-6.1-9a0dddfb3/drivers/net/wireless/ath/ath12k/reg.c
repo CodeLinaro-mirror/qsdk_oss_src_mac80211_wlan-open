@@ -769,7 +769,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 				       reg_rule->start_freq,
 				       reg_rule->end_freq, max_bw,
 				       reg_rule->ant_gain, reg_rule->reg_power,
-				       reg_rule->psd_eirp, flags, 0);
+				       reg_rule->psd_eirp, flags, pwr_mode);
 
 		/* Update dfs cac timeout if the dfs domain is ETSI and the
 		 * new rule covers weather radar band.

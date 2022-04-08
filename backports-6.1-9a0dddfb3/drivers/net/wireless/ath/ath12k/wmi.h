@@ -4599,6 +4599,11 @@ enum {
 
 #define WMI_REG_CLIENT_MAX 4
 
+enum wmi_reg_chan_list_cmd_type {
+        WMI_REG_CHAN_LIST_CC_ID = 0,
+        WMI_REG_CHAN_LIST_CC_EXT_ID = 1,
+};
+
 struct wmi_reg_chan_list_cc_ext_event {
 	__le32 status_code;
 	__le32 phy_id;
