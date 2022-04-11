@@ -27,6 +27,7 @@ struct ath12k_base;
 struct ath12k;
 struct ath12k_link_vif;
 struct ath12k_fw_stats;
+struct ath12k_reg_tpc_power_info;
 
 /* There is no signed version of __le32, so for a temporary solution come
  * up with our own version. The idea is from fs/ntfs/endian.h.
@@ -74,6 +75,31 @@ struct wmi_tlv {
 	__le32 header;
 	u8 value[];
 } __packed;
+
+struct wmi_vdev_ch_power_info {
+        u32 tlv_header;
+        u32 chan_cfreq; /* Channel center frequency (MHz) */
+        /* Unit: dBm, either PSD/EIRP power for this frequency or
+         * incremental for non-PSD BW
+         */
+        u32 tx_power;
+} __packed;
+
+struct wmi_vdev_set_tpc_power_cmd {
+        u32 tlv_header;
+        u32 vdev_id;
+        u32 psd_power; /* Value: 0 or 1, is PSD power or not */
+        u32 eirp_power; /* Maximum EIRP power (dBm units), valid only if power is PSD */
+        u32 power_type_6ghz; /* Type: WMI_6GHZ_REG_TYPE, used for halphy CTL lookup */
+        /* This fixed_param TLV is followed by the below TLVs:
+         * num_pwr_levels of wmi_vdev_ch_power_info
+         * For non-psd power, the power values are for 20, 40, and till
+         * BSS BW power levels.
+         * The num_pwr_levels will be checked by sw how many elements present
+         * in the variable-length array.
+         */
+} __packed;
+
 
 #define WMI_TLV_LEN	GENMASK(15, 0)
 #define WMI_TLV_TAG	GENMASK(31, 16)
@@ -414,6 +440,36 @@ enum wmi_tlv_cmd_id {
 	WMI_VDEV_SET_CUSTOM_AGGR_SIZE_CMDID,
 	WMI_VDEV_ENCRYPT_DECRYPT_DATA_REQ_CMDID,
 	WMI_VDEV_ADD_MAC_ADDR_TO_RX_FILTER_CMDID,
+        /** WMI commands related to dbg arp stats */
+        WMI_VDEV_SET_ARP_STAT_CMDID,
+        WMI_VDEV_GET_ARP_STAT_CMDID,
+        /** get tx power for the current vdev */
+        WMI_VDEV_GET_TX_POWER_CMDID,
+        /* limit STA offchannel activity */
+        WMI_VDEV_LIMIT_OFFCHAN_CMDID,
+        /** To set custom software retries per-AC for vdev */
+        WMI_VDEV_SET_CUSTOM_SW_RETRY_TH_CMDID,
+        /** To set chainmask configuration for vdev */
+        WMI_VDEV_CHAINMASK_CONFIG_CMDID,
+        WMI_VDEV_GET_BCN_RECEPTION_STATS_CMDID,
+        /* request LTE-Coex info */
+        WMI_VDEV_GET_MWS_COEX_INFO_CMDID,
+        /** delete all peer (excluding bss peer) */
+        WMI_VDEV_DELETE_ALL_PEER_CMDID,
+        /* To set bss max idle time related parameters */
+        WMI_VDEV_BSS_MAX_IDLE_TIME_CMDID,
+        /** Indicates FW to trigger Audio sync  */
+        WMI_VDEV_AUDIO_SYNC_TRIGGER_CMDID,
+        /** Gives Qtimer value  to FW  */
+        WMI_VDEV_AUDIO_SYNC_QTIMER_CMDID,
+        /** Preferred channel list for each vdev */
+        WMI_VDEV_SET_PCL_CMDID,
+        /** VDEV_GET_BIG_DATA_CMD IS DEPRECATED - DO NOT USE */
+        WMI_VDEV_GET_BIG_DATA_CMDID,
+        /** Get per vdev BIG DATA stats phase 2 */
+        WMI_VDEV_GET_BIG_DATA_P2_CMDID,
+        /** set TPC PSD/non-PSD power */
+        WMI_VDEV_SET_TPC_POWER_CMDID,
 	WMI_PEER_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_PEER),
 	WMI_PEER_DELETE_CMDID,
 	WMI_PEER_FLUSH_TIDS_CMDID,
@@ -2011,6 +2067,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_REGULATORY_RULE_EXT_STRUCT = 0x3A9,
 	WMI_TAG_REG_CHAN_LIST_CC_EXT_EVENT,
 	WMI_CTRL_PATH_MEM_STATS,
+	WMI_TAG_VDEV_SET_TPC_POWER_CMD = 0x3B5,
+	WMI_TAG_VDEV_CH_POWER_INFO,
 	WMI_TAG_TPC_STATS_GET_CMD = 0x38B,
 	WMI_TAG_TPC_STATS_EVENT_FIXED_PARAM,
 	WMI_TAG_TPC_STATS_CONFIG_EVENT,
@@ -7623,5 +7681,7 @@ bool ath12k_wmi_is_mvr_supported(struct ath12k_base *ab);
 int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 					  struct wmi_pdev_multiple_vdev_restart_req_arg *arg);
 void ath12k_wmi_peer_chan_width_switch_work(struct wiphy *wiphy, struct wiphy_work *work);
-
+int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
+				       u32 vdev_id,
+				       struct ath12k_reg_tpc_power_info *param);
 #endif

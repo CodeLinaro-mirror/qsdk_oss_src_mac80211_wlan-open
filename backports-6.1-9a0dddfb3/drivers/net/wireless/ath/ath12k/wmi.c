@@ -3252,6 +3252,69 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 	return ret;
 }
 
+int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
+                                       u32 vdev_id,
+                                       struct ath12k_reg_tpc_power_info *param)
+{
+        struct ath12k_wmi_pdev *wmi = ar->wmi;
+        struct wmi_vdev_set_tpc_power_cmd *cmd;
+        struct wmi_vdev_ch_power_info *ch;
+        struct sk_buff *skb;
+        struct wmi_tlv *tlv;
+        u8 *ptr;
+        int i, ret, len;
+
+        len = sizeof(*cmd) + TLV_HDR_SIZE;
+        len += (sizeof(struct wmi_vdev_ch_power_info) * param->num_pwr_levels);
+
+        skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+        if (!skb)
+                return -ENOMEM;
+
+        ptr = skb->data;
+
+        cmd = (struct wmi_vdev_set_tpc_power_cmd *)ptr;
+        cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_VDEV_SET_TPC_POWER_CMD) |
+                          FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+        cmd->vdev_id = vdev_id;
+        cmd->psd_power = param->is_psd_power;
+        cmd->eirp_power = param->eirp_power;
+        cmd->power_type_6ghz = param->power_type_6g;
+        ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+                   "wmi TPC vdev_id: %d is_psd_power: %d eirp_power: %d power_type_6g: %d\n",
+                   vdev_id, param->is_psd_power, param->eirp_power, param->power_type_6g);
+
+        ptr += sizeof(*cmd);
+        tlv = (struct wmi_tlv *)ptr;
+        tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
+                      FIELD_PREP(WMI_TLV_LEN, param->num_pwr_levels * sizeof(*ch));
+
+        ptr += TLV_HDR_SIZE;
+        ch = (struct wmi_vdev_ch_power_info *)ptr;
+
+        for (i = 0; i < param->num_pwr_levels; i++, ch++) {
+                ch->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+                                            WMI_TAG_VDEV_CH_POWER_INFO) |
+                                FIELD_PREP(WMI_TLV_LEN,
+                                           sizeof(*ch) - TLV_HDR_SIZE);
+
+                ch->chan_cfreq = param->chan_power_info[i].chan_cfreq;
+                ch->tx_power = param->chan_power_info[i].tx_power;
+
+                ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+                           "wmi TPC chan_cfreq: %d , tx_power: %d\n",
+                           ch->chan_cfreq, ch->tx_power);
+        }
+
+        ret = ath12k_wmi_cmd_send(wmi, skb,
+                                  WMI_VDEV_SET_TPC_POWER_CMDID);
+        if (ret) {
+                ath12k_warn(ar->ab, "failed to send WMI_VDEV_SET_TPC_POWER_CMDID\n");
+                dev_kfree_skb(skb);
+        }
+        return ret;
+}
+
 int ath12k_wmi_send_scan_stop_cmd(struct ath12k *ar,
 				  struct ath12k_wmi_scan_cancel_arg *arg)
 {
