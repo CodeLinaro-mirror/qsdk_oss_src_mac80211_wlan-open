@@ -3257,8 +3257,8 @@ struct ath12k_wmi_rx_reorder_queue_remove_arg {
 #define REG_RULE_MAX_BW				0x0000ffff
 #define REG_RULE_REG_PWR			0x00ff0000
 #define REG_RULE_ANT_GAIN			0xff000000
-#define REG_RULE_PSD_INFO			BIT(2)
-#define REG_RULE_PSD_EIRP			0xffff0000
+#define REG_RULE_PSD_INFO                       BIT(0)
+#define REG_RULE_PSD_EIRP                       0xff0000
 
 #define WMI_VDEV_PARAM_TXBF_SU_TX_BFEE BIT(0)
 #define WMI_VDEV_PARAM_TXBF_MU_TX_BFEE BIT(1)
@@ -3743,6 +3743,29 @@ struct wmi_bcn_send_from_host_cmd {
 
 #define WMI_CHAN_REG_INFO2_ANT_MAX	GENMASK(7, 0)
 #define WMI_CHAN_REG_INFO2_MAX_TX_PWR	GENMASK(15, 8)
+
+enum reg_subdomains_6g {
+       EMPTY_6G = 0x0,
+       FCC1_CLIENT_LPI_REGULAR_6G = 0x01,
+       FCC1_CLIENT_SP_6G = 0x02,
+       FCC1_AP_LPI_6G = 0x03,
+       FCC1_CLIENT_LPI_SUBORDINATE = FCC1_AP_LPI_6G,
+       FCC1_AP_SP_6G = 0x04,
+       ETSI1_LPI_6G = 0x10,
+       ETSI1_VLP_6G = 0x11,
+       ETSI2_LPI_6G = 0x12,
+       ETSI2_VLP_6G = 0x13,
+       APL1_LPI_6G = 0x20,
+       APL1_VLP_6G = 0x21,
+};
+
+enum reg_super_domain_6g {
+       FCC1_6G = 0x01,
+       ETSI1_6G = 0x02,
+       ETSI2_6G = 0x03,
+       APL1_6G = 0x04,
+       FCC1_6G_CL = 0x05,
+ };
 
 struct ath12k_wmi_channel_params {
 	__le32 tlv_header;

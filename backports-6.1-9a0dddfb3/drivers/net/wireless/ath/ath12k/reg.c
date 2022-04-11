@@ -29,6 +29,21 @@ static const struct ieee80211_regdomain ath12k_world_regd = {
 	}
 };
 
+enum wmi_reg_6g_ap_type
+ath12k_ieee80211_ap_pwr_type_convert(enum ieee80211_ap_reg_power power_type)
+{
+	switch (power_type) {
+	case IEEE80211_REG_LPI_AP:
+		return WMI_REG_INDOOR_AP;
+	case IEEE80211_REG_SP_AP:
+		return WMI_REG_STD_POWER_AP;
+	case IEEE80211_REG_VLP_AP:
+		return WMI_REG_VLP_AP;
+	default:
+		return WMI_REG_MAX_AP_TYPE;
+	}
+}
+
 static bool ath12k_regdom_changes(struct ieee80211_hw *hw, char *alpha2)
 {
 	const struct ieee80211_regdomain *regd;
@@ -567,11 +582,11 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 {
 	struct ieee80211_regdomain *updated_new_regd = NULL;
 	struct ieee80211_regdomain *new_regd = NULL;
-	struct ath12k_reg_rule *reg_rule;
+	struct ath12k_reg_rule *reg_rule, *reg_rule_6g;
 	u8 i = 0, j = 0, k = 0;
 	u8 num_rules;
 	u16 max_bw;
-	u32 flags;
+	u32 flags, reg_6g_number, max_bw_6g;
 	char alpha2[3];
 
 	num_rules = reg_info->num_5g_reg_rules + reg_info->num_2g_reg_rules;
@@ -580,8 +595,12 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 	 * This can be updated to choose the combination dynamically based on AP
 	 * type and client type, after complete 6G regulatory support is added.
 	 */
-	if (reg_info->is_ext_reg_event)
-		num_rules += reg_info->num_6g_reg_rules_ap[WMI_REG_INDOOR_AP];
+	if (reg_info->is_ext_reg_event) {
+		reg_6g_number = reg_info->num_6g_reg_rules_ap[WMI_REG_INDOOR_AP];
+		reg_rule_6g = reg_info->reg_rules_6g_ap_ptr[WMI_REG_INDOOR_AP];
+		max_bw_6g = reg_info->max_bw_6g_ap[WMI_REG_INDOOR_AP];
+		num_rules += reg_6g_number;
+       }
 
 	if (!num_rules)
 		goto ret;
