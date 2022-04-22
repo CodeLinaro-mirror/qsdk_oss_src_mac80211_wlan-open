@@ -81,6 +81,8 @@ struct ath12k_generic_iter {
 #define HECAP_PHY_ULOFDMA_GET(hecap_phy) \
 	u8_get_bits(hecap_phy[2], IEEE80211_HE_PHY_CAP2_UL_MU_PARTIAL_MU_MIMO)
 
+#define ATH12K_MIN_TX_POWER		-127
+
 enum ath12k_supported_bw {
 	ATH12K_BW_20    = 0,
 	ATH12K_BW_40    = 1,
@@ -129,6 +131,9 @@ struct ath12k *ath12k_mac_get_ar_by_vdev_id(struct ath12k_base *ab, u32 vdev_id)
 struct ath12k *ath12k_mac_get_ar_by_pdev_id(struct ath12k_base *ab, u32 pdev_id);
 enum wmi_vdev_type ath12k_mac_get_ar_vdev_type(struct ath12k *ar);
 
+void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
+                                  struct ieee80211_vif *vif,
+                                  struct ieee80211_chanctx_conf *ctx);
 void ath12k_mac_drain_tx(struct ath12k *ar);
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar);
 void ath12k_mac_dp_peer_cleanup(struct ath12k *ar);
