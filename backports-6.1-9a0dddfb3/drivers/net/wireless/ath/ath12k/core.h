@@ -687,6 +687,11 @@ enum btcoex_algo {
         COEX_ALGO_MAX_SUPPORTED,
 };
 
+enum ath12k_ap_ps_state {
+	ATH12K_AP_PS_STATE_OFF,
+	ATH12K_AP_PS_STATE_ON,
+};
+
 struct ath12k {
 	struct ath12k_base *ab;
 	struct ath12k_pdev *pdev;
@@ -836,6 +841,8 @@ struct ath12k {
 #ifdef CPTCFG_ATH12K_SPECTRAL
 	struct ath12k_spectral spectral;
 #endif
+	bool ap_ps_enabled;
+	enum ath12k_ap_ps_state ap_ps_state;
 };
 
 struct ath12k_hw {

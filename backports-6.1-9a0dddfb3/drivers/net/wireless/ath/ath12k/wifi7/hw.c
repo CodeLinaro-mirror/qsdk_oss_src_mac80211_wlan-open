@@ -421,6 +421,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.max_fft_bins = 0,
 			.fragment_160mhz = false,
 		},
+		.supports_ap_ps = true,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -509,6 +510,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.handle_beacon_miss = false,
 		.en_qdsslog = true,
 		.support_fse = false,
+		.supports_ap_ps = true,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -603,6 +605,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.max_fft_bins = 512,
 			.fragment_160mhz = true,
 		},
+		.supports_ap_ps = true,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -688,6 +691,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.max_fft_bins = 512,
 			.fragment_160mhz = false,
 		},
+		.supports_ap_ps = true,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -753,6 +757,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.max_fft_bins = 512,
 			.fragment_160mhz = false,
 		},
+		.supports_ap_ps = true,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -838,6 +843,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 			.max_fft_bins = 512,
 			.fragment_160mhz = false,
 		},
+		.supports_ap_ps = true,
 	},
 };
 

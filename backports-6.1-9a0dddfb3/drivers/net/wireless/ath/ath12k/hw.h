@@ -264,6 +264,7 @@ struct ath12k_hw_params {
 	bool handle_beacon_miss;
 	bool en_qdsslog;
 	bool support_fse;
+	bool supports_ap_ps;
 };
 
 struct ath12k_hw_ops {

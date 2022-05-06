@@ -3308,6 +3308,12 @@ enum wmi_bss_chan_info_req_type {
 	WMI_BSS_SURVEY_REQ_TYPE_READ_CLEAR,
 };
 
+struct wmi_pdev_ap_ps_cmd {
+	u32 tlv_header;
+	u32 pdev_id;
+	u32 param_value;
+};
+
 struct wmi_pdev_set_param_cmd {
 	__le32 tlv_header;
 	__le32 pdev_id;
@@ -6648,5 +6654,6 @@ void ath12k_wmi_fw_stats_dump(struct ath12k *ar,
 			      char *buf);
 int ath12k_wmi_pdev_m3_dump_enable(struct ath12k *ar, u32 enable);
 int ath12k_wmi_dbglog_cfg(struct ath12k *ar, u32 param, u64 value);
+int ath12k_wmi_pdev_ap_ps_cmd_send(struct ath12k *ar, u8 pdev_id, u32 value);
 
 #endif

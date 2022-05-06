@@ -11117,3 +11117,35 @@ int ath12k_wmi_mlo_teardown(struct ath12k *ar)
 
 	return 0;
 }
+
+int ath12k_wmi_pdev_ap_ps_cmd_send(struct ath12k *ar, u8 pdev_id,
+				   u32 param_value)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_pdev_ap_ps_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_ap_ps_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_PDEV_GREEN_AP_PS_ENABLE_CMD) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->pdev_id = pdev_id;
+	cmd->param_value = param_value;
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_GREEN_AP_PS_ENABLE_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send ap ps enable/disable cmd %d\n",ret);
+		dev_kfree_skb(skb);
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi pdev ap ps set pdev id %d value %d\n",
+		   pdev_id, param_value);
+
+	return ret;
+}

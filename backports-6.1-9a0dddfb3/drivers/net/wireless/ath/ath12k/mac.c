@@ -3919,6 +3919,41 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 			   ahvif->links_map);
 }
 
+void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
+{
+	enum ath12k_ap_ps_state state = ATH12K_AP_PS_STATE_OFF;
+	struct ath12k_link_vif *arvif;
+	bool allow_ap_ps = true;
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+			allow_ap_ps = false;
+			break;
+		}
+	}
+
+	if (!allow_ap_ps)
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "ap ps is not"
+			   "allowed\n");
+
+	if (allow_ap_ps && !ar->num_stations && ar->ap_ps_enabled)
+		state = ATH12K_AP_PS_STATE_ON;
+
+	if (ar->ap_ps_state == state)
+		return;
+
+	ret = ath12k_wmi_pdev_ap_ps_cmd_send(ar, ar->pdev->pdev_id, state);
+	if (!ret)
+		ar->ap_ps_state = state;
+	else
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "failed to send ap ps command pdev_id %u state %u\n",
+			    ar->pdev->pdev_id, state);
+}
+
 static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 					     struct ath12k_link_vif *arvif)
 {
@@ -3953,6 +3988,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 				    arvif->vdev_id, arvif->link_id, ret, ar->num_peers);
 	}
 	ath12k_mac_vdev_delete(ar, arvif);
+	ath12k_mac_ap_ps_recalc(ar);
 }
 
 static struct ath12k_link_vif *ath12k_mac_assign_link_vif(struct ath12k_hw *ah,
@@ -4679,6 +4715,11 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 	    ar->ab->hw_params->supports_sta_ps) {
 		ahvif->ps = vif_cfg->ps;
 		ath12k_mac_vif_setup_ps(arvif);
+	}
+
+	if (changed & BSS_CHANGED_AP_PS) {
+		ar->ap_ps_enabled = info->ap_ps_enable;
+		ath12k_mac_ap_ps_recalc(ar);
 	}
 }
 
@@ -6175,6 +6216,10 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 			return ret;
 		}
 	}
+	/* Trigger AP powersave recal for first peer create */
+	if (ar->ap_ps_enabled) {
+		ath12k_mac_ap_ps_recalc(ar);
+	}
 
 	return 0;
 }
@@ -6534,6 +6579,7 @@ static void ath12k_mac_station_post_remove(struct ath12k *ar,
 	}
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
+	ath12k_mac_ap_ps_recalc(ar);
 }
 
 static int ath12k_mac_station_unauthorize(struct ath12k *ar,
@@ -9495,6 +9541,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 			    arvif->vdev_id, ret);
 	}
 
+	ath12k_mac_ap_ps_recalc(ar);
 	ath12k_dp_vdev_tx_attach(ar, arvif);
 
 	return ret;
@@ -12958,6 +13005,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		ieee80211_hw_set(hw, SUPPORTS_AMSDU_IN_AMPDU);
 		ieee80211_hw_set(hw, USES_RSS);
 	}
+
+	if (ab->hw_params->supports_ap_ps)
+        	ieee80211_hw_set(hw, SUPPORTS_AP_PS);
 
 	wiphy->features |= NL80211_FEATURE_STATIC_SMPS;
 	wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
