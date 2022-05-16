@@ -686,8 +686,11 @@ struct ath12k_sta {
 #define ATH12K_MAX_5G_LOW_BAND_FREQ  5330
 #define ATH12K_MIN_5G_HIGH_BAND_FREQ 5490
 
-#define ATH12K_NUM_CHANS 101
-#define ATH12K_MAX_5GHZ_CHAN 173
+#define ATH12K_NUM_CHANS 	102
+#define ATH12K_MIN_5GHZ_CHAN 	36
+#define ATH12K_MAX_5GHZ_CHAN 	177
+#define ATH12K_MIN_2GHZ_CHAN 	1
+#define ATH12K_MAX_2GHZ_CHAN 	11
 
 enum ath12k_hw_state {
 	ATH12K_HW_STATE_OFF,
@@ -1252,9 +1255,9 @@ struct ath12k_base {
 
 	/* Current DFS Regulatory */
 	enum ath12k_dfs_region dfs_region;
-	struct ath12k_reg_rule reg_rule_2g;
-	struct ath12k_reg_rule reg_rule_5g;
-	struct ath12k_reg_rule reg_rule_6g;
+	struct ath12k_reg_freq reg_freq_2g;
+	struct ath12k_reg_freq reg_freq_5g;
+	struct ath12k_reg_freq reg_freq_6g;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_soc;
 #endif
@@ -1355,10 +1358,6 @@ struct ath12k_base {
 	enum ath12k_firmware_mode fw_mode;
 	struct ath12k_ftm_event_obj ftm_event_obj;
 	bool hw_group_ref;
-
-	struct ath12k_reg_freq reg_freq_2g;
-	struct ath12k_reg_freq reg_freq_5g;
-	struct ath12k_reg_freq reg_freq_6g;
 
 	struct {
                 const struct ath12k_msi_config *config;

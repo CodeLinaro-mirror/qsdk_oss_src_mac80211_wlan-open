@@ -718,9 +718,12 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 			 * BW correction if required and applies flags as
 			 * per other BW rule flags we pass from here
 			 */
-			flags = NL80211_RRF_AUTO_BW;
+			flags = NL80211_RRF_AUTO_BW | NL80211_RRF_NO_320MHZ;
 			pwr_mode = 0;
-			ath12k_copy_reg_rule(&ab->reg_freq_5g, reg_rule);
+			if (reg_rule->end_freq <= ATH12K_MAX_5GHZ_FREQ)
+				ath12k_copy_reg_rule(&ab->reg_freq_5g, reg_rule);
+			else if (reg_rule->start_freq >= ATH12K_MIN_6GHZ_FREQ)
+				ath12k_copy_reg_rule(&ab->reg_freq_6g, reg_rule);
 		} else if (reg_info->is_ext_reg_event && reg_6g_number) {
 			if (!reg_6g_itr_set) {
 				reg_rule_6g = ath12k_get_active_6g_reg_rule(reg_info,
