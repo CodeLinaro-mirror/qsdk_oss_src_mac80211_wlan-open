@@ -1010,14 +1010,28 @@ struct htt_resp_msg {
 	};
 } __packed;
 
+struct htt_h2t_msg_type_vdev_txrx_stats_req {
+        u32 hdr;
+        u32 vdev_id_lo_bitmask;
+        u32 vdev_id_hi_bitmask;
+};
+
 #define HTT_VDEV_GET_STATS_U64(msg_l32, msg_u32)\
 	(((u64)__le32_to_cpu(msg_u32) << 32) | (__le32_to_cpu(msg_l32)))
 #define HTT_T2H_VDEV_STATS_PERIODIC_MSG_TYPE		GENMASK(7, 0)
 #define HTT_T2H_VDEV_STATS_PERIODIC_PDEV_ID		GENMASK(15, 8)
-#define HTT_T2H_VDEV_STATS_PERIODIC_NUM_VDEV		GENMASK(23, 16)
-#define HTT_T2H_VDEV_STATS_PERIODIC_PAYLOAD_BYTES	GENMASK(15, 0)
+#define HTT_T2H_VDEV_STATS_PERIODIC_PAYLOAD_BYTES	GENMASK(23, 16)
 #define HTT_VDEV_TXRX_STATS_COMMON_TLV		0
 #define HTT_VDEV_TXRX_STATS_HW_STATS_TLV	1
+
+#define HTT_H2T_VDEV_TXRX_HDR_MSG_TYPE	      	GENMASK(7, 0)
+#define HTT_H2T_VDEV_TXRX_HDR_PDEV_ID	      	GENMASK(15, 8)
+#define HTT_H2T_VDEV_TXRX_HDR_ENABLE		BIT(16)
+#define HTT_H2T_VDEV_TXRX_HDR_INTERVAL		GENMASK(24, 17)
+#define HTT_H2T_VDEV_TXRX_HDR_RESET_STATS	GENMASK(26, 25)
+#define HTT_H2T_VDEV_TXRX_LO_BITMASK		GENMASK(31, 0)
+#define HTT_H2T_VDEV_TXRX_HI_BITMASK		GENMASK_ULL(63, 32)
+#define ATH12K_STATS_TIMER_DUR_1SEC		1000
 
 struct htt_t2h_vdev_txrx_stats_ind {
 	__le32 vdev_id;
@@ -1633,12 +1647,6 @@ struct htt_ext_stats_cfg_params {
 	u32 cfg1;
 	u32 cfg2;
 	u32 cfg3;
-};
-
-enum vdev_stats_offload_timer_duration {
-	ATH12K_STATS_TIMER_DUR_500MS = 1,
-	ATH12K_STATS_TIMER_DUR_1SEC = 2,
-	ATH12K_STATS_TIMER_DUR_2SEC = 3,
 };
 
 #define ATH12K_HTT_MAC_ADDR_L32_0	GENMASK(7, 0)

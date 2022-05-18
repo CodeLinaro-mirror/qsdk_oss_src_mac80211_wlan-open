@@ -1710,6 +1710,52 @@ static const struct file_operations fops_pdev_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_write_enable_vdev_stats_offload(struct file *file,
+						      const char __user *ubuf,
+						      size_t count, loff_t *ppos)
+{
+       struct ath12k *ar = file->private_data;
+       bool enable;
+       int ret;
+
+       if (kstrtobool_from_user(ubuf, count, &enable))
+               return -EINVAL;
+
+       guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+
+       if (enable == ar->fw_stats.en_vdev_stats_ol) {
+               ret = count;
+               goto out;
+       }
+
+       ar->fw_stats.en_vdev_stats_ol = enable;
+       ret = count;
+
+out:
+       return ret;
+}
+
+static ssize_t ath12k_read_enable_vdev_stats_offload(struct file *file,
+	       					     char __user *ubuf,
+						     size_t count, loff_t *ppos)
+{
+	char buf[32] = {0};
+	struct ath12k *ar = file->private_data;
+	int len = 0;
+
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+	len = scnprintf(buf, sizeof(buf) - len, "%u\n",
+			ar->fw_stats.en_vdev_stats_ol);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_vdev_stats_offload = {
+	.read = ath12k_read_enable_vdev_stats_offload,
+	.write = ath12k_write_enable_vdev_stats_offload,
+	.open = simple_open
+};
+
 static
 void ath12k_debugfs_fw_stats_register(struct ath12k *ar)
 {
@@ -1725,6 +1771,9 @@ void ath12k_debugfs_fw_stats_register(struct ath12k *ar)
 			    &fops_bcn_stats);
 	debugfs_create_file("pdev_stats", 0600, fwstats_dir, ar,
 			    &fops_pdev_stats);
+	debugfs_create_file("en_vdev_stats_ol", 0600, fwstats_dir, ar,
+			    &fops_vdev_stats_offload);
+
 	ath12k_fw_stats_init(ar);
 }
 

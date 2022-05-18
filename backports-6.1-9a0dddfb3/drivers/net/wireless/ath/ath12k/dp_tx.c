@@ -153,3 +153,46 @@ out:
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_dp_tx_align_payload);
+
+int
+ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct htt_h2t_msg_type_vdev_txrx_stats_req *cmd;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct sk_buff *skb;
+	int len = sizeof(*cmd), ret;
+
+	skb = ath12k_htc_alloc_skb(ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, len);
+	cmd = (struct htt_h2t_msg_type_vdev_txrx_stats_req *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+	cmd->hdr = FIELD_PREP(HTT_H2T_VDEV_TXRX_HDR_MSG_TYPE,
+			      HTT_H2T_MSG_TYPE_VDEV_TXRX_STATS_CFG);
+	cmd->hdr |= FIELD_PREP(HTT_H2T_VDEV_TXRX_HDR_PDEV_ID,
+			       ar->pdev->pdev_id);
+	cmd->hdr |= FIELD_PREP(HTT_H2T_VDEV_TXRX_HDR_ENABLE, true);
+
+	/* Periodic interval is calculated as 1 units = 8 ms.
+	* Ex: 125 -> 1000 ms
+	*/
+	cmd->hdr |= FIELD_PREP(HTT_H2T_VDEV_TXRX_HDR_INTERVAL,
+			       (ATH12K_STATS_TIMER_DUR_1SEC >> 3));
+	cmd->hdr |= FIELD_PREP(HTT_H2T_VDEV_TXRX_HDR_RESET_STATS, true);
+	cmd->vdev_id_lo_bitmask = (reset_bitmask & HTT_H2T_VDEV_TXRX_LO_BITMASK);
+	cmd->vdev_id_hi_bitmask = ((reset_bitmask &
+				    HTT_H2T_VDEV_TXRX_HI_BITMASK) >> 32);
+
+	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	if (ret) {
+		ath12k_warn(ab, "failed to send htt type vdev stats offload request: %d",
+			    ret);
+		dev_kfree_skb_any(skb);
+		return ret;
+	}
+
+	return 0;
+}

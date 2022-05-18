@@ -8939,6 +8939,17 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 		memcpy(arvif->bssid, link_addr, ETH_ALEN);
 	}
 
+	/* Send vdev stats offload commands to firmware before first vdev
+	 * creation. ie., when num_created_vdevs = 0
+	 */
+	if (ar->fw_stats.en_vdev_stats_ol && !ar->num_created_vdevs) {
+		ret = ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(ar, 0);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to request vdev stats offload: %d\n", ret);
+			goto err;
+		}
+	}
+
 	arvif->ar = ar;
 	vdev_id = __ffs64(ab->free_vdev_map);
 	arvif->vdev_id = vdev_id;
