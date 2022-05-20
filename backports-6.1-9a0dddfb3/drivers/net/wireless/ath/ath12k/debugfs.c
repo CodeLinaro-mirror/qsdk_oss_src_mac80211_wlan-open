@@ -2532,6 +2532,36 @@ static const struct file_operations fops_btcoex_priority = {
         .llseek = default_llseek,
 };
 
+static ssize_t ath12k_write_simulate_awgn(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	int ret;
+	u32 chan_bw_interference_bitmap;
+
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		ath12k_warn(ar->ab, "Interface not up\n");
+		return -ENETDOWN;
+	}
+
+	if (kstrtou32_from_user(user_buf, count, 0, &chan_bw_interference_bitmap))
+		return -EINVAL;
+
+	ret = ath12k_wmi_simulate_awgn(ar, chan_bw_interference_bitmap);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static const struct file_operations fops_simulate_awgn = {
+        .write = ath12k_write_simulate_awgn,
+        .open = simple_open
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -2593,6 +2623,11 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("ext_rx_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_extd_rx_stats);
+	if (ar->mac.sbands[NL80211_BAND_6GHZ].channels) {
+		debugfs_create_file("simulate_awgn", 0200,
+				    ar->debug.debugfs_pdev, ar,
+				    &fops_simulate_awgn);
+	}
 }
 
 static ssize_t ath12k_read_simulate_fw_crash(struct file *file,

@@ -843,6 +843,10 @@ struct ath12k {
 #endif
 	bool ap_ps_enabled;
 	enum ath12k_ap_ps_state ap_ps_state;
+
+	struct cfg80211_chan_def awgn_chandef;
+	u32 chan_bw_interference_bitmap;
+	bool awgn_intf_handling_in_prog;
 };
 
 struct ath12k_hw {

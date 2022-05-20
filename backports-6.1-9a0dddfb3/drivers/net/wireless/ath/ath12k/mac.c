@@ -8973,6 +8973,10 @@ static int ath12k_mac_start(struct ath12k *ar)
 	ar->allocated_vdev_map = 0;
 	ar->chan_tx_pwr = ATH12K_PDEV_TX_POWER_INVALID;
 
+	spin_lock_bh(&ar->data_lock);
+        ar->awgn_intf_handling_in_prog = false;
+        spin_unlock_bh(&ar->data_lock);
+
 	/* Configure monitor status ring with default rx_filter to get rx status
 	 * such as rssi, rx_duration.
 	 */
@@ -9171,6 +9175,10 @@ static void ath12k_mac_stop(struct ath12k *ar)
 	synchronize_rcu();
 
 	atomic_set(&ar->num_pending_mgmt_tx, 0);
+
+	spin_lock_bh(&ar->data_lock);
+        ar->awgn_intf_handling_in_prog = false;
+        spin_unlock_bh(&ar->data_lock);
 }
 
 void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
@@ -10746,6 +10754,83 @@ static int ath12k_mac_update_peer_puncturing_width(struct ath12k *ar,
 	return ret;
 }
 
+static void ath12k_mac_num_chanctxs_iter(struct ieee80211_hw *hw,
+                                         struct ieee80211_chanctx_conf *conf,
+                                         void *data)
+{
+        int *num = data;
+
+        (*num)++;
+}
+
+static int ath12k_mac_num_chanctxs(struct ath12k *ar)
+{
+        int num = 0;
+
+        ieee80211_iter_chan_contexts_atomic(ar->ah->hw,
+                                            ath12k_mac_num_chanctxs_iter,
+                                            &num);
+
+        return num;
+}
+
+static void ath12k_mac_update_rx_channel(struct ath12k *ar,
+					 struct ieee80211_chanctx_conf *ctx,
+					 struct ieee80211_vif_chanctx_switch *vifs,
+					 int n_vifs)
+{
+	struct ath12k_mac_get_any_chanctx_conf_arg arg;
+	struct cfg80211_chan_def *def = NULL;
+
+	/* Both locks are required because ar->rx_channel is modified. This
+	 * allows readers to hold either lock.
+	 */
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+	lockdep_assert_held(&ar->data_lock);
+
+	WARN_ON(ctx && vifs);
+	WARN_ON(vifs && !n_vifs);
+
+	/* FIXME: Sort of an optimization and a workaround. Peers and vifs are
+	 * on a linked list now. Doing a lookup peer -> vif -> chanctx for each
+	 * ppdu on Rx may reduce performance on low-end systems. It should be
+	 * possible to make tables/hashmaps to speed the lookup up (be vary of
+	 * cpu data cache lines though regarding sizes) but to keep the initial
+	 * implementation simple and less intrusive fallback to the slow lookup
+	 * only for multi-channel cases. Single-channel cases will remain to
+	 * use the old channel derival and thus performance should not be
+	 * affected much.
+	 */
+	rcu_read_lock();
+	if (!ctx && ath12k_mac_num_chanctxs(ar) == 1) {
+		arg.chanctx_conf = NULL;
+		ieee80211_iter_chan_contexts_atomic(ath12k_ar_to_hw(ar),
+						    ath12k_mac_get_any_chanctx_conf_iter,
+						    &arg);
+
+		if (vifs)
+			def = &vifs[0].new_ctx->def;
+		else if (arg.chanctx_conf)
+			def = &arg.chanctx_conf->def;
+
+		if (def)
+			ar->rx_channel = def->chan;
+		else
+			ar->rx_channel = NULL;
+	} else if ((ctx && ath12k_mac_num_chanctxs(ar) == 0) ||
+		  (ctx && (ar->ah->state == ATH12K_HW_STATE_RESTARTED))) {
+	       /* During driver restart due to firmware assert, since mac80211
+		* already has valid channel context for given radio, channel
+		* context iteration return num_chanctx > 0. So fix rx_channel
+		* when restart is in progress.
+		*/
+		ar->rx_channel = ctx->def.chan;
+	} else {
+		ar->rx_channel = NULL;
+	}
+	rcu_read_unlock();
+}
+
 static void
 ath12k_mac_update_vif_chan(struct ath12k *ar,
 			   struct ieee80211_vif_chanctx_switch *vifs,
@@ -10753,6 +10838,7 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 {
 	struct ath12k_wmi_vdev_up_params params = {};
 	struct ath12k_link_vif *arvif, *tx_arvif;
+	struct cfg80211_chan_def *chandef = NULL;
 	struct ieee80211_bss_conf *link_conf;
 	struct ath12k_base *ab = ar->ab;
 	struct ieee80211_vif *vif;
@@ -10763,6 +10849,10 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 	bool monitor_vif = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	chandef = &vifs[0].new_ctx->def;
+
+	ath12k_mac_update_rx_channel(ar, NULL, vifs, n_vifs);
 
 	for (i = 0; i < n_vifs; i++) {
 		vif = vifs[i].vif;
@@ -10854,6 +10944,37 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 		if (!ath12k_mac_monitor_stop(ar))
 			ath12k_mac_monitor_start(ar);
 	}
+	spin_lock_bh(&ar->data_lock);
+        if (ar->awgn_intf_handling_in_prog && chandef) {
+                if (!ar->chan_bw_interference_bitmap ||
+                    (ar->chan_bw_interference_bitmap & WMI_DCS_SEG_PRI20)) {
+                        if (ar->awgn_chandef.chan->center_freq !=
+                            chandef->chan->center_freq) {
+                                ar->awgn_intf_handling_in_prog = false;
+                                ath12k_dbg(ab, ATH12K_DBG_MAC,
+                                           "AWGN : channel switch completed\n");
+                        } else {
+                                ath12k_warn(ab, "AWGN : channel switch is not done, freq : %d\n",
+                                            ar->awgn_chandef.chan->center_freq);
+                        }
+                } else {
+                        if ((ar->awgn_chandef.chan->center_freq ==
+                             chandef->chan->center_freq) &&
+                            (ar->awgn_chandef.width != chandef->width)) {
+                                ath12k_dbg(ab, ATH12K_DBG_MAC,
+                                           "AWGN : BW reduction is complete\n");
+                                ar->awgn_intf_handling_in_prog = false;
+                        } else {
+                                ath12k_warn(ab, "AWGN : awgn_freq : %d chan_freq %d"
+                                            " awgn_width %d chan_width %d\n",
+                                            ar->awgn_chandef.chan->center_freq,
+                                            chandef->chan->center_freq,
+                                            ar->awgn_chandef.width,
+                                            chandef->width);
+                        }
+                }
+        }
+        spin_unlock_bh(&ar->data_lock);
 }
 
 static void

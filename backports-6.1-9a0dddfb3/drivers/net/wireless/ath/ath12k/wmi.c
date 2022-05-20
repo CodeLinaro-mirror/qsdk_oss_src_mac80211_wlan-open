@@ -8346,6 +8346,239 @@ static void ath12k_pdev_ctl_failsafe_check_event(struct ath12k_base *ab,
 
 	kfree(tb);
 }
+static int ath12k_wmi_awgn_intf_subtlv_parser(struct ath12k_base *ab,
+					      u16 tag, u16 len,
+					      const void *ptr, void *data)
+{
+	int ret = 0;
+	struct wmi_dcs_awgn_info *awgn_info;
+
+	switch (tag) {
+	case WMI_TAG_DCS_AWGN_INT_TYPE:
+		awgn_info = (struct wmi_dcs_awgn_info *)ptr;
+
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "AWGN Info: channel width: %d, chan freq: %d, center_freq0: %d, center_freq1: %d, bw_intf_bitmap: %d\n",
+			   awgn_info->channel_width, awgn_info->chan_freq, awgn_info->center_freq0, awgn_info->center_freq1,
+			   awgn_info->chan_bw_interference_bitmap);
+		memcpy(data, awgn_info, sizeof(*awgn_info));
+		break;
+	default:
+		ath12k_warn(ab,
+			    "Received invalid tag for wmi dcs interference in subtlvs\n");
+		return -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+static int ath12k_wmi_dcs_awgn_event_parser(struct ath12k_base *ab,
+					    u16 tag, u16 len,
+					    const void *ptr, void *data)
+{
+	int ret = 0;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wmi dcs awgn event tag 0x%x of len %d rcvd\n",
+		   tag, len);
+
+	switch (tag) {
+	case WMI_TAG_DCS_INTERFERENCE_EVENT:
+		/* Fixed param is already processed*/
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		/* len 0 is expected for array of struct when there
+		 * is no content of that type to pack inside that tlv
+		 */
+		if (len == 0)
+			return 0;
+		ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+					  ath12k_wmi_awgn_intf_subtlv_parser,
+					  data);
+		break;
+	default:
+		ath12k_warn(ab, "Received invalid tag for wmi dcs interference event\n");
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+bool ath12k_wmi_validate_dcs_awgn_info(struct ath12k *ar, struct wmi_dcs_awgn_info *awgn_info)
+{
+	spin_lock_bh(&ar->data_lock);
+
+	if (!ar->rx_channel) {
+		spin_unlock_bh(&ar->data_lock);
+		return false;
+	}
+
+	if (awgn_info->chan_freq != ar->rx_channel->center_freq) {
+		spin_unlock_bh(&ar->data_lock);
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "dcs interference event received with wrong channel %d",awgn_info->chan_freq);
+		return false;
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	switch (awgn_info->channel_width) {
+	case WMI_HOST_CHAN_WIDTH_20:
+		if (awgn_info->chan_bw_interference_bitmap > WMI_DCS_SEG_PRI20) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+				   "dcs interference event received with wrong chan width bmap %d for 20MHz",
+				   awgn_info->chan_bw_interference_bitmap);
+			return false;
+		}
+		break;
+	case WMI_HOST_CHAN_WIDTH_40:
+		if (awgn_info->chan_bw_interference_bitmap > (WMI_DCS_SEG_PRI20 |
+							      WMI_DCS_SEG_SEC20)) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+				   "dcs interference event received with wrong chan width bmap %d for 40MHz",
+				   awgn_info->chan_bw_interference_bitmap);
+			return false;
+		}
+		break;
+	case WMI_HOST_CHAN_WIDTH_80:
+		if (awgn_info->chan_bw_interference_bitmap > (WMI_DCS_SEG_PRI20 |
+							      WMI_DCS_SEG_SEC20 |
+							      WMI_DCS_SEG_SEC40)) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+				   "dcs interference event received with wrong chan width bmap %d for 80MHz",
+				   awgn_info->chan_bw_interference_bitmap);
+			return false;
+		}
+		break;
+	case WMI_HOST_CHAN_WIDTH_160:
+	case WMI_HOST_CHAN_WIDTH_80P80:
+		if (awgn_info->chan_bw_interference_bitmap > (WMI_DCS_SEG_PRI20 |
+							      WMI_DCS_SEG_SEC20 |
+							      WMI_DCS_SEG_SEC40 |
+							      WMI_DCS_SEG_SEC80)) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+				   "dcs interference event received with wrong chan width bmap %d for 80P80/160MHz",
+				   awgn_info->chan_bw_interference_bitmap);
+			return false;
+		}
+		break;
+	default:
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "dcs interference event received with unknown channel width %d",
+			   awgn_info->channel_width);
+		return false;
+	}
+	return true;
+}
+static void
+ath12k_wmi_dcs_awgn_interference_event(struct ath12k_base *ab,
+				       struct sk_buff *skb)
+{
+	const struct wmi_dcs_interference_ev *dcs_intf_ev;
+	struct ath12k_mac_get_any_chanctx_conf_arg arg;
+	struct wmi_dcs_awgn_info awgn_info = {};
+	struct cfg80211_chan_def *chandef;
+	const struct wmi_tlv *tlv;
+	struct ath12k *ar;
+	u16 tlv_tag;
+	u8 *ptr;
+	int ret;
+
+	if (!test_bit(WMI_TLV_SERVICE_DCS_AWGN_INT_SUPPORT, ab->wmi_ab.svc_map)) {
+		ath12k_warn(ab, "firmware doesn't support awgn interference, so dropping dcs interference ev\n");
+		return;
+	}
+
+	ptr = skb->data;
+
+	if (skb->len < (sizeof(*dcs_intf_ev) + TLV_HDR_SIZE)) {
+		ath12k_warn(ab, "dcs interference event size invalid\n");
+		return;
+	}
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv_tag = FIELD_GET(WMI_TLV_TAG, tlv->header);
+	ptr += sizeof(*tlv);
+
+	if (tlv_tag == WMI_TAG_DCS_INTERFERENCE_EVENT) {
+		dcs_intf_ev = (struct wmi_dcs_interference_ev*)ptr;
+
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "pdev awgn detected on pdev %d, interference type %d\n",
+			   dcs_intf_ev->pdev_id, dcs_intf_ev->interference_type);
+
+		if (dcs_intf_ev->interference_type != WMI_DCS_AWGN_INTF) {
+			ath12k_warn(ab, "interference type is not awgn\n");
+			return;
+		}
+	} else {
+		ath12k_warn(ab, "dcs interference event received with wrong tag\n");
+		return;
+	}
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_dcs_awgn_event_parser,
+				  &awgn_info);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse awgn tlv %d\n", ret);
+		return;
+	}
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, dcs_intf_ev->pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "awgn detected in invalid pdev id(%d)\n",
+			    dcs_intf_ev->pdev_id);
+		goto exit;
+	}
+	if (!ar->supports_6ghz) {
+		ath12k_warn(ab, "pdev does not supports 6G, so dropping dcs interference event\n");
+		goto exit;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	if (ar->awgn_intf_handling_in_prog) {
+		spin_unlock_bh(&ar->data_lock);
+		rcu_read_unlock();
+		return;
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	if (!ath12k_wmi_validate_dcs_awgn_info(ar, &awgn_info)) {
+		ath12k_warn(ab, "Invalid DCS AWGN TLV - Skipping event");
+		goto exit;
+	}
+
+	ath12k_info(ab, "Interface(pdev %d) : AWGN interference detected\n",
+		    dcs_intf_ev->pdev_id);
+
+	arg.ar = ar;
+	arg.chanctx_conf = NULL;
+	ieee80211_iter_chan_contexts_atomic(ath12k_ar_to_hw(ar),
+					    ath12k_mac_get_any_chanctx_conf_iter, &arg);
+	if (!arg.chanctx_conf) {
+		ath12k_warn(ab, "failed to find valid chanctx_conf in AWGN event\n");
+		goto exit;
+	}
+	chandef = &arg.chanctx_conf->def;
+	if (!chandef) {
+		ath12k_warn(ab, "chandef is not available\n");
+		goto exit;
+	}
+	ar->awgn_chandef = *chandef;
+
+	ieee80211_awgn_detected(ath12k_ar_to_hw(ar), awgn_info.chan_bw_interference_bitmap,
+				chandef->chan);
+
+	spin_lock_bh(&ar->data_lock);
+	ar->awgn_intf_handling_in_prog = true;
+	ar->chan_bw_interference_bitmap = awgn_info.chan_bw_interference_bitmap;
+	spin_unlock_bh(&ar->data_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "AWGN : Interference handling started\n");
+exit:
+	rcu_read_unlock();
+}
 
 static void
 ath12k_wmi_process_csa_switch_count_event(struct ath12k_base *ab,
@@ -10041,6 +10274,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		else
 			ath12k_tm_wmi_event_unsegmented(ab, id, skb);
 		break;
+	case WMI_DCS_INTERFERENCE_EVENTID:
+                ath12k_wmi_dcs_awgn_interference_event(ab, skb);
+                break;
 	case WMI_MUEDCA_PARAMS_CONFIG_EVENTID:
 		ath12k_wmi_pdev_update_muedca_params_status_event(ab, skb);
 		break;
@@ -10412,6 +10648,45 @@ int ath12k_wmi_pdev_m3_dump_enable(struct ath12k *ar, u32 enable)
                    enable ? "Enabling" : "Disabling");
 
         return ath12k_wmi_send_unit_test_cmd(ar, wmi_ut, m3_args);
+}
+
+int ath12k_wmi_simulate_awgn(struct ath12k *ar, u32 chan_bw_interference_bitmap)
+{
+	u32 awgn_args[WMI_AWGN_MAX_TEST_ARGS];
+	struct wmi_unit_test_cmd wmi_ut;
+        struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+        bool arvif_found = false;
+
+        if (!test_bit(WMI_TLV_SERVICE_DCS_AWGN_INT_SUPPORT, ar->ab->wmi_ab.svc_map)) {
+                ath12k_warn(ar->ab, "firmware doesn't support awgn interference, so can't simulate it\n");
+                return -EOPNOTSUPP;
+        }
+
+        list_for_each_entry(arvif, &ar->arvifs, list) {
+		ahvif = arvif->ahvif;
+                if (arvif->is_started && ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+                        arvif_found = true;
+                        break;
+                }
+        }
+
+        if (!arvif_found)
+                return -EINVAL;
+
+        awgn_args[WMI_AWGN_TEST_AWGN_INT] = WMI_UNIT_TEST_AWGN_INTF_TYPE;
+        awgn_args[WMI_AWGN_TEST_BITMAP] = chan_bw_interference_bitmap;
+
+        wmi_ut.vdev_id = arvif->vdev_id;
+        wmi_ut.module_id = WMI_AWGN_UNIT_TEST_MODULE;
+        wmi_ut.num_args = WMI_AWGN_MAX_TEST_ARGS;
+        wmi_ut.diag_token = WMI_AWGN_UNIT_TEST_TOKEN;
+
+        ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+                   "Triggering AWGN Simulation, interference bitmap : 0x%x\n",
+                   chan_bw_interference_bitmap);
+
+        return ath12k_wmi_send_unit_test_cmd(ar, wmi_ut, awgn_args);
 }
 
 int ath12k_wmi_connect(struct ath12k_base *ab)

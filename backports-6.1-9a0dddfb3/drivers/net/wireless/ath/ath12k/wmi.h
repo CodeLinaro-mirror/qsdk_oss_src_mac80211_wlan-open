@@ -2260,6 +2260,7 @@ enum wmi_tlv_service {
 	WMI_MAX_EXT_SERVICE = 256,
 
 	WMI_TLV_SERVICE_REG_CC_EXT_EVENT_SUPPORT = 281,
+	WMI_TLV_SERVICE_DCS_AWGN_INT_SUPPORT = 286,
 
 	WMI_TLV_SERVICE_11BE = 289,
 
@@ -4278,6 +4279,17 @@ enum wmi_m3_test_args_idx {
 	WMI_M3_MAX_TEST_ARGS,
 };
 
+#define WMI_AWGN_UNIT_TEST_MODULE 0x18
+#define WMI_AWGN_UNIT_TEST_TOKEN  0
+#define WMI_UNIT_TEST_AWGN_INTF_TYPE 1
+#define WMI_UNIT_TEST_AWGN_PRIMARY_20 0x01
+
+enum wmi_awgn_test_args_idx {
+        WMI_AWGN_TEST_AWGN_INT,
+        WMI_AWGN_TEST_BITMAP,
+        WMI_AWGN_MAX_TEST_ARGS,
+};
+
 struct wmi_unit_test_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
@@ -4549,6 +4561,42 @@ struct ath12k_wmi_pdev_radar_event {
 	a_sle32 freq_offset;
 	a_sle32 sidx;
 } __packed;
+
+#define WMI_DCS_AWGN_INTF       0x04
+
+struct wmi_dcs_awgn_info {
+        u32 channel_width;
+        u32 chan_freq;
+        u32 center_freq0;
+        u32 center_freq1;
+        u32 chan_bw_interference_bitmap;
+} __packed;
+
+struct wmi_dcs_interference_ev {
+        u32 interference_type;
+        u32 pdev_id;
+} __packed;
+
+enum wmi_host_channel_width {
+        WMI_HOST_CHAN_WIDTH_20    = 0,
+        WMI_HOST_CHAN_WIDTH_40    = 1,
+        WMI_HOST_CHAN_WIDTH_80    = 2,
+        WMI_HOST_CHAN_WIDTH_160   = 3,
+        WMI_HOST_CHAN_WIDTH_80P80 = 4,
+};
+
+enum wmi_dcs_interference_chan_segment {
+        WMI_DCS_SEG_PRI20             =  0x1,
+        WMI_DCS_SEG_SEC20             =  0x2,
+        WMI_DCS_SEG_SEC40_LOWER       =  0x4,
+        WMI_DCS_SEG_SEC40_UPPER       =  0x8,
+        WMI_DCS_SEG_SEC40             =  0xC,
+        WMI_DCS_SEG_SEC80_LOWER       = 0x10,
+        WMI_DCS_SEG_SEC80_LOWER_UPPER = 0x20,
+        WMI_DCS_SEG_SEC80_UPPER_LOWER = 0x40,
+        WMI_DCS_SEG_SEC80_UPPER       = 0x80,
+        WMI_DCS_SEG_SEC80             = 0xF0,
+};
 
 struct wmi_pdev_temperature_event {
 	/* temperature value in Celsius degree */
@@ -6564,6 +6612,7 @@ ath12k_wmi_rx_reord_queue_remove(struct ath12k *ar,
 int ath12k_wmi_send_pdev_set_regdomain(struct ath12k *ar,
 				       struct ath12k_wmi_pdev_set_regdomain_arg *arg);
 int ath12k_wmi_simulate_radar(struct ath12k *ar);
+int ath12k_wmi_simulate_awgn(struct ath12k *ar, u32 chan_bw_interference_bitmap);
 int ath12k_wmi_send_twt_enable_cmd(struct ath12k *ar, u32 pdev_id);
 int ath12k_wmi_send_twt_disable_cmd(struct ath12k *ar, u32 pdev_id);
 int ath12k_wmi_send_obss_spr_cmd(struct ath12k *ar, u32 vdev_id,
