@@ -126,7 +126,10 @@ enum ath12k_skb_flags {
 
 struct ath12k_skb_cb {
 	dma_addr_t paddr;
-	struct ath12k *ar;
+	union {
+		struct ath12k *ar;
+		u8 eid;
+	} u;
 	struct ieee80211_vif *vif;
 	dma_addr_t paddr_ext_desc;
 	u32 cipher;

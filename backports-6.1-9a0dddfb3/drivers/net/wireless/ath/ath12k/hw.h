@@ -271,6 +271,7 @@ struct ath12k_hw_params {
 	bool supports_ap_ps;
 	bool support_ce_manual_poll;
 	bool ftm_responder;
+	bool credit_flow;
 };
 
 struct ath12k_hw_ops {

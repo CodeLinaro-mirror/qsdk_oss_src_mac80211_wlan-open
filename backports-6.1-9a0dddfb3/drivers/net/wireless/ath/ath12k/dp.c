@@ -1083,7 +1083,7 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 			 */
 			if (!(test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags))) {
 				skb_cb = ATH12K_SKB_CB(skb);
-				ar = skb_cb->ar;
+				ar = skb_cb->u.ar;
 
 				if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 					wake_up(&ar->dp.tx_empty_waitq);

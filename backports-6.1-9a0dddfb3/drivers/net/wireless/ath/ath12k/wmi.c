@@ -362,6 +362,7 @@ int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id)
 {
 	struct ath12k_wmi_base *wmi_ab = wmi->wmi_ab;
+	struct ath12k_base *ab = wmi_ab->ab;
 	int ret = -EOPNOTSUPP;
 
 	if (!(test_bit(ATH12K_FLAG_WMI_INIT_DONE, &wmi_ab->ab->dev_flags)) &&
@@ -370,17 +371,32 @@ int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 
 	might_sleep();
 
-	wait_event_timeout(wmi_ab->tx_credits_wq, ({
-		ret = ath12k_wmi_cmd_send_nowait(wmi, skb, cmd_id);
+	if (ab->hw_params->credit_flow) {
+		wait_event_timeout(wmi_ab->tx_credits_wq, ({
+			ret = ath12k_wmi_cmd_send_nowait(wmi, skb, cmd_id);
 
-		if (ret && test_bit(ATH12K_FLAG_CRASH_FLUSH, &wmi_ab->ab->dev_flags))
-			ret = -ESHUTDOWN;
+			if (ret && test_bit(ATH12K_FLAG_CRASH_FLUSH,
+					    &wmi_ab->ab->dev_flags))
+				ret = -ESHUTDOWN;
+			(ret != -EAGAIN);
+			}), WMI_SEND_TIMEOUT_HZ);
+	} else {
+		wait_event_timeout(wmi->tx_ce_desc_wq, ({
+			ret = ath12k_wmi_cmd_send_nowait(wmi, skb, cmd_id);
+			if (ret && test_bit(ATH12K_FLAG_CRASH_FLUSH,
+					    &wmi_ab->ab->dev_flags))
+				ret = -ESHUTDOWN;
 
-		(ret != -EAGAIN);
-	}), WMI_SEND_TIMEOUT_HZ);
+			(ret != -ENOBUFS);
+			}), WMI_SEND_TIMEOUT_HZ);
+	}
 
 	if (ret == -EAGAIN)
 		ath12k_warn(wmi_ab->ab, "wmi command %d timeout\n", cmd_id);
+
+	if (ret == -ENOBUFS)
+		ath12k_warn(wmi_ab->ab, "ce desc not available for wmi command %d\n",
+			    cmd_id);
 
 	return ret;
 }
@@ -7400,7 +7416,31 @@ static int ath12k_reg_11d_new_cc_event(struct ath12k_base *ab, struct sk_buff *s
 static void ath12k_wmi_htc_tx_complete(struct ath12k_base *ab,
 				       struct sk_buff *skb)
 {
+	struct ath12k_wmi_pdev *wmi = NULL;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	u32 i;
+	u8 wmi_ep_count;
+	u8 eid;
+
+	eid = skb_cb->u.eid;
 	dev_kfree_skb(skb);
+
+	if (eid >= ATH12K_HTC_EP_COUNT)
+		return;
+
+	wmi_ep_count = ab->htc.wmi_ep_count;
+	if (wmi_ep_count > ab->hw_params->max_radios)
+		return;
+
+	for (i = 0; i < ab->htc.wmi_ep_count; i++) {
+		if (ab->wmi_ab.wmi[i].eid == eid) {
+			wmi = &ab->wmi_ab.wmi[i];
+			break;
+		}
+	}
+
+	if (wmi)
+		wake_up(&wmi->tx_ce_desc_wq);
 }
 
 static int ath12k_reg_chan_list_event(struct ath12k_base *ab, struct sk_buff *skb)
@@ -11894,6 +11934,7 @@ static int ath12k_connect_pdev_htc_service(struct ath12k_base *ab,
 	ab->wmi_ab.wmi_endpoint_id[pdev_idx] = conn_resp.eid;
 	ab->wmi_ab.wmi[pdev_idx].eid = conn_resp.eid;
 	ab->wmi_ab.max_msg_len[pdev_idx] = conn_resp.max_msg_len;
+	init_waitqueue_head(&ab->wmi_ab.wmi[pdev_idx].tx_ce_desc_wq);
 
 	return 0;
 }

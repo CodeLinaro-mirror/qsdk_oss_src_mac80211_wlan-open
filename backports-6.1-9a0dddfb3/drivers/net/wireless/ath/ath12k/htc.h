@@ -81,6 +81,8 @@ enum ath12k_htc_conn_flag_threshold_level {
 	ATH12K_HTC_CONN_FLAGS_THRESHOLD_LEVEL_ONE_HALF,
 	ATH12K_HTC_CONN_FLAGS_THRESHOLD_LEVEL_THREE_FOURTHS,
 	ATH12K_HTC_CONN_FLAGS_THRESHOLD_LEVEL_UNITY,
+	ATH12K_HTC_CONN_FLAGS_REDUCE_CREDIT_DRIBBLE	    = 0x4,
+	ATH12K_HTC_CONN_FLAGS_DISABLE_CREDIT_FLOW_CTRL	    = 0x8,
 };
 
 #define ATH12K_HTC_CONN_FLAGS_THRESHOLD_LEVEL_MASK	GENMASK(1, 0)
@@ -116,6 +118,8 @@ struct ath12k_htc_conn_svc_resp {
 	__le32 flags_len;
 	__le32 svc_meta_pad;
 } __packed;
+
+#define ATH12K_GLOBAL_DISABLE_CREDIT_FLOW BIT(1)
 
 struct ath12k_htc_setup_complete_extended {
 	__le32 msg_id;
@@ -311,6 +315,8 @@ int ath12k_htc_send(struct ath12k_htc *htc, enum ath12k_htc_ep_id eid,
 		    struct sk_buff *packet);
 struct sk_buff *ath12k_htc_alloc_skb(struct ath12k_base *ar, int size);
 void ath12k_htc_rx_completion_handler(struct ath12k_base *ar,
+				      struct sk_buff *skb);
+void ath12k_htc_tx_completion_handler(struct ath12k_base *ab,
 				      struct sk_buff *skb);
 
 #endif

@@ -81,6 +81,8 @@ int ath12k_htc_send(struct ath12k_htc *htc,
 	struct ath12k_base *ab = htc->ab;
 	int credits = 0;
 	int ret;
+	bool credit_flow_enabled = (ab->hw_params->credit_flow &&
+				    ep->tx_credit_flow_enabled);
 
 	if (eid >= ATH12K_HTC_EP_COUNT) {
 		ath12k_warn(ab, "Invalid endpoint id: %d\n", eid);
@@ -89,7 +91,7 @@ int ath12k_htc_send(struct ath12k_htc *htc,
 
 	skb_push(skb, sizeof(struct ath12k_htc_hdr));
 
-	if (ep->tx_credit_flow_enabled) {
+	if (credit_flow_enabled) {
 		credits = DIV_ROUND_UP(skb->len, htc->target_credit_size);
 		spin_lock_bh(&htc->tx_lock);
 		if (ep->tx_credits < credits) {
@@ -108,6 +110,7 @@ int ath12k_htc_send(struct ath12k_htc *htc,
 	}
 
 	ath12k_htc_prepare_tx_skb(ep, skb);
+	skb_cb->u.eid = eid;
 
 	skb_cb->paddr = dma_map_single(dev, skb->data, skb->len, DMA_TO_DEVICE);
 	ret = dma_mapping_error(dev, skb_cb->paddr);
@@ -125,7 +128,7 @@ int ath12k_htc_send(struct ath12k_htc *htc,
 err_unmap:
 	dma_unmap_single(dev, skb_cb->paddr, skb->len, DMA_TO_DEVICE);
 err_credits:
-	if (ep->tx_credit_flow_enabled) {
+	if (credit_flow_enabled) {
 		spin_lock_bh(&htc->tx_lock);
 		ep->tx_credits += credits;
 		ath12k_dbg(ab, ATH12K_DBG_HTC,
@@ -202,23 +205,25 @@ static int ath12k_htc_process_trailer(struct ath12k_htc *htc,
 			break;
 		}
 
-		switch (record->hdr.id) {
-		case ATH12K_HTC_RECORD_CREDITS:
-			len = sizeof(struct ath12k_htc_credit_report);
-			if (record->hdr.len < len) {
-				ath12k_warn(ab, "Credit report too long\n");
-				status = -EINVAL;
+		if (ab->hw_params->credit_flow) {
+			switch (record->hdr.id) {
+			case ATH12K_HTC_RECORD_CREDITS:
+				len = sizeof(struct ath12k_htc_credit_report);
+				if (record->hdr.len < len) {
+					ath12k_warn(ab, "Credit report too long\n");
+					status = -EINVAL;
+					break;
+				}
+				ath12k_htc_process_credit_report(htc,
+								 record->credit_report,
+								 record->hdr.len,
+								 src_eid);
+				break;
+			default:
+				ath12k_warn(ab, "Unhandled record: id:%d length:%d\n",
+					    record->hdr.id, record->hdr.len);
 				break;
 			}
-			ath12k_htc_process_credit_report(htc,
-							 record->credit_report,
-							 record->hdr.len,
-							 src_eid);
-			break;
-		default:
-			ath12k_warn(ab, "Unhandled record: id:%d length:%d\n",
-				    record->hdr.id, record->hdr.len);
-			break;
 		}
 
 		if (status)
@@ -248,6 +253,31 @@ static void ath12k_htc_wakeup_from_suspend(struct ath12k_base *ab)
 {
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "boot wakeup from suspend is received\n");
 }
+
+void ath12k_htc_tx_completion_handler(struct ath12k_base *ab,
+				      struct sk_buff *skb)
+{
+	void (*ep_tx_complete)(struct ath12k_base *, struct sk_buff *);
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	struct ath12k_htc *htc = &ab->htc;
+	struct ath12k_htc_ep *ep;
+	u8 eid;
+
+	eid = skb_cb->u.eid;
+	if (eid >= ATH12K_HTC_EP_COUNT)
+		return;
+
+	ep = &htc->endpoint[eid];
+	spin_lock_bh(&htc->tx_lock);
+	ep_tx_complete = ep->ep_ops.ep_tx_complete;
+	spin_unlock_bh(&htc->tx_lock);
+	if (!ep_tx_complete) {
+		dev_kfree_skb_any(skb);
+		return;
+	}
+	ep_tx_complete(htc->ab, skb);
+}
+EXPORT_SYMBOL(ath12k_htc_tx_completion_handler);
 
 void ath12k_htc_rx_completion_handler(struct ath12k_base *ab,
 				      struct sk_buff *skb)
@@ -613,6 +643,11 @@ int ath12k_htc_connect_service(struct ath12k_htc *htc,
 		disable_credit_flow_ctrl = true;
 	}
 
+	if (!ab->hw_params->credit_flow) {
+		flags |= ATH12K_HTC_CONN_FLAGS_DISABLE_CREDIT_FLOW_CTRL;
+		disable_credit_flow_ctrl = true;
+	}
+
 	req_msg->flags_len = le32_encode_bits(flags, HTC_SVC_MSG_CONNECTIONFLAGS);
 	req_msg->msg_svc_id |= le32_encode_bits(conn_req->service_id,
 						HTC_SVC_MSG_SERVICE_ID);
@@ -737,7 +772,10 @@ int ath12k_htc_start(struct ath12k_htc *htc)
 	msg->msg_id = le32_encode_bits(ATH12K_HTC_MSG_SETUP_COMPLETE_EX_ID,
 				       HTC_MSG_MESSAGEID);
 
-	ath12k_dbg(ab, ATH12K_DBG_HTC, "HTC is using TX credit flow control\n");
+	if (ab->hw_params->credit_flow)
+		ath12k_dbg(ab, ATH12K_DBG_HTC, "HTC is using TX credit flow control\n");
+	else
+		msg->flags |= ATH12K_GLOBAL_DISABLE_CREDIT_FLOW;
 
 	status = ath12k_htc_send(htc, ATH12K_HTC_EP_0, skb);
 	if (status) {

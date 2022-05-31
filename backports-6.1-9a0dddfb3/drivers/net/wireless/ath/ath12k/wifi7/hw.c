@@ -423,6 +423,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		},
 		.supports_ap_ps = true,
 		.ftm_responder = true,
+		.credit_flow = false,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -514,6 +515,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
 		.ftm_responder = false,
+		.credit_flow = false,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -611,6 +613,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
 		.ftm_responder = true,
+		.credit_flow = false,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -699,6 +702,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
 		.ftm_responder = false,
+		.credit_flow = false,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -767,6 +771,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
 		.ftm_responder = true,
+		.credit_flow = false,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -855,6 +860,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.supports_ap_ps = true,
 		.support_ce_manual_poll=true,
 		.ftm_responder = false,
+		.credit_flow = false,
 	},
 };
 
@@ -937,7 +943,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	/* as skb_cb is common currently for dp and mgmt tx processing
 	 * set this in the common mac op tx function.
 	 */
-	skb_cb->ar = ar;
+	skb_cb->u.ar = ar;
 	is_prb_rsp = ieee80211_is_probe_resp(hdr->frame_control);
 
 	if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP) {

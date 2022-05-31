@@ -471,7 +471,7 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_base *ab,
 	skb_cb = ATH12K_SKB_CB(msdu);
 	info = IEEE80211_SKB_CB(msdu);
 
-	ar = skb_cb->ar;
+	ar = skb_cb->u.ar;
 
 	if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 		wake_up(&ar->dp.tx_empty_waitq);

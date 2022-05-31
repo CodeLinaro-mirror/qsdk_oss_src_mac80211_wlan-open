@@ -236,18 +236,31 @@ err_unlock:
 	return skb;
 }
 
-static void ath12k_ce_send_done_cb(struct ath12k_ce_pipe *pipe)
+static void ath12k_ce_tx_process_cb(struct ath12k_ce_pipe *pipe)
 {
 	struct ath12k_base *ab = pipe->ab;
 	struct sk_buff *skb;
+	struct sk_buff_head list;
 
+	__skb_queue_head_init(&list);
 	while (!IS_ERR(skb = ath12k_ce_completed_send_next(pipe))) {
 		if (!skb)
 			continue;
 
 		dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr, skb->len,
 				 DMA_TO_DEVICE);
-		dev_kfree_skb_any(skb);
+		if ((!pipe->send_cb) || ab->hw_params->credit_flow) {
+			dev_kfree_skb_any(skb);
+			continue;
+		}
+
+		__skb_queue_tail(&list, skb);
+	}
+
+	while ((skb = __skb_dequeue(&list))) {
+		ath12k_dbg(ab, ATH12K_DBG_PCI, "tx ce pipe %d len %d\n",
+			   pipe->pipe_num, skb->len);
+		pipe->send_cb(ab, skb);
 	}
 }
 
@@ -387,7 +400,7 @@ static int ath12k_ce_alloc_pipe(struct ath12k_base *ab, int ce_id)
 	pipe->attr_flags = attr->flags;
 
 	if (attr->src_nentries) {
-		pipe->send_cb = ath12k_ce_send_done_cb;
+		pipe->send_cb = attr->send_cb;
 		nentries = roundup_pow_of_two(attr->src_nentries);
 		desc_sz = ath12k_hal_ce_get_desc_size(hal, HAL_CE_DESC_SRC);
 		ring = ath12k_ce_alloc_ring(ab, nentries, desc_sz);
@@ -418,9 +431,10 @@ static int ath12k_ce_alloc_pipe(struct ath12k_base *ab, int ce_id)
 void ath12k_ce_per_engine_service(struct ath12k_base *ab, u16 ce_id)
 {
 	struct ath12k_ce_pipe *pipe = &ab->ce.ce_pipe[ce_id];
+	const struct ce_attr *attr = &ab->hw_params->host_ce_config[ce_id];
 
-	if (pipe->send_cb)
-		pipe->send_cb(pipe);
+	if (attr->src_nentries)
+		ath12k_ce_tx_process_cb(pipe);
 
 	if (pipe->recv_cb)
 		ath12k_ce_recv_process_cb(pipe);
@@ -429,9 +443,10 @@ void ath12k_ce_per_engine_service(struct ath12k_base *ab, u16 ce_id)
 void ath12k_ce_poll_send_completed(struct ath12k_base *ab, u8 pipe_id)
 {
 	struct ath12k_ce_pipe *pipe = &ab->ce.ce_pipe[pipe_id];
+	const struct ce_attr *attr =  &ab->hw_params->host_ce_config[pipe_id];
 
-	if ((pipe->attr_flags & CE_ATTR_DIS_INTR) && pipe->send_cb)
-		pipe->send_cb(pipe);
+	if ((pipe->attr_flags & CE_ATTR_DIS_INTR) && attr->src_nentries)
+		ath12k_ce_tx_process_cb(pipe);
 }
 
 #define CE_RING_FULL_THRESHOLD_TIME_MS 500
@@ -519,7 +534,7 @@ retry:
 			spin_unlock_bh(&srng->lock);
 			spin_unlock_bh(&ab->ce.ce_lock);
 
-			ath12k_ce_send_done_cb(pipe);
+			ath12k_ce_tx_process_cb(pipe);
 			goto retry;
 		} else {
 			ret = -ENOBUFS;

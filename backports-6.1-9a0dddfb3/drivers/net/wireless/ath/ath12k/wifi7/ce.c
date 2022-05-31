@@ -691,6 +691,7 @@ const struct ce_attr ath12k_wifi7_host_ce_config_qcn9274[] = {
 		.src_nentries = 32,
 		.src_sz_max = 2048,
 		.dest_nentries = 0,
+		.send_cb = ath12k_htc_tx_completion_handler,
 	},
 
 	/* CE4: host->target HTT */
@@ -724,6 +725,7 @@ const struct ce_attr ath12k_wifi7_host_ce_config_qcn9274[] = {
 		.src_nentries = 32,
 		.src_sz_max = 2048,
 		.dest_nentries = 0,
+		.send_cb = ath12k_htc_tx_completion_handler,
 	},
 
 	/* CE8: target autonomous hif_memcpy */
@@ -901,6 +903,7 @@ const struct ce_attr ath12k_wifi7_host_ce_config_ipq5332[] = {
 		.src_nentries = 32,
 		.src_sz_max = 2048,
 		.dest_nentries = 0,
+		.send_cb = ath12k_htc_tx_completion_handler,
 	},
 
 	/* CE4: host->target HTT */
@@ -934,6 +937,7 @@ const struct ce_attr ath12k_wifi7_host_ce_config_ipq5332[] = {
 		.src_nentries = 0,
 		.src_sz_max = 0,
 		.dest_nentries = 0,
+		.send_cb = ath12k_htc_tx_completion_handler,
 	},
 
 	/* CE8: Target HIF memcpy (Generic HIF memcypy) */

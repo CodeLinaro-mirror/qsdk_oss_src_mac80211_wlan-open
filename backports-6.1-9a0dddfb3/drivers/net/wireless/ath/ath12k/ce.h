@@ -110,6 +110,8 @@ struct ce_attr {
 	unsigned int dest_nentries;
 
 	void (*recv_cb)(struct ath12k_base *ab, struct sk_buff *skb);
+
+	void (*send_cb)(struct ath12k_base *, struct sk_buff *);
 };
 
 #define CE_DESC_RING_ALIGN 8
@@ -163,7 +165,7 @@ struct ath12k_ce_pipe {
 	unsigned int buf_sz;
 	unsigned int rx_buf_needed;
 
-	void (*send_cb)(struct ath12k_ce_pipe *pipe);
+	void (*send_cb)(struct ath12k_base *, struct sk_buff *);
 	void (*recv_cb)(struct ath12k_base *ab, struct sk_buff *skb);
 
 #if LINUX_VERSION_IS_GEQ(6,13,0)
