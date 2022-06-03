@@ -3436,11 +3436,14 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 
 	arg->peer_nss = min(link_sta->rx_nss, max_nss);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "mac he peer %pM nss %d mcs cnt %d\n",
-		   link_sta->addr, arg->peer_nss, arg->peer_he_mcs_count);
+        arg->punct_bitmap = ~arvif->punct_bitmap;
+        if (ieee80211_vif_is_mesh(vif) && link_sta->punctured)
+                arg->punct_bitmap = ~link_sta->punctured;
 
-	arg->punct_bitmap = ~arvif->punct_bitmap;
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "mac eht peer %pM nss %d mcs cnt %d ru_punct_bitmap 0x%x\n",
+		   link_sta->addr, arg->peer_nss, arg->peer_he_mcs_count, arg->punct_bitmap);
+
 	arg->enable_mcs15 = link_conf->enable_mcs15;
 }
 
