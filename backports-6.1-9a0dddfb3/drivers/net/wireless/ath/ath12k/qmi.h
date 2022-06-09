@@ -31,11 +31,15 @@
 #define ATH12K_QMI_FW_MEM_REQ_SEGMENT_CNT	3
 #define ATH12K_QMI_WLFW_MAX_DEV_MEM_NUM_V01 4
 #define ATH12K_QMI_DEVMEM_CMEM_INDEX	0
+#define ATH12K_QMI_M3_DUMP_SIZE                 0x100000
+
 
 #define QMI_WLFW_REQUEST_MEM_IND_V01		0x0035
 #define QMI_WLFW_FW_MEM_READY_IND_V01		0x0037
 #define QMI_WLFW_COLD_BOOT_CAL_DONE_IND_V01	0x0021
 #define QMI_WLFW_FW_READY_IND_V01		0x0038
+#define QMI_WLFW_M3_DUMP_UPLOAD_REQ_IND_V01    	0x004D
+#define QMI_WLFW_M3_DUMP_UPLOAD_DONE_REQ_V01   	0x004E
 
 #define QMI_WLANFW_MAX_DATA_SIZE_V01		6144
 #define ATH12K_FIRMWARE_MODE_OFF		4
@@ -87,6 +91,7 @@ enum ath12k_qmi_event_type {
 	ATH12K_QMI_EVENT_POWER_UP,
 	ATH12K_QMI_EVENT_POWER_DOWN,
 	ATH12K_QMI_EVENT_HOST_CAP,
+	ATH12K_QMI_EVENT_M3_DUMP_UPLOAD_REQ = 18,
 	ATH12K_QMI_EVENT_MAX,
 };
 
@@ -94,6 +99,13 @@ struct ath12k_qmi_driver_event {
 	struct list_head list;
 	enum ath12k_qmi_event_type type;
 	void *data;
+};
+
+struct ath12k_qmi_m3_dump_data {
+	u32 pdev_id;
+	u32 size;
+	u64 timestamp;
+	char *addr;
 };
 
 struct ath12k_qmi_ce_cfg {
@@ -173,7 +185,23 @@ struct ath12k_qmi {
 	struct dev_mem_info dev_mem[ATH12K_QMI_WLFW_MAX_DEV_MEM_NUM_V01];
 };
 
+struct ath12k_qmi_m3_dump_upload_req_data {
+        u32 pdev_id;
+        u64 addr;
+        u64 size;
+};
+
 #define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		261
+
+struct qmi_wlanfw_m3_dump_upload_done_req_msg_v01 {
+	u32 pdev_id;
+	u32 status;
+};
+
+struct qmi_wlanfw_m3_dump_upload_done_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
 #define QMI_WLANFW_HOST_CAP_REQ_V01			0x0034
 #define QMI_WLANFW_HOST_CAP_RESP_MSG_V01_MAX_LEN	7
 #define QMI_WLFW_HOST_CAP_RESP_V01			0x0034
@@ -328,6 +356,8 @@ struct qmi_wlanfw_ind_register_req_msg_v01 {
 	u8 xo_cal_enable;
 	u8 cal_done_enable_valid;
 	u8 cal_done_enable;
+	u8 m3_dump_upload_req_enable_valid;
+	u8 m3_dump_upload_req_enable;
 };
 
 struct qmi_wlanfw_ind_register_resp_msg_v01 {
@@ -565,6 +595,8 @@ struct qmi_wlanfw_bdf_download_resp_msg_v01 {
 #define QMI_WLANFW_M3_INFO_RESP_V01		0x003C
 #define QMI_WLANFW_M3_INFO_REQ_V01		0x003C
 
+#define QMI_WLANFW_M3_DUMP_UPLOAD_DONE_REQ_MSG_V01_MAX_MSG_LEN	14
+
 struct qmi_wlanfw_m3_info_req_msg_v01 {
 	u64 addr;
 	u32 size;
@@ -652,6 +684,12 @@ static inline bool ath12k_qmi_get_event_block(struct ath12k_qmi *qmi)
 	return qmi->block_event;
 }
 
+struct qmi_wlanfw_m3_dump_upload_req_ind_msg_v01 {
+	u32 pdev_id;
+	u64 addr;
+	u64 size;
+};
+
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			      u32 mode);
 void ath12k_qmi_firmware_stop(struct ath12k_base *ab);
@@ -661,5 +699,6 @@ int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab);
 void ath12k_qmi_free_resource(struct ath12k_base *ab);
 void ath12k_qmi_trigger_host_cap(struct ath12k_base *ab);
 void ath12k_qmi_reset_mlo_mem(struct ath12k_hw_group *ag);
-
+int ath12k_qmi_m3_dump_upload_done_ind_send(struct ath12k_base *ab,
+                                            u32 pdev_id, int status);
 #endif

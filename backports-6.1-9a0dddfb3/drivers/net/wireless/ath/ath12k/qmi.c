@@ -15,6 +15,7 @@
 #include <net/sock.h>
 #include <linux/of_address.h>
 #include <linux/ioport.h>
+#include <linux/devcoredump.h>
 
 #define SLEEP_CLOCK_SELECT_INTERNAL_BIT	0x02
 #define HOST_CSTATE_BIT			0x04
@@ -840,6 +841,24 @@ static const struct qmi_elem_info qmi_wlanfw_ind_register_req_msg_v01_ei[] = {
 		.tlv_type	= 0x1B,
 		.offset		= offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
 					   cal_done_enable),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x20,
+		.offset         = offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
+					   m3_dump_upload_req_enable_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x20,
+		.offset         = offsetof(struct qmi_wlanfw_ind_register_req_msg_v01,
+					   m3_dump_upload_req_enable),
 	},
 	{
 		.data_type	= QMI_EOTI,
@@ -2094,6 +2113,87 @@ static const struct qmi_elem_info qmi_wlanfw_wlan_ini_resp_msg_v01_ei[] = {
 	},
 };
 
+static struct qmi_elem_info qmi_wlanfw_m3_dump_upload_req_ind_msg_v01_ei[] = {
+        {
+                .data_type = QMI_UNSIGNED_4_BYTE,
+                .elem_len = 1,
+                .elem_size = sizeof(u32),
+                .array_type = NO_ARRAY,
+                .tlv_type = 0x01,
+                .offset = offsetof(struct qmi_wlanfw_m3_dump_upload_req_ind_msg_v01,
+                                   pdev_id),
+        },
+        {
+                .data_type = QMI_UNSIGNED_8_BYTE,
+                .elem_len = 1,
+                .elem_size = sizeof(u64),
+                .array_type = NO_ARRAY,
+                .tlv_type = 0x02,
+                .offset = offsetof(struct qmi_wlanfw_m3_dump_upload_req_ind_msg_v01,
+                                   addr),
+        },
+        {
+                .data_type = QMI_UNSIGNED_8_BYTE,
+                .elem_len = 1,
+                .elem_size = sizeof(u64),
+                .array_type = NO_ARRAY,
+                .tlv_type = 0x03,
+                .offset = offsetof(struct qmi_wlanfw_m3_dump_upload_req_ind_msg_v01,
+                                   size),
+        },
+        {
+                .data_type = QMI_EOTI,
+                .array_type = NO_ARRAY,
+                .tlv_type = QMI_COMMON_TLV_TYPE,
+        },
+};
+
+static struct qmi_elem_info qmi_wlanfw_m3_dump_upload_done_req_msg_v01_ei[] = {
+        {
+                .data_type = QMI_UNSIGNED_4_BYTE,
+                .elem_len = 1,
+                .elem_size = sizeof(u32),
+                .array_type = NO_ARRAY,
+                .tlv_type = 0x01,
+                .offset = offsetof(struct
+                                   qmi_wlanfw_m3_dump_upload_done_req_msg_v01,
+                                   pdev_id),
+        },
+        {
+                .data_type = QMI_UNSIGNED_4_BYTE,
+                .elem_len = 1,
+                .elem_size = sizeof(u32),
+                .array_type = NO_ARRAY,
+                .tlv_type = 0x02,
+                .offset = offsetof(struct
+                                   qmi_wlanfw_m3_dump_upload_done_req_msg_v01,
+                                   status),
+        },
+        {
+                .data_type = QMI_EOTI,
+                .array_type = NO_ARRAY,
+                .tlv_type = QMI_COMMON_TLV_TYPE,
+        },
+};
+
+static struct qmi_elem_info qmi_wlanfw_m3_dump_upload_done_resp_msg_v01_ei[] = {
+        {
+                .data_type = QMI_STRUCT,
+                .elem_len = 1,
+                .elem_size = sizeof(struct qmi_response_type_v01),
+                .array_type = NO_ARRAY,
+                .tlv_type = 0x02,
+                .offset = offsetof(struct qmi_wlanfw_m3_dump_upload_done_resp_msg_v01,
+                                   resp),
+                .ei_array = qmi_response_type_v01_ei,
+        },
+        {
+                .data_type = QMI_EOTI,
+                .array_type = NO_ARRAY,
+                .tlv_type = QMI_COMMON_TLV_TYPE,
+        },
+};
+
 static void ath12k_host_cap_hw_link_id_init(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab, *partner_ab;
@@ -2421,6 +2521,8 @@ static int ath12k_qmi_fw_ind_register_send(struct ath12k_base *ab)
 	req->cal_done_enable = 1;
 	req->fw_init_done_enable_valid = 1;
 	req->fw_init_done_enable = 1;
+	req->m3_dump_upload_req_enable_valid = 1;
+	req->m3_dump_upload_req_enable = 1;
 
 	req->pin_connect_result_enable_valid = 0;
 	req->pin_connect_result_enable = 0;
@@ -3702,6 +3804,71 @@ int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 	return 0;
 }
 
+int ath12k_qmi_m3_dump_upload_done_ind_send(struct ath12k_base *ab,
+                                            u32 pdev_id, int status)
+{
+        struct qmi_wlanfw_m3_dump_upload_done_req_msg_v01 *req;
+        struct qmi_wlanfw_m3_dump_upload_done_resp_msg_v01 *resp;
+        struct qmi_txn txn;
+        int ret;
+
+        req = kzalloc(sizeof(*req), GFP_KERNEL);
+        if (!req)
+                return -ENOMEM;
+
+        resp = kzalloc(sizeof(*resp), GFP_KERNEL);
+        if (!resp) {
+                kfree(req);
+                return -ENOMEM;
+        }
+
+        req->pdev_id = pdev_id;
+        req->status = status;
+
+        ret = qmi_txn_init(&ab->qmi.handle, &txn,
+                           qmi_wlanfw_m3_dump_upload_done_resp_msg_v01_ei, resp);
+        if (ret < 0)
+                goto out;
+
+        ret =
+        qmi_send_request(&ab->qmi.handle, NULL, &txn,
+                         QMI_WLFW_M3_DUMP_UPLOAD_DONE_REQ_V01,
+                         QMI_WLANFW_M3_DUMP_UPLOAD_DONE_REQ_MSG_V01_MAX_MSG_LEN,
+                         qmi_wlanfw_m3_dump_upload_done_req_msg_v01_ei, req);
+        if (ret < 0) {
+                qmi_txn_cancel(&txn);
+                ath12k_warn(ab, "Failed to send M3 dump upload done request, err %d\n",
+                            ret);
+                goto out;
+        }
+
+        ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+        if (ret < 0)
+                goto out;
+
+        if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+                ath12k_warn(ab, "qmi M3 upload done req failed, result: %d, err: %d\n",
+                            resp->resp.result, resp->resp.error);
+                ret = -EINVAL;
+                goto out;
+        }
+        ath12k_info(ab, "qmi m3 dump uploaded\n");
+
+out:
+        kfree(req);
+        kfree(resp);
+        return ret;
+}
+
+static void ath12k_qmi_event_m3_dump_upload_req(struct ath12k_qmi *qmi,
+                                                void *data)
+{
+        struct ath12k_base *ab = qmi->ab;
+        struct ath12k_qmi_m3_dump_upload_req_data *event_data = data;
+
+        ath12k_coredump_m3_dump(ab, event_data);
+}
+
 static int ath12k_qmi_process_coldboot_calibration(struct ath12k_base *ab)
 {
 	int timeout;
@@ -4109,6 +4276,30 @@ static void ath12k_qmi_msg_cold_boot_cal_done_cb(struct qmi_handle *qmi_hdl,
 	ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi cold boot calibration done\n");
 }
 
+static void ath12k_qmi_m3_dump_upload_req_ind_cb(struct qmi_handle *qmi_hdl,
+                                                 struct sockaddr_qrtr *sq,
+                                                 struct qmi_txn *txn,
+                                                 const void *data)
+{
+        struct ath12k_qmi *qmi = container_of(qmi_hdl, struct ath12k_qmi, handle);
+        struct ath12k_base *ab = qmi->ab;
+        const struct qmi_wlanfw_m3_dump_upload_req_ind_msg_v01 *msg = data;
+        struct ath12k_qmi_m3_dump_upload_req_data *event_data;
+
+        ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi m3 dump memory request\n");
+
+        event_data = kzalloc(sizeof(*event_data), GFP_KERNEL);
+        if (!event_data)
+                return;
+
+        event_data->pdev_id = msg->pdev_id;
+        event_data->addr = msg->addr;
+        event_data->size = msg->size;
+
+        ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_M3_DUMP_UPLOAD_REQ,
+                                     event_data);
+}
+
 static const struct qmi_msg_handler ath12k_qmi_msg_handlers[] = {
 	{
 		.type = QMI_INDICATION,
@@ -4138,6 +4329,14 @@ static const struct qmi_msg_handler ath12k_qmi_msg_handlers[] = {
 		.decoded_size =
 			sizeof(struct qmi_wlanfw_fw_cold_cal_done_ind_msg_v01),
 		.fn = ath12k_qmi_msg_cold_boot_cal_done_cb,
+	},
+	{
+		.type = QMI_INDICATION,
+		.msg_id = QMI_WLFW_M3_DUMP_UPLOAD_REQ_IND_V01,
+		.ei = qmi_wlanfw_m3_dump_upload_req_ind_msg_v01_ei,
+		.decoded_size =
+			sizeof(struct qmi_wlanfw_m3_dump_upload_req_ind_msg_v01),
+		.fn = ath12k_qmi_m3_dump_upload_req_ind_cb,
 	},
 	/* end of list */
 	{},
@@ -4288,6 +4487,9 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 				set_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
 			break;
 		case ATH12K_QMI_EVENT_COLD_BOOT_CAL_DONE:
+			break;
+		case ATH12K_QMI_EVENT_M3_DUMP_UPLOAD_REQ:
+			ath12k_qmi_event_m3_dump_upload_req(qmi, event->data);
 			break;
 		default:
 			ath12k_warn(ab, "invalid event type: %d", event->type);

@@ -698,3 +698,45 @@ end:
         ath12k_coredump_free_seg_info(ab, segment, phnum);
         kfree(segment);
 }
+
+void ath12k_coredump_m3_dump(struct ath12k_base *ab,
+			     struct ath12k_qmi_m3_dump_upload_req_data *event_data)
+{
+	struct target_mem_chunk *target_mem = ab->qmi.target_mem;
+	struct ath12k_qmi_m3_dump_data m3_dump_data;
+	void *dump;
+	int i, ret = 0;
+
+	dump = vzalloc(event_data->size);
+	if (!dump) {
+		return;
+	}
+
+	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
+		if (target_mem[i].paddr == event_data->addr &&
+		    event_data->size <= target_mem[i].size)
+			break;
+	}
+
+	if (i == ab->qmi.mem_seg_count) {
+		ath12k_warn(ab, "qmi invalid paddr from firmware for M3 dump\n");
+		ret = -EINVAL;
+		vfree(dump);
+		goto send_resp;
+	}
+
+	m3_dump_data.addr = target_mem[i].v.ioaddr;
+	m3_dump_data.size = event_data->size;
+	m3_dump_data.pdev_id = event_data->pdev_id;
+	m3_dump_data.timestamp = ktime_to_ms(ktime_get());
+
+	memcpy(dump, m3_dump_data.addr, m3_dump_data.size);
+
+	dev_coredumpv(ab->dev, dump, m3_dump_data.size,
+		      GFP_KERNEL);
+
+send_resp:
+       ret = ath12k_qmi_m3_dump_upload_done_ind_send(ab, event_data->pdev_id, ret);
+       if (ret < 0)
+               ath12k_warn(ab, "qmi M3 dump upload done failed\n");
+}

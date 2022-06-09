@@ -111,6 +111,8 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab);
 void ath12k_coredump_build_inline(struct ath12k_base *ab,
                                  struct ath12k_dump_segment *segments, int num_seg);
 void ath12k_coredump_ahb_collect(struct ath12k_base *ab);
+void ath12k_coredump_m3_dump(struct ath12k_base *ab,
+                            struct ath12k_qmi_m3_dump_upload_req_data *event_data);
 #else
 static inline void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 {
@@ -123,6 +125,11 @@ static inline void ath12k_coredump_build_inline(struct ath12k_base *ab,
 }
 
 static inline void ath12k_coredump_ahb_collect(struct ath12k_base *ab)
+{
+}
+static inline void
+ath12k_coredump_m3_dump(struct ath12k_base *ab,
+                        struct ath12k_qmi_m3_dump_upload_req_data *event_data)
 {
 }
 #endif
