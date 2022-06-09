@@ -1790,6 +1790,36 @@ free_bcn_skb:
 	return ret;
 }
 
+void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif)
+{
+	struct ieee80211_vif *vif = arvif->ahvif->vif;
+	struct ath12k *ar = arvif->ar;
+	struct ieee80211_bss_conf* link_conf;
+
+	link_conf = ath12k_mac_get_link_bss_conf(arvif);
+
+	if (!link_conf) {
+		ath12k_warn(ar->ab, "unable to access bss link conf in bcn tx event\n");
+		return;
+	}
+
+	if (!link_conf->color_change_active && !arvif->bcca_zero_sent)
+		return;
+
+	if (link_conf->color_change_active &&
+	    ieee80211_beacon_cntdwn_is_complete(vif, arvif->link_id)) {
+		arvif->bcca_zero_sent = true;
+		ieee80211_color_change_finish(vif, arvif->link_id);
+		return;
+	}
+
+	arvif->bcca_zero_sent = false;
+
+	if (link_conf->color_change_active && !link_conf->ema_ap)
+		ieee80211_beacon_update_cntdwn(vif, arvif->link_id);
+	ath12k_mac_setup_bcn_tmpl(arvif);
+}
+
 static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 				     struct ieee80211_bss_conf *info)
 {
@@ -4014,6 +4044,26 @@ static void ath12k_recalculate_mgmt_rate(struct ath12k *ar,
 		ath12k_warn(ar->ab, "failed to set beacon tx rate %d\n", ret);
 }
 
+static void ath12k_update_obss_color_notify_work(struct wiphy *wiphy,
+						 struct wiphy_work *work)
+{
+	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
+					update_obss_color_notify_work);
+	struct ath12k *ar;
+
+	ar = arvif->ar;
+
+	if (!ar)
+		return;
+
+	if (arvif->is_created)
+		ieee80211_obss_color_collision_notify(arvif->ahvif->vif,
+						       arvif->obss_color_bitmap,
+						       GFP_KERNEL,
+						       arvif->link_id);
+	arvif->obss_color_bitmap = 0;
+}
+
 static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 				  struct ath12k_link_vif *arvif, int link_id)
 {
@@ -4044,6 +4094,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	arvif->key_cipher = INVALID_CIPHER;
 	INIT_DELAYED_WORK(&ahvif->deflink.connection_loss_work,
 			  ath12k_mac_vif_sta_connection_loss_work);
+	wiphy_work_init(&arvif->update_obss_color_notify_work,
+			ath12k_update_obss_color_notify_work);
 
 	for (i = 0; i < ARRAY_SIZE(arvif->bitrate_mask.control); i++) {
 		arvif->bitrate_mask.control[i].legacy = 0xffffffff;
@@ -4117,6 +4169,9 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 
 	if (arvif == &ahvif->deflink)
 		cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
+
+	wiphy_work_cancel(ar->ah->hw->wiphy,
+			  &arvif->update_obss_color_notify_work);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac remove link interface (vdev %d link id %d)",
 		   arvif->vdev_id, arvif->link_id);
@@ -4587,6 +4642,7 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 	int ret;
 	u8 rateidx;
 	u32 rate;
+	bool color_collision_detect;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -4621,12 +4677,18 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 				   "Set burst beacon mode for VDEV: %d\n",
 				   arvif->vdev_id);
+		if (!arvif->do_not_send_tmpl || !arvif->bcca_zero_sent) {
+			ret = ath12k_mac_setup_bcn_tmpl(arvif);
+			if (ret)
+				ath12k_warn(ar->ab, "failed to update bcn template: %d\n",
+					    ret);
+		}
 
-		ret = ath12k_mac_setup_bcn_tmpl(arvif);
-		if (ret)
-			ath12k_warn(ar->ab, "failed to update bcn template: %d\n",
-				    ret);
-	}
+		if (arvif->bcca_zero_sent)
+			arvif->do_not_send_tmpl = true;
+		else
+			arvif->do_not_send_tmpl = false;
+		}
 
 	if (changed & (BSS_CHANGED_BEACON_INFO | BSS_CHANGED_BEACON)) {
 		arvif->dtim_period = info->dtim_period;
@@ -4835,15 +4897,34 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 		ath12k_mac_config_obss_pd(ar, &info->he_obss_pd);
 
 	if (changed & BSS_CHANGED_HE_BSS_COLOR) {
+		color_collision_detect = (info->he_bss_color.enabled &&
+					  info->he_bss_color.collision_detection_enabled);
 		if (vif->type == NL80211_IFTYPE_AP) {
 			ret = ath12k_wmi_obss_color_cfg_cmd(ar,
 							    arvif->vdev_id,
 							    info->he_bss_color.color,
 							    ATH12K_BSS_COLOR_AP_PERIODS,
-							    info->he_bss_color.enabled);
+							    color_collision_detect);
 			if (ret)
 				ath12k_warn(ar->ab, "failed to set bss color collision on vdev %i: %d\n",
 					    arvif->vdev_id,  ret);
+
+			param_id = WMI_VDEV_PARAM_BSS_COLOR;
+			param_value = info->he_bss_color.color << IEEE80211_HE_OPERATION_BSS_COLOR_OFFSET;
+
+			if (!info->he_bss_color.enabled)
+				param_value |= IEEE80211_HE_OPERATION_BSS_COLOR_DISABLED;
+			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+							    param_id,
+							    param_value);
+			if (ret)
+				ath12k_warn(ar->ab,
+					    "failed to set bss color param on vdev %i: %d\n",
+					    arvif->vdev_id,  ret);
+
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "bss color param 0x%x set on vdev %i\n",
+				   param_value, arvif->vdev_id);
 		} else if (vif->type == NL80211_IFTYPE_STATION) {
 			ret = ath12k_wmi_send_bss_color_change_enable_cmd(ar,
 									  arvif->vdev_id,
@@ -9547,6 +9628,7 @@ void ath12k_mac_11d_scan_stop_all(struct ath12k_base *ab)
 		ath12k_mac_11d_scan_stop(ar);
 	}
 }
+
 int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 {
 	struct ath12k_hw *ah = ar->ah;
@@ -14026,6 +14108,10 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_CQM_RSSI_LIST);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_STA_TX_PWR);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT);
+
+	if (test_bit(WMI_TLV_SERVICE_BSS_COLOR_OFFLOAD, ar->ab->wmi_ab.svc_map))
+		 wiphy_ext_feature_set(ar->ah->hw->wiphy,
+				       NL80211_EXT_FEATURE_BSS_COLOR);
 
 	wiphy->cipher_suites = cipher_suites;
 	wiphy->n_cipher_suites = ARRAY_SIZE(cipher_suites);

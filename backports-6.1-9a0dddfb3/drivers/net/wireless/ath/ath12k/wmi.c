@@ -210,6 +210,8 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_pdev_update_muedca_event) },
 	[WMI_TAG_TWT_ADD_DIALOG_COMPLETE_EVENT] = {
 		.min_len = sizeof(struct wmi_twt_add_dialog_event) },
+	[WMI_TAG_OBSS_COLOR_COLLISION_EVT]
+		= { .min_len = sizeof(struct wmi_obss_color_collision_event) },
 };
 
 __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len)
@@ -7167,12 +7169,24 @@ static void ath12k_vdev_start_resp_event(struct ath12k_base *ab, struct sk_buff 
 
 static void ath12k_bcn_tx_status_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
+	struct ath12k_link_vif *arvif;
 	u32 vdev_id, tx_status;
 
 	if (ath12k_pull_bcn_tx_status_ev(ab, skb, &vdev_id, &tx_status) != 0) {
 		ath12k_warn(ab, "failed to extract bcn tx status");
 		return;
 	}
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+	if (!arvif) {
+		ath12k_warn(ab, "invalid vdev id %d in bcn_tx_status",
+			    vdev_id);
+		rcu_read_unlock();
+		return;
+	}
+	ath12k_mac_bcn_tx_event(arvif);
+	rcu_read_unlock();
 }
 
 static void ath12k_vdev_stopped_event(struct ath12k_base *ab, struct sk_buff *skb)
@@ -10521,6 +10535,60 @@ exit:
 	kfree(tb);
 }
 
+static void
+ath12k_wmi_obss_color_collision_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	const struct wmi_obss_color_collision_event *ev;
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar;
+	const void **tb;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_OBSS_COLOR_COLLISION_EVT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch obss color collision ev");
+		goto exit;
+	}
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, ev->vdev_id);
+	if (!arvif) {
+		ath12k_warn(ab, "failed to find arvif with vedv id %d in obss_color_collision_event\n",
+				ev->vdev_id);
+		goto unlock;
+	}
+	switch (ev->evt_type) {
+	case WMI_BSS_COLOR_COLLISION_DETECTION:
+		ar = arvif->ar;
+		arvif->obss_color_bitmap = ev->obss_color_bitmap;
+		rcu_read_unlock();
+		wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy, &arvif->update_obss_color_notify_work);
+
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+				"OBSS color collision detected vdev:%d, event:%d, bitmap:%08llx\n",
+				ev->vdev_id, ev->evt_type, ev->obss_color_bitmap);
+		goto exit;
+	case WMI_BSS_COLOR_COLLISION_DISABLE:
+	case WMI_BSS_COLOR_FREE_SLOT_TIMER_EXPIRY:
+	case WMI_BSS_COLOR_FREE_SLOT_AVAILABLE:
+		goto unlock;
+	default:
+		ath12k_warn(ab, "received unknown obss color collision detetction event\n");
+	}
+
+unlock:
+	rcu_read_unlock();
+exit:
+	kfree(tb);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_cmd_hdr *cmd_hdr;
@@ -10668,7 +10736,6 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	/* add Unsupported events (frequent) here */
 	case WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID:
 	case WMI_MGMT_RX_FW_CONSUMED_EVENTID:
-	case WMI_OBSS_COLOR_COLLISION_DETECTION_EVENTID:
 	case WMI_TWT_DEL_DIALOG_EVENTID:
 	case WMI_TWT_PAUSE_DIALOG_EVENTID:
 	case WMI_TWT_RESUME_DIALOG_EVENTID:
@@ -10697,6 +10764,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_TWT_ADD_DIALOG_EVENTID:
 		ath12k_wmi_twt_add_dialog_event(ab, skb);
+		break;
+	case WMI_OBSS_COLOR_COLLISION_DETECTION_EVENTID:
+		ath12k_wmi_obss_color_collision_event(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
