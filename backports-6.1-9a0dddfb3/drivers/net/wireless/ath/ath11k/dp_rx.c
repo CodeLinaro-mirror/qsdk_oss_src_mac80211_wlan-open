@@ -3465,7 +3465,6 @@ ath11k_dp_rx_update_peer_rate_table_stats(struct ath11k_rx_peer_stats *rx_stats,
 					  struct hal_rx_user_status* user_stats,
 					  u32 num_msdu)
 {
-	u32 rate_idx = 0;
 	u32 mcs_idx = (user_stats) ? user_stats->mcs : ppdu_info->mcs;
 	u32 nss_idx = (user_stats) ? user_stats->nss - 1 : ppdu_info->nss - 1;
 	u32 bw_idx = ppdu_info->bw;
@@ -3476,23 +3475,15 @@ ath11k_dp_rx_update_peer_rate_table_stats(struct ath11k_rx_peer_stats *rx_stats,
 		return;
 	}
 
-	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11N ||
-	    ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AC) {
-		rate_idx = mcs_idx * 8 + 8 * 10 * nss_idx;
-		rate_idx += bw_idx * 2 + gi_idx;
-	} else if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AX) {
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AX) {
 		gi_idx = ath11k_he_gi_to_nl80211_he_gi(ppdu_info->gi);
-		rate_idx = mcs_idx * 12 + 12 * 12 * nss_idx;
-		rate_idx += bw_idx * 3 + gi_idx;
-	}  else {
-		return;
 	}
 
-	rx_stats->pkt_stats.rx_rate[rate_idx] += num_msdu;
+	rx_stats->pkt_stats.rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += num_msdu;
 	if (user_stats)
-		rx_stats->byte_stats.rx_rate[rate_idx] += user_stats->mpdu_ok_byte_count;
+		rx_stats->byte_stats.rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += user_stats->mpdu_ok_byte_count;
 	else
-		rx_stats->byte_stats.rx_rate[rate_idx] += ppdu_info->mpdu_len;
+		rx_stats->byte_stats.rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += ppdu_info->mpdu_len;
 }
 
 static void ath11k_dp_rx_update_peer_su_stats(struct ath11k *ar,

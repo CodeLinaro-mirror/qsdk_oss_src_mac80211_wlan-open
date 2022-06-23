@@ -409,8 +409,7 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 	int len = 0, i, retval = 0;
 	const int size = 4 * 4096;
 	char *buf;
-	int he_rates_avail;
-	int rate_table_len;
+	int mcs = 0, bw = 0, nss = 0, gi = 0, bw_num = 0, num_run, found;
 	char *legacy_rate_str[] = {"1Mbps", "2Mbps", "5.5Mbps", "6Mbps",
 				   "9Mbps", "11Mbps", "12Mbps", "18Mbps",
 				   "24Mbps", "36 Mbps", "48Mbps", "54Mbps"};
@@ -423,9 +422,6 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 
 	ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size, size);
 
-	he_rates_avail = (rx_stats->pream_cnt[HAL_RX_PREAMBLE_11AX] > 1) ? 1 : 0;
-	rate_table_len = he_rates_avail ? ATH11K_RX_RATE_TABLE_11AX_NUM :
-					      ATH11K_RX_RATE_TABLE_NUM;
 	mutex_lock(&ar->conf_mutex);
 	spin_lock_bh(&ar->ab->base_lock);
 
@@ -503,12 +499,54 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 			 rx_stats->pkt_stats.bw_count[2],
 			 rx_stats->pkt_stats.bw_count[3]);
 	len += scnprintf(buf + len, size - len, "\nRate Table (packets):\n");
-	for (i = 0; i < rate_table_len; i++)
-		len += scnprintf(buf + len, size - len, "%10llu%s",
-				rx_stats->pkt_stats.rx_rate[i],
-				(i + 1) % (he_rates_avail ? 12 : 8) ? "\t" : "\n");
+	num_run = HAL_RX_BW_MAX * HAL_RX_GI_MAX * HAL_RX_MAX_NSS;
 
-	len += scnprintf(buf + len, size - len, "\nRX success byte stats:\n");
+	for (i = 0; i < num_run; i++) {
+		found = 0;
+		for (mcs = 0; mcs < (HAL_RX_MAX_MCS_HT + 1); mcs++)
+			if (rx_stats->pkt_stats.rx_rate[bw][gi][nss][mcs]) {
+				found = 1;
+				break;
+			}
+
+		if (found) {
+			switch (bw) {
+			case 0:
+				bw_num = 20;
+				break;
+			case 1:
+				bw_num = 40;
+				break;
+			case 2:
+				bw_num = 80;
+				break;
+			case 3:
+				bw_num = 160;
+				break;
+			case 4:
+				bw_num = 320;
+				break;
+			}
+			len += scnprintf(buf + len, size - len, "\n%d Mhz gi %d us %dx%d : ",
+					 bw_num, gi, nss + 1, nss + 1);
+			for (mcs = 0; mcs < (HAL_RX_MAX_MCS_HT + 1); mcs++) {
+				if (rx_stats->pkt_stats.rx_rate[bw][gi][nss][mcs])
+					len += scnprintf(buf + len, size - len, " %d:%llu",
+							 mcs, rx_stats->pkt_stats.rx_rate[bw][gi][nss][mcs]);
+			}
+		}
+
+		if (nss++ >= HAL_RX_MAX_NSS - 1) {
+			nss = 0;
+			if (gi++ >= HAL_RX_GI_MAX - 1) {
+				gi = 0;
+				if (bw < HAL_RX_BW_MAX - 1)
+					bw++;
+			}
+		}
+	}
+
+	len += scnprintf(buf + len, size - len, "\n\nRX success byte stats:\n");
 	len += scnprintf(buf + len, size - len, "\nHE byte stats:\n");
 	for (i = 0; i <= HAL_RX_MAX_MCS_HE; i++)
 		len += scnprintf(buf + len, size - len, "MCS %d: %llu%s", i,
@@ -547,10 +585,54 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 			 rx_stats->byte_stats.bw_count[2],
 			 rx_stats->byte_stats.bw_count[3]);
 	len += scnprintf(buf + len, size - len, "\nRate Table (bytes):\n");
-	for (i = 0; i < rate_table_len; i++)
-		len += scnprintf(buf + len, size - len, "%10llu%s",
-				rx_stats->byte_stats.rx_rate[i],
-				(i + 1) % (he_rates_avail ? 12 : 8) ? "\t" : "\n");
+	bw = 0;
+	gi = 0;
+	nss = 0;
+	for (i = 0; i < num_run; i++) {
+		found = 0;
+		for (mcs = 0; mcs < (HAL_RX_MAX_MCS_HT + 1); mcs++)
+			if (rx_stats->byte_stats.rx_rate[bw][gi][nss][mcs]) {
+				found = 1;
+				break;
+			}
+
+		if (found) {
+			switch (bw) {
+			case 0:
+				bw_num = 20;
+				break;
+			case 1:
+				bw_num = 40;
+				break;
+			case 2:
+				bw_num = 80;
+				break;
+			case 3:
+				bw_num = 160;
+				break;
+			case 4:
+				bw_num = 320;
+				break;
+			}
+			len += scnprintf(buf + len, size - len, "\n%d Mhz gi %d us %dx%d : ",
+					 bw_num, gi, nss + 1, nss + 1);
+			for (mcs = 0; mcs < (HAL_RX_MAX_MCS_HT + 1); mcs++) {
+				if (rx_stats->byte_stats.rx_rate[bw][gi][nss][mcs])
+					len += scnprintf(buf + len, size - len, " %d:%llu",
+							 mcs, rx_stats->byte_stats.rx_rate[bw][gi][nss][mcs]);
+			}
+		}
+
+		if (nss++ >= HAL_RX_MAX_NSS - 1) {
+			nss = 0;
+			if (gi++ >= HAL_RX_GI_MAX - 1) {
+				gi = 0;
+				if (bw < HAL_RX_BW_MAX - 1)
+					bw++;
+			}
+		}
+	}
+	len += scnprintf(buf + len, size - len, "\n");
 	len += scnprintf(buf + len, size - len,
 			 "\nDCM: %llu\nRU26:  %llu \nRU52:  %llu \nRU106: %llu \nRU242: %llu \nRU484: %llu \nRU996: %llu\n",
 			 rx_stats->dcm_count, rx_stats->ru_alloc_cnt[0],
