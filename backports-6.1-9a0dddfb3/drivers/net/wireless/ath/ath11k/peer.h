@@ -98,6 +98,8 @@ struct ath11k_peer {
 	bool delayba_flag;
 	bool peer_logging_enabled;
 	bool delete_in_progress;
+	/* Peer's datapath set flag */
+	bool dp_setup_done;
 };
 
 void ath11k_peer_unmap_event(struct ath11k_base *ab, u16 peer_id);
