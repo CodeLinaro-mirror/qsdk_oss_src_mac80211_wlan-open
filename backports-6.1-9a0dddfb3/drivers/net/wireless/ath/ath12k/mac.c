@@ -1959,7 +1959,7 @@ static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
 	}
 
 	/* FIXME: base on RSN IE/WPA IE is a correct idea? */
-	if (rsnie || wpaie) {
+	if (ar->supports_6ghz || rsnie || wpaie) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 			   "%s: rsn ie found\n", __func__);
 		arg->need_ptk_4_way = true;
