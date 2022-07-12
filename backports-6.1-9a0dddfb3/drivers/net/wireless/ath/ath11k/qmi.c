@@ -2778,7 +2778,7 @@ out:
 	return ret;
 }
 
-static void ath11k_qmi_free_target_mem_chunk(struct ath11k_base *ab)
+void ath11k_qmi_free_target_mem_chunk(struct ath11k_base *ab)
 {
 	int i;
 
@@ -2810,6 +2810,13 @@ static void ath11k_qmi_free_target_mem_chunk(struct ath11k_base *ab)
 		iounmap(ab->qmi.qdss_mem[0].vaddr);
 		ab->qmi.qdss_mem[0].vaddr = NULL;
 	}
+
+	if (ab->mem && ab->userpd_id) {
+		iounmap(ab->mem);
+		ab->mem = NULL;
+		ab->mem_len = 0;
+	}
+
 }
 
 static int ath11k_qmi_alloc_target_mem_chunk(struct ath11k_base *ab)

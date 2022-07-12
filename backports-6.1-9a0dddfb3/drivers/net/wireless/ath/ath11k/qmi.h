@@ -746,4 +746,5 @@ int ath11k_send_qdss_trace_mode_req(struct ath11k_base *ab,
 int ath11k_enable_fwlog(struct ath11k_base *ab);
 int ath11k_qmi_mem_read(struct ath11k_base *ab, u32 mem_addr, void *mem_value, size_t count);
 int ath11k_qmi_mem_write(struct ath11k_base *ab, u32 mem_addr, void* mem_value, size_t count);
+void ath11k_qmi_free_target_mem_chunk(struct ath11k_base *ab);
 #endif

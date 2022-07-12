@@ -2390,6 +2390,8 @@ int ath11k_core_ssr_notifier_cb(struct notifier_block *nb, unsigned long event,
 	ath11k_hal_dump_srng_stats(qmi->ab);
 	/* TODO Add more driver stats */
 
+	ath11k_qmi_free_target_mem_chunk(qmi->ab);
+
 	/* Crash the system once all the stats are dumped */
 	if(!qmi->ab->fw_recovery_support)
 		BUG_ON(1);
