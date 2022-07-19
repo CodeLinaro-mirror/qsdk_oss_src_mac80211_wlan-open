@@ -2771,11 +2771,77 @@ static const struct file_operations fops_fw_recovery = {
 	.open = simple_open,
 };
 
+static ssize_t ath12k_read_fw_dbglog(struct file *file,
+				     char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	size_t len;
+	char buf[128];
+
+	len = scnprintf(buf, sizeof(buf), "%u 0x%016llx\n",
+			ab->fw_dbglog_param, ab->fw_dbglog_val);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath12k_write_fw_dbglog(struct file *file,
+				      const char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k *ar = ab->pdevs[0].ar;
+	char buf[128] = {0};
+	unsigned int param;
+	u64 value;
+	int ret;
+
+	if (!ar)
+		return -EINVAL;
+
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
+				     user_buf, count);
+	if (ret <= 0)
+		goto out;
+
+	ret = sscanf(buf, "%u %llx", &param, &value);
+
+	if (ret != 2) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ab->fw_dbglog_param = param;
+	ab->fw_dbglog_val = value;
+	ret = ath12k_wmi_dbglog_cfg(ar, param, value);
+	if (ret) {
+		ath12k_warn(ab, "dbglog cfg failed from debugfs: %d\n",
+			    ret);
+		goto out;
+	}
+
+	ret = count;
+
+out:
+	return ret;
+}
+
+static const struct file_operations fops_fw_dbglog = {
+	.read = ath12k_read_fw_dbglog,
+	.write = ath12k_write_fw_dbglog,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
 			    &fops_simulate_fw_crash);
 	debugfs_create_file("set_fw_recovery", 0600, ab->debugfs_soc, ab,
 			    &fops_fw_recovery);
+	debugfs_create_file("fw_dbglog_config", 0600, ab->debugfs_soc, ab,
+			    &fops_fw_dbglog);
 }
 
 void ath12k_debugfs_unregister(struct ath12k *ar)

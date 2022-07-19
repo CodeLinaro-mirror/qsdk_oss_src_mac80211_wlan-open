@@ -5300,6 +5300,21 @@ struct wmi_probe_tmpl_cmd {
 	__le32 buf_len;
 } __packed;
 
+enum wmi_dblog_param {
+	WMI_DEBUG_LOG_PARAM_LOG_LEVEL = 0x1,
+	WMI_DEBUG_LOG_PARAM_VDEV_ENABLE,
+	WMI_DEBUG_LOG_PARAM_VDEV_DISABLE,
+	WMI_DEBUG_LOG_PARAM_VDEV_ENABLE_BITMAP,
+	WMI_DEBUG_LOG_PARAM_MOD_ENABLE_BITMAP,
+	WMI_DEBUG_LOG_PARAM_WOW_MOD_ENABLE_BITMAP,
+};
+
+struct wmi_dbglog_config_cmd_fixed_param {
+	u32 tlv_header;
+	u32 dbg_log_param;
+	u32 value;
+} __packed;
+
 #define WMI_MLO_CMD_TIMEOUT_HZ (5 * HZ)
 #define WMI_SERVICE_READY_TIMEOUT_HZ (5 * HZ)
 #define WMI_SEND_TIMEOUT_HZ (3 * HZ)
@@ -6519,5 +6534,6 @@ void ath12k_wmi_fw_stats_dump(struct ath12k *ar,
 			      struct ath12k_fw_stats *fw_stats, u32 stats_id,
 			      char *buf);
 int ath12k_wmi_pdev_m3_dump_enable(struct ath12k *ar, u32 enable);
+int ath12k_wmi_dbglog_cfg(struct ath12k *ar, u32 param, u64 value);
 
 #endif

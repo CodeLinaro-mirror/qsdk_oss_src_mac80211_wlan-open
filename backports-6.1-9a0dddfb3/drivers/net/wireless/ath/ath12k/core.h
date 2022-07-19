@@ -1142,6 +1142,9 @@ struct ath12k_base {
 
 	enum ath12k_fw_recovery_option fw_recovery_support;
 
+	u32 fw_dbglog_param;
+	u64 fw_dbglog_val;
+
 	u64 fw_soc_drop_count;
 	bool static_window_map;
 	struct device_node *hremote_node;
