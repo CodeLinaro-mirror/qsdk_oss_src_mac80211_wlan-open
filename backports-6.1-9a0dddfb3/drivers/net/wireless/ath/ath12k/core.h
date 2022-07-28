@@ -375,6 +375,7 @@ struct ath12k_link_vif {
 	bool do_not_send_tmpl;
 	u64 obss_color_bitmap;
 	struct wiphy_work update_obss_color_notify_work;
+	struct wiphy_work update_bcn_template_work;
 };
 
 struct ath12k_dp_link_vif {

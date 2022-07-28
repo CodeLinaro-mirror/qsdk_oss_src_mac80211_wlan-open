@@ -1790,6 +1790,26 @@ free_bcn_skb:
 	return ret;
 }
 
+static void ath12k_update_bcn_template_work(struct wiphy *wiphy,
+					    struct wiphy_work *work)
+{
+        struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
+                                        update_bcn_template_work);
+        struct ath12k *ar = arvif->ar;
+        int ret = -EINVAL;
+
+	lockdep_assert_wiphy(wiphy);
+
+        if (!ar)
+                return;
+
+        if (arvif->is_created)
+                ret = ath12k_mac_setup_bcn_tmpl(arvif);
+        if (ret)
+                ath12k_warn(ar->ab, "failed to update bcn tmpl for vdev_id: %d ret: %d\n",
+                                arvif->vdev_id, ret);
+}
+
 void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif)
 {
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
@@ -1817,7 +1837,8 @@ void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif)
 
 	if (link_conf->color_change_active && !link_conf->ema_ap)
 		ieee80211_beacon_update_cntdwn(vif, arvif->link_id);
-	ath12k_mac_setup_bcn_tmpl(arvif);
+	wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy,
+			 &arvif->update_bcn_template_work);
 }
 
 static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
@@ -4096,6 +4117,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 			  ath12k_mac_vif_sta_connection_loss_work);
 	wiphy_work_init(&arvif->update_obss_color_notify_work,
 			ath12k_update_obss_color_notify_work);
+	wiphy_work_init(&arvif->update_bcn_template_work,
+			ath12k_update_bcn_template_work);
 
 	for (i = 0; i < ARRAY_SIZE(arvif->bitrate_mask.control); i++) {
 		arvif->bitrate_mask.control[i].legacy = 0xffffffff;
@@ -4172,6 +4195,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 
 	wiphy_work_cancel(ar->ah->hw->wiphy,
 			  &arvif->update_obss_color_notify_work);
+	wiphy_work_cancel(ah->hw->wiphy,
+			  &arvif->update_bcn_template_work);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac remove link interface (vdev %d link id %d)",
 		   arvif->vdev_id, arvif->link_id);
