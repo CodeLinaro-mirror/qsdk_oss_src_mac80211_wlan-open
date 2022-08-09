@@ -445,8 +445,8 @@ int ath11k_dp_rxbufs_replenish(struct ath11k_base *ab, int mac_id,
 			buf_id = buf_ids[buf_id_index];
 			idr_replace(&rx_ring->bufs_idr, skb, buf_id);
 		} else {
-			buf_id = idr_alloc(&rx_ring->bufs_idr, skb, 0,
-					rx_ring->bufs_max * 3, GFP_ATOMIC);
+			buf_id = idr_alloc(&rx_ring->bufs_idr, skb, 1,
+					(rx_ring->bufs_max * 3) + 1, GFP_ATOMIC);
 		}
 		spin_unlock_bh(&rx_ring->idr_lock);
 		if (buf_id <= 0)
@@ -3338,6 +3338,16 @@ try_again:
 	while (likely(desc =
 	      (struct hal_reo_dest_ring *)ath11k_hal_srng_dst_get_next_entry(ab,
 									     srng))) {
+
+		push_reason = FIELD_GET(HAL_REO_DEST_RING_INFO0_PUSH_REASON,
+					desc->info0);
+		if (unlikely(push_reason ==
+		    HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED)) {
+			ath11k_warn(ab,"Received invalid desc\n");
+			ab->soc_stats.hal_reo_error[dp->reo_dst_ring[ring_id].ring_id]++;
+			continue;
+		}
+
 		cookie = FIELD_GET(BUFFER_ADDR_INFO1_SW_COOKIE,
 				   desc->buf_addr_info.info1);
 		buf_id = FIELD_GET(DP_RXDMA_BUF_COOKIE_BUF_ID,
@@ -3373,8 +3383,6 @@ try_again:
 
 		num_buffs_reaped[mac_id]++;
 
-		push_reason = FIELD_GET(HAL_REO_DEST_RING_INFO0_PUSH_REASON,
-					desc->info0);
 		if (unlikely(push_reason !=
 			     HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION)) {
 			dev_kfree_skb_any(msdu);
