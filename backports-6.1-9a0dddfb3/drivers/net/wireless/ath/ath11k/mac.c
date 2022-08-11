@@ -5595,12 +5595,6 @@ static int ath11k_station_disassoc(struct ath11k *ar,
 			return ret;
 	}
 
-	ret = ath11k_clear_peer_keys(arvif, sta->addr);
-	if (ret) {
-		ath11k_warn(ar->ab, "failed to clear all peer keys for vdev %i: %d\n",
-			    arvif->vdev_id, ret);
-		return ret;
-	}
 	return 0;
 }
 
@@ -12213,6 +12207,17 @@ static int ath11k_mac_op_sta_state(struct ieee80211_hw *hw,
 			if (ath11k_smart_ant_sta_connect(ar, arvif, sta))
 				ath11k_warn(ar->ab, "Smart antenna station connect failed, disabling smart antenna for %pM\n",
 					    sta->addr);
+		}
+
+		/* Driver should clear the peer keys during mac80211's ref ptr
+		 * gets cleared in __sta_info_destroy_part2 (trans from
+		 * IEEE80211_STA_AUTHORIZED to IEEE80211_STA_ASSOC)
+		 */
+		ret = ath11k_clear_peer_keys(arvif, sta->addr);
+		if (ret) {
+			ath11k_warn(ar->ab, "failed to clear all peer keys for vdev %i: %d\n",
+					arvif->vdev_id, ret);
+			return ret;
 		}
 	} else if (old_state == IEEE80211_STA_ASSOC &&
 		   new_state == IEEE80211_STA_AUTHORIZED) {
