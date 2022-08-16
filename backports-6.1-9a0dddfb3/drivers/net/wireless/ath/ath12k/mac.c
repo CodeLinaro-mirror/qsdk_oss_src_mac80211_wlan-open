@@ -1199,8 +1199,10 @@ static int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
 		   ATH12K_VDEV_SETUP_TIMEOUT_HZ);
 
 	if (!wait_for_completion_timeout(&ar->vdev_setup_done,
-					 ATH12K_VDEV_SETUP_TIMEOUT_HZ))
+					 ATH12K_VDEV_SETUP_TIMEOUT_HZ)){
+		WARN_ON(1);
 		return -ETIMEDOUT;
+	}
 
 	return ar->last_wmi_vdev_start_status ? -EINVAL : 0;
 }
@@ -10699,9 +10701,30 @@ static int ath12k_mac_vdev_start(struct ath12k_link_vif *arvif,
 }
 
 static int ath12k_mac_vdev_restart(struct ath12k_link_vif *arvif,
-				   struct ieee80211_chanctx_conf *ctx)
+				   struct ieee80211_chanctx_conf *ctx,
+				   bool pseudo_restart)
 {
-	return ath12k_mac_vdev_start_restart(arvif, ctx, true);
+	struct ath12k_base *ab = arvif->ar->ab;
+	int ret;
+
+	if(!pseudo_restart)
+		return ath12k_mac_vdev_start_restart(arvif, ctx, true);
+
+	ret = ath12k_mac_vdev_stop(arvif);
+	if (ret) {
+		ath12k_warn(ab, "failed to stop vdev %d: %d during restart\n",
+			    arvif->vdev_id, ret);
+		return ret;
+	}
+
+	ret = ath12k_mac_vdev_start(arvif, ctx);
+	if (ret) {
+		ath12k_warn(ab, "failed to start vdev %d: %d during restart\n",
+			    arvif->vdev_id, ret);
+		return ret;
+	}
+
+	return ret;
 }
 
 struct ath12k_mac_change_chanctx_arg {
@@ -10840,6 +10863,92 @@ static int ath12k_mac_update_peer_puncturing_width(struct ath12k *ar,
 	return ret;
 }
 
+static int ath12k_vdev_restart_sequence(struct ath12k_link_vif *arvif,
+					struct ieee80211_chanctx_conf *new_ctx,
+					u64 vif_down_failed_map,
+					int vdev_index)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_link_vif *tx_arvif;
+	struct ath12k_vif *tx_ahvif;
+	struct ieee80211_bss_conf *link;
+	struct ieee80211_chanctx_conf old_chanctx;
+	struct ath12k_wmi_vdev_up_params params = { 0 };
+	int ret = -EINVAL;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+
+	spin_lock_bh(&ar->data_lock);
+	if (arvif->chanctx.def.chan)
+		old_chanctx = arvif->chanctx;
+	else
+		memset(&old_chanctx, 0, sizeof(struct ieee80211_chanctx_conf));
+	memcpy(&arvif->chanctx, new_ctx, sizeof(*new_ctx));
+	spin_unlock_bh(&ar->data_lock);
+
+	if (vif_down_failed_map & BIT_ULL(vdev_index))
+		ret = ath12k_mac_vdev_restart(arvif, new_ctx, false);
+	else
+		ret = ath12k_mac_vdev_restart(arvif, new_ctx, true);
+
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to restart vdev %d: %d\n",
+			    arvif->vdev_id, ret);
+		spin_lock_bh(&ar->data_lock);
+		if (old_chanctx.def.chan)
+			arvif->chanctx = old_chanctx;
+		spin_unlock_bh(&ar->data_lock);
+		return ret;
+	}
+
+	if (!arvif->is_up)
+		return -EOPNOTSUPP;
+
+	ret = ath12k_mac_setup_bcn_tmpl(arvif);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to update bcn tmpl during csa: %d\n",
+			    arvif->vdev_id);
+		return ret;
+	}
+
+	params.vdev_id = arvif->vdev_id;
+	params.aid = ahvif->aid;
+	params.bssid = arvif->bssid;
+	rcu_read_lock();
+	link = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
+	if (link->mbssid_tx_vif) {
+		tx_ahvif = (void *)link->mbssid_tx_vif->drv_priv;
+		tx_arvif = tx_ahvif->link[link->mbssid_tx_vif_linkid];
+		params.tx_bssid = tx_arvif->bssid;
+		params.nontx_profile_idx = ahvif->vif->bss_conf.bssid_index;
+		params.nontx_profile_cnt = BIT(link->bssid_indicator);
+	}
+
+	if (ahvif->vif->type == NL80211_IFTYPE_STATION && link->nontransmitted) {
+		params.nontx_profile_idx = link->bssid_index;
+		params.nontx_profile_cnt = BIT(link->bssid_indicator) - 1;
+		params.tx_bssid = link->transmitter_bssid;
+	}
+	rcu_read_unlock();
+
+	ret = ath12k_wmi_vdev_up(arvif->ar, &params);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
+			    arvif->vdev_id, ret);
+		return ret;
+	}
+
+	ret = ath12k_mac_update_peer_puncturing_width(ar, arvif, new_ctx->def);
+
+	if (ret) {
+		 ath12k_warn(ar->ab,
+			     "failed to update puncturing bitmap %02x and width %d: %d\n",
+			     new_ctx->def.punctured,
+			     new_ctx->def.width, ret);
+	}
+
+	return ret;
+}
+
 static void ath12k_mac_num_chanctxs_iter(struct ieee80211_hw *hw,
                                          struct ieee80211_chanctx_conf *conf,
                                          void *data)
@@ -10922,23 +11031,29 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 			   struct ieee80211_vif_chanctx_switch *vifs,
 			   int n_vifs)
 {
-	struct ath12k_wmi_vdev_up_params params = {};
 	struct ath12k_link_vif *arvif, *tx_arvif;
 	struct cfg80211_chan_def *chandef = NULL;
 	struct ieee80211_bss_conf *link_conf;
 	struct ath12k_base *ab = ar->ab;
 	struct ieee80211_vif *vif;
-	struct ath12k_vif *ahvif;
+	struct ath12k_vif *ahvif, *tx_ahvif = NULL;
+	u64 vif_down_failed_map = 0;
+	struct ieee80211_vif *tx_vif;
 	u8 link_id;
 	int ret;
-	int i;
+	int i, trans_vdev_index;
 	bool monitor_vif = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	chandef = &vifs[0].new_ctx->def;
+	/* Each vif is mapped to each bit of vif_down_failed_map. */
+	if (n_vifs > sizeof(vif_down_failed_map)*__CHAR_BIT__) {
+		ath12k_warn(ar->ab, "%d n_vifs are not supported currently\n",
+			    n_vifs);
+		return;
+	}
 
-	ath12k_mac_update_rx_channel(ar, NULL, vifs, n_vifs);
+	tx_arvif = NULL;
 
 	for (i = 0; i < n_vifs; i++) {
 		vif = vifs[i].vif;
@@ -10961,74 +11076,63 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 			   vifs[i].old_ctx->def.width,
 			   vifs[i].new_ctx->def.width);
 
-		if (WARN_ON(!arvif->is_started))
+		if (!arvif->is_started) {
+			memcpy(&arvif->chanctx, vifs[i].new_ctx, sizeof(*vifs[i].new_ctx));
+			continue;
+		}
+
+		if (!arvif->is_up)
 			continue;
 
 		arvif->punct_bitmap = vifs[i].new_ctx->def.punctured;
 
-		/* Firmware expect vdev_restart only if vdev is up.
-		 * If vdev is down then it expect vdev_stop->vdev_start.
-		 */
-		if (arvif->is_up) {
-			ret = ath12k_mac_vdev_restart(arvif, vifs[i].new_ctx);
-			if (ret) {
-				ath12k_warn(ab, "failed to restart vdev %d: %d\n",
-					    arvif->vdev_id, ret);
-				continue;
-			}
-		} else {
-			ret = ath12k_mac_vdev_stop(arvif);
-			if (ret) {
-				ath12k_warn(ab, "failed to stop vdev %d: %d\n",
-					    arvif->vdev_id, ret);
-				continue;
-			}
-
-			ret = ath12k_mac_vdev_start(arvif, vifs[i].new_ctx);
-			if (ret)
-				ath12k_warn(ab, "failed to start vdev %d: %d\n",
-					    arvif->vdev_id, ret);
-			continue;
+		if (vifs[i].link_conf->mbssid_tx_vif &&
+		    ahvif == (struct ath12k_vif *)vifs[i].link_conf->mbssid_tx_vif->drv_priv) {
+			tx_vif = vifs[i].link_conf->mbssid_tx_vif;
+			tx_ahvif = ath12k_vif_to_ahvif(tx_vif);
+			tx_arvif = tx_ahvif->link[vifs[i].link_conf->mbssid_tx_vif_linkid];
+			trans_vdev_index = i;
 		}
-
-		ret = ath12k_mac_setup_bcn_tmpl(arvif);
-		if (ret)
-			ath12k_warn(ab, "failed to update bcn tmpl during csa: %d\n",
-				    ret);
-
-		memset(&params, 0, sizeof(params));
-		params.vdev_id = arvif->vdev_id;
-		params.aid = ahvif->aid;
-		params.bssid = arvif->bssid;
-
-		tx_arvif = ath12k_mac_get_tx_arvif(arvif, link_conf);
-		if (tx_arvif) {
-			params.tx_bssid = tx_arvif->bssid;
-			params.nontx_profile_idx = link_conf->bssid_index;
-			params.nontx_profile_cnt = 1 << link_conf->bssid_indicator;
-		}
-		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
+		ret = ath12k_wmi_vdev_down(ar, arvif->vdev_id);
 		if (ret) {
-			ath12k_warn(ab, "failed to bring vdev up %d: %d\n",
+			vif_down_failed_map |= BIT_ULL(i);
+			ath12k_warn(ab, "failed to down vdev %d: %d\n",
 				    arvif->vdev_id, ret);
-			continue;
-		}
-
-		ret = ath12k_mac_update_peer_puncturing_width(arvif->ar, arvif,
-							      vifs[i].new_ctx->def);
-		if (ret) {
-			ath12k_warn(ar->ab,
-				    "failed to update puncturing bitmap %02x and width %d: %d\n",
-				    vifs[i].new_ctx->def.punctured,
-				    vifs[i].new_ctx->def.width, ret);
 			continue;
 		}
 	}
 
-	/* Restart the internal monitor vdev on new channel */
-	if (!monitor_vif && ar->monitor_vdev_created) {
-		if (!ath12k_mac_monitor_stop(ar))
-			ath12k_mac_monitor_start(ar);
+	ath12k_mac_update_rx_channel(ar, NULL, vifs, n_vifs);
+
+	if (tx_arvif) {
+		ret = ath12k_vdev_restart_sequence(tx_arvif,
+						   vifs[trans_vdev_index].new_ctx,
+						   vif_down_failed_map,
+						   trans_vdev_index);
+
+		if (ret)
+			ath12k_warn(ab, "failed to restart vdev:%d: %d\n",
+				    tx_arvif->vdev_id, ret);
+	}
+
+	for (i = 0; i < n_vifs; i++) {
+		ahvif = (void *)vifs[i].vif->drv_priv;
+
+		link_id = vifs[i].link_conf->link_id;
+		arvif = ahvif->link[link_id];
+		if (WARN_ON(!arvif))
+			continue;
+		if (vifs[i].link_conf->mbssid_tx_vif &&
+		    arvif == tx_arvif)
+			continue;
+
+		ret = ath12k_vdev_restart_sequence(arvif,
+						   vifs[i].new_ctx,
+						   vif_down_failed_map, i);
+		if (ret && ret != -EOPNOTSUPP) {
+			ath12k_warn(ab, "failed to bring up vdev %d: %d\n",
+				    arvif->vdev_id, ret);
+		}
 	}
 	spin_lock_bh(&ar->data_lock);
         if (ar->awgn_intf_handling_in_prog && chandef) {

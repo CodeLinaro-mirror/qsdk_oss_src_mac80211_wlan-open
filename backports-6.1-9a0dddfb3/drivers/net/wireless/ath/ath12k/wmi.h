@@ -3005,7 +3005,7 @@ struct ath12k_wmi_ssid_params {
 	u8 ssid[ATH12K_WMI_SSID_LEN];
 } __packed;
 
-#define ATH12K_VDEV_SETUP_TIMEOUT_HZ (5 * HZ)
+#define ATH12K_VDEV_SETUP_TIMEOUT_HZ (10 * HZ)
 
 enum wmi_vdev_mbssid_flags {
 	WMI_VDEV_MBSSID_FLAGS_NON_MBSSID_AP	= BIT(0),
