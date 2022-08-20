@@ -58,6 +58,10 @@ module_param_named(io_coherency, ath12k_io_coherency_enabled, bool, 0644);
 MODULE_PARM_DESC(io_coherency, "Enable io_coherency (0 - disable, 1 - enable)");
 #endif
 
+static unsigned int ath12k_en_fwlog = true;
+module_param_named(en_fwlog, ath12k_en_fwlog, uint, 0644);
+MODULE_PARM_DESC(en_fwlog, "fwlog: 0-disable, 1-enable");
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 
@@ -1365,8 +1369,10 @@ core_pdev_create:
 			goto err;
 		}
 
-		if (ath12k_enable_fwlog(ab))
-			ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
+		if (ath12k_en_fwlog == true) {
+			if (ath12k_enable_fwlog(ab))
+				ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
+		}
 
 		mutex_unlock(&ab->core_lock);
 	}
