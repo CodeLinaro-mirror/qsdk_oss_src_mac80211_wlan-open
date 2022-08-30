@@ -1183,7 +1183,9 @@ struct ath11k_soc_dp_stats {
 	u32 err_ring_pkts;
 	u32 invalid_rbm;
 	u32 rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
+	u32 rxdma_error_drop[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
 	u32 reo_error[HAL_REO_DEST_RING_ERROR_CODE_MAX];
+	u32 reo_error_drop[HAL_REO_DEST_RING_ERROR_CODE_MAX];
 	u32 hal_reo_error[DP_REO_DST_RING_MAX];
 	struct ath11k_soc_dp_tx_err_stats tx_err;
 	struct ath11k_dp_ring_bp_stats bp_stats;

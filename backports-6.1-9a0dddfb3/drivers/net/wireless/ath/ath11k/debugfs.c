@@ -901,13 +901,15 @@ static ssize_t ath11k_debugfs_dump_soc_dp_stats(struct file *file,
 			 soc_stats->invalid_rbm);
 	len += scnprintf(buf + len, size - len, "RXDMA errors:\n");
 	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
-		len += scnprintf(buf + len, size - len, "%s: %u\n",
-				 rxdma_err[i], soc_stats->rxdma_error[i]);
+		len += scnprintf(buf + len, size - len, "%s: handled %u dropped %u\n",
+				 rxdma_err[i], soc_stats->rxdma_error[i],
+				 soc_stats->rxdma_error_drop[i]);
 
 	len += scnprintf(buf + len, size - len, "\nREO errors:\n");
 	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
-		len += scnprintf(buf + len, size - len, "%s: %u\n",
-				 reo_err[i], soc_stats->reo_error[i]);
+		len += scnprintf(buf + len, size - len, "%s: handled %u dropped %u\n",
+				 reo_err[i], soc_stats->reo_error[i],
+				 soc_stats->reo_error_drop[i]);
 
 	len += scnprintf(buf + len, size - len, "\nHAL REO errors:\n");
 	len += scnprintf(buf + len, size - len,
