@@ -4090,6 +4090,39 @@ enum set_init_cc_flags {
 	ALPHA_IS_SET,
 };
 
+#define THERMAL_LEVELS		1
+struct tt_level_config {
+	u32 tmplwm;
+	u32 tmphwm;
+	u32 dcoffpercent;
+	u32 priority;
+};
+
+struct ath12k_wmi_thermal_mitigation_arg {
+	u32 pdev_id;
+	u32 enable;
+	u32 dc;
+	u32 dc_per_event;
+	struct tt_level_config levelconf[THERMAL_LEVELS];
+};
+
+struct wmi_therm_throt_config_request_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 enable;
+	__le32 dc;
+	__le32 dc_per_event;
+	__le32 therm_throt_levels;
+} __packed;
+
+struct wmi_therm_throt_level_config_info {
+	__le32 tlv_header;
+	__le32 temp_lwm;
+	__le32 temp_hwm;
+	__le32 dc_off_percent;
+	__le32 prio;
+} __packed;
+
 struct ath12k_wmi_init_country_arg {
 	union {
 		u16 country_code;
@@ -6328,6 +6361,9 @@ int ath12k_wmi_send_bcn_offload_control_cmd(struct ath12k *ar,
 					    u32 vdev_id, u32 bcn_ctrl_op);
 int ath12k_wmi_send_init_country_cmd(struct ath12k *ar,
 				     struct ath12k_wmi_init_country_arg *arg);
+int
+ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
+				       struct ath12k_wmi_thermal_mitigation_arg *arg);
 int
 ath12k_wmi_send_set_current_country_cmd(struct ath12k *ar,
 					struct wmi_set_current_country_arg *arg);

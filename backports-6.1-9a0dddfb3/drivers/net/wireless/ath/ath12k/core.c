@@ -1007,6 +1007,7 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 static int ath12k_core_pdev_init(struct ath12k_base *ab)
 {
 	ath12k_fse_init(ab);
+	ath12k_thermal_register(ab);
 
 	return 0;
 }
@@ -1014,6 +1015,7 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 static void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 {
 	ath12k_fse_deinit(ab);
+	ath12k_thermal_unregister(ab);
 }
 
 static int ath12k_core_pdev_create(struct ath12k_base *ab)
@@ -1691,6 +1693,7 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 			complete(&ar->vdev_setup_done);
 			complete(&ar->vdev_delete_done);
 			complete(&ar->bss_survey_done);
+			complete(&ar->thermal.wmi_sync);
 
 			wake_up(&ar->dp.tx_empty_waitq);
 			idr_for_each(&ar->txmgmt_idr,

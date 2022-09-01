@@ -27,6 +27,7 @@
 #include "mac.h"
 #include "hw.h"
 #include "reg.h"
+#include "thermal.h"
 #include "dbring.h"
 #include "fw.h"
 #include "acpi.h"
@@ -827,6 +828,7 @@ struct ath12k {
 	struct ath12k_fw_stats fw_stats;
 	unsigned long last_signal_update;
 	unsigned long last_tx_power_update;
+	struct ath12k_thermal thermal;
 };
 
 struct ath12k_hw {
