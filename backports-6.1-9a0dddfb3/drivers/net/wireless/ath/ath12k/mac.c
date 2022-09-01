@@ -3925,6 +3925,11 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	    ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE)
 		ath12k_mac_11d_scan_stop(ar);
 
+	ret = ath12k_spectral_vif_stop(arvif);
+	if (ret)
+		ath12k_warn(ar->ab, "failed to stop spectral for vdev %i: %d\n",
+			    arvif->vdev_id, ret);
+
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid);
 		if (ret)
@@ -4789,6 +4794,9 @@ static int ath12k_start_scan(struct ath12k *ar,
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ath12k_spectral_get_mode(ar) == ATH12K_SPECTRAL_BACKGROUND)
+		ath12k_spectral_reset_buffer(ar);
 
 	ret = ath12k_wmi_send_scan_start_cmd(ar, arg);
 	if (ret)

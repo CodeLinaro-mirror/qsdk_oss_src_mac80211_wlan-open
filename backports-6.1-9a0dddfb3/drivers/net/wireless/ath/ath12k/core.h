@@ -35,6 +35,7 @@
 #include "debugfs_htt_stats.h"
 #include "coredump.h"
 #include "cmn_defs.h"
+#include "spectral.h"
 
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
@@ -362,6 +363,7 @@ struct ath12k_link_vif {
 	bool is_scan_vif;
 	u32 key_cipher;
 	bool nawds_support;
+	bool spectral_enabled;
 };
 
 struct ath12k_dp_link_vif {
@@ -829,6 +831,9 @@ struct ath12k {
 	unsigned long last_signal_update;
 	unsigned long last_tx_power_update;
 	struct ath12k_thermal thermal;
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	struct ath12k_spectral spectral;
+#endif
 };
 
 struct ath12k_hw {

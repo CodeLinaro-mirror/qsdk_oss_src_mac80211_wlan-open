@@ -1008,6 +1008,7 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 {
 	ath12k_fse_init(ab);
 	ath12k_thermal_register(ab);
+	ath12k_spectral_init(ab);
 
 	return 0;
 }
@@ -1016,6 +1017,7 @@ static void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 {
 	ath12k_fse_deinit(ab);
 	ath12k_thermal_unregister(ab);
+	ath12k_spectral_deinit(ab);
 }
 
 static int ath12k_core_pdev_create(struct ath12k_base *ab)

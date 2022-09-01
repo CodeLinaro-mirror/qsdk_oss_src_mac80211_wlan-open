@@ -98,3 +98,12 @@ config ATH12K_MEM_PROFILE_512M
 	  (vdevs).
 
 endchoice
+
+config ATH12K_SPECTRAL
+	bool "QTI ath12k spectral scan support"
+	depends on ATH12K_DEBUGFS
+	depends on RELAY
+	help
+	  Enable ath12k spectral scan support
+
+	  Say Y to enable access to the FFT/spectral data via debugfs.

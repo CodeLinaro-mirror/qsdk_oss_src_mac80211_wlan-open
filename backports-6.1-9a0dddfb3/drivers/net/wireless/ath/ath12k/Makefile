@@ -37,6 +37,7 @@ ath12k-$(CPTCFG_NL80211_TESTMODE) += testmode.o
 ath12k-$(CPTCFG_ATH12K_SPECTRAL) += spectral.o
 ath12k-$(CPTCFG_WANT_DEV_COREDUMP) += coredump.o
 ath12k-$(CONFIG_THERMAL) += thermal.o
+ath12k-$(CPTCFG_ATH12K_SPECTRAL) += spectral.o
 
 # for tracing framework to find trace.h
 CFLAGS_trace.o := -I$(src)
