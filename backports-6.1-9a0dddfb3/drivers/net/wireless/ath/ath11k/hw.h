@@ -229,6 +229,7 @@ struct ath11k_hw_params {
 	u32 hal_desc_sz;
 	bool supports_regdb;
 	bool fix_l1ss;
+	bool supports_ap_ps;
 	bool credit_flow;
 	u8 max_tx_ring;
 	const struct ath11k_hw_hal_params *hal_params;

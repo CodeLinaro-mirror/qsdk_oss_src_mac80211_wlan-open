@@ -754,6 +754,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.dp_window = 1,
 		.reo_status_poll = false,
 		.num_vdevs_peers = ath11k_vdevs_peers,
+		.supports_ap_ps = true,
 	},
 	{
 		.hw_rev = ATH11K_HW_IPQ5018_HW10,

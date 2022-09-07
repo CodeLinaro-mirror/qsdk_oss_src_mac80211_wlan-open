@@ -4262,6 +4262,11 @@ static void ath11k_mac_op_bss_info_changed(struct ieee80211_hw *hw,
 	    changed & BSS_CHANGED_UNSOL_BCAST_PROBE_RESP)
 		ath11k_mac_fils_discovery(arvif, info);
 
+	if ((changed & BSS_CHANGED_PS) && vif->type == NL80211_IFTYPE_AP) {
+		ar->ap_ps_enabled = info->ap_ps_enable;
+		ath11k_mac_ap_ps_recalc(ar);
+	}
+
 	if (changed & BSS_CHANGED_ARP_FILTER) {
 		ipv4_cnt = min(vif->cfg.arp_addr_cnt, ATH11K_IPV4_MAX_COUNT);
 		memcpy(arvif->arp_ns_offload.ipv4_addr,
@@ -13011,6 +13016,9 @@ static int __ath11k_mac_register(struct ath11k *ar)
 
 	if (ab->hw_params.single_pdev_only && ar->supports_6ghz)
 		ieee80211_hw_set(ar->hw, SINGLE_SCAN_ON_ALL_BANDS);
+
+	if (ab->hw_params.supports_ap_ps)
+		ieee80211_hw_set(ar->hw, SUPPORTS_AP_PS);
 
 	if (ab->hw_params.supports_multi_bssid) {
 		ieee80211_hw_set(ar->hw, SUPPORTS_MULTI_BSSID);
