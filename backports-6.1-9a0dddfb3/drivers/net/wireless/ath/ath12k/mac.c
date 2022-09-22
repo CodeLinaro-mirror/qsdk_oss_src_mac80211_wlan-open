@@ -1146,6 +1146,8 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 
 	ar->num_peers = 0;
 	ar->num_stations = 0;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "ath12k mac peer cleanup done\n");
 }
 
 static int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
@@ -3946,8 +3948,9 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid);
 		if (ret)
-			ath12k_warn(ar->ab, "failed to submit AP self-peer removal on vdev %d link id %d: %d",
-				    arvif->vdev_id, arvif->link_id, ret);
+			ath12k_warn(ar->ab, "failed to submit AP self-peer removal on vdev %d link id %d: %d"
+				    "num_peers: %d",
+				    arvif->vdev_id, arvif->link_id, ret, ar->num_peers);
 	}
 	ath12k_mac_vdev_delete(ar, arvif);
 }
@@ -6521,8 +6524,9 @@ static void ath12k_mac_station_post_remove(struct ath12k *ar,
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp, arvif->vdev_id,
 							    arsta->addr);
 	if (peer && peer->sta == sta) {
-		ath12k_warn(ar->ab, "Found peer entry %pM n vdev %i after it was supposedly removed\n",
-			    vif->addr, arvif->vdev_id);
+		ath12k_warn(ar->ab, "Found peer entry %pM n vdev %i after it was supposedly removed"
+			    "num_peers: %d \n",
+			    vif->addr, arvif->vdev_id, ar->num_peers);
 		peer->sta = NULL;
 		list_del(&peer->list);
 		kfree(peer);
@@ -6627,11 +6631,11 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 
 	ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr);
 	if (ret)
-		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d\n",
-			    arsta->addr, arvif->vdev_id);
+		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d num_peers: %d\n",
+			    arsta->addr, arvif->vdev_id, ar->num_peers);
 	else
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "Removed peer: %pM for VDEV: %d\n",
-			   arsta->addr, arvif->vdev_id);
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "Removed peer: %pM for VDEV: %d num_peers:%d\n",
+			   arsta->addr, arvif->vdev_id, ar->num_peers);
 
 	ath12k_mac_station_post_remove(ar, arvif, arsta);
 
@@ -6685,8 +6689,8 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 		goto rhash_delete;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_MAC, "Added peer: %pM for VDEV: %d\n",
-		   arsta->addr, arvif->vdev_id);
+	ath12k_dbg(ab, ATH12K_DBG_MAC, "Added peer: %pM for VDEV: %d num_stations: %d\n",
+		   arsta->addr, arvif->vdev_id, ar->num_stations);
 
 	if (ieee80211_vif_is_mesh(vif)) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
@@ -9795,7 +9799,8 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	time_left = wait_for_completion_timeout(&ar->vdev_delete_done,
 						ATH12K_VDEV_DELETE_TIMEOUT_HZ);
 	if (time_left == 0) {
-		ath12k_warn(ab, "Timeout in receiving vdev delete response\n");
+		ath12k_warn(ab, "Timeout in receiving vdev delete response %d\n",
+			    arvif->vdev_id);
 		goto err_vdev_del;
 	}
 

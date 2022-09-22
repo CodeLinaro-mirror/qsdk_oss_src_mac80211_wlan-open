@@ -885,7 +885,8 @@ int ath12k_wmi_vdev_delete(struct ath12k *ar, u8 vdev_id)
 						 sizeof(*cmd));
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI vdev delete id %d\n", vdev_id);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI vdev delete id %d num_peers : %d\n",
+		   vdev_id, ar->num_peers);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DELETE_CMDID);
 	if (ret) {
@@ -945,7 +946,8 @@ int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id)
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DOWN_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to submit WMI_VDEV_DOWN cmd\n");
+		ath12k_warn(ar->ab, "failed to submit WMI_VDEV_DOWN cmd vdev id : %d\n",
+			    vdev_id);
 		dev_kfree_skb(skb);
 	}
 
@@ -1233,8 +1235,8 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 	ptr += sizeof(*ml_param);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x\n",
-		   arg->vdev_id, arg->peer_addr, ml_param->flags);
+		   "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d\n",
+		   arg->vdev_id, arg->peer_addr, ml_param->flags, ar->num_peers);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_CREATE_CMDID);
 	if (ret) {
@@ -1265,12 +1267,14 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI peer delete vdev_id %d peer_addr %pM\n",
-		   vdev_id,  peer_addr);
+		   "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d\n",
+		   vdev_id,  peer_addr, ar->num_peers);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_DELETE_CMDID);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to send WMI_PEER_DELETE cmd\n");
+		ath12k_warn(ar->ab, "failed to send WMI_PEER_DELETE cmd"
+			   " peer_addr %pM num_peer : %d\n",
+			    peer_addr, ar->num_peers);
 		dev_kfree_skb(skb);
 	}
 

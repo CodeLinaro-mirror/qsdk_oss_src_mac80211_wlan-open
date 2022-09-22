@@ -68,14 +68,15 @@ int ath12k_wait_for_peer_delete_done(struct ath12k *ar, u32 vdev_id,
 
 	ret = ath12k_wait_for_peer_deleted(ar, vdev_id, addr);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed wait for peer deleted");
+		ath12k_warn(ar->ab, "failed wait for peer deleted peer_addr : %pM\n", addr);
 		return ret;
 	}
 
 	time_left = wait_for_completion_timeout(&ar->peer_delete_done,
 						3 * HZ);
 	if (time_left == 0) {
-		ath12k_warn(ar->ab, "Timeout in receiving peer delete response\n");
+		ath12k_warn(ar->ab, "Timeout in receiving peer delete response peer_addr : %pM\n",
+			    addr);
 		return -ETIMEDOUT;
 	}
 
