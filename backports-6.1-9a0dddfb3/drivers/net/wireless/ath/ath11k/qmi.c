@@ -2829,6 +2829,16 @@ static int ath11k_qmi_alloc_target_mem_chunk(struct ath11k_base *ab)
 	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
 		chunk = &ab->qmi.target_mem[i];
 
+
+		if (chunk->type == CALDB_MEM_REGION_TYPE && (!ab->enable_cold_boot_cal
+							|| !ab->hw_params.cold_boot_calib)) {
+			ath11k_info(ab, "Skipping caldb allocation chunk->size %u chunk->paddr %pad\n",
+						chunk->size, &chunk->paddr);
+			chunk->paddr = 0;
+			chunk->vaddr = NULL;
+			continue;
+		}
+
 		/*
 		 * Ignore the memory request from FW if size is more than 2MB
 		 * if host sends failure, FW reqesut for 2MB segments in mode-0
