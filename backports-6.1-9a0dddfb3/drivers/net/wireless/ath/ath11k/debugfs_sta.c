@@ -1590,12 +1590,16 @@ static ssize_t ath11k_dbg_sta_read_htt_comm_stats(struct file *file,
 			 arsta->fail_pkts);
 	len += scnprintf(buf + len, sizeof(buf) - len, "succ_pkts    : %llu\n",
 			 arsta->succ_pkts);
+	len += scnprintf(buf + len, sizeof(buf) - len, "drop_pkts    : %llu\n",
+			 arsta->drop_pkts);
 	len += scnprintf(buf + len, sizeof(buf) - len, "PER          : %lu\n",
 			 ewma_sta_per_read(&arsta->per));
 	len += scnprintf(buf + len, sizeof(buf) - len, "fail_bytes   : %llu\n",
 			 arsta->fail_bytes);
 	len += scnprintf(buf + len, sizeof(buf) - len, "succ_bytes   : %llu\n",
 			 arsta->succ_bytes);
+	len += scnprintf(buf + len, sizeof(buf) - len, "drop_bytes   : %llu\n",
+			 arsta->drop_bytes);
 	len += scnprintf(buf + len, sizeof(buf) - len,
 			 "BER          : %lu\n", ewma_sta_ber_read(&arsta->ber));
 	spin_unlock_bh(&ar->ab->base_lock);

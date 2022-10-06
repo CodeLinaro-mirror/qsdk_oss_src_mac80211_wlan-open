@@ -754,12 +754,14 @@ struct ath11k_sta {
 	struct ewma_sta_per per;
 	u64 fail_pkts;
 	u64 succ_pkts;
+	u64 drop_pkts;
 	/* pkt count for packet error rate computation*/
 	u32 per_fail_pkts;
 	u32 per_succ_pkts;
 	struct ewma_sta_ber ber;
 	u64 succ_bytes;
 	u64 fail_bytes;
+	u64 drop_bytes;
 	/*bytes count for bit error rate computation*/
 	u32 ber_succ_bytes;
 	u32 ber_fail_bytes;

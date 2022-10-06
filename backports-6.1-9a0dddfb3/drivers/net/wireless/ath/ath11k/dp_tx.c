@@ -364,6 +364,8 @@ tcl_ring_sel:
 		/* TODO: Take care of other encap modes as well */
 		ret = -EINVAL;
 		atomic_inc(&ab->soc_stats.tx_err.misc_fail);
+		arsta->drop_pkts++;
+		arsta->drop_bytes += skb->len;
 		goto fail_remove_idr;
 	}
 
@@ -944,10 +946,24 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 	}
 
 	if (ts.status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
-		arsta->fail_pkts += 1;
-		arsta->per_fail_pkts += 1;
-		arsta->fail_bytes += msdu->len;
-		arsta->ber_fail_bytes += msdu->len;
+		switch (ts.status) {
+		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU:
+		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES:
+		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX:
+			arsta->drop_pkts += 1;
+			arsta->drop_bytes += msdu->len;
+			spin_unlock_bh(&ab->base_lock);
+			dev_kfree_skb_any(msdu);
+			return;
+		default:
+			//TODO: Remove this print and add as a stats
+			ath11k_dbg(ab, ATH11K_DBG_DP_TX, "tx frame is not acked status %d\n", ts.status);
+			arsta->fail_pkts += 1;
+			arsta->per_fail_pkts += 1;
+			arsta->fail_bytes += msdu->len;
+			arsta->ber_fail_bytes += msdu->len;
+		}
+
 		if(arsta->per_fail_pkts + arsta->per_succ_pkts >=
 		   ATH11K_NUM_PKTS_THRSHLD_FOR_PER)
 			ath11k_sta_stats_update_per(arsta);
