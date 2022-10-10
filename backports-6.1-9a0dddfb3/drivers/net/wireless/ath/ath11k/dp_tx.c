@@ -825,6 +825,7 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 	struct hal_tx_status ts = { 0 };
 	enum hal_wbm_htt_tx_comp_status wbm_status;
 	enum hal_wbm_tqm_rel_reason rel_status;
+	u32 bw_offset;
 	u8 flags = 0;
 
 	if (unlikely(WARN_ON_ONCE(buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM))) {
@@ -880,19 +881,6 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 	/* skip tx rate update from ieee80211_status*/
 	info->status.rates[0].idx = -1;
 
-	if (ts.status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
-	    !(info->flags & IEEE80211_TX_CTL_NO_ACK) &&
-	    !(flags & ATH11K_SKB_F_NOACK_TID)) {
-		info->flags |= IEEE80211_TX_STAT_ACK;
-		info->status.ack_signal = ts.ack_rssi;
-
-		if (!test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
-			      ab->wmi_ab.svc_map))
-			info->status.ack_signal += ATH11K_DEFAULT_NOISE_FLOOR;
-
-		info->status.flags |= IEEE80211_TX_STATUS_ACK_SIGNAL_VALID;
-	}
-
 	if (ts.status == HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX &&
 	    (info->flags & IEEE80211_TX_CTL_NO_ACK) &&
 	    (flags & ATH11K_SKB_F_NOACK_TID))
@@ -943,6 +931,17 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 
 	status.rates = &status_rate;
 	status.n_rates = 1;
+
+	arsta->tx_retry_count += ts.try_cnt > 1 ? (ts.try_cnt - 1) : 0;
+
+	if (ts.status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
+	    !(info->flags & IEEE80211_TX_CTL_NO_ACK) &&
+	    !(flags & ATH11K_SKB_F_NOACK_TID)) {
+	    	info->flags |= IEEE80211_TX_STAT_ACK;
+	    	bw_offset = arsta->last_tx_pkt_bw * ATH11K_TX_PKTS_BW_OFFSET;
+	    	info->status.ack_signal = ts.ack_rssi + ar->chan_noise_floor + bw_offset;
+	    	info->status.flags |= IEEE80211_TX_STATUS_ACK_SIGNAL_VALID;
+	}
 
 	if (ts.status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
 		arsta->fail_pkts += 1;

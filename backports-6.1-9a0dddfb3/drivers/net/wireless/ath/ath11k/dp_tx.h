@@ -13,6 +13,7 @@
 #define ATH11K_NUM_PKTS_THRSHLD_FOR_PER  50
 #define ATH11K_GET_PERCENTAGE(value, total_value) (((value)*100)/(total_value))
 #define ATH11K_NUM_BYTES_THRSHLD_FOR_BER 25000
+#define ATH11K_TX_PKTS_BW_OFFSET	3
 
 struct ath11k_dp_htt_wbm_tx_status {
 	u32 msdu_id;

@@ -7398,10 +7398,12 @@ static int ath11k_pull_wds_addr_ev(struct ath11k_base *ab, struct sk_buff *skb,
 	return 0;
 }
 
-static void ath11k_wmi_pull_pdev_stats_base(const struct wmi_pdev_stats_base *src,
+static void ath11k_wmi_pull_pdev_stats_base(struct ath11k *ar,
+					    const struct wmi_pdev_stats_base *src,
 					    struct ath11k_fw_stats_pdev *dst)
 {
 	dst->ch_noise_floor = src->chan_nf;
+	ar->chan_noise_floor = src->chan_nf;
 	dst->tx_frame_count = src->tx_frame_count;
 	dst->rx_frame_count = src->rx_frame_count;
 	dst->rx_clear_count = src->rx_clear_count;
@@ -7625,7 +7627,7 @@ static int ath11k_wmi_tlv_fw_stats_data_parse(struct ath11k_base *ab,
 		if (!dst)
 			continue;
 
-		ath11k_wmi_pull_pdev_stats_base(&src->base, dst);
+		ath11k_wmi_pull_pdev_stats_base(ar, &src->base, dst);
 		ath11k_wmi_pull_pdev_stats_tx(&src->tx, dst);
 		ath11k_wmi_pull_pdev_stats_rx(&src->rx, dst);
 		list_add_tail(&dst->list, &stats->pdevs);

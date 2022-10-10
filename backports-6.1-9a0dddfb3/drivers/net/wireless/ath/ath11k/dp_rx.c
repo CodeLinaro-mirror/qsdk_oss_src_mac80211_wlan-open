@@ -1591,91 +1591,84 @@ ath11k_update_per_peer_tx_stats(struct ath11k *ar,
 	ru_start = user_rate->ru_start;
 	ru_tone = user_rate->ru_end;
 
-	/* Note: If host configured fixed rates and in some other special
-	 * cases, the broadcast/management frames are sent in different rates.
-	 * Firmware rate's control to be skipped for this?
-	 */
+	 /* PPDU stats reported for mgmt packet doesn't have valid tx bytes.
+	  * So skip peer stats update for mgmt packets.
+	  */
 
-	if (flags == WMI_RATE_PREAMBLE_HE && mcs > ATH11K_HE_MCS_MAX) {
-		ath11k_warn(ab, "Invalid HE mcs %d peer stats",  mcs);
-		return;
-	}
-
-	if (flags == WMI_RATE_PREAMBLE_VHT && mcs > ATH11K_VHT_MCS_MAX) {
-		ath11k_warn(ab, "Invalid VHT mcs %d peer stats",  mcs);
-		return;
-	}
-
-	if (flags == WMI_RATE_PREAMBLE_HT && (mcs > ATH11K_HT_MCS_MAX || nss < 1)) {
-		ath11k_warn(ab, "Invalid HT mcs %d nss %d peer stats",
-			    mcs, nss);
-		return;
-	}
-
-	if (flags == WMI_RATE_PREAMBLE_CCK || flags == WMI_RATE_PREAMBLE_OFDM) {
-		ret = ath11k_mac_hw_ratecode_to_legacy_rate(mcs,
-							    flags,
-							    &rate_idx,
-							    &rate);
-		if (ret < 0)
-			return;
-	}
-
-	rcu_read_lock();
-	spin_lock_bh(&ab->base_lock);
-	peer = ath11k_peer_find_by_id(ab, usr_stats->peer_id);
-
-	if (!peer || !peer->sta) {
-		spin_unlock_bh(&ab->base_lock);
-		rcu_read_unlock();
-		return;
-	}
-
-	sta = peer->sta;
-	arsta = ath11k_sta_to_arsta(sta);
-
-	memset(&arsta->txrate, 0, sizeof(arsta->txrate));
-
-	switch (flags) {
-	case WMI_RATE_PREAMBLE_OFDM:
-		arsta->txrate.legacy = rate;
-		break;
-	case WMI_RATE_PREAMBLE_CCK:
-		arsta->txrate.legacy = rate;
-		break;
-	case WMI_RATE_PREAMBLE_HT:
-		arsta->txrate.mcs = mcs + 8 * (nss - 1);
-		arsta->txrate.flags = RATE_INFO_FLAGS_MCS;
-		if (sgi)
-			arsta->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
-		break;
-	case WMI_RATE_PREAMBLE_VHT:
-		arsta->txrate.mcs = mcs;
-		arsta->txrate.flags = RATE_INFO_FLAGS_VHT_MCS;
-		if (sgi)
-			arsta->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
-		break;
-	case WMI_RATE_PREAMBLE_HE:
-		arsta->txrate.mcs = mcs;
-		arsta->txrate.flags = RATE_INFO_FLAGS_HE_MCS;
-		arsta->txrate.he_dcm = dcm;
-		arsta->txrate.he_gi = ath11k_mac_he_gi_to_nl80211_he_gi(sgi);
-		arsta->txrate.he_ru_alloc = ath11k_mac_phy_he_ru_to_nl80211_he_ru_alloc
-						((user_rate->ru_end -
-						 user_rate->ru_start) + 1);
-		break;
-	}
-
-	arsta->txrate.nss = nss;
-
-	arsta->txrate.bw = ath11k_mac_bw_to_mac80211_bw(bw);
-	arsta->tx_duration += tx_duration;
-	memcpy(&arsta->last_txrate, &arsta->txrate, sizeof(struct rate_info));
-
-	/* PPDU stats reported for mgmt packet doesn't have valid tx bytes.
-	 * So skip peer stats update for mgmt packets.
-	 */
 	if (tid < HTT_PPDU_STATS_NON_QOS_TID) {
+		/* Note: If host configured fixed rates and in some other special
+		 * cases, the broadcast/management frames are sent in different rates.
+		 * Firmware rate's control to be skipped for this?
+		 */
+		if (flags == WMI_RATE_PREAMBLE_HE && mcs > ATH11K_HE_MCS_MAX) {
+			ath11k_warn(ab, "Invalid HE mcs %d peer stats",  mcs);
+			return;
+		}
+		if (flags == WMI_RATE_PREAMBLE_VHT && mcs > ATH11K_VHT_MCS_MAX) {
+			ath11k_warn(ab, "Invalid VHT mcs %d peer stats",  mcs);
+			return;
+		}
+
+		if (flags == WMI_RATE_PREAMBLE_HT && (mcs > ATH11K_HT_MCS_MAX || nss < 1)) {
+			ath11k_warn(ab, "Invalid HT mcs %d nss %d peer stats",
+					mcs, nss);
+			return;
+		}
+		if (flags == WMI_RATE_PREAMBLE_CCK || flags == WMI_RATE_PREAMBLE_OFDM) {
+			ret = ath11k_mac_hw_ratecode_to_legacy_rate(mcs,
+														flags,&rate_idx,&rate);
+			if (ret < 0)
+				return;
+		}
+		rcu_read_lock();
+		spin_lock_bh(&ab->base_lock);
+		peer = ath11k_peer_find_by_id(ab, usr_stats->peer_id);
+		if (!peer || !peer->sta) {
+			spin_unlock_bh(&ab->base_lock);
+			rcu_read_unlock();
+			return;
+		}
+		sta = peer->sta;
+		arsta = ath11k_sta_to_arsta(sta);
+
+		memset(&arsta->txrate, 0, sizeof(arsta->txrate));
+
+		switch (flags) {
+		case WMI_RATE_PREAMBLE_OFDM:
+			arsta->txrate.legacy = rate;
+			break;
+		case WMI_RATE_PREAMBLE_CCK:
+			arsta->txrate.legacy = rate;
+			break;
+		case WMI_RATE_PREAMBLE_HT:
+			arsta->txrate.mcs = mcs + 8 * (nss - 1);
+			arsta->txrate.flags = RATE_INFO_FLAGS_MCS;
+			if (sgi)
+				arsta->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
+			break;
+		case WMI_RATE_PREAMBLE_VHT:
+			arsta->txrate.mcs = mcs;
+			arsta->txrate.flags = RATE_INFO_FLAGS_VHT_MCS;
+			if (sgi)
+				arsta->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
+			break;
+		case WMI_RATE_PREAMBLE_HE:
+			arsta->txrate.mcs = mcs;
+			arsta->txrate.flags = RATE_INFO_FLAGS_HE_MCS;
+			arsta->txrate.he_dcm = dcm;
+			arsta->txrate.he_gi = ath11k_mac_he_gi_to_nl80211_he_gi(sgi);
+			arsta->txrate.he_ru_alloc = ath11k_mac_phy_he_ru_to_nl80211_he_ru_alloc
+							((user_rate->ru_end -
+						 	user_rate->ru_start) + 1);
+			break;
+		}
+
+		arsta->txrate.nss = nss;
+
+		arsta->txrate.bw = ath11k_mac_bw_to_mac80211_bw(bw);
+		arsta->tx_duration += tx_duration;
+		memcpy(&arsta->last_txrate, &arsta->txrate, sizeof(struct rate_info));
+
 		memset(peer_stats, 0, sizeof(*peer_stats));
 		peer_stats->succ_pkts = succ_pkts;
 		peer_stats->succ_bytes = succ_bytes;
@@ -1703,12 +1696,12 @@ ath11k_update_per_peer_tx_stats(struct ath11k *ar,
 
 		if (unlikely(ath11k_debugfs_is_extd_tx_stats_enabled(ar)))
 			ath11k_debugfs_sta_add_tx_stats(arsta, peer_stats, rate_idx);
+
+		spin_unlock_bh(&ab->base_lock);
+		rcu_read_unlock();
 	}
 
 	usr_stats->rate_stats_updated = true;
-
-	spin_unlock_bh(&ab->base_lock);
-	rcu_read_unlock();
 }
 
 static void ath11k_htt_update_ppdu_stats(struct ath11k *ar,
@@ -3500,13 +3493,16 @@ static void ath11k_dp_rx_update_peer_su_stats(struct ath11k *ar,
 {
 	struct ath11k_rx_peer_stats *rx_stats = arsta->rx_stats;
 	u32 num_msdu;
+	u32 bw_offset;
 	int i;
 
 	if (!rx_stats)
 		return;
 
+	arsta->last_tx_pkt_bw = ppdu_info->bw;
+	bw_offset = arsta->last_tx_pkt_bw * 3;
 	arsta->rssi_comb = ppdu_info->rssi_comb;
-	ewma_avg_rssi_add(&arsta->avg_rssi, ppdu_info->rssi_comb);
+	ewma_avg_rssi_add(&arsta->avg_rssi, ppdu_info->rssi_comb + bw_offset);
 
 	if (!ath11k_debugfs_is_extd_rx_stats_enabled(ar))
 		return;

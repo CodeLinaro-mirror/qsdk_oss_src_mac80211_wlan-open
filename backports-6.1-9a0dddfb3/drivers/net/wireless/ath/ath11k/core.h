@@ -719,6 +719,7 @@ struct ath11k_sta {
 	u8 rssi_comb;
 	struct ewma_avg_rssi avg_rssi;
 	s8 rssi_beacon;
+	u32 tx_retry_count;
 	s8 chain_signal[IEEE80211_MAX_CHAINS];
 	struct ath11k_htt_tx_stats *tx_stats;
 	struct ath11k_rx_peer_stats *rx_stats;
@@ -762,6 +763,7 @@ struct ath11k_sta {
 	/*bytes count for bit error rate computation*/
 	u32 ber_succ_bytes;
 	u32 ber_fail_bytes;
+	u32 last_tx_pkt_bw;
 	struct work_struct tid_config_wk;
 	struct ath11k_tid_qos_config tid_cfg[ATH11K_TID_MAX];
 #ifdef CPTCFG_ATH11K_CFR
@@ -956,6 +958,7 @@ struct ath11k {
 	u32 txpower_scale;
 	u32 power_scale;
 	u32 chan_tx_pwr;
+	s32 chan_noise_floor;
 	u32 num_stations;
 	u32 max_num_stations;
 	/* To synchronize concurrent synchronous mac80211 callback operations,
