@@ -11365,7 +11365,7 @@ ath11k_wmi_send_unit_test_cmd(struct ath11k *ar,
 	return ret;
 }
 
-int ath11k_wmi_simulate_radar(struct ath11k *ar)
+int ath11k_wmi_simulate_radar(struct ath11k *ar, u32 radar_params)
 {
 	struct ath11k_vif *arvif;
 	u32 dfs_args[DFS_MAX_TEST_ARGS];
@@ -11388,14 +11388,15 @@ int ath11k_wmi_simulate_radar(struct ath11k *ar)
 	 * freq offset (b3 - b10) to unit test. For simulation
 	 * purpose this can be set to 0 which is valid.
 	 */
-	dfs_args[DFS_TEST_RADAR_PARAM] = 0;
+	dfs_args[DFS_TEST_RADAR_PARAM] = radar_params;
 
 	wmi_ut.vdev_id = arvif->vdev_id;
 	wmi_ut.module_id = DFS_UNIT_TEST_MODULE;
 	wmi_ut.num_args = DFS_MAX_TEST_ARGS;
 	wmi_ut.diag_token = DFS_UNIT_TEST_TOKEN;
 
-	ath11k_dbg(ar->ab, ATH11K_DBG_REG, "Triggering Radar Simulation\n");
+	ath11k_dbg(ar->ab, ATH11K_DBG_REG,
+		   "Triggering Radar Simulation with param %d\n", radar_params);
 
 	return ath11k_wmi_send_unit_test_cmd(ar, wmi_ut, dfs_args);
 }

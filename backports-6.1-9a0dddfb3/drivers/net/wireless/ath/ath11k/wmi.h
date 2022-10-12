@@ -7721,7 +7721,7 @@ int ath11k_wmi_pull_fw_stats(struct ath11k_base *ab, struct sk_buff *skb,
 void ath11k_wmi_fw_stats_fill(struct ath11k *ar,
 			      struct ath11k_fw_stats *fw_stats, u32 stats_id,
 			      char *buf);
-int ath11k_wmi_simulate_radar(struct ath11k *ar);
+int ath11k_wmi_simulate_radar(struct ath11k *ar, u32 radar_params);
 int ath11k_wmi_simulate_awgn(struct ath11k *ar, u32 chan_bw_interference_bitmap);
 void ath11k_wmi_fill_default_twt_params(struct wmi_twt_enable_params *twt_params);
 int ath11k_wmi_send_twt_enable_cmd(struct ath11k *ar, u32 pdev_id,

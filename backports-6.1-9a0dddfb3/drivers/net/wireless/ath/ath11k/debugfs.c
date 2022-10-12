@@ -1918,12 +1918,21 @@ static const struct file_operations fops_pktlog_filter = {
 	.open = simple_open
 };
 
+#define	SEGMENT_ID	GENMASK(1,0)
+#define CHRIP_ID	BIT(2)
+#define OFFSET		GENMASK(10,3)
+#define DETECTOR_ID	GENMASK(12,11)
 static ssize_t ath11k_write_simulate_radar(struct file *file,
 					   const char __user *user_buf,
 					   size_t count, loff_t *ppos)
 {
 	struct ath11k *ar = file->private_data;
 	int ret;
+	u32 radar_params;
+	u8 agile = 0, segment = 0, chrip = 0;
+	int offset = 0, len;
+	char buf[64], *token, *sptr;
+
 
 	if (ar->state != ATH11K_STATE_ON) {
 		ath11k_warn(ar->ab, "pdev %d not in ON state\n", ar->pdev->pdev_id);
@@ -1931,7 +1940,54 @@ static ssize_t ath11k_write_simulate_radar(struct file *file,
 		return -ENETDOWN;
 	}
 
-	ret = ath11k_wmi_simulate_radar(ar);
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len))
+		return -EFAULT;
+
+	/* For backward compatibility */
+	if (len <= 2)
+		goto send_cmd;
+
+	buf[len] = '\0';
+	sptr = buf;
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtou8(token, 16, &segment))
+		return -EINVAL;
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtou8(token, 16, &chrip))
+		return -EINVAL;
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtoint(token, 16, &offset))
+		return -EINVAL;
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtou8(token, 16, &agile))
+		return -EINVAL;
+
+	if ((segment > 1) || (chrip > 1) || (agile > 2))
+		return -EINVAL;
+
+send_cmd:
+	radar_params = FIELD_PREP(SEGMENT_ID, segment) |
+		       FIELD_PREP(CHRIP_ID, chrip) |
+		       FIELD_PREP(OFFSET, offset) |
+		       FIELD_PREP(DETECTOR_ID, agile);
+
+	ret = ath11k_wmi_simulate_radar(ar, radar_params);
 	if (ret)
 		return ret;
 
