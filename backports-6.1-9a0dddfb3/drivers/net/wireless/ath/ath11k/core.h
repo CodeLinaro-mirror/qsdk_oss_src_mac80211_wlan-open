@@ -1130,6 +1130,9 @@ struct ath11k_pdev {
 	u8 mac_addr[ETH_ALEN];
 };
 
+#define BOARD_NAME_SIZE 100
+#define REGDB_NAME_SIZE 100
+
 struct ath11k_board_data {
 	const struct firmware *fw;
 	const void *data;
@@ -1316,6 +1319,7 @@ struct ath11k_base {
 	u32 ext_service_bitmap[WMI_SERVICE_EXT_BM_SIZE];
 	bool pdevs_macaddr_valid;
 	bool enable_cold_boot_cal;
+	int bd_api;
 
 	struct ath11k_hw_params hw_params;
 	bool is_qdss_tracing;
@@ -1650,7 +1654,8 @@ void ath11k_core_free(struct ath11k_base *ath11k);
 int ath11k_core_fetch_bdf(struct ath11k_base *ath11k,
 			  struct ath11k_board_data *bd);
 int ath11k_config_qdss(struct ath11k_base *ab);
-int ath11k_core_fetch_regdb(struct ath11k_base *ab, struct ath11k_board_data *bd);
+int ath11k_core_fetch_regdb(struct ath11k_base *ab,
+                            struct ath11k_board_data *bd);
 int ath11k_core_fetch_board_data_api_1(struct ath11k_base *ab,
 				       struct ath11k_board_data *bd,
 				       const char *name);

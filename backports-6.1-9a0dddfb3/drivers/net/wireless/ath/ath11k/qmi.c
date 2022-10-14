@@ -1414,6 +1414,24 @@ static const struct qmi_elem_info qmi_wlanfw_cap_resp_msg_v01_ei[] = {
 					   eeprom_read_timeout),
 	},
 	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x24,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   regdb_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x24,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   regdb_support),
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -3227,6 +3245,11 @@ static int ath11k_qmi_request_target_cap(struct ath11k_base *ab)
 		ath11k_dbg(ab, ATH11K_DBG_QMI, "cal data supported from eeprom\n");
 	}
 
+	if (resp.regdb_support_valid) {
+		ab->qmi.target.regdb = resp.regdb_support;
+		ath11k_dbg(ab, ATH11K_DBG_QMI, "qmi regdb download is supported\n");
+	}
+
 	fw_build_id = ab->qmi.target.fw_build_id;
 	fw_build_id_mask_len = strlen(FW_BUILD_ID_MASK);
 	if (!strncmp(fw_build_id, FW_BUILD_ID_MASK, fw_build_id_mask_len))
@@ -3270,7 +3293,7 @@ static int ath11k_qmi_load_file_target_mem(struct ath11k_base *ab,
 
 	memset(&resp, 0, sizeof(resp));
 
-	if (ab->hw_params.fixed_bdf_addr) {
+	if (ab->hw_params.fixed_bdf_addr && !ab->qmi.target.regdb) {
 		bdf_addr = ioremap(ab->hw_params.bdf_addr, ab->hw_params.fw.board_size);
 		if (!bdf_addr) {
 			ath11k_warn(ab, "qmi ioremap error for bdf_addr\n");
@@ -3299,7 +3322,7 @@ static int ath11k_qmi_load_file_target_mem(struct ath11k_base *ab,
 			req->end = 1;
 		}
 
-		if (ab->hw_params.fixed_bdf_addr ||
+		if ((ab->hw_params.fixed_bdf_addr && !ab->qmi.target.regdb) ||
 		    type == ATH11K_QMI_FILE_TYPE_EEPROM) {
 			req->data_valid = 0;
 			req->end = 1;
@@ -3308,7 +3331,7 @@ static int ath11k_qmi_load_file_target_mem(struct ath11k_base *ab,
 			memcpy(req->data, temp, req->data_len);
 		}
 
-		if (ab->hw_params.fixed_bdf_addr) {
+		if (ab->hw_params.fixed_bdf_addr && !ab->qmi.target.regdb) {
 			if (type == ATH11K_QMI_FILE_TYPE_CALDATA)
 				bdf_addr += ab->hw_params.fw.cal_offset;
 
@@ -3347,7 +3370,7 @@ static int ath11k_qmi_load_file_target_mem(struct ath11k_base *ab,
 			goto err_iounmap;
 		}
 
-		if (ab->hw_params.fixed_bdf_addr ||
+		if ((ab->hw_params.fixed_bdf_addr && !ab->qmi.target.regdb) ||
 		    type == ATH11K_QMI_FILE_TYPE_EEPROM) {
 			remaining = 0;
 		} else {
@@ -3360,7 +3383,7 @@ static int ath11k_qmi_load_file_target_mem(struct ath11k_base *ab,
 	}
 
 err_iounmap:
-	if (ab->hw_params.fixed_bdf_addr)
+	if (ab->hw_params.fixed_bdf_addr && !ab->qmi.target.regdb)
 		iounmap(bdf_addr);
 
 err_free_req:
@@ -3406,21 +3429,22 @@ static int ath11k_qmi_load_bdf_qmi(struct ath11k_base *ab,
 
 	if (regdb) {
 		ret = ath11k_core_fetch_regdb(ab, &bd);
+		if (ret) {
+			ath11k_warn(ab, "qmi failed to fetch regdb file: %d\n", ret);
+			goto out;
+		}
+		bdf_type = ATH11K_QMI_BDF_TYPE_REGDB;
 	} else {
 		ret = ath11k_core_fetch_bdf(ab, &bd);
-		if (ret)
+		if (ret) {
 			ath11k_warn(ab, "qmi failed to fetch board file: %d\n", ret);
+			goto out;
+		}
+		if (bd.len >= SELFMAG && memcmp(bd.data, ELFMAG, SELFMAG) == 0)
+			bdf_type = ATH11K_QMI_BDF_TYPE_ELF;
+		else
+			bdf_type = ATH11K_QMI_BDF_TYPE_BIN;
 	}
-
-	if (ret)
-		goto out;
-
-	if (regdb)
-		bdf_type = ATH11K_QMI_BDF_TYPE_REGDB;
-	else if (bd.len >= SELFMAG && memcmp(bd.data, ELFMAG, SELFMAG) == 0)
-		bdf_type = ATH11K_QMI_BDF_TYPE_ELF;
-	else
-		bdf_type = ATH11K_QMI_BDF_TYPE_BIN;
 
 	ath11k_dbg(ab, ATH11K_DBG_QMI, "bdf_type %d\n", bdf_type);
 

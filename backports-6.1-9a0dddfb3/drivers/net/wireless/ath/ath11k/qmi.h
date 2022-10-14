@@ -184,6 +184,7 @@ struct target_info {
 	u32 soc_id;
 	u32 fw_version;
 	u32 eeprom_caldata;
+	u8 regdb;
 	char fw_build_timestamp[ATH11K_QMI_WLANFW_MAX_TIMESTAMP_LEN_V01 + 1];
 	char fw_build_id[ATH11K_QMI_WLANFW_MAX_BUILD_ID_LEN_V01 + 1];
 	char bdf_ext[ATH11K_QMI_BDF_EXT_STR_LENGTH];
@@ -585,6 +586,8 @@ struct qmi_wlanfw_cap_resp_msg_v01 {
 	u32 otp_version;
 	u8 eeprom_read_timeout_valid;
 	u32 eeprom_read_timeout;
+	u8 regdb_support_valid;
+	u8 regdb_support;
 };
 
 struct qmi_wlanfw_cap_req_msg_v01 {

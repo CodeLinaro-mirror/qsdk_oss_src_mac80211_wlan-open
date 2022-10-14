@@ -107,6 +107,8 @@ struct ath11k_cfr_peer_tx_param;
 #define ATH11K_AMSS_FILE		"amss.bin"
 #define ATH11K_M3_FILE			"m3.bin"
 #define ATH11K_REGDB_FILE_NAME		"regdb.bin"
+#define ATH11K_REGDB_BINARY		"regdb"
+#define ATH11K_DEFAULT_ID		255
 #define NODE_ID_BASE                   	0x27
 
 #define ATH11K_CE_OFFSET(ab)	(ab->mem_ce - ab->mem)
