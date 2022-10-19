@@ -132,6 +132,12 @@ extern const struct htt_rx_ring_tlv_filter ath11k_mac_mon_status_filter_default;
 #define ATH11K_SCAN_11D_INTERVAL		600000
 #define ATH11K_11D_INVALID_VDEV_ID		0xFFFF
 
+enum ath11k_background_dfs_events {
+	ATH11K_BGDFS_SUCCESS,
+	ATH11K_BGDFS_ABORT,
+	ATH11K_BGDFS_RADAR,
+};
+
 void ath11k_mac_11d_scan_start(struct ath11k *ar, u32 vdev_id);
 void ath11k_mac_11d_scan_stop(struct ath11k *ar);
 void ath11k_mac_11d_scan_stop_all(struct ath11k_base *ab);
@@ -190,4 +196,5 @@ void ath11k_mac_get_any_chandef_iter(struct ieee80211_hw *hw,
 				     struct ieee80211_chanctx_conf *conf,
 				     void *data);
 void ath11k_mac_debugfs_remove_stats_file(struct ath11k_vif *arvif);
+void ath11k_mac_background_dfs_event(struct ath11k *ar, enum ath11k_background_dfs_events ev);
 #endif

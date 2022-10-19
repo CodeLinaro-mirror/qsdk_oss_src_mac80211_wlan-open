@@ -2332,6 +2332,19 @@ struct ath11k_ppe_threshold {
 	u32 ppet16_ppet8_ru3_ru0[PSOC_HOST_MAX_NUM_SS];
 };
 
+struct ath11k_chainmask_capabilities {
+	u32 supported_caps;
+	u32 chainmask;
+};
+
+struct ath11k_chainmask_table {
+	u32 table_id;
+	u32 num_valid_chainmasks;
+	struct ath11k_chainmask_capabilities *cap_list;
+};
+
+#define ATH11K_MAX_CHAINMASK_TABLES 5
+
 struct ath11k_service_ext_param {
 	u32 default_conc_scan_config_bits;
 	u32 default_fw_config_bits;
@@ -2341,6 +2354,9 @@ struct ath11k_service_ext_param {
 	u32 max_bssid_rx_filters;
 	u32 num_hw_modes;
 	u32 num_phy;
+	u32 num_chainmask_tables;
+	struct ath11k_chainmask_table
+		chainmask_table[ATH11K_MAX_CHAINMASK_TABLES];
 };
 
 struct ath11k_hw_mode_caps {
@@ -2580,6 +2596,17 @@ struct wmi_hw_mode_capabilities {
 	u32 hw_mode_id;
 	u32 phy_id_map;
 	u32 hw_mode_config_type;
+} __packed;
+
+struct wmi_mac_phy_chainmask_combo {
+	u32 chainmask_table_id;
+	u32 num_valid_chainmask;
+} __packed;
+
+struct wmi_mac_phy_chainmask_caps {
+	u32 tlv_header;
+	u32 supported_flags;
+	u32 chainmask;
 } __packed;
 
 #define WMI_MAX_HECAP_PHY_SIZE                 (3)
@@ -5220,6 +5247,9 @@ enum wmi_host_channel_width {
 	WMI_HOST_CHAN_WIDTH_80    = 2,
 	WMI_HOST_CHAN_WIDTH_160   = 3,
 	WMI_HOST_CHAN_WIDTH_80P80 = 4,
+
+	/* keep last */
+	WMI_HOST_CHAN_WIDTH_MAX	  = 0xF,
 };
 
 enum wmi_dcs_interference_chan_segment {
@@ -7515,8 +7545,60 @@ struct wmi_peer_set_smart_ant_node_config_ops_cmd {
 	u32 args_count;
 } __packed;
 
-const void **ath11k_wmi_tlv_parse_alloc(struct ath11k_base *ab,
-					struct sk_buff *skb, gfp_t gfp);
+#define WMI_ADFS_MODE_QUICK_OCAC		0 /* Agile preCAC */
+#define WMI_ADFS_MODE_QUICK_RCAC		2 /* Agile Rolling CAC */
+#define WMI_SUPPORT_CHAIN_MASK_ADFS		BIT(31)
+
+#define MIN_PRECAC_TIMEOUT			(6 * 60 * 1000) /* 6 minutes */
+#define MIN_WEATHER_RADAR_CHAN_PRECAC_TIMEOUT	(6 * 10 * 60 * 1000) /* 1 hour */
+#define MAX_PRECAC_TIMEOUT			(4 * 60 * 60 * 1000) /* 4 hours */
+#define MAX_WEATHER_RADAR_CHAN_PRECAC_TIMEOUT	(24 * 60 * 60 * 1000) /* 24 hours */
+#define MIN_RCAC_TIMEOUT			(62 * 1000) /* 62 seconds */
+#define MAX_RCAC_TIMEOUT			0xffffffff
+
+struct wmi_vdev_adfs_ch_cfg_cmd {
+	u32  tlv_header;
+	u32  vdev_id;
+	u32  ocac_mode;
+	u32  min_duration_ms;
+	u32  max_duration_ms;
+	u32  chan_freq;
+	u32  chan_width;
+	/*
+	 * Two center frequencies are required since agile channel switch
+	 * has to support 160/165 MHz for products like Pine.
+	 * For agile which supports only up to 80MHz (HK),
+	 * freq2 will be 0 and ignored.
+	 */
+	union {
+		u32  center_freq;
+		u32  center_freq1;
+	};
+	u32  center_freq2;
+} __packed;
+
+struct wmi_vdev_adfs_ocac_abort_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+} __packed;
+
+#define WMI_DFS_RADAR_DETECTED_IN_SERVICE_CHAN	0
+#define WMI_DFS_RADAR_DETECTED_IN_OCAC_CHAN	1
+
+struct wmi_vdev_adfs_ocac_complete_event_fixed_param {
+	u32 vdev_id;
+	u32 chan_freq;
+	u32 chan_width;
+	union {
+		u32 center_freq;
+		u32 center_freq1;
+	};
+	u32 status;
+	u32 center_freq2;
+} __packed;
+
+const void **ath11k_wmi_tlv_parse_alloc(struct ath11k_base *ab, const void *ptr,
+                                        size_t len, gfp_t gfp);
 int ath11k_wmi_cmd_send(struct ath11k_pdev_wmi *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath11k_wmi_alloc_skb(struct ath11k_wmi_base *wmi_sc, u32 len);
@@ -7753,4 +7835,6 @@ int
 ath11k_wmi_send_vdev_set_tpc_power(struct ath11k *ar,
 				       u32 vdev_id,
 				       struct ath11k_reg_tpc_power_info *param);
+int ath11k_wmi_vdev_adfs_ch_cfg_cmd_send(struct ath11k *ar,u32 vdev_id, struct cfg80211_chan_def *chandef);
+int ath11k_wmi_vdev_adfs_ocac_abort_cmd_send(struct ath11k *ar,u32 vdev_id);
 #endif

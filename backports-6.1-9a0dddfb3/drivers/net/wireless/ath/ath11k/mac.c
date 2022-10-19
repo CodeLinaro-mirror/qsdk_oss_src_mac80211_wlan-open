@@ -8708,6 +8708,28 @@ ath11k_mac_vdev_start_restart(struct ath11k_vif *arvif,
 	if (ret)
                 ath11k_warn(ab, "failed to set 6G non-ht dup conf for vdev %d: %d\n",
                             arvif->vdev_id, ret);
+
+	/* In case of ADFS, we have to abort ongoing backgrorund CAC */
+
+	if ((ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5G_CAP) &&
+	    test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask) &&
+	    ar->agile_chandef.chan) {
+
+		ath11k_dbg(ab, ATH11K_DBG_MAC,
+			   "Aborting ongoing Agile DFS on freq %d",
+			   ar->agile_chandef.chan->center_freq);
+
+		ret = ath11k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
+		if (!ret) {
+			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+			ar->agile_chandef.chan = NULL;
+			ath11k_mac_background_dfs_event(ar, ATH11K_BGDFS_ABORT);
+		} else {
+			ath11k_warn(ab, "failed to abort agile CAC for vdev %d",
+				    arvif->vdev_id);
+		}
+	}
+
 	return 0;
 }
 
@@ -12464,6 +12486,80 @@ out:
 	return ret;
 }
 
+
+static int ath11k_mac_op_set_radar_background(struct ieee80211_hw *hw,
+					      struct cfg80211_chan_def *def)
+{
+	struct ath11k *ar = hw->priv;
+	struct ath11k_vif *arvif;
+	bool arvif_found = false;
+	int ret;
+	struct ieee80211_chanctx_conf *conf;
+
+	mutex_lock(&ar->conf_mutex);
+
+	if (ar->ab->dfs_region == ATH11K_DFS_REG_UNSET) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (!test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask)) {
+		ret  = -EINVAL;
+		goto exit;
+	}
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->is_started &&
+		    arvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			arvif_found = true;
+			break;
+		}
+	}
+
+	if (!arvif_found) {
+		ret  = -EINVAL;
+		goto exit;
+	}
+
+	if (!def) {
+		ret = ath11k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
+		if (!ret) {
+			memset(&ar->agile_chandef, 0,
+			       sizeof(struct cfg80211_chan_def));
+			ar->agile_chandef.chan = NULL;
+		}
+	} else {
+		if (!cfg80211_chandef_valid(def) ||
+		    !(def->chan->flags & IEEE80211_CHAN_RADAR)) {
+			ret = -EINVAL;
+			goto exit;
+		}
+
+		/* Note: currently, half and quater bandwidth agile DFS is not
+			 supported */
+		conf = rcu_dereference(arvif->vif->bss_conf.chanctx_conf);
+		if (conf && conf->def.width != def->width) {
+			ret = -EINVAL;
+			goto exit;
+		}
+		ret = ath11k_wmi_vdev_adfs_ch_cfg_cmd_send(ar, arvif->vdev_id, def);
+		if (!ret) {
+			memcpy(&ar->agile_chandef, def,
+			       sizeof(struct cfg80211_chan_def));
+		} else {
+			ath11k_warn(ar->ab, "Failed to start agile CAC");
+			memset(&ar->agile_chandef, 0,
+			       sizeof(struct cfg80211_chan_def));
+			ar->agile_chandef.chan = NULL;
+		}
+	}
+
+exit:
+	mutex_unlock(&ar->conf_mutex);
+	return ret;
+}
+
+
 static const struct ieee80211_ops ath11k_ops = {
 	.tx				= ath11k_mac_op_tx,
 	.wake_tx_queue			= ieee80211_handle_wake_tx_queue,
@@ -12528,6 +12624,7 @@ static const struct ieee80211_ops ath11k_ops = {
 #ifdef CPTCFG_MAC80211_MESH
 	.config_mesh_offload_path       = ath11k_mac_op_config_mesh_offload_path,
 #endif
+	.set_radar_background           = ath11k_mac_op_set_radar_background,
 };
 
 static void ath11k_mac_update_ch_list(struct ath11k *ar,
@@ -13175,6 +13272,11 @@ static int __ath11k_mac_register(struct ath11k *ar)
 		wiphy_ext_feature_set(ar->hw->wiphy,
 				      NL80211_EXT_FEATURE_WIDE_BAND_SCAN);
 
+	if ((cap->supported_bands & WMI_HOST_WLAN_5G_CAP) &&
+	    test_bit(ar->cfg_rx_chainmask, &cap->adfs_chain_mask))
+		wiphy_ext_feature_set(ar->hw->wiphy,
+				      NL80211_EXT_FEATURE_RADAR_BACKGROUND);
+
 	ar->hw->wiphy->cipher_suites = cipher_suites;
 	ar->hw->wiphy->n_cipher_suites = ARRAY_SIZE(cipher_suites);
 
@@ -13479,3 +13581,40 @@ int ath11k_mac_vif_set_keepalive(struct ath11k_vif *arvif,
 
 	return 0;
 }
+
+void ath11k_mac_background_dfs_event(struct ath11k *ar,
+				     enum ath11k_background_dfs_events ev)
+{
+	struct ath11k_vif *arvif;
+	bool arvif_found = false;
+	int ret = 0;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->is_started &&
+		    arvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			arvif_found = true;
+			break;
+		}
+	}
+
+	if (!arvif_found)
+		return;
+
+	if (ev == ATH11K_BGDFS_RADAR) {
+		cfg80211_background_radar_event(ar->hw->wiphy, &ar->agile_chandef, GFP_ATOMIC);
+		lockdep_assert_held(&ar->conf_mutex);
+		ret = ath11k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
+	} else if (ev == ATH11K_BGDFS_ABORT) {
+		cfg80211_background_cac_abort(ar->hw->wiphy);
+	}
+
+	if (!ret) {
+		memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+		ar->agile_chandef.chan = NULL;
+	} else {
+		ath11k_dbg(ar->ab, ATH11K_DBG_MAC,
+			   "ADFS state can't be reset (ret=%d)\n",
+			   ret);
+	}
+}
+
