@@ -2862,7 +2862,7 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 		       arg->num_hint_s_ssid * sizeof(*s_ssid);
 
 	len += TLV_HDR_SIZE;
-	if (arg->extraie.len)
+	if (arg->extraie.len && arg->extraie.len <= 0xFFFF)
 		extraie_len_with_pad =
 			roundup(arg->extraie.len, sizeof(u32));
 	if (extraie_len_with_pad <= (wmi->wmi_ab->max_msg_len[ar->pdev_idx] - len)) {
