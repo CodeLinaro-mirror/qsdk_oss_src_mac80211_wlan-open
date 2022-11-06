@@ -8689,10 +8689,80 @@ ath12k_wmi_pdev_csa_switch_count_status_event(struct ath12k_base *ab,
 }
 
 static void
+ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
+				 const struct ath12k_wmi_pdev_radar_event *radar)
+{
+	u32 radar_found_freq, sub_channel_cfreq, radar_found_freq_low, radar_found_freq_high;
+	struct ath12k_mac_get_any_chanctx_conf_arg arg;
+	u16 radar_bitmap = 0, subchannel_count;
+	struct cfg80211_chan_def *chandef;
+	enum nl80211_chan_width width;
+	struct ath12k *ar;
+	u32 center_freq;
+	int i;
+
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, radar->pdev_id);
+	arg.ar = ar;
+	arg.chanctx_conf = NULL;
+	ieee80211_iter_chan_contexts_atomic(ath12k_ar_to_hw(ar),
+					    ath12k_mac_get_any_chanctx_conf_iter, &arg);
+	if (!arg.chanctx_conf) {
+		ath12k_warn(ab, "failed to find valid chanctx_conf in radar detected event\n");
+		return;
+	}
+
+	chandef = &arg.chanctx_conf->def;
+	if (!chandef) {
+		ath12k_warn(ab, "chandef information is not available\n");
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, " Operating freq:%u center_freq1:%u, center_freq2:%u",
+		   chandef->chan->center_freq, chandef->center_freq1,chandef->center_freq2);
+
+	width = chandef->width;
+	subchannel_count = ath12k_calculate_subchannel_count(width);
+	if (!subchannel_count)
+	{
+		ath12k_warn(ab, "invalid subchannel count for bandwith=%d\n",width);
+		goto mark_radar;
+	}
+
+	center_freq = chandef->center_freq1;
+
+	radar_found_freq = center_freq + radar->freq_offset;
+
+	radar_found_freq_high = radar_found_freq_low = radar_found_freq;
+
+	if (radar->is_chirp) {
+		radar_found_freq_high = radar_found_freq_high + 10;
+		radar_found_freq_low  = radar_found_freq_low  - 10;
+	}
+
+	sub_channel_cfreq = center_freq - ((subchannel_count-1) * 10);
+
+	for(i=0; i < subchannel_count; i++) {
+		if (sub_channel_cfreq >= 5260 &&
+		    ((radar_found_freq_low >= sub_channel_cfreq-10 &&
+		    radar_found_freq_low <= sub_channel_cfreq+10) ||
+		    (radar_found_freq_high >= sub_channel_cfreq-10 &&
+		    radar_found_freq_high <= sub_channel_cfreq+10)))
+			radar_bitmap |= 1 << i;
+
+		sub_channel_cfreq += 20;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "radar_bitmap:%0x and subchannel_count:%d",
+		   radar_bitmap,subchannel_count);
+
+mark_radar:
+	ieee80211_radar_detected_bitmap(ar->ah->hw, radar_bitmap, chandef->chan);
+}
+
+static void
 ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	const void **tb;
-	struct ath12k_mac_get_any_chanctx_conf_arg arg;
 	const struct ath12k_wmi_pdev_radar_event *ev;
 	struct ath12k *ar;
 	int ret;
@@ -8728,22 +8798,13 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 		goto exit;
 	}
 
-	arg.ar = ar;
-	arg.chanctx_conf = NULL;
-	ieee80211_iter_chan_contexts_atomic(ath12k_ar_to_hw(ar),
-					    ath12k_mac_get_any_chanctx_conf_iter, &arg);
-	if (!arg.chanctx_conf) {
-		ath12k_warn(ab, "failed to find valid chanctx_conf in radar detected event\n");
-		goto exit;
-	}
-
 	ath12k_dbg(ar->ab, ATH12K_DBG_REG, "DFS Radar Detected in pdev %d\n",
 		   ev->pdev_id);
 
 	if (ar->dfs_block_radar_events)
 		ath12k_info(ab, "DFS Radar detected, but ignored as requested\n");
 	else
-		ieee80211_radar_detected(ath12k_ar_to_hw(ar), arg.chanctx_conf);
+		ath12k_dfs_calculate_subchannels(ab, ev);
 
 exit:
 	rcu_read_unlock();

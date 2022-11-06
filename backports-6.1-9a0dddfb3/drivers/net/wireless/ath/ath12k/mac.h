@@ -292,4 +292,5 @@ void ath12k_mlo_mcast_update_tx_link_address(struct ieee80211_vif *vif,
 void ath12k_mac_get_any_chandef_iter(struct ieee80211_hw *hw,
 				     struct ieee80211_chanctx_conf *conf,
 				     void *data);
+u16 ath12k_calculate_subchannel_count(enum nl80211_chan_width width);
 #endif

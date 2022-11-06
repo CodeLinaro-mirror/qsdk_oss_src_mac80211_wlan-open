@@ -14401,3 +14401,30 @@ int ath12k_mac_vif_set_keepalive(struct ath12k_link_vif *arvif,
 
 	return 0;
 }
+
+u16 ath12k_calculate_subchannel_count(enum nl80211_chan_width width) {
+	u16 width_num = 0;
+
+	switch (width) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+		width_num = 20;
+		break;
+	case NL80211_CHAN_WIDTH_40:
+		width_num = 40;
+		break;
+	case NL80211_CHAN_WIDTH_80:
+	case NL80211_CHAN_WIDTH_80P80:
+		width_num = 80;
+		break;
+	case NL80211_CHAN_WIDTH_160:
+		width_num = 160;
+		break;
+	case NL80211_CHAN_WIDTH_320:
+		width_num = 320;
+		break;
+	default:
+		break;
+	}
+	return width_num/20;
+}
