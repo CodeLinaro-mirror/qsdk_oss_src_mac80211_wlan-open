@@ -373,8 +373,7 @@ void ath11k_peer_map_ast(struct ath11k *ar, struct ath11k_peer *peer,
 
 		if ((ast_entry->type == ATH11K_AST_TYPE_WDS) ||
 		    (ast_entry->type == ATH11K_AST_TYPE_MEC))
-			ath11k_nss_map_wds_peer(ar, peer, mac_addr,
-						ast_entry->type);
+			ath11k_nss_map_wds_peer(ar, peer, mac_addr, ast_entry);
 
 		ath11k_dbg(ab, ATH11K_DBG_MAC, "ath11k_peer_map_ast peer %pM ast_entry %pM\n",
 			   peer->addr, ast_entry->addr);

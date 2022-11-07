@@ -17,6 +17,7 @@ struct ath11k;
 struct ath11k_base;
 struct ath11k_vif;
 struct ath11k_peer;
+struct ath11k_ast_entry;
 struct ath11k_sta;
 enum ath11k_ast_entry_type;
 struct hal_rx_mon_ppdu_info;
@@ -290,7 +291,7 @@ int ath11k_nss_add_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
 int ath11k_nss_update_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
 			       u8 *dest_mac);
 int ath11k_nss_map_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
-			    u8 *dest_mac, enum ath11k_ast_entry_type type);
+			    u8 *dest_mac, struct ath11k_ast_entry *ast_entry);
 int ath11k_nss_del_wds_peer(struct ath11k *ar, u8 *peer_addr,
 			    int peer_id, u8 *dest_mac);
 int ath11k_nss_ext_vdev_cfg_wds_peer(struct ath11k_vif *arvif,
@@ -399,7 +400,8 @@ static inline int ath11k_nss_update_wds_peer(struct ath11k *ar, struct ath11k_pe
 }
 
 static inline int ath11k_nss_map_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
-					  u8 *dest_mac, int type)
+					  u8 *dest_mac,
+					  struct ath11k_ast_entry *ast_entry)
 {
 	return 0;
 }

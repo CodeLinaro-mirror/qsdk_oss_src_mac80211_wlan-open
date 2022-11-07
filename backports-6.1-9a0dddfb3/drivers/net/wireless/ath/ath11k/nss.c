@@ -3879,13 +3879,14 @@ msg_free:
 }
 
 int ath11k_nss_map_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
-			    u8 *dest_mac, enum ath11k_ast_entry_type type)
+			    u8 *dest_mac, struct ath11k_ast_entry *ast_entry)
 {
 	struct ath11k_base *ab = ar->ab;
 	struct nss_wifili_wds_peer_map_msg *wds_peer_map_msg;
 	struct nss_wifili_msg *wlmsg = NULL;
 	nss_wifili_msg_callback_t msg_cb;
 	nss_tx_status_t status;
+	enum ath11k_ast_entry_type type = ast_entry->type;
 	int ret = 0;
 
 	wlmsg = kzalloc(sizeof(struct nss_wifili_msg), GFP_ATOMIC);
@@ -3895,7 +3896,7 @@ int ath11k_nss_map_wds_peer(struct ath11k *ar, struct ath11k_peer *peer,
 	wds_peer_map_msg = &wlmsg->msg.wdspeermapmsg;
 
 	wds_peer_map_msg->vdev_id = peer->vdev_id;
-	wds_peer_map_msg->ast_idx = peer->hw_peer_id;
+	wds_peer_map_msg->ast_idx = ast_entry->ast_idx;
 
 	if (type == ATH11K_AST_TYPE_MEC)
 		wds_peer_map_msg->peer_id = NSS_WIFILI_MEC_PEER_ID;
