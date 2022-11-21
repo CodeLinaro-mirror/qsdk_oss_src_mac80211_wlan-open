@@ -10455,7 +10455,7 @@ ath12k_wmi_send_unit_test_cmd(struct ath12k *ar,
 	return ret;
 }
 
-int ath12k_wmi_simulate_radar(struct ath12k *ar)
+int ath12k_wmi_simulate_radar(struct ath12k *ar, u32 radar_params)
 {
 	struct ath12k_link_vif *arvif;
 	u32 dfs_args[DFS_MAX_TEST_ARGS];
@@ -10474,11 +10474,10 @@ int ath12k_wmi_simulate_radar(struct ath12k *ar)
 
 	dfs_args[DFS_TEST_CMDID] = 0;
 	dfs_args[DFS_TEST_PDEV_ID] = ar->pdev->pdev_id;
-	/* Currently we could pass segment_id(b0 - b1), chirp(b2)
-	 * freq offset (b3 - b10) to unit test. For simulation
-	 * purpose this can be set to 0 which is valid.
+	/* Currently we pass segment_id(b0 - b1), chirp(b2)
+	 * freq offset (b3 - b10), detector_id(b11 - b12) to unit test.
 	 */
-	dfs_args[DFS_TEST_RADAR_PARAM] = 0;
+	dfs_args[DFS_TEST_RADAR_PARAM] = radar_params;
 
 	wmi_ut.vdev_id = cpu_to_le32(arvif->vdev_id);
 	wmi_ut.module_id = cpu_to_le32(DFS_UNIT_TEST_MODULE);

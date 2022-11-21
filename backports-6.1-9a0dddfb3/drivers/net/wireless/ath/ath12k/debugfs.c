@@ -15,15 +15,85 @@
 #include "qmi.h"
 #include "wmi.h"
 
+#define SEGMENT_ID	GENMASK(1,0)
+#define CHRIP_ID	BIT(2)
+#define OFFSET		GENMASK(10,3)
+#define DETECTOR_ID	GENMASK(12,11)
+#define FHSS		BIT(14)
+
 static ssize_t ath12k_write_simulate_radar(struct file *file,
 					   const char __user *user_buf,
 					   size_t count, loff_t *ppos)
 {
+	u8 agile = 0, segment = 0, radar_type = 0, chirp = 0, fhss = 0;
 	struct ath12k *ar = file->private_data;
+	char buf[64], *token, *sptr;
+	u32 radar_params;
+	int offset = 0;
 	int ret;
+	int len;
+
+	len = min(count, sizeof(buf) - 1);
+	if (copy_from_user(buf, user_buf, len)) {
+		return -EFAULT;
+	}
+
+	/* For backward compatibility */
+	if (len <= 2)
+		goto send_cmd;
+
+	buf[len] = '\0';
+	sptr = buf;
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtou8(token, 16, &segment))
+		return -EINVAL;
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtou8(token, 16, &radar_type))
+		return -EINVAL;
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtoint(token, 10, &offset))
+		return -EINVAL;
+
+	token = strsep(&sptr, " ");
+	if (!token)
+		return -EINVAL;
+
+	if (kstrtou8(token, 16, &agile))
+		return -EINVAL;
+
+	if ((segment > 1) || (radar_type > 2) || (agile > 2))
+		return -EINVAL;
+
+	/* TODO Add agile chandef validation
+	 */
+	if (agile)
+		return -EINVAL;
+
+send_cmd:
+	/* radar_type 1 is for chirp, radar_type 2 is for FHSS */
+	if (radar_type == 1)
+		chirp = 1;
+	if (radar_type == 2)
+		fhss = 1;
+
+	radar_params = u32_encode_bits(segment, SEGMENT_ID) |
+		       u32_encode_bits(chirp, CHRIP_ID) |
+		       u32_encode_bits(offset, OFFSET) |
+		       u32_encode_bits(agile, DETECTOR_ID) |
+		       u32_encode_bits(fhss, FHSS);
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	ret = ath12k_wmi_simulate_radar(ar);
+	ret = ath12k_wmi_simulate_radar(ar, radar_params);
 	if (ret)
 		goto exit;
 
