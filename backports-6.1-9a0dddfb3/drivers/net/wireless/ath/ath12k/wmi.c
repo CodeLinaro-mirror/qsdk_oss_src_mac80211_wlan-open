@@ -53,6 +53,9 @@ struct ath12k_wmi_service_ext_arg {
 	u32 max_bssid_rx_filters;
 	u32 num_hw_modes;
 	u32 num_phy;
+	u32 num_chainmask_tables;
+	struct ath12k_chainmask_table
+		chainmask_table[ATH12K_MAX_CHAINMASK_TABLES];
 };
 
 struct ath12k_wmi_svc_rdy_ext_parse {
@@ -71,6 +74,7 @@ struct ath12k_wmi_svc_rdy_ext_parse {
 	bool hw_mode_done;
 	bool mac_phy_done;
 	bool ext_hal_reg_done;
+	u32 n_mac_phy_chainmask_combo;
 	bool mac_phy_chainmask_combo_done;
 	bool mac_phy_chainmask_cap_done;
 	bool oem_dma_ring_cap_done;
@@ -312,6 +316,40 @@ int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
        return ret;
 }
 
+
+enum wmi_host_channel_width
+ath12k_wmi_get_host_chan_width(u32 width)
+{
+	enum wmi_host_channel_width host_width;
+
+	switch (width) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+		host_width = WMI_HOST_CHAN_WIDTH_20;
+		break;
+	case NL80211_CHAN_WIDTH_40:
+		host_width = WMI_HOST_CHAN_WIDTH_40;
+		break;
+	case NL80211_CHAN_WIDTH_80:
+		host_width = WMI_HOST_CHAN_WIDTH_80;
+		break;
+	case NL80211_CHAN_WIDTH_160:
+		host_width = WMI_HOST_CHAN_WIDTH_160;
+		break;
+	case NL80211_CHAN_WIDTH_80P80:
+		host_width = WMI_HOST_CHAN_WIDTH_80P80;
+		break;
+	case NL80211_CHAN_WIDTH_320:
+		host_width = WMI_HOST_CHAN_WIDTH_320;
+		break;
+	default:
+		host_width = WMI_HOST_CHAN_WIDTH_MAX;
+		break;
+	}
+
+	return host_width;
+}
+
 static int
 ath12k_wmi_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
 		    int (*iter)(struct ath12k_base *ab, u16 tag, u16 len,
@@ -541,6 +579,7 @@ ath12k_pull_mac_phy_cap_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 	pdev->hw_link_id = ath12k_wmi_mac_phy_get_hw_link_id(mac_caps);
 	pdev_cap->supported_bands |= le32_to_cpu(mac_caps->supported_bands);
 	pdev_cap->ampdu_density = le32_to_cpu(mac_caps->ampdu_density);
+	pdev_cap->chainmask_table_id = mac_caps->chainmask_table_id;
 
 	fw_pdev = &ab->fw_pdev[ab->fw_pdev_count];
 	fw_pdev->supported_bands = le32_to_cpu(mac_caps->supported_bands);
@@ -6134,6 +6173,102 @@ mem_free:
 	kfree(tb);
 }
 
+
+static int ath12k_wmi_tlv_mac_phy_chainmask_caps(struct ath12k_base *soc,
+						 u16 len, const void *ptr, void *data)
+{
+	struct ath12k_wmi_svc_rdy_ext_parse *svc_rdy_ext = data;
+	struct wmi_mac_phy_chainmask_caps *cmask_caps = (struct wmi_mac_phy_chainmask_caps *)ptr;
+	struct ath12k_chainmask_table *cmask_table;
+	struct ath12k_pdev_cap *pdev_cap;
+	u32 tag;
+	int i, j;
+
+	if (!svc_rdy_ext->hw_mode_caps)
+		return -EINVAL;
+
+	if ((!svc_rdy_ext->arg.num_chainmask_tables) ||
+	    (svc_rdy_ext->arg.num_chainmask_tables > ATH12K_MAX_CHAINMASK_TABLES))
+		return -EINVAL;
+
+	for (i = 0; i < svc_rdy_ext->arg.num_chainmask_tables; i++) {
+		cmask_table = &svc_rdy_ext->arg.chainmask_table[i];
+
+		for (j = 0; j < cmask_table->num_valid_chainmasks; j++) {
+			tag = FIELD_GET(WMI_TLV_TAG, cmask_caps->tlv_header);
+
+			if (tag != WMI_TAG_MAC_PHY_CHAINMASK_CAPABILITY)
+				return -EPROTO;
+
+			cmask_table->cap_list[j].chainmask = cmask_caps->chainmask;
+			cmask_table->cap_list[j].supported_caps = cmask_caps->supported_flags;
+			cmask_caps++;
+			ath12k_dbg(soc, ATH12K_DBG_WMI,"[id %d] chainmask %x supported_caps %x",
+				   cmask_table->table_id, cmask_table->cap_list[j].chainmask,
+				   cmask_table->cap_list[j].supported_caps);
+		}
+	}
+
+	for (i = 0; i < soc->num_radios; i++) {
+		pdev_cap = &soc->pdevs[i].cap;
+		for (j = 0; j < svc_rdy_ext->n_mac_phy_chainmask_combo; j++) {
+			cmask_table = &svc_rdy_ext->arg.chainmask_table[j];
+			if (cmask_table->table_id == pdev_cap->chainmask_table_id)
+				break;
+		}
+		for (j = 0; j < cmask_table->num_valid_chainmasks; j++) {
+			if (cmask_table->cap_list[j].supported_caps & WMI_SUPPORT_CHAIN_MASK_ADFS)
+				pdev_cap->adfs_chain_mask |= (1 << cmask_table->cap_list[j].chainmask);
+		}
+		ath12k_dbg(soc, ATH12K_DBG_WMI, "updated adfs chain mask %lx for pdev %d",
+			   pdev_cap->adfs_chain_mask, i);
+	}
+	return 0;
+}
+
+static void ath12k_wmi_free_chainmask_caps(struct ath12k_wmi_svc_rdy_ext_parse *svc_rdy_ext)
+{
+	int i;
+
+	if (!svc_rdy_ext->arg.num_chainmask_tables)
+		return;
+
+	for (i = 0; i < svc_rdy_ext->arg.num_chainmask_tables; i++) {
+		if (!svc_rdy_ext->arg.chainmask_table[i].cap_list)
+			continue;
+		kfree(svc_rdy_ext->arg.chainmask_table[i].cap_list);
+		svc_rdy_ext->arg.chainmask_table[i].cap_list = NULL;
+	}
+}
+
+static int ath12k_wmi_tlv_mac_phy_chainmask_combo_parse(struct ath12k_base *soc,
+							u16 tag, u16 len,
+							const void *ptr, void *data)
+{
+	struct ath12k_wmi_svc_rdy_ext_parse *svc_rdy_ext = data;
+	struct wmi_mac_phy_chainmask_combo *cmask_combo = (struct wmi_mac_phy_chainmask_combo *) ptr;
+	u32 i = svc_rdy_ext->n_mac_phy_chainmask_combo;
+	struct ath12k_chainmask_table *cmask_table;
+
+	if (tag != WMI_TAG_MAC_PHY_CHAINMASK_COMBO)
+		return -EPROTO;
+
+	if (svc_rdy_ext->n_mac_phy_chainmask_combo >= svc_rdy_ext->arg.num_chainmask_tables)
+		return -ENOBUFS;
+
+	cmask_table = &svc_rdy_ext->arg.chainmask_table[i];
+	cmask_table->table_id = cmask_combo->chainmask_table_id;
+	cmask_table->num_valid_chainmasks = cmask_combo->num_valid_chainmask;
+	cmask_table->cap_list = kcalloc(cmask_combo->num_valid_chainmask,
+					sizeof(struct ath12k_chainmask_caps),
+					GFP_ATOMIC);
+	if (!svc_rdy_ext->arg.chainmask_table[i].cap_list)
+		return -ENOMEM;
+
+	svc_rdy_ext->n_mac_phy_chainmask_combo++;
+	return 0;
+}
+
 static int ath12k_wmi_hw_mode_caps_parse(struct ath12k_base *soc,
 					 u16 tag, u16 len,
 					 const void *ptr, void *data)
@@ -6446,6 +6581,7 @@ static int ath12k_wmi_svc_rdy_ext_parse(struct ath12k_base *ab,
 		svc_rdy_ext->hw_caps = ptr;
 		svc_rdy_ext->arg.num_hw_modes =
 			le32_to_cpu(svc_rdy_ext->hw_caps->num_hw_modes);
+		svc_rdy_ext->arg.num_chainmask_tables = le32_to_cpu(svc_rdy_ext->hw_caps->num_chainmask_tables);
 		break;
 
 	case WMI_TAG_SOC_HAL_REG_CAPABILITIES:
@@ -6480,8 +6616,21 @@ static int ath12k_wmi_svc_rdy_ext_parse(struct ath12k_base *ab,
 
 			svc_rdy_ext->ext_hal_reg_done = true;
 		} else if (!svc_rdy_ext->mac_phy_chainmask_combo_done) {
+			svc_rdy_ext->n_mac_phy_chainmask_combo = 0;
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						  ath12k_wmi_tlv_mac_phy_chainmask_combo_parse,
+						  svc_rdy_ext);
+			if (ret) {
+				ath12k_warn(ab, "failed to parse chainmask combo tlv %d\n", ret);
+				return ret;
+			}
 			svc_rdy_ext->mac_phy_chainmask_combo_done = true;
 		} else if (!svc_rdy_ext->mac_phy_chainmask_cap_done) {
+			ret = ath12k_wmi_tlv_mac_phy_chainmask_caps(ab, len, ptr, svc_rdy_ext);
+			if (ret) {
+				ath12k_warn(ab, "failed to parse chainmask caps tlv %d\n", ret);
+				return ret;
+			}
 			svc_rdy_ext->mac_phy_chainmask_cap_done = true;
 		} else if (!svc_rdy_ext->oem_dma_ring_cap_done) {
 			svc_rdy_ext->oem_dma_ring_cap_done = true;
@@ -6519,9 +6668,12 @@ static int ath12k_service_ready_ext_event(struct ath12k_base *ab,
 		complete(&ab->wmi_ab.service_ready);
 
 	kfree(svc_rdy_ext.mac_phy_caps);
+	ath12k_wmi_free_chainmask_caps(&svc_rdy_ext);
 	return 0;
 
 err:
+	kfree(svc_rdy_ext.mac_phy_caps);
+	ath12k_wmi_free_chainmask_caps(&svc_rdy_ext);
 	ath12k_wmi_free_dbring_caps(ab);
 	return ret;
 }
@@ -10944,14 +11096,18 @@ ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
 	ar = ath12k_mac_get_ar_by_pdev_id(ab, radar->pdev_id);
 	arg.ar = ar;
 	arg.chanctx_conf = NULL;
-	ieee80211_iter_chan_contexts_atomic(ath12k_ar_to_hw(ar),
-					    ath12k_mac_get_any_chanctx_conf_iter, &arg);
-	if (!arg.chanctx_conf) {
-		ath12k_warn(ab, "failed to find valid chanctx_conf in radar detected event\n");
-		return;
+	if (!radar->detector_id) {
+		ieee80211_iter_chan_contexts_atomic(ath12k_ar_to_hw(ar),
+						    ath12k_mac_get_any_chanctx_conf_iter, &arg);
+		if (!arg.chanctx_conf) {
+			ath12k_warn(ab, "failed to find valid chanctx_conf in radar detected event\n");
+			return;
+		}
+		chandef = &arg.chanctx_conf->def;
+	} else {
+		chandef = &ar->agile_chandef;
 	}
 
-	chandef = &arg.chanctx_conf->def;
 	if (!chandef) {
 		ath12k_warn(ab, "chandef information is not available\n");
 		return;
@@ -11001,7 +11157,12 @@ ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
 		   radar_bitmap,subchannel_count);
 
 mark_radar:
-	ieee80211_radar_detected_bitmap(ar->ah->hw, radar_bitmap, chandef->chan);
+	if (!radar->detector_id) {
+		ieee80211_radar_detected_bitmap(ar->ah->hw, radar_bitmap, chandef->chan);
+	} else {
+		ar->agile_chandef.radar_bitmap = radar_bitmap;
+		ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_RADAR);
+	}
 }
 
 static void
@@ -13660,6 +13821,61 @@ static void ath12k_wmi_parse_cfr_capture_event(struct ath12k_base *ab,
 			    ret);
 }
 
+static void ath12k_process_ocac_complete_event(struct ath12k_base *ab,
+					       struct sk_buff *skb)
+{
+	const void **tb;
+	const struct wmi_vdev_adfs_ocac_complete_event_fixed_param *ev;
+	struct ath12k *ar;
+	u32 vdev_id, status;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_VDEV_ADFS_OCAC_COMPLETE_EVENT];
+
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch ocac completed ev");
+		kfree(tb);
+		return;
+	}
+
+	vdev_id = __le32_to_cpu(ev->vdev_id);
+	status = __le32_to_cpu(ev->status);
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "pdev dfs ocac complete event on pdev %d, chan freq %d,"
+		   "chan_width %d, status %d  freq %d, freq1  %d, freq2 %d",
+		   ev->vdev_id, __le32_to_cpu(ev->chan_freq),
+		   __le32_to_cpu(ev->chan_width), status,
+		   __le32_to_cpu(ev->center_freq), __le32_to_cpu(ev->center_freq1),
+		   __le32_to_cpu(ev->center_freq2));
+
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, vdev_id);
+
+	if (!ar) {
+		ath12k_warn(ab, "OCAC complete event in invalid vdev %d\n",
+			    ev->vdev_id);
+		goto exit;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,"aDFS ocac complete event in vdev %d\n",
+		   __le32_to_cpu(ev->vdev_id));
+
+	if (status) {
+	    ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
+	} else {
+		memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+		ar->agile_chandef.chan = NULL;
+	}
+exit:
+	kfree(tb);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -13879,6 +14095,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_AFC_EVENTID:
 		ath12k_wmi_afc_event(ab, skb);
+		break;
+	case WMI_VDEV_ADFS_OCAC_COMPLETE_EVENTID:
+		ath12k_process_ocac_complete_event(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
@@ -15828,3 +16047,95 @@ ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 
 	return ret;
 }
+
+int ath12k_wmi_vdev_adfs_ch_cfg_cmd_send(struct ath12k *ar,
+					 u32 vdev_id,
+					 struct cfg80211_chan_def *def)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_vdev_adfs_ch_cfg_cmd *cmd;
+	u32 min_duration_ms;
+	struct sk_buff *skb;
+	int ret = 0;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_vdev_adfs_ch_cfg_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_ADFS_CH_CFG_CMD,
+						 sizeof(struct wmi_vdev_adfs_ch_cfg_cmd));
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+
+	if (ar->ab->dfs_region == ATH12K_DFS_REG_ETSI) {
+		cmd->ocac_mode = WMI_ADFS_MODE_QUICK_OCAC;
+		min_duration_ms = cfg80211_chandef_dfs_cac_time(ar->ah->hw->wiphy,
+								def, true, false);
+		cmd->min_duration_ms = cpu_to_le32(min_duration_ms);
+
+		if (min_duration_ms == MIN_WEATHER_RADAR_CHAN_PRECAC_TIMEOUT)
+			cmd->max_duration_ms = cpu_to_le32(MAX_WEATHER_RADAR_CHAN_PRECAC_TIMEOUT);
+		else
+			cmd->max_duration_ms = cpu_to_le32(MAX_PRECAC_TIMEOUT);
+	} else if (ar->ab->dfs_region == ATH12K_DFS_REG_FCC) {
+		cmd->ocac_mode = cpu_to_le32(WMI_ADFS_MODE_QUICK_RCAC);
+		cmd->min_duration_ms = cpu_to_le32(MIN_RCAC_TIMEOUT);
+		cmd->max_duration_ms = cpu_to_le32(MAX_RCAC_TIMEOUT);
+	}
+
+	cmd->chan_freq = cpu_to_le32(def->chan->center_freq);
+	cmd->chan_width = cpu_to_le32(ath12k_wmi_get_host_chan_width(def->width));
+	cmd->center_freq1 = cpu_to_le32(def->center_freq1);
+	cmd->center_freq2 = cpu_to_le32(def->center_freq2);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "Send adfs channel cfg command for vdev id %d "
+		   "mode as %d min duration %d chan_freq %d chan_width %d\n"
+		   "center_freq1 %d center_freq2 %d", cmd->vdev_id,
+		   cmd->ocac_mode, cmd->min_duration_ms, cmd->chan_freq,
+		   cmd->chan_width, cmd->center_freq1, cmd->center_freq2);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_ADFS_CH_CFG_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_VDEV_ADFS_CH_CFG_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(struct ath12k *ar, u32 vdev_id)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_vdev_adfs_ocac_abort_cmd *cmd;
+	struct sk_buff *skb;
+	int ret = 0;
+
+	if (!ar->agile_chandef.chan) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "Currently, agile CAC is not active on any channel."
+			   "Ignore abort");
+		return ret;
+	}
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_vdev_adfs_ocac_abort_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_ADFS_OCAC_ABORT_CMD,
+						 sizeof(struct wmi_vdev_adfs_ocac_abort_cmd));
+
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_ADFS_OCAC_ABORT_CMDID);
+
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_VDEV_ADFS_ABORT_CMD\n");
+		dev_kfree_skb(skb);
+		return ret;
+	}
+	return ret;
+}
+

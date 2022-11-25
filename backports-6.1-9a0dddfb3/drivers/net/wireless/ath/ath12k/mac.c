@@ -930,6 +930,28 @@ static struct ath12k *ath12k_mac_get_ar_by_chan(struct ieee80211_hw *hw,
 	return NULL;
 }
 
+static struct ath12k *ath12k_mac_get_ar_by_agile_chandef(struct ieee80211_hw *hw,
+							 enum nl80211_band band)
+{
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k *ar;
+	int i;
+
+	if (band != NL80211_BAND_5GHZ)
+		return NULL;
+
+	ar = ah->radio;
+	for (i = 0; i < ah->num_radio; i++) {
+		if (!ar->agile_chandef.chan)
+			continue;
+		if (ar->agile_chandef.chan->center_freq > ar->chan_info.low_freq &&
+		    ar->agile_chandef.chan->center_freq < ar->chan_info.high_freq)
+			return ar;
+		ar++;
+	}
+	return NULL;
+}
+
 static struct ath12k *ath12k_get_ar_by_ctx(struct ieee80211_hw *hw,
 					   struct ieee80211_chanctx_conf *ctx)
 {
@@ -7290,6 +7312,115 @@ exit:
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_mac_op_link_reconfig_remove);
+
+/* Note: only half bandwidth agile is supported */
+bool ath12k_is_supported_agile_bandwidth(enum nl80211_chan_width conf_bw,
+					 enum nl80211_chan_width agile_bw)
+{
+	bool is_supported = false;
+
+	switch (conf_bw) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+	case NL80211_CHAN_WIDTH_20:
+	case NL80211_CHAN_WIDTH_40:
+		if (agile_bw <= conf_bw)
+			is_supported = true;
+		break;
+	case NL80211_CHAN_WIDTH_80:
+		if (agile_bw == conf_bw ||
+		    agile_bw == NL80211_CHAN_WIDTH_40)
+			is_supported = true;
+		break;
+	case NL80211_CHAN_WIDTH_160:
+		if (agile_bw == conf_bw ||
+		    agile_bw == NL80211_CHAN_WIDTH_80)
+			is_supported = true;
+		break;
+	case NL80211_CHAN_WIDTH_320:
+		if (agile_bw == conf_bw ||
+		    agile_bw == NL80211_CHAN_WIDTH_160)
+			is_supported = true;
+		break;
+	default:
+		break;
+	}
+
+	return is_supported;
+}
+
+int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
+				       struct cfg80211_chan_def *def)
+{
+	struct cfg80211_chan_def conf_def;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	bool arvif_found = false;
+	struct ath12k *ar;
+	int ret;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	if (def)
+		ar = ath12k_mac_get_ar_by_chan(hw, def->chan);
+	else
+		ar = ath12k_mac_get_ar_by_agile_chandef(hw, NL80211_BAND_5GHZ);
+
+	if (!ar)
+		return -EINVAL;
+
+	if (ar->ab->dfs_region == ATH12K_DFS_REG_UNSET)
+		return -EINVAL;
+
+	if (!test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask))
+		return -EINVAL;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		ahvif = arvif->ahvif;
+		if (arvif->is_started && ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			arvif_found = true;
+			break;
+		}
+	}
+
+	if (!arvif_found)
+		return -EINVAL;
+
+	if (!def) {
+		ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
+		if (!ret) {
+			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+			ar->agile_chandef.chan = NULL;
+		}
+	} else {
+		if (!cfg80211_chandef_valid(def))
+			return -EINVAL;
+
+		if (WARN_ON(ath12k_mac_vif_link_chan(ahvif->vif, arvif->link_id, &conf_def)))
+			return -EINVAL;
+
+		if (!(def->chan->flags & IEEE80211_CHAN_RADAR))
+			return -EINVAL;
+
+		/* Note: Only Half width and full bandwidth is supported */
+		if(!(ath12k_is_supported_agile_bandwidth(conf_def.width,
+							  def->width)))
+			return -EINVAL;
+
+		if (conf_def.center_freq1 == def->center_freq1)
+			return -EINVAL;
+
+		ret = ath12k_wmi_vdev_adfs_ch_cfg_cmd_send(ar, arvif->vdev_id, def);
+		if (!ret) {
+			memcpy(&ar->agile_chandef, def, sizeof(struct cfg80211_chan_def));
+		} else {
+			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+			ar->agile_chandef.chan = NULL;
+		}
+	}
+	return 0;
+}
+
+EXPORT_SYMBOL(ath12k_mac_op_set_radar_background);
 
 static u8
 ath12k_mac_find_link_id_by_ar(struct ath12k_vif *ahvif, struct ath12k *ar)
@@ -15268,6 +15399,53 @@ ath12k_mac_check_fixed_rate_settings_for_mumimo(struct ath12k_link_vif *arvif,
 	return true;
 }
 
+void ath12k_agile_cac_abort_work(struct wiphy *wiphy,
+				 struct wiphy_work *work)
+{
+        struct ath12k *ar = container_of(work, struct ath12k,
+                                         agile_cac_abort_wq);
+	struct ath12k_link_vif *arvif;
+        struct ath12k_vif *ahvif;
+        bool arvif_found = false;
+        int ret = 0;
+
+        list_for_each_entry(arvif, &ar->arvifs, list) {
+                ahvif = arvif->ahvif;
+                if (arvif->is_started &&
+                    ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+                        arvif_found = true;
+                        break;
+                }
+        }
+
+        if (!arvif_found)
+                goto err;
+
+        ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar, arvif->vdev_id);
+
+        if (!ret) {
+                memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+                ar->agile_chandef.chan = NULL;
+        } else
+                goto err;
+
+err:
+        ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+                           "ADFS state can't be reset (ret=%d)\n",
+                           ret);
+}
+
+void ath12k_mac_background_dfs_event(struct ath12k *ar,
+				     enum ath12k_background_dfs_events ev)
+{
+	if (ev == ATH12K_BGDFS_RADAR) {
+		cfg80211_background_radar_event(ar->ah->hw->wiphy, &ar->agile_chandef, GFP_ATOMIC);
+		wiphy_work_queue(ar->ah->hw->wiphy, &ar->agile_cac_abort_wq);
+	} else if (ev == ATH12K_BGDFS_ABORT) {
+		cfg80211_background_cac_abort(ar->ah->hw->wiphy);
+	}
+}
+
 static int
 ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 				   const struct cfg80211_chan_def *chandef)
@@ -15307,6 +15485,23 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 	if (ret)
 		ath12k_warn(ab, "failed to set 6G non-ht dup conf for vdev %d: %d\n",
 		            arvif->vdev_id, ret);
+	 /* In case of ADFS, we have to abort ongoing backgrorund CAC */
+	if ((ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP) &&
+	    test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask) &&
+	    ar->agile_chandef.chan) {
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "Aborting ongoing Agile DFS on freq %d",
+			   ar->agile_chandef.chan->center_freq);
+		ret = ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(ar,arvif->vdev_id);
+		if (!ret) {
+			memset(&ar->agile_chandef, 0, sizeof(struct cfg80211_chan_def));
+			ar->agile_chandef.chan = NULL;
+			ath12k_mac_background_dfs_event(ar, ATH12K_BGDFS_ABORT);
+		} else {
+			ath12k_warn(ab, "failed to abort agile CAC for vdev %d",
+				    arvif->vdev_id);
+		}
+	}
 
 	return ret;
 }
@@ -20259,6 +20454,11 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	if (test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT, ar->ab->wmi_ab.svc_map))
 		ieee80211_hw_set(hw, SUPPORTS_EXT_REMAIN_ON_CHAN);
 
+	if ((ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP) &&
+	    test_bit(ar->cfg_rx_chainmask, &cap->adfs_chain_mask))
+		wiphy_ext_feature_set(hw->wiphy,
+				      NL80211_EXT_FEATURE_RADAR_BACKGROUND);
+
 	ath12k_reg_init(hw);
 
 	if (!is_raw_mode) {
@@ -20404,6 +20604,7 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	INIT_DELAYED_WORK(&ar->scan.timeout, ath12k_scan_timeout_work);
 	wiphy_work_init(&ar->scan.vdev_clean_wk, ath12k_scan_vdev_clean_work);
 	INIT_WORK(&ar->regd_update_work, ath12k_regd_update_work);
+	wiphy_work_init(&ar->agile_cac_abort_wq, ath12k_agile_cac_abort_work);
 
 	wiphy_work_init(&ar->wmi_mgmt_tx_work, ath12k_mgmt_over_wmi_tx_work);
 	skb_queue_head_init(&ar->wmi_mgmt_tx_queue);

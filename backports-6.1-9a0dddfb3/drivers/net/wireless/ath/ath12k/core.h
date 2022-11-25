@@ -1163,6 +1163,8 @@ struct ath12k {
 #ifdef CPTCFG_ATH12K_CFR
 	struct ath12k_cfr cfr;
 #endif
+	struct cfg80211_chan_def agile_chandef;
+	struct wiphy_work agile_cac_abort_wq;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
@@ -1229,6 +1231,8 @@ struct ath12k_pdev_cap {
 	u32 rx_chain_mask;
 	u32 tx_chain_mask_shift;
 	u32 rx_chain_mask_shift;
+	u32 chainmask_table_id;
+	unsigned long adfs_chain_mask;
 	struct ath12k_band_cap band[NUM_NL80211_BANDS];
 	u32 eml_cap;
 	u32 mld_cap;

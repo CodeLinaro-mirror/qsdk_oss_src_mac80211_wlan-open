@@ -1959,6 +1959,7 @@ void ath12k_core_halt(struct ath12k *ar)
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ab->rfkill_work);
 	cancel_work_sync(&ab->update_11d_work);
+	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->agile_cac_abort_wq);
 
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx], NULL);
 	synchronize_rcu();

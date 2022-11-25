@@ -135,6 +135,12 @@ struct ath12k_mac_get_any_chanctx_conf_arg {
 #define ATH12K_11D_INVALID_VDEV_ID             0xFFFF
 #define MAX_NUM_BRIDGE_VDEV_PER_MLD  2
 
+enum ath12k_background_dfs_events {
+	ATH12K_BGDFS_SUCCESS,
+	ATH12K_BGDFS_ABORT,
+	ATH12K_BGDFS_RADAR,
+};
+
 struct ath12k_mac_link_migrate_usr_params {
 	u8 link_id;
 	u8 addr[ETH_ALEN];
@@ -490,6 +496,15 @@ enum ieee80211_neg_ttlm_res ath12k_mac_op_can_neg_ttlm(struct ieee80211_hw *hw,
 void ath12k_mac_op_apply_neg_ttlm_per_client(struct ieee80211_hw *hw,
 					     struct ieee80211_vif *vif,
 					     struct ieee80211_sta *sta);
+
+int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
+				       struct cfg80211_chan_def *def);
+void ath12k_mac_background_dfs_event(struct ath12k *ar,
+				     enum ath12k_background_dfs_events ev);
+int ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(struct ath12k *ar, u32 vdev_id);
+int ath12k_wmi_vdev_adfs_ch_cfg_cmd_send(struct ath12k *ar,
+					 u32 vdev_id,
+					 struct cfg80211_chan_def *def);
 
 /* Used for offset adjustments in shaping the mask */
 #define ATH12K_PUNCTURE_OFFSET_STEP	5

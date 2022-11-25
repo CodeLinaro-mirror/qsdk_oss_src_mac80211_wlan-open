@@ -2960,6 +2960,18 @@ struct ath12k_wmi_hw_mode_cap_params {
 	__le32 hw_mode_config_type;
 } __packed;
 
+struct wmi_mac_phy_chainmask_combo {
+	u32 chainmask_table_id;
+	u32 num_valid_chainmask;
+} __packed;
+
+struct wmi_mac_phy_chainmask_caps {
+	u32 tlv_header;
+	u32 supported_flags;
+	u32 chainmask;
+} __packed;
+
+
 #define WMI_MAX_HECAP_PHY_SIZE                 (3)
 #define WMI_NSS_RATIO_EN_DIS_BITPOS    BIT(0)
 #define WMI_NSS_RATIO_EN_DIS_GET(_val) \
@@ -5166,6 +5178,19 @@ struct wmi_dcs_interference_ev {
         u32 pdev_id;
 } __packed;
 
+struct ath12k_chainmask_caps {
+	u32 supported_caps;
+	u32 chainmask;
+};
+
+struct ath12k_chainmask_table {
+	u32 table_id;
+	u32 num_valid_chainmasks;
+	struct ath12k_chainmask_caps *cap_list;
+};
+
+#define ATH12K_MAX_CHAINMASK_TABLES 5
+
 enum wmi_host_channel_width {
 	WMI_HOST_CHAN_WIDTH_20    = 0,
 	WMI_HOST_CHAN_WIDTH_40    = 1,
@@ -5177,6 +5202,8 @@ enum wmi_host_channel_width {
 	WMI_HOST_CHAN_WIDTH_165     = 7,
 	WMI_HOST_CHAN_WIDTH_160P160 = 8,
 	WMI_HOST_CHAN_WIDTH_320     = 9,
+	/*keep last */
+	WMI_HOST_CHAN_WIDTH_MAX   = 0xF,
 };
 
 enum wmi_dcs_interference_chan_segment {
@@ -7058,6 +7085,58 @@ struct wmi_twt_enable_event {
 struct wmi_twt_disable_event {
 	__le32 pdev_id;
 	__le32 status;
+} __packed;
+
+#define WMI_ADFS_MODE_QUICK_OCAC		0 /* Agile preCAC */
+#define WMI_ADFS_MODE_QUICK_RCAC		2 /* Agile Rolling CAC */
+#define WMI_SUPPORT_CHAIN_MASK_ADFS		BIT(31)
+
+#define MIN_PRECAC_TIMEOUT			(6 * 60 * 1000) /* 6 minutes */
+#define MIN_WEATHER_RADAR_CHAN_PRECAC_TIMEOUT	(6 * 10 * 60 * 1000) /* 1 hour */
+#define MAX_PRECAC_TIMEOUT			(4 * 60 * 60 * 1000) /* 4 hours */
+#define MAX_WEATHER_RADAR_CHAN_PRECAC_TIMEOUT	(24 * 60 * 60 * 1000) /* 24 hours */
+#define MIN_RCAC_TIMEOUT			(62 * 1000) /* 62 seconds */
+#define MAX_RCAC_TIMEOUT			0xffffffff
+
+struct wmi_vdev_adfs_ch_cfg_cmd {
+	__le32  tlv_header;
+	__le32  vdev_id;
+	__le32  ocac_mode;
+	__le32  min_duration_ms;
+	__le32  max_duration_ms;
+	__le32  chan_freq;
+	__le32  chan_width;
+	 /*
+	  * Two center frequencies are required since agile channel switch
+	  * has to support 160/165 MHz for products like Pine.
+	  * For agile which supports only up to 80MHz (HK),
+	  * freq2 will be 0 and ignored.
+	  */
+	union {
+		__le32  center_freq;
+		__le32  center_freq1;
+	};
+	__le32  center_freq2;
+} __packed;
+
+struct wmi_vdev_adfs_ocac_abort_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+} __packed;
+
+#define WMI_DFS_RADAR_DETECTED_IN_SERVICE_CHAN	0
+#define WMI_DFS_RADAR_DETECTED_IN_OCAC_CHAN	1
+
+struct wmi_vdev_adfs_ocac_complete_event_fixed_param {
+	__le32 vdev_id;
+	__le32 chan_freq;
+	__le32 chan_width;
+	union {
+		__le32 center_freq;
+		__le32 center_freq1;
+	};
+	__le32 status;
+	__le32 center_freq2;
 } __packed;
 
 struct wmi_mlo_setup_cmd {
