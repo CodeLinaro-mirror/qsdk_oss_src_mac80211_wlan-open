@@ -745,6 +745,7 @@ enum wmi_tlv_event_id {
 	WMI_PDEV_RAP_INFO_EVENTID,
 	WMI_CHAN_RF_CHARACTERIZATION_INFO_EVENTID,
 	WMI_SERVICE_READY_EXT2_EVENTID,
+	WMI_PDEV_MULTIPLE_VDEV_RESTART_RESP_EVENTID,
 	WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID =
 					WMI_SERVICE_READY_EXT2_EVENTID + 4,
 	WMI_VDEV_START_RESP_EVENTID = WMI_TLV_CMD(WMI_GRP_VDEV),
@@ -1988,6 +1989,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_SERVICE_READY_EXT2_EVENT = 0x334,
 	WMI_TAG_FILS_DISCOVERY_TMPL_CMD = 0x344,
 	WMI_TAG_PEER_CREATE_RESP_EVENT = 0x364,
+	WMI_TAG_MULTIPLE_VDEV_RESTART_RESPONSE_EVENT = 0x365,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT = 0x36F,
 	WMI_TAG_PDEV_SRG_BSS_COLOR_BITMAP_CMD = 0x37b,
 	WMI_TAG_PDEV_SRG_PARTIAL_BSSID_BITMAP_CMD,
@@ -2254,6 +2256,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_PER_PEER_HTT_STATS_RESET = 213,
 	WMI_TLV_SERVICE_FREQINFO_IN_METADATA = 219,
 	WMI_TLV_SERVICE_EXT2_MSG = 220,
+	WMI_TLV_SERVICE_MULTIPLE_VDEV_RESTART_RESPONSE_SUPPORT = 235,
 	WMI_TLV_SERVICE_SRG_SRP_SPATIAL_REUSE_SUPPORT = 249,
 	WMI_TLV_SERVICE_CTRL_PATH_STATS_REQUEST = 250,
 	WMI_TLV_SERVICE_MBSS_PARAM_IN_VDEV_START_SUPPORT = 253,
@@ -5574,6 +5577,47 @@ struct wmi_pdev_set_bios_geo_table_cmd {
 	__le32 geo_len;
 } __packed;
 
+/* Inform FW that host expects response for multi-vdev
+ * restart command */
+#define WMI_MVR_RESPONSE_SUPPORT_EXPECTED     0x1
+#define WMI_MVR_CMD_TIMEOUT_HZ		      (2 * HZ)
+#define WMI_MVR_RESP_VDEV_BM_MAX_LEN	      2
+#define WMI_MVR_RESP_VDEV_BM_MAX_LEN_BYTES    (WMI_MVR_RESP_VDEV_BM_MAX_LEN * 4)
+
+struct wmi_vdev_ids_arg {
+	u32 id_len;
+	u32 id[17]; /* TARGET_NUM_VDEVS */
+};
+
+struct wmi_pdev_multiple_vdev_restart_req_arg {
+	struct wmi_vdev_ids_arg vdev_ids;
+	struct wmi_vdev_start_req_arg vdev_start_arg;
+	u16 ru_punct_bitmap;
+};
+
+struct wmi_pdev_multiple_vdev_restart_request_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 requestor_id;
+	__le32 disable_hw_ack;
+	__le32 cac_duration_ms;
+	__le32 num_vdevs;
+	__le32 flags;
+	__le32 puncture_20mhz_bitmap;
+} __packed;
+
+struct wmi_pdev_mvr_resp_event_fixed_param {
+	u32 pdev_id;
+	u32 requestor_id;
+	u32 status;
+} __packed;
+
+struct wmi_pdev_mvr_resp_event_parse {
+	struct wmi_pdev_mvr_resp_event_fixed_param fixed_param;
+	u32 num_vdevs_bm;
+	u32 vdev_id_bm[WMI_MVR_RESP_VDEV_BM_MAX_LEN];
+} __packed;
+
 #define ATH12K_FW_STATS_BUF_SIZE (1024 * 1024)
 
 enum wmi_sys_cap_info_flags {
@@ -6736,5 +6780,8 @@ void ath12k_wmi_fw_stats_dump(struct ath12k *ar,
 int ath12k_wmi_pdev_m3_dump_enable(struct ath12k *ar, u32 enable);
 int ath12k_wmi_dbglog_cfg(struct ath12k *ar, u32 param, u64 value);
 int ath12k_wmi_pdev_ap_ps_cmd_send(struct ath12k *ar, u8 pdev_id, u32 value);
+bool ath12k_wmi_is_mvr_supported(struct ath12k_base *ab);
+int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
+					  struct wmi_pdev_multiple_vdev_restart_req_arg *arg);
 
 #endif

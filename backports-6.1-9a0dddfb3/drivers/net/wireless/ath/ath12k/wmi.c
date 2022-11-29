@@ -548,6 +548,108 @@ ath12k_pull_mac_phy_cap_svc_ready_ext(struct ath12k_wmi_pdev *wmi_handle,
 	return 0;
 }
 
+static void ath12k_wmi_process_mvr_event(struct ath12k_base *ab, u32 *vdev_id_bm,
+					 u32 num_vdev_bm)
+{
+	struct ath12k *ar = NULL;
+	struct ath12k_link_vif *arvif = NULL;
+	u32 vdev_bitmap, bit_pos;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "wmi mvr resp num_vdev_bm %d vdev_id_bm[0]=0x%x vdev_id_bm[1]=0x%x\n",
+		   num_vdev_bm, vdev_id_bm[0],
+		   (num_vdev_bm == WMI_MVR_RESP_VDEV_BM_MAX_LEN ?
+				   vdev_id_bm[1] : 0x00));
+
+	/* 31-0 bits processing */
+	vdev_bitmap = vdev_id_bm[0];
+
+	for (bit_pos = 0; bit_pos < 32; bit_pos++) {
+
+		if (!(vdev_bitmap & BIT(bit_pos)))
+			continue;
+
+		arvif = ath12k_mac_get_arvif_by_vdev_id(ab, bit_pos);
+		if (!arvif) {
+			ath12k_warn(ab, "wmi mvr resp for unknown vdev %d", bit_pos);
+			continue;
+		}
+
+		arvif->mvr_processing = false;
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "wmi mvr vdev %d restarted\n", bit_pos);
+	}
+
+	/* TODO: 63-32 bits processing
+	 * Add support to parse bitmap once support for
+	 * TARGET_NUM_VDEVS > 32 is added
+	 */
+
+	if (arvif)
+		ar = arvif->ar;
+
+	if (ar)
+		complete(&ar->mvr_complete);
+}
+
+static int ath12k_wmi_tlv_mvr_event_parse(struct ath12k_base *ab,
+					  u16 tag, u16 len,
+					  const void *ptr, void *data)
+{
+	struct wmi_pdev_mvr_resp_event_parse *parse = data;
+	struct wmi_pdev_mvr_resp_event_fixed_param *fixed_param;
+
+	switch(tag) {
+	case WMI_TAG_MULTIPLE_VDEV_RESTART_RESPONSE_EVENT:
+		fixed_param = (struct wmi_pdev_mvr_resp_event_fixed_param *)ptr;
+
+		if (fixed_param->status) {
+			ath12k_warn(ab, "wmi mvr resp event status %u\n",
+				    fixed_param->status);
+			return -EINVAL;
+		}
+
+		memcpy(&parse->fixed_param, fixed_param,
+		       sizeof(struct wmi_pdev_mvr_resp_event_fixed_param));
+		break;
+	case WMI_TAG_ARRAY_UINT32:
+		if ((len > WMI_MVR_RESP_VDEV_BM_MAX_LEN_BYTES) || (len == 0)) {
+			ath12k_warn(ab, "wmi invalid vdev id len in mvr resp %u\n",
+				    len);
+			return -EINVAL;
+		}
+
+		parse->num_vdevs_bm = len / sizeof(u32);
+		memcpy(parse->vdev_id_bm, ptr, len);
+		break;
+	default:
+		break;
+	}
+
+	return 0;
+}
+
+static void ath12k_wmi_event_mvr_response(struct ath12k_base *ab,
+					  struct sk_buff *skb)
+{
+	struct wmi_pdev_mvr_resp_event_parse parse = {};
+	int ret;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_tlv_mvr_event_parse,
+				  &parse);
+	if (ret) {
+		ath12k_warn(ab, "wmi failed to parse mvr response tlv %d\n",
+			    ret);
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wmi mvr resp for pdev %d\n",
+		   parse.fixed_param.pdev_id);
+
+	ath12k_wmi_process_mvr_event(ab, parse.vdev_id_bm, parse.num_vdevs_bm);
+}
+
 static int
 ath12k_pull_reg_cap_svc_rdy_ext(struct ath12k_wmi_pdev *wmi_handle,
 				const struct ath12k_wmi_soc_hal_reg_caps_params *reg_caps,
@@ -994,7 +1096,7 @@ static void ath12k_wmi_put_wmi_channel(struct ath12k_wmi_channel_params *chan,
 					cpu_to_le32(center_freq1 - 80);
 
 		chan->band_center_freq2 = cpu_to_le32(arg->band_center_freq1);
-	} else if (arg->mode == MODE_11BE_EHT160) {
+	} else if ((arg->mode == MODE_11AX_HE160) || (arg->mode == MODE_11BE_EHT160)) {
 		chan->band_center_freq2 = cpu_to_le32(arg->band_center_freq2);
 	} else {
 		chan->band_center_freq2 = 0;
@@ -10354,6 +10456,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_MUEDCA_PARAMS_CONFIG_EVENTID:
 		ath12k_wmi_pdev_update_muedca_params_status_event(ab, skb);
 		break;
+	case WMI_PDEV_MULTIPLE_VDEV_RESTART_RESP_EVENTID:
+		ath12k_wmi_event_mvr_response(ab, skb);
+		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
 		break;
@@ -11571,6 +11676,85 @@ int ath12k_wmi_pdev_ap_ps_cmd_send(struct ath12k *ar, u8 pdev_id,
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 		   "wmi pdev ap ps set pdev id %d value %d\n",
 		   pdev_id, param_value);
+
+	return ret;
+}
+
+bool ath12k_wmi_is_mvr_supported(struct ath12k_base *ab)
+{
+	struct ath12k_wmi_base *wmi_ab = &ab->wmi_ab;
+
+	return test_bit(WMI_TLV_SERVICE_MULTIPLE_VDEV_RESTART,
+			 wmi_ab->svc_map) &&
+		test_bit(WMI_TLV_SERVICE_MULTIPLE_VDEV_RESTART_RESPONSE_SUPPORT,
+			 wmi_ab->svc_map);
+}
+
+int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
+					  struct wmi_pdev_multiple_vdev_restart_req_arg *arg)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_pdev_multiple_vdev_restart_request_cmd *cmd;
+	struct ath12k_wmi_channel_params *chan;
+	struct wmi_tlv *tlv;
+	u32 num_vdev_ids;
+	__le32 *vdev_ids;
+	size_t vdev_ids_len;
+	struct sk_buff *skb;
+	void *ptr;
+	int ret, len, i;
+
+	if (WARN_ON(arg->vdev_ids.id_len > TARGET_NUM_VDEVS))
+		return -EINVAL;
+
+	num_vdev_ids = arg->vdev_ids.id_len;
+	vdev_ids_len = num_vdev_ids * sizeof(__le32);
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE + vdev_ids_len +
+	      sizeof(*chan);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_multiple_vdev_restart_request_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_MULTIPLE_VDEV_RESTART_REQUEST_CMD,
+						 sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->num_vdevs = cpu_to_le32(arg->vdev_ids.id_len);
+	cmd->puncture_20mhz_bitmap = cpu_to_le32(arg->ru_punct_bitmap);
+
+	cmd->flags = cpu_to_le32(WMI_MVR_RESPONSE_SUPPORT_EXPECTED);
+
+	ptr = skb->data + sizeof(*cmd);
+	tlv = (struct wmi_tlv *)ptr;
+
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_UINT32, vdev_ids_len);
+	vdev_ids = (__le32 *)tlv->value;
+
+	for (i = 0; i < num_vdev_ids; i++)
+		vdev_ids[i] = cpu_to_le32(arg->vdev_ids.id[i]);
+
+	ptr += TLV_HDR_SIZE + vdev_ids_len;
+	chan = (struct ath12k_wmi_channel_params *)ptr;
+
+	ath12k_wmi_put_wmi_channel(chan, &arg->vdev_start_arg);
+
+	chan->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHANNEL, sizeof(*chan));
+	ptr += sizeof(*chan);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb,
+				  WMI_PDEV_MULTIPLE_VDEV_RESTART_REQUEST_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "wmi failed to send mvr command (%d)\n",
+			    ret);
+		dev_kfree_skb(skb);
+		return ret;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi mvr cmd sent num_vdevs %d freq %d\n",
+		   num_vdev_ids, arg->vdev_start_arg.freq);
 
 	return ret;
 }

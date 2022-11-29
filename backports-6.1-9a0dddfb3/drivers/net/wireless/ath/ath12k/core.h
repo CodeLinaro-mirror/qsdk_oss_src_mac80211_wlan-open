@@ -367,6 +367,7 @@ struct ath12k_link_vif {
 	bool nawds_support;
 	bool spectral_enabled;
 	u32 vht_cap;
+	bool mvr_processing;
 };
 
 struct ath12k_dp_link_vif {
@@ -848,6 +849,8 @@ struct ath12k {
 	struct cfg80211_chan_def awgn_chandef;
 	u32 chan_bw_interference_bitmap;
 	bool awgn_intf_handling_in_prog;
+
+	struct completion mvr_complete;
 };
 
 struct ath12k_hw {

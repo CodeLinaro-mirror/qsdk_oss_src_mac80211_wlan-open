@@ -10903,10 +10903,17 @@ static int ath12k_vdev_restart_sequence(struct ath12k_link_vif *arvif,
 	memcpy(&arvif->chanctx, new_ctx, sizeof(*new_ctx));
 	spin_unlock_bh(&ar->data_lock);
 
-	if (vif_down_failed_map & BIT_ULL(vdev_index))
+	/* vdev is already restarted via mvr, need to setup
+	 * certain config alone after restart */
+	if (vdev_index == -1) {
+        	ret = ath12k_mac_vdev_config_after_start(arvif, &new_ctx->def);
+        	if (!ret)
+                	goto beacon_tmpl_setup;
+	} else if (vif_down_failed_map & BIT_ULL(vdev_index)) {
 		ret = ath12k_mac_vdev_restart(arvif, new_ctx, false);
-	else
+	} else {
 		ret = ath12k_mac_vdev_restart(arvif, new_ctx, true);
+	}
 
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to restart vdev %d: %d\n",
@@ -10918,6 +10925,7 @@ static int ath12k_vdev_restart_sequence(struct ath12k_link_vif *arvif,
 		return ret;
 	}
 
+beacon_tmpl_setup:
 	if (!arvif->is_up)
 		return -EOPNOTSUPP;
 
@@ -11044,6 +11052,43 @@ static void ath12k_mac_update_rx_channel(struct ath12k *ar,
 	rcu_read_unlock();
 }
 
+static int
+ath12k_mac_multi_vdev_restart(struct ath12k *ar,
+			      const struct cfg80211_chan_def *chandef,
+			      u32 *vdev_id, int len,
+			      bool radar_enabled)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct wmi_pdev_multiple_vdev_restart_req_arg arg = {};
+	int ret, i;
+
+	arg.vdev_ids.id_len = len;
+
+	for (i = 0; i < len; i++)
+		arg.vdev_ids.id[i] = vdev_id[i];
+
+	arg.vdev_start_arg.freq = chandef->chan->center_freq;
+	arg.vdev_start_arg.band_center_freq1 = chandef->center_freq1;
+	arg.vdev_start_arg.band_center_freq2 = chandef->center_freq2;
+	arg.vdev_start_arg.mode =
+		ath12k_phymodes[chandef->chan->band][chandef->width];
+
+	arg.vdev_start_arg.min_power = 0;
+	arg.vdev_start_arg.max_power = chandef->chan->max_power;
+	arg.vdev_start_arg.max_reg_power = chandef->chan->max_reg_power;
+	arg.vdev_start_arg.max_antenna_gain = chandef->chan->max_antenna_gain;
+	arg.vdev_start_arg.chan_radar = !!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
+	arg.vdev_start_arg.passive = arg.vdev_start_arg.chan_radar;
+	arg.vdev_start_arg.freq2_radar = radar_enabled;
+	arg.vdev_start_arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
+	arg.ru_punct_bitmap = ~chandef->punctured;
+	ret = ath12k_wmi_pdev_multiple_vdev_restart(ar, &arg);
+	if (ret)
+		ath12k_warn(ab, "mac failed to do mvr (%d)\n", ret);
+
+	return ret;
+}
+
 static void
 ath12k_mac_update_vif_chan_extras(struct ath12k *ar,
 				  struct ieee80211_vif_chanctx_switch *vifs,
@@ -11051,7 +11096,6 @@ ath12k_mac_update_vif_chan_extras(struct ath12k *ar,
 {
 	struct ath12k_base *ab = ar->ab;
 	struct cfg80211_chan_def *chandef;
-	int i;
 
 	chandef = &vifs[0].new_ctx->def;
 
@@ -11178,7 +11222,6 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 
 	for (i = 0; i < n_vifs; i++) {
 		ahvif = (void *)vifs[i].vif->drv_priv;
-
 		link_id = vifs[i].link_conf->link_id;
 		arvif = ahvif->link[link_id];
 		if (WARN_ON(!arvif))
@@ -11186,7 +11229,6 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 		if (vifs[i].link_conf->mbssid_tx_vif &&
 		    arvif == tx_arvif)
 			continue;
-
 		ret = ath12k_vdev_restart_sequence(arvif,
 						   vifs[i].new_ctx,
 						   vif_down_failed_map, i);
@@ -11195,6 +11237,145 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 				    arvif->vdev_id, ret);
 		}
 	}
+}
+
+static void
+ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
+			       struct ieee80211_vif_chanctx_switch *vifs,
+			       int n_vifs)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_link_vif *arvif, *tx_arvif;
+	struct ath12k_vif *ahvif, *tx_ahvif;
+	struct cfg80211_chan_def *chandef;
+	struct ieee80211_vif *tx_vif;
+	int ret, i, time_left, trans_vdev_index, vdev_idx, n_vdevs = 0;
+	u32 vdev_ids[TARGET_NUM_VDEVS];
+
+	chandef = &vifs[0].new_ctx->def;
+	tx_arvif = NULL;
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC, "mac chanctx switch via mvr");
+
+	ath12k_mac_update_rx_channel(ar, NULL, vifs, n_vifs);
+
+	for (i = 0; i < n_vifs; i++) {
+		ahvif = (void *)vifs[i].vif->drv_priv;
+		arvif = ahvif->link[vifs[i].link_conf->link_id];
+
+		if (WARN_ON(!arvif))
+			continue;
+
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "mac chanctx switch vdev_id %i freq %u->%u width %d->%d\n",
+			   arvif->vdev_id,
+			   vifs[i].old_ctx->def.chan->center_freq,
+			   vifs[i].new_ctx->def.chan->center_freq,
+			   vifs[i].old_ctx->def.width,
+			   vifs[i].new_ctx->def.width);
+
+		if (!arvif->is_started) {
+			memcpy(&arvif->chanctx, vifs[i].new_ctx, sizeof(*vifs[i].new_ctx));
+			continue;
+		}
+
+		if (vifs[i].link_conf->mbssid_tx_vif &&
+		    ahvif == (struct ath12k_vif *)vifs[i].link_conf->mbssid_tx_vif->drv_priv) {
+			tx_vif = vifs[i].link_conf->mbssid_tx_vif;
+			tx_ahvif = ath12k_vif_to_ahvif(tx_vif);
+			tx_arvif = tx_ahvif->link[vifs[i].link_conf->mbssid_tx_vif_linkid];
+			trans_vdev_index = i;
+		}
+
+		arvif->mvr_processing = true;
+		vdev_ids[n_vdevs++] = arvif->vdev_id;
+	}
+
+	if (!n_vdevs) {
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "mac 0 vdevs available to switch chan ctx via mvr\n");
+		return;
+	}
+
+	reinit_completion(&ar->mvr_complete);
+
+	ret = ath12k_mac_multi_vdev_restart(ar, chandef, vdev_ids, n_vdevs,
+					    vifs[0].new_ctx->radar_enabled);
+	if (ret) {
+		ath12k_warn(ab, "mac failed to send mvr command (%d)\n", ret);
+		return;
+	}
+
+	time_left = wait_for_completion_timeout(&ar->mvr_complete,
+						WMI_MVR_CMD_TIMEOUT_HZ);
+	if (!time_left) {
+		ath12k_err(ar->ab, "mac mvr cmd response timed out\n");
+		/* fallback to restarting one-by-one */
+		return ath12k_mac_update_vif_chan(ar, vifs, n_vifs);
+	}
+
+	if (tx_arvif) {
+		vdev_idx = -1;
+
+		if (tx_arvif->mvr_processing) {
+			/* failed to restart tx vif via mvr, fallback */
+			arvif->mvr_processing = false;
+			vdev_idx = trans_vdev_index;
+			ath12k_err(ab,
+				   "mac failed to restart mbssid tx vdev %d via mvr cmd\n",
+				   tx_arvif->vdev_id);
+		}
+
+		ret = ath12k_vdev_restart_sequence(tx_arvif,
+						   vifs[trans_vdev_index].new_ctx,
+						   BIT_ULL(trans_vdev_index),
+						   vdev_idx);
+		if (ret)
+			ath12k_warn(ab,
+				    "mac failed to bring up mbssid tx vdev %d after mvr (%d)\n",
+				    tx_arvif->vdev_id, ret);
+	}
+
+	for (i = 0; i < n_vifs; i++) {
+		ahvif = (void *)vifs[i].vif->drv_priv;
+		arvif = ahvif->link[vifs[i].link_conf->link_id];
+
+		if (WARN_ON(!arvif))
+			continue;
+
+		vdev_idx = -1;
+
+		if (vifs[i].link_conf->mbssid_tx_vif && arvif == tx_arvif)
+			continue;
+
+		if (arvif->mvr_processing) {
+			/* failed to restart vdev via mvr, fallback */
+			arvif->mvr_processing = false;
+			vdev_idx = i;
+			ath12k_err(ab, "mac failed to restart vdev %d via mvr cmd\n",
+				   arvif->vdev_id);
+		}
+
+		ret = ath12k_vdev_restart_sequence(arvif, vifs[i].new_ctx,
+						   BIT_ULL(i), vdev_idx);
+		if (ret && ret != -EOPNOTSUPP)
+			ath12k_warn(ab, "mac failed to bring up vdev %d after mvr (%d)\n",
+				    arvif->vdev_id, ret);
+	}
+}
+
+static void
+ath12k_mac_process_update_vif_chan(struct ath12k *ar,
+				   struct ieee80211_vif_chanctx_switch *vifs,
+				   int n_vifs)
+{
+	struct ath12k_base *ab = ar->ab;
+
+	if (ath12k_wmi_is_mvr_supported(ab))
+		ath12k_mac_update_vif_chan_mvr(ar, vifs, n_vifs);
+	else
+		ath12k_mac_update_vif_chan(ar, vifs, n_vifs);
+
 	ath12k_mac_update_vif_chan_extras(ar, vifs, n_vifs);
 }
 
@@ -11223,7 +11404,7 @@ ath12k_mac_update_active_vif_chan(struct ath12k *ar,
 						   ath12k_mac_change_chanctx_fill_iter,
 						   &arg);
 
-	ath12k_mac_update_vif_chan(ar, arg.vifs, arg.n_vifs);
+	ath12k_mac_process_update_vif_chan(ar, arg.vifs, arg.n_vifs);
 
 	kfree(arg.vifs);
 }
@@ -11471,7 +11652,7 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 		   "mac chanctx switch n_vifs %d mode %d\n",
 		   n_vifs, mode);
-	ath12k_mac_update_vif_chan(ar, vifs, n_vifs);
+	ath12k_mac_process_update_vif_chan(ar, vifs, n_vifs);
 
 	return 0;
 }
@@ -13990,6 +14171,7 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	init_completion(&ar->mlo_setup_done);
 	init_completion(&ar->completed_11d_scan);
 	init_completion(&ar->thermal.wmi_sync);
+	init_completion(&ar->mvr_complete);
 
 	INIT_DELAYED_WORK(&ar->scan.timeout, ath12k_scan_timeout_work);
 	wiphy_work_init(&ar->scan.vdev_clean_wk, ath12k_scan_vdev_clean_work);
