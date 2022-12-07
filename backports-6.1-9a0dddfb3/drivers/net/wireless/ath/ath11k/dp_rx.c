@@ -2699,7 +2699,8 @@ static void ath11k_dp_rx_h_undecap(struct ath11k *ar, struct sk_buff *msdu,
 		ehdr = (struct ethhdr *)msdu->data;
 
 		/* mac80211 allows fast path only for authorized STA */
-		if (ehdr->h_proto == cpu_to_be16(ETH_P_PAE)) {
+		if (ehdr->h_proto == cpu_to_be16(ETH_P_PAE) ||
+		    enctype == HAL_ENCRYPT_TYPE_TKIP_MIC) {
 			ATH11K_SKB_RXCB(msdu)->is_eapol = true;
 			ath11k_dp_rx_h_undecap_eth(ar, msdu, first_hdr,
 						   enctype, status);
