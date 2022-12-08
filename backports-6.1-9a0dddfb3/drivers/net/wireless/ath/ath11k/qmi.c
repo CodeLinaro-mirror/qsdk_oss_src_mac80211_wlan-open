@@ -4404,7 +4404,7 @@ static int ath11k_qmi_event_load_bdf(struct ath11k_qmi *qmi)
 		return ret;
 	}
 
-	if (ab->hw_params.supports_regdb)
+	if (ab->hw_params.supports_regdb  && ab->qmi.target.regdb)
 		ath11k_qmi_load_bdf_qmi(ab, true);
 
 	ret = ath11k_qmi_load_bdf_qmi(ab, false);

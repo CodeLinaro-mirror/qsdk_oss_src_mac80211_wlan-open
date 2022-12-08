@@ -1921,7 +1921,6 @@ int ath11k_core_fetch_regdb(struct ath11k_base *ab, struct ath11k_board_data *bd
 		return ret;
 	}
 
-	ab->bd_api = 2;
 	ret = ath11k_core_fetch_board_data_api_n(ab, bd, regdbname,
 						 ATH11K_BD_IE_REGDB,
 						 ATH11K_BD_IE_REGDB_NAME,
@@ -1933,20 +1932,14 @@ int ath11k_core_fetch_regdb(struct ath11k_base *ab, struct ath11k_board_data *bd
 						 ATH11K_BD_IE_REGDB,
 						 ATH11K_BD_IE_REGDB_NAME,
 						 ATH11K_BD_IE_REGDB_DATA);
-	if (!ret)
-		goto success;
-
-	ab->bd_api = 1;
-
-	ret = ath11k_core_fetch_board_data_api_1(ab, bd, ATH11K_REGDB_FILE_NAME);
 	if (ret) {
-		ath11k_dbg(ab, ATH11K_DBG_BOOT, "failed to fetch %s from %s\n",
-			   ATH11K_REGDB_FILE_NAME, ab->hw_params.fw.dir);
+		ath11k_dbg(ab, ATH11K_DBG_BOOT, "failed to fetch %s from board-2.bin\n",
+			   ATH11K_REGDB_FILE_NAME);
 		return ret;
 	}
 
 success:
-	ath11k_dbg(ab, ATH11K_DBG_BOOT, "using board api %d\n", ab->bd_api);
+	ath11k_dbg(ab, ATH11K_DBG_BOOT, "using board-2.bin\n");
 	return 0;
 }
 
