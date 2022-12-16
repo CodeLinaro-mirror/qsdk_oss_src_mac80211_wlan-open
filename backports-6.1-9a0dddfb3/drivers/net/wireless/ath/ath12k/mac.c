@@ -851,7 +851,7 @@ struct ath12k *ath12k_mac_get_ar_by_pdev_id(struct ath12k_base *ab, u32 pdev_id)
 	return NULL;
 }
 
-static bool ath12k_mac_is_ml_arvif(struct ath12k_link_vif *arvif)
+bool ath12k_mac_is_ml_arvif(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 
@@ -4989,6 +4989,9 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				struct ath12k_link_vif *arvif_itr;
 				list_for_each_entry(arvif_itr, &ar->arvifs, list) {
 					if (!arvif_itr->pending_csa_up)
+						continue;
+
+					if (arvif_itr->tx_vdev_id != tx_arvif->vdev_id)
 						continue;
 
 					memset(&params, 0, sizeof(params));
@@ -10074,6 +10077,7 @@ static int ath12k_mac_setup_vdev_params_mbssid(struct ath12k_link_vif *arvif,
 	} else {
 		return -EINVAL;
 	}
+	arvif->tx_vdev_id = *tx_vdev_id;
 
 	if (link_conf->ema_ap)
 		*flags |= WMI_VDEV_MBSSID_FLAGS_EMA_MODE;
@@ -10411,6 +10415,9 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	spin_unlock_bh(&ar->ab->base_lock);
 
 	arvif->vdev_id = vdev_id;
+	/* Assume it as non-mbssid initially, well overwrite it later.
+	 */
+	arvif->tx_vdev_id = vdev_id;
 	ahvif->vdev_subtype = WMI_VDEV_SUBTYPE_NONE;
 
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];

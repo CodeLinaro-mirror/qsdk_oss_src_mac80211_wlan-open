@@ -2035,6 +2035,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_VDEV_CREATE_PARAMS = 0x3D7,
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
 	WMI_TAG_PDEV_SET_BIOS_GEO_TABLE_CMD = 0x3D9,
+	WMI_TAG_BCN_TMPL_ML_PARAMS_CMD = 0x3E6,
 	WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS = 0x3E9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
 	WMI_TAG_SPECTRAL_SCAN_BW_CAPABILITIES = 0x415,
@@ -2044,6 +2045,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO_FIXED_PARAM = 0x427,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO,
 	WMI_TAG_RSSI_DBM_CONVERSION_TEMP_OFFSET_INFO,
+	WMI_TAG_BCN_TMPL_ML_INFO_CMD = 0x436,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
@@ -6250,6 +6252,39 @@ struct wmi_chan_width_peer_list {
 	__le32 chan_width;
 	__le32 puncture_20mhz_bitmap;
 } __packed;
+
+struct wmi_bcn_tmpl_ml_params {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 hw_link_id;
+	__le32 beacon_interval;
+	__le32 csa_switch_count_offset;
+	__le32 ext_csa_switch_count_offset;
+	__le32 per_sta_profile_offset;
+	__le32 quiet_ie_offset;
+	__le32 is_other_ie_present;
+} __packed;
+
+struct wmi_bcn_tmpl_ml_info {
+	__le32 tlv_header;
+	__le32 hw_link_id;
+	__le32 cu_vdev_map_cat1_lo;
+	__le32 cu_vdev_map_cat1_hi;
+	__le32 cu_vdev_map_cat2_lo;
+	__le32 cu_vdev_map_cat2_hi;
+} __packed;
+
+struct wmi_critical_update_arg {
+	u16 num_ml_params;
+	struct wmi_bcn_tmpl_ml_params *ml_params;
+	u16 num_ml_info;
+	struct wmi_bcn_tmpl_ml_info *ml_info;
+};
+
+#define ATH12K_LOWER_32_MASK			GENMASK_ULL(31, 0)
+#define ATH12K_UPPER_32_MASK			GENMASK_ULL(63, 32)
+#define ATH12K_GET_LOWER_32_BITS(val)		(val & ATH12K_LOWER_32_MASK)
+#define ATH12K_GET_UPPER_32_BITS(val)		((val & ATH12K_UPPER_32_MASK) >> 32)
 
 #define ATH12K_FW_STATS_BUF_SIZE (1024 * 1024)
 

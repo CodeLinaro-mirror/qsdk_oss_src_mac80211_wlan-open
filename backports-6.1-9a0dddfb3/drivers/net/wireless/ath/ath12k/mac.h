@@ -295,4 +295,6 @@ void ath12k_mac_get_any_chandef_iter(struct ieee80211_hw *hw,
 				     void *data);
 u16 ath12k_calculate_subchannel_count(enum nl80211_chan_width width);
 void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif);
+struct ieee80211_bss_conf *ath12k_mac_get_link_bss_conf(struct ath12k_link_vif *arvif);
+bool ath12k_mac_is_ml_arvif(struct ath12k_link_vif *arvif);
 #endif

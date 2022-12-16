@@ -2158,6 +2158,157 @@ int ath12k_wmi_p2p_go_bcn_ie(struct ath12k *ar, u32 vdev_id,
 	return ret;
 }
 
+static void ath12k_wmi_bcn_fill_ml_info(struct ath12k_link_vif *arvif,
+					struct wmi_bcn_tmpl_ml_info *ml_info)
+{
+	struct ieee80211_bss_conf *link_conf, *tx_link_conf;
+	struct ath12k_base *ab = arvif->ar->ab;
+	struct ath12k_link_vif *arvif_iter;
+	u32 vdev_id = arvif->vdev_id;
+	unsigned long vdev_map_cat1 = 0;
+	unsigned long vdev_map_cat2 = 0;
+
+	rcu_read_lock();
+
+	tx_link_conf = ath12k_mac_get_link_bss_conf(arvif);
+	if (!tx_link_conf) {
+		rcu_read_unlock();
+		goto err_fill_ml_info;
+	}
+
+	/* Fill CU flags for non-tx vdevs while setting tx vdev beacon.
+	 */
+	list_for_each_entry(arvif_iter, &arvif->ar->arvifs, list) {
+		if (arvif_iter != arvif && arvif_iter->tx_vdev_id == arvif->vdev_id &&
+		    ath12k_mac_is_ml_arvif(arvif_iter)) {
+			link_conf = ath12k_mac_get_link_bss_conf(arvif_iter);
+			if (!link_conf) {
+				rcu_read_unlock();
+				goto err_fill_ml_info;
+			}
+			/* If this is cu cat 1 for tx vdev, then it applies
+			 * to non-tx vdev as well.
+			 */
+			if (link_conf->elemid_added || tx_link_conf->elemid_added)
+				set_bit(arvif_iter->vdev_id, &vdev_map_cat1);
+			/* If arvif is not up, current set beacon will be bringing it up
+			 * So for link addition, set critical update even if arvif is
+			 * not up.
+			 */
+			if (link_conf->elemid_modified || !arvif_iter->is_up)
+				set_bit(arvif_iter->vdev_id, &vdev_map_cat2);
+		}
+	}
+
+	rcu_read_unlock();
+
+	ml_info->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_BCN_TMPL_ML_INFO_CMD,
+						     sizeof(*ml_info));
+	ml_info->hw_link_id = cpu_to_le32(arvif->ar->pdev->hw_link_id);
+
+	if (tx_link_conf->elemid_added)
+		set_bit(vdev_id, &vdev_map_cat1);
+
+	if (tx_link_conf->elemid_modified)
+		set_bit(vdev_id, &vdev_map_cat2);
+
+err_fill_ml_info:
+	ml_info->cu_vdev_map_cat1_lo =
+			   cpu_to_le32(ATH12K_GET_LOWER_32_BITS(vdev_map_cat1));
+	ml_info->cu_vdev_map_cat1_hi =
+			   cpu_to_le32(ATH12K_GET_UPPER_32_BITS(vdev_map_cat1));
+	ml_info->cu_vdev_map_cat2_lo =
+			   cpu_to_le32(ATH12K_GET_LOWER_32_BITS(vdev_map_cat2));
+	ml_info->cu_vdev_map_cat2_hi =
+			   cpu_to_le32(ATH12K_GET_UPPER_32_BITS(vdev_map_cat2));
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "wmi CU filled ml info cat1_lo=0x%x cat1_hi=0x%x cat2_lo=0x%x cat2_hi=0x%x\n",
+		   ml_info->cu_vdev_map_cat1_lo, ml_info->cu_vdev_map_cat1_hi,
+		   ml_info->cu_vdev_map_cat2_lo, ml_info->cu_vdev_map_cat2_hi);
+}
+
+static void ath12k_wmi_fill_cu_arg(struct ath12k_link_vif *arvif,
+				   struct wmi_critical_update_arg *cu_arg)
+{
+	struct ath12k_base *ab = arvif->ar->ab;
+	struct wmi_bcn_tmpl_ml_info *ml_info;
+	int i;
+
+	if (!ath12k_mac_is_ml_arvif(arvif))
+		return;
+
+	/* Fill ML params
+	 * ML params should be filled for all partner links
+	 */
+	cu_arg->num_ml_params = 0;
+	/* TODO: Fill ML params. Will work without this info too */
+
+	/* Fill ML info
+	 * ML info should be filled for impacted link only
+	 */
+	cu_arg->num_ml_info = 1;
+	cu_arg->ml_info = (struct wmi_bcn_tmpl_ml_info *)
+			  kzalloc((cu_arg->num_ml_info * sizeof(*ml_info)),
+				  GFP_KERNEL);
+
+	if (!cu_arg->ml_info) {
+		ath12k_warn(ab, "wmi failed to get memory for ml info");
+		cu_arg->num_ml_info = 0;
+	} else {
+		for (i = 0; i < cu_arg->num_ml_info; i++) {
+			ml_info = &cu_arg->ml_info[i];
+			ath12k_wmi_bcn_fill_ml_info(arvif, ml_info);
+		}
+	}
+}
+
+static void *
+ath12k_wmi_append_critical_update_params(struct ath12k *ar, u32 vdev_id,
+					 void *ptr,
+					 struct wmi_critical_update_arg *cu_arg)
+{
+	struct wmi_bcn_tmpl_ml_params *ml_params;
+	struct wmi_bcn_tmpl_ml_info *ml_info;
+	void *start = ptr;
+	struct wmi_tlv *tlv;
+	size_t ml_params_len = cu_arg->num_ml_params * sizeof(*ml_params);
+	size_t ml_info_len = cu_arg->num_ml_info * sizeof(*ml_info);
+	int i;
+
+	/* Add ML params */
+	tlv = (struct wmi_tlv *)ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, ml_params_len);
+	ml_params = (struct wmi_bcn_tmpl_ml_params *)tlv->value;
+
+	for (i = 0; i < cu_arg->num_ml_params; i++)
+		memcpy(&ml_params[i], &cu_arg->ml_params[i],
+		       sizeof(*ml_params));
+
+	if (cu_arg->num_ml_params)
+		kfree(cu_arg->ml_params);
+
+	ptr += TLV_HDR_SIZE + ml_params_len;
+
+	/* Add ML info */
+	tlv = (struct wmi_tlv *)ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, ml_info_len);
+	ml_info = (struct wmi_bcn_tmpl_ml_info *)tlv->value;
+
+	for (i = 0; i < cu_arg->num_ml_info; i++)
+		memcpy(&ml_info[i], &cu_arg->ml_info[i],
+		       sizeof(*ml_info));
+
+	if (cu_arg->num_ml_info)
+		kfree(cu_arg->ml_info);
+
+	ptr += TLV_HDR_SIZE + ml_info_len;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "wmi %ld bytes of additional data filled for CU\n",
+		    (unsigned long)(ptr - start));
+	return ptr;
+}
+
 int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
 			struct ieee80211_mutable_offsets *offs,
 			struct sk_buff *bcn,
@@ -2177,6 +2328,12 @@ int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
 	void *ptr;
 	int ret, len;
 	size_t aligned_len = roundup(bcn->len, 4);
+	struct wmi_critical_update_arg cu_arg = {
+						 .num_ml_params = 0,
+						 .ml_params = NULL,
+						 .num_ml_info = 0,
+						 .ml_info = NULL,
+						};
 
 	conf = ath12k_mac_get_link_bss_conf(arvif);
 	if (!conf) {
@@ -2186,11 +2343,20 @@ int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
 		return -EINVAL;
 	}
 
-	len = sizeof(*cmd) + sizeof(*bcn_prb_info) + TLV_HDR_SIZE + aligned_len;
+	ath12k_wmi_fill_cu_arg(arvif, &cu_arg);
+
+	len = sizeof(*cmd) + sizeof(*bcn_prb_info) + TLV_HDR_SIZE + aligned_len +
+	      TLV_HDR_SIZE + (sizeof(struct wmi_bcn_tmpl_ml_params) * cu_arg.num_ml_params) +
+	      TLV_HDR_SIZE + (sizeof(struct wmi_bcn_tmpl_ml_info) * cu_arg.num_ml_info);
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
-	if (!skb)
+	if (!skb) {
+		if (cu_arg.num_ml_params)
+			kfree(cu_arg.ml_params);
+		if (cu_arg.num_ml_info)
+			kfree(cu_arg.ml_info);
 		return -ENOMEM;
+	}
 
 	cmd = (struct wmi_bcn_tmpl_cmd *)skb->data;
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_BCN_TMPL_CMD,
@@ -2235,6 +2401,11 @@ int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
 	tlv = ptr;
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE, aligned_len);
 	memcpy(tlv->value, bcn->data, bcn->len);
+
+	ptr += (TLV_HDR_SIZE + aligned_len);
+
+	ptr = ath12k_wmi_append_critical_update_params(ar, vdev_id, ptr,
+						       &cu_arg);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_BCN_TMPL_CMDID);
 	if (ret) {
