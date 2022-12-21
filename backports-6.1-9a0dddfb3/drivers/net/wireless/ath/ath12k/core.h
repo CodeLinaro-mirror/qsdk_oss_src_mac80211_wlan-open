@@ -766,6 +766,11 @@ enum ath12k_fw_recovery_option {
 	 /* command to unlink UserPD assert from RootPD */
 };
 
+struct ath12k_chan_info {
+	u32 low_freq;
+	u32 high_freq;
+};
+
 #define ATH12K_FLUSH_TIMEOUT (5 * HZ)
 #define ATH12K_VDEV_DELETE_TIMEOUT_HZ (5 * HZ)
 
@@ -806,6 +811,7 @@ struct ath12k {
 	struct ath12k_wmi_pdev *wmi;
 	struct ath12k_pdev_dp dp;
 	u8 mac_addr[ETH_ALEN];
+	struct ath12k_chan_info chan_info;
 	u32 ht_cap_info;
 	u32 vht_cap_info;
 	struct ath12k_he ar_he;

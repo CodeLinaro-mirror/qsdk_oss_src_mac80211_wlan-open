@@ -338,8 +338,46 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	struct ieee80211_regdomain *regd, *regd_copy = NULL;
 	int ret, regd_len, pdev_id;
 	struct ath12k_base *ab;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
+	u32 phy_id, freq_low, freq_high, supported_bands, band;
 
 	ab = ar->ab;
+
+	supported_bands = ar->pdev->cap.supported_bands;
+	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP)
+		band = NL80211_BAND_2GHZ;
+	else if(supported_bands & WMI_HOST_WLAN_5GHZ_CAP && !ar->supports_6ghz)
+		band = NL80211_BAND_5GHZ;
+	else if(supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz)
+		band = NL80211_BAND_6GHZ;
+
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
+
+	if (ab->hw_params->single_pdev_only && !ar->supports_6ghz) {
+		phy_id = ar->pdev->cap.band[band].phy_id;
+		reg_cap = &ab->hal_reg_cap[phy_id];
+	}
+
+	/* Possible that due to reg change, current limits for supported
+	 * frequency changed. Update that
+	 */
+	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
+		freq_low = max(reg_cap->low_2ghz_chan, ab->reg_freq_2g.start_freq);
+		freq_high = min(reg_cap->high_2ghz_chan, ab->reg_freq_2g.end_freq);
+	} else if(supported_bands & WMI_HOST_WLAN_5GHZ_CAP && !ar->supports_6ghz) {
+		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
+		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
+	} else if(supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
+		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_6g.start_freq);
+		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_6g.end_freq);
+	}
+
+	ar->chan_info.low_freq = freq_low;
+	ar->chan_info.high_freq = freq_high;
+
+	ath12k_dbg(ab, ATH12K_DBG_REG, "pdev %u reg updated freq limits %u->%u MHz\n",
+		   ar->pdev->pdev_id, ar->chan_info.low_freq,
+		   ar->chan_info.high_freq);
 
 	/* If one of the radios within ah has already updated the regd for
 	 * the wiphy, then avoid setting regd again

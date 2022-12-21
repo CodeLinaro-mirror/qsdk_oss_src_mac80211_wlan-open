@@ -11706,6 +11706,10 @@ int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant)
 	*tx_ant = antennas_tx;
 	*rx_ant = antennas_rx;
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac pdev %u freq limits %u->%u MHz\n",
+		   ar->pdev->pdev_id, ar->chan_info.low_freq,
+		   ar->chan_info.high_freq);
+
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_get_antenna);
@@ -14982,6 +14986,8 @@ static void ath12k_mac_update_ch_list(struct ath12k *ar,
 
 	ar->freq_range.start_freq = MHZ_TO_KHZ(freq_low);
         ar->freq_range.end_freq = MHZ_TO_KHZ(freq_high);
+	ar->chan_info.low_freq = freq_low;
+	ar->chan_info.high_freq = freq_high;
 
 	if (band->band == NL80211_BAND_6GHZ) {
 		for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
@@ -15008,7 +15014,7 @@ static u32 ath12k_get_phy_id(struct ath12k *ar, u32 band)
 	struct ath12k_pdev_cap *pdev_cap = &pdev->cap;
 
 	if (band == WMI_HOST_WLAN_2GHZ_CAP)
-		return pdev_cap->band[NL80211_BAND_2GHZ].phy_id;
+	return pdev_cap->band[NL80211_BAND_2GHZ].phy_id;
 
 	if (band == WMI_HOST_WLAN_5GHZ_CAP)
 		return pdev_cap->band[NL80211_BAND_5GHZ].phy_id;
