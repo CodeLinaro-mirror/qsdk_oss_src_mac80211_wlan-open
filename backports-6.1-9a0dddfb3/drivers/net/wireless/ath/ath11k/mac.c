@@ -11192,7 +11192,7 @@ ath11k_mac_check_fixed_rate_settings_for_mumimo(struct ath11k_vif *arvif, const 
 
 static int
 ath11k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
-			       struct ieee80211_vif *vif,
+			       struct ieee80211_vif *vif, unsigned int link_id,
 			       const struct cfg80211_bitrate_mask *mask)
 {
 	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
