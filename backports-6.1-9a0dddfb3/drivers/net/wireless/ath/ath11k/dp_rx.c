@@ -3008,8 +3008,6 @@ static void ath11k_dp_rx_h_mpdu(struct ath11k *ar,
 			}
 		}
 
-		*fast_rx = false;
-
 		if (rxcb->is_mcbc)
 			enctype = peer->sec_type_grp;
 		else
@@ -3018,6 +3016,8 @@ static void ath11k_dp_rx_h_mpdu(struct ath11k *ar,
 		enctype = ath11k_dp_rx_h_mpdu_start_enctype(ar->ab, rx_desc);
 	}
 	spin_unlock_bh(&ar->ab->base_lock);
+
+	*fast_rx = false;
 
 	rx_attention = ath11k_dp_rx_get_attention(ar->ab, rx_desc);
 	err_bitmap = ath11k_dp_rx_h_attn_mpdu_err(rx_attention);
