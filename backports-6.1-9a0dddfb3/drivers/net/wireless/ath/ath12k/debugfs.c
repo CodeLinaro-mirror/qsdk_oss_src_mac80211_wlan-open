@@ -3907,9 +3907,20 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
 	/* Create a symlink under ieee80211/phy* */
 	scnprintf(buf, sizeof(buf), "../../ath12k/%pd2", ar->debug.debugfs_pdev);
-	ar->debug.debugfs_pdev_symlink = debugfs_create_symlink("ath12k",
-								hw->wiphy->debugfsdir,
-								buf);
+	if (!hw->wiphy->n_radio) {
+		ar->debug.debugfs_pdev_symlink =
+			debugfs_create_symlink("ath12k",
+						hw->wiphy->debugfsdir,
+						buf);
+	} else {
+		char dirname[32] = {0};
+
+		snprintf(dirname, 32, "ath12k_hw%d", ar->hw_link_id);
+		ar->debug.debugfs_pdev_symlink =
+			debugfs_create_symlink(dirname,
+					       hw->wiphy->debugfsdir,
+					       buf);
+	}
 
 	if (ar->mac.sbands[NL80211_BAND_5GHZ].channels) {
 		debugfs_create_file("dfs_simulate_radar", 0200,
