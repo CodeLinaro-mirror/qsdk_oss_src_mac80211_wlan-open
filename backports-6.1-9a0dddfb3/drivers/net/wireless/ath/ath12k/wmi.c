@@ -8462,6 +8462,18 @@ bool ath12k_wmi_validate_dcs_awgn_info(struct ath12k *ar, struct wmi_dcs_awgn_in
 			return false;
 		}
 		break;
+	case WMI_HOST_CHAN_WIDTH_320:
+		if (awgn_info->chan_bw_interference_bitmap > (WMI_DCS_SEG_PRI20 |
+							      WMI_DCS_SEG_SEC20 |
+							      WMI_DCS_SEG_SEC40 |
+							      WMI_DCS_SEG_SEC80 |
+							      WMI_DCS_SEG_SEC160)) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+				   "dcs interference event received with wrong chan width bmap %d for 320MHz",
+				   awgn_info->chan_bw_interference_bitmap);
+			return false;
+		}
+        break;
 	default:
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 			   "dcs interference event received with unknown channel width %d",
@@ -8470,6 +8482,7 @@ bool ath12k_wmi_validate_dcs_awgn_info(struct ath12k *ar, struct wmi_dcs_awgn_in
 	}
 	return true;
 }
+
 static void
 ath12k_wmi_dcs_awgn_interference_event(struct ath12k_base *ab,
 				       struct sk_buff *skb)
