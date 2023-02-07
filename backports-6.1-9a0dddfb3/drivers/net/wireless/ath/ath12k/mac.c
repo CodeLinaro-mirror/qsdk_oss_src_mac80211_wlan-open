@@ -1029,6 +1029,7 @@ static void ath12k_pdev_caps_update(struct ath12k *ar)
 
 	ar->txpower_limit_2g = ar->max_tx_power;
 	ar->txpower_limit_5g = ar->max_tx_power;
+	ar->txpower_limit_6g = ar->max_tx_power;
 	ar->txpower_scale = WMI_HOST_TP_SCALE_MAX;
 }
 
@@ -1079,6 +1080,16 @@ static int ath12k_mac_txpower_recalc(struct ath12k *ar)
 		if (ret)
 			goto fail;
 		ar->txpower_limit_5g = txpower;
+	}
+
+	if ((ar->ah->hw->wiphy->bands[NL80211_BAND_6GHZ]) &&
+		ar->txpower_limit_6g != txpower) {
+		param = WMI_PDEV_PARAM_TXPOWER_LIMIT5G;
+		ret = ath12k_wmi_pdev_set_param(ar, param,
+						txpower, ar->pdev->pdev_id);
+		if (ret)
+			goto fail;
+		ar->txpower_limit_6g = txpower;
 	}
 
 	return 0;
@@ -5206,19 +5217,8 @@ skip_pending_cs_up:
 	if (changed & BSS_CHANGED_TXPOWER) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac vdev_id %i txpower %d\n",
 			   arvif->vdev_id, info->txpower);
-
-		if (ar->supports_6ghz && info->chanreq.oper.chan &&
-                    info->chanreq.oper.chan->band == NL80211_BAND_6GHZ &&
-                    (ahvif->vdev_type == WMI_VDEV_TYPE_STA ||
-                     ahvif->vdev_type == WMI_VDEV_TYPE_AP) &&
-                    test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT,
-                             ar->ab->wmi_ab.svc_map)) {
-                        ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-                                   "discard tx power, change to set TPC power\n");
-                } else {
-                        arvif->txpower = info->txpower;
-                        ath12k_mac_txpower_recalc(ar);
-                }
+		arvif->txpower = info->txpower;
+		ath12k_mac_txpower_recalc(ar);
 	}
 
 	if (changed & BSS_CHANGED_MCAST_RATE &&
