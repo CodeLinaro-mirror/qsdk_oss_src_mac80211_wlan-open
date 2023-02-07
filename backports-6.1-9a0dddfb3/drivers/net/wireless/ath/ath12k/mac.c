@@ -2183,6 +2183,94 @@ static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
 	/* TODO: safe_mode_enabled (bypass 4-way handshake) flag req? */
 }
 
+static enum ieee80211_sta_rx_bandwidth
+ath12k_get_radio_max_bw_caps(struct ath12k *ar,
+			     enum nl80211_band band,
+			     enum ieee80211_sta_rx_bandwidth sta_bw,
+			     enum nl80211_iftype iftype)
+{
+	struct ieee80211_supported_band *sband;
+	struct ieee80211_sband_iftype_data *iftype_data;
+	const struct ieee80211_sta_eht_cap *eht_cap;
+	const struct ieee80211_sta_he_cap *he_cap;
+	int i, idx = 0;
+
+	sband = &ar->mac.sbands[band];
+	iftype_data = ar->mac.iftype[band];
+
+	if (!sband || !iftype_data) {
+		WARN_ONCE(1, "Invalid band specified :%d\n", band);
+		return sta_bw;
+	}
+
+	for (i = 0; i < NUM_NL80211_IFTYPES && i != iftype; i++) {
+		switch(i) {
+		case NL80211_IFTYPE_STATION:
+		case NL80211_IFTYPE_AP:
+		case NL80211_IFTYPE_MESH_POINT:
+			idx++;
+			break;
+		default:
+			break;
+		}
+	}
+
+	eht_cap = &iftype_data[idx].eht_cap;
+	he_cap = &iftype_data[idx].he_cap;
+
+	if (!eht_cap || !he_cap)
+		return sta_bw;
+
+	/* EHT Caps */
+	if (band != NL80211_BAND_2GHZ && eht_cap->has_eht &&
+	    (eht_cap->eht_cap_elem.phy_cap_info[0] &
+	     IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ))
+		return IEEE80211_STA_RX_BW_320;
+
+	/* HE Caps */
+	switch (band) {
+	case NL80211_BAND_5GHZ:
+	case NL80211_BAND_6GHZ:
+		if (he_cap->has_he) {
+			if (he_cap->he_cap_elem.phy_cap_info[0] &
+			    (IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G |
+			    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_80PLUS80_MHZ_IN_5G)) {
+				return IEEE80211_STA_RX_BW_160;
+			} else if (he_cap->he_cap_elem.phy_cap_info[0] &
+				   IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G) {
+				return IEEE80211_STA_RX_BW_80;
+			}
+		}
+		break;
+	case NL80211_BAND_2GHZ:
+		if (he_cap->has_he &&
+		    (he_cap->he_cap_elem.phy_cap_info[0] &
+		     IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_IN_2G))
+			return IEEE80211_STA_RX_BW_40;
+		break;
+	default:
+		break;
+	}
+
+	if (sband->vht_cap.vht_supported) {
+		switch (sband->vht_cap.cap &
+			IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_MASK) {
+		case IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160MHZ:
+		case IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_160_80PLUS80MHZ:
+			return IEEE80211_STA_RX_BW_160;
+		default:
+			return sta_bw;
+		}
+	}
+
+	/* Keep Last */
+	if (sband->ht_cap.ht_supported &&
+	    (sband->ht_cap.cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40))
+		return IEEE80211_STA_RX_BW_40;
+
+	return sta_bw;
+}
+
 static void ath12k_peer_assoc_h_rates(struct ath12k *ar,
 				      struct ath12k_link_vif *arvif,
 				      struct ath12k_link_sta *arsta,
@@ -2675,6 +2763,7 @@ static void ath12k_peer_assoc_h_he(struct ath12k *ar,
 {
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	enum ieee80211_sta_rx_bandwidth radio_max_bw_caps;
 	const struct ieee80211_sta_he_cap *he_cap;
 	struct ieee80211_bss_conf *link_conf;
 	struct ieee80211_link_sta *link_sta;
@@ -2717,6 +2806,8 @@ static void ath12k_peer_assoc_h_he(struct ath12k *ar,
 
 	band = def.chan->band;
 	he_mcs_mask = arvif->bitrate_mask.control[band].he_mcs;
+	radio_max_bw_caps = ath12k_get_radio_max_bw_caps(ar, band, link_sta->bandwidth,
+						 vif->type);
 
 	if (ath12k_peer_assoc_h_he_masked(he_mcs_mask))
 		return;
@@ -2845,7 +2936,7 @@ static void ath12k_peer_assoc_h_he(struct ath12k *ar,
 		he_mcs_mask[link_sta->rx_nss - 1] = he_mcs_mask[he_nss - 1];
 	}
 
-	switch (link_sta->bandwidth) {
+	switch (min(link_sta->sta_max_bandwidth, radio_max_bw_caps)) {
 	case IEEE80211_STA_RX_BW_160:
 		v = le16_to_cpu(he_cap->he_mcs_nss_supp.rx_mcs_160);
 		arg->peer_he_rx_mcs_set[WMI_HECAP_TXRX_MCS_NSS_IDX_160] = v;
@@ -3418,6 +3509,7 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 	const struct ieee80211_eht_mcs_nss_supp *own_eht_mcs_nss_supp;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	const struct ieee80211_eht_mcs_nss_supp_20mhz_only *bw_20;
+	enum ieee80211_sta_rx_bandwidth radio_max_bw_caps;
 	const struct ieee80211_sta_eht_cap *own_eht_cap;
 	const struct ieee80211_eht_mcs_nss_supp_bw *bw;
 	const struct ieee80211_sta_eht_cap *eht_cap;
@@ -3514,7 +3606,11 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 	bw_20 = &eht_cap->eht_mcs_nss_supp.only_20mhz;
 	bw = &eht_cap->eht_mcs_nss_supp.bw._80;
 
-	switch (link_sta->bandwidth) {
+	radio_max_bw_caps = ath12k_get_radio_max_bw_caps(ar, band,
+							 link_sta->bandwidth,
+							 vif->type);
+
+	switch (min(link_sta->sta_max_bandwidth, radio_max_bw_caps)) {
 	case IEEE80211_STA_RX_BW_320:
 		bw = &eht_cap->eht_mcs_nss_supp.bw._320;
 		ath12k_mac_set_eht_mcs(bw->rx_tx_mcs9_max_nss,
