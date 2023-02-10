@@ -513,7 +513,7 @@ out:
 }
 
 int ath11k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-		  void *data, int len)
+		  u8 link_id, void *data, int len)
 {
 	struct ath11k *ar = hw->priv;
 	struct nlattr *tb[ATH_TM_ATTR_MAX + 1];
@@ -521,6 +521,7 @@ int ath11k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 
 	ret = nla_parse(tb, ATH_TM_ATTR_MAX, data, len, ath11k_tm_policy,
 			NULL);
+
 	if (ret)
 		return ret;
 
