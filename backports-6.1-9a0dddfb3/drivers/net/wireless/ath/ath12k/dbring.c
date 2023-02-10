@@ -8,6 +8,34 @@
 #include "debug.h"
 #include "hal.h"
 
+#define ATH12K_DB_MAGIC_VALUE 0xdeadbeaf
+
+int ath12k_dbring_validate_buffer(struct ath12k *ar, void *buffer, u32 size)
+{
+	u32 *temp;
+	int idx;
+	size = size >> 2;
+
+	for (idx = 0, temp = buffer; idx < size; idx++, temp++) {
+		if (*temp == ATH12K_DB_MAGIC_VALUE)
+			return -EINVAL;
+	}
+
+	return 0;
+}
+
+static void ath12k_dbring_fill_magic_value(struct ath12k *ar,
+					  void *buffer, u32 size)
+{
+	/* memset32 function fills buffer payload with the ATH12K_DB_MAGIC_VALUE
+	 * and the variable size is expected to be the number of u32 values
+	 * to be stored, not the number of bytes.
+	 */
+	size = size / sizeof(u32);
+
+	memset32(buffer, ATH12K_DB_MAGIC_VALUE, size);
+}
+
 static int ath12k_dbring_bufs_replenish(struct ath12k *ar,
 					struct ath12k_dbring *ring,
 					struct ath12k_dbring_element *buff,
@@ -29,6 +57,7 @@ static int ath12k_dbring_bufs_replenish(struct ath12k *ar,
 
 	ptr_unaligned = buff->payload;
 	ptr_aligned = PTR_ALIGN(ptr_unaligned, ring->buf_align);
+	ath12k_dbring_fill_magic_value(ar, ptr_aligned, ring->buf_sz);
 	paddr = dma_map_single(ab->dev, ptr_aligned, ring->buf_sz,
 			       DMA_FROM_DEVICE);
 
@@ -52,6 +81,7 @@ static int ath12k_dbring_bufs_replenish(struct ath12k *ar,
 
 	buff->paddr = paddr;
 
+	dma_sync_single_for_device(ab->dev, paddr, ring->buf_sz, DMA_FROM_DEVICE);
 	cookie = u32_encode_bits(ar->pdev_idx, DP_RXDMA_BUF_COOKIE_PDEV_ID) |
 		 u32_encode_bits(buf_id, DP_RXDMA_BUF_COOKIE_BUF_ID);
 
@@ -179,7 +209,7 @@ int ath12k_dbring_buf_setup(struct ath12k *ar,
 	ring->hp_addr = ath12k_hal_srng_get_hp_addr(ab, srng);
 	ring->tp_addr = ath12k_hal_srng_get_tp_addr(ab, srng);
 
-	ret = ath12k_dbring_fill_bufs(ar, ring, GFP_KERNEL);
+	ret = ath12k_dbring_fill_bufs(ar, ring, GFP_ATOMIC);
 
 	return ret;
 }

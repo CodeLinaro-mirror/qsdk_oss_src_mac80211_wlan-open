@@ -110,6 +110,25 @@ struct ath12k_wmi_dma_buf_release_arg {
 	bool meta_data_done;
 };
 
+struct wmi_pdev_sscan_fw_param_parse {
+	struct ath12k_wmi_pdev_sscan_fw_cmd_fixed_param fixed;
+	struct ath12k_wmi_pdev_sscan_fft_bin_index *bin;
+	struct ath12k_wmi_pdev_sscan_chan_info ch_info;
+	struct ath12k_wmi_pdev_sscan_per_detector_info *det_info;
+	bool bin_entry_done;
+	bool det_info_entry_done;
+
+};
+
+struct wmi_spectral_capabilities_parse {
+	struct ath12k_wmi_spectral_scan_bw_capabilities *sscan_bw_caps;
+	struct ath12k_wmi_spectral_fft_size_capabilities *fft_size_caps;
+	bool sscan_bw_caps_entry_done;
+	bool fft_size_caps_entry_done;
+	u32 num_bw_caps_entry;
+	u32 num_fft_size_caps_entry;
+};
+
 struct ath12k_wmi_tlv_policy {
 	size_t min_len;
 };
@@ -224,6 +243,7 @@ ath12k_wmi_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
 	const struct wmi_tlv *tlv;
 	u16 tlv_tag, tlv_len;
 	int ret;
+
 
 	while (len > 0) {
 		if (len < sizeof(*tlv)) {
@@ -4737,6 +4757,7 @@ static void ath12k_wmi_pdev_dma_ring_buf_release_event(struct ath12k_base *ab,
 	struct ath12k_wmi_dma_buf_release_arg arg = {};
 	struct ath12k_dbring_buf_release_event param;
 	int ret;
+
 
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
 				  ath12k_wmi_dma_buf_parse,
@@ -9556,6 +9577,234 @@ static void ath12k_wmi_peer_create_conf_event(struct ath12k_base *ab,
 		   arg.mac_addr, arg.status);
 }
 
+static int ath12k_wmi_pdev_sscan_fft_bin_index_parse(struct ath12k_base *soc,
+						     u16 tag, u16 len,
+						     const void *ptr, void *data)
+{
+	if (tag != WMI_TAG_PDEV_SSCAN_FFT_BIN_INDEX)
+		return -EPROTO;
+	return 0;
+}
+
+static int ath12k_wmi_pdev_sscan_per_detector_info_parse(struct ath12k_base *soc,
+							 u16 tag, u16 len,
+							 const void *ptr, void *data)
+{
+	if (tag != WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO)
+		return -EPROTO;
+
+	return 0;
+}
+
+static int ath12k_wmi_tlv_sscan_fw_parse(struct ath12k_base *ab,
+					 u16 tag, u16 len,
+					 const void *ptr, void *data)
+{
+	struct wmi_pdev_sscan_fw_param_parse *parse = data;
+	int ret;
+
+	switch (tag) {
+
+	case WMI_TAG_PDEV_SSCAN_FW_CMD_FIXED_PARAM:
+		memcpy(&parse->fixed, ptr,
+		       sizeof(struct ath12k_wmi_pdev_sscan_fw_cmd_fixed_param));
+		parse->fixed.pdev_id = DP_HW2SW_MACID(parse->fixed.pdev_id);
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+	       if (!parse->bin_entry_done) {
+		       parse->bin = (struct ath12k_wmi_pdev_sscan_fft_bin_index *)ptr;
+
+		       ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						 ath12k_wmi_pdev_sscan_fft_bin_index_parse,
+						 parse);
+
+		       if (ret) {
+			       ath12k_warn(ab, "failed to parse fft bin index %d\n",
+					   ret);
+			       return ret;
+		       }
+
+		       parse->bin_entry_done = true;
+	       } else if (!parse->det_info_entry_done) {
+		       parse->det_info = (struct ath12k_wmi_pdev_sscan_per_detector_info *)ptr;
+
+		       ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						 ath12k_wmi_pdev_sscan_per_detector_info_parse,
+						 parse);
+
+		       if (ret) {
+			       ath12k_warn(ab, "failed to parse detector info %d\n",
+					   ret);
+			       return ret;
+		       }
+		       parse->det_info_entry_done = true;
+	       }
+	       break;
+	case WMI_TAG_PDEV_SSCAN_CHAN_INFO:
+	       memcpy(&parse->ch_info, ptr,
+		      sizeof(struct ath12k_wmi_pdev_sscan_chan_info));
+	       parse->bin_entry_done = true;
+	       break;
+	default:
+	       break;
+	}
+	return 0;
+
+}
+
+static void
+ath12k_wmi_pdev_sscan_fw_param_event(struct ath12k_base *ab,
+				     struct sk_buff *skb)
+{
+	struct ath12k *ar;
+	struct wmi_pdev_sscan_fw_param_parse parse = { };
+	struct wmi_pdev_sscan_fw_param_event param;
+	int ret;
+	u8 pdev_idx;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_tlv_sscan_fw_parse,
+				  &parse);
+
+	if (ret) {
+		ath12k_warn(ab, "failed to parse padev sscan fw tlv %d\n", ret);
+		return;
+	}
+
+	param.fixed             = parse.fixed;
+	param.bin		= parse.bin;
+	param.ch_info		= parse.ch_info;
+	param.det_info		= parse.det_info;
+
+	pdev_idx = param.fixed.pdev_id;
+	ar = ab->pdevs[pdev_idx].ar;
+
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	ar->spectral.ch_width = param.ch_info.operating_bw;
+#endif
+
+}
+
+static int
+ath12k_wmi_spectral_scan_bw_cap_parse(struct ath12k_base *soc,
+				     u16 tag, u16 len,
+				     const void *ptr, void *data)
+{
+	struct wmi_spectral_capabilities_parse *parse = data;
+	if (tag != WMI_TAG_SPECTRAL_SCAN_BW_CAPABILITIES)
+		return -EPROTO;
+	parse->num_bw_caps_entry++;
+	return 0;
+}
+
+static int
+ath12k_wmi_spectral_fft_size_cap_parse(struct ath12k_base *soc,
+				       u16 tag, u16 len,
+				       const void *ptr, void *data)
+{
+	struct wmi_spectral_capabilities_parse *parse = data;
+	if (tag != WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES)
+		return -EPROTO;
+
+	parse->num_fft_size_caps_entry++;
+	return 0;
+}
+
+static int
+ath12k_wmi_tlv_spectral_cap_parse(struct ath12k_base *ab,
+				  u16 tag, u16 len,
+				  const void *ptr, void *data)
+{
+	struct wmi_spectral_capabilities_parse *parse = data;
+	int ret;
+
+	if (tag == WMI_TAG_ARRAY_STRUCT) {
+		if (!parse->sscan_bw_caps_entry_done) {
+			parse->num_bw_caps_entry = 0;
+			parse->sscan_bw_caps = (struct ath12k_wmi_spectral_scan_bw_capabilities *)ptr;
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+					ath12k_wmi_spectral_scan_bw_cap_parse,
+					parse);
+			if (ret) {
+				ath12k_warn(ab, "failed to parse scan bw cap %d\n",
+					    ret);
+				return ret;
+			}
+			parse->sscan_bw_caps_entry_done = true;
+		} else if (!parse->fft_size_caps_entry_done) {
+			parse->num_fft_size_caps_entry = 0;
+			parse->fft_size_caps = (struct ath12k_wmi_spectral_fft_size_capabilities *)ptr;
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+					ath12k_wmi_spectral_fft_size_cap_parse,
+					parse);
+			if (ret) {
+				ath12k_warn(ab, "failed to parse fft size cap %d\n",
+					    ret);
+				return ret;
+			}
+			parse->fft_size_caps_entry_done = true;
+		}
+	}
+	return 0;
+}
+
+static void
+ath12k_wmi_spectral_capabilities_event(struct ath12k_base *ab,
+				       struct sk_buff *skb)
+{
+	struct wmi_spectral_capabilities_parse parse = { };
+	struct wmi_spectral_capabilities_event param;
+	struct ath12k *ar = NULL;
+	int ret, size;
+	u8 pdev_id, i;
+	struct ath12k_pdev *pdev;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_tlv_spectral_cap_parse,
+				  &parse);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse spectral capabilities tlv %d\n", ret);
+		return;
+	}
+
+	param.sscan_bw_caps = parse.sscan_bw_caps;
+	param.fft_size_caps = parse.fft_size_caps;
+	param.num_bw_caps_entry = parse.num_bw_caps_entry;
+	param.num_fft_size_caps_entry = parse.num_fft_size_caps_entry;
+
+	pdev_id = param.sscan_bw_caps->pdev_id;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		if (pdev && pdev->pdev_id == pdev_id) {
+			ar = pdev->ar;
+			break;
+		}
+	}
+
+	if (!ar) {
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "ar is NULL for pdev_id %d use default spectral fft size 7",
+			   pdev_id);
+		return;
+	}
+	size = sizeof(struct ath12k_wmi_spectral_fft_size_capabilities)*
+					param.num_fft_size_caps_entry;
+
+#ifdef CPTCFG_ATH12K_SPECTRAL
+	ar->spectral.spectral_cap.fft_size_caps = kzalloc(size, GFP_ATOMIC);
+	if (!ar->spectral.spectral_cap.fft_size_caps) {
+		ath12k_warn(ab, "Failed to allocate memory");
+		return;
+	}
+	memcpy(ar->spectral.spectral_cap.fft_size_caps,
+		param.fft_size_caps, size);
+	ar->spectral.spectral_cap.num_bw_caps_entry = param.num_bw_caps_entry;
+	ar->spectral.spectral_cap.num_fft_size_caps_entry = param.num_fft_size_caps_entry;
+#endif
+
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_cmd_hdr *cmd_hdr;
@@ -9705,6 +9954,12 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_MGMT_RX_FW_CONSUMED_EVENTID:
 	case WMI_OBSS_COLOR_COLLISION_DETECTION_EVENTID:
 		/* debug might flood hence silently ignore (no-op) */
+		break;
+	case WMI_PDEV_SSCAN_FW_PARAM_EVENTID:
+		ath12k_wmi_pdev_sscan_fw_param_event(ab, skb);
+		break;
+	case WMI_SPECTRAL_CAPABILITIES_EVENTID:
+		ath12k_wmi_spectral_capabilities_event(ab, skb);
 		break;
 	case WMI_PDEV_UTF_EVENTID:
 		if (test_bit(ATH12K_FLAG_FTM_SEGMENTED, &ab->dev_flags))

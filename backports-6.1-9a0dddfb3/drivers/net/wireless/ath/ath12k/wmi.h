@@ -708,6 +708,9 @@ enum wmi_tlv_event_id {
 	WMI_READY_EVENTID,
 	WMI_SERVICE_AVAILABLE_EVENTID,
 	WMI_SCAN_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_SCAN),
+	WMI_PDEV_SSCAN_FW_PARAM_EVENTID,
+	WMI_SSCAN_EVT_MESSAGE_EVENTID,
+	WMI_SPECTRAL_CAPABILITIES_EVENTID,
 	WMI_PDEV_TPC_CONFIG_EVENTID = WMI_TLV_CMD(WMI_GRP_PDEV),
 	WMI_CHAN_INFO_EVENTID,
 	WMI_PHYERR_EVENTID,
@@ -1984,6 +1987,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT = 0x36F,
 	WMI_TAG_PDEV_SRG_BSS_COLOR_BITMAP_CMD = 0x37b,
 	WMI_TAG_PDEV_SRG_PARTIAL_BSSID_BITMAP_CMD,
+	WMI_TAG_PDEV_SSCAN_FW_CMD_FIXED_PARAM = 0x37f,
+	WMI_TAG_PDEV_SSCAN_FFT_BIN_INDEX,
 	WMI_TAG_PDEV_SRG_OBSS_COLOR_ENABLE_BITMAP_CMD = 0x381,
 	WMI_TAG_PDEV_SRG_OBSS_BSSID_ENABLE_BITMAP_CMD,
 	WMI_TAG_PDEV_NON_SRG_OBSS_COLOR_ENABLE_BITMAP_CMD,
@@ -2016,6 +2021,10 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
 	WMI_TAG_PDEV_SET_BIOS_GEO_TABLE_CMD = 0x3D9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
+	WMI_TAG_SPECTRAL_SCAN_BW_CAPABILITIES = 0x415,
+	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
+	WMI_TAG_PDEV_SSCAN_CHAN_INFO = 0x417,
+	WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
 	WMI_TAG_MAX
@@ -2337,6 +2346,7 @@ enum wmi_peer_chwidth {
 	WMI_PEER_CHWIDTH_80MHZ = 2,
 	WMI_PEER_CHWIDTH_160MHZ = 3,
 	WMI_PEER_CHWIDTH_320MHZ = 4,
+	WMI_PEER_CHWIDTH_MAX = 9,
 };
 
 enum wmi_beacon_gen_mode {
@@ -2347,6 +2357,7 @@ enum wmi_beacon_gen_mode {
 enum wmi_direct_buffer_module {
 	WMI_DIRECT_BUF_SPECTRAL = 0,
 	WMI_DIRECT_BUF_CFR = 1,
+	WMI_CONFIG_MODULE_CV_UPLOAD = 2,
 
 	/* keep it last */
 	WMI_DIRECT_BUF_MAX
@@ -5292,6 +5303,78 @@ struct ath12k_wmi_dma_buf_release_entry_params {
 	__le32 paddr_hi;
 } __packed;
 
+struct ath12k_wmi_pdev_sscan_fw_cmd_fixed_param {
+	u32 pdev_id;
+	u32 spectral_scan_mode;
+} __packed;
+
+
+struct ath12k_wmi_pdev_sscan_fft_bin_index {
+	u32 pri80_bins;
+	u32 sec80_bins;
+	u32 mid_5mhz_bins;
+} __packed;
+
+struct ath12k_wmi_pdev_sscan_chan_info {
+	u32 operating_pri20_freq;
+	u32 operating_cfreq1;
+	u32 operating_cfreq2;
+	u32 operating_bw;
+	u32 operating_puncture_20mhz_bitmap;
+	u32 sscan_cfreq1;
+	u32 sscan_cfreq2;
+	u32 sscan_bw;
+	u32 sscan_puncture_20mhz_bitmap;
+} __packed;
+
+struct ath12k_wmi_pdev_sscan_per_detector_info {
+	__le32 tlv_header;
+	u32 detector_id;
+	u32 start_freq;
+	u32 end_freq;
+} __packed;
+
+struct ath12k_wmi_spectral_scan_bw_capabilities {
+	__le32 tlv_header;
+	u32 pdev_id;
+	u32 sscan_mode;
+	u32 operating_bw;
+	union {
+		struct {
+			u32 supports_sscan_bw_20:1,
+			    supports_sscan_bw_40:1,
+			    supports_sscan_bw_80:1,
+			    supports_sscan_bw_160:1,
+			    supports_sscan_bw_80p80:1,
+			    supports_sscan_bw_320:1,
+			    reserved:21;
+		};
+		u32 supported_flags;
+	};
+} __packed;
+
+struct ath12k_wmi_spectral_fft_size_capabilities {
+	__le32 tlv_header;
+	u32 pdev_id;
+	u32 sscan_bw;
+	union {
+		struct {
+			u32 supports_fft_size_1:1,
+			    supports_fft_size_2:1,
+			    supports_fft_size_3:1,
+			    supports_fft_size_4:1,
+			    supports_fft_size_5:1,
+			    supports_fft_size_6:1,
+			    supports_fft_size_7:1,
+			    supports_fft_size_8:1,
+			    supports_fft_size_9:1,
+			    supports_fft_size_10:1,
+			    supports_fft_size_11:1,
+			    reserved:21;
+		};
+		u32 supported_flags;
+	};
+} __packed;
 #define WMI_SPECTRAL_META_INFO1_FREQ1		GENMASK(15, 0)
 #define WMI_SPECTRAL_META_INFO1_FREQ2		GENMASK(31, 16)
 

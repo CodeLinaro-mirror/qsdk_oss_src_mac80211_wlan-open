@@ -205,7 +205,15 @@ struct ath12k_hw_params {
 	int num_rxdma_dst_ring;
 	bool rx_mac_buf_ring:1;
 	bool vdev_start_delay:1;
-	u8 spectral_fft_sz;
+
+	struct {
+		u8 fft_sz;
+		u8 fft_pad_sz;
+		u8 summary_pad_sz;
+		u8 fft_hdr_len;
+		u16 max_fft_bins;
+		bool fragment_160mhz;
+	} spectral;
 
 	u16 interface_modes;
 	bool supports_monitor:1;

@@ -36,6 +36,9 @@ struct ath12k_spectral {
 	u16 count;
 	u8 fft_size;
 	bool enabled;
+	bool is_primary;
+	u32 ch_width;
+	struct wmi_spectral_capabilities_event spectral_cap;
 };
 
 #ifdef CPTCFG_ATH12K_SPECTRAL

@@ -413,6 +413,14 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.handle_beacon_miss = true,
 		.en_qdsslog = true,
 		.support_fse = false,
+		.spectral = {
+			.fft_sz = 0,
+			.fft_pad_sz = 0,
+			.summary_pad_sz = 0,
+			.fft_hdr_len = 0,
+			.max_fft_bins = 0,
+			.fragment_160mhz = false,
+		},
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -587,6 +595,14 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.handle_beacon_miss = true,
 		.en_qdsslog = true,
 		.support_fse = true,
+		.spectral = {
+			.fft_sz = 7,
+			.fft_pad_sz = 0,
+			.summary_pad_sz = 16,
+			.fft_hdr_len = 24,
+			.max_fft_bins = 512,
+			.fragment_160mhz = true,
+		},
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -664,6 +680,14 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ce_remap = &ath12k_wifi7_ce_remap_ipq5332,
 		.en_qdsslog = true,
 		.support_fse = true,
+		.spectral = {
+			.fft_sz = 7,
+			.fft_pad_sz = 0,
+			.summary_pad_sz = 16,
+			.fft_hdr_len = 24,
+			.max_fft_bins = 512,
+			.fragment_160mhz = false,
+		},
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -721,6 +745,14 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.send_platform_model = true,
 		.en_qdsslog = true,
 		.support_fse = true,
+		.spectral = {
+			.fft_sz = 7,
+			.fft_pad_sz = 0,
+			.summary_pad_sz = 16,
+			.fft_hdr_len = 24,
+			.max_fft_bins = 512,
+			.fragment_160mhz = false,
+		},
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -798,6 +830,14 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ce_remap = &ath12k_wifi7_ce_remap_ipq5424,
 		.en_qdsslog = true,
 		.support_fse = true,
+		.spectral = {
+			.fft_sz = 7,
+			.fft_pad_sz = 0,
+			.summary_pad_sz = 16,
+			.fft_hdr_len = 24,
+			.max_fft_bins = 512,
+			.fragment_160mhz = false,
+		},
 	},
 };
 

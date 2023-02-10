@@ -31,6 +31,20 @@ struct ath12k_dbring_buf_release_event {
 	u32 num_meta;
 };
 
+struct wmi_pdev_sscan_fw_param_event {
+	struct ath12k_wmi_pdev_sscan_fw_cmd_fixed_param fixed;
+	struct ath12k_wmi_pdev_sscan_fft_bin_index *bin;
+	struct ath12k_wmi_pdev_sscan_chan_info ch_info;
+	struct ath12k_wmi_pdev_sscan_per_detector_info *det_info;
+};
+
+struct wmi_spectral_capabilities_event {
+	struct ath12k_wmi_spectral_scan_bw_capabilities *sscan_bw_caps;
+	struct ath12k_wmi_spectral_fft_size_capabilities *fft_size_caps;
+	u32 num_bw_caps_entry;
+	u32 num_fft_size_caps_entry;
+};
+
 struct ath12k_dbring_cap {
 	u32 pdev_id;
 	enum wmi_direct_buffer_module id;
@@ -77,4 +91,5 @@ int ath12k_dbring_get_cap(struct ath12k_base *ab,
 			  struct ath12k_dbring_cap *db_cap);
 void ath12k_dbring_srng_cleanup(struct ath12k *ar, struct ath12k_dbring *ring);
 void ath12k_dbring_buf_cleanup(struct ath12k *ar, struct ath12k_dbring *ring);
+int ath12k_dbring_validate_buffer(struct ath12k *ar, void *data, u32 size);
 #endif /* ATH12K_DBRING_H */
