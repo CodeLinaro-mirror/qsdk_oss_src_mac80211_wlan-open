@@ -20,6 +20,11 @@
 #define MHI_TIMEOUT_DEFAULT_MS	20000
 #define RDDM_DUMP_SIZE	0x420000
 #define MHI_CB_INVALID	0xff
+#ifdef CONFIG_64BIT
+#define MAX_RAM_ADDR 0xFFFFFFFFFFFFFFFF
+#else
+#define MAX_RAM_ADDR 0xFFFFFFFF
+#endif
 
 static const struct mhi_channel_config ath11k_mhi_channels_qca6390[] = {
 	{
@@ -385,7 +390,7 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 			goto free_controller;
 	} else {
 		mhi_ctrl->iova_start = 0;
-		mhi_ctrl->iova_stop = ab_pci->dma_mask;
+		mhi_ctrl->iova_stop = MAX_RAM_ADDR;
 	}
 
 	ath11k_info(ab, "mhi_ctrl start addr %llx end addr %llx\n",

@@ -20,7 +20,8 @@
 #include "qmi.h"
 
 #define ATH11K_PCI_BAR_NUM		0
-#define ATH11K_PCI_DMA_MASK		36
+/* Target can access upto (2^40) GB of RAM directly */
+#define ATH11K_PCI_DMA_MASK		40
 #define ATH11K_PCI_COHERENT_DMA_MASK	32
 
 #define TCSR_SOC_HW_VERSION		0x0224

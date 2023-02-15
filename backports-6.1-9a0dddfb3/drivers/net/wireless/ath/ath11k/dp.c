@@ -803,7 +803,7 @@ int ath11k_dp_link_desc_setup(struct ath11k_base *ab,
 	u32 tot_mem_sz;
 	u32 n_link_desc_bank, last_bank_sz;
 	u32 entry_sz, align_bytes, n_entries;
-	u32 paddr;
+	dma_addr_t paddr;
 	u32 *desc;
 	int i, ret;
 
