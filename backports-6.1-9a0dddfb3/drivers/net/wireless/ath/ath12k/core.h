@@ -298,6 +298,7 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_QMI_FW_READY_COMPLETE,
 	ATH12K_FLAG_FTM_SEGMENTED,
 	ATH12K_FLAG_FIXED_MEM_REGION,
+	ATH12K_FLAG_BTCOEX,
 };
 
 struct ath12k_tx_conf {
@@ -623,6 +624,8 @@ struct ath12k_dbg_htt_stats {
 	struct debug_htt_stats_req *stats_req;
 };
 
+#define ATH12K_MAX_COEX_PRIORITY_LEVEL  3
+
 struct ath12k_debug {
 	struct dentry *debugfs_pdev;
 	struct dentry *debugfs_pdev_symlink;
@@ -652,6 +655,31 @@ enum ath12k_fw_recovery_option {
 
 #define ATH12K_FLUSH_TIMEOUT (5 * HZ)
 #define ATH12K_VDEV_DELETE_TIMEOUT_HZ (5 * HZ)
+
+struct ath12k_btcoex_info {
+	bool coex_support;
+	u32 pta_num;
+	u32 coex_mode;
+	u32 bt_active_time_slot;
+	u32 bt_priority_time_slot;
+	u32 coex_algo_type;
+	u32 pta_priority;
+	u32 pta_algorithm;
+	u32 wlan_prio_mask;
+	u32 wlan_weight;
+	u32 bt_weight;
+	u32 duty_cycle;
+	u32 wlan_duration;
+	u32 wlan_pkt_type;
+	u32 wlan_pkt_type_continued;
+};
+
+enum btcoex_algo {
+	COEX_ALGO_UNCONS_FREERUN = 0,
+	COEX_ALGO_FREERUN,
+        COEX_ALGO_OCS,
+        COEX_ALGO_MAX_SUPPORTED,
+};
 
 struct ath12k {
 	struct ath12k_base *ab;
@@ -782,6 +810,8 @@ struct ath12k {
 	enum ath12k_11d_state state_11d;
 	u8 alpha2[REG_ALPHA2_LEN];
 	bool regdom_set_by_user;
+
+	struct ath12k_btcoex_info coex;
 
 	int monitor_vdev_id;
 

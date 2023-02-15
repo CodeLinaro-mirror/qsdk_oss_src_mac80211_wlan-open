@@ -2526,6 +2526,7 @@ struct wmi_init_cmd {
 #define WMI_RSRC_CFG_FLAGS2_INTRABSS_MEC_WDS_LEARNING_DISABLE  BIT(15)
 #define WMI_RSRC_CFG_FLAGS2_FW_AST_INDICATION_DISABLE          BIT(18)
 #define WMI_RSRC_CFG_FLAGS2_WDS_NULL_FRAME_SUPPORT             BIT(22)
+#define WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT BIT(25)
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;
@@ -4832,6 +4833,119 @@ enum ath12k_hw_txrx_mode {
 	ATH12K_HW_TXRX_ETHERNET = 2,
 };
 
+enum wmi_coex_config_type {
+        WMI_COEX_CONFIG_PAGE_P2P_TDM            = 1,
+        WMI_COEX_CONFIG_PAGE_STA_TDM            = 2,
+        WMI_COEX_CONFIG_PAGE_SAP_TDM            = 3,
+        WMI_COEX_CONFIG_DURING_WLAN_CONN        = 4,
+        WMI_COEX_CONFIG_BTC_ENABLE              = 5,
+        WMI_COEX_CONFIG_COEX_DBG                = 6,
+        WMI_COEX_CONFIG_PAGE_P2P_STA_TDM        = 7,
+        WMI_COEX_CONFIG_INQUIRY_P2P_TDM         = 8,
+        WMI_COEX_CONFIG_INQUIRY_STA_TDM         = 9,
+        WMI_COEX_CONFIG_INQUIRY_SAP_TDM         = 10,
+        WMI_COEX_CONFIG_INQUIRY_P2P_STA_TDM     = 11,
+        WMI_COEX_CONFIG_TX_POWER                = 12,
+        WMI_COEX_CONFIG_PTA_CONFIG              = 13,
+        WMI_COEX_CONFIG_AP_TDM                  = 14,
+        WMI_COEX_CONFIG_WLAN_SCAN_PRIORITY      = 15,
+        WMI_COEX_CONFIG_WLAN_PKT_PRIORITY       = 16,
+        WMI_COEX_CONFIG_PTA_INTERFACE           = 17,
+        WMI_COEX_CONFIG_THREE_WAY_COEX_RESET    = 32,
+        WMI_COEX_CONFIG_THREE_WAY_COEX_START    = 34,
+        /* WMI_COEX_CONFIG_FORCED_ALGO
+         * config to select coex algorithm
+         * coex_algo: select fixed coex algorithm
+         */
+        WMI_COEX_CONFIG_FORCED_ALGO             = 47,
+};
+
+struct coex_config_arg {
+        u32 vdev_id;
+        u32 config_type;
+        union {
+                struct {
+                        u32 coex_enable;
+                };
+
+                struct {
+                        u32 pta_num;
+                        u32 coex_mode;
+                        u32 bt_txrx_time;
+                        u32 bt_priority_time;
+                        u32 pta_algorithm;
+                        u32 pta_priority;
+                };
+
+                struct {
+                        u32 wlan_pkt_type;
+                        u32 wlan_pkt_type_continued;
+                        u32 wlan_pkt_weight;
+                        u32 bt_pkt_weight;
+                };
+                struct {
+                        u32 duty_cycle;
+                        u32 wlan_duration;
+                };
+                struct {
+                        u32 coex_algo;
+                };
+                struct {
+                        u32 priority0;
+                        u32 priority1;
+                        u32 priority2;
+                        u32 config_arg4;
+                        u32 config_arg5;
+                        u32 config_arg6;
+                };
+        };
+};
+
+struct wmi_coex_config_cmd {
+        u32 tlv_header;
+        u32 vdev_id;
+        u32 config_type;
+        union {
+                struct {
+                        u32 coex_enable;
+                } __packed;
+
+                struct {
+                        u32 pta_num;
+                        u32 coex_mode;
+                        u32 bt_txrx_time;
+                        u32 bt_priority_time;
+                        u32 pta_algorithm;
+                        u32 pta_priority;
+                } __packed;
+
+                struct {
+                        u32 wlan_pkt_type;
+                        u32 wlan_pkt_type_continued;
+                        u32 wlan_pkt_weight;
+                        u32 bt_pkt_weight;
+                } __packed;
+
+                struct {
+                        u32 duty_cycle;
+                        u32 wlan_duration;
+                } __packed;
+
+                struct {
+                        u32 coex_algo;
+                } __packed;
+
+                struct {
+                        u32 priority0;
+                        u32 priority1;
+                        u32 priority2;
+                        u32 config_arg4;
+                        u32 config_arg5;
+                        u32 config_arg6;
+                } __packed;
+        } __packed;
+} __packed;
+
 struct wmi_wmm_params {
 	__le32 tlv_header;
 	__le32 cwmin;
@@ -6235,6 +6349,8 @@ int ath12k_wmi_send_twt_enable_cmd(struct ath12k *ar, u32 pdev_id);
 int ath12k_wmi_send_twt_disable_cmd(struct ath12k *ar, u32 pdev_id);
 int ath12k_wmi_send_obss_spr_cmd(struct ath12k *ar, u32 vdev_id,
 				 struct ieee80211_he_obss_pd *he_obss_pd);
+int ath12k_send_coex_config_cmd(struct ath12k *ar,
+                                struct coex_config_arg *coex_config);
 int ath12k_wmi_obss_color_cfg_cmd(struct ath12k *ar, u32 vdev_id,
 				  u8 bss_color, u32 period,
 				  bool enable);

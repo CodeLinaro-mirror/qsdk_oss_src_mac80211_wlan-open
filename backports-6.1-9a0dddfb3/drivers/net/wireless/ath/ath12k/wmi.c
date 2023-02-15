@@ -1752,6 +1752,109 @@ int ath12k_wmi_vdev_set_param_cmd(struct ath12k *ar, u32 vdev_id,
 	return ret;
 }
 
+static void ath12k_wmi_copy_coex_config(struct ath12k *ar, struct wmi_coex_config_cmd *cmd,
+                                       struct coex_config_arg *coex_config)
+{
+        switch (coex_config->config_type) {
+        case WMI_COEX_CONFIG_BTC_ENABLE:
+                cmd->coex_enable = coex_config->coex_enable;
+                ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+                           "WMI coex config type %u vdev id %d"
+                           " coex_enable %u\n",
+                           coex_config->config_type,
+                           coex_config->vdev_id,
+                           coex_config->coex_enable);
+                break;
+        case WMI_COEX_CONFIG_WLAN_PKT_PRIORITY:
+                cmd->wlan_pkt_type = coex_config->wlan_pkt_type;
+                cmd->wlan_pkt_weight = coex_config->wlan_pkt_weight;
+                cmd->bt_pkt_weight = coex_config->bt_pkt_weight;
+                ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+                           "WMI coex config type %u vdev id %d"
+                           " wlan pkt type 0x%x wlan pkt weight %u"
+                           " bt pkt weight %u\n",
+                           coex_config->config_type,
+                           coex_config->vdev_id,
+                           coex_config->wlan_pkt_type,
+                           coex_config->wlan_pkt_weight,
+                           coex_config->bt_pkt_weight);
+                break;
+        case WMI_COEX_CONFIG_PTA_INTERFACE:
+                cmd->pta_num = coex_config->pta_num;
+                cmd->coex_mode = coex_config->coex_mode;
+                cmd->bt_txrx_time = coex_config->bt_txrx_time;
+                cmd->bt_priority_time = coex_config->bt_priority_time;
+                cmd->pta_algorithm = coex_config->pta_algorithm;
+                cmd->pta_priority = coex_config->pta_priority;
+                ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+                           "WMI coex config type %u vdev id %d"
+                           " pta num %u coex mode 0x%x"
+                           " bt_txrx_time 0x%x"
+                           " bt_priority_time 0x%x pta alogrithm 0x%x"
+                           " pta priority 0x%x\n",
+                           coex_config->config_type,
+                           coex_config->vdev_id,
+                           coex_config->pta_num,
+                           coex_config->coex_mode,
+                           coex_config->bt_txrx_time,
+                           coex_config->bt_priority_time,
+                           coex_config->pta_algorithm,
+                           coex_config->pta_priority);
+                break;
+        case WMI_COEX_CONFIG_AP_TDM:
+                cmd->duty_cycle = coex_config->duty_cycle;
+                cmd->wlan_duration = coex_config->wlan_duration;
+                ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+                           "WMI coex config type %u vdev id %d"
+                           " duty_cycle %u wlan_duration %u\n",
+                           coex_config->config_type,
+                           coex_config->vdev_id,
+                           coex_config->duty_cycle,
+                           coex_config->wlan_duration);
+                break;
+        case WMI_COEX_CONFIG_FORCED_ALGO:
+                cmd->coex_algo = coex_config->coex_algo;
+                ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+                           "WMI coex config type %u vdev id %d"
+                           " coex_algorithm %u\n",
+                           coex_config->config_type,
+                           coex_config->vdev_id,
+                           coex_config->coex_algo);
+		break;
+        default:
+                break;
+        }
+}
+
+int ath12k_send_coex_config_cmd(struct ath12k *ar,
+                                struct coex_config_arg *coex_config)
+{
+        struct ath12k_wmi_pdev *wmi = ar->wmi;
+        struct wmi_coex_config_cmd *cmd;
+        struct sk_buff *skb;
+        int ret;
+
+        skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+        if (!skb)
+                return -ENOMEM;
+
+        cmd = (struct wmi_coex_config_cmd *)skb->data;
+        cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_COEX_CONFIG_CMD) |
+                          FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+
+        cmd->vdev_id = coex_config->vdev_id;
+        cmd->config_type = coex_config->config_type;
+        ath12k_wmi_copy_coex_config(ar, cmd, coex_config);
+
+        ret = ath12k_wmi_cmd_send(wmi, skb, WMI_COEX_CONFIG_CMDID);
+        if (ret) {
+                ath12k_warn(ar->ab, "failed to send WMI_COEX_CONFIG_CMD cmd\n");
+                dev_kfree_skb(skb);
+        }
+
+        return ret;
+}
+
 int ath12k_wmi_send_pdev_temperature_cmd(struct ath12k *ar)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
@@ -3886,6 +3989,8 @@ static int ath12k_init_cmd_send(struct ath12k_wmi_pdev *wmi,
 	struct ath12k_wmi_pdev_band_to_mac_params *band_to_mac;
 	struct ath12k_wmi_host_mem_chunk_params *host_mem_chunks;
 	struct wmi_tlv *tlv;
+	struct device *dev = ab->dev;
+	bool three_way_coex_enabled = false;
 	size_t ret, len;
 	void *ptr;
 	u32 hw_mode_len = 0;
@@ -3909,6 +4014,10 @@ static int ath12k_init_cmd_send(struct ath12k_wmi_pdev *wmi,
 
 	ptr = skb->data + sizeof(*cmd);
 	cfg = ptr;
+
+	three_way_coex_enabled = of_property_read_bool(dev->of_node, "qcom,btcoex");
+	if (three_way_coex_enabled)
+		cfg->flag1 |= WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT;
 
 	ath12k_wmi_copy_resource_config(ab, cfg, &arg->res_cfg);
 

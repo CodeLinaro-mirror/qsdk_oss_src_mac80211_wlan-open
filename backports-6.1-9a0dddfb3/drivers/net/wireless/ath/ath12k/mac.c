@@ -7,6 +7,11 @@
 #include <net/mac80211.h>
 #include <net/cfg80211.h>
 #include <linux/etherdevice.h>
+#include <linux/bitfield.h>
+#include <linux/inetdevice.h>
+#include <linux/of.h>
+#include <linux/module.h>
+#include <net/if_inet6.h>
 
 #include "mac.h"
 #include "core.h"
@@ -11462,6 +11467,70 @@ static void ath12k_mac_put_chain_rssi(struct station_info *sinfo,
 	}
 }
 
+int ath12k_mac_btcoex_config(struct ath12k *ar, struct ath12k_link_vif *arvif,
+			     int coex, u32 wlan_prio_mask, u8 wlan_weight)
+{
+	struct ieee80211_hw *hw = ar->ah->hw;
+	struct coex_config_arg coex_config;
+	int ret;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	if (coex == BTCOEX_CONFIGURE_DEFAULT || (test_bit(ATH12K_FLAG_BTCOEX, &ar->dev_flags) ^ coex)) {
+		goto next;
+	}
+
+	coex_config.vdev_id = arvif->vdev_id;
+	if (coex == BTCOEX_ENABLE) {
+		coex_config.config_type = WMI_COEX_CONFIG_PTA_INTERFACE;
+		coex_config.pta_num = ar->coex.pta_num;
+		coex_config.coex_mode = ar->coex.coex_mode;
+		coex_config.bt_txrx_time = ar->coex.bt_active_time_slot;
+		coex_config.bt_priority_time = ar->coex.bt_priority_time_slot;
+		coex_config.pta_algorithm = ar->coex.coex_algo_type;
+		coex_config.pta_priority = ar->coex.pta_priority;
+		ret = ath12k_send_coex_config_cmd(ar, &coex_config);
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "failed to set coex config vdev_id %d ret %d\n",
+				    coex_config.vdev_id, ret);
+			goto out;
+		}
+	}
+
+	memset(&coex_config, 0, sizeof(struct coex_config_arg));
+	coex_config.vdev_id = arvif->vdev_id;
+	coex_config.config_type = WMI_COEX_CONFIG_BTC_ENABLE;
+	coex_config.coex_enable = coex;
+	ret = ath12k_send_coex_config_cmd(ar, &coex_config);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to set coex config vdev_id %d ret %d\n",
+			    coex_config.vdev_id, ret);
+		goto out;
+	}
+
+next:
+	if (!coex) {
+		ret = 0;
+		goto out;
+	}
+
+	memset(&coex_config, 0, sizeof(struct coex_config_arg));
+	coex_config.vdev_id = arvif->vdev_id;
+	coex_config.config_type = WMI_COEX_CONFIG_WLAN_PKT_PRIORITY;
+	coex_config.wlan_pkt_type = wlan_prio_mask;
+	coex_config.wlan_pkt_weight = wlan_weight;
+	ret = ath12k_send_coex_config_cmd(ar, &coex_config);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to set coex config vdev_id %d ret %d\n",
+			    coex_config.vdev_id, ret);
+	}
+out:
+	return ret;
+}
+
 void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 				  struct ieee80211_vif *vif,
 				  struct ieee80211_sta *sta,
@@ -12232,6 +12301,61 @@ err_free_combinations:
 	return ret;
 }
 
+static void ath12k_mac_fetch_coex_info(struct ath12k *ar)
+{
+        struct ath12k_pdev_cap *cap = &ar->pdev->cap;
+        struct ath12k_base *ab = ar->ab;
+        struct device *dev = ab->dev;
+
+        ar->coex.coex_support = false;
+
+        if (!(cap->supported_bands & WMI_HOST_WLAN_2GHZ_CAP))
+                return;
+
+        if (of_property_read_u32(dev->of_node, "qcom,pta-num",
+                                &ar->coex.pta_num)) {
+                ath12k_err(ab, "No qcom,pta_num entry in dev-tree.\n");
+        }
+
+        if (of_property_read_u32(dev->of_node, "qcom,coex-mode",
+                                &ar->coex.coex_mode)) {
+                ath12k_err(ab, "No qcom,coex_mode entry in dev-tree.\n");
+        }
+
+        if (of_property_read_u32(dev->of_node, "qcom,bt-active-time",
+                                &ar->coex.bt_active_time_slot)) {
+                ath12k_err(ab, "No qcom,bt-active-time entry in dev-tree.\n");
+        }
+
+        if (of_property_read_u32(dev->of_node, "qcom,bt-priority-time",
+                                &ar->coex.bt_priority_time_slot)) {
+                ath12k_err(ab, "No qcom,bt-priority-time entry in dev-tree.\n");
+        }
+
+        if (of_property_read_u32(dev->of_node, "qcom,coex-algo",
+                                &ar->coex.coex_algo_type)) {
+                ath12k_err(ab, "No qcom,coex-algo entry in dev-tree.\n");
+        }
+
+        if (of_property_read_u32(dev->of_node, "qcom,pta-priority",
+                                &ar->coex.pta_priority)) {
+                ath12k_err(ab, "No qcom,pta-priority entry in dev-tree.\n");
+        }
+
+        if (ar->coex.coex_algo_type == COEX_ALGO_OCS) {
+                ar->coex.duty_cycle = 100000;
+                ar->coex.wlan_duration = 80000;
+        }
+
+        ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "coex pta_num %u coex_mode %u"
+                   " bt_active_time_slot %u bt_priority_time_slot %u"
+                   " coex_algorithm %u pta_priority %u\n", ar->coex.pta_num,
+                   ar->coex.coex_mode, ar->coex.bt_active_time_slot,
+                   ar->coex.bt_priority_time_slot, ar->coex.coex_algo_type,
+                   ar->coex.pta_priority);
+        ar->coex.coex_support = true;
+}
+
 static const u8 ath12k_if_types_ext_capa[] = {
 	[0] = WLAN_EXT_CAPA1_EXT_CHANNEL_SWITCHING,
 	[2] = WLAN_EXT_CAPA3_MULTI_BSSID_SUPPORT,
@@ -12636,6 +12760,8 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	 * Should we do this again?
 	 */
 	ath12k_wmi_pdev_attach(ab, pdev_idx);
+
+	ath12k_mac_fetch_coex_info(ar);
 
 	ar->cfg_tx_chainmask = pdev->cap.tx_chain_mask;
 	ar->cfg_rx_chainmask = pdev->cap.rx_chain_mask;

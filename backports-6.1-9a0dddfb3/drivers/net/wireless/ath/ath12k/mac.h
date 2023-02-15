@@ -88,6 +88,9 @@ struct ath12k_mac_get_any_chanctx_conf_arg {
 	struct ieee80211_chanctx_conf *chanctx_conf;
 };
 
+#define ATH12K_WLAN_PRIO_MAX    0x63
+#define ATH12K_WLAN_PRIO_WEIGHT 0xff
+
 extern const struct htt_rx_ring_tlv_filter ath12k_mac_mon_status_filter_default;
 
 #define ATH12K_SCAN_11D_INTERVAL               600000
@@ -114,6 +117,8 @@ void ath12k_mac_scan_finish(struct ath12k *ar);
 struct ath12k_link_vif *ath12k_mac_get_arvif(struct ath12k *ar, u32 vdev_id);
 struct ath12k_link_vif *ath12k_mac_get_arvif_by_vdev_id(struct ath12k_base *ab,
 							u32 vdev_id);
+int ath12k_mac_btcoex_config(struct ath12k *ar, struct ath12k_link_vif *arvif,
+			   int coex, u32 wlan_prio_mask, u8 wlan_weight);
 struct ath12k *ath12k_mac_get_ar_by_vdev_id(struct ath12k_base *ab, u32 vdev_id);
 struct ath12k *ath12k_mac_get_ar_by_pdev_id(struct ath12k_base *ab, u32 pdev_id);
 

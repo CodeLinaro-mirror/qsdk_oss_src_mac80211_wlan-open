@@ -54,6 +54,36 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 
 #define ATH12K_TPC_STATS_BUF_SIZE	(TPC_STATS_TOT_ROW * TPC_STATS_TOT_COLUMN)
 
+/*
+ * enum qca_wlan_priority_type - priority mask
+ * This enum defines priority mask that user can configure
+ * over BT traffic type which can be passed through
+ * QCA_WLAN_VENDOR_ATTR_BTCOEX_CONFIG_WLAN_PRIORITY attribute.
+ *
+ * @QCA_WLAN_PRIORITY_BE: Bit mask for WLAN Best effort traffic
+ * @QCA_WLAN_PRIORITY_BK: Bit mask for WLAN Background traffic
+ * @QCA_WLAN_PRIORITY_VI: Bit mask for WLAN Video traffic
+ * @QCA_WLAN_PRIORITY_VO: Bit mask for WLAN Voice traffic
+ * @QCA_WLAN_PRIORITY_BEACON: Bit mask for WLAN BEACON frame
+ * @QCA_WLAN_PRIORITY_MGMT: Bit mask for WLAN Management frame
+ */
+enum qca_wlan_priority_type {
+	QCA_WLAN_PRIORITY_BE = BIT(0),
+	QCA_WLAN_PRIORITY_BK = BIT(1),
+	QCA_WLAN_PRIORITY_VI = BIT(2),
+	QCA_WLAN_PRIORITY_VO = BIT(3),
+	QCA_WLAN_PRIORITY_BEACON = BIT(4),
+	QCA_WLAN_PRIORITY_MGMT = BIT(5),
+};
+
+#define BTCOEX_ENABLE                    1
+#define BTCOEX_DISABLE                   0
+#define BTCOEX_CONFIGURE_DEFAULT        -1
+#define BTCOEX_THREE_WIRE_MODE           1
+#define BTCOEX_PTA_MODE                  2
+#define BTCOEX_MAX_PKT_WEIGHT            255
+#define BTCOEX_MAX_WLAN_PRIORITY    ((QCA_WLAN_PRIORITY_MGMT << 1) - 1)
+
 enum wmi_tpc_pream_bw {
 	WMI_TPC_PREAM_CCK,
 	WMI_TPC_PREAM_OFDM,
