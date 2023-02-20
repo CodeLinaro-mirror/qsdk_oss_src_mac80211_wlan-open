@@ -6781,7 +6781,7 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	}
 
 	if (changed & IEEE80211_RC_NSS_CHANGED) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac update sta %pM nss %d\n",
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac update sta %pM nss %d\n",
 			   arsta->addr, nss);
 
 		err = ath12k_wmi_set_peer_param(ar, arsta->addr, arvif->vdev_id,
@@ -6792,7 +6792,7 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	}
 
 	if (changed & IEEE80211_RC_SMPS_CHANGED) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac update sta %pM smps %d\n",
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac update sta %pM smps %d\n",
 			   arsta->addr, smps);
 
 		err = ath12k_wmi_set_peer_param(ar, arsta->addr, arvif->vdev_id,
@@ -6924,7 +6924,7 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		ahvif = arvif->ahvif;
 		ar = arvif->ar;
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
 			   "setting USE_4ADDR for peer %pM\n", arsta->addr);
 
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
@@ -7117,7 +7117,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d num_peers: %d\n",
 			    arsta->addr, arvif->vdev_id, ar->num_peers);
 	else
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "Removed peer: %pM for VDEV: %d num_peers:%d\n",
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "Removed peer: %pM for VDEV: %d num_peers:%d\n",
 			   arsta->addr, arvif->vdev_id, ar->num_peers);
 
 	ath12k_mac_station_post_remove(ar, arvif, arsta);
@@ -7172,7 +7172,7 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 		goto rhash_delete;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_MAC, "Added peer: %pM for VDEV: %d num_stations: %d\n",
+	ath12k_dbg(ab, ATH12K_DBG_PEER, "Added peer: %pM for VDEV: %d num_stations: %d\n",
 		   arsta->addr, arvif->vdev_id, ar->num_stations);
 
 	if (ieee80211_vif_is_mesh(vif)) {
@@ -7321,7 +7321,7 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return -ESHUTDOWN;
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac handle link %u sta %pM state %d -> %d\n",
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac handle link %u sta %pM state %d -> %d\n",
 		   arsta->link_id, arsta->addr, old_state, new_state);
 
 	/* IEEE80211_STA_NONE -> IEEE80211_STA_NOTEXIST: Remove the station

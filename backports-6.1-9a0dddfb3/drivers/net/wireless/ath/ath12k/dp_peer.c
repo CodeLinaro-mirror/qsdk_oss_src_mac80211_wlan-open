@@ -138,7 +138,7 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id)
 		goto exit;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "htt peer unmap vdev %d peer %pM id %d\n",
+	ath12k_dbg(ab, ATH12K_DBG_PEER, "htt peer unmap vdev %d peer %pM id %d\n",
 		   peer->vdev_id, peer->addr, peer_id);
 
 	kfree(peer->peer_stats.rx_stats);
@@ -172,7 +172,7 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 		wake_up(&ab->peer_mapping_wq);
 		ewma_avg_rssi_init(&peer->avg_rssi);
 	}
-	ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "htt peer map vdev %d peer %pM id %d\n",
+	ath12k_dbg(ab, ATH12K_DBG_PEER, "htt peer map vdev %d peer %pM id %d\n",
 		   vdev_id, mac_addr, peer_id);
 
 exit:

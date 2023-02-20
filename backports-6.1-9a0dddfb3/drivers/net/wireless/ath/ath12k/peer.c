@@ -252,6 +252,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		}
 	}
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "peer created %pM\n", arg->peer_addr);
+
 	ar->num_peers++;
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
@@ -282,6 +284,8 @@ u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah)
 
 	if (ml_peer_id == ATH12K_MAX_MLO_PEERS)
 		ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+
+	ath12k_dbg(NULL, ATH12K_DBG_PEER, "Allocated ml_peer_id:%d", ml_peer_id);
 
 	return ml_peer_id;
 }

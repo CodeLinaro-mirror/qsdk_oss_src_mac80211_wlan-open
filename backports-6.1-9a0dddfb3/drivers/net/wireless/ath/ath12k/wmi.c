@@ -1369,7 +1369,7 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 
 	ptr += sizeof(*ml_param);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
 		   "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d\n",
 		   arg->vdev_id, arg->peer_addr, ml_param->flags, ar->num_peers);
 
@@ -1401,7 +1401,7 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 	ether_addr_copy(cmd->peer_macaddr.addr, peer_addr);
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
 		   "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d\n",
 		   vdev_id,  peer_addr, ar->num_peers);
 
@@ -2593,6 +2593,13 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 			   ml_params->emlsr_trans_delay_us,
 			   ml_params->emlsr_trans_timeout_us);
 	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "peer (%pM) ml flags %x mld_addr %pM logical_link_idx %u ml peer id %d ieee_link_id %u num_partner_links %d",
+		   arg->peer_mac, ml_params->flags, ml_params->mld_addr.addr,
+		   ml_params->logical_link_idx, ml_params->ml_peer_id,
+		   ml_params->ieee_link_id,
+		   arg->ml.num_partner_links);
+
 	ptr += sizeof(*ml_params);
 
 skip_ml_params:
@@ -7090,7 +7097,7 @@ static void ath12k_peer_delete_resp_event(struct ath12k_base *ab, struct sk_buff
 
 	complete(&ar->peer_delete_done);
 	rcu_read_unlock();
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "peer delete resp for vdev id %d addr %pM\n",
+	ath12k_dbg(ab, ATH12K_DBG_PEER, "peer delete resp for vdev id %d addr %pM\n",
 		   peer_del_resp.vdev_id, peer_del_resp.peer_macaddr.addr);
 }
 
@@ -7556,7 +7563,7 @@ static void ath12k_peer_sta_kickout_event(struct ath12k_base *ab, struct sk_buff
 	else
 		ieee80211_report_low_ack(sta, 10);
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "peer sta kickout event %pM",
+	ath12k_dbg(ab, ATH12K_DBG_PEER, "peer sta kickout event %pM",
 		   arg.mac_addr);
 
 exit:
