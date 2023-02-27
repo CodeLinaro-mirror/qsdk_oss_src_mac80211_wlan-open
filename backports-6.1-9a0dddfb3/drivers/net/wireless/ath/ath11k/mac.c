@@ -1848,8 +1848,10 @@ static int ath11k_mac_setup_bcn_tmpl_ema(struct ath11k_vif *arvif,
 	u8 i = 0;
 	bool found_vdev = false;
 
-	if (!arvif->vif->mbssid_tx_vif)
+	if (!arvif->vif->bss_conf.mbssid_tx_vif)
 		return -1;
+
+	tx_arvif = (void *)arvif->vif->bss_conf.mbssid_tx_vif->drv_priv;
 
 	beacons = ieee80211_beacon_get_template_ema_list(tx_arvif->ar->hw,
 							 tx_arvif->vif, 0);
@@ -1902,11 +1904,14 @@ static int ath11k_mac_setup_bcn_tmpl_mbssid(struct ath11k_vif *arvif,
 	struct sk_buff *bcn;
 	int ret;
 
-	if (tx_arvif != arvif) {
-		ar = tx_arvif->ar;
-		ab = ar->ab;
-		hw = ar->hw;
-		vif = tx_arvif->vif;
+	if (arvif->vif->bss_conf.mbssid_tx_vif) {
+		tx_arvif = (void *)arvif->vif->bss_conf.mbssid_tx_vif->drv_priv;
+		if (tx_arvif != arvif) {
+			ar = tx_arvif->ar;
+			ab = ar->ab;
+			hw = ar->hw;
+			vif = tx_arvif->vif;
+		}
 	}
 
 	bcn = ieee80211_beacon_get_template(hw, vif, &offs, 0);
@@ -1986,8 +1991,8 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 	struct vdev_up_params params = { 0 };
 	int ret = 0;
 
-	if (arvif->vif->mbssid_tx_vif)
-		tx_arvif = (void *)arvif->vif->mbssid_tx_vif->drv_priv;
+	if (arvif->vif->bss_conf.mbssid_tx_vif)
+		tx_arvif = (void *)arvif->vif->bss_conf.mbssid_tx_vif->drv_priv;
 
 	lockdep_assert_held(&arvif->ar->conf_mutex);
 
@@ -3591,9 +3596,8 @@ static void ath11k_bss_disassoc(struct ieee80211_hw *hw,
 			    arvif->vdev_id, ret);
 
 	arvif->is_up = false;
-
-	if (arvif->vif->mbssid_tx_vif) {
-		tx_arvif = (void *)arvif->vif->mbssid_tx_vif->drv_priv;
+	if (arvif->vif->bss_conf.mbssid_tx_vif) {
+		tx_arvif = (void *)arvif->vif->bss_conf.mbssid_tx_vif->drv_priv;
 		if (tx_arvif != arvif)
 			tx_arvif->nontransmitting_vif_count--;
 	}
@@ -9173,9 +9177,8 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 		params.vdev_id = arvif->vdev_id;
 		params.aid = arvif->aid;
 		params.bssid = arvif->bssid;
-
-		if (arvif->vif->mbssid_tx_vif) {
-			tx_arvif = (void *)arvif->vif->mbssid_tx_vif->drv_priv;
+		if (arvif->vif->bss_conf.mbssid_tx_vif) {
+			tx_arvif = (void *)arvif->vif->bss_conf.mbssid_tx_vif->drv_priv;
 			params.tx_bssid = tx_arvif->bssid;
 			params.profile_idx = arvif->vif->bss_conf.bssid_index;
 			params.profile_count = tx_arvif->nontransmitting_vif_count;
