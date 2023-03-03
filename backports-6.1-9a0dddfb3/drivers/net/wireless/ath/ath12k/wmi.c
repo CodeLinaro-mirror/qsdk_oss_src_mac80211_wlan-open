@@ -1143,6 +1143,7 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 {
 	struct wmi_vdev_start_mlo_params *ml_params;
 	struct wmi_partner_link_info *partner_info;
+	struct ath12k_hw_group *ag = ar->ab->ag;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_vdev_start_request_cmd *cmd;
 	struct sk_buff *skb;
@@ -1195,6 +1196,8 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 	}
 
 	cmd->flags |= cpu_to_le32(WMI_VDEV_START_LDPC_RX_ENABLED);
+	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ag->flags))
+		cmd->flags |= cpu_to_le32(WMI_VDEV_START_HW_ENCRYPTION_DISABLED);
 
 	ptr = skb->data + sizeof(*cmd);
 	chan = ptr;
