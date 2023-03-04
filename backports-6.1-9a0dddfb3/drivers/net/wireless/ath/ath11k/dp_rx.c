@@ -4740,8 +4740,7 @@ int ath11k_dp_process_rx_err(struct ath11k_base *ab, struct napi_struct *napi,
 	struct ath11k *ar;
 	dma_addr_t paddr;
 	u32 *desc;
-	bool is_frag;
-	u8 drop = 0;
+	bool is_frag, drop = false;
 
 	tot_n_bufs_reaped = 0;
 	quota = budget;
@@ -4788,7 +4787,7 @@ int ath11k_dp_process_rx_err(struct ath11k_base *ab, struct napi_struct *napi,
 		 * msdu's indicated due to error reasons.
 		 */
 		if (!is_frag || num_msdus > 1) {
-			drop = 1;
+			drop = true;
 			/* Return the link desc back to wbm idle list */
 			ath11k_dp_rx_link_desc_return(ab, desc,
 						      HAL_WBM_REL_BM_ACT_PUT_IN_IDLE);
@@ -4802,6 +4801,9 @@ int ath11k_dp_process_rx_err(struct ath11k_base *ab, struct napi_struct *napi,
 					   msdu_cookies[i]);
 
 			ar = ab->pdevs[mac_id].ar;
+
+			if (drop)
+				ar->wmm_stats.total_wmm_rx_drop[ar->wmm_stats.rx_type]++;
 
 			if (!ath11k_dp_process_rx_err_buf(ar, desc, buf_id, drop)) {
 				n_bufs_reaped[mac_id]++;
