@@ -858,6 +858,12 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 
 	ath11k_dp_tx_status_parse(ab, tx_status, &ts);
 
+	ar->wmm_stats.tx_type = ath11k_tid_to_ac(ts.tid > ATH11K_DSCP_PRIORITY ? 0:ts.tid);
+	if (ar->wmm_stats.tx_type) {
+		if (ts.status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED)
+			ar->wmm_stats.total_wmm_tx_drop[ar->wmm_stats.tx_type]++;
+	}
+
 	if (unlikely(!rcu_access_pointer(ab->pdevs_active[ar->pdev_idx]))) {
 		ieee80211_free_txskb(ar->hw, msdu);
 		return;

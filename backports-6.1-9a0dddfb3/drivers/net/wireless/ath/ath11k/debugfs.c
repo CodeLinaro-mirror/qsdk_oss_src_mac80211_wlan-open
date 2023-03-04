@@ -335,6 +335,7 @@ static ssize_t ath11k_read_wmm_stats(struct file *file,
 	ssize_t retval;
 	u64 total_wmm_sent_pkts = 0;
 	u64 total_wmm_received_pkts = 0;
+	u64 total_wmm_fail_sent = 0;
 
 	buf = kzalloc(size, GFP_KERNEL);
 	if (!buf)
@@ -344,12 +345,15 @@ static ssize_t ath11k_read_wmm_stats(struct file *file,
 	for (count = 0; count < WME_NUM_AC; count++) {
 		total_wmm_sent_pkts += ar->wmm_stats.total_wmm_tx_pkts[count];
 		total_wmm_received_pkts += ar->wmm_stats.total_wmm_rx_pkts[count];
+		total_wmm_fail_sent += ar->wmm_stats.total_wmm_tx_drop[count];
 	}
 
 	len += scnprintf(buf + len, size - len, "total number of wmm_sent: %llu\n",
 			 total_wmm_sent_pkts);
 	len += scnprintf(buf + len, size - len, "total number of wmm_received: %llu\n",
 			 total_wmm_received_pkts);
+	len += scnprintf(buf + len, size - len, "total number of wmm_fail_sent: %llu\n",
+			 total_wmm_fail_sent);
 	len += scnprintf(buf + len, size - len, "num of be wmm_sent: %llu\n",
 			 ar->wmm_stats.total_wmm_tx_pkts[WME_AC_BE]);
 	len += scnprintf(buf + len, size - len, "num of bk wmm_sent: %llu\n",
@@ -366,6 +370,14 @@ static ssize_t ath11k_read_wmm_stats(struct file *file,
 			 ar->wmm_stats.total_wmm_rx_pkts[WME_AC_VI]);
 	len += scnprintf(buf + len, size - len, "num of vo wmm_received: %llu\n",
 			 ar->wmm_stats.total_wmm_rx_pkts[WME_AC_VO]);
+	len += scnprintf(buf + len, size - len, "num of be wmm_tx_dropped: %llu\n",
+			 ar->wmm_stats.total_wmm_tx_drop[WME_AC_BE]);
+	len += scnprintf(buf + len, size - len, "num of bk wmm_tx_dropped: %llu\n",
+			 ar->wmm_stats.total_wmm_tx_drop[WME_AC_BK]);
+	len += scnprintf(buf + len, size - len, "num of vi wmm_tx_dropped: %llu\n",
+			 ar->wmm_stats.total_wmm_tx_drop[WME_AC_VI]);
+	len += scnprintf(buf + len, size - len, "num of vo wmm_tx_dropped: %llu\n",
+			 ar->wmm_stats.total_wmm_tx_drop[WME_AC_VO]);
 
 	mutex_unlock(&ar->conf_mutex);
 
