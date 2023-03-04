@@ -324,6 +324,51 @@ static const struct file_operations fops_pdev_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_read_wmm_stats(struct file *file,
+				     char __user *ubuf,
+				     size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	int len = 0;
+	int size = 2048;
+	char *buf;
+	ssize_t retval;
+	u64 total_wmm_sent_pkts = 0;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&ar->conf_mutex);
+	for (count = 0; count < WME_NUM_AC; count++)
+		total_wmm_sent_pkts += ar->wmm_stats.total_wmm_tx_pkts[count];
+
+	len += scnprintf(buf + len, size - len, "total number of wmm_sent: %llu\n",
+			 total_wmm_sent_pkts);
+	len += scnprintf(buf + len, size - len, "num of be wmm_sent: %llu\n",
+			 ar->wmm_stats.total_wmm_tx_pkts[WME_AC_BE]);
+	len += scnprintf(buf + len, size - len, "num of bk wmm_sent: %llu\n",
+			 ar->wmm_stats.total_wmm_tx_pkts[WME_AC_BK]);
+	len += scnprintf(buf + len, size - len, "num of vi wmm_sent: %llu\n",
+			 ar->wmm_stats.total_wmm_tx_pkts[WME_AC_VI]);
+	len += scnprintf(buf + len, size - len, "num of vo wmm_sent: %llu\n",
+			 ar->wmm_stats.total_wmm_tx_pkts[WME_AC_VO]);
+
+	mutex_unlock(&ar->conf_mutex);
+
+	if (len > size)
+		len = size;
+	retval = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_wmm_stats = {
+	.read = ath11k_read_wmm_stats,
+	.open = simple_open,
+};
+
 static int ath11k_open_vdev_stats(struct inode *inode, struct file *file)
 {
 	struct ath11k *ar = inode->i_private;
@@ -4115,6 +4160,12 @@ int ath11k_debugfs_register(struct ath11k *ar)
 	init_completion(&ar->tpc_complete);
         init_completion(&ab->ani_ofdm_event);
         init_completion(&ab->ani_cck_event);
+
+	memset(&ar->wmm_stats, 0, sizeof(struct ath11k_wmm_stats));
+
+	debugfs_create_file("wmm_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_wmm_stats);
 
 	debugfs_create_file("ext_tx_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,

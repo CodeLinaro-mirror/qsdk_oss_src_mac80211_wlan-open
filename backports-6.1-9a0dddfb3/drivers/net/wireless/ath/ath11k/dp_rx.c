@@ -1573,6 +1573,8 @@ ath11k_update_per_peer_tx_stats(struct ath11k *ar,
 				      usr_stats->ack_ba.info);
 		tid = FIELD_GET(HTT_PPDU_STATS_ACK_BA_INFO_TID_NUM,
 				usr_stats->ack_ba.info);
+		ar->wmm_stats.tx_type = ath11k_tid_to_ac(tid > ATH11K_DSCP_PRIORITY ? 0: tid);
+		ar->wmm_stats.total_wmm_tx_pkts[ar->wmm_stats.tx_type]++;
 	}
 
 	if (common->fes_duration_us)

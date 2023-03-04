@@ -883,6 +883,13 @@ struct ath11k_per_peer_tx_stats {
 	bool is_ampdu;
 };
 
+#define ATH11K_DSCP_PRIORITY 7
+
+struct ath11k_wmm_stats {
+	int tx_type;
+	u64 total_wmm_tx_pkts[WME_NUM_AC];
+};
+
 #define ATH11K_FLUSH_TIMEOUT (5 * HZ)
 #define ATH11K_VDEV_DELETE_TIMEOUT_HZ (5 * HZ)
 
@@ -1038,6 +1045,7 @@ struct ath11k {
 	struct ath11k_wow wow;
 	struct completion target_suspend;
 	bool target_suspend_ack;
+	struct ath11k_wmm_stats wmm_stats;
 	struct ath11k_per_peer_tx_stats peer_tx_stats;
 	struct list_head ppdu_stats_info;
 	u32 ppdu_stat_list_depth;
