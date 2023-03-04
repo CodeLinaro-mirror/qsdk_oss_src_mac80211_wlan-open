@@ -887,7 +887,9 @@ struct ath11k_per_peer_tx_stats {
 
 struct ath11k_wmm_stats {
 	int tx_type;
+	int rx_type;
 	u64 total_wmm_tx_pkts[WME_NUM_AC];
+	u64 total_wmm_rx_pkts[WME_NUM_AC];
 };
 
 #define ATH11K_FLUSH_TIMEOUT (5 * HZ)

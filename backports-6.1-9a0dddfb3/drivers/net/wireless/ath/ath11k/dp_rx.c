@@ -2721,6 +2721,7 @@ static void ath11k_dp_rx_h_undecap(struct ath11k *ar, struct sk_buff *msdu,
 					    enctype, status);
 		break;
 	}
+	ar->wmm_stats.total_wmm_rx_pkts[ar->wmm_stats.rx_type]++;
 }
 
 static struct ath11k_peer *
@@ -2811,7 +2812,9 @@ static void ath11k_dp_rx_h_mpdu(struct ath11k *ar,
 	u32 err_bitmap;
 	struct wireless_dev *wdev = NULL;
 	struct ath11k_sta *arsta = NULL;
+	u8 tid;
 
+	tid = ath11k_dp_rx_h_mpdu_start_tid(ar->ab, rx_desc);
 	/* PN for multicast packets will be checked in mac80211 */
 	rxcb = ATH11K_SKB_RXCB(msdu);
 	if (!ar->ab->nss.enabled)
@@ -2832,6 +2835,9 @@ static void ath11k_dp_rx_h_mpdu(struct ath11k *ar,
 		 * path, so its safe to skip checking errors here */
 		if (*fast_rx &&
 		    ath11k_dp_rx_check_fast_rx(ar, msdu, rx_desc, peer)) {
+			ar->wmm_stats.rx_type =
+				ath11k_tid_to_ac(rxcb->tid > ATH11K_DSCP_PRIORITY ? 0: rxcb->tid);
+			ar->wmm_stats.total_wmm_rx_pkts[ar->wmm_stats.rx_type]++;
 			wdev = ieee80211_vif_to_wdev(peer->vif);
 			if (wdev) {
 		        	spin_unlock_bh(&ar->ab->base_lock);
@@ -3398,6 +3404,8 @@ try_again:
 					 desc->rx_mpdu_info.info0);
 		rxcb->tid = FIELD_GET(HAL_REO_DEST_RING_INFO0_RX_QUEUE_NUM,
 				      desc->info0);
+
+		ar->wmm_stats.rx_type = ath11k_tid_to_ac(rxcb->tid > ATH11K_DSCP_PRIORITY ? 0: rxcb->tid);
 
 		if (ath11k_debugfs_is_extd_rx_stats_enabled(ar) && rxcb->peer_id) {
 			rcu_read_lock();
