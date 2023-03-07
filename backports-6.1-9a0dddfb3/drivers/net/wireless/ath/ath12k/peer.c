@@ -103,7 +103,7 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 	return 0;
 }
 
-int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
+static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
 {
 	int ret;
 
@@ -123,6 +123,19 @@ int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
 		return ret;
 
 	ret = ath12k_wait_for_peer_delete_done(ar, vdev_id, addr);
+	if (ret)
+		return ret;
+
+	return 0;
+}
+
+int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
+{
+	int ret;
+
+	lockdep_assert_held(ath12k_ar_to_hw(ar)->wiphy);
+
+	ret = __ath12k_peer_delete(ar, vdev_id, addr);
 	if (ret)
 		return ret;
 
@@ -199,20 +212,10 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ath12k_warn(ar->ab, "failed to find peer %pM on vdev %i after creation\n",
 			    arg->peer_addr, arg->vdev_id);
 
-		reinit_completion(&ar->peer_delete_done);
-
-		ret = ath12k_wmi_send_peer_delete_cmd(ar, arg->peer_addr,
-						      arg->vdev_id);
-		if (ret) {
+		ret = __ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr);
+		if (ret)
 			ath12k_warn(ar->ab, "failed to delete peer vdev_id %d addr %pM\n",
 				    arg->vdev_id, arg->peer_addr);
-			return ret;
-		}
-
-		ret = ath12k_wait_for_peer_delete_done(ar, arg->vdev_id,
-						       arg->peer_addr);
-		if (ret)
-			return ret;
 
 		return -ENOENT;
 	}

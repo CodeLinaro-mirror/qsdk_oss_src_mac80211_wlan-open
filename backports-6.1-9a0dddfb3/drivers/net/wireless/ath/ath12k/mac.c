@@ -9804,7 +9804,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	u32 param_id, param_value;
 	u16 nss;
 	int i;
-	int ret, vdev_id;
+	int ret, fbret, vdev_id;
 	u8 link_id, link_addr[ETH_ALEN];
 	struct ath12k_dp_link_vif *dp_link_vif = NULL;
 	u8 mac_addr[ETH_ALEN];
@@ -10061,22 +10061,12 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 
 err_peer_del:
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		reinit_completion(&ar->peer_delete_done);
-
-		ret = ath12k_wmi_send_peer_delete_cmd(ar, arvif->bssid,
-						      arvif->vdev_id);
-		if (ret) {
-			ath12k_warn(ar->ab, "failed to delete peer vdev_id %d addr %pM\n",
-				    arvif->vdev_id, arvif->bssid);
+		fbret = ath12k_peer_delete(ar, arvif->vdev_id, link_addr);
+		if (fbret) {
+			ath12k_warn(ar->ab, "failed to delete peer %pM vdev_id %d ret %d\n",
+				    link_addr, arvif->vdev_id, fbret);
 			goto err;
 		}
-
-		ret = ath12k_wait_for_peer_delete_done(ar, arvif->vdev_id,
-						       arvif->bssid);
-		if (ret)
-			goto err_vdev_del;
-
-		ar->num_peers--;
 	}
 
 err_vdev_del:
