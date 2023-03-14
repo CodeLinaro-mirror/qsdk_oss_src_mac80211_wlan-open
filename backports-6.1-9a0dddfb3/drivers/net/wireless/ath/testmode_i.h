@@ -16,6 +16,7 @@
 
 #define ATH_TM_DATA_MAX_LEN		5000
 #define ATH_FTM_EVENT_MAX_BUF_LENGTH	2048
+#define ATH_TM_FWLOG_MAX_LEN		2048
 
 enum ath_tm_attr {
 	__ATH_TM_ATTR_INVALID		= 0,
@@ -25,6 +26,8 @@ enum ath_tm_attr {
 	ATH_TM_ATTR_VERSION_MAJOR	= 4,
 	ATH_TM_ATTR_VERSION_MINOR	= 5,
 	ATH_TM_ATTR_WMI_OP_VERSION	= 6,
+	ATH_TM_ATTR_FWLOG		= 7,
+	ATH_TM_ATTR_LINK_IDX		= 8,
 
 	/* keep last */
 	__ATH_TM_ATTR_AFTER_LAST,

@@ -25,6 +25,7 @@ static const struct nla_policy ath12k_tm_policy[ATH_TM_ATTR_MAX + 1] = {
 	[ATH_TM_ATTR_VERSION_MINOR]	= { .type = NLA_U32 },
 	[ATH_TM_ATTR_FWLOG]		= { .type = NLA_BINARY,
 					    .len = 2048 },
+	[ATH_TM_ATTR_LINK_IDX]		= { .type = NLA_U8 },
 };
 
 void ath12k_fwlog_write(struct ath12k_base *ab, u8 *data, int len)
@@ -57,6 +58,15 @@ void ath12k_fwlog_write(struct ath12k_base *ab, u8 *data, int len)
 		ath12k_warn(ab, "failed to put fwlog wmi event to nl: %d\n", ret);
 		kfree_skb(nl_skb);
 		return;
+	}
+
+	if (ab->ag->mlo_capable) {
+		ret = nla_put_u8(nl_skb, ATH_TM_ATTR_LINK_IDX, ar->hw_link_id);
+		if (ret) {
+			ath12k_warn(ab, "failed to put link idx wmi event to nl: %d\n", ret);
+			kfree_skb(nl_skb);
+			return;
+		}
 	}
 
 	cfg80211_testmode_event(nl_skb, GFP_ATOMIC);
