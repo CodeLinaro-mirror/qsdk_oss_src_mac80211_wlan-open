@@ -13,6 +13,9 @@
 #define ATH11K_TX_POWER_MIN_VAL	0
 #define ATH11K_DEBUG_ENABLE_MEMORY_STATS 1
 
+#define ATH11K_MAX_NRPS 7
+#define MAC_UNIT_LEN    3
+
 /* htt_dbg_ext_stats_type */
 enum ath11k_dbg_htt_ext_stats_type {
 	ATH11K_DBG_HTT_EXT_STATS_RESET                      =  0,
@@ -191,6 +194,11 @@ enum ath11k_dbg_aggr_mode {
 	ATH11K_DBG_AGGR_MODE_MAX,
 };
 
+enum ath11k_nrp_action {
+	NRP_ACTION_ADD,
+	NRP_ACTION_DEL,
+};
+
 enum fw_dbglog_wlan_module_id {
 	WLAN_MODULE_ID_MIN = 0,
 	WLAN_MODULE_INF = WLAN_MODULE_ID_MIN,
@@ -299,6 +307,17 @@ enum fw_dbglog_log_level {
 	ATH11K_FW_DBGLOG_LVL_MAX
 };
 
+struct ath11k_neighbor_peer {
+	struct list_head list;
+	struct completion filter_done;
+	bool is_filter_on;
+	int vdev_id;
+	u8 addr[ETH_ALEN];
+	u8 rssi;
+	s64 timestamp;
+	bool rssi_valid;
+};
+
 struct ath11k_fw_dbglog {
 	enum wmi_debug_log_param param;
 	union {
@@ -362,6 +381,8 @@ ssize_t ath11k_debugfs_dump_soc_ring_bp_stats(struct ath11k_base *ab,
 					      char *buf, int size);
 int ath11k_debugfs_get_fw_stats(struct ath11k *ar, u32 pdev_id,
 				u32 vdev_id, u32 stats_id);
+void ath11k_debugfs_nrp_clean(struct ath11k *ar, const u8 *addr);
+void ath11k_debugfs_nrp_cleanup_all(struct ath11k *ar);
 
 static inline bool ath11k_debugfs_is_pktlog_lite_mode_enabled(struct ath11k *ar)
 {
@@ -528,6 +549,15 @@ ath11k_debugfs_add_dbring_entry(struct ath11k *ar,
 static inline void ath11k_smart_ant_debugfs_init(struct ath11k *ar)
 {
 }
+
+static inline void ath11k_debugfs_nrp_clean(struct ath11k *ar, const u8 *addr)
+{
+}
+
+static inline void ath11k_debugfs_nrp_cleanup_all(struct ath11k *ar)
+{
+}
+
 #endif /* CPTCFG_ATH11K_DEBUGFS*/
 
 #ifdef CPTCFG_ATH11K_PKTLOG

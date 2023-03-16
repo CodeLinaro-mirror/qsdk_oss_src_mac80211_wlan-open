@@ -2584,6 +2584,10 @@ void ath11k_core_pre_reconfigure_recovery(struct ath11k_base *ab)
 		complete(&ar->scan.on_channel);
 		complete(&ar->peer_assoc_done);
 		complete(&ar->peer_delete_done);
+
+		if (!list_empty(&ab->neighbor_peers))
+			ath11k_debugfs_nrp_cleanup_all(ar);
+
 		complete(&ar->install_key_done);
 		complete(&ar->vdev_setup_done);
 		complete(&ar->vdev_delete_done);
@@ -2884,6 +2888,7 @@ struct ath11k_base *ath11k_core_alloc(struct device *dev, size_t priv_size,
 	init_completion(&ab->recovery_start);
 
 	INIT_LIST_HEAD(&ab->peers);
+	INIT_LIST_HEAD(&ab->neighbor_peers);
 	init_waitqueue_head(&ab->peer_mapping_wq);
 	init_waitqueue_head(&ab->wmi_ab.tx_credits_wq);
 	init_waitqueue_head(&ab->qmi.cold_boot_waitq);

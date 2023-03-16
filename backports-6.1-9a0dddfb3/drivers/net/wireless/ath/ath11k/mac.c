@@ -1070,6 +1070,9 @@ void ath11k_mac_peer_cleanup_all(struct ath11k *ar)
 	spin_unlock_bh(&ab->base_lock);
 	mutex_unlock(&ab->tbl_mtx_lock);
 
+	if (!list_empty(&ab->neighbor_peers))
+		ath11k_debugfs_nrp_cleanup_all(ar);
+
 	ar->num_peers = 0;
 	ar->num_stations = 0;
 }
@@ -11858,6 +11861,9 @@ static int ath11k_mac_station_add(struct ath11k *ar,
 	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
 	struct ath11k_sta *arsta = ath11k_sta_to_arsta(sta);
 	struct peer_create_params peer_param;
+	struct ath11k_neighbor_peer *nrp, *tmp;
+	int nvdev_id;
+	bool del_nrp = false;
 	bool peer_dbg_info;
 	int ret;
 
@@ -11880,6 +11886,32 @@ static int ath11k_mac_station_add(struct ath11k *ar,
 	peer_param.vdev_id = arvif->vdev_id;
 	peer_param.peer_addr = sta->addr;
 	peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
+
+	/*
+	 * When the neighbor peer associates with this AP and successfully
+	 * becomes a station, check and clear the corresponding MAC from
+	 * NRP list and failing to do so would inadvertently cause the
+	 * STA association(peer creation for STA) to fail due to the NRP
+	 * having created a peer already for the same MAC address
+	 */
+	if (!list_empty(&ab->neighbor_peers)) {
+		spin_lock_bh(&ab->base_lock);
+		list_for_each_entry_safe(nrp, tmp, &ab->neighbor_peers, list) {
+			if (ether_addr_equal(nrp->addr, sta->addr)) {
+				nvdev_id = nrp->vdev_id;
+				list_del(&nrp->list);
+				kfree(nrp);
+				del_nrp = true;
+				break;
+			}
+		}
+		spin_unlock_bh(&ab->base_lock);
+
+		if (del_nrp) {
+			ath11k_peer_delete(ar, nvdev_id, sta->addr);
+			ath11k_debugfs_nrp_clean(ar, sta->addr);
+		}
+	}
 
 	ret = ath11k_peer_create(ar, arvif, sta, &peer_param);
 	if (ret) {

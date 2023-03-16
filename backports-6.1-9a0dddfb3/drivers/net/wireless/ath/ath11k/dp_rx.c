@@ -6351,6 +6351,7 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 	struct sk_buff *skb;
 	struct sk_buff_head skb_list;
 	struct ath11k_peer *peer;
+	struct ath11k_neighbor_peer *nrp, *tmp;
 	struct ath11k_sta *arsta = NULL;
 	int num_buffs_reaped = 0;
 	u32 rx_buf_sz;
@@ -6410,6 +6411,19 @@ int ath11k_dp_rx_process_mon_status(struct ath11k_base *ab, int mac_id,
 		rcu_read_lock();
 		spin_lock_bh(&ab->base_lock);
 		peer = ath11k_peer_find_by_id(ab, ppdu_info->peer_id);
+
+		if (!list_empty(&ab->neighbor_peers)) {
+			if (peer && !peer->sta) {
+				list_for_each_entry_safe(nrp, tmp, &ab->neighbor_peers, list) {
+					if (nrp->is_filter_on && ether_addr_equal(nrp->addr, peer->addr)) {
+						nrp->rssi = ppdu_info->rssi_comb;
+						nrp->timestamp = ktime_to_ms(ktime_get_real());
+						complete(&nrp->filter_done);
+					}
+				}
+				goto next_skb;
+			}
+		}
 
 		if (!peer || !peer->sta) {
 			ath11k_dbg(ab, ATH11K_DBG_DATA,

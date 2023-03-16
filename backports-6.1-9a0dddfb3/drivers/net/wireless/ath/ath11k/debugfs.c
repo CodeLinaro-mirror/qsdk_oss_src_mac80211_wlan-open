@@ -882,6 +882,404 @@ static const struct file_operations fops_extd_rx_stats = {
 	.open = simple_open,
 };
 
+static int ath11k_reset_nrp_filter(struct ath11k *ar,
+				   bool reset)
+{
+	int i = 0;
+	int ret = 0;
+	u32 ring_id = 0;
+	struct htt_rx_ring_tlv_filter tlv_filter = {0};
+	struct ath11k_pdev_dp *dp = &ar->dp;
+	struct ath11k_base *ab = ar->ab;
+
+	if (ab->hw_params.full_monitor_mode) {
+		ret = ath11k_dp_tx_htt_rx_full_mon_setup(ab,
+							 dp->mac_id, !reset);
+		if (ret < 0) {
+			ath11k_err(ab, "failed to setup full monitor %d\n", ret);
+			return ret;
+		}
+	}
+
+	ring_id = dp->rxdma_mon_buf_ring.refill_buf_ring.ring_id;
+	tlv_filter.offset_valid = false;
+	if (!reset) {
+		tlv_filter.pkt_filter_flags0 =
+			HTT_RX_MON_MO_MGMT_FILTER_FLAGS0;
+		tlv_filter.pkt_filter_flags1 =
+			HTT_RX_MON_MO_MGMT_FILTER_FLAGS1;
+		tlv_filter.pkt_filter_flags2 =
+			HTT_RX_MON_MO_CTRL_FILTER_FLASG2;
+		tlv_filter.pkt_filter_flags3 =
+			HTT_RX_MON_MO_CTRL_FILTER_FLASG3 |
+			HTT_RX_MON_MO_DATA_FILTER_FLASG3;
+	}
+
+	if (ar->ab->hw_params.rxdma1_enable) {
+		ret = ath11k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id, ar->dp.mac_id,
+						       HAL_RXDMA_MONITOR_BUF,
+						       DP_RXDMA_REFILL_RING_SIZE,
+						       &tlv_filter);
+	} else if (!reset) {
+		for (i = 0; i < ar->ab->hw_params.num_rxdma_per_pdev; i++) {
+			ring_id = ar->dp.rx_mac_buf_ring[i].ring_id;
+			ret = ath11k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id,
+							       ar->dp.mac_id + i,
+							       HAL_RXDMA_BUF,
+							       1024,
+							       &tlv_filter);
+		}
+	}
+
+	if (ret)
+		return ret;
+
+	for (i = 0; i < ar->ab->hw_params.num_rxdma_per_pdev; i++) {
+		ring_id = ar->dp.rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
+		if (!reset) {
+			tlv_filter.rx_filter =
+				HTT_RX_MON_FILTER_TLV_FLAGS_MON_STATUS_RING;
+		} else {
+			tlv_filter = ath11k_mac_mon_status_filter_default;
+
+			if (ath11k_debugfs_is_extd_rx_stats_enabled(ar))
+				tlv_filter.rx_filter = ath11k_debugfs_rx_filter(ar);
+		}
+
+		ret = ath11k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id,
+						       ar->dp.mac_id + i,
+						       HAL_RXDMA_MONITOR_STATUS,
+						       DP_RXDMA_REFILL_RING_SIZE,
+						       &tlv_filter);
+	}
+
+	if (!ar->ab->hw_params.rxdma1_enable)
+		mod_timer(&ar->ab->mon_reap_timer, jiffies +
+			  msecs_to_jiffies(ATH11K_MON_TIMER_INTERVAL));
+
+	return ret;
+}
+
+void ath11k_debugfs_nrp_cleanup_all(struct ath11k *ar)
+{
+	struct ath11k_base *ab = ar->ab;
+	struct ath11k_neighbor_peer *nrp, *tmp;
+
+	spin_lock_bh(&ab->base_lock);
+	list_for_each_entry_safe(nrp, tmp, &ab->neighbor_peers, list) {
+		if (nrp->is_filter_on)
+			complete(&nrp->filter_done);
+		list_del(&nrp->list);
+		kfree(nrp);
+	}
+
+	ab->num_nrps = 0;
+	spin_unlock_bh(&ab->base_lock);
+
+	debugfs_remove_recursive(ar->debug.debugfs_nrp);
+}
+
+void ath11k_debugfs_nrp_clean(struct ath11k *ar, const u8 *addr)
+{
+	int i, j;
+	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
+
+	for (i = 0, j = 0; i < (MAC_UNIT_LEN * ETH_ALEN); i += MAC_UNIT_LEN, j++) {
+		if (j == ETH_ALEN - 1) {
+			snprintf(fname + i, sizeof(fname) - i, "%02x", *(addr + j));
+			break;
+		}
+		snprintf(fname + i, sizeof(fname) - i, "%02x:", *(addr + j));
+	}
+
+	spin_lock_bh(&ar->ab->base_lock);
+	ar->ab->num_nrps--;
+	spin_unlock_bh(&ar->ab->base_lock);
+
+	debugfs_lookup_and_remove(fname, ar->debug.debugfs_nrp);
+	if (!ar->ab->num_nrps) {
+		debugfs_remove_recursive(ar->debug.debugfs_nrp);
+		ath11k_reset_nrp_filter(ar, true);
+	}
+}
+
+static ssize_t ath11k_read_nrp_rssi(struct file *file,
+				    char __user *ubuf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	struct ath11k_base *ab = ar->ab;
+	struct ath11k_vif *arvif = NULL;
+	struct ath11k_neighbor_peer *nrp = NULL, *tmp;
+	struct peer_create_params peer_param = {0};
+	u8 macaddr[ETH_ALEN] = {0};
+	loff_t file_pos = *ppos;
+	struct path *fpath = &file->f_path;
+	char *fname = fpath->dentry->d_iname;
+	char buf[128] = {0};
+	int i = 0;
+	int j = 0;
+	int len = 0;
+	int vdev_id = -1;
+	bool nrp_found = false;
+	int ret;
+
+	mutex_lock(&ar->conf_mutex);
+	if (ar->state != ATH11K_STATE_ON) {
+		mutex_unlock(&ar->conf_mutex);
+		return -ENETDOWN;
+	}
+	mutex_unlock(&ar->conf_mutex);
+
+	if (file_pos > 0)
+		return 0;
+
+	mutex_lock(&ar->conf_mutex);
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			vdev_id = arvif->vdev_id;
+			break;
+		}
+	}
+	mutex_unlock(&ar->conf_mutex);
+
+	if (vdev_id < 0) {
+		ath11k_warn(ab, "unable to get vdev for AP interface\n");
+		return 0;
+	}
+
+	for (i = 0, j = 0;  i < MAC_UNIT_LEN * ETH_ALEN; i += MAC_UNIT_LEN, j++) {
+		if (sscanf(fname + i, "%hhX", &macaddr[j]) <= 0)
+			return -EINVAL;
+	}
+
+	spin_lock_bh(&ab->base_lock);
+	list_for_each_entry(nrp, &ab->neighbor_peers, list) {
+		if (ether_addr_equal(macaddr, nrp->addr)) {
+			reinit_completion(&nrp->filter_done);
+			nrp->vdev_id = vdev_id;
+			nrp->is_filter_on = false;
+			break;
+		}
+	}
+	spin_unlock_bh(&ab->base_lock);
+
+	peer_param.vdev_id = nrp->vdev_id;
+	peer_param.peer_addr = nrp->addr;
+	peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
+
+	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SET_PROMISC_MODE_CMDID,
+					1, ar->pdev->pdev_id);
+	if (ret)
+		ath11k_err(ar->ab, "failed to enable promisc mode: %d\n", ret);
+
+	if (!ath11k_peer_create(ar, arvif, NULL, &peer_param)) {
+		spin_lock_bh(&ab->base_lock);
+		list_for_each_entry_safe(nrp, tmp, &ab->neighbor_peers, list) {
+			if (ether_addr_equal(nrp->addr, peer_param.peer_addr)) {
+				nrp_found = true;
+				break;
+			}
+		}
+		spin_unlock_bh(&ab->base_lock);
+
+		if (nrp_found) {
+			spin_lock_bh(&ab->base_lock);
+			nrp->is_filter_on = true;
+			spin_unlock_bh(&ab->base_lock);
+
+			wait_for_completion_interruptible_timeout(&nrp->filter_done, 15 * HZ);
+
+			spin_lock_bh(&ab->base_lock);
+			nrp->is_filter_on = false;
+			spin_unlock_bh(&ab->base_lock);
+
+			len = scnprintf(buf, sizeof(buf),
+					"Neighbor Peer MAC\t\tRSSI\t\tTime\n");
+			len += scnprintf(buf + len, sizeof(buf) - len, "%pM\t\t%u\t\t%lld\n",
+					 nrp->addr, nrp->rssi, nrp->timestamp);
+		} else {
+			ath11k_peer_delete(ar, vdev_id, macaddr);
+			ath11k_warn(ab, "%pM not found in nrp list\n", macaddr);
+			return -EINVAL;
+		}
+
+		ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SET_PROMISC_MODE_CMDID,
+						0, ar->pdev->pdev_id);
+		if (ret)
+			ath11k_err(ar->ab, "failed to disable promisc mode: %d\n", ret);
+
+		ath11k_peer_delete(ar, vdev_id, macaddr);
+	} else {
+		ath11k_warn(ab, "unable to create peer for nrp[%pM]\n", macaddr);
+		return -EINVAL;
+	}
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_read_nrp_rssi = {
+	.read = ath11k_read_nrp_rssi,
+	.open = simple_open,
+};
+
+static ssize_t ath11k_write_nrp_mac(struct file *file,
+				    const char __user *ubuf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	struct ath11k_base *ab = ar->ab;
+	struct ath11k_peer *peer = NULL;
+	struct ath11k_neighbor_peer *nrp = NULL, *tmp = NULL;
+	u8 mac[ETH_ALEN] = {0};
+	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
+	char *str = NULL;
+	char *buf = vmalloc(count);
+	char *ptr = buf;
+	int i = 0;
+	int j = 0;
+	int ret = count;
+	int action = 0;
+	ssize_t rc = 0;
+	bool del_nrp = false;
+
+	mutex_lock(&ar->conf_mutex);
+
+	rc = simple_write_to_buffer(buf, count, ppos, ubuf, count);
+	if (rc <= 0)
+		goto exit;
+
+	buf[count - 1] = '\0';
+
+	if (ar->state != ATH11K_STATE_ON) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	str = strsep(&buf, ",");
+	if (!strcmp(str, "add"))
+		action = NRP_ACTION_ADD;
+	else if (!strcmp(str, "del"))
+		action = NRP_ACTION_DEL;
+	else {
+		ath11k_err(ab, "error: invalid argument\n");
+		goto exit;
+	}
+
+	memset(mac, 0, sizeof(mac));
+	while ((str = strsep(&buf, ":")) != NULL) {
+		if (i >= ETH_ALEN || kstrtou8(str, 16, mac + i)) {
+			ath11k_warn(ab, "error: invalid mac address\n");
+			goto exit;
+		}
+		i++;
+	}
+
+	if (i != ETH_ALEN) {
+		ath11k_warn(ab, "error: invalid mac address\n");
+		goto exit;
+	}
+
+	if (!is_valid_ether_addr(mac)) {
+		ath11k_err(ab, "error: invalid mac address\n");
+		goto exit;
+	}
+
+	for (i = 0, j = 0; i < (MAC_UNIT_LEN * ETH_ALEN); i += MAC_UNIT_LEN, j++) {
+		if (j == ETH_ALEN - 1) {
+			snprintf(fname + i, sizeof(fname) - i, "%02x", mac[j]);
+			break;
+		}
+		snprintf(fname + i, sizeof(fname) - i, "%02x:", mac[j]);
+	}
+
+	switch (action) {
+	case NRP_ACTION_ADD:
+		if (ab->num_nrps == (ATH11K_MAX_NRPS - 1)) {
+			ath11k_warn(ab, "max nrp reached, cannot create more\n");
+			goto exit;
+		}
+
+		spin_lock_bh(&ab->base_lock);
+		list_for_each_entry(nrp, &ab->neighbor_peers, list) {
+			if (ether_addr_equal(nrp->addr, mac)) {
+				ath11k_warn(ab, "cannot add existing neighbor peer\n");
+				goto exit;
+			}
+		}
+		spin_unlock_bh(&ab->base_lock);
+
+		spin_lock_bh(&ab->base_lock);
+		peer = ath11k_peer_find_by_addr(ab, mac);
+		if (peer) {
+			ath11k_warn(ab, "cannot add exisitng peer [%pM] as nrp\n", mac);
+			spin_unlock_bh(&ab->base_lock);
+			goto exit;
+		}
+		spin_unlock_bh(&ab->base_lock);
+
+		nrp = kzalloc(sizeof(*nrp), GFP_KERNEL);
+		if (!nrp)
+			goto exit;
+
+		init_completion(&nrp->filter_done);
+		ether_addr_copy(nrp->addr, mac);
+
+		spin_lock_bh(&ab->base_lock);
+		list_add_tail(&nrp->list, &ab->neighbor_peers);
+		spin_unlock_bh(&ab->base_lock);
+
+		if (!ab->num_nrps) {
+			ar->debug.debugfs_nrp = debugfs_create_dir("nrp_rssi",
+								   ar->debug.debugfs_pdev);
+			ath11k_reset_nrp_filter(ar, false);
+		}
+		spin_lock_bh(&ab->base_lock);
+		ab->num_nrps++;
+		spin_unlock_bh(&ab->base_lock);
+
+		debugfs_create_file(fname, 0644,
+				    ar->debug.debugfs_nrp, ar,
+				    &fops_read_nrp_rssi);
+		break;
+	case NRP_ACTION_DEL:
+		if (!ar->ab->num_nrps) {
+			ath11k_err(ab, "error: no nac added\n");
+			goto exit;
+		}
+
+		spin_lock_bh(&ab->base_lock);
+		list_for_each_entry_safe(nrp, tmp, &ab->neighbor_peers, list) {
+			if (ether_addr_equal(nrp->addr, mac)) {
+				list_del(&nrp->list);
+				kfree(nrp);
+				del_nrp = true;
+				break;
+			}
+
+		}
+		spin_unlock_bh(&ab->base_lock);
+
+		if (!del_nrp)
+			ath11k_warn(ab, "cannot delete %pM not added to list\n", mac);
+		else
+			ath11k_debugfs_nrp_clean(ar, mac);
+		break;
+	default:
+		break;
+	}
+ exit:
+	mutex_unlock(&ar->conf_mutex);
+
+	vfree(ptr);
+	return ret;
+}
+
+static const struct file_operations fops_write_nrp_mac = {
+	.write = ath11k_write_nrp_mac,
+	.open = simple_open,
+};
+
 static int ath11k_fill_bp_stats(struct ath11k_base *ab,
 				struct ath11k_bp_stats *bp_stats,
 				char *buf, int len, int size)
@@ -4204,6 +4602,9 @@ int ath11k_debugfs_register(struct ath11k *ar)
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_wmm_stats);
 
+	debugfs_create_file("neighbor_peer", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_write_nrp_mac);
 	debugfs_create_file("ext_tx_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_extd_tx_stats);

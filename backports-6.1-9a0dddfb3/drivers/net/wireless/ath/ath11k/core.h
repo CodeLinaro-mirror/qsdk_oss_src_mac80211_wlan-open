@@ -864,6 +864,7 @@ struct ath11k_debug {
 	struct dentry *debugfs_smartant;
 	u32 coex_priority_level[ATH11K_MAX_COEX_PRIORITY_LEVEL];
 	enum wmi_bss_chan_info_req_type bss_survey_mode;
+	struct dentry *debugfs_nrp;
 };
 
 struct ath11k_per_peer_tx_stats {
@@ -1360,6 +1361,9 @@ struct ath11k_base {
 	struct ath11k_memory_stats memory_stats;
 #endif
 	struct ath11k_soc_dp_stats soc_stats;
+
+	struct list_head neighbor_peers;
+	int num_nrps;
 
 	unsigned long dev_flags;
 	struct completion driver_recovery;
