@@ -9793,6 +9793,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	int ret, vdev_id;
 	u8 link_id, link_addr[ETH_ALEN];
 	struct ath12k_dp_link_vif *dp_link_vif = NULL;
+	u8 mac_addr[ETH_ALEN];
+	u8 mask[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00};
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -9876,6 +9878,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	case NL80211_IFTYPE_MONITOR:
 		ahvif->vdev_type = WMI_VDEV_TYPE_MONITOR;
 		ar->monitor_vdev_id = vdev_id;
+		get_random_mask_addr(mac_addr, ar->mac_addr, mask);
 		break;
 	case NL80211_IFTYPE_P2P_DEVICE:
 		ahvif->vdev_type = WMI_VDEV_TYPE_STA;
@@ -9901,7 +9904,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 		goto err;
 	}
 
-	ret = ath12k_wmi_vdev_create(ar, arvif->bssid, &vdev_arg);
+	ret = ath12k_wmi_vdev_create(ar, vdev_arg.type == WMI_VDEV_TYPE_MONITOR ?
+				     mac_addr : arvif->bssid, &vdev_arg);
 	if (ret) {
 		ath12k_warn(ab, "failed to create WMI vdev %d: %d\n",
 			    arvif->vdev_id, ret);
