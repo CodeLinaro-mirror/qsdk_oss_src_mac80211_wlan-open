@@ -1416,7 +1416,9 @@ static int ath12k_mac_monitor_vdev_delete(struct ath12k *ar)
 		ath12k_warn(ar->ab, "Timeout in receiving vdev delete response\n");
 	} else {
 		ar->allocated_vdev_map &= ~(1LL << ar->monitor_vdev_id);
+		spin_lock_bh(&ar->ab->base_lock);
 		ar->ab->free_vdev_map |= 1LL << (ar->monitor_vdev_id);
+		spin_unlock_bh(&ar->ab->base_lock);
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac monitor vdev %d deleted\n",
 			   ar->monitor_vdev_id);
 		WARN_ON(!ar->num_created_vdevs);
@@ -9846,7 +9848,18 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	}
 
 	arvif->ar = ar;
+
+	spin_lock_bh(&ar->ab->base_lock);
+	if (!ab->free_vdev_map) {
+		spin_unlock_bh(&ar->ab->base_lock);
+		ath12k_warn(ar->ab, "failed to create vdev. No free vdev id left.\n");
+		ret = -EINVAL;
+		goto err;
+	}
 	vdev_id = __ffs64(ab->free_vdev_map);
+	ab->free_vdev_map &= ~(1LL << vdev_id);
+	spin_unlock_bh(&ar->ab->base_lock);
+
 	arvif->vdev_id = vdev_id;
 	ahvif->vdev_subtype = WMI_VDEV_SUBTYPE_NONE;
 
@@ -9901,6 +9914,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	if (ret) {
 		ath12k_warn(ab, "failed to create vdev parameters %d: %d\n",
 			    arvif->vdev_id, ret);
+	        spin_lock_bh(&ar->ab->base_lock);
+		ab->free_vdev_map |= 1LL << arvif->vdev_id;
+		spin_unlock_bh(&ar->ab->base_lock);
+
 		goto err;
 	}
 
@@ -9917,7 +9934,6 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM created, vdev_id %d\n",
 		   vif->addr, arvif->vdev_id);
 	ar->allocated_vdev_map |= 1LL << arvif->vdev_id;
-	ab->free_vdev_map &= ~(1LL << arvif->vdev_id);
 
 	spin_lock_bh(&ar->data_lock);
 	list_add(&arvif->list, &ar->arvifs);
@@ -10062,7 +10078,9 @@ err_vdev_del:
 	arvif->is_created = false;
 	arvif->ar = NULL;
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
+	spin_lock_bh(&ar->ab->base_lock);
 	ab->free_vdev_map |= 1LL << arvif->vdev_id;
+	spin_unlock_bh(&ar->ab->base_lock);
 	ab->free_vdev_stats_id_map &= ~(1LL << arvif->vdev_stats_id);
 	spin_lock_bh(&ar->data_lock);
 	list_del(&arvif->list);
@@ -10337,7 +10355,10 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 		goto err_vdev_del;
 	}
 
+	spin_lock_bh(&ar->ab->base_lock);
 	ab->free_vdev_map |= 1LL << arvif->vdev_id;
+	spin_unlock_bh(&ar->ab->base_lock);
+
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
 	WARN_ON(!ar->num_created_vdevs);
 	ar->num_created_vdevs--;
@@ -14721,7 +14742,9 @@ static void ath12k_mac_set_device_defaults(struct ath12k_base *ab)
 {
 	/* Initialize channel counters frequency value in hertz */
 	ab->cc_freq_hz = 320000;
+	spin_lock_bh(&ab->base_lock);
 	ab->free_vdev_map = (1LL << (ab->num_radios * TARGET_NUM_VDEVS)) - 1;
+	spin_unlock_bh(&ab->base_lock);
 }
 
 int ath12k_mac_allocate(struct ath12k_hw_group *ag)
