@@ -7831,7 +7831,15 @@ static int ath11k_mac_setup_vdev_params_mbssid(struct ath11k_vif *arvif,
 	*tx_vdev_id = 0;
 	tx_arvif = ath11k_mac_get_tx_arvif(arvif);
 	if (!tx_arvif) {
-		*flags = WMI_HOST_VDEV_FLAGS_NON_MBSSID_AP;
+		/* Since a 6GHz AP is MBSS capable by default, FW expects
+		 * Tx vdev flag to be set even in case of single bss case
+		 * WMI_HOST_VDEV_FLAGS_NON_MBSSID_AP is to be used for non 6GHz
+		 * cases
+		 */
+		if (ar->supports_6ghz && arvif->vif->type == NL80211_IFTYPE_AP)
+			*flags = WMI_HOST_VDEV_FLAGS_TRANSMIT_AP;
+		else
+			*flags = WMI_HOST_VDEV_FLAGS_NON_MBSSID_AP;
 		return 0;
 	}
 
