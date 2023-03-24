@@ -8827,6 +8827,7 @@ static int ath12k_mac_setup_vdev_params_mbssid(struct ath12k_link_vif *arvif,
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_bss_conf *link_conf;
 	struct ath12k *ar = arvif->ar;
+	struct ieee80211_vif *tx_vif;
 	struct ath12k_link_vif *tx_arvif;
 
 	link_conf = ath12k_mac_get_link_bss_conf(arvif);
@@ -8835,6 +8836,20 @@ static int ath12k_mac_setup_vdev_params_mbssid(struct ath12k_link_vif *arvif,
 			    ahvif->vif->addr, arvif->link_id);
 		return -ENOLINK;
 	}
+
+        tx_vif = link_conf->mbssid_tx_vif;
+        if (!tx_vif) {
+                /* Since a 6GHz AP is MBSS capable by default, FW expects
+                 * Tx vdev flag to be set even in case of single bss case
+                 * WMI_HOST_VDEV_FLAGS_NON_MBSSID_AP is to be used for non 6GHz
+                 * cases
+                 */
+                if (ar->supports_6ghz && arvif->ahvif->vif->type == NL80211_IFTYPE_AP)
+                        *flags = WMI_VDEV_MBSSID_FLAGS_TRANSMIT_AP;
+                else
+                        *flags = WMI_VDEV_MBSSID_FLAGS_NON_MBSSID_AP;
+                return 0;
+        }
 
 	tx_arvif = ath12k_mac_get_tx_arvif(arvif, link_conf);
 	if (!tx_arvif)
