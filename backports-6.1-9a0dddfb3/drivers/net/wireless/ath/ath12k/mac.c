@@ -15551,12 +15551,24 @@ static struct wiphy_iftype_ext_capab ath12k_iftypes_ext_capa[] = {
 
 static void ath12k_mac_cleanup_unregister(struct ath12k *ar)
 {
+	int i;
+
 	idr_for_each(&ar->txmgmt_idr, ath12k_mac_tx_mgmt_pending_free, ar);
 	idr_destroy(&ar->txmgmt_idr);
 
 	kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
 	kfree(ar->mac.sbands[NL80211_BAND_5GHZ].channels);
-	kfree(ar->mac.sbands[NL80211_BAND_6GHZ].channels);
+
+	ar->mac.sbands[NL80211_BAND_2GHZ].channels = NULL;
+	ar->mac.sbands[NL80211_BAND_5GHZ].channels = NULL;
+
+	for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+		if (!ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i])
+			continue;
+		kfree(ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i]->channels);
+		kfree(ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i]);
+		ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i] = NULL;
+	}
 }
 
 static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
