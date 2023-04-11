@@ -1521,6 +1521,7 @@ struct htt_ppdu_stats_usr_cmpltn_cmn {
 #define HTT_PPDU_STATS_ACK_BA_INFO_TID_NUM	GENMASK(31, 25)
 
 #define HTT_PPDU_STATS_NON_QOS_TID	16
+#define HTT_PPDU_STATS_PPDU_ID		GENMASK(24, 0)
 
 struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	u32 ppdu_id;

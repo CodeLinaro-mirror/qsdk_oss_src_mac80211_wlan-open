@@ -1339,7 +1339,7 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 	struct ath11k_peer *peer;
 	int cur_user;
 	u16 peer_id;
-	u32 frame_type;
+	u32 frame_type, ppdu_id;
 	int i;
 
 	ppdu_info = data;
@@ -1422,6 +1422,8 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 			return -EINVAL;
 		}
 
+		ppdu_id =
+		((struct htt_ppdu_stats_usr_cmpltn_ack_ba_status *)ptr)->ppdu_id;
 		peer_id =
 		((struct htt_ppdu_stats_usr_cmpltn_ack_ba_status *)ptr)->sw_peer_id;
 		cur_user = ath11k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
@@ -1433,6 +1435,7 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 		user_stats->is_valid_peer_id = true;
 		memcpy((void *)&user_stats->ack_ba, ptr,
 		       sizeof(struct htt_ppdu_stats_usr_cmpltn_ack_ba_status));
+		ppdu_info->ppdu_id = FIELD_GET(HTT_PPDU_STATS_PPDU_ID, ppdu_id);
 		user_stats->tlv_flags |= BIT(tag);
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMMON:
