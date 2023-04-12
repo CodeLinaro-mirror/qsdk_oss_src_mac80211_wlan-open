@@ -6808,6 +6808,9 @@ static u8 ath12k_mac_get_num_pwr_levels(struct cfg80211_chan_def *chan_def)
                 case NL80211_CHAN_WIDTH_160:
                         num_pwr_levels = 8;
                         break;
+                case NL80211_CHAN_WIDTH_320:
+                	num_pwr_levels = 16;
+                	break;
                 default:
                         return 1;
                 }
@@ -6826,6 +6829,9 @@ static u8 ath12k_mac_get_num_pwr_levels(struct cfg80211_chan_def *chan_def)
                 case NL80211_CHAN_WIDTH_160:
                         num_pwr_levels = 4;
                         break;
+                case NL80211_CHAN_WIDTH_320:
+                	num_pwr_levels = 5;
+                	break;
                 default:
                         return 1;
                 }
@@ -6848,6 +6854,9 @@ static u16 ath12k_mac_get_6g_start_frequency(struct cfg80211_chan_def *chan_def)
          * with center frequency 5955, its diff is 6025 - 5955 = 70.
          */
         switch (chan_def->width) {
+        case NL80211_CHAN_WIDTH_320:
+        	diff_seq = 150;
+        	break;
         case NL80211_CHAN_WIDTH_160:
                 diff_seq = 70;
                 break;
