@@ -2960,6 +2960,8 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 			if (!ab->qmi.target_mem[idx].iaddr)
 				return -EIO;
 
+			ab->qmi.target_mem[idx].vaddr = ab->qmi.target_mem[idx].iaddr;
+
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			host_ddr_sz = ab->qmi.target_mem[i].size;
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
