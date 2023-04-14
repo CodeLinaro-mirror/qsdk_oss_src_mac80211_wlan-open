@@ -26,6 +26,7 @@ static const struct nla_policy ath12k_tm_policy[ATH_TM_ATTR_MAX + 1] = {
 	[ATH_TM_ATTR_FWLOG]		= { .type = NLA_BINARY,
 					    .len = 2048 },
 	[ATH_TM_ATTR_LINK_IDX]		= { .type = NLA_U8 },
+	[ATH_TM_ATTR_DUAL_MAC]		= { .type = NLA_U8 },
 };
 
 void ath12k_fwlog_write(struct ath12k_base *ab, u8 *data, int len)
@@ -67,6 +68,15 @@ void ath12k_fwlog_write(struct ath12k_base *ab, u8 *data, int len)
 			kfree_skb(nl_skb);
 			return;
 		}
+	}
+
+	if (ab->num_radios == 2)
+		ret = nla_put_u8(nl_skb, ATH_TM_ATTR_DUAL_MAC, ab->num_radios);
+
+	if (ret) {
+		ath12k_warn(ab, "failed to put dual mac wmi event to nl: %d\n", ret);
+		kfree_skb(nl_skb);
+		return;
 	}
 
 	cfg80211_testmode_event(nl_skb, GFP_ATOMIC);

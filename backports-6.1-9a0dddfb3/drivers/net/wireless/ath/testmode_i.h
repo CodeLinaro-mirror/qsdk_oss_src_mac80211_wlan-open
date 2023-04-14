@@ -28,6 +28,7 @@ enum ath_tm_attr {
 	ATH_TM_ATTR_WMI_OP_VERSION	= 6,
 	ATH_TM_ATTR_FWLOG		= 7,
 	ATH_TM_ATTR_LINK_IDX		= 8,
+	ATH_TM_ATTR_DUAL_MAC		= 9,
 
 	/* keep last */
 	__ATH_TM_ATTR_AFTER_LAST,
