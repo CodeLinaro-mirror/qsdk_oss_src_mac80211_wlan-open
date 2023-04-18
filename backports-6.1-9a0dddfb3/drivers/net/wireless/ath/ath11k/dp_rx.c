@@ -23,6 +23,9 @@
 
 #define ATH11K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
+static void ath11k_dp_rx_tid_del_func(struct ath11k_dp *dp, void *ctx,
+				      enum hal_reo_cmd_status status);
+
 static inline
 u8 *ath11k_dp_rx_h_80211_hdr(struct ath11k_base *ab, struct hal_rx_desc *desc)
 {
@@ -730,12 +733,49 @@ static int ath11k_dp_rx_pdev_srng_alloc(struct ath11k *ar)
 	return 0;
 }
 
+static int ath11k_peer_rx_tid_delete_handler(struct ath11k_base *ab,
+					     struct dp_rx_tid *rx_tid, u8 tid)
+{
+	struct ath11k_hal_reo_cmd cmd = {0};
+	struct ath11k_dp *dp = &ab->dp;
+
+	lockdep_assert_held(&dp->reo_cmd_update_queue_lock);
+
+	rx_tid->active = false;
+	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
+	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+	cmd.upd0 |= HAL_REO_CMD_UPD0_VLD;
+
+	return ath11k_dp_tx_send_reo_cmd(ab, rx_tid,
+					 HAL_REO_CMD_UPDATE_RX_QUEUE,
+					 &cmd,
+					 ath11k_dp_rx_tid_del_func);
+}
+
 void ath11k_dp_reo_cmd_list_cleanup(struct ath11k_base *ab)
 {
 	struct ath11k_dp *dp = &ab->dp;
 	struct dp_reo_cmd *cmd, *tmp;
 	struct dp_reo_cache_flush_elem *cmd_cache, *tmp_cache;
+	struct dp_reo_update_rx_queue_elem *cmd_queue, *tmp_queue;
 	struct dp_rx_tid *rx_tid;
+
+	spin_lock_bh(&dp->reo_cmd_update_queue_lock);
+	list_for_each_entry_safe(cmd_queue, tmp_queue,
+				 &dp->reo_cmd_update_rx_queue_list,
+				 list) {
+		list_del(&cmd_queue->list);
+		rx_tid = &cmd_queue->data;
+		if (rx_tid->vaddr) {
+			dma_unmap_single(ab->dev, rx_tid->paddr,
+					 rx_tid->size, DMA_BIDIRECTIONAL);
+			kfree(rx_tid->vaddr);
+			rx_tid->vaddr = NULL;
+		}
+		kfree(cmd_queue);
+	}
+	spin_unlock_bh(&dp->reo_cmd_update_queue_lock);
 
 	spin_lock_bh(&dp->reo_cmd_lock);
 	list_for_each_entry_safe(cmd, tmp, &dp->reo_cmd_list, list) {
@@ -782,14 +822,18 @@ static void ath11k_dp_reo_cmd_free(struct ath11k_dp *dp, void *ctx,
 	}
 }
 
-static void ath11k_dp_reo_cache_flush(struct ath11k_base *ab,
+static int ath11k_dp_reo_cache_flush(struct ath11k_base *ab,
 				      struct dp_rx_tid *rx_tid)
 {
 	struct ath11k_hal_reo_cmd cmd = {0};
 	unsigned long tot_desc_sz, desc_sz;
 	int ret;
 
-	tot_desc_sz = rx_tid->size;
+	if (rx_tid->pending_desc_size)
+		tot_desc_sz = rx_tid->pending_desc_size;
+	else
+		tot_desc_sz = rx_tid->size;
+
 	desc_sz = ath11k_hal_reo_qdesc_size(0, HAL_DESC_REO_NON_QOS_TID);
 
 	while (tot_desc_sz > desc_sz) {
@@ -800,11 +844,17 @@ static void ath11k_dp_reo_cache_flush(struct ath11k_base *ab,
 						HAL_REO_CMD_FLUSH_CACHE, &cmd,
 						NULL);
 		if (ret)
-			ath11k_warn(ab,
-				    "failed to send HAL_REO_CMD_FLUSH_CACHE, tid %d (%d)\n",
-				    rx_tid->tid, ret);
+			rx_tid->pending_desc_size = tot_desc_sz + desc_sz;
+
+		/* If this fails with ring full condition, then
+		 * no need to retry below as it is expected to
+		 * fail within short time
+		 */
+		if (ret == -ENOBUFS)
+			goto exit;
 	}
 
+	rx_tid->pending_desc_size = desc_sz;
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
 	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
@@ -812,24 +862,20 @@ static void ath11k_dp_reo_cache_flush(struct ath11k_base *ab,
 	ret = ath11k_dp_tx_send_reo_cmd(ab, rx_tid,
 					HAL_REO_CMD_FLUSH_CACHE,
 					&cmd, ath11k_dp_reo_cmd_free);
-	if (ret) {
-		ath11k_err(ab, "failed to send HAL_REO_CMD_FLUSH_CACHE cmd, tid %d (%d)\n",
-			   rx_tid->tid, ret);
-		dma_free_noncoherent(ab->dev, rx_tid->unaligned_size,
-				     rx_tid->vaddr_unaligned,
-				     rx_tid->paddr_unaligned, DMA_BIDIRECTIONAL);
-		rx_tid->vaddr_unaligned = NULL;
-	}
+exit:
+	return ret;
 }
 
 static void ath11k_dp_rx_tid_del_func(struct ath11k_dp *dp, void *ctx,
 				      enum hal_reo_cmd_status status)
 {
 	struct ath11k_base *ab = dp->ab;
-	struct dp_rx_tid *rx_tid = ctx;
+	struct dp_rx_tid *rx_tid = ctx, *update_rx_tid;
 	struct dp_reo_cache_flush_elem *elem, *tmp;
+	struct dp_reo_update_rx_queue_elem *qelem, *qtmp;
 
 	if (status == HAL_REO_CMD_DRAIN) {
+		ab->soc_stats.hal_reo_cmd_drain++;
 		goto free_desc;
 	} else if (status != HAL_REO_CMD_SUCCESS) {
 		/* Shouldn't happen! Cleanup in case of other failure? */
@@ -837,6 +883,29 @@ static void ath11k_dp_rx_tid_del_func(struct ath11k_dp *dp, void *ctx,
 			    rx_tid->tid, status);
 		return;
 	}
+
+	/* Check if there is any pending rx_queue, if yes then update it */
+	spin_lock_bh(&dp->reo_cmd_update_queue_lock);
+	list_for_each_entry_safe(qelem, qtmp, &dp->reo_cmd_update_rx_queue_list,
+				 list) {
+		if (qelem->reo_cmd_update_rx_queue_resend_flag &&
+		    qelem->data.active) {
+			update_rx_tid = &qelem->data;
+
+			if (ath11k_peer_rx_tid_delete_handler(ab, update_rx_tid, qelem->tid)) {
+				update_rx_tid->active = true;
+				break;
+			}
+			update_rx_tid->vaddr = NULL;
+			update_rx_tid->paddr = 0;
+			update_rx_tid->size = 0;
+			update_rx_tid->pending_desc_size = 0;
+
+			list_del(&qelem->list);
+			kfree(qelem);
+		}
+	}
+	spin_unlock_bh(&dp->reo_cmd_update_queue_lock);
 
 	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
 	if (!elem)
@@ -855,13 +924,20 @@ static void ath11k_dp_rx_tid_del_func(struct ath11k_dp *dp, void *ctx,
 		if (dp->reo_cmd_cache_flush_count > DP_REO_DESC_FREE_THRESHOLD ||
 		    time_after(jiffies, elem->ts +
 			       msecs_to_jiffies(DP_REO_DESC_FREE_TIMEOUT_MS))) {
+			spin_unlock_bh(&dp->reo_cmd_lock);
+			if (ath11k_dp_reo_cache_flush(ab, &elem->data)) {
+				ab->soc_stats.reo_cmd_cache_error++;
+				/* In failure case, just update the timestamp
+				 * for flush cache elem and continue
+				 */
+				spin_lock_bh(&dp->reo_cmd_lock);
+				elem->ts = jiffies;
+				break;
+			}
+			spin_lock_bh(&dp->reo_cmd_lock);
 			list_del(&elem->list);
 			dp->reo_cmd_cache_flush_count--;
-			spin_unlock_bh(&dp->reo_cmd_lock);
-
-			ath11k_dp_reo_cache_flush(ab, &elem->data);
 			kfree(elem);
-			spin_lock_bh(&dp->reo_cmd_lock);
 		}
 	}
 	spin_unlock_bh(&dp->reo_cmd_lock);
@@ -877,36 +953,47 @@ free_desc:
 void ath11k_peer_rx_tid_delete(struct ath11k *ar,
 			       struct ath11k_peer *peer, u8 tid)
 {
-	struct ath11k_hal_reo_cmd cmd = {0};
 	struct dp_rx_tid *rx_tid = &peer->rx_tid[tid];
-	int ret;
+	struct dp_reo_update_rx_queue_elem *elem, *tmp;
+	struct ath11k_base *ab = ar->ab;
+	struct ath11k_dp *dp = &ab->dp;
 
 	if (!rx_tid->active)
 		return;
 
-	rx_tid->active = false;
-
-	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
-	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
-	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
-	cmd.upd0 |= HAL_REO_CMD_UPD0_VLD;
-	ret = ath11k_dp_tx_send_reo_cmd(ar->ab, rx_tid,
-					HAL_REO_CMD_UPDATE_RX_QUEUE, &cmd,
-					ath11k_dp_rx_tid_del_func);
-	if (ret) {
-		if (ret != -ESHUTDOWN)
-			ath11k_err(ar->ab, "failed to send HAL_REO_CMD_UPDATE_RX_QUEUE cmd, tid %d (%d)\n",
-				   tid, ret);
-		dma_free_noncoherent(ar->ab->dev, rx_tid->unaligned_size,
-				     rx_tid->vaddr_unaligned,
-				     rx_tid->paddr_unaligned, DMA_BIDIRECTIONAL);
-		rx_tid->vaddr_unaligned = NULL;
+	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
+	if (!elem) {
+		ath11k_warn(ar->ab, "failed to alloc reo_update_rx_queue_elem, rx tid %d\n",
+			    rx_tid->tid);
+		return;
 	}
+	elem->reo_cmd_update_rx_queue_resend_flag = false;
+	elem->peer_id = peer->peer_id;
+	elem->tid = tid;
+	memcpy(&elem->data, rx_tid, sizeof(*rx_tid));
+	spin_lock_bh(&dp->reo_cmd_update_queue_lock);
+	list_add_tail(&elem->list, &dp->reo_cmd_update_rx_queue_list);
 
-	rx_tid->paddr = 0;
-	rx_tid->paddr_unaligned = 0;
-	rx_tid->size = 0;
-	rx_tid->unaligned_size = 0;
+	list_for_each_entry_safe(elem, tmp, &dp->reo_cmd_update_rx_queue_list, list) {
+		rx_tid = &elem->data;
+
+		if (ath11k_peer_rx_tid_delete_handler(ab, rx_tid, elem->tid)) {
+			rx_tid->active = true;
+			ab->soc_stats.reo_cmd_update_rx_queue_error++;
+			elem->reo_cmd_update_rx_queue_resend_flag = true;
+			break;
+		}
+		rx_tid->vaddr = NULL;
+		rx_tid->paddr = 0;
+		rx_tid->size = 0;
+		rx_tid->pending_desc_size = 0;
+
+		list_del(&elem->list);
+		kfree(elem);
+	}
+	spin_unlock_bh(&dp->reo_cmd_update_queue_lock);
+
+	return;
 }
 
 static int ath11k_dp_rx_link_desc_return(struct ath11k_base *ab,

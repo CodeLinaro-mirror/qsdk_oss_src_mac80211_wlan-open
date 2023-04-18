@@ -1186,8 +1186,10 @@ int ath11k_dp_alloc(struct ath11k_base *ab)
 
 	INIT_LIST_HEAD(&dp->reo_cmd_list);
 	INIT_LIST_HEAD(&dp->reo_cmd_cache_flush_list);
+	INIT_LIST_HEAD(&dp->reo_cmd_update_rx_queue_list);
 	INIT_LIST_HEAD(&dp->dp_full_mon_mpdu_list);
 	spin_lock_init(&dp->reo_cmd_lock);
+	spin_lock_init(&dp->reo_cmd_update_queue_lock);
 
 	dp->reo_cmd_cache_flush_count = 0;
 

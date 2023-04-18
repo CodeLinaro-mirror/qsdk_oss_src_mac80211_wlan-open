@@ -1422,6 +1422,18 @@ static ssize_t ath11k_debugfs_dump_soc_dp_stats(struct file *file,
 			 "\nNSS Transmit Failures: %d\n",
 			 atomic_read(&soc_stats->tx_err.nss_tx_fail));
 
+	len += scnprintf(buf + len, size - len,
+			 "\nHAL_REO_CMD_DRAIN Counter: %u\n",
+			 soc_stats->hal_reo_cmd_drain);
+
+	len += scnprintf(buf + len, size - len,
+			 "\nREO_CMD_CACHE_FLUSH Failure: %u\n",
+			 soc_stats->reo_cmd_cache_error);
+
+	len += scnprintf(buf + len, size - len,
+			 "\nREO_CMD_UPDATE_RX_QUEUE Failure: %u\n",
+			 soc_stats->reo_cmd_update_rx_queue_error);
+
 	len += ath11k_debugfs_dump_soc_ring_bp_stats(ab, buf + len, size - len);
 
 	if (len > size)

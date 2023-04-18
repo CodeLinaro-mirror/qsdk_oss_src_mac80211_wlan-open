@@ -23,6 +23,7 @@ struct dp_rx_tid {
 	u8 tid;
 	dma_addr_t paddr;
 	u32 size;
+	u32 pending_desc_size;
 	u32 ba_win_sz;
 	bool active;
 
@@ -53,6 +54,14 @@ struct dp_reo_cache_flush_elem {
 	struct list_head list;
 	struct dp_rx_tid data;
 	unsigned long ts;
+};
+
+struct dp_reo_update_rx_queue_elem {
+	struct list_head list;
+	struct dp_rx_tid data;
+	int peer_id;
+	u8 tid;
+	bool reo_cmd_update_rx_queue_resend_flag;
 };
 
 struct dp_reo_cmd {
@@ -299,6 +308,12 @@ struct ath11k_dp {
 	 * - reo_cmd_cache_flush_count
 	 */
 	spinlock_t reo_cmd_lock;
+	struct list_head reo_cmd_update_rx_queue_list;
+	/**
+	 * protects access to below field,
+	 * - reo_cmd_update_rx_queue_list
+	 */
+	spinlock_t reo_cmd_update_queue_lock;
 	struct ath11k_hp_update_timer reo_cmd_timer;
 	struct ath11k_hp_update_timer tx_ring_timer[DP_TCL_NUM_RING_MAX];
 

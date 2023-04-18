@@ -1208,6 +1208,9 @@ struct ath11k_soc_dp_stats {
 	u32 reo_error[HAL_REO_DEST_RING_ERROR_CODE_MAX];
 	u32 reo_error_drop[HAL_REO_DEST_RING_ERROR_CODE_MAX];
 	u32 hal_reo_error[DP_REO_DST_RING_MAX];
+	u32 hal_reo_cmd_drain;
+	u32 reo_cmd_cache_error;
+	u32 reo_cmd_update_rx_queue_error;
 	struct ath11k_soc_dp_tx_err_stats tx_err;
 	struct ath11k_dp_ring_bp_stats bp_stats;
 };
