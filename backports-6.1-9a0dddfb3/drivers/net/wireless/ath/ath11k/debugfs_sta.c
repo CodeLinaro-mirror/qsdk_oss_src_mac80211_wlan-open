@@ -46,7 +46,8 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 {
 	struct rate_info *txrate = &arsta->txrate;
 	struct ath11k_htt_tx_stats *tx_stats;
-	int gi, mcs, bw, nss, ru_type, ppdu_type;
+	int gi, mcs, bw, nss, ru_type, ppdu_type, idx;
+	u8 he_gi;
 
 	if (!arsta->tx_stats)
 		return;
@@ -56,6 +57,10 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 	mcs = txrate->mcs;
 	bw = ath11k_mac_mac80211_bw_to_ath11k_bw(txrate->bw);
 	nss = txrate->nss - 1;
+
+	he_gi = ath11k_he_gi_to_nl80211_he_gi(gi);
+	idx = mcs * 12 + 12 * 12 * nss;
+	idx += bw * 3 + he_gi;
 
 #define STATS_OP_FMT(name) tx_stats->stats[ATH11K_STATS_TYPE_##name]
 
@@ -153,11 +158,15 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 			peer_stats->succ_bytes + peer_stats->retry_bytes;
 		STATS_OP_FMT(AMPDU).gi[0][gi] +=
 			peer_stats->succ_bytes + peer_stats->retry_bytes;
+		STATS_OP_FMT(AMPDU).rate_table[0][idx] +=
+			peer_stats->succ_bytes + peer_stats->retry_bytes;
 		STATS_OP_FMT(AMPDU).bw[1][bw] +=
 			peer_stats->succ_pkts + peer_stats->retry_pkts;
 		STATS_OP_FMT(AMPDU).nss[1][nss] +=
 			peer_stats->succ_pkts + peer_stats->retry_pkts;
 		STATS_OP_FMT(AMPDU).gi[1][gi] +=
+			peer_stats->succ_pkts + peer_stats->retry_pkts;
+		STATS_OP_FMT(AMPDU).rate_table[1][idx] +=
 			peer_stats->succ_pkts + peer_stats->retry_pkts;
 	} else {
 		tx_stats->ack_fails += peer_stats->ba_fails;
@@ -187,6 +196,15 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 	STATS_OP_FMT(RETRY).nss[1][nss] += peer_stats->retry_pkts;
 	STATS_OP_FMT(RETRY).gi[1][gi] += peer_stats->retry_pkts;
 
+	if (txrate->flags >= RATE_INFO_FLAGS_MCS) {
+		STATS_OP_FMT(SUCC).rate_table[0][idx] += peer_stats->succ_bytes;
+		STATS_OP_FMT(SUCC).rate_table[1][idx] += peer_stats->succ_pkts;
+		STATS_OP_FMT(FAIL).rate_table[0][idx] += peer_stats->failed_bytes;
+		STATS_OP_FMT(FAIL).rate_table[1][idx] += peer_stats->failed_pkts;
+		STATS_OP_FMT(RETRY).rate_table[0][idx] += peer_stats->retry_bytes;
+		STATS_OP_FMT(RETRY).rate_table[1][idx] += peer_stats->retry_pkts;
+	}
+
 	tx_stats->tx_duration += peer_stats->duration;
 
 	tx_stats->ru_start = peer_stats->ru_start;
@@ -207,6 +225,8 @@ void ath11k_debugfs_sta_update_txcompl(struct ath11k *ar,
 	ath11k_dp_tx_update_txcompl(ar, ts);
 }
 
+#define STR_PKTS_BYTES  ((strstr(str[j], "packets")) ? "packets" : "bytes")
+
 static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 					    char __user *user_buf,
 					    size_t count, loff_t *ppos)
@@ -219,7 +239,7 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 							      "retry", "ampdu"};
 	static const char *str[ATH11K_COUNTER_TYPE_MAX] = {"bytes", "packets"};
 	int len = 0, i, j, k, retval = 0;
-	const int size = 2 * 4096;
+	const int size = 16 * 4096;
 	char *buf, mu_group_id[MAX_MU_GROUP_LENGTH] = {0};
 	u32 index;
 	char *fields[] = {[HAL_WBM_REL_HTT_TX_COMP_STATUS_OK] = "Acked pkt count",
@@ -298,6 +318,18 @@ static ssize_t ath11k_dbg_sta_dump_tx_stats(struct file *file,
 				len += scnprintf(buf + len, size - len, "%llu ",
 						 stats->legacy[j][i]);
 
+			len += scnprintf(buf + len, size - len,
+					 "\nRate table %s :\n",
+					 STR_PKTS_BYTES);
+			for (i = 0; i < ATH11K_TX_RATE_TABLE_11AX_NUM; i++) {
+				len += scnprintf(buf + len, size - len,
+						 "\t%llu",
+						 stats->rate_table[j][i]);
+				if (!((i + 1) % 8))
+					len +=
+					scnprintf(buf + len, size - len, "\n");
+			}
+			len += scnprintf(buf + len, size - len, "\n");
 			len += scnprintf(buf + len, size - len, "\n ru %s: \n", str[j]);
 			len += scnprintf(buf + len, size - len,
 					 "\tru 26: %llu\n", stats->ru_loc[j][0]);

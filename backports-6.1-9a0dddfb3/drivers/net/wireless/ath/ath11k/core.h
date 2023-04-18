@@ -67,6 +67,7 @@ extern struct mutex dev_init_lock;
 #define ATH11K_CONNECTION_LOSS_HZ	(3 * HZ)
 #define ATH11K_RX_RATE_TABLE_NUM 320
 #define ATH11K_RX_RATE_TABLE_11AX_NUM 576
+#define ATH11K_TX_RATE_TABLE_11AX_NUM 576
 
 #define QCN6122_USERPD_0               1
 #define QCN6122_USERPD_1               2
@@ -650,6 +651,7 @@ struct ath11k_htt_data_stats {
 	u64 gi[ATH11K_COUNTER_TYPE_MAX][ATH11K_GI_NUM];
 	u64 transmit_type[ATH11K_COUNTER_TYPE_MAX][HAL_RX_RECEPTION_TYPE_MAX];
 	u64 ru_loc[ATH11K_COUNTER_TYPE_MAX][HAL_RX_RU_ALLOC_TYPE_MAX];
+	u64 rate_table[ATH11K_COUNTER_TYPE_MAX][ATH11K_TX_RATE_TABLE_11AX_NUM];
 };
 
 struct ath11k_wbm_tx_stats {
