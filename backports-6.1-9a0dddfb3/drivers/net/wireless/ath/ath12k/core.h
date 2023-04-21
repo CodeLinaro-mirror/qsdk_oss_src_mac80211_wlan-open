@@ -404,6 +404,7 @@ struct ath12k_link_vif {
 	struct completion peer_ch_width_switch_send;
 	struct wiphy_work peer_ch_width_switch_work;
 	struct ath12k_peer_ch_width_switch_data *peer_ch_width_switch_data;
+	bool pending_csa_up;
 };
 
 struct ath12k_dp_link_vif {

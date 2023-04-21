@@ -4892,9 +4892,11 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 					struct ieee80211_bss_conf *info,
 					u64 changed)
 {
-	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_vif *ahvif = arvif->ahvif, *tx_ahvif;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
+	struct ath12k_wmi_vdev_up_params params = { 0 };
 	struct ieee80211_vif_cfg *vif_cfg = &vif->cfg;
+	struct ath12k_link_vif *tx_arvif;
 	struct cfg80211_chan_def def;
 	u32 param_id, param_value;
 	enum nl80211_band band;
@@ -4942,17 +4944,70 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				   "Set burst beacon mode for VDEV: %d\n",
 				   arvif->vdev_id);
 		if (!arvif->do_not_send_tmpl || !arvif->bcca_zero_sent) {
+			/* need to install Transmitting vif's template first */
 			ret = ath12k_mac_setup_bcn_tmpl(arvif);
 			if (ret)
 				ath12k_warn(ar->ab, "failed to update bcn template: %d\n",
 					    ret);
-		}
+			if (!arvif->pending_csa_up)
+				goto skip_pending_cs_up;
 
+			memset(&params, 0, sizeof(params));
+			params.vdev_id = arvif->vdev_id;
+			params.aid = ahvif->aid;
+			params.bssid = arvif->bssid;
+
+			if (info->mbssid_tx_vif) {
+				tx_ahvif = (void *)info->mbssid_tx_vif->drv_priv;
+				tx_arvif = tx_ahvif->link[info->mbssid_tx_vif_linkid];
+				params.tx_bssid = tx_arvif->bssid;
+				params.nontx_profile_idx = ahvif->vif->bss_conf.bssid_index;
+				params.nontx_profile_cnt = BIT(info->bssid_indicator);
+			}
+
+			if (info->mbssid_tx_vif && arvif != tx_arvif &&
+			    tx_arvif->pending_csa_up) {
+				/* skip non tx vif's */
+				goto skip_pending_cs_up;
+			}
+
+			ret = ath12k_wmi_vdev_up(arvif->ar, &params);
+			if (ret)
+				ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
+					    arvif->vdev_id, ret);
+
+			arvif->pending_csa_up = false;
+
+			if (info->mbssid_tx_vif && arvif == tx_arvif) {
+				struct ath12k_link_vif *arvif_itr;
+				list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+					if (!arvif_itr->pending_csa_up)
+						continue;
+
+					memset(&params, 0, sizeof(params));
+					params.vdev_id = arvif_itr->vdev_id;
+					params.aid = ahvif->aid;
+					params.bssid = arvif_itr->bssid;
+					params.tx_bssid = tx_arvif->bssid;
+					params.nontx_profile_idx =
+						ahvif->vif->bss_conf.bssid_index;
+					params.nontx_profile_cnt =
+						BIT(info->bssid_indicator);
+
+					ret = ath12k_wmi_vdev_up(arvif_itr->ar, &params);
+					if (ret)
+						ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
+							    arvif_itr->vdev_id, ret);
+					arvif_itr->pending_csa_up = false;
+				}
+			}
+		}
+skip_pending_cs_up:
 		if (arvif->bcca_zero_sent)
 			arvif->do_not_send_tmpl = true;
 		else
 			arvif->do_not_send_tmpl = false;
-		}
+	}
 
 	if (changed & (BSS_CHANGED_BEACON_INFO | BSS_CHANGED_BEACON)) {
 		arvif->dtim_period = info->dtim_period;
@@ -11555,6 +11610,8 @@ static int ath12k_vdev_restart_sequence(struct ath12k_link_vif *arvif,
 	}
 
 beacon_tmpl_setup:
+	if (arvif->pending_csa_up)
+		return 0;
 	ath12k_mac_update_ru_punct_bitmap(arvif, &old_chanctx, new_ctx);
 
 	if (!arvif->is_up)
@@ -11841,6 +11898,14 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 	ath12k_mac_update_rx_channel(ar, NULL, vifs, n_vifs);
 
 	if (tx_arvif) {
+		rcu_read_lock();
+		link_conf = rcu_dereference(tx_ahvif->vif->link_conf[tx_arvif->link_id]);
+
+		if (link_conf->csa_active && tx_arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+			tx_arvif->pending_csa_up = true;
+
+		rcu_read_unlock();
+
 		ret = ath12k_vdev_restart_sequence(tx_arvif,
 						   vifs[trans_vdev_index].new_ctx,
 						   vif_down_failed_map,
@@ -11860,6 +11925,15 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 		if (vifs[i].link_conf->mbssid_tx_vif &&
 		    arvif == tx_arvif)
 			continue;
+
+		rcu_read_lock();
+		link_conf = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
+
+		if (link_conf->csa_active && arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+			arvif->pending_csa_up = true;
+
+		rcu_read_unlock();
+
 		ret = ath12k_vdev_restart_sequence(arvif,
 						   vifs[i].new_ctx,
 						   vif_down_failed_map, i);
@@ -11882,6 +11956,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 	struct ieee80211_vif *tx_vif;
 	int ret, i, time_left, trans_vdev_index, vdev_idx, n_vdevs = 0;
 	u32 vdev_ids[TARGET_NUM_VDEVS];
+	struct ieee80211_bss_conf *link;
 
 	chandef = &vifs[0].new_ctx->def;
 	tx_arvif = NULL;
@@ -11957,6 +12032,14 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 				   tx_arvif->vdev_id);
 		}
 
+		rcu_read_lock();
+		link = rcu_dereference(tx_ahvif->vif->link_conf[tx_arvif->link_id]);
+
+		if (link->csa_active && tx_arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+			tx_arvif->pending_csa_up = true;
+
+		rcu_read_unlock();
+
 		ret = ath12k_vdev_restart_sequence(tx_arvif,
 						   vifs[trans_vdev_index].new_ctx,
 						   BIT_ULL(trans_vdev_index),
@@ -11986,6 +12069,14 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			ath12k_err(ab, "mac failed to restart vdev %d via mvr cmd\n",
 				   arvif->vdev_id);
 		}
+
+		rcu_read_lock();
+		link = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
+
+		if (link->csa_active && arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+			arvif->pending_csa_up = true;
+
+		rcu_read_unlock();
 
 		ret = ath12k_vdev_restart_sequence(arvif, vifs[i].new_ctx,
 						   BIT_ULL(i), vdev_idx);
