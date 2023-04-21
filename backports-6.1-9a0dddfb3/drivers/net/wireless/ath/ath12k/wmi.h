@@ -3817,6 +3817,8 @@ struct ath12k_wmi_bcn_tmpl_ema_arg {
 	u8 bcn_index;
 };
 
+#define WMI_BEACON_PROTECTION_EN_BIT	BIT(0)
+
 struct wmi_bcn_tmpl_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
@@ -4931,7 +4933,7 @@ enum wmi_ap_ps_peer_param {
 
 #define DISABLE_SIFS_RESPONSE_TRIGGER 0
 
-#define WMI_MAX_KEY_INDEX   3
+#define WMI_MAX_KEY_INDEX   7
 #define WMI_MAX_KEY_LEN     32
 
 enum wmi_key_type {
