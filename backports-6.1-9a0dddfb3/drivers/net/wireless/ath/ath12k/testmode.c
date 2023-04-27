@@ -354,14 +354,18 @@ static int ath12k_tm_cmd_testmode_start(struct ath12k *ar, struct nlattr *tb[])
 	return 0;
 }
 
-static int ath12k_tm_cmd_wmi(struct ath12k *ar, struct nlattr *tb[])
+static int ath12k_tm_cmd_wmi(struct ath12k *ar, struct nlattr *tb[],
+			     struct ieee80211_vif *vif, u8 link_id)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_hw *ah = ar->ah;
+	struct ath12k_vif *ahvif;
 	struct sk_buff *skb;
-	struct wmi_pdev_set_param_cmd *cmd;
 	int ret = 0, tag;
 	void *buf;
 	u32 cmd_id, buf_len;
+	u32 *cmd;
 
 	if (!tb[ATH_TM_ATTR_DATA])
 		return -EINVAL;
@@ -379,11 +383,30 @@ static int ath12k_tm_cmd_wmi(struct ath12k *ar, struct nlattr *tb[])
 
 	cmd_id = nla_get_u32(tb[ATH_TM_ATTR_WMI_CMDID]);
 
-	cmd = buf;
-	tag = le32_get_bits(cmd->tlv_header, WMI_TLV_TAG);
+	cmd = (u32 *)buf;
+	tag = FIELD_GET(WMI_TLV_TAG, *cmd);
+	cmd++;
 
 	if (tag == WMI_TAG_PDEV_SET_PARAM_CMD)
-		cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+		*cmd = cpu_to_le32(ar->pdev->pdev_id);
+
+	if (ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM &&
+	    (tag == WMI_TAG_VDEV_SET_PARAM_CMD || tag == WMI_TAG_UNIT_TEST_CMD)) {
+		if (vif) {
+			ahvif = (struct ath12k_vif *)vif->drv_priv;
+			arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
+			if (!arvif) {
+				ath12k_warn(ar->ab, "failed to find link interface\n");
+				return -EINVAL;
+			}
+			*cmd = cpu_to_le32(arvif->vdev_id);
+		}
+		else {
+			ath12k_warn(ar->ab, "vdev is not up for given vdev id, so failed to send wmi command (testmode): %d\n",
+				    ret);
+			return -EINVAL;
+		}
+	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_TESTMODE,
 		   "testmode cmd wmi cmd_id %d  buf length %d\n",
@@ -416,6 +439,7 @@ int ath12k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	struct nlattr *tb[ATH_TM_ATTR_MAX + 1];
 	struct ath12k_base *ab;
 	struct wiphy *wiphy = hw->wiphy;
+	enum ath_tm_cmd cmd_type;
 	int ret;
 
 	lockdep_assert_held(&wiphy->mtx);
@@ -428,17 +452,32 @@ int ath12k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 	if (!tb[ATH_TM_ATTR_CMD])
 		return -EINVAL;
 
-	/* TODO: have to handle ar for MLO case */
-	if (ah->num_radio)
-		ar = ah->radio;
+	cmd_type = nla_get_u32(tb[ATH_TM_ATTR_CMD]);
 
-	if (!ar)
+	if (vif == NULL && (cmd_type == ATH_TM_CMD_WMI_FTM ||
+	    cmd_type == ATH_TM_CMD_TESTMODE_START ||
+	    cmd_type == ATH_TM_CMD_WMI)) {
+		if (ah->num_radio)
+			ar = ah->radio;
+	} else {
+		ar = ath12k_get_ar_by_vif(hw, vif, link_id);
+	}
+
+	if (!ar) {
+		ath12k_err(NULL,
+			   "unable to determine device\n");
 		return -EINVAL;
+	}
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+		ath12k_warn(ar->ab, "invalid link id specified\n");
+		return -EINVAL;
+	}
 
 	ab = ar->ab;
-	switch (nla_get_u32(tb[ATH_TM_ATTR_CMD])) {
+	switch (cmd_type) {
 	case ATH_TM_CMD_WMI:
-		return ath12k_tm_cmd_wmi(ar, tb);
+		return ath12k_tm_cmd_wmi(ar, tb, vif, link_id);
 	case ATH_TM_CMD_TESTMODE_START:
 		return ath12k_tm_cmd_testmode_start(ar, tb);
 	case ATH_TM_CMD_GET_VERSION:
