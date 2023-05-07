@@ -8835,6 +8835,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	struct ieee80211_tx_info *info;
 	enum hal_encrypt_type enctype;
 	unsigned int mic_len;
+	bool link_agnostic;
 	dma_addr_t paddr;
 	int buf_id;
 	int ret;
@@ -8873,7 +8874,10 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	skb_cb->paddr = paddr;
 
-	ret = ath12k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb);
+	link_agnostic = ATH12K_SKB_CB(skb)->flags & ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+
+	ret = ath12k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb,
+				   link_agnostic);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to send mgmt frame: %d\n", ret);
 		goto err_unmap_buf;
@@ -9020,6 +9024,22 @@ void ath12k_mlo_mcast_update_tx_link_address(struct ieee80211_vif *vif,
 }
 EXPORT_SYMBOL(ath12k_mlo_mcast_update_tx_link_address);
 
+/* This function should be called only for a mgmt frame to a ML STA,
+ * hence, such sanity checks are skipped
+ */
+static bool ath12k_mac_is_mgmt_link_agnostic(struct sk_buff *skb)
+{
+	struct ieee80211_mgmt *mgmt;
+	mgmt = (struct ieee80211_mgmt *)skb->data;
+
+	if (ieee80211_is_deauth(mgmt->frame_control) ||
+		ieee80211_is_disassoc(mgmt->frame_control))
+		return true;
+
+	/* TODO Extend as per requirement */
+	return false;
+}
+
 /* Note: called under rcu_read_lock() */
 u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 			  u8 link, struct sk_buff *skb, u32 info_flags)
@@ -9115,6 +9135,19 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 			ether_addr_copy(hdr->addr3, bss_conf->addr);
 	}
 
+	/* Check if this mgmt frame can be queued at MLD level, in that
+	 * case the FW can decide on which link it needs to be finally
+	 * transmitted based on the power state of that link.
+	 * The link param returned by this function still needs
+	 * to be valid to get queued to one of the valid link FW
+	 */
+	if (ath12k_mac_is_mgmt_link_agnostic(skb)) {
+		ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+		ath12k_dbg(NULL, ATH12K_DBG_MGMT,
+			   "Sending Mgmt Frame (fc %x) as link agnostic to ML STA %pM \n",
+			   hdr->frame_control, sta->addr);
+	}
+
 	return link;
 }
 EXPORT_SYMBOL(ath12k_mac_get_tx_link);
@@ -9163,6 +9196,7 @@ static int ath12k_mac_config_mon_status_default(struct ath12k *ar, bool enable)
 				   "failed to setup filter for monitor buf %d\n",
 				   ret);
 		}
+
 	}
 
 	return ret;

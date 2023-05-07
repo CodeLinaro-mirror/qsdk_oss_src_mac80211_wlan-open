@@ -4070,6 +4070,7 @@ struct wmi_scan_chan_list_cmd {
 	__le32 pdev_id;
 } __packed;
 
+#define WMI_MLO_MGMT_TID		0xFFFFFFFF
 #define WMI_MGMT_SEND_DOWNLD_LEN	64
 
 #define WMI_TX_PARAMS_DWORD0_POWER		GENMASK(7, 0)
@@ -4097,6 +4098,18 @@ struct wmi_mgmt_send_cmd {
 	/* This TLV is followed by struct wmi_mgmt_frame */
 
 	/* Followed by struct wmi_mgmt_send_params */
+	/* Followed by struct wmi_mlo_mgmt_send_params */
+} __packed;
+
+struct wmi_mlo_mgmt_send_params {
+	u32 tlv_header;
+	u32 hw_link_id;
+} __packed;
+
+struct wmi_mgmt_send_params {
+	u32 tlv_header;
+	u32 tx_param_dword0;
+	u32 tx_param_dword1;
 } __packed;
 
 struct wmi_sta_powersave_mode_cmd {
@@ -6695,7 +6708,7 @@ int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
 int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
-			 struct sk_buff *frame);
+			 struct sk_buff *frame, bool link_agnostic);
 int ath12k_wmi_p2p_go_bcn_ie(struct ath12k *ar, u32 vdev_id,
 			     const u8 *p2p_ie);
 int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
