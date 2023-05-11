@@ -4221,6 +4221,7 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 			ath12k_update_obss_color_notify_work);
 	wiphy_work_init(&arvif->update_bcn_template_work,
 			ath12k_update_bcn_template_work);
+	arvif->num_stations = 0;
 
 	for (i = 0; i < ARRAY_SIZE(arvif->bitrate_mask.control); i++) {
 		arvif->bitrate_mask.control[i].legacy = 0xffffffff;
@@ -6701,6 +6702,15 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 			return ret;
 		}
 	}
+
+	spin_lock_bh(&ar->data_lock);
+	arvif->num_stations++;
+	spin_unlock_bh(&ar->data_lock);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "mac station %pM connected to vdev %u. num_stations=%u\n",
+		   arsta->addr,  arvif->vdev_id, arvif->num_stations);
+
 	/* Trigger AP powersave recal for first peer create */
 	if (ar->ap_ps_enabled) {
 		ath12k_mac_ap_ps_recalc(ar);
@@ -6716,6 +6726,21 @@ static int ath12k_mac_station_disassoc(struct ath12k *ar,
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	spin_lock_bh(&arvif->ar->data_lock);
+
+	if (!arvif->num_stations) {
+		ath12k_warn(ar->ab,
+			    "mac station disassoc for vdev %u which does not have any station connected\n",
+			    arvif->vdev_id);
+	} else {
+		arvif->num_stations--;
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "mac station %pM disconnected from vdev %u. num_stations=%u\n",
+			   arsta->addr, arvif->vdev_id, arvif->num_stations);
+	}
+
+	spin_unlock_bh(&arvif->ar->data_lock);
 
 	if (!sta->wme) {
 		arvif->num_legacy_stations--;
@@ -6770,7 +6795,6 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	bw_prev = arsta->bw_prev;
 	nss = arsta->nss;
 	smps = arsta->smps;
-
 	spin_unlock_bh(&ar->data_lock);
 
 	nss = max_t(u32, 1, nss);
