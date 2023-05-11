@@ -4222,6 +4222,9 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	wiphy_work_init(&arvif->update_bcn_template_work,
 			ath12k_update_bcn_template_work);
 	arvif->num_stations = 0;
+	init_completion(&arvif->peer_ch_width_switch_send);
+	wiphy_work_init(&arvif->peer_ch_width_switch_work,
+		  ath12k_wmi_peer_chan_width_switch_work);
 
 	for (i = 0; i < ARRAY_SIZE(arvif->bitrate_mask.control); i++) {
 		arvif->bitrate_mask.control[i].legacy = 0xffffffff;
@@ -4300,6 +4303,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 			  &arvif->update_obss_color_notify_work);
 	wiphy_work_cancel(ah->hw->wiphy,
 			  &arvif->update_bcn_template_work);
+	wiphy_work_cancel(ah->hw->wiphy,
+			  &arvif->peer_ch_width_switch_work);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac remove link interface (vdev %d link id %d)",
 		   arvif->vdev_id, arvif->link_id);
@@ -6653,7 +6658,6 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 
 	spin_lock_bh(&ar->data_lock);
 	arsta->bw = ath12k_mac_ieee80211_sta_bw_to_wmi(ar, link_sta);
-	arsta->bw_prev = link_sta->bandwidth;
 	spin_unlock_bh(&ar->data_lock);
 
 	if (link_sta->vht_cap.vht_supported && num_vht_rates == 1) {
@@ -6750,6 +6754,70 @@ static int ath12k_mac_station_disassoc(struct ath12k *ar,
 	return 0;
 }
 
+static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
+					      struct ath12k_link_sta *arsta)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_peer_ch_width_switch_data *peer_data;
+	struct wmi_chan_width_peer_arg *peer_arg;
+	struct ieee80211_link_sta *link_sta;
+	struct ieee80211_vif *vif = arvif->ahvif->vif;
+	struct cfg80211_chan_def def;
+	u16 ru_punct_bitmap;
+
+	if (!ar->ab->chwidth_num_peer_caps)
+		return -EOPNOTSUPP;
+
+	if (WARN_ON(ath12k_mac_vif_link_chan(vif, arvif->link_id, &def)))
+		return -EINVAL;
+
+	peer_data = arvif->peer_ch_width_switch_data;
+
+	if (!peer_data) {
+		peer_data = kzalloc(struct_size(peer_data, peer_arg,
+						arvif->num_stations),
+				    GFP_KERNEL);
+		if (!peer_data)
+			return -ENOMEM;
+
+		peer_data->count = 0;
+		arvif->peer_ch_width_switch_data = peer_data;
+	}
+
+	peer_arg = &peer_data->peer_arg[peer_data->count++];
+
+	ru_punct_bitmap = 0;
+
+	rcu_read_lock();
+	link_sta = ath12k_mac_get_link_sta(arsta);
+
+	if (link_sta) {
+		if (link_sta->he_cap.has_he && link_sta->eht_cap.has_eht)
+			ru_punct_bitmap = def.punctured;
+
+		if (ieee80211_vif_is_mesh(vif) && link_sta->punctured)
+			ru_punct_bitmap = link_sta->punctured;
+	}
+
+	rcu_read_unlock();
+
+	spin_lock_bh(&ar->data_lock);
+	ether_addr_copy(peer_arg->mac_addr.addr, arsta->addr);
+	peer_arg->chan_width = arsta->bw;
+	peer_arg->puncture_20mhz_bitmap = ~ru_punct_bitmap;
+	spin_unlock_bh(&ar->data_lock);
+
+	if (peer_data->count == 1) {
+		reinit_completion(&arvif->peer_ch_width_switch_send);
+		wiphy_work_queue(ar->ah->hw->wiphy, &arvif->peer_ch_width_switch_work);
+	}
+
+	if (peer_data->count == arvif->num_stations)
+		complete(&arvif->peer_ch_width_switch_send);
+
+	return 0;
+}
+
 static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 {
 	struct ieee80211_link_sta *link_sta;
@@ -6762,10 +6830,9 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	const u16 *vht_mcs_mask;
 	const u16 *he_mcs_mask;
 	const u16 *eht_mcs_mask;
-	u32 changed, bw, nss, mac_nss, smps, bw_prev;
+	u32 changed, bw, nss, mac_nss, smps;
 	int err, num_vht_rates, num_he_rates, num_ht_rates, num_eht_rates;
 	const struct cfg80211_bitrate_mask *mask;
-	enum wmi_phy_mode peer_phymode;
 	struct ath12k_link_sta *arsta;
 	struct ieee80211_vif *vif;
 
@@ -6792,7 +6859,6 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	arsta->changed = 0;
 
 	bw = arsta->bw;
-	bw_prev = arsta->bw_prev;
 	nss = arsta->nss;
 	smps = arsta->smps;
 	spin_unlock_bh(&ar->data_lock);
@@ -6811,53 +6877,19 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		return;
 
 	if (changed & IEEE80211_RC_BW_CHANGED) {
-		ath12k_peer_assoc_h_phymode(ar, arvif, arsta, peer_arg);
-		peer_phymode = peer_arg->peer_phymode;
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac bandwidth upgrade for sta %pM new %d\n",
+			   arsta->addr, bw);
 
-		if (bw > bw_prev) {
-			/* Phymode shows maximum supported channel width, if we
-			 * upgrade bandwidth then due to sanity check of firmware,
-			 * we have to send WMI_PEER_PHYMODE followed by
-			 * WMI_PEER_CHWIDTH
-			 */
-			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac bandwidth upgrade for sta %pM new %d old %d\n",
-				   arsta->addr, bw, bw_prev);
-			err = ath12k_wmi_set_peer_param(ar, arsta->addr,
-							arvif->vdev_id, WMI_PEER_PHYMODE,
-							peer_phymode);
-			if (err) {
-				ath12k_warn(ar->ab, "failed to update STA %pM to peer phymode %d: %d\n",
-					    arsta->addr, peer_phymode, err);
-				return;
-			}
-			err = ath12k_wmi_set_peer_param(ar, arsta->addr,
-							arvif->vdev_id, WMI_PEER_CHWIDTH,
-							bw);
-			if (err)
-				ath12k_warn(ar->ab, "failed to update STA %pM to peer bandwidth %d: %d\n",
-					    arsta->addr, bw, err);
-		} else {
-			/* When we downgrade bandwidth this will conflict with phymode
-			 * and cause to trigger firmware crash. In this case we send
-			 * WMI_PEER_CHWIDTH followed by WMI_PEER_PHYMODE
-			 */
-			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac bandwidth downgrade for sta %pM new %d old %d\n",
-				   arsta->addr, bw, bw_prev);
-			err = ath12k_wmi_set_peer_param(ar, arsta->addr,
-							arvif->vdev_id, WMI_PEER_CHWIDTH,
-							bw);
-			if (err) {
-				ath12k_warn(ar->ab, "failed to update STA %pM peer to bandwidth %d: %d\n",
-					    arsta->addr, bw, err);
-				return;
-			}
-			err = ath12k_wmi_set_peer_param(ar, arsta->addr,
-							arvif->vdev_id, WMI_PEER_PHYMODE,
-							peer_phymode);
-			if (err)
-				ath12k_warn(ar->ab, "failed to update STA %pM to peer phymode %d: %d\n",
-					    arsta->addr, peer_phymode, err);
-		}
+		err = ath12k_mac_set_peer_ch_switch_data(arvif, arsta);
+		if (!err || err == -EINVAL)
+			return;
+
+		err = ath12k_wmi_set_peer_param(ar, sta->addr,
+						arvif->vdev_id, WMI_PEER_CHWIDTH,
+						bw);
+		if (err)
+			ath12k_warn(ar->ab, "failed to update STA %pM to peer bandwidth %d: %d\n",
+				    arsta->addr, bw, err);
 	}
 
 	if (changed & IEEE80211_RC_NSS_CHANGED) {
@@ -7789,7 +7821,6 @@ void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 
 	if (changed & IEEE80211_RC_BW_CHANGED) {
 		bw = ath12k_mac_ieee80211_sta_bw_to_wmi(ar, link_sta);
-		arsta->bw_prev = arsta->bw;
 		arsta->bw = bw;
 	}
 

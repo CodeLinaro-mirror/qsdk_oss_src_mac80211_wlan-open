@@ -337,6 +337,11 @@ struct ath12k_rekey_data {
 	bool enable_offload;
 };
 
+struct ath12k_peer_ch_width_switch_data {
+	int count;
+	struct wmi_chan_width_peer_arg peer_arg[];
+};
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -385,6 +390,10 @@ struct ath12k_link_vif {
 	bool beacon_prot;
 	u64 tbtt_offset;
 	int num_stations;
+
+	struct completion peer_ch_width_switch_send;
+	struct wiphy_work peer_ch_width_switch_work;
+	struct ath12k_peer_ch_width_switch_data *peer_ch_width_switch_data;
 };
 
 struct ath12k_dp_link_vif {
@@ -1282,6 +1291,7 @@ struct ath12k_base {
 	struct rhashtable_params rhash_sta_addr_param;
 	
 	bool in_coldboot_fwreset;
+	u32 chwidth_num_peer_caps;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

@@ -436,6 +436,8 @@ enum wmi_tlv_cmd_id {
 	WMI_PEER_REORDER_QUEUE_REMOVE_CMDID,
 	WMI_PEER_SET_RX_BLOCKSIZE_CMDID,
 	WMI_PEER_ANTDIV_INFO_REQ_CMDID,
+	WMI_PEER_CHAN_WIDTH_SWITCH_CMDID =
+		WMI_PEER_ANTDIV_INFO_REQ_CMDID + 5,
 	WMI_BCN_TX_CMDID = WMI_TLV_CMD(WMI_GRP_MGMT),
 	WMI_PDEV_SEND_BCN_CMDID,
 	WMI_BCN_TMPL_CMDID,
@@ -5834,6 +5836,38 @@ struct wmi_rssi_dbm_conv_offsets {
 	u32 xlna_bypass_threshold;
 };
 
+#define ATH12K_PEER_VALID_VDEV_ID		(1 << 31)
+#define ATH12K_PEER_PUNCT_BITMAP_VALID		(1 << 30)
+#define ATH12K_PEER_CH_WIDTH_SWITCH_TIMEOUT_HZ	(5 * HZ)
+
+struct wmi_chan_width_peer_arg {
+	struct ath12k_wmi_mac_addr_params mac_addr;
+	u32 chan_width;
+	u32 puncture_20mhz_bitmap;
+	enum wmi_phy_mode peer_phymode;
+	bool is_upgrade;
+};
+
+struct wmi_peer_chan_width_switch_arg {
+	u32 num_peers;
+	u32 vdev_var;
+	u32 start_idx;
+	struct wmi_chan_width_peer_arg *peer_arg;
+};
+
+struct wmi_peer_chan_width_switch_req_cmd {
+	__le32 tlv_header;
+	__le32 num_peers;
+	__le32 vdev_var;
+} __packed;
+
+struct wmi_chan_width_peer_list {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params mac_addr;
+	__le32 chan_width;
+	__le32 puncture_20mhz_bitmap;
+} __packed;
+
 #define ATH12K_FW_STATS_BUF_SIZE (1024 * 1024)
 
 enum wmi_sys_cap_info_flags {
@@ -7009,5 +7043,6 @@ int ath12k_wmi_pdev_ap_ps_cmd_send(struct ath12k *ar, u8 pdev_id, u32 value);
 bool ath12k_wmi_is_mvr_supported(struct ath12k_base *ab);
 int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 					  struct wmi_pdev_multiple_vdev_restart_req_arg *arg);
+void ath12k_wmi_peer_chan_width_switch_work(struct wiphy *wiphy, struct wiphy_work *work);
 
 #endif

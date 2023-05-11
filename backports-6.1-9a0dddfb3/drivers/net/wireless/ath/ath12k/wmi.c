@@ -5783,6 +5783,7 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 				    ret);
 			return ret;
 		}
+		ab->chwidth_num_peer_caps = parse->arg.chwidth_num_peer_caps;
 		break;
 
 	case WMI_TAG_ARRAY_STRUCT:
@@ -12514,4 +12515,184 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 		   num_vdev_ids, arg->vdev_start_arg.freq);
 
 	return ret;
+}
+
+static void ath12k_wmi_put_peer_list(struct ath12k_base *ab,
+				     struct wmi_chan_width_peer_list *peer_list,
+				     struct wmi_chan_width_peer_arg *peer_arg,
+				     u32 num_peers, int start_idx)
+{
+	struct wmi_chan_width_peer_list *itr;
+	struct wmi_chan_width_peer_arg *arg_itr;
+	int i;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "wmi peer channel width switch command peer list\n");
+
+	for (i = 0; i < num_peers; i++) {
+		itr = &peer_list[i];
+		arg_itr = &peer_arg[start_idx + i];
+
+		itr->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHAN_WIDTH_PEER_LIST,
+							 sizeof(*itr));
+		ether_addr_copy(itr->mac_addr.addr, arg_itr->mac_addr.addr);
+		itr->chan_width = cpu_to_le32(arg_itr->chan_width);
+		itr->puncture_20mhz_bitmap = cpu_to_le32(arg_itr->puncture_20mhz_bitmap);
+
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "   (%u) width %u addr %pM punct_bitmap 0x%x\n",
+			   i + 1, arg_itr->chan_width, arg_itr->mac_addr.addr,
+			   arg_itr->puncture_20mhz_bitmap);
+	}
+}
+
+static int ath12k_wmi_peer_chan_width_switch(struct ath12k *ar,
+					     struct wmi_peer_chan_width_switch_arg *arg)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_peer_chan_width_switch_req_cmd *cmd;
+	struct wmi_chan_width_peer_list *peer_list;
+	struct wmi_tlv *tlv;
+	u32 num_peers;
+	size_t peer_list_len;
+	struct sk_buff *skb;
+	void *ptr;
+	int ret, len;
+
+	num_peers = arg->num_peers;
+
+	if (WARN_ON(num_peers > ab->chwidth_num_peer_caps))
+		return -EINVAL;
+
+	peer_list_len = num_peers * sizeof(*peer_list);
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE + peer_list_len;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_peer_chan_width_switch_req_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_CHAN_WIDTH_SWITCH_CMD,
+						 sizeof(*cmd));
+	cmd->num_peers = cpu_to_le32(num_peers);
+	cmd->vdev_var = cpu_to_le32(arg->vdev_var);
+
+	ptr = skb->data + sizeof(*cmd);
+	tlv = (struct wmi_tlv *)ptr;
+
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, peer_list_len);
+	peer_list = (struct wmi_chan_width_peer_list *)tlv->value;
+
+	ath12k_wmi_put_peer_list(ab, peer_list, arg->peer_arg, num_peers,
+				 arg->start_idx);
+
+	ptr += peer_list_len;
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_CHAN_WIDTH_SWITCH_CMDID);
+	if (ret) {
+		ath12k_warn(ab, "wmi failed to send peer chan width switch command (%d)\n",
+			    ret);
+		dev_kfree_skb(skb);
+		return ret;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "wmi peer chan width switch cmd sent num_peers %d \n",
+		   num_peers);
+
+	return ret;
+}
+
+void ath12k_wmi_set_peers_chan_width(struct ath12k_link_vif *arvif,
+				     struct wmi_chan_width_peer_arg *peer_arg,
+				     int num, u8 start_idx)
+{
+	struct ath12k *ar = arvif->ar;
+	struct wmi_chan_width_peer_arg *arg;
+	int i, err;
+
+	for (i = 0; i < num; i++) {
+		arg = &peer_arg[start_idx + i];
+
+		err = ath12k_wmi_set_peer_param(ar, arg->mac_addr.addr,
+						arvif->vdev_id, WMI_PEER_CHWIDTH,
+						arg->chan_width);
+		if (err) {
+			ath12k_warn(ar->ab, "failed to update STA %pM peer bw %d: %d\n",
+				    arg->mac_addr.addr, arg->chan_width, err);
+			continue;
+		}
+	}
+}
+
+void ath12k_wmi_peer_chan_width_switch_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
+						     peer_ch_width_switch_work);
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_peer_ch_width_switch_data *data;
+	struct wmi_peer_chan_width_switch_arg arg;
+	unsigned long time_left = 0;
+	int count_left, curr_count, max_count_per_cmd = ar->ab->chwidth_num_peer_caps;
+	int cmd_num = 0, ret;
+
+	/* possible that the worker got scheduled after complete was triggered. In
+	 * this case we don't wait for timeout
+	 */
+	if (arvif->peer_ch_width_switch_data->count == arvif->num_stations)
+		goto send_cmd;
+
+	time_left = wait_for_completion_timeout(&arvif->peer_ch_width_switch_send,
+						ATH12K_PEER_CH_WIDTH_SWITCH_TIMEOUT_HZ);
+	if (time_left == 0) {
+		/* Even though timeout occured, we would send the command for the peers
+		 * for which we received sta rc update event, hence not returning
+		 */
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "timed out waiting for all peers in peer channel width switch\n");
+	}
+
+send_cmd:
+
+	data = arvif->peer_ch_width_switch_data;
+
+	spin_lock_bh(&ar->data_lock);
+	arg.vdev_var = arvif->vdev_id;
+	spin_unlock_bh(&ar->data_lock);
+
+	arg.vdev_var |= ATH12K_PEER_VALID_VDEV_ID | ATH12K_PEER_PUNCT_BITMAP_VALID;
+	arg.peer_arg = data->peer_arg;
+
+	count_left = data->count;
+
+	while (count_left > 0) {
+		if (count_left <= max_count_per_cmd)
+			curr_count = count_left;
+		else
+			curr_count = max_count_per_cmd;
+
+		count_left -= curr_count;
+
+		cmd_num++;
+
+		arg.num_peers = curr_count;
+		arg.start_idx = (cmd_num - 1) * max_count_per_cmd;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "wmi peer channel width switch command num %u\n",
+			   cmd_num);
+
+		ret = ath12k_wmi_peer_chan_width_switch(ar, &arg);
+		if (ret) {
+			/* fallback */
+			ath12k_wmi_set_peers_chan_width(arvif, arg.peer_arg,
+							arg.num_peers,
+							arg.start_idx);
+		}
+	}
+
+	kfree(arvif->peer_ch_width_switch_data);
+	arvif->peer_ch_width_switch_data = NULL;
 }
