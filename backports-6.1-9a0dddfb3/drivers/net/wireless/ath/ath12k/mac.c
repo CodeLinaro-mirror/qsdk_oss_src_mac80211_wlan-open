@@ -14418,8 +14418,10 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	return 0;
 
 err_unregister_hw:
-	for_each_ar(ah, ar, i)
+	for_each_ar(ah, ar, i) {
+		ath12k_fw_stats_free(&ar->fw_stats);
 		ath12k_debugfs_unregister(ar);
+	}
 
 	ieee80211_unregister_hw(hw);
 

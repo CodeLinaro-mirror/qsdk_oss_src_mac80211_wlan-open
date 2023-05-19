@@ -872,8 +872,11 @@ void ath12k_dp_pdev_free(struct ath12k_base *ab)
 
 	synchronize_rcu();
 
-	for (i = 0; i < ab->num_radios; i++)
+	for (i = 0; i < ab->num_radios; i++) {
+		ar = ab->pdevs[i].ar;
 		ath12k_dp_rx_pdev_free(ab, i);
+		ath12k_fw_stats_free(&ar->fw_stats);
+	}
 }
 
 void ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
