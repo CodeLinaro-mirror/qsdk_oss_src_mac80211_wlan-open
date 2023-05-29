@@ -158,7 +158,6 @@ int ath11k_thermal_set_throttling(struct ath11k *ar, u32 throttle_state)
 int ath11k_thermal_register(struct ath11k_base *ab)
 {
 	struct thermal_cooling_device *cdev;
-	struct device *hwmon_dev;
 	struct ath11k *ar;
 	struct ath11k_pdev *pdev;
 	int i, ret;
@@ -194,12 +193,13 @@ int ath11k_thermal_register(struct ath11k_base *ab)
 		if (!IS_REACHABLE(CONFIG_HWMON))
 			return 0;
 
-		hwmon_dev = devm_hwmon_device_register_with_groups(&ar->hw->wiphy->dev,
-								   "ath11k_hwmon", ar,
-								   ath11k_hwmon_groups);
-		if (IS_ERR(hwmon_dev)) {
+		ar->thermal.hwmon_dev = hwmon_device_register_with_groups(&ar->hw->wiphy->dev,
+									  "ath11k_hwmon", ar,
+									  ath11k_hwmon_groups);
+		if (IS_ERR(ar->thermal.hwmon_dev)) {
 			ath11k_err(ar->ab, "failed to register hwmon device: %ld\n",
-				   PTR_ERR(hwmon_dev));
+				   PTR_ERR(ar->thermal.hwmon_dev));
+			ar->thermal.hwmon_dev = NULL;
 			ret = -EINVAL;
 			goto err_thermal_destroy;
 		}
@@ -223,6 +223,11 @@ void ath11k_thermal_unregister(struct ath11k_base *ab)
 		ar = pdev->ar;
 		if (!ar)
 			continue;
+
+		if (ar->thermal.hwmon_dev) {
+			hwmon_device_unregister(ar->thermal.hwmon_dev);
+			ar->thermal.hwmon_dev = NULL;
+		}
 
 		sysfs_remove_link(&ar->hw->wiphy->dev.kobj, "cooling_device");
 		thermal_cooling_device_unregister(ar->thermal.cdev);
