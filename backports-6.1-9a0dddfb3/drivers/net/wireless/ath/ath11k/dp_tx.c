@@ -345,7 +345,8 @@ tcl_ring_sel:
 
 	switch (ti.encap_type) {
 	case HAL_TCL_ENCAP_TYPE_NATIVE_WIFI:
-		if (arvif->vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
+		if ((arvif->vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED) &&
+		     skb->protocol == cpu_to_be16(ETH_P_PAE))
 			is_diff_encap = true;
 		else
 			ath11k_dp_tx_encap_nwifi(skb);
@@ -373,7 +374,7 @@ tcl_ring_sel:
 	if ((!test_bit(ATH11K_FLAG_HW_CRYPTO_DISABLED, &ar->ab->dev_flags) &&
 	    !(info->control.flags & IEEE80211_TX_CTL_HW_80211_ENCAP) &&
 	    !info->control.hw_key && ieee80211_has_protected(hdr->frame_control)) ||
-	    (skb->protocol == cpu_to_be16(ETH_P_PAE) && is_diff_encap)) {
+	    is_diff_encap) {
 		/* HW requirement is that metadata should always point to a
 		 * 8-byte aligned address. So we add alignment pad to start of
 		 * buffer. HTT Metadata should be ensured to be multiple of 8-bytes
