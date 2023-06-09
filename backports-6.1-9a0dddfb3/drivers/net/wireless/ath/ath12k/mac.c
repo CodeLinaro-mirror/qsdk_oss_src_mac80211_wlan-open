@@ -6803,6 +6803,18 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	}
 
 	if (changed & IEEE80211_RC_SUPP_RATES_CHANGED) {
+		if (arsta->disable_fixed_rate) {
+			err = ath12k_wmi_set_peer_param(ar, arsta->addr,
+							arvif->vdev_id,
+							WMI_PEER_PARAM_FIXED_RATE,
+							WMI_FIXED_RATE_NONE);
+			if (err)
+				ath12k_warn(ar->ab,
+					    "failed to disable peer fixed rate for STA %pM ret %d\n",
+					    arsta->addr, err);
+
+			arsta->disable_fixed_rate = false;
+		}
 		mask = &arvif->bitrate_mask;
 		num_ht_rates = ath12k_mac_bitrate_mask_num_ht_rates(ar, band,
 								    mask);
@@ -12649,7 +12661,6 @@ static void ath12k_mac_disable_peer_fixed_rate(void *data,
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar = arvif->ar;
-	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -12659,14 +12670,11 @@ static void ath12k_mac_disable_peer_fixed_rate(void *data,
 	if (!arsta || arsta->arvif != arvif)
 		return;
 
-	ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
-					arvif->vdev_id,
-					WMI_PEER_PARAM_FIXED_RATE,
-					WMI_FIXED_RATE_NONE);
-	if (ret)
-		ath12k_warn(ar->ab,
-			    "failed to disable peer fixed rate for STA %pM ret %d\n",
-			    arsta->addr, ret);
+	spin_lock_bh(&ar->data_lock);
+	arsta->disable_fixed_rate = true;
+	spin_unlock_bh(&ar->data_lock);
+
+	wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy, &arsta->update_wk);
 }
 
 static bool

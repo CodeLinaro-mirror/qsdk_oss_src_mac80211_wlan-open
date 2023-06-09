@@ -570,6 +570,9 @@ struct ath12k_link_sta {
 
 	u16 tcl_metadata;
 	u16 ast_hash;
+
+	/* For check disable fixed rate check for peer */
+	bool disable_fixed_rate;
 };
 
 struct ath12k_sta {
