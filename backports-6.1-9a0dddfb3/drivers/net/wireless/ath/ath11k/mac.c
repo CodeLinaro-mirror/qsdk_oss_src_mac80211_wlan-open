@@ -1965,6 +1965,7 @@ static int ath11k_mac_setup_bcn_tmpl(struct ath11k_vif *arvif)
 void ath11k_mac_bcn_tx_event(struct ath11k_vif *arvif)
 {
 	struct ieee80211_vif *vif = arvif->vif;
+	struct ath11k *ar = arvif->ar;
 
 	if (!vif->bss_conf.color_change_active && !arvif->bcca_zero_sent)
 		return;
@@ -1980,6 +1981,7 @@ void ath11k_mac_bcn_tx_event(struct ath11k_vif *arvif)
 
 	if (vif->bss_conf.color_change_active)
 		ieee80211_beacon_update_cntdwn(vif, 0);
+	ieee80211_queue_work(ar->hw, &arvif->update_bcn_template_work);
 	ath11k_mac_setup_bcn_tmpl(arvif);
 }
 
