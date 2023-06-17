@@ -374,6 +374,7 @@ out:
 	vfree(dump);
 }
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 int ath11k_coredump_mhi_update_bhie_table(struct ath11k_base *ab, void *va,
 					  phys_addr_t pa, size_t size)
 {
@@ -392,3 +393,4 @@ int ath11k_coredump_mhi_update_bhie_table(struct ath11k_base *ab, void *va,
 
 	return ret;
 }
+#endif

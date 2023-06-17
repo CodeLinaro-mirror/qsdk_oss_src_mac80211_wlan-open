@@ -98,6 +98,14 @@ extern bool ath11k_ftm_mode;
 
 #define ATH11K_AHB_PROBE_SEQ_TIMEOUT   (2 * HZ)
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+#define ATH11K_SSR_POWERUP SUBSYS_AFTER_POWERUP
+#define ATH11K_SSR_PREPARE_SHUTDOWN SUBSYS_PREPARE_FOR_FATAL_SHUTDOWN
+#else
+#define ATH11K_SSR_POWERUP QCOM_SSR_AFTER_POWERUP
+#define ATH11K_SSR_PREPARE_SHUTDOWN QCOM_SSR_NOTIFY_CRASH
+#endif
+
 enum ath11k_supported_bw {
 	ATH11K_BW_20	= 0,
 	ATH11K_BW_40	= 1,
@@ -1695,8 +1703,10 @@ bool ath11k_core_coldboot_cal_support(struct ath11k_base *ab);
 void ath11k_core_dump_bp_stats(struct ath11k_base *ab);
 void ath11k_coredump_qdss_dump(struct ath11k_base *ab,
 			       struct ath11k_qmi_event_qdss_trace_save_data *event_data);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 int ath11k_coredump_mhi_update_bhie_table(struct ath11k_base *ab, void *va,
 					  phys_addr_t pa, size_t size);
+#endif
 const struct firmware *ath11k_core_firmware_request(struct ath11k_base *ab,
 						    const char *filename);
 int ath11k_wait_for_suspend(struct ath11k *ar, u32 suspend_opt);

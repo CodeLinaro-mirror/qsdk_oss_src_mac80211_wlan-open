@@ -1051,7 +1051,7 @@ void ath11k_update_latency_stats(struct ath11k *ar, struct sk_buff *msdu, u8 tid
 	now = ieee80211_txdelay_get_time();
 	bin = txdelay_ms_to_bin(txdelay_time_to_ms(now - enqueue_time));
 
-	if (!ar->debug.tx_delay_stats) {
+	if (!ar->debug.tx_delay_stats[tid]) {
 		ath11k_warn(ar->ab, "tx delay stats invalid\n");
 		return;
 	}

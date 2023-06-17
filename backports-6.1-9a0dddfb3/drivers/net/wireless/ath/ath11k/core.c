@@ -2332,13 +2332,13 @@ int ath11k_core_ssr_notifier_cb(struct notifier_block *nb, unsigned long event,
 	}
 
 #if LINUX_VERSION_IS_GEQ(5,4,0)
-	if (ath11k_collect_dump && event == QCOM_SSR_AFTER_POWERUP) {
+	if (ath11k_collect_dump && event == ATH11K_SSR_POWERUP) {
 		ath11k_collect_dump = false;
 		wake_up(&ath11k_ssr_dump_wq);
 		return 0;
 	}
 
-	if (event != QCOM_SSR_NOTIFY_CRASH)
+	if (event != ATH11K_SSR_PREPARE_SHUTDOWN)
 		return 0;
 	ath11k_collect_dump = true;
 #else

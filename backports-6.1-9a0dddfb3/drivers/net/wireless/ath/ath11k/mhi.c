@@ -40,7 +40,9 @@ static const struct mhi_channel_config ath11k_mhi_channels_qca6390[] = {
 		.offload_channel = false,
 		.doorbell_mode_switch = false,
 		.auto_queue = false,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 		.auto_start = false,
+#endif
 	},
 	{
 		.num = 21,
@@ -106,7 +108,9 @@ static const struct mhi_channel_config ath11k_mhi_channels_qcn9074[] = {
 		.offload_channel = false,
 		.doorbell_mode_switch = false,
 		.auto_queue = false,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 		.auto_start = false,
+#endif
 	},
 	{
 		.num = 21,
@@ -121,7 +125,9 @@ static const struct mhi_channel_config ath11k_mhi_channels_qcn9074[] = {
 		.offload_channel = false,
 		.doorbell_mode_switch = false,
 		.auto_queue = true,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 		.auto_start = true,
+#endif
 	},
 };
 

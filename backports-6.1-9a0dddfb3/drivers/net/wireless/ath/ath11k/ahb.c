@@ -575,8 +575,13 @@ static int ath11k_ahb_config_ext_irq(struct ath11k_base *ab)
 		if (!napi_ndev)
 			return -ENOMEM;
 
-		netif_napi_add(napi_ndev, &irq_grp->napi,
-			       ath11k_ahb_ext_grp_napi_poll);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+		netif_napi_add(&irq_grp->napi_ndev, &irq_grp->napi,
+			       ath11k_ahb_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#else
+		netif_napi_add_weight(&irq_grp->napi_ndev, &irq_grp->napi,
+				ath11k_ahb_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#endif
 
 		for (j = 0; j < ATH11K_EXT_IRQ_NUM_MAX; j++) {
 			if (!nss_offload && ab->hw_params.ring_mask->tx[i] & BIT(j)) {
@@ -807,9 +812,13 @@ static void ath11k_ahb_ssr_notifier_reg(struct ath11k_base *ab)
 #if LINUX_VERSION_IS_LESS(5, 4, 0)
 	qcom_register_ssr_notifier(&ab->qmi.ssr_nb);
 #else
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
 	rproc_register_subsys_notifier(ab_ahb->tgt_rproc->name,
 				       &ab->qmi.ssr_nb, &ab->qmi.ssr_nb);
+#else
+	ab->qmi.ssr_handle = qcom_register_ssr_notifier("q6wcss", &ab->qmi.ssr_nb);
+#endif
 #endif
 }
 
@@ -818,10 +827,15 @@ static void ath11k_ahb_ssr_notifier_unreg(struct ath11k_base *ab)
 #if LINUX_VERSION_IS_LESS(5, 4, 0)
 	qcom_unregister_ssr_notifier(&ab->qmi.ssr_nb);
 #else
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
 	rproc_unregister_subsys_notifier(ab_ahb->tgt_rproc->name,
 					 &ab->qmi.ssr_nb,
 					 &ab->qmi.ssr_nb);
+#else
+	if (ab->qmi.ssr_handle)
+		qcom_unregister_ssr_notifier(ab->qmi.ssr_handle, &ab->qmi.ssr_nb);
+#endif
 #endif
 }
 #endif

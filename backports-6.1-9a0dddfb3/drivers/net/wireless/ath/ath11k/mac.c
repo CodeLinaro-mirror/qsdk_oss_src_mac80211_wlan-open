@@ -2245,7 +2245,7 @@ static void ath11k_peer_assoc_h_rates(struct ath11k *ar,
 }
 
 static bool
-ath11k_peer_assoc_h_ht_masked(const u8 *ht_mcs_mask)
+ath11k_peer_assoc_h_ht_masked(const u8 *ht_mcs_mask[])
 {
 	int nss;
 
@@ -2257,7 +2257,7 @@ ath11k_peer_assoc_h_ht_masked(const u8 *ht_mcs_mask)
 }
 
 static bool
-ath11k_peer_assoc_h_vht_masked(const u16 *vht_mcs_mask)
+ath11k_peer_assoc_h_vht_masked(const u16 *vht_mcs_mask[])
 {
 	int nss;
 
@@ -2652,7 +2652,7 @@ static u16 ath11k_peer_assoc_h_he_limit(u16 tx_mcs_set,
 }
 
 static bool
-ath11k_peer_assoc_h_he_masked(const u16 *he_mcs_mask)
+ath11k_peer_assoc_h_he_masked(const u16 *he_mcs_mask[])
 {
 	int nss;
 
@@ -3296,8 +3296,8 @@ static bool ath11k_peer_assoc_prepare(struct ath11k *ar,
 		vif_mask = &arvif->bitrate_mask;
 		ath11k_warn(ar->ab, "arvif bit rate masked: he %d vht %d ht %d",
 			    ath11k_peer_assoc_h_he_masked(vif_mask->control[band].he_mcs),
-			    ath11k_peer_assoc_h_he_masked(vif_mask->control[band].vht_mcs),
-			    ath11k_peer_assoc_h_he_masked(vif_mask->control[band].ht_mcs));
+			    ath11k_peer_assoc_h_vht_masked(vif_mask->control[band].vht_mcs),
+			    ath11k_peer_assoc_h_ht_masked(vif_mask->control[band].ht_mcs));
 		WARN_ON_ONCE(1);
 		return true;
 	}

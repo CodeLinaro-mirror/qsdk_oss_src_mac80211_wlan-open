@@ -205,6 +205,7 @@ struct ath11k_qmi {
 	struct list_head event_list;
 	spinlock_t event_lock; /* spinlock for qmi event list */
 	struct notifier_block ssr_nb;
+	void *ssr_handle;
 	struct ath11k_qmi_ce_cfg ce_cfg;
 	struct target_mem_chunk target_mem[ATH11K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
 	u32 mem_seg_count;

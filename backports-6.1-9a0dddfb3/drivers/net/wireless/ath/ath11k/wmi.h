@@ -54,7 +54,11 @@ struct wmi_tlv {
 
 #define WMI_TLV_LEN	GENMASK(15, 0)
 #define WMI_TLV_TAG	GENMASK(31, 16)
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+#define TLV_HDR_SIZE    FIELD_SIZEOF(struct wmi_tlv, header)
+#else
 #define TLV_HDR_SIZE	sizeof_field(struct wmi_tlv, header)
+#endif
 
 #define WMI_CMD_HDR_CMD_ID      GENMASK(23, 0)
 #define WMI_MAX_MEM_REQS        32
@@ -7821,11 +7825,11 @@ int ath11k_wmi_peer_set_smart_tx_ant(struct ath11k *ar, u32 vdev_id,
 				     const u8 *macaddr, const u32 *tx_antenna);
 int ath11k_wmi_pdev_set_rx_ant(struct ath11k *ar, u32 antenna);
 int
-ath11k_wmi_peer_set_smart_ant_node_config(struct ath11k *ar, u8 *mac,
+ath11k_wmi_peer_set_smart_ant_node_config(struct ath11k *ar, u8 mac_addr[ETH_ALEN],
 					  struct ath11k_smart_ant_node_config_params *param);
 int
 ath11k_wmi_peer_set_smart_ant_train_info(struct ath11k *ar, u32 vdev_id,
-					 u8 *mac,
+					 u8 mac_addr[ETH_ALEN],
 					 struct ath11k_smart_ant_train_info *param);
 int
 ath11k_wmi_peer_set_smart_ant_train_ant_param_cmd(struct ath11k *ar,

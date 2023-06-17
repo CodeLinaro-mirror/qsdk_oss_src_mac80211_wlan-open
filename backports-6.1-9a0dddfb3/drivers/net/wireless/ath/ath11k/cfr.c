@@ -90,7 +90,7 @@ static int cfr_calculate_tones_form_dma_hdr(struct ath11k_cfir_dma_hdr *hdr)
 		case 3: /* DUP160/VHT160 */
 			return TONES_IN_160MHZ;
 		}
-
+		fallthrough;
 	case ATH11K_CFR_PREAMBLE_TYPE_HT:
 		switch (bw) {
 		case 0:

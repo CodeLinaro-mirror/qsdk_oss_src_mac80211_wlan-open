@@ -3062,7 +3062,7 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 							ab->qmi.target_mem[i].size);
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 			ret = ath11k_coredump_mhi_update_bhie_table(ab,
 						ab->qmi.target_mem[idx].vaddr,
 						ab->qmi.target_mem[idx].paddr,
@@ -3070,7 +3070,7 @@ static int ath11k_qmi_assign_target_mem_chunk(struct ath11k_base *ab)
 			if (ret < 0)
 				ath11k_warn(ab, "qmi fail to update BHI table %d\n",
 					    ret);
-
+#endif
 			idx++;
 			break;
 		default:

@@ -621,9 +621,13 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 			goto fail_allocate;
 		}
 
-		netif_napi_add(napi_ndev, &irq_grp->napi,
-			       ath11k_pcic_ext_grp_napi_poll);
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+		netif_napi_add(&irq_grp->napi_ndev, &irq_grp->napi,
+			       ath11k_pcic_ext_grp_napi_poll,NAPI_POLL_WEIGHT);
+#else
+		netif_napi_add_weight(&irq_grp->napi_ndev, &irq_grp->napi,
+				      ath11k_pcic_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#endif
 		/* tcl, reo, rx_err, wbm release, rxdma rings are offloaded to nss. */
 		if (ab->nss.enabled &&
 		    !(ab->hw_params.ring_mask->reo_status[i] ||
@@ -940,8 +944,13 @@ int ath11k_pcic_ext_config_gic_msi_irq(struct ath11k_base *ab, struct platform_d
 	irq_grp->ab = ab;
 	irq_grp->grp_id = i;
 	init_dummy_netdev(&irq_grp->napi_ndev);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	netif_napi_add(&irq_grp->napi_ndev, &irq_grp->napi,
 		       ath11k_pcic_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#else
+	netif_napi_add_weight(&irq_grp->napi_ndev, &irq_grp->napi,
+		       ath11k_pcic_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#endif
 
 	if (ab->hw_params.ring_mask->tx[i] ||
 	    ab->hw_params.ring_mask->rx[i] ||
@@ -1037,8 +1046,11 @@ int ath11k_pcic_ipci_config_irq(struct ath11k_base *ab)
 		ath11k_warn(ab, "failed to alloc irqs %d ab %pM\n", ret, ab);
 		return ret;
 	}
-
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	for_each_msi_entry(msi_desc, &pdev->dev) {
+#else
+        msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ALL) {
+#endif
 		if (!ce_done && i == ab->hw_params.ce_count) {
 			i = 0;
 			ce_done = true;
@@ -1069,7 +1081,11 @@ int ath11k_pcic_ipci_config_irq(struct ath11k_base *ab)
 			ab->pci.msi.ep_base_data = msi_desc->msg.data;
 	}
 
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	for_each_msi_entry(msi_desc, &pdev->dev) {
+#else
+        msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ALL) {
+#endif
 		u32 user_base_data = 0, base_vector = 0;
 		int vector, num_vectors = 0;
 
