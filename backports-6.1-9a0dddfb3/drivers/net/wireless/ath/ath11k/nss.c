@@ -100,6 +100,43 @@ static void ath11k_nss_wifili_stats_sync(struct ath11k_base *ab,
 	spin_unlock_bh(&ab->base_lock);
 }
 
+static void ath11k_nss_wifili_link_desc_set(struct ath11k_base *ab, void *desc,
+					    struct ath11k_buffer_addr *buf_addr_info,
+					    enum hal_wbm_rel_bm_act action)
+{
+	struct hal_wbm_release_ring *dst_desc = desc;
+
+	dst_desc->buf_addr_info = *buf_addr_info;
+	dst_desc->info0 |= FIELD_PREP(HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE,
+				      HAL_WBM_REL_SRC_MODULE_SW) |
+			   FIELD_PREP(HAL_WBM_RELEASE_INFO0_BM_ACTION, action) |
+			   FIELD_PREP(HAL_WBM_RELEASE_INFO0_DESC_TYPE,
+				      HAL_WBM_REL_DESC_TYPE_MSDU_LINK);
+}
+
+static void ath11k_nss_wifili_link_desc_return(struct ath11k_base *ab,
+					       struct ath11k_buffer_addr *buf_addr_info)
+{
+	struct ath11k_dp *dp = &ab->dp;
+	struct hal_srng *srng;
+	u32 *desc;
+
+	srng = &ab->hal.srng_list[dp->wbm_desc_rel_ring.ring_id];
+	spin_lock_bh(&srng->lock);
+
+	ath11k_hal_srng_access_begin(ab, srng);
+	desc = ath11k_hal_srng_src_get_next_entry(ab, srng);
+
+	if (!desc)
+		goto exit;
+
+	ath11k_nss_wifili_link_desc_set(ab, desc, buf_addr_info, HAL_WBM_REL_BM_ACT_PUT_IN_IDLE);
+
+exit:
+	ath11k_hal_srng_access_end(ab, srng);
+	spin_unlock(&srng->lock);
+}
+
 static void ath11k_nss_get_peer_stats(struct ath11k_base *ab, struct nss_wifili_peer_stats *stats)
 {
 	struct ath11k_peer *peer;
@@ -369,6 +406,10 @@ void ath11k_nss_wifili_event_receive(struct ath11k_base *ab, struct nss_wifili_m
 			ab->nss.mesh_nss_offload_enabled = true;
 		ath11k_dbg(ab, ATH11K_DBG_NSS_MESH, "nss wifili mesh capability response %d\n",
 			   ab->nss.mesh_nss_offload_enabled);
+		break;
+	case NSS_WIFILI_LINK_DESC_INFO_MSG:
+		ath11k_nss_wifili_link_desc_return(ab,
+						   (void *)&msg->msg.linkdescinfomsg);
 		break;
 	default:
 		ath11k_dbg(ab, ATH11K_DBG_NSS, "unhandled event %d\n", msg_type);
