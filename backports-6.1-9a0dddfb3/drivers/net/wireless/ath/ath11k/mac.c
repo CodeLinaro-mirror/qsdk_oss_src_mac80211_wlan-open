@@ -10088,6 +10088,8 @@ static int ath11k_mac_flush_tx_complete(struct ath11k *ar)
 		ret = -ETIMEDOUT;
 	}
 
+	flush_work(&ar->wmi_mgmt_tx_work);
+
 	time_left = wait_event_timeout(ar->txmgmt_empty_waitq,
 				       (atomic_read(&ar->num_pending_mgmt_tx) == 0),
 				       ATH11K_FLUSH_TIMEOUT);
