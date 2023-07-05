@@ -13233,7 +13233,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
 	struct ath12k_base *ab;
-	s8 signal;
+	s8 signal, rssi_signal, rssi_offset;
 	bool db2dbm;
 	struct ath12k_dp *dp;
 	struct ath12k_dp_link_peer_rate_info rate_info = {0};
@@ -13279,9 +13279,12 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	}
 
 	spin_unlock_bh(&ab->base_lock);
-	/* TODO: Use real NF instead of default one. */
-	signal = rate_info.rssi_comb;
+	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.rssi_offset;
+	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
+		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
+		      rssi_offset;
 
+	signal = rate_info.rssi_comb;
 	params.pdev_id = ar->pdev->pdev_id;
 	params.vdev_id = 0;
 	params.stats_id = WMI_REQUEST_VDEV_STAT;
@@ -13302,14 +13305,14 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		ath12k_mac_put_chain_rssi(sinfo, arsta);
 
 	if (signal) {
-		sinfo->signal = db2dbm ? signal : signal + ATH12K_DEFAULT_NOISE_FLOOR;
+		sinfo->signal = db2dbm ? rate_info.rssi_comb : rssi_signal;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
 	}
 
 	sinfo->signal_avg = rate_info.signal_avg;
 
 	if (!db2dbm)
-		sinfo->signal_avg += ATH12K_DEFAULT_NOISE_FLOOR;
+		sinfo->signal_avg += ar->rssi_offsets.rssi_offset;
 
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
 }

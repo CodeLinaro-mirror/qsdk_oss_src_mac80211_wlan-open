@@ -2021,7 +2021,7 @@ static void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 	u8 *ptr = NULL;
 
 	rxs->flag |= RX_FLAG_MACTIME_START;
-	rxs->signal = ppduinfo->rssi_comb + ATH12K_DEFAULT_NOISE_FLOOR;
+	rxs->signal = (s8)(ppduinfo->rssi_comb + dp_pdev->ar->rssi_offsets.rssi_offset);
 	rxs->nss = ppduinfo->nss + 1;
 
 	if (ppduinfo->userstats[ppduinfo->userid].ampdu_present) {
