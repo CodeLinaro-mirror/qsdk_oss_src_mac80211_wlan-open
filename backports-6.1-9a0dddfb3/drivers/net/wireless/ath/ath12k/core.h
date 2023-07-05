@@ -871,6 +871,7 @@ struct ath12k {
 
 	struct completion mvr_complete;
 	bool twt_enabled;
+	struct wmi_rssi_dbm_conv_offsets rssi_offsets;
 };
 
 struct ath12k_hw {

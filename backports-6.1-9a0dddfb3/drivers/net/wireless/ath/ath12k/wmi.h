@@ -748,6 +748,8 @@ enum wmi_tlv_event_id {
 	WMI_PDEV_MULTIPLE_VDEV_RESTART_RESP_EVENTID,
 	WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID =
 					WMI_SERVICE_READY_EXT2_EVENTID + 4,
+	WMI_PDEV_RSSI_DBM_CONVERSION_PARAMS_INFO_EVENTID =
+					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 5,
 	WMI_VDEV_START_RESP_EVENTID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_STOPPED_EVENTID,
 	WMI_VDEV_INSTALL_KEY_COMPLETE_EVENTID,
@@ -2031,6 +2033,9 @@ enum wmi_tlv_tag {
 	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
 	WMI_TAG_PDEV_SSCAN_CHAN_INFO = 0x417,
 	WMI_TAG_PDEV_SSCAN_PER_DETECTOR_INFO,
+	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO_FIXED_PARAM = 0x427,
+	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO,
+	WMI_TAG_RSSI_DBM_CONVERSION_TEMP_OFFSET_INFO,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
 	WMI_TAG_MAX
@@ -5752,6 +5757,36 @@ struct wmi_pdev_mvr_resp_event_parse {
 	u32 num_vdevs_bm;
 	u32 vdev_id_bm[WMI_MVR_RESP_VDEV_BM_MAX_LEN];
 } __packed;
+
+
+#define MAX_20MHZ_SEGS 16
+#define MAX_NUM_ANTENNA 8
+
+struct wmi_rssi_dbm_conv_event_fixed_param {
+	u32 pdev_id;
+} __packed;
+
+struct wmi_rssi_dbm_conv_param_info {
+	u32 curr_bw;
+	u32 curr_rx_chainmask;
+	u32 xbar_config;
+	u32 xlna_bypass_offset;
+	u32 xlna_bypass_threshold;
+	s8 nf_hw_dbm[MAX_NUM_ANTENNA][MAX_20MHZ_SEGS];
+} __packed;
+
+struct wmi_rssi_dbm_conv_temp_offset {
+	s32 rssi_temp_offset;
+} __packed;
+
+struct wmi_rssi_dbm_conv_offsets {
+	s32 rssi_temp_offset;
+	s8 min_nf_dbm;
+	/* rssi_offset is the sum of min_nf_dbm & rssi_temp_offset*/
+	s32 rssi_offset;
+	u32 xlna_bypass_offset;
+	u32 xlna_bypass_threshold;
+};
 
 #define ATH12K_FW_STATS_BUF_SIZE (1024 * 1024)
 

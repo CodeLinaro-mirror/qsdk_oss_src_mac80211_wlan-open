@@ -10636,6 +10636,162 @@ exit:
 	kfree(tb);
 }
 
+static int
+ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
+				       u16 tag, u16 len,
+				       const void *ptr, void *data)
+{
+	struct wmi_rssi_dbm_conv_offsets *rssi_offsets =
+		(struct wmi_rssi_dbm_conv_offsets *) data;
+	struct wmi_rssi_dbm_conv_param_info *param_info;
+	struct wmi_rssi_dbm_conv_temp_offset *temp_offset_info;
+	int i, ret = 0;
+	s8 min_nf = 0;
+
+	switch (tag) {
+	case WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO:
+		if (len != sizeof(*param_info)) {
+			ath12k_warn(ab, "wmi rssi dbm conv subtlv 0x%x invalid len rcvd",
+				    tag);
+			return -EINVAL;
+		}
+		param_info = (struct wmi_rssi_dbm_conv_param_info *)ptr;
+
+		/* Using minimum pri20 Noise Floor across active chains instead
+		 * of all sub-bands*/
+		for (i = 0; i < MAX_NUM_ANTENNA; i++) {
+			if (param_info->curr_rx_chainmask & (0x01 << i))
+				min_nf = min(param_info->nf_hw_dbm[i][0], min_nf);
+		}
+		rssi_offsets->min_nf_dbm = min_nf;
+		rssi_offsets->xlna_bypass_offset = param_info->xlna_bypass_offset;
+		rssi_offsets->xlna_bypass_threshold = param_info->xlna_bypass_threshold;
+		break;
+	case WMI_TAG_RSSI_DBM_CONVERSION_TEMP_OFFSET_INFO:
+		if (len != sizeof(*temp_offset_info)) {
+			ath12k_warn(ab, "wmi rssi dbm conv subtlv 0x%x invalid len rcvd",
+				    tag);
+			return -EINVAL;
+		}
+		temp_offset_info = (struct wmi_rssi_dbm_conv_temp_offset *)ptr;
+		rssi_offsets->rssi_temp_offset = temp_offset_info->rssi_temp_offset;
+		break;
+	default:
+		ath12k_warn(ab, "Received invalid sub-tag for wmi rssi dbm conversion\n");
+		ret = -EINVAL;
+	}
+	return ret;
+}
+
+static int
+ath12k_wmi_rssi_dbm_conv_event_parser(struct ath12k_base *ab,
+				      u16 tag, u16 len,
+				      const void *ptr, void *data)
+{
+	int ret = 0;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wmi rssi dbm conv tag 0x%x of len %d rcvd",
+		   tag, len);
+	switch (tag) {
+	case WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO_FIXED_PARAM:
+		/* Fixed param is already processed*/
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		/* len 0 is expected for array of struct when there
+		 * is no content of that type inside that tlv
+		 */
+		if (len == 0)
+			return ret;
+		ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+					  ath12k_wmi_rssi_dbm_conv_subtlv_parser,
+					  data);
+		break;
+	default:
+		ath12k_warn(ab, "Received invalid tag for wmi rssi dbm conv interference event\n");
+		ret = -EINVAL;
+		break;
+
+	}
+
+	return ret;
+}
+
+static struct
+ath12k *ath12k_wmi_rssi_dbm_process_fixed_param(struct ath12k_base *ab,
+						u8 *ptr, size_t len)
+{
+	struct ath12k *ar;
+	const struct wmi_tlv *tlv;
+	struct wmi_rssi_dbm_conv_event_fixed_param *fixed_param;
+	u16 tlv_tag;
+
+	if(!ptr) {
+		ath12k_warn(ab, "No data present in rssi dbm conv event\n");
+		return NULL;
+	}
+
+	if (len < (sizeof(*fixed_param) + TLV_HDR_SIZE)) {
+		ath12k_warn(ab, "rssi dbm conv event size invalid\n");
+		return NULL;
+	}
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv_tag = FIELD_GET(WMI_TLV_TAG, tlv->header);
+	ptr += sizeof(*tlv);
+
+	if (tlv_tag == WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO_FIXED_PARAM) {
+		fixed_param = (struct wmi_rssi_dbm_conv_event_fixed_param *)ptr;
+
+		ar = ath12k_mac_get_ar_by_pdev_id(ab, fixed_param->pdev_id);
+		if (!ar) {
+			ath12k_warn(ab, "Failed to get ar for rssi dbm conv event\n");
+			return NULL;
+		}
+	} else {
+		ath12k_warn(ab, "rssi dbm conv event received without fixed param tlv at start\n");
+		return NULL;
+	}
+
+	return ar;
+}
+
+static void ath12k_wmi_rssi_dbm_conversion_param_info(struct ath12k_base *ab,
+						      struct sk_buff *skb)
+{
+	struct ath12k *ar;
+	struct wmi_rssi_dbm_conv_offsets *rssi_offsets;
+	int ret, i;
+
+	/* if pdevs are not active ignore the event */
+	for (i = 0; i < ab->num_radios; i++) {
+		if (!ab->pdevs_active[i])
+			return;
+	}
+
+	ar = ath12k_wmi_rssi_dbm_process_fixed_param(ab, skb->data,
+						     skb->len);
+	if(!ar) {
+		ath12k_warn(ab, "failed to get ar from rssi dbm conversion event\n");
+		return;
+	}
+
+	rssi_offsets = &ar->rssi_offsets;
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_rssi_dbm_conv_event_parser,
+				  rssi_offsets);
+	if (ret) {
+		ath12k_warn(ab, "Unable to parse rssi dbm conversion event\n");
+		return;
+	}
+
+	rssi_offsets->rssi_offset = rssi_offsets->min_nf_dbm +
+				    rssi_offsets->rssi_temp_offset;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "RSSI offset updated, current offset is %d\n",
+		   rssi_offsets->rssi_offset);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_cmd_hdr *cmd_hdr;
@@ -10814,6 +10970,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_OBSS_COLOR_COLLISION_DETECTION_EVENTID:
 		ath12k_wmi_obss_color_collision_event(ab, skb);
+		break;
+	case WMI_PDEV_RSSI_DBM_CONVERSION_PARAMS_INFO_EVENTID:
+		ath12k_wmi_rssi_dbm_conversion_param_info(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);

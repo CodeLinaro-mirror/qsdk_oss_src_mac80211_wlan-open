@@ -14146,6 +14146,7 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 
 	ar->max_num_stations = ath12k_core_get_max_station_per_radio(ar->ab);
 	ar->max_num_peers = ath12k_core_get_max_peers_per_radio(ar->ab);
+	ar->rssi_offsets.rssi_offset = ATH12K_DEFAULT_NOISE_FLOOR;
 
 	return 0;
 }
