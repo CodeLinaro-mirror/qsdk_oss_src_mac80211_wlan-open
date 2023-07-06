@@ -127,6 +127,8 @@ struct ath12k_cfr_peer_tx_param;
 #define ATH12K_BOARD_API2_FILE		"board-2.bin"
 #define ATH12K_DEFAULT_BOARD_FILE	"board.bin"
 #define ATH12K_DEFAULT_CAL_FILE		"caldata.bin"
+#define ATH12K_QMI_DEF_CAL_FILE_PREFIX  "caldata_"
+#define ATH12K_QMI_DEF_CAL_FILE_SUFFIX  ".bin"
 #define ATH12K_AMSS_FILE		"amss.bin"
 #define ATH12K_AMSS_DUALMAC_FILE	"amss_dualmac.bin"
 #define ATH12K_M3_FILE			"m3.bin"

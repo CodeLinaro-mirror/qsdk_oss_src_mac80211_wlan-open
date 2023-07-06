@@ -11,6 +11,7 @@
 #include "debug.h"
 #include "hif.h"
 #include "coredump.h"
+#include "ahb.h"
 #include <linux/of.h>
 #include <linux/firmware.h>
 #include <net/sock.h>
@@ -5077,6 +5078,7 @@ int ath12k_qmi_load_bdf_qmi(struct ath12k_base *ab,
 	char filename[ATH12K_QMI_MAX_BDF_FILE_NAME_SIZE];
 	const struct firmware *fw_entry;
 	struct ath12k_board_data bd;
+	struct ath12k_ahb *ab_ahb;
 	u32 fw_size, file_type;
 	int ret = 0;
 	const u8 *tmp;
@@ -5124,11 +5126,23 @@ int ath12k_qmi_load_bdf_qmi(struct ath12k_base *ab,
 			snprintf(filename, sizeof(filename), "cal-%s-%s.bin",
 				 ath12k_bus_str(ab->hif.bus), dev_name(dev));
 			fw_entry = ath12k_core_firmware_request(ab, filename);
+
 			if (!IS_ERR(fw_entry))
 				goto success;
 
-			fw_entry = ath12k_core_firmware_request(ab,
-								ATH12K_DEFAULT_CAL_FILE);
+			if (ab->hif.bus == ATH12K_BUS_HYBRID) {
+				ab_ahb = ath12k_ab_to_ahb(ab);
+				snprintf(filename, sizeof(filename), "%s%d%s",
+					 ATH12K_QMI_DEF_CAL_FILE_PREFIX,
+					 ab_ahb->userpd_id - 1,
+					 ATH12K_QMI_DEF_CAL_FILE_SUFFIX);
+			} else {
+				snprintf(filename, sizeof(filename), "%s",
+					 ATH12K_DEFAULT_CAL_FILE);
+			}
+
+			fw_entry = ath12k_core_firmware_request(ab, filename);
+
 			if (IS_ERR(fw_entry)) {
 				ret = PTR_ERR(fw_entry);
 				ath12k_warn(ab,
