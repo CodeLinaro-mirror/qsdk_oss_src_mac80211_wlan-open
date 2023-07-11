@@ -265,6 +265,7 @@ struct ath12k_hw_params {
 	bool en_qdsslog;
 	bool support_fse;
 	bool supports_ap_ps;
+	bool support_ce_manual_poll;
 };
 
 struct ath12k_hw_ops {

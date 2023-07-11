@@ -743,9 +743,12 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 		if (ath12k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
 			continue;
 
-		ath12k_err(ab, "CE_id %d pipe_num %d %ums before\n",
+		ath12k_err(ab,"CE_id %d pipe_num %d %ums before ce_manual_poll_count %d "
+				"ce_last_manual_tasklet_schedule_ts %ums before\n",
 			   i, ce_pipe->pipe_num,
-			   jiffies_to_msecs(jiffies - ce_pipe->timestamp));
+			   jiffies_to_msecs(jiffies - ce_pipe->timestamp),
+			   ce_pipe->ce_manual_poll_count,
+			   jiffies_to_msecs(jiffies - ce_pipe->last_ce_manual_poll_ts));
 	}
 
 	ath12k_err(ab, "\nLast interrupt received for each group:\n");
