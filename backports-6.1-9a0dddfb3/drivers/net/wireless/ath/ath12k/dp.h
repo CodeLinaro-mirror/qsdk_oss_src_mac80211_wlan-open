@@ -307,6 +307,7 @@ struct ath12k_pdev_dp {
 
 #define DP_REO_QREF_NUM		GENMASK(31, 16)
 #define DP_MAX_PEER_ID		2047
+#define ATH12K_PEER_ID_INVALID	0x3FFF
 
 #define DP_TCL_ENCAP_TYPE_MAX	4
 #define DP_TCL_DESC_TYPE_MAX	2
