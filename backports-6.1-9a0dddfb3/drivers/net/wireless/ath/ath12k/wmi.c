@@ -2724,7 +2724,7 @@ void ath12k_wmi_start_scan_init(struct ath12k *ar,
 {
 	/* setup commonly used values */
 	arg->scan_req_id = 1;
-	arg->scan_priority = WMI_SCAN_PRIORITY_LOW;
+	arg->scan_priority = WMI_SCAN_PRIORITY_MEDIUM;
 	arg->dwell_time_active = 50;
 	arg->dwell_time_active_2g = 0;
 	arg->dwell_time_passive = 150;
