@@ -283,6 +283,7 @@ struct ath11k_hw_params {
 	u32 caldb_offset;
 	u32 qdss_offset;
 	u32 pageable_offset;
+	bool support_ce_manual_poll;
 };
 
 struct ath11k_hw_ops {

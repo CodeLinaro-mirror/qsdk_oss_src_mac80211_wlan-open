@@ -1197,6 +1197,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.m3_offset = ATH11K_QMI_IPQ9574_M3_OFFSET,
 		.caldb_offset = ATH11K_QMI_IPQ9574_CALDB_OFFSET,
 		.bdf_offset = ATH11K_QMI_IPQ9574_BDF_OFFSET,
+		.support_ce_manual_poll=true,
 	},
 };
 

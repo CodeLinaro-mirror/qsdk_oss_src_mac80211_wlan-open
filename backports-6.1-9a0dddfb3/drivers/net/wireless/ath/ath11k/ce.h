@@ -199,7 +199,9 @@ struct ath11k_ce_pipe {
 	struct ath11k_ce_ring *src_ring;
 	struct ath11k_ce_ring *dest_ring;
 	struct ath11k_ce_ring *status_ring;
-	u64 timestamp;
+	unsigned long timestamp;
+	u32 ce_manual_poll_count;
+	u64 last_ce_manual_poll_ts;
 
 	struct ce_tasklet_entry_ts tasklet_ts;
 	struct ce_tasklet_time tracker[CE_TIME_DURATION_MAX];

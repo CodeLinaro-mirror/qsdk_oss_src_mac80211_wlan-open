@@ -1445,10 +1445,12 @@ void ath11k_hal_dump_srng_stats(struct ath11k_base *ab)
 		if (ath11k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
 			continue;
 
-		ath11k_info(ab, "CE_id %d pipe_num %d %ums before, sched_delay_gt_500US %u, exec_delay_gt_500US %u\n",
+		ath11k_info(ab, "CE_id %d pipe_num %d %ums before, sched_delay_gt_500US %u, exec_delay_gt_500US %u ce_manual_poll_count %d ce_last_manual_poll_done %ums before\n",
 			   i, ce_pipe->pipe_num,
 			   jiffies_to_msecs(jiffies - ce_pipe->timestamp),
-			   ce_pipe->sched_delay_gt_500US, ce_pipe->exec_delay_gt_500US);
+			   ce_pipe->sched_delay_gt_500US, ce_pipe->exec_delay_gt_500US,
+			   ce_pipe->ce_manual_poll_count,
+			   jiffies_to_msecs(jiffies - ce_pipe->last_ce_manual_poll_ts));
 
 		for (j = 0; j < CE_TIME_DURATION_MAX; j++) {
 			last_sched = jiffies_to_msecs(jiffies -

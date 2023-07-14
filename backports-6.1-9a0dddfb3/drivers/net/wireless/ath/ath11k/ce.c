@@ -814,6 +814,31 @@ void ath11k_ce_poll_send_completed(struct ath11k_base *ab, u8 pipe_id)
 }
 EXPORT_SYMBOL(ath11k_ce_per_engine_service);
 
+#define ATH11K_CE_RING_FULL_THRESHOLD_TIME_MS 500
+#define ATH11K_MAX_CE_MANUAL_RETRY	3
+/* Ths function is called from ce_send path. Returns true If there is no buffer
+ * to send packet via HTC, then check if interrupts are not processed from that
+ * CE for last 500ms. If so, poll manually to reap available entries.
+ */
+static bool ath11k_is_manual_ce_poll_needed(struct ath11k_base *ab,
+					    struct ath11k_ce_pipe *pipe,
+					    struct hal_srng *srng)
+{
+	if (!ab->hw_params.support_ce_manual_poll)
+		return false;
+
+	if (time_after
+	    (jiffies, pipe->timestamp + msecs_to_jiffies(ATH11K_CE_RING_FULL_THRESHOLD_TIME_MS)) &&
+	    (srng->u.src_ring.hp == srng->u.src_ring.reap_hp) &&
+		 (srng->u.src_ring.reap_hp == *srng->u.src_ring.tp_addr)) {
+		pipe->ce_manual_poll_count++;
+		pipe->last_ce_manual_poll_ts = jiffies;
+		return true;
+	}
+
+	return false;
+}
+
 int ath11k_ce_send(struct ath11k_base *ab, struct sk_buff *skb, u8 pipe_id,
 		   u16 transfer_id)
 {
@@ -824,7 +849,7 @@ int ath11k_ce_send(struct ath11k_base *ab, struct sk_buff *skb, u8 pipe_id,
 	unsigned int nentries_mask;
 	int ret = 0;
 	u8 byte_swap_data = 0;
-	int num_used;
+	int num_used, retry = 0;
 
 	/* Check if some entries could be regained by handling tx completion if
 	 * the CE has interrupts disabled and the used entries is more than the
@@ -851,6 +876,7 @@ int ath11k_ce_send(struct ath11k_base *ab, struct sk_buff *skb, u8 pipe_id,
 	if (test_bit(ATH11K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return -ESHUTDOWN;
 
+retry:
 	spin_lock_bh(&ab->ce.ce_lock);
 
 	write_index = pipe->src_ring->write_index;
@@ -871,8 +897,17 @@ int ath11k_ce_send(struct ath11k_base *ab, struct sk_buff *skb, u8 pipe_id,
 	desc = ath11k_hal_srng_src_get_next_reaped(ab, srng);
 	if (!desc) {
 		ath11k_hal_srng_access_end(ab, srng);
-		ret = -ENOBUFS;
-		goto err_unlock;
+		if (retry++ < ATH11K_MAX_CE_MANUAL_RETRY &&
+		    ath11k_is_manual_ce_poll_needed(ab, pipe, srng)) {
+			spin_unlock_bh(&srng->lock);
+			spin_unlock_bh(&ab->ce.ce_lock);
+
+			ath11k_ce_tx_process_cb(pipe);
+			goto retry;
+		} else {
+			ret = -ENOBUFS;
+			goto err_unlock;
+		}
 	}
 
 	if (pipe->attr_flags & CE_ATTR_BYTE_SWAP_DATA)
