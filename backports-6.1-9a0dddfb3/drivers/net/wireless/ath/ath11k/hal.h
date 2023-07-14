@@ -981,4 +981,5 @@ int ath11k_hal_srng_update_shadow_config(struct ath11k_base *ab,
 void ath11k_hal_srng_shadow_config(struct ath11k_base *ab);
 void ath11k_hal_srng_shadow_update_hp_tp(struct ath11k_base *ab,
 					 struct hal_srng *srng);
+ssize_t ath11k_debugfs_hal_dump_srng_stats(struct ath11k_base *ab, char *buf, int size);
 #endif

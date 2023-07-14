@@ -1427,6 +1427,70 @@ void ath11k_hal_srng_deinit(struct ath11k_base *ab)
 }
 EXPORT_SYMBOL(ath11k_hal_srng_deinit);
 
+ssize_t ath11k_debugfs_hal_dump_srng_stats(struct ath11k_base *ab, char *buf, int size)
+{
+	struct hal_srng *srng;
+	struct ath11k_ext_irq_grp *irq_grp;
+	struct ath11k_ce_pipe *ce_pipe;
+	unsigned int len = 0;
+	int i;
+
+	len += scnprintf(buf + len, size - len, "Last interrupt received for each CE:\n");
+	for (i = 0; i < ab->hw_params.ce_count; i++) {
+		ce_pipe = &ab->ce.ce_pipe[i];
+
+		if (ath11k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
+			continue;
+
+		spin_lock_bh(&ab->ce.ce_lock);
+		len += scnprintf(buf + len, size - len,
+				"CE_id %d pipe_num %d %ums before ce_manual_poll_count %d ce_last_manual_tasklet_schedule_ts %ums before\n",
+			   i, ce_pipe->pipe_num,
+			   jiffies_to_msecs(jiffies - ce_pipe->timestamp),
+			   ce_pipe->ce_manual_poll_count,
+			   jiffies_to_msecs(jiffies - ce_pipe->last_ce_manual_poll_ts));
+		spin_unlock_bh(&ab->ce.ce_lock);
+	}
+
+	len += scnprintf(buf + len, size - len, "\nLast interrupt received for each group:\n");
+	for (i = 0; i < ATH11K_EXT_IRQ_GRP_NUM_MAX; i++) {
+		irq_grp = &ab->ext_irq_grp[i];
+		len += scnprintf(buf + len, size - len, "group_id %d %ums before\n",
+			   irq_grp->grp_id,
+			   jiffies_to_msecs(jiffies - irq_grp->timestamp));
+	}
+
+	for (i = 0; i < HAL_SRNG_RING_ID_MAX; i++) {
+		srng = &ab->hal.srng_list[i];
+
+		spin_lock_bh(&srng->lock);
+		if (!srng->initialized) {
+			spin_unlock_bh(&srng->lock);
+			continue;
+		}
+
+		if (srng->ring_dir == HAL_SRNG_DIR_SRC)
+			len += scnprintf(buf + len, size - len,
+				   "src srng id %u hp %u, reap_hp %u, cur tp %u, cached tp %u last tp %u napi processed before %ums\n",
+				   srng->ring_id, srng->u.src_ring.hp,
+				   srng->u.src_ring.reap_hp,
+				   *srng->u.src_ring.tp_addr, srng->u.src_ring.cached_tp,
+				   srng->u.src_ring.last_tp,
+				   jiffies_to_msecs(jiffies - srng->timestamp));
+		else if (srng->ring_dir == HAL_SRNG_DIR_DST)
+			len += scnprintf(buf + len, size - len,
+				   "dst srng id %u tp %u, cur hp %u, cached hp %u last hp %u napi processed before %ums\n",
+				   srng->ring_id, srng->u.dst_ring.tp,
+				   *srng->u.dst_ring.hp_addr,
+				   srng->u.dst_ring.cached_hp,
+				   srng->u.dst_ring.last_hp,
+				   jiffies_to_msecs(jiffies - srng->timestamp));
+		spin_unlock_bh(&srng->lock);
+	}
+
+	return len;
+}
+
 void ath11k_hal_dump_srng_stats(struct ath11k_base *ab)
 {
 	struct hal_srng *srng;

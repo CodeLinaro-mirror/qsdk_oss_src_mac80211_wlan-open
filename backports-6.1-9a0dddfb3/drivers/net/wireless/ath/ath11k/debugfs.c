@@ -1949,6 +1949,35 @@ static const struct file_operations fops_ce_latency_stats = {
 	.read = ath11k_read_ce_latency_stats,
 };
 
+static ssize_t ath11k_debugfs_hal_dump_srng_stats_read(struct file *file,
+						char __user *user_buf,
+						size_t count, loff_t *ppos)
+{
+	struct ath11k_base *ab = file->private_data;
+	int len = 0, retval;
+	const int size = 4096 * 6;
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len = ath11k_debugfs_hal_dump_srng_stats(ab, buf + len, size - len);
+	if (len > size)
+		len = size;
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_dump_hal_stats = {
+	.read = ath11k_debugfs_hal_dump_srng_stats_read,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 {
 	if (test_bit(ATH11K_FLAG_REGISTERED, &ab->dev_flags))
@@ -1982,6 +2011,9 @@ int ath11k_debugfs_pdev_create(struct ath11k_base *ab)
 
 	debugfs_create_file("rx_hash", 0600, ab->debugfs_soc, ab,
 			    &fops_soc_rx_hash);
+
+	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc, ab,
+			    &fops_dump_hal_stats);
 
 	return 0;
 }
