@@ -2432,6 +2432,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 	init_completion(&ab->htc_suspend);
 	init_completion(&ab->restart_completed);
 	init_completion(&ab->wow.wakeup_completed);
+	init_completion(&ab->rddm_reset_done);
 
 	ab->dev = dev;
 	ab->hif.bus = bus;

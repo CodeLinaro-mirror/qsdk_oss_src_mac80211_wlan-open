@@ -158,6 +158,14 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 			break;
 		}
 
+		/* In-case of rddm for mhi soc reset */
+		if(test_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state)) {
+			ath12k_dbg(ab, ATH12K_DBG_BOOT, "Triggering RDDM from mhi soc reset\n");
+			clear_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
+			complete(&ab->rddm_reset_done);
+			return;
+		}
+
 		if (!(test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags)))
 			queue_work(ab->workqueue_aux, &ab->reset_work);
 		break;
@@ -294,6 +302,12 @@ void ath12k_mhi_unregister(struct ath12k_pci *ab_pci)
 	ab_pci->mhi_ctrl = NULL;
 }
 
+/*
+ *TODO: The enum values of ath12k_mhi_state reperesent the set bits
+ *in mhi_state bitmap and printing the state based on that is wrong.
+ *More over there can be more than one bit set at a time.
+ */
+
 static char *ath12k_mhi_state_to_str(enum ath12k_mhi_state mhi_state)
 {
 	switch (mhi_state) {
@@ -356,6 +370,9 @@ static void ath12k_mhi_set_state_bit(struct ath12k_pci *ab_pci,
 	case ATH12K_MHI_RDDM_DONE:
 		set_bit(ATH12K_MHI_RDDM_DONE, &ab_pci->mhi_state);
 		break;
+	case ATH12K_MHI_SOC_RESET:
+		set_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
+                break;
 	default:
 		ath12k_err(ab, "unhandled mhi state (%d)\n", mhi_state);
 	}
@@ -399,6 +416,8 @@ static int ath12k_mhi_check_state_bit(struct ath12k_pci *ab_pci,
 		break;
 	case ATH12K_MHI_RDDM_DONE:
 		return 0;
+	case ATH12K_MHI_SOC_RESET:
+		return 0;
 	default:
 		ath12k_err(ab, "unhandled mhi state: %s(%d)\n",
 			   ath12k_mhi_state_to_str(mhi_state), mhi_state);
@@ -411,7 +430,7 @@ static int ath12k_mhi_check_state_bit(struct ath12k_pci *ab_pci,
 	return -EINVAL;
 }
 
-static int ath12k_mhi_set_state(struct ath12k_pci *ab_pci,
+int ath12k_mhi_set_state(struct ath12k_pci *ab_pci,
 				enum ath12k_mhi_state mhi_state)
 {
 	struct ath12k_base *ab = ab_pci->ab;
@@ -470,6 +489,9 @@ static int ath12k_mhi_set_state(struct ath12k_pci *ab_pci,
 		ret = mhi_force_rddm_mode(ab_pci->mhi_ctrl);
 		break;
 	case ATH12K_MHI_RDDM_DONE:
+		break;
+	case ATH12K_MHI_SOC_RESET:
+		mhi_soc_reset(ab_pci->mhi_ctrl);
 		break;
 	default:
 		ath12k_err(ab, "unhandled MHI state (%d)\n", mhi_state);

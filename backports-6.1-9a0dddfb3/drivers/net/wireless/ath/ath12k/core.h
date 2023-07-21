@@ -1133,6 +1133,7 @@ struct ath12k_base {
 	} fw;
 
 	struct completion restart_completed;
+	struct completion rddm_reset_done;
 
 #ifdef CONFIG_ACPI
 
