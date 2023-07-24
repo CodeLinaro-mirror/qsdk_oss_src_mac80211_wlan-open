@@ -9215,7 +9215,7 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 						  struct sk_buff *skb)
 {
 	struct ath12k *ar = arvif->ar;
-	struct ath12k_skb_cb *skb_cb;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_mgmt *mgmt;
 	struct ieee80211_bss_conf *link_conf;
@@ -9227,8 +9227,10 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 	u8 action_code, dialog_token;
 
 	/* make sure category field is present */
-	if (skb->len < IEEE80211_MIN_ACTION_SIZE)
+	if (skb->len < IEEE80211_MIN_ACTION_SIZE) {
+		skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
 		return -EINVAL;
+	}
 
 	has_protected = ieee80211_has_protected(hdr->frame_control);
 
@@ -9236,8 +9238,11 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 	 * we can't put in data in this case
 	 */
 	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags) &&
-	    has_protected)
+	    has_protected) {
+	    	skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
 		return -EOPNOTSUPP;
+	}
+
 
 	mgmt = (struct ieee80211_mgmt *)hdr;
 	buf = (u8 *)&mgmt->u.action;
@@ -9246,8 +9251,6 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 	 * many bytes if it is there
 	 */
 	if (has_protected) {
-		skb_cb = ATH12K_SKB_CB(skb);
-
 		switch (skb_cb->cipher) {
 		/* Currently only for CCMP cipher suite, we asked for it via
 		 * setting %IEEE80211_KEY_FLAG_GENERATE_IV_MGMT in key. Check
@@ -9267,6 +9270,7 @@ static int ath12k_mac_mgmt_action_frame_fill_elem(struct ath12k_link_vif *arvif,
 			iv_len = 0;
 			break;
 		default:
+			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
 			return -EINVAL;
 		}
 
@@ -9336,6 +9340,7 @@ check_rm_action_frame:
 			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 				   "RRM: Link Measurement Req dialog_token=%u, cur_tx_power=%d, max_tx_power=%d\n",
 				   dialog_token, cur_tx_power, max_tx_power);
+			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
 			break;
 		case WLAN_ACTION_RADIO_MSR_LINK_MSR_REP:
 			/* Variable Len Format:
@@ -9351,6 +9356,7 @@ check_rm_action_frame:
 			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 				   "RRM: Link Measurement Resp dialog_token=%u, cur_tx_power=%d\n",
 				   dialog_token, cur_tx_power);
+			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
 			break;
 		default:
 			return -EINVAL;
@@ -9358,6 +9364,7 @@ check_rm_action_frame:
 		break;
 	default:
 		/* nothing to fill */
+		skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
 		return 0;
 	}
 
@@ -9517,8 +9524,7 @@ static bool ath12k_mac_is_mgmt_link_agnostic(struct sk_buff *skb)
 	struct ieee80211_mgmt *mgmt;
 	mgmt = (struct ieee80211_mgmt *)skb->data;
 
-	if (ieee80211_is_deauth(mgmt->frame_control) ||
-		ieee80211_is_disassoc(mgmt->frame_control))
+	if (ieee80211_is_action(mgmt->frame_control))
 		return true;
 
 	/* TODO Extend as per requirement */
@@ -9628,9 +9634,9 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	 */
 	if (ath12k_mac_is_mgmt_link_agnostic(skb)) {
 		ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
-		ath12k_dbg(NULL, ATH12K_DBG_MGMT,
-			   "Sending Mgmt Frame (fc %x) as link agnostic to ML STA %pM \n",
-			   hdr->frame_control, sta->addr);
+		/* For action frames this will be reset if not needed
+		 * later based on action category.
+		 */
 	}
 
 	return link;
