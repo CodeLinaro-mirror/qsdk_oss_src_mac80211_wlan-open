@@ -1461,6 +1461,8 @@ struct ath11k_base {
 	struct mutex base_ast_lock;
 	struct work_struct wmi_ast_work;
 	struct list_head wmi_ast_list;
+	struct completion pm_restart;
+	bool pm_suspend;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -1697,6 +1699,7 @@ int ath11k_coredump_mhi_update_bhie_table(struct ath11k_base *ab, void *va,
 					  phys_addr_t pa, size_t size);
 const struct firmware *ath11k_core_firmware_request(struct ath11k_base *ab,
 						    const char *filename);
+int ath11k_wait_for_suspend(struct ath11k *ar, u32 suspend_opt);
 void ath11k_core_wait_dump_collect(struct ath11k_base *ab);
 
 static inline const char *ath11k_scan_state_str(enum ath11k_scan_state state)

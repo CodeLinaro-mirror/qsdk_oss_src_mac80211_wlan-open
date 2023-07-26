@@ -1027,7 +1027,8 @@ static void ath11k_pci_shutdown(struct pci_dev *pdev)
 	struct ath11k_pci *ab_pci = ath11k_pci_priv(ab);
 
 	ath11k_pci_set_irq_affinity_hint(ab_pci, NULL);
-	ath11k_pci_power_down(ab);
+	if (!ab->pm_suspend)
+		ath11k_pci_power_down(ab);
 }
 
 static __maybe_unused int ath11k_pci_pm_suspend(struct device *dev)

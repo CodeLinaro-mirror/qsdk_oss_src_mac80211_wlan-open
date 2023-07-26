@@ -1949,9 +1949,30 @@ success:
 	return 0;
 }
 
+int ath11k_wait_for_suspend(struct ath11k *ar, u32 suspend_opt)
+{
+	int ret;
+	unsigned long time_left;
+
+	ret = ath11k_wmi_pdev_suspend(ar, suspend_opt, ar->pdev->pdev_id);
+	if (ret) {
+		ath11k_warn(ar->ab, "failed to suspend target (%d)\n", ret);
+		return ret;
+	}
+
+	time_left = wait_for_completion_timeout(&ar->ab->htc_suspend, ATH11K_PM_TIMEOUT);
+
+	if (!time_left) {
+		ath11k_warn(ar->ab, "suspend time out - target pause event never came\n");
+		return -ETIMEDOUT;
+	}
+
+	return ret;
+}
+
 static void ath11k_core_stop(struct ath11k_base *ab)
 {
-	if (!test_bit(ATH11K_FLAG_CRASH_FLUSH, &ab->dev_flags))
+	if (!test_bit(ATH11K_FLAG_CRASH_FLUSH, &ab->dev_flags) && !ab->pm_suspend)
 		ath11k_qmi_firmware_stop(ab);
 
 	ath11k_hif_stop(ab);
@@ -2021,16 +2042,18 @@ static int ath11k_core_pdev_create(struct ath11k_base *ab)
 		goto err_pdev_debug;
 	}
 
-	ret = ath11k_nss_setup(ab);
-	if (ret) {
-		ath11k_err(ab, "failed to setup nss driver interface%d", ret);
-		goto err_dp_pdev_free;
-	}
+	if (!ab->pm_suspend) {
+		ret = ath11k_nss_setup(ab);
+		if (ret) {
+			ath11k_err(ab, "failed to setup nss driver interface%d", ret);
+			goto err_dp_pdev_free;
+		}
 
-	ret = ath11k_mac_register(ab);
-	if (ret) {
-		ath11k_err(ab, "failed register the radio with mac80211: %d\n", ret);
-		goto err_nss_tear;
+		ret = ath11k_mac_register(ab);
+		if (ret) {
+			ath11k_err(ab, "failed register the radio with mac80211: %d\n", ret);
+			goto err_nss_tear;
+		}
 	}
 
 	ret = ath11k_thermal_register(ab);
@@ -2174,11 +2197,13 @@ static int ath11k_core_start(struct ath11k_base *ab)
 		goto err_hif_stop;
 	}
 
-	ret = ath11k_mac_allocate(ab);
-	if (ret) {
-		ath11k_err(ab, "failed to create new hw device with mac80211 :%d\n",
-			   ret);
-		goto err_hif_stop;
+	if (!ab->pm_suspend) {
+		ret = ath11k_mac_allocate(ab);
+		if (ret) {
+			ath11k_err(ab, "failed to create new hw device with mac80211 :%d\n",
+				   ret);
+			goto err_hif_stop;
+		}
 	}
 
 	ath11k_dp_pdev_pre_alloc(ab);
@@ -2569,7 +2594,7 @@ void ath11k_core_pre_reconfigure_recovery(struct ath11k_base *ab)
 		pdev = &ab->pdevs[i];
 		ar = pdev->ar;
 		if (!ar || ar->state == ATH11K_STATE_OFF ||
-		    ar->state == ATH11K_STATE_FTM)
+		    ar->state == ATH11K_STATE_FTM || ab->pm_suspend)
 			continue;
 
 		list_for_each_entry(arvif, &ar->arvifs, list)
@@ -2629,7 +2654,8 @@ static void ath11k_core_post_reconfigure_recovery(struct ath11k_base *ab)
 		case ATH11K_STATE_ON:
 			ar->state = ATH11K_STATE_RESTARTING;
 			ath11k_core_halt(ar);
-			ieee80211_restart_hw(ar->hw);
+			if (!ab->pm_suspend)
+				ieee80211_restart_hw(ar->hw);
 			break;
 		case ATH11K_STATE_OFF:
 			ath11k_warn(ab,
@@ -2672,6 +2698,9 @@ static void ath11k_core_restart(struct work_struct *work)
 
 	if (!ab->is_reset)
 		ath11k_core_post_reconfigure_recovery(ab);
+
+	if (ab->pm_suspend)
+		complete(&ab->pm_restart);
 }
 
 static void ath11k_core_reset(struct work_struct *work)
@@ -2834,7 +2863,9 @@ void ath11k_core_deinit(struct ath11k_base *ab)
 
 	mutex_unlock(&ab->core_lock);
 
-	ath11k_hif_power_down(ab);
+	if (!ab->pm_suspend)
+		ath11k_hif_power_down(ab);
+
 	ath11k_mac_destroy(ab);
 	ath11k_core_soc_destroy(ab);
 
@@ -2886,6 +2917,7 @@ struct ath11k_base *ath11k_core_alloc(struct device *dev, size_t priv_size,
 	init_completion(&ab->reset_complete);
 	init_completion(&ab->reconfigure_complete);
 	init_completion(&ab->recovery_start);
+	init_completion(&ab->pm_restart);
 
 	INIT_LIST_HEAD(&ab->peers);
 	INIT_LIST_HEAD(&ab->neighbor_peers);

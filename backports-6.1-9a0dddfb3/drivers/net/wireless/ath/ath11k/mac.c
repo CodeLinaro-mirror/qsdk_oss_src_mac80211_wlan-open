@@ -7570,6 +7570,22 @@ static int ath11k_mac_op_start(struct ieee80211_hw *hw)
 
 	switch (ar->state) {
 	case ATH11K_STATE_OFF:
+		if (ab->pm_suspend) {
+			mutex_unlock(&ar->conf_mutex);
+			ath11k_hif_power_up(ab);
+
+			if (!wait_for_completion_timeout(&ab->pm_restart,
+							 ATH11K_PM_RESTART_TIMEOUT)) {
+				ath11k_warn(ar->ab,
+					    "Timeout in receiving for pm restart\n");
+				ar->state = ATH11K_STATE_OFF;
+				return -ETIMEDOUT;
+			}
+
+			mutex_lock(&ar->conf_mutex);
+			ab->pm_suspend = false;
+		}
+
 		ar->state = ATH11K_STATE_ON;
 		break;
 	case ATH11K_STATE_RESTARTING:
@@ -7749,8 +7765,18 @@ static void ath11k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 			   ret);
 
 	clear_bit(ATH11K_CAC_RUNNING, &ar->dev_flags);
-	ar->state = ATH11K_STATE_OFF;
-	ar->ap_ps_state = ATH11K_AP_PS_STATE_OFF;
+	if (ar->state != ATH11K_STATE_OFF) {
+		ath11k_wait_for_suspend(ar, WMI_PDEV_SUSPEND_AND_DISABLE_INTR);
+
+		if (!test_bit(ATH11K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
+			ath11k_qmi_firmware_stop(ar->ab);
+
+		ath11k_hif_power_down(ar->ab);
+		ath11k_qmi_free_resource(ar->ab);
+		ar->ab->pm_suspend = true;
+		ar->state = ATH11K_STATE_OFF;
+		ar->ap_ps_state = ATH11K_AP_PS_STATE_OFF;
+	}
 	mutex_unlock(&ar->conf_mutex);
 
 	cancel_delayed_work_sync(&ar->scan.timeout);

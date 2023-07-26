@@ -127,6 +127,9 @@ struct ath11k_generic_iter {
 #define ATH11K_OBSS_PD_SRG_EN				BIT(30)
 #define ATH11K_OBSS_PD_NON_SRG_EN			BIT(31)
 
+#define ATH11K_PM_TIMEOUT	(3 * HZ)
+#define ATH11K_PM_RESTART_TIMEOUT	(10 * HZ)
+
 extern const struct htt_rx_ring_tlv_filter ath11k_mac_mon_status_filter_default;
 
 #define ATH11K_SCAN_11D_INTERVAL		600000
