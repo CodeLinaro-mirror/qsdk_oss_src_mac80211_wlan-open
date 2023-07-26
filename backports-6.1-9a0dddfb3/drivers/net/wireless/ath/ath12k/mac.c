@@ -11683,6 +11683,10 @@ ath12k_mac_process_update_vif_chan(struct ath12k *ar,
 {
 	struct ath12k_base *ab = ar->ab;
 
+	/* should not happen */
+	if (WARN_ON(n_vifs > TARGET_NUM_VDEVS))
+		return;
+
 	if (ath12k_wmi_is_mvr_supported(ab))
 		ath12k_mac_update_vif_chan_mvr(ar, vifs, n_vifs);
 	else
@@ -11949,24 +11953,73 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 				 int n_vifs,
 				 enum ieee80211_chanctx_switch_mode mode)
 {
-	struct ath12k *ar;
+	//struct ath12k_hw *ah = hw->priv;
+	struct ath12k *curr_ar, *new_ar, *ar;
+	struct ieee80211_chanctx_conf *curr_ctx;
+	int i, ret = 0, next_ctx_idx = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	ar = ath12k_get_ar_by_ctx(hw, vifs->old_ctx);
-	if (!ar)
-		return -EINVAL;
+	/* TODO Switching a vif between two radios require deleting of vdev
+	 * in its current ar and creating a vdev and applying its cached params
+	 * to the new vdev in ar. So instead of returning error, handle it?
+	 */
+	for (i = 0; i < n_vifs; i++) {
+		if (vifs[i].old_ctx->def.chan->band !=
+		    vifs[i].new_ctx->def.chan->band) {
+			WARN_ON(1);
+			ret = -EINVAL;
+			break;
+		}
 
-	/* Switching channels across radio is not allowed */
-	if (ar != ath12k_get_ar_by_ctx(hw, vifs->new_ctx))
-		return -EINVAL;
+		curr_ar = ath12k_get_ar_by_ctx(hw, vifs[i].old_ctx);
+		new_ar = ath12k_get_ar_by_ctx(hw, vifs[i].new_ctx);
+		if (!curr_ar || !new_ar) {
+			ath12k_err(NULL,
+				   "unable to determine device for the passed channel ctx");
+			ath12k_err(NULL,
+				   "Old freq %d MHz (device %s) to new freq %d MHz (device %s)\n",
+				   vifs[i].old_ctx->def.chan->center_freq,
+				   curr_ar ? "valid" : "invalid",
+				   vifs[i].new_ctx->def.chan->center_freq,
+				   new_ar ? "valid" : "invalid");
+			ret = -EINVAL;
+			break;
+		}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-		   "mac chanctx switch n_vifs %d mode %d\n",
-		   n_vifs, mode);
-	ath12k_mac_process_update_vif_chan(ar, vifs, n_vifs);
+		/* Switching a vif between two radios is not allowed */
+		if (curr_ar != new_ar) {
+			ath12k_dbg(curr_ar->ab, ATH12K_DBG_MAC,
+				   "mac chanctx switch to another radio not supported.");
+			ret = -EOPNOTSUPP;
+			break;
+		}
+	}
 
-	return 0;
+        if (ret)
+                return ret;
+
+	/* List of vifs contains data grouped by the band, example: All 2 GHz vifs
+	 * ready to be switched to new context followed by all 5 GHz. The order of
+	 * bands is not fixed. Send MVR when the loop processes the last vif
+	 * for a particular band.
+	 */
+	for (i = 0; i < n_vifs; i++) {
+		curr_ctx = vifs[i].old_ctx;
+		ar = ath12k_get_ar_by_ctx(hw, curr_ctx);
+
+		if ((i + 1 < n_vifs) && (vifs[i + 1].old_ctx == curr_ctx))
+			continue;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "mac chanctx switch n_vifs %d mode %d\n",
+			   i - next_ctx_idx + 1, mode);
+		ath12k_mac_process_update_vif_chan(ar, vifs + next_ctx_idx,
+						   i - next_ctx_idx + 1);
+
+		next_ctx_idx = i + 1;
+	}
+	return ret;
 }
 EXPORT_SYMBOL(ath12k_mac_op_switch_vif_chanctx);
 
