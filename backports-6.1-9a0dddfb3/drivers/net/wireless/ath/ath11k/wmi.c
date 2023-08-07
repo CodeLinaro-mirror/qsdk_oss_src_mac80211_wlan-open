@@ -7771,7 +7771,6 @@ static int ath11k_wmi_tlv_fw_stats_data_parse(struct ath11k_base *ab,
 		}
 		spin_unlock_bh(&ar->data_lock);
 	}
-	rcu_read_unlock();
 
 	for (i = 0; i < ev->num_vdev_stats; i++) {
 		const struct wmi_vdev_stats *src;
