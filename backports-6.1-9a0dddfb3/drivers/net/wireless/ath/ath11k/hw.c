@@ -900,6 +900,17 @@ static u32 ath11k_hw_wcn6750_get_tcl_ring_selector(struct sk_buff *skb)
 	return skb_get_hash(skb);
 }
 
+static u32 ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len(struct hal_rx_mpdu_info *mpdu_info)
+{
+	return FIELD_GET(HAL_RX_MPDU_INFO_INFO1_MPDU_LEN,
+			 __le32_to_cpu(mpdu_info->u.ipq8074.info1));
+}
+
+static u32 ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_len(struct hal_rx_mpdu_info *mpdu_info)
+{
+	return FIELD_GET(HAL_RX_MPDU_INFO_INFO1_MPDU_LEN,
+			 __le32_to_cpu(mpdu_info->u.qcn9074.info1));
+}
 const struct ath11k_hw_ops ipq8074_ops = {
 	.get_hw_mac_from_pdev_id = ath11k_hw_ipq8074_mac_from_pdev_id,
 	.wmi_init_config = ath11k_init_wmi_config_ipq8074,
@@ -938,6 +949,7 @@ const struct ath11k_hw_ops ipq8074_ops = {
 	.rx_desc_mac_addr2_valid = ath11k_hw_ipq8074_rx_desc_mac_addr2_valid,
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq8074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
+	.rx_desc_get_hal_mpdu_len = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len,
 };
 
 const struct ath11k_hw_ops ipq6018_ops = {
@@ -978,6 +990,7 @@ const struct ath11k_hw_ops ipq6018_ops = {
 	.rx_desc_mac_addr2_valid = ath11k_hw_ipq8074_rx_desc_mac_addr2_valid,
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq8074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
+	.rx_desc_get_hal_mpdu_len = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len,
 };
 
 const struct ath11k_hw_ops qca6390_ops = {
@@ -1018,6 +1031,7 @@ const struct ath11k_hw_ops qca6390_ops = {
 	.rx_desc_mac_addr2_valid = ath11k_hw_ipq8074_rx_desc_mac_addr2_valid,
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq8074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
+	.rx_desc_get_hal_mpdu_len = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len,
 };
 
 const struct ath11k_hw_ops qcn9074_ops = {
@@ -1058,6 +1072,7 @@ const struct ath11k_hw_ops qcn9074_ops = {
 	.rx_desc_mac_addr2_valid = ath11k_hw_ipq9074_rx_desc_mac_addr2_valid,
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq9074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
+	.rx_desc_get_hal_mpdu_len = ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_len,
 };
 
 const struct ath11k_hw_ops wcn6855_ops = {
@@ -1098,6 +1113,7 @@ const struct ath11k_hw_ops wcn6855_ops = {
 	.rx_desc_mac_addr2_valid = ath11k_hw_wcn6855_rx_desc_mac_addr2_valid,
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_wcn6855_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
+	.rx_desc_get_hal_mpdu_len = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len,
 };
 
 const struct ath11k_hw_ops wcn6750_ops = {
@@ -1138,6 +1154,7 @@ const struct ath11k_hw_ops wcn6750_ops = {
 	.rx_desc_mac_addr2_valid = ath11k_hw_ipq9074_rx_desc_mac_addr2_valid,
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq9074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_wcn6750_get_tcl_ring_selector,
+	.rx_desc_set_msdu_len = ath11k_hw_qcn9074_rx_desc_set_msdu_len,
 };
 
 /* IPQ5018 hw ops is similar to QCN9074 except for the dest ring remap */
@@ -1179,6 +1196,7 @@ const struct ath11k_hw_ops ipq5018_ops = {
 	.rx_desc_mac_addr2_valid = ath11k_hw_ipq9074_rx_desc_mac_addr2_valid,
 	.rx_desc_mpdu_start_addr2 = ath11k_hw_ipq9074_rx_desc_mpdu_start_addr2,
 	.get_ring_selector = ath11k_hw_ipq8074_get_tcl_ring_selector,
+	.rx_desc_get_hal_mpdu_len = ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_len,
 };
 
 #define ATH11K_TX_RING_MASK_0 BIT(0)

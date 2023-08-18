@@ -42,6 +42,25 @@ struct ath11k_dp_rfc1042_hdr {
 	__be16 snap_type;
 } __packed;
 
+static inline u32 ath11k_he_gi_to_nl80211_he_gi(u8 sgi)
+{
+        u32 ret = 0;
+
+        switch (sgi) {
+        case RX_MSDU_START_SGI_0_8_US:
+                ret = NL80211_RATE_INFO_HE_GI_0_8;
+                break;
+        case RX_MSDU_START_SGI_1_6_US:
+                ret = NL80211_RATE_INFO_HE_GI_1_6;
+                break;
+        case RX_MSDU_START_SGI_3_2_US:
+                ret = NL80211_RATE_INFO_HE_GI_3_2;
+                break;
+        }
+
+        return ret;
+}
+
 int ath11k_dp_rx_ampdu_start(struct ath11k *ar,
 			     struct ieee80211_ampdu_params *params);
 int ath11k_dp_rx_ampdu_stop(struct ath11k *ar,

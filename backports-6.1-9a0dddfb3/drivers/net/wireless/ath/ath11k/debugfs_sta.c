@@ -11,6 +11,7 @@
 #include "peer.h"
 #include "debug.h"
 #include "dp_tx.h"
+#include "dp_rx.h"
 #include "debugfs_htt_stats.h"
 
 void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
@@ -248,8 +249,14 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 	struct ath11k *ar = arsta->arvif->ar;
 	struct ath11k_rx_peer_stats *rx_stats = arsta->rx_stats;
 	int len = 0, i, retval = 0;
-	const int size = 4096;
+	const int size = 4 * 4096;
 	char *buf;
+	int he_rates_avail = (rx_stats->pream_cnt[HAL_RX_PREAMBLE_11AX] > 1) ? 1 : 0;
+	int rate_table_len = he_rates_avail ? ATH11K_RX_RATE_TABLE_11AX_NUM :
+					      ATH11K_RX_RATE_TABLE_NUM;
+	char *legacy_rate_str[] = {"1Mbps", "2Mbps", "5.5Mbps", "6Mbps",
+				   "9Mbps", "11Mbps", "12Mbps", "18Mbps",
+				   "24Mbps", "36 Mbps", "48Mbps", "54Mbps"};
 
 	if (!rx_stats)
 		return -ENOENT;
@@ -280,14 +287,6 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 			 rx_stats->num_mpdu_fcs_ok);
 	len += scnprintf(buf + len, size - len, "Num of MPDUs with FCS error: %llu\n",
 			 rx_stats->num_mpdu_fcs_err);
-	len += scnprintf(buf + len, size - len,
-			 "GI: 0.8us %llu 0.4us %llu 1.6us %llu 3.2us %llu\n",
-			 rx_stats->gi_count[0], rx_stats->gi_count[1],
-			 rx_stats->gi_count[2], rx_stats->gi_count[3]);
-	len += scnprintf(buf + len, size - len,
-			 "BW: 20Mhz %llu 40Mhz %llu 80Mhz %llu 160Mhz %llu\n",
-			 rx_stats->bw_count[0], rx_stats->bw_count[1],
-			 rx_stats->bw_count[2], rx_stats->bw_count[3]);
 	len += scnprintf(buf + len, size - len, "BCC %llu LDPC %llu\n",
 			 rx_stats->coding_count[0], rx_stats->coding_count[1]);
 	len += scnprintf(buf + len, size - len,
@@ -302,14 +301,96 @@ static ssize_t ath11k_dbg_sta_dump_rx_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "TID(0-15) Legacy TID(16):");
 	for (i = 0; i <= IEEE80211_NUM_TIDS; i++)
 		len += scnprintf(buf + len, size - len, "%llu ", rx_stats->tid_count[i]);
-	len += scnprintf(buf + len, size - len, "\nMCS(0-11) Legacy MCS(12):");
-	for (i = 0; i < HAL_RX_MAX_MCS + 1; i++)
-		len += scnprintf(buf + len, size - len, "%llu ", rx_stats->mcs_count[i]);
-	len += scnprintf(buf + len, size - len, "\nNSS(1-8):");
-	for (i = 0; i < HAL_RX_MAX_NSS; i++)
-		len += scnprintf(buf + len, size - len, "%llu ", rx_stats->nss_count[i]);
-	len += scnprintf(buf + len, size - len, "\nRX Duration:%llu ",
+	len += scnprintf(buf + len, size - len, "\nRX Duration:%llu\n",
 			 rx_stats->rx_duration);
+
+	len += scnprintf(buf + len, size - len, "\nRX success packet stats:\n");
+	len += scnprintf(buf + len, size - len, "\nHE packet stats:\n");
+	for (i = 0; i <= HAL_RX_MAX_MCS_HE; i++)
+		len += scnprintf(buf + len, size - len, "MCS %d: %llu%s", i,
+				 rx_stats->pkt_stats.he_mcs_count[i],
+				 (i + 1) % 6 ? "\t" : "\n");
+	len += scnprintf(buf + len, size - len, "\nVHT packet stats:\n");
+	for (i = 0; i <= HAL_RX_MAX_MCS_VHT; i++)
+		len += scnprintf(buf + len, size - len, "MCS %d: %llu%s", i,
+				 rx_stats->pkt_stats.vht_mcs_count[i],
+				 (i + 1) % 5 ? "\t" : "\n");
+	len += scnprintf(buf + len, size - len, "\nHT packet stats:\n");
+	for (i = 0; i <= HAL_RX_MAX_MCS_HT; i++)
+		len += scnprintf(buf + len, size - len, "MCS %d: %llu%s", i,
+				 rx_stats->pkt_stats.ht_mcs_count[i],
+				 (i + 1) % 8 ? "\t" : "\n");
+	len += scnprintf(buf + len, size - len, "\nLegacy rate packet stats:\n");
+	for (i = 0; i < HAL_RX_MAX_NUM_LEGACY_RATES; i++)
+		len += scnprintf(buf + len, size - len, "%s: %llu%s", legacy_rate_str[i],
+				 rx_stats->pkt_stats.legacy_count[i],
+				 (i + 1) % 4 ? "\t" : "\n");
+	len += scnprintf(buf + len, size - len, "\nNSS packet stats:\n");
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		len += scnprintf(buf + len, size - len, "%dx%d: %llu ", i + 1, i + 1,
+				 rx_stats->pkt_stats.nss_count[i]);
+	len += scnprintf(buf + len, size - len,
+			 "\n\nGI: 0.8us %llu 0.4us %llu 1.6us %llu 3.2us %llu\n",
+			 rx_stats->pkt_stats.gi_count[0],
+			 rx_stats->pkt_stats.gi_count[1],
+			 rx_stats->pkt_stats.gi_count[2],
+			 rx_stats->pkt_stats.gi_count[3]);
+	len += scnprintf(buf + len, size - len,
+			 "BW: 20Mhz %llu 40Mhz %llu 80Mhz %llu 160Mhz %llu\n",
+			 rx_stats->pkt_stats.bw_count[0],
+			 rx_stats->pkt_stats.bw_count[1],
+			 rx_stats->pkt_stats.bw_count[2],
+			 rx_stats->pkt_stats.bw_count[3]);
+	len += scnprintf(buf + len, size - len, "\nRate Table (packets):\n");
+	for (i = 0; i < rate_table_len; i++)
+		len += scnprintf(buf + len, size - len, "%10llu%s",
+				rx_stats->pkt_stats.rx_rate[i],
+				(i + 1) % (he_rates_avail ? 12 : 8) ? "\t" : "\n");
+
+	len += scnprintf(buf + len, size - len, "\nRX success byte stats:\n");
+	len += scnprintf(buf + len, size - len, "\nHE byte stats:\n");
+	for (i = 0; i <= HAL_RX_MAX_MCS_HE; i++)
+		len += scnprintf(buf + len, size - len, "MCS %d: %llu%s", i,
+				 rx_stats->byte_stats.he_mcs_count[i],
+				 (i + 1) % 6 ? "\t" : "\n");
+
+	len += scnprintf(buf + len, size - len, "\nVHT byte stats:\n");
+	for (i = 0; i <= HAL_RX_MAX_MCS_VHT; i++)
+		len += scnprintf(buf + len, size - len, "MCS %d: %llu%s", i,
+				 rx_stats->byte_stats.vht_mcs_count[i],
+				 (i + 1) % 5 ? "\t" : "\n");
+	len += scnprintf(buf + len, size - len, "\nHT byte stats:\n");
+	for (i = 0; i <= HAL_RX_MAX_MCS_HT; i++)
+		len += scnprintf(buf + len, size - len, "MCS %d: %llu%s", i,
+				 rx_stats->byte_stats.ht_mcs_count[i],
+				 (i + 1) % 8 ? "\t" : "\n");
+	len += scnprintf(buf + len, size - len, "\nLegacy rate byte stats:\n");
+	for (i = 0; i < HAL_RX_MAX_NUM_LEGACY_RATES; i++)
+		len += scnprintf(buf + len, size - len, "%s: %llu%s", legacy_rate_str[i],
+				 rx_stats->byte_stats.legacy_count[i],
+				 (i + 1) % 4 ? "\t" : "\n");
+	len += scnprintf(buf + len, size - len, "\nNSS byte stats:\n");
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		len += scnprintf(buf + len, size - len, "%dx%d: %llu ", i + 1, i + 1,
+				 rx_stats->byte_stats.nss_count[i]);
+	len += scnprintf(buf + len, size - len,
+			 "\n\nGI: 0.8us %llu 0.4us %llu 1.6us %llu 3.2us %llu\n",
+			 rx_stats->byte_stats.gi_count[0],
+			 rx_stats->byte_stats.gi_count[1],
+			 rx_stats->byte_stats.gi_count[2],
+			 rx_stats->byte_stats.gi_count[3]);
+	len += scnprintf(buf + len, size - len,
+			 "BW: 20Mhz %llu 40Mhz %llu 80Mhz %llu 160Mhz %llu\n",
+			 rx_stats->byte_stats.bw_count[0],
+			 rx_stats->byte_stats.bw_count[1],
+			 rx_stats->byte_stats.bw_count[2],
+			 rx_stats->byte_stats.bw_count[3]);
+	len += scnprintf(buf + len, size - len, "\nRate Table (bytes):\n");
+	for (i = 0; i < rate_table_len; i++)
+		len += scnprintf(buf + len, size - len, "%10llu%s",
+				rx_stats->byte_stats.rx_rate[i],
+				(i + 1) % (he_rates_avail ? 12 : 8) ? "\t" : "\n");
+
 	len += scnprintf(buf + len, size - len,
 			 "\nDCM: %llu\nRU: 26 %llu 52: %llu 106: %llu 242: %llu 484: %llu 996: %llu\n",
 			 rx_stats->dcm_count, rx_stats->ru_alloc_cnt[0],
@@ -848,6 +929,40 @@ static const struct file_operations fops_total_ps_duration = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_dbg_sta_reset_rx_stats(struct file *file,
+					     const char __user *buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath11k_sta *arsta = (struct ath11k_sta *)sta->drv_priv;
+	struct ath11k *ar = arsta->arvif->ar;
+	int ret, reset;
+
+	if (!arsta->rx_stats)
+		return -ENOENT;
+
+	ret = kstrtoint_from_user(buf, count, 0, &reset);
+	if (ret)
+		return ret;
+
+	if (!reset || reset > 1)
+		return -EINVAL;
+
+	spin_lock_bh(&ar->ab->base_lock);
+	memset(arsta->rx_stats, 0, sizeof(*arsta->rx_stats));
+	spin_unlock_bh(&ar->ab->base_lock);
+
+	ret = count;
+	return ret;
+}
+
+static const struct file_operations fops_reset_rx_stats = {
+	.write = ath11k_dbg_sta_reset_rx_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath11k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			       struct ieee80211_sta *sta, struct dentry *dir)
 {
@@ -856,9 +971,12 @@ void ath11k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 	if (ath11k_debugfs_is_extd_tx_stats_enabled(ar))
 		debugfs_create_file("tx_stats", 0400, dir, sta,
 				    &fops_tx_stats);
-	if (ath11k_debugfs_is_extd_rx_stats_enabled(ar))
+	if (ath11k_debugfs_is_extd_rx_stats_enabled(ar)) {
 		debugfs_create_file("rx_stats", 0400, dir, sta,
 				    &fops_rx_stats);
+		debugfs_create_file("reset_rx_stats", 0600, dir, sta,
+				    &fops_reset_rx_stats);
+	}
 
 	debugfs_create_file("htt_peer_stats", 0400, dir, sta,
 			    &fops_htt_peer_stats);

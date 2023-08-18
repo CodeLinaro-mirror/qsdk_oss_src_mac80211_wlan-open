@@ -2755,10 +2755,43 @@ exit:
 	return total_msdu_reaped;
 }
 
+static void
+ath11k_dp_rx_update_peer_rate_table_stats(struct ath11k_rx_peer_stats *rx_stats,
+					  struct hal_rx_mon_ppdu_info *ppdu_info,
+					  u32 num_msdu)
+{
+	u32 rate_idx = 0;
+	u32 mcs_idx = ppdu_info->mcs;
+	u32 nss_idx = ppdu_info->nss - 1;
+	u32 bw_idx = ppdu_info->bw;
+	u32 gi_idx = ppdu_info->gi;
+
+	if ((mcs_idx > HAL_RX_MAX_MCS_HE) || (nss_idx >= HAL_RX_MAX_NSS) ||
+	    (bw_idx >= HAL_RX_BW_MAX) || (gi_idx >= HAL_RX_GI_MAX)) {
+		return;
+	}
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11N ||
+	    ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AC) {
+		rate_idx = mcs_idx * 8 + 8 * 10 * nss_idx;
+		rate_idx += bw_idx * 2 + gi_idx;
+	} else if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AX) {
+		gi_idx = ath11k_he_gi_to_nl80211_he_gi(ppdu_info->gi);
+		rate_idx = mcs_idx * 12 + 12 * 12 * nss_idx;
+		rate_idx += bw_idx * 3 + gi_idx;
+	}  else {
+		return;
+	}
+
+	rx_stats->pkt_stats.rx_rate[rate_idx] += num_msdu;
+	rx_stats->byte_stats.rx_rate[rate_idx] += ppdu_info->mpdu_len;
+}
+
 static void ath11k_dp_rx_update_peer_stats(struct ath11k_sta *arsta,
 					   struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct ath11k_rx_peer_stats *rx_stats = arsta->rx_stats;
+	struct ath11k *ar = arsta->arvif->ar;
 	u32 num_msdu;
 	int i;
 
@@ -2768,6 +2801,8 @@ static void ath11k_dp_rx_update_peer_stats(struct ath11k_sta *arsta,
 	arsta->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&arsta->avg_rssi, ppdu_info->rssi_comb);
 
+	if (!ath11k_debugfs_is_extd_rx_stats_enabled(ar))
+		return;
 	num_msdu = ppdu_info->tcp_msdu_count + ppdu_info->tcp_ack_msdu_count +
 		   ppdu_info->udp_msdu_count + ppdu_info->other_msdu_count;
 
@@ -2783,18 +2818,6 @@ static void ath11k_dp_rx_update_peer_stats(struct ath11k_sta *arsta,
 		ppdu_info->mcs = HAL_RX_MAX_MCS;
 		ppdu_info->tid = IEEE80211_NUM_TIDS;
 	}
-
-	if (ppdu_info->nss > 0 && ppdu_info->nss <= HAL_RX_MAX_NSS)
-		rx_stats->nss_count[ppdu_info->nss - 1] += num_msdu;
-
-	if (ppdu_info->mcs <= HAL_RX_MAX_MCS)
-		rx_stats->mcs_count[ppdu_info->mcs] += num_msdu;
-
-	if (ppdu_info->gi < HAL_RX_GI_MAX)
-		rx_stats->gi_count[ppdu_info->gi] += num_msdu;
-
-	if (ppdu_info->bw < HAL_RX_BW_MAX)
-		rx_stats->bw_count[ppdu_info->bw] += num_msdu;
 
 	if (ppdu_info->ldpc < HAL_RX_SU_MU_CODING_MAX)
 		rx_stats->coding_count[ppdu_info->ldpc] += num_msdu;
@@ -2832,6 +2855,52 @@ static void ath11k_dp_rx_update_peer_stats(struct ath11k_sta *arsta,
 
 	rx_stats->rx_duration += ppdu_info->rx_duration;
 	arsta->rx_duration = rx_stats->rx_duration;
+
+	if (ppdu_info->nss > 0 && ppdu_info->nss <= HAL_RX_MAX_NSS) {
+		rx_stats->pkt_stats.nss_count[ppdu_info->nss - 1] += num_msdu;
+		rx_stats->byte_stats.nss_count[ppdu_info->nss - 1] += ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11N &&
+	    ppdu_info->mcs <= HAL_RX_MAX_MCS_HT) {
+			rx_stats->pkt_stats.ht_mcs_count[ppdu_info->mcs] += num_msdu;
+			rx_stats->byte_stats.ht_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
+			/* To fit into rate table for HT packets */
+			ppdu_info->mcs = ppdu_info->mcs % 8;
+	}
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AC &&
+	    ppdu_info->mcs <= HAL_RX_MAX_MCS_VHT) {
+		rx_stats->pkt_stats.vht_mcs_count[ppdu_info->mcs] += num_msdu;
+		rx_stats->byte_stats.vht_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->preamble_type == HAL_RX_PREAMBLE_11AX &&
+	    ppdu_info->mcs <= HAL_RX_MAX_MCS_HE) {
+		rx_stats->pkt_stats.he_mcs_count[ppdu_info->mcs] += num_msdu;
+		rx_stats->byte_stats.he_mcs_count[ppdu_info->mcs] += ppdu_info->mpdu_len;
+	}
+
+
+	if ((ppdu_info->preamble_type == HAL_RX_PREAMBLE_11A ||
+	     ppdu_info->preamble_type == HAL_RX_PREAMBLE_11B) &&
+	     ppdu_info->rate < HAL_RX_LEGACY_RATE_INVALID) {
+		rx_stats->pkt_stats.legacy_count[ppdu_info->rate] += num_msdu;
+		rx_stats->byte_stats.legacy_count[ppdu_info->rate] += ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->gi < HAL_RX_GI_MAX) {
+		rx_stats->pkt_stats.gi_count[ppdu_info->gi] += num_msdu;
+		rx_stats->byte_stats.gi_count[ppdu_info->gi] += ppdu_info->mpdu_len;
+	}
+
+	if (ppdu_info->bw < HAL_RX_BW_MAX) {
+		rx_stats->pkt_stats.bw_count[ppdu_info->bw] += num_msdu;
+		rx_stats->byte_stats.bw_count[ppdu_info->bw] += ppdu_info->mpdu_len;
+	}
+
+	ath11k_dp_rx_update_peer_rate_table_stats(rx_stats, ppdu_info, num_msdu);
+
 }
 
 static struct sk_buff *ath11k_dp_rx_alloc_mon_status_buf(struct ath11k_base *ab,

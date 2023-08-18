@@ -271,6 +271,7 @@ struct ath11k_hw_ops {
 	bool (*rx_desc_mac_addr2_valid)(struct hal_rx_desc *desc);
 	u8* (*rx_desc_mpdu_start_addr2)(struct hal_rx_desc *desc);
 	u32 (*get_ring_selector)(struct sk_buff *skb);
+	u32 (*rx_desc_get_hal_mpdu_len)(struct hal_rx_mpdu_info *mpdu_info);
 };
 
 extern const struct ath11k_hw_ops ipq8074_ops;

@@ -20,7 +20,11 @@ struct hal_rx_wbm_rel_info {
 #define VHT_SIG_SU_NSS_MASK 0x7
 
 #define HAL_RX_MAX_MCS 12
+#define HAL_RX_MAX_MCS_HT 31
+#define HAL_RX_MAX_MCS_VHT 9
+#define HAL_RX_MAX_MCS_HE 11
 #define HAL_RX_MAX_NSS 8
+#define HAL_RX_MAX_NUM_LEGACY_RATES 12
 
 struct hal_rx_mon_status_tlv_hdr {
 	u32 hdr;
@@ -104,6 +108,22 @@ struct hal_rx_user_status {
 	u32 mpdu_err_byte_count;
 };
 
+enum hal_rx_legacy_rate {
+	HAL_RX_LEGACY_RATE_1_MBPS,
+	HAL_RX_LEGACY_RATE_2_MBPS,
+	HAL_RX_LEGACY_RATE_5_5_MBPS,
+	HAL_RX_LEGACY_RATE_6_MBPS,
+	HAL_RX_LEGACY_RATE_9_MBPS,
+	HAL_RX_LEGACY_RATE_11_MBPS,
+	HAL_RX_LEGACY_RATE_12_MBPS,
+	HAL_RX_LEGACY_RATE_18_MBPS,
+	HAL_RX_LEGACY_RATE_24_MBPS,
+	HAL_RX_LEGACY_RATE_36_MBPS,
+	HAL_RX_LEGACY_RATE_48_MBPS,
+	HAL_RX_LEGACY_RATE_54_MBPS,
+	HAL_RX_LEGACY_RATE_INVALID,
+};
+
 #define HAL_TLV_STATUS_PPDU_NOT_DONE    HAL_RX_MON_STATUS_PPDU_NOT_DONE
 #define HAL_TLV_STATUS_PPDU_DONE        HAL_RX_MON_STATUS_PPDU_DONE
 #define HAL_TLV_STATUS_BUF_DONE         HAL_RX_MON_STATUS_BUF_DONE
@@ -128,6 +148,7 @@ struct hal_rx_mon_ppdu_info {
 	u32 num_mpdu_fcs_ok;
 	u32 num_mpdu_fcs_err;
 	u32 preamble_type;
+	u32 mpdu_len;
 	u16 chan_num;
 	u16 tcp_msdu_count;
 	u16 tcp_ack_msdu_count;

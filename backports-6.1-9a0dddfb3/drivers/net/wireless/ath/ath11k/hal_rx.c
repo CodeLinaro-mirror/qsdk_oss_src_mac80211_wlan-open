@@ -977,44 +977,78 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		ppdu_info->is_stbc = FIELD_GET(HAL_RX_HT_SIG_INFO_INFO1_STBC,
 					       info1);
 		ppdu_info->ldpc = FIELD_GET(HAL_RX_HT_SIG_INFO_INFO1_FEC_CODING, info1);
-		ppdu_info->gi = info1 & HAL_RX_HT_SIG_INFO_INFO1_GI;
-
-		switch (ppdu_info->mcs) {
-		case 0 ... 7:
-			ppdu_info->nss = 1;
-			break;
-		case 8 ... 15:
-			ppdu_info->nss = 2;
-			break;
-		case 16 ... 23:
-			ppdu_info->nss = 3;
-			break;
-		case 24 ... 31:
-			ppdu_info->nss = 4;
-			break;
-		}
-
-		if (ppdu_info->nss > 1)
-			ppdu_info->mcs = ppdu_info->mcs % 8;
-
+		ppdu_info->gi = FIELD_GET(HAL_RX_HT_SIG_INFO_INFO1_GI, info1);
+		ppdu_info->nss = (ppdu_info->mcs >> 3) + 1;
 		ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_SU;
 		break;
 	}
 	case HAL_PHYRX_L_SIG_B: {
 		struct hal_rx_lsig_b_info *lsigb =
 			(struct hal_rx_lsig_b_info *)tlv_data;
+		u8 rate;
 
-		ppdu_info->rate = FIELD_GET(HAL_RX_LSIG_B_INFO_INFO0_RATE,
-					    __le32_to_cpu(lsigb->info0));
+		rate = FIELD_GET(HAL_RX_LSIG_B_INFO_INFO0_RATE,
+				 __le32_to_cpu(lsigb->info0));
+
+		switch (rate) {
+		case 1:
+			rate = HAL_RX_LEGACY_RATE_1_MBPS;
+			break;
+		case 2:
+		case 5:
+			rate = HAL_RX_LEGACY_RATE_2_MBPS;
+			break;
+		case 3:
+		case 6:
+			rate = HAL_RX_LEGACY_RATE_5_5_MBPS;
+			break;
+		case 4:
+		case 7:
+			rate = HAL_RX_LEGACY_RATE_11_MBPS;
+			break;
+		default:
+			rate = HAL_RX_LEGACY_RATE_INVALID;
+		}
+		ppdu_info->rate = rate;
 		ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_SU;
 		break;
 	}
 	case HAL_PHYRX_L_SIG_A: {
 		struct hal_rx_lsig_a_info *lsiga =
 			(struct hal_rx_lsig_a_info *)tlv_data;
+		u8 rate;
 
-		ppdu_info->rate = FIELD_GET(HAL_RX_LSIG_A_INFO_INFO0_RATE,
-					    __le32_to_cpu(lsiga->info0));
+		rate = FIELD_GET(HAL_RX_LSIG_A_INFO_INFO0_RATE,
+				 __le32_to_cpu(lsiga->info0));
+		switch (rate) {
+		case 8:
+			rate = HAL_RX_LEGACY_RATE_48_MBPS;
+			break;
+		case 9:
+			rate = HAL_RX_LEGACY_RATE_24_MBPS;
+			break;
+		case 10:
+			rate = HAL_RX_LEGACY_RATE_12_MBPS;
+			break;
+		case 11:
+			rate = HAL_RX_LEGACY_RATE_6_MBPS;
+			break;
+		case 12:
+			rate = HAL_RX_LEGACY_RATE_54_MBPS;
+			break;
+		case 13:
+			rate = HAL_RX_LEGACY_RATE_36_MBPS;
+			break;
+		case 14:
+			rate = HAL_RX_LEGACY_RATE_18_MBPS;
+			break;
+		case 15:
+			rate = HAL_RX_LEGACY_RATE_9_MBPS;
+			break;
+		default:
+			rate = HAL_RX_LEGACY_RATE_INVALID;
+		}
+		ppdu_info->rate = rate;
 		ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_SU;
 		break;
 	}
@@ -1472,6 +1506,9 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		peer_id = ath11k_hal_rx_mpduinfo_get_peerid(ab, mpdu_info);
 		if (peer_id)
 			ppdu_info->peer_id = peer_id;
+
+		ppdu_info->mpdu_len += ab->hw_params.hw_ops->rx_desc_get_hal_mpdu_len(mpdu_info);
+
 		break;
 	}
 	case HAL_RXPCU_PPDU_END_INFO: {

@@ -52,6 +52,8 @@ extern bool ath11k_collect_dump;
 
 #define ATH11K_INVALID_HW_MAC_ID	0xFF
 #define ATH11K_CONNECTION_LOSS_HZ	(3 * HZ)
+#define ATH11K_RX_RATE_TABLE_NUM 320
+#define ATH11K_RX_RATE_TABLE_11AX_NUM 576
 
 /* SMBIOS type containing Board Data File Name Extension */
 #define ATH11K_SMBIOS_BDF_EXT_TYPE 0xF8
@@ -439,6 +441,17 @@ struct ath11k_vif_iter {
 	struct ath11k_vif *arvif;
 };
 
+struct ath11k_rx_peer_rate_stats {
+	u64 ht_mcs_count[HAL_RX_MAX_MCS_HT + 1];
+	u64 vht_mcs_count[HAL_RX_MAX_MCS_VHT + 1];
+	u64 he_mcs_count[HAL_RX_MAX_MCS_HE + 1];
+	u64 nss_count[HAL_RX_MAX_NSS];
+	u64 bw_count[HAL_RX_BW_MAX];
+	u64 gi_count[HAL_RX_GI_MAX];
+	u64 legacy_count[HAL_RX_MAX_NUM_LEGACY_RATES];
+	u64 rx_rate[ATH11K_RX_RATE_TABLE_11AX_NUM];
+};
+
 struct ath11k_rx_peer_stats {
 	u64 num_msdu;
 	u64 num_mpdu_fcs_ok;
@@ -450,10 +463,6 @@ struct ath11k_rx_peer_stats {
 	u64 non_ampdu_msdu_count;
 	u64 stbc_count;
 	u64 beamformed_count;
-	u64 mcs_count[HAL_RX_MAX_MCS + 1];
-	u64 nss_count[HAL_RX_MAX_NSS];
-	u64 bw_count[HAL_RX_BW_MAX];
-	u64 gi_count[HAL_RX_GI_MAX];
 	u64 coding_count[HAL_RX_SU_MU_CODING_MAX];
 	u64 tid_count[IEEE80211_NUM_TIDS + 1];
 	u64 pream_cnt[HAL_RX_PREAMBLE_MAX];
@@ -461,6 +470,8 @@ struct ath11k_rx_peer_stats {
 	u64 rx_duration;
 	u64 dcm_count;
 	u64 ru_alloc_cnt[HAL_RX_RU_ALLOC_TYPE_MAX];
+	struct ath11k_rx_peer_rate_stats pkt_stats;
+	struct ath11k_rx_peer_rate_stats byte_stats;
 };
 
 #define ATH11K_HE_MCS_NUM       12
