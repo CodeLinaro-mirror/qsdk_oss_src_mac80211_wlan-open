@@ -11316,6 +11316,63 @@ static int ath12k_mac_update_peer_puncturing_width(struct ath12k *ar,
 	return ret;
 }
 
+static void
+ath12k_mac_update_peer_ru_punct_bitmap_iter(void *data,
+					    struct ieee80211_sta *sta)
+{
+	struct ath12k_link_vif *arvif = data;
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_sta *ahsta = (struct ath12k_sta *)sta->drv_priv;
+	struct ath12k_link_sta *arsta;
+	struct ieee80211_link_sta *link_sta;
+	u8 link_id = arvif->link_id;
+
+	if (ahsta->ahvif != arvif->ahvif)
+		return;
+
+	/* Check if there is a link sta in the vif link */
+	if (!(BIT(link_id) & ahsta->links_map))
+		return;
+
+	arsta = ahsta->link[link_id];
+	link_sta = ath12k_mac_get_link_sta(arsta);
+	if (!link_sta) {
+		ath12k_warn(ar->ab, "unable to access link sta in peer ru punct bitmap update\n");
+		return;
+	}
+
+	/* Puncturing in only applicable for EHT supported peers */
+	if (!link_sta->he_cap.has_he || !link_sta->eht_cap.has_eht)
+		return;
+
+	spin_lock_bh(&ar->data_lock);
+	/* RC_BW_CHANGED handler has infra already to send the bitmap.
+	 * Hence we can leverage from the same flag
+	 */
+	arsta->changed |= IEEE80211_RC_BW_CHANGED;
+	spin_unlock_bh(&ar->data_lock);
+
+	wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy, &arsta->update_wk);
+}
+
+void ath12k_mac_update_ru_punct_bitmap(struct ath12k_link_vif *arvif,
+				       struct ieee80211_chanctx_conf *old_ctx,
+				       struct ieee80211_chanctx_conf *new_ctx)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_hw *ah = ar->ah;
+
+	//lockdep_assert_held(&ah->conf_mutex);
+	//lockdep_assert_held(&ar->conf_mutex);
+
+	if (old_ctx->def.punctured == new_ctx->def.punctured)
+		return;
+
+	ieee80211_iterate_stations_atomic(ah->hw,
+					  ath12k_mac_update_peer_ru_punct_bitmap_iter,
+					  arvif);
+}
+
 static int ath12k_vdev_restart_sequence(struct ath12k_link_vif *arvif,
 					struct ieee80211_chanctx_conf *new_ctx,
 					u64 vif_down_failed_map,
@@ -11361,6 +11418,8 @@ static int ath12k_vdev_restart_sequence(struct ath12k_link_vif *arvif,
 	}
 
 beacon_tmpl_setup:
+	ath12k_mac_update_ru_punct_bitmap(arvif, &old_chanctx, new_ctx);
+
 	if (!arvif->is_up)
 		return -EOPNOTSUPP;
 
