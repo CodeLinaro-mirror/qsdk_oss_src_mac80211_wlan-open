@@ -226,6 +226,7 @@ struct hal_rx_mon_ppdu_info {
 	u8 userid;
 	u16 ampdu_id[HAL_MAX_UL_MU_USERS];
 	u32 rx_antenna;
+	bool ppdu_continuation;
 };
 
 #define HAL_RX_UL_OFDMA_USER_INFO_V0_W0_VALID			BIT(30)
