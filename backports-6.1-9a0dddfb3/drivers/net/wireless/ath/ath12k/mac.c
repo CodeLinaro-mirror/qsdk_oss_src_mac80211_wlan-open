@@ -5259,7 +5259,7 @@ static int ath12k_install_key(struct ath12k_link_vif *arvif,
 
 	reinit_completion(&ar->install_key_done);
 
-	if (test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ar->ab->dev_flags))
+	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags))
 		return 0;
 
 	if (cmd == DISABLE_KEY) {
@@ -5292,7 +5292,7 @@ static int ath12k_install_key(struct ath12k_link_vif *arvif,
 		return -EOPNOTSUPP;
 	}
 
-	if (test_bit(ATH12K_FLAG_RAW_MODE, &ar->ab->dev_flags))
+	if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags))
 		key->flags |= IEEE80211_KEY_FLAG_GENERATE_IV |
 			      IEEE80211_KEY_FLAG_RESERVE_TAILROOM;
 
@@ -5376,7 +5376,7 @@ static int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	if (arsta)
 		sta = ath12k_ahsta_to_sta(arsta->ahsta);
 
-	if (test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ab->dev_flags))
+	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags))
 		return 1;
 
 	if (sta)
@@ -8716,7 +8716,7 @@ static void ath12k_mac_update_vif_offload(struct ath12k_link_vif *arvif)
 
 	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
-	else if (test_bit(ATH12K_FLAG_RAW_MODE, &ab->dev_flags))
+	else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags))
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_RAW;
 	else
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
@@ -8732,7 +8732,7 @@ static void ath12k_mac_update_vif_offload(struct ath12k_link_vif *arvif)
 	param_id = WMI_VDEV_PARAM_RX_DECAP_TYPE;
 	if (vif->offload_flags & IEEE80211_OFFLOAD_DECAP_ENABLED)
 		param_value = ATH12K_HW_TXRX_ETHERNET;
-	else if (test_bit(ATH12K_FLAG_RAW_MODE, &ab->dev_flags))
+	else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags))
 		param_value = ATH12K_HW_TXRX_RAW;
 	else
 		param_value = ATH12K_HW_TXRX_NATIVE_WIFI;
@@ -12518,7 +12518,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		if (ar->supports_6ghz)
 			is_6ghz = true;
 
-		if (test_bit(ATH12K_FLAG_RAW_MODE, &ar->ab->dev_flags))
+		if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags))
 			is_raw_mode = true;
 
 		if (!ar->ab->hw_params->supports_monitor)

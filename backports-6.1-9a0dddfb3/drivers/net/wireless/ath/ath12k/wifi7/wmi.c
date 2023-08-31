@@ -25,7 +25,7 @@ void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 	config->rx_timeout_pri[2] = TARGET_RX_TIMEOUT_LO_PRI;
 	config->rx_timeout_pri[3] = TARGET_RX_TIMEOUT_HI_PRI;
 
-	if (test_bit(ATH12K_FLAG_RAW_MODE, &ab->dev_flags))
+	if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags))
 		config->rx_decap_mode = TARGET_DECAP_MODE_RAW;
 	else
 		config->rx_decap_mode = TARGET_DECAP_MODE_NATIVE_WIFI;

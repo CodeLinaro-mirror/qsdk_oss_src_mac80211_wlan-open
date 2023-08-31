@@ -909,14 +909,14 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 	/* Checking if it is a DVLAN frame */
-	if (!test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ar->ab->dev_flags) &&
+	if (!test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags) &&
 	    !(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
 	    !(skb_cb->flags & ATH12K_SKB_CIPHER_SET) &&
 	    ieee80211_has_protected(hdr->frame_control))
 		is_dvlan = true;
 
 	if (!vif->valid_links || !is_mcast || is_dvlan || is_eth ||
-	    test_bit(ATH12K_FLAG_RAW_MODE, &ar->ab->dev_flags)) {
+	    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags)) {
 		ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta);
 		if (unlikely(ret)) {
 			ath12k_warn(ar->ab, "failed to transmit frame %d\n", ret);

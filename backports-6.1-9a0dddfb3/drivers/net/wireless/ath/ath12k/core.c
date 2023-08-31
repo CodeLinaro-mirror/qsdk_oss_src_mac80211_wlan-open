@@ -171,6 +171,10 @@ static int ath12k_core_continue_suspend_resume(struct ath12k_base *ab)
 	return 1;
 }
 
+static unsigned int ath12k_crypto_mode;
+module_param_named(crypto_mode, ath12k_crypto_mode, uint, 0644);
+MODULE_PARM_DESC(crypto_mode, "crypto mode: 0-hardware, 1-software");
+
 int ath12k_core_suspend(struct ath12k_base *ab)
 {
 	struct ath12k *ar;
@@ -1288,6 +1292,21 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 
 	if (test_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags))
 		goto core_pdev_create;
+
+
+	switch (ath12k_crypto_mode) {
+	case ATH12K_CRYPT_MODE_SW:
+		set_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ag->flags);
+		set_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ag->flags);
+		break;
+	case ATH12K_CRYPT_MODE_HW:
+		clear_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ag->flags);
+		clear_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ag->flags);
+		break;
+	default:
+		ath12k_info(NULL, "invalid crypto_mode: %d\n", ath12k_crypto_mode);
+		return -EINVAL;
+	}
 
 	ret = ath12k_mac_allocate(ag);
 	if (WARN_ON(ret))

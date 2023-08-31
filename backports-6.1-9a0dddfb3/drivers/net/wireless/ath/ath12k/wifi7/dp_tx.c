@@ -16,7 +16,7 @@ ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
 
-	if (test_bit(ATH12K_FLAG_RAW_MODE, &ab->dev_flags))
+	if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags))
 		return HAL_TCL_ENCAP_TYPE_RAW;
 
 	if (tx_info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
@@ -219,7 +219,7 @@ tcl_ring_sel:
 			ath12k_dp_tx_encap_nwifi(skb);
 		break;
 	case HAL_TCL_ENCAP_TYPE_RAW:
-		if (!test_bit(ATH12K_FLAG_RAW_MODE, &ab->dev_flags)) {
+		if (!test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags)) {
 			ret = -EINVAL;
 			goto fail_remove_tx_buf;
 		}
@@ -287,7 +287,7 @@ map:
 		goto fail_remove_tx_buf;
 	}
 
-	if ((!test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ab->dev_flags) &&
+	if ((!test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
 	     !(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
 	     !(skb_cb->flags & ATH12K_SKB_CIPHER_SET) &&
 	     ieee80211_has_protected(hdr->frame_control)) ||
@@ -987,7 +987,7 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 	 * With SW crypto, mac80211 sets key per packet
 	 */
 	if (dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_RAW &&
-	    test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ab->dev_flags) &&
+	    test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
 	    arvif->key_cipher != INVALID_CIPHER)
 		bank_config |=
 			u32_encode_bits(ath12k_dp_tx_get_encrypt_type(arvif->key_cipher),

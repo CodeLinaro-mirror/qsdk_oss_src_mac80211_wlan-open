@@ -2297,8 +2297,8 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	cmd->punct_bitmap = cpu_to_le32(arg->punct_bitmap);
 
 	ath12k_wmi_copy_peer_flags(cmd, arg,
-				   test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED,
-					    &ar->ab->dev_flags));
+				   test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED,
+					    &ar->ab->ag->flags));
 
 	ether_addr_copy(cmd->peer_macaddr.addr, arg->peer_mac);
 
