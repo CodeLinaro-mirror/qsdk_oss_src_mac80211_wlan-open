@@ -2469,6 +2469,12 @@ static void ath11k_peer_assoc_h_he(struct ath11k *ar,
 
 	arg->peer_nss = min(sta->deflink.rx_nss, max_nss);
 
+#if LINUX_VERSION_IS_LESS(5,16,0)
+	memcpy(&arg->peer_he_cap_macinfo, he_cap->he_cap_elem.mac_cap_info,
+			sizeof(arg->peer_he_cap_macinfo));
+	memcpy(&arg->peer_he_cap_phyinfo, he_cap->he_cap_elem.phy_cap_info,
+			sizeof(arg->peer_he_cap_phyinfo));
+#else
 	memcpy_and_pad(&arg->peer_he_cap_macinfo,
 		       sizeof(arg->peer_he_cap_macinfo),
 		       he_cap->he_cap_elem.mac_cap_info,
@@ -2479,6 +2485,7 @@ static void ath11k_peer_assoc_h_he(struct ath11k *ar,
 		       he_cap->he_cap_elem.phy_cap_info,
 		       sizeof(he_cap->he_cap_elem.phy_cap_info),
 		       0);
+#endif
 	arg->peer_he_ops = vif->bss_conf.he_oper.params;
 
 	/* the top most byte is used to indicate BSS color info */
@@ -7264,7 +7271,7 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 	if ((vif->type == NL80211_IFTYPE_AP_VLAN ||
 	     vif->type == NL80211_IFTYPE_STATION) && ab->nss.enabled) {
 		if (ath11k_frame_mode == ATH11K_HW_TXRX_ETHERNET &&
-		    ieee80211_set_hw_80211_encap(vif, true)) {
+		    (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)) {
 			vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_4ADDR;
 			arvif->nss.encap = ATH11K_HW_TXRX_ETHERNET;
 			arvif->nss.decap = ATH11K_HW_TXRX_ETHERNET;
@@ -10789,6 +10796,8 @@ static void ath11k_mac_update_ch_list(struct ath11k *ar,
 		    band->channels[i].center_freq > freq_high)
 			band->channels[i].flags |= IEEE80211_CHAN_DISABLED;
 	}
+
+	return;
 }
 
 #define ATH11k_5_DOT_9_MIN_FREQ	5845

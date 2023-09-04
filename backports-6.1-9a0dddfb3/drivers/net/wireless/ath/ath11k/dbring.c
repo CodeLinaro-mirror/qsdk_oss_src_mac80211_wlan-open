@@ -89,7 +89,6 @@ int ath11k_dbring_bufs_replenish(struct ath11k *ar,
 
 	ath11k_hal_rx_buf_addr_info_set(desc, paddr, cookie, 0);
 
-	ath11k_debugfs_add_dbring_entry(ar, id, ATH11K_DBG_DBR_EVENT_REPLENISH, srng);
 	ath11k_hal_srng_access_end(ab, srng);
 
 	return 0;

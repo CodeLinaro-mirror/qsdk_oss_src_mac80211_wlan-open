@@ -344,7 +344,7 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 	const struct mhi_controller_config *ath11k_mhi_config;
 	int ret;
 
-	mhi_ctrl = mhi_alloc_controller();
+	mhi_ctrl = kzalloc(sizeof(*mhi_ctrl), GFP_KERNEL);
 	if (!mhi_ctrl)
 		return -ENOMEM;
 
@@ -427,7 +427,7 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 	return 0;
 
 free_controller:
-	mhi_free_controller(mhi_ctrl);
+	kfree(mhi_ctrl);
 	ab_pci->mhi_ctrl = NULL;
 	return ret;
 }
@@ -492,7 +492,8 @@ int ath11k_mhi_resume(struct ath11k_pci *ab_pci)
 	 * are not in M3 state but they are functional. So just ignore
 	 * the MHI state while resuming.
 	 */
-	ret = mhi_pm_resume_force(ab_pci->mhi_ctrl);
+	//ret = mhi_pm_resume_force(ab_pci->mhi_ctrl);
+	ret = 0;
 	if (ret) {
 		ath11k_warn(ab, "failed to resume mhi: %d", ret);
 		return ret;

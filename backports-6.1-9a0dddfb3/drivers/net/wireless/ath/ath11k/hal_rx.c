@@ -30,7 +30,12 @@ static int ath11k_hal_reo_cmd_queue_stats(struct hal_tlv_hdr *tlv,
 		  FIELD_PREP(HAL_TLV_HDR_LEN, sizeof(*desc));
 
 	desc = (struct hal_reo_get_queue_stats *)tlv->value;
+#if LINUX_VERSION_IS_LESS(5,16,0)
+	memset(&desc->queue_addr_lo, 0,
+			(sizeof(*desc) - sizeof(struct hal_reo_cmd_hdr)));
+#else
 	memset_startat(desc, 0, queue_addr_lo);
+#endif
 
 	desc->cmd.info0 &= ~HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED;
 	if (cmd->flag & HAL_REO_CMD_FLG_NEED_STATUS)
@@ -62,7 +67,12 @@ static int ath11k_hal_reo_cmd_flush_cache(struct ath11k_hal *hal, struct hal_tlv
 		  FIELD_PREP(HAL_TLV_HDR_LEN, sizeof(*desc));
 
 	desc = (struct hal_reo_flush_cache *)tlv->value;
+#if LINUX_VERSION_IS_LESS(5,16,0)
+	memset(&desc->cache_addr_lo, 0,
+			(sizeof(*desc) - sizeof(struct hal_reo_cmd_hdr)));
+#else
 	memset_startat(desc, 0, cache_addr_lo);
+#endif
 
 	desc->cmd.info0 &= ~HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED;
 	if (cmd->flag & HAL_REO_CMD_FLG_NEED_STATUS)
@@ -100,7 +110,12 @@ static int ath11k_hal_reo_cmd_update_rx_queue(struct hal_tlv_hdr *tlv,
 		  FIELD_PREP(HAL_TLV_HDR_LEN, sizeof(*desc));
 
 	desc = (struct hal_reo_update_rx_queue *)tlv->value;
+#if LINUX_VERSION_IS_LESS(5,16,0)
+	memset(&desc->queue_addr_lo, 0,
+			(sizeof(*desc) - sizeof(struct hal_reo_cmd_hdr)));
+#else
 	memset_startat(desc, 0, queue_addr_lo);
+#endif
 
 	desc->cmd.info0 &= ~HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED;
 	if (cmd->flag & HAL_REO_CMD_FLG_NEED_STATUS)
