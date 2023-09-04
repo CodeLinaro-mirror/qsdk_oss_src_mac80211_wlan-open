@@ -986,6 +986,57 @@ static inline bool ath11k_dp_tx_completion_valid(struct hal_wbm_release_ring *de
 	return true;
 }
 
+static inline u32 txdelay_time_to_ms(u32 val)
+{
+	u64 valns = ((u64)val << IEEE80211_TX_DELAY_SHIFT);
+
+	do_div(valns, NSEC_PER_MSEC);
+	return (u32)valns;
+}
+
+/* Returns transmit delay histogram stats bin to credit based on latency. */
+static inline int txdelay_ms_to_bin(u32 latency)
+{
+	int top_bit_set;
+	int bin_offset;
+
+	/* The exponential (power-of-two) bucket range is determined by the high
+	 * order bit set.  The first two 1ms bin (i.e. [0, 1) and [1, 2)) are
+	 * returned directly.  All other bins are subdivided in half by
+	 * calculating bin_offset based on the bit immediately to the right of
+	 * the high order bit set.
+	 */
+	top_bit_set = fls(latency);
+	if (top_bit_set < 2)
+		return top_bit_set;
+	if (top_bit_set > ATH11K_DELAY_STATS_SCALED_BINS)
+		return ATH11K_DELAY_STATS_SCALED_BINS;
+	bin_offset = (latency & (1 << (top_bit_set - 2))) ? 1 : 0;
+	return (top_bit_set - 1) * 2 + bin_offset;
+}
+
+void ath11k_update_latency_stats(struct ath11k *ar, struct sk_buff *msdu, u8 tid)
+{
+	u32 enqueue_time, now;
+	struct ieee80211_tx_info *info;
+	int bin;
+
+	info = IEEE80211_SKB_CB(msdu);
+	enqueue_time = info->latency.tx_start_time;
+	if (enqueue_time == 0)
+		return;
+
+	now = ieee80211_txdelay_get_time();
+	bin = txdelay_ms_to_bin(txdelay_time_to_ms(now - enqueue_time));
+
+	if (!ar->debug.tx_delay_stats) {
+		ath11k_warn(ar->ab, "tx delay stats invalid\n");
+		return;
+	}
+
+	ar->debug.tx_delay_stats[tid]->counts[bin]++;
+}
+
 void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 {
 	struct ath11k *ar;
@@ -998,7 +1049,7 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 	enum hal_wbm_rel_src_module buf_rel_source;
 	u32 *desc;
 	u32 msdu_id, desc_id;
-	u8 mac_id;
+	u8 mac_id, tid;
 	struct hal_wbm_release_ring *tx_status;
 
 	spin_lock_bh(&status_ring->lock);
@@ -1067,6 +1118,12 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 		}
 
 		ar = ab->pdevs[mac_id].ar;
+
+		tid = FIELD_GET(HAL_WBM_RELEASE_INFO3_TID, tx_status->info3);
+		if (tid < IEEE80211_NUM_TIDS)
+			ath11k_update_latency_stats(ar, msdu, tid);
+		else
+			ath11k_warn(ab, "Received data with invalid tid\n");
 
 		if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 			wake_up(&ar->dp.tx_empty_waitq);

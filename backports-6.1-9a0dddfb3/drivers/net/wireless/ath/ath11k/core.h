@@ -816,9 +816,23 @@ struct ath11k_dbg_htt_stats {
 
 #define ATH11K_MAX_COEX_PRIORITY_LEVEL           3
 
+#define ATH11K_DELAY_STATS_SCALED_BINS		20
+#define ATH11K_DELAY_STATS_MAX_BINS		(ATH11K_DELAY_STATS_SCALED_BINS + 1)
+struct ath11k_tx_delay_stats {
+	/* histogram of tx delay with 21 bins. The bucket size scales
+	 * exponentially, from 1ms to 1024ms. Each power-of-two bucket that
+	 * spans greater than 1ms is subdivided into two bins (e.g. the range
+	 * [2, 4) is broken into bins [2, 3) and [3, 4), while the range
+	 * [32, 64) is broken into bins [32, 48) and [48, 64), etc.).
+	 * Each bin is a counter of tx packet with delay in that range.
+	 */
+	u32 counts[ATH11K_DELAY_STATS_MAX_BINS];
+};
+
 struct ath11k_debug {
 	struct dentry *debugfs_pdev;
 	struct ath11k_dbg_htt_stats htt_stats;
+	struct ath11k_tx_delay_stats *tx_delay_stats[IEEE80211_NUM_TIDS];
 	u32 extd_tx_stats;
 	u32 extd_rx_stats;
 	u32 pktlog_filter;

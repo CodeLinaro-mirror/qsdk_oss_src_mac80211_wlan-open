@@ -356,6 +356,7 @@ void ath11k_debugfs_unregister(struct ath11k *ar);
 void ath11k_debugfs_fw_stats_process(struct ath11k *ar, struct ath11k_fw_stats *stats);
 
 void ath11k_debugfs_fw_stats_init(struct ath11k *ar);
+void ath11k_init_tx_latency_stats(struct ath11k *ar);
 void ath11k_smart_ant_debugfs_init(struct ath11k *ar);
 ssize_t ath11k_debugfs_dump_soc_ring_bp_stats(struct ath11k_base *ab,
 					      char *buf, int size);
@@ -464,6 +465,10 @@ static inline void ath11k_debugfs_fw_stats_process(struct ath11k *ar,
 }
 
 static inline void ath11k_debugfs_fw_stats_init(struct ath11k *ar)
+{
+}
+
+static inline void ath11k_init_tx_latency_stats(struct ath11k *ar)
 {
 }
 

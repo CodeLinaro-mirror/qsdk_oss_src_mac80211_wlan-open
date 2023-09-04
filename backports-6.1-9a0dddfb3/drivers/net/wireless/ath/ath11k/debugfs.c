@@ -1586,6 +1586,144 @@ void ath11k_debugfs_fw_stats_init(struct ath11k *ar)
 			    &fops_bcn_stats);
 }
 
+/* TX delay stats class names ordered by TID. */
+static const char ath11k_tx_delay_stats_names[][7] = {
+	"AC_BE",
+	"AC_BK",
+	"AC_BK+",
+	"AC_BE+",
+	"AC_VI",
+	"AC_VI+",
+	"AC_VO",
+	"AC_VO+",
+	"TID8",
+	"TID9",
+	"TID10",
+	"TID11",
+	"TID12",
+	"TID13",
+	"TID14",
+	"TID15",
+};
+
+#define ATH11K_TX_DELAY_STATS_NAMES_SIZE ARRAY_SIZE(ath11k_tx_delay_stats_names)
+
+/* Returns start time of the transmit delay histogram stats bin. */
+static inline int ath11k_tx_delay_bin_to_ms(int bin)
+{
+	int bin_ms;
+
+	/* The first two bins span 1ms (i.e. [0, 1), and [1, 2)) are returned
+	 * directly. All other power-of-two bucket ranges are subdivided into
+	 * two bins, with the even numbered bin covering the first half of the
+	 * range and the odd numbered bin offset by 1/2 of the range.
+	 */
+	if (bin < 2)
+		return bin;
+	bin_ms = 1 << (bin / 2);
+	if (bin % 2)
+		bin_ms += bin_ms >> 1;
+	return bin_ms;
+}
+
+static ssize_t ath11k_tx_delay_histo_dump(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath11k_tx_delay_stats *stats = file->private_data;
+	struct ath11k_tx_delay_stats stats_local;
+	char *buf;
+	unsigned int len = 0, buf_len = 4096, i;
+	ssize_t ret_cnt;
+
+	memcpy(&stats_local, stats, sizeof(struct ath11k_tx_delay_stats));
+	buf = kzalloc(buf_len, GFP_KERNEL);
+	if (!buf)
+		return 0;
+
+	len += scnprintf(buf + len, buf_len - len, "TX delay histogram(ms)\n");
+	for (i = 0; i < ATH11K_DELAY_STATS_SCALED_BINS; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "[%4u - %4u):%8u ",
+				 ath11k_tx_delay_bin_to_ms(i),
+				 ath11k_tx_delay_bin_to_ms(i + 1),
+				 stats_local.counts[i]);
+
+		if (i % 5 == 4)
+			len += scnprintf(buf + len, buf_len - len, "\n");
+	}
+	len += scnprintf(buf + len, buf_len - len, "[%4d -  inf):%8u ",
+			 ath11k_tx_delay_bin_to_ms(i), stats_local.counts[i]);
+
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	ret_cnt = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+	return ret_cnt;
+}
+
+static ssize_t ath11k_tx_delay_histo_reset(struct file *file,
+					   const char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath11k_tx_delay_stats *stats = file->private_data;
+	int val, ret;
+
+	ret = kstrtoint_from_user(user_buf, count, 0, &val);
+	if (ret)
+		return ret;
+	if (val != 0)
+		return -EINVAL;
+	memset(stats, 0, sizeof(struct ath11k_tx_delay_stats));
+	return count;
+}
+
+static const struct file_operations fops_tx_delay_histo = {
+	.read = ath11k_tx_delay_histo_dump,
+	.write = ath11k_tx_delay_histo_reset,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+void ath11k_init_tx_latency_stats(struct ath11k *ar)
+{
+	size_t tx_delay_stats_size;
+	struct ath11k_tx_delay_stats *pbuf, *buf;
+	struct dentry *tx_delay_histo_dir;
+	int i;
+
+	tx_delay_stats_size = sizeof(struct ath11k_tx_delay_stats) *
+			      ARRAY_SIZE(ar->debug.tx_delay_stats);
+
+	pbuf = kzalloc(tx_delay_stats_size, GFP_KERNEL);
+	if (!pbuf) {
+		ath11k_err(ar->ab, "Unable to allocate memory for latency stats\n");
+		return;
+	}
+
+	buf = pbuf;
+
+	for (i = 0; i < ARRAY_SIZE(ar->debug.tx_delay_stats); i++) {
+		ar->debug.tx_delay_stats[i] = buf;
+		buf++;
+	}
+
+	tx_delay_histo_dir = debugfs_create_dir("tx_delay_histogram",
+						ar->debug.debugfs_pdev);
+	if (IS_ERR_OR_NULL(tx_delay_histo_dir)) {
+		ath11k_err(ar->ab, "Failed to create debugfs dir tx_delay_stats\n");
+		kfree(pbuf);
+		return;
+	}
+	for (i = 0; i < ATH11K_TX_DELAY_STATS_NAMES_SIZE; i++) {
+		debugfs_create_file(ath11k_tx_delay_stats_names[i], 0644,
+				    tx_delay_histo_dir,
+				    ar->debug.tx_delay_stats[i],
+				    &fops_tx_delay_histo);
+	}
+}
+
 static ssize_t ath11k_write_pktlog_filter(struct file *file,
 					  const char __user *ubuf,
 					  size_t count, loff_t *ppos)
@@ -3866,6 +4004,7 @@ int ath11k_debugfs_register(struct ath11k *ar)
 	ath11k_debugfs_htt_stats_init(ar);
 
 	ath11k_debugfs_fw_stats_init(ar);
+	ath11k_init_tx_latency_stats(ar);
 	ath11k_init_pktlog(ar);
 	ath11k_smart_ant_debugfs_init(ar);
 	init_completion(&ar->tpc_complete);
@@ -3983,6 +4122,7 @@ void ath11k_debugfs_unregister(struct ath11k *ar)
 	}
 
 	ath11k_deinit_pktlog(ar);
+	kfree(ar->debug.tx_delay_stats[0]);
 	debugfs_remove_recursive(ar->debug.debugfs_pdev);
 	ar->debug.debugfs_pdev = NULL;
 }
