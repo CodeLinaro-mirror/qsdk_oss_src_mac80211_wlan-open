@@ -3637,6 +3637,30 @@ static const struct file_operations fops_ani_level = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath11k_medium_busy_read(struct file *file,
+				       char __user *user_buf,
+				       size_t count, loff_t *ppos)
+{
+	struct ath11k *ar = file->private_data;
+	u8 buf[50];
+	size_t len = 0;
+
+	mutex_lock(&ar->conf_mutex);
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "Medium Busy in percentage %u\n",
+			 ar->hw->medium_busy);
+	mutex_unlock(&ar->conf_mutex);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_medium_busy = {
+	.read = ath11k_medium_busy_read,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int ath11k_debugfs_register(struct ath11k *ar)
 {
 	struct ath11k_base *ab = ar->ab;
@@ -3746,6 +3770,8 @@ int ath11k_debugfs_register(struct ath11k *ar)
 			    ar->debug.debugfs_pdev, ar, &fops_ani_poll_period);
 	debugfs_create_file("ani_listen_period", S_IRUSR | S_IWUSR,
 			    ar->debug.debugfs_pdev, ar, &fops_ani_listen_period);
+	debugfs_create_file("medium_busy", S_IRUSR, ar->debug.debugfs_pdev, ar,
+			    &fops_medium_busy);
 	return 0;
 }
 

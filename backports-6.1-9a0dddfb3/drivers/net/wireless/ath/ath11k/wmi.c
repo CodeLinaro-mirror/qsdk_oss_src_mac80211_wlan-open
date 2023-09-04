@@ -7490,6 +7490,7 @@ static int ath11k_wmi_tlv_fw_stats_data_parse(struct ath11k_base *ab,
 	struct ath11k_sta *arsta;
 	int i, ret = 0;
 	const void *data = ptr;
+	u64 time, time_busy;
 
 	if (!ev) {
 		ath11k_warn(ab, "failed to fetch update stats ev");
@@ -7525,7 +7526,16 @@ static int ath11k_wmi_tlv_fw_stats_data_parse(struct ath11k_base *ab,
 		ath11k_wmi_pull_pdev_stats_tx(&src->tx, dst);
 		ath11k_wmi_pull_pdev_stats_rx(&src->rx, dst);
 		list_add_tail(&dst->list, &stats->pdevs);
+
+		spin_lock_bh(&ar->data_lock);
+		time = div_u64(dst->cycle_count, ab->cc_freq_hz);
+		if(ar && time) {
+			time_busy = div_u64(dst->rx_clear_count, ab->cc_freq_hz);
+			ar->hw->medium_busy = div_u64((time_busy * 100), time);
+		}
+		spin_unlock_bh(&ar->data_lock);
 	}
+	rcu_read_unlock();
 
 	for (i = 0; i < ev->num_vdev_stats; i++) {
 		const struct wmi_vdev_stats *src;
@@ -9088,6 +9098,9 @@ static void ath11k_chan_info_event(struct ath11k_base *ab, struct sk_buff *skb)
 				 SURVEY_INFO_TIME_BUSY;
 		survey->time = div_u64(ch_info_ev.cycle_count, cc_freq_hz);
 		survey->time_busy = div_u64(ch_info_ev.rx_clear_count, cc_freq_hz);
+		if (survey->time)
+			ar->hw->medium_busy = div_u64((survey->time_busy * 100),
+						      survey->time);
 	}
 exit:
 	spin_unlock_bh(&ar->data_lock);
