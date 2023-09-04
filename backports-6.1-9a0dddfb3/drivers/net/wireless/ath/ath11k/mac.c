@@ -10831,6 +10831,9 @@ static int __ath11k_mac_register(struct ath11k *ar)
 		 */
 		ar->hw->wiphy->interface_modes &= ~BIT(NL80211_IFTYPE_MONITOR);
 
+	ar->hw->wiphy->interface_modes |= BIT(NL80211_IFTYPE_AP_VLAN);
+	ar->hw->wiphy->software_iftypes |= BIT(NL80211_IFTYPE_AP_VLAN);
+
 	/* Apply the regd received during initialization */
 	ret = ath11k_regd_update(ar);
 	if (ret) {
