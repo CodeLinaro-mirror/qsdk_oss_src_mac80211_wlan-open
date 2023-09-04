@@ -12778,6 +12778,8 @@ static int __ath11k_mac_register(struct ath11k *ar)
 			ieee80211_hw_set(ar->hw, USES_RSS);
 	}
 
+	ieee80211_hw_set(ar->hw, SUPPORTS_TID_CLASS_OFFLOAD);
+
 	ar->hw->wiphy->features |= NL80211_FEATURE_STATIC_SMPS;
 	ar->hw->wiphy->flags |= WIPHY_FLAG_IBSS_RSN;
 

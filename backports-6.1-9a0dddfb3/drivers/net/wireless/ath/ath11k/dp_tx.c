@@ -44,19 +44,6 @@ static void ath11k_dp_tx_encap_nwifi(struct sk_buff *skb)
 	hdr->frame_control &= ~__cpu_to_le16(IEEE80211_STYPE_QOS_DATA);
 }
 
-static u8 ath11k_dp_tx_get_tid(struct sk_buff *skb)
-{
-	struct ieee80211_hdr *hdr = (void *)skb->data;
-	struct ath11k_skb_cb *cb = ATH11K_SKB_CB(skb);
-
-	if (cb->flags & ATH11K_SKB_HW_80211_ENCAP)
-		return skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-	else if (!ieee80211_is_data_qos(hdr->frame_control))
-		return HAL_DESC_REO_NON_QOS_TID;
-	else
-		return skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-}
-
 enum hal_encrypt_type ath11k_dp_tx_get_encrypt_type(u32 cipher)
 {
 	switch (cipher) {
@@ -145,7 +132,6 @@ int ath11k_dp_tx(struct ath11k *ar, struct ath11k_vif *arvif,
 		return -EOPNOTSUPP;
 
 	max_tx_ring = ab->hw_params.max_tx_ring;
-	pool_id = skb_get_queue_mapping(skb) & (ATH11K_HW_MAX_QUEUES - 1);
 
 #ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
 	if (unlikely(atomic_read(&ab->num_max_allowed) > DP_TX_COMP_MAX_ALLOWED)) {
@@ -154,6 +140,7 @@ int ath11k_dp_tx(struct ath11k *ar, struct ath11k_vif *arvif,
 	}
 #endif
 	ring_selector = ab->hw_params.hw_ops->get_ring_selector(skb);
+	pool_id = ring_selector;
 
 tcl_ring_sel:
 	tcl_ring_retry = false;
@@ -236,10 +223,6 @@ tcl_ring_sel:
 
 	if (ieee80211_vif_is_mesh(arvif->vif))
 		ti.enable_mesh = true;
-
-	ti.flags1 |= FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TID_OVERWRITE, 1);
-
-	ti.tid = ath11k_dp_tx_get_tid(skb);
 
 	switch (ti.encap_type) {
 	case HAL_TCL_ENCAP_TYPE_NATIVE_WIFI:

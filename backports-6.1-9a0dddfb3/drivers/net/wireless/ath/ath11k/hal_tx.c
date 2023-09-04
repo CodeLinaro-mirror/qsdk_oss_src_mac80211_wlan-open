@@ -65,7 +65,6 @@ void ath11k_hal_tx_cmd_desc_setup(struct ath11k_base *ab, void *cmd,
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_PKT_OFFSET, ti->pkt_offset);
 
 	tcl_cmd.info2 = ti->flags1 |
-		FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TID, ti->tid) |
 		FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_LMAC_ID, ti->lmac_id);
 
 	tcl_cmd.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_DSCP_TID_TABLE_IDX,
