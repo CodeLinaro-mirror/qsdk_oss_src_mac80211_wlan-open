@@ -258,7 +258,7 @@ int ath11k_dp_tx(struct ath11k *ar, struct ath11k_vif *arvif,
 		return -ENOSPC;
 	}
 #endif
-	ring_selector = ab->hw_params.hw_ops->get_ring_selector(skb);
+	ring_selector = smp_processor_id();;
 	pool_id = ring_selector;
 
 tcl_ring_sel:
@@ -268,7 +268,6 @@ tcl_ring_sel:
 	tcl_ring_id = (ring_id == DP_TCL_NUM_RING_MAX) ?
 				  DP_TCL_NUM_RING_MAX - 1 : ring_id;
 
-	ti.rbm_id = ab->hw_params.hal_params->tcl2wbm_rbm_map[ti.ring_id].rbm_id;
 
 	ring_map |= BIT(ring_id);
 
@@ -469,11 +468,10 @@ fail_unmap_dma:
 	dma_unmap_single(ab->dev, ti.paddr, ti.data_len, DMA_TO_DEVICE);
 
 fail_remove_idr:
-	if (ti.pkt_offset)
-		skb_pull(skb, ti.pkt_offset);
-
-	tx_ring->idr_pool[idr].id = -1;
-	clear_bit(idr, tx_ring->idrs);
+	spin_lock_bh(&tx_ring->tx_idr_lock);
+        idr_remove(&tx_ring->txbuf_idr,
+                   FIELD_GET(DP_TX_DESC_ID_MSDU_ID, ti.desc_id));
+        spin_unlock_bh(&tx_ring->tx_idr_lock);
 
 	if (tcl_ring_retry)
 		goto tcl_ring_sel;

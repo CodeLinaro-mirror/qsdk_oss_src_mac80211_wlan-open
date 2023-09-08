@@ -97,6 +97,7 @@ extern bool ath11k_ftm_mode;
 #define MAX_SOCS	3
 
 #define ATH11K_AHB_PROBE_SEQ_TIMEOUT   (2 * HZ)
+#define HAL_REO_DEST_RING_CTRL_HASH_RING_SHIFT                  8
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 #define ATH11K_SSR_POWERUP SUBSYS_AFTER_POWERUP
@@ -461,7 +462,7 @@ struct chan_power_info {
 struct ath11k_reg_tpc_power_info {
 	bool is_psd_power;
 	u8 eirp_power;
-	enum wmi_reg_6g_ap_type power_type_6g;
+	enum wmi_reg_6ghz_ap_type power_type_6g;
 	u8 num_pwr_levels;
 	u8 reg_max[IEEE80211_MAX_NUM_PWR_LEVEL];
 	u8 ap_constraint_power;
@@ -534,6 +535,7 @@ struct ath11k_vif {
 	struct ieee80211_chanctx_conf chanctx;
 
 #ifdef CPTCFG_ATH11K_DEBUGFS
+	struct dentry *debugfs_twt;
 	struct dentry *ampdu_aggr_size;
 	struct dentry *amsdu_aggr_size;
 	struct dentry *wmi_ctrl_stat;
@@ -943,6 +945,7 @@ struct ath11k {
 	struct ath11k_base *ab;
 	struct ath11k_pdev *pdev;
 	struct ieee80211_hw *hw;
+	struct ieee80211_ops *ops;
 	struct ath11k_pdev_wmi *wmi;
 #ifdef CPTCFG_ATH11K_NSS_SUPPORT
 	struct ath11k_nss nss;
@@ -1118,6 +1121,8 @@ struct ath11k {
 	struct cfg80211_chan_def awgn_chandef;
 	u32 chan_bw_interference_bitmap;
 	bool awgn_intf_handling_in_prog;
+	struct cfg80211_chan_def agile_chandef;
+	struct list_head fw_stats_pdevs;
 };
 
 struct ath11k_band_cap {
@@ -1471,6 +1476,7 @@ struct ath11k_base {
 	struct list_head wmi_ast_list;
 	struct completion pm_restart;
 	bool pm_suspend;
+	bool ce_latency_stats_enable;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

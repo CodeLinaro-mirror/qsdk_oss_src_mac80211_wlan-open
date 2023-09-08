@@ -458,8 +458,7 @@ void ath11k_peer_unmap_event(struct ath11k_base *ab, u16 peer_id)
 	}
 
 	if (peer->peer_logging_enabled)
-		ath11k_dbg(ab, ATH11K_DBG_PEER, "peer unmap vdev %d peer %pM
-id %d\n",
+		ath11k_dbg(ab, ATH11K_DBG_PEER, "peer unmap vdev %d peer %pM id %d\n",
 			   peer->vdev_id, peer->addr, peer_id);
 
 	list_del(&peer->list);

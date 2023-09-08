@@ -4504,24 +4504,6 @@ static void ath11k_qmi_msg_mem_ready_cb(struct qmi_handle *qmi_hdl,
 	ath11k_qmi_driver_event_post(qmi, ATH11K_QMI_EVENT_FW_MEM_READY, NULL);
 }
 
-static void ath11k_qmi_msg_fw_ready_cb(struct qmi_handle *qmi_hdl,
-				       struct sockaddr_qrtr *sq,
-				       struct qmi_txn *txn,
-				       const void *decoded)
-{
-	struct ath11k_qmi *qmi = container_of(qmi_hdl, struct ath11k_qmi, handle);
-	struct ath11k_base *ab = qmi->ab;
-
-	ath11k_dbg(ab, ATH11K_DBG_QMI, "firmware ready\n");
-
-	if (!ab->qmi.cal_done) {
-		ab->qmi.cal_done = 1;
-		wake_up(&ab->qmi.cold_boot_waitq);
-	}
-
-	ath11k_qmi_driver_event_post(qmi, ATH11K_QMI_EVENT_FW_READY, NULL);
-}
-
 static void ath11k_qmi_msg_cold_boot_cal_done_cb(struct qmi_handle *qmi_hdl,
 						 struct sockaddr_qrtr *sq,
 						 struct qmi_txn *txn,
@@ -4782,19 +4764,19 @@ static const struct qmi_msg_handler ath11k_qmi_msg_handlers[] = {
 		.decoded_size = sizeof(struct qmi_wlanfw_request_mem_ind_msg_v01),
 		.fn = ath11k_qmi_msg_mem_request_cb,
 	},
+	 {
+                .type = QMI_INDICATION,
+                .msg_id = QMI_WLFW_FW_MEM_READY_IND_V01,
+                .ei = qmi_wlanfw_mem_ready_ind_msg_v01_ei,
+                .decoded_size = sizeof(struct qmi_wlanfw_fw_mem_ready_ind_msg_v01),
+                .fn = ath11k_qmi_msg_mem_ready_cb,
+        },
 	{
 		.type = QMI_INDICATION,
-		.msg_id = QMI_WLFW_FW_MEM_READY_IND_V01,
-		.ei = qmi_wlanfw_mem_ready_ind_msg_v01_ei,
-		.decoded_size = sizeof(struct qmi_wlanfw_fw_mem_ready_ind_msg_v01),
-		.fn = ath11k_qmi_msg_mem_ready_cb,
-	},
-	{
-		.type = QMI_INDICATION,
-		.msg_id = QMI_WLFW_FW_READY_IND_V01,
-		.ei = qmi_wlanfw_fw_ready_ind_msg_v01_ei,
-		.decoded_size = sizeof(struct qmi_wlanfw_fw_ready_ind_msg_v01),
-		.fn = ath11k_qmi_msg_fw_ready_cb,
+		.msg_id = QMI_WLFW_FW_INIT_DONE_IND_V01,
+		.ei = qmi_wlfw_fw_init_done_ind_msg_v01_ei,
+		.decoded_size = sizeof(struct qmi_wlfw_fw_init_done_ind_msg_v01),
+		.fn = ath11k_qmi_msg_fw_init_done_cb,
 	},
 	{
 		.type = QMI_INDICATION,
@@ -4827,14 +4809,6 @@ static const struct qmi_msg_handler ath11k_qmi_msg_handlers[] = {
 		.decoded_size =
 			sizeof(struct qmi_wlanfw_qdss_trace_save_ind_msg_v01),
 		.fn = ath11k_wlfw_qdss_trace_save_ind_cb,
-	},
-	{
-		.type = QMI_INDICATION,
-		.msg_id = QMI_WLFW_FW_INIT_DONE_IND_V01,
-		.ei = qmi_wlfw_fw_init_done_ind_msg_v01_ei,
-		.decoded_size =
-			sizeof(struct qmi_wlfw_fw_init_done_ind_msg_v01),
-		.fn = ath11k_qmi_msg_fw_init_done_cb,
 	},
 	/* end of list */
 	{},
@@ -4983,22 +4957,6 @@ static void ath11k_qmi_driver_event_work(struct work_struct *work)
 				}
 				set_bit(ATH11K_FLAG_REGISTERED, &ab->dev_flags);
 			}
-
-			break;
-		case ATH11K_QMI_EVENT_FW_READY:
-			/* For targets requiring a FW restart upon cold
-			 * boot completion, there is no need to process
-			 * FW ready; such targets will receive FW init
-			 * done message after FW restart.
-			 */
-			if (ab->hw_params.cbcal_restart_fw)
-				break;
-
-			clear_bit(ATH11K_FLAG_CRASH_FLUSH,
-				  &ab->dev_flags);
-			clear_bit(ATH11K_FLAG_RECOVERY, &ab->dev_flags);
-			ath11k_core_qmi_firmware_ready(ab);
-			set_bit(ATH11K_FLAG_REGISTERED, &ab->dev_flags);
 
 			break;
 		case ATH11K_QMI_EVENT_COLD_BOOT_CAL_DONE:

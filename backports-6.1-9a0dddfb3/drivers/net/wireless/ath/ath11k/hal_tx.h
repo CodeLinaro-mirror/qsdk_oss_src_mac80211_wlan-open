@@ -36,7 +36,6 @@ struct hal_tx_info {
 	u8 lmac_id;
 	u8 dscp_tid_tbl_idx;
 	bool enable_mesh;
-	u8 rbm_id;
 };
 
 /* TODO: Check if the actual desc macros can be used instead */

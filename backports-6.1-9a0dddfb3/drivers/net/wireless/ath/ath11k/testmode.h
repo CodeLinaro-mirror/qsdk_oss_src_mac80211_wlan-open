@@ -5,7 +5,9 @@
  */
 
 #include "core.h"
+#include "hif.h"
 
+#define WMI_TLV_HDR_SIZE 4
 #ifdef CPTCFG_NL80211_TESTMODE
 
 void ath11k_tm_wmi_event(struct ath11k_base *ab, u32 cmd_id, struct sk_buff *skb);

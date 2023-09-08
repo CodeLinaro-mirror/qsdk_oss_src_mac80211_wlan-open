@@ -93,7 +93,6 @@ struct ath11k_peer {
 	u16 sec_type;
 	u16 sec_type_grp;
 	bool is_authorized;
-	bool dp_setup_done;
 	struct ppdu_user_delayba ppdu_stats_delayba;
 	bool delayba_flag;
 	bool peer_logging_enabled;

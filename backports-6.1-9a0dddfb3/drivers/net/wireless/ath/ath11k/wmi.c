@@ -1173,7 +1173,7 @@ int ath11k_wmi_vdev_up(struct ath11k *ar, struct vdev_up_params *params)
 	struct sk_buff *skb;
 	int ret;
 
-	arvif = ath11k_mac_get_arvif(ar, vdev_id);
+	arvif = ath11k_mac_get_arvif(ar, params->vdev_id);
 
 	skb = ath11k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
 	if (!skb)
@@ -1186,15 +1186,13 @@ int ath11k_wmi_vdev_up(struct ath11k *ar, struct vdev_up_params *params)
 	cmd->vdev_id = params->vdev_id;
 	cmd->vdev_assoc_id = params->aid;
 	ether_addr_copy(cmd->vdev_bssid.addr, params->bssid);
-	cmd->profile_idx = params->profile_idx;
-	cmd->profile_count = params->profile_count;
+	cmd->nontx_profile_idx = params->profile_idx;
+	cmd->nontx_profile_cnt = params->profile_count;
 	if (params->tx_bssid)
 		ether_addr_copy(cmd->tx_vdev_bssid.addr, params->tx_bssid);
 
-	cmd->nontx_profile_idx = nontx_profile_idx;
-	cmd->nontx_profile_cnt = nontx_profile_cnt;
-	if (tx_bssid)
-		ether_addr_copy(cmd->tx_vdev_bssid.addr, tx_bssid);
+	if (params->tx_bssid)
+		ether_addr_copy(cmd->tx_vdev_bssid.addr, params->tx_bssid);
 
 	if (arvif && arvif->vif->type == NL80211_IFTYPE_STATION) {
 		bss_conf = &arvif->vif->bss_conf;
@@ -4987,7 +4985,7 @@ ath11k_wmi_obss_color_collision_event(struct ath11k_base *ab, struct sk_buff *sk
 	switch (ev->evt_type) {
 	case WMI_BSS_COLOR_COLLISION_DETECTION:
 		ieee80211_obss_color_collision_notify(arvif->vif, ev->obss_color_bitmap,
-						      0);
+						      GFP_KERNEL);
 		ath11k_dbg(ab, ATH11K_DBG_WMI,
 			   "OBSS color collision detected vdev:%d, event:%d, bitmap:%08llx\n",
 			   ev->vdev_id, ev->evt_type, ev->obss_color_bitmap);
@@ -6415,27 +6413,6 @@ ath11k_invalid_5ghz_reg_ext_rules_from_wmi(u32 num_reg_rules,
 	return num_invalid_5ghz_rules;
 }
 
-static u8
-ath11k_invalid_5g_reg_ext_rules_from_wmi(u32 num_reg_rules,
-					 struct wmi_regulatory_ext_rule_struct *wmi_reg_rule)
-{
-	u8 num_invalid_5g_rules = 0;
-	u32 count, start_freq, end_freq;
-
-	for (count = 0; count < num_reg_rules; count++) {
-		start_freq = FIELD_GET(REG_RULE_START_FREQ,
-				       wmi_reg_rule[count].freq_info);
-		end_freq = FIELD_GET(REG_RULE_END_FREQ,
-				     wmi_reg_rule[count].freq_info);
-
-		if (start_freq >= ATH11K_MIN_6G_FREQ &&
-		    end_freq <= ATH11K_MAX_6G_FREQ)
-			num_invalid_5g_rules++;
-	}
-
-	return num_invalid_5g_rules;
-}
-
 static int ath11k_pull_reg_chan_list_ext_update_ev(struct ath11k_base *ab,
 						   struct sk_buff *skb,
 						   struct cur_regulatory_info *reg_info)
@@ -6991,7 +6968,7 @@ static int ath11k_pull_mgmt_rx_params_tlv(struct ath11k_base *ab,
 }
 
 static int wmi_process_tx_comp(struct ath11k *ar,
-				    struct wmi_mgmt_tx_compl_event *tx_compl_param)
+				    struct wmi_tx_compl_event *tx_compl_param)
 {
 	struct sk_buff *msdu;
 	struct ieee80211_tx_info *info;
@@ -8338,14 +8315,14 @@ static int ath11k_reg_chan_list_event(struct ath11k_base *ab, struct sk_buff *sk
 
 mem_free:
 	if (reg_info) {
-		kfree(reg_info->reg_rules_2g_ptr);
-		 kfree(reg_info->reg_rules_5g_ptr);
+		kfree(reg_info->reg_rules_2ghz_ptr);
+		kfree(reg_info->reg_rules_5ghz_ptr);
 		if (reg_info->is_ext_reg_event) {
 			for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++) {
-				kfree(reg_info->reg_rules_6g_ap_ptr[i]);
+				kfree(reg_info->reg_rules_6ghz_ap_ptr[i]);
 
 				for (j = 0; j < WMI_REG_MAX_CLIENT_TYPE; j++)
-					kfree(reg_info->reg_rules_6g_client_ptr[i][j]);
+					kfree(reg_info->reg_rules_6ghz_client_ptr[i][j]);
 			}
 		}
 		kfree(reg_info);

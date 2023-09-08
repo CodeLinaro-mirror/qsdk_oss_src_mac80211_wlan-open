@@ -1052,6 +1052,7 @@ int ath11k_hal_srng_setup(struct ath11k_base *ab, enum hal_ring_type type,
 	u32 lmac_idx;
 	int i;
 	u32 reg_base;
+	unsigned long *mem;
 
 	ring_id = ath11k_hal_srng_get_ring_id(ab, type, ring_num, mac_id);
 	if (ring_id < 0)
@@ -1080,6 +1081,8 @@ int ath11k_hal_srng_setup(struct ath11k_base *ab, enum hal_ring_type type,
 		srng->hwreg_base[i] = srng_config->reg_start[i] +
 				      (ring_num * srng_config->reg_size[i]);
 	}
+
+	mem = ab->mem;
 
 	memset(srng->ring_base_vaddr, 0,
 	       (srng->entry_size * srng->num_entries) << 2);

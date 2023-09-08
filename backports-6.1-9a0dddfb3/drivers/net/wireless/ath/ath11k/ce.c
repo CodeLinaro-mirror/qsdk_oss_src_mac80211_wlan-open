@@ -1039,8 +1039,6 @@ void ath11k_ce_rx_post_buf(struct ath11k_base *ab)
 			if (ret == -ENOSPC)
 				continue;
 
-			ath11k_warn(ab, "failed to post rx buf to pipe: %d err: %d\n",
-				    i, ret);
 			mod_timer(&ab->rx_replenish_retry,
 				  jiffies + ATH11K_CE_RX_POST_RETRY_JIFFIES);
 

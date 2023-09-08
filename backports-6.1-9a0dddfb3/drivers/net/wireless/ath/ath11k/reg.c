@@ -573,6 +573,21 @@ static void ath11k_copy_reg_rule(struct ath11k_reg_rule *ath11k_reg_rule,
 		ath11k_reg_rule->end_freq = reg_rule->end_freq;
 }
 
+enum wmi_reg_6ghz_ap_type
+ath11k_ieee80211_ap_pwr_type_convert(enum ieee80211_ap_reg_power power_type)
+{
+        switch (power_type) {
+        case IEEE80211_REG_LPI_AP:
+                return WMI_REG_INDOOR_AP;
+        case IEEE80211_REG_SP_AP:
+                return WMI_REG_STANDARD_POWER_AP;
+        case IEEE80211_REG_VLP_AP:
+                return WMI_REG_VERY_LOW_POWER_AP;
+        default:
+                return WMI_REG_MAX_AP_TYPE;
+        }
+}
+
 static struct cur_reg_rule
 *ath11k_get_active_6g_reg_rule(struct cur_regulatory_info *reg_info,
 			       u32 *max_bw_6g, int *max_elements,
@@ -582,11 +597,11 @@ static struct cur_reg_rule
 	u8 i = 0, j = 0;
 
 	for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++) {
-		if (reg_info->num_6g_reg_rules_ap[i]) {
-			*max_elements = reg_info->num_6g_reg_rules_ap[i];
-			reg_rule = reg_info->reg_rules_6g_ap_ptr[i];
-			*max_bw_6g = reg_info->max_bw_6g_ap[i];
-			reg_info->num_6g_reg_rules_ap[i] = 0;
+		if (reg_info->num_6ghz_rules_ap[i]) {
+			*max_elements = reg_info->num_6ghz_rules_ap[i];
+			reg_rule = reg_info->reg_rules_6ghz_ap_ptr[i];
+			*max_bw_6g = reg_info->max_bw_6ghz_ap[i];
+			reg_info->num_6ghz_rules_ap[i] = 0;
 			*pwr_mode = i;
 			return reg_rule;
 		}
@@ -594,11 +609,11 @@ static struct cur_reg_rule
 
 	for (i = 0; i < WMI_REG_MAX_CLIENT_TYPE; i++) {
 		for (j = 0; j < WMI_REG_CURRENT_MAX_AP_TYPE; j++) {
-			if (reg_info->num_6g_reg_rules_client[j][i]) {
-				*max_elements = reg_info->num_6g_reg_rules_client[j][i];
-				reg_rule = reg_info->reg_rules_6g_client_ptr[j][i];
-				*max_bw_6g = reg_info->max_bw_6g_client[j][i];
-				reg_info->num_6g_reg_rules_client[j][i] = 0;
+			if (reg_info->num_6ghz_rules_client[j][i]) {
+				*max_elements = reg_info->num_6ghz_rules_client[j][i];
+				reg_rule = reg_info->reg_rules_6ghz_client_ptr[j][i];
+				*max_bw_6g = reg_info->max_bw_6ghz_client[j][i];
+				reg_info->num_6ghz_rules_client[j][i] = 0;
 				*pwr_mode = WMI_REG_CURRENT_MAX_AP_TYPE * (i + 1)  + j;
 				return reg_rule;
 			}
@@ -613,7 +628,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 		      struct cur_regulatory_info *reg_info, bool intersect)
 {
 	struct ieee80211_regdomain *tmp_regd, *default_regd, *new_regd = NULL;
-	struct cur_reg_rule *reg_rule, *reg_rule_6ghz;
+	struct cur_reg_rule *reg_rule, *reg_rule_6g;
 	u8 i = 0, j = 0, k = 0, max_elements = 0;
 	u8 num_rules;
 	u16 max_bw;

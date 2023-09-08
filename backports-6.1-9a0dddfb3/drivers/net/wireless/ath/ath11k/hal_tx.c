@@ -45,7 +45,7 @@ void ath11k_hal_tx_cmd_desc_setup(struct ath11k_base *ab, void *cmd,
 		FIELD_PREP(BUFFER_ADDR_INFO1_ADDR,
 			   ((uint64_t)ti->paddr >> HAL_ADDR_MSB_REG_SHIFT));
 	tcl_cmd.buf_addr_info.info1 |=
-		FIELD_PREP(BUFFER_ADDR_INFO1_RET_BUF_MGR, ti->rbm_id) |
+		FIELD_PREP(BUFFER_ADDR_INFO1_RET_BUF_MGR, ti->buf_id) |
 		FIELD_PREP(BUFFER_ADDR_INFO1_SW_COOKIE, ti->desc_id);
 
 	tcl_cmd.info0 =

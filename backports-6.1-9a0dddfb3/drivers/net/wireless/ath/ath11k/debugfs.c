@@ -2049,6 +2049,8 @@ int ath11k_debugfs_soc_create(struct ath11k_base *ab)
 		ret = PTR_ERR(ab->debugfs_soc);
 		goto out;
 	}
+	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
+			    &fops_soc_stats_disable);
 
 	ret = 0;
 
@@ -2080,9 +2082,6 @@ int ath11k_debugfs_create()
 			return PTR_ERR(debugfs_ath11k);
 		return -ENOMEM;
 	}
-
-	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
-			    &fops_soc_stats_disable);
 
 	return 0;
 }

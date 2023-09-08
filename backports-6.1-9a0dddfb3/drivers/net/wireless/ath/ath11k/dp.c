@@ -465,7 +465,6 @@ static int ath11k_dp_srng_common_setup(struct ath11k_base *ab)
 	struct ath11k_dp *dp = &ab->dp;
 	struct hal_srng *srng;
 	int i, ret, j;
-	u8 tcl_num, wbm_num;
 
 	ath11k_dp_init_reo_status_timer(ab);
 
@@ -498,45 +497,41 @@ static int ath11k_dp_srng_common_setup(struct ath11k_base *ab)
 	}
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
-		tcl_num = ab->hw_params.hal_params->tcl2wbm_rbm_map[i].tcl_ring_num;
-		wbm_num = ab->hw_params.hal_params->tcl2wbm_rbm_map[i].wbm_ring_num;
-
 		ret = ath11k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_data_ring,
-					   HAL_TCL_DATA, tcl_num, 0,
-					   ab->hw_params.tx_ring_size);
-		if (ret) {
-			ath11k_warn(ab, "failed to set up tcl_data ring (%d) :%d\n",
-				    i, ret);
-			goto err;
-		}
+					   HAL_TCL_DATA, i, 0,
+					   DP_TCL_DATA_RING_SIZE);
+                if (ret) {
+                        ath11k_warn(ab, "failed to set up tcl_data ring (%d) :%d\n",
+                                    i, ret);
+                        goto err;
+                }
 
-		ret = ath11k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
-					   HAL_WBM2SW_RELEASE, wbm_num, 0,
-					   DP_TX_COMP_RING_SIZE);
-		if (ret) {
-			ath11k_warn(ab, "failed to set up tcl_comp ring (%d) :%d\n",
-				    i, ret);
-			goto err;
-		}
+                ret = ath11k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
+                                           HAL_WBM2SW_RELEASE, i, 0,
+                                           DP_TX_COMP_RING_SIZE);
+                if (ret) {
+                        ath11k_warn(ab, "failed to set up tcl_comp ring (%d) :%d\n",
+                                    i, ret);
+                        goto err;
+                }
 
-		srng = &ab->hal.srng_list[dp->tx_ring[i].tcl_data_ring.ring_id];
-		ath11k_hal_tx_init_data_ring(ab, srng, HAL_TCL_DATA);
+                srng = &ab->hal.srng_list[dp->tx_ring[i].tcl_data_ring.ring_id];
+                ath11k_hal_tx_init_data_ring(ab, srng, HAL_TCL_DATA);
 
-		ath11k_dp_shadow_init_timer(ab, &dp->tx_ring_timer[i],
-					    ATH11K_SHADOW_DP_TIMER_INTERVAL,
-					    dp->tx_ring[i].tcl_data_ring.ring_id);
+                ath11k_dp_shadow_init_timer(ab, &dp->tx_ring_timer[i],
+                                            ATH11K_SHADOW_DP_TIMER_INTERVAL,
+                                            dp->tx_ring[i].tcl_data_ring.ring_id);
 
-		dp->tx_ring[i].idr_pool = kcalloc(DP_TX_IDR_SIZE,
-						  sizeof(struct idr_entry), GFP_KERNEL);
-		if (!dp->tx_ring[i].idr_pool) {
-			ath11k_warn(ab, "failed to allocate memory for idr pool ring(%d)\n", i);
-			ret = -ENOMEM;
-			goto err;
-		}
+                dp->tx_ring[i].idr_pool = kcalloc(DP_TX_IDR_SIZE,
+                                                  sizeof(struct idr_entry), GFP_KERNEL);
+                if (!dp->tx_ring[i].idr_pool) {
+                        ath11k_warn(ab, "failed to allocate memory for idr pool ring(%d)\n", i);
+                        ret = -ENOMEM;
+                        goto err;
+                }
 
-		/* Reset id to default */
 		for (j = 0; j < DP_TX_IDR_SIZE; j++)
-			dp->tx_ring[i].idr_pool[j].id = -1;
+                        dp->tx_ring[i].idr_pool[j].id = -1;
 	}
 
 	ret = ath11k_dp_srng_setup(ab, &dp->reo_reinject_ring, HAL_REO_REINJECT,
@@ -896,10 +891,11 @@ int ath11k_dp_service_srng(struct ath11k_base *ab,
 	int tot_work_done = 0;
 	bool nss_offload;
 
-	for (i = 0; i < ab->hw_params.max_tx_ring; i++) {
-		if (!nss_offload && (BIT(ab->hw_params.hal_params->tcl2wbm_rbm_map[i].wbm_ring_num) &
-		    ab->hw_params.ring_mask->tx[grp_id]))
-			ath11k_dp_tx_completion_handler(ab, i);
+	nss_offload = ab->nss.enabled;
+
+	if (!nss_offload && ab->hw_params.ring_mask->tx[grp_id]) {
+		i = __fls(ab->hw_params.ring_mask->tx[grp_id]);
+		ath11k_dp_tx_completion_handler(ab, i);
 	}
 
 	if (!nss_offload && ab->hw_params.ring_mask->rx_err[grp_id]) {
@@ -1229,7 +1225,7 @@ int ath11k_dp_alloc(struct ath11k_base *ab)
 		ATH11K_MEMORY_STATS_INC(ab, malloc_size, size);
 	}
 
-	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
+	for (i = 0; i < ab->hw_params.num_dscp_tid_map_tbl; i++)
 		ath11k_hal_tx_set_dscp_tid_map(ab, i);
 
 	/* Init any SOC level resource for DP */

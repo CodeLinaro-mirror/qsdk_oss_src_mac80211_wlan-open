@@ -70,6 +70,16 @@ static inline const char *ath11k_dbg_str(enum ath11k_debug_mask mask)
 		return "dp_rx";
 	case ATH11K_DBG_CE:
 		return "ce";
+	case ATH11K_DBG_CFR:
+		return "cfr";
+	case ATH11K_DBG_CFR_DUMP:
+		return "cfr_dump";
+	case ATH11K_DBG_PEER:
+		return "peer";
+	case ATH11K_DBG_TEST:
+		return "test";
+	case ATH11K_DBG_SMART_ANT:
+		return "antenna";
 
 	/* no default handler to allow compiler to check that the
 	 * enum is fully handled

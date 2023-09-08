@@ -28,6 +28,7 @@ struct ath11k_base;
 #define HAL_WBM_IDLE_SCATTER_BUF_SIZE (HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX - \
 				       HAL_WBM_IDLE_SCATTER_NEXT_PTR_SIZE)
 
+#define HAL_IPQ5018_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX	32
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX	48
 #define HAL_DSCP_TID_TBL_SIZE			24
 
@@ -121,6 +122,7 @@ struct ath11k_base;
 #define HAL_REO1_DEST_RING_CTRL_IX_1		0x00000008
 #define HAL_REO1_DEST_RING_CTRL_IX_2		0x0000000c
 #define HAL_REO1_DEST_RING_CTRL_IX_3		0x00000010
+#define HAL_REO1_R0_MISC_CTL                   0x000005d8
 #define HAL_REO1_MISC_CTL(ab)			ab->hw_params.regs->hal_reo1_misc_ctl
 #define HAL_REO1_RING_BASE_LSB(ab)		ab->hw_params.regs->hal_reo1_ring_base_lsb
 #define HAL_REO1_RING_BASE_MSB(ab)		ab->hw_params.regs->hal_reo1_ring_base_msb
@@ -285,6 +287,7 @@ struct ath11k_base;
 #define HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE		BIT(2)
 #define HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE		BIT(3)
 #define HAL_REO1_MISC_CTL_FRAGMENT_DST_RING		GENMASK(20, 17)
+#define HAL_IPQ5018_REO1_MISC_CTL_FRAGMENT_DEST_RING		GENMASK(19, 17)
 
 /* CE ring bit field mask and shift */
 #define HAL_CE_DST_R0_DEST_CTRL_MAX_LEN			GENMASK(15, 0)

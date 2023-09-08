@@ -21,6 +21,7 @@ struct ath11k_ext_irq_grp;
 
 struct dp_rx_tid {
 	u8 tid;
+	u32 *vaddr;
 	dma_addr_t paddr;
 	u32 size;
 	u32 pending_desc_size;

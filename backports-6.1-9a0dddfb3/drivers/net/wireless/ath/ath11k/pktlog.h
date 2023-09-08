@@ -51,6 +51,6 @@ struct ath_pktlog {
 	u8 hdr_size_field_offset;
 };
 
-#endif /* CONFIG_ATH10K_PKTLOG */
+#endif /* CONFIG_ATH11K_PKTLOG */
 
 #endif /* _PKTLOG_H_ */

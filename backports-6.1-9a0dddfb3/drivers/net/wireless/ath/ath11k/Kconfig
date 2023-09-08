@@ -6,7 +6,6 @@ config ATH11K
 	depends on MAC80211 && HAS_DMA
 	depends on CRYPTO_MICHAEL_MIC
 	select ATH_COMMON
-	depends on QCOM_QMI_HELPERS
 	help
 	  This module adds support for Qualcomm Technologies 802.11ax family of
 	  chipsets.

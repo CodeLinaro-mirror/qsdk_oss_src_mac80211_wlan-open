@@ -465,12 +465,13 @@ struct hal_rx_phyrx_rssi_legacy_info {
 #define HAL_RX_MPDU_INFO_INFO0_PEERID	GENMASK(31, 16)
 #define HAL_RX_MPDU_INFO_INFO0_PEERID_WCN6855	GENMASK(15, 0)
 #define HAL_RX_MPDU_INFO_INFO1_MPDU_LEN		GENMASK(13, 0)
+#define HAL_RX_MPDU_INFO_INFO0_PPDU_ID          GENMASK(31, 16)
 
 struct hal_rx_mpdu_info_ipq8074 {
-	__le32 rsvd0;
 	__le32 info0;
-	__le32 rsvd1[11];
 	__le32 info1;
+	__le32 rsvd1[11];
+	__le32 info2;
 	__le32 rsvd2[9];
 } __packed;
 

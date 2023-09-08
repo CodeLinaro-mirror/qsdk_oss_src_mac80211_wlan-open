@@ -205,6 +205,7 @@ struct ath11k_hw_params {
 	bool rx_mac_buf_ring;
 	bool vdev_start_delay;
 	bool htt_peer_map_v2;
+	u8 num_dscp_tid_map_tbl;
 
 	struct {
 		u8 fft_sz;
@@ -238,6 +239,7 @@ struct ath11k_hw_params {
 	bool supports_dynamic_smps_6ghz;
 	bool alloc_cacheable_memory;
 	u32 m3_addr;
+	u8 reo_dest_ring_map_shift;
 	bool supports_rssi_stats;
 	bool fw_wmi_diag_event;
 	bool current_cc_support;
@@ -328,6 +330,9 @@ struct ath11k_hw_ops {
 	bool (*rx_desc_mac_addr2_valid)(struct hal_rx_desc *desc);
 	u8* (*rx_desc_mpdu_start_addr2)(struct hal_rx_desc *desc);
 	u32 (*get_ring_selector)(struct sk_buff *skb);
+	u32 (*rx_desc_get_hal_mpdu_len) (struct hal_rx_mpdu_info *mpdu_info);
+	void (*set_rx_fragmentation_dst_ring)(struct ath11k_base *ab);
+	u32 (*get_reo_dest_remap_config)(void);
 #ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
 	void (*rx_desc_get_offset)(struct htt_rx_ring_tlv_filter *tlv_filter);
 #endif

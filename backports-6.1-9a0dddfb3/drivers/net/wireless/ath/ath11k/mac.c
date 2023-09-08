@@ -1476,7 +1476,6 @@ static int ath11k_mac_op_config(struct ieee80211_hw *hw, u32 changed)
 	struct ath11k *ar = hw->priv;
 	struct ieee80211_conf *conf = &hw->conf;
 	int ret = 0;
-	struct vdev_up_params params = { 0 };
 
 	mutex_lock(&ar->conf_mutex);
 
@@ -1601,80 +1600,6 @@ static bool ath11k_mac_set_nontx_vif_params(struct ath11k_vif *tx_arvif,
 								 tx_arvif->rsnie_present,
 								 profile,
 								 profile_len);
-				return true;
-			}
-			profile = next_profile;
-		}
-		ies = cfg80211_find_ie(WLAN_EID_MULTIPLE_BSSID, profile,
-				       ies_len);
-	}
-
-	return false;
-}
-
-static bool ath11k_mac_setup_bcn_tmpl_nontx_vif_params(struct ath11k_vif *tx_arvif,
-						       struct ath11k_vif *arvif,
-						       struct sk_buff *bcn)
-{
-	struct ieee80211_mgmt *mgmt;
-	const u8 *ies, *profile, *next_profile;
-	int ies_len;
-
-	if (arvif == tx_arvif)
-		return true;
-
-	arvif->rsnie_present = tx_arvif->rsnie_present;
-
-	ies = bcn->data + ieee80211_get_hdrlen_from_skb(bcn);
-	ies += sizeof(mgmt->u.beacon);
-	ies_len = skb_tail_pointer(bcn) - ies;
-
-	ies = cfg80211_find_ie(WLAN_EID_MULTIPLE_BSSID, ies, ies_len);
-
-	while (ies) {
-		u8 mbssid_len;
-
-		ies_len -= (2 + ies[1]);
-		mbssid_len = ies[1] - 1;
-		profile = &ies[3];
-
-		while (mbssid_len) {
-			u8 profile_len, nie_len, *nie;
-
-			profile_len = profile[1];
-			next_profile = profile + (2 + profile_len);
-			mbssid_len -= (2 + profile_len);
-
-			profile += 2;
-			profile_len -= (2 + profile[1]);
-			profile += (2 + profile[1]); /* nontx capabilities */
-			profile_len -= (2 + profile[1]);
-			profile += (2 + profile[1]); /* SSID */
-			if (profile[2] == arvif->vif->bss_conf.bssid_index) {
-				profile_len -= 5;
-				profile = profile + 5;
-
-				if (cfg80211_find_ie(WLAN_EID_RSN, profile,
-						     profile_len))
-					arvif->rsnie_present = true;
-				else if (tx_arvif->rsnie_present) {
-					nie = cfg80211_find_ext_ie(WLAN_EID_EXT_NON_INHERITANCE,
-								   profile,
-								   profile_len);
-					if (nie) {
-						int i;
-
-						nie_len = nie[1];
-						nie += 2;
-						for (i = 0; i < nie_len; i++) {
-							if (nie[i] ==
-								WLAN_EID_RSN) {
-								arvif->rsnie_present = false;
-								break;
-							}
-						}
-					}
-				}
 				return true;
 			}
 			profile = next_profile;
@@ -1872,9 +1797,9 @@ static int ath11k_mac_setup_bcn_tmpl_ema(struct ath11k_vif *arvif,
 
 	for (i = 0; i < beacons->cnt; i++) {
 		if (found_vdev == false)
-			found_vdev = ath11k_mac_setup_bcn_tmpl_nontx_vif_params(tx_arvif,
-										arvif
-										beacons->bcn[i].skb);
+			found_vdev = ath11k_mac_set_nontx_vif_params(tx_arvif,
+								     arvif,
+								     beacons->bcn[i].skb);
 
 		ret = __ath11k_mac_setup_bcn_tmpl(tx_arvif, beacons->bcn[i].skb,
 						  beacons->bcn[i].offs,
@@ -1923,10 +1848,11 @@ static int ath11k_mac_setup_bcn_tmpl_mbssid(struct ath11k_vif *arvif,
 	if (tx_arvif == arvif) {
 		if (ath11k_mac_set_vif_params(tx_arvif, bcn))
 			return -EINVAL;
-	else
-		(void) ath11k_mac_setup_bcn_tmpl_nontx_vif_params(tx_arvif,
-								  arvif,
-								  bcn);
+	} else {
+		(void) ath11k_mac_set_nontx_vif_params(tx_arvif,
+							arvif,
+							bcn);
+	}
 	ret = __ath11k_mac_setup_bcn_tmpl(tx_arvif, bcn, offs, 0, 0);
 	kfree_skb(bcn);
 
@@ -3687,7 +3613,7 @@ static int ath11k_mac_fils_discovery(struct ath11k_vif *arvif,
 	if (info->fils_discovery.max_interval) {
 		interval = info->fils_discovery.max_interval;
 
-		tmpl = ieee80211_get_fils_discovery_tmpl(ar->hw, arvif->vif);
+		tmpl = ieee80211_get_fils_discovery_tmpl(ar->hw, arvif->vif, 0);
 		if (tmpl)
 			ret = ath11k_wmi_fils_discovery_tmpl(ar, arvif->vdev_id,
 							     tmpl);
@@ -3696,7 +3622,7 @@ static int ath11k_mac_fils_discovery(struct ath11k_vif *arvif,
 		interval = info->unsol_bcast_probe_resp_interval;
 
 		tmpl = ieee80211_get_unsol_bcast_probe_resp_tmpl(ar->hw,
-								 arvif->vif);
+								 arvif->vif, 0);
 		if (tmpl)
 			ret = ath11k_wmi_probe_resp_tmpl(ar, arvif->vdev_id,
 							 tmpl);
@@ -5093,7 +5019,6 @@ ath11k_mac_bitrate_mask_num_ht_rates(struct ath11k *ar,
 {
 	int num_rates = 0;
 	int i;
-	u32 scan_timeout;
 
 	for (i = 0; i < ARRAY_SIZE(mask->control[band].ht_mcs); i++)
 		num_rates += hweight8(mask->control[band].ht_mcs[i]);
@@ -7377,6 +7302,11 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	int ret;
 	u64 adjusted_tsf;
 
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
+	 if (skb->fast_xmit)
+                info_flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
+#endif
+
 	if (arvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ieee80211_free_txskb(ar->hw, skb);
 		return;
@@ -7436,8 +7366,7 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 		}
 		return;
 	}
-
-	if (control->sta)
+	if ( control && control->sta)
 		arsta = ath11k_sta_to_arsta(control->sta);
 
 	/* Must call mac80211 tx status handler, else when stats is disabled we free
@@ -7721,9 +7650,6 @@ static int ath11k_mac_op_start(struct ieee80211_hw *hw)
 			goto err;
 		}
 	}
-
-	ath11k_debug_aggr_size_config_init(arvif);
-	ath11k_debugfs_wmi_ctrl_stats(arvif);
 
 	mutex_unlock(&ar->conf_mutex);
 
@@ -8429,6 +8355,9 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 		ath11k_reg_handle_chan_list(ab, reg_info, IEEE80211_REG_LPI_AP);
 	}
 
+	ath11k_debug_aggr_size_config_init(arvif);
+        ath11k_debugfs_wmi_ctrl_stats(arvif);
+
 	/* Remove A-MPDU, A-MSDU aggr size files */
 	debugfs_remove(arvif->ampdu_aggr_size);
 	arvif->ampdu_aggr_size = NULL;
@@ -8442,6 +8371,14 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 
 	if (arvif->vif->debugfs_dir)
 		ath11k_debugfs_per_arvif(arvif);
+
+	/* Remove the mac filter file */
+        debugfs_remove(arvif->mac_filter);
+        arvif->mac_filter = NULL;
+
+        /* Remove the wbm tx compl stats file */
+        debugfs_remove(arvif->wbm_tx_completion_stats);
+        arvif->wbm_tx_completion_stats = NULL;
 
 	mutex_unlock(&ar->conf_mutex);
 
@@ -8619,7 +8556,7 @@ err_vdev_del:
 	/* TODO: recalc traffic pause state based on the available vdevs */
 	if (arvif->vif->debugfs_dir)
 		ath11k_mac_debugfs_remove_stats_file(arvif);
-
+unlock:
 	mutex_unlock(&ar->conf_mutex);
 }
 
@@ -8645,15 +8582,6 @@ static void ath11k_mac_op_configure_filter(struct ieee80211_hw *hw,
 	*total_flags &= SUPPORTED_FILTERS;
 	ar->filter_flags = *total_flags;
 
-	/* Remove the mac filter file */
-	debugfs_remove(arvif->mac_filter);
-	arvif->mac_filter = NULL;
-
-	/* Remove the wbm tx compl stats file */
-	debugfs_remove(arvif->wbm_tx_completion_stats);
-	arvif->wbm_tx_completion_stats = NULL;
-
-unlock:
 	mutex_unlock(&ar->conf_mutex);
 }
 

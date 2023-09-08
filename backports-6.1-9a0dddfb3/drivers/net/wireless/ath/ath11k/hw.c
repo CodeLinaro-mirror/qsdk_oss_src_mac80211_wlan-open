@@ -439,6 +439,50 @@ struct rx_attention *ath11k_hw_ipq8074_rx_desc_get_attention(struct hal_rx_desc 
 	return &desc->u.ipq8074.attention;
 }
 
+static void ath11k_hw_ipq8074_set_rx_fragmentation_dst_ring(struct ath11k_base *ab)
+{
+	u8 frag_dst_ring = HAL_SRNG_RING_ID_REO2SW1;
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u32 val;
+
+	if (ab->nss.enabled)
+		frag_dst_ring = HAL_SRNG_REO_ALTERNATE_SELECT;
+
+	val = ath11k_hif_read32(ab, reo_base + HAL_REO1_GEN_ENABLE);
+
+	val &= ~HAL_REO1_GEN_ENABLE_FRAG_DST_RING;
+	val |= FIELD_PREP(HAL_REO1_GEN_ENABLE_FRAG_DST_RING,
+			  frag_dst_ring) |
+	       FIELD_PREP(HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE, 1) |
+	       FIELD_PREP(HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE, 1);
+	ath11k_hif_write32(ab, reo_base + HAL_REO1_GEN_ENABLE, val);
+}
+
+static void ath11k_hw_wcn6855_set_rx_fragmentation_dst_ring(struct ath11k_base *ab)
+{
+	u8 frag_dst_ring = HAL_SRNG_RING_ID_REO2SW1;
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u32 val;
+
+	if (ab->nss.enabled)
+		frag_dst_ring = HAL_SRNG_REO_ALTERNATE_SELECT;
+
+	val = ath11k_hif_read32(ab, reo_base + HAL_REO1_GEN_ENABLE);
+
+	val &= ~HAL_REO1_GEN_ENABLE_FRAG_DST_RING;
+	val |= FIELD_PREP(HAL_REO1_GEN_ENABLE_FRAG_DST_RING,
+			  frag_dst_ring) |
+	       FIELD_PREP(HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE, 1) |
+	       FIELD_PREP(HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE, 1);
+	ath11k_hif_write32(ab, reo_base + HAL_REO1_GEN_ENABLE, val);
+
+	val = ath11k_hif_read32(ab, reo_base + HAL_REO1_MISC_CTL(ab));
+	val &= ~HAL_REO1_MISC_CTL_FRAGMENT_DST_RING;
+	val |= FIELD_PREP(HAL_REO1_MISC_CTL_FRAGMENT_DST_RING, frag_dst_ring);
+	ath11k_hif_write32(ab, reo_base + HAL_REO1_MISC_CTL(ab), val);
+
+}
+
 static u8 *ath11k_hw_ipq8074_rx_desc_get_msdu_payload(struct hal_rx_desc *desc)
 {
 	return &desc->u.ipq8074.msdu_payload[0];
@@ -929,9 +973,7 @@ static u8 *ath11k_hw_wcn6855_rx_desc_mpdu_start_addr2(struct hal_rx_desc *desc)
 
 static void ath11k_hw_wcn6855_reo_setup(struct ath11k_base *ab)
 {
-	u8 frag_dest_ring = HAL_SRNG_RING_ID_REO2SW1;
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
-	u32 val;
 
 	/* Each hash entry uses four bits to map to a particular ring. */
 	u32 ring_hash_map = HAL_HASH_ROUTING_RING_SW1 << 0 |
@@ -943,18 +985,8 @@ static void ath11k_hw_wcn6855_reo_setup(struct ath11k_base *ab)
 		HAL_HASH_ROUTING_RING_SW3 << 24 |
 		HAL_HASH_ROUTING_RING_SW4 << 28;
 
-	if (ab->nss.enabled)
-		frag_dest_ring = HAL_SRNG_REO_ALTERNATE_SELECT;
-
-	val = ath11k_hif_read32(ab, reo_base + HAL_REO1_GEN_ENABLE);
-	val |= FIELD_PREP(HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE, 1) |
-		FIELD_PREP(HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE, 1);
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_GEN_ENABLE, val);
-
-	val = ath11k_hif_read32(ab, reo_base + HAL_REO1_MISC_CTL(ab));
-	val &= ~HAL_REO1_MISC_CTL_FRAGMENT_DST_RING;
-	val |= FIELD_PREP(HAL_REO1_MISC_CTL_FRAGMENT_DST_RING, frag_dest_ring);
-	ath11k_hif_write32(ab, reo_base + HAL_REO1_MISC_CTL(ab), val);
+	u8 reo_dest_hash_shift = ab->hw_params.reo_dest_ring_map_shift;
+	ab->hw_params.hw_ops->set_rx_fragmentation_dst_ring(ab);
 
 	ath11k_hif_write32(ab, reo_base + HAL_REO1_AGING_THRESH_IX_0(ab),
 			   HAL_DEFAULT_REO_TIMEOUT_USEC);
@@ -969,7 +1001,10 @@ static void ath11k_hw_wcn6855_reo_setup(struct ath11k_base *ab)
 	if (ab->nss.enabled)
 		return;
 
-	ath11k_hal_reo_hash_setup(ab, ring_hash_map);
+	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_2,
+			   ring_hash_map << reo_dest_hash_shift);
+	ath11k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_3,
+			   ring_hash_map << reo_dest_hash_shift);
 }
 
 static void ath11k_hw_ipq5018_reo_setup(struct ath11k_base *ab)
@@ -1014,7 +1049,7 @@ ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id(u8 *tlv_data)
 		(struct hal_rx_mpdu_info *)tlv_data;
 
 	return FIELD_GET(HAL_RX_MPDU_INFO_INFO0_PPDU_ID,
-			 __le32_to_cpu(u.ipq8074.info0));
+			 __le32_to_cpu(mpdu_info->u.ipq8074.info0));
 }
 
 static
@@ -1091,13 +1126,13 @@ static u32 ath11k_hw_wcn6750_get_tcl_ring_selector(struct sk_buff *skb)
 static u32 ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_len(struct hal_rx_mpdu_info *mpdu_info)
 {
 	return FIELD_GET(HAL_RX_MPDU_INFO_INFO1_MPDU_LEN,
-			 __le32_to_cpu(mpdu_info->u.ipq8074.info1));
+			 __le32_to_cpu(mpdu_info->u.ipq8074.info2));
 }
 
 static u32 ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_len(struct hal_rx_mpdu_info *mpdu_info)
 {
 	return FIELD_GET(HAL_RX_MPDU_INFO_INFO1_MPDU_LEN,
-			 __le32_to_cpu(mpdu_info->u.qcn9074.info1));
+			 __le32_to_cpu(mpdu_info->u.qcn9074.info0));
 }
 
 #ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
@@ -1333,6 +1368,70 @@ void ath11k_hw_qcn6122_fill_cfr_hdr_info(struct ath11k *ar,
 	       sizeof(params->chain_phase));
 }
 
+static void ath11k_hw_ipq5018_set_rx_fragmentation_dst_ring(struct ath11k_base *ab)
+{
+	u8 frag_dst_ring = HAL_SRNG_RING_ID_REO2SW1;
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u32 val;
+
+	if (ab->nss.enabled)
+		frag_dst_ring = HAL_SRNG_REO_ALTERNATE_SELECT;
+
+	val = ath11k_hif_read32(ab, reo_base + HAL_REO1_GEN_ENABLE);
+
+	val &= ~HAL_REO1_GEN_ENABLE_FRAG_DST_RING;
+	val |= FIELD_PREP(HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE, 1) |
+	       FIELD_PREP(HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE, 1);
+	ath11k_hif_write32(ab, reo_base + HAL_REO1_GEN_ENABLE, val);
+
+	val = ath11k_hif_read32(ab, reo_base + HAL_REO1_R0_MISC_CTL);
+	val &= ~HAL_IPQ5018_REO1_MISC_CTL_FRAGMENT_DEST_RING;
+	val |= FIELD_PREP(HAL_IPQ5018_REO1_MISC_CTL_FRAGMENT_DEST_RING,
+			  frag_dst_ring);
+	ath11k_hif_write32(ab, reo_base + HAL_REO1_R0_MISC_CTL, val);
+}
+
+static u32 ath11k_get_reo_dest_remap_config_default(void)
+{
+	u32 ring_hash_map;
+
+	/* For IPQ8074, IPQ6018, QCN9074, the first 8 bits are
+	 * are reserved/not used and the remainig 24 bits are
+	 * mapped for 8 hash values with 3 bits representing the
+	 * destination ring
+	 */
+	ring_hash_map = HAL_HASH_ROUTING_RING_SW1 << 0 |
+			HAL_HASH_ROUTING_RING_SW2 << 3 |
+			HAL_HASH_ROUTING_RING_SW3 << 6 |
+			HAL_HASH_ROUTING_RING_SW4 << 9 |
+			HAL_HASH_ROUTING_RING_SW1 << 12 |
+			HAL_HASH_ROUTING_RING_SW2 << 15 |
+			HAL_HASH_ROUTING_RING_SW3 << 18 |
+			HAL_HASH_ROUTING_RING_SW4 << 21;
+
+	return ring_hash_map;
+}
+
+static u32 ath11k_get_reo_dest_remap_config_5018(void)
+{
+	u32 ring_hash_map;
+
+	/* For IPQ5018 4 bits x 8 hash values represent the corresponding
+	 * destination rings. The 4th bit for each ring representation is
+	 * currently reserved/not used.
+	 */
+	ring_hash_map = HAL_HASH_ROUTING_RING_SW1 << 0 |
+			HAL_HASH_ROUTING_RING_SW2 << 4 |
+			HAL_HASH_ROUTING_RING_SW3 << 8 |
+			HAL_HASH_ROUTING_RING_SW4 << 12 |
+			HAL_HASH_ROUTING_RING_SW1 << 16 |
+			HAL_HASH_ROUTING_RING_SW2 << 20 |
+			HAL_HASH_ROUTING_RING_SW3 << 24 |
+			HAL_HASH_ROUTING_RING_SW4 << 28;
+
+	return ring_hash_map;
+}
+
 const struct ath11k_hw_ops ipq8074_ops = {
 	.get_hw_mac_from_pdev_id = ath11k_hw_ipq8074_mac_from_pdev_id,
 	.wmi_init_config = ath11k_init_wmi_config_ipq8074,
@@ -1566,6 +1665,7 @@ const struct ath11k_hw_ops wcn6855_ops = {
 	.rx_desc_get_crypto_header = ath11k_hw_ipq8074_rx_desc_get_crypto_hdr,
 	.fill_cfr_hdr_info = ath11k_hw_ipq8074_fill_cfr_hdr_info,
 	.rx_desc_get_hal_ppdu_id = ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id,
+	.set_rx_fragmentation_dst_ring = ath11k_hw_wcn6855_set_rx_fragmentation_dst_ring,
 };
 
 const struct ath11k_hw_ops wcn6750_ops = {
@@ -3326,6 +3426,10 @@ const struct ath11k_hw_regs qcn9074_regs = {
 	/* REO CMD ring address */
 	.hal_reo_cmd_ring_base_lsb = 0x00000194,
 	.hal_reo_cmd_ring_hp = 0x00003020,
+
+	/* SW2REO ring address */
+	.hal_sw2reo_ring_base_lsb = 0x000001ec,
+	.hal_sw2reo_ring_hp = 0x00003028,
 
 	/* REO status address */
 	.hal_reo_status_ring_base_lsb = 0x00000504,

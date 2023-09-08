@@ -131,6 +131,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 			.max_fft_bins = 512,
 			.fragment_160mhz = true,
 		},
+		.num_dscp_tid_map_tbl = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
 
 		.interface_modes = BIT(NL80211_IFTYPE_STATION) |
 					BIT(NL80211_IFTYPE_AP) |
@@ -339,6 +340,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.num_peers = 512,
 		.supports_suspend = true,
 		.hal_desc_sz = sizeof(struct hal_rx_desc_ipq8074),
+		.reo_dest_ring_map_shift = HAL_REO_DEST_RING_CTRL_HASH_RING_SHIFT,
 		.supports_regdb = false,
 		.fix_l1ss = true,
 		.credit_flow = true,
@@ -404,6 +406,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.rx_mac_buf_ring = false,
 		.vdev_start_delay = false,
 		.htt_peer_map_v2 = true,
+		.num_dscp_tid_map_tbl = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
 
 		.spectral = {
 			.fft_sz = 2,
@@ -508,6 +511,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.rx_mac_buf_ring = true,
 		.vdev_start_delay = true,
 		.htt_peer_map_v2 = false,
+		.num_dscp_tid_map_tbl = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
 
 		.spectral = {
 			.fft_sz = 0,
@@ -694,6 +698,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.rx_mac_buf_ring = true,
 		.vdev_start_delay = true,
 		.htt_peer_map_v2 = false,
+		.num_dscp_tid_map_tbl = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
 
 		.spectral = {
 			.fft_sz = 0,
@@ -1135,6 +1140,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.ring_mask = &ath11k_hw_ring_mask_ipq8074,
 		.internal_sleep_clock = false,
 		.regs = &ipq8074_regs,
+		.ce_ie_addr = &ath11k_ce_ie_addr_ipq8074,
 		.qmi_service_ins_id = ATH11K_QMI_WLFW_SERVICE_INS_ID_V01_IPQ8074,
 		.host_ce_config = ath11k_host_ce_config_ipq9574,
 		.supports_regdb = true,
