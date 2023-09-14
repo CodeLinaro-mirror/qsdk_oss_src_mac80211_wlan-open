@@ -4631,6 +4631,8 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	if (ab->hw_params->reoq_lut_support)
 		wmi_cfg->host_service_flags |=
 			cpu_to_le32(1 << WMI_RSRC_CFG_HOST_SVC_FLAG_REO_QREF_SUPPORT_BIT);
+	wmi_cfg->host_service_flags |=
+			cpu_to_le32(1 << WMI_RSRC_CFG_HOST_SVC_FLAG_FULL_BW_NOL_SUPPORT_BIT);
 	wmi_cfg->ema_max_vap_cnt = cpu_to_le32(tg_cfg->ema_max_vap_cnt);
 	wmi_cfg->ema_max_profile_period = cpu_to_le32(tg_cfg->ema_max_profile_period);
 	wmi_cfg->flags2 |= cpu_to_le32(WMI_RSRC_CFG_FLAGS2_CALC_NEXT_DTIM_COUNT_SET);
@@ -4858,6 +4860,8 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 	if (test_bit(WMI_TLV_SERVICE_REG_CC_EXT_EVENT_SUPPORT,
 		     ab->wmi_ab.svc_map))
 		arg.res_cfg.is_reg_cc_ext_event_supported = true;
+	if (test_bit(WMI_TLV_SERVICE_RADAR_FLAGS_SUPPORT, ab->wmi_ab.svc_map))
+		arg.res_cfg.is_full_bw_nol_feature_supported = true;
 
 	if (test_bit(WMI_SERVICE_WDS_NULL_FRAME_SUPPORT, ab->wmi_ab.svc_map))
 		arg.res_cfg.is_wds_null_frame_supported = true;
@@ -9063,7 +9067,8 @@ ath12k_wmi_pdev_csa_switch_count_status_event(struct ath12k_base *ab,
 
 static void
 ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
-				 const struct ath12k_wmi_pdev_radar_event *radar)
+				 const struct ath12k_wmi_pdev_radar_event *radar,
+				 bool do_full_bw_nol)
 {
 	u32 radar_found_freq, sub_channel_cfreq, radar_found_freq_low, radar_found_freq_high;
 	struct ath12k_mac_get_any_chanctx_conf_arg arg;
@@ -9095,11 +9100,16 @@ ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
 
 	width = chandef->width;
 	subchannel_count = ath12k_calculate_subchannel_count(width);
-	if (!subchannel_count)
-	{
-		ath12k_warn(ab, "invalid subchannel count for bandwith=%d\n",width);
+	if (!subchannel_count) {
+		ath12k_warn(ab, "invalid subchannel count for bandwidth=%d\n", width);
 		goto mark_radar;
 	}
+
+	if (do_full_bw_nol) {
+		ath12k_dbg(ab, ATH12K_DBG_WMI, "put all channels in NOL\n");
+		goto mark_radar;
+	}
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "perform channel submarking\n");
 
 	center_freq = chandef->center_freq1;
 
@@ -9135,24 +9145,65 @@ mark_radar:
 static void
 ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
-	const void **tb;
+	const struct wmi_pdev_radar_flags_param *rf_ev;
 	const struct ath12k_wmi_pdev_radar_event *ev;
 	struct ath12k *ar;
 	int ret;
+	bool do_full_bw_nol = false;
+	bool is_full_bw_nol_feature_supported = false;
+	const struct wmi_tlv *tlv;
+	u16 tlv_tag;
+	u32 len = 0;
+	void *ptr;
 
-	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
-	if (IS_ERR(tb)) {
-		ret = PTR_ERR(tb);
+	ptr = skb->data;
+
+	len += sizeof(*ev) + TLV_HDR_SIZE;
+	if (skb->len < len) {
 		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
 		return;
 	}
 
-	ev = tb[WMI_TAG_PDEV_DFS_RADAR_DETECTION_EVENT];
+	tlv = ptr;
+	tlv_tag = le32_get_bits(tlv->header, WMI_TLV_TAG);
 
-	if (!ev) {
-		ath12k_warn(ab, "failed to fetch pdev dfs radar detected ev");
-		kfree(tb);
+	ptr += sizeof(*tlv);
+	if (tlv_tag != WMI_TAG_PDEV_DFS_RADAR_DETECTION_EVENT) {
+		ath12k_warn(ab, "pdev dfs event received with wrong tag %x\n", tlv_tag);
 		return;
+	}
+	ev = ptr;
+	ptr += sizeof(*ev);
+
+	is_full_bw_nol_feature_supported = test_bit(WMI_TLV_SERVICE_RADAR_FLAGS_SUPPORT,
+						    ab->wmi_ab.svc_map);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "pdev dfs radar event found\n");
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "pdev dfs radar flags host support %x\n",
+		   is_full_bw_nol_feature_supported);
+	if (is_full_bw_nol_feature_supported) {
+		/* Expect an array TLV containing a single radar flags param TLV */
+		len += sizeof(*tlv) + sizeof(*tlv) + sizeof(*rf_ev);
+		if (skb->len < len) {
+			ath12k_warn(ab, "pdev dfs radar flag event size invalid\n");
+			return;
+		}
+
+		/* Skip Array TLV Tag */
+		ptr += sizeof(*tlv);
+
+		tlv = ptr;
+		tlv_tag = le32_get_bits(tlv->header, WMI_TLV_TAG);
+		ptr += sizeof(*tlv);
+		if (tlv_tag != WMI_TAG_PDEV_DFS_RADAR_FLAGS) {
+			ath12k_warn(ab, "pdev dfs radar flag event received with wrong tag\n");
+			return;
+		}
+
+		rf_ev = ptr;
+		do_full_bw_nol = le32_to_cpu(rf_ev->radar_flags) &
+				 (1 << WMI_PDEV_RADAR_FLAGS_FULL_BW_NOL_MARK_BIT);
+		ath12k_dbg(ab, ATH12K_DBG_WMI, "pdev dfs radar flag event found, radar_flag_bit %d\n",
+			   do_full_bw_nol);
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
@@ -9164,11 +9215,11 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 	rcu_read_lock();
 
 	ar = ath12k_mac_get_ar_by_pdev_id(ab, le32_to_cpu(ev->pdev_id));
-
 	if (!ar) {
 		ath12k_warn(ab, "radar detected in invalid pdev %d\n",
 			    ev->pdev_id);
-		goto exit;
+		rcu_read_unlock();
+		return;
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_REG, "DFS Radar Detected in pdev %d\n",
@@ -9177,12 +9228,9 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 	if (ar->dfs_block_radar_events)
 		ath12k_info(ab, "DFS Radar detected, but ignored as requested\n");
 	else
-		ath12k_dfs_calculate_subchannels(ab, ev);
+		ath12k_dfs_calculate_subchannels(ab, ev, do_full_bw_nol);
 
-exit:
 	rcu_read_unlock();
-
-	kfree(tb);
 }
 
 static void ath12k_tm_wmi_event_segmented(struct ath12k_base *ab, u32 cmd_id,

@@ -2040,6 +2040,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_RSSI_DBM_CONVERSION_TEMP_OFFSET_INFO,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
+	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
 	WMI_TAG_MAX
 };
 
@@ -2278,6 +2279,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_WMSK_COMPACTION_RX_TLVS = 361,
 
 	WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT = 365,
+	WMI_TLV_SERVICE_RADAR_FLAGS_SUPPORT = 390,
 	WMI_SERVICE_WDS_NULL_FRAME_SUPPORT = 421,
 	WMI_SERVICE_MEC_AGING_TIMER_SUPPORT = 423,
 
@@ -2517,6 +2519,7 @@ struct ath12k_wmi_resource_config_arg {
 	u32 ema_max_profile_period;
 	bool is_reg_cc_ext_event_supported;
 	bool is_wds_null_frame_supported;
+	bool is_full_bw_nol_feature_supported;
 };
 
 struct ath12k_wmi_init_cmd_arg {
@@ -2577,6 +2580,7 @@ struct wmi_init_cmd {
 
 #define WMI_RSRC_CFG_HOST_SVC_FLAG_REG_CC_EXT_SUPPORT_BIT 4
 #define WMI_RSRC_CFG_HOST_SVC_FLAG_REO_QREF_SUPPORT_BIT   12
+#define WMI_RSRC_CFG_HOST_SVC_FLAG_FULL_BW_NOL_SUPPORT_BIT	14
 #define WMI_RSRC_CFG_FLAGS2_RX_PEER_METADATA_VERSION		GENMASK(5, 4)
 #define WMI_RSRC_CFG_FLAG1_BSS_CHANNEL_INFO_64	BIT(5)
 #define WMI_RSRC_CFG_FLAGS2_CALC_NEXT_DTIM_COUNT_SET      BIT(9)
@@ -4596,6 +4600,11 @@ struct ath12k_wmi_pdev_radar_event {
 	a_sle32 freq_offset;
 	a_sle32 sidx;
 } __packed;
+
+struct wmi_pdev_radar_flags_param {
+	__le32 radar_flags;
+} __packed;
+#define WMI_PDEV_RADAR_FLAGS_FULL_BW_NOL_MARK_BIT 0
 
 #define WMI_DCS_AWGN_INTF       0x04
 
