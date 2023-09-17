@@ -7573,9 +7573,11 @@ static void ath12k_scan_event(struct ath12k_base *ab, struct sk_buff *skb)
 static void ath12k_peer_sta_kickout_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_peer_sta_kickout_arg arg = {};
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ieee80211_sta *sta;
-	struct ath12k_link_sta *arsta;
+	struct ath12k_dp_link_peer *peer;
 	struct ath12k_vif *ahvif;
+	unsigned int link_id;
 	struct ath12k *ar;
 
 	if (ath12k_pull_peer_sta_kickout_ev(ab, skb, &arg) != 0) {
@@ -7585,36 +7587,47 @@ static void ath12k_peer_sta_kickout_event(struct ath12k_base *ab, struct sk_buff
 
 	rcu_read_lock();
 
-	spin_lock_bh(&ab->base_lock);
+	spin_lock_bh(&dp->dp_lock);
 
-	arsta = ath12k_link_sta_find_by_addr(ab, arg.mac_addr);
+	peer = ath12k_dp_link_peer_find_by_addr(dp, arg.mac_addr);
 
-	if (!arsta) {
-		ath12k_warn(ab, "arsta not found %pM\n",
+	if (!peer) {
+		ath12k_warn(ab, "peer not found %pM\n",
 			    arg.mac_addr);
 		goto exit;
 	}
 
-	ar = arsta->arvif->ar;
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, peer->vdev_id);
 	if (!ar) {
 		ath12k_warn(ab, "invalid ar in peer sta kickout ev");
 		goto exit;
 	}
 
-	ahvif = arsta->arvif->ahvif;
+	ahvif = ath12k_vif_to_ahvif(peer->vif);
 
-	sta = ieee80211_find_sta_by_ifaddr(ath12k_ar_to_hw(ar),
+	if (peer->mlo)
+		sta = ieee80211_find_sta_by_link_addrs(ar->ah->hw, arg.mac_addr,
+						       NULL, &link_id);
+	else
+		sta = ieee80211_find_sta_by_ifaddr(ath12k_ar_to_hw(ar),
 					   arg.mac_addr, NULL);
 	if (!sta) {
-		ath12k_warn(ab, "Spurious quick kickout for STA %pM\n",
-			    arg.mac_addr);
+		ath12k_warn(ab, "Spurious quick kickout for %sSTA %pM\n",
+			    peer->mlo ? "MLO " : "", arg.mac_addr);
+		goto exit;
+	}
+
+	if (peer->mlo && peer->link_id != link_id) {
+		ath12k_warn(ab,
+			    "Spurious quick kickout for MLO STA %pM with invalid link_id, peer: %d, sta: %d\n",
+			    arg.mac_addr, peer->link_id, link_id);
 		goto exit;
 	}
 
 	if (ar->ab->hw_params->handle_beacon_miss &&
 	    ahvif->vif->type == NL80211_IFTYPE_STATION &&
 	    arg.reason == __cpu_to_le32(WMI_PEER_STA_KICKOUT_REASON_INACTIVITY))
-		ath12k_mac_handle_beacon_miss(ar, arsta->arvif->vdev_id);
+		ath12k_mac_handle_beacon_miss(ar, peer->vdev_id);
 	else
 		ieee80211_report_low_ack(sta, 10);
 
@@ -7622,7 +7635,7 @@ static void ath12k_peer_sta_kickout_event(struct ath12k_base *ab, struct sk_buff
 		   arg.mac_addr);
 
 exit:
-	spin_unlock_bh(&ab->base_lock);
+	spin_unlock_bh(&dp->dp_lock);
 	rcu_read_unlock();
 }
 
