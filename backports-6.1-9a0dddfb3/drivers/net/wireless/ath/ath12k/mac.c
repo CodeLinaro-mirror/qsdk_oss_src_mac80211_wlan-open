@@ -4136,6 +4136,13 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 	params.vdev_id = arvif->vdev_id;
 	params.aid = ahvif->aid;
 	params.bssid = arvif->bssid;
+
+	if (bss_conf->nontransmitted) {
+		params.nontx_profile_idx = bss_conf->bssid_index;
+		params.nontx_profile_cnt = BIT(bss_conf->bssid_indicator) - 1;
+		params.tx_bssid = bss_conf->transmitter_bssid;
+	}
+
 	ret = ath12k_wmi_vdev_up(ar, &params);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to set vdev %d up: %d\n",
