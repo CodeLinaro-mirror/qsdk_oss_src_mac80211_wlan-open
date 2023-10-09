@@ -330,8 +330,8 @@ static int ath12k_pcic_ext_grp_napi_poll(struct napi_struct *napi, int budget)
 
 	work_done = ath12k_dp_service_srng(ab, irq_grp, budget);
 	if (work_done < budget) {
-		napi_complete_done(napi, work_done);
-		ath12k_pcic_ext_grp_enable(irq_grp);
+		if(likely(napi_complete_done(napi, work_done)))
+				ath12k_pcic_ext_grp_enable(irq_grp);
 	}
 
 	if (work_done > budget)
