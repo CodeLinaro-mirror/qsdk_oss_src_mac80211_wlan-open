@@ -812,12 +812,17 @@ static void ath11k_ahb_ssr_notifier_reg(struct ath11k_base *ab)
 #if LINUX_VERSION_IS_LESS(5, 4, 0)
 	qcom_register_ssr_notifier(&ab->qmi.ssr_nb);
 #else
-#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
 	rproc_register_subsys_notifier(ab_ahb->tgt_rproc->name,
 				       &ab->qmi.ssr_nb, &ab->qmi.ssr_nb);
 #else
-	ab->qmi.ssr_handle = qcom_register_ssr_notifier("q6wcss", &ab->qmi.ssr_nb);
+	ab->qmi.atomic_ssr_handle = qcom_register_ssr_atomic_notifier(ab_ahb->tgt_rproc->name,
+								      &ab->qmi.atomic_ssr_nb);
+	if (!ab->qmi.atomic_ssr_handle)
+		ath11k_err(ab, "failed to register atomic ssr notifier\n");
+
+	ab->qmi.ssr_handle = qcom_register_ssr_notifier(ab_ahb->tgt_rproc->name, &ab->qmi.ssr_nb);
 #endif
 #endif
 }
@@ -833,6 +838,10 @@ static void ath11k_ahb_ssr_notifier_unreg(struct ath11k_base *ab)
 					 &ab->qmi.ssr_nb,
 					 &ab->qmi.ssr_nb);
 #else
+	if (ab->qmi.atomic_ssr_handle)
+		qcom_unregister_ssr_atomic_notifier(ab->qmi.atomic_ssr_handle,
+						    &ab->qmi.atomic_ssr_nb);
+
 	if (ab->qmi.ssr_handle)
 		qcom_unregister_ssr_notifier(ab->qmi.ssr_handle, &ab->qmi.ssr_nb);
 #endif
