@@ -346,7 +346,8 @@ tcl_ring_sel:
 	switch (ti.encap_type) {
 	case HAL_TCL_ENCAP_TYPE_NATIVE_WIFI:
 		if ((arvif->vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED) &&
-		     skb->protocol == cpu_to_be16(ETH_P_PAE))
+		    (skb->protocol == cpu_to_be16(ETH_P_PAE) ||
+		     ieee80211_is_qos_nullfunc(hdr->frame_control)))
 			is_diff_encap = true;
 		else
 			ath11k_dp_tx_encap_nwifi(skb);
