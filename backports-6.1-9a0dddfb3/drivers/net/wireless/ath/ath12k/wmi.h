@@ -2048,6 +2048,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_BCN_TMPL_ML_INFO_CMD = 0x436,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
+	WMI_TAG_PRB_RESP_TMPL_ML_INFO_CMD = 0x460,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
 	WMI_TAG_MAX
 };
@@ -6280,6 +6281,15 @@ struct wmi_critical_update_arg {
 	u16 num_ml_info;
 	struct wmi_bcn_tmpl_ml_info *ml_info;
 };
+
+struct wmi_prb_resp_tmpl_ml_info_params {
+	__le32 tlv_header;
+	__le32 hw_link_id;
+	__le32 cu_vdev_map_cat1_lo;
+	__le32 cu_vdev_map_cat1_hi;
+	__le32 cu_vdev_map_cat2_lo;
+	__le32 cu_vdev_map_cat2_hi;
+} __packed;
 
 #define ATH12K_LOWER_32_MASK			GENMASK_ULL(31, 0)
 #define ATH12K_UPPER_32_MASK			GENMASK_ULL(63, 32)

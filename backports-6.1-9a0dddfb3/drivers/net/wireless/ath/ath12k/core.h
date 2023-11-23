@@ -352,6 +352,14 @@ struct ath12k_peer_ch_width_switch_data {
 	struct wmi_chan_width_peer_arg peer_arg[];
 };
 
+struct ath12k_prb_resp_tmpl_ml_info {
+	u32 hw_link_id;
+	u32 cu_vdev_map_cat1_lo;
+	u32 cu_vdev_map_cat1_hi;
+	u32 cu_vdev_map_cat2_lo;
+	u32 cu_vdev_map_cat2_hi;
+};
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -406,6 +414,7 @@ struct ath12k_link_vif {
 	struct ath12k_peer_ch_width_switch_data *peer_ch_width_switch_data;
 	bool pending_csa_up;
 	u32 tx_vdev_id;
+	struct ath12k_prb_resp_tmpl_ml_info ml_info;
 };
 
 struct ath12k_dp_link_vif {

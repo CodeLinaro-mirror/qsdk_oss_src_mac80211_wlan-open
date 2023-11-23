@@ -2231,8 +2231,10 @@ err_fill_ml_info:
 static void ath12k_wmi_fill_cu_arg(struct ath12k_link_vif *arvif,
 				   struct wmi_critical_update_arg *cu_arg)
 {
+	struct ath12k_prb_resp_tmpl_ml_info *ar_ml_info;
 	struct ath12k_base *ab = arvif->ar->ab;
 	struct wmi_bcn_tmpl_ml_info *ml_info;
+	struct ath12k *ar = arvif->ar;
 	int i;
 
 	if (!ath12k_mac_is_ml_arvif(arvif))
@@ -2259,6 +2261,17 @@ static void ath12k_wmi_fill_cu_arg(struct ath12k_link_vif *arvif,
 		for (i = 0; i < cu_arg->num_ml_info; i++) {
 			ml_info = &cu_arg->ml_info[i];
 			ath12k_wmi_bcn_fill_ml_info(arvif, ml_info);
+			/* Retain copy of CU vdev bitmap. Which are used to
+			 * update cu_vdev_map in 20TU probe response template.
+			 */
+			if (ar->supports_6ghz) {
+				ar_ml_info = &arvif->ml_info;
+				ar_ml_info->hw_link_id = ml_info->hw_link_id;
+				ar_ml_info->cu_vdev_map_cat1_lo = ml_info->cu_vdev_map_cat1_lo;
+				ar_ml_info->cu_vdev_map_cat1_hi = ml_info->cu_vdev_map_cat1_hi;
+				ar_ml_info->cu_vdev_map_cat2_lo = ml_info->cu_vdev_map_cat2_lo;
+				ar_ml_info->cu_vdev_map_cat2_hi = ml_info->cu_vdev_map_cat2_hi;
+			}
 		}
 	}
 }
@@ -4655,6 +4668,41 @@ int ath12k_wmi_fils_discovery_tmpl(struct ath12k *ar, u32 vdev_id,
 	return ret;
 }
 
+static void *
+ath12k_wmi_append_prb_resp_cu_params(struct ath12k *ar, u32 vdev_id, void *ptr)
+{
+	struct wmi_prb_resp_tmpl_ml_info_params *ml_info;
+	struct ath12k_prb_resp_tmpl_ml_info *ar_ml_info;
+	void *start = ptr;
+	struct wmi_tlv *tlv;
+	struct ath12k_link_vif *arvif = ath12k_mac_get_arvif(ar, vdev_id);
+	size_t ml_info_len = sizeof(*ml_info);
+
+	if (!arvif)
+		return ptr;
+
+	/* Add ML info */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, ml_info_len);
+	ml_info = (struct wmi_prb_resp_tmpl_ml_info_params *)tlv->value;
+
+	ar_ml_info = &arvif->ml_info;
+	ml_info->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PRB_RESP_TMPL_ML_INFO_CMD,
+						     sizeof(*ml_info));
+	ml_info->hw_link_id = cpu_to_le32(ar_ml_info->hw_link_id);
+	ml_info->cu_vdev_map_cat1_lo = cpu_to_le32(ar_ml_info->cu_vdev_map_cat1_lo);
+	ml_info->cu_vdev_map_cat1_hi = cpu_to_le32(ar_ml_info->cu_vdev_map_cat1_hi);
+	ml_info->cu_vdev_map_cat2_lo = cpu_to_le32(ar_ml_info->cu_vdev_map_cat2_lo);
+	ml_info->cu_vdev_map_cat2_hi = cpu_to_le32(ar_ml_info->cu_vdev_map_cat2_hi);
+
+	ptr += TLV_HDR_SIZE + sizeof(*ml_info);
+	/* Reset CU bitmap and bpcc values*/
+	memset(&arvif->ml_info, 0, sizeof(arvif->ml_info));
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "wmi %ld bytes of additional data filled for prb resp CU\n",
+		   (unsigned long)(ptr - start));
+	return ptr;
+}
+
 int ath12k_wmi_probe_resp_tmpl(struct ath12k *ar, u32 vdev_id,
 			       struct sk_buff *tmpl)
 {
@@ -4663,18 +4711,23 @@ int ath12k_wmi_probe_resp_tmpl(struct ath12k *ar, u32 vdev_id,
 	struct wmi_tlv *tlv;
 	struct sk_buff *skb;
 	void *ptr;
-	int ret, len;
+	int ret, len, mlinfo_tlv_len = 0;
 	size_t aligned_len = roundup(tmpl->len, 4);
+	struct ath12k_link_vif *arvif = ath12k_mac_get_arvif(ar, vdev_id);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 		   "WMI vdev %i set probe response template\n", vdev_id);
 
-	len = sizeof(*cmd) + sizeof(*probe_info) + TLV_HDR_SIZE + aligned_len;
+	if (ath12k_mac_is_ml_arvif(arvif))
+		mlinfo_tlv_len = TLV_HDR_SIZE + sizeof(struct wmi_prb_resp_tmpl_ml_info_params);
+
+	len = sizeof(*cmd) + sizeof(*probe_info) + TLV_HDR_SIZE + aligned_len + mlinfo_tlv_len;
 
 	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, len);
-	if (!skb)
+	if (!skb) {
+		memset(&arvif->ml_info, 0, sizeof(arvif->ml_info));
 		return -ENOMEM;
-
+	}
 	cmd = (struct wmi_probe_tmpl_cmd *)skb->data;
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PRB_TMPL_CMD,
 						 sizeof(*cmd));
@@ -4695,6 +4748,10 @@ int ath12k_wmi_probe_resp_tmpl(struct ath12k *ar, u32 vdev_id,
 	tlv = ptr;
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE, aligned_len);
 	memcpy(tlv->value, tmpl->data, tmpl->len);
+	ptr += (TLV_HDR_SIZE + aligned_len);
+
+	if (ath12k_mac_is_ml_arvif(arvif))
+		ptr = ath12k_wmi_append_prb_resp_cu_params(ar, vdev_id, ptr);
 
 	ret = ath12k_wmi_cmd_send(ar->wmi, skb, WMI_PRB_TMPL_CMDID);
 	if (ret) {
