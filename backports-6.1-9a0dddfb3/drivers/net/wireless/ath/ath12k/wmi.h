@@ -2046,6 +2046,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO,
 	WMI_TAG_RSSI_DBM_CONVERSION_TEMP_OFFSET_INFO,
 	WMI_TAG_BCN_TMPL_ML_INFO_CMD = 0x436,
+	WMI_TAG_MLO_MGMT_RX_CU_PARAMS = 0x439,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
 	WMI_TAG_PRB_RESP_TMPL_ML_INFO_CMD = 0x460,
@@ -4753,6 +4754,42 @@ struct wmi_pdev_update_muedca_event {
 #define WMI_RX_STATUS_ERR_KEY_CACHE_MISS	0x20
 
 #define WLAN_MGMT_TXRX_HOST_MAX_ANTENNA 4
+
+#define CU_VDEV_MAP_LB GENMASK(15, 0)
+#define CU_VDEV_MAP_HB GENMASK(31, 16)
+/* Maximum number of CU LINKS across the system.
+ * this is not the CU links within an AP MLD.
+ */
+#define CU_MAX_MLO_LINKS 8
+#define MAX_AP_MLDS_PER_LINK 16
+
+struct ath12k_wmi_mgmt_rx_cu_params {
+	/* CU vdev map to intimate about the on-going Critical update
+	 * per-link contains 16 VAPs at max.
+	 */
+
+	/* bits    : 0-15 | 16-31
+	 * link-id :  0   |   1
+	 */
+	__le32 cu_vdev_map_1;
+	/* bits    : 0-15 | 16-31
+	 * link-id :  2   |   3
+	 */
+	__le32 cu_vdev_map_2;
+	/* bits    : 0-15 | 16-31
+	 * link-id :  4   |   5
+	 */
+	__le32 cu_vdev_map_3;
+	/* bits    : 0-15 | 16-31
+	 * link-id :  6   |   7
+	 */
+	__le32 cu_vdev_map_4; /* bits 63:32 */
+};
+
+struct ath12k_mgmt_rx_cu_arg {
+	u16 cu_vdev_map[CU_MAX_MLO_LINKS];
+	u8 *bpcc_bufp;
+};
 
 struct ath12k_wmi_mgmt_rx_arg {
 	u32 chan_freq;

@@ -137,6 +137,9 @@ struct wmi_tlv_mgmt_rx_parse {
 	const struct ath12k_wmi_mgmt_rx_params *fixed;
 	const u8 *frame_buf;
 	bool frame_buf_done;
+	struct ath12k_mgmt_rx_cu_arg cu_params;
+	bool mgmt_ml_info_done;
+	bool bpcc_buf_done;
 };
 
 static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
@@ -6633,11 +6636,46 @@ static int ath12k_pull_vdev_stopped_param_tlv(struct ath12k_base *ab, struct sk_
 	return 0;
 }
 
+static int ath12k_wmi_mgmt_rx_sub_tlv_parse(struct ath12k_base *ab,
+					    u16 tag, u16 len,
+					    const void *ptr, void *data)
+{
+	struct wmi_tlv_mgmt_rx_parse *parse = data;
+	struct ath12k_mgmt_rx_cu_arg *rx_cu_params;
+	struct ath12k_wmi_mgmt_rx_cu_params *rx_cu_params_tlv;
+
+	switch (tag) {
+	case WMI_TAG_MLO_MGMT_RX_CU_PARAMS:
+		rx_cu_params = &parse->cu_params;
+		rx_cu_params_tlv = (struct ath12k_wmi_mgmt_rx_cu_params *)ptr;
+		rx_cu_params->cu_vdev_map[0] =
+			le32_get_bits(rx_cu_params_tlv->cu_vdev_map_1, CU_VDEV_MAP_LB);
+		rx_cu_params->cu_vdev_map[1] =
+			le32_get_bits(rx_cu_params_tlv->cu_vdev_map_1, CU_VDEV_MAP_HB);
+		rx_cu_params->cu_vdev_map[2] =
+			le32_get_bits(rx_cu_params_tlv->cu_vdev_map_2, CU_VDEV_MAP_LB);
+		rx_cu_params->cu_vdev_map[3] =
+			le32_get_bits(rx_cu_params_tlv->cu_vdev_map_2, CU_VDEV_MAP_HB);
+		rx_cu_params->cu_vdev_map[4] =
+			le32_get_bits(rx_cu_params_tlv->cu_vdev_map_3, CU_VDEV_MAP_LB);
+		rx_cu_params->cu_vdev_map[5] =
+			le32_get_bits(rx_cu_params_tlv->cu_vdev_map_3, CU_VDEV_MAP_HB);
+		rx_cu_params->cu_vdev_map[6] =
+			le32_get_bits(rx_cu_params_tlv->cu_vdev_map_4, CU_VDEV_MAP_LB);
+		rx_cu_params->cu_vdev_map[7] =
+			le32_get_bits(rx_cu_params_tlv->cu_vdev_map_4, CU_VDEV_MAP_HB);
+		parse->mgmt_ml_info_done = true;
+		break;
+	}
+	return 0;
+}
+
 static int ath12k_wmi_tlv_mgmt_rx_parse(struct ath12k_base *ab,
 					u16 tag, u16 len,
 					const void *ptr, void *data)
 {
 	struct wmi_tlv_mgmt_rx_parse *parse = data;
+	int ret;
 
 	switch (tag) {
 	case WMI_TAG_MGMT_RX_HDR:
@@ -6647,10 +6685,83 @@ static int ath12k_wmi_tlv_mgmt_rx_parse(struct ath12k_base *ab,
 		if (!parse->frame_buf_done) {
 			parse->frame_buf = ptr;
 			parse->frame_buf_done = true;
+		} else if (!parse->bpcc_buf_done) {
+			if (len == 0)
+				break;
+			parse->cu_params.bpcc_bufp = (u8*)ptr;
+			parse->bpcc_buf_done = true;
+		}
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+					  ath12k_wmi_mgmt_rx_sub_tlv_parse, parse);
+		if (ret) {
+			ath12k_warn(ab, "failed to parse mgmt rx sub tlv %d\n", ret);
+			return ret;
 		}
 		break;
 	}
 	return 0;
+}
+
+static u32 ath12k_get_ar_next_vdev_pos(struct ath12k *ar, u32 pos)
+{
+	bool bit;
+	u32 i = 0;
+
+	for (i = pos; i < MAX_AP_MLDS_PER_LINK; i++) {
+		bit = ar->allocated_vdev_map & (1LL << i);
+		if (bit)
+			break;
+	}
+	return i;
+}
+
+static void ath12k_update_cu_params(struct ath12k_base *ab,
+				    struct ath12k_mgmt_rx_cu_arg *cu_params)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_link_vif *arvif;
+	u8 *bpcc_ptr, *bpcc_bufp;
+	struct ath12k_hw *ah;
+	u32 vdev_id, pos = 0;
+	bool critical_flag;
+	struct ath12k *ar;
+	int num_hw, i, j;
+	u8 hw_link_id;
+
+	if (!cu_params->bpcc_bufp)
+		return;
+
+	/* Iterate over all the radios */
+	for (num_hw = 0; num_hw < ag->num_hw; num_hw++) {
+		ah = ag->ah[num_hw];
+		if (!ah)
+			continue;
+		for_each_ar(ah, ar, j) {
+			ar = &ah->radio[j];
+
+			pos = 0;
+			for (i = 0; i < ar->num_created_vdevs; i++) {
+				pos = ath12k_get_ar_next_vdev_pos(ar, pos);
+				vdev_id = pos;
+				pos++;
+				arvif = ath12k_mac_get_arvif(ar, vdev_id);
+				if (!arvif)
+					continue;
+				if (arvif->is_up && arvif->ahvif->vif->valid_links) {
+					critical_flag = cu_params->cu_vdev_map[hw_link_id] & (1 << i);
+					bpcc_bufp = cu_params->bpcc_bufp;
+					bpcc_ptr = bpcc_bufp +
+						((hw_link_id * MAX_AP_MLDS_PER_LINK) + i);
+					ieee80211_critical_update(arvif->ahvif->vif,
+								  arvif->link_id,
+								  critical_flag,
+								  *bpcc_ptr);
+				}
+			}
+		}
+	}
 }
 
 static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
@@ -6662,6 +6773,7 @@ static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 	const u8 *frame;
 	int i, ret;
 
+	memset(&parse, 0, sizeof(parse));
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
 				  ath12k_wmi_tlv_mgmt_rx_parse,
 				  &parse);
@@ -6692,6 +6804,12 @@ static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 
 	for (i = 0; i < ATH_MAX_ANTENNA; i++)
 		hdr->rssi_ctl[i] = le32_to_cpu(ev->rssi_ctl[i]);
+
+	if (parse.mgmt_ml_info_done) {
+		rcu_read_lock();
+		ath12k_update_cu_params(ab, &parse.cu_params);
+		rcu_read_unlock();
+	}
 
 	if (skb->len < (frame - skb->data) + hdr->buf_len) {
 		ath12k_warn(ab, "invalid length in mgmt rx hdr ev");
