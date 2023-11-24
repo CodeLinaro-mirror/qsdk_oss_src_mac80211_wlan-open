@@ -7876,6 +7876,10 @@ ath12k_mac_filter_eht_cap_mesh(struct ieee80211_eht_cap_elem_fixed
 	m = IEEE80211_EHT_MAC_CAP0_EPCS_PRIO_ACCESS;
 	eht_cap_elem->mac_cap_info[0] &= ~m;
 
+	m = IEEE80211_EHT_MAC_CAP1_TWO_BQRS_SUPP |
+	    IEEE80211_EHT_MAC_CAP1_EHT_LINK_ADAPTATION_SUPP;
+	eht_cap_elem->mac_cap_info[1] &= ~m;
+
 	m = IEEE80211_EHT_PHY_CAP0_PARTIAL_BW_UL_MU_MIMO;
 	eht_cap_elem->phy_cap_info[0] &= ~m;
 
@@ -7907,6 +7911,11 @@ ath12k_mac_filter_eht_cap_mesh(struct ieee80211_eht_cap_elem_fixed
 	    IEEE80211_EHT_PHY_CAP7_MU_BEAMFORMER_160MHZ |
 	    IEEE80211_EHT_PHY_CAP7_MU_BEAMFORMER_320MHZ;
 	eht_cap_elem->phy_cap_info[7] &= ~m;
+
+	m = IEEE80211_EHT_PHY_CAP8_20MHZ_ONLY_CAPS |
+	    IEEE80211_EHT_PHY_CAP8_20MHZ_ONLY_TRIGGER_MUBF_FL_BW_FB_DLMUMIMO |
+	    IEEE80211_EHT_PHY_CAP8_20MHZ_ONLY_MRU_SUPP;
+	eht_cap_elem->phy_cap_info[8] &= ~m;
 }
 
 static void ath12k_mac_copy_eht_cap(struct ath12k *ar,
