@@ -127,12 +127,15 @@ DECLARE_EVENT_CLASS(ath11k_log_event,
 	TP_STRUCT__entry(
 		__string(device, dev_name(ab->dev))
 		__string(driver, dev_driver_string(ab->dev))
-		__vstring(msg, vaf->fmt, vaf->va)
+		__dynamic_array(char, msg, ATH11K_MSG_MAX)
 	),
 	TP_fast_assign(
 		__assign_str(device);
 		__assign_str(driver);
-		__assign_vstr(msg, vaf->fmt, vaf->va);
+		WARN_ON_ONCE(vsnprintf(__get_dynamic_array(msg),
+				       ATH11K_MSG_MAX,
+				       vaf->fmt,
+				       *vaf->va) >= ATH11K_MSG_MAX);
 	),
 	TP_printk(
 		"%s %s %s",
