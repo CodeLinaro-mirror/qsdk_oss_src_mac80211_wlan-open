@@ -15623,6 +15623,12 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	arg.pref_tx_streams = ar->num_tx_chains;
 	arg.pref_rx_streams = ar->num_rx_chains;
 
+	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
+				 ar->ab->wmi_ab.svc_map)) {
+		arg.width_device = chandef->width_device;
+		arg.center_freq_device = chandef->center_freq_device;
+	}
+
 	if (is_bridge_vdev)
 		arg.mbssid_flags = 0;
 	else
@@ -16200,6 +16206,13 @@ ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 	arg.vdev_start_arg.freq2_radar = radar_enabled;
 	arg.vdev_start_arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
 	arg.ru_punct_bitmap = ~chandef->punctured;
+
+	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
+		     ar->ab->wmi_ab.svc_map)) {
+		arg.width_device = chandef->width_device;
+		arg.center_freq_device = chandef->center_freq_device;
+	}
+
 	ret = ath12k_wmi_pdev_multiple_vdev_restart(ar, &arg);
 	if (ret)
 		ath12k_warn(ab, "mac failed to do mvr (%d)\n", ret);

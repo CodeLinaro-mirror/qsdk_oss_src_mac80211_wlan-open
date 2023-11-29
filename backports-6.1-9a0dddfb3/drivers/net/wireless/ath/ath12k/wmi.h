@@ -3469,6 +3469,8 @@ struct wmi_vdev_start_req_arg {
 	u32 mbssid_tx_vdev_id;
 	u32 punct_bitmap;
 	struct wmi_ml_arg ml;
+	u32 width_device;
+	u32 center_freq_device;
 };
 
 struct ath12k_wmi_peer_create_arg {
@@ -6870,6 +6872,8 @@ struct wmi_pdev_multiple_vdev_restart_req_arg {
 	struct wmi_vdev_ids_arg vdev_ids;
 	struct wmi_vdev_start_req_arg vdev_start_arg;
 	u16 ru_punct_bitmap;
+	u32 width_device;
+	u32 center_freq_device;
 };
 
 struct wmi_pdev_multiple_vdev_restart_request_cmd {

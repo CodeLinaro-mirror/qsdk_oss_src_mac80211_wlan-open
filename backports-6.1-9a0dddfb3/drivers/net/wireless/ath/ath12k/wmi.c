@@ -1260,6 +1260,79 @@ int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id)
 	return ret;
 }
 
+static inline bool
+ath12k_wmi_check_device_present(u32 width_device,
+				u32 center_freq_device,
+				u32 center_freq_oper)
+{
+	return (center_freq_device && width_device &&
+		center_freq_device != center_freq_oper);
+}
+
+static void ath12k_wmi_set_wmi_channel_device(struct ath12k_wmi_channel_params *chan_device,
+					      struct wmi_vdev_start_req_arg *channel,
+					      u32 cf_device, u32 width_device)
+{
+	enum wmi_phy_mode mode_device;
+
+	memset(chan_device, 0, sizeof(*chan_device));
+
+	chan_device->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHANNEL,
+							 sizeof(*chan_device));
+	chan_device->mhz = cpu_to_le32(channel->freq);
+	chan_device->band_center_freq1 = cpu_to_le32(cf_device);
+
+	if (width_device == NL80211_CHAN_WIDTH_320) {
+		mode_device = MODE_11BE_EHT320;
+		if (channel->freq > chan_device->band_center_freq1)
+			chan_device->band_center_freq1 = cf_device + 80;
+		else
+			chan_device->band_center_freq1 = cf_device - 80;
+		chan_device->band_center_freq2 = cf_device;
+	} else if (width_device == NL80211_CHAN_WIDTH_160) {
+		mode_device = MODE_11BE_EHT160;
+		if (channel->freq > chan_device->band_center_freq1)
+			chan_device->band_center_freq1 = cf_device + 40;
+		else
+			chan_device->band_center_freq1 = cf_device - 40;
+		chan_device->band_center_freq2 = cf_device;
+	} else if (width_device == NL80211_CHAN_WIDTH_80) {
+		mode_device = MODE_11BE_EHT80;
+	} else if (width_device == NL80211_CHAN_WIDTH_40) {
+		mode_device = MODE_11BE_EHT40;
+	} else {
+		mode_device = MODE_UNKNOWN;
+	}
+
+	chan_device->info |= le32_encode_bits(mode_device, WMI_CHAN_INFO_MODE);
+	if (channel->passive)
+		chan_device->info |= cpu_to_le32(WMI_CHAN_INFO_PASSIVE);
+	if (channel->allow_ibss)
+		chan_device->info |= cpu_to_le32(WMI_CHAN_INFO_ADHOC_ALLOWED);
+	if (channel->allow_ht)
+		chan_device->info |= cpu_to_le32(WMI_CHAN_INFO_ALLOW_HT);
+	if (channel->allow_vht)
+		chan_device->info |= cpu_to_le32(WMI_CHAN_INFO_ALLOW_VHT);
+	if (channel->allow_he)
+		chan_device->info |= cpu_to_le32(WMI_CHAN_INFO_ALLOW_HE);
+	if (channel->ht40plus)
+		chan_device->info |= cpu_to_le32(WMI_CHAN_INFO_HT40_PLUS);
+	if (channel->chan_radar)
+		chan_device->info |= cpu_to_le32(WMI_CHAN_INFO_DFS);
+	if (channel->freq2_radar)
+		chan_device->info |= cpu_to_le32(WMI_CHAN_INFO_DFS_FREQ2);
+
+	chan_device->reg_info_1 = le32_encode_bits(channel->max_power,
+						   WMI_CHAN_REG_INFO1_MAX_PWR) |
+				  le32_encode_bits(channel->max_reg_power,
+						   WMI_CHAN_REG_INFO1_MAX_REG_PWR);
+
+	chan_device->reg_info_2 = le32_encode_bits(channel->max_antenna_gain,
+						   WMI_CHAN_REG_INFO2_ANT_MAX) |
+				  le32_encode_bits(channel->max_power,
+						   WMI_CHAN_REG_INFO2_MAX_TX_PWR);
+}
+
 static void ath12k_wmi_put_wmi_channel(struct ath12k_wmi_channel_params *chan,
 				       struct wmi_vdev_start_req_arg *arg)
 {
@@ -1315,11 +1388,13 @@ static void ath12k_wmi_put_wmi_channel(struct ath12k_wmi_channel_params *chan,
 int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 			  bool restart)
 {
+	struct ath12k_wmi_channel_params *chan_device;
 	struct wmi_vdev_start_mlo_params *ml_params;
 	struct wmi_partner_link_info *partner_info;
 	struct ath12k_hw_group *ag = ar->ab->ag;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_vdev_start_request_cmd *cmd;
+	bool device_params_present = false;
 	struct sk_buff *skb;
 	struct ath12k_wmi_channel_params *chan;
 	struct wmi_tlv *tlv;
@@ -1337,6 +1412,12 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 					      sizeof(*partner_info));
 		len += ml_arg_size;
 	}
+	device_params_present = ath12k_wmi_check_device_present(arg->width_device,
+								arg->center_freq_device,
+								arg->band_center_freq1);
+	if (device_params_present)
+		len += TLV_HDR_SIZE + sizeof(*chan_device);
+
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -1459,6 +1540,19 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "vdev %s id 0x%x freq 0x%x mode 0x%x\n",
 		   restart ? "restart" : "start", arg->vdev_id,
 		   arg->freq, arg->mode);
+
+	if (device_params_present) {
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 sizeof(*chan_device));
+		ptr += TLV_HDR_SIZE;
+
+		chan_device = ptr;
+		ath12k_wmi_set_wmi_channel_device(chan_device, arg,
+						  arg->center_freq_device,
+						  arg->width_device);
+		ptr += sizeof(*chan_device);
+	}
 
 	if (restart)
 		ret = ath12k_wmi_cmd_send(wmi, skb,
@@ -15568,12 +15662,14 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 	struct wmi_pdev_multiple_vdev_restart_request_cmd *cmd;
 	struct ath12k_wmi_channel_params *chan;
 	struct wmi_tlv *tlv;
+	struct ath12k_wmi_channel_params *chan_device;
 	u32 num_vdev_ids;
 	__le32 *vdev_ids;
 	size_t vdev_ids_len;
 	struct sk_buff *skb;
 	void *ptr;
 	int ret, len, i;
+	bool device_params_present = false;
 
 	if (ab->ag && ab->ag->num_devices >= ATH12K_MIN_NUM_DEVICES_NLINK) {
 		if (WARN_ON(arg->vdev_ids.id_len > TARGET_NUM_VDEVS + TARGET_NUM_BRIDGE_VDEVS))
@@ -15587,7 +15683,15 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 	vdev_ids_len = num_vdev_ids * sizeof(__le32);
 
 	len = sizeof(*cmd) + TLV_HDR_SIZE + vdev_ids_len +
-	      sizeof(*chan);
+	      sizeof(*chan) + TLV_HDR_SIZE + TLV_HDR_SIZE +
+	      TLV_HDR_SIZE;
+
+	device_params_present = ath12k_wmi_check_device_present(arg->width_device,
+								arg->center_freq_device,
+								arg->vdev_start_arg.band_center_freq1);
+
+	if (device_params_present)
+		len += TLV_HDR_SIZE + sizeof(*chan_device);
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -15618,6 +15722,32 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 
 	chan->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHANNEL, sizeof(*chan));
 	ptr += sizeof(*chan);
+
+	/* Zero length TLVs for phymode_list, preferred_tx_stream_list
+	 * and preferred_rx_stream_list which are mandatory if any of
+	 * the following TLVs are to be sent to target.
+	 */
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_UINT32, 0);
+	ptr += sizeof(*tlv);
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_UINT32, 0);
+	ptr += sizeof(*tlv);
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_UINT32, 0);
+	ptr += sizeof(*tlv);
+
+	if (device_params_present) {
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 sizeof(*chan_device));
+		ptr += TLV_HDR_SIZE;
+		chan_device = ptr;
+		ath12k_wmi_set_wmi_channel_device(chan_device, &arg->vdev_start_arg,
+						  arg->center_freq_device,
+						  arg->width_device);
+		ptr += sizeof(*chan_device);
+	}
 
 	ret = ath12k_wmi_cmd_send(wmi, skb,
 				  WMI_PDEV_MULTIPLE_VDEV_RESTART_REQUEST_CMDID);
