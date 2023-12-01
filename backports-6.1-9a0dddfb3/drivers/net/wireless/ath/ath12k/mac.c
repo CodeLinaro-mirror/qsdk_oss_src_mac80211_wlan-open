@@ -9512,6 +9512,23 @@ static int ath12k_mac_station_disassoc(struct ath12k *ar,
 	return 0;
 }
 
+static u16 ath12k_mac_set_punct_bitmap_device(u32 oper_freq,
+					      enum nl80211_chan_width width_device,
+					      u32 device_freq, u16 oper_punct_bitmap)
+{
+	if (oper_freq == device_freq || oper_freq < device_freq)
+		return oper_punct_bitmap;
+
+	switch (width_device) {
+	case NL80211_CHAN_WIDTH_160:
+		return (oper_punct_bitmap << 4);
+	case NL80211_CHAN_WIDTH_320:
+		return (oper_punct_bitmap << 8);
+	default:
+		return oper_punct_bitmap;
+	}
+}
+
 static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 					      struct ath12k_link_sta *arsta)
 {
@@ -9561,6 +9578,14 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 	}
 
 	rcu_read_unlock();
+
+	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
+	    cfg80211_chandef_device_present(&def)) {
+		ru_punct_bitmap = ath12k_mac_set_punct_bitmap_device(def.chan->center_freq,
+								     def.width_device,
+								     def.center_freq_device,
+								     def.punctured);
+	}
 
 	spin_lock_bh(&ar->data_lock);
 	ether_addr_copy(peer_arg->mac_addr.addr, arsta->addr);
@@ -15567,9 +15592,9 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_bss_conf *link_conf;
+	u16 punct_bitmap =  arvif->punct_bitmap;
 	struct ieee80211_channel *channel;
 	int ret;
-	u16 ru_punct_bitmap = arvif->punct_bitmap;
 	bool is_bridge_vdev;
 
 	lockdep_assert_wiphy(hw->wiphy);
@@ -15619,16 +15644,20 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		arg.max_antenna_gain = chandef->chan->max_antenna_gain;
 	}
 
-	arg.punct_bitmap = ~ru_punct_bitmap;
 	arg.pref_tx_streams = ar->num_tx_chains;
 	arg.pref_rx_streams = ar->num_rx_chains;
 
-	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
-				 ar->ab->wmi_ab.svc_map)) {
+	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
+	    cfg80211_chandef_device_present(chandef)) {
 		arg.width_device = chandef->width_device;
 		arg.center_freq_device = chandef->center_freq_device;
+		punct_bitmap = ath12k_mac_set_punct_bitmap_device(chandef->chan->center_freq,
+								 chandef->width_device,
+								 chandef->center_freq_device,
+								 punct_bitmap);
 	}
 
+	arg.punct_bitmap = ~punct_bitmap;
 	if (is_bridge_vdev)
 		arg.mbssid_flags = 0;
 	else
@@ -16185,6 +16214,7 @@ ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 	struct ath12k_base *ab = ar->ab;
 	struct wmi_pdev_multiple_vdev_restart_req_arg arg = {};
 	int ret, i;
+	u16 punct_bitmap = chandef->punctured;
 
 	arg.vdev_ids.id_len = len;
 
@@ -16205,13 +16235,18 @@ ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 	arg.vdev_start_arg.passive = arg.vdev_start_arg.chan_radar;
 	arg.vdev_start_arg.freq2_radar = radar_enabled;
 	arg.vdev_start_arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
-	arg.ru_punct_bitmap = ~chandef->punctured;
 
-	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
-		     ar->ab->wmi_ab.svc_map)) {
+	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
+	    cfg80211_chandef_device_present(chandef)) {
 		arg.width_device = chandef->width_device;
 		arg.center_freq_device = chandef->center_freq_device;
+		punct_bitmap = ath12k_mac_set_punct_bitmap_device(chandef->chan->center_freq,
+								  chandef->width_device,
+								  chandef->center_freq_device,
+								  punct_bitmap);
 	}
+
+	arg.ru_punct_bitmap = ~punct_bitmap;
 
 	ret = ath12k_wmi_pdev_multiple_vdev_restart(ar, &arg);
 	if (ret)

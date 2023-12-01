@@ -1541,7 +1541,8 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 		   restart ? "restart" : "start", arg->vdev_id,
 		   arg->freq, arg->mode);
 
-	if (device_params_present) {
+	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
+	    device_params_present) {
 		tlv = ptr;
 		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
 						 sizeof(*chan_device));
@@ -15702,6 +15703,7 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 						 sizeof(*cmd));
 	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
 	cmd->num_vdevs = cpu_to_le32(arg->vdev_ids.id_len);
+
 	cmd->puncture_20mhz_bitmap = cpu_to_le32(arg->ru_punct_bitmap);
 
 	cmd->flags = cpu_to_le32(WMI_MVR_RESPONSE_SUPPORT_EXPECTED);
@@ -15737,7 +15739,8 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_UINT32, 0);
 	ptr += sizeof(*tlv);
 
-	if (device_params_present) {
+	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
+	    device_params_present) {
 		tlv = ptr;
 		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
 						 sizeof(*chan_device));
