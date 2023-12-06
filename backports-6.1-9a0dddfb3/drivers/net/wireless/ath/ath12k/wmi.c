@@ -11182,6 +11182,7 @@ ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
 	u32 radar_found_freq, sub_channel_cfreq, radar_found_freq_low, radar_found_freq_high;
 	struct ath12k_mac_get_any_chanctx_conf_arg arg;
 	u16 radar_bitmap = 0, subchannel_count;
+	bool chandef_device_present = false;
 	struct cfg80211_chan_def *chandef;
 	enum nl80211_chan_width width;
 	struct ath12k *ar;
@@ -11199,6 +11200,7 @@ ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
 			return;
 		}
 		chandef = &arg.chanctx_conf->def;
+		chandef_device_present = cfg80211_chandef_device_present(chandef);
 	} else {
 		chandef = &ar->agile_chandef;
 	}
@@ -11211,7 +11213,11 @@ ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
 	ath12k_dbg(ab, ATH12K_DBG_WMI, " Operating freq:%u center_freq1:%u, center_freq2:%u",
 		   chandef->chan->center_freq, chandef->center_freq1,chandef->center_freq2);
 
-	width = chandef->width;
+	if (chandef_device_present)
+		width = chandef->width_device;
+	else
+		width = chandef->width;
+
 	subchannel_count = ath12k_calculate_subchannel_count(width);
 	if (!subchannel_count) {
 		ath12k_warn(ab, "invalid subchannel count for bandwidth=%d\n", width);
@@ -11224,7 +11230,10 @@ ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
 	}
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "perform channel submarking\n");
 
-	center_freq = chandef->center_freq1;
+	if (chandef_device_present)
+		center_freq = chandef->center_freq_device;
+	else
+		center_freq = chandef->center_freq1;
 
 	radar_found_freq = center_freq + radar->freq_offset;
 
