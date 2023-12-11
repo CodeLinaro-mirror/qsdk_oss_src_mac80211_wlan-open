@@ -3228,6 +3228,15 @@ struct ath12k_htt_phy_stats_tlv {
 	a_sle32 ani_level;
 	__le32 fw_run_time;
 	a_sle32 runtime_nf_chain[ATH12K_HTT_STATS_MAX_CHAINS];
+	__le32 current_operating_width;
+	__le32 current_device_width;
+	__le32 last_radar_type;
+	__le32 dfs_reg_domain;
+	__le32 radar_mask_bit;
+	__le32 radar_rssi;
+	__le32 radar_dfs_flags;
+	__le32 band_center_frequency_operating;
+	__le32 band_center_frequency_device;
 } __packed;
 
 struct ath12k_htt_phy_counters_tlv {

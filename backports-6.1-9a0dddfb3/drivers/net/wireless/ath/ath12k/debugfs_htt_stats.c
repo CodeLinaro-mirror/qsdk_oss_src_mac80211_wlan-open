@@ -6050,6 +6050,24 @@ ath12k_htt_print_phy_stats_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->radar_cs_cnt));
 	len += scnprintf(buf + len, buf_len - len, "ani_level = %d\n\n",
 			 a_sle32_to_cpu(htt_stats_buf->ani_level));
+	len += scnprintf(buf + len, buf_len - len, "current operating bw = %u\n",
+			 le32_to_cpu(htt_stats_buf->current_operating_width));
+	len += scnprintf(buf + len, buf_len - len, "current device bw = %u\n",
+			 le32_to_cpu(htt_stats_buf->current_device_width));
+	len += scnprintf(buf + len, buf_len - len, "last radar type = %u\n",
+			 le32_to_cpu(htt_stats_buf->last_radar_type));
+	len += scnprintf(buf + len, buf_len - len, "dfs regulatory domain = %u\n",
+			 le32_to_cpu(htt_stats_buf->dfs_reg_domain));
+	len += scnprintf(buf + len, buf_len - len, "radar mask bit = %u\n",
+			 le32_to_cpu(htt_stats_buf->radar_mask_bit));
+	len += scnprintf(buf + len, buf_len - len, "radar rssi = %d\n",
+			 le32_to_cpu(htt_stats_buf->radar_rssi));
+	len += scnprintf(buf + len, buf_len - len, "radar dfs flags = %u\n",
+			 le32_to_cpu(htt_stats_buf->radar_dfs_flags));
+	len += scnprintf(buf + len, buf_len - len, "operating center freq = %u\n",
+			 le32_to_cpu(htt_stats_buf->band_center_frequency_operating));
+	len += scnprintf(buf + len, buf_len - len, "device center freq = %u\n",
+			 le32_to_cpu(htt_stats_buf->band_center_frequency_device));
 
 	stats_req->buf_len = len;
 }
