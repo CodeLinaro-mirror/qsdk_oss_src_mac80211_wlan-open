@@ -1101,6 +1101,36 @@ struct ath12k_hal_tcl_to_wbm_rbm_map  {
 	u8 rbm_id;
 };
 
+#define HAL_FST_HASH_KEY_SIZE_BYTES				40
+#define HAL_RX_KEY_CACHE_SIZE					512
+
+struct hal_rx_fse;
+
+struct hal_rx_fst {
+	struct hal_rx_fse *base_vaddr;
+	dma_addr_t base_paddr;
+	u8 *key;
+	u8 shifted_key[HAL_FST_HASH_KEY_SIZE_BYTES];
+	u32 key_cache[HAL_FST_HASH_KEY_SIZE_BYTES][HAL_RX_KEY_CACHE_SIZE];
+	u16 max_entries;
+	u16 max_skid_length;
+	u32 fst_entry_size;
+};
+
+struct hal_flow_tuple_info {
+	u32 dest_ip_127_96;
+	u32 dest_ip_95_64;
+	u32 dest_ip_63_32;
+	u32 dest_ip_31_0;
+	u32 src_ip_127_96;
+	u32 src_ip_95_64;
+	u32 src_ip_63_32;
+	u32 src_ip_31_0;
+	u32 dest_port;
+	u32 src_port;
+	u32 l4_protocol;
+};
+
 struct hal_wbm_idle_scatter_list;
 struct hal_wbm_link_desc;
 

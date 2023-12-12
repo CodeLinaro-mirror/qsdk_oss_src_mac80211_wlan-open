@@ -891,3 +891,122 @@ void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
 	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
 			   HAL_REO1_QDESC_ADDR(hal), val);
 }
+
+static void
+ath12k_wifi7_key_bitwise_left_shift(u8 *key, int length, int shift)
+{
+	int i;
+	int next;
+
+	while (shift--) {
+		for (i = length - 1; i >= 0; i--) {
+			if (i > 0)
+				next = (key[i - 1] & 0x80 ? 1 : 0);
+			else
+				next = 0;
+
+			key[i] = (key[i] << 1) | next;
+		}
+	}
+}
+
+static void
+ath12k_wifi7_reverse_key(u8 *dest, const u8 *src, int length)
+{
+	int i, j;
+
+	for (i = 0, j = length  - 1; i < length; i++, j--)
+		dest[i] = src[j];
+}
+
+void
+ath12k_wifi7_hal_fst_key_configure(struct hal_rx_fst *fst)
+{
+	u8 key[HAL_FST_HASH_KEY_SIZE_BYTES];
+
+	memcpy(key, fst->key, HAL_FST_HASH_KEY_SIZE_BYTES);
+
+	ath12k_wifi7_key_bitwise_left_shift(key, HAL_FST_HASH_KEY_SIZE_BYTES, 5);
+	ath12k_wifi7_reverse_key(fst->shifted_key, key, HAL_FST_HASH_KEY_SIZE_BYTES);
+}
+
+void
+ath12k_wifi7_hal_flow_toeplitz_create_cache(struct hal_rx_fst *fst)
+{
+	int bit;
+	int value;
+	int i;
+	u8 *key = fst->shifted_key;
+	u32 current_key = (key[0] << 24) | (key[1] << 16) | (key[2] << 8) |
+		key[3];
+
+	for (i = 0; i < HAL_FST_HASH_KEY_SIZE_BYTES; i++) {
+		u8 new_key;
+		u32 shifted_key[8];
+
+		if (i + 4 < HAL_FST_HASH_KEY_SIZE_BYTES)
+			new_key = key[i + 4];
+		else
+			new_key = 0;
+
+		shifted_key[0] = current_key;
+
+		for (bit = 1; bit < 8; bit++)
+			shifted_key[bit] = current_key << bit | new_key >> (8 - bit);
+
+		for (value = 0; value < (1 << 8); value++) {
+			u32 hash = 0;
+			int mask;
+
+			for (bit = 0, mask = 1 << 7; bit < 8; bit++, mask >>= 1)
+				if ((value & mask))
+					hash ^= shifted_key[bit];
+
+			fst->key_cache[i][value] = hash;
+		}
+
+		current_key = current_key << 8 | new_key;
+	}
+}
+
+u32 ath12k_wifi7_hal_flow_toeplitz_hash(struct ath12k_base *ab,
+					struct hal_rx_fst *fst,
+					struct hal_flow_tuple_info *tuple_info)
+{
+	int i, j;
+	u32 hash = 0;
+	u32 input[HAL_FST_HASH_KEY_SIZE_WORDS] = {0};
+	u8 *tuple;
+
+	input[0] = htonl(tuple_info->src_ip_127_96);
+	input[1] = htonl(tuple_info->src_ip_95_64);
+	input[2] = htonl(tuple_info->src_ip_63_32);
+	input[3] = htonl(tuple_info->src_ip_31_0);
+	input[4] = htonl(tuple_info->dest_ip_127_96);
+	input[5] = htonl(tuple_info->dest_ip_95_64);
+	input[6] = htonl(tuple_info->dest_ip_63_32);
+	input[7] = htonl(tuple_info->dest_ip_31_0);
+	input[8] = (tuple_info->dest_port << 16) | (tuple_info->src_port);
+	input[9] = tuple_info->l4_protocol;
+
+	tuple = (u8 *)input;
+
+	for (i = 0, j = HAL_FST_HASH_DATA_SIZE - 1;
+	     i < HAL_FST_HASH_KEY_SIZE_BYTES && j >= 0; i++, j--)
+		hash ^= fst->key_cache[i][tuple[j]];
+
+	hash >>= 12;
+	hash &= (fst->max_entries - 1);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Hash value %u\n", hash);
+
+	return hash;
+}
+
+u32 ath12k_wifi7_hal_rx_get_trunc_hash(struct hal_rx_fst *fst, u32 hash)
+{
+	if (hash >= fst->max_entries)
+		hash &= (fst->max_entries - 1);
+
+	return hash;
+}

@@ -829,6 +829,66 @@ enum hal_mon_reception_type {
 #define HAL_RU_PER80(ru_per80, num_80mhz, ru_idx_per80mhz) \
 			(HAL_RU(ru_per80, num_80mhz, ru_idx_per80mhz))
 
+/* info1 subfields */
+#define HAL_RX_FSE_SRC_PORT			GENMASK(15, 0)
+#define HAL_RX_FSE_DEST_PORT			GENMASK(31, 16)
+
+/* info2 subfields */
+#define HAL_RX_FSE_L4_PROTOCOL			GENMASK(7, 0)
+#define HAL_RX_FSE_VALID			GENMASK(8, 8)
+#define HAL_RX_FSE_RESERVED			GENMASK(12, 9)
+#define HAL_RX_FSE_SERVICE_CODE			GENMASK(21, 13)
+#define HAL_RX_FSE_PRIORITY_VLD			GENMASK(22, 22)
+#define HAL_RX_FSE_USE_PPE			GENMASK(23, 23)
+#define HAL_RX_FSE_REO_INDICATION		GENMASK(28, 24)
+#define HAL_RX_FSE_MSDU_DROP			GENMASK(29, 29)
+#define HAL_RX_FSE_REO_DESTINATION_HANDLER	GENMASK(31, 30)
+
+/* info 3 subfields */
+#define HAL_RX_FSE_AGGREGATION_COUNT		GENMASK(15, 0)
+#define HAL_RX_FSE_LRO_ELIGIBLE			GENMASK(31, 16)
+#define HAL_RX_FSE_MSDU_COUNT			GENMASK(31, 16)
+
+/* info4 subfields */
+#define HAL_RX_FSE_CUMULATIVE_IP_LEN1		GENMASK(15, 0)
+#define HAL_RX_FSE_CUMULATIVE_IP_LEN		GENMASK(31, 16)
+
+/* This structure should not be modified as it is shared with HW */
+struct hal_rx_fse {
+	u32 src_ip_127_96;
+	u32 src_ip_95_64;
+	u32 src_ip_63_32;
+	u32 src_ip_31_0;
+	u32 dest_ip_127_96;
+	u32 dest_ip_95_64;
+	u32 dest_ip_63_32;
+	u32 dest_ip_31_0;
+	u32 info1;
+	u32 info2;
+	u32 metadata;
+	u32 info3;
+	u32 msdu_byte_count;
+	u32 timestamp;
+	u32 info4;
+	u32 tcp_sequence_number;
+};
+
+#define HAL_FST_HASH_DATA_SIZE		37
+#define HAL_FST_HASH_KEY_SIZE_WORDS	10
+#define HAL_RX_FST_MAX_SEARCH		16
+#define HAL_RX_FLOW_SEARCH_TABLE_SIZE	2048
+#define HAL_RX_FST_TOEPLITZ_KEYLEN	40
+
+struct hal_rx_flow {
+	struct hal_flow_tuple_info tuple_info;
+	u32 fse_metadata;
+	u16 service_code;
+	u8 reo_destination_handler;
+	u8 reo_indication;
+	u8 use_ppe      :1,
+	   drop         :1;
+};
+
 void ath12k_wifi7_hal_reo_status_queue_stats(struct ath12k_base *ab,
 					     struct hal_tlv_64_hdr *tlv,
 					     struct hal_reo_status *status);
@@ -882,4 +942,8 @@ void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);
 void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
 				      u32 start_seq, enum hal_pn_type type);
+u32 ath12k_wifi7_hal_rx_get_trunc_hash(struct hal_rx_fst *fst, u32 hash);
+u32 ath12k_wifi7_hal_flow_toeplitz_hash(struct ath12k_base *ab,
+					struct hal_rx_fst *fst,
+					struct hal_flow_tuple_info *tuple_info);
 #endif
