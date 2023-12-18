@@ -5651,6 +5651,10 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 		 * above, assign arvif again for create.
 		 */
 		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id);
+		if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
+		    (!is_broadcast_ether_addr(req->bssid) &&
+		     !is_zero_ether_addr(req->bssid)))
+			memcpy(arvif->bssid, req->bssid, ETH_ALEN);
 
 		arvif->is_scan_vif = true;
 		ret = ath12k_mac_vdev_create(ar, arvif);
@@ -9887,7 +9891,11 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 		}
 	}
 
-	if (link_conf) {
+	if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
+	    !is_zero_ether_addr(arvif->bssid)) {
+		memcpy(link_addr, arvif->bssid, ETH_ALEN);
+	} else if (link_conf) {
+		memcpy(link_addr, link_conf->addr, ETH_ALEN);
 		memcpy(arvif->bssid, link_conf->addr, ETH_ALEN);
 	} else {
 		eth_random_addr(link_addr);
