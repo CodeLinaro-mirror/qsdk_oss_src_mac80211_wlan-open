@@ -1355,8 +1355,8 @@ int ath12k_dp_rx_pdev_mon_attach(struct ath12k *ar)
 	return 0;
 }
 
-int ath12k_dp_rx_flow_send_fst_setup(struct ath12k_base *ab,
-				     struct dp_rx_fst *fst)
+static int ath12k_dp_rx_flow_send_fst_setup(struct ath12k_base *ab,
+					    struct dp_rx_fst *fst)
 {
 	struct htt_rx_flow_fst_setup fst_setup = {0};
 	int ret;
@@ -1573,4 +1573,59 @@ int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab)
 		   "FST num_entries = %d", fst->num_entries);
 out:
 	return ret;
+}
+
+void ath12k_dp_fst_core_map_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct dp_fst_config *fst_config = &dp->fst_config;
+	u32 fst_core_mask = fst_config->fst_core_mask;
+	int i;
+	int core_map_index = 0;
+
+	for (i = 0; i < 4; i++) {
+		fst_config->fst_core_map[i] = 0xf;
+		if ((fst_core_mask >> i) & 0x1) {
+			fst_config->fst_core_map[core_map_index] = i;
+			core_map_index++;
+		}
+	}
+
+	fst_config->fst_num_cores = core_map_index;
+	fst_config->core_idx = 0;
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "FST core_mask %x num_cores %d\n",
+		   fst_config->fst_core_mask, fst_config->fst_num_cores);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "FST core map %x %x %x %x\n",
+		   fst_config->fst_core_map[0],
+		   fst_config->fst_core_map[1],
+		   fst_config->fst_core_map[2],
+		   fst_config->fst_core_map[3]);
+}
+
+void ath12k_dp_rx_fst_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
+
+	if (!fst) {
+		ath12k_warn(ab, "FST table is NULL\n");
+		return;
+	}
+
+	fst->ipv4_fse_rule_cnt = 0;
+	fst->ipv6_fse_rule_cnt = 0;
+	dp->fst_config.fst_core_mask = 0x7;
+	dp->fst_config.fst_num_cores = 0;
+
+	ath12k_dp_fst_core_map_init(ab);
+	ath12k_dp_rx_flow_send_fst_setup(ab, fst);
+	/* After fst setup, make sure that the DDR table and HW cache is in sync
+	 * by sending INVALIDATE FULL command. This is needed to avoid DDR
+	 * and HW cache going out of sync when one soc goes for a recovery.
+	 */
+	ath12k_dp_htt_rx_flow_fse_operation(ab,
+					    DP_HTT_FST_CACHE_INVALIDATE_FULL,
+					    NULL);
 }

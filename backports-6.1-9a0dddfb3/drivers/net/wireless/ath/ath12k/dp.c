@@ -1612,6 +1612,11 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 
 	lockdep_assert_held(&ag->mutex);
 
+	if (dp_hw_grp->fst) {
+		ath12k_dp_rx_fst_detach(dp->ab, dp_hw_grp->fst);
+		dp_hw_grp->fst = NULL;
+	}
+
 	dp_hw_grp->dp[dp->device_id] = NULL;
 
 	dp->dp_hw_grp = NULL;
@@ -1627,6 +1632,9 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 	dp->dp_hw_grp = dp_hw_grp;
 	dp->device_id = ab->device_id;
 	dp_hw_grp->dp[dp->device_id] = dp;
+
+	if (!dp_hw_grp->fst)
+		dp_hw_grp->fst = ath12k_dp_rx_fst_attach(ab);
 }
 
 void ath12k_dp_cmn_update_hw_links(struct ath12k_dp *dp,

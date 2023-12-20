@@ -196,4 +196,8 @@ int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 				   struct rx_flow_info *flow_info);
 int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab);
+struct dp_rx_fst *ath12k_dp_rx_fst_attach(struct ath12k_base *ab);
+void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst);
+void ath12k_dp_fst_core_map_init(struct ath12k_base *ab);
+void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 #endif /* ATH12K_DP_RX_H */

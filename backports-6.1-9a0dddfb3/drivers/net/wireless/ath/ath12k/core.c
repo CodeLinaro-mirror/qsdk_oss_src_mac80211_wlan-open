@@ -974,6 +974,8 @@ static int ath12k_core_start(struct ath12k_base *ab)
 	/* Indicate the core start in the appropriate group */
 	ath12k_core_to_group_ref_get(ab);
 
+	ath12k_dp_rx_fst_init(ab);
+
 	return 0;
 
 err_reo_cleanup:
