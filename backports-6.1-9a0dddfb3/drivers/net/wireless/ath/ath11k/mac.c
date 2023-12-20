@@ -7698,7 +7698,8 @@ static void ath11k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 			   ret);
 
 	clear_bit(ATH11K_CAC_RUNNING, &ar->dev_flags);
-	if (ar->state != ATH11K_STATE_OFF) {
+	if (ar->state != ATH11K_STATE_OFF &&
+	    test_bit(ATH11K_FLAG_UNREGISTERING, &ar->ab->dev_flags)) {
 		ath11k_wait_for_suspend(ar, WMI_PDEV_SUSPEND_AND_DISABLE_INTR);
 
 		if (!test_bit(ATH11K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags))
@@ -7707,9 +7708,10 @@ static void ath11k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 		ath11k_hif_power_down(ar->ab);
 		ath11k_qmi_free_resource(ar->ab);
 		ar->ab->pm_suspend = true;
-		ar->state = ATH11K_STATE_OFF;
-		ar->ap_ps_state = ATH11K_AP_PS_STATE_OFF;
 	}
+
+	ar->state = ATH11K_STATE_OFF;
+	ar->ap_ps_state = ATH11K_AP_PS_STATE_OFF;
 	mutex_unlock(&ar->conf_mutex);
 
 	cancel_delayed_work_sync(&ar->scan.timeout);
