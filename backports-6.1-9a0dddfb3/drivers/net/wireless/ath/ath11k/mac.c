@@ -1936,8 +1936,6 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 				    arvif->vdev_id, ret);
 
 		arvif->is_up = false;
-		if (tx_arvif)
-			tx_arvif->nontransmitting_vif_count = 0;
 
 		return;
 	}
@@ -1962,9 +1960,7 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 	if (tx_arvif) {
 		params.tx_bssid = tx_arvif->bssid;
 		params.profile_idx = info->bssid_index;
-		if (params.profile_idx >= tx_arvif->nontransmitting_vif_count)
-			tx_arvif->nontransmitting_vif_count = params.profile_idx;
-		params.profile_count = tx_arvif->nontransmitting_vif_count;
+		params.profile_count = BIT(info->bssid_indicator);
 	}
 	ret = ath11k_wmi_vdev_up(arvif->ar, &params);
 	if (ret) {
@@ -3526,8 +3522,6 @@ static void ath11k_bss_disassoc(struct ieee80211_hw *hw,
 	arvif->is_up = false;
 	if (arvif->vif->bss_conf.mbssid_tx_vif) {
 		tx_arvif = (void *)arvif->vif->bss_conf.mbssid_tx_vif->drv_priv;
-		if (tx_arvif != arvif)
-			tx_arvif->nontransmitting_vif_count--;
 	}
 	memset(&arvif->rekey_data, 0, sizeof(arvif->rekey_data));
 
@@ -9124,7 +9118,7 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 			tx_arvif = (void *)arvif->vif->bss_conf.mbssid_tx_vif->drv_priv;
 			params.tx_bssid = tx_arvif->bssid;
 			params.profile_idx = arvif->vif->bss_conf.bssid_index;
-			params.profile_count = tx_arvif->nontransmitting_vif_count;
+			params.profile_count = BIT(arvif->vif->bss_conf.bssid_indicator);
 		}
 		ret = ath11k_wmi_vdev_up(arvif->ar, &params);
 		if (ret) {
