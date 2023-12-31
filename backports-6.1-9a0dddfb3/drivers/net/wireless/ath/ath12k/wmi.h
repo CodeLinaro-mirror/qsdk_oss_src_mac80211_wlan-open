@@ -6174,11 +6174,71 @@ struct wmi_dbglog_config_cmd_fixed_param {
 #define WMI_SEND_TIMEOUT_HZ (3 * HZ)
 #define WMI_CTRL_STATS_READY_TIMEOUT_HZ (1 * HZ)
 
+#define WMI_CMD_EVT_DEBUG_MAX_ENTRY 1024
+#define WMI_DEBUG_ENTRY_MAX_LENGTH (16)
+
+#define WMI_COMMAND_RECORD(wmi, skb, id) {                              \
+	if (wmi->dbg_cmd_tail_idx >= WMI_CMD_EVT_DEBUG_MAX_ENTRY)        \
+		wmi->dbg_cmd_tail_idx = 0;                               \
+	wmi->wmi_cmd_log[wmi->dbg_cmd_tail_idx].cmdid = id;              \
+	memcpy(wmi->wmi_cmd_log[wmi->dbg_cmd_tail_idx].data, skb->data + \
+		sizeof(struct wmi_cmd_hdr), WMI_DEBUG_ENTRY_MAX_LENGTH); \
+	wmi->wmi_cmd_log[wmi->dbg_cmd_tail_idx].time =                   \
+		ktime_to_us(ktime_get());                                \
+	wmi->dbg_cmd_tail_idx++;                                         \
+}
+
+#define WMI_COMMAND_TX_CMP_RECORD(wmi, id) {                               \
+	if (wmi->dbg_cmd_tx_cmp_tail_idx >= WMI_CMD_EVT_DEBUG_MAX_ENTRY)    \
+		wmi->dbg_cmd_tx_cmp_tail_idx = 0;                           \
+	wmi->wmi_cmd_tx_cmp_log[wmi->dbg_cmd_tx_cmp_tail_idx].cmdid = id;   \
+	wmi->wmi_cmd_tx_cmp_log[wmi->dbg_cmd_tx_cmp_tail_idx].time =        \
+		ktime_to_us(ktime_get());                                   \
+	wmi->dbg_cmd_tx_cmp_tail_idx++;                                     \
+}
+
+#define WMI_EVENT_RX_RECORD(wmi, skb, id) {                            \
+	if (wmi->dbg_evt_tail_idx >= WMI_CMD_EVT_DEBUG_MAX_ENTRY)       \
+		wmi->dbg_evt_tail_idx = 0;                              \
+	wmi->wmi_evt_log[wmi->dbg_evt_tail_idx].eventid = id;           \
+	memcpy(wmi->wmi_evt_log[wmi->dbg_evt_tail_idx].data, skb->data, \
+		WMI_DEBUG_ENTRY_MAX_LENGTH);                            \
+	wmi->wmi_evt_log[wmi->dbg_evt_tail_idx].time =                  \
+		ktime_to_us(ktime_get());                               \
+	wmi->dbg_evt_tail_idx++;                                        \
+}
+
+struct wmi_cmd_debug {
+	enum wmi_tlv_cmd_id cmdid;
+	/* WMI event data excluding TLV header */
+	uint32_t data[WMI_DEBUG_ENTRY_MAX_LENGTH / sizeof(uint32_t)];
+	uint64_t time;
+};
+
+struct wmi_cmd_comp_debug {
+	enum wmi_tlv_cmd_id cmdid;
+	uint64_t time;
+};
+
+struct wmi_event_debug {
+	enum wmi_tlv_event_id eventid;
+	/* WMI event data excluding TLV header */
+	uint32_t data[WMI_DEBUG_ENTRY_MAX_LENGTH / sizeof(uint32_t)];
+	uint64_t time;
+};
+
 struct ath12k_wmi_pdev {
 	struct ath12k_wmi_base *wmi_ab;
 	enum ath12k_htc_ep_id eid;
 	u32 rx_decap_mode;
 	wait_queue_head_t tx_ce_desc_wq;
+
+	struct wmi_cmd_debug wmi_cmd_log[WMI_CMD_EVT_DEBUG_MAX_ENTRY];
+	struct wmi_cmd_comp_debug wmi_cmd_tx_cmp_log[WMI_CMD_EVT_DEBUG_MAX_ENTRY];
+	struct wmi_event_debug wmi_evt_log[WMI_CMD_EVT_DEBUG_MAX_ENTRY];
+	u16 dbg_cmd_tail_idx;
+	u16 dbg_cmd_tx_cmp_tail_idx;
+	u16 dbg_evt_tail_idx;
 };
 
 struct ath12k_wmi_base {

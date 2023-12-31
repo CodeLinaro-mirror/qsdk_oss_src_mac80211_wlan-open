@@ -291,6 +291,7 @@ void ath12k_htc_rx_completion_handler(struct ath12k_base *ab,
 	size_t min_len;
 	u8 eid;
 	bool trailer_present;
+	struct ath12k_skb_cb *skb_cb;
 
 	hdr = (struct ath12k_htc_hdr *)skb->data;
 	skb_pull(skb, sizeof(*hdr));
@@ -394,6 +395,8 @@ void ath12k_htc_rx_completion_handler(struct ath12k_base *ab,
 		goto out;
 	}
 
+	skb_cb = ATH12K_SKB_CB(skb);
+	skb_cb->u.eid = eid;
 	ath12k_dbg(ab, ATH12K_DBG_HTC, "htc rx completion ep %d skb %p\n",
 		   eid, skb);
 	ep->ep_ops.ep_rx_complete(ab, skb);

@@ -344,6 +344,7 @@ static int ath12k_wmi_cmd_send_nowait(struct ath12k_wmi_pdev *wmi, struct sk_buf
 
 	cmd_hdr = (struct wmi_cmd_hdr *)skb->data;
 	cmd_hdr->cmd_id = le32_encode_bits(cmd_id, WMI_CMD_HDR_CMD_ID);
+	WMI_COMMAND_RECORD(wmi, skb, cmd_id);
 
 	memset(skb_cb, 0, sizeof(*skb_cb));
 	ret = ath12k_htc_send(&ab->htc, wmi->eid, skb);
@@ -7565,11 +7566,16 @@ static void ath12k_wmi_htc_tx_complete(struct ath12k_base *ab,
 {
 	struct ath12k_wmi_pdev *wmi = NULL;
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	struct wmi_cmd_hdr *cmd_hdr;
+	enum wmi_tlv_cmd_id id;
 	u32 i;
 	u8 wmi_ep_count;
 	u8 eid;
 
 	eid = skb_cb->u.eid;
+	skb_pull(skb, sizeof(struct ath12k_htc_hdr));
+	cmd_hdr = (struct wmi_cmd_hdr *)skb->data;
+	id = le32_get_bits(cmd_hdr->cmd_id, WMI_CMD_HDR_CMD_ID);
 	dev_kfree_skb(skb);
 
 	if (eid >= ATH12K_HTC_EP_COUNT)
@@ -7586,8 +7592,10 @@ static void ath12k_wmi_htc_tx_complete(struct ath12k_base *ab,
 		}
 	}
 
-	if (wmi)
+	if (wmi) {
+		WMI_COMMAND_TX_CMP_RECORD(wmi, id);
 		wake_up(&wmi->tx_ce_desc_wq);
+	}
 }
 
 static int ath12k_reg_chan_list_event(struct ath12k_base *ab, struct sk_buff *skb)
@@ -11860,14 +11868,35 @@ void ath12k_wmi_event_tbttoffset_update(struct ath12k_base *ab, struct sk_buff *
 
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct wmi_cmd_hdr *cmd_hdr;
 	enum wmi_tlv_event_id id;
+	struct ath12k_wmi_pdev *wmi = NULL;
+	u32 i;
+	u8 eid, wmi_ep_count;
 
+	eid = skb_cb->u.eid;
 	cmd_hdr = (struct wmi_cmd_hdr *)skb->data;
 	id = le32_get_bits(cmd_hdr->cmd_id, WMI_CMD_HDR_CMD_ID);
 
+	wmi_ep_count = ab->htc.wmi_ep_count;
+
 	if (!skb_pull(skb, sizeof(struct wmi_cmd_hdr)))
 		goto out;
+
+	if (wmi_ep_count <= ab->hw_params->max_radios) {
+		for (i = 0; i < ab->htc.wmi_ep_count; i++) {
+			if (ab->wmi_ab.wmi[i].eid == eid) {
+				wmi = &ab->wmi_ab.wmi[i];
+				break;
+			}
+		}
+	}
+
+	if (wmi) {
+		if (id != WMI_DIAG_EVENTID && id != WMI_MGMT_RX_EVENTID)
+			WMI_EVENT_RX_RECORD(wmi, skb, id);
+	}
 
 	switch (id) {
 		/* Process all the WMI events here */
