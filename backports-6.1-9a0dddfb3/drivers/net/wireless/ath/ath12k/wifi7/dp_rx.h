@@ -81,4 +81,5 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 int ath12k_wifi7_dp_rx_flow_delete_entry(struct ath12k_dp *dp,
 					 struct rx_flow_info *flow_info);
 int ath12k_wifi7_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp);
+ssize_t ath12k_wifi7_dp_dump_fst_table(struct ath12k_dp *dp, char *buf, int size);
 #endif

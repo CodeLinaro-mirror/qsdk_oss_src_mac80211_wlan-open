@@ -200,4 +200,5 @@ struct dp_rx_fst *ath12k_dp_rx_fst_attach(struct ath12k_base *ab);
 void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst);
 void ath12k_dp_fst_core_map_init(struct ath12k_base *ab);
 void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
+ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
 #endif /* ATH12K_DP_RX_H */

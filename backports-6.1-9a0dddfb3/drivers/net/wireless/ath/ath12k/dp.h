@@ -435,6 +435,7 @@ struct ath12k_dp_arch_ops {
 	int (*rx_flow_add_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
 	int (*rx_flow_delete_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
 	int (*rx_flow_delete_all_entries)(struct ath12k_dp *dp);
+	ssize_t (*dump_fst_table)(struct ath12k_dp *dp, char *buf, int size);
 };
 
 struct ath12k_bp_stats {
@@ -474,6 +475,9 @@ struct ath12k_device_dp_stats {
 	struct ath12k_device_dp_tx_err_stats tx_err;
 	struct ath12k_dp_ring_bp_stats bp_stats;
 };
+
+#define ATH12K_DP_MIN_FST_CORE_MASK 0x1
+#define ATH12K_DP_MAX_FST_CORE_MASK 0xf
 
 struct dp_fst_config {
 	u32 fst_core_mask;
@@ -685,6 +689,12 @@ static inline int
 ath12k_dp_arch_rx_flow_delete_all_entries(struct ath12k_dp *dp)
 {
 	return dp->arch_ops->rx_flow_delete_all_entries(dp);
+}
+
+static inline ssize_t
+ath12k_dp_arch_dump_fst_table(struct ath12k_dp *dp, char *buf, int size)
+{
+	return dp->arch_ops->dump_fst_table(dp, buf, size);
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

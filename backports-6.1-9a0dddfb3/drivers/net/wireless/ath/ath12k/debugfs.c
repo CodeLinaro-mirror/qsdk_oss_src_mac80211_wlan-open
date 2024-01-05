@@ -6,6 +6,7 @@
 
 #include "core.h"
 #include "dp_tx.h"
+#include "dp_rx.h"
 #include "debug.h"
 #include "debugfs.h"
 #include "debug.h"
@@ -953,6 +954,173 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_debugfs_op_vif_add);
 
+static ssize_t ath12k_read_fst_core_mask(struct file *file,
+					 char __user *user_buf,
+					 size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	char *buf;
+	const int size = 256;
+	int len = 0, retval;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len = scnprintf(buf + len, size - len,
+			"\nFST core mask: %u\n",
+			dp->fst_config.fst_core_mask);
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static ssize_t ath12k_write_fst_core_mask(struct file *file,
+					  const char __user *ubuf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_pdev *pdev;
+	u32 fst_core_mask;
+	int ret, i;
+	bool radioup = false;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		if (pdev && pdev->ar) {
+			radioup = true;
+			break;
+		}
+	}
+
+	if (!radioup) {
+		ath12k_err(ab, "radio is not up\n");
+		return -ENETDOWN;
+	}
+
+	ret = kstrtou32_from_user(ubuf, count, 0, &fst_core_mask);
+	if (ret)
+		return -EINVAL;
+
+	if (!dp->dp_hw_grp->fst) {
+		ath12k_err(ab, "FST table is NULL\n");
+		return -EINVAL;
+	}
+
+	if (fst_core_mask < ATH12K_DP_MIN_FST_CORE_MASK ||
+	    fst_core_mask > ATH12K_DP_MAX_FST_CORE_MASK) {
+		ath12k_err(ab, "Invalid FST core mask:0x%x\n",
+			   fst_core_mask);
+		return -EINVAL;
+	}
+
+	dp->fst_config.fst_core_mask = fst_core_mask;
+	if (fst_core_mask)
+		ath12k_dp_fst_core_map_init(ab);
+
+	ret = count;
+	return ret;
+}
+
+static ssize_t ath12k_dump_fst_flow_stats(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
+	char *buf;
+	const int size = 1024;
+	int len = 0, retval;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len += scnprintf(buf + len, size - len,
+			"\nNo of IPv4 Flow entries inserted: %u\n",
+			fst->ipv4_fse_rule_cnt);
+
+	len += scnprintf(buf + len, size - len,
+			"\nNo of IPv6 Flow entries inserted: %u\n",
+			fst->ipv6_fse_rule_cnt);
+
+	len += scnprintf(buf + len, size - len,
+			"\nFlow addition failure: %u\n",
+			fst->flow_add_fail);
+
+	len += scnprintf(buf + len, size - len,
+			"\nFlow deletion failure: %u\n",
+			fst->flow_del_fail);
+
+	len += scnprintf(buf + len, size - len,
+			"\nNo of Flows per reo:\n0:%u\t1:%u\t2:%u\t3:%u\n",
+			fst->flows_per_reo[0],
+			fst->flows_per_reo[1],
+			fst->flows_per_reo[2],
+			fst->flows_per_reo[3]);
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static ssize_t ath12k_dump_fst_dump_table(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	char *buf;
+	const int size = 256 * 2048;
+	int len = 0, retval;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len = ath12k_dp_dump_fst_table(ab, buf + len, size - len);
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_fst_core_mask = {
+	.open = simple_open,
+	.read = ath12k_read_fst_core_mask,
+	.write = ath12k_write_fst_core_mask,
+};
+
+static const struct file_operations fops_fst_dp_stats = {
+	.open = simple_open,
+	.read = ath12k_dump_fst_flow_stats,
+};
+
+static const struct file_operations fops_fst_dump_table = {
+	.open = simple_open,
+	.read = ath12k_dump_fst_dump_table,
+};
+
+void ath12k_fst_debugfs_init(struct ath12k_base *ab)
+{
+	struct dentry *fsestats_dir = debugfs_create_dir("fst_config", ab->debugfs_soc);
+
+	debugfs_create_file("fst_core_mask", 0600, fsestats_dir, ab,
+			    &fops_fst_core_mask);
+
+	debugfs_create_file("fst_dp_stats", 0400, fsestats_dir, ab,
+			    &fops_fst_dp_stats);
+
+	debugfs_create_file("fst_dump_table", 0400, fsestats_dir, ab,
+			    &fops_fst_dump_table);
+}
+
 void ath12k_debugfs_soc_create(struct ath12k_base *ab)
 {
 	bool dput_needed;
@@ -977,6 +1145,8 @@ void ath12k_debugfs_soc_create(struct ath12k_base *ab)
 
 	if (dput_needed)
 		dput(debugfs_ath12k);
+
+	ath12k_fst_debugfs_init(ab);
 }
 
 static ssize_t ath12k_write_wmi_ctrl_path_stats(struct file *file,

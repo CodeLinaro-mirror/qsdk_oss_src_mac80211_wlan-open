@@ -1629,3 +1629,10 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab)
 					    DP_HTT_FST_CACHE_INVALIDATE_FULL,
 					    NULL);
 }
+
+ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	return ath12k_dp_arch_dump_fst_table(dp, buf, size);
+}
