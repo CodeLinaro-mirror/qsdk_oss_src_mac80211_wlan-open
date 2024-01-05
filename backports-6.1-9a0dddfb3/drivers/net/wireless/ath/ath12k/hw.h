@@ -251,6 +251,7 @@ struct ath12k_hw_params {
 	bool send_platform_model;
 	bool handle_beacon_miss;
 	bool en_qdsslog;
+	bool support_fse;
 };
 
 struct ath12k_hw_ops {

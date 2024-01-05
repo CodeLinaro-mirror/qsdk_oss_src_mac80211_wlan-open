@@ -2565,3 +2565,32 @@ void ath12k_wifi7_dp_rx_process_reo_status(struct ath12k_dp *dp)
 
 	spin_unlock_bh(&srng->lock);
 }
+
+int ath12k_wifi7_dp_rx_fst_attach(struct ath12k_dp *dp, struct dp_rx_fst *fst)
+{
+	struct ath12k_base *ab = dp->ab;
+
+	fst->num_entries = 0;
+
+	fst->base = kcalloc(HAL_RX_FLOW_SEARCH_TABLE_SIZE,
+			    sizeof(struct dp_rx_fse), GFP_KERNEL);
+	if (!fst->base)
+		return -ENOMEM;
+
+	fst->hal_rx_fst = ath12k_wifi7_hal_rx_fst_attach(ab);
+	if (!fst->hal_rx_fst) {
+		ath12k_err(ab, "Rx Hal fst allocation failed\n");
+		kfree(fst->base);
+		return -ENOMEM;
+	}
+
+	return 0;
+}
+
+void ath12k_wifi7_dp_rx_fst_detach(struct ath12k_dp *dp, struct dp_rx_fst *fst)
+{
+	struct ath12k_base *ab = dp->ab;
+
+	ath12k_wifi7_hal_rx_fst_detach(ab, fst->hal_rx_fst);
+	kfree(fst->base);
+}

@@ -146,6 +146,8 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.peer_rx_tid_reo_update = ath12k_wifi7_peer_rx_tid_reo_update,
 	.alloc_reo_qdesc = ath12k_wifi7_dp_alloc_reo_qdesc,
 	.peer_rx_tid_qref_setup = ath12k_wifi7_peer_rx_tid_qref_setup,
+	.rx_fst_attach = ath12k_wifi7_dp_rx_fst_attach,
+	.rx_fst_detach = ath12k_wifi7_dp_rx_fst_detach,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */

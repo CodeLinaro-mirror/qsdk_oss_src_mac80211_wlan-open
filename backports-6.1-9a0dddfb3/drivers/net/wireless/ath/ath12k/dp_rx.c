@@ -1378,3 +1378,40 @@ int ath12k_dp_rx_flow_send_fst_setup(struct ath12k_base *ab,
 
 	return 0;
 }
+
+struct dp_rx_fst *ath12k_dp_rx_fst_attach(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct dp_rx_fst *fst;
+	int ret;
+
+	if (!ab->hw_params->support_fse)
+		return NULL;
+
+	fst = kzalloc(sizeof(*fst), GFP_KERNEL);
+	if (!fst)
+		return NULL;
+
+	ret = ath12k_dp_arch_rx_fst_attach(dp, fst);
+	if (ret) {
+		kfree(fst);
+		return NULL;
+	}
+
+	spin_lock_init(&fst->fst_lock);
+
+	ath12k_info(ab, "Rx FST attach successful\n");
+
+	return fst;
+}
+
+void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (!fst)
+		return;
+
+	ath12k_dp_arch_rx_fst_detach(dp, fst);
+	kfree(fst);
+}

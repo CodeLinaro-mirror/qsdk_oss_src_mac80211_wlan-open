@@ -11,6 +11,15 @@
 #include "../dp_rx.h"
 #include "hal_desc.h"
 
+struct dp_rx_fse {
+	struct hal_rx_fse *hal_fse;
+	u32 flow_hash;
+	u32 flow_id;
+	u32 msdu_count;
+	u8 reo_indication;
+	u8 is_valid;
+};
+
 int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab, struct ath12k_dp_rx_tid *rx_tid,
 				 enum hal_reo_cmd_type type,
 				 struct ath12k_hal_reo_cmd *cmd,
@@ -54,6 +63,8 @@ int ath12k_wifi7_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 				    struct hal_rx_reo_queue **addr_aligned);
 int ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab);
 int ath12k_wifi7_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab);
+int ath12k_wifi7_dp_rx_fst_attach(struct ath12k_dp *dp, struct dp_rx_fst *fst);
+void ath12k_wifi7_dp_rx_fst_detach(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 
 static inline
 void ath12k_wifi7_dp_extract_rx_desc_data(struct ath12k_dp *dp,
@@ -63,4 +74,5 @@ void ath12k_wifi7_dp_extract_rx_desc_data(struct ath12k_dp *dp,
 {
 	dp->hw_params->hal_ops->extract_rx_desc_data(rx_desc_data, rx_desc, ldesc);
 }
+
 #endif

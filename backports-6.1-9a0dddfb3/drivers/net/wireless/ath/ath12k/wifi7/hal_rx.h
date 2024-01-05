@@ -956,4 +956,6 @@ int ath12k_wifi7_hal_rx_find_flow_from_tuple(struct ath12k_base *ab,
 ssize_t ath12k_wifi7_hal_rx_dump_fst_table(struct ath12k_base *ab,
 					   struct hal_rx_fst *fst,
 					   char *buf, int size);
+struct hal_rx_fst *ath12k_wifi7_hal_rx_fst_attach(struct ath12k_base *ab);
+void ath12k_wifi7_hal_rx_fst_detach(struct ath12k_base *ab, struct hal_rx_fst *fst);
 #endif

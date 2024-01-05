@@ -28,6 +28,7 @@ struct ath12k_dp_rx_tid;
 struct ath12k_hal_reo_cmd;
 struct hal_reo_dest_ring;
 enum hal_wbm_rel_bm_act;
+struct dp_rx_fst;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
@@ -427,6 +428,8 @@ struct ath12k_dp_arch_ops {
 			       struct hal_rx_reo_queue **addr_aligned);
 	void (*peer_rx_tid_qref_setup)(struct ath12k_base *ab, u16 peer_id, u16 tid,
 				       dma_addr_t paddr);
+	int (*rx_fst_attach)(struct ath12k_dp *dp, struct dp_rx_fst *fst);
+	void (*rx_fst_detach)(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 };
 
 struct ath12k_bp_stats {
@@ -631,6 +634,17 @@ static inline void ath12k_dp_arch_peer_rx_tid_qref_setup(struct ath12k_dp *dp,
 	dp->arch_ops->peer_rx_tid_qref_setup(dp->ab, peer_id, tid, paddr);
 }
 
+static inline int ath12k_dp_arch_rx_fst_attach(struct ath12k_dp *dp,
+					       struct dp_rx_fst *fst)
+{
+	return dp->arch_ops->rx_fst_attach(dp, fst);
+}
+
+static inline void ath12k_dp_arch_rx_fst_detach(struct ath12k_dp *dp,
+						struct dp_rx_fst *fst)
+{
+	dp->arch_ops->rx_fst_detach(dp, fst);
+}
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 {
