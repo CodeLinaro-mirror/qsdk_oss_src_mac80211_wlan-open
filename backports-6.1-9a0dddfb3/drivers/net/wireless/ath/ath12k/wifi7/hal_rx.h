@@ -946,4 +946,12 @@ u32 ath12k_wifi7_hal_rx_get_trunc_hash(struct hal_rx_fst *fst, u32 hash);
 u32 ath12k_wifi7_hal_flow_toeplitz_hash(struct ath12k_base *ab,
 					struct hal_rx_fst *fst,
 					struct hal_flow_tuple_info *tuple_info);
+int ath12k_wifi7_hal_rx_find_flow_from_tuple(struct ath12k_base *ab,
+					     struct hal_rx_fst *fst,
+					     u32 flow_hash,
+					     void *flow_tuple_info,
+					     u32 *flow_idx);
+ssize_t ath12k_wifi7_hal_rx_dump_fst_table(struct ath12k_base *ab,
+					   struct hal_rx_fst *fst,
+					   char *buf, int size);
 #endif
