@@ -55,6 +55,8 @@ enum htt_h2t_msg_type {
 	HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG	= 0xc,
 	HTT_H2T_MSG_TYPE_EXT_STATS_CFG		= 0x10,
 	HTT_H2T_MSG_TYPE_PPDU_STATS_CFG		= 0x11,
+	HTT_H2T_MSG_TYPE_RX_FSE_SETUP_CFG       = 0x12,
+	HTT_H2T_MSG_TYPE_RX_FSE_OPERATION_CFG   = 0x13,
 	HTT_H2T_MSG_TYPE_VDEV_TXRX_STATS_CFG	= 0x1a,
 	HTT_H2T_MSG_TYPE_TX_MONITOR_CFG		= 0x1b,
 };
@@ -1650,6 +1652,97 @@ struct htt_mac_addr {
 	__le32 mac_addr_h16;
 } __packed;
 
+/* info0 */
+#define HTT_DP_RX_FLOW_FST_SETUP_MSG_TYPE                  GENMASK(7, 0)
+#define HTT_DP_RX_FLOW_FST_SETUP_PDEV_ID                   GENMASK(15, 8)
+#define HTT_DP_RX_FLOW_FST_SETUP_RESERVED0                 GENMASK(31, 16)
+
+/* info1 */
+#define HTT_DP_RX_FLOW_FST_SETUP_NUM_RECORDS               GENMASK(19, 0)
+#define HTT_DP_RX_FLOW_FST_SETUP_MAX_SEARCH                GENMASK(27, 20)
+#define HTT_DP_RX_FLOW_FST_SETUP_IP_DA_SA                  GENMASK(29, 28)
+#define HTT_DP_RX_FLOW_FST_SETUP_RESERVED1                 GENMASK(31, 30)
+
+/* info2 */
+#define HTT_DP_RX_FLOW_FST_SETUP_TOEPLITZ                  GENMASK(26, 0)
+#define HTT_DP_RX_FLOW_FST_SETUP_RESERVED2                 GENMASK(31, 27)
+
+struct htt_rx_flow_fst_setup_cmd {
+	__le32 info0;
+	__le32 info1;
+	__le32 base_addr_lo;
+	__le32 base_addr_hi;
+	__le32 toeplitz31_0;
+	__le32 toeplitz63_32;
+	__le32 toeplitz95_64;
+	__le32 toeplitz127_96;
+	__le32 toeplitz159_128;
+	__le32 toeplitz191_160;
+	__le32 toeplitz223_192;
+	__le32 toeplitz255_224;
+	__le32 toeplitz287_256;
+	__le32 info2;
+} __packed;
+
+/* info0 */
+#define HTT_H2T_MSG_RX_FSE_MSG_TYPE                  GENMASK(7, 0)
+#define HTT_H2T_MSG_RX_FSE_PDEV_ID                   GENMASK(15, 8)
+#define HTT_H2T_MSG_RX_FSE_RESERVED0                 GENMASK(31, 16)
+
+/* info1 */
+#define HTT_H2T_MSG_RX_FSE_IPSEC_VALID               GENMASK(0, 0)
+#define HTT_H2T_MSG_RX_FSE_OPERATION                 GENMASK(7, 1)
+#define HTT_H2T_MSG_RX_FSE_RESERVED1                 GENMASK(31, 8)
+
+/* info2 */
+#define HTT_H2T_MSG_RX_FSE_SRC_PORT                  GENMASK(15, 0)
+#define HTT_H2T_MSG_RX_FSE_DEST_PORT                 GENMASK(31, 16)
+
+/* info3 */
+#define HTT_H2T_MSG_RX_FSE_L4_PROTO                  GENMASK(7, 0)
+#define HTT_H2T_MSG_RX_FSE_RESERVED2                 GENMASK(31, 8)
+
+struct htt_rx_msg_fse_operation {
+	__le32 info0;
+	__le32 info1;
+	__le32 ip_src_addr_31_0;
+	__le32 ip_src_addr_63_32;
+	__le32 ip_src_addr_95_64;
+	__le32 ip_src_addr_127_96;
+	__le32 ip_dest_addr_31_0;
+	__le32 ip_dest_addr_63_32;
+	__le32 ip_dest_addr_95_64;
+	__le32 ip_dest_addr_127_96;
+	__le32 info2;
+	__le32 info3;
+} __packed;
+
+struct htt_rx_flow_fst_setup {
+	u32 max_entries;
+	u32 max_search;
+	u32 base_addr_lo;
+	u32 base_addr_hi;
+	u32 ip_da_sa_prefix;
+	u32 hash_key_len;
+	u8 *hash_key;
+};
+
+enum dp_htt_flow_fst_operation {
+	DP_HTT_FST_CACHE_OP_NONE,
+	DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
+	DP_HTT_FST_CACHE_INVALIDATE_FULL,
+	DP_HTT_FST_ENABLE,
+	DP_HTT_FST_DISABLE
+};
+
+enum htt_rx_fse_operation {
+	HTT_RX_FSE_CACHE_INVALIDATE_NONE,
+	HTT_RX_FSE_CACHE_INVALIDATE_ENTRY,
+	HTT_RX_FSE_CACHE_INVALIDATE_FULL,
+	HTT_RX_FSE_DISABLE,
+	HTT_RX_FSE_ENABLE,
+};
+
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
@@ -1677,4 +1770,8 @@ int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int tx_buf_size,
 				     struct htt_tx_ring_tlv_filter *htt_tlv_filter);
 int ath12k_dp_tx_htt_monitor_mode_ring_config(struct ath12k *ar, bool reset);
+int ath12k_dp_htt_rx_flow_fst_setup(struct ath12k_base *ab, struct htt_rx_flow_fst_setup *setup_info);
+int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
+					enum dp_htt_flow_fst_operation op_code,
+					struct hal_flow_tuple_info *tuple_info);
 #endif

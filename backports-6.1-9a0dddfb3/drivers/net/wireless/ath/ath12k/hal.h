@@ -1103,6 +1103,7 @@ struct ath12k_hal_tcl_to_wbm_rbm_map  {
 
 #define HAL_FST_HASH_KEY_SIZE_BYTES				40
 #define HAL_RX_KEY_CACHE_SIZE					512
+#define HAL_FST_IP_DA_SA_PFX_TYPE_IPV4_COMPATIBLE_IPV6		2
 
 struct hal_rx_fse;
 

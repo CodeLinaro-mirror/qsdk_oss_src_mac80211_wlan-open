@@ -383,6 +383,15 @@ struct ath12k_link_stats {
 	u32 tx_desc_type[DP_TCL_DESC_TYPE_MAX];
 };
 
+struct rx_flow_info {
+	struct hal_flow_tuple_info flow_tuple_info;
+	u16 fse_metadata;
+	u8 ring_id;
+	u8 is_addr_ipv4	:1,
+	   use_ppe	:1,
+	   drop		:1;
+};
+
 /* DP arch ops to communicate from common module
  * to arch specific module
  */

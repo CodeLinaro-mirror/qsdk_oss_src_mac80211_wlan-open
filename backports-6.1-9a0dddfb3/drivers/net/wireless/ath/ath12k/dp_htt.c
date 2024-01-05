@@ -1671,3 +1671,132 @@ err_free:
 	dev_kfree_skb_any(skb);
 	return ret;
 }
+
+int
+ath12k_dp_htt_rx_flow_fst_setup(struct ath12k_base *ab,
+				struct htt_rx_flow_fst_setup *setup_info)
+{
+	struct sk_buff *skb;
+	struct htt_rx_flow_fst_setup_cmd *cmd;
+	int ret;
+	u32 *key;
+	int len = sizeof(*cmd);
+
+	skb = ath12k_htc_alloc_skb(ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, len);
+	cmd = (struct htt_rx_flow_fst_setup_cmd *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_RX_FSE_SETUP_CFG,
+				      HTT_DP_RX_FLOW_FST_SETUP_MSG_TYPE);
+	cmd->info0 |= le32_encode_bits(0, HTT_DP_RX_FLOW_FST_SETUP_PDEV_ID);
+
+	cmd->info1 = le32_encode_bits(setup_info->max_entries,
+				      HTT_DP_RX_FLOW_FST_SETUP_NUM_RECORDS);
+	cmd->info1 |= le32_encode_bits(setup_info->max_search,
+				       HTT_DP_RX_FLOW_FST_SETUP_MAX_SEARCH);
+	cmd->info1 |= le32_encode_bits(setup_info->ip_da_sa_prefix,
+				       HTT_DP_RX_FLOW_FST_SETUP_IP_DA_SA);
+
+	cmd->base_addr_lo = setup_info->base_addr_lo;
+	cmd->base_addr_hi = setup_info->base_addr_hi;
+
+	key = (u32 *)setup_info->hash_key;
+	cmd->toeplitz31_0 = *key++;
+	cmd->toeplitz63_32 = *key++;
+	cmd->toeplitz95_64 = *key++;
+	cmd->toeplitz127_96 = *key++;
+	cmd->toeplitz159_128 = *key++;
+	cmd->toeplitz191_160 = *key++;
+	cmd->toeplitz223_192 = *key++;
+	cmd->toeplitz255_224 = *key++;
+	cmd->toeplitz287_256 = *key++;
+	cmd->info2 = le32_encode_bits(*key, HTT_DP_RX_FLOW_FST_SETUP_TOEPLITZ);
+
+	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "FST setup HTT message:",
+			(void *)cmd, len);
+
+	ret = ath12k_htc_send(&ab->htc, ath12k_ab_to_dp(ab)->eid, skb);
+	if (ret) {
+		ath12k_err(ab, "DP FSE setup msg send failed ret:%d\n", ret);
+		goto err_free;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "DP FSE setup msg sent from host\n");
+
+	return 0;
+
+err_free:
+	dev_kfree_skb_any(skb);
+	return ret;
+}
+
+int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
+					enum dp_htt_flow_fst_operation op_code,
+					struct hal_flow_tuple_info *tuple_info)
+{
+	struct sk_buff *skb;
+	struct htt_rx_msg_fse_operation *cmd;
+	int ret;
+	int len = sizeof(*cmd);
+
+	skb = ath12k_htc_alloc_skb(ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, len);
+	cmd = (struct htt_rx_msg_fse_operation *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_RX_FSE_OPERATION_CFG,
+				      HTT_H2T_MSG_RX_FSE_MSG_TYPE);
+	cmd->info0 |= le32_encode_bits(0, HTT_H2T_MSG_RX_FSE_PDEV_ID);
+	cmd->info1 = le32_encode_bits(false, HTT_H2T_MSG_RX_FSE_IPSEC_VALID);
+
+	if (op_code == DP_HTT_FST_CACHE_INVALIDATE_ENTRY) {
+		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_CACHE_INVALIDATE_ENTRY,
+					       HTT_H2T_MSG_RX_FSE_OPERATION);
+		cmd->ip_src_addr_31_0 = htonl(tuple_info->src_ip_31_0);
+		cmd->ip_src_addr_63_32 = htonl(tuple_info->src_ip_63_32);
+		cmd->ip_src_addr_95_64 = htonl(tuple_info->src_ip_95_64);
+		cmd->ip_src_addr_127_96 = htonl(tuple_info->src_ip_127_96);
+		cmd->ip_dest_addr_31_0 = htonl(tuple_info->dest_ip_31_0);
+		cmd->ip_dest_addr_63_32 = htonl(tuple_info->dest_ip_63_32);
+		cmd->ip_dest_addr_95_64 = htonl(tuple_info->dest_ip_95_64);
+		cmd->ip_dest_addr_127_96 = htonl(tuple_info->dest_ip_127_96);
+		cmd->info2 = le32_encode_bits(tuple_info->src_port,
+					      HTT_H2T_MSG_RX_FSE_SRC_PORT);
+		cmd->info2 |= le32_encode_bits(tuple_info->dest_port,
+					       HTT_H2T_MSG_RX_FSE_DEST_PORT);
+		cmd->info3 = le32_encode_bits(tuple_info->l4_protocol,
+					      HTT_H2T_MSG_RX_FSE_L4_PROTO);
+	} else if (op_code == DP_HTT_FST_CACHE_INVALIDATE_FULL) {
+		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_CACHE_INVALIDATE_FULL,
+					       HTT_H2T_MSG_RX_FSE_OPERATION);
+	} else if (op_code == DP_HTT_FST_DISABLE) {
+		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_DISABLE,
+					       HTT_H2T_MSG_RX_FSE_OPERATION);
+	} else if (op_code == DP_HTT_FST_ENABLE) {
+		cmd->info1 |= le32_encode_bits(HTT_RX_FSE_ENABLE,
+					       HTT_H2T_MSG_RX_FSE_OPERATION);
+	}
+
+	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "FSE HTT message:",
+			(void *)cmd, len);
+
+	ret = ath12k_htc_send(&ab->htc, ath12k_ab_to_dp(ab)->eid, skb);
+	if (ret) {
+		ath12k_warn(ab, "DP FSE operation msg send failed ret:%d\n", ret);
+		goto err_free;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "DP FSE operation msg sent from host\n");
+	return 0;
+
+err_free:
+	dev_kfree_skb_any(skb);
+	return ret;
+}

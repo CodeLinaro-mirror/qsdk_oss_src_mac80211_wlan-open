@@ -65,6 +65,14 @@ struct ath12k_dp_rx_rfc1042_hdr {
 	__be16 snap_type;
 } __packed;
 
+struct dp_rx_fst {
+	u8 *base;
+	struct hal_rx_fst *hal_rx_fst;
+	u16 num_entries;
+	/* spinlock to prevent concurrent table access */
+	spinlock_t fst_lock;
+};
+
 static inline u32 ath12k_he_gi_to_nl80211_he_gi(u8 sgi)
 {
 	u32 ret = 0;

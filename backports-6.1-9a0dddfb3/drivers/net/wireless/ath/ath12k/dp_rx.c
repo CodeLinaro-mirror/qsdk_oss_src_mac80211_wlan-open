@@ -1354,3 +1354,27 @@ int ath12k_dp_rx_pdev_mon_attach(struct ath12k *ar)
 
 	return 0;
 }
+
+int ath12k_dp_rx_flow_send_fst_setup(struct ath12k_base *ab,
+				     struct dp_rx_fst *fst)
+{
+	struct htt_rx_flow_fst_setup fst_setup = {0};
+	int ret;
+
+	fst_setup.max_entries = fst->hal_rx_fst->max_entries;
+	fst_setup.max_search = fst->hal_rx_fst->max_skid_length;
+	fst_setup.base_addr_lo = lower_32_bits(fst->hal_rx_fst->base_paddr);
+	fst_setup.base_addr_hi = upper_32_bits(fst->hal_rx_fst->base_paddr);
+	fst_setup.ip_da_sa_prefix =
+		HAL_FST_IP_DA_SA_PFX_TYPE_IPV4_COMPATIBLE_IPV6;
+	fst_setup.hash_key = fst->hal_rx_fst->key;
+	fst_setup.hash_key_len = HAL_FST_HASH_KEY_SIZE_BYTES;
+
+	ret = ath12k_dp_htt_rx_flow_fst_setup(ab, &fst_setup);
+	if (ret) {
+		ath12k_err(ab, "Failed to send Rx FSE Setup:status %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
