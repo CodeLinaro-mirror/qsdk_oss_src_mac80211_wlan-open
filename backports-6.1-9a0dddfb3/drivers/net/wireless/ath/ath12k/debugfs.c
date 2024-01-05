@@ -4,6 +4,7 @@
  * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
+#include <linux/inet.h>
 #include "core.h"
 #include "dp_tx.h"
 #include "dp_rx.h"
@@ -954,6 +955,142 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_debugfs_op_vif_add);
 
+static ssize_t ath12k_fse_ops_write(struct file *file,
+				    const char __user *ubuf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_pdev *pdev;
+	struct rx_flow_info flow_info = {0};
+	u8 buf[160] = {0};
+	u32 sip_addr[4] = {0};
+	u32 dip_addr[4] = {0};
+
+	char ops[8], ipver[8], srcip[48], destip[48];
+	u32 srcport, destport, protocol;
+
+	int ret, i;
+	bool radioup = false;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		if (pdev && pdev->ar) {
+			radioup = true;
+			break;
+		}
+	}
+
+	if (!radioup) {
+		ath12k_err(ab, "radio is not up\n");
+		ret = -ENETDOWN;
+		goto exit;
+	}
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
+	if (ret < 0)
+		goto exit;
+
+	buf[ret] = '\0';
+
+	ret = sscanf(buf, "%7s %7s %47s %47s %d %d %d", ops, ipver,
+		     srcip, destip, &srcport, &destport, &protocol);
+
+	if (!(ret == 7 || ret == 1)) {
+		ret = -EINVAL;
+		goto exit;
+	}
+	if (ret == 1) {
+		if (!strcmp(ops, "RST")) {
+			ath12k_dp_rx_flow_delete_all_entries(ab);
+			ret = count;
+		} else {
+			ret = -EINVAL;
+		}
+		goto exit;
+	}
+
+	if (!(protocol == IPPROTO_TCP || protocol == IPPROTO_UDP)) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (!(srcport >= ATH12K_UDP_TCP_START_PORT &&
+	      srcport <= ATH12K_UDP_TCP_END_PORT) ||
+	    !(destport >= ATH12K_UDP_TCP_START_PORT &&
+	      destport <= ATH12K_UDP_TCP_END_PORT)) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (!strcmp(ipver, "IPV4")) {
+		if (!in4_pton(srcip, -1, (u8 *)&sip_addr[0], -1, NULL)) {
+			ret = -EINVAL;
+			goto exit;
+		}
+		if (!in4_pton(destip, -1, (u8 *)&dip_addr[0], -1, NULL)) {
+			ret = -EINVAL;
+			goto exit;
+		}
+	} else if (!strcmp(ipver, "IPV6")) {
+		if (!in6_pton(srcip, -1, (u8 *)sip_addr, -1, NULL)) {
+			ret = -EINVAL;
+			goto exit;
+		}
+		if (!in6_pton(destip, -1, (u8 *)dip_addr, -1, NULL)) {
+			ret = -EINVAL;
+			goto exit;
+		}
+	} else {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "S_IP:%x:%x:%x:%x D_IP:%x:%x:%x:%x\n",
+		   sip_addr[0], sip_addr[1], sip_addr[2], sip_addr[3],
+		   dip_addr[0], dip_addr[1], dip_addr[2], dip_addr[3]);
+
+	if (!strcmp(ops, "ADD") || !strcmp(ops, "DEL")) {
+		flow_info.flow_tuple_info.src_port = srcport;
+		flow_info.flow_tuple_info.dest_port = destport;
+		flow_info.flow_tuple_info.l4_protocol = protocol;
+
+		if (!strcmp(ipver, "IPV4")) {
+			flow_info.is_addr_ipv4 = 1;
+			flow_info.flow_tuple_info.src_ip_31_0 = sip_addr[0];
+			flow_info.flow_tuple_info.dest_ip_31_0 = dip_addr[0];
+		} else {
+			flow_info.flow_tuple_info.src_ip_31_0 = sip_addr[3];
+			flow_info.flow_tuple_info.src_ip_63_32 = sip_addr[2];
+			flow_info.flow_tuple_info.src_ip_95_64 = sip_addr[1];
+			flow_info.flow_tuple_info.src_ip_127_96 = sip_addr[0];
+
+			flow_info.flow_tuple_info.dest_ip_31_0 = dip_addr[3];
+			flow_info.flow_tuple_info.dest_ip_63_32 = dip_addr[2];
+			flow_info.flow_tuple_info.dest_ip_95_64 = dip_addr[1];
+			flow_info.flow_tuple_info.dest_ip_127_96 = dip_addr[0];
+		}
+		if (!strcmp(ops, "ADD")) {
+			flow_info.fse_metadata = ATH12K_RX_FSE_FLOW_MATCH_DEBUGFS;
+			ath12k_dp_rx_flow_add_entry(ab, &flow_info);
+		} else {
+			ath12k_dp_rx_flow_delete_entry(ab, &flow_info);
+		}
+		ret = count;
+	}
+
+exit:
+	if (ret == -EINVAL) {
+		ath12k_warn(ab, "Invalid input\nUsage:\n");
+		ath12k_warn(ab, "<Case1> Cmd(RST)\n");
+		ath12k_warn(ab, "<Example> RST\n");
+		ath12k_warn(ab, "<Case2> Cmd(ADD/DEL) ipver(IPV4/IPV6) srcip destip srcport(0-65535) destport(0-65535) protocol(6-tcp 17-udp)\n");
+		ath12k_warn(ab, "<Example1> ADD IPV4 192.168.1.1 192.168.1.2 15000 15500 17\n");
+		ath12k_warn(ab, "<Example2> DEL IPV4 192.168.1.1 192.168.1.2 15000 15500 17\n");
+		ath12k_warn(ab, "<Example3> ADD IPV6 ffaa:bbcc:1122:5566:ccbb:aadd:1122:5555 fefe:b1c1:1122:5566:ccbb:aadd:1122:5555 15000 15500 17\n");
+		ath12k_warn(ab, "<Example4> DEL IPV6 ffaa:bbcc:1122:5566:ccbb:aadd:1122:5555 fefe:b1c1:1122:5566:ccbb:aadd:1122:5555 15000 15500 17\n");
+	}
+	return ret;
+}
+
 static ssize_t ath12k_read_fst_core_mask(struct file *file,
 					 char __user *user_buf,
 					 size_t count, loff_t *ppos)
@@ -1091,6 +1228,11 @@ static ssize_t ath12k_dump_fst_dump_table(struct file *file,
 	return retval;
 }
 
+static const struct file_operations fops_fse = {
+	.open = simple_open,
+	.write = ath12k_fse_ops_write,
+};
+
 static const struct file_operations fops_fst_core_mask = {
 	.open = simple_open,
 	.read = ath12k_read_fst_core_mask,
@@ -1119,6 +1261,9 @@ void ath12k_fst_debugfs_init(struct ath12k_base *ab)
 
 	debugfs_create_file("fst_dump_table", 0400, fsestats_dir, ab,
 			    &fops_fst_dump_table);
+
+	debugfs_create_file("fse", 0200, fsestats_dir, ab,
+			    &fops_fse);
 }
 
 void ath12k_debugfs_soc_create(struct ath12k_base *ab)

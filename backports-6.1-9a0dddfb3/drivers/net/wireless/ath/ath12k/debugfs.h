@@ -7,6 +7,10 @@
 #ifndef _ATH12K_DEBUGFS_H_
 #define _ATH12K_DEBUGFS_H_
 
+#define ATH12K_UDP_TCP_START_PORT		0
+#define ATH12K_UDP_TCP_END_PORT			65535
+#define ATH12K_RX_FSE_FLOW_MATCH_DEBUGFS	0xBBBB
+
 #ifdef CPTCFG_ATH12K_DEBUGFS
 void ath12k_debugfs_soc_create(struct ath12k_base *ab);
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab);
