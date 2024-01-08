@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include "../ahb.h"
 #include "../pci.h"
+#include "../erp.h"
 #include "pci.h"
 #include "ahb.h"
 
@@ -14,6 +15,8 @@ static int ahb_err, pci_err;
 
 static int ath12k_wifi7_init(void)
 {
+	ath12k_erp_init();
+
 	ahb_err = ath12k_wifi7_ahb_init();
 	if (ahb_err)
 		pr_warn("Failed to initialize ath12k WiFi7 AHB device: %d\n",
@@ -35,6 +38,8 @@ static void ath12k_wifi7_exit(void)
 
 	if (!ahb_err)
 		ath12k_wifi7_ahb_exit();
+
+	ath12k_erp_deinit();
 }
 
 module_init(ath12k_wifi7_init);

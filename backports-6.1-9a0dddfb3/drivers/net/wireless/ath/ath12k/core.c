@@ -35,6 +35,7 @@
 #include "ppe.h"
 #include "cfr.h"
 #include "ini.h"
+#include "erp.h"
 
 #define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT 0x8000
 #define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT 1024
@@ -1973,6 +1974,9 @@ void ath12k_core_halt(struct ath12k *ar)
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
 		INIT_LIST_HEAD(&ar->arvifs);
 	idr_init(&ar->txmgmt_idr);
+
+	cancel_work_sync(&ar->erp_handle_trigger_work);
+	ar->erp_trigger_set = false;
 }
 
 static void ath12k_core_mlo_hw_queues_stop(struct ath12k_hw_group *ag)

@@ -16,6 +16,7 @@
 #include "peer.h"
 #include "dp_mon.h"
 #include "debugfs_htt_stats.h"
+#include "erp.h"
 
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 				struct list_head *head,

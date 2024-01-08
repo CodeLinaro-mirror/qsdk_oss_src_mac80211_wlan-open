@@ -33,7 +33,8 @@ ath12k-y += core.o \
 	    telemetry_agent_if.o \
 	    ini.o \
 	    ini_parse.o \
-	    dp_mon_filter.o
+	    dp_mon_filter.o \
+	    erp.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o

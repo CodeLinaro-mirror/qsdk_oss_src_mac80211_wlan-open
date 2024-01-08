@@ -2451,9 +2451,18 @@ static bool ath12k_wifi7_dp_rx_h_reo_err(struct ath12k_pdev_dp *dp_pdev,
 
 	switch (rxcb->err_code) {
 	case HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO:
+		struct ath12k *ar = dp_pdev->ar;
+
 		if (ath12k_wifi7_dp_rx_h_null_q_desc(dp_pdev, msdu, status, msdu_list,
 						     rx_desc_data))
 			drop = true;
+
+		/* CCE rule configured for the ERP feature on REO RELEASE RING gets
+		 * handled under this specific error code
+		 * */
+		if (!drop && ar->erp_trigger_set)
+			queue_work(ar->ab->workqueue, &ar->erp_handle_trigger_work);
+
 		break;
 	case HAL_REO_DEST_RING_ERROR_CODE_PN_CHECK_FAILED:
 		/* TODO: Do not drop PN failed packets in the driver;

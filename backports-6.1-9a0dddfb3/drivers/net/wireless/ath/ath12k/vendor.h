@@ -31,6 +31,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION = 74,
 	QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION = 75,
 	QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS = 200,
+	QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC = 206,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT = 222,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_RESPONSE = 223,
 	QCA_NL80211_VENDOR_SUBCMD_SDWF_PHY_OPS = 235,
@@ -43,6 +44,7 @@ enum qca_nl80211_vendor_subcmds {
 enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX = 0,
 	QCA_NL80211_VENDOR_SUBCMD_6GHZ_PWR_MODE_EVT_IDX = 1,
+	QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC_INDEX = 2,
 };
 
 /**
@@ -796,6 +798,111 @@ enum qca_wlan_vendor_attr_sdwf_sla_threshold {
 	QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MAX =
 	QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_rm_generic - Attributes required for vendor
+ * command %QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC to register a Resource Manager
+ * with the driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP: Nested attribute used for commands
+ * and events related to ErP (Energy related Products),
+ * see @enum qca_wlan_vendor_attr_erp_ath for details.
+ */
+enum qca_wlan_vendor_attr_rm_generic {
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP = 13,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MAX =
+		QCA_WLAN_VENDOR_ATTR_RM_GENERIC_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_erp_ath - Parameters to support ErP in ath driver.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ERP_INVALID: Invalid attribute
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ERP_ENTER_START: Flag, set to true will trigger
+ * driver's entry into ErP mode.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ERP_ENTER_COMPLETE: Flag to indicate that ErP
+ * parameter configuration is complete. This can be included along with flags
+ * QCA_WLAN_VENDOR_ATTR_ERP_ENTER_START and
+ * QCA_WLAN_VENDOR_ATTR_ERP_CONFIG.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ERP_CONFIG: Optional nested attribute for ErP
+ * parameters. Flag QCA_WLAN_VENDOR_ATTR_ERP_ENTER_START must be sent
+ * either before or when the first time this flag is included. See
+ * @enum qca_wlan_vendor_attr_erp_ath_config for details.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ERP_EXIT: Flag, set to true will trigger exit from
+ * ErP mode. Driver uses this flag to send vendor event
+ * %QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC to userspace upon receiving a packet
+ * matching a previously configured filter. Userspace can also trigger driver's
+ * exit from ErP using this flag.
+ */
+enum qca_wlan_vendor_attr_erp_ath {
+	QCA_WLAN_VENDOR_ATTR_ERP_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ERP_ENTER_START = 1,
+	QCA_WLAN_VENDOR_ATTR_ERP_ENTER_COMPLETE = 2,
+	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG = 3,
+	QCA_WLAN_VENDOR_ATTR_ERP_EXIT = 4,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_ERP_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_ERP_MAX = QCA_WLAN_VENDOR_ATTR_ERP_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_trigger_types - Types of ErP wake up trigger
+ */
+enum qca_wlan_vendor_trigger_types {
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_ARP_IPV4,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_NS_IPV6,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_IGMP_IPV4,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_MLD_IPV6,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_DHCP_IPV4,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_DHCP_IPV6,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_DNS_TCP_IPV4,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_DNS_TCP_IPV6,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_DNS_UDP_IPV4,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_DNS_UDP_IPV6,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_ICMP_IPV4,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_ICMP_IPV6,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_TCP_IPV4,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_TCP_IPV6,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_UDP_IPV4,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_UDP_IPV6,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_IPV4,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_IPV6,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_EAP,
+	QCA_WLAN_VENDOR_TRIGGER_TYPE_MAX,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_erp_ath_config - Parameters to support ErP.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_INVALID: Invalid attribute
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_IFINDEX: (u32) Interface index. This is
+ * a mandatory attribute for setting packet trigger for the designated wake up
+ * interface along with %QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_TRIGGER).
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_TRIGGER: (u32) Attribute used
+ * to set wake-up trigger to bring the device out of ErP mode. This is bitmap
+ * where each bit corresponds to the values defined in
+ * enum qca_wlan_vendor_trigger_types.
+ */
+enum qca_wlan_vendor_attr_erp_ath_config {
+	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_IFINDEX = 1,
+	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_TRIGGER = 2,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_MAX =
+		QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_AFTER_LAST - 1,
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah);

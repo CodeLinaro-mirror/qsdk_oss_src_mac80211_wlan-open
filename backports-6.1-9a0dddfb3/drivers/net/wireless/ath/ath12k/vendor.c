@@ -13,6 +13,7 @@
 #include "ppe.h"
 #include "vendor.h"
 #include "telemetry.h"
+#include "erp.h"
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -1145,6 +1146,11 @@ int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *a
 out:
 	return ret;
 }
+
+static const struct nla_policy
+ath12k_vendor_rm_generic_policy[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP] = {.type = NLA_NESTED},
+};
 
 static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
@@ -2570,6 +2576,28 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 	return ret;
 }
 
+static int ath12k_vendor_parse_rm(struct wiphy *wiphy, struct wireless_dev *wdev,
+				  const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MAX + 1];
+	int ret;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MAX,
+			data, data_len, ath12k_vendor_rm_generic_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "failed to parse QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC\n");
+		return ret;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP]) {
+		ath12k_err(NULL, "invalid attributes provided for QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC\n");
+		return ret;
+	}
+
+	return ath12k_vendor_parse_rm_erp(wiphy, wdev,
+					  tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP]);
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -2586,6 +2614,13 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_wifi_config_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC,
+		.doit = ath12k_vendor_parse_rm,
+		.policy = ath12k_vendor_rm_generic_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MAX,
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -2637,6 +2672,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_6GHZ_PWR_MODE_EVT_IDX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_POWER_MODE_CHANGE_COMPLETED
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC,
 	},
 };
 

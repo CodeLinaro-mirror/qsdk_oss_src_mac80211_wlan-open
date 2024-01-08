@@ -1205,6 +1205,9 @@ struct ath12k {
 	struct wiphy_work agile_cac_abort_wq;
 	u32 free_map_id;
 	struct ath12k_qos_map *qos_map;
+
+	bool erp_trigger_set;
+	struct work_struct erp_handle_trigger_work;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

@@ -33,6 +33,7 @@
 #include "ppe.h"
 #include "cfr.h"
 #include "dp_mon.h"
+#include "erp.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -19108,6 +19109,8 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 				}
 			}
 		}
+
+		ath12k_erp_handle_ssr(ar);
 	}
 
 	clear_bit(ATH12K_GROUP_FLAG_RECOVERY, &ar->ab->ag->flags);
@@ -20954,8 +20957,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		goto err_cleanup_if_combs;
 	}
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_vendor_register(ah);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ieee80211_hw_set(hw, SUPPORT_ECM_REGISTRATION);
 #endif
 
@@ -21081,6 +21085,8 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	ar->monitor_vdev_id = -1;
 	ar->monitor_vdev_created = false;
 	ar->monitor_started = false;
+
+	INIT_WORK(&ar->erp_handle_trigger_work, ath12k_erp_handle_trigger);
 }
 
 static int __ath12k_mac_mlo_setup(struct ath12k *ar)
