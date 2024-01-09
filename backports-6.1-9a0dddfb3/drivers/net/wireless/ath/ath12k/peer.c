@@ -165,7 +165,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ar->num_peers > (ar->max_num_peers - 1)) {
+	if (ar->num_peers >= (ar->max_num_peers - 1)) {
 		ath12k_warn(ar->ab,
 			    "failed to create peer due to insufficient peer entry resource in firmware\n");
 		return -ENOBUFS;
