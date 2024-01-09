@@ -6042,3 +6042,27 @@ void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 		 */
 	}
 }
+
+struct dentry *ath12k_debugfs_erp_create(void)
+{
+	struct dentry *debugfs_ath12k, *erp_dir;
+	bool dput_needed;
+
+	debugfs_ath12k = debugfs_lookup("ath12k", NULL);
+	if (debugfs_ath12k) {
+		/* a dentry from lookup() needs dput() after we don't use it */
+		dput_needed = true;
+	} else {
+		debugfs_ath12k = debugfs_create_dir("ath12k", NULL);
+		if (IS_ERR_OR_NULL(debugfs_ath12k))
+			return NULL;
+		dput_needed = false;
+	}
+
+	erp_dir = debugfs_create_dir("erp", debugfs_ath12k);
+
+	if (dput_needed)
+		dput(debugfs_ath12k);
+
+	return erp_dir;
+}

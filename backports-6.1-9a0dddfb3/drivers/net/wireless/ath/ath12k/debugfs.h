@@ -79,6 +79,7 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab);
 
 void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif);
 void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif);
+struct dentry *ath12k_debugfs_erp_create(void);
 
 #define ATH12K_CCK_RATES			4
 #define ATH12K_OFDM_RATES			8
@@ -270,6 +271,11 @@ static inline void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
 
 static inline void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 {
+}
+
+struct dentry *ath12k_debugfs_erp_create(void)
+{
+       return NULL;
 }
 
 #endif /* CPTCFG_ATH12K_DEBUGFS */

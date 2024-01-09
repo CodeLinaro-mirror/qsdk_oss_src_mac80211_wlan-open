@@ -1453,3 +1453,13 @@ void ath12k_pci_unregister_driver(const enum ath12k_device_family device_id)
 	ath12k_pci_family_drivers[device_id] = NULL;
 }
 EXPORT_SYMBOL(ath12k_pci_unregister_driver);
+
+struct pci_dev *ath12k_pci_get_dev_by_ab(struct ath12k_base *ab)
+{
+	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+
+	if (!ab_pci)
+		return NULL;
+
+	return ab_pci->pdev;
+}

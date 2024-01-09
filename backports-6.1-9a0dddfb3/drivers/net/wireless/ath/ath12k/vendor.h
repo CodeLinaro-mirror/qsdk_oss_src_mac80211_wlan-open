@@ -893,11 +893,15 @@ enum qca_wlan_vendor_trigger_types {
  * to set wake-up trigger to bring the device out of ErP mode. This is bitmap
  * where each bit corresponds to the values defined in
  * enum qca_wlan_vendor_trigger_types.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_PCIE_REMOVE: flag, set if the driver should
+ * remove PCIe slot.
  */
 enum qca_wlan_vendor_attr_erp_ath_config {
 	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_IFINDEX = 1,
 	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_TRIGGER = 2,
+	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_PCIE_REMOVE = 3,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_ERP_CONFIG_AFTER_LAST,

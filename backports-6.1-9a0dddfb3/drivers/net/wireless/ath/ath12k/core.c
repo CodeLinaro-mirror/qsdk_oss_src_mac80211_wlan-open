@@ -4093,6 +4093,42 @@ int ath12k_core_config_ul_qos(struct ath12k *ar,
 }
 EXPORT_SYMBOL(ath12k_core_config_ul_qos);
 
+struct ath12k_base *ath12k_core_get_ab_by_wiphy(const struct wiphy *wiphy,
+						bool no_arvifs)
+{
+	struct ath12k_hw_group *ag;
+	struct ath12k_base *ab;
+	struct ath12k *ar;
+	int soc, i;
+
+	mutex_lock(&ath12k_hw_group_mutex);
+	list_for_each_entry(ag, &ath12k_hw_group_list, list) {
+		if (!ag) {
+			ath12k_err(NULL, "unable to fetch hw group\n");
+			mutex_unlock(&ath12k_hw_group_mutex);
+			return NULL;
+		}
+
+		for (soc = ag->num_probed; soc > 0; soc--) {
+			ab = ag->ab[soc - 1];
+			for (i = 0; i < ab->num_radios; i++) {
+				ar = ab->pdevs[i].ar;
+				if (!ar || ar->ah->hw->wiphy != wiphy)
+					continue;
+
+				if (no_arvifs && !list_empty(&ar->arvifs))
+					continue;
+
+				mutex_unlock(&ath12k_hw_group_mutex);
+				return ab;
+			}
+		}
+	}
+
+	mutex_unlock(&ath12k_hw_group_mutex);
+	return NULL;
+}
+
 int ath12k_core_init(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag;
