@@ -2198,6 +2198,12 @@ static int ath11k_core_start(struct ath11k_base *ab)
 		goto err_hif_stop;
 	}
 
+	ret = ath11k_wmi_cmd_init(ab);
+	if (ret) {
+		ath11k_err(ab, "failed to send wmi init cmd: %d\n", ret);
+		goto err_hif_stop;
+	}
+
 	if (!ab->pm_suspend) {
 		ret = ath11k_mac_allocate(ab);
 		if (ret) {
@@ -2213,12 +2219,6 @@ static int ath11k_core_start(struct ath11k_base *ab)
 	if (ret) {
 		ath11k_err(ab, "failed to initialize reo destination rings: %d\n", ret);
 		goto err_mac_destroy;
-	}
-
-	ret = ath11k_wmi_cmd_init(ab);
-	if (ret) {
-		ath11k_err(ab, "failed to send wmi init cmd: %d\n", ret);
-		goto err_reo_cleanup;
 	}
 
 	ret = ath11k_wmi_wait_for_unified_ready(ab);

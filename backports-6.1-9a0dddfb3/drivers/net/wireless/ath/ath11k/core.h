@@ -796,6 +796,10 @@ struct ath11k_sta {
 #define ATH11K_NUM_CHANS 102
 #define ATH11K_MAX_5G_CHAN 177
 
+#define ATH11K_PHY_2GHZ "phy00"
+#define ATH11K_PHY_5GHZ "phy01"
+#define ATH11K_PHY_6GHZ "phy03"
+
 enum ath11k_state {
 	ATH11K_STATE_OFF,
 	ATH11K_STATE_ON,
@@ -1156,6 +1160,7 @@ struct ath11k_pdev {
 	u32 pdev_id;
 	struct ath11k_pdev_cap cap;
 	u8 mac_addr[ETH_ALEN];
+	const char *phy_name;
 };
 
 #define BOARD_NAME_SIZE 100

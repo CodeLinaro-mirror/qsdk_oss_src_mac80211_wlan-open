@@ -13637,7 +13637,7 @@ int ath11k_mac_allocate(struct ath11k_base *ab)
 		}
 
 		pdev = &ab->pdevs[i];
-		hw = ieee80211_alloc_hw(sizeof(struct ath11k), ops);
+		hw = ieee80211_alloc_hw_nm(sizeof(struct ath11k), ops, pdev->phy_name);
 		if (!hw) {
 			ath11k_warn(ab, "failed to allocate mac80211 hw device\n");
 			ret = -ENOMEM;
