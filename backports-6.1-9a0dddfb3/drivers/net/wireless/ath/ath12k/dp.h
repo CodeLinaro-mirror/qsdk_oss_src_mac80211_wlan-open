@@ -430,6 +430,8 @@ struct ath12k_dp_arch_ops {
 				       dma_addr_t paddr);
 	int (*rx_fst_attach)(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 	void (*rx_fst_detach)(struct ath12k_dp *dp, struct dp_rx_fst *fst);
+	void (*rx_flow_dump_entry)(struct ath12k_dp *dp,
+				   struct rx_flow_info *flow_info);
 };
 
 struct ath12k_bp_stats {
@@ -644,6 +646,13 @@ static inline void ath12k_dp_arch_rx_fst_detach(struct ath12k_dp *dp,
 						struct dp_rx_fst *fst)
 {
 	dp->arch_ops->rx_fst_detach(dp, fst);
+}
+
+static inline void
+ath12k_dp_arch_rx_flow_dump_entry(struct ath12k_dp *dp,
+				  struct rx_flow_info *flow_info)
+{
+	return dp->arch_ops->rx_flow_dump_entry(dp, flow_info);
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

@@ -29,6 +29,7 @@ struct ath12k_dp_hw {
 struct ath12k_dp_hw_group {
 	struct ath12k_dp_hw_link hw_links[ATH12K_GROUP_MAX_RADIO];
 	struct ath12k_dp *dp[ATH12K_MAX_SOCS];
+	struct dp_rx_fst *fst;
 };
 
 /* TODO: Move this to a seperate dp_stats file */

@@ -75,4 +75,6 @@ void ath12k_wifi7_dp_extract_rx_desc_data(struct ath12k_dp *dp,
 	dp->hw_params->hal_ops->extract_rx_desc_data(rx_desc_data, rx_desc, ldesc);
 }
 
+void ath12k_wifi7_dp_rx_flow_dump_entry(struct ath12k_dp *dp,
+					struct rx_flow_info *flow_info);
 #endif

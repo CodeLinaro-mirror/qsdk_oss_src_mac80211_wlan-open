@@ -2594,3 +2594,90 @@ void ath12k_wifi7_dp_rx_fst_detach(struct ath12k_dp *dp, struct dp_rx_fst *fst)
 	ath12k_wifi7_hal_rx_fst_detach(ab, fst->hal_rx_fst);
 	kfree(fst->base);
 }
+
+void ath12k_wifi7_dp_rx_flow_dump_entry(struct ath12k_dp *dp,
+					struct rx_flow_info *flow_info)
+{
+	struct hal_flow_tuple_info *tuple_info = &flow_info->flow_tuple_info;
+	struct ath12k_base *ab = dp->ab;
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Dest IP address %x:%x:%x:%x",
+		   tuple_info->dest_ip_127_96,
+		   tuple_info->dest_ip_95_64,
+		   tuple_info->dest_ip_63_32,
+		   tuple_info->dest_ip_31_0);
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Source IP address %x:%x:%x:%x",
+		   tuple_info->src_ip_127_96,
+		   tuple_info->src_ip_95_64,
+		   tuple_info->src_ip_63_32,
+		   tuple_info->src_ip_31_0);
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Dest port %u, Src Port %u, Protocol %u",
+		   tuple_info->dest_port,
+		   tuple_info->src_port,
+		   tuple_info->l4_protocol);
+}
+
+static
+u32 ath12k_dp_rx_flow_compute_flow_hash(struct ath12k_base *ab,
+					struct dp_rx_fst *fst,
+					struct rx_flow_info *rx_flow_info,
+					struct hal_rx_flow *flow)
+{
+	memcpy(&flow->tuple_info, &rx_flow_info->flow_tuple_info,
+	       sizeof(struct hal_flow_tuple_info));
+
+	return ath12k_wifi7_hal_flow_toeplitz_hash(ab, fst->hal_rx_fst,
+						   &flow->tuple_info);
+}
+
+static inline struct dp_rx_fse *
+ath12k_dp_rx_flow_get_fse(struct dp_rx_fst *fst, u32 flow_hash)
+{
+	struct dp_rx_fse *fse;
+	u32 idx = ath12k_wifi7_hal_rx_get_trunc_hash(fst->hal_rx_fst, flow_hash);
+
+	fse = (struct dp_rx_fse *)fst->base;
+	return &fse[idx];
+}
+
+struct dp_rx_fse *
+ath12k_dp_rx_flow_find_entry_by_tuple(struct ath12k_base *ab,
+				      struct dp_rx_fst *fst,
+				      struct rx_flow_info *flow_info,
+				      struct hal_rx_flow *flow)
+{
+	u32 flow_hash;
+	u32 flow_idx;
+	int status;
+
+	flow_hash = ath12k_dp_rx_flow_compute_flow_hash(ab, fst, flow_info, flow);
+
+	status = ath12k_wifi7_hal_rx_find_flow_from_tuple(ab, fst->hal_rx_fst,
+							  flow_hash,
+							  &flow_info->flow_tuple_info,
+							  &flow_idx);
+	if (status != 0) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Could not find tuple with hash %u", flow_hash);
+		ath12k_wifi7_dp_rx_flow_dump_entry(ab->dp, flow_info);
+		return NULL;
+	}
+
+	return ath12k_dp_rx_flow_get_fse(fst, flow_idx);
+}
+
+ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size)
+{
+	struct dp_rx_fst *fst = ab->ag->dp_hw_grp.fst;
+	int len = 0;
+
+	if (!fst) {
+		ath12k_warn(ab, "FST table is NULL\n");
+		return -ENODEV;
+	}
+
+	len += scnprintf(buf + len, size - len,
+			 "Number of entries in FST table: %d\n", fst->num_entries);
+	len += ath12k_wifi7_hal_rx_dump_fst_table(ab, fst->hal_rx_fst, buf + len, size - len);
+
+	return len;
+}
