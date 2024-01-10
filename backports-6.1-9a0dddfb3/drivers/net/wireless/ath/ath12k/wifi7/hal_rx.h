@@ -958,4 +958,15 @@ ssize_t ath12k_wifi7_hal_rx_dump_fst_table(struct ath12k_base *ab,
 					   char *buf, int size);
 struct hal_rx_fst *ath12k_wifi7_hal_rx_fst_attach(struct ath12k_base *ab);
 void ath12k_wifi7_hal_rx_fst_detach(struct ath12k_base *ab, struct hal_rx_fst *fst);
+int ath12k_wifi7_hal_rx_flow_insert_entry(struct ath12k_base *ab,
+					  struct hal_rx_fst *fst,
+					  u32 flow_hash,
+					  void *flow_tuple_info,
+					  u32 *flow_idx);
+void *ath12k_wifi7_hal_rx_flow_setup_fse(struct ath12k_base *ab,
+					 struct hal_rx_fst *fst,
+					 u32 table_offset,
+					 struct hal_rx_flow *flow);
+void ath12k_wifi7_hal_rx_flow_delete_entry(struct ath12k_base *ab,
+					   struct hal_rx_fse *hal_fse);
 #endif

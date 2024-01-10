@@ -1195,3 +1195,111 @@ void ath12k_wifi7_hal_rx_fst_detach(struct ath12k_base *ab, struct hal_rx_fst *f
 				  fst->base_vaddr, fst->base_paddr);
 	kfree(fst);
 }
+
+int ath12k_wifi7_hal_rx_flow_insert_entry(struct ath12k_base *ab,
+					  struct hal_rx_fst *fst,
+					  u32 flow_hash,
+					  void *flow_tuple_info,
+					  u32 *flow_idx)
+{
+	int i;
+	void *hal_fse = NULL;
+	u32 hal_hash = 0;
+	struct hal_flow_tuple_info hal_tuple_info = { 0 };
+
+	for (i = 0; i < fst->max_skid_length; i++) {
+		hal_hash = ath12k_wifi7_hal_rx_get_trunc_hash(fst, (flow_hash + i));
+
+		hal_fse = ath12k_wifi7_hal_rx_flow_get_tuple_info(ab, fst, hal_hash,
+								  &hal_tuple_info);
+		if (!hal_fse)
+			break;
+
+		/* Find the matching flow entry in HW FST */
+		if (!memcmp(&hal_tuple_info, flow_tuple_info,
+			    sizeof(struct hal_flow_tuple_info))) {
+			ath12k_err(ab, "Duplicate flow entry in FST %u at skid %u",
+				   hal_hash, i);
+			return -EEXIST;
+		}
+	}
+
+	if (i == fst->max_skid_length) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Max skid length reached for hash %u",
+			   flow_hash);
+		return -ERANGE;
+	}
+
+	*flow_idx = hal_hash;
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+		   "flow_hash = %u, skid_entry = %d, flow_addr = %pK flow_idx = %d",
+		    flow_hash, i, hal_fse, *flow_idx);
+
+	return 0;
+}
+
+void *ath12k_wifi7_hal_rx_flow_setup_fse(struct ath12k_base *ab,
+					 struct hal_rx_fst *fst,
+					 u32 table_offset,
+					 struct hal_rx_flow *flow)
+{
+	struct hal_rx_fse *hal_fse;
+
+	if (table_offset >= fst->max_entries) {
+		ath12k_err(ab, "HAL FSE table offset %u exceeds max entries %u",
+			   table_offset, fst->max_entries);
+		return NULL;
+	}
+
+	hal_fse = &fst->base_vaddr[table_offset];
+
+	if (u32_get_bits(hal_fse->info2, HAL_RX_FSE_VALID)) {
+		ath12k_err(ab, "HAL FSE %pK already valid", hal_fse);
+		return NULL;
+	}
+
+	hal_fse->src_ip_127_96 = htonl(flow->tuple_info.src_ip_127_96);
+	hal_fse->src_ip_95_64 = htonl(flow->tuple_info.src_ip_95_64);
+	hal_fse->src_ip_63_32 = htonl(flow->tuple_info.src_ip_63_32);
+	hal_fse->src_ip_31_0 = htonl(flow->tuple_info.src_ip_31_0);
+	hal_fse->dest_ip_127_96 = htonl(flow->tuple_info.dest_ip_127_96);
+	hal_fse->dest_ip_95_64 = htonl(flow->tuple_info.dest_ip_95_64);
+	hal_fse->dest_ip_63_32 = htonl(flow->tuple_info.dest_ip_63_32);
+	hal_fse->dest_ip_31_0 = htonl(flow->tuple_info.dest_ip_31_0);
+	hal_fse->metadata = flow->fse_metadata;
+	hal_fse->msdu_byte_count = 0;
+	hal_fse->timestamp = 0;
+	hal_fse->tcp_sequence_number = 0;
+
+	hal_fse->info1 = u32_encode_bits(flow->tuple_info.dest_port,
+					 HAL_RX_FSE_DEST_PORT);
+	hal_fse->info1 |= u32_encode_bits(flow->tuple_info.src_port,
+					  HAL_RX_FSE_SRC_PORT);
+
+	hal_fse->info2 = u32_encode_bits(flow->tuple_info.l4_protocol,
+					 HAL_RX_FSE_L4_PROTOCOL);
+	hal_fse->info2 |= u32_encode_bits(1, HAL_RX_FSE_VALID);
+	hal_fse->info2 |= u32_encode_bits(flow->service_code, HAL_RX_FSE_SERVICE_CODE);
+	hal_fse->info2 |= u32_encode_bits(flow->use_ppe, HAL_RX_FSE_USE_PPE);
+	hal_fse->info2 |= u32_encode_bits(flow->reo_indication,
+					  HAL_RX_FSE_REO_INDICATION);
+	hal_fse->info2 |= u32_encode_bits(flow->drop, HAL_RX_FSE_MSDU_DROP);
+	hal_fse->info2 |= u32_encode_bits(flow->reo_destination_handler,
+					  HAL_RX_FSE_REO_DESTINATION_HANDLER);
+	hal_fse->info3 = 0;
+	hal_fse->info4 = 0;
+
+	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "Hal FSE setup:",
+			hal_fse, sizeof(*hal_fse));
+
+	return hal_fse;
+}
+
+void ath12k_wifi7_hal_rx_flow_delete_entry(struct ath12k_base *ab,
+					   struct hal_rx_fse *hal_fse)
+{
+	if (!u32_get_bits(hal_fse->info2, HAL_RX_FSE_VALID))
+		ath12k_err(ab, "HAL FSE %pK is invalid", hal_fse);
+	else
+		hal_fse->info2 = u32_encode_bits(0, HAL_RX_FSE_VALID);
+}
