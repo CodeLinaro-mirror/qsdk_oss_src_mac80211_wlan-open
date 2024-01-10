@@ -919,7 +919,7 @@ ath12k_wifi7_reverse_key(u8 *dest, const u8 *src, int length)
 		dest[i] = src[j];
 }
 
-void
+static void
 ath12k_wifi7_hal_fst_key_configure(struct hal_rx_fst *fst)
 {
 	u8 key[HAL_FST_HASH_KEY_SIZE_BYTES];
@@ -930,7 +930,7 @@ ath12k_wifi7_hal_fst_key_configure(struct hal_rx_fst *fst)
 	ath12k_wifi7_reverse_key(fst->shifted_key, key, HAL_FST_HASH_KEY_SIZE_BYTES);
 }
 
-void
+static void
 ath12k_wifi7_hal_flow_toeplitz_create_cache(struct hal_rx_fst *fst)
 {
 	int bit;
@@ -1135,4 +1135,63 @@ ssize_t ath12k_wifi7_hal_rx_dump_fst_table(struct ath12k_base *ab,
 	}
 
 	return len;
+}
+
+static const u8 ath12k_wifi7_hal_rx_fst_toeplitz_key[HAL_RX_FST_TOEPLITZ_KEYLEN] = {
+	0x6d, 0x5a, 0x56, 0xda, 0x25, 0x5b, 0x0e, 0xc2,
+	0x41, 0x67, 0x25, 0x3d, 0x43, 0xa3, 0x8f, 0xb0,
+	0xd0, 0xca, 0x2b, 0xcb, 0xae, 0x7b, 0x30, 0xb4,
+	0x77, 0xcb, 0x2d, 0xa3, 0x80, 0x30, 0xf2, 0x0c,
+	0x6a, 0x42, 0xb7, 0x3b, 0xbe, 0xac, 0x01, 0xfa
+};
+
+struct hal_rx_fst *
+ath12k_wifi7_hal_rx_fst_attach(struct ath12k_base *ab)
+{
+	struct hal_rx_fst *fst;
+	u32 alloc_size;
+
+	fst = kzalloc(sizeof(*fst), GFP_KERNEL);
+	if (!fst)
+		return NULL;
+
+	fst->key = (u8 *)ath12k_wifi7_hal_rx_fst_toeplitz_key;
+	fst->max_skid_length = HAL_RX_FST_MAX_SEARCH;
+	fst->max_entries = HAL_RX_FLOW_SEARCH_TABLE_SIZE;
+	fst->fst_entry_size = HAL_RX_FST_ENTRY_SIZE;
+	alloc_size = fst->max_entries * fst->fst_entry_size;
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "HAL FST allocation %pK entries %u entry size %u alloc_size %u\n",
+		   fst, fst->max_entries, fst->fst_entry_size, alloc_size);
+
+	fst->base_vaddr = dma_alloc_coherent(ab->dev, alloc_size,
+					     &fst->base_paddr, GFP_KERNEL);
+	if (!fst->base_vaddr) {
+		kfree(fst);
+		return NULL;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "hal_rx_fst base address 0x%pK",
+		   (void *)fst->base_paddr);
+
+	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "FST Key: ",
+			(void *)fst->key, HAL_FST_HASH_KEY_SIZE_BYTES);
+
+	memset((u8 *)fst->base_vaddr, 0, alloc_size);
+	ath12k_wifi7_hal_fst_key_configure(fst);
+	ath12k_wifi7_hal_flow_toeplitz_create_cache(fst);
+
+	return fst;
+}
+
+void ath12k_wifi7_hal_rx_fst_detach(struct ath12k_base *ab, struct hal_rx_fst *fst)
+{
+	if (!fst)
+		return;
+
+	if (fst->base_vaddr)
+		dma_free_coherent(ab->dev,
+				  (fst->max_entries * fst->fst_entry_size),
+				  fst->base_vaddr, fst->base_paddr);
+	kfree(fst);
 }

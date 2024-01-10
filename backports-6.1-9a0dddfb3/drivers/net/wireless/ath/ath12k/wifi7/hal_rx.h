@@ -878,6 +878,8 @@ struct hal_rx_fse {
 #define HAL_RX_FST_MAX_SEARCH		16
 #define HAL_RX_FLOW_SEARCH_TABLE_SIZE	2048
 #define HAL_RX_FST_TOEPLITZ_KEYLEN	40
+#define NUM_OF_DWORDS_RX_FLOW_SEARCH_ENTRY	16
+#define HAL_RX_FST_ENTRY_SIZE		(NUM_OF_DWORDS_RX_FLOW_SEARCH_ENTRY * 4)
 
 struct hal_rx_flow {
 	struct hal_flow_tuple_info tuple_info;
