@@ -880,6 +880,7 @@ struct hal_rx_fse {
 #define HAL_RX_FST_TOEPLITZ_KEYLEN	40
 #define NUM_OF_DWORDS_RX_FLOW_SEARCH_ENTRY	16
 #define HAL_RX_FST_ENTRY_SIZE		(NUM_OF_DWORDS_RX_FLOW_SEARCH_ENTRY * 4)
+#define HAL_RX_FSE_REO_DEST_FT 0
 
 struct hal_rx_flow {
 	struct hal_flow_tuple_info tuple_info;

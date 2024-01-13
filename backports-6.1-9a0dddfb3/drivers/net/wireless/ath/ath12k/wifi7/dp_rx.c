@@ -2681,3 +2681,155 @@ ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size)
 
 	return len;
 }
+
+struct dp_rx_fse *
+ath12k_wifi7_dp_rx_flow_alloc_entry(struct ath12k_base *ab,
+				    struct dp_rx_fst *fst,
+				    struct rx_flow_info *flow_info,
+				    struct hal_rx_flow *flow)
+{
+	struct dp_rx_fse *fse;
+	u32 flow_hash;
+	u32 flow_idx;
+	int status;
+
+	flow_hash = ath12k_dp_rx_flow_compute_flow_hash(ab, fst, flow_info, flow);
+
+	status = ath12k_wifi7_hal_rx_flow_insert_entry(ab, fst->hal_rx_fst, flow_hash,
+						       &flow_info->flow_tuple_info,
+						       &flow_idx);
+	if (status != 0) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Add entry failed with status %d for tuple with hash %u",
+			   status, flow_hash);
+		return NULL;
+	}
+
+	fse = ath12k_dp_rx_flow_get_fse(fst, flow_idx);
+	fse->flow_hash = flow_hash;
+	fse->flow_id = flow_idx;
+	fse->is_valid = true;
+
+	return fse;
+}
+
+static int ath12k_dp_fst_get_reo_indication(struct ath12k_dp *dp)
+{
+	u8 reo_indication;
+
+	reo_indication = dp->fst_config.fst_core_map[dp->fst_config.core_idx] + 1;
+	dp->fst_config.core_idx = (dp->fst_config.core_idx + 1) %
+					dp->fst_config.fst_num_cores;
+
+	return reo_indication;
+}
+
+int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
+				      struct rx_flow_info *flow_info)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct hal_rx_flow flow = { 0 };
+	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
+	struct dp_rx_fse *fse;
+
+	/* Allocate entry in DP FST */
+	fse = ath12k_wifi7_dp_rx_flow_alloc_entry(ab, fst, flow_info, &flow);
+	if (!fse) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "RX FSE alloc failed");
+		return -ENOMEM;
+	}
+
+	flow.drop = flow_info->drop;
+
+	/* Reo indication is required only when drop bit is not set */
+	if (!flow.drop) {
+		if (flow_info->ring_id && flow_info->ring_id <= DP_REO_DST_RING_MAX)
+			flow.reo_indication = flow_info->ring_id;
+		else
+			flow.reo_indication = ath12k_dp_fst_get_reo_indication(dp);
+	}
+
+	fse->reo_indication = flow.reo_indication;
+	flow.reo_destination_handler = HAL_RX_FSE_REO_DEST_FT;
+	flow.fse_metadata = flow_info->fse_metadata;
+	if (flow_info->use_ppe) {
+		flow.use_ppe = flow_info->use_ppe;
+		flow.service_code = 0;
+	}
+
+	fse->hal_fse = ath12k_wifi7_hal_rx_flow_setup_fse(ab, fst->hal_rx_fst,
+							  fse->flow_id, &flow);
+	if (!fse->hal_fse) {
+		ath12k_err(ab, "Unable to alloc FSE entry");
+		fse->is_valid = false;
+		return -EEXIST;
+	}
+
+	fst->num_entries++;
+	fst->flows_per_reo[fse->reo_indication - 1]++;
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+		   "FST num_entries = %d, reo_dest_ind = %d, reo_dest_hand = %u",
+		   fst->num_entries, flow.reo_indication,
+		   flow.reo_destination_handler);
+
+	return 0;
+}
+
+int ath12k_wifi7_dp_rx_flow_delete_entry(struct ath12k_dp *dp,
+					 struct rx_flow_info *flow_info)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct hal_rx_flow flow = { 0 };
+	struct dp_rx_fse *fse;
+	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
+
+	fse = ath12k_dp_rx_flow_find_entry_by_tuple(ab, fst, flow_info, &flow);
+	if (!fse || !fse->is_valid) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "RX flow delete entry failed");
+		return -EINVAL;
+	}
+
+	/* Delete the FSE in HW FST */
+	ath12k_wifi7_hal_rx_flow_delete_entry(ab, fse->hal_fse);
+
+	/* mark the FSE entry as invalid */
+	fse->is_valid = false;
+
+	/* Decrement number of valid entries in table */
+	fst->num_entries--;
+	fst->flows_per_reo[fse->reo_indication - 1]--;
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+		   "FST num_entries = %d", fst->num_entries);
+
+	return 0;
+}
+
+int ath12k_wifi7_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
+	struct dp_rx_fse *fse;
+	int i;
+
+	fse = (struct dp_rx_fse *)fst->base;
+	if (!fse)
+		return -ENODEV;
+
+	for (i = 0; i < fst->hal_rx_fst->max_entries; i++, fse++) {
+		if (!fse->is_valid)
+			continue;
+
+		ath12k_wifi7_hal_rx_flow_delete_entry(ab, fse->hal_fse);
+
+		fse->is_valid = false;
+
+		fst->num_entries--;
+		fst->flows_per_reo[fse->reo_indication - 1]--;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+		   "FST num_entries = %d", fst->num_entries);
+
+	return 0;
+}

@@ -149,6 +149,9 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.rx_fst_attach = ath12k_wifi7_dp_rx_fst_attach,
 	.rx_fst_detach = ath12k_wifi7_dp_rx_fst_detach,
 	.rx_flow_dump_entry = ath12k_wifi7_dp_rx_flow_dump_entry,
+	.rx_flow_add_entry = ath12k_wifi7_dp_rx_flow_add_entry,
+	.rx_flow_delete_entry = ath12k_wifi7_dp_rx_flow_delete_entry,
+	.rx_flow_delete_all_entries = ath12k_wifi7_dp_rx_flow_delete_all_entries,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */

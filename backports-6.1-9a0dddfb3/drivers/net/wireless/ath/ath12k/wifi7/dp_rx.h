@@ -15,9 +15,8 @@ struct dp_rx_fse {
 	struct hal_rx_fse *hal_fse;
 	u32 flow_hash;
 	u32 flow_id;
-	u32 msdu_count;
 	u8 reo_indication;
-	u8 is_valid;
+	bool is_valid;
 };
 
 int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab, struct ath12k_dp_rx_tid *rx_tid,
@@ -77,4 +76,9 @@ void ath12k_wifi7_dp_extract_rx_desc_data(struct ath12k_dp *dp,
 
 void ath12k_wifi7_dp_rx_flow_dump_entry(struct ath12k_dp *dp,
 					struct rx_flow_info *flow_info);
+int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
+				      struct rx_flow_info *flow_info);
+int ath12k_wifi7_dp_rx_flow_delete_entry(struct ath12k_dp *dp,
+					 struct rx_flow_info *flow_info);
+int ath12k_wifi7_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp);
 #endif

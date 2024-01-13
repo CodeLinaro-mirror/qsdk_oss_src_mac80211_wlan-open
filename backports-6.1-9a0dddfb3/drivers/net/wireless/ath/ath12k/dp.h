@@ -432,6 +432,9 @@ struct ath12k_dp_arch_ops {
 	void (*rx_fst_detach)(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 	void (*rx_flow_dump_entry)(struct ath12k_dp *dp,
 				   struct rx_flow_info *flow_info);
+	int (*rx_flow_add_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
+	int (*rx_flow_delete_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
+	int (*rx_flow_delete_all_entries)(struct ath12k_dp *dp);
 };
 
 struct ath12k_bp_stats {
@@ -470,6 +473,13 @@ struct ath12k_device_dp_stats {
 	u32 hal_reo_error[DP_REO_DST_RING_MAX];
 	struct ath12k_device_dp_tx_err_stats tx_err;
 	struct ath12k_dp_ring_bp_stats bp_stats;
+};
+
+struct dp_fst_config {
+	u32 fst_core_mask;
+	u8 fst_core_map[4];
+	u8 fst_num_cores;
+	u8 core_idx;
 };
 
 struct ath12k_dp {
@@ -541,6 +551,8 @@ struct ath12k_dp {
 	u8 device_id;
 
 	struct ath12k_dp_arch_ops *arch_ops;
+
+	struct dp_fst_config fst_config;
 
 	/* Linked list of struct ath12k_dp_link_peer */
 	struct list_head peers;
@@ -653,6 +665,26 @@ ath12k_dp_arch_rx_flow_dump_entry(struct ath12k_dp *dp,
 				  struct rx_flow_info *flow_info)
 {
 	return dp->arch_ops->rx_flow_dump_entry(dp, flow_info);
+}
+
+static inline int
+ath12k_dp_arch_rx_flow_add_entry(struct ath12k_dp *dp,
+				 struct rx_flow_info *flow_info)
+{
+	return dp->arch_ops->rx_flow_add_entry(dp, flow_info);
+}
+
+static inline int
+ath12k_dp_arch_rx_flow_delete_entry(struct ath12k_dp *dp,
+				    struct rx_flow_info *flow_info)
+{
+	return dp->arch_ops->rx_flow_delete_entry(dp, flow_info);
+}
+
+static inline int
+ath12k_dp_arch_rx_flow_delete_all_entries(struct ath12k_dp *dp)
+{
+	return dp->arch_ops->rx_flow_delete_all_entries(dp);
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

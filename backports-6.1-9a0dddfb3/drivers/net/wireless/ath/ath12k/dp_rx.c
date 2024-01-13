@@ -1415,3 +1415,162 @@ void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst)
 	ath12k_dp_arch_rx_fst_detach(dp, fst);
 	kfree(fst);
 }
+
+int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
+					 enum dp_htt_flow_fst_operation operation,
+					 struct hal_flow_tuple_info *tuple_info)
+{
+	int i;
+	int ret = 0;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		struct ath12k_base *partner_ab = ag->ab[i];
+
+		if (!partner_ab)
+			continue;
+
+		/* Skip sending HTT command when recovery in progress */
+		if (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+			continue;
+
+		/* Flush entries in the HW cache */
+		ret = ath12k_dp_htt_rx_flow_fse_operation(partner_ab, operation,
+							  tuple_info);
+		if (ret) {
+			ath12k_err(partner_ab, "Unable to invalidate cache entry ret %d",
+				   ret);
+			return ret;
+		}
+	}
+	return ret;
+}
+
+static void ath12k_dp_rx_flow_dump_entry(struct ath12k_dp *dp,
+					 struct rx_flow_info *flow_info)
+{
+	ath12k_dp_arch_rx_flow_dump_entry(dp, flow_info);
+}
+
+int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
+				struct rx_flow_info *flow_info)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
+	int ret;
+
+	if (!fst) {
+		ath12k_warn(ab, "FST table is NULL\n");
+		return -ENODEV;
+	}
+
+	/* lock the FST table to prevent concurrent access */
+	spin_lock_bh(&fst->fst_lock);
+
+	ret = ath12k_dp_arch_rx_flow_add_entry(dp, flow_info);
+	if (ret) {
+		ath12k_dp_rx_flow_dump_entry(dp, flow_info);
+		fst->flow_add_fail++;
+		spin_unlock_bh(&fst->fst_lock);
+		goto out;
+	}
+
+	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
+						   &flow_info->flow_tuple_info);
+	if (ret) {
+		ath12k_err(ab, "Unable to invalidate cache entry ret %d", ret);
+		ath12k_dp_rx_flow_dump_entry(dp, flow_info);
+		ath12k_dp_arch_rx_flow_delete_entry(dp, flow_info);
+		fst->flow_add_fail++;
+		spin_unlock_bh(&fst->fst_lock);
+		goto out;
+	}
+
+	spin_unlock_bh(&fst->fst_lock);
+
+	if (flow_info->is_addr_ipv4)
+		fst->ipv4_fse_rule_cnt++;
+	else
+		fst->ipv6_fse_rule_cnt++;
+
+out:
+	return ret;
+}
+
+int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
+				   struct rx_flow_info *flow_info)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
+	int ret;
+
+	if (!fst) {
+		ath12k_warn(ab, "FST table is NULL\n");
+		return -ENODEV;
+	}
+
+	/* lock the FST table to prevent concurrent access */
+	spin_lock_bh(&fst->fst_lock);
+
+	ret = ath12k_dp_arch_rx_flow_delete_entry(dp, flow_info);
+	if (ret) {
+		ath12k_dp_rx_flow_dump_entry(dp, flow_info);
+		fst->flow_del_fail++;
+		spin_unlock_bh(&fst->fst_lock);
+		goto out;
+	}
+
+	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
+						   &flow_info->flow_tuple_info);
+	if (ret) {
+		ath12k_err(ab, "Rx flow delete fail due to invalidate ret %d", ret);
+		ath12k_dp_rx_flow_dump_entry(dp, flow_info);
+		fst->flow_del_fail++;
+		spin_unlock_bh(&fst->fst_lock);
+		goto out;
+	}
+
+	spin_unlock_bh(&fst->fst_lock);
+
+	if (flow_info->is_addr_ipv4)
+		fst->ipv4_fse_rule_cnt--;
+	else
+		fst->ipv6_fse_rule_cnt--;
+
+out:
+	return ret;
+}
+
+int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
+	int ret;
+
+	spin_lock_bh(&fst->fst_lock);
+
+	ret = ath12k_dp_arch_rx_flow_delete_all_entries(dp);
+	if (ret) {
+		ath12k_err(ab, "Rx flow delete all entries failed ret %d", ret);
+		spin_unlock_bh(&fst->fst_lock);
+		goto out;
+	}
+
+	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag,
+						   DP_HTT_FST_CACHE_INVALIDATE_FULL,
+						   NULL);
+	if (ret) {
+		ath12k_err(ab, "Rx flow delete all fail due to invalidate ret %d", ret);
+		spin_unlock_bh(&fst->fst_lock);
+		goto out;
+	}
+
+	spin_unlock_bh(&fst->fst_lock);
+
+	fst->ipv4_fse_rule_cnt = 0;
+	fst->ipv6_fse_rule_cnt = 0;
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+		   "FST num_entries = %d", fst->num_entries);
+out:
+	return ret;
+}

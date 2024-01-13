@@ -69,6 +69,11 @@ struct dp_rx_fst {
 	u8 *base;
 	struct hal_rx_fst *hal_rx_fst;
 	u16 num_entries;
+	u16 ipv4_fse_rule_cnt;
+	u16 ipv6_fse_rule_cnt;
+	u16 flows_per_reo[4];
+	u32 flow_add_fail;
+	u32 flow_del_fail;
 	/* spinlock to prevent concurrent table access */
 	spinlock_t fst_lock;
 };
@@ -183,5 +188,12 @@ struct ath12k_dp_peer *
 ath12k_dp_rx_h_find_peer_by_peerid_index(struct ath12k_dp *dp,
 					 struct ath12k_pdev_dp *dp_pdev,
 					 struct sk_buff *msdu);
-
+int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
+					 enum dp_htt_flow_fst_operation operation,
+					 struct hal_flow_tuple_info *tuple_info);
+int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
+				struct rx_flow_info *flow_info);
+int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
+				   struct rx_flow_info *flow_info);
+int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab);
 #endif /* ATH12K_DP_RX_H */
