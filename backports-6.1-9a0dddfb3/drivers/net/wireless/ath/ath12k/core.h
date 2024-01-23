@@ -440,6 +440,7 @@ struct ath12k_vif {
 	/* indicates bitmap of link vif created in FW */
 	u32 links_map;
 	u8 last_scan_link;
+	bool chanctx_peer_del_done;
 
 	/* Must be last - ends in a flexible-array member.
 	 *

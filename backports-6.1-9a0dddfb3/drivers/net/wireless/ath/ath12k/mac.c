@@ -11810,6 +11810,10 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	struct ath12k *ar;
 	struct ath12k_base *ab;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	enum ieee80211_sta_state state, prev_state;
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta;
 	u8 link_id = link_conf->link_id;
 	struct ath12k_link_vif *arvif;
 	int ret;
@@ -11853,6 +11857,30 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	if (WARN_ON(arvif->is_started)) {
 		ret = -EBUSY;
 		goto out;
+	}
+
+	if (!ab->hw_params->vdev_start_delay &&
+	    ahvif->vdev_type == WMI_VDEV_TYPE_STA && ahvif->chanctx_peer_del_done) {
+		rcu_read_lock();
+		sta = ieee80211_find_sta(vif, vif->cfg.ap_addr);
+		if (!sta) {
+			ath12k_warn(ar->ab, "failed to find station entry for bss vdev\n");
+			rcu_read_unlock();
+			goto out;
+		}
+
+		ahsta = ath12k_sta_to_ahsta(sta);
+		arsta = &ahsta->deflink;
+		rcu_read_unlock();
+
+		mutex_lock(&ah->hw_mutex);
+		prev_state = arsta->ahsta->state;
+		for (state = IEEE80211_STA_NOTEXIST; state < prev_state;
+		     state++)
+			ath12k_mac_op_sta_state(ar->ah->hw, arvif->ahvif->vif, sta,
+						state, (state + 1));
+		mutex_unlock(&ah->hw_mutex);
+		ahvif->chanctx_peer_del_done = false;
 	}
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
