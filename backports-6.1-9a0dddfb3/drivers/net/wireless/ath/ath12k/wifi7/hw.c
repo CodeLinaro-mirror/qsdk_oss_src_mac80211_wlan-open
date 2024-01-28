@@ -586,7 +586,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ce_remap = NULL,
 		.handle_beacon_miss = true,
 		.en_qdsslog = true,
-		.support_fse = false,
+		.support_fse = true,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -663,7 +663,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ce_ie_addr = &ath12k_wifi7_ce_ie_addr_ipq5332,
 		.ce_remap = &ath12k_wifi7_ce_remap_ipq5332,
 		.en_qdsslog = true,
-		.support_fse = false,
+		.support_fse = true,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -720,7 +720,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.supports_aspm = true,
 		.send_platform_model = true,
 		.en_qdsslog = true,
-		.support_fse = false,
+		.support_fse = true,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -797,7 +797,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ce_ie_addr = &ath12k_wifi7_ce_ie_addr_ipq5424,
 		.ce_remap = &ath12k_wifi7_ce_remap_ipq5424,
 		.en_qdsslog = true,
-		.support_fse = false,
+		.support_fse = true,
 	},
 };
 

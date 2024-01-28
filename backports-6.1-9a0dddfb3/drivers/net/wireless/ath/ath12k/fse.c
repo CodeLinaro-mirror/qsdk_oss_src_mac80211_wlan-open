@@ -9,9 +9,9 @@
 #include "peer.h"
 #include <linux/module.h>
 
-bool ath12k_fse_enable;
+bool ath12k_fse_enable = true;
 module_param_named(fse, ath12k_fse_enable, bool, 0444);
-MODULE_PARM_DESC(fse, "Enable FSE feature (Default: false)");
+MODULE_PARM_DESC(fse, "Enable FSE feature (Default: true)");
 
 static const struct ath_fse_ops ath_fse_ops_obj = {
 	.fse_rule_add = ath12k_sfe_add_flow_entry,
@@ -79,15 +79,59 @@ void *ath12k_sfe_get_ab_from_vif(struct ieee80211_vif *vif,
 	return ab;
 }
 
+static void
+ath12k_sfe_update_flow_info(struct rx_flow_info *flow_info,
+			    u32 *src_ip, u32 src_port,
+			    u32 *dest_ip, u32 dest_port,
+			    u8 protocol, u8 version, int operation)
+{
+	struct hal_flow_tuple_info *tuple_info = &flow_info->flow_tuple_info;
+
+	ath12k_generic_dbg(ATH12K_DBG_DP_FST,
+			   "%s S_IP:%x:%x:%x:%x,sPort:%u,D_IP:%x:%x:%x:%x,dPort:%u,Proto:%d,Ver:%d\n",
+			   fse_state_to_string(operation),
+			   src_ip[0], src_ip[1], src_ip[2], src_ip[3], src_port,
+			   dest_ip[0], dest_ip[1], dest_ip[2], dest_ip[3],
+			   dest_port, protocol, version);
+
+	tuple_info->src_port = src_port;
+	tuple_info->dest_port = dest_port;
+	tuple_info->l4_protocol = protocol;
+
+	flow_info->fse_metadata = ATH12K_RX_FSE_FLOW_MATCH_SFE;
+
+	if (version == 4) {
+		flow_info->is_addr_ipv4 = 1;
+		tuple_info->src_ip_31_0 = src_ip[0];
+		tuple_info->dest_ip_31_0 = dest_ip[0];
+	} else if (version == 6) {
+		tuple_info->src_ip_31_0 = src_ip[3];
+		tuple_info->src_ip_63_32 = src_ip[2];
+		tuple_info->src_ip_95_64 = src_ip[1];
+		tuple_info->src_ip_127_96 = src_ip[0];
+		tuple_info->dest_ip_31_0 = dest_ip[3];
+		tuple_info->dest_ip_63_32 = dest_ip[2];
+		tuple_info->dest_ip_95_64 = dest_ip[1];
+		tuple_info->dest_ip_127_96 = dest_ip[0];
+	}
+}
+
 int ath12k_sfe_add_flow_entry(void *ptr,
 			      u32 *src_ip, u32 src_port,
 			      u32 *dest_ip, u32 dest_port,
 			      u8 protocol, u8 version)
 
 {
-	int ret = 0;
+	struct rx_flow_info flow_info = {0};
+	struct ath12k_base *ab = (struct ath12k_base *)ptr;
 
-	return ret;
+	if (!ath12k_fse_enable)
+		return -EINVAL;
+
+	ath12k_sfe_update_flow_info(&flow_info, src_ip, src_port, dest_ip,
+				    dest_port, protocol, version, FSE_RULE_ADD);
+
+	return ath12k_dp_rx_flow_add_entry(ab, &flow_info);
 }
 
 int ath12k_sfe_delete_flow_entry(void *ptr,
@@ -95,7 +139,25 @@ int ath12k_sfe_delete_flow_entry(void *ptr,
 				 u32 *dest_ip, u32 dest_port,
 				 u8 protocol, u8 version)
 {
-	int ret = 0;
+	struct rx_flow_info flow_info = {0};
+	struct ath12k_hw *ah = NULL;
+	struct ath12k *ar;
+	struct ieee80211_hw *hw = (struct ieee80211_hw *)ptr;
 
-	return ret;
+	if (!ath12k_fse_enable)
+		return -EINVAL;
+
+	ah = hw->priv;
+	if (!ah) {
+		ath12k_err(NULL, "HW invalid-Flow delete failed:S_IP:%x:%x:%x:%x,sPort:%u,D_IP:%x:%x:%x:%x,dPort:%u,Proto:%d,Ver:%d",
+			   src_ip[0], src_ip[1], src_ip[2], src_ip[3], src_port, dest_ip[0],
+			   dest_ip[1], dest_ip[2], dest_ip[3], dest_port, protocol, version);
+		return -EINVAL;
+	}
+
+	ar = ah->radio;
+	ath12k_sfe_update_flow_info(&flow_info, src_ip, src_port, dest_ip,
+				    dest_port, protocol, version, FSE_RULE_DELETE);
+
+	return ath12k_dp_rx_flow_delete_entry(ar->ab, &flow_info);
 }

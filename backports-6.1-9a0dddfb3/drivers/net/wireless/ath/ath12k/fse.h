@@ -9,6 +9,25 @@
 #include <ath/ath_fse.h>
 
 #define ATH12K_RX_FSE_FLOW_MATCH_SFE 0xAAAA
+
+enum fse_operation {
+	FSE_RULE_ADD,
+	FSE_RULE_DELETE,
+	FSE_RULE_MAX,
+};
+
+static inline char *fse_state_to_string(enum fse_operation operation)
+{
+	switch (operation) {
+	case FSE_RULE_ADD:
+		return "ADD";
+	case FSE_RULE_DELETE:
+		return "DELETE";
+	default:
+		return "UNKNOWN_COMMAND";
+	}
+}
+
 void ath12k_fse_init(struct ath12k_base *ab);
 void ath12k_fse_deinit(struct ath12k_base *ab);
 void *ath12k_sfe_get_ab_from_vif(struct ieee80211_vif *vif,
