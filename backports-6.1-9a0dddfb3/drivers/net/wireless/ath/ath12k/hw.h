@@ -13,6 +13,9 @@
 #include "wmi.h"
 #include "hal.h"
 
+struct ath12k_csi_cfr_header;
+struct ath12k_cfr_peer_tx_param;
+
 /* Target configuration defines */
 
 
@@ -304,6 +307,10 @@ struct ath12k_hw_params {
 	u16 umac_reset_ipc;
 	bool umac_irq_line_reset;
 	bool is_plink_preferable;
+	bool cfr_support;
+	u32 cfr_dma_hdr_size;
+	u32 cfr_num_stream_bufs;
+	u32 cfr_stream_buf_size;
 };
 
 struct ath12k_hw_ops {
@@ -313,6 +320,9 @@ struct ath12k_hw_ops {
 	int (*rxdma_ring_sel_config)(struct ath12k_base *ab);
 	u8 (*get_ring_selector)(struct sk_buff *skb);
 	bool (*dp_srng_is_tx_comp_ring)(int ring_num);
+	void (*fill_cfr_hdr_info)(struct ath12k *ar,
+				  struct ath12k_csi_cfr_header *header,
+				  struct ath12k_cfr_peer_tx_param *params);
 };
 
 static inline

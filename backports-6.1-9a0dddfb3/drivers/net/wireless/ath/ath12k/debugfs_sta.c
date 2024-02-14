@@ -756,6 +756,170 @@ static const struct file_operations fops_htt_peer_stats_reset = {
 	.llseek = default_llseek,
 };
 
+#ifdef CPTCFG_ATH12K_CFR
+static ssize_t ath12k_dbg_sta_write_cfr_capture(struct file *file,
+						const char __user *user_buf,
+						size_t count, loff_t *ppos)
+{
+	struct ieee80211_link_sta *link_sta = file->private_data;
+	struct ieee80211_sta *sta = link_sta->sta;
+	struct ath12k_sta *ahsta = (struct ath12k_sta *)sta->drv_priv;
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *ar;
+	struct ath12k_cfr *cfr;
+	struct wmi_peer_cfr_capture_conf_arg arg;
+	u8 link_id = link_sta->link_id;
+	u32 cfr_capture_enable = 0, cfr_capture_bw  = 0;
+	u32 cfr_capture_method = 0, cfr_capture_period = 0;
+	int ret;
+	char buf[64] = {0};
+
+	simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+
+	wiphy_lock(ah->hw->wiphy);
+
+	if (!(BIT(link_id) & ahsta->links_map)) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	arsta = ahsta->link[link_id];
+	if (!arsta || !arsta->arvif->ar) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	ar = arsta->arvif->ar;
+
+	if (ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto out;
+	}
+	if (!ar->cfr.cfr_enabled) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ret = sscanf(buf, "%u %u %u %u", &cfr_capture_enable, &cfr_capture_bw,
+		     &cfr_capture_period, &cfr_capture_method);
+	if ((ret < 1) || (cfr_capture_enable && ret != 4)) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (cfr_capture_enable == arsta->cfr_capture.cfr_enable &&
+	    (cfr_capture_period &&
+	     cfr_capture_period == arsta->cfr_capture.cfr_period) &&
+	    cfr_capture_bw == arsta->cfr_capture.cfr_bandwidth &&
+	    cfr_capture_method == arsta->cfr_capture.cfr_method) {
+		ret = count;
+		goto out;
+	}
+
+	if (!cfr_capture_enable &&
+	    cfr_capture_enable == arsta->cfr_capture.cfr_enable) {
+		ret = count;
+		goto out;
+	}
+
+	if (cfr_capture_enable > WMI_PEER_CFR_CAPTURE_ENABLE ||
+	    cfr_capture_bw > sta->deflink.bandwidth ||
+	    cfr_capture_method > CFR_CAPURE_METHOD_NULL_FRAME_WITH_PHASE ||
+	    cfr_capture_period > WMI_PEER_CFR_PERIODICITY_MAX) {
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (ar->cfr.cfr_enabled_peer_cnt >= ATH12K_MAX_CFR_ENABLED_CLIENTS &&
+	    !arsta->cfr_capture.cfr_enable) {
+		ret = -EINVAL;
+		ath12k_err(ar->ab, "CFR enable peer threshold reached %u\n",
+			   ar->cfr.cfr_enabled_peer_cnt);
+		goto out;
+	}
+
+	if (!cfr_capture_enable) {
+		cfr_capture_bw = arsta->cfr_capture.cfr_bandwidth;
+		cfr_capture_period = arsta->cfr_capture.cfr_period;
+		cfr_capture_method = arsta->cfr_capture.cfr_method;
+	}
+
+	arg.request = cfr_capture_enable;
+	arg.periodicity = cfr_capture_period;
+	arg.bandwidth = cfr_capture_bw;
+	arg.capture_method = cfr_capture_method;
+
+	ret = ath12k_wmi_peer_set_cfr_capture_conf(ar, arsta->arvif->vdev_id,
+						   link_sta->addr, &arg);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send cfr capture info: vdev_id %u peer %pM\n",
+			    arsta->arvif->vdev_id, link_sta->addr);
+		goto out;
+	}
+	ret = count;
+
+	spin_lock_bh(&ar->cfr.lock);
+	cfr = &ar->cfr;
+	if (cfr_capture_enable &&
+	    cfr_capture_enable != arsta->cfr_capture.cfr_enable)
+		cfr->cfr_enabled_peer_cnt++;
+	else if (!cfr_capture_enable)
+		cfr->cfr_enabled_peer_cnt--;
+	spin_unlock_bh(&ar->cfr.lock);
+
+	arsta->cfr_capture.cfr_enable = cfr_capture_enable;
+	arsta->cfr_capture.cfr_period = cfr_capture_period;
+	arsta->cfr_capture.cfr_bandwidth = cfr_capture_bw;
+	arsta->cfr_capture.cfr_method = cfr_capture_method;
+out:
+	wiphy_unlock(ah->hw->wiphy);
+	return ret;
+}
+
+static ssize_t ath12k_dbg_sta_read_cfr_capture(struct file *file,
+					       char __user *user_buf,
+					       size_t count, loff_t *ppos)
+{
+	struct ieee80211_link_sta *link_sta = file->private_data;
+	struct ieee80211_sta *sta = link_sta->sta;
+	struct ath12k_sta *ahsta = (struct ath12k_sta *)sta->drv_priv;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	u8 link_id = link_sta->link_id;
+	char buf[512] = {0};
+	int len = 0;
+
+	guard(wiphy)(ah->hw->wiphy);
+
+	if (!(BIT(link_id) & ahsta->links_map))
+		return -ENOENT;
+
+	arsta = ahsta->link[link_id];
+	if (!arsta || !arsta->arvif->ar)
+		return -ENOENT;
+
+	len += scnprintf(buf + len, sizeof(buf) - len, "cfr_enabled = %d\n",
+			 arsta->cfr_capture.cfr_enable);
+	len += scnprintf(buf + len, sizeof(buf) - len, "bandwidth = %d\n",
+			 arsta->cfr_capture.cfr_bandwidth);
+	len += scnprintf(buf + len, sizeof(buf) - len, "period = %d\n",
+			 arsta->cfr_capture.cfr_period);
+	len += scnprintf(buf + len, sizeof(buf) - len, "cfr_method = %d\n",
+			 arsta->cfr_capture.cfr_method);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_peer_cfr_capture = {
+	.write = ath12k_dbg_sta_write_cfr_capture,
+	.read = ath12k_dbg_sta_read_cfr_capture,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+#endif /* CPTCFG_ATH12K_CFR */
+
 void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			       struct ieee80211_sta *sta, struct dentry *dir)
 {
@@ -1437,6 +1601,12 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 	debugfs_create_file("rx_mpdu_retries", 0400, dir, link_sta,
 			    &fops_rx_retries);
 
+#ifdef CPTCFG_ATH12K_CFR
+	if (test_bit(WMI_TLV_SERVICE_CFR_CAPTURE_SUPPORT,
+		     ar->ab->wmi_ab.svc_map))
+	       debugfs_create_file("cfr_capture", 0400, dir, link_sta,
+				   &fops_peer_cfr_capture);
+#endif/* CPTCFG_ATH12K_CFR */
 
 }
 EXPORT_SYMBOL(ath12k_debugfs_link_sta_op_add);

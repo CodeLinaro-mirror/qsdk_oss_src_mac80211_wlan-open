@@ -31,6 +31,7 @@
 #include "dp_tx.h"
 #include "vendor.h"
 #include "ppe.h"
+#include "cfr.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -8826,6 +8827,8 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 
 	ath12k_mac_station_post_remove(ar, arvif, arsta);
 
+	ath12k_cfr_decrement_peer_count(ar, arsta);
+
 	spin_lock_bh(&ar->ab->base_lock);
 	ath12k_link_sta_rhash_delete(ar->ab, arsta);
 	spin_unlock_bh(&ar->ab->base_lock);
@@ -9302,6 +9305,8 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 		ar = arvif->ar;
 
 		ath12k_mac_station_post_remove(ar, arvif, arsta);
+
+		ath12k_cfr_decrement_peer_count(ar, arsta);
 
 		spin_lock_bh(&ar->ab->base_lock);
 		ath12k_link_sta_rhash_delete(ar->ab, arsta);
@@ -11753,6 +11758,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	enum hal_encrypt_type enctype;
+	bool tx_params_valid = false;
 	unsigned int mic_len;
 	bool link_agnostic;
 	dma_addr_t paddr;
@@ -11801,8 +11807,14 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	link_agnostic = ATH12K_SKB_CB(skb)->flags & ATH12K_SKB_MGMT_LINK_AGNOSTIC;
 
+#ifdef CPTCFG_ATH12K_CFR
+	if (ar->cfr.cfr_enabled && ieee80211_is_probe_resp(hdr->frame_control) &&
+	    peer_is_in_cfr_unassoc_pool(ar, hdr->addr1))
+		tx_params_valid = true;
+#endif /* CPTCFG_ATH12K_CFR */
+
 	ret = ath12k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb,
-				   link_agnostic);
+				   link_agnostic, tx_params_valid);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to send mgmt frame: %d\n", ret);
 		goto err_unmap_buf;

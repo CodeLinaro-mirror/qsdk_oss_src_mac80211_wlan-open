@@ -99,6 +99,15 @@ config ATH12K_MEM_PROFILE_512M
 
 endchoice
 
+config ATH12K_CFR
+	bool "QCA ath12k CFR support"
+	depends on ATH12K_DEBUGFS
+	depends on RELAY
+	help
+	  Enable ath12k cfr dump support
+
+	  Say Y to enable access to collect cfr data dump via debugfs.
+
 config ATH12K_SPECTRAL
 	bool "QTI ath12k spectral scan support"
 	depends on ATH12K_DEBUGFS

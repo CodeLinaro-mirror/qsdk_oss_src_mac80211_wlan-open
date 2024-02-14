@@ -40,6 +40,7 @@
 #include <ppe_ds_wlan.h>
 #include <ppe_vp_public.h>
 #endif
+#include "cfr.h"
 
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
@@ -689,6 +690,13 @@ struct ath12k_htt_data_stats {
 	u64 ru_loc[ATH12K_COUNTER_TYPE_MAX][HAL_RX_RU_ALLOC_TYPE_MAX];
 };
 
+struct ath12k_per_peer_cfr_capture {
+	u32 cfr_enable;
+	u32 cfr_period;
+	u32 cfr_bandwidth;
+	u32 cfr_method;
+};
+
 struct ath12k_per_ppdu_tx_stats {
 	u16 succ_pkts;
 	u16 failed_pkts;
@@ -736,6 +744,9 @@ struct ath12k_link_sta {
 	bool disable_fixed_rate;
 	/* will be saved to use during recovery */
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
+#ifdef CPTCFG_ATH12K_CFR
+	struct ath12k_per_peer_cfr_capture cfr_capture;
+#endif
 };
 
 struct ath12k_sta_migration_data {
@@ -1115,6 +1126,9 @@ struct ath12k {
 
 	bool mlo_complete_event;
 	struct ath12k_afc_info afc;
+#ifdef CPTCFG_ATH12K_CFR
+	struct ath12k_cfr cfr;
+#endif
 };
 
 struct ath12k_6ghz_sp_reg_rule {

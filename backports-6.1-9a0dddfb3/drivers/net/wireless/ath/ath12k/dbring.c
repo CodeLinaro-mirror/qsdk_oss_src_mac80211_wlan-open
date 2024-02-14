@@ -7,6 +7,7 @@
 #include "core.h"
 #include "debug.h"
 #include "hal.h"
+#include "cfr.h"
 
 #define ATH12K_DB_MAGIC_VALUE 0xdeadbeaf
 
@@ -36,9 +37,10 @@ static void ath12k_dbring_fill_magic_value(struct ath12k *ar,
 	memset32(buffer, ATH12K_DB_MAGIC_VALUE, size);
 }
 
-static int ath12k_dbring_bufs_replenish(struct ath12k *ar,
+int ath12k_dbring_bufs_replenish(struct ath12k *ar,
 					struct ath12k_dbring *ring,
 					struct ath12k_dbring_element *buff,
+					enum wmi_direct_buffer_module id,
 					gfp_t gfp)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -84,6 +86,9 @@ static int ath12k_dbring_bufs_replenish(struct ath12k *ar,
 		goto err_idr_remove;
 	}
 
+	if (id == WMI_DIRECT_BUF_CFR)
+		ath12k_cfr_lut_update_paddr(ar, paddr, buf_id);
+
 	buff->paddr = paddr;
 #ifndef CONFIG_IO_COHERENCY
 	dma_sync_single_for_device(ab->dev, paddr, ring->buf_sz, DMA_FROM_DEVICE);
@@ -111,6 +116,7 @@ err:
 
 static int ath12k_dbring_fill_bufs(struct ath12k *ar,
 				   struct ath12k_dbring *ring,
+				   enum wmi_direct_buffer_module id,
 				   gfp_t gfp)
 {
 	struct ath12k_dbring_element *buff;
@@ -135,7 +141,7 @@ static int ath12k_dbring_fill_bufs(struct ath12k *ar,
 		if (!buff)
 			break;
 
-		ret = ath12k_dbring_bufs_replenish(ar, ring, buff, gfp);
+		ret = ath12k_dbring_bufs_replenish(ar, ring, buff, id, gfp);
 		if (ret) {
 			ath12k_warn(ab, "failed to replenish db ring num_remain %d req_ent %d\n",
 				    num_remain, req_entries);
@@ -215,7 +221,7 @@ int ath12k_dbring_buf_setup(struct ath12k *ar,
 	ring->hp_addr = ath12k_hal_srng_get_hp_addr(ab, srng);
 	ring->tp_addr = ath12k_hal_srng_get_tp_addr(ab, srng);
 
-	ret = ath12k_dbring_fill_bufs(ar, ring, GFP_ATOMIC);
+	ret = ath12k_dbring_fill_bufs(ar, ring, db_cap->id, GFP_ATOMIC);
 
 	return ret;
 }
@@ -256,7 +262,6 @@ int ath12k_dbring_get_cap(struct ath12k_base *ab,
 		if (pdev_idx == ab->db_caps[i].pdev_id &&
 		    id == ab->db_caps[i].id) {
 			*db_cap = ab->db_caps[i];
-
 			return 0;
 		}
 	}
@@ -275,14 +280,16 @@ int ath12k_dbring_buffer_release_event(struct ath12k_base *ab,
 	struct ath12k_buffer_address desc;
 	u8 *vaddr_unalign;
 	u32 num_entry, num_buff_reaped;
-	u8 pdev_idx, rbm;
+	u8 pdev_idx, rbm, module_id;
 	u32 cookie;
 	int buf_id;
 	int size;
 	dma_addr_t paddr;
 	int ret = 0;
+	int status;
 
 	pdev_idx = le32_to_cpu(ev->fixed.pdev_id);
+	module_id = le32_to_cpu(ev->fixed.module_id);
 
 	if (pdev_idx >= ab->num_radios) {
 		ath12k_warn(ab, "Invalid pdev id %d\n", pdev_idx);
@@ -308,6 +315,9 @@ int ath12k_dbring_buffer_release_event(struct ath12k_base *ab,
 	switch (ev->fixed.module_id) {
 	case WMI_DIRECT_BUF_SPECTRAL:
 		ring = ath12k_spectral_get_dbring(ar);
+		break;
+	case WMI_DIRECT_BUF_CFR:
+		ring = ath12k_cfr_get_dbring(ar);
 		break;
 	default:
 		ring = NULL;
@@ -357,12 +367,16 @@ int ath12k_dbring_buffer_release_event(struct ath12k_base *ab,
 			handler_data.data = PTR_ALIGN(vaddr_unalign,
 						      ring->buf_align);
 			handler_data.data_sz = ring->buf_sz;
+			handler_data.buff = buff;
+			handler_data.buf_id = buf_id;
 
-			ring->handler(ar, &handler_data);
+			status = ring->handler(ar, &handler_data);
+			if (status == ATH12K_CORRELATE_STATUS_HOLD)
+				continue;
 		}
 
 		memset(buff, 0, size);
-		ath12k_dbring_bufs_replenish(ar, ring, buff, GFP_ATOMIC);
+		ath12k_dbring_bufs_replenish(ar, ring, buff, module_id, GFP_ATOMIC);
 	}
 
 	spin_unlock_bh(&srng->lock);

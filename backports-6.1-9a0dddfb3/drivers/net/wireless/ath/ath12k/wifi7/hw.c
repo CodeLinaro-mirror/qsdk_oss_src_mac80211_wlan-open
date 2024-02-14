@@ -26,6 +26,7 @@
 #include "dp_tx.h"
 #include "hal_qcn9274.h"
 #include "hal_wcn7850.h"
+#include "../cfr.h"
 
 static const guid_t wcn7850_uuid = GUID_INIT(0xf634f534, 0x6147, 0x11ec,
 					     0x90, 0xd6, 0x02, 0x42,
@@ -90,6 +91,101 @@ static bool ath12k_wifi7_dp_srng_is_comp_ring_wcn7850(int ring_num)
 	return false;
 }
 
+void ath12k_hw_qcn9274_fill_cfr_hdr_info(struct ath12k *ar,
+					 struct ath12k_csi_cfr_header *header,
+					 struct ath12k_cfr_peer_tx_param *params)
+{
+	header->start_magic_num = ATH12K_CFR_START_MAGIC;
+	header->vendorid = VENDOR_QCA;
+	header->pltform_type = PLATFORM_TYPE_ARM;
+	header->cfr_metadata_len = sizeof(struct cfr_enh_metadata);
+	header->cfr_data_version = ATH12K_CFR_DATA_VERSION_1;
+	header->host_real_ts = ktime_to_ns(ktime_get_real());
+
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_9;
+	if(ar->ab->hw_rev == ATH12K_HW_QCN6432_HW10)
+		header->chip_type = ATH12K_CFR_RADIO_QCN6432;
+	else if (ar->ab->hw_rev == ATH12K_HW_IPQ5424_HW10)
+		header->chip_type = ATH12K_CFR_RADIO_IPQ5424;
+	else if (ar->ab->hw_rev == ATH12K_HW_IPQ5332_HW10)
+		header->chip_type = ATH12K_CFR_RADIO_IPQ5332;
+	else
+		header->chip_type = ATH12K_CFR_RADIO_QCN9274;
+
+	header->u.meta_enh.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
+					      params->status);
+	header->u.meta_enh.capture_bw = params->bandwidth;
+	header->u.meta_enh.phy_mode = params->phy_mode;
+	header->u.meta_enh.prim20_chan = params->primary_20mhz_chan;
+	header->u.meta_enh.center_freq1 = params->band_center_freq1;
+	header->u.meta_enh.center_freq2 = params->band_center_freq2;
+	header->u.meta_enh.capture_mode = params->bandwidth ?
+		ATH12K_CFR_CAPTURE_DUP_LEGACY_ACK : ATH12K_CFR_CAPTURE_LEGACY_ACK;
+	header->u.meta_enh.capture_type = params->capture_method;
+	header->u.meta_enh.num_rx_chain = ar->cfg_rx_chainmask;
+	header->u.meta_enh.sts_count = params->spatial_streams;
+	header->u.meta_enh.timestamp = params->timestamp_us;
+	header->u.meta_enh.rx_start_ts = params->rx_start_ts;
+	header->u.meta_enh.cfo_measurement = params->cfo_measurement;
+	header->u.meta_enh.mcs_rate = params->mcs_rate;
+	header->u.meta_enh.gi_type = params->gi_type;
+
+	memcpy(header->u.meta_enh.peer_addr.su_peer_addr,
+	       params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->u.meta_enh.chain_rssi, params->chain_rssi,
+	       sizeof(params->chain_rssi));
+	memcpy(header->u.meta_enh.chain_phase, params->chain_phase,
+	       sizeof(params->chain_phase));
+	memcpy(header->u.meta_enh.agc_gain, params->agc_gain,
+	       sizeof(params->agc_gain));
+	memcpy(header->u.meta_enh.agc_gain_tbl_index, params->agc_gain_tbl_index,
+	       sizeof(params->agc_gain_tbl_index));
+}
+
+void ath12k_hw_wcn7850_fill_cfr_hdr_info(struct ath12k *ar,
+					 struct ath12k_csi_cfr_header *header,
+					 struct ath12k_cfr_peer_tx_param *params)
+{
+	header->start_magic_num = ATH12K_CFR_START_MAGIC;
+	header->vendorid = VENDOR_QCA;
+	header->pltform_type = PLATFORM_TYPE_ARM;
+	header->cfr_metadata_len = sizeof(struct cfr_enh_metadata);
+	header->cfr_data_version = ATH12K_CFR_DATA_VERSION_1;
+	header->host_real_ts = ktime_to_ns(ktime_get_real());
+
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_9;
+	header->chip_type = ATH12K_CFR_RADIO_WCN7850;
+
+	header->u.meta_enh.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
+					      params->status);
+	header->u.meta_enh.capture_bw = params->bandwidth;
+	header->u.meta_enh.phy_mode = params->phy_mode;
+	header->u.meta_enh.prim20_chan = params->primary_20mhz_chan;
+	header->u.meta_enh.center_freq1 = params->band_center_freq1;
+	header->u.meta_enh.center_freq2 = params->band_center_freq2;
+	header->u.meta_enh.capture_mode = params->bandwidth ?
+		ATH12K_CFR_CAPTURE_DUP_LEGACY_ACK : ATH12K_CFR_CAPTURE_LEGACY_ACK;
+	header->u.meta_enh.capture_type = params->capture_method;
+	header->u.meta_enh.num_rx_chain = ar->cfg_rx_chainmask;
+	header->u.meta_enh.sts_count = params->spatial_streams;
+	header->u.meta_enh.timestamp = params->timestamp_us;
+	header->u.meta_enh.rx_start_ts = params->rx_start_ts;
+	header->u.meta_enh.cfo_measurement = params->cfo_measurement;
+	header->u.meta_enh.mcs_rate = params->mcs_rate;
+	header->u.meta_enh.gi_type = params->gi_type;
+
+	memcpy(header->u.meta_enh.peer_addr.su_peer_addr,
+	       params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->u.meta_enh.chain_rssi, params->chain_rssi,
+	       sizeof(params->chain_rssi));
+	memcpy(header->u.meta_enh.chain_phase, params->chain_phase,
+	       sizeof(params->chain_phase));
+	memcpy(header->u.meta_enh.agc_gain, params->agc_gain,
+	       sizeof(params->agc_gain));
+	memcpy(header->u.meta_enh.agc_gain_tbl_index, params->agc_gain_tbl_index,
+	       sizeof(params->agc_gain_tbl_index));
+}
+
 static const struct ath12k_hw_ops qcn9274_ops = {
 	.get_hw_mac_from_pdev_id = ath12k_wifi7_hw_qcn9274_mac_from_pdev_id,
 	.mac_id_to_pdev_id = ath12k_wifi7_hw_mac_id_to_pdev_id_qcn9274,
@@ -97,6 +193,7 @@ static const struct ath12k_hw_ops qcn9274_ops = {
 	.rxdma_ring_sel_config = ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274,
 	.get_ring_selector = ath12k_wifi7_hw_get_ring_selector_qcn9274,
 	.dp_srng_is_tx_comp_ring = ath12k_wifi7_dp_srng_is_comp_ring_qcn9274,
+	.fill_cfr_hdr_info = ath12k_hw_qcn9274_fill_cfr_hdr_info,
 };
 
 static const struct ath12k_hw_ops wcn7850_ops = {
@@ -571,6 +668,15 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = 0,
 		.ds_support = false,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 127,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+				(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
+				CFR_DATA_MAX_LEN_QCN9274,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -668,6 +774,15 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = 0,
 		.ds_support = false,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 255,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_WCN7850 *4) +
+					CFR_DATA_MAX_LEN_WCN7850,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -772,6 +887,15 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = 0,
 		.ds_support = true,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 127,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
+					CFR_DATA_MAX_LEN_QCN9274,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -867,6 +991,15 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = ATH12K_UMAC_RESET_IPC_IPQ5332,
 		.ds_support = false,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 255,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_IPQ5332 *4) +
+					CFR_DATA_MAX_LEN_IPQ5332,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -942,6 +1075,15 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.umac_irq_line_reset = true,
 		.umac_reset_ipc = ATH12K_UMAC_RESET_IPC_QCN6432,
 		.ds_support = true,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 128,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN6432 *4) +
+					CFR_DATA_MAX_LEN_QCN6432,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -1037,6 +1179,19 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.umac_irq_line_reset = false,
 		.umac_reset_ipc = ATH12K_UMAC_RESET_IPC_IPQ5332,
 		.ds_support = true,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 128,
+		/* Max size :
+		 * sizeof(ath12k_csi_cfr_header) + 96 bytes(cfr header) +
+		 *                              15744 bytes(cfr payload)
+		 * where cfr_header = rtt upload header len +
+		 *                    freeze_tlv len + uplink user setup info
+		 *                  = 32bytes + 32bytes + (8bytes * 4users)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_IPQ5424 * 4) +
+					CFR_DATA_MAX_LEN_IPQ5424,
 	},
 };
 

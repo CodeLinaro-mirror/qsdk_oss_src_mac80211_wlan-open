@@ -31,6 +31,7 @@
 #include "accel_cfg.h"
 #include "peer.h"
 #include "ppe.h"
+#include "cfr.h"
 
 #define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT 0x8000
 #define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT 1024
@@ -106,6 +107,10 @@ bool ath12k_debug_critical = false;
 module_param_named(debug_critical, ath12k_debug_critical, bool, 0644);
 MODULE_PARM_DESC(debug_critical, "Debug critical issue (0 - disable, 1 - enable)");
 EXPORT_SYMBOL(ath12k_debug_critical);
+
+unsigned int ath12k_cfr_enable_bmap = 0;
+module_param_named(cfr_enable_bmap, ath12k_cfr_enable_bmap, uint, 0644);
+MODULE_PARM_DESC(cfr_enable_bmap, "cfr_enable_bmap: 0-disable, enable-(0x7 for 3 chipsets)");
 
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
@@ -1117,6 +1122,11 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 	ath12k_dp_accel_cfg_init(ab);
 	ath12k_thermal_register(ab);
 	ath12k_spectral_init(ab);
+	/* Check if cfr_enable_bmap is set for the corresponding HW */
+	if (ath12k_cfr_enable_bmap & (1 << ab->device_id)) {
+		ath12k_info(ab, "Enabling CFR for chip id:%d\n", ab->device_id);
+		ath12k_cfr_init(ab);
+	}
 
 	return 0;
 }
@@ -1127,6 +1137,8 @@ static void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 	ath12k_fse_deinit(ab);
 	ath12k_thermal_unregister(ab);
 	ath12k_spectral_deinit(ab);
+	if (ath12k_cfr_enable_bmap & (1 << ab->device_id))
+		ath12k_cfr_deinit(ab);
 }
 
 static int ath12k_core_pdev_create(struct ath12k_base *ab)

@@ -32,6 +32,10 @@ enum ath12k_debug_mask {
 	ATH12K_DBG_DP_UMAC_RESET= 0x00100000,
 	ATH12K_DBG_MODE1_RECOVERY= 0x00200000,
 	ATH12K_DBG_PPE          = 0x08000000,
+	/* TODO: Delete this comment
+	 * Package Upgrade: Parity with 13.0 */
+	ATH12K_DBG_CFR          = 0x01000000,
+	ATH12K_DBG_CFR_DUMP     = 0x02000000,
 
 	/* keep last*/
 	ATH12K_DBG_ANY		= 0xffffffff,
