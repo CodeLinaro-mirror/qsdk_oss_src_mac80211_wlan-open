@@ -11070,6 +11070,7 @@ struct ath12k_mac_change_chanctx_arg {
 	struct ieee80211_vif_chanctx_switch *vifs;
 	int n_vifs;
 	int next_vif;
+	bool set_csa_active;
 	struct ath12k *ar;
 };
 
@@ -11102,6 +11103,9 @@ ath12k_mac_change_chanctx_cnt_iter(void *data, u8 *mac,
 
 		if (rcu_access_pointer(link_conf->chanctx_conf) != arg->ctx)
 			continue;
+
+		if (arg->set_csa_active && link_conf->csa_active)
+			arg->ar->csa_active_cnt++;
 
 		arg->n_vifs++;
 	}
@@ -11707,7 +11711,9 @@ static void
 ath12k_mac_update_active_vif_chan(struct ath12k *ar,
 				  struct ieee80211_chanctx_conf *ctx)
 {
-	struct ath12k_mac_change_chanctx_arg arg = { .ctx = ctx, .ar = ar };
+	struct ath12k_mac_change_chanctx_arg arg = { .ctx = ctx,
+						     .set_csa_active = true,
+						     .ar = ar };
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -11716,12 +11722,14 @@ ath12k_mac_update_active_vif_chan(struct ath12k *ar,
 						   IEEE80211_IFACE_ITER_NORMAL,
 						   ath12k_mac_change_chanctx_cnt_iter,
 						   &arg);
-	if (arg.n_vifs == 0)
+	if (arg.n_vifs == 0 || ar->csa_active_cnt > 1)
 		return;
 
 	arg.vifs = kcalloc(arg.n_vifs, sizeof(arg.vifs[0]), GFP_KERNEL);
 	if (!arg.vifs)
 		return;
+	if (ar->csa_active_cnt)
+		ar->csa_active_cnt = 0;
 
 	ieee80211_iterate_active_interfaces_atomic(hw,
 						   IEEE80211_IFACE_ITER_NORMAL,
@@ -11992,7 +12000,7 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 	//struct ath12k_hw *ah = hw->priv;
 	struct ath12k *curr_ar, *new_ar, *ar;
 	struct ieee80211_chanctx_conf *curr_ctx;
-	int i, ret = 0, next_ctx_idx = 0;
+	int i, ret = 0, next_ctx_idx = 0, curr_ctx_n_vifs = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -12047,13 +12055,52 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 		if ((i + 1 < n_vifs) && (vifs[i + 1].old_ctx == curr_ctx))
 			continue;
 
+	if (ar->csa_active_cnt >= curr_ctx_n_vifs)
+		ar->csa_active_cnt -= curr_ctx_n_vifs;
+
+	/* Control will reach here only for the last vif for curr_ctx */
+	if (ath12k_wmi_is_mvr_supported(ar->ab)) {
+		struct ath12k_mac_change_chanctx_arg arg = {};
+
+		arg.ar = ar;
+		arg.ctx = curr_ctx;
+		ieee80211_iterate_active_interfaces_atomic(ar->ah->hw,
+							   IEEE80211_IFACE_ITER_NORMAL,
+							   ath12k_mac_change_chanctx_cnt_iter,
+							   &arg);
+		if (arg.n_vifs <= 1 || arg.n_vifs == curr_ctx_n_vifs)
+			goto update_vif_chan;
+
+		if (ar->csa_active_cnt)
+			goto next_ctx;
+
+		arg.vifs = kcalloc(arg.n_vifs, sizeof(arg.vifs[0]), GFP_KERNEL);
+		if (!arg.vifs)
+			return -ENOBUFS;
+
+		ieee80211_iterate_active_interfaces_atomic(ar->ah->hw,
+							   IEEE80211_IFACE_ITER_NORMAL,
+							   ath12k_mac_change_chanctx_fill_iter,
+							   &arg);
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "mac chanctx switch n_vifs %d mode %d\n",
+			   arg.n_vifs, mode);
+		ath12k_mac_process_update_vif_chan(ar, arg.vifs, arg.n_vifs);
+
+		kfree(arg.vifs);
+		goto next_ctx;
+	}
+
+update_vif_chan:
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 			   "mac chanctx switch n_vifs %d mode %d\n",
 			   i - next_ctx_idx + 1, mode);
 		ath12k_mac_process_update_vif_chan(ar, vifs + next_ctx_idx,
 						   i - next_ctx_idx + 1);
-
+next_ctx:
 		next_ctx_idx = i + 1;
+		curr_ctx_n_vifs = 0;
 	}
 	return ret;
 }
