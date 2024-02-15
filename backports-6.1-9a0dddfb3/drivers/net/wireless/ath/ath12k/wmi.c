@@ -8433,6 +8433,10 @@ skip_mgmt_stats:
 	spin_unlock_bh(&ar->data_lock);
 
 	info = IEEE80211_SKB_CB(msdu);
+	memset(&info->status, 0, sizeof(info->status));
+
+	info->status.rates[0].idx = -1;
+
 	if ((!(info->flags & IEEE80211_TX_CTL_NO_ACK)) && !status) {
 		info->flags |= IEEE80211_TX_STAT_ACK;
 		info->status.ack_signal = ack_rssi;
