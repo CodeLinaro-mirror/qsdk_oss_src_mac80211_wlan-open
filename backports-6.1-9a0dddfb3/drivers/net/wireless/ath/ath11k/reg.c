@@ -408,6 +408,10 @@ ath11k_regd_intersect(struct ieee80211_regdomain *default_regd,
 	return new_regd;
 }
 
+/* TODO: API ath11k_reg_can_intersect() to handle whether two
+ * ieee80211_reg_rules can intersect or not based on their
+ * frequency range and power mode. */
+
 static const char *
 ath11k_reg_get_regdom_str(enum nl80211_dfs_regions dfs_region)
 {
@@ -606,9 +610,7 @@ static struct cur_reg_rule
 
 struct ieee80211_regdomain *
 ath11k_reg_build_regd(struct ath11k_base *ab,
-		      struct cur_regulatory_info *reg_info, bool intersect,
-		      enum wmi_vdev_type vdev_type,
-		      enum ieee80211_ap_reg_power power_type)
+		      struct cur_regulatory_info *reg_info, bool intersect)
 {
 	struct ieee80211_regdomain *tmp_regd, *default_regd, *new_regd = NULL;
 	struct cur_reg_rule *reg_rule, *reg_rule_6ghz;
@@ -762,7 +764,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 				   i + 1, reg_rule->start_freq, reg_rule->end_freq,
 				   max_bw, reg_rule->ant_gain, reg_rule->reg_power,
 				   tmp_regd->reg_rules[i].dfs_cac_ms, flags,
-				   reg_rule->psd_flag, reg_rule->psd_eirp);
+				   reg_rule->psd_eirp, new_regd->reg_rules[i].mode);
 		} else {
 			ath11k_dbg(ab, ATH11K_DBG_REG,
 				   "\t%d. (%d - %d @ %d) (%d, %d) (%d ms) (FLAGS %d)\n",
@@ -945,7 +947,7 @@ int ath11k_reg_handle_chan_list(struct ath11k_base *ab,
 		   "wmi handle chan list power type %d vdev type %d intersect %d\n",
 		   power_type, vdev_type, intersect);
 
-	regd = ath11k_reg_build_regd(ab, reg_info, intersect, vdev_type, power_type);
+	regd = ath11k_reg_build_regd(ab, reg_info, intersect);
 	if (!regd) {
 		ath11k_warn(ab, "failed to build regd from reg_info\n");
 		goto fallback;
