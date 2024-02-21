@@ -573,7 +573,7 @@ ath11k_dp_tx_htt_tx_complete_buf(struct ath11k_base *ab,
 		return;
 	}
 	if (unlikely(!skb_cb->vif)) {
-		dev_kfree_skb_any(msdu);
+		ieee80211_free_txskb(ar->hw, msdu);
 		return;
 	}
 
@@ -969,7 +969,7 @@ static void ath11k_dp_tx_complete_msdu(struct ath11k *ar,
 			arsta->drop_pkts += 1;
 			arsta->drop_bytes += msdu->len;
 			spin_unlock_bh(&ab->base_lock);
-			dev_kfree_skb_any(msdu);
+			ieee80211_free_txskb(ar->hw, msdu);
 			return;
 		default:
 			//TODO: Remove this print and add as a stats
