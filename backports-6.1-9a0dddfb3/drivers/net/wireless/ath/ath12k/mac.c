@@ -14257,6 +14257,7 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 		ath12k_mac_cleanup_unregister(ar);
 
 	ath12k_mac_cleanup_iface_combinations(ah);
+	kfree(ah->hw->wiphy->addresses);
 
 	SET_IEEE80211_DEV(hw, NULL);
 }
@@ -14287,6 +14288,28 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	ar->max_num_peers = ath12k_core_get_max_peers_per_radio(ar->ab);
 	ar->rssi_offsets.rssi_offset = ATH12K_DEFAULT_NOISE_FLOOR;
 
+	return 0;
+}
+
+static int ath12k_alloc_per_hw_mac_addr(struct ath12k_hw *ah)
+{
+	struct ath12k *ar;
+	struct ieee80211_hw *hw = ah->hw;
+	struct mac_address *addresses;
+	int i;
+	ar = ah->radio;
+
+	addresses = kzalloc(sizeof(*addresses) * ah->num_radio,
+			    GFP_KERNEL);
+	if(!addresses)
+		return -ENOMEM;
+
+	for (i = 0; i < ah->num_radio; i++) {
+		ether_addr_copy((u8 *)(&addresses[i]), ar->mac_addr);
+		ar++;
+	}
+	hw->wiphy->addresses = addresses;
+	hw->wiphy->n_addresses = ah->num_radio;
 	return 0;
 }
 
@@ -14374,6 +14397,12 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	if (ret) {
 		ath12k_err(ab, "failed to setup interface combinations: %d\n", ret);
 		goto err_complete_cleanup_unregister;
+	}
+
+	ret = ath12k_alloc_per_hw_mac_addr(ah);
+	if (ret) {
+		ath12k_err(ab, "failed to register per hw mac address: %d\n", ret);
+		goto err_cleanup_if_combs;
 	}
 
 	wiphy->interface_modes = ath12k_mac_get_ifmodes(ah);
