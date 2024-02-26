@@ -3077,6 +3077,7 @@ static void ath12k_peer_assoc_h_he_6ghz(struct ath12k *ar,
 }
 
 static int ath12k_get_smps_from_capa(const struct ieee80211_sta_ht_cap *ht_cap,
+				     const struct ieee80211_sta_he_cap *he_cap,
 				     const struct ieee80211_he_6ghz_capa *he_6ghz_capa,
 				     int *smps)
 {
@@ -3085,6 +3086,13 @@ static int ath12k_get_smps_from_capa(const struct ieee80211_sta_ht_cap *ht_cap,
 	else
 		*smps = le16_get_bits(he_6ghz_capa->capa,
 				      IEEE80211_HE_6GHZ_CAP_SM_PS);
+
+	if (he_cap->has_he) {
+		if (he_cap->he_cap_elem.mac_cap_info[5] &
+		    IEEE80211_HE_MAC_CAP5_HE_DYNAMIC_SM_PS) {
+			*smps = WLAN_HT_CAP_SM_PS_DYNAMIC;
+		}
+	}
 
 	if (*smps >= ARRAY_SIZE(ath12k_smps_map))
 		return -EINVAL;
@@ -3099,6 +3107,7 @@ static void ath12k_peer_assoc_h_smps(struct ath12k_link_sta *arsta,
 	const struct ieee80211_he_6ghz_capa *he_6ghz_capa;
 	struct ath12k_link_vif *arvif = arsta->arvif;
 	const struct ieee80211_sta_ht_cap *ht_cap;
+	const struct ieee80211_sta_he_cap *he_cap;
 	struct ieee80211_link_sta *link_sta;
 	struct ath12k *ar = arvif->ar;
 	int smps;
@@ -3112,12 +3121,19 @@ static void ath12k_peer_assoc_h_smps(struct ath12k_link_sta *arsta,
 
 	he_6ghz_capa = &link_sta->he_6ghz_capa;
 	ht_cap = &link_sta->ht_cap;
+	he_cap = &link_sta->he_cap;
 
-	if (!ht_cap->ht_supported && !he_6ghz_capa->capa)
+	if (!ht_cap->ht_supported && !he_cap->has_he && !he_6ghz_capa->capa)
 		return;
 
-	if (ath12k_get_smps_from_capa(ht_cap, he_6ghz_capa, &smps))
+	if (ath12k_get_smps_from_capa(ht_cap, he_cap, he_6ghz_capa, &smps))
 		return;
+
+	if (he_cap->has_he) {
+		if (he_cap->he_cap_elem.mac_cap_info[5] & IEEE80211_HE_MAC_CAP5_HE_DYNAMIC_SM_PS) {
+			smps = WLAN_HT_CAP_SM_PS_DYNAMIC;
+		}
+	}
 
 	switch (smps) {
 	case WLAN_HT_CAP_SM_PS_STATIC:
@@ -3803,14 +3819,15 @@ static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 static int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				  const u8 *addr,
 				  const struct ieee80211_sta_ht_cap *ht_cap,
+				  const struct ieee80211_sta_he_cap *he_cap,
 				  const struct ieee80211_he_6ghz_capa *he_6ghz_capa)
 {
 	int smps, ret = 0;
 
-	if (!ht_cap->ht_supported && !he_6ghz_capa)
+	if (!ht_cap->ht_supported && !he_6ghz_capa && !he_6ghz_capa)
 		return 0;
 
-	ret = ath12k_get_smps_from_capa(ht_cap, he_6ghz_capa, &smps);
+	ret = ath12k_get_smps_from_capa(ht_cap, he_cap, he_6ghz_capa, &smps);
 	if (ret < 0)
 		return ret;
 
@@ -4128,7 +4145,9 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 	spin_unlock_bh(&dp->dp_lock);
 
 	ret = ath12k_setup_peer_smps(ar, arvif, bss_conf->bssid,
-				     &link_sta->ht_cap, &link_sta->he_6ghz_capa);
+				     &link_sta->ht_cap,
+				     &link_sta->he_cap,
+				     &link_sta->he_6ghz_capa);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to setup peer SMPS for vdev %d: %d\n",
 			    arvif->vdev_id, ret);
@@ -6882,7 +6901,9 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 		return 0;
 
 	ret = ath12k_setup_peer_smps(ar, arvif, arsta->addr,
-				     &link_sta->ht_cap, &link_sta->he_6ghz_capa);
+				     &link_sta->ht_cap,
+				     &link_sta->he_cap,
+				     &link_sta->he_6ghz_capa);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to setup peer SMPS for vdev %d: %d\n",
 			    arvif->vdev_id, ret);
