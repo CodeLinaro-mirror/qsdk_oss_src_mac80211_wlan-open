@@ -20883,6 +20883,22 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 		/* If 5g end and 6g start overlaps, decide band based on
 		 * the difference between target limit and ATH12K_5G_MAX_CENTER
 		 */
+
+		if (ab->wide_band && (reg_cap->low_5ghz_chan < ATH12K_MIN_6GHZ_FREQ &&
+				      reg_cap->high_5ghz_chan > ATH12K_MAX_5GHZ_FREQ)) {
+			/* Wide band radio can operate in either 5GHz or 6GHz,
+			 * configuring the band in which the radio has to operate,
+			 * default band is set to 5GHz.
+			 */
+			if (ab->wide_band == ATH12K_WIDE_BAND_6GHZ) {
+				reg_cap->low_5ghz_chan = ATH12K_MIN_6GHZ_FREQ;
+				ath12k_info(ab, "Wide band radio coming up in 6GHz band");
+			} else {
+				reg_cap->high_5ghz_chan = ATH12K_MAX_5GHZ_FREQ;
+				ath12k_info(ab, "Wide band radio coming up in 5GHz band");
+			}
+		}
+
 		if ((reg_cap->low_5ghz_chan >= ATH12K_MIN_5GHZ_FREQ) &&
 		    ((reg_cap->high_5ghz_chan < ATH12K_MAX_5GHZ_FREQ) ||
 		     ((reg_cap->high_5ghz_chan - ATH12K_5GHZ_MAX_CENTER) < (ATH12K_HALF_20MHZ_BW * 2)))) {

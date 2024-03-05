@@ -390,6 +390,12 @@ enum ath12k_hw_group_flags {
 	ATH12K_GROUP_FLAG_HIF_POWER_DOWN
 };
 
+enum wide_band_cap {
+	ATH12K_WIDE_BAND_NONE,
+	ATH12K_WIDE_BAND_5GHZ,
+	ATH12K_WIDE_BAND_6GHZ,
+};
+
 enum ath12k_dev_flags {
 	ATH12K_FLAG_CAC_RUNNING,
 	ATH12K_FLAG_CRASH_FLUSH,
@@ -1776,6 +1782,7 @@ struct ath12k_base {
 	bool rxgainlut_support;
 	bool fw_cfg_support;
 	bool is_dualmac;
+	enum wide_band_cap wide_band;
 
 	const struct ieee80211_ops *ath12k_ops;
 

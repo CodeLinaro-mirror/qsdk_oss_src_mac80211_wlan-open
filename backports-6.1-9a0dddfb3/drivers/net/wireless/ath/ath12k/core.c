@@ -4898,6 +4898,7 @@ void ath12k_core_free(struct ath12k_base *ab)
 struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 				      enum ath12k_bus bus)
 {
+	u32 wide_band = ATH12K_WIDE_BAND_NONE;
 	struct ath12k_base *ab;
 	u32 addr;
 
@@ -4943,6 +4944,11 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 
 	if (!of_property_read_u32(ab->dev->of_node, "memory-region", &addr))
 		set_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags);
+
+	if (of_property_read_u32(ab->dev->of_node, "qcom,wide_band", &wide_band))
+		ath12k_dbg(ab, ATH12K_DBG_BOOT, "Wide band property not present");
+
+	ab->wide_band = wide_band;
 
 	/* Device index used to identify the devices in a group.
 	 *
