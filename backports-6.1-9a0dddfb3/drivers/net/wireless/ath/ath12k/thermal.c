@@ -18,6 +18,16 @@
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 struct ath12k_ps_context ath12k_global_ps_ctx;
 
+uint8_t ath12k_get_number_of_active_eth_ports(void)
+{
+	struct eawtp_port_info pact_info = {0};
+
+	if (ath12k_global_ps_ctx.get_actv_eth_ports_cb)
+		ath12k_global_ps_ctx.get_actv_eth_ports_cb(0, &pact_info);
+
+	return pact_info.num_active_port;
+}
+
 static void
 ath12k_pdev_notify_power_save_metric(u8 count, u8 idx_map,
 				     enum ath12k_ps_metric_change metric)
@@ -131,6 +141,71 @@ ath12k_pdev_notify_power_save_metric(u8 count, u8 idx_map,
 		}
 	}
 }
+
+static int
+netstandby_eawtp_wifi_notify_active_eth_ports(void *app_data,
+					      struct eawtp_port_info *ntfy_info)
+{
+	struct ath12k *tmp_ar;
+	u8 idx, idx_i, active_eth_ports = 0, idx_map = 0;
+	struct ath12k_base *ab_tmp;
+	struct ath12k_pdev *pdev;
+	struct ath12k_hw_group *ag = ath12k_global_ps_ctx.ag;
+
+	if (!ntfy_info) {
+		ath12k_info(NULL, "WIFI-Netstandby: Invalid Port Info!");
+		return -EINVAL;
+	}
+
+	active_eth_ports = ntfy_info->num_active_port;
+
+	for (idx = 0; idx < ag->num_hw; idx++) {
+		ab_tmp = ag->ab[idx];
+
+		if (!ab_tmp)
+			continue;
+
+		for (idx_i = 0; idx_i < ab_tmp->num_radios; idx_i++) {
+			rcu_read_lock();
+			pdev = rcu_dereference(ab_tmp->pdevs_active[idx_i]);
+			if (pdev && pdev->ar) {
+				tmp_ar = ab_tmp->pdevs_active[idx_i]->ar;
+				if (tmp_ar && tmp_ar->num_stations)
+					idx_map |= (1 << idx);
+			}
+			rcu_read_unlock();
+		}
+	}
+
+	ath12k_pdev_notify_power_save_metric(active_eth_ports, idx_map, PS_ETH_PORT_CHANGE);
+
+	return 0;
+}
+
+int eawtp_wifi_get_and_register_cb(struct eawtp_reg_info *info)
+{
+	if (!info)
+		return -1;
+
+	ath12k_global_ps_ctx.get_actv_eth_ports_cb = info->get_active_ports_cb;
+	ath12k_get_number_of_active_eth_ports();
+	info->ntfy_port_status_to_wifi_cb = netstandby_eawtp_wifi_notify_active_eth_ports;
+
+	ath12k_info(NULL, "WIFI-Netstandby_eawtp: WIFI registration complete");
+
+	return 0;
+}
+EXPORT_SYMBOL(eawtp_wifi_get_and_register_cb);
+
+int eawtp_wifi_unregister_cb(void)
+{
+	ath12k_global_ps_ctx.get_actv_eth_ports_cb = NULL;
+
+	ath12k_info(NULL, "WIFI-Netstandby_eawtp: WIFI unregistered");
+
+	return 0;
+}
+EXPORT_SYMBOL(eawtp_wifi_unregister_cb);
 
 void ath12k_ath_update_active_pdev_count(struct ath12k *ar)
 {

@@ -50,6 +50,7 @@ struct ath12k_ps_context {
 	u8 num_active_port;
 	struct ath12k_hw_group *ag;
 	enum ath12k_dbs_in_out_state dbs_state;
+	eawtp_get_num_active_ports_cb_t get_actv_eth_ports_cb;
 };
 
 enum ath12k_ps_metric_change {
