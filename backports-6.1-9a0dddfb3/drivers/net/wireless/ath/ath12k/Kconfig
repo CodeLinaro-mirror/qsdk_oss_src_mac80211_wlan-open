@@ -23,6 +23,13 @@ config ATH12K_SAWF
 	  Enable ath12k SAWF and telemetry support
 	  Say Y to enable. If unsure, say N.
 
+config ATH12K_POWER_OPTIMIZATION
+	bool "ath12k Power and Thermal Optimization support"
+	depends on ATH12K
+	help
+	  Enable ath12k Power Reduction support
+	  Say Y to enable. If unsure, say N.
+
 config ATH12K_AHB
 	bool "QTI ath12k AHB support"
 	depends on ATH12K && REMOTEPROC && QCOM_Q6V5_WCSS_SEC

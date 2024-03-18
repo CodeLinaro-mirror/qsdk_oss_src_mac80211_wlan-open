@@ -4781,6 +4781,92 @@ static const struct file_operations fops_fw_recovery = {
 	.open = simple_open,
 };
 
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+static ssize_t ath12k_debug_write_dbs_power_reduction(struct file *file,
+						      const char __user *user_buf,
+						      size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_hw_group *ag;
+	unsigned int value;
+
+	if (kstrtouint_from_user(user_buf, count, 0, &value))
+		return -EINVAL;
+
+	ag = ab->ag;
+
+	if (value > 15) {
+		ath12k_warn(ab, "Dual band power reduction value should be between 0 - 15 dBm");
+		return -EINVAL;
+	}
+
+	ag->dbs_power_reduction = value;
+
+	return count;
+}
+
+static ssize_t ath12k_debug_read_dbs_power_reduction(struct file *file,
+						     char __user *user_buf,
+						     size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	char buf[ATH12K_BUF_SIZE_32];
+	size_t len;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", ab->ag->dbs_power_reduction);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations dbs_power_reduction = {
+	.read = ath12k_debug_read_dbs_power_reduction,
+	.write = ath12k_debug_write_dbs_power_reduction,
+	.open = simple_open,
+};
+
+static ssize_t ath12k_debug_write_eth_power_reduction(struct file *file,
+						      const char __user *user_buf,
+						      size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_hw_group *ag;
+	unsigned int value;
+
+	if (kstrtouint_from_user(user_buf, count, 0, &value))
+		return -EINVAL;
+
+	ag = ab->ag;
+
+	if (value > 15) {
+		ath12k_warn(ab, "Ethernet power reduction value should be between 0 - 15 dBm");
+		return -EINVAL;
+	}
+
+	ag->eth_power_reduction = value;
+
+	return count;
+}
+
+static ssize_t ath12k_debug_read_eth_power_reduction(struct file *file,
+						     char __user *user_buf,
+						     size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	char buf[ATH12K_BUF_SIZE_32];
+	size_t len;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", ab->ag->eth_power_reduction);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations eth_power_reduction = {
+	.read = ath12k_debug_read_eth_power_reduction,
+	.write = ath12k_debug_write_eth_power_reduction,
+	.open = simple_open,
+};
+#endif
+
 static ssize_t ath12k_read_fw_dbglog(struct file *file,
 				     char __user *user_buf,
 				     size_t count, loff_t *ppos)
@@ -4982,6 +5068,14 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_simulate_fw_crash);
 	debugfs_create_file("set_fw_recovery", 0600, ab->debugfs_soc, ab,
 			    &fops_fw_recovery);
+
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+	debugfs_create_file("dbs_power_reduction", 0600, ab->debugfs_soc, ab,
+			    &dbs_power_reduction);
+	debugfs_create_file("eth_power_reduction", 0600, ab->debugfs_soc, ab,
+			    &eth_power_reduction);
+#endif
+
 	debugfs_create_file("fw_dbglog_config", 0600, ab->debugfs_soc, ab,
 			    &fops_fw_dbglog);
 	debugfs_create_file("fw_reset_stats", 0400, ab->debugfs_soc, ab,

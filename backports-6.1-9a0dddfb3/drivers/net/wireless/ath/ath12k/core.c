@@ -51,6 +51,10 @@ unsigned int ath12k_ppe_ds_enabled = true;
 module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+extern struct ath12k_ps_context ath12k_global_ps_ctx;
+#endif
+
 unsigned int ath12k_debug_mask;
 module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
 MODULE_PARM_DESC(debug_mask, "Debugging mask");
@@ -3428,6 +3432,10 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 		return NULL;
 
 	ag->id = count;
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+	ag->dbs_power_reduction = ATH12K_DEFAULT_POWER_REDUCTION;
+	ag->eth_power_reduction = ATH12K_DEFAULT_POWER_REDUCTION;
+#endif
 	list_add(&ag->list, &ath12k_hw_group_list);
 	INIT_WORK(&ag->reset_group_work, ath12k_core_update_userpd_state);
 	mutex_init(&ag->mutex);
@@ -3436,6 +3444,9 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;
 
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+	ath12k_global_ps_ctx.ag = ag;
+#endif
 	return ag;
 }
 

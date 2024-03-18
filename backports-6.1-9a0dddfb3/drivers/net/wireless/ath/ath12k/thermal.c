@@ -11,6 +11,162 @@
 #include <linux/hwmon-sysfs.h>
 #include "core.h"
 #include "debug.h"
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+#include <soc/qcom/eawtp.h>
+#endif
+
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+struct ath12k_ps_context ath12k_global_ps_ctx;
+
+static void
+ath12k_pdev_notify_power_save_metric(u8 count, u8 idx_map,
+				     enum ath12k_ps_metric_change metric)
+{
+	u8 idx, idx_i;
+	u8 update_ps_change = 0;
+	u8 power_reduction_dbm = 0;
+	struct ath12k *tmp_ar;
+	struct ath12k_base *tmp_ab;
+	struct ath12k_hw_group *ag = ath12k_global_ps_ctx.ag;
+	struct ath12k_pdev *pdev;
+
+	if (ag->eth_power_reduction == ATH12K_DEFAULT_POWER_REDUCTION ||
+	    ag->dbs_power_reduction == ATH12K_DEFAULT_POWER_REDUCTION) {
+		ath12k_dbg(NULL, ATH12K_DBG_WMI,
+			   "Power and Thermal optimization: dbs_power_reduction and eth_power_reduction values are not set\n");
+		return;
+	}
+
+	switch (metric) {
+	case PS_WLAN_DBS_CHANGE:
+		ath12k_dbg(NULL, ATH12K_DBG_WMI,
+			   "Power and Thermal optimization: Change in active pdevs active_pdevs:%u\n",
+			   count);
+		/* Update to FW about Power Reduction value only when there
+		 * is a change in DBS status:
+		 * 1. If DBS in, Get Ethernet Port count and check
+		 *    a. If Ethernet Port count is lower than TH,
+		 *       send dbs_pwr_reduction_dbm to FW
+		 *    b. If Ethernet Port count is greter than the TH,
+		 *       send dbs_pwr_reduction_dbm + eth_pwr_reduction_dbm
+		 *       to FW
+		 * 2. If DBS out, update power reduction dbm to 0
+		 */
+		if (ath12k_global_ps_ctx.num_active_pdev != count) {
+			if (count >= ACTIVE_PDEV_TH) {
+				/* Set ath12k_global_ps_ctx.num_active_port */
+				power_reduction_dbm = ag->dbs_power_reduction;
+				if (ath12k_global_ps_ctx.num_active_port > ETH_PORT_COUNT)
+					power_reduction_dbm += ag->eth_power_reduction;
+				update_ps_change |= (1 << metric);
+				ath12k_global_ps_ctx.dbs_state = DBS_IN;
+			} else if ((count < ACTIVE_PDEV_TH) &&
+				   (ath12k_global_ps_ctx.num_active_pdev >= ACTIVE_PDEV_TH)) {
+				update_ps_change |= (1 << metric);
+				ath12k_global_ps_ctx.dbs_state = DBS_OUT;
+			}
+			ath12k_global_ps_ctx.num_active_pdev = count;
+		}
+		break;
+	case PS_ETH_PORT_CHANGE:
+		ath12k_dbg(NULL, ATH12K_DBG_WMI,
+			   "Power and Thermal optimization: Change in active ethernet ports active_eth_ports:%u\n",
+			   count);
+		/* Update Power Reduction value to FW only for DBS IN state
+		 * when there is a change in active ethernet port count:
+		 * 1. If DBS IN state,
+		 *     a. If Ethernet Port count is crossing the TH,
+		 *        send dbs_pwr_reduction_dbm + eth_pwr_reduction_dbm
+		 *        from ini to FW
+		 *     b. If Ethernet Port count is coming below the TH,
+		 *        send dbs_pwr_reduction_dbm to FW
+		 * 2. If DBS OUT state, No Update
+		 */
+		if (ath12k_global_ps_ctx.num_active_port != count &&
+		    ath12k_global_ps_ctx.dbs_state == DBS_IN) {
+			if (ath12k_global_ps_ctx.num_active_port <= ETH_PORT_COUNT &&
+			    count > ETH_PORT_COUNT) {
+				power_reduction_dbm = ag->eth_power_reduction +
+						      ag->dbs_power_reduction;
+				update_ps_change |= (1 << metric);
+			} else if (ath12k_global_ps_ctx.num_active_port > ETH_PORT_COUNT &&
+				   count <= ETH_PORT_COUNT) {
+				power_reduction_dbm = ag->dbs_power_reduction;
+				update_ps_change |= (1 << metric);
+			}
+		}
+		ath12k_global_ps_ctx.num_active_port = count;
+		break;
+	default:
+		break;
+	}
+
+	if (update_ps_change) {
+		for (idx = 0; idx < ag->num_hw; idx++) {
+			tmp_ab = ag->ab[idx];
+			if (!tmp_ab)
+				continue;
+			for (idx_i = 0; idx_i < tmp_ab->num_radios; idx_i++) {
+				if (ath12k_global_ps_ctx.dbs_state == DBS_IN &&
+				    !(idx_map & (1 << idx)))
+					continue;
+				rcu_read_lock();
+				pdev = rcu_dereference(tmp_ab->pdevs_active[idx_i]);
+				if (!pdev) {
+					rcu_read_unlock();
+					continue;
+				}
+				tmp_ar = pdev->ar;
+				if (tmp_ar && tmp_ar->num_stations) {
+					ath12k_dbg(tmp_ab, ATH12K_DBG_WMI,
+						   "Power and Thermal optimization sending WMI command to reduces power power_reduction_dbm:%u\n",
+						   power_reduction_dbm);
+					ath12k_wmi_pdev_set_param(tmp_ar,
+								  WMI_PDEV_PARAM_PWR_REDUCTION_IN_QUARTER_DB,
+								  power_reduction_dbm,
+								  tmp_ar->pdev->pdev_id);
+				}
+				rcu_read_unlock();
+			}
+		}
+	}
+}
+
+void ath12k_ath_update_active_pdev_count(struct ath12k *ar)
+{
+	struct ath12k_hw_group *ag;
+	u8 idx, idx_i, active_pdev = 0, idx_map = 0;
+	struct ath12k_base *ab, *ab_tmp;
+	struct ath12k_pdev *pdev;
+
+	ab = ar->ab;
+
+	if (!ab)
+		ath12k_dbg(NULL, ATH12K_DBG_WMI, "Power and thermal optimization: ab is NULL");
+
+	ag = ab->ag;
+
+	if (!ag)
+		return;
+
+	for (idx = 0; idx < ag->num_hw; idx++) {
+		ab_tmp = ag->ab[idx];
+		if (!ab_tmp)
+			continue;
+		for (idx_i = 0; idx_i < ab_tmp->num_radios; idx_i++) {
+			rcu_read_lock();
+			pdev = rcu_dereference(ab_tmp->pdevs_active[idx_i]);
+			if (pdev && pdev->ar && pdev->ar->num_stations) {
+				active_pdev++;
+				idx_map |= (1 << idx);
+			}
+			rcu_read_unlock();
+		}
+	}
+
+	ath12k_pdev_notify_power_save_metric(active_pdev, idx_map, PS_WLAN_DBS_CHANGE);
+}
+#endif
 
 static int
 ath12k_thermal_get_max_throttle_state(struct thermal_cooling_device *cdev,

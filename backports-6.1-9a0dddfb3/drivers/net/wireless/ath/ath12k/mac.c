@@ -1278,6 +1278,10 @@ static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
 		return;
 
 	ar->num_stations--;
+
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+	ath12k_ath_update_active_pdev_count(ar);
+#endif
 }
 
 int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
@@ -5265,6 +5269,7 @@ int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
 	struct ath12k_link_vif *arvif;
 	unsigned long links;
 	struct ath12k_base *ab;
+	struct ath12k *ar;
 
 	*link_id = ATH12K_BRIDGE_LINK_MIN;
 
@@ -5275,6 +5280,7 @@ int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
 			continue;
 
 		ab = arvif->ar->ab;
+		ar = arvif->ar;
 		if (bridge_bitmap & BIT(ab->wsi_info.index)) {
 			ath12k_dbg(ab, ATH12K_DBG_PEER,
 				   "arvif found link_id %d for bridge_bitmap 0x%x\n",
@@ -5283,6 +5289,10 @@ int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
 			break;
 		}
 	}
+
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+	ath12k_ath_update_active_pdev_count(ar);
+#endif
 
 	return ret;
 }

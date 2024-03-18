@@ -1303,6 +1303,10 @@ struct ath12k_hw_group {
 	/* this should be the first member */
 	struct ath12k_dp_hw_group dp_hw_grp;
 	struct list_head list;
+#ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
+	u8 dbs_power_reduction;
+	u8 eth_power_reduction;
+#endif
 	u8 id;
 	u8 num_devices;
 	u8 num_probed;
