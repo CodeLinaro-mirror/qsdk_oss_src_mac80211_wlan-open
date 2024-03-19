@@ -24,6 +24,10 @@
 #define PLATFORM_CAP_PCIE_GLOBAL_RESET	0x08
 #define ATH12K_QMI_MAX_CHUNK_SIZE	2097152
 
+static bool ath12k_skip_caldata;
+module_param_named(skip_caldata, ath12k_skip_caldata, bool, 0444);
+MODULE_PARM_DESC(skip_caldata, "Skip caldata download");
+
 bool ath12k_cold_boot_cal = 1;
 module_param_named(cold_boot_cal, ath12k_cold_boot_cal, bool, 0644);
 MODULE_PARM_DESC(cold_boot_cal,
@@ -5114,7 +5118,15 @@ int ath12k_qmi_load_bdf_qmi(struct ath12k_base *ab,
 		}
 		break;
 	case ATH12K_QMI_BDF_TYPE_CALIBRATION:
-
+		if (ath12k_skip_caldata) {
+			if (ath12k_ftm_mode) {
+				ath12k_warn(ab, "Skipping caldata download in FTM mode\n");
+				goto out;
+			}
+			ath12k_err(ab, "failed to skip caldata download. FTM mode is not enabled\n");
+			ret = -EOPNOTSUPP;
+			goto out;
+		}
 		if (ab->qmi.target.eeprom_caldata) {
 			file_type = ATH12K_QMI_FILE_TYPE_EEPROM;
 			tmp = filename;
