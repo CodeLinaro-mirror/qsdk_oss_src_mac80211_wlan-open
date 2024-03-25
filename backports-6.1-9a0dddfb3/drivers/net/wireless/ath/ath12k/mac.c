@@ -2143,7 +2143,11 @@ static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
 			       IEEE80211_BSS_TYPE_ANY, IEEE80211_PRIVACY_ANY);
 
 	if (arvif->rsnie_present || arvif->wpaie_present) {
-		arg->need_ptk_4_way = true;
+		if (sta->ft_auth)
+			arg->need_ptk_4_way = false;
+		else
+			arg->need_ptk_4_way = true;
+
 		if (arvif->wpaie_present)
 			arg->need_gtk_2_way = true;
 	} else if (bss) {
@@ -2166,7 +2170,10 @@ static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
 	if (ar->supports_6ghz || rsnie || wpaie) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 			   "%s: rsn ie found\n", __func__);
-		arg->need_ptk_4_way = true;
+		if (sta->ft_auth)
+			arg->need_ptk_4_way = false;
+		else
+			arg->need_ptk_4_way = true;
 	}
 
 	if (wpaie) {
