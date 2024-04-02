@@ -115,7 +115,7 @@ void ath11k_coredump_build_inline(struct ath11k_base *ab,
 	ATH11K_MEMORY_STATS_INC(ab, malloc_size, header_size);
 
 	file_data = (struct ath11k_dump_file_data *)buf;
-	strlcpy(file_data->df_magic, "ATH11K-FW-DUMP",
+	strscpy(file_data->df_magic, "ATH11K-FW-DUMP",
 	        sizeof(file_data->df_magic));
 	file_data->len = cpu_to_le32(header_size);
 	file_data->version = cpu_to_le32(ATH11K_FW_CRASH_DUMP_VERSION);

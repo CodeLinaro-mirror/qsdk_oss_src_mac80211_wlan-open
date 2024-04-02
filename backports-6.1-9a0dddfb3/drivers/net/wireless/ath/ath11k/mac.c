@@ -8423,21 +8423,6 @@ static int ath11k_mac_vif_unref(int buf_id, void *skb, void *ctx)
 
 void ath11k_mac_debugfs_remove_stats_file(struct ath11k_vif *arvif)
 {
-	/* Remove TWT related files and directory */
-	debugfs_remove_recursive(arvif->debugfs_twt);
-	arvif->debugfs_twt = NULL;
-
-	/* Remove A-MPDU, A-MSDU aggr size files */
-	debugfs_remove(arvif->ampdu_aggr_size);
-	arvif->ampdu_aggr_size = NULL;
-
-	debugfs_remove(arvif->amsdu_aggr_size);
-	arvif->amsdu_aggr_size = NULL;
-
-	/* Remove wmi ctrl stats file */
-	debugfs_remove(arvif->wmi_ctrl_stat);
-	arvif->wmi_ctrl_stat = NULL;
-
 	/* Remove the mac filter file */
 	debugfs_remove(arvif->mac_filter);
 	arvif->mac_filter = NULL;

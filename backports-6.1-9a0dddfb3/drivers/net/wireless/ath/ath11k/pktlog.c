@@ -195,7 +195,11 @@ static int ath_pktlog_mmap(struct file *file, struct vm_area_struct *vma)
 		return -ENOMEM;
 	}
 
+#if LINUX_VERSION_IS_LESS(6, 6, 3)
 	vma->vm_flags |= VM_LOCKED;
+#else
+	vm_flags_set(vma, VM_LOCKED);
+#endif
 	vma->vm_ops = &pktlog_vmops;
 
 	return 0;
