@@ -142,6 +142,29 @@ ath12k_pdev_notify_power_save_metric(u8 count, u8 idx_map,
 	}
 }
 
+static struct tt_level_config tt_level_configs[THERMAL_LEVELS] = {
+		{ /* Level 0 */
+			ATH12K_THERMAL_LVL0_TEMP_LOW_MARK,
+			ATH12K_THERMAL_LVL0_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL0_DUTY_CYCLE, 0
+		},
+		{ /* Level 1 */
+			ATH12K_THERMAL_LVL1_TEMP_LOW_MARK,
+			ATH12K_THERMAL_LVL1_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL1_DUTY_CYCLE, 0
+		},
+		{ /* Level 2 */
+			ATH12K_THERMAL_LVL2_TEMP_LOW_MARK,
+			ATH12K_THERMAL_LVL2_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL2_DUTY_CYCLE, 0
+		},
+		{ /* Level 3 */
+			ATH12K_THERMAL_LVL3_TEMP_LOW_MARK,
+			ATH12K_THERMAL_LVL3_TEMP_HIGH_MARK,
+			ATH12K_THERMAL_LVL3_DUTY_CYCLE, 0
+		}
+};
+
 static int
 netstandby_eawtp_wifi_notify_active_eth_ports(void *app_data,
 					      struct eawtp_port_info *ntfy_info)
@@ -278,8 +301,6 @@ ath12k_thermal_set_cur_throttle_state(struct thermal_cooling_device *cdev,
 	}
 	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
 	ret = ath12k_thermal_set_throttling(ar, throttle_state);
-	if (ret == 0)
-		ar->thermal.throttle_state = throttle_state;
 	return ret;
 }
 
@@ -344,6 +365,16 @@ void ath12k_thermal_event_temperature(struct ath12k *ar, int temperature)
 	complete(&ar->thermal.wmi_sync);
 }
 
+void ath12k_thermal_event_throt_level(struct ath12k *ar, int curr_level)
+{
+	if (curr_level >= THERMAL_LEVELS)
+		return;
+
+	spin_lock_bh(&ar->data_lock);
+	ar->thermal.throttle_state = tt_level_configs[curr_level].dcoffpercent;
+	spin_unlock_bh(&ar->data_lock);
+}
+
 static SENSOR_DEVICE_ATTR(temp1_input, 0444, ath12k_thermal_show_temp,
 			  NULL, 0);
 
@@ -358,7 +389,7 @@ int ath12k_thermal_set_throttling(struct ath12k *ar, u32 throttle_state)
 	struct ath12k_base *sc = ar->ab;
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	struct ath12k_wmi_thermal_mitigation_arg param;
-	int ret = 0;
+	int level, ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -367,14 +398,19 @@ int ath12k_thermal_set_throttling(struct ath12k *ar, u32 throttle_state)
 
 	memset(&param, 0, sizeof(param));
 	param.pdev_id = ar->pdev->pdev_id;
-	param.enable = throttle_state ? 1 : 0;
+	param.enable = ATH12K_FW_THERMAL_THROTTLING_ENABLE;
 	param.dc = ATH12K_THERMAL_DEFAULT_DUTY_CYCLE;
-	param.dc_per_event = 0xFFFFFFFF;
+	/* After how many duty cycles the FW sends stats to host */
+	param.dc_per_event = 0x2;
 
-	param.levelconf[0].tmplwm = ATH12K_THERMAL_TEMP_LOW_MARK;
-	param.levelconf[0].tmphwm = ATH12K_THERMAL_TEMP_HIGH_MARK;
-	param.levelconf[0].dcoffpercent = throttle_state;
-	param.levelconf[0].priority = 0; /* disable all data tx queues */
+	tt_level_configs[0].dcoffpercent = throttle_state;
+	for (level = 0; level < THERMAL_LEVELS; level++) {
+		param.levelconf[level].tmplwm = tt_level_configs[level].tmplwm;
+		param.levelconf[level].tmphwm = tt_level_configs[level].tmphwm;
+		param.levelconf[level].dcoffpercent = tt_level_configs[level].dcoffpercent;
+		param.levelconf[level].priority = 0; /* disable all data tx queues */
+	}
+
 	ret = ath12k_wmi_send_thermal_mitigation_cmd(ar, &param);
 	if (ret) {
 		ath12k_warn(sc, "failed to send thermal mitigation duty cycle %u ret %d\n",

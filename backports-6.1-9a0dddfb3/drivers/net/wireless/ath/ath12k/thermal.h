@@ -11,13 +11,26 @@
 #ifndef _ATH12K_THERMAL_
 #define _ATH12K_THERMAL_
 
-#define ATH12K_THERMAL_TEMP_LOW_MARK -100
-#define ATH12K_THERMAL_TEMP_HIGH_MARK 150
+/* Below temperatures are in celsius */
+#define ATH12K_THERMAL_LVL0_TEMP_LOW_MARK -100
+#define ATH12K_THERMAL_LVL0_TEMP_HIGH_MARK 100
+#define ATH12K_THERMAL_LVL1_TEMP_LOW_MARK 95
+#define ATH12K_THERMAL_LVL1_TEMP_HIGH_MARK 105
+#define ATH12K_THERMAL_LVL2_TEMP_LOW_MARK 100
+#define ATH12K_THERMAL_LVL2_TEMP_HIGH_MARK 110
+#define ATH12K_THERMAL_LVL3_TEMP_LOW_MARK 105
+#define ATH12K_THERMAL_LVL3_TEMP_HIGH_MARK 120
+
+#define ATH12K_THERMAL_LVL0_DUTY_CYCLE 0
+#define ATH12K_THERMAL_LVL1_DUTY_CYCLE 50
+#define ATH12K_THERMAL_LVL2_DUTY_CYCLE 90
+#define ATH12K_THERMAL_LVL3_DUTY_CYCLE 100
+
+#define ATH12K_FW_THERMAL_THROTTLING_ENABLE  1
 #define ATH12K_THERMAL_THROTTLE_MAX     100
 #define ATH12K_THERMAL_DEFAULT_DUTY_CYCLE 100
 #define ATH12K_HWMON_NAME_LEN           15
 #define ATH12K_THERMAL_SYNC_TIMEOUT_HZ (5 * HZ)
-#define THERMAL_LEVELS  1
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 #define ETH_PORT_COUNT 3
@@ -67,6 +80,8 @@ int ath12k_thermal_register(struct ath12k_base *sc);
 void ath12k_thermal_unregister(struct ath12k_base *sc);
 int ath12k_thermal_set_throttling(struct ath12k *ar, u32 throttle_state);
 void ath12k_thermal_event_temperature(struct ath12k *ar, int temperature);
+void ath12k_thermal_event_throt_level(struct ath12k *ar, int curr_level);
+int ath12k_wmi_thermal_set_throttle(struct ath12k *ar);
 #else
 static inline int ath12k_thermal_register(struct ath12k_base *sc)
 {

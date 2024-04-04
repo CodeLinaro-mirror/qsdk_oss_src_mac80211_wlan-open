@@ -12607,6 +12607,13 @@ int ath12k_mac_start(struct ath12k *ar)
 	lockdep_assert_held(&ah->hw_mutex);
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	ath12k_info(ab, "Enabling FW Thermal throttling\n");
+	ret = ath12k_thermal_set_throttling(ar, ATH12K_THERMAL_LVL0_DUTY_CYCLE);
+	if (ret) {
+		ath12k_err(ab, "failed to set thermal throttle: (%d)\n", ret);
+		goto err;
+	}
+
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_PMF_QOS,
 					1, pdev->pdev_id);
 

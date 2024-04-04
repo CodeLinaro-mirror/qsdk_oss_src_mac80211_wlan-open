@@ -962,6 +962,7 @@ enum wmi_tlv_event_id {
 	WMI_READ_DATA_FROM_FLASH_EVENTID,
 	WMI_REPORT_RX_AGGR_FAILURE_EVENTID,
 	WMI_PKGID_EVENTID,
+	WMI_THERM_THROT_STATS_EVENTID,
 	WMI_MUEDCA_PARAMS_CONFIG_EVENTID = 0x1d01e,
 	WMI_GPIO_INPUT_EVENTID = WMI_TLV_CMD(WMI_GRP_GPIO),
 	WMI_UPLOADH_EVENTID,
@@ -4534,13 +4535,20 @@ enum set_init_cc_flags {
 	ALPHA_IS_SET,
 };
 
-#define THERMAL_LEVELS		1
+#define THERMAL_LEVELS  4
 struct tt_level_config {
 	u32 tmplwm;
 	u32 tmphwm;
 	u32 dcoffpercent;
 	u32 priority;
 };
+
+struct wmi_therm_throt_stats_event {
+	__le32 pdev_id;
+	__le32 temp;
+	__le32 level;
+	__le32 therm_throt_levels;
+} __packed;
 
 struct ath12k_wmi_thermal_mitigation_arg {
 	u32 pdev_id;
