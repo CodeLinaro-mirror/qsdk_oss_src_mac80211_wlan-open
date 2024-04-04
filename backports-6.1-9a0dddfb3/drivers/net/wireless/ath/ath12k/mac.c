@@ -1780,10 +1780,13 @@ static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
 		ath12k_mac_set_arvif_ies(arvif, beacons->bcn[0].skb, 0, NULL);
 
 	for (i = 0; i < beacons->cnt; i++) {
-		if (tx_arvif != arvif && !nontx_profile_found)
+		if (tx_arvif != arvif && !nontx_profile_found) {
 			ath12k_mac_set_arvif_ies(arvif, beacons->bcn[i].skb,
 						 bssid_index,
 						 &nontx_profile_found);
+			if (arvif->beacon_prot)
+				tx_arvif->beacon_prot = arvif->beacon_prot;
+		}
 
 		ema_args.bcn_cnt = beacons->cnt;
 		ema_args.bcn_index = i;
