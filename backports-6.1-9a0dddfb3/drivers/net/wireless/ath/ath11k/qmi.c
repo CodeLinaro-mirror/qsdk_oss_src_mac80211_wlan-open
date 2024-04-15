@@ -2849,7 +2849,7 @@ static int ath11k_qmi_alloc_target_mem_chunk(struct ath11k_base *ab)
 
 
 		if (chunk->type == CALDB_MEM_REGION_TYPE && (!ab->enable_cold_boot_cal
-							|| !ab->hw_params.cold_boot_calib)) {
+							|| !ab->hw_params.coldboot_cal_mm)) {
 			ath11k_info(ab, "Skipping caldb allocation chunk->size %u chunk->paddr %pad\n",
 						chunk->size, &chunk->paddr);
 			chunk->paddr = 0;
@@ -3936,31 +3936,6 @@ int ath11k_qmi_fwreset_from_cold_boot(struct ath11k_base *ab)
 				       ATH11K_COLD_BOOT_FW_RESET_DELAY);
 
 	if (time_left <= 0) {
-		ath11k_warn(ab, "Coldboot Calibration timed out\n");
-		return -ETIMEDOUT;
-	}
-
-	/* reset the firmware */
-	ath11k_hif_power_down(ab);
-	ath11k_hif_power_up(ab);
-	ath11k_dbg(ab, ATH11K_DBG_QMI, "exit wait for cold boot done\n");
-	return 0;
-}
-EXPORT_SYMBOL(ath11k_qmi_fwreset_from_cold_boot);
-
-int ath11k_qmi_fwreset_from_cold_boot(struct ath11k_base *ab)
-{
-	int timeout;
-
-	if (ab->enable_cold_boot_cal == 0 ||
- 	    ab->hw_params.cold_boot_calib == 0)
-		return 0;
-
-	ath11k_dbg(ab, ATH11K_DBG_QMI, "wait for cold boot done\n");
-
-	timeout = wait_event_timeout(ab->qmi.cold_boot_waitq, (ab->qmi.cal_done  == 1),
-				     ATH11K_COLD_BOOT_FW_RESET_DELAY);
-	if (timeout <= 0) {
 		ath11k_warn(ab, "Coldboot Calibration timed out\n");
 		return -ETIMEDOUT;
 	}

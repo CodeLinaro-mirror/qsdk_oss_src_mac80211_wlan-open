@@ -1952,7 +1952,8 @@ static void ath11k_control_beaconing(struct ath11k_vif *arvif,
 
 	ether_addr_copy(arvif->bssid, info->bssid);
 
-	tx_arvif = ath11k_mac_get_tx_arvif(arvif);
+	if (arvif->vif->bss_conf.mbssid_tx_vif)
+		tx_arvif = (void *)arvif->vif->bss_conf.mbssid_tx_vif->drv_priv;
 
 	params.vdev_id = arvif->vdev_id;
 	params.aid = arvif->aid;
@@ -3502,7 +3503,7 @@ static void ath11k_bss_disassoc(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif)
 {
 	struct ath11k *ar = hw->priv;
-	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
+	struct ath11k_vif *arvif = (void *)vif->drv_priv, *tx_arvif;
 	int ret;
 
 	lockdep_assert_held(&ar->conf_mutex);
@@ -8821,7 +8822,7 @@ ath11k_mac_vdev_start_restart(struct ath11k_vif *arvif,
 	    cfg80211_chandef_dfs_usable(ar->hw->wiphy, chandef)) {
 		set_bit(ATH11K_CAC_RUNNING, &ar->dev_flags);
 		dfs_cac_time = cfg80211_chandef_dfs_cac_time(ar->hw->wiphy,
-							     chandef);
+							     chandef,false,false);
 		ath11k_dbg(ab, ATH11K_DBG_MAC,
 			   "cac started dfs_cac_time %u center_freq %d center_freq1 %d for vdev %d\n",
 			   dfs_cac_time, arg.channel.freq, chandef->center_freq1,
@@ -12547,7 +12548,7 @@ ath11k_mac_op_config_mesh_offload_path(struct ieee80211_hw *hw,
 				       struct ieee80211_mesh_path_offld *path)
 {
 	struct ath11k *ar = hw->priv;
-	struct ath11k_vif *arvif = (void *)vif->drv_priv, *tx_arvif;
+	struct ath11k_vif *arvif = (void *)vif->drv_priv;
 	int ret;
 
 	if (arvif->ar->ab->nss.debug_mode) {
