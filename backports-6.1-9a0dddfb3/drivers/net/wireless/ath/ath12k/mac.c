@@ -251,6 +251,8 @@ const struct htt_rx_ring_tlv_filter ath12k_mac_mon_status_filter_default = {
 #define ath12k_a_rates_size (ARRAY_SIZE(ath12k_legacy_rates) - 4)
 
 #define ATH12K_MAC_SCAN_TIMEOUT_MSECS 200 /* in msecs */
+/* Overhead due to the processing of channel switch events from FW */
+#define ATH12K_SCAN_CHANNEL_SWITCH_WMI_EVT_OVERHEAD	10 /* in msecs */
 
 static const u32 ath12k_smps_map[] = {
 	[WLAN_HT_CAP_SM_PS_STATIC] = WMI_PEER_SMPS_STATIC,
@@ -5597,6 +5599,7 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	int i;
 	bool create = true;
 	u8 n_channels = to_index - from_index;
+	u32 scan_timeout;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -5726,6 +5729,24 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 			arg->chan_list[i] = req->channels[i + from_index]->center_freq;
 	}
 
+	/* if duration is set, default dwell times will be overwritten */
+	if (req->duration) {
+		arg->dwell_time_active = req->duration;
+		arg->dwell_time_active_2g = req->duration;
+		arg->dwell_time_active_6g = req->duration;
+		arg->dwell_time_passive = req->duration;
+		arg->dwell_time_passive_6g = req->duration;
+		arg->burst_duration = req->duration;
+		scan_timeout = min_t(u32, arg->max_rest_time *
+				    (arg->num_chan - 1) + (req->duration +
+				    ATH12K_SCAN_CHANNEL_SWITCH_WMI_EVT_OVERHEAD) *
+				    arg->num_chan, arg->max_scan_time);
+	} else {
+		scan_timeout = arg->max_scan_time;
+	}
+	/* Add a margin to account for event/command processing */
+	scan_timeout = scan_timeout + ATH12K_MAC_SCAN_TIMEOUT_MSECS;
+
 	ret = ath12k_start_scan(ar, arg);
 	if (ret) {
 		if (ret == -EBUSY)
@@ -5750,8 +5771,7 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 
 	/* Add a margin to account for event/command processing */
 	ieee80211_queue_delayed_work(ath12k_ar_to_hw(ar), &ar->scan.timeout,
-				     msecs_to_jiffies(arg->max_scan_time +
-						      ATH12K_MAC_SCAN_TIMEOUT_MSECS));
+				     msecs_to_jiffies(scan_timeout));
 
 exit:
 	if (arg) {
@@ -14550,6 +14570,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	}
 
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_PUNCT);
+	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_SET_SCAN_DWELL);
 
 	ath12k_reg_init(hw);
 
