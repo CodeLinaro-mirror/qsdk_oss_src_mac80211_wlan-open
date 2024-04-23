@@ -2439,6 +2439,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_PDEV_WSI_STATS_INFO_SUPPORT = 388,
 	WMI_TLV_SERVICE_RADAR_FLAGS_SUPPORT = 390,
 	WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI = 394,
+	WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION = 410,
 	WMI_SERVICE_WDS_NULL_FRAME_SUPPORT = 421,
 	WMI_SERVICE_MEC_AGING_TIMER_SUPPORT = 423,
 
@@ -4536,11 +4537,14 @@ enum set_init_cc_flags {
 };
 
 #define THERMAL_LEVELS  4
+#define ENHANCED_THERMAL_LEVELS  5
+#define ATH12K_THERMAL_LEVELS 2
 struct tt_level_config {
 	u32 tmplwm;
 	u32 tmphwm;
 	u32 dcoffpercent;
 	u32 priority;
+	u32 pout_reduction_db;
 };
 
 struct wmi_therm_throt_stats_event {
@@ -4555,7 +4559,7 @@ struct ath12k_wmi_thermal_mitigation_arg {
 	u32 enable;
 	u32 dc;
 	u32 dc_per_event;
-	struct tt_level_config levelconf[THERMAL_LEVELS];
+	struct tt_level_config levelconf[ATH12K_THERMAL_LEVELS][ENHANCED_THERMAL_LEVELS];
 };
 
 struct wmi_therm_throt_config_request_cmd {
@@ -4573,6 +4577,7 @@ struct wmi_therm_throt_level_config_info {
 	__le32 temp_hwm;
 	__le32 dc_off_percent;
 	__le32 prio;
+	__le32 pout_reduction_25db;
 } __packed;
 
 struct ath12k_wmi_init_country_arg {

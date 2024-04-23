@@ -4381,7 +4381,10 @@ ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
 	struct sk_buff *skb;
 	int i, ret, len;
 
-	len = sizeof(*cmd) + TLV_HDR_SIZE + THERMAL_LEVELS * sizeof(*lvl_conf);
+	if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map))
+		len = sizeof(*cmd) + TLV_HDR_SIZE + ENHANCED_THERMAL_LEVELS * sizeof(*lvl_conf);
+	else
+		len = sizeof(*cmd) + TLV_HDR_SIZE + THERMAL_LEVELS * sizeof(*lvl_conf);
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -4396,31 +4399,61 @@ ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
 	cmd->enable = cpu_to_le32(arg->enable);
 	cmd->dc = cpu_to_le32(arg->dc);
 	cmd->dc_per_event = cpu_to_le32(arg->dc_per_event);
-	cmd->therm_throt_levels = cpu_to_le32(THERMAL_LEVELS);
+	if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map))
+		cmd->therm_throt_levels = cpu_to_le32(ENHANCED_THERMAL_LEVELS);
+	else
+		cmd->therm_throt_levels = cpu_to_le32(THERMAL_LEVELS);
 
 	tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
-	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
-					 THERMAL_LEVELS * sizeof(*lvl_conf));
+	if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map))
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 ENHANCED_THERMAL_LEVELS * sizeof(*lvl_conf));
+	else
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 THERMAL_LEVELS * sizeof(*lvl_conf));
 
 	lvl_conf = (struct wmi_therm_throt_level_config_info *)(skb->data +
 								sizeof(*cmd) +
 								TLV_HDR_SIZE);
-	for (i = 0; i < THERMAL_LEVELS; i++) {
-		lvl_conf->tlv_header =
-			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_THERM_THROT_LEVEL_CONFIG_INFO,
-					       sizeof(*lvl_conf));
 
-		lvl_conf->temp_lwm = arg->levelconf[i].tmplwm;
-		lvl_conf->temp_hwm = arg->levelconf[i].tmphwm;
-		lvl_conf->dc_off_percent = arg->levelconf[i].dcoffpercent;
-		lvl_conf->prio = arg->levelconf[i].priority;
-		lvl_conf++;
+	if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map)) {
+		for (i = 0; i < ENHANCED_THERMAL_LEVELS; i++) {
+			lvl_conf->tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_THERM_THROT_LEVEL_CONFIG_INFO,
+						       sizeof(*lvl_conf));
+
+			lvl_conf->temp_lwm =
+				arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].tmplwm;
+			lvl_conf->temp_hwm =
+				arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].tmphwm;
+			lvl_conf->dc_off_percent =
+				arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].dcoffpercent;
+			lvl_conf->prio = arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].priority;
+			lvl_conf->pout_reduction_25db =
+				arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].pout_reduction_db;
+			lvl_conf++;
+		}
+	} else {
+		for (i = 0; i < THERMAL_LEVELS; i++) {
+			lvl_conf->tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_THERM_THROT_LEVEL_CONFIG_INFO,
+						       sizeof(*lvl_conf));
+
+			lvl_conf->temp_lwm = arg->levelconf[ATH12K_DEFAULT_THERMAL_LEVEL][i].tmplwm;
+			lvl_conf->temp_hwm = arg->levelconf[ATH12K_DEFAULT_THERMAL_LEVEL][i].tmphwm;
+			lvl_conf->dc_off_percent =
+				arg->levelconf[ATH12K_DEFAULT_THERMAL_LEVEL][i].dcoffpercent;
+			lvl_conf->prio = arg->levelconf[ATH12K_DEFAULT_THERMAL_LEVEL][i].priority;
+			lvl_conf++;
+		}
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 		   "WMI vdev set thermal throt pdev_id %d enable %d dc %d dc_per_event %x levels %d\n",
 		   ar->pdev->pdev_id, arg->enable, arg->dc,
-		   arg->dc_per_event, THERMAL_LEVELS);
+		   arg->dc_per_event,
+		   (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map) ?
+		   ENHANCED_THERMAL_LEVELS : THERMAL_LEVELS));
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_THERM_THROT_SET_CONF_CMDID);
 	if (ret) {
