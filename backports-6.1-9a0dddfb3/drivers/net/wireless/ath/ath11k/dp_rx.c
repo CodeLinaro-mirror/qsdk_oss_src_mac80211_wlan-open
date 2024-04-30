@@ -424,8 +424,14 @@ int ath11k_dp_rxbufs_replenish(struct ath11k_base *ab, int mac_id,
 	num_remain = req_entries;
 
 	while (num_remain > 0) {
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
+		skb = netdev_alloc_skb_fast(NULL,
+					    DP_RX_BUFFER_SIZE +\
+					    DP_RX_BUFFER_ALIGN_SIZE);
+#else
 		skb = dev_alloc_skb(DP_RX_BUFFER_SIZE +
 				    DP_RX_BUFFER_ALIGN_SIZE);
+#endif
 		if (!skb)
 			break;
 
