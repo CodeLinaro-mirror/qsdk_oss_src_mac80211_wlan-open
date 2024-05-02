@@ -7302,11 +7302,6 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 	int ret;
 	u64 adjusted_tsf;
 
-#ifdef CPTCFG_MAC80211_SFE_SUPPORT
-	 if (skb->fast_xmit)
-                info_flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
-#endif
-
 	if (arvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ieee80211_free_txskb(ar->hw, skb);
 		return;
@@ -7319,6 +7314,13 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 
 	memset(skb_cb, 0, sizeof(*skb_cb));
 	skb_cb->vif = vif;
+
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
+	 if (skb->fast_xmit) {
+                info_flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
+		goto skip_regular_xmit;
+	}
+#endif
 
 	if (key) {
 		skb_cb->cipher = key->cipher;
@@ -7400,6 +7402,9 @@ static void ath11k_mac_op_tx(struct ieee80211_hw *hw,
 			skb_cb->flags |= ATH11K_SKB_F_NOACK_TID;
 	}
 
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
+skip_regular_xmit:
+#endif
 	if (ar->ab->nss.enabled)
 		ret = ath11k_nss_tx(arvif, skb);
 	else if (info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
