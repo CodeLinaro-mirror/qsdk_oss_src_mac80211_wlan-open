@@ -1018,9 +1018,9 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI vdev create: id %d type %d subtype %d macaddr %pM pdevid %d\n",
-		   args->if_id, args->type, args->subtype,
-		   macaddr, args->pdev_id);
+		   "WMI vdev create: id %d type %d subtype %d macaddr %pM pdevid %d vdev bitmap (allocate:0x%llx free:0x%llx)\n",
+		   args->if_id, args->type, args->subtype, macaddr, args->pdev_id,
+		   ar->allocated_vdev_map, ar->ab->free_vdev_map);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_CREATE_CMDID);
 	if (ret) {
@@ -1048,8 +1048,10 @@ int ath12k_wmi_vdev_delete(struct ath12k *ar, u8 vdev_id)
 						 sizeof(*cmd));
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI vdev delete id %d num_peers : %d\n",
-		   vdev_id, ar->num_peers);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev delete id %d num_peers : %d vdev bitmap (allocate:0x%llx free:0x%llx)\n",
+		   vdev_id, ar->num_peers, ar->allocated_vdev_map,
+		   ar->ab->free_vdev_map);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DELETE_CMDID);
 	if (ret) {
