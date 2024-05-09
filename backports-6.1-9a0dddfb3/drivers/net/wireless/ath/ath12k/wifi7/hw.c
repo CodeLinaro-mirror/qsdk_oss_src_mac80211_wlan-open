@@ -869,6 +869,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath12k_link_vif *tmp_arvif;
 	struct ath12k_sta *ahsta = NULL;
 	u32 info_flags = info->flags;
+	struct ieee80211_mgmt *mgmt;
 	struct sk_buff *msdu_copied;
 	struct ath12k *ar, *tmp_ar;
 	struct ath12k_pdev_dp *dp_pdev, *tmp_dp_pdev;
@@ -937,6 +938,14 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		is_eth = true;
 		skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
 	} else if (ieee80211_is_mgmt(hdr->frame_control)) {
+		if (is_prb_rsp && arvif->tbtt_offset) {
+			u64 adjusted_tsf;
+
+			mgmt = (struct ieee80211_mgmt *)skb->data;
+			adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
+			memcpy(&mgmt->u.probe_resp.timestamp, &adjusted_tsf,
+			       sizeof(adjusted_tsf));
+		}
 		ret = ath12k_mac_mgmt_tx(ar, skb, is_prb_rsp);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to queue management frame %d\n",

@@ -10879,6 +10879,143 @@ static void ath12k_wmi_rssi_dbm_conversion_param_info(struct ath12k_base *ab,
 		   rssi_offsets->rssi_offset);
 }
 
+static int ath12k_wmi_tbtt_offset_subtlv_parser(struct ath12k_base *ab, u16 tag,
+						u16 len, const void *ptr,
+						void *data)
+{
+	int ret = 0;
+	struct ath12k *ar;
+	u64 tx_delay = 0;
+	struct wmi_tbtt_offset_info *tbtt_offset_info;
+	struct ieee80211_chanctx_conf *conf;
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_bss_conf *link_conf;
+	struct ieee80211_vif *vif;
+
+	tbtt_offset_info = (struct wmi_tbtt_offset_info *)ptr;
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, tbtt_offset_info->vdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "ar not found, vdev_id %d\n", tbtt_offset_info->vdev_id);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	arvif = ath12k_mac_get_arvif(ar, tbtt_offset_info->vdev_id);
+	if (!arvif) {
+		ath12k_warn(ab, "arvif not found, vdev_id %d\n",
+			    tbtt_offset_info->vdev_id);
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	vif = arvif->ahvif->vif;
+	if (!arvif->is_up || arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+		ret = 0;
+		goto exit;
+	}
+
+	arvif->tbtt_offset = tbtt_offset_info->tbtt_offset;
+
+	if (!vif->link_conf[arvif->link_id]) {
+		ret = -ENOENT;
+		goto exit;
+	}
+
+	link_conf = wiphy_dereference(ath12k_ar_to_hw(ar)->wiphy,
+				      vif->link_conf[arvif->link_id]);
+
+	if (!link_conf) {
+		ret = -ENOENT;
+		goto exit;
+	}
+
+	if (link_conf->csa_active) {
+		ath12k_warn(ab, "Skip TBTT event since CSA is active\n");
+		goto exit;
+	}
+
+	conf = rcu_dereference(link_conf->chanctx_conf);
+	if (!conf) {
+		ret = -ENOENT;
+		goto exit;
+	}
+
+	if (conf->def.chan->band == NL80211_BAND_2GHZ) {
+		/* 1Mbps Beacon: */
+		/* 144 us ( LPREAMBLE) + 48 (PLCP Header)
+		 * + 192 (1Mbps, 24 ytes)
+		 * = 384 us + 2us(MAC/BB DELAY
+		 */
+		tx_delay = 386;
+	} else if (conf->def.chan->band == NL80211_BAND_5GHZ ||
+		   conf->def.chan->band == NL80211_BAND_6GHZ) {
+		/* 6Mbps Beacon: */
+		/* 20(lsig)+2(service)+32(6mbps, 24 bytes)
+		 * = 54us + 2us(MAC/BB DELAY)
+		 */
+		tx_delay = 56;
+	}
+	arvif->tbtt_offset -= tx_delay;
+	wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy, &arvif->update_bcn_template_work);
+exit:
+	rcu_read_unlock();
+	return ret;
+}
+
+static int ath12k_wmi_tbtt_offset_event_parser(struct ath12k_base *ab,
+					       u16 tag, u16 len,
+					       const void *ptr, void *data)
+{
+	int ret = 0;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wmi tbtt offset event tag 0x%x of len %d rcvd\n",
+		   tag, len);
+
+	switch (tag) {
+	case WMI_TAG_TBTT_OFFSET_EXT_EVENT:
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+					  ath12k_wmi_tbtt_offset_subtlv_parser,
+					  data);
+		break;
+	default:
+		ath12k_warn(ab, "Received invalid tag 0x%x for wmi tbtt offset event\n", tag);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+static int ath12k_wmi_pull_tbtt_offset(struct ath12k_base *ab, struct sk_buff *skb,
+				       struct wmi_tbtt_offset_ev_arg *arg)
+{
+	struct wmi_tbtt_offset_info tbtt_offset_info = {0};
+	int ret;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_tbtt_offset_event_parser,
+				  &tbtt_offset_info);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse tbtt tlv %d\n", ret);
+		return -EINVAL;
+	}
+	return 0;
+}
+
+void ath12k_wmi_event_tbttoffset_update(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	struct wmi_tbtt_offset_ev_arg arg = {};
+	int ret;
+
+	ret = ath12k_wmi_pull_tbtt_offset(ab, skb, &arg);
+	if (ret)
+		ath12k_warn(ab, "failed to parse tbtt offset event: %d\n", ret);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_cmd_hdr *cmd_hdr;
@@ -11016,8 +11153,10 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_PEER_CREATE_CONF_EVENTID:
 		ath12k_wmi_peer_create_conf_event(ab, skb);
 		break;
-	/* add Unsupported events (rare) here */
 	case WMI_TBTTOFFSET_EXT_UPDATE_EVENTID:
+		ath12k_wmi_event_tbttoffset_update(ab, skb);
+		break;
+	/* add Unsupported events (rare) here */
 	case WMI_PEER_OPER_MODE_CHANGE_EVENTID:
 	case WMI_PDEV_DMA_RING_CFG_RSP_EVENTID:
 		ath12k_dbg(ab, ATH12K_DBG_WMI,

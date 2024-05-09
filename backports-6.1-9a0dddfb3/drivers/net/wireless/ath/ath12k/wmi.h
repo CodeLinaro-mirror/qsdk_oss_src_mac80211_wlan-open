@@ -4517,6 +4517,24 @@ struct wmi_vdev_stopped_event {
 	__le32 vdev_id;
 } __packed;
 
+struct wmi_tbtt_offset_info {
+	u32 vdev_id;
+	u32 tbtt_offset;
+	u32 tbtt_qtime_low_us;
+	u32 tbtt_qtime_high_us;
+} __packed;
+
+struct wmi_tbtt_offset_event {
+	u32 num_vdevs;
+} __packed;
+
+struct wmi_tbtt_offset_ev_arg {
+	u32 vdev_id;
+	u32 tbtt_offset;
+	u32 tbtt_qtime_low_us;
+	u32 tbtt_qtime_high_us;
+} __packed;
+
 struct wmi_pdev_bss_chan_info_event {
 	__le32 freq;	/* Units in MHz */
 	__le32 noise_floor;	/* units are dBm */

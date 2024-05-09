@@ -1648,6 +1648,15 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 	arvif->wpaie_present = false;
 	arvif->beacon_prot = false;
 
+	/* Make the TSF offset negative so beacons in the same
+	 * staggered batch have the same TSF.
+	 */
+	if (arvif->tbtt_offset) {
+		u64 adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
+
+		memcpy(&mgmt->u.beacon.timestamp, &adjusted_tsf, sizeof(adjusted_tsf));
+	}
+
 	elem = cfg80211_find_elem(WLAN_EID_EXT_CAPABILITY, start, (skb_tail_pointer(bcn) - start));
 	if (elem && elem->datalen >= 11 &&
 			(elem->data[10] & WLAN_EXT_CAPA11_BCN_PROTECT))

@@ -383,6 +383,7 @@ struct ath12k_link_vif {
 	struct wiphy_work update_obss_color_notify_work;
 	struct wiphy_work update_bcn_template_work;
 	bool beacon_prot;
+	u64 tbtt_offset;
 };
 
 struct ath12k_dp_link_vif {
@@ -1154,7 +1155,6 @@ struct ath12k_base {
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_soc;
 #endif
-
 	unsigned long dev_flags;
 	struct completion driver_recovery;
 	struct workqueue_struct *workqueue;
