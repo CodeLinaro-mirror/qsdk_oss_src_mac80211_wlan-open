@@ -12892,6 +12892,20 @@ exit:
 	return ret;
 }
 
+int ath12k_is_mcs_rate_changed(enum nl80211_band band,
+			       const struct cfg80211_bitrate_mask *user_mask)
+{
+	if (user_mask->control[band].legacy_mcs_changed ||
+	    user_mask->control[band].ht_mcs_changed ||
+	    user_mask->control[band].vht_mcs_changed ||
+	    user_mask->control[band].he_mcs_changed ||
+	    user_mask->control[band].he_ul_mcs_changed ||
+	    user_mask->control[band].eht_mcs_changed)
+		return 1;
+
+	return 0;
+}
+
 int
 ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif, unsigned int link_id,
@@ -12986,6 +13000,9 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			goto out;
 		}
 
+		if(!ath12k_is_mcs_rate_changed(band, mask))
+			goto skip_mcs_set;
+
 		ieee80211_iterate_stations_mtx(hw,
 					       ath12k_mac_disable_peer_fixed_rate,
 					       arvif);
@@ -12994,6 +13011,9 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 		rate = WMI_FIXED_RATE_NONE;
 		nss = single_nss;
 		arvif->bitrate_mask = *mask;
+
+		if(!ath12k_is_mcs_rate_changed(band, mask))
+			goto skip_mcs_set;
 
 		ieee80211_iterate_stations_atomic(hw,
 						  ath12k_mac_set_bitrate_mask_iter,
@@ -13074,6 +13094,9 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			goto out;
 		}
 
+		if(!ath12k_is_mcs_rate_changed(band, mask))
+			goto skip_mcs_set;
+
 		ieee80211_iterate_stations_mtx(hw,
 					       ath12k_mac_disable_peer_fixed_rate,
 					       arvif);
@@ -13084,6 +13107,7 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 					       arvif);
 	}
 
+skip_mcs_set:
 	ret = ath12k_mac_set_rate_params(arvif, rate, nss, sgi, ldpc, he_gi,
 					 he_ltf, he_fixed_rate, eht_gi, eht_ltf,
 					 eht_fixed_rate, he_ul_rate, he_ul_nss);
