@@ -680,6 +680,8 @@ ath12k_wifi7_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 		return HAL_RX_BUF_RBM_WBM_DEV1_IDLE_DESC_LIST;
 	case 2:
 		return HAL_RX_BUF_RBM_WBM_DEV2_IDLE_DESC_LIST;
+	case 3:
+		return HAL_RX_BUF_RBM_WBM_DEV3_IDLE_DESC_LIST;
 	default:
 		ath12k_warn(hal,
 			    "invalid %d device id, so choose default rbm\n",

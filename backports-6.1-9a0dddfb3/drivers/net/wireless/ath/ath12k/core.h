@@ -74,6 +74,9 @@
 #define ATH12K_MAX_MLO_PEERS            256
 #define ATH12K_MLO_PEER_ID_INVALID      0xFFFF
 
+#define ATH12K_MAX_ADJACENT_CHIPS   2
+#define ATH12K_WSI_MAX_ARGS 4
+
 #define INVALID_CIPHER 0xFFFFFFFF
 
 #define ATH12K_PHY_2GHZ "phy00"
@@ -1139,6 +1142,8 @@ struct ath12k_hw_group {
 struct ath12k_wsi_info {
 	u32 index;
 	u32 hw_link_id_base;
+	u32 num_adj_chips;
+	u32 adj_chip_idxs[ATH12K_MAX_ADJACENT_CHIPS];
 };
 
 enum ath12k_device_family {

@@ -266,7 +266,7 @@ static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 		.elem_len       = 1,
 		.elem_size      = sizeof(u8),
 		.array_type	= NO_ARRAY,
-		.tlv_type       = 0,
+		.tlv_type       = 0x00,
 		.offset         = offsetof(struct wlfw_host_mlo_chip_info_s_v01,
 					   chip_id),
 	},
@@ -275,7 +275,7 @@ static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 		.elem_len       = 1,
 		.elem_size      = sizeof(u8),
 		.array_type	= NO_ARRAY,
-		.tlv_type       = 0,
+		.tlv_type       = 0x00,
 		.offset         = offsetof(struct wlfw_host_mlo_chip_info_s_v01,
 					   num_local_links),
 	},
@@ -284,7 +284,7 @@ static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 		.elem_len       = QMI_WLFW_MAX_NUM_MLO_LINKS_PER_CHIP_V01,
 		.elem_size      = sizeof(u8),
 		.array_type     = STATIC_ARRAY,
-		.tlv_type       = 0,
+		.tlv_type       = 0x00,
 		.offset         = offsetof(struct wlfw_host_mlo_chip_info_s_v01,
 					   hw_link_id),
 	},
@@ -293,9 +293,46 @@ static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 		.elem_len       = QMI_WLFW_MAX_NUM_MLO_LINKS_PER_CHIP_V01,
 		.elem_size      = sizeof(u8),
 		.array_type     = STATIC_ARRAY,
-		.tlv_type       = 0,
+		.tlv_type       = 0x00,
 		.offset         = offsetof(struct wlfw_host_mlo_chip_info_s_v01,
 					   valid_mlo_link_id),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type	= NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+static struct qmi_elem_info wlfw_host_mlo_chip_info_s_v02_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct wlfw_host_mlo_chip_info_s_v01),
+		.array_type	= NO_ARRAY,
+		.tlv_type       = 0x00,
+		.offset         = offsetof(struct wlfw_host_mlo_chip_info_s_v02,
+					   mlo_chip_info),
+		.ei_array       = wlfw_host_mlo_chip_info_s_v01_ei,
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type	= NO_ARRAY,
+		.tlv_type       = 0x00,
+		.offset         = offsetof(struct wlfw_host_mlo_chip_info_s_v02,
+					   num_adj_chips),
+	},
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = QMI_WLFW_MAX_NUM_MLO_ADJ_CHIPS_V01,
+		.elem_size      = sizeof(struct wlfw_host_mlo_chip_info_s_v01),
+		.array_type     = STATIC_ARRAY,
+		.tlv_type       = 0x00,
+		.offset         = offsetof(struct wlfw_host_mlo_chip_info_s_v02,
+					   mlo_adj_chip_info),
+		.ei_array       = wlfw_host_mlo_chip_info_s_v01_ei,
 	},
 	{
 		.data_type      = QMI_EOTI,
@@ -838,6 +875,25 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
 		.tlv_type       = 0x2E,
 		.offset         = offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
 					   fw_cfg_support),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x2F,
+		.offset         = offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+							mlo_chip_v2_info_valid),
+	},
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = QMI_WLFW_MAX_NUM_MLO_CHIPS_V01,
+		.elem_size      = sizeof(struct wlfw_host_mlo_chip_info_s_v02),
+		.array_type     = STATIC_ARRAY,
+		.tlv_type       = 0x2F,
+		.offset         = offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+							mlo_chip_info_v2),
+		.ei_array      = wlfw_host_mlo_chip_info_s_v02_ei,
 	},
 	{
 		.data_type	= QMI_EOTI,
@@ -3219,10 +3275,59 @@ static void ath12k_host_cap_hw_link_id_init(struct ath12k_hw_group *ag)
 	ag->hw_link_id_init_done = true;
 }
 
+
+static int ath12k_qmi_fill_adj_info(struct ath12k_base *ab,
+				    struct wlfw_host_mlo_chip_info_s_v02 *info)
+{
+	struct wlfw_host_mlo_chip_info_s_v01 *adj_info;
+	struct ath12k_base *adjacent_ab;
+	struct ath12k_hw_group *ag = ab->ag;
+	u32 chip_idx;
+	bool adj_ab_found = false;
+	int i, j;
+	int adj_index;
+
+	for (i = 0; i < info->num_adj_chips; i++) {
+		chip_idx = ab->wsi_info.adj_chip_idxs[i];
+		adj_info = &info->mlo_adj_chip_info[i];
+
+		for (j = 0; j < ag->num_devices; j++) {
+			adjacent_ab = ag->ab[j];
+
+			if (adjacent_ab->wsi_info.index == chip_idx) {
+				adj_ab_found = true;
+				break;
+			}
+		}
+
+		if (!adj_ab_found) {
+			ath12k_err(ab, "MLO adjacent ab for chip idx not found: %d\n", chip_idx);
+			return -EINVAL;
+		}
+
+		adj_info->chip_id = adjacent_ab->device_id;
+		adj_info->num_local_links = adjacent_ab->qmi.num_radios;
+
+		ath12k_dbg(ab, ATH12K_DBG_QMI, "MLO adj chip id %d num_link %d\n",
+			   adjacent_ab->device_id, adj_info->num_local_links);
+
+		for (adj_index = 0; adj_index < adj_info->num_local_links; adj_index++) {
+			adj_info->hw_link_id[adj_index] = adjacent_ab->wsi_info.hw_link_id_base + adj_index;
+			adj_info->valid_mlo_link_id[adj_index] = true;
+
+			ath12k_dbg(ab, ATH12K_DBG_QMI, "MLO adj chip link id %d\n",
+				   adj_info->hw_link_id[adj_index]);
+
+		}
+	}
+	return 0;
+}
+
 static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 				     struct qmi_wlanfw_host_cap_req_msg_v01 *req)
 {
-	struct wlfw_host_mlo_chip_info_s_v01 *info;
+	//struct wlfw_host_mlo_chip_info_s_v01 *info;
+	struct wlfw_host_mlo_chip_info_s_v02 *info;
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_base *partner_ab;
 	u8 hw_link_id = 0;
@@ -3278,7 +3383,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 		ath12k_host_cap_hw_link_id_init(ag);
 
 	for (i = 0; i < ag->num_devices; i++) {
-		info = &req->mlo_chip_info[i];
+		info = &req->mlo_chip_info_v2[i];
 		partner_ab = ag->ab[i];
 
 		if (partner_ab->device_id == ATH12K_INVALID_DEVICE_ID) {
@@ -3287,27 +3392,35 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 			goto device_cleanup;
 		}
 
-		info->chip_id = partner_ab->device_id;
-		info->num_local_links = partner_ab->qmi.num_radios;
+		info->mlo_chip_info.chip_id = partner_ab->device_id;
+		info->mlo_chip_info.num_local_links = partner_ab->qmi.num_radios;
+		info->num_adj_chips = ab->wsi_info.num_adj_chips;
 
 		ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo device id %d num_link %d\n",
-			   info->chip_id, info->num_local_links);
+			   info->mlo_chip_info.chip_id,
+			   info->mlo_chip_info.num_local_links);
 
-		for (j = 0; j < info->num_local_links; j++) {
-			info->hw_link_id[j] = partner_ab->wsi_info.hw_link_id_base + j;
-			info->valid_mlo_link_id[j] = 1;
+		for (j = 0; j < info->mlo_chip_info.num_local_links; j++) {
+			info->mlo_chip_info.hw_link_id[j] = partner_ab->wsi_info.hw_link_id_base + j;
+			info->mlo_chip_info.valid_mlo_link_id[j] = 1; //true
 
 			ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo hw_link_id %d\n",
-				   info->hw_link_id[j]);
+				   info->mlo_chip_info.hw_link_id[j]);
 
 			hw_link_id++;
+		}
+
+		ret = ath12k_qmi_fill_adj_info(partner_ab, info);
+		if (ret < 0) {
+			ath12k_err(ab, "failed to update adjacent information\n");
+			goto device_cleanup;
 		}
 	}
 
 	if (hw_link_id <= 0)
 		ag->mlo_capable = false;
 
-	req->mlo_chip_info_valid = 1;
+	req->mlo_chip_v2_info_valid = 1;
 
 	mutex_unlock(&ag->mutex);
 
@@ -3315,7 +3428,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 
 device_cleanup:
 	for (i = i - 1; i >= 0; i--) {
-		info = &req->mlo_chip_info[i];
+		info = &req->mlo_chip_info_v2[i];
 
 		memset(info, 0, sizeof(*info));
 	}

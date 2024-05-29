@@ -106,7 +106,6 @@ struct ath12k_coredump_segment_info {
         u8 bus_id;
 };
 
-#define ATH12K_MAX_SOCS 3
 struct ath12k_coredump_info {
         atomic_t num_chip;
         struct ath12k_coredump_segment_info chip_seg_info[ATH12K_MAX_SOCS];

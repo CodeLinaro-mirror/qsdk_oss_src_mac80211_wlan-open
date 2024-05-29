@@ -910,6 +910,7 @@ enum hal_rx_buf_return_buf_manager {
 	HAL_RX_BUF_RBM_SW4_BM,
 	HAL_RX_BUF_RBM_SW5_BM,
 	HAL_RX_BUF_RBM_SW6_BM,
+	HAL_RX_BUF_RBM_WBM_DEV3_IDLE_DESC_LIST,
 };
 
 enum hal_pn_type {

@@ -3781,7 +3781,7 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 	i = 0;
 
 	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
-		if (i >= ATH12K_WMI_MLO_MAX_LINKS)
+		if (i >= ATH12K_WMI_MLO_PEER_MAX_LINKS)
 			break;
 
 		arsta_p = rcu_dereference(ahsta->link[link_id]);

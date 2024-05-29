@@ -2360,6 +2360,8 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_WMSK_COMPACTION_RX_TLVS = 361,
 
 	WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT = 365,
+	WMI_TLV_SERVICE_N_LINK_MLO_SUPPORT = 381,
+	WMI_TLV_SERVICE_BRIDGE_VDEV_SUPPORT = 384,
 	WMI_TLV_SERVICE_RADAR_FLAGS_SUPPORT = 390,
 	WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI = 394,
 	WMI_SERVICE_WDS_NULL_FRAME_SUPPORT = 421,
@@ -4050,7 +4052,7 @@ struct peer_assoc_mlo_params {
 	u32 ml_peer_id;
 	u32 ieee_link_id;
 	u8 num_partner_links;
-	struct wmi_ml_partner_info partner_info[ATH12K_WMI_MLO_MAX_LINKS];
+	struct wmi_ml_partner_info partner_info[ATH12K_WMI_MLO_PEER_MAX_LINKS];
 	u16 eml_cap;
 };
 

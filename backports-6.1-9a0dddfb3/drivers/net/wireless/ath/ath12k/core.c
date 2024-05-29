@@ -2230,6 +2230,68 @@ static struct ath12k_hw_group *ath12k_core_hw_group_find_by_dt(struct ath12k_bas
 	return NULL;
 }
 
+#define ATH12K_BYPASSED_WSI_INDEX ATH12K_MAX_SOCS
+
+static bool
+ath12k_core_check_is_bypassed(struct ath12k_hw_group *ag, struct device_node *connected_dev) {
+	int i;
+	struct ath12k_base *ab;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+
+		if (ab->dev->of_node == connected_dev && ab->wsi_info.index == ATH12K_BYPASSED_WSI_INDEX)
+			return true;
+	}
+
+	return false;
+}
+
+/*
+@reg - use reg as 0 to get the right side neighbour (Connected to TX port),
+and 1 to get left side neighbour (Connected to RX port).
+*/
+
+static struct device_node *
+ath12k_get_connected_dev(struct ath12k_base *ab,int reg) {
+
+	struct device_node *endpoint, *next_endpoint, *connected_dev;
+	struct device_node *ab_dev = ab->dev->of_node;
+
+	connected_dev = ab_dev;
+
+	do {
+		endpoint = of_graph_get_endpoint_by_regs(connected_dev, reg, -1);
+
+		if (!endpoint)
+			return NULL;
+
+		next_endpoint = of_graph_get_remote_endpoint(endpoint);
+		if (!next_endpoint) {
+			of_node_put(next_endpoint);
+			return NULL;
+		}
+
+		of_node_put(endpoint);
+
+		connected_dev = of_graph_get_port_parent(next_endpoint);
+
+		if (!connected_dev) {
+			of_node_put(next_endpoint);
+			return NULL;
+		}
+
+		of_node_put(next_endpoint);
+		of_node_put(connected_dev);
+
+		if (!ath12k_core_check_is_bypassed(ab->ag, connected_dev))
+			return connected_dev;
+
+	} while (connected_dev != ab_dev);
+
+	return NULL;
+}
+
 static int ath12k_core_get_wsi_info(struct ath12k_hw_group *ag,
 				    struct ath12k_base *ab)
 {
@@ -2254,21 +2316,19 @@ static int ath12k_core_get_wsi_info(struct ath12k_hw_group *ag,
 
 		next_rx_endpoint = of_graph_get_remote_endpoint(tx_endpoint);
 		if (!next_rx_endpoint) {
-			of_node_put(next_wsi_dev);
+ 			of_node_put(next_wsi_dev);
 			of_node_put(tx_endpoint);
+			return -ENODEV;
+		}
+
+		next_wsi_dev = of_graph_get_port_parent(next_rx_endpoint);
+		if (!next_wsi_dev) {
+			of_node_put(next_wsi_dev);
 			return -ENODEV;
 		}
 
 		of_node_put(tx_endpoint);
 		of_node_put(next_wsi_dev);
-
-		next_wsi_dev = of_graph_get_port_parent(next_rx_endpoint);
-		if (!next_wsi_dev) {
-			of_node_put(next_rx_endpoint);
-			return -ENODEV;
-		}
-
-		of_node_put(next_rx_endpoint);
 
 		device_count++;
 		if (device_count > ATH12K_MAX_SOCS) {
@@ -2285,6 +2345,51 @@ static int ath12k_core_get_wsi_info(struct ath12k_hw_group *ag,
 	return 0;
 }
 
+static void ath12k_core_fill_adj_info(struct ath12k_base *ab) {
+
+	struct device_node* ab_dev = ab->dev->of_node;
+	struct device_node *tx_neighbour, *rx_neighbour;
+	struct ath12k_hw_group *ag = ab->ag;
+	int num_adj_chips = 0, i = 0;
+
+	tx_neighbour = ath12k_get_connected_dev(ab, 0);
+	if (!tx_neighbour) {
+		of_node_put(ab_dev);
+		return;
+	}
+
+	for (i = 0; i < ag->num_devices; i++) {
+		if (tx_neighbour == ag->ab[i]->dev->of_node) {
+			ab->wsi_info.adj_chip_idxs[num_adj_chips] = ag->ab[i]->wsi_info.index;
+			break;
+		}
+	}
+
+	num_adj_chips++;
+
+	rx_neighbour = ath12k_get_connected_dev(ab, 1);
+	if (!rx_neighbour) {
+		of_node_put(ab_dev);
+		return;
+	}
+
+	if (tx_neighbour != rx_neighbour) {
+
+		for (i = 0; i < ag->num_devices; i++) {
+			if (rx_neighbour == ag->ab[i]->dev->of_node) {
+				ab->wsi_info.adj_chip_idxs[num_adj_chips] = ag->ab[i]->wsi_info.index;
+				break;
+			}
+		}
+		num_adj_chips++;
+	}
+
+	of_node_put(tx_neighbour);
+	of_node_put(rx_neighbour);
+	of_node_put(ab_dev);
+
+	ab->wsi_info.num_adj_chips = num_adj_chips;
+}
 static int ath12k_core_get_wsi_index(struct ath12k_hw_group *ag,
 				     struct ath12k_base *ab)
 {
@@ -2502,6 +2607,8 @@ static int ath12k_core_hw_group_create(struct ath12k_hw_group *ag)
 			continue;
 
 		mutex_lock(&ab->core_lock);
+
+		ath12k_core_fill_adj_info(ab);
 
 		ret = ath12k_core_soc_create(ab);
 		if (ret) {
