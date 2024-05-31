@@ -14432,10 +14432,13 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		if (!ar->ab->hw_params->supports_monitor)
 			is_monitor_disable = true;
 
+		/* In non-MLO/SLO case ah->num_radio is 1, and ar->mac_addr is
+		 * assigned to ieee80211_hw. In MLO with ah->num_radio > 1,
+		 * in that case we take first ar mac_addr and assign to
+		 * ieee80211_hw.
+		 */
 		if (i == 0)
 			mac_addr = ar->mac_addr;
-		else
-			mac_addr = ab->mac_addr;
 
 		mbssid_max_interfaces += TARGET_NUM_VDEVS;
 	}
