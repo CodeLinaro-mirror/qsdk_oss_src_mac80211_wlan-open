@@ -527,6 +527,9 @@ static int ieee80211_key_replace(struct ieee80211_sub_if_data *sdata,
 			if (new &&
 			    !(new->conf.flags & IEEE80211_KEY_FLAG_NO_AUTO_TX))
 				_ieee80211_set_tx_key(new, true);
+			else if (old &&
+			         !(old->conf.flags & IEEE80211_KEY_FLAG_NO_AUTO_TX))
+				_ieee80211_set_tx_key(old, true);
 		} else {
 			rcu_assign_pointer(link_sta->gtk[idx], new);
 		}
