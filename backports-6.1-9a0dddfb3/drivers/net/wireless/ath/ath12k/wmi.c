@@ -5106,6 +5106,22 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->twt_ap_sta_count = cpu_to_le32(tg_cfg->twt_ap_sta_count);
 	wmi_cfg->flags2 = le32_encode_bits(tg_cfg->peer_metadata_ver,
 					   WMI_RSRC_CFG_FLAGS2_RX_PEER_METADATA_VERSION);
+
+	if (tg_cfg->afc_support) {
+		wmi_cfg->host_service_flags &= ~(1 << WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT);
+		wmi_cfg->host_service_flags |= 1 << WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT;
+	}
+
+	if (tg_cfg->afc_disable_timer_check) {
+		wmi_cfg->host_service_flags &= ~(1 << WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT);
+		wmi_cfg->host_service_flags |= 1 << WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT;
+	}
+
+	if (tg_cfg->afc_disable_req_id_check) {
+		wmi_cfg->host_service_flags &= ~(1 << WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT);
+		wmi_cfg->host_service_flags |= 1 << WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT;
+	}
+
 	wmi_cfg->host_service_flags = cpu_to_le32(tg_cfg->is_reg_cc_ext_event_supported <<
 				WMI_RSRC_CFG_HOST_SVC_FLAG_REG_CC_EXT_SUPPORT_BIT);
 	if (ab->hw_params->reoq_lut_support)
@@ -5127,6 +5143,13 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->ema_init_config =
 		cpu_to_le32(u32_encode_bits(tg_cfg->max_beacon_size,
 					    WMI_RSRC_CFG_EMA_INIT_CONFIG_BEACON_SIZE));
+}
+
+void ath12k_set_afc_config(struct ath12k_wmi_resource_config_arg *config)
+{
+	config->afc_support = ath12k_afc_test_enabled;
+	config->afc_disable_timer_check = ath12k_afc_disable_timer_check;
+	config->afc_disable_req_id_check = ath12k_afc_disable_req_id_check;
 }
 
 static int ath12k_init_cmd_send(struct ath12k_wmi_pdev *wmi,
@@ -5350,6 +5373,7 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 	if (test_bit(WMI_SERVICE_WDS_NULL_FRAME_SUPPORT, ab->wmi_ab.svc_map))
 		arg.res_cfg.is_wds_null_frame_supported = true;
 
+	ath12k_set_afc_config(&arg.res_cfg);
 	ab->hw_params->wmi_init(ab, &arg.res_cfg);
 	ab->wow.wmi_conf_rx_decap_mode = arg.res_cfg.rx_decap_mode;
 

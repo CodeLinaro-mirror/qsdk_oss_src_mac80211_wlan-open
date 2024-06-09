@@ -2402,6 +2402,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_DCS_AWGN_INT_SUPPORT = 286,
 
 	WMI_TLV_SERVICE_11BE = 289,
+	WMI_TLV_SERVICE_AFC_SUPPORT = 295,
 
 	WMI_TLV_SERVICE_WMSK_COMPACTION_RX_TLVS = 361,
 
@@ -2655,6 +2656,9 @@ struct ath12k_wmi_resource_config_arg {
 	bool is_wds_null_frame_supported;
 	bool is_full_bw_nol_feature_supported;
 	u32 max_beacon_size;
+	u32 afc_support;
+	u32 afc_disable_timer_check;
+	u32 afc_disable_req_id_check;
 };
 
 struct ath12k_wmi_init_cmd_arg {
@@ -2725,6 +2729,9 @@ struct wmi_init_cmd {
 #define WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT BIT(25)
 #define WMI_PDEV_MEC_AGING_TIMER_THRESHOLD_VALUE 5000
 #define WMI_RSRC_CFG_EMA_INIT_CONFIG_BEACON_SIZE               GENMASK(15, 0)
+#define WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT              7
+#define WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT             8
+#define WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT            9
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;

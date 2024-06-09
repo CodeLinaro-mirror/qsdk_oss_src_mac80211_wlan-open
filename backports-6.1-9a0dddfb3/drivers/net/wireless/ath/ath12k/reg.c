@@ -18,6 +18,11 @@
 #define ETSI_WEATHER_RADAR_BAND_HIGH		5650
 #define ETSI_WEATHER_RADAR_BAND_CAC_TIMEOUT	600000
 
+/* These variables need to assigned to true for enabling Proxy AFC, else 0 */
+bool ath12k_afc_disable_timer_check = true;
+bool ath12k_afc_disable_req_id_check = true;
+bool ath12k_afc_test_enabled = true;
+
 static const struct ieee80211_regdomain ath12k_world_regd = {
 	.n_reg_rules = 3,
 	.alpha2 = "00",

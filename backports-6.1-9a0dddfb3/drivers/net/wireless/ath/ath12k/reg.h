@@ -16,6 +16,10 @@ struct ath12k;
 #define ATH12K_2GHZ_MAX_FREQUENCY	2495
 #define ATH12K_5GHZ_MAX_FREQUENCY	5920
 
+extern bool ath12k_afc_disable_timer_check;
+extern bool ath12k_afc_disable_req_id_check;
+extern bool ath12k_afc_test_enabled;
+
 /* DFS regdomains supported by Firmware */
 enum ath12k_dfs_region {
 	ATH12K_DFS_REG_UNSET,
