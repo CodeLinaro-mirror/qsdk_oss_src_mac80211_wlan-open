@@ -197,6 +197,9 @@ struct wmi_vdev_set_tpc_power_cmd {
 
 #define WMI_BA_MODE_BUFFER_SIZE_256  3
 
+#define WMI_AFC_LOW_FREQUENCY                  GENMASK(15, 0)
+#define WMI_AFC_HIGH_FREQUENCY                 GENMASK(31, 16)
+
 /* HW mode config type replicated from FW header
  * @WMI_HOST_HW_MODE_SINGLE: Only one PHY is active.
  * @WMI_HOST_HW_MODE_DBS: Both PHYs are active in different bands,
@@ -996,6 +999,7 @@ enum wmi_tlv_event_id {
 	WMI_REG_CHAN_LIST_CC_EVENTID = WMI_TLV_CMD(WMI_GRP_REGULATORY),
 	WMI_11D_NEW_COUNTRY_EVENTID,
 	WMI_REG_CHAN_LIST_CC_EXT_EVENTID,
+	WMI_AFC_EVENTID,
 	WMI_NDI_CAP_RSP_EVENTID = WMI_TLV_CMD(WMI_GRP_PROTOTYPE),
 	WMI_NDP_INITIATOR_RSP_EVENTID,
 	WMI_NDP_RESPONDER_RSP_EVENTID,
@@ -2129,6 +2133,12 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_VDEV_CREATE_PARAMS = 0x3D7,
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
 	WMI_TAG_PDEV_SET_BIOS_GEO_TABLE_CMD = 0x3D9,
+	WMI_TAG_AFC_EVENT_FIXED_PARAM,
+	WMI_TAG_AFC_EXPIRY_EVENT_PARAM,
+	WMI_TAG_AFC_POWER_EVENT_PARAM,
+	WMI_TAG_AFC_6GHZ_FREQUENCY_INFO,
+	WMI_TAG_AFC_6GHZ_CHANNEL_INFO,
+	WMI_TAG_AFC_CHAN_EIRP_POWER_INFO,
 	WMI_TAG_BCN_TMPL_ML_PARAMS_CMD = 0x3E6,
 	WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS = 0x3E9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
@@ -6677,6 +6687,38 @@ struct wmi_prb_resp_tmpl_ml_info_params {
 #define ATH12K_UPPER_32_MASK			GENMASK_ULL(63, 32)
 #define ATH12K_GET_LOWER_32_BITS(val)		(val & ATH12K_LOWER_32_MASK)
 #define ATH12K_GET_UPPER_32_BITS(val)		((val & ATH12K_UPPER_32_MASK) >> 32)
+
+struct wmi_6ghz_afc_frequency_info {
+	__le32 tlv_header;
+	__le32 freq_info;
+	__le32 psd_power_info;
+} __packed;
+
+struct wmi_afc_chan_eirp_power_info {
+	__le32 tlv_header;
+	__le32 channel_cfi;
+	__le32 eirp_pwr;
+} __packed;
+
+struct wmi_6ghz_afc_channel_info {
+	__le32 tlv_header;
+	__le32 global_operating_class;
+	__le32 num_channels;
+} __packed;
+
+struct wmi_afc_event_fixed_param {
+	__le32 pdev_id;
+	__le32 event_type;
+} __packed;
+
+struct wmi_afc_power_event_param {
+	__le32 fw_status_code;
+	__le32 resp_id;
+	__le32 afc_serv_resp_code;
+	__le32 afc_wfa_version;
+	__le32 avail_exp_time_d;
+	__le32 avail_exp_time_t;
+};
 
 #define ATH12K_FW_STATS_BUF_SIZE (1024 * 1024)
 

@@ -547,6 +547,96 @@ static u32 ath12k_map_fw_phy_flags(u32 phy_flags)
 	return flags;
 }
 
+static void ath12k_reg_intersect_sp_rules(struct ath12k *ar,
+					  struct ieee80211_reg_rule *rule1,
+					  struct ieee80211_reg_rule *rule2,
+					  struct ieee80211_reg_rule *new_rule)
+{
+	u32 start_freq1, end_freq1;
+	u32 start_freq2, end_freq2;
+	u32 freq_diff;
+
+	start_freq1 = rule1->freq_range.start_freq_khz;
+	start_freq2 = rule2->freq_range.start_freq_khz;
+
+	end_freq1 = rule1->freq_range.end_freq_khz;
+	end_freq2 = rule2->freq_range.end_freq_khz;
+
+	new_rule->freq_range.start_freq_khz = max_t(u32, start_freq1,
+						    start_freq2);
+
+	new_rule->freq_range.end_freq_khz = min_t(u32, end_freq1, end_freq2);
+
+	freq_diff = new_rule->freq_range.end_freq_khz -
+		new_rule->freq_range.start_freq_khz;
+	new_rule->freq_range.max_bandwidth_khz =
+		min_t(u32, freq_diff, rule1->freq_range.max_bandwidth_khz);
+	new_rule->power_rule.max_eirp = rule1->power_rule.max_eirp;
+	/* Use the flags of both the rules */
+	new_rule->flags = rule1->flags | rule2->flags;
+
+	if ((rule1->flags & NL80211_RRF_PSD) && (rule2->flags & NL80211_RRF_PSD))
+		new_rule->psd = min_t(s8, rule1->psd, rule2->psd);
+	else
+		new_rule->flags &= ~NL80211_RRF_PSD;
+
+	new_rule->mode = NL80211_REG_AP_SP;
+
+	/* To be safe, lets use the max cac timeout of both rules */
+	new_rule->dfs_cac_ms = max_t(u32, rule1->dfs_cac_ms,
+				     rule2->dfs_cac_ms);
+	ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+		   "Adding sp rule start freq %u end freq %u mac bw %u max eirp %d psd %d flags 0x%x\n",
+		   new_rule->freq_range.start_freq_khz,
+		   new_rule->freq_range.end_freq_khz,
+		   new_rule->freq_range.max_bandwidth_khz,
+		   new_rule->power_rule.max_eirp, new_rule->psd, new_rule->flags);
+}
+
+/* ath12k_reg_can_intersect() - Check whether two ieee80211_reg_rules can
+ * intersect or not based on their frequency range and power mode.
+ *
+ * @rule1: Pointer to rule1
+ * @rule2: Pointer to rule2
+ *
+ * Return: Return true if 2 rules can be intersected else false
+ **/
+static bool
+ath12k_reg_can_intersect(struct ieee80211_reg_rule *rule1,
+			 struct ieee80211_reg_rule *rule2)
+{
+	u32 start_freq1, end_freq1;
+	u32 start_freq2, end_freq2;
+ 	u8 reg_6ghz_pwr_mode1, reg_6ghz_pwr_mode2;
+
+	start_freq1 = rule1->freq_range.start_freq_khz;
+	start_freq2 = rule2->freq_range.start_freq_khz;
+
+	end_freq1 = rule1->freq_range.end_freq_khz;
+	end_freq2 = rule2->freq_range.end_freq_khz;
+
+	reg_6ghz_pwr_mode1 = rule1->mode;
+	reg_6ghz_pwr_mode2 = rule2->mode;
+
+	/* 6G reg rules can not intersect if power mode is not same.
+	 * NOTE: For 2G/5G rules, it will be always 0.
+	 */
+	if (reg_6ghz_pwr_mode1 != reg_6ghz_pwr_mode2)
+		return false;
+
+	if ((start_freq1 >= start_freq2 && start_freq1 < end_freq2) ||
+	    (start_freq2 > start_freq1 && start_freq2 < end_freq1))
+		return true;
+
+	/* TODO: Should we restrict intersection feasibility
+	 *  based on min bandwidth of the intersected region also,
+	 *  say the intersected rule should have a  min bandwidth
+	 * of 20MHz?
+	 */
+
+	return false;
+}
+
 static const char *
 ath12k_reg_get_regdom_str(enum nl80211_dfs_regions dfs_region)
 {
@@ -859,6 +949,200 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 
 ret:
 	return new_regd;
+}
+
+/* ath12k_reg_coalesce_afc_freq_info() - Coalesce the freq info objects received
+ * in the AFC power event.
+ *
+ * @afc_reg_info: Pointer to AFC response
+ *
+ * When freq info objects are a continuous sequence, coalesce them. The max_psd
+ * of the coalesced freq info obj should be the minimum of all psd values of the
+ * freq info objects that are being coalesced.
+ * Eg: If the freq info objects are as follows
+ * {freq_low: 6330, freq_high: 6361, max_psd: 11}
+ * {freq_low: 6361, freq_high: 6425, max_psd: 23}
+ * {freq_low: 6525, freq_high: 6540, max_psd: 23}
+ * {freq_low: 6540, freq_high: 6570, max_psd: 22}
+ *
+ * These should be coalesced into
+ * {freq_low: 6330, freq_high: 6425, max_psd: 11}
+ * {freq_low: 6525, freq_high: 6570, max_psd: 22}
+ **/
+static void
+ath12k_reg_coalesce_afc_freq_info(struct ath12k_afc_sp_reg_info *afc_reg_info)
+{
+	struct ath12k_afc_freq_obj *afc_freq_info = afc_reg_info->afc_freq_info;
+	u8 num_freq_objs = afc_reg_info->num_freq_objs;
+	int start_idx = 0;
+	int next_idx = start_idx + 1;
+
+	while (next_idx < num_freq_objs) {
+		if (afc_freq_info[start_idx].high_freq ==
+		    afc_freq_info[next_idx].low_freq) {
+			afc_freq_info[start_idx].high_freq = afc_freq_info[next_idx].high_freq;
+			afc_freq_info[start_idx].max_psd = min(afc_freq_info[start_idx].max_psd,
+							       afc_freq_info[next_idx].max_psd);
+			next_idx++;
+			afc_reg_info->num_freq_objs--;
+		} else {
+			start_idx++;
+			afc_freq_info[start_idx].low_freq = afc_freq_info[next_idx].low_freq;
+			afc_freq_info[start_idx].high_freq = afc_freq_info[next_idx].high_freq;
+			afc_freq_info[start_idx].max_psd = afc_freq_info[next_idx].max_psd;
+			next_idx++;
+		}
+	}
+}
+
+int ath12k_reg_process_afc_power_event(struct ath12k *ar)
+{
+	int new_reg_rule_cnt, num_regd_rules, num_afc_rules, num_sp_rules;
+	int ret = 0, num_old_sp_rules = 0, num_new_sp_rules = 0;
+	struct ieee80211_reg_rule *old_rule, *new_regd_rules;
+	struct ath12k_afc_sp_reg_info *afc_reg_info = NULL;
+	struct ath12k_6ghz_sp_reg_rule *sp_rule = NULL;
+	struct ieee80211_regdomain *new_regd = NULL;
+	struct ieee80211_regdomain *old_regd = NULL;
+	struct ath12k_afc_freq_obj *afc_freq_info;
+	struct ath12k_afc_freq_obj *afc_freq_obj;
+	struct ieee80211_reg_rule new_rule = {0};
+	struct ieee80211_regdomain *regd = NULL;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_hw *ah = ar->ah;
+	int i, j, k, pdev_idx;
+	char alpha2[3] = {0};
+
+	pdev_idx = ar->pdev_idx;
+
+	if (!ab->sp_rule || !ar->afc.afc_reg_info)
+		return -EINVAL;
+
+	spin_lock_bh(&ar->data_lock);
+	sp_rule = ab->sp_rule;
+	afc_reg_info = ar->afc.afc_reg_info;
+	afc_freq_info = afc_reg_info->afc_freq_info;
+
+	if (afc_reg_info->fw_status_code != REG_FW_AFC_POWER_EVENT_SUCCESS) {
+		ath12k_warn(ab, "AFC Power event failure status code %d",
+			    afc_reg_info->fw_status_code);
+		ret = -EINVAL;
+		goto end;
+	}
+
+	if (!sp_rule->num_6ghz_sp_rule) {
+		ath12k_warn(ab, "No default 6 GHz sp rules present\n");
+		ret = -EINVAL;
+		goto end;
+	}
+
+	ar->afc.is_6ghz_afc_power_event_received = true;
+
+	if (ab->new_regd[pdev_idx])
+		regd = ab->new_regd[pdev_idx];
+	else
+		regd = ab->default_regd[pdev_idx];
+
+	if (!regd) {
+		ath12k_warn(ab, "Regulatory domain data not present\n");
+		ret = -EINVAL;
+		goto end;
+	}
+
+	num_sp_rules = ab->sp_rule->num_6ghz_sp_rule;
+	num_regd_rules = regd->n_reg_rules;
+	ath12k_reg_coalesce_afc_freq_info(afc_reg_info);
+	num_afc_rules = afc_reg_info->num_freq_objs;
+
+	for (i = 0; i < num_regd_rules; i++) {
+		old_rule = regd->reg_rules + i;
+		if (old_rule->mode == NL80211_REG_AP_SP)
+			num_old_sp_rules++;
+	}
+
+	for (i = 0; i < num_sp_rules; i++) {
+		old_rule = sp_rule->sp_reg_rule + i;
+
+		for (j = 0; j < num_afc_rules; j++) {
+			afc_freq_obj = afc_freq_info + j;
+			new_rule.freq_range.start_freq_khz =
+						MHZ_TO_KHZ(afc_freq_obj->low_freq);
+			new_rule.freq_range.end_freq_khz =
+						MHZ_TO_KHZ(afc_freq_obj->high_freq);
+			new_rule.mode = NL80211_REG_AP_SP;
+			if (ath12k_reg_can_intersect(old_rule, &new_rule))
+				num_new_sp_rules++;
+		}
+	}
+
+	/* Remove the old sp rule from regd and add the new intersected sp rules */
+	new_reg_rule_cnt = num_regd_rules  - num_old_sp_rules + num_new_sp_rules;
+	ath12k_dbg(ab, ATH12K_DBG_AFC,
+		   "Total reg rules %d old sp rules %d new sp rules after intersection %d\n",
+		   num_regd_rules, num_old_sp_rules, num_new_sp_rules);
+
+	new_regd = kzalloc(sizeof(*new_regd) +
+			   (sizeof(*new_regd_rules) * new_reg_rule_cnt),
+			   GFP_ATOMIC);
+	if (!new_regd) {
+		ret = -ENOMEM;
+		goto end;
+	}
+
+	new_regd->n_reg_rules = new_reg_rule_cnt;
+	memcpy(new_regd->alpha2, regd->alpha2, REG_ALPHA2_LEN + 1);
+	memcpy(alpha2, regd->alpha2, REG_ALPHA2_LEN + 1);
+	alpha2[2] = '\0';
+	new_regd->dfs_region = regd->dfs_region;
+	ath12k_dbg(ab, ATH12K_DBG_AFC,
+		   "\nAFC: Country %s, CFG Regdomain %s, num_reg_rules %d\n",
+		   alpha2, ath12k_reg_get_regdom_str(new_regd->dfs_region),
+		   new_reg_rule_cnt);
+	k = 0;
+	for (i = 0; i < num_regd_rules; i++) {
+		old_rule = regd->reg_rules + i;
+
+		if (old_rule->mode == NL80211_REG_AP_SP) {
+			continue;
+		} else {
+			memcpy((new_regd->reg_rules + k), old_rule, sizeof(*new_regd_rules));
+			k++;
+		}
+	}
+
+	for (i = 0; i < num_sp_rules; i++) {
+		old_rule = sp_rule->sp_reg_rule + i;
+		for (j = 0; j < num_afc_rules; j++) {
+			afc_freq_obj = afc_freq_info + j;
+				new_rule.freq_range.start_freq_khz =
+						MHZ_TO_KHZ(afc_freq_obj->low_freq);
+				new_rule.freq_range.end_freq_khz =
+						MHZ_TO_KHZ(afc_freq_obj->high_freq);
+				new_rule.mode = NL80211_REG_AP_SP;
+				if (ath12k_reg_can_intersect(old_rule, &new_rule)) {
+					new_rule.psd = (s8)(afc_freq_obj->max_psd / 100);
+					new_rule.flags |= NL80211_RRF_PSD;
+					ath12k_reg_intersect_sp_rules(ar, old_rule, &new_rule,
+								      new_regd->reg_rules + k);
+					k++;
+				}
+			}
+	}
+
+	spin_unlock_bh(&ar->data_lock);
+
+	spin_lock_bh(&ab->base_lock);
+	old_regd = ab->new_regd[pdev_idx];
+	ab->new_regd[pdev_idx] = new_regd;
+	spin_unlock_bh(&ab->base_lock);
+	kfree(old_regd);
+
+	ah->regd_updated = false;
+	queue_work(ab->workqueue, &ar->regd_update_work);
+	return ret;
+end:
+	spin_unlock_bh(&ar->data_lock);
+	return ret;
 }
 
 void ath12k_regd_update_work(struct work_struct *work)

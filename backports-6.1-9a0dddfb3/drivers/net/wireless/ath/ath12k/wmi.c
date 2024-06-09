@@ -6347,6 +6347,327 @@ static int ath12k_pull_vdev_start_resp_tlv(struct ath12k_base *ab, struct sk_buf
 	return 0;
 }
 
+static void ath12k_free_afc_power_event_info(struct ath12k_afc_info *afc)
+{
+	struct ath12k *ar = container_of(afc, struct ath12k, afc);
+	struct ath12k_afc_sp_reg_info *afc_reg_info;
+	struct ath12k_afc_chan_obj *afc_chan_info;
+	struct ath12k_base *ab = ar->ab;
+	int num_chan_objs = 0;
+	int i;
+
+	if (!afc->afc_reg_info)
+		return;
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "Freeing afc info\n");
+	spin_lock_bh(&ar->data_lock);
+	afc_reg_info = afc->afc_reg_info;
+	num_chan_objs = afc_reg_info->num_chan_objs;
+	kfree(afc_reg_info->afc_freq_info);
+
+	for (i = 0; i < num_chan_objs; i++) {
+		afc_chan_info = afc_reg_info->afc_chan_info + i;
+		kfree(afc_chan_info->chan_eirp_info);
+	}
+
+	kfree(afc_reg_info->afc_chan_info);
+	kfree(afc_reg_info);
+	afc->afc_reg_info = NULL;
+	spin_unlock_bh(&ar->data_lock);
+}
+
+static int ath12k_copy_afc_power_event_fixed_info(struct ath12k_base *ab,
+						  struct ath12k_afc_info *afc,
+						  const void *ptr,
+						  u16 len)
+{
+	struct wmi_afc_power_event_param *afc_pwr_param;
+	struct ath12k_afc_sp_reg_info *afc_reg_info;
+
+	afc_pwr_param = (struct wmi_afc_power_event_param *)ptr;
+	afc_reg_info = kzalloc(sizeof(*afc_reg_info), GFP_ATOMIC);
+
+	if (!afc_reg_info)
+		return -ENOMEM;
+
+	afc_reg_info->fw_status_code =
+				le32_to_cpu(afc_pwr_param->fw_status_code);
+	afc_reg_info->resp_id = le32_to_cpu(afc_pwr_param->resp_id);
+	afc_reg_info->serv_resp_code =
+				le32_to_cpu(afc_pwr_param->afc_serv_resp_code);
+	afc_reg_info->afc_wfa_version =
+				le32_to_cpu(afc_pwr_param->afc_wfa_version);
+	afc_reg_info->avail_exp_time_d =
+				le32_to_cpu(afc_pwr_param->avail_exp_time_d);
+	afc_reg_info->avail_exp_time_t =
+				le32_to_cpu(afc_pwr_param->avail_exp_time_t);
+	afc->afc_reg_info = afc_reg_info;
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC,
+		   "pwr event-fw status %d req id %d server resp code %d wfa version %d expiry date %d time %d\n",
+		   afc_reg_info->fw_status_code, afc_reg_info->resp_id,
+		   afc_reg_info->serv_resp_code, afc_reg_info->afc_wfa_version,
+		   afc_reg_info->avail_exp_time_d, afc_reg_info->avail_exp_time_t);
+	return 0;
+}
+
+static int ath12k_wmi_afc_fill_freq_obj(struct ath12k_base *ab,
+					const void *ptr, u16 len,
+					struct ath12k_afc_info *afc)
+{
+	struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
+	struct wmi_6ghz_afc_frequency_info *freq_buf = NULL;
+	struct ath12k_afc_freq_obj *freq_obj = NULL;
+	int i;
+
+	if (!afc_reg_info->num_freq_objs) {
+		ath12k_warn(ab, "No freq objects in afc power event\n");
+		return -EINVAL;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "Num afc freq obj received %d\n",
+		   afc_reg_info->num_freq_objs);
+	freq_obj = kzalloc(afc_reg_info->num_freq_objs * sizeof(*freq_obj),
+			   GFP_ATOMIC);
+	if (!freq_obj)
+		return -ENOMEM;
+
+	freq_buf = (struct wmi_6ghz_afc_frequency_info *)ptr;
+	for (i = 0; i < afc_reg_info->num_freq_objs; i++) {
+		freq_obj[i].low_freq =
+				le32_to_cpu(u32_get_bits(freq_buf[i].freq_info,
+							 WMI_AFC_LOW_FREQUENCY));
+		freq_obj[i].high_freq =
+				le32_to_cpu(u32_get_bits(freq_buf[i].freq_info,
+							 WMI_AFC_HIGH_FREQUENCY));
+		freq_obj[i].max_psd = le32_to_cpu(freq_buf[i].psd_power_info);
+		ath12k_dbg(ab, ATH12K_DBG_AFC,
+			   "Freq obj: low: %d high: %d psd: %d\n",
+			   freq_obj[i].low_freq, freq_obj[i].high_freq,
+			   freq_obj[i].max_psd);
+	}
+
+	afc_reg_info->afc_freq_info = freq_obj;
+
+	return 0;
+}
+
+static int ath12k_wmi_afc_fill_chan_obj(struct ath12k_base *ab,
+					const void *ptr, u16 len,
+					struct ath12k_afc_info *afc)
+{
+	struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
+	struct ath12k_afc_chan_obj *chan_obj = NULL;
+	struct ath12k_chan_eirp_obj *eirp_info = NULL;
+	struct wmi_6ghz_afc_channel_info *chan_buf = NULL;
+	int i;
+
+	if (!afc_reg_info->num_chan_objs) {
+		ath12k_warn(ab, "No channel objects in afc power event\n");
+		return -EINVAL;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "Num chan objects received %d\n",
+		   afc_reg_info->num_chan_objs);
+	chan_obj = kzalloc(afc_reg_info->num_chan_objs * sizeof(*chan_obj),
+			   GFP_ATOMIC);
+	if (!chan_obj)
+		return -ENOMEM;
+
+	chan_buf = (struct wmi_6ghz_afc_channel_info *)ptr;
+	for (i = 0; i < afc_reg_info->num_chan_objs; i++) {
+		chan_obj[i].global_opclass =
+			le32_to_cpu(chan_buf[i].global_operating_class);
+		chan_obj[i].num_chans =
+				le32_to_cpu(chan_buf[i].num_channels);
+		ath12k_dbg(ab, ATH12K_DBG_AFC,
+			   "Chan obj %d  global_opclass : %d num_chans %d\n", i,
+			   chan_obj[i].global_opclass, chan_obj[i].num_chans);
+		eirp_info = kzalloc(chan_obj[i].num_chans * sizeof(*eirp_info),
+				    GFP_ATOMIC);
+		if (!eirp_info)
+			return -ENOMEM;
+
+		chan_obj[i].chan_eirp_info = eirp_info;
+	}
+
+	afc_reg_info->afc_chan_info = chan_obj;
+
+	return 0;
+}
+
+static int ath12k_wmi_afc_fill_chan_eirp_obj(struct ath12k_base *ab,
+					     const void *ptr, u16 len,
+					     struct ath12k_afc_info *afc,
+					     u32 total_eirp_info)
+{
+	struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
+	struct wmi_afc_chan_eirp_power_info *eirp_buf = NULL;
+	struct ath12k_afc_chan_obj *chan_info = NULL;
+	struct ath12k_chan_eirp_obj *eirp_obj;
+	int eirp_count, idx1, idx2, count = 0;
+
+	eirp_buf = (struct wmi_afc_chan_eirp_power_info *)ptr;
+	chan_info = afc_reg_info->afc_chan_info;
+	for (idx1 = 0; idx1 < afc_reg_info->num_chan_objs; ++idx1) {
+		eirp_obj = chan_info[idx1].chan_eirp_info;
+		eirp_count = le32_to_cpu(chan_info[idx1].num_chans);
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "Chan obj %d Chan eirp count %d\n",
+			   idx1, eirp_count);
+		for (idx2 = 0; idx2 < eirp_count; ++idx2) {
+			eirp_obj[idx2].cfi =
+				le32_to_cpu(eirp_buf[count].channel_cfi);
+			eirp_obj[idx2].eirp_power =
+					le32_to_cpu(eirp_buf[count].eirp_pwr);
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "Chan eirp obj %d CFI %d EIRP %d\n",
+			   idx2, eirp_obj[idx2].cfi, eirp_obj[idx2].eirp_power);
+			++count;
+		}
+	}
+
+	return 0;
+}
+
+static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
+				       u16 tag, u16 len,
+				       const void *ptr, void *data)
+{
+	struct ath12k_afc_info *afc = (struct ath12k_afc_info *)data;
+	int total_eirp_obj, sub_tlv_size, ret = 0;
+	struct wmi_tlv *tlv;
+	u16 tlv_tag;
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "AFC event tag 0x%x of len %d type %d\n",
+		   tag, len, afc->event_type);
+
+	switch (tag) {
+	case WMI_TAG_AFC_EVENT_FIXED_PARAM:
+		/* Fixed param is already processed */
+		break;
+	case WMI_TAG_AFC_EXPIRY_EVENT_PARAM:
+		/* TBD */
+		break;
+	case WMI_TAG_AFC_POWER_EVENT_PARAM:
+		if (len == 0)
+			return 0;
+
+		if (afc->event_type != ATH12K_AFC_EVENT_POWER_INFO)
+			return 0;
+
+		ret = ath12k_copy_afc_power_event_fixed_info(ab, afc, ptr, len);
+		if (ret) {
+			ath12k_warn(ab, "Failed to copy power event fixed info\n");
+			return ret;
+		}
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
+
+		if (len == 0)
+			return 0;
+
+		tlv = (struct wmi_tlv *)ptr;
+		tlv_tag = u32_get_bits(tlv->header, WMI_TLV_TAG);
+
+		if (tlv_tag == WMI_TAG_AFC_6GHZ_FREQUENCY_INFO) {
+			sub_tlv_size = sizeof(struct wmi_6ghz_afc_frequency_info);
+			afc_reg_info->num_freq_objs = len / sub_tlv_size;
+			ret = ath12k_wmi_afc_fill_freq_obj(ab, ptr, len, afc);
+		} else if (tlv_tag == WMI_TAG_AFC_6GHZ_CHANNEL_INFO) {
+			sub_tlv_size = sizeof(struct wmi_6ghz_afc_channel_info);
+			afc_reg_info->num_chan_objs = len / sub_tlv_size;
+			ret = ath12k_wmi_afc_fill_chan_obj(ab, ptr, len, afc);
+		} else if (tlv_tag == WMI_TAG_AFC_CHAN_EIRP_POWER_INFO) {
+			sub_tlv_size = sizeof(struct wmi_afc_chan_eirp_power_info);
+			total_eirp_obj = len / sub_tlv_size;
+			ret =  ath12k_wmi_afc_fill_chan_eirp_obj(ab, ptr, len, afc,
+								 total_eirp_obj);
+		}
+		break;
+	default:
+		ath12k_warn(ab, "Unknown afc event tag %d\n", tag);
+		return -EINVAL;
+	}
+
+	return ret;
+}
+
+static struct ath12k *ath12k_wmi_afc_process_fixed_param(struct ath12k_base *ab,
+							 void *ptr, size_t len)
+{
+	struct wmi_afc_event_fixed_param *fixed_param;
+	const struct wmi_tlv *tlv;
+	struct ath12k *ar = NULL;
+	u16 tlv_tag;
+	u8 pdev_id;
+
+	if (!ptr) {
+		ath12k_warn(ab, "No data present in afc event\n");
+		return NULL;
+	}
+
+	if (len < (sizeof(*fixed_param) + TLV_HDR_SIZE)) {
+		ath12k_warn(ab, "afc event size invalid\n");
+		return NULL;
+	}
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv_tag = u32_get_bits(tlv->header, WMI_TLV_TAG);
+	ptr += sizeof(*tlv);
+
+	if (tlv_tag == WMI_TAG_AFC_EVENT_FIXED_PARAM) {
+		fixed_param = (struct wmi_afc_event_fixed_param *)ptr;
+		pdev_id = le32_to_cpu(fixed_param->pdev_id);
+		ar = ab->pdevs[pdev_id].ar;
+		if (!ar) {
+			ath12k_warn(ab, "Failed to get ar for afc fixed param\n");
+			return NULL;
+		}
+	} else {
+		ath12k_warn(ab, "Wrong tag %d in afc fixed param\n", tlv_tag);
+		return NULL;
+	}
+
+	ath12k_free_afc_power_event_info(&ar->afc);
+	memset(&ar->afc, 0, sizeof(ar->afc));
+	ar->afc.event_type = le32_to_cpu(fixed_param->event_type);
+
+	return ar;
+}
+
+static void ath12k_wmi_afc_event(struct ath12k_base *ab,
+				 struct sk_buff *skb)
+{
+	struct ath12k_afc_info *afc_info;
+	struct ath12k *ar;
+	int ret;
+
+	ar = ath12k_wmi_afc_process_fixed_param(ab, skb->data, skb->len);
+	if (!ar) {
+		ath12k_warn(ab, "Failed to get ar for afc processing\n");
+		return;
+	}
+
+	afc_info = &ar->afc;
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "Received AFC event of type %d\n",
+		   ar->afc.event_type);
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_afc_event_parser, afc_info);
+	if (ret) {
+		ath12k_free_afc_power_event_info(afc_info);
+		ath12k_warn(ab, "Failed to parse afc event type %d ret = %d\n",
+			    afc_info->event_type, ret);
+		return;
+	}
+
+	if (afc_info->event_type == ATH12K_AFC_EVENT_POWER_INFO) {
+		ret = ath12k_reg_process_afc_power_event(ar);
+		if (ret)
+			ath12k_warn(ab, "AFC reg rule update failed ret : %d\n",
+				    ret);
+	}
+}
+
 static struct ath12k_reg_rule
 *create_ext_reg_rules_from_wmi(u32 num_reg_rules,
 			       struct ath12k_wmi_reg_rule_ext_params *wmi_reg_rule)
@@ -12734,6 +13055,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_EVENT_ID:
 		ath12k_wmi_peer_migration_event(ab, skb);
+		break;
+	case WMI_AFC_EVENTID:
+		ath12k_wmi_afc_event(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);

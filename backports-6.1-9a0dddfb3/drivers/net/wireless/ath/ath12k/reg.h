@@ -28,6 +28,71 @@ enum ath12k_dfs_region {
 	ATH12K_DFS_REG_UNDEF,
 };
 
+enum ath12k_afc_power_update_status {
+	ath12k_AFC_POWER_UPDATE_IGNORE = 0, /* Used for expiry event */
+	ath12k_AFC_POWER_UPDATE_SUCCESS = 1,
+	ath12k_AFC_POWER_UPDATE_FAIL = 3,
+};
+
+enum ath12k_afc_event_state {
+	ATH12K_AFC_EVENT_POWER_INFO   = 1,
+};
+
+enum ath12k_afc_power_event_status_code {
+	REG_FW_AFC_POWER_EVENT_SUCCESS = 0,
+	REG_FW_AFC_POWER_EVENT_RESP_NOT_RECEIVED = 1,
+	REG_FW_AFC_POWER_EVENT_RESP_PARSING_FAILURE = 2,
+	REG_FW_AFC_POWER_EVENT_FAILURE = 3,
+};
+
+enum ath12k_serv_resp_code {
+	REG_AFC_SERV_RESP_GENERAL_FAILURE = -1,
+	REG_AFC_SERV_RESP_SUCCESS = 0,
+	REG_AFC_SERV_RESP_VERSION_NOT_SUPPORTED = 100,
+	REG_AFC_SERV_RESP_DEVICE_UNALLOWED = 101,
+	REG_AFC_SERV_RESP_MISSING_PARAM = 102,
+	REG_AFC_SERV_RESP_INVALID_VALUE = 103,
+	REG_AFC_SERV_RESP_UNEXPECTED_PARAM = 106,
+	REG_AFC_SERV_RESP_UNSUPPORTED_SPECTRUM = 300,
+};
+
+struct ath12k_afc_freq_obj {
+	u32 low_freq;
+	u32 high_freq;
+	s16 max_psd;
+};
+
+struct ath12k_chan_eirp_obj {
+	u8 cfi;
+	u16 eirp_power;
+};
+
+struct ath12k_afc_chan_obj {
+	u8 global_opclass;
+	u8 num_chans;
+	struct ath12k_chan_eirp_obj *chan_eirp_info;
+};
+
+struct ath12k_afc_sp_reg_info {
+	u32 resp_id;
+	enum ath12k_afc_power_event_status_code fw_status_code;
+	enum ath12k_serv_resp_code serv_resp_code;
+	u32 afc_wfa_version;
+	u32 avail_exp_time_d;
+	u32 avail_exp_time_t;
+	u8 num_freq_objs;
+	u8 num_chan_objs;
+	struct ath12k_afc_freq_obj *afc_freq_info;
+	struct ath12k_afc_chan_obj *afc_chan_info;
+};
+
+struct ath12k_afc_info {
+	enum ath12k_afc_event_state event_type;
+	bool is_6ghz_afc_power_event_received;
+	struct ath12k_afc_sp_reg_info *afc_reg_info;
+	bool afc_regdom_configured;
+};
+
 enum ath12k_reg_cc_code {
 	REG_SET_CC_STATUS_PASS = 0,
 	REG_CURRENT_ALPHA2_NOT_FOUND = 1,
@@ -103,5 +168,5 @@ int ath12k_regd_update(struct ath12k *ar, bool init);
 int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait);
 int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 				     struct ieee80211_supported_band *band);
-
+int ath12k_reg_process_afc_power_event(struct ath12k *ar);
 #endif

@@ -1066,6 +1066,12 @@ struct ath12k {
 	s8 max_allowed_tx_power;
 
 	bool mlo_complete_event;
+	struct ath12k_afc_info afc;
+};
+
+struct ath12k_6ghz_sp_reg_rule {
+	int num_6ghz_sp_rule;
+	struct ieee80211_reg_rule sp_reg_rule[];
 };
 
 struct ath12k_hw {
@@ -1360,6 +1366,12 @@ struct ath12k_base {
 	 */
 	struct ieee80211_regdomain *new_regd[MAX_RADIOS];
 	bool regd_freed;
+
+	/* 6 GHz standard power rules from cc ext event are saved here
+	 * as it should not be updated to cfg unless we have a AFC
+	 * response
+	 */
+	struct ath12k_6ghz_sp_reg_rule *sp_rule;
 
 	/* Current DFS Regulatory */
 	enum ath12k_dfs_region dfs_region;
