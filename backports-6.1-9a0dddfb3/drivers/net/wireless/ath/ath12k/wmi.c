@@ -11379,6 +11379,62 @@ int wmi_print_ctrl_path_mem_stats_tlv(struct ath12k_base *ab, u16 len,
 	return 0;
 }
 
+int wmi_print_ctrl_path_afc_stats_tlv(struct ath12k_base *ab, u16 len,
+				      const void *ptr, void *data)
+{
+	struct wmi_ctrl_path_stats_ev_parse_param *stats_buff = data;
+	struct wmi_ctrl_path_afc_stats *afc_stats_skb, *afc_stats = NULL;
+	struct wmi_ctrl_path_stats_list *stats;
+	struct ath12k *ar = NULL;
+	int i;
+	struct ath12k_base *partner_ab;;
+	u8 device_id, pdev_idx;
+
+	afc_stats_skb = (struct wmi_ctrl_path_afc_stats *)ptr;
+
+	for (i = 0; i < ATH12K_GROUP_MAX_RADIO; i++) {
+		device_id = ab->ag->dp_hw_grp.hw_links[i].device_id;
+		pdev_idx = ab->ag->dp_hw_grp.hw_links[i].pdev_idx;
+		partner_ab = ath12k_ag_to_ab(ab->ag, device_id);
+		ar = partner_ab->pdevs[pdev_idx].ar;
+		if (!ar) {
+			ath12k_warn(ab, "Failed to get ar for wmi ctrl afc stats\n");
+			return -EINVAL;
+		}
+
+		if (ar->supports_6ghz)
+			break;
+	}
+
+	if (!ar->supports_6ghz) {
+		ath12k_warn(ab, "AFC stats is not supported on a non 6 GHz radio\n");
+		return -EINVAL;
+	}
+
+	stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
+	if (!stats)
+		return -ENOMEM;
+
+	afc_stats = kzalloc(sizeof(*afc_stats), GFP_ATOMIC);
+
+	if (!afc_stats) {
+		kfree(stats);
+		return -ENOMEM;
+	}
+
+	memcpy(afc_stats, afc_stats_skb, sizeof(*afc_stats));
+	stats->stats_ptr = afc_stats;
+	list_add_tail(&stats->list, &stats_buff->list);
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_AFC_STATS;
+	stats_buff->ar = ar;
+
+	return 0;
+}
+
 static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 					       u16 tag, u16 len,
 					       const void *ptr, void *data)
@@ -11402,6 +11458,9 @@ static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 		break;
 	case WMI_CTRL_PATH_MEM_STATS:
 		ret = wmi_print_ctrl_path_mem_stats_tlv(ab, len, ptr, data);
+		break;
+	case WMI_CTRL_PATH_AFC_STATS:
+		ret = wmi_print_ctrl_path_afc_stats_tlv(ab, len, ptr, data);
 		break;
 		/* Add case for newly wmi ctrl path added stats here */
 	default:
@@ -13327,6 +13386,7 @@ ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
 		stats_id = (1 << arg->stats_id);
 		break;
 	case WMI_REQ_CTRL_PATH_AWGN_STAT:
+	case WMI_REQ_CTRL_PATH_AFC_STAT:
 		if (ar->supports_6ghz) {
 			stats_id = (1 << arg->stats_id);
 		} else {

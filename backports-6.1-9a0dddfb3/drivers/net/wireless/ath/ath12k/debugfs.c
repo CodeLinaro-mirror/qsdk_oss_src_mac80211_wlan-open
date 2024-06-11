@@ -249,6 +249,186 @@ int wmi_ctrl_path_cal_stat(struct ath12k *ar, char __user *ubuf,
 	return ret_val;
 }
 
+static int wmi_ctrl_path_afc_stat(struct ath12k *ar, char __user *ubuf,
+				  size_t count, loff_t *ppos)
+{
+	struct wmi_ctrl_path_stats_list *stats, *tmp;
+	struct wmi_ctrl_path_afc_stats *afc_stats;
+	LIST_HEAD(wmi_stats_list);
+	const int size = 2048;
+	int len = 0, ret_val;
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	if (!list_empty(&wmi_stats_list)) {
+		len += scnprintf(buf + len, size - len, "WMI_CTRL_PATH_AFC_STATS_TLV:\n");
+		len += scnprintf(buf + len, size - len, "\n");
+		len += scnprintf(buf + len, size - len, "****General AFC counters****\n");
+	}
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_splice_tail_init(&ar->debug.wmi_ctrl_path_stats.pdev_stats, &wmi_stats_list);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_for_each_entry_safe(stats, tmp, &wmi_stats_list, list) {
+		if (!stats)
+			break;
+
+		afc_stats = stats->stats_ptr;
+
+		if (!afc_stats)
+			break;
+
+		len += scnprintf(buf + len, size - len,
+				 "Total request ID = %u\n",
+				 __le32_to_cpu(afc_stats->request_id_count));
+
+		len += scnprintf(buf + len, size - len,
+				 "Total payload count = %u\n",
+				 __le32_to_cpu(afc_stats->response_count));
+
+		len += scnprintf(buf + len, size - len,
+				 "Total invalid payload count = %u\n",
+				 __le32_to_cpu(afc_stats->invalid_response_count));
+
+		len += scnprintf(buf + len, size - len,
+				 "Total AFC reset count = %u\n",
+				 __le32_to_cpu(afc_stats->reset_count));
+
+		len += scnprintf(buf + len, size - len, "\n");
+		len += scnprintf(buf + len, size - len,
+				 "****AFC Payload Response error counters****\n");
+
+		len += scnprintf(buf + len, size - len,
+				 "Payload id mismatch count = %u\n",
+				 __le32_to_cpu(afc_stats->id_mismatch_count));
+
+		len += scnprintf(buf + len, size - len,
+				 "Local error code success = %u\n",
+				 __le32_to_cpu(afc_stats->local_err_code_success));
+
+		len += scnprintf(buf + len, size - len,
+				 "Local error code failure = %u\n",
+				 __le32_to_cpu(afc_stats->local_err_code_failure));
+
+		len += scnprintf(buf + len, size - len, "\n");
+		len += scnprintf(buf + len, size - len,
+				 "****AFC Server Response error counters****\n");
+
+		len += scnprintf(buf + len, size - len,
+				 "Code_100 | Version not supported = %u\n",
+				 __le32_to_cpu(afc_stats->serv_resp_code_100));
+
+		len += scnprintf(buf + len, size - len,
+				 "Code_101 | Device disallowed = %u\n",
+				 __le32_to_cpu(afc_stats->serv_resp_code_101));
+
+		len += scnprintf(buf + len, size - len,
+				 "Code_102 | Missing Param = %u\n",
+				 __le32_to_cpu(afc_stats->serv_resp_code_102));
+
+		len += scnprintf(buf + len, size - len,
+				 "Code_103 | Invalid value = %u\n",
+				 __le32_to_cpu(afc_stats->serv_resp_code_103));
+
+		len += scnprintf(buf + len, size - len,
+				 "Code_106 | Unexpected param = %u\n",
+				 __le32_to_cpu(afc_stats->serv_resp_code_106));
+
+		len += scnprintf(buf + len, size - len,
+				 "Code_300 | Unsupported spectrum = %u\n",
+				 __le32_to_cpu(afc_stats->serv_resp_code_300));
+
+		len += scnprintf(buf + len, size - len, "\n");
+		len += scnprintf(buf + len, size - len,
+				 "****AFC Compliance tracker****\n");
+
+		len += scnprintf(buf + len, size - len,
+				 "Proxy_standalone 0 = %u\n",
+				 __le32_to_cpu(afc_stats->proxy_standalone_0));
+
+		len += scnprintf(buf + len, size - len,
+				 "Proxy_standalone 1 = %u\n",
+				 __le32_to_cpu(afc_stats->proxy_standalone_1));
+
+		len += scnprintf(buf + len, size - len,
+				 "Successful power event sent count = %u\n",
+				 __le32_to_cpu(afc_stats->power_event_counter));
+
+		len += scnprintf(buf + len, size - len,
+				 "Force LPI switch count = %u\n",
+				 __le32_to_cpu(afc_stats->force_LPI_counter));
+
+		len += scnprintf(buf + len, size - len,
+				 "TPC WMI success count = %u\n",
+				 __le32_to_cpu(afc_stats->tpc_wmi_success_count));
+
+		len += scnprintf(buf + len, size - len,
+				 "TPC WMI failure count = %u\n",
+				 __le32_to_cpu(afc_stats->tpc_wmi_failure_count));
+
+		len += scnprintf(buf + len, size - len, "\n");
+		len += scnprintf(buf + len, size - len,
+				 "****AFC Regulatory Compliance check counter****\n");
+
+		len += scnprintf(buf + len, size - len,
+				 "psd failure = %u\n",
+				 __le32_to_cpu(afc_stats->psd_failure_count));
+
+		len += scnprintf(buf + len, size - len,
+				 "psd end freq failure = %u\n",
+				 __le32_to_cpu(afc_stats->psd_end_freq_failure_count));
+
+		len += scnprintf(buf + len, size - len,
+				 "psd start freq failure = %u\n",
+				 __le32_to_cpu(afc_stats->psd_start_freq_failure_count));
+
+		len += scnprintf(buf + len, size - len, "eirp failure = %u\n",
+				 __le32_to_cpu(afc_stats->eirp_failure_count));
+
+		len += scnprintf(buf + len, size - len,
+				 "centre freq failure = %u\n",
+				 __le32_to_cpu(afc_stats->cfreq_failure_count));
+
+		len += scnprintf(buf + len, size - len, "\n");
+		len += scnprintf(buf + len, size - len,
+				 "****AFC Miscellaneous stats****\n");
+
+		len += scnprintf(buf + len, size - len,
+				 "Current request ID = %u\n",
+				 __le32_to_cpu(afc_stats->request_id));
+
+		len += scnprintf(buf + len, size - len,
+				 "Grace timer count = %u\n",
+				 __le32_to_cpu(afc_stats->grace_timer_count));
+
+		len += scnprintf(buf + len, size - len,
+				 "Current TTL timer = %u seconds\n",
+				 __le32_to_cpu(afc_stats->cur_ttl_timer));
+
+		len += scnprintf(buf + len, size - len, "Deployment mode = %u (%s)\n",
+				 __le32_to_cpu(afc_stats->deployment_mode),
+				 (__le32_to_cpu(afc_stats->deployment_mode) == 1) ? "indoor" :
+				 (__le32_to_cpu(afc_stats->deployment_mode) == 2) ? "outdoor" :
+				 "(unknown)");
+
+		len += scnprintf(buf + len, size - len,
+				 "Total AFC-Response Payload clear count = %u\n",
+				 __le32_to_cpu(afc_stats->payload_clear_count));
+		kfree(stats->stats_ptr);
+		list_del(&stats->list);
+		kfree(stats);
+	}
+
+	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+
+	return ret_val;
+}
+
 int wmi_ctrl_path_btcoex_stat(struct ath12k *ar, char __user *ubuf,
 			size_t count, loff_t *ppos)
 {
@@ -2405,6 +2585,9 @@ static ssize_t ath12k_read_wmi_ctrl_path_stats(struct file *file,
 		break;
 	case WMI_CTRL_PATH_MEM_STATS:
 		ret = wmi_ctrl_path_mem_stat(ar, ubuf, count, ppos);
+		break;
+	case WMI_CTRL_PATH_AFC_STATS:
+		ret = wmi_ctrl_path_afc_stat(ar, ubuf, count, ppos);
 		break;
 		/* Add case for newly wmi ctrl path added stats here */
 	default:

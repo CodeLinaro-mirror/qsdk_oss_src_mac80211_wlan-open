@@ -2153,6 +2153,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO_FIXED_PARAM = 0x427,
 	WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO,
 	WMI_TAG_RSSI_DBM_CONVERSION_TEMP_OFFSET_INFO,
+	WMI_CTRL_PATH_AFC_STATS = 0x42A,
 	WMI_TAG_BCN_TMPL_ML_INFO_CMD = 0x436,
 	WMI_TAG_MLO_MGMT_RX_CU_PARAMS = 0x439,
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
@@ -6106,6 +6107,40 @@ struct wmi_ctrl_path_mem_stats_params {
 	__le32 allocated_bytes;
 } __packed;
 
+struct wmi_ctrl_path_afc_stats {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 request_id_count;
+	__le32 response_count;
+	__le32 invalid_response_count;
+	__le32 reset_count;
+	__le32 id_mismatch_count;
+	__le32 local_err_code_success;
+	__le32 local_err_code_failure;
+	__le32 serv_resp_code_100;
+	__le32 serv_resp_code_101;
+	__le32 serv_resp_code_102;
+	__le32 serv_resp_code_103;
+	__le32 serv_resp_code_106;
+	__le32 serv_resp_code_300;
+	__le32 proxy_standalone_0;
+	__le32 proxy_standalone_1;
+	__le32 power_event_counter;
+	__le32 force_LPI_counter;
+	__le32 tpc_wmi_success_count;
+	__le32 tpc_wmi_failure_count;
+	__le32 psd_failure_count;
+	__le32 psd_end_freq_failure_count;
+	__le32 psd_start_freq_failure_count;
+	__le32 eirp_failure_count;
+	__le32 cfreq_failure_count;
+	__le32 request_id;
+	__le32 grace_timer_count;
+	__le32 cur_ttl_timer;
+	__le32 deployment_mode;
+	__le32 payload_clear_count;
+} __packed;
+
 struct wmi_ctrl_path_stats_ev_parse_param {
 	struct list_head list;
 	struct ath12k *ar;
@@ -7379,6 +7414,7 @@ enum  wmi_ctrl_path_stats_id {
  	WMI_REQ_CTRL_PATH_CAL_STAT		= 5,
 	WMI_REQ_CTRL_PATH_AWGN_STAT		= 7,
  	WMI_REQ_CTRL_PATH_BTCOEX_STAT		= 8,
+	WMI_REQ_CTRL_PATH_AFC_STAT       	= 11,
 };
 
 enum wmi_ctrl_path_stats_action {
