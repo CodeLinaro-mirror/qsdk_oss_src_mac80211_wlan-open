@@ -7642,6 +7642,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                 psd_power, tx_power = 0, eirp_power = 0;
         u16 oper_freq = 0, start_freq = 0, center_freq = 0;
 	u8 reg_6g_power_mode;
+	enum nl80211_chan_width bw;
+	int cfi;
 
 	rcu_read_lock();
 
@@ -7782,7 +7784,21 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                            &temp_chan,
                                                            &tx_power,
 							   reg_6g_power_mode);
-                                eirp_power = tx_power;
+				if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+				    ar->afc.is_6ghz_afc_power_event_received) {
+					cfi = ieee80211_frequency_to_channel(center_freq);
+					bw = NL80211_CHAN_WIDTH_20;
+					eirp_power =
+						ath12k_reg_get_afc_eirp_power(ar, bw, cfi);
+					/* In some case channel obj for that
+					 * particular freq  might not be received
+					 */
+					if (!eirp_power)
+						eirp_power = tx_power;
+				} else {
+					eirp_power = tx_power;
+				}
+
 				if (temp_chan) {
 					psd_power = temp_chan->psd;
 					max_tx_power[pwr_lvl_idx] = psd_power;
@@ -7799,6 +7815,18 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                           &tx_power,
 							  reg_6g_power_mode);
                                 max_tx_power[pwr_lvl_idx] = tx_power;
+				min_t(s8, tx_power, reg_tpc_info->tpe[pwr_lvl_idx]);
+				if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+				    ar->afc.is_6ghz_afc_power_event_received) {
+					ath12k_reg_get_afc_eirp_power_for_bw(ar, &start_freq,
+									     &center_freq,
+									     pwr_lvl_idx,
+									     &ctx->def,
+									     &tx_power);
+					/* Override tx power only if afc response has a value */
+					if (tx_power)
+						max_tx_power[pwr_lvl_idx] = tx_power;
+				}
                         }
                 }
 

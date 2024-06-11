@@ -1048,6 +1048,116 @@ ath12k_reg_coalesce_afc_freq_info(struct ath12k_afc_sp_reg_info *afc_reg_info)
 	}
 }
 
+int ath12k_reg_get_6ghz_opclass_from_bw(int bw, int cfi)
+{
+	int opclass;
+
+	switch (bw) {
+	case NL80211_CHAN_WIDTH_20:
+		opclass = 131;
+		/* According spec Table E-4 Global operating classes */
+		if (cfi == 2)
+			opclass = 136;
+		break;
+	case NL80211_CHAN_WIDTH_40:
+		opclass = 132;
+		break;
+	case NL80211_CHAN_WIDTH_80:
+		opclass = 133;
+		break;
+	case NL80211_CHAN_WIDTH_160:
+		opclass = 134;
+		break;
+	case NL80211_CHAN_WIDTH_80P80:
+		opclass = 135;
+		break;
+	case NL80211_CHAN_WIDTH_320:
+		opclass = 137;
+		break;
+	default:
+		opclass = 0;
+	}
+
+	return opclass;
+}
+
+s8 ath12k_reg_get_afc_eirp_power(struct ath12k *ar, enum nl80211_chan_width bw, int cfi)
+{
+	u16 eirp_pwr = 0;
+	struct ath12k_afc_sp_reg_info *reg_info = ar->afc.afc_reg_info;
+	struct ath12k_afc_chan_obj *afc_chan;
+	struct ath12k_chan_eirp_obj *chan_eirp;
+	int op_class, i, j;
+
+	spin_lock_bh(&ar->data_lock);
+
+	if (!ar->afc.afc_reg_info) {
+		ath12k_warn(ar->ab, "AFC power info not found\n");
+		goto ret;
+	}
+
+	op_class = ath12k_reg_get_6ghz_opclass_from_bw(bw, cfi);
+	if (!op_class) {
+		ath12k_warn(ar->ab, "Invalid opclass for 6 GHz bw\n");
+		goto ret;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Configured BW belong to op_class %d cfi %d\n",
+		   op_class, cfi);
+
+	for (i = 0;  i < reg_info->num_chan_objs; i++) {
+		afc_chan = reg_info->afc_chan_info + i;
+
+		if (afc_chan->global_opclass != op_class)
+			continue;
+
+		for (j = 0; j < afc_chan->num_chans; j++) {
+			chan_eirp = afc_chan->chan_eirp_info + j;
+			if (chan_eirp->cfi == cfi) {
+				eirp_pwr = chan_eirp->eirp_power;
+				break;
+			}
+		}
+
+		if (eirp_pwr)
+			break;
+	}
+
+	eirp_pwr = eirp_pwr / 100;
+
+ret:
+	spin_unlock_bh(&ar->data_lock);
+	return eirp_pwr;
+}
+
+void ath12k_reg_get_afc_eirp_power_for_bw(struct ath12k *ar, u16 *start_freq,
+					  u16 *center_freq, int pwr_level,
+					  struct cfg80211_chan_def *chan_def,
+					  s8 *tx_power)
+{
+	int bw = 0, cfi;
+
+	if (chan_def->width == NL80211_CHAN_WIDTH_80P80 && pwr_level == 3)
+		*center_freq = (u16)chan_def->center_freq2;
+	else
+		*center_freq = *start_freq + (10 * (BIT(pwr_level) - 1));
+
+	/* For 20 MHz, no +10 offset is required */
+	if (pwr_level != 0)
+		*center_freq += 10;
+
+	/* power level is directly correlated to enum nl80211_chan_width
+	 * plus one as power level starts from 0
+	 */
+	if (pwr_level < 3)
+		bw = pwr_level + 1;
+	else if (pwr_level == 3)
+		bw = chan_def->width;
+
+	cfi = ieee80211_frequency_to_channel(*center_freq);
+	*tx_power = ath12k_reg_get_afc_eirp_power(ar, bw, cfi);
+}
+
 int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 {
 	int new_reg_rule_cnt, num_regd_rules, num_afc_rules, num_sp_rules;

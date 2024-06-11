@@ -309,4 +309,10 @@ int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 				     struct ieee80211_supported_band *band);
 int ath12k_reg_process_afc_power_event(struct ath12k *ar);
 int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len);
+s8 ath12k_reg_get_afc_eirp_power(struct ath12k *ar, enum nl80211_chan_width bw,
+				 int cfi);
+void ath12k_reg_get_afc_eirp_power_for_bw(struct ath12k *ar, u16 *start_freq,
+					  u16 *center_freq, int pwr_level,
+					  struct cfg80211_chan_def *chan_def,
+					  s8 *tx_power);
 #endif
