@@ -667,6 +667,8 @@ struct ath12k_sta {
 	u16 ml_peer_id;
 	u8 num_peer;
 	u8 primary_link_id;
+	/* indicates bitmap of devices where peers are created */
+	u8 device_bitmap;
 
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	/* protected by conf_mutex */

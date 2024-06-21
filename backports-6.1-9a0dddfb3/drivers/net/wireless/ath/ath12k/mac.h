@@ -63,6 +63,7 @@ struct ath12k_generic_iter {
 /* Define 1 scan link for each radio for parallel scan purposes */
 #define ATH12K_NUM_MAX_LINKS	(IEEE80211_MLD_MAX_NUM_LINKS + ATH12K_GROUP_MAX_RADIO)
 #define ATH12K_SCAN_LINKS_MASK	GENMASK(ATH12K_NUM_MAX_LINKS, IEEE80211_MLD_MAX_NUM_LINKS)
+#define ATH12K_MAX_STA_LINKS	3
 
 #define ATH12K_PDEV_SIGNAL_UPDATE_TIME_MSECS	2000
 

@@ -7846,6 +7846,8 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 					      u8 link_id)
 {
 	struct ath12k_link_sta *arsta;
+	struct ath12k_link_vif *arvif = ahsta->link[link_id]->arvif;
+	struct ath12k_base *ab = arvif->ar->ab;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -7857,6 +7859,7 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 		return;
 
 	ahsta->links_map &= ~BIT(link_id);
+	ahsta->device_bitmap &= ~BIT(ab->wsi_info.index);
 	rcu_assign_pointer(ahsta->link[link_id], NULL);
 	synchronize_rcu();
 
@@ -8231,6 +8234,7 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
 	struct ieee80211_link_sta *link_sta;
 	struct ath12k_link_vif *arvif;
+	struct ath12k_base *ab;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -8255,6 +8259,8 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 	arsta->link_id = link_id;
 	ath12k_mac_map_link_sta(ahsta, link_id);
 	arsta->arvif = arvif;
+	ab = arsta->arvif->ar->ab;
+	ahsta->device_bitmap |= BIT(ab->wsi_info.index);
 	arsta->ahsta = ahsta;
 	ahsta->ahvif = ahvif;
 
@@ -8776,6 +8782,74 @@ static struct ath12k_link_sta *ath12k_mac_alloc_assign_link_sta(struct ath12k_hw
 	return arsta;
 }
 
+void ath12k_mac_assign_middle_link_id(struct ieee80211_sta *sta,
+				      struct ath12k_sta *ahsta,
+				      u8 num_devices)
+{
+	struct ath12k_link_sta *arsta;
+	struct ath12k_base *ab;
+	u8 link_id;
+	u8 device_bitmap = ahsta->device_bitmap;
+	u8 i, next, prev;
+	bool adjacent_found = false;
+	unsigned long links;
+
+	/* 4 device: In case of 3 link STA association, Make sure to select
+	 * the middle device link as primary_link_id of sta which is adjacent
+	 * to other two devices.
+	 */
+	if (!(num_devices == ATH12K_NLINK_SUPP_DEVICES &&
+	      hweight16(sta->valid_links) == ATH12K_MAX_STA_LINKS)) {
+		/* To-Do: Requirement to set primary link id for no.of devices
+		 * greater than 4 has not yet confirmed. Also, Need to revisit
+		 * here when STA association support extends more than 3.
+		 */
+		if (num_devices > ATH12K_NLINK_SUPP_DEVICES)
+			ath12k_err(NULL,
+				   "num devices %d Combination not supported yet\n",
+				   num_devices);
+		return;
+	}
+
+	for (i = 0; i < num_devices; i++) {
+		if (!(device_bitmap & BIT(i)))
+			continue;
+
+		next = (i + 1) % num_devices;
+		prev = ((i - 1) + num_devices) % num_devices;
+		if ((device_bitmap & BIT(next)) && (device_bitmap & BIT(prev))) {
+			adjacent_found = true;
+			break;
+		}
+	}
+
+	if (!adjacent_found) {
+		ath12k_err(NULL,
+			   "No common adjacent devices found for sta %pM with device bitmap 0x%x\n",
+			   sta->addr, device_bitmap);
+		return;
+	}
+
+	links = ahsta->links_map;
+	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+		arsta = ahsta->link[link_id];
+
+		if (!arsta && !arsta->arvif)
+			continue;
+
+		ab = arsta->arvif->ar->ab;
+		if (!ab)
+			continue;
+
+		if (ab->wsi_info.index == i) {
+			ath12k_info(ab, "Overwriting primary link_id as %d for sta %pM",
+				    link_id, sta->addr);
+			ahsta->primary_link_id = link_id;
+			break;
+		}
+	}
+}
+
 int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   struct ieee80211_sta *sta,
@@ -8788,6 +8862,7 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	struct ath12k_link_sta *arsta, *tmp_arsta, *def_arsta;
 	unsigned long valid_links;
 	struct ath12k *ar;
+	struct ath12k_hw_group *ag;
 	u16 removed_link_map;
 	u8 link_id, tmp_link_id;
 	int ret;
@@ -8856,7 +8931,11 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 				ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
 				return ret;
 			}
+			ag = ar->ab->ag;
 		}
+
+		ath12k_mac_assign_middle_link_id(sta, ahsta, ag->num_devices);
+
 	} else {
 		removed_link_map = old_links ^ new_links;
 
