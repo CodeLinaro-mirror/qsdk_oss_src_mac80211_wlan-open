@@ -90,6 +90,7 @@
 
 #define ATH12K_MAX_MLO_PEERS            1024
 #define ATH12K_MLO_PEER_ID_INVALID      0xFFFF
+#define ATH12K_VENDOR_VALID_INTF_BITMAP WMI_DCS_WLAN_INTF
 
 #define ATH12K_MAX_ADJACENT_CHIPS   2
 #define ATH12K_WSI_MAX_ARGS 4
@@ -1432,6 +1433,8 @@ struct ath12k {
 	bool commitatf;
 	bool atf_strict_scheduling;
 	u8 dcs_enable_bitmap;
+	struct list_head wlan_intf_list;
+	struct work_struct wlan_intf_work;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
@@ -2005,6 +2008,11 @@ struct ath12k_fw_stats_bcn {
 	u32 tx_bcn_outage_cnt;
 };
 
+struct ath12k_dcs_wlan_interference {
+	struct list_head list;
+	struct wmi_dcs_wlan_interference_stats info;
+};
+
 struct ath12k_fw_stats_pdev {
 	struct list_head list;
 
@@ -2415,5 +2423,8 @@ void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed, u16 link
 void ath12k_core_radio_cleanup(struct ath12k *ar);
 void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 				    bool set_clear, u8 tid);
+void ath12k_vendor_wlan_intf_stats(struct work_struct *work);
+void ath12k_debug_print_dcs_wlan_intf_stats(struct ath12k_base *ab,
+					    struct wmi_dcs_wlan_interference_stats *info);
 struct ath12k_hw_group *ath12k_core_get_ag(void);
 #endif /* _CORE_H_ */

@@ -3,6 +3,7 @@
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
  * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
+#include "wmi.h"
 #include <linux/skbuff.h>
 #include <linux/ctype.h>
 #include <net/mac80211.h>
@@ -11363,6 +11364,36 @@ static void ath12k_pdev_ctl_failsafe_check_event(struct ath12k_base *ab,
 	kfree(tb);
 }
 
+void ath12k_debug_print_dcs_wlan_intf_stats(struct ath12k_base *ab,
+					    struct wmi_dcs_wlan_interference_stats *info)
+{
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_tsf32=%u", info->reg_tsf32);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: last_ack_rssi=%u",
+		   info->last_ack_rssi);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: tx_waste_time=%u",
+		   info->tx_waste_time);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: rx_time=%u", info->rx_time);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: phyerr_cnt=%u", info->phyerr_cnt);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: listen_time=%u", info->listen_time);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_tx_frame_cnt=%u",
+		   info->reg_tx_frame_cnt);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_rx_frame_cnt=%u",
+		   info->reg_rx_frame_cnt);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_rxclr_cnt=%u",
+		   info->reg_rxclr_cnt);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_cycle_cnt=%u",
+		   info->reg_cycle_cnt);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_rxclr_ext_cnt=%u",
+		   info->reg_rxclr_ext_cnt);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_ofdm_phyerr_cnt=%u",
+		   info->reg_ofdm_phyerr_cnt);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_cck_phyerr_cnt=%u",
+		   info->reg_cck_phyerr_cnt);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: chan_nf=%d", info->chan_nf);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: my_bss_rx_cycle_count=%u",
+		   info->my_bss_rx_cycle_count);
+}
+
 static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 					     u16 tag, u16 len,
 					     const void *ptr, void *data)
@@ -11370,6 +11401,8 @@ static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 	int ret = 0;
 	struct wmi_dcs_awgn_info *awgn_info;
 	struct wmi_dcs_cw_info *cw_info;
+	struct wmi_dcs_wlan_interference_stats_ev *wlan_info;
+	struct wmi_dcs_wlan_interference_stats *tmp;
 
 	switch (tag) {
 	case WMI_TAG_DCS_AWGN_INT_TYPE:
@@ -11385,6 +11418,26 @@ static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 		cw_info = (struct wmi_dcs_cw_info *)ptr;
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "CW Info: channel=%d", cw_info->channel);
 		memcpy(data, cw_info, sizeof(*cw_info));
+		break;
+	case WMI_TAG_ATH_DCS_WLAN_INT_STAT:
+		wlan_info = (struct wmi_dcs_wlan_interference_stats_ev *)ptr;
+		tmp = (struct wmi_dcs_wlan_interference_stats *)data;
+		tmp->reg_tsf32 = le32_to_cpu(wlan_info->reg_tsf32);
+		tmp->last_ack_rssi = le32_to_cpu(wlan_info->last_ack_rssi);
+		tmp->tx_waste_time = le32_to_cpu(wlan_info->tx_waste_time);
+		tmp->rx_time = le32_to_cpu(wlan_info->rx_time);
+		tmp->phyerr_cnt = le32_to_cpu(wlan_info->phyerr_cnt);
+		tmp->listen_time = le32_to_cpu(wlan_info->listen_time);
+		tmp->reg_tx_frame_cnt = le32_to_cpu(wlan_info->reg_tx_frame_cnt);
+		tmp->reg_rx_frame_cnt = le32_to_cpu(wlan_info->reg_rx_frame_cnt);
+		tmp->reg_rxclr_cnt = le32_to_cpu(wlan_info->reg_rxclr_cnt);
+		tmp->reg_cycle_cnt = le32_to_cpu(wlan_info->reg_cycle_cnt);
+		tmp->reg_rxclr_ext_cnt = le32_to_cpu(wlan_info->reg_rxclr_ext_cnt);
+		tmp->reg_ofdm_phyerr_cnt = le32_to_cpu(wlan_info->reg_ofdm_phyerr_cnt);
+		tmp->reg_cck_phyerr_cnt = le32_to_cpu(wlan_info->reg_cck_phyerr_cnt);
+		tmp->chan_nf = le32_to_cpu(wlan_info->chan_nf);
+		tmp->my_bss_rx_cycle_count =
+			le32_to_cpu(wlan_info->my_bss_rx_cycle_count);
 		break;
 	default:
 		ath12k_warn(ab,
@@ -11558,6 +11611,48 @@ ath12k_wmi_dcs_cw_interference_event(struct ath12k_base *ab,
 		goto exit;
 	}
 	ieee80211_cw_detected(ah->hw, chanctx_conf->def.chan);
+exit:
+	rcu_read_unlock();
+}
+
+static void
+ath12k_wmi_dcs_wlan_interference_event(struct ath12k_base *ab,
+				       struct sk_buff *skb,
+				       u32 pdev_id)
+{
+	struct wmi_dcs_wlan_interference_stats wlan_info = {};
+	struct ath12k *ar;
+	int ret;
+	struct ath12k_dcs_wlan_interference *dcs_wlan_intf;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_dcs_event_parser,
+				  &wlan_info);
+	if (ret)
+		return;
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (!ar)
+		goto exit;
+
+	spin_lock_bh(&ar->data_lock);
+	if (!(ar->dcs_enable_bitmap & WMI_DCS_WLAN_INTF)) {
+		spin_unlock_bh(&ar->data_lock);
+		goto exit;
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	dcs_wlan_intf = kzalloc(sizeof(*dcs_wlan_intf), GFP_ATOMIC);
+	if (!dcs_wlan_intf)
+		goto exit;
+
+	INIT_LIST_HEAD(&dcs_wlan_intf->list);
+	memcpy(&dcs_wlan_intf->info, &wlan_info, sizeof(wlan_info));
+	spin_lock_bh(&ar->data_lock);
+	list_add_tail(&dcs_wlan_intf->list, &ar->wlan_intf_list);
+	spin_unlock_bh(&ar->data_lock);
+	schedule_work(&ar->wlan_intf_work);
 exit:
 	rcu_read_unlock();
 }
@@ -11959,6 +12054,9 @@ ath12k_wmi_dcs_interference_event(struct ath12k_base *ab,
 	switch (interference_type) {
 	case WMI_DCS_CW_INTF:
 		ath12k_wmi_dcs_cw_interference_event(ab, skb, pdev_id);
+		break;
+	case WMI_DCS_WLAN_INTF:
+		ath12k_wmi_dcs_wlan_interference_event(ab, skb, pdev_id);
 		break;
 	case WMI_DCS_AWGN_INTF:
 		ath12k_wmi_dcs_awgn_interference_event(ab, skb, pdev_id);
