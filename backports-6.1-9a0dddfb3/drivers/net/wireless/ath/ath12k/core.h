@@ -1431,6 +1431,7 @@ struct ath12k {
 	u8 atf_stats_timeout;
 	bool commitatf;
 	bool atf_strict_scheduling;
+	u8 dcs_enable_bitmap;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

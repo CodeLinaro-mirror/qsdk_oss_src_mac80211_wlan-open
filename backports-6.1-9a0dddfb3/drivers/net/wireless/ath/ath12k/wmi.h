@@ -5375,6 +5375,8 @@ struct wmi_pdev_radar_flags_param {
 } __packed;
 #define WMI_PDEV_RADAR_FLAGS_FULL_BW_NOL_MARK_BIT 0
 
+#define WMI_DCS_CW_INTF         0x01
+#define WMI_DCS_WLAN_INTF       0x02
 #define WMI_DCS_AWGN_INTF       0x04
 
 struct wmi_dcs_awgn_info {
@@ -5385,9 +5387,13 @@ struct wmi_dcs_awgn_info {
         u32 chan_bw_interference_bitmap;
 } __packed;
 
+struct wmi_dcs_cw_info {
+	__le32 channel;
+};
+
 struct wmi_dcs_interference_ev {
-        u32 interference_type;
-        u32 pdev_id;
+	__le32 interference_type;
+	__le32 pdev_id;
 } __packed;
 
 struct ath12k_chainmask_caps {

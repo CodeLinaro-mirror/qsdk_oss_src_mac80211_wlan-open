@@ -1026,6 +1026,7 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	INIT_WORK(&local->cw_detected_work,
 		  ieee80211_cw_detected_work);
 	INIT_LIST_HEAD(&local->awgn_info_list);
+	INIT_LIST_HEAD(&local->cw_info_list);
 
 	wiphy_work_init(&local->reconfig_filter, ieee80211_reconfig_filter);
 

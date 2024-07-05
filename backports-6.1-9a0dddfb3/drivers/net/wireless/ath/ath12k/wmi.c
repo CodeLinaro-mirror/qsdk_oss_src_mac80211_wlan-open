@@ -11362,12 +11362,14 @@ static void ath12k_pdev_ctl_failsafe_check_event(struct ath12k_base *ab,
 
 	kfree(tb);
 }
-static int ath12k_wmi_awgn_intf_subtlv_parser(struct ath12k_base *ab,
-					      u16 tag, u16 len,
-					      const void *ptr, void *data)
+
+static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
+					     u16 tag, u16 len,
+					     const void *ptr, void *data)
 {
 	int ret = 0;
 	struct wmi_dcs_awgn_info *awgn_info;
+	struct wmi_dcs_cw_info *cw_info;
 
 	switch (tag) {
 	case WMI_TAG_DCS_AWGN_INT_TYPE:
@@ -11379,19 +11381,24 @@ static int ath12k_wmi_awgn_intf_subtlv_parser(struct ath12k_base *ab,
 			   awgn_info->chan_bw_interference_bitmap);
 		memcpy(data, awgn_info, sizeof(*awgn_info));
 		break;
+	case WMI_TAG_WLAN_DCS_CW_INT:
+		cw_info = (struct wmi_dcs_cw_info *)ptr;
+		ath12k_dbg(ab, ATH12K_DBG_WMI, "CW Info: channel=%d", cw_info->channel);
+		memcpy(data, cw_info, sizeof(*cw_info));
+		break;
 	default:
 		ath12k_warn(ab,
 			    "Received invalid tag for wmi dcs interference in subtlvs\n");
-		return -EINVAL;
+		ret = -EINVAL;
 		break;
 	}
 
 	return ret;
 }
 
-static int ath12k_wmi_dcs_awgn_event_parser(struct ath12k_base *ab,
-					    u16 tag, u16 len,
-					    const void *ptr, void *data)
+static int ath12k_wmi_dcs_event_parser(struct ath12k_base *ab,
+				       u16 tag, u16 len,
+				       const void *ptr, void *data)
 {
 	int ret = 0;
 
@@ -11409,7 +11416,7 @@ static int ath12k_wmi_dcs_awgn_event_parser(struct ath12k_base *ab,
 		if (len == 0)
 			return 0;
 		ret = ath12k_wmi_tlv_iter(ab, ptr, len,
-					  ath12k_wmi_awgn_intf_subtlv_parser,
+					  ath12k_wmi_dcs_intf_subtlv_parser,
 					  data);
 		break;
 	default:
@@ -11500,17 +11507,70 @@ bool ath12k_wmi_validate_dcs_awgn_info(struct ath12k *ar, struct wmi_dcs_awgn_in
 }
 
 static void
-ath12k_wmi_dcs_awgn_interference_event(struct ath12k_base *ab,
-				       struct sk_buff *skb)
+ath12k_wmi_dcs_cw_interference_event(struct ath12k_base *ab,
+				     struct sk_buff *skb,
+				     u32 pdev_id)
 {
-	const struct wmi_dcs_interference_ev *dcs_intf_ev;
+	struct ath12k *ar;
+	struct wmi_dcs_cw_info cw_info = {};
+	struct ieee80211_chanctx_conf *chanctx_conf;
+	struct ath12k_mac_get_any_chanctx_conf_arg arg;
+	struct ath12k_hw *ah;
+	int ret;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_dcs_event_parser,
+				  &cw_info);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse cw tlv %d\n", ret);
+		return;
+	}
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "CW detected in invalid pdev id(%d)\n",
+			    pdev_id);
+		goto exit;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	if (!(ar->dcs_enable_bitmap & WMI_DCS_CW_INTF)) {
+		/* TODO - incase Fw missed the pdev set param
+		 * to disable CW Interference
+		 */
+		spin_unlock_bh(&ar->data_lock);
+		goto exit;
+	}
+	spin_unlock_bh(&ar->data_lock);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "CW Interference detected for pdev=%d\n",
+		   pdev_id);
+
+	ah = ar->ah;
+
+	arg.ar = ar;
+	arg.chanctx_conf = NULL;
+	ieee80211_iter_chan_contexts_atomic(ah->hw, ath12k_mac_get_any_chanctx_conf_iter,
+					    &arg);
+	chanctx_conf = arg.chanctx_conf;
+	if (!chanctx_conf) {
+		ath12k_warn(ab, "chanctx_conf is not available\n");
+		goto exit;
+	}
+	ieee80211_cw_detected(ah->hw, chanctx_conf->def.chan);
+exit:
+	rcu_read_unlock();
+}
+
+static void
+ath12k_wmi_dcs_awgn_interference_event(struct ath12k_base *ab,
+				       struct sk_buff *skb,
+				       u32 pdev_id)
+{
 	struct ath12k_mac_get_any_chanctx_conf_arg arg;
 	struct wmi_dcs_awgn_info awgn_info = {};
 	struct cfg80211_chan_def *chandef;
-	const struct wmi_tlv *tlv;
 	struct ath12k *ar;
-	u16 tlv_tag;
-	u8 *ptr;
 	int ret;
 
 	if (!test_bit(WMI_TLV_SERVICE_DCS_AWGN_INT_SUPPORT, ab->wmi_ab.svc_map)) {
@@ -11518,35 +11578,8 @@ ath12k_wmi_dcs_awgn_interference_event(struct ath12k_base *ab,
 		return;
 	}
 
-	ptr = skb->data;
-
-	if (skb->len < (sizeof(*dcs_intf_ev) + TLV_HDR_SIZE)) {
-		ath12k_warn(ab, "dcs interference event size invalid\n");
-		return;
-	}
-
-	tlv = (struct wmi_tlv *)ptr;
-	tlv_tag = FIELD_GET(WMI_TLV_TAG, tlv->header);
-	ptr += sizeof(*tlv);
-
-	if (tlv_tag == WMI_TAG_DCS_INTERFERENCE_EVENT) {
-		dcs_intf_ev = (struct wmi_dcs_interference_ev*)ptr;
-
-		ath12k_dbg(ab, ATH12K_DBG_WMI,
-			   "pdev awgn detected on pdev %d, interference type %d\n",
-			   dcs_intf_ev->pdev_id, dcs_intf_ev->interference_type);
-
-		if (dcs_intf_ev->interference_type != WMI_DCS_AWGN_INTF) {
-			ath12k_warn(ab, "interference type is not awgn\n");
-			return;
-		}
-	} else {
-		ath12k_warn(ab, "dcs interference event received with wrong tag\n");
-		return;
-	}
-
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
-				  ath12k_wmi_dcs_awgn_event_parser,
+				  ath12k_wmi_dcs_event_parser,
 				  &awgn_info);
 	if (ret) {
 		ath12k_warn(ab, "failed to parse awgn tlv %d\n", ret);
@@ -11554,10 +11587,10 @@ ath12k_wmi_dcs_awgn_interference_event(struct ath12k_base *ab,
 	}
 
 	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, dcs_intf_ev->pdev_id);
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
 	if (!ar) {
 		ath12k_warn(ab, "awgn detected in invalid pdev id(%d)\n",
-			    dcs_intf_ev->pdev_id);
+			    pdev_id);
 		goto exit;
 	}
 	if (!ar->supports_6ghz) {
@@ -11579,7 +11612,7 @@ ath12k_wmi_dcs_awgn_interference_event(struct ath12k_base *ab,
 	}
 
 	ath12k_info(ab, "Interface(pdev %d) : AWGN interference detected\n",
-		    dcs_intf_ev->pdev_id);
+		    pdev_id);
 
 	arg.ar = ar;
 	arg.chanctx_conf = NULL;
@@ -11888,6 +11921,54 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 		ath12k_dfs_calculate_subchannels(ab, ev, do_full_bw_nol);
 
 	rcu_read_unlock();
+}
+
+static void
+ath12k_wmi_dcs_interference_event(struct ath12k_base *ab,
+				  struct sk_buff *skb)
+{
+	const struct wmi_dcs_interference_ev *dcs_intf_ev;
+	const struct wmi_tlv *tlv;
+	u32 pdev_id, interference_type;
+	u16 tlv_tag;
+	u8 *ptr;
+
+	ptr = skb->data;
+
+	if (skb->len < (sizeof(*dcs_intf_ev) + TLV_HDR_SIZE)) {
+		ath12k_warn(ab, "dcs interference event size invalid\n");
+		return;
+	}
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv_tag = u32_get_bits(tlv->header, WMI_TLV_TAG);
+	ptr += sizeof(*tlv);
+
+	if (tlv_tag == WMI_TAG_DCS_INTERFERENCE_EVENT) {
+		dcs_intf_ev = (struct wmi_dcs_interference_ev *)ptr;
+		pdev_id = le32_to_cpu(dcs_intf_ev->pdev_id);
+		interference_type = le32_to_cpu(dcs_intf_ev->interference_type);
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "Interference detected on pdev %d, interference type %d\n",
+			   pdev_id, interference_type);
+	} else {
+		ath12k_warn(ab, "dcs interference event received with wrong tag\n");
+		return;
+	}
+
+	switch (interference_type) {
+	case WMI_DCS_CW_INTF:
+		ath12k_wmi_dcs_cw_interference_event(ab, skb, pdev_id);
+		break;
+	case WMI_DCS_AWGN_INTF:
+		ath12k_wmi_dcs_awgn_interference_event(ab, skb, pdev_id);
+		break;
+	default:
+		ath12k_warn(ab,
+			    "For pdev=%d, Invalid Interference type=%d received from FW",
+			    pdev_id, interference_type);
+		break;
+	}
 }
 
 static void ath12k_tm_wmi_event_segmented(struct ath12k_base *ab, u32 cmd_id,
@@ -15229,7 +15310,7 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 			ath12k_tm_wmi_event_unsegmented(ab, id, skb);
 		break;
 	case WMI_DCS_INTERFERENCE_EVENTID:
-                ath12k_wmi_dcs_awgn_interference_event(ab, skb);
+		ath12k_wmi_dcs_interference_event(ab, skb);
                 break;
 	case WMI_MUEDCA_PARAMS_CONFIG_EVENTID:
 		ath12k_wmi_pdev_update_muedca_params_status_event(ab, skb);
