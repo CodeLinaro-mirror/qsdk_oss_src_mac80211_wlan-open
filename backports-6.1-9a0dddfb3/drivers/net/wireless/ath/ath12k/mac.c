@@ -620,6 +620,13 @@ static u8 ath12k_parse_mpdudensity(u8 mpdudensity)
 	}
 }
 
+bool ath12k_mac_is_bridge_vdev(struct ath12k_link_vif *arvif)
+{
+	if (arvif->vdev_subtype == WMI_VDEV_SUBTYPE_BRIDGE)
+		return true;
+	return false;
+}
+
 static int ath12k_mac_vif_link_chan(struct ieee80211_vif *vif, u8 link_id,
 				    struct cfg80211_chan_def *def)
 {
@@ -752,7 +759,7 @@ static void ath12k_get_arvif_iter(void *data, u8 *mac,
 	struct ath12k_link_vif *arvif;
 	u8 link_id;
 
-	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		arvif = rcu_dereference(ahvif->link[link_id]);
 
 		if (WARN_ON(!arvif))
@@ -4238,7 +4245,7 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 
 	if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ar->ab->wmi_ab.svc_map) &&
 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-	    ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE)
+	    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE)
 		ath12k_mac_11d_scan_stop_all(ar->ab);
 
 }
@@ -4483,6 +4490,9 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
+	if (!ar)
+		return;
+
 	if (arvif == &ahvif->deflink)
 		cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
 
@@ -4498,7 +4508,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 
 	if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ar->ab->wmi_ab.svc_map) &&
 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-	    ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE)
+	    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE)
 		ath12k_mac_11d_scan_stop(ar);
 
 	ret = ath12k_spectral_vif_stop(arvif);
@@ -5870,7 +5880,7 @@ ath12k_mac_find_link_id_by_ar(struct ath12k_vif *ahvif, struct ath12k *ar)
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
-	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
 		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
 
 		if (!arvif || !arvif->is_created)
@@ -6092,7 +6102,7 @@ exit:
 
 	if (ar->state_11d == ATH12K_11D_PREPARING &&
 	   ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-	   ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE)
+	   arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE)
 		ath12k_mac_11d_scan_start(ar, arvif->vdev_id);
 
 	return ret;
@@ -8798,13 +8808,13 @@ void ath12k_mac_assign_middle_link_id(struct ieee80211_sta *sta,
 	 * the middle device link as primary_link_id of sta which is adjacent
 	 * to other two devices.
 	 */
-	if (!(num_devices == ATH12K_NLINK_SUPP_DEVICES &&
+	if (!(num_devices == ATH12K_MIN_NUM_DEVICES_NLINK &&
 	      hweight16(sta->valid_links) == ATH12K_MAX_STA_LINKS)) {
 		/* To-Do: Requirement to set primary link id for no.of devices
 		 * greater than 4 has not yet confirmed. Also, Need to revisit
 		 * here when STA association support extends more than 3.
 		 */
-		if (num_devices > ATH12K_NLINK_SUPP_DEVICES)
+		if (num_devices > ATH12K_MIN_NUM_DEVICES_NLINK)
 			ath12k_err(NULL,
 				   "num devices %d Combination not supported yet\n",
 				   num_devices);
@@ -10650,6 +10660,7 @@ static int ath12k_mac_start(struct ath12k *ar)
 
 	ar->num_started_vdevs = 0;
 	ar->num_created_vdevs = 0;
+	ar->num_created_bridge_vdevs = 0;
 	ar->num_peers = 0;
 	ar->allocated_vdev_map = 0;
 	ar->chan_tx_pwr = ATH12K_PDEV_TX_POWER_INVALID;
@@ -10976,7 +10987,7 @@ static int ath12k_mac_setup_vdev_create_arg(struct ath12k_link_vif *arvif,
 
 	arg->if_id = arvif->vdev_id;
 	arg->type = ahvif->vdev_type;
-	arg->subtype = ahvif->vdev_subtype;
+	arg->subtype = arvif->vdev_subtype;
 	arg->pdev_id = pdev->pdev_id;
 
 	arg->mbssid_flags = WMI_VDEV_MBSSID_FLAGS_NON_MBSSID_AP;
@@ -11297,7 +11308,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	/* Assume it as non-mbssid initially, well overwrite it later.
 	 */
 	arvif->tx_vdev_id = vdev_id;
-	ahvif->vdev_subtype = WMI_VDEV_SUBTYPE_NONE;
+	arvif->vdev_subtype = WMI_VDEV_SUBTYPE_NONE;
 
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
 
@@ -11311,17 +11322,17 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 		ahvif->vdev_type = WMI_VDEV_TYPE_STA;
 
 		if (vif->p2p)
-			ahvif->vdev_subtype = WMI_VDEV_SUBTYPE_P2P_CLIENT;
+			arvif->vdev_subtype = WMI_VDEV_SUBTYPE_P2P_CLIENT;
 
 		break;
 	case NL80211_IFTYPE_MESH_POINT:
-		ahvif->vdev_subtype = WMI_VDEV_SUBTYPE_MESH_11S;
+		arvif->vdev_subtype = WMI_VDEV_SUBTYPE_MESH_11S;
 		fallthrough;
 	case NL80211_IFTYPE_AP:
 		ahvif->vdev_type = WMI_VDEV_TYPE_AP;
 
 		if (vif->p2p)
-			ahvif->vdev_subtype = WMI_VDEV_SUBTYPE_P2P_GO;
+			arvif->vdev_subtype = WMI_VDEV_SUBTYPE_P2P_GO;
 
 		break;
 	case NL80211_IFTYPE_MONITOR:
@@ -11331,7 +11342,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 		break;
 	case NL80211_IFTYPE_P2P_DEVICE:
 		ahvif->vdev_type = WMI_VDEV_TYPE_STA;
-		ahvif->vdev_subtype = WMI_VDEV_SUBTYPE_P2P_DEVICE;
+		arvif->vdev_subtype = WMI_VDEV_SUBTYPE_P2P_DEVICE;
 		break;
 	default:
 		WARN_ON(1);
@@ -11339,7 +11350,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_SET(MAC, L1), "mac vdev create id %d type %d subtype %d map %llx\n",
-		   arvif->vdev_id, ahvif->vdev_type, ahvif->vdev_subtype,
+		   arvif->vdev_id, ahvif->vdev_type, arvif->vdev_subtype,
 		   ab->free_vdev_map);
 
 	vif->cab_queue = arvif->vdev_id % (ATH12K_HW_MAX_QUEUES - 1);
@@ -11365,7 +11376,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 		return ret;
 	}
 
-	ar->num_created_vdevs++;
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		ar->num_created_bridge_vdevs++;
+	else
+		ar->num_created_vdevs++;
 	arvif->is_created = true;
 	ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM created, vdev_id %d\n",
 		   vif->addr, arvif->vdev_id);
@@ -11446,7 +11460,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 
 		if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ab->wmi_ab.svc_map) &&
 		    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-		    ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE) {
+		    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE) {
 			reinit_completion(&ar->completed_11d_scan);
 			ar->state_11d = ATH12K_11D_PREPARING;
 		}
@@ -11499,8 +11513,13 @@ err_vdev_del:
 		ar->monitor_vdev_created = false;
 		ar->monitor_vdev_id = -1;
 	}
-	WARN_ON(!ar->num_created_vdevs);
-	ar->num_created_vdevs--;
+	if (ath12k_mac_is_bridge_vdev(arvif)) {
+		WARN_ON(!ar->num_created_bridge_vdevs);
+		ar->num_created_bridge_vdevs--;
+	} else {
+		WARN_ON(!ar->num_created_vdevs);
+		ar->num_created_vdevs--;
+	}
 	arvif->is_created = false;
 	arvif->ar = NULL;
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
@@ -11605,6 +11624,7 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	u8 link_id = arvif->link_id, scan_link;
 	unsigned long scan_link_map;
 	int ret;
+	bool is_bridge_vdev;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -11672,9 +11692,9 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	if (arvif->is_created)
 		goto flush;
 
-	if (ar->num_created_vdevs > (TARGET_NUM_VDEVS - 1)) {
-		ath12k_warn(ab, "failed to create vdev, reached max vdev limit %d\n",
-			    TARGET_NUM_VDEVS);
+	is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
+	if (ath12k_core_is_vdev_limit_reached(ar, is_bridge_vdev)) {
+		ret = -EBUSY;
 		goto unlock;
 	}
 
@@ -11793,8 +11813,13 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	spin_unlock_bh(&ar->ab->base_lock);
 
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
-	WARN_ON(!ar->num_created_vdevs);
-	ar->num_created_vdevs--;
+	if (!ath12k_mac_is_bridge_vdev(arvif)) {
+		WARN_ON(!ar->num_created_vdevs);
+		ar->num_created_vdevs--;
+	} else {
+		WARN_ON(!ar->num_created_bridge_vdevs);
+		ar->num_created_bridge_vdevs--;
+	}
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ar->monitor_vdev_id = -1;
@@ -13495,7 +13520,7 @@ ath12k_mac_op_unassign_vif_chanctx(struct ieee80211_hw *hw,
 
 	if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ab->wmi_ab.svc_map) &&
 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-	    ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE &&
+	    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE &&
 	    ar->state_11d != ATH12K_11D_PREPARING) {
 		reinit_completion(&ar->completed_11d_scan);
 		ar->state_11d = ATH12K_11D_PREPARING;
@@ -14710,7 +14735,7 @@ ath12k_mac_op_reconfig_complete(struct ieee80211_hw *hw,
 			 */
 			if (arvif->is_up &&
 			    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-			    ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE) {
+			    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE) {
 				ieee80211_hw_restart_disconnect(ahvif->vif);
 
 				ath12k_dbg(ab, ATH12K_DBG_BOOT,
@@ -15861,6 +15886,7 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 {
 	struct ath12k_pdev_cap *cap = &ar->pdev->cap;
 	int ret;
+	u8 total_vdevs;
 
 	init_waitqueue_head(&ar->txmgmt_empty_waitq);
 	idr_init(&ar->txmgmt_idr);
@@ -15880,6 +15906,10 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	ar->max_num_stations = ath12k_core_get_max_station_per_radio(ar->ab);
 	ar->max_num_peers = ath12k_core_get_max_peers_per_radio(ar->ab);
 	ar->rssi_offsets.rssi_offset = ATH12K_DEFAULT_NOISE_FLOOR;
+
+	total_vdevs = ath12k_core_get_total_num_vdevs(ar->ab);
+	if (total_vdevs == ATH12K_MAX_NUM_VDEVS_NLINK)
+		ar->max_num_stations -= TARGET_NUM_BRIDGE_SELF_PEER;
 
 	return 0;
 }
@@ -16576,10 +16606,13 @@ void ath12k_mac_destroy(struct ath12k_hw_group *ag)
 
 static void ath12k_mac_set_device_defaults(struct ath12k_base *ab)
 {
+	u8 total_vdevs;
+
 	/* Initialize channel counters frequency value in hertz */
 	ab->cc_freq_hz = 320000;
 	spin_lock_bh(&ab->base_lock);
-	ab->free_vdev_map = (1LL << (ab->num_radios * TARGET_NUM_VDEVS)) - 1;
+	total_vdevs = ath12k_core_get_total_num_vdevs(ab);
+	ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
 	spin_unlock_bh(&ab->base_lock);
 }
 

@@ -60,11 +60,23 @@ struct ath12k_generic_iter {
  * for driver usage purpose.
  */
 #define ATH12K_DEFAULT_SCAN_LINK	IEEE80211_MLD_MAX_NUM_LINKS
+#define ATH12K_LAST_SCAN_LINK		(IEEE80211_MLD_MAX_NUM_LINKS + \
+					ATH12K_GROUP_MAX_RADIO - 1)
+#define ATH12K_MAX_NUM_BRIDGE_LINKS	2
+#define ATH12K_BRIDGE_LINK_MIN		(ATH12K_LAST_SCAN_LINK + 1)
+#define ATH12K_BRIDGE_LINK_MAX		(ATH12K_LAST_SCAN_LINK + \
+					ATH12K_MAX_NUM_BRIDGE_LINKS)
 /* Define 1 scan link for each radio for parallel scan purposes */
-#define ATH12K_NUM_MAX_LINKS	(IEEE80211_MLD_MAX_NUM_LINKS + ATH12K_GROUP_MAX_RADIO)
-#define ATH12K_SCAN_LINKS_MASK	GENMASK(ATH12K_NUM_MAX_LINKS, IEEE80211_MLD_MAX_NUM_LINKS)
+#define ATH12K_NUM_MAX_LINKS		(IEEE80211_MLD_MAX_NUM_LINKS + \
+					ATH12K_GROUP_MAX_RADIO + \
+					ATH12K_MAX_NUM_BRIDGE_LINKS)
+#define ATH12K_BRIDGE_LINKS_MASK	GENMASK(ATH12K_BRIDGE_LINK_MAX, \
+					ATH12K_BRIDGE_LINK_MIN)
+#define ATH12K_IEEE80211_MLD_MAX_LINKS_MASK	\
+					GENMASK(IEEE80211_MLD_MAX_NUM_LINKS - \
+					1, 0)
 #define ATH12K_MAX_STA_LINKS	3
-
+#define ATH12K_SCAN_LINKS_MASK	GENMASK(ATH12K_LAST_SCAN_LINK, IEEE80211_MLD_MAX_NUM_LINKS)
 #define ATH12K_PDEV_SIGNAL_UPDATE_TIME_MSECS	2000
 
 #define HECAP_PHY_SUBFMR_GET(hecap_phy) \
@@ -307,4 +319,5 @@ u16 ath12k_calculate_subchannel_count(enum nl80211_chan_width width);
 void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif);
 struct ieee80211_bss_conf *ath12k_mac_get_link_bss_conf(struct ath12k_link_vif *arvif);
 bool ath12k_mac_is_ml_arvif(struct ath12k_link_vif *arvif);
+bool ath12k_mac_is_bridge_vdev(struct ath12k_link_vif *arvif);
 #endif

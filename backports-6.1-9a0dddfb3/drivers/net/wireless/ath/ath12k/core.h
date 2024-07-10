@@ -446,6 +446,7 @@ struct ath12k_link_vif {
 	bool spectral_enabled;
 	u32 vht_cap;
 	bool mvr_processing;
+	enum wmi_vdev_subtype vdev_subtype;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_twt;
 #endif /* CPTCFG_ATH12K_DEBUGFS */
@@ -492,7 +493,6 @@ struct ath12k_vif {
 	/* Should be the first member in the structure */
 	struct ath12k_dp_vif dp_vif;
 	enum wmi_vdev_type vdev_type;
-	enum wmi_vdev_subtype vdev_subtype;
 	struct ieee80211_vif *vif;
 	struct ath12k_hw *ah;
 
@@ -897,6 +897,7 @@ struct ath12k {
 	int max_num_peers;
 	u32 num_started_vdevs;
 	u32 num_created_vdevs;
+	u8 num_created_bridge_vdevs;
 	unsigned long long allocated_vdev_map;
 
 	struct idr txmgmt_idr;
@@ -1553,6 +1554,8 @@ void ath12k_fw_stats_free(struct ath12k_fw_stats *stats);
 void ath12k_fw_stats_reset(struct ath12k *ar);
 struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab,
 						  const char* name);
+u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
+bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar, bool is_bridge_vdev);
 
 static inline const char *ath12k_scan_state_str(enum ath12k_scan_state state)
 {

@@ -1588,11 +1588,73 @@ exit:
 	return ret;
 }
 
+u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab)
+{
+	if (ab->ag && ab->ag->num_devices >= ATH12K_MIN_NUM_DEVICES_NLINK)
+		return TARGET_NUM_VDEVS + TARGET_NUM_BRIDGE_VDEVS;
+
+	return TARGET_NUM_VDEVS;
+}
+EXPORT_SYMBOL(ath12k_core_get_total_num_vdevs);
+
+bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar,
+				       bool is_bridge_vdev)
+{
+	struct ath12k_base *ab;
+	u32 num_created_vdevs;
+	u8 total_num_vdevs, num_created_bridge_vdevs;
+	bool ret = false;
+
+	ab = ar->ab;
+	total_num_vdevs = ath12k_core_get_total_num_vdevs(ab);
+	num_created_vdevs = ar->num_created_vdevs;
+	num_created_bridge_vdevs = ar->num_created_bridge_vdevs;
+
+	if (total_num_vdevs == ATH12K_MAX_NUM_VDEVS_NLINK) {
+		if ((num_created_vdevs + num_created_bridge_vdevs) >
+		    (ATH12K_MAX_NUM_VDEVS_NLINK - 1)) {
+			ath12k_err(ab, "failed to create vdev, reached total max vdev limit %d[%d]\n",
+				   num_created_vdevs + num_created_bridge_vdevs,
+				   ATH12K_MAX_NUM_VDEVS_NLINK);
+			ret = true;
+			goto exit;
+		}
+
+		if (!is_bridge_vdev &&
+		    num_created_vdevs > (TARGET_NUM_VDEVS - 1)) {
+			ath12k_err(ab, "failed to create vdev, reached max vdev limit %d[%d]\n",
+				   num_created_vdevs,
+				   TARGET_NUM_VDEVS);
+			ret = true;
+			goto exit;
+		}
+
+		if (is_bridge_vdev &&
+		    num_created_bridge_vdevs > (TARGET_NUM_BRIDGE_VDEVS - 1)) {
+			ath12k_warn(ab, "failed to create bridge vdev, reached max bridge vdev limit: %d[%d]\n",
+				    num_created_bridge_vdevs, TARGET_NUM_BRIDGE_VDEVS);
+			ret = true;
+			goto exit;
+		}
+		goto exit;
+	}
+
+	if (num_created_vdevs > (TARGET_NUM_VDEVS - 1)) {
+		ath12k_err(ab, "failed to create vdev, reached max vdev limit %d [%d]\n",
+			   num_created_vdevs, TARGET_NUM_VDEVS);
+		ret = true;
+	}
+
+exit:
+	return ret;
+}
+
 static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 {
 	struct ath12k *ar = NULL;
 	struct ath12k_pdev *pdev;
 	int ret, j;
+	u8 total_vdevs;
 
 	mutex_lock(&ab->core_lock);
 	ath12k_core_pdev_deinit(ab);
@@ -1605,7 +1667,8 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_hal_srng_deinit(ab);
 
-	ab->free_vdev_map = (1LL << (ab->num_radios * TARGET_NUM_VDEVS)) - 1;
+	total_vdevs = ath12k_core_get_total_num_vdevs(ab);
+	ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
 	ab->free_vdev_stats_id_map = 0;
 
 	for (j = 0; j < ab->num_radios; j++) {
@@ -1614,6 +1677,7 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 		if (ar) {
 			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 			ar->num_created_vdevs = 0;
+			ar->num_created_bridge_vdevs = 0;
 			ar->allocated_vdev_map = 0;
 			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		}

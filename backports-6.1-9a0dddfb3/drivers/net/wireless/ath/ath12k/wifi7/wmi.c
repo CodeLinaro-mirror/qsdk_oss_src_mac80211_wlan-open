@@ -10,7 +10,10 @@
 void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 				   struct ath12k_wmi_resource_config_arg *config)
 {
-	config->num_vdevs = ab->num_radios * TARGET_NUM_VDEVS;
+	u8 total_vdevs;
+
+	total_vdevs = ath12k_core_get_total_num_vdevs(ab);
+	config->num_vdevs = ab->num_radios * total_vdevs;
 	config->num_peers = ab->num_radios *
 		ath12k_core_get_max_peers_per_radio(ab);
 	config->num_tids = ath12k_core_get_max_num_tids(ab);

@@ -5153,6 +5153,7 @@ enum wmi_vdev_subtype {
 	WMI_VDEV_SUBTYPE_PROXY_STA,
 	WMI_VDEV_SUBTYPE_MESH_NON_11S,
 	WMI_VDEV_SUBTYPE_MESH_11S,
+	WMI_VDEV_SUBTYPE_BRIDGE = 8,
 };
 
 enum wmi_sta_powersave_param {

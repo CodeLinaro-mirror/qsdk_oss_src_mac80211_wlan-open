@@ -19,6 +19,9 @@
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS        (8 + 1)
+/* Num of Bridge vdevs per radio */
+#define TARGET_NUM_BRIDGE_VDEVS		0
+#define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_BRIDGE_VDEVS
 #define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_512M
 
 /* Max num of stations for Single Radio mode */
@@ -30,6 +33,10 @@
 // #ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Enable default profile
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS	(16 + 1)
+/* Num of Bridge vdevs per radio */
+#define TARGET_NUM_BRIDGE_VDEVS		8
+#define ATH12K_MAX_NUM_VDEVS_NLINK	TARGET_NUM_VDEVS + \
+					TARGET_NUM_BRIDGE_VDEVS
 #define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_DEFAULT
 
 /* Max num of stations for Single Radio mode */
@@ -47,6 +54,8 @@
 #define TARGET_NUM_PEERS_PDEV_DBS_SBS	(TARGET_NUM_STATIONS_DBS_SBS + \
 					 TARGET_NUM_VDEVS)
 
+#define TARGET_NUM_BRIDGE_SELF_PEER	TARGET_NUM_BRIDGE_VDEVS
+
 /* Num of peers for Single Radio mode */
 #define TARGET_NUM_PEERS_SINGLE		(TARGET_NUM_PEERS_PDEV_SINGLE)
 
@@ -61,6 +70,7 @@
 
 #define TARGET_NUM_PEERS(x)	TARGET_NUM_PEERS_##x
 #define TARGET_NUM_PEER_KEYS	2
+/* Do we need to change the below */
 #define TARGET_NUM_TIDS(x)	(2 * TARGET_NUM_PEERS(x) + \
 				 4 * TARGET_NUM_VDEVS + 8)
 
@@ -127,7 +137,7 @@
 #define ATH12K_QCN6432_USERPD_ID_2	3
 
 #define ATH12K_HOST_AFC_QCN6432_MEM_OFFSET 0xD8000
-#define ATH12K_NLINK_SUPP_DEVICES 4
+#define ATH12K_MIN_NUM_DEVICES_NLINK 4
 
 enum ath12k_hw_rate_cck {
 	ATH12K_HW_RATE_CCK_LP_11M = 0,

@@ -29,11 +29,11 @@ static const struct wiphy_wowlan_support ath12k_wowlan_support = {
 	.max_pkt_offset = WOW_MAX_PKT_OFFSET,
 };
 
-static inline bool ath12k_wow_is_p2p_vdev(struct ath12k_vif *ahvif)
+static inline bool ath12k_wow_is_p2p_vdev(struct ath12k_link_vif *arvif)
 {
-	return (ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_P2P_DEVICE ||
-		ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_P2P_CLIENT ||
-		ahvif->vdev_subtype == WMI_VDEV_SUBTYPE_P2P_GO);
+	return (arvif->vdev_subtype == WMI_VDEV_SUBTYPE_P2P_DEVICE ||
+		arvif->vdev_subtype == WMI_VDEV_SUBTYPE_P2P_CLIENT ||
+		arvif->vdev_subtype == WMI_VDEV_SUBTYPE_P2P_GO);
 }
 
 int ath12k_wow_enable(struct ath12k *ar)
@@ -479,7 +479,7 @@ static int ath12k_wow_set_wakeups(struct ath12k *ar,
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (ath12k_wow_is_p2p_vdev(arvif->ahvif))
+		if (ath12k_wow_is_p2p_vdev(arvif))
 			continue;
 		ret = ath12k_wow_vif_set_wakeups(arvif, wowlan);
 		if (ret) {
@@ -538,7 +538,7 @@ static int ath12k_wow_nlo_cleanup(struct ath12k *ar)
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (ath12k_wow_is_p2p_vdev(arvif->ahvif))
+		if (ath12k_wow_is_p2p_vdev(arvif))
 			continue;
 
 		ret = ath12k_wow_vif_clean_nlo(arvif);
