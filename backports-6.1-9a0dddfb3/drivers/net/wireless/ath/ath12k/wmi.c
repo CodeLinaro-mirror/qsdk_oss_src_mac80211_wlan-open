@@ -13697,6 +13697,7 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 					  struct wmi_pdev_multiple_vdev_restart_req_arg *arg)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = ar->ab;
 	struct wmi_pdev_multiple_vdev_restart_request_cmd *cmd;
 	struct ath12k_wmi_channel_params *chan;
 	struct wmi_tlv *tlv;
@@ -13707,8 +13708,13 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 	void *ptr;
 	int ret, len, i;
 
-	if (WARN_ON(arg->vdev_ids.id_len > TARGET_NUM_VDEVS))
-		return -EINVAL;
+	if (ab->ag && ab->ag->num_devices >= ATH12K_MIN_NUM_DEVICES_NLINK) {
+		if (WARN_ON(arg->vdev_ids.id_len > TARGET_NUM_VDEVS + TARGET_NUM_BRIDGE_VDEVS))
+			return -EINVAL;
+	} else {
+		if (WARN_ON(arg->vdev_ids.id_len > TARGET_NUM_VDEVS))
+			return -EINVAL;
+	}
 
 	num_vdev_ids = arg->vdev_ids.id_len;
 	vdev_ids_len = num_vdev_ids * sizeof(__le32);

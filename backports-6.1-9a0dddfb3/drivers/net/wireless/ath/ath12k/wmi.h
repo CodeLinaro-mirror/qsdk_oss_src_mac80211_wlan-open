@@ -6448,7 +6448,7 @@ struct wmi_pdev_set_bios_geo_table_cmd {
 
 struct wmi_vdev_ids_arg {
 	u32 id_len;
-	u32 id[17]; /* TARGET_NUM_VDEVS */
+	u32 id[25]; /* TARGET_NUM_VDEVS + TARGET_NUM_BRIDGE_VDEVS */
 };
 
 struct wmi_pdev_multiple_vdev_restart_req_arg {
