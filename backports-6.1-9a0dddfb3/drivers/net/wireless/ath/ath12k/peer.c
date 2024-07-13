@@ -223,6 +223,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	peer->pdev_idx = ar->pdev_idx;
 	peer->sta = sta;
 	peer->vif = vif;
+	peer->is_bridge_peer = arg->mlo_bridge_peer;
 
 	if (vif->type == NL80211_IFTYPE_STATION) {
 		dp_link_vif->ast_hash = peer->ast_hash;
@@ -321,7 +322,7 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 	 * of peer unmap or delete responses
 	 */
 	links = ahsta->links_map;
-	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
 		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
 		if (!arvif || !arsta)
@@ -347,7 +348,7 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 
 	/* Ensure all link peers are deleted and unmapped */
 	links = ahsta->links_map;
-	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
 		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
 		if (!arvif || !arsta)

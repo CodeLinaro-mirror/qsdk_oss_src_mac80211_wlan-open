@@ -993,7 +993,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	/* handle only for MLO case, use deflink for non MLO case */
 	if (ieee80211_vif_is_mld(vif)) {
 		link_id = ath12k_mac_get_tx_link(sta, vif, link_id, skb, info_flags);
-		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+		if (link_id >= ATH12K_NUM_MAX_LINKS ||
+		    (ATH12K_SCAN_LINKS_MASK & BIT(link_id))) {
 			ieee80211_free_txskb(hw, skb);
 			return;
 		}
@@ -1038,6 +1039,11 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
 			memcpy(&mgmt->u.probe_resp.timestamp, &adjusted_tsf,
 			       sizeof(adjusted_tsf));
+		}
+
+		if (ath12k_mac_is_bridge_vdev(arvif)) {
+			ieee80211_free_txskb(hw, skb);
+			return;
 		}
 
 		frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);

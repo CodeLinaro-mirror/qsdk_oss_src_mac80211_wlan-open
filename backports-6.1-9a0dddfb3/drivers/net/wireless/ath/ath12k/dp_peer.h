@@ -103,6 +103,7 @@ struct ath12k_dp_link_peer {
 	struct rhash_head rhash_addr;
 	bool rhash_done;
 
+	bool is_bridge_peer;
 	u8 hw_link_id;
 
 	/* link stats */

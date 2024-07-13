@@ -654,6 +654,7 @@ struct ath12k_link_sta {
 	u16 tcl_metadata;
 	u16 ast_hash;
 
+	bool is_bridge_peer;
 	/* For check disable fixed rate check for peer */
 	bool disable_fixed_rate;
 };
@@ -662,7 +663,7 @@ struct ath12k_sta {
 	struct ath12k_vif *ahvif;
 	enum hal_pn_type pn_type;
 	struct ath12k_link_sta deflink;
-	struct ath12k_link_sta __rcu *link[IEEE80211_MLD_MAX_NUM_LINKS];
+	struct ath12k_link_sta __rcu *link[ATH12K_NUM_MAX_LINKS];
 	/* indicates bitmap of link sta created in FW */
 	u16 links_map;
 	u8 assoc_link_id;

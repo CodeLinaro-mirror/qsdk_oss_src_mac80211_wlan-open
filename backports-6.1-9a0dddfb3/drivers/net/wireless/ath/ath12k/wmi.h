@@ -3058,6 +3058,7 @@ struct wmi_vdev_create_mlo_params {
 #define ATH12K_WMI_FLAG_MLO_EMLSR_SUPPORT		BIT(6)
 #define ATH12K_WMI_FLAG_MLO_FORCED_INACTIVE		BIT(7)
 #define ATH12K_WMI_FLAG_MLO_LINK_ADD			BIT(8)
+#define ATH12K_WMI_FLAG_MLO_BRIDGE_PEER			BIT(10)
 #define ATH12K_WMI_FLAG_MLO_BRIDGE_LINK			BIT(14)
 #define ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID		BIT(18)
 #define ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID_PARTNER	BIT(19)
@@ -3294,6 +3295,7 @@ struct ath12k_wmi_peer_create_arg {
 	u32 peer_type;
 	u32 vdev_id;
 	bool ml_enabled;
+	bool mlo_bridge_peer;
 };
 
 struct wmi_peer_create_mlo_params {
@@ -3399,6 +3401,7 @@ enum wmi_peer_type {
 	WMI_PEER_TYPE_DEFAULT = 0,
 	WMI_PEER_TYPE_BSS = 1,
 	WMI_PEER_TYPE_TDLS = 2,
+	WMI_PEER_TYPE_MLO_BRIDGE = 7,
 };
 
 struct wmi_peer_create_cmd {

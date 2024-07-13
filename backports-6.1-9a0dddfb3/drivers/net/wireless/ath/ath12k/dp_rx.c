@@ -1030,6 +1030,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_sta *pubsta;
 	struct ath12k_dp_peer *peer;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
+	struct ath12k_dp_link_peer *link_peer = NULL;
 	u8 decap = rx_desc_data->decap;
 	bool is_mcbc = rxcb->is_mcbc;
 
@@ -1046,9 +1047,21 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	pubsta = peer ? peer->sta : NULL;
 
+	if (rxcb->peer_id)
+		link_peer = ath12k_dp_link_peer_find_by_id(dp, rxcb->peer_id);
+
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;
 		status->link_id = peer->hw_links[rxcb->hw_link_id];
+		if (link_peer && link_peer->is_bridge_peer) {
+			dev_kfree_skb_any(msdu);
+			ath12k_dbg(ab, ATH12K_DBG_DATA,
+				   "Packet received on bridge peer link_id %d, drop it\n",
+				   link_peer->link_id);
+			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock();
+			return;
+		}
 	}
 
 	spin_unlock_bh(&dp->dp_lock);

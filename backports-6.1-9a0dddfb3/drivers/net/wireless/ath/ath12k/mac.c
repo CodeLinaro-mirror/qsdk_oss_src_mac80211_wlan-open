@@ -271,7 +271,10 @@ static void ath12k_mac_stop(struct ath12k *ar);
 static int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				  bool is_bridge_vdev);
 static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arvif);
-
+static struct ath12k_link_sta *ath12k_mac_alloc_assign_link_sta(struct ath12k_hw *ah,
+								struct ath12k_sta *ahsta,
+								struct ath12k_vif *ahvif,
+								u8 link_id);
 static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
@@ -633,6 +636,7 @@ bool ath12k_mac_is_bridge_vdev(struct ath12k_link_vif *arvif)
 		return true;
 	return false;
 }
+EXPORT_SYMBOL(ath12k_mac_is_bridge_vdev);
 
 struct ath12k *ath12k_get_ar_by_link_idx(struct ath12k_hw *ah, u16 link_idx)
 {
@@ -3971,14 +3975,16 @@ static int ath12k_mac_vif_recalc_sta_he_txbf(struct ath12k *ar,
 	u8 link_id = arvif->link_id;
 	struct ieee80211_bss_conf *link_conf;
 
-	link_conf = ath12k_mac_get_link_bss_conf(arvif);
-	if (!link_conf) {
-		ath12k_warn(ar->ab, "unable to access bss link conf in recalc txbf conf\n");
-		return -EINVAL;
-	}
+	if (!ath12k_mac_is_bridge_vdev(arvif)) {
+		link_conf = ath12k_mac_get_link_bss_conf(arvif);
+		if (!link_conf) {
+			ath12k_warn(ar->ab, "unable to access bss link conf in recalc txbf conf\n");
+			return -EINVAL;
+		}
 
-	if (!link_conf->he_support)
-		return 0;
+		if (!link_conf->he_support)
+			return 0;
+	}
 
 	if (vif->type != NL80211_IFTYPE_STATION)
 		return -EINVAL;
@@ -4016,7 +4022,6 @@ static int ath12k_mac_vif_recalc_sta_he_txbf(struct ath12k *ar,
 		if (u32_get_bits(*hemode, HE_MODE_MU_TX_BFER))
 			*hemode |= u32_encode_bits(HE_SU_BFER_ENABLE, HE_MODE_SU_TX_BFER);
 	}
-
 	return 0;
 }
 
@@ -4898,6 +4903,35 @@ static int ath12k_mac_config_obss_pd(struct ath12k *ar,
 	}
 
 	return 0;
+}
+
+int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
+					     u16 bridge_bitmap, u8 *link_id)
+{
+	int ret = -EINVAL;
+	struct ath12k_link_vif *arvif;
+	unsigned long links;
+	struct ath12k_base *ab;
+
+	*link_id = ATH12K_BRIDGE_LINK_MIN;
+
+	links = ahvif->links_map;
+	for_each_set_bit_from(*link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		arvif = ahvif->link[*link_id];
+		if (!arvif)
+			continue;
+
+		ab = arvif->ar->ab;
+		if (bridge_bitmap & BIT(ab->wsi_info.index)) {
+			ath12k_dbg(ab, ATH12K_DBG_PEER,
+				   "arvif found link_id %d for bridge_bitmap 0x%x\n",
+				   *link_id, bridge_bitmap);
+			ret = 0;
+			break;
+		}
+	}
+
+	return ret;
 }
 
 bool ath12k_mac_is_bridge_required(u8 device_bitmap, u8 num_devices,
@@ -6685,7 +6719,7 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		 */
 		if (sta->mlo) {
 			links = ahsta->links_map;
-			for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+			for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 				arvif = wiphy_dereference(hw->wiphy,
 							  ahvif->link[link_id]);
 				arsta = wiphy_dereference(hw->wiphy,
@@ -8070,7 +8104,7 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
-	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+	if (WARN_ON(link_id >= ATH12K_NUM_MAX_LINKS))
 		return;
 
 	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
@@ -8282,7 +8316,8 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 				     struct ath12k_link_vif *arvif,
 				     struct ath12k_link_sta *arsta)
 {
-	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	struct ath12k_sta *ahsta = arsta->ahsta;
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	int ret = 0;
 
@@ -8317,7 +8352,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	ath12k_link_sta_rhash_delete(ar->ab, arsta);
 	spin_unlock_bh(&ar->ab->base_lock);
 
-	if (sta->valid_links)
+	if (ahsta->links_map)
 		ath12k_mac_free_unassign_link_sta(ahvif->ah,
 						  arsta->ahsta, arsta->link_id);
 
@@ -8330,7 +8365,8 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	struct ath12k_wmi_peer_create_arg peer_param = {0};
 	struct ath12k_neighbor_peer *nrp, *tmp;
@@ -8357,7 +8393,19 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 
 	peer_param.vdev_id = arvif->vdev_id;
 	peer_param.peer_addr = arsta->addr;
-	peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
+	if (arsta->is_bridge_peer) {
+		peer_param.peer_type = WMI_PEER_TYPE_MLO_BRIDGE;
+
+		/* For STA mode bridge peer, FW requirement is to set
+		 * peer type as Default (0) during peer create.
+		 */
+		if (ahvif && ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
+		peer_param.mlo_bridge_peer = true;
+	} else {
+		peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
+		peer_param.mlo_bridge_peer = false;
+	}
 	peer_param.ml_enabled = sta->mlo;
 
 	/*
@@ -8407,13 +8455,6 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 		}
 	}
 
-	ret = ath12k_dp_peer_setup(ar, arvif->vdev_id, arsta->addr);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup dp for peer %pM on vdev %i (%d)\n",
-			    arsta->addr, arvif->vdev_id, ret);
-		goto free_peer;
-	}
-
 	if (ab->hw_params->vdev_start_delay &&
 	    !arvif->is_started &&
 	    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
@@ -8454,10 +8495,11 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 	struct ieee80211_link_sta *link_sta;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_base *ab;
+	bool is_bridge_peer;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
-	if (!arsta || link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+	if (!arsta || link_id >= ATH12K_NUM_MAX_LINKS)
 		return -EINVAL;
 
 	arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
@@ -8466,11 +8508,20 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 
 	memset(arsta, 0, sizeof(*arsta));
 
-	link_sta = wiphy_dereference(ah->hw->wiphy, sta->link[link_id]);
-	if (!link_sta)
-		return -EINVAL;
+	/* For bridge peer, generate random mac_addr using kernel API
+	 */
+	is_bridge_peer = (ATH12K_BRIDGE_LINKS_MASK & BIT(link_id)) ? true :
+								     false;
+	if (is_bridge_peer) {
+		eth_random_addr(arsta->addr);
+		ahsta->primary_link_id = link_id;
+	} else {
+		link_sta = wiphy_dereference(ah->hw->wiphy, sta->link[link_id]);
+		if (!link_sta)
+			return -EINVAL;
 
-	ether_addr_copy(arsta->addr, link_sta->addr);
+		ether_addr_copy(arsta->addr, link_sta->addr);
+	}
 
 	/* logical index of the link sta in order of creation */
 	arsta->link_idx = ahsta->num_peer++;
@@ -8482,12 +8533,95 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 	ahsta->device_bitmap |= BIT(ab->wsi_info.index);
 	arsta->ahsta = ahsta;
 	ahsta->ahvif = ahvif;
+	arsta->is_bridge_peer = is_bridge_peer;
 
 	wiphy_work_init(&arsta->update_wk, ath12k_sta_rc_update_wk);
 
 	rcu_assign_pointer(ahsta->link[link_id], arsta);
 
 	return 0;
+}
+
+int ath12k_mac_create_bridge_peer(struct ath12k_hw *ah, struct ath12k_sta *ahsta,
+				  struct ath12k_vif *ahvif, u8 link_id)
+{
+	int ret = -EINVAL;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar;
+
+	if (ahsta->links_map & BIT(link_id)) {
+		/* Some assumptions went wrong */
+		ath12k_err(NULL, "Peer already exists on link: %d, unable to create Bridge peer\n",
+			   link_id);
+		return ret;
+	}
+
+	arvif = ahvif->link[link_id];
+	if (!arvif) {
+		ath12k_err(NULL, "Failed to get arvif to create bridge peer\n");
+		return ret;
+	}
+
+	arsta = ath12k_mac_alloc_assign_link_sta(ah, ahsta, ahvif, link_id);
+
+	if (!arsta) {
+		ath12k_err(NULL, "Failed to alloc/assign link sta");
+		return -ENOMEM;
+	}
+
+	ar = arvif->ar;
+	if (!ar) {
+		ath12k_err(NULL, "Failed to get ar to create bridge peer\n");
+		ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
+		return ret;
+	}
+
+	ret = ath12k_mac_station_add(ar, arvif, arsta);
+	if (ret) {
+		ath12k_warn(ar->ab, "Failed to add station: %pM for VDEV: %d\n",
+			    arsta->addr, arvif->vdev_id);
+		ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
+	}
+
+	return ret;
+}
+
+int ath12k_mac_init_bridge_peer(struct ath12k_hw *ah, struct ieee80211_sta *sta,
+				struct ath12k_vif *ahvif, u16 bridge_bitmap)
+{
+	struct ath12k_base *bridge_ab = NULL;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	u8 link_id = 0;
+	int ret = -EINVAL;
+
+	if (ath12k_mac_get_bridge_link_id_from_ahvif(ahvif, bridge_bitmap,
+						     &link_id)) {
+		ath12k_err(NULL, "Unable to find Bridge link vif for bitmap 0x%x\n",
+			   bridge_bitmap);
+		ret = -EINVAL;
+		goto out_err;
+	} else {
+		bridge_ab = ahvif->link[link_id]->ar->ab;
+		if (!test_bit(WMI_TLV_SERVICE_N_LINK_MLO_SUPPORT,
+			      bridge_ab->wmi_ab.svc_map)) {
+			ath12k_warn(bridge_ab,
+				    "firmware doesn't support Bridge peer, so disconnect the sta %pM\n",
+				    sta->addr);
+			ret = -EINVAL;
+			goto out_err;
+		}
+		ret = ath12k_mac_create_bridge_peer(ah, ahsta, ahvif, link_id);
+		if (ret) {
+			ath12k_err(bridge_ab, "Couldnt create Bridge peer for sta %pM\n",
+				   sta->addr);
+			goto out_err;
+		}
+		ath12k_info(bridge_ab, "Bridge peer created on link %d for sta %pM\n",
+			    link_id, sta->addr);
+	}
+out_err:
+	return ret;
 }
 
 static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
@@ -8507,7 +8641,7 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 
 	/* validate link station removal and clear arsta links */
 	links = ahsta->links_map;
-	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
 		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
 		if (!arvif || !arsta)
@@ -8575,15 +8709,23 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	 * peer associated to AP/Mesh/ADHOC vif type.
 	 */
 	} else if (old_state == IEEE80211_STA_AUTH &&
-		   new_state == IEEE80211_STA_ASSOC &&
-		   (vif->type == NL80211_IFTYPE_AP ||
-		    vif->type == NL80211_IFTYPE_MESH_POINT ||
-		    vif->type == NL80211_IFTYPE_ADHOC)) {
-		ret = ath12k_mac_station_assoc(ar, arvif, arsta, false);
-		if (ret)
-			ath12k_warn(ar->ab, "Failed to associate station: %pM\n",
-				    arsta->addr);
+		   new_state == IEEE80211_STA_ASSOC) {
 
+		ret = ath12k_dp_peer_setup(ar, arvif->vdev_id, arsta->addr);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to setup dp for peer %pM on vdev %i (%d)\n",
+					arsta->addr, arvif->vdev_id, ret);
+			goto exit;
+		}
+
+		if (vif->type == NL80211_IFTYPE_AP ||
+		    vif->type == NL80211_IFTYPE_MESH_POINT ||
+		    vif->type == NL80211_IFTYPE_ADHOC) {
+			ret = ath12k_mac_station_assoc(ar, arvif, arsta, false);
+			if (ret)
+				ath12k_warn(ar->ab, "Failed to associate station: %pM\n",
+					    arsta->addr);
+		}
 	/* IEEE80211_STA_ASSOC -> IEEE80211_STA_AUTHORIZED: set peer status as
 	 * authorized
 	 */
@@ -8646,9 +8788,11 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k_link_vif *arvif;
 	struct ath12k_link_sta *arsta;
+	struct ath12k *ar = ah->radio;
+	unsigned long links_map;
 	bool is_recovery = false;
-	unsigned long valid_links;
-	u8 link_id = 0;
+	u8 link_id = 0, num_devices = ar->ab->ag->num_devices;
+	u16 bridge_bitmap = 0;
 	int ret = -EINVAL;
 	struct ath12k_dp_peer_create_params dp_params = {0};
 
@@ -8732,9 +8876,18 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	    old_state == IEEE80211_STA_AUTH && new_state == IEEE80211_STA_ASSOC)
 		ieee80211_set_active_links(vif, ieee80211_vif_usable_links(vif));
 
+	if ((ahvif->vdev_type == WMI_VDEV_TYPE_AP || ahvif->vdev_type == WMI_VDEV_TYPE_STA) &&
+	    (old_state == IEEE80211_STA_AUTH && new_state == IEEE80211_STA_ASSOC) &&
+	    ath12k_mac_is_bridge_required(ahsta->device_bitmap, num_devices,
+					  &bridge_bitmap)) {
+		ret = ath12k_mac_init_bridge_peer(ah, sta, ahvif, bridge_bitmap);
+		if (ret)
+			goto exit;
+	}
+
 	/* Handle all the other state transitions in generic way */
-	valid_links = ahsta->links_map;
-	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
+	links_map = ahsta->links_map;
+	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
 		arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
 		/* some assumptions went wrong! */
@@ -8975,7 +9128,7 @@ static struct ath12k_link_sta *ath12k_mac_alloc_assign_link_sta(struct ath12k_hw
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
-	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+	if (link_id >= ATH12K_NUM_MAX_LINKS)
 		return NULL;
 
 	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
@@ -9053,7 +9206,7 @@ void ath12k_mac_assign_middle_link_id(struct ieee80211_sta *sta,
 	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
 		arsta = ahsta->link[link_id];
 
-		if (!arsta && !arsta->arvif)
+		if (!(arsta && arsta->arvif))
 			continue;
 
 		ab = arsta->arvif->ar->ab;
@@ -12279,7 +12432,7 @@ int ath12k_mac_op_ampdu_action(struct ieee80211_hw *hw,
 	if (WARN_ON(!links_map))
 		return ret;
 
-	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		ret = ath12k_mac_ampdu_action(hw, vif, params, link_id);
 		if (ret)
 			return ret;
@@ -14722,7 +14875,7 @@ void ath12k_mac_op_flush(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 	links = ahvif->links_map;
-	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
 		if (!(arvif && arvif->ar))
 			continue;

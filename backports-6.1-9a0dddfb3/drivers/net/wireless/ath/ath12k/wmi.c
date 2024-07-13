@@ -1431,14 +1431,16 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 	ml_param->tlv_header =
 			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_PEER_CREATE_PARAMS,
 					       sizeof(*ml_param));
-	if (arg->ml_enabled)
-		ml_param->flags = cpu_to_le32(ATH12K_WMI_FLAG_MLO_ENABLED);
+	ml_param->flags = le32_encode_bits(arg->ml_enabled,
+					   ATH12K_WMI_FLAG_MLO_ENABLED) |
+			  le32_encode_bits(arg->mlo_bridge_peer,
+					   ATH12K_WMI_FLAG_MLO_BRIDGE_PEER);
 
 	ptr += sizeof(*ml_param);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-		   "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d\n",
-		   arg->vdev_id, arg->peer_addr, ml_param->flags, ar->num_peers);
+		   "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d bridge peer %d\n",
+		   arg->vdev_id, arg->peer_addr, ml_param->flags, ar->num_peers, arg->mlo_bridge_peer);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_CREATE_CMDID);
 	if (ret) {
@@ -8283,7 +8285,7 @@ skip_mgmt_stats:
 	if (is_4addr_null_pkt) {
 		spin_lock_bh(&ab->base_lock);
 		arsta = ath12k_link_sta_find_by_addr(ab, hdr->addr2);
-		if (!arsta) {
+		if (!arsta || arsta->is_bridge_peer) {
 			spin_unlock_bh(&ab->base_lock);
 			ath12k_warn(ab, "arsta not found %pM\n",
 				    hdr->addr2);
