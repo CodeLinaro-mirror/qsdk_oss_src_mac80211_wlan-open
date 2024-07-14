@@ -2849,6 +2849,9 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	if (arg->ml.peer_id_valid)
 		ml_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_PEER_ID_VALID);
 
+	if (arg->ml.bridge_peer)
+		ml_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_BRIDGE_PEER);
+
 	ether_addr_copy(ml_params->mld_addr.addr, arg->ml.mld_addr);
 	ml_params->logical_link_idx = cpu_to_le32(arg->ml.logical_link_idx);
 	ml_params->ml_peer_id = cpu_to_le32(arg->ml.ml_peer_id);
@@ -2871,11 +2874,11 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 			   ml_params->emlsr_trans_timeout_us);
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "peer (%pM) ml flags %x mld_addr %pM logical_link_idx %u ml peer id %d ieee_link_id %u num_partner_links %d",
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "peer (%pM) ml flags %x mld_addr %pM logical_link_idx %u ml peer id %d ieee_link_id %u num_partner_links %d is_bridge_peer %d\n",
 		   arg->peer_mac, ml_params->flags, ml_params->mld_addr.addr,
 		   ml_params->logical_link_idx, ml_params->ml_peer_id,
 		   ml_params->ieee_link_id,
-		   arg->ml.num_partner_links);
+		   arg->ml.num_partner_links, arg->ml.bridge_peer);
 
 	ptr += sizeof(*ml_params);
 
@@ -2932,6 +2935,10 @@ skip_ml_params:
 			v = cpu_to_le32(ATH12K_WMI_FLAG_MLO_LINK_ID_VALID);
 			partner_info->flags |= v;
 		}
+
+		if (arg->ml.partner_info[i].bridge_peer)
+			partner_info->flags |=
+				cpu_to_le32(ATH12K_WMI_FLAG_MLO_BRIDGE_PEER);
 
 		partner_info->logical_link_idx =
 			cpu_to_le32(arg->ml.partner_info[i].logical_link_idx);

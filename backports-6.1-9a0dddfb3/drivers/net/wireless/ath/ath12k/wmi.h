@@ -3236,6 +3236,7 @@ struct wmi_ml_partner_info {
 	bool primary_umac;
 	bool logical_link_idx_valid;
 	bool mlo_bridge_link;
+	bool bridge_peer;
 	u32 logical_link_idx;
 };
 
