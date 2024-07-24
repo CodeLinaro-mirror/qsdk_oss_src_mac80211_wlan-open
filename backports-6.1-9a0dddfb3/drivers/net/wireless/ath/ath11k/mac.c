@@ -4194,7 +4194,7 @@ static void ath11k_mac_op_bss_info_changed(struct ieee80211_hw *hw,
 	    changed & BSS_CHANGED_UNSOL_BCAST_PROBE_RESP)
 		ath11k_mac_fils_discovery(arvif, info);
 
-	if ((changed & BSS_CHANGED_PS) && vif->type == NL80211_IFTYPE_AP) {
+	if ((changed & BSS_CHANGED_AP_PS) && vif->type == NL80211_IFTYPE_AP) {
 		ar->ap_ps_enabled = info->ap_ps_enable;
 		ath11k_mac_ap_ps_recalc(ar);
 	}

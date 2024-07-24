@@ -1191,6 +1191,7 @@ static const struct ath11k_hw_params ath11k_hw_params[] = {
 		.max_tx_ring = DP_TCL_NUM_RING_MAX + 1,
 		//.wakeup_mhi = false,
 		.num_vdevs_peers = ath11k_vdevs_peers,
+		.supports_ap_ps = true,
 		.supports_sta_ps = false,
 		.dbr_debug_support = true,
 		.bios_sar_capa = NULL,
