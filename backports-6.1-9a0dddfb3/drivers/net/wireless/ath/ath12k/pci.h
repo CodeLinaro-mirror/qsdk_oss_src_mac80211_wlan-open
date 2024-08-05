@@ -169,4 +169,5 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type,
 void ath12k_pci_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type);
 void ath12k_pci_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type);
 struct pci_dev *ath12k_pci_get_dev_by_ab(struct ath12k_base *ab);
+int ath12k_pci_get_link_status(struct pci_dev *pdev, u16 *speed, u16 *width);
 #endif /* ATH12K_PCI_H */

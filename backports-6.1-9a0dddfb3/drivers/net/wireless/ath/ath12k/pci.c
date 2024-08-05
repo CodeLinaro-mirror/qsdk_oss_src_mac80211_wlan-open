@@ -1138,6 +1138,23 @@ ath12k_get_device_family(const struct pci_device_id *pci_dev)
 	return ATH12K_DEVICE_FAMILY_MAX;
 }
 
+int ath12k_pci_get_link_status(struct pci_dev *pdev, u16 *speed, u16 *width)
+{
+	u16 link_status;
+	int ret;
+
+	if (!pdev || !speed || !width)
+		return -EINVAL;
+
+	ret = pcie_capability_read_word(pdev, PCI_EXP_LNKSTA, &link_status);
+	if (ret)
+		return ret;
+
+	*speed = u16_get_bits(link_status, PCI_EXP_LNKSTA_CLS);
+	*width = u16_get_bits(link_status, PCI_EXP_LNKSTA_NLW);
+	return 0;
+}
+
 static int ath12k_pci_probe(struct pci_dev *pdev,
 			    const struct pci_device_id *pci_dev)
 {
