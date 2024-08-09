@@ -185,6 +185,8 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_per_chain_rssi_stat_params) },
 	[WMI_TAG_11D_NEW_COUNTRY_EVENT] = {
 		.min_len = sizeof(struct wmi_11d_new_cc_event) },
+	[WMI_TAG_PEER_CREATE_RESP_EVENT] = {
+		.min_len = sizeof(struct ath12k_wmi_peer_create_conf_ev) },
 };
 
 __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len)
@@ -9498,6 +9500,58 @@ static void ath12k_wmi_process_tpc_stats(struct ath12k_base *ab,
 }
 #endif
 
+static long int
+ath12k_pull_peer_create_conf_ev(struct ath12k_base *ab,
+				struct sk_buff *skb,
+				struct ath12k_wmi_peer_create_conf_arg *arg)
+{
+	const void **tb;
+	const struct ath12k_wmi_peer_create_conf_ev *ev;
+	long int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %ld\n", ret);
+		return ret;
+	}
+
+	ev = tb[WMI_TAG_PEER_CREATE_RESP_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch peer create response ev");
+		kfree(tb);
+		return -EPROTO;
+	}
+
+	arg->vdev_id = __le32_to_cpu(ev->vdev_id);
+	ether_addr_copy(arg->mac_addr, ev->peer_macaddr.addr);
+	arg->status = __le32_to_cpu(ev->status);
+
+	kfree(tb);
+	return 0;
+}
+
+static void ath12k_wmi_peer_create_conf_event(struct ath12k_base *ab,
+					      struct sk_buff *skb)
+{
+	struct ath12k_wmi_peer_create_conf_arg arg = {};
+
+	if (ath12k_pull_peer_create_conf_ev(ab, skb, &arg)) {
+		ath12k_warn(ab, "failed to extract peer create conf event");
+		return;
+	}
+
+	if (arg.status != ATH12K_WMI_PEER_CREATE_SUCCESS) {
+		ath12k_warn(ab, "Peer %pM creation failed due to %d",
+			    arg.mac_addr, arg.status);
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "Peer create conf event for %pM status %d",
+		   arg.mac_addr, arg.status);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_cmd_hdr *cmd_hdr;
@@ -9631,6 +9685,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_11D_NEW_COUNTRY_EVENTID:
 		ath12k_reg_11d_new_cc_event(ab, skb);
+		break;
+	case WMI_PEER_CREATE_CONF_EVENTID:
+		ath12k_wmi_peer_create_conf_event(ab, skb);
 		break;
 	/* add Unsupported events (rare) here */
 	case WMI_TBTTOFFSET_EXT_UPDATE_EVENTID:

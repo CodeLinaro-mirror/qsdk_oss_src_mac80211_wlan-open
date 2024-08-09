@@ -775,6 +775,7 @@ enum wmi_tlv_event_id {
 	WMI_PEER_RESERVED9_EVENTID,
 	WMI_PEER_RESERVED10_EVENTID,
 	WMI_PEER_OPER_MODE_CHANGE_EVENTID,
+	WMI_PEER_CREATE_CONF_EVENTID = WMI_PEER_OPER_MODE_CHANGE_EVENTID + 3,
 	WMI_MGMT_RX_EVENTID = WMI_TLV_CMD(WMI_GRP_MGMT),
 	WMI_HOST_SWBA_EVENTID,
 	WMI_TBTTOFFSET_UPDATE_EVENTID,
@@ -1979,6 +1980,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_INFO,
 	WMI_TAG_SERVICE_READY_EXT2_EVENT = 0x334,
 	WMI_TAG_FILS_DISCOVERY_TMPL_CMD = 0x344,
+	WMI_TAG_PEER_CREATE_RESP_EVENT = 0x364,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT = 0x36F,
 	WMI_TAG_PDEV_SRG_BSS_COLOR_BITMAP_CMD = 0x37b,
 	WMI_TAG_PDEV_SRG_PARTIAL_BSSID_BITMAP_CMD,
@@ -4617,6 +4619,26 @@ struct wmi_peer_sta_kickout_event {
 
 #define WMI_ROAM_REASON_MASK		GENMASK(3, 0)
 #define WMI_ROAM_SUBNET_STATUS_MASK	GENMASK(5, 4)
+
+typedef enum {
+	ATH12K_WMI_PEER_CREATE_SUCCESS,
+	ATH12K_WMI_PEER_BSS_PEER_EXISTS,
+	ATH12K_WMI_PEER_AST_FULL,
+
+	ATH12K_WMI_PEER_CREATRE_STATUS_MAX
+} ath12k_peer_create_conf_status;
+
+struct ath12k_wmi_peer_create_conf_ev {
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 status;
+} __packed;
+
+struct ath12k_wmi_peer_create_conf_arg {
+	u32 vdev_id;
+	u8 mac_addr[ETH_ALEN];
+	u32 status;
+};
 
 enum wmi_roam_reason {
 	WMI_ROAM_REASON_BETTER_AP = 1,
