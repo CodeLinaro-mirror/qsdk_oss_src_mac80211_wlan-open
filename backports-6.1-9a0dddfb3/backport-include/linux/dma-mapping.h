@@ -6,6 +6,10 @@
 #include <linux/athdebug_dma-mapping.h>
 #endif
 
+#ifdef CPTCFG_MAC80211_ATHMEMDEBUG
+#include <linux/athdebug_dma-mapping.h>
+#endif
+
 #ifndef DMA_MAPPING_ERROR
 /*
  * A dma_addr_t can hold any valid DMA or bus address for the platform.  It can

@@ -4692,7 +4692,6 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_ATHMEMDEBUG
 	ath_update_alloc(skb, skb->truesize, __LINE__, __func__, 1);
 #endif
-
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	ieee80211_xmit_nss_fixup(skb, dev);
 #endif
@@ -5031,7 +5030,6 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_ATHMEMDEBUG
         ath_update_alloc(skb, skb->truesize, __LINE__, __func__, 1);
 #endif
-
 	orig_sdata = sdata;
 	if (likely(skb->fast_xmit && perf_mode)) {
 		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
