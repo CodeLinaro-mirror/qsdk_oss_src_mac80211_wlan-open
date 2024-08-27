@@ -1246,6 +1246,7 @@ static int ath12k_core_start(struct ath12k_base *ab)
 	ath12k_core_to_group_ref_get(ab);
 
 	ath12k_dp_rx_fst_init(ab);
+	ath12k_wsi_load_info_wsiorder_update(ab);
 
 	return 0;
 
@@ -3416,6 +3417,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	init_completion(&ag->umac_reset_complete);
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+	ag->wsi_load_info = NULL;
 
 	return ag;
 }
@@ -3723,6 +3725,9 @@ exit:
 
 	ath12k_dp_cmn_hw_group_assign(ath12k_ab_to_dp(ab), ag);
 
+	if (ath12k_wsi_load_info_init(ab))
+		ath12k_err(ab, "failed to initialize wsi load info\n");
+
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "wsi group-id %d num-devices %d index %d",
 		   ag->id, ag->num_devices, wsi->index);
 
@@ -3737,6 +3742,11 @@ void ath12k_core_hw_group_unassign(struct ath12k_base *ab)
 
 	if (!ag)
 		return;
+
+	if (ag->wsi_load_info) {
+		ath12k_wsi_load_info_deinit(ab, ag->wsi_load_info);
+		ag->wsi_load_info = NULL;
+	}
 
 	mutex_lock(&ag->mutex);
 
@@ -3895,6 +3905,69 @@ void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag)
 		if (ab->fw.api_version == ATH12K_FW_API_V2 && !test_bit(ATH12K_FW_FEATURE_MLO, ab->fw.fw_features)) {
 			ag->mlo_capable = false;
 			return;
+		}
+	}
+}
+
+int ath12k_wsi_load_info_init(struct ath12k_base *ab)
+{
+	struct ath12k_mlo_wsi_load_info *wsi_load_info = NULL;
+	struct ath12k_mlo_wsi_device_group *mlo_grp_info;
+	struct ath12k_hw_group *ag = ab->ag;
+	int ret = 0;
+	u8 i;
+
+	if (!ag)
+		return ret;
+
+	if (ag->num_devices < ATH12K_MIN_NUM_DEVICES_NLINK)
+		return ret;
+
+	if (!ag->wsi_load_info) {
+		wsi_load_info = kzalloc(sizeof(*wsi_load_info), GFP_KERNEL);
+		if (!wsi_load_info)
+			return -ENOMEM;
+		ag->wsi_load_info = wsi_load_info;
+		mlo_grp_info = &wsi_load_info->mlo_device_grp;
+		mlo_grp_info->num_devices = 0;
+		for (i = 0; i < ATH12K_MAX_SOCS; i++)
+			mlo_grp_info->wsi_order[i] = WSI_INVALID_ORDER;
+		ath12k_dbg(ab, ATH12K_DBG_MAC, "successfully initialized wsi load info\n");
+	}
+	return ret;
+}
+
+void ath12k_wsi_load_info_deinit(struct ath12k_base *ab,
+				 struct ath12k_mlo_wsi_load_info *wsi_load_info)
+{
+	ath12k_dbg(ab, ATH12K_DBG_MAC, "successfully deinitialized wsi load info\n");
+	kfree(wsi_load_info);
+}
+
+void ath12k_wsi_load_info_wsiorder_update(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_wsi_load_info *wsi_load_info;
+	struct ath12k_mlo_wsi_device_group *mlo_grp_info;
+	u8 i;
+
+	if (!ag || !ag->wsi_load_info)
+		return;
+
+	if (ag->num_devices < ATH12K_MIN_NUM_DEVICES_NLINK)
+		return;
+
+	wsi_load_info = ag->wsi_load_info;
+	mlo_grp_info = &wsi_load_info->mlo_device_grp;
+
+	for (i = 0; i < ATH12K_MAX_SOCS; i++) {
+		if (mlo_grp_info->wsi_order[i] == WSI_INVALID_ORDER) {
+			mlo_grp_info->wsi_order[i] = ab->wsi_info.index;
+			mlo_grp_info->num_devices++;
+			ath12k_dbg(ab, ATH12K_DBG_MAC,
+				   "wsi load info update for wsi order %d\n",
+				   ab->wsi_info.index);
+			break;
 		}
 	}
 }

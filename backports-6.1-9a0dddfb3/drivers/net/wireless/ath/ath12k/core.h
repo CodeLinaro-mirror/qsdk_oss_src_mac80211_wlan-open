@@ -1206,6 +1206,25 @@ struct ath12k_mlo_dp_umac_reset {
         u8 initiator_chip;
 };
 
+#define WSI_INVALID_ORDER	0xFF
+#define WSI_INVALID_INDEX	0xFF
+
+struct ath12k_mlo_wsi_device_group {
+	u8 wsi_order[ATH12K_MAX_SOCS];
+	u8 num_devices;
+};
+
+struct ath12k_mlo_wsi_device_load_stats {
+	u32 ingress_cnt;
+	u32 egress_cnt;
+	bool notify;
+};
+
+struct ath12k_mlo_wsi_load_info {
+	struct ath12k_mlo_wsi_device_group mlo_device_grp;
+	struct ath12k_mlo_wsi_device_load_stats load_stats[ATH12K_MAX_SOCS];
+};
+
 /* Holds info on the group of devices that are registered as a single
  * wiphy, protected with struct ath12k_hw_group::mutex.
  */
@@ -1238,6 +1257,7 @@ struct ath12k_hw_group {
 	bool hw_link_id_init_done;
 	u8 num_userpd_started;
 	struct work_struct reset_group_work;
+	struct ath12k_mlo_wsi_load_info *wsi_load_info;
 	u32 recovery_mode;
 	struct ath12k_mlo_dp_umac_reset mlo_umac_reset;
         struct completion umac_reset_complete;
@@ -1900,4 +1920,8 @@ static inline int ath12k_get_peer_count(struct ath12k_base *ab, bool get_max)
        return peer_count;
 }
 
+int ath12k_wsi_load_info_init(struct ath12k_base *ab);
+void ath12k_wsi_load_info_deinit(struct ath12k_base *ab,
+				 struct ath12k_mlo_wsi_load_info *wsi_load_info);
+void ath12k_wsi_load_info_wsiorder_update(struct ath12k_base *ab);
 #endif /* _CORE_H_ */

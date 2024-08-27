@@ -8989,6 +8989,209 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 	return 0;
 }
 
+static struct ath12k *ath12k_get_ar_by_device_idx(struct ath12k_hw_group *ag,
+						  u8 device_idx)
+{
+	struct ath12k *ar = NULL;
+	struct ath12k_hw *ah;
+	u8 i, j;
+
+	for (i = 0; i < ag->num_hw; i++) {
+		ah = ag->ah[i];
+		if (!ah)
+			continue;
+
+		ar = ah->radio;
+		for (j = 0; j < ah->num_radio; j++) {
+			if (!ar)
+				continue;
+
+			if (ar->ab->wsi_info.index == device_idx)
+				return ar;
+			ar++;
+		}
+	}
+	return NULL;
+}
+
+u8 ath12k_get_device_index(struct ath12k_mlo_wsi_load_info *wsi_load_info, u8 device_id)
+{
+	for (u8 i = 0; i < wsi_load_info->mlo_device_grp.num_devices; i++) {
+		if (wsi_load_info->mlo_device_grp.wsi_order[i] == device_id)
+			return i;
+	}
+	return WSI_INVALID_INDEX;
+}
+
+static u8 ath12k_get_wsi_next_device(struct ath12k_mlo_wsi_device_group *mlo_device_grp,
+				     u8 prim_deviceid, u8 num_hop)
+{
+	u8 next_device_id = WSI_INVALID_ORDER;
+
+	if (!num_hop)
+		return next_device_id;
+
+	next_device_id = (prim_deviceid + num_hop) % mlo_device_grp->num_devices;
+
+	return next_device_id;
+}
+
+static int ath12k_send_wsi_load_info(struct ath12k_base *ab, u8 group_id)
+{
+	struct ath12k_wmi_wsi_stats_info_param param;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_wsi_load_info *wsi_load_info = ag->wsi_load_info;
+	struct ath12k *ar = NULL;
+	int ret = 0, i;
+
+	for (i = 0; i < ATH12K_MAX_SOCS; i++) {
+		if (wsi_load_info->load_stats[i].notify) {
+			ar = ath12k_get_ar_by_device_idx(ag,
+							 wsi_load_info->mlo_device_grp.wsi_order[i]);
+			if (!ar) {
+				ath12k_err(NULL, "ar is null");
+				continue;
+			}
+			param.wsi_ingress_load_info =
+				wsi_load_info->load_stats[i].ingress_cnt;
+			param.wsi_egress_load_info =
+				wsi_load_info->load_stats[i].egress_cnt;
+
+			ret = ath12k_wmi_send_wsi_stats_info(ar, &param);
+			if (ret)
+				ath12k_warn(ar->ab,
+					    "failed to initiate wmi pdev wsi stats info  %d",
+					    ret);
+			else
+				wsi_load_info->load_stats[i].notify = false;
+		}
+	}
+	return ret;
+}
+
+static int ath12k_wsi_load_info_stats_update(struct ath12k_vif *ahvif,
+					     struct ath12k_sta *ahsta, bool append)
+{
+	struct ieee80211_sta *sta = container_of((void *)ahsta,
+						 struct ieee80211_sta, drv_priv);
+	struct ath12k_hw_group *ag;
+	struct ath12k_mlo_wsi_device_group *mlo_device_grp;
+	struct ath12k_link_vif *primary_arvif;
+	struct ath12k_base *primary_ab;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_mlo_wsi_load_info *wsi_load_info;
+	unsigned long links;
+	int ret = 0;
+	u8 i, link_id;
+	u8 prim_deviceid, hop_deviceid;
+	u8 sec_deviceids[ATH12K_MAX_SOCS];
+	u8 prim_deviceid_index, sec_deviceid_index, hop_deviceid_index;
+	u8 hop_counted, num_dev_found = 0;
+	u8 hops_from_primary;
+
+	if (ahvif->vif->type != NL80211_IFTYPE_AP)
+		return ret;
+
+	if (!sta || !sta->mlo)
+		return ret;
+
+	/* Primary link device id identification */
+	primary_arvif = ath12k_get_arvif_from_link_id(ahvif, ahsta->primary_link_id);
+	primary_ab = primary_arvif->ar->ab;
+	ag = primary_ab->ag;
+
+	if (!ag || !ag->wsi_load_info)
+		return ret;
+
+	if (ag->num_devices < ATH12K_MIN_NUM_DEVICES_NLINK)
+		return ret;
+
+	wsi_load_info = ag->wsi_load_info;
+
+	prim_deviceid = primary_ab->wsi_info.index;
+
+	if (!test_bit(WMI_TLV_SERVICE_PDEV_WSI_STATS_INFO_SUPPORT,
+		      primary_ab->wmi_ab.svc_map))
+		return 0;
+
+	/* Secondary links device id identification */
+	links = ahsta->links_map;
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		if (ahsta->primary_link_id == link_id)
+			continue;
+
+		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+
+		if (WARN_ON(!arvif))
+			continue;
+
+		if (!test_bit(WMI_TLV_SERVICE_PDEV_WSI_STATS_INFO_SUPPORT,
+			      arvif->ar->ab->wmi_ab.svc_map))
+			continue;
+
+		sec_deviceids[num_dev_found++] = arvif->ar->ab->wsi_info.index;
+	}
+
+	/* Egress and ingress load count updation */
+	prim_deviceid_index = ath12k_get_device_index(wsi_load_info, prim_deviceid);
+
+	if (prim_deviceid_index == WSI_INVALID_INDEX) {
+		ath12k_err(primary_ab, "primary device id not found in wsi_load_info\n");
+		return -EOPNOTSUPP;
+	}
+
+	mlo_device_grp = &wsi_load_info->mlo_device_grp;
+
+	if (num_dev_found) {
+		wsi_load_info->load_stats[prim_deviceid_index].notify = true;
+		wsi_load_info->load_stats[prim_deviceid_index].egress_cnt += append ? 1 : -1;
+	} else {
+		return ret;
+	}
+
+	hop_counted = 1;
+	for (i = 0; i < num_dev_found; i++) {
+		sec_deviceid_index = ath12k_get_device_index(wsi_load_info,
+							     sec_deviceids[i]);
+
+		if (sec_deviceid_index == WSI_INVALID_INDEX) {
+			ath12k_err(NULL, "secondary device id not found in wsi_load_info\n");
+			continue;
+		}
+		if (sec_deviceids[i] > prim_deviceid)
+			hops_from_primary = sec_deviceids[i] - prim_deviceid;
+		else
+			hops_from_primary = mlo_device_grp->num_devices -
+						(prim_deviceid - sec_deviceids[i]);
+
+		while (hops_from_primary > hop_counted) {
+			hop_deviceid = ath12k_get_wsi_next_device(mlo_device_grp,
+								  prim_deviceid,
+								  hop_counted);
+			hop_counted++;
+			if (hop_deviceid == WSI_INVALID_ORDER)
+				continue;
+
+			hop_deviceid_index = ath12k_get_device_index(wsi_load_info,
+								     hop_deviceid);
+			if (hop_deviceid_index == WSI_INVALID_INDEX) {
+				ath12k_err(NULL,
+					   "hop device id not found in wsi_load_info\n");
+				continue;
+			}
+			wsi_load_info->load_stats[hop_deviceid_index].notify = true;
+			wsi_load_info->load_stats[hop_deviceid_index].ingress_cnt +=
+									append ? 1 : -1;
+		}
+	}
+
+	ret = ath12k_send_wsi_load_info(primary_ab, ag->id);
+	if (ret)
+		ath12k_err(primary_ab, "failed to send wsi load info");
+
+	return ret;
+}
+
 int ath12k_mac_create_bridge_peer(struct ath12k_hw *ah, struct ath12k_sta *ahsta,
 				  struct ath12k_vif *ahvif, u8 link_id)
 {
@@ -9082,6 +9285,8 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 	u8 link_id;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
+
+	ath12k_wsi_load_info_stats_update(ahvif, ahsta, false);
 
 	ath12k_peer_mlo_link_peers_delete(ahvif, ahsta);
 
@@ -9475,6 +9680,9 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 				goto exit;
 		}
 	}
+
+	if (old_state == IEEE80211_STA_AUTH &&  new_state == IEEE80211_STA_ASSOC)
+		ath12k_wsi_load_info_stats_update(ahvif, ahsta, true);
 
 ml_station_remove:
 	/* IEEE80211_STA_NONE -> IEEE80211_STA_NOTEXIST:
@@ -9896,6 +10104,7 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 					return 0;
 				}
 			}
+			ath12k_wsi_load_info_stats_update(ahvif, ahsta, false);
 
 			ret = ath12k_mac_station_unauthorize(ar, arvif, arsta);
 			if (ret)
@@ -9919,6 +10128,7 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 					ret = 0;
 				}
 			}
+			ath12k_wsi_load_info_stats_update(ahvif, ahsta, true);
 		} else if (vif->type == NL80211_IFTYPE_STATION)
 			ath12k_mac_free_unassign_link_sta(ahsta->ahvif->ah, arsta->ahsta,
 							  arsta->link_id);
