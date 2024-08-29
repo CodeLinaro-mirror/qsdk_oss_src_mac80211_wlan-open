@@ -4127,6 +4127,8 @@ static void ath12k_recalculate_mgmt_rate(struct ath12k *ar,
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
 	const struct ieee80211_supported_band *sband;
 	struct ieee80211_bss_conf *bss_conf;
+	enum nl80211_band band;
+	u8 beacon_rate_idx;
 	u8 basic_rate_idx;
 	int hw_rate_code;
 	u32 vdev_param;
@@ -4143,6 +4145,7 @@ static void ath12k_recalculate_mgmt_rate(struct ath12k *ar,
 	}
 
 	sband = hw->wiphy->bands[def->chan->band];
+	band = def->chan->band;
 	basic_rate_idx = ffs(bss_conf->basic_rates);
 	if (basic_rate_idx)
 		basic_rate_idx -= 1;
@@ -4159,6 +4162,18 @@ static void ath12k_recalculate_mgmt_rate(struct ath12k *ar,
 					    hw_rate_code);
 	if (ret)
 		ath12k_warn(ar->ab, "failed to set mgmt tx rate %d\n", ret);
+	if (bss_conf->beacon_tx_rate.control[band].legacy) {
+		beacon_rate_idx = ffs(bss_conf->beacon_tx_rate.control[band].legacy);
+		beacon_rate_idx -=1;
+
+		if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
+			beacon_rate_idx += ATH12K_MAC_FIRST_OFDM_RATE_IDX;
+		if (beacon_rate_idx < ARRAY_SIZE(ath12k_legacy_rates)) {
+			bitrate = ath12k_legacy_rates[beacon_rate_idx].bitrate;
+			hw_rate_code = ath12k_mac_get_rate_hw_value(bitrate);
+
+		}
+	}
 
 	vdev_param = WMI_VDEV_PARAM_BEACON_RATE;
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, vdev_param,
@@ -14739,6 +14754,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_PUNCT);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_SET_SCAN_DWELL);
+	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_RATE_LEGACY);
 
 	ath12k_reg_init(hw);
 
