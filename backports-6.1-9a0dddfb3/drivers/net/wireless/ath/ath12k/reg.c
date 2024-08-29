@@ -565,6 +565,7 @@ struct ieee80211_regdomain *
 ath12k_reg_build_regd(struct ath12k_base *ab,
 		      struct ath12k_reg_info *reg_info)
 {
+	struct ieee80211_regdomain *updated_new_regd = NULL;
 	struct ieee80211_regdomain *new_regd = NULL;
 	struct ath12k_reg_rule *reg_rule;
 	u8 i = 0, j = 0, k = 0;
@@ -584,10 +585,6 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 
 	if (!num_rules)
 		goto ret;
-
-	/* Add max additional rules to accommodate weather radar band */
-	if (reg_info->dfs_region == ATH12K_DFS_REG_ETSI)
-		num_rules += 2;
 
 	new_regd = kzalloc(sizeof(*new_regd) +
 			   (num_rules * sizeof(struct ieee80211_reg_rule)),
@@ -660,7 +657,17 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 		if (flags & NL80211_RRF_DFS &&
 		    reg_info->dfs_region == ATH12K_DFS_REG_ETSI &&
 		    (reg_rule->end_freq > ETSI_WEATHER_RADAR_BAND_LOW &&
-		    reg_rule->start_freq < ETSI_WEATHER_RADAR_BAND_HIGH)){
+		     reg_rule->start_freq < ETSI_WEATHER_RADAR_BAND_HIGH)){
+			num_rules += 2;
+			updated_new_regd = krealloc(new_regd, sizeof(*new_regd) +
+						    (num_rules * sizeof(struct ieee80211_reg_rule)), GFP_ATOMIC);
+			if (!updated_new_regd) {
+				ath12k_err(ab, "Failed to realloc new_regd with number of rules as %d\n",
+					   num_rules);
+				break;
+			}
+
+			new_regd = updated_new_regd;
 			ath12k_reg_update_weather_radar_band(ab, new_regd,
 							     reg_rule, &i,
 							     flags, max_bw);
