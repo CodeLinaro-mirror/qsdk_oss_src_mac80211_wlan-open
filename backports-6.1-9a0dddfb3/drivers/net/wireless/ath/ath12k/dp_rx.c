@@ -1608,6 +1608,8 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct dp_rx_fst *fst = dp->dp_hw_grp->fst;
+	u32 tuple_mask = 0;
+	int ret, i;
 
 	if (!fst) {
 		ath12k_warn(ab, "FST table is NULL\n");
@@ -1628,6 +1630,19 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab)
 	ath12k_dp_htt_rx_flow_fse_operation(ab,
 					    DP_HTT_FST_CACHE_INVALIDATE_FULL,
 					    NULL);
+
+	if (!ath12k_fse_3_tuple_enabled)
+		return;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		tuple_mask = HTT_H2T_FLOW_CLASSIFY_3_TUPLE_FIELD_ENABLE;
+		ret = ath12k_dp_htt_rx_fse_3_tuple_config_send(ab, tuple_mask, i);
+		if (ret) {
+			ath12k_warn(ab, "FSE 3 tuple config failed for pdev:%d\n",
+					i);
+			return;
+		}
+	}
 }
 
 ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size)

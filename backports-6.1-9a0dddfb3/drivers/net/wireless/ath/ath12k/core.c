@@ -40,6 +40,10 @@ module_param_named(frame_mode, ath12k_frame_mode, uint, 0644);
 MODULE_PARM_DESC(frame_mode,
 		 "Datapath frame mode (0: raw, 1: native wifi (default), 2: ethernet)");
 
+bool ath12k_fse_3_tuple_enabled = true;
+module_param_named(fse_3_tuple_enabled, ath12k_fse_3_tuple_enabled, bool, 0644);
+MODULE_PARM_DESC(fse_3_tuple_enabled, "fse_3_tuple_enabled: 0-disable, 1-enable");
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 

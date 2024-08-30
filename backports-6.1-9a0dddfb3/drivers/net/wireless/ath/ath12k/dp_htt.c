@@ -1800,3 +1800,44 @@ err_free:
 	dev_kfree_skb_any(skb);
 	return ret;
 }
+
+int ath12k_dp_htt_rx_fse_3_tuple_config_send(struct ath12k_base *ab,
+					     u32 tuple_mask, u8 pdev_id)
+{
+	struct sk_buff *skb;
+	struct htt_h2t_msg_rx_3_tuple_hash_cfg *cmd;
+	int ret;
+	int len = sizeof(*cmd);
+
+	skb = ath12k_htc_alloc_skb(ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, len);
+	cmd = (struct htt_h2t_msg_rx_3_tuple_hash_cfg *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_RX_FSE_3_TUPLE_HASH_CFG,
+				      HTT_H2T_MSG_RX_FSE_3_TUPLE_MSG_TYPE);
+	cmd->info0 |= le32_encode_bits(pdev_id, HTT_H2T_MSG_RX_FSE_PDEV_ID);
+	cmd->info1 |= le32_encode_bits(tuple_mask,
+				       HTT_H2T_FLOW_CLASSIFY_3_TUPLE_FIELD_CONFIG);
+
+	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "FSE 3 TUPLE ENABLE HTT message:",
+			(void *)cmd, len);
+
+	ret = ath12k_htc_send(&ab->htc, ath12k_ab_to_dp(ab)->eid, skb);
+	if (ret) {
+		ath12k_err(ab, "DP FSE 3 TUPLE enable msg send failed ret:%d\n", ret);
+		goto err_free;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "DP FSE 3 TUPLE enable msg sent from host\n");
+
+	return 0;
+
+err_free:
+	dev_kfree_skb_any(skb);
+	return ret;
+}
+

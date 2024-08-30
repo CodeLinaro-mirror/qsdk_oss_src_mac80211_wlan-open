@@ -75,6 +75,8 @@
 #define INVALID_CIPHER 0xFFFFFFFF
 
 extern unsigned int ath12k_frame_mode;
+extern bool ath12k_fse_3_tuple_enabled;
+
 enum ath12k_bdf_search {
 	ATH12K_BDF_SEARCH_DEFAULT,
 	ATH12K_BDF_SEARCH_BUS_AND_BOARD,
