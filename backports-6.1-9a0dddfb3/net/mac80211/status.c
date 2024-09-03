@@ -1346,7 +1346,20 @@ EXPORT_SYMBOL(ieee80211_tx_status_8023);
 void ieee80211_report_low_ack(struct ieee80211_sta *pubsta, u32 num_packets)
 {
 	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
-	cfg80211_cqm_pktloss_notify(sta->sdata->dev, sta->sta.addr,
+	struct ieee80211_sub_if_data *master = NULL, *sdata = sta->sdata;
+	struct net_device *dev = sdata->dev;
+
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN && sdata->bss) {
+		master = container_of(sdata->bss,
+				      struct ieee80211_sub_if_data, u.ap);
+		if (master)
+			dev = master->dev;
+		else
+			pr_warn("Master interface not found, sending low ack with current device context %s\n",
+				dev->name);
+	}
+
+	cfg80211_cqm_pktloss_notify(dev, sta->sta.addr,
 				    num_packets, GFP_ATOMIC);
 }
 EXPORT_SYMBOL(ieee80211_report_low_ack);
