@@ -5373,6 +5373,43 @@ static const struct file_operations ath12k_fops_primary_link = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_write_power_save_gtx(struct file *file,
+					   const char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath12k_link_vif *arvif = file->private_data;
+	bool value;
+
+	if (kstrtobool_from_user(user_buf, count, &value))
+		return -EINVAL;
+
+	arvif->power_save_gtx = value;
+
+	ath12k_wmi_vdev_set_param_cmd(arvif->ar, arvif->vdev_id,
+				      WMI_VDEV_PARAM_GTX_ENABLE, value);
+
+	return count;
+}
+
+static ssize_t ath12k_read_power_save_gtx(struct file *file,
+					  char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_link_vif *arvif = file->private_data;
+	char buf[ATH12K_BUF_SIZE_32];
+	size_t len;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", arvif->power_save_gtx);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations ath12k_power_save_gtx = {
+	.open = simple_open,
+	.write = ath12k_write_power_save_gtx,
+	.read = ath12k_read_power_save_gtx,
+};
+
 void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
@@ -5422,6 +5459,11 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 	debugfs_create_file("rfs_core_mask", 0644, vif->debugfs_dir,
 			    ahvif, &ath12k_fops_rfs_core_mask);
 
+	arvif->debugfs_power_save_gtx = debugfs_create_file("power_save_gtx", 0644,
+							    vif->link_debugfs[link_id],
+							    arvif,
+							    &ath12k_power_save_gtx);
+
 	/* Note: Add new AP mode only debugfs file before "ap_and_sta_debugfs_file" label.
 	 * Add new debugfs file for both AP and STA mode after the "ap_and_sta_debugfs_file"
 	 * label.
@@ -5451,6 +5493,7 @@ void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 {
 	if (arvif->ahvif->vif->type == NL80211_IFTYPE_AP)
 		arvif->debugfs_twt = NULL;
+	arvif->debugfs_power_save_gtx = NULL;
 	/**
 	 * Remove ahvif debugfs only when all the link is going to be removed.
 	 */

@@ -526,6 +526,8 @@ struct ath12k_link_vif {
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_twt;
 #endif /* CPTCFG_ATH12K_DEBUGFS */
+	struct dentry *debugfs_power_save_gtx;
+	bool power_save_gtx;
 	bool bcca_zero_sent;
 	bool do_not_send_tmpl;
 	u64 obss_color_bitmap;
