@@ -150,7 +150,7 @@ struct ath11k_qmi_m3_dump_data {
 	u32 pdev_id;
 	u32 size;
 	u64 timestamp;
-	char *addr;
+	u32 *addr;
 };
 
 struct ath11k_qmi_ce_cfg {

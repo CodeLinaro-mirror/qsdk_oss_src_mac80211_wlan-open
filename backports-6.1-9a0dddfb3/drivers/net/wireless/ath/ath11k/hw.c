@@ -1043,7 +1043,7 @@ static void ath11k_hw_ipq5018_reo_setup(struct ath11k_base *ab)
 }
 
 static u16
-ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id(u8 *tlv_data)
+ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id(struct hal_rx_mpdu_info *tlv_data)
 {
 	struct hal_rx_mpdu_info *mpdu_info =
 		(struct hal_rx_mpdu_info *)tlv_data;
@@ -1053,10 +1053,10 @@ ath11k_hw_ipq8074_rx_desc_get_hal_mpdu_ppdu_id(u8 *tlv_data)
 }
 
 static
-u16 ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_ppdu_id(u8 *tlv_data)
+u16 ath11k_hw_qcn9074_rx_desc_get_hal_mpdu_ppdu_id(struct hal_rx_mpdu_info *tlv_data)
 {
 	struct hal_rx_mpdu_info_qcn9074 *mpdu_info =
-		(struct hal_rx_mpdu_info_ipq9074 *)tlv_data;
+		(struct hal_rx_mpdu_info_qcn9074 *)tlv_data;
 
 	return FIELD_GET(HAL_RX_MPDU_INFO_INFO0_PPDU_ID,
 			 __le32_to_cpu(mpdu_info->info0));
