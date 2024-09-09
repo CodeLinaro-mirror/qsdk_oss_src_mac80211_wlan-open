@@ -14574,6 +14574,14 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy->mbssid_max_interfaces = mbssid_max_interfaces;
 	wiphy->ema_max_profile_periodicity = TARGET_EMA_MAX_PROFILE_PERIOD;
 
+	wiphy->mbssid_max_ngroups = TARGET_MAX_MBSSID_GROUPS;
+
+	/* Currently ath12k isn't overriding default target beacon size
+	 * explicitly, hence advertising the same to mac80211 using
+	 * max_beacon_size.
+	 */
+	wiphy->max_beacon_size = TARGET_MAX_BEACON_SIZE;
+
 	if (is_6ghz) {
 		wiphy_ext_feature_set(wiphy,
 				      NL80211_EXT_FEATURE_FILS_DISCOVERY);

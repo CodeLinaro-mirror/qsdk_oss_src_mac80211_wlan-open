@@ -2520,6 +2520,7 @@ struct ath12k_wmi_resource_config_arg {
 	bool is_reg_cc_ext_event_supported;
 	bool is_wds_null_frame_supported;
 	bool is_full_bw_nol_feature_supported;
+	u32 max_beacon_size;
 };
 
 struct ath12k_wmi_init_cmd_arg {
@@ -2589,6 +2590,7 @@ struct wmi_init_cmd {
 #define WMI_RSRC_CFG_FLAGS2_WDS_NULL_FRAME_SUPPORT             BIT(22)
 #define WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT BIT(25)
 #define WMI_PDEV_MEC_AGING_TIMER_THRESHOLD_VALUE 5000
+#define WMI_RSRC_CFG_EMA_INIT_CONFIG_BEACON_SIZE               GENMASK(15, 0)
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;
@@ -2661,6 +2663,11 @@ struct ath12k_wmi_resource_config_params {
 	__le32 max_rnr_neighbours;
 	__le32 ema_max_vap_cnt;
 	__le32 ema_max_profile_period;
+	__le32 max_ndp_sessions;
+	__le32 max_ndi_interfaces;
+	__le32 max_ap_vaps;
+	__le32 cbc_flow_ena;
+	__le32 ema_init_config;
 } __packed;
 
 struct wmi_service_ready_event {

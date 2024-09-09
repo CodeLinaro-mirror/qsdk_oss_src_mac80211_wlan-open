@@ -4645,6 +4645,10 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 
 	if (tg_cfg->is_wds_null_frame_supported)
 		wmi_cfg->flags2 |= WMI_RSRC_CFG_FLAGS2_WDS_NULL_FRAME_SUPPORT;
+
+	wmi_cfg->ema_init_config =
+		cpu_to_le32(u32_encode_bits(tg_cfg->max_beacon_size,
+					    WMI_RSRC_CFG_EMA_INIT_CONFIG_BEACON_SIZE));
 }
 
 static int ath12k_init_cmd_send(struct ath12k_wmi_pdev *wmi,
