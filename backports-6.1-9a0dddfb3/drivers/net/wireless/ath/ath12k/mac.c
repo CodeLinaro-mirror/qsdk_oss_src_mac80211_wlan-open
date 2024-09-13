@@ -4058,10 +4058,19 @@ static int ath12k_mac_fils_discovery(struct ath12k_link_vif *arvif,
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ath12k *ar = arvif->ar;
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
+	struct ieee80211_bss_conf *link_conf;
 	struct sk_buff *tmpl;
 	int ret;
 	u32 interval;
 	bool unsol_bcast_probe_resp_enabled = false;
+
+	rcu_read_lock();
+	link_conf = ath12k_mac_get_link_bss_conf(arvif);
+	if (link_conf && link_conf->nontransmitted) {
+		rcu_read_unlock();
+		return 0;
+	}
+	rcu_read_unlock();
 
 	if (info->fils_discovery.max_interval) {
 		interval = info->fils_discovery.max_interval;
