@@ -229,8 +229,7 @@ static int ath11k_cfr_correlate_and_relay(struct ath11k *ar,
 
 static u8 freeze_reason_to_capture_type(void *freeze_tlv)
 {
-	struct macrx_freeze_capture_channel *freeze =
-		(struct macrx_freeze_capture_channel_v3 *)freeze_tlv;
+	struct macrx_freeze_capture_channel *freeze = freeze_tlv;
 	u8 capture_reason = FIELD_GET(MACRX_FREEZE_CC_INFO0_CAPTURE_REASON,
 				      freeze->info0);
 

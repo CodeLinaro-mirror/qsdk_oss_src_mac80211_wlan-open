@@ -2175,7 +2175,7 @@ static void ath11k_peer_assoc_h_rates(struct ath11k *ar,
 }
 
 static bool
-ath11k_peer_assoc_h_ht_masked(const u8 *ht_mcs_mask[])
+ath11k_peer_assoc_h_ht_masked(const u8 *ht_mcs_mask)
 {
 	int nss;
 
@@ -2187,7 +2187,7 @@ ath11k_peer_assoc_h_ht_masked(const u8 *ht_mcs_mask[])
 }
 
 static bool
-ath11k_peer_assoc_h_vht_masked(const u16 *vht_mcs_mask[])
+ath11k_peer_assoc_h_vht_masked(const u16 *vht_mcs_mask)
 {
 	int nss;
 
@@ -2582,7 +2582,7 @@ static u16 ath11k_peer_assoc_h_he_limit(u16 tx_mcs_set,
 }
 
 static bool
-ath11k_peer_assoc_h_he_masked(const u16 *he_mcs_mask[])
+ath11k_peer_assoc_h_he_masked(const u16 *he_mcs_mask)
 {
 	int nss;
 
@@ -3808,7 +3808,7 @@ static bool ath11k_mac_supports_station_tpc(struct ath11k *ar,
 
 static void ath11k_mac_op_nss_bss_info_changed(struct ieee80211_hw *hw,
 					   struct ieee80211_vif *vif,
-					   u32 changed)
+					   u64 changed)
 {
 	struct ath11k *ar = hw->priv;
 	struct ath11k_vif *arvif = ath11k_vif_to_arvif(vif);
@@ -7066,7 +7066,7 @@ static int ath11k_mac_mgmt_action_frame_fill_elem(struct ath11k_vif *arvif,
 		return -EOPNOTSUPP;
 
 	mgmt = (struct ieee80211_mgmt *)hdr;
-	buf = &mgmt->u.action;
+	buf = (u8 *)&mgmt->u.action;
 
 	/* FCTL_PROTECTED frame might have extra space added for HDR_LEN. Offset that
 	 * many bytes if it is there
@@ -7404,7 +7404,8 @@ skip_regular_xmit:
 		ret = ath11k_nss_tx(arvif, skb);
 	else if (info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
 		ret = ath11k_dp_tx_simple(ar, arvif, skb,
-					  (control->sta) ? control->sta->drv_priv : NULL);
+					  (control->sta) ? (struct ath11k_sta *)
+					   control->sta->drv_priv : NULL);
 	else
 		ret = ath11k_dp_tx(ar, arvif, arsta, skb);
 
@@ -7830,7 +7831,7 @@ static int ath11k_mac_setup_vdev_create_params(struct ath11k_vif *arvif,
 	return 0;
 }
 
-static int ath11k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
+static void ath11k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 					     struct ieee80211_vif *vif)
 {
 	struct ath11k *ar = hw->priv;
@@ -7840,7 +7841,7 @@ static int ath11k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 	int ret;
 
 	if (ab->nss.enabled && vif->type == NL80211_IFTYPE_AP_VLAN)
-		return 0;
+		return;
 
 	param_id = WMI_VDEV_PARAM_TX_ENCAP_TYPE;
 	if (ath11k_frame_mode != ATH11K_HW_TXRX_ETHERNET ||
@@ -7879,8 +7880,6 @@ static int ath11k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 			    arvif->vdev_id, ret);
 		vif->offload_flags &= ~IEEE80211_OFFLOAD_DECAP_ENABLED;
 	}
-
-	return ret;
 }
 
 static bool ath11k_mac_vif_ap_active_any(struct ath11k_base *ab)
@@ -8225,8 +8224,7 @@ static int ath11k_mac_op_add_interface(struct ieee80211_hw *hw,
 		goto err_vdev_del;
 	}
 
-	if (ath11k_mac_op_update_vif_offload(hw, vif))
-		goto err_vdev_del;
+	ath11k_mac_op_update_vif_offload(hw, vif);
 
 	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
 		param_value = ATH11K_HW_TXRX_ETHERNET;
@@ -9066,7 +9064,7 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 		 * If vdev is down then it expect vdev_stop->vdev_start.
 		 */
 		if (arvif->is_up) {
-			ret = ath11k_mac_vdev_restart(arvif, &vifs[i].new_ctx->def,
+			ret = ath11k_mac_vdev_restart(arvif, vifs[i].new_ctx,
 						      vifs[i].new_ctx->radar_enabled);
 			if (ret) {
 				ath11k_warn(ab, "failed to restart vdev %d: %d\n",
@@ -9081,7 +9079,7 @@ ath11k_mac_update_vif_chan(struct ath11k *ar,
 				continue;
 			}
 
-			ret = ath11k_mac_vdev_start(arvif, &vifs[i].new_ctx->def,
+			ret = ath11k_mac_vdev_start(arvif, vifs[i].new_ctx,
 						    vifs[i].new_ctx->radar_enabled);
 			if (ret)
 				ath11k_warn(ab, "failed to start vdev %d: %d\n",
@@ -9245,7 +9243,7 @@ static int ath11k_mac_start_vdev_delay(struct ieee80211_hw *hw,
 	if (WARN_ON(arvif->is_started))
 		return -EBUSY;
 
-	ret = ath11k_mac_vdev_start(arvif, &arvif->chanctx.def,
+	ret = ath11k_mac_vdev_start(arvif, &arvif->chanctx,
 				    arvif->chanctx.radar_enabled);
 	if (ret) {
 		ath11k_warn(ab, "failed to start vdev %i addr %pM on freq %d: %d\n",
@@ -9816,7 +9814,7 @@ ath11k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	}
 
 	if (!arvif->is_started) {
-		ret = ath11k_mac_vdev_start(arvif, &ctx->def, ctx->radar_enabled);
+		ret = ath11k_mac_vdev_start(arvif, ctx, ctx->radar_enabled);
 		if (ret) {
 			ath11k_warn(ab, "failed to start vdev %i addr %pM on freq %d: %d\n",
 				    arvif->vdev_id, vif->addr,

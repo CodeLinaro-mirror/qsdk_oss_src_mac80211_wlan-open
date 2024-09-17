@@ -125,6 +125,7 @@ int ath11k_smart_ant_alg_sta_connect(struct ath11k *ar,
 	struct ath11k_smart_ant_sta *smart_ant_sta;
 	int ret;
 	u8 mac_addr[ETH_ALEN];
+	u32 arg = ATH11K_SMART_ANT_TX_FEEDBACK_CONFIG_DEFAULT;
 
 	lockdep_assert_held(&ar->conf_mutex);
 
@@ -137,7 +138,7 @@ int ath11k_smart_ant_alg_sta_connect(struct ath11k *ar,
 	params.cmd_id = 1;
 	params.arg_count = 1;
 	params.vdev_id = arsta->arvif->vdev_id;
-	params.arg_arr = ATH11K_SMART_ANT_TX_FEEDBACK_CONFIG_DEFAULT;
+	params.arg_arr = &arg;
 	ether_addr_copy(mac_addr, sta->addr);
 
 	ret = ath11k_wmi_peer_set_smart_ant_node_config(ar, mac_addr, &params);

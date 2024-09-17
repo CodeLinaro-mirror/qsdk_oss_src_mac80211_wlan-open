@@ -1303,7 +1303,7 @@ static const struct file_operations fops_reset_rx_stats = {
 
 static ssize_t
 ath11k_dbg_sta_dump_driver_tx_pkts_flow(struct file *file,
-					const char __user *user_buf,
+					char __user *user_buf,
 					size_t count, loff_t *ppos)
 {
 	struct ieee80211_sta *sta = file->private_data;
@@ -1531,7 +1531,7 @@ static ssize_t ath11k_dbg_sta_write_cfr_capture(struct file *file,
 	ret = ath11k_wmi_peer_set_cfr_capture_conf(ar, arsta->arvif->vdev_id,
 						   sta->addr, &arg);
 	if (ret) {
-		ath11k_warn(ar, "failed to send cfr capture info: vdev_id %u peer %pM\n",
+		ath11k_warn(ar->ab, "failed to send cfr capture info: vdev_id %u peer %pM\n",
 			    arsta->arvif->vdev_id, sta->addr);
 		goto out;
 	}

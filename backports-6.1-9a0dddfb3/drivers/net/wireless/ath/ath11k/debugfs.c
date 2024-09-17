@@ -1696,7 +1696,7 @@ static const struct file_operations fops_soc_stats_disable = {
 };
 
 static ssize_t ath11k_debug_write_fw_recovery(struct file *file,
-                                              char __user *user_buf,
+                                              const char __user *user_buf,
                                               size_t count, loff_t *ppos)
 {
        struct ath11k_base *ab = file->private_data;
@@ -1778,7 +1778,7 @@ ath11k_debug_read_enable_memory_stats(struct file *file,
 
 static ssize_t
 ath11k_debug_write_enable_memory_stats(struct file *file,
-				       char __user *ubuf,
+				       const char __user *ubuf,
 				       size_t count, loff_t *ppos)
 {
 	struct ath11k_base *ab = file->private_data;
@@ -4179,7 +4179,7 @@ static ssize_t ath11k_write_ani_enable(struct file *file,
 	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ANI_ENABLE,
 					enable, ar->pdev->pdev_id);
 	if (ret) {
-		ath11k_warn(ar, "ani_enable failed from debugfs: %d\n", ret);
+		ath11k_warn(ar->ab, "ani_enable failed from debugfs: %d\n", ret);
 		goto exit;
 	}
 	ar->ani_enabled = enable;
@@ -4235,7 +4235,7 @@ static ssize_t ath11k_write_ani_poll_period(struct file *file,
 	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ANI_POLL_PERIOD,
 			ani_poll_period, ar->pdev->pdev_id);
 	if (ret) {
-		ath11k_warn(ar, "ani poll period write failed in debugfs: %d\n", ret);
+		ath11k_warn(ar->ab, "ani poll period write failed in debugfs: %d\n", ret);
 		goto exit;
 	}
 	ar->ab->ani_poll_period = ani_poll_period;
@@ -4291,7 +4291,7 @@ static ssize_t ath11k_write_ani_listen_period(struct file *file,
 	ret = ath11k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ANI_LISTEN_PERIOD,
 					ani_listen_period, ar->pdev->pdev_id);
 	if (ret) {
-		ath11k_warn(ar, "ani listen period write failed in debugfs: %d\n", ret);
+		ath11k_warn(ar->ab, "ani listen period write failed in debugfs: %d\n", ret);
 		goto exit;
 	}
 	ar->ab->ani_listen_period = ani_listen_period;
@@ -4322,7 +4322,7 @@ static int ath11k_debug_get_ani_level(struct ath11k *ar)
 	ret = ath11k_wmi_pdev_get_ani_level(ar, WMI_PDEV_GET_ANI_OFDM_CONFIG_CMDID,
 					    ar->pdev->pdev_id);
 	if (ret) {
-		ath11k_warn(ar, "failed to request ofdm ani level: %d\n", ret);
+		ath11k_warn(ar->ab, "failed to request ofdm ani level: %d\n", ret);
 		return ret;
 	}
 	time_left = wait_for_completion_timeout(&ar->ab->ani_ofdm_event, 1 * HZ);
@@ -4334,7 +4334,7 @@ static int ath11k_debug_get_ani_level(struct ath11k *ar)
 		ret = ath11k_wmi_pdev_get_ani_level(ar, WMI_PDEV_GET_ANI_CCK_CONFIG_CMDID,
 						    ar->pdev->pdev_id);
 		if (ret) {
-			ath11k_warn(ar, "failed to request cck ani level: %d\n", ret);
+			ath11k_warn(ar->ab, "failed to request cck ani level: %d\n", ret);
 			return ret;
 		}
 		time_left = wait_for_completion_timeout(&ar->ab->ani_cck_event, 1 * HZ);
@@ -4363,7 +4363,7 @@ static ssize_t ath11k_read_ani_level(struct file *file, char __user *user_buf,
 	} else {
 		ret = ath11k_debug_get_ani_level(ar);
 		if (ret) {
-			ath11k_warn(ar, "failed to request ani level: %d\n", ret);
+			ath11k_warn(ar->ab, "failed to request ani level: %d\n", ret);
 			goto unlock;
 		}
 		len += scnprintf(buf, sizeof(buf), "ofdm level %d cck level %d\n",
@@ -4428,7 +4428,7 @@ static ssize_t ath11k_write_ani_level(struct file *file,
 
 	ret = ath11k_wmi_pdev_set_param(ar, ofdm_param, ofdm_level, ar->pdev->pdev_id);
 	if (ret) {
-		ath11k_warn(ar, "failed to set ANI ofdm level :%d\n", ret);
+		ath11k_warn(ar->ab, "failed to set ANI ofdm level :%d\n", ret);
 		goto exit;
 	}
 
@@ -4436,7 +4436,7 @@ static ssize_t ath11k_write_ani_level(struct file *file,
 		ret = ath11k_wmi_pdev_set_param(ar, cck_param, cck_level,
 						ar->pdev->pdev_id);
 		if (ret) {
-			ath11k_warn(ar, "failed to set ANI cck level :%d\n", ret);
+			ath11k_warn(ar->ab, "failed to set ANI cck level :%d\n", ret);
 			goto exit;
 		}
 	}
@@ -4588,7 +4588,7 @@ static ssize_t ath11k_bss_survey_mode_write(struct file *file,
 					    size_t count, loff_t *ppos)
 {
 	struct ath11k *ar = file->private_data;
-	u8 survey_mode;
+	u32 survey_mode;
 
 	if (kstrtouint_from_user(user_buf, count, 0, &survey_mode))
 		return -EINVAL;
@@ -5017,7 +5017,7 @@ static ssize_t ath11k_write_wmi_ctrl_path_stats(struct file *file,
 	return ret ? ret : count;
 }
 
-int wmi_ctrl_path_pdev_stat(struct ath11k_vif *arvif, const char __user *ubuf,
+int wmi_ctrl_path_pdev_stat(struct ath11k_vif *arvif, char __user *ubuf,
 			    size_t count, loff_t *ppos)
 {
 	const int size = 2048;
@@ -5091,7 +5091,7 @@ int wmi_ctrl_path_pdev_stat(struct ath11k_vif *arvif, const char __user *ubuf,
 	return ret_val;
 }
 
-int wmi_ctrl_path_cal_stat(struct ath11k_vif *arvif, const char __user *ubuf,
+int wmi_ctrl_path_cal_stat(struct ath11k_vif *arvif, char __user *ubuf,
 			   size_t count, loff_t *ppos)
 {
 	const int size = 4096;
@@ -5160,7 +5160,7 @@ int wmi_ctrl_path_cal_stat(struct ath11k_vif *arvif, const char __user *ubuf,
 	return ret_val;
 }
 
-int wmi_ctrl_path_btcoex_stat(struct ath11k_vif *arvif, const char __user *ubuf,
+int wmi_ctrl_path_btcoex_stat(struct ath11k_vif *arvif, char __user *ubuf,
 			      size_t count, loff_t *ppos)
 {
 	struct wmi_ctrl_path_stats_list *stats;
@@ -5223,7 +5223,7 @@ int wmi_ctrl_path_btcoex_stat(struct ath11k_vif *arvif, const char __user *ubuf,
 }
 
 static ssize_t ath11k_read_wmi_ctrl_path_stats(struct file *file,
-		const char __user *ubuf,
+		char __user *ubuf,
 		size_t count, loff_t *ppos)
 {
 	struct ath11k_vif *arvif = file->private_data;

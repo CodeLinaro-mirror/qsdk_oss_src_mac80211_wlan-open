@@ -22,7 +22,7 @@
 #include "smart_ant.h"
 
 static ssize_t ath11k_read_sa_enable_ops(struct file *file,
-					 const char __user *ubuf,
+					 char __user *ubuf,
 					 size_t count, loff_t *ppos)
 {
 	struct ath11k *ar = file->private_data;
@@ -225,7 +225,7 @@ static ssize_t ath11k_write_sa_rx_ant(struct file *file,
 }
 
 static ssize_t ath11k_read_sa_rx_ant(struct file *file,
-				     const char __user *ubuf,
+				     char __user *ubuf,
 				     size_t count, loff_t *ppos)
 {
 	char buf[4];
