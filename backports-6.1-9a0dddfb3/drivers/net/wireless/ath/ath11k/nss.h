@@ -281,7 +281,7 @@ int ath11k_nss_vdev_create(struct ath11k_vif *arvif);
 void ath11k_nss_vdev_delete(struct ath11k_vif *arvif);
 int ath11k_nss_vdev_up(struct ath11k_vif *arvif);
 int ath11k_nss_vdev_down(struct ath11k_vif *arvif);
-int ath11k_nss_peer_delete(struct ath11k_base *ab, u32 vdev_id, u8 *addr);
+int ath11k_nss_peer_delete(struct ath11k_base *ab, u32 vdev_id, const u8 *addr);
 int ath11k_nss_set_peer_authorize(struct ath11k *ar, u16 peer_id);
 int ath11k_nss_peer_create(struct ath11k *ar, struct ath11k_peer *peer);
 void ath11k_nss_peer_stats_enable(struct ath11k *ar);
@@ -382,7 +382,7 @@ static inline int ath11k_nss_vdev_down(struct ath11k_vif *arvif)
 }
 
 static inline int ath11k_nss_peer_delete(struct ath11k_base *ab, u32 vdev_id,
-					 u8 *addr)
+					 const u8 *addr)
 {
 	return 0;
 }

@@ -590,7 +590,7 @@ ath11k_ieee80211_ap_pwr_type_convert(enum ieee80211_ap_reg_power power_type)
 
 static struct cur_reg_rule
 *ath11k_get_active_6g_reg_rule(struct cur_regulatory_info *reg_info,
-			       u32 *max_bw_6g, int *max_elements,
+			       u32 *max_bw_6g, u32 *max_elements,
 			       enum nl80211_regulatory_power_modes *pwr_mode)
 {
 	struct cur_reg_rule *reg_rule = NULL;
@@ -629,7 +629,8 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 {
 	struct ieee80211_regdomain *tmp_regd, *default_regd, *new_regd = NULL;
 	struct cur_reg_rule *reg_rule, *reg_rule_6g;
-	u8 i = 0, j = 0, k = 0, max_elements = 0;
+	u8 i = 0, j = 0, k = 0;
+	u32 max_elements = 0;
 	u8 num_rules;
 	u16 max_bw;
 	u32 flags, reg_6g_number = 0, max_bw_6g = 0;

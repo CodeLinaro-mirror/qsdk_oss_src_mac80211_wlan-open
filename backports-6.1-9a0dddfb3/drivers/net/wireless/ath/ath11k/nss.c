@@ -3642,7 +3642,7 @@ void ath11k_nss_update_sta_rxrate(struct hal_rx_mon_ppdu_info *ppdu_info,
 	peer->nss.nss_stats->rxrate.bw = ath11k_mac_bw_to_mac80211_bw(ppdu_info->bw);
 }
 
-int ath11k_nss_peer_delete(struct ath11k_base *ab, u32 vdev_id, u8 *addr)
+int ath11k_nss_peer_delete(struct ath11k_base *ab, u32 vdev_id, const u8 *addr)
 {
 	struct nss_wifili_peer_msg *peer_msg;
 	struct nss_wifili_msg *wlmsg = NULL;
