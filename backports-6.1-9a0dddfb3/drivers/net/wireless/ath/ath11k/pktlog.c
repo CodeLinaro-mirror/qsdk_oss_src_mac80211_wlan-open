@@ -155,13 +155,14 @@ static char *ath_pktlog_getbuf(struct ath_pktlog *pl_info,
 	return log_ptr;
 }
 
-static int  pktlog_pgfault(struct vm_area_struct *vma, struct vm_fault *vmf)
+static vm_fault_t pktlog_pgfault(struct vm_fault *vmf)
 {
 #if LINUX_VERSION_IS_LESS(5,4,0)
 	unsigned long address = (unsigned long)vmf->virtual_address;
 #elif LINUX_VERSION_IS_GEQ(5,4,0)
 	unsigned long address = vmf->address;
 #endif
+	struct vm_area_struct *vma = vmf->vma;
 
 	if (address == 0UL)
 		return VM_FAULT_NOPAGE;

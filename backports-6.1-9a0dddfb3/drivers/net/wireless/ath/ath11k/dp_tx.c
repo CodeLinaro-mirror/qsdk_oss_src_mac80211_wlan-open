@@ -1007,7 +1007,7 @@ static inline bool ath11k_dp_tx_completion_valid(struct hal_wbm_release_ring *de
 
 	if (FIELD_GET(HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE, desc->info0) ==
 	    HAL_WBM_REL_SRC_MODULE_FW) {
-		status_desc = ((u8 *)desc) + HTT_TX_WBM_COMP_STATUS_OFFSET;
+		status_desc = (struct htt_tx_wbm_completion *)(((u8 *)desc) + HTT_TX_WBM_COMP_STATUS_OFFSET);
 
 		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
 		if (FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS, status_desc->info0) ==
@@ -1078,7 +1078,7 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 	struct dp_tx_ring *tx_ring = &dp->tx_ring[ring_id];
 	int valid_entries;
 	enum hal_wbm_rel_src_module buf_rel_source;
-	u32 *desc;
+	struct hal_wbm_release_ring *desc;
 	u32 msdu_id, desc_id;
 	u8 mac_id, tid;
 	struct hal_wbm_release_ring *tx_status;
@@ -1096,7 +1096,8 @@ void ath11k_dp_tx_completion_handler(struct ath11k_base *ab, int ring_id)
 
 	ath11k_hal_srng_dst_invalidate_entry(ab, status_ring, valid_entries);
 
-	while ((desc = ath11k_hal_srng_dst_get_next_cache_entry(ab, status_ring))) {
+	while ((desc = (struct hal_wbm_release_ring *)
+				ath11k_hal_srng_dst_get_next_cache_entry(ab, status_ring))) {
 		if (!ath11k_dp_tx_completion_valid(desc))
 			continue;
 

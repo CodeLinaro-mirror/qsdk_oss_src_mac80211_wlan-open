@@ -1505,7 +1505,7 @@ static int ath11k_htt_tlv_ppdu_stats_parse(struct ath11k_base *ab,
 		memcpy((void *)&user_stats->cmpltn_cmn, ptr,
 		       sizeof(struct htt_ppdu_stats_usr_cmpltn_cmn));
 		user_stats->tlv_flags |= BIT(tag);
-		ath11k_smart_ant_proc_tx_feedback(ab, ptr, peer_id);
+		ath11k_smart_ant_proc_tx_feedback(ab, (u32 *)ptr, peer_id);
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS:
 		if (len <
@@ -1578,6 +1578,8 @@ static void ath11k_dp_ppdu_stats_flush_tlv_parse(struct ath11k_base *ab,
 	struct ath11k_sta *arsta;
 	struct ath11k_peer *peer = NULL;
 	struct ieee80211_tx_status status;
+	struct ieee80211_rate_status status_rate = { 0 };
+	struct rate_info rate;
 
 	if (!ab->nss.mesh_nss_offload_enabled)
 		return;
@@ -1601,7 +1603,12 @@ static void ath11k_dp_ppdu_stats_flush_tlv_parse(struct ath11k_base *ab,
 	memset(&status, 0, sizeof(status));
 
 	status.sta = sta;
-	status.rates = &arsta->last_txrate;
+
+	rate = arsta->last_txrate;
+	status_rate.rate_idx = rate;
+	status_rate.try_count = 1;
+	status.rates = &status_rate;
+
 	status.mpdu_fail = FIELD_GET(HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_NUM_MPDU,
 				     msg->info);
 	ar = arsta->arvif->ar;
@@ -1623,7 +1630,7 @@ static int ath11k_htt_tlv_ppdu_soc_stats_parse(struct ath11k_base *ab,
 				    len, tag);
 			return -EINVAL;
 		}
-		ath11k_dp_ppdu_stats_flush_tlv_parse(ab, ptr);
+		ath11k_dp_ppdu_stats_flush_tlv_parse(ab, (struct htt_ppdu_stats_cmpltn_flush *)ptr);
 		break;
 	default:
 		break;
@@ -1928,6 +1935,8 @@ ath11k_dp_rx_ppdu_stats_update_tx_comp_status(struct ath11k *ar,
 	struct ath11k_peer *peer = NULL;
 	struct htt_ppdu_user_stats* usr_stats = NULL;
 	struct ieee80211_tx_status status;
+	struct ieee80211_rate_status status_rate = { 0 };
+	struct rate_info rate;
 	u32 peer_id = 0;
 	int i;
 
@@ -1966,7 +1975,12 @@ ath11k_dp_rx_ppdu_stats_update_tx_comp_status(struct ath11k *ar,
 		memset(&status, 0, sizeof(status));
 
 		status.sta = sta;
-		status.rates = &arsta->last_txrate;
+
+		rate = arsta->last_txrate;
+		status_rate.rate_idx = rate;
+		status_rate.try_count = 1;
+		status.rates = &status_rate;
+
 		status.mpdu_succ = usr_stats->cmpltn_cmn.mpdu_success;
 
 		ieee80211s_update_metric_ppdu(ar->hw, &status);
