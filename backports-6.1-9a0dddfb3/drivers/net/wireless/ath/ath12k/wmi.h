@@ -2443,6 +2443,9 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION = 410,
 	WMI_SERVICE_WDS_NULL_FRAME_SUPPORT = 421,
 	WMI_SERVICE_MEC_AGING_TIMER_SUPPORT = 423,
+	WMI_SERVICE_IS_TARGET_IPA = 425,
+	WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK = 426,
+	WMI_SERVICE_THERM_THROT_5_LEVELS = 429,
 
 	WMI_SERVICE_UMAC_MIGRATION_SUPPORT = 436,
 
@@ -4539,13 +4542,17 @@ enum set_init_cc_flags {
 
 #define THERMAL_LEVELS  4
 #define ENHANCED_THERMAL_LEVELS  5
-#define ATH12K_THERMAL_LEVELS 2
+#define ATH12K_THERMAL_LEVELS 4
+#define ATH12K_TT_CHAINMASK 3
+
 struct tt_level_config {
 	u32 tmplwm;
 	u32 tmphwm;
 	u32 dcoffpercent;
 	u32 priority;
 	u32 pout_reduction_db;
+	u16 tx_chain_mask;
+	u32 duty_cycle;
 };
 
 struct wmi_therm_throt_stats_event {
@@ -4555,12 +4562,17 @@ struct wmi_therm_throt_stats_event {
 	__le32 therm_throt_levels;
 } __packed;
 
+struct wmi_therm_throt_level_stats_info {
+	__le32 level_count;
+	__le32 dc_count;
+};
+
 struct ath12k_wmi_thermal_mitigation_arg {
 	u32 pdev_id;
 	u32 enable;
 	u32 dc;
 	u32 dc_per_event;
-	struct tt_level_config levelconf[ATH12K_THERMAL_LEVELS][ENHANCED_THERMAL_LEVELS];
+	struct tt_level_config levelconf[ENHANCED_THERMAL_LEVELS];
 };
 
 struct wmi_therm_throt_config_request_cmd {
@@ -4579,6 +4591,8 @@ struct wmi_therm_throt_level_config_info {
 	__le32 dc_off_percent;
 	__le32 prio;
 	__le32 pout_reduction_25db;
+	__le32 tx_chain_mask;
+	__le32 duty_cycle;
 } __packed;
 
 struct ath12k_wmi_init_country_arg {

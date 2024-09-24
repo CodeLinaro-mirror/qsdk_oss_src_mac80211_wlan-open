@@ -4381,10 +4381,10 @@ ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
 	struct sk_buff *skb;
 	int i, ret, len;
 
-	if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map))
-		len = sizeof(*cmd) + TLV_HDR_SIZE + ENHANCED_THERMAL_LEVELS * sizeof(*lvl_conf);
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map))
+		len = sizeof(*cmd) + TLV_HDR_SIZE + (ENHANCED_THERMAL_LEVELS * sizeof(*lvl_conf));
 	else
-		len = sizeof(*cmd) + TLV_HDR_SIZE + THERMAL_LEVELS * sizeof(*lvl_conf);
+		len = sizeof(*cmd) + TLV_HDR_SIZE + (THERMAL_LEVELS * sizeof(*lvl_conf));
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -4399,13 +4399,13 @@ ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
 	cmd->enable = cpu_to_le32(arg->enable);
 	cmd->dc = cpu_to_le32(arg->dc);
 	cmd->dc_per_event = cpu_to_le32(arg->dc_per_event);
-	if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map))
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map))
 		cmd->therm_throt_levels = cpu_to_le32(ENHANCED_THERMAL_LEVELS);
 	else
 		cmd->therm_throt_levels = cpu_to_le32(THERMAL_LEVELS);
 
 	tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
-	if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map))
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map))
 		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
 						 ENHANCED_THERMAL_LEVELS * sizeof(*lvl_conf));
 	else
@@ -4416,21 +4416,26 @@ ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
 								sizeof(*cmd) +
 								TLV_HDR_SIZE);
 
-	if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map)) {
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map)) {
 		for (i = 0; i < ENHANCED_THERMAL_LEVELS; i++) {
 			lvl_conf->tlv_header =
 				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_THERM_THROT_LEVEL_CONFIG_INFO,
 						       sizeof(*lvl_conf));
 
-			lvl_conf->temp_lwm =
-				arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].tmplwm;
-			lvl_conf->temp_hwm =
-				arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].tmphwm;
-			lvl_conf->dc_off_percent =
-				arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].dcoffpercent;
-			lvl_conf->prio = arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].priority;
-			lvl_conf->pout_reduction_25db =
-				arg->levelconf[ATH12K_ENHANCED_THERMAL_LEVEL][i].pout_reduction_db;
+			lvl_conf->temp_lwm = arg->levelconf[i].tmplwm;
+			lvl_conf->temp_hwm = arg->levelconf[i].tmphwm;
+			lvl_conf->dc_off_percent = arg->levelconf[i].dcoffpercent;
+			lvl_conf->prio = arg->levelconf[i].priority;
+
+			if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION,
+				     ar->ab->wmi_ab.svc_map))
+				lvl_conf->pout_reduction_25db =
+					arg->levelconf[i].pout_reduction_db;
+
+			if (test_bit(WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK,
+				     ar->ab->wmi_ab.svc_map))
+				lvl_conf->tx_chain_mask = arg->levelconf[i].tx_chain_mask;
+			lvl_conf->duty_cycle = arg->levelconf[i].duty_cycle;
 			lvl_conf++;
 		}
 	} else {
@@ -4439,11 +4444,20 @@ ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,
 				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_THERM_THROT_LEVEL_CONFIG_INFO,
 						       sizeof(*lvl_conf));
 
-			lvl_conf->temp_lwm = arg->levelconf[ATH12K_DEFAULT_THERMAL_LEVEL][i].tmplwm;
-			lvl_conf->temp_hwm = arg->levelconf[ATH12K_DEFAULT_THERMAL_LEVEL][i].tmphwm;
-			lvl_conf->dc_off_percent =
-				arg->levelconf[ATH12K_DEFAULT_THERMAL_LEVEL][i].dcoffpercent;
-			lvl_conf->prio = arg->levelconf[ATH12K_DEFAULT_THERMAL_LEVEL][i].priority;
+			lvl_conf->temp_lwm = arg->levelconf[i].tmplwm;
+			lvl_conf->temp_hwm = arg->levelconf[i].tmphwm;
+			lvl_conf->dc_off_percent = arg->levelconf[i].dcoffpercent;
+			lvl_conf->prio = arg->levelconf[i].priority;
+
+			if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION,
+				     ar->ab->wmi_ab.svc_map))
+				lvl_conf->pout_reduction_25db =
+					arg->levelconf[i].pout_reduction_db;
+
+			if (test_bit(WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK,
+				     ar->ab->wmi_ab.svc_map))
+				lvl_conf->tx_chain_mask = arg->levelconf[i].tx_chain_mask;
+			lvl_conf->duty_cycle = arg->levelconf[i].duty_cycle;
 			lvl_conf++;
 		}
 	}
@@ -11079,6 +11093,47 @@ exit:
 	rcu_read_unlock();
 }
 
+static int ath12k_wmi_stats_parser(struct ath12k_base *ab,
+				   u16 tag, u16 tag_len,
+				   const void *ptr,
+				   void *data)
+{
+	int ret = 0;
+	u16 tlv_tag, tlv_len, len;
+	const struct wmi_tlv *tlv;
+	struct wmi_therm_throt_level_stats_info *tt_stats = data;
+
+	switch (tag) {
+	case WMI_TAG_THERM_THROT_STATS_EVENT:
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		len = tag_len;
+		tlv = (struct wmi_tlv *)ptr;
+		tlv_tag = u32_get_bits(tlv->header, WMI_TLV_TAG);
+
+		while (len > 0) {
+			len -= sizeof(*tlv);
+			tlv_len = le32_get_bits(tlv->header, WMI_TLV_LEN);
+			ptr += sizeof(*tlv);
+			struct wmi_therm_throt_level_stats_info *stats;
+
+			stats = (struct wmi_therm_throt_level_stats_info *)ptr;
+
+			memcpy(tt_stats, stats,
+			       sizeof(struct wmi_therm_throt_level_stats_info));
+			ptr += tlv_len;
+			tt_stats++;
+			len -= tlv_len;
+		}
+		break;
+	default:
+		ath12k_warn(ab, "Invalid tag received tag %d len %d\n",
+			    tag, len);
+		return -EINVAL;
+	}
+	return ret;
+}
+
 static void ath12k_wmi_thermal_throt_stats_event(struct ath12k_base *ab,
 						 struct sk_buff *skb)
 {
@@ -11086,6 +11141,7 @@ static void ath12k_wmi_thermal_throt_stats_event(struct ath12k_base *ab,
 	const void **tb;
 	int ret;
 	const struct wmi_therm_throt_stats_event *ev;
+	struct wmi_therm_throt_level_stats_info *stats;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
@@ -11110,6 +11166,12 @@ static void ath12k_wmi_thermal_throt_stats_event(struct ath12k_base *ab,
 	ar = ath12k_mac_get_ar_by_pdev_id(ab, ev->pdev_id);
 	if (!ar)
 		goto err;
+
+	stats = ar->tt_level_stats;
+	memcpy(&ar->tt_current_state, ev, sizeof(struct wmi_therm_throt_stats_event));
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_stats_parser,
+				  stats);
 
 	ath12k_thermal_event_throt_level(ar, ev->level);
 

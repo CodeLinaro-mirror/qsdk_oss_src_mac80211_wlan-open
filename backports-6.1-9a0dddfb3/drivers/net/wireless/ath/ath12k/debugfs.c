@@ -579,6 +579,178 @@ static const struct file_operations fops_dump_mgmt_stats = {
 	.open = simple_open
 };
 
+static ssize_t ath12k_debug_get_tt_stats_configs(struct file *file,
+						 char __user *user_buf,
+						 size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	int retval, i = 0;
+	size_t len = 0;
+	char *buf;
+	const int size = 1024;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		retval = -ENETDOWN;
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return retval;
+	}
+
+	len += scnprintf(buf + len, size - len,
+			 "Thermal levels are %d with pout enabled : %d and tx chainmask enabled : %d\n",
+			 (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map) ? ENHANCED_THERMAL_LEVELS : THERMAL_LEVELS),
+			 (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map) ? 1 : 0),
+			 (test_bit(WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK, ar->ab->wmi_ab.svc_map) ? 1 : 0));
+
+	len += scnprintf(buf + len, size - len, "Thermal config\n");
+	for (i = 0; i < ar->tt_current_state.therm_throt_levels; i++) {
+		len += scnprintf(buf + len, size - len,
+				 "level:%d low threshold: %d, high threshold: %d, dcoffpercent: %d,",
+				 i, ar->tt_level_configs[i].tmplwm,
+				 ar->tt_level_configs[i].tmphwm,
+				 ar->tt_level_configs[i].dcoffpercent);
+
+		if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map))
+			len += scnprintf(buf + len, size - len, " rpout[0.25db]: %d",
+					 ar->tt_level_configs[i].pout_reduction_db);
+
+		if (test_bit(WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK, ar->ab->wmi_ab.svc_map))
+			len += scnprintf(buf + len, size - len, " tx_chainmask: %d",
+					 ar->tt_level_configs[i].tx_chain_mask);
+		len += scnprintf(buf + len, size - len, " dc: %d\n",
+				 ar->tt_level_configs[i].duty_cycle);
+	}
+
+	len += scnprintf(buf + len, size - len, "Thermal stats\n");
+
+	len += scnprintf(buf + len, size - len, "Current temperature: %d, Current level: %d\n",
+			 ar->tt_current_state.temp,
+			 ar->tt_current_state.level);
+
+	for (i = 0; i < ar->tt_current_state.therm_throt_levels; i++) {
+		len += scnprintf(buf + len, size - len,
+				 "level: %d, entry count: %d, duty cycle spent: %d\n",
+				 i, ar->tt_level_stats[i].level_count,
+				 ar->tt_level_stats[i].dc_count);
+	}
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static ssize_t ath12k_debug_write_tt_configs(struct file *file,
+					     const char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	unsigned int tx_chainmask, level, tmphwm, dcoffpercent, pout_reduction_db, duty_cycle;
+	int tmplwm, ret;
+	char buf[128] = {0};
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
+				     user_buf, count);
+
+	if (ret <= 0)
+		goto out;
+
+	ret = sscanf(buf, "%d %d %d %d %d %d %d",
+		     &level, &tmplwm, &tmphwm, &dcoffpercent,
+		     &pout_reduction_db, &tx_chainmask, &duty_cycle);
+
+	if (dcoffpercent < 0 || dcoffpercent > 100) {
+		ath12k_err(ar->ab, "dcoffpercent should be between 0 and 100");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (duty_cycle > 100 || duty_cycle < 10) {
+		ath12k_err(ar->ab, "dc should be between 10 and 100");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (test_bit(WMI_SERVICE_THERM_THROT_TX_CHAIN_MASK, ar->ab->wmi_ab.svc_map)) {
+		if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map)) {
+			if (ret != 7) {
+				ath12k_err(ar->ab,
+					   "7 arguments required usage: level tmplwm tmphwm dcoffpercent pout_reduction_db tx_chainmask duty_cycle");
+				ret = -EINVAL;
+				goto out;
+			}
+		} else {
+			if (ret != 6) {
+				ath12k_err(ar->ab,
+					   "6 arguments required usage: level tmplwm tmphwm dcoffpercent tx_chainmask duty_cycle");
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+	} else {
+		if (test_bit(WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION, ar->ab->wmi_ab.svc_map)) {
+			if (ret != 6) {
+				ath12k_err(ar->ab,
+					   "6 arguments required usage: level tmplwm tmphwm dcoffpercent pout_reduction_db duty_cycle");
+				ret = -EINVAL;
+				goto out;
+			}
+		} else {
+			if (ret != 5) {
+				ath12k_err(ar->ab,
+					   "5 arguments required usage: level tmplwm tmphwm dcoffpercent duty_cycle");
+				ret = -EINVAL;
+				goto out;
+			}
+		}
+	}
+
+	if (pout_reduction_db > 100) {
+		ath12k_err(ar->ab, "pout_reduction_db should be betweem 0 and 100");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (test_bit(WMI_SERVICE_THERM_THROT_5_LEVELS, ar->ab->wmi_ab.svc_map)) {
+		if (level > 4) {
+			ath12k_err(ar->ab, "level should be between 0 and 4");
+			ret = -EINVAL;
+			goto out;
+		}
+	} else {
+		if (level > 3) {
+			ath12k_err(ar->ab, "level should be between 0 and 3");
+			ret = -EINVAL;
+			goto out;
+		}
+	}
+
+	if (tx_chainmask > ar->cfg_tx_chainmask || (tx_chainmask & (tx_chainmask + 1)) != 0) {
+		ath12k_err(ar->ab, "tx_chainmask shoulb be 1/3/7/15");
+		ret = -EINVAL;
+		goto out;
+	}
+
+	ath12k_update_tt_configs(ar, level, tmplwm, tmphwm,
+				 dcoffpercent, pout_reduction_db, tx_chainmask, duty_cycle);
+
+	ret = count;
+out:
+	return ret;
+}
+
+static const struct file_operations tt_configs = {
+	.read = ath12k_debug_get_tt_stats_configs,
+	.write = ath12k_debug_write_tt_configs,
+	.open = simple_open,
+};
+
 static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 						char __user *user_buf,
 						size_t count, loff_t *ppos)
@@ -4538,6 +4710,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 				ar->debug.debugfs_pdev, ar,
 				&fops_dump_mgmt_stats);
 
+	debugfs_create_file("set_tt_configs", 0600, ar->debug.debugfs_pdev, ar,
+			    &tt_configs);
+
 	ath12k_debugfs_htt_stats_register(ar);
 	ath12k_debugfs_fw_stats_register(ar);
 
@@ -4785,6 +4960,7 @@ static const struct file_operations fops_fw_recovery = {
 	.write = ath12k_debug_write_fw_recovery,
 	.open = simple_open,
 };
+
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 static ssize_t ath12k_debug_write_dbs_power_reduction(struct file *file,

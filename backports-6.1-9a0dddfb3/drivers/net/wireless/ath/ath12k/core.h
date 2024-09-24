@@ -1025,6 +1025,10 @@ struct ath12k {
 	/* valid during scan; needed for mgmt rx during scan */
 	struct ieee80211_channel *scan_channel;
 
+	struct tt_level_config tt_level_configs[ENHANCED_THERMAL_LEVELS];
+	struct wmi_therm_throt_level_stats_info tt_level_stats[ENHANCED_THERMAL_LEVELS];
+	struct wmi_therm_throt_stats_event tt_current_state;
+
 	u8 cfg_tx_chainmask;
 	u8 cfg_rx_chainmask;
 	u8 num_rx_chains;
