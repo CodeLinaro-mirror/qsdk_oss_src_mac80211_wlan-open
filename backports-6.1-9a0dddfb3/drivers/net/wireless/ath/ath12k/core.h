@@ -908,6 +908,13 @@ struct ath12k {
 	struct wmi_rssi_dbm_conv_offsets rssi_offsets;
 	u16 csa_active_cnt;
 	s32 sensitivity_level;
+
+	/* minimum and maximum rest time scan parameters which
+	 * can be configured via debugfs and should be used
+	 * only in wmi scan cmd.
+	 */
+	u32 scan_min_rest_time;
+	u32 scan_max_rest_time;
 };
 
 struct ath12k_hw {

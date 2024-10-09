@@ -3150,6 +3150,72 @@ static const struct file_operations fops_simulate_awgn = {
         .open = simple_open
 };
 
+static ssize_t ath12k_read_scan_args_config(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	int len = 0;
+	char buf[64] = {0};
+
+	len += scnprintf(buf + len, sizeof(buf) - len, "min_rest_time: %u\n",
+			 ar->scan_min_rest_time);
+	len += scnprintf(buf + len, sizeof(buf) - len, "max_rest_time: %u\n",
+			 ar->scan_max_rest_time);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath12k_write_scan_args_config(struct file *file,
+					     const char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	int ret;
+	unsigned int scan_params[2] = {0};
+	u8 buf[64] = {0};
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+	if (ret < 0)
+		return ret;
+
+	buf[ret] = '\0';
+
+	ret = sscanf(buf, "%u %u\n", &scan_params[0], &scan_params[1]);
+	if (ret != 2)
+		return -EINVAL;
+
+	if (scan_params[0] == scan_params[1]) {
+		ath12k_err(ar->ab, "min and max rest time shouldn't be same\n");
+		return -EINVAL;
+	}
+
+	if (scan_params[0] < 50 || scan_params[0] > 500) {
+		ath12k_err(ar->ab, "min rest time between 50 to 500\n");
+		return -EINVAL;
+	}
+
+	if (scan_params[1] < scan_params[0] || scan_params[1] > 500) {
+		ath12k_err(ar->ab, "max rest time between min rest time to 500\n");
+		return -EINVAL;
+	}
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	ar->scan_min_rest_time = scan_params[0];
+	ar->scan_max_rest_time = scan_params[1];
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	return count;
+}
+
+static const struct file_operations fops_scan_args_config = {
+	.read = ath12k_read_scan_args_config,
+	.write = ath12k_write_scan_args_config,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -3220,6 +3286,8 @@ void ath12k_debugfs_register(struct ath12k *ar)
 				    ar->debug.debugfs_pdev, ar,
 				    &fops_simulate_awgn);
 	}
+	debugfs_create_file("scan_args_config", 0600, ar->debug.debugfs_pdev, ar,
+			    &fops_scan_args_config);
 }
 
 static ssize_t ath12k_read_simulate_fw_crash(struct file *file,

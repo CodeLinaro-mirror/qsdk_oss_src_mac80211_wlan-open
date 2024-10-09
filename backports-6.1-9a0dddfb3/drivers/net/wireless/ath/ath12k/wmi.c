@@ -2758,6 +2758,12 @@ void ath12k_wmi_start_scan_init(struct ath12k *ar,
 	arg->dwell_time_passive_6g = 70;
 	arg->min_rest_time = 50;
 	arg->max_rest_time = 500;
+
+	if (ar->scan_min_rest_time)
+		arg->min_rest_time = ar->scan_min_rest_time;
+	if (ar->scan_max_rest_time)
+		arg->max_rest_time = ar->scan_max_rest_time;
+
 	arg->repeat_probe_time = 0;
 	arg->probe_spacing_time = 0;
 	arg->idle_time = 0;
