@@ -33,11 +33,26 @@ enum ath12k_fw_crash_dump_type {
 
 #define COREDUMP_TLV_HDR_SIZE 8
 
+struct ath12k_elf_coredump_state {
+	struct ath12k_base *ab;
+	void *header;
+	struct ath12k_ahb_dump_segment *segments;
+	struct completion dump_done;
+	u32 num_seg;
+};
+
 struct ath12k_dump_segment {
        unsigned long addr;
        void *vaddr;
        unsigned int len;
        unsigned int type;
+};
+
+struct ath12k_ahb_dump_segment {
+	unsigned long addr;
+	unsigned int len;
+	void *hdr_vaddr;
+	void *vaddr;
 };
 
 struct ath12k_dump_file_data {
@@ -95,6 +110,7 @@ struct ath12k_coredump_info {
 void ath12k_coredump_download_rddm(struct ath12k_base *ab);
 void ath12k_coredump_build_inline(struct ath12k_base *ab,
                                  struct ath12k_dump_segment *segments, int num_seg);
+void ath12k_coredump_ahb_collect(struct ath12k_base *ab);
 #else
 static inline void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 {
@@ -103,6 +119,10 @@ static inline void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 static inline void ath12k_coredump_build_inline(struct ath12k_base *ab,
                                                struct ath12k_dump_segment *segments,
                                                int num_seg)
+{
+}
+
+static inline void ath12k_coredump_ahb_collect(struct ath12k_base *ab)
 {
 }
 #endif

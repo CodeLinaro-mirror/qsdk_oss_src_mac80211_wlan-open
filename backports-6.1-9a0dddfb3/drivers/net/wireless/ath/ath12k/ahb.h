@@ -74,6 +74,10 @@ struct ath12k_ahb {
 	bool scm_auth_enabled;
 	const struct ath12k_ahb_ops *ahb_ops;
 	const struct ath12k_ahb_device_family_ops *device_ops;
+	phys_addr_t mem_phys;
+	size_t mem_size;
+	void *mem_region;
+	void *rpd_notifier;
 };
 
 struct ath12k_ahb_driver {
