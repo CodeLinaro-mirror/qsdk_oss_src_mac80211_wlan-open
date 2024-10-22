@@ -1522,6 +1522,9 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 
 	rcu_read_unlock();
 
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
+		return 0;
+
 	ret = ath12k_wmi_vdev_stop(ar, arvif->vdev_id);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to stop WMI vdev %i: %d\n",
@@ -10168,9 +10171,9 @@ err_vdev_del:
 	spin_unlock_bh(&ar->ab->base_lock);
 	ab->free_vdev_stats_id_map &= ~(1LL << arvif->vdev_stats_id);
 	spin_lock_bh(&ar->data_lock);
-	list_del(&arvif->list);
+	if (!list_empty(&ar->arvifs))
+		list_del(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
-
 err:
 	arvif->ar = NULL;
 	return ret;
@@ -10425,6 +10428,9 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	reinit_completion(&ar->vdev_delete_done);
 
+	if (unlikely(test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)))
+		goto err_vdev_del;
+
 	ret = ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
 	if (ret) {
 		ath12k_warn(ab, "failed to delete WMI vdev %d: %d\n",
@@ -10458,7 +10464,8 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 
 err_vdev_del:
 	spin_lock_bh(&ar->data_lock);
-	list_del(&arvif->list);
+	if (!list_empty(&ar->arvifs))
+		list_del(&arvif->list);
 	spin_unlock_bh(&ar->data_lock);
 
 	ath12k_peer_cleanup(ar, arvif->vdev_id);
@@ -13436,12 +13443,17 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		return;
 
 	ab = ar->ab;
+	if (!ab) {
+		ath12k_err(NULL,
+			   "unable to determine sta statistics \n");
+		return;
+	}
 
-	dp = ath12k_ab_to_dp(ar->ab);
+	dp = ath12k_ab_to_dp(ab);
 	ath12k_link_peer_get_sta_rate_info_stats(dp, arsta->addr, &rate_info);
 
 	db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
-			  ar->ab->wmi_ab.svc_map);
+			  ab->wmi_ab.svc_map);
 
 	sinfo->rx_duration = rate_info.rx_duration;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DURATION);
