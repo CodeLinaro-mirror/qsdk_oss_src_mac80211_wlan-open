@@ -11,6 +11,10 @@
 #include <linux/firmware.h>
 #include <linux/of.h>
 #include <linux/of_graph.h>
+#ifdef CONFIG_IO_COHERENCY
+#include <linux/tmelcom_ipc.h>
+#endif
+
 #include "ahb.h"
 #include "core.h"
 #include "coredump.h"
@@ -48,12 +52,73 @@ bool ath12k_fse_3_tuple_enabled = true;
 module_param_named(fse_3_tuple_enabled, ath12k_fse_3_tuple_enabled, bool, 0644);
 MODULE_PARM_DESC(fse_3_tuple_enabled, "fse_3_tuple_enabled: 0-disable, 1-enable");
 
+#ifdef CONFIG_IO_COHERENCY
+bool ath12k_io_coherency_enabled = true;
+module_param_named(io_coherency, ath12k_io_coherency_enabled, bool, 0644);
+MODULE_PARM_DESC(io_coherency, "Enable io_coherency (0 - disable, 1 - enable)");
+#endif
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 
 static DEFINE_MUTEX(ath12k_hw_group_mutex);
 
 extern struct ath12k_coredump_info ath12k_coredump_ram_info;
+
+#ifdef CONFIG_IO_COHERENCY
+static int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
+{
+	int ret, num_elem, idx = 0;
+	struct tmel_secure_io secure_reg;
+
+	if (!ath12k_io_coherency_enabled) {
+		ath12k_err(ab, "io-coherency Disabled\n");
+		return 0;
+	}
+
+	num_elem = of_property_count_elems_of_size(ab->dev->of_node, "secure-reg",
+						   sizeof(u32));
+	if (num_elem < 0) {
+		ath12k_err(ab, "secure-reg not configured for io-coherency\n");
+		return 0;
+	}
+
+	while (idx < num_elem) {
+		ret = of_property_read_u32_index(ab->dev->of_node, "secure-reg", idx++,
+						 &secure_reg.reg_addr);
+		if (ret) {
+			ath12k_err(ab, "failed to get the secure reg addr %d\n", (idx - 1));
+			goto err;
+		}
+
+		if (enable) {
+			ret = of_property_read_u32_index(ab->dev->of_node, "secure-reg", idx++,
+							 &secure_reg.reg_val);
+
+			if (ret) {
+				ath12k_err(ab, "failed to get the secure reg val %d\n", (idx - 1));
+				goto err;
+			}
+		} else {
+			secure_reg.reg_val = 0;
+		}
+
+		ath12k_info(ab, "Configuring secure reg: 0x%x val: 0x%x\n",
+			    secure_reg.reg_addr, secure_reg.reg_val);
+
+		ret = tmelcom_secure_io_write(&secure_reg, sizeof(struct tmel_secure_io));
+
+		if (ret) {
+			ath12k_err(ab, "Failed to update secure_reg settings, ret = %d reg: 0x%x val: 0x%x\n",
+				   ret, secure_reg.reg_addr, secure_reg.reg_val);
+			goto err;
+		}
+	}
+
+err:
+	return ret;
+}
+#endif
 
 static int ath12k_core_rfkill_config(struct ath12k_base *ab)
 {
@@ -788,6 +853,14 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 {
 	ath12k_core_to_group_ref_put(ab);
 
+#ifdef CONFIG_IO_COHERENCY
+	int ret;
+
+	ret = ath12k_core_config_iocoherency(ab, false);
+	if (ret)
+		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
+#endif
+
 	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		ath12k_qmi_firmware_stop(ab);
 
@@ -1302,7 +1375,11 @@ static int ath12k_core_start_firmware(struct ath12k_base *ab,
 		ath12k_err(ab, "failed to send firmware start: %d\n", ret);
 		return ret;
 	}
-
+#ifdef CONFIG_IO_COHERENCY
+	ret = ath12k_core_config_iocoherency(ab, true);
+	if (ret)
+		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
+#endif
 	return ret;
 }
 
@@ -1454,6 +1531,11 @@ err_dp_free:
 	mutex_unlock(&ag->mutex);
 
 err_firmware_stop:
+#ifdef CONFIG_IO_COHERENCY
+	ret = ath12k_core_config_iocoherency(ab, false);
+	if (ret)
+		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
+#endif
 	ath12k_qmi_firmware_stop(ab);
 
 exit:
