@@ -4000,6 +4000,15 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 		return;
 	}
 
+	spin_lock_bh(&dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arsta->addr);
+	if (peer && !peer->assoc_success) {
+		ath12k_warn(ar->ab, "peer assoc failure in firmware %pM\n", arsta->addr);
+		spin_unlock_bh(&dp->dp_lock);
+		return;
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
 	ret = ath12k_setup_peer_smps(ar, arvif, bss_conf->bssid,
 				     &link_sta->ht_cap, &link_sta->he_6ghz_capa);
 	if (ret) {
@@ -6574,6 +6583,8 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 	struct cfg80211_chan_def def;
 	enum nl80211_band band;
 	struct cfg80211_bitrate_mask *mask;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	u8 num_vht_rates, num_he_rates, num_ht_rates, num_eht_rates;
 	u8 link_id = arvif->link_id;
 
@@ -6613,6 +6624,15 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 			    arsta->addr, arvif->vdev_id);
 		return -ETIMEDOUT;
 	}
+
+	spin_lock_bh(&dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arsta->arvif->vdev_id, arsta->addr);
+	if (!reassoc && peer && !peer->assoc_success) {
+		ath12k_warn(ar->ab, "peer assoc failure from firmware %pM\n", arsta->addr);
+		spin_unlock_bh(&dp->dp_lock);
+		return -EINVAL;
+	}
+	spin_unlock_bh(&dp->dp_lock);
 
 	num_vht_rates = ath12k_mac_bitrate_mask_num_vht_rates(ar, band, mask);
 	num_he_rates = ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask);

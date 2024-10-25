@@ -4584,11 +4584,13 @@ struct wmi_vdev_install_key_complete_arg {
 struct wmi_peer_assoc_conf_event {
 	__le32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 status;
 } __packed;
 
 struct wmi_peer_assoc_conf_arg {
 	u32 vdev_id;
 	const u8 *macaddr;
+	u32 status; /* 0 - Pass; 1 - Failure */
 };
 
 struct wmi_fils_discovery_event {

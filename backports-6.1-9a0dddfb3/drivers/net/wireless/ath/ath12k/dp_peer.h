@@ -115,6 +115,7 @@ struct ath12k_dp_link_peer {
 	struct ath12k_dp_peer_stats peer_stats;
 
 	u16 tcl_metadata;
+	bool assoc_success; /* information on peer assoc status from firmware */
 };
 
 struct ath12k_dp_peer {

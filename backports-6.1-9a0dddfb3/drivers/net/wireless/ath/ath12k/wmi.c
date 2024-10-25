@@ -6906,6 +6906,7 @@ static int ath12k_pull_peer_assoc_conf_ev(struct ath12k_base *ab, struct sk_buff
 
 	peer_assoc_conf->vdev_id = le32_to_cpu(ev->vdev_id);
 	peer_assoc_conf->macaddr = ev->peer_macaddr.addr;
+	peer_assoc_conf->status = le32_to_cpu(ev->status);
 
 	kfree(tb);
 	return 0;
@@ -7954,6 +7955,8 @@ static int ath12k_service_available_event(struct ath12k_base *ab, struct sk_buff
 static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_peer_assoc_conf_arg peer_assoc_conf = {0};
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_link_peer *peer;
 	struct ath12k *ar;
 
 	if (ath12k_pull_peer_assoc_conf_ev(ab, skb, &peer_assoc_conf) != 0) {
@@ -7962,8 +7965,9 @@ static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff 
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
-		   "peer assoc conf ev vdev id %d macaddr %pM\n",
-		   peer_assoc_conf.vdev_id, peer_assoc_conf.macaddr);
+		   "peer assoc conf ev vdev id %d macaddr %pM status:%d\n",
+		   peer_assoc_conf.vdev_id, peer_assoc_conf.macaddr,
+		   peer_assoc_conf.status);
 
 	rcu_read_lock();
 	ar = ath12k_mac_get_ar_by_vdev_id(ab, peer_assoc_conf.vdev_id);
@@ -7974,6 +7978,13 @@ static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff 
 		rcu_read_unlock();
 		return;
 	}
+
+	spin_lock_bh(&dp->dp_lock);
+	peer =  ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, peer_assoc_conf.vdev_id,
+							     peer_assoc_conf.macaddr);
+	if (peer && !peer_assoc_conf.status)
+		peer->assoc_success = true;
+	spin_unlock_bh(&dp->dp_lock);
 
 	complete(&ar->peer_assoc_done);
 	rcu_read_unlock();
