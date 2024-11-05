@@ -796,9 +796,13 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 	int i;
 
 	lockdep_assert_held(&ar->data_lock);
+
+	ath12k_htt_update_ppdu_stats(dp_pdev, ppdu_info);
+	/* Update below stats when msdu update path is disabled, It is likely
+	 * the case when KPI is enabled
+	 */
 	if (!ab->stats_disable)
 		return;
-	ath12k_htt_update_ppdu_stats(dp_pdev, ppdu_info);
 
 	for (i = 0; i < ppdu_info->ppdu_stats.common.num_users; i++) {
 		usr_stats = &ppdu_info->ppdu_stats.user_stats[i];
