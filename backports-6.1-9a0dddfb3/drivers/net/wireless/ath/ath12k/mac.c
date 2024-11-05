@@ -4951,6 +4951,20 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return;
 
+	if (changed & BSS_CHANGED_FTM_RESPONDER &&
+	    arvif->ftm_responder != info->ftm_responder &&
+	    (vif->type == NL80211_IFTYPE_AP ||
+	     vif->type == NL80211_IFTYPE_MESH_POINT)) {
+		param_id = WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_RESPONDER_ROLE;
+		ret =  ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param_id,
+						     info->ftm_responder);
+		if (ret)
+			ath12k_warn(ar->ab, "Failed to set ftm responder %i: %d\n",
+				    arvif->vdev_id, ret);
+		else
+			arvif->ftm_responder = info->ftm_responder;
+	}
+
 	if (changed & BSS_CHANGED_BEACON_INT) {
 		arvif->beacon_interval = info->beacon_int;
 
@@ -15200,6 +15214,10 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_PUNCT);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_SET_SCAN_DWELL);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_RATE_LEGACY);
+
+	if (ar->ab->hw_params->ftm_responder)
+		wiphy_ext_feature_set(wiphy,
+				      NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER);
 
 	ath12k_reg_init(hw);
 

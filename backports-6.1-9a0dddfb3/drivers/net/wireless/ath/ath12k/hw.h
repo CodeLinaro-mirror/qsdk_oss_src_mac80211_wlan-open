@@ -270,6 +270,7 @@ struct ath12k_hw_params {
 	bool support_fse;
 	bool supports_ap_ps;
 	bool support_ce_manual_poll;
+	bool ftm_responder;
 };
 
 struct ath12k_hw_ops {

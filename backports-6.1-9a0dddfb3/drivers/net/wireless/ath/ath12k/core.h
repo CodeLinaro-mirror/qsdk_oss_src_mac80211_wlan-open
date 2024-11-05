@@ -415,6 +415,7 @@ struct ath12k_link_vif {
 	bool pending_csa_up;
 	u32 tx_vdev_id;
 	struct ath12k_prb_resp_tmpl_ml_info ml_info;
+	bool ftm_responder;
 };
 
 struct ath12k_dp_link_vif {
