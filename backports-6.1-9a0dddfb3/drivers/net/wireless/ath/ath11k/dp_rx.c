@@ -5942,6 +5942,7 @@ u32 ath11k_dp_rx_mon_mpdu_pop(struct ath11k *ar, int mac_id,
 					   i, pmon->mon_last_buf_cookie);
 				drop_mpdu = true;
 				pmon->rx_mon_stats.dup_mon_buf_cnt++;
+				pmon->mon_last_linkdesc_paddr = paddr;
 				continue;
 			}
 			buf_id = FIELD_GET(DP_RXDMA_BUF_COOKIE_BUF_ID,
