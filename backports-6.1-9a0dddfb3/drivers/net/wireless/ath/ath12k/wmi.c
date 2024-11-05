@@ -7695,10 +7695,20 @@ static void ath12k_wmi_htc_tx_complete(struct ath12k_base *ab,
 	}
 }
 
+static inline bool
+ath12k_is_regd_alpha2_global_mode(const struct ieee80211_regdomain *regd)
+{
+	if (!regd)
+		return false;
+
+	return !strncmp(regd->alpha2, "00", 2);
+}
+
 static int ath12k_reg_handle_chan_list(struct ath12k_base *ab,
 				       struct ath12k_reg_info *reg_info,
 				       enum ieee80211_ap_reg_power power_type)
 {
+	const struct ieee80211_regdomain *wiphy_regd = NULL;
 	struct ieee80211_regdomain *regd;
 	int pdev_idx;
 	struct ath12k *ar;
@@ -7726,13 +7736,24 @@ static int ath12k_reg_handle_chan_list(struct ath12k_base *ab,
 			goto fallback;
 	}
 
+	ar = ab->pdevs[pdev_idx].ar;
+	rcu_read_lock();
+	if (ar)
+		wiphy_regd = rcu_dereference(ar->ah->hw->wiphy->regd);
+
 	/* Avoid multiple overwrites to default regd, during core
-	 * stop-start after mac registration.
+	 * stop-start after mac registration. Also, add an exception when
+	 * the current regd in wiphy is 00.
 	 */
-	if (ab->default_regd[pdev_idx] && !ab->new_regd[pdev_idx] &&
+	if (!ath12k_is_regd_alpha2_global_mode(wiphy_regd) &&
+	    ab->default_regd[pdev_idx] && !ab->new_regd[pdev_idx] &&
 	    !memcmp(ab->default_regd[pdev_idx]->alpha2,
-		    reg_info->alpha2, 2))
+		    reg_info->alpha2, 2)) {
+		rcu_read_unlock();
 		goto retfail;
+	}
+
+	rcu_read_unlock();
 
 	regd = ath12k_reg_build_regd(ab, reg_info);
 	if (!regd) {
@@ -7749,7 +7770,6 @@ static int ath12k_reg_handle_chan_list(struct ath12k_base *ab,
 		 * generated regd to ar. NULL pointer handling will be
 		 * taken care by kfree itself.
 		 */
-		ar = ab->pdevs[pdev_idx].ar;
 		kfree(ab->new_regd[pdev_idx]);
 		ab->new_regd[pdev_idx] = regd;
 		queue_work(ab->workqueue, &ar->regd_update_work);
@@ -7783,7 +7803,6 @@ fallback:
 retfail:
         return -EINVAL;
 }
-
 
 static int ath12k_reg_chan_list_event(struct ath12k_base *ab, struct sk_buff *skb)
 {

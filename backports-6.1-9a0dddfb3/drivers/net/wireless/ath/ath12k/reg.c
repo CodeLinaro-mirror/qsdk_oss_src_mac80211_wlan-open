@@ -347,19 +347,6 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	if (ah->regd_updated)
 		return 0;
 
-	/* firmware provides reg rules which are similar for 2 GHz and 5 GHz
-	 * pdev but 6 GHz pdev has superset of all rules including rules for
-	 * all bands, we prefer 6 GHz pdev's rules to be used for setup of
-	 * the wiphy regd.
-	 * If 6 GHz pdev was part of the ath12k_hw, wait for the 6 GHz pdev,
-	 * else pick the first pdev which calls this function and use its
-	 * regd to update global hw regd.
-	 * The regd_updated flag set at the end will not allow any further
-	 * updates.
-	 */
-	if (ah->use_6ghz_regd && !ar->supports_6ghz)
-		return 0;
-
 	pdev_id = ar->pdev_idx;
 
 	spin_lock_bh(&ab->base_lock);
@@ -385,6 +372,22 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 		ret = -EINVAL;
 		spin_unlock_bh(&ab->base_lock);
 		goto err;
+	}
+
+	/* firmware provides reg rules which are similar for 2 GHz and 5 GHz
+	 * pdev but 6 GHz pdev has superset of all rules including rules for
+	 * all bands, we prefer 6 GHz pdev's rules to be used for setup of
+	 * the wiphy regd.
+	 * If 6 GHz pdev was part of the ath12k_hw, wait for the 6 GHz pdev,
+	 * else pick the first pdev which calls this function and use its
+	 * regd to update global hw regd.
+	 * The regd_updated flag set at the end will not allow any further
+	 * updates.
+	 */
+	if (strncmp(regd->alpha2, "00", 2) &&
+	    (ah->use_6ghz_regd && !ar->supports_6ghz)) {
+		spin_unlock_bh(&ab->base_lock);
+		return 0;
 	}
 
 	regd_len = sizeof(*regd) + (regd->n_reg_rules *
