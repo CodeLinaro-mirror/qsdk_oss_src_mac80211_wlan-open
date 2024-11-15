@@ -625,6 +625,7 @@ struct ath12k_link_vif {
 	u8 map_id;
 	struct ath12k_qos_map *qos_map;
 	struct wiphy_work set_dscp_tid_work;
+	bool set_wds_vdev_param;
 };
 
 struct ath12k_dp_link_vif {

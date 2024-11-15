@@ -10170,10 +10170,12 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
 			   "setting USE_4ADDR for peer %pM\n", arsta->addr);
 
-		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
-						arvif->vdev_id,
-						WMI_PEER_USE_4ADDR,
-						WMI_PEER_4ADDR_ALLOW_EAPOL_DATA_FRAME);
+		if (!arvif->set_wds_vdev_param) {
+			ath12k_wmi_set_peer_param(ar, arsta->addr,
+						  arvif->vdev_id,
+						  WMI_PEER_USE_4ADDR,
+						  WMI_PEER_4ADDR_ALLOW_EAPOL_DATA_FRAME);
+		}
 		spin_lock_bh(&ar->ab->dp->dp_lock);
 		peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp, arvif->vdev_id,
 								    arsta->addr);
@@ -14950,6 +14952,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	struct ath12k_wmi_vdev_create_arg vdev_arg = {0};
 	struct ath12k_wmi_peer_create_arg peer_param = {0};
 	struct ieee80211_bss_conf *link_conf = NULL;
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 	u32 param_id, param_value;
 	u16 nss;
 	int i;
@@ -15281,6 +15284,17 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	ath12k_mac_ap_ps_recalc(ar);
 	ath12k_dp_vdev_tx_attach(ar, arvif);
+
+	if (vif->type == NL80211_IFTYPE_STATION &&
+	    (wdev && wdev->use_4addr)) {
+		ret = ath12k_wmi_vdev_set_param_cmd(arvif->ar, arvif->vdev_id,
+						    WMI_VDEV_PARAM_WDS, 1);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to set WDS vdev param: %d\n", ret);
+			goto err_vdev_del;
+		}
+		arvif->set_wds_vdev_param = true;
+	}
 
 	return ret;
 
