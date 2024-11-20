@@ -485,6 +485,33 @@ enum ath12k_supported_bw ath12k_mac_mac80211_bw_to_ath12k_bw(enum rate_info_bw b
 	}
 }
 
+u8 ath12k_mac_get_bw_offset(enum ieee80211_sta_rx_bandwidth bandwidth)
+{
+	u8 bw_offset;
+
+	switch (bandwidth) {
+	case IEEE80211_STA_RX_BW_20:
+		bw_offset = ATH12K_BW_GAIN_20MHZ;
+		break;
+	case IEEE80211_STA_RX_BW_40:
+		bw_offset = ATH12K_BW_GAIN_40MHZ;
+		break;
+	case IEEE80211_STA_RX_BW_80:
+		bw_offset = ATH12K_BW_GAIN_80MHZ;
+		break;
+	case IEEE80211_STA_RX_BW_160:
+		bw_offset = ATH12K_BW_GAIN_160MHZ;
+		break;
+	case IEEE80211_STA_RX_BW_320:
+		bw_offset = ATH12K_BW_GAIN_320MHZ;
+		break;
+	default:
+		bw_offset = ATH12K_BW_GAIN_20MHZ;
+	}
+
+	return bw_offset;
+}
+
 int ath12k_mac_hw_ratecode_to_legacy_rate(u8 hw_rc, u8 preamble, u8 *rateidx,
 					  u16 *rate)
 {

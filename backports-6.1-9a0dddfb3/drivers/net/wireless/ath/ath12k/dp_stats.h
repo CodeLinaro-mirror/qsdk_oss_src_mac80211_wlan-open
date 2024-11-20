@@ -197,6 +197,9 @@ struct ath12k_peer_telemetry_stats {
 
 struct ath12k_dp_mon_peer_stats {
        struct ath12k_mon_peer_airtime_stats mon_stats;
+	u32 avg_snr;
+	u8 rssi;
+	u8 snr;
 };
 
 #define QOS_TID_MAX 8

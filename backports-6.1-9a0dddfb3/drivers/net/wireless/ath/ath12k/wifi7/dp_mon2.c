@@ -844,11 +844,13 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct ath12k_pdev_dp *pdev_dp,
 				ath12k_dp_mon_rx_update_peer_su_stats(pdev_dp, peer,
 								      ppdu_info);
 				ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);
+				ath12k_dp_mon_ppdu_rssi_update(pdev_dp, ppdu_info);
 			} else if ((ppdu_info->fc_valid) &&
 				   (ppdu_info->ast_index != HAL_AST_IDX_INVALID)) {
 				ath12k_dp_mon_rx_process_ulofdma_stats(ppdu_info);
 				ath12k_dp_mon_rx_update_peer_mu_stats(pdev_dp, ppdu_info);
 				ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);
+				ath12k_dp_mon_ppdu_rssi_update(pdev_dp, ppdu_info);
 			}
 
 unlock:

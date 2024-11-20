@@ -1556,6 +1556,38 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
                   stats->dp_mon_stats.mon_stats.rx_airtime_consumption[ac].consumption);
 }
 
+static void
+ath12k_dp_mon_per_user_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
+					struct hal_rx_mon_ppdu_info *ppdu_info,
+					u32 uid)
+{
+	struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
+	struct ath12k_dp_mon_peer_stats *stats = NULL;
+	struct ath12k_dp_link_peer *peer;
+	u8 rssi_comb;
+
+	if (!dp_pdev)
+		return;
+
+	lockdep_assert_held(&dp_pdev->dp->dp_lock);
+
+	peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, user_stats->sw_peer_id);
+	if (!peer || !peer->sta) {
+		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
+			   "peer stats not found on ppdu peer id %d\n",
+			   user_stats->sw_peer_id);
+		return;
+	}
+
+	rssi_comb = ppdu_info->rssi_comb;
+	stats = &peer->peer_stats.dp_mon_stats;
+	stats->snr = rssi_comb;
+	if (unlikely(stats->avg_snr == SNR_INVALID))
+		stats->avg_snr = SNR_IN(stats->snr);
+	else
+		SNR_UPDATE_AVG(stats->avg_snr, stats->snr);
+}
+
 void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 				       struct hal_rx_mon_ppdu_info *ppdu_info,
 				       bool is_stat)
@@ -1573,6 +1605,20 @@ void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
                ath12k_dp_mon_ppdu_per_user_rx_time_update(dp_pdev, ppdu_info, uid);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_ppdu_rx_time_update);
+
+void ath12k_dp_mon_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
+				    struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	u32 num_users, uid;
+
+	num_users = ppdu_info->num_users;
+	if (num_users > HAL_MAX_UL_MU_USERS)
+		num_users = HAL_MAX_UL_MU_USERS;
+
+	for (uid = 0; uid < num_users; uid++)
+		ath12k_dp_mon_per_user_ppdu_rssi_update(dp_pdev, ppdu_info, uid);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_ppdu_rssi_update);
 
 void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_dp *dp,
 				       struct dp_rxdma_mon_ring *rx_ring)
@@ -2091,7 +2137,7 @@ static void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer 
                stats->rx_airtime_consumption[ac] =
                        dp_stats->mon_stats.rx_airtime_consumption[ac].avg_consumption_per_sec;
        }
-       stats->snr = 0;
+	stats->snr = dp_stats->avg_snr;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_update_telemetry_stats);
 

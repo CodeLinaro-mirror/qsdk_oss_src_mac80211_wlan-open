@@ -4,6 +4,7 @@
  */
 
 #include <linux/export.h>
+#include "core.h"
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
 #include "telemetry_agent.h"
@@ -76,6 +77,7 @@ static int ath12k_telemetry_create_destroy_peer_agent(struct ath12k_base *ab,
 	memset(&peer_obj, 0, sizeof(peer_obj));
 	memset(&peer->peer_stats.dp_mon_stats, 0,
 	       sizeof(struct ath12k_dp_mon_peer_stats));
+	peer->peer_stats.dp_mon_stats.avg_snr = SNR_INVALID;
 	peer_obj.peer_back_pointer = peer;
 	peer_obj.psoc_back_pointer = ab;
 	peer_obj.pdev_back_pointer = pdev;
@@ -474,6 +476,29 @@ int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats)
 	return 0;
 }
 
+static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
+{
+	struct ieee80211_sta *sta;
+	struct ieee80211_link_sta *link_sta;
+	u32 bw, avg_snr;
+	u8 bw_offset;
+
+	WARN_ON(!rcu_read_lock_held());
+	sta = peer->sta;
+	link_sta = rcu_dereference(sta->link[peer->link_id]);
+	bw = link_sta->bandwidth;
+
+	bw_offset = ath12k_mac_get_bw_offset(bw);
+
+	/* To do : calculate SNR for non-active link peers based on
+	 * path loss approximation. Not needed for energy service
+	 */
+
+	avg_snr = SNR_OUT(peer->peer_stats.dp_mon_stats.avg_snr) + bw_offset;
+
+	return avg_snr;
+}
+
 int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 {
 	struct agent_peer_db *peer_db = (struct agent_peer_db *)obj;
@@ -481,8 +506,6 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 	struct ath12k_pdev *pdev = peer_db->pdev_obj_ptr;
 	struct ath12k_base *ab = peer_db->psoc_obj_ptr;
 	struct ath12k_peer_telemetry_stats dp_stats;
-	const u8 link_id;
-	const u8 *addr;
 	u8 ac;
 
 	/* Telemetry agent is expected to hold lock while fetching this stats
@@ -497,7 +520,8 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_db->peer_id);
-	if (!peer || peer->is_bridge_peer || !peer->assoc_success) {
+	if (!peer || peer->is_bridge_peer || !peer->assoc_success ||
+	    !peer->sta) {
 		spin_unlock_bh(&ab->dp->dp_lock);
 		return -EINVAL;
 	}
@@ -510,10 +534,6 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 		ath12k_err(NULL, "Failed to get telemetry peer stats for %pM\n",
 			   peer->addr);
 
-	addr = peer->addr;
-	link_id = peer->link_id;
-	spin_unlock_bh(&ab->dp->dp_lock);
-
 	for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
 		stats->airtime_consumption[ac] =
 			(u8)(dp_stats.tx_airtime_consumption[ac] +
@@ -524,14 +544,20 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 
 		ath12k_dbg(NULL, ATH12K_DBG_RM,
 			   "peer stats peer: %pM soc: %d pdev: %d link: %d ac: %d airtime_consumption: %d tx: %d rx: %d\n",
-			   addr, ab->device_id, pdev->pdev_id, link_id,
+			   peer->addr, ab->device_id, pdev->pdev_id, peer->link_id,
 			   ac, stats->airtime_consumption[ac],
 			   dp_stats.tx_airtime_consumption[ac],
 			   dp_stats.rx_airtime_consumption[ac]);
 	}
+	stats->rssi = ath12k_calculate_link_rssi(peer);
 
-	/* To-Do: Implement a way to get rssi */
-	stats->rssi = 0;
+	/*
+	 * TODO
+	 * if (peer->primary_link)
+	 *      ath12k_get_peer_sla_config(peer, &stats->sla_mask);
+	 */
+
+	spin_unlock_bh(&ab->dp->dp_lock);
 
 	return 0;
 }

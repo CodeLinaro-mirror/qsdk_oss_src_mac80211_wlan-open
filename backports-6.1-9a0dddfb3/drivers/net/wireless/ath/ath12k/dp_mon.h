@@ -195,6 +195,18 @@ struct dp_mon_tx_ppdu_info {
 	struct dp_mon_mpdu *tx_mon_mpdu;
 };
 
+#define SNR_INVALID 255
+
+#define SNR_MULTIPLIER BIT(8)
+#define SNR_MUL(x, mul) ((x) * (mul))
+#define SNR_RND(x, mul) ((((x) % (mul)) >= ((mul) / 2)) ? \
+			 ((x) + ((mul) - 1)) / (mul) : (x) / (mul))
+
+#define SNR_OUT(x) (SNR_RND((x), SNR_MULTIPLIER))
+#define SNR_IN(x)  (SNR_MUL((x), SNR_MULTIPLIER))
+#define SNR_AVG(x, y) ((((x) << 2) + (y) - (x)) >> 2)
+#define SNR_UPDATE_AVG(x, y) ((x) = SNR_AVG((x), SNR_IN(y)))
+
 struct ath12k_pdev_mon_stats {
 	u32 status_ppdu_state;
 	u32 status_ppdu_start;
@@ -363,6 +375,8 @@ void ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
 void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 				       struct hal_rx_mon_ppdu_info *ppdu_info,
 				       bool is_stat);
+void ath12k_dp_mon_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
+				    struct hal_rx_mon_ppdu_info *ppdu_info);
 void ath12k_dp_mon_rx_stats_enable(struct ath12k_pdev_dp *dp_pdev,
 				   enum dp_mon_stats_mode mode);
 void ath12k_dp_mon_rx_stats_disable(struct ath12k_pdev_dp *dp_pdev,
