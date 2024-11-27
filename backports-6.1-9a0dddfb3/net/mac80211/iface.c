@@ -294,6 +294,7 @@ static int _ieee80211_change_mac(struct ieee80211_sub_if_data *sdata,
 	if (ret == 0) {
 		memcpy(sdata->vif.addr, sa->sa_data, ETH_ALEN);
 		ether_addr_copy(sdata->vif.bss_conf.addr, sdata->vif.addr);
+		sdata_info(sdata,"Address changed addr:%pM name:%s\n", sdata->vif.addr, sdata->name);
 	}
 
 	/* Regardless of eth_mac_addr() return we still want to add the
@@ -2290,6 +2291,7 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 		memcpy(sdata->vif.addr, ndev->dev_addr, ETH_ALEN);
 		ether_addr_copy(sdata->vif.bss_conf.addr, sdata->vif.addr);
 		memcpy(sdata->name, ndev->name, IFNAMSIZ);
+		sdata_info(sdata, "Address assigned:%pM name:%s\n", sdata->vif.addr, sdata->name);
 
 		if (txq_size) {
 			txqi = netdev_priv(ndev) + size;

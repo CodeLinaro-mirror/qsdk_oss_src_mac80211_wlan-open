@@ -9771,6 +9771,8 @@ static int ath12k_mac_setup_vdev_create_arg(struct ath12k_link_vif *arvif,
 		}
 
 		ether_addr_copy(arg->mld_addr, ahvif->vif->addr);
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "MLD address:%pM for vdev:%d arvif addr :%pM",
+			   arg->mld_addr, arvif->vdev_id, arvif->bssid);
 	}
 
 	return 0;
@@ -10450,6 +10452,7 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
 	int i;
@@ -10472,6 +10475,9 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	vif->driver_flags |= IEEE80211_VIF_SUPPORTS_UAPSD;
 	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET)
 		vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_4ADDR;
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC, "Add interface vif address:%pM netdev:%s",
+		   vif->addr, wdev->netdev->name);
 
 	/* Defer vdev creation until assign_chanctx or hw_scan is initiated as driver
 	 * will not know if this interface is an ML vif at this point.
