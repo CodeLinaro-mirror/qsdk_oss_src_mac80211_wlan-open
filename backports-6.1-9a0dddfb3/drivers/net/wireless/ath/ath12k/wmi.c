@@ -7188,6 +7188,7 @@ static int ath12k_wmi_rdy_parse(struct ath12k_base *ab, u16 tag, u16 len,
 				fixed_param.ready_event_min.mac_addr.addr);
 		ab->pktlog_defs_checksum = le32_to_cpu(fixed_param.pktlog_defs_checksum);
 		ab->wmi_ready = true;
+		ab->max_ml_peer_supported = fixed_param.max_num_ml_peers;
 		break;
 	case WMI_TAG_ARRAY_FIXED_STRUCT:
 		addr_list = (struct ath12k_wmi_mac_addr_params *)ptr;
@@ -12647,6 +12648,7 @@ int ath12k_wmi_mlo_setup(struct ath12k *ar, struct wmi_mlo_setup_arg *mlo_params
 						 sizeof(*cmd));
 	cmd->mld_group_id = mlo_params->group_id;
 	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->max_num_ml_peers = cpu_to_le32(mlo_params->max_ml_peer_supported);
 	ptr = skb->data + sizeof(*cmd);
 
 	tlv = ptr;

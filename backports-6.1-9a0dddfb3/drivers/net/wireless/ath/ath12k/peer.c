@@ -274,6 +274,12 @@ u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah)
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
+	if (ah->num_ml_peers >= ah->max_ml_peers_supported) {
+		ath12k_err(NULL, "Failed to create ML peer limit %d[%d]\n",
+			   ah->max_ml_peers_supported, ah->num_ml_peers);
+		return ATH12K_MLO_PEER_ID_INVALID;
+	}
+
 	for (ml_peer_id = 0; ml_peer_id < ATH12K_MAX_MLO_PEERS; ml_peer_id++) {
 		if (test_bit(ml_peer_id, ah->free_ml_peer_id_map))
 			continue;

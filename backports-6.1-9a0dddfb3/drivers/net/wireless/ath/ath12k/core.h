@@ -934,6 +934,8 @@ struct ath12k_hw {
 	DECLARE_BITMAP(free_ml_peer_id_map, ATH12K_MAX_MLO_PEERS);
 
 	struct ath12k_dp_hw dp_hw;
+	u32 max_ml_peers_supported;
+	u32 num_ml_peers;
 
 	/* Keep last */
 	struct ath12k radio[] __aligned(sizeof(void *));
@@ -1322,6 +1324,9 @@ struct ath12k_base {
 	
 	bool in_coldboot_fwreset;
 	u32 chwidth_num_peer_caps;
+
+	/* Number of ML peers supported by firmware */
+	u32 max_ml_peer_supported;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

@@ -2916,6 +2916,10 @@ struct wmi_ready_event {
 	struct ath12k_wmi_ready_event_min_params ready_event_min;
 	__le32 max_ast_index;
 	__le32 pktlog_defs_checksum;
+	__le32 max_onchip_ast_index;
+	__le32 num_of_linkview_peers;
+	__le32 num_max_active_vdevs;
+	__le32 max_num_ml_peers;
 } __packed;
 
 struct wmi_service_available_event {
@@ -6288,12 +6292,14 @@ struct wmi_mlo_setup_cmd {
 	__le32 tlv_header;
 	__le32 mld_group_id;
 	__le32 pdev_id;
+	__le32 max_num_ml_peers;
 } __packed;
 
 struct wmi_mlo_setup_arg {
 	__le32 group_id;
 	u8 num_partner_links;
 	u8 *partner_link_id;
+	u32 max_ml_peer_supported;
 };
 
 struct wmi_mlo_ready_cmd {

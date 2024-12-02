@@ -1249,14 +1249,18 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
 {
 	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
 	struct ath12k_dp_peer *dp_peer, *tmp;
+	struct ath12k_sta *ahsta = NULL;
 	u16 peerid_index;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	list_for_each_entry_safe(dp_peer, tmp, &dp_hw->peers, list) {
 		if (dp_peer->is_mlo) {
+			ahsta = ath12k_sta_to_ahsta(dp_peer->sta);
 			peerid_index = dp_peer->peer_id;
 			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-			clear_bit(peerid_index, ar->ah->free_ml_peer_id_map);
+			clear_bit(ahsta->ml_peer_id, ar->ah->free_ml_peer_id_map);
+			ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+			ar->ah->num_ml_peers--;
 		}
 		list_del(&dp_peer->list);
 		kfree(dp_peer);
@@ -7453,6 +7457,7 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 	if (sta->mlo) {
 		clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
 		ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+		ah->num_ml_peers--;
 	}
 }
 
@@ -7608,6 +7613,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 
 			dp_params.is_mlo = true;
 			dp_params.peer_id = ahsta->ml_peer_id | ATH12K_PEER_ML_ID_VALID;
+			ah->num_ml_peers++;
 		}
 
 		dp_params.sta = sta;
@@ -7619,6 +7625,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			if (sta->mlo) {
 				clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
 				ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+				ah->num_ml_peers--;
 			}
 
 			goto exit;
@@ -14929,6 +14936,7 @@ static int __ath12k_mac_mlo_setup(struct ath12k *ar)
 	u8 num_link = 0, partner_link_id[ATH12K_GROUP_MAX_RADIO] = {};
 	struct ath12k_base *partner_ab, *ab = ar->ab;
 	struct ath12k_hw_group *ag = ab->ag;
+	u32 max_ml_peers = ab->max_ml_peer_supported;
 	struct wmi_mlo_setup_arg mlo = {};
 	struct ath12k_pdev *pdev;
 	unsigned long time_left;
@@ -14940,6 +14948,9 @@ static int __ath12k_mac_mlo_setup(struct ath12k *ar)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
+
+		if ((ab != partner_ab) && (max_ml_peers > partner_ab->max_ml_peer_supported))
+			max_ml_peers = min(max_ml_peers, partner_ab->max_ml_peer_supported);
 
 		for (j = 0; j < partner_ab->num_radios; j++) {
 			pdev = &partner_ab->pdevs[j];
@@ -14962,9 +14973,12 @@ static int __ath12k_mac_mlo_setup(struct ath12k *ar)
 	mlo.group_id = cpu_to_le32(ag->id);
 	mlo.partner_link_id = partner_link_id;
 	mlo.num_partner_links = num_link;
+	mlo.max_ml_peer_supported = max_ml_peers;
 	ar->mlo_setup_status = 0;
+	ar->ah->max_ml_peers_supported = max_ml_peers;
 
-	ath12k_dbg(ab, ATH12K_DBG_MAC, "group id %d num_link %d\n", ag->id, num_link);
+	ath12k_dbg(ab, ATH12K_DBG_MAC, "group id %d num_link %d max_ml_peers:%d\n",
+		   ag->id, num_link, max_ml_peers);
 
 	ret = ath12k_wmi_mlo_setup(ar, &mlo);
 	if (ret) {
