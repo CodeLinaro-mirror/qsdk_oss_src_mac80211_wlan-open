@@ -4811,6 +4811,8 @@ int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab)
 		return 0;
 	}
 
+	ab->in_coldboot_fwreset = true;
+
 	ath12k_dbg(ab, ATH12K_DBG_QMI, "wait for cold boot done\n");
 
 	timeout = wait_event_timeout(ab->qmi.cold_boot_waitq,
@@ -4832,6 +4834,7 @@ int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab)
 	/* reset host fixed mem off to zero */
 
 	ath12k_hif_power_up(ab);
+	ab->in_coldboot_fwreset = false;
 	ath12k_dbg(ab, ATH12K_DBG_QMI, "exit wait for cold boot done\n");
 	return 0;
 }

@@ -66,7 +66,7 @@ static DEFINE_MUTEX(ath12k_hw_group_mutex);
 extern struct ath12k_coredump_info ath12k_coredump_ram_info;
 
 #ifdef CONFIG_IO_COHERENCY
-static int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
+int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 {
 	int ret, num_elem, idx = 0;
 	struct tmel_secure_io secure_reg;
@@ -75,6 +75,9 @@ static int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 		ath12k_err(ab, "io-coherency Disabled\n");
 		return 0;
 	}
+
+	if (ab->in_coldboot_fwreset)
+		return 0;
 
 	num_elem = of_property_count_elems_of_size(ab->dev->of_node, "secure-reg",
 						   sizeof(u32));
@@ -101,6 +104,7 @@ static int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable)
 			}
 		} else {
 			secure_reg.reg_val = 0;
+			idx++;
 		}
 
 		ath12k_info(ab, "Configuring secure reg: 0x%x val: 0x%x\n",
@@ -853,14 +857,6 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 {
 	ath12k_core_to_group_ref_put(ab);
 
-#ifdef CONFIG_IO_COHERENCY
-	int ret;
-
-	ret = ath12k_core_config_iocoherency(ab, false);
-	if (ret)
-		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
-#endif
-
 	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		ath12k_qmi_firmware_stop(ab);
 
@@ -1531,11 +1527,6 @@ err_dp_free:
 	mutex_unlock(&ag->mutex);
 
 err_firmware_stop:
-#ifdef CONFIG_IO_COHERENCY
-	ret = ath12k_core_config_iocoherency(ab, false);
-	if (ret)
-		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
-#endif
 	ath12k_qmi_firmware_stop(ab);
 
 exit:

@@ -370,6 +370,9 @@ static void ath12k_mhi_set_state_bit(struct ath12k_pci *ab_pci,
 	case ATH12K_MHI_RDDM_DONE:
 		set_bit(ATH12K_MHI_RDDM_DONE, &ab_pci->mhi_state);
 		break;
+	case ATH12K_MHI_RDDM:
+		set_bit(ATH12K_MHI_RDDM, &ab_pci->mhi_state);
+		break;
 	case ATH12K_MHI_SOC_RESET:
 		set_bit(ATH12K_MHI_SOC_RESET, &ab_pci->mhi_state);
                 break;
@@ -417,6 +420,8 @@ static int ath12k_mhi_check_state_bit(struct ath12k_pci *ab_pci,
 	case ATH12K_MHI_RDDM_DONE:
 		return 0;
 	case ATH12K_MHI_SOC_RESET:
+		return 0;
+	case ATH12K_MHI_RDDM:
 		return 0;
 	default:
 		ath12k_err(ab, "unhandled mhi state: %s(%d)\n",
@@ -489,6 +494,8 @@ int ath12k_mhi_set_state(struct ath12k_pci *ab_pci,
 		ret = mhi_force_rddm_mode(ab_pci->mhi_ctrl);
 		break;
 	case ATH12K_MHI_RDDM_DONE:
+		break;
+	case ATH12K_MHI_RDDM:
 		break;
 	case ATH12K_MHI_SOC_RESET:
 		mhi_soc_reset(ab_pci->mhi_ctrl);

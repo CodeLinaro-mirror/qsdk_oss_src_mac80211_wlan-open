@@ -1194,6 +1194,8 @@ struct ath12k_base {
 	struct rhashtable *rhead_sta_addr;
 	struct rhashtable_params rhash_sta_addr_param;
 	
+	bool in_coldboot_fwreset;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -1465,5 +1467,7 @@ static inline struct ath12k_dp *ath12k_ab_to_dp(struct ath12k_base *ab)
 {
 	return ab->dp;
 }
+
+int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable);
 
 #endif /* _CORE_H_ */
