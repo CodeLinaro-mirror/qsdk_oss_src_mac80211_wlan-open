@@ -143,21 +143,41 @@ void ath12k_tm_wmi_event_unsegmented(struct ath12k_base *ab, u32 cmd_id,
 }
 
 void ath12k_tm_process_event(struct ath12k_base *ab, u32 cmd_id,
-			     const struct ath12k_wmi_ftm_event *ftm_msg,
+			     const void **tb,
 			     u16 length)
 {
+	const struct wmi_pdev_utf_event_param *param = NULL;
+	const struct ath12k_wmi_ftm_event *ftm_msg;
+	u8 total_segments, current_seq;
 	struct sk_buff *nl_skb;
 	struct ath12k *ar;
 	u32 data_pos, pdev_id;
 	u16 datalen;
-	u8 total_segments, current_seq;
 	u8 const *buf_pos;
+
+	ftm_msg = tb[WMI_TAG_ARRAY_BYTE];
+	if (!ftm_msg) {
+		ath12k_warn(ab, "failed to fetch ftm msg\n");
+		return;
+	}
 
 	ath12k_dbg(ab, ATH12K_DBG_TESTMODE,
 		   "testmode event wmi cmd_id %d ftm event msg %pK datalen %d\n",
 		   cmd_id, ftm_msg, length);
 	ath12k_dbg_dump(ab, ATH12K_DBG_TESTMODE, NULL, "", ftm_msg, length);
-	pdev_id = DP_HW2SW_MACID(le32_to_cpu(ftm_msg->seg_hdr.pdev_id));
+
+	if (test_bit(WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI, ab->wmi_ab.svc_map)) {
+		param = tb[WMI_TAG_PDEV_UTF_EVENT_FIXED_PARAM];
+		if (!param) {
+			ath12k_warn(ab, "failed to fetch utf msg\n");
+			return;
+		}
+		length -= (sizeof(*param) + TLV_HDR_SIZE);
+		pdev_id = le32_to_cpu(DP_HW2SW_MACID(param->pdev_id));
+		ath12k_dbg_dump(ab, ATH12K_DBG_TESTMODE, NULL, "", param, sizeof(*param));
+	} else {
+		pdev_id = DP_HW2SW_MACID(le32_to_cpu(ftm_msg->seg_hdr.pdev_id));
+	}
 
 	if (pdev_id >= ab->num_radios) {
 		ath12k_warn(ab, "testmode event not handled due to invalid pdev id\n");
@@ -263,9 +283,11 @@ static int ath12k_tm_cmd_get_version(struct ath12k *ar, struct nlattr *tb[])
 
 static int ath12k_tm_cmd_process_ftm(struct ath12k *ar, struct nlattr *tb[])
 {
+	struct wmi_pdev_utf_cmd_fixed_param *utf_cmd;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct sk_buff *skb;
 	struct ath12k_wmi_ftm_cmd *ftm_cmd;
+	uint16_t len;
 	int ret = 0;
 	void *buf;
 	size_t aligned_len;
@@ -300,8 +322,12 @@ static int ath12k_tm_cmd_process_ftm(struct ath12k *ar, struct nlattr *tb[])
 		else
 			chunk_len = buf_len;
 
-		skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, (chunk_len +
-					sizeof(struct ath12k_wmi_ftm_cmd)));
+		if (test_bit(WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI, ar->ab->wmi_ab.svc_map))
+			len = chunk_len + sizeof(*ftm_cmd) + sizeof(*utf_cmd);
+		else
+			len = chunk_len + sizeof(*ftm_cmd);
+
+		skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 
 		if (!skb)
 			return -ENOMEM;
@@ -319,6 +345,13 @@ static int ath12k_tm_cmd_process_ftm(struct ath12k *ar, struct nlattr *tb[])
 		ftm_cmd->seg_hdr.pdev_id = cpu_to_le32(ar->pdev->pdev_id);
 		segnumber++;
 		memcpy(&ftm_cmd->data, bufpos, chunk_len);
+		if (test_bit(WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI, ar->ab->wmi_ab.svc_map)) {
+			utf_cmd = (struct wmi_pdev_utf_cmd_fixed_param *)(skb->data + chunk_len + sizeof(*ftm_cmd));
+			utf_cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM) |
+				FIELD_PREP(WMI_TLV_LEN, sizeof(*utf_cmd) - TLV_HDR_SIZE);
+			utf_cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+		}
+
 		ret = ath12k_wmi_cmd_send(wmi, skb, cmd_id);
 
 		if (ret) {

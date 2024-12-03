@@ -9724,7 +9724,6 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 static void ath12k_tm_wmi_event_segmented(struct ath12k_base *ab, u32 cmd_id,
 					  struct sk_buff *skb)
 {
-	const struct ath12k_wmi_ftm_event *ev;
 	const void **tb;
 	int ret;
 	u16 length;
@@ -9737,15 +9736,8 @@ static void ath12k_tm_wmi_event_segmented(struct ath12k_base *ab, u32 cmd_id,
 		return;
 	}
 
-	ev = tb[WMI_TAG_ARRAY_BYTE];
-	if (!ev) {
-		ath12k_warn(ab, "failed to fetch ftm msg\n");
-		kfree(tb);
-		return;
-	}
-
 	length = skb->len - TLV_HDR_SIZE;
-	ath12k_tm_process_event(ab, cmd_id, ev, length);
+	ath12k_tm_process_event(ab, cmd_id, tb, length);
 	kfree(tb);
 	tb = NULL;
 }

@@ -2051,6 +2051,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
 	WMI_TAG_PRB_RESP_TMPL_ML_INFO_CMD = 0x460,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
+	WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM = 0x4be,
+	WMI_TAG_PDEV_UTF_EVENT_FIXED_PARAM,
 	WMI_TAG_MAX
 };
 
@@ -2290,6 +2292,7 @@ enum wmi_tlv_service {
 
 	WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT = 365,
 	WMI_TLV_SERVICE_RADAR_FLAGS_SUPPORT = 390,
+	WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI = 394,
 	WMI_SERVICE_WDS_NULL_FRAME_SUPPORT = 421,
 	WMI_SERVICE_MEC_AGING_TIMER_SUPPORT = 423,
 
@@ -3850,6 +3853,15 @@ struct ath12k_wmi_ftm_event {
 	struct ath12k_wmi_ftm_seg_hdr_params seg_hdr;
 	u8 data[];
 } __packed;
+
+struct wmi_pdev_utf_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 pdev_id;
+};
+
+struct wmi_pdev_utf_event_param {
+	__le32 pdev_id;
+};
 
 #define WMI_BEACON_TX_BUFFER_SIZE	512
 

@@ -12,7 +12,7 @@
 void ath12k_tm_wmi_event_unsegmented(struct ath12k_base *ab, u32 cmd_id,
 				     struct sk_buff *skb);
 void ath12k_tm_process_event(struct ath12k_base *ab, u32 cmd_id,
-			     const struct ath12k_wmi_ftm_event *ftm_msg,
+			     const void **tb,
 			     u16 length);
 int ath12k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		  u8 link_id, void *data, int len);
@@ -26,7 +26,7 @@ static inline void ath12k_tm_wmi_event_unsegmented(struct ath12k_base *ab, u32 c
 }
 
 static inline void ath12k_tm_process_event(struct ath12k_base *ab, u32 cmd_id,
-					   const struct ath12k_wmi_ftm_event *msg,
+					   const void **tb,
 					   u16 length)
 {
 }
