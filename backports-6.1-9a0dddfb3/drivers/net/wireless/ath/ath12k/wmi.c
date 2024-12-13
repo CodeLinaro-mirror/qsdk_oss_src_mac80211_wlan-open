@@ -1272,10 +1272,13 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 				   le32_encode_bits(arg->ml.mcast_link,
 						    ATH12K_WMI_FLAG_MLO_MCAST_VDEV) |
 				   le32_encode_bits(arg->ml.link_add,
-						    ATH12K_WMI_FLAG_MLO_LINK_ADD);
+						    ATH12K_WMI_FLAG_MLO_LINK_ADD) |
+				   le32_encode_bits(1,
+						    ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID);
+		ml_params->ieee_link_id = arg->ml.ieee_link_id;
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "vdev %d start ml flags 0x%x\n",
-			   arg->vdev_id, ml_params->flags);
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "vdev %d start ml flags 0x%x ieee_link_id=%d\n",
+			   arg->vdev_id, ml_params->flags, ml_params->ieee_link_id);
 
 		ptr += sizeof(*ml_params);
 
@@ -1297,10 +1300,13 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 				cpu_to_le32(arg->ml.partner_info[i].hw_link_id);
 			ether_addr_copy(partner_info->vdev_addr.addr,
 					arg->ml.partner_info[i].addr);
+			partner_info->ieee_link_id = arg->ml.partner_info[i].logical_link_idx;
+			partner_info->flags = le32_encode_bits(1,
+							       ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID_PARTNER);
 
-			ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "partner vdev %d hw_link_id %d macaddr%pM\n",
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "partner vdev %d hw_link_id %d macaddr%pM flags:0x%x\n",
 				   partner_info->vdev_id, partner_info->hw_link_id,
-				   partner_info->vdev_addr.addr);
+				   partner_info->vdev_addr.addr, partner_info->flags);
 
 			partner_info++;
 		}
