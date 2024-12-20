@@ -3982,6 +3982,10 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 		return;
 	}
 
+        spin_lock_bh(&ar->data_lock);
+        arsta->bw = ath12k_mac_ieee80211_sta_bw_to_wmi(ar, link_sta);
+        spin_unlock_bh(&ar->data_lock);
+
 	rcu_read_unlock();
 
 	/* keep this before ath12k_wmi_send_peer_assoc_cmd() */
