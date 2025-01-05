@@ -886,10 +886,17 @@ static struct ath12k *ath12k_mac_get_ar_by_chan(struct ieee80211_hw *hw,
 static struct ath12k *ath12k_get_ar_by_ctx(struct ieee80211_hw *hw,
 					   struct ieee80211_chanctx_conf *ctx)
 {
+	struct ath12k *ar;
+
 	if (!ctx)
 		return NULL;
 
-	return ath12k_mac_get_ar_by_chan(hw, ctx->def.chan);
+	ar = ath12k_mac_get_ar_by_chan(hw, ctx->def.chan);
+
+	if (!ar || ath12k_mac_get_ar_by_pdev_id(ar->ab, ar->pdev->pdev_id))
+		return ar;
+
+	return NULL;
 }
 
 struct ath12k *ath12k_get_ar_by_vif(struct ieee80211_hw *hw,
@@ -5211,9 +5218,9 @@ ath12k_mac_select_scan_device(struct ieee80211_hw *hw,
 			if (center_freq >= KHZ_TO_MHZ(ar->freq_range.start_freq) &&
 			    center_freq <= KHZ_TO_MHZ(ar->freq_range.end_freq))
 				if (ar->mac.sbands[band].channels)
-					return ar;
+					return ath12k_mac_get_ar_by_pdev_id(ar->ab, ar->pdev->pdev_id);
 		} else if (ar->mac.sbands[band].channels) {
-			return ar;
+			return ath12k_mac_get_ar_by_pdev_id(ar->ab, ar->pdev->pdev_id);
 		}
 	}
 	return NULL;
@@ -12034,6 +12041,8 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	if (!ar) {
 		ath12k_hw_warn(ah, "failed to assign chanctx for vif %pM link id %u link vif is already started",
 			       vif->addr, link_id);
+		ath12k_mac_remove_link_interface(hw, arvif);
+		ath12k_mac_unassign_link_vif(arvif);
 		return -EINVAL;
 	}
 
