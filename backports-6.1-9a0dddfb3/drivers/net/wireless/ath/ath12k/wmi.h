@@ -1947,6 +1947,9 @@ enum wmi_tlv_tag {
 	WMI_TAG_SERVICE_READY_EXT2_EVENT = 0x334,
 	WMI_TAG_FILS_DISCOVERY_TMPL_CMD = 0x344,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT = 0x36F,
+	WMI_TAG_CTRL_PATH_STATS_CMD_FIXED_PARAM = 0x388,
+	WMI_TAG_CTRL_PATH_STATS_EV_FIXED_PARAM,
+	WMI_TAG_CTRL_PATH_PDEV_STATS,
 	WMI_TAG_REGULATORY_RULE_EXT_STRUCT = 0x3A9,
 	WMI_TAG_REG_CHAN_LIST_CC_EXT_EVENT,
 	WMI_TAG_TPC_STATS_GET_CMD = 0x38B,
@@ -2197,6 +2200,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_PER_PEER_HTT_STATS_RESET = 213,
 	WMI_TLV_SERVICE_FREQINFO_IN_METADATA = 219,
 	WMI_TLV_SERVICE_EXT2_MSG = 220,
+	WMI_TLV_SERVICE_CTRL_PATH_STATS_REQUEST = 250,
 	WMI_TLV_SERVICE_MBSS_PARAM_IN_VDEV_START_SUPPORT = 253,
 
 	WMI_MAX_EXT_SERVICE = 256,
@@ -5667,6 +5671,82 @@ enum wmi_sta_keepalive_method {
 #define WMI_STA_KEEPALIVE_INTERVAL_DEFAULT	30
 #define WMI_STA_KEEPALIVE_INTERVAL_DISABLE	0
 
+#define WMI_CTRL_STATS_READY_TIMEOUT           (1 * HZ)
+
+enum  wmi_ctrl_path_stats_id {
+	/* bit 0 is currently unused / reserved */
+	WMI_REQ_CTRL_PATH_PDEV_TX_STAT          = 1,
+};
+
+enum wmi_ctrl_path_stats_action {
+	WMI_REQUEST_CTRL_PATH_STAT_GET          = 1,
+	WMI_REQUEST_CTRL_PATH_STAT_RESET        = 2,
+	WMI_REQUEST_CTRL_PATH_STAT_START        = 3,
+	WMI_REQUEST_CTRL_PATH_STAT_STOP         = 4,
+};
+
+struct  wmi_ctrl_path_stats_cmd {
+	__le32 tlv_header;
+	__le32 stats_id;
+	__le32 req_id;
+	/* get/reset/start/stop based on stats id is defined as
+	 * a part of wmi_ctrl_path_stats_action
+	 */
+	__le32 action;
+} __packed;
+
+struct wmi_ctrl_path_stats_arg {
+	u32 stats_id;
+	u32 req_id;
+	u32 action;
+};
+
+struct wmi_ctrl_path_stats_event {
+	__le32 req_id;
+	/* more flag
+	 * 1 - More events sent after this event.
+	 * 0 - no more events after this event.
+	 */
+	__le32 more;
+};
+
+/* WMI arrays of length WMI_MGMT_FRAME_SUBTYPE_MAX use the
+ * IEEE802.11 standard's enumeration of mgmt frame subtypes:
+ */
+#define IEEE80211_MGMT_FRAME_SUBTYPE_MAX       16
+#define WMI_MAX_STRING_LEN                     256
+
+struct wmi_ctrl_path_pdev_stats_params {
+	__le32 pdev_id;
+	__le32 tx_mgmt_subtype[IEEE80211_MGMT_FRAME_SUBTYPE_MAX];
+	__le32 rx_mgmt_subtype[IEEE80211_MGMT_FRAME_SUBTYPE_MAX];
+	__le32 scan_fail_dfs_viol_time_ms;
+	__le32 nol_chk_fail_last_chan_freq;
+	__le32 nol_chk_fail_time_stamp_ms;
+	__le32 tot_peer_create_cnt;
+	__le32 tot_peer_del_cnt;
+	__le32 tot_peer_del_resp_cnt;
+	__le32 sched_algo_fifo_full_cnt;
+} __packed;
+
+struct ath12k_wmi_ctrl_path_stats_list {
+	struct list_head pdev_stats;
+	struct ath12k *ar;
+};
+
+struct wmi_ctrl_path_pdev_stats {
+	struct list_head list;
+	u32 tx_mgmt_subtype[IEEE80211_MGMT_FRAME_SUBTYPE_MAX];
+	u32 rx_mgmt_subtype[IEEE80211_MGMT_FRAME_SUBTYPE_MAX];
+	u32 scan_fail_dfs_viol_time_ms;
+	u32 nol_chk_fail_last_chan_freq;
+	u32 nol_chk_fail_time_stamp_ms;
+	u32 tot_peer_create_cnt;
+	u32 tot_peer_del_cnt;
+	u32 tot_peer_del_resp_cnt;
+	u32 sched_algo_fifo_full_cnt;
+};
+
 struct wmi_stats_event {
 	__le32 stats_id;
 	__le32 num_pdev_stats;
@@ -6031,6 +6111,8 @@ int ath12k_wmi_set_bios_cmd(struct ath12k_base *ab, u32 param_id,
 			    const u8 *buf, size_t buf_len);
 int ath12k_wmi_set_bios_sar_cmd(struct ath12k_base *ab, const u8 *psar_table);
 int ath12k_wmi_set_bios_geo_cmd(struct ath12k_base *ab, const u8 *pgeo_table);
+int ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
+				       struct wmi_ctrl_path_stats_arg *arg);
 int ath12k_wmi_send_stats_request_cmd(struct ath12k *ar, u32 stats_id,
 				      u32 vdev_id, u32 pdev_id);
 __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len);

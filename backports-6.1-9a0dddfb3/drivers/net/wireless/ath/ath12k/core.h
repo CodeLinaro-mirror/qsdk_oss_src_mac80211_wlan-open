@@ -582,6 +582,13 @@ struct ath12k_debug {
 	struct dentry *debugfs_pdev;
 	struct dentry *debugfs_pdev_symlink;
 	struct ath12k_dbg_htt_stats htt_stats;
+	struct ath12k_wmi_ctrl_path_stats_list wmi_ctrl_path_stats;
+	enum wmi_tlv_tag wmi_ctrl_path_stats_tagid;
+	struct completion wmi_ctrl_path_stats_rcvd;
+	u8 wmi_ctrl_path_stats_reqid;
+	/* To protect wmi_list manipulation */
+	spinlock_t  wmi_ctrl_path_stats_lock;
+	bool wmi_ctrl_path_stats_more_enabled;
 	enum wmi_halphy_ctrl_path_stats_id tpc_stats_type;
 	bool tpc_request;
 	struct completion tpc_complete;
