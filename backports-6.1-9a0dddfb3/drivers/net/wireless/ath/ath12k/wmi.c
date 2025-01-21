@@ -9785,6 +9785,7 @@ static void ath12k_wmi_event_mlo_setup_complete(struct ath12k_base *ab,
 	const struct wmi_mlo_setup_complete_event *ev;
 	struct ath12k *ar = NULL;
 	struct ath12k_pdev *pdev;
+	u32 max_ml_peer_ids;
 	const void **tb;
 	int ret, i;
 
@@ -9822,6 +9823,8 @@ skip_lookup:
 	}
 
 	ar->mlo_setup_status = le32_to_cpu(ev->status);
+	max_ml_peer_ids = le32_to_cpu(ev->max_ml_peer_ids);
+	ar->ah->max_ml_peer_ids = max_ml_peer_ids ? max_ml_peer_ids : ATH12K_MAX_MLO_PEERS;
 	complete(&ar->mlo_setup_done);
 
 out:

@@ -6320,6 +6320,7 @@ struct wmi_mlo_teardown_cmd {
 struct wmi_mlo_setup_complete_event {
 	__le32 pdev_id;
 	__le32 status;
+	__le32 max_ml_peer_ids;
 } __packed;
 
 struct wmi_mlo_teardown_complete_event {

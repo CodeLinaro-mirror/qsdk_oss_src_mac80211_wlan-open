@@ -271,6 +271,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah)
 {
 	u16 ml_peer_id;
+	int i;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -280,7 +281,13 @@ u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah)
 		return ATH12K_MLO_PEER_ID_INVALID;
 	}
 
-	for (ml_peer_id = 0; ml_peer_id < ATH12K_MAX_MLO_PEERS; ml_peer_id++) {
+	ml_peer_id = ah->last_ml_peer_id;
+	for (i = 0; i <= ah->max_ml_peer_ids; i++) {
+		ml_peer_id = (ml_peer_id + 1) % ah->max_ml_peer_ids;
+
+		if (!ml_peer_id)
+			continue;
+
 		if (test_bit(ml_peer_id, ah->free_ml_peer_id_map))
 			continue;
 
@@ -288,7 +295,8 @@ u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah)
 		break;
 	}
 
-	if (ml_peer_id == ATH12K_MAX_MLO_PEERS)
+	ah->last_ml_peer_id = ml_peer_id;
+	if (i == ah->max_ml_peer_ids)
 		ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
 
 	ath12k_dbg(NULL, ATH12K_DBG_PEER, "Allocated ml_peer_id:%d", ml_peer_id);
