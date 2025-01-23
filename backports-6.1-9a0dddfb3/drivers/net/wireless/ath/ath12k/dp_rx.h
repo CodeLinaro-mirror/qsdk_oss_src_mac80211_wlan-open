@@ -107,6 +107,25 @@ static inline u32 ath12k_he_gi_to_nl80211_he_gi(u8 sgi)
 	return ret;
 }
 
+static inline u32 ath12k_eht_gi_to_nl80211_eht_gi(u8 sgi)
+{
+	u32 ret = 0;
+
+	switch (sgi) {
+	case RX_MSDU_START_SGI_0_8_US:
+		ret = NL80211_RATE_INFO_EHT_GI_0_8;
+		break;
+	case RX_MSDU_START_SGI_1_6_US:
+		ret = NL80211_RATE_INFO_EHT_GI_1_6;
+		break;
+	case RX_MSDU_START_SGI_3_2_US:
+		ret = NL80211_RATE_INFO_EHT_GI_3_2;
+		break;
+	}
+
+	return ret;
+}
+
 int ath12k_dp_rx_ampdu_start(struct ath12k *ar,
 			     struct ieee80211_ampdu_params *params,
 			     u8 link_id);
