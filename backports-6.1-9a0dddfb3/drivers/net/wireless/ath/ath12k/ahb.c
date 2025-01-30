@@ -20,6 +20,9 @@ static const struct of_device_id ath12k_ahb_of_match[] = {
 	{ .compatible = "qcom,ipq5332-wifi",
 	  .data = (void *)ATH12K_HW_IPQ5332_HW10,
 	},
+	{ .compatible = "qcom,ipq5424-wifi",
+	  .data = (void *)ATH12K_HW_IPQ5424_HW10,
+	},
 	{ }
 };
 
@@ -406,9 +409,11 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 		ATH12K_AHB_UPD_SWID;
 
 	/* Load FW image to a reserved memory location */
-	ret = qcom_mdt_load(dev, fw, fw_name, pasid, ab_ahb->mem_region,
-			    ab_ahb->mem_phys, ab_ahb->mem_size,
-			    &ab_ahb->mem_phys);
+	ret = ab_ahb->ahb_ops->mdt_load(dev, fw, fw_name, pasid,
+					ab_ahb->mem_region,
+					ab_ahb->mem_phys,
+					ab_ahb->mem_size,
+					&ab_ahb->mem_phys);
 	if (ret) {
 		ath12k_err(ab, "Failed to load MDT segments: %d\n", ret);
 		goto err_fw;
@@ -440,11 +445,13 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 		goto err_fw2;
 	}
 
-	/* Authenticate FW image using peripheral ID */
-	ret = qcom_scm_pas_auth_and_reset(pasid);
-	if (ret) {
-		ath12k_err(ab, "failed to boot the remote processor %d\n", ret);
-		goto err_fw2;
+	if (ab_ahb->scm_auth_enabled) {
+		/* Authenticate FW image using peripheral ID */
+		ret = qcom_scm_pas_auth_and_reset(pasid);
+		if (ret) {
+			ath12k_err(ab, "failed to boot the remote processor %d\n", ret);
+			goto err_fw2;
+		}
 	}
 
 	/* Instruct Q6 to spawn userPD thread */
@@ -501,13 +508,15 @@ static void ath12k_ahb_power_down(struct ath12k_base *ab, bool is_suspend)
 
 	qcom_smem_state_update_bits(ab_ahb->stop_state, BIT(ab_ahb->stop_bit), 0);
 
-	pasid = (u32_encode_bits(ab_ahb->userpd_id, ATH12K_USERPD_ID_MASK)) |
-		ATH12K_AHB_UPD_SWID;
-	/* Release the firmware */
-	ret = qcom_scm_pas_shutdown(pasid);
-	if (ret)
-		ath12k_err(ab, "scm pas shutdown failed for userPD%d: %d\n",
-			   ab_ahb->userpd_id, ret);
+	if (ab_ahb->scm_auth_enabled) {
+		pasid = (u32_encode_bits(ab_ahb->userpd_id, ATH12K_USERPD_ID_MASK)) |
+			 ATH12K_AHB_UPD_SWID;
+		/* Release the firmware */
+		ret = qcom_scm_pas_shutdown(pasid);
+		if (ret)
+			ath12k_err(ab, "scm pas shutdown failed for userPD%d\n",
+				   ab_ahb->userpd_id);
+	}
 }
 
 static void ath12k_ahb_init_qmi_ce_config(struct ath12k_base *ab)
@@ -739,6 +748,14 @@ static int ath12k_ahb_map_service_to_pipe(struct ath12k_base *ab, u16 service_id
 
 	return 0;
 }
+
+static const struct ath12k_ahb_ops ahb_ops_ipq5332 = {
+	.mdt_load = qcom_mdt_load,
+};
+
+static const struct ath12k_ahb_ops ahb_ops_ipq5424 = {
+	.mdt_load = qcom_mdt_load_no_init,
+};
 
 static const struct ath12k_hif_ops ath12k_ahb_hif_ops_ipq5332 = {
 	.start = ath12k_ahb_start,
@@ -1035,13 +1052,32 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 		return -EOPNOTSUPP;
 	}
 
+	ab_ahb = ath12k_ab_to_ahb(ab);
+	ab_ahb->ab = ab;
+
+	hw_rev = ath12k_ahb_get_hw_rev(pdev);
+	switch (hw_rev) {
+	case ATH12K_HW_IPQ5332_HW10:
+		hif_ops = &ath12k_ahb_hif_ops_ipq5332;
+		ab_ahb->userpd_id = ATH12K_IPQ5332_USERPD_ID;
+		ab_ahb->scm_auth_enabled = true;
+		ab_ahb->ahb_ops = &ahb_ops_ipq5332;
+		break;
+	case ATH12K_HW_IPQ5424_HW10:
+		hif_ops = &ath12k_ahb_hif_ops_ipq5332;
+		ab_ahb->userpd_id = ATH12K_IPQ5332_USERPD_ID;
+		ab_ahb->scm_auth_enabled = false;
+		ab_ahb->ahb_ops = &ahb_ops_ipq5424;
+		break;
+	default:
+		ret = -EOPNOTSUPP;
+		goto err_core_free;
+	}
+
 	ab->hif.ops = hif_ops;
 	ab->pdev = pdev;
 	ab->hw_rev = hw_rev;
 	platform_set_drvdata(pdev, ab);
-	ab_ahb = ath12k_ab_to_ahb(ab);
-	ab_ahb->ab = ab;
-	ab_ahb->userpd_id = userpd_id;
 
 	/* Set fixed_mem_region to true for platforms that support fixed memory
 	 * reservation from DT. If memory is reserved from DT for FW, ath12k driver
