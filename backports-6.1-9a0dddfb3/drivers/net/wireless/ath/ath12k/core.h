@@ -815,6 +815,7 @@ struct ath12k {
 	u8 ftm_msgref;
 	struct ath12k_fw_stats fw_stats;
 	unsigned long last_signal_update;
+	unsigned long last_tx_power_update;
 };
 
 struct ath12k_hw {
