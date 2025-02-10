@@ -807,6 +807,7 @@ struct ath12k {
 	int monitor_vdev_id;
 
 	struct wiphy_radio_freq_range freq_range;
+	u32 num_channels;
 
 	struct completion fw_stats_complete;
 
