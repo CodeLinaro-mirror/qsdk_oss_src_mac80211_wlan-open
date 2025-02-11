@@ -11100,12 +11100,12 @@ static int ath12k_mac_op_get_survey(struct ieee80211_hw *hw, int idx,
 	return 0;
 }
 
-static int ath12k_mac_get_fw_stats(struct ath12k *ar, u32 pdev_id,
-				   u32 vdev_id, u32 stats_id)
+int ath12k_mac_get_fw_stats(struct ath12k *ar,
+			    struct ath12k_fw_stats_req_params *param)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
-	unsigned long time_left;
+	unsigned long timeout, time_left;
 	int ret;
 
 	guard(mutex)(&ah->hw_mutex);
@@ -11113,9 +11113,18 @@ static int ath12k_mac_get_fw_stats(struct ath12k *ar, u32 pdev_id,
 	if (ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
 
+	/* FW stats can get split when exceeding the stats data buffer limit.
+	 * In that case, since there is no end marking for the back-to-back
+	 * received 'update stats' event, we keep a 3 seconds timeout in case,
+	 * fw_stats_done is not marked yet
+	 */
+	timeout = jiffies + msecs_to_jiffies(3 * 1000);
+	ath12k_fw_stats_reset(ar);
+
 	reinit_completion(&ar->fw_stats_complete);
 
-	ret = ath12k_wmi_send_stats_request_cmd(ar, stats_id, vdev_id, pdev_id);
+	ret = ath12k_wmi_send_stats_request_cmd(ar, param->stats_id,
+						param->vdev_id, param->pdev_id);
 
 	if (ret) {
 		ath12k_warn(ab, "failed to request fw stats: %d\n", ret);
@@ -11124,14 +11133,33 @@ static int ath12k_mac_get_fw_stats(struct ath12k *ar, u32 pdev_id,
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
 		   "get fw stat pdev id %d vdev id %d stats id 0x%x\n",
-		   pdev_id, vdev_id, stats_id);
+		   param->pdev_id, param->vdev_id, param->stats_id);
 
 	time_left = wait_for_completion_timeout(&ar->fw_stats_complete, 1 * HZ);
 
-	if (!time_left)
+	if (!time_left) {
 		ath12k_warn(ab, "time out while waiting for get fw stats\n");
+		return -ETIMEDOUT;
+	}
 
-	return ret;
+	/* Firmware sends WMI_UPDATE_STATS_EVENTID back-to-back
+	 * when stats data buffer limit is reached. fw_stats_complete
+	 * is completed once host receives first event from firmware, but
+	 * still end might not be marked in the TLV.
+	 * Below loop is to confirm that firmware completed sending all the event
+	 * and fw_stats_done is marked true when end is marked in the TLV.
+	 */
+	for (;;) {
+		if (time_after(jiffies, timeout))
+			break;
+		spin_lock_bh(&ar->data_lock);
+		if (ar->fw_stats.fw_stats_done) {
+			spin_unlock_bh(&ar->data_lock);
+			break;
+		}
+		spin_unlock_bh(&ar->data_lock);
+	}
+	return 0;
 }
 
 static void ath12k_mac_put_chain_rssi(struct station_info *sinfo,
@@ -11161,6 +11189,7 @@ static void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 					 struct station_info *sinfo)
 {
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_fw_stats_req_params params = {};
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
 	s8 signal;
@@ -11202,16 +11231,19 @@ static void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	/* TODO: Use real NF instead of default one. */
 	signal = arsta->rssi_comb;
 
+	params.pdev_id = ar->pdev->pdev_id;
+	params.vdev_id = 0;
+	params.stats_id = WMI_REQUEST_VDEV_STAT;
+
 	/* Limit the requests to Firmware for fetching the signal strength */
 	if (time_after(jiffies, msecs_to_jiffies(ATH12K_PDEV_SIGNAL_UPDATE_TIME_MSECS) +
 				ar->last_signal_update)) {
-		ath12k_mac_get_fw_stats(ar, ar->pdev->pdev_id, 0, WMI_REQUEST_VDEV_STAT);
-		ath12k_mac_get_fw_stats(ar, ar->pdev->pdev_id, 0,
-					WMI_REQUEST_RSSI_PER_CHAIN_STAT);
+		ath12k_mac_get_fw_stats(ar, &params);
 		ar->last_signal_update = jiffies;
 	}
 
-	if (!signal && ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+	if (!signal && ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    (!ath12k_mac_get_fw_stats(ar, &params)))
 		signal = arsta->rssi_beacon;
 
 	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_CHAIN_SIGNAL)) &&
