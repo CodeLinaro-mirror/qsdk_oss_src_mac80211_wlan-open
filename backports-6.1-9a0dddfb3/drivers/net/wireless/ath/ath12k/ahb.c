@@ -757,7 +757,7 @@ static const struct ath12k_ahb_ops ahb_ops_ipq5424 = {
 	.mdt_load = qcom_mdt_load_no_init,
 };
 
-static const struct ath12k_hif_ops ath12k_ahb_hif_ops_ipq5332 = {
+static const struct ath12k_hif_ops ath12k_ahb_hif_ops = {
 	.start = ath12k_ahb_start,
 	.stop = ath12k_ahb_stop,
 	.read32 = ath12k_ahb_read32,
@@ -1058,13 +1058,13 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 	hw_rev = ath12k_ahb_get_hw_rev(pdev);
 	switch (hw_rev) {
 	case ATH12K_HW_IPQ5332_HW10:
-		hif_ops = &ath12k_ahb_hif_ops_ipq5332;
+		hif_ops = &ath12k_ahb_hif_ops;
 		ab_ahb->userpd_id = ATH12K_IPQ5332_USERPD_ID;
 		ab_ahb->scm_auth_enabled = true;
 		ab_ahb->ahb_ops = &ahb_ops_ipq5332;
 		break;
 	case ATH12K_HW_IPQ5424_HW10:
-		hif_ops = &ath12k_ahb_hif_ops_ipq5332;
+		hif_ops = &ath12k_ahb_hif_ops;
 		ab_ahb->userpd_id = ATH12K_IPQ5332_USERPD_ID;
 		ab_ahb->scm_auth_enabled = false;
 		ab_ahb->ahb_ops = &ahb_ops_ipq5424;
