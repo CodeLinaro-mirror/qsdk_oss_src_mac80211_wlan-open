@@ -15,8 +15,30 @@
 
 /* Target configuration defines */
 
+
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
+/* Num VDEVS per radio */
+#define TARGET_NUM_VDEVS        (8 + 1)
+#define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_512M
+
+/* Max num of stations for Single Radio mode */
+#define TARGET_NUM_STATIONS_SINGLE     128
+
+/* Max num of stations for DBS */
+#define TARGET_NUM_STATIONS_DBS                64
+#else
+// #ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Enable default profile
 /* Num VDEVS per radio */
 #define TARGET_NUM_VDEVS	(16 + 1)
+#define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_DEFAULT
+
+/* Max num of stations for Single Radio mode */
+#define TARGET_NUM_STATIONS_SINGLE     512
+
+/* Max num of stations for DBS */
+#define TARGET_NUM_STATIONS_DBS                128
+
+#endif
 
 #define TARGET_NUM_PEERS_PDEV_SINGLE	(TARGET_NUM_STATIONS_SINGLE + \
 					 TARGET_NUM_VDEVS)
@@ -33,12 +55,6 @@
 
 /* Num of peers for DBS_SBS */
 #define TARGET_NUM_PEERS_DBS_SBS	(3 * TARGET_NUM_PEERS_PDEV_DBS_SBS)
-
-/* Max num of stations for Single Radio mode */
-#define TARGET_NUM_STATIONS_SINGLE	512
-
-/* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS		128
 
 /* Max num of stations for DBS_SBS */
 #define TARGET_NUM_STATIONS_DBS_SBS	128
