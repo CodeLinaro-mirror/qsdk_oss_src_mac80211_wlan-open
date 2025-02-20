@@ -1315,6 +1315,7 @@ struct ath12k_base {
 	bool ce_pipe_init_done;
 	bool rxgainlut_support;
 	bool fw_cfg_support;
+	bool is_dualmac;
 
 	const struct ieee80211_ops *ath12k_ops;
 

@@ -137,6 +137,129 @@ static struct qmi_elem_info qmi_wlanfw_qdss_trace_config_download_resp_msg_v01_e
 	},
 };
 
+struct qmi_elem_info qmi_wlfw_qdss_trace_data_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_req_msg_v01, seg_id),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlfw_qdss_trace_data_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01, resp),
+		.ei_array      = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01, total_size_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01, total_size),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x11,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01,
+					   seg_id_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x11,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01,
+					   seg_id),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x12,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01,
+					   data_valid),
+	},
+	{
+		.data_type      = QMI_DATA_LEN,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u16),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x12,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01,
+					   data_len),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = QMI_WLANFW_MAX_DATA_SIZE_V01,
+		.elem_size      = sizeof(u8),
+		.array_type       = VAR_LEN_ARRAY,
+		.tlv_type       = 0x12,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01,
+					   data),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x13,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01,
+					   end_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x13,
+		.offset         = offsetof(struct
+					   qmi_wlfw_qdss_trace_data_resp_msg_v01,
+					   end),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
 static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 	{
 		.data_type      = QMI_UNSIGNED_1_BYTE,
@@ -4884,6 +5007,113 @@ int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_qmi_fwreset_from_cold_boot);
 
+static int ath12k_qmi_event_qdss_trace_misc_hdlr(struct ath12k_qmi *qmi, void *data)
+{
+	struct qmi_wlfw_qdss_trace_data_req_msg_v01 *req;
+	struct qmi_wlfw_qdss_trace_data_resp_msg_v01 *resp;
+	struct qmi_txn txn;
+	struct ath12k_qmi_event_qdss_trace_save_data *event_data = data;
+	struct ath12k_base *ab = qmi->ab;
+	u32 total_size = event_data->total_size;
+	int ret = 0;
+	u32 remaining;
+	unsigned char *qdss_trace_data_temp, *qdss_trace_data = NULL;
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
+	if (!resp) {
+		kfree(req);
+		return -ENOMEM;
+	}
+
+	qdss_trace_data = kzalloc(total_size, GFP_KERNEL);
+
+	if (!qdss_trace_data) {
+		ret = -ENOMEM;
+		goto out_free_req_resp;
+	}
+
+	remaining = total_size;
+	qdss_trace_data_temp = qdss_trace_data;
+
+	while (remaining) {
+		if (resp->end_valid && resp->end)
+			break;
+		ret = qmi_txn_init(&ab->qmi.handle, &txn,
+				   qmi_wlfw_qdss_trace_data_resp_msg_v01_ei, resp);
+		if (ret < 0) {
+			ath12k_warn(ab, "Fail to initialize qmi txn err %d\n", ret);
+			goto out_free_all;
+		}
+
+		ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+				      QMI_WLFW_QDSS_TRACE_DATA_REQ_V01,
+				      QMI_WLFW_QDSS_TRACE_DATA_REQ_MSG_V01_MAX_MSG_LEN,
+				      qmi_wlfw_qdss_trace_data_req_msg_v01_ei, req);
+		if (ret < 0) {
+			ath12k_warn(ab, "qmi send request failed err %d\n", ret);
+			qmi_txn_cancel(&txn);
+			goto out_free_all;
+		}
+
+		ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+
+		if (ret < 0) {
+			ath12k_warn(ab, "qmi failed to qdss data request, err = %d\n", ret);
+			goto out_free_all;
+		}
+
+		if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+			ath12k_warn(ab, "Respond qdss data req failed, result: %d, err: %d\n",
+				   resp->resp.result, resp->resp.error);
+			ret = -EINVAL;
+			goto out_free_all;
+		}
+
+		if (resp->total_size_valid == 1 && resp->total_size == total_size &&
+		    resp->seg_id_valid == 1 && resp->seg_id == req->seg_id &&
+		    resp->data_valid == 1 && resp->data_len <= QMI_WLANFW_MAX_DATA_SIZE_V01 &&
+		    resp->data_len <= remaining) {
+			memcpy(qdss_trace_data_temp, resp->data, resp->data_len);
+		} else {
+			ath12k_warn(ab, "invalid qmi response\n");
+			ret = -EINVAL;
+			goto out_free_all;
+		}
+
+		remaining -= resp->data_len;
+		qdss_trace_data_temp += resp->data_len;
+		req->seg_id++;
+	}
+
+	if (!remaining && resp->end_valid && resp->end) {
+		struct ath12k_dump_segment *segment;
+		segment = vzalloc(sizeof(*segment));
+
+		if (!segment) {
+			ret = -ENOMEM;
+			goto out_free_all;
+		}
+		segment->len = total_size;
+		segment->vaddr = qdss_trace_data;
+		segment->type = FW_CRASH_DUMP_QDSS_DATA;
+		ath12k_coredump_build_inline(ab, segment, 1);
+		vfree(segment);
+	} else {
+		ath12k_err(ab,"dump collection failed: remaining-%u response end-%u\n",
+			   remaining,resp->end);
+	}
+out_free_all:
+	kfree(qdss_trace_data);
+out_free_req_resp:
+	kfree(req);
+	kfree(resp);
+	return ret;
+}
+
 static int
 ath12k_qmi_driver_event_post(struct ath12k_qmi *qmi,
 			     enum ath12k_qmi_event_type type,
@@ -5108,7 +5338,7 @@ int ath12k_qmi_event_mem_request(struct ath12k_qmi *qmi)
 }
 
 int ath12k_send_qdss_trace_mode_req(struct ath12k_base *ab,
-				    enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode)
+				    enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode, u64 value)
 {
 	int ret;
 	struct qmi_txn txn;
@@ -5118,8 +5348,12 @@ int ath12k_send_qdss_trace_mode_req(struct ath12k_base *ab,
 	req.mode_valid = 1;
 	req.mode = mode;
 	req.option_valid = 1;
-	req.option = mode == QMI_WLANFW_QDSS_TRACE_OFF_V01 ?
-	                     QMI_WLANFW_QDSS_STOP_ALL_TRACE : 0;
+	if (!value) {
+		req.option = mode == QMI_WLANFW_QDSS_TRACE_OFF_V01 ?
+		                     QMI_WLANFW_QDSS_STOP_ALL_TRACE : 0;
+	} else {
+		req.option = value;
+	}
 
 	ret = qmi_txn_init(&ab->qmi.handle, &txn,
 			   qmi_wlanfw_qdss_trace_mode_resp_msg_v01_ei, &resp);
@@ -5319,7 +5553,7 @@ static void ath12k_qmi_event_qdss_trace_req_mem_hdlr(struct ath12k_qmi *qmi)
 	 * before that.
 	 */
 	msleep(1000);
-	ret = ath12k_send_qdss_trace_mode_req(ab, QMI_WLANFW_QDSS_TRACE_ON_V01);
+	ret = ath12k_send_qdss_trace_mode_req(ab, QMI_WLANFW_QDSS_TRACE_ON_V01, 0);
 	if (ret < 0) {
 		ath12k_warn(ab, "Failed to enable QDSS trace: %d\n", ret);
 		ath12k_qmi_qdss_mem_free(qmi);
@@ -5612,9 +5846,6 @@ static void ath12k_wlfw_qdss_trace_save_ind_cb(struct qmi_handle *qmi_hdl,
 	struct ath12k_qmi_event_qdss_trace_save_data *event_data;
 	int i;
 
-	if (ind_msg->source == 1)
-		return;
-
 	ath12k_dbg(ab, ATH12K_DBG_QMI, "Received qdss trace save indication\n");
 	event_data = kzalloc(sizeof(*event_data), GFP_KERNEL);
 
@@ -5635,7 +5866,14 @@ static void ath12k_wlfw_qdss_trace_save_ind_cb(struct qmi_handle *qmi_hdl,
 		}
 	}
 
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "source %d, total size requested %u\n",
+		   ind_msg->source, ind_msg->total_size);
 	event_data->total_size = ind_msg->total_size;
+	if (ind_msg->source == 1) {
+		ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_QDSS_TRACE_REQ_DATA,
+				event_data);
+		return;
+	}
 	ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_QDSS_TRACE_SAVE,
 				     event_data);
 	return;
@@ -5928,6 +6166,13 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 			break;
 		case ATH12K_QMI_EVENT_QDSS_TRACE_SAVE:
 			ath12k_qmi_event_qdss_trace_save_hdlr(qmi, event->data);
+			break;
+		case ATH12K_QMI_EVENT_QDSS_TRACE_REQ_DATA:
+			ret = ath12k_qmi_event_qdss_trace_misc_hdlr(qmi, event->data);
+
+			if (ret < 0)
+				ath12k_warn(ab, "failed to collect phy logs : %d\n", ret);
+
 			break;
 		case ATH12K_QMI_EVENT_COLD_BOOT_CAL_DONE:
 			break;

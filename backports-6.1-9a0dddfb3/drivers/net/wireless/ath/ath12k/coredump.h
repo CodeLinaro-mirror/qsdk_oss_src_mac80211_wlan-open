@@ -33,6 +33,12 @@ enum ath12k_fw_crash_dump_type {
 
 #define COREDUMP_TLV_HDR_SIZE 8
 
+enum ath12k_qdss_dump_type {
+	ATH12K_QDSS_DUMP,
+	ATH12K_PHYA0_DUMP = 64,
+	ATH12K_PHYA1_DUMP = 128,
+};
+
 struct ath12k_elf_coredump_state {
 	struct ath12k_base *ab;
 	void *header;

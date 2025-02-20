@@ -238,6 +238,7 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	}
 
 	if (dualmac) {
+		ab->is_dualmac = true;
 		if (ab->fw.amss_dualmac_data && ab->fw.amss_dualmac_len > 0) {
 			/* use MHI firmware file from firmware-N.bin */
 			mhi_ctrl->fw_data = ab->fw.amss_dualmac_data;

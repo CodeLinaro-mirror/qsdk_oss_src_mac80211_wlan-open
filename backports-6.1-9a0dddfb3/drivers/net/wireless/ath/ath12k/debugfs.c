@@ -14,6 +14,7 @@
 #include "debugfs_htt_stats.h"
 #include "qmi.h"
 #include "wmi.h"
+#include "coredump.h"
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)
@@ -3583,9 +3584,46 @@ ath12k_write_trace_qdss(struct file *file,
 	int i, ret;
 	bool radioup = false;
 	bool qdss_enable;
+	char input_buf[64];
+	char *log_val = NULL;
+	u64 val = 0;
 
-	if (kstrtobool_from_user(user_buf, count, &qdss_enable))
+	if (count > sizeof(input_buf) - 1) {
+		ath12k_err(ab, "Input buffer size is too large\n");
 		return -EINVAL;
+	}
+
+	if (copy_from_user(input_buf, user_buf, count)) {
+		ath12k_err(ab, "Failed to copy data from user buffer\n");
+		return -EFAULT;
+	}
+
+	input_buf[count] = '\0';
+
+	if (kstrtobool(input_buf, &qdss_enable))
+		return -EINVAL;
+
+	if (!qdss_enable) {
+		log_val = strchr(input_buf, ' ');
+		if (log_val && kstrtou64(log_val + 1, 0, &val)) {
+			ath12k_err(ab, "Invalid debug mask\n");
+			return -EINVAL;
+		}
+		switch (val) {
+			case ATH12K_QDSS_DUMP:
+			case ATH12K_PHYA0_DUMP:
+				break;
+			case ATH12K_PHYA1_DUMP:
+				if (!ab->is_dualmac) {
+					ath12k_err(ab, "value is not supported%s\n", log_val);
+					return -EINVAL;
+				}
+				break;
+			default:
+				ath12k_err(ab, "Invalid value %s\n", log_val);
+				return -EINVAL;
+		}
+	}
 
 	for (i = 0; i < ab->num_radios; i++) {
 		pdev = &ab->pdevs[i];
@@ -3598,32 +3636,23 @@ ath12k_write_trace_qdss(struct file *file,
 
 	if (!radioup) {
 		ath12k_err(ab, "radio is not up\n");
-		ret = -ENETDOWN;
-		goto exit;
+		return -ENETDOWN;
 	}
 
 	if (qdss_enable) {
-		if (ab->is_qdss_tracing) {
-			ret = count;
-			goto exit;
-		}
+		if (ab->is_qdss_tracing)
+			return count;
+
 		ath12k_config_qdss(ab);
 	} else {
-		if (!ab->is_qdss_tracing) {
-			ret = count;
-			goto exit;
-		}
-		ret = ath12k_send_qdss_trace_mode_req(ab,
-						      QMI_WLANFW_QDSS_TRACE_OFF_V01);
+		if (!ab->is_qdss_tracing)
+			return count;
+		ret = ath12k_send_qdss_trace_mode_req(ab, QMI_WLANFW_QDSS_TRACE_OFF_V01, val);
 		if (ret < 0)
-			ath12k_warn(ab,
-				    "Failed to stop QDSS: %d\n", ret);
+			ath12k_warn(ab, "Failed to stop QDSS: %d\n", ret);
 	}
 
-	ret = count;
-
-exit:
-	return ret;
+	return count;
 }
 
 static const struct file_operations fops_trace_qdss = {
