@@ -1391,7 +1391,6 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 			ar->monitor_vdev_id = -1;
 			ar->monitor_started = false;
 			ar->monitor_vdev_created = false;
-			ar->monitor_conf_enabled = false;
 		}
 
 		wiphy_unlock(ah->hw->wiphy);
