@@ -181,8 +181,10 @@ int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait)
 		}
 	}
 
-	if (WARN_ON(!num_channels))
-		return -EINVAL;
+	if (!num_channels) {
+		ath12k_warn(ar->ab, "pdev is not supported for this country\n");
+		return -EOPNOTSUPP;
+	}
 
 	arg = kzalloc(struct_size(arg, channel, num_channels), GFP_KERNEL);
 
