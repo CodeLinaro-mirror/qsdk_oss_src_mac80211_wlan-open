@@ -347,6 +347,7 @@ struct ath12k_link_vif {
 	struct ath12k_link_stats link_stats;
 	spinlock_t link_stats_lock; /* Protects updates to link_stats */
 	bool is_scan_vif;
+	u32 key_cipher;
 };
 
 struct ath12k_vif {
@@ -373,7 +374,6 @@ struct ath12k_vif {
 	} u;
 
 	u32 aid;
-	u32 key_cipher;
 	u8 tx_encap_type;
 	bool ps;
 	atomic_t mcbc_gsn;
