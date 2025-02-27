@@ -1740,7 +1740,6 @@ static const struct ath12k_hw_params ath12k_hw_params[] = {
 
 		.ce_ie_addr = &ath12k_ce_ie_addr_ipq5424,
 		.ce_remap = &ath12k_ce_remap_ipq5424,
-		.bdf_addr_offset = 0x940000,
 	},
 };
 

@@ -612,6 +612,39 @@ u32 ath12k_core_get_max_num_tids(struct ath12k_base *ab)
 	return TARGET_NUM_TIDS(SINGLE);
 }
 
+struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab,
+							 const char *name)
+{
+	struct device *dev = ab->dev;
+	struct reserved_mem *rmem;
+	struct device_node *node;
+	int index;
+
+	index = of_property_match_string(dev->of_node, "memory-region-names", name);
+	if (index < 0) {
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+			   "memory region %s not found\n", name);
+		return NULL;
+	}
+
+	node = of_parse_phandle(dev->of_node, "memory-region", index);
+	if (!node) {
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+			   "failed to parse memory region %s\n", name);
+		return NULL;
+	}
+
+	rmem = of_reserved_mem_lookup(node);
+	of_node_put(node);
+	if (!rmem) {
+		ath12k_dbg(ab, ATH12K_DBG_BOOT,
+			   "unable to get memory-region for index %d\n", index);
+		return NULL;
+	}
+
+	return rmem;
+}
+
 static inline
 void ath12k_core_to_group_ref_get(struct ath12k_base *ab)
 {
