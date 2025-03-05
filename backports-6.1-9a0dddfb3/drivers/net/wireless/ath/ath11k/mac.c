@@ -1531,8 +1531,10 @@ static int ath11k_mac_set_vif_params(struct ath11k_vif *arvif,
 
 static struct ath11k_vif *ath11k_mac_get_tx_arvif(struct ath11k_vif *arvif)
 {
-	if (arvif->vif->mbssid_tx_vif)
+	// TODO need to revisit
+	/*if (arvif->vif->mbssid_tx_vif)
 		return ath11k_vif_to_arvif(arvif->vif->mbssid_tx_vif);
+	*/
 
 	return NULL;
 }
