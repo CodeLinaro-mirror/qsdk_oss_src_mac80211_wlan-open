@@ -10122,6 +10122,7 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 
 	ahsta->links_map &= ~BIT(link_id);
 	ahsta->device_bitmap &= ~BIT(ab->wsi_info.index);
+	ahsta->num_peer--;
 	rcu_assign_pointer(ahsta->link[link_id], NULL);
 	synchronize_rcu();
 
