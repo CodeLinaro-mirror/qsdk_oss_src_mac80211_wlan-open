@@ -6,7 +6,7 @@
 #ifndef ATH12K_AHB_WIFI7_H
 #define ATH12K_AHB_WIFI7_H
 
-#ifdef CONFIG_ATH12K_AHB
+#ifdef CPTCFG_ATH12K_AHB
 int ath12k_wifi7_ahb_init(void);
 void ath12k_wifi7_ahb_exit(void);
 #else

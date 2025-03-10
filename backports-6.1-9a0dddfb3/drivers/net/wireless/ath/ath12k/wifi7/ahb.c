@@ -13,7 +13,7 @@
 #include "hif.h"
 #include "hw_wifi7.h"
 
-static const struct of_device_id ath12k_ahb_of_match[] = {
+static const struct of_device_id ath12k_wifi7_ahb_of_match[] = {
 	{ .compatible = "qcom,ipq5332-wifi",
 	  .data = (void *)ATH12K_HW_IPQ5332_HW10,
 	},
@@ -23,7 +23,7 @@ static const struct of_device_id ath12k_ahb_of_match[] = {
 	{ }
 };
 
-MODULE_DEVICE_TABLE(of, ath12k_ahb_of_match);
+MODULE_DEVICE_TABLE(of, ath12k_wifi7_ahb_of_match);
 
 static const struct ath12k_ahb_ops ahb_ops_ipq5332 = {
 	.mdt_load = qcom_mdt_load,
