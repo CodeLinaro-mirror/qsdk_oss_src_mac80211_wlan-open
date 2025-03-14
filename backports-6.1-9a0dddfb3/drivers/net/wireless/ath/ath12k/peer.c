@@ -107,6 +107,8 @@ int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	ath12k_dp_link_peer_unassign(ar, vdev_id, addr);
+
 	ret = ath12k_peer_delete_send(ar, vdev_id, addr);
 	if (ret)
 		return ret;
@@ -235,6 +237,10 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
+	ath12k_dp_link_peer_assign(ar, arvif->vdev_id,
+				   sta ? sta->addr : NULL, arg->peer_addr,
+				   link_id, ar->hw_link_id);
+
 	return 0;
 }
 
@@ -289,6 +295,8 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 			continue;
 
 		ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
+
+		ath12k_dp_link_peer_unassign(ar, arvif->vdev_id, arsta->addr);
 
 		spin_lock_bh(&ar->ab->base_lock);
 		ath12k_link_sta_rhash_delete(ar->ab, arsta);

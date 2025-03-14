@@ -6473,7 +6473,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct ath12k_link_sta *arsta;
 	unsigned long valid_links;
 	u8 link_id = 0;
-	int ret;
+	int ret = -EINVAL;
 	struct ath12k_dp_peer_create_params dp_params = {0};
 
 	lockdep_assert_wiphy(hw->wiphy);

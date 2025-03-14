@@ -3096,7 +3096,7 @@ struct wmi_vdev_start_req_arg {
 };
 
 struct ath12k_wmi_peer_create_arg {
-	const u8 *peer_addr;
+	u8 *peer_addr;
 	u32 peer_type;
 	u32 vdev_id;
 	bool ml_enabled;
