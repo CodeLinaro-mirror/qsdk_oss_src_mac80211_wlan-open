@@ -395,7 +395,10 @@ void ath12k_vendor_services_init(void)
 		ath12k_vendor_service_common_init;
 	ath12k_vendor_service_deinit[ATH12K_RM_ENERGY_SERVICE] =
 		ath12k_vendor_service_common_deinit;
-
+	ath12k_vendor_service_init[ATH12K_RM_ERP_SERVICE] =
+		ath12k_vendor_service_common_init;
+	ath12k_vendor_service_deinit[ATH12K_RM_ERP_SERVICE] =
+		ath12k_vendor_service_common_deinit;
 	/* Initialize other serives as needed */
 }
 EXPORT_SYMBOL(ath12k_vendor_services_init);
