@@ -53,7 +53,7 @@ config ATH12K_TRACING
 config ATH12K_COREDUMP
 	bool "ath12k coredump"
 	depends on ATH12K
-	select BPAUTO_WANT_DEV_COREDUMP
+	select WANT_DEV_COREDUMP
 	help
 	  Enable ath12k coredump collection
 

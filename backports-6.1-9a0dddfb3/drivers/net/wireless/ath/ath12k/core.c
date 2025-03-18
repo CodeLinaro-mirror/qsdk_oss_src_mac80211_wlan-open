@@ -1804,6 +1804,7 @@ static int ath12k_core_get_wsi_info(struct ath12k_hw_group *ag,
 		ag->wsi_node[device_count] = next_wsi_dev;
 
 		tx_endpoint = of_graph_get_endpoint_by_regs(next_wsi_dev, 0, -1);
+
 		if (!tx_endpoint) {
 			of_node_put(next_wsi_dev);
 			return -ENODEV;
@@ -2105,7 +2106,12 @@ void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag)
 		/* even if 1 device's firmware feature indicates MLO
 		 * unsupported, make MLO unsupported for the whole group
 		 */
-		if (!test_bit(ATH12K_FW_FEATURE_MLO, ab->fw.fw_features)) {
+
+		 /* TODO: As AHB, HYBRID chipsets dosen't support firmware2.bin
+		  * bypassing this check for the both. Need to make this generic
+		  */
+
+		if (ab->hif.bus == ATH12K_BUS_PCI && !test_bit(ATH12K_FW_FEATURE_MLO, ab->fw.fw_features)) {
 			ag->mlo_capable = false;
 			return;
 		}
@@ -2176,6 +2182,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 				      enum ath12k_bus bus)
 {
 	struct ath12k_base *ab;
+	u32 addr;
 
 	ab = kzalloc(sizeof(*ab) + priv_size, GFP_KERNEL);
 	if (!ab)
@@ -2212,6 +2219,9 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 	ab->dev = dev;
 	ab->hif.bus = bus;
 	ab->qmi.num_radios = U8_MAX;
+
+	if (!of_property_read_u32(ab->dev->of_node, "memory-region", &addr))
+		set_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags);
 
 	/* Device index used to identify the devices in a group.
 	 *

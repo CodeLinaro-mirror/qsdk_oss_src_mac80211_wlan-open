@@ -1033,7 +1033,6 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 	enum ath12k_device_family device_id;
 	struct ath12k_ahb *ab_ahb;
 	struct ath12k_base *ab;
-	u32 addr;
 	int ret;
 
 	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
@@ -1074,13 +1073,6 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 		}
 	}
  
-	/* Set fixed_mem_region to true for platforms that support fixed memory
-	 * reservation from DT. If memory is reserved from DT for FW, ath12k driver
-	 * need not to allocate memory.
-	 */
-	if (!of_property_read_u32(ab->dev->of_node, "memory-region", &addr))
-		set_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags);
-
 	ath12k_fw_map(ab);
 
 	ret = ath12k_ahb_resource_init(ab);

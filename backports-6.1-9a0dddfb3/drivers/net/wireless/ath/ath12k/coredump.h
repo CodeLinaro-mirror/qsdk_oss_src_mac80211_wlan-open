@@ -57,6 +57,27 @@ struct ath12k_dump_file_data {
 	u8 data[];
 } __packed;
 
+#define MAX_RAMDUMP_TABLE_SIZE  6
+#define COREDUMP_DESC           "Q6-COREDUMP"
+#define Q6_SFR_DESC             "Q6-SFR"
+
+#define DESC_STRING_SIZE 20
+#define FILE_NAME_STRING_SIZE 20
+
+struct ath12k_coredump_q6ramdump_entry {
+        __le64 base_address;
+        __le64 actual_phys_address;
+        __le64 size;
+        char description[DESC_STRING_SIZE];
+        char file_name[FILE_NAME_STRING_SIZE];
+};
+
+struct ath12k_coredump_q6ramdump_header {
+        __le32 version;
+        __le32 header_size;
+        struct ath12k_coredump_q6ramdump_entry ramdump_table[MAX_RAMDUMP_TABLE_SIZE];
+};
+
 #ifdef CPTCFG_ATH12K_COREDUMP
 enum ath12k_fw_crash_dump_type ath12k_coredump_get_dump_type
 						(enum ath12k_qmi_target_mem type);

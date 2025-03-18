@@ -4,6 +4,9 @@
  * Copyright (c) 2024 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/devcoredump.h>
+#include <linux/pci.h>
+
+#include "pci.h"
 #include "hif.h"
 #include "coredump.h"
 #include "debug.h"
@@ -48,7 +51,67 @@ void ath12k_coredump_upload(struct work_struct *work)
 	ab->dump_data = NULL;
 }
 
+static void ath12k_coredump_q6crash_reason(struct ath12k_base *ab)
+{
+        int i = 0;
+        uint64_t coredump_offset = 0;
+        struct ath12k_pci *ar_pci = (struct ath12k_pci *)ab->drv_priv;
+        struct mhi_controller *mhi_ctrl = ar_pci->mhi_ctrl;
+        struct mhi_buf *mhi_buf;
+        struct image_info *rddm_image;
+        struct ath12k_coredump_q6ramdump_header *ramdump_header;
+        struct ath12k_coredump_q6ramdump_entry *ramdump_table;
+        char *msg = NULL;
+        struct pci_dev *pci_dev = ar_pci->pdev;
+
+        rddm_image = mhi_ctrl->rddm_image;
+        mhi_buf = rddm_image->mhi_buf;
+
+        ath12k_info(ab, "CRASHED - [DID:DOMAIN:BUS:SLOT] - %x:%04u:%02u:%02u\n",
+                    pci_dev->device, pci_dev->bus->domain_nr,
+                    pci_dev->bus->number, PCI_SLOT(pci_dev->devfn));
+
+        /* Get RDDM header size */
+        ramdump_header = (struct ath12k_coredump_q6ramdump_header *)mhi_buf[0].buf;
+        ramdump_table = ramdump_header->ramdump_table;
+        coredump_offset = le32_to_cpu(ramdump_header->header_size);
+
+        /* Traverse ramdump table to get coredump offset */
+        while (i < MAX_RAMDUMP_TABLE_SIZE) {
+                if (!strncmp(ramdump_table->description, COREDUMP_DESC,
+                             sizeof(COREDUMP_DESC)) ||
+                    !strncmp(ramdump_table->description, Q6_SFR_DESC,
+                             sizeof(Q6_SFR_DESC))) {
+                        break;
+                }
+                coredump_offset += le64_to_cpu(ramdump_table->size);
+                ramdump_table++;
+                i++;
+        }
+
+        if (i == MAX_RAMDUMP_TABLE_SIZE) {
+                ath12k_warn(ab, "Cannot find '%s' entry in ramdump\n",
+                            COREDUMP_DESC);
+                return;
+        }
+
+        /* Locate coredump data from the ramdump segments */
+        for (i = 0; i < rddm_image->entries; i++) {
+                if (coredump_offset < mhi_buf[i].len) {
+                        msg = mhi_buf[i].buf + coredump_offset;
+                        break;
+                }
+
+                coredump_offset -= mhi_buf[i].len;
+        }
+
+        if (msg && msg[0])
+                ath12k_err(ab, "Fatal error received from wcss!\n%s\n",
+                            msg);
+}
+
 void ath12k_coredump_collect(struct ath12k_base *ab)
 {
+	ath12k_coredump_q6crash_reason(ab);
 	ath12k_hif_coredump_download(ab);
 }
