@@ -1,0 +1,43 @@
+/* SPDX-License-Identifier: BSD-3-Clause-Clear */
+/*
+ * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ */
+
+#ifndef ATH12K_DP_RX_WIFI7_H
+#define ATH12K_DP_RX_WIFI7_H
+
+#include "../core.h"
+#include "../dp_rx.h"
+
+int ath12k_dp_reo_cmd_send(struct ath12k_base *ab, struct ath12k_dp_rx_tid *rx_tid,
+			   enum hal_reo_cmd_type type,
+			   struct ath12k_hal_reo_cmd *cmd,
+			   void (*cb)(struct ath12k_dp *dp, void *ctx,
+				      enum hal_reo_cmd_status status));
+int ath12k_dp_rx_process_wbm_err(struct ath12k_base *ab,
+				 struct napi_struct *napi, int budget);
+int ath12k_dp_rx_process_err(struct ath12k_base *ab, struct napi_struct *napi,
+			     int budget);
+int ath12k_dp_rx_process(struct ath12k_base *ab, int mac_id,
+			 struct napi_struct *napi,
+			 int budget);
+void ath12k_dp_rx_peer_tid_delete(struct ath12k *ar,
+				  struct ath12k_peer *peer, u8 tid);
+void ath12k_dp_rx_h_ppdu(struct ath12k *ar, struct ath12k_dp_rx_info *rx_info);
+void ath12k_dp_reo_cache_flush(struct ath12k_base *ab,
+			       struct ath12k_dp_rx_tid *rx_tid);
+int ath12k_peer_rx_tid_reo_update(struct ath12k *ar,
+				  struct ath12k_peer *peer,
+				  struct ath12k_dp_rx_tid *rx_tid,
+				  u32 ba_win_sz, u16 ssn,
+				  bool update_ssn);
+void ath12k_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id, u16 tid,
+				   dma_addr_t paddr);
+int ath12k_dp_rx_link_desc_return(struct ath12k_base *ab,
+				  struct hal_reo_dest_ring *ring,
+				  enum hal_wbm_rel_bm_act action);
+void ath12k_dp_rx_process_reo_status(struct ath12k_base *ab);
+void ath12k_dp_rx_h_fetch_info(struct ath12k_base *ab,  struct hal_rx_desc *rx_desc,
+				   struct ath12k_dp_rx_info *rx_info);
+#endif

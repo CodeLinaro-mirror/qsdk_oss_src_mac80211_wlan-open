@@ -9,6 +9,7 @@
 #include "dp_rx.h"
 #include "dp_tx.h"
 #include "peer.h"
+#include "wifi7/dp_rx.h"
 
 #define ATH12K_LE32_DEC_ENC(value, dec_bits, enc_bits)	\
 		u32_encode_bits(le32_get_bits(value, dec_bits), enc_bits)

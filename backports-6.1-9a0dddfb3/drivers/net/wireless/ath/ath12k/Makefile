@@ -23,6 +23,7 @@ ath12k-y += core.o \
 
 ath12k-y += wifi7/hal_tx.o \
 	    wifi7/hal_rx.o \
+	    wifi7/dp_rx.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 

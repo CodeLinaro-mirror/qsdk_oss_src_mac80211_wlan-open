@@ -9,6 +9,7 @@
 #include "core.h"
 #include "wifi7/hal_rx_desc.h"
 #include "debug.h"
+#include <crypto/hash.h>
 
 #define DP_MAX_NWIFI_HDR_LEN	30
 
@@ -137,8 +138,6 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key);
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_peer *peer);
-void ath12k_dp_rx_peer_tid_delete(struct ath12k *ar,
-				  struct ath12k_peer *peer, u8 tid);
 int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
 				u8 tid, u32 ba_win_sz, u16 ssn,
 				enum hal_pn_type pn_type);
@@ -152,14 +151,6 @@ void ath12k_dp_rx_free(struct ath12k_base *ab);
 int ath12k_dp_rx_pdev_alloc(struct ath12k_base *ab, int pdev_idx);
 void ath12k_dp_rx_pdev_free(struct ath12k_base *ab, int pdev_idx);
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab);
-void ath12k_dp_rx_process_reo_status(struct ath12k_base *ab);
-int ath12k_dp_rx_process_wbm_err(struct ath12k_base *ab,
-				 struct napi_struct *napi, int budget);
-int ath12k_dp_rx_process_err(struct ath12k_base *ab, struct napi_struct *napi,
-			     int budget);
-int ath12k_dp_rx_process(struct ath12k_base *ab, int mac_id,
-			 struct napi_struct *napi,
-			 int budget);
 int ath12k_dp_rx_bufs_replenish(struct ath12k_base *ab,
 				struct dp_rxdma_ring *rx_ring,
 				struct list_head *used_list,
@@ -176,7 +167,6 @@ u8 ath12k_dp_rx_h_decap_type(struct ath12k_base *ab,
 			     struct hal_rx_desc *desc);
 u32 ath12k_dp_rx_h_mpdu_err(struct ath12k_base *ab,
 			    struct hal_rx_desc *desc);
-void ath12k_dp_rx_h_ppdu(struct ath12k *ar, struct ath12k_dp_rx_info *rx_info);
 int ath12k_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab);
 int ath12k_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab);
 
@@ -184,8 +174,33 @@ int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
 			   int (*iter)(struct ath12k_base *ar, u16 tag, u16 len,
 				       const void *ptr, void *data),
 			   void *data);
-void ath12k_dp_rx_h_fetch_info(struct ath12k_base *ab,  struct hal_rx_desc *rx_desc,
+void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
+			       enum hal_reo_cmd_status status);
+u16 ath12k_dp_rx_h_seq_no(struct ath12k_base *ab, struct hal_rx_desc *desc);
+void ath12k_dp_rx_deliver_msdu(struct ath12k *ar, struct napi_struct *napi,
+			       struct sk_buff *msdu,
 			       struct ath12k_dp_rx_info *rx_info);
+void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
+			    enum hal_reo_cmd_status status);
+void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
+				bool rel_link_desc);
+struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
+					       struct sk_buff *first);
+int ath12k_dp_rx_crypto_mic_len(struct ath12k *ar,
+				enum hal_encrypt_type enctype);
+int ath12k_dp_rx_crypto_param_len(struct ath12k *ar,
+				  enum hal_encrypt_type enctype);
+int ath12k_dp_rx_crypto_icv_len(struct ath12k *ar,
+				enum hal_encrypt_type enctype);
+void ath12k_dp_rx_h_undecap_frag(struct ath12k *ar, struct sk_buff *msdu,
+				 enum hal_encrypt_type enctype, u32 flags);
+int ath12k_dp_rx_h_michael_mic(struct crypto_shash *tfm, u8 *key,
+			       struct ieee80211_hdr *hdr, u8 *data,
+			       size_t data_len, u8 *mic);
+void ath12k_dp_rx_h_undecap_raw(struct ath12k *ar, struct sk_buff *msdu,
+				enum hal_encrypt_type enctype,
+				struct ieee80211_rx_status *status,
+				bool decrypted);
 int ath12k_dp_rx_crypto_mic_len(struct ath12k *ar, enum hal_encrypt_type enctype);
 
 #endif /* ATH12K_DP_RX_H */
