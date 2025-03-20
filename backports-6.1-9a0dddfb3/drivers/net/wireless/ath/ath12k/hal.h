@@ -1275,6 +1275,10 @@ struct hal_ops {
 				u8 byte_swap_data);
 	void (*ce_dst_set_desc)(struct hal_ce_srng_dest_desc *desc,
 				dma_addr_t paddr);
+	u32 (*ce_dst_status_get_length)(struct hal_ce_srng_dst_status_desc *desc);
+	void (*set_link_desc_addr)(struct hal_wbm_link_desc *desc, u32 cookie,
+				   dma_addr_t paddr,
+				   enum hal_rx_buf_return_buf_manager rbm);
 };
 
 u8 ath12k_hal_rx_get_msdu_src_link(struct ath12k_base *ab,
@@ -1310,9 +1314,6 @@ dma_addr_t ath12k_hal_srng_get_tp_addr(struct ath12k_base *ab,
 				       struct hal_srng *srng);
 dma_addr_t ath12k_hal_srng_get_hp_addr(struct ath12k_base *ab,
 				       struct hal_srng *srng);
-void ath12k_hal_set_link_desc_addr(struct hal_wbm_link_desc *desc, u32 cookie,
-				   dma_addr_t paddr,
-				   enum hal_rx_buf_return_buf_manager rbm);
 u32 ath12k_hal_ce_get_desc_size(struct ath12k_hal *hal, enum hal_ce_desc type);
 void ath12k_hal_ce_dst_set_desc(struct ath12k_hal *hal,
 				struct hal_ce_srng_dest_desc *desc,
@@ -1321,7 +1322,6 @@ void ath12k_hal_ce_src_set_desc(struct ath12k_hal *hal,
 				struct hal_ce_srng_src_desc *desc,
 				dma_addr_t paddr, u32 len, u32 id,
 				u8 byte_swap_data);
-u32 ath12k_hal_ce_dst_status_get_length(struct hal_ce_srng_dst_status_desc *desc);
 int ath12k_hal_srng_get_entrysize(struct ath12k_base *ab, u32 ring_type);
 int ath12k_hal_srng_get_max_entries(struct ath12k_base *ab, u32 ring_type);
 void ath12k_hal_srng_get_params(struct ath12k_base *ab, struct hal_srng *srng,
@@ -1357,4 +1357,10 @@ void ath12k_hal_srng_shadow_update_hp_tp(struct ath12k_base *ab,
 void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 int ath12k_hal_srng_init(struct ath12k_base *ab);
 void ath12k_hal_srng_deinit(struct ath12k_base *ab);
+void ath12k_hal_set_link_desc_addr(struct ath12k_hal *hal,
+				   struct hal_wbm_link_desc *desc, u32 cookie,
+				   dma_addr_t paddr, int rbm);
+u32
+ath12k_hal_ce_dst_status_get_length(struct ath12k_hal *hal,
+				    struct hal_ce_srng_dst_status_desc *desc);
 #endif

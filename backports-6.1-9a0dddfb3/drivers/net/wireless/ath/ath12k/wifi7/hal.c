@@ -426,9 +426,9 @@ void ath12k_wifi7_hal_ce_src_set_desc(struct hal_ce_srng_src_desc *desc,
 	desc->buffer_addr_low = cpu_to_le32(paddr & HAL_ADDR_LSB_REG_MASK);
 	desc->buffer_addr_info =
 		le32_encode_bits(((u64)paddr >> HAL_ADDR_MSB_REG_SHIFT),
-				HAL_CE_SRC_DESC_ADDR_INFO_ADDR_HI) |
+				 HAL_CE_SRC_DESC_ADDR_INFO_ADDR_HI) |
 		le32_encode_bits(byte_swap_data,
-				HAL_CE_SRC_DESC_ADDR_INFO_BYTE_SWAP) |
+				 HAL_CE_SRC_DESC_ADDR_INFO_BYTE_SWAP) |
 		le32_encode_bits(0, HAL_CE_SRC_DESC_ADDR_INFO_GATHER) |
 		le32_encode_bits(len, HAL_CE_SRC_DESC_ADDR_INFO_LEN);
 	desc->meta_info = le32_encode_bits(id, HAL_CE_SRC_DESC_META_INFO_DATA);
@@ -440,5 +440,28 @@ void ath12k_wifi7_hal_ce_dst_set_desc(struct hal_ce_srng_dest_desc *desc,
 	desc->buffer_addr_low = cpu_to_le32(paddr & HAL_ADDR_LSB_REG_MASK);
 	desc->buffer_addr_info =
 		le32_encode_bits(((u64)paddr >> HAL_ADDR_MSB_REG_SHIFT),
-				HAL_CE_DEST_DESC_ADDR_INFO_ADDR_HI);
+				 HAL_CE_DEST_DESC_ADDR_INFO_ADDR_HI);
+}
+
+void ath12k_wifi7_hal_set_link_desc_addr(struct hal_wbm_link_desc *desc,
+					 u32 cookie, dma_addr_t paddr,
+					 enum hal_rx_buf_return_buf_manager rbm)
+{
+	desc->buf_addr_info.info0 = le32_encode_bits((paddr & HAL_ADDR_LSB_REG_MASK),
+						     BUFFER_ADDR_INFO0_ADDR);
+	desc->buf_addr_info.info1 =
+		le32_encode_bits(((u64)paddr >> HAL_ADDR_MSB_REG_SHIFT),
+				 BUFFER_ADDR_INFO1_ADDR) |
+		le32_encode_bits(rbm, BUFFER_ADDR_INFO1_RET_BUF_MGR) |
+		le32_encode_bits(cookie, BUFFER_ADDR_INFO1_SW_COOKIE);
+}
+
+u32 ath12k_wifi7_hal_ce_dst_status_get_length(struct hal_ce_srng_dst_status_desc *desc)
+{
+	u32 len;
+
+	len = le32_get_bits(desc->flags, HAL_CE_DST_STATUS_DESC_FLAGS_LEN);
+	desc->flags &= ~cpu_to_le32(HAL_CE_DST_STATUS_DESC_FLAGS_LEN);
+
+	return len;
 }
