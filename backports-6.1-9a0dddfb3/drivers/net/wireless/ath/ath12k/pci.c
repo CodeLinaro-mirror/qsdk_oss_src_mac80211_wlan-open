@@ -1027,6 +1027,8 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 #ifdef CPTCFG_ATH12K_COREDUMP
 	.coredump_download = ath12k_pci_coredump_download,
 #endif
+	.ext_irq_setup = ath12k_pcic_ext_irq_config,
+	.ext_irq_cleanup = ath12k_pcic_free_ext_irq,
 };
 
 static enum ath12k_device_family

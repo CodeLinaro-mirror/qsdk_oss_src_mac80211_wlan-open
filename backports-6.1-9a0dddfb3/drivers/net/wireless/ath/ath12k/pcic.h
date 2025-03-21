@@ -72,4 +72,10 @@ int ath12k_pcic_get_msi_irq(struct ath12k_base *ab, unsigned int vector);
 int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab);
 int ath12k_pcic_config_irq(struct ath12k_base *ab);
 void ath12k_pcic_free_irq(struct ath12k_base *ab);
+int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
+			       int (*irq_handler)(struct ath12k_dp *dp,
+						  struct ath12k_ext_irq_grp *irq_grp,
+						  int budget),
+			       struct ath12k_dp *dp);
+void ath12k_pcic_free_ext_irq(struct ath12k_base *ab);
 #endif

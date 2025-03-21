@@ -174,6 +174,7 @@ extern bool ath12k_cold_boot_cal;
 #define ATH12K_MAX_TCL_RING_NUM	3
 
 struct ath12k_ext_irq_grp {
+	struct ath12k_dp *dp;
 	struct ath12k_base *ab;
 	u32 irqs[ATH12K_EXT_IRQ_NUM_MAX];
 	u32 num_irq;
@@ -186,6 +187,8 @@ struct ath12k_ext_irq_grp {
 #else
 	struct net_device napi_ndev;
 #endif
+	int (*irq_handler)(struct ath12k_dp *dp,
+			   struct ath12k_ext_irq_grp *irq_grp, int budget);
 };
 
 enum ath12k_smbios_cc_type {

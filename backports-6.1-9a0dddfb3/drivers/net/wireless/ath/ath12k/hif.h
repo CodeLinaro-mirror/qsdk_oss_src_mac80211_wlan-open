@@ -34,6 +34,12 @@ struct ath12k_hif_ops {
 	void (*get_ce_msi_idx)(struct ath12k_base *ab, u32 ce_id, u32 *msi_idx);
 	int (*panic_handler)(struct ath12k_base *ab);
 	void (*coredump_download)(struct ath12k_base *ab);
+	int (*ext_irq_setup)(struct ath12k_base *ab,
+			     int (*handler)(struct ath12k_dp *dp,
+					    struct ath12k_ext_irq_grp *irq_grp,
+					    int budget),
+			     struct ath12k_dp *dp);
+	void (*ext_irq_cleanup)(struct ath12k_base *ab);
 	int (*set_qrtr_endpoint_id)(struct ath12k_base *ab);
 	void (*config_static_window)(struct ath12k_base *ab);
 	int (*get_msi_irq)(struct ath12k_base *ab, unsigned int vector);
@@ -196,6 +202,27 @@ static inline int ath12k_hif_get_msi_irq(struct ath12k_base *ab, unsigned int ve
 		return -EOPNOTSUPP;
 
 	return ab->hif.ops->get_msi_irq(ab, vector);
+}
+
+static inline
+int ath12k_hif_ext_irq_setup(struct ath12k_base *ab,
+			     int (*irq_handler)(struct ath12k_dp *dp,
+						struct ath12k_ext_irq_grp *irq_grp,
+						int budget),
+			     struct ath12k_dp *dp)
+{
+	if (!ab->hif.ops->ext_irq_setup)
+		return -EOPNOTSUPP;
+
+	return ab->hif.ops->ext_irq_setup(ab, irq_handler, dp);
+}
+
+static inline void ath12k_hif_ext_irq_cleanup(struct ath12k_base *ab)
+{
+	if (!ab->hif.ops->ext_irq_cleanup)
+		return;
+
+	ab->hif.ops->ext_irq_cleanup(ab);
 }
 
 #endif /* ATH12K_HIF_H */

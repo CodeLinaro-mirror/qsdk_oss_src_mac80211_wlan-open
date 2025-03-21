@@ -174,7 +174,7 @@ u32 ath12k_pcic_get_window_start(struct ath12k_base *ab, u32 offset)
 	return window_start;
 }
 
-static void ath12k_pcic_free_ext_irq(struct ath12k_base *ab)
+void ath12k_pcic_free_ext_irq(struct ath12k_base *ab)
 {
 	int i, j;
 
@@ -201,8 +201,6 @@ void ath12k_pcic_free_irq(struct ath12k_base *ab)
 		irq_idx = ATH12K_PCI_IRQ_CE0_OFFSET + i;
 		free_irq(ab->irq_num[irq_idx], &ab->ce.ce_pipe[i]);
 	}
-
-	ath12k_pcic_free_ext_irq(ab);
 }
 
 void ath12k_pcic_free_hybrid_irq(struct ath12k_base *ab)
@@ -210,6 +208,7 @@ void ath12k_pcic_free_hybrid_irq(struct ath12k_base *ab)
 	struct platform_device *pdev = ab->pdev;
 
 	ath12k_pcic_free_irq(ab);
+	ath12k_pcic_free_ext_irq(ab);
 	platform_msi_domain_free_irqs(&pdev->dev);
 }
 
@@ -325,10 +324,9 @@ static int ath12k_pcic_ext_grp_napi_poll(struct napi_struct *napi, int budget)
 	struct ath12k_ext_irq_grp *irq_grp = container_of(napi,
 						struct ath12k_ext_irq_grp,
 						napi);
-	struct ath12k_base *ab = irq_grp->ab;
 	int work_done;
 
-	work_done = ath12k_wifi7_dp_service_srng(ab, irq_grp, budget);
+	work_done = irq_grp->irq_handler(irq_grp->dp, irq_grp, budget);
 	if (work_done < budget) {
 		if(likely(napi_complete_done(napi, work_done)))
 				ath12k_pcic_ext_grp_enable(irq_grp);
@@ -694,7 +692,11 @@ void ath12k_pcic_ipci_write32(struct ath12k_base *ab, u32 offset, u32 value)
 		  (offset & WINDOW_RANGE_MASK));
 }
 
-static int ath12k_pci_ext_irq_config(struct ath12k_base *ab)
+int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
+			       int (*irq_handler)(struct ath12k_dp *dp,
+						  struct ath12k_ext_irq_grp *irq_grp,
+						  int budget),
+			       struct ath12k_dp *dp)
 {
 
 	struct ath12k_pci *ar_pci = (struct ath12k_pci *)ab->drv_priv;
@@ -718,7 +720,8 @@ static int ath12k_pci_ext_irq_config(struct ath12k_base *ab)
 
 		irq_grp->ab = ab;
 		irq_grp->grp_id = i;
-
+		irq_grp->irq_handler = irq_handler;
+		irq_grp->dp = dp;
 #if LINUX_VERSION_IS_GEQ(6,10,0)
 		irq_grp->napi_ndev = alloc_netdev_dummy(0);
 		napi_ndev = irq_grp->napi_ndev;
@@ -847,10 +850,6 @@ int ath12k_pcic_config_irq(struct ath12k_base *ab)
 
 		ath12k_pcic_ce_irq_disable(ab, i);
 	}
-
-	ret = ath12k_pci_ext_irq_config(ab);
-	if (ret)
-		return ret;
 
 	return 0;
 }
