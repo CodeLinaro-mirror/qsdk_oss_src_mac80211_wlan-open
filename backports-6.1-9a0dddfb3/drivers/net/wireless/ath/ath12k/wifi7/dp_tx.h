@@ -8,7 +8,8 @@
 #define ATH12K_DP_TX_WIFI7_H
 
 void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_base *ab, int ring_id);
-int ath12k_wifi7_dp_tx(struct ath12k *ar, struct ath12k_link_vif *arvif,
+int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
+		       struct ath12k_link_vif *arvif,
 		       struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
 		       bool is_mcast);
 

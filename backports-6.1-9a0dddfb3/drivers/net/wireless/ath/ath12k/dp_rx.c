@@ -49,7 +49,7 @@ out:
 	return nodes;
 }
 
-int ath12k_dp_rx_crypto_mic_len(struct ath12k *ar,
+int ath12k_dp_rx_crypto_mic_len(struct ath12k_pdev_dp *dp_pdev,
 				enum hal_encrypt_type enctype)
 {
 	switch (enctype) {
@@ -72,11 +72,11 @@ int ath12k_dp_rx_crypto_mic_len(struct ath12k *ar,
 		break;
 	}
 
-	ath12k_warn(ar->ab, "unsupported encryption type %d for mic len\n", enctype);
+	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d for mic len\n", enctype);
 	return 0;
 }
 
-int ath12k_dp_rx_crypto_param_len(struct ath12k *ar,
+int ath12k_dp_rx_crypto_param_len(struct ath12k_pdev_dp *dp_pdev,
 				  enum hal_encrypt_type enctype)
 {
 	switch (enctype) {
@@ -100,11 +100,11 @@ int ath12k_dp_rx_crypto_param_len(struct ath12k *ar,
 		break;
 	}
 
-	ath12k_warn(ar->ab, "unsupported encryption type %d\n", enctype);
+	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d\n", enctype);
 	return 0;
 }
 
-int ath12k_dp_rx_crypto_icv_len(struct ath12k *ar,
+int ath12k_dp_rx_crypto_icv_len(struct ath12k_pdev_dp *dp_pdev,
 				enum hal_encrypt_type enctype)
 {
 	switch (enctype) {
@@ -125,17 +125,18 @@ int ath12k_dp_rx_crypto_icv_len(struct ath12k *ar,
 		break;
 	}
 
-	ath12k_warn(ar->ab, "unsupported encryption type %d\n", enctype);
+	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d\n", enctype);
 	return 0;
 }
 
-void ath12k_dp_rx_h_undecap_frag(struct ath12k *ar, struct sk_buff *msdu,
+void ath12k_dp_rx_h_undecap_frag(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				 enum hal_encrypt_type enctype, u32 flags)
 {
+	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ieee80211_hdr *hdr;
 	size_t hdr_len;
 	size_t crypto_len;
-	u32 hal_rx_desc_sz = ar->ab->hal.hal_desc_sz;
+	u32 hal_rx_desc_sz = dp->ab->hal.hal_desc_sz;
 
 	if (!flags)
 		return;
@@ -144,15 +145,15 @@ void ath12k_dp_rx_h_undecap_frag(struct ath12k *ar, struct sk_buff *msdu,
 
 	if (flags & RX_FLAG_MIC_STRIPPED)
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_mic_len(ar, enctype));
+			 ath12k_dp_rx_crypto_mic_len(dp_pdev, enctype));
 
 	if (flags & RX_FLAG_ICV_STRIPPED)
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_icv_len(ar, enctype));
+			 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
 
 	if (flags & RX_FLAG_IV_STRIPPED) {
 		hdr_len = ieee80211_hdrlen(hdr->frame_control);
-		crypto_len = ath12k_dp_rx_crypto_param_len(ar, enctype);
+		crypto_len = ath12k_dp_rx_crypto_param_len(dp_pdev, enctype);
 
 		memmove(msdu->data + hal_rx_desc_sz + crypto_len,
 			msdu->data + hal_rx_desc_sz, hdr_len);
@@ -201,7 +202,7 @@ out:
 	return ret;
 }
 
-void ath12k_dp_rx_h_undecap_raw(struct ath12k *ar, struct sk_buff *msdu,
+void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status,
 				bool decrypted)
@@ -227,20 +228,20 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k *ar, struct sk_buff *msdu,
 	/* Tail */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_mic_len(ar, enctype));
+			 ath12k_dp_rx_crypto_mic_len(dp_pdev, enctype));
 
 		skb_trim(msdu, msdu->len -
-			 ath12k_dp_rx_crypto_icv_len(ar, enctype));
+			 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
 	} else {
 		/* MIC */
 		if (status->flag & RX_FLAG_MIC_STRIPPED)
 			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_mic_len(ar, enctype));
+				 ath12k_dp_rx_crypto_mic_len(dp_pdev, enctype));
 
 		/* ICV */
 		if (status->flag & RX_FLAG_ICV_STRIPPED)
 			skb_trim(msdu, msdu->len -
-				 ath12k_dp_rx_crypto_icv_len(ar, enctype));
+				 ath12k_dp_rx_crypto_icv_len(dp_pdev, enctype));
 	}
 
 	/* MMIC */
@@ -252,7 +253,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k *ar, struct sk_buff *msdu,
 	/* Head */
 	if (status->flag & RX_FLAG_IV_STRIPPED) {
 		hdr_len = ieee80211_hdrlen(hdr->frame_control);
-		crypto_len = ath12k_dp_rx_crypto_param_len(ar, enctype);
+		crypto_len = ath12k_dp_rx_crypto_param_len(dp_pdev, enctype);
 
 		memmove(msdu->data + crypto_len, msdu->data, hdr_len);
 		skb_pull(msdu, crypto_len);
@@ -946,12 +947,14 @@ ath12k_dp_rx_h_find_peer(struct ath12k_base *ab, struct sk_buff *msdu,
 	return peer;
 }
 
-void ath12k_dp_rx_deliver_msdu(struct ath12k *ar, struct napi_struct *napi,
-				      struct sk_buff *msdu,
-				      struct ieee80211_rx_status *status,
-				      struct hal_rx_desc_data *rx_desc_data)
+void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
+			       struct napi_struct *napi,
+			       struct sk_buff *msdu,
+			       struct ieee80211_rx_status *status,
+			       struct hal_rx_desc_data *rx_desc_data)
 {
-	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_base *ab = dp->ab;
 	static const struct ieee80211_radiotap_he known = {
 		.data1 = cpu_to_le16(IEEE80211_RADIOTAP_HE_DATA1_DATA_MCS_KNOWN |
 				     IEEE80211_RADIOTAP_HE_DATA1_BW_RU_ALLOC_KNOWN),
@@ -1028,7 +1031,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k *ar, struct napi_struct *napi,
 	    !(is_mcbc && rx_status->flag & RX_FLAG_DECRYPTED))
 		rx_status->flag |= RX_FLAG_8023;
 
-	ieee80211_rx_napi(ath12k_ar_to_hw(ar), pubsta, msdu, napi);
+	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 }
 
 static void ath12k_dp_rx_frag_timer(struct timer_list *timer)

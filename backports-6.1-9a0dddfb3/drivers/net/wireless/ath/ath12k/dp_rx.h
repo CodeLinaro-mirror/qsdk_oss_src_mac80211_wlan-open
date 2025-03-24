@@ -146,7 +146,8 @@ void ath12k_dp_rx_process_reo_status(struct ath12k_base *ab);
 void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			       enum hal_reo_cmd_status status);
 u16 ath12k_dp_rx_h_seq_no(struct ath12k_base *ab, struct hal_rx_desc *desc);
-void ath12k_dp_rx_deliver_msdu(struct ath12k *ar, struct napi_struct *napi,
+void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
+			       struct napi_struct *napi,
 			       struct sk_buff *msdu,
 			       struct ieee80211_rx_status *status,
 			       struct hal_rx_desc_data *rx_desc_data);
@@ -156,21 +157,20 @@ void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 				bool rel_link_desc);
 struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 					       struct sk_buff *first);
-int ath12k_dp_rx_crypto_mic_len(struct ath12k *ar,
+int ath12k_dp_rx_crypto_mic_len(struct ath12k_pdev_dp *dp_pdev,
 				enum hal_encrypt_type enctype);
-int ath12k_dp_rx_crypto_param_len(struct ath12k *ar,
+int ath12k_dp_rx_crypto_param_len(struct ath12k_pdev_dp *dp_pdev,
 				  enum hal_encrypt_type enctype);
-int ath12k_dp_rx_crypto_icv_len(struct ath12k *ar,
+int ath12k_dp_rx_crypto_icv_len(struct ath12k_pdev_dp *dp_pdev,
 				enum hal_encrypt_type enctype);
-void ath12k_dp_rx_h_undecap_frag(struct ath12k *ar, struct sk_buff *msdu,
+void ath12k_dp_rx_h_undecap_frag(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				 enum hal_encrypt_type enctype, u32 flags);
 int ath12k_dp_rx_h_michael_mic(struct crypto_shash *tfm, u8 *key,
 			       struct ieee80211_hdr *hdr, u8 *data,
 			       size_t data_len, u8 *mic);
-void ath12k_dp_rx_h_undecap_raw(struct ath12k *ar, struct sk_buff *msdu,
+void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status,
 				bool decrypted);
-int ath12k_dp_rx_crypto_mic_len(struct ath12k *ar, enum hal_encrypt_type enctype);
 
 #endif /* ATH12K_DP_RX_H */

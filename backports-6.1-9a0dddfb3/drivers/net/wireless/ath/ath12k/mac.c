@@ -22,6 +22,7 @@
 #include "hif.h"
 #include "wow.h"
 #include "debugfs_sta.h"
+#include "dp.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -7812,7 +7813,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 				ath12k_warn(ab, "WMI protected management tx frame without ATH12K_SKB_CIPHER_SET");
 
 			enctype = ath12k_dp_tx_get_encrypt_type(skb_cb->cipher);
-			mic_len = ath12k_dp_rx_crypto_mic_len(ar, enctype);
+			mic_len = ath12k_dp_rx_crypto_mic_len(&ar->dp, enctype);
 			skb_put(skb, mic_len);
 		}
 	}
@@ -8085,6 +8086,7 @@ void ath12k_mac_op_tx(struct ieee80211_hw *hw,
 	u32 info_flags = info->flags;
 	struct sk_buff *msdu_copied;
 	struct ath12k *ar, *tmp_ar;
+	struct ath12k_pdev_dp *dp_pdev, *tmp_dp_pdev;
 	struct ath12k_peer *peer;
 	unsigned long links_map;
 	bool is_mcast = false, is_eth = false;
@@ -8130,6 +8132,10 @@ void ath12k_mac_op_tx(struct ieee80211_hw *hw,
 
 	ar = arvif->ar;
 	skb_cb->link_id = link_id;
+	/* as skb_cb is common currently for dp and mgmt tx processing
+	 * set this in the common mac op tx function.
+	 */
+	skb_cb->ar = ar;
 	is_prb_rsp = ieee80211_is_probe_resp(hdr->frame_control);
 
 	if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP) {
@@ -8154,6 +8160,12 @@ void ath12k_mac_op_tx(struct ieee80211_hw *hw,
 	if (vif->type == NL80211_IFTYPE_AP && vif->p2p)
 		ath12k_mac_add_p2p_noa_ie(ar, vif, skb, is_prb_rsp);
 
+	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
+	if (!dp_pdev) {
+		ieee80211_free_txskb(hw, skb);
+		return;
+	}
+
 	/* Checking if it is a DVLAN frame */
 	if (!test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ar->ab->dev_flags) &&
 	    !(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
@@ -8163,7 +8175,7 @@ void ath12k_mac_op_tx(struct ieee80211_hw *hw,
 
 	if (!vif->valid_links || !is_mcast || is_dvlan || is_eth ||
 	    test_bit(ATH12K_FLAG_RAW_MODE, &ar->ab->dev_flags)) {
-		ret = ath12k_wifi7_dp_tx(ar, arvif, skb, false, 0, is_mcast);
+		ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast);
 		if (unlikely(ret)) {
 			ath12k_warn(ar->ab, "failed to transmit frame %d\n", ret);
 			ieee80211_free_txskb(ar->ah->hw, skb);
@@ -8180,6 +8192,9 @@ void ath12k_mac_op_tx(struct ieee80211_hw *hw,
 				continue;
 
 			tmp_ar = tmp_arvif->ar;
+			tmp_dp_pdev = ath12k_dp_to_dp_pdev(tmp_ar->ab->dp, tmp_ar->pdev_idx);
+			if (!tmp_dp_pdev)
+				continue;
 			msdu_copied = skb_copy(skb, GFP_ATOMIC);
 			if (!msdu_copied) {
 				ath12k_err(ar->ab,
@@ -8225,7 +8240,7 @@ void ath12k_mac_op_tx(struct ieee80211_hw *hw,
 			spin_unlock_bh(&tmp_ar->ab->base_lock);
 
 skip_peer_find:
-			ret = ath12k_wifi7_dp_tx(tmp_ar, tmp_arvif,
+			ret = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
 						 msdu_copied, true, mcbc_gsn, is_mcast);
 			if (unlikely(ret)) {
 				if (ret == -ENOMEM) {
