@@ -138,9 +138,6 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key);
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_peer *peer);
-int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
-				u8 tid, u32 ba_win_sz, u16 ssn,
-				enum hal_pn_type pn_type);
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
 int ath12k_dp_rx_pdev_reo_setup(struct ath12k_base *ab);

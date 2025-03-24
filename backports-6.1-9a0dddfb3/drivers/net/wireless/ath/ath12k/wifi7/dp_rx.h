@@ -40,4 +40,14 @@ int ath12k_dp_rx_link_desc_return(struct ath12k_base *ab,
 void ath12k_dp_rx_process_reo_status(struct ath12k_base *ab);
 void ath12k_dp_rx_h_fetch_info(struct ath12k_base *ab,  struct hal_rx_desc *rx_desc,
 				   struct ath12k_dp_rx_info *rx_info);
+int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+				u8 tid, u32 ba_win_sz, u16 ssn,
+				enum hal_pn_type pn_type);
+void ath12k_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,
+				      struct ath12k_dp_rx_tid *rx_tid,
+				      u32 cipher, enum set_key_cmd key_cmd);
+int ath12k_dp_alloc_reo_qdesc(struct ath12k_base *ab,
+			      struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
+			      enum hal_pn_type pn_type,
+			      struct hal_rx_reo_queue **addr_aligned);
 #endif

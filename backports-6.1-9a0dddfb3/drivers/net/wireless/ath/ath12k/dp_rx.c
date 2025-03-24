@@ -676,13 +676,11 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_
 				u8 tid, u32 ba_win_sz, u16 ssn,
 				enum hal_pn_type pn_type)
 {
+	struct hal_rx_reo_queue *addr_aligned;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = &ab->dp;
-	struct hal_rx_reo_queue *addr_aligned;
 	struct ath12k_peer *peer;
 	struct ath12k_dp_rx_tid *rx_tid;
-	u32 hw_desc_sz;
-	void *vaddr;
 	dma_addr_t paddr;
 	int ret;
 
@@ -745,37 +743,15 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_
 
 	rx_tid->ba_win_sz = ba_win_sz;
 
-	/* TODO: Optimize the memory allocation for qos tid based on
-	 * the actual BA window size in REO tid update path.
-	 */
-	if (tid == HAL_DESC_REO_NON_QOS_TID)
-		hw_desc_sz = ath12k_hal_reo_qdesc_size(ba_win_sz, tid);
-	else
-		hw_desc_sz = ath12k_hal_reo_qdesc_size(DP_BA_WIN_SZ_MAX, tid);
-
-	vaddr = kzalloc(hw_desc_sz + HAL_LINK_DESC_ALIGN - 1, GFP_ATOMIC);
-	if (!vaddr) {
+	ret = ath12k_dp_alloc_reo_qdesc(ab, rx_tid, ssn, pn_type, &addr_aligned);
+	if (ret < 0) {
 		spin_unlock_bh(&ab->base_lock);
-		return -ENOMEM;
+		return ret;
 	}
-
-	addr_aligned = PTR_ALIGN(vaddr, HAL_LINK_DESC_ALIGN);
 
 	ath12k_hal_reo_qdesc_setup(addr_aligned, tid, ba_win_sz,
 				   ssn, pn_type);
 
-	paddr = dma_map_single(ab->dev, addr_aligned, hw_desc_sz,
-			       DMA_BIDIRECTIONAL);
-
-	ret = dma_mapping_error(ab->dev, paddr);
-	if (ret) {
-		spin_unlock_bh(&ab->base_lock);
-		goto err_mem_free;
-	}
-
-	rx_tid->vaddr = vaddr;
-	rx_tid->paddr = paddr;
-	rx_tid->size = hw_desc_sz;
 	rx_tid->active = true;
 
 	if (ab->hw_params->reoq_lut_support) {
@@ -783,21 +759,23 @@ int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_
 		 * and tid with qaddr.
 		 */
 		if (peer->mlo)
-			ath12k_peer_rx_tid_qref_setup(ab, peer->ml_id, tid, paddr);
+			ath12k_peer_rx_tid_qref_setup(ab, peer->ml_id,
+						      rx_tid->tid,
+						      rx_tid->paddr);
 		else
-			ath12k_peer_rx_tid_qref_setup(ab, peer->peer_id, tid, paddr);
+			ath12k_peer_rx_tid_qref_setup(ab, peer->peer_id,
+						      rx_tid->tid,
+						      rx_tid->paddr);
 
 		spin_unlock_bh(&ab->base_lock);
 	} else {
 		spin_unlock_bh(&ab->base_lock);
-		ret = ath12k_wmi_peer_rx_reorder_queue_setup(ar, vdev_id, peer_mac,
-							     paddr, tid, 1, ba_win_sz);
+		ret = ath12k_wmi_peer_rx_reorder_queue_setup(ar, vdev_id,
+							     peer_mac,
+							     rx_tid->paddr,
+							     rx_tid->tid, 1,
+							     rx_tid->ba_win_sz);
 	}
-
-	return ret;
-
-err_mem_free:
-	kfree(vaddr);
 
 	return ret;
 }
@@ -883,9 +861,9 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key)
 {
+	struct ath12k_hal_reo_cmd cmd = {0};
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_hal_reo_cmd cmd = {0};
 	struct ath12k_peer *peer;
 	struct ath12k_dp_rx_tid *rx_tid;
 	u8 tid;
@@ -897,28 +875,6 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 	 */
 	if (!(key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
 		return 0;
-
-	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
-	cmd.upd0 = HAL_REO_CMD_UPD0_PN |
-		    HAL_REO_CMD_UPD0_PN_SIZE |
-		    HAL_REO_CMD_UPD0_PN_VALID |
-		    HAL_REO_CMD_UPD0_PN_CHECK |
-		    HAL_REO_CMD_UPD0_SVLD;
-
-	switch (key->cipher) {
-	case WLAN_CIPHER_SUITE_TKIP:
-	case WLAN_CIPHER_SUITE_CCMP:
-	case WLAN_CIPHER_SUITE_CCMP_256:
-	case WLAN_CIPHER_SUITE_GCMP:
-	case WLAN_CIPHER_SUITE_GCMP_256:
-		if (key_cmd == SET_KEY) {
-			cmd.upd1 |= HAL_REO_CMD_UPD1_PN_CHECK;
-			cmd.pn_size = 48;
-		}
-		break;
-	default:
-		break;
-	}
 
 	spin_lock_bh(&ab->base_lock);
 
@@ -934,10 +890,9 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 		rx_tid = &peer->rx_tid[tid];
 		if (!rx_tid->active)
 			continue;
-		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
-		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
-		ret = ath12k_dp_reo_cmd_send(ab, rx_tid,
-					     HAL_REO_CMD_UPDATE_RX_QUEUE,
+
+		ath12k_dp_setup_pn_check_reo_cmd(&cmd, rx_tid, key->cipher, key_cmd);
+		ret = ath12k_dp_reo_cmd_send(ab, rx_tid, HAL_REO_CMD_UPDATE_RX_QUEUE,
 					     &cmd, NULL);
 		if (ret) {
 			ath12k_warn(ab, "failed to configure rx tid %d queue of peer %pM for pn replay detection %d\n",

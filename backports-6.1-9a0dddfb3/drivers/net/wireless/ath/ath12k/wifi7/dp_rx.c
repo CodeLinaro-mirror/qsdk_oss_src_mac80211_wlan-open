@@ -438,6 +438,36 @@ void ath12k_dp_rx_peer_tid_delete(struct ath12k *ar,
 	rx_tid->active = false;
 }
 
+void  ath12k_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,
+				       struct ath12k_dp_rx_tid *rx_tid,
+				       u32 cipher, enum set_key_cmd key_cmd)
+{
+	cmd->flag = HAL_REO_CMD_FLG_NEED_STATUS;
+	cmd->upd0 = HAL_REO_CMD_UPD0_PN |
+			HAL_REO_CMD_UPD0_PN_SIZE |
+			HAL_REO_CMD_UPD0_PN_VALID |
+			HAL_REO_CMD_UPD0_PN_CHECK |
+			HAL_REO_CMD_UPD0_SVLD;
+
+	switch (cipher) {
+	case WLAN_CIPHER_SUITE_TKIP:
+	case WLAN_CIPHER_SUITE_CCMP:
+	case WLAN_CIPHER_SUITE_CCMP_256:
+	case WLAN_CIPHER_SUITE_GCMP:
+	case WLAN_CIPHER_SUITE_GCMP_256:
+		if (key_cmd == SET_KEY) {
+			cmd->upd1 |= HAL_REO_CMD_UPD1_PN_CHECK;
+			cmd->pn_size = 48;
+		}
+		break;
+	default:
+		break;
+	}
+
+	cmd->addr_lo = lower_32_bits(rx_tid->paddr);
+	cmd->addr_hi = upper_32_bits(rx_tid->paddr);
+}
+
 /* TODO: it's strange (and ugly) that struct hal_reo_dest_ring is converted
  * to struct hal_wbm_release_ring, I couldn't figure out the logic behind
  * that.
@@ -2416,6 +2446,47 @@ int ath12k_dp_rx_process_wbm_err(struct ath12k_base *ab,
 	rcu_read_unlock();
 done:
 	return total_num_buffs_reaped;
+}
+
+int ath12k_dp_alloc_reo_qdesc(struct ath12k_base *ab,
+			      struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
+			      enum hal_pn_type pn_type,
+			      struct hal_rx_reo_queue **addr_aligned)
+{
+	u8 tid = rx_tid->tid;
+	u32 ba_win_sz = rx_tid->ba_win_sz;
+	void *vaddr;
+	u32 hw_desc_sz;
+	dma_addr_t paddr;
+	int ret;
+
+	/* TODO: Optimize the memory allocation for qos tid based on
+	 * the actual BA window size in REO tid update path.
+	 */
+	if (tid == HAL_DESC_REO_NON_QOS_TID)
+		hw_desc_sz = ath12k_hal_reo_qdesc_size(ba_win_sz, tid);
+	else
+		hw_desc_sz = ath12k_hal_reo_qdesc_size(DP_BA_WIN_SZ_MAX, tid);
+
+	vaddr = kzalloc(hw_desc_sz + HAL_LINK_DESC_ALIGN - 1, GFP_ATOMIC);
+	if (!vaddr)
+		return -ENOMEM;
+
+	*addr_aligned = PTR_ALIGN(vaddr, HAL_LINK_DESC_ALIGN);
+
+	paddr = dma_map_single(ab->dev, *addr_aligned, hw_desc_sz,
+			       DMA_BIDIRECTIONAL);
+	ret = dma_mapping_error(ab->dev, paddr);
+	if (ret) {
+		kfree(vaddr);
+		return ret;
+	}
+
+	rx_tid->vaddr = vaddr;
+	rx_tid->paddr = paddr;
+	rx_tid->size = hw_desc_sz;
+
+	return 0;
 }
 
 int ath12k_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab)
