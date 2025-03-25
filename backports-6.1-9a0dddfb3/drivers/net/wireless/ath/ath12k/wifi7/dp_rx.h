@@ -23,14 +23,14 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_base *ab, int mac_id,
 			       struct napi_struct *napi,
 			       int budget);
 void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
-					struct ath12k_peer *peer, u8 tid);
+					struct ath12k_dp_link_peer *peer, u8 tid);
 void ath12k_wifi7_dp_rx_h_ppdu(struct ath12k_pdev_dp *dp_pdev,
 			       struct ieee80211_rx_status *rx_status,
 			       struct hal_rx_desc_data *rx_desc_data);
 void ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 				     struct ath12k_dp_rx_tid *rx_tid);
 int ath12k_wifi7_peer_rx_tid_reo_update(struct ath12k *ar,
-					struct ath12k_peer *peer,
+					struct ath12k_dp_link_peer *peer,
 					struct ath12k_dp_rx_tid *rx_tid,
 					u32 ba_win_sz, u16 ssn,
 					bool update_ssn);

@@ -28,7 +28,7 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 
 static inline
 struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
-						 struct ath12k_peer *peer)
+						 struct ath12k_dp_link_peer *peer)
 {
 	struct ath12k_sta *ahsta;
 	struct ath12k_link_sta *arsta;

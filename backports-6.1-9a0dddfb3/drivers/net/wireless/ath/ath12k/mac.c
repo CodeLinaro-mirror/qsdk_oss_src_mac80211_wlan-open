@@ -1116,7 +1116,7 @@ static int ath12k_mac_set_kickout(struct ath12k_link_vif *arvif)
 
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 {
-	struct ath12k_peer *peer, *tmp;
+	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_base *ab = ar->ab;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -3563,7 +3563,7 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 	struct ath12k_link_sta *arsta;
 	struct ieee80211_sta *ap_sta;
 	struct ath12k_sta *ahsta;
-	struct ath12k_peer *peer;
+	struct ath12k_dp_link_peer *peer;
 	bool is_auth = false;
 	u32 hemode = 0;
 	int ret;
@@ -3674,7 +3674,8 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 
 	spin_lock_bh(&ar->ab->base_lock);
 
-	peer = ath12k_peer_find(ar->ab, arvif->vdev_id, arvif->bssid);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab, arvif->vdev_id,
+							    arvif->bssid);
 	if (peer && peer->is_authorized)
 		is_auth = true;
 
@@ -5264,7 +5265,7 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 {
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_peer *peer;
+	struct ath12k_dp_link_peer *peer;
 	int first_errno = 0;
 	int ret;
 	int i;
@@ -5273,7 +5274,7 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	spin_lock_bh(&ab->base_lock);
-	peer = ath12k_peer_find(ab, arvif->vdev_id, addr);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab, arvif->vdev_id, addr);
 	spin_unlock_bh(&ab->base_lock);
 
 	if (!peer)
@@ -5308,7 +5309,7 @@ static int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 {
 	struct ieee80211_sta *sta = NULL;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_peer *peer;
+	struct ath12k_dp_link_peer *peer;
 	struct ath12k_sta *ahsta;
 	const u8 *peer_addr;
 	int ret;
@@ -5333,7 +5334,8 @@ static int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	 * we already hold wiphy lock. we just make sure its there now.
 	 */
 	spin_lock_bh(&ab->base_lock);
-	peer = ath12k_peer_find(ab, arvif->vdev_id, peer_addr);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab, arvif->vdev_id,
+							    peer_addr);
 	spin_unlock_bh(&ab->base_lock);
 
 	if (!peer) {
@@ -5367,7 +5369,8 @@ static int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	}
 
 	spin_lock_bh(&ab->base_lock);
-	peer = ath12k_peer_find(ab, arvif->vdev_id, peer_addr);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab, arvif->vdev_id,
+							    peer_addr);
 	if (peer && cmd == SET_KEY) {
 		peer->keys[key->keyidx] = key;
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
@@ -6061,7 +6064,7 @@ static void ath12k_mac_station_post_remove(struct ath12k *ar,
 {
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
-	struct ath12k_peer *peer;
+	struct ath12k_dp_link_peer *peer;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -6069,7 +6072,8 @@ static void ath12k_mac_station_post_remove(struct ath12k *ar,
 
 	spin_lock_bh(&ar->ab->base_lock);
 
-	peer = ath12k_peer_find(ar->ab, arvif->vdev_id, arsta->addr);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab, arvif->vdev_id,
+							    arsta->addr);
 	if (peer && peer->sta == sta) {
 		ath12k_warn(ar->ab, "Found peer entry %pM n vdev %i after it was supposedly removed\n",
 			    vif->addr, arvif->vdev_id);
@@ -6089,14 +6093,15 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 					  struct ath12k_link_vif *arvif,
 					  struct ath12k_link_sta *arsta)
 {
-	struct ath12k_peer *peer;
+	struct ath12k_dp_link_peer *peer;
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	spin_lock_bh(&ar->ab->base_lock);
 
-	peer = ath12k_peer_find(ar->ab, arvif->vdev_id, arsta->addr);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab, arvif->vdev_id,
+							    arsta->addr);
 	if (peer)
 		peer->is_authorized = false;
 
@@ -6122,7 +6127,7 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 					struct ath12k_link_vif *arvif,
 					struct ath12k_link_sta *arsta)
 {
-	struct ath12k_peer *peer;
+	struct ath12k_dp_link_peer *peer;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	int ret;
 
@@ -6130,7 +6135,8 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 
 	spin_lock_bh(&ar->ab->base_lock);
 
-	peer = ath12k_peer_find(ar->ab, arvif->vdev_id, arsta->addr);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab, arvif->vdev_id,
+							    arsta->addr);
 	if (peer)
 		peer->is_authorized = true;
 
@@ -6615,7 +6621,7 @@ void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k_link_sta *arsta;
 	struct ath12k_link_vif *arvif;
-	struct ath12k_peer *peer;
+	struct ath12k_dp_link_peer *peer;
 	u32 bw, smps;
 
 	rcu_read_lock();
@@ -6638,7 +6644,8 @@ void ath12k_mac_op_link_sta_rc_update(struct ieee80211_hw *hw,
 	}
 	spin_lock_bh(&ar->ab->base_lock);
 
-	peer = ath12k_peer_find(ar->ab, arvif->vdev_id, arsta->addr);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab, arvif->vdev_id,
+							    arsta->addr);
 	if (!peer) {
 		spin_unlock_bh(&ar->ab->base_lock);
 		rcu_read_unlock();
@@ -8087,7 +8094,7 @@ void ath12k_mac_op_tx(struct ieee80211_hw *hw,
 	struct sk_buff *msdu_copied;
 	struct ath12k *ar, *tmp_ar;
 	struct ath12k_pdev_dp *dp_pdev, *tmp_dp_pdev;
-	struct ath12k_peer *peer;
+	struct ath12k_dp_link_peer *peer;
 	unsigned long links_map;
 	bool is_mcast = false, is_eth = false;
 	bool is_dvlan = false;
@@ -8216,7 +8223,8 @@ void ath12k_mac_op_tx(struct ieee80211_hw *hw,
 				goto skip_peer_find;
 
 			spin_lock_bh(&tmp_ar->ab->base_lock);
-			peer = ath12k_peer_find_by_addr(tmp_ar->ab, tmp_arvif->bssid);
+			peer = ath12k_dp_link_peer_find_by_addr(tmp_ar->ab,
+								tmp_arvif->bssid);
 			if (!peer) {
 				spin_unlock_bh(&tmp_ar->ab->base_lock);
 				ath12k_warn(tmp_ar->ab,
@@ -10375,7 +10383,7 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	if (ab->hw_params->vdev_start_delay &&
 	    ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
 	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR &&
-	    !ath12k_peer_exist_by_vdev_id(ab, arvif->vdev_id)) {
+	    !ath12k_dp_link_peer_exist_by_vdev_id(ab, arvif->vdev_id)) {
 		memcpy(&arvif->chanctx, ctx, sizeof(*ctx));
 		ret = 0;
 		goto out;
@@ -11095,7 +11103,7 @@ ath12k_mac_validate_fixed_rate_settings(struct ath12k *ar, enum nl80211_band ban
 	bool he_fixed_rate = false, vht_fixed_rate = false;
 	const u16 *vht_mcs_mask, *he_mcs_mask;
 	struct ieee80211_link_sta *link_sta;
-	struct ath12k_peer *peer, *tmp;
+	struct ath12k_dp_link_peer *peer, *tmp;
 	u8 vht_nss, he_nss;
 	int ret = true;
 
