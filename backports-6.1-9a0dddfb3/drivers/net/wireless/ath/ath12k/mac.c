@@ -6182,6 +6182,10 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 
 	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
 
+	spin_lock_bh(&ar->ab->base_lock);
+	ath12k_link_sta_rhash_delete(ar->ab, arsta);
+	spin_unlock_bh(&ar->ab->base_lock);
+
 	ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr);
 	if (ret)
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d\n",
@@ -6234,6 +6238,10 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 			    arsta->addr, arvif->vdev_id);
 		goto free_peer;
 	}
+
+	spin_lock_bh(&ab->base_lock);
+	ath12k_link_sta_rhash_add(ab, arsta);
+	spin_unlock_bh(&ab->base_lock);
 
 	ath12k_dbg(ab, ATH12K_DBG_MAC, "Added peer: %pM for VDEV: %d\n",
 		   arsta->addr, arvif->vdev_id);
@@ -12961,6 +12969,8 @@ void ath12k_mac_destroy(struct ath12k_hw_group *ag)
 				continue;
 			pdev->ar = NULL;
 		}
+
+		ath12k_link_sta_rhash_tbl_destroy(ab);
 	}
 
 	for (i = 0; i < ag->num_hw; i++) {
@@ -12997,6 +13007,7 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 
 		ath12k_mac_set_device_defaults(ab);
 		total_radio += ab->num_radios;
+		ath12k_link_sta_rhash_tbl_init(ab);
 	}
 
 	if (!total_radio)
