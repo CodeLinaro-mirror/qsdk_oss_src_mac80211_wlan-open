@@ -360,6 +360,8 @@ struct ath12k_link_stats {
 struct ath12k_dp_arch_ops {
 	int (*dp_op_device_init)(struct ath12k_dp *dp);
 	void (*dp_op_device_deinit)(struct ath12k_dp *dp);
+	u32 (*dp_tx_get_vdev_bank_config)(struct ath12k_base *ab,
+					  struct ath12k_link_vif *arvif);
 };
 
 
