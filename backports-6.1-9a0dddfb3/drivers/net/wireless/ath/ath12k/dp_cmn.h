@@ -16,6 +16,16 @@ struct ath12k_dp_hw_link {
 	u8 pdev_idx;
 };
 
+#define MAX_DP_PEER_LIST_SIZE  16384
+
+struct ath12k_dp_hw {
+	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
+
+	/* Lock for protection of dp_peer_list and peers */
+	spinlock_t peer_lock;
+	struct list_head peers;
+};
+
 struct ath12k_dp_hw_group {
 	struct ath12k_dp_hw_link hw_links[ATH12K_GROUP_MAX_RADIO];
 	struct ath12k_dp *dp[ATH12K_MAX_SOCS];
@@ -37,6 +47,13 @@ struct ath12k_per_peer_tx_stats {
 	u32 mu_grpid;
 	u32 mu_pos;
 	bool is_ampdu;
+};
+
+struct ath12k_dp_peer_create_params {
+	struct ieee80211_sta *sta;
+	bool is_mlo;
+	bool is_vdev_peer;
+	u16 peer_id;
 };
 
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp);

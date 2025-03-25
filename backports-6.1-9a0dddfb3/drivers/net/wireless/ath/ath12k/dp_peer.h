@@ -9,6 +9,8 @@
 
 #include "dp_rx.h"
 
+#define ATH12K_DP_PEER_ID_INVALID              0xFFFF
+
 struct ppdu_user_delayba {
 	u16 sw_peer_id;
 	u32 info0;
@@ -24,6 +26,7 @@ struct ppdu_user_delayba {
 struct ath12k_dp_link_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
+	struct ath12k_dp_peer *dp_peer;
 	struct ieee80211_vif *vif;
 	int vdev_id;
 	u8 addr[ETH_ALEN];
@@ -67,6 +70,37 @@ struct ath12k_dp_link_peer {
 	/* peer addr based rhashtable list pointer */
 	struct rhash_head rhash_addr;
 	bool rhash_done;
+
+	u8 hw_link_id;
+};
+
+struct ath12k_dp_peer {
+	struct list_head list;
+	struct ieee80211_sta *sta;
+	int peer_id;
+	u8 addr[ETH_ALEN];
+	bool is_mlo;
+	bool is_vdev_peer;
+
+	u8 primary_link_id;
+	u8 assoc_link_id;
+
+	/* Lock for protection of link_peers*/
+	spinlock_t link_peers_lock;
+	struct ath12k_dp_link_peer __rcu *link_peers[ATH12K_NUM_MAX_LINKS];
+
+	bool is_authorized;
+	enum hal_pn_type pn_type;
+
+	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
+	struct ath12k_dp_rx_tid rx_tid[IEEE80211_NUM_TIDS + 1];
+
+	/* Info used in MMIC verification of * RX fragments */
+	struct crypto_shash *tfm_mmic;
+	u8 mcast_keyidx;
+	u8 ucast_keyidx;
+	u16 sec_type;
+	u16 sec_type_grp;
 };
 
 void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id);
@@ -89,4 +123,7 @@ int ath12k_dp_link_peer_rhash_add(struct ath12k_dp *dp,
 				  struct ath12k_dp_link_peer *peer);
 int ath12k_dp_link_peer_rhash_delete(struct ath12k_dp *dp,
 				     struct ath12k_dp_link_peer *peer);
+int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
+			  struct ath12k_dp_peer_create_params *params);
+void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr);
 #endif
