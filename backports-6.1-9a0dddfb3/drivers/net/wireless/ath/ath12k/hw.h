@@ -111,9 +111,14 @@
 #define ATH12K_AMSS_FILE		"amss.bin"
 #define ATH12K_M3_FILE			"m3.bin"
 #define ATH12K_REGDB_FILE_NAME		"regdb.bin"
+#define ATH12K_DEFAULT_ID		255
 
 #define ATH12K_PCIE_MAX_PAYLOAD_SIZE	128
 #define ATH12K_IPQ5332_USERPD_ID	1
+#define ATH12K_QCN6432_USERPD_ID_1	2
+#define ATH12K_QCN6432_USERPD_ID_2	3
+
+#define ATH12K_HOST_AFC_QCN6432_MEM_OFFSET 0xD8000
 
 enum ath12k_hw_rate_cck {
 	ATH12K_HW_RATE_CCK_LP_11M = 0,
@@ -139,6 +144,7 @@ enum ath12k_hw_rate_ofdm {
 enum ath12k_bus {
 	ATH12K_BUS_PCI,
 	ATH12K_BUS_AHB,
+	ATH12K_BUS_HYBRID,
 };
 
 #define ATH12K_EXT_IRQ_GRP_NUM_MAX 11
@@ -248,6 +254,7 @@ struct ath12k_hw_params {
 
 	const struct ce_ie_addr *ce_ie_addr;
 	const struct ce_remap *ce_remap;
+	bool send_platform_model;
 	bool handle_beacon_miss;
 };
 

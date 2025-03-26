@@ -7,11 +7,14 @@
 #include <linux/msi.h>
 #include <linux/pci.h>
 #include <linux/firmware.h>
+#include <linux/of.h>
 
 #include "core.h"
 #include "debug.h"
 #include "mhi.h"
 #include "pci.h"
+#include "hif.h"
+#include "pcic.h"
 
 #define MHI_TIMEOUT_DEFAULT_MS	90000
 #define OTP_INVALID_BOARD_ID	0xFFFF
@@ -71,9 +74,9 @@ static int ath12k_mhi_get_msi(struct ath12k_pci *ab_pci)
 	int *irq;
 	unsigned int msi_data;
 
-	ret = ath12k_pci_get_user_msi_assignment(ab,
-						 "MHI", &num_vectors,
-						 &user_base_data, &base_vector);
+	ret = ath12k_pcic_get_user_msi_assignment(ab,
+						  "MHI", &num_vectors,
+						  &user_base_data, &base_vector);
 	if (ret)
 		return ret;
 
@@ -87,10 +90,10 @@ static int ath12k_mhi_get_msi(struct ath12k_pci *ab_pci)
 	msi_data = base_vector;
 	for (i = 0; i < num_vectors; i++) {
 		if (test_bit(ATH12K_PCI_FLAG_MULTI_MSI_VECTORS, &ab_pci->flags))
-			irq[i] = ath12k_pci_get_msi_irq(ab->dev,
+			irq[i] = ath12k_hif_get_msi_irq(ab,
 							msi_data++);
 		else
-			irq[i] = ath12k_pci_get_msi_irq(ab->dev,
+			irq[i] = ath12k_hif_get_msi_irq(ab,
 							msi_data);
 	}
 
@@ -201,9 +204,14 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	mhi_ctrl->rddm_size = ab->hw_params->rddm_size;
 
 	if (ab->hw_params->otp_board_id_register) {
-		board_id =
-			ath12k_pci_read32(ab, ab->hw_params->otp_board_id_register);
-		board_id = u32_get_bits(board_id, OTP_BOARD_ID_MASK);
+		if (!of_property_read_u32(ab->dev->of_node, "qcom,board_id", &board_id) &&
+		    board_id != 0xFF) {
+			board_id = u32_get_bits(board_id, OTP_BOARD_ID_MASK);
+		} else {
+			board_id =
+				ath12k_pci_read32(ab, ab->hw_params->otp_board_id_register);
+			board_id = u32_get_bits(board_id, OTP_BOARD_ID_MASK);
+		}
 
 		if (!board_id || (board_id == OTP_INVALID_BOARD_ID)) {
 			ath12k_dbg(ab, ATH12K_DBG_BOOT,

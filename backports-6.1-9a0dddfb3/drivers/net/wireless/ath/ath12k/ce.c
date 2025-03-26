@@ -185,7 +185,6 @@ static void ath12k_ce_recv_process_cb(struct ath12k_ce_pipe *pipe)
 			   pipe->pipe_num, skb->len);
 		pipe->recv_cb(ab, skb);
 	}
-
 	ret = ath12k_ce_rx_post_pipe(pipe);
 	if (ret && ret != -ENOSPC) {
 		ath12k_warn(ab, "failed to post rx buf to pipe: %d err: %d\n",
@@ -261,6 +260,12 @@ static void ath12k_ce_srng_msi_ring_params_setup(struct ath12k_base *ab, u32 ce_
 	u32 addr_hi;
 	int ret;
 
+	if ((ab->hif.bus == ATH12K_BUS_HYBRID) &&
+            (ce_id >= ATH12K_QCN6432_CE_COUNT)) {
+                ath12k_warn(ab, "Failed to setup ring params ce_id %d", ce_id);
+                return;
+        }
+
 	ret = ath12k_hif_get_user_msi_vector(ab, "CE",
 					     &msi_data_count, &msi_data_start,
 					     &msi_irq_start);
@@ -273,7 +278,10 @@ static void ath12k_ce_srng_msi_ring_params_setup(struct ath12k_base *ab, u32 ce_
 
 	ring_params->msi_addr = addr_lo;
 	ring_params->msi_addr |= (dma_addr_t)(((uint64_t)addr_hi) << 32);
-	ring_params->msi_data = (msi_data_idx % msi_data_count) + msi_data_start;
+	if (ab->hif.bus == ATH12K_BUS_HYBRID)
+		ring_params->msi_data = ab->ipci.ce_msi_data[ce_id];
+	else
+		ring_params->msi_data = (msi_data_idx % msi_data_count) + msi_data_start;
 	ring_params->flags |= HAL_SRNG_FLAGS_MSI_INTR;
 }
 
@@ -669,6 +677,7 @@ int ath12k_ce_init_pipes(struct ath12k_base *ab)
 		}
 	}
 
+	ab->ce_pipe_init_done = true;
 	return 0;
 }
 
@@ -715,6 +724,7 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 			pipe->status_ring = NULL;
 		}
 	}
+	ab->ce_pipe_init_done = false;
 }
 
 int ath12k_ce_alloc_pipes(struct ath12k_base *ab)

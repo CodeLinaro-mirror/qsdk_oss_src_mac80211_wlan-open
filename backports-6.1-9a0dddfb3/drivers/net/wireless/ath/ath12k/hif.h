@@ -12,6 +12,8 @@
 struct ath12k_hif_ops {
 	u32 (*read32)(struct ath12k_base *ab, u32 address);
 	void (*write32)(struct ath12k_base *ab, u32 address, u32 data);
+	u32 (*cmem_read32)(struct ath12k_base *sc, u32 address);
+	void (*cmem_write32)(struct ath12k_base *sc, u32 address, u32 data);
 	void (*irq_enable)(struct ath12k_base *ab);
 	void (*irq_disable)(struct ath12k_base *ab);
 	int (*start)(struct ath12k_base *ab);
@@ -33,6 +35,8 @@ struct ath12k_hif_ops {
 	int (*panic_handler)(struct ath12k_base *ab);
 	void (*coredump_download)(struct ath12k_base *ab);
 	int (*set_qrtr_endpoint_id)(struct ath12k_base *ab);
+	void (*config_static_window)(struct ath12k_base *ab);
+	int (*get_msi_irq)(struct ath12k_base *ab, unsigned int vector);
 };
 
 static inline int ath12k_hif_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,
@@ -128,6 +132,12 @@ static inline u32 ath12k_hif_read32(struct ath12k_base *ab, u32 address)
 	return ab->hif.ops->read32(ab, address);
 }
 
+static inline void ath12k_hif_cmem_write32(struct ath12k_base *ab, u32 address,
+                                      u32 data)
+{
+        ab->hif.ops->cmem_write32(ab, address, data);
+}
+
 static inline void ath12k_hif_write32(struct ath12k_base *ab, u32 address,
 				      u32 data)
 {
@@ -170,6 +180,22 @@ static inline int ath12k_hif_set_qrtr_endpoint_id(struct ath12k_base *ab)
 		return -EOPNOTSUPP;
 	else
 		return ab->hif.ops->set_qrtr_endpoint_id(ab);
+}
+
+static inline void ath12k_hif_config_static_window(struct ath12k_base *ab)
+{
+	if (!ab->hif.ops->config_static_window)
+		return;
+
+	ab->hif.ops->config_static_window(ab);
+}
+
+static inline int ath12k_hif_get_msi_irq(struct ath12k_base *ab, unsigned int vector)
+{
+	if (!ab->hif.ops->get_msi_irq)
+		return -EOPNOTSUPP;
+
+	return ab->hif.ops->get_msi_irq(ab, vector);
 }
 
 #endif /* ATH12K_HIF_H */

@@ -134,7 +134,7 @@ static inline struct ath12k_pci *ath12k_pci_priv(struct ath12k_base *ab)
 int ath12k_pci_get_user_msi_assignment(struct ath12k_base *ab, char *user_name,
 				       int *num_vectors, u32 *user_base_data,
 				       u32 *base_vector);
-int ath12k_pci_get_msi_irq(struct device *dev, unsigned int vector);
+int ath12k_pci_get_msi_irq(struct ath12k_base *ab, unsigned int vector);
 void ath12k_pci_write32(struct ath12k_base *ab, u32 offset, u32 value);
 u32 ath12k_pci_read32(struct ath12k_base *ab, u32 offset);
 int ath12k_pci_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,
@@ -145,8 +145,6 @@ void ath12k_pci_get_ce_msi_idx(struct ath12k_base *ab, u32 ce_id,
 			       u32 *msi_idx);
 void ath12k_pci_hif_ce_irq_enable(struct ath12k_base *ab);
 void ath12k_pci_hif_ce_irq_disable(struct ath12k_base *ab);
-void ath12k_pci_ext_irq_enable(struct ath12k_base *ab);
-void ath12k_pci_ext_irq_disable(struct ath12k_base *ab);
 int ath12k_pci_hif_suspend(struct ath12k_base *ab);
 int ath12k_pci_hif_resume(struct ath12k_base *ab);
 void ath12k_pci_stop(struct ath12k_base *ab);

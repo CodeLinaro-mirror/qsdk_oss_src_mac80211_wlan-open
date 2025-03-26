@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: GPL-2.0-only
+config BACKPORT_DIR
+	string
+	option env="BACKPORT_DIR"
+
 config MAC80211
 	tristate "Generic IEEE 802.11 Networking Stack (mac80211)"
 	depends on m
@@ -252,6 +256,15 @@ config MAC80211_ATHMEMDEBUG
 	  build helps to track memory allocation, deallocation
 	  for ATH related sub-system (cfg/mac80211, ath).
 
+config MAC80211_ATHMEMDEBUG
+	bool "ATH memory debugging"
+	depends on ATHMEMDEBUG
+	default n
+	help
+	  Select this option to enable a debug build. This debug
+	  build helps to track memory allocation, deallocation
+	  for ATH related sub-system (cfg/mac80211, ath).
+
 config MAC80211_MPL_DEBUG
 	bool "Verbose mesh peer link debugging"
 	depends on MAC80211_DEBUG_MENU
@@ -360,3 +373,11 @@ config MAC80211_STA_HASH_MAX_SIZE
 	  connect more stations than the number selected here.)
 
 	  If unsure, leave the default of 0.
+
+config QCN_EXTN
+	bool "Enable QCN extensions support"
+	depends on MAC80211
+	default y
+	help
+		Select this option to enable QCN 802.11 extensions in mac80211
+		drivers that support it..

@@ -16,6 +16,13 @@ config ATH12K
 
 	  If you choose to build a module, it'll be called ath12k.
 
+config ATH12K_SAWF
+	bool "ath12k Service Aware WiFi Framework and Telemetry support"
+	depends on ATH12K
+	help
+	  Enable ath12k SAWF and telemetry support
+	  Say Y to enable. If unsure, say N.
+
 config ATH12K_AHB
 	bool "QTI ath12k AHB support"
 	depends on ATH12K && REMOTEPROC && QCOM_Q6V5_WCSS_SEC

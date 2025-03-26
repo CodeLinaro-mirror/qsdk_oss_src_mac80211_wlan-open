@@ -9,8 +9,10 @@
 #include "qmi.h"
 #include "core.h"
 #include "debug.h"
+#include "hif.h"
 #include <linux/of.h>
 #include <linux/firmware.h>
+#include <net/sock.h>
 #include <linux/of_address.h>
 #include <linux/ioport.h>
 
@@ -1061,6 +1063,68 @@ static const struct qmi_elem_info qmi_wlanfw_cap_req_msg_v01_ei[] = {
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
+	},
+};
+
+static struct qmi_elem_info qmi_wlanfw_device_info_req_msg_v01_ei[] = {
+        {
+                .data_type      = QMI_EOTI,
+                .array_type     = NO_ARRAY,
+                .tlv_type       = QMI_COMMON_TLV_TYPE,
+        },
+};
+
+struct qmi_elem_info qmi_wlanfw_device_info_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct qmi_wlanfw_device_info_resp_msg_v01,
+					   resp),
+		.ei_array       = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct qmi_wlanfw_device_info_resp_msg_v01,
+					   bar_addr_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_8_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u64),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct qmi_wlanfw_device_info_resp_msg_v01,
+					   bar_addr),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x11,
+		.offset		= offsetof(struct qmi_wlanfw_device_info_resp_msg_v01,
+					   bar_size_valid),
+	},
+	{
+		.data_type	= QMI_UNSIGNED_4_BYTE,
+		.elem_len	= 1,
+		.elem_size	= sizeof(u32),
+		.array_type	= NO_ARRAY,
+		.tlv_type	= 0x11,
+		.offset		= offsetof(struct qmi_wlanfw_device_info_resp_msg_v01,
+					   bar_size),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
 	},
 };
 
@@ -2162,6 +2226,8 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 	struct qmi_wlanfw_host_cap_resp_msg_v01 resp = {};
 	struct qmi_txn txn;
 	int ret = 0;
+	struct device_node *root;
+	const char *model = NULL;
 
 	req.num_clients_valid = 1;
 	req.num_clients = 1;
@@ -2179,6 +2245,20 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 
 	req.cal_done_valid = 1;
 	req.cal_done = ab->qmi.cal_done;
+
+	if (ab->hw_params->send_platform_model) {
+                root = of_find_node_by_path("/");
+                if (root) {
+                        model = of_get_property(root, "model", NULL);
+                        if (model) {
+                                req.platform_name_valid = 1;
+                                strncpy(req.platform_name, model,
+                                        QMI_WLANFW_MAX_PLATFORM_NAME_LEN_V01);
+                                ath12k_info(ab, "Platform name: %s", req.platform_name);
+                        }
+                        of_node_put(root);
+                }
+        }
 
 	if (ab->hw_params->qmi_cnss_feature_bitmap) {
 		req.feature_list_valid = 1;
@@ -2835,6 +2915,47 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			}
 			idx++;
 			break;
+		case AFC_REGION_TYPE:
+			if (ab->qmi.target_mem[i].size > AFC_MEM_SIZE) {
+				ath12k_warn(ab, "AFC mem request size %d is larger than allowed value\n",
+					    ab->qmi.target_mem[i].size);
+				return -EINVAL;
+			}
+
+			/* For multi-pd platforms, AFC_REGION_TYPE needs
+			 * to be allocated from within the M3_DUMP_REGION.
+			 * This is because multi-pd platforms cannot access memory
+			 * regions allocated outside FW reserved memory.
+			 * AFC_REGION_TYPE is supported for 6 GHz.
+			 */
+			if (ab->hif.bus == ATH12K_BUS_HYBRID) {
+				rmem = ath12k_core_get_reserved_mem_by_name(ab, "m3-dump");
+				if (!rmem) {
+					ret = -EINVAL;
+					goto out;
+				}
+
+				if (ab->qmi.target_mem[i].size > (rmem->size - ATH12K_HOST_AFC_QCN6432_MEM_OFFSET)) {
+					ath12k_err(ab, "AFC mem request size %d is larger than M3_MEM_REGION size %u\n",
+					   ab->qmi.target_mem[i].size,
+						  (u32)rmem->size);
+					ret = -EINVAL;
+					goto out;
+			}
+
+				ab->qmi.target_mem[idx].paddr = rmem->base + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
+				ab->qmi.target_mem[idx].v.ioaddr =
+					ioremap(ab->qmi.target_mem[idx].paddr,
+						ab->qmi.target_mem[idx].size);
+			} else {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.addr = NULL;
+			}
+
+			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+			idx++;
+			break;
 		case PAGEABLE_MEM_REGION_TYPE:
 			if (ab->hif.bus == ATH12K_BUS_PCI) {
 				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
@@ -2891,7 +3012,8 @@ int ath12k_qmi_request_target_cap(struct ath12k_base *ab)
 	struct qmi_wlanfw_cap_req_msg_v01 req = {};
 	struct qmi_wlanfw_cap_resp_msg_v01 resp = {};
 	struct qmi_txn txn;
-	unsigned int board_id = ATH12K_BOARD_ID_DEFAULT;
+	struct device *dev = ab->dev;
+	unsigned int board_id;
 	int ret = 0;
 	int r;
 	int i;
@@ -2930,10 +3052,13 @@ int ath12k_qmi_request_target_cap(struct ath12k_base *ab)
 		ab->qmi.target.chip_family = resp.chip_info.chip_family;
 	}
 
-	if (resp.board_info_valid)
+	if (!of_property_read_u32(dev->of_node, "qcom,board_id", &board_id) &&
+	    board_id != 0xFF)
+		ab->qmi.target.board_id = board_id;
+	else if (resp.board_info_valid)
 		ab->qmi.target.board_id = resp.board_info.board_id;
 	else
-		ab->qmi.target.board_id = board_id;
+		ab->qmi.target.board_id = ATH12K_BOARD_ID_DEFAULT;
 
 	if (resp.soc_info_valid)
 		ab->qmi.target.soc_id = resp.soc_info.soc_id;
@@ -3661,6 +3786,84 @@ int ath12k_qmi_event_mem_request(struct ath12k_qmi *qmi)
 	return ret;
 }
 
+static int ath12k_qmi_request_device_info(struct ath12k_base *ab)
+{
+	struct qmi_wlanfw_device_info_req_msg_v01 req;
+	struct qmi_wlanfw_device_info_resp_msg_v01 resp;
+	struct qmi_txn txn = {};
+	void *bar_addr_va = NULL;
+	int ret = 0;
+
+	/*device info message only supported for internal-PCI devices */
+	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10)
+		return 0;
+
+	memset(&req, 0, sizeof(req));
+	memset(&resp, 0, sizeof(resp));
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+			   qmi_wlanfw_device_info_resp_msg_v01_ei, &resp);
+	if (ret < 0)
+		goto out;
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLANFW_DEVICE_INFO_REQ_V01,
+			       QMI_WLANFW_DEVICE_INFO_REQ_MSG_V01,
+			       qmi_wlanfw_device_info_req_msg_v01_ei, &req);
+	if (ret < 0) {
+		ath12k_warn(ab, "qmi failed to send target device info request, err = %d\n",
+			    ret);
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+	if (ret < 0) {
+		ath12k_warn(ab, "qmi failed target device info request %d\n", ret);
+		goto out;
+	}
+
+	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
+		ath12k_warn(ab, "qmi device info req failed, result: %d, err: %d\n",
+			    resp.resp.result, resp.resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (!resp.bar_addr_valid || !resp.bar_size_valid) {
+		ath12k_warn(ab, "qmi device info response invalid, result: %d, err: %d\n",
+			    resp.resp.result, resp.resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+	if (!resp.bar_addr ||
+	    resp.bar_size != QCN6432_DEVICE_BAR_SIZE) {
+		ath12k_warn(ab, "qmi device info invalid addr and size, result: %d, err: %d\n",
+			    resp.resp.result, resp.resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	bar_addr_va = ioremap(resp.bar_addr, resp.bar_size);
+
+	if (!bar_addr_va) {
+		ath12k_warn(ab, "qmi device info ioremap failed\n");
+		ab->mem_len = 0;
+		ret = -EIO;
+		goto out;
+	}
+
+	ab->mem = bar_addr_va;
+	ab->mem_len = resp.bar_size;
+
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "Device BAR Info pa: 0x%llx, va: 0x%p, size: 0x%lx\n",
+		   resp.bar_addr, ab->mem, ab->mem_len);
+
+	ath12k_hif_config_static_window(ab);
+	return 0;
+out:
+	return ret;
+}
+
 /* clang stack usage explodes if this is inlined */
 static noinline_for_stack
 int ath12k_qmi_event_load_bdf(struct ath12k_qmi *qmi)
@@ -3671,6 +3874,12 @@ int ath12k_qmi_event_load_bdf(struct ath12k_qmi *qmi)
 	ret = ath12k_qmi_request_target_cap(ab);
 	if (ret < 0) {
 		ath12k_warn(ab, "qmi failed to req target capabilities:%d\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_qmi_request_device_info(ab);
+	if (ret < 0) {
+		ath12k_warn(ab, "qmi failed to req device info:%d\n", ret);
 		return ret;
 	}
 
@@ -3852,6 +4061,23 @@ static int ath12k_qmi_event_host_cap(struct ath12k_qmi *qmi)
 	return ret;
 }
 
+static int ath12k_wait_for_gic_msi(struct ath12k_base *ab)
+{
+	int timeout;
+
+	if (ab->hw_rev != ATH12K_HW_QCN6432_HW10)
+		return 0;
+
+	timeout = wait_event_timeout(ab->ipci.gic_msi_waitq,
+				     (ab->ipci.gic_enabled == 1),
+				     ATH12K_RCV_GIC_MSI_HDLR_DELAY);
+	if (timeout <= 0) {
+		ath12k_warn(ab, "Receive gic msi handler timed out\n");
+		return -ETIMEDOUT;
+	}
+	return 0;
+}
+
 static void ath12k_qmi_driver_event_work(struct work_struct *work)
 {
 	struct ath12k_qmi *qmi = container_of(work, struct ath12k_qmi,
@@ -3902,6 +4128,12 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 
 			clear_bit(ATH12K_FLAG_CRASH_FLUSH,
 				  &ab->dev_flags);
+			ret = ath12k_wait_for_gic_msi(ab);
+			if (ret) {
+				ath12k_warn(ab, "failed to get qgic handler for dev %d ret: %d\n",
+					    ab->hw_rev, ret);
+				break;
+			}
 			ret = ath12k_core_qmi_firmware_ready(ab);
 			if (!ret)
 				set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
@@ -3933,7 +4165,14 @@ int ath12k_qmi_init_service(struct ath12k_base *ab)
 	memset(&ab->qmi.target_mem, 0, sizeof(struct target_mem_chunk));
 	ab->qmi.ab = ab;
 
-	ab->qmi.target_mem_mode = ATH12K_QMI_TARGET_MEM_MODE_DEFAULT;
+	ab->qmi.target_mem_mode = ATH12K_QMI_TARGET_MEM_MODE;
+
+	ret = ath12k_hif_set_qrtr_endpoint_id(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to set QRTR endpoint ID: %d\n", ret);
+		ath12k_warn(ab, "only one device per system will be supported\n");
+	}
+
 	ret = qmi_handle_init(&ab->qmi.handle, ATH12K_QMI_RESP_LEN_MAX,
 			      &ath12k_qmi_ops, ath12k_qmi_msg_handlers);
 	if (ret < 0) {

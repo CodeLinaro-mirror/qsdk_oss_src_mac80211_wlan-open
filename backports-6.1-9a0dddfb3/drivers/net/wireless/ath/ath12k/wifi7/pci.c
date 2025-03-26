@@ -6,12 +6,13 @@
 
 #include <linux/pci.h>
 
+#include "../pci.h"
 #include "pci.h"
-#include "pci_wifi7.h"
-#include "core.h"
-#include "hif.h"
-#include "mhi.h"
-#include "hw_wifi7.h"
+#include "../pcic.h"
+#include "../core.h"
+#include "../hif.h"
+#include "../mhi.h"
+#include "hw.h"
 
 #define QCN9274_DEVICE_ID		0x1109
 #define WCN7850_DEVICE_ID		0x1107
@@ -32,17 +33,6 @@ static const struct pci_device_id ath12k_wifi7_pci_id_table[] = {
 MODULE_DEVICE_TABLE(pci, ath12k_wifi7_pci_id_table);
 
 /* TODO: revisit IRQ mapping for new SRNG's */
-static const struct ath12k_msi_config ath12k_wifi7_msi_config[] = {
-	{
-		.total_vectors = 16,
-		.total_users = 3,
-		.users = (struct ath12k_msi_user[]) {
-			{ .name = "MHI", .num_vectors = 3, .base_vector = 0 },
-			{ .name = "CE", .num_vectors = 5, .base_vector = 3 },
-			{ .name = "DP", .num_vectors = 8, .base_vector = 8 },
-		},
-	},
-};
 
 static const struct ath12k_pci_ops ath12k_wifi7_pci_ops_qcn9274 = {
 	.wakeup = NULL,

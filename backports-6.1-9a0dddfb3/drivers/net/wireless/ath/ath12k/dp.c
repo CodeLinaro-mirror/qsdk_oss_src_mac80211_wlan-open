@@ -230,8 +230,11 @@ static void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 
 	ring_params->msi_addr = addr_lo;
 	ring_params->msi_addr |= (dma_addr_t)(((uint64_t)addr_hi) << 32);
-	ring_params->msi_data = (msi_group_number % msi_data_count)
-		+ msi_data_start;
+	if (ab->hif.bus == ATH12K_BUS_HYBRID)
+		ring_params->msi_data = ab->ipci.dp_msi_data[msi_group_number];
+	else
+		ring_params->msi_data = (msi_group_number % msi_data_count)
+			+ msi_data_start;
 	ring_params->flags |= HAL_SRNG_FLAGS_MSI_INTR;
 }
 
@@ -1057,6 +1060,7 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp)
 	struct ath12k_htc_svc_conn_req conn_req = {0};
 	struct ath12k_htc_svc_conn_resp conn_resp = {0};
 	int status;
+	struct ath12k_base *ab = dp->ab;
 
 	conn_req.ep_ops.ep_tx_complete = ath12k_dp_htt_htc_tx_complete;
 	conn_req.ep_ops.ep_rx_complete = ath12k_dp_htt_htc_t2h_msg_handler;
@@ -1064,6 +1068,7 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp)
 	/* connect to control service */
 	conn_req.service_id = ATH12K_HTC_SVC_ID_HTT_DATA_MSG;
 
+	ab->htt_flag = true;
 	status = ath12k_htc_connect_service(&dp->ab->htc, &conn_req,
 					    &conn_resp);
 
@@ -1500,9 +1505,14 @@ static int ath12k_dp_cmem_init(struct ath12k_base *ab,
 	}
 
 	/* Write to PPT in CMEM */
-	for (i = start; i < end; i++)
-		ath12k_hif_write32(ab, cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
-				   dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
+	for (i = start; i < end; i++) {
+		if (ab->hif.ops->cmem_write32 && (ab->hif.bus == ATH12K_BUS_HYBRID))
+			ath12k_hif_cmem_write32(ab, cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
+					dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
+		else
+			ath12k_hif_write32(ab, cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
+					dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
+	}
 
 	return 0;
 }

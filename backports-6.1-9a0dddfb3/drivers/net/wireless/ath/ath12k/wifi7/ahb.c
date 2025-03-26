@@ -7,11 +7,11 @@
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/soc/qcom/mdt_loader.h>
+#include "../ahb.h"
 #include "ahb.h"
-#include "ahb_wifi7.h"
-#include "debug.h"
-#include "hif.h"
-#include "hw_wifi7.h"
+#include "../debug.h"
+#include "../hif.h"
+#include "hw.h"
 
 static const struct of_device_id ath12k_wifi7_ahb_of_match[] = {
 	{ .compatible = "qcom,ipq5332-wifi",
@@ -19,6 +19,9 @@ static const struct of_device_id ath12k_wifi7_ahb_of_match[] = {
 	},
 	{ .compatible = "qcom,ipq5424-wifi",
 	  .data = (void *)ATH12K_HW_IPQ5424_HW10,
+	},
+	{ .compatible = "qcom,qcn6432-wifi",
+	  .data = (void *)ATH12K_HW_QCN6432_HW10,
 	},
 	{ }
 };
@@ -36,17 +39,17 @@ static const struct ath12k_ahb_ops ahb_ops_ipq5424 = {
 static int ath12k_wifi7_ahb_probe(struct platform_device *pdev)
 {
 	struct ath12k_ahb *ab_ahb;
-	enum ath12k_hw_rev hw_rev;
 	struct ath12k_base *ab;
 	int ret;
 
 	ab = platform_get_drvdata(pdev);
 	ab_ahb = ath12k_ab_to_ahb(ab);
 
-	hw_rev = (enum ath12k_hw_rev)(kernel_ulong_t)of_device_get_match_data(&pdev->dev);
-	switch (hw_rev) {
+	switch (ab->hw_rev) {
 	case ATH12K_HW_IPQ5332_HW10:
 		ab_ahb->userpd_id = ATH12K_IPQ5332_USERPD_ID;
+		fallthrough;
+	case ATH12K_HW_QCN6432_HW10:
 		ab_ahb->scm_auth_enabled = true;
 		ab_ahb->ahb_ops = &ahb_ops_ipq5332;
 		break;
@@ -58,8 +61,6 @@ static int ath12k_wifi7_ahb_probe(struct platform_device *pdev)
 	default:
 		return -EOPNOTSUPP;
 	}
-
-	ab->hw_rev = hw_rev;
 
 	ret = ath12k_wifi7_hw_init(ab);
 	if (ret) {

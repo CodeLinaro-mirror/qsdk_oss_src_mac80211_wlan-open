@@ -9,6 +9,7 @@
 #include "debug.h"
 #include "hal_desc.h"
 #include "hif.h"
+#include "pcic.h"
 
 static const struct hal_srng_config hw_srng_config_template[] = {
 	/* TODO: max_rings can populated by querying HW capabilities */
@@ -1090,6 +1091,58 @@ const struct hal_ops hal_qcn9274_ops = {
 };
 EXPORT_SYMBOL(hal_qcn9274_ops);
 
+const struct hal_rx_ops hal_rx_qcn6432_ops = {
+	.rx_desc_get_first_msdu = ath12k_hw_qcn9274_compact_rx_desc_get_first_msdu,
+	.rx_desc_get_last_msdu = ath12k_hw_qcn9274_compact_rx_desc_get_last_msdu,
+	.rx_desc_get_l3_pad_bytes = ath12k_hw_qcn9274_compact_rx_desc_get_l3_pad_bytes,
+	.rx_desc_encrypt_valid = ath12k_hw_qcn9274_compact_rx_desc_encrypt_valid,
+	.rx_desc_get_encrypt_type = ath12k_hw_qcn9274_compact_rx_desc_get_encrypt_type,
+	.rx_desc_get_decap_type = ath12k_hw_qcn9274_compact_rx_desc_get_decap_type,
+	.rx_desc_get_mesh_ctl = ath12k_hw_qcn9274_compact_rx_desc_get_mesh_ctl,
+	.rx_desc_get_mpdu_seq_ctl_vld = ath12k_hw_qcn9274_compact_rx_desc_get_mpdu_seq_ctl_vld,
+	.rx_desc_get_mpdu_fc_valid = ath12k_hw_qcn9274_compact_rx_desc_get_mpdu_fc_valid,
+	.rx_desc_get_mpdu_start_seq_no = ath12k_hw_qcn9274_compact_rx_desc_get_mpdu_start_seq_no,
+	.rx_desc_get_msdu_len = ath12k_hw_qcn9274_compact_rx_desc_get_msdu_len,
+	.rx_desc_get_msdu_sgi = ath12k_hw_qcn9274_compact_rx_desc_get_msdu_sgi,
+	.rx_desc_get_msdu_rate_mcs = ath12k_hw_qcn9274_compact_rx_desc_get_msdu_rate_mcs,
+	.rx_desc_get_msdu_rx_bw = ath12k_hw_qcn9274_compact_rx_desc_get_msdu_rx_bw,
+	.rx_desc_get_msdu_freq = ath12k_hw_qcn9274_compact_rx_desc_get_msdu_freq,
+	.rx_desc_get_msdu_pkt_type = ath12k_hw_qcn9274_compact_rx_desc_get_msdu_pkt_type,
+	.rx_desc_get_msdu_nss = ath12k_hw_qcn9274_compact_rx_desc_get_msdu_nss,
+	.rx_desc_get_mpdu_tid = ath12k_hw_qcn9274_compact_rx_desc_get_mpdu_tid,
+	.rx_desc_get_mpdu_peer_id = ath12k_hw_qcn9274_compact_rx_desc_get_mpdu_peer_id,
+	.rx_desc_copy_end_tlv = ath12k_hw_qcn9274_compact_rx_desc_copy_end_tlv,
+	.rx_desc_get_mpdu_ppdu_id = ath12k_hw_qcn9274_compact_rx_desc_get_mpdu_ppdu_id,
+	.rx_desc_set_msdu_len = ath12k_hw_qcn9274_compact_rx_desc_set_msdu_len,
+	.rx_desc_get_msdu_payload = ath12k_hw_qcn9274_compact_rx_desc_get_msdu_payload,
+	.rx_desc_get_mpdu_start_offset = ath12k_hw_qcn9274_compact_rx_desc_get_mpdu_start_offset,
+	.rx_desc_get_msdu_end_offset = ath12k_hw_qcn9274_compact_rx_desc_get_msdu_end_offset,
+	.rx_desc_mac_addr2_valid = ath12k_hw_qcn9274_compact_rx_desc_mac_addr2_valid,
+	.rx_desc_mpdu_start_addr2 = ath12k_hw_qcn9274_compact_rx_desc_mpdu_start_addr2,
+	.rx_desc_is_da_mcbc = ath12k_hw_qcn9274_compact_rx_desc_is_da_mcbc,
+	.rx_desc_get_dot11_hdr = ath12k_hw_qcn9274_compact_rx_desc_get_dot11_hdr,
+	.rx_desc_get_crypto_header = ath12k_hw_qcn9274_compact_rx_desc_get_crypto_hdr,
+	.dp_rx_h_msdu_done = ath12k_hw_qcn9274_compact_dp_rx_h_msdu_done,
+	.dp_rx_h_l4_cksum_fail = ath12k_hw_qcn9274_compact_dp_rx_h_l4_cksum_fail,
+	.dp_rx_h_ip_cksum_fail = ath12k_hw_qcn9274_compact_dp_rx_h_ip_cksum_fail,
+	.dp_rx_h_is_decrypted = ath12k_hw_qcn9274_compact_dp_rx_h_is_decrypted,
+	.dp_rx_h_mpdu_err = ath12k_hw_qcn9274_compact_dp_rx_h_mpdu_err,
+	//.rx_desc_get_mpdu_frame_ctl = ath12k_hw_qcn9274_compact_rx_desc_get_mpdu_frame_ctl,
+	.rx_desc_get_desc_size = ath12k_hw_qcn9274_compact_get_rx_desc_size,
+	.rx_desc_get_msdu_src_link_id =
+		ath12k_hw_qcn9274_compact_rx_desc_get_msdu_src_link,
+};
+
+const struct hal_ops hal_qcn6432_ops = {
+        .create_srng_config = ath12k_hal_srng_create_config_qcn9274,
+        .tcl_to_wbm_rbm_map = ath12k_hal_qcn9274_tcl_to_wbm_rbm_map,
+        .rxdma_ring_wmask_rx_mpdu_start = ath12k_hal_qcn9274_rx_mpdu_start_wmask_get,
+        .rxdma_ring_wmask_rx_msdu_end = ath12k_hal_qcn9274_rx_msdu_end_wmask_get,
+        .get_hal_rx_compact_ops = ath12k_hal_qcn9274_get_hal_rx_compact_ops,
+};
+
+EXPORT_SYMBOL(hal_qcn6432_ops);
+
 static bool ath12k_hw_wcn7850_rx_desc_get_first_msdu(struct hal_rx_desc *desc)
 {
 	return !!le16_get_bits(desc->u.wcn7850.msdu_end.info5,
@@ -1695,6 +1748,7 @@ static void ath12k_hal_srng_dst_hw_init(struct ath12k_base *ab,
 	ath12k_hif_write32(ab, reg_base, 0);
 	ath12k_hif_write32(ab, reg_base + HAL_REO1_RING_TP_OFFSET, 0);
 	*srng->u.dst_ring.hp_addr = 0;
+	srng->u.dst_ring.tp = 0;
 
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
 	val = 0;
@@ -1783,6 +1837,7 @@ static void ath12k_hal_srng_src_hw_init(struct ath12k_base *ab,
 	ath12k_hif_write32(ab, reg_base, 0);
 	ath12k_hif_write32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET, 0);
 	*srng->u.src_ring.tp_addr = 0;
+	srng->u.src_ring.hp = 0;
 
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
 	val = 0;
@@ -1989,8 +2044,11 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 
 	desc = srng->ring_base_vaddr + srng->u.dst_ring.tp;
 
-	srng->u.dst_ring.tp = (srng->u.dst_ring.tp + srng->entry_size) %
-			      srng->ring_size;
+	srng->u.dst_ring.tp = (srng->u.dst_ring.tp + srng->entry_size);
+
+        /* wrap around to start of ring*/
+        if (srng->u.dst_ring.tp == srng->ring_size)
+                srng->u.dst_ring.tp = 0;
 
 	return desc;
 }
@@ -2127,7 +2185,6 @@ void ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng)
 void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng)
 {
 	lockdep_assert_held(&srng->lock);
-
 	/* TODO: See if we need a write memory barrier here */
 	if (srng->flags & HAL_SRNG_FLAGS_LMAC_RING) {
 		/* For LMAC rings, ring pointer updates are done through FW and
@@ -2321,21 +2378,41 @@ int ath12k_hal_srng_setup(struct ath12k_base *ab, enum hal_ring_type type,
 		srng->u.src_ring.tp_addr = (void *)(hal->rdp.vaddr + ring_id);
 		srng->u.src_ring.low_threshold = params->low_threshold *
 						 srng->entry_size;
+
+		if (srng->u.src_ring.tp_addr)
+                        *srng->u.src_ring.tp_addr = 0;
+
 		if (srng_config->mac_type == ATH12K_HAL_SRNG_UMAC) {
-			if (!ab->hw_params->supports_shadow_regs)
-				srng->u.src_ring.hp_addr =
-					(u32 *)((unsigned long)ab->mem + reg_base);
-			else
-				ath12k_dbg(ab, ATH12K_DBG_HAL,
-					   "hal type %d ring_num %d reg_base 0x%x shadow 0x%lx\n",
-					   type, ring_num,
-					   reg_base,
-					   (unsigned long)srng->u.src_ring.hp_addr -
-					   (unsigned long)ab->mem);
+			if (!ab->hw_params->supports_shadow_regs) {
+                                srng->u.src_ring.hp_addr =
+                                        (u32 *)((unsigned long)ab->mem + reg_base);
+                                if (type  == HAL_TCL_DATA) {
+                                        if (ab->hif.bus == ATH12K_BUS_PCI ||
+                                            ab->hif.bus == ATH12K_BUS_HYBRID){
+                                                srng->u.src_ring.hp_addr_direct =
+                                                        (u32 *)((unsigned long)ab->mem +
+                                                        HAL_DP_REG_WINDOW_OFFSET +
+                                                        (reg_base & WINDOW_RANGE_MASK));
+                                        } else {
+                                                srng->u.src_ring.hp_addr_direct =
+                                                        srng->u.src_ring.hp_addr;
+                                        }
+                                }
+                        } else {
+                                        ath12k_dbg(ab, ATH12K_DBG_HAL,
+                                                   "hal type %d ring_num %d reg_base 0x%x shadow 0x%lx\n",
+                                                type, ring_num,
+                                                reg_base,
+                                                (unsigned long)srng->u.src_ring.hp_addr -
+                                                (unsigned long)ab->mem);
+			}
 		} else {
 			idx = ring_id - HAL_SRNG_RING_ID_DMAC_CMN_ID_START;
 			srng->u.src_ring.hp_addr = (void *)(hal->wrp.vaddr +
 						   idx);
+			if (srng->u.src_ring.hp_addr)
+                                *srng->u.src_ring.hp_addr = 0;
+
 			srng->flags |= HAL_SRNG_FLAGS_LMAC_RING;
 		}
 	} else {
@@ -2351,6 +2428,10 @@ int ath12k_hal_srng_setup(struct ath12k_base *ab, enum hal_ring_type type,
 		srng->u.dst_ring.tp = 0;
 		srng->u.dst_ring.cached_hp = 0;
 		srng->u.dst_ring.hp_addr = (void *)(hal->rdp.vaddr + ring_id);
+
+		if (srng->u.dst_ring.hp_addr)
+                        *srng->u.dst_ring.hp_addr = 0;
+
 		if (srng_config->mac_type == ATH12K_HAL_SRNG_UMAC) {
 			if (!ab->hw_params->supports_shadow_regs)
 				srng->u.dst_ring.tp_addr =
@@ -2370,6 +2451,9 @@ int ath12k_hal_srng_setup(struct ath12k_base *ab, enum hal_ring_type type,
 			idx = ring_id - HAL_SRNG_RING_ID_DMAC_CMN_ID_START;
 			srng->u.dst_ring.tp_addr = (void *)(hal->wrp.vaddr +
 						   idx);
+			if (srng->u.dst_ring.tp_addr)
+                                *srng->u.dst_ring.tp_addr = 0;
+
 			srng->flags |= HAL_SRNG_FLAGS_LMAC_RING;
 		}
 	}

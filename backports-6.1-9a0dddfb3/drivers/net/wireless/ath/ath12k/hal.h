@@ -59,6 +59,7 @@ struct ath12k_base;
 #define HAL_SEQ_WCSS_UMAC_WBM_REG		0x00a34000
 
 #define HAL_CE_WFSS_CE_REG_BASE			0x01b80000
+#define HAL_DP_REG_WINDOW_OFFSET                0x180000
 
 #define HAL_TCL_SW_CONFIG_BANK_ADDR		0x00a4408c
 
@@ -168,6 +169,7 @@ struct ath12k_base;
 #define HAL_REO1_AGING_THRESH_IX_2(ab)	((ab)->hw_params->regs->hal_reo1_aging_thres_ix2)
 #define HAL_REO1_AGING_THRESH_IX_3(ab)	((ab)->hw_params->regs->hal_reo1_aging_thres_ix3)
 
+/* REO2SW(x) R2 ring pointers (head/tail) address */
 /* REO2SW(x) R2 ring pointers (head/tail) address */
 #define HAL_REO1_RING_HP			0x00003048
 #define HAL_REO1_RING_TP			0x0000304c
@@ -386,6 +388,13 @@ struct ath12k_base;
 
 #define HAL_IPQ5424_CE_WFSS_REG_BASE	0x200000
 #define HAL_IPQ5424_CE_SIZE		0x100000
+
+#define HAL_QCN6432_CE_WFSS_REG_BASE	0x1B80000
+#define HAL_QCN6432_CE_SIZE		0x200000
+
+#define HAL_QCN6432_CMEM_REG_BASE	0x00100000
+#define HAL_QCN6432_CMEM_SIZE		0x40000
+#define HAL_QCN6432_CMEM_BASE		0x100000
 
 enum hal_srng_ring_id {
 	HAL_SRNG_RING_ID_REO2SW0 = 0,
@@ -750,6 +759,7 @@ struct hal_srng {
 			 * through SW structure
 			 */
 			u32 *hp_addr;
+			u32 *hp_addr_direct;
 
 			/* Low threshold - in number of ring entries */
 			u32 low_threshold;
@@ -1112,8 +1122,10 @@ struct hal_ops {
 
 extern const struct hal_ops hal_qcn9274_ops;
 extern const struct hal_ops hal_wcn7850_ops;
+extern const struct hal_ops hal_qcn6432_ops;
 
 extern const struct hal_rx_ops hal_rx_qcn9274_ops;
+extern const struct hal_rx_ops hal_rx_qcn6432_ops;
 extern const struct hal_rx_ops hal_rx_qcn9274_compact_ops;
 extern const struct hal_rx_ops hal_rx_wcn7850_ops;
 

@@ -8,6 +8,8 @@
 #define ATH12K_CE_H
 
 #define CE_COUNT_MAX 16
+#define ATH12K_QCN6432_CE_COUNT 12
+#define ATH12K_QCN6432_EXT_IRQ_GRP_NUM_MAX 15
 
 /* Byte swap data words */
 #define CE_ATTR_BYTE_SWAP_DATA 2

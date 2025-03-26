@@ -8,6 +8,13 @@
 
 #define ATH12K_FW_CRASH_DUMP_V2      2
 
+#define MAX_RAMDUMP_TABLE_SIZE  6
+#define COREDUMP_DESC           "Q6-COREDUMP"
+#define Q6_SFR_DESC             "Q6-SFR"
+
+#define DESC_STRING_SIZE 20
+#define FILE_NAME_STRING_SIZE 20
+
 enum ath12k_fw_crash_dump_type {
 	FW_CRASH_DUMP_PAGING_DATA,
 	FW_CRASH_DUMP_RDDM_DATA,

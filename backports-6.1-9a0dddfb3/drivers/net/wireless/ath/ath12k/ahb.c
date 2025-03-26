@@ -16,6 +16,7 @@
 #include "debug.h"
 #include "hif.h"
 #include "fw.h"
+#include "pcic.h"
 
 #define ATH12K_IRQ_CE0_OFFSET 4
 #define ATH12K_MAX_UPDS 1
@@ -433,9 +434,13 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 				    ab_ahb->mem_region, ab_ahb->mem_phys,
 				    ab_ahb->mem_size, &ab_ahb->mem_phys);
 	if (ret) {
-		ath12k_err(ab, "Failed to load MDT segments: %d\n", ret);
+		ath12k_err(ab, "Failed to load MDT segments with no init : %d\n", ret);
 		goto err_fw2;
 	}
+
+	reinit_completion(&ab_ahb->userpd_spawned);
+	reinit_completion(&ab_ahb->userpd_ready);
+	reinit_completion(&ab_ahb->userpd_stopped);
 
 	if (ab_ahb->scm_auth_enabled) {
 		/* Authenticate FW image using peripheral ID */
@@ -459,7 +464,7 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 	if (!time_left) {
 		ath12k_err(ab, "UserPD spawn wait timed out\n");
 		ret = -ETIMEDOUT;
-		goto err_fw2;
+		goto reset_spawn;
 	}
 
 	time_left = wait_for_completion_timeout(&ab_ahb->userpd_ready,
@@ -467,13 +472,14 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 	if (!time_left) {
 		ath12k_err(ab, "UserPD ready wait timed out\n");
 		ret = -ETIMEDOUT;
-		goto err_fw2;
+		goto reset_spawn;
 	}
 
+	ath12k_info(ab, "UserPD%d is now UP\n", ab_ahb->userpd_id);
+	ab->ag->num_userpd_started++;
+
+reset_spawn:
 	qcom_smem_state_update_bits(ab_ahb->spawn_state, BIT(ab_ahb->spawn_bit), 0);
-
-	ath12k_dbg(ab, ATH12K_DBG_AHB, "UserPD%d is now UP\n", ab_ahb->userpd_id);
-
 err_fw2:
 	release_firmware(fw2);
 err_fw:
@@ -509,17 +515,30 @@ static void ath12k_ahb_power_down(struct ath12k_base *ab, bool is_suspend)
 			ath12k_err(ab, "scm pas shutdown failed for userPD%d\n",
 				   ab_ahb->userpd_id);
 	}
+
+	ab->ag->num_userpd_started--;
+
+	/* Turn off rootPD during rmmod and shutdown only. RootPD is handled
+	 * by RProc driver in case of recovery
+	 */
+
+	if (!ab->ag->num_userpd_started &&
+	    test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)) {
+		rproc_put(ab_ahb->tgt_rproc);
+	}
 }
 
 static void ath12k_ahb_init_qmi_ce_config(struct ath12k_base *ab)
 {
 	struct ath12k_qmi_ce_cfg *cfg = &ab->qmi.ce_cfg;
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
 	cfg->tgt_ce_len = ab->hw_params->target_ce_count;
 	cfg->tgt_ce = ab->hw_params->target_ce_config;
 	cfg->svc_to_ce_map_len = ab->hw_params->svc_to_ce_map_len;
 	cfg->svc_to_ce_map = ab->hw_params->svc_to_ce_map;
 	ab->qmi.service_ins_id = ab->hw_params->qmi_service_ins_id;
+	ab->qmi.service_ins_id += ab_ahb->userpd_id - 1;
 }
 
 #if LINUX_VERSION_IS_GEQ(6,13,0)
@@ -536,6 +555,9 @@ static void ath12k_ahb_ce_workqueue(struct work_struct *work)
 static irqreturn_t ath12k_ahb_ce_interrupt_handler(int irq, void *arg)
 {
 	struct ath12k_ce_pipe *ce_pipe = arg;
+
+	if (unlikely(!ce_pipe->ab->ce_pipe_init_done))
+		return IRQ_HANDLED;
 
 	/* last interrupt received for this CE */
 	ce_pipe->timestamp = jiffies;
@@ -677,6 +699,11 @@ static int ath12k_ahb_config_irq(struct ath12k_base *ab)
 	int irq, irq_idx, i;
 	int ret;
 
+	if (ab->hif.bus == ATH12K_BUS_HYBRID) {
+		init_waitqueue_head(&ab->ipci.gic_msi_waitq);
+		return ath12k_pcic_config_hybrid_irq(ab);
+	}
+
 	/* Configure CE irqs */
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
 		struct ath12k_ce_pipe *ce_pipe = &ab->ce.ce_pipe[i];
@@ -751,6 +778,28 @@ static const struct ath12k_hif_ops ath12k_ahb_hif_ops = {
 	.map_service_to_pipe = ath12k_ahb_map_service_to_pipe,
 	.power_up = ath12k_ahb_power_up,
 	.power_down = ath12k_ahb_power_down,
+	.ce_irq_enable = ath12k_ahb_ce_irqs_enable,
+	.ce_irq_disable = ath12k_ahb_ce_irqs_disable,
+};
+
+static const struct ath12k_hif_ops ath12k_ahb_hif_ops_qcn6432 = {
+	.start = ath12k_pcic_start,
+        .stop = ath12k_pcic_stop,
+	.cmem_read32 = ath12k_pcic_cmem_read32,
+	.cmem_write32 = ath12k_pcic_cmem_write32,
+        .power_down = ath12k_ahb_power_down,
+        .power_up = ath12k_ahb_power_up,
+        .read32 = ath12k_pcic_ipci_read32,
+        .write32 = ath12k_pcic_ipci_write32,
+        .irq_enable = ath12k_pcic_ext_irq_enable,
+        .irq_disable = ath12k_pcic_ext_irq_disable,
+        .get_msi_address =  ath12k_pcic_get_msi_address,
+        .get_user_msi_vector = ath12k_pcic_get_user_msi_assignment,
+        .config_static_window = ath12k_pcic_config_static_window,
+        .get_msi_irq = ath12k_pcic_get_msi_irq,
+        .map_service_to_pipe = ath12k_pcic_map_service_to_pipe,
+	.ce_irq_enable = ath12k_pcic_ce_irqs_enable,
+	.ce_irq_disable = ath12k_pcic_ce_irq_disable_sync,
 };
 
 static irqreturn_t ath12k_userpd_irq_handler(int irq, void *data)
@@ -840,6 +889,10 @@ static int ath12k_ahb_register_rproc_notifier(struct ath12k_base *ab)
 	ab_ahb->root_pd_nb.notifier_call = ath12k_ahb_root_pd_state_notifier;
 	init_completion(&ab_ahb->rootpd_ready);
 
+	/* RootPD notification can be registered only once */
+	if (ab_ahb->userpd_id != ATH12K_AHB_USERPD1)
+		return 0;
+
 	ab_ahb->root_pd_notifier = qcom_register_ssr_notifier(ab_ahb->tgt_rproc->name,
 							      &ab_ahb->root_pd_nb);
 	if (IS_ERR(ab_ahb->root_pd_notifier))
@@ -851,6 +904,9 @@ static int ath12k_ahb_register_rproc_notifier(struct ath12k_base *ab)
 static void ath12k_ahb_unregister_rproc_notifier(struct ath12k_base *ab)
 {
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+
+	if (ab_ahb->userpd_id != ATH12K_AHB_USERPD1)
+		return;
 
 	if (!ab_ahb->root_pd_notifier) {
 		ath12k_err(ab, "Rproc notifier not registered\n");
@@ -932,7 +988,11 @@ static int ath12k_ahb_configure_rproc(struct ath12k_base *ab)
 		}
 	}
 
-	return ath12k_ahb_config_rproc_irq(ab);
+	ret = ath12k_ahb_config_rproc_irq(ab);
+	if (ret < 0)
+		goto err_unreg_notifier;
+
+	return ret;
 
 err_unreg_notifier:
 	ath12k_ahb_unregister_rproc_notifier(ab);
@@ -955,6 +1015,9 @@ static int ath12k_ahb_resource_init(struct ath12k_base *ab)
 	struct platform_device *pdev = ab->pdev;
 	struct resource *mem_res;
 	int ret;
+
+	if (ab->hif.bus == ATH12K_BUS_HYBRID)
+		return 0;
 
 	ab->mem = devm_platform_get_and_ioremap_resource(pdev, 0, &mem_res);
 	if (IS_ERR(ab->mem)) {
@@ -1028,28 +1091,76 @@ ath12k_ahb_get_device_family(const struct platform_device *pdev)
 	return ATH12K_DEVICE_FAMILY_MAX;
 }
 
+static int ath12k_get_userpd_id(struct device *dev)
+{
+	int ret;
+	int userpd_id = 0;
+	const char *subsys_name;
+
+	ret = of_property_read_string(dev->of_node,
+				      "qcom,userpd-subsys-name",
+				      &subsys_name);
+	if (ret) {
+		dev_err(dev, "Not multipd architecture");
+		return 0;
+	}
+
+	if (strcmp(subsys_name, "q6v5_wcss_userpd1") == 0) {
+		userpd_id = ATH12K_IPQ5332_USERPD_ID;
+	} else if (strcmp(subsys_name, "q6v5_wcss_userpd2") == 0) {
+		userpd_id = ATH12K_QCN6432_USERPD_ID_1;
+	} else if (strcmp(subsys_name, "q6v5_wcss_userpd3") == 0) {
+		userpd_id = ATH12K_QCN6432_USERPD_ID_2;
+	}
+
+	return userpd_id;
+}
+
 static int ath12k_ahb_probe(struct platform_device *pdev)
 {
 	enum ath12k_device_family device_id;
+	const struct ath12k_hif_ops *hif_ops;
+	struct device *dev = &pdev->dev;
+	int ret, bus_type, userpd_id;
 	struct ath12k_ahb *ab_ahb;
+	enum ath12k_hw_rev hw_rev;
 	struct ath12k_base *ab;
-	int ret;
 
-	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
+	userpd_id = ath12k_get_userpd_id(dev);
+
+	ret = dma_set_mask_and_coherent(dev, DMA_BIT_MASK(32));
 	if (ret) {
-		dev_err(&pdev->dev, "Failed to set 32-bit coherent dma\n");
+		dev_err(dev, "Failed to set 32-bit coherent dma\n");
 		return ret;
 	}
 
-	ab = ath12k_core_alloc(&pdev->dev, sizeof(struct ath12k_ahb),
-			       ATH12K_BUS_AHB);
+	hw_rev = (enum ath12k_hw_rev)of_device_get_match_data(dev);
+
+	switch (hw_rev) {
+		case ATH12K_HW_IPQ5424_HW10:
+		case ATH12K_HW_IPQ5332_HW10:
+			hif_ops = &ath12k_ahb_hif_ops;
+			bus_type = ATH12K_BUS_AHB;
+			break;
+		case ATH12K_HW_QCN6432_HW10:
+			bus_type = ATH12K_BUS_HYBRID;
+			hif_ops = &ath12k_ahb_hif_ops_qcn6432;
+			break;
+		default:
+			return -EOPNOTSUPP;
+	}
+
+	ab = ath12k_core_alloc(dev, sizeof(struct ath12k_ahb),
+			       bus_type);
 	if (!ab)
 		return -ENOMEM;
 
 	ab_ahb = ath12k_ab_to_ahb(ab);
 	ab_ahb->ab = ab;
-	ab->hif.ops = &ath12k_ahb_hif_ops;
+	ab_ahb->userpd_id = userpd_id;
 	ab->pdev = pdev;
+	ab->hw_rev = hw_rev;
+	ab->hif.ops = hif_ops;
 	platform_set_drvdata(pdev, ab);
 
 	device_id = ath12k_ahb_get_device_family(pdev);
@@ -1148,6 +1259,9 @@ static void ath12k_ahb_remove_prepare(struct ath12k_base *ab)
 static void ath12k_ahb_free_resources(struct ath12k_base *ab)
 {
 	struct platform_device *pdev = ab->pdev;
+
+	if (ab->hif.bus == ATH12K_BUS_HYBRID)
+		return ath12k_pcic_free_hybrid_irq(ab);
 
 	ath12k_hal_srng_deinit(ab);
 	ath12k_ce_free_pipes(ab);

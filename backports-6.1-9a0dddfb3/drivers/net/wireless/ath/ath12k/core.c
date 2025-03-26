@@ -7,6 +7,7 @@
 #include <linux/module.h>
 #include <linux/slab.h>
 #include <linux/remoteproc.h>
+#include <linux/panic_notifier.h>
 #include <linux/firmware.h>
 #include <linux/of.h>
 #include <linux/of_graph.h>
@@ -894,13 +895,11 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		ath12k_err(ab, "failed to connect to HTT: %d\n", ret);
 		goto err_hif_stop;
 	}
-
 	ret = ath12k_wmi_connect(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to connect wmi: %d\n", ret);
 		goto err_hif_stop;
 	}
-
 	ret = ath12k_htc_start(&ab->htc);
 	if (ret) {
 		ath12k_err(ab, "failed to start HTC: %d\n", ret);

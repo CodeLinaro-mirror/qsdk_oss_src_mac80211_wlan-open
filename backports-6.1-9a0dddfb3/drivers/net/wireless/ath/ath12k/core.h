@@ -152,6 +152,7 @@ enum ath12k_hw_rev {
 	ATH12K_HW_WCN7850_HW20,
 	ATH12K_HW_IPQ5332_HW10,
 	ATH12K_HW_IPQ5424_HW10,
+	ATH12K_HW_QCN6432_HW10,
 };
 
 enum ath12k_firmware_mode {
@@ -190,6 +191,11 @@ enum ath12k_smbios_cc_type {
 
 	/* worldwide regdomain */
 	ATH12K_SMBIOS_CC_WW = 2,
+};
+
+enum ath12k_msi_supported_hw {
+        ATH12K_MSI_CONFIG_PCI,
+        ATH12K_MSI_CONFIG_IPCI,
 };
 
 struct ath12k_smbios_bdf {
@@ -974,6 +980,7 @@ struct ath12k_hw_group {
 	struct ath12k_mlo_memory mlo_mem;
 	struct ath12k_hw_link hw_links[ATH12K_GROUP_MAX_RADIO];
 	bool hw_link_id_init_done;
+	u8 num_userpd_started;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -985,6 +992,14 @@ struct ath12k_wsi_info {
 enum ath12k_device_family {
 	ATH12K_DEVICE_FAMILY_WIFI7,
 	ATH12K_DEVICE_FAMILY_MAX,
+};
+
+struct ath12k_internal_pci {
+        bool gic_enabled;
+        wait_queue_head_t gic_msi_waitq;
+        u32 dp_msi_data[ATH12K_QCN6432_EXT_IRQ_GRP_NUM_MAX];
+        u32 ce_msi_data[ATH12K_QCN6432_CE_COUNT];
+        u32 dp_irq_num[ATH12K_QCN6432_EXT_IRQ_GRP_NUM_MAX];
 };
 
 /* Master structure to hold the hw data which may be used in core module */
@@ -1014,6 +1029,7 @@ struct ath12k_base {
 	void __iomem *mem_ce;
 	u32 ce_remap_base_addr;
 	bool ce_remap;
+	bool htt_flag;
 
 	struct {
 		enum ath12k_bus bus;
@@ -1185,6 +1201,16 @@ struct ath12k_base {
 	struct ath12k_reg_freq reg_freq_2g;
 	struct ath12k_reg_freq reg_freq_5g;
 	struct ath12k_reg_freq reg_freq_6g;
+
+	struct {
+                const struct ath12k_msi_config *config;
+                u32 ep_base_data;
+                u32 irqs[32];
+                u32 addr_lo;
+                u32 addr_hi;
+        } msi;
+	struct ath12k_internal_pci ipci;
+	bool ce_pipe_init_done;
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -1388,6 +1414,8 @@ static inline const char *ath12k_bus_str(enum ath12k_bus bus)
 	case ATH12K_BUS_PCI:
 		return "pci";
 	case ATH12K_BUS_AHB:
+		return "ahb";
+	case ATH12K_BUS_HYBRID:
 		return "ahb";
 	}
 

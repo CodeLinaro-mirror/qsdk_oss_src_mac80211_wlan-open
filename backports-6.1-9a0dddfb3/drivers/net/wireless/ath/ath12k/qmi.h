@@ -22,6 +22,7 @@
 
 #define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_QCN9274	0x07
 #define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_IPQ5332	0x2
+#define ATH12K_QMI_WLFW_SERVICE_INS_ID_V01_QCN6432	0x60
 #define ATH12K_QMI_WLANFW_MAX_TIMESTAMP_LEN_V01	32
 #define ATH12K_QMI_RESP_LEN_MAX			8192
 #define ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01	52
@@ -39,6 +40,13 @@
 #define ATH12K_FIRMWARE_MODE_OFF		4
 
 #define ATH12K_BOARD_ID_DEFAULT	0xFF
+
+#define QCN6432_DEVICE_BAR_SIZE                0x200000
+#define ATH12K_RCV_GIC_MSI_HDLR_DELAY          (3 * HZ)
+
+#define AFC_SLOT_SIZE				0x1000
+#define AFC_MAX_SLOT				2
+#define AFC_MEM_SIZE				(AFC_SLOT_SIZE * AFC_MAX_SLOT)
 
 struct ath12k_base;
 struct ath12k_hw_group;
@@ -180,6 +188,7 @@ enum ath12k_qmi_target_mem {
 	CALDB_MEM_REGION_TYPE = 0x4,
 	MLO_GLOBAL_MEM_REGION_TYPE = 0x8,
 	PAGEABLE_MEM_REGION_TYPE = 0x9,
+	AFC_REGION_TYPE = 0xA,
 };
 
 enum qmi_wlanfw_host_build_type {
@@ -388,6 +397,8 @@ struct qmi_wlanfw_fw_ready_ind_msg_v01 {
 #define QMI_WLANFW_CAP_RESP_MSG_V01_MAX_LEN	207
 #define QMI_WLANFW_CAP_REQ_V01			0x0024
 #define QMI_WLANFW_CAP_RESP_V01			0x0024
+#define QMI_WLANFW_DEVICE_INFO_REQ_V01		0x004C
+#define QMI_WLANFW_DEVICE_INFO_REQ_MSG_V01	0
 
 enum qmi_wlanfw_pipedir_enum_v01 {
 	QMI_WLFW_PIPEDIR_NONE_V01 = 0,
@@ -497,6 +508,18 @@ struct qmi_wlanfw_cap_resp_msg_v01 {
 
 struct qmi_wlanfw_cap_req_msg_v01 {
 	char placeholder;
+};
+
+struct qmi_wlanfw_device_info_req_msg_v01 {
+	char placeholder;
+};
+
+struct qmi_wlanfw_device_info_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+	u64 bar_addr;
+	u32 bar_size;
+	u8 bar_addr_valid;
+	u8 bar_size_valid;
 };
 
 #define QMI_WLANFW_BDF_DOWNLOAD_REQ_MSG_V01_MAX_LEN	6182
