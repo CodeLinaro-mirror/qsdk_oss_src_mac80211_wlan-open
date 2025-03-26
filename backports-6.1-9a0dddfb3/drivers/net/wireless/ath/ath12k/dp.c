@@ -7,7 +7,6 @@
 #include <crypto/hash.h>
 #include "core.h"
 #include "dp_tx.h"
-#include "wifi7/dp_rx.h"
 #include "hif.h"
 #include "hal.h"
 #include "debug.h"
@@ -15,6 +14,13 @@
 #include "peer.h"
 #include "dp_mon.h"
 #include "dp_cmn.h"
+
+/*
+ * TODO: fix this
+ */
+int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+				      u8 tid, u32 ba_win_sz, u16 ssn,
+				      enum hal_pn_type pn_type);
 
 enum ath12k_dp_desc_type {
 	ATH12K_DP_TX_DESC,
@@ -101,7 +107,7 @@ peer_clean:
 	}
 
 	for (; tid >= 0; tid--)
-		ath12k_wifi7_dp_rx_peer_tid_delete(ar, peer, tid);
+		ab->dp->arch_ops->rx_peer_tid_delete(ar, peer, tid);
 
 	spin_unlock_bh(&dp->dp_lock);
 

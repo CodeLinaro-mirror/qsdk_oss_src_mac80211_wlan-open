@@ -24,6 +24,7 @@ struct ath12k_vif;
 struct ath12k_link_vif;
 struct hal_tcl_status_ring;
 struct ath12k_ext_irq_grp;
+struct ath12k_dp_rx_tid;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
@@ -364,6 +365,33 @@ struct ath12k_dp_arch_ops {
 	void (*dp_op_device_deinit)(struct ath12k_dp *dp);
 	u32 (*dp_tx_get_vdev_bank_config)(struct ath12k_base *ab,
 					  struct ath12k_link_vif *arvif);
+	int (*dp_reo_cmd_send)(struct ath12k_base *ab,
+			       struct ath12k_dp_rx_tid *rx_tid,
+			       enum hal_reo_cmd_type type,
+			       struct ath12k_hal_reo_cmd *cmd,
+			       void (*cb)(struct ath12k_dp *dp, void *ctx,
+				          enum hal_reo_cmd_status status));
+	void (*setup_pn_check_reo_cmd)(struct ath12k_hal_reo_cmd *cmd,
+				       struct ath12k_dp_rx_tid *rx_tid,
+				       u32 cipher, enum set_key_cmd key_cmd);
+	void (*rx_peer_tid_delete)(struct ath12k *ar,
+				   struct ath12k_dp_link_peer *peer, u8 tid);
+	void (*reo_cache_flush)(struct ath12k_base *ab,
+				struct ath12k_dp_rx_tid *rx_tid);
+	int (*rx_link_desc_return)(struct ath12k_base *ab,
+				   struct hal_reo_dest_ring *ring,
+				   enum hal_wbm_rel_bm_act action);
+	int (*peer_rx_tid_reo_update)(struct ath12k *ar,
+				      struct ath12k_dp_link_peer *peer,
+				      struct ath12k_dp_rx_tid *rx_tid,
+				      u32 ba_win_sz, u16 ssn,
+				      bool update_ssn);
+	int (*alloc_reo_qdesc)(struct ath12k_base *ab,
+			       struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
+			       enum hal_pn_type pn_type,
+			       struct hal_rx_reo_queue **addr_aligned);
+	void (*peer_rx_tid_qref_setup)(struct ath12k_base *ab, u16 peer_id, u16 tid,
+				       dma_addr_t paddr);
 };
 
 
