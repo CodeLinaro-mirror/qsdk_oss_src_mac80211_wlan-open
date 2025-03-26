@@ -107,7 +107,7 @@ peer_clean:
 	}
 
 	for (; tid >= 0; tid--)
-		ab->dp->arch_ops->rx_peer_tid_delete(ar, peer, tid);
+		ath12k_dp_arch_rx_peer_tid_delete(ab->dp, ar, peer, tid);
 
 	spin_unlock_bh(&dp->dp_lock);
 
@@ -350,7 +350,7 @@ static int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab,
 
 
 	/* convert vdev params into hal_tx_bank_config */
-	bank_config = dp->arch_ops->dp_tx_get_vdev_bank_config(ab, arvif);
+	bank_config = ath12k_dp_arch_tx_get_vdev_bank_config(dp, arvif);
 
 	spin_lock_bh(&dp->tx_bank_lock);
 	/* TODO: implement using idr kernel framework*/
@@ -1578,7 +1578,7 @@ fail_link_desc_cleanup:
 
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 {
-	dp->arch_ops->dp_op_device_deinit(dp);
+	ath12k_dp_arch_op_device_deinit(dp);
 
 	ath12k_dp_link_peer_rhash_tbl_destroy(dp);
 
@@ -1593,7 +1593,7 @@ int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)
 	if (ret)
 		return ret;
 
-	ret = dp->arch_ops->dp_op_device_init(dp);
+	ret = ath12k_dp_arch_op_device_init(dp);
 	if (ret)
 		return ret;
 

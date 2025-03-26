@@ -473,6 +473,89 @@ struct ath12k_dp {
 	struct rhashtable_params rhash_peer_addr_param;
 };
 
+static inline int ath12k_dp_arch_op_device_init(struct ath12k_dp *dp)
+{
+	return dp->arch_ops->dp_op_device_init(dp);
+}
+
+static inline void ath12k_dp_arch_op_device_deinit(struct ath12k_dp *dp)
+{
+	dp->arch_ops->dp_op_device_deinit(dp);
+}
+
+static inline u32 ath12k_dp_arch_tx_get_vdev_bank_config(struct ath12k_dp *dp,
+							 struct ath12k_link_vif *arvif)
+{
+	return dp->arch_ops->dp_tx_get_vdev_bank_config(dp->ab, arvif);
+}
+
+static inline int ath12k_dp_arch_reo_cmd_send(struct ath12k_dp *dp,
+					      struct ath12k_dp_rx_tid *rx_tid,
+					      enum hal_reo_cmd_type type,
+					      struct ath12k_hal_reo_cmd *cmd,
+					      void (*cb)(struct ath12k_dp *dp, void *ctx,
+							 enum hal_reo_cmd_status status))
+{
+	return dp->arch_ops->dp_reo_cmd_send(dp->ab, rx_tid, type, cmd, cb);
+}
+
+static inline void ath12k_dp_arch_setup_pn_check_reo_cmd(struct ath12k_dp *dp,
+							 struct ath12k_hal_reo_cmd *cmd,
+							 struct ath12k_dp_rx_tid *rx_tid,
+							 u32 cipher,
+							 enum set_key_cmd key_cmd)
+{
+	dp->arch_ops->setup_pn_check_reo_cmd(cmd, rx_tid, cipher, key_cmd);
+}
+
+static inline void ath12k_dp_arch_rx_peer_tid_delete(struct ath12k_dp *dp,
+						     struct ath12k *ar,
+						     struct ath12k_dp_link_peer *peer,
+						     u8 tid)
+{
+	dp->arch_ops->rx_peer_tid_delete(ar, peer, tid);
+}
+
+static inline void ath12k_dp_arch_reo_cache_flush(struct ath12k_dp *dp,
+						  struct ath12k_dp_rx_tid *rx_tid)
+{
+	dp->arch_ops->reo_cache_flush(dp->ab, rx_tid);
+}
+
+static inline int ath12k_dp_arch_rx_link_desc_return(struct ath12k_dp *dp,
+						     struct hal_reo_dest_ring *ring,
+						     enum hal_wbm_rel_bm_act action)
+{
+	return dp->arch_ops->rx_link_desc_return(dp->ab, ring, action);
+}
+
+static inline int ath12k_dp_arch_peer_rx_tid_reo_update(struct ath12k_dp *dp,
+							struct ath12k *ar,
+							struct ath12k_dp_link_peer *peer,
+							struct ath12k_dp_rx_tid *rx_tid,
+							u32 ba_win_sz, u16 ssn,
+							bool update_ssn)
+{
+	return dp->arch_ops->peer_rx_tid_reo_update(ar, peer, rx_tid,
+						    ba_win_sz, ssn, update_ssn);
+}
+
+static inline int ath12k_dp_arch_alloc_reo_qdesc(struct ath12k_dp *dp,
+						 struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
+						 enum hal_pn_type pn_type,
+						 struct hal_rx_reo_queue **addr_aligned)
+{
+	return dp->arch_ops->alloc_reo_qdesc(dp->ab, rx_tid, ssn, pn_type, addr_aligned);
+}
+
+static inline void ath12k_dp_arch_peer_rx_tid_qref_setup(struct ath12k_dp *dp,
+							 u16 peer_id, u16 tid,
+							 dma_addr_t paddr)
+{
+	dp->arch_ops->peer_rx_tid_qref_setup(dp->ab, peer_id, tid, paddr);
+}
+
+
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 {
 	memcpy(addr, &addr_l32, 4);
