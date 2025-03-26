@@ -544,8 +544,8 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	/* This is to prefer choose the real NSS value arsta->last_txrate.nss,
 	 * if it is invalid, then choose the NSS value while assoc.
 	 */
-	if (arsta->last_txrate.nss)
-		txrate.nss = arsta->last_txrate.nss;
+	if (peer->last_txrate.nss)
+		txrate.nss = peer->last_txrate.nss;
 	else
 		txrate.nss = arsta->peer_nss;
 	spin_unlock_bh(&dp->dp_lock);
@@ -631,7 +631,7 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	spin_lock_bh(&dp->dp_lock);
-	arsta->txrate = txrate;
+	peer->txrate = txrate;
 	spin_unlock_bh(&dp->dp_lock);
 }
 

@@ -192,7 +192,6 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_link_peer *peer;
 	struct ieee80211_sta *sta;
-	struct ath12k_link_sta *arsta;
 	struct htt_ppdu_stats_user_rate *user_rate;
 	struct ath12k_per_peer_tx_stats *peer_stats = &dp_pdev->peer_tx_stats;
 	struct htt_ppdu_user_stats *usr_stats = &ppdu_stats->user_stats[user];
@@ -276,66 +275,60 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	sta = peer->sta;
-	arsta = ath12k_peer_get_link_sta(ab, peer);
-	if (!arsta) {
-		spin_unlock_bh(&ab->base_lock);
-		rcu_read_unlock();
-		return;
-	}
 
-	memset(&arsta->txrate, 0, sizeof(arsta->txrate));
+	memset(&peer->txrate, 0, sizeof(peer->txrate));
 
 	switch (flags) {
 	case WMI_RATE_PREAMBLE_OFDM:
-		arsta->txrate.legacy = rate;
+		peer->txrate.legacy = rate;
 		break;
 	case WMI_RATE_PREAMBLE_CCK:
-		arsta->txrate.legacy = rate;
+		peer->txrate.legacy = rate;
 		break;
 	case WMI_RATE_PREAMBLE_HT:
-		arsta->txrate.mcs = mcs + 8 * (nss - 1);
-		arsta->txrate.flags = RATE_INFO_FLAGS_MCS;
+		peer->txrate.mcs = mcs + 8 * (nss - 1);
+		peer->txrate.flags = RATE_INFO_FLAGS_MCS;
 		if (sgi)
-			arsta->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
+			peer->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
 		break;
 	case WMI_RATE_PREAMBLE_VHT:
-		arsta->txrate.mcs = mcs;
-		arsta->txrate.flags = RATE_INFO_FLAGS_VHT_MCS;
+		peer->txrate.mcs = mcs;
+		peer->txrate.flags = RATE_INFO_FLAGS_VHT_MCS;
 		if (sgi)
-			arsta->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
+			peer->txrate.flags |= RATE_INFO_FLAGS_SHORT_GI;
 		break;
 	case WMI_RATE_PREAMBLE_HE:
-		arsta->txrate.mcs = mcs;
-		arsta->txrate.flags = RATE_INFO_FLAGS_HE_MCS;
-		arsta->txrate.he_dcm = dcm;
-		arsta->txrate.he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
+		peer->txrate.mcs = mcs;
+		peer->txrate.flags = RATE_INFO_FLAGS_HE_MCS;
+		peer->txrate.he_dcm = dcm;
+		peer->txrate.he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
 		tones = le16_to_cpu(user_rate->ru_end) -
 			le16_to_cpu(user_rate->ru_start) + 1;
 		v = ath12k_he_ru_tones_to_nl80211_he_ru_alloc(tones);
-		arsta->txrate.he_ru_alloc = v;
+		peer->txrate.he_ru_alloc = v;
 		break;
 	case WMI_RATE_PREAMBLE_EHT:
-		arsta->txrate.mcs = mcs;
-		arsta->txrate.flags = RATE_INFO_FLAGS_EHT_MCS;
-		arsta->txrate.he_dcm = dcm;
-		arsta->txrate.eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(sgi);
+		peer->txrate.mcs = mcs;
+		peer->txrate.flags = RATE_INFO_FLAGS_EHT_MCS;
+		peer->txrate.he_dcm = dcm;
+		peer->txrate.eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(sgi);
 		tones = le16_to_cpu(user_rate->ru_end) -
 			le16_to_cpu(user_rate->ru_start) + 1;
 		v = ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(tones);
-		arsta->txrate.eht_ru_alloc = v;
+		peer->txrate.eht_ru_alloc = v;
 		break;
 	}
 
-	arsta->txrate.nss = nss;
-	arsta->txrate.bw = ath12k_mac_bw_to_mac80211_bw(bw);
-	arsta->tx_duration += tx_duration;
-	memcpy(&arsta->last_txrate, &arsta->txrate, sizeof(struct rate_info));
+	peer->txrate.nss = nss;
+	peer->txrate.bw = ath12k_mac_bw_to_mac80211_bw(bw);
+	peer->tx_duration += tx_duration;
+	memcpy(&peer->last_txrate, &peer->txrate, sizeof(struct rate_info));
 
 	if (is_ofdma) {
 		if (flags == WMI_RATE_PREAMBLE_HE)
-			arsta->txrate.bw = RATE_INFO_BW_HE_RU;
+			peer->txrate.bw = RATE_INFO_BW_HE_RU;
 		else if (flags == WMI_RATE_PREAMBLE_EHT)
-			arsta->txrate.bw = RATE_INFO_BW_EHT_RU;
+			peer->txrate.bw = RATE_INFO_BW_EHT_RU;
 	}
 
 	/* PPDU stats reported for mgmt packet doesn't have valid tx bytes.

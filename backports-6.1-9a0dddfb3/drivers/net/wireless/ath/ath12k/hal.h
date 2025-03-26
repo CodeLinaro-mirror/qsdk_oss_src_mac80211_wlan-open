@@ -80,6 +80,15 @@ struct hal_rx_reo_queue;
 #define HAL_SRNG_RING_ID_MAX    (HAL_SRNG_RING_ID_DMAC_CMN_ID_END + \
 				 HAL_SRNG_NUM_PMAC_RINGS)
 
+#define HAL_AST_IDX_INVALID	0xFFFF
+#define HAL_RX_MAX_MCS		12
+#define HAL_RX_MAX_MCS_HT	31
+#define HAL_RX_MAX_MCS_VHT	9
+#define HAL_RX_MAX_MCS_HE	11
+#define HAL_RX_MAX_MCS_BE	15
+#define HAL_RX_MAX_NSS		8
+#define HAL_RX_MAX_NUM_LEGACY_RATES 12
+
 enum hal_rx_su_mu_coding {
 	HAL_RX_SU_MU_CODING_BCC,
 	HAL_RX_SU_MU_CODING_LDPC,

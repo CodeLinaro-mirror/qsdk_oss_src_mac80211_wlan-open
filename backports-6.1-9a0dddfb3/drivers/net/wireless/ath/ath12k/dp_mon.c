@@ -3207,17 +3207,17 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	stats->rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += len;
 }
 
-static void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_link_sta *arsta,
+static void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_dp_link_peer *peer,
 						  struct hal_rx_mon_ppdu_info *ppdu_info)
 {
-	struct ath12k_rx_peer_stats *rx_stats = arsta->rx_stats;
+	struct ath12k_rx_peer_stats *rx_stats = peer->peer_stats.rx_stats;
 	u32 num_msdu;
 
 	if (!rx_stats)
 		return;
 
-	arsta->rssi_comb = ppdu_info->rssi_comb;
-	ewma_avg_rssi_add(&arsta->avg_rssi, ppdu_info->rssi_comb);
+	peer->rssi_comb = ppdu_info->rssi_comb;
+	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
 	num_msdu = ppdu_info->tcp_msdu_count + ppdu_info->tcp_ack_msdu_count +
 		   ppdu_info->udp_msdu_count + ppdu_info->other_msdu_count;
@@ -3263,7 +3263,7 @@ static void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_link_sta *arsta,
 	rx_stats->dcm_count += ppdu_info->dcm;
 
 	rx_stats->rx_duration += ppdu_info->rx_duration;
-	arsta->rx_duration = rx_stats->rx_duration;
+	peer->rx_duration = rx_stats->rx_duration;
 
 	if (ppdu_info->nss > 0 && ppdu_info->nss <= HAL_RX_MAX_NSS) {
 		rx_stats->pkt_stats.nss_count[ppdu_info->nss - 1] += num_msdu;
@@ -3395,12 +3395,12 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_base *ab,
 		return;
 	}
 
-	rx_stats = arsta->rx_stats;
+	rx_stats = peer->peer_stats.rx_stats;
 	if (!rx_stats)
 		return;
 
-	arsta->rssi_comb = ppdu_info->rssi_comb;
-	ewma_avg_rssi_add(&arsta->avg_rssi, ppdu_info->rssi_comb);
+	peer->rssi_comb = ppdu_info->rssi_comb;
+	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
 	num_msdu = user_stats->tcp_msdu_count + user_stats->tcp_ack_msdu_count +
 		   user_stats->udp_msdu_count + user_stats->other_msdu_count;
@@ -3442,7 +3442,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_base *ab,
 		rx_stats->ru_alloc_cnt[user_stats->ul_ofdma_ru_size] += num_msdu;
 
 	rx_stats->rx_duration += ppdu_info->rx_duration;
-	arsta->rx_duration = rx_stats->rx_duration;
+	peer->rx_duration = rx_stats->rx_duration;
 
 	if (user_stats->nss > 0 && user_stats->nss <= HAL_RX_MAX_NSS) {
 		rx_stats->pkt_stats.nss_count[user_stats->nss - 1] += num_msdu;
@@ -3641,7 +3641,7 @@ move_next:
 				dev_kfree_skb_any(skb);
 				continue;
 			}
-			ath12k_dp_mon_rx_update_peer_su_stats(arsta,
+			ath12k_dp_mon_rx_update_peer_su_stats(peer,
 							      ppdu_info);
 		} else if ((ppdu_info->fc_valid) &&
 			   (ppdu_info->ast_index != HAL_AST_IDX_INVALID)) {
