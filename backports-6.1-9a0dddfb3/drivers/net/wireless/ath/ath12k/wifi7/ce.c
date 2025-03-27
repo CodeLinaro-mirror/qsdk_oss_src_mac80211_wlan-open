@@ -12,6 +12,7 @@
 #include "../ce.h"
 #include "ce.h"
 #include "../dp_rx.h"
+#include "../dp_htt.h"
 
 /* Target firmware's Copy Engine configuration. */
 const struct ce_pipe_config ath12k_wifi7_target_ce_config_wlan_qcn9274[] = {

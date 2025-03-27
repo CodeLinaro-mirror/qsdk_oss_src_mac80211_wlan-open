@@ -138,8 +138,6 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key);
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_peer *peer);
-void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
-				       struct sk_buff *skb);
 int ath12k_dp_rx_pdev_reo_setup(struct ath12k_base *ab);
 void ath12k_dp_rx_pdev_reo_cleanup(struct ath12k_base *ab);
 int ath12k_dp_rx_htt_setup(struct ath12k_base *ab);
@@ -167,10 +165,6 @@ u32 ath12k_dp_rx_h_mpdu_err(struct ath12k_base *ab,
 int ath12k_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab);
 int ath12k_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab);
 void ath12k_dp_rx_process_reo_status(struct ath12k_base *ab);
-int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
-			   int (*iter)(struct ath12k_base *ar, u16 tag, u16 len,
-				       const void *ptr, void *data),
-			   void *data);
 void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			       enum hal_reo_cmd_status status);
 u16 ath12k_dp_rx_h_seq_no(struct ath12k_base *ab, struct hal_rx_desc *desc);
