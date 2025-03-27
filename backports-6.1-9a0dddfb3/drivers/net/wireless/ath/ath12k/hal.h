@@ -7,8 +7,8 @@
 #ifndef ATH12K_HAL_H
 #define ATH12K_HAL_H
 
-#include "hal_desc.h"
-#include "rx_desc.h"
+#include "wifi7/hal_desc.h"
+#include "wifi7/hal_rx_desc.h"
 
 struct ath12k_base;
 #define HAL_CE_REMAP_REG_BASE  (ab->ce_remap_base_addr)

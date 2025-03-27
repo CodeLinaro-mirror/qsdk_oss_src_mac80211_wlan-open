@@ -2,8 +2,6 @@
 obj-$(CPTCFG_ATH12K) += ath12k.o
 ath12k-y += core.o \
 	    hal.o \
-	    hal_tx.o \
-	    hal_rx.o \
 	    wmi.o \
 	    mac.o \
 	    reg.o \
@@ -22,6 +20,9 @@ ath12k-y += core.o \
 	    dp_mon.o \
 	    fw.o \
 	    p2p.o
+
+ath12k-y += wifi7/hal_tx.o \
+	    wifi7/hal_rx.o \
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 

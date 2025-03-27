@@ -4,10 +4,10 @@
  * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/dma-mapping.h>
-#include "hal_tx.h"
-#include "hal_rx.h"
+#include "wifi7/hal_tx.h"
+#include "wifi7/hal_rx.h"
 #include "debug.h"
-#include "hal_desc.h"
+#include "wifi7/hal_desc.h"
 #include "hif.h"
 #include "pcic.h"
 
