@@ -277,11 +277,12 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 }
 
 /* Returns number of Rx buffers replenished */
-int ath12k_dp_rx_bufs_replenish(struct ath12k_base *ab,
+int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_ring *rx_ring,
 				struct list_head *used_list,
 				int req_entries)
 {
+	struct ath12k_base *ab = dp->ab;
 	struct ath12k_buffer_address *desc;
 	struct hal_srng *srng;
 	struct sk_buff *skb;
@@ -289,9 +290,8 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_base *ab,
 	int num_remain;
 	u32 cookie;
 	dma_addr_t paddr;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_rx_desc_info *rx_desc;
-	enum hal_rx_buf_return_buf_manager mgr = ab->hal.hal_params->rx_buf_rbm;
+	enum hal_rx_buf_return_buf_manager mgr = dp->hal->hal_params->rx_buf_rbm;
 
 	req_entries = min(req_entries, rx_ring->bufs_max);
 
@@ -334,10 +334,10 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_base *ab,
 				 skb->data);
 		}
 
-		paddr = dma_map_single(ab->dev, skb->data,
+		paddr = dma_map_single(dp->dev, skb->data,
 				       skb->len + skb_tailroom(skb),
 				       DMA_FROM_DEVICE);
-		if (dma_mapping_error(ab->dev, paddr))
+		if (dma_mapping_error(dp->dev, paddr))
 			goto fail_free_skb;
 
 		rx_desc = list_first_entry_or_null(used_list,
@@ -358,14 +358,14 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_base *ab,
 
 		num_remain--;
 
-		ath12k_hal_rx_buf_addr_info_set(&ab->hal, desc, paddr, cookie,
+		ath12k_hal_rx_buf_addr_info_set(dp->hal, desc, paddr, cookie,
 						mgr);
 	}
 
 	goto out;
 
 fail_dma_unmap:
-	dma_unmap_single(ab->dev, paddr, skb->len + skb_tailroom(skb),
+	dma_unmap_single(dp->dev, paddr, skb->len + skb_tailroom(skb),
 			 DMA_FROM_DEVICE);
 fail_free_skb:
 	dev_kfree_skb_any(skb);
@@ -436,7 +436,7 @@ static int ath12k_dp_rxdma_ring_buf_setup(struct ath12k_base *ab,
 	rx_ring->bufs_max = rx_ring->refill_buf_ring.size /
 			ath12k_hal_srng_get_entrysize(ab, HAL_RXDMA_BUF);
 
-	ath12k_dp_rx_bufs_replenish(ab, rx_ring, &list, 0);
+	ath12k_dp_rx_bufs_replenish(ab->dp, rx_ring, &list, 0);
 
 	return 0;
 }

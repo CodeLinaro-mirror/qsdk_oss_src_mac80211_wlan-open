@@ -378,7 +378,7 @@ struct ath12k_dp_arch_ops {
 				   struct ath12k_dp_link_peer *peer, u8 tid);
 	void (*reo_cache_flush)(struct ath12k_base *ab,
 				struct ath12k_dp_rx_tid *rx_tid);
-	int (*rx_link_desc_return)(struct ath12k_base *ab,
+	int (*rx_link_desc_return)(struct ath12k_dp *dp,
 				   struct hal_reo_dest_ring *ring,
 				   enum hal_wbm_rel_bm_act action);
 	int (*peer_rx_tid_reo_update)(struct ath12k *ar,
@@ -544,7 +544,7 @@ static inline int ath12k_dp_arch_rx_link_desc_return(struct ath12k_dp *dp,
 						     struct hal_reo_dest_ring *ring,
 						     enum hal_wbm_rel_bm_act action)
 {
-	return dp->arch_ops->rx_link_desc_return(dp->ab, ring, action);
+	return dp->arch_ops->rx_link_desc_return(dp, ring, action);
 }
 
 static inline int ath12k_dp_arch_peer_rx_tid_reo_update(struct ath12k_dp *dp,
@@ -622,9 +622,9 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 			      struct dp_link_desc_bank *link_desc_banks,
 			      u32 ring_type, struct hal_srng *srng,
 			      u32 n_link_desc);
-struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_base *ab,
+struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 						  u32 cookie);
-struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_base *ab,
+struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 						  u32 desc_id);
 bool ath12k_dp_wmask_compaction_rx_tlv_supported(struct ath12k_base *ab);
 #endif

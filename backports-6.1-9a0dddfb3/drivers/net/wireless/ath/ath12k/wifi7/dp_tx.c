@@ -61,6 +61,7 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		       bool is_mcast)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_hal *hal = dp->hal;
 	struct ath12k_base *ab = dp->ab;
 	struct hal_tx_info ti = {0};
 	struct ath12k_tx_desc_info *tx_desc;
@@ -82,7 +83,7 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	bool tcl_ring_retry;
 	bool msdu_ext_desc = false;
 	bool add_htt_metadata = false;
-	u32 iova_mask = ab->hw_params->iova_mask;
+	u32 iova_mask = dp->hw_params->iova_mask;
 	bool is_diff_encap = false, is_null = false;
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
@@ -101,14 +102,14 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	 * If all rings are full, we drop the packet.
 	 * TODO: Add throttling logic when all rings are full
 	 */
-	ring_selector = ab->hw_params->hw_ops->get_ring_selector(skb);
+	ring_selector = dp->hw_params->hw_ops->get_ring_selector(skb);
 
 tcl_ring_sel:
 	tcl_ring_retry = false;
-	ti.ring_id = ring_selector % ab->hw_params->max_tx_ring;
+	ti.ring_id = ring_selector % dp->hw_params->max_tx_ring;
 
 	ring_map |= BIT(ti.ring_id);
-	ti.rbm_id = ab->hal.tcl_to_wbm_rbm_map[ti.ring_id].rbm_id;
+	ti.rbm_id = hal->tcl_to_wbm_rbm_map[ti.ring_id].rbm_id;
 
 	tx_ring = &dp->tx_ring[ti.ring_id];
 
@@ -208,7 +209,7 @@ tcl_ring_sel:
 
 	if (iova_mask &&
 	    (unsigned long)skb->data & iova_mask) {
-		ret = ath12k_dp_tx_align_payload(ab, &skb);
+		ret = ath12k_dp_tx_align_payload(dp, &skb);
 		if (ret) {
 			ath12k_warn(ab, "failed to align TX buffer %d\n", ret);
 			/* don't bail out, give original buffer
@@ -223,8 +224,8 @@ tcl_ring_sel:
 		hdr = (void *)skb->data;
 	}
 map:
-	ti.paddr = dma_map_single(ab->dev, skb->data, skb->len, DMA_TO_DEVICE);
-	if (dma_mapping_error(ab->dev, ti.paddr)) {
+	ti.paddr = dma_map_single(dp->dev, skb->data, skb->len, DMA_TO_DEVICE);
+	if (dma_mapping_error(dp->dev, ti.paddr)) {
 		atomic_inc(&dp->device_stats.tx_err.misc_fail);
 		ath12k_warn(ab, "failed to DMA map data Tx buffer\n");
 		ret = -ENOMEM;
@@ -275,9 +276,9 @@ map:
 			}
 		}
 
-		ti.paddr = dma_map_single(ab->dev, skb_ext_desc->data,
+		ti.paddr = dma_map_single(dp->dev, skb_ext_desc->data,
 					  skb_ext_desc->len, DMA_TO_DEVICE);
-		ret = dma_mapping_error(ab->dev, ti.paddr);
+		ret = dma_mapping_error(dp->dev, ti.paddr);
 		if (ret)
 			goto fail_free_ext_skb;
 
@@ -289,7 +290,7 @@ map:
 	}
 
 	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
-	tcl_ring = &ab->hal.srng_list[hal_ring_id];
+	tcl_ring = &hal->srng_list[hal_ring_id];
 
 	spin_lock_bh(&tcl_ring->lock);
 
@@ -310,8 +311,8 @@ map:
 		 * checking this ring earlier for each pkt tx.
 		 * Restart ring selection if some rings are not checked yet.
 		 */
-		if (ring_map != (BIT(ab->hw_params->max_tx_ring) - 1) &&
-		    ab->hw_params->tcl_ring_retry) {
+		if (ring_map != (BIT(dp->hw_params->max_tx_ring) - 1) &&
+		    dp->hw_params->tcl_ring_retry) {
 			tcl_ring_retry = true;
 			ring_selector++;
 		}
@@ -345,7 +346,7 @@ map:
 
 fail_unmap_dma_ext:
 	if (skb_cb->paddr_ext_desc)
-		dma_unmap_single(ab->dev, skb_cb->paddr_ext_desc,
+		dma_unmap_single(dp->dev, skb_cb->paddr_ext_desc,
 				 skb_ext_desc->len,
 				 DMA_TO_DEVICE);
 fail_free_ext_skb:
@@ -353,7 +354,7 @@ fail_free_ext_skb:
 		kfree_skb(skb_ext_desc);
 
 fail_unmap_dma:
-	dma_unmap_single(ab->dev, ti.paddr, ti.data_len, DMA_TO_DEVICE);
+	dma_unmap_single(dp->dev, ti.paddr, ti.data_len, DMA_TO_DEVICE);
 
 fail_remove_tx_buf:
 	ath12k_dp_tx_release_txbuf(dp, tx_desc, pool_id);
@@ -368,29 +369,29 @@ fail_remove_tx_buf:
 	return ret;
 }
 
-static void ath12k_wifi7_dp_tx_free_txbuf(struct ath12k_base *ab,
+static void ath12k_wifi7_dp_tx_free_txbuf(struct ath12k_dp *dp,
 					  struct sk_buff *msdu, u8 mac_id,
 					  struct dp_tx_ring *tx_ring,
 					  struct sk_buff *skb_ext_desc)
 {
-	struct ath12k *ar;
+	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_skb_cb *skb_cb;
-	u8 pdev_id = ath12k_hw_mac_id_to_pdev_id(ab->hw_params, mac_id);
+	u8 pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
 
 	skb_cb = ATH12K_SKB_CB(msdu);
-	ar = ab->pdevs[pdev_id].ar;
+	dp_pdev = dp->dp_pdevs[pdev_id];
 
-	dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
+	dma_unmap_single(dp->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 	if (skb_cb->paddr_ext_desc) {
-		dma_unmap_single(ab->dev, skb_cb->paddr_ext_desc,
+		dma_unmap_single(dp->dev, skb_cb->paddr_ext_desc,
 				 skb_ext_desc->len, DMA_TO_DEVICE);
 		dev_kfree_skb_any(skb_ext_desc);
 	}
 
-	ieee80211_free_txskb(ar->ah->hw, msdu);
+	ieee80211_free_txskb(dp_pdev->hw, msdu);
 
-	if (atomic_dec_and_test(&ar->dp.num_tx_pending))
-		wake_up(&ar->dp.tx_empty_waitq);
+	if (atomic_dec_and_test(&dp_pdev->num_tx_pending))
+		wake_up(&dp_pdev->tx_empty_waitq);
 }
 
 static void
@@ -502,7 +503,8 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_base *ab,
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT:
-		ath12k_wifi7_dp_tx_free_txbuf(ab, msdu, mac_id, tx_ring, skb_ext_desc);
+		ath12k_wifi7_dp_tx_free_txbuf(ab->dp, msdu, mac_id, tx_ring,
+					      skb_ext_desc);
 		break;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY:
 		/* This event is to be handled only when the driver decides to
@@ -790,10 +792,10 @@ ath12k_wifi7_dp_tx_status_parse(struct ath12k_base *ab,
 	}
 }
 
-void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_base *ab, int ring_id)
+void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id)
 {
+	struct ath12k_base *ab = dp->ab;
 	struct ath12k_pdev_dp *dp_pdev;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int hal_ring_id = dp->tx_ring[ring_id].tcl_comp_ring.ring_id;
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
 	struct ath12k_tx_desc_info *tx_desc = NULL;
@@ -848,7 +850,7 @@ void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_base *ab, int ring_id)
 			desc_id = le32_get_bits(tx_status->buf_va_hi,
 						BUFFER_ADDR_INFO1_SW_COOKIE);
 
-			tx_desc = ath12k_dp_get_tx_desc(ab, desc_id);
+			tx_desc = ath12k_dp_get_tx_desc(dp, desc_id);
 		}
 		if (!tx_desc) {
 			ath12k_warn(ab, "unable to retrieve tx_desc!");
@@ -871,7 +873,7 @@ void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_base *ab, int ring_id)
 			continue;
 		}
 
-		pdev_id = ath12k_hw_mac_id_to_pdev_id(ab->hw_params, mac_id);
+		pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
 
 		rcu_read_lock();
 

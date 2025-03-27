@@ -1156,18 +1156,15 @@ static u32 ath12k_dp_cc_cookie_gen(u16 ppt_idx, u16 spt_idx)
 	return (u32)ppt_idx << ATH12K_CC_PPT_SHIFT | spt_idx;
 }
 
-static inline void *ath12k_dp_cc_get_desc_addr_ptr(struct ath12k_base *ab,
+static inline void *ath12k_dp_cc_get_desc_addr_ptr(struct ath12k_dp *dp,
 						   u16 ppt_idx, u16 spt_idx)
 {
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-
 	return dp->spt_info[ppt_idx].vaddr + spt_idx;
 }
 
-struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_base *ab,
+struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 						  u32 cookie)
 {
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_rx_desc_info **desc_addr_ptr;
 	u16 start_ppt_idx, end_ppt_idx, ppt_idx, spt_idx;
 
@@ -1183,13 +1180,13 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_base *ab,
 		return NULL;
 
 	ppt_idx = ppt_idx - dp->rx_ppt_base;
-	desc_addr_ptr = ath12k_dp_cc_get_desc_addr_ptr(ab, ppt_idx, spt_idx);
+	desc_addr_ptr = ath12k_dp_cc_get_desc_addr_ptr(dp, ppt_idx, spt_idx);
 
 	return *desc_addr_ptr;
 }
 EXPORT_SYMBOL(ath12k_dp_get_rx_desc);
 
-struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_base *ab,
+struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 						  u32 cookie)
 {
 	struct ath12k_tx_desc_info **desc_addr_ptr;
@@ -1207,7 +1204,7 @@ struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_base *ab,
 	    spt_idx > ATH12K_MAX_SPT_ENTRIES)
 		return NULL;
 
-	desc_addr_ptr = ath12k_dp_cc_get_desc_addr_ptr(ab, ppt_idx, spt_idx);
+	desc_addr_ptr = ath12k_dp_cc_get_desc_addr_ptr(dp, ppt_idx, spt_idx);
 
 	return *desc_addr_ptr;
 }
@@ -1244,7 +1241,7 @@ static int ath12k_dp_cc_desc_init(struct ath12k_base *ab)
 			list_add_tail(&rx_descs[j].list, &dp->rx_desc_free_list);
 
 			/* Update descriptor VA in SPT */
-			rx_desc_addr = ath12k_dp_cc_get_desc_addr_ptr(ab, ppt_idx, j);
+			rx_desc_addr = ath12k_dp_cc_get_desc_addr_ptr(dp, ppt_idx, j);
 			*rx_desc_addr = &rx_descs[j];
 		}
 	}
@@ -1276,7 +1273,7 @@ static int ath12k_dp_cc_desc_init(struct ath12k_base *ab)
 
 				/* Update descriptor VA in SPT */
 				tx_desc_addr =
-					ath12k_dp_cc_get_desc_addr_ptr(ab, ppt_idx, j);
+					ath12k_dp_cc_get_desc_addr_ptr(dp, ppt_idx, j);
 				*tx_desc_addr = &tx_descs[j];
 			}
 		}
