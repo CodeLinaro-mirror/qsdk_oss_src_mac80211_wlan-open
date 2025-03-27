@@ -66,26 +66,6 @@ struct ath12k_dp_rx_rfc1042_hdr {
 	__be16 snap_type;
 } __packed;
 
-#define ATH12K_RX_INFO_ADDR2 BIT(0)
-
-struct ath12k_dp_rx_info {
-	bool ip_csum_fail;
-	bool l4_csum_fail;
-	bool is_mcbc;
-	u8 decap_type;
-	u8 pkt_type;
-	u8 sgi;
-	u8 rate_mcs;
-	u8 bw;
-	u8 nss;
-	u8 addr2[ETH_ALEN];
-	u8 tid;
-	u16 peer_id;
-	u32 phy_meta_data;
-	u32 filled;
-	struct ieee80211_rx_status *rx_status;
-};
-
 static inline u32 ath12k_he_gi_to_nl80211_he_gi(u8 sgi)
 {
 	u32 ret = 0;
@@ -157,20 +137,19 @@ u8 ath12k_dp_rx_h_l3pad(struct ath12k_base *ab,
 			struct hal_rx_desc *desc);
 struct ath12k_peer *
 ath12k_dp_rx_h_find_peer(struct ath12k_base *ab, struct sk_buff *msdu,
-			 struct ath12k_dp_rx_info *rx_info);
+			 struct hal_rx_desc_data *rx_desc_data);
 u8 ath12k_dp_rx_h_decap_type(struct ath12k_base *ab,
 			     struct hal_rx_desc *desc);
 u32 ath12k_dp_rx_h_mpdu_err(struct ath12k_base *ab,
 			    struct hal_rx_desc *desc);
-int ath12k_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab);
-int ath12k_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab);
 void ath12k_dp_rx_process_reo_status(struct ath12k_base *ab);
 void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			       enum hal_reo_cmd_status status);
 u16 ath12k_dp_rx_h_seq_no(struct ath12k_base *ab, struct hal_rx_desc *desc);
 void ath12k_dp_rx_deliver_msdu(struct ath12k *ar, struct napi_struct *napi,
 			       struct sk_buff *msdu,
-			       struct ath12k_dp_rx_info *rx_info);
+			       struct ieee80211_rx_status *status,
+			       struct hal_rx_desc_data *rx_desc_data);
 void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 			    enum hal_reo_cmd_status status);
 void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,

@@ -26,7 +26,9 @@ ath12k-y += wifi7/hal_tx.o \
 	    wifi7/hal_rx.o \
 	    wifi7/dp_rx.o \
 	    wifi7/dp_tx.o \
-	    wifi7/dp.o
+	    wifi7/dp.o \
+	    wifi7/hal_qcn9274.o \
+	    wifi7/hal_wcn7850.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 

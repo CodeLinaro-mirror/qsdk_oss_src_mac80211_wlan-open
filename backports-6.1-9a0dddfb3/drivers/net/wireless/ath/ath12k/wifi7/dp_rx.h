@@ -24,7 +24,8 @@ int ath12k_dp_rx_process(struct ath12k_base *ab, int mac_id,
 			 int budget);
 void ath12k_dp_rx_peer_tid_delete(struct ath12k *ar,
 				  struct ath12k_peer *peer, u8 tid);
-void ath12k_dp_rx_h_ppdu(struct ath12k *ar, struct ath12k_dp_rx_info *rx_info);
+void ath12k_dp_rx_h_ppdu(struct ath12k *ar, struct ieee80211_rx_status *rx_status,
+			 struct hal_rx_desc_data *rx_desc_data);
 void ath12k_dp_reo_cache_flush(struct ath12k_base *ab,
 			       struct ath12k_dp_rx_tid *rx_tid);
 int ath12k_peer_rx_tid_reo_update(struct ath12k *ar,
@@ -38,8 +39,6 @@ int ath12k_dp_rx_link_desc_return(struct ath12k_base *ab,
 				  struct hal_reo_dest_ring *ring,
 				  enum hal_wbm_rel_bm_act action);
 void ath12k_dp_rx_process_reo_status(struct ath12k_base *ab);
-void ath12k_dp_rx_h_fetch_info(struct ath12k_base *ab,  struct hal_rx_desc *rx_desc,
-				   struct ath12k_dp_rx_info *rx_info);
 int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
 				u8 tid, u32 ba_win_sz, u16 ssn,
 				enum hal_pn_type pn_type);
@@ -50,4 +49,15 @@ int ath12k_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 			      struct ath12k_dp_rx_tid *rx_tid, u16 ssn,
 			      enum hal_pn_type pn_type,
 			      struct hal_rx_reo_queue **addr_aligned);
+int ath12k_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab);
+int ath12k_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab);
+
+static inline
+void ath12k_wifi7_dp_extract_rx_desc_data(struct ath12k_base *ab,
+					  struct hal_rx_desc_data *rx_desc_data,
+					  struct hal_rx_desc *rx_desc,
+					  struct hal_rx_desc *ldesc)
+{
+	ab->hw_params->hal_ops->extract_rx_desc_data(rx_desc_data, rx_desc, ldesc);
+}
 #endif

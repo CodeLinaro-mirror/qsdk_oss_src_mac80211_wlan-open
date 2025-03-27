@@ -1199,8 +1199,6 @@ struct ath12k_base {
 		DECLARE_BITMAP(fw_features, ATH12K_FW_FEATURE_COUNT);
 	} fw;
 
-	const struct hal_rx_ops *hal_rx_ops;
-
 	struct completion restart_completed;
 
 #ifdef CONFIG_ACPI

@@ -16,7 +16,7 @@
 #include "hw.h"
 #include "../mhi.h"
 #include "mhi.h"
-#include "../dp_rx.h"
+#include "dp_rx.h"
 #include "wmi.h"
 
 static const guid_t wcn7850_uuid = GUID_INIT(0xf634f534, 0x6147, 0x11ec,
@@ -1246,7 +1246,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.max_tx_ring = 4,
 
 		.wmi_init = &ath12k_wifi7_wmi_init_qcn9274,
-		.hal_ops = &hal_qcn6432_ops,
+		.hal_ops = &hal_qcn9274_ops,
 
 		.supports_aspm = true,
 		.send_platform_model = true,

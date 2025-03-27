@@ -636,6 +636,35 @@ enum hal_srng_dir {
 	HAL_SRNG_DIR_DST
 };
 
+struct hal_rx_desc_data {
+	u32 freq;
+	u32 err_bitmap;
+	u32 enctype;
+	u32 msdu_done:1,
+	    is_decrypted:1,
+	    ip_csum_fail:1,
+	    l4_csum_fail:1,
+	    is_first_msdu:1,
+	    is_last_msdu:1,
+	    mesh_ctrl_present:1,
+	    mac_addr2_valid:1,
+	    fill_crypto_hdr:1,
+	    seq_ctl_valid:1,
+	    fc_valid:1;
+	u16 msdu_len;
+	u16 peer_id;
+	u16 seq_no;
+	u8 *mpdu_start_addr2;
+	u8 pkt_type;
+	u8 l3_pad_bytes;
+	u8 decap;
+	u8 bw;
+	u8 rate_mcs;
+	u8 nss;
+	u8 sgi;
+	u8 tid;
+};
+
 /* srng flags */
 #define HAL_SRNG_FLAGS_MSI_SWAP			0x00000008
 #define HAL_SRNG_FLAGS_RING_PTR_SWAP		0x00000010
@@ -1114,21 +1143,44 @@ struct hal_rx_ops {
 
 struct hal_ops {
 	int (*create_srng_config)(struct ath12k_base *ab);
-	u16 (*rxdma_ring_wmask_rx_mpdu_start)(void);
-	u32 (*rxdma_ring_wmask_rx_msdu_end)(void);
-	const struct hal_rx_ops *(*get_hal_rx_compact_ops)(void);
 	const struct ath12k_hal_tcl_to_wbm_rbm_map *tcl_to_wbm_rbm_map;
+	void (*rx_desc_copy_end_tlv)(struct hal_rx_desc *fdesc,
+				     struct hal_rx_desc *ldesc);
+	void (*rx_desc_get_crypto_header)(struct hal_rx_desc *desc,
+					  u8 *crypto_hdr,
+					  enum hal_encrypt_type enctype);
+	u16 (*rx_desc_get_mpdu_frame_ctl)(struct hal_rx_desc *desc);
+	void (*rx_desc_get_dot11_hdr)(struct hal_rx_desc *desc,
+				      struct ieee80211_hdr *hdr);
+	void (*rx_desc_set_msdu_len)(struct hal_rx_desc *desc, u16 len);
+	u8 (*rx_desc_get_msdu_src_link_id)(struct hal_rx_desc *desc);
+	void (*extract_rx_desc_data)(struct hal_rx_desc_data *rx_desc_data,
+				     struct hal_rx_desc *rx_desc,
+				     struct hal_rx_desc *ldesc);
+	u32 (*get_rx_desc_size)(void);
 };
 
 extern const struct hal_ops hal_qcn9274_ops;
 extern const struct hal_ops hal_wcn7850_ops;
 extern const struct hal_ops hal_qcn6432_ops;
 
-extern const struct hal_rx_ops hal_rx_qcn9274_ops;
-extern const struct hal_rx_ops hal_rx_qcn6432_ops;
-extern const struct hal_rx_ops hal_rx_qcn9274_compact_ops;
-extern const struct hal_rx_ops hal_rx_wcn7850_ops;
-
+u8 ath12k_hal_rx_get_msdu_src_link(struct ath12k_base *ab,
+				   struct hal_rx_desc *desc);
+void ath12k_hal_rx_desc_end_tlv_copy(struct ath12k_base *ab,
+				     struct hal_rx_desc *fdesc,
+				     struct hal_rx_desc *ldesc);
+void ath12k_hal_rxdesc_set_msdu_len(struct ath12k_base *ab,
+				    struct hal_rx_desc *desc,
+				    u16 len);
+void ath12k_hal_rx_desc_get_dot11_hdr(struct ath12k_base *ab,
+				      struct hal_rx_desc *desc,
+				      struct ieee80211_hdr *hdr);
+void ath12k_hal_rx_desc_get_crypto_header(struct ath12k_base *ab,
+					  struct hal_rx_desc *desc,
+					  u8 *crypto_hdr,
+					  enum hal_encrypt_type enctype);
+u16 ath12k_hal_rxdesc_get_mpdu_frame_ctrl(struct ath12k_base *ab,
+					  struct hal_rx_desc *desc);
 u32 ath12k_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
 void ath12k_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				int tid, u32 ba_window_size,

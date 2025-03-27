@@ -926,7 +926,7 @@ struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 
 struct ath12k_peer *
 ath12k_dp_rx_h_find_peer(struct ath12k_base *ab, struct sk_buff *msdu,
-			 struct ath12k_dp_rx_info *rx_info)
+			 struct hal_rx_desc_data *rx_desc_data)
 {
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ath12k_peer *peer = NULL;
@@ -939,15 +939,16 @@ ath12k_dp_rx_h_find_peer(struct ath12k_base *ab, struct sk_buff *msdu,
 	if (peer)
 		return peer;
 
-	if (rx_info->filled & BIT_ULL(ATH12K_RX_INFO_ADDR2))
-		peer = ath12k_peer_find_by_addr(ab, rx_info->addr2);
+	if (rx_desc_data->mac_addr2_valid)
+		peer = ath12k_peer_find_by_addr(ab, rx_desc_data->mpdu_start_addr2);
 
 	return peer;
 }
 
 void ath12k_dp_rx_deliver_msdu(struct ath12k *ar, struct napi_struct *napi,
 				      struct sk_buff *msdu,
-				      struct ath12k_dp_rx_info *rx_info)
+				      struct ieee80211_rx_status *status,
+				      struct hal_rx_desc_data *rx_desc_data)
 {
 	struct ath12k_base *ab = ar->ab;
 	static const struct ieee80211_radiotap_he known = {
@@ -960,8 +961,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k *ar, struct napi_struct *napi,
 	struct ieee80211_sta *pubsta;
 	struct ath12k_peer *peer;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
-	struct ieee80211_rx_status *status = rx_info->rx_status;
-	u8 decap = DP_RX_DECAP_TYPE_RAW;
+	u8 decap = rx_desc_data->decap;
 	bool is_mcbc = rxcb->is_mcbc;
 	bool is_eapol = rxcb->is_eapol;
 
@@ -972,11 +972,8 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k *ar, struct napi_struct *napi,
 		status->flag |= RX_FLAG_RADIOTAP_HE;
 	}
 
-	if (!(status->flag & RX_FLAG_ONLY_MONITOR))
-		decap = rx_info->decap_type;
-
 	spin_lock_bh(&ab->base_lock);
-	peer = ath12k_dp_rx_h_find_peer(ab, msdu, rx_info);
+	peer = ath12k_dp_rx_h_find_peer(ab, msdu, rx_desc_data);
 
 	pubsta = peer ? peer->sta : NULL;
 
@@ -994,7 +991,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k *ar, struct napi_struct *napi,
 		   peer ? peer->addr : NULL,
 		   rxcb->tid,
 		   is_mcbc ? "mcast" : "ucast",
-		   ath12k_dp_rx_h_seq_no(ab, rxcb->rx_desc),
+		   rx_desc_data->seq_no,
 		   (status->encoding == RX_ENC_LEGACY) ? "legacy" : "",
 		   (status->encoding == RX_ENC_HT) ? "ht" : "",
 		   (status->encoding == RX_ENC_VHT) ? "vht" : "",
