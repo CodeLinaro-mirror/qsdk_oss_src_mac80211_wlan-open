@@ -67,8 +67,8 @@ int ath12k_dp_peer_setup(struct ath12k *ar, int vdev_id, const u8 *addr)
 	}
 
 	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
-		ret = ath12k_dp_rx_peer_tid_setup(ar, addr, vdev_id, tid, 1, 0,
-						  HAL_PN_TYPE_NONE);
+		ret = ath12k_wifi7_dp_rx_peer_tid_setup(ar, addr, vdev_id, tid, 1, 0,
+							HAL_PN_TYPE_NONE);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup rxd tid queue for tid %d: %d\n",
 				    tid, ret);
@@ -97,7 +97,7 @@ peer_clean:
 	}
 
 	for (; tid >= 0; tid--)
-		ath12k_dp_rx_peer_tid_delete(ar, peer, tid);
+		ath12k_wifi7_dp_rx_peer_tid_delete(ar, peer, tid);
 
 	spin_unlock_bh(&ab->base_lock);
 
@@ -412,7 +412,8 @@ inc_ref_and_return:
 	spin_unlock_bh(&dp->tx_bank_lock);
 
 	if (configure_register)
-		ath12k_hal_tx_configure_bank_register(ab, bank_config, bank_id);
+		ath12k_wifi7_hal_tx_configure_bank_register(ab, bank_config,
+							    bank_id);
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "dp_htt tcl bank_id %d input 0x%x match 0x%x num_users %u",
 		   bank_id, bank_config, dp->bank_profiles[bank_id].bank_config,
@@ -548,7 +549,7 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 	}
 
 	srng = &ab->hal.srng_list[dp->reo_cmd_ring.ring_id];
-	ath12k_hal_reo_init_cmd_ring(ab, srng);
+	ath12k_wifi7_hal_reo_init_cmd_ring(ab, srng);
 
 	ret = ath12k_dp_srng_setup(ab, &dp->reo_status_ring, HAL_REO_STATUS,
 				   0, 0, DP_REO_STATUS_RING_SIZE);
@@ -572,7 +573,7 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 			HAL_HASH_ROUTING_RING_SW3 << 24 |
 			HAL_HASH_ROUTING_RING_SW4 << 28;
 
-	ath12k_hal_reo_hw_setup(ab, ring_hash_map);
+	ath12k_wifi7_hal_reo_hw_setup(ab, ring_hash_map);
 
 	return 0;
 
@@ -1596,7 +1597,7 @@ int ath12k_dp_alloc(struct ath12k_base *ab)
 	}
 
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
-		ath12k_hal_tx_set_dscp_tid_map(ab, i);
+		ath12k_wifi7_hal_tx_set_dscp_tid_map(ab, i);
 
 	ret = ath12k_dp_rx_alloc(ab);
 	if (ret)

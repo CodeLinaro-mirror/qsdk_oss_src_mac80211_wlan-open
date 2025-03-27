@@ -1181,13 +1181,13 @@ void ath12k_hal_rx_desc_get_crypto_header(struct ath12k_base *ab,
 					  enum hal_encrypt_type enctype);
 u16 ath12k_hal_rxdesc_get_mpdu_frame_ctrl(struct ath12k_base *ab,
 					  struct hal_rx_desc *desc);
-u32 ath12k_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
-void ath12k_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
-				int tid, u32 ba_window_size,
-				u32 start_seq, enum hal_pn_type type);
-void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab,
-				  struct hal_srng *srng);
-void ath12k_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);
+u32 ath12k_wifi7_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
+void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
+				      int tid, u32 ba_window_size,
+				      u32 start_seq, enum hal_pn_type type);
+void ath12k_wifi7_hal_reo_init_cmd_ring(struct ath12k_base *ab,
+					struct hal_srng *srng);
+void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);
 void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
 				     struct hal_wbm_idle_scatter_list *sbuf,
 				     u32 nsbufs, u32 tot_link_desc,

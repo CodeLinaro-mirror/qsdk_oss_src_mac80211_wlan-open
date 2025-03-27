@@ -86,7 +86,7 @@ static const struct ath12k_hw_ops qcn9274_ops = {
 	.get_hw_mac_from_pdev_id = ath12k_wifi7_hw_qcn9274_mac_from_pdev_id,
 	.mac_id_to_pdev_id = ath12k_wifi7_hw_mac_id_to_pdev_id_qcn9274,
 	.mac_id_to_srng_id = ath12k_wifi7_hw_mac_id_to_srng_id_qcn9274,
-	.rxdma_ring_sel_config = ath12k_dp_rxdma_ring_sel_config_qcn9274,
+	.rxdma_ring_sel_config = ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274,
 	.get_ring_selector = ath12k_wifi7_hw_get_ring_selector_qcn9274,
 	.dp_srng_is_tx_comp_ring = ath12k_wifi7_dp_srng_is_comp_ring_qcn9274,
 };
@@ -95,7 +95,7 @@ static const struct ath12k_hw_ops wcn7850_ops = {
 	.get_hw_mac_from_pdev_id = ath12k_wifi7_hw_qcn9274_mac_from_pdev_id,
 	.mac_id_to_pdev_id = ath12k_wifi7_hw_mac_id_to_pdev_id_wcn7850,
 	.mac_id_to_srng_id = ath12k_wifi7_hw_mac_id_to_srng_id_wcn7850,
-	.rxdma_ring_sel_config = ath12k_dp_rxdma_ring_sel_config_wcn7850,
+	.rxdma_ring_sel_config = ath12k_wifi7_dp_rxdma_ring_sel_config_wcn7850,
 	.get_ring_selector = ath12k_wifi7_hw_get_ring_selector_wcn7850,
 	.dp_srng_is_tx_comp_ring = ath12k_wifi7_dp_srng_is_comp_ring_wcn7850,
 };

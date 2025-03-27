@@ -11,10 +11,11 @@
 #include "dp_rx.h"
 #include "dp.h"
 #include "dp_tx.h"
+#include "dp_rx.h"
 
-int ath12k_dp_service_srng(struct ath12k_base *ab,
-			   struct ath12k_ext_irq_grp *irq_grp,
-			   int budget)
+int ath12k_wifi7_dp_service_srng(struct ath12k_base *ab,
+				 struct ath12k_ext_irq_grp *irq_grp,
+				 int budget)
 {
 	struct napi_struct *napi = &irq_grp->napi;
 	int grp_id = irq_grp->grp_id;
@@ -28,11 +29,11 @@ int ath12k_dp_service_srng(struct ath12k_base *ab,
 
 	if (ab->hw_params->ring_mask->tx[grp_id]) {
 		i = fls(ab->hw_params->ring_mask->tx[grp_id]) - 1;
-		ath12k_dp_tx_completion_handler(ab, i);
+		ath12k_wifi7_dp_tx_completion_handler(ab, i);
 	}
 
 	if (ab->hw_params->ring_mask->rx_err[grp_id]) {
-		work_done = ath12k_dp_rx_process_err(ab, napi, budget);
+		work_done = ath12k_wifi7_dp_rx_process_err(ab, napi, budget);
 		budget -= work_done;
 		tot_work_done += work_done;
 		if (budget <= 0)
@@ -40,9 +41,7 @@ int ath12k_dp_service_srng(struct ath12k_base *ab,
 	}
 
 	if (ab->hw_params->ring_mask->rx_wbm_rel[grp_id]) {
-		work_done = ath12k_dp_rx_process_wbm_err(ab,
-							 napi,
-							 budget);
+		work_done = ath12k_wifi7_dp_rx_process_wbm_err(ab, napi, budget);
 		budget -= work_done;
 		tot_work_done += work_done;
 
@@ -53,8 +52,7 @@ int ath12k_dp_service_srng(struct ath12k_base *ab,
 	while (rx_mask) {
 		i = fls(rx_mask) - 1;
 		rx_mask ^= 1 << i;
-		work_done = ath12k_dp_rx_process(ab, i, napi,
-						 budget);
+		work_done = ath12k_wifi7_dp_rx_process(ab, i, napi, budget);
 		budget -= work_done;
 		tot_work_done += work_done;
 		if (budget <= 0)
@@ -104,7 +102,7 @@ int ath12k_dp_service_srng(struct ath12k_base *ab,
 	}
 
 	if (ab->hw_params->ring_mask->reo_status[grp_id])
-		ath12k_dp_rx_process_reo_status(ab);
+		ath12k_wifi7_dp_rx_process_reo_status(ab);
 
 	if (ab->hw_params->ring_mask->host2rxdma[grp_id]) {
 		struct ath12k_dp *dp = &ab->dp;

@@ -10,9 +10,10 @@
 #include "../peer.h"
 #include "dp_tx.h"
 
-static void ath12k_hal_tx_cmd_ext_desc_setup(struct ath12k_base *ab,
-					     struct hal_tx_msdu_ext_desc *tcl_ext_cmd,
-					     struct hal_tx_info *ti)
+static void
+ath12k_wifi7_hal_tx_cmd_ext_desc_setup(struct ath12k_base *ab,
+				       struct hal_tx_msdu_ext_desc *tcl_ext_cmd,
+				       struct hal_tx_info *ti)
 {
 	tcl_ext_cmd->info0 = le32_encode_bits(ti->paddr,
 					      HAL_TX_MSDU_EXT_INFO0_BUF_PTR_LO);
@@ -31,7 +32,7 @@ static void ath12k_hal_tx_cmd_ext_desc_setup(struct ath12k_base *ab,
 #define HTT_META_DATA_ALIGNMENT 0x8
 
 /* Preparing HTT Metadata when utilized with ext MSDU */
-static int ath12k_dp_prepare_htt_metadata(struct sk_buff *skb)
+static int ath12k_wifi7_dp_prepare_htt_metadata(struct sk_buff *skb)
 {
 	struct hal_tx_msdu_metadata *desc_ext;
 	u8 htt_desc_size;
@@ -53,9 +54,9 @@ static int ath12k_dp_prepare_htt_metadata(struct sk_buff *skb)
 	return 0;
 }
 
-int ath12k_dp_tx(struct ath12k *ar, struct ath12k_link_vif *arvif,
-		 struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
-		 bool is_mcast)
+int ath12k_wifi7_dp_tx(struct ath12k *ar, struct ath12k_link_vif *arvif,
+		       struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
+		       bool is_mcast)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = &ab->dp;
@@ -261,10 +262,10 @@ map:
 		memset(skb_ext_desc->data, 0, skb_ext_desc->len);
 
 		msg = (struct hal_tx_msdu_ext_desc *)skb_ext_desc->data;
-		ath12k_hal_tx_cmd_ext_desc_setup(ab, msg, &ti);
+		ath12k_wifi7_hal_tx_cmd_ext_desc_setup(ab, msg, &ti);
 
 		if (add_htt_metadata) {
-			ret = ath12k_dp_prepare_htt_metadata(skb_ext_desc);
+			ret = ath12k_wifi7_dp_prepare_htt_metadata(skb_ext_desc);
 			if (ret < 0) {
 				ath12k_dbg(ab, ATH12K_DBG_DP_TX,
 					   "Failed to add HTT meta data, dropping packet\n");
@@ -327,7 +328,7 @@ map:
 		arvif->link_stats.tx_enqueued++;
 	spin_unlock_bh(&arvif->link_stats_lock);
 
-	ath12k_hal_tx_cmd_desc_setup(ab, hal_tcl_desc, &ti);
+	ath12k_wifi7_hal_tx_cmd_desc_setup(ab, hal_tcl_desc, &ti);
 
 	ath12k_hal_srng_access_end(ab, tcl_ring);
 
@@ -365,10 +366,10 @@ fail_remove_tx_buf:
 	return ret;
 }
 
-static void ath12k_dp_tx_free_txbuf(struct ath12k_base *ab,
-				    struct sk_buff *msdu, u8 mac_id,
-				    struct dp_tx_ring *tx_ring,
-				    struct sk_buff *skb_ext_desc)
+static void ath12k_wifi7_dp_tx_free_txbuf(struct ath12k_base *ab,
+					  struct sk_buff *msdu, u8 mac_id,
+					  struct dp_tx_ring *tx_ring,
+					  struct sk_buff *skb_ext_desc)
 {
 	struct ath12k *ar;
 	struct ath12k_skb_cb *skb_cb;
@@ -391,12 +392,12 @@ static void ath12k_dp_tx_free_txbuf(struct ath12k_base *ab,
 }
 
 static void
-ath12k_dp_tx_htt_tx_complete_buf(struct ath12k_base *ab,
-				 struct sk_buff *msdu,
-				 struct dp_tx_ring *tx_ring,
-				 struct ath12k_dp_htt_wbm_tx_status *ts,
-				 struct sk_buff *skb_ext_desc,
-				 u16 peer_id)
+ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_base *ab,
+				       struct sk_buff *msdu,
+				       struct dp_tx_ring *tx_ring,
+				       struct ath12k_dp_htt_wbm_tx_status *ts,
+				       struct sk_buff *skb_ext_desc,
+				       u16 peer_id)
 {
 	struct ieee80211_tx_status status = { 0 };
 	struct ieee80211_tx_info *info;
@@ -467,11 +468,11 @@ ath12k_dp_tx_htt_tx_complete_buf(struct ath12k_base *ab,
 }
 
 static void
-ath12k_dp_tx_process_htt_tx_complete(struct ath12k_base *ab,
-				     void *desc, u8 mac_id,
-				     struct sk_buff *msdu,
-				     struct dp_tx_ring *tx_ring,
-				     struct sk_buff *skb_ext_desc)
+ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_base *ab,
+					   void *desc, u8 mac_id,
+					   struct sk_buff *msdu,
+					   struct dp_tx_ring *tx_ring,
+					   struct sk_buff *skb_ext_desc)
 {
 	struct htt_tx_wbm_completion *status_desc;
 	struct ath12k_dp_htt_wbm_tx_status ts = {0};
@@ -491,14 +492,14 @@ ath12k_dp_tx_process_htt_tx_complete(struct ath12k_base *ab,
 		peer_id = le32_get_bits(((struct hal_wbm_completion_ring_tx *)desc)->
 				info3, HAL_WBM_COMPL_TX_INFO3_PEER_ID);
 
-		ath12k_dp_tx_htt_tx_complete_buf(ab, msdu, tx_ring, &ts, skb_ext_desc,
-						 peer_id);
+		ath12k_wifi7_dp_tx_htt_tx_complete_buf(ab, msdu, tx_ring, &ts,
+						       skb_ext_desc, peer_id);
 		break;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT:
-		ath12k_dp_tx_free_txbuf(ab, msdu, mac_id, tx_ring, skb_ext_desc);
+		ath12k_wifi7_dp_tx_free_txbuf(ab, msdu, mac_id, tx_ring, skb_ext_desc);
 		break;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY:
 		/* This event is to be handled only when the driver decides to
@@ -511,7 +512,7 @@ ath12k_dp_tx_process_htt_tx_complete(struct ath12k_base *ab,
 	}
 
 }
-static void ath12k_dp_tx_update_txcompl(struct ath12k *ar, struct hal_tx_status *ts)
+static void ath12k_wifi7_dp_tx_update_txcompl(struct ath12k *ar, struct hal_tx_status *ts)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_peer *peer;
@@ -629,10 +630,10 @@ static void ath12k_dp_tx_update_txcompl(struct ath12k *ar, struct hal_tx_status 
 	spin_unlock_bh(&ab->base_lock);
 }
 
-static void ath12k_dp_tx_complete_msdu(struct ath12k *ar,
-				       struct sk_buff *msdu,
-				       struct hal_tx_status *ts,
-				       struct sk_buff *skb_ext_desc)
+static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k *ar,
+					     struct sk_buff *msdu,
+					     struct hal_tx_status *ts,
+					     struct sk_buff *skb_ext_desc)
 {
 	struct ieee80211_tx_status status = { 0 };
 	struct ath12k_base *ab = ar->ab;
@@ -726,7 +727,7 @@ static void ath12k_dp_tx_complete_msdu(struct ath12k *ar,
 	 * Might end up reporting it out-of-band from HTT stats.
 	 */
 
-	ath12k_dp_tx_update_txcompl(ar, ts);
+	ath12k_wifi7_dp_tx_update_txcompl(ar, ts);
 
 	spin_lock_bh(&ab->base_lock);
 	peer = ath12k_peer_find_by_id(ab, ts->peer_id);
@@ -749,9 +750,10 @@ exit:
 	rcu_read_unlock();
 }
 
-static void ath12k_dp_tx_status_parse(struct ath12k_base *ab,
-				      struct hal_wbm_completion_ring_tx *desc,
-				      struct hal_tx_status *ts)
+static void
+ath12k_wifi7_dp_tx_status_parse(struct ath12k_base *ab,
+				struct hal_wbm_completion_ring_tx *desc,
+				struct hal_tx_status *ts)
 {
 	u32 info0 = le32_to_cpu(desc->rate_stats.info0);
 
@@ -782,7 +784,7 @@ static void ath12k_dp_tx_status_parse(struct ath12k_base *ab,
 	}
 }
 
-void ath12k_dp_tx_completion_handler(struct ath12k_base *ab, int ring_id)
+void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_base *ab, int ring_id)
 {
 	struct ath12k *ar;
 	struct ath12k_dp *dp = &ab->dp;
@@ -828,7 +830,7 @@ void ath12k_dp_tx_completion_handler(struct ath12k_base *ab, int ring_id)
 		tx_ring->tx_status_tail =
 			ATH12K_TX_COMPL_NEXT(tx_ring->tx_status_tail);
 		tx_status = &tx_ring->tx_status[tx_ring->tx_status_tail];
-		ath12k_dp_tx_status_parse(ab, tx_status, &ts);
+		ath12k_wifi7_dp_tx_status_parse(ab, tx_status, &ts);
 
 		if (le32_get_bits(tx_status->info0, HAL_WBM_COMPL_TX_INFO0_CC_DONE)) {
 			/* HW done cookie conversion */
@@ -856,10 +858,10 @@ void ath12k_dp_tx_completion_handler(struct ath12k_base *ab, int ring_id)
 		 */
 		ath12k_dp_tx_release_txbuf(dp, tx_desc, tx_desc->pool_id);
 		if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW) {
-			ath12k_dp_tx_process_htt_tx_complete(ab,
-							     (void *)tx_status,
-							     mac_id, msdu,
-							     tx_ring, skb_ext_desc);
+			ath12k_wifi7_dp_tx_process_htt_tx_complete(ab,
+								   (void *)tx_status,
+								   mac_id, msdu,
+								   tx_ring, skb_ext_desc);
 			continue;
 		}
 
@@ -869,6 +871,6 @@ void ath12k_dp_tx_completion_handler(struct ath12k_base *ab, int ring_id)
 		if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 			wake_up(&ar->dp.tx_empty_waitq);
 
-		ath12k_dp_tx_complete_msdu(ar, msdu, &ts, skb_ext_desc);
+		ath12k_wifi7_dp_tx_complete_msdu(ar, msdu, &ts, skb_ext_desc);
 	}
 }
