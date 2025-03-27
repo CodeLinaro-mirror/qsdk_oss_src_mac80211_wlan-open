@@ -367,7 +367,6 @@ fail_remove_tx_buf:
 
 	return ret;
 }
-EXPORT_SYMBOL(ath12k_wifi7_dp_tx);
 
 static void ath12k_wifi7_dp_tx_free_txbuf(struct ath12k_base *ab,
 					  struct sk_buff *msdu, u8 mac_id,

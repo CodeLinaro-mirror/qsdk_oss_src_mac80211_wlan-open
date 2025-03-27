@@ -2433,7 +2433,6 @@ int ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab)
 
 	return ret;
 }
-EXPORT_SYMBOL(ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274);
 
 int ath12k_wifi7_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab)
 {
@@ -2476,7 +2475,6 @@ int ath12k_wifi7_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab)
 
 	return ret;
 }
-EXPORT_SYMBOL(ath12k_wifi7_dp_rxdma_ring_sel_config_wcn7850);
 
 void ath12k_wifi7_dp_rx_process_reo_status(struct ath12k_base *ab)
 {

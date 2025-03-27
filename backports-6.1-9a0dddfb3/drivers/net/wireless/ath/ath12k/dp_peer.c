@@ -91,6 +91,7 @@ ath12k_dp_link_peer_find_by_id(struct ath12k_dp *dp, int peer_id)
 
 	return NULL;
 }
+EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_id);
 
 bool ath12k_dp_link_peer_exist_by_vdev_id(struct ath12k_dp *dp, int vdev_id)
 {
@@ -367,6 +368,7 @@ struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 
 	return rcu_dereference(dp_pdev->dp_hw->dp_peer_list[index]);
 }
+EXPORT_SYMBOL(ath12k_dp_peer_find_by_peerid_index);
 
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,

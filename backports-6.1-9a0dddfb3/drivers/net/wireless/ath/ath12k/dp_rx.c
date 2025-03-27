@@ -101,6 +101,7 @@ int ath12k_dp_rx_crypto_param_len(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d\n", enctype);
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_crypto_param_len);
 
 int ath12k_dp_rx_crypto_icv_len(struct ath12k_pdev_dp *dp_pdev,
 				enum hal_encrypt_type enctype)
@@ -158,6 +159,7 @@ void ath12k_dp_rx_h_undecap_frag(struct ath12k_pdev_dp *dp_pdev, struct sk_buff 
 		skb_pull(msdu, crypto_len);
 	}
 }
+EXPORT_SYMBOL(ath12k_dp_rx_h_undecap_frag);
 
 int ath12k_dp_rx_h_michael_mic(struct crypto_shash *tfm, u8 *key,
 			       struct ieee80211_hdr *hdr, u8 *data,
@@ -199,6 +201,7 @@ out:
 	shash_desc_zero(desc);
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_h_michael_mic);
 
 void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				enum hal_encrypt_type enctype,
@@ -257,6 +260,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 		skb_pull(msdu, crypto_len);
 	}
 }
+EXPORT_SYMBOL(ath12k_dp_rx_h_undecap_raw);
 
 static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 				      struct list_head *used_list)
@@ -375,6 +379,7 @@ out:
 
 	return req_entries - num_remain;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_bufs_replenish);
 
 static int ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_base *ab,
 					     struct dp_rxdma_mon_ring *rx_ring)
@@ -570,6 +575,7 @@ void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 	kfree(rx_tid->vaddr);
 	rx_tid->vaddr = NULL;
 }
+EXPORT_SYMBOL(ath12k_dp_reo_cmd_free);
 
 void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			       enum hal_reo_cmd_status status)
@@ -631,6 +637,7 @@ free_desc:
 	kfree(rx_tid->vaddr);
 	rx_tid->vaddr = NULL;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_tid_del_func);
 
 void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 				       bool rel_link_desc)
@@ -656,6 +663,7 @@ void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 	rx_tid->rx_frag_bitmap = 0;
 	__skb_queue_purge(&rx_tid->rx_frags);
 }
+EXPORT_SYMBOL(ath12k_dp_rx_frags_cleanup);
 
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer *peer)
 {
@@ -942,6 +950,7 @@ struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 
 	return NULL;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_get_msdu_last_buf);
 
 struct ath12k_dp_peer *
 ath12k_dp_rx_h_find_peer_by_peerid_index(struct ath12k_dp *dp,
@@ -956,6 +965,7 @@ ath12k_dp_rx_h_find_peer_by_peerid_index(struct ath12k_dp *dp,
 
 	return peer;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_h_find_peer_by_peerid_index);
 
 struct ath12k_dp_link_peer *
 ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct sk_buff *msdu,
@@ -1066,6 +1076,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 }
+EXPORT_SYMBOL(ath12k_dp_rx_deliver_msdu);
 
 static void ath12k_dp_rx_frag_timer(struct timer_list *timer)
 {

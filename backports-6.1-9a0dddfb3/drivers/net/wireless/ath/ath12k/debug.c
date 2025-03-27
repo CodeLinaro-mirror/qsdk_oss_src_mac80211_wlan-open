@@ -104,5 +104,6 @@ void ath12k_dbg_dump(struct ath12k_base *ab,
 		}
 	}
 }
+EXPORT_SYMBOL(ath12k_dbg_dump);
 
 #endif /* CPTCFG_ATH12K_DEBUG */

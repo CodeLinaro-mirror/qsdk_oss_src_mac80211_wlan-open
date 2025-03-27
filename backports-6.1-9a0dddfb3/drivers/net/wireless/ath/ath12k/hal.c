@@ -198,6 +198,7 @@ int ath12k_hal_srng_get_entrysize(struct ath12k_base *ab, u32 ring_type)
 
 	return (srng_config->entry_size << 2);
 }
+EXPORT_SYMBOL(ath12k_hal_srng_get_entrysize);
 
 int ath12k_hal_srng_get_max_entries(struct ath12k_base *ab, u32 ring_type)
 {
@@ -227,6 +228,7 @@ void ath12k_hal_srng_get_params(struct ath12k_base *ab, struct hal_srng *srng,
 	params->msi2_data = srng->msi2_data;
 	params->flags = srng->flags;
 }
+EXPORT_SYMBOL(ath12k_hal_srng_get_params);
 
 dma_addr_t ath12k_hal_srng_get_hp_addr(struct ath12k_base *ab,
 				       struct hal_srng *srng)
@@ -290,6 +292,7 @@ void *ath12k_hal_srng_dst_peek(struct ath12k_base *ab, struct hal_srng *srng)
 
 	return NULL;
 }
+EXPORT_SYMBOL(ath12k_hal_srng_dst_peek);
 
 void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng)
@@ -311,6 +314,7 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 
 	return desc;
 }
+EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_entry);
 
 int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 				 bool sync_hw_ptr)
@@ -333,6 +337,7 @@ int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 	else
 		return (srng->ring_size - tp + hp) / srng->entry_size;
 }
+EXPORT_SYMBOL(ath12k_hal_srng_dst_num_free);
 
 /* Returns number of available entries in src ring */
 int ath12k_hal_srng_src_num_free(struct ath12k_base *ab, struct hal_srng *srng,
@@ -389,6 +394,7 @@ void *ath12k_hal_srng_src_get_next_entry(struct ath12k_base *ab,
 
 	return desc;
 }
+EXPORT_SYMBOL(ath12k_hal_srng_src_get_next_entry);
 
 void *ath12k_hal_srng_src_reap_next(struct ath12k_base *ab,
 				    struct hal_srng *srng)
@@ -437,6 +443,7 @@ void ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng)
 	else
 		srng->u.dst_ring.cached_hp = *srng->u.dst_ring.hp_addr;
 }
+EXPORT_SYMBOL(ath12k_hal_srng_access_begin);
 
 /* Update cached ring head/tail pointers to HW. ath12k_hal_srng_access_begin()
  * should have been called before this.
@@ -476,6 +483,7 @@ void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng)
 
 	srng->timestamp = jiffies;
 }
+EXPORT_SYMBOL(ath12k_hal_srng_access_end);
 
 void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
 				     struct wbm_idle_scatter_list *sbuf,
