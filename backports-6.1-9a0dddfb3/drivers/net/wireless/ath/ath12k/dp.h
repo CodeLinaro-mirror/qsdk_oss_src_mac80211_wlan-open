@@ -12,6 +12,7 @@
 #include "hw.h"
 #include "dp_htt.h"
 #include "dp_cmn.h"
+#include "hal.h"
 
 #define MAX_RXDMA_PER_PDEV     2
 
