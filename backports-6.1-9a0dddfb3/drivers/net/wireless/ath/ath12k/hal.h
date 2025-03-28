@@ -49,13 +49,13 @@ struct ath12k_base;
 #define HAL_SEQ_WCSS_UMAC_REO_REG		0x00a38000
 #define HAL_SEQ_WCSS_UMAC_TCL_REG		0x00a44000
 #define HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(ab) \
-	((ab)->hw_params->regs->hal_umac_ce0_src_reg_base)
+	((ab)->hal.regs->hal_umac_ce0_src_reg_base)
 #define HAL_SEQ_WCSS_UMAC_CE0_DST_REG(ab) \
-	((ab)->hw_params->regs->hal_umac_ce0_dest_reg_base)
+	((ab)->hal.regs->hal_umac_ce0_dest_reg_base)
 #define HAL_SEQ_WCSS_UMAC_CE1_SRC_REG(ab) \
-	((ab)->hw_params->regs->hal_umac_ce1_src_reg_base)
+	((ab)->hal.regs->hal_umac_ce1_src_reg_base)
 #define HAL_SEQ_WCSS_UMAC_CE1_DST_REG(ab) \
-	((ab)->hw_params->regs->hal_umac_ce1_dest_reg_base)
+	((ab)->hal.regs->hal_umac_ce1_dest_reg_base)
 #define HAL_SEQ_WCSS_UMAC_WBM_REG		0x00a34000
 
 #define HAL_CE_WFSS_CE_REG_BASE			0x01b80000
@@ -67,30 +67,30 @@ struct ath12k_base;
 #define HAL_TCL1_RING_CMN_CTRL_REG		0x00000020
 #define HAL_TCL1_RING_DSCP_TID_MAP		0x00000240
 #define HAL_TCL1_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_base_lsb)
+	((ab)->hal.regs->hal_tcl1_ring_base_lsb)
 #define HAL_TCL1_RING_BASE_MSB(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_base_msb)
-#define HAL_TCL1_RING_ID(ab)			((ab)->hw_params->regs->hal_tcl1_ring_id)
+	((ab)->hal.regs->hal_tcl1_ring_base_msb)
+#define HAL_TCL1_RING_ID(ab)			((ab)->hal.regs->hal_tcl1_ring_id)
 #define HAL_TCL1_RING_MISC(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_misc)
+	((ab)->hal.regs->hal_tcl1_ring_misc)
 #define HAL_TCL1_RING_TP_ADDR_LSB(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_tp_addr_lsb)
+	((ab)->hal.regs->hal_tcl1_ring_tp_addr_lsb)
 #define HAL_TCL1_RING_TP_ADDR_MSB(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_tp_addr_msb)
+	((ab)->hal.regs->hal_tcl1_ring_tp_addr_msb)
 #define HAL_TCL1_RING_CONSUMER_INT_SETUP_IX0(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_consumer_int_setup_ix0)
+	((ab)->hal.regs->hal_tcl1_ring_consumer_int_setup_ix0)
 #define HAL_TCL1_RING_CONSUMER_INT_SETUP_IX1(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_consumer_int_setup_ix1)
+	((ab)->hal.regs->hal_tcl1_ring_consumer_int_setup_ix1)
 #define HAL_TCL1_RING_MSI1_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_msi1_base_lsb)
+	((ab)->hal.regs->hal_tcl1_ring_msi1_base_lsb)
 #define HAL_TCL1_RING_MSI1_BASE_MSB(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_msi1_base_msb)
+	((ab)->hal.regs->hal_tcl1_ring_msi1_base_msb)
 #define HAL_TCL1_RING_MSI1_DATA(ab) \
-	((ab)->hw_params->regs->hal_tcl1_ring_msi1_data)
+	((ab)->hal.regs->hal_tcl1_ring_msi1_data)
 #define HAL_TCL2_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_tcl2_ring_base_lsb)
+	((ab)->hal.regs->hal_tcl2_ring_base_lsb)
 #define HAL_TCL_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_tcl_ring_base_lsb)
+	((ab)->hal.regs->hal_tcl_ring_base_lsb)
 
 #define HAL_TCL1_RING_MSI1_BASE_LSB_OFFSET(ab) ({ typeof(ab) _ab = (ab); \
 	(HAL_TCL1_RING_MSI1_BASE_LSB(_ab) - HAL_TCL1_RING_BASE_LSB(_ab)); })
@@ -124,7 +124,7 @@ struct ath12k_base;
 
 /* TCL STATUS ring address */
 #define HAL_TCL_STATUS_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_tcl_status_ring_base_lsb)
+	((ab)->hal.regs->hal_tcl_status_ring_base_lsb)
 #define HAL_TCL_STATUS_RING_HP			0x00002048
 
 /* PPE2TCL1 Ring address */
@@ -133,41 +133,41 @@ struct ath12k_base;
 
 /* WBM PPE Release Ring address */
 #define HAL_WBM_PPE_RELEASE_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_ppe_rel_ring_base)
+	((ab)->hal.regs->hal_ppe_rel_ring_base)
 #define HAL_WBM_PPE_RELEASE_RING_HP		0x00003020
 
 /* REO2SW(x) R0 ring configuration address */
 #define HAL_REO1_GEN_ENABLE			0x00000000
 #define HAL_REO1_MISC_CTRL_ADDR(ab) \
-	((ab)->hw_params->regs->hal_reo1_misc_ctrl_addr)
+	((ab)->hal.regs->hal_reo1_misc_ctrl_addr)
 #define HAL_REO1_DEST_RING_CTRL_IX_0		0x00000004
 #define HAL_REO1_DEST_RING_CTRL_IX_1		0x00000008
 #define HAL_REO1_DEST_RING_CTRL_IX_2		0x0000000c
 #define HAL_REO1_DEST_RING_CTRL_IX_3		0x00000010
-#define HAL_REO1_QDESC_ADDR(ab)                ((ab)->hw_params->regs->hal_reo1_qdesc_addr)
-#define HAL_REO1_QDESC_MAX_PEERID(ab)  ((ab)->hw_params->regs->hal_reo1_qdesc_max_peerid)
-#define HAL_REO1_SW_COOKIE_CFG0(ab)	((ab)->hw_params->regs->hal_reo1_sw_cookie_cfg0)
-#define HAL_REO1_SW_COOKIE_CFG1(ab)	((ab)->hw_params->regs->hal_reo1_sw_cookie_cfg1)
-#define HAL_REO1_QDESC_LUT_BASE0(ab)	((ab)->hw_params->regs->hal_reo1_qdesc_lut_base0)
-#define HAL_REO1_QDESC_LUT_BASE1(ab)	((ab)->hw_params->regs->hal_reo1_qdesc_lut_base1)
-#define HAL_REO1_RING_BASE_LSB(ab)	((ab)->hw_params->regs->hal_reo1_ring_base_lsb)
-#define HAL_REO1_RING_BASE_MSB(ab)	((ab)->hw_params->regs->hal_reo1_ring_base_msb)
-#define HAL_REO1_RING_ID(ab)		((ab)->hw_params->regs->hal_reo1_ring_id)
-#define HAL_REO1_RING_MISC(ab)		((ab)->hw_params->regs->hal_reo1_ring_misc)
-#define HAL_REO1_RING_HP_ADDR_LSB(ab)	((ab)->hw_params->regs->hal_reo1_ring_hp_addr_lsb)
-#define HAL_REO1_RING_HP_ADDR_MSB(ab)	((ab)->hw_params->regs->hal_reo1_ring_hp_addr_msb)
+#define HAL_REO1_QDESC_ADDR(ab)                ((ab)->hal.regs->hal_reo1_qdesc_addr)
+#define HAL_REO1_QDESC_MAX_PEERID(ab)  ((ab)->hal.regs->hal_reo1_qdesc_max_peerid)
+#define HAL_REO1_SW_COOKIE_CFG0(ab)	((ab)->hal.regs->hal_reo1_sw_cookie_cfg0)
+#define HAL_REO1_SW_COOKIE_CFG1(ab)	((ab)->hal.regs->hal_reo1_sw_cookie_cfg1)
+#define HAL_REO1_QDESC_LUT_BASE0(ab)	((ab)->hal.regs->hal_reo1_qdesc_lut_base0)
+#define HAL_REO1_QDESC_LUT_BASE1(ab)	((ab)->hal.regs->hal_reo1_qdesc_lut_base1)
+#define HAL_REO1_RING_BASE_LSB(ab)	((ab)->hal.regs->hal_reo1_ring_base_lsb)
+#define HAL_REO1_RING_BASE_MSB(ab)	((ab)->hal.regs->hal_reo1_ring_base_msb)
+#define HAL_REO1_RING_ID(ab)		((ab)->hal.regs->hal_reo1_ring_id)
+#define HAL_REO1_RING_MISC(ab)		((ab)->hal.regs->hal_reo1_ring_misc)
+#define HAL_REO1_RING_HP_ADDR_LSB(ab)	((ab)->hal.regs->hal_reo1_ring_hp_addr_lsb)
+#define HAL_REO1_RING_HP_ADDR_MSB(ab)	((ab)->hal.regs->hal_reo1_ring_hp_addr_msb)
 #define HAL_REO1_RING_PRODUCER_INT_SETUP(ab) \
-	((ab)->hw_params->regs->hal_reo1_ring_producer_int_setup)
+	((ab)->hal.regs->hal_reo1_ring_producer_int_setup)
 #define HAL_REO1_RING_MSI1_BASE_LSB(ab)	\
-	((ab)->hw_params->regs->hal_reo1_ring_msi1_base_lsb)
+	((ab)->hal.regs->hal_reo1_ring_msi1_base_lsb)
 #define HAL_REO1_RING_MSI1_BASE_MSB(ab)	\
-	((ab)->hw_params->regs->hal_reo1_ring_msi1_base_msb)
-#define HAL_REO1_RING_MSI1_DATA(ab)	((ab)->hw_params->regs->hal_reo1_ring_msi1_data)
-#define HAL_REO2_RING_BASE_LSB(ab)	((ab)->hw_params->regs->hal_reo2_ring_base)
-#define HAL_REO1_AGING_THRESH_IX_0(ab)	((ab)->hw_params->regs->hal_reo1_aging_thres_ix0)
-#define HAL_REO1_AGING_THRESH_IX_1(ab)	((ab)->hw_params->regs->hal_reo1_aging_thres_ix1)
-#define HAL_REO1_AGING_THRESH_IX_2(ab)	((ab)->hw_params->regs->hal_reo1_aging_thres_ix2)
-#define HAL_REO1_AGING_THRESH_IX_3(ab)	((ab)->hw_params->regs->hal_reo1_aging_thres_ix3)
+	((ab)->hal.regs->hal_reo1_ring_msi1_base_msb)
+#define HAL_REO1_RING_MSI1_DATA(ab)	((ab)->hal.regs->hal_reo1_ring_msi1_data)
+#define HAL_REO2_RING_BASE_LSB(ab)	((ab)->hal.regs->hal_reo2_ring_base)
+#define HAL_REO1_AGING_THRESH_IX_0(ab)	((ab)->hal.regs->hal_reo1_aging_thres_ix0)
+#define HAL_REO1_AGING_THRESH_IX_1(ab)	((ab)->hal.regs->hal_reo1_aging_thres_ix1)
+#define HAL_REO1_AGING_THRESH_IX_2(ab)	((ab)->hal.regs->hal_reo1_aging_thres_ix2)
+#define HAL_REO1_AGING_THRESH_IX_3(ab)	((ab)->hal.regs->hal_reo1_aging_thres_ix3)
 
 /* REO2SW(x) R2 ring pointers (head/tail) address */
 /* REO2SW(x) R2 ring pointers (head/tail) address */
@@ -179,23 +179,23 @@ struct ath12k_base;
 
 /* REO2SW0 ring configuration address */
 #define HAL_REO_SW0_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_reo2_sw0_ring_base)
+	((ab)->hal.regs->hal_reo2_sw0_ring_base)
 
 /* REO2SW0 R2 ring pointer (head/tail) address */
 #define HAL_REO_SW0_RING_HP			0x00003088
 
 /* REO CMD R0 address */
 #define HAL_REO_CMD_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_reo_cmd_ring_base)
+	((ab)->hal.regs->hal_reo_cmd_ring_base)
 
 /* REO CMD R2 address */
 #define HAL_REO_CMD_HP				0x00003020
 
 /* SW2REO R0 address */
 #define	HAL_SW2REO_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_sw2reo_ring_base)
+	((ab)->hal.regs->hal_sw2reo_ring_base)
 #define HAL_SW2REO1_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_sw2reo1_ring_base)
+	((ab)->hal.regs->hal_sw2reo1_ring_base)
 
 /* SW2REO R2 address */
 #define HAL_SW2REO_RING_HP			0x00003028
@@ -213,41 +213,41 @@ struct ath12k_base;
 
 /* REO status address */
 #define HAL_REO_STATUS_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_reo_status_ring_base)
+	((ab)->hal.regs->hal_reo_status_ring_base)
 #define HAL_REO_STATUS_HP			0x000030a8
 
 /* WBM Idle R0 address */
 #define HAL_WBM_IDLE_LINK_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_wbm_idle_ring_base_lsb)
+	((ab)->hal.regs->hal_wbm_idle_ring_base_lsb)
 #define HAL_WBM_IDLE_LINK_RING_MISC_ADDR(ab) \
-	((ab)->hw_params->regs->hal_wbm_idle_ring_misc_addr)
+	((ab)->hal.regs->hal_wbm_idle_ring_misc_addr)
 #define HAL_WBM_R0_IDLE_LIST_CONTROL_ADDR(ab) \
-	((ab)->hw_params->regs->hal_wbm_r0_idle_list_cntl_addr)
+	((ab)->hal.regs->hal_wbm_r0_idle_list_cntl_addr)
 #define HAL_WBM_R0_IDLE_LIST_SIZE_ADDR(ab) \
-	((ab)->hw_params->regs->hal_wbm_r0_idle_list_size_addr)
+	((ab)->hal.regs->hal_wbm_r0_idle_list_size_addr)
 #define HAL_WBM_SCATTERED_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_wbm_scattered_ring_base_lsb)
+	((ab)->hal.regs->hal_wbm_scattered_ring_base_lsb)
 #define HAL_WBM_SCATTERED_RING_BASE_MSB(ab) \
-	((ab)->hw_params->regs->hal_wbm_scattered_ring_base_msb)
+	((ab)->hal.regs->hal_wbm_scattered_ring_base_msb)
 #define HAL_WBM_SCATTERED_DESC_PTR_HEAD_INFO_IX0(ab) \
-	((ab)->hw_params->regs->hal_wbm_scattered_desc_head_info_ix0)
+	((ab)->hal.regs->hal_wbm_scattered_desc_head_info_ix0)
 #define HAL_WBM_SCATTERED_DESC_PTR_HEAD_INFO_IX1(ab) \
-	((ab)->hw_params->regs->hal_wbm_scattered_desc_head_info_ix1)
+	((ab)->hal.regs->hal_wbm_scattered_desc_head_info_ix1)
 #define HAL_WBM_SCATTERED_DESC_PTR_TAIL_INFO_IX0(ab) \
-	((ab)->hw_params->regs->hal_wbm_scattered_desc_tail_info_ix0)
+	((ab)->hal.regs->hal_wbm_scattered_desc_tail_info_ix0)
 #define HAL_WBM_SCATTERED_DESC_PTR_TAIL_INFO_IX1(ab) \
-	((ab)->hw_params->regs->hal_wbm_scattered_desc_tail_info_ix1)
+	((ab)->hal.regs->hal_wbm_scattered_desc_tail_info_ix1)
 #define HAL_WBM_SCATTERED_DESC_PTR_HP_ADDR(ab) \
-	((ab)->hw_params->regs->hal_wbm_scattered_desc_ptr_hp_addr)
+	((ab)->hal.regs->hal_wbm_scattered_desc_ptr_hp_addr)
 
 /* WBM Idle R2 address */
 #define HAL_WBM_IDLE_LINK_RING_HP		0x000030b8
 
 /* SW2WBM R0 release address */
 #define HAL_WBM_SW_RELEASE_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_wbm_sw_release_ring_base_lsb)
+	((ab)->hal.regs->hal_wbm_sw_release_ring_base_lsb)
 #define HAL_WBM_SW1_RELEASE_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_wbm_sw1_release_ring_base_lsb)
+	((ab)->hal.regs->hal_wbm_sw1_release_ring_base_lsb)
 
 /* SW2WBM R2 release address */
 #define HAL_WBM_SW_RELEASE_RING_HP		0x00003010
@@ -255,10 +255,10 @@ struct ath12k_base;
 
 /* WBM2SW R0 release address */
 #define HAL_WBM0_RELEASE_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_wbm0_release_ring_base_lsb)
+	((ab)->hal.regs->hal_wbm0_release_ring_base_lsb)
 
 #define HAL_WBM1_RELEASE_RING_BASE_LSB(ab) \
-	((ab)->hw_params->regs->hal_wbm1_release_ring_base_lsb)
+	((ab)->hal.regs->hal_wbm1_release_ring_base_lsb)
 
 /* WBM2SW R2 release address */
 #define HAL_WBM0_RELEASE_RING_HP		0x000030c8
@@ -1053,6 +1053,94 @@ struct hal_reo_status {
 	} u;
 };
 
+struct ath12k_hw_hal_params {
+	enum hal_rx_buf_return_buf_manager rx_buf_rbm;
+	u32	  wbm2sw_cc_enable;
+};
+
+struct ath12k_hw_regs {
+	u32 hal_tcl1_ring_id;
+	u32 hal_tcl1_ring_misc;
+	u32 hal_tcl1_ring_tp_addr_lsb;
+	u32 hal_tcl1_ring_tp_addr_msb;
+	u32 hal_tcl1_ring_consumer_int_setup_ix0;
+	u32 hal_tcl1_ring_consumer_int_setup_ix1;
+	u32 hal_tcl1_ring_msi1_base_lsb;
+	u32 hal_tcl1_ring_msi1_base_msb;
+	u32 hal_tcl1_ring_msi1_data;
+	u32 hal_tcl_ring_base_lsb;
+	u32 hal_tcl1_ring_base_lsb;
+	u32 hal_tcl1_ring_base_msb;
+	u32 hal_tcl2_ring_base_lsb;
+
+	u32 hal_tcl_status_ring_base_lsb;
+
+	u32 hal_reo1_qdesc_addr;
+	u32 hal_reo1_qdesc_max_peerid;
+
+	u32 hal_wbm_idle_ring_base_lsb;
+	u32 hal_wbm_idle_ring_misc_addr;
+	u32 hal_wbm_r0_idle_list_cntl_addr;
+	u32 hal_wbm_r0_idle_list_size_addr;
+	u32 hal_wbm_scattered_ring_base_lsb;
+	u32 hal_wbm_scattered_ring_base_msb;
+	u32 hal_wbm_scattered_desc_head_info_ix0;
+	u32 hal_wbm_scattered_desc_head_info_ix1;
+	u32 hal_wbm_scattered_desc_tail_info_ix0;
+	u32 hal_wbm_scattered_desc_tail_info_ix1;
+	u32 hal_wbm_scattered_desc_ptr_hp_addr;
+
+	u32 hal_wbm_sw_release_ring_base_lsb;
+	u32 hal_wbm_sw1_release_ring_base_lsb;
+	u32 hal_wbm0_release_ring_base_lsb;
+	u32 hal_wbm1_release_ring_base_lsb;
+
+	u32 pcie_qserdes_sysclk_en_sel;
+	u32 pcie_pcs_osc_dtct_config_base;
+
+	u32 hal_umac_ce0_src_reg_base;
+	u32 hal_umac_ce0_dest_reg_base;
+	u32 hal_umac_ce1_src_reg_base;
+	u32 hal_umac_ce1_dest_reg_base;
+
+	u32 hal_ppe_rel_ring_base;
+
+	u32 hal_reo2_ring_base;
+	u32 hal_reo1_misc_ctrl_addr;
+	u32 hal_reo1_sw_cookie_cfg0;
+	u32 hal_reo1_sw_cookie_cfg1;
+	u32 hal_reo1_qdesc_lut_base0;
+	u32 hal_reo1_qdesc_lut_base1;
+	u32 hal_reo1_ring_base_lsb;
+	u32 hal_reo1_ring_base_msb;
+	u32 hal_reo1_ring_id;
+	u32 hal_reo1_ring_misc;
+	u32 hal_reo1_ring_hp_addr_lsb;
+	u32 hal_reo1_ring_hp_addr_msb;
+	u32 hal_reo1_ring_producer_int_setup;
+	u32 hal_reo1_ring_msi1_base_lsb;
+	u32 hal_reo1_ring_msi1_base_msb;
+	u32 hal_reo1_ring_msi1_data;
+	u32 hal_reo1_aging_thres_ix0;
+	u32 hal_reo1_aging_thres_ix1;
+	u32 hal_reo1_aging_thres_ix2;
+	u32 hal_reo1_aging_thres_ix3;
+
+	u32 hal_reo2_sw0_ring_base;
+
+	u32 hal_sw2reo_ring_base;
+	u32 hal_sw2reo1_ring_base;
+
+	u32 hal_reo_cmd_ring_base;
+
+	u32 hal_reo_status_ring_base;
+};
+
+struct ath12k_hw_version_map {
+	const struct ath12k_hw_hal_params *hal_params;
+	const struct ath12k_hw_regs *hw_regs;
+};
+
 /* HAL context to be used to access SRNG APIs (currently used by data path
  * and transport (CE) modules)
  */
@@ -1077,6 +1165,8 @@ struct ath12k_hal {
 	} wrp;
 
 	const struct hal_ops *hal_ops;
+	const struct ath12k_hw_regs *regs;
+	const struct ath12k_hw_hal_params *hal_params;
 	/* Available REO blocking resources bitmap */
 	u8 avail_blk_resource;
 
@@ -1144,8 +1234,13 @@ struct hal_rx_ops {
 	u8 (*rx_desc_get_msdu_src_link_id)(struct hal_rx_desc *desc);
 };
 
+struct hw_regs_version_mapping {
+	u8 hw_version;
+	const struct ath12k_hw_regs *hw_regs;
+};
+
 struct hal_ops {
-	int (*hal_init)(struct ath12k_hal *hal);
+	int (*hal_init)(struct ath12k_hal *hal, u8 hw_version);
 	int (*create_srng_config)(struct ath12k_base *ab);
 	void (*rx_desc_copy_end_tlv)(struct hal_rx_desc *fdesc,
 				     struct hal_rx_desc *ldesc);

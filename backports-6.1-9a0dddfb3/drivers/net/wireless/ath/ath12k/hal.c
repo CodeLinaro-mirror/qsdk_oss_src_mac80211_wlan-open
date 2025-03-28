@@ -1049,7 +1049,7 @@ int ath12k_hal_srng_init(struct ath12k_base *ab)
 
 	memset(hal, 0, sizeof(*hal));
 
-	ret = ab->hw_params->hal_ops->hal_init(hal);
+	ret = ab->hw_params->hal_ops->hal_init(hal, ab->hw_params->hw_rev);
 	if (ret)
 		goto err_hal;
 
