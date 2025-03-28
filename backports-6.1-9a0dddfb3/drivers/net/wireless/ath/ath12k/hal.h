@@ -1076,6 +1076,7 @@ struct ath12k_hal {
 		dma_addr_t paddr;
 	} wrp;
 
+	const struct hal_ops *hal_ops;
 	/* Available REO blocking resources bitmap */
 	u8 avail_blk_resource;
 
@@ -1086,6 +1087,8 @@ struct ath12k_hal {
 	int num_shadow_reg_configured;
 
 	u32 hal_desc_sz;
+
+	const struct ath12k_hal_tcl_to_wbm_rbm_map *tcl_to_wbm_rbm_map;
 };
 
 /* Maps WBM ring number and Return Buffer Manager Id per TCL ring */
@@ -1142,8 +1145,8 @@ struct hal_rx_ops {
 };
 
 struct hal_ops {
+	int (*hal_init)(struct ath12k_hal *hal);
 	int (*create_srng_config)(struct ath12k_base *ab);
-	const struct ath12k_hal_tcl_to_wbm_rbm_map *tcl_to_wbm_rbm_map;
 	void (*rx_desc_copy_end_tlv)(struct hal_rx_desc *fdesc,
 				     struct hal_rx_desc *ldesc);
 	void (*rx_desc_get_crypto_header)(struct hal_rx_desc *desc,
@@ -1157,12 +1160,7 @@ struct hal_ops {
 	void (*extract_rx_desc_data)(struct hal_rx_desc_data *rx_desc_data,
 				     struct hal_rx_desc *rx_desc,
 				     struct hal_rx_desc *ldesc);
-	u32 (*get_rx_desc_size)(void);
 };
-
-extern const struct hal_ops hal_qcn9274_ops;
-extern const struct hal_ops hal_wcn7850_ops;
-extern const struct hal_ops hal_qcn6432_ops;
 
 u8 ath12k_hal_rx_get_msdu_src_link(struct ath12k_base *ab,
 				   struct hal_rx_desc *desc);

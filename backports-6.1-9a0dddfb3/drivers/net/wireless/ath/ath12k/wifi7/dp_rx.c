@@ -67,11 +67,6 @@ static inline u16 ath12k_wifi7_dp_rxdesc_get_mpdu_frame_ctrl(struct ath12k_base 
 	return ab->hw_params->hal_ops->rx_desc_get_mpdu_frame_ctl(desc);
 }
 
-void ath12k_dp_hal_rx_desc_init(struct ath12k_base *ab)
-{
-	ab->hal.hal_desc_sz = ab->hw_params->hal_ops->get_rx_desc_size();
-}
-
 static bool ath12k_wifi7_dp_rx_h_more_frags(struct ath12k_base *ab,
 					    struct sk_buff *skb)
 {

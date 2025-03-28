@@ -460,9 +460,35 @@ static int ath12k_wifi7_hal_srng_create_config_wcn7850(struct ath12k_base *ab)
 	return 0;
 }
 
+static const struct ath12k_hal_tcl_to_wbm_rbm_map
+ath12k_wifi7_hal_tcl_to_wbm_rbm_map_wcn7850[DP_TCL_NUM_RING_MAX] = {
+	{
+		.wbm_ring_num = 0,
+		.rbm_id = HAL_RX_BUF_RBM_SW0_BM,
+	},
+	{
+		.wbm_ring_num = 2,
+		.rbm_id = HAL_RX_BUF_RBM_SW2_BM,
+	},
+	{
+		.wbm_ring_num = 4,
+		.rbm_id = HAL_RX_BUF_RBM_SW4_BM,
+	},
+};
+
+static
+int ath12k_wifi7_hal_init_wcn7850(struct ath12k_hal *hal)
+{
+	hal->tcl_to_wbm_rbm_map = ath12k_wifi7_hal_tcl_to_wbm_rbm_map_wcn7850;
+	hal->hal_ops = &hal_wcn7850_ops;
+	hal->hal_desc_sz = ath12k_wifi7_hal_get_rx_desc_size_wcn7850();
+
+	return 0;
+}
+
 const struct hal_ops hal_wcn7850_ops = {
+	.hal_init = ath12k_wifi7_hal_init_wcn7850,
 	.create_srng_config = ath12k_wifi7_hal_srng_create_config_wcn7850,
-	.tcl_to_wbm_rbm_map = ath12k_hal_wcn7850_tcl_to_wbm_rbm_map,
 	.rx_desc_set_msdu_len = ath12k_wifi7_hal_rxdesc_set_msdu_len_wcn7850,
 	.rx_desc_get_dot11_hdr = ath12k_wifi7_hal_rx_desc_get_dot11_hdr_wcn7850,
 	.rx_desc_get_mpdu_frame_ctl =
@@ -474,7 +500,5 @@ const struct hal_ops hal_wcn7850_ops = {
 			ath12k_wifi7_hal_rx_get_msdu_src_link_wcn7850,
 	.extract_rx_desc_data =
 			ath12k_wifi7_hal_extract_rx_desc_data_wcn7850,
-	.get_rx_desc_size =
-			ath12k_wifi7_hal_get_rx_desc_size_wcn7850,
 };
 EXPORT_SYMBOL(hal_wcn7850_ops);
