@@ -35,24 +35,11 @@ struct ath12k_dp_link_peer {
 	u8 pdev_idx;
 	u16 hw_peer_id;
 
-	/* protected by ab->data_lock */
-	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
-	struct ath12k_dp_rx_tid rx_tid[IEEE80211_NUM_TIDS + 1];
-
-	/* Info used in MMIC verification of
-	 * RX fragments
-	 */
-	struct crypto_shash *tfm_mmic;
-	u8 mcast_keyidx;
-	u8 ucast_keyidx;
-	u16 sec_type;
-	u16 sec_type_grp;
 	struct ppdu_user_delayba ppdu_stats_delayba;
 	bool delayba_flag;
 	bool is_authorized;
 	bool mlo;
 	/* protected by ab->data_lock */
-	bool dp_setup_done;
 
 	u16 ml_id;
 
@@ -89,6 +76,8 @@ struct ath12k_dp_peer {
 	spinlock_t link_peers_lock;
 	struct ath12k_dp_link_peer __rcu *link_peers[ATH12K_NUM_MAX_LINKS];
 
+	bool primary_link_frag_setup;
+
 	bool is_authorized;
 	enum hal_pn_type pn_type;
 
@@ -101,6 +90,8 @@ struct ath12k_dp_peer {
 	u8 ucast_keyidx;
 	u16 sec_type;
 	u16 sec_type_grp;
+
+	u8 hw_links[ATH12K_GROUP_MAX_RADIO];
 };
 
 void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id);
@@ -126,4 +117,11 @@ int ath12k_dp_link_peer_rhash_delete(struct ath12k_dp *dp,
 int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 			  struct ath12k_dp_peer_create_params *params);
 void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr);
+struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
+							   struct ath12k_pdev_dp *dp_pdev,
+							   u16 peer_id);
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,
+					 struct ath12k_pdev_dp *dp_pdev, u16 peer_id);
+
 #endif

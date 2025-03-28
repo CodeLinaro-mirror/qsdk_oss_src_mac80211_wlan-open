@@ -663,8 +663,11 @@ void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer
 
 	lockdep_assert_held(&dp->dp_lock);
 
+	if (!peer->primary_link)
+		return;
+
 	for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
-		rx_tid = &peer->rx_tid[i];
+		rx_tid = &peer->dp_peer->rx_tid[i];
 
 		ath12k_wifi7_dp_rx_peer_tid_delete(ar, peer, i);
 		ath12k_dp_rx_frags_cleanup(rx_tid, true);
@@ -715,7 +718,7 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 		return -EINVAL;
 	}
 
-	rx_tid = &peer->rx_tid[tid];
+	rx_tid = &peer->dp_peer->rx_tid[tid];
 	/* Update the tid queue if it is already setup */
 	if (rx_tid->active) {
 		paddr = rx_tid->paddr;
@@ -841,14 +844,19 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 		return -ENOENT;
 	}
 
-	active = peer->rx_tid[params->tid].active;
+	if (!peer->primary_link) {
+		spin_unlock_bh(&dp->dp_lock);
+		return 0;
+	}
+
+	active = peer->dp_peer->rx_tid[params->tid].active;
 
 	if (!active) {
 		spin_unlock_bh(&dp->dp_lock);
 		return 0;
 	}
 
-	ret = ath12k_wifi7_peer_rx_tid_reo_update(ar, peer, peer->rx_tid, 1, 0, false);
+	ret = ath12k_wifi7_peer_rx_tid_reo_update(ar, peer, peer->dp_peer->rx_tid, 1, 0, false);
 	spin_unlock_bh(&dp->dp_lock);
 	if (ret) {
 		ath12k_warn(ab, "failed to update reo for rx tid %d: %d\n",
@@ -892,7 +900,7 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 	}
 
 	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
-		rx_tid = &peer->rx_tid[tid];
+		rx_tid = &peer->dp_peer->rx_tid[tid];
 		if (!rx_tid->active)
 			continue;
 
@@ -928,6 +936,20 @@ struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 	}
 
 	return NULL;
+}
+
+struct ath12k_dp_peer *
+ath12k_dp_rx_h_find_peer_by_peerid_index(struct ath12k_dp *dp,
+					 struct ath12k_pdev_dp *dp_pdev,
+					 struct sk_buff *msdu)
+{
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
+	struct ath12k_dp_peer *peer = NULL;
+
+	if (rxcb->peer_id)
+		peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, rxcb->peer_id);
+
+	return peer;
 }
 
 struct ath12k_dp_link_peer *
@@ -967,7 +989,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_radiotap_he *he;
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_sta *pubsta;
-	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_peer *peer;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	u8 decap = rx_desc_data->decap;
 	bool is_mcbc = rxcb->is_mcbc;
@@ -980,17 +1002,19 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 		status->flag |= RX_FLAG_RADIOTAP_HE;
 	}
 
+	rcu_read_lock();
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_rx_h_find_peer(dp, msdu, rx_desc_data);
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, rx_desc_data->peer_id);
 
 	pubsta = peer ? peer->sta : NULL;
 
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;
-		status->link_id = peer->link_id;
+		status->link_id = peer->hw_links[rxcb->hw_link_id];
 	}
 
 	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
 
 	ath12k_dbg(ab, ATH12K_DBG_DATA,
 		   "rx skb %p len %u peer %pM %d %s sn %u %s%s%s%s%s%s%s%s%s%s rate_idx %u vht_nss %u freq %u band %u flag 0x%x fcs-err %i mic-err %i amsdu-more %i\n",
@@ -1082,14 +1106,14 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar, const u8 *peer_mac, int vdev
 	}
 
 	for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
-		rx_tid = &peer->rx_tid[i];
+		rx_tid = &peer->dp_peer->rx_tid[i];
 		rx_tid->dp = dp;
 		timer_setup(&rx_tid->frag_timer, ath12k_dp_rx_frag_timer, 0);
 		skb_queue_head_init(&rx_tid->rx_frags);
 	}
 
-	peer->tfm_mmic = tfm;
-	peer->dp_setup_done = true;
+	peer->dp_peer->tfm_mmic = tfm;
+	peer->dp_peer->primary_link_frag_setup = true;
 	spin_unlock_bh(&dp->dp_lock);
 
 	return 0;

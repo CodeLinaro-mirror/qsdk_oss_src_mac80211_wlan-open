@@ -240,7 +240,7 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 					struct ath12k_dp_link_peer *peer, u8 tid)
 {
 	struct ath12k_hal_reo_cmd cmd = {0};
-	struct ath12k_dp_rx_tid *rx_tid = &peer->rx_tid[tid];
+	struct ath12k_dp_rx_tid *rx_tid = &peer->dp_peer->rx_tid[tid];
 	int ret;
 
 	if (!rx_tid->active)
@@ -647,7 +647,7 @@ static void ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	enum hal_encrypt_type enctype;
 	bool is_decrypted = false;
 	struct ieee80211_hdr *hdr;
-	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_peer *peer;
 	u32 err_bitmap = rx_desc_data->err_bitmap;
 
 	/* PN for multicast packets will be checked in mac80211 */
@@ -657,8 +657,9 @@ static void ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (rxcb->is_mcbc)
 		rxcb->peer_id = rx_desc_data->peer_id;
 
+	rcu_read_lock();
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_rx_h_find_peer(dp, msdu, rx_desc_data);
+	peer = ath12k_dp_rx_h_find_peer_by_peerid_index(dp, dp_pdev, msdu);
 	if (peer) {
 		if (rxcb->is_mcbc)
 			enctype = peer->sec_type_grp;
@@ -668,6 +669,7 @@ static void ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		enctype = HAL_ENCRYPT_TYPE_OPEN;
 	}
 	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
 
 	if (enctype != HAL_ENCRYPT_TYPE_OPEN && !err_bitmap)
 		is_decrypted = rx_desc_data->is_decrypted;
@@ -1192,7 +1194,7 @@ exit:
 }
 
 static int ath12k_wifi7_dp_rx_h_verify_tkip_mic(struct ath12k_pdev_dp *dp_pdev,
-						struct ath12k_dp_link_peer *peer,
+						struct ath12k_dp_peer *peer,
 						enum hal_encrypt_type enctype,
 						struct sk_buff *msdu,
 						struct hal_rx_desc_data *rx_desc_data)
@@ -1255,7 +1257,7 @@ mic_fail:
 }
 
 static int ath12k_wifi7_dp_rx_h_defrag(struct ath12k_pdev_dp *dp_pdev,
-				       struct ath12k_dp_link_peer *peer,
+				       struct ath12k_dp_peer *peer,
 				       struct ath12k_dp_rx_tid *rx_tid,
 				       struct sk_buff **defrag_skb,
 				       enum hal_encrypt_type enctype,
@@ -1558,7 +1560,7 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
-	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_peer *peer;
 	struct ath12k_dp_rx_tid *rx_tid;
 	struct sk_buff *defrag_skb = NULL;
 	u32 peer_id = rx_desc_data->peer_id;
@@ -1584,7 +1586,7 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		return -EINVAL;
 
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (!peer) {
 		ath12k_warn(ab, "failed to find the peer to de-fragment received fragment peer_id %d\n",
 			    peer_id);
@@ -1592,7 +1594,7 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		goto out_unlock;
 	}
 
-	if (!peer->dp_setup_done) {
+	if (!peer->primary_link_frag_setup) {
 		ath12k_warn(ab, "The peer %pM [%d] has uninitialized datapath\n",
 			    peer->addr, peer_id);
 		ret = -ENOENT;
@@ -1647,7 +1649,7 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	del_timer_sync(&rx_tid->frag_timer);
 	spin_lock_bh(&dp->dp_lock);
 
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (!peer)
 		goto err_frags_cleanup;
 
