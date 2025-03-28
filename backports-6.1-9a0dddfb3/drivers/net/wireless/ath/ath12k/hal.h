@@ -1279,6 +1279,16 @@ struct hal_ops {
 	void (*set_link_desc_addr)(struct hal_wbm_link_desc *desc, u32 cookie,
 				   dma_addr_t paddr,
 				   enum hal_rx_buf_return_buf_manager rbm);
+	void (*setup_link_idle_list)(struct ath12k_base *ab,
+				     struct hal_wbm_idle_scatter_list *sbuf,
+				     u32 nsbufs, u32 tot_link_desc,
+				     u32 end_offset);
+	void (*tx_set_dscp_tid_map)(struct ath12k_base *ab, int id);
+	void (*tx_configure_bank_register)(struct ath12k_base *ab,
+					   u32 bank_config, u8 bank_id);
+	void (*write_ml_reoq_lut_addr)(struct ath12k_base *ab,
+				       dma_addr_t paddr);
+	void (*write_reoq_lut_addr)(struct ath12k_base *ab, dma_addr_t paddr);
 };
 
 u8 ath12k_hal_rx_get_msdu_src_link(struct ath12k_base *ab,
@@ -1363,4 +1373,10 @@ void ath12k_hal_set_link_desc_addr(struct ath12k_hal *hal,
 u32
 ath12k_hal_ce_dst_status_get_length(struct ath12k_hal *hal,
 				    struct hal_ce_srng_dst_status_desc *desc);
+void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, int id);
+void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
+					   u32 bank_config, u8 bank_id);
+void ath12k_hal_write_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr);
+void
+ath12k_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr);
 #endif
