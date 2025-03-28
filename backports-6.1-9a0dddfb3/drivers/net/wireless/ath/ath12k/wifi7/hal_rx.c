@@ -275,15 +275,16 @@ void ath12k_wifi7_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *binfo,
 	paddr_hi = upper_32_bits(paddr);
 	binfo->info0 = le32_encode_bits(paddr_lo, BUFFER_ADDR_INFO0_ADDR);
 	binfo->info1 = le32_encode_bits(paddr_hi, BUFFER_ADDR_INFO1_ADDR) |
-		       le32_encode_bits(cookie, BUFFER_ADDR_INFO1_SW_COOKIE) |
-		       le32_encode_bits(manager, BUFFER_ADDR_INFO1_RET_BUF_MGR);
+		le32_encode_bits(cookie, BUFFER_ADDR_INFO1_SW_COOKIE) |
+		le32_encode_bits(manager, BUFFER_ADDR_INFO1_RET_BUF_MGR);
 }
 
 void ath12k_wifi7_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,
-					   dma_addr_t *paddr,
-					   u32 *cookie, u8 *rbm)
+					   dma_addr_t *paddr, u32 *cookie,
+					   u8 *rbm)
 {
-	*paddr = (((u64)le32_get_bits(binfo->info1, BUFFER_ADDR_INFO1_ADDR)) << 32) |
+	*paddr = (((u64)le32_get_bits(binfo->info1,
+				      BUFFER_ADDR_INFO1_ADDR)) << 32) |
 		le32_get_bits(binfo->info0, BUFFER_ADDR_INFO0_ADDR);
 	*cookie = le32_get_bits(binfo->info1, BUFFER_ADDR_INFO1_SW_COOKIE);
 	*rbm = le32_get_bits(binfo->info1, BUFFER_ADDR_INFO1_RET_BUF_MGR);

@@ -356,7 +356,8 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_base *ab,
 
 		num_remain--;
 
-		ath12k_wifi7_hal_rx_buf_addr_info_set(desc, paddr, cookie, mgr);
+		ath12k_hal_rx_buf_addr_info_set(&ab->hal, desc, paddr, cookie,
+						mgr);
 	}
 
 	goto out;
@@ -750,8 +751,7 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 		return ret;
 	}
 
-	ath12k_wifi7_hal_reo_qdesc_setup(addr_aligned, tid, ba_win_sz,
-					 ssn, pn_type);
+	ath12k_hal_reo_qdesc_setup(&ab->hal, addr_aligned, tid, ba_win_sz, ssn, pn_type);
 
 	rx_tid->active = true;
 

@@ -1421,8 +1421,7 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	memset(reo_ent_ring, 0, sizeof(*reo_ent_ring));
 
 	ath12k_wifi7_hal_rx_buf_addr_info_set(&reo_ent_ring->buf_addr_info,
-					      link_paddr, cookie,
-					      idle_link_rbm);
+					      link_paddr, cookie, idle_link_rbm);
 
 	mpdu_info = u32_encode_bits(1, RX_MPDU_DESC_INFO0_MSDU_COUNT) |
 		    u32_encode_bits(0, RX_MPDU_DESC_INFO0_FRAG_FLAG) |
