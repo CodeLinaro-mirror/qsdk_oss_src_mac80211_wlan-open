@@ -1257,6 +1257,13 @@ struct hal_ops {
 	void (*extract_rx_desc_data)(struct hal_rx_desc_data *rx_desc_data,
 				     struct hal_rx_desc *rx_desc,
 				     struct hal_rx_desc *ldesc);
+	void (*ce_dst_setup)(struct ath12k_base *ab,
+			     struct hal_srng *srng, int ring_num);
+	void (*set_umac_srng_ptr_addr)(struct ath12k_base *ab,
+				       struct hal_srng *srng,
+				       enum hal_ring_type type, int ring_num);
+	void (*srng_src_hw_init)(struct ath12k_base *ab, struct hal_srng *srng);
+	void (*srng_dst_hw_init)(struct ath12k_base *ab, struct hal_srng *srng);
 };
 
 u8 ath12k_hal_rx_get_msdu_src_link(struct ath12k_base *ab,
