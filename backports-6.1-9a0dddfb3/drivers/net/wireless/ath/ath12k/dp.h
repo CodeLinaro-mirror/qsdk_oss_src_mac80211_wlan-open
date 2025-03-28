@@ -13,6 +13,7 @@
 #include "dp_htt.h"
 #include "dp_cmn.h"
 #include "hal.h"
+#include <linux/rhashtable.h>
 
 #define MAX_RXDMA_PER_PDEV     2
 
@@ -425,7 +426,7 @@ struct ath12k_dp {
 	struct device *dev;
 	struct ath12k_hal *hal;
 
-	/* protects data fields like dp_pdevs and peers */
+	/* protects data fields like dp_pdevs, peers and rhead_peer_addr */
 	spinlock_t dp_lock;
 	struct ath12k_pdev_dp __rcu *dp_pdevs[MAX_RADIOS];
 	u8 num_radios;
@@ -437,6 +438,10 @@ struct ath12k_dp {
 
 	/* Linked list of struct ath12k_dp_link_peer */
 	struct list_head peers;
+
+	/* The rhashtable containing struct ath12k_peer keyed by mac addr */
+	struct rhashtable *rhead_peer_addr;
+	struct rhashtable_params rhash_peer_addr_param;
 };
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

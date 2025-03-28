@@ -1479,6 +1479,8 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 	dp->idle_link_rbm =
 			ath12k_hal_get_idle_link_rbm(&ab->hal, ab->device_id);
 
+	ath12k_dp_link_peer_rhash_tbl_init(dp);
+
 	ret = ath12k_wbm_idle_ring_setup(ab, &n_link_desc);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup wbm_idle_ring: %d\n", ret);
@@ -1569,6 +1571,9 @@ fail_link_desc_cleanup:
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 {
 	dp->arch_ops->dp_op_device_deinit(dp);
+
+	ath12k_dp_link_peer_rhash_tbl_destroy(dp);
+
 	ath12k_dp_cleanup(dp->ab);
 }
 
