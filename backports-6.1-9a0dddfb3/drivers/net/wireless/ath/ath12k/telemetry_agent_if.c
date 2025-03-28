@@ -562,6 +562,59 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 	return 0;
 }
 
+static int ath12k_get_erp_pdev_stats(void *obj,
+				     struct erp_link_iface_stats_obj *stats)
+{
+	struct ath12k_pdev *pdev = (struct ath12k_pdev *)obj;
+	struct ath12k_pdev_telemetry_stats dp_stats;
+	struct ath12k_base *ab;
+	struct ath12k *ar;
+
+	if (!pdev)
+		return -EINVAL;
+
+	ar = pdev->ar;
+	if (!ar) {
+		ath12k_err(NULL, "Failed to get ar from telemetry agent object pdev\n");
+		return -EINVAL;
+	}
+
+	ab = ath12k_pdev_to_ab(pdev);
+	if (!ab) {
+		ath12k_err(NULL, "Failed to get ab from telemetry agent object pdev\n");
+		return -ENOENT;
+	}
+
+	if (ath12k_dp_get_pdev_telemetry_stats(ab, pdev->pdev_id, &dp_stats))
+		return -EINVAL;
+
+	memset(stats, 0, sizeof(*stats));
+
+	stats->tx_data_msdu_cnt = dp_stats.tx_data_msdu_cnt;
+	stats->total_tx_data_bytes = dp_stats.total_tx_data_bytes;
+	stats->rx_data_msdu_cnt = dp_stats.rx_data_msdu_cnt;
+	stats->total_rx_data_bytes = dp_stats.total_rx_data_bytes;
+	stats->sta_vap_exist = dp_stats.sta_vap_exist ? 1 : 0;
+	stats->time_since_last_assoc =
+		(ktime_get_real_seconds() - dp_stats.time_last_assoc) * USEC_PER_SEC;
+
+	ath12k_dbg(ab, ATH12K_DBG_RM,
+		   "pdev %u stats sta_vaps_exist %s time_since_last_assoc %lld usec\n",
+		   pdev->pdev_id, stats->sta_vap_exist ? "true":"false",
+		   stats->time_since_last_assoc);
+
+	ath12k_dbg(ab, ATH12K_DBG_RM,
+		   "pdev %u stats total bytes tx %lld rx %lld\n",
+		   pdev->pdev_id, stats->total_tx_data_bytes,
+		   stats->total_rx_data_bytes);
+
+	ath12k_dbg(ab, ATH12K_DBG_RM,
+		   "pdev %u stats msdu count tx %lld rx %lld\n",
+		   pdev->pdev_id, stats->tx_data_msdu_cnt, stats->rx_data_msdu_cnt);
+
+	return 0;
+}
+
 static int ath12k_telemetry_peer_agent_update(struct ath12k_base *ab,
 					      struct ath12k_pdev *pdev,
 					      struct ath12k_dp_link_peer *peer,
@@ -700,6 +753,7 @@ int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 	g_agent_ops->agent_get_peer_stats = ath12k_get_peer_stats;
 	g_agent_ops->agent_get_emesh_pdev_stats = NULL;
 	g_agent_ops->agent_get_emesh_peer_stats = NULL;
+	g_agent_ops->agent_get_erp_pdev_stats = ath12k_get_erp_pdev_stats;
 
 	g_agent_ops->sawf_get_tput_stats = ath12k_sawf_get_tput_stats;
 	g_agent_ops->sawf_get_mpdu_stats = ath12k_sawf_get_mpdu_stats;

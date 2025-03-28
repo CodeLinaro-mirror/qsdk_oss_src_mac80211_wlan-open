@@ -116,6 +116,12 @@ struct ath12k_pdev_telemetry_stats {
        u32 link_airtime[WLAN_MAX_AC];
        u32 tx_link_airtime[WLAN_MAX_AC];
        u32 rx_link_airtime[WLAN_MAX_AC];
+	u64 tx_data_msdu_cnt;
+	u64 total_tx_data_bytes;
+	u64 rx_data_msdu_cnt;
+	u64 total_rx_data_bytes;
+	u64 time_last_assoc;
+	u8 sta_vap_exist;
 };
 
 struct ath12k_pdev_dp_stats {

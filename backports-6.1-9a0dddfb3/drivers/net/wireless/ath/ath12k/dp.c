@@ -1308,6 +1308,13 @@ int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
                           dp->stats.telemetry_stats.rx_link_airtime[ac]) * 100) / 1000000);
        }
 
+	stats->rx_data_msdu_cnt = dp->stats.telemetry_stats.rx_data_msdu_cnt;
+	stats->total_rx_data_bytes = dp->stats.telemetry_stats.total_rx_data_bytes;
+	stats->tx_data_msdu_cnt = dp->stats.telemetry_stats.tx_data_msdu_cnt;
+	stats->total_tx_data_bytes = dp->stats.telemetry_stats.total_tx_data_bytes;
+	stats->sta_vap_exist = dp->stats.telemetry_stats.sta_vap_exist;
+	stats->time_last_assoc = dp->stats.telemetry_stats.time_last_assoc;
+
        spin_unlock_bh(&ar->data_lock);
 
        return 0;
