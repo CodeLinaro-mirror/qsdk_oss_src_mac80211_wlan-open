@@ -7,7 +7,6 @@
 #define ATH12K_DP_RX_H
 
 #include "core.h"
-#include "wifi7/hal_rx_desc.h"
 #include "debug.h"
 #include <crypto/hash.h>
 

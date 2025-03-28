@@ -1537,7 +1537,6 @@ struct hal_rx_desc {
 } __packed;
 
 #define MAX_USER_POS 8
-#define MAX_MU_GROUP_ID 64
 #define MAX_MU_GROUP_SHOW 16
 #define MAX_MU_GROUP_LENGTH (6 * MAX_MU_GROUP_SHOW)
 

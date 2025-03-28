@@ -8,6 +8,7 @@
 #include <linux/skbuff.h>
 #include <crypto/hash.h>
 #include "../core.h"
+#include "hal.h"
 #include "../debug.h"
 #include "../peer.h"
 #include "../hw.h"
@@ -15,10 +16,8 @@
 #include "../debugfs_htt_stats.h"
 #include "../dp_tx.h"
 #include "../dp_mon.h"
-#include "dp_rx.h"
 #include "hal_rx.h"
 #include "dp_rx.h"
-#include "hal_desc.h"
 #include "hal_qcn9274.h"
 #include "hal_wcn7850.h"
 
@@ -1343,6 +1342,7 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	u32 cookie, hal_rx_desc_sz, dest_ring_info0, queue_addr_hi;
 	int ret, len_diff;
 	struct ath12k_rx_desc_info *desc_info;
+	struct ath12k_buffer_address *info;
 	enum hal_rx_buf_return_buf_manager idle_link_rbm = dp->idle_link_rbm;
 	u8 dst_ind;
 
@@ -1401,7 +1401,8 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 
 	ATH12K_SKB_RXCB(defrag_skb)->paddr = buf_paddr;
 
-	ath12k_wifi7_hal_rx_buf_addr_info_set(&msdu0->buf_addr_info, buf_paddr,
+	info = (struct ath12k_buffer_address *)&msdu0->buf_addr_info;
+	ath12k_wifi7_hal_rx_buf_addr_info_set(info, buf_paddr,
 					      desc_info->cookie,
 					      HAL_RX_BUF_RBM_SW3_BM);
 
@@ -1420,7 +1421,8 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	}
 	memset(reo_ent_ring, 0, sizeof(*reo_ent_ring));
 
-	ath12k_wifi7_hal_rx_buf_addr_info_set(&reo_ent_ring->buf_addr_info,
+	info = (struct ath12k_buffer_address *)&reo_ent_ring->buf_addr_info;
+	ath12k_wifi7_hal_rx_buf_addr_info_set(info,
 					      link_paddr, cookie, idle_link_rbm);
 
 	mpdu_info = u32_encode_bits(1, RX_MPDU_DESC_INFO0_MSDU_COUNT) |

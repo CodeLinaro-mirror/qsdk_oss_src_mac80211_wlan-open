@@ -10,11 +10,9 @@
 #include <crypto/hash.h>
 #include "core.h"
 #include "debug.h"
-#include "wifi7/hal_desc.h"
 #include "hw.h"
 #include "dp_rx.h"
 #include "wifi7/dp_rx.h"
-#include "wifi7/hal_rx.h"
 #include "dp_tx.h"
 #include "peer.h"
 #include "dp_mon.h"
@@ -280,7 +278,7 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_base *ab,
 				struct list_head *used_list,
 				int req_entries)
 {
-	struct ath12k_buffer_addr *desc;
+	struct ath12k_buffer_address *desc;
 	struct hal_srng *srng;
 	struct sk_buff *skb;
 	int num_free;

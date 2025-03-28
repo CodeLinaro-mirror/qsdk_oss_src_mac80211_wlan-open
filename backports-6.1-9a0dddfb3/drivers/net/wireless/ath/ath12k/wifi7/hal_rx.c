@@ -4,12 +4,9 @@
  * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 
-#include "debug.h"
+#include "../debug.h"
+#include "../hif.h"
 #include "hal.h"
-#include "hal_tx.h"
-#include "hal_rx.h"
-#include "hal_desc.h"
-#include "hif.h"
 
 static
 void ath12k_wifi7_hal_reo_set_desc_hdr(struct hal_desc_header *hdr,
@@ -265,10 +262,11 @@ out:
 	return ret;
 }
 
-void ath12k_wifi7_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *binfo,
+void ath12k_wifi7_hal_rx_buf_addr_info_set(struct ath12k_buffer_address *b_info,
 					   dma_addr_t paddr, u32 cookie,
 					   u8 manager)
 {
+	struct ath12k_buffer_addr *binfo = (struct ath12k_buffer_addr *)b_info;
 	u32 paddr_lo, paddr_hi;
 
 	paddr_lo = lower_32_bits(paddr);
@@ -279,10 +277,12 @@ void ath12k_wifi7_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *binfo,
 		le32_encode_bits(manager, BUFFER_ADDR_INFO1_RET_BUF_MGR);
 }
 
-void ath12k_wifi7_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,
+void ath12k_wifi7_hal_rx_buf_addr_info_get(struct ath12k_buffer_address *b_info,
 					   dma_addr_t *paddr, u32 *cookie,
 					   u8 *rbm)
 {
+	struct ath12k_buffer_addr *binfo = (struct ath12k_buffer_addr *)b_info;
+
 	*paddr = (((u64)le32_get_bits(binfo->info1,
 				      BUFFER_ADDR_INFO1_ADDR)) << 32) |
 		le32_get_bits(binfo->info0, BUFFER_ADDR_INFO0_ADDR);

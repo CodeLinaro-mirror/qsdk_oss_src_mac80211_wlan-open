@@ -7,6 +7,9 @@
 #ifndef ATH12K_HAL_RX_H
 #define ATH12K_HAL_RX_H
 
+#include "hal_desc.h"
+#include "hal.h"
+
 struct hal_rx_wbm_rel_info {
 	u32 cookie;
 	enum hal_wbm_rel_src_module err_rel_src;
@@ -37,64 +40,6 @@ struct hal_rx_wbm_rel_info {
 struct hal_rx_mon_status_tlv_hdr {
 	u32 hdr;
 	u8 value[];
-};
-
-enum hal_rx_su_mu_coding {
-	HAL_RX_SU_MU_CODING_BCC,
-	HAL_RX_SU_MU_CODING_LDPC,
-	HAL_RX_SU_MU_CODING_MAX,
-};
-
-enum hal_rx_gi {
-	HAL_RX_GI_0_8_US,
-	HAL_RX_GI_0_4_US,
-	HAL_RX_GI_1_6_US,
-	HAL_RX_GI_3_2_US,
-	HAL_RX_GI_MAX,
-};
-
-enum hal_rx_bw {
-	HAL_RX_BW_20MHZ,
-	HAL_RX_BW_40MHZ,
-	HAL_RX_BW_80MHZ,
-	HAL_RX_BW_160MHZ,
-	HAL_RX_BW_320MHZ,
-	HAL_RX_BW_MAX,
-};
-
-enum hal_rx_preamble {
-	HAL_RX_PREAMBLE_11A,
-	HAL_RX_PREAMBLE_11B,
-	HAL_RX_PREAMBLE_11N,
-	HAL_RX_PREAMBLE_11AC,
-	HAL_RX_PREAMBLE_11AX,
-	HAL_RX_PREAMBLE_11BA,
-	HAL_RX_PREAMBLE_11BE,
-	HAL_RX_PREAMBLE_MAX,
-};
-
-enum hal_rx_reception_type {
-	HAL_RX_RECEPTION_TYPE_SU,
-	HAL_RX_RECEPTION_TYPE_MU_MIMO,
-	HAL_RX_RECEPTION_TYPE_MU_OFDMA,
-	HAL_RX_RECEPTION_TYPE_MU_OFDMA_MIMO,
-	HAL_RX_RECEPTION_TYPE_MAX,
-};
-
-enum hal_rx_legacy_rate {
-	HAL_RX_LEGACY_RATE_1_MBPS,
-	HAL_RX_LEGACY_RATE_2_MBPS,
-	HAL_RX_LEGACY_RATE_5_5_MBPS,
-	HAL_RX_LEGACY_RATE_6_MBPS,
-	HAL_RX_LEGACY_RATE_9_MBPS,
-	HAL_RX_LEGACY_RATE_11_MBPS,
-	HAL_RX_LEGACY_RATE_12_MBPS,
-	HAL_RX_LEGACY_RATE_18_MBPS,
-	HAL_RX_LEGACY_RATE_24_MBPS,
-	HAL_RX_LEGACY_RATE_36_MBPS,
-	HAL_RX_LEGACY_RATE_48_MBPS,
-	HAL_RX_LEGACY_RATE_54_MBPS,
-	HAL_RX_LEGACY_RATE_INVALID,
 };
 
 #define HAL_TLV_STATUS_PPDU_NOT_DONE            0
@@ -1041,24 +986,6 @@ enum hal_mon_reception_type {
 #define HAL_RU_PER80(ru_per80, num_80mhz, ru_idx_per80mhz) \
 			(HAL_RU(ru_per80, num_80mhz, ru_idx_per80mhz))
 
-#define RU_INVALID		0
-#define RU_26			1
-#define RU_52			2
-#define RU_106			4
-#define RU_242			9
-#define RU_484			18
-#define RU_996			37
-#define RU_2X996		74
-#define RU_3X996		111
-#define RU_4X996		148
-#define RU_52_26		(RU_52 + RU_26)
-#define RU_106_26		(RU_106 + RU_26)
-#define RU_484_242		(RU_484 + RU_242)
-#define RU_996_484		(RU_996 + RU_484)
-#define RU_996_484_242		(RU_996 + RU_484_242)
-#define RU_2X996_484		(RU_2X996 + RU_484)
-#define RU_3X996_484		(RU_3X996 + RU_484)
-
 enum ath12k_eht_ru_size {
 	ATH12K_EHT_RU_26,
 	ATH12K_EHT_RU_52,
@@ -1082,39 +1009,6 @@ enum ath12k_eht_ru_size {
 };
 
 #define HAL_RX_RU_ALLOC_TYPE_MAX	ATH12K_EHT_RU_INVALID
-
-static inline
-enum nl80211_he_ru_alloc ath12k_he_ru_tones_to_nl80211_he_ru_alloc(u16 ru_tones)
-{
-	enum nl80211_he_ru_alloc ret;
-
-	switch (ru_tones) {
-	case RU_52:
-		ret = NL80211_RATE_INFO_HE_RU_ALLOC_52;
-		break;
-	case RU_106:
-		ret = NL80211_RATE_INFO_HE_RU_ALLOC_106;
-		break;
-	case RU_242:
-		ret = NL80211_RATE_INFO_HE_RU_ALLOC_242;
-		break;
-	case RU_484:
-		ret = NL80211_RATE_INFO_HE_RU_ALLOC_484;
-		break;
-	case RU_996:
-		ret = NL80211_RATE_INFO_HE_RU_ALLOC_996;
-		break;
-	case RU_2X996:
-		ret = NL80211_RATE_INFO_HE_RU_ALLOC_2x996;
-		break;
-	case RU_26:
-		fallthrough;
-	default:
-		ret = NL80211_RATE_INFO_HE_RU_ALLOC_26;
-		break;
-	}
-	return ret;
-}
 
 void ath12k_wifi7_hal_reo_status_queue_stats(struct ath12k_base *ab,
 					     struct hal_tlv_64_hdr *tlv,
@@ -1149,10 +1043,10 @@ ath12k_wifi7_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
 				       struct hal_wbm_release_ring *dst_desc,
 				       struct hal_wbm_release_ring *src_desc,
 				       enum hal_wbm_rel_bm_act action);
-void ath12k_wifi7_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *binfo,
+void ath12k_wifi7_hal_rx_buf_addr_info_set(struct ath12k_buffer_address *binfo,
 					   dma_addr_t paddr, u32 cookie,
 					   u8 manager);
-void ath12k_wifi7_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,
+void ath12k_wifi7_hal_rx_buf_addr_info_get(struct ath12k_buffer_address *binfo,
 					   dma_addr_t *paddr,
 					   u32 *cookie, u8 *rbm);
 int ath12k_wifi7_hal_desc_reo_parse_err(struct ath12k_base *ab,

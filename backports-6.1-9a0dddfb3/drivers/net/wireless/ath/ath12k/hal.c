@@ -4,14 +4,9 @@
  * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
  */
 #include <linux/dma-mapping.h>
-#include "wifi7/hal_tx.h"
-#include "wifi7/hal_rx.h"
 #include "debug.h"
-#include "wifi7/hal_desc.h"
 #include "hif.h"
 #include "pcic.h"
-#include "wifi7/hal_qcn9274.h"
-#include "wifi7/hal_wcn7850.h"
 
 static void ath12k_hal_ce_dst_setup(struct ath12k_base *ab,
 				    struct hal_srng *srng, int ring_num)
@@ -54,10 +49,11 @@ int ath12k_hal_srng_update_shadow_config(struct ath12k_base *ab,
 }
 
 void ath12k_hal_set_link_desc_addr(struct ath12k_hal *hal,
-				   struct hal_wbm_link_desc *desc, u32 cookie,
+				   struct wbm_link_desc*desc, u32 cookie,
 				   dma_addr_t paddr, int rbm)
 {
-	hal->hal_ops->set_link_desc_addr(desc, cookie, paddr, rbm);
+	hal->hal_ops->set_link_desc_addr((struct hal_wbm_link_desc *)desc,
+					 cookie, paddr, rbm);
 }
 
 u32 ath12k_hal_ce_get_desc_size(struct ath12k_hal *hal, enum hal_ce_desc type)
@@ -105,19 +101,18 @@ void ath12k_hal_reo_qdesc_setup(struct ath12k_hal *hal,
 }
 
 void ath12k_hal_rx_buf_addr_info_set(struct ath12k_hal *hal,
-				     struct ath12k_buffer_addr *binfo,
+				     struct ath12k_buffer_address *binfo,
 				     dma_addr_t paddr, u32 cookie, u8 manager)
 {
 	hal->hal_ops->rx_buf_addr_info_set(binfo, paddr, cookie, manager);
 }
 
 void ath12k_hal_rx_buf_addr_info_get(struct ath12k_hal *hal,
-				     struct ath12k_buffer_addr *binfo,
+				     struct ath12k_buffer_address *binfo,
 				     dma_addr_t *paddr, u32 *msdu_cookies,
 				     u8 *rbm)
 {
-	hal->hal_ops->rx_buf_addr_info_get((struct ath12k_buffer_addr *)binfo,
-					   paddr, msdu_cookies, rbm);
+	hal->hal_ops->rx_buf_addr_info_get(binfo, paddr, msdu_cookies, rbm);
 }
 
 void ath12k_hal_cc_config(struct ath12k_base *ab)
@@ -483,11 +478,11 @@ void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng)
 }
 
 void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
-				     struct hal_wbm_idle_scatter_list *sbuf,
+				     struct wbm_idle_scatter_list *sbuf,
 				     u32 nsbufs, u32 tot_link_desc,
 				     u32 end_offset)
 {
-	ab->hal.hal_ops->setup_link_idle_list(ab, sbuf, nsbufs,
+	ab->hal.hal_ops->setup_link_idle_list(ab, (struct hal_wbm_idle_scatter_list *)sbuf, nsbufs,
 					      tot_link_desc, end_offset);
 }
 

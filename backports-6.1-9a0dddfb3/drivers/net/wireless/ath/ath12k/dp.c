@@ -7,9 +7,9 @@
 #include <crypto/hash.h>
 #include "core.h"
 #include "dp_tx.h"
-#include "wifi7/hal_tx.h"
 #include "wifi7/dp_rx.h"
 #include "hif.h"
+#include "hal.h"
 #include "debug.h"
 #include "dp_rx.h"
 #include "peer.h"
@@ -547,7 +547,7 @@ err:
 static void ath12k_dp_scatter_idle_link_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct hal_wbm_idle_scatter_list *slist = dp->scatter_list;
+	struct wbm_idle_scatter_list *slist = dp->scatter_list;
 	int i;
 
 	for (i = 0; i < DP_IDLE_SCATTER_BUFS_MAX; i++) {
@@ -569,10 +569,10 @@ static int ath12k_dp_scatter_idle_link_desc_setup(struct ath12k_base *ab,
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_hal *hal = dp->hal;
 	struct dp_link_desc_bank *link_desc_banks = dp->link_desc_banks;
-	struct hal_wbm_idle_scatter_list *slist = dp->scatter_list;
+	struct wbm_idle_scatter_list *slist = dp->scatter_list;
 	u32 n_entries_per_buf;
 	int num_scatter_buf, scatter_idx;
-	struct hal_wbm_link_desc *scatter_buf;
+	struct wbm_link_desc *scatter_buf;
 	int align_bytes, n_entries;
 	dma_addr_t paddr;
 	int rem_entries;
@@ -627,7 +627,7 @@ static int ath12k_dp_scatter_idle_link_desc_setup(struct ath12k_base *ab,
 	}
 
 	end_offset = (scatter_buf - slist[scatter_idx].vaddr) *
-		     sizeof(struct hal_wbm_link_desc);
+		     sizeof(struct wbm_link_desc);
 	ath12k_hal_setup_link_idle_list(ab, slist, num_scatter_buf,
 					n_link_desc, end_offset);
 
@@ -752,7 +752,7 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 	u32 tot_mem_sz;
 	u32 n_link_desc_bank, last_bank_sz;
 	u32 entry_sz, align_bytes, n_entries;
-	struct hal_wbm_link_desc *desc;
+	struct wbm_link_desc *desc;
 	u32 paddr;
 	int i, ret;
 	u32 cookie;

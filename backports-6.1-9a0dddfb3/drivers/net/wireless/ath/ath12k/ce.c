@@ -7,6 +7,7 @@
 #include "dp_rx.h"
 #include "debug.h"
 #include "hif.h"
+#include "hal.h"
 
 static int ath12k_ce_rx_buf_enqueue_pipe(struct ath12k_ce_pipe *pipe,
 					 struct sk_buff *skb, dma_addr_t paddr)
