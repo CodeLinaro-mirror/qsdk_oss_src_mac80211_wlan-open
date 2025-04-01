@@ -4193,7 +4193,6 @@ struct ath12k_wmi_eht_rate_set_params {
 #define MAX_REG_RULES 10
 #define REG_ALPHA2_LEN 2
 #define MAX_6GHZ_REG_RULES 5
-#define REG_US_5G_NUM_REG_RULES 4
 
 struct wmi_set_current_country_arg {
 	u8 alpha2[REG_ALPHA2_LEN];
