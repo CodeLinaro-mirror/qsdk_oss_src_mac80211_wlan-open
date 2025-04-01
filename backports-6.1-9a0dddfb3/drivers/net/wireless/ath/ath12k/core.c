@@ -2286,6 +2286,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 		goto err_free_wq;
 
 	mutex_init(&ab->core_lock);
+	mutex_init(&ab->tbl_mtx_lock);
 	spin_lock_init(&ab->base_lock);
 	init_completion(&ab->reset_complete);
 

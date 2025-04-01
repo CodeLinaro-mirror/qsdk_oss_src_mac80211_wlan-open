@@ -1168,6 +1168,9 @@ struct ath12k_base {
 
 	const struct ieee80211_ops *ath12k_ops;
 
+	/* To synchronize rhash tbl write operation */
+	struct mutex tbl_mtx_lock;
+
 	struct rhashtable *rhead_sta_addr;
 	struct rhashtable_params rhash_sta_addr_param;
 

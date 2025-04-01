@@ -431,7 +431,7 @@ static int ath12k_link_sta_rhash_addr_tbl_init(struct ath12k_base *ab)
 	int ret;
 	size_t size;
 
-	lockdep_assert_held(&ab->base_lock);
+	lockdep_assert_held(&ab->tbl_mtx_lock);
 
 	if (ab->rhead_sta_addr)
 		return 0;
@@ -475,16 +475,16 @@ int ath12k_link_sta_rhash_tbl_init(struct ath12k_base *ab)
 {
 	int ret;
 
-	spin_lock_bh(&ab->base_lock);
+	mutex_lock(&ab->tbl_mtx_lock);
 	ret = ath12k_link_sta_rhash_addr_tbl_init(ab);
-	spin_unlock_bh(&ab->base_lock);
+	mutex_unlock(&ab->tbl_mtx_lock);
 
 	return ret;
 }
 
 void ath12k_link_sta_rhash_tbl_destroy(struct ath12k_base *ab)
 {
-	spin_lock_bh(&ab->base_lock);
+	mutex_lock(&ab->tbl_mtx_lock);
 
 	if (!ab->rhead_sta_addr)
 		goto unlock;
@@ -494,7 +494,7 @@ void ath12k_link_sta_rhash_tbl_destroy(struct ath12k_base *ab)
 	ab->rhead_sta_addr = NULL;
 
 unlock:
-	spin_unlock_bh(&ab->base_lock);
+	mutex_unlock(&ab->tbl_mtx_lock);
 }
 
 struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k_base *ab,
