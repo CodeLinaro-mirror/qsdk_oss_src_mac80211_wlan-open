@@ -179,6 +179,8 @@ static int ath12k_dp_link_peer_rhash_addr_tbl_init(struct ath12k_dp *dp)
 	int ret;
 	size_t size;
 
+	lockdep_assert_held(&dp->tbl_mtx_lock);
+
 	if (dp->rhead_peer_addr)
 		return 0;
 
@@ -220,16 +222,16 @@ int ath12k_dp_link_peer_rhash_tbl_init(struct ath12k_dp *dp)
 {
 	int ret;
 
-	spin_lock_bh(&dp->dp_lock);
+	mutex_lock(&dp->tbl_mtx_lock);
 	ret = ath12k_dp_link_peer_rhash_addr_tbl_init(dp);
-	spin_unlock_bh(&dp->dp_lock);
+	mutex_unlock(&dp->tbl_mtx_lock);
 
 	return ret;
 }
 
 void ath12k_dp_link_peer_rhash_tbl_destroy(struct ath12k_dp *dp)
 {
-	spin_lock_bh(&dp->dp_lock);
+	mutex_lock(&dp->tbl_mtx_lock);
 
 	if (!dp->rhead_peer_addr)
 		goto unlock;
@@ -239,7 +241,7 @@ void ath12k_dp_link_peer_rhash_tbl_destroy(struct ath12k_dp *dp)
 	dp->rhead_peer_addr = NULL;
 
 unlock:
-	spin_unlock_bh(&dp->dp_lock);
+	mutex_unlock(&dp->tbl_mtx_lock);
 }
 
 static int ath12k_dp_link_peer_rhash_insert(struct ath12k_dp *dp,

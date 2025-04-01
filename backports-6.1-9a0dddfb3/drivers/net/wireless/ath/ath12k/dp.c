@@ -1482,6 +1482,8 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 
 	INIT_LIST_HEAD(&dp->peers);
 
+	mutex_init(&dp->tbl_mtx_lock);
+
 	dp->reo_cmd_cache_flush_count = 0;
 	dp->idle_link_rbm =
 			ath12k_hal_get_idle_link_rbm(&ab->hal, ab->device_id);

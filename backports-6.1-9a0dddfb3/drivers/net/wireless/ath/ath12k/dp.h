@@ -485,6 +485,9 @@ struct ath12k_dp {
 	/* Linked list of struct ath12k_dp_link_peer */
 	struct list_head peers;
 
+	/* To synchronize rhash tbl write operation */
+	struct mutex tbl_mtx_lock;
+
 	/* The rhashtable containing struct ath12k_peer keyed by mac addr */
 	struct rhashtable *rhead_peer_addr;
 	struct rhashtable_params rhash_peer_addr_param;
