@@ -57,6 +57,7 @@
 #include <linux/verification.h>
 #include <linux/moduleparam.h>
 #include <linux/firmware.h>
+#include <linux/module.h>
 #include <linux/units.h>
 
 #include <net/cfg80211.h>
