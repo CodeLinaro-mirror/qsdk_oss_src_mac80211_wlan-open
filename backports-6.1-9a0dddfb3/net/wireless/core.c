@@ -143,11 +143,14 @@ int cfg80211_dev_rename(struct cfg80211_registered_device *rdev,
 	if (result)
 		return result;
 
+#if LINUX_VERSION_IS_GEQ(6,14,0)
+	debugfs_change_name(rdev->wiphy.debugfsdir, "%s", newname);
+#else
 	if (!IS_ERR_OR_NULL(rdev->wiphy.debugfsdir))
 		debugfs_rename(rdev->wiphy.debugfsdir->d_parent,
 			       rdev->wiphy.debugfsdir,
 			       rdev->wiphy.debugfsdir->d_parent, newname);
-
+#endif
 	nl80211_notify_wiphy(rdev, NL80211_CMD_NEW_WIPHY);
 
 	return 0;
