@@ -1350,7 +1350,11 @@ struct ieee80211_tx_status {
 	ktime_t ack_hwtstamp;
 	u8 n_rates;
 
+#if LINUX_VERSION_IS_GEQ(4,19,0)
 	struct list_head *free_list;
+#else
+	struct sk_buff_head *free_list;
+#endif
 };
 
 /**
