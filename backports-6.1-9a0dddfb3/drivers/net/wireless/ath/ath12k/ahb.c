@@ -582,10 +582,9 @@ static int ath12k_ahb_ext_grp_napi_poll(struct napi_struct *napi, int budget)
 	struct ath12k_ext_irq_grp *irq_grp = container_of(napi,
 						struct ath12k_ext_irq_grp,
 						napi);
-	struct ath12k_base *ab = irq_grp->ab;
 	int work_done;
 
-	work_done = ath12k_dp_service_srng(ab, irq_grp, budget);
+	work_done = irq_grp->irq_handler(irq_grp->dp, irq_grp, budget);
 	if (work_done < budget) {
 		napi_complete_done(napi, work_done);
 		ath12k_ahb_ext_grp_enable(irq_grp);
@@ -611,7 +610,13 @@ static irqreturn_t ath12k_ahb_ext_interrupt_handler(int irq, void *arg)
 	return IRQ_HANDLED;
 }
 
-static int ath12k_ahb_config_ext_irq(struct ath12k_base *ab)
+static int
+ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
+			  int (*irq_handler)(struct ath12k_dp *dp,
+					     struct ath12k_ext_irq_grp *irq_grp,
+					     int budget),
+			  struct ath12k_dp *dp)
+
 {
 	const struct ath12k_hw_ring_mask *ring_mask;
 	struct ath12k_ext_irq_grp *irq_grp;
@@ -628,6 +633,8 @@ static int ath12k_ahb_config_ext_irq(struct ath12k_base *ab)
 
 		irq_grp->ab = ab;
 		irq_grp->grp_id = i;
+		irq_grp->irq_handler = irq_handler;
+		irq_grp->dp = dp;
 #if LINUX_VERSION_IS_GEQ(6,10,0)
 		irq_grp->napi_ndev = alloc_netdev_dummy(0);
 		napi_ndev = irq_grp->napi_ndev;
@@ -646,7 +653,7 @@ static int ath12k_ahb_config_ext_irq(struct ath12k_base *ab)
 			 * tcl_to_wbm_rbm_map point to the same ring number.
 			 */
 			if (ring_mask->tx[i] &
-			    BIT(hal_ops->tcl_to_wbm_rbm_map[j].wbm_ring_num)) {
+			    BIT(ab->hal.tcl_to_wbm_rbm_map[j].wbm_ring_num)) {
 				irq_grp->irqs[num_irq++] =
 					wbm2host_tx_completions_ring1 - j;
 			}
@@ -734,9 +741,6 @@ static int ath12k_ahb_config_irq(struct ath12k_base *ab)
 		ab->irq_num[irq_idx] = irq;
 	}
 
-	/* Configure external interrupts */
-	ret = ath12k_ahb_config_ext_irq(ab);
-
 	return ret;
 }
 
@@ -774,6 +778,23 @@ static int ath12k_ahb_map_service_to_pipe(struct ath12k_base *ab, u16 service_id
 	return 0;
 }
 
+static void ath12k_ahb_free_ext_irq(struct ath12k_base *ab)
+{
+	int i, j;
+
+	if (test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags))
+		return;
+
+	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
+		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
+
+		for (j = 0; j < irq_grp->num_irq; j++)
+			free_irq(ab->irq_num[irq_grp->irqs[j]], irq_grp);
+
+		netif_napi_del(&irq_grp->napi);
+	}
+}
+
 static const struct ath12k_hif_ops ath12k_ahb_hif_ops = {
 	.start = ath12k_ahb_start,
 	.stop = ath12k_ahb_stop,
@@ -786,6 +807,8 @@ static const struct ath12k_hif_ops ath12k_ahb_hif_ops = {
 	.power_down = ath12k_ahb_power_down,
 	.ce_irq_enable = ath12k_ahb_ce_irqs_enable,
 	.ce_irq_disable = ath12k_ahb_ce_irqs_disable,
+	.ext_irq_setup = ath12k_ahb_config_ext_irq,
+	.ext_irq_cleanup = ath12k_ahb_free_ext_irq,
 };
 
 static const struct ath12k_hif_ops ath12k_ahb_hif_ops_qcn6432 = {
@@ -806,6 +829,8 @@ static const struct ath12k_hif_ops ath12k_ahb_hif_ops_qcn6432 = {
         .map_service_to_pipe = ath12k_pcic_map_service_to_pipe,
 	.ce_irq_enable = ath12k_pcic_ce_irqs_enable,
 	.ce_irq_disable = ath12k_pcic_ce_irq_disable_sync,
+	.ext_irq_setup = ath12k_ahb_config_ext_irq,
+	.ext_irq_cleanup = ath12k_pcic_free_ext_irq,
 };
 
 static void ath12k_core_dump_crash_reason(struct ath12k_base *ab)
