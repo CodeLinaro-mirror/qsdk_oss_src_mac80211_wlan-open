@@ -845,9 +845,21 @@ static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_setup_tc		= ieee80211_netdev_setup_tc,
 };
 
+#if LINUX_VERSION_IS_GEQ(5,2,0)
 static u16 ieee80211_monitor_select_queue(struct net_device *dev,
 					  struct sk_buff *skb,
 					  struct net_device *sb_dev)
+#elif LINUX_VERSION_IS_GEQ(4,19,0)
+static u16 ieee80211_monitor_select_queue(struct net_device *dev,
+					  struct sk_buff *skb,
+					  struct net_device *sb_dev,
+					  select_queue_fallback_t fallback)
+#else
+static u16 ieee80211_monitor_select_queue(struct net_device *dev,
+					  struct sk_buff *skb,
+					  void *accel_priv,
+					  select_queue_fallback_t fallback)
+#endif
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = sdata->local;
