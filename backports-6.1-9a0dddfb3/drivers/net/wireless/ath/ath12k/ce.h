@@ -148,7 +148,11 @@ struct ath12k_ce_pipe {
 	void (*send_cb)(struct ath12k_ce_pipe *pipe);
 	void (*recv_cb)(struct ath12k_base *ab, struct sk_buff *skb);
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 	struct work_struct intr_wq;
+#else
+	struct tasklet_struct intr_tq;
+#endif
 	struct ath12k_ce_ring *src_ring;
 	struct ath12k_ce_ring *dest_ring;
 	struct ath12k_ce_ring *status_ring;

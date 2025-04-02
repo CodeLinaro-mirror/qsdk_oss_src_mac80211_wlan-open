@@ -169,7 +169,11 @@ struct ath12k_ext_irq_grp {
 	u64 timestamp;
 	bool napi_enabled;
 	struct napi_struct napi;
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 	struct net_device *napi_ndev;
+#else
+	struct net_device napi_ndev;
+#endif
 };
 
 struct ath12k_smbios_bdf {

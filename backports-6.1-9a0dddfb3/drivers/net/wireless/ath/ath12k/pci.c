@@ -352,7 +352,9 @@ static void ath12k_pci_free_ext_irq(struct ath12k_base *ab)
 			free_irq(ab->irq_num[irq_grp->irqs[j]], irq_grp);
 
 		netif_napi_del(&irq_grp->napi);
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);
+#endif
 	}
 }
 
@@ -427,6 +429,7 @@ static void ath12k_pci_sync_ce_irqs(struct ath12k_base *ab)
 	}
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 static void ath12k_pci_ce_workqueue(struct work_struct *work)
 {
 	struct ath12k_ce_pipe *ce_pipe = from_work(ce_pipe, work, intr_wq);
@@ -436,6 +439,7 @@ static void ath12k_pci_ce_workqueue(struct work_struct *work)
 
 	enable_irq(ce_pipe->ab->irq_num[irq_idx]);
 }
+#endif
 
 static irqreturn_t ath12k_pci_ce_interrupt_handler(int irq, void *arg)
 {
@@ -451,8 +455,11 @@ static irqreturn_t ath12k_pci_ce_interrupt_handler(int irq, void *arg)
 
 	disable_irq_nosync(ab->irq_num[irq_idx]);
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 	queue_work(system_bh_wq, &ce_pipe->intr_wq);
-
+#else
+	tasklet_schedule(&ce_pipe->intr_tq);
+#endif
 	return IRQ_HANDLED;
 }
 
@@ -570,6 +577,7 @@ static int ath12k_pci_ext_irq_config(struct ath12k_base *ab)
 	int i, j, n, ret, num_vectors = 0;
 	u32 user_base_data = 0, base_vector = 0, base_idx;
 	struct ath12k_ext_irq_grp *irq_grp;
+	struct net_device *napi_ndev;
 
 	base_idx = ATH12K_PCI_IRQ_CE0_OFFSET + CE_COUNT_MAX;
 	ret = ath12k_pci_get_user_msi_assignment(ab, "DP",
@@ -585,13 +593,19 @@ static int ath12k_pci_ext_irq_config(struct ath12k_base *ab)
 
 		irq_grp->ab = ab;
 		irq_grp->grp_id = i;
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		irq_grp->napi_ndev = alloc_netdev_dummy(0);
-		if (!irq_grp->napi_ndev) {
+		napi_ndev = irq_grp->napi_ndev;
+#else
+		init_dummy_netdev(&irq_grp->napi_ndev);
+		napi_ndev = &irq_grp->napi_ndev;
+#endif
+		if (!napi_ndev) {
 			ret = -ENOMEM;
 			goto fail_allocate;
 		}
 
-		netif_napi_add(irq_grp->napi_ndev, &irq_grp->napi,
+		netif_napi_add(napi_ndev, &irq_grp->napi,
 			       ath12k_pci_ext_grp_napi_poll);
 
 		if (ab->hw_params->ring_mask->tx[i] ||
@@ -638,7 +652,9 @@ fail_request:
 fail_allocate:
 	for (n = 0; n < i; n++) {
 		irq_grp = &ab->ext_irq_grp[n];
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);
+#endif
 	}
 	return ret;
 }
@@ -650,6 +666,15 @@ static int ath12k_pci_set_irq_affinity_hint(struct ath12k_pci *ab_pci,
 		return 0;
 
 	return irq_set_affinity_and_hint(ab_pci->pdev->irq, m);
+}
+
+static void ath12k_pcic_ce_tasklet(struct tasklet_struct *t)
+{
+	struct ath12k_ce_pipe *ce_pipe = from_tasklet(ce_pipe, t, intr_tq);
+
+	ath12k_ce_per_engine_service(ce_pipe->ab, ce_pipe->pipe_num);
+
+	ath12k_pci_ce_irq_enable(ce_pipe->ab, ce_pipe->pipe_num);
 }
 
 static int ath12k_pci_config_irq(struct ath12k_base *ab)
@@ -680,8 +705,11 @@ static int ath12k_pci_config_irq(struct ath12k_base *ab)
 
 		irq_idx = ATH12K_PCI_IRQ_CE0_OFFSET + i;
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 		INIT_WORK(&ce_pipe->intr_wq, ath12k_pci_ce_workqueue);
-
+#else
+		tasklet_setup(&ce_pipe->intr_tq, ath12k_pcic_ce_tasklet);
+#endif
 		ret = request_irq(irq, ath12k_pci_ce_interrupt_handler,
 				  ab_pci->irq_flags, irq_name[irq_idx],
 				  ce_pipe);
@@ -967,6 +995,7 @@ static void ath12k_pci_aspm_restore(struct ath12k_pci *ab_pci)
 						   PCI_EXP_LNKCTL_ASPMC);
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 static void ath12k_pci_cancel_workqueue(struct ath12k_base *ab)
 {
 	int i;
@@ -980,12 +1009,30 @@ static void ath12k_pci_cancel_workqueue(struct ath12k_base *ab)
 		cancel_work_sync(&ce_pipe->intr_wq);
 	}
 }
+#endif
+static void ath12k_pcic_kill_tasklets(struct ath12k_base *ab)
+{
+	int i;
+
+	for (i = 0; i < ab->hw_params->ce_count; i++) {
+		struct ath12k_ce_pipe *ce_pipe = &ab->ce.ce_pipe[i];
+
+		if (ath12k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
+			continue;
+
+		tasklet_kill(&ce_pipe->intr_tq);
+	}
+}
 
 static void ath12k_pci_ce_irq_disable_sync(struct ath12k_base *ab)
 {
 	ath12k_pci_ce_irqs_disable(ab);
 	ath12k_pci_sync_ce_irqs(ab);
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 	ath12k_pci_cancel_workqueue(ab);
+#else
+	ath12k_pcic_kill_tasklets(ab);
+#endif
 }
 
 int ath12k_pci_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,

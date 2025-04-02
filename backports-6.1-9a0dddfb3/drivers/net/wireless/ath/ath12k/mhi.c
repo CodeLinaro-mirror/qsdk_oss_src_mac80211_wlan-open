@@ -569,10 +569,12 @@ static int ath12k_mhi_set_state(struct ath12k_pci *ab_pci,
 		mhi_power_down(ab_pci->mhi_ctrl, true);
 		ret = 0;
 		break;
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 	case ATH12K_MHI_POWER_OFF_KEEP_DEV:
 		mhi_power_down_keep_dev(ab_pci->mhi_ctrl, true);
 		ret = 0;
 		break;
+#endif
 	case ATH12K_MHI_FORCE_POWER_OFF:
 		mhi_power_down(ab_pci->mhi_ctrl, false);
 		ret = 0;
