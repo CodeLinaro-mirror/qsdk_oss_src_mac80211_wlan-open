@@ -178,7 +178,11 @@ static int ath11k_debugfs_fw_stats_request(struct ath11k *ar,
 	 * received 'update stats' event, we keep a 3 seconds timeout in case,
 	 * fw_stats_done is not marked yet
 	 */
+#if LINUX_VERSION_IS_GEQ(6,13,0)
+	timeout = jiffies + secs_to_jiffies(3);
+#else
 	timeout = jiffies + msecs_to_jiffies(3 * 1000);
+#endif
 
 	ath11k_debugfs_fw_stats_reset(ar);
 

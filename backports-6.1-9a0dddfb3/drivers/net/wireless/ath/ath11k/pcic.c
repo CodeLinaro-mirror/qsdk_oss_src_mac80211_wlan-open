@@ -596,10 +596,6 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 		irq_grp->grp_id = i;
 #if LINUX_VERSION_IS_GEQ(6,10,0)
 		irq_grp->napi_ndev = alloc_netdev_dummy(0);
-		if (!irq_grp->napi_ndev) {
-			ret = -ENOMEM;
-			goto fail_allocate;
-		}
 		napi_ndev = irq_grp->napi_ndev;
 #else
 		init_dummy_netdev(&irq_grp->napi_ndev);

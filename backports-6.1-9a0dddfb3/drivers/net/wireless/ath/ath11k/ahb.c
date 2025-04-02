@@ -442,7 +442,9 @@ static void ath11k_ahb_free_ext_irq(struct ath11k_base *ab)
 			free_irq(ab->irq_num[irq_grp->irqs[j]], irq_grp);
 
 		netif_napi_del(&irq_grp->napi);
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);
+#endif
 	}
 }
 
@@ -524,6 +526,7 @@ static irqreturn_t ath11k_ahb_ext_interrupt_handler(int irq, void *arg)
 static int ath11k_ahb_config_ext_irq(struct ath11k_base *ab)
 {
 	struct ath11k_hw_params *hw = &ab->hw_params;
+	struct net_device *napi_ndev;
 	int i, j;
 	int irq;
 	int ret;
@@ -535,11 +538,17 @@ static int ath11k_ahb_config_ext_irq(struct ath11k_base *ab)
 		irq_grp->ab = ab;
 		irq_grp->grp_id = i;
 
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		irq_grp->napi_ndev = alloc_netdev_dummy(0);
-		if (!irq_grp->napi_ndev)
+		napi_ndev = irq_grp->napi_ndev;
+#else
+		init_dummy_netdev(&irq_grp->napi_ndev);
+		napi_ndev = &irq_grp->napi_ndev;
+#endif
+		if (!napi_ndev)
 			return -ENOMEM;
 
-		netif_napi_add(irq_grp->napi_ndev, &irq_grp->napi,
+		netif_napi_add(napi_ndev, &irq_grp->napi,
 			       ath11k_ahb_ext_grp_napi_poll);
 
 		for (j = 0; j < ATH11K_EXT_IRQ_NUM_MAX; j++) {
@@ -1031,7 +1040,11 @@ static int ath11k_ahb_fw_resources_init(struct ath11k_base *ab)
 
 	ab_ahb->fw.dev = &pdev->dev;
 
+#if LINUX_VERSION_IS_GEQ(6,11,0)
 	iommu_dom = iommu_paging_domain_alloc(ab_ahb->fw.dev);
+#else
+	iommu_dom = iommu_domain_alloc(&platform_bus_type);
+#endif
 	if (IS_ERR(iommu_dom)) {
 		ath11k_err(ab, "failed to allocate iommu domain\n");
 		ret = PTR_ERR(iommu_dom);
@@ -1275,7 +1288,11 @@ static void ath11k_ahb_free_resources(struct ath11k_base *ab)
 	platform_set_drvdata(pdev, NULL);
 }
 
+#if LINUX_VERSION_IS_GEQ(6,8,0)
 static void ath11k_ahb_remove(struct platform_device *pdev)
+#else
+static int ath11k_ahb_remove(struct platform_device *pdev)
+#endif
 {
 	struct ath11k_base *ab = platform_get_drvdata(pdev);
 
@@ -1292,6 +1309,10 @@ static void ath11k_ahb_remove(struct platform_device *pdev)
 qmi_fail:
 	ath11k_fw_destroy(ab);
 	ath11k_ahb_free_resources(ab);
+
+#if LINUX_VERSION_IS_LESS(6,8,0)
+	return 0;
+#endif
 }
 
 static void ath11k_ahb_shutdown(struct platform_device *pdev)
