@@ -2,7 +2,7 @@
 # Makefile for the output source package
 #
 
-ifeq ($(KERNELRELEASE),)
+ifeq ($(KERNELVERSION),)
 
 MAKEFLAGS += --no-print-directory
 SHELL := /usr/bin/env bash
