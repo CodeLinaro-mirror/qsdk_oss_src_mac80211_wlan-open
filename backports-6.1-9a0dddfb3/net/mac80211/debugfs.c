@@ -41,11 +41,20 @@ static ssize_t name## _read(struct file *file, char __user *userbuf,	\
 				      fmt "\n", ##value);		\
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 #define DEBUGFS_READONLY_FILE_OPS(name)			\
 static const struct debugfs_short_fops name## _ops = {				\
 	.read = name## _read,						\
 	.llseek = generic_file_llseek,					\
 };
+#else
+#define DEBUGFS_READONLY_FILE_OPS(name)                 \
+static const struct file_operations name## _ops = {                          \
+        .read = name## _read,                                           \
+	.open = simple_open,						\
+        .llseek = generic_file_llseek,                                  \
+};
+#endif
 
 #define DEBUGFS_READONLY_FILE(name, fmt, value...)		\
 	DEBUGFS_READONLY_FILE_FN(name, fmt, value)		\
@@ -141,11 +150,20 @@ static ssize_t aqm_write(struct file *file,
 	return -EINVAL;
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 static const struct debugfs_short_fops aqm_ops = {
 	.write = aqm_write,
 	.read = aqm_read,
 	.llseek = default_llseek,
 };
+#else
+static const struct file_operations aqm_ops = {
+        .write = aqm_write,
+	.open = simple_open,
+        .read = aqm_read,
+        .llseek = default_llseek,
+};
+#endif
 
 static ssize_t airtime_flags_read(struct file *file,
 				  char __user *user_buf,
@@ -192,11 +210,20 @@ static ssize_t airtime_flags_write(struct file *file,
 	return count;
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 static const struct debugfs_short_fops airtime_flags_ops = {
 	.write = airtime_flags_write,
 	.read = airtime_flags_read,
 	.llseek = default_llseek,
 };
+#else
+static const struct file_operations airtime_flags_ops = {
+        .write = airtime_flags_write,
+        .read = airtime_flags_read,
+	.open = simple_open,
+        .llseek = default_llseek,
+};
+#endif
 
 static ssize_t aql_pending_read(struct file *file,
 				char __user *user_buf,
@@ -222,10 +249,18 @@ static ssize_t aql_pending_read(struct file *file,
 				       buf, len);
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 static const struct debugfs_short_fops aql_pending_ops = {
 	.read = aql_pending_read,
 	.llseek = default_llseek,
 };
+#else
+static const struct file_operations aql_pending_ops = {
+        .read = aql_pending_read,
+	.open = simple_open,
+        .llseek = default_llseek,
+};
+#endif
 
 static ssize_t aql_txq_limit_read(struct file *file,
 				  char __user *user_buf,
@@ -301,11 +336,20 @@ static ssize_t aql_txq_limit_write(struct file *file,
 	return count;
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 static const struct debugfs_short_fops aql_txq_limit_ops = {
 	.write = aql_txq_limit_write,
 	.read = aql_txq_limit_read,
 	.llseek = default_llseek,
 };
+#else
+static const struct file_operations aql_txq_limit_ops = {
+        .write = aql_txq_limit_write,
+        .read = aql_txq_limit_read,
+	.open = simple_open,
+        .llseek = default_llseek,
+};
+#endif
 
 static ssize_t aql_enable_read(struct file *file, char __user *user_buf,
 			       size_t count, loff_t *ppos)
@@ -350,11 +394,20 @@ static ssize_t aql_enable_write(struct file *file, const char __user *user_buf,
 	return count;
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 static const struct debugfs_short_fops aql_enable_ops = {
 	.write = aql_enable_write,
 	.read = aql_enable_read,
 	.llseek = default_llseek,
 };
+#else
+static const struct file_operations aql_enable_ops = {
+        .write = aql_enable_write,
+        .read = aql_enable_read,
+	.open = simple_open,
+        .llseek = default_llseek,
+};
+#endif
 
 static ssize_t force_tx_status_read(struct file *file,
 				    char __user *user_buf,
@@ -400,11 +453,20 @@ static ssize_t force_tx_status_write(struct file *file,
 	return count;
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 static const struct debugfs_short_fops force_tx_status_ops = {
 	.write = force_tx_status_write,
 	.read = force_tx_status_read,
 	.llseek = default_llseek,
 };
+#else
+static const struct file_operations force_tx_status_ops = {
+        .write = force_tx_status_write,
+        .read = force_tx_status_read,
+	.open = simple_open,
+        .llseek = default_llseek,
+};
+#endif
 
 #ifdef CONFIG_PM
 static ssize_t reset_write(struct file *file, const char __user *user_buf,
@@ -427,10 +489,18 @@ static ssize_t reset_write(struct file *file, const char __user *user_buf,
 	return count;
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 static const struct debugfs_short_fops reset_ops = {
 	.write = reset_write,
 	.llseek = noop_llseek,
 };
+#else
+static const struct file_operations reset_ops = {
+        .write = reset_write,
+	.open = simple_open,
+        .llseek = noop_llseek,
+};
+#endif
 #endif
 
 static const char *hw_flag_names[] = {
@@ -599,6 +669,7 @@ static ssize_t format_devstat_counter(struct ieee80211_local *local,
 	return simple_read_from_buffer(userbuf, count, ppos, buf, res);
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 #define DEBUGFS_DEVSTATS_FILE(name)					\
 static int print_devstats_##name(struct ieee80211_low_level_stats *stats,\
 				 char *buf, int buflen)			\
@@ -620,6 +691,29 @@ static const struct debugfs_short_fops stats_ ##name## _ops = {			\
 	.read = stats_ ##name## _read,					\
 	.llseek = generic_file_llseek,					\
 };
+#else
+#define DEBUGFS_DEVSTATS_FILE(name)                                     \
+static int print_devstats_##name(struct ieee80211_low_level_stats *stats,\
+                                 char *buf, int buflen)                 \
+{                                                                       \
+        return scnprintf(buf, buflen, "%u\n", stats->name);             \
+}                                                                       \
+static ssize_t stats_ ##name## _read(struct file *file,                 \
+                                     char __user *userbuf,              \
+                                     size_t count, loff_t *ppos)        \
+{                                                                       \
+        return format_devstat_counter(file->private_data,               \
+                                      userbuf,                          \
+                                      count,                            \
+                                      ppos,                             \
+                                      print_devstats_##name);           \
+}                                                                       \
+                                                                        \
+static const struct file_operations stats_ ##name## _ops = {                 \
+        .read = stats_ ##name## _read,                                  \
+        .llseek = generic_file_llseek,                                  \
+};
+#endif
 
 #ifdef CPTCFG_MAC80211_DEBUG_COUNTERS
 #define DEBUGFS_STATS_ADD(name)					\

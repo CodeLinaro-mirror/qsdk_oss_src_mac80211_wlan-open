@@ -136,6 +136,7 @@ static void wiphy_locked_debugfs_read_work(struct wiphy *wiphy,
 	complete(&w->completion);
 }
 
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 static void wiphy_locked_debugfs_read_cancel(struct dentry *dentry,
 					     void *data)
 {
@@ -144,6 +145,7 @@ static void wiphy_locked_debugfs_read_cancel(struct dentry *dentry,
 	wiphy_work_cancel(w->wiphy, &w->work);
 	complete(&w->completion);
 }
+#endif
 
 ssize_t wiphy_locked_debugfs_read(struct wiphy *wiphy, struct file *file,
 				  char *buf, size_t bufsize,
@@ -166,21 +168,25 @@ ssize_t wiphy_locked_debugfs_read(struct wiphy *wiphy, struct file *file,
 		.ret = -ENODEV,
 		.completion = COMPLETION_INITIALIZER_ONSTACK(work.completion),
 	};
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 	struct debugfs_cancellation cancellation = {
 		.cancel = wiphy_locked_debugfs_read_cancel,
 		.cancel_data = &work,
 	};
-
+#endif
 	/* don't leak stack data or whatever */
 	memset(buf, 0, bufsize);
 
 	wiphy_work_init(&work.work, wiphy_locked_debugfs_read_work);
 	wiphy_work_queue(wiphy, &work.work);
 
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 	debugfs_enter_cancellation(file, &cancellation);
+#endif
 	wait_for_completion(&work.completion);
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 	debugfs_leave_cancellation(file, &cancellation);
-
+#endif
 	if (work.ret < 0)
 		return work.ret;
 
@@ -216,6 +222,7 @@ static void wiphy_locked_debugfs_write_work(struct wiphy *wiphy,
 	complete(&w->completion);
 }
 
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 static void wiphy_locked_debugfs_write_cancel(struct dentry *dentry,
 					      void *data)
 {
@@ -224,6 +231,7 @@ static void wiphy_locked_debugfs_write_cancel(struct dentry *dentry,
 	wiphy_work_cancel(w->wiphy, &w->work);
 	complete(&w->completion);
 }
+#endif
 
 ssize_t wiphy_locked_debugfs_write(struct wiphy *wiphy,
 				   struct file *file, char *buf, size_t bufsize,
@@ -245,11 +253,12 @@ ssize_t wiphy_locked_debugfs_write(struct wiphy *wiphy,
 		.ret = -ENODEV,
 		.completion = COMPLETION_INITIALIZER_ONSTACK(work.completion),
 	};
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 	struct debugfs_cancellation cancellation = {
 		.cancel = wiphy_locked_debugfs_write_cancel,
 		.cancel_data = &work,
 	};
-
+#endif
 	/* mostly used for strings so enforce NUL-termination for safety */
 	if (count >= bufsize)
 		return -EINVAL;
@@ -262,9 +271,13 @@ ssize_t wiphy_locked_debugfs_write(struct wiphy *wiphy,
 	wiphy_work_init(&work.work, wiphy_locked_debugfs_write_work);
 	wiphy_work_queue(wiphy, &work.work);
 
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 	debugfs_enter_cancellation(file, &cancellation);
+#endif
 	wait_for_completion(&work.completion);
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 	debugfs_leave_cancellation(file, &cancellation);
+#endif
 
 	return work.ret;
 }

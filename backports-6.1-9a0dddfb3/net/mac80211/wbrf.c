@@ -5,7 +5,9 @@
  *
  */
 
+#if LINUX_VERSION_IS_GEQ(6,8,0)
 #include <linux/acpi_amd_wbrf.h>
+#endif
 #include <linux/units.h>
 #include <net/cfg80211.h>
 #include "ieee80211_i.h"
@@ -22,9 +24,12 @@ void ieee80211_check_wbrf_support(struct ieee80211_local *local)
 	if (!dev)
 		return;
 
+#if LINUX_VERSION_IS_GEQ(6,8,0)
 	local->wbrf_supported = acpi_amd_wbrf_supported_producer(dev);
+#endif
 }
 
+#if LINUX_VERSION_IS_GEQ(6,8,0)
 static void get_chan_freq_boundary(u32 center_freq, u32 bandwidth, u64 *start, u64 *end)
 {
 	bandwidth *= KHZ_PER_MHZ;
@@ -61,9 +66,11 @@ static void get_ranges_from_chandef(struct cfg80211_chan_def *chandef,
 		ranges_in->num_of_ranges++;
 	}
 }
+#endif
 
 void ieee80211_add_wbrf(struct ieee80211_local *local, struct cfg80211_chan_def *chandef)
 {
+#if LINUX_VERSION_IS_GEQ(6,8,0)
 	struct wbrf_ranges_in_out ranges_in = {0};
 	struct device *dev;
 
@@ -71,14 +78,14 @@ void ieee80211_add_wbrf(struct ieee80211_local *local, struct cfg80211_chan_def 
 		return;
 
 	dev = local->hw.wiphy->dev.parent;
-
 	get_ranges_from_chandef(chandef, &ranges_in);
-
 	acpi_amd_wbrf_add_remove(dev, WBRF_RECORD_ADD, &ranges_in);
+#endif
 }
 
 void ieee80211_remove_wbrf(struct ieee80211_local *local, struct cfg80211_chan_def *chandef)
 {
+#if LINUX_VERSION_IS_GEQ(6,8,0)
 	struct wbrf_ranges_in_out ranges_in = {0};
 	struct device *dev;
 
@@ -86,8 +93,7 @@ void ieee80211_remove_wbrf(struct ieee80211_local *local, struct cfg80211_chan_d
 		return;
 
 	dev = local->hw.wiphy->dev.parent;
-
 	get_ranges_from_chandef(chandef, &ranges_in);
-
 	acpi_amd_wbrf_add_remove(dev, WBRF_RECORD_REMOVE, &ranges_in);
+#endif
 }

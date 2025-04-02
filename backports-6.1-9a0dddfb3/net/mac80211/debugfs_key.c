@@ -25,18 +25,37 @@ static ssize_t key_##name##_read(struct file *file,			\
 }
 #define KEY_READ_X(name) KEY_READ(name, name, "0x%x\n")
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 #define KEY_OPS(name)							\
 static const struct debugfs_short_fops key_ ##name## _ops = {		\
 	.read = key_##name##_read,					\
 	.llseek = generic_file_llseek,					\
 }
+#else
+#define KEY_OPS(name)							\
+static const struct file_operations key_ ##name## _ops = {          	\
+        .read = key_##name##_read,                                      \
+	.open = simple_open,						\
+        .llseek = generic_file_llseek,                                  \
+}
+#endif
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 #define KEY_OPS_W(name)							\
 static const struct debugfs_short_fops key_ ##name## _ops = {		\
 	.read = key_##name##_read,					\
 	.write = key_##name##_write,					\
 	.llseek = generic_file_llseek,					\
 }
+#else
+#define KEY_OPS_W(name)                                                 \
+static const struct file_operations key_ ##name## _ops = {           \
+        .read = key_##name##_read,                                      \
+        .write = key_##name##_write,                                    \
+	.open = simple_open,						\
+        .llseek = generic_file_llseek,                                  \
+}
+#endif
 
 #define KEY_FILE(name, format)						\
 		 KEY_READ_##format(name)				\
@@ -46,11 +65,20 @@ static const struct debugfs_short_fops key_ ##name## _ops = {		\
 	KEY_READ(conf_##name, conf.name, format_string)
 #define KEY_CONF_READ_D(name) KEY_CONF_READ(name, "%d\n")
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 #define KEY_CONF_OPS(name)						\
 static const struct debugfs_short_fops key_ ##name## _ops = {		\
 	.read = key_conf_##name##_read,					\
 	.llseek = generic_file_llseek,					\
 }
+#else
+#define KEY_CONF_OPS(name)							\
+static const struct file_operations key_ ##name## _ops = {		\
+	.read = key_conf_##name##_read,					\
+	.open = simple_open,						\
+	.llseek = generic_file_llseek,					\
+}
+#endif
 
 #define KEY_CONF_FILE(name, format)					\
 		 KEY_CONF_READ_##format(name)				\

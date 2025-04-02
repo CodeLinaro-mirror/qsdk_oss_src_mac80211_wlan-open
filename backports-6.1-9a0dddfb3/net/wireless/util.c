@@ -2436,9 +2436,13 @@ int cfg80211_iter_combinations(struct wiphy *wiphy,
 			continue;
 		if (params->num_different_channels > c->num_different_channels)
 			continue;
-
+#if LINUX_VERSION_IS_GEQ(6,9,0)
 		limits = kmemdup_array(c->limits, c->n_limits, sizeof(*limits),
 				       GFP_KERNEL);
+#else
+		limits = kmemdup(c->limits, c->n_limits * sizeof(*limits),
+				 GFP_KERNEL);
+#endif
 		if (!limits)
 			return -ENOMEM;
 

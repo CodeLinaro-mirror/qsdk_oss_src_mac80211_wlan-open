@@ -1289,6 +1289,7 @@ static bool is_valid_rd(const struct ieee80211_regdomain *rd)
  *
  * Returns: whether or not the frequency is in the range
  */
+#define KHZ_PER_GHZ		1000000UL
 static bool freq_in_rule_band(const struct ieee80211_freq_range *freq_range,
 			      u32 freq_khz)
 {

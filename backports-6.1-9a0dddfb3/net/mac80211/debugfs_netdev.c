@@ -220,12 +220,22 @@ static ssize_t ieee80211_if_fmt_##name(					\
 			 jiffies_to_msecs(data->field));		\
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 #define _IEEE80211_IF_FILE_OPS(name, _read, _write)			\
 static const struct debugfs_short_fops name##_ops = {				\
 	.read = (_read),						\
 	.write = (_write),						\
 	.llseek = generic_file_llseek,					\
 }
+#else
+#define _IEEE80211_IF_FILE_OPS(name, _read, _write)                     \
+static const struct file_operations name##_ops = {                           \
+        .read = (_read),                                                \
+        .write = (_write),                                              \
+	.open = simple_open,						\
+        .llseek = generic_file_llseek,                                  \
+}
+#endif
 
 #define _IEEE80211_IF_FILE_R_FN(name)					\
 static ssize_t ieee80211_if_read_##name(struct file *file,		\

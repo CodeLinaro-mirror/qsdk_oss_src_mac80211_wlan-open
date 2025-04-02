@@ -62,7 +62,11 @@ static inline void rate_control_add_sta_debugfs(struct sta_info *sta)
 #endif
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 extern const struct debugfs_short_fops rcname_ops;
+#else
+extern const struct file_operations rcname_ops;
+#endif
 
 static inline void rate_control_add_debugfs(struct ieee80211_local *local)
 {

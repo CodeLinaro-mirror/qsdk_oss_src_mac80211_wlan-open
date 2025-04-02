@@ -20,7 +20,7 @@
 #include <linux/etherdevice.h>
 #include <linux/bitfield.h>
 #include <asm/byteorder.h>
-#include <linux/unaligned.h>
+#include <asm/unaligned.h>
 
 /*
  * DS bit usage

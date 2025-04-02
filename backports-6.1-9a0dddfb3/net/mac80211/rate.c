@@ -249,10 +249,17 @@ static ssize_t rcname_read(struct file *file, char __user *userbuf,
 				       ref->ops->name, len);
 }
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 const struct debugfs_short_fops rcname_ops = {
 	.read = rcname_read,
 	.llseek = default_llseek,
 };
+#else
+const struct file_operations rcname_ops = {
+        .read = rcname_read,
+        .llseek = default_llseek,
+};
+#endif
 #endif
 
 static struct rate_control_ref *

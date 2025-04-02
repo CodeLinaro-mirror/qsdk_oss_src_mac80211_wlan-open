@@ -475,14 +475,25 @@ nl80211_sta_wme_policy[NL80211_STA_WME_MAX + 1] = {
 	[NL80211_STA_WME_MAX_SP] = { .type = NLA_U8 },
 };
 
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 static const struct netlink_range_validation nl80211_punct_bitmap_range = {
 	.min = 0,
 	.max = 0xffff,
 };
+#else
+static struct netlink_range_validation nl80211_punct_bitmap_range = {
+        .min = 0,
+        .max = 0xffff,
+};
+#endif
 
-#if LINUX_VERSION_IS_GEQ(5,10,0)
+#if LINUX_VERSION_IS_GEQ(6,7,0)
 static const struct netlink_range_validation q_range = {
 	.max = INT_MAX,
+};
+#else
+static struct netlink_range_validation q_range = {
+        .max = INT_MAX,
 };
 #endif
 
@@ -1301,6 +1312,27 @@ static bool nl80211_put_txq_stats(struct sk_buff *msg,
 
 #undef PUT_TXQVAL_U32
 	return true;
+}
+
+static inline u8 nla_get_u8_default(const struct nlattr *nla, u8 defvalue)
+{
+	if (!nla)
+		return defvalue;
+	return nla_get_u8(nla);
+}
+
+static inline u32 nla_get_u32_default(const struct nlattr *nla, u32 defvalue)
+{
+	if (!nla)
+		return defvalue;
+	return nla_get_u32(nla);
+}
+
+static inline u16 nla_get_u16_default(const struct nlattr *nla, u16 defvalue)
+{
+	if (!nla)
+		return defvalue;
+	return nla_get_u16(nla);
 }
 
 /* netlink command implementations */
@@ -18111,9 +18143,14 @@ void nl80211_common_reg_change_event(enum nl80211_commands cmd_id,
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
-
+#if LINUX_VERSION_IS_GEQ(6,11,0)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
+#else
+	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
+                                NL80211_MCGRP_REGULATORY,
+				GFP_ATOMIC);
+#endif
 
 	return;
 
@@ -18861,10 +18898,14 @@ void nl80211_send_beacon_hint_event(struct wiphy *wiphy,
 	nla_nest_end(msg, nl_freq);
 
 	genlmsg_end(msg, hdr);
-
+#if LINUX_VERSION_IS_GEQ(6,11,0)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
-
+#else
+	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
+                                NL80211_MCGRP_REGULATORY,
+				GFP_ATOMIC);
+#endif
 	return;
 
 nla_put_failure:

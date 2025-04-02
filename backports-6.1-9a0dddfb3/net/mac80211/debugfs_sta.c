@@ -29,6 +29,7 @@ static ssize_t sta_ ##name## _read(struct file *file,			\
 }
 #define STA_READ_D(name, field) STA_READ(name, field, "%d\n")
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 #define STA_OPS(name)							\
 static const struct debugfs_short_fops sta_ ##name## _ops = {		\
 	.read = sta_##name##_read,					\
@@ -41,6 +42,22 @@ static const struct debugfs_short_fops sta_ ##name## _ops = {		\
 	.write = sta_##name##_write,					\
 	.llseek = generic_file_llseek,					\
 }
+#else
+#define STA_OPS(name)                                                   \
+static const struct file_operations sta_ ##name## _ops = {           \
+        .read = sta_##name##_read,                                      \
+	.open = simple_open,						\
+        .llseek = generic_file_llseek,                                  \
+}
+
+#define STA_OPS_RW(name)                                                \
+static const struct file_operations sta_ ##name## _ops = {           \
+        .read = sta_##name##_read,                                      \
+        .write = sta_##name##_write,                                    \
+	.open = simple_open,						\
+        .llseek = generic_file_llseek,                                  \
+}
+#endif
 
 #define STA_FILE(name, field, format)					\
 		STA_READ_##format(name, field)				\
@@ -446,12 +463,22 @@ static ssize_t sta_agg_status_write(struct file *file,
 }
 STA_OPS_RW(agg_status);
 
+#if LINUX_VERSION_IS_GEQ(6,13,0)
 /* link sta attributes */
 #define LINK_STA_OPS(name)						\
 static const struct debugfs_short_fops link_sta_ ##name## _ops = {		\
 	.read = link_sta_##name##_read,					\
 	.llseek = generic_file_llseek,					\
 }
+#else
+/* link sta attributes */
+#define LINK_STA_OPS(name)                                              \
+static const struct file_operations link_sta_ ##name## _ops = {              \
+        .read = link_sta_##name##_read,                                 \
+	.open = simple_open,						\
+        .llseek = generic_file_llseek,                                  \
+}
+#endif
 
 static ssize_t link_sta_addr_read(struct file *file, char __user *userbuf,
 				  size_t count, loff_t *ppos)

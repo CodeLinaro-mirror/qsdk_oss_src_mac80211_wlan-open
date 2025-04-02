@@ -18,7 +18,7 @@
 #define __RADIOTAP_H
 
 #include <linux/kernel.h>
-#include <linux/unaligned.h>
+#include <asm/unaligned.h>
 
 /**
  * struct ieee80211_radiotap_header - base radiotap header
