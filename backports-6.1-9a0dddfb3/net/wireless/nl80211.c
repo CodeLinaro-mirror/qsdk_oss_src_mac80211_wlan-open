@@ -480,9 +480,11 @@ static const struct netlink_range_validation nl80211_punct_bitmap_range = {
 	.max = 0xffff,
 };
 
+#if LINUX_VERSION_IS_GEQ(5,10,0)
 static const struct netlink_range_validation q_range = {
 	.max = INT_MAX,
 };
+#endif
 
 static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[0] = { .strict_start_type = NL80211_ATTR_HE_OBSS_PD },
@@ -557,7 +559,11 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_MPATH_NEXT_HOP] = NLA_POLICY_ETH_ADDR_COMPAT,
 
 	/* allow 3 for NUL-termination, we used to declare this NLA_STRING */
+#if LINUX_VERSION_IS_GEQ(5,10,0)
 	[NL80211_ATTR_REG_ALPHA2] = NLA_POLICY_BINARY_RANGE(2, 3),
+#else
+	[NL80211_ATTR_REG_ALPHA2] = { .type = NLA_STRING, .len = 2 },
+#endif
 	[NL80211_ATTR_REG_RULES] = { .type = NLA_NESTED },
 
 	[NL80211_ATTR_BSS_CTS_PROT] = { .type = NLA_U8 },
@@ -707,14 +713,24 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	 * The value of the Length field of the Supported Operating
 	 * Classes element is between 2 and 253.
 	 */
+#if LINUX_VERSION_IS_GEQ(5,10,0)
 	[NL80211_ATTR_STA_SUPPORTED_OPER_CLASSES] =
 		NLA_POLICY_BINARY_RANGE(2, 253),
+#else
+	[NL80211_ATTR_STA_SUPPORTED_OPER_CLASSES] =
+		{ .type = NLA_BINARY },
+#endif
 		[NL80211_ATTR_HANDLE_DFS] = { .type = NLA_FLAG },
 		[NL80211_ATTR_OPMODE_NOTIF] = { .type = NLA_U8 },
 		[NL80211_ATTR_VENDOR_ID] = { .type = NLA_U32 },
 		[NL80211_ATTR_VENDOR_SUBCMD] = { .type = NLA_U32 },
 		[NL80211_ATTR_VENDOR_DATA] = { .type = NLA_BINARY },
+#if LINUX_VERSION_IS_GEQ(5,10,0)
 		[NL80211_ATTR_QOS_MAP] = NLA_POLICY_BINARY_RANGE(IEEE80211_QOS_MAP_LEN_MIN, IEEE80211_QOS_MAP_LEN_MAX),
+#else
+		[NL80211_ATTR_QOS_MAP] = { .type = NLA_BINARY,
+					   .len = IEEE80211_QOS_MAP_LEN_MAX },
+#endif
 		[NL80211_ATTR_MAC_HINT] = NLA_POLICY_EXACT_LEN_WARN(ETH_ALEN),
 		[NL80211_ATTR_WIPHY_FREQ_HINT] = { .type = NLA_U32 },
 		[NL80211_ATTR_TDLS_PEER_CAPABILITY] = { .type = NLA_U32 },
@@ -768,7 +784,11 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 
 	[NL80211_ATTR_TXQ_LIMIT] = { .type = NLA_U32 },
 	[NL80211_ATTR_TXQ_MEMORY_LIMIT] = { .type = NLA_U32 },
+#if LINUX_VERSION_IS_GEQ(5,10,0)
 	[NL80211_ATTR_TXQ_QUANTUM] = NLA_POLICY_FULL_RANGE(NLA_U32, &q_range),
+#else
+	[NL80211_ATTR_TXQ_QUANTUM] = { .type = NLA_U32 },
+#endif
 	[NL80211_ATTR_HE_CAPABILITY] =
 		NLA_POLICY_VALIDATE_FN(NLA_BINARY, validate_he_capa,
 				       NL80211_HE_MAX_CAPABILITY_LEN),
