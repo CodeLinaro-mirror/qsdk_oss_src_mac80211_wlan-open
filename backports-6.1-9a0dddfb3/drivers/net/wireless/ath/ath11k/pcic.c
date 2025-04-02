@@ -327,7 +327,9 @@ static void ath11k_pcic_free_ext_irq(struct ath11k_base *ab)
 			free_irq(ab->irq_num[irq_grp->irqs[j]], irq_grp);
 
 		netif_napi_del(&irq_grp->napi);
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);
+#endif
 	}
 }
 
@@ -574,6 +576,7 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 	u32 user_base_data = 0, base_vector = 0;
 	struct ath11k_ext_irq_grp *irq_grp;
 	unsigned long irq_flags;
+	struct net_device *napi_ndev;
 
 	ret = ath11k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
 						  &user_base_data,
@@ -591,13 +594,23 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 
 		irq_grp->ab = ab;
 		irq_grp->grp_id = i;
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		irq_grp->napi_ndev = alloc_netdev_dummy(0);
 		if (!irq_grp->napi_ndev) {
 			ret = -ENOMEM;
 			goto fail_allocate;
 		}
+		napi_ndev = irq_grp->napi_ndev;
+#else
+		init_dummy_netdev(&irq_grp->napi_ndev);
+		napi_ndev = &irq_grp->napi_ndev;
+#endif
+		if (!napi_ndev) {
+			ret = -ENOMEM;
+			goto fail_allocate;
+		}
 
-		netif_napi_add(irq_grp->napi_ndev, &irq_grp->napi,
+		netif_napi_add(napi_ndev, &irq_grp->napi,
 			       ath11k_pcic_ext_grp_napi_poll);
 
 		if (ab->hw_params.ring_mask->tx[i] ||
@@ -637,7 +650,9 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 					   vector, ret);
 				for (n = 0; n <= i; n++) {
 					irq_grp = &ab->ext_irq_grp[n];
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 					free_netdev(irq_grp->napi_ndev);
+#endif
 				}
 				return ret;
 			}
@@ -652,7 +667,9 @@ fail_irq:
 fail_allocate:
 	for (n = 0; n < i; n++) {
 		irq_grp = &ab->ext_irq_grp[n];
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);
+#endif
 	}
 	return ret;
 }
