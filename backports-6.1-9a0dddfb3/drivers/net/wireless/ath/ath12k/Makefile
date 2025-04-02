@@ -26,6 +26,7 @@ ath12k-y += core.o \
 ath12k-$(CPTCFG_ATH12K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o
 ath12k-$(CONFIG_ACPI) += acpi.o
 ath12k-$(CPTCFG_ATH12K_TRACING) += trace.o
+ath12k-$(CPTCFG_ATH12K_SAWF) += telemetry_agent_if.o
 ath12k-$(CONFIG_PM) += wow.o
 ath12k-$(CPTCFG_ATH12K_COREDUMP) += coredump.o
 ath12k-$(CPTCFG_NL80211_TESTMODE) += testmode.o
