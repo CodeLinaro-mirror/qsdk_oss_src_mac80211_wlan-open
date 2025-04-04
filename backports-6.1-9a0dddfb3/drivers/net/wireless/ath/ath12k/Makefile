@@ -21,7 +21,8 @@ ath12k-y += core.o \
 	    pci.o \
 	    dp_mon.o \
 	    fw.o \
-	    p2p.o
+	    p2p.o \
+	    fse.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 

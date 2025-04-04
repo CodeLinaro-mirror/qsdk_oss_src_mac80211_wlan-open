@@ -23,6 +23,7 @@
 #include "pci.h"
 #include "wow.h"
 #include "dp_cmn.h"
+#include "fse.h"
 
 unsigned int ath12k_debug_mask;
 module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
@@ -848,6 +849,18 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 	ath12k_qmi_deinit_service(ab);
 }
 
+static int ath12k_core_pdev_init(struct ath12k_base *ab)
+{
+	ath12k_fse_init(ab);
+
+	return 0;
+}
+
+static void ath12k_core_pdev_deinit(struct ath12k_base *ab)
+{
+	ath12k_fse_deinit(ab);
+}
+
 static int ath12k_core_pdev_create(struct ath12k_base *ab)
 {
 	int ret;
@@ -991,6 +1004,15 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 
 	clear_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags);
 	cancel_work_sync(&ag->reset_group_work);
+
+	for (i = ag->num_devices - 1; i >= 0; i--) {
+		ab = ag->ab[i];
+		if (!ab)
+			continue;
+		mutex_lock(&ab->core_lock);
+		ath12k_core_pdev_deinit(ab);
+		mutex_unlock(&ab->core_lock);
+    }
 
 	ath12k_mac_unregister(ag);
 
@@ -1141,6 +1163,13 @@ core_pdev_create:
 		ret = ath12k_core_pdev_create(ab);
 		if (ret) {
 			ath12k_err(ab, "failed to create pdev core %d\n", ret);
+			mutex_unlock(&ab->core_lock);
+			goto err;
+		}
+
+		ret = ath12k_core_pdev_init(ab);
+		if (ret) {
+			ath12k_err(ab, "failed to init pdev core %d\n", ret);
 			mutex_unlock(&ab->core_lock);
 			goto err;
 		}
@@ -1352,6 +1381,7 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 	int ret;
 
 	mutex_lock(&ab->core_lock);
+	ath12k_core_pdev_deinit(ab);
 	ath12k_dp_pdev_free(ab);
 	ath12k_ce_cleanup_pipes(ab);
 	ath12k_wmi_detach(ab);

@@ -17,7 +17,8 @@ ath-objs :=	main.o \
 		hw.o \
 		key.o \
 		dfs_pattern_detector.o \
-		dfs_pri_detector.o
+		dfs_pri_detector.o \
+		ath_fse.o
 
 ath-$(CPTCFG_ATH_DEBUG) += debug.o
 ath-$(CPTCFG_ATH_TRACEPOINTS) += trace.o
