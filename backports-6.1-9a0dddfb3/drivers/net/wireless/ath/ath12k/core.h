@@ -2080,6 +2080,8 @@ static inline int ath12k_get_peer_count(struct ath12k_base *ab, bool get_max)
        return peer_count;
 }
 
+extern unsigned int ath12k_mlo_capable;
+
 int ath12k_wsi_load_info_init(struct ath12k_base *ab);
 void ath12k_wsi_load_info_deinit(struct ath12k_base *ab,
 				 struct ath12k_mlo_wsi_load_info *wsi_load_info);

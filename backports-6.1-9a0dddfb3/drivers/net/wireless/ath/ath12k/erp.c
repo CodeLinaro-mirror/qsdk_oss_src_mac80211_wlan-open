@@ -464,9 +464,8 @@ static int ath12k_erp_config(struct wiphy *wiphy, struct nlattr *attrs)
 		return ath12k_erp_remove_pcie(wiphy);
 }
 
-static int ath12k_erp_enter(struct wiphy *wiphy,
-			    struct wireless_dev *wdev,
-			    struct nlattr **attrs)
+static int ath12k_erp_enter_non_mlo(struct wiphy *wiphy, struct wireless_dev *wdev,
+				    struct nlattr **attrs)
 {
 	int ret = -EINVAL;
 
@@ -594,12 +593,15 @@ static int ath12k_erp_exit(struct wiphy *wiphy, bool send_event)
 	}
 
 	ath12k_erp_reset_state();
-	mutex_unlock(&erp_sm.lock);
 
-	queue_work(erp_pcie_config_workqueue, &erp_pcie_config.work);
+	if (!ath12k_mlo_capable) {
+		mutex_unlock(&erp_sm.lock);
 
-	if (send_event)
-		ath12k_vendor_send_erp_trigger(wiphy);
+		queue_work(erp_pcie_config_workqueue, &erp_pcie_config.work);
+
+		if (send_event)
+			ath12k_vendor_send_erp_trigger(wiphy);
+	}
 
 	return 0;
 }
@@ -663,6 +665,12 @@ int ath12k_vendor_parse_rm_erp(struct wiphy *wiphy, struct wireless_dev *wdev,
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ERP_MAX + 1];
 	int ret;
 
+	if (ath12k_mlo_capable) {
+		ath12k_err(NULL,
+			   "ErP vendor command support is available only for non-mlo mode\n");
+		return -EOPNOTSUPP;
+	}
+
 	if (!erp_sm.initialized)
 		return -EOPNOTSUPP;
 
@@ -678,7 +686,7 @@ int ath12k_vendor_parse_rm_erp(struct wiphy *wiphy, struct wireless_dev *wdev,
 	if (nla_get_flag(tb[QCA_WLAN_VENDOR_ATTR_ERP_ENTER_START]) ||
 			nla_get_flag(tb[QCA_WLAN_VENDOR_ATTR_ERP_ENTER_COMPLETE]) ||
 			tb[QCA_WLAN_VENDOR_ATTR_ERP_CONFIG])
-		ret = ath12k_erp_enter(wiphy, wdev, tb);
+		ret = ath12k_erp_enter_non_mlo(wiphy, wdev, tb);
 	else if (nla_get_flag(tb[QCA_WLAN_VENDOR_ATTR_ERP_EXIT])) {
 		ret = ath12k_erp_exit(wiphy, false);
 	}
@@ -721,26 +729,29 @@ void ath12k_erp_init(void)
 	mutex_init(&erp_sm.lock);
 	ath12k_erp_reset_state();
 
-	erp_sm.erp_dir = ath12k_debugfs_erp_create();
-	if (!erp_sm.erp_dir || !IS_ERR(erp_sm.erp_dir))
-		goto err_dir;
+	if (!ath12k_mlo_capable) {
+		erp_sm.erp_dir = ath12k_debugfs_erp_create();
+		if (!erp_sm.erp_dir || !IS_ERR(erp_sm.erp_dir))
+			goto err_dir;
 
-	debugfs_create_file("rescan_pcie", 0200, erp_sm.erp_dir,
-			    NULL, &ath12k_fops_erp_rescan_pcie);
+		debugfs_create_file("rescan_pcie", 0200, erp_sm.erp_dir,
+				    NULL, &ath12k_fops_erp_rescan_pcie);
 
-	erp_pcie_config_workqueue = create_singlethread_workqueue("ath12k_erp_wq");
-	if (!erp_pcie_config_workqueue) {
-		ath12k_err(NULL, "failed to initialize ErP work queue\n");
-		goto err_workqueue;
+		erp_pcie_config_workqueue = create_singlethread_workqueue("ath12k_erp_wq");
+		if (!erp_pcie_config_workqueue) {
+			ath12k_err(NULL, "failed to initialize ErP work queue\n");
+			goto err_workqueue;
+		}
+
+		INIT_WORK(&erp_pcie_config.work, ath12k_erp_pcie_work);
 	}
-
-	INIT_WORK(&erp_pcie_config.work, ath12k_erp_pcie_work);
 
 	erp_sm.initialized = true;
 	return;
 
 err_workqueue:
-	debugfs_remove_recursive(erp_sm.erp_dir);
+	if (!ath12k_mlo_capable)
+		debugfs_remove_recursive(erp_sm.erp_dir);
 err_dir:
 	erp_sm.erp_dir = NULL;
 	mutex_destroy(&erp_sm.lock);
@@ -754,11 +765,13 @@ void ath12k_erp_deinit(void)
 
 	mutex_lock(&erp_sm.lock);
 
-	erp_sm.erp_dir = NULL;
+	if (!ath12k_mlo_capable) {
+		erp_sm.erp_dir = NULL;
 
-	cancel_work_sync(&erp_pcie_config.work);
-	destroy_workqueue(erp_pcie_config_workqueue);
-	erp_pcie_config_workqueue = NULL;
+		cancel_work_sync(&erp_pcie_config.work);
+		destroy_workqueue(erp_pcie_config_workqueue);
+		erp_pcie_config_workqueue = NULL;
+	}
 
 	ath12k_erp_reset_state();
 	erp_sm.initialized = false;
