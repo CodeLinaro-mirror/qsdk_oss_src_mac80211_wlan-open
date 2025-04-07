@@ -2088,4 +2088,7 @@ void ath12k_wsi_load_info_deinit(struct ath12k_base *ab,
 void ath12k_wsi_load_info_wsiorder_update(struct ath12k_base *ab);
 struct ath12k_base *ath12k_core_get_ab_by_wiphy(const struct wiphy *wiphy,
 					        bool no_arvifs);
+u8 ath12k_core_get_ab_list_by_wiphy(const struct wiphy *wiphy,
+				    struct ath12k_base **ab_list,
+				    u8 ab_list_size);
 #endif /* _CORE_H_ */

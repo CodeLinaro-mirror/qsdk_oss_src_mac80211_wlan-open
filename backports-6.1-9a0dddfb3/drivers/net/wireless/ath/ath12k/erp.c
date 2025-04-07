@@ -366,6 +366,60 @@ static int ath12k_erp_remove_pcie(struct wiphy *wiphy)
 	return 0;
 }
 
+static void ath12k_erp_config_pcie_mlo(const struct wiphy *wiphy)
+{
+	struct ath12k_base *ab_list[ATH12K_MAX_SOCS] = { NULL }, *ab;
+	struct ath12k_erp_pci_dev *pci;
+	struct pci_dev *pci_dev;
+	u8 i;
+
+	lockdep_assert_wiphy(wiphy);
+	lockdep_assert_held(&erp_sm.lock);
+
+	erp_pcie_config.enter_cnt = ath12k_core_get_ab_list_by_wiphy(wiphy,
+								     ab_list,
+								     ATH12K_MAX_SOCS);
+
+	if (!erp_pcie_config.enter_cnt)
+		return;
+
+	for (i = 0; i < erp_pcie_config.enter_cnt; i++) {
+		ab = ab_list[i];
+
+		if (!ab || ab->hif.bus != ATH12K_BUS_PCI)
+			continue;
+
+		pci_dev = ath12k_pci_get_dev_by_ab(ab);
+		if (!pci_dev) {
+			ath12k_warn(ab,
+				   "no PCIe device associated with wiphy\n");
+			continue;
+		}
+
+		pci = &erp_pcie_config.pci[erp_pcie_config.exit_cnt];
+
+		pci->root = pcie_find_root_port(pci_dev);
+		if (!pci->root) {
+			ath12k_warn(ab, "failed to find PCIe root dev\n");
+			continue;
+		}
+
+		if (ath12k_pci_get_link_status(pci->root, &pci->speed, &pci->width) < 0) {
+			ath12k_warn(ab, "failed to get PCIe link status\n");
+			pci->root = NULL;
+			continue;
+		}
+
+		pci->dev = pci_dev;
+		pci->bus = pci->root->bus;
+		ath12k_erp_config_pcie_speed_width(pci->root, pci, true);
+
+		erp_pcie_config.exit_cnt++;
+	}
+
+	erp_pcie_config.enter_cnt = 0;
+}
+
 static int ath12k_erp_config_active_ar(struct wiphy *wiphy, struct nlattr **attrs)
 {
 	struct ath12k_erp_pci_dev *pci;
@@ -607,6 +661,16 @@ int ath12k_erp_exit(struct wiphy *wiphy, bool send_event)
 		if (send_event)
 			ath12k_vendor_send_erp_trigger(wiphy);
 	} else {
+		u8 i;
+
+		for (i = 0; i < erp_pcie_config.exit_cnt; i++)
+			ath12k_erp_config_pcie_speed_width(erp_pcie_config.pci[i].root,
+							   &erp_pcie_config.pci[i],
+							   false);
+
+		erp_pcie_config.exit_cnt = 0;
+		mutex_unlock(&erp_sm.lock);
+
 		if (send_event)
 			cfg80211_erp_trigger_exit(wiphy);
 	}
@@ -728,6 +792,8 @@ int ath12k_erp_enter(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int lin
 
 		erp_sm.active_ar.ar = ar;
 	}
+
+	ath12k_erp_config_pcie_mlo(hw->wiphy);
 
 	erp_sm.state = ATH12K_ERP_ENTER_COMPLETE;
 	mutex_unlock(&erp_sm.lock);

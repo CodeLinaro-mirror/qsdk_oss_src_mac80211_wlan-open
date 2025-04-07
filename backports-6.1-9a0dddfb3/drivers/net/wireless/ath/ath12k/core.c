@@ -4129,6 +4129,48 @@ struct ath12k_base *ath12k_core_get_ab_by_wiphy(const struct wiphy *wiphy,
 	return NULL;
 }
 
+u8 ath12k_core_get_ab_list_by_wiphy(const struct wiphy *wiphy,
+				    struct ath12k_base **ab_list,
+				    u8 ab_list_size)
+{
+	struct ath12k_hw_group *ag;
+	struct ath12k_base *ab;
+	struct ath12k *ar;
+	int soc, i, index = 0;
+
+	mutex_lock(&ath12k_hw_group_mutex);
+
+	list_for_each_entry(ag, &ath12k_hw_group_list, list) {
+		if (!ag)
+			continue;
+
+		for (soc = ag->num_probed; soc > 0; soc--) {
+			ab = ag->ab[soc - 1];
+
+			for (i = 0; i < ab->num_radios; i++) {
+				ar = ab->pdevs[i].ar;
+
+				if (index >= ab_list_size) {
+					ath12k_err(NULL,
+						   "insufficient length for ab_list\n");
+					goto error;
+				}
+
+				if (!ar || ath12k_ar_to_hw(ar)->wiphy != wiphy)
+					continue;
+
+				ab_list[index] = ab;
+				index++;
+				break;
+			}
+		}
+	}
+
+error:
+	mutex_unlock(&ath12k_hw_group_mutex);
+	return index;
+}
+
 int ath12k_core_init(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag;
