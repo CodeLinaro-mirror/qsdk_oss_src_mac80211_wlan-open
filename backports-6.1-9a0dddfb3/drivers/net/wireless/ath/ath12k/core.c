@@ -2064,6 +2064,8 @@ static int ath12k_core_hw_group_create(struct ath12k_hw_group *ag)
 		}
 
 		mutex_unlock(&ab->core_lock);
+
+		ath12k_qmi_fwreset_from_cold_boot(ab);
 	}
 
 	return 0;
@@ -2120,6 +2122,7 @@ void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag)
 int ath12k_core_init(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag;
+	bool is_ready;
 	int ret;
 
 	ret = ath12k_core_panic_notifier_register(ab);
@@ -2137,21 +2140,21 @@ int ath12k_core_init(struct ath12k_base *ab)
 
 	mutex_unlock(&ath12k_hw_group_mutex);
 
-	mutex_lock(&ag->mutex);
-
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "num devices %d num probed %d\n",
 		   ag->num_devices, ag->num_probed);
 
-	if (ath12k_core_hw_group_create_ready(ag)) {
+	// TODO: fix the the locking sequence
+	mutex_lock(&ag->mutex);
+	is_ready = ath12k_core_hw_group_create_ready(ag);
+	mutex_unlock(&ag->mutex);
+
+	if (is_ready) {
 		ret = ath12k_core_hw_group_create(ag);
 		if (ret) {
-			mutex_unlock(&ag->mutex);
 			ath12k_warn(ab, "unable to create hw group\n");
 			goto err;
 		}
 	}
-
-	mutex_unlock(&ag->mutex);
 
 	return 0;
 
@@ -2204,6 +2207,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 	INIT_LIST_HEAD(&ab->peers);
 	init_waitqueue_head(&ab->peer_mapping_wq);
 	init_waitqueue_head(&ab->wmi_ab.tx_credits_wq);
+	init_waitqueue_head(&ab->qmi.cold_boot_waitq);
 	INIT_WORK(&ab->restart_work, ath12k_core_restart);
 	INIT_WORK(&ab->reset_work, ath12k_core_reset);
 	INIT_WORK(&ab->rfkill_work, ath12k_rfkill_work);

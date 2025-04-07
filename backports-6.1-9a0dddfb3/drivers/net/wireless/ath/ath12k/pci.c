@@ -988,9 +988,6 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
 {
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 
-	if (!test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags))
-		return;
-
 	/* restore aspm in case firmware bootup fails */
 	ath12k_pci_aspm_restore(ab_pci);
 
@@ -1239,6 +1236,7 @@ qmi_fail:
 static void ath12k_pci_hw_group_power_down(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
+	struct ath12k_pci *ab_pci;
 	int i;
 
 	if (!ag)
@@ -1248,10 +1246,20 @@ static void ath12k_pci_hw_group_power_down(struct ath12k_hw_group *ag)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		if (!ab)
+		if  (!ab || ab->hif.bus != ATH12K_BUS_PCI)
 			continue;
 
-		ath12k_pci_power_down(ab, false);
+		ab_pci = ath12k_pci_priv(ab);
+
+		/* TODO: The purpose of the check on ATH12K_PCI_FLAG_INIT_DONE
+		 * is to skip setting the mhi state again and again in case of reboot
+		 * as for every SOC power_down is getting called as many times as
+		 * number of SOC's in the group. But need to check if this is really
+		 * needed and remove later.
+		 */
+
+		if (test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags))
+			ath12k_pci_power_down(ab, false);
 	}
 
 	mutex_unlock(&ag->mutex);

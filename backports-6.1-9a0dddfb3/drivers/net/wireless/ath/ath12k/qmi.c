@@ -21,6 +21,11 @@
 #define PLATFORM_CAP_PCIE_GLOBAL_RESET	0x08
 #define ATH12K_QMI_MAX_CHUNK_SIZE	2097152
 
+bool ath12k_cold_boot_cal = 1;
+module_param_named(cold_boot_cal, ath12k_cold_boot_cal, bool, 0644);
+MODULE_PARM_DESC(cold_boot_cal,
+		 "Decrease the channel switch time but increase the driver load time (Default: true)");
+
 static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 	{
 		.data_type      = QMI_UNSIGNED_1_BYTE,
@@ -62,6 +67,13 @@ static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 		.data_type      = QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+static struct qmi_elem_info qmi_wlanfw_cold_boot_cal_done_ind_msg_v01_ei[] = {
+	{
+		.data_type = QMI_EOTI,
+		.array_type = NO_ARRAY,
 	},
 };
 
@@ -2121,6 +2133,14 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 		return 0;
 	}
 
+	if (ath12k_cold_boot_cal && ab->qmi.cal_done == 0 &&
+            ab->hw_params->cold_boot_calib &&
+                ab->qmi.cal_timeout == 0) {
+                ath12k_dbg(ab, ATH12K_DBG_QMI, "Skip MLO cap send for device id %d since it's in cold_boot\n",
+                                ab->device_id);
+                return 0;
+        }
+
 	if (!ab->qmi.num_radios || ab->qmi.num_radios == U8_MAX) {
 		ag->mlo_capable = false;
 		ath12k_dbg(ab, ATH12K_DBG_QMI,
@@ -2764,13 +2784,12 @@ err:
 static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
-	unsigned int bdf_location[MAX_TGT_MEM_MODES];
+	unsigned int bdf_location[MAX_TGT_MEM_MODES], caldb_location[MAX_TGT_MEM_MODES], caldb_size[1];
 	struct ath12k_hw_group *ag = ab->ag;
 	int sz = 0, avail_sz;
 	int i, idx, ret;
 
 	mutex_lock(&ag->mutex);
-
 	if (!ag->mlo_mem.init_done) {
 		memset(ag->mlo_mem.chunk, 0, sizeof(ag->mlo_mem.chunk));
 		ag->mlo_mem.init_done = true;
@@ -2778,16 +2797,16 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 
 	ddr_rmem = ath12k_core_get_reserved_mem_by_name(ab, "host-ddr-mem");
 
+	if (!ddr_rmem) {
+		ret = -ENODEV;
+		goto out;
+	}
+
 	for (i = 0, idx = 0; i < ab->qmi.mem_seg_count; i++) {
 		struct target_mem_chunk *mlo_chunk;
 
 		switch (ab->qmi.target_mem[i].type) {
 		case HOST_DDR_REGION_TYPE:
-			if (!ddr_rmem) {
-				ret = -ENODEV;
-				goto out;
-			}
-
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
 				goto print_err;
@@ -2828,32 +2847,61 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			idx++;
 			break;
 		case CALDB_MEM_REGION_TYPE:
-			/* Cold boot calibration is not enabled in Ath12k. Hence,
-			 * assign paddr = 0.
-			 * Once cold boot calibration is enabled add support to
-			 * assign reserved memory from DT.
-			 */
-			ab->qmi.target_mem[idx].paddr = 0;
-			ab->qmi.target_mem[idx].v.ioaddr = NULL;
+			if (ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib) {
+                                if (ab->hif.bus == ATH12K_BUS_AHB ||
+                                    ab->hif.bus == ATH12K_BUS_HYBRID) {
+                                        if (of_property_read_u32_array(ab->dev->of_node,
+                                                                       "qcom,caldb-addr", caldb_location,
+                                                                       ARRAY_SIZE(caldb_location))) {
+                                                ath12k_err(ab, "CALDB_MEM_REGION Not defined in device_tree\n");
+                                                ret = -EINVAL;
+                                                goto out;
+                                        }
+
+                                        if (of_property_read_u32_array(ab->dev->of_node,
+                                                                       "qcom,caldb-size", caldb_size,
+                                                                       ARRAY_SIZE(caldb_size))) {
+                                                ath12k_err(ab, "CALDB_SIZE Not defined in device_tree\n");
+                                                ret = -EINVAL;
+                                                goto out;
+                                        }
+
+                                        ab->qmi.target_mem[idx].paddr = caldb_location[ATH12K_QMI_TARGET_MEM_MODE];
+                                        ab->qmi.target_mem[i].size = caldb_size[0];
+
+                                        ab->qmi.target_mem[idx].v.ioaddr =
+                                                ioremap(ab->qmi.target_mem[idx].paddr,
+                                                        ab->qmi.target_mem[i].size);
+                                } else {
+					if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
+						avail_sz = ddr_rmem->size - sz;
+						goto print_err;
+					}
+
+					ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
+                                        ab->qmi.target_mem[idx].v.ioaddr =
+                                                ioremap(ab->qmi.target_mem[idx].paddr,
+                                                        ab->qmi.target_mem[i].size);
+                                        sz += ab->qmi.target_mem[i].size;
+				}
+                        } else {
+                                ab->qmi.target_mem[idx].paddr = 0;
+                                ab->qmi.target_mem[idx].v.ioaddr = NULL;
+                        }
+
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			idx++;
 			break;
 		case M3_DUMP_REGION_TYPE:
 			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				if (!ddr_rmem) {
-					ret = -EINVAL;
-					goto out;
-				}
-
 				if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 					avail_sz = ddr_rmem->size - sz;
 					goto print_err;
 				}
 				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
 				sz += ab->qmi.target_mem[i].size;
-			}
-			else {
+			} else {
 				rmem = ath12k_core_get_reserved_mem_by_name(ab, "m3-dump");
 				if (!rmem) {
 					ret = -EINVAL;
@@ -2986,6 +3034,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			break;
 		}
 	}
+
 	ab->qmi.mem_seg_count = idx;
 
 	mutex_unlock(&ag->mutex);
@@ -3653,6 +3702,68 @@ int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 	return 0;
 }
 
+static int ath12k_qmi_process_coldboot_calibration(struct ath12k_base *ab)
+{
+	int timeout;
+	int ret;
+
+	ret = ath12k_qmi_wlanfw_mode_send(ab, ATH12K_FIRMWARE_MODE_COLD_BOOT);
+	if (ret < 0) {
+		ath12k_warn(ab, "qmi failed to send wlan fw mode:%d\n", ret);
+		return ret;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "Coldboot calibration wait started\n");
+
+	timeout = wait_event_timeout(ab->qmi.cold_boot_waitq,
+				     (ab->qmi.cal_done  == 1),
+				     ATH12K_COLD_BOOT_FW_RESET_DELAY);
+	if (timeout <= 0) {
+		ath12k_warn(ab, "Coldboot Calibration failed - wait ended\n");
+		return 0;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "Coldboot calibration done\n");
+
+	return 0;
+}
+
+int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab)
+{
+	int timeout;
+
+	if (ath12k_cold_boot_cal == 0 ||
+		ab->hw_params->cold_boot_calib == 0){
+		ath12k_info(ab, "Cold boot cal is not supported/enabled\n");
+		return 0;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "wait for cold boot done\n");
+
+	timeout = wait_event_timeout(ab->qmi.cold_boot_waitq,
+				     (ab->qmi.cal_done  == 1),
+				     ATH12K_COLD_BOOT_FW_RESET_DELAY);
+
+	if (timeout <= 0) {
+		ath12k_warn(ab, "Coldboot Calibration timed out\n");
+		/*set cal_timeout to switch to mission mode on firware reset*/
+		ab->qmi.cal_timeout = 1;
+        }
+
+	/* reset the firmware */
+	ath12k_info(ab, "power down to restart firmware in mission mode\n");
+	ath12k_qmi_firmware_stop(ab);
+	ath12k_hif_power_down(ab, false);
+	ath12k_qmi_free_target_mem_chunk(ab);
+	ath12k_info(ab, "power up to restart firmware in mission mode\n");
+	/* reset host fixed mem off to zero */
+
+	ath12k_hif_power_up(ab);
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "exit wait for cold boot done\n");
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_qmi_fwreset_from_cold_boot);
+
 static int
 ath12k_qmi_driver_event_post(struct ath12k_qmi *qmi,
 			     enum ath12k_qmi_event_type type,
@@ -3749,23 +3860,28 @@ int ath12k_qmi_event_server_arrive(struct ath12k_qmi *qmi)
 		return ret;
 	}
 
-	spin_lock(&qmi->event_lock);
-
-	ath12k_qmi_set_event_block(qmi, true);
-
-	spin_unlock(&qmi->event_lock);
-
-	mutex_lock(&ag->mutex);
-
-	if (ath12k_qmi_hw_group_host_cap_ready(ag)) {
+	if (ath12k_cold_boot_cal && ab->qmi.cal_done == 0 &&
+			ab->hw_params->cold_boot_calib &&
+			ab->qmi.cal_timeout == 0) {
+		/* Coldboot calibration mode */
+		ath12k_qmi_trigger_host_cap(ab);
+	} else {
+		spin_lock(&qmi->event_lock);
 		ath12k_core_hw_group_set_mlo_capable(ag);
+		ath12k_qmi_set_event_block(qmi, true);
 
-		block_ab = ath12k_qmi_hw_group_find_blocked(ag);
-		if (block_ab)
-			ath12k_qmi_trigger_host_cap(block_ab);
+		spin_unlock(&qmi->event_lock);
+
+		mutex_lock(&ag->mutex);
+
+		if (ath12k_qmi_hw_group_host_cap_ready(ag)) {
+
+			block_ab = ath12k_qmi_hw_group_find_blocked(ag);
+			if (block_ab)
+				ath12k_qmi_trigger_host_cap(block_ab);
+		}
+		mutex_unlock(&ag->mutex);
 	}
-
-	mutex_unlock(&ag->mutex);
 
 	return ret;
 }
@@ -3979,6 +4095,20 @@ static void ath12k_qmi_msg_fw_ready_cb(struct qmi_handle *qmi_hdl,
 	ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_FW_READY, NULL);
 }
 
+static void ath12k_qmi_msg_cold_boot_cal_done_cb(struct qmi_handle *qmi_hdl,
+						 struct sockaddr_qrtr *sq,
+						 struct qmi_txn *txn,
+						 const void *decoded)
+{
+	struct ath12k_qmi *qmi = container_of(qmi_hdl,
+					      struct ath12k_qmi, handle);
+	struct ath12k_base *ab = qmi->ab;
+
+	ab->qmi.cal_done = 1;
+	wake_up(&ab->qmi.cold_boot_waitq);
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi cold boot calibration done\n");
+}
+
 static const struct qmi_msg_handler ath12k_qmi_msg_handlers[] = {
 	{
 		.type = QMI_INDICATION,
@@ -4001,7 +4131,14 @@ static const struct qmi_msg_handler ath12k_qmi_msg_handlers[] = {
 		.decoded_size = sizeof(struct qmi_wlanfw_fw_ready_ind_msg_v01),
 		.fn = ath12k_qmi_msg_fw_ready_cb,
 	},
-
+	{
+		.type = QMI_INDICATION,
+		.msg_id = QMI_WLFW_COLD_BOOT_CAL_DONE_IND_V01,
+		.ei = qmi_wlanfw_cold_boot_cal_done_ind_msg_v01_ei,
+		.decoded_size =
+			sizeof(struct qmi_wlanfw_fw_cold_cal_done_ind_msg_v01),
+		.fn = ath12k_qmi_msg_cold_boot_cal_done_cb,
+	},
 	/* end of list */
 	{},
 };
@@ -4087,6 +4224,7 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 	int ret;
 
 	spin_lock(&qmi->event_lock);
+
 	while (!list_empty(&qmi->event_list)) {
 		event = list_first_entry(&qmi->event_list,
 					 struct ath12k_qmi_driver_event, list);
@@ -4126,24 +4264,30 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 				break;
 			}
 
-			clear_bit(ATH12K_FLAG_CRASH_FLUSH,
-				  &ab->dev_flags);
 			ret = ath12k_wait_for_gic_msi(ab);
 			if (ret) {
 				ath12k_warn(ab, "failed to get qgic handler for dev %d ret: %d\n",
 					    ab->hw_rev, ret);
 				break;
 			}
-			ret = ath12k_core_qmi_firmware_ready(ab);
-			if (!ret)
-				set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
-					&ab->dev_flags);
-
+			if (ath12k_cold_boot_cal && ab->qmi.cal_done == 0 &&
+			    ab->hw_params->cold_boot_calib) {
+				ath12k_qmi_process_coldboot_calibration(ab);
+			} else {
+				clear_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+				clear_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
+				ret = ath12k_core_qmi_firmware_ready(ab);
+				if (!ret)
+					set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
+						&ab->dev_flags);
+			}
 			break;
 		case ATH12K_QMI_EVENT_HOST_CAP:
 			ret = ath12k_qmi_event_host_cap(qmi);
 			if (ret < 0)
 				set_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
+			break;
+		case ATH12K_QMI_EVENT_COLD_BOOT_CAL_DONE:
 			break;
 		default:
 			ath12k_warn(ab, "invalid event type: %d", event->type);

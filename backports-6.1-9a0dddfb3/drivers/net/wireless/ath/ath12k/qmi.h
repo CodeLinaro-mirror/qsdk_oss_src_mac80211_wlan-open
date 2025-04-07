@@ -34,10 +34,12 @@
 
 #define QMI_WLFW_REQUEST_MEM_IND_V01		0x0035
 #define QMI_WLFW_FW_MEM_READY_IND_V01		0x0037
+#define QMI_WLFW_COLD_BOOT_CAL_DONE_IND_V01	0x0021
 #define QMI_WLFW_FW_READY_IND_V01		0x0038
 
 #define QMI_WLANFW_MAX_DATA_SIZE_V01		6144
 #define ATH12K_FIRMWARE_MODE_OFF		4
+#define ATH12K_COLD_BOOT_FW_RESET_DELAY		(60 * HZ)
 
 #define ATH12K_BOARD_ID_DEFAULT	0xFF
 
@@ -76,6 +78,8 @@ enum ath12k_qmi_event_type {
 	ATH12K_QMI_EVENT_REQUEST_MEM,
 	ATH12K_QMI_EVENT_FW_MEM_READY,
 	ATH12K_QMI_EVENT_FW_READY,
+	ATH12K_QMI_EVENT_COLD_BOOT_CAL_START,
+	ATH12K_QMI_EVENT_COLD_BOOT_CAL_DONE,
 	ATH12K_QMI_EVENT_REGISTER_DRIVER,
 	ATH12K_QMI_EVENT_UNREGISTER_DRIVER,
 	ATH12K_QMI_EVENT_RECOVERY,
@@ -157,7 +161,7 @@ struct ath12k_qmi {
 	u32 target_mem_mode;
 	bool target_mem_delayed;
 	u8 cal_done;
-
+	u8 cal_timeout;
 	/* protected with struct ath12k_qmi::event_lock */
 	bool block_event;
 
@@ -165,6 +169,7 @@ struct ath12k_qmi {
 	struct target_info target;
 	struct m3_mem_region m3_mem;
 	unsigned int service_ins_id;
+	wait_queue_head_t cold_boot_waitq;
 	struct dev_mem_info dev_mem[ATH12K_QMI_WLFW_MAX_DEV_MEM_NUM_V01];
 };
 
@@ -390,6 +395,10 @@ struct qmi_wlanfw_fw_mem_ready_ind_msg_v01 {
 };
 
 struct qmi_wlanfw_fw_ready_ind_msg_v01 {
+	char placeholder;
+};
+
+struct qmi_wlanfw_fw_cold_cal_done_ind_msg_v01 {
 	char placeholder;
 };
 
@@ -648,6 +657,7 @@ int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 void ath12k_qmi_firmware_stop(struct ath12k_base *ab);
 void ath12k_qmi_deinit_service(struct ath12k_base *ab);
 int ath12k_qmi_init_service(struct ath12k_base *ab);
+int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab);
 void ath12k_qmi_free_resource(struct ath12k_base *ab);
 void ath12k_qmi_trigger_host_cap(struct ath12k_base *ab);
 void ath12k_qmi_reset_mlo_mem(struct ath12k_hw_group *ag);
