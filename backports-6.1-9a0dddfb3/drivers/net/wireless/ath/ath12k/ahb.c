@@ -494,17 +494,21 @@ static void ath12k_ahb_power_down(struct ath12k_base *ab, bool is_suspend)
 	u32 pasid;
 	int ret;
 
-	qcom_smem_state_update_bits(ab_ahb->stop_state, BIT(ab_ahb->stop_bit),
-				    BIT(ab_ahb->stop_bit));
+	if (ab_ahb->crash_type == ATH12K_NO_CRASH) {
+		qcom_smem_state_update_bits(ab_ahb->stop_state, BIT(ab_ahb->stop_bit),
+					    BIT(ab_ahb->stop_bit));
 
-	time_left = wait_for_completion_timeout(&ab_ahb->userpd_stopped,
+		time_left = wait_for_completion_timeout(&ab_ahb->userpd_stopped,
 						ATH12K_USERPD_STOP_TIMEOUT);
-	if (!time_left) {
-		ath12k_err(ab, "UserPD stop wait timed out\n");
-		return;
-	}
+		if (!time_left) {
+			ath12k_err(ab, "UserPD stop wait timed out\n");
+			qcom_smem_state_update_bits(ab_ahb->stop_state,
+						    BIT(ab_ahb->stop_bit), 0);
+			return;
+		}
 
-	qcom_smem_state_update_bits(ab_ahb->stop_state, BIT(ab_ahb->stop_bit), 0);
+		qcom_smem_state_update_bits(ab_ahb->stop_state, BIT(ab_ahb->stop_bit), 0);
+	}
 
 	if (ab_ahb->scm_auth_enabled) {
 		pasid = (u32_encode_bits(ab_ahb->userpd_id, ATH12K_USERPD_ID_MASK)) |
@@ -868,18 +872,111 @@ static int ath12k_ahb_config_rproc_irq(struct ath12k_base *ab)
 	return 0;
 }
 
+int ath12k_ahb_root_pd_fatal_notifier(struct notifier_block *nb,
+                                     const unsigned long event, void *data)
+{
+	struct ath12k_ahb *ab_ahb = container_of(nb, struct ath12k_ahb, root_pd_fatal_nb);
+	struct ath12k_base *ab = ab_ahb->ab;
+	struct ath12k_hw_group *ag = ab->ag;
+
+	if (event != ATH12K_RPROC_NOTIFY_CRASH)
+		return NOTIFY_DONE;
+
+	ath12k_info(ab, "RootPD CRASHED\n");
+	if (!test_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags))
+		return NOTIFY_DONE;
+
+	/* Disable rootPD recovery as FW recovery is disabled
+	 * to collect dump in crashed state
+	 */
+
+	if (ab->fw_recovery_support == ATH12K_FW_RECOVERY_DISABLE)
+		ab_ahb->tgt_rproc->recovery_disabled = true;
+
+	if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags))) {
+		set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
+		set_bit(ATH12K_GROUP_FLAG_CRASH_FLUSH, &ag->flags);
+		set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
+		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+		ab_ahb->crash_type = ATH12K_RPROC_ROOTPD_CRASH;
+		queue_work(ab->workqueue_aux, &ag->reset_group_work);
+	} else {
+		/* In case of rootpd crash during rmmod case */
+		WARN_ON(1);
+	}
+
+	return NOTIFY_OK;
+}
+
+static void ath12k_ahb_queue_all_userpd_reset(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_base *partner_ab;
+	int i;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+
+		if (partner_ab->hif.bus == ATH12K_BUS_PCI)
+			continue;
+
+		if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)))
+			queue_work(partner_ab->workqueue_aux, &partner_ab->reset_work);
+	}
+}
+
+static int ath12k_ahb_release_all_userpd(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_ahb *ab_ahb;
+	struct ath12k_base *partner_ab;
+	int i, ret;
+	u32 pasid;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+
+		if (!(partner_ab->hif.bus == ATH12K_BUS_AHB ||
+		      partner_ab->hif.bus == ATH12K_BUS_HYBRID))
+			continue;
+
+		ab_ahb = ath12k_ab_to_ahb(partner_ab);
+		if (ab_ahb->scm_auth_enabled) {
+			pasid = (u32_encode_bits(ab_ahb->userpd_id, ATH12K_USERPD_ID_MASK)) |
+				 ATH12K_AHB_UPD_SWID;
+			ret = qcom_scm_pas_shutdown(pasid);
+			if (ret) {
+				ath12k_err(ab, "userpd ID:- %u release failed\n",
+					   ab_ahb->userpd_id);
+				return ret;
+			}
+		}
+	}
+	return 0;
+}
+
 static int ath12k_ahb_root_pd_state_notifier(struct notifier_block *nb,
 					     const unsigned long event, void *data)
 {
 	struct ath12k_ahb *ab_ahb = container_of(nb, struct ath12k_ahb, root_pd_nb);
 	struct ath12k_base *ab = ab_ahb->ab;
 
-	if (event == ATH12K_RPROC_AFTER_POWERUP) {
+	switch (event) {
+	case ATH12K_RPROC_AFTER_POWERUP:
 		ath12k_dbg(ab, ATH12K_DBG_AHB, "Root PD is UP\n");
 		complete(&ab_ahb->rootpd_ready);
+
+		if (ab_ahb->crash_type == ATH12K_RPROC_ROOTPD_CRASH &&
+		    ab->fw_recovery_support)
+		     ath12k_ahb_queue_all_userpd_reset(ab);
+
+		return NOTIFY_OK;
+	case ATH12K_RPROC_BEFORE_SHUTDOWN:
+		ath12k_ahb_release_all_userpd(ab);
+		return NOTIFY_OK;
 	}
 
-	return 0;
+	return NOTIFY_DONE;
 }
 
 static int ath12k_ahb_register_rproc_notifier(struct ath12k_base *ab)
@@ -887,6 +984,8 @@ static int ath12k_ahb_register_rproc_notifier(struct ath12k_base *ab)
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
 	ab_ahb->root_pd_nb.notifier_call = ath12k_ahb_root_pd_state_notifier;
+	ab_ahb->root_pd_fatal_nb.notifier_call = ath12k_ahb_root_pd_fatal_notifier;
+
 	init_completion(&ab_ahb->rootpd_ready);
 
 	/* RootPD notification can be registered only once */
@@ -898,7 +997,16 @@ static int ath12k_ahb_register_rproc_notifier(struct ath12k_base *ab)
 	if (IS_ERR(ab_ahb->root_pd_notifier))
 		return PTR_ERR(ab_ahb->root_pd_notifier);
 
-	return 0;
+	ab_ahb->root_pd_fatal_notifier =
+			qcom_register_ssr_atomic_notifier(ab_ahb->tgt_rproc->name,
+							  &ab_ahb->root_pd_fatal_nb);
+
+	if (IS_ERR(ab_ahb->root_pd_fatal_notifier)) {
+		qcom_unregister_ssr_notifier(ab_ahb->root_pd_notifier, &ab_ahb->root_pd_nb);
+		return PTR_ERR(ab_ahb->root_pd_fatal_notifier);
+	}
+
+        return 0;
 }
 
 static void ath12k_ahb_unregister_rproc_notifier(struct ath12k_base *ab)
@@ -908,14 +1016,23 @@ static void ath12k_ahb_unregister_rproc_notifier(struct ath12k_base *ab)
 	if (ab_ahb->userpd_id != ATH12K_AHB_USERPD1)
 		return;
 
-	if (!ab_ahb->root_pd_notifier) {
-		ath12k_err(ab, "Rproc notifier not registered\n");
-		return;
+	if (ab_ahb->root_pd_fatal_notifier) {
+
+		qcom_unregister_ssr_atomic_notifier(ab_ahb->root_pd_fatal_notifier,
+						    &ab_ahb->root_pd_fatal_nb);
+		ab_ahb->root_pd_fatal_notifier = NULL;
+	} else {
+		ath12k_err(ab, "Rproc fatal notifier not registered\n");
 	}
 
-	qcom_unregister_ssr_notifier(ab_ahb->root_pd_notifier,
-				     &ab_ahb->root_pd_nb);
-	ab_ahb->root_pd_notifier = NULL;
+	if (ab_ahb->root_pd_notifier) {
+
+		qcom_unregister_ssr_notifier(ab_ahb->root_pd_notifier,
+					     &ab_ahb->root_pd_nb);
+		ab_ahb->root_pd_notifier = NULL;
+	} else {
+		ath12k_err(ab, "Rproc notifier not registered\n");
+	}
 }
 
 static int ath12k_ahb_get_rproc(struct ath12k_base *ab)

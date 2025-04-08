@@ -19,6 +19,8 @@
 #define ATH12K_PCI_IRQ_CE0_OFFSET		3
 #define ATH12K_ROOTPD_READY_TIMEOUT		(5 * HZ)
 #define ATH12K_RPROC_AFTER_POWERUP		QCOM_SSR_AFTER_POWERUP
+#define ATH12K_RPROC_NOTIFY_CRASH		QCOM_SSR_NOTIFY_CRASH
+#define ATH12K_RPROC_BEFORE_SHUTDOWN		QCOM_SSR_BEFORE_SHUTDOWN
 #define ATH12K_AHB_FW_PREFIX			"q6_fw"
 #define ATH12K_AHB_FW_SUFFIX			".mdt"
 #define ATH12K_AHB_FW2				"iu_fw.mdt"
@@ -58,10 +60,13 @@ struct ath12k_ahb_device_family_ops {
 struct ath12k_ahb {
 	struct ath12k_base *ab;
 	struct rproc *tgt_rproc;
+	enum ath12k_core_crash_type crash_type;
 	struct clk *xo_clk;
 	struct completion rootpd_ready;
 	struct notifier_block root_pd_nb;
+	struct notifier_block root_pd_fatal_nb;
 	void *root_pd_notifier;
+	void *root_pd_fatal_notifier;
 	struct qcom_smem_state *spawn_state;
 	struct qcom_smem_state *stop_state;
 	struct completion userpd_spawned;

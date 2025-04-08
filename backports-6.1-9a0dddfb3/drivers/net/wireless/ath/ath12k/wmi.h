@@ -6138,7 +6138,7 @@ int ath12k_wmi_vdev_set_param_cmd(struct ath12k *ar, u32 vdev_id,
 
 int ath12k_wmi_set_sta_ps_param(struct ath12k *ar, u32 vdev_id,
 				u32 param, u32 param_value);
-int ath12k_wmi_force_fw_hang_cmd(struct ath12k *ar, u32 type, u32 delay_time_ms);
+int ath12k_wmi_force_fw_hang_cmd(struct ath12k *ar, u32 type, u32 delay_time_ms, bool nowait);
 int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 				    const u8 *peer_addr, u8 vdev_id);
 int ath12k_wmi_vdev_delete(struct ath12k *ar, u8 vdev_id);

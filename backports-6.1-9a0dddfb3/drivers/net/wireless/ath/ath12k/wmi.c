@@ -1687,12 +1687,12 @@ int ath12k_wmi_set_sta_ps_param(struct ath12k *ar, u32 vdev_id,
 	return ret;
 }
 
-int ath12k_wmi_force_fw_hang_cmd(struct ath12k *ar, u32 type, u32 delay_time_ms)
+int ath12k_wmi_force_fw_hang_cmd(struct ath12k *ar, u32 type, u32 delay_time_ms, bool nowait)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_force_fw_hang_cmd *cmd;
 	struct sk_buff *skb;
-	int ret, len;
+	int ret = 0, len;
 
 	len = sizeof(*cmd);
 
@@ -1706,8 +1706,10 @@ int ath12k_wmi_force_fw_hang_cmd(struct ath12k *ar, u32 type, u32 delay_time_ms)
 
 	cmd->type = cpu_to_le32(type);
 	cmd->delay_time_ms = cpu_to_le32(delay_time_ms);
-
-	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_FORCE_FW_HANG_CMDID);
+	if (nowait)
+		ath12k_wmi_cmd_send_nowait(wmi, skb, WMI_FORCE_FW_HANG_CMDID);
+	else
+		ret = ath12k_wmi_cmd_send(wmi, skb, WMI_FORCE_FW_HANG_CMDID);
 
 	if (ret) {
 		ath12k_warn(ar->ab, "Failed to send WMI_FORCE_FW_HANG_CMDID");

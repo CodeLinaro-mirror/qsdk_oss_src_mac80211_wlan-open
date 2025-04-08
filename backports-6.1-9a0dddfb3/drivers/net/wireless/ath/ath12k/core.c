@@ -989,6 +989,7 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 	lockdep_assert_held(&ag->mutex);
 
 	clear_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags);
+	cancel_work_sync(&ag->reset_group_work);
 
 	ath12k_mac_unregister(ag);
 
@@ -1617,6 +1618,75 @@ exit_restart:
 	complete(&ab->restart_completed);
 }
 
+static void ath12k_core_trigger_bug_on(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	int dump_count;
+
+	/* Crash the system once all the stats are dumped */
+	if (ab->in_panic)
+		return;
+
+	if (ag->mlo_capable) {
+		dump_count = atomic_read(&ath12k_coredump_ram_info.num_chip);
+		if (dump_count >= ATH12K_MAX_SOCS) {
+			ath12k_err(ab, "invalid chip number %d\n",
+				   dump_count);
+			return;
+		}
+	}
+
+	atomic_inc(&ath12k_coredump_ram_info.num_chip);
+	ath12k_core_issue_bug_on(ab);
+}
+
+static void ath12k_core_update_userpd_state(struct work_struct *work)
+{
+	struct ath12k_hw_group *ag = container_of(work, struct ath12k_hw_group, reset_group_work);
+	struct ath12k_base *ab;
+	struct ath12k_ahb *ab_ahb = NULL;
+	int i;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+
+		if (!ab->fw_recovery_support) {
+			if (ab->hif.bus == ATH12K_BUS_PCI &&
+			    !test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
+			/* Failsafe. Assert partner chips as crash notification would
+			 * not be propagated to all chips in rare case.
+			 */
+				ath12k_info(ab, "sending fw_hang cmd to partner chip\n");
+				ath12k_wmi_force_fw_hang_cmd(ab->pdevs[0].ar,
+							     ATH12K_WMI_FW_HANG_ASSERT_TYPE,
+							     ATH12K_WMI_FW_HANG_DELAY,
+							     true);
+
+			} else if (ab->hif.bus == ATH12K_BUS_AHB ||
+				   ab->hif.bus == ATH12K_BUS_HYBRID) {
+				ath12k_hal_dump_srng_stats(ab);
+				ath12k_core_trigger_bug_on(ab);
+			}
+			continue;
+		} else {
+			if (ab->hif.bus == ATH12K_BUS_PCI)
+				continue;
+		}
+
+		ab_ahb = ath12k_ab_to_ahb(ab);
+		if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags))) {
+			set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
+			set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+			ab_ahb->crash_type = ATH12K_RPROC_ROOTPD_CRASH;
+		}
+
+		if (!ab->is_reset) {
+			ath12k_hif_irq_disable(ab);
+		}
+		ath12k_hal_dump_srng_stats(ab);
+	}
+}
+
 static void ath12k_core_reset(struct work_struct *work)
 {
 	struct ath12k_base *ab = container_of(work, struct ath12k_base, reset_work);
@@ -1668,7 +1738,12 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	ab->is_reset = true;
 	/* prepare coredump */
-	ath12k_coredump_download_rddm(ab);
+	if (ab->hif.bus == ATH12K_BUS_PCI) {
+		ath12k_coredump_download_rddm(ab);
+	} else if ((ab->hif.bus == ATH12K_BUS_AHB || ab->hif.bus == ATH12K_BUS_HYBRID) &&
+		   !ab->fw_recovery_support) {
+		ath12k_core_trigger_bug_on(ab);
+	}
 
 	atomic_set(&ab->recovery_count, 0);
 
@@ -1759,6 +1834,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 
 	ag->id = count;
 	list_add(&ag->list, &ath12k_hw_group_list);
+	INIT_WORK(&ag->reset_group_work, ath12k_core_update_userpd_state);
 	mutex_init(&ag->mutex);
 	ag->mlo_capable = false;
 

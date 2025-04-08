@@ -273,6 +273,8 @@ enum ath12k_11d_state {
 enum ath12k_hw_group_flags {
 	ATH12K_GROUP_FLAG_REGISTERED,
 	ATH12K_GROUP_FLAG_UNREGISTER,
+	ATH12K_GROUP_FLAG_RECOVERY,
+	ATH12K_GROUP_FLAG_CRASH_FLUSH,
 };
 
 enum ath12k_dev_flags {
@@ -993,6 +995,7 @@ struct ath12k_hw_group {
 	struct ath12k_hw_link hw_links[ATH12K_GROUP_MAX_RADIO];
 	bool hw_link_id_init_done;
 	u8 num_userpd_started;
+	struct work_struct reset_group_work;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -1004,6 +1007,24 @@ struct ath12k_wsi_info {
 enum ath12k_device_family {
 	ATH12K_DEVICE_FAMILY_WIFI7,
 	ATH12K_DEVICE_FAMILY_MAX,
+};
+
+/* Fatal error notification type based on specific platform type */
+enum ath12k_core_crash_type {
+	/* Fatal error notification unknown or fatal error notification
+	 * is honored.
+	 */
+	ATH12K_NO_CRASH,
+
+	/* Fatal error notification from remoteproc user pd for platform with
+	 * ahb based internal radio and pcic based external radios
+	 */
+	ATH12K_RPROC_USERPD_CRASH,
+
+	/* Fatal error notification from remoteproc root pd for platform with
+	 * ahb based internal radio and pcic based external radios
+	*/
+	ATH12K_RPROC_ROOTPD_CRASH
 };
 
 struct ath12k_internal_pci {
