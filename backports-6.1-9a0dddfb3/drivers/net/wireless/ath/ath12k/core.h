@@ -787,7 +787,6 @@ struct ath12k {
 	bool ch_info_can_report_survey:1;
 	bool target_suspend_ack:1;
 	bool dfs_block_radar_events:1;
-	bool monitor_conf_enabled:1;
 	bool monitor_vdev_created:1;
 	bool monitor_started:1;
 	bool nlo_enabled:1;
