@@ -10,8 +10,9 @@
 #include <linux/of_device.h>
 #include <linux/platform_device.h>
 #include <linux/remoteproc.h>
-#include <linux/soc/qcom/mdt_loader.h>
+#include <linux/soc/qcom/smem.h>
 #include <linux/soc/qcom/smem_state.h>
+#include <linux/soc/qcom/mdt_loader.h>
 #include "ahb.h"
 #include "debug.h"
 #include "hif.h"
@@ -26,7 +27,8 @@ static struct ath12k_ahb_driver *ath12k_ahb_family_drivers[ATH12K_DEVICE_FAMILY_
 static struct platform_driver ath12k_ahb_drivers[ATH12K_DEVICE_FAMILY_MAX];
 static const char ath12k_userpd_irq[][9] = {"spawn",
 				     "ready",
-				     "stop-ack"};
+				     "stop-ack",
+				     "fatal"};
 
 static const char *irq_name[ATH12K_IRQ_NUM_MAX] = {
 	"misc-pulse1",
@@ -806,6 +808,42 @@ static const struct ath12k_hif_ops ath12k_ahb_hif_ops_qcn6432 = {
 	.ce_irq_disable = ath12k_pcic_ce_irq_disable_sync,
 };
 
+static void ath12k_core_dump_crash_reason(struct ath12k_base *ab)
+{
+	size_t len;
+	char *msg;
+
+	msg = qcom_smem_get(ATH12K_SMEM_HOST, ATH12K_Q6_CRASH_REASON, &len);
+	if (!IS_ERR(msg) && len > 0 && msg[0])
+		ath12k_err(ab, "fatal error received: %s\n", msg);
+	else
+		ath12k_err(ab, "fatal error without message\n");
+}
+
+static void ath12k_ahb_handle_userpd_crash(struct ath12k_base *ab)
+{
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+
+	if (!test_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags))
+		return;
+
+	ath12k_info(ab, "UserPD - %d CRASHED\n", ab_ahb->userpd_id);
+
+	complete(&ab_ahb->userpd_spawned);
+	complete(&ab_ahb->userpd_ready);
+	complete(&ab_ahb->userpd_stopped);
+	ath12k_core_dump_crash_reason(ab);
+	if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags))) {
+		set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
+		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+		ab_ahb->crash_type = ATH12K_RPROC_USERPD_CRASH;
+		queue_work(ab->workqueue_aux, &ab->reset_work);
+	} else {
+		/* In case of userpd crash during rmmod case */
+		WARN_ON(1);
+	}
+}
+
 static irqreturn_t ath12k_userpd_irq_handler(int irq, void *data)
 {
 	struct ath12k_base *ab = data;
@@ -815,8 +853,10 @@ static irqreturn_t ath12k_userpd_irq_handler(int irq, void *data)
 		complete(&ab_ahb->userpd_spawned);
 	} else if (irq == ab_ahb->userpd_irq_num[ATH12K_USERPD_READY_IRQ]) {
 		complete(&ab_ahb->userpd_ready);
-	} else if (irq == ab_ahb->userpd_irq_num[ATH12K_USERPD_STOP_ACK_IRQ])	{
+	} else if (irq == ab_ahb->userpd_irq_num[ATH12K_USERPD_STOP_ACK_IRQ]) {
 		complete(&ab_ahb->userpd_stopped);
+	} else if (irq == ab_ahb->userpd_irq_num[ATH12K_USERPD_FATAL_IRQ]) {
+		ath12k_ahb_handle_userpd_crash(ab);
 	} else {
 		ath12k_err(ab, "Invalid userpd interrupt\n");
 		return IRQ_NONE;
