@@ -11,6 +11,16 @@
 #define ATH12K_UDP_TCP_END_PORT			65535
 #define ATH12K_RX_FSE_FLOW_MATCH_DEBUGFS	0xBBBB
 
+#define ATH12K_HTT_PEER_STATS_RESET BIT(16)
+
+#define ATH12K_HTT_STATS_BUF_SIZE (1024 * 512)
+
+enum ath12k_dbg_aggr_mode {
+	ATH12K_DBG_AGGR_MODE_AUTO,
+	ATH12K_DBG_AGGR_MODE_MANUAL,
+	ATH12K_DBG_AGGR_MODE_MAX,
+};
+
 #ifdef CPTCFG_ATH12K_DEBUGFS
 void ath12k_debugfs_soc_create(struct ath12k_base *ab);
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab);
@@ -18,6 +28,14 @@ void ath12k_debugfs_register(struct ath12k *ar);
 void ath12k_debugfs_unregister(struct ath12k *ar);
 void ath12k_debugfs_fw_stats_process(struct ath12k *ar,
 				     struct ath12k_fw_stats *stats);
+void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab);
+void ath12k_debugfs_fw_stats_init(struct ath12k *ar);
+
+static inline bool ath12k_debugfs_is_pktlog_rx_stats_enabled(struct ath12k *ar)
+{
+	return (!ar->debug.pktlog_peer_valid && ar->debug.pktlog_mode);
+}
+
 static inline bool ath12k_debugfs_is_extd_rx_stats_enabled(struct ath12k *ar)
 {
 	return ar->debug.extd_rx_stats;
@@ -147,6 +165,20 @@ enum ath12k_debug_tpc_stats_support_modes {
 	ATH12K_TPC_STATS_SUPPORT_BE_PUNC,
 };
 #else
+
+static inline void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab)
+{
+}
+
+static inline void ath12k_debugfs_fw_stats_init(struct ath12k *ar)
+{
+}
+
+static inline bool ath12k_debugfs_is_pktlog_rx_stats_enabled(struct ath12k *ar)
+{
+	return false;
+}
+
 static inline void ath12k_debugfs_soc_create(struct ath12k_base *ab)
 {
 }

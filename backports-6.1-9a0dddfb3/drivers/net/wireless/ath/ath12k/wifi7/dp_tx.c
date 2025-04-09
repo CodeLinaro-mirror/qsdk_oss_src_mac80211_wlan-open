@@ -10,6 +10,7 @@
 #include "../peer.h"
 #include "dp_tx.h"
 #include "hal_rx.h"
+#include "../debugfs_sta.h"
 
 static enum hal_tcl_encap_type
 ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb)
@@ -703,7 +704,8 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 					     struct sk_buff *msdu,
 					     struct hal_tx_status *ts,
-					     struct ath12k_tx_desc_info *tx_desc)
+					     struct ath12k_tx_desc_info *tx_desc,
+					     u8 mac_id)
 {
 	struct ieee80211_tx_status status = { 0 };
 	struct ieee80211_rate_status status_rate = { 0 };
@@ -717,6 +719,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *peer;
 	struct sk_buff *skb_ext_desc = tx_desc->skb_ext_desc;
+	struct ath12k *ar;
 
 	if (WARN_ON_ONCE(ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM)) {
 		/* Must not happen */
@@ -742,6 +745,8 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 		dev_kfree_skb_any(msdu);
 		return;
 	}
+
+	ar = ab->pdevs[mac_id].ar;
 
 	rcu_read_lock();
 
@@ -808,7 +813,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	 * Might end up reporting it out-of-band from HTT stats.
 	 */
 
-	ath12k_wifi7_dp_tx_update_txcompl(dp_pdev, ts);
+       	ath12k_wifi7_dp_tx_update_txcompl(dp_pdev, ts);
 
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_id(dp, ts->peer_id);
@@ -964,7 +969,7 @@ void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id)
 		if (atomic_dec_and_test(&dp_pdev->num_tx_pending))
 			wake_up(&dp_pdev->tx_empty_waitq);
 
-		ath12k_wifi7_dp_tx_complete_msdu(dp_pdev, msdu, &ts, tx_desc);
+		ath12k_wifi7_dp_tx_complete_msdu(dp_pdev, msdu, &ts, tx_desc, tx_desc->mac_id);
 
 		rcu_read_unlock();
 tx_release:

@@ -1036,15 +1036,20 @@ static int ath12k_core_pdev_create(struct ath12k_base *ab)
 	ret = ath12k_dp_pdev_alloc(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to attach DP pdev: %d\n", ret);
-		return ret;
+		goto err_pdev_debug;
 	}
 
 	return 0;
+
+err_pdev_debug:
+	ath12k_debugfs_pdev_destroy(ab);
+	return ret;
 }
 
 static void ath12k_core_pdev_destroy(struct ath12k_base *ab)
 {
 	ath12k_dp_pdev_free(ab);
+	ath12k_debugfs_pdev_destroy(ab);
 }
 
 static int ath12k_core_start(struct ath12k_base *ab)

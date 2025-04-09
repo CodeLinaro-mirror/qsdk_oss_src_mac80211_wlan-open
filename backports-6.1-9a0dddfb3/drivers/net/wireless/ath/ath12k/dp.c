@@ -14,6 +14,7 @@
 #include "peer.h"
 #include "dp_mon.h"
 #include "dp_cmn.h"
+#include "debugfs.h"
 
 /*
  * TODO: fix this

@@ -531,16 +531,6 @@ struct ath12k_htt_data_stats {
 	u64 ru_loc[ATH12K_COUNTER_TYPE_MAX][HAL_RX_RU_ALLOC_TYPE_MAX];
 };
 
-struct ath12k_htt_tx_stats {
-	struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
-	u64 tx_duration;
-	u64 ba_fails;
-	u64 ack_fails;
-	u16 ru_start;
-	u16 ru_tones;
-	u32 mu_group[MAX_MU_GROUP_ID];
-};
-
 struct ath12k_per_ppdu_tx_stats {
 	u16 succ_pkts;
 	u16 failed_pkts;
@@ -597,6 +587,12 @@ struct ath12k_sta {
 	u8 assoc_link_id;
 	u16 ml_peer_id;
 	u8 num_peer;
+	u8 primary_link_id;
+
+#ifdef CPTCFG_MAC80211_DEBUGFS
+	/* protected by conf_mutex */
+	bool aggr_mode;
+#endif
 	bool use_4addr_set;
 	struct wiphy_work set_4addr_wk;
 
@@ -647,6 +643,7 @@ struct ath12k_ftm_event_obj {
 };
 
 struct ath12k_fw_stats {
+	struct dentry *debugfs_fwstats;
 	u32 pdev_id;
 	u32 stats_id;
 	struct list_head pdevs;
@@ -683,6 +680,12 @@ struct ath12k_debug {
 	u32 rx_filter;
 	bool extd_rx_stats;
 	bool enable_m3_dump;
+ #ifdef CPTCFG_ATH12K_PKTLOG
+	struct dentry *debugfs_pktlog;
+#endif
+	u32 pktlog_mode;
+	u32 pktlog_peer_valid;
+	u8 pktlog_peer_addr[ETH_ALEN];
 };
 
 enum ath12k_fw_recovery_option {

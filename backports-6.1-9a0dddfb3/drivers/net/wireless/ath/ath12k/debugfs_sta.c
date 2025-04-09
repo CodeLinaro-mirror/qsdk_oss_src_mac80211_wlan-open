@@ -13,6 +13,584 @@
 #include "debugfs.h"
 #include "dp_cmn.h"
 
+static int
+ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
+{
+	struct ieee80211_link_sta *link_sta = inode->i_private;
+	struct ieee80211_sta *sta = link_sta->sta;
+	u8 link_id = link_sta->link_id;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *ar;
+	struct debug_htt_stats_req *stats_req;
+	int type;
+	int ret;
+
+	wiphy_lock(ah->hw->wiphy);
+	mutex_lock(&ah->hw_mutex);
+
+	if (!(BIT(link_id) & ahsta->links_map)) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	arsta = ahsta->link[link_id];
+
+	if (!arsta || !arsta->arvif->ar) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	ar = arsta->arvif->ar;
+
+	type = ar->debug.htt_stats.type;
+	if ((type != ATH12K_DBG_HTT_EXT_STATS_PEER_INFO &&
+	     type != ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS) ||
+	    type == ATH12K_DBG_HTT_EXT_STATS_RESET) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -EPERM;
+	}
+
+	stats_req = vzalloc(sizeof(*stats_req) + ATH12K_HTT_STATS_BUF_SIZE);
+	if (!stats_req) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOMEM;
+	}
+
+	ar->debug.htt_stats.stats_req = stats_req;
+	stats_req->type = ATH12K_DBG_HTT_EXT_STATS_PEER_INFO;
+	memcpy(stats_req->peer_addr, link_sta->addr, ETH_ALEN);
+	ret = ath12k_debugfs_htt_stats_req(ar);
+	if (ret < 0)
+		goto out;
+
+	file->private_data = stats_req;
+	mutex_unlock(&ah->hw_mutex);
+	wiphy_unlock(ah->hw->wiphy);
+	return 0;
+out:
+	vfree(stats_req);
+	ar->debug.htt_stats.stats_req = NULL;
+	mutex_unlock(&ah->hw_mutex);
+	wiphy_unlock(ah->hw->wiphy);
+	return ret;
+}
+
+static int
+ath12k_dbg_sta_release_htt_peer_stats(struct inode *inode, struct file *file)
+{
+	struct ieee80211_link_sta *link_sta = inode->i_private;
+	struct ieee80211_sta *sta = link_sta->sta;
+	u8 link_id = link_sta->link_id;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *ar;
+
+	wiphy_lock(ah->hw->wiphy);
+	mutex_lock(&ah->hw_mutex);
+
+	if (!(BIT(link_id) & ahsta->links_map)) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	arsta = ahsta->link[link_id];
+
+	if (!arsta || !arsta->arvif->ar) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	ar = arsta->arvif->ar;
+	vfree(file->private_data);
+	ar->debug.htt_stats.stats_req = NULL;
+	mutex_unlock(&ah->hw_mutex);
+	wiphy_unlock(ah->hw->wiphy);
+
+	return 0;
+}
+
+static ssize_t ath12k_dbg_sta_read_htt_peer_stats(struct file *file,
+						  char __user *user_buf,
+						  size_t count, loff_t *ppos)
+{
+	struct debug_htt_stats_req *stats_req = file->private_data;
+	char *buf;
+	u32 length = 0;
+
+	buf = stats_req->buf;
+	length = min_t(u32, stats_req->buf_len, ATH12K_HTT_STATS_BUF_SIZE);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, length);
+}
+
+static const struct file_operations fops_htt_peer_stats = {
+	.open = ath12k_dbg_sta_open_htt_peer_stats,
+	.release = ath12k_dbg_sta_release_htt_peer_stats,
+	.read = ath12k_dbg_sta_read_htt_peer_stats,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath12k_dbg_sta_write_peer_pktlog(struct file *file,
+						const char __user *buf,
+						size_t count, loff_t *ppos)
+{
+	struct ieee80211_link_sta *link_sta = file->private_data;
+	struct ieee80211_sta *sta = link_sta->sta;
+	u8 link_id = link_sta->link_id;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *ar;
+	int ret, enable;
+
+	wiphy_lock(ah->hw->wiphy);
+	mutex_lock(&ah->hw_mutex);
+
+	if (!(BIT(link_id) & ahsta->links_map)) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	arsta = ahsta->link[link_id];
+
+	if (!arsta || !arsta->arvif->ar) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	ar = arsta->arvif->ar;
+
+	if (ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto out;
+	}
+
+	ret = kstrtoint_from_user(buf, count, 0, &enable);
+	if (ret)
+		goto out;
+
+	ar->debug.pktlog_peer_valid = enable;
+	memcpy(ar->debug.pktlog_peer_addr, link_sta->addr, ETH_ALEN);
+
+	/* Send peer based pktlog enable/disable */
+	ret = ath12k_wmi_pdev_peer_pktlog_filter(ar, link_sta->addr, enable);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to set peer pktlog filter %pM: %d\n",
+			    sta->addr, ret);
+		goto out;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "peer pktlog filter set to %d\n",
+		   enable);
+	ret = count;
+
+out:
+	mutex_unlock(&ah->hw_mutex);
+	wiphy_unlock(ah->hw->wiphy);
+	return ret;
+}
+
+static ssize_t ath12k_dbg_sta_read_peer_pktlog(struct file *file,
+					       char __user *ubuf,
+					       size_t count, loff_t *ppos)
+{
+	struct ieee80211_link_sta *link_sta = file->private_data;
+	struct ieee80211_sta *sta = link_sta->sta;
+	u8 link_id = link_sta->link_id;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *ar;
+	char buf[32] = {0};
+	int len;
+
+	wiphy_lock(ah->hw->wiphy);
+	mutex_lock(&ah->hw_mutex);
+
+	if (!(BIT(link_id) & ahsta->links_map)) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	arsta = ahsta->link[link_id];
+
+	if (!arsta || !arsta->arvif->ar) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	ar = arsta->arvif->ar;
+
+	len = scnprintf(buf, sizeof(buf), "%08x %pM\n",
+			ar->debug.pktlog_peer_valid,
+			ar->debug.pktlog_peer_addr);
+	mutex_unlock(&ah->hw_mutex);
+	wiphy_unlock(ah->hw->wiphy);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_peer_pktlog = {
+	.write = ath12k_dbg_sta_write_peer_pktlog,
+	.read = ath12k_dbg_sta_read_peer_pktlog,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath12k_dbg_sta_write_delba(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_sta *arsta = &ahsta->deflink;
+	struct ath12k *ar = arsta->arvif->ar;
+	u32 tid, initiator, reason;
+	int ret;
+	char buf[64] = {0};
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
+				     user_buf, count);
+	if (ret <= 0)
+		return ret;
+
+	ret = sscanf(buf, "%u %u %u", &tid, &initiator, &reason);
+	if (ret != 3)
+		return -EINVAL;
+
+	/* Valid TID values are 0 through 15 */
+	if (tid > HAL_DESC_REO_NON_QOS_TID - 1)
+		return -EINVAL;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON ||
+	    ahsta->aggr_mode != ATH12K_DBG_AGGR_MODE_MANUAL) {
+		ret = count;
+		goto out;
+	}
+
+	ret = ath12k_wmi_delba_send(ar, arsta->arvif->vdev_id, sta->addr,
+				    tid, initiator, reason);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send delba: vdev_id %u peer %pM tid %u initiator %u reason %u\n",
+			    arsta->arvif->vdev_id, sta->addr, tid, initiator,
+			    reason);
+	}
+	ret = count;
+out:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return ret;
+}
+
+static const struct file_operations fops_delba = {
+	.write = ath12k_dbg_sta_write_delba,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath12k_dbg_sta_write_addba_resp(struct file *file,
+					       const char __user *user_buf,
+					       size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_sta *arsta = &ahsta->deflink;
+	struct ath12k *ar = arsta->arvif->ar;
+	u32 tid, status;
+	int ret;
+	char buf[64] = {0};
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
+				     user_buf, count);
+	if (ret <= 0)
+		return ret;
+
+	ret = sscanf(buf, "%u %u", &tid, &status);
+	if (ret != 2)
+		return -EINVAL;
+
+	/* Valid TID values are 0 through 15 */
+	if (tid > HAL_DESC_REO_NON_QOS_TID - 1)
+		return -EINVAL;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON ||
+	    ahsta->aggr_mode != ATH12K_DBG_AGGR_MODE_MANUAL) {
+		ret = count;
+		goto out;
+	}
+
+	ret = ath12k_wmi_addba_set_resp(ar, arsta->arvif->vdev_id, sta->addr,
+					tid, status);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send addba response: vdev_id %u peer %pM tid %u status%u\n",
+			    arsta->arvif->vdev_id, sta->addr, tid, status);
+	}
+	ret = count;
+out:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return ret;
+}
+
+static const struct file_operations fops_addba_resp = {
+	.write = ath12k_dbg_sta_write_addba_resp,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath12k_dbg_sta_write_addba(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_sta *arsta = &ahsta->deflink;
+	struct ath12k *ar = arsta->arvif->ar;
+	u32 tid, buf_size;
+	int ret;
+	char buf[64] = {0};
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
+				     user_buf, count);
+	if (ret <= 0)
+		return ret;
+
+	ret = sscanf(buf, "%u %u", &tid, &buf_size);
+	if (ret != 2)
+		return -EINVAL;
+
+	/* Valid TID values are 0 through 15 */
+	if (tid > HAL_DESC_REO_NON_QOS_TID - 1)
+		return -EINVAL;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON ||
+	    ahsta->aggr_mode != ATH12K_DBG_AGGR_MODE_MANUAL) {
+		ret = count;
+		goto out;
+	}
+
+	ret = ath12k_wmi_addba_send(ar, arsta->arvif->vdev_id, sta->addr,
+				    tid, buf_size);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send addba request: vdev_id %u peer %pM tid %u buf_size %u\n",
+			    arsta->arvif->vdev_id, sta->addr, tid, buf_size);
+	}
+
+	ret = count;
+out:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return ret;
+}
+
+static const struct file_operations fops_addba = {
+	.write = ath12k_dbg_sta_write_addba,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath12k_dbg_sta_read_aggr_mode(struct file *file,
+					     char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_sta *arsta = &ahsta->deflink;
+	struct ath12k *ar = arsta->arvif->ar;
+	char buf[64];
+	int len = 0;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	len = scnprintf(buf, sizeof(buf) - len,
+			"aggregation mode: %s\n\n%s\n%s\n",
+			(ahsta->aggr_mode == ATH12K_DBG_AGGR_MODE_AUTO) ?
+			"auto" : "manual", "auto = 0", "manual = 1");
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t ath12k_dbg_sta_write_aggr_mode(struct file *file,
+					      const char __user *user_buf,
+					      size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_sta *arsta = &ahsta->deflink;
+	struct ath12k *ar = arsta->arvif->ar;
+	u32 aggr_mode;
+	int ret;
+
+	if (kstrtouint_from_user(user_buf, count, 0, &aggr_mode))
+		return -EINVAL;
+
+	if (aggr_mode >= ATH12K_DBG_AGGR_MODE_MAX)
+		return -EINVAL;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON ||
+	    aggr_mode == ahsta->aggr_mode) {
+		ret = count;
+		goto out;
+	}
+
+	ret = ath12k_wmi_addba_clear_resp(ar, arsta->arvif->vdev_id, sta->addr);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to clear addba session ret: %d\n",
+			    ret);
+		goto out;
+	}
+
+	ahsta->aggr_mode = aggr_mode;
+out:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return ret;
+}
+
+static const struct file_operations fops_aggr_mode = {
+	.read = ath12k_dbg_sta_read_aggr_mode,
+	.write = ath12k_dbg_sta_write_aggr_mode,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t ath12k_dbg_sta_read_primary_link_id(struct file *file,
+						   char __user *user_buf,
+						   size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	char buf[32];
+	int len = 0;
+
+	mutex_lock(&ah->hw_mutex);
+	len = scnprintf(buf, sizeof(buf) - len,
+			"Primary_link_id: %d\n", ahsta->primary_link_id);
+	mutex_unlock(&ah->hw_mutex);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_primary_link_id = {
+	.read = ath12k_dbg_sta_read_primary_link_id,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static ssize_t
+ath12k_write_htt_peer_stats_reset(struct file *file,
+				  const char __user *user_buf,
+				  size_t count, loff_t *ppos)
+{
+	struct ieee80211_link_sta *link_sta = file->private_data;
+	struct ieee80211_sta *sta = link_sta->sta;
+	u8 link_id = link_sta->link_id;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *ar;
+	struct htt_ext_stats_cfg_params cfg_params = { 0 };
+	int ret;
+	u8 type;
+
+	ret = kstrtou8_from_user(user_buf, count, 0, &type);
+	if (ret)
+		return ret;
+
+	if (!type)
+		return ret;
+
+	wiphy_lock(ah->hw->wiphy);
+	mutex_lock(&ah->hw_mutex);
+
+	if (!(BIT(link_id) & ahsta->links_map)) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	arsta = ahsta->link[link_id];
+
+	if (!arsta || !arsta->arvif->ar) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	ar = arsta->arvif->ar;
+
+	cfg_params.cfg0 = HTT_STAT_PEER_INFO_MAC_ADDR;
+	cfg_params.cfg0 |= FIELD_PREP(GENMASK(15, 1),
+				HTT_PEER_STATS_REQ_MODE_FLUSH_TQM);
+
+	cfg_params.cfg1 = HTT_STAT_DEFAULT_PEER_REQ_TYPE;
+
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(7, 0), link_sta->addr[0]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(15, 8), link_sta->addr[1]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(23, 16), link_sta->addr[2]);
+	cfg_params.cfg2 |= FIELD_PREP(GENMASK(31, 24), link_sta->addr[3]);
+
+	cfg_params.cfg3 |= FIELD_PREP(GENMASK(7, 0), link_sta->addr[4]);
+	cfg_params.cfg3 |= FIELD_PREP(GENMASK(15, 8), link_sta->addr[5]);
+
+	cfg_params.cfg3 |= ATH12K_HTT_PEER_STATS_RESET;
+
+	ret = ath12k_dp_tx_htt_h2t_ext_stats_req(ar,
+						 ATH12K_DBG_HTT_EXT_STATS_PEER_INFO,
+						 &cfg_params,
+						 0ULL);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send htt peer stats request: %d\n", ret);
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return ret;
+	}
+
+	mutex_unlock(&ah->hw_mutex);
+	wiphy_unlock(ah->hw->wiphy);
+
+	ret = count;
+
+	return ret;
+}
+
+static const struct file_operations fops_htt_peer_stats_reset = {
+	.write = ath12k_write_htt_peer_stats_reset,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta, struct dentry *dir)
+{
+	debugfs_create_file("aggr_mode", 0644, dir, sta, &fops_aggr_mode);
+	debugfs_create_file("addba", 0200, dir, sta, &fops_addba);
+	debugfs_create_file("addba_resp", 0200, dir, sta, &fops_addba_resp);
+	debugfs_create_file("delba", 0200, dir, sta, &fops_delba);
+	debugfs_create_file("primary_link_id", 0400, dir, sta, &fops_primary_link_id);
+}
+
 static
 u32 ath12k_dbg_sta_dump_rate_stats(u8 *buf, u32 offset, const int size,
 				   bool he_rates_avail,
@@ -340,5 +918,15 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 		debugfs_create_file("reset_rx_stats", 0200, dir, link_sta,
 				    &fops_reset_rx_stats);
 	}
+
+	debugfs_create_file("htt_peer_stats", 0400, dir, link_sta,
+			    &fops_htt_peer_stats);
+	debugfs_create_file("peer_pktlog", 0644, dir, link_sta,
+			    &fops_peer_pktlog);
+
+	if (test_bit(WMI_TLV_SERVICE_PER_PEER_HTT_STATS_RESET,
+		     ar->ab->wmi_ab.svc_map))
+		debugfs_create_file("htt_peer_stats_reset", 0600, dir, link_sta,
+				    &fops_htt_peer_stats_reset);
 }
 EXPORT_SYMBOL(ath12k_debugfs_link_sta_op_add);

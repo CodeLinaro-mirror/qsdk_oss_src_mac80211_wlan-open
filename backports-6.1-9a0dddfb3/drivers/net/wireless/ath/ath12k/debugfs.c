@@ -21,6 +21,82 @@
 #define DETECTOR_ID	GENMASK(12,11)
 #define FHSS		BIT(14)
 
+static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
+						char __user *user_buf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_device_dp_stats *device_stats = &ab->dp->device_stats;
+	int len = 0, i, retval;
+	const int size = 4096;
+	static const char *rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX] = {
+			"Overflow", "MPDU len", "FCS", "Decrypt", "TKIP MIC",
+			"Unencrypt", "MSDU len", "MSDU limit", "WiFi parse",
+			"AMSDU parse", "SA timeout", "DA timeout",
+			"Flow timeout", "Flush req"};
+	static const char *reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX] = {
+			"Desc addr zero", "Desc inval", "AMPDU in non BA",
+			"Non BA dup", "BA dup", "Frame 2k jump", "BAR 2k jump",
+			"Frame OOR", "BAR OOR", "No BA session",
+			"Frame SN equal SSN", "PN check fail", "2k err",
+			"PN err", "Desc blocked"};
+
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len += scnprintf(buf + len, size - len, "SOC RX STATS:\n\n");
+	len += scnprintf(buf + len, size - len, "err ring pkts: %u\n",
+			 device_stats->err_ring_pkts);
+	len += scnprintf(buf + len, size - len, "Invalid RBM: %u\n\n",
+			 device_stats->invalid_rbm);
+	len += scnprintf(buf + len, size - len, "RXDMA errors:\n");
+	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
+		len += scnprintf(buf + len, size - len, "%s: %u\n",
+				 rxdma_err[i], device_stats->rxdma_error[i]);
+
+	len += scnprintf(buf + len, size - len, "\nREO errors:\n");
+	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
+		len += scnprintf(buf + len, size - len, "%s: %u\n",
+				 reo_err[i], device_stats->reo_error[i]);
+
+	len += scnprintf(buf + len, size - len, "\nHAL REO errors:\n");
+	len += scnprintf(buf + len, size - len,
+			 "ring0: %u\nring1: %u\nring2: %u\nring3: %u\n",
+			 device_stats->hal_reo_error[0],
+			 device_stats->hal_reo_error[1],
+			 device_stats->hal_reo_error[2],
+			 device_stats->hal_reo_error[3]);
+
+	len += scnprintf(buf + len, size - len, "\nSOC TX STATS:\n");
+	len += scnprintf(buf + len, size - len, "\nTCL Ring Full Failures:\n");
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
+				 i, device_stats->tx_err.desc_na[i]);
+
+	len += scnprintf(buf + len, size - len,
+			 "\nMisc Transmit Failures: %d\n",
+			 atomic_read(&device_stats->tx_err.misc_fail));
+
+
+	if (len > size)
+		len = size;
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations fops_device_dp_stats = {
+	.read = ath12k_debugfs_dump_device_dp_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath12k_write_simulate_radar(struct file *file,
 					   const char __user *user_buf,
 					   size_t count, loff_t *ppos)
@@ -1340,6 +1416,10 @@ void ath12k_fst_debugfs_init(struct ath12k_base *ab)
 
 	debugfs_create_file("fse", 0200, fsestats_dir, ab,
 			    &fops_fse);
+}
+
+void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab)
+{
 }
 
 void ath12k_debugfs_soc_create(struct ath12k_base *ab)
@@ -3059,6 +3139,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_fw_reset_stats);
 	debugfs_create_file("trace_qdss", 0600, ab->debugfs_soc, ab,
 			    &fops_trace_qdss);
+	debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc, ab,
+			    &fops_device_dp_stats);
 }
 
 void ath12k_debugfs_unregister(struct ath12k *ar)

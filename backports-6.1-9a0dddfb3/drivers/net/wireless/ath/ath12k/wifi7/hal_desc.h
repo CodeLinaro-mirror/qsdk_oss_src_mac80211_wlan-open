@@ -1744,6 +1744,7 @@ enum hal_wbm_rel_src_module {
 	HAL_WBM_REL_SRC_MODULE_REO,
 	HAL_WBM_REL_SRC_MODULE_FW,
 	HAL_WBM_REL_SRC_MODULE_SW,
+	HAL_WBM_REL_SRC_MODULE_MAX,
 };
 
 enum hal_wbm_rel_desc_type {
