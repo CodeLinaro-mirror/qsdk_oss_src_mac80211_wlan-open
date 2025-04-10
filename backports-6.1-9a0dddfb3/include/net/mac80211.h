@@ -343,7 +343,7 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_IDLE: Idle changed for this BSS/interface.
  * @BSS_CHANGED_SSID: SSID changed for this BSS (AP and IBSS mode)
  * @BSS_CHANGED_AP_PROBE_RESP: Probe Response changed for this BSS (AP mode)
- * @BSS_CHANGED_PS: PS changed for this BSS (STA mode)
+ * @BSS_CHANGED_PS: PS changed for this BSS (both AP and STA mode)
  * @BSS_CHANGED_TXPOWER: TX power setting changed for this interface
  * @BSS_CHANGED_P2P_PS: P2P powersave settings (CTWindow, opportunistic PS)
  *	changed
@@ -881,6 +881,7 @@ struct ieee80211_bss_conf {
 	u8 nss_offld_ttl;
 	bool nss_offld_mesh_forward_enabled;
 	u32 nss_offld_mpath_refresh_time;
+	bool ap_ps_enable;
 };
 
 /**
@@ -2906,6 +2907,8 @@ struct ieee80211_txq {
  * @IEEE80211_HW_SUPPORTS_RX_DECAP_OFFLOAD: Hardware supports rx decapsulation
  *	offload
  *
+ * @IEEE80211_HW_SUPPORTS_AP_PS: Hardware supports AP power save.
+ *
  * @IEEE80211_HW_SUPPORTS_CONC_MON_RX_DECAP: Hardware supports concurrent rx
  *	decapsulation offload and passing raw 802.11 frames for monitor iface.
  *	If this is supported, the driver must pass both 802.3 frames for real
@@ -2995,6 +2998,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_NSS_OFFLOAD,
 	IEEE80211_HW_SUPPORTS_MESH_NSS_OFFLOAD,
 	IEEE80211_HW_SUPPORTS_TID_CLASS_OFFLOAD,
+	IEEE80211_HW_SUPPORTS_AP_PS,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS

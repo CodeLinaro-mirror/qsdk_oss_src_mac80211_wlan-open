@@ -3132,11 +3132,25 @@ void ieee80211_recalc_ps(struct ieee80211_local *local)
 
 void ieee80211_recalc_ps_vif(struct ieee80211_sub_if_data *sdata)
 {
+	struct ieee80211_link_data *link;
+	u16 link_id;
 	bool ps_allowed = ieee80211_powersave_allowed(sdata);
 
 	if (sdata->vif.cfg.ps != ps_allowed) {
 		sdata->vif.cfg.ps = ps_allowed;
-		ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_PS);
+		if (!sdata->vif.valid_links) {
+			ieee80211_link_info_change_notify(sdata, &sdata->deflink,
+							  BSS_CHANGED_PS);
+		} else {
+			for_each_set_bit(link_id, (unsigned long *)&sdata->vif.valid_links,
+					 IEEE80211_MLD_MAX_NUM_LINKS) {
+				link = sdata_dereference(sdata->link[link_id], sdata);
+				if (!link)
+					continue;
+
+				ieee80211_link_info_change_notify(sdata, link, BSS_CHANGED_PS);
+			}
+		}
 	}
 }
 

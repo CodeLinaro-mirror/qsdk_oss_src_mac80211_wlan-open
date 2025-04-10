@@ -1577,8 +1577,8 @@ error:
 	return err;
 }
 
-static int ieee80211_change_beacon(struct wiphy *wiphy, struct net_device *dev,
-				   struct cfg80211_ap_settings *params)
+static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
+			       struct cfg80211_ap_settings *params)
 
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
@@ -1609,9 +1609,21 @@ static int ieee80211_change_beacon(struct wiphy *wiphy, struct net_device *dev,
 
 	err = ieee80211_assign_beacon(sdata, link, beacon, NULL, NULL,
 				      &changed);
+	if (params->beacon.head || params->beacon.tail) {
+		err = ieee80211_assign_beacon(sdata, link, &params->beacon, NULL, NULL,
+					      &changed);
+	}
 	if (err < 0)
 		return err;
 
+	if (ieee80211_hw_check(&sdata->local->hw, SUPPORTS_AP_PS) &&
+	    params->ap_ps_valid) {
+		link_conf->ap_ps_enable = params->ap_ps_enable;
+		if (err < 0)
+			err = BSS_CHANGED_PS;
+		else
+			err |= BSS_CHANGED_PS;
+	}
 	err = ieee80211_set_fils_discovery(sdata, &params->fils_discovery,
 					   link, link_conf, &changed);
 	if (err < 0)
@@ -5328,6 +5340,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_default_mgmt_key = ieee80211_config_default_mgmt_key,
 	.set_default_beacon_key = ieee80211_config_default_beacon_key,
 	.start_ap = ieee80211_start_ap,
+	.update_ap = ieee80211_update_ap,
 	.stop_ap = ieee80211_stop_ap,
 	.add_station = ieee80211_add_station,
 	.del_station = ieee80211_del_station,

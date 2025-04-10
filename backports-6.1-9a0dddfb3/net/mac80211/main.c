@@ -325,7 +325,6 @@ EXPORT_SYMBOL(ieee80211_emulate_switch_vif_chanctx);
 
 #define BSS_CHANGED_VIF_CFG_FLAGS (BSS_CHANGED_ASSOC |\
 				   BSS_CHANGED_IDLE |\
-				   BSS_CHANGED_PS |\
 				   BSS_CHANGED_IBSS |\
 				   BSS_CHANGED_ARP_FILTER |\
 				   BSS_CHANGED_SSID |\
