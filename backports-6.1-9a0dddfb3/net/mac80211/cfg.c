@@ -4432,6 +4432,8 @@ static int ieee80211_probe_client(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_chanctx_conf *chanctx_conf;
 	enum nl80211_band band;
 	int ret;
+	u8 link_id;
+	struct ieee80211_bss_conf *conf;
 
 	/* the lock is needed to assign the cookie later */
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -4445,11 +4447,25 @@ static int ieee80211_probe_client(struct wiphy *wiphy, struct net_device *dev,
 
 	qos = sta->sta.wme;
 
-	chanctx_conf = rcu_dereference(sdata->vif.bss_conf.chanctx_conf);
+	/* In case of ML vif, we shall use the default sta link to
+	 * send the probe frame. For non ML vif the link id 0 is
+	 * the deflink
+	 */
+	link_id = sta->deflink.link_id;
+
+	conf = rcu_dereference(sdata->vif.link_conf[link_id]);
+
+	if (unlikely(!conf)) {
+		ret = -ENOLINK;
+		goto unlock;
+	}
+
+	chanctx_conf = rcu_dereference(conf->chanctx_conf);
 	if (WARN_ON(!chanctx_conf)) {
 		ret = -EINVAL;
 		goto unlock;
 	}
+
 	band = chanctx_conf->def.chan->band;
 
 	if (qos) {
@@ -4477,8 +4493,8 @@ static int ieee80211_probe_client(struct wiphy *wiphy, struct net_device *dev,
 	nullfunc->frame_control = fc;
 	nullfunc->duration_id = 0;
 	memcpy(nullfunc->addr1, sta->sta.addr, ETH_ALEN);
-	memcpy(nullfunc->addr2, sdata->vif.addr, ETH_ALEN);
-	memcpy(nullfunc->addr3, sdata->vif.addr, ETH_ALEN);
+	memcpy(nullfunc->addr2, conf->addr, ETH_ALEN);
+	memcpy(nullfunc->addr3, conf->addr, ETH_ALEN);
 	nullfunc->seq_ctrl = 0;
 
 	info = IEEE80211_SKB_CB(skb);
@@ -4486,6 +4502,8 @@ static int ieee80211_probe_client(struct wiphy *wiphy, struct net_device *dev,
 	info->flags |= IEEE80211_TX_CTL_REQ_TX_STATUS |
 		       IEEE80211_TX_INTFL_NL80211_FRAME_TX;
 	info->band = band;
+
+	info->control.flags |= u32_encode_bits(link_id, IEEE80211_TX_CTRL_MLO_LINK);
 
 	skb_set_queue_mapping(skb, IEEE80211_AC_VO);
 	skb->priority = 7;
