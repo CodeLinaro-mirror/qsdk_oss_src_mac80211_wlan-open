@@ -5910,6 +5910,14 @@ static bool ieee80211_assoc_success(struct ieee80211_sub_if_data *sdata,
 
 	rate_control_rate_init_all_links(sta);
 
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		if (!(sta->sta.valid_links & BIT(link_id)) ||
+		    sta->deflink.link_id == link_id)
+			continue;
+
+		ieee80211_sta_init_nss(sta->link[link_id]);
+	}
+
 	if (ifmgd->flags & IEEE80211_STA_MFP_ENABLED) {
 		set_sta_flag(sta, WLAN_STA_MFP);
 		sta->sta.mfp = true;
