@@ -5269,6 +5269,13 @@ ieee80211_color_change_bss_config_notify(struct ieee80211_link_data *link,
 					 u8 color, int enable, u64 changed)
 {
 	struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct wireless_dev *wdev = &sdata->wdev;
+
+	/* If is_going_down flag is set, this means that this link is going
+	 * to get removed hence no point in proceeding further
+	 */
+	if (wdev->links[link->link_id].ap.is_going_down)
+		return;
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
