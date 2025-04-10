@@ -164,7 +164,8 @@ static bool __cfg80211_unlink_bss(struct cfg80211_registered_device *rdev,
 
 	list_del_init(&bss->list);
 	list_del_init(&bss->pub.nontrans_list);
-	rb_erase(&bss->rbn, &rdev->bss_tree);
+	if (bss->in_rbtree)
+		rb_erase(&bss->rbn, &rdev->bss_tree);
 	rdev->bss_entries--;
 	WARN_ONCE((rdev->bss_entries == 0) ^ list_empty(&rdev->bss_list),
 		  "rdev bss entries[%d]/list[empty:%d] corruption\n",
@@ -1653,6 +1654,7 @@ static bool rb_insert_bss(struct cfg80211_registered_device *rdev,
 		cmp = cmp_bss(&bss->pub, &tbss->pub, BSS_CMP_REGULAR);
 
 		if (WARN_ON(!cmp)) {
+			bss->in_rbtree = false;
 			/* will sort of leak this BSS */
 			return false;
 		}
@@ -1663,6 +1665,7 @@ static bool rb_insert_bss(struct cfg80211_registered_device *rdev,
 			p = &(*p)->rb_right;
 	}
 
+	bss->in_rbtree = true;
 	rb_link_node(&bss->rbn, parent, p);
 	rb_insert_color(&bss->rbn, &rdev->bss_tree);
 	return true;
@@ -1708,7 +1711,8 @@ static void cfg80211_rehash_bss(struct cfg80211_registered_device *rdev,
 {
 	lockdep_assert_held(&rdev->bss_lock);
 
-	rb_erase(&bss->rbn, &rdev->bss_tree);
+	if (bss->in_rbtree)
+		rb_erase(&bss->rbn, &rdev->bss_tree);
 	if (!rb_insert_bss(rdev, bss)) {
 		list_del(&bss->list);
 		if (!list_empty(&bss->hidden_list))
