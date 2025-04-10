@@ -1107,18 +1107,6 @@ bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
 				 const struct cfg80211_chan_def *chandef);
 
 /**
- * cfg80211_chandef_dfs_cac_time - get the DFS CAC time (in ms) for given
- *				   channel definition
- * @wiphy: the wiphy to validate against
- * @chandef: the channel definition to check
- *
- * Returns: DFS CAC time (in ms) which applies for this channel definition
- */
-unsigned int
-cfg80211_chandef_dfs_cac_time(struct wiphy *wiphy,
-			      const struct cfg80211_chan_def *chandef);
-
-/**
  * cfg80211_chandef_primary - calculate primary 40/80/160 MHz freq
  * @chandef: chandef to calculate for
  * @primary_chan_width: primary channel width to calculate center for
@@ -1177,6 +1165,17 @@ ieee80211_chandef_rate_flags(struct cfg80211_chan_def *chandef)
 {
 	return ieee80211_chanwidth_rate_flags(chandef->width);
 }
+
+/**
+ * cfg80211_chandef_dfs_cac_time - get maximum dfs cac time traversing
+ * through the entire channel width
+ * @wiphy: the wiphy to validate against
+ * @chandef: the channel definition to check
+ * @is_bgcac: background cac state
+ * Returns: dfs cac time, or 0 is none found
+ */
+unsigned int cfg80211_chandef_dfs_cac_time(struct wiphy *wiphy,
+                                           const struct cfg80211_chan_def *chandef);
 
 /**
  * ieee80211_chandef_max_power - maximum transmission power for the chandef
