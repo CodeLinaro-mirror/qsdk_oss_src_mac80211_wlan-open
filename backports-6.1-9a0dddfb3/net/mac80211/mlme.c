@@ -78,6 +78,11 @@ module_param(debug_param, int, 0644);
 MODULE_PARM_DESC(debug_param,
 		"Debug module param to debug link id < 0");
 
+bool ap_vlan_without_4addr_null = true;
+module_param(ap_vlan_without_4addr_null, bool, 0644);
+MODULE_PARM_DESC(ap_vlan_without_4addr_null,
+		 "Check if AP_VLAN created without 4addr null frame");
+
 /*
  * Time the connection can be idle before we probe
  * it to see if we can still talk to the AP.

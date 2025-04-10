@@ -36,6 +36,8 @@
 
 extern int debug_param;
 
+extern bool ap_vlan_without_4addr_null;
+
 #define IEEE80211_FSE_MAGIC_NUM      0xAA
 #define IEEE80211_FSE_MAGIC_NUM_MASK GENMASK(7,0)
 #define IEEE80211_PPE_VP_NUM         GENMASK(23, 8)
@@ -3320,7 +3322,8 @@ ieee80211_rx_h_data(struct ieee80211_rx_data *rx)
 			if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_ENCAP_4ADDR) {
 				pr_warn("4addr non-null data frame: %d with frame_control: %x",
 					port_control, hdr->frame_control);
-				WARN_ON_ONCE(1);
+				if (!ap_vlan_without_4addr_null)
+					WARN_ON_ONCE(1);
 			}
 		}
 		return RX_DROP_MONITOR;
