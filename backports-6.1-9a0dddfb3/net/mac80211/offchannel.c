@@ -904,7 +904,9 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 		if (!ieee80211_is_action(mgmt->frame_control) ||
 		    mgmt->u.action.category == WLAN_CATEGORY_PUBLIC ||
 		    mgmt->u.action.category == WLAN_CATEGORY_SELF_PROTECTED ||
-		    mgmt->u.action.category == WLAN_CATEGORY_SPECTRUM_MGMT) {
+		    mgmt->u.action.category == WLAN_CATEGORY_SPECTRUM_MGMT ||
+		    (is_broadcast_ether_addr(mgmt->da) &&
+		     mgmt->u.action.category == WLAN_CATEGORY_WNM)) {
 			rcu_read_unlock();
 			break;
 		}
