@@ -1650,6 +1650,8 @@ struct ieee80211_local {
 	struct work_struct awgn_detected_work;
 	u32 chan_bw_interference_bitmap;
 
+	bool enable_tx_latency_stats;
+
 	/* extended capabilities provided by mac80211 */
 	u8 ext_capa[8];
 

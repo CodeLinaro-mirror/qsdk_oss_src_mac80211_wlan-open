@@ -505,6 +505,41 @@ static const struct file_operations dbg_mask_ops = {
 	.llseek = default_llseek,
 };
 
+static ssize_t enable_tx_latency_stats_read(struct file *file, char __user *user_buf,
+			     size_t count, loff_t *ppos)
+{
+	struct ieee80211_local *local = file->private_data;
+	char buf[10];
+	int len = 0;
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", local->enable_tx_latency_stats);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static ssize_t enable_tx_latency_stats_write(struct file *file, const char __user *user_buf,
+			      size_t count, loff_t *ppos)
+{
+	struct ieee80211_local *local = file->private_data;
+	int ret, enable_disable;
+
+	ret = kstrtou32_from_user(user_buf, count, 0, &enable_disable);
+	if (ret || (enable_disable != 1 && enable_disable != 0))
+		return -EINVAL;
+
+	local->enable_tx_latency_stats = enable_disable;
+
+	return count;
+}
+
+
+static const struct file_operations enable_tx_latency_stats_ops = {
+	.write = enable_tx_latency_stats_write,
+	.read = enable_tx_latency_stats_read,
+	.open = simple_open,
+	.llseek = default_llseek,
+};
+
 #ifdef CONFIG_PM
 static ssize_t reset_write(struct file *file, const char __user *user_buf,
 			   size_t count, loff_t *ppos)
@@ -794,6 +829,7 @@ void debugfs_hw_add(struct ieee80211_local *local)
 	DEBUGFS_ADD(aql_pending);
 	DEBUGFS_ADD(dbg_mask);
 	DEBUGFS_ADD_MODE(aqm, 0600);
+	DEBUGFS_ADD(enable_tx_latency_stats);
 
 	DEBUGFS_ADD_MODE(airtime_flags, 0600);
 

@@ -1680,6 +1680,7 @@ static bool ieee80211_queue_skb(struct ieee80211_local *local,
 				struct sta_info *sta,
 				struct sk_buff *skb)
 {
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_vif *vif;
 	struct txq_info *txqi;
 
@@ -1697,6 +1698,9 @@ static bool ieee80211_queue_skb(struct ieee80211_local *local,
 		return false;
 
 	ieee80211_txq_enqueue(local, txqi, skb);
+
+	if (local->enable_tx_latency_stats)
+		info->latency.tx_start_time =  ieee80211_txdelay_get_time();
 
 	schedule_and_wake_txq(local, txqi);
 
@@ -1770,6 +1774,9 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 		control.sta = sta ? &sta->sta : NULL;
 
 		__skb_unlink(skb, skbs);
+		if (local->enable_tx_latency_stats)
+			info->latency.tx_start_time =  ieee80211_txdelay_get_time();
+
 		drv_tx(local, &control, skb);
 	}
 
@@ -4686,6 +4693,9 @@ static bool __ieee80211_tx_8023(struct ieee80211_sub_if_data *sdata,
 
 	control.sta = pubsta;
 
+	if (local->enable_tx_latency_stats)
+		info->latency.tx_start_time =  ieee80211_txdelay_get_time();
+
 	drv_tx(local, &control, skb);
 
 	if (sta)
@@ -4794,6 +4804,8 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 
 	info->flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
 	info->control.vif = &sdata->vif;
+	if (local->enable_tx_latency_stats)
+		info->latency.tx_start_time =  ieee80211_txdelay_get_time();
 
 	if (key)
 		info->control.hw_key = &key->conf;
