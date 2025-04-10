@@ -5552,6 +5552,7 @@ static int eht_build_mcs_mask(struct genl_info *info,
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	u8 mcs_nss_len, nss, mcs_7 = 0, mcs_9 = 0, mcs_11 = 0, mcs_13 = 0;
 	bool mcs_14 = false, mcs_15 = false;
+	unsigned int link_id = nl80211_link_id(info->attrs);
 
 	mcs_nss_len = ieee80211_eht_mcs_nss_size(&he_cap->he_cap_elem,
 						 &eht_cap->eht_cap_elem,
@@ -5580,7 +5581,10 @@ static int eht_build_mcs_mask(struct genl_info *info,
 
 		switch (wdev->iftype) {
 		case NL80211_IFTYPE_AP:
-			width = wdev->u.ap.preset_chandef.width;
+			if (wdev->valid_links)
+				width = wdev->links[link_id].ap.chandef.width;
+			else
+				width = wdev->u.ap.preset_chandef.width;
 			break;
 		case NL80211_IFTYPE_MESH_POINT:
 			width = wdev->u.mesh.chandef.width;
