@@ -304,6 +304,7 @@ void ieee80211s_update_metric(struct ieee80211_local *local,
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) st->skb->data;
 	struct ieee80211_tx_info *txinfo = st->info;
 	int failed = 0;
+	u32 fail_avg;
 	struct rate_info rinfo;
 
 	failed = !(txinfo->flags & IEEE80211_TX_STAT_ACK);
@@ -322,6 +323,11 @@ void ieee80211s_update_metric(struct ieee80211_local *local,
 			sta->mesh->tx_fail_cnt[sta->mesh->fail_cnt]++;
 		sta->mesh->fail_cnt = 0;
 	}
+
+	fail_avg = ewma_mesh_fail_avg_read(&sta->mesh->fail_avg);
+	if (!fail_avg)
+		/* init it at a low value - 0 is tricky */
+		ewma_mesh_fail_avg_add(&sta->mesh->fail_avg, 1);
 
 	/* moving average, scaled to 100.
 	 * feed failure as 100 and success as 0
