@@ -2121,6 +2121,9 @@ struct ieee80211_vif {
 
 	bool noqueue_enable;
 
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+	u32 ppe_vp_num;
+#endif
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };

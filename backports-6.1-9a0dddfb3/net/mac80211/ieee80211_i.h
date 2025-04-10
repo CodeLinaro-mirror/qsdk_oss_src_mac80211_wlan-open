@@ -39,6 +39,11 @@
 #include <nss_api_if.h>
 #endif
 
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+#include <ppe_vp_public.h>
+#include <ppe_vp_tx.h>
+#endif
+
 extern const struct cfg80211_ops mac80211_config_ops;
 
 struct ieee80211_local;
@@ -1204,6 +1209,9 @@ struct ieee80211_sub_if_data {
 #endif
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	struct nss_virt_if_handle *nssctx;
+#endif
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+	u32 ppe_vp_num;
 #endif
 
 	struct work_struct awgn_detected_work;

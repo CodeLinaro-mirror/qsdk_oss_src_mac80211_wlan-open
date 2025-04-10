@@ -2645,6 +2645,34 @@ static bool ieee80211_frame_allowed(struct ieee80211_rx_data *rx, __le16 fc)
 	return true;
 }
 
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+static void ieee80211_netif_rx_ppe(struct ieee80211_rx_data *rx,
+				   struct sk_buff *skb)
+{
+	struct ieee80211_sub_if_data *sdata = rx->sdata;
+
+	skb->next = NULL;
+	/*
+	 * if the skb is shared, not sure when it has to be freed.
+	 * skip ppe and proceed with normal path.
+	 */
+	if (unlikely(skb_shared(skb)))
+		goto out;
+
+	if (likely(ppe_vp_tx_to_ppe(sdata->ppe_vp_num, skb)))
+		return;
+
+out:
+	skb->protocol = eth_type_trans(skb, sdata->dev);
+	skb->dev = sdata->dev;
+	if (rx->napi)
+		napi_gro_receive(rx->napi, skb);
+	else
+		netif_receive_skb(skb);
+
+}
+#endif
+
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 #define case_rtn_string(val) case val: return #val
 
@@ -4975,6 +5003,13 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 			return;
 	}
 
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+	if (rx->sdata->ppe_vp_num) {
+		ieee80211_netif_rx_ppe(rx, skb);
+		atomic_inc(&sta->rx_netif_pkts);
+		return;
+	}
+#endif
 	/* deliver to local stack */
 	skb->protocol = eth_type_trans(skb, fast_rx->dev);
 	ieee80211_deliver_skb_to_local_stack(skb, rx);

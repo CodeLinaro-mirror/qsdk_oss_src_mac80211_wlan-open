@@ -33,6 +33,12 @@ module_param(nss_redirect, bool, 0644);
 MODULE_PARM_DESC(nss_redirect, "module param to enable NSS Redirect; 1-enable, 0-disable");
 #endif
 
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+bool ppe_vp_accel = false;
+module_param(ppe_vp_accel, bool, 0644);
+MODULE_PARM_DESC(ppe_vp_accel, "module param to enable PPE; 1-enable, 0-disable");
+#endif
+
 /**
  * DOC: Interface list locking
  *
@@ -826,6 +832,15 @@ static int ieee80211_stop(struct net_device *dev)
 	if (sdata->vif.type == NL80211_IFTYPE_AP)
 		ieee80211_stop_mbssid(sdata);
 
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+	if (sdata->ppe_vp_num) {
+		ppe_vp_free(sdata->ppe_vp_num);
+		sdata_info(sdata, "Destroyed PPE VP port no:%d for dev:%s\n",
+			   sdata->ppe_vp_num, dev->name);
+		sdata->ppe_vp_num = 0;
+		sdata->vif.ppe_vp_num = 0;
+	}
+#endif
 	ieee80211_do_stop(sdata, true);
 
 	return 0;
@@ -1263,6 +1278,55 @@ void receive_from_nss(struct net_device *dev, struct sk_buff *sk_buff, struct na
 }
 #endif
 
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+/*
+ * This callback is registered for Tx path.
+ * PPE will invoke this callback and the skb is
+ * routed to the driver.
+ */
+static bool ieee80211_process_dst_ppe_vp(struct ppe_vp_cb_info *ppe_vp_info, void *cb_data)
+{
+	struct sk_buff *skb = ppe_vp_info->skb;
+	struct net_device *dev = ppe_vp_info->napi->dev;
+	if (unlikely(dev == NULL)) {
+		dev_kfree_skb_any(skb);
+		return false;
+	}
+
+	skb->dev = dev;
+	dev_queue_xmit(skb);
+
+	return true;
+}
+
+/*
+ * Register with PPE virtual port(vp) on VAP creation.
+ * Allocate a new virtual port and returns ppe vp no on success.
+ * on failure returns -1;
+ */
+static int ieee80211_ppe_vp_802_3_redir_vap(struct ieee80211_sub_if_data *sdata,
+					    struct net_device *dev)
+{
+	int vp;
+	struct ppe_vp_ai vpai;
+
+	memset(&vpai, 0, sizeof(struct ppe_vp_ai));
+
+	vpai.type = PPE_VP_TYPE_SW_L2;
+	vpai.dst_cb = ieee80211_process_dst_ppe_vp;
+	vpai.dst_cb_data = &sdata->vif;
+	vpai.src_cb = NULL;
+	vpai.src_cb_data = NULL;
+	vpai.queue_num = 0;
+
+	vp = ppe_vp_alloc(dev, &vpai);
+	if (vp <= 0)
+		return -1;
+
+	return vp;
+}
+#endif
+
 /*
  * NOTE: Be very careful when changing this function, it must NOT return
  * an error on interface type changes that have been pre-checked, so most
@@ -1276,6 +1340,9 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 	u64 changed = 0;
 	int res;
 	u32 hw_reconf_flags = 0;
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+	int vp;
+#endif
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1519,6 +1586,21 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
                        sdata_info(sdata, "Failed to create a NSS virtual interface\n");
                }
        }
+#endif
+
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+	if (ppe_vp_accel) {
+		vp = ieee80211_ppe_vp_802_3_redir_vap(sdata, dev);
+		if (vp > 0) {
+			sdata->ppe_vp_num = vp;
+			sdata->vif.ppe_vp_num = sdata->ppe_vp_num;
+			sdata_info(sdata, "Allocated vp:%d for device:%s\n",
+				   sdata->ppe_vp_num, dev->name);
+		} else {
+			sdata->ppe_vp_num = 0;
+			sdata_err(sdata, "Failed to register with PPE VP\n");
+		}
+	}
 #endif
 
 	set_bit(SDATA_STATE_RUNNING, &sdata->state);
