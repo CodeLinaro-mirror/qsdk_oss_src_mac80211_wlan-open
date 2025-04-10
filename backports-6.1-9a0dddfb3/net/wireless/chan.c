@@ -1011,8 +1011,8 @@ bool cfg80211_any_wiphy_oper_chan(struct wiphy *wiphy,
 	return false;
 }
 
-static bool cfg80211_chandef_dfs_available(struct wiphy *wiphy,
-				const struct cfg80211_chan_def *chandef)
+bool cfg80211_chandef_dfs_available(struct wiphy *wiphy,
+				    const struct cfg80211_chan_def *chandef)
 {
 	struct ieee80211_channel *c;
 	int width;
@@ -1049,6 +1049,7 @@ static bool cfg80211_chandef_dfs_available(struct wiphy *wiphy,
 
 	return true;
 }
+EXPORT_SYMBOL(cfg80211_chandef_dfs_available);
 
 unsigned int
 cfg80211_chandef_dfs_cac_time(struct wiphy *wiphy,

@@ -885,10 +885,15 @@ struct wireless_dev *ieee80211_vif_to_wdev_relaxed(struct ieee80211_vif *vif)
 }
 EXPORT_SYMBOL(ieee80211_vif_to_wdev_relaxed);
 
-void ieee80211_radar_detected_bitmap(struct ieee80211_hw *hw, u16 radar_bitmap)
+void ieee80211_radar_detected_bitmap(struct ieee80211_hw *hw, u16 radar_bitmap,
+				     struct ieee80211_channel *radar_channel)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
 	struct channel_radar_info *radar_info;
+
+	if (WARN_ON(local->hw.wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO &&
+		    !radar_channel))
+		return;
 
 	radar_info = kzalloc(sizeof(*radar_info), GFP_ATOMIC);
 	if (!radar_info)
@@ -896,6 +901,7 @@ void ieee80211_radar_detected_bitmap(struct ieee80211_hw *hw, u16 radar_bitmap)
 
 	INIT_LIST_HEAD(&radar_info->list);
 	radar_info->radar_bitmap = radar_bitmap;
+	radar_info->radar_channel = radar_channel;
 
 	list_add_tail(&radar_info->list, &local->radar_info_list);
 	wiphy_work_queue(hw->wiphy, &local->radar_detected_work);
@@ -3629,13 +3635,11 @@ u64 ieee80211_calculate_rx_timestamp(struct ieee80211_local *local,
 /* Cancel CAC for the interfaces under the specified @local. If @ctx is
  * also provided, only the interfaces using that ctx will be canceled.
  */
-void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
-			      struct ieee80211_chanctx *ctx)
+void ieee80211_dfs_cac_cancel(struct ieee80211_local *local)
 {
 	struct ieee80211_sub_if_data *sdata;
 	struct cfg80211_chan_def chandef;
 	struct ieee80211_link_data *link;
-	struct ieee80211_chanctx_conf *chanctx_conf;
 	unsigned int link_id;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -3646,11 +3650,6 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 			link = sdata_dereference(sdata->link[link_id],
 						 sdata);
 			if (!link)
-				continue;
-
-			chanctx_conf = sdata_dereference(link->conf->chanctx_conf,
-							 sdata);
-			if (ctx && &ctx->conf != chanctx_conf)
 				continue;
 
 			wiphy_delayed_work_cancel(local->hw.wiphy,
@@ -3694,10 +3693,13 @@ void ieee80211_awgn_detected_work(struct work_struct *work)
 
 static void
 ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
-                                       u16 radar_bitmap)
+					u16 radar_bitmap,
+					struct ieee80211_channel *radar_channel)
 {
-	struct cfg80211_chan_def chandef;
+	struct cfg80211_chan_def chandef = local->hw.conf.chandef;
+	struct cfg80211_chan_def *radar_chandef = NULL;
 	struct ieee80211_chanctx *ctx;
+	int num_chanctx = 0;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -3705,22 +3707,35 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 		if (ctx->replace_state == IEEE80211_CHANCTX_REPLACES_OTHER)
 			continue;
 
-		if (!ctx->radar_detected)
-			continue;
-
-		ctx->radar_detected = false;
-
+		num_chanctx++;
 		chandef = ctx->conf.def;
 
-		wiphy_lock(local->hw.wiphy);
-		ieee80211_dfs_cac_cancel(local, ctx);
-		wiphy_unlock(local->hw.wiphy);
+		if (radar_channel &&
+	    	    (chandef.chan == radar_channel))
+		    radar_chandef = &ctx->conf.def;
+	}
+	ieee80211_dfs_cac_cancel(local);
 
-		chandef.radar_bitmap = radar_bitmap;
+	if (radar_chandef)
+		radar_chandef->radar_bitmap = radar_bitmap;
 
+	chandef.radar_bitmap = radar_bitmap;
+
+	if (num_chanctx > 1) {
+		if (local->hw.wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO) {
+			if (WARN_ON(!radar_chandef))
+				return;
+
+			cfg80211_radar_event(local->hw.wiphy, radar_chandef, GFP_KERNEL);
+		} else {
+			/* XXX: multi-channel is not supported yet */
+			WARN_ON(1);
+		}
+	} else {
 		cfg80211_radar_event(local->hw.wiphy, &chandef, GFP_KERNEL);
 	}
 }
+
 
 static void
 ieee80211_radar_mark_chan_ctx_iterator(struct ieee80211_hw *hw,
@@ -3746,14 +3761,18 @@ void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *w
 		container_of(work, struct ieee80211_local, radar_detected_work);
 	struct channel_radar_info *radar_info, *temp;
 	u16 radar_bitmap;
+	struct ieee80211_channel *radar_channel = NULL;
 
 	if (list_empty(&local->radar_info_list))
-		return ieee80211_dfs_radar_detected_processing(local, 0);
+		return ieee80211_dfs_radar_detected_processing(local, 0,
+							       radar_channel);
 
 	list_for_each_entry_safe(radar_info, temp, &local->radar_info_list, list) {
 		radar_bitmap = radar_info->radar_bitmap;
+		radar_channel = radar_info->radar_channel;
 
-		ieee80211_dfs_radar_detected_processing(local, radar_bitmap);
+		ieee80211_dfs_radar_detected_processing(local, radar_bitmap,
+							radar_channel);
 
 		list_del(&radar_info->list);
 		kfree(radar_info);

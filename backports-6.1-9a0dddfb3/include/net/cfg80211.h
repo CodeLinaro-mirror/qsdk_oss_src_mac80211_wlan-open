@@ -1130,6 +1130,16 @@ int cfg80211_chandef_primary(const struct cfg80211_chan_def *chandef,
 int nl80211_send_chandef(struct sk_buff *msg, const struct cfg80211_chan_def *chandef);
 
 /**
+ * cfg80211_chandef_dfs_available - checks if radar is already available
+ * @wiphy: the wiphy to validate against
+ * @chandef: the channel definition to check
+ * Returns:
+ *	true if all channels are radar available, false otherwise
+ */
+bool cfg80211_chandef_dfs_available(struct wiphy *wiphy,
+				    const struct cfg80211_chan_def *chandef);
+
+/**
  * ieee80211_chanwidth_rate_flags - return rate flags for channel width
  * @width: the channel width of the channel
  *
@@ -8928,6 +8938,7 @@ struct cfg80211_tx_status {
  * @wdev: wireless device receiving the frame
  * @status: TX status data
  * @gfp: context flags
+ * @link_id: valid link_id for MLO operation or 0 otherwise.
  *
  * This function is called whenever a management frame was requested to be
  * transmitted with cfg80211_ops::mgmt_tx() to report the TX status of the

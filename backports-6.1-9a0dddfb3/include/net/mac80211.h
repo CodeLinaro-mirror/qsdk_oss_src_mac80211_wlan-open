@@ -6920,8 +6920,11 @@ void ieee80211_radar_detected(struct ieee80211_hw *hw,
  * 	with bitmap
  * @hw: pointer as obtained from ieee80211_alloc_hw()
  * @radar_bitmap: denotes the bitmap of radar.
+ * @radar_channel: Channel pointer on which radar is detected. Mandatory to pass
+ *	for MLO drivers. For non-MLO %NULL can be passed
  */
-void ieee80211_radar_detected_bitmap(struct ieee80211_hw *hw, u16 radar_bitmap);
+void ieee80211_radar_detected_bitmap(struct ieee80211_hw *hw, u16 radar_bitmap,
+				     struct ieee80211_channel *radar_channel);
 
 
 /**

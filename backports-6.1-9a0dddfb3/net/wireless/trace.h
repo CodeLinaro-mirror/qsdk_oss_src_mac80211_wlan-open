@@ -805,7 +805,7 @@ DEFINE_EVENT(wiphy_netdev_evt, rdev_flush_pmksa,
 	TP_ARGS(wiphy, netdev)
 );
 
-TRACE_EVENT(rdev_end_cac,
+DECLARE_EVENT_CLASS(wiphy_netdev_link_evt,
 	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
 		 unsigned int link_id),
 	TP_ARGS(wiphy, netdev, link_id),
@@ -819,8 +819,14 @@ TRACE_EVENT(rdev_end_cac,
 		NETDEV_ASSIGN;
 		__entry->link_id = link_id;
 	),
-	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT ", link_id: %d",
-		  WIPHY_PR_ARG, NETDEV_PR_ARG, __entry->link_id)
+	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT ", link_id: %u",
+      		  WIPHY_PR_ARG, NETDEV_PR_ARG, __entry->link_id)
+);
+
+DEFINE_EVENT(wiphy_netdev_link_evt, rdev_end_cac,
+	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
+		 unsigned int link_id),
+	TP_ARGS(wiphy, netdev, link_id)
 );
 
 DECLARE_EVENT_CLASS(station_add_change,
