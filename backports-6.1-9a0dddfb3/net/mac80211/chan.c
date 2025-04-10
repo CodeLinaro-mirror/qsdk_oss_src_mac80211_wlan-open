@@ -666,6 +666,9 @@ bool ieee80211_is_radar_required(struct ieee80211_local *local,
 	for_each_sdata_link(local, link) {
 		if (link->radar_required) {
 			struct ieee80211_channel *chan = link->conf->chanreq.oper.chan;
+			if (!req)
+				return false;
+
 			hw_idx = cfg80211_get_hw_idx_by_chan(wiphy, chan);
 			if (hw_idx == req->hw_idx)
 				return true;
