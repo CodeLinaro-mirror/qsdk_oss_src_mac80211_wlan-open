@@ -1073,6 +1073,7 @@ struct ieee80211_link_data {
 		struct ieee80211_chan_req chanreq;
 	} csa;
 
+	struct work_struct awgn_detected_work;
 	struct wiphy_work color_change_finalize_work;
 	struct wiphy_delayed_work color_collision_detect_work;
 	u64 color_bitmap;
@@ -1206,6 +1207,7 @@ struct ieee80211_sub_if_data {
 	struct nss_virt_if_handle *nssctx;
 #endif
 
+	struct work_struct awgn_detected_work;
 	/* must be last, dynamically sized area in this! */
 	struct ieee80211_vif vif;
 };
@@ -2044,6 +2046,8 @@ int ieee80211_mgmt_tx_cancel_wait(struct wiphy *wiphy,
 void ieee80211_csa_finalize_work(struct wiphy *wiphy, struct wiphy_work *work);
 int ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 			     struct cfg80211_csa_settings *params);
+/* awgn interference handling */
+void ieee80211_awgn_interference_detected_work(struct work_struct *work);
 
 /* color change handling */
 void ieee80211_color_change_finalize_work(struct wiphy *wiphy,

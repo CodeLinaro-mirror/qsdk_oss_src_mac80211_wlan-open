@@ -880,6 +880,15 @@ struct wireless_dev *ieee80211_vif_to_wdev_relaxed(struct ieee80211_vif *vif)
 }
 EXPORT_SYMBOL(ieee80211_vif_to_wdev_relaxed);
 
+void ieee80211_awgn_detected(struct ieee80211_vif *vif)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+
+	ieee80211_queue_work(&sdata->local->hw,
+			     &sdata->awgn_detected_work);
+}
+EXPORT_SYMBOL(ieee80211_awgn_detected);
+
 /*
  * Nothing should have been stuffed into the workqueue during
  * the suspend->resume cycle. Since we can't check each caller
