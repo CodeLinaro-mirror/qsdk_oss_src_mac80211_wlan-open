@@ -2372,6 +2372,11 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 		ndev->features |= local->hw.netdev_features;
 		ndev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
+		if ((type == NL80211_IFTYPE_AP || type == NL80211_IFTYPE_STATION ||
+		    type == NL80211_IFTYPE_AP_VLAN) &&
+		    ieee80211_hw_check(&local->hw, SUPPORTS_TX_ENCAP_OFFLOAD))
+			ndev->features |= NETIF_F_HW_CSUM;
+
 		ndev->hw_features |= ndev->features &
 					MAC80211_SUPPORTED_FEATURES_TX;
 		sdata->vif.netdev_features = local->hw.netdev_features;

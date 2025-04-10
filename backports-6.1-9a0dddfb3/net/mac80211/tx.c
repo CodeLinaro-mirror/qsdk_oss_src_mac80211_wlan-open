@@ -37,6 +37,8 @@
 #include "wme.h"
 #include "rate.h"
 
+#define IS_HW_CSUM_NOT_ENABLED(dev)             (!((dev)->features & NETIF_F_HW_CSUM))
+
 static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 				struct net_device *dev, struct sta_info *sta,
 				struct ieee80211_key *key, struct sk_buff *skb,
@@ -3683,7 +3685,7 @@ ieee80211_sdata_netdev_features(struct ieee80211_sub_if_data *sdata)
 }
 
 static struct sk_buff *
-ieee80211_tx_skb_fixup(struct sk_buff *skb, netdev_features_t features)
+ieee80211_tx_skb_fixup(struct sk_buff *skb, netdev_features_t features, struct net_device *dev)
 {
 	if (skb_is_gso(skb)) {
 		struct sk_buff *segs;
@@ -3701,7 +3703,7 @@ ieee80211_tx_skb_fixup(struct sk_buff *skb, netdev_features_t features)
 	if (skb_needs_linearize(skb, features) && __skb_linearize(skb))
 		goto free;
 
-	if (skb->ip_summed == CHECKSUM_PARTIAL) {
+	if (skb->ip_summed == CHECKSUM_PARTIAL && IS_HW_CSUM_NOT_ENABLED(dev)) {
 		int ofs = skb_checksum_start_offset(skb);
 
 		if (skb->encapsulation)
@@ -3847,7 +3849,7 @@ static bool ieee80211_xmit_fast(struct ieee80211_sub_if_data *sdata,
 	memcpy(&eth, skb->data, ETH_HLEN - 2);
 
 	/* after this point (skb is modified) we cannot return false */
-	skb = ieee80211_tx_skb_fixup(skb, ieee80211_sdata_netdev_features(sdata));
+	skb = ieee80211_tx_skb_fixup(skb, ieee80211_sdata_netdev_features(sdata), sdata->dev);
 	if (!skb)
 		return true;
 
@@ -4396,7 +4398,7 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 	 * things so we cannot really handle checksum or GSO offload.
 	 * fix it up in software before we handle anything else.
 	 */
-	skb = ieee80211_tx_skb_fixup(skb, 0);
+	skb = ieee80211_tx_skb_fixup(skb, 0, dev);
 	if (!skb) {
 		len = 0;
 		goto out;
@@ -4791,7 +4793,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 		}
 	}
 
-	skb = ieee80211_tx_skb_fixup(skb, ieee80211_sdata_netdev_features(sdata));
+	skb = ieee80211_tx_skb_fixup(skb, ieee80211_sdata_netdev_features(sdata), dev);
 	if (!skb)
 		return;
 

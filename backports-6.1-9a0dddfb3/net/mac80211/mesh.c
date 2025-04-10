@@ -13,6 +13,8 @@
 #include "wme.h"
 #include "driver-ops.h"
 
+#define IS_HW_CSUM_NOT_ENABLED(dev)             (!((dev)->features & NETIF_F_HW_CSUM))
+
 static int mesh_allocated;
 static struct kmem_cache *rm_cache;
 
@@ -827,7 +829,7 @@ bool ieee80211_mesh_xmit_fast(struct ieee80211_sub_if_data *sdata,
 	if (skb->sk && skb_shinfo(skb)->tx_flags & SKBTX_WIFI_STATUS)
 		return false;
 
-	if (skb->ip_summed == CHECKSUM_PARTIAL) {
+	if (skb->ip_summed == CHECKSUM_PARTIAL && IS_HW_CSUM_NOT_ENABLED(sdata->dev)) {
 		skb_set_transport_header(skb, skb_checksum_start_offset(skb));
 		if (skb_checksum_help(skb))
 			return false;
