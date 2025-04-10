@@ -885,6 +885,7 @@ void mesh_plink_broken(struct sta_info *sta)
 	struct mesh_table *tbl = &sdata->u.mesh.mesh_paths;
 	static const u8 bcast[ETH_ALEN] = {0xff, 0xff, 0xff, 0xff, 0xff, 0xff};
 	struct mesh_path *mpath;
+        int paths_deactivated = 0, signal_avg;
 
 	rcu_read_lock();
 	hlist_for_each_entry_rcu(mpath, &tbl->walk_head, walk_list) {
@@ -899,9 +900,19 @@ void mesh_plink_broken(struct sta_info *sta)
 				sdata->u.mesh.mshcfg.element_ttl,
 				mpath->dst, mpath->sn,
 				WLAN_REASON_MESH_PATH_DEST_UNREACHABLE, bcast);
+                                ++paths_deactivated;
 		}
 	}
 	rcu_read_unlock();
+	if (paths_deactivated) {
+		signal_avg = -ewma_signal_read(&sta->deflink.rx_stats_avg.signal);
+		sdata_info(sta->sdata, " MESH MPL link to %pM is broken and"
+			   " %d path deactivated signal %d dbm signal_avg %d dbm\n",
+			   sta->deflink.addr, paths_deactivated,
+			   sta->deflink.rx_stats.last_signal,
+			   signal_avg);
+		mesh_continuous_tx_fail_cnt(sta, NL80211_MPATH_BROKEN_NOTIFY);
+	}
 }
 
 static void mesh_path_free_rcu(struct mesh_table *tbl,

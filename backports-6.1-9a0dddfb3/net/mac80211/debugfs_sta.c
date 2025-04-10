@@ -584,6 +584,57 @@ static ssize_t link_sta_ht_capa_read(struct file *file, char __user *userbuf,
 }
 LINK_STA_OPS(ht_capa);
 
+static ssize_t sta_tx_fail_cnt_read(struct file *file, char __user *userbuf,
+                                   size_t count, loff_t *ppos)
+{
+       struct sta_info *sta = file->private_data;
+       char buf[18 * MAX_TX_FAIL_CNT], *p = buf;
+       int i;
+
+       if(!sta->mesh) {
+               p += scnprintf(p, sizeof(buf) + buf - p, "tx_fail_cnt is supported only for mesh\n");
+               return simple_read_from_buffer(userbuf, count, ppos, buf, p - buf);
+       }
+
+       p += scnprintf(p, sizeof(buf) + buf - p, "\nTx Cont fail cnt info : \n");
+       for (i = 0; i < MAX_TX_FAIL_CNT; i++) {
+               if (!sta->mesh->tx_fail_cnt[i])
+                       continue;
+               p += scnprintf(p, sizeof(buf) + buf - p, "%d : %u\n",i,
+                              sta->mesh->tx_fail_cnt[i]);
+       }
+
+       p += scnprintf(p, sizeof(buf) + buf - p, "mgmt fail cnt : %u\n", sta->mesh->mgmt_fail_cnt);
+       p += scnprintf(p, sizeof(buf) + buf - p, "current fail avg : %lu\n",
+                      ewma_mesh_fail_avg_read(&sta->mesh->fail_avg));
+
+       return simple_read_from_buffer(userbuf, count, ppos, buf, p - buf);
+}
+
+static ssize_t sta_tx_fail_cnt_write(struct file *file,
+                                    const char __user *userbuf,
+                                    size_t count, loff_t *ppos)
+{
+       struct sta_info *sta = file->private_data;
+       int ret;
+       u8 val;
+
+       ret = kstrtou8_from_user(userbuf, count, 0, &val);
+
+       if (!sta->mesh || ret || val >= MESH_TX_FAILURE_LOG_CTRL_MAX)
+               return -EINVAL;
+
+       if (val & MESH_RESET_TX_FAIL_COUNT) {
+               memset(sta->mesh->tx_fail_cnt, 0, sizeof(u32) * MAX_TX_FAIL_CNT);
+               return count;
+       }
+
+       sta->mesh->tx_fail_log = val;
+       return count;
+}
+
+STA_OPS_RW(tx_fail_cnt);
+
 static ssize_t link_sta_vht_capa_read(struct file *file, char __user *userbuf,
 				      size_t count, loff_t *ppos)
 {
@@ -1464,6 +1515,9 @@ void ieee80211_sta_debugfs_add(struct sta_info *sta)
 	DEBUGFS_ADD(reset_mac80211_rx_pkts_flow);
 	DEBUGFS_ADD(mac80211_tx_pkts_flow);
 	DEBUGFS_ADD(mac80211_rx_pkts_flow);
+#ifdef CPTCFG_MAC80211_MESH
+        DEBUGFS_ADD(tx_fail_cnt);
+#endif
 	/* FIXME: Kept here as the statistics are only done on the deflink */
 	DEBUGFS_ADD_COUNTER(tx_filtered, deflink.status_stats.filtered);
 

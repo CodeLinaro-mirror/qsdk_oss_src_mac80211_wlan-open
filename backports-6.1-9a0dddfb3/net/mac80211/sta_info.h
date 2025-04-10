@@ -123,6 +123,15 @@ enum ieee80211_sta_info_flags {
 #define HT_AGG_STATE_STOP_CB		7
 #define HT_AGG_STATE_SENT_ADDBA		8
 
+#define MAX_TX_FAIL_CNT 		50
+
+enum mesh_tx_failure_log_control{
+	MESH_RESET_TX_FAIL_COUNT = BIT(0),
+	MESH_ENABLE_TX_FAIL_COUNT_LOG = BIT(1),
+	MESH_ENABLE_MPL_LOG = BIT(2),
+	MESH_TX_FAILURE_LOG_CTRL_MAX = BIT(3)
+};
+
 DECLARE_EWMA(avg_signal, 10, 8)
 enum ieee80211_agg_stop_reason {
 	AGG_STOP_DECLINED,
@@ -423,6 +432,11 @@ struct mesh_sta {
 	struct ewma_mesh_fail_avg fail_avg;
 	/* moving average of tx bitrate */
 	struct ewma_mesh_tx_rate_avg tx_rate_avg;
+
+	u32 fail_cnt;
+	u32 tx_fail_cnt[MAX_TX_FAIL_CNT];
+	u8 tx_fail_log;
+	u32 mgmt_fail_cnt;
 };
 
 DECLARE_EWMA(signal, 10, 8)
@@ -957,6 +971,8 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id);
 void ieee80211_sta_ps_deliver_wakeup(struct sta_info *sta);
 void ieee80211_sta_ps_deliver_poll_response(struct sta_info *sta);
 void ieee80211_sta_ps_deliver_uapsd(struct sta_info *sta);
+void mesh_continuous_tx_fail_cnt(struct sta_info *sta,
+				 enum nl80211_mpath_change_notify event);
 
 unsigned long ieee80211_sta_last_active(struct sta_info *sta);
 

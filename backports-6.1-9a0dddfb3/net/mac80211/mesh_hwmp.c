@@ -71,6 +71,9 @@ static inline u16 u16_field_get(const u8 *preq_elem, int offset, bool ae)
 #define SN_LT(x, y) ((s32)(x - y) < 0)
 #define MAX_SANE_SN_DELTA 32
 
+#define MP_DIFF(a, b) (((a) > (b)) ? ((a) - (b)) : ((b) - (a)))
+#define LOG_PERCENT_DIFF 30
+
 static inline u32 SN_DELTA(u32 x, u32 y)
 {
 	return x >= y ? x - y : y - x;
@@ -298,11 +301,27 @@ void ieee80211s_update_metric(struct ieee80211_local *local,
 			      struct sta_info *sta,
 			      struct ieee80211_tx_status *st)
 {
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *) st->skb->data;
 	struct ieee80211_tx_info *txinfo = st->info;
-	int failed;
+	int failed = 0;
 	struct rate_info rinfo;
 
 	failed = !(txinfo->flags & IEEE80211_TX_STAT_ACK);
+
+	if (failed) {
+		sta->mesh->fail_cnt++;
+		if (ieee80211_is_mgmt(hdr->frame_control))
+			sta->mesh->mgmt_fail_cnt++;
+	} else if (sta->mesh->fail_cnt) {
+		if (sta->mesh->fail_cnt >= MAX_TX_FAIL_CNT &&
+		    (sta->mesh->tx_fail_log & MESH_ENABLE_MPL_LOG))
+			sdata_info(sta->sdata, " MESH MPL HIGHER fail count %u for peer %pM\n",
+				   sta->mesh->fail_cnt, sta->sta.addr);
+
+		if(sta->mesh->fail_cnt  < MAX_TX_FAIL_CNT)
+			sta->mesh->tx_fail_cnt[sta->mesh->fail_cnt]++;
+		sta->mesh->fail_cnt = 0;
+	}
 
 	/* moving average, scaled to 100.
 	 * feed failure as 100 and success as 0
@@ -374,6 +393,33 @@ next_hop_deref_protected(struct mesh_path *mpath)
 					 lockdep_is_held(&mpath->state_lock));
 }
 
+void mesh_continuous_tx_fail_cnt(struct sta_info *sta,
+				 enum nl80211_mpath_change_notify event)
+{
+	int i;
+
+	if (!(sta->mesh->tx_fail_log & MESH_ENABLE_TX_FAIL_COUNT_LOG))
+		return;
+
+	cfg80211_cqm_mpath_change_notify(sta->sdata->dev, sta->sta.addr,
+					 event, GFP_ATOMIC);
+
+	if (event == NL80211_MPATH_METRIC_CHANGE)
+		return;
+
+	sdata_info(sta->sdata, "MESH MPL continuous fail count for mesh %pM :\n", sta->addr);
+	for (i = 0; i < MAX_TX_FAIL_CNT; i++) {
+		if (!sta->mesh->tx_fail_cnt[i])
+			continue;
+
+		sdata_info(sta->sdata, "%d cont tx failure occurred %u times\n", i,
+			   sta->mesh->tx_fail_cnt[i]);
+	}
+
+	sdata_info(sta->sdata, "current continuous tx fail count %u mgmt fail cnt %u fail avg : %lu\n",
+		   sta->mesh->fail_cnt, sta->mesh->mgmt_fail_cnt, ewma_mesh_fail_avg_read(&sta->mesh->fail_avg));
+}
+
 /**
  * hwmp_route_info_get - Update routing info to originator and transmitter
  *
@@ -407,6 +453,8 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 	bool flush_mpath = false;
 	bool process = true;
 	u8 hopcount;
+	int signal_avg;
+	bool mpath_metric_change = 0;
 
 	rcu_read_lock();
 	sta = sta_info_get(sdata, mgmt->sa);
@@ -507,8 +555,22 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 				ether_addr_copy(old_next_hop_addr, next_hop->sta.addr);
 			if (next_hop != sta) {
 				mpath->path_change_count++;
+                                mpath_dbg(sdata, "MESH MPU dst %pM next hop %pM"
+                                          " metric %d ft 0x%x\n",
+                                          mpath->dst, sta->deflink.addr, last_hop_metric, action);
 				flush_mpath = true;
-			}
+                        } else if (MP_DIFF(new_metric, mpath->metric) >
+                                   (mpath->metric*LOG_PERCENT_DIFF)/100) {
+                                signal_avg = -ewma_signal_read(&sta->deflink.rx_stats_avg.signal);
+                                mpath_dbg(sdata, "MESH MPLMU DIRECT dst %pM next hop"
+                                          " %pM metric from %d to %d ft 0x%x signal %d"
+                                          "dbm signal_avg %d dbm\n",
+                                          mpath->dst, sta->deflink.addr, mpath->metric,
+                                          new_metric, action,
+                                          sta->deflink.rx_stats.last_signal,
+                                          signal_avg);
+                                mpath_metric_change = 1;
+                        }
 			mesh_path_assign_nexthop(mpath, sta);
 			mpath->flags |= MESH_PATH_SN_VALID;
 			mpath->metric = new_metric;
@@ -568,8 +630,22 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 				ether_addr_copy(old_next_hop_addr, next_hop->sta.addr);
 			if (next_hop != sta) {
 				mpath->path_change_count++;
+				mpath_dbg(sdata, "MESH MPU dst %pM next hop %pM"
+					  " metric %d ft 0x%x\n",
+					  mpath->dst, sta->deflink.addr, last_hop_metric, action);
 				flush_mpath = true;
-			}
+                        } else if (MP_DIFF(new_metric, mpath->metric) >
+                                   (mpath->metric*LOG_PERCENT_DIFF)/100) {
+                                signal_avg = -ewma_signal_read(&sta->deflink.rx_stats_avg.signal);
+                                mpath_dbg(sdata, "MESH MPLMU DIRECT dst %pM next hop"
+                                          " %pM metric from %d to %d ft 0x%x signal %d"
+                                          "dbm signal_avg %d dbm\n",
+                                          mpath->dst, sta->deflink.addr, mpath->metric,
+                                          new_metric, action,
+                                          sta->deflink.rx_stats.last_signal,
+                                          signal_avg);
+                                mpath_metric_change = 1;
+                        }
 			mesh_path_assign_nexthop(mpath, sta);
 			mpath->metric = last_hop_metric;
 			mpath->exp_time = time_after(mpath->exp_time, exp_time)
@@ -588,6 +664,9 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 		} else
 			spin_unlock_bh(&mpath->state_lock);
 	}
+
+	if (mpath_metric_change)
+		mesh_continuous_tx_fail_cnt(sta, NL80211_MPATH_METRIC_CHANGE);
 
 	rcu_read_unlock();
 
