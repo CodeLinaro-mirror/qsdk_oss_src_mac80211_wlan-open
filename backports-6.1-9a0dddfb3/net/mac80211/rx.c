@@ -2659,7 +2659,7 @@ static void ieee80211_netif_rx_ppe(struct ieee80211_rx_data *rx,
 	if (unlikely(skb_shared(skb)))
 		goto out;
 
-	if (likely(ppe_vp_tx_to_ppe(sdata->ppe_vp_num, skb)))
+	if (likely(ppe_vp_tx_to_ppe(sdata->vif.ppe_vp_num, skb)))
 		return;
 
 out:
@@ -5004,7 +5004,7 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 	}
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	if (rx->sdata->ppe_vp_num) {
+	if (rx->sdata->vif.ppe_vp_num) {
 		ieee80211_netif_rx_ppe(rx, skb);
 		atomic_inc(&sta->rx_netif_pkts);
 		return;

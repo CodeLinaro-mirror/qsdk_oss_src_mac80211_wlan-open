@@ -1210,9 +1210,6 @@ struct ieee80211_sub_if_data {
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	struct nss_virt_if_handle *nssctx;
 #endif
-#ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	u32 ppe_vp_num;
-#endif
 
 	struct work_struct awgn_detected_work;
 	/* must be last, dynamically sized area in this! */

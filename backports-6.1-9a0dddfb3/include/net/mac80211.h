@@ -2122,7 +2122,8 @@ struct ieee80211_vif {
 	bool noqueue_enable;
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	u32 ppe_vp_num;
+	int ppe_vp_num;
+	unsigned long ppe_vp_type;
 #endif
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -3944,6 +3945,11 @@ struct ieee80211_prep_tx_info {
 	int link_id;
 };
 
+struct ieee80211_ppe_vp_ds_params {
+	struct net_device *dev;
+	int ppe_vp_profile_idx;
+	unsigned long ppe_vp_type;
+};
 /**
  * struct ieee80211_ops - callbacks from mac80211 to the driver
  *
@@ -4988,6 +4994,15 @@ struct ieee80211_ops {
 	int (*sta_set_mgmt_rts_cts)(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_sta *sta);
+
+	/*TODO: explore if this can be moved completely under ath12k driver */
+	int (*ppeds_attach_vdev)(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 void *vp_arg, int *ppe_vp_num,
+				 struct ieee80211_ppe_vp_ds_params *vp_params);
+	int (*ppeds_detach_vdev)(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_ppe_vp_ds_params *vp_params);
 };
 
 /**

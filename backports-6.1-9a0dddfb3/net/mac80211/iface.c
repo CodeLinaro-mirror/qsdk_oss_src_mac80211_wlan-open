@@ -805,6 +805,7 @@ void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata)
 static int ieee80211_stop(struct net_device *dev)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_ppe_vp_ds_params vp_params = {0};
 
 	/* close dependent VLAN interfaces before locking wiphy */
 	if (sdata->vif.type == NL80211_IFTYPE_AP) {
@@ -833,12 +834,14 @@ static int ieee80211_stop(struct net_device *dev)
 		ieee80211_stop_mbssid(sdata);
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	if (sdata->ppe_vp_num) {
-		ppe_vp_free(sdata->ppe_vp_num);
+	if (sdata->vif.ppe_vp_num != -1) {
+		drv_ppeds_detach_vdev(sdata, &sdata->vif, &vp_params);
+		if (sdata->vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
+			ppe_vp_free(sdata->vif.ppe_vp_num);
+
 		sdata_info(sdata, "Destroyed PPE VP port no:%d for dev:%s\n",
-			   sdata->ppe_vp_num, dev->name);
-		sdata->ppe_vp_num = 0;
-		sdata->vif.ppe_vp_num = 0;
+			   sdata->vif.ppe_vp_num, dev->name);
+		sdata->vif.ppe_vp_num = -1;
 	}
 #endif
 	ieee80211_do_stop(sdata, true);
@@ -1307,8 +1310,9 @@ static bool ieee80211_process_dst_ppe_vp(struct ppe_vp_cb_info *ppe_vp_info, voi
 static int ieee80211_ppe_vp_802_3_redir_vap(struct ieee80211_sub_if_data *sdata,
 					    struct net_device *dev)
 {
-	int vp;
 	struct ppe_vp_ai vpai;
+	struct ieee80211_ppe_vp_ds_params vp_params = {0};
+	int vp = -1, ret;
 
 	memset(&vpai, 0, sizeof(struct ppe_vp_ai));
 
@@ -1318,7 +1322,19 @@ static int ieee80211_ppe_vp_802_3_redir_vap(struct ieee80211_sub_if_data *sdata,
 	vpai.src_cb = NULL;
 	vpai.src_cb_data = NULL;
 	vpai.queue_num = 0;
+	vpai.usr_type = PPE_VP_USER_TYPE_DS;
+	vpai.net_dev_type = PPE_VP_NET_DEV_TYPE_WIFI;
 
+	vp_params.dev = dev;
+	ret = drv_ppeds_attach_vdev(sdata, &sdata->vif, (void *)&vpai, &vp, &vp_params);
+	if (!ret) {
+		sdata->vif.ppe_vp_type = PPE_VP_USER_TYPE_DS;
+		return vp;
+	}
+
+	sdata_info(sdata, "PPE-DS attach failed falling back to passive vp\n");
+	/* when PPE-DS attach fails, fall back to passive vp support */
+	vpai.usr_type = 0;
 	vp = ppe_vp_alloc(dev, &vpai);
 	if (vp <= 0)
 		return -1;
@@ -1592,12 +1608,11 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 	if (ppe_vp_accel) {
 		vp = ieee80211_ppe_vp_802_3_redir_vap(sdata, dev);
 		if (vp > 0) {
-			sdata->ppe_vp_num = vp;
-			sdata->vif.ppe_vp_num = sdata->ppe_vp_num;
+			sdata->vif.ppe_vp_num = vp;
 			sdata_info(sdata, "Allocated vp:%d for device:%s\n",
-				   sdata->ppe_vp_num, dev->name);
+				   sdata->vif.ppe_vp_num, dev->name);
 		} else {
-			sdata->ppe_vp_num = 0;
+			sdata->vif.ppe_vp_num = -1;
 			sdata_err(sdata, "Failed to register with PPE VP\n");
 		}
 	}
@@ -1880,6 +1895,7 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 	/* and set some type-dependent values */
 	sdata->vif.type = type;
 	sdata->vif.p2p = false;
+	sdata->vif.ppe_vp_num = -1;
 	sdata->wdev.iftype = type;
 
 	sdata->control_port_protocol = cpu_to_be16(ETH_P_PAE);
