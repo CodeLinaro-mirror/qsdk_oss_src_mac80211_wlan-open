@@ -3378,6 +3378,13 @@ struct ieee80211_channel
 	reg_info = (he_6ghz_oper->control & IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO) >>
 		   IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO_LSB;
 
+	/*
+	 * If the root AP is Indoor SP AP, convert the received control field
+	 * to SP AP.
+	 */
+	if (reg_info == IEEE80211_6GHZ_CTRL_REG_INDOOR_SP_AP)
+		reg_info = IEEE80211_6GHZ_CTRL_REG_SP_AP;
+
 	/* 6G Power mode configured by the user */
 	reg_6g_power_mode = sdata->wdev.reg_6g_power_mode;
 
@@ -3431,6 +3438,13 @@ bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
 	/* 6G Power mode present in the beacon */
 	reg_info = (he_6ghz_oper->control & IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO) >>
 		    IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO_LSB;
+
+	/*
+	 * If the root AP is Indoor SP AP, convert the received control field
+	 * to SP AP.
+	 */
+	if (reg_info == IEEE80211_6GHZ_CTRL_REG_INDOOR_SP_AP)
+		reg_info = IEEE80211_6GHZ_CTRL_REG_SP_AP;
 
 	/* 6G Power mode configured by the user */
 	reg_6g_power_mode = sdata->wdev.reg_6g_power_mode;
