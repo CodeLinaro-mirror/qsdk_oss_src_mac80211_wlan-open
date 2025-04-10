@@ -6721,13 +6721,17 @@ struct wireless_dev {
 		};
 
 		bool cac_started;
+		bool critical_flag;
+		u8 bpcc;
 		unsigned long cac_start_time;
 		unsigned int cac_time_ms;
+		u8 switch_count;
 	} links[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links;
 
 	u32 radio_mask;
 	u8 reg_6g_power_mode;
+	bool critical_update;
 };
 
 static inline const u8 *wdev_address(struct wireless_dev *wdev)
@@ -8877,6 +8881,7 @@ struct cfg80211_rx_info {
 	u32 flags;
 	u64 rx_tstamp;
 	u64 ack_tstamp;
+	bool critical_update;
 };
 
 /**

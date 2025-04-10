@@ -3999,6 +3999,10 @@ void ieee80211_csa_finish(struct ieee80211_vif *vif, unsigned int link_id)
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_bss_conf *tx_bss_conf;
 	struct ieee80211_link_data *link_data;
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+
+	if(!wdev)
+		return;
 
 	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
 		return;
@@ -4009,6 +4013,11 @@ void ieee80211_csa_finish(struct ieee80211_vif *vif, unsigned int link_id)
 	if (WARN_ON(!link_data)) {
 		rcu_read_unlock();
 		return;
+	}
+
+	if (wdev->valid_links && wdev->links[link_id].switch_count != 0) {
+		wdev->links[link_id].switch_count = 0;
+		wdev->critical_update = 1;
 	}
 
 	tx_bss_conf = rcu_dereference(link_data->conf->tx_bss_conf);
@@ -4042,6 +4051,12 @@ void ieee80211_csa_finish(struct ieee80211_vif *vif, unsigned int link_id)
 				    link_iter->conf->mbssid_tx_vif_linkid != link_data->link_id)
 					continue;
 
+				if (iter->sdata->wdev.valid_links &&
+				    iter->sdata->wdev.links[link_id_iter].switch_count != 0) {
+				    iter->sdata->wdev.links[link_id_iter].switch_count = 0;
+				    iter->sdata->wdev.critical_update = 1;
+				}
+
 				wiphy_work_queue(iter->sdata->local->hw.wiphy,
 					 &iter->csa.finalize_work);
 			}
@@ -4053,6 +4068,24 @@ void ieee80211_csa_finish(struct ieee80211_vif *vif, unsigned int link_id)
 	rcu_read_unlock();
 }
 EXPORT_SYMBOL(ieee80211_csa_finish);
+
+void ieee80211_critical_update(struct ieee80211_vif *vif, unsigned int link_id,
+		bool critical_flag, u8 bpcc)
+{
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+
+	if (!wdev || !wdev->valid_links)
+		return;
+	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+	if (wdev->links[link_id].critical_flag != critical_flag ||
+		wdev->links[link_id].bpcc != bpcc) {
+		wdev->critical_update = 1;
+		wdev->links[link_id].critical_flag = critical_flag;
+		wdev->links[link_id].bpcc = bpcc;
+       }
+}
+EXPORT_SYMBOL(ieee80211_critical_update);
 
 void ieee80211_channel_switch_disconnect(struct ieee80211_vif *vif)
 {
@@ -5327,6 +5360,10 @@ void ieee80211_color_change_finish(struct ieee80211_vif *vif, u8 link_id)
 {
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
 	struct ieee80211_link_data *link;
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+
+	if(!wdev)
+		return;
 
 	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
 		return;
@@ -5388,6 +5425,10 @@ ieee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
 				 &link->color_collision_detect_work,
 				 msecs_to_jiffies(500));
 
+	if (wdev->valid_links && wdev->links[link_id].switch_count != 0) {
+		wdev->links[link_id].switch_count = 0;
+		wdev->critical_update = 1;
+	}
 	rcu_read_unlock();
 	cfg80211_obss_color_collision_notify(sdata->dev, color_bitmap, gfp, link_id);
 }

@@ -8106,4 +8106,12 @@ mesh_nss_offld_proxy_path_exp_update(struct ieee80211_vif *vif, u8* da,
 }
 #endif
 
+/** ieee80211_critical_update - update critical params for each link
+ * @vif: virtual interface
+ * @critical_flag: critical update information
+ * @bpcc: Bss parameter change count value
+ */
+void ieee80211_critical_update(struct ieee80211_vif *vif, unsigned int link_id,
+				bool critical_flag, u8 bpcc);
+
 #endif /* MAC80211_H */
