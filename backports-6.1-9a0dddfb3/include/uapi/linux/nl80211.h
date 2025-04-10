@@ -2960,6 +2960,9 @@ enum nl80211_commands {
  *	this attribute is not present, and hence any associated attributes are
  *	deemed to be applicable to all radios
  *
+ * @NL80211_ATTR_WIPHY_ANTENNA_GAIN: Configured antenna gain. Used to reduce
+ *	transmit power to stay within regulatory limits. u32, dBi.
+ *
  * @NL80211_ATTR_HE_MUEDCA_PARAMS: MU-EDCA AC parameters for the
  *	%NL80211_CMD_UPDATE_HE_MUEDCA_PARAMS command.
  * @NL80211_ATTR_BEACON_TX_MODE: used to configure the beacon tx mode as

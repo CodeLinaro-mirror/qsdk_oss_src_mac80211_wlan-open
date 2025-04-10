@@ -4674,6 +4674,7 @@ struct cfg80211_link_reconfig_removal_params {
  *	(as advertised by the nl80211 feature flag.)
  * @get_tx_power: store the current TX power into the dbm variable;
  *	return 0 if successful
+ * @set_antenna_gain: set antenna gain to reduce maximum tx power if necessary
  *
  * @rfkill_poll: polls the hw rfkill line, use cfg80211 reporting
  *	functions to adjust rfkill hw state
@@ -5050,7 +5051,7 @@ struct cfg80211_ops {
 				unsigned int link_id);
 	int	(*get_tx_power)(struct wiphy *wiphy, struct wireless_dev *wdev,
 				unsigned int link_id, int *dbm);
-
+	int     (*set_antenna_gain)(struct wiphy *wiphy, int dbi);
 	void	(*rfkill_poll)(struct wiphy *wiphy);
 
 #ifdef CPTCFG_NL80211_TESTMODE

@@ -947,6 +947,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_INTERFERENCE_TYPE] = { .type = NLA_U8 },
 	[NL80211_ATTR_AP_REMOVAL_COUNT] = { .type = NLA_U32 },
 	[NL80211_ATTR_TSF] = { .type = NLA_U64 },
+	[NL80211_ATTR_WIPHY_ANTENNA_GAIN] = { .type = NLA_U32 },
 };
 
 /* policy for the key attributes */
@@ -3980,6 +3981,22 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 
 		if (result)
 			return result;
+	}
+
+	if (info->attrs[NL80211_ATTR_WIPHY_ANTENNA_GAIN]) {
+		int idx, dbi = 0;
+
+		if (!rdev->ops->set_antenna_gain) {
+			result = -EOPNOTSUPP;
+			goto out;
+		}
+
+		idx = NL80211_ATTR_WIPHY_ANTENNA_GAIN;
+		dbi = nla_get_u32(info->attrs[idx]);
+
+		result = rdev->ops->set_antenna_gain(&rdev->wiphy, dbi);
+		if (result)
+			goto out;
 	}
 
 	if (info->attrs[NL80211_ATTR_WIPHY_TX_POWER_SETTING]) {

@@ -3561,6 +3561,19 @@ static int ieee80211_get_tx_power(struct wiphy *wiphy,
 	return 0;
 }
 
+static int ieee80211_set_antenna_gain(struct wiphy *wiphy, int dbi)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+
+	if (dbi < 0)
+		return -EINVAL;
+
+	local->user_antenna_gain = dbi;
+	ieee80211_hw_config(local, 0);
+
+	return 0;
+}
+
 static void ieee80211_rfkill_poll(struct wiphy *wiphy)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
@@ -5914,6 +5927,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_wiphy_params = ieee80211_set_wiphy_params,
 	.set_tx_power = ieee80211_set_tx_power,
 	.get_tx_power = ieee80211_get_tx_power,
+	.set_antenna_gain = ieee80211_set_antenna_gain,
 	.rfkill_poll = ieee80211_rfkill_poll,
 	CFG80211_TESTMODE_CMD(ieee80211_testmode_cmd)
 	CFG80211_TESTMODE_DUMP(ieee80211_testmode_dump)

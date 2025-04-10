@@ -1659,6 +1659,7 @@ struct ieee80211_local {
 	int dynamic_ps_forced_timeout;
 
 	int user_power_level; /* in dBm, for all interfaces */
+	int user_antenna_gain; /* in dBi */
 
 	struct work_struct restart_work;
 
