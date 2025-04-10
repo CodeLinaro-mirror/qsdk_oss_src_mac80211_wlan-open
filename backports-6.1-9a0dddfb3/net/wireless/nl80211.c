@@ -9905,6 +9905,7 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	struct nlattr *attr;
 	struct wiphy *wiphy;
 	int err, tmp, n_ssids = 0, n_channels = 0, i;
+	s8 hw_idx = -1;
 	size_t ie_len, size;
 	size_t ssids_offset, ie_offset;
 	bool chandef_found = false;
@@ -10003,6 +10004,11 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 				continue;
 
 			request->channels[i] = chan;
+
+			hw_idx = cfg80211_get_hw_idx_by_chan(wiphy, chan);
+			if (hw_idx >= 0)
+				request->hw_idx = hw_idx;
+
 			i++;
 		}
 	} else if (!chandef_found) {
@@ -10024,6 +10030,11 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 					continue;
 
 				request->channels[i] = chan;
+
+				hw_idx = cfg80211_get_hw_idx_by_chan(wiphy, chan);
+				if (hw_idx >= 0)
+					request->hw_idx = hw_idx;
+
 				i++;
 			}
 		}

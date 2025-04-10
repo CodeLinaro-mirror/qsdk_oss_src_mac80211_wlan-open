@@ -2613,37 +2613,26 @@ bool cfg80211_per_hw_iface_comb_advertised(struct wiphy *wiphy)
 }
 EXPORT_SYMBOL(cfg80211_per_hw_iface_comb_advertised);
 
-static bool
-cfg80211_chan_supported_by_sub_hw(struct ieee80211_chans_per_hw *hw_chans,
-				  const struct cfg80211_chan_def *chandef)
-{
- 	int i;
-
-  	for (i = 0; i < hw_chans->n_chans; i++)
-   		if (chandef->chan->center_freq ==
-		    hw_chans->chans[i].center_freq)
-		 	return true;
-
-	return false;
-}
-
 int
 cfg80211_get_hw_idx_by_chan(struct wiphy *wiphy,
-     			    const struct cfg80211_chan_def *chandef)
+			    const struct ieee80211_channel *chan)
 {
- 	int i;
+	const struct wiphy_radio_freq_range *freq_range;
+ 	int i, j;
 
-  	if (!chandef)
+  	if (!chan)
    		return -1;
 
-    	if (!cfg80211_chandef_valid(chandef))
-     		return -1;
-
-      	for (i = 0; i < wiphy->num_hw; i++) {
-       		if (cfg80211_chan_supported_by_sub_hw(wiphy->hw_chans[i],
-					chandef))
- 			return i;
-  	}
+	for (i = 0; i < wiphy->n_radio; i++) {
+		freq_range = wiphy->radio[i].freq_range;
+		if (freq_range) {
+			for (j = 0; j < wiphy->radio[i].n_freq_range; j++) {
+				if (MHZ_TO_KHZ(chan->center_freq) >= freq_range[j].start_freq &&
+				    MHZ_TO_KHZ(chan->center_freq) <= freq_range[j].end_freq)
+					return i;
+			}
+		}
+	}
 
 	return -1;
 }
@@ -2701,8 +2690,9 @@ int cfg80211_iter_combinations(struct wiphy *wiphy,
  		if (!num_per_hw_ifaces)
   			return -ENOMEM;
 
-		hw_chan_idx = cfg80211_get_hw_idx_by_chan(wiphy,
-				params->chandef);
+		if (cfg80211_chandef_valid(params->chandef))
+			hw_chan_idx = cfg80211_get_hw_idx_by_chan(wiphy,
+								  params->chandef->chan);
  	}
 
 	for (iftype = 0; iftype < NUM_NL80211_IFTYPES; iftype++) {

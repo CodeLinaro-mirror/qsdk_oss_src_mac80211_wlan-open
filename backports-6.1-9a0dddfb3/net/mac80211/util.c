@@ -4260,9 +4260,9 @@ ieee80211_get_per_hw_sdata_active_iface(struct ieee80211_sub_if_data *sdata,
 			ctx = ctx->replace_ctx;
 
  		idx = -1;
-  		if (ctx)
+  		if (ctx && cfg80211_chandef_valid(&ctx->conf.def))
    			idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy,
-					&ctx->conf.def);
+							  ctx->conf.def.chan);
 
  		if (idx >= 0)
   			params->per_hw[idx].iftype_num[sdata->wdev.iftype]++;
@@ -4494,7 +4494,7 @@ ieee80211_max_num_channels_hw_list(struct ieee80211_local *local,
 
 	if (link_sdata && cfg80211_chandef_valid(chandef)) {
 		enum nl80211_iftype iftype = link_sdata->wdev.iftype;
-		hchan_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy, chandef);
+		hchan_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy, chandef->chan);
 		if (hchan_idx >= 0) {
 			params.per_hw[hchan_idx].num_different_channels = 1;
 			if (iftype != NL80211_IFTYPE_UNSPECIFIED) {
@@ -4511,7 +4511,7 @@ ieee80211_max_num_channels_hw_list(struct ieee80211_local *local,
        		if (WARN_ON(!cfg80211_chandef_valid(&ctx->conf.def)))
        			continue;
        		hchan_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy,
-							&ctx->conf.def);
+							ctx->conf.def.chan);
 		if (WARN_ON(hchan_idx < 0))
 			continue;
 

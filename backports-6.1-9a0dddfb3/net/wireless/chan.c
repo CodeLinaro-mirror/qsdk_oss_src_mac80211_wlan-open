@@ -351,6 +351,9 @@ bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef)
 	u32 control_freq, oper_freq;
 	int oper_width, control_width;
 
+	if (!chandef)
+		return false;
+
 	if (!chandef->chan)
 		return false;
 

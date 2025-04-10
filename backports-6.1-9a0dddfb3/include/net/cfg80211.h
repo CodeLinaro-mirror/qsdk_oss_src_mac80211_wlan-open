@@ -2831,6 +2831,7 @@ struct cfg80211_scan_request {
 	u32 n_6ghz_params;
 	struct cfg80211_scan_6ghz_params *scan_6ghz_params;
 	s8 tsf_report_link_id;
+	u8 hw_idx;
 
 	/* keep last */
 	struct ieee80211_channel *channels[] __counted_by(n_channels);
@@ -9693,14 +9694,13 @@ bool cfg80211_per_hw_iface_comb_advertised(struct wiphy *wiphy);
  * cfg80211_get_hw_idx_by_chan - get the hw index by the channel
  *
  * @wiphy: the wiphy
- * @chandef: channel definition for which the supported hw index is
- *     required
+ * @chan: channel for which the supported hw index is required
  *
  * returns -1 in case the channel is not supported by any of the constituent
  *     hw
  */
 int cfg80211_get_hw_idx_by_chan(struct wiphy *wiphy,
-				const struct cfg80211_chan_def *chandef);
+				const struct ieee80211_channel *chan);
 
 /**
  * cfg80211_stop_iface - trigger interface disconnection

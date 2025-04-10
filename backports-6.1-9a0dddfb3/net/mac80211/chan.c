@@ -55,7 +55,7 @@ static int ieee80211_num_chanctx(struct ieee80211_local *local,
 	int hw_idx = -1, ctx_idx;
 
 	if (cfg80211_chandef_valid(chandef))
-		hw_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy, chandef);
+		hw_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy, chandef->chan);
 
        	list_for_each_entry(ctx, &local->chanctx_list, list) {
 		if (hw_idx < 0)
@@ -63,7 +63,7 @@ static int ieee80211_num_chanctx(struct ieee80211_local *local,
 		else {
 			if (cfg80211_chandef_valid(&ctx->conf.def)) {
 				ctx_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy,
-								      &ctx->conf.def);
+								      ctx->conf.def.chan);
 				if (ctx_idx == hw_idx)
 					num++;
 			}
@@ -654,15 +654,22 @@ ieee80211_find_chanctx(struct ieee80211_local *local,
 	return NULL;
 }
 
-bool ieee80211_is_radar_required(struct ieee80211_local *local)
+bool ieee80211_is_radar_required(struct ieee80211_local *local,
+				 struct cfg80211_scan_request *req)
 {
 	struct ieee80211_link_data *link;
+	struct wiphy *wiphy = local->hw.wiphy;
+	s8 hw_idx;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
 	for_each_sdata_link(local, link) {
-		if (link->radar_required)
-			return true;
+		if (link->radar_required) {
+			struct ieee80211_channel *chan = link->conf->chanreq.oper.chan;
+			hw_idx = cfg80211_get_hw_idx_by_chan(wiphy, chan);
+			if (hw_idx == req->hw_idx)
+				return true;
+		}
 	}
 
 	return false;

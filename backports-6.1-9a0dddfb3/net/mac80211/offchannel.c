@@ -571,6 +571,7 @@ static int ieee80211_start_roc_work(struct ieee80211_local *local,
 	struct ieee80211_roc_work *roc, *tmp;
 	bool queued = false, combine_started = true;
 	int ret;
+	struct cfg80211_scan_request *req = local->scan_req;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -619,7 +620,7 @@ static int ieee80211_start_roc_work(struct ieee80211_local *local,
 
 	/* if there's no need to queue, handle it immediately */
 	if (list_empty(&local->roc_list) &&
-	    !local->scanning && !ieee80211_is_radar_required(local)) {
+	    !local->scanning && !ieee80211_is_radar_required(local, req)) {
 		/* if not HW assist, just queue & schedule work */
 		if (!local->ops->remain_on_channel) {
 			list_add_tail(&roc->list, &local->roc_list);
