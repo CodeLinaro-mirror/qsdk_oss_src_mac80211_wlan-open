@@ -982,6 +982,17 @@ void cfg80211_chandef_create(struct cfg80211_chan_def *chandef,
 			     struct ieee80211_channel *channel,
 			     enum nl80211_channel_type chantype);
 
+/**
+ * cfg80211_channel_identical - check if two channel definitions are identical
+ *                     for 6 GHz band alone check center_freq as they have
+ *                     different power modes.
+ * @channel1: first channel definition
+ * @channel2: second channel definition
+ *
+ * Return: %true if the channels defined by the channel definitions are
+ * identical except power related settings, %false otherwise.
+ */
+
 static inline bool
 cfg80211_channel_identical(struct ieee80211_channel *channel1,
 			   struct ieee80211_channel *channel2)
@@ -1014,7 +1025,8 @@ static inline bool
 cfg80211_chandef_identical(const struct cfg80211_chan_def *chandef1,
 			   const struct cfg80211_chan_def *chandef2)
 {
-	return (chandef1->chan == chandef2->chan &&
+	return (cfg80211_channel_identical(chandef1->chan,
+					   chandef2->chan) &&
 		chandef1->width == chandef2->width &&
 		chandef1->center_freq1 == chandef2->center_freq1 &&
 		chandef1->freq1_offset == chandef2->freq1_offset &&
