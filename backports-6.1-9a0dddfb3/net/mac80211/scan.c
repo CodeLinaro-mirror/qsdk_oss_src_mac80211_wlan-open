@@ -481,6 +481,12 @@ static void __ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 
 	synchronize_rcu();
 
+	atomic_sub(sizeof(*local->hw_scan_req) +
+		   scan_req->n_channels *
+		   sizeof(scan_req->channels[0]) +
+		   local->hw_scan_ies_bufsize,
+		   &local->memory_stats.malloc_size);
+
 	if (scan_req != local->int_scan_req) {
 		local->scan_info.aborted = aborted;
 		cfg80211_scan_done(scan_req, &local->scan_info);
@@ -756,6 +762,12 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 		if (!local->hw_scan_req)
 			return -ENOMEM;
 
+		atomic_add(sizeof(*local->hw_scan_req) +
+			   req->n_channels *
+			   sizeof(req->channels[0]) +
+			   local->hw_scan_ies_bufsize,
+			   &local->memory_stats.malloc_size);
+
 		local->hw_scan_req->req.chandef = req->chandef;
 		local->hw_scan_req->req.ssids = req->ssids;
 		local->hw_scan_req->req.n_ssids = req->n_ssids;
@@ -854,6 +866,12 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 	}
 
 	if (rc) {
+		atomic_sub(sizeof(*local->hw_scan_req) +
+			   req->n_channels *
+			   sizeof(req->channels[0]) +
+			   local->hw_scan_ies_bufsize,
+			   &local->memory_stats.malloc_size);
+
 		kfree(local->hw_scan_req);
 		local->hw_scan_req = NULL;
 		local->scanning = 0;

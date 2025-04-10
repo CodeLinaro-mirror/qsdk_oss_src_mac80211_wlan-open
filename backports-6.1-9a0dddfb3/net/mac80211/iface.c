@@ -1183,6 +1183,9 @@ int ieee80211_add_virtual_monitor(struct ieee80211_local *local)
 		return ret;
 	}
 
+	atomic_add(sizeof(*sdata) + local->hw.vif_data_size,
+		   &local->memory_stats.malloc_size);
+
 	skb_queue_head_init(&sdata->skb_queue);
 	skb_queue_head_init(&sdata->status_queue);
 	wiphy_work_init(&sdata->work, ieee80211_iface_work);
@@ -1208,6 +1211,9 @@ void ieee80211_del_virtual_monitor(struct ieee80211_local *local)
 		mutex_unlock(&local->iflist_mtx);
 		return;
 	}
+
+	atomic_sub(sizeof(*sdata) + local->hw.vif_data_size,
+		   &local->memory_stats.malloc_size);
 
 	RCU_INIT_POINTER(local->monitor_sdata, NULL);
 	mutex_unlock(&local->iflist_mtx);

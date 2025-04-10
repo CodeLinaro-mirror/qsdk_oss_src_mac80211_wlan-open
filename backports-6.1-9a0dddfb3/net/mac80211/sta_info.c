@@ -401,6 +401,7 @@ static void sta_remove_link(struct sta_info *sta, unsigned int link_id,
  */
 void sta_info_free(struct ieee80211_local *local, struct sta_info *sta)
 {
+	struct ieee80211_hw *hw = &local->hw;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(sta->link); i++) {
@@ -439,9 +440,13 @@ void sta_info_free(struct ieee80211_local *local, struct sta_info *sta)
 	kfree(to_txq_info(sta->sta.txq[0]));
 	kfree(rcu_dereference_raw(sta->sta.rates));
 #ifdef CPTCFG_MAC80211_MESH
+	if (sta->mesh)
+		atomic_sub(sizeof(*sta->mesh),
+			   &local->memory_stats.malloc_size);
 	kfree(sta->mesh);
 #endif
-
+	atomic_sub(sizeof(*sta) + hw->sta_data_size,
+		   &local->memory_stats.malloc_size);
 	sta_info_free_link(&sta->deflink);
 	kfree(sta);
 }
@@ -566,6 +571,9 @@ __sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 	sta->local = local;
 	sta->sdata = sdata;
 
+	atomic_add(sizeof(*sta) + hw->sta_data_size,
+		   &local->memory_stats.malloc_size);
+
 	if (sta_info_alloc_link(local, &sta->deflink, gfp))
 		goto free;
 
@@ -588,6 +596,8 @@ __sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 		sta->mesh = kzalloc(sizeof(*sta->mesh), gfp);
 		if (!sta->mesh)
 			goto free;
+		atomic_add(sizeof(*sta->mesh),
+			   &local->memory_stats.malloc_size);
 		sta->mesh->plink_sta = sta;
 		spin_lock_init(&sta->mesh->plink_lock);
 		if (!sdata->u.mesh.user_mpm)
@@ -717,8 +727,12 @@ free_txq:
 free:
 	sta_info_free_link(&sta->deflink);
 #ifdef CPTCFG_MAC80211_MESH
+	atomic_sub(sizeof(*sta->mesh),
+		   &local->memory_stats.malloc_size);
 	kfree(sta->mesh);
 #endif
+	atomic_sub(sizeof(*sta) + hw->sta_data_size,
+		   &local->memory_stats.malloc_size);
 	kfree(sta);
 	return NULL;
 }

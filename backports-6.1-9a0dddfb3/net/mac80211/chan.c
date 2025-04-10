@@ -692,6 +692,9 @@ ieee80211_alloc_chanctx(struct ieee80211_local *local,
 	if (!ctx)
 		return NULL;
 
+	atomic_add(sizeof(*ctx) + local->hw.chanctx_data_size,
+		   &local->memory_stats.malloc_size);
+
 	INIT_LIST_HEAD(&ctx->assigned_links);
 	INIT_LIST_HEAD(&ctx->reserved_links);
 	ctx->conf.def = chanreq->oper;
@@ -749,6 +752,8 @@ ieee80211_new_chanctx(struct ieee80211_local *local,
 
 	err = ieee80211_add_chanctx(local, ctx);
 	if (!assign_on_failure && err) {
+		atomic_sub(sizeof(*ctx) + local->hw.chanctx_data_size,
+			   &local->memory_stats.malloc_size);
 		kfree(ctx);
 		return ERR_PTR(err);
 	}
@@ -783,6 +788,8 @@ static void ieee80211_free_chanctx(struct ieee80211_local *local,
 
 	list_del_rcu(&ctx->list);
 	ieee80211_del_chanctx(local, ctx, skip_idle_recalc);
+	atomic_sub(sizeof(*ctx) + local->hw.chanctx_data_size,
+		   &local->memory_stats.malloc_size);
 	kfree_rcu(ctx, rcu_head);
 }
 
@@ -1494,6 +1501,9 @@ static int ieee80211_chsw_switch_vifs(struct ieee80211_local *local,
 	if (!vif_chsw)
 		return -ENOMEM;
 
+	atomic_add(sizeof(vif_chsw[0]) * n_vifs,
+		   &local->memory_stats.malloc_size);
+
 	i = 0;
 	list_for_each_entry(ctx, &local->chanctx_list, list) {
 		if (ctx->replace_state != IEEE80211_CHANCTX_REPLACES_OTHER)
@@ -1523,6 +1533,8 @@ static int ieee80211_chsw_switch_vifs(struct ieee80211_local *local,
 				     CHANCTX_SWMODE_SWAP_CONTEXTS);
 
 out:
+	atomic_sub(sizeof(vif_chsw[0]) * n_vifs,
+		   &local->memory_stats.malloc_size);
 	kfree(vif_chsw);
 	return err;
 }

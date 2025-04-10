@@ -79,6 +79,8 @@ DEBUGFS_READONLY_FILE(wep_iv, "%#08x",
 		      local->wep_iv & 0xffffff);
 DEBUGFS_READONLY_FILE(rate_ctrl_alg, "%s",
 	local->rate_ctrl ? local->rate_ctrl->ops->name : "hw/driver");
+DEBUGFS_READONLY_FILE(memory_stats, "memory stats: malloc_size: %u",
+		      atomic_read(&local->memory_stats.malloc_size));
 
 static ssize_t aqm_read(struct file *file,
 			char __user *user_buf,
@@ -762,6 +764,8 @@ void debugfs_hw_add(struct ieee80211_local *local)
 			   phyd, &local->aql_threshold);
 
 	statsd = debugfs_create_dir("statistics", phyd);
+
+	DEBUGFS_ADD(memory_stats);
 
 #ifdef CPTCFG_MAC80211_DEBUG_COUNTERS
 	DEBUGFS_STATS_ADD(dot11TransmittedFragmentCount);

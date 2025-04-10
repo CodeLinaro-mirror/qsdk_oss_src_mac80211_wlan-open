@@ -1362,6 +1362,10 @@ enum mac80211_scan_state {
 
 DECLARE_STATIC_KEY_FALSE(aql_disable);
 
+struct mac80211_memory_stats {
+	atomic_t malloc_size;
+};
+
 struct ieee80211_local {
 	/* embed the driver visible part.
 	 * don't cast (use the static inlines below), but we keep
@@ -1638,6 +1642,8 @@ struct ieee80211_local {
 	/* virtual monitor interface */
 	struct ieee80211_sub_if_data __rcu *monitor_sdata;
 	struct ieee80211_chan_req monitor_chanreq;
+
+	struct mac80211_memory_stats memory_stats;
 
 	/* extended capabilities provided by mac80211 */
 	u8 ext_capa[8];
