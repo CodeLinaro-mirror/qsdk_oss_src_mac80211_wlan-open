@@ -2137,6 +2137,11 @@ struct cfg80211_tid_stats {
 
 #define IEEE80211_MAX_CHAINS	4
 
+struct link_station_info {
+	u8 addr[ETH_ALEN] __aligned(2);
+	/* TODO: packet stats */
+};
+
 /**
  * struct station_info - station information
  *
@@ -2286,6 +2291,8 @@ struct station_info {
 	u8 mld_addr[ETH_ALEN] __aligned(2);
 	const u8 *assoc_resp_ies;
 	size_t assoc_resp_ies_len;
+	u16 valid_links;
+	struct link_station_info links[IEEE80211_MLD_MAX_NUM_LINKS];
 };
 
 /**
