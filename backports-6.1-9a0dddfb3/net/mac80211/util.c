@@ -3189,6 +3189,17 @@ void ieee80211_chandef_eht_oper(const struct ieee80211_eht_operation_info *info,
 		}
 		break;
 	}
+
+	if (chandef->width >= NL80211_CHAN_WIDTH_80 &&
+	    IEEE80211_EHT_OPER_DISABLED_SUBCHANNEL_BITMAP_PRESENT) {
+		chandef->punctured = (info->optional[4] << 8) |
+				      info->optional[3];
+
+		if (!valid_puncturing_bitmap(chandef)) {
+			chandef->punctured = 0;
+			return;
+		}
+	}
 }
 
 struct ieee80211_channel

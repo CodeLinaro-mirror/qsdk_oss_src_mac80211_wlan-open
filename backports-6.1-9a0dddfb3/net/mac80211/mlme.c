@@ -167,6 +167,9 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 	struct cfg80211_chan_def vht_chandef;
 	bool no_vht = false;
 	u32 ht_cfreq;
+	const struct ieee80211_sta_eht_cap *eht_cap;
+	const struct ieee80211_sta_he_cap *he_cap;
+	enum nl80211_iftype iftype = ieee80211_vif_type_p2p(&sdata->vif);
 
 	*chandef = (struct cfg80211_chan_def) {
 		.chan = channel,
@@ -317,9 +320,31 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 	 */
 	if (eht_oper->params & IEEE80211_EHT_OPER_INFO_PRESENT) {
 		struct cfg80211_chan_def eht_chandef = *chandef;
+		bool support_160, support_320;
+		u8 he_phy_cap, eht_phy_cap;
+
+		he_cap = ieee80211_get_he_iftype_cap(sband, iftype);
+		if (!he_cap) {
+			sdata_info(sdata, "Missing iftype sband data/HE cap, disabling HE/EHT");
+			return IEEE80211_CONN_MODE_HT;
+		}
+
+		eht_cap = ieee80211_get_eht_iftype_cap(sband, iftype);
+		if (!eht_cap) {
+			sdata_info(sdata, "Missing iftype sband data/EHT cap, disabling EHT");
+			return IEEE80211_CONN_MODE_HE;
+		}
+
+		eht_phy_cap = eht_cap->eht_cap_elem.phy_cap_info[0];
+		he_phy_cap = he_cap->he_cap_elem.phy_cap_info[0];
+		support_320 =
+			eht_phy_cap & IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ;
+		support_160 =
+			he_phy_cap &
+			IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G;
 
 		ieee80211_chandef_eht_oper((const void *)eht_oper->optional,
-					   true, true,
+					   support_160, support_320,
 					   &eht_chandef);
 
 		eht_chandef.punctured =
