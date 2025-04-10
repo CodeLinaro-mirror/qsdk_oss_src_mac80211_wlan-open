@@ -1720,7 +1720,6 @@ void ieee80211_sta_debugfs_add(struct sta_info *sta)
 	DEBUGFS_ADD(num_ps_buf_frames);
 	DEBUGFS_ADD(last_seq_ctrl);
 	DEBUGFS_ADD(agg_status);
-	DEBUGFS_ADD(eht_capa);
 	DEBUGFS_ADD(reset_mac80211_tx_pkts_flow);
 	DEBUGFS_ADD(reset_mac80211_rx_pkts_flow);
 	DEBUGFS_ADD(mac80211_tx_pkts_flow);
