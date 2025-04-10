@@ -906,6 +906,8 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_6G_REG_POWER_MODE] = NLA_POLICY_RANGE(NLA_U8, 0, 2),
 	[NL80211_ATTR_AP_PS] = NLA_POLICY_MAX(NLA_U8, 1),
 	[NL80211_ATTR_RADAR_BITMAP] = { .type = NLA_U16 },
+	[NL80211_ATTR_EML_CAPABILITY] = { .type = NLA_U16 },
+	[NL80211_ATTR_MLD_CAPA_AND_OPS] = { .type = NLA_U16 },
 };
 
 /* policy for the key attributes */
@@ -7987,6 +7989,13 @@ static int nl80211_set_station(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		return err;
 
+	if (info->attrs[NL80211_ATTR_EML_CAPABILITY])
+		params.link_sta_params.eml_cap =
+			nla_get_u16(info->attrs[NL80211_ATTR_EML_CAPABILITY]);
+
+	if (info->attrs[NL80211_ATTR_MLD_CAPA_AND_OPS])
+		params.link_sta_params.mld_oper =
+			nla_get_u16(info->attrs[NL80211_ATTR_MLD_CAPA_AND_OPS]);
 	/* Include parameters for TDLS peer (will check later) */
 	err = nl80211_set_station_tdls(info, &params);
 	if (err)

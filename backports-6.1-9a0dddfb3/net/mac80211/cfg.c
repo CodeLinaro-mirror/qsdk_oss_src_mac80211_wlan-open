@@ -2047,6 +2047,7 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 
 	mask = params->sta_flags_mask;
 	set = params->sta_flags_set;
+	sta->sta.eml_cap = params->link_sta_params.eml_cap;
 
 	if (ieee80211_vif_is_mesh(&sdata->vif)) {
 		/*

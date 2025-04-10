@@ -2587,6 +2587,8 @@ struct ieee80211_link_sta {
  *	by the AP.
  * @valid_links: bitmap of valid links, or 0 for non-MLO
  * @spp_amsdu: indicates whether the STA uses SPP A-MSDU or not.
+ * @eml_cap: EML capabilities of station
+ * @mld_cap_op: MLD capabilites and operation field of station
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2602,7 +2604,6 @@ struct ieee80211_sta {
 	bool mlo;
 	bool spp_amsdu;
 	u8 max_amsdu_subframes;
-	u16 eml_cap;
 
 	struct ieee80211_sta_aggregates *cur;
 
@@ -2614,6 +2615,9 @@ struct ieee80211_sta {
 	u16 valid_links;
 	struct ieee80211_link_sta deflink;
 	struct ieee80211_link_sta __rcu *link[IEEE80211_MLD_MAX_NUM_LINKS];
+
+	u16 eml_cap;
+	u16 mld_cap_op;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
