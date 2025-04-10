@@ -6912,6 +6912,15 @@ void ieee80211_radar_detected(struct ieee80211_hw *hw,
 			      struct ieee80211_chanctx_conf *chanctx_conf);
 
 /**
+ * ieee80211_radar_detected_bitmap - inform that a radar was detected
+ * 	with bitmap
+ * @hw: pointer as obtained from ieee80211_alloc_hw()
+ * @radar_bitmap: denotes the bitmap of radar.
+ */
+void ieee80211_radar_detected_bitmap(struct ieee80211_hw *hw, u16 radar_bitmap);
+
+
+/**
  * ieee80211_chswitch_done - Complete channel switch process
  * @vif: &struct ieee80211_vif pointer from the add_interface callback.
  * @success: make the channel switch successful or not

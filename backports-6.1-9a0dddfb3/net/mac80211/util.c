@@ -885,6 +885,23 @@ struct wireless_dev *ieee80211_vif_to_wdev_relaxed(struct ieee80211_vif *vif)
 }
 EXPORT_SYMBOL(ieee80211_vif_to_wdev_relaxed);
 
+void ieee80211_radar_detected_bitmap(struct ieee80211_hw *hw, u16 radar_bitmap)
+{
+	struct ieee80211_local *local = hw_to_local(hw);
+	struct channel_radar_info *radar_info;
+
+	radar_info = kzalloc(sizeof(*radar_info), GFP_ATOMIC);
+	if (!radar_info)
+		return;
+
+	INIT_LIST_HEAD(&radar_info->list);
+	radar_info->radar_bitmap = radar_bitmap;
+
+	list_add_tail(&radar_info->list, &local->radar_info_list);
+	wiphy_work_queue(hw->wiphy, &local->radar_detected_work);
+}
+EXPORT_SYMBOL(ieee80211_radar_detected_bitmap);
+
 void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap)
 {
        struct ieee80211_local *local = hw_to_local(hw);
@@ -3683,11 +3700,10 @@ void ieee80211_awgn_detected_work(struct work_struct *work)
 				    local->chan_bw_interference_bitmap);
 }
 
-void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy,
-				       struct wiphy_work *work)
+static void
+ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
+                                       u16 radar_bitmap)
 {
-	struct ieee80211_local *local =
-		container_of(work, struct ieee80211_local, radar_detected_work);
 	struct cfg80211_chan_def chandef;
 	struct ieee80211_chanctx *ctx;
 
@@ -3704,7 +3720,12 @@ void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy,
 
 		chandef = ctx->conf.def;
 
+		wiphy_lock(local->hw.wiphy);
 		ieee80211_dfs_cac_cancel(local, ctx);
+		wiphy_unlock(local->hw.wiphy);
+
+		chandef.radar_bitmap = radar_bitmap;
+
 		cfg80211_radar_event(local->hw.wiphy, &chandef, GFP_KERNEL);
 	}
 }
@@ -3726,6 +3747,27 @@ ieee80211_radar_mark_chan_ctx_iterator(struct ieee80211_hw *hw,
 
 	ctx->radar_detected = true;
 }
+
+void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ieee80211_local *local =
+		container_of(work, struct ieee80211_local, radar_detected_work);
+	struct channel_radar_info *radar_info, *temp;
+	u16 radar_bitmap;
+
+	if (list_empty(&local->radar_info_list))
+		return ieee80211_dfs_radar_detected_processing(local, 0);
+
+	list_for_each_entry_safe(radar_info, temp, &local->radar_info_list, list) {
+		radar_bitmap = radar_info->radar_bitmap;
+
+		ieee80211_dfs_radar_detected_processing(local, radar_bitmap);
+
+		list_del(&radar_info->list);
+		kfree(radar_info);
+	}
+}
+
 
 void ieee80211_radar_detected(struct ieee80211_hw *hw,
 			      struct ieee80211_chanctx_conf *chanctx_conf)

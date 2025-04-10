@@ -957,6 +957,7 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	wiphy->extended_capabilities_len =
 		ARRAY_SIZE(local->ext_capa);
 
+	INIT_LIST_HEAD(&local->radar_info_list);
 	INIT_LIST_HEAD(&local->interfaces);
 	INIT_LIST_HEAD(&local->mon_list);
 

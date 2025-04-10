@@ -1369,6 +1369,11 @@ struct mac80211_memory_stats {
 	atomic_t malloc_size;
 };
 
+struct channel_radar_info {
+	struct list_head list;
+	u16 radar_bitmap;
+};
+
 struct ieee80211_local {
 	/* embed the driver visible part.
 	 * don't cast (use the static inlines below), but we keep
@@ -1470,6 +1475,7 @@ struct ieee80211_local {
 	bool wowlan;
 
 	struct wiphy_work radar_detected_work;
+	struct list_head radar_info_list;
 
 	/* number of RX chains the hardware has */
 	u8 rx_chains;
@@ -2754,8 +2760,7 @@ bool ieee80211_is_radar_required(struct ieee80211_local *local);
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 			      struct ieee80211_chanctx *chanctx);
-void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy,
-				       struct wiphy_work *work);
+void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_awgn_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings);
