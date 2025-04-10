@@ -1543,7 +1543,7 @@ void cfg80211_leave(struct cfg80211_registered_device *rdev,
 	struct cfg80211_sched_scan_request *pos, *tmp;
 
 	lockdep_assert_held(&rdev->wiphy.mtx);
-
+	wdev->is_netdev_going_down = true;
 	cfg80211_pmsr_wdev_down(wdev);
 
 	cfg80211_stop_background_radar_detection(wdev);
@@ -1645,6 +1645,7 @@ void cfg80211_init_wdev(struct wireless_dev *wdev)
 		wdev->ps = false;
 	/* allow mac80211 to determine the timeout */
 	wdev->ps_timeout = -1;
+	wdev->is_netdev_going_down = false;
 
 	wdev->radio_mask = BIT(wdev->wiphy->n_radio) - 1;
 

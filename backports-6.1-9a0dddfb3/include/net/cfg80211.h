@@ -6810,6 +6810,7 @@ struct wireless_dev {
 	u32 radio_mask;
 	u8 reg_6g_power_mode;
 	bool critical_update;
+	bool is_netdev_going_down; /*Indicates netdev going down - wdev specific*/
 };
 
 static inline const u8 *wdev_address(struct wireless_dev *wdev)

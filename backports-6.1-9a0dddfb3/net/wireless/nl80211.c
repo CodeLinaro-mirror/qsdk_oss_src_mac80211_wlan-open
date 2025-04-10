@@ -6947,6 +6947,7 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 			wdev->conn_owner_nlportid = info->snd_portid;
 
 		wdev->links[link_id].ap.is_going_down = false;
+		wdev->is_netdev_going_down = false;
 		nl80211_send_ap_started(wdev, link_id);
 	}
 out:

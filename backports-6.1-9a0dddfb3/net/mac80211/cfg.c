@@ -4228,6 +4228,14 @@ void ieee80211_csa_finalize_work(struct wiphy *wiphy, struct wiphy_work *work)
 	if (wdev->links[link->link_id].ap.is_going_down)
 		return;
 
+	/* When a link is brought down, at times the worker threads for other
+	 * link might not see the is_going_down bit to true and
+	 * end up sleeping on the sdata_lock. Check for
+	 * wdev flag as well.
+	 */
+	if (wdev->is_netdev_going_down)
+		return;
+
 	/* AP might have been stopped while waiting for the lock. */
 	if (!link->conf->csa_active)
 		return;
@@ -5339,6 +5347,13 @@ void ieee80211_color_change_finalize_work(struct wiphy *wiphy,
 
 	if (wdev->links[link->link_id].ap.is_going_down)
 		return;
+	/* When a link is brought down, at times the worker threads for other
+	 * link might not see the is_going_down bit to true and
+	 * end up sleeping on the sdata_lock. Check for
+	 * wdev flag as well.
+	 */
+	if (wdev->is_netdev_going_down)
+		return;
 
 	/* AP might have been stopped while waiting for the lock. */
 	if (!link_conf->color_change_active)
@@ -5357,6 +5372,15 @@ void ieee80211_color_collision_detection_work(struct wiphy *wiphy,
 		container_of(work, struct ieee80211_link_data,
 			     color_collision_detect_work.work);
 	struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct wireless_dev *wdev = &sdata->wdev;
+
+	/* When a link is brought down, at times the worker threads for other
+	 * link might not see the is_going_down bit to true and
+	 * end up sleeping on the sdata_lock. Check for
+	 * wdev flag as well.
+	 */
+	if (wdev->is_netdev_going_down)
+		return;
 
 	cfg80211_obss_color_collision_notify(sdata->dev, link->color_bitmap,
 					     GFP_KERNEL, link->link_id);
