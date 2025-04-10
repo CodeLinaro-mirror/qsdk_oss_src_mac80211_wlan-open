@@ -6530,7 +6530,7 @@ static int nl80211_set_beacon(struct sk_buff *skb, struct genl_info *info)
 	unsigned int link_id = nl80211_link_id(info->attrs);
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
-	struct cfg80211_ap_update *params;
+	struct cfg80211_ap_settings *params;
 	struct nlattr *attr;
 	int err;
 

@@ -1564,7 +1564,7 @@ error:
 }
 
 static int ieee80211_change_beacon(struct wiphy *wiphy, struct net_device *dev,
-				   struct cfg80211_ap_update *params)
+				   struct cfg80211_ap_settings *params)
 
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
@@ -1613,6 +1613,24 @@ static int ieee80211_change_beacon(struct wiphy *wiphy, struct net_device *dev,
 	    beacon->he_bss_color.enabled != link_conf->he_bss_color.enabled) {
 		link_conf->he_bss_color.enabled = beacon->he_bss_color.enabled;
 		changed |= BSS_CHANGED_HE_BSS_COLOR;
+	}
+
+	if (params->fils_discovery.max_interval) {
+		err = ieee80211_set_fils_discovery(sdata,
+						   &params->fils_discovery,
+						   link, link_conf, &changed);
+		if (err < 0)
+			return err;
+		changed |= BSS_CHANGED_FILS_DISCOVERY;
+	}
+
+	if (params->unsol_bcast_probe_resp.interval) {
+		err = ieee80211_set_unsol_bcast_probe_resp(sdata,
+							   &params->unsol_bcast_probe_resp,
+							   link, link_conf, &changed);
+		if (err < 0)
+			return err;
+		changed |= BSS_CHANGED_UNSOL_BCAST_PROBE_RESP;
 	}
 
 	ieee80211_link_info_change_notify(sdata, link, changed);
