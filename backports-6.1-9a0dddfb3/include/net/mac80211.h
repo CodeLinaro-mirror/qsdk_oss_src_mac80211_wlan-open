@@ -2134,7 +2134,7 @@ struct ieee80211_vif {
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	int ppe_vp_num;
-	unsigned long ppe_vp_type;
+	u8 ppe_vp_type;
 #endif
 	bool is_roc;
 	/* must be last */
@@ -3977,6 +3977,7 @@ struct ieee80211_prep_tx_info {
 	int link_id;
 };
 
+#define MAC80211_INVALID_PPE_VP_NUM -1
 struct ieee80211_ppe_vp_ds_params {
 	struct net_device *dev;
 	int ppe_vp_profile_idx;

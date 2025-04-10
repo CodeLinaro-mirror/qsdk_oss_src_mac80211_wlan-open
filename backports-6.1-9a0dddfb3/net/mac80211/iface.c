@@ -1309,10 +1309,11 @@ static bool ieee80211_process_dst_ppe_vp(struct ppe_vp_cb_info *ppe_vp_info, voi
  * on failure returns -1;
  */
 static int ieee80211_ppe_vp_802_3_redir_vap(struct ieee80211_sub_if_data *sdata,
-					    struct net_device *dev)
+					    struct net_device *dev,
+					    int ppe_vp_type)
 {
 	struct ppe_vp_ai vpai;
-	int vp = -1;
+	int vp = MAC80211_INVALID_PPE_VP_NUM;
 
 	memset(&vpai, 0, sizeof(struct ppe_vp_ai));
 
@@ -1326,13 +1327,12 @@ static int ieee80211_ppe_vp_802_3_redir_vap(struct ieee80211_sub_if_data *sdata,
 		vpai.src_cb = NULL;
 		vpai.src_cb_data = NULL;
 		vpai.queue_num = 0;
-		sdata->vif.ppe_vp_type = PPE_VP_USER_TYPE_ACTIVE;
 	} else if (ppe_vp_rfs && sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
 		vpai.usr_type = PPE_VP_USER_TYPE_PASSIVE;
 		vpai.core_mask = 0x7;
-		sdata->vif.ppe_vp_type = PPE_VP_USER_TYPE_PASSIVE;
 	}
 
+	sdata->vif.ppe_vp_type = ppe_vp_type;
 	/* Allocate VP port here for PPE_VP mode or RFS mode for VLANs */
 	vp = ppe_vp_alloc(dev, &vpai);
 	if (vp <= 0)
@@ -1613,7 +1613,8 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	/* for PPE RFS, driver handles VP allocation for non VLAN interfaces */
 	if ((ppe_vp_accel || ppe_vp_rfs) && sdata->vif.ppe_vp_num != -1) {
-		vp = ieee80211_ppe_vp_802_3_redir_vap(sdata, dev);
+		vp = ieee80211_ppe_vp_802_3_redir_vap(sdata, dev,
+						      wdev->ppe_vp_type);
 		if (vp > 0) {
 			sdata->vif.ppe_vp_num = vp;
 			sdata_info(sdata, "Allocated vp:%d for device:%s\n",
