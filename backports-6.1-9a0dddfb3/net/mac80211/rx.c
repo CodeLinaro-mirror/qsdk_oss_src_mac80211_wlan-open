@@ -3314,9 +3314,15 @@ ieee80211_rx_h_data(struct ieee80211_rx_data *rx)
 	if (ieee80211_has_a4(hdr->frame_control) &&
 	    sdata->vif.type == NL80211_IFTYPE_AP) {
 		if (rx->sta &&
-		    !test_and_set_sta_flag(rx->sta, WLAN_STA_4ADDR_EVENT))
+		    !test_and_set_sta_flag(rx->sta, WLAN_STA_4ADDR_EVENT)) {
 			cfg80211_rx_unexpected_4addr_frame(
 				rx->sdata->dev, rx->sta->sta.addr, GFP_ATOMIC, rx->link_id);
+			if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_ENCAP_4ADDR) {
+				pr_warn("4addr non-null data frame: %d with frame_control: %x",
+					port_control, hdr->frame_control);
+				WARN_ON_ONCE(1);
+			}
+		}
 		return RX_DROP_MONITOR;
 	}
 
