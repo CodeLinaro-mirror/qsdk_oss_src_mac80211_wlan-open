@@ -4687,6 +4687,7 @@ struct ieee80211_ppe_vp_ds_params {
  *	a flexibility to init driver specific data at interface init time.
  * @deinit_interface: Called at the time of netdev deinit stage. This gives drivers
  *	a flexibility to deinit driver specific data at interface deinit time.
+ * @erp: Notifies the driver to start ErP enter/exit procedure or to send status.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5097,6 +5098,8 @@ struct ieee80211_ops {
 	int (*deinit_interface)(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct net_device *dev);
+	int (*erp)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+		   int link_id, struct cfg80211_erp_params *params);
 };
 
 /**

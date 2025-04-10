@@ -5893,6 +5893,21 @@ ieee80211_set_epcs(struct wiphy *wiphy, struct net_device *dev, bool enable)
 	return ieee80211_mgd_set_epcs(sdata, enable);
 }
 
+static int ieee80211_erp(struct wiphy *wiphy, struct wireless_dev *wdev,
+			 int link_id, struct cfg80211_erp_params *params)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	struct ieee80211_sub_if_data *sdata = NULL;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (wdev)
+		sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+
+	return drv_erp(local, sdata, link_id, params);
+
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -6012,4 +6027,5 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.get_radio_mask = ieee80211_get_radio_mask,
 	.assoc_ml_reconf = ieee80211_assoc_ml_reconf,
 	.set_epcs = ieee80211_set_epcs,
+	.erp = ieee80211_erp,
 };

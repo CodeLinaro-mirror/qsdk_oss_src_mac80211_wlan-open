@@ -3432,6 +3432,35 @@ TRACE_EVENT(drv_link_reconfig_remove,
 		__entry->link_id, le16_to_cpup((__le16 *)__get_dynamic_array(frame)),
 		__entry->count)
 );
+
+TRACE_EVENT(drv_erp,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 int link_id,
+		 struct cfg80211_erp_params *params),
+
+	TP_ARGS(local, sdata, link_id, params),
+
+	TP_STRUCT__entry(
+		LOCAL_ENTRY
+		__field(int, link_id)
+		__field(u32, cmd)
+		__field(u32, trigger)
+	),
+
+	TP_fast_assign(
+		LOCAL_ASSIGN;
+		__entry->link_id = link_id;
+		__entry->cmd = params->cmd;
+		__entry->trigger = params->trigger;
+	),
+
+	TP_printk(
+		LOCAL_PR_FMT ", cmd:%u link_id:%d trigger:%u",
+		LOCAL_PR_ARG, __entry->cmd, __entry->link_id, __entry->trigger
+	)
+);
+
 #endif /* !__MAC80211_DRIVER_TRACE || TRACE_HEADER_MULTI_READ */
 
 #undef TRACE_INCLUDE_PATH

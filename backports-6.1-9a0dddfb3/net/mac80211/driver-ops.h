@@ -1829,4 +1829,21 @@ drv_check_removed_link_is_primary(struct ieee80211_local *local,
 
 	return false;
 }
+
+static inline int drv_erp(struct ieee80211_local *local,
+				struct ieee80211_sub_if_data *sdata,
+				int link_id,
+				struct cfg80211_erp_params *params)
+{
+	int ret = -EOPNOTSUPP;
+
+	if (local->ops->erp) {
+		trace_drv_erp(local, sdata, link_id, params);
+		ret = local->ops->erp(&local->hw, sdata ? &sdata->vif : NULL,
+				      link_id, params);
+	}
+
+	trace_drv_return_int(local, ret);
+	return ret;
+}
 #endif /* __MAC80211_DRIVER_OPS */
