@@ -716,7 +716,7 @@ static ssize_t queues_read(struct file *file, char __user *user_buf,
 
 	spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
 	for (q = 0; q < local->hw.queues; q++)
-		res += sprintf(buf + res, "%02d: %#.8lx/%d\n", q,
+		res += snprintf(buf + res, sizeof(buf) + res, "%02d: %#.8lx/%d\n", q,
 				local->queue_stop_reasons[q],
 				skb_queue_len(&local->pending[q]));
 	spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
