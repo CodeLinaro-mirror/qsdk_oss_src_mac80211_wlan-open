@@ -5824,9 +5824,15 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 
 		mask->control[i].eht_gi = 0xFF;
 		mask->control[i].eht_ltf = 0xFF;
+
+		mask->control[i].legacy_mcs_changed = false;
+		mask->control[i].ht_mcs_changed = false;
+		mask->control[i].vht_mcs_changed = false;
+		mask->control[i].he_mcs_changed = false;
+		mask->control[i].he_ul_mcs_changed = false;
+		mask->control[i].eht_mcs_changed = false;
 	}
 
-	/* if no rates are given set it back to the defaults */
 	if (!attrs[attr])
 		goto out;
 
@@ -5854,6 +5860,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		if (err)
 			return err;
 		if (tb[NL80211_TXRATE_LEGACY]) {
+			mask->control[band].legacy_mcs_changed = true;
 			mask->control[band].legacy = rateset_to_mask(
 				sband,
 				nla_data(tb[NL80211_TXRATE_LEGACY]),
@@ -5863,6 +5870,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 				return -EINVAL;
 		}
 		if (tb[NL80211_TXRATE_HT]) {
+			mask->control[band].ht_mcs_changed = true;
 			if (!ht_rateset_to_mask(
 					sband,
 					nla_data(tb[NL80211_TXRATE_HT]),
@@ -5872,6 +5880,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		}
 
 		if (tb[NL80211_TXRATE_VHT]) {
+			mask->control[band].vht_mcs_changed = true;
 			if (!vht_set_mcs_mask(
 					sband,
 					nla_data(tb[NL80211_TXRATE_VHT]),
@@ -5892,6 +5901,9 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 				     link_id))
 			return -EINVAL;
 
+		if (tb[NL80211_TXRATE_HE])
+			mask->control[band].he_mcs_changed = true;
+
 		if (tb[NL80211_TXRATE_HE_GI])
 			mask->control[band].he_gi =
 				nla_get_u8(tb[NL80211_TXRATE_HE_GI]);
@@ -5900,6 +5912,7 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 				nla_get_u8(tb[NL80211_TXRATE_HE_LTF]);
 
 		if (tb[NL80211_TXRATE_HE_UL]) {
+			mask->control[band].he_ul_mcs_changed = true;
 			if (!he_set_mcs_mask(
 					info, wdev, sband,
 					nla_data(tb[NL80211_TXRATE_HE_UL]),
@@ -5913,6 +5926,9 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 				      nla_data(tb[NL80211_TXRATE_EHT]),
 				      mask->control[band].eht_mcs))
 			return -EINVAL;
+
+		if (tb[NL80211_TXRATE_EHT])
+			mask->control[band].eht_mcs_changed = true;
 
 		if (tb[NL80211_TXRATE_EHT_GI])
 			mask->control[band].eht_gi =

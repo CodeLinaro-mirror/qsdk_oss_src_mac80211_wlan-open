@@ -877,6 +877,12 @@ struct cfg80211_bitrate_mask {
 		u16 eht_mcs[NL80211_EHT_NSS_MAX];
 		enum nl80211_eht_gi eht_gi;
 		enum nl80211_eht_ltf eht_ltf;
+		bool legacy_mcs_changed;
+		bool eht_mcs_changed;
+		bool he_mcs_changed;
+		bool he_ul_mcs_changed;
+		bool vht_mcs_changed;
+		bool ht_mcs_changed;
 	} control[NUM_NL80211_BANDS];
 };
 
