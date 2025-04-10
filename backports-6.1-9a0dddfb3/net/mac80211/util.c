@@ -3004,8 +3004,6 @@ u8 *ieee80211_ie_build_eht_oper(u8 *pos, const struct cfg80211_chan_def *chandef
 				const struct ieee80211_sta_eht_cap *eht_cap)
 
 {
-	const struct ieee80211_eht_mcs_nss_supp_20mhz_only *eht_mcs_nss =
-					&eht_cap->eht_mcs_nss_supp.only_20mhz;
 	struct ieee80211_eht_operation *eht_oper;
 	struct ieee80211_eht_operation_info *eht_oper_info;
 	u8 eht_oper_len = IEEE80211_EHT_OPERATION_FIXED_LEN;
@@ -3023,7 +3021,7 @@ u8 *ieee80211_ie_build_eht_oper(u8 *pos, const struct cfg80211_chan_def *chandef
 
 	eht_oper = (struct ieee80211_eht_operation *)pos;
 
-	memcpy(&eht_oper->basic_mcs_nss, eht_mcs_nss, sizeof(*eht_mcs_nss));
+	eht_oper->basic_mcs_nss.rx_tx_mcs7_max_nss = EHT_BASIC_MCS_NSS_SET;
 	eht_oper->params |= IEEE80211_EHT_OPER_INFO_PRESENT;
 	pos += eht_oper_len;
 

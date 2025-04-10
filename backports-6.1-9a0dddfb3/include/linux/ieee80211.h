@@ -2246,6 +2246,9 @@ struct ieee80211_he_mu_edca_param_ac_rec {
 #define IEEE80211_EHT_OPERATION_FIXED_LEN			0x5
 #define IEEE80211_EHT_OPERATION_INFO_FIXED_LEN			0x3
 #define DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE			0x2
+
+#define EHT_BASIC_MCS_NSS_SET					0x11
+
 /**
  * struct ieee80211_mu_edca_param_set - MU EDCA Parameter Set element
  * @mu_qos_info: QoS Info
