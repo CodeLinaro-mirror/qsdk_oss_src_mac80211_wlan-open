@@ -2129,6 +2129,7 @@ struct ieee80211_vif {
 	int ppe_vp_num;
 	unsigned long ppe_vp_type;
 #endif
+	bool is_roc;
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };

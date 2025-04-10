@@ -5482,10 +5482,12 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 				bss_conf = rcu_dereference(sdata->vif.link_conf[link_id]);
 				if (bss_conf) {
 					conf = rcu_dereference(bss_conf->chanctx_conf);
-					if (conf && conf->def.chan &&
-					    conf->def.chan->center_freq == status->freq) {
-						flag = true;
-						break;
+					if (conf && conf->def.chan) {
+						if (conf->def.chan->center_freq == status->freq ||
+						    sdata->vif.is_roc) {
+							flag = true;
+							break;
+						}
 					}
 				}
 			}
@@ -5494,9 +5496,11 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 			if (bss_conf) {
 				conf = rcu_dereference(bss_conf->chanctx_conf);
-				if (conf && conf->def.chan &&
-				    conf->def.chan->center_freq == status->freq)
-					flag = true;
+				if (conf && conf->def.chan) {
+					if (conf->def.chan->center_freq == status->freq ||
+					    sdata->vif.is_roc)
+						flag = true;
+				}
 			}
 		}
 
@@ -5533,10 +5537,12 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 				if (bss_conf) {
 					conf = rcu_dereference(bss_conf->chanctx_conf);
-					if (conf && conf->def.chan &&
-					    conf->def.chan->center_freq == status->freq) {
-						flag = true;
-						break;
+					if (conf && conf->def.chan) {
+						if (conf->def.chan->center_freq == status->freq ||
+						    sdata->vif.is_roc) {
+							flag = true;
+							break;
+						}
 					}
 				}
 			}
@@ -5545,9 +5551,11 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 			if (bss_conf) {
 				conf = rcu_dereference(bss_conf->chanctx_conf);
-				if (conf && conf->def.chan &&
-				    conf->def.chan->center_freq == status->freq)
+				if (conf && conf->def.chan) {
+					if (conf->def.chan->center_freq == status->freq ||
+					    sdata->vif.is_roc)
 					flag = true;
+				}
 			}
 		}
 

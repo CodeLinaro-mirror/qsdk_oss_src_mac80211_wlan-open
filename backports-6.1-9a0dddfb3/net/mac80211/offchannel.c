@@ -172,6 +172,8 @@ static void ieee80211_roc_notify_destroy(struct ieee80211_roc_work *roc)
 {
 	struct ieee80211_sub_if_data *sdata = roc->sdata;
 	/* was never transmitted */
+
+	sdata->vif.is_roc = false;
 	if (roc->frame) {
 		cfg80211_mgmt_tx_status(&roc->sdata->wdev, roc->mgmt_tx_cookie,
 					roc->frame->data, roc->frame->len,
@@ -274,6 +276,7 @@ static void ieee80211_hw_roc_start(struct wiphy *wiphy, struct wiphy_work *work)
 			break;
 
 		roc->hw_begun = true;
+		roc->sdata->vif.is_roc = true;
 		ieee80211_handle_roc_started(roc, local->hw_roc_start_time);
 	}
 }
