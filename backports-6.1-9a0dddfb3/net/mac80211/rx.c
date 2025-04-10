@@ -3692,6 +3692,7 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 
 			/* set cur_max_bandwidth and recalc sta bw */
 			rx->link_sta->cur_max_bandwidth = max_bw;
+			rx->link_sta->pub->sta_max_bandwidth = rx->link_sta->cur_max_bandwidth;
 			new_bw = ieee80211_sta_cur_vht_bw(rx->link_sta);
 
 			if (rx->link_sta->pub->bandwidth == new_bw)

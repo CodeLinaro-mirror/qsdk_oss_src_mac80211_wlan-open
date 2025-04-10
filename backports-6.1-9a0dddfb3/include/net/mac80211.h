@@ -2531,6 +2531,7 @@ struct ieee80211_link_sta {
 
 	u8 rx_nss;
 	enum ieee80211_sta_rx_bandwidth bandwidth;
+	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
 };
 

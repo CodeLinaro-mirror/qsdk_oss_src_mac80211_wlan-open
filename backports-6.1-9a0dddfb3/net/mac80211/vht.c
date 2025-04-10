@@ -303,6 +303,7 @@ ieee80211_vht_cap_ie_to_sta_vht_cap(struct ieee80211_sub_if_data *sdata,
 	}
 
 	link_sta->pub->bandwidth = ieee80211_sta_cur_vht_bw(link_sta);
+	link_sta->pub->sta_max_bandwidth = link_sta->cur_max_bandwidth;
 
 	/*
 	 * Work around the Cisco 9115 FW 17.3 bug by taking the min of
@@ -693,6 +694,7 @@ u32 __ieee80211_vht_handle_opmode(struct ieee80211_sub_if_data *sdata,
 		break;
 	}
 
+	link_sta->pub->sta_max_bandwidth = link_sta->cur_max_bandwidth;
 	new_bw = ieee80211_sta_cur_vht_bw(link_sta);
 	if (new_bw != link_sta->pub->bandwidth) {
 		link_sta->pub->bandwidth = new_bw;

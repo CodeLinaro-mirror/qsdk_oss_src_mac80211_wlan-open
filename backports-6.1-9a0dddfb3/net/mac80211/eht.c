@@ -76,6 +76,7 @@ ieee80211_eht_cap_ie_to_sta_eht_cap(struct ieee80211_sub_if_data *sdata,
 
 	link_sta->cur_max_bandwidth = ieee80211_sta_cap_rx_bw(link_sta);
 	link_sta->pub->bandwidth = ieee80211_sta_cur_vht_bw(link_sta);
+	link_sta->pub->sta_max_bandwidth = link_sta->cur_max_bandwidth;
 
 	switch (u8_get_bits(eht_cap->eht_cap_elem.mac_cap_info[0],
 			    IEEE80211_EHT_MAC_CAP0_MAX_MPDU_LEN_MASK)) {
