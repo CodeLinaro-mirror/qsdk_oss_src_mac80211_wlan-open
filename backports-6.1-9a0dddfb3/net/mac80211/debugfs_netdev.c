@@ -1062,31 +1062,89 @@ static void add_link_files(struct ieee80211_link_data *link,
 	}
 }
 
+void ieee80211_debugfs_add_link(struct ieee80211_sub_if_data *sdata,
+				unsigned long add)
+{
+	char buf[IFNAMSIZ];
+	u8 id;
+
+	if (!sdata->vif.valid_links)
+		return;
+
+	for_each_set_bit(id, &add, IEEE80211_MLD_MAX_NUM_LINKS) {
+		if (sdata->vif.link_debugfs[id])
+			continue;
+
+		snprintf(buf, IFNAMSIZ, "link%d", id);
+		sdata->vif.link_debugfs[id] = debugfs_create_dir(buf,
+								 sdata->vif.debugfs_dir);
+	}
+}
+
+void ieee80211_debugfs_remove_link(struct ieee80211_sub_if_data *sdata, unsigned long rem)
+{
+	u8 link_id;
+
+	if (!sdata->vif.valid_links)
+		return;
+
+	for_each_set_bit(link_id, &rem, IEEE80211_MLD_MAX_NUM_LINKS) {
+		if (!sdata->vif.link_debugfs[link_id])
+			continue;
+
+		debugfs_remove_recursive(sdata->vif.link_debugfs[link_id]);
+		sdata->vif.link_debugfs[link_id] = NULL;
+	}
+}
+
 static void ieee80211_debugfs_add_netdev(struct ieee80211_sub_if_data *sdata,
 					 bool mld_vif)
 {
-	char buf[10+IFNAMSIZ];
+	char buf[10 + IFNAMSIZ];
+	int i = 0;
 
-	sprintf(buf, "netdev:%s", sdata->name);
+	snprintf(buf, 10 + IFNAMSIZ, "netdev:%s", sdata->name);
 	sdata->vif.debugfs_dir = debugfs_create_dir(buf,
 		sdata->local->hw.wiphy->debugfsdir);
 	/* deflink also has this */
 	sdata->deflink.debugfs_dir = sdata->vif.debugfs_dir;
 	sdata->debugfs.subdir_stations = debugfs_create_dir("stations",
 							sdata->vif.debugfs_dir);
+	for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++)
+		sdata->vif.link_debugfs[i] = NULL;
+
 	add_files(sdata);
 	if (!mld_vif)
 		add_link_files(&sdata->deflink, sdata->vif.debugfs_dir);
+
+	/* create default link if it does not exist */
+	if (sdata->vif.link_debugfs[0])
+		return;
+
+	memset(buf, 0, 10 + IFNAMSIZ);
+	snprintf(buf, 10 + IFNAMSIZ, "link0");
+	sdata->vif.link_debugfs[0] = debugfs_create_dir(buf,
+							sdata->vif.debugfs_dir);
 }
 
 void ieee80211_debugfs_remove_netdev(struct ieee80211_sub_if_data *sdata)
 {
+	int i = 0;
 	if (!sdata->vif.debugfs_dir)
 		return;
+
+	if (!sdata->vif.valid_links &&
+		sdata->vif.link_debugfs[0]) {
+		debugfs_remove_recursive(sdata->vif.link_debugfs[0]);
+		sdata->vif.link_debugfs[0] = NULL;
+	}
 
 	debugfs_remove_recursive(sdata->vif.debugfs_dir);
 	sdata->vif.debugfs_dir = NULL;
 	sdata->debugfs.subdir_stations = NULL;
+
+	for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++)
+		sdata->vif.link_debugfs[i] = NULL;
 }
 
 void ieee80211_debugfs_rename_netdev(struct ieee80211_sub_if_data *sdata)

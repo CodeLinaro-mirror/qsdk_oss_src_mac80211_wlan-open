@@ -376,11 +376,13 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 
 	ret = ieee80211_check_dup_link_addrs(sdata);
 	if (!ret) {
+		ieee80211_debugfs_remove_link(sdata, rem);
 		/* for keys we will not be able to undo this */
 		ieee80211_tear_down_links(sdata, to_free, rem);
 
 		ieee80211_set_vif_links_bitmaps(sdata, new_links, dormant_links);
 
+		ieee80211_debugfs_add_link(sdata, add);
 		/* tell the driver */
 		if (sdata->vif.type != NL80211_IFTYPE_AP_VLAN)
 			ret = drv_change_vif_links(sdata->local, sdata,

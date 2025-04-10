@@ -2110,6 +2110,7 @@ struct ieee80211_vif {
 
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	struct dentry *debugfs_dir;
+	struct dentry *link_debugfs[IEEE80211_MLD_MAX_NUM_LINKS];
 #endif
 
 	bool probe_req_reg;
