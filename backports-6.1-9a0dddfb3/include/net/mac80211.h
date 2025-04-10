@@ -2983,6 +2983,8 @@ struct ieee80211_txq {
  * @IEE80211_HW_HAS_TX_QUEUE: Hardware/drivers has tx queue, does skb queuing itself,
  *	the stack will not do tx queuing.
  *
+ * @IEE80211_HW_SUPPORT_ECM_REGISTRATION: driver supports ECM registration
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3048,6 +3050,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_TID_CLASS_OFFLOAD,
 	IEEE80211_HW_SUPPORTS_AP_PS,
 	IEEE80211_HW_HAS_TX_QUEUE,
+	IEEE80211_HW_SUPPORT_ECM_REGISTRATION,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
