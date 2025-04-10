@@ -783,6 +783,7 @@ struct ieee80211_parsed_tpe {
  *	(as opposed to hearing its value from another link's beacon).
  * @critical_update_flag: indicates any Critical update going on in the BSS.
  * 	see &enum ieee80211_critical_updates
+ * @beacon_tx_mode: Beacon Tx Mode setting.
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -896,6 +897,7 @@ struct ieee80211_bss_conf {
 	bool elemid_modified;
 	u32 rts_threshold;
 	u8 intf_detect_bitmap;
+	enum nl80211_beacon_tx_mode beacon_tx_mode;
 };
 
 /**

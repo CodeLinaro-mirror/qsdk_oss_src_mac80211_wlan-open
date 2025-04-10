@@ -1687,6 +1687,7 @@ struct cfg80211_unsol_bcast_probe_resp {
  * @mbssid_config: AP settings for multiple bssid
  * @intf_detect_bitmap: Interference detection bitmap.
  *	BIT(0) represents - CW Interference.
+ * @beacon_tx_mode: Beacon Tx Mode setting
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -1723,6 +1724,7 @@ struct cfg80211_ap_settings {
 	bool ap_ps_valid;
 	bool ap_ps_enable;
 	u8 intf_detect_bitmap;
+	enum nl80211_beacon_tx_mode beacon_tx_mode;
 };
 
 
@@ -2781,6 +2783,7 @@ struct mesh_config {
  *	to operate on DFS channels.
  * @control_port_over_nl80211: TRUE if userspace expects to exchange control
  *	port frames over NL80211 instead of the network interface.
+ * @beacon_tx_mode: Beacon Tx Mode setting.
  *
  * These parameters are fixed when the mesh is created.
  */
@@ -2804,6 +2807,7 @@ struct mesh_setup {
 	struct cfg80211_bitrate_mask beacon_rate;
 	bool userspace_handles_dfs;
 	bool control_port_over_nl80211;
+	enum nl80211_beacon_tx_mode beacon_tx_mode;
 };
 
 /**
