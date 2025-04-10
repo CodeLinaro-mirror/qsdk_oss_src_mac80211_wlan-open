@@ -18818,12 +18818,27 @@ struct nl80211_mlme_event {
 static void nl80211_send_mlme_event(struct cfg80211_registered_device *rdev,
 				    struct net_device *netdev,
 				    const struct nl80211_mlme_event *event,
-				    gfp_t gfp)
+				    gfp_t gfp,
+				    struct cfg80211_connect_resp_params *cr)
 {
 	struct sk_buff *msg;
 	void *hdr;
+	unsigned int link;
+	size_t link_info_size = 0;
 
-	msg = nlmsg_new(100 + event->buf_len + event->req_ies_len, gfp);
+	if (cr && cr->valid_links) {
+		for_each_valid_link(cr, link) {
+			/* Nested attribute header */
+			link_info_size += NLA_HDRLEN;
+			/* Link ID */
+			link_info_size += nla_total_size(sizeof(u8));
+			link_info_size += cr->links[link].addr ?
+					  nla_total_size(ETH_ALEN) : 0;
+
+		}
+	}
+
+	msg = nlmsg_new(100 + event->buf_len + event->req_ies_len + link_info_size, gfp);
 	if (!msg)
 		return;
 
@@ -18858,6 +18873,34 @@ static void nl80211_send_mlme_event(struct cfg80211_registered_device *rdev,
 		nla_nest_end(msg, nla_wmm);
 	}
 
+	if (cr && cr->valid_links) {
+		int i = 1;
+		struct nlattr *nested;
+
+		nested = nla_nest_start(msg, NL80211_ATTR_MLO_LINKS);
+		if (!nested)
+			goto nla_put_failure;
+
+		for_each_valid_link(cr, link) {
+			struct nlattr *nested_mlo_links;
+
+			nested_mlo_links = nla_nest_start(msg, i);
+			if (!nested_mlo_links)
+				goto nla_put_failure;
+
+			if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link) ||
+			    (cr->links[link].addr &&
+			     nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN,
+				     cr->links[link].addr)))
+				goto nla_put_failure;
+
+			nla_nest_end(msg, nested_mlo_links);
+			i++;
+		}
+		nla_nest_end(msg, nested);
+	}
+
+
 	genlmsg_end(msg, hdr);
 
 	genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy), msg, 0,
@@ -18879,12 +18922,13 @@ void nl80211_send_rx_auth(struct cfg80211_registered_device *rdev,
 		.uapsd_queues = -1,
 	};
 
-	nl80211_send_mlme_event(rdev, netdev, &event, gfp);
+	nl80211_send_mlme_event(rdev, netdev, &event, gfp, NULL);
 }
 
 void nl80211_send_rx_assoc(struct cfg80211_registered_device *rdev,
 			   struct net_device *netdev,
-			   const struct cfg80211_rx_assoc_resp_data *data)
+			   const struct cfg80211_rx_assoc_resp_data *data,
+			   struct cfg80211_connect_resp_params *cr)
 {
 	struct nl80211_mlme_event event = {
 		.cmd = NL80211_CMD_ASSOCIATE,
@@ -18895,7 +18939,7 @@ void nl80211_send_rx_assoc(struct cfg80211_registered_device *rdev,
 		.req_ies_len = data->req_ies_len,
 	};
 
-	nl80211_send_mlme_event(rdev, netdev, &event, GFP_KERNEL);
+	nl80211_send_mlme_event(rdev, netdev, &event, GFP_KERNEL, cr);
 }
 
 void nl80211_send_deauth(struct cfg80211_registered_device *rdev,
@@ -18910,7 +18954,7 @@ void nl80211_send_deauth(struct cfg80211_registered_device *rdev,
 		.uapsd_queues = -1,
 	};
 
-	nl80211_send_mlme_event(rdev, netdev, &event, gfp);
+	nl80211_send_mlme_event(rdev, netdev, &event, gfp, NULL);
 }
 
 void nl80211_send_disassoc(struct cfg80211_registered_device *rdev,
@@ -18925,7 +18969,7 @@ void nl80211_send_disassoc(struct cfg80211_registered_device *rdev,
 		.uapsd_queues = -1,
 	};
 
-	nl80211_send_mlme_event(rdev, netdev, &event, gfp);
+	nl80211_send_mlme_event(rdev, netdev, &event, gfp, NULL);
 }
 
 void cfg80211_rx_unprot_mlme_mgmt(struct net_device *dev, const u8 *buf,
@@ -18959,7 +19003,7 @@ void cfg80211_rx_unprot_mlme_mgmt(struct net_device *dev, const u8 *buf,
 	}
 
 	trace_cfg80211_rx_unprot_mlme_mgmt(dev, buf, len);
-	nl80211_send_mlme_event(rdev, dev, &event, GFP_ATOMIC);
+	nl80211_send_mlme_event(rdev, dev, &event, GFP_ATOMIC, NULL);
 }
 EXPORT_SYMBOL(cfg80211_rx_unprot_mlme_mgmt);
 
@@ -19384,7 +19428,7 @@ void nl80211_mlo_reconf_add_done(struct net_device *dev,
 		.uapsd_queues = -1,
 	};
 
-	nl80211_send_mlme_event(rdev, dev, &event, GFP_KERNEL);
+	nl80211_send_mlme_event(rdev, dev, &event, GFP_KERNEL, NULL);
 }
 EXPORT_SYMBOL(nl80211_mlo_reconf_add_done);
 

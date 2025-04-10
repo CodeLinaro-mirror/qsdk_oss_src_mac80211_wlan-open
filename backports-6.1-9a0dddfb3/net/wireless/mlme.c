@@ -91,7 +91,7 @@ void cfg80211_rx_assoc_resp(struct net_device *dev,
 		return;
 	}
 
-	nl80211_send_rx_assoc(rdev, dev, data);
+	nl80211_send_rx_assoc(rdev, dev, data, &cr);
 	/* update current_bss etc., consumes the bss reference */
 	__cfg80211_connect_result(dev, &cr, cr.status == WLAN_STATUS_SUCCESS);
 }
