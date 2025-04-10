@@ -3162,6 +3162,8 @@ ieee80211_he_spr_size(const u8 *he_spr_ie)
 #define IEEE80211_EHT_MAC_CAP1_MAX_AMPDU_LEN_EXP      0x01
 #define IEEE80211_EHT_MAC_CAP1_EHT_TRS                0x02
 #define IEEE80211_EHT_MAC_CAP1_TXOP_SHARE_MODE2       0x04
+#define IEEE80211_EHT_MAC_CAP1_TWO_BQRS_SUPP          0x08
+#define IEEE80211_EHT_MAC_CAP1_EHT_LINK_ADAPTATION_SUPP         0x30
 
 /* EHT PHY capabilities as defined in P802.11be_D2.0 section 9.4.2.313.3 */
 #define IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ			0x02
@@ -3230,6 +3232,9 @@ ieee80211_he_spr_size(const u8 *he_spr_ie)
 
 #define IEEE80211_EHT_PHY_CAP8_RX_1024QAM_WIDER_BW_DL_OFDMA	0x01
 #define IEEE80211_EHT_PHY_CAP8_RX_4096QAM_WIDER_BW_DL_OFDMA	0x02
+#define IEEE80211_EHT_PHY_CAP8_20MHZ_ONLY_CAPS                  0x04
+#define IEEE80211_EHT_PHY_CAP8_20MHZ_ONLY_TRIGGER_MUBF_FL_BW_FB_DLMUMIMO   0x08
+#define IEEE80211_EHT_PHY_CAP8_20MHZ_ONLY_MRU_SUPP                         0x10
 
 /*
  * EHT operation channel width as defined in P802.11be_D2.0 section 9.4.2.311

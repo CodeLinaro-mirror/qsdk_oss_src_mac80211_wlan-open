@@ -1369,6 +1369,8 @@ static ssize_t sta_eht_capa_read(struct file *file, char __user *userbuf,
         PFLAG(MAC, 1, MAX_AMPDU_LEN_EXP, "Maximum A-MPDU Length Exponent Extension");
         PFLAG(MAC, 1, EHT_TRS, "EHT TRS Support");
         PFLAG(MAC, 1, TXOP_SHARE_MODE2, "TXOP Return Support In TXOP Sharing Mode 2");
+	PFLAG(MAC, 1, TWO_BQRS_SUPP, "Two BQRs Support");
+	PFLAG(MAC, 1, EHT_LINK_ADAPTATION_SUPP, "EHT Link Adaptation Support");
 
         cap = ehtc->eht_cap_elem.phy_cap_info;
         p += scnprintf(p, buf_sz + buf - p,
@@ -1455,6 +1457,12 @@ static ssize_t sta_eht_capa_read(struct file *file, char __user *userbuf,
               "Rx 1024-QAM In Wider Bandwidth DL OFDMA Support");
         PFLAG(PHY, 8, RX_4096QAM_WIDER_BW_DL_OFDMA,
               "Rx 4096-QAM In Wider Bandwidth DL OFDMA Support");
+	PFLAG(PHY, 8, 20MHZ_ONLY_CAPS,
+	      "20 MHz-Only Limited Capabilities Support");
+	PFLAG(PHY, 8, 20MHZ_ONLY_TRIGGER_MUBF_FL_BW_FB_DLMUMIMO,
+	      "20 MHz-Only Triggered MU Beamforming Full BW Feedback And DL MU-MIMO");
+	PFLAG(PHY, 8, 20MHZ_ONLY_MRU_SUPP,
+	      "20 MHz-Only M-RU Support");
 
 #undef PFLAG_RANGE
 #undef PFLAG
