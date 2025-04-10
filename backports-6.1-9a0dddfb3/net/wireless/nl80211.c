@@ -5980,6 +5980,7 @@ static int nl80211_parse_mbssid_config(struct wiphy *wiphy,
 				       u8 num_elems)
 {
 	struct nlattr *tb[NL80211_MBSSID_CONFIG_ATTR_MAX + 1];
+	struct nlattr *tx_link_id;
 
 	if (!wiphy->mbssid_max_interfaces)
 		return -EOPNOTSUPP;
@@ -5989,6 +5990,7 @@ static int nl80211_parse_mbssid_config(struct wiphy *wiphy,
 	    !tb[NL80211_MBSSID_CONFIG_ATTR_INDEX])
 		return -EINVAL;
 
+	tx_link_id = tb[NL80211_MBSSID_CONFIG_ATTR_TX_LINK_ID];
 	config->ema = nla_get_flag(tb[NL80211_MBSSID_CONFIG_ATTR_EMA]);
 	if (config->ema) {
 		if (!wiphy->ema_max_profile_periodicity)
@@ -6045,6 +6047,15 @@ static int nl80211_parse_mbssid_config(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	if (!config->tx_wdev->valid_links && tx_link_id)
+		return -EINVAL;
+
+	if (config->tx_wdev->valid_links &&
+	    (!tx_link_id ||
+	     !(config->tx_wdev->valid_links & BIT(nla_get_u8(tx_link_id)))))
+		return -ENOLINK;
+
+	config->tx_link_id = tx_link_id ? nla_get_u8(tx_link_id) : 0;
 	return 0;
 }
 
