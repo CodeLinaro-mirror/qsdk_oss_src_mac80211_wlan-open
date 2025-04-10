@@ -3915,6 +3915,11 @@ static int ieee80211_set_after_csa_beacon(struct ieee80211_link_data *link_data,
 
 		if (err < 0)
 			return err;
+
+                link_data->conf->critical_update_flag &=
+					     ~(IEEE80211_CU_INCLUDE_CSA_ELEM |
+					       IEEE80211_CU_INCLUDE_ECSA_ELEM);
+
 		break;
 	case NL80211_IFTYPE_ADHOC:
 		err = ieee80211_ibss_finish_csa(sdata, changed);
@@ -4079,6 +4084,10 @@ static int ieee80211_set_csa_beacon(struct ieee80211_link_data *link_data,
 			ieee80211_free_next_beacon(link_data);
 			return err;
 		}
+
+		link_data->conf->critical_update_flag |=
+					(IEEE80211_CU_INCLUDE_CSA_ELEM |
+					 IEEE80211_CU_INCLUDE_ECSA_ELEM);
 
 		break;
 	case NL80211_IFTYPE_ADHOC:
