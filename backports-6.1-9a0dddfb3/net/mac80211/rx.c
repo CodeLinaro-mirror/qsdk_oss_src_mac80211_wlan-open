@@ -5397,7 +5397,7 @@ drop:
 }
 
 static bool ieee80211_rx_for_interface(struct ieee80211_rx_data *rx,
-				       struct sk_buff *skb, bool consume)
+				       struct sk_buff *skb, bool consume, bool is_mgmt)
 {
 	struct link_sta_info *link_sta;
 	struct ieee80211_hdr *hdr = (void *)skb->data;
@@ -5421,6 +5421,20 @@ static bool ieee80211_rx_for_interface(struct ieee80211_rx_data *rx,
 		sta = sta_info_get_bss(rx->sdata, hdr->addr2);
 		if (status->link_valid)
 			link_id = status->link_id;
+	}
+
+	/*
+	 * Sometimes when a STA associates to one of the link and
+	 * steers to other link, link_id and valid_links should not be
+	 * fetched using sta since it has the previously associated link_id and
+	 * valid_links. Use the originally received link_id and make sta as NULL,
+	 * to pass the frame to upper layer.
+	 */
+	if (is_mgmt &&
+	    status->link_valid && (status->link_id != link_id ||
+	    (sta && !(sta->sta.valid_links & BIT(status->link_id))))) {
+		 link_id = status->link_id;
+		 sta = NULL;
 	}
 
 	if (!ieee80211_rx_data_set_sta(rx, sta, link_id, only_monitor))
@@ -5451,6 +5465,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	struct ieee80211_sub_if_data *prev;
 	struct rhlist_head *tmp;
 	int err = 0;
+	bool is_mgmt = false;
 
 	fc = ((struct ieee80211_hdr *)skb->data)->frame_control;
 	memset(&rx, 0, sizeof(rx));
@@ -5463,6 +5478,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 		I802_DEBUG_INC(local->dot11ReceivedFragmentCount);
 
 	if (ieee80211_is_mgmt(fc)) {
+		is_mgmt = true;
 		/* drop frame if too short for header */
 		if (skb->len < ieee80211_hdrlen(fc))
 			err = -ENOBUFS;
@@ -5620,7 +5636,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 			}
 
 			rx.sdata = prev;
-			ieee80211_rx_for_interface(&rx, skb, false);
+			ieee80211_rx_for_interface(&rx, skb, false, is_mgmt);
 
 			prev = sdata;
 		}
@@ -5670,7 +5686,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 		if (flag) {
 			rx.sdata = prev;
 
-			if (ieee80211_rx_for_interface(&rx, skb, true))
+			if (ieee80211_rx_for_interface(&rx, skb, true, is_mgmt))
 				return;
 		}
 	}
