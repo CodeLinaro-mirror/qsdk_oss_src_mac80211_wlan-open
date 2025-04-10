@@ -2366,6 +2366,9 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 	if (err)
 		return err;
 
+	if (params->sta_flags_set & BIT(NL80211_STA_FLAG_FT_AUTH))
+		sta->sta.ft_auth = true;
+
 	if (params->vlan && params->vlan != sta->sdata->dev) {
 		vlansdata = IEEE80211_DEV_TO_SUB_IF(params->vlan);
 
