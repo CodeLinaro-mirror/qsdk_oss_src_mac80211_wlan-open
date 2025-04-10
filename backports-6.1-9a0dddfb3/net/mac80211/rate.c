@@ -297,38 +297,6 @@ static void rate_control_free(struct ieee80211_local *local,
 	kfree(ctrl_ref);
 }
 
-void ieee80211_check_rate_mask(struct ieee80211_link_data *link)
-{
-	struct ieee80211_sub_if_data *sdata = link->sdata;
-	struct ieee80211_local *local = sdata->local;
-	struct ieee80211_supported_band *sband;
-	u32 user_mask, basic_rates = link->conf->basic_rates;
-	enum nl80211_band band;
-
-	if (WARN_ON(!link->conf->chanreq.oper.chan))
-		return;
-
-	band = link->conf->chanreq.oper.chan->band;
-	if (band == NL80211_BAND_S1GHZ) {
-		/* TODO */
-		return;
-	}
-
-	if (WARN_ON_ONCE(!basic_rates))
-		return;
-
-	user_mask = sdata->rc_rateidx_mask[band];
-	sband = local->hw.wiphy->bands[band];
-
-	if (user_mask & basic_rates)
-		return;
-
-	sdata_dbg(sdata,
-		  "no overlap between basic rates (0x%x) and user mask (0x%x on band %d) - clearing the latter",
-		  basic_rates, user_mask, band);
-	sdata->rc_rateidx_mask[band] = (1 << sband->n_bitrates) - 1;
-}
-
 static bool rc_no_data_or_no_ack_use_min(struct ieee80211_tx_rate_control *txrc)
 {
 	struct sk_buff *skb = txrc->skb;

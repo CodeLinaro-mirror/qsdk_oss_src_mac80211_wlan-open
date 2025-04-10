@@ -2860,7 +2860,6 @@ static int ieee80211_change_bss(struct wiphy *wiphy,
 					      &link->conf->basic_rates))
 			return -EINVAL;
 		changed |= BSS_CHANGED_BASIC_RATES;
-		ieee80211_check_rate_mask(link);
 	}
 
 	if (params->use_cts_prot >= 0) {

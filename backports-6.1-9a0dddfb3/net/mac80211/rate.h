@@ -89,8 +89,6 @@ static inline void rate_control_add_debugfs(struct ieee80211_local *local)
 #endif
 }
 
-void ieee80211_check_rate_mask(struct ieee80211_link_data *link);
-
 /* Get a reference to the rate control algorithm. If `name' is NULL, get the
  * first available algorithm. */
 int ieee80211_init_rate_ctrl_alg(struct ieee80211_local *local,

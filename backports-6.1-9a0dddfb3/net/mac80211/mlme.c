@@ -3607,8 +3607,6 @@ static u64 ieee80211_link_set_associated(struct ieee80211_link_data *link,
 						   bss->has_erp_value,
 						   bss->erp_value);
 
-	ieee80211_check_rate_mask(link);
-
 	link->conf->bss = cbss;
 	memcpy(link->u.mgd.bssid, cbss->bssid, ETH_ALEN);
 
