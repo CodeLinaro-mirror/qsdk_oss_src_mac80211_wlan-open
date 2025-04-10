@@ -37,6 +37,9 @@
 #include "wme.h"
 #include "rate.h"
 
+static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
+				struct net_device *dev, struct sta_info *sta,
+				struct ieee80211_key *key, struct sk_buff *skb);
 /* misc utils */
 
 static __le16 ieee80211_duration(struct ieee80211_tx_data *tx,
@@ -4298,6 +4301,8 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 	struct sta_info *sta;
 	struct sk_buff *next;
 	int len = skb->len;
+	struct ieee80211_key *key = NULL;
+	struct ieee80211_sub_if_data *ap_sdata;
 
 	if (unlikely(!ieee80211_sdata_running(sdata) || skb->len < ETH_HLEN)) {
 		kfree_skb(skb);
@@ -4318,6 +4323,19 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 
 	if (IS_ERR(sta))
 		sta = NULL;
+
+        if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
+                ap_sdata = container_of(sdata->bss,
+                                        struct ieee80211_sub_if_data, u.ap);
+                if (ap_sdata->vif.offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED &&
+                    !is_multicast_ether_addr(skb->data)) {
+                        if (sta)
+                                key = rcu_dereference(sta->ptk[sta->ptk_idx]);
+                        ieee80211_8023_xmit(sdata, dev, sta, key, skb);
+                        rcu_read_unlock();
+                        return;
+                }
+        }
 
 	skb_set_queue_mapping(skb, ieee80211_select_queue(sdata, sta, skb));
 	ieee80211_aggr_check(sdata, sta, skb);
