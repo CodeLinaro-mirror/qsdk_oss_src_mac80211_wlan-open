@@ -1803,11 +1803,11 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	wiphy_work_cancel(local->hw.wiphy, &local->reconfig_filter);
 	wiphy_work_cancel(local->hw.wiphy, &local->sched_scan_stopped_work);
 	wiphy_work_cancel(local->hw.wiphy, &local->radar_detected_work);
-	flush_work(&local->awgn_detected_work);
-	flush_work(&local->cw_detected_work);
 	wiphy_unlock(local->hw.wiphy);
 	rtnl_unlock();
 
+	flush_work(&local->awgn_detected_work);
+	flush_work(&local->cw_detected_work);
 	cancel_work_sync(&local->restart_work);
 
 	ieee80211_clear_tx_pending(local);
