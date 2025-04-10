@@ -1615,7 +1615,7 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_link_data *link;
 	struct cfg80211_beacon_data *beacon = &params->beacon;
 	struct beacon_data *old;
-	int err;
+	s64 err = -EINVAL;
 	struct ieee80211_bss_conf *link_conf;
 	u64 changed = 0;
 
@@ -1650,9 +1650,9 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 	    params->ap_ps_valid) {
 		link_conf->ap_ps_enable = params->ap_ps_enable;
 		if (err < 0)
-			err = BSS_CHANGED_PS;
+			err = BSS_CHANGED_AP_PS;
 		else
-			err |= BSS_CHANGED_PS;
+			err |= BSS_CHANGED_AP_PS;
 	}
 
 	if (beacon->he_bss_color_valid &&
