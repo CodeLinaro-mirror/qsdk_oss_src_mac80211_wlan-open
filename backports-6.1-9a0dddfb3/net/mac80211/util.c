@@ -4100,6 +4100,23 @@ ieee80211_fill_ifcomb_params(struct ieee80211_local *local,
 		    cfg80211_chandef_compatible(chandef, &ctx->conf.def))
 			continue;
 
+		if (chandef && ctx->mode == IEEE80211_CHANCTX_SHARED) {
+			/* 6 GHz chandefs could be different for different
+			 * interfaces beacuse of operating power modes.
+			 * Hence, we skip the chandef compatibility check.
+			 */
+			enum nl80211_band chan_band = chandef->chan->band;
+			bool is_6ghz_band = chan_band == NL80211_BAND_6GHZ
+							 ? true : false;
+
+			if (is_6ghz_band)
+				continue;
+
+			if (!is_6ghz_band &&
+			    cfg80211_chandef_compatible(chandef,
+							&ctx->conf.def))
+				continue;
+		}
 		params->num_different_channels++;
 	}
 
