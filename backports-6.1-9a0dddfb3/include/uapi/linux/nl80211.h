@@ -1374,6 +1374,9 @@
  * @NL80211_CMD_LINK_REMOVAL_COMPLETED: Once last beacon with reconfiguration
  *	MLE is sent, userspace is notified with completion.
  *
+ * @NL80211_CMD_ERP: Command to enter/exit and get status regarding ErP low
+ *	power mode using %NL80211_ATTR_ERP parameters.
+ *
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1649,6 +1652,9 @@ enum nl80211_commands {
 	NL80211_CMD_LINK_REMOVAL_STARTED,
 
 	NL80211_CMD_LINK_REMOVAL_COMPLETED,
+
+	NL80211_CMD_ERP,
+
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */
@@ -3604,6 +3610,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_AP_REMOVAL_COUNT,
 	NL80211_ATTR_TSF,
 	NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE,
+
+	NL80211_ATTR_ERP,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -6926,6 +6934,8 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_MLD_LINK_REMOVAL_OFFLOAD: Driver/device which supports
  *	ML reconfig link removal offload.
  *
+ * @NL80211_EXT_FEATURE_ERP: Driver supports ErP low power mode.
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7006,6 +7016,7 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_BEACON_RATE_EHT,
 	NL80211_EXT_FEATURE_DEVICE_BW,
 	NL80211_EXT_FEATURE_MLD_LINK_REMOVAL_OFFLOAD,
+	NL80211_EXT_FEATURE_ERP,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
@@ -8658,5 +8669,31 @@ enum nl80211_interference_type {
 
 	NL80211_INTERFERENCE_TYPE_LAST,
 	NL80211_INTERFERENCE_TYPE_MAX = NL80211_INTERFERENCE_TYPE_LAST - 1,
+};
+
+/**
+ * enum nl80211_erp_attrs - set ErP attributes during entry/exit
+ *
+ * @NL80211_ERP_ATTR_ENTER: (flag) enter into ErP mode.
+ * @NL80211_ERP_ATTR_EXIT: (flag) exit from ErP mode.
+ * @NL80211_ERP_ATTR_STATUS: (u8) get/send ErP status from driver.
+ * @NL80211_ERP_ATTR_TRIGGER: (u32) trigger to initiate automatic exit from ErP
+ *     low power mode.
+ *
+ * @__NL80211_ERP_ATTR_LAST : internal use
+ * @NL80211_ERP_ATTR_MAX : maximum ErP attributes
+ *
+ */
+enum nl80211_erp_attrs {
+	__NL80211_ERP_ATTR_INVALID,
+
+	NL80211_ERP_ATTR_ENTER,
+	NL80211_ERP_ATTR_EXIT,
+	NL80211_ERP_ATTR_STATUS,
+	NL80211_ERP_ATTR_TRIGGER,
+
+	/* keep last */
+	__NL80211_ERP_ATTR_LAST,
+	NL80211_ERP_ATTR_MAX = __NL80211_ERP_ATTR_LAST - 1
 };
 #endif /* __LINUX_NL80211_H */

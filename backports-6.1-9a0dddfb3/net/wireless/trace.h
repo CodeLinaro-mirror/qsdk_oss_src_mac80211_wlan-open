@@ -4281,6 +4281,34 @@ TRACE_EVENT(cfg80211_update_link_reconfig_remove_update,
 		  WIPHY_PR_ARG, NETDEV_PR_ARG,
 		  __entry->link_id, __entry->tbtt_count, __entry->tsf, __entry->cmd)
 );
+
+TRACE_EVENT(rdev_erp,
+	TP_PROTO(struct wiphy *wiphy, struct wireless_dev *wdev,
+		 int link_id, struct cfg80211_erp_params *params),
+
+	TP_ARGS(wiphy, wdev, link_id, params),
+
+	TP_STRUCT__entry(
+		WIPHY_ENTRY
+		WDEV_ENTRY
+		__field(int, link_id)
+		__field(u32, cmd)
+		__field(u32, trigger)
+	),
+
+	TP_fast_assign(
+		WIPHY_ASSIGN;
+		WDEV_ASSIGN;
+		__entry->link_id = link_id;
+		__entry->cmd = params->cmd;
+		__entry->trigger = params->trigger;
+	),
+
+	TP_printk(WIPHY_PR_FMT ", " WDEV_PR_FMT
+		  ", cmd: %u, link_id: %d, trigger: %u",
+		  WIPHY_PR_ARG, WDEV_PR_ARG,
+		  __entry->cmd, __entry->link_id, __entry->trigger)
+);
 #endif /* !__RDEV_OPS_TRACE || TRACE_HEADER_MULTI_READ */
 
 #undef TRACE_INCLUDE_PATH

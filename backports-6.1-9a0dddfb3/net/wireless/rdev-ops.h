@@ -1615,4 +1615,18 @@ rdev_set_epcs(struct cfg80211_registered_device *rdev,
 	return ret;
 }
 
+static inline int rdev_erp(struct cfg80211_registered_device *rdev,
+			   struct wireless_dev *wdev, int link_id,
+			   struct cfg80211_erp_params *params)
+{
+	int ret;
+
+	if (!rdev->ops->erp)
+		return -EOPNOTSUPP;
+
+	trace_rdev_erp(&rdev->wiphy, wdev, link_id, params);
+	ret = rdev->ops->erp(&rdev->wiphy, wdev, link_id, params);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
+}
 #endif /* __CFG80211_RDEV_OPS */

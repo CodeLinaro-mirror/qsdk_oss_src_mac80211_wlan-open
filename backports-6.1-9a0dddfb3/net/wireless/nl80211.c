@@ -530,6 +530,14 @@ nl80211_set_critical_update_policy[NL80211_SET_CU_ATTR_MAX + 1] = {
 	[NL80211_SET_CU_ATTR_ELEM_MODIFIED_BMAP] = { .type = NLA_U32 },
 };
 
+static const struct nla_policy
+nl80211_erp_policy[NL80211_ERP_ATTR_MAX + 1] = {
+	[NL80211_ERP_ATTR_ENTER] = { .type = NLA_FLAG },
+	[NL80211_ERP_ATTR_EXIT] = { .type = NLA_FLAG },
+	[NL80211_ERP_ATTR_STATUS] = { .type = NLA_U8 },
+	[NL80211_ERP_ATTR_TRIGGER] = { .type = NLA_U32 },
+};
+
 #if LINUX_VERSION_IS_GEQ(6,7,0)
 static const struct netlink_range_validation nl80211_punct_bitmap_range = {
 	.min = 0,
@@ -950,6 +958,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_WIPHY_ANTENNA_GAIN] = { .type = NLA_U32 },
 	[NL80211_ATTR_VIF_RADIO_MASK] = { .type = NLA_U32 },
 	[NL80211_ATTR_BEACON_TX_MODE] = NLA_POLICY_RANGE(NLA_U32, 1, 2),
+	[NL80211_ATTR_ERP] = NLA_POLICY_NESTED(nl80211_erp_policy),
 };
 
 /* policy for the key attributes */
@@ -17515,6 +17524,89 @@ nl80211_epcs_cfg(struct sk_buff *skb, struct genl_info *info)
 	return rdev_set_epcs(rdev, dev, val);
 }
 
+static int nl80211_erp(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct nlattr *attrs[NL80211_ERP_ATTR_MAX + 1];
+	struct cfg80211_erp_params params = {};
+	struct wireless_dev *wdev;
+	struct sk_buff *msg;
+	void *hdr;
+	int err;
+
+	if (!wiphy_ext_feature_isset(&rdev->wiphy, NL80211_EXT_FEATURE_ERP))
+		return -EOPNOTSUPP;
+
+	if (!info->attrs[NL80211_ATTR_ERP])
+		return -EINVAL;
+
+	err = nla_parse_nested(attrs, NL80211_ERP_ATTR_MAX,
+			       info->attrs[NL80211_ATTR_ERP],
+			       nl80211_erp_policy, NULL);
+	if (err)
+		return err;
+
+	wdev = __cfg80211_wdev_from_attrs(rdev, genl_info_net(info),
+					  info->attrs);
+	if (IS_ERR(wdev)) {
+		err = PTR_ERR(wdev);
+		if (err != -EINVAL)
+			return err;
+		wdev = NULL;
+	} else if (wdev->wiphy != &rdev->wiphy) {
+		return -EINVAL;
+	}
+
+	if (nla_get_flag(attrs[NL80211_ERP_ATTR_ENTER])) {
+		if (nla_get_flag(attrs[NL80211_ERP_ATTR_EXIT]) ||
+		    attrs[NL80211_ERP_ATTR_STATUS])
+			return -EINVAL;
+
+		if (attrs[NL80211_ERP_ATTR_TRIGGER])
+			params.trigger = nla_get_u32(attrs[NL80211_ERP_ATTR_TRIGGER]);
+
+		params.cmd = CFG80211_ERP_CMD_ENTER;
+		return rdev_erp(rdev, wdev,
+				nl80211_link_id_or_invalid(info->attrs),
+				&params);
+	}
+
+	if (nla_get_flag(attrs[NL80211_ERP_ATTR_EXIT])) {
+		if (attrs[NL80211_ERP_ATTR_STATUS])
+			return -EINVAL;
+
+		params.cmd = CFG80211_ERP_CMD_EXIT;
+		return rdev_erp(rdev, wdev,
+				nl80211_link_id_or_invalid(info->attrs),
+				&params);
+	}
+
+	if (attrs[NL80211_ERP_ATTR_STATUS]) {
+		params.cmd = CFG80211_ERP_CMD_STATUS;
+		err = rdev_erp(rdev, wdev,
+			       nl80211_link_id_or_invalid(info->attrs),
+			       &params);
+		if (err)
+			return err;
+
+		msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+		if (!msg)
+			return -ENOMEM;
+
+		hdr = nl80211hdr_put(msg, info->snd_portid, info->snd_seq, 0,
+				     NL80211_CMD_ERP);
+		if (!hdr)
+			return -ENOBUFS;
+
+		if (nla_put_u8(msg, NL80211_ERP_ATTR_STATUS, params.status))
+			return -ENOBUFS;
+
+		return genlmsg_reply(msg, info);
+	}
+
+	return -EINVAL;
+}
+
 #define NL80211_FLAG_NEED_WIPHY		0x01
 #define NL80211_FLAG_NEED_NETDEV	0x02
 #define NL80211_FLAG_NEED_RTNL		0x04
@@ -18746,6 +18838,13 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 					 NL80211_FLAG_NO_WIPHY_MTX |
 					 NL80211_FLAG_MLO_VALID_LINK_ID),
 	},
+	{
+		.cmd = NL80211_CMD_ERP,
+		.validate = GENL_DONT_VALIDATE_STRICT,
+		.doit = nl80211_erp,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_WIPHY),
+	},
 };
 
 static struct genl_family nl80211_fam __ro_after_init = {
@@ -18765,7 +18864,7 @@ static struct genl_family nl80211_fam __ro_after_init = {
 	.n_small_ops = ARRAY_SIZE(nl80211_small_ops),
 #endif
 #if LINUX_VERSION_IS_GEQ(6,1,0)
-	.resv_start_op = NL80211_CMD_REMOVE_LINK_STA + 9,
+	.resv_start_op = NL80211_CMD_REMOVE_LINK_STA + 14,
 #endif
 	.mcgrps = nl80211_mcgrps,
 	.n_mcgrps = ARRAY_SIZE(nl80211_mcgrps),

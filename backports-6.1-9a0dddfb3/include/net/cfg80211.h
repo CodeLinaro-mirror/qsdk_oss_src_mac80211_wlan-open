@@ -4485,6 +4485,51 @@ struct cfg80211_link_reconfig_removal_params {
 };
 
 /**
+ * enum cfg80211_erp_cmds - ErP command types
+ *
+ * Defines types of commands for ErP mode.
+ *
+ * @CFG80211_ERP_CMD_INVALID: invalid command
+ * @CFG80211_ERP_CMD_ENTER: enter into ErP mode
+ * @CFG80211_ERP_CMD_EXIT: exit from ErP mode
+ * @CFG80211_ERP_CMD_STATUS: get ErP status from driver
+ */
+enum cfg80211_erp_cmds {
+	CFG80211_ERP_CMD_INVALID,
+	CFG80211_ERP_CMD_ENTER,
+	CFG80211_ERP_CMD_EXIT,
+	CFG80211_ERP_CMD_STATUS,
+};
+
+/**
+ * enum cfg80211_erp_status - ErP status
+ *
+ * Used to send driver's ErP status to userspace.
+ *
+ * @CFG80211_ERP_STATUS_OFF: driver is not in ErP mode
+ * @CFG80211_ERP_STATUS_ON: driver is in ErP mode
+ */
+ enum cfg80211_erp_status {
+	CFG80211_ERP_STATUS_OFF,
+	CFG80211_ERP_STATUS_ON,
+};
+
+/**
+ * struct cfg80211_erp_params - ErP parameters
+ *
+ * Used for ErP entry/exit/status commands from userspace.
+ *
+ * @cmd: ErP command, see enum cfg80211_erp_cmds.
+ * @trigger: defines the packet trigger to initiate automatic exit from ErP.
+ * @status: drivers can use this field to send current ErP status to cfg80211.
+ */
+struct cfg80211_erp_params {
+	enum cfg80211_erp_cmds cmd;
+	u32 trigger;
+	enum cfg80211_erp_status status;
+};
+
+/**
  * struct cfg80211_ops - backend description for wireless configuration
  *
  * This struct is registered by fullmac card drivers and/or wireless stacks
@@ -4902,7 +4947,8 @@ struct cfg80211_link_reconfig_removal_params {
  * 	scheduled for removal with ML reconfigure element built for that particular
  *	link along with the TBTT count until which the beacon with ML
  *	reconfigure element should be sent.
-
+ *
+ * @erp: Enter/exit ErP low power mode or get status.
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -5281,6 +5327,8 @@ struct cfg80211_ops {
 	int     (*link_reconfig_remove)(struct wiphy *wiphy,
 					struct net_device *dev,
 					const struct cfg80211_link_reconfig_removal_params *params);
+	int	(*erp)(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id,
+		       struct cfg80211_erp_params *params);
 };
 
 /*
