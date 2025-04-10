@@ -1395,6 +1395,7 @@ ieee80211_link_use_reserved_reassign(struct ieee80211_link_data *link)
 
 	list_del(&link->reserved_chanctx_list);
 	link->reserved_chanctx = NULL;
+	link->radar_required = link->reserved_radar_required;
 
 	err = drv_switch_vif_chanctx(local, vif_chsw, 1,
 				     CHANCTX_SWMODE_REASSIGN_VIF);
