@@ -331,7 +331,9 @@ int mesh_path_send_to_gates(struct mesh_path *mpath);
 int mesh_gate_num(struct ieee80211_sub_if_data *sdata);
 u32 airtime_link_metric_get(struct ieee80211_local *local,
 			    struct sta_info *sta);
-
+void mesh_bmiss_update(struct ieee80211_sub_if_data *sdata,
+		       struct ieee80211_mgmt *mgmt, struct ieee802_11_elems *ie,
+		       struct ieee80211_rx_status *rx_status);
 /* Mesh plinks */
 void mesh_neighbour_update(struct ieee80211_sub_if_data *sdata,
 			   u8 *hw_addr, struct ieee802_11_elems *ie,
@@ -366,6 +368,7 @@ void mesh_path_discard_frame(struct ieee80211_sub_if_data *sdata,
 void mesh_path_tx_root_frame(struct ieee80211_sub_if_data *sdata);
 
 bool mesh_action_is_path_sel(struct ieee80211_mgmt *mgmt);
+void mesh_bmiss_event(struct timer_list *t);
 void mesh_nss_offld_path_update(struct mesh_path *mpath, bool is_mpath, u8 *old_next_hop_addr);
 struct ieee80211_mesh_fast_tx *
 mesh_fast_tx_get(struct ieee80211_sub_if_data *sdata,

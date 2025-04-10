@@ -603,6 +603,7 @@ __sta_info_alloc(struct ieee80211_sub_if_data *sdata,
 		if (!sdata->u.mesh.user_mpm)
 			timer_setup(&sta->mesh->plink_timer, mesh_plink_timer,
 				    0);
+		timer_setup(&sta->mesh->bmiss_timer, mesh_bmiss_event, 0);
 		sta->mesh->nonpeer_pm = NL80211_MESH_POWER_ACTIVE;
 	}
 #endif

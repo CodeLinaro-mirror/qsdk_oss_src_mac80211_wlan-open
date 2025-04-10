@@ -860,6 +860,7 @@ struct ieee80211_bss_conf {
 
 	bool color_change_active;
 	u8 color_change_color;
+	u8 bmiss_threshold;
 
 	bool ht_ldpc;
 	bool vht_ldpc;
@@ -2981,6 +2982,12 @@ enum ieee80211_hw_flags {
 	NUM_IEEE80211_HW_FLAGS
 };
 
+enum ieee80211_dbg_mask {
+	IEEE80211_HW_DBG_BMISS_LOG = 0x00000001,
+	IEEE80211_HW_DBG_DRIVER_LOG = 0x00000002,
+	IEEE80211_HW_MAX_DBG_MASK = 0x00000004
+};
+
 /**
  * struct ieee80211_hw - hardware information and state
  *
@@ -3144,6 +3151,7 @@ struct ieee80211_hw {
 	u32 max_mtu;
 	const s8 *tx_power_levels;
 	u8 max_txpwr_levels_idx;
+	u32 dbg_mask;
 };
 
 static inline bool _ieee80211_hw_check(struct ieee80211_hw *hw,

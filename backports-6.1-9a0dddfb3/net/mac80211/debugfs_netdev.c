@@ -449,6 +449,32 @@ static ssize_t ieee80211_if_parse_smps(struct ieee80211_link_data *link,
 }
 IEEE80211_IF_LINK_FILE_RW(smps);
 
+ssize_t ieee80211_if_fmt_bmiss_threshold(const struct ieee80211_sub_if_data *sdata,
+				     char *buf, int buflen)
+{
+	return snprintf(buf, buflen, "%u\n", sdata->vif.bss_conf.bmiss_threshold);
+}
+
+static ssize_t ieee80211_if_parse_bmiss_threshold(struct ieee80211_sub_if_data *sdata,
+						  const char *buf, int buflen)
+{
+	int ret;
+	u8 val;
+
+	ret = kstrtou8(buf, 0, &val);
+	if (ret)
+		return ret;
+
+	if (!val)
+		return -EINVAL;
+
+	sdata->vif.bss_conf.bmiss_threshold = val;
+
+	return buflen;
+}
+
+IEEE80211_IF_FILE_RW(bmiss_threshold);
+
 static ssize_t ieee80211_if_parse_tkip_mic_test(
 	struct ieee80211_sub_if_data *sdata, const char *buf, int buflen)
 {
@@ -867,6 +893,7 @@ static void add_ap_files(struct ieee80211_sub_if_data *sdata)
 	DEBUGFS_ADD(num_buffered_multicast);
 	DEBUGFS_ADD_MODE(tkip_mic_test, 0200);
 	DEBUGFS_ADD_MODE(multicast_to_unicast, 0600);
+	DEBUGFS_ADD_MODE(bmiss_threshold, 0600);
 }
 
 static void add_vlan_files(struct ieee80211_sub_if_data *sdata)
@@ -887,6 +914,7 @@ static void add_mesh_files(struct ieee80211_sub_if_data *sdata)
 {
 	DEBUGFS_ADD_MODE(tsf, 0600);
 	DEBUGFS_ADD_MODE(estab_plinks, 0400);
+	DEBUGFS_ADD_MODE(bmiss_threshold, 0600);
 }
 
 static void add_mesh_stats(struct ieee80211_sub_if_data *sdata)

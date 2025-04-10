@@ -415,6 +415,10 @@ struct mesh_sta {
 	enum nl80211_mesh_power_mode peer_pm;
 	enum nl80211_mesh_power_mode nonpeer_pm;
 
+	struct timer_list bmiss_timer;
+	u32 bmiss_count;
+	u32 beacon_int;
+
 	/* moving percentage of failed MSDUs */
 	struct ewma_mesh_fail_avg fail_avg;
 	/* moving average of tx bitrate */
