@@ -693,6 +693,9 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_AP_VLAN:
+		if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) &&
+		    going_down)
+			drv_remove_interface(local, sdata);
 		break;
 	case NL80211_IFTYPE_MONITOR:
 		if (local->monitors == 0)
@@ -959,6 +962,7 @@ static bool ieee80211_iftype_supports_hdr_offload(enum nl80211_iftype iftype)
 	switch (iftype) {
 	/* P2P GO and client are mapped to AP/STATION types */
 	case NL80211_IFTYPE_AP:
+	case NL80211_IFTYPE_AP_VLAN:
 	case NL80211_IFTYPE_STATION:
 		return true;
 	default:
@@ -1013,7 +1017,8 @@ static void ieee80211_set_vif_encap_ops(struct ieee80211_sub_if_data *sdata)
 	struct ieee80211_sub_if_data *bss = sdata;
 	bool enabled;
 
-	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+	    !ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
 		if (!sdata->bss)
 			return;
 
@@ -1364,6 +1369,14 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 			}
 
 			netif_carrier_on(dev);
+
+			if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
+				ieee80211_set_sdata_offload_flags(sdata);
+				res = drv_add_interface(local, sdata);
+				if (res)
+					goto err_del_interface;
+			}
+
 			ieee80211_set_vif_encap_ops(sdata);
 		} else {
 			netif_carrier_off(dev);

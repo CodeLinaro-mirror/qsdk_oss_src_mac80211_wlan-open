@@ -619,7 +619,9 @@ static inline void drv_sta_rate_tbl_update(struct ieee80211_local *local,
 					   struct ieee80211_sub_if_data *sdata,
 					   struct ieee80211_sta *sta)
 {
-	sdata = get_bss_sdata(sdata);
+	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
+		sdata = get_bss_sdata(sdata);
+
 	if (!check_sdata_in_driver(sdata))
 		return;
 

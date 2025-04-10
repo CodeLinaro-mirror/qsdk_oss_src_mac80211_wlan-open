@@ -4328,8 +4328,13 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 		atomic_inc(&sta->tx_netif_pkts);
 
         if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
-                ap_sdata = container_of(sdata->bss,
-                                        struct ieee80211_sub_if_data, u.ap);
+                if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
+                        ap_sdata = container_of(sdata->bss,
+                                                struct ieee80211_sub_if_data,
+                                                u.ap);
+                else
+                        ap_sdata = sdata;
+
                 if (ap_sdata->vif.offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED &&
                     !is_multicast_ether_addr(skb->data)) {
                         if (sta)
@@ -4739,7 +4744,8 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 
 	info->hw_queue = sdata->vif.hw_queue[queue];
 
-	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+		!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
 		sdata = container_of(sdata->bss,
 				     struct ieee80211_sub_if_data, u.ap);
 

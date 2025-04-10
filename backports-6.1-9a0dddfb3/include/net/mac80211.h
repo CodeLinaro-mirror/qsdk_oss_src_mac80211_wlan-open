@@ -5330,6 +5330,17 @@ void ieee80211_sta_pspoll(struct ieee80211_sta *sta);
  */
 void ieee80211_sta_uapsd_trigger(struct ieee80211_sta *sta, u8 tid);
 
+/**
+ * ieee80211_rx_nss_notify_4addr - notify userspace about 4addr frame rx
+ * @dev: The device the frame matched to
+ * @addr: the transmitter address of 4addr sta
+ *
+ * When operating in AP mode with NSS offload enabled, this function is used
+ * to invoke cfg80211 callback to notify userspace that an associated station
+ * sent a 4addr frame.
+ */
+void ieee80211_rx_nss_notify_4addr(struct net_device *dev, u8* sta_addr);
+
 /*
  * The TX headroom reserved by mac80211 for its own tx_status functions.
  * This is enough for the radiotap header.

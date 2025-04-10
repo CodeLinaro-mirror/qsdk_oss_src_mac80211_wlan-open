@@ -2268,7 +2268,13 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 
 			rcu_assign_pointer(vlansdata->u.vlan.sta, sta);
 			__ieee80211_check_fast_rx_iface(vlansdata);
-			drv_sta_set_4addr(local, sta->sdata, &sta->sta, true);
+
+			if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
+				drv_sta_set_4addr(local, vlansdata, &sta->sta,
+						  true);
+			else
+				drv_sta_set_4addr(local, sta->sdata, &sta->sta,
+						  true);
 		}
 
 		if (sta->sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&

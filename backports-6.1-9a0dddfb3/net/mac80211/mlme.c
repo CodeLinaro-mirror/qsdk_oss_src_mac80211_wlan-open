@@ -5904,7 +5904,8 @@ static bool ieee80211_assoc_success(struct ieee80211_sub_if_data *sdata,
 	 * If we're using 4-addr mode, let the AP know that we're
 	 * doing so, so that it can create the STA VLAN on its side
 	 */
-	if (ifmgd->use_4addr)
+	if (ifmgd->use_4addr &&
+	    (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)))
 		ieee80211_send_4addr_nullfunc(local, sdata);
 
 	/*

@@ -1701,6 +1701,12 @@ void ieee80211_sta_uapsd_trigger(struct ieee80211_sta *pubsta, u8 tid)
 }
 EXPORT_SYMBOL(ieee80211_sta_uapsd_trigger);
 
+void ieee80211_rx_nss_notify_4addr(struct net_device *dev, u8 *sta_addr)
+{
+	cfg80211_rx_unexpected_4addr_frame(dev, sta_addr, GFP_ATOMIC);
+}
+EXPORT_SYMBOL(ieee80211_rx_nss_notify_4addr);
+
 static ieee80211_rx_result debug_noinline
 ieee80211_rx_h_uapsd_and_pspoll(struct ieee80211_rx_data *rx)
 {
