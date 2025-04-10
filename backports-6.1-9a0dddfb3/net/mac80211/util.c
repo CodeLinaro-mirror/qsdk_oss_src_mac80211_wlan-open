@@ -908,11 +908,20 @@ void ieee80211_radar_detected_bitmap(struct ieee80211_hw *hw, u16 radar_bitmap,
 }
 EXPORT_SYMBOL(ieee80211_radar_detected_bitmap);
 
-void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap)
+void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap,
+			     struct ieee80211_channel *awgn_channel)
 {
        struct ieee80211_local *local = hw_to_local(hw);
+       struct channel_awgn_info *awgn_info;
 
-       local->chan_bw_interference_bitmap = chan_bw_interference_bitmap;
+       awgn_info = kzalloc(sizeof(*awgn_info), GFP_ATOMIC);
+       if (!awgn_info)
+	       return;
+
+       INIT_LIST_HEAD(&awgn_info->list);
+       awgn_info->chan_bw_interference_bitmap = chan_bw_interference_bitmap;
+       awgn_info->awgn_channel = awgn_channel;
+       list_add_tail(&awgn_info->list, &local->awgn_info_list);
        schedule_work(&local->awgn_detected_work);
 }
 EXPORT_SYMBOL(ieee80211_awgn_detected);
@@ -3667,11 +3676,12 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local)
 	}
 }
 
-void ieee80211_awgn_detected_work(struct work_struct *work)
+static void ieee80211_awgn_detected_processing(struct ieee80211_local *local,
+					       u32 interference_bitmap,
+					       struct ieee80211_channel *awgn_channel)
 {
-	struct ieee80211_local *local =
-		container_of(work, struct ieee80211_local, awgn_detected_work);
 	struct cfg80211_chan_def chandef = local->hw.conf.chandef;
+	struct cfg80211_chan_def *awgn_chandef = NULL;
 	struct ieee80211_chanctx *ctx;
 	int num_chanctx = 0;
 
@@ -3681,14 +3691,50 @@ void ieee80211_awgn_detected_work(struct work_struct *work)
 
 		num_chanctx++;
 		chandef = ctx->conf.def;
+
+		if (awgn_channel &&
+		    (chandef.chan == awgn_channel))
+			awgn_chandef = &ctx->conf.def;
+
 	}
 
-	if (num_chanctx > 1)
-		/* XXX: multi-channel is not supported yet */
-		WARN_ON_ONCE(1);
-	else
+	if (num_chanctx > 1) {
+		if (local->hw.wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO) {
+			if (WARN_ON(!awgn_chandef))
+				return;
+			cfg80211_awgn_event(local->hw.wiphy, awgn_chandef,
+					    GFP_KERNEL,
+					    interference_bitmap);
+		} else {
+			/* XXX: multi-channel is not supported yet */
+			WARN_ON_ONCE(1);
+		}
+	} else
 		cfg80211_awgn_event(local->hw.wiphy, &chandef, GFP_KERNEL,
-				    local->chan_bw_interference_bitmap);
+				    interference_bitmap);
+}
+
+void ieee80211_awgn_detected_work(struct work_struct *work)
+{
+	struct ieee80211_local *local =
+		container_of(work, struct ieee80211_local, awgn_detected_work);
+	struct channel_awgn_info *awgn_info, *temp;
+	u32 chan_bw_interference_bitmap;
+	struct ieee80211_channel *awgn_channel;
+
+	if (WARN_ON(list_empty(&local->awgn_info_list)))
+		return;
+
+	list_for_each_entry_safe(awgn_info, temp, &local->awgn_info_list, list) {
+		chan_bw_interference_bitmap = awgn_info->chan_bw_interference_bitmap;
+		awgn_channel = awgn_info->awgn_channel;
+
+		ieee80211_awgn_detected_processing(local, chan_bw_interference_bitmap,
+                                                  awgn_channel);
+
+		list_del(&awgn_info->list);
+		kfree(awgn_info);
+	}
 }
 
 static void

@@ -1375,6 +1375,12 @@ struct channel_radar_info {
 	struct ieee80211_channel *radar_channel;
 };
 
+struct channel_awgn_info {
+	struct list_head list;
+	struct ieee80211_channel *awgn_channel;
+	u32 chan_bw_interference_bitmap;
+};
+
 struct ieee80211_local {
 	/* embed the driver visible part.
 	 * don't cast (use the static inlines below), but we keep
@@ -1655,9 +1661,10 @@ struct ieee80211_local {
 
 	struct mac80211_memory_stats memory_stats;
 	struct work_struct awgn_detected_work;
-	u32 chan_bw_interference_bitmap;
 
 	bool enable_tx_latency_stats;
+
+	struct list_head awgn_info_list;
 
 	/* extended capabilities provided by mac80211 */
 	u8 ext_capa[8];

@@ -6961,8 +6961,11 @@ void ieee80211_channel_switch_disconnect(struct ieee80211_vif *vif);
  *
  * @hw: pointer as obtained from ieee80211_alloc_hw()
  * @chan_bw_interference_bitmap : awgn interference bitmap
+ * @awgn_channel: Channel pointer on which AWGN is detected. Mandatory to pass
+ *	for MLO drivers. For non-MLO %NULL can be passed
  */
-void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap);
+void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap,
+			     struct ieee80211_channel *awgn_channel);
 
 /**
  * ieee80211_request_smps - request SM PS transition
