@@ -5222,7 +5222,7 @@ struct ieee80211_iface_combination {
 	 * @radar_detect_widths:
 	 * bitmap of channel widths supported for radar detection
 	 */
-	u8 radar_detect_widths;
+	u32 radar_detect_widths;
 
 	/**
 	 * @radar_detect_regions:

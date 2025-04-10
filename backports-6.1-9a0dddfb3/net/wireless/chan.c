@@ -15,6 +15,12 @@
 #include "core.h"
 #include "rdev-ops.h"
 
+/* 5GHz 320MHz support */
+#define FIXED_PUNCTURE_PATTERN 0xF000
+#define CENTER_FREQ_5G_240MHZ  5650
+#define DISABLED_SUB_CHAN(freq, start_freq, punctured) \
+ ((1 << (freq - start_freq)/MHZ_TO_KHZ(20)) & punctured)
+
 static bool cfg80211_valid_60g_freq(u32 freq)
 {
 	return freq >= 58320 && freq <= 70200;
@@ -744,7 +750,6 @@ static int cfg80211_get_chans_dfs_required(struct wiphy *wiphy,
 	return 0;
 }
 
-
 int cfg80211_chandef_dfs_required(struct wiphy *wiphy,
 				  const struct cfg80211_chan_def *chandef,
 				  enum nl80211_iftype iftype)
@@ -785,6 +790,16 @@ int cfg80211_chandef_dfs_required(struct wiphy *wiphy,
 	return 0;
 }
 EXPORT_SYMBOL(cfg80211_chandef_dfs_required);
+
+bool cfg80211_valid_240mhz_freq(const struct cfg80211_chan_def *chandef)
+{
+	if (chandef->width == NL80211_CHAN_WIDTH_320 &&
+	    chandef->center_freq1 == CENTER_FREQ_5G_240MHZ &&
+	    ((chandef->punctured & FIXED_PUNCTURE_PATTERN) == FIXED_PUNCTURE_PATTERN)) {
+		return true;
+	}
+	return false;
+}
 
 bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
 				 const struct cfg80211_chan_def *chandef)
@@ -1255,10 +1270,14 @@ bool _cfg80211_chandef_usable(struct wiphy *wiphy,
 		prohibited_flags |= IEEE80211_CHAN_NO_320MHZ;
 		width = 320;
 
-		if (chandef->chan->band != NL80211_BAND_6GHZ)
+		if ((chandef->chan->band != NL80211_BAND_6GHZ) &&
+		    (!cfg80211_valid_240mhz_freq(chandef)))
 			return false;
 
-		sband = wiphy->bands[NL80211_BAND_6GHZ];
+		if (cfg80211_valid_240mhz_freq(chandef))
+			sband = wiphy->bands[NL80211_BAND_5GHZ];
+		else
+			sband = wiphy->bands[NL80211_BAND_6GHZ];
 		if (!sband)
 			return false;
 

@@ -361,7 +361,11 @@ __ieee80211_sta_cap_rx_bw(struct link_sta_info *link_sta,
 			rcu_read_unlock();
 		}
 
-		if (eht_cap->has_eht && band == NL80211_BAND_6GHZ) {
+ 		/* TODO: 5GHz is reusing the same PHY capability
+		 * to advertise the 320MHz support. Removind band
+		 * specific check for now.
+		 */
+		if (eht_cap->has_eht && band != NL80211_BAND_6GHZ) {
 			info = eht_cap->eht_cap_elem.phy_cap_info[0];
 
 			if (info & IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ)
