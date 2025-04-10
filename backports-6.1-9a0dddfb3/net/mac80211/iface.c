@@ -805,7 +805,9 @@ void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata)
 static int ieee80211_stop(struct net_device *dev)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	struct ieee80211_ppe_vp_ds_params vp_params = {0};
+#endif
 
 	/* close dependent VLAN interfaces before locking wiphy */
 	if (sdata->vif.type == NL80211_IFTYPE_AP) {
@@ -1895,7 +1897,9 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 	/* and set some type-dependent values */
 	sdata->vif.type = type;
 	sdata->vif.p2p = false;
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	sdata->vif.ppe_vp_num = -1;
+#endif
 	sdata->wdev.iftype = type;
 
 	sdata->control_port_protocol = cpu_to_be16(ETH_P_PAE);
