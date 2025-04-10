@@ -3742,9 +3742,12 @@ void __ieee80211_xmit_fast(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_hdr *hdr = (void *)fast_tx->hdr;
 	struct ieee80211_tx_info *info;
 	struct ieee80211_tx_data tx;
+	struct ieee80211_tx_control control = {};
 	ieee80211_tx_result r;
 	int hw_headroom = sdata->local->hw.extra_tx_headroom;
 	int extra_head = fast_tx->hdr_len - (ETH_HLEN - 2);
+	bool skip_tx_queue = (local->hw.perf_mode &&
+			      !ieee80211_vif_is_mesh(&sdata->vif));
 
 	skb = skb_share_check(skb, GFP_ATOMIC);
 	if (unlikely(!skb))
@@ -3798,8 +3801,11 @@ void __ieee80211_xmit_fast(struct ieee80211_sub_if_data *sdata,
 	tx.sta = sta;
 	tx.key = fast_tx->key;
 
-	if (ieee80211_queue_skb(local, sdata, sta, skb))
-		return;
+	if (unlikely(!skip_tx_queue)) {
+		__skb_queue_head_init(&tx.skbs);
+		if (ieee80211_queue_skb(local, sdata, sta, skb))
+			return;
+	}
 
 	tx.skb = skb;
 	r = ieee80211_xmit_fast_finish(sdata, sta, fast_tx->pn_offs,
@@ -3812,8 +3818,15 @@ void __ieee80211_xmit_fast(struct ieee80211_sub_if_data *sdata,
 		sdata = container_of(sdata->bss,
 				     struct ieee80211_sub_if_data, u.ap);
 
-	__skb_queue_tail(&tx.skbs, skb);
-	ieee80211_tx_frags(local, &sdata->vif, sta, &tx.skbs, false);
+	if (likely(skip_tx_queue)) {
+		info->control.vif = &sdata->vif;
+		control.sta = sta ? &sta->sta : NULL;
+		drv_tx(local, &control, skb);
+	} else {
+		__skb_queue_tail(&tx.skbs, skb);
+		ieee80211_tx_frags(local, &sdata->vif, sta, &tx.skbs, false);
+	}
+
 	return;
 
 free:
@@ -4942,15 +4955,20 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 					    struct net_device *dev)
 {
 #ifdef CPTCFG_MAC80211_SFE_SUPPORT
-	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev), *orig_sdata;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_tx_control control = {};
 	struct sta_info *sta;
 	struct ieee80211_sta *pubsta = NULL;
+	bool perf_mode = sdata->local->hw.perf_mode;
 
-	info->control.vif = &sdata->vif;
+	orig_sdata = sdata;
+	if (likely(skb->fast_xmit && perf_mode)) {
+		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+			sdata = container_of(sdata->bss,
+					     struct ieee80211_sub_if_data, u.ap);
 
-	if (skb->fast_xmit) {
+		info->control.vif = &sdata->vif;
 		info->control.flags = u32_encode_bits(IEEE80211_LINK_UNSPECIFIED,
 						      IEEE80211_TX_CTRL_MLO_LINK);
 		info->flags = IEEE80211_TX_CTL_HW_80211_ENCAP;
@@ -4958,7 +4976,7 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 		if (hweight16(sdata->vif.valid_links) > 1) {
 			rcu_read_lock();
 
-			if (ieee80211_lookup_ra_sta(sdata, skb, &sta)) {
+			if (ieee80211_lookup_ra_sta(orig_sdata, skb, &sta)) {
 				kfree_skb(skb);
 				goto out;
 			}
@@ -4977,6 +4995,8 @@ out:
 
 		return NETDEV_TX_OK;
 	}
+
+	info->control.vif = &sdata->vif;
 #endif
 	return __ieee80211_subif_start_xmit_8023(skb, dev, 0, 0, NULL);
 
