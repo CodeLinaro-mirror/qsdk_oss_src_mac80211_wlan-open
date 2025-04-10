@@ -7344,16 +7344,36 @@ static int nl80211_send_station(struct sk_buff *msg, u32 cmd, u32 portid,
 		if (!bss_param)
 			goto nla_put_failure;
 
+		link_id = 0;
+		if (sinfo->valid_links) {
+			for_each_valid_link(sinfo, link_id) {
+				link = nla_nest_start(msg, link_id + 1);
+				if (!link)
+					goto nla_put_failure;
+				if (nla_put_u8(msg, NL80211_STA_BSS_PARAM_DTIM_PERIOD,
+					       sinfo->links[link_id].dtim_period))
+					goto nla_put_failure;
+				if (nla_put_u16(msg, NL80211_STA_BSS_PARAM_BEACON_INTERVAL,
+						sinfo->links[link_id].beacon_interval))
+					goto nla_put_failure;
+
+				nla_nest_end(msg, link);
+			}
+		} else {
+			if (nla_put_u8(msg, NL80211_STA_BSS_PARAM_DTIM_PERIOD,
+				       sinfo->bss_param.dtim_period) ||
+			    nla_put_u16(msg, NL80211_STA_BSS_PARAM_BEACON_INTERVAL,
+				        sinfo->bss_param.beacon_interval)) {
+				goto nla_put_failure;
+			}
+		}
+
 		if (((sinfo->bss_param.flags & BSS_PARAM_FLAGS_CTS_PROT) &&
 		     nla_put_flag(msg, NL80211_STA_BSS_PARAM_CTS_PROT)) ||
 		    ((sinfo->bss_param.flags & BSS_PARAM_FLAGS_SHORT_PREAMBLE) &&
 		     nla_put_flag(msg, NL80211_STA_BSS_PARAM_SHORT_PREAMBLE)) ||
 		    ((sinfo->bss_param.flags & BSS_PARAM_FLAGS_SHORT_SLOT_TIME) &&
-		     nla_put_flag(msg, NL80211_STA_BSS_PARAM_SHORT_SLOT_TIME)) ||
-		    nla_put_u8(msg, NL80211_STA_BSS_PARAM_DTIM_PERIOD,
-			       sinfo->bss_param.dtim_period) ||
-		    nla_put_u16(msg, NL80211_STA_BSS_PARAM_BEACON_INTERVAL,
-				sinfo->bss_param.beacon_interval))
+		     nla_put_flag(msg, NL80211_STA_BSS_PARAM_SHORT_SLOT_TIME)))
 			goto nla_put_failure;
 
 		nla_nest_end(msg, bss_param);

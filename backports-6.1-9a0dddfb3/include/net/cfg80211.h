@@ -2164,6 +2164,8 @@ struct cfg80211_tid_stats {
 
 struct link_station_info {
 	u8 addr[ETH_ALEN] __aligned(2);
+	u8 dtim_period;
+	u16 beacon_interval;
 	/* TODO: packet stats */
 };
 

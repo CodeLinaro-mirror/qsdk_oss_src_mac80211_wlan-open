@@ -2728,6 +2728,8 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 	int i, ac, link_id = 0;
 	struct ieee80211_sta_rx_stats *last_rxstats;
 	struct link_sta_info *link_sta = NULL;
+	struct ieee80211_link_data *link;
+	struct ieee80211_bss_conf *link_conf;
 
 	last_rxstats = sta_get_last_rx_stats(sta, false);
 
@@ -2779,11 +2781,22 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 			link_sta_filled |= link_sta_set_info(link_sta, sinfo,
 							     init);
 			init = false;
+
+			link = sdata_dereference(sdata->link[link_id], sdata);
+
+			if (link) {
+				link_conf = link->conf;
+
+				sinfo->links[link_id].dtim_period = link_conf->dtim_period;
+				sinfo->links[link_id].beacon_interval = link_conf->beacon_int;
+			}
 			rcu_read_unlock();
 		}
 
 		sinfo->filled |= link_sta_filled;
 	} else {
+		sinfo->bss_param.dtim_period = sdata->deflink.conf->dtim_period;
+		sinfo->bss_param.beacon_interval = sdata->deflink.conf->beacon_int;
 		sinfo->filled |= link_sta_set_info(&sta->deflink, sinfo, true);
 	}
 
