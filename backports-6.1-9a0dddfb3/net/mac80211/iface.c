@@ -27,6 +27,12 @@
 #include "wme.h"
 #include "rate.h"
 
+#ifdef CPTCFG_MAC80211_NSS_SUPPORT
+bool nss_redirect = false;
+module_param(nss_redirect, bool, 0644);
+MODULE_PARM_DESC(nss_redirect, "module param to enable NSS Redirect; 1-enable, 0-disable");
+#endif
+
 /**
  * DOC: Interface list locking
  *
@@ -803,6 +809,13 @@ static int ieee80211_stop(struct net_device *dev)
 
 	wiphy_work_cancel(sdata->local->hw.wiphy, &sdata->activate_links_work);
 
+#ifdef CPTCFG_MAC80211_NSS_SUPPORT
+	if (sdata->nssctx) {
+		nss_virt_if_destroy_sync(sdata->nssctx);
+		sdata_info(sdata, "Destroyed NSS virtual interface\n");
+	}
+#endif
+
 	/* Close the dependent MBSSID interfaces with wiphy lock as we may be
 	 * terminating its partner links too in case of MLD.
 	 */
@@ -1209,6 +1222,34 @@ void ieee80211_del_virtual_monitor(struct ieee80211_local *local)
 	kfree(sdata);
 }
 
+#ifdef CPTCFG_MAC80211_NSS_SUPPORT
+/* This callback is registered for nss redirect to receive packet exceptioned from nss in Rx path.
+ * When packet does not match any of the ecm rules is redirected back here.
+ */
+void receive_from_nss(struct net_device *dev, struct sk_buff *sk_buff, struct napi_struct *napi)
+{
+	struct net_device *netdev;
+	struct sk_buff *skb;
+	struct ieee80211_sub_if_data *sdata;
+
+	if (!dev) {
+		kfree(sk_buff);
+		return;
+	}
+
+	netdev = (struct net_device *)dev;
+	sdata = netdev_priv(netdev);
+	if (sdata->dev != dev) {
+		kfree(sk_buff);
+		return;
+	}
+	skb = (struct sk_buff *)sk_buff;
+	skb->dev = netdev;
+	skb->protocol = eth_type_trans(skb, netdev);
+	napi_gro_receive(napi, skb);
+}
+#endif
+
 /*
  * NOTE: Be very careful when changing this function, it must NOT return
  * an error on interface type changes that have been pre-checked, so most
@@ -1445,6 +1486,19 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 		ieee80211_hw_config(local, hw_reconf_flags);
 
 	ieee80211_recalc_ps(local);
+
+#ifdef CPTCFG_MAC80211_NSS_SUPPORT
+       sdata->nssctx = NULL;
+       if (nss_redirect) {
+               sdata->nssctx = nss_virt_if_create_sync(dev);
+               if (sdata->nssctx) {
+                       sdata_info(sdata, "Created a NSS virtual interface\n");
+                       nss_virt_if_register(sdata->nssctx, receive_from_nss, sdata->dev);
+               } else {
+                       sdata_info(sdata, "Failed to create a NSS virtual interface\n");
+               }
+       }
+#endif
 
 	set_bit(SDATA_STATE_RUNNING, &sdata->state);
 

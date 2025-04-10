@@ -35,6 +35,9 @@
 #include "sta_info.h"
 #include "debug.h"
 #include "drop.h"
+#ifdef CPTCFG_MAC80211_NSS_SUPPORT
+#include <nss_api_if.h>
+#endif
 
 extern const struct cfg80211_ops mac80211_config_ops;
 
@@ -1196,6 +1199,9 @@ struct ieee80211_sub_if_data {
 		struct dentry *default_mgmt_key;
 		struct dentry *default_beacon_key;
 	} debugfs;
+#endif
+#ifdef CPTCFG_MAC80211_NSS_SUPPORT
+	struct nss_virt_if_handle *nssctx;
 #endif
 
 	/* must be last, dynamically sized area in this! */

@@ -4531,6 +4531,35 @@ static void ieee80211_mlo_multicast_tx(struct net_device *dev,
 	kfree_skb(skb);
 }
 
+#ifdef CPTCFG_MAC80211_NSS_SUPPORT
+void ieee80211_xmit_nss_fixup(struct sk_buff *skb,
+			      struct net_device *dev)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+
+	/* Packets from NSS does not have valid protocol, priority and other
+	 * network stack values. Derive required parameters (priority
+	 * and network_header) from payload for QoS header.
+	 * XXX: Here the assumption is that packet are in 802.3 format.
+	 * As of now priority is handled only for IPv4 and IPv6.
+	 */
+
+	if (sdata->nssctx && likely(!skb->protocol)) {
+		skb_set_network_header(skb, 14);
+		switch (((struct ethhdr *)skb->data)->h_proto) {
+		case htons(ETH_P_IP):
+			skb->priority = (ipv4_get_dsfield(ip_hdr(skb)) &
+					 0xfc) >> 5;
+			break;
+		case htons(ETH_P_IPV6):
+			skb->priority = (ipv6_get_dsfield(ipv6_hdr(skb)) &
+					 0xfc) >> 5;
+			break;
+		}
+	}
+}
+#endif
+
 /**
  * ieee80211_subif_start_xmit - netif start_xmit function for 802.3 vifs
  * @skb: packet to be sent
@@ -4545,6 +4574,10 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	const struct ethhdr *eth = (void *)skb->data;
+
+#ifdef CPTCFG_MAC80211_NSS_SUPPORT
+	ieee80211_xmit_nss_fixup(skb, dev);
+#endif
 
 	if (likely(!is_multicast_ether_addr(eth->h_dest)))
 		goto normal;
@@ -4751,6 +4784,9 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	struct sta_info *sta;
 	bool is_eapol;
 
+#ifdef CPTCFG_MAC80211_NSS_SUPPORT
+       ieee80211_xmit_nss_fixup(skb, dev);
+#endif
 	if (unlikely(!ieee80211_sdata_running(sdata) || skb->len < ETH_HLEN)) {
 		kfree_skb(skb);
 		return NETDEV_TX_OK;
