@@ -862,7 +862,8 @@ bool ieee80211_mesh_xmit_fast(struct ieee80211_sub_if_data *sdata,
 	if (!skb)
 		return true;
 
-	skb_set_queue_mapping(skb, ieee80211_select_queue(sdata, sta, skb));
+	if (unlikely(!ieee80211_hw_check(&sdata->local->hw, HAS_TX_QUEUE)))
+		skb_set_queue_mapping(skb, ieee80211_select_queue(sdata, sta, skb));
 
 	meshhdr = (struct ieee80211s_hdr *)entry->hdr;
 	if ((meshhdr->flags & MESH_FLAGS_AE) == MESH_FLAGS_AE_A5_A6) {

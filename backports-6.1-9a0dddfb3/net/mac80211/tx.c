@@ -1623,6 +1623,9 @@ int ieee80211_txq_setup_flows(struct ieee80211_local *local)
 	bool supp_vht = false;
 	enum nl80211_band band;
 
+	if (ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+		return 0;
+
 	ret = fq_init(fq, 4096);
 	if (ret)
 		return ret;
@@ -1670,6 +1673,9 @@ void ieee80211_txq_teardown_flows(struct ieee80211_local *local)
 {
 	struct fq *fq = &local->fq;
 
+	if (ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+		return;
+
 	kvfree(local->cvars);
 	local->cvars = NULL;
 
@@ -1687,7 +1693,8 @@ static bool ieee80211_queue_skb(struct ieee80211_local *local,
 	struct ieee80211_vif *vif;
 	struct txq_info *txqi;
 
-	if (sdata->vif.type == NL80211_IFTYPE_MONITOR)
+	if (ieee80211_hw_check(&local->hw, HAS_TX_QUEUE) ||
+	    sdata->vif.type == NL80211_IFTYPE_MONITOR)
 		return false;
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
@@ -4381,7 +4388,8 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
                 }
         }
 
-	skb_set_queue_mapping(skb, ieee80211_select_queue(sdata, sta, skb));
+	if (unlikely(!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE)))
+		skb_set_queue_mapping(skb, ieee80211_select_queue(sdata, sta, skb));
 	ieee80211_aggr_check(sdata, sta, skb);
 
 	if (sta) {
@@ -4758,8 +4766,10 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	bool multicast;
 	u8 tid;
 
-	queue = ieee80211_select_queue(sdata, sta, skb);
-	skb_set_queue_mapping(skb, queue);
+	if (unlikely(!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))) {
+		queue = ieee80211_select_queue(sdata, sta, skb);
+		skb_set_queue_mapping(skb, queue);
+	}
 
 	multicast = is_multicast_ether_addr(ra);
 
@@ -6543,9 +6553,12 @@ int ieee80211_tx_control_port(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	if (!IS_ERR(sta)) {
-		u16 queue = ieee80211_select_queue(sdata, sta, skb);
 
-		skb_set_queue_mapping(skb, queue);
+		if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE)) {
+			u16 queue = ieee80211_select_queue(sdata, sta, skb);
+
+			skb_set_queue_mapping(skb, queue);
+		}
 
 		/*
 		 * for MLO STA, the SA should be the AP MLD address, but

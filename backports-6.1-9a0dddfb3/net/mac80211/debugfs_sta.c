@@ -177,6 +177,9 @@ static ssize_t sta_aqm_read(struct file *file, char __user *userbuf,
 		       bufsz + buf - p,
 		       "tid ac backlog-bytes backlog-packets new-flows drops marks overlimit collisions tx-bytes tx-packets flags\n");
 
+	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+		goto skip_txq_info;
+
 	for (i = 0; i < ARRAY_SIZE(sta->sta.txq); i++) {
 		if (!sta->sta.txq[i])
 			continue;
@@ -201,6 +204,7 @@ static ssize_t sta_aqm_read(struct file *file, char __user *userbuf,
 			       test_bit(IEEE80211_TXQ_DIRTY, &txqi->flags) ? " DIRTY" : "");
 	}
 
+skip_txq_info:
 	rcu_read_unlock();
 	spin_unlock_bh(&local->fq.lock);
 

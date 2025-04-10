@@ -1014,7 +1014,10 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 		atomic_set(&local->agg_queue_stop[i], 0);
 	}
 	tasklet_setup(&local->tx_pending_tasklet, ieee80211_tx_pending);
-	tasklet_setup(&local->wake_txqs_tasklet, ieee80211_wake_txqs);
+
+	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
+		tasklet_setup(&local->wake_txqs_tasklet, ieee80211_wake_txqs);
+
 	tasklet_setup(&local->tasklet, ieee80211_tasklet_handler);
 
 	skb_queue_head_init(&local->skb_queue);

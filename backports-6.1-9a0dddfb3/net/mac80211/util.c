@@ -466,7 +466,7 @@ static void __ieee80211_wake_queue(struct ieee80211_hw *hw, int queue,
 	 * release someone's lock, but it is fine because all the callers of
 	 * __ieee80211_wake_queue call it right before releasing the lock.
 	 */
-	if (local->ops->wake_tx_queue)
+	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
 		tasklet_schedule(&local->wake_txqs_tasklet);
 }
 

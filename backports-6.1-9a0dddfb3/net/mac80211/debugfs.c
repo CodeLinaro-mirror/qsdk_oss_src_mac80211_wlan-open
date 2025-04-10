@@ -638,6 +638,7 @@ static const char *hw_flag_names[] = {
 	FLAG(SUPPORTS_MESH_NSS_OFFLOAD),
 	FLAG(SUPPORTS_TID_CLASS_OFFLOAD),
 	FLAG(SUPPORTS_AP_PS),
+	FLAG(HAS_TX_QUEUE),
 #undef FLAG
 };
 
