@@ -3001,6 +3001,9 @@ struct ieee80211_txq {
  *
  * @IEEE80211_HW_VLAN_DATA_OFFLOAD: driver supports vlan data path offload
  *
+ * @IEEE80211_HW_SUPPORTS_CONC_AP_MON_IN_80211_FORMAT: Hardware supports concurrent
+ *	encapsulation decapsulation offload for AP and monitor in 80211 FORMAT.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3068,6 +3071,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_HAS_TX_QUEUE,
 	IEEE80211_HW_SUPPORT_ECM_REGISTRATION,
 	IEEE80211_HW_SUPPORTS_VLAN_DATA_OFFLOAD,
+	IEEE80211_HW_SUPPORTS_CONC_AP_MON_IN_80211_FORMAT,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS

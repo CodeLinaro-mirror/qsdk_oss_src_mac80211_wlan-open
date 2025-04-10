@@ -1022,7 +1022,8 @@ static bool ieee80211_set_sdata_offload_flags(struct ieee80211_sub_if_data *sdat
 			flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;
 
 		if (local->monitors &&
-		    !ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
+		    (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) &&
+		     ieee80211_hw_check(&local->hw, SUPPORTS_CONC_AP_MON_IN_80211_FORMAT)))
 			flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;
 	} else {
 		flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;
@@ -1033,8 +1034,9 @@ static bool ieee80211_set_sdata_offload_flags(struct ieee80211_sub_if_data *sdat
 		flags |= IEEE80211_OFFLOAD_DECAP_ENABLED;
 
 		if (local->monitors &&
-		    (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
-		     !ieee80211_hw_check(&local->hw, SUPPORTS_CONC_MON_RX_DECAP)))
+		    ((!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+		      !ieee80211_hw_check(&local->hw, SUPPORTS_CONC_MON_RX_DECAP)) &&
+		     ieee80211_hw_check(&local->hw, SUPPORTS_CONC_AP_MON_IN_80211_FORMAT)))
 			flags &= ~IEEE80211_OFFLOAD_DECAP_ENABLED;
 	} else {
 		flags &= ~IEEE80211_OFFLOAD_DECAP_ENABLED;
