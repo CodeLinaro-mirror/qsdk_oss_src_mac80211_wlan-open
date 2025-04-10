@@ -1624,6 +1624,16 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 		else
 			err |= BSS_CHANGED_PS;
 	}
+
+	if (beacon->he_bss_color_valid &&
+	    beacon->he_bss_color.enabled != link_conf->he_bss_color.enabled) {
+		link_conf->he_bss_color.enabled = beacon->he_bss_color.enabled;
+		err |= BSS_CHANGED_HE_BSS_COLOR;
+	}
+
+	if (err > 0)
+		changed = err;
+
 	err = ieee80211_set_fils_discovery(sdata, &params->fils_discovery,
 					   link, link_conf, &changed);
 	if (err < 0)
@@ -1634,12 +1644,6 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 						   link, link_conf, &changed);
 	if (err < 0)
 		return err;
-
-	if (beacon->he_bss_color_valid &&
-	    beacon->he_bss_color.enabled != link_conf->he_bss_color.enabled) {
-		link_conf->he_bss_color.enabled = beacon->he_bss_color.enabled;
-		changed |= BSS_CHANGED_HE_BSS_COLOR;
-	}
 
 	if (params->fils_discovery.max_interval) {
 		err = ieee80211_set_fils_discovery(sdata,
