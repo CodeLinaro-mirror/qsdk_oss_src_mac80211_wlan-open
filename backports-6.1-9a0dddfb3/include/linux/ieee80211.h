@@ -1352,7 +1352,7 @@ struct ieee80211_mgmt {
 			__le16 auth_transaction;
 			__le16 status_code;
 			/* possibly followed by Challenge text */
-			u8 variable[];
+			u8 variable[0];
 		} __packed auth;
 		struct {
 			__le16 reason_code;
@@ -1361,26 +1361,26 @@ struct ieee80211_mgmt {
 			__le16 capab_info;
 			__le16 listen_interval;
 			/* followed by SSID and Supported rates */
-			u8 variable[];
+			u8 variable[0];
 		} __packed assoc_req;
 		struct {
 			__le16 capab_info;
 			__le16 status_code;
 			__le16 aid;
 			/* followed by Supported rates */
-			u8 variable[];
+			u8 variable[0];
 		} __packed assoc_resp, reassoc_resp;
 		struct {
 			__le16 capab_info;
 			__le16 status_code;
-			u8 variable[];
+			u8 variable[0];
 		} __packed s1g_assoc_resp, s1g_reassoc_resp;
 		struct {
 			__le16 capab_info;
 			__le16 listen_interval;
 			u8 current_ap[ETH_ALEN];
 			/* followed by SSID and Supported rates */
-			u8 variable[];
+			u8 variable[0];
 		} __packed reassoc_req;
 		struct {
 			__le16 reason_code;
@@ -1391,11 +1391,11 @@ struct ieee80211_mgmt {
 			__le16 capab_info;
 			/* followed by some of SSID, Supported rates,
 			 * FH Params, DS Params, CF Params, IBSS Params, TIM */
-			u8 variable[];
+			u8 variable[0];
 		} __packed beacon;
 		struct {
 			/* only variable items: SSID, Supported rates */
-			DECLARE_FLEX_ARRAY(u8, variable);
+			u8 variable[0];
 		} __packed probe_req;
 		struct {
 			__le64 timestamp;
@@ -1403,7 +1403,7 @@ struct ieee80211_mgmt {
 			__le16 capab_info;
 			/* followed by some of SSID, Supported rates,
 			 * FH Params, DS Params, CF Params, IBSS Params */
-			u8 variable[];
+			u8 variable[0];
 		} __packed probe_resp;
 		struct {
 			u8 category;
@@ -1412,16 +1412,16 @@ struct ieee80211_mgmt {
 					u8 action_code;
 					u8 dialog_token;
 					u8 status_code;
-					u8 variable[];
+					u8 variable[0];
 				} __packed wme_action;
 				struct{
 					u8 action_code;
-					u8 variable[];
+					u8 variable[0];
 				} __packed chan_switch;
 				struct{
 					u8 action_code;
 					struct ieee80211_ext_chansw_ie data;
-					u8 variable[];
+					u8 variable[0];
 				} __packed ext_chan_switch;
 				struct{
 					u8 action_code;
@@ -1437,7 +1437,7 @@ struct ieee80211_mgmt {
 					__le16 timeout;
 					__le16 start_seq_num;
 					/* followed by BA Extension */
-					u8 variable[];
+					u8 variable[0];
 				} __packed addba_req;
 				struct{
 					u8 action_code;
@@ -1455,11 +1455,11 @@ struct ieee80211_mgmt {
 				} __packed delba;
 				struct {
 					u8 action_code;
-					u8 variable[];
+					u8 variable[0];
 				} __packed self_prot;
 				struct{
 					u8 action_code;
-					u8 variable[];
+					u8 variable[0];
 				} __packed mesh_action;
 				struct {
 					u8 action;
@@ -1503,7 +1503,7 @@ struct ieee80211_mgmt {
 					u8 toa[6];
 					__le16 tod_error;
 					__le16 toa_error;
-					u8 variable[];
+					u8 variable[0];
 				} __packed ftm;
 				struct {
 					u8 action_code;
