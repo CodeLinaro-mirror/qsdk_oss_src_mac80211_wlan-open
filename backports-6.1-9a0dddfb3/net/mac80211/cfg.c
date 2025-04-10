@@ -1014,7 +1014,7 @@ static int ieee80211_set_fils_discovery(struct ieee80211_sub_if_data *sdata,
 	if (old)
 		kfree_rcu(old, rcu_head);
 
-	if (params->tmpl && params->tmpl_len) {
+	if (params->tmpl && params->tmpl_len && fd->max_interval) {
 		new = kzalloc(sizeof(*new) + params->tmpl_len, GFP_KERNEL);
 		if (!new)
 			return -ENOMEM;
@@ -1041,13 +1041,18 @@ ieee80211_set_unsol_bcast_probe_resp(struct ieee80211_sub_if_data *sdata,
 	if (!params->update)
 		return 0;
 
+	/* If already disabled, then nothing to do much here */
+	if (params->interval == 0 &&
+	    link_conf->unsol_bcast_probe_resp_interval == 0)
+		return 0;
+
 	link_conf->unsol_bcast_probe_resp_interval = params->interval;
 
 	old = sdata_dereference(link->u.ap.unsol_bcast_probe_resp, sdata);
 	if (old)
 		kfree_rcu(old, rcu_head);
 
-	if (params->tmpl && params->tmpl_len) {
+	if (params->tmpl && params->tmpl_len && params->interval) {
 		new = kzalloc(sizeof(*new) + params->tmpl_len, GFP_KERNEL);
 		if (!new)
 			return -ENOMEM;
@@ -1644,24 +1649,6 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 						   link, link_conf, &changed);
 	if (err < 0)
 		return err;
-
-	if (params->fils_discovery.max_interval) {
-		err = ieee80211_set_fils_discovery(sdata,
-						   &params->fils_discovery,
-						   link, link_conf, &changed);
-		if (err < 0)
-			return err;
-		changed |= BSS_CHANGED_FILS_DISCOVERY;
-	}
-
-	if (params->unsol_bcast_probe_resp.interval) {
-		err = ieee80211_set_unsol_bcast_probe_resp(sdata,
-							   &params->unsol_bcast_probe_resp,
-							   link, link_conf, &changed);
-		if (err < 0)
-			return err;
-		changed |= BSS_CHANGED_UNSOL_BCAST_PROBE_RESP;
-	}
 
 	ieee80211_link_info_change_notify(sdata, link, changed);
 	return 0;
