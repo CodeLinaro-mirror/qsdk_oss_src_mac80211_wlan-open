@@ -616,9 +616,11 @@ static struct ieee80211_key *
 ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
 		     u8 key_idx, bool pairwise, const u8 *mac_addr)
 {
-	struct ieee80211_local *local __maybe_unused = sdata->local;
+	struct ieee80211_local *local __maybe_unused;
 	struct ieee80211_link_data *link = &sdata->deflink;
 	struct ieee80211_key *key;
+
+	local = sdata->local;
 
 	if (link_id >= 0) {
 		link = sdata_dereference(sdata->link[link_id], sdata);
