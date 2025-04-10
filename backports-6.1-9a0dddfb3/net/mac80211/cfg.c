@@ -1333,6 +1333,78 @@ static u8 ieee80211_num_beaconing_links(struct ieee80211_sub_if_data *sdata)
 	return num;
 }
 
+static int ieee80211_set_critical_update(struct ieee80211_sub_if_data *sdata,
+					 unsigned int link_id,
+					 struct cfg80211_set_cu_params *params,
+					 bool update)
+{
+	struct ieee80211_vif *vif = &sdata->vif;
+	struct ieee80211_link_data *link;
+
+	if (!ieee80211_vif_is_mld(vif))
+		return 0;
+
+	rcu_read_lock();
+	link = rcu_dereference(sdata->link[link_id]);
+	if (!link || !params || (!params->elemid_added_bmap &&
+				 !params->elemid_modified_bmap)) {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	if (BIT(link->conf->bssid_index) & params->elemid_added_bmap)
+		link->conf->elemid_added = update;
+	if (BIT(link->conf->bssid_index) & params->elemid_modified_bmap)
+		link->conf->elemid_modified = update;
+
+	if (!(params->elemid_added_bmap & ~BIT(0)) &&
+	    !(params->elemid_modified_bmap & ~BIT(0))) {
+		/* None of the Non-TX BSS is due for CU.
+		 */
+		rcu_read_unlock();
+		return 0;
+	}
+
+	/* Only TX BSS is allowed to set CU for its Non-TX BSSes and not
+	 * Vice versa.
+	 */
+	if (link->conf->mbssid_tx_vif == vif &&
+	    link->conf->mbssid_tx_vif_linkid == link->conf->link_id) {
+		unsigned int link_id_iter;
+		unsigned long valid_links;
+		struct ieee80211_sub_if_data *iter;
+		struct ieee80211_link_data *link_iter;
+
+		list_for_each_entry_rcu(iter, &sdata->local->interfaces, list) {
+			if (!ieee80211_sdata_running(iter) || iter == sdata)
+				continue;
+
+			/* check link 0 by default for Non-ML non-tx vif's deflinks */
+			valid_links = iter->vif.valid_links | BIT(0);
+			for_each_set_bit(link_id_iter, &valid_links,
+					 IEEE80211_MLD_MAX_NUM_LINKS) {
+				link_iter = rcu_dereference(iter->link[link_id_iter]);
+				if (!link_iter)
+					continue;
+				/* Check if any of link of iterator sdata belongs
+				 * to same mbssid group as the tx link
+				 */
+				if (link_iter->conf->mbssid_tx_vif != vif ||
+				    link_iter->conf->mbssid_tx_vif_linkid != link->link_id)
+					continue;
+				if (BIT(link_iter->conf->bssid_index) &
+					params->elemid_added_bmap)
+					link_iter->conf->elemid_added = update;
+				if (BIT(link_iter->conf->bssid_index) &
+					params->elemid_modified_bmap)
+					link_iter->conf->elemid_modified = update;
+			}
+		}
+	}
+	rcu_read_unlock();
+	return 0;
+}
+
 static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			      struct cfg80211_ap_settings *params)
 {
@@ -1568,6 +1640,7 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (err < 0)
 		goto error;
 
+	ieee80211_set_critical_update(sdata, link_id, &params->beacon.cu_params, true);
 	err = drv_start_ap(sdata->local, sdata, link_conf);
 	if (err) {
 		old = sdata_dereference(link->u.ap.beacon, sdata);
@@ -1578,10 +1651,8 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 		if (ieee80211_num_beaconing_links(sdata) == 0) {
 			sdata->u.ap.active = false;
-			link_conf->elemid_added = 0;
-			link_conf->elemid_modified = 0;
 		}
-
+		ieee80211_set_critical_update(sdata, link_id, &params->beacon.cu_params, false);
 		goto error;
 	}
 
@@ -1595,8 +1666,7 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list)
 		netif_carrier_on(vlan->dev);
 
-	link_conf->elemid_added = 0;
-	link_conf->elemid_modified = 0;
+	ieee80211_set_critical_update(sdata, link_id, &params->beacon.cu_params, false);
 	return 0;
 
 error:
@@ -1681,9 +1751,12 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (err < 0)
 		return err;
 
+	ieee80211_set_critical_update(sdata, link->link_id,
+				      &params->beacon.cu_params, true);
 	ieee80211_link_info_change_notify(sdata, link, changed);
-	link_conf->elemid_added = 0;
-	link_conf->elemid_modified = 0;
+	ieee80211_set_critical_update(sdata, link->link_id,
+				      &params->beacon.cu_params, false);
+
 	return 0;
 }
 
