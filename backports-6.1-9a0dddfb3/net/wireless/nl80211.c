@@ -5779,7 +5779,8 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 					 struct cfg80211_bitrate_mask *mask,
 					 struct net_device *dev,
 					 bool default_all_enabled,
-					 unsigned int link_id)
+					 unsigned int link_id,
+					 struct cfg80211_chan_def *chandef)
 {
 	struct nlattr *tb[NL80211_TXRATE_MAX + 1];
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -5851,7 +5852,6 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 	nla_for_each_nested(tx_rates, attrs[attr], rem) {
 		enum nl80211_band band_link, band = nla_type(tx_rates);
 		int err;
-		struct cfg80211_chan_def *chandef = wdev_chandef(wdev, link_id);
 
 		if (!chandef || !chandef->chan)
 			return -EINVAL;
@@ -6889,7 +6889,8 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		err = nl80211_parse_tx_bitrate_mask(info, info->attrs,
 						    NL80211_ATTR_TX_RATES,
 						    &params->beacon_rate,
-						    dev, false, link_id);
+						    dev, false, link_id,
+						    &params->chandef);
 		if (err)
 			goto out;
 
@@ -13509,6 +13510,7 @@ static int nl80211_set_tx_bitrate_mask(struct sk_buff *skb,
 	unsigned int link_id = nl80211_link_id(info->attrs);
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct net_device *dev = info->user_ptr[1];
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	int err;
 
 	if (!rdev->ops->set_bitrate_mask)
@@ -13516,7 +13518,8 @@ static int nl80211_set_tx_bitrate_mask(struct sk_buff *skb,
 
 	err = nl80211_parse_tx_bitrate_mask(info, info->attrs,
 					    NL80211_ATTR_TX_RATES, &mask,
-					    dev, true, link_id);
+					    dev, true, link_id,
+					    wdev_chandef(wdev, link_id));
 	if (err)
 		return err;
 
@@ -14150,7 +14153,7 @@ static int nl80211_join_mesh(struct sk_buff *skb, struct genl_info *info)
 		err = nl80211_parse_tx_bitrate_mask(info, info->attrs,
 						    NL80211_ATTR_TX_RATES,
 						    &setup.beacon_rate,
-						    dev, false, 0);
+						    dev, false, 0, &setup.chandef);
 		if (err)
 			return err;
 
@@ -16889,7 +16892,9 @@ static int parse_tid_conf(struct cfg80211_registered_device *rdev,
 			attr = NL80211_TID_CONFIG_ATTR_TX_RATE;
 			err = nl80211_parse_tx_bitrate_mask(info, attrs, attr,
 						    &tid_conf->txrate_mask, dev,
-						    true, link_id);
+						    true, link_id,
+						    wdev_chandef(rdev->background_radar_wdev,
+						    link_id));
 			if (err)
 				return err;
 
