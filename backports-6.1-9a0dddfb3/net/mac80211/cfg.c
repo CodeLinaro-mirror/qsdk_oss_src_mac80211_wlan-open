@@ -927,6 +927,7 @@ static int ieee80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = sdata->local;
 	struct sta_info *sta;
+	struct link_sta_info *link_sta;
 	int ret = -ENOENT;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -935,6 +936,13 @@ static int ieee80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 	if (sta) {
 		ret = 0;
 		sta_set_sinfo(sta, sinfo, true);
+	}
+	else {
+		link_sta = link_sta_info_get_bss(sdata, mac);
+		if (link_sta) {
+			ret = 0;
+			sta_set_sinfo(link_sta->sta, sinfo, true);
+		}
 	}
 
 	return ret;
