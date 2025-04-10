@@ -1440,6 +1440,11 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			return err;
 	}
 
+	if (params->he_cap) {
+		memcpy(&sdata->vif.bss_conf.he_cap_elem, params->he_cap,
+		       sizeof(*params->he_cap));
+	}
+
 	err = ieee80211_link_use_channel(link, &chanreq,
 					 IEEE80211_CHANCTX_SHARED);
 	if (!err)

@@ -817,6 +817,7 @@ struct ieee80211_bss_conf {
 		u16 nss_set;
 	} he_oper;
 	struct ieee80211_he_obss_pd he_obss_pd;
+	struct ieee80211_he_cap_elem  he_cap_elem;
 	struct cfg80211_he_bss_color he_bss_color;
 	struct ieee80211_fils_discovery fils_discovery;
 	u32 unsol_bcast_probe_resp_interval;
