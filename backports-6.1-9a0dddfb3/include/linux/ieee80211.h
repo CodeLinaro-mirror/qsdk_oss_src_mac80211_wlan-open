@@ -3862,6 +3862,16 @@ enum ieee80211_spectrum_mgmt_actioncode {
 	WLAN_ACTION_SPCT_CHL_SWITCH = 4,
 };
 
+/* RADIO_MEASUREMENT action code */
+enum ieee80211_radio_measurement_actioncode {
+	WLAN_ACTION_RADIO_MSR_RM_REQ = 0,
+	WLAN_ACTION_RADIO_MSR_RM_REP = 1,
+	WLAN_ACTION_RADIO_MSR_LINK_MSR_REQ = 2,
+	WLAN_ACTION_RADIO_MSR_LINK_MSR_REP = 3,
+	WLAN_ACTION_RADIO_MSR_NBOR_REP_REQ = 4,
+	WLAN_ACTION_RADIO_MSR_NBOR_REP_REP = 5,
+};
+
 /* HT action codes */
 enum ieee80211_ht_actioncode {
 	WLAN_HT_ACTION_NOTIFY_CHANWIDTH = 0,
