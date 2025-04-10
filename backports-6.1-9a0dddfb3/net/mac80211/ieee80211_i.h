@@ -1793,6 +1793,7 @@ struct ieee802_11_elems {
 	const struct ieee80211_channel_sw_ie *ch_switch_ie;
 	const struct ieee80211_ext_chansw_ie *ext_chansw_ie;
 	const struct ieee80211_wide_bw_chansw_ie *wide_bw_chansw_ie;
+	const struct ieee80211_bw_ind_element *bw_ind;
 	const u8 *max_channel_switch_time;
 	const u8 *country_elem;
 	const u8 *pwr_constr_elem;
@@ -2653,8 +2654,10 @@ u8 *ieee80211_ie_build_ht_cap(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 u8 *ieee80211_ie_build_ht_oper(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 			       const struct cfg80211_chan_def *chandef,
 			       u16 prot_mode, bool rifs_mode);
-void ieee80211_ie_build_wide_bw_cs(u8 *pos,
-				   const struct cfg80211_chan_def *chandef);
+u8 *ieee80211_ie_build_wide_bw_cs(u8 *pos,
+				  const struct cfg80211_chan_def *chandef);
+u8 *ieee80211_ie_build_bw_ind_cs(u8 *pos,
+				 const struct cfg80211_chan_def *chandef);
 u8 *ieee80211_ie_build_vht_cap(u8 *pos, struct ieee80211_sta_vht_cap *vht_cap,
 			       u32 cap);
 u8 *ieee80211_ie_build_vht_oper(u8 *pos, struct ieee80211_sta_vht_cap *vht_cap,

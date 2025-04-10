@@ -1004,11 +1004,12 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 	struct mesh_csa_settings *csa;
 	const struct ieee80211_supported_band *sband;
 	u8 ie_len_he_cap, ie_len_eht_cap;
-	u8 *pos;
+	u8 *pos, *length_pos, *eid;;
 	struct ieee80211_sub_if_data *sdata;
 	int hdr_len = offsetofend(struct ieee80211_mgmt, u.beacon);
 	int eht_optional_sz = 0;
 	u32 rate_flags;
+	int bw_ind_optional_sz = 0;
 
 	sdata = container_of(ifmsh, struct ieee80211_sub_if_data, u.mesh);
 
@@ -1019,6 +1020,10 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 	ie_len_he_cap = ieee80211_ie_len_he_cap(sdata);
 	ie_len_eht_cap = ieee80211_ie_len_eht_cap(sdata);
 
+	csa = rcu_dereference(ifmsh->csa);
+	if (csa && csa->settings.chandef.punctured)
+		bw_ind_optional_sz = DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE;
+
 	if (sdata->vif.bss_conf.chanreq.oper.punctured)
 		eht_optional_sz = DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE;
 
@@ -1028,8 +1033,13 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 		   2 + sizeof(struct ieee80211_channel_sw_ie) +
 		   /* Mesh Channel Switch Parameters */
 		   2 + sizeof(struct ieee80211_mesh_chansw_params_ie) +
-		   /* Channel Switch Wrapper + Wide Bandwidth CSA IE */
+		   /* Channel Switch Wrapper + Wide Bandwidth CSA IE
+		    * + Bandwidth Indication IE
+		    */
 		   2 + 2 + sizeof(struct ieee80211_wide_bw_chansw_ie) +
+		   2 + 1 + IEEE80211_BW_IND_FIXED_LEN +
+			   IEEE80211_BW_IND_INFO_FIXED_LEN +
+			   bw_ind_optional_sz +
 		   2 + sizeof(struct ieee80211_sec_chan_offs_ie) +
 		   2 + 8 + /* supported rates */
 		   2 + 3; /* DS params */
@@ -1129,16 +1139,28 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 		case NL80211_CHAN_WIDTH_80:
 		case NL80211_CHAN_WIDTH_80P80:
 		case NL80211_CHAN_WIDTH_160:
+ 		case NL80211_CHAN_WIDTH_320:
+			eid = pos;
 			/* Channel Switch Wrapper + Wide Bandwidth CSA IE */
 			ie_len = 2 + 2 +
 				 sizeof(struct ieee80211_wide_bw_chansw_ie);
 			pos = skb_put_zero(skb, ie_len);
 
 			*pos++ = WLAN_EID_CHANNEL_SWITCH_WRAPPER; /* EID */
-			*pos++ = 5;				  /* len */
+			length_pos = pos++;			  /* len */
 			/* put sub IE */
 			chandef = &csa->settings.chandef;
 			ieee80211_ie_build_wide_bw_cs(pos, chandef);
+
+			if (chandef->width > NL80211_CHAN_WIDTH_160 || chandef->punctured) {
+				/* Bandwidth Indication element */
+				ie_len = 2 + 1 + IEEE80211_BW_IND_FIXED_LEN +
+					IEEE80211_BW_IND_INFO_FIXED_LEN +
+					bw_ind_optional_sz;
+				pos = skb_put_zero(skb, ie_len);
+				pos = ieee80211_ie_build_bw_ind_cs(pos, chandef);
+			}
+			*length_pos = pos - (eid + 2);
 			break;
 		default:
 			break;

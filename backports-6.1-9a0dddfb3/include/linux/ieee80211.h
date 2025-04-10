@@ -982,6 +982,45 @@ struct ieee80211_mesh_chansw_params_ie {
 	__le16 mesh_pre_value;
 } __packed;
 
+/* IEEE P802.11be/D3.0, 9.4.2.319 - Bandwidth Indication element */
+/* Figure 9-1002ba: Bandwidth Indication Parameters field subfields */
+#define IEEE80211_BW_IND_PARAMETER_RESERVED                         0x01
+#define IEEE80211_BW_IND_PARAMETER_DISABLED_SUBCHAN_BITMAP_PRESENT  0x02
+
+/* Table 9-467: Control subfield: Channel Width subfield; */
+#define IEEE80211_BW_IND_CHANWIDTH_20MHZ                        0
+#define IEEE80211_BW_IND_CHANWIDTH_40MHZ                        1
+#define IEEE80211_BW_IND_CHANWIDTH_80MHZ                        2
+#define IEEE80211_BW_IND_CHANWIDTH_160MHZ                       3
+#define IEEE80211_BW_IND_CHANWIDTH_320MHZ                       4
+
+#define IEEE80211_BW_IND_FIXED_LEN			            0x1
+#define IEEE80211_BW_IND_INFO_FIXED_LEN                             0x3
+
+/**
+ * struct ieee80211_bw_ind_info - Bandwidth Indication channel switch info
+ * @ccfs0:    defines a channel center frequency for a 20, 40, 80, 160, or 320 MHz
+ *            EHT BSS.
+ * @ccfs1:    defines a channel center frequency for a 160 or 320 MHz EHT BSS.
+ * @optional: optional parts
+ */
+struct ieee80211_bw_ind_info {
+	u8 control;
+	u8 ccfs0;
+	u8 ccfs1;
+	u8 optional[];
+} __packed;
+
+/**
+ * struct ieee80211_bw_ind_element - bandwidth indication field
+ * @bw_ind_params: Bandwidth Indication Parameters
+ * @bw_ind_info: Bandwidth Indication information
+ */
+struct ieee80211_bw_ind_element {
+	u8 bw_ind_params;
+	struct ieee80211_bw_ind_info bw_ind_info;
+} __packed;
+
 /**
  * struct ieee80211_wide_bw_chansw_ie - wide bandwidth channel switch IE
  * @new_channel_width: New Channel Width

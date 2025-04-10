@@ -2718,8 +2718,8 @@ u8 *ieee80211_ie_build_ht_oper(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 	return pos + sizeof(struct ieee80211_ht_operation);
 }
 
-void ieee80211_ie_build_wide_bw_cs(u8 *pos,
-				   const struct cfg80211_chan_def *chandef)
+u8 *ieee80211_ie_build_wide_bw_cs(u8 *pos,
+				  const struct cfg80211_chan_def *chandef)
 {
 	*pos++ = WLAN_EID_WIDE_BW_CHANNEL_SWITCH;	/* EID */
 	*pos++ = 3;					/* IE length */
@@ -2749,6 +2749,94 @@ void ieee80211_ie_build_wide_bw_cs(u8 *pos,
 		*pos++ = ieee80211_frequency_to_channel(chandef->center_freq2);
 	else
 		*pos++ = 0;
+
+	return pos;
+}
+
+u8 *ieee80211_ie_build_bw_ind_cs(u8 *pos,
+				 const struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_bw_ind_element *bw_ind_elem;
+	u8 ie_len = 1 /*Tag length*/
+		    + IEEE80211_BW_IND_FIXED_LEN
+		    + IEEE80211_BW_IND_INFO_FIXED_LEN;
+	u8 chwidth = 0, bw_ind_status = false;
+
+	if (chandef->width > NL80211_CHAN_WIDTH_160 ||
+	    chandef->punctured)
+		bw_ind_status = true;
+
+	if (!bw_ind_status)
+		return pos;
+
+	if (chandef->punctured)
+		ie_len += DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE;
+
+	*pos++ = WLAN_EID_EXTENSION;
+	*pos++ = ie_len;
+	*pos++ = WLAN_EID_EXT_BANDWIDTH_INDICATION;
+
+	bw_ind_elem = (struct ieee80211_bw_ind_element *)pos;
+	memset(bw_ind_elem, 0, sizeof(struct ieee80211_bw_ind_element));
+
+	pos += IEEE80211_BW_IND_FIXED_LEN;
+
+	bw_ind_elem->bw_ind_info.ccfs0 =
+		ieee80211_frequency_to_channel(chandef->center_freq1);
+
+	if (chandef->center_freq2)
+		bw_ind_elem->bw_ind_info.ccfs1 =
+			ieee80211_frequency_to_channel(chandef->center_freq2);
+	else
+		bw_ind_elem->bw_ind_info.ccfs1 = 0;
+
+	switch (chandef->width) {
+	case NL80211_CHAN_WIDTH_320:
+		chwidth = IEEE80211_BW_IND_CHANWIDTH_320MHZ;
+		bw_ind_elem->bw_ind_info.ccfs1 = bw_ind_elem->bw_ind_info.ccfs0;
+		if (chandef->chan->center_freq < chandef->center_freq1)
+			bw_ind_elem->bw_ind_info.ccfs0 -= 16;
+		else
+			bw_ind_elem->bw_ind_info.ccfs0 += 16;
+		break;
+	case NL80211_CHAN_WIDTH_160:
+		chwidth = IEEE80211_BW_IND_CHANWIDTH_160MHZ;
+		bw_ind_elem->bw_ind_info.ccfs1 = bw_ind_elem->bw_ind_info.ccfs0;
+		if (chandef->chan->center_freq < chandef->center_freq1)
+			bw_ind_elem->bw_ind_info.ccfs0 -= 8;
+		else
+			bw_ind_elem->bw_ind_info.ccfs0 += 8;
+		break;
+	case NL80211_CHAN_WIDTH_80P80:
+		chwidth = IEEE80211_BW_IND_CHANWIDTH_160MHZ;
+		break;
+	case NL80211_CHAN_WIDTH_80:
+		chwidth = IEEE80211_BW_IND_CHANWIDTH_80MHZ;
+		break;
+	case NL80211_CHAN_WIDTH_40:
+		chwidth = IEEE80211_BW_IND_CHANWIDTH_40MHZ;
+		break;
+	default:
+		chwidth = IEEE80211_BW_IND_CHANWIDTH_20MHZ;
+		break;
+	}
+
+	bw_ind_elem->bw_ind_info.control = chwidth;
+
+	pos += IEEE80211_BW_IND_INFO_FIXED_LEN;
+
+	if (chandef->punctured) {
+		pos += DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE;
+		bw_ind_elem->bw_ind_params =
+		   IEEE80211_BW_IND_PARAMETER_DISABLED_SUBCHAN_BITMAP_PRESENT;
+
+		bw_ind_elem->bw_ind_info.optional[0] =
+			chandef->punctured & 0x00FF;
+		bw_ind_elem->bw_ind_info.optional[1] =
+			chandef->punctured >> 8;
+	}
+
+	return pos;
 }
 
 u8 *ieee80211_ie_build_vht_oper(u8 *pos, struct ieee80211_sta_vht_cap *vht_cap,
@@ -3949,16 +4037,21 @@ int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 	int freq;
 	int hdr_len = offsetofend(struct ieee80211_mgmt,
 				  u.action.u.chan_switch);
-	u8 *pos;
+	u8 *pos,  bw_ind_optional_sz = 0, len;
 
 	if (sdata->vif.type != NL80211_IFTYPE_ADHOC &&
 	    sdata->vif.type != NL80211_IFTYPE_MESH_POINT)
 		return -EOPNOTSUPP;
 
+	if (csa_settings->chandef.punctured)
+		bw_ind_optional_sz = DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE;
+
 	skb = dev_alloc_skb(local->tx_headroom + hdr_len +
 			    5 + /* channel switch announcement element */
 			    3 + /* secondary channel offset element */
 			    5 + /* wide bandwidth channel switch announcement */
+			    7 + /* BW indication element */
+			    bw_ind_optional_sz + /* BW indication optional element */
 			    8); /* mesh channel switch parameters element */
 	if (!skb)
 		return -ENOMEM;
@@ -4020,7 +4113,17 @@ int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_80P80 ||
 	    csa_settings->chandef.width == NL80211_CHAN_WIDTH_160) {
 		skb_put(skb, 5);
-		ieee80211_ie_build_wide_bw_cs(pos, &csa_settings->chandef);
+		pos = ieee80211_ie_build_wide_bw_cs(pos, &csa_settings->chandef);
+	}
+
+	if (csa_settings->chandef.width > NL80211_CHAN_WIDTH_160 ||
+	    csa_settings->chandef.punctured) {
+		len = 3 /* Tag len */
+		      + IEEE80211_BW_IND_FIXED_LEN
+		      + IEEE80211_BW_IND_INFO_FIXED_LEN
+		      + bw_ind_optional_sz;
+		skb_put(skb, len);
+		ieee80211_ie_build_bw_ind_cs(pos, &csa_settings->chandef);
 	}
 
 	ieee80211_tx_skb(sdata, skb);
