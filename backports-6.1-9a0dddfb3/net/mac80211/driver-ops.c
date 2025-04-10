@@ -135,7 +135,11 @@ int drv_sta_state(struct ieee80211_local *local,
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	sdata = get_bss_sdata(sdata);
+	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+	    !(old_state == IEEE80211_STA_ASSOC &&
+	      new_state == IEEE80211_STA_AUTHORIZED))
+		sdata = get_bss_sdata(sdata);
+
 	if (!check_sdata_in_driver(sdata))
 		return -EIO;
 

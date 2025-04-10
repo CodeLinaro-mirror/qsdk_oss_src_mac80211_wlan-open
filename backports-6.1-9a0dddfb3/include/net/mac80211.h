@@ -2257,6 +2257,8 @@ enum ieee80211_key_flags {
  * @tx_pn: PN used for TX keys, may be used by the driver as well if it
  *	needs to do software PN assignment by itself (e.g. due to TSO)
  * @flags: key flags, see &enum ieee80211_key_flags.
+ * @vlan_id: VLAN ID corresponding to the group key.
+ * 	For VLAN interfaces 1-4096, 0 for non-vlan interfaces
  * @keyidx: the key index (0-7)
  * @keylen: key material length
  * @key: key material. For ALG_TKIP the key is encoded as a 256-bit (32 byte)
@@ -2276,6 +2278,7 @@ struct ieee80211_key_conf {
 	u8 hw_key_idx;
 	s8 keyidx;
 	u16 flags;
+	u16 vlan_id;
 	s8 link_id;
 	u8 keylen;
 	u8 key[];

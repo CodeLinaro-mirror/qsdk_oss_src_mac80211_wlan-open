@@ -160,7 +160,8 @@ static int ieee80211_key_enable_hw_accel(struct ieee80211_key *key)
 	if (sta && !sta->uploaded)
 		goto out_unsupported;
 
-	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+	    !ieee80211_hw_check(&key->local->hw, SUPPORTS_NSS_OFFLOAD)) {
 		/*
 		 * The driver doesn't know anything about VLAN interfaces.
 		 * Hence, don't send GTKs for VLAN interfaces to the driver.
@@ -606,6 +607,8 @@ ieee80211_key_alloc(u32 cipher, int idx, size_t key_len,
 	 */
 	key->conf.flags = 0;
 	key->flags = 0;
+	/* VLAN ID initialised to zero for non-vlan interfaces */
+	key->conf.vlan_id = 0;
 
 	key->conf.link_id = -1;
 	key->conf.cipher = cipher;
