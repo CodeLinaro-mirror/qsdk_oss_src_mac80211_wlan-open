@@ -1990,13 +1990,19 @@ static int sta_link_apply_parameters(struct ieee80211_local *local,
 						  (void *)params->he_6ghz_capa,
 						  link_sta);
 
-	if (params->he_capa && params->eht_capa)
+	if (params->eht_capa) {
 		ieee80211_eht_cap_ie_to_sta_eht_cap(sdata, sband,
 						    (u8 *)params->he_capa,
 						    params->he_capa_len,
 						    params->eht_capa,
 						    params->eht_capa_len,
 						    link_sta);
+		/* 802.11s mesh STA may have different eht punctruing pattern,
+		 * update it here so that drivers can use if needed.
+		 */
+		if (ieee80211_vif_is_mesh(&sdata->vif) && params->punctured)
+			link_sta->pub->punctured = params->punctured;
+	}
 
 	ieee80211_sta_init_nss(link_sta);
 

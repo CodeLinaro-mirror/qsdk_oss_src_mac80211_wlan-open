@@ -136,7 +136,7 @@ static const struct cfg80211_per_bw_puncturing_values per_bw_puncturing[] = {
 	CFG80211_PER_BW_VALID_PUNCTURING_VALUES(320)
 };
 
-static bool valid_puncturing_bitmap(const struct cfg80211_chan_def *chandef)
+bool valid_puncturing_bitmap(const struct cfg80211_chan_def *chandef)
 {
 	u32 idx, i, start_freq, primary_center = chandef->chan->center_freq;
 
@@ -171,6 +171,7 @@ static bool valid_puncturing_bitmap(const struct cfg80211_chan_def *chandef)
 
 	return false;
 }
+EXPORT_SYMBOL(valid_puncturing_bitmap);
 
 static bool cfg80211_edmg_chandef_valid(const struct cfg80211_chan_def *chandef)
 {

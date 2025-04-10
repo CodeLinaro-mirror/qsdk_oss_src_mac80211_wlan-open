@@ -1041,6 +1041,14 @@ int nl80211_chan_width_to_mhz(enum nl80211_chan_width chan_width);
 bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef);
 
 /**
+ * valid_puncturing_bitmap - check if Puncturing bitmap on given
+ * channel definition is valid
+ * @chandef: the channel definition to check
+ * Return: %true if the Puncturing bitmap is valid . %false otherwise.
+ */
+bool valid_puncturing_bitmap(const struct cfg80211_chan_def *chandef);
+
+/**
  * cfg80211_chandef_usable - check if secondary channels can be used
  * @wiphy: the wiphy to validate against
  * @chandef: the channel definition to check
@@ -1715,6 +1723,7 @@ struct link_station_parameters {
 	const struct ieee80211_ht_cap *ht_capa;
 	const struct ieee80211_vht_cap *vht_capa;
 	u8 opmode_notif;
+	u32 punctured;
 	bool opmode_notif_used;
 	const struct ieee80211_he_cap_elem *he_capa;
 	u8 he_capa_len;

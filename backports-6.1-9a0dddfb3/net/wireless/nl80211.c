@@ -7996,6 +7996,10 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 			nla_get_u8(info->attrs[NL80211_ATTR_OPMODE_NOTIF]);
 	}
 
+	if (info->attrs[NL80211_ATTR_PUNCT_BITMAP])
+		params.link_sta_params.punctured =
+			nla_get_u32(info->attrs[NL80211_ATTR_PUNCT_BITMAP]);
+
 	if (info->attrs[NL80211_ATTR_STA_PLINK_ACTION])
 		params.plink_action =
 			nla_get_u8(info->attrs[NL80211_ATTR_STA_PLINK_ACTION]);

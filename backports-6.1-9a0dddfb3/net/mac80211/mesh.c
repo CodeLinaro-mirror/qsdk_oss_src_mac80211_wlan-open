@@ -111,6 +111,35 @@ bool mesh_matches_local(struct ieee80211_sub_if_data *sdata,
 				       ie->eht_operation,
 				       &sta_chan_def);
 
+	if (sband->band == NL80211_BAND_5GHZ && ie->he_operation &&
+	    ie->eht_operation) {
+	       const struct ieee80211_sta_eht_cap *eht_cap;
+	       const struct ieee80211_sta_he_cap *he_cap;
+	       bool support_160, support_320;
+	       u8 eht_phy_cap, he_phy_cap;
+	       eht_cap = ieee80211_get_eht_iftype_cap(sband, NL80211_IFTYPE_MESH_POINT);
+	       he_cap = ieee80211_get_he_iftype_cap(sband, NL80211_IFTYPE_MESH_POINT);
+	       if (!he_cap)
+		       goto out;
+	       if (!eht_cap)
+		       goto out;
+	       eht_phy_cap = eht_cap->eht_cap_elem.phy_cap_info[0];
+	       he_phy_cap = he_cap->he_cap_elem.phy_cap_info[0];
+
+	       support_320 = eht_phy_cap & IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ;
+	       support_160 = he_phy_cap & IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G;
+	       ieee80211_chandef_eht_oper((void *)ie->eht_operation->optional, support_160,
+					  support_320, &sta_chan_def);
+	}
+
+out:
+	/* Update STA punctured bitmap before compatiblity check to allow mesh peering with
+	 * Peers advertising different puncturing pattern.
+	 */
+	if (sta_chan_def.punctured &&
+	    sta_chan_def.punctured != sdata->vif.bss_conf.chanreq.oper.punctured)
+		sta_chan_def.punctured = sdata->vif.bss_conf.chanreq.oper.punctured;
+
 	if (!cfg80211_chandef_compatible(&sdata->vif.bss_conf.chanreq.oper,
 					 &sta_chan_def))
 		return false;
