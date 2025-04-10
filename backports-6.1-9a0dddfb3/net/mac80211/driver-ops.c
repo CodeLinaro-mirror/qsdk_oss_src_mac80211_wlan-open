@@ -582,7 +582,9 @@ int drv_change_vif_links(struct ieee80211_local *local,
 				 IEEE80211_MLD_MAX_NUM_LINKS) {
 			link = rcu_access_pointer(sdata->link[link_id]);
 
+#ifdef CPTCFG_MAC80211_DEBUGFS
 			ieee80211_link_debugfs_drv_add(link);
+#endif
 		}
 	}
 

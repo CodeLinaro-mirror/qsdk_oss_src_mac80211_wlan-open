@@ -1121,6 +1121,9 @@ static void ieee80211_debugfs_add_netdev(struct ieee80211_sub_if_data *sdata,
 	if (sdata->vif.link_debugfs[0])
 		return;
 
+	/*TODO : Need to revamp the contents of link0 directory to link-0
+	 * directory
+	 */
 	memset(buf, 0, 10 + IFNAMSIZ);
 	snprintf(buf, 10 + IFNAMSIZ, "link0");
 	sdata->vif.link_debugfs[0] = debugfs_create_dir(buf,
@@ -1178,6 +1181,7 @@ void ieee80211_debugfs_recreate_netdev(struct ieee80211_sub_if_data *sdata,
 	}
 }
 
+#ifdef CPTCFG_MAC80211_DEBUGFS
 void ieee80211_link_debugfs_add(struct ieee80211_link_data *link)
 {
 	char link_dir_name[10];
@@ -1187,6 +1191,9 @@ void ieee80211_link_debugfs_add(struct ieee80211_link_data *link)
 
 	/* For now, this should not be called for non-MLO capable drivers */
 	if (WARN_ON(!(link->sdata->local->hw.wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO)))
+		return;
+
+	if (link->debugfs_dir)
 		return;
 
 	snprintf(link_dir_name, sizeof(link_dir_name),
@@ -1241,3 +1248,4 @@ void ieee80211_link_debugfs_drv_remove(struct ieee80211_link_data *link)
 
 	ieee80211_link_debugfs_add(link);
 }
+#endif
