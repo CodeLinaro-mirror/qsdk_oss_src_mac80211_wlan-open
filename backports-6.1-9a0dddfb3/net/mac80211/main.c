@@ -490,11 +490,10 @@ static void ieee80211_restart_work(struct work_struct *work)
 	/* we might do interface manipulations, so need both */
 	wiphy_lock(local->hw.wiphy);
 	wiphy_work_flush(local->hw.wiphy, NULL);
-
-	wiphy_work_flush(local->hw.wiphy, &local->sched_scan_stopped_work);
-        wiphy_work_flush(local->hw.wiphy, &local->radar_detected_work);
         flush_work(&local->awgn_detected_work);
 
+	wiphy_work_cancel(local->hw.wiphy, &local->sched_scan_stopped_work);
+	wiphy_work_cancel(local->hw.wiphy, &local->radar_detected_work);
 	WARN(test_bit(SCAN_HW_SCANNING, &local->scanning),
 	     "%s called with hardware scan in progress\n", __func__);
 

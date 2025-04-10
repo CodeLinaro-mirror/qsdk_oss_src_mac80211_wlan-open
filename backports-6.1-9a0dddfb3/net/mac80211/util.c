@@ -3783,6 +3783,8 @@ static void ieee80211_awgn_detected_processing(struct ieee80211_local *local,
 	struct ieee80211_chanctx *ctx;
 	int num_chanctx = 0;
 
+	lockdep_assert_wiphy(local->hw.wiphy);
+
 	list_for_each_entry(ctx, &local->chanctx_list, list) {
 		if (ctx->replace_state == IEEE80211_CHANCTX_REPLACES_OTHER)
 			continue;
@@ -3907,6 +3909,7 @@ void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *w
 	u16 radar_bitmap;
 	struct ieee80211_channel *radar_channel = NULL;
 
+	lockdep_assert_wiphy(local->hw.wiphy);
 	if (list_empty(&local->radar_info_list))
 		return ieee80211_dfs_radar_detected_processing(local, 0,
 							       radar_channel);
