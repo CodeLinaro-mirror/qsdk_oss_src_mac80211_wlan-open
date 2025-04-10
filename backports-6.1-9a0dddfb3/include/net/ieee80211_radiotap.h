@@ -97,6 +97,11 @@ enum ieee80211_radiotap_presence {
 	IEEE80211_RADIOTAP_EHT = 34,
 };
 
+enum ieee80211_radiotap_presence_ext {
+	IEEE80211_RADIOTAP_USIG_INFO	= 1,
+	IEEE80211_RADIOTAP_EHT_INFO	= 2,
+};
+
 /* for IEEE80211_RADIOTAP_FLAGS */
 enum ieee80211_radiotap_flags {
 	IEEE80211_RADIOTAP_F_CFP = 0x01,
@@ -582,6 +587,12 @@ enum ieee80211_radiotap_eht_usig_tb {
 	IEEE80211_RADIOTAP_EHT_USIG2_TB_B11_B15_DISREGARD	= 0x003e0000,
 	IEEE80211_RADIOTAP_EHT_USIG2_TB_B16_B19_CRC		= 0x03c00000,
 	IEEE80211_RADIOTAP_EHT_USIG2_TB_B20_B25_TAIL		= 0xfc000000,
+};
+
+struct ieee80211_radiotap_usig {
+	__le32 usig_cmn;
+	__le32 eht_mu_ppdu;
+	__le32 eht_tb_ppdu;
 };
 
 /**

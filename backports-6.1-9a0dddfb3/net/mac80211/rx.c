@@ -147,6 +147,12 @@ ieee80211_rx_radiotap_hdrlen(struct ieee80211_local *local,
 	/* always present fields */
 	len = sizeof(struct ieee80211_radiotap_header) + 8;
 
+	/* EHT present fields */
+	if ((status->flag & RX_FLAG_EHT_HEADER) ||
+	    (status->flag & RX_FLAG_USIG_HEADER)) {
+		len += 4;
+	}
+
 	/* allocate extra bitmaps */
 	if (status->chains)
 		len += 4 * hweight8(status->chains);
@@ -206,6 +212,21 @@ ieee80211_rx_radiotap_hdrlen(struct ieee80211_local *local,
 		BUILD_BUG_ON(sizeof(struct ieee80211_radiotap_lsig) != 4);
 	}
 
+	if (status->flag & RX_FLAG_USIG_HEADER &&
+	    status->encoding == RX_ENC_EHT) {
+		len = ALIGN(len, 4);
+		len += 12;
+		BUILD_BUG_ON(sizeof(struct ieee80211_radiotap_usig) != 12);
+	}
+
+	if (status->flag & RX_FLAG_EHT_HEADER &&
+	    status->encoding == RX_ENC_EHT) {
+		len = ALIGN(len, 4);
+		len += 40;
+		len += status->eht_num_user * 4;
+		BUILD_BUG_ON(sizeof(struct ieee80211_radiotap_eht) != 40);
+	}
+
 	if (status->chains) {
 		/* antenna and antenna signal fields */
 		len += 2 * hweight8(status->chains);
@@ -227,6 +248,16 @@ ieee80211_rx_radiotap_hdrlen(struct ieee80211_local *local,
 		if (status->flag & RX_FLAG_RADIOTAP_LSIG)
 			tlv_offset +=
 				sizeof(struct ieee80211_radiotap_lsig);
+
+		if (status->flag & RX_FLAG_USIG_HEADER)
+			tlv_offset +=
+				sizeof(struct ieee80211_radiotap_usig);
+		if (status->flag & RX_FLAG_EHT_HEADER) {
+			tlv_offset +=
+				sizeof(struct ieee80211_radiotap_eht);
+			tlv_offset +=
+				status->eht_num_user * sizeof(u32);
+		}
 
 		/* ensure 4 byte alignment for TLV */
 		len = ALIGN(len, 4);
@@ -345,6 +376,14 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	struct ieee80211_radiotap_he he = {};
 	struct ieee80211_radiotap_he_mu he_mu = {};
 	struct ieee80211_radiotap_lsig lsig = {};
+	struct ieee80211_radiotap_usig usig = {};
+	struct ieee80211_radiotap_eht eht = {};
+	u32 *user_info;
+	bool rhdr_ext = false;
+
+	if ((status->flag & RX_FLAG_USIG_HEADER) ||
+	    (status->flag & RX_FLAG_EHT_HEADER))
+		rhdr_ext = true;
 
 	if (status->flag & RX_FLAG_RADIOTAP_HE) {
 		he = *(struct ieee80211_radiotap_he *)skb->data;
@@ -365,6 +404,20 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	if (status->flag & RX_FLAG_RADIOTAP_TLV_AT_END) {
 		/* data is pointer at tlv all other info was pulled off */
 		tlvs_len = skb_mac_header(skb) - skb->data;
+	}
+
+	if (status->flag & RX_FLAG_USIG_HEADER) {
+		usig = *(struct ieee80211_radiotap_usig *)skb->data;
+		skb_pull(skb, sizeof(usig));
+		WARN_ON_ONCE(status->encoding != RX_ENC_EHT);
+	}
+
+	if (status->flag & RX_FLAG_EHT_HEADER) {
+		eht = *(struct ieee80211_radiotap_eht *)skb->data;
+		skb_pull(skb, sizeof(eht));
+		user_info = (u32 *)skb->data;
+		skb_pull(skb, status->eht_num_user * sizeof(u32));
+		WARN_ON_ONCE(status->encoding != RX_ENC_EHT);
 	}
 
 	mpdulen = skb->len;
@@ -396,6 +449,19 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 
 	if (status->flag & RX_FLAG_RADIOTAP_TLV_AT_END)
 		it_present_val |= BIT(IEEE80211_RADIOTAP_TLV);
+
+	if (rhdr_ext) {
+		it_present_val |= BIT(IEEE80211_RADIOTAP_EXT);
+		put_unaligned_le32(it_present_val, it_present);
+		it_present_val = 0;
+		it_present++;
+		/* IEEE80211_RADIOTAP_USIG */
+		if (status->flag & RX_FLAG_USIG_HEADER)
+			it_present_val |= BIT(IEEE80211_RADIOTAP_USIG_INFO);
+		/* IEEE80211_RADIOTAP_EHT */
+		if (status->flag & RX_FLAG_EHT_HEADER)
+			it_present_val |= BIT(IEEE80211_RADIOTAP_EHT_INFO);
+	}
 
 	put_unaligned_le32(it_present_val, it_present);
 
@@ -730,6 +796,22 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 		*pos++ = status->chain_signal[chain];
 		*pos++ = chain;
 	}
+
+	if (status->flag & RX_FLAG_USIG_HEADER) {
+		while ((pos - (u8 *)rthdr) & 1)
+			pos++;
+		memcpy(pos, &usig, sizeof(usig));
+		pos += sizeof(usig);
+	}
+
+	if (status->flag & RX_FLAG_EHT_HEADER) {
+		while ((pos - (u8 *)rthdr) & 1)
+			pos++;
+		memcpy(pos, &eht, sizeof(eht));
+		pos += sizeof(eht);
+		memcpy(pos, user_info, (status->eht_num_user * sizeof(u32)));
+		pos += status->eht_num_user * sizeof(u32);
+	}
 }
 
 static struct sk_buff *
@@ -823,6 +905,14 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 
 	if (status->flag & RX_FLAG_RADIOTAP_TLV_AT_END)
 		rtap_space += skb_mac_header(origskb) - &origskb->data[rtap_space];
+
+	if (status->flag & RX_FLAG_USIG_HEADER)
+		rtap_space += sizeof(struct ieee80211_radiotap_usig);
+
+	if (status->flag & RX_FLAG_EHT_HEADER) {
+		rtap_space += sizeof(struct ieee80211_radiotap_eht);
+		rtap_space += (status->eht_num_user * sizeof(u32));
+	}
 
 	min_head_len = rtap_space;
 
