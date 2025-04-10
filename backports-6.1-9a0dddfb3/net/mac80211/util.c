@@ -3939,7 +3939,8 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local)
 			if (!link)
 				continue;
 
-			wiphy_delayed_work_cancel(local->hw.wiphy,
+			hrtimer_cancel(&link->dfs_cac_timer);
+			wiphy_work_cancel(local->hw.wiphy,
 						  &link->dfs_cac_timer_work);
 
 			if (!sdata->wdev.links[link_id].cac_started)

@@ -3295,11 +3295,23 @@ void ieee80211_dynamic_ps_timer(struct timer_list *t)
 	wiphy_work_queue(local->hw.wiphy, &local->dynamic_ps_enable_work);
 }
 
+enum hrtimer_restart ieee80211_dfs_cac_timeout(struct hrtimer *timer)
+{
+        struct ieee80211_link_data *link =
+                container_of(timer, struct ieee80211_link_data,
+                             dfs_cac_timer);
+        struct ieee80211_sub_if_data *sdata = link->sdata;
+
+        wiphy_work_queue(sdata->local->hw.wiphy, &link->dfs_cac_timer_work);
+
+        return HRTIMER_NORESTART;
+}
+
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 {
 	struct ieee80211_link_data *link =
 		container_of(work, struct ieee80211_link_data,
-			     dfs_cac_timer_work.work);
+			     dfs_cac_timer_work);
 	struct cfg80211_chan_def chandef = link->conf->chanreq.oper;
 	struct ieee80211_sub_if_data *sdata = link->sdata;
 

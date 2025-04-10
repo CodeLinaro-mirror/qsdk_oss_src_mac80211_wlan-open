@@ -1894,7 +1894,8 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	if (sdata->wdev.links[link_id].cac_started) {
 		chandef = link_conf->chanreq.oper;
-		wiphy_delayed_work_cancel(wiphy, &link->dfs_cac_timer_work);
+		hrtimer_cancel(&link->dfs_cac_timer);
+		wiphy_work_cancel(wiphy, &link->dfs_cac_timer_work);
 		cfg80211_cac_event(sdata->dev, &chandef,
 				   NL80211_RADAR_CAC_ABORTED,
 				   GFP_KERNEL, link_id);
@@ -3962,6 +3963,7 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_link_data *link_data;
 	int err;
+	ktime_t ktime = ms_to_ktime(cac_time_ms);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -3981,9 +3983,7 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	if (err)
 		return err;
 
-	wiphy_delayed_work_queue(wiphy, &link_data->dfs_cac_timer_work,
-				 msecs_to_jiffies(cac_time_ms));
-
+	hrtimer_start(&link_data->dfs_cac_timer, ktime, HRTIMER_MODE_REL);
 	return 0;
 }
 
@@ -4001,8 +4001,9 @@ static void ieee80211_end_cac(struct wiphy *wiphy,
 		if (!link_data)
 			continue;
 
-		wiphy_delayed_work_cancel(wiphy,
-					  &link_data->dfs_cac_timer_work);
+		hrtimer_cancel(&link_data->dfs_cac_timer);
+		wiphy_work_cancel(wiphy,
+				  &link_data->dfs_cac_timer_work);
 
 		if (sdata->wdev.links[link_id].cac_started) {
 			ieee80211_link_release_channel(link_data);

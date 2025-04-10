@@ -1101,7 +1101,8 @@ struct ieee80211_link_data {
 	int ap_power_level; /* in dBm */
 
 	bool radar_required;
-	struct wiphy_delayed_work dfs_cac_timer_work;
+	struct hrtimer dfs_cac_timer;
+	struct wiphy_work dfs_cac_timer_work;
 
 	union {
 		struct ieee80211_link_data_managed mgd;
@@ -2835,7 +2836,9 @@ void ieee80211_recalc_chanctx_min_def(struct ieee80211_local *local,
 bool ieee80211_is_radar_required(struct ieee80211_local *local,
 				 struct cfg80211_scan_request *req);
 
+enum hrtimer_restart ieee80211_dfs_cac_timeout(struct hrtimer *timer);
 void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
+
 void ieee80211_dfs_cac_cancel(struct ieee80211_local *local);
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_awgn_detected_work(struct work_struct *work);
