@@ -204,6 +204,9 @@ u8 ieee80211_retrieve_addba_ext_data(struct sta_info *sta,
 	if (elem_len <= 0)
 		return 0;
 
+	if (((u8 *)elem_data)[0] != WLAN_EID_ADDBA_EXT)
+		return 0;
+
 	elems = ieee802_11_parse_elems(elem_data, elem_len, true, NULL);
 
 	if (elems && !elems->parse_error && elems->addba_ext_ie) {
