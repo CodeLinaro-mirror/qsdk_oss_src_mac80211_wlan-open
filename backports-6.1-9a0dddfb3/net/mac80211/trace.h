@@ -433,7 +433,7 @@ TRACE_EVENT(drv_nss_bss_info_changed,
 		LOCAL_ENTRY
 		VIF_ENTRY
 		__field(u32, changed)
-		__field(bool, nss_ap_isolate);
+		__field(bool, nss_ap_isolate)
 	),
 
 	TP_fast_assign(
