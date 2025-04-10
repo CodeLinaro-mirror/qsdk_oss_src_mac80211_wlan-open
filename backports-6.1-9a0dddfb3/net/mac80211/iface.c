@@ -968,7 +968,8 @@ static bool ieee80211_set_sdata_offload_flags(struct ieee80211_sub_if_data *sdat
 		    local->hw.wiphy->frag_threshold != (u32)-1)
 			flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;
 
-		if (local->monitors)
+		if (local->monitors &&
+		    !ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
 			flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;
 	} else {
 		flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;

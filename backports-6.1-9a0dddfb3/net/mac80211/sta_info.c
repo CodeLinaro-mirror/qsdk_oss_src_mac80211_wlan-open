@@ -2417,6 +2417,9 @@ sta_get_last_rx_stats(struct sta_info *sta)
 	struct ieee80211_sta_rx_stats *stats = &sta->deflink.rx_stats;
 	int cpu;
 
+	if (ieee80211_hw_check(&sta->local->hw, SUPPORTS_NSS_OFFLOAD))
+		return stats;
+
 	if (!sta->deflink.pcpu_rx_stats)
 		return stats;
 

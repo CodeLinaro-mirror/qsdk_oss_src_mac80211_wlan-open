@@ -421,6 +421,38 @@ TRACE_EVENT(drv_config,
 		LOCAL_PR_ARG, __entry->changed, CHANDEF_PR_ARG
 	)
 );
+TRACE_EVENT(drv_nss_bss_info_changed,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 struct ieee80211_bss_conf *info,
+		 u32 changed),
+
+	TP_ARGS(local, sdata, info, changed),
+
+	TP_STRUCT__entry(
+		LOCAL_ENTRY
+		VIF_ENTRY
+		__field(u32, changed)
+		__field(bool, nss_ap_isolate);
+	),
+
+	TP_fast_assign(
+		LOCAL_ASSIGN;
+		VIF_ASSIGN;
+		__entry->changed = changed;
+		__entry->nss_ap_isolate = info->nss_ap_isolate;
+	),
+
+	TP_printk(
+		LOCAL_PR_FMT  VIF_PR_FMT " changed:%#x",
+		LOCAL_PR_ARG, VIF_PR_ARG, __entry->changed
+	)
+);
+
+DEFINE_EVENT(local_only_evt, drv_nss_return_void,
+	TP_PROTO(struct ieee80211_local *local),
+	TP_ARGS(local)
+);
 
 TRACE_EVENT(drv_vif_cfg_changed,
 	TP_PROTO(struct ieee80211_local *local,

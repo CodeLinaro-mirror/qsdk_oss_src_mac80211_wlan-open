@@ -180,6 +180,23 @@ void drv_link_info_changed(struct ieee80211_local *local,
 			   struct ieee80211_bss_conf *info,
 			   int link_id, u64 changed);
 
+static inline void drv_nss_bss_info_changed(struct ieee80211_local *local,
+					struct ieee80211_sub_if_data *sdata,
+					struct ieee80211_bss_conf *info,
+					u32 changed)
+{
+	might_sleep();
+
+	if (!check_sdata_in_driver(sdata))
+		return;
+
+	trace_drv_nss_bss_info_changed(local, sdata, info, changed);
+	if (local->ops->nss_bss_info_changed) {
+		local->ops->nss_bss_info_changed(&local->hw, &sdata->vif, changed);
+	}
+	trace_drv_nss_return_void(local);
+}
+
 static inline u64 drv_prepare_multicast(struct ieee80211_local *local,
 					struct netdev_hw_addr_list *mc_list)
 {

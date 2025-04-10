@@ -864,6 +864,22 @@ struct wireless_dev *ieee80211_vif_to_wdev(struct ieee80211_vif *vif)
 }
 EXPORT_SYMBOL_GPL(ieee80211_vif_to_wdev);
 
+struct wireless_dev *ieee80211_vif_to_wdev_relaxed(struct ieee80211_vif *vif)
+{
+	struct ieee80211_sub_if_data *sdata;
+
+	if (!vif)
+		return NULL;
+
+	sdata = vif_to_sdata(vif);
+
+	if (sdata)
+		return &sdata->wdev;
+
+	return NULL;
+}
+EXPORT_SYMBOL(ieee80211_vif_to_wdev_relaxed);
+
 /*
  * Nothing should have been stuffed into the workqueue during
  * the suspend->resume cycle. Since we can't check each caller

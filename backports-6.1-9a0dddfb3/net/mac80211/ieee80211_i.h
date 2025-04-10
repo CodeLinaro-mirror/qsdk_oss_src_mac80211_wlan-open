@@ -1883,6 +1883,8 @@ void ieee80211_vif_cfg_change_notify(struct ieee80211_sub_if_data *sdata,
 void ieee80211_link_info_change_notify(struct ieee80211_sub_if_data *sdata,
 				       struct ieee80211_link_data *link,
 				       u64 changed);
+void ieee80211_nss_bss_info_change_notify(struct ieee80211_sub_if_data *sdata,
+					  u64 changed);
 void ieee80211_configure_filter(struct ieee80211_local *local);
 u64 ieee80211_reset_erp_info(struct ieee80211_sub_if_data *sdata);
 

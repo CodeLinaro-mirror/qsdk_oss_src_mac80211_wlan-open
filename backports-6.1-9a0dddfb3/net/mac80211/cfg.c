@@ -2755,7 +2755,7 @@ static int ieee80211_change_bss(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_link_data *link;
 	struct ieee80211_supported_band *sband;
-	u64 changed = 0;
+	u32 changed = 0, nss_changed = 0;
 
 	link = ieee80211_link_or_deflink(sdata, params->link_id, true);
 	if (IS_ERR(link))
@@ -2805,6 +2805,8 @@ static int ieee80211_change_bss(struct wiphy *wiphy,
 			sdata->flags |= IEEE80211_SDATA_DONT_BRIDGE_PACKETS;
 		else
 			sdata->flags &= ~IEEE80211_SDATA_DONT_BRIDGE_PACKETS;
+		sdata->vif.bss_conf.nss_ap_isolate = params->ap_isolate;
+		nss_changed |= BSS_CHANGED_NSS_AP_ISOLATE;
 		ieee80211_check_fast_rx_iface(sdata);
 	}
 
@@ -2832,6 +2834,8 @@ static int ieee80211_change_bss(struct wiphy *wiphy,
 	}
 
 	ieee80211_link_info_change_notify(sdata, link, changed);
+
+	ieee80211_nss_bss_info_change_notify(sdata, nss_changed);
 
 	return 0;
 }

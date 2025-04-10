@@ -416,6 +416,17 @@ void ieee80211_link_info_change_notify(struct ieee80211_sub_if_data *sdata,
 	drv_link_info_changed(local, sdata, link->conf, link->link_id, changed);
 }
 
+void ieee80211_nss_bss_info_change_notify(struct ieee80211_sub_if_data *sdata,
+                                         u64 changed)
+{
+       struct ieee80211_local *local = sdata->local;
+
+       if (!changed || sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+               return;
+
+       drv_nss_bss_info_changed(local, sdata, &sdata->vif.bss_conf, changed);
+}
+
 u64 ieee80211_reset_erp_info(struct ieee80211_sub_if_data *sdata)
 {
 	sdata->vif.bss_conf.use_cts_prot = false;
@@ -859,12 +870,6 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			   NL80211_FEATURE_FULL_AP_CLIENT_STATE;
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_FILS_STA);
 	wiphy_ext_feature_set(wiphy,
-			      NL80211_EXT_FEATURE_CONTROL_PORT_OVER_NL80211);
-	wiphy_ext_feature_set(wiphy,
-			      NL80211_EXT_FEATURE_CONTROL_PORT_NO_PREAUTH);
-	wiphy_ext_feature_set(wiphy,
-			      NL80211_EXT_FEATURE_CONTROL_PORT_OVER_NL80211_TX_STATUS);
-	wiphy_ext_feature_set(wiphy,
 			      NL80211_EXT_FEATURE_SCAN_FREQ_KHZ);
 	wiphy_ext_feature_set(wiphy,
 			      NL80211_EXT_FEATURE_POWERED_ADDR_CHANGE);
@@ -1195,6 +1200,18 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 
 		if (WARN_ON(!ieee80211_hw_check(hw, AP_LINK_PS)))
 			return -EINVAL;
+	}
+
+	/* Control port over nl80211 is disabled for nss offload as
+	 * sending per packet tx status is not supported and only
+	 * rx over netdev from driver is done currently */
+	if (!ieee80211_hw_check(hw, SUPPORTS_NSS_OFFLOAD)) {
+		wiphy_ext_feature_set(hw->wiphy,
+				      NL80211_EXT_FEATURE_CONTROL_PORT_OVER_NL80211);
+		wiphy_ext_feature_set(hw->wiphy,
+				      NL80211_EXT_FEATURE_CONTROL_PORT_NO_PREAUTH);
+		wiphy_ext_feature_set(hw->wiphy,
+				      NL80211_EXT_FEATURE_CONTROL_PORT_OVER_NL80211_TX_STATUS);
 	}
 
 #ifdef CONFIG_PM

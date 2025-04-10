@@ -115,6 +115,15 @@ menuconfig MAC80211_DEBUG_MENU
 	help
 	  This option collects various mac80211 debug settings.
 
+config MAC80211_NSS_SUPPORT
+	bool "QTI mac80211 nss support"
+	depends on ATH11K_NSS_SUPPORT
+	default n
+	---help---
+	  Enables NSS offload support for ATH11K driver
+
+	  If unsure, say Y to enable NSS offload support.
+
 config MAC80211_NOINLINE
 	bool "Do not inline TX/RX handlers"
 	depends on MAC80211_DEBUG_MENU
