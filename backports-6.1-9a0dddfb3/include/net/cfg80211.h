@@ -1038,7 +1038,9 @@ cfg80211_chandef_identical(const struct cfg80211_chan_def *chandef1,
 		chandef1->center_freq1 == chandef2->center_freq1 &&
 		chandef1->freq1_offset == chandef2->freq1_offset &&
 		chandef1->center_freq2 == chandef2->center_freq2 &&
-		chandef1->punctured == chandef2->punctured);
+		chandef1->punctured == chandef2->punctured &&
+		chandef1->width_device == chandef2->width_device &&
+		chandef1->center_freq_device == chandef2->center_freq_device);
 }
 
 /**
@@ -1163,6 +1165,20 @@ bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
 				 const struct cfg80211_chan_def *chandef);
 
 /**
+ * cfg80211_chandef_dfs_usable_device - checks if chandef is DFS usable
+ * @wiphy: the wiphy to validate against
+ * @chandef: the channel definition to check
+ *
+ * Checks if chandef is usable when the device bandwidth parameters are different
+ * than the operating bandwidth parameters and we can/need start CAC on such channel.
+ *
+ * Return: true if all channels available and at least
+ *	one channel requires CAC (NL80211_DFS_USABLE)
+ */
+bool cfg80211_chandef_dfs_usable_device(struct wiphy *wiphy,
+					const struct cfg80211_chan_def *chandef);
+
+/**
  * cfg80211_chandef_primary - calculate primary 40/80/160 MHz freq
  * @chandef: chandef to calculate for
  * @primary_chan_width: primary channel width to calculate center for
@@ -1260,10 +1276,12 @@ bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
  * @wiphy: the wiphy to validate against
  * @chandef: the channel definition to check
  * @is_bgcac: background cac state
+ * @is_dbw_cac: cac on current device bandwidth
  * Returns: dfs cac time, or 0 is none found
  */
 unsigned int cfg80211_chandef_dfs_cac_time(struct wiphy *wiphy,
-                                           const struct cfg80211_chan_def *chandef);
+                                           const struct cfg80211_chan_def *chandef,
+					   bool is_bgcac, bool is_dbw_cac);
 
 /**
  * ieee80211_chandef_max_power - maximum transmission power for the chandef

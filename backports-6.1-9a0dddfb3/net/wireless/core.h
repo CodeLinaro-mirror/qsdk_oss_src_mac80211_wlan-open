@@ -481,7 +481,8 @@ void cfg80211_sched_dfs_chan_update(struct cfg80211_registered_device *rdev);
 int
 cfg80211_start_background_radar_detection(struct cfg80211_registered_device *rdev,
 					  struct wireless_dev *wdev,
-					  struct cfg80211_chan_def *chandef);
+					  struct cfg80211_chan_def *chandef,
+					  int link_id);
 
 void cfg80211_stop_background_radar_detection(struct wireless_dev *wdev);
 

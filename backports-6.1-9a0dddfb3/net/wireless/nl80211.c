@@ -10855,12 +10855,25 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	if (err == 0)
 		return -EINVAL;
 
+	if (nla_get_flag(info->attrs[NL80211_ATTR_RADAR_BACKGROUND]) &&
+	    chandef_link && chandef_link->center_freq_device &&
+	    chandef_link->width_device &&
+	    cfg80211_chandef_identical(&chandef, chandef_link)) {
+		if (!cfg80211_chandef_dfs_usable_device(wiphy, &chandef)) {
+			err = -EINVAL;
+			goto unlock;
+		}
+		err = cfg80211_start_background_radar_detection(rdev, wdev,
+								&chandef, link_id);
+		goto unlock;
+	}
+
 	if (!cfg80211_chandef_dfs_usable(wiphy, &chandef))
 		return -EINVAL;
 
 	if (nla_get_flag(info->attrs[NL80211_ATTR_RADAR_BACKGROUND]))
 		return cfg80211_start_background_radar_detection(rdev, wdev,
-								 &chandef);
+								 &chandef, link_id);
 
 	if (cfg80211_beaconing_iface_active(wdev)) {
 		/* During MLO other link(s) can beacon, only the current link
@@ -10884,7 +10897,7 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	if (!rdev->ops->start_radar_detection)
 		return -EOPNOTSUPP;
 
-	cac_time_ms = cfg80211_chandef_dfs_cac_time(&rdev->wiphy, &chandef);
+	cac_time_ms = cfg80211_chandef_dfs_cac_time(&rdev->wiphy, &chandef,false, false);
 	if (WARN_ON(!cac_time_ms))
 		cac_time_ms = IEEE80211_DFS_MIN_CAC_TIME_MS;
 

@@ -1099,6 +1099,10 @@ bool cfg80211_radar_event_device(struct wiphy *wiphy, struct cfg80211_chan_def *
 		if (!c)
 			continue;
 
+		if (chandef->width_device == NL80211_CHAN_WIDTH_320 &&
+		    (freq >= MHZ_TO_KHZ(5740) && freq <= MHZ_TO_KHZ(5800)))
+			continue;
+
 		if (c->dfs_state == NL80211_DFS_UNAVAILABLE) {
 			chandef->radar_bitmap &= ~BIT(i);
 			nop_in_progress = true;
@@ -1109,6 +1113,9 @@ bool cfg80211_radar_event_device(struct wiphy *wiphy, struct cfg80211_chan_def *
 
 	for (freq = start_freq, i = 0; freq <= end_freq; i++, freq += MHZ_TO_KHZ(20)) {
 		c = ieee80211_get_channel_khz(wiphy, freq);
+		if (chandef->width_device == NL80211_CHAN_WIDTH_320 &&
+		    (freq >= MHZ_TO_KHZ(5740) && freq <= MHZ_TO_KHZ(5800)))
+			continue;
 		if (!c || !(c->flags & IEEE80211_CHAN_RADAR))
 			continue;
 
@@ -1242,6 +1249,7 @@ __cfg80211_background_cac_event(struct cfg80211_registered_device *rdev,
 {
 	struct wiphy *wiphy = &rdev->wiphy;
 	struct net_device *netdev;
+	struct cfg80211_chan_def *w_chandef;
 
 	lockdep_assert_wiphy(&rdev->wiphy);
 
@@ -1272,6 +1280,12 @@ __cfg80211_background_cac_event(struct cfg80211_registered_device *rdev,
 
 	netdev = wdev ? wdev->netdev : NULL;
 	nl80211_radar_notify(rdev, chandef, event, netdev, GFP_KERNEL);
+	w_chandef = wdev_chandef(wdev, 0);
+
+	if ((event == NL80211_RADAR_CAC_FINISHED || event == NL80211_RADAR_CAC_ABORTED) &&
+	    w_chandef && cfg80211_chandef_identical(w_chandef, chandef)) {
+		rdev->background_radar_wdev = NULL;
+	}
 }
 
 static void
@@ -1317,8 +1331,10 @@ EXPORT_SYMBOL(cfg80211_background_cac_abort);
 int
 cfg80211_start_background_radar_detection(struct cfg80211_registered_device *rdev,
 					  struct wireless_dev *wdev,
-					  struct cfg80211_chan_def *chandef)
+					  struct cfg80211_chan_def *chandef,
+					  int link_id)
 {
+	struct cfg80211_chan_def *current_chandef;
 	unsigned int cac_time_ms;
 	int err;
 
@@ -1341,7 +1357,16 @@ cfg80211_start_background_radar_detection(struct cfg80211_registered_device *rde
 	if (err)
 		return err;
 
-	cac_time_ms = cfg80211_chandef_dfs_cac_time(&rdev->wiphy, chandef);
+	current_chandef = wdev_chandef(wdev, link_id);
+	if (current_chandef &&
+	    cfg80211_chandef_identical(current_chandef, chandef) &&
+	    cfg80211_chandef_device_present(chandef))
+		cac_time_ms = cfg80211_chandef_dfs_cac_time(&rdev->wiphy, chandef,
+							    true, true);
+	else
+		cac_time_ms = cfg80211_chandef_dfs_cac_time(&rdev->wiphy, chandef,
+                                                           true, false);
+
 	if (!cac_time_ms)
 		cac_time_ms = IEEE80211_DFS_MIN_CAC_TIME_MS;
 
