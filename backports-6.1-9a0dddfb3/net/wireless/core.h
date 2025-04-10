@@ -493,6 +493,9 @@ void cfg80211_background_cac_abort_wk(struct work_struct *work);
 bool cfg80211_any_wiphy_oper_chan(struct wiphy *wiphy,
 				  struct ieee80211_channel *chan);
 
+bool cfg80211_any_wiphy_non_oper_device_chan(struct wiphy *wiphy,
+					     struct ieee80211_channel *chan);
+
 bool cfg80211_beaconing_iface_active(struct wireless_dev *wdev);
 
 bool cfg80211_is_sub_chan(struct cfg80211_chan_def *chandef,

@@ -1043,6 +1043,9 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 				    cfg80211_any_wiphy_oper_chan(wiphy, c))
 					continue;
 
+				if (cfg80211_any_wiphy_non_oper_device_chan(wiphy, c))
+					continue;
+
 				time_dfs_update = REG_PRE_CAC_EXPIRY_GRACE_MS;
 				radar_event = NL80211_RADAR_PRE_CAC_EXPIRED;
 			}

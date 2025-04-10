@@ -1349,6 +1349,76 @@ bool cfg80211_any_wiphy_oper_chan(struct wiphy *wiphy,
 	return false;
 }
 
+static bool cfg80211_is_sub_chan_device(struct cfg80211_chan_def *chandef,
+					struct ieee80211_channel *chan)
+{
+	int width;
+	u32 start_freq = chandef->center_freq_device;
+	u32 end_freq = chandef->center_freq_device;
+
+	if (cfg80211_is_sub_chan(chandef, chan, false) == true)
+		return false;
+
+	width = cfg80211_chandef_get_width(chandef);
+	if (chandef->center_freq1 > chandef->center_freq_device)
+		start_freq -= width;
+	else
+		end_freq += width;
+
+	if (chan->center_freq >= start_freq && chan->center_freq <= end_freq)
+		return true;
+
+	return false;
+}
+
+static bool cfg80211_is_wiphy_non_oper_device_chan(struct wiphy *wiphy,
+						   struct ieee80211_channel *chan)
+{
+	struct wireless_dev *wdev;
+	unsigned int link;
+	struct cfg80211_chan_def *chandef;
+
+	list_for_each_entry(wdev, &wiphy->wdev_list, list) {
+		if (wdev->iftype == NL80211_IFTYPE_AP) {
+			for_each_valid_link(wdev, link) {
+				chandef = &wdev->links[link].ap.chandef;
+
+				if (!chandef->chan || chandef->chan->band != chan->band ||
+				    !cfg80211_chandef_device_present(chandef))
+					continue;
+
+				if (cfg80211_is_sub_chan_device(&wdev->links[link].ap.chandef,
+								chan)) {
+					return true;
+				}
+			}
+		}
+	}
+
+       return false;
+}
+
+bool cfg80211_any_wiphy_non_oper_device_chan(struct wiphy *wiphy,
+					     struct ieee80211_channel *chan)
+{
+	struct cfg80211_registered_device *rdev;
+
+	ASSERT_RTNL();
+
+	if (!(chan->flags & IEEE80211_CHAN_RADAR))
+		return false;
+
+	list_for_each_entry(rdev, &cfg80211_rdev_list, list) {
+		if (!reg_dfs_domain_same(wiphy, &rdev->wiphy))
+			continue;
+
+		if (cfg80211_is_wiphy_non_oper_device_chan(&rdev->wiphy, chan))
+			return true;
+	}
+
+	return false;
+}
+
 bool cfg80211_chandef_dfs_available(struct wiphy *wiphy,
 				    const struct cfg80211_chan_def *chandef)
 {
