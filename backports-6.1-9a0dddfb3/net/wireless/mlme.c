@@ -1082,12 +1082,81 @@ void cfg80211_dfs_channels_update_work(struct work_struct *work)
 				   next_time);
 }
 
+bool cfg80211_radar_event_device(struct wiphy *wiphy, struct cfg80211_chan_def *chandef)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	struct ieee80211_channel *c;
+	u32 freq, end_freq, start_freq;
+	bool nop_in_progress = false, non_oper_event = false;
+	int i;
+	unsigned long time_nop_entered = 0;
+
+	start_freq = cfg80211_get_start_freq_device(chandef);
+	end_freq = cfg80211_get_end_freq_device(chandef);
+
+	for (freq = start_freq, i = 0; freq <= end_freq; i++, freq += MHZ_TO_KHZ(20)) {
+		c = ieee80211_get_channel_khz(wiphy, freq);
+		if (!c)
+			continue;
+
+		if (c->dfs_state == NL80211_DFS_UNAVAILABLE) {
+			chandef->radar_bitmap &= ~BIT(i);
+			nop_in_progress = true;
+			time_nop_entered = c->dfs_state_entered;
+			break;
+		}
+	}
+
+	for (freq = start_freq, i = 0; freq <= end_freq; i++, freq += MHZ_TO_KHZ(20)) {
+		c = ieee80211_get_channel_khz(wiphy, freq);
+		if (!c || !(c->flags & IEEE80211_CHAN_RADAR))
+			continue;
+
+		if (!chandef->radar_bitmap)
+			break;
+
+		if (cfg80211_is_freq_device_non_oper(chandef, freq)) {
+			if (c->dfs_state != NL80211_DFS_UNAVAILABLE &&
+			    chandef->radar_bitmap & BIT(i)) {
+				non_oper_event = true;
+				c->dfs_state = NL80211_DFS_UNAVAILABLE;
+				if (time_nop_entered)
+					c->dfs_state_entered = time_nop_entered;
+				else {
+					c->dfs_state_entered = jiffies;
+					time_nop_entered = c->dfs_state_entered;
+				}
+			}
+		} else if (chandef->radar_bitmap & BIT(i)) {
+			if (rdev->background_radar_wdev &&
+			    cfg80211_chandef_identical(&rdev->background_radar_chandef,
+						       chandef))
+				queue_work(cfg80211_wq, &rdev->background_cac_abort_wk);
+			return false;
+		}
+	}
+
+	if (non_oper_event && !nop_in_progress) {
+		if (rdev->background_radar_wdev &&
+		    cfg80211_chandef_identical(&rdev->background_radar_chandef, chandef))
+			queue_work(cfg80211_wq, &rdev->background_cac_abort_wk);
+		return false;
+	}
+
+	chandef->radar_bitmap = 0;
+	return true;
+}
 
 void __cfg80211_radar_event(struct wiphy *wiphy,
 			    struct cfg80211_chan_def *chandef,
 			    bool offchan, gfp_t gfp)
 {
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+
+	if (chandef->radar_bitmap &&
+	    cfg80211_chandef_device_present(chandef) &&
+	    cfg80211_radar_event_device(wiphy, chandef) == true)
+		return;
 
 	trace_cfg80211_radar_event(wiphy, chandef, offchan);
 

@@ -4268,6 +4268,11 @@ int nl80211_send_chandef(struct sk_buff *msg, const struct cfg80211_chan_def *ch
 	if (nla_put_u16(msg, NL80211_ATTR_RADAR_BITMAP, chandef->radar_bitmap))
 		return -ENOBUFS;
 
+	if (nla_put_u32(msg, NL80211_ATTR_CENTER_FREQ_DEVICE,
+			chandef->center_freq_device) ||
+	    nla_put_u32(msg, NL80211_ATTR_CHANNEL_WIDTH_DEVICE, chandef->width_device))
+		return -ENOBUFS;
+
 	return 0;
 }
 EXPORT_SYMBOL(nl80211_send_chandef);

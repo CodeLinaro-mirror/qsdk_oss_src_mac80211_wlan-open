@@ -209,6 +209,7 @@ struct ieee80211_channel {
 	int orig_mag, orig_mpwr;
 	enum nl80211_dfs_state dfs_state;
 	unsigned long dfs_state_entered;
+	unsigned long dfs_state_last_available;
 	unsigned int dfs_cac_ms;
 	s8 psd;
 };
@@ -1041,6 +1042,21 @@ cfg80211_chandef_identical(const struct cfg80211_chan_def *chandef1,
 }
 
 /**
+ * cfg80211_chandef_device_present - check if channel definitions includes device
+ * bandwidth parameters different than the operating bandwidth parameters
+ * @chandef: channel definition
+ *
+ * Return: %true if the parameters are different
+ */
+static inline bool
+cfg80211_chandef_device_present(const struct cfg80211_chan_def *chandef)
+{
+	return (chandef->width_device && chandef->center_freq_device &&
+		chandef->width_device != chandef->width &&
+		chandef->center_freq_device != chandef->center_freq1);
+}
+
+/**
  * cfg80211_chandef_is_edmg - check if chandef represents an EDMG channel
  *
  * @chandef: the channel definition
@@ -1178,6 +1194,15 @@ int nl80211_send_chandef(struct sk_buff *msg, const struct cfg80211_chan_def *ch
  */
 bool cfg80211_chandef_dfs_available(struct wiphy *wiphy,
 				    const struct cfg80211_chan_def *chandef);
+
+/**
+ * cfg80211_is_freq_device_non_oper - check if the given frequency falls under
+ * the non operating portion of the device bandwidth.
+ * @chandef: the channel definition to check
+ * @freq: frequency to check
+ * Returns: True if the frequency is part of the non operating bandwidth, false otherwise.
+ */
+bool cfg80211_is_freq_device_non_oper(const struct cfg80211_chan_def *chandef, u32 freq);
 
 /**
  * ieee80211_chanwidth_rate_flags - return rate flags for channel width

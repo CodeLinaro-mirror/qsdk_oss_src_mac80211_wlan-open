@@ -639,6 +639,36 @@ cfg80211_chandef_compatible(const struct cfg80211_chan_def *c1,
 }
 EXPORT_SYMBOL(cfg80211_chandef_compatible);
 
+static void cfg80211_set_chans_dfs_state(struct wiphy *wiphy, u32 center_freq,
+					 u32 bandwidth,
+					 enum nl80211_dfs_state dfs_state,
+					 u16 radar_bitmap)
+{
+	struct ieee80211_channel *c;
+	u32 freq;
+	int i;
+
+	for (i = 0, freq = center_freq - bandwidth / 2 + 10;
+		freq <= center_freq + bandwidth / 2 - 10;
+		freq += 20, i++) {
+		c = ieee80211_get_channel(wiphy, freq);
+		if (!c || !(c->flags & IEEE80211_CHAN_RADAR) )
+			continue;
+
+		if (radar_bitmap && dfs_state == NL80211_DFS_UNAVAILABLE) {
+			if (radar_bitmap & 1 << i) {
+				c->dfs_state = dfs_state;
+				c->dfs_state_entered = jiffies;
+			}
+		}
+		else {
+			c->dfs_state = dfs_state;
+			c->dfs_state_entered = jiffies;
+			c->dfs_state_last_available = jiffies;
+		}
+	}
+}
+
 void cfg80211_set_dfs_state(struct wiphy *wiphy,
 			    const struct cfg80211_chan_def *chandef,
 			    enum nl80211_dfs_state dfs_state)
@@ -649,8 +679,27 @@ void cfg80211_set_dfs_state(struct wiphy *wiphy,
 	if (WARN_ON(!cfg80211_chandef_valid(chandef)))
 		return;
 
+	if (cfg80211_chandef_device_present(chandef)) {
+		width = nl80211_chan_width_to_mhz(chandef->width_device);
+		if (width < 0)
+			return;
+
+		cfg80211_set_chans_dfs_state(wiphy, chandef->center_freq_device,
+					     width, dfs_state,
+					     chandef->radar_bitmap);
+		return;
+	}
+
 	width = cfg80211_chandef_get_width(chandef);
 	if (width < 0)
+		return;
+
+	cfg80211_set_chans_dfs_state(wiphy, chandef->center_freq1,
+				     width, dfs_state,
+				     chandef->radar_bitmap);
+
+	/* WAR: To avoid setting all sub channels as NOL */
+	if (chandef->radar_bitmap)
 		return;
 
 	for_each_subchan(chandef, freq, cf) {
@@ -802,6 +851,25 @@ bool cfg80211_chandef_device_valid(const struct cfg80211_chan_def *chandef)
 		return true;
 
 	return false;
+}
+
+bool cfg80211_is_freq_device_non_oper(const struct cfg80211_chan_def *chandef,
+				      u32 freq)
+{
+	int width = nl80211_chan_width_to_mhz(chandef->width);
+
+	if (freq < cfg80211_get_start_freq_device(chandef) ||
+	    freq > cfg80211_get_end_freq_device(chandef))
+		return false;
+
+	if (width < 0)
+		return false;
+
+	if (freq >= cfg80211_get_start_freq(chandef, width) &&
+	    freq <= cfg80211_get_end_freq(chandef, width))
+		return false;
+
+	return true;
 }
 
 static int cfg80211_get_chans_dfs_required(struct wiphy *wiphy,
