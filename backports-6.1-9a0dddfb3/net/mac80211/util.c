@@ -860,6 +860,31 @@ struct ieee80211_vif *wdev_to_ieee80211_vif(struct wireless_dev *wdev)
 }
 EXPORT_SYMBOL_GPL(wdev_to_ieee80211_vif);
 
+struct ieee80211_vif *wdev_to_ieee80211_vif_vlan(struct wireless_dev *wdev)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+	struct ieee80211_sub_if_data *master;
+
+	if (!ieee80211_sdata_running(sdata))
+		return NULL;
+
+	switch (sdata->vif.type) {
+	case NL80211_IFTYPE_AP_VLAN:
+		master = container_of(sdata->bss,
+				      struct ieee80211_sub_if_data, u.ap);
+		if (WARN_ON(!master))
+			return NULL;
+		if (!(master->flags & IEEE80211_SDATA_IN_DRIVER))
+			return NULL;
+		return &master->vif;
+	default:
+		if (!(sdata->flags & IEEE80211_SDATA_IN_DRIVER))
+			return NULL;
+		return &sdata->vif;
+	}
+}
+EXPORT_SYMBOL_GPL(wdev_to_ieee80211_vif_vlan);
+
 struct wireless_dev *ieee80211_vif_to_wdev(struct ieee80211_vif *vif)
 {
 	if (!vif)
