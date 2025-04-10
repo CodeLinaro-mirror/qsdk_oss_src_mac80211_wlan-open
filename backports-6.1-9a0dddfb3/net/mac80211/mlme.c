@@ -3962,6 +3962,14 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 		link = sdata_dereference(sdata->link[link_id], sdata);
 		if (!link)
 			continue;
+
+		link->conf->csa_active = false;
+		if (link->csa_block_tx) {
+			ieee80211_wake_vif_queues(local, sdata,
+						  IEEE80211_QUEUE_STOP_REASON_CSA);
+			link->csa_block_tx = false;
+		}
+
 		ieee80211_link_release_channel(link);
 	}
 
