@@ -525,6 +525,31 @@ static int _ieee80211_set_active_links(struct ieee80211_sub_if_data *sdata,
 		 */
 	}
 
+	for_each_set_bit(link_id, &add, IEEE80211_MLD_MAX_NUM_LINKS) {
+		struct ieee80211_link_data *link;
+
+		link = sdata_dereference(sdata->link[link_id], sdata);
+
+		ret = ieee80211_link_use_channel(link, &link->conf->chanreq,
+						 IEEE80211_CHANCTX_SHARED);
+		WARN_ON_ONCE(ret);
+
+		ieee80211_mgd_set_link_qos_params(link);
+		ieee80211_link_info_change_notify(sdata, link,
+						  BSS_CHANGED_ERP_CTS_PROT |
+						  BSS_CHANGED_ERP_PREAMBLE |
+						  BSS_CHANGED_ERP_SLOT |
+						  BSS_CHANGED_HT |
+						  BSS_CHANGED_BASIC_RATES |
+						  BSS_CHANGED_BSSID |
+						  BSS_CHANGED_CQM |
+						  BSS_CHANGED_QOS |
+						  BSS_CHANGED_TXPOWER |
+						  BSS_CHANGED_BANDWIDTH |
+						  BSS_CHANGED_TWT |
+						  BSS_CHANGED_HE_OBSS_PD |
+						  BSS_CHANGED_HE_BSS_COLOR);
+	}
 	list_for_each_entry(sta, &local->sta_list, list) {
 		if (sdata != sta->sdata)
 			continue;
@@ -561,28 +586,6 @@ static int _ieee80211_set_active_links(struct ieee80211_sub_if_data *sdata,
 		 * not switched yet...
 		 */
 		__ieee80211_sta_recalc_aggregates(sta, active_links);
-	}
-
-	for_each_set_bit(link_id, &add, IEEE80211_MLD_MAX_NUM_LINKS) {
-		struct ieee80211_link_data *link;
-
-		link = sdata_dereference(sdata->link[link_id], sdata);
-
-		ieee80211_mgd_set_link_qos_params(link);
-		ieee80211_link_info_change_notify(sdata, link,
-						  BSS_CHANGED_ERP_CTS_PROT |
-						  BSS_CHANGED_ERP_PREAMBLE |
-						  BSS_CHANGED_ERP_SLOT |
-						  BSS_CHANGED_HT |
-						  BSS_CHANGED_BASIC_RATES |
-						  BSS_CHANGED_BSSID |
-						  BSS_CHANGED_CQM |
-						  BSS_CHANGED_QOS |
-						  BSS_CHANGED_TXPOWER |
-						  BSS_CHANGED_BANDWIDTH |
-						  BSS_CHANGED_TWT |
-						  BSS_CHANGED_HE_OBSS_PD |
-						  BSS_CHANGED_HE_BSS_COLOR);
 	}
 
 	old_active = sdata->vif.active_links;
