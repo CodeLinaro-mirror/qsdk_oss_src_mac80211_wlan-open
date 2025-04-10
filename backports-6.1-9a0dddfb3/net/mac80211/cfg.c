@@ -2462,12 +2462,14 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 			rcu_assign_pointer(vlansdata->u.vlan.sta, sta);
 			__ieee80211_check_fast_rx_iface(vlansdata);
 
-			if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
+			if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
 				drv_sta_set_4addr(local, vlansdata, &sta->sta,
 						  true);
-			else
+			} else {
+				sta->sta.dev = vlansdata->dev;
 				drv_sta_set_4addr(local, sta->sdata, &sta->sta,
 						  true);
+			}
 			if (sta->sta.valid_links) {
 				int link_id;
 				for_each_set_bit(link_id,

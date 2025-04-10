@@ -2653,6 +2653,7 @@ struct ieee80211_sta {
 
 	u16 eml_cap;
 	u16 mld_cap_op;
+	struct net_device *dev;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
