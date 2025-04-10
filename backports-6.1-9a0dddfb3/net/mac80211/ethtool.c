@@ -52,14 +52,31 @@ static void ieee80211_get_ringparam(struct net_device *dev,
 }
 
 static const char ieee80211_gstrings_sta_stats[][ETH_GSTRING_LEN] = {
-	"rx_packets", "rx_bytes",
-	"rx_duplicates", "rx_fragments", "rx_dropped",
-	"tx_packets", "tx_bytes",
-	"tx_filtered", "tx_retry_failed", "tx_retries",
-	"sta_state", "txrate", "rxrate", "signal",
-	"channel", "noise", "ch_time", "ch_time_busy",
-	"ch_time_ext_busy", "ch_time_rx", "ch_time_tx"
+	[IEEE80211_RX_PACKETS] = "rx_packets",
+	[IEEE80211_RX_BYTES] = "rx_bytes",
+	[IEEE80211_RX_DUPLICATES] = "rx_duplicates",
+	[IEEE80211_RX_FRAGMENTS] = "rx_fragments",
+	[IEEE80211_RX_DROPPED] = "rx_dropped",
+	[IEEE80211_TX_PACKETS] = "tx_packets",
+	[IEEE80211_TX_BYTES] = "tx_bytes",
+	[IEEE80211_TX_FILTERED] = "tx_filtered",
+	[IEEE80211_TX_RETRY_FAILED] = "tx_retry_failed",
+	[IEEE80211_TX_RETRIES] = "tx_retries",
+	[IEEE80211_STA_STATE] = "sta_state",
+	[IEEE80211_TX_RATE] = "txrate",
+	[IEEE80211_RX_RATE] ="rxrate",
+	[IEEE80211_SIGNAL] = "signal",
+	[IEEE80211_CHANNEL] = "channel",
+	[IEEE80211_NOISE] = "noise",
+	[IEEE80211_CH_TIME] = "ch_time",
+	[IEEE80211_CH_TIME_BUSY] = "ch_time_busy",
+	[IEEE80211_CH_TIME_EXT_BUSY] = "ch_time_ext_busy",
+	[IEEE80211_CH_TIME_RX] = "ch_time_rx",
+	[IEEE80211_CH_TIME_TX] = "ch_time_tx",
+	[IEEE80211_TX_DEV_DROPPED] = "tx_dev_dropped",
+	[IEEE80211_RX_DEV_DROPPED] = "rx_dev_dropped",
 };
+
 #define STA_STATS_LEN	ARRAY_SIZE(ieee80211_gstrings_sta_stats)
 
 static int ieee80211_get_sset_count(struct net_device *dev, int sset)
@@ -88,7 +105,8 @@ static void ieee80211_get_stats(struct net_device *dev,
 	struct ieee80211_local *local = sdata->local;
 	struct station_info sinfo;
 	struct survey_info survey;
-	int i, q;
+	int q;
+	unsigned long int i;
 #define STA_STATS_SURVEY_LEN 7
 
 	memset(data, 0, sizeof(u64) * STA_STATS_LEN);
@@ -157,7 +175,7 @@ static void ieee80211_get_stats(struct net_device *dev,
 	}
 
 do_survey:
-	i = STA_STATS_LEN - STA_STATS_SURVEY_LEN;
+	i = IEEE80211_CHANNEL;
 	/* Get survey stats for current channel */
 	survey.filled = 0;
 
@@ -214,10 +232,15 @@ do_survey:
 	else
 		data[i++] = -1LL;
 
+	data[IEEE80211_TX_DEV_DROPPED] = sdata->tx_dropped;
+	i++;
+	data[IEEE80211_RX_DEV_DROPPED] = sdata->rx_dropped;
+	i++;
+
 	if (WARN_ON(i != STA_STATS_LEN))
 		return;
 
-	drv_get_et_stats(sdata, stats, &(data[STA_STATS_LEN]));
+	drv_get_et_stats(sdata, stats, &(data[0]));
 }
 
 static void ieee80211_get_strings(struct net_device *dev, u32 sset, u8 *data)

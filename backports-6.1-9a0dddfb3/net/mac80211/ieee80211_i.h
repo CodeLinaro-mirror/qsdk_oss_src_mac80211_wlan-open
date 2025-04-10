@@ -1214,6 +1214,10 @@ struct ieee80211_sub_if_data {
 #endif
 
 	struct work_struct awgn_detected_work;
+
+	u32 tx_dropped;
+	u32 rx_dropped;
+
 	/* must be last, dynamically sized area in this! */
 	struct ieee80211_vif vif;
 };
