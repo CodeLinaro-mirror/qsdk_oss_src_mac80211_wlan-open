@@ -858,7 +858,7 @@ void sta_set_rate_info_tx(struct sta_info *sta,
 	} else {
 		struct ieee80211_supported_band *sband;
 
-		sband = ieee80211_get_sband(sta->sdata);
+		sband = ieee80211_get_link_sband(&sta->sdata->deflink);
 		WARN_ON_ONCE(sband && !sband->bitrates);
 		if (sband && sband->bitrates)
 			rinfo->legacy = sband->bitrates[rate->idx].bitrate;

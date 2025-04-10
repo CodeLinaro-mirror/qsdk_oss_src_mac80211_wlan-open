@@ -2603,13 +2603,112 @@ static inline u64 sta_get_stats_bytes(struct ieee80211_sta_rx_stats *rxstats)
 	return value;
 }
 
+static u64 link_sta_set_info(struct link_sta_info *link_sta,
+			      struct station_info *sinfo,
+			      bool init)
+{
+	int ac, cpu;
+	u64 filled = 0;
+
+	if (!(sinfo->filled & (BIT_ULL(NL80211_STA_INFO_TX_BYTES64) |
+			       BIT_ULL(NL80211_STA_INFO_TX_BYTES)))) {
+		if (init)
+			sinfo->tx_bytes = 0;
+
+		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
+			sinfo->tx_bytes += link_sta->tx_stats.bytes[ac];
+
+		filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES64);
+	}
+
+	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_TX_PACKETS))) {
+		if (init)
+			sinfo->tx_packets = 0;
+
+		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
+			sinfo->tx_packets += link_sta->tx_stats.packets[ac];
+
+		filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
+	}
+
+	if (!(sinfo->filled & (BIT_ULL(NL80211_STA_INFO_RX_BYTES64) |
+			       BIT_ULL(NL80211_STA_INFO_RX_BYTES)))) {
+		if (init)
+			sinfo->rx_bytes = 0;
+
+		sinfo->rx_bytes += sta_get_stats_bytes(&link_sta->rx_stats);
+
+		if (link_sta->pcpu_rx_stats) {
+			for_each_possible_cpu(cpu) {
+				struct ieee80211_sta_rx_stats *cpurxs;
+
+				cpurxs = per_cpu_ptr(link_sta->pcpu_rx_stats,
+						     cpu);
+				sinfo->rx_bytes += sta_get_stats_bytes(cpurxs);
+			}
+		}
+
+		filled |= BIT_ULL(NL80211_STA_INFO_RX_BYTES64);
+	}
+
+	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_RX_PACKETS))) {
+		if (init)
+			sinfo->rx_packets = 0;
+
+		sinfo->rx_packets += link_sta->rx_stats.packets;
+		if (link_sta->pcpu_rx_stats) {
+			for_each_possible_cpu(cpu) {
+				struct ieee80211_sta_rx_stats *cpurxs;
+
+				cpurxs = per_cpu_ptr(link_sta->pcpu_rx_stats,
+						     cpu);
+				sinfo->rx_packets += cpurxs->packets;
+			}
+		}
+
+		filled |= BIT_ULL(NL80211_STA_INFO_RX_PACKETS);
+	}
+
+	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_TX_RETRIES))) {
+		if (init)
+			sinfo->tx_retries = 0;
+
+		sinfo->tx_retries += link_sta->status_stats.retry_count;
+
+		filled |= BIT_ULL(NL80211_STA_INFO_TX_RETRIES);
+	}
+
+	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_TX_FAILED))) {
+		if (init)
+			sinfo->tx_failed = 0;
+
+		sinfo->tx_failed += link_sta->status_stats.retry_failed;
+		filled |= BIT_ULL(NL80211_STA_INFO_TX_FAILED);
+	}
+
+	if (init)
+		sinfo->rx_dropped_misc = 0;
+
+	sinfo->rx_dropped_misc += link_sta->rx_stats.dropped;
+	if (link_sta->pcpu_rx_stats) {
+		for_each_possible_cpu(cpu) {
+			struct ieee80211_sta_rx_stats *cpurxs;
+
+			cpurxs = per_cpu_ptr(link_sta->pcpu_rx_stats, cpu);
+			sinfo->rx_dropped_misc += cpurxs->dropped;
+		}
+	}
+
+	return filled;
+}
+
 void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 		   bool tidstats)
 {
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
 	struct ieee80211_local *local = sdata->local;
 	u32 thr = 0;
-	int i, ac, cpu, link_id = 0;
+	int i, ac, link_id = 0;
 	struct ieee80211_sta_rx_stats *last_rxstats;
 	struct link_sta_info *link_sta = NULL;
 
@@ -2646,10 +2745,12 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 	sinfo->valid_links = sta->sta.valid_links;
 
 	if (sinfo->valid_links) {
+		u64 link_sta_filled = 0;
+		bool init = true;
+
 		for_each_valid_link(sinfo, link_id) {
 			rcu_read_lock();
 			link_sta = rcu_dereference(sta->link[link_id]);
-
 			if (!link_sta) {
 				rcu_read_unlock();
 				continue;
@@ -2657,65 +2758,18 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 
 			memcpy(sinfo->links[link_id].addr, link_sta->addr,
 			       ETH_ALEN);
+
+			link_sta_filled |= link_sta_set_info(link_sta, sinfo,
+							     init);
+			init = false;
 			rcu_read_unlock();
 		}
+
+		sinfo->filled |= link_sta_filled;
+	} else {
+		sinfo->filled |= link_sta_set_info(&sta->deflink, sinfo, true);
 	}
 
-	if (!(sinfo->filled & (BIT_ULL(NL80211_STA_INFO_TX_BYTES64) |
-			       BIT_ULL(NL80211_STA_INFO_TX_BYTES)))) {
-		sinfo->tx_bytes = 0;
-		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
-			sinfo->tx_bytes += sta->deflink.tx_stats.bytes[ac];
-		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BYTES64);
-	}
-
-	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_TX_PACKETS))) {
-		sinfo->tx_packets = 0;
-		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
-			sinfo->tx_packets += sta->deflink.tx_stats.packets[ac];
-		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_PACKETS);
-	}
-
-	if (!(sinfo->filled & (BIT_ULL(NL80211_STA_INFO_RX_BYTES64) |
-			       BIT_ULL(NL80211_STA_INFO_RX_BYTES)))) {
-		sinfo->rx_bytes += sta_get_stats_bytes(&sta->deflink.rx_stats);
-
-		if (sta->deflink.pcpu_rx_stats) {
-			for_each_possible_cpu(cpu) {
-				struct ieee80211_sta_rx_stats *cpurxs;
-
-				cpurxs = per_cpu_ptr(sta->deflink.pcpu_rx_stats,
-						     cpu);
-				sinfo->rx_bytes += sta_get_stats_bytes(cpurxs);
-			}
-		}
-
-		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BYTES64);
-	}
-
-	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_RX_PACKETS))) {
-		sinfo->rx_packets = sta->deflink.rx_stats.packets;
-		if (sta->deflink.pcpu_rx_stats) {
-			for_each_possible_cpu(cpu) {
-				struct ieee80211_sta_rx_stats *cpurxs;
-
-				cpurxs = per_cpu_ptr(sta->deflink.pcpu_rx_stats,
-						     cpu);
-				sinfo->rx_packets += cpurxs->packets;
-			}
-		}
-		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_PACKETS);
-	}
-
-	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_TX_RETRIES))) {
-		sinfo->tx_retries = sta->deflink.status_stats.retry_count;
-		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_RETRIES);
-	}
-
-	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_TX_FAILED))) {
-		sinfo->tx_failed = sta->deflink.status_stats.retry_failed;
-		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_FAILED);
-	}
 
 	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_RX_DURATION))) {
 		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
@@ -2732,16 +2786,6 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_AIRTIME_WEIGHT))) {
 		sinfo->airtime_weight = sta->airtime_weight;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_AIRTIME_WEIGHT);
-	}
-
-	sinfo->rx_dropped_misc = sta->deflink.rx_stats.dropped;
-	if (sta->deflink.pcpu_rx_stats) {
-		for_each_possible_cpu(cpu) {
-			struct ieee80211_sta_rx_stats *cpurxs;
-
-			cpurxs = per_cpu_ptr(sta->deflink.pcpu_rx_stats, cpu);
-			sinfo->rx_dropped_misc += cpurxs->dropped;
-		}
 	}
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION &&
@@ -2788,15 +2832,13 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 	}
 
 	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_TX_BITRATE)) &&
-	    !sta->sta.valid_links &&
 	    ieee80211_rate_valid(&sta->deflink.tx_stats.last_rate)) {
 		sta_set_rate_info_tx(sta, &sta->deflink.tx_stats.last_rate,
 				     &sinfo->txrate);
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
 	}
 
-	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_RX_BITRATE)) &&
-	    !sta->sta.valid_links) {
+	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_RX_BITRATE))) {
 		if (sta_set_rate_info_rx(sta, &sinfo->rxrate) == 0)
 			sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_BITRATE);
 	}
