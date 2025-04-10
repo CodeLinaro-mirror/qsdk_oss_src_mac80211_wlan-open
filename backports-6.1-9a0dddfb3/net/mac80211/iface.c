@@ -921,6 +921,14 @@ static int ieee80211_netdev_setup_tc(struct net_device *dev,
 	return drv_net_setup_tc(local, sdata, dev, type, type_data);
 }
 
+static u16 ieee80211_netdev_select_queue(struct net_device *netdev,
+				  struct sk_buff *skb,
+				  struct net_device *sb_dev)
+{
+	return smp_processor_id();
+}
+
+
 static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_open		= ieee80211_open,
 	.ndo_stop		= ieee80211_stop,
@@ -930,6 +938,7 @@ static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_set_mac_address 	= ieee80211_change_mac,
 	.ndo_setup_tc		= ieee80211_netdev_setup_tc,
 	.ndo_change_mtu		= ieee80211_change_mtu,
+	.ndo_select_queue       = ieee80211_netdev_select_queue,
 };
 
 #if LINUX_VERSION_IS_GEQ(5,2,0)
@@ -991,6 +1000,7 @@ static const struct net_device_ops ieee80211_dataif_8023_ops = {
 	.ndo_set_mac_address	= ieee80211_change_mac,
 	.ndo_setup_tc		= ieee80211_netdev_setup_tc,
 	.ndo_change_mtu		= ieee80211_change_mtu,
+	.ndo_select_queue       = ieee80211_netdev_select_queue,
 };
 
 static bool ieee80211_iftype_supports_hdr_offload(enum nl80211_iftype iftype)
