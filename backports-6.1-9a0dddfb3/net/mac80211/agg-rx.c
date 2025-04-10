@@ -237,6 +237,8 @@ static void ieee80211_send_addba_resp(struct sta_info *sta, u8 *da, u16 tid,
 	struct ieee80211_mgmt *mgmt;
 	bool amsdu = ieee80211_hw_check(&local->hw, SUPPORTS_AMSDU_IN_AMPDU);
 	u16 capab;
+	struct ieee80211_link_data *link;
+	u8 link_id;
 
 	skb = dev_alloc_skb(sizeof(*mgmt) +
 		    2 + sizeof(struct ieee80211_addba_ext_ie) +
@@ -246,6 +248,36 @@ static void ieee80211_send_addba_resp(struct sta_info *sta, u8 *da, u16 tid,
 
 	skb_reserve(skb, local->hw.extra_tx_headroom);
 	mgmt = ieee80211_mgmt_ba(skb, da, sdata);
+
+	memcpy(mgmt->da, da, ETH_ALEN);
+        memcpy(mgmt->sa, sdata->vif.addr, ETH_ALEN);
+
+	if (sdata->vif.type == NL80211_IFTYPE_AP) {
+		memcpy(mgmt->bssid, sdata->vif.addr, ETH_ALEN);
+		/* Override MLD address in A2/A3 with link addr
+		 * in case of AP MLO and a non ML STA
+		 */
+		if (sdata->vif.valid_links && sta && !sta->sta.mlo) {
+			link_id = sta->deflink.link_id;
+			rcu_read_lock();
+			link = rcu_dereference(sdata->link[link_id]);
+			if (link) {
+				memcpy(mgmt->sa, link->conf->addr, ETH_ALEN);
+				memcpy(mgmt->bssid, link->conf->addr, ETH_ALEN);
+			}
+			rcu_read_unlock();
+		}
+        } else if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN ||
+                sdata->vif.type == NL80211_IFTYPE_MESH_POINT) {
+                memcpy(mgmt->bssid, sdata->vif.addr, ETH_ALEN);
+        } else if (sdata->vif.type == NL80211_IFTYPE_STATION) {
+                memcpy(mgmt->bssid, sdata->vif.cfg.ap_addr, ETH_ALEN);
+        } else if (sdata->vif.type == NL80211_IFTYPE_ADHOC) {
+                memcpy(mgmt->bssid, sdata->u.ibss.bssid, ETH_ALEN);
+        }
+
+        mgmt->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT |
+                                          IEEE80211_STYPE_ACTION);
 
 	skb_put(skb, 1 + sizeof(mgmt->u.action.u.addba_resp));
 	mgmt->u.action.category = WLAN_CATEGORY_BACK;
@@ -286,6 +318,9 @@ void __ieee80211_start_rx_ba_session(struct sta_info *sta,
 	int i, ret = -EOPNOTSUPP;
 	u16 status = WLAN_STATUS_REQUEST_DECLINED;
 	u16 max_buf_size;
+	u8 link_id;
+	enum nl80211_band band;
+	struct ieee80211_bss_conf *link_conf;
 
 	lockdep_assert_wiphy(sta->local->hw.wiphy);
 
@@ -296,8 +331,21 @@ void __ieee80211_start_rx_ba_session(struct sta_info *sta,
 		goto end;
 	}
 
-	if (!sta->sta.deflink.ht_cap.ht_supported &&
-	    !sta->sta.deflink.he_cap.has_he) {
+	link_id = sta->sta.deflink.link_id;
+	rcu_read_lock();
+	link_conf = rcu_dereference(sta->sdata->vif.link_conf[link_id]);
+
+	if (WARN_ON(!link_conf || (!link_conf->chanreq.oper.chan))) {
+		ht_dbg(sta->sdata,
+		       "STA %pM BA session couldnt setup due to invalid link %d\n",
+		       sta->sta.addr, link_id);
+		rcu_read_unlock();
+		goto end;
+	}
+	band = link_conf->chanreq.oper.chan->band;
+	rcu_read_unlock();
+
+	if (!sta->sta.deflink.ht_cap.ht_supported && band != NL80211_BAND_6GHZ) {
 		ht_dbg(sta->sdata,
 		       "STA %pM erroneously requests BA session on tid %d w/o HT\n",
 		       sta->sta.addr, tid);

@@ -1444,18 +1444,18 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 	if (params->he_cap) {
-		memcpy(&sdata->vif.bss_conf.he_cap_elem, params->he_cap,
+		memcpy(&link_conf->he_cap_elem, params->he_cap,
 		       sizeof(*params->he_cap));
-		sdata->vif.bss_conf.he_su_beamformer =
+		link_conf->he_su_beamformer =
 			params->he_cap->phy_cap_info[3] &
 			IEEE80211_HE_PHY_CAP3_SU_BEAMFORMER;
-		sdata->vif.bss_conf.he_su_beamformee =
+		link_conf->he_su_beamformee =
 			params->he_cap->phy_cap_info[4] &
 			IEEE80211_HE_PHY_CAP4_SU_BEAMFORMEE;
-		sdata->vif.bss_conf.he_mu_beamformer =
+		link_conf->he_mu_beamformer =
 			params->he_cap->phy_cap_info[4] &
 			IEEE80211_HE_PHY_CAP4_MU_BEAMFORMER;
-		sdata->vif.bss_conf.he_full_ul_mumimo =
+		link_conf->he_full_ul_mumimo =
 			params->he_cap->phy_cap_info[2] &
 			IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO;
 	}
@@ -2021,6 +2021,15 @@ static int sta_link_apply_parameters(struct ieee80211_local *local,
 	}
 
 	ieee80211_sta_init_nss(link_sta);
+
+	/* update nss if not done already for the link sta,
+	 * for the deflink the nss will be updated once the assoc
+	 * flag is set through set station. For the non-deflink sta
+	 * we would reach here only during assoc, so we would have all
+	 * caps to calculate the nss.
+	 */
+	if (&sta->deflink != link_sta)
+		ieee80211_sta_init_nss(link_sta);
 
 	if (params->opmode_notif_used) {
 		/* returned value is only needed for rc update, but the
