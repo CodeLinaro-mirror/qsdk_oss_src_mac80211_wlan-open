@@ -805,9 +805,6 @@ void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata, int _link_id)
 static int ieee80211_stop(struct net_device *dev)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
-#ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	struct ieee80211_ppe_vp_ds_params vp_params = {0};
-#endif
 
 	/* close dependent VLAN interfaces before locking wiphy */
 	if (sdata->vif.type == NL80211_IFTYPE_AP) {
@@ -836,11 +833,9 @@ static int ieee80211_stop(struct net_device *dev)
 		ieee80211_stop_mbssid(sdata, -1);
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	if (sdata->vif.ppe_vp_num != -1) {
-		drv_ppeds_detach_vdev(sdata, &sdata->vif, &vp_params);
-		if (sdata->vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
-			ppe_vp_free(sdata->vif.ppe_vp_num);
-
+	/* Free VP port here for PPE_VP mode */
+	if (ppe_vp_accel && sdata->vif.ppe_vp_num != -1) {
+		ppe_vp_free(sdata->vif.ppe_vp_num);
 		sdata_info(sdata, "Destroyed PPE VP port no:%d for dev:%s\n",
 			   sdata->vif.ppe_vp_num, dev->name);
 		sdata->vif.ppe_vp_num = -1;
@@ -1313,8 +1308,7 @@ static int ieee80211_ppe_vp_802_3_redir_vap(struct ieee80211_sub_if_data *sdata,
 					    struct net_device *dev)
 {
 	struct ppe_vp_ai vpai;
-	struct ieee80211_ppe_vp_ds_params vp_params = {0};
-	int vp = -1, ret;
+	int vp = -1;
 
 	memset(&vpai, 0, sizeof(struct ppe_vp_ai));
 
@@ -1324,19 +1318,9 @@ static int ieee80211_ppe_vp_802_3_redir_vap(struct ieee80211_sub_if_data *sdata,
 	vpai.src_cb = NULL;
 	vpai.src_cb_data = NULL;
 	vpai.queue_num = 0;
-	vpai.usr_type = PPE_VP_USER_TYPE_DS;
 	vpai.net_dev_type = PPE_VP_NET_DEV_TYPE_WIFI;
 
-	vp_params.dev = dev;
-	ret = drv_ppeds_attach_vdev(sdata, &sdata->vif, (void *)&vpai, &vp, &vp_params);
-	if (!ret) {
-		sdata->vif.ppe_vp_type = PPE_VP_USER_TYPE_DS;
-		return vp;
-	}
-
-	sdata_info(sdata, "PPE-DS attach failed falling back to passive vp\n");
-	/* when PPE-DS attach fails, fall back to passive vp support */
-	vpai.usr_type = 0;
+	/* Allocate VP port here for PPE_VP mode */
 	vp = ppe_vp_alloc(dev, &vpai);
 	if (vp <= 0)
 		return -1;

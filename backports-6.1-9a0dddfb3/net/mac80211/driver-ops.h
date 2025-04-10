@@ -1713,34 +1713,6 @@ static inline bool drv_can_activate_links(struct ieee80211_local *local,
 	return ret;
 }
 
-static inline int drv_ppeds_attach_vdev(struct ieee80211_sub_if_data *sdata,
-					struct ieee80211_vif *vif, void *vp_arg,
-					int *ppe_vp_num,
-					struct ieee80211_ppe_vp_ds_params *vp_params)
-{
-
-	struct ieee80211_local *local = sdata->local;
-
-	if (!local->ops->ppeds_attach_vdev)
-	        return -EINVAL;
-
-	return local->ops->ppeds_attach_vdev(&local->hw, vif, vp_arg,
-					     ppe_vp_num, vp_params);
-}
-
-static inline int drv_ppeds_detach_vdev(struct ieee80211_sub_if_data *sdata,
-					struct ieee80211_vif *vif,
-					struct ieee80211_ppe_vp_ds_params *vp_params)
-{
-	struct ieee80211_local *local = sdata->local;
-
-	if (!local->ops->ppeds_detach_vdev)
-	        return -EINVAL;
-
-	return local->ops->ppeds_detach_vdev(&local->hw, vif, vp_params);
-
-}
-
 int drv_change_vif_links(struct ieee80211_local *local,
 			 struct ieee80211_sub_if_data *sdata,
 			 u16 old_links, u16 new_links,

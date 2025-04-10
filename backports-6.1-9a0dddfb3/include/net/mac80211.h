@@ -5005,15 +5005,6 @@ struct ieee80211_ops {
 	int (*sta_set_mgmt_rts_cts)(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_sta *sta);
-
-	/*TODO: explore if this can be moved completely under ath12k driver */
-	int (*ppeds_attach_vdev)(struct ieee80211_hw *hw,
-				 struct ieee80211_vif *vif,
-				 void *vp_arg, int *ppe_vp_num,
-				 struct ieee80211_ppe_vp_ds_params *vp_params);
-	int (*ppeds_detach_vdev)(struct ieee80211_hw *hw,
-				 struct ieee80211_vif *vif,
-				 struct ieee80211_ppe_vp_ds_params *vp_params);
 };
 
 /**
