@@ -1277,7 +1277,7 @@ ieee80211_tx_prepare(struct ieee80211_sub_if_data *sdata,
 			tx->sta = sta_info_get_bss(sdata, hdr->addr1);
 		}
 		if (!tx->sta && !is_multicast_ether_addr(hdr->addr1)) {
-			tx->sta = sta_info_get(sdata, hdr->addr1);
+			tx->sta = sta_info_get_bss(sdata, hdr->addr1);
 			aggr_check = true;
 		}
 	}
