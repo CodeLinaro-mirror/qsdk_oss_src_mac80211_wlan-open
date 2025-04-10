@@ -8242,4 +8242,14 @@ int ieee80211_6ghz_power_mode_change(struct wiphy *wiphy,
 				     struct wireless_dev *wdev,
 				     u8 ap_6ghz_pwr_mode,
 				     int link_id);
+
+/** ieee80211_link_removal_count_update - Update link reconfig removal for each
+ * link for which the link removal has been scheduled
+ * @vif: BSS in which the link is getting removed
+ * @link_id: Link id of the link getting removed
+ * @count: current TBTT value from driver
+ */
+void ieee80211_link_removal_count_update(struct ieee80211_vif *vif,
+					 unsigned int link_id, u16 count);
+
 #endif /* MAC80211_H */

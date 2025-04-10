@@ -4179,6 +4179,20 @@ void ieee80211_critical_update(struct ieee80211_vif *vif, unsigned int link_id,
 }
 EXPORT_SYMBOL(ieee80211_critical_update);
 
+void ieee80211_link_removal_count_update(struct ieee80211_vif *vif,
+					 unsigned int link_id, u16 count)
+{
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+
+	if (!wdev->valid_links ||
+		WARN_ON(link_id > IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+
+	wdev->links[link_id].link_removal_tbtt_count = count;
+	wdev->link_removal_flag = true;
+}
+EXPORT_SYMBOL(ieee80211_link_removal_count_update);
+
 void ieee80211_channel_switch_disconnect(struct ieee80211_vif *vif)
 {
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);

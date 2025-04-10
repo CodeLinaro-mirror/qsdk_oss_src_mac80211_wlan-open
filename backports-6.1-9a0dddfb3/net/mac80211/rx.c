@@ -3998,6 +3998,7 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 		.link_id = rx->link_id,
 		.have_link_id = rx->link_id >= 0,
 		.critical_update = 0,
+		.link_removal_update = 0,
 	};
 
 	stype = mgmt->frame_control & cpu_to_le16(IEEE80211_FCTL_STYPE);
@@ -4006,6 +4007,9 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 	    stype ==  cpu_to_le16(IEEE80211_STYPE_REASSOC_REQ)) {
 		if (wdev->critical_update)
 			info.critical_update = 1;
+
+		if (wdev->link_removal_flag)
+			info.link_removal_update = 1;
 	}
 	/* skip known-bad action frames and return them in the next handler */
 	if (status->rx_flags & IEEE80211_RX_MALFORMED_ACTION_FRM)
