@@ -1810,7 +1810,7 @@ ieee80211_assoc_add_ml_elem(struct ieee80211_sub_if_data *sdata,
 	const struct wiphy_iftype_ext_capab *ift_ext_capa;
 	__le16 eml_capa = 0, mld_capa_ops = 0;
 	unsigned int link_id;
-	u8 *ml_elem_len;
+	u8 *ml_elem_len, max_simul_links = 0;
 	void *capab_pos;
 
 	if (!ieee80211_vif_is_mld(&sdata->vif))
@@ -1844,6 +1844,19 @@ ieee80211_assoc_add_ml_elem(struct ieee80211_sub_if_data *sdata,
 			cpu_to_le16(IEEE80211_MLC_BASIC_PRES_EML_CAPA);
 		skb_put_data(skb, &eml_capa, sizeof(eml_capa));
 	}
+
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		if (!assoc_data->link[link_id].bss ||
+			link_id == assoc_data->assoc_link_id)
+			continue;
+
+		max_simul_links++;
+	}
+
+	mld_capa_ops |= cpu_to_le16(max_simul_links & IEEE80211_MLD_CAP_OP_MAX_SIMUL_LINKS);
+
+        /* need indication from userspace to support this */
+        mld_capa_ops &= ~cpu_to_le16(IEEE80211_MLD_CAP_OP_TID_TO_LINK_MAP_NEG_SUPP);
 	skb_put_data(skb, &mld_capa_ops, sizeof(mld_capa_ops));
 
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
