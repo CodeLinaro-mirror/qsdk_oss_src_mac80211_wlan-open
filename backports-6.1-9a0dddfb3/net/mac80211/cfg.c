@@ -1446,6 +1446,18 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (params->he_cap) {
 		memcpy(&sdata->vif.bss_conf.he_cap_elem, params->he_cap,
 		       sizeof(*params->he_cap));
+		sdata->vif.bss_conf.he_su_beamformer =
+			params->he_cap->phy_cap_info[3] &
+			IEEE80211_HE_PHY_CAP3_SU_BEAMFORMER;
+		sdata->vif.bss_conf.he_su_beamformee =
+			params->he_cap->phy_cap_info[4] &
+			IEEE80211_HE_PHY_CAP4_SU_BEAMFORMEE;
+		sdata->vif.bss_conf.he_mu_beamformer =
+			params->he_cap->phy_cap_info[4] &
+			IEEE80211_HE_PHY_CAP4_MU_BEAMFORMER;
+		sdata->vif.bss_conf.he_full_ul_mumimo =
+			params->he_cap->phy_cap_info[2] &
+			IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO;
 	}
 
 	err = ieee80211_link_use_channel(link, &chanreq,

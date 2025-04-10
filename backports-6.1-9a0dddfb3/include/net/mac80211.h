@@ -717,6 +717,12 @@ struct ieee80211_parsed_tpe {
  *	in order to discover all the nontransmitted BSSIDs in the set.
  * @he_oper: HE operation information of the BSS (AP/Mesh) or of the AP we are
  *	connected to (STA)
+ * @he_su_beamformer: does this BSS support operation as a HE SU beamformer
+ * @he_su_beamformee: does this BSS support operation as a HE SU beamformee
+ * @he_mu_beamformer: does this BSS support operation as a HE MU beamformer
+ * @he_full_ul_mumimo: does this BSS support the reception (AP) or transmission
+ *     (non-AP STA) of an HE TB PPDU on an RU that spans the entire PPDU
+ *     bandwidth
  * @he_obss_pd: OBSS Packet Detection parameters.
  * @he_bss_color: BSS coloring settings, if BSS supports HE
  * @fils_discovery: FILS discovery configuration
@@ -748,15 +754,6 @@ struct ieee80211_parsed_tpe {
  *	beamformer
  * @vht_mu_beamformee: in AP mode, does this BSS support operation as an VHT MU
  *	beamformee
- * @he_su_beamformer: in AP-mode, does this BSS support operation as an HE SU
- *	beamformer
- * @he_su_beamformee: in AP-mode, does this BSS support operation as an HE SU
- *	beamformee
- * @he_mu_beamformer: in AP-mode, does this BSS support operation as an HE MU
- *	beamformer
- * @he_full_ul_mumimo: does this BSS support the reception (AP) or transmission
- *	(non-AP STA) of an HE TB PPDU on an RU that spans the entire PPDU
- *	bandwidth
  * @eht_su_beamformer: in AP-mode, does this BSS enable operation as an EHT SU
  *	beamformer
  * @eht_su_beamformee: in AP-mode, does this BSS enable operation as an EHT SU
@@ -839,6 +836,10 @@ struct ieee80211_bss_conf {
 		u32 params;
 		u16 nss_set;
 	} he_oper;
+	bool he_su_beamformer;
+	bool he_su_beamformee;
+	bool he_mu_beamformer;
+	bool he_full_ul_mumimo;
 	struct ieee80211_he_obss_pd he_obss_pd;
 	struct ieee80211_he_cap_elem  he_cap_elem;
 	struct cfg80211_he_bss_color he_bss_color;
@@ -869,10 +870,6 @@ struct ieee80211_bss_conf {
 	bool vht_su_beamformee;
 	bool vht_mu_beamformer;
 	bool vht_mu_beamformee;
-	bool he_su_beamformer;
-	bool he_su_beamformee;
-	bool he_mu_beamformer;
-	bool he_full_ul_mumimo;
 	bool eht_su_beamformer;
 	bool eht_su_beamformee;
 	bool eht_mu_beamformer;
