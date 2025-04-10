@@ -1106,6 +1106,18 @@ int nl80211_chan_width_to_mhz(enum nl80211_chan_width chan_width);
 bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef);
 
 /**
+ * cfg80211_chandef_primary_freqs - Fill centre freq for 40, 80 and 160 MHz for
+ * the given chan_def
+ * @chandef: Input channel definition
+ * @pri40: Centre freq of 40 MHz
+ * @pri80: Centre freq of 80 MHz
+ * @pri160: Centre freq of 160 MHz
+ * Return: %true if the channel definition is valid. %false otherwise.
+ */
+void cfg80211_chandef_primary_freqs(const struct cfg80211_chan_def *c, u32 *pri40,
+				    u32 *pri80, u32 *pri160);
+
+/**
  * cfg80211_get_start_freq_device - retrieve start frequency of the device BW
  * @chandef: the channel definition to check
  * Returns: Start frequency in KHz.

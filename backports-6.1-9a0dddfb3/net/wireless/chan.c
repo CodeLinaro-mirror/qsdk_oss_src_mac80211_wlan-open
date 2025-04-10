@@ -482,6 +482,60 @@ bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef)
 }
 EXPORT_SYMBOL(cfg80211_chandef_valid);
 
+void cfg80211_chandef_primary_freqs(const struct cfg80211_chan_def *c,
+				    u32 *pri40, u32 *pri80, u32 *pri160)
+{
+	int tmp;
+
+	switch (c->width) {
+	case NL80211_CHAN_WIDTH_40:
+		*pri40 = c->center_freq1;
+		*pri80 = 0;
+		*pri160 = 0;
+		break;
+	case NL80211_CHAN_WIDTH_80:
+	case NL80211_CHAN_WIDTH_80P80:
+		*pri160 = 0;
+		*pri80 = c->center_freq1;
+		/* n_P20 */
+		tmp = (30 + c->chan->center_freq - c->center_freq1)/20;
+		/* n_P40 */
+		tmp /= 2;
+		/* freq_P40 */
+		*pri40 = c->center_freq1 - 20 + 40 * tmp;
+		break;
+	case NL80211_CHAN_WIDTH_160:
+		*pri160 = c->center_freq1;
+		/* n_P20 */
+		tmp = (70 + c->chan->center_freq - c->center_freq1)/20;
+		/* n_P40 */
+		tmp /= 2;
+		/* freq_P40 */
+		*pri40 = c->center_freq1 - 60 + 40 * tmp;
+		/* n_P80 */
+		tmp /= 2;
+		*pri80 = c->center_freq1 - 40 + 80 * tmp;
+		break;
+	case NL80211_CHAN_WIDTH_320:
+		/* n_P20 */
+		tmp = (150 + c->chan->center_freq - c->center_freq1) / 20;
+		/* n_P40 */
+		tmp /= 2;
+		/* freq_P40 */
+		*pri40 = c->center_freq1 - 140 + 40 * tmp;
+		/* n_P80 */
+		tmp /= 2;
+		*pri80 = c->center_freq1 - 120 + 80 * tmp;
+		/* n_P160 */
+		tmp /= 2;
+		*pri160 = c->center_freq1 - 80 + 160 * tmp;
+		break;
+	default:
+		WARN_ON_ONCE(1);
+	}
+}
+EXPORT_SYMBOL(cfg80211_chandef_primary_freqs);
+
 int cfg80211_chandef_primary(const struct cfg80211_chan_def *c,
 			     enum nl80211_chan_width primary_chan_width,
 			     u16 *punctured)
