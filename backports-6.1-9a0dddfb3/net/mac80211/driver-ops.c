@@ -78,6 +78,9 @@ int drv_add_interface(struct ieee80211_local *local,
 	if (!(sdata->flags & IEEE80211_SDATA_IN_DRIVER)) {
 		sdata->flags |= IEEE80211_SDATA_IN_DRIVER;
 
+		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+			return 0;
+
 		drv_vif_add_debugfs(local, sdata);
 		/* initially vif is not MLD */
 		ieee80211_link_debugfs_drv_add(&sdata->deflink);
@@ -135,7 +138,8 @@ int drv_sta_state(struct ieee80211_local *local,
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+	if ((!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) &&
+	    !ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) ||
 	    !(old_state == IEEE80211_STA_ASSOC &&
 	      new_state == IEEE80211_STA_AUTHORIZED))
 		sdata = get_bss_sdata(sdata);
@@ -613,7 +617,7 @@ int drv_change_sta_links(struct ieee80211_local *local,
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 		/* Update parent vif for further use when vif type is AP/VLAN */
-		vif = wdev_to_ieee80211_vif_vlan(wdev);
+		vif = wdev_to_ieee80211_vif_vlan(wdev, false);
 
 		if (!vif)
 			return -EINVAL;

@@ -2471,7 +2471,9 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 			rcu_assign_pointer(vlansdata->u.vlan.sta, sta);
 			__ieee80211_check_fast_rx_iface(vlansdata);
 
-			if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
+			if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+			    ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) {
+				sta->sta.dev = vlansdata->dev;
 				drv_sta_set_4addr(local, vlansdata, &sta->sta,
 						  true);
 			} else {

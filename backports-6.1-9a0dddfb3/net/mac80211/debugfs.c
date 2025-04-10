@@ -640,6 +640,7 @@ static const char *hw_flag_names[] = {
 	FLAG(SUPPORTS_AP_PS),
 	FLAG(HAS_TX_QUEUE),
 	FLAG(SUPPORT_ECM_REGISTRATION),
+	FLAG(SUPPORTS_VLAN_DATA_OFFLOAD),
 #undef FLAG
 };
 

@@ -2205,8 +2205,20 @@ static inline bool ieee80211_vif_is_mesh(struct ieee80211_vif *vif)
 struct ieee80211_vif *wdev_to_ieee80211_vif(struct wireless_dev *wdev);
 
 /**
+ * wdev_to_ieee80211_vlan_sta - return a sta for the AP_VLAN interface
+ *
+ * @wdev: the wdev to get the sta for vlan interface
+ *
+ * If the wdev is associated with a vif of AP_VLAN interface, this API
+ * returns sta pointer associated with the AP_VLAN interface.
+ */
+
+struct ieee80211_sta *wdev_to_ieee80211_vlan_sta(struct wireless_dev *wdev);
+
+/**
  * wdev_to_ieee80211_vif_vlan - return a vif struct from a wdev
  * @wdev: the wdev to get the vif for
+ * @is_add_vlan: Whether the callback is from op_add_interface or not
  *
  * This can be used by mac80211 drivers with direct cfg80211 APIs
  * (like the vendor commands) that get a wdev.
@@ -2215,7 +2227,8 @@ struct ieee80211_vif *wdev_to_ieee80211_vif(struct wireless_dev *wdev);
  * fetches the master interface and returns it. This API can be used for
  * non-ap/VLAN interfaces.
  */
-struct ieee80211_vif *wdev_to_ieee80211_vif_vlan(struct wireless_dev *wdev);
+struct ieee80211_vif *wdev_to_ieee80211_vif_vlan(struct wireless_dev *wdev,
+						 bool is_add_vlan);
 
 /**
  * ieee80211_vif_to_wdev - return a wdev struct from a vif
@@ -2985,6 +2998,8 @@ struct ieee80211_txq {
  *
  * @IEE80211_HW_SUPPORT_ECM_REGISTRATION: driver supports ECM registration
  *
+ * @IEEE80211_HW_VLAN_DATA_OFFLOAD: driver supports vlan data path offload
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3051,6 +3066,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_AP_PS,
 	IEEE80211_HW_HAS_TX_QUEUE,
 	IEEE80211_HW_SUPPORT_ECM_REGISTRATION,
+	IEEE80211_HW_SUPPORTS_VLAN_DATA_OFFLOAD,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS

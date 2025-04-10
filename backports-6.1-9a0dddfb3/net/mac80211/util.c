@@ -860,12 +860,28 @@ struct ieee80211_vif *wdev_to_ieee80211_vif(struct wireless_dev *wdev)
 }
 EXPORT_SYMBOL_GPL(wdev_to_ieee80211_vif);
 
-struct ieee80211_vif *wdev_to_ieee80211_vif_vlan(struct wireless_dev *wdev)
+struct ieee80211_sta *wdev_to_ieee80211_vlan_sta(struct wireless_dev *wdev)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+	struct sta_info *sta = NULL;
+
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
+		sta = rcu_dereference(sdata->u.vlan.sta);
+
+	if (!sta)
+		return NULL;
+
+	return &sta->sta;
+}
+EXPORT_SYMBOL_GPL(wdev_to_ieee80211_vlan_sta);
+
+struct ieee80211_vif *wdev_to_ieee80211_vif_vlan(struct wireless_dev *wdev,
+						 bool is_add_vlan)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 	struct ieee80211_sub_if_data *master;
 
-	if (!ieee80211_sdata_running(sdata))
+	if (!is_add_vlan && !ieee80211_sdata_running(sdata))
 		return NULL;
 
 	switch (sdata->vif.type) {
@@ -1968,7 +1984,9 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 		    !ieee80211_hw_check(&local->hw, NO_VIRTUAL_MONITOR))
 			continue;
 		if ((sdata->vif.type != NL80211_IFTYPE_AP_VLAN ||
-		     ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) &&
+		     ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+		     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) &&
+		    sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 		    ieee80211_sdata_running(sdata)) {
 			res = drv_add_interface(local, sdata);
 			if (WARN_ON(res))
@@ -1986,7 +2004,9 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 			    !ieee80211_hw_check(&local->hw, NO_VIRTUAL_MONITOR))
 				continue;
 			if ((sdata->vif.type != NL80211_IFTYPE_AP_VLAN ||
-			     ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) &&
+			     ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+			     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) &&
+			    sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 			    ieee80211_sdata_running(sdata))
 				drv_remove_interface(local, sdata);
 		}
@@ -2045,9 +2065,11 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 				sdata->vif.active_links = BIT(link_id);
 			}
 
-			drv_change_vif_links(local, sdata, 0,
-					     sdata->vif.active_links,
-					     old);
+			if (sdata->vif.type != NL80211_IFTYPE_AP_VLAN ||
+                            ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
+				drv_change_vif_links(local, sdata, 0,
+						     sdata->vif.active_links,
+						     old);
 		}
 
 		sdata->restart_active_links = active_links;
