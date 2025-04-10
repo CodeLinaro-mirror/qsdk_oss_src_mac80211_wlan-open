@@ -1309,30 +1309,6 @@ ieee80211_assign_beacon(struct ieee80211_sub_if_data *sdata,
 	return 0;
 }
 
-static u8 ieee80211_num_beaconing_links(struct ieee80211_sub_if_data *sdata)
-{
-	struct ieee80211_link_data *link;
-	u8 link_id, num = 0;
-
-	if (sdata->vif.type != NL80211_IFTYPE_AP &&
-	    sdata->vif.type != NL80211_IFTYPE_P2P_GO)
-		return num;
-
-	if (!sdata->vif.valid_links)
-		return num;
-
-	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
-		link = sdata_dereference(sdata->link[link_id], sdata);
-		if (!link)
-			continue;
-
-		if (sdata_dereference(link->u.ap.beacon, sdata))
-			num++;
-	}
-
-	return num;
-}
-
 static int ieee80211_set_critical_update(struct ieee80211_sub_if_data *sdata,
 					 unsigned int link_id,
 					 struct cfg80211_set_cu_params *params,
@@ -1403,6 +1379,31 @@ static int ieee80211_set_critical_update(struct ieee80211_sub_if_data *sdata,
 	}
 	rcu_read_unlock();
 	return 0;
+}
+
+static u8 ieee80211_num_beaconing_links(struct ieee80211_sub_if_data *sdata)
+{
+	struct ieee80211_link_data *link;
+	u8 link_id, num = 0;
+
+	if (sdata->vif.type != NL80211_IFTYPE_AP &&
+	    sdata->vif.type != NL80211_IFTYPE_P2P_GO &&
+	    sdata->vif.type != NL80211_IFTYPE_AP_VLAN)
+		return num;
+
+	if (!sdata->vif.valid_links)
+		return num;
+
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		link = sdata_dereference(sdata->link[link_id], sdata);
+		if (!link)
+			continue;
+
+		if (sdata_dereference(link->u.ap.beacon, sdata))
+			num++;
+	}
+
+	return num;
 }
 
 static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
@@ -1663,8 +1664,10 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (ieee80211_num_beaconing_links(sdata) <= 1)
 		netif_carrier_on(dev);
 
-	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list)
-		netif_carrier_on(vlan->dev);
+	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
+		if (ieee80211_num_beaconing_links(vlan) <= 1)
+			netif_carrier_on(vlan->dev);
+	}
 
 	ieee80211_set_critical_update(sdata, link_id, &params->beacon.cu_params, false);
 	return 0;
@@ -1822,8 +1825,10 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	ieee80211_free_next_beacon(link);
 
 	/* turn off carrier for this interface and dependent VLANs */
-	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list)
-		netif_carrier_off(vlan->dev);
+	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
+		if (ieee80211_num_beaconing_links(vlan) < 1)
+			netif_carrier_off(vlan->dev);
+	}
 
 	if (ieee80211_num_beaconing_links(sdata) <= 1) {
 		netif_carrier_off(dev);
