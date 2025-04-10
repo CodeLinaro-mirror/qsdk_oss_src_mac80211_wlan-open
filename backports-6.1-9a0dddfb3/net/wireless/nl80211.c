@@ -4080,6 +4080,8 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		u32 old_frag_threshold, old_rts_threshold;
 		u8 old_coverage_class, i;
 		u32 old_txq_limit, old_txq_memory_limit, old_txq_quantum;
+		struct wireless_dev *rts_wdev = wdev;
+		unsigned int link;
 
 		if (!rdev->ops->set_wiphy_params)
 			return -EOPNOTSUPP;
@@ -4092,7 +4094,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 				rdev->wiphy.radio_cfg[radio_id].rts_threshold =
 					rts_threshold;
 
-			result = rdev_set_wiphy_params(rdev, radio_id, changed);
+			result = rdev_set_wiphy_params(rdev, radio_id, changed, rts_wdev, 0);
 			if (result)
 				rdev->wiphy.radio_cfg[radio_id].rts_threshold =
 					old_rts_threshold;
@@ -4123,7 +4125,26 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 			if (changed & WIPHY_PARAM_TXQ_QUANTUM)
 				rdev->wiphy.txq_quantum = txq_quantum;
 
-			result = rdev_set_wiphy_params(rdev, radio_id, changed);
+			if (rts_wdev && rts_wdev->valid_links) {
+				if (!info->attrs[NL80211_ATTR_MLO_LINK_ID]) {
+					result = -EINVAL;
+					goto out;
+				}
+
+				link = nla_get_u8(info->attrs[NL80211_ATTR_MLO_LINK_ID]);
+
+				if (!(rts_wdev->valid_links & BIT(link))) {
+					result = -ENOLINK;
+					goto out;
+				}
+				result = rdev_set_wiphy_params(rdev, radio_id, changed, rts_wdev, link);
+			} else {
+	 			if (!info->attrs[NL80211_ATTR_MLO_LINK_ID])
+					result = rdev_set_wiphy_params(rdev, radio_id, changed, rts_wdev, 0);
+				else
+	 				result = -EINVAL;
+			}
+
 			if (result) {
 				rdev->wiphy.retry_short = old_retry_short;
 				rdev->wiphy.retry_long = old_retry_long;

@@ -264,7 +264,7 @@ int cfg80211_wext_siwrts(struct net_device *dev,
 		wdev->wiphy->rts_threshold = rts->value;
 
 	err = rdev_set_wiphy_params(rdev, NL80211_WIPHY_RADIO_ID_MAX,
-				    WIPHY_PARAM_RTS_THRESHOLD);
+				    WIPHY_PARAM_RTS_THRESHOLD, wdev, 0);
 	if (err)
 		wdev->wiphy->rts_threshold = orts;
 	return err;
@@ -306,7 +306,7 @@ int cfg80211_wext_siwfrag(struct net_device *dev,
 	}
 
 	err = rdev_set_wiphy_params(rdev, NL80211_WIPHY_RADIO_ID_MAX,
-				    WIPHY_PARAM_FRAG_THRESHOLD);
+				    WIPHY_PARAM_FRAG_THRESHOLD, wdev, 0);
 	if (err)
 		wdev->wiphy->frag_threshold = ofrag;
 	return err;
@@ -357,7 +357,7 @@ static int cfg80211_wext_siwretry(struct net_device *dev,
 		changed |= WIPHY_PARAM_RETRY_SHORT;
 	}
 
-	err = rdev_set_wiphy_params(rdev, NL80211_WIPHY_RADIO_ID_MAX, changed);
+	err = rdev_set_wiphy_params(rdev, NL80211_WIPHY_RADIO_ID_MAX, changed, wdev, 0);
 	if (err) {
 		wdev->wiphy->retry_short = oshort;
 		wdev->wiphy->retry_long = olong;

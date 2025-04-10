@@ -1697,8 +1697,9 @@ TRACE_EVENT(rdev_join_ocb,
 );
 
 TRACE_EVENT(rdev_set_wiphy_params,
-	TP_PROTO(struct wiphy *wiphy, u8 radio_id, u32 changed),
-	TP_ARGS(wiphy, radio_id, changed),
+	TP_PROTO(struct wiphy *wiphy, u8 radio_id, u32 changed,
+		 struct wireless_dev *wdev, unsigned int link_id),
+	TP_ARGS(wiphy, radio_id, changed, wdev, link_id),
 	TP_STRUCT__entry(
 		WIPHY_ENTRY
 		__field(u8, radio_id)
