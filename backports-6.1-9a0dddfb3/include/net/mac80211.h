@@ -2112,6 +2112,8 @@ struct ieee80211_vif {
 	bool probe_req_reg;
 	bool rx_mcast_action_reg;
 
+	bool noqueue_enable;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
