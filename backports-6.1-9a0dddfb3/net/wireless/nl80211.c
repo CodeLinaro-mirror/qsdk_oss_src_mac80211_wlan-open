@@ -5692,13 +5692,17 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 	 */
 	BUILD_BUG_ON(NL80211_MAX_SUPP_HT_RATES > IEEE80211_HT_MCS_MASK_LEN * 8);
 	nla_for_each_nested(tx_rates, attrs[attr], rem) {
-		enum nl80211_band band = nla_type(tx_rates);
+		enum nl80211_band band_link, band = nla_type(tx_rates);
 		int err;
+		struct cfg80211_chan_def *chandef = wdev_chandef(wdev, link_id);
 
+		if (!chandef || !chandef->chan)
+			return -EINVAL;
+		band_link = chandef->chan->band;
 		if (band < 0 || band >= NUM_NL80211_BANDS)
 			return -EINVAL;
 		sband = rdev->wiphy.bands[band];
-		if (sband == NULL)
+		if (sband == NULL || band_link != band)
 			return -EINVAL;
 		err = nla_parse_nested_deprecated(tb, NL80211_TXRATE_MAX,
 						  tx_rates,
