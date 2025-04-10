@@ -2904,13 +2904,17 @@ u8 *ieee80211_ie_build_eht_oper(u8 *pos, const struct cfg80211_chan_def *chandef
 					&eht_cap->eht_mcs_nss_supp.only_20mhz;
 	struct ieee80211_eht_operation *eht_oper;
 	struct ieee80211_eht_operation_info *eht_oper_info;
-	u8 eht_oper_len = offsetof(struct ieee80211_eht_operation, optional);
+	u8 eht_oper_len = IEEE80211_EHT_OPERATION_FIXED_LEN;
 	u8 eht_oper_info_len =
-		offsetof(struct ieee80211_eht_operation_info, optional);
+		IEEE80211_EHT_OPERATION_INFO_FIXED_LEN;
+	u8 ie_len = 0;
 	u8 chan_width = 0;
 
+	if (chandef->punctured)
+		ie_len += DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE;
+
 	*pos++ = WLAN_EID_EXTENSION;
-	*pos++ = 1 + eht_oper_len + eht_oper_info_len;
+	*pos++ = 1 + eht_oper_len + eht_oper_info_len + ie_len;
 	*pos++ = WLAN_EID_EXT_EHT_OPERATION;
 
 	eht_oper = (struct ieee80211_eht_operation *)pos;
@@ -2962,25 +2966,13 @@ u8 *ieee80211_ie_build_eht_oper(u8 *pos, const struct cfg80211_chan_def *chandef
 	eht_oper_info->control = chan_width;
 	pos += eht_oper_info_len;
 
-	eht_oper->params |= IEEE80211_EHT_OPER_INFO_PRESENT;
-
-	eht_oper_info->ccfs0 =
-	       ieee80211_frequency_to_channel(chandef->center_freq1);
-	eht_oper_info->ccfs1 = 0; /* How to get this? */
-
-	eht_oper->optional[0] = eht_oper_info->control;
-	eht_oper->optional[1] = eht_oper_info->ccfs0;
-	eht_oper->optional[2] = eht_oper_info->ccfs1;
-
 	if (chandef->punctured) {
+		pos += DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE;
 		eht_oper->params |=
 			  IEEE80211_EHT_OPER_DISABLED_SUBCHANNEL_BITMAP_PRESENT;
 
 		eht_oper_info->optional[0] = chandef->punctured && 0x00FF;
 		eht_oper_info->optional[1] = chandef->punctured >> 8;
-
-		eht_oper->optional[3] = eht_oper_info->optional[0];
-		eht_oper->optional[4] = eht_oper_info->optional[1];
 	}
 
 	return pos;

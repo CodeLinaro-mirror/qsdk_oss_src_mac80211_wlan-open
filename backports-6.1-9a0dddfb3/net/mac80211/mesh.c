@@ -703,8 +703,11 @@ int mesh_add_eht_oper_ie(struct ieee80211_sub_if_data *sdata, struct sk_buff *sk
 	    sdata->vif.bss_conf.chanreq.oper.width == NL80211_CHAN_WIDTH_10)
 		return 0;
 
-	len = 2 + 1 + offsetof(struct ieee80211_eht_operation, optional) +
-		      offsetof(struct ieee80211_eht_operation_info, optional);
+	len = 2 + 1 + IEEE80211_EHT_OPERATION_FIXED_LEN +
+		      IEEE80211_EHT_OPERATION_INFO_FIXED_LEN;
+
+	if (sdata->vif.bss_conf.chanreq.oper.punctured)
+		len += DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE;
 
 	if (skb_tailroom(skb) < len)
 		return -ENOMEM;
@@ -1001,6 +1004,7 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 	u8 *pos;
 	struct ieee80211_sub_if_data *sdata;
 	int hdr_len = offsetofend(struct ieee80211_mgmt, u.beacon);
+	int eht_optional_sz = 0;
 	u32 rate_flags;
 
 	sdata = container_of(ifmsh, struct ieee80211_sub_if_data, u.mesh);
@@ -1011,6 +1015,10 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 
 	ie_len_he_cap = ieee80211_ie_len_he_cap(sdata);
 	ie_len_eht_cap = ieee80211_ie_len_eht_cap(sdata);
+
+	if (sdata->vif.bss_conf.chanreq.oper.punctured)
+		eht_optional_sz = DISABLED_SUBCHANNEL_BITMAP_BYTES_SIZE;
+
 	head_len = hdr_len +
 		   2 + /* NULL SSID */
 		   /* Channel Switch Announcement */
@@ -1035,8 +1043,9 @@ ieee80211_mesh_build_beacon(struct ieee80211_if_mesh *ifmsh)
 			   sizeof(struct ieee80211_he_6ghz_oper) +
 		   2 + 1 + sizeof(struct ieee80211_he_6ghz_capa) +
 		   ie_len_eht_cap +
-		   2 + 1 + offsetof(struct ieee80211_eht_operation, optional) +
-			   offsetof(struct ieee80211_eht_operation_info, optional) +
+		   2 + 1 + IEEE80211_EHT_OPERATION_FIXED_LEN +
+			   IEEE80211_EHT_OPERATION_INFO_FIXED_LEN +
+			   eht_optional_sz +
 		   ifmsh->ie_len;
 
 	bcn = kzalloc(sizeof(*bcn) + head_len + tail_len, GFP_KERNEL);
