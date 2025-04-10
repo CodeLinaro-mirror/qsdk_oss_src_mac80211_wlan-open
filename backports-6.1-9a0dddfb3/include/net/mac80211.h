@@ -4846,11 +4846,6 @@ struct ieee80211_ops {
 				     struct ieee80211_sta *sta, u8 flowid);
 	int (*set_radar_background)(struct ieee80211_hw *hw,
 				    struct cfg80211_chan_def *chandef);
-	int (*net_fill_forward_path)(struct ieee80211_hw *hw,
-				     struct ieee80211_vif *vif,
-				     struct ieee80211_sta *sta,
-				     struct net_device_path_ctx *ctx,
-				     struct net_device_path *path);
 	bool (*can_activate_links)(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   u16 active_links);

@@ -2489,13 +2489,6 @@ TRACE_EVENT(drv_twt_teardown_request,
 	)
 );
 
-DEFINE_EVENT(sta_event, drv_net_fill_forward_path,
-	TP_PROTO(struct ieee80211_local *local,
-		 struct ieee80211_sub_if_data *sdata,
-		 struct ieee80211_sta *sta),
-	TP_ARGS(local, sdata, sta)
-);
-
 TRACE_EVENT(drv_net_setup_tc,
 	TP_PROTO(struct ieee80211_local *local,
 		 struct ieee80211_sub_if_data *sdata,

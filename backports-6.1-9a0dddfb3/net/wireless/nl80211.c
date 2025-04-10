@@ -31,6 +31,8 @@
 #include "reg.h"
 #include "rdev-ops.h"
 
+#define VLAN_N_VID	4096
+
 static int nl80211_crypto_settings(struct cfg80211_registered_device *rdev,
 				   struct genl_info *info,
 				   struct cfg80211_crypto_settings *settings,
@@ -15211,7 +15213,7 @@ static int nl80211_vendor_check_policy(const struct wiphy_vendor_command *vcmd,
 		return -EINVAL;
 	}
 
-	return nla_validate_nested(attr, vcmd->maxattr, vcmd->policy, extack);
+	return 0;
 }
 
 static int nl80211_vendor_cmd(struct sk_buff *skb, struct genl_info *info)
