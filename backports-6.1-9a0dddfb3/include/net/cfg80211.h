@@ -545,6 +545,21 @@ struct ieee80211_sta_s1g_cap {
 };
 
 /**
+ * struct ieee80211_6ghz_channel - 6G channel definitions
+ *
+ * This structure defines all the channels supported by the
+ * 6 GHz band
+ *
+ * @channels: Array of channels the hardware can operate with
+ *      in 6G band.
+ * @n_channels: Number of channels in @channels
+ */
+struct ieee80211_6ghz_channel {
+	struct ieee80211_channel *channels;
+	int n_channels;
+};
+
+/**
  * struct ieee80211_supported_band - frequency band definition
  *
  * This structure describes a frequency band a wiphy
@@ -552,6 +567,7 @@ struct ieee80211_sta_s1g_cap {
  *
  * @channels: Array of channels the hardware can operate with
  *	in this band.
+ * @chan_6g: Array of 6G channels the hardware can operate with
  * @band: the band this structure represents
  * @n_channels: Number of channels in @channels
  * @bitrates: Array of bitrates the hardware can operate with
@@ -571,6 +587,7 @@ struct ieee80211_sta_s1g_cap {
  */
 struct ieee80211_supported_band {
 	struct ieee80211_channel *channels;
+	struct ieee80211_6ghz_channel *chan_6g[NL80211_REG_NUM_POWER_MODES];
 	struct ieee80211_rate *bitrates;
 	enum nl80211_band band;
 	int n_channels;
@@ -6458,6 +6475,7 @@ struct wireless_dev {
 	u16 valid_links;
 
 	u32 radio_mask;
+	u8 reg_6g_power_mode;
 };
 
 static inline const u8 *wdev_address(struct wireless_dev *wdev)
@@ -6614,6 +6632,19 @@ ieee80211_get_channel(struct wiphy *wiphy, int freq)
 {
 	return ieee80211_get_channel_khz(wiphy, MHZ_TO_KHZ(freq));
 }
+
+/**
+ * ieee80211_get_6g_channel_khz - get channel struct from wiphy for specified
+ *                                frequency in 6G band
+ *
+ * @wiphy: the struct wiphy to get the channel for
+ * @freq: the center frequency (in KHz) of the channel
+ * @mode: the poer mode in which freq is to be operated
+ * Return: The channel struct from @wiphy at @freq.
+ */
+struct ieee80211_channel *
+ieee80211_get_6g_channel_khz(struct wiphy *wiphy, u32 freq,
+			     enum nl80211_regulatory_power_modes mode);
 
 /**
  * cfg80211_channel_is_psc - Check if the channel is a 6 GHz PSC
@@ -8859,6 +8890,19 @@ cfg80211_background_radar_event(struct wiphy *wiphy,
 {
 	__cfg80211_radar_event(wiphy, chandef, true, gfp);
 }
+
+/**
+ * cfg80211_awgn_event - awgn detection event
+ * @wiphy: the wiphy
+ * @chandef: chandef for the current channel
+ * @gfp: context flags
+ * @chan_bw_interference_bitmap: channel bandwidth interference bitmap
+ *
+ * This function is called when Additive white Gaussian noise (AWGN)
+ * is detected on the current channel.
+ */
+void cfg80211_awgn_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
+			 gfp_t gfp, u32 chan_bw_interference_bitmap);
 
 /**
  * cfg80211_sta_opmode_change_notify - STA's ht/vht operation mode change event

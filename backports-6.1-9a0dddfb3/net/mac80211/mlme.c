@@ -205,8 +205,8 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 			mode = IEEE80211_CONN_MODE_HE;
 		}
 
-		if (!ieee80211_chandef_he_6ghz_oper(sdata->local, he_oper,
-						    eht_oper, chandef)) {
+		if (!ieee80211_chandef_he_6ghz_oper(sdata, he_oper,
+						    eht_oper, chandef)){
 			sdata_info(sdata, "bad HE/EHT 6 GHz operation\n");
 			return IEEE80211_CONN_MODE_LEGACY;
 		}

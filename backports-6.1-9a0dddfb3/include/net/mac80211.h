@@ -6916,9 +6916,10 @@ void ieee80211_channel_switch_disconnect(struct ieee80211_vif *vif);
 /**
  * ieee80211_awgn_detected - inform that awgn interference is detected
  *
- * @vif: &struct ieee80211_vif pointer from the add_interface callback.
+ * @hw: pointer as obtained from ieee80211_alloc_hw()
+ * @chan_bw_interference_bitmap : awgn interference bitmap
  */
-void ieee80211_awgn_detected(struct ieee80211_vif *vif);
+void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap);
 
 /**
  * ieee80211_request_smps - request SM PS transition

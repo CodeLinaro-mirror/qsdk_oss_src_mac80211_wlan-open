@@ -144,7 +144,6 @@ validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 				     struct ieee80211_conn_settings *conn,
 				     struct cfg80211_chan_def *chandef)
 {
-	struct ieee80211_local *local = sdata->local;
 	u32 control_freq, center_freq1, center_freq2;
 	enum nl80211_chan_width chan_width;
 	struct {
@@ -213,7 +212,7 @@ validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 		eht_oper = &eht._oper;
 	}
 
-	if (!ieee80211_chandef_he_6ghz_oper(local, &he._oper,
+	if (!ieee80211_chandef_he_6ghz_oper(sdata, &he._oper,
 					    eht_oper, chandef))
 		chandef->chan = NULL;
 }

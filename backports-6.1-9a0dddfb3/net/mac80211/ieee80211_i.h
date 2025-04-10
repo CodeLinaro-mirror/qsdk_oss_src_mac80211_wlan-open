@@ -1073,7 +1073,6 @@ struct ieee80211_link_data {
 		struct ieee80211_chan_req chanreq;
 	} csa;
 
-	struct work_struct awgn_detected_work;
 	struct wiphy_work color_change_finalize_work;
 	struct wiphy_delayed_work color_collision_detect_work;
 	u64 color_bitmap;
@@ -1648,6 +1647,8 @@ struct ieee80211_local {
 	struct ieee80211_chan_req monitor_chanreq;
 
 	struct mac80211_memory_stats memory_stats;
+	struct work_struct awgn_detected_work;
+	u32 chan_bw_interference_bitmap;
 
 	/* extended capabilities provided by mac80211 */
 	u8 ext_capa[8];
@@ -2669,7 +2670,7 @@ bool ieee80211_chandef_vht_oper(struct ieee80211_hw *hw, u32 vht_cap_info,
 				struct cfg80211_chan_def *chandef);
 void ieee80211_chandef_eht_oper(const struct ieee80211_eht_operation_info *info,
 				struct cfg80211_chan_def *chandef);
-bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_local *local,
+bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
 				    const struct ieee80211_he_operation *he_oper,
 				    const struct ieee80211_eht_operation *eht_oper,
 				    struct cfg80211_chan_def *chandef);
@@ -2740,6 +2741,7 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 			      struct ieee80211_chanctx *chanctx);
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy,
 				       struct wiphy_work *work);
+void ieee80211_awgn_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings);
 

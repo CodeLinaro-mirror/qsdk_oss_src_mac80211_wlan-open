@@ -893,6 +893,8 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_WIPHY_RADIO_INDEX] = { .type = NLA_U8 },
 	[NL80211_ATTR_STA_MGMT_RTS_CTS_CONFIG] =
 				NLA_POLICY_MAX(NLA_U8, NL80211_MGMT_RTS_CTS_DISABLE),
+	[NL80211_ATTR_AWGN_INTERFERENCE_BITMAP] = { .type = NLA_U32 },
+	[NL80211_ATTR_6G_REG_POWER_MODE] = NLA_POLICY_RANGE(NLA_U8, 0, 2),
 };
 
 /* policy for the key attributes */
@@ -3423,6 +3425,7 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 {
 	struct netlink_ext_ack *extack = info->extack;
 	struct nlattr **attrs = info->attrs;
+	enum nl80211_regulatory_power_modes mode = NL80211_REG_AP_LPI;
 	u32 control_freq;
 
 	if (!attrs[NL80211_ATTR_WIPHY_FREQ]) {
@@ -3437,8 +3440,19 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		control_freq +=
 		    nla_get_u32(info->attrs[NL80211_ATTR_WIPHY_FREQ_OFFSET]);
 
+	if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE])
+		mode = nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
+
 	memset(chandef, 0, sizeof(*chandef));
-	chandef->chan = ieee80211_get_channel_khz(&rdev->wiphy, control_freq);
+
+	if (control_freq >= MHZ_TO_KHZ(5945) && control_freq <= MHZ_TO_KHZ(7125))
+		chandef->chan = ieee80211_get_6g_channel_khz(&rdev->wiphy,
+							     control_freq,
+							     mode);
+	else
+		chandef->chan = ieee80211_get_channel_khz(&rdev->wiphy,
+							  control_freq);
+
 	chandef->width = NL80211_CHAN_WIDTH_20_NOHT;
 	chandef->center_freq1 = KHZ_TO_MHZ(control_freq);
 	chandef->freq1_offset = control_freq % 1000;
@@ -3592,6 +3606,13 @@ static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
 					&chandef);
 	if (result)
 		return result;
+
+	/* Userspace might advertise the 6G power mode (AP). Just parse and store
+	 * it in wdev. No immediate action required. */
+	if (wdev && info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
+		wdev->reg_6g_power_mode =
+				nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
+	}
 
 	switch (iftype) {
 	case NL80211_IFTYPE_AP:
@@ -4479,6 +4500,15 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 			return err;
 	} else {
 		params.use_4addr = -1;
+	}
+
+	/* For 6GHz client, userspace could set the client type.
+	 * Just parse and store the value, no action required immediately.
+	 */
+	if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
+		struct wireless_dev *wdev = dev->ieee80211_ptr;
+		wdev->reg_6g_power_mode =
+			nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
 	}
 
 	err = nl80211_parse_mon_options(rdev, ntype, info, &params);
@@ -8883,7 +8913,9 @@ static int nl80211_put_regdom(const struct ieee80211_regdomain *regdom,
 		    nla_put_u32(msg, NL80211_ATTR_POWER_RULE_MAX_EIRP,
 				power_rule->max_eirp) ||
 		    nla_put_u32(msg, NL80211_ATTR_DFS_CAC_TIME,
-				reg_rule->dfs_cac_ms))
+				reg_rule->dfs_cac_ms) ||
+		    nla_put_u8(msg, NL80211_ATTR_REG_POWER_MODE,
+			       reg_rule->mode))
 			goto nla_put_failure;
 
 		if ((reg_rule->flags & NL80211_RRF_PSD) &&
@@ -9064,6 +9096,7 @@ static const struct nla_policy reg_rule_policy[NL80211_REG_RULE_ATTR_MAX + 1] = 
 	[NL80211_ATTR_POWER_RULE_MAX_ANT_GAIN]	= { .type = NLA_U32 },
 	[NL80211_ATTR_POWER_RULE_MAX_EIRP]	= { .type = NLA_U32 },
 	[NL80211_ATTR_DFS_CAC_TIME]		= { .type = NLA_U32 },
+	[NL80211_ATTR_POWER_RULE_PSD]           = { .type = NLA_S8 },
 };
 
 static int parse_reg_rule(struct nlattr *tb[],
@@ -9084,6 +9117,13 @@ static int parse_reg_rule(struct nlattr *tb[],
 		return -EINVAL;
 
 	reg_rule->flags = nla_get_u32(tb[NL80211_ATTR_REG_RULE_FLAGS]);
+	if (reg_rule->flags & NL80211_RRF_PSD) {
+		if (!tb[NL80211_ATTR_POWER_RULE_PSD])
+			return -EINVAL;
+
+		reg_rule->psd =
+			nla_get_s8(tb[NL80211_ATTR_POWER_RULE_PSD]);
+	}
 
 	freq_range->start_freq_khz =
 		nla_get_u32(tb[NL80211_ATTR_FREQ_RANGE_START]);
@@ -19933,6 +19973,55 @@ void cfg80211_ch_switch_notify(struct net_device *dev,
 				 NL80211_CMD_CH_SWITCH_NOTIFY, 0, false);
 }
 EXPORT_SYMBOL(cfg80211_ch_switch_notify);
+
+void nl80211_awgn_notify(struct cfg80211_registered_device *rdev,
+			 struct cfg80211_chan_def *chandef,
+			 struct net_device *netdev,
+			 gfp_t gfp, u32 chan_bw_interference_bitmap)
+{
+	struct sk_buff *msg;
+	void *hdr;
+	int ret;
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
+	if (!msg)
+		return;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_AWGN_DETECT);
+	if (!hdr) {
+		nlmsg_free(msg);
+		return;
+	}
+
+	 if (nla_put_u32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx))
+		 goto nla_put_failure;
+
+	/* Radar and AWGN events don't need a netdev parameter */
+	if (netdev) {
+		struct wireless_dev *wdev = netdev->ieee80211_ptr;
+
+		if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, netdev->ifindex) ||
+		    nla_put_u64_64bit(msg, NL80211_ATTR_WDEV, wdev_id(wdev),
+				      NL80211_ATTR_PAD))
+			goto nla_put_failure;
+	}
+
+	if (nl80211_send_chandef(msg, chandef))
+		goto nla_put_failure;
+
+	if (nla_put_u32(msg, NL80211_ATTR_AWGN_INTERFERENCE_BITMAP,
+			chan_bw_interference_bitmap))
+		goto nla_put_failure;
+
+	genlmsg_end(msg, hdr);
+
+	ret = genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy), msg, 0,
+				      NL80211_MCGRP_MLME, gfp);
+	return;
+
+nla_put_failure:
+	nlmsg_free(msg);
+}
 
 void cfg80211_ch_switch_started_notify(struct net_device *dev,
 				       struct cfg80211_chan_def *chandef,

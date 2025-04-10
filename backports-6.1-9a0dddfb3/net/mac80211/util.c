@@ -880,12 +880,12 @@ struct wireless_dev *ieee80211_vif_to_wdev_relaxed(struct ieee80211_vif *vif)
 }
 EXPORT_SYMBOL(ieee80211_vif_to_wdev_relaxed);
 
-void ieee80211_awgn_detected(struct ieee80211_vif *vif)
+void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_bitmap)
 {
-	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+       struct ieee80211_local *local = hw_to_local(hw);
 
-	ieee80211_queue_work(&sdata->local->hw,
-			     &sdata->awgn_detected_work);
+       local->chan_bw_interference_bitmap = chan_bw_interference_bitmap;
+       schedule_work(&local->awgn_detected_work);
 }
 EXPORT_SYMBOL(ieee80211_awgn_detected);
 
@@ -3123,14 +3123,18 @@ void ieee80211_chandef_eht_oper(const struct ieee80211_eht_operation_info *info,
 	}
 }
 
-bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_local *local,
+bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
 				    const struct ieee80211_he_operation *he_oper,
 				    const struct ieee80211_eht_operation *eht_oper,
 				    struct cfg80211_chan_def *chandef)
 {
 	struct cfg80211_chan_def he_chandef = *chandef;
 	const struct ieee80211_he_6ghz_oper *he_6ghz_oper;
+	enum nl80211_iftype iftype = ieee80211_vif_type_p2p(&sdata->vif);
+	enum nl80211_regulatory_power_modes mode;
 	u32 freq;
+	u8 reg_info;
+	u8 reg_6g_power_mode;
 
 	if (chandef->chan->band != NL80211_BAND_6GHZ)
 		return true;
@@ -3142,6 +3146,26 @@ bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_local *local,
 	if (!he_6ghz_oper)
 		return false;
 
+	/* 6G Power mode present in the beacon */
+	reg_info = (he_6ghz_oper->control & IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO) >>
+		    IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO_LSB;
+
+	/* 6G Power mode configured by the user */
+	reg_6g_power_mode = sdata->wdev.reg_6g_power_mode;
+
+	/*
+	 * For AP/AP_VLAN/MESH_POINT interfaces, the 6G power mode depends on the
+	 * mode configured by user (LPI/SP/VLP). For other interfaces (for ex STA)
+	 * mode depends on the power mode present in beacon as well as power mode
+	 * configured by the user for that interface
+	 */
+
+	if (iftype == NL80211_IFTYPE_AP || iftype == NL80211_IFTYPE_AP_VLAN ||
+	    iftype == NL80211_IFTYPE_MESH_POINT)
+		mode = reg_6g_power_mode;
+	else
+		mode = 3 * (1 + reg_6g_power_mode) + reg_info;
+
 	/*
 	 * The EHT operation IE does not contain the primary channel so the
 	 * primary channel frequency should be taken from the 6 GHz operation
@@ -3149,10 +3173,14 @@ bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_local *local,
 	 */
 	freq = ieee80211_channel_to_frequency(he_6ghz_oper->primary,
 					      NL80211_BAND_6GHZ);
-	he_chandef.chan = ieee80211_get_channel(local->hw.wiphy, freq);
-
-	if (!he_chandef.chan)
+	he_chandef.chan = ieee80211_get_6g_channel_khz(sdata->local->hw.wiphy,
+						       MHZ_TO_KHZ(freq), mode);
+	if (!he_chandef.chan) {
+		sdata_info(sdata,
+			   "Unable to get channel definition for freq:%d MHz control:0x%x\n",
+			   freq, he_6ghz_oper->control);
 		return false;
+	}
 
 	if (!eht_oper ||
 	    !(eht_oper->params & IEEE80211_EHT_OPER_INFO_PRESENT)) {
@@ -3532,6 +3560,30 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local,
 					   GFP_KERNEL, link_id);
 		}
 	}
+}
+
+void ieee80211_awgn_detected_work(struct work_struct *work)
+{
+	struct ieee80211_local *local =
+		container_of(work, struct ieee80211_local, awgn_detected_work);
+	struct cfg80211_chan_def chandef = local->hw.conf.chandef;
+	struct ieee80211_chanctx *ctx;
+	int num_chanctx = 0;
+
+	list_for_each_entry(ctx, &local->chanctx_list, list) {
+		if (ctx->replace_state == IEEE80211_CHANCTX_REPLACES_OTHER)
+			continue;
+
+		num_chanctx++;
+		chandef = ctx->conf.def;
+	}
+
+	if (num_chanctx > 1)
+		/* XXX: multi-channel is not supported yet */
+		WARN_ON_ONCE(1);
+	else
+		cfg80211_awgn_event(local->hw.wiphy, &chandef, GFP_KERNEL,
+				    local->chan_bw_interference_bitmap);
 }
 
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy,

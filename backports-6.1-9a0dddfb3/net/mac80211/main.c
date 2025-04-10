@@ -485,6 +485,10 @@ static void ieee80211_restart_work(struct work_struct *work)
 	wiphy_lock(local->hw.wiphy);
 	wiphy_work_flush(local->hw.wiphy, NULL);
 
+	wiphy_work_flush(local->hw.wiphy, &local->sched_scan_stopped_work);
+        wiphy_work_flush(local->hw.wiphy, &local->radar_detected_work);
+        flush_work(&local->awgn_detected_work);
+
 	WARN(test_bit(SCAN_HW_SCANNING, &local->scanning),
 	     "%s called with hardware scan in progress\n", __func__);
 
@@ -987,6 +991,8 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 
 	wiphy_work_init(&local->radar_detected_work,
 			ieee80211_dfs_radar_detected_work);
+	INIT_WORK(&local->awgn_detected_work,
+		  ieee80211_awgn_detected_work);
 
 	wiphy_work_init(&local->reconfig_filter, ieee80211_reconfig_filter);
 
@@ -1706,6 +1712,7 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	wiphy_work_cancel(local->hw.wiphy, &local->reconfig_filter);
 	wiphy_work_cancel(local->hw.wiphy, &local->sched_scan_stopped_work);
 	wiphy_work_cancel(local->hw.wiphy, &local->radar_detected_work);
+	flush_work(&local->awgn_detected_work);
 	wiphy_unlock(local->hw.wiphy);
 	rtnl_unlock();
 

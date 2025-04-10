@@ -1109,6 +1109,15 @@ void __cfg80211_radar_event(struct wiphy *wiphy,
 }
 EXPORT_SYMBOL(__cfg80211_radar_event);
 
+void cfg80211_awgn_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
+			 gfp_t gfp, u32 chan_bw_interference_bitmap)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+
+	nl80211_awgn_notify(rdev, chandef, NULL, gfp, chan_bw_interference_bitmap);
+}
+EXPORT_SYMBOL(cfg80211_awgn_event);
+
 void cfg80211_cac_event(struct net_device *netdev,
 			const struct cfg80211_chan_def *chandef,
 			enum nl80211_radar_event event, gfp_t gfp,
