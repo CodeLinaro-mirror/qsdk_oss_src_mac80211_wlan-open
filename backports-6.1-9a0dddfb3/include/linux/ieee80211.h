@@ -1931,6 +1931,10 @@ struct ieee80211_ht_operation {
 	u8 basic_set[16];
 } __packed;
 
+/* Determine primary channel index */
+#define PRIMARY_CENTER_CHAN_IDX(chan, ccfs_idx, bw)	\
+		((chan > ccfs_idx) ? ccfs_idx + (bw/20) : ccfs_idx - (bw/20))
+
 /* for ht_param */
 #define IEEE80211_HT_PARAM_CHA_SEC_OFFSET		0x03
 #define		IEEE80211_HT_PARAM_CHA_SEC_NONE		0x00

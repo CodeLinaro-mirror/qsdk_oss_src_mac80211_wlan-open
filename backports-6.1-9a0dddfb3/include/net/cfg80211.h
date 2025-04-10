@@ -981,6 +981,26 @@ void cfg80211_chandef_create(struct cfg80211_chan_def *chandef,
 			     struct ieee80211_channel *channel,
 			     enum nl80211_channel_type chantype);
 
+static inline bool
+cfg80211_channel_identical(struct ieee80211_channel *channel1,
+			   struct ieee80211_channel *channel2)
+{
+	if (channel1 == channel2)
+		return true;
+
+	if (!channel1 || !channel2)
+		return false;
+
+	if (channel1->band != channel2->band)
+		return false;
+
+	if (channel1->band != NL80211_BAND_6GHZ)
+		return false;
+
+	return (channel1->center_freq == channel2->center_freq &&
+		channel1->freq_offset == channel2->freq_offset);
+}
+
 /**
  * cfg80211_chandef_identical - check if two channel definitions are identical
  * @chandef1: first channel definition

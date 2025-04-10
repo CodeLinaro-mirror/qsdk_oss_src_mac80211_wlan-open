@@ -291,13 +291,19 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 				elems->mesh_chansw_params_ie->mesh_reason);
 	}
 
-	new_freq = ieee80211_channel_to_frequency(new_chan_no, new_band);
-	new_chan = ieee80211_get_channel(sdata->local->hw.wiphy, new_freq);
+	if (new_band == NL80211_BAND_6GHZ) {
+		new_chan = ieee80211_get_channel_6ghz_pwr_mode(sdata,
+							       elems->he_operation,
+							       new_chan_no);
+	} else {
+		new_freq = ieee80211_channel_to_frequency(new_chan_no, new_band);
+		new_chan = ieee80211_get_channel(sdata->local->hw.wiphy, new_freq);
+	}
 	if (!new_chan || new_chan->flags & IEEE80211_CHAN_DISABLED) {
 		if (!unprot_action)
 			sdata_info(sdata,
-				   "BSS %pM switches to unsupported channel (%d MHz), disconnecting\n",
-				   bssid, new_freq);
+				   "BSS %pM switches to unsupported channel %d (%d MHz), disconnecting\n",
+				   bssid, new_chan_no, new_freq);
 		return -EINVAL;
 	}
 

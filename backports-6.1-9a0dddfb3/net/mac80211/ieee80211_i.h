@@ -2678,6 +2678,11 @@ bool ieee80211_chandef_vht_oper(struct ieee80211_hw *hw, u32 vht_cap_info,
 void ieee80211_chandef_eht_oper(const struct ieee80211_eht_operation_info *info,
 				bool support_160, bool support_320,
 				struct cfg80211_chan_def *chandef);
+struct ieee80211_channel
+*ieee80211_get_channel_6ghz_pwr_mode(struct ieee80211_sub_if_data *sdata,
+				     const struct ieee80211_he_operation *he_oper,
+				     const int new_chan_idx);
+
 bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
 				    const struct ieee80211_he_operation *he_oper,
 				    const struct ieee80211_eht_operation *eht_oper,
