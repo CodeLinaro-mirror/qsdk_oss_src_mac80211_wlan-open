@@ -892,7 +892,7 @@ static int cfg80211_validate_per_hw_chans(struct wiphy *wiphy)
 	 * be sufficient
 	 */
 
-	if (wiphy->num_hw < 2)
+	if (wiphy->num_hw < 1)
 		return -EINVAL;
 
 	for (i = 0; i < wiphy->num_hw; i++) {
