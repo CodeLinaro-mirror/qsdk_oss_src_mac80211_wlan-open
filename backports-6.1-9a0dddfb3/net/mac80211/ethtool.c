@@ -75,6 +75,8 @@ static const char ieee80211_gstrings_sta_stats[][ETH_GSTRING_LEN] = {
 	[IEEE80211_CH_TIME_TX] = "ch_time_tx",
 	[IEEE80211_TX_DEV_DROPPED] = "tx_dev_dropped",
 	[IEEE80211_RX_DEV_DROPPED] = "rx_dev_dropped",
+	[IEEE80211_TX_NET_PACKETS] = "tx_net_packets",
+	[IEEE80211_RX_NET_PACKETS] = "rx_net_packets",
 };
 
 #define STA_STATS_LEN	ARRAY_SIZE(ieee80211_gstrings_sta_stats)
@@ -107,6 +109,10 @@ static void ieee80211_get_stats(struct net_device *dev,
 	struct survey_info survey;
 	int q;
 	unsigned long int i;
+	struct rtnl_link_stats64 rtnl_stats = {0};
+
+	dev_fetch_sw_netstats(&rtnl_stats, dev->tstats);
+
 #define STA_STATS_SURVEY_LEN 7
 
 	memset(data, 0, sizeof(u64) * STA_STATS_LEN);
@@ -235,6 +241,11 @@ do_survey:
 	data[IEEE80211_TX_DEV_DROPPED] = sdata->tx_dropped;
 	i++;
 	data[IEEE80211_RX_DEV_DROPPED] = sdata->rx_dropped;
+	i++;
+
+	data[IEEE80211_TX_NET_PACKETS] = rtnl_stats.tx_packets;
+	i++;
+	data[IEEE80211_RX_NET_PACKETS] = rtnl_stats.rx_packets;
 	i++;
 
 	if (WARN_ON(i != STA_STATS_LEN))
