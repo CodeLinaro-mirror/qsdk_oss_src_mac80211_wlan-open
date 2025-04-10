@@ -1774,7 +1774,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 		ieee80211_free_key_list(local, &keys);
 	}
 
-	ieee80211_stop_mbssid(sdata);
+	ieee80211_stop_mbssid(sdata, link_id);
 	RCU_INIT_POINTER(link_conf->tx_bss_conf, NULL);
 
 	link_conf->enable_beacon = false;
@@ -4170,7 +4170,7 @@ static void ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 		sdata_info(sdata, "failed to finalize CSA on link %d, disconnecting\n",
 			   link_data->link_id);
 		cfg80211_stop_iface(sdata->local->hw.wiphy, &sdata->wdev,
-				    GFP_KERNEL);
+				    GFP_KERNEL, link_data->link_id);
 	}
 }
 

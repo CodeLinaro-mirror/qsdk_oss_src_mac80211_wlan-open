@@ -746,14 +746,21 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 		ieee80211_add_virtual_monitor(local);
 }
 
-void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata)
+void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata, int _link_id)
 {
 	struct ieee80211_sub_if_data *tx_sdata;
 	struct ieee80211_bss_conf *link_conf, *tx_bss_conf;
 	struct ieee80211_link_data *tx_link, *link;
+	unsigned long iter_valid_links;
 	unsigned int link_id;
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	if (_link_id == -1)
+		/* Check link 0 by default for non MLO. */
+		iter_valid_links = sdata->vif.valid_links | BIT(0);
+	else
+		iter_valid_links = BIT(_link_id);
 
 	/* Check if any of the links of current sdata is an MBSSID. */
 	for_each_vif_active_link(&sdata->vif, link_conf, link_id) {
@@ -792,13 +799,13 @@ void ieee80211_stop_mbssid(struct ieee80211_sub_if_data *sdata)
 			 * removal can be supported.
 			 */
 			cfg80211_stop_iface(link_sdata->wdev.wiphy, &link_sdata->wdev,
-					    GFP_KERNEL);
+					    GFP_KERNEL, link_id);
 		}
 
 		/* If we are not tx sdata, remove links of tx sdata and proceed */
 		if (sdata != tx_sdata && ieee80211_sdata_running(tx_sdata))
 			cfg80211_stop_iface(tx_sdata->wdev.wiphy,
-					    &tx_sdata->wdev, GFP_KERNEL);
+					    &tx_sdata->wdev, GFP_KERNEL, link_id);
 	}
 }
 
@@ -833,7 +840,7 @@ static int ieee80211_stop(struct net_device *dev)
 	 * terminating its partner links too in case of MLD.
 	 */
 	if (sdata->vif.type == NL80211_IFTYPE_AP)
-		ieee80211_stop_mbssid(sdata);
+		ieee80211_stop_mbssid(sdata, -1);
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	if (sdata->vif.ppe_vp_num != -1) {

@@ -9740,14 +9740,17 @@ int cfg80211_get_hw_idx_by_chan(struct wiphy *wiphy,
  * @wiphy: the wiphy
  * @wdev: wireless device
  * @gfp: context flags
+ * @link_id: valid link ID in case of MLO or else -1
  *
  * Trigger interface to be stopped as if AP was stopped, IBSS/mesh left, STA
  * disconnected.
+ * In case of AP, if link_id is passed, it would only stop that link on the
+ * iface alone. If need to stop the whole iface, -1 should be passed
  *
  * Note: This doesn't need any locks and is asynchronous.
  */
 void cfg80211_stop_iface(struct wiphy *wiphy, struct wireless_dev *wdev,
-			 gfp_t gfp);
+			 gfp_t gfp, int link_id);
 
 /**
  * cfg80211_shutdown_all_interfaces - shut down all interfaces for a wiphy
