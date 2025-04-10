@@ -34,6 +34,12 @@
 #include "led.h"
 #include "debugfs.h"
 
+#define PHY_2GHZ "phy00"
+#define PHY_5GHZ "phy01"
+#define PHY_5GHZ_LOW "phy01"
+#define PHY_5GHZ_HIGH "phy02"
+#define PHY_6GHZ "phy03"
+
 void ieee80211_configure_filter(struct ieee80211_local *local)
 {
 	u64 mc;
@@ -914,6 +920,19 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 
 	local->ops = ops;
 	local->emulate_chanctx = emulate_chanctx;
+	if (requested_name) {
+		if (!strcmp(requested_name, PHY_2GHZ))
+			local->wlan_name = "wlan0";
+		else if (!strcmp(requested_name, PHY_5GHZ) || !strcmp(requested_name, PHY_5GHZ_LOW))
+			local->wlan_name = "wlan1";
+		else if (!strcmp(requested_name, PHY_5GHZ_HIGH))
+			local->wlan_name = "wlan2";
+		else if (!strcmp(requested_name, PHY_6GHZ))
+			local->wlan_name = "wlan3";
+		else
+			local->wlan_name = "wlan%d";
+	} else
+		local->wlan_name = "wlan%d";
 
 	if (emulate_chanctx)
 		ieee80211_hw_set(&local->hw, CHANCTX_STA_CSA);
@@ -1689,7 +1708,7 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	    !ieee80211_hw_check(hw, NO_AUTO_VIF)) {
 		struct vif_params params = {0};
 
-		result = ieee80211_if_add(local, "wlan%d", NET_NAME_ENUM, NULL,
+		result = ieee80211_if_add(local, local->wlan_name, NET_NAME_ENUM, NULL,
 					  NL80211_IFTYPE_STATION, &params);
 		if (result)
 			wiphy_warn(local->hw.wiphy,

@@ -1673,6 +1673,8 @@ struct ieee80211_local {
 
 	struct list_head awgn_info_list;
 
+	const char *wlan_name;
+
 	/* extended capabilities provided by mac80211 */
 	u8 ext_capa[8];
 
