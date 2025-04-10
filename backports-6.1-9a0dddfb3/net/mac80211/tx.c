@@ -4324,6 +4324,9 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 	if (IS_ERR(sta))
 		sta = NULL;
 
+	if (sta)
+		atomic_inc(&sta->tx_netif_pkts);
+
         if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
                 ap_sdata = container_of(sdata->bss,
                                         struct ieee80211_sub_if_data, u.ap);
@@ -4648,6 +4651,9 @@ static bool __ieee80211_tx_8023(struct ieee80211_sub_if_data *sdata,
 
 	drv_tx(local, &control, skb);
 
+	if (sta)
+		atomic_inc(&sta->tx_drv_pkts);
+
 	return true;
 }
 
@@ -4768,6 +4774,9 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	ieee80211_tpt_led_trig_tx(local, len);
 
 	ieee80211_tx_8023(sdata, skb, sta, false);
+
+	if (sta)
+		atomic_inc(&sta->tx_netif_pkts);
 
 	return;
 

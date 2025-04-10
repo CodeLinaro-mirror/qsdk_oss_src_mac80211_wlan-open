@@ -2677,6 +2677,7 @@ static void ieee80211_deliver_skb_to_local_stack(struct sk_buff *skb,
 {
 	struct ieee80211_sub_if_data *sdata = rx->sdata;
 	struct net_device *dev = sdata->dev;
+	struct sta_info *sta = rx->sta;
 
 	if (unlikely((skb->protocol == sdata->control_port_protocol ||
 		     (skb->protocol == cpu_to_be16(ETH_P_PREAUTH) &&
@@ -2724,6 +2725,7 @@ static void ieee80211_deliver_skb_to_local_stack(struct sk_buff *skb,
 		else
 			netif_receive_skb(skb);
 #endif
+		atomic_inc(&sta->rx_netif_pkts);
 	}
 }
 
@@ -2782,6 +2784,7 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 				 */
 				xmit_skb = skb;
 				skb = NULL;
+				atomic_inc(&rx->sta->rx_forwarded_pkts);
 			}
 		}
 	}
@@ -4937,6 +4940,7 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 			skb_reset_network_header(xmit_skb);
 			skb_reset_mac_header(xmit_skb);
 			dev_queue_xmit(xmit_skb);
+			atomic_inc(&rx->sta->rx_forwarded_pkts);
 		}
 
 		if (!skb)
@@ -5509,8 +5513,17 @@ void ieee80211_rx_list(struct ieee80211_hw *hw, struct ieee80211_sta *pubsta,
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	struct sta_info *sta = NULL;
 
 	WARN_ON_ONCE(softirq_count() == 0);
+
+	if (pubsta) {
+		sta = container_of(pubsta, struct sta_info, sta);
+		if (sta) {
+			if (!(status->flag & RX_FLAG_ONLY_MONITOR))
+				atomic_inc(&sta->rx_drv_pkts);
+		}
+	}
 
 	if (WARN_ON(status->band >= NUM_NL80211_BANDS))
 		goto drop;

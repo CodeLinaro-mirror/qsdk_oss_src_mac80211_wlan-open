@@ -1255,6 +1255,176 @@ out:
 }
 LINK_STA_OPS(eht_capa);
 
+static ssize_t
+sta_reset_mac80211_tx_pkts_flow_read(struct file *file,
+				     char __user *userbuf,
+				     size_t count, loff_t *ppos)
+{
+	size_t bufsz = 30;
+	char *buf = kzalloc(bufsz, GFP_KERNEL), *p = buf;
+	ssize_t rv;
+
+	if (!buf)
+		return -ENOMEM;
+
+	p += scnprintf(p, bufsz + buf - p, "write 1 to reset the stats\n");
+
+	rv = simple_read_from_buffer(userbuf, count, ppos, buf, p - buf);
+	kfree(buf);
+	return rv;
+}
+
+static ssize_t
+sta_reset_mac80211_tx_pkts_flow_write(struct file *file,
+				      const char __user *userbuf,
+				      size_t count, loff_t *ppos)
+{
+	struct sta_info *sta = file->private_data;
+	unsigned long tx_stats_reset;
+	int ret;
+	char _buf[2] = {}, *buf = _buf;
+
+	if (count > sizeof(_buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, userbuf, count))
+		return -EFAULT;
+
+	buf[sizeof(_buf) - 1] = '\0';
+	if (sscanf(buf, "%lu", &tx_stats_reset) != 1)
+		return -EINVAL;
+
+	ret = kstrtoul(buf, 0, &tx_stats_reset);
+	if (ret || tx_stats_reset != 1)
+		return -EINVAL;
+
+	atomic_set(&sta->tx_drv_pkts, 0);
+	atomic_set(&sta->tx_netif_pkts, 0);
+
+	return count;
+}
+STA_OPS_RW(reset_mac80211_tx_pkts_flow);
+
+static ssize_t
+sta_reset_mac80211_rx_pkts_flow_read(struct file *file,
+				     char __user *userbuf,
+				     size_t count, loff_t *ppos)
+{
+	size_t bufsz = 30;
+	char *buf = kzalloc(bufsz, GFP_KERNEL), *p = buf;
+	ssize_t rv;
+
+	if (!buf)
+		return -ENOMEM;
+
+	p += scnprintf(p, bufsz + buf - p, "write 1 to reset the stats\n");
+
+	rv = simple_read_from_buffer(userbuf, count, ppos, buf, p - buf);
+	kfree(buf);
+	return rv;
+}
+
+static ssize_t
+sta_reset_mac80211_rx_pkts_flow_write(struct file *file,
+				      const char __user *userbuf,
+				      size_t count, loff_t *ppos)
+{
+	struct sta_info *sta = file->private_data;
+	unsigned long rx_stats_reset;
+	int ret;
+	char _buf[2] = {}, *buf = _buf;
+
+	if (count > sizeof(_buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, userbuf, count))
+		return -EFAULT;
+
+	buf[sizeof(_buf) - 1] = '\0';
+	if (sscanf(buf, "%lu", &rx_stats_reset) != 1)
+		return -EINVAL;
+
+	ret = kstrtoul(buf, 0, &rx_stats_reset);
+	if (ret || rx_stats_reset != 1)
+		return -EINVAL;
+
+	atomic_set(&sta->rx_drv_pkts, 0);
+	atomic_set(&sta->rx_netif_pkts, 0);
+	atomic_set(&sta->rx_forwarded_pkts, 0);
+
+	return count;
+}
+STA_OPS_RW(reset_mac80211_rx_pkts_flow);
+
+static ssize_t sta_mac80211_tx_pkts_flow_read(struct file *file,
+					      char __user *userbuf,
+					      size_t count, loff_t *ppos)
+{
+	struct sta_info *sta = file->private_data;
+	int retval = 0, len = 0;
+	const int size = 256;
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	rcu_read_lock();
+
+	len += scnprintf(buf + len, size - len,
+			 "Tx packets outflow from netif: %u\n",
+			 atomic_read(&sta->tx_netif_pkts));
+	len += scnprintf(buf + len, size - len,
+			 "Tx packets outflow from mac80211: %u\n",
+			 atomic_read(&sta->tx_drv_pkts));
+	rcu_read_unlock();
+
+	if (len > size)
+		len = size;
+
+	retval = simple_read_from_buffer(userbuf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+STA_OPS(mac80211_tx_pkts_flow);
+
+static ssize_t sta_mac80211_rx_pkts_flow_read(struct file *file,
+					      char __user *userbuf,
+					      size_t count, loff_t *ppos)
+{
+	struct sta_info *sta = file->private_data;
+	int retval = 0, len = 0;
+	const int size = 512;
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	rcu_read_lock();
+
+	len += scnprintf(buf + len, size - len,
+			 "Rx packets inflow in mac80211: %u\n",
+			 atomic_read(&sta->rx_drv_pkts));
+	len += scnprintf(buf + len, size - len,
+			 "Rx packets inflow in netif: %u\n",
+			 atomic_read(&sta->rx_netif_pkts));
+	len += scnprintf(buf + len, size - len,
+			 "Rx forwarded packets in bridge: %u\n",
+			 atomic_read(&sta->rx_forwarded_pkts));
+
+	rcu_read_unlock();
+
+	if (len > size)
+		len = size;
+	retval = simple_read_from_buffer(userbuf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+STA_OPS(mac80211_rx_pkts_flow);
+
 #define DEBUGFS_ADD(name) \
 	debugfs_create_file(#name, 0400, \
 		sta->debugfs_dir, sta, &sta_ ##name## _ops)
@@ -1290,6 +1460,10 @@ void ieee80211_sta_debugfs_add(struct sta_info *sta)
 	DEBUGFS_ADD(num_ps_buf_frames);
 	DEBUGFS_ADD(last_seq_ctrl);
 	DEBUGFS_ADD(agg_status);
+	DEBUGFS_ADD(reset_mac80211_tx_pkts_flow);
+	DEBUGFS_ADD(reset_mac80211_rx_pkts_flow);
+	DEBUGFS_ADD(mac80211_tx_pkts_flow);
+	DEBUGFS_ADD(mac80211_rx_pkts_flow);
 	/* FIXME: Kept here as the statistics are only done on the deflink */
 	DEBUGFS_ADD_COUNTER(tx_filtered, deflink.status_stats.filtered);
 
