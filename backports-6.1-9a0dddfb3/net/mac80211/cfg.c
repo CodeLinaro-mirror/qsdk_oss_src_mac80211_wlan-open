@@ -1785,6 +1785,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_link_data *link =
 		sdata_dereference(sdata->link[link_id], sdata);
 	struct ieee80211_bss_conf *link_conf;
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	LIST_HEAD(keys);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -1861,7 +1862,12 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 		ieee80211_free_key_list(local, &keys);
 	}
 
-	ieee80211_stop_mbssid(sdata, link_id);
+	/* With dynamic link removal support, any non-tx bss can be removed
+	 * individually. Hence, call ieee80211_stop_mbssid when the wdev is
+	 * removed through any other user application(s).
+	 */
+	if (wdev->is_netdev_going_down)
+		ieee80211_stop_mbssid(sdata, link_id);
 	RCU_INIT_POINTER(link_conf->tx_bss_conf, NULL);
 
 	link_conf->enable_beacon = false;
