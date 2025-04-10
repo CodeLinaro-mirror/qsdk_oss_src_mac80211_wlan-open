@@ -2295,6 +2295,7 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 		}
 
 		ieee80211_assign_perm_addr(local, ndev->perm_addr, type);
+		ndev->addr_len = ETH_ALEN;
 		if (is_valid_ether_addr(params->macaddr))
 #if KERNEL_VERSION(5, 17, 0) > LINUX_VERSION_CODE
 			memcpy(ndev->dev_addr, params->macaddr, ETH_ALEN);
