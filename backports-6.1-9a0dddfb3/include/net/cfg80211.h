@@ -1189,6 +1189,19 @@ ieee80211_chandef_rate_flags(struct cfg80211_chan_def *chandef)
 }
 
 /**
+ * cfg80211_chandef_dfs_usable - checks if chandef is DFS usable
+ * @wiphy: the wiphy to validate against
+ * @chandef: the channel definition to check
+ *
+ * Checks if chandef is usable and we can/need start CAC on such channel.
+ *
+ * Return: true if all channels available and at least
+ *	   one channel requires CAC (NL80211_DFS_USABLE)
+ */
+bool cfg80211_chandef_dfs_usable(struct wiphy *wiphy,
+				 const struct cfg80211_chan_def *chandef);
+
+/**
  * cfg80211_chandef_dfs_cac_time - get maximum dfs cac time traversing
  * through the entire channel width
  * @wiphy: the wiphy to validate against
