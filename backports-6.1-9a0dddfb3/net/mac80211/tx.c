@@ -4652,9 +4652,6 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	ieee80211_xmit_nss_fixup(skb, dev);
 #endif
-#ifdef CPTCFG_MAC80211_SFE_SUPPORT
-	skb->fast_xmit = 0;
-#endif
 	if (likely(!is_multicast_ether_addr(eth->h_dest)))
 		goto normal;
 
