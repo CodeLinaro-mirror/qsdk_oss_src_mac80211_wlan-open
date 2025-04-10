@@ -1834,8 +1834,13 @@ EXPORT_SYMBOL(ieee80211_register_hw);
 void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
+	int cpu;
 
-	tasklet_kill(&local->tx_pending_tasklet);
+	for_each_possible_cpu(cpu) {
+		struct ieee80211_tasklet_data *tasklet_data =
+			 per_cpu_ptr(local->tx_pending_tasklet, cpu);
+		tasklet_kill(&tasklet_data->tasklet);
+	}
 	tasklet_kill(&local->tasklet);
 
 #ifdef __disabled__CONFIG_INET
@@ -1868,7 +1873,7 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	flush_work(&local->cw_detected_work);
 	cancel_work_sync(&local->restart_work);
 
-	ieee80211_clear_tx_pending(local);
+	on_each_cpu((void (*)(void *))ieee80211_clear_tx_pending, local, 1);
 	rate_control_deinitialize(local);
 
 	if (skb_queue_len(&local->skb_queue) ||

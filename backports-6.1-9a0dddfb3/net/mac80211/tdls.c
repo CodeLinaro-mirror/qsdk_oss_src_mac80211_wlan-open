@@ -1415,7 +1415,7 @@ int ieee80211_tdls_oper(struct wiphy *wiphy, struct net_device *dev,
 	struct sta_info *sta;
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = sdata->local;
-	int ret;
+	int ret, cpu;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1471,7 +1471,11 @@ int ieee80211_tdls_oper(struct wiphy *wiphy, struct net_device *dev,
 		 * Note that this only forces the tasklet to flush pendings -
 		 * not to stop the tasklet from rescheduling itself.
 		 */
-		tasklet_kill(&local->tx_pending_tasklet);
+		for_each_possible_cpu(cpu) {
+			struct ieee80211_tasklet_data *tasklet_data =
+				 per_cpu_ptr(local->tx_pending_tasklet, cpu);
+			tasklet_kill(&tasklet_data->tasklet);
+		}
 		/* flush a potentially queued teardown packet */
 		ieee80211_flush_queues(local, sdata, false);
 

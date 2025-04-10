@@ -46,6 +46,11 @@
 
 extern const struct cfg80211_ops mac80211_config_ops;
 
+/* Maximum number of skbs that can be held
+ * by a percpu SW queue.
+ */
+#define IEEE80211_PENDING_QUEUE_MAX_LENGTH 5000
+
 struct ieee80211_local;
 struct ieee80211_mesh_fast_tx;
 
@@ -2607,6 +2612,7 @@ void ieee80211_flush_queues(struct ieee80211_local *local,
 void __ieee80211_flush_queues(struct ieee80211_local *local,
 			      struct ieee80211_sub_if_data *sdata,
 			      unsigned int queues, bool drop);
+void ieee80211_unlink_all_skbs(struct ieee80211_sub_if_data *sdata);
 
 static inline bool ieee80211_can_run_worker(struct ieee80211_local *local)
 {
