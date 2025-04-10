@@ -124,6 +124,13 @@ config MAC80211_NSS_SUPPORT
 
 	  If unsure, say Y to enable NSS offload support.
 
+config MAC80211_SFE_SUPPORT
+	bool "QTI mac80211 sfe support"
+	depends on ATH12K
+	default n
+	---help---
+	  Enables sfe support for ATH12K driver
+
 config MAC80211_PPE_SUPPORT
        bool "QTI mac80211 ppe support"
        depends on ATH12K

@@ -4637,8 +4637,9 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	ieee80211_xmit_nss_fixup(skb, dev);
 #endif
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
 	skb->fast_xmit = 0;
-
+#endif
 	if (likely(!is_multicast_ether_addr(eth->h_dest)))
 		goto normal;
 
@@ -4938,6 +4939,7 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 					    struct net_device *dev)
 {
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_tx_control control = {};
@@ -4972,9 +4974,10 @@ out:
 		}
 
 		return NETDEV_TX_OK;
-	} else {
-		return __ieee80211_subif_start_xmit_8023(skb, dev, 0, 0, NULL);
 	}
+#endif
+	return __ieee80211_subif_start_xmit_8023(skb, dev, 0, 0, NULL);
+
 }
 
 netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
