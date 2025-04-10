@@ -1502,6 +1502,21 @@ struct cfg80211_rnr_elems {
 };
 
 /**
+ * struct cfg80211_set_cu_params
+ * Critical update Parameter for given beacon update.
+ *
+ * @elemid_added_bmap: bitmap of BSS indexes having
+ * existing beacon elements modified.
+ * @elemid_modified_bmap : bitmap of BSS indexes having
+ * new beacon elements added.
+ */
+
+struct cfg80211_set_cu_params {
+	u32 elemid_added_bmap;
+	u32 elemid_modified_bmap;
+};
+
+/**
  * struct cfg80211_beacon_data - beacon data
  * @link_id: the link ID for the AP MLD link sending this beacon
  * @head: head portion of beacon (before TIM IE)
@@ -1557,6 +1572,7 @@ struct cfg80211_beacon_data {
 	size_t civicloc_len;
 	struct cfg80211_he_bss_color he_bss_color;
 	bool he_bss_color_valid;
+	struct cfg80211_set_cu_params cu_params;
 };
 
 struct mac_address {
@@ -1609,6 +1625,7 @@ struct cfg80211_fils_discovery {
  * @tmpl_len: Template length
  * @tmpl: Template data for probe response
  */
+
 struct cfg80211_unsol_bcast_probe_resp {
 	bool update;
 	u32 interval;
@@ -1656,8 +1673,6 @@ struct cfg80211_unsol_bcast_probe_resp {
  * @fils_discovery: FILS discovery transmission parameters
  * @unsol_bcast_probe_resp: Unsolicited broadcast probe response parameters
  * @mbssid_config: AP settings for multiple bssid
- * @elemid_added: critical update element id inserted
- * @elemid_modified: critical update element id modified
  * @intf_detect_bitmap: Interference detection bitmap.
  *	BIT(0) represents - CW Interference.
  */
@@ -1695,8 +1710,6 @@ struct cfg80211_ap_settings {
 	struct cfg80211_mbssid_config mbssid_config;
 	bool ap_ps_valid;
 	bool ap_ps_enable;
-	bool elemid_added;
-	bool elemid_modified;
 	u8 intf_detect_bitmap;
 };
 
@@ -1748,8 +1761,6 @@ struct cfg80211_csa_settings {
 	u8 count;
 	u8 link_id;
 	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
-	bool beacon_after_cu;
-	bool beacon_csa_cu;
 };
 
 /**
@@ -1776,7 +1787,6 @@ struct cfg80211_color_change_settings {
 	u8 color;
 	u8 link_id;
 	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
-	bool elemid_added;
 };
 
 /**

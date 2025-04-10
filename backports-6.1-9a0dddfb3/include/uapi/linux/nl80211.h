@@ -2962,8 +2962,8 @@ enum nl80211_commands {
  *	update for each MLD. In each nested item, it contains attributes
  *	defined in &enum nl80211_cu_attrs.
  *
- * @NL80211_ATTR_SET_CRITICAL_UPDATE: set critical update for the bss (u8)
- *	(see &enum nl80211_set_cu).
+ * @NL80211_ATTR_SET_CRITICAL_UPDATE: set critical update bitmap for the BSS(s)
+ *	(see &enum nl80211_set_cu_attrs).
  *
  * @NL80211_ATTR_CHANNEL_WIDTH_DEVICE: Device channel width (u32). Value
  *	must be zero or twice @NL80211_ATTR_CHANNEL_WIDTH which is the
@@ -8532,19 +8532,30 @@ enum nl80211_cu_mld_link_attrs {
 };
 
 /**
- * enum nl80211_set_cu - set critical update params
+ * enum nl80211_set_cu_attrs - set critical update attributes
  *
- * @NL80211_CU_UNSPEC: reserved
- * @NL80211_CU_ELEMID_ADDED: Critical update - Element id added
- * @NL80211_CU_ELEMID_MODIFIED: Critical update - Element id Modified
- * @NUM_NL80211_CUS: number of CU attributes
+ * @NL80211_ATTR_SET_CU_ELEM_ADDED_BMAP: Bitmap of interfaces to which critical update
+ * happened due to addition of new beacon element. Bit 0 represents the (TX) interface
+ * in which the attribute is received. Other bits represents the MBSSID index of NON-TX
+ * BSSes in case this attribute is carried as part of set/update beacon for an
+ * MBSSID group's TX VAP.
+ *
+ * @NL80211_ATTR_SET_CU_ELEM_MODIFIED_BMAP: Bitmap of interfaces to which critical update
+ * happened due to modification of existing beacon element.
+ *
+ * @__NL80211_CU_MLD_LINK_ATTR_LAST : internal use
+ * @NL80211_SET_CU_ATTR_MAX : maximum set critical update attributes
+ *
  */
-enum nl80211_set_cu {
-	NL80211_CU_UNSPEC = 0,
-	NL80211_CU_ELEMID_ADDED = BIT(0),
-	NL80211_CU_ELEMID_MODIFIED = BIT(1),
+enum nl80211_set_cu_attrs {
+	__NL80211_SET_CU_ATTR_INVALID,
 
-	NUM_NL80211_CUS = BIT(2),
+	NL80211_SET_CU_ATTR_ELEM_ADDED_BMAP,
+	NL80211_SET_CU_ATTR_ELEM_MODIFIED_BMAP,
+
+	/* keep last */
+	__NL80211_SET_CU_ATTR_LAST,
+	NL80211_SET_CU_ATTR_MAX = __NL80211_SET_CU_ATTR_LAST - 1
 };
 
 /**

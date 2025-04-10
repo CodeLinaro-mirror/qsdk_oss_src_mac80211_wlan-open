@@ -1568,8 +1568,6 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (err < 0)
 		goto error;
 
-	link_conf->elemid_added = params->elemid_added;
-	link_conf->elemid_modified = params->elemid_modified;
 	err = drv_start_ap(sdata->local, sdata, link_conf);
 	if (err) {
 		old = sdata_dereference(link->u.ap.beacon, sdata);
@@ -1682,9 +1680,6 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 						   link, link_conf, &changed);
 	if (err < 0)
 		return err;
-
-	link_conf->elemid_added = params->elemid_added;
-	link_conf->elemid_modified = params->elemid_modified;
 
 	ieee80211_link_info_change_notify(sdata, link, changed);
 	link_conf->elemid_added = 0;
@@ -4466,8 +4461,9 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	if (err)
 		goto out;
 
-	link_conf->elemid_added = params->beacon_csa_cu;
-	link_data->u.ap.after_beacon_cu = params->beacon_after_cu;
+	link_conf->elemid_added = params->beacon_csa.cu_params.elemid_added_bmap ? true : false;
+	link_data->u.ap.after_beacon_cu =
+		params->beacon_after.cu_params.elemid_modified_bmap ? true : false;
 
 	err = drv_pre_channel_switch(sdata, &ch_switch);
 	if (err)
@@ -5559,7 +5555,7 @@ ieee80211_color_change(struct wiphy *wiphy, struct net_device *dev,
 
 	link_conf->color_change_active = true;
 	link_conf->color_change_color = params->color;
-	link_conf->elemid_added = params->elemid_added;
+	link_conf->elemid_added = params->beacon_next.cu_params.elemid_added_bmap ? true : false;
 
 	err = ieee80211_set_unsol_bcast_probe_resp(sdata, &params->unsol_bcast_probe_resp,
 						   link, link_conf, &changed);
