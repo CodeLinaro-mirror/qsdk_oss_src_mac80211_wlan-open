@@ -16859,7 +16859,7 @@ static int nl80211_color_change(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	params.link_id = nl80211_link_id(info->attrs);
-	err = rdev_color_change(rdev, dev, &params);
+	err = rdev_color_change(rdev, dev, &params, params.link_id);
 
 out:
 	kfree(params.beacon_next.mbssid_ies);
@@ -18255,7 +18255,8 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.doit = nl80211_del_tx_ts,
 		.flags = GENL_UNS_ADMIN_PERM,
-		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP |
+					 NL80211_FLAG_MLO_VALID_LINK_ID),
 	},
 	{
 		.cmd = NL80211_CMD_TDLS_CHANNEL_SWITCH,
@@ -20519,6 +20520,10 @@ int cfg80211_bss_color_notify(struct net_device *dev,
 		goto nla_put_failure;
 
 	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, dev->ifindex))
+		goto nla_put_failure;
+
+	if (wdev->valid_links &&
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id))
 		goto nla_put_failure;
 
 	if (wdev->valid_links &&

@@ -2965,15 +2965,16 @@ TRACE_EVENT(rdev_set_sar_specs,
 
 TRACE_EVENT(rdev_color_change,
 	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
-		 struct cfg80211_color_change_settings *params),
-	TP_ARGS(wiphy, netdev, params),
+		 struct cfg80211_color_change_settings *params,
+		 unsigned int link_id),
+	TP_ARGS(wiphy, netdev, params, link_id),
 	TP_STRUCT__entry(
 		WIPHY_ENTRY
 		NETDEV_ENTRY
 		__field(u8, count)
 		__field(u16, bcn_ofs)
 		__field(u16, pres_ofs)
-		__field(u8, link_id)
+		__field(unsigned int, link_id)
 	),
 	TP_fast_assign(
 		WIPHY_ASSIGN;

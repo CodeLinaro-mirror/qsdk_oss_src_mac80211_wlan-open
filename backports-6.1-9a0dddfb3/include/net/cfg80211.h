@@ -5084,7 +5084,8 @@ struct cfg80211_ops {
 				 struct cfg80211_sar_specs *sar);
 	int	(*color_change)(struct wiphy *wiphy,
 				struct net_device *dev,
-				struct cfg80211_color_change_settings *params);
+				struct cfg80211_color_change_settings *params,
+				unsigned int link_id);
 	int     (*set_fils_aad)(struct wiphy *wiphy, struct net_device *dev,
 				struct cfg80211_fils_aad *fils_aad);
 	int	(*set_radar_background)(struct wiphy *wiphy,

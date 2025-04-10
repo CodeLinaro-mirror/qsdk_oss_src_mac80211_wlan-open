@@ -1706,6 +1706,9 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	 */
 	wiphy_work_cancel(wiphy, &link->csa.finalize_work);
 
+	/* see comment above */
+	wiphy_work_cancel(wiphy, &link->color_change_finalize_work);
+
 	ieee80211_free_next_beacon(link);
 
 	/* turn off carrier for this interface and dependent VLANs */
@@ -5006,6 +5009,7 @@ ieee80211_set_after_color_change_beacon(struct ieee80211_link_data *link,
 		if (ret < 0)
 			return ret;
 
+		link->conf->critical_update_flag &= ~IEEE80211_CU_INCLUDE_BCCA_ELEM;
 		break;
 	}
 	default:
@@ -5048,6 +5052,7 @@ ieee80211_set_color_change_beacon(struct ieee80211_link_data *link,
 			ieee80211_free_next_beacon(link);
 			return err;
 		}
+		link->conf->critical_update_flag |= IEEE80211_CU_INCLUDE_BCCA_ELEM;
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -5121,8 +5126,12 @@ void ieee80211_color_change_finalize_work(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata = link->sdata;
 	struct ieee80211_bss_conf *link_conf = link->conf;
 	struct ieee80211_local *local = sdata->local;
+	struct wireless_dev *wdev = &sdata->wdev;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (wdev->links[link->link_id].ap.is_going_down)
+		return;
 
 	/* AP might have been stopped while waiting for the lock. */
 	if (!link_conf->color_change_active)
@@ -5175,8 +5184,12 @@ ieee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
 {
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
 	struct ieee80211_link_data *link;
+	struct wireless_dev *wdev = &sdata->wdev;
 
 	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+
+	if (wdev->links[link_id].ap.is_going_down)
 		return;
 
 	rcu_read_lock();
@@ -5207,18 +5220,19 @@ ieee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
 				 msecs_to_jiffies(500));
 
 	rcu_read_unlock();
+	cfg80211_obss_color_collision_notify(sdata->dev, color_bitmap, link_id);
 }
 EXPORT_SYMBOL_GPL(ieee80211_obss_color_collision_notify);
 
 static int
 ieee80211_color_change(struct wiphy *wiphy, struct net_device *dev,
-		       struct cfg80211_color_change_settings *params)
+		       struct cfg80211_color_change_settings *params,
+		       unsigned int link_id)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_bss_conf *link_conf;
 	struct ieee80211_link_data *link;
-	u8 link_id = params->link_id;
 	u64 changed = 0;
 	int err;
 
