@@ -1718,7 +1718,7 @@ EXPORT_SYMBOL(ieee80211_sta_uapsd_trigger);
 
 void ieee80211_rx_nss_notify_4addr(struct net_device *dev, u8 *sta_addr)
 {
-	cfg80211_rx_unexpected_4addr_frame(dev, sta_addr, GFP_ATOMIC);
+	cfg80211_rx_unexpected_4addr_frame(dev, sta_addr, GFP_ATOMIC, -1);
 }
 EXPORT_SYMBOL(ieee80211_rx_nss_notify_4addr);
 
@@ -1893,7 +1893,7 @@ ieee80211_rx_h_sta_process(struct ieee80211_rx_data *rx)
 			if (!test_and_set_sta_flag(sta, WLAN_STA_4ADDR_EVENT))
 				cfg80211_rx_unexpected_4addr_frame(
 					rx->sdata->dev, sta->sta.addr,
-					GFP_ATOMIC);
+					GFP_ATOMIC, rx->link_id);
 			return RX_DROP_M_UNEXPECTED_4ADDR_FRAME;
 		}
 		/*
@@ -3309,7 +3309,7 @@ ieee80211_rx_h_data(struct ieee80211_rx_data *rx)
 		if (rx->sta &&
 		    !test_and_set_sta_flag(rx->sta, WLAN_STA_4ADDR_EVENT))
 			cfg80211_rx_unexpected_4addr_frame(
-				rx->sdata->dev, rx->sta->sta.addr, GFP_ATOMIC);
+				rx->sdata->dev, rx->sta->sta.addr, GFP_ATOMIC, rx->link_id);
 		return RX_DROP_MONITOR;
 	}
 

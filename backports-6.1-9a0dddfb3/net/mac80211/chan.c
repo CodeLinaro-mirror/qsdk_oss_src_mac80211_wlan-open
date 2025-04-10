@@ -1089,6 +1089,9 @@ __ieee80211_link_copy_chanctx_to_vlans(struct ieee80211_link_data *link,
 	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
 		struct ieee80211_bss_conf *vlan_conf;
 
+		if (!(vlan->vif.valid_links & BIT(link_id)))
+			continue;
+
 		vlan_conf = wiphy_dereference(local->hw.wiphy,
 					      vlan->vif.link_conf[link_id]);
 		if (WARN_ON(!vlan_conf))
@@ -1334,6 +1337,9 @@ ieee80211_link_update_chanreq(struct ieee80211_link_data *link,
 
 	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
 		struct ieee80211_bss_conf *vlan_conf;
+
+		if (!(vlan->vif.valid_links & BIT(link_id)))
+			continue;
 
 		vlan_conf = wiphy_dereference(sdata->local->hw.wiphy,
 					      vlan->vif.link_conf[link_id]);
