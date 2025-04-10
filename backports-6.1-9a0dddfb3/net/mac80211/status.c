@@ -301,8 +301,11 @@ ieee80211_add_tx_radiotap_header(struct ieee80211_local *local,
 		struct ieee80211_supported_band *sband;
 
 		sband = local->hw.wiphy->bands[info->band];
-		legacy_rate =
-			sband->bitrates[info->status.rates[0].idx].bitrate;
+		//TODO: Incase of MLD, band will be 0 for tx pkts
+		//this has to be taken care during TX monitor support.
+		if (sband)
+			legacy_rate =
+				sband->bitrates[info->status.rates[0].idx].bitrate;
 	}
 
 	if (legacy_rate) {
