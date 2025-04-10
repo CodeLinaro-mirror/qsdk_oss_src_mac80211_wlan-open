@@ -673,9 +673,16 @@ static void ieee80211_scan_state_send_probe(struct ieee80211_local *local,
 	int i;
 	struct ieee80211_sub_if_data *sdata;
 	struct cfg80211_scan_request *scan_req;
-	enum nl80211_band band = local->hw.conf.chandef.chan->band;
+	enum nl80211_band band;
 	u32 flags = 0, tx_flags;
 
+	if (!local->hw.conf.chandef.chan) {
+		printk("channel NULL\n");
+		WARN_ON(1);
+		return;
+	}
+
+	band = local->hw.conf.chandef.chan->band;
 	scan_req = rcu_dereference_protected(local->scan_req,
 					     lockdep_is_held(&local->hw.wiphy->mtx));
 

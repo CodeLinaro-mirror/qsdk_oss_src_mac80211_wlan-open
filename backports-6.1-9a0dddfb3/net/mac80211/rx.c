@@ -5813,12 +5813,16 @@ void ieee80211_rx_list(struct ieee80211_hw *hw, struct ieee80211_sta *pubsta,
 		}
 	}
 
-	if (WARN_ON(status->band >= NUM_NL80211_BANDS))
+	if (WARN_ON(status->band >= NUM_NL80211_BANDS)) {
+		printk("invalid status band %d freq %d\n", status->band, status->freq);
 		goto drop;
+	}
 
 	sband = local->hw.wiphy->bands[status->band];
-	if (WARN_ON(!sband))
+	if (WARN_ON(!sband)) {
+		printk("NULL sband status band %d freq %d\n", status->band, status->freq);
 		goto drop;
+	}
 
 	/*
 	 * If we're suspending, it is possible although not too likely

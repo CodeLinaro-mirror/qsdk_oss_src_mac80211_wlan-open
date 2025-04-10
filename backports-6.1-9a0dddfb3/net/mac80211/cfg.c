@@ -4684,6 +4684,7 @@ int ieee80211_attach_ack_skb(struct ieee80211_local *local, struct sk_buff *skb,
 
 	if (id < 0) {
 		kfree_skb(ack_skb);
+		printk(KERN_ERR "attach ack fail %d\n", id);
 		return -ENOMEM;
 	}
 
