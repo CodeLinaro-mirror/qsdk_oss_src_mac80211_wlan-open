@@ -830,9 +830,9 @@ struct key_params {
 /**
  * struct cfg80211_chan_def - channel definition
  * @chan: the (control) channel
- * @width: channel width
- * @center_freq1: center frequency of first segment
- * @center_freq2: center frequency of second segment
+ * @width: operating channel width
+ * @center_freq1: operating center frequency of first segment
+ * @center_freq2: operating center frequency of second segment
  *	(only with 80+80 MHz)
  * @edmg: define the EDMG channels configuration.
  *	If edmg is requested (i.e. the .channels member is non-zero),
@@ -842,7 +842,11 @@ struct key_params {
  * @punctured: mask of the punctured 20 MHz subchannels, with
  *	bits turned on being disabled (punctured); numbered
  *	from lower to higher frequency (like in the spec)
- */
+ * @width_device: channel width of the device. @width is the operating channel
+ *	width
+ * @center_frequency_device: center frequency of the device @center_freq1 is
+ *	the operating center frequency of the channel
+  */
 struct cfg80211_chan_def {
 	struct ieee80211_channel *chan;
 	enum nl80211_chan_width width;
@@ -852,6 +856,8 @@ struct cfg80211_chan_def {
 	u16 freq1_offset;
 	u16 punctured;
 	u16 radar_bitmap;
+	enum nl80211_chan_width width_device;
+	u32 center_freq_device;
 };
 
 /*
@@ -1074,6 +1080,28 @@ int nl80211_chan_width_to_mhz(enum nl80211_chan_width chan_width);
  * Return: %true if the channel definition is valid. %false otherwise.
  */
 bool cfg80211_chandef_valid(const struct cfg80211_chan_def *chandef);
+
+/**
+ * cfg80211_get_start_freq_device - retrieve start frequency of the device BW
+ * @chandef: the channel definition to check
+ * Returns: Start frequency in KHz.
+ */
+u32 cfg80211_get_start_freq_device(const struct cfg80211_chan_def *chandef);
+
+/**
+ * cfg80211_get_end_freq_device - retrieve end frequency of the device BW
+ * @chandef: the channel definition to check
+ * Returns: End frequency in KHz.
+ */
+u32 cfg80211_get_end_freq_device(const struct cfg80211_chan_def *chandef);
+
+/**
+ * cfg80211_chandef_device_valid - check if device bandwidth parameters in a channel
+ *     definition are valid
+ * @chandef: the channel definition to check
+ * Return: %true if the device bandwidth parameters are valid. %false otherwise.
+ */
+bool cfg80211_chandef_device_valid(const struct cfg80211_chan_def *chandef);
 
 /**
  * valid_puncturing_bitmap - check if Puncturing bitmap on given

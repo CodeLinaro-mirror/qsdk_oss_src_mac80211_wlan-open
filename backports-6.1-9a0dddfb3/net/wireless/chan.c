@@ -36,6 +36,8 @@ void cfg80211_chandef_create(struct cfg80211_chan_def *chandef,
 	*chandef = (struct cfg80211_chan_def) {
 		.chan = chan,
 		.freq1_offset = chan->freq_offset,
+		.width_device = NL80211_CHAN_WIDTH_20_NOHT,
+		.center_freq_device = 0,
 	};
 
 	switch (chan_type) {
@@ -730,6 +732,74 @@ static bool cfg80211_dfs_permissive_chan(struct wiphy *wiphy,
 		if (ret)
 			return ret;
 	}
+
+	return false;
+}
+
+u32 cfg80211_get_start_freq_device(const struct cfg80211_chan_def *chandef)
+{
+	int width = nl80211_chan_width_to_mhz(chandef->width_device);
+
+	if (width < 0)
+		return 0;
+
+	return cfg80211_get_start_freq(chandef, width);
+}
+
+u32 cfg80211_get_end_freq_device(const struct cfg80211_chan_def *chandef)
+{
+	int width = nl80211_chan_width_to_mhz(chandef->width_device);
+
+	if (width < 0)
+		return 0;
+
+	return cfg80211_get_end_freq(chandef, width);
+}
+
+bool cfg80211_chandef_device_valid(const struct cfg80211_chan_def *chandef)
+{
+	int start_freq_device, end_freq_device, start_freq_oper, end_freq_oper;
+
+	if ((chandef->width_device == NL80211_CHAN_WIDTH_20_NOHT &&
+	     chandef->center_freq_device == 0) ||
+	    (chandef->width_device == chandef->width &&
+	     chandef->center_freq_device == chandef->center_freq1))
+		return true;
+
+	if (chandef->center_freq_device == 0 ||
+	    chandef->width_device == NL80211_CHAN_WIDTH_20_NOHT)
+		return false;
+
+	switch (chandef->width_device) {
+	case NL80211_CHAN_WIDTH_320:
+		if (chandef->width != NL80211_CHAN_WIDTH_160)
+			return false;
+		break;
+	case NL80211_CHAN_WIDTH_160:
+		if (chandef->width != NL80211_CHAN_WIDTH_80)
+			return false;
+		break;
+	case NL80211_CHAN_WIDTH_80:
+		if (chandef->width != NL80211_CHAN_WIDTH_40)
+			return false;
+		break;
+	case NL80211_CHAN_WIDTH_40:
+		if (chandef->width != NL80211_CHAN_WIDTH_20)
+			return false;
+		break;
+	default:
+		return false;
+	}
+	start_freq_device = cfg80211_get_start_freq_device(chandef);
+	end_freq_device = cfg80211_get_end_freq_device(chandef);
+
+	start_freq_oper = cfg80211_get_start_freq(chandef,
+						  chandef->width);
+	end_freq_oper = cfg80211_get_end_freq(chandef,
+					      chandef->width);
+
+	if (start_freq_device <= start_freq_oper && end_freq_oper <= end_freq_device)
+		return true;
 
 	return false;
 }

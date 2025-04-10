@@ -4022,6 +4022,8 @@ again:
 	 * 40 Mhz channel, but that's not valid when downgraded to 40 MHz width.
 	 * In that case, downgrade again.
 	 */
+	c->width_device = c->width;
+	c->center_freq_device = c->center_freq1;
 	if (!cfg80211_chandef_valid(c) && c->punctured)
 		goto again;
 

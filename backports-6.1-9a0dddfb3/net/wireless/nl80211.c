@@ -33,6 +33,10 @@
 
 #define VLAN_N_VID	4096
 
+static int nl80211_parse_chandef_device(struct cfg80211_registered_device *rdev,
+					struct genl_info *info,
+					struct cfg80211_chan_def *chandef);
+
 static int nl80211_crypto_settings(struct cfg80211_registered_device *rdev,
 				   struct genl_info *info,
 				   struct cfg80211_crypto_settings *settings,
@@ -929,6 +933,8 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_MLD_CAPA_AND_OPS] = { .type = NLA_U16 },
 	[NL80211_ATTR_RXMGMT_CRITICAL_UPDATE] = NLA_POLICY_NESTED(cu_policy),
 	[NL80211_ATTR_SET_CRITICAL_UPDATE] = { .type = NLA_U8 },
+	[NL80211_ATTR_CHANNEL_WIDTH_DEVICE] = { .type = NLA_U32 },
+	[NL80211_ATTR_CENTER_FREQ_DEVICE] = { .type = NLA_U32 },
 };
 
 /* policy for the key attributes */
@@ -3515,6 +3521,7 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 	struct nlattr **attrs = info->attrs;
 	enum nl80211_regulatory_power_modes mode = NL80211_REG_AP_LPI;
 	u32 control_freq;
+	int err;
 
 	if (!attrs[NL80211_ATTR_WIPHY_FREQ]) {
 		NL_SET_ERR_MSG_ATTR(extack, attrs[NL80211_ATTR_WIPHY_FREQ],
@@ -3643,6 +3650,12 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		return -EINVAL;
 	}
 
+	err = nl80211_parse_chandef_device(rdev, info, chandef);
+	if (err) {
+		NL_SET_ERR_MSG(extack, "invalid device bandwidth information");
+		return err;
+	}
+
 	if (!_cfg80211_chandef_usable(&rdev->wiphy, chandef,
 				      IEEE80211_CHAN_DISABLED,
 				      monitor ? IEEE80211_CHAN_CAN_MONITOR : 0)) {
@@ -3656,6 +3669,34 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		NL_SET_ERR_MSG(extack, "5/10 MHz not supported");
 		return -EINVAL;
 	}
+
+	return 0;
+}
+
+static int nl80211_parse_chandef_device(struct cfg80211_registered_device *rdev,
+					struct genl_info *info,
+					struct cfg80211_chan_def *chandef)
+{
+	chandef->width_device = NL80211_CHAN_WIDTH_20_NOHT;
+	chandef->center_freq_device = 0;
+
+	if (!info->attrs[NL80211_ATTR_CHANNEL_WIDTH_DEVICE] &&
+	    !info->attrs[NL80211_ATTR_CENTER_FREQ_DEVICE])
+		return 0;
+
+	if (!wiphy_ext_feature_isset(&rdev->wiphy, NL80211_EXT_FEATURE_DEVICE_BW))
+		return -EOPNOTSUPP;
+
+	if (!info->attrs[NL80211_ATTR_CENTER_FREQ_DEVICE] ||
+	    !info->attrs[NL80211_ATTR_CHANNEL_WIDTH_DEVICE]) {
+		return -EINVAL;
+	}
+
+	chandef->width_device = nla_get_u32(info->attrs[NL80211_ATTR_CHANNEL_WIDTH_DEVICE]);
+	chandef->center_freq_device = nla_get_u32(info->attrs[NL80211_ATTR_CENTER_FREQ_DEVICE]);
+
+	if (!cfg80211_chandef_device_valid(chandef))
+		return -EINVAL;
 
 	return 0;
 }
