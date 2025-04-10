@@ -140,6 +140,16 @@ config MAC80211_PPE_SUPPORT
 
          If unsure, say N.
 
+config MAC80211_DS_SUPPORT
+       bool "QTI mac80211 PPE DS support"
+       depends on ATH12K
+       default n
+       ---help---
+         Enables PPE DS support in MAC80211. Currently used only
+	 for updating per packet stats in DS case
+
+         If unsure, say N.
+
 config MAC80211_NOINLINE
 	bool "Do not inline TX/RX handlers"
 	depends on MAC80211_DEBUG_MENU

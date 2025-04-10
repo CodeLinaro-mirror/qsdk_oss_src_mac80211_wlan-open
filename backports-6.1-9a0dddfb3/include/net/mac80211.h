@@ -5064,6 +5064,11 @@ struct ieee80211_hw *ieee80211_alloc_hw(size_t priv_data_len,
 	return ieee80211_alloc_hw_nm(priv_data_len, ops, NULL);
 }
 
+#ifdef CPTCFG_MAC80211_DS_SUPPORT
+void ieee80211_rx_update_stats(struct ieee80211_hw *hw, struct ieee80211_sta *pubsta,
+			       int link_id, u32 len, struct ieee80211_rx_status *status);
+#endif /* CPTCFG_MAC80211_DS_SUPPORT */
+
 /**
  * ieee80211_register_hw - Register hardware device
  *
@@ -5659,6 +5664,32 @@ void ieee80211_tx_status_irqsafe(struct ieee80211_hw *hw,
 void ieee80211_report_low_ack(struct ieee80211_sta *sta, u32 num_packets);
 
 #define IEEE80211_MAX_CNTDWN_COUNTERS_NUM 2
+
+#ifdef CPTCFG_MAC80211_DS_SUPPORT
+/**
+ * ieee80211_ppeds_tx_update_stats - update tx stats for PPE DS path
+ *
+ * Call this function for all transmitted data frames after their transmit
+ * completion. This callback should only be called for data frames which
+ * are using driver's (or hardware's) offload capability of encap/decap
+ * 802.11 frames.
+ *
+ * This function may not be called in IRQ context. Calls to this function
+ * for a single hardware must be synchronized against each other and all
+ * calls in the same tx status family.
+ *
+ * @hw: the hardware the frame was transmitted by
+ * @pubsta: the station to update the tx rate for.
+ * @info: tx status information
+ * @rate: tx rate information
+ * @link_id: link id
+ * @len: length
+ */
+void ieee80211_ppeds_tx_update_stats(struct ieee80211_hw *hw,
+				     struct ieee80211_sta *pubsta,
+				     struct ieee80211_tx_info *info,
+				     struct rate_info rate, int link_id, u32 len);
+#endif /* CPTCFG_MAC80211_DS_SUPPORT */
 
 /**
  * struct ieee80211_mutable_offsets - mutable beacon offsets

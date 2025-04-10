@@ -4928,6 +4928,62 @@ void ieee80211_check_fast_rx_iface(struct ieee80211_sub_if_data *sdata)
 	__ieee80211_check_fast_rx_iface(sdata);
 }
 
+#ifdef CPTCFG_MAC80211_DS_SUPPORT
+void ieee80211_rx_update_stats(struct ieee80211_hw *hw, struct ieee80211_sta *pubsta,
+			       int link_id, u32 len, struct ieee80211_rx_status *status)
+{
+	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
+	struct link_sta_info *link_sta;
+	struct ieee80211_sta_rx_stats *stats;
+
+	rcu_read_lock();
+	if (link_id >= 0) {
+		link_sta = rcu_dereference(sta->link[link_id]);
+		if (WARN_ON_ONCE(!link_sta)) {
+			rcu_read_unlock();
+			return;
+		}
+	} else {
+		link_sta = &sta->deflink;
+	}
+
+	if (ieee80211_hw_check(hw, USES_RSS))
+		stats = this_cpu_ptr(link_sta->pcpu_rx_stats);
+	else
+		stats = &link_sta->rx_stats;
+
+	if (!(status->flag & RX_FLAG_NO_SIGNAL_VAL)) {
+		stats->last_signal = status->signal;
+	}
+
+	if (status->chains) {
+		int i;
+
+		stats->chains = status->chains;
+		for (i = 0; i < ARRAY_SIZE(status->chain_signal); i++) {
+			int signal = status->chain_signal[i];
+
+			if (!(status->chains & BIT(i)))
+				continue;
+
+			stats->chain_signal_last[i] = signal;
+		}
+	}
+
+	stats->last_rx = jiffies;
+	stats->last_rate = sta_stats_encode_rate(status);
+
+	stats->fragments++;
+	stats->packets++;
+
+	u64_stats_update_begin(&stats->syncp);
+	stats->bytes += len;
+	u64_stats_update_end(&stats->syncp);
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(ieee80211_rx_update_stats);
+#endif /* CPTCFG_MAC80211_DS_SUPPORT */
+
 static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 			      struct ieee80211_fast_rx *fast_rx,
 			      int orig_len)

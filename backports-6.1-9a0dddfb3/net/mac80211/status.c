@@ -1285,6 +1285,40 @@ void ieee80211_tx_rate_update(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ieee80211_tx_rate_update);
 
+#ifdef CPTCFG_MAC80211_DS_SUPPORT
+void ieee80211_ppeds_tx_update_stats(struct ieee80211_hw *hw,
+				     struct ieee80211_sta *pubsta,
+				     struct ieee80211_tx_info *info,
+				     struct rate_info rate, int link_id, u32 len)
+{
+	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
+	struct link_sta_info *link_sta;
+	int rates_idx, retry_count;
+
+	rcu_read_lock();
+	if (link_id >= 0) {
+		link_sta = rcu_dereference(sta->link[link_id]);
+		if (WARN_ON_ONCE(!link_sta)) {
+			rcu_read_unlock();
+			return;
+		}
+	} else {
+		link_sta = &sta->deflink;
+	}
+
+	link_sta->tx_stats.packets[0]++;
+	link_sta->tx_stats.bytes[0] += len;
+	rates_idx = ieee80211_tx_get_rates(hw, info, &retry_count);
+	if (rates_idx != -1)
+		link_sta->tx_stats.last_rate = info->status.rates[rates_idx];
+	link_sta->tx_stats.last_rate_info = rate;
+
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(ieee80211_ppeds_tx_update_stats);
+#endif /* CPTCFG_MAC80211_DS_SUPPORT */
+
+
 void ieee80211_tx_status_8023(struct ieee80211_hw *hw,
                               struct ieee80211_vif *vif,
                               struct sk_buff *skb)
