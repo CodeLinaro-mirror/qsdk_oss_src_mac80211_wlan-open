@@ -20597,7 +20597,7 @@ void cfg80211_ch_switch_started_notify(struct net_device *dev,
 }
 EXPORT_SYMBOL(cfg80211_ch_switch_started_notify);
 
-int cfg80211_bss_color_notify(struct net_device *dev,
+int cfg80211_bss_color_notify(struct net_device *dev, gfp_t gfp,
 			      enum nl80211_commands cmd, u8 count,
 			      u64 color_bitmap, u8 link_id)
 {
@@ -20611,7 +20611,7 @@ int cfg80211_bss_color_notify(struct net_device *dev,
 
 	trace_cfg80211_bss_color_notify(dev, cmd, count, color_bitmap);
 
-	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
 	if (!msg)
 		return -ENOMEM;
 
@@ -20642,7 +20642,7 @@ int cfg80211_bss_color_notify(struct net_device *dev,
 	genlmsg_end(msg, hdr);
 
 	return genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy),
-				       msg, 0, NL80211_MCGRP_MLME, GFP_KERNEL);
+				       msg, 0, NL80211_MCGRP_MLME, gfp);
 
 nla_put_failure:
 	nlmsg_free(msg);

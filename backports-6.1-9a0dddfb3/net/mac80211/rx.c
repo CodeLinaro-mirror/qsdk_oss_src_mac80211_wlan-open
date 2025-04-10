@@ -3525,6 +3525,7 @@ ieee80211_rx_check_bss_color_collision(struct ieee80211_rx_data *rx)
 		if (color == bss_conf->he_bss_color.color)
 			ieee80211_obss_color_collision_notify(&rx->sdata->vif,
 							      BIT_ULL(color),
+							      GFP_ATOMIC,
 							      bss_conf->link_id);
 	}
 }

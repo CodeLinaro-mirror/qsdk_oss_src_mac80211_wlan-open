@@ -5586,6 +5586,10 @@ void ieee80211_tx_status_ext(struct ieee80211_hw *hw,
  *	(NULL for multicast packets)
  * @info: tx status information
  */
+void ieee80211_tx_status_8023(struct ieee80211_hw *hw,
+                               struct ieee80211_vif *vif,
+                               struct sk_buff *skb);
+
 static inline void ieee80211_tx_status_noskb(struct ieee80211_hw *hw,
 					     struct ieee80211_sta *sta,
 					     struct ieee80211_tx_info *info)
@@ -7847,7 +7851,8 @@ ieee80211_get_unsol_bcast_probe_resp_tmpl(struct ieee80211_hw *hw,
  */
 void
 ieee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
-				      u64 color_bitmap, u8 link_id);
+				      u64 color_bitmap, gfp_t gfp,
+				      u8 link_id);
 
 /**
  * ieee80211_is_tx_data - check if frame is a data frame

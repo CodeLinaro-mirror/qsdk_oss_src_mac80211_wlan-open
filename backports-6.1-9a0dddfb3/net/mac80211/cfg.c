@@ -5252,7 +5252,7 @@ void ieee80211_color_collision_detection_work(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata = link->sdata;
 
 	cfg80211_obss_color_collision_notify(sdata->dev, link->color_bitmap,
-					     link->link_id);
+					     GFP_KERNEL, link->link_id);
 }
 
 void ieee80211_color_change_finish(struct ieee80211_vif *vif, u8 link_id)
@@ -5280,7 +5280,8 @@ EXPORT_SYMBOL_GPL(ieee80211_color_change_finish);
 
 void
 ieee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
-				      u64 color_bitmap, u8 link_id)
+				      u64 color_bitmap, gfp_t gfp,
+				      u8 link_id)
 {
 	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
 	struct ieee80211_link_data *link;
@@ -5320,7 +5321,7 @@ ieee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
 				 msecs_to_jiffies(500));
 
 	rcu_read_unlock();
-	cfg80211_obss_color_collision_notify(sdata->dev, color_bitmap, link_id);
+	cfg80211_obss_color_collision_notify(sdata->dev, color_bitmap, gfp, link_id);
 }
 EXPORT_SYMBOL_GPL(ieee80211_obss_color_collision_notify);
 

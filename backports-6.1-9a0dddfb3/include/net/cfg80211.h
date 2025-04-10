@@ -10007,7 +10007,7 @@ void cfg80211_bss_flush(struct wiphy *wiphy);
  *
  * Return: 0 on success. Non-zero on error.
  */
-int cfg80211_bss_color_notify(struct net_device *dev,
+int cfg80211_bss_color_notify(struct net_device *dev, gfp_t gfp,
 			      enum nl80211_commands cmd, u8 count,
 			      u64 color_bitmap, u8 link_id);
 
@@ -10021,9 +10021,10 @@ int cfg80211_bss_color_notify(struct net_device *dev,
  */
 static inline int cfg80211_obss_color_collision_notify(struct net_device *dev,
 						       u64 color_bitmap,
+						       gfp_t gfp,
 						       u8 link_id)
 {
-	return cfg80211_bss_color_notify(dev, NL80211_CMD_OBSS_COLOR_COLLISION,
+	return cfg80211_bss_color_notify(dev, gfp, NL80211_CMD_OBSS_COLOR_COLLISION,
 					 0, color_bitmap, link_id);
 }
 
@@ -10040,7 +10041,7 @@ static inline int cfg80211_obss_color_collision_notify(struct net_device *dev,
 static inline int cfg80211_color_change_started_notify(struct net_device *dev,
 						       u8 count, u8 link_id)
 {
-	return cfg80211_bss_color_notify(dev, NL80211_CMD_COLOR_CHANGE_STARTED,
+	return cfg80211_bss_color_notify(dev, GFP_KERNEL, NL80211_CMD_COLOR_CHANGE_STARTED,
 					 count, 0, link_id);
 }
 
@@ -10056,7 +10057,7 @@ static inline int cfg80211_color_change_started_notify(struct net_device *dev,
 static inline int cfg80211_color_change_aborted_notify(struct net_device *dev,
 						       u8 link_id)
 {
-	return cfg80211_bss_color_notify(dev, NL80211_CMD_COLOR_CHANGE_ABORTED,
+	return cfg80211_bss_color_notify(dev, GFP_KERNEL, NL80211_CMD_COLOR_CHANGE_ABORTED,
 					 0, 0, link_id);
 }
 
@@ -10072,7 +10073,7 @@ static inline int cfg80211_color_change_aborted_notify(struct net_device *dev,
 static inline int cfg80211_color_change_notify(struct net_device *dev,
 					       u8 link_id)
 {
-	return cfg80211_bss_color_notify(dev,
+	return cfg80211_bss_color_notify(dev, GFP_KERNEL,
 					 NL80211_CMD_COLOR_CHANGE_COMPLETED,
 					 0, 0, link_id);
 }
