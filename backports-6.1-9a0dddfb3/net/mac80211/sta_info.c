@@ -2795,8 +2795,16 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 
 		sinfo->filled |= link_sta_filled;
 	} else {
-		sinfo->bss_param.dtim_period = sdata->deflink.conf->dtim_period;
-		sinfo->bss_param.beacon_interval = sdata->deflink.conf->beacon_int;
+		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
+			struct ieee80211_sub_if_data *ap_sdata;
+
+			ap_sdata = container_of(sdata->bss, struct ieee80211_sub_if_data, u.ap);
+			sinfo->bss_param.dtim_period = ap_sdata->deflink.conf->dtim_period;
+			sinfo->bss_param.beacon_interval = ap_sdata->deflink.conf->beacon_int;
+		} else {
+			sinfo->bss_param.dtim_period = sdata->deflink.conf->dtim_period;
+			sinfo->bss_param.beacon_interval = sdata->deflink.conf->beacon_int;
+		}
 		sinfo->filled |= link_sta_set_info(&sta->deflink, sinfo, true);
 	}
 
