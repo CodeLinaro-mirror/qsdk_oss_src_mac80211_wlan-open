@@ -4595,6 +4595,46 @@ static int ieee80211_set_ap_chanwidth(struct wiphy *wiphy,
 	return ret;
 }
 
+static enum nl80211_regulatory_power_modes
+ieee80211_get_ap_6ghz_pwr_mode(struct wireless_dev *wdev)
+{
+	struct ieee80211_sub_if_data *sdata;
+	enum nl80211_regulatory_power_modes mode = NL80211_REG_AP_LPI;
+	enum ieee80211_ap_reg_power ap_power_type;
+
+	if (!wdev)
+		return mode;
+	switch (wdev->iftype) {
+	case NL80211_IFTYPE_AP:
+		mode = wdev->reg_6g_power_mode;
+		break;
+	case NL80211_IFTYPE_STATION:
+		sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+		if (!ieee80211_sdata_running(sdata) ||
+		    !(sdata->flags & IEEE80211_SDATA_IN_DRIVER)) {
+				sdata_info(sdata, "sdata not running");
+				return mode;
+		}
+		/* If STA is not yet associated then assign power type
+		 * by default as IEEE80211_REG_LPI_AP */
+		if (sdata->vif.bss_conf.power_type ==
+		    IEEE80211_REG_UNSET_AP) {
+			ap_power_type = IEEE80211_REG_LPI_AP;
+		} else {
+			ap_power_type = sdata->vif.bss_conf.power_type;
+		}
+		/* ieee80211_ap_reg_power starts with 0 since they used
+		 * IEEE80211_REG_UNSET_AP as first parameter. Hence reduced
+		 * ap_power_type by offset 1 to match with 6g_reg_power_mode */
+		mode = GET_POWER_MODE_FOR_NON_AP_STA(wdev->reg_6g_power_mode, ap_power_type - 1);
+		break;
+	default:
+		/* do nothing */
+		break;
+	}
+	return mode;
+}
+
 static int ieee80211_add_tx_ts(struct wiphy *wiphy, struct net_device *dev,
 			       u8 tsid, const u8 *peer, u8 up,
 			       u16 admitted_time)
@@ -5445,6 +5485,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.channel_switch = ieee80211_channel_switch,
 	.set_qos_map = ieee80211_set_qos_map,
 	.set_ap_chanwidth = ieee80211_set_ap_chanwidth,
+	.get_ap_6ghz_pwr_mode = ieee80211_get_ap_6ghz_pwr_mode,
 	.add_tx_ts = ieee80211_add_tx_ts,
 	.del_tx_ts = ieee80211_del_tx_ts,
 	.start_nan = ieee80211_start_nan,

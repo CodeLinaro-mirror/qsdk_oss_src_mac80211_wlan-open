@@ -372,6 +372,21 @@ TRACE_EVENT(rdev_return_int,
 	TP_printk(WIPHY_PR_FMT ", returned: %d", WIPHY_PR_ARG, __entry->ret)
 );
 
+TRACE_EVENT(rdev_return_enum,
+        TP_PROTO(struct wiphy *wiphy,
+		  enum nl80211_regulatory_power_modes ret),
+        TP_ARGS(wiphy, ret),
+        TP_STRUCT__entry(
+                WIPHY_ENTRY
+                __field(enum nl80211_regulatory_power_modes, ret)
+        ),
+        TP_fast_assign(
+                WIPHY_ASSIGN;
+                __entry->ret = ret;
+        ),
+        TP_printk(WIPHY_PR_FMT ", returned: %d", WIPHY_PR_ARG, __entry->ret)
+);
+
 TRACE_EVENT(rdev_scan,
 	TP_PROTO(struct wiphy *wiphy, struct cfg80211_scan_request *request),
 	TP_ARGS(wiphy, request),
@@ -2501,6 +2516,14 @@ TRACE_EVENT(rdev_set_ap_chanwidth,
 	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT ", " CHAN_DEF_PR_FMT ", link:%d",
 		  WIPHY_PR_ARG, NETDEV_PR_ARG, CHAN_DEF_PR_ARG,
 		  __entry->link_id)
+);
+
+TRACE_EVENT(rdev_get_ap_6ghz_pwr_mode,
+        TP_PROTO(struct wireless_dev *wdev),
+        TP_ARGS(wdev),
+        TP_STRUCT__entry(WDEV_ENTRY),
+        TP_fast_assign(WDEV_ASSIGN),
+        TP_printk(WDEV_PR_FMT, WDEV_PR_ARG)
 );
 
 TRACE_EVENT(rdev_add_tx_ts,

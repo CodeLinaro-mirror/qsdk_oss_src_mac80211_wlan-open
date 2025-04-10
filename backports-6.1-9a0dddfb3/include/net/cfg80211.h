@@ -5009,6 +5009,9 @@ struct cfg80211_ops {
 				    unsigned int link_id,
 				    struct cfg80211_chan_def *chandef);
 
+	enum nl80211_regulatory_power_modes
+		(*get_ap_6ghz_pwr_mode)(struct wireless_dev *wdev);
+
 	int	(*add_tx_ts)(struct wiphy *wiphy, struct net_device *dev,
 			     u8 tsid, const u8 *peer, u8 user_prio,
 			     u16 admitted_time);

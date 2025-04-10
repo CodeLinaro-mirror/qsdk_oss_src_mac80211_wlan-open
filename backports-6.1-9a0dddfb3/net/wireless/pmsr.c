@@ -192,7 +192,8 @@ static int pmsr_parse_ftm(struct cfg80211_registered_device *rdev,
 static int pmsr_parse_peer(struct cfg80211_registered_device *rdev,
 			   struct nlattr *peer,
 			   struct cfg80211_pmsr_request_peer *out,
-			   struct genl_info *info)
+			   struct genl_info *info,
+			   struct wireless_dev *wdev)
 {
 	struct nlattr *tb[NL80211_PMSR_PEER_ATTR_MAX + 1];
 	struct nlattr *req[NL80211_PMSR_REQ_ATTR_MAX + 1];
@@ -221,7 +222,7 @@ static int pmsr_parse_peer(struct cfg80211_registered_device *rdev,
 	if (err)
 		return err;
 
-	err = nl80211_parse_chandef(rdev, info, &out->chandef);
+	err = nl80211_parse_chandef(rdev, info, &out->chandef, wdev);
 	if (err)
 		return err;
 
@@ -325,7 +326,8 @@ int nl80211_pmsr_start(struct sk_buff *skb, struct genl_info *info)
 	idx = 0;
 	nla_for_each_nested(peer, peers, rem) {
 		/* NB: this reuses info->attrs, but we no longer need it */
-		err = pmsr_parse_peer(rdev, peer, &req->peers[idx], info);
+		err = pmsr_parse_peer(rdev, peer, &req->peers[idx], info,
+				      wdev);
 		if (err)
 			goto out_err;
 		idx++;

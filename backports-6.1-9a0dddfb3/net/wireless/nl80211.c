@@ -3485,7 +3485,8 @@ static bool nl80211_can_set_dev_channel(struct wireless_dev *wdev)
 
 static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 				  struct genl_info *info, bool monitor,
-				  struct cfg80211_chan_def *chandef)
+				  struct cfg80211_chan_def *chandef,
+				  struct wireless_dev *wdev)
 {
 	struct netlink_ext_ack *extack = info->extack;
 	struct nlattr **attrs = info->attrs;
@@ -3506,6 +3507,8 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 
 	if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE])
 		mode = nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
+	else
+		mode = rdev_get_ap_6ghz_pwr_mode(rdev, wdev);
 
 	memset(chandef, 0, sizeof(*chandef));
 
@@ -3636,9 +3639,10 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 
 int nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 			  struct genl_info *info,
-			  struct cfg80211_chan_def *chandef)
+			  struct cfg80211_chan_def *chandef,
+			  struct wireless_dev *wdev)
 {
-	return _nl80211_parse_chandef(rdev, info, false, chandef);
+	return _nl80211_parse_chandef(rdev, info, false, chandef, wdev);
 }
 
 static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
@@ -3667,7 +3671,7 @@ static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
 
 	result = _nl80211_parse_chandef(rdev, info,
 					iftype == NL80211_IFTYPE_MONITOR,
-					&chandef);
+					&chandef, wdev);
 	if (result)
 		return result;
 
@@ -6693,7 +6697,7 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	if (info->attrs[NL80211_ATTR_WIPHY_FREQ]) {
-		err = nl80211_parse_chandef(rdev, info, &params->chandef);
+		err = nl80211_parse_chandef(rdev, info, &params->chandef, wdev);
 		if (err)
 			goto out;
 	} else if (wdev->valid_links) {
@@ -9876,7 +9880,7 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 		return -EBUSY;
 
 	if (info->attrs[NL80211_ATTR_WIPHY_FREQ]) {
-		if (nl80211_parse_chandef(rdev, info, &chandef)) {
+		if (nl80211_parse_chandef(rdev, info, &chandef, wdev)) {
 			return -EINVAL;
 		}
 		chandef_found = true;
@@ -10663,7 +10667,7 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	if (dfs_region == NL80211_DFS_UNSET)
 		return -EINVAL;
 
-	err = nl80211_parse_chandef(rdev, info, &chandef);
+	err = nl80211_parse_chandef(rdev, info, &chandef, wdev);
 	if (err)
 		return err;
 
@@ -10761,7 +10765,7 @@ static int nl80211_notify_radar_detection(struct sk_buff *skb,
 		return -EINVAL;
 	}
 
-	err = nl80211_parse_chandef(rdev, info, &chandef);
+	err = nl80211_parse_chandef(rdev, info, &chandef, wdev);
 	if (err) {
 		GENL_SET_ERR_MSG(info, "Unable to extract chandef info");
 		return err;
@@ -10947,7 +10951,7 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 		goto free;
 
 skip_beacons:
-	err = nl80211_parse_chandef(rdev, info, &params.chandef);
+	err = nl80211_parse_chandef(rdev, info, &params.chandef, wdev);
 	if (err)
 		goto free;
 
@@ -12114,6 +12118,7 @@ static int nl80211_join_ibss(struct sk_buff *skb, struct genl_info *info)
 	struct cfg80211_ibss_params ibss;
 	struct wiphy *wiphy;
 	struct cfg80211_cached_keys *connkeys = NULL;
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	int err;
 
 	memset(&ibss, 0, sizeof(ibss));
@@ -12136,7 +12141,7 @@ static int nl80211_join_ibss(struct sk_buff *skb, struct genl_info *info)
 	if (!rdev->ops->join_ibss)
 		return -EOPNOTSUPP;
 
-	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_ADHOC)
+	if (wdev->iftype != NL80211_IFTYPE_ADHOC)
 		return -EOPNOTSUPP;
 
 	wiphy = &rdev->wiphy;
@@ -12155,7 +12160,7 @@ static int nl80211_join_ibss(struct sk_buff *skb, struct genl_info *info)
 		ibss.ie_len = nla_len(info->attrs[NL80211_ATTR_IE]);
 	}
 
-	err = nl80211_parse_chandef(rdev, info, &ibss.chandef);
+	err = nl80211_parse_chandef(rdev, info, &ibss.chandef, wdev);
 	if (err)
 		return err;
 
@@ -13151,7 +13156,7 @@ static int nl80211_remain_on_channel(struct sk_buff *skb,
 	    duration > rdev->wiphy.max_remain_on_channel_duration)
 		return -EINVAL;
 
-	err = nl80211_parse_chandef(rdev, info, &chandef);
+	err = nl80211_parse_chandef(rdev, info, &chandef, wdev);
 	if (err)
 		return err;
 
@@ -13363,7 +13368,7 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 	 */
 	chandef.chan = NULL;
 	if (info->attrs[NL80211_ATTR_WIPHY_FREQ]) {
-		err = nl80211_parse_chandef(rdev, info, &chandef);
+		err = nl80211_parse_chandef(rdev, info, &chandef, wdev);
 		if (err)
 			return err;
 	}
@@ -13766,7 +13771,8 @@ static int nl80211_join_ocb(struct sk_buff *skb, struct genl_info *info)
 	struct ocb_setup setup = {};
 	int err;
 
-	err = nl80211_parse_chandef(rdev, info, &setup.chandef);
+	err = nl80211_parse_chandef(rdev, info, &setup.chandef,
+				    dev->ieee80211_ptr);
 	if (err)
 		return err;
 
@@ -13841,7 +13847,8 @@ static int nl80211_join_mesh(struct sk_buff *skb, struct genl_info *info)
 		cfg.auto_open_plinks = false;
 
 	if (info->attrs[NL80211_ATTR_WIPHY_FREQ]) {
-		err = nl80211_parse_chandef(rdev, info, &setup.chandef);
+		err = nl80211_parse_chandef(rdev, info, &setup.chandef,
+					    dev->ieee80211_ptr);
 		if (err)
 			return err;
 	} else {
@@ -16130,7 +16137,7 @@ static int nl80211_tdls_channel_switch(struct sk_buff *skb,
 	    !info->attrs[NL80211_ATTR_OPER_CLASS])
 		return -EINVAL;
 
-	err = nl80211_parse_chandef(rdev, info, &chandef);
+	err = nl80211_parse_chandef(rdev, info, &chandef, wdev);
 	if (err)
 		return err;
 
