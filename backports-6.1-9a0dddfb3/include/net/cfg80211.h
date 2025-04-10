@@ -6659,6 +6659,7 @@ struct wireless_dev {
 			struct {
 				unsigned int beacon_interval;
 				struct cfg80211_chan_def chandef;
+				bool is_going_down;
 			} ap;
 			struct {
 				struct cfg80211_internal_bss *current_bss;

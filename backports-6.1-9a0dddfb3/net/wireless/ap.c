@@ -20,6 +20,8 @@ static int ___cfg80211_stop_ap(struct cfg80211_registered_device *rdev,
 
 	lockdep_assert_wiphy(wdev->wiphy);
 
+	wdev->links[link_id].ap.is_going_down = true;
+
 	if (!rdev->ops->stop_ap)
 		return -EOPNOTSUPP;
 

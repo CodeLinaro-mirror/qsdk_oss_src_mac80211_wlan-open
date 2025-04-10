@@ -2428,7 +2428,6 @@ TRACE_EVENT(rdev_channel_switch,
 		__field(u8, count)
 		__dynamic_array(u16, bcn_ofs, params->n_counter_offsets_beacon)
 		__dynamic_array(u16, pres_ofs, params->n_counter_offsets_presp)
-		__field(u8, link_id)
 	),
 	TP_fast_assign(
 		WIPHY_ASSIGN;

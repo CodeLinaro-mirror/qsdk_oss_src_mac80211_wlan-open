@@ -6768,6 +6768,7 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		if (info->attrs[NL80211_ATTR_SOCKET_OWNER])
 			wdev->conn_owner_nlportid = info->snd_portid;
 
+		wdev->links[link_id].ap.is_going_down = false;
 		nl80211_send_ap_started(wdev, link_id);
 	}
 out:

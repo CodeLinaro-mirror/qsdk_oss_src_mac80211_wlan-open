@@ -1712,6 +1712,13 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	link_conf->color_change_active = false;
 	ieee80211_vif_unblock_queues_csa(sdata);
 
+	/* The below work requires sdata lock which we have already acquired
+	 * here. But before that, it will check whether link_conf->csa_active
+	 * is true, which we have made false above. Hence, it will not proceed
+	 * to acquire the sdata lock and deadlock will be avoided.
+	 */
+	wiphy_work_cancel(wiphy, &link->csa.finalize_work);
+
 	ieee80211_free_next_beacon(link);
 
 	/* turn off carrier for this interface and dependent VLANs */
@@ -4000,8 +4007,12 @@ void ieee80211_csa_finalize_work(struct wiphy *wiphy, struct wiphy_work *work)
 		container_of(work, struct ieee80211_link_data, csa.finalize_work);
 	struct ieee80211_sub_if_data *sdata = link->sdata;
 	struct ieee80211_local *local = sdata->local;
+	struct wireless_dev *wdev = &sdata->wdev;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (wdev->links[link->link_id].ap.is_going_down)
+		return;
 
 	/* AP might have been stopped while waiting for the lock. */
 	if (!link->conf->csa_active)
