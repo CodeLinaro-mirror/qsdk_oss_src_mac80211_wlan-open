@@ -886,8 +886,9 @@ struct ieee80211_bss_conf {
 	bool nss_offld_mesh_forward_enabled;
 	u32 nss_offld_mpath_refresh_time;
 	bool ap_ps_enable;
-	/* Critical Update flag*/
-	u32 critical_update_flag;
+
+	bool elemid_added;
+	bool elemid_modified;
 	u32 rts_threshold;
 };
 

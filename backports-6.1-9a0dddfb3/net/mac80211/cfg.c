@@ -1572,6 +1572,8 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (err < 0)
 		goto error;
 
+	link_conf->elemid_added = params->elemid_added;
+	link_conf->elemid_modified = params->elemid_modified;
 	err = drv_start_ap(sdata->local, sdata, link_conf);
 	if (err) {
 		old = sdata_dereference(link->u.ap.beacon, sdata);
@@ -1580,8 +1582,11 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			kfree_rcu(old, rcu_head);
 		RCU_INIT_POINTER(link->u.ap.beacon, NULL);
 
-		if (ieee80211_num_beaconing_links(sdata) == 0)
+		if (ieee80211_num_beaconing_links(sdata) == 0) {
 			sdata->u.ap.active = false;
+			link_conf->elemid_added = 0;
+			link_conf->elemid_modified = 0;
+		}
 
 		goto error;
 	}
@@ -1596,6 +1601,8 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list)
 		netif_carrier_on(vlan->dev);
 
+	link_conf->elemid_added = 0;
+	link_conf->elemid_modified = 0;
 	return 0;
 
 error:
@@ -1672,7 +1679,12 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (err < 0)
 		return err;
 
+	link_conf->elemid_added = params->elemid_added;
+	link_conf->elemid_modified = params->elemid_modified;
+
 	ieee80211_link_info_change_notify(sdata, link, changed);
+	link_conf->elemid_added = 0;
+	link_conf->elemid_modified = 0;
 	return 0;
 }
 
@@ -4102,6 +4114,7 @@ static int ieee80211_set_after_csa_beacon(struct ieee80211_link_data *link_data,
 					  u64 *changed)
 {
 	struct ieee80211_sub_if_data *sdata = link_data->sdata;
+	struct ieee80211_bss_conf *link_conf = link_data->conf;
 	int err;
 
 	switch (sdata->vif.type) {
@@ -4117,10 +4130,8 @@ static int ieee80211_set_after_csa_beacon(struct ieee80211_link_data *link_data,
 		if (err < 0)
 			return err;
 
-                link_data->conf->critical_update_flag &=
-					     ~(IEEE80211_CU_INCLUDE_CSA_ELEM |
-					       IEEE80211_CU_INCLUDE_ECSA_ELEM);
-
+		link_conf->elemid_modified = link_data->u.ap.after_beacon_cu;
+		link_data->u.ap.after_beacon_cu = 0;
 		break;
 	case NL80211_IFTYPE_ADHOC:
 		err = ieee80211_ibss_finish_csa(sdata, changed);
@@ -4139,6 +4150,7 @@ static int ieee80211_set_after_csa_beacon(struct ieee80211_link_data *link_data,
 		return -EINVAL;
 	}
 
+	link_conf->elemid_modified = 0;
 	return 0;
 }
 
@@ -4285,10 +4297,6 @@ static int ieee80211_set_csa_beacon(struct ieee80211_link_data *link_data,
 			ieee80211_free_next_beacon(link_data);
 			return err;
 		}
-
-		link_data->conf->critical_update_flag |=
-					(IEEE80211_CU_INCLUDE_CSA_ELEM |
-					 IEEE80211_CU_INCLUDE_ECSA_ELEM);
 
 		break;
 	case NL80211_IFTYPE_ADHOC:
@@ -4443,6 +4451,9 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	if (err)
 		goto out;
 
+	link_conf->elemid_added = params->beacon_csa_cu;
+	link_data->u.ap.after_beacon_cu = params->beacon_after_cu;
+
 	err = drv_pre_channel_switch(sdata, &ch_switch);
 	if (err)
 		goto out;
@@ -4489,6 +4500,7 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	}
 
 out:
+	link_conf->elemid_added = 0;
 	return err;
 }
 
@@ -5198,7 +5210,6 @@ ieee80211_set_after_color_change_beacon(struct ieee80211_link_data *link,
 		if (ret < 0)
 			return ret;
 
-		link->conf->critical_update_flag &= ~IEEE80211_CU_INCLUDE_BCCA_ELEM;
 		break;
 	}
 	default:
@@ -5241,7 +5252,6 @@ ieee80211_set_color_change_beacon(struct ieee80211_link_data *link,
 			ieee80211_free_next_beacon(link);
 			return err;
 		}
-		link->conf->critical_update_flag |= IEEE80211_CU_INCLUDE_BCCA_ELEM;
 		break;
 	default:
 		return -EOPNOTSUPP;
@@ -5474,6 +5484,7 @@ ieee80211_color_change(struct wiphy *wiphy, struct net_device *dev,
 
 	link_conf->color_change_active = true;
 	link_conf->color_change_color = params->color;
+	link_conf->elemid_added = params->elemid_added;
 
 	err = ieee80211_set_unsol_bcast_probe_resp(sdata, &params->unsol_bcast_probe_resp,
 						   link, link_conf, &changed);
@@ -5489,7 +5500,7 @@ ieee80211_color_change(struct wiphy *wiphy, struct net_device *dev,
 		ieee80211_color_change_finalize(link);
 
 out:
-
+	link_conf->elemid_added = 0;
 	return err;
 }
 

@@ -928,6 +928,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_EML_CAPABILITY] = { .type = NLA_U16 },
 	[NL80211_ATTR_MLD_CAPA_AND_OPS] = { .type = NLA_U16 },
 	[NL80211_ATTR_RXMGMT_CRITICAL_UPDATE] = NLA_POLICY_NESTED(cu_policy),
+	[NL80211_ATTR_SET_CRITICAL_UPDATE] = { .type = NLA_U8 },
 };
 
 /* policy for the key attributes */
@@ -6621,6 +6622,7 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_ap_settings *params;
 	int err;
+	u8 critical_update = 0;
 
 	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
 	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_P2P_GO)
@@ -6865,6 +6867,14 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 			info->attrs[NL80211_ATTR_AP_SETTINGS_FLAGS]);
 	else if (info->attrs[NL80211_ATTR_EXTERNAL_AUTH_SUPPORT])
 		params->flags |= NL80211_AP_SETTINGS_EXTERNAL_AUTH_SUPPORT;
+	if (info->attrs[NL80211_ATTR_SET_CRITICAL_UPDATE]) {
+		critical_update =
+			nla_get_u8(info->attrs[NL80211_ATTR_SET_CRITICAL_UPDATE]);
+		if (critical_update & NL80211_CU_ELEMID_ADDED)
+			params->elemid_added = 1;
+		if (critical_update & NL80211_CU_ELEMID_MODIFIED)
+			params->elemid_modified = 1;
+	}
 
 	if (wdev->conn_owner_nlportid &&
 	    info->attrs[NL80211_ATTR_SOCKET_OWNER] &&
@@ -10982,6 +10992,7 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 	bool need_new_beacon = false;
 	bool need_handle_dfs_flag = true;
 	u32 cs_count;
+	u8 critical_update = 0;
 
 	if (!rdev->ops->channel_switch ||
 	    !(rdev->wiphy.flags & WIPHY_FLAG_HAS_CHANNEL_SWITCH))
@@ -11083,6 +11094,13 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 	if (err)
 		goto free;
 
+	if (csa_attrs[NL80211_ATTR_SET_CRITICAL_UPDATE]) {
+		critical_update =
+			nla_get_u8(csa_attrs[NL80211_ATTR_SET_CRITICAL_UPDATE]);
+		if (critical_update & NL80211_CU_ELEMID_ADDED)
+			params.beacon_csa_cu = 1;
+	}
+
 skip_beacons:
 	err = nl80211_parse_chandef(rdev, info, &params.chandef, wdev);
 	if (err)
@@ -11118,6 +11136,12 @@ skip_beacons:
 							   &params.unsol_bcast_probe_resp);
 		if (err)
 			goto free;
+	}
+	if (info->attrs[NL80211_ATTR_SET_CRITICAL_UPDATE]) {
+		critical_update =
+			nla_get_u8(info->attrs[NL80211_ATTR_SET_CRITICAL_UPDATE]);
+		if (critical_update & NL80211_CU_ELEMID_MODIFIED)
+			params.beacon_after_cu = 1;
 	}
 
 	params.link_id = link_id;

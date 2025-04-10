@@ -1579,6 +1579,8 @@ struct cfg80211_unsol_bcast_probe_resp {
  * @fils_discovery: FILS discovery transmission parameters
  * @unsol_bcast_probe_resp: Unsolicited broadcast probe response parameters
  * @mbssid_config: AP settings for multiple bssid
+ * @elemid_added: critical update element id inserted
+ * @elemid_modified: critical update element id modified
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -1614,6 +1616,8 @@ struct cfg80211_ap_settings {
 	struct cfg80211_mbssid_config mbssid_config;
 	bool ap_ps_valid;
 	bool ap_ps_enable;
+	bool elemid_added;
+	bool elemid_modified;
 };
 
 
@@ -1664,6 +1668,8 @@ struct cfg80211_csa_settings {
 	u8 count;
 	u8 link_id;
 	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
+	bool beacon_after_cu;
+	bool beacon_csa_cu;
 };
 
 /**
@@ -1690,6 +1696,7 @@ struct cfg80211_color_change_settings {
 	u8 color;
 	u8 link_id;
 	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
+	bool elemid_added;
 };
 
 /**

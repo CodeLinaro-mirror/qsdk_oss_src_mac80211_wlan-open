@@ -1053,6 +1053,7 @@ struct ieee80211_link_data_ap {
 
 	/* to be used after channel switch. */
 	struct cfg80211_beacon_data *next_beacon;
+	bool after_beacon_cu;
 };
 
 struct ieee80211_link_data {
