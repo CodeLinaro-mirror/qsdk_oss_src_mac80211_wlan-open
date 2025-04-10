@@ -420,6 +420,12 @@ static const struct nla_policy nl80211_txattr_policy[NL80211_TXRATE_MAX + 1] = {
 #endif
 	[NL80211_TXRATE_EHT] =
 		NLA_POLICY_EXACT_LEN(sizeof(struct nl80211_txrate_eht)),
+	[NL80211_TXRATE_EHT_GI] =  NLA_POLICY_RANGE(NLA_U8,
+						    NL80211_RATE_INFO_EHT_GI_0_8,
+						    NL80211_RATE_INFO_EHT_GI_3_2),
+	[NL80211_TXRATE_EHT_LTF] = NLA_POLICY_RANGE(NLA_U8,
+						    NL80211_RATE_INFO_EHT_1XLTF,
+						    NL80211_RATE_INFO_EHT_4XLTF),
 };
 
 static const struct nla_policy
@@ -5616,6 +5622,9 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 
 		mask->control[i].he_gi = 0xFF;
 		mask->control[i].he_ltf = 0xFF;
+
+		mask->control[i].eht_gi = 0xFF;
+		mask->control[i].eht_ltf = 0xFF;
 	}
 
 	/* if no rates are given set it back to the defaults */
@@ -5701,6 +5710,14 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 				      nla_data(tb[NL80211_TXRATE_EHT]),
 				      mask->control[band].eht_mcs))
 			return -EINVAL;
+
+		if (tb[NL80211_TXRATE_EHT_GI])
+			mask->control[band].eht_gi =
+				nla_get_u8(tb[NL80211_TXRATE_EHT_GI]);
+
+		if (tb[NL80211_TXRATE_EHT_LTF])
+			mask->control[band].eht_ltf =
+				nla_get_u8(tb[NL80211_TXRATE_EHT_LTF]);
 
 		if (mask->control[band].legacy == 0) {
 			/* don't allow empty legacy rates if HT, VHT or HE
