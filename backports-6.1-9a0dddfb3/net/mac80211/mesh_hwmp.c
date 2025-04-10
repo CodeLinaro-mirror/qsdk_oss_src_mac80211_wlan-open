@@ -307,6 +307,13 @@ void ieee80211s_update_metric(struct ieee80211_local *local,
 	u32 fail_avg;
 	struct rate_info rinfo;
 
+	/* If metric calculation is offloaded, do not
+	 * update metrics again in the SW tx completion
+	 * path.
+	 */
+	if (st->skip_per_packet_metric_update)
+		return;
+
 	failed = !(txinfo->flags & IEEE80211_TX_STAT_ACK);
 
 	if (failed) {
@@ -1654,6 +1661,7 @@ void ieee80211s_update_metric_ppdu(struct ieee80211_hw *hw,
 	int i, num_mpdu;
 	bool failed;
 	struct rate_info rinfo;
+	u32 fail_avg;
 
 	if (!st->sta)
 		return;
@@ -1672,6 +1680,14 @@ void ieee80211s_update_metric_ppdu(struct ieee80211_hw *hw,
 		return;
 
 	for (i = 0; i < num_mpdu; i++) {
+		fail_avg = ewma_mesh_fail_avg_read(&sta->mesh->fail_avg);
+		if (!fail_avg)
+			/* init it at a low value - 0 is tricky */
+			ewma_mesh_fail_avg_add(&sta->mesh->fail_avg, 1);
+
+		/* moving average, scaled to 100.
+		 * feed failure as 100 and success as 0
+		 */
 		ewma_mesh_fail_avg_add(&sta->mesh->fail_avg, failed * 100);
 		if (ewma_mesh_fail_avg_read(&sta->mesh->fail_avg) >
 					    LINK_FAIL_THRESH)

@@ -1422,6 +1422,7 @@ struct ieee80211_tx_status {
 #endif
 	u32 mpdu_succ;
 	u32 mpdu_fail;
+	bool skip_per_packet_metric_update;
 };
 
 /**
