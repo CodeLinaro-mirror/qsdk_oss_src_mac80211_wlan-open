@@ -6732,7 +6732,10 @@ enum ieee80211_ap_reg_power {
  * @links.cac_start_time: timestamp (jiffies) when the dfs state was
  *	entered.
  * @links.cac_time_ms: CAC time in ms
+ * @link[].link_removal_tbtt_count: Link removal count for the bss
  * @valid_links: bitmap describing what elements of @links are valid
+ * @link_removal_flag: ML link reconfigure removal params updated on anyone
+ * 	wdev link
  * @radio_mask: Bitmask of radios that this interface is allowed to operate on.
  */
 struct wireless_dev {
@@ -6848,6 +6851,7 @@ struct wireless_dev {
 		unsigned long cac_start_time;
 		unsigned int cac_time_ms;
 		u8 switch_count;
+		u32 link_removal_tbtt_count;
 	} links[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links;
 
@@ -6856,6 +6860,7 @@ struct wireless_dev {
 	bool critical_update;
 	bool is_netdev_going_down; /*Indicates netdev going down - wdev specific*/
 	u8 ppe_vp_type;
+	bool link_removal_flag;
 };
 
 static inline const u8 *wdev_address(struct wireless_dev *wdev)
@@ -8994,6 +8999,8 @@ void cfg80211_conn_failed(struct net_device *dev, const u8 *mac_addr,
  * @flags: flags, as defined in &enum nl80211_rxmgmt_flags
  * @rx_tstamp: Hardware timestamp of frame RX in nanoseconds
  * @ack_tstamp: Hardware timestamp of ack TX in nanoseconds
+ * @link_removal_update: Indicates whether link removal update is present in
+ *	the rx info
  */
 struct cfg80211_rx_info {
 	int freq;
@@ -9006,6 +9013,7 @@ struct cfg80211_rx_info {
 	u64 rx_tstamp;
 	u64 ack_tstamp;
 	bool critical_update;
+	bool link_removal_update;
 };
 
 /**

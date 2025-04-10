@@ -3004,6 +3004,15 @@ enum nl80211_commands {
  * @NL80211_ATTR_TSF: (u64) TSF value when the first beacon with reconfiguration
  *	MLE is sent.
  *
+ * @NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE: This is a nested attribute for driver
+ *	supporting link removal offload feature for AP MLD. When used with
+ *	%NL80211_CMD_FRAME it contains attribute defined in %NL80211_ATTR_AP_REMOVAL_COUNT,
+ *	to send link removal params for list of MLDs. Driver adds this attribute
+ *	only for probe, assoc and reassoc request frame. User-space can use these
+ *	params to update ML reconfigure element on corresponding response frame. This
+ *	attribute is needed only on ML reconfigure offload case and it is not needed on
+ *	ML reconfigure non-offload case since user space itself has these data.
+
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3589,6 +3598,7 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_AP_REMOVAL_COUNT,
 	NL80211_ATTR_TSF,
+	NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -8556,6 +8566,7 @@ enum nl80211_cu_mld_link_attrs {
 	NL80211_CU_MLD_LINK_ATTR_CRITICAL_FLAG,
 	NL80211_CU_MLD_LINK_ATTR_BPCC,
 	NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT,
+	NL80211_CU_ATTR_AP_REMOVAL_COUNT,
 
 	/* keep last */
 	__NL80211_CU_MLD_LINK_ATTR_LAST,
