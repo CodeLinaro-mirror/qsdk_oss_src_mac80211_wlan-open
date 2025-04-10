@@ -4761,7 +4761,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_aggr_check(sdata, sta, skb);
 
-	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
+	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) && sta) {
 		tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
 		tid_tx = rcu_dereference(sta->ampdu_mlme.tid_tx[tid]);
 		if (tid_tx) {
@@ -4815,7 +4815,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	}
 
 	ieee80211_tx_stats(dev, len);
-	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
+	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) && sta) {
 		sta->deflink.tx_stats.packets[queue] += skbs;
 		sta->deflink.tx_stats.bytes[queue] += len;
 	}
