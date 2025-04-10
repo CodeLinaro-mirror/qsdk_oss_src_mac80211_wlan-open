@@ -683,8 +683,10 @@ static ssize_t misc_read(struct file *file, char __user *user_buf,
 	char *buf;
 	char *pos, *end;
 	ssize_t rv;
-	int i;
+	int i, cpu;
 	int ln;
+	struct sk_buff_head *pcpu_pending;
+	unsigned long flags;
 
 	buf = kzalloc(bufsz, GFP_KERNEL);
 	if (!buf)
@@ -695,10 +697,19 @@ static ssize_t misc_read(struct file *file, char __user *user_buf,
 
 	pos += scnprintf(pos, end - pos, "pending:\n");
 
-	for (i = 0; i < IEEE80211_MAX_QUEUES; i++) {
-		ln = skb_queue_len(&local->pending[i]);
-		pos += scnprintf(pos, end - pos, "[%i] %d\n",
-				 i, ln);
+	/* Read queues from each CPU for each access category
+	 */
+	for_each_possible_cpu(cpu) {
+		spin_lock_irqsave(per_cpu_ptr(local->queue_stop_reason_lock, cpu),
+				flags);
+		for (i = 0; i < IEEE80211_MAX_QUEUES; i++) {
+			pcpu_pending = per_cpu_ptr(local->pending[i], cpu);
+			ln = skb_queue_len(pcpu_pending);
+			pos += scnprintf(pos, end - pos, "cpu%d:[%i] %d\n",
+					 cpu, i, ln);
+		}
+		spin_unlock_irqrestore(per_cpu_ptr(local->queue_stop_reason_lock, cpu),
+				flags);
 	}
 
 	rv = simple_read_from_buffer(user_buf, count, ppos, buf, strlen(buf));
@@ -712,14 +723,26 @@ static ssize_t queues_read(struct file *file, char __user *user_buf,
 	struct ieee80211_local *local = file->private_data;
 	unsigned long flags;
 	char buf[IEEE80211_MAX_QUEUES * 20];
+	unsigned long *queue_stop_reasons;
 	int q, res = 0;
+	int cpu;
 
-	spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
-	for (q = 0; q < local->hw.queues; q++)
-		res += snprintf(buf + res, sizeof(buf) + res, "%02d: %#.8lx/%d\n", q,
-				local->queue_stop_reasons[q],
-				skb_queue_len(&local->pending[q]));
-	spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+	/* Read queues from each CPU for each access category
+	 */
+	for_each_possible_cpu(cpu) {
+		spin_lock_irqsave(per_cpu_ptr(local->queue_stop_reason_lock, cpu),
+				flags);
+		for (q = 0; q < local->hw.queues; q++) {
+			queue_stop_reasons =
+				per_cpu_ptr(local->queue_stop_reasons[q], cpu);
+			res += snprintf(buf + res, sizeof(buf) + res, "%02d: %#.8lx/%d\n",
+					q,
+					*queue_stop_reasons,
+					skb_queue_len(per_cpu_ptr(local->pending[q], cpu)));
+		}
+		spin_unlock_irqrestore(per_cpu_ptr(local->queue_stop_reason_lock, cpu),
+				flags);
+	}
 
 	return simple_read_from_buffer(user_buf, count, ppos, buf, res);
 }

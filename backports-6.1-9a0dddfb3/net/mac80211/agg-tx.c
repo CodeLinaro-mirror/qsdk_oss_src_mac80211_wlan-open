@@ -235,6 +235,8 @@ ieee80211_agg_splice_packets(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_local *local = sdata->local;
 	int queue = sdata->vif.hw_queue[ieee80211_ac_from_tid(tid)];
 	unsigned long flags;
+	spinlock_t *pcpu_queue_stop_reason_lock;
+	struct sk_buff_head *pcpu_pending;
 
 	ieee80211_stop_queue_agg(sdata, tid);
 
@@ -243,12 +245,14 @@ ieee80211_agg_splice_packets(struct ieee80211_sub_if_data *sdata,
 		 tid))
 		return;
 
+	pcpu_queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
+	pcpu_pending = this_cpu_ptr(local->pending[queue]);
 	if (!skb_queue_empty(&tid_tx->pending)) {
-		spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
+		spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
 		/* copy over remaining packets */
 		skb_queue_splice_tail_init(&tid_tx->pending,
-					   &local->pending[queue]);
-		spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+					   pcpu_pending);
+		spin_unlock_irqrestore(pcpu_queue_stop_reason_lock, flags);
 	}
 }
 

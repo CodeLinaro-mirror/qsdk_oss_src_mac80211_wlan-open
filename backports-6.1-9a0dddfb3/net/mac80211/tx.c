@@ -1726,7 +1726,14 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 	struct ieee80211_tx_control control = {};
 	struct sk_buff *skb, *tmp;
 	unsigned long flags;
+	spinlock_t *pcpu_queue_stop_reason_lock;
+	struct sk_buff_head *pcpu_pending;
+	unsigned long *queue_stop_reasons;
 
+	/*
+	 * Get the current CPU's spinlock to acquire it
+	 */
+	pcpu_queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
 	skb_queue_walk_safe(skbs, skb, tmp) {
 		struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 		int q = info->hw_queue;
@@ -1738,13 +1745,28 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 			continue;
 		}
 #endif
+		/*
+		 * For the given queue, get the current CPU pending
+		 * SW queue
+		 * Get the corresponding variables associated with that
+		 * queue for that CPU
+		 */
+		pcpu_pending = this_cpu_ptr(local->pending[q]);
+		queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[q]);
 
-		spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
-		if (local->queue_stop_reasons[q] ||
-		    (!txpending && !skb_queue_empty(&local->pending[q]))) {
+		/* Acquire the spinlock for the current CPU
+		 * Check if the queue was stopped or if there
+		 * packets in the SW queue; then take a call
+		 * whether it is safe to transmit the newly
+		 * arrived packet or if it needs to be stored
+		 * in this SW queue
+		 */
+		spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
+		if (*queue_stop_reasons ||
+		    (!txpending && !skb_queue_empty(pcpu_pending))) {
 			if (unlikely(info->flags &
 				     IEEE80211_TX_INTFL_OFFCHAN_TX_OK)) {
-				if (local->queue_stop_reasons[q] &
+				if (*queue_stop_reasons &
 				    ~BIT(IEEE80211_QUEUE_STOP_REASON_OFFCHANNEL)) {
 					/*
 					 * Drop off-channel frames if queues
@@ -1752,8 +1774,7 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 					 * than off-channel operation. Never
 					 * queue them.
 					 */
-					spin_unlock_irqrestore(
-						&local->queue_stop_reason_lock,
+					spin_unlock_irqrestore(pcpu_queue_stop_reason_lock,
 						flags);
 					ieee80211_purge_tx_queue(&local->hw,
 								 skbs);
@@ -1766,19 +1787,29 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 				 * later transmission from the tx-pending
 				 * tasklet when the queue is woken again.
 				 */
+				if ((skb_queue_len(pcpu_pending) +
+							skb_queue_len(skbs)) >=
+						IEEE80211_PENDING_QUEUE_MAX_LENGTH) {
+					spin_unlock_irqrestore(pcpu_queue_stop_reason_lock,
+							flags);
+					ieee80211_purge_tx_queue(&local->hw,
+							skbs);
+					return true;
+				}
+
 				if (txpending)
 					skb_queue_splice_init(skbs,
-							      &local->pending[q]);
+							      pcpu_pending);
 				else
 					skb_queue_splice_tail_init(skbs,
-								   &local->pending[q]);
+								   pcpu_pending);
 
-				spin_unlock_irqrestore(&local->queue_stop_reason_lock,
+				spin_unlock_irqrestore(pcpu_queue_stop_reason_lock,
 						       flags);
 				return false;
 			}
 		}
-		spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+		spin_unlock_irqrestore(pcpu_queue_stop_reason_lock, flags);
 
 		info->control.vif = vif;
 		control.sta = sta ? &sta->sta : NULL;
@@ -3904,6 +3935,8 @@ struct sk_buff *ieee80211_tx_dequeue(struct ieee80211_hw *hw,
 	int q = vif->hw_queue[txq->ac];
 	unsigned long flags;
 	bool q_stopped;
+	spinlock_t *pcpu_queue_stop_reason_lock;
+	unsigned long *queue_stop_reasons;
 
 	WARN_ON_ONCE(softirq_count() == 0);
 
@@ -3911,9 +3944,11 @@ struct sk_buff *ieee80211_tx_dequeue(struct ieee80211_hw *hw,
 		return NULL;
 
 begin:
-	spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
-	q_stopped = local->queue_stop_reasons[q];
-	spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+	pcpu_queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
+	spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
+	queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[q]);
+	q_stopped = *queue_stop_reasons;
+	spin_unlock_irqrestore(pcpu_queue_stop_reason_lock, flags);
 
 	if (unlikely(q_stopped)) {
 		/* mark for waking later */
@@ -4705,22 +4740,29 @@ static bool __ieee80211_tx_8023(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_sta *pubsta = NULL;
 	unsigned long flags;
 	int q = info->hw_queue;
+	spinlock_t *queue_stop_reason_lock;
+	struct sk_buff_head *pending;
+	unsigned long *queue_stop_reasons;
 
-	spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
+	queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
+	pending = this_cpu_ptr(local->pending[q]);
+	queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[q]);
 
-	if (local->queue_stop_reasons[q] ||
-	    (!txpending && !skb_queue_empty(&local->pending[q]))) {
+	spin_lock_irqsave(queue_stop_reason_lock, flags);
+
+	if (*queue_stop_reasons ||
+	    (!txpending && !skb_queue_empty(pending))) {
 		if (txpending)
-			skb_queue_head(&local->pending[q], skb);
+			skb_queue_head(pending, skb);
 		else
-			skb_queue_tail(&local->pending[q], skb);
+			skb_queue_tail(pending, skb);
 
-		spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+		spin_unlock_irqrestore(queue_stop_reason_lock, flags);
 
 		return false;
 	}
 
-	spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+	spin_unlock_irqrestore(queue_stop_reason_lock, flags);
 
 	if (sta && sta->uploaded)
 		pubsta = &sta->sta;
@@ -4900,6 +4942,11 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	unsigned char *ra = ehdr->h_dest;
 	bool multicast = is_multicast_ether_addr(ra);
+	spinlock_t *queue_stop_reason_lock;
+	struct sk_buff_head *pending;
+	unsigned long *queue_stop_reasons;
+
+	queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
 
 	/*
 	 * If the skb is shared we need to obtain our own copy.
@@ -4935,15 +4982,18 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 		atomic_inc(&sta->tx_netif_pkts);
 	}
 
-	spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
+	pending = this_cpu_ptr(local->pending[q]);
+	queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[q]);
+	spin_lock_irqsave(queue_stop_reason_lock, flags);
 
-	if (local->queue_stop_reasons[q] || !skb_queue_empty(&local->pending[q])) {
-		skb_queue_tail(&local->pending[q], skb);
-		spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+	if (*queue_stop_reasons ||
+			!skb_queue_empty(pending)) {
+		skb_queue_tail(pending, skb);
+		spin_unlock_irqrestore(queue_stop_reason_lock, flags);
 		return;
 	}
 
-	spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+	spin_unlock_irqrestore(queue_stop_reason_lock, flags);
 
 	if (sta && sta->uploaded)
 		pubsta = &sta->sta;
@@ -5190,26 +5240,35 @@ static bool ieee80211_tx_pending_skb(struct ieee80211_local *local,
  */
 void ieee80211_tx_pending(struct tasklet_struct *t)
 {
-	struct ieee80211_local *local = from_tasklet(local, t,
-						     tx_pending_tasklet);
+	struct ieee80211_tasklet_data *tasklet_data = from_tasklet(tasklet_data, t, tasklet);
+	struct ieee80211_local *local = tasklet_data->local;
 	unsigned long flags;
 	int i;
 	bool txok;
+	spinlock_t *pcpu_queue_stop_reason_lock;
+	unsigned long *queue_stop_reasons;
+	struct sk_buff_head *pcpu_pending;
 
 	rcu_read_lock();
 
-	spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
-	for (i = 0; i < local->hw.queues; i++) {
+	/* Since the tasklet has been scheduled on a specific core,
+	 * get the associated SW queue, lock and variables
+	 */
+	pcpu_queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
+	spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
+	for (i = 0; i < IEEE80211_NUM_ACS; i++) {
 		/*
 		 * If queue is stopped by something other than due to pending
 		 * frames, or we have no pending frames, proceed to next queue.
 		 */
-		if (local->queue_stop_reasons[i] ||
-		    skb_queue_empty(&local->pending[i]))
+		queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[i]);
+		pcpu_pending = this_cpu_ptr(local->pending[i]);
+		if (*queue_stop_reasons ||
+		    skb_queue_empty(pcpu_pending))
 			continue;
 
-		while (!skb_queue_empty(&local->pending[i])) {
-			struct sk_buff *skb = __skb_dequeue(&local->pending[i]);
+		while (!skb_queue_empty(pcpu_pending)) {
+			struct sk_buff *skb = __skb_dequeue(pcpu_pending);
 			struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 
 			if (WARN_ON(!info->control.vif)) {
@@ -5217,17 +5276,17 @@ void ieee80211_tx_pending(struct tasklet_struct *t)
 				continue;
 			}
 
-			spin_unlock_irqrestore(&local->queue_stop_reason_lock,
+			spin_unlock_irqrestore(pcpu_queue_stop_reason_lock,
 						flags);
 
 			txok = ieee80211_tx_pending_skb(local, skb);
-			spin_lock_irqsave(&local->queue_stop_reason_lock,
+			spin_lock_irqsave(pcpu_queue_stop_reason_lock,
 					  flags);
 			if (!txok)
 				break;
 		}
 	}
-	spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+	spin_unlock_irqrestore(pcpu_queue_stop_reason_lock, flags);
 
 	rcu_read_unlock();
 }

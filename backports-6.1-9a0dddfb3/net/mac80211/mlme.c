@@ -3205,6 +3205,8 @@ void ieee80211_dynamic_ps_enable_work(struct wiphy *wiphy,
 	struct ieee80211_if_managed *ifmgd;
 	unsigned long flags;
 	int q;
+	spinlock_t *pcpu_queue_stop_reason_lock;
+	unsigned long *queue_stop_reasons;
 
 	/* can only happen when PS was just disabled anyway */
 	if (!sdata)
@@ -3229,10 +3231,16 @@ void ieee80211_dynamic_ps_enable_work(struct wiphy *wiphy,
 		 * dynamic_ps_timer expiry. Postpone the ps timer if it
 		 * is not the actual idle state.
 		 */
-		spin_lock_irqsave(&local->queue_stop_reason_lock, flags);
+		/* TODO: Check if it is necessary to update the ps timer
+		 * after checking all the queues of all the CPUs
+		 */
+		pcpu_queue_stop_reason_lock =
+			this_cpu_ptr(local->queue_stop_reason_lock);
+		queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[q]);
+		spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
 		for (q = 0; q < local->hw.queues; q++) {
-			if (local->queue_stop_reasons[q]) {
-				spin_unlock_irqrestore(&local->queue_stop_reason_lock,
+			if (*queue_stop_reasons) {
+				spin_unlock_irqrestore(pcpu_queue_stop_reason_lock,
 						       flags);
 				mod_timer(&local->dynamic_ps_timer, jiffies +
 					  msecs_to_jiffies(
@@ -3240,7 +3248,7 @@ void ieee80211_dynamic_ps_enable_work(struct wiphy *wiphy,
 				return;
 			}
 		}
-		spin_unlock_irqrestore(&local->queue_stop_reason_lock, flags);
+		spin_unlock_irqrestore(pcpu_queue_stop_reason_lock, flags);
 	}
 
 	if (ieee80211_hw_check(&local->hw, PS_NULLFUNC_STACK) &&
