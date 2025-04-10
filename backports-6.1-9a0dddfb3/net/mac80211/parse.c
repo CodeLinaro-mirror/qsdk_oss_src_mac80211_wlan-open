@@ -274,7 +274,8 @@ static void ieee80211_parse_tpe(struct ieee80211_parsed_tpe *tpe,
 static u32
 _ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params,
 			     struct ieee80211_elems_parse *elems_parse,
-			     const struct element *check_inherit)
+			     const struct element *check_inherit,
+			     bool bcheck_inherit)
 {
 	struct ieee802_11_elems *elems = &elems_parse->elems;
 	const struct element *elem;
@@ -291,7 +292,7 @@ _ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params,
 		u8 elen = elem->datalen;
 		const u8 *pos = elem->data;
 
-		if (check_inherit &&
+		if (bcheck_inherit && check_inherit &&
 		    !cfg80211_is_element_inherited(elem,
 						   check_inherit))
 			continue;
@@ -928,7 +929,8 @@ static void ieee80211_mle_parse_link(struct ieee80211_elems_parse *elems_parse,
 
 	non_inherit = cfg80211_find_ext_elem(WLAN_EID_EXT_NON_INHERITANCE,
 					     sub.start, sub.len);
-	_ieee802_11_parse_elems_full(&sub, elems_parse, non_inherit);
+	_ieee802_11_parse_elems_full(&sub, elems_parse, non_inherit,
+				     non_inherit ? true : false);
 }
 
 static void
@@ -982,6 +984,7 @@ ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params)
 	u8 *nontransmitted_profile;
 	int nontransmitted_profile_len = 0;
 	size_t scratch_len = params->scratch_len ?: 2 * params->len;
+	bool check_inherit = false;
 
 	BUILD_BUG_ON(offsetof(typeof(*elems_parse), elems) != 0);
 
@@ -1011,8 +1014,11 @@ ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params)
 					     nontransmitted_profile,
 					     nontransmitted_profile_len);
 
+	if (non_inherit || nontransmitted_profile_len)
+		check_inherit = true;
+
 	elems->crc = _ieee802_11_parse_elems_full(params, elems_parse,
-						  non_inherit);
+						  non_inherit, check_inherit);
 
 	/* Override with nontransmitted profile, if found */
 	if (nontransmitted_profile_len) {
@@ -1024,7 +1030,7 @@ ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params)
 			.link_id = params->link_id,
 		};
 
-		_ieee802_11_parse_elems_full(&sub, elems_parse, NULL);
+		_ieee802_11_parse_elems_full(&sub, elems_parse, NULL, false);
 	}
 
 	ieee80211_mle_parse_link(elems_parse, params);
