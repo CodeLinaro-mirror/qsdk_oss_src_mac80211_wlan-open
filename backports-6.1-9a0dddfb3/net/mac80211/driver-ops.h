@@ -419,16 +419,20 @@ static inline int drv_set_frag_threshold(struct ieee80211_local *local,
 }
 
 static inline int drv_set_rts_threshold(struct ieee80211_local *local,
-					u8 radio_id, u32 value)
+					u8 radio_id, u32 value,
+					struct ieee80211_sub_if_data *sdata,
+					u32 link_id)
 {
 	int ret = 0;
 
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	trace_drv_set_rts_threshold(local, radio_id, value);
-	if (local->ops->set_rts_threshold)
-		ret = local->ops->set_rts_threshold(&local->hw, radio_id, value);
+	trace_drv_set_rts_threshold(local, radio_id, value, sdata, link_id);
+	if (sdata && local->ops->set_rts_threshold)
+		ret = local->ops->set_rts_threshold(&local->hw, radio_id, value, &sdata->vif, link_id);
+	else if (local->ops->set_rts_threshold)
+		ret = local->ops->set_rts_threshold(&local->hw, radio_id, value, NULL, link_id);
 	trace_drv_return_int(local, ret);
 	return ret;
 }

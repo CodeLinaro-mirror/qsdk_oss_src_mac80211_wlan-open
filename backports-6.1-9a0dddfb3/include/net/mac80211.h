@@ -886,6 +886,7 @@ struct ieee80211_bss_conf {
 	bool ap_ps_enable;
 	/* Critical Update flag*/
 	u32 critical_update_flag;
+	u32 rts_threshold;
 };
 
 /**
@@ -4669,7 +4670,8 @@ struct ieee80211_ops {
 			    struct ieee80211_key_conf *key,
 			    struct ieee80211_key_seq *seq);
 	int (*set_frag_threshold)(struct ieee80211_hw *hw, u32 value);
-	int (*set_rts_threshold)(struct ieee80211_hw *hw, u8 radio_id, u32 value);
+	int (*set_rts_threshold)(struct ieee80211_hw *hw, u8 radio_id, u32 value,
+			struct ieee80211_vif *vif, u32 link_id);
 	int (*sta_add)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		       struct ieee80211_sta *sta);
 	int (*sta_remove)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,

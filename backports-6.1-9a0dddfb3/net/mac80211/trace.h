@@ -856,25 +856,28 @@ DEFINE_EVENT(local_u32_evt, drv_set_frag_threshold,
 );
 
 TRACE_EVENT(drv_set_rts_threshold,
-	TP_PROTO(struct ieee80211_local *local, u8 radio_id, u32 value),
+	TP_PROTO(struct ieee80211_local *local, u8 radio_id, u32 value,
+		struct ieee80211_sub_if_data *sdata, u32 link_id),
 
-	TP_ARGS(local, radio_id, value),
+	TP_ARGS(local, radio_id, value, sdata, link_id),
 
 	TP_STRUCT__entry(
 		LOCAL_ENTRY
 		__field(u8, radio_id)
 		__field(u32, value)
+		__field(int, link_id)
 	),
 
 	TP_fast_assign(
 		LOCAL_ASSIGN;
 		__entry->radio_id = radio_id;
 		__entry->value = value;
+		__entry->link_id = link_id;
 	),
 
 	TP_printk(
-		LOCAL_PR_FMT " value:%d",
-		LOCAL_PR_ARG, __entry->value
+		LOCAL_PR_FMT " value:%d link_id:%d",
+		LOCAL_PR_ARG, __entry->value, __entry->link_id
 	)
 );
 

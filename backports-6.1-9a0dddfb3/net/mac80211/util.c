@@ -1895,10 +1895,11 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 	if (hw->wiphy->n_radio)
 		for (i = 0; i < hw->wiphy->n_radio; i++)
 			drv_set_rts_threshold(local, i,
-					      hw->wiphy->radio_cfg[i].rts_threshold);
+					      hw->wiphy->radio_cfg[i].rts_threshold,
+					      sdata, 0);
 	else
 		drv_set_rts_threshold(local, NL80211_WIPHY_RADIO_ID_MAX,
-				      hw->wiphy->rts_threshold);
+				      hw->wiphy->rts_threshold, sdata, 0);
 
 	/* reset coverage class */
 	drv_set_coverage_class(local, hw->wiphy->coverage_class);

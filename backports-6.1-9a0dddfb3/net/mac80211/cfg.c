@@ -3129,7 +3129,10 @@ static int ieee80211_set_wiphy_params(struct wiphy *wiphy, u8 radio_id, u32 chan
 				      struct wireless_dev *wdev, unsigned int link_id)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
-	int err;
+	struct ieee80211_sub_if_data *sdata;
+	int err, old_rts_threshold = 0;
+	struct ieee80211_bss_conf *link_conf = NULL;
+
 
 	if (changed & WIPHY_PARAM_FRAG_THRESHOLD) {
 		ieee80211_check_fast_xmit_all(local);
@@ -3154,18 +3157,48 @@ static int ieee80211_set_wiphy_params(struct wiphy *wiphy, u8 radio_id, u32 chan
 			return err;
 	}
 
-	if (changed & WIPHY_PARAM_RTS_THRESHOLD) {
+	if (wdev) {
 		u32 rts_threshold;
 
+		sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
+		rcu_read_lock();
+		link_conf = rcu_dereference(sdata->vif.link_conf[link_id]);
+		if (!link_conf) {
+			rcu_read_unlock();
+			return -ENOLINK;
+		}
+		old_rts_threshold = link_conf->rts_threshold;
 		if (radio_id >= wiphy->n_radio)
 			rts_threshold = wiphy->rts_threshold;
 		else
 			rts_threshold = wiphy->radio_cfg[radio_id].rts_threshold;
-		err = drv_set_rts_threshold(local, radio_id, rts_threshold);
+
+		if (changed & WIPHY_PARAM_RTS_THRESHOLD) {
+			link_conf->rts_threshold = rts_threshold;
+			rcu_read_unlock();
+			err = drv_set_rts_threshold(local, radio_id, rts_threshold, sdata, link_id);
+			if (err) {
+				rcu_read_lock();
+				link_conf = rcu_dereference(sdata->vif.link_conf[link_id]);
+				link_conf->rts_threshold = old_rts_threshold;
+				rcu_read_unlock();
+				return err;
+			}
+		}
+		rcu_read_unlock();
 
 		if (err)
 			return err;
-	}
+	} else {
+		if (changed & WIPHY_PARAM_RTS_THRESHOLD && !wiphy->num_hw) {
+			err = drv_set_rts_threshold(local, radio_id, wiphy->rts_threshold, NULL, link_id);
+
+			if (err)
+				return err;
+		} else {
+			return -EOPNOTSUPP;
+		}
+        }
 
 	if (changed & WIPHY_PARAM_RETRY_SHORT) {
 		if (wiphy->retry_short > IEEE80211_MAX_TX_RETRY)
