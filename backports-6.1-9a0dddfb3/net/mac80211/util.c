@@ -2647,6 +2647,7 @@ u8 *ieee80211_ie_build_ht_oper(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 	ht_oper->primary_chan = ieee80211_frequency_to_channel(
 					chandef->chan->center_freq);
 	switch (chandef->width) {
+	case NL80211_CHAN_WIDTH_320:
 	case NL80211_CHAN_WIDTH_160:
 	case NL80211_CHAN_WIDTH_80P80:
 	case NL80211_CHAN_WIDTH_80:
@@ -2656,10 +2657,6 @@ u8 *ieee80211_ie_build_ht_oper(u8 *pos, struct ieee80211_sta_ht_cap *ht_cap,
 		else
 			ht_oper->ht_param = IEEE80211_HT_PARAM_CHA_SEC_BELOW;
 		break;
-	case NL80211_CHAN_WIDTH_320:
-		/* HT information element should not be included on 6GHz */
-		WARN_ON(1);
-		return pos;
 	default:
 		ht_oper->ht_param = IEEE80211_HT_PARAM_CHA_SEC_NONE;
 		break;
@@ -2720,19 +2717,31 @@ u8 *ieee80211_ie_build_vht_oper(u8 *pos, struct ieee80211_sta_vht_cap *vht_cap,
 				const struct cfg80211_chan_def *chandef)
 {
 	struct ieee80211_vht_operation *vht_oper;
+	struct cfg80211_chan_def tmp_chandef;
+
+	cfg80211_chandef_create(&tmp_chandef, chandef->chan, NL80211_CHAN_NO_HT);
+	tmp_chandef.center_freq1 = chandef->center_freq1;
+	tmp_chandef.center_freq2 = chandef->center_freq2;
+	tmp_chandef.width = chandef->width;
 
 	*pos++ = WLAN_EID_VHT_OPERATION;
 	*pos++ = sizeof(struct ieee80211_vht_operation);
 	vht_oper = (struct ieee80211_vht_operation *)pos;
 	vht_oper->center_freq_seg0_idx = ieee80211_frequency_to_channel(
-							chandef->center_freq1);
-	if (chandef->center_freq2)
+							tmp_chandef.center_freq1);
+	if (tmp_chandef.center_freq2)
 		vht_oper->center_freq_seg1_idx =
-			ieee80211_frequency_to_channel(chandef->center_freq2);
+			ieee80211_frequency_to_channel(tmp_chandef.center_freq2);
 	else
 		vht_oper->center_freq_seg1_idx = 0x00;
 
-	switch (chandef->width) {
+	switch (tmp_chandef.width) {
+	case NL80211_CHAN_WIDTH_320:
+		/* Downgrade EHT 320 MHz BW to 160 MHz for VHT & set new center_freq1 */
+		ieee80211_chandef_downgrade(&tmp_chandef, NULL);
+		vht_oper->center_freq_seg0_idx =
+			ieee80211_frequency_to_channel(tmp_chandef.center_freq1);
+		fallthrough;
 	case NL80211_CHAN_WIDTH_160:
 		/*
 		 * Convert 160 MHz channel width to new style as interop
@@ -2740,7 +2749,7 @@ u8 *ieee80211_ie_build_vht_oper(u8 *pos, struct ieee80211_sta_vht_cap *vht_cap,
 		 */
 		vht_oper->chan_width = IEEE80211_VHT_CHANWIDTH_80MHZ;
 		vht_oper->center_freq_seg1_idx = vht_oper->center_freq_seg0_idx;
-		if (chandef->chan->center_freq < chandef->center_freq1)
+		if (tmp_chandef.chan->center_freq < tmp_chandef.center_freq1)
 			vht_oper->center_freq_seg0_idx -= 8;
 		else
 			vht_oper->center_freq_seg0_idx += 8;
@@ -2755,10 +2764,6 @@ u8 *ieee80211_ie_build_vht_oper(u8 *pos, struct ieee80211_sta_vht_cap *vht_cap,
 	case NL80211_CHAN_WIDTH_80:
 		vht_oper->chan_width = IEEE80211_VHT_CHANWIDTH_80MHZ;
 		break;
-	case NL80211_CHAN_WIDTH_320:
-		/* VHT information element should not be included on 6GHz */
-		WARN_ON(1);
-		return pos;
 	default:
 		vht_oper->chan_width = IEEE80211_VHT_CHANWIDTH_USE_HT;
 		break;
@@ -2935,7 +2940,15 @@ u8 *ieee80211_ie_build_eht_oper(u8 *pos, const struct cfg80211_chan_def *chandef
 	eht_oper_info->control = chan_width;
 	pos += eht_oper_info_len;
 
-	/* TODO: eht_oper_info->optional */
+	eht_oper->params |= IEEE80211_EHT_OPER_INFO_PRESENT;
+
+	eht_oper_info->ccfs0 =
+	       ieee80211_frequency_to_channel(chandef->center_freq1);
+	eht_oper_info->ccfs1 = 0; /* How to get this? */
+
+	eht_oper->optional[0] = eht_oper_info->control;
+	eht_oper->optional[1] = eht_oper_info->ccfs0;
+	eht_oper->optional[2] = eht_oper_info->ccfs1;
 
 	return pos;
 }
