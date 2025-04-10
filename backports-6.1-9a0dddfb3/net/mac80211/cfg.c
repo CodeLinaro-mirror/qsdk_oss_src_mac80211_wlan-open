@@ -2598,6 +2598,7 @@ static int ieee80211_update_mesh_config(struct wiphy *wiphy,
 	struct mesh_config *conf;
 	struct ieee80211_sub_if_data *sdata;
 	struct ieee80211_if_mesh *ifmsh;
+	u32 nss_changed = 0;
 
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	ifmsh = &sdata->u.mesh;
@@ -2614,8 +2615,11 @@ static int ieee80211_update_mesh_config(struct wiphy *wiphy,
 		conf->dot11MeshMaxPeerLinks = nconf->dot11MeshMaxPeerLinks;
 	if (_chg_mesh_attr(NL80211_MESHCONF_MAX_RETRIES, mask))
 		conf->dot11MeshMaxRetries = nconf->dot11MeshMaxRetries;
-	if (_chg_mesh_attr(NL80211_MESHCONF_TTL, mask))
+	if (_chg_mesh_attr(NL80211_MESHCONF_TTL, mask)) {
 		conf->dot11MeshTTL = nconf->dot11MeshTTL;
+		sdata->vif.bss_conf.nss_offld_ttl = nconf->dot11MeshTTL;
+		nss_changed |= BSS_CHANGED_NSS_MESH_TTL;
+	}
 	if (_chg_mesh_attr(NL80211_MESHCONF_ELEMENT_TTL, mask))
 		conf->element_ttl = nconf->element_ttl;
 	if (_chg_mesh_attr(NL80211_MESHCONF_AUTO_OPEN_PLINKS, mask)) {
@@ -2629,8 +2633,12 @@ static int ieee80211_update_mesh_config(struct wiphy *wiphy,
 	if (_chg_mesh_attr(NL80211_MESHCONF_HWMP_MAX_PREQ_RETRIES, mask))
 		conf->dot11MeshHWMPmaxPREQretries =
 			nconf->dot11MeshHWMPmaxPREQretries;
-	if (_chg_mesh_attr(NL80211_MESHCONF_PATH_REFRESH_TIME, mask))
+	if (_chg_mesh_attr(NL80211_MESHCONF_PATH_REFRESH_TIME, mask)) {
 		conf->path_refresh_time = nconf->path_refresh_time;
+		sdata->vif.bss_conf.nss_offld_mpath_refresh_time =
+			nconf->path_refresh_time;
+		nss_changed |= BSS_CHANGED_NSS_MESH_REFRESH_TIME;
+	}
 	if (_chg_mesh_attr(NL80211_MESHCONF_MIN_DISCOVERY_TIMEOUT, mask))
 		conf->min_discovery_timeout = nconf->min_discovery_timeout;
 	if (_chg_mesh_attr(NL80211_MESHCONF_HWMP_ACTIVE_PATH_TIMEOUT, mask))
@@ -2665,8 +2673,12 @@ static int ieee80211_update_mesh_config(struct wiphy *wiphy,
 	if (_chg_mesh_attr(NL80211_MESHCONF_HWMP_RANN_INTERVAL, mask))
 		conf->dot11MeshHWMPRannInterval =
 			nconf->dot11MeshHWMPRannInterval;
-	if (_chg_mesh_attr(NL80211_MESHCONF_FORWARDING, mask))
+	if (_chg_mesh_attr(NL80211_MESHCONF_FORWARDING, mask)) {
 		conf->dot11MeshForwarding = nconf->dot11MeshForwarding;
+		sdata->vif.bss_conf.nss_offld_mesh_forward_enabled =
+			nconf->dot11MeshForwarding;
+		nss_changed |= BSS_CHANGED_NSS_MESH_FWD_ENABLED;
+	}
 	if (_chg_mesh_attr(NL80211_MESHCONF_RSSI_THRESHOLD, mask)) {
 		/* our RSSI threshold implementation is supported only for
 		 * devices that report signal in dBm.
@@ -2708,6 +2720,7 @@ static int ieee80211_update_mesh_config(struct wiphy *wiphy,
 		conf->dot11MeshConnectedToAuthServer =
 			nconf->dot11MeshConnectedToAuthServer;
 	ieee80211_mbss_info_change_notify(sdata, BSS_CHANGED_BEACON);
+	ieee80211_nss_bss_info_change_notify(sdata, nss_changed);
 	return 0;
 }
 

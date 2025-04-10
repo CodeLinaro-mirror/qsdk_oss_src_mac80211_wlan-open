@@ -367,6 +367,13 @@ u32 airtime_link_metric_get(struct ieee80211_local *local,
 	return (u32)result;
 }
 
+static inline struct sta_info *
+next_hop_deref_protected(struct mesh_path *mpath)
+{
+	return rcu_dereference_protected(mpath->next_hop,
+					 lockdep_is_held(&mpath->state_lock));
+}
+
 /**
  * hwmp_route_info_get - Update routing info to originator and transmitter
  *
@@ -390,9 +397,10 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 {
 	struct ieee80211_local *local = sdata->local;
 	struct mesh_path *mpath;
-	struct sta_info *sta;
+	struct sta_info *sta, *next_hop;
 	bool fresh_info;
 	const u8 *orig_addr, *ta;
+	u8 old_next_hop_addr[ETH_ALEN] = {0};
 	u32 orig_sn, orig_metric;
 	unsigned long orig_lifetime, exp_time;
 	u32 last_hop_metric, new_metric;
@@ -494,7 +502,10 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 		}
 
 		if (fresh_info) {
-			if (rcu_access_pointer(mpath->next_hop) != sta) {
+			next_hop = rcu_dereference(mpath->next_hop);
+			if (next_hop)
+				ether_addr_copy(old_next_hop_addr, next_hop->sta.addr);
+			if (next_hop != sta) {
 				mpath->path_change_count++;
 				flush_mpath = true;
 			}
@@ -516,6 +527,8 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 			/* draft says preq_id should be saved to, but there does
 			 * not seem to be any use for it, skipping by now
 			 */
+
+			mesh_nss_offld_path_update(mpath, true, old_next_hop_addr);
 		} else
 			spin_unlock_bh(&mpath->state_lock);
 	}
@@ -546,7 +559,14 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 		}
 
 		if (fresh_info) {
-			if (rcu_access_pointer(mpath->next_hop) != sta) {
+			/* Reset the old_next_hop_addr since this may have filled
+			 * if orig_addr and ta are different
+			 */
+			memset(old_next_hop_addr, 0, ETH_ALEN);
+			next_hop = rcu_dereference(mpath->next_hop);
+			if (next_hop)
+				ether_addr_copy(old_next_hop_addr, next_hop->sta.addr);
+			if (next_hop != sta) {
 				mpath->path_change_count++;
 				flush_mpath = true;
 			}
@@ -563,6 +583,8 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
 			/* init it at a low value - 0 start is tricky */
 			ewma_mesh_fail_avg_add(&sta->mesh->fail_avg, 1);
 			mesh_path_tx_pending(mpath);
+
+			mesh_nss_offld_path_update(mpath, true, old_next_hop_addr);
 		} else
 			spin_unlock_bh(&mpath->state_lock);
 	}
@@ -698,15 +720,6 @@ static void hwmp_preq_frame_process(struct ieee80211_sub_if_data *sdata,
 		ifmsh->mshstats.fwded_frames++;
 	}
 }
-
-
-static inline struct sta_info *
-next_hop_deref_protected(struct mesh_path *mpath)
-{
-	return rcu_dereference_protected(mpath->next_hop,
-					 lockdep_is_held(&mpath->state_lock));
-}
-
 
 static void hwmp_prep_frame_process(struct ieee80211_sub_if_data *sdata,
 				    struct ieee80211_mgmt *mgmt,
@@ -1356,3 +1369,274 @@ void mesh_path_tx_root_frame(struct ieee80211_sub_if_data *sdata)
 		return;
 	}
 }
+
+static int mesh_path_offld_mpath_refresh(struct ieee80211_sub_if_data *sdata,
+					 u8 *mda)
+{
+	struct mesh_path *mpath;
+
+	rcu_read_lock();
+
+	mpath = mesh_path_lookup(sdata, mda);
+	if (!mpath || !(mpath->flags & MESH_PATH_ACTIVE)) {
+		moffld_dbg(sdata,
+			   "mpath lookup failed during path refresh for %pM, is_mpath %d\n",
+			   mda, mpath != NULL);
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	if (!(mpath->flags & MESH_PATH_RESOLVING) && !(mpath->flags & MESH_PATH_FIXED))
+		mesh_queue_preq(mpath, PREQ_Q_F_START | PREQ_Q_F_REFRESH);
+
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int mesh_path_offld_mpath_del(struct ieee80211_sub_if_data *sdata, u8 *da)
+{
+	struct mesh_path *mpath, *mppath;
+
+	rcu_read_lock();
+
+	mpath = mesh_path_lookup(sdata, da);
+	if (!mpath) {
+		moffld_dbg(sdata, "mpath lookup failed for %pM during duplicate mpath removal\n",
+			   da);
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	mppath = mpp_path_lookup(sdata, da);
+	if (!mppath) {
+		moffld_dbg(sdata, "proxy path lookup failed for %pM during duplicate mpath removal\n",
+			   da);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	mesh_path_del(sdata, mpath->dst);
+
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int mesh_path_offld_mpath_exp(struct ieee80211_sub_if_data *sdata, u8 *mda)
+{
+	struct mesh_path *mpath;
+
+	rcu_read_lock();
+
+	mpath = mesh_path_lookup(sdata, mda);
+	if (!mpath) {
+		mpath = mesh_path_add(sdata, mda);
+		if (IS_ERR(mpath)) {
+			rcu_read_unlock();
+			moffld_dbg(sdata,
+				   "failed to add mpath for %pM during mpath exp\n", mda);
+			return PTR_ERR(mpath);
+		}
+	}
+
+	spin_lock_bh(&mpath->state_lock);
+	mpath->flags &= ~MESH_PATH_ACTIVE;
+	spin_unlock_bh(&mpath->state_lock);
+
+	if (!(mpath->flags & MESH_PATH_RESOLVING) &&
+	    mesh_path_sel_is_hwmp(sdata))
+		mesh_queue_preq(mpath, PREQ_Q_F_START);
+
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int mesh_path_offld_mpp_learn(struct ieee80211_sub_if_data *sdata,
+				     u8 *da, u8 *mda)
+{
+	struct mesh_path *mppath;
+	int ret;
+
+	rcu_read_lock();
+	mppath = mpp_path_lookup(sdata, da);
+	if (mppath) {
+		moffld_dbg(sdata, "proxy path for da %pM mesh_da %pM already exists\n",
+			   da, mda);
+		rcu_read_unlock();
+		return -EEXIST;
+	}
+
+	ret = mpp_path_add(sdata, da, mda);
+	if (ret)
+		moffld_dbg(sdata, "failed to add proxy path entry (%d): da %pM mesh_da %pM\n",
+			   ret, da, mda);
+
+	rcu_read_unlock();
+
+	return ret;
+}
+
+static int mesh_path_offld_mpp_add(struct ieee80211_sub_if_data *sdata,
+				     u8 *da, u8 *mda)
+{
+	struct mesh_path *mppath;
+	int ret;
+
+	rcu_read_lock();
+	mppath = mpp_path_lookup(sdata, da);
+	if (mppath) {
+		moffld_dbg(sdata, "proxy path for da %pM mesh_da %pM already exists\n",
+			   da, mda);
+		rcu_read_unlock();
+		return -EEXIST;
+	}
+
+	ret = __mpp_path_add(sdata, da, mda);
+	if (ret)
+		moffld_dbg(sdata, "failed to add proxy path entry (%d): da %pM mesh_da %pM\n",
+			   ret, da, mda);
+
+	rcu_read_unlock();
+
+	return ret;
+}
+
+static int mesh_path_offld_mpp_update(struct ieee80211_sub_if_data *sdata,
+				      u8 *da, u8 *mda)
+{
+	struct mesh_path *mppath;
+
+	rcu_read_lock();
+	mppath = mpp_path_lookup(sdata, da);
+	if (!mppath) {
+		moffld_dbg(sdata,
+			   "proxy path lookup for da %pM failed during MPP update with mesh_da %pM\n",
+			   da, mda);
+		rcu_read_unlock();
+		return -ENOENT;
+	} else {
+		spin_lock_bh(&mppath->state_lock);
+		if (!ether_addr_equal(mppath->mpp, mda))
+			memcpy(mppath->mpp, mda, ETH_ALEN);
+		mppath->exp_time = jiffies;
+		spin_unlock_bh(&mppath->state_lock);
+	}
+	rcu_read_unlock();
+
+	return 0;
+}
+
+static int mesh_path_offld_mpath_not_found(struct ieee80211_sub_if_data *sdata,
+					   u8 *mda, u8 *ta)
+{
+	struct mesh_path *mpath;
+	struct ieee80211_if_mesh *ifmsh = &sdata->u.mesh;
+
+	rcu_read_lock();
+
+	mpath = mesh_path_lookup(sdata, mda);
+	if (!mpath) {
+		mpath = mesh_path_add(sdata, mda);
+		if (IS_ERR(mpath)) {
+			moffld_dbg(sdata, "mpath add failed for mesh_da %pM (%lu)\n",
+				   mda, PTR_ERR(mpath));
+			rcu_read_unlock();
+			return PTR_ERR(mpath);
+		}
+	}
+
+	if (!(mpath->flags & MESH_PATH_RESOLVING) &&
+	    mesh_path_sel_is_hwmp(sdata))
+		mesh_queue_preq(mpath, PREQ_Q_F_START);
+
+	rcu_read_unlock();
+
+	if (!is_zero_ether_addr(ta))
+		mesh_path_error_tx(sdata, ifmsh->mshcfg.element_ttl,
+				   mda, 0, WLAN_REASON_MESH_PATH_NOFORWARD, ta);
+
+	return 0;
+}
+
+void ieee80211s_update_metric_ppdu(struct ieee80211_hw *hw,
+				   struct ieee80211_tx_status *st)
+{
+	struct sta_info *sta;
+	int i, num_mpdu;
+	bool failed;
+	struct rate_info rinfo;
+
+	if (!st->sta)
+		return;
+
+	if (st->mpdu_succ) {
+		num_mpdu = st->mpdu_succ;
+		failed = false;
+	} else if (st->mpdu_fail) {
+		num_mpdu = st->mpdu_fail;
+		failed = true;
+	} else
+		return;
+
+	sta = container_of(st->sta, struct sta_info, sta);
+	if (!ieee80211_vif_is_mesh(&sta->sdata->vif))
+		return;
+
+	for (i = 0; i < num_mpdu; i++) {
+		ewma_mesh_fail_avg_add(&sta->mesh->fail_avg, failed * 100);
+		if (ewma_mesh_fail_avg_read(&sta->mesh->fail_avg) >
+					    LINK_FAIL_THRESH)
+			mesh_plink_broken(sta);
+
+		if (!st->rates)
+			continue;
+
+		rinfo = st->rates->rate_idx;
+		ewma_mesh_tx_rate_avg_add(&sta->mesh->tx_rate_avg,
+					  cfg80211_calculate_bitrate(&rinfo));
+	}
+}
+EXPORT_SYMBOL(ieee80211s_update_metric_ppdu);
+
+int ieee80211_mesh_path_offld_change_notify(struct ieee80211_vif *vif,
+				struct ieee80211_mesh_path_offld *path,
+				enum ieee80211_mesh_path_offld_action action)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	int ret = -ENOTSUPP;
+
+	moffld_dbg(sdata, "received mesh offload event %d\n", action);
+
+	switch (action) {
+	case IEEE80211_MESH_PATH_OFFLD_ACTION_MPATH_REFRESH:
+		ret = mesh_path_offld_mpath_refresh(sdata, path->mesh_da);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_ACTION_MPATH_DEL:
+		ret = mesh_path_offld_mpath_del(sdata, path->mesh_da);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_ACTION_MPATH_EXP:
+		ret = mesh_path_offld_mpath_exp(sdata, path->mesh_da);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_ACTION_MPP_LEARN:
+		ret = mesh_path_offld_mpp_learn(sdata, path->da, path->mesh_da);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_ACTION_MPP_ADD:
+		ret = mesh_path_offld_mpp_add(sdata, path->da, path->mesh_da);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_ACTION_MPP_UPDATE:
+		ret = mesh_path_offld_mpp_update(sdata, path->da,
+						 path->mesh_da);
+		break;
+	case IEEE80211_MESH_PATH_OFFLD_ACTION_PATH_NOT_FOUND:
+		ret = mesh_path_offld_mpath_not_found(sdata, path->da,
+						      path->ta);
+		break;
+	default:
+		break;
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(ieee80211_mesh_path_offld_change_notify);

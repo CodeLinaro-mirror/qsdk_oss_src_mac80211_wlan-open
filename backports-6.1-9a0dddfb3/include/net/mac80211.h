@@ -145,6 +145,9 @@
  */
 struct device;
 
+struct ieee80211_mesh_path_offld;
+enum ieee80211_mesh_path_offld_cmd;
+
 /**
  * enum ieee80211_max_queues - maximum number of queues
  *
@@ -413,11 +416,17 @@ enum ieee80211_bss_change {
  * to indicate which NSS BSS parameter changed.
  *
  * @BSS_CHANGED_NSS_AP_ISOLATE: AP Isolate feature in NSS mode
+ * @BSS_CHANGED_NSS_MESH_TTL: TTL update in NSS mesh mode
+ * @BSS_CHANGED_NSS_MESH_REFRESH_TIME: Mesh refresh time in NSS mesh mode
+ * @BSS_CHANGED_NSS_MESH_FWD_ENABLED: NSS offload mesh forward enabled
  *
  */
 
 enum ieee80211_nss_bss_change {
 	BSS_CHANGED_NSS_AP_ISOLATE  = BIT(0),
+	BSS_CHANGED_NSS_MESH_TTL  = BIT(1),
+	BSS_CHANGED_NSS_MESH_REFRESH_TIME  = BIT(2),
+	BSS_CHANGED_NSS_MESH_FWD_ENABLED  = BIT(3),
 };
 
 /*
@@ -870,6 +879,10 @@ struct ieee80211_bss_conf {
 	bool nss_ap_isolate;
 	u8 bss_param_ch_cnt;
 	u8 bss_param_ch_cnt_link_id;
+	/* Mesh configuration for nss offload */
+	u8 nss_offld_ttl;
+	bool nss_offld_mesh_forward_enabled;
+	u32 nss_offld_mpath_refresh_time;
 };
 
 /**
@@ -1362,6 +1375,8 @@ struct ieee80211_rate_status {
  * @ack_hwtstamp: Hardware timestamp of the received ack in nanoseconds
  *	Only needed for Timing measurement and Fine timing measurement action
  *	frames. Only reported by devices that have timestamping enabled.
+ * @mpdu_succ: Number of mpdus successfully transmitted
+ * @mpdu_fail: Number of mpdus failed
  */
 struct ieee80211_tx_status {
 	struct ieee80211_sta *sta;
@@ -1376,6 +1391,8 @@ struct ieee80211_tx_status {
 #else
 	struct sk_buff_head *free_list;
 #endif
+	u32 mpdu_succ;
+	u32 mpdu_fail;
 };
 
 /**
@@ -1888,6 +1905,7 @@ struct ieee80211_channel_switch {
  * @IEEE80211_VIF_REMOVE_AP_AFTER_DISASSOC: indicates that the AP sta should
  *	be removed only after setting the vif as unassociated, and not the
  *	opposite. Only relevant for STA vifs.
+ * @IEEE80211_HW_NSS_OFFLOAD_DEBUG_MODE: It enables the debug mode of nss offload.
  */
 enum ieee80211_vif_flags {
 	IEEE80211_VIF_BEACON_FILTER		= BIT(0),
@@ -1897,6 +1915,7 @@ enum ieee80211_vif_flags {
 	IEEE80211_VIF_EML_ACTIVE	        = BIT(4),
 	IEEE80211_VIF_IGNORE_OFDMA_WIDER_BW	= BIT(5),
 	IEEE80211_VIF_REMOVE_AP_AFTER_DISASSOC	= BIT(6),
+	IEEE80211_VIF_NSS_OFFLOAD_DEBUG_MODE	= BIT(7),
 };
 
 
@@ -2956,6 +2975,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_DISALLOW_PUNCTURING_5GHZ,
 	IEEE80211_HW_HANDLES_QUIET_CSA,
 	IEEE80211_HW_SUPPORTS_NSS_OFFLOAD,
+	IEEE80211_HW_SUPPORTS_MESH_NSS_OFFLOAD,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
@@ -4477,6 +4497,8 @@ struct ieee80211_prep_tx_info {
  * @set_sar_specs: Update the SAR (TX power) settings.
  * @sta_set_decap_offload: Called to notify the driver when a station is allowed
  *	to use rx decapsulation offload
+ * @config_mesh_offload_path: Configure mesh path table when driver supports mesh offload.
+ *	This calback must be atomic.
  * @add_twt_setup: Update hw with TWT agreement parameters received from the peer.
  *	This callback allows the hw to check if requested parameters
  *	are supported and if there is enough room for a new agreement.
@@ -4908,6 +4930,13 @@ struct ieee80211_ops {
 	void (*nss_bss_info_changed)(struct ieee80211_hw *hw,
 				     struct ieee80211_vif *vif,
 				     u64 changed);
+#ifdef CPTCFG_MAC80211_MESH
+	void (*config_mesh_offload_path)(struct ieee80211_hw *hw,
+					 struct ieee80211_vif *vif,
+					 enum ieee80211_mesh_path_offld_cmd cmd,
+					 struct ieee80211_mesh_path_offld *path);
+#endif
+
 };
 
 /**
@@ -7871,5 +7900,101 @@ int ieee80211_emulate_switch_vif_chanctx(struct ieee80211_hw *hw,
 					 struct ieee80211_vif_chanctx_switch *vifs,
 					 int n_vifs,
 					 enum ieee80211_chanctx_switch_mode mode);
+
+/* Defines for Mesh NSS offload */
+
+enum ieee80211_mesh_path_offld_cmd {
+	IEEE80211_MESH_PATH_OFFLD_CMD_ADD_MPATH,
+	IEEE80211_MESH_PATH_OFFLD_CMD_UPDATE_MPATH,
+	IEEE80211_MESH_PATH_OFFLD_CMD_DELETE_MPATH,
+	IEEE80211_MESH_PATH_OFFLD_CMD_ADD_MPP,
+	IEEE80211_MESH_PATH_OFFLD_CMD_UPDATE_MPP,
+	IEEE80211_MESH_PATH_OFFLD_CMD_DELETE_MPP,
+};
+
+enum ieee80211_mesh_path_offld_action {
+	IEEE80211_MESH_PATH_OFFLD_ACTION_MPATH_REFRESH	= BIT(0),
+	IEEE80211_MESH_PATH_OFFLD_ACTION_MPATH_DEL	= BIT(1),
+	IEEE80211_MESH_PATH_OFFLD_ACTION_MPATH_EXP	= BIT(2),
+	IEEE80211_MESH_PATH_OFFLD_ACTION_MPP_LEARN	= BIT(3),
+	IEEE80211_MESH_PATH_OFFLD_ACTION_MPP_ADD	= BIT(4),
+	IEEE80211_MESH_PATH_OFFLD_ACTION_MPP_UPDATE	= BIT(5),
+	IEEE80211_MESH_PATH_OFFLD_ACTION_PATH_NOT_FOUND	= BIT(6),
+};
+
+/* Duplicate defines to make it available to driver */
+enum ieee80211_mesh_path_flags {
+	IEEE80211_MESH_PATH_ACTIVE =		BIT(0),
+	IEEE80211_MESH_PATH_RESOLVING =		BIT(1),
+	IEEE80211_MESH_PATH_SN_VALID =		BIT(2),
+	IEEE80211_MESH_PATH_FIXED =		BIT(3),
+	IEEE80211_MESH_PATH_RESOLVED =		BIT(4),
+	IEEE80211_MESH_PATH_REQ_QUEUED =	BIT(5),
+	IEEE80211_MESH_PATH_DELETED =		BIT(6),
+};
+
+struct ieee80211_mesh_path_offld {
+	u8 mesh_da[ETH_ALEN];
+	u8 da[ETH_ALEN];
+	u8 next_hop[ETH_ALEN];
+	u8 old_next_hop[ETH_ALEN];
+	u8 ta[ETH_ALEN];
+	u32 metric;
+	unsigned long exp_time;
+	u8 hop_count;
+	u16 flags; /* See &enum ieee80211_mesh_path_flags */
+	u8 mesh_gate;
+	u8 block_mesh_fwd;
+	u8 metadata_type;
+};
+
+#ifdef CPTCFG_MAC80211_MESH
+/** ieee80211_mesh_path_offld_change_notify - Notify mesh path change event.
+ * @vif: Mesh interface on which the event is being reported.
+ * @path: Mesh path which got changed. Please note not all the entries in the
+ *	  path will have valid information. Based on the action code, it will be
+ *	  processed.
+ * @action: Type of the event.
+ */
+int ieee80211_mesh_path_offld_change_notify(struct ieee80211_vif *vif,
+					    struct ieee80211_mesh_path_offld *path,
+					    enum ieee80211_mesh_path_offld_action action);
+
+/** ieee80211s_update_metric_ppdu - Upate tx PPDU stats for 11s metric computation
+ *
+ * @hw: the hardware the frame was transmitted by
+ * @st: tx status information
+*/
+void ieee80211s_update_metric_ppdu(struct ieee80211_hw *hw,
+				   struct ieee80211_tx_status *st);
+
+/** mesh_nss_offld_proxy_path_exp_update - update the expiry time from nss
+ * @vif Mesh interface on which the event is being reported.
+ * @mac: dest_mac_addr of the mesh proxy path
+ * @time_diff: This is the time diff since the mesh peer is active
+ */
+void mesh_nss_offld_proxy_path_exp_update(struct ieee80211_vif *vif, u8* da,
+					   u8* mesh_da, u32 time_diff);
+#else
+static inline int
+ieee80211_mesh_path_offld_change_notify(struct ieee80211_vif *vif,
+					struct ieee80211_mesh_path_offld *path,
+					enum ieee80211_mesh_path_offld_action action)
+{
+	return 0;
+}
+
+static inline void
+ieee80211s_update_metric_ppdu(struct ieee80211_hw *hw,
+			      struct ieee80211_tx_status *st)
+{
+}
+
+static inline void
+mesh_nss_offld_proxy_path_exp_update(struct ieee80211_vif *vif, u8* da,
+				      u8* mesh_da, u32 time_diff)
+{
+}
+#endif
 
 #endif /* MAC80211_H */

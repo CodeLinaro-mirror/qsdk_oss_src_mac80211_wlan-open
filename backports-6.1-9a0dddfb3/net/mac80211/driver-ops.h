@@ -1743,4 +1743,10 @@ drv_prep_add_interface(struct ieee80211_local *local,
 	trace_drv_return_void(local);
 }
 
+#ifdef CPTCFG_MAC80211_MESH
+void drv_config_mesh_offload_path(struct ieee80211_local *local,
+				  struct ieee80211_sub_if_data *sdata,
+				  enum ieee80211_mesh_path_offld_cmd cmd,
+				  struct ieee80211_mesh_path_offld *path);
+#endif /* CPTCFG_MAC80211_MESH */
 #endif /* __MAC80211_DRIVER_OPS */

@@ -623,3 +623,23 @@ int drv_change_sta_links(struct ieee80211_local *local,
 
 	return 0;
 }
+
+#ifdef CPTCFG_MAC80211_MESH
+void drv_config_mesh_offload_path(struct ieee80211_local *local,
+				  struct ieee80211_sub_if_data *sdata,
+				  enum ieee80211_mesh_path_offld_cmd cmd,
+				  struct ieee80211_mesh_path_offld *path)
+{
+	if (!check_sdata_in_driver(sdata))
+		return;
+
+	if (!ieee80211_hw_check(&local->hw, SUPPORTS_MESH_NSS_OFFLOAD))
+		return;
+
+	if (local->ops->config_mesh_offload_path)
+		local->ops->config_mesh_offload_path(&local->hw,
+						     &sdata->vif, cmd, path);
+
+	/* TODO: trace event */
+}
+#endif

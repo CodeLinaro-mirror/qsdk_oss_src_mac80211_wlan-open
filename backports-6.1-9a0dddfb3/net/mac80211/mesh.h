@@ -321,6 +321,10 @@ void mesh_rx_path_sel_frame(struct ieee80211_sub_if_data *sdata,
 			    struct ieee80211_mgmt *mgmt, size_t len);
 struct mesh_path *
 mesh_path_add(struct ieee80211_sub_if_data *sdata, const u8 *dst);
+struct mesh_path *__mesh_path_add(struct ieee80211_sub_if_data *sdata,
+				  const u8 *dst);
+int __mpp_path_add(struct ieee80211_sub_if_data *sdata,
+		   const u8 *dst, const u8 *mpp);
 
 int mesh_path_add_gate(struct mesh_path *mpath);
 int mesh_path_send_to_gates(struct mesh_path *mpath);
@@ -362,6 +366,7 @@ void mesh_path_discard_frame(struct ieee80211_sub_if_data *sdata,
 void mesh_path_tx_root_frame(struct ieee80211_sub_if_data *sdata);
 
 bool mesh_action_is_path_sel(struct ieee80211_mgmt *mgmt);
+void mesh_nss_offld_path_update(struct mesh_path *mpath, bool is_mpath, u8 *old_next_hop_addr);
 struct ieee80211_mesh_fast_tx *
 mesh_fast_tx_get(struct ieee80211_sub_if_data *sdata,
 		 struct ieee80211_mesh_fast_tx_key *key);

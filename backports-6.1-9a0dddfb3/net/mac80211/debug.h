@@ -67,6 +67,12 @@
 #define MAC80211_MESH_PS_DEBUG 0
 #endif
 
+#ifdef CPTCFG_MAC80211_MESH_OFFLOAD_DEBUG
+#define MAC80211_MESH_OFFLOAD_DEBUG 1
+#else
+#define MAC80211_MESH_OFFLOAD_DEBUG 0
+#endif
+
 #ifdef CPTCFG_MAC80211_TDLS_DEBUG
 #define MAC80211_TDLS_DEBUG 1
 #else
@@ -222,6 +228,10 @@ do {									\
 
 #define mps_dbg(sdata, fmt, ...)					\
 	_sdata_dbg(MAC80211_MESH_PS_DEBUG,				\
+		   sdata, fmt, ##__VA_ARGS__)
+
+#define moffld_dbg(sdata, fmt, ...)					\
+	_sdata_dbg(MAC80211_MESH_OFFLOAD_DEBUG,				\
 		   sdata, fmt, ##__VA_ARGS__)
 
 #define tdls_dbg(sdata, fmt, ...)					\

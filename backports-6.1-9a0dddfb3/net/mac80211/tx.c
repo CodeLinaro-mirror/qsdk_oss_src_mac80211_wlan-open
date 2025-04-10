@@ -2663,6 +2663,9 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 		info_flags |= IEEE80211_TX_CTL_REQ_TX_STATUS;
 #endif
 
+	info = IEEE80211_SKB_CB(skb);
+	memset(info, 0, sizeof(*info));
+
 	/* convert Ethernet header to proper 802.11 header (based on
 	 * operation mode) */
 	ethertype = (skb->data[12] << 8) | skb->data[13];
@@ -2733,6 +2736,13 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 		break;
 #ifdef CPTCFG_MAC80211_MESH
 	case NL80211_IFTYPE_MESH_POINT:
+		if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) &&
+		    (sdata->vif.driver_flags & IEEE80211_VIF_NSS_OFFLOAD_DEBUG_MODE) &&
+		    !(is_multicast_ether_addr(skb->data))) {
+			info->flags = IEEE80211_TX_CTL_HW_80211_ENCAP;
+			goto nss_mesh;
+		}
+
 		if (!is_multicast_ether_addr(skb->data)) {
 			struct sta_info *next_hop;
 			bool mpp_lookup = true;
@@ -2996,10 +3006,10 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 
 	skb_reset_mac_header(skb);
 
-	info = IEEE80211_SKB_CB(skb);
-	memset(info, 0, sizeof(*info));
-
-	info->flags = info_flags;
+#ifdef CPTCFG_MAC80211_MESH
+nss_mesh:
+#endif
+	info->flags |= info_flags;
 	if (info_id) {
 		info->status_data = info_id;
 		info->status_data_idr = 1;
@@ -4317,6 +4327,7 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 	struct sk_buff *next;
 	int len = skb->len;
 	struct ieee80211_key *key = NULL;
+	struct ieee80211_tx_info *info;
 	struct ieee80211_sub_if_data *ap_sdata;
 
 	if (unlikely(!ieee80211_sdata_running(sdata) || skb->len < ETH_HLEN)) {
@@ -4396,9 +4407,15 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 			goto out;
 		}
 
-		ieee80211_tx_stats(dev, skb->len);
-
-		ieee80211_xmit(sdata, sta, skb);
+		info = IEEE80211_SKB_CB(skb);
+		if (info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP) {
+		    	if (sta)
+				key = rcu_dereference(sta->ptk[sta->ptk_idx]);
+			ieee80211_8023_xmit(sdata, dev, sta, key, skb);
+		} else {
+			ieee80211_tx_stats(dev, skb->len);
+			ieee80211_xmit(sdata, sta, skb);
+		}
 	}
 	goto out;
  out_free:

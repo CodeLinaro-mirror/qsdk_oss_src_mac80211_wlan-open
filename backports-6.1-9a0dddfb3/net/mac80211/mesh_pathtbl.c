@@ -16,6 +16,7 @@
 #include "ieee80211_i.h"
 #include "mesh.h"
 #include <linux/rhashtable.h>
+#include "driver-ops.h"
 
 static void mesh_path_free_rcu(struct mesh_table *tbl, struct mesh_path *mpath);
 
@@ -102,6 +103,63 @@ static void mesh_table_free(struct mesh_table *tbl)
 {
 	rhashtable_free_and_destroy(&tbl->rhead,
 				    mesh_path_rht_free, tbl);
+}
+
+void mesh_nss_offld_proxy_path_exp_update(struct ieee80211_vif *vif, u8* da, u8* mesh_da, u32 inactive_time)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct mesh_table *tbl = &sdata->u.mesh.mpp_paths;
+	struct mesh_path *mppath;
+	struct hlist_node *n;
+	unsigned long expiry;
+
+	spin_lock_bh(&tbl->walk_lock);
+	hlist_for_each_entry_safe(mppath, n, &tbl->walk_head, walk_list) {
+		if(!ether_addr_equal(da, mppath->dst) || !ether_addr_equal(mesh_da, mppath->mpp))
+			continue;
+		if ((!(mppath->flags & MESH_PATH_RESOLVING)) &&
+		    (!(mppath->flags & MESH_PATH_FIXED))) {
+			expiry = jiffies - msecs_to_jiffies(inactive_time);
+			mppath->exp_time = time_after(mppath->exp_time, expiry) ?
+								mppath->exp_time : expiry;
+		}
+	}
+	spin_unlock_bh(&tbl->walk_lock);
+}
+EXPORT_SYMBOL(mesh_nss_offld_proxy_path_exp_update);
+
+void mesh_nss_offld_path_update(struct mesh_path *mpath, bool is_mpath, u8 *old_next_hop_addr)
+{
+	struct ieee80211_mesh_path_offld path = {0};
+	struct sta_info *next_hop;
+	struct ieee80211_sub_if_data *sdata = mpath->sdata;
+
+
+	path.metric = mpath->metric;
+	if (time_before(jiffies, mpath->exp_time))
+		path.exp_time = jiffies_to_msecs(mpath->exp_time - jiffies);
+
+	path.hop_count = mpath->hop_count;
+	path.flags = mpath->flags;
+	path.mesh_gate = mpath->is_gate;
+	if (is_mpath) {
+		ether_addr_copy(path.mesh_da, mpath->dst);
+	} else {
+		ether_addr_copy(path.mesh_da, mpath->mpp);
+		ether_addr_copy(path.da, mpath->dst);
+	}
+
+	next_hop = rcu_dereference(mpath->next_hop);
+	if (next_hop)
+		ether_addr_copy(path.next_hop, next_hop->addr);
+
+	if (old_next_hop_addr)
+		ether_addr_copy(path.old_next_hop, old_next_hop_addr);
+
+	drv_config_mesh_offload_path(sdata->local, sdata,
+				     is_mpath ? IEEE80211_MESH_PATH_OFFLD_CMD_UPDATE_MPATH :
+						IEEE80211_MESH_PATH_OFFLD_CMD_UPDATE_MPP,
+				     &path);
 }
 
 /**
@@ -241,16 +299,23 @@ static void mesh_path_move_to_queue(struct mesh_path *gate_mpath,
 
 
 static struct mesh_path *mpath_lookup(struct mesh_table *tbl, const u8 *dst,
-				      struct ieee80211_sub_if_data *sdata)
+				      struct ieee80211_sub_if_data *sdata,
+				      bool is_mpath)
 {
 	struct mesh_path *mpath;
+	bool update;
+	struct sta_info *next_hop;
 
 	mpath = rhashtable_lookup(&tbl->rhead, dst, mesh_rht_params);
 
 	if (mpath && mpath_expired(mpath)) {
 		spin_lock_bh(&mpath->state_lock);
+		next_hop = rcu_dereference(mpath->next_hop);
+		update = !!(mpath->flags & MESH_PATH_ACTIVE);
 		mpath->flags &= ~MESH_PATH_ACTIVE;
 		spin_unlock_bh(&mpath->state_lock);
+		if (update && is_mpath)
+			mesh_nss_offld_path_update(mpath, true, next_hop ? next_hop->addr : NULL);
 	}
 	return mpath;
 }
@@ -267,13 +332,13 @@ static struct mesh_path *mpath_lookup(struct mesh_table *tbl, const u8 *dst,
 struct mesh_path *
 mesh_path_lookup(struct ieee80211_sub_if_data *sdata, const u8 *dst)
 {
-	return mpath_lookup(&sdata->u.mesh.mesh_paths, dst, sdata);
+	return mpath_lookup(&sdata->u.mesh.mesh_paths, dst, sdata, true);
 }
 
 struct mesh_path *
 mpp_path_lookup(struct ieee80211_sub_if_data *sdata, const u8 *dst)
 {
-	return mpath_lookup(&sdata->u.mesh.mpp_paths, dst, sdata);
+	return mpath_lookup(&sdata->u.mesh.mpp_paths, dst, sdata, false);
 }
 
 static struct mesh_path *
@@ -337,6 +402,7 @@ mpp_path_lookup_by_idx(struct ieee80211_sub_if_data *sdata, int idx)
 int mesh_path_add_gate(struct mesh_path *mpath)
 {
 	struct mesh_table *tbl;
+	struct sta_info *next_hop;
 	int err;
 
 	rcu_read_lock();
@@ -349,6 +415,7 @@ int mesh_path_add_gate(struct mesh_path *mpath)
 		goto err_rcu;
 	}
 	mpath->is_gate = true;
+	next_hop = rcu_dereference(mpath->next_hop);
 	mpath->sdata->u.mesh.num_gates++;
 
 	spin_lock(&tbl->gates_lock);
@@ -356,6 +423,8 @@ int mesh_path_add_gate(struct mesh_path *mpath)
 	spin_unlock(&tbl->gates_lock);
 
 	spin_unlock_bh(&mpath->state_lock);
+
+	mesh_nss_offld_path_update(mpath, true, next_hop ? next_hop->addr : NULL);
 
 	mpath_dbg(mpath->sdata,
 		  "Mesh path: Recorded new gate: %pM. %d known gates\n",
@@ -373,15 +442,20 @@ err_rcu:
  */
 static void mesh_gate_del(struct mesh_table *tbl, struct mesh_path *mpath)
 {
+	struct sta_info *next_hop;
+
 	lockdep_assert_held(&mpath->state_lock);
 	if (!mpath->is_gate)
 		return;
 
+	next_hop = rcu_dereference(mpath->next_hop);
 	mpath->is_gate = false;
 	spin_lock_bh(&tbl->gates_lock);
 	hlist_del_rcu(&mpath->gate_list);
 	mpath->sdata->u.mesh.num_gates--;
 	spin_unlock_bh(&tbl->gates_lock);
+
+	mesh_nss_offld_path_update(mpath, true, next_hop ? next_hop->addr : NULL);
 
 	mpath_dbg(mpath->sdata,
 		  "Mesh path: Deleted gate: %pM. %d known gates\n",
@@ -668,16 +742,7 @@ void mesh_fast_tx_flush_addr(struct ieee80211_sub_if_data *sdata,
 	spin_unlock_bh(&cache->walk_lock);
 }
 
-/**
- * mesh_path_add - allocate and add a new path to the mesh path table
- * @sdata: local subif
- * @dst: destination address of the path (ETH_ALEN length)
- *
- * Returns: 0 on success
- *
- * State: the initial state of the new path is set to 0
- */
-struct mesh_path *mesh_path_add(struct ieee80211_sub_if_data *sdata,
+struct mesh_path *__mesh_path_add(struct ieee80211_sub_if_data *sdata,
 				const u8 *dst)
 {
 	struct mesh_table *tbl;
@@ -719,8 +784,36 @@ struct mesh_path *mesh_path_add(struct ieee80211_sub_if_data *sdata,
 	return new_mpath;
 }
 
-int mpp_path_add(struct ieee80211_sub_if_data *sdata,
-		 const u8 *dst, const u8 *mpp)
+/**
+ * mesh_path_add - allocate and add a new path to the mesh path table
+ * @dst: destination address of the path (ETH_ALEN length)
+ * @sdata: local subif
+ *
+ * Returns: 0 on success
+ *
+ * State: the initial state of the new path is set to 0
+ */
+struct mesh_path *mesh_path_add(struct ieee80211_sub_if_data *sdata,
+				const u8 *dst)
+{
+	struct mesh_path *new_path;
+	struct ieee80211_mesh_path_offld path = {0};
+
+	new_path = __mesh_path_add(sdata, dst);
+	if (IS_ERR(new_path))
+		return new_path;
+
+	ether_addr_copy(path.mesh_da, dst);
+
+	drv_config_mesh_offload_path(sdata->local, sdata,
+				     IEEE80211_MESH_PATH_OFFLD_CMD_ADD_MPATH,
+				     &path);
+
+	return new_path;
+}
+
+int __mpp_path_add(struct ieee80211_sub_if_data *sdata,
+		   const u8 *dst, const u8 *mpp)
 {
 	struct mesh_table *tbl;
 	struct mesh_path *new_mpath;
@@ -758,6 +851,25 @@ int mpp_path_add(struct ieee80211_sub_if_data *sdata,
 	return ret;
 }
 
+int mpp_path_add(struct ieee80211_sub_if_data *sdata,
+		 const u8 *dst, const u8 *mpp)
+{
+	struct ieee80211_mesh_path_offld path = {0};
+	int ret;
+
+	ret = __mpp_path_add(sdata, dst, mpp);
+	if (ret)
+		return ret;
+
+	ether_addr_copy(path.mesh_da, mpp);
+	ether_addr_copy(path.da, dst);
+
+	drv_config_mesh_offload_path(sdata->local, sdata,
+				     IEEE80211_MESH_PATH_OFFLD_CMD_ADD_MPP,
+				     &path);
+
+	return 0;
+}
 
 /**
  * mesh_plink_broken - deactivates paths and sends perr when a link breaks
@@ -808,8 +920,29 @@ static void mesh_path_free_rcu(struct mesh_table *tbl,
 	kfree_rcu(mpath, rcu);
 }
 
-static void __mesh_path_del(struct mesh_table *tbl, struct mesh_path *mpath)
+static void __mesh_path_del(struct mesh_table *tbl, struct mesh_path *mpath,
+			   bool is_mpath_tbl)
 {
+	struct ieee80211_mesh_path_offld path = {0};
+	struct sta_info *next_hop;
+	struct ieee80211_sub_if_data *sdata = mpath->sdata;
+
+
+	path.metric = mpath->metric;
+	path.exp_time = mpath->exp_time;
+	path.hop_count = mpath->hop_count;
+	path.flags = mpath->flags;
+	if (is_mpath_tbl) {
+		ether_addr_copy(path.mesh_da, mpath->dst);
+	} else {
+		ether_addr_copy(path.mesh_da, mpath->mpp);
+		ether_addr_copy(path.da, mpath->dst);
+	}
+
+	next_hop = rcu_dereference(mpath->next_hop);
+	if (next_hop)
+		ether_addr_copy(path.next_hop, next_hop->addr);
+
 	hlist_del_rcu(&mpath->walk_list);
 	rhashtable_remove_fast(&tbl->rhead, &mpath->rhash, mesh_rht_params);
 	if (tbl == &mpath->sdata->u.mesh.mpp_paths)
@@ -817,6 +950,11 @@ static void __mesh_path_del(struct mesh_table *tbl, struct mesh_path *mpath)
 	else
 		mesh_fast_tx_flush_mpath(mpath);
 	mesh_path_free_rcu(tbl, mpath);
+
+	drv_config_mesh_offload_path(sdata->local, sdata,
+				     is_mpath_tbl ? IEEE80211_MESH_PATH_OFFLD_CMD_DELETE_MPATH :
+						    IEEE80211_MESH_PATH_OFFLD_CMD_DELETE_MPP,
+				     &path);
 }
 
 /**
@@ -840,7 +978,7 @@ void mesh_path_flush_by_nexthop(struct sta_info *sta)
 	spin_lock_bh(&tbl->walk_lock);
 	hlist_for_each_entry_safe(mpath, n, &tbl->walk_head, walk_list) {
 		if (rcu_access_pointer(mpath->next_hop) == sta)
-			__mesh_path_del(tbl, mpath);
+			__mesh_path_del(tbl, mpath, true);
 	}
 	spin_unlock_bh(&tbl->walk_lock);
 }
@@ -855,19 +993,19 @@ static void mpp_flush_by_proxy(struct ieee80211_sub_if_data *sdata,
 	spin_lock_bh(&tbl->walk_lock);
 	hlist_for_each_entry_safe(mpath, n, &tbl->walk_head, walk_list) {
 		if (ether_addr_equal(mpath->mpp, proxy))
-			__mesh_path_del(tbl, mpath);
+			__mesh_path_del(tbl, mpath, false);
 	}
 	spin_unlock_bh(&tbl->walk_lock);
 }
 
-static void table_flush_by_iface(struct mesh_table *tbl)
+static void table_flush_by_iface(struct mesh_table *tbl, bool is_mpath_tbl)
 {
 	struct mesh_path *mpath;
 	struct hlist_node *n;
 
 	spin_lock_bh(&tbl->walk_lock);
 	hlist_for_each_entry_safe(mpath, n, &tbl->walk_head, walk_list) {
-		__mesh_path_del(tbl, mpath);
+		__mesh_path_del(tbl, mpath, is_mpath_tbl);
 	}
 	spin_unlock_bh(&tbl->walk_lock);
 }
@@ -881,8 +1019,8 @@ static void table_flush_by_iface(struct mesh_table *tbl)
  */
 void mesh_path_flush_by_iface(struct ieee80211_sub_if_data *sdata)
 {
-	table_flush_by_iface(&sdata->u.mesh.mesh_paths);
-	table_flush_by_iface(&sdata->u.mesh.mpp_paths);
+	table_flush_by_iface(&sdata->u.mesh.mesh_paths, true);
+	table_flush_by_iface(&sdata->u.mesh.mpp_paths, false);
 }
 
 /**
@@ -896,7 +1034,7 @@ void mesh_path_flush_by_iface(struct ieee80211_sub_if_data *sdata)
  */
 static int table_path_del(struct mesh_table *tbl,
 			  struct ieee80211_sub_if_data *sdata,
-			  const u8 *addr)
+			  const u8 *addr, bool is_mpath_tbl)
 {
 	struct mesh_path *mpath;
 
@@ -907,7 +1045,7 @@ static int table_path_del(struct mesh_table *tbl,
 		return -ENXIO;
 	}
 
-	__mesh_path_del(tbl, mpath);
+	__mesh_path_del(tbl, mpath, is_mpath_tbl);
 	spin_unlock_bh(&tbl->walk_lock);
 	return 0;
 }
@@ -928,7 +1066,7 @@ int mesh_path_del(struct ieee80211_sub_if_data *sdata, const u8 *addr)
 	/* flush relevant mpp entries first */
 	mpp_flush_by_proxy(sdata, addr);
 
-	err = table_path_del(&sdata->u.mesh.mesh_paths, sdata, addr);
+	err = table_path_del(&sdata->u.mesh.mesh_paths, sdata, addr, true);
 	sdata->u.mesh.mesh_paths_generation++;
 	return err;
 }
@@ -1046,7 +1184,10 @@ void mesh_path_flush_pending(struct mesh_path *mpath)
  */
 void mesh_path_fix_nexthop(struct mesh_path *mpath, struct sta_info *next_hop)
 {
+	struct sta_info *old_next_hop;
+
 	spin_lock_bh(&mpath->state_lock);
+	old_next_hop = rcu_dereference(mpath->next_hop);
 	mesh_path_assign_nexthop(mpath, next_hop);
 	mpath->sn = 0xffff;
 	mpath->metric = 0;
@@ -1060,6 +1201,8 @@ void mesh_path_fix_nexthop(struct mesh_path *mpath, struct sta_info *next_hop)
 	/* init it at a low value - 0 start is tricky */
 	ewma_mesh_fail_avg_add(&next_hop->mesh->fail_avg, 1);
 	mesh_path_tx_pending(mpath);
+
+	mesh_nss_offld_path_update(mpath, true, old_next_hop ? old_next_hop->addr : NULL);
 }
 
 void mesh_pathtbl_init(struct ieee80211_sub_if_data *sdata)
@@ -1071,7 +1214,7 @@ void mesh_pathtbl_init(struct ieee80211_sub_if_data *sdata)
 
 static
 void mesh_path_tbl_expire(struct ieee80211_sub_if_data *sdata,
-			  struct mesh_table *tbl)
+			  struct mesh_table *tbl, bool is_mpath_tbl)
 {
 	struct mesh_path *mpath;
 	struct hlist_node *n;
@@ -1081,15 +1224,15 @@ void mesh_path_tbl_expire(struct ieee80211_sub_if_data *sdata,
 		if ((!(mpath->flags & MESH_PATH_RESOLVING)) &&
 		    (!(mpath->flags & MESH_PATH_FIXED)) &&
 		     time_after(jiffies, mpath->exp_time + MESH_PATH_EXPIRE))
-			__mesh_path_del(tbl, mpath);
+			__mesh_path_del(tbl, mpath, is_mpath_tbl);
 	}
 	spin_unlock_bh(&tbl->walk_lock);
 }
 
 void mesh_path_expire(struct ieee80211_sub_if_data *sdata)
 {
-	mesh_path_tbl_expire(sdata, &sdata->u.mesh.mesh_paths);
-	mesh_path_tbl_expire(sdata, &sdata->u.mesh.mpp_paths);
+	mesh_path_tbl_expire(sdata, &sdata->u.mesh.mesh_paths, true);
+	mesh_path_tbl_expire(sdata, &sdata->u.mesh.mpp_paths, false);
 }
 
 void mesh_pathtbl_unregister(struct ieee80211_sub_if_data *sdata)
