@@ -3325,6 +3325,26 @@ TRACE_EVENT(drv_prep_add_interface,
 	)
 );
 
+TRACE_EVENT(api_update_muedca_params,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_mu_edca_param_set *params),
+
+	TP_ARGS(local, params),
+
+	TP_STRUCT__entry(
+		LOCAL_ENTRY
+	),
+
+	TP_fast_assign(
+		LOCAL_ASSIGN;
+	),
+
+	TP_printk(
+		LOCAL_PR_FMT " updated MU-EDCA parameters",
+		LOCAL_PR_ARG
+	)
+);
+
 #endif /* !__MAC80211_DRIVER_TRACE || TRACE_HEADER_MULTI_READ */
 
 #undef TRACE_INCLUDE_PATH

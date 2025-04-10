@@ -9866,4 +9866,15 @@ ssize_t wiphy_locked_debugfs_write(struct wiphy *wiphy, struct file *file,
 				   void *data);
 #endif
 
+/**
+ * cfg80211_update_muedca_params_event - Notify the updated MU-EDCA parameters
+ *	to user space.
+ * @wiphy: the wiphy
+ * @params: Updated MU-EDCA parameters
+ * @gfp: allocation flags
+ */
+void cfg80211_update_muedca_params_event(struct wiphy *wiphy,
+					 struct ieee80211_mu_edca_param_set
+					 *params, gfp_t gfp);
+
 #endif /* __NET_CFG80211_H */

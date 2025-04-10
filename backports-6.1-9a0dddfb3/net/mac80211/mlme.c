@@ -9603,6 +9603,18 @@ void ieee80211_disable_rssi_reports(struct ieee80211_vif *vif)
 }
 EXPORT_SYMBOL(ieee80211_disable_rssi_reports);
 
+void ieee80211_update_muedca_params(struct ieee80211_hw *hw,
+				    struct ieee80211_mu_edca_param_set
+				    *params, gfp_t gfp)
+{
+	struct ieee80211_local *local = hw_to_local(hw);
+
+	trace_api_update_muedca_params(local, params);
+
+	cfg80211_update_muedca_params_event(local->hw.wiphy, params, gfp);
+}
+EXPORT_SYMBOL(ieee80211_update_muedca_params);
+
 static void ieee80211_ml_reconf_selectors(unsigned long *userspace_selectors)
 {
 	*userspace_selectors = 0;
