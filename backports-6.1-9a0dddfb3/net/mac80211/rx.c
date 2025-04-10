@@ -5019,7 +5019,10 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 	}
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	if (rx->sdata->vif.ppe_vp_num) {
+	/* Do not deliver frames to PPE in fast rx incase of RFS
+	 * RFS is supported only in SFE Mode */
+	if (rx->sdata->vif.ppe_vp_type == PPE_VP_USER_TYPE_ACTIVE &&
+	    rx->sdata->vif.ppe_vp_num != -1) {
 		ieee80211_netif_rx_ppe(rx, skb);
 		atomic_inc(&sta->rx_netif_pkts);
 		return;

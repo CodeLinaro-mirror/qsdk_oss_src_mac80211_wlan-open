@@ -37,6 +37,10 @@ MODULE_PARM_DESC(nss_redirect, "module param to enable NSS Redirect; 1-enable, 0
 bool ppe_vp_accel = false;
 module_param(ppe_vp_accel, bool, 0644);
 MODULE_PARM_DESC(ppe_vp_accel, "module param to enable PPE; 1-enable, 0-disable");
+
+bool ppe_vp_rfs;
+module_param(ppe_vp_rfs, bool, 0644);
+MODULE_PARM_DESC(ppe_vp_rfs, "module param to enable PPE RFS for VLAN; 1-enable, 0-disable");
 #endif
 
 /**
@@ -833,8 +837,8 @@ static int ieee80211_stop(struct net_device *dev)
 		ieee80211_stop_mbssid(sdata, -1);
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	/* Free VP port here for PPE_VP mode */
-	if (ppe_vp_accel && sdata->vif.ppe_vp_num != -1) {
+	/* Free VP port here for PPE_VP mode or RFS Mode for VLANs */
+	if ((ppe_vp_accel || ppe_vp_rfs) && sdata->vif.ppe_vp_num != -1) {
 		ppe_vp_free(sdata->vif.ppe_vp_num);
 		sdata_info(sdata, "Destroyed PPE VP port no:%d for dev:%s\n",
 			   sdata->vif.ppe_vp_num, dev->name);
@@ -1313,17 +1317,29 @@ static int ieee80211_ppe_vp_802_3_redir_vap(struct ieee80211_sub_if_data *sdata,
 	memset(&vpai, 0, sizeof(struct ppe_vp_ai));
 
 	vpai.type = PPE_VP_TYPE_SW_L2;
-	vpai.dst_cb = ieee80211_process_dst_ppe_vp;
-	vpai.dst_cb_data = &sdata->vif;
-	vpai.src_cb = NULL;
-	vpai.src_cb_data = NULL;
-	vpai.queue_num = 0;
 	vpai.net_dev_type = PPE_VP_NET_DEV_TYPE_WIFI;
 
-	/* Allocate VP port here for PPE_VP mode */
+	/* keep first - ppe_vp_accel if set overrides ppe_vp_rfs */
+	if (ppe_vp_accel) {
+		vpai.dst_cb = ieee80211_process_dst_ppe_vp;
+		vpai.dst_cb_data = &sdata->vif;
+		vpai.src_cb = NULL;
+		vpai.src_cb_data = NULL;
+		vpai.queue_num = 0;
+		sdata->vif.ppe_vp_type = PPE_VP_USER_TYPE_ACTIVE;
+	} else if (ppe_vp_rfs && sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
+		vpai.usr_type = PPE_VP_USER_TYPE_PASSIVE;
+		vpai.core_mask = 0x7;
+		sdata->vif.ppe_vp_type = PPE_VP_USER_TYPE_PASSIVE;
+	}
+
+	/* Allocate VP port here for PPE_VP mode or RFS mode for VLANs */
 	vp = ppe_vp_alloc(dev, &vpai);
 	if (vp <= 0)
 		return -1;
+
+	sdata_info(sdata, "Allocated PPE VP port no:%d type %d for dev:%s\n",
+		   vp, vpai.usr_type, dev->name);
 
 	return vp;
 }
@@ -1591,7 +1607,8 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 #endif
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
-	if (ppe_vp_accel) {
+	/* for PPE RFS, driver handles VP allocation for non VLAN interfaces */
+	if ((ppe_vp_accel || ppe_vp_rfs) && sdata->vif.ppe_vp_num != -1) {
 		vp = ieee80211_ppe_vp_802_3_redir_vap(sdata, dev);
 		if (vp > 0) {
 			sdata->vif.ppe_vp_num = vp;
