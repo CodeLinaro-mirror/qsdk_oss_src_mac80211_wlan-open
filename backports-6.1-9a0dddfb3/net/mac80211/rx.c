@@ -4445,7 +4445,8 @@ static bool ieee80211_rx_data_set_sta(struct ieee80211_rx_data *rx,
 				rx->link = rcu_dereference(rx->sdata->link[sta->deflink.link_id]);
 			} else {
 				rx->link = &rx->sdata->deflink;
-				WARN_ON_ONCE(1);
+				if (!rx->local->in_reconfig)
+					WARN_ON_ONCE(1);
 			}
 		} else {
 			rx->link = &rx->sdata->deflink;
