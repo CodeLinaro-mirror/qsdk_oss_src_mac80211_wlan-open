@@ -1164,10 +1164,12 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 	 * this may be applicable even if channel is identical
 	 */
 	if (elems->ht_operation) {
-		ht_opmode = le16_to_cpu(elems->ht_operation->operation_mode);
-		if (link->conf->ht_operation_mode != ht_opmode) {
-			*changed |= BSS_CHANGED_HT;
-			link->conf->ht_operation_mode = ht_opmode;
+		if (channel->band != NL80211_BAND_6GHZ) {
+			ht_opmode = le16_to_cpu(elems->ht_operation->operation_mode);
+			if (link->conf->ht_operation_mode != ht_opmode) {
+				*changed |= BSS_CHANGED_HT;
+				link->conf->ht_operation_mode = ht_opmode;
+			}
 		}
 	}
 
