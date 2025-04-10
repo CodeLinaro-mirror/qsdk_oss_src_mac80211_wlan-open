@@ -750,11 +750,13 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 		local->hw_scan_req = kmalloc(struct_size(local->hw_scan_req,
 							 req.channels,
 							 req->n_channels) +
+							 sizeof(*req->chandef) +
 					     local->hw_scan_ies_bufsize,
 					     GFP_KERNEL);
 		if (!local->hw_scan_req)
 			return -ENOMEM;
 
+		local->hw_scan_req->req.chandef = req->chandef;
 		local->hw_scan_req->req.ssids = req->ssids;
 		local->hw_scan_req->req.n_ssids = req->n_ssids;
 		/* None of the channels are actually set

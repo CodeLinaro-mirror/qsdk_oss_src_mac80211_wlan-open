@@ -9407,7 +9407,10 @@ nl80211_check_scan_flags(struct wiphy *wiphy, struct wireless_dev *wdev,
 				     NL80211_EXT_FEATURE_SCAN_RANDOM_SN) ||
 	    !nl80211_check_scan_feat(wiphy, *flags,
 				     NL80211_SCAN_FLAG_MIN_PREQ_CONTENT,
-				     NL80211_EXT_FEATURE_SCAN_MIN_PREQ_CONTENT))
+				     NL80211_EXT_FEATURE_SCAN_MIN_PREQ_CONTENT) ||
+	    !nl80211_check_scan_feat(wiphy, *flags,
+				     NL80211_SCAN_FLAG_WIDE_BAND_SCAN,
+				     NL80211_EXT_FEATURE_WIDE_BAND_SCAN))
 		return -EOPNOTSUPP;
 
 	if (*flags & NL80211_SCAN_FLAG_RANDOM_ADDR) {
@@ -9431,12 +9434,14 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	struct wireless_dev *wdev = info->user_ptr[1];
 	struct cfg80211_scan_request *request;
 	struct nlattr *scan_freqs = NULL;
+	struct cfg80211_chan_def chandef;
 	bool scan_freqs_khz = false;
 	struct nlattr *attr;
 	struct wiphy *wiphy;
-	int err, tmp, n_ssids = 0, n_channels, i;
+	int err, tmp, n_ssids = 0, n_channels = 0, i;
 	size_t ie_len, size;
 	size_t ssids_offset, ie_offset;
+	bool chandef_found = false;
 
 	wiphy = &rdev->wiphy;
 
@@ -9449,7 +9454,12 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	if (rdev->scan_req || rdev->scan_msg)
 		return -EBUSY;
 
-	if (info->attrs[NL80211_ATTR_SCAN_FREQ_KHZ]) {
+	if (info->attrs[NL80211_ATTR_WIPHY_FREQ]) {
+		if (nl80211_parse_chandef(rdev, info, &chandef)) {
+			return -EINVAL;
+		}
+		chandef_found = true;
+	} else if (info->attrs[NL80211_ATTR_SCAN_FREQ_KHZ]) {
 		if (!wiphy_ext_feature_isset(wiphy,
 					     NL80211_EXT_FEATURE_SCAN_FREQ_KHZ))
 			return -EOPNOTSUPP;
@@ -9462,6 +9472,8 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 		n_channels = validate_scan_freqs(scan_freqs);
 		if (!n_channels)
 			return -EINVAL;
+	} else if (chandef_found) {
+		n_channels = 1;
 	} else {
 		n_channels = ieee80211_get_num_supported_channels(wiphy);
 	}
@@ -9486,10 +9498,16 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	size = size_add(size, array_size(sizeof(*request->ssids), n_ssids));
 	ie_offset = size;
 	size = size_add(size, ie_len);
+	size = size_add(size, sizeof(*request->chandef));
 	request = kzalloc(size, GFP_KERNEL);
 	if (!request)
 		return -ENOMEM;
-	request->n_channels = n_channels;
+
+	if (chandef_found) {
+		request->chandef = &chandef;
+		request->channels[0] = chandef.chan;
+		request->n_channels = n_channels;
+	}
 
 	if (n_ssids)
 		request->ssids = (void *)request + ssids_offset;
@@ -9521,7 +9539,7 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 			request->channels[i] = chan;
 			i++;
 		}
-	} else {
+	} else if (!chandef_found) {
 		enum nl80211_band band;
 
 		/* all channels */

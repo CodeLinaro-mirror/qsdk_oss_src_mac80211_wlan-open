@@ -2662,6 +2662,7 @@ struct cfg80211_scan_6ghz_params {
  * @n_ssids: number of SSIDs
  * @channels: channels to scan on.
  * @n_channels: total number of channels to scan
+ * @chandef: defines the channel to do wide band scan
  * @ie: optional information element(s) to add into Probe Request or %NULL
  * @ie_len: length of ie in octets
  * @duration: how long to listen on each channel, in TUs. If
@@ -2693,6 +2694,7 @@ struct cfg80211_scan_request {
 	struct cfg80211_ssid *ssids;
 	int n_ssids;
 	u32 n_channels;
+	struct cfg80211_chan_def *chandef;
 	const u8 *ie;
 	size_t ie_len;
 	u16 duration;
