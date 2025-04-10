@@ -494,6 +494,8 @@ nl80211_mbssid_config_policy[NL80211_MBSSID_CONFIG_ATTR_MAX + 1] = {
 	[NL80211_MBSSID_CONFIG_ATTR_EMA] = { .type = NLA_FLAG },
 	[NL80211_MBSSID_CONFIG_ATTR_TX_LINK_ID] =
 		NLA_POLICY_MAX(NLA_U8, IEEE80211_MLD_MAX_NUM_LINKS),
+	[NL80211_MBSSID_CONFIG_ATTR_MAX_MBSSID_GROUPS] = { .type = NLA_U8 },
+	[NL80211_MBSSID_CONFIG_ATTR_MAX_BEACON_SIZE] = { .type = NLA_U16 },
 };
 
 static const struct nla_policy
@@ -2591,6 +2593,17 @@ static int nl80211_put_mbssid_support(struct wiphy *wiphy, struct sk_buff *msg)
 		       wiphy->ema_max_profile_periodicity))
 		goto fail;
 
+	if (wiphy->mbssid_max_ngroups &&
+	    nla_put_u8(msg,
+		       NL80211_MBSSID_CONFIG_ATTR_MAX_MBSSID_GROUPS,
+		       wiphy->mbssid_max_ngroups))
+		goto fail;
+
+	if (wiphy->max_beacon_size &&
+	    nla_put_u16(msg,
+			NL80211_MBSSID_CONFIG_ATTR_MAX_BEACON_SIZE,
+			wiphy->max_beacon_size))
+		goto fail;
 	nla_nest_end(msg, config);
 	return 0;
 

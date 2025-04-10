@@ -6131,7 +6131,15 @@ struct ieee80211_chans_per_hw {
  *
  * @radio_cfg: configuration of radios belonging to a muli-radio wiphy. This struct
  *	contains a list of all radio specific attributes and should be used only for
- *	multi-radio wiphy.
+ *	multi-radio wiphy
+ *
+ * @mbssid_max_ngroups: maximum number of MBSSID groups supported by the
+ *	driver in a multi MBSSID group mode. This field must be set to a
+ *	non-zero value by the driver to advertise the maximum allowed MBSSID
+ *	groups.
+ * @max_beacon_size: maximum size of the beacon frame supported by the
+ *	driver. This field must be set to a non-zero value by the driver to
+ *	advertise the maximum allowed size for beacon frame.
  */
 struct wiphy {
 	struct mutex mtx;
@@ -6292,6 +6300,9 @@ struct wiphy {
 
 	struct ieee80211_chans_per_hw **hw_chans;
 	int num_hw;
+
+	u8 mbssid_max_ngroups;
+	u16 max_beacon_size;
 
 	char priv[] __aligned(NETDEV_ALIGN);
 };
