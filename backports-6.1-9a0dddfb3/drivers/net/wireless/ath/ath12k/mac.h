@@ -350,6 +350,8 @@ int ath12k_mac_op_link_reconfig_remove(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
 				       const struct cfg80211_link_reconfig_removal_params *params);
 bool ath12k_mac_op_removed_link_is_primary(struct ieee80211_sta *sta, u16 removed_links);
+int ath12k_mac_op_erp(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+		      int link_id, struct cfg80211_erp_params *params);
 int ath12k_mac_mgmt_tx(struct ath12k *ar, struct sk_buff *skb,
 		       bool is_prb_rsp);
 void ath12k_mac_add_p2p_noa_ie(struct ath12k *ar,

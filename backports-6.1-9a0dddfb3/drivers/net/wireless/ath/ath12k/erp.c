@@ -555,10 +555,15 @@ static void ath12k_vendor_send_erp_trigger(struct wiphy *wiphy)
 	wiphy_unlock(wiphy);
 }
 
-static int ath12k_erp_exit(struct wiphy *wiphy, bool send_event)
+int ath12k_erp_exit(struct wiphy *wiphy, bool send_event)
 {
 	struct ath12k_erp_active_ar *active_ar;
 	int ret;
+
+	if (!erp_sm.initialized) {
+		ath12k_err(NULL, "ErP is not initialized\n");
+		return -EOPNOTSUPP;
+	}
 
 	if (!send_event) {
 		/* When exit is triggered by userspace, no need to send event
@@ -601,6 +606,9 @@ static int ath12k_erp_exit(struct wiphy *wiphy, bool send_event)
 
 		if (send_event)
 			ath12k_vendor_send_erp_trigger(wiphy);
+	} else {
+		if (send_event)
+			cfg80211_erp_trigger_exit(wiphy);
 	}
 
 	return 0;
@@ -658,6 +666,77 @@ static const struct file_operations ath12k_fops_erp_rescan_pcie = {
 	.open = simple_open,
 	.read = ath12k_read_erp_rescan_pcie,
 };
+
+int ath12k_erp_enter(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int link_id,
+		     struct cfg80211_erp_params *params)
+{
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar = NULL;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	if (!ath12k_mlo_capable) {
+		ath12k_err(NULL, "command not supported in non-MLO mode\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (!erp_sm.initialized) {
+		ath12k_err(NULL, "Erp is not initialized\n");
+		return -EOPNOTSUPP;
+	}
+
+	if (vif && params->trigger) {
+		if (link_id < 0) {
+			ath12k_err(NULL, "invalid link id for Erp enter operation\n");
+			return -ENOLINK;
+		}
+
+		ahvif = ath12k_vif_to_ahvif(vif);
+		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+		if (!arvif || !arvif->is_created || !arvif->ar) {
+			ath12k_info(NULL, "cannot set ErP trigger for the specified link\n");
+			return -ENOLINK;
+		}
+
+		ar = arvif->ar;
+	}
+
+	mutex_lock(&erp_sm.lock);
+
+	if (erp_sm.state != ATH12K_ERP_OFF) {
+		ath12k_err(NULL, "driver is already in ErP mode\n");
+		goto out;
+	}
+
+	if (erp_pcie_config.enter_cnt) {
+		ath12k_err(NULL,
+			   "PCIe configuration for previous entry has not completed yet\n");
+		goto out;
+	}
+
+	if (erp_pcie_config.exit_cnt) {
+		ath12k_err(NULL,
+			   "PCIe configuration for previous exit has not completed yet\n");
+		goto out;
+	}
+
+	if (ar && params->trigger) {
+		if (ath12k_erp_set_pkt_filter(ar, params->trigger,
+					      ATH12K_WMI_PKTROUTE_ADD))
+			return -EINVAL;
+
+		erp_sm.active_ar.ar = ar;
+	}
+
+	erp_sm.state = ATH12K_ERP_ENTER_COMPLETE;
+	mutex_unlock(&erp_sm.lock);
+	return 0;
+
+out:
+	mutex_unlock(&erp_sm.lock);
+	return -EINVAL;
+}
 
 int ath12k_vendor_parse_rm_erp(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       struct nlattr *attrs)

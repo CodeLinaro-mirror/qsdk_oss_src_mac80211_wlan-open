@@ -19746,6 +19746,22 @@ void ath12k_mac_op_set_rekey_data(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_set_rekey_data);
 
+int ath12k_mac_op_erp(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+		      int link_id, struct cfg80211_erp_params *params)
+{
+	lockdep_assert_wiphy(hw->wiphy);
+
+	switch (params->cmd) {
+		case CFG80211_ERP_CMD_ENTER:
+			return ath12k_erp_enter(hw, vif, link_id, params);
+		case CFG80211_ERP_CMD_EXIT:
+			return ath12k_erp_exit(hw->wiphy, false);
+		default:
+			return -EINVAL;
+	}
+}
+EXPORT_SYMBOL(ath12k_mac_op_erp);
+
 /**
  * ath12k_disable_chans_outside_limit - disable channels outside the freq limits
  * @ch_lst: list of channels to check
@@ -20956,6 +20972,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		ath12k_warn(ar->ab, "failed to init wow: %d\n", ret);
 		goto err_cleanup_if_combs;
 	}
+
+	if (ab->ag->mlo_capable)
+		wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_ERP);
 
 	ath12k_vendor_register(ah);
 

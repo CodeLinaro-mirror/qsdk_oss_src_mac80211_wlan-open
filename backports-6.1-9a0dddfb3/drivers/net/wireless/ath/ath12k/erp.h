@@ -12,6 +12,8 @@ void ath12k_erp_deinit(void);
 bool ath12k_erp_in_progress(void);
 void ath12k_erp_handle_trigger(struct work_struct *work);
 void ath12k_erp_handle_ssr(struct ath12k *ar);
-
+int ath12k_erp_enter(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int link_id,
+		     struct cfg80211_erp_params *params);
+int ath12k_erp_exit(struct wiphy *wiphy, bool send_event);
 #endif /* ATH12K_ERP_H */
 
