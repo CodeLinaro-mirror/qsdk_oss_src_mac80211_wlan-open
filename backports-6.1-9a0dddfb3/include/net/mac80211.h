@@ -5038,6 +5038,8 @@ struct ieee80211_ops {
 	int (*link_reconfig_remove)(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    const struct cfg80211_link_reconfig_removal_params *params);
+	bool (*removed_link_is_primary)(struct ieee80211_sta *sta,
+					u16 removed_links);
 };
 
 /**

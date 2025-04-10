@@ -5894,7 +5894,7 @@ static bool ieee80211_assoc_success(struct ieee80211_sub_if_data *sdata,
 
 		if (assoc_data->link[link_id].status != WLAN_STATUS_SUCCESS) {
 			valid_links &= ~BIT(link_id);
-			ieee80211_sta_remove_link(sta, link_id);
+			ieee80211_sta_remove_link(sta, link_id, true);
 			continue;
 		}
 
@@ -6397,15 +6397,28 @@ static void ieee80211_ml_reconf_work(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata =
 		container_of(work, struct ieee80211_sub_if_data,
 			     u.mgd.ml_reconf_work.work);
-	u16 new_valid_links, new_active_links, new_dormant_links;
+	struct sta_info *sta;
+	struct ieee80211_local *local = sdata->local;
+	u16 new_valid_links, new_active_links, new_dormant_links, link_id;
 	int ret;
 
 	if (!sdata->u.mgd.removed_links)
 		return;
 
 	sdata_info(sdata,
-		   "MLO Reconfiguration: work: valid=0x%x, removed=0x%x\n",
+		   "MLO Reconfiguration: work: valid=0x%x, removed=0x%lx\n",
 		   sdata->vif.valid_links, sdata->u.mgd.removed_links);
+
+	list_for_each_entry(sta, &local->sta_list, list) {
+		if (sdata != sta->sdata)
+			continue;
+
+		if (drv_check_removed_link_is_primary(local, sta,
+						      sdata->u.mgd.removed_links)) {
+			__ieee80211_disconnect(sdata);
+			return;
+		}
+	}
 
 	new_valid_links = sdata->vif.valid_links & ~sdata->u.mgd.removed_links;
 	if (new_valid_links == sdata->vif.valid_links)
@@ -6443,11 +6456,19 @@ static void ieee80211_ml_reconf_work(struct wiphy *wiphy,
 	ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_MLD_VALID_LINKS);
 
 out:
-	if (!ret)
-		cfg80211_links_removed(sdata->dev, sdata->u.mgd.removed_links);
-	else
-		__ieee80211_disconnect(sdata);
+	if (!ret) {
+		list_for_each_entry(sta, &local->sta_list, list) {
+			if (sdata != sta->sdata)
+				continue;
 
+			for_each_set_bit(link_id, &sdata->u.mgd.removed_links,
+					 IEEE80211_MLD_MAX_NUM_LINKS)
+				ieee80211_sta_remove_link(sta, link_id, false);
+		}
+		cfg80211_links_removed(sdata->dev, sdata->u.mgd.removed_links);
+	} else
+		__ieee80211_disconnect(sdata);
+	
 	sdata->u.mgd.removed_links = 0;
 }
 
@@ -10341,7 +10362,7 @@ int ieee80211_mgd_assoc_ml_reconf(struct ieee80211_sub_if_data *sdata,
 			if (!(rem_links & BIT(link_id)))
 				continue;
 
-			ieee80211_sta_remove_link(sta, link_id);
+			ieee80211_sta_remove_link(sta, link_id, false);
 		}
 
 		/* notify the driver and upper layers */

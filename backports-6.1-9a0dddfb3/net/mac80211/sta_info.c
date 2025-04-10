@@ -3062,13 +3062,13 @@ int ieee80211_sta_allocate_link(struct sta_info *sta, unsigned int link_id)
 	return 0;
 }
 
-void ieee80211_sta_free_link(struct sta_info *sta, unsigned int link_id)
+void ieee80211_sta_free_link(struct sta_info *sta, unsigned int link_id, bool unhash)
 {
 	lockdep_assert_wiphy(sta->sdata->local->hw.wiphy);
 
 	WARN_ON(!test_sta_flag(sta, WLAN_STA_INSERTED));
 
-	sta_remove_link(sta, link_id, false);
+	sta_remove_link(sta, link_id, unhash);
 }
 
 int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
@@ -3119,20 +3119,57 @@ hash:
 	return 0;
 }
 
-void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id)
+void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
+			       bool update)
 {
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
-	u16 old_links = sta->sta.valid_links;
+	struct link_sta_info *sta_info;
+	struct ieee80211_link_sta *link_sta;
+	u16 old_links = sta->sta.valid_links, n_link_id;
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
 	sta->sta.valid_links &= ~BIT(link_id);
 
-	if (!WARN_ON(!test_sta_flag(sta, WLAN_STA_INSERTED)))
-		drv_change_sta_links(sdata->local, sdata, &sta->sta,
-				     old_links, sta->sta.valid_links);
+	if (!WARN_ON(!test_sta_flag(sta, WLAN_STA_INSERTED)) && update)
+		if (drv_change_sta_links(sdata->local, sdata, &sta->sta,
+				     old_links, sta->sta.valid_links)) {
+			sta->sta.valid_links |= BIT(link_id);
+			return;
+		}
 
 	sta_remove_link(sta, link_id, true);
+
+	/* If deflink is getting removed, then move the contents of the next
+	 * asosciated link to deflink and free the moved link memory
+	 */
+	if (sta->deflink.link_id == link_id) {
+		n_link_id = ffs(sta->sta.valid_links) - 1;
+
+		sta_info = rcu_access_pointer(sta->link[n_link_id]);
+		link_sta = rcu_access_pointer(sta->sta.link[n_link_id]);
+
+		if (sta_info && link_sta) {
+			sta->deflink.link_id = n_link_id;
+			sta->sta.deflink.link_id = n_link_id;
+
+			memcpy(&sta->deflink, sta_info, sizeof(*sta_info));
+			memcpy(&sta->sta.deflink, link_sta, sizeof(*link_sta));
+
+			/* Free the moved link memory */
+			sta_remove_link(sta, n_link_id, true);
+
+			/* Re-add the link id to valid_links */
+			sta->sta.valid_links |= BIT(n_link_id);
+
+			rcu_assign_pointer(sta->link[n_link_id], &sta->deflink);
+			rcu_assign_pointer(sta->sta.link[n_link_id],
+					   &sta->sta.deflink);
+
+			link_sta_info_hash_add(sdata->local, &sta->deflink);
+			ieee80211_link_sta_debugfs_add(&sta->deflink);
+		}
+	}
 }
 
 void ieee80211_sta_set_max_amsdu_subframes(struct sta_info *sta,

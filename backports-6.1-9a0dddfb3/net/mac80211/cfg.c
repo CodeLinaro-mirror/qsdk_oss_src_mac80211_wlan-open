@@ -5751,7 +5751,7 @@ ieee80211_add_link_station(struct wiphy *wiphy, struct net_device *dev,
 
 	ret = sta_link_apply_parameters(local, sta, STA_LINK_MODE_NEW, params);
 	if (ret) {
-		ieee80211_sta_free_link(sta, params->link_id);
+		ieee80211_sta_free_link(sta, params->link_id, false);
 		return ret;
 	}
 
@@ -5807,7 +5807,7 @@ ieee80211_del_link_station(struct wiphy *wiphy, struct net_device *dev,
 	if (sta->sta.valid_links == BIT(params->link_id))
 		return -EINVAL;
 
-	ieee80211_sta_remove_link(sta, params->link_id);
+	ieee80211_sta_remove_link(sta, params->link_id, true);
 
 	return 0;
 }

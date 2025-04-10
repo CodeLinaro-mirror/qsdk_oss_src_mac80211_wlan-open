@@ -1777,4 +1777,16 @@ drv_link_reconfig_remove(struct ieee80211_local *local,
 
 	return ret;
 }
+
+static inline bool
+drv_check_removed_link_is_primary(struct ieee80211_local *local,
+				  struct sta_info *sta,
+				  u16 removed_links)
+{
+	if (local->ops->removed_link_is_primary)
+		return local->ops->removed_link_is_primary(&sta->sta,
+							   removed_links);
+
+	return false;
+}
 #endif /* __MAC80211_DRIVER_OPS */

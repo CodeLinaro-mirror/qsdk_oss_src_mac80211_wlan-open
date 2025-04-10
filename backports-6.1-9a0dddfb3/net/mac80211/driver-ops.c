@@ -598,6 +598,7 @@ int drv_change_sta_links(struct ieee80211_local *local,
 {
 	struct sta_info *info = container_of(sta, struct sta_info, sta);
 	struct link_sta_info *link_sta;
+	struct ieee80211_vif *vif = &sdata->vif;
 	unsigned long links_to_add;
 	unsigned long links_to_rem;
 	unsigned int link_id;
@@ -609,8 +610,17 @@ int drv_change_sta_links(struct ieee80211_local *local,
 	if (!check_sdata_in_driver(sdata))
 		return -EIO;
 
-	old_links &= sdata->vif.active_links;
-	new_links &= sdata->vif.active_links;
+	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
+		struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+		/* Update parent vif for further use when vif type is AP/VLAN */
+		vif = wdev_to_ieee80211_vif_vlan(wdev);
+
+		if (!vif)
+			return -EINVAL;
+	}
+
+	old_links &= vif->active_links;
+	new_links &= vif->active_links;
 
 	if (old_links == new_links)
 		return 0;
@@ -627,7 +637,7 @@ int drv_change_sta_links(struct ieee80211_local *local,
 
 	trace_drv_change_sta_links(local, sdata, sta, old_links, new_links);
 	if (local->ops->change_sta_links)
-		ret = local->ops->change_sta_links(&local->hw, &sdata->vif, sta,
+		ret = local->ops->change_sta_links(&local->hw, vif, sta,
 						   old_links, new_links);
 	trace_drv_return_int(local, ret);
 
