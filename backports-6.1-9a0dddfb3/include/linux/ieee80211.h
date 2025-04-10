@@ -3201,6 +3201,8 @@ ieee80211_he_spr_size(const u8 *he_spr_ie)
 #define IEEE80211_EHT_OPER_CHAN_WIDTH_160MHZ	3
 #define IEEE80211_EHT_OPER_CHAN_WIDTH_320MHZ	4
 
+#define IEEE80211_EHT_OPER_PRESENT_BM		0x8
+
 /* Calculate 802.11be EHT capabilities IE Tx/Rx EHT MCS NSS Support Field size */
 static inline u8
 ieee80211_eht_mcs_nss_size(const struct ieee80211_he_cap_elem *he_cap,
@@ -3275,6 +3277,9 @@ ieee80211_eht_capa_size_ok(const u8 *he_capa, const u8 *data, u8 len,
 
 	if (len < needed || !he_capa)
 		return false;
+
+	/* WAR: always set to true */
+	return true;
 
 	needed += ieee80211_eht_mcs_nss_size((const void *)he_capa,
 					     (const void *)data,

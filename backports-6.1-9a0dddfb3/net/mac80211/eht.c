@@ -16,7 +16,6 @@ ieee80211_eht_cap_ie_to_sta_eht_cap(struct ieee80211_sub_if_data *sdata,
 				    struct link_sta_info *link_sta)
 {
 	struct ieee80211_sta_eht_cap *eht_cap = &link_sta->pub->eht_cap;
-	struct ieee80211_he_cap_elem *he_cap_ie_elem = (void *)he_cap_ie;
 	u8 eht_ppe_size = 0;
 	u8 mcs_nss_size;
 	u8 eht_total_size = sizeof(eht_cap->eht_cap_elem);
@@ -28,10 +27,13 @@ ieee80211_eht_cap_ie_to_sta_eht_cap(struct ieee80211_sub_if_data *sdata,
 	    !ieee80211_get_eht_iftype_cap_vif(sband, &sdata->vif))
 		return;
 
-	mcs_nss_size = ieee80211_eht_mcs_nss_size(he_cap_ie_elem,
+	mcs_nss_size = eht_cap_len - sizeof(struct ieee80211_eht_cap_elem_fixed);
+	/* WAR: compute based on capabilities
+	 * mcs_nss_size = ieee80211_eht_mcs_nss_size(he_cap_ie_elem,
 						  &eht_cap_ie_elem->fixed,
 						  sdata->vif.type ==
 							NL80211_IFTYPE_STATION);
+	*/
 
 	eht_total_size += mcs_nss_size;
 

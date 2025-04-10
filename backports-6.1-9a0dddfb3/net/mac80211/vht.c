@@ -557,10 +557,13 @@ void ieee80211_sta_init_nss(struct link_sta_info *link_sta)
 
 	if (link_sta->pub->eht_cap.has_eht) {
 		int i;
+		int eht_mcs_set_size = ieee80211_eht_mcs_nss_size(&link_sta->pub->he_cap.he_cap_elem,
+								  &link_sta->pub->eht_cap.eht_cap_elem,
+								  false);
 		const u8 *rx_nss_mcs = (void *)&link_sta->pub->eht_cap.eht_mcs_nss_supp;
 
 		/* get the max nss for EHT over all possible bandwidths and mcs */
-		for (i = 0; i < sizeof(struct ieee80211_eht_mcs_nss_supp); i++)
+		for (i = 0; i < eht_mcs_set_size; i++)
 			eht_rx_nss = max_t(u8, eht_rx_nss,
 					   u8_get_bits(rx_nss_mcs[i],
 						       IEEE80211_EHT_MCS_NSS_RX));
