@@ -1247,7 +1247,7 @@ ieee80211_assign_beacon(struct ieee80211_sub_if_data *sdata,
 		}
 		/* update bssid_indicator */
 		link_conf->bssid_indicator =
-			ilog2(__roundup_pow_of_two(mbssid->cnt + 1));
+			ieee80211_get_max_bssid_indicator(new->mbssid_ies);
 	}
 
 	if (csa) {

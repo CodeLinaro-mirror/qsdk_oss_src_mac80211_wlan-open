@@ -1251,6 +1251,19 @@ struct ieee80211_sub_if_data *vif_to_sdata(struct ieee80211_vif *p)
 		    ((__link) = sdata_dereference((__sdata)->link[__link_id],	\
 						  (__sdata))))			\
 
+static inline u8
+ieee80211_get_max_bssid_indicator(struct cfg80211_mbssid_elems *mbssid_elems)
+{
+	const u8 *bssid_indicator_offset;
+
+	if (!mbssid_elems || !mbssid_elems->cnt)
+		return 0;
+
+	bssid_indicator_offset = mbssid_elems->elem[0].data + 2;
+
+	return *bssid_indicator_offset;
+}
+
 static inline int
 ieee80211_get_mbssid_beacon_len(struct cfg80211_mbssid_elems *elems,
 				struct cfg80211_rnr_elems *rnr_elems,
