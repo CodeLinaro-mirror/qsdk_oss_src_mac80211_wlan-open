@@ -389,6 +389,8 @@ static u64 __mesh_plink_deactivate(struct sta_info *sta)
 	changed |= ieee80211_mps_set_sta_local_pm(sta,
 			NL80211_MESH_POWER_UNKNOWN);
 
+	ieee80211_check_fast_rx(sta);
+
 	return changed;
 }
 
@@ -908,6 +910,7 @@ static u64 mesh_plink_establish(struct ieee80211_sub_if_data *sdata,
 	mpl_dbg(sdata, "Mesh plink with %pM ESTABLISHED\n", sta->sta.addr);
 	ieee80211_mps_sta_status_update(sta);
 	changed |= ieee80211_mps_set_sta_local_pm(sta, mshcfg->power_mode);
+	ieee80211_check_fast_rx(sta);
 	return changed;
 }
 
@@ -926,7 +929,7 @@ static u64 mesh_plink_fsm(struct ieee80211_sub_if_data *sdata,
 	struct mesh_config *mshcfg = &sdata->u.mesh.mshcfg;
 	enum ieee80211_self_protected_actioncode action = 0;
 	u64 changed = 0;
-	bool flush = false;
+	bool flush = false, check_fast_rx = false;
 
 	mpl_dbg(sdata, "peer %pM in state %s got event %s\n", sta->sta.addr,
 		mplstates[sta->mesh->plink_state], mplevents[event]);
@@ -986,6 +989,7 @@ static u64 mesh_plink_fsm(struct ieee80211_sub_if_data *sdata,
 			break;
 		case CNF_ACPT:
 			changed |= mesh_plink_establish(sdata, sta);
+			check_fast_rx = true;
 			break;
 		default:
 			break;
@@ -1001,6 +1005,7 @@ static u64 mesh_plink_fsm(struct ieee80211_sub_if_data *sdata,
 			break;
 		case OPN_ACPT:
 			changed |= mesh_plink_establish(sdata, sta);
+			check_fast_rx = true;
 			action = WLAN_SP_MESH_PEERING_CONFIRM;
 			break;
 		default:
@@ -1047,6 +1052,10 @@ static u64 mesh_plink_fsm(struct ieee80211_sub_if_data *sdata,
 		break;
 	}
 	spin_unlock_bh(&sta->mesh->plink_lock);
+
+	if (check_fast_rx)
+		ieee80211_check_fast_rx(sta);
+
 	if (flush)
 		mesh_path_flush_by_nexthop(sta);
 	if (action) {

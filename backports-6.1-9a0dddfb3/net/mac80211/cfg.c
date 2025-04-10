@@ -1818,6 +1818,8 @@ static void sta_apply_mesh_params(struct ieee80211_local *local,
 			/* init at low value */
 			ewma_mesh_tx_rate_avg_add(&sta->mesh->tx_rate_avg, 10);
 
+			ieee80211_check_fast_rx(sta);
+
 			break;
 		case NL80211_PLINK_LISTEN:
 		case NL80211_PLINK_BLOCKED:
@@ -1832,6 +1834,7 @@ static void sta_apply_mesh_params(struct ieee80211_local *local,
 			ieee80211_mps_sta_status_update(sta);
 			changed |= ieee80211_mps_set_sta_local_pm(sta,
 					NL80211_MESH_POWER_UNKNOWN);
+			ieee80211_check_fast_rx(sta);
 			break;
 		default:
 			/*  nothing  */
