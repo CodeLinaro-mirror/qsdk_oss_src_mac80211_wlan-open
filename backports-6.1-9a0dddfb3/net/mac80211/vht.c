@@ -122,7 +122,6 @@ ieee80211_vht_cap_ie_to_sta_vht_cap(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_sta_vht_cap *vht_cap = &link_sta->pub->vht_cap;
 	struct ieee80211_sta_vht_cap own_cap;
 	u32 cap_info, i;
-	bool have_80mhz;
 	u32 mpdu_len;
 
 	memset(vht_cap, 0, sizeof(*vht_cap));
@@ -131,20 +130,6 @@ ieee80211_vht_cap_ie_to_sta_vht_cap(struct ieee80211_sub_if_data *sdata,
 		return;
 
 	if (!vht_cap_ie || !sband->vht_cap.vht_supported)
-		return;
-
-	/* Allow VHT if at least one channel on the sband supports 80 MHz */
-	have_80mhz = false;
-	for (i = 0; i < sband->n_channels; i++) {
-		if (sband->channels[i].flags & (IEEE80211_CHAN_DISABLED |
-						IEEE80211_CHAN_NO_80MHZ))
-			continue;
-
-		have_80mhz = true;
-		break;
-	}
-
-	if (!have_80mhz)
 		return;
 
 	/*
@@ -405,6 +390,12 @@ __ieee80211_sta_cap_rx_bw(struct link_sta_info *link_sta,
 		return link_sta->pub->ht_cap.cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40 ?
 				IEEE80211_STA_RX_BW_40 :
 				IEEE80211_STA_RX_BW_20;
+
+	/* If 40MHz support is not indicated in HT cap, we need not check other
+	 * vht caps for 80 & 160MHz. STA bandwidth can be set to 20MHz.
+	 */
+	if (!(link_sta->pub->ht_cap.cap & IEEE80211_HT_CAP_SUP_WIDTH_20_40))
+		return IEEE80211_STA_RX_BW_20;
 
 	cap_width = vht_cap->cap & IEEE80211_VHT_CAP_SUPP_CHAN_WIDTH_MASK;
 
