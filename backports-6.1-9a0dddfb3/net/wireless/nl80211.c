@@ -4266,6 +4266,10 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 	    nla_put_u32(msg, NL80211_ATTR_VIF_RADIO_MASK, wdev->radio_mask))
 		goto nla_put_failure;
 
+	if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
+		       wdev->reg_6g_power_mode))
+		goto nla_put_failure;
+
 	switch (wdev->iftype) {
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
