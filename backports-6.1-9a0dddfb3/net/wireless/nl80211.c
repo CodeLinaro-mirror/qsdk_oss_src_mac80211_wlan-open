@@ -10601,6 +10601,16 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	return 0;
 }
 
+static int nl80211_stop_radar_detection(struct sk_buff *skb,
+						struct genl_info *info)
+{
+	struct net_device *dev = info->user_ptr[1];
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+
+	cfg80211_stop_background_radar_detection(wdev);
+
+	return 0;
+}
 static int nl80211_notify_radar_detection(struct sk_buff *skb,
 					  struct genl_info *info)
 {
@@ -18202,6 +18212,15 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
 	},
+	{
+		.cmd = NL80211_CMD_STOP_BGRADAR_DETECT,
+		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
+		.doit = nl80211_stop_radar_detection,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP |
+					 NL80211_FLAG_NO_WIPHY_MTX |
+					 NL80211_FLAG_MLO_VALID_LINK_ID),
+	},
 };
 
 static struct genl_family nl80211_fam __ro_after_init = {
@@ -18221,7 +18240,7 @@ static struct genl_family nl80211_fam __ro_after_init = {
 	.n_small_ops = ARRAY_SIZE(nl80211_small_ops),
 #endif
 #if LINUX_VERSION_IS_GEQ(6,1,0)
-	.resv_start_op = NL80211_CMD_REMOVE_LINK_STA + 1,
+	.resv_start_op = NL80211_CMD_REMOVE_LINK_STA + 9,
 #endif
 	.mcgrps = nl80211_mcgrps,
 	.n_mcgrps = ARRAY_SIZE(nl80211_mcgrps),
@@ -20341,6 +20360,12 @@ nl80211_radar_notify(struct cfg80211_registered_device *rdev,
 		if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, netdev->ifindex) ||
 		    nla_put_u64_64bit(msg, NL80211_ATTR_WDEV, wdev_id(wdev),
 				      NL80211_ATTR_PAD))
+			goto nla_put_failure;
+	}
+
+	if (rdev->background_radar_wdev &&
+	    cfg80211_chandef_identical(&rdev->background_radar_chandef, chandef)) {
+		if(nla_put_flag(msg, NL80211_ATTR_RADAR_BACKGROUND))
 			goto nla_put_failure;
 	}
 
