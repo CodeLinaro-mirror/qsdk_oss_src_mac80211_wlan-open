@@ -8400,16 +8400,24 @@ void ieee80211_mgd_setup_link(struct ieee80211_link_data *link)
 
 	ieee80211_clear_tpe(&link->conf->tpe);
 
-	if (sdata->u.mgd.assoc_data)
+	if (sdata->u.mgd.assoc_data) {
 		ether_addr_copy(link->conf->addr,
 				sdata->u.mgd.assoc_data->link[link_id].addr);
-	else if (link != &sdata->deflink)
+	} else if (link != &sdata->deflink) {
 		ether_addr_copy(link->conf->addr, sdata->vif.addr);
-	else if (sdata->u.mgd.reconf.add_links_data)
+		if (link_id >= 0)
+			link->conf->addr[5] += link_id;
+	} else if (sdata->u.mgd.reconf.add_links_data) {
 		ether_addr_copy(link->conf->addr,
 				sdata->u.mgd.reconf.add_links_data->link[link_id].addr);
-	else if (!is_valid_ether_addr(link->conf->addr))
-		eth_random_addr(link->conf->addr);
+	} else if (!is_valid_ether_addr(link->conf->addr)) {
+		if (link_id >= 0) {
+			ether_addr_copy(link->conf->addr, sdata->vif.addr);
+			link->conf->addr[5] += link_id;
+		}  else {
+			eth_random_addr(link->conf->addr);
+		}
+	}
 }
 
 /* scan finished notification */
@@ -8464,7 +8472,10 @@ static int ieee80211_prep_connection(struct ieee80211_sub_if_data *sdata,
 		err = -ENOLINK;
 		goto out_err;
 	}
-
+	if (mlo && !is_valid_ether_addr(link->conf->addr)) {
+		ether_addr_copy(link->conf->addr, sdata->vif.addr);
+		link->conf->addr[5] += link_id;
+	}
 	if (WARN_ON(!ifmgd->auth_data && !ifmgd->assoc_data)) {
 		err = -EINVAL;
 		goto out_err;
@@ -9205,11 +9216,13 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 			}
 
 			link = sdata_dereference(sdata->link[i], sdata);
-			if (link)
+			if (link) {
 				ether_addr_copy(assoc_data->link[i].addr,
 						link->conf->addr);
-			else
-				eth_random_addr(assoc_data->link[i].addr);
+			} else {
+				ether_addr_copy(assoc_data->link[i].addr, sdata->vif.addr);
+				assoc_data->link[i].addr[5] += i;
+			}
 			sband = local->hw.wiphy->bands[link_cbss->channel->band];
 
 			if (match_auth && i == assoc_link_id && link)
