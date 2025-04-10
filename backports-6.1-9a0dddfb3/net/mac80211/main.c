@@ -369,7 +369,8 @@ void ieee80211_bss_info_change_notify(struct ieee80211_sub_if_data *sdata,
 			local->ops->vif_cfg_changed(&local->hw, &sdata->vif, ch);
 	}
 
-	if (changed & ~BSS_CHANGED_VIF_CFG_FLAGS) {
+	if (((!sdata->vif.valid_links) || (sdata->vif.valid_links & BIT(0))) &&
+	    changed & ~BSS_CHANGED_VIF_CFG_FLAGS) {
 		u64 ch = changed & ~BSS_CHANGED_VIF_CFG_FLAGS;
 
 		trace_drv_link_info_changed(local, sdata, &sdata->vif.bss_conf,
