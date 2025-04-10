@@ -709,6 +709,59 @@ static void ieee80211_scan_state_send_probe(struct ieee80211_local *local,
 	local->next_scan_state = SCAN_DECISION;
 }
 
+static void __ieee80211_validate_scan_freqs(struct ieee80211_sub_if_data *sdata,
+					    struct cfg80211_scan_request *req)
+{
+	struct ieee80211_vif *vif = &sdata->vif;
+	unsigned long links = vif->valid_links;
+	struct ieee80211_bss_conf *link_conf;
+	int n_chans = 0, i;
+	u8 link_id, bands_active = 0, band;
+
+	if (req->scan_with_freq_info)
+		return;
+
+	/* In case of single wiphy, if req is without freq info, then it will have all
+	 * possible enabled channels from all bands. Parse and only keep
+	 * those who are active on the given interface
+	 */
+
+	if (!vif->valid_links) {
+		link_conf = &vif->bss_conf;
+
+		if (!link_conf->chanctx_conf) {
+			return;
+		}
+
+		band = link_conf->chanctx_conf->def.chan->band;
+		bands_active |= BIT(band);
+	} else {
+		rcu_read_lock();
+		for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+			link_conf = vif->link_conf[link_id];
+
+			if (!link_conf || !link_conf->chanctx_conf)
+				continue;
+
+			band = link_conf->chanctx_conf->def.chan->band;
+			bands_active |= BIT(band);
+		}
+		rcu_read_unlock();
+	}
+
+	if (!bands_active)
+		return;
+
+	for (i = 0; i < req->n_channels; i++) {
+		if (!(bands_active & BIT(req->channels[i]->band)))
+			continue;
+
+		req->channels[n_chans++] = req->channels[i];
+	}
+
+	req->n_channels = n_chans;
+}
+
 static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 				  struct cfg80211_scan_request *req)
 {
@@ -756,6 +809,8 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 			}
 
 			local->hw_scan_ies_bufsize *= n_bands;
+		} else {
+			__ieee80211_validate_scan_freqs(sdata, req);
 		}
 
 		local->hw_scan_req = kmalloc(struct_size(local->hw_scan_req,

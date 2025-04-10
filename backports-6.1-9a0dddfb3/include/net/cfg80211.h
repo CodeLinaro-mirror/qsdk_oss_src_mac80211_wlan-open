@@ -2844,6 +2844,7 @@ struct cfg80211_scan_request {
 	struct cfg80211_scan_6ghz_params *scan_6ghz_params;
 	s8 tsf_report_link_id;
 	u8 hw_idx;
+	bool scan_with_freq_info;
 
 	/* keep last */
 	struct ieee80211_channel *channels[] __counted_by(n_channels);
@@ -2980,6 +2981,8 @@ struct cfg80211_sched_scan_request {
 	u32 owner_nlportid;
 	bool nl_owner_dead;
 	struct list_head list;
+
+	bool scan_with_freq_info;
 
 	/* keep last */
 	struct ieee80211_channel *channels[] __counted_by(n_channels);

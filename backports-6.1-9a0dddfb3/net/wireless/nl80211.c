@@ -9913,6 +9913,7 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	size_t ie_len, size;
 	size_t ssids_offset, ie_offset;
 	bool chandef_found = false;
+	bool freq_info_provided = true;
 
 	wiphy = &rdev->wiphy;
 
@@ -9947,6 +9948,7 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 		n_channels = 1;
 	} else {
 		n_channels = ieee80211_get_num_supported_channels(wiphy);
+		freq_info_provided = false;
 	}
 
 	if (info->attrs[NL80211_ATTR_SCAN_SSIDS])
@@ -10050,6 +10052,7 @@ static int nl80211_trigger_scan(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	request->n_channels = i;
+	request->scan_with_freq_info = freq_info_provided;
 
 	for (i = 0; i < request->n_channels; i++) {
 		struct ieee80211_channel *chan = request->channels[i];
@@ -10469,6 +10472,8 @@ nl80211_parse_sched_scan(struct wiphy *wiphy, struct wireless_dev *wdev,
 				struct ieee80211_channel *chan;
 
 				chan = &wiphy->bands[band]->channels[j];
+				if (!chan)
+					continue;
 
 				if (chan->flags & IEEE80211_CHAN_DISABLED)
 					continue;
