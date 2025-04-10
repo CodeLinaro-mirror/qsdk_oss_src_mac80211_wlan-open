@@ -8386,6 +8386,8 @@ void ieee80211_mgd_setup_link(struct ieee80211_link_data *link)
 	if (sdata->u.mgd.assoc_data)
 		ether_addr_copy(link->conf->addr,
 				sdata->u.mgd.assoc_data->link[link_id].addr);
+	else if (link != &sdata->deflink)
+		ether_addr_copy(link->conf->addr, sdata->vif.addr);
 	else if (sdata->u.mgd.reconf.add_links_data)
 		ether_addr_copy(link->conf->addr,
 				sdata->u.mgd.reconf.add_links_data->link[link_id].addr);
