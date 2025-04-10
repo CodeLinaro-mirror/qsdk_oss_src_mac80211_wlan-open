@@ -4665,6 +4665,10 @@ struct ieee80211_ppe_vp_ds_params {
  *	link along with the TBTT count until which the beacon with ML
  *	reconfigure element should be sent.
  * @change_mtu: Ops to change the interface MTU.
+ * @init_interface: Called at the time of netdev init stage. This gives drivers
+ *	a flexibility to init driver specific data at interface init time.
+ * @deinit_interface: Called at the time of netdev deinit stage. This gives drivers
+ *	a flexibility to deinit driver specific data at interface deinit time.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5067,6 +5071,12 @@ struct ieee80211_ops {
 	int (*change_mtu)(struct ieee80211_hw *hw,
 			  struct ieee80211_vif *vif,
 			  int mtu);
+	int (*init_interface)(struct ieee80211_hw *hw,
+			      struct ieee80211_vif *vif,
+			      struct net_device *dev);
+	int (*deinit_interface)(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct net_device *dev);
 };
 
 /**

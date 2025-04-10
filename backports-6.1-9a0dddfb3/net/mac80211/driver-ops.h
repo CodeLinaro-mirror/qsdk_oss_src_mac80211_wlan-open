@@ -1729,6 +1729,30 @@ static inline bool drv_can_activate_links(struct ieee80211_local *local,
 	return ret;
 }
 
+static inline int drv_init_interface(struct ieee80211_local *local,
+				     struct ieee80211_sub_if_data *sdata,
+				     struct net_device *dev)
+{
+	int ret = 0;
+
+	if (local->ops->init_interface)
+		ret = local->ops->init_interface(&local->hw, &sdata->vif, dev);
+
+	return ret;
+}
+
+static inline int drv_deinit_interface(struct ieee80211_local *local,
+				       struct ieee80211_sub_if_data *sdata,
+				       struct net_device *dev)
+{
+	int ret = 0;
+
+	if (local->ops->deinit_interface)
+		ret = local->ops->deinit_interface(&local->hw, &sdata->vif, dev);
+
+	return ret;
+}
+
 int drv_change_vif_links(struct ieee80211_local *local,
 			 struct ieee80211_sub_if_data *sdata,
 			 u16 old_links, u16 new_links,
