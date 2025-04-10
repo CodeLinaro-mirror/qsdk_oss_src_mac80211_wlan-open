@@ -907,10 +907,11 @@ void mesh_plink_broken(struct sta_info *sta)
 	if (paths_deactivated) {
 		signal_avg = -ewma_signal_read(&sta->deflink.rx_stats_avg.signal);
 		sdata_info(sta->sdata, " MESH MPL link to %pM is broken and"
-			   " %d path deactivated signal %d dbm signal_avg %d dbm\n",
+			   " %d path deactivated signal %d dbm signal_avg %d dbm"
+			   " medium_busy : %d\n",
 			   sta->deflink.addr, paths_deactivated,
 			   sta->deflink.rx_stats.last_signal,
-			   signal_avg);
+			   signal_avg, sta->local->hw.medium_busy);
 		mesh_continuous_tx_fail_cnt(sta, NL80211_MPATH_BROKEN_NOTIFY);
 	}
 }

@@ -564,11 +564,12 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
                                 signal_avg = -ewma_signal_read(&sta->deflink.rx_stats_avg.signal);
                                 mpath_dbg(sdata, "MESH MPLMU DIRECT dst %pM next hop"
                                           " %pM metric from %d to %d ft 0x%x signal %d"
-                                          "dbm signal_avg %d dbm\n",
+                                          "dbm signal_avg %d dbm medium_busy %u\n",
                                           mpath->dst, sta->deflink.addr, mpath->metric,
                                           new_metric, action,
                                           sta->deflink.rx_stats.last_signal,
-                                          signal_avg);
+                                          signal_avg,
+                                          sta->local->hw.medium_busy);
                                 mpath_metric_change = 1;
                         }
 			mesh_path_assign_nexthop(mpath, sta);
@@ -639,11 +640,12 @@ static u32 hwmp_route_info_get(struct ieee80211_sub_if_data *sdata,
                                 signal_avg = -ewma_signal_read(&sta->deflink.rx_stats_avg.signal);
                                 mpath_dbg(sdata, "MESH MPLMU DIRECT dst %pM next hop"
                                           " %pM metric from %d to %d ft 0x%x signal %d"
-                                          "dbm signal_avg %d dbm\n",
+                                          "dbm signal_avg %d dbm medium_busy %u\n",
                                           mpath->dst, sta->deflink.addr, mpath->metric,
                                           new_metric, action,
                                           sta->deflink.rx_stats.last_signal,
-                                          signal_avg);
+                                          signal_avg,
+                                          sta->local->hw.medium_busy);
                                 mpath_metric_change = 1;
                         }
 			mesh_path_assign_nexthop(mpath, sta);

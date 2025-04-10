@@ -3152,6 +3152,7 @@ struct ieee80211_hw {
 	const s8 *tx_power_levels;
 	u8 max_txpwr_levels_idx;
 	u32 dbg_mask;
+	u8 medium_busy;
 };
 
 static inline bool _ieee80211_hw_check(struct ieee80211_hw *hw,
