@@ -369,6 +369,8 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 		link = links[link_id];
 		ieee80211_link_init(sdata, link_id, &link->data, &link->conf);
 		ieee80211_link_setup(&link->data);
+		ieee80211_set_wmm_default(&link->data, true,
+			sdata->vif.type != NL80211_IFTYPE_STATION);
 	}
 
 	if (new_links == 0)
