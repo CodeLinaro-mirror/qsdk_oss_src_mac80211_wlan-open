@@ -804,9 +804,10 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 					   const char *requested_name)
 {
 	struct ieee80211_local *local;
-	int priv_size, i;
+	int priv_size, i, j;
 	struct wiphy *wiphy;
 	bool emulate_chanctx;
+	int cpu = 0;
 
 	if (WARN_ON(!ops->tx || !ops->start || !ops->stop || !ops->config ||
 		    !ops->add_interface || !ops->remove_interface ||
@@ -993,7 +994,6 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	mutex_init(&local->iflist_mtx);
 	spin_lock_init(&local->filter_lock);
 	spin_lock_init(&local->rx_path_lock);
-	spin_lock_init(&local->queue_stop_reason_lock);
 
 	for (i = 0; i < IEEE80211_NUM_ACS; i++) {
 		INIT_LIST_HEAD(&local->active_txqs[i]);
@@ -1038,11 +1038,55 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	spin_lock_init(&local->ack_status_lock);
 	idr_init(&local->ack_status_frames);
 
-	for (i = 0; i < IEEE80211_MAX_QUEUES; i++) {
-		skb_queue_head_init(&local->pending[i]);
+	for (i = 0; i < IEEE80211_MAX_QUEUES; i++)
 		atomic_set(&local->agg_queue_stop[i], 0);
+
+	/* Initialize the percpu queues
+	 * This includes :
+	 * 1. Initializing the percpu pending queue
+	 * 2. Initializing the percpu tasklet for transmitting skbs from
+	 * each pending queue
+	 * 4. Initializing queue_stop_reasons for each cpu
+	 * 5. Initializing percpu spinlocks to avoid contention between a
+	 * tasklet and process trying to access the same pending queue
+	 */
+	local->tx_pending_tasklet =
+		alloc_percpu_gfp(struct ieee80211_tasklet_data, GFP_KERNEL);
+	if (!local->tx_pending_tasklet)
+		goto err_free;
+
+	local->queue_stop_reason_lock = alloc_percpu(spinlock_t);
+	if (!local->queue_stop_reason_lock)
+		goto err_free;
+
+	for (i = 0; i < IEEE80211_MAX_QUEUES; i++) {
+		local->pending[i] = alloc_percpu(struct sk_buff_head);
+		if (!local->pending[i])
+			goto err_free;
+
+		local->queue_stop_reasons[i] = alloc_percpu_gfp(unsigned long, GFP_KERNEL);
+		if (!local->queue_stop_reasons[i])
+			goto err_free;
+
+		for (j = 0; j < IEEE80211_QUEUE_STOP_REASONS; j++) {
+			local->q_stop_reasons[i][j] = alloc_percpu(int);
+			if (!local->q_stop_reasons[i][j])
+				goto err_free;
+		}
 	}
-	tasklet_setup(&local->tx_pending_tasklet, ieee80211_tx_pending);
+
+	for_each_possible_cpu(cpu) {
+		struct ieee80211_tasklet_data *tasklet_data = per_cpu_ptr(local->tx_pending_tasklet, cpu);
+		for (i = 0; i < IEEE80211_MAX_QUEUES; i++) {
+			struct sk_buff_head *pending = per_cpu_ptr(local->pending[i], cpu);
+			if (!pending)
+				continue;
+			skb_queue_head_init(pending);
+		}
+		tasklet_data->local = local;
+		tasklet_setup(&tasklet_data->tasklet, ieee80211_tx_pending);
+		spin_lock_init(per_cpu_ptr(local->queue_stop_reason_lock, cpu));
+	}
 
 	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
 		tasklet_setup(&local->wake_txqs_tasklet, ieee80211_wake_txqs);
@@ -1061,6 +1105,20 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 
 	return &local->hw;
  err_free:
+	if (this_cpu_ptr(local->tx_pending_tasklet))
+		free_percpu(local->tx_pending_tasklet);
+	if (this_cpu_ptr(local->queue_stop_reason_lock))
+		free_percpu(local->queue_stop_reason_lock);
+	for (i = 0; i < IEEE80211_MAX_QUEUES; i++) {
+		if (this_cpu_ptr(local->pending[i]))
+			free_percpu(local->pending[i]);
+		if (this_cpu_ptr(local->queue_stop_reasons[i]))
+			free_percpu(local->queue_stop_reasons[i]);
+		for (j = 0; j < IEEE80211_QUEUE_STOP_REASONS; j++)
+			if (this_cpu_ptr(local->q_stop_reasons[i][j]))
+				free_percpu(local->q_stop_reasons[i][j]);
+	}
+
 	wiphy_free(wiphy);
 	return NULL;
 }
@@ -1837,6 +1895,7 @@ void ieee80211_free_hw(struct ieee80211_hw *hw)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
 	enum nl80211_band band;
+	int i, j;
 
 	mutex_destroy(&local->iflist_mtx);
 
@@ -1848,6 +1907,18 @@ void ieee80211_free_hw(struct ieee80211_hw *hw)
 	idr_for_each(&local->ack_status_frames,
 		     ieee80211_free_ack_frame, NULL);
 	idr_destroy(&local->ack_status_frames);
+
+	/* Free the perCPU SW queues and associated
+	 * variables
+	 */
+	for (i = 0; i < IEEE80211_MAX_QUEUES; i++) {
+		free_percpu(local->pending[i]);
+		free_percpu(local->queue_stop_reasons[i]);
+		for (j = 0; j < IEEE80211_QUEUE_STOP_REASONS; j++)
+			free_percpu(local->q_stop_reasons[i][j]);
+	}
+	free_percpu(local->tx_pending_tasklet);
+	free_percpu(local->queue_stop_reason_lock);
 
 	sta_info_stop(local);
 

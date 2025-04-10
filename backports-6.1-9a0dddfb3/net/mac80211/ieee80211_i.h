@@ -1410,6 +1410,11 @@ struct channel_cw_info {
 	struct ieee80211_channel *cw_channel;
 };
 
+struct ieee80211_tasklet_data {
+	struct tasklet_struct tasklet;
+	struct ieee80211_local *local;
+};
+
 struct ieee80211_local {
 	/* embed the driver visible part.
 	 * don't cast (use the static inlines below), but we keep
@@ -1443,10 +1448,14 @@ struct ieee80211_local {
 	 */
 	struct workqueue_struct *workqueue;
 
-	unsigned long queue_stop_reasons[IEEE80211_MAX_QUEUES];
-	int q_stop_reasons[IEEE80211_MAX_QUEUES][IEEE80211_QUEUE_STOP_REASONS];
+	/* percpu SW queue variables to stop/wake individual queues
+	 * for the current CPU
+	 */
+	unsigned long __percpu *queue_stop_reasons[IEEE80211_MAX_QUEUES];
+	int __percpu
+		*q_stop_reasons[IEEE80211_MAX_QUEUES][IEEE80211_QUEUE_STOP_REASONS];
 	/* also used to protect ampdu_ac_queue and amdpu_ac_stop_refcnt */
-	spinlock_t queue_stop_reason_lock;
+	spinlock_t __percpu *queue_stop_reason_lock;
 
 	int open_count;
 	int monitors, cooked_mntrs, tx_mntrs;
@@ -1545,8 +1554,12 @@ struct ieee80211_local {
 	struct timer_list sta_cleanup;
 	int sta_generation;
 
-	struct sk_buff_head pending[IEEE80211_MAX_QUEUES];
-	struct tasklet_struct tx_pending_tasklet;
+	/* percpu SW queues - each CPU having IEEE80211_MAX_QUEUES.
+	 * Maintain percpu tx dequeue tasklets which
+	 * will dequeue packets from its own CPU
+	 */
+	struct sk_buff_head __percpu *pending[IEEE80211_MAX_QUEUES];
+	struct ieee80211_tasklet_data __percpu *tx_pending_tasklet;
 	struct tasklet_struct wake_txqs_tasklet;
 
 	atomic_t agg_queue_stop[IEEE80211_MAX_QUEUES];
@@ -1704,6 +1717,13 @@ struct ieee80211_local {
 	u8 ext_capa[8];
 
 	bool wbrf_supported;
+};
+
+struct ieee80211_queue_info {
+	struct ieee80211_hw *hw;
+	int queue;
+	enum queue_stop_reason reason;
+	bool refcounted;
 };
 
 static inline struct ieee80211_sub_if_data *
