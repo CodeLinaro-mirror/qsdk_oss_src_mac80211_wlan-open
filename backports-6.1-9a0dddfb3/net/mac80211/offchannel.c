@@ -814,6 +814,39 @@ int ieee80211_cancel_remain_on_channel(struct wiphy *wiphy,
 	return ieee80211_cancel_roc(local, cookie, false);
 }
 
+static bool ieee80211_is_link_bss_active(struct ieee80211_sub_if_data *sdata,
+				  	 int link_id)
+{
+	struct ieee80211_link_data *link;
+
+	if (!sdata->bss)
+		return false;
+
+	/* This is consolidated status of the MLD or non ML bss */
+	if (sdata->bss->active)
+		return true;
+
+	if (link_id < 0)
+		return false;
+
+	if (!sdata->vif.valid_links)
+		return false;
+
+	if (!(sdata->vif.valid_links & BIT(link_id)))
+		return false;
+
+	link = sdata_dereference(sdata->link[link_id], sdata);
+	if (!link) {
+		return false;
+	}
+
+	if (sdata_dereference(link->u.ap.beacon, sdata)) {
+		return true;
+	}
+
+	return false;
+}
+
 int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 		      struct cfg80211_mgmt_tx_params *params, u64 *cookie)
 {
@@ -857,7 +890,7 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	case NL80211_IFTYPE_P2P_GO:
 		if (sdata->vif.type != NL80211_IFTYPE_ADHOC &&
 		    !ieee80211_vif_is_mesh(&sdata->vif) &&
-		    !sdata->bss->active)
+		    !ieee80211_is_link_bss_active(sdata, params->link_id))
 			need_offchan = true;
 
 		rcu_read_lock();
@@ -937,7 +970,9 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 				break;
 			}
 
-			if (ether_addr_equal(conf->addr, mgmt->sa)) {
+			if (ether_addr_equal(conf->addr, mgmt->sa) &&
+			    cfg80211_channel_identical(params->chan,
+				    		       chanctx_conf->def.chan)) {
 				/* If userspace requested Tx on a specific link
 				 * use the same link id if the link bss is matching
 				 * the requested chan.
