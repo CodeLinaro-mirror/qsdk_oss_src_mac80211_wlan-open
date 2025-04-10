@@ -2367,6 +2367,10 @@ netdev_tx_t ieee80211_monitor_start_xmit(struct sk_buff *skb,
 	u16 len_rthdr;
 	int hdrlen;
 
+#ifdef CPTCFG_MAC80211_ATHMEMDEBUG
+	ath_update_alloc(skb, skb->truesize, __LINE__, __func__, 1);
+#endif
+
 	sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	if (unlikely(!ieee80211_sdata_running(sdata)))
 		goto fail;
@@ -4649,6 +4653,10 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	const struct ethhdr *eth = (void *)skb->data;
 
+#ifdef CPTCFG_MAC80211_ATHMEMDEBUG
+	ath_update_alloc(skb, skb->truesize, __LINE__, __func__, 1);
+#endif
+
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	ieee80211_xmit_nss_fixup(skb, dev);
 #endif
@@ -4959,6 +4967,10 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	struct ieee80211_sta *pubsta = NULL;
 	bool perf_mode = sdata->local->hw.perf_mode;
 
+#ifdef CPTCFG_MAC80211_ATHMEMDEBUG
+        ath_update_alloc(skb, skb->truesize, __LINE__, __func__, 1);
+#endif
+
 	orig_sdata = sdata;
 	if (likely(skb->fast_xmit && perf_mode)) {
 		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
@@ -4994,7 +5006,11 @@ out:
 	}
 
 	info->control.vif = &sdata->vif;
-#endif
+#else
+#ifdef CPTCFG_MAC80211_ATHMEMDEBUG
+        ath_update_alloc(skb, skb->truesize, __LINE__, __func__, 1);
+#endif /* CPTCFG_MAC80211_ATHMEMDEBUG */
+#endif /* CPTCFG_MAC80211_SFE_SUPPORT */
 	return __ieee80211_subif_start_xmit_8023(skb, dev, 0, 0, NULL);
 
 }

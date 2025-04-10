@@ -3,6 +3,10 @@
 #include_next <linux/skbuff.h>
 #include <linux/version.h>
 
+#ifdef CPTCFG_MAC80211_ATHMEMDEBUG
+#include <linux/athdebug_skbuff.h>
+#endif
+
 #if LINUX_VERSION_IS_LESS(4,20,0)
 static inline struct sk_buff *__skb_peek(const struct sk_buff_head *list_)
 {

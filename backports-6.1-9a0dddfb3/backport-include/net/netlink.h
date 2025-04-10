@@ -4,6 +4,10 @@
 #include <linux/version.h>
 #include <linux/in6.h>
 
+#ifdef CPTCFG_MAC80211_ATHMEMDEBUG
+#include <net/athdebug_netlink.h>
+#endif
+
 #if LINUX_VERSION_IS_LESS(5,2,0)
 /* can't backport using the enum - need to override */
 #define NLA_UNSPEC		0
