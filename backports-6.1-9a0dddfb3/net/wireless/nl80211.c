@@ -3895,6 +3895,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		struct wireless_dev *txp_wdev = wdev;
 		enum nl80211_tx_power_setting type;
 		int idx, mbm = 0;
+		unsigned int link_id;
 
 		if (!(rdev->wiphy.features & NL80211_FEATURE_VIF_TXPOWER))
 			txp_wdev = NULL;
@@ -3914,9 +3915,46 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 			mbm = nla_get_u32(info->attrs[idx]);
 		}
 
-		result = rdev_set_tx_power(rdev, txp_wdev, radio_id, type, mbm);
-		if (result)
-			return result;
+		if (txp_wdev && txp_wdev->valid_links) {
+			if (!info->attrs[NL80211_ATTR_MLO_LINK_ID]) {
+				result = -EINVAL;
+				goto out;
+			}
+			link_id = nla_get_u8(info->attrs[NL80211_ATTR_MLO_LINK_ID]);
+			if (!(txp_wdev->valid_links & BIT(link_id))) {
+				result = -ENOLINK;
+				goto out;
+			}
+
+			result = rdev_set_tx_power(rdev, txp_wdev, radio_id, type, mbm);
+			if (result) {
+				goto out;
+			}
+		} else {
+			if (!info->attrs[NL80211_ATTR_MLO_LINK_ID]) {
+				if (txp_wdev) {
+					result = rdev_set_tx_power(rdev, txp_wdev, radio_id,
+								   type, mbm);
+					if (result) {
+						goto out;
+					}
+				} else {
+					if (!rdev->wiphy.num_hw) {
+						result = rdev_set_tx_power(rdev, NULL, radio_id,
+									   type, mbm);
+
+						if (result)
+							goto out;
+					} else {
+						result = -EOPNOTSUPP;
+						goto out;
+					}
+				}
+			} else {
+				result = -EINVAL;
+				goto out;
+			}
+		}
 	}
 
 	if (info->attrs[NL80211_ATTR_WIPHY_ANTENNA_TX] &&
@@ -4100,6 +4138,9 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	return 0;
+
+out:
+	return result;
 }
 
 int nl80211_send_chandef(struct sk_buff *msg, const struct cfg80211_chan_def *chandef)
