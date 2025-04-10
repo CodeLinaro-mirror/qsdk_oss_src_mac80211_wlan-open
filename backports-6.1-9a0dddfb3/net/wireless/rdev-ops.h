@@ -171,13 +171,13 @@ static inline int rdev_start_ap(struct cfg80211_registered_device *rdev,
 	return ret;
 }
 
-static inline int rdev_change_beacon(struct cfg80211_registered_device *rdev,
+static inline int rdev_update_ap(struct cfg80211_registered_device *rdev,
 				     struct net_device *dev,
 				     struct cfg80211_ap_settings *info)
 {
 	int ret;
-	trace_rdev_change_beacon(&rdev->wiphy, dev, info);
-	ret = rdev->ops->change_beacon(&rdev->wiphy, dev, info);
+	trace_rdev_update_ap(&rdev->wiphy, dev, info);
+	ret = rdev->ops->update_ap(&rdev->wiphy, dev, info);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }

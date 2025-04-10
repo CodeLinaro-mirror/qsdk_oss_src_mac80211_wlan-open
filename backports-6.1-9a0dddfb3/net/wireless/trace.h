@@ -695,7 +695,7 @@ TRACE_EVENT(rdev_start_ap,
 		  __entry->inactivity_timeout, __entry->link_id)
 );
 
-TRACE_EVENT(rdev_change_beacon,
+TRACE_EVENT(rdev_update_ap,
 	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
 		 struct cfg80211_ap_settings *info),
 	TP_ARGS(wiphy, netdev, info),

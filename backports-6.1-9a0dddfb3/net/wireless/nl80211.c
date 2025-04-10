@@ -903,6 +903,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 				NLA_POLICY_MAX(NLA_U8, NL80211_MGMT_RTS_CTS_DISABLE),
 	[NL80211_ATTR_AWGN_INTERFERENCE_BITMAP] = { .type = NLA_U32 },
 	[NL80211_ATTR_6G_REG_POWER_MODE] = NLA_POLICY_RANGE(NLA_U8, 0, 2),
+	[NL80211_ATTR_AP_PS] = NLA_POLICY_MAX(NLA_U8, 1),
 };
 
 /* policy for the key attributes */
@@ -6725,7 +6726,7 @@ out:
 	return err;
 }
 
-static int nl80211_set_beacon(struct sk_buff *skb, struct genl_info *info)
+static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct cfg80211_beaconing_check_config beacon_check = {};
@@ -6735,12 +6736,13 @@ static int nl80211_set_beacon(struct sk_buff *skb, struct genl_info *info)
 	struct cfg80211_ap_settings *params;
 	struct nlattr *attr;
 	int err;
+	bool haveinfo = false;
 
 	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_AP &&
 	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_P2P_GO)
 		return -EOPNOTSUPP;
 
-	if (!rdev->ops->change_beacon)
+	if (!rdev->ops->update_ap)
 		return -EOPNOTSUPP;
 
 	if (!wdev->links[link_id].ap.beacon_interval)
@@ -6750,9 +6752,17 @@ static int nl80211_set_beacon(struct sk_buff *skb, struct genl_info *info)
 	if (!params)
 		return -ENOMEM;
 
+	memset(params, 0, sizeof(*params));
+
+	if (info->attrs[NL80211_ATTR_AP_PS]) {
+		params->ap_ps_enable = nla_get_u8(info->attrs[NL80211_ATTR_AP_PS]);
+		params->ap_ps_valid = true;
+		haveinfo = true;
+	}
+
 	err = nl80211_parse_beacon(rdev, info->attrs, &params->beacon,
 				   info->extack);
-	if (err)
+	if (err && !haveinfo)
 		goto out;
 
 	/* recheck beaconing is permitted with possibly changed power type */
@@ -6784,7 +6794,7 @@ static int nl80211_set_beacon(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 	}
 
-	err = rdev_change_beacon(rdev, dev, params);
+	err = rdev_update_ap(rdev, dev, params);
 
 out:
 	kfree(params->beacon.mbssid_ies);
@@ -17409,10 +17419,10 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
 	},
 	{
-		.cmd = NL80211_CMD_SET_BEACON,
+		.cmd = NL80211_CMD_UPDATE_AP,
 		.validate = GENL_DONT_VALIDATE_STRICT | GENL_DONT_VALIDATE_DUMP,
 		.flags = GENL_UNS_ADMIN_PERM,
-		.doit = nl80211_set_beacon,
+		.doit = nl80211_update_ap,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP |
 					 NL80211_FLAG_MLO_VALID_LINK_ID),
 	},

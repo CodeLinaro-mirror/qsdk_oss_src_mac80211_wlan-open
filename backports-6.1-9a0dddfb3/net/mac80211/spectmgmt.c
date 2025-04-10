@@ -352,7 +352,7 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 		/* start with the CSA one */
 		new_chandef = csa_ie->chanreq.oper;
 		/* and update the width accordingly */
-		ieee80211_chandef_eht_oper(&bwi->info, &new_chandef);
+		ieee80211_chandef_eht_oper(&bwi->info, true, true, &new_chandef);
 
 		if (bwi->params & IEEE80211_BW_IND_DIS_SUBCH_PRESENT)
 			new_chandef.punctured =

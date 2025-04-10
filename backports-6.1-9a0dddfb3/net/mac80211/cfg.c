@@ -5328,7 +5328,6 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_default_mgmt_key = ieee80211_config_default_mgmt_key,
 	.set_default_beacon_key = ieee80211_config_default_beacon_key,
 	.start_ap = ieee80211_start_ap,
-	.change_beacon = ieee80211_change_beacon,
 	.stop_ap = ieee80211_stop_ap,
 	.add_station = ieee80211_add_station,
 	.del_station = ieee80211_del_station,

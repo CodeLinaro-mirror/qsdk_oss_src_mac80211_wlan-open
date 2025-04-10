@@ -319,6 +319,7 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 		struct cfg80211_chan_def eht_chandef = *chandef;
 
 		ieee80211_chandef_eht_oper((const void *)eht_oper->optional,
+					   true, true,
 					   &eht_chandef);
 
 		eht_chandef.punctured =

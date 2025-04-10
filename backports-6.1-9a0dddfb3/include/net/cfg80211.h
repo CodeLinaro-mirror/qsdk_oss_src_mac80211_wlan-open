@@ -1555,6 +1555,8 @@ struct cfg80211_ap_settings {
 	struct cfg80211_fils_discovery fils_discovery;
 	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
 	struct cfg80211_mbssid_config mbssid_config;
+	bool ap_ps_valid;
+	bool ap_ps_enable;
 };
 
 
@@ -4314,8 +4316,8 @@ struct mgmt_frame_regs {
  * @set_rekey_data: give the data necessary for GTK rekeying to the driver
  *
  * @start_ap: Start acting in AP mode defined by the parameters.
- * @change_beacon: Change the beacon parameters for an access point mode
- *	interface. This should reject the call when AP mode wasn't started.
+ * @update_ap: Update parameters for an access point mode interface.
+ *	This should reject the call when AP mode wasn't started.
  * @stop_ap: Stop being an AP, including stopping beaconing.
  *
  * @add_station: Add a new station.
@@ -4702,8 +4704,8 @@ struct cfg80211_ops {
 
 	int	(*start_ap)(struct wiphy *wiphy, struct net_device *dev,
 			    struct cfg80211_ap_settings *settings);
-	int	(*change_beacon)(struct wiphy *wiphy, struct net_device *dev,
-				 struct cfg80211_ap_settings *info);
+	int	(*update_ap)(struct wiphy *wiphy, struct net_device *dev,
+			     struct cfg80211_ap_settings *settings);
 	int	(*stop_ap)(struct wiphy *wiphy, struct net_device *dev,
 			   unsigned int link_id);
 
