@@ -40,6 +40,21 @@
 static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 				struct net_device *dev, struct sta_info *sta,
 				struct ieee80211_key *key, struct sk_buff *skb);
+
+static inline void ieee80211_tx_stats(struct net_device *dev, u32 len)
+{
+	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev_tstats(dev));
+
+	u64_stats_update_begin(&tstats->syncp);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+	tstats->tx_packets++;
+	tstats->tx_bytes += len;
+#else
+	u64_stats_inc(&tstats->tx_packets);
+	u64_stats_add(&tstats->tx_bytes, len);
+#endif
+	u64_stats_update_end(&tstats->syncp);
+}
 /* misc utils */
 
 static __le16 ieee80211_duration(struct ieee80211_tx_data *tx,
@@ -3587,7 +3602,7 @@ ieee80211_xmit_fast_finish(struct ieee80211_sub_if_data *sdata,
 	if (key)
 		info->control.hw_key = &key->conf;
 
-	dev_sw_netstats_tx_add(skb->dev, 1, skb->len);
+	ieee80211_tx_stats(skb->dev, skb->len);
 
 	if (hdr->frame_control & cpu_to_le16(IEEE80211_STYPE_QOS_DATA)) {
 		tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
@@ -4381,7 +4396,7 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 			goto out;
 		}
 
-		dev_sw_netstats_tx_add(dev, 1, skb->len);
+		ieee80211_tx_stats(dev, skb->len);
 
 		ieee80211_xmit(sdata, sta, skb);
 	}
@@ -4782,7 +4797,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 			info->status_data_idr = 1;
 	}
 
-	dev_sw_netstats_tx_add(dev, skbs, len);
+	ieee80211_tx_stats(dev, len);
 	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
 		sta->deflink.tx_stats.packets[queue] += skbs;
 		sta->deflink.tx_stats.bytes[queue] += len;
