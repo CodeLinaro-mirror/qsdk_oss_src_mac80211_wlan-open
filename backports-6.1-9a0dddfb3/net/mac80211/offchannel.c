@@ -965,7 +965,8 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			if (!chanctx_conf)
 				continue;
 
-			if (mlo_sta && params->chan == chanctx_conf->def.chan &&
+			if (mlo_sta && cfg80211_channel_identical(params->chan,
+								  chanctx_conf->def.chan) &&
 			    ether_addr_equal(sdata->vif.addr, mgmt->sa)) {
 				link_id = i;
 				break;
@@ -991,8 +992,8 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 		if (chanctx_conf) {
 			need_offchan = params->chan &&
-				       (params->chan !=
-					chanctx_conf->def.chan);
+				       !cfg80211_channel_identical(params->chan,
+								   chanctx_conf->def.chan);
 		} else {
 			need_offchan = true;
 		}
