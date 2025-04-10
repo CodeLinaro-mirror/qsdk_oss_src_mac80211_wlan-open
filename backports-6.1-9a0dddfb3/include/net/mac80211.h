@@ -4658,6 +4658,7 @@ struct ieee80211_ppe_vp_ds_params {
  *	scheduled for removal with ML reconfigure element built for that particular
  *	link along with the TBTT count until which the beacon with ML
  *	reconfigure element should be sent.
+ * @change_mtu: Ops to change the interface MTU.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5057,6 +5058,9 @@ struct ieee80211_ops {
 				    const struct cfg80211_link_reconfig_removal_params *params);
 	bool (*removed_link_is_primary)(struct ieee80211_sta *sta,
 					u16 removed_links);
+	int (*change_mtu)(struct ieee80211_hw *hw,
+			  struct ieee80211_vif *vif,
+			  int mtu);
 };
 
 /**

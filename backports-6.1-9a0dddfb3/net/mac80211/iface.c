@@ -896,6 +896,22 @@ static void ieee80211_uninit(struct net_device *dev)
 	ieee80211_teardown_sdata(IEEE80211_DEV_TO_SUB_IF(dev));
 }
 
+static int ieee80211_change_mtu(struct net_device *dev, int mtu)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_local *local = sdata->local;
+
+	if (sdata->vif.type == NL80211_IFTYPE_MONITOR)
+		return 0;
+
+	if ((mtu > IEEE80211_MAX_DATA_LEN) || mtu < 0)
+		return -EINVAL;
+
+	dev->mtu = mtu;
+
+	return drv_change_interface_mtu(local, sdata, mtu);
+}
+
 static int ieee80211_netdev_setup_tc(struct net_device *dev,
 				     enum tc_setup_type type, void *type_data)
 {
@@ -913,6 +929,7 @@ static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_set_rx_mode	= ieee80211_set_multicast_list,
 	.ndo_set_mac_address 	= ieee80211_change_mac,
 	.ndo_setup_tc		= ieee80211_netdev_setup_tc,
+	.ndo_change_mtu		= ieee80211_change_mtu,
 };
 
 #if LINUX_VERSION_IS_GEQ(5,2,0)
@@ -973,6 +990,7 @@ static const struct net_device_ops ieee80211_dataif_8023_ops = {
 	.ndo_set_rx_mode	= ieee80211_set_multicast_list,
 	.ndo_set_mac_address	= ieee80211_change_mac,
 	.ndo_setup_tc		= ieee80211_netdev_setup_tc,
+	.ndo_change_mtu		= ieee80211_change_mtu,
 };
 
 static bool ieee80211_iftype_supports_hdr_offload(enum nl80211_iftype iftype)

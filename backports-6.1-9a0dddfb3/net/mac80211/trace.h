@@ -2553,6 +2553,31 @@ TRACE_EVENT(drv_twt_teardown_request,
 	)
 );
 
+TRACE_EVENT(drv_change_interface_mtu,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 int mtu),
+
+	TP_ARGS(local, sdata, mtu),
+
+	TP_STRUCT__entry(
+		LOCAL_ENTRY
+		VIF_ENTRY
+		__field(int, mtu)
+	),
+
+	TP_fast_assign(
+		LOCAL_ASSIGN;
+		VIF_ASSIGN;
+		__entry->mtu = mtu;
+	),
+
+	TP_printk(
+		LOCAL_PR_FMT VIF_PR_FMT " mtu:%d\n",
+		LOCAL_PR_ARG, VIF_PR_ARG, __entry->mtu
+	)
+);
+
 TRACE_EVENT(drv_net_setup_tc,
 	TP_PROTO(struct ieee80211_local *local,
 		 struct ieee80211_sub_if_data *sdata,
