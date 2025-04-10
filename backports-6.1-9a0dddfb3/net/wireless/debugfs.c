@@ -135,7 +135,9 @@ void cfg80211_debugfs_rdev_add(struct cfg80211_registered_device *rdev)
 {
 	struct dentry *phyd = rdev->wiphy.debugfsdir;
 
-	DEBUGFS_ADD(rts_threshold);
+	if (!rdev->wiphy.num_hw)
+		DEBUGFS_ADD(rts_threshold);
+
 	DEBUGFS_ADD(fragmentation_threshold);
 	DEBUGFS_ADD(short_retry_limit);
 	DEBUGFS_ADD(long_retry_limit);
