@@ -647,11 +647,12 @@ static inline void rdev_rfkill_poll(struct cfg80211_registered_device *rdev)
 #ifdef CPTCFG_NL80211_TESTMODE
 static inline int rdev_testmode_cmd(struct cfg80211_registered_device *rdev,
 				    struct wireless_dev *wdev,
+				    u8 link_id,
 				    void *data, int len)
 {
 	int ret;
-	trace_rdev_testmode_cmd(&rdev->wiphy, wdev);
-	ret = rdev->ops->testmode_cmd(&rdev->wiphy, wdev, data, len);
+	trace_rdev_testmode_cmd(&rdev->wiphy, wdev, link_id);
+	ret = rdev->ops->testmode_cmd(&rdev->wiphy, wdev, link_id, data, len);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }

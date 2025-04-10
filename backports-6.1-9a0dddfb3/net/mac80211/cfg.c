@@ -3397,6 +3397,7 @@ static void ieee80211_rfkill_poll(struct wiphy *wiphy)
 #ifdef CPTCFG_NL80211_TESTMODE
 static int ieee80211_testmode_cmd(struct wiphy *wiphy,
 				  struct wireless_dev *wdev,
+				  u8 link_id,
 				  void *data, int len)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
@@ -3413,7 +3414,7 @@ static int ieee80211_testmode_cmd(struct wiphy *wiphy,
 			vif = &sdata->vif;
 	}
 
-	return local->ops->testmode_cmd(&local->hw, vif, data, len);
+	return local->ops->testmode_cmd(&local->hw, vif, link_id, data, len);
 }
 
 static int ieee80211_testmode_dump(struct wiphy *wiphy,

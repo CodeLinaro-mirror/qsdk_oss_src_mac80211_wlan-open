@@ -12493,6 +12493,7 @@ static int nl80211_testmode_do(struct sk_buff *skb, struct genl_info *info)
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct wireless_dev *wdev;
 	int err;
+	u8 link_id;
 
 	lockdep_assert_held(&rdev->wiphy.mtx);
 
@@ -12514,8 +12515,18 @@ static int nl80211_testmode_do(struct sk_buff *skb, struct genl_info *info)
 	if (!info->attrs[NL80211_ATTR_TESTDATA])
 		return -EINVAL;
 
+	link_id = nl80211_link_id(info->attrs);
+
+	if(wdev) {
+		if (wdev->valid_links && !(wdev->valid_links & BIT(link_id)))
+			return -EINVAL;
+
+		if (!wdev->valid_links && link_id)
+			return -EINVAL;
+	}
+
 	rdev->cur_cmd_info = info;
-	err = rdev_testmode_cmd(rdev, wdev,
+	err = rdev_testmode_cmd(rdev, wdev, link_id,
 				nla_data(info->attrs[NL80211_ATTR_TESTDATA]),
 				nla_len(info->attrs[NL80211_ATTR_TESTDATA]));
 	rdev->cur_cmd_info = NULL;

@@ -4889,7 +4889,7 @@ struct cfg80211_ops {
 
 #ifdef CPTCFG_NL80211_TESTMODE
 	int	(*testmode_cmd)(struct wiphy *wiphy, struct wireless_dev *wdev,
-				void *data, int len);
+				u8 link_id, void *data, int len);
 	int	(*testmode_dump)(struct wiphy *wiphy, struct sk_buff *skb,
 				 struct netlink_callback *cb,
 				 void *data, int len);
