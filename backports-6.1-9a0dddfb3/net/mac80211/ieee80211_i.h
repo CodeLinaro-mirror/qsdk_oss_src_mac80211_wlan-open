@@ -2162,6 +2162,10 @@ static inline void ieee80211_vif_clear_links(struct ieee80211_sub_if_data *sdata
 void ieee80211_apvlan_link_setup(struct ieee80211_sub_if_data *sdata);
 void ieee80211_apvlan_link_clear(struct ieee80211_sub_if_data *sdata);
 
+int __ieee80211_link_reconfig_remove(struct ieee80211_local *local,
+				     struct ieee80211_sub_if_data *sdata,
+				     const struct cfg80211_link_reconfig_removal_params *params);
+
 /* tx handling */
 void ieee80211_clear_tx_pending(struct ieee80211_local *local);
 void ieee80211_tx_pending(struct tasklet_struct *t);

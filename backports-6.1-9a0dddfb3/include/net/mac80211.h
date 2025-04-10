@@ -4637,6 +4637,10 @@ struct ieee80211_ppe_vp_ds_params {
  *      interface with the specified type would be added, and thus drivers that
  *      implement this callback need to handle such cases. The type is the full
  *      &enum nl80211_iftype.
+ * @link_reconfig_remove: Notifies the driver about the link to be
+ *	scheduled for removal with ML reconfigure element built for that particular
+ *	link along with the TBTT count until which the beacon with ML
+ *	reconfigure element should be sent.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5031,6 +5035,9 @@ struct ieee80211_ops {
 	int (*sta_set_mgmt_rts_cts)(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_sta *sta);
+	int (*link_reconfig_remove)(struct ieee80211_hw *hw,
+				    struct ieee80211_vif *vif,
+				    const struct cfg80211_link_reconfig_removal_params *params);
 };
 
 /**
@@ -8068,6 +8075,24 @@ int ieee80211_emulate_switch_vif_chanctx(struct ieee80211_hw *hw,
 					 struct ieee80211_vif_chanctx_switch *vifs,
 					 int n_vifs,
 					 enum ieee80211_chanctx_switch_mode mode);
+
+/* Defines for ML Reconfigure removal offload */
+
+/**
+ * ieee80211_update_link_reconfig_remove_update - Inform userspace about
+ * the removal status of link which is scheduled for removal
+ * @vif: interface in which reconfig removal status is received.
+ * @link_id: Link which is undergoing removal
+ * @tbtt_count: Current tbtt_count to be updated.
+ * @tsf: Beacon's timestamp value
+ * @cmd: Inform started or completed action to userspace
+ *
+ * For description, check cfg80211_link_reconfig_remove_update
+ */
+int ieee80211_update_link_reconfig_remove_update(struct ieee80211_vif *vif,
+						 unsigned int link_id,
+						 u32 tbtt_count, u64 tsf,
+						 enum nl80211_commands cmd);
 
 /* Defines for Mesh NSS offload */
 
