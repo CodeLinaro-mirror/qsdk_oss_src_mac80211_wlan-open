@@ -2960,6 +2960,8 @@ enum nl80211_commands {
  *	this attribute is not present, and hence any associated attributes are
  *	deemed to be applicable to all radios
  *
+ * @NL80211_ATTR_VIF_RADIO_MASK: Bitmask of allowed radios (u32).
+ *	A value of 0 means all radios.
  * @NL80211_ATTR_WIPHY_ANTENNA_GAIN: Configured antenna gain. Used to reduce
  *	transmit power to stay within regulatory limits. u32, dBi.
  *

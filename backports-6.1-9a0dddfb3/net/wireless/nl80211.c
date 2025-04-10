@@ -948,6 +948,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_AP_REMOVAL_COUNT] = { .type = NLA_U32 },
 	[NL80211_ATTR_TSF] = { .type = NLA_U64 },
 	[NL80211_ATTR_WIPHY_ANTENNA_GAIN] = { .type = NLA_U32 },
+	[NL80211_ATTR_VIF_RADIO_MASK] = { .type = NLA_U32 },
 };
 
 /* policy for the key attributes */
