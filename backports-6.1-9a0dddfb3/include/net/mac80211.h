@@ -4787,6 +4787,7 @@ struct ieee80211_ops {
 			      u32 *tx, u32 *tx_max, u32 *rx, u32 *rx_max);
 	bool (*tx_frames_pending)(struct ieee80211_hw *hw);
 	int (*set_bitrate_mask)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+				unsigned int link_id,
 				const struct cfg80211_bitrate_mask *mask);
 	void (*event_callback)(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif,

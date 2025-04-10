@@ -1499,9 +1499,10 @@ DEFINE_EVENT(local_only_evt, drv_offchannel_tx_cancel_wait,
 TRACE_EVENT(drv_set_bitrate_mask,
 	TP_PROTO(struct ieee80211_local *local,
 		 struct ieee80211_sub_if_data *sdata,
+		 unsigned int link_id,
 		 const struct cfg80211_bitrate_mask *mask),
 
-	TP_ARGS(local, sdata, mask),
+	TP_ARGS(local, sdata, link_id, mask),
 
 	TP_STRUCT__entry(
 		LOCAL_ENTRY

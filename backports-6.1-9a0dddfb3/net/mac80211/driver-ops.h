@@ -876,6 +876,7 @@ static inline bool drv_tx_frames_pending(struct ieee80211_local *local)
 
 static inline int drv_set_bitrate_mask(struct ieee80211_local *local,
 				       struct ieee80211_sub_if_data *sdata,
+				       unsigned int link_id,
 				       const struct cfg80211_bitrate_mask *mask)
 {
 	int ret = -EOPNOTSUPP;
@@ -886,10 +887,10 @@ static inline int drv_set_bitrate_mask(struct ieee80211_local *local,
 	if (!check_sdata_in_driver(sdata))
 		return -EIO;
 
-	trace_drv_set_bitrate_mask(local, sdata, mask);
+	trace_drv_set_bitrate_mask(local, sdata, link_id, mask);
 	if (local->ops->set_bitrate_mask)
 		ret = local->ops->set_bitrate_mask(&local->hw,
-						   &sdata->vif, mask);
+						   &sdata->vif, link_id, mask);
 	trace_drv_return_int(local, ret);
 
 	return ret;
