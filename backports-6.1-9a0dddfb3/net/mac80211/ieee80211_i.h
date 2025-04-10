@@ -1405,6 +1405,11 @@ struct channel_awgn_info {
 	u32 chan_bw_interference_bitmap;
 };
 
+struct channel_cw_info {
+	struct list_head list;
+	struct ieee80211_channel *cw_channel;
+};
+
 struct ieee80211_local {
 	/* embed the driver visible part.
 	 * don't cast (use the static inlines below), but we keep
@@ -1685,10 +1690,12 @@ struct ieee80211_local {
 
 	struct mac80211_memory_stats memory_stats;
 	struct work_struct awgn_detected_work;
+	struct work_struct cw_detected_work;
 
 	bool enable_tx_latency_stats;
 
 	struct list_head awgn_info_list;
+	struct list_head cw_info_list;
 
 	const char *wlan_name;
 
@@ -2801,6 +2808,7 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_dfs_cac_cancel(struct ieee80211_local *local);
 void ieee80211_dfs_radar_detected_work(struct wiphy *wiphy, struct wiphy_work *work);
 void ieee80211_awgn_detected_work(struct work_struct *work);
+void ieee80211_cw_detected_work(struct work_struct *work);
 int ieee80211_send_action_csa(struct ieee80211_sub_if_data *sdata,
 			      struct cfg80211_csa_settings *csa_settings);
 

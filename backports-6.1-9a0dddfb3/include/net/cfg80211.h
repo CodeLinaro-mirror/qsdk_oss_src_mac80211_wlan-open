@@ -1658,6 +1658,8 @@ struct cfg80211_unsol_bcast_probe_resp {
  * @mbssid_config: AP settings for multiple bssid
  * @elemid_added: critical update element id inserted
  * @elemid_modified: critical update element id modified
+ * @intf_detect_bitmap: Interference detection bitmap.
+ *	BIT(0) represents - CW Interference.
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -1695,6 +1697,7 @@ struct cfg80211_ap_settings {
 	bool ap_ps_enable;
 	bool elemid_added;
 	bool elemid_modified;
+	u8 intf_detect_bitmap;
 };
 
 
@@ -9246,6 +9249,18 @@ cfg80211_background_radar_event(struct wiphy *wiphy,
  */
 void cfg80211_awgn_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
 			 gfp_t gfp, u32 chan_bw_interference_bitmap);
+
+/**
+ * cfg80211_cw_event - CW detection event
+ * @wiphy: the wiphy
+ * @chandef: chandef for the current channel
+ * @gfp: context flags
+ *
+ * This function is called when Continous Wave
+ * is detected on the current channel.
+ */
+void cfg80211_cw_event(struct wiphy *wiphy, struct cfg80211_chan_def *chandef,
+			 gfp_t gfp);
 
 /**
  * cfg80211_sta_opmode_change_notify - STA's ht/vht operation mode change event

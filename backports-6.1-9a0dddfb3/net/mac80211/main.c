@@ -491,6 +491,7 @@ static void ieee80211_restart_work(struct work_struct *work)
 	wiphy_lock(local->hw.wiphy);
 	wiphy_work_flush(local->hw.wiphy, NULL);
         flush_work(&local->awgn_detected_work);
+	flush_work(&local->cw_detected_work);
 
 	wiphy_work_cancel(local->hw.wiphy, &local->sched_scan_stopped_work);
 	wiphy_work_cancel(local->hw.wiphy, &local->radar_detected_work);
@@ -1012,6 +1013,8 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 			ieee80211_dfs_radar_detected_work);
 	INIT_WORK(&local->awgn_detected_work,
 		  ieee80211_awgn_detected_work);
+	INIT_WORK(&local->cw_detected_work,
+		  ieee80211_cw_detected_work);
 	INIT_LIST_HEAD(&local->awgn_info_list);
 
 	wiphy_work_init(&local->reconfig_filter, ieee80211_reconfig_filter);
@@ -1794,6 +1797,7 @@ void ieee80211_unregister_hw(struct ieee80211_hw *hw)
 	wiphy_work_cancel(local->hw.wiphy, &local->sched_scan_stopped_work);
 	wiphy_work_cancel(local->hw.wiphy, &local->radar_detected_work);
 	flush_work(&local->awgn_detected_work);
+	flush_work(&local->cw_detected_work);
 	wiphy_unlock(local->hw.wiphy);
 	rtnl_unlock();
 

@@ -1358,6 +1358,9 @@
  *	%NL80211_ATTR_AWGN_INTERFERENCE_BITMAP
  * @NL80211_ATTR_AWGN_INTERFERENCE_BITMAP: u32 attribute specifying the
  *	interference bitmap of operating bandwidth for %NL80211_CMD_AWGN_DETECT
+ * @NL80211_CMD_INTERFERENCE_DETECT: Once any interference is detected on the
+ *	operating channel, userspace would be notified of it
+ *	using %NL80211_ATTR_INTERFERENCE_TYPE.
  * @NL80211_CMD_MAX: highest used command number
  * @__NL80211_CMD_AFTER_LAST: internal use
  */
@@ -1621,9 +1624,14 @@ enum nl80211_commands {
 
 	NL80211_CMD_UPDATE_HE_MUEDCA_PARAMS,
 
+	/* To be Deprecated from ATH QSDK, once we upstream
+	 * NL80211_CMD_INTERFERENCE_DETECT
+	 */
 	NL80211_CMD_AWGN_DETECT,
 
 	NL80211_CMD_STOP_BGRADAR_DETECT,
+
+	NL80211_CMD_INTERFERENCE_DETECT,
 	/* add new commands above here */
 
 	/* used to define NL80211_CMD_MAX below */
@@ -2965,6 +2973,13 @@ enum nl80211_commands {
  *	value must be such that the operating bandwidth is a subset of the
  *	device bandwidth.
  *
+ * @NL80211_ATTR_INTERFERENCE_TYPE: Different Interference Types (u32).
+ * 	This value indicates the below list of interference detected.
+ * 	1. Continous Wave Interference, it can be from a dialer phone or microwave.
+ * 	2. AWGN Interference.
+ *
+ * 	The above list is detailed in the enum nl80211_interference_type.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3546,6 +3561,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_SET_CRITICAL_UPDATE,
 	NL80211_ATTR_CHANNEL_WIDTH_DEVICE,
 	NL80211_ATTR_CENTER_FREQ_DEVICE,
+	NL80211_ATTR_INTERFERENCE_TYPE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -8529,5 +8545,20 @@ enum nl80211_set_cu {
 	NL80211_CU_ELEMID_MODIFIED = BIT(1),
 
 	NUM_NL80211_CUS = BIT(2),
+};
+
+/**
+ * enum nl80211_interference_type -
+ *
+ * @NL80211_CW_INTERFERENCE_DETECTED : Continous Wave Interference Detected.
+ * @NL80211_AWGN_INTERFERENCE_DETECTED : AWGN Interference Detected.
+*/
+enum nl80211_interference_type {
+	NL80211_INTERFERENCE_TYPE_INVALID,
+	NL80211_INTERFERENCE_TYPE_CW,
+	NL80211_INTERFERENCE_TYPE_AWGN,
+
+	NL80211_INTERFERENCE_TYPE_LAST,
+	NL80211_INTERFERENCE_TYPE_MAX = NL80211_INTERFERENCE_TYPE_LAST - 1,
 };
 #endif /* __LINUX_NL80211_H */
