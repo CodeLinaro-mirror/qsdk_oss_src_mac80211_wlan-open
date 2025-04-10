@@ -271,8 +271,11 @@ int cfg80211_leave_mesh(struct cfg80211_registered_device *rdev,
 	if (!rdev->ops->leave_mesh)
 		return -EOPNOTSUPP;
 
-	if (!wdev->u.mesh.id_len)
+	if (!wdev->u.mesh.id_len) {
+		if (wdev->links[0].cac_started)
+			rdev_end_cac(rdev, wdev->netdev, 0);
 		return -ENOTCONN;
+	}
 
 	err = rdev_leave_mesh(rdev, dev);
 	if (!err) {
