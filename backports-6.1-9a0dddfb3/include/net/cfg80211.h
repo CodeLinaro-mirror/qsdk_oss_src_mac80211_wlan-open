@@ -878,6 +878,8 @@ struct cfg80211_tid_cfg {
 	enum nl80211_tid_config amsdu;
 	enum nl80211_tx_rate_setting txrate_type;
 	struct cfg80211_bitrate_mask txrate_mask;
+	u16 ampdu_count;
+	u16 amsdu_count;
 };
 
 /**
@@ -1638,6 +1640,7 @@ enum station_parameters_apply_mask {
 	STATION_PARAM_APPLY_UAPSD = BIT(0),
 	STATION_PARAM_APPLY_CAPABILITY = BIT(1),
 	STATION_PARAM_APPLY_PLINK_STATE = BIT(2),
+	STATION_PARAM_APPLY_MGMT_RTS_CTS = BIT(4),
 };
 
 /**
@@ -1791,6 +1794,7 @@ struct station_parameters {
 	u8 supported_oper_classes_len;
 	int support_p2p_ps;
 	u16 airtime_weight;
+	enum nl80211_mgmt_rts_cts_conf mgmt_rts_cts;
 	bool eml_cap_present;
 	u16 eml_cap;
 	struct link_station_parameters link_sta_params;

@@ -2093,6 +2093,13 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 	if (params->eml_cap_present)
 		sta->sta.eml_cap = params->eml_cap;
 
+	if (params->sta_modify_mask & STATION_PARAM_APPLY_MGMT_RTS_CTS) {
+		sta->sta.mgmt_rts_cts = params->mgmt_rts_cts;
+		ret = drv_sta_set_mgmt_rts_cts(local, sdata, sta);
+		if (ret)
+			return ret;
+	}
+
 	ret = sta_link_apply_parameters(local, sta, STA_LINK_MODE_STA_MODIFY,
 					&params->link_sta_params);
 	if (ret)

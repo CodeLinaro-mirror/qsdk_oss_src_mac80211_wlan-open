@@ -439,7 +439,9 @@ nl80211_tid_config_attr_policy[NL80211_TID_CONFIG_ATTR_MAX + 1] = {
 	[NL80211_TID_CONFIG_ATTR_TX_RATE_TYPE] =
 			NLA_POLICY_MAX(NLA_U8, NL80211_TX_RATE_FIXED),
 	[NL80211_TID_CONFIG_ATTR_TX_RATE] =
-			NLA_POLICY_NESTED(nl80211_txattr_policy),
+			NLA_POLICY_NESTED_ARRAY(nl80211_txattr_policy),
+	[NL80211_TID_CONFIG_ATTR_AMPDU_COUNT] = { .type = NLA_U16 },
+	[NL80211_TID_CONFIG_ATTR_AMSDU_COUNT] = { .type = NLA_U16 },
 };
 
 static const struct nla_policy
@@ -889,6 +891,8 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_MLO_RECONF_REM_LINKS] = { .type = NLA_U16 },
 	[NL80211_ATTR_EPCS] = { .type = NLA_FLAG },
 	[NL80211_ATTR_WIPHY_RADIO_INDEX] = { .type = NLA_U8 },
+	[NL80211_ATTR_STA_MGMT_RTS_CTS_CONFIG] =
+				NLA_POLICY_MAX(NLA_U8, NL80211_MGMT_RTS_CTS_DISABLE),
 };
 
 /* policy for the key attributes */
@@ -7586,6 +7590,15 @@ static int nl80211_set_station(struct sk_buff *skb, struct genl_info *info)
 	    !wiphy_ext_feature_isset(&rdev->wiphy,
 				     NL80211_EXT_FEATURE_AIRTIME_FAIRNESS))
 		return -EOPNOTSUPP;
+
+	if (info->attrs[NL80211_ATTR_STA_MGMT_RTS_CTS_CONFIG]) {
+		if (!wiphy_ext_feature_isset(&rdev->wiphy,
+					     NL80211_EXT_FEATURE_STA_MGMT_RTS_CTS))
+			return -EOPNOTSUPP;
+		params.mgmt_rts_cts =
+			nla_get_u8(info->attrs[NL80211_ATTR_STA_MGMT_RTS_CTS_CONFIG]);
+		params.sta_modify_mask |= STATION_PARAM_APPLY_MGMT_RTS_CTS;
+	}
 
 	err = nl80211_parse_sta_txpower_setting(info,
 						&params.link_sta_params.txpwr,
@@ -16160,6 +16173,12 @@ static int parse_tid_conf(struct cfg80211_registered_device *rdev,
 		tid_conf->mask |= BIT(NL80211_TID_CONFIG_ATTR_AMPDU_CTRL);
 		tid_conf->ampdu =
 			nla_get_u8(attrs[NL80211_TID_CONFIG_ATTR_AMPDU_CTRL]);
+
+		if (attrs[NL80211_TID_CONFIG_ATTR_AMPDU_COUNT]) {
+			tid_conf->mask |= BIT(NL80211_TID_CONFIG_ATTR_AMPDU_COUNT);
+			tid_conf->ampdu_count =
+				nla_get_u16(attrs[NL80211_TID_CONFIG_ATTR_AMPDU_COUNT]);
+		}
 	}
 
 	if (attrs[NL80211_TID_CONFIG_ATTR_RTSCTS_CTRL]) {
@@ -16172,6 +16191,12 @@ static int parse_tid_conf(struct cfg80211_registered_device *rdev,
 		tid_conf->mask |= BIT(NL80211_TID_CONFIG_ATTR_AMSDU_CTRL);
 		tid_conf->amsdu =
 			nla_get_u8(attrs[NL80211_TID_CONFIG_ATTR_AMSDU_CTRL]);
+
+		if (attrs[NL80211_TID_CONFIG_ATTR_AMSDU_COUNT]) {
+			tid_conf->mask |= BIT(NL80211_TID_CONFIG_ATTR_AMSDU_COUNT);
+			tid_conf->amsdu_count =
+				nla_get_u16(attrs[NL80211_TID_CONFIG_ATTR_AMSDU_COUNT]);
+		}
 	}
 
 	if (attrs[NL80211_TID_CONFIG_ATTR_TX_RATE_TYPE]) {

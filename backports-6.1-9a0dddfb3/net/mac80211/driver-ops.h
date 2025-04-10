@@ -613,6 +613,11 @@ int drv_sta_set_txpwr(struct ieee80211_local *local,
 		      struct ieee80211_sub_if_data *sdata,
 		      struct sta_info *sta);
 
+__must_check
+int drv_sta_set_mgmt_rts_cts(struct ieee80211_local *local,
+			     struct ieee80211_sub_if_data *sdata,
+			     struct sta_info *sta);
+
 void drv_link_sta_rc_update(struct ieee80211_local *local,
 			    struct ieee80211_sub_if_data *sdata,
 			    struct ieee80211_link_sta *link_sta, u32 changed);

@@ -185,6 +185,27 @@ int drv_sta_set_txpwr(struct ieee80211_local *local,
 	return ret;
 }
 
+__must_check
+int drv_sta_set_mgmt_rts_cts(struct ieee80211_local *local,
+			     struct ieee80211_sub_if_data *sdata,
+			     struct sta_info *sta)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+
+	sdata = get_bss_sdata(sdata);
+	if (!check_sdata_in_driver(sdata))
+		return -EIO;
+
+	trace_drv_sta_set_mgmt_rts_cts(local, sdata, &sta->sta);
+	if (local->ops->sta_set_mgmt_rts_cts)
+		ret = local->ops->sta_set_mgmt_rts_cts(&local->hw, &sdata->vif,
+						       &sta->sta);
+	trace_drv_return_int(local, ret);
+	return ret;
+}
+
 void drv_link_sta_rc_update(struct ieee80211_local *local,
 			    struct ieee80211_sub_if_data *sdata,
 			    struct ieee80211_link_sta *link_sta,

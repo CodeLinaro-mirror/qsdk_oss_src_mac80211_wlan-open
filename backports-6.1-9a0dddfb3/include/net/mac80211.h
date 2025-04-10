@@ -2587,6 +2587,7 @@ struct ieee80211_sta {
 	struct ieee80211_sta_aggregates *cur;
 
 	bool support_p2p_ps;
+	enum nl80211_mgmt_rts_cts_conf mgmt_rts_cts;
 
 	struct ieee80211_txq *txq[IEEE80211_NUM_TIDS + 1];
 
@@ -4945,7 +4946,9 @@ struct ieee80211_ops {
 					 enum ieee80211_mesh_path_offld_cmd cmd,
 					 struct ieee80211_mesh_path_offld *path);
 #endif
-
+	int (*sta_set_mgmt_rts_cts)(struct ieee80211_hw *hw,
+				    struct ieee80211_vif *vif,
+				    struct ieee80211_sta *sta);
 };
 
 /**
