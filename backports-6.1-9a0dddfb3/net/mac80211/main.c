@@ -1346,9 +1346,9 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 				return -EINVAL;
 		}
 
-		/* HT, VHT, HE require QoS, thus >= 4 queues */
+		/* HT, VHT, HE, EHT require QoS, thus >= 4 queues */
 		if (WARN_ON(local->hw.queues < IEEE80211_NUM_ACS &&
-			    (supp_ht || supp_vht || supp_he)))
+			    (supp_ht || supp_vht || supp_he || supp_eht)))
 			return -EINVAL;
 
 		/* EHT requires HE support */
