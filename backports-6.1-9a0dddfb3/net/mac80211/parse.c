@@ -845,6 +845,9 @@ ieee80211_mle_get_sta_prof(struct ieee80211_elems_parse *elems_parse,
 		if (!(control & IEEE80211_MLE_STA_CONTROL_COMPLETE_PROFILE))
 			return;
 
+		elems->prof = prof;
+		elems->sta_prof_len = sub->datalen;
+
 		/* the sub element can be fragmented */
 		sta_prof_len =
 			cfg80211_defragment_element(sub,
@@ -978,7 +981,7 @@ ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params)
 	const struct element *non_inherit = NULL;
 	u8 *nontransmitted_profile;
 	int nontransmitted_profile_len = 0;
-	size_t scratch_len = 3 * params->len;
+	size_t scratch_len = params->scratch_len ?: 2 * params->len;
 
 	BUILD_BUG_ON(offsetof(typeof(*elems_parse), elems) != 0);
 

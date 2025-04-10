@@ -2439,6 +2439,7 @@ struct ieee80211_elems_parse_params {
 	struct cfg80211_bss *bss;
 	int link_id;
 	bool from_ap;
+	size_t scratch_len;
 };
 
 struct ieee802_11_elems *
