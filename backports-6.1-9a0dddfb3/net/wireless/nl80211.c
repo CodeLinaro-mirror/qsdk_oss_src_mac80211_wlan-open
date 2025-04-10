@@ -7757,7 +7757,8 @@ int cfg80211_check_station_change(struct wiphy *wiphy,
 				  BIT(NL80211_STA_FLAG_SHORT_PREAMBLE) |
 				  BIT(NL80211_STA_FLAG_WME) |
 				  BIT(NL80211_STA_FLAG_MFP) |
-				  BIT(NL80211_STA_FLAG_SPP_AMSDU)))
+				  BIT(NL80211_STA_FLAG_SPP_AMSDU) |
+				  BIT(NL80211_STA_FLAG_FT_AUTH)))
 			return -EINVAL;
 
 		/* but authenticated/associated only if driver handles it */
@@ -8363,7 +8364,8 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 		    info->attrs[NL80211_ATTR_PEER_AID])
 			return -EINVAL;
 		/* but don't bother the driver with it */
-		params.sta_flags_mask &= ~BIT(NL80211_STA_FLAG_TDLS_PEER);
+		params.sta_flags_mask &= ~(BIT(NL80211_STA_FLAG_TDLS_PEER) |
+					   BIT(NL80211_STA_FLAG_FT_AUTH));
 
 		/* allow authenticated/associated only if driver handles it */
 		if (!(rdev->wiphy.features &
