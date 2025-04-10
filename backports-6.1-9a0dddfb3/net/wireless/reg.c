@@ -4310,6 +4310,7 @@ void regulatory_propagate_dfs_state(struct wiphy *wiphy,
 
 		nl80211_radar_notify(rdev, chandef, event, NULL, GFP_KERNEL);
 	}
+	chandef->radar_bitmap = 0;
 }
 
 static int __init regulatory_init_db(void)

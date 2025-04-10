@@ -1106,6 +1106,7 @@ void __cfg80211_radar_event(struct wiphy *wiphy,
 
 	memcpy(&rdev->radar_chandef, chandef, sizeof(struct cfg80211_chan_def));
 	queue_work(cfg80211_wq, &rdev->propagate_radar_detect_wk);
+	chandef->radar_bitmap = 0;
 }
 EXPORT_SYMBOL(__cfg80211_radar_event);
 

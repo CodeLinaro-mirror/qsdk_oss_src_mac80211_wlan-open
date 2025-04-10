@@ -905,6 +905,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_AWGN_INTERFERENCE_BITMAP] = { .type = NLA_U32 },
 	[NL80211_ATTR_6G_REG_POWER_MODE] = NLA_POLICY_RANGE(NLA_U8, 0, 2),
 	[NL80211_ATTR_AP_PS] = NLA_POLICY_MAX(NLA_U8, 1),
+	[NL80211_ATTR_RADAR_BITMAP] = { .type = NLA_U16 },
 };
 
 /* policy for the key attributes */
@@ -4132,6 +4133,9 @@ int nl80211_send_chandef(struct sk_buff *msg, const struct cfg80211_chan_def *ch
 		return -ENOBUFS;
 	if (chandef->punctured &&
 	    nla_put_u32(msg, NL80211_ATTR_PUNCT_BITMAP, chandef->punctured))
+		return -ENOBUFS;
+
+	if (nla_put_u16(msg, NL80211_ATTR_RADAR_BITMAP, chandef->radar_bitmap))
 		return -ENOBUFS;
 
 	return 0;

@@ -851,6 +851,7 @@ struct cfg80211_chan_def {
 	struct ieee80211_edmg edmg;
 	u16 freq1_offset;
 	u16 punctured;
+	u16 radar_bitmap;
 };
 
 /*
