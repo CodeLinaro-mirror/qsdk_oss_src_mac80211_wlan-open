@@ -34,6 +34,8 @@
 #include "wme.h"
 #include "rate.h"
 
+extern int debug_param;
+
 static inline void ieee80211_rx_stats(struct net_device *dev, u32 len)
 {
 	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev_tstats(dev));
@@ -4425,7 +4427,7 @@ static bool ieee80211_rx_data_set_link(struct ieee80211_rx_data *rx,
 }
 
 static bool ieee80211_rx_data_set_sta(struct ieee80211_rx_data *rx,
-				      struct sta_info *sta, int link_id)
+				      struct sta_info *sta, int link_id, bool only_monitor)
 {
 	rx->link_id = link_id;
 	rx->sta = sta;
@@ -4440,14 +4442,9 @@ static bool ieee80211_rx_data_set_sta(struct ieee80211_rx_data *rx,
 	}
 
 	if (link_id < 0) {
-		if (rx->sdata->vif.valid_links) {
-			if (sta && !sta->sta.valid_links) {
+		if (rx->sdata->vif.valid_links &&
+		    (sta && !sta->sta.valid_links)) {
 				rx->link = rcu_dereference(rx->sdata->link[sta->deflink.link_id]);
-			} else {
-				rx->link = &rx->sdata->deflink;
-				if (!rx->local->in_reconfig)
-					WARN_ON_ONCE(1);
-			}
 		} else {
 			rx->link = &rx->sdata->deflink;
 		}
@@ -4476,7 +4473,7 @@ void ieee80211_release_reorder_timeout(struct sta_info *sta, int tid)
 	if (sta->sta.valid_links)
 		link_id = ffs(sta->sta.valid_links) - 1;
 
-	if (!ieee80211_rx_data_set_sta(&rx, sta, link_id))
+	if (!ieee80211_rx_data_set_sta(&rx, sta, link_id, false))
 		return;
 
 	tid_agg_rx = rcu_dereference(sta->ampdu_mlme.tid_rx[tid]);
@@ -4528,7 +4525,7 @@ void ieee80211_mark_rx_ba_filtered_frames(struct ieee80211_sta *pubsta, u8 tid,
 		  "RX BA marker can't support max_rx_aggregation_subframes %u > 64\n",
 		  local->hw.max_rx_aggregation_subframes);
 
-	if (!ieee80211_rx_data_set_sta(&rx, sta, -1))
+	if (!ieee80211_rx_data_set_sta(&rx, sta, -1, false))
 		return;
 
 	rcu_read_lock();
@@ -5369,7 +5366,7 @@ static void __ieee80211_rx_handle_8023(struct ieee80211_hw *hw,
 	 * the deflink is fine?
 	 */
 	sta = container_of(pubsta, struct sta_info, sta);
-	if (!ieee80211_rx_data_set_sta(&rx, sta, link_id))
+	if (!ieee80211_rx_data_set_sta(&rx, sta, link_id, false))
 		goto drop;
 
 	fast_rx = rcu_dereference(rx.sta->fast_rx);
@@ -5390,7 +5387,10 @@ static bool ieee80211_rx_for_interface(struct ieee80211_rx_data *rx,
 	struct ieee80211_hdr *hdr = (void *)skb->data;
 	struct sta_info *sta;
 	int link_id = -1;
+	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
+	bool only_monitor;
 
+	only_monitor = status->flag & RX_FLAG_ONLY_MONITOR;
 	/*
 	 * Look up link station first, in case there's a
 	 * chance that they might have a link address that
@@ -5402,14 +5402,12 @@ static bool ieee80211_rx_for_interface(struct ieee80211_rx_data *rx,
 		sta = link_sta->sta;
 		link_id = link_sta->link_id;
 	} else {
-		struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
-
 		sta = sta_info_get_bss(rx->sdata, hdr->addr2);
 		if (status->link_valid)
 			link_id = status->link_id;
 	}
 
-	if (!ieee80211_rx_data_set_sta(rx, sta, link_id))
+	if (!ieee80211_rx_data_set_sta(rx, sta, link_id, only_monitor))
 		return false;
 
 	return ieee80211_prepare_and_rx_handle(rx, skb, consume);
@@ -5475,13 +5473,14 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	if (ieee80211_is_data(fc)) {
 		struct sta_info *sta, *prev_sta;
 		int link_id = -1;
+		bool only_monitor = status->flag & RX_FLAG_ONLY_MONITOR;
 
 		if (status->link_valid)
 			link_id = status->link_id;
 
 		if (pubsta) {
 			sta = container_of(pubsta, struct sta_info, sta);
-			if (!ieee80211_rx_data_set_sta(&rx, sta, link_id))
+			if (!ieee80211_rx_data_set_sta(&rx, sta, link_id, only_monitor))
 				goto out;
 
 			/*
@@ -5517,7 +5516,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 			}
 
 			rx.sdata = prev_sta->sdata;
-			if (!ieee80211_rx_data_set_sta(&rx, prev_sta, link_id))
+			if (!ieee80211_rx_data_set_sta(&rx, prev_sta, link_id, only_monitor))
 				goto out;
 
 			if (!status->link_valid && prev_sta->sta.mlo)
@@ -5530,7 +5529,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 		if (prev_sta) {
 			rx.sdata = prev_sta->sdata;
-			if (!ieee80211_rx_data_set_sta(&rx, prev_sta, link_id))
+			if (!ieee80211_rx_data_set_sta(&rx, prev_sta, link_id, only_monitor))
 				goto out;
 
 			if (!status->link_valid && prev_sta->sta.mlo)

@@ -73,6 +73,11 @@ module_param(beacon_loss_count, int, 0644);
 MODULE_PARM_DESC(beacon_loss_count,
 		 "Number of beacon intervals before we decide beacon was lost.");
 
+int debug_param = 0;
+module_param(debug_param, int, 0644);
+MODULE_PARM_DESC(debug_param,
+		"Debug module param to debug link id < 0");
+
 /*
  * Time the connection can be idle before we probe
  * it to see if we can still talk to the AP.
