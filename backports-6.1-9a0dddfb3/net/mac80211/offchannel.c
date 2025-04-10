@@ -1079,11 +1079,16 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			local->hw.offchannel_tx_hw_queue;
 
 	/* This will handle all kinds of coalescing and immediate TX */
+	if (!params->chan) {
+		ret = -EINVAL;
+		goto out_unlock;
+	}
 	ret = ieee80211_start_roc_work(local, sdata, params->chan,
 				       params->wait, cookie, skb,
 				       IEEE80211_ROC_TYPE_MGMT_TX);
 	if (ret)
 		ieee80211_free_txskb(&local->hw, skb);
+
  out_unlock:
 	return ret;
 }
