@@ -915,6 +915,7 @@ ieee80211_determine_chan_mode(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_bss *bss = (void *)cbss->priv;
 	struct ieee80211_channel *channel = cbss->channel;
 	struct ieee80211_elems_parse_params parse_params = {
+		.bss = cbss,
 		.link_id = -1,
 		.from_ap = true,
 		.start = ies->data,
