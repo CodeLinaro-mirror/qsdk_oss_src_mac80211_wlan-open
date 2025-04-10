@@ -41,6 +41,10 @@
 #define QMI_WLFW_FW_READY_IND_V01		0x0038
 #define QMI_WLFW_M3_DUMP_UPLOAD_REQ_IND_V01    	0x004D
 #define QMI_WLFW_M3_DUMP_UPLOAD_DONE_REQ_V01   	0x004E
+#define QMI_WLFW_QDSS_TRACE_REQ_MEM_IND_V01     0x003F
+#define QMI_Q6_QDSS_ETR_SIZE_QCN9274            0x100000
+#define QMI_WLFW_QDSS_TRACE_SAVE_IND_V01        0x0041
+#define QMI_Q6_QDSS_ETR_OFFSET_QCN9274		0x2500000
 
 #define QMI_WLANFW_MAX_DATA_SIZE_V01		6144
 #define ATH12K_FIRMWARE_MODE_OFF		4
@@ -91,6 +95,8 @@ enum ath12k_qmi_event_type {
 	ATH12K_QMI_EVENT_FORCE_FW_ASSERT,
 	ATH12K_QMI_EVENT_POWER_UP,
 	ATH12K_QMI_EVENT_POWER_DOWN,
+	ATH12K_QMI_EVENT_QDSS_TRACE_REQ_MEM = 15,
+	ATH12K_QMI_EVENT_QDSS_TRACE_SAVE,
 	ATH12K_QMI_EVENT_HOST_CAP,
 	ATH12K_QMI_EVENT_M3_DUMP_UPLOAD_REQ = 18,
 	ATH12K_QMI_EVENT_MAX,
@@ -219,7 +225,7 @@ struct qmi_wlanfw_qdss_trace_config_download_resp_msg_v01 {
 #define QMI_WLANFW_QDSS_TRACE_MODE_REQ_MSG_V01_MAX_LEN 18
 #define QMI_WLANFW_QDSS_TRACE_MODE_RESP_MSG_V01_MAX_LEN 7
 #define QMI_WLANFW_QDSS_TRACE_MODE_RESP_V01 0x0045
-#define QMI_WLANFW_QDSS_STOP_ALL_TRACE 0x3f
+#define QMI_WLANFW_QDSS_STOP_ALL_TRACE 0x01
 
 enum qmi_wlanfw_qdss_trace_mode_enum_v01 {
 	WLFW_QDSS_TRACE_MODE_ENUM_MIN_VAL_V01 = INT_MIN,
@@ -256,6 +262,7 @@ struct qmi_wlanfw_m3_dump_upload_done_resp_msg_v01 {
 #define QMI_WLFW_MAX_NUM_GPIO_V01			32
 #define QMI_WLANFW_MAX_PLATFORM_NAME_LEN_V01		64
 #define QMI_WLANFW_MAX_HOST_DDR_RANGE_SIZE_V01		3
+#define QDSS_ETR_MEM_REGION_TYPE                        0x6
 
 struct qmi_wlanfw_host_ddr_range {
 	u64 start;
@@ -404,8 +411,15 @@ struct qmi_wlanfw_ind_register_req_msg_v01 {
 	u8 xo_cal_enable;
 	u8 cal_done_enable_valid;
 	u8 cal_done_enable;
+	u8 qdss_trace_req_mem_enable_valid;
+	u8 qdss_trace_req_mem_enable;
+	u8 qdss_trace_save_enable_valid;
+	u8 qdss_trace_save_enable;
+	u8 qdss_trace_free_enable_valid;
+	u8 qdss_trace_free_enable;
 	u8 m3_dump_upload_req_enable_valid;
 	u8 m3_dump_upload_req_enable;
+
 };
 
 struct qmi_wlanfw_ind_register_resp_msg_v01 {
@@ -421,6 +435,7 @@ struct qmi_wlanfw_ind_register_resp_msg_v01 {
 #define QMI_WLANFW_RESPOND_MEM_REQ_V01			0x0036
 #define QMI_WLANFW_RESPOND_MEM_RESP_V01			0x0036
 #define QMI_WLANFW_MAX_NUM_MEM_CFG_V01			2
+#define QMI_WLFW_QDSS_TRACE_MEM_INFO_REQ_V01            0x0040
 #define QMI_WLANFW_MAX_STR_LEN_V01                      16
 
 struct qmi_wlanfw_mem_cfg_s_v01 {
@@ -738,6 +753,30 @@ struct qmi_wlanfw_m3_dump_upload_req_ind_msg_v01 {
 	u64 size;
 };
 
+struct qmi_wlanfw_qdss_trace_save_ind_msg_v01 {
+	u32 source;
+	u32 total_size;
+	u8 mem_seg_valid;
+	u32 mem_seg_len;
+	struct qmi_wlanfw_mem_seg_resp_s_v01
+			mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
+	u8 file_name_valid;
+	char file_name[QMI_WLANFW_MAX_STR_LEN_V01 + 1];
+};
+
+#define QDSS_TRACE_SEG_LEN_MAX 32
+
+struct qdss_trace_mem_seg {
+	u64 addr;
+	u32 size;
+};
+
+struct ath12k_qmi_event_qdss_trace_save_data {
+	u32 total_size;
+	u32 mem_seg_len;
+	struct qdss_trace_mem_seg mem_seg[QDSS_TRACE_SEG_LEN_MAX];
+};
+
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			      u32 mode);
 void ath12k_qmi_firmware_stop(struct ath12k_base *ab);
@@ -749,4 +788,6 @@ void ath12k_qmi_trigger_host_cap(struct ath12k_base *ab);
 void ath12k_qmi_reset_mlo_mem(struct ath12k_hw_group *ag);
 int ath12k_qmi_m3_dump_upload_done_ind_send(struct ath12k_base *ab,
                                             u32 pdev_id, int status);
+int ath12k_send_qdss_trace_mode_req(struct ath12k_base *ab,
+				    enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode);
 #endif

@@ -1096,6 +1096,7 @@ struct ath12k_base {
 
 	u64 fw_soc_drop_count;
 	bool static_window_map;
+	struct device_node *hremote_node;
 
 	struct work_struct rfkill_work;
 	/* true means radio is on */
@@ -1170,6 +1171,7 @@ struct ath12k_base {
         } msi;
 	bool in_panic;
 	bool is_qdss_tracing;
+	u32 host_ddr_fixed_mem_off;
 	struct ath12k_internal_pci ipci;
 	bool ce_pipe_init_done;
 
@@ -1298,6 +1300,7 @@ int ath12k_core_resume_early(struct ath12k_base *ab);
 int ath12k_core_resume(struct ath12k_base *ab);
 int ath12k_core_suspend(struct ath12k_base *ab);
 int ath12k_core_suspend_late(struct ath12k_base *ab);
+int ath12k_config_qdss(struct ath12k_base *ab);
 void ath12k_core_hw_group_unassign(struct ath12k_base *ab);
 u8 ath12k_get_num_partner_link(struct ath12k *ar);
 

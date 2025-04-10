@@ -1147,6 +1147,11 @@ core_pdev_create:
 
 		ath12k_hif_irq_enable(ab);
 
+		if (ab->hw_params->en_qdsslog) {
+			ath12k_info(ab, "QDSS trace enabled\n");
+			ath12k_config_qdss(ab);
+                }
+
 		ret = ath12k_core_rfkill_config(ab);
 		if (ret && ret != -EOPNOTSUPP) {
 			mutex_unlock(&ab->core_lock);

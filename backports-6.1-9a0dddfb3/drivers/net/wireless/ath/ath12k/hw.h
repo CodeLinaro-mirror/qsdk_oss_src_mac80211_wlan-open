@@ -249,6 +249,7 @@ struct ath12k_hw_params {
 	const struct ce_remap *ce_remap;
 	bool send_platform_model;
 	bool handle_beacon_miss;
+	bool en_qdsslog;
 };
 
 struct ath12k_hw_ops {

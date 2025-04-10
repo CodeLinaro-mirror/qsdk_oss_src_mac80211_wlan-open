@@ -431,6 +431,75 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	}
 
 }
+
+void ath12k_coredump_qdss_dump(struct ath12k_base *ab,
+			       struct ath12k_qmi_event_qdss_trace_save_data *event_data)
+{
+	struct ath12k_dump_segment *segment;
+	int len, num_seg;
+	void *dump;
+
+	num_seg = event_data->mem_seg_len;
+	len = sizeof(*segment);
+	segment = vzalloc(len);
+	if (!segment) {
+		ath12k_warn(ab, "fail to alloc memory for qdss\n");
+		return;
+	}
+
+	if (event_data->total_size &&
+	    event_data->total_size <= ab->qmi.qdss_mem[0].size)
+		dump = vzalloc(event_data->total_size);
+	if (!dump) {
+		vfree(segment);
+		return;
+	}
+
+	if (num_seg == 1) {
+		segment->len = event_data->mem_seg[0].size;
+		segment->vaddr = ab->qmi.qdss_mem[0].v.ioaddr;
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "seg vaddr is 0x%p len is 0x%x\n",
+			   segment->vaddr, segment->len);
+		segment->type = FW_CRASH_DUMP_QDSS_DATA;
+	} else if (num_seg == 2) {
+		/*FW sends 2 segments with segment 0 and segment 1 */
+
+	if (event_data->mem_seg[1].addr != ab->qmi.qdss_mem[0].paddr) {
+			ath12k_warn(ab, "Invalid seg 0 addr 0x%llx\n",
+			    event_data->mem_seg[1].addr);
+			goto out;
+		}
+		if (event_data->mem_seg[0].size + event_data->mem_seg[1].size !=
+		    ab->qmi.qdss_mem[0].size) {
+			ath12k_warn(ab, "Invalid total size 0x%x 0x%x\n",
+				    event_data->mem_seg[0].size,
+				    event_data->mem_seg[1].size);
+			goto out;
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_QMI, "qdss mem seg0 addr 0x%llx size 0x%x\n",
+			   event_data->mem_seg[0].addr, event_data->mem_seg[0].size);
+		ath12k_dbg(ab, ATH12K_DBG_QMI, "qdss mem seg1 addr 0x%llx size 0x%x\n",
+			   event_data->mem_seg[1].addr, event_data->mem_seg[1].size);
+
+		memcpy(dump,
+		       ab->qmi.qdss_mem[0].v.ioaddr + event_data->mem_seg[1].size,
+		       event_data->mem_seg[0].size);
+		memcpy(dump + event_data->mem_seg[0].size,
+		       ab->qmi.qdss_mem[0].v.ioaddr, event_data->mem_seg[1].size);
+
+		segment->len = event_data->mem_seg[0].size + event_data->mem_seg[1].size;
+		segment->vaddr = dump;
+		ath12k_dbg(ab, ATH12K_DBG_QMI, "seg vaddr is 0x%p and len is 0x%x\n",
+			   segment->vaddr, segment->len);
+		segment->type = FW_CRASH_DUMP_QDSS_DATA;
+	}
+	ath12k_coredump_build_inline(ab, segment, 1);
+out:
+	vfree(segment);
+	vfree(dump);
+}
+
 #ifdef CPTCFG_ATH12K_COREDUMP
 void ath12k_coredump_collect(struct ath12k_base *ab)
 {
