@@ -2505,6 +2505,7 @@ static void sta_stats_decode_rate(struct ieee80211_local *local, u32 rate,
 		rinfo->nss = STA_STATS_GET(EHT_NSS, rate);
 		rinfo->eht_gi = STA_STATS_GET(EHT_GI, rate);
 		rinfo->eht_ru_alloc = STA_STATS_GET(EHT_RU, rate);
+		rinfo->he_dcm = STA_STATS_GET(HE_DCM, rate);
 		break;
 	}
 }

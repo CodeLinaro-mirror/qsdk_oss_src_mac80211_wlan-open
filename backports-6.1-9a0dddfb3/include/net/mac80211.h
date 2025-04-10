@@ -1640,6 +1640,7 @@ enum mac80211_rx_encoding {
 	RX_ENC_HT,
 	RX_ENC_VHT,
 	RX_ENC_HE,
+	RX_ENC_S1G,
 	RX_ENC_EHT,
 };
 
