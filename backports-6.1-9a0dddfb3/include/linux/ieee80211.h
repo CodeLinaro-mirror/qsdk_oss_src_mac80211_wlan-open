@@ -2825,6 +2825,7 @@ enum ieee80211_tx_power_category_6ghz {
 	IEEE80211_TPE_CAT_6GHZ_SUBORDINATE = 1,
 };
 
+#define IEEE80211_MAX_NUM_PWR_LEVEL    16
 /*
  * For IEEE80211_TPE_LOCAL_EIRP / IEEE80211_TPE_REG_CLIENT_EIRP,
  * setting to 63.5 dBm means no constraint.
