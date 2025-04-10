@@ -4626,6 +4626,7 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 	ieee80211_xmit_nss_fixup(skb, dev);
 #endif
+	skb->fast_xmit = 0;
 
 	if (likely(!is_multicast_ether_addr(eth->h_dest)))
 		goto normal;
@@ -4922,7 +4923,43 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 					    struct net_device *dev)
 {
-	return __ieee80211_subif_start_xmit_8023(skb, dev, 0, 0, NULL);
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_tx_control control = {};
+	struct sta_info *sta;
+	struct ieee80211_sta *pubsta = NULL;
+
+	info->control.vif = &sdata->vif;
+
+	if (skb->fast_xmit) {
+		info->control.flags = u32_encode_bits(IEEE80211_LINK_UNSPECIFIED,
+						      IEEE80211_TX_CTRL_MLO_LINK);
+		info->flags = IEEE80211_TX_CTL_HW_80211_ENCAP;
+
+		if (hweight16(sdata->vif.valid_links) > 1) {
+			rcu_read_lock();
+
+			if (ieee80211_lookup_ra_sta(sdata, skb, &sta)) {
+				kfree_skb(skb);
+				goto out;
+			}
+
+			if (!IS_ERR_OR_NULL(sta) && sta->uploaded)
+				pubsta = &sta->sta;
+
+			control.sta = pubsta;
+			drv_tx(sdata->local, &control,  skb);
+out:
+			rcu_read_unlock();
+		} else {
+			control.sta = NULL;
+			drv_tx(sdata->local, &control,  skb);
+		}
+
+		return NETDEV_TX_OK;
+	} else {
+		return __ieee80211_subif_start_xmit_8023(skb, dev, 0, 0, NULL);
+	}
 }
 
 netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
