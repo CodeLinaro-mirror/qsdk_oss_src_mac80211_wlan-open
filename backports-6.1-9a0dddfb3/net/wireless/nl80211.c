@@ -10652,7 +10652,7 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	int link_id = nl80211_link_id(info->attrs);
 	struct wiphy *wiphy = wdev->wiphy;
-	struct cfg80211_chan_def chandef;
+	struct cfg80211_chan_def chandef, *chandef_link;
 	enum nl80211_dfs_regions dfs_region;
 	unsigned int cac_time_ms;
 	int err;
@@ -10679,6 +10679,19 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	err = nl80211_parse_chandef(rdev, info, &chandef, wdev);
 	if (err)
 		return err;
+
+	chandef_link = wdev_chandef(wdev, link_id);
+	if (!chandef_link) {
+		err = -EINVAL;
+		goto unlock;
+	}
+
+	if (chandef_link->chan) {
+		if (chandef_link->chan->band != chandef.chan->band) {
+			err = -EINVAL;
+			goto unlock;
+		}
+	}
 
 	err = cfg80211_chandef_dfs_required(wiphy, &chandef, wdev->iftype);
 	if (err < 0)
@@ -10743,7 +10756,8 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 	wdev->links[link_id].cac_start_time = jiffies;
 	wdev->links[link_id].cac_time_ms = cac_time_ms;
 
-	return 0;
+unlock:
+	return err;
 }
 
 static int nl80211_stop_radar_detection(struct sk_buff *skb,
@@ -10751,6 +10765,21 @@ static int nl80211_stop_radar_detection(struct sk_buff *skb,
 {
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	int link_id = nl80211_link_id(info->attrs);
+	struct cfg80211_chan_def *chandef_link, *chandef;
+
+	if (!rdev->background_radar_wdev)
+		return -EINVAL;
+
+	chandef = &rdev->background_radar_chandef;
+	chandef_link = wdev_chandef(wdev, link_id);
+
+	if (!chandef_link)
+		return -EINVAL;
+
+	if (chandef_link->chan->band != chandef->chan->band)
+		return -EINVAL;
 
 	cfg80211_stop_background_radar_detection(wdev);
 
