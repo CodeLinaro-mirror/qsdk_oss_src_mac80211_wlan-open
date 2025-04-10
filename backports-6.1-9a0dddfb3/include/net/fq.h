@@ -72,6 +72,7 @@ struct fq {
 	struct list_head tin_backlog;
 	spinlock_t lock;
 	u32 flows_cnt;
+	siphash_key_t	perturbation;
 	u32 limit;
 	u32 memory_limit;
 	u32 memory_usage;

@@ -136,7 +136,7 @@ begin:
 
 static u32 fq_flow_idx(struct fq *fq, struct sk_buff *skb)
 {
-	u32 hash = skb_get_hash(skb);
+	u32 hash = skb_get_hash_perturb(skb, &fq->perturbation);
 
 	return reciprocal_scale(hash, fq->flows_cnt);
 }
@@ -354,6 +354,7 @@ static int fq_init(struct fq *fq, int flows_cnt)
 	spin_lock_init(&fq->lock);
 	INIT_LIST_HEAD(&fq->tin_backlog);
 	fq->flows_cnt = max_t(u32, flows_cnt, 1);
+	get_random_bytes(&fq->perturbation, sizeof(fq->perturbation));
 	fq->quantum = 300;
 	fq->limit = 8192;
 	fq->memory_limit = 16 << 20; /* 16 MBytes */

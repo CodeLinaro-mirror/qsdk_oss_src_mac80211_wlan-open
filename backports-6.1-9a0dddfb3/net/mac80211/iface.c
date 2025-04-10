@@ -2185,9 +2185,17 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 		ieee80211_assign_perm_addr(local, ndev->perm_addr, type);
 		if (is_valid_ether_addr(params->macaddr))
-			eth_hw_addr_set(ndev, params->macaddr);
+#if KERNEL_VERSION(5, 17, 0) > LINUX_VERSION_CODE
+			memcpy(ndev->dev_addr, params->macaddr, ETH_ALEN);
+#else
+			dev_addr_set(ndev, params->macaddr);
+#endif
 		else
-			eth_hw_addr_set(ndev, ndev->perm_addr);
+#if KERNEL_VERSION(5, 17, 0) > LINUX_VERSION_CODE
+			memcpy(ndev->dev_addr, ndev->perm_addr, ETH_ALEN);
+#else
+			dev_addr_set(ndev, ndev->perm_addr);
+#endif
 		SET_NETDEV_DEV(ndev, wiphy_dev(local->hw.wiphy));
 
 		/* don't use IEEE80211_DEV_TO_SUB_IF -- it checks too much */
