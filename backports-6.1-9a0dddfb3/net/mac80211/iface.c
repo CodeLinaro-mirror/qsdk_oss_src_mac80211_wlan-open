@@ -50,7 +50,8 @@ MODULE_PARM_DESC(nss_redirect, "module param to enable NSS Redirect; 1-enable, 0
 
 static void ieee80211_iface_work(struct wiphy *wiphy, struct wiphy_work *work);
 
-bool __ieee80211_recalc_txpower(struct ieee80211_link_data *link)
+bool __ieee80211_recalc_txpower(struct ieee80211_link_data *link,
+				unsigned int link_id)
 {
 	struct ieee80211_chanctx_conf *chanctx_conf;
 	int power;
@@ -80,9 +81,9 @@ bool __ieee80211_recalc_txpower(struct ieee80211_link_data *link)
 }
 
 void ieee80211_recalc_txpower(struct ieee80211_link_data *link,
-			      bool update_bss)
+			      bool update_bss, unsigned int link_id)
 {
-	if (__ieee80211_recalc_txpower(link) ||
+	if (__ieee80211_recalc_txpower(link, link_id) ||
 	    (update_bss && ieee80211_sdata_running(link->sdata)))
 		ieee80211_link_info_change_notify(link->sdata, link,
 						  BSS_CHANGED_TXPOWER);

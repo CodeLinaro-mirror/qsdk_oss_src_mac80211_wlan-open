@@ -1723,14 +1723,16 @@ DEFINE_EVENT(wiphy_wdev_link_evt, rdev_get_tx_power,
 
 TRACE_EVENT(rdev_set_tx_power,
 	TP_PROTO(struct wiphy *wiphy, struct wireless_dev *wdev, u8 radio_id,
-		 enum nl80211_tx_power_setting type, int mbm),
-	TP_ARGS(wiphy, wdev, radio_id, type, mbm),
+		 enum nl80211_tx_power_setting type, int mbm,
+		 unsigned int link_id),
+	TP_ARGS(wiphy, wdev, radio_id, type, mbm, link_id),
 	TP_STRUCT__entry(
 		WIPHY_ENTRY
 		WDEV_ENTRY
 		__field(u8, radio_id)
 		__field(enum nl80211_tx_power_setting, type)
 		__field(int, mbm)
+		__field(unsigned int, link_id)
 	),
 	TP_fast_assign(
 		WIPHY_ASSIGN;
@@ -1738,10 +1740,11 @@ TRACE_EVENT(rdev_set_tx_power,
 		__entry->radio_id = radio_id;
 		__entry->type = type;
 		__entry->mbm = mbm;
+		__entry->link_id = link_id;
 	),
-	TP_printk(WIPHY_PR_FMT ", " WDEV_PR_FMT ", radio_id: %u, type: %u, mbm: %d",
+	TP_printk(WIPHY_PR_FMT ", " WDEV_PR_FMT ", radio_id: %u, type: %u, mbm: %d link_id %d",
 		  WIPHY_PR_ARG, WDEV_PR_ARG, __entry->radio_id, __entry->type,
-		  __entry->mbm)
+		  __entry->mbm, __entry->link_id)
 );
 
 TRACE_EVENT(rdev_return_int_int,

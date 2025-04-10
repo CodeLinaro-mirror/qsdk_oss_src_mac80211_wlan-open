@@ -2997,7 +2997,7 @@ static u64 ieee80211_handle_pwr_constr(struct ieee80211_link_data *link,
 	}
 
 	link->ap_power_level = new_ap_level;
-	if (__ieee80211_recalc_txpower(link))
+	if (__ieee80211_recalc_txpower(link, 0))
 		return BSS_CHANGED_TXPOWER;
 	return 0;
 }

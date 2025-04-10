@@ -3202,7 +3202,8 @@ static int ieee80211_set_wiphy_params(struct wiphy *wiphy, u8 radio_id, u32 chan
 
 static int ieee80211_set_tx_power(struct wiphy *wiphy,
 				  struct wireless_dev *wdev, u8 radio_id,
-				  enum nl80211_tx_power_setting type, int mbm)
+				  enum nl80211_tx_power_setting type, int mbm,
+				  unsigned int link_id)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata;
@@ -3212,6 +3213,7 @@ static int ieee80211_set_tx_power(struct wiphy *wiphy,
 	bool has_monitor = false;
 	int user_power_level;
 	int old_power = local->user_power_level;
+	struct ieee80211_link_data *link_data;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -3233,6 +3235,10 @@ static int ieee80211_set_tx_power(struct wiphy *wiphy,
 	if (wdev) {
 		sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 
+		link_data = sdata_dereference(sdata->link[link_id], sdata);
+		if (!link_data)
+			return -ENOLINK;
+
 		if (sdata->vif.type == NL80211_IFTYPE_MONITOR &&
 		    !ieee80211_hw_check(&local->hw, NO_VIRTUAL_MONITOR)) {
 			if (!ieee80211_hw_check(&local->hw, WANT_MONITOR_VIF))
@@ -3244,24 +3250,20 @@ static int ieee80211_set_tx_power(struct wiphy *wiphy,
 				return -EOPNOTSUPP;
 		}
 
-		for (int link_id = 0;
-		     link_id < ARRAY_SIZE(sdata->link);
-		     link_id++) {
-			struct ieee80211_link_data *link =
-				wiphy_dereference(wiphy, sdata->link[link_id]);
+		struct ieee80211_link_data *link =
+			wiphy_dereference(wiphy, sdata->link[link_id]);
 
-			if (!link)
-				continue;
+		if (!link)
+			return -ENOLINK;
 
-			link->user_power_level = user_power_level;
+		link->user_power_level = user_power_level;
 
-			if (txp_type != link->conf->txpower_type) {
-				update_txp_type = true;
-				link->conf->txpower_type = txp_type;
-			}
-
-			ieee80211_recalc_txpower(link, update_txp_type);
+		if (txp_type != link->conf->txpower_type) {
+			update_txp_type = true;
+			link->conf->txpower_type = txp_type;
 		}
+
+		ieee80211_recalc_txpower(link, update_txp_type, link_id);
 		return 0;
 	}
 
@@ -3274,49 +3276,41 @@ static int ieee80211_set_tx_power(struct wiphy *wiphy,
 			continue;
 		}
 
-		for (int link_id = 0;
-		     link_id < ARRAY_SIZE(sdata->link);
-		     link_id++) {
-			struct ieee80211_link_data *link =
-				wiphy_dereference(wiphy, sdata->link[link_id]);
+		struct ieee80211_link_data *link =
+			wiphy_dereference(wiphy, sdata->link[link_id]);
 
-			if (!link)
+		if (!link)
+			return -ENOLINK;
+
+		if (radio_id < wiphy->n_radio) {
+			conf = wiphy_dereference(wiphy, link->conf->chanctx_conf);
+			if (!conf || conf->radio_idx != radio_id)
 				continue;
-
-			if (radio_id < wiphy->n_radio) {
-				conf = wiphy_dereference(wiphy, link->conf->chanctx_conf);
-				if (!conf || conf->radio_idx != radio_id)
-					continue;
-			}
-
-			link->user_power_level = local->user_power_level;
-			if (txp_type != link->conf->txpower_type)
-				update_txp_type = true;
-			link->conf->txpower_type = txp_type;
 		}
+
+		link->user_power_level = local->user_power_level;
+		if (txp_type != link->conf->txpower_type)
+			update_txp_type = true;
+		link->conf->txpower_type = txp_type;
 	}
 	list_for_each_entry(sdata, &local->interfaces, list) {
 		if (sdata->vif.type == NL80211_IFTYPE_MONITOR &&
 		    !ieee80211_hw_check(&local->hw, NO_VIRTUAL_MONITOR))
 			continue;
 
-		for (int link_id = 0;
-		     link_id < ARRAY_SIZE(sdata->link);
-		     link_id++) {
-			struct ieee80211_link_data *link =
-				wiphy_dereference(wiphy, sdata->link[link_id]);
+		struct ieee80211_link_data *link =
+			wiphy_dereference(wiphy, sdata->link[link_id]);
 
-			if (!link)
+		if (!link)
+			return -ENOLINK;
+
+		if (radio_id < wiphy->n_radio) {
+			conf = wiphy_dereference(wiphy, link->conf->chanctx_conf);
+			if (!conf || conf->radio_idx != radio_id)
 				continue;
-
-			if (radio_id < wiphy->n_radio) {
-				conf = wiphy_dereference(wiphy, link->conf->chanctx_conf);
-				if (!conf || conf->radio_idx != radio_id)
-					continue;
-			}
-
-			ieee80211_recalc_txpower(link, update_txp_type);
 		}
+
+		ieee80211_recalc_txpower(link, update_txp_type, link_id);
 	}
 
 	if (has_monitor) {
@@ -3329,7 +3323,7 @@ static int ieee80211_set_tx_power(struct wiphy *wiphy,
 			sdata->vif.bss_conf.txpower_type = txp_type;
 
 			ieee80211_recalc_txpower(&sdata->deflink,
-						 update_txp_type);
+						 update_txp_type, link_id);
 		}
 	}
 

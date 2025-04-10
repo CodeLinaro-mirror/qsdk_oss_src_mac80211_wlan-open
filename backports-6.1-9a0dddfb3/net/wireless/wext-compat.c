@@ -893,7 +893,7 @@ static int cfg80211_wext_siwtxpower(struct net_device *dev,
 	guard(wiphy)(&rdev->wiphy);
 
 	return rdev_set_tx_power(rdev, wdev, NL80211_WIPHY_RADIO_ID_MAX, type,
-				 DBM_TO_MBM(dbm));
+				 DBM_TO_MBM(dbm), 0);
 }
 
 static int cfg80211_wext_giwtxpower(struct net_device *dev,

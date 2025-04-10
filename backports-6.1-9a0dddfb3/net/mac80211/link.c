@@ -88,6 +88,7 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 			 struct ieee80211_link_data *link,
 			 struct ieee80211_bss_conf *link_conf)
 {
+	struct ieee80211_local *local = sdata->local;
 	bool deflink = link_id < 0;
 
 	if (link_id < 0)
@@ -126,6 +127,9 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 	INIT_LIST_HEAD(&link->reserved_chanctx_list);
 	wiphy_delayed_work_init(&link->dfs_cac_timer_work,
 				ieee80211_dfs_cac_timer_work);
+
+	link->ap_power_level = IEEE80211_UNSET_POWER_LEVEL;
+	link->user_power_level = local->user_power_level;
 
 	if (!deflink) {
 		switch (sdata->vif.type) {
