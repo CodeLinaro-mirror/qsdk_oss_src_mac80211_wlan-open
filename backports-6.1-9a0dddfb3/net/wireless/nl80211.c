@@ -6093,8 +6093,7 @@ static int nl80211_parse_mbssid_config(struct wiphy *wiphy,
 	}
 
 	config->index = nla_get_u8(tb[NL80211_MBSSID_CONFIG_ATTR_INDEX]);
-	if (config->index >= wiphy->mbssid_max_interfaces ||
-	    (!config->index && !num_elems))
+	if (config->index >= wiphy->mbssid_max_interfaces)
 		return -EINVAL;
 
 	if (tb[NL80211_MBSSID_CONFIG_ATTR_TX_IFINDEX]) {
