@@ -1336,6 +1336,10 @@ struct ieee80211_tx_info {
 		u8 pad[36];
 		u32 tx_start_time;
 	} latency;
+		struct {
+			u8 pad[36];
+			u32 nw_delay;
+		} sawf;
 	};
 };
 

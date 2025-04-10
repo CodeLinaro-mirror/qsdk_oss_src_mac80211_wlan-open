@@ -4418,6 +4418,7 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 		}
 
 		info = IEEE80211_SKB_CB(skb);
+		info->sawf.nw_delay = (u32) ktime_to_us(net_timedelta(skb->tstamp));
 		if (info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP) {
 		    	if (sta)
 				key = rcu_dereference(sta->ptk[sta->ptk_idx]);
@@ -4801,6 +4802,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	memset(info, 0, sizeof(*info));
 
 	info->flags |= info_flags;
+	info->sawf.nw_delay = (u32) ktime_to_us(net_timedelta(skb->tstamp));
 	info->hw_queue = sdata->vif.hw_queue[queue];
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
@@ -4888,6 +4890,7 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 
 	info->flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
 	info->control.vif = &sdata->vif;
+	info->sawf.nw_delay = (u32) ktime_to_us(net_timedelta(skb->tstamp));
 
 	if (key)
 		info->control.hw_key = &key->conf;
