@@ -291,7 +291,7 @@ static int ieee80211_change_iface(struct wiphy *wiphy,
 		if (!ifmgd->associated)
 			return 0;
 
-		sta = sta_info_get(sdata, sdata->deflink.u.mgd.bssid);
+		sta = sta_info_get(sdata, sdata->vif.cfg.ap_addr);
 		if (sta)
 			drv_sta_set_4addr(local, sdata, &sta->sta,
 					  params->use_4addr);
