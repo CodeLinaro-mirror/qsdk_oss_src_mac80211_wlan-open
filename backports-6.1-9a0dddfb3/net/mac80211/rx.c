@@ -3605,6 +3605,7 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *) rx->skb->data;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(rx->skb);
 	int len = rx->skb->len;
+	int link_id;
 
 	if (!ieee80211_is_action(mgmt->frame_control))
 		return RX_CONTINUE;
@@ -3665,7 +3666,7 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 			sta_opmode.changed = STA_OPMODE_SMPS_MODE_CHANGED;
 
 			sband = rx->local->hw.wiphy->bands[status->band];
-
+			link_id = rx->link_sta->link_id;
 			rate_control_rate_update(local, sband, rx->link_sta,
 						 IEEE80211_RC_SMPS_CHANGED);
 			cfg80211_sta_opmode_change_notify(sdata->dev,
@@ -3703,7 +3704,7 @@ ieee80211_rx_h_action(struct ieee80211_rx_data *rx)
 			sta_opmode.bw =
 				ieee80211_sta_rx_bw_to_chan_width(rx->link_sta);
 			sta_opmode.changed = STA_OPMODE_MAX_BW_CHANGED;
-
+			link_id = rx->link_sta->link_id;
 			rate_control_rate_update(local, sband, rx->link_sta,
 						 IEEE80211_RC_BW_CHANGED);
 			cfg80211_sta_opmode_change_notify(sdata->dev,

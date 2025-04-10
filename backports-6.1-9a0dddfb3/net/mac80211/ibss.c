@@ -973,6 +973,12 @@ static void ieee80211_update_sta_info(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_supported_band *sband;
 	bool rates_updated = false;
 	u32 supp_rates = 0;
+	int link_id;
+
+	if (!rx_status->link_valid)
+		link_id = -1;
+	else
+		link_id = rx_status->link_id;
 
 	if (sdata->vif.type != NL80211_IFTYPE_ADHOC)
 		return;
@@ -1097,7 +1103,6 @@ static void ieee80211_rx_bss_info(struct ieee80211_sub_if_data *sdata,
 	channel = ieee80211_get_channel(local->hw.wiphy, rx_status->freq);
 	if (!channel)
 		return;
-
 	ieee80211_update_sta_info(sdata, mgmt, len, rx_status, elems, channel);
 
 	bss = ieee80211_bss_info_update(local, rx_status, mgmt, len, channel);
