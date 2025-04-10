@@ -183,7 +183,7 @@ void drv_link_info_changed(struct ieee80211_local *local,
 static inline void drv_nss_bss_info_changed(struct ieee80211_local *local,
 					struct ieee80211_sub_if_data *sdata,
 					struct ieee80211_bss_conf *info,
-					u32 changed)
+					u64 changed)
 {
 	might_sleep();
 

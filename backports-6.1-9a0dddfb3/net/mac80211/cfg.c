@@ -5196,6 +5196,43 @@ static int ieee80211_set_sar_specs(struct wiphy *wiphy,
 	return local->ops->set_sar_specs(&local->hw, sar);
 }
 
+int
+ieee80211_6ghz_power_mode_change(struct wiphy *wiphy, struct wireless_dev *wdev,
+				 u8 ap_6ghz_pwr_mode,
+				 int link_id)
+{
+	struct ieee80211_sub_if_data *sdata =
+					IEEE80211_DEV_TO_SUB_IF(wdev->netdev);
+	struct ieee80211_link_data *link;
+	u64 changed = 0;
+
+	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return -EINVAL;
+
+	rcu_read_lock();
+
+	link = rcu_dereference(sdata->link[link_id]);
+	if (WARN_ON(!link)) {
+		rcu_read_unlock();
+		return -ENOLINK;
+	}
+
+	if (link->conf->csa_active) {
+		rcu_read_unlock();
+		return -EBUSY;
+	}
+
+	rcu_read_unlock();
+
+	wdev->reg_6g_power_mode = ap_6ghz_pwr_mode;
+	changed = BSS_CHANGED_6GHZ_POWER_MODE;
+
+	ieee80211_bss_info_change_notify(sdata, changed);
+
+	return 0;
+}
+EXPORT_SYMBOL(ieee80211_6ghz_power_mode_change);
+
 static int
 ieee80211_set_after_color_change_beacon(struct ieee80211_link_data *link,
 					u64 *changed)

@@ -369,6 +369,7 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_MLD_TTLM: negotiated TID to link mapping was changed
  * @BSS_CHANGED_TPE: transmit power envelope changed
  * @BSS_CHANGED_AP_PS: PS changed for this BSS (AP mode)
+ * @BSS_CHANGED_6GHZ_POWER_MODE: Indicate the 6 GHz power mode change.
  */
 enum ieee80211_bss_change {
 	BSS_CHANGED_ASSOC		= 1<<0,
@@ -407,6 +408,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_MLD_TTLM		= BIT_ULL(34),
 	BSS_CHANGED_TPE			= BIT_ULL(35),
 	BSS_CHANGED_AP_PS               = BIT_ULL(36),
+	BSS_CHANGED_6GHZ_POWER_MODE     = BIT_ULL(37),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 
@@ -8186,4 +8188,16 @@ enum ieee80211_gstrings_stats {
 	IEEE80211_STATS_MAX,
 };
 
+/** ieee80211_6ghz_power_mode_change - Change the 6 GHz power mode
+ * @wiphy: Pointer to wiphy
+ * @wdev: Pointer to wdev
+ * @ap_6ghz_pwr_mode: AP 6 GHz power mode
+ * @link_id: Link ID
+ *
+ * Return 0 if 6 GHz power mode change is successful else return error.
+ */
+int ieee80211_6ghz_power_mode_change(struct wiphy *wiphy,
+				     struct wireless_dev *wdev,
+				     u8 ap_6ghz_pwr_mode,
+				     int link_id);
 #endif /* MAC80211_H */
