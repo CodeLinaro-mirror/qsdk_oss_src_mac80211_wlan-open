@@ -1649,6 +1649,7 @@ struct cfg80211_ap_update {
  * @count: number of beacons until switch
  * @link_id: defines the link on which channel switch is expected during
  *	MLO. 0 in case of non-MLO.
+ * @unsol_bcast_probe_resp: Unsolicited broadcast probe response parameters
  */
 struct cfg80211_csa_settings {
 	struct cfg80211_chan_def chandef;
@@ -1662,6 +1663,7 @@ struct cfg80211_csa_settings {
 	bool block_tx;
 	u8 count;
 	u8 link_id;
+	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
 };
 
 /**
@@ -1677,6 +1679,7 @@ struct cfg80211_csa_settings {
  * @color: the color used after the change
  * @link_id: defines the link on which color change is expected during MLO.
  *	0 in case of non-MLO.
+ * @unsol_bcast_probe_resp: Unsolicited broadcast probe response parameters
  */
 struct cfg80211_color_change_settings {
 	struct cfg80211_beacon_data beacon_color_change;
@@ -1686,6 +1689,7 @@ struct cfg80211_color_change_settings {
 	u8 count;
 	u8 color;
 	u8 link_id;
+	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
 };
 
 /**

@@ -11092,6 +11092,14 @@ skip_beacons:
 	if (info->attrs[NL80211_ATTR_CH_SWITCH_BLOCK_TX])
 		params.block_tx = true;
 
+	if (info->attrs[NL80211_ATTR_UNSOL_BCAST_PROBE_RESP]) {
+		err = nl80211_parse_unsol_bcast_probe_resp(rdev,
+							   info->attrs[NL80211_ATTR_UNSOL_BCAST_PROBE_RESP],
+							   &params.unsol_bcast_probe_resp);
+		if (err)
+			goto free;
+	}
+
 	params.link_id = link_id;
 	err = rdev_channel_switch(rdev, dev, &params);
 

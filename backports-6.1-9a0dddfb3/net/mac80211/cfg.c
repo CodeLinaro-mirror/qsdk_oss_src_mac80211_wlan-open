@@ -4405,6 +4405,11 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	ch_switch.chandef = chanreq.oper;
 	ch_switch.count = params->count;
 
+	err = ieee80211_set_unsol_bcast_probe_resp(sdata, &params->unsol_bcast_probe_resp,
+						   link_data, link_conf, &changed);
+	if (err)
+		goto out;
+
 	err = drv_pre_channel_switch(sdata, &ch_switch);
 	if (err)
 		goto out;
@@ -5428,6 +5433,11 @@ ieee80211_color_change(struct wiphy *wiphy, struct net_device *dev,
 
 	link_conf->color_change_active = true;
 	link_conf->color_change_color = params->color;
+
+	err = ieee80211_set_unsol_bcast_probe_resp(sdata, &params->unsol_bcast_probe_resp,
+						   link, link_conf, &changed);
+	if (err)
+		goto out;
 
 	cfg80211_color_change_started_notify(sdata->dev, params->count, link_id);
 
