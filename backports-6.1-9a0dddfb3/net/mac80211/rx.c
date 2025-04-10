@@ -36,6 +36,10 @@
 
 extern int debug_param;
 
+#define IEEE80211_FSE_MAGIC_NUM      0xAA
+#define IEEE80211_FSE_MAGIC_NUM_MASK GENMASK(7,0)
+#define IEEE80211_PPE_VP_NUM         GENMASK(23, 8)
+
 static inline void ieee80211_rx_stats(struct net_device *dev, u32 len)
 {
 	struct pcpu_sw_netstats *tstats = this_cpu_ptr(netdev_tstats(dev));
@@ -2651,30 +2655,28 @@ static bool ieee80211_frame_allowed(struct ieee80211_rx_data *rx, __le16 fc)
 }
 
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
-static void ieee80211_netif_rx_ppe(struct ieee80211_rx_data *rx,
-				   struct sk_buff *skb)
+static bool inline ieee80211_netif_rx_ppe(struct ieee80211_rx_data *rx,
+					 struct sk_buff *skb)
 {
-	struct ieee80211_sub_if_data *sdata = rx->sdata;
+	struct net_device *dev;
 
 	skb->next = NULL;
+	if (u32_get_bits(skb->mark, IEEE80211_FSE_MAGIC_NUM_MASK) !=
+	    IEEE80211_FSE_MAGIC_NUM)
+		return false;
+
 	/*
 	 * if the skb is shared, not sure when it has to be freed.
 	 * skip ppe and proceed with normal path.
 	 */
-	if (unlikely(skb_shared(skb)))
-		goto out;
+	if (unlikely(skb_shared(skb) || skb_is_nonlinear(skb)))
+		return false;
 
-	if (likely(ppe_vp_tx_to_ppe(sdata->vif.ppe_vp_num, skb)))
-		return;
+	dev = skb->dev;
+	if (dev->offload_ops->recv(dev, skb))
+		return true;
 
-out:
-	skb->protocol = eth_type_trans(skb, sdata->dev);
-	skb->dev = sdata->dev;
-	if (rx->napi)
-		napi_gro_receive(rx->napi, skb);
-	else
-		netif_receive_skb(skb);
-
+	return false;
 }
 #endif
 
@@ -5091,9 +5093,7 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	/* Do not deliver frames to PPE in fast rx incase of RFS
 	 * RFS is supported only in SFE Mode */
-	if (rx->sdata->vif.ppe_vp_type == PPE_VP_USER_TYPE_ACTIVE &&
-	    rx->sdata->vif.ppe_vp_num != -1) {
-		ieee80211_netif_rx_ppe(rx, skb);
+	if (ieee80211_netif_rx_ppe(rx, skb)) {
 		atomic_inc(&sta->rx_netif_pkts);
 		return;
 	}
