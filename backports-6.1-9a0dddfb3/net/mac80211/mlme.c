@@ -5092,7 +5092,7 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 		*changed |= ieee80211_recalc_twt_req(sdata, sband, link,
 						     link_sta, elems);
 
-		if (elems->eht_operation && elems->eht_cap &&
+		if (elems->eht_cap &&
 		    link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_EHT) {
 			ieee80211_eht_cap_ie_to_sta_eht_cap(sdata, sband,
 							    elems->he_cap,

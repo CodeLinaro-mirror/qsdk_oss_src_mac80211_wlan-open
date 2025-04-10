@@ -3198,14 +3198,16 @@ ieee80211_eht_mcs_nss_size(const struct ieee80211_he_cap_elem *he_cap,
 {
 	u8 count = 0;
 
-	/* on 2.4 GHz, if it supports 40 MHz, the result is 3 */
-	if (he_cap->phy_cap_info[0] &
-	    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_IN_2G)
-		return 3;
+	if ((he_cap->phy_cap_info[0] &
+	    (IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_IN_2G |
+	    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G |
+	    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G |
+	    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_80PLUS80_MHZ_IN_5G)) == 0)
+		return 4;
 
-	/* on 2.4 GHz, these three bits are reserved, so should be 0 */
-	if (he_cap->phy_cap_info[0] &
-	    IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G)
+	if ((he_cap->phy_cap_info[0] &
+	    (IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_IN_2G |
+	     IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_40MHZ_80MHZ_IN_5G)))
 		count += 3;
 
 	if (he_cap->phy_cap_info[0] &
@@ -3270,7 +3272,8 @@ ieee80211_eht_capa_size_ok(const u8 *he_capa, const u8 *data, u8 len,
 		return false;
 
 	if (elem->phy_cap_info[5] &
-			IEEE80211_EHT_PHY_CAP5_PPE_THRESHOLD_PRESENT) {
+			IEEE80211_EHT_PHY_CAP5_PPE_THRESHOLD_PRESENT &&
+	    len > needed) {
 		u16 ppe_thres_hdr;
 
 		if (len < needed + sizeof(ppe_thres_hdr))

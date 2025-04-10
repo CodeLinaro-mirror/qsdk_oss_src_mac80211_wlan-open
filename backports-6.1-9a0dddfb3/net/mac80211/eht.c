@@ -37,7 +37,8 @@ ieee80211_eht_cap_ie_to_sta_eht_cap(struct ieee80211_sub_if_data *sdata,
 
 	/* Calculate the PPE thresholds length only if the header is present */
 	if (eht_cap_ie_elem->fixed.phy_cap_info[5] &
-			IEEE80211_EHT_PHY_CAP5_PPE_THRESHOLD_PRESENT) {
+			IEEE80211_EHT_PHY_CAP5_PPE_THRESHOLD_PRESENT &&
+	    eht_cap_len > eht_total_size) {
 		u16 eht_ppe_hdr;
 
 		if (eht_cap_len < eht_total_size + sizeof(u16))
