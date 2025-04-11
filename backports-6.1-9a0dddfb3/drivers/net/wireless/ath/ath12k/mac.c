@@ -6193,10 +6193,6 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 
 	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
 
-	spin_lock_bh(&ar->ab->base_lock);
-	ath12k_link_sta_rhash_delete(ar->ab, arsta);
-	spin_unlock_bh(&ar->ab->base_lock);
-
 	ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr);
 	if (ret)
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d\n",
@@ -6206,6 +6202,10 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 			   arsta->addr, arvif->vdev_id);
 
 	ath12k_mac_station_post_remove(ar, arvif, arsta);
+
+	spin_lock_bh(&ar->ab->base_lock);
+	ath12k_link_sta_rhash_delete(ar->ab, arsta);
+	spin_unlock_bh(&ar->ab->base_lock);
 
 	if (sta->valid_links)
 		ath12k_mac_free_unassign_link_sta(ahvif->ah,
@@ -6233,6 +6233,14 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 		goto exit;
 	}
 
+	spin_lock_bh(&ab->base_lock);
+	ret = ath12k_link_sta_rhash_add(ab, arsta);
+	spin_unlock_bh(&ab->base_lock);
+	if (ret) {
+		ath12k_warn(ab, "Failed to add peer: %pM to hash table", arsta->addr);
+		goto dec_num_station;
+	}
+
 	peer_param.vdev_id = arvif->vdev_id;
 	peer_param.peer_addr = arsta->addr;
 	peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
@@ -6242,12 +6250,8 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	if (ret) {
 		ath12k_warn(ab, "Failed to add peer: %pM for VDEV: %d\n",
 			    arsta->addr, arvif->vdev_id);
-		goto free_peer;
+		goto rhash_delete;
 	}
-
-	spin_lock_bh(&ab->base_lock);
-	ath12k_link_sta_rhash_add(ab, arsta);
-	spin_unlock_bh(&ab->base_lock);
 
 	ath12k_dbg(ab, ATH12K_DBG_MAC, "Added peer: %pM for VDEV: %d\n",
 		   arsta->addr, arvif->vdev_id);
@@ -6284,6 +6288,11 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 
 free_peer:
 	ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr);
+rhash_delete:
+	spin_lock_bh(&ab->base_lock);
+	ath12k_link_sta_rhash_delete(ab, arsta);
+	spin_unlock_bh(&ab->base_lock);
+dec_num_station:
 	ath12k_mac_dec_num_stations(arvif, arsta);
 exit:
 	return ret;
@@ -6358,6 +6367,10 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 		ar = arvif->ar;
 
 		ath12k_mac_station_post_remove(ar, arvif, arsta);
+
+		spin_lock_bh(&ar->ab->base_lock);
+		ath12k_link_sta_rhash_delete(ar->ab, arsta);
+		spin_unlock_bh(&ar->ab->base_lock);
 
 		ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
 	}

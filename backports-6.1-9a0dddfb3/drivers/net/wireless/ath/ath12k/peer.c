@@ -295,10 +295,6 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 
 		ath12k_dp_link_peer_unassign(ar, arvif->vdev_id, arsta->addr);
 
-		spin_lock_bh(&ar->ab->base_lock);
-		ath12k_link_sta_rhash_delete(ar->ab, arsta);
-		spin_unlock_bh(&ar->ab->base_lock);
-
 		ret = ath12k_peer_delete_send(ar, arvif->vdev_id, arsta->addr);
 		if (ret) {
 			ath12k_warn(ar->ab,
