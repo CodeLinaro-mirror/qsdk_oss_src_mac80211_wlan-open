@@ -6983,8 +6983,7 @@ static ssize_t ath12k_write_htt_stats_type(struct file *file,
 	if (!num_args || num_args > 5)
 		return -EINVAL;
 
-	if (type == ATH12K_DBG_HTT_EXT_STATS_RESET ||
-	    type >= ATH12K_DBG_HTT_NUM_EXT_STATS)
+	if (type == ATH12K_DBG_HTT_EXT_STATS_RESET)
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
@@ -7070,7 +7069,9 @@ static int ath12k_open_htt_stats(struct inode *inode,
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
 
-	if (type == ATH12K_DBG_HTT_EXT_STATS_RESET)
+	if (type == ATH12K_DBG_HTT_EXT_STATS_RESET ||
+	    type == ATH12K_DBG_HTT_EXT_STATS_PEER_INFO ||
+	    type == ATH12K_DBG_HTT_EXT_PEER_CTRL_PATH_TXRX_STATS)
 		return -EPERM;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
