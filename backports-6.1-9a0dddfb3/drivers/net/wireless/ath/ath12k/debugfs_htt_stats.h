@@ -234,10 +234,23 @@ enum htt_stats_param_type {
 	HTT_STATS_PREAM_HT,
 	HTT_STATS_PREAM_VHT,
 	HTT_STATS_PREAM_HE,
-	HTT_STATS_PREAM_RSVD,
+	HTT_STATS_PREAM_EHT,
 	HTT_STATS_PREAM_RSVD1,
 
 	HTT_STATS_PREAM_COUNT,
+};
+
+enum htt_stats_direction {
+	HTT_STATS_DIRECTION_TX,
+	HTT_STATS_DIRECTION_RX,
+};
+
+enum htt_stats_ppdu_type {
+	HTT_STATS_PPDU_TYPE_MODE_SU,
+	HTT_STATS_PPDU_TYPE_DL_MU_MIMO,
+	HTT_STATS_PPDU_TYPE_UL_MU_MIMO,
+	HTT_STATS_PPDU_TYPE_DL_MU_OFDMA,
+	HTT_STATS_PPDU_TYPE_UL_MU_OFDMA,
 };
 
 #define HTT_TX_PEER_STATS_NUM_MCS_COUNTERS        12
@@ -401,8 +414,13 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_STRM_GEN_MPDUS_DETAILS_STATS		= 44,
 	ATH12K_DBG_HTT_EXT_STATS_SOC_ERROR			= 45,
 	ATH12K_DBG_HTT_DBG_PDEV_PUNCTURE_STATS			= 46,
+	ATH12K_DBG_HTT_DBG_EXT_STATS_ML_PEERS_INFO		= 47,
+	ATH12K_DBG_HTT_DBG_ODD_MANDATORY_STATS			= 48,
 	ATH12K_DBG_HTT_EXT_STATS_PDEV_SCHED_ALGO		= 49,
+	ATH12K_DBG_HTT_DBG_ODD_MANDATORY_MUMIMO_STATS		= 50,
 	ATH12K_DBG_HTT_EXT_STATS_MANDATORY_MUOFDMA		= 51,
+	ATH12K_DBG_HTT_DBG_EXT_PHY_PROF_CAL_STATS		= 52,
+	ATH12K_DGB_HTT_DBG_EXT_STATS_PDEV_BW_MGR		= 53,
 	ATH12K_DGB_HTT_EXT_STATS_PDEV_MBSSID_CTRL_FRAME		= 54,
 
 	/* keep this last */
@@ -550,8 +568,23 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_RX_PDEV_BE_UL_OFDMA_USER_STATS_TAG	= 156,
 	HTT_STATS_PHY_TPC_STATS_TAG			= 157,
 	HTT_STATS_PDEV_PUNCTURE_STATS_TAG		= 158,
+	HTT_STATS_ML_PEER_DETAILS_TAG			= 159,
+	HTT_STATS_ML_PEER_EXT_DETAILS_TAG		= 160,
+	HTT_STATS_ML_LINK_INFO_DETAILS_TAG		= 161,
+	HTT_STATS_TX_PDEV_PPDU_DUR_TAG			= 162,
+	HTT_STATS_RX_PDEV_PPDU_DUR_TAG			= 163,
+	HTT_STATS_ODD_PDEV_MANDATORY_TAG		= 164,
 	HTT_STATS_PDEV_SCHED_ALGO_OFDMA_STATS_TAG	= 165,
+	HTT_DBG_ODD_MANDATORY_MUMIMO_TAG		= 166,
+	HTT_DBG_ODD_MANDATORY_MUOFDMA_TAG		= 167,
+	HTT_STATS_LATENCY_PROF_CAL_STATS_TAG		= 168,
+	HTT_STATS_TX_PDEV_MUEDCA_PARAMS_STATS_TAG	= 169,
+	HTT_STATS_PDEV_BW_MGR_STATS_TAG			= 170,
+	HTT_STATS_TX_PDEV_AP_EDCA_PARAMS_STATS_TAG	= 171,
 	HTT_STATS_TXBF_OFDMA_AX_STEER_MPDU_STATS_TAG	= 172,
+	HTT_STATS_TXBF_OFDMA_BE_STEER_MPDU_STATS_TAG	= 173,
+	HTT_STATS_PEER_AX_OFDMA_STATS_TAG		= 174,
+	HTT_STATS_TX_PDEV_MU_EDCA_PARAMS_STATS_TAG	= 175,
 	HTT_STATS_PDEV_MBSSID_CTRL_FRAME_STATS_TAG	= 176,
 
 	HTT_STATS_MAX_TAG,
@@ -3448,6 +3481,447 @@ struct htt_rx_pdev_be_ul_ofdma_user_stats_tlv {
 	u32 be_rx_ulofdma_mpdu_fail;
 	u32 be_rx_ulofdma_non_data_nusers;
 	u32 be_rx_ulofdma_data_nusers;
+};
+
+#define HTT_PUNCTURE_STATS_MAX_SUBBAND_COUNT 32
+
+#define HTT_PDEV_PUNCTURE_STATS_MAC_ID_M 0x000000ff
+#define HTT_PDEV_PUNCTURE_STATS_MAC_ID_S 0
+
+#define HTT_PDEV_PUNCTURE_STATS_MAC_ID_GET(_var) \
+	(((_var) & HTT_PDEV_PUNCTURE_STATS_MAC_ID_M) >> \
+	 HTT_PDEV_PUNCTURE_STATS_MAC_ID_S)
+#define HTT_PDEV_PUNCTURE_STATS_MAC_ID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_PDEV_PUNCTURE_STATS_MAC_ID, _val); \
+		((_var) |= ((_val) << HTT_PDEV_PUNCTURE_STATS_MAC_ID_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_NUM_LINKS_M			0x00000003
+#define HTT_ML_PEER_DETAILS_NUM_LINKS_S			0
+#define HTT_ML_PEER_DETAILS_ML_PEER_ID_M		0x00003FFC
+#define HTT_ML_PEER_DETAILS_ML_PEER_ID_S		2
+#define HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX_M		0x0001C000
+#define HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX_S		14
+#define HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID_M		0x00060000
+#define HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID_S		17
+#define HTT_ML_PEER_DETAILS_LINK_INIT_COUNT_M		0x00380000
+#define HTT_ML_PEER_DETAILS_LINK_INIT_COUNT_S		19
+#define HTT_ML_PEER_DETAILS_NON_STR_M			0x00400000
+#define HTT_ML_PEER_DETAILS_NON_STR_S			22
+#define HTT_ML_PEER_DETAILS_EMLSR_M			0x00800000
+#define HTT_ML_PEER_DETAILS_EMLSR_S			23
+#define HTT_ML_PEER_DETAILS_IS_STA_KO_M			0x01000000
+#define HTT_ML_PEER_DETAILS_IS_STA_KO_S			24
+#define HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS_M		0x06000000
+#define HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS_S		25
+#define HTT_ML_PEER_DETAILS_ALLOCATED_M			0x08000000
+#define HTT_ML_PEER_DETAILS_ALLOCATED_S			27
+
+#define HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP_M	0x000000ff
+#define HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP_S	0
+
+#define HTT_ML_PEER_DETAILS_NUM_LINKS_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_NUM_LINKS_M) >> \
+	 HTT_ML_PEER_DETAILS_NUM_LINKS_S)
+
+#define HTT_ML_PEER_DETAILS_NUM_LINKS_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_NUM_LINKS, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_NUM_LINKS_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_NUM_LINKS_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_ML_PEER_ID_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_ML_PEER_ID_M) >> \
+	 HTT_ML_PEER_DETAILS_ML_PEER_ID_S)
+
+#define HTT_ML_PEER_DETAILS_ML_PEER_ID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_ML_PEER_ID, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_ML_PEER_ID_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_ML_PEER_ID_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX_M) >> \
+	 HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX_S)
+
+#define HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX_S)); \
+	} while (0)
+#define HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID_M) >> \
+	 HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID_S)
+
+#define HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_LINK_INIT_COUNT_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_LINK_INIT_COUNT_M) >> \
+	 HTT_ML_PEER_DETAILS_LINK_INIT_COUNT_S)
+
+#define HTT_ML_PEER_DETAILS_LINK_INIT_COUNT_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_LINK_INIT_COUNT, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_LINK_INIT_COUNT_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_LINK_INIT_COUNT_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_NON_STR_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_NON_STR_M) >> \
+	 HTT_ML_PEER_DETAILS_NON_STR_S)
+
+#define HTT_ML_PEER_DETAILS_NON_STR_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_NON_STR, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_NON_STR_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_NON_STR_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_EMLSR_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_EMLSR_M) >> \
+	 HTT_ML_PEER_DETAILS_EMLSR_S)
+
+#define HTT_ML_PEER_DETAILS_EMLSR_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_EMLSR, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_EMLSR_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_EMLSR_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_IS_STA_KO_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_IS_STA_KO_M) >> \
+	 HTT_ML_PEER_DETAILS_IS_STA_KO_S)
+
+#define HTT_ML_PEER_DETAILS_IS_STA_KO_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_IS_STA_KO, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_IS_STA_KO_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_IS_STA_KO_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS_M) >> \
+	 HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS_S)
+#define HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_ALLOCATED_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_ALLOCATED_M) >> \
+	 HTT_ML_PEER_DETAILS_ALLOCATED_S)
+
+#define HTT_ML_PEER_DETAILS_ALLOCATED_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_ALLOCATED, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_ALLOCATED_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_ALLOCATED_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP_GET(_var) \
+	(((_var) & HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP_M) >> \
+	 HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP_S)
+
+#define HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP, _val); \
+		((_var) &= ~(HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP_S)); \
+	} while (0)
+
+struct htt_ml_peer_details_tlv {
+	struct htt_mac_addr remote_mld_mac_addr;
+	union {
+		struct {
+			u32 num_links:2,
+			    ml_peer_id:12,
+			    primary_link_idx:3,
+			    primary_chip_id:2,
+			    link_init_count:3,
+			    non_str:1,
+			    emlsr:1,
+			    is_sta_ko:1,
+			    num_local_links:2,
+			    allocated:1,
+			    reserved:4;
+		};
+		u32 msg_dword_1;
+	};
+
+	union {
+		struct {
+			u32 participating_chips_bitmap:8,
+			    reserved1:24;
+		};
+		u32 msg_dword_2;
+	};
+
+	u32 ml_peer_flags;
+};
+
+#define HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD_M		0x0000003F
+#define HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD_S		0
+#define HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD_M	0x00000FC0
+#define HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD_S	6
+#define HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX_M			0x0FFFF000
+#define HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX_S			12
+
+#define HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD_GET(_var) \
+	(((_var) & HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD_M) >> \
+	 HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD_S)
+
+#define HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD, _val); \
+		((_var) &= ~(HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD_GET(_var) \
+	(((_var) & HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD_M) >> \
+	 HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD_S)
+
+#define HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD, _val); \
+		((_var) &= ~(HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD_S)); \
+	} while (0)
+
+#define HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX_GET(_var) \
+	(((_var) & HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX_M) >> \
+	 HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX_S)
+
+#define HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX, _val); \
+		((_var) &= ~(HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX_M)); \
+		((_var) |= ((_val) << HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX_S)); \
+	} while (0)
+
+struct htt_ml_peer_ext_details_tlv {
+	union {
+		struct {
+			u32 peer_assoc_ipc_recvd:6,
+			    sched_peer_delete_recvd:6,
+			    mld_ast_index:16,
+			    reserved:4;
+		};
+		u32 msg_dword_1;
+	};
+};
+
+#define HTT_ML_LINK_INFO_VALID_M		0x00000001
+#define HTT_ML_LINK_INFO_VALID_S		0
+#define HTT_ML_LINK_INFO_ACTIVE_M		0x00000002
+#define HTT_ML_LINK_INFO_ACTIVE_S		1
+#define HTT_ML_LINK_INFO_PRIMARY_M		0x00000004
+#define HTT_ML_LINK_INFO_PRIMARY_S		2
+#define HTT_ML_LINK_INFO_ASSOC_LINK_M		0x00000008
+#define HTT_ML_LINK_INFO_ASSOC_LINK_S		3
+#define HTT_ML_LINK_INFO_CHIP_ID_M		0x00000070
+#define HTT_ML_LINK_INFO_CHIP_ID_S		4
+#define HTT_ML_LINK_INFO_IEEE_LINK_ID_M		0x00007F80
+#define HTT_ML_LINK_INFO_IEEE_LINK_ID_S		7
+#define HTT_ML_LINK_INFO_HW_LINK_ID_M		0x00038000
+#define HTT_ML_LINK_INFO_HW_LINK_ID_S		15
+#define HTT_ML_LINK_INFO_LOGICAL_LINK_ID_M	0x000C0000
+#define HTT_ML_LINK_INFO_LOGICAL_LINK_ID_S	18
+#define HTT_ML_LINK_INFO_MASTER_LINK_M		0x00100000
+#define HTT_ML_LINK_INFO_MASTER_LINK_S		20
+#define HTT_ML_LINK_INFO_ANCHOR_LINK_M		0x00200000
+#define HTT_ML_LINK_INFO_ANCHOR_LINK_S		21
+#define HTT_ML_LINK_INFO_INITIALIZED_M		0x00400000
+#define HTT_ML_LINK_INFO_INITIALIZED_S		22
+
+#define HTT_ML_LINK_INFO_SW_PEER_ID_M		0x0000ffff
+#define HTT_ML_LINK_INFO_SW_PEER_ID_S		0
+#define HTT_ML_LINK_INFO_VDEV_ID_M		0x00ff0000
+#define HTT_ML_LINK_INFO_VDEV_ID_S		16
+
+#define HTT_ML_LINK_INFO_VALID_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_VALID_M) >> \
+	 HTT_ML_LINK_INFO_VALID_S)
+
+#define HTT_ML_LINK_INFO_VALID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_VALID, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_VALID_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_VALID_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_ACTIVE_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_ACTIVE_M) >> \
+	 HTT_ML_LINK_INFO_ACTIVE_S)
+
+#define HTT_ML_LINK_INFO_ACTIVE_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_ACTIVE, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_ACTIVE_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_ACTIVE_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_PRIMARY_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_PRIMARY_M) >> \
+	 HTT_ML_LINK_INFO_PRIMARY_S)
+
+#define HTT_ML_LINK_INFO_PRIMARY_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_PRIMARY, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_PRIMARY_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_PRIMARY_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_ASSOC_LINK_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_ASSOC_LINK_M) >> \
+	 HTT_ML_LINK_INFO_ASSOC_LINK_S)
+
+#define HTT_ML_LINK_INFO_ASSOC_LINK_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_ASSOC_LINK, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_ASSOC_LINK_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_ASSOC_LINK_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_CHIP_ID_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_CHIP_ID_M) >> \
+	 HTT_ML_LINK_INFO_CHIP_ID_S)
+
+#define HTT_ML_LINK_INFO_CHIP_ID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_CHIP_ID, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_CHIP_ID_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_CHIP_ID_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_IEEE_LINK_ID_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_IEEE_LINK_ID_M) >> \
+	 HTT_ML_LINK_INFO_IEEE_LINK_ID_S)
+
+#define HTT_ML_LINK_INFO_IEEE_LINK_ID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_IEEE_LINK_ID, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_IEEE_LINK_ID_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_IEEE_LINK_ID_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_HW_LINK_ID_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_HW_LINK_ID_M) >> \
+	 HTT_ML_LINK_INFO_HW_LINK_ID_S)
+
+#define HTT_ML_LINK_INFO_HW_LINK_ID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_HW_LINK_ID, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_HW_LINK_ID_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_HW_LINK_ID_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_LOGICAL_LINK_ID_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_LOGICAL_LINK_ID_M) >> \
+	 HTT_ML_LINK_INFO_LOGICAL_LINK_ID_S)
+
+#define HTT_ML_LINK_INFO_LOGICAL_LINK_ID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_LOGICAL_LINK_ID, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_LOGICAL_LINK_ID_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_LOGICAL_LINK_ID_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_MASTER_LINK_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_MASTER_LINK_M) >> \
+	 HTT_ML_LINK_INFO_MASTER_LINK_S)
+
+#define HTT_ML_LINK_INFO_MASTER_LINK_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_MASTER_LINK, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_MASTER_LINK_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_MASTER_LINK_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_ANCHOR_LINK_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_ANCHOR_LINK_M) >> \
+	 HTT_ML_LINK_INFO_ANCHOR_LINK_S)
+
+#define HTT_ML_LINK_INFO_ANCHOR_LINK_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_ANCHOR_LINK, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_ANCHOR_LINK_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_ANCHOR_LINK_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_INITIALIZED_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_INITIALIZED_M) >> \
+	 HTT_ML_LINK_INFO_INITIALIZED_S)
+
+#define HTT_ML_LINK_INFO_INITIALIZED_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_INITIALIZED, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_INITIALIZED_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_INITIALIZED_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_SW_PEER_ID_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_SW_PEER_ID_M) >> \
+	 HTT_ML_LINK_INFO_SW_PEER_ID_S)
+
+#define HTT_ML_LINK_INFO_SW_PEER_ID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_SW_PEER_ID, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_SW_PEER_ID_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_SW_PEER_ID_S)); \
+	} while (0)
+
+#define HTT_ML_LINK_INFO_VDEV_ID_GET(_var) \
+	(((_var) & HTT_ML_LINK_INFO_VDEV_ID_M) >> \
+	 HTT_ML_LINK_INFO_VDEV_ID_S)
+
+#define HTT_ML_LINK_INFO_VDEV_ID_SET(_var, _val) \
+	do { \
+		HTT_CHECK_SET_VAL(HTT_ML_LINK_INFO_VDEV_ID, _val); \
+		((_var) &= ~(HTT_ML_LINK_INFO_VDEV_ID_M)); \
+		((_var) |= ((_val) << HTT_ML_LINK_INFO_VDEV_ID_S)); \
+	} while (0)
+
+struct htt_ml_link_info_tlv {
+	union {
+		struct {
+			u32 valid:1,
+			    active:1,
+			    primary:1,
+			    assoc_link:1,
+			    chip_id:3,
+			    ieee_link_id:8,
+			    hw_link_id:3,
+			    logical_link_id:2,
+			    master_link:1,
+			    anchor_link:1,
+			    initialized:1,
+			    reserved:9;
+		};
+		u32 msg_dword_1;
+	};
+
+	union {
+		struct {
+			u32 sw_peer_id:16,
+			    vdev_id:8,
+			    reserved1:8;
+		};
+		u32 msg_dword_2;
+	};
+
+	u32 primary_tid_mask;
 };
 
 #endif

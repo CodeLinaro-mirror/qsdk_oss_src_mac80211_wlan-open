@@ -93,6 +93,162 @@ print_array_to_buf_s8(u8 *buf, u32 offset, const char *header, u32 stats_index,
 }
 
 static inline void
+ath12k_htt_print_ml_peer_details_stats_tlv(const void *tag_buf,
+					   struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_ml_peer_details_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "HTT_ML_PEER_DETAILS_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "========================\n");
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "remote_mld_mac_addr = %02x:%02x:%02x:%02x:%02x:%02x\n",
+			 (htt_stats_buf->remote_mld_mac_addr.mac_addr_l32 & 0xFF),
+			 (htt_stats_buf->remote_mld_mac_addr.mac_addr_l32 & 0xFF00) >> 8,
+			 (htt_stats_buf->remote_mld_mac_addr.mac_addr_l32 & 0xFF0000) >> 16,
+			 (htt_stats_buf->remote_mld_mac_addr.mac_addr_l32 & 0xFF000000) >> 24,
+			 (htt_stats_buf->remote_mld_mac_addr.mac_addr_h16 & 0xFF),
+			 (htt_stats_buf->remote_mld_mac_addr.mac_addr_h16 & 0xFF00) >> 8);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "ml_peer_flags = 0x%x\n",
+			 htt_stats_buf->ml_peer_flags);
+
+	len += scnprintf(buf + len, buf_len - len,
+		"num_links = %u\n",
+		HTT_ML_PEER_DETAILS_NUM_LINKS_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"ml_peer_id = %u\n",
+		HTT_ML_PEER_DETAILS_ML_PEER_ID_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"primary_link_idx = %u\n",
+		HTT_ML_PEER_DETAILS_PRIMARY_LINK_IDX_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"primary_chip_id = %u\n",
+		HTT_ML_PEER_DETAILS_PRIMARY_CHIP_ID_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"link_init_count = %u\n",
+		HTT_ML_PEER_DETAILS_LINK_INIT_COUNT_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"non_str = %u\n",
+		HTT_ML_PEER_DETAILS_NON_STR_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"emlsr = %u\n",
+		HTT_ML_PEER_DETAILS_EMLSR_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"is_stako = %u\n",
+		HTT_ML_PEER_DETAILS_IS_STA_KO_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"num_local_links = %u\n",
+		HTT_ML_PEER_DETAILS_NUM_LOCAL_LINKS_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"allocated = %u\n",
+		HTT_ML_PEER_DETAILS_ALLOCATED_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+		"participating_chips_bitmap = 0x%x\n",
+		HTT_ML_PEER_DETAILS_PARTICIPATING_CHIPS_BITMAP_GET(
+			htt_stats_buf->msg_dword_2));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "=========================================== \n");
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_ml_peer_ext_stats_tlv(const void *tag_buf,
+				       struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_ml_peer_ext_details_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_ML_PEER_EXT_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len, "====================\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "peer_assoc_ipc_recvd    = %u\n",
+			 HTT_ML_PEER_EXT_DETAILS_PEER_ASSOC_IPC_RECVD_GET(
+				 htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "sched_peer_delete_recvd = %u\n",
+			 HTT_ML_PEER_EXT_DETAILS_SCHED_PEER_DELETE_RECVD_GET(
+				 htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "mld_ast_index           = %u\n",
+			 HTT_ML_PEER_EXT_DETAILS_MLD_AST_INDEX_GET(htt_stats_buf->msg_dword_1));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "=========================================== \n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_ml_link_info_stats_tlv(const void *tag_buf,
+					struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_ml_link_info_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_ML_LINK_INFO_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len, "=====================\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "valid             = %u\n",
+			 HTT_ML_LINK_INFO_VALID_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "active            = %u\n",
+			 HTT_ML_LINK_INFO_ACTIVE_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "primary           = %u\n",
+			 HTT_ML_LINK_INFO_PRIMARY_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "assoc_link        = %u\n",
+			 HTT_ML_LINK_INFO_ASSOC_LINK_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "chip_id           = %u\n",
+			 HTT_ML_LINK_INFO_CHIP_ID_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "ieee_link_id      = %u\n",
+			 HTT_ML_LINK_INFO_IEEE_LINK_ID_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "hw_link_id        = %u\n",
+			 HTT_ML_LINK_INFO_HW_LINK_ID_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "logical_link_id   = %u\n",
+			 HTT_ML_LINK_INFO_LOGICAL_LINK_ID_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "master_link       = %u\n",
+			 HTT_ML_LINK_INFO_MASTER_LINK_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "anchor_link       = %u\n",
+			 HTT_ML_LINK_INFO_ANCHOR_LINK_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "initialized       = %u\n",
+			 HTT_ML_LINK_INFO_INITIALIZED_GET(htt_stats_buf->msg_dword_1));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "sw_peer_id        = %u\n",
+			 HTT_ML_LINK_INFO_SW_PEER_ID_GET(htt_stats_buf->msg_dword_2));
+	len += scnprintf(buf + len, buf_len - len,
+			 "vdev_id           = %u\n",
+			 HTT_ML_LINK_INFO_VDEV_ID_GET(htt_stats_buf->msg_dword_2));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "primary_tid_mask  = 0x%x\n",
+			 htt_stats_buf->primary_tid_mask);
+	len += scnprintf(buf + len, buf_len - len,
+			 "=========================================== \n");
+	stats_req->buf_len = len;
+}
+
+static inline void
 ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 					      struct debug_htt_stats_req *stats_req)
 {
@@ -7647,6 +7803,15 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		break;
 	case HTT_STATS_RX_PDEV_BE_UL_OFDMA_USER_STATS_TAG:
 		ath12k_htt_print_be_ul_ofdma_user_stats(tag_buf, stats_req);
+		break;
+	case HTT_STATS_ML_PEER_DETAILS_TAG:
+		ath12k_htt_print_ml_peer_details_stats_tlv(tag_buf, stats_req);
+		break;
+	case HTT_STATS_ML_PEER_EXT_DETAILS_TAG:
+		ath12k_htt_print_ml_peer_ext_stats_tlv(tag_buf, stats_req);
+		break;
+	case HTT_STATS_ML_LINK_INFO_DETAILS_TAG:
+		ath12k_htt_print_ml_link_info_stats_tlv(tag_buf, stats_req);
 		break;
 	default:
 		break;
