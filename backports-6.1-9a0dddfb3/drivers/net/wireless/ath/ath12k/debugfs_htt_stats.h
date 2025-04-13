@@ -396,6 +396,9 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_EXT_VDEV_RTT_INITIATOR_STATS		= 39,
 	ATH12K_DBG_HTT_EXT_PDEV_PER_STATS			= 40,
 	ATH12K_DBG_HTT_EXT_AST_ENTRIES				= 41,
+	ATH12K_DBG_HTT_EXT_RX_RING_STATS			= 42,
+	ATH12K_DBG_HTT_STRM_GEN_MPDUS_STATS			= 43,
+	ATH12K_DBG_HTT_STRM_GEN_MPDUS_DETAILS_STATS		= 44,
 	ATH12K_DBG_HTT_EXT_STATS_SOC_ERROR			= 45,
 	ATH12K_DBG_HTT_DBG_PDEV_PUNCTURE_STATS			= 46,
 	ATH12K_DBG_HTT_EXT_STATS_PDEV_SCHED_ALGO		= 49,
@@ -539,7 +542,12 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TXBF_OFDMA_AX_NDP_STATS_TAG		= 148,
 	HTT_STATS_TXBF_OFDMA_AX_BRP_STATS_TAG		= 149,
 	HTT_STATS_TXBF_OFDMA_AX_STEER_STATS_TAG		= 150,
+	HTT_STATS_TXBF_OFDMA_BE_NDPA_STATS_TAG		= 151,
+	HTT_STATS_TXBF_OFDMA_BE_NDP_STATS_TAG		= 152,
+	HTT_STATS_TXBF_OFDMA_BE_BRP_STATS_TAG		= 153,
+	HTT_STATS_TXBF_OFDMA_BE_STEER_STATS_TAG		= 154,
 	HTT_STATS_DMAC_RESET_STATS_TAG			= 155,
+	HTT_STATS_RX_PDEV_BE_UL_OFDMA_USER_STATS_TAG	= 156,
 	HTT_STATS_PHY_TPC_STATS_TAG			= 157,
 	HTT_STATS_PDEV_PUNCTURE_STATS_TAG		= 158,
 	HTT_STATS_PDEV_SCHED_ALGO_OFDMA_STATS_TAG	= 165,
@@ -3377,5 +3385,69 @@ struct ath12k_htt_pdev_mbssid_ctrl_frame_tlv {
 	__le32 ul_mumimo_trigger_across_bss;
 	__le32 ul_mumimo_trigger_within_bss;
 } __packed;
+
+struct htt_txbf_ofdma_be_ndpa_stats_elem_t {
+	u32 be_ofdma_ndpa_queued;
+	u32 be_ofdma_ndpa_tried;
+	u32 be_ofdma_ndpa_flushed;
+	u32 be_ofdma_ndpa_err;
+};
+
+struct htt_txbf_ofdma_be_ndpa_stats_tlv {
+	u32 num_elems_be_ndpa_arr;
+	u32 arr_elem_size_be_ndpa;
+	struct htt_txbf_ofdma_be_ndpa_stats_elem_t be_ndpa[1];
+};
+
+struct htt_txbf_ofdma_be_ndp_stats_elem_t {
+	u32 be_ofdma_ndp_queued;
+	u32 be_ofdma_ndp_tried;
+	u32 be_ofdma_ndp_flushed;
+	u32 be_ofdma_ndp_err;
+};
+
+struct htt_txbf_ofdma_be_ndp_stats_tlv {
+	u32 num_elems_be_ndp_arr;
+	u32 arr_elem_size_be_ndp;
+	struct htt_txbf_ofdma_be_ndp_stats_elem_t be_ndp[1];
+};
+
+struct htt_txbf_ofdma_be_brp_stats_elem_t {
+	u32 be_ofdma_brpoll_queued;
+	u32 be_ofdma_brpoll_tried;
+	u32 be_ofdma_brpoll_flushed;
+	u32 be_ofdma_brp_err;
+	u32 be_ofdma_brp_err_num_cbf_rcvd;
+};
+
+struct htt_txbf_ofdma_be_brp_stats_tlv {
+	u32 num_elems_be_brp_arr;
+	u32 arr_elem_size_be_brp;
+	struct htt_txbf_ofdma_be_brp_stats_elem_t be_brp[1];
+};
+
+struct htt_txbf_ofdma_be_steer_stats_elem_t {
+	u32 be_ofdma_num_ppdu_steer;
+	u32 be_ofdma_num_ppdu_ol;
+	u32 be_ofdma_num_usrs_prefetch;
+	u32 be_ofdma_num_usrs_sound;
+	u32 be_ofdma_num_usrs_force_sound;
+};
+
+struct htt_txbf_ofdma_be_steer_stats_tlv {
+	u32 num_elems_be_steer_arr;
+	u32 arr_elem_size_be_steer;
+	struct htt_txbf_ofdma_be_steer_stats_elem_t be_steer[1];
+};
+
+struct htt_rx_pdev_be_ul_ofdma_user_stats_tlv {
+	u32 user_index;
+	u32 be_rx_ulofdma_non_data_ppdu;
+	u32 be_rx_ulofdma_data_ppdu;
+	u32 be_rx_ulofdma_mpdu_ok;
+	u32 be_rx_ulofdma_mpdu_fail;
+	u32 be_rx_ulofdma_non_data_nusers;
+	u32 be_rx_ulofdma_data_nusers;
+};
 
 #endif
