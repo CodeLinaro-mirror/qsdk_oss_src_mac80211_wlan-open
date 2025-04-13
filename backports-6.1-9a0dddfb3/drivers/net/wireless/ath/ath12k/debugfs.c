@@ -21,6 +21,73 @@
 #define DETECTOR_ID	GENMASK(12,11)
 #define FHSS		BIT(14)
 
+static ssize_t ath12k_read_sensitivity_level(struct file *file,
+					     char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	int len = 0;
+	char buf[16];
+
+	len = scnprintf(buf, sizeof(buf) - len, "%d\n", ar->sensitivity_level);
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+#define ATH12K_SENS_LEVEL_MAX    -10
+#define ATH12K_SENS_LEVEL_MIN    -95
+
+static ssize_t ath12k_write_sensitivity_level(struct file *file,
+					      const char __user *user_buf,
+					      size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	int ret;
+	s32 level;
+
+	if (kstrtos32_from_user(user_buf, count, 10, &level))
+		return -EINVAL;
+
+	if (level > ATH12K_SENS_LEVEL_MAX || level < ATH12K_SENS_LEVEL_MIN) {
+		ath12k_warn(ar->ab, "invalid sensitivity level: %d (valid range: [%d, %d])\n",
+			    level, ATH12K_SENS_LEVEL_MIN, ATH12K_SENS_LEVEL_MAX);
+		return -EINVAL;
+	}
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	if (ar->sensitivity_level == level) {
+		ret = count;
+		goto exit;
+	}
+
+	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SENSITIVITY_LEVEL,
+					level, ar->pdev->pdev_id);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to set sensitivity level: %d\n", ret);
+		goto exit;
+	}
+
+	ar->sensitivity_level = level;
+	ret = count;
+
+exit:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return ret;
+}
+
+static const struct file_operations fops_sensitivity_level = {
+	.read = ath12k_read_sensitivity_level,
+	.write = ath12k_write_sensitivity_level,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 int wmi_ctrl_path_awgn_stat(struct ath12k *ar, char __user *ubuf,
 			    size_t count, loff_t *ppos)
 {

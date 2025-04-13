@@ -907,6 +907,7 @@ struct ath12k {
 	bool twt_enabled;
 	struct wmi_rssi_dbm_conv_offsets rssi_offsets;
 	u16 csa_active_cnt;
+	s32 sensitivity_level;
 };
 
 struct ath12k_hw {
