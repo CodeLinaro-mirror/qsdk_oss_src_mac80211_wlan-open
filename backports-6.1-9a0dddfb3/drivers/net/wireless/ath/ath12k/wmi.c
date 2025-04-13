@@ -9845,7 +9845,139 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 	kfree(tb);
 }
 
-#ifdef CONFIG_ATH12K_DEBUGFS
+#ifdef CPTCFG_ATH12K_DEBUGFS
+
+void ath12k_wmi_crl_path_stats_list_free(struct ath12k *ar, struct list_head *head)
+{
+	struct wmi_ctrl_path_stats_list *stats, *tmp;
+
+	lockdep_assert_held(&ar->wmi_ctrl_path_stats_lock);
+	list_for_each_entry_safe(stats, tmp, head, list) {
+		kfree(stats->stats_ptr);
+		list_del(&stats->list);
+		kfree(stats);
+	}
+}
+
+int wmi_print_ctrl_path_pdev_tx_stats_tlv(struct ath12k_base *ab, u16 len, const void *ptr, void *data)
+{
+	struct wmi_ctrl_path_stats_ev_parse_param *stats_buff = (struct wmi_ctrl_path_stats_ev_parse_param *)data;
+	struct wmi_ctrl_path_pdev_stats_params *pdev_stats_skb = (struct wmi_ctrl_path_pdev_stats_params *)ptr;
+	struct wmi_ctrl_path_pdev_stats_params *pdev_stats = NULL;
+	struct wmi_ctrl_path_stats_list *stats = kzalloc(sizeof(struct wmi_ctrl_path_stats_list), GFP_ATOMIC);
+	struct ath12k *ar = NULL;
+
+	if (!stats)
+		return -ENOMEM;
+
+	pdev_stats = kzalloc(sizeof(*pdev_stats), GFP_ATOMIC);
+	if (!pdev_stats) {
+		kfree(stats);
+		return -ENOMEM;
+	}
+
+	memcpy(pdev_stats, pdev_stats_skb, sizeof(struct wmi_ctrl_path_pdev_stats_params));
+	stats->stats_ptr = pdev_stats;
+	list_add_tail(&stats->list, &stats_buff->list);
+
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_stats_skb->pdev_id + 1);
+	if (!ar) {
+		ath12k_warn(ab, "Failed to get ar for wmi ctrl stats\n");
+		kfree(pdev_stats);
+		list_del(&stats->list);
+		kfree(stats);
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ar->debug.wmi_ctrl_path_stats_tagid = WMI_TAG_CTRL_PATH_PDEV_STATS;
+	stats_buff->ar = ar;
+	return 0;
+}
+
+int wmi_print_ctrl_path_cal_stats_tlv(struct ath12k_base *ab, u16 len,
+				      const void *ptr, void *data)
+{
+	struct wmi_ctrl_path_stats_ev_parse_param *stats_buff = (struct wmi_ctrl_path_stats_ev_parse_param *)data;
+	struct wmi_ctrl_path_cal_stats *cal_stats_skb = (struct wmi_ctrl_path_cal_stats *)ptr;
+	struct wmi_ctrl_path_cal_stats *cal_stats = NULL;
+	struct wmi_ctrl_path_stats_list *stats = kzalloc(sizeof(struct wmi_ctrl_path_stats_list), GFP_ATOMIC);
+	struct ath12k *ar = NULL;
+
+	if (!stats)
+		return -ENOMEM;
+
+	cal_stats = kzalloc(sizeof(*cal_stats), GFP_ATOMIC);
+	if (!cal_stats) {
+		kfree(stats);
+		return -ENOMEM;
+	}
+
+	memcpy(cal_stats, cal_stats_skb, sizeof(struct wmi_ctrl_path_cal_stats));
+	stats->stats_ptr = cal_stats;
+	list_add_tail(&stats->list, &stats_buff->list);
+
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, cal_stats_skb->pdev_id + 1);
+	if (!ar) {
+		ath12k_warn(ab, "Failed to get ar for wmi ctrl cal stats\n");
+		kfree(cal_stats);
+		list_del(&stats->list);
+		kfree(stats);
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_CAL_STATS;
+	stats_buff->ar = ar;
+	return 0;
+}
+
+int wmi_print_ctrl_path_btcoex_stats_tlv(struct ath12k_base *ab, u16 len,
+					 const void *ptr, void *data)
+{
+	struct wmi_ctrl_path_stats_ev_parse_param *stats_buff =
+				(struct wmi_ctrl_path_stats_ev_parse_param *)data;
+	struct wmi_ctrl_path_btcoex_stats *btcoex_stats_skb =
+				(struct wmi_ctrl_path_btcoex_stats *)ptr;
+	struct wmi_ctrl_path_btcoex_stats *btcoex_stats = NULL;
+	struct wmi_ctrl_path_stats_list *stats;
+	struct ath12k *ar = NULL;
+
+	stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
+	if (!stats)
+		return -ENOMEM;
+
+	btcoex_stats = kzalloc(sizeof(*btcoex_stats), GFP_ATOMIC);
+	if (!btcoex_stats) {
+		kfree(stats);
+		return -ENOMEM;
+	}
+
+	memcpy(btcoex_stats, btcoex_stats_skb, sizeof(*btcoex_stats));
+	stats->stats_ptr = btcoex_stats;
+	list_add_tail(&stats->list, &stats_buff->list);
+
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, btcoex_stats_skb->pdev_id + 1);
+	if (!ar) {
+		ath12k_warn(ab, "Failed to get ar for wmi ctrl cal stats\n");
+		kfree(btcoex_stats);
+		list_del(&stats->list);
+		kfree(stats);
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_BTCOEX_STATS;
+	stats_buff->ar = ar;
+	return 0;
+}
+
 static void
 ath12k_wmi_ctrl_path_pdev_stats_list_free(struct list_head *head)
 {
@@ -9863,64 +9995,6 @@ ath12k_wmi_ctrl_path_stats_list_free(struct ath12k_wmi_ctrl_path_stats_list *par
 	ath12k_wmi_ctrl_path_pdev_stats_list_free(&param->pdev_stats);
 }
 
-static int wmi_pull_ctrl_path_pdev_tx_stats_tlv(struct ath12k_base *ab, u16 len,
-                                               const void *ptr, void *data)
-{
-	struct ath12k_wmi_ctrl_path_stats_list *stats_buff = data;
-	const struct wmi_ctrl_path_pdev_stats_params *stats = ptr;
-	struct ath12k_wmi_ctrl_path_stats_list *stats_list;
-	struct wmi_ctrl_path_pdev_stats *pdev_stats =
-		kzalloc(sizeof(*pdev_stats), GFP_ATOMIC);
-	struct ath12k *ar;
-	u32 pdev_id;
-	int i;
-
-	if (!pdev_stats)
-		return -ENOMEM;
-
-	for (i = 0; i < IEEE80211_MGMT_FRAME_SUBTYPE_MAX; i++) {
-		pdev_stats->tx_mgmt_subtype[i] =
-			__le32_to_cpu(stats->tx_mgmt_subtype[i]);
-		pdev_stats->rx_mgmt_subtype[i] =
-			__le32_to_cpu(stats->rx_mgmt_subtype[i]);
-	}
-	pdev_stats->scan_fail_dfs_viol_time_ms =
-		__le32_to_cpu(stats->scan_fail_dfs_viol_time_ms);
-	pdev_stats->nol_chk_fail_last_chan_freq =
-		__le32_to_cpu(stats->nol_chk_fail_last_chan_freq);
-	pdev_stats->nol_chk_fail_time_stamp_ms =
-		__le32_to_cpu(stats->nol_chk_fail_time_stamp_ms);
-	pdev_stats->tot_peer_create_cnt =
-		__le32_to_cpu(stats->tot_peer_create_cnt);
-	pdev_stats->tot_peer_del_cnt =
-		__le32_to_cpu(stats->tot_peer_del_cnt);
-	pdev_stats->tot_peer_del_resp_cnt =
-		__le32_to_cpu(stats->tot_peer_del_resp_cnt);
-	pdev_stats->sched_algo_fifo_full_cnt =
-		__le32_to_cpu(stats->sched_algo_fifo_full_cnt);
-
-	list_add_tail(&pdev_stats->list, &stats_buff->pdev_stats);
-	pdev_id = le32_to_cpu(stats->pdev_id);
-
-	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id + 1);
-	if (!ar) {
-		rcu_read_unlock();
-		ath12k_warn(ab, "Failed to get ar for wmi ctrl stats\n");
-		ath12k_wmi_ctrl_path_pdev_stats_list_free(&stats_buff->pdev_stats);
-		return -EINVAL;
-	}
-
-	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
-	stats_list = &ar->debug.wmi_ctrl_path_stats;
-	ath12k_wmi_ctrl_path_pdev_stats_list_free(&stats_list->pdev_stats);
-	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
-	ar->debug.wmi_ctrl_path_stats_tagid = WMI_TAG_CTRL_PATH_PDEV_STATS;
-	stats_buff->ar = ar;
-	rcu_read_unlock();
-	return 0;
-}
-
 static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 					       u16 tag, u16 len,
 					       const void *ptr, void *data)
@@ -9931,7 +10005,13 @@ static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 	case WMI_TAG_CTRL_PATH_STATS_EV_FIXED_PARAM:
 		break;
 	case WMI_TAG_CTRL_PATH_PDEV_STATS:
-		ret = wmi_pull_ctrl_path_pdev_tx_stats_tlv(ab, len, ptr, data);
+		ret = wmi_print_ctrl_path_pdev_tx_stats_tlv(ab, len, ptr, data);
+		break;
+	case WMI_CTRL_PATH_CAL_STATS:
+		ret = wmi_print_ctrl_path_cal_stats_tlv(ab, len, ptr, data);
+		break;
+	case WMI_CTRL_PATH_BTCOEX_STATS:
+		ret = wmi_print_ctrl_path_btcoex_stats_tlv(ab, len, ptr, data);
 		break;
 		/* Add case for newly wmi ctrl path added stats here */
 	default:
@@ -10072,7 +10152,7 @@ struct sk_buff *skb)
 {
 	ath12k_update_stats_event(ab, skb);
 }
-#endif /* CONFIG_ATH12K_DEBUGFS */
+#endif /* CPTCFG_ATH12K_DEBUGFS */
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
 static int ath12k_wmi_tpc_stats_copy_buffer(struct ath12k_base *ab,
@@ -11512,8 +11592,8 @@ int ath12k_wmi_dbglog_cfg(struct ath12k *ar, u32 param, u64 value)
 	return ret;
 }
 
+#ifdef CPTCFG_ATH12K_DEBUGFS
 
-#ifdef CONFIG_ATH12K_DEBUGFS
 int
 ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
 				   struct wmi_ctrl_path_stats_arg *arg)

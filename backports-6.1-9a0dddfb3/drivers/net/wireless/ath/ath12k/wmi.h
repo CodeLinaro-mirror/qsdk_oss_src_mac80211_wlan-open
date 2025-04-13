@@ -2015,6 +2015,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_TPC_STATS_REG_PWR_ALLOWED,
 	WMI_TAG_TPC_STATS_RATES_ARRAY,
 	WMI_TAG_TPC_STATS_CTL_PWR_TABLE_EVENT,
+	WMI_CTRL_PATH_CAL_STATS = 0x3BC,
+	WMI_CTRL_PATH_BTCOEX_STATS = 0x3FD,
 	WMI_TAG_EHT_RATE_SET = 0x3C4,
 	WMI_TAG_DCS_AWGN_INT_TYPE = 0x3C5,
 	WMI_TAG_MLO_TX_SEND_PARAMS,
@@ -5415,6 +5417,241 @@ struct wmi_twt_resume_dialog_params_cmd {
 	u32 next_twt_size;
 } __packed;
 
+/**
+ * WMI arrays of length WMI_MGMT_FRAME_SUBTYPE_MAX use the
+ * IEEE802.11 standard's enumeration of mgmt frame subtypes:
+ *  0 -> IEEE80211_STYPE_FC0_SUBTYPE_ASSOC_REQ
+ *  1 -> IEEE80211_STYPE_FC0_SUBTYPE_ASSOC_RESP
+ *  2 -> IEEE80211_STYPE_FC0_SUBTYPE_REASSOC_REQ
+ *  3 -> IEEE80211_STYPE_FC0_SUBTYPE_REASSOC_RESP
+ *  4 -> IEEE80211_STYPE_FC0_SUBTYPE_PROBE_REQ
+ *  5 -> IEEE80211_STYPE_FC0_SUBTYPE_PROBE_RESP
+ *  6 -> Reserved
+ *  7 -> Reserved
+ *  8 -> IEEE80211_STYPE_FC0_SUBTYPE_BEACON
+ *  9 -> IEEE80211_STYPE_FC0_SUBTYPE_ATIM
+ * 10 -> IEEE80211_STYPE_FC0_SUBTYPE_DISASSOC
+ * 11 -> IEEE80211_STYPE_FC0_SUBTYPE_AUTH
+ * 12 -> IEEE80211_STYPE_FC0_SUBTYPE_DEAUTH
+ * 13 -> IEEE80211_STYPE_FCO_SUBTYPE_ACTION
+ * 14 -> IEEE80211_STYPE_FC0_SUBTYPE_ACTION_NOACK
+ * 15 -> IEEE80211_STYPE_FC0_SUBTYPE_RESERVED
+ */
+#define WMI_MGMT_FRAME_SUBTYPE_MAX 16
+#define WMI_MAX_STRING_LEN 256
+
+enum wmi_ctrl_path_cal_prof_id {
+	WMI_CTRL_PATH_STATS_CAL_PROF_COLD_BOOT_CAL = 0,
+	WMI_CTRL_PATH_STATS_CAL_PROF_FULL_CHAN_SWITCH,
+	WMI_CTRL_PATH_STATS_CAL_PROF_SCAN_CHAN_SWITCH,
+	WMI_CTRL_PATH_STATS_CAL_PROF_DPD_SPLIT_CAL,
+	WMI_CTRL_PATH_STATS_CAL_PROF_TEMP_TRIGEER_CAL,
+	WMI_CTRL_PATH_STATS_CAL_PROF_POWER_SAVE_WAKE_UP,
+	WMI_CTRL_PATH_STATS_CAL_PROF_TIMER_TRIGGER_CAL,
+	WMI_CTRL_PATH_STATS_CAL_PROF_FTM_TRIGGER_CAL,
+	WMI_CTRL_PATH_STATS_CAL_PROF_AGILE_OR_POWER_DOWN_DTIM,
+	WMI_CTRL_PATH_STATS_CAL_PROF_NOISY_ENV_RXDO,
+	/* IDs from 10 to 30 for future use*/
+	WMI_CTRL_PATH_STATS_CAL_PROFILE_INVALID = 0x1F,
+};
+
+static inline const char *
+wmi_ctrl_path_cal_prof_id_to_name(u8 prof_id) {
+	switch (prof_id) {
+	case WMI_CTRL_PATH_STATS_CAL_PROF_COLD_BOOT_CAL:
+		return "COLD_BOOT_CAL";
+	case WMI_CTRL_PATH_STATS_CAL_PROF_FULL_CHAN_SWITCH:
+		return "FULL_CHAN_SWITCH";
+	case WMI_CTRL_PATH_STATS_CAL_PROF_SCAN_CHAN_SWITCH:
+		return "SCAN_CHAN_SWITCH";
+	case WMI_CTRL_PATH_STATS_CAL_PROF_DPD_SPLIT_CAL:
+		return "DPD_SPLIT_CAL";
+	case WMI_CTRL_PATH_STATS_CAL_PROF_TEMP_TRIGEER_CAL:
+		return "TEMP_TRIGEER_CAL";
+	case WMI_CTRL_PATH_STATS_CAL_PROF_POWER_SAVE_WAKE_UP:
+		return "POWER_SAVE_WAKE_UP";
+	case WMI_CTRL_PATH_STATS_CAL_PROF_TIMER_TRIGGER_CAL:
+		return "TIMER_TRIGGER_CAL";
+	case WMI_CTRL_PATH_STATS_CAL_PROF_FTM_TRIGGER_CAL:
+		return "FTM_TRIGGER_CAL";
+	case WMI_CTRL_PATH_STATS_CAL_PROF_AGILE_OR_POWER_DOWN_DTIM:
+		return "AGILE_OR_POWER_DOWN_DTIM";
+	case WMI_CTRL_PATH_STATS_CAL_PROF_NOISY_ENV_RXDO:
+		return "NOISY_ENV_RXDO";
+	case WMI_CTRL_PATH_STATS_CAL_PROFILE_INVALID:
+		break;
+	}
+	return "UNKOWN_CAL_PROFILE";
+}
+
+enum wmi_ctrl_path_cal_type_id {
+	WMI_CTRL_PATH_STATS_CAL_TYPE_ADC = 0,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_DAC,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_PROCESS,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_NOISE_FLOOR,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_RXDCO,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_COMB_TXLO_TXIQ_RXIQ,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_TXLO,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_TXIQ,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_RXIQ,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_IM2,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_LNA,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXDCO,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXIQ,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORYLESS,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORY,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_IBF,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_PDET_AND_PAL,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_RXDCO_IQ,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_RXDCO_DTIM,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_TPC_CAL,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_TIMEREQ,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_BWFILTER,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_PEF,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_PADROOP,
+	WMI_CTRL_PATH_STATS_CAL_TYPE_SELFCALTPC,
+	/* IDs 25 to 254 for future use*/
+	WMI_CTRL_PATH_STATS_CAL_TYPE_INVALID = 0xff,
+};
+
+static inline const char *
+wmi_ctrl_path_cal_type_id_to_name(u8 type_id) {
+	switch (type_id) {
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_ADC:
+		return "ADC";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_DAC:
+		return "DAC";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_PROCESS:
+		return "PROCESS";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_NOISE_FLOOR:
+		return "NOISE_FLOOR";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_RXDCO:
+		return "RXDCO";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_COMB_TXLO_TXIQ_RXIQ:
+		return "COMB_TXLO_TXIQ_RXIQ";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_TXLO:
+		return "TXLO";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_TXIQ:
+		return "TXIQ";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_RXIQ:
+		return "RXIQ";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_IM2:
+		return "IM2";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_LNA:
+		return "LNA";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXDCO:
+		return "DPD_LP_RXDCO";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXIQ:
+		return "DPD_LP_RXIQ";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORYLESS:
+		return "DPD_MEMORYLESS";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORY:
+		return "DPD_MEMORY";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_IBF:
+		return "IBF";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_PDET_AND_PAL:
+		return "PDET_AND_PAL";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_RXDCO_IQ:
+		return "RXDCO_IQ";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_RXDCO_DTIM:
+		return "RXDCO_DTIM";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_TPC_CAL:
+		return "TPC_CAL";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_DPD_TIMEREQ:
+		return "DPD_TIMEREQ";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_BWFILTER:
+		return "BWFILTER";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_PEF:
+		return "PEF";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_PADROOP:
+		return "PADROOP";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_SELFCALTPC:
+		return "SELFCALTPC";
+	case WMI_CTRL_PATH_STATS_CAL_TYPE_INVALID:
+		break;
+	}
+	return "UNKNOWN_CAL_TYPE";
+}
+
+enum wmi_ctrl_path_periodic_cal_type_id {
+	WMI_CTRL_PATH_STATS_PERIODIC_CAL_TYPE_NOISE_FLOOR,
+	WMI_CTRL_PATH_STATS_PERIODIC_CAL_TYPE_DPD_MEMORYLESS,
+	WMI_CTRL_PATH_STATS_PERIODIC_CAL_TYPE_DPD_MEMORY,
+	/* IDs 3 to 254 for future use*/
+	WMI_CTRL_PATH_STATS_PERIODIC_CAL_TYPE_INVALID = 0xFF,
+};
+
+static inline const char *
+wmi_ctrl_path_periodic_cal_type_id_to_name(u8 type_id) {
+	switch (type_id) {
+	case WMI_CTRL_PATH_STATS_PERIODIC_CAL_TYPE_NOISE_FLOOR:
+		return "NOISE_FLOOR";
+	case WMI_CTRL_PATH_STATS_PERIODIC_CAL_TYPE_DPD_MEMORYLESS:
+		return "DPD_MEMORYLESS";
+	case WMI_CTRL_PATH_STATS_PERIODIC_CAL_TYPE_DPD_MEMORY:
+		return "DPD_MEMORY";
+	case WMI_CTRL_PATH_STATS_PERIODIC_CAL_TYPE_INVALID:
+		break;
+	}
+	return "UNKNOWN_PERIODIC_CAL_TYPE";
+}
+
+#define WMI_CTRL_PATH_CAL_PROF_MASK	GENMASK(12, 8)
+#define WMI_CTRL_PATH_CAL_TYPE_MASK	GENMASK(7, 0)
+#define WMI_CTRL_PATH_IS_PERIODIC_CAL	GENMASK(13, 13)
+
+struct wmi_ctrl_path_cal_stats {
+	u32 pdev_id;
+	u32 cal_info;
+	u32 cal_triggered_cnt;
+	u32 cal_fail_cnt;
+	u32 cal_fcs_cnt;
+	u32 cal_fcs_fail_cnt;
+} __packed;
+
+struct  wmi_ctrl_path_stats_cmd_param {
+	u32 tlv_header;
+	u32 stats_id;
+	u32 req_id;
+	/* get/reset/start/stop based on stats id is defined as
+	 * a part of wmi_ctrl_path_stats_action
+	 */
+	u32 action;
+} __packed;
+
+struct wmi_ctrl_path_stats_ev_param {
+	u32 req_id;
+	/* more flag
+	 * 1 - More events sent after this event.
+	 * 0 - no more events after this event.
+	 */
+	u32 more;
+} __packed;
+
+struct wmi_ctrl_path_stats_list {
+	struct list_head list;
+	void *stats_ptr;
+} __packed;
+
+struct wmi_ctrl_path_btcoex_stats {
+	u32 pdev_id;
+	u32 bt_tx_req_cntr;
+	u32 bt_rx_req_cntr;
+	u32 bt_req_nack_cntr;
+	u32 wl_tx_req_nack_schd_bt_reason_cntr;
+	u32 wl_tx_req_nack_current_bt_reason_cntr;
+	u32 wl_tx_req_nack_other_wlan_tx_reason_cntr;
+	u32 wl_in_tx_abort_cntr;
+	u32 wl_tx_auto_resp_req_cntr;
+	u32 wl_tx_req_ack_cntr;
+	u32 wl_tx_req_cntr;
+} __packed;
+
+struct wmi_ctrl_path_stats_ev_parse_param {
+	struct list_head list;
+	struct ath12k *ar;
+} __packed;
+
 struct wmi_obss_spatial_reuse_params_cmd {
 	__le32 tlv_header;
 	__le32 pdev_id;
@@ -5738,6 +5975,7 @@ struct wmi_dbglog_config_cmd_fixed_param {
 #define WMI_MLO_CMD_TIMEOUT_HZ (5 * HZ)
 #define WMI_SERVICE_READY_TIMEOUT_HZ (5 * HZ)
 #define WMI_SEND_TIMEOUT_HZ (3 * HZ)
+#define WMI_CTRL_STATS_READY_TIMEOUT_HZ (1 * HZ)
 
 struct ath12k_wmi_pdev {
 	struct ath12k_wmi_base *wmi_ab;

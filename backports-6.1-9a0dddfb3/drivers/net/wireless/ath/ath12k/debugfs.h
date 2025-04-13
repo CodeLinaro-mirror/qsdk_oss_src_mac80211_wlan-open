@@ -21,6 +21,8 @@ enum ath12k_dbg_aggr_mode {
 	ATH12K_DBG_AGGR_MODE_MAX,
 };
 
+void ath12k_wmi_crl_path_stats_list_free(struct ath12k *ar, struct list_head *head);
+
 #ifdef CPTCFG_ATH12K_DEBUGFS
 void ath12k_debugfs_soc_create(struct ath12k_base *ab);
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab);

@@ -21,6 +21,145 @@
 #define DETECTOR_ID	GENMASK(12,11)
 #define FHSS		BIT(14)
 
+int wmi_ctrl_path_cal_stat(struct ath12k *ar, char __user *ubuf,
+			   size_t count, loff_t *ppos)
+{
+	const int size = 4096;
+	char *buf;
+	u8 cal_type_mask, cal_prof_mask, is_periodic_cal;
+	int len = 0, ret_val;
+	struct wmi_ctrl_path_stats_list *stats;
+	struct wmi_ctrl_path_cal_stats *cal_stats;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len += scnprintf(buf + len, size - len,
+			"WMI_CTRL_PATH_CAL_STATS\n");
+	len += scnprintf(buf + len, size - len,
+			"%-25s %-25s %-17s %-16s %-16s %-16s\n",
+			"cal_profile", "cal_type",
+			"cal_triggered_cnt", "cal_fail_cnt",
+			"cal_fcs_cnt", "cal_fcs_fail_cnt");
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_for_each_entry(stats, &ar->debug.wmi_ctrl_path_stats.pdev_stats, list) {
+		if (!stats)
+			break;
+
+		cal_stats = stats->stats_ptr;
+
+		if (!cal_stats)
+			break;
+
+		cal_prof_mask = FIELD_GET(WMI_CTRL_PATH_CAL_PROF_MASK,
+				cal_stats->cal_info);
+		if (cal_prof_mask == WMI_CTRL_PATH_STATS_CAL_PROFILE_INVALID)
+			continue;
+
+		cal_type_mask = FIELD_GET(WMI_CTRL_PATH_CAL_TYPE_MASK,
+				cal_stats->cal_info);
+		is_periodic_cal = FIELD_GET(WMI_CTRL_PATH_IS_PERIODIC_CAL,
+				cal_stats->cal_info);
+
+
+		if (!is_periodic_cal) {
+			len += scnprintf(buf + len, size - len,
+			   "%-25s %-25s %-17d %-16d %-16d %-16d\n",
+			   wmi_ctrl_path_cal_prof_id_to_name(cal_prof_mask),
+			   wmi_ctrl_path_cal_type_id_to_name(cal_type_mask),
+			   cal_stats->cal_triggered_cnt,
+			   cal_stats->cal_fail_cnt,
+			   cal_stats->cal_fcs_cnt,
+			   cal_stats->cal_fcs_fail_cnt);
+		} else {
+			len += scnprintf(buf + len, size - len,
+			   "%-25s %-25s %-17d %-16d %-16d %-16d\n",
+			   "PERIODIC_CAL",
+			   wmi_ctrl_path_periodic_cal_type_id_to_name(cal_type_mask),
+			   cal_stats->cal_triggered_cnt,
+			   cal_stats->cal_fail_cnt,
+			   cal_stats->cal_fcs_cnt,
+			   cal_stats->cal_fcs_fail_cnt);
+		}
+
+	}
+
+	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+	return ret_val;
+}
+
+int wmi_ctrl_path_btcoex_stat(struct ath12k *ar, char __user *ubuf,
+			size_t count, loff_t *ppos)
+{
+	struct wmi_ctrl_path_stats_list *stats;
+	struct wmi_ctrl_path_btcoex_stats *btcoex_stats;
+	const int size = 2048;
+	int len = 0, ret_val;
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_for_each_entry(stats, &ar->debug.wmi_ctrl_path_stats.pdev_stats, list) {
+		if (!stats)
+			break;
+
+		btcoex_stats = stats->stats_ptr;
+
+		if (!btcoex_stats)
+			break;
+
+		len += scnprintf(buf + len, size - len,
+				"WMI_CTRL_PATH_BTCOEX_STATS:\n");
+		len += scnprintf(buf + len, size - len,
+				"pdev_id = %u\n",
+				btcoex_stats->pdev_id);
+		len += scnprintf(buf + len, size - len,
+				"bt_tx_req_cntr = %u\n",
+				btcoex_stats->bt_tx_req_cntr);
+		len += scnprintf(buf + len, size - len,
+				"bt_rx_req_cntr = %u\n",
+				btcoex_stats->bt_rx_req_cntr);
+		len += scnprintf(buf + len, size - len,
+				"bt_req_nack_cntr = %u\n",
+				btcoex_stats->bt_req_nack_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_nack_schd_bt_reason_cntr = %u\n",
+				btcoex_stats->wl_tx_req_nack_schd_bt_reason_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_nack_current_bt_reason_cntr = %u\n",
+				btcoex_stats->wl_tx_req_nack_current_bt_reason_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_nack_other_wlan_tx_reason_cntr = %u\n",
+				btcoex_stats->wl_tx_req_nack_other_wlan_tx_reason_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_in_tx_abort_cntr = %u\n",
+				btcoex_stats->wl_in_tx_abort_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_auto_resp_req_cntr = %u\n",
+				btcoex_stats->wl_tx_auto_resp_req_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_ack_cntr = %u\n",
+				btcoex_stats->wl_tx_req_ack_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_cntr = %u\n",
+				btcoex_stats->wl_tx_req_cntr);
+	}
+
+	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+	return ret_val;
+}
+
 static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 					char __user *ubuf,
 					size_t count, loff_t *ppos)
@@ -1557,15 +1696,8 @@ static ssize_t ath12k_write_wmi_ctrl_path_stats(struct file *file,
 		return -EINVAL;
 
 	guard(mutex)(&ah->hw_mutex);
-#ifdef CONFIG_ATH12K_DEBUGFS  //TODO need to revisit
 	ret = ath12k_wmi_send_wmi_ctrl_stats_cmd(ar, &arg);
-	if (ret && ret != -ETIMEDOUT) {
-		ath12k_info(ar->ab, "failed to send ctrl path stats request %d\n",
-			    ret);
-		return ret;
-	}
-#endif
-	return count;
+	return ret ? ret : count;
 }
 
 static int wmi_ctrl_path_pdev_stat(struct ath12k *ar, char __user *ubuf,
@@ -1657,6 +1789,13 @@ static ssize_t ath12k_read_wmi_ctrl_path_stats(struct file *file,
 	case WMI_TAG_CTRL_PATH_PDEV_STATS:
 		ret = wmi_ctrl_path_pdev_stat(ar, ubuf, count, ppos);
 		break;
+	case WMI_CTRL_PATH_CAL_STATS:
+		ret = wmi_ctrl_path_cal_stat(ar, ubuf, count, ppos);
+		break;
+	case WMI_CTRL_PATH_BTCOEX_STATS:
+		ret = wmi_ctrl_path_btcoex_stat(ar, ubuf, count, ppos);
+		break;
+		/* Add case for newly wmi ctrl path added stats here */
 	default:
 		/* Unsupported tag */
 		ret = -EINVAL;
@@ -3240,6 +3379,10 @@ void ath12k_debugfs_unregister(struct ath12k *ar)
 	debugfs_remove_recursive(ar->debug.debugfs_pdev);
 	ar->debug.debugfs_pdev_symlink = NULL;
 	ar->debug.debugfs_pdev = NULL;
+
+	/* Remove wmi ctrl stats file */
+	debugfs_remove(ar->wmi_ctrl_stat);
+	ar->wmi_ctrl_stat = NULL;
 }
 
 static ssize_t ath12k_write_twt_add_dialog(struct file *file,

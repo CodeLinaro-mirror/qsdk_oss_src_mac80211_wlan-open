@@ -853,6 +853,11 @@ struct ath12k {
 	u32 cached_ppdu_id;
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct ath12k_debug debug;
+	struct dentry *wmi_ctrl_stat;
+	/* To protect wmi_list manipulation */
+	spinlock_t wmi_ctrl_path_stats_lock;
+
+	/* TODO: Add mac_filter, ampdu_aggr_size and wbm_tx_completion_stats stats*/
 #endif
 	bool supports_6ghz:1;
 	bool ch_info_can_report_survey:1;
