@@ -9995,6 +9995,53 @@ ath12k_wmi_ctrl_path_stats_list_free(struct ath12k_wmi_ctrl_path_stats_list *par
 	ath12k_wmi_ctrl_path_pdev_stats_list_free(&param->pdev_stats);
 }
 
+int wmi_print_ctrl_path_awgn_stats_tlv(struct ath12k_base *ab, u16 len,
+				       const void *ptr, void *data)
+{
+	struct wmi_ctrl_path_stats_ev_parse_param *stats_buff =
+			    (struct wmi_ctrl_path_stats_ev_parse_param *)data;
+	struct wmi_ctrl_path_awgn_stats *awgn_stats_skb, *awgn_stats = NULL;
+	struct wmi_ctrl_path_stats_list *stats;
+	struct ath12k *ar = NULL;
+	int i;
+
+	awgn_stats_skb = (struct wmi_ctrl_path_awgn_stats *)ptr;
+
+	for (i = 0; i < ATH12K_GROUP_MAX_RADIO; i++) {
+		ar = ath12k_mac_get_ar_by_pdev_id(ab, ab->ag->dp_hw_grp.hw_links[i].pdev_idx);
+		if (!ar) {
+			ath12k_warn(ab, "Failed to get ar for wmi ctrl awgn stats\n");
+			return -EINVAL;
+		}
+
+		if (ar->supports_6ghz)
+			break;
+	}
+
+	stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
+	if (!stats)
+		return -ENOMEM;
+
+	awgn_stats = kzalloc(sizeof(*awgn_stats), GFP_ATOMIC);
+
+	if (!awgn_stats) {
+		kfree(stats);
+		return -ENOMEM;
+	}
+
+	memcpy(awgn_stats, awgn_stats_skb, sizeof(*awgn_stats));
+	stats->stats_ptr = awgn_stats;
+	list_add_tail(&stats->list, &stats_buff->list);
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_AWGN_STATS;
+	stats_buff->ar = ar;
+
+	return 0;
+}
+
 static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 					       u16 tag, u16 len,
 					       const void *ptr, void *data)
@@ -10012,6 +10059,9 @@ static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 		break;
 	case WMI_CTRL_PATH_BTCOEX_STATS:
 		ret = wmi_print_ctrl_path_btcoex_stats_tlv(ab, len, ptr, data);
+		break;
+	case WMI_CTRL_PATH_AWGN_STATS:
+		ret = wmi_print_ctrl_path_awgn_stats_tlv(ab, len, ptr, data);
 		break;
 		/* Add case for newly wmi ctrl path added stats here */
 	default:
@@ -11609,8 +11659,36 @@ ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
 	void *ptr;
 	u32 stats_id;
 
+	switch (arg->stats_id) {
+	case WMI_REQ_CTRL_PATH_PDEV_TX_STAT:
+	case WMI_REQ_CTRL_PATH_CAL_STAT:
+	case WMI_REQ_CTRL_PATH_BTCOEX_STAT:
+		stats_id = (1 << arg->stats_id);
+		break;
+	case WMI_REQ_CTRL_PATH_AWGN_STAT:
+		if (ar->supports_6ghz) {
+			stats_id = (1 << arg->stats_id);
+		} else {
+			ath12k_warn(ab,
+			  "Stats id %d %s stats are only supported for 6GHz",
+			  arg->stats_id,
+			  (arg->stats_id ==
+			   WMI_REQ_CTRL_PATH_AWGN_STAT) ? "AWGN" : "AFC");
+			return -EIO;
+		}
+		break;
+	case WMI_REQ_CTRL_PATH_MEM_STAT:
+		ar->ctrl_mem_stats = true;
+		stats_id = (1 << arg->stats_id);
+		break;
+		/* Add case for newly wmi ctrl path stats here */
+	default:
+		ath12k_warn(ab, "Unsupported stats id %d", arg->stats_id);
+		return -EIO;
+		break;
+	}
+
 	pdev_id = cpu_to_le32(ath12k_mac_get_target_pdev_id(ar));
-	stats_id = (1 << arg->stats_id);
 
 	len = sizeof(*cmd) +
 		TLV_HDR_SIZE + sizeof(u32) +

@@ -2017,6 +2017,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_TPC_STATS_CTL_PWR_TABLE_EVENT,
 	WMI_CTRL_PATH_CAL_STATS = 0x3BC,
 	WMI_CTRL_PATH_BTCOEX_STATS = 0x3FD,
+	WMI_CTRL_PATH_AWGN_STATS = 0x3F9,
 	WMI_TAG_EHT_RATE_SET = 0x3C4,
 	WMI_TAG_DCS_AWGN_INT_TYPE = 0x3C5,
 	WMI_TAG_MLO_TX_SEND_PARAMS,
@@ -5599,6 +5600,7 @@ wmi_ctrl_path_periodic_cal_type_id_to_name(u8 type_id) {
 #define WMI_CTRL_PATH_CAL_PROF_MASK	GENMASK(12, 8)
 #define WMI_CTRL_PATH_CAL_TYPE_MASK	GENMASK(7, 0)
 #define WMI_CTRL_PATH_IS_PERIODIC_CAL	GENMASK(13, 13)
+#define WMI_AWGN_MAX_BW 6
 
 struct wmi_ctrl_path_cal_stats {
 	u32 pdev_id;
@@ -5645,6 +5647,21 @@ struct wmi_ctrl_path_btcoex_stats {
 	u32 wl_tx_auto_resp_req_cntr;
 	u32 wl_tx_req_ack_cntr;
 	u32 wl_tx_req_cntr;
+} __packed;
+
+struct wmi_ctrl_path_awgn_stats {
+	u32 awgn_send_evt_cnt;
+	u32 awgn_pri_int_cnt;
+	u32 awgn_sec_int_cnt;
+	u32 awgn_pkt_drop_trigger_cnt;
+	u32 awgn_pkt_drop_trigger_reset_cnt;
+	u32 awgn_bw_drop_cnt;
+	u32 awgn_bw_drop_reset_cnt;
+	u32 awgn_cca_int_cnt;
+	u32 awgn_cca_int_reset_cnt;
+	u32 awgn_cca_ack_blk_cnt;
+	u32 awgn_cca_ack_reset_cnt;
+	u32 awgn_int_bw_cnt[WMI_AWGN_MAX_BW];
 } __packed;
 
 struct wmi_ctrl_path_stats_ev_parse_param {
@@ -6765,6 +6782,10 @@ enum wmi_sta_keepalive_method {
 enum  wmi_ctrl_path_stats_id {
 	/* bit 0 is currently unused / reserved */
 	WMI_REQ_CTRL_PATH_PDEV_TX_STAT          = 1,
+ 	WMI_REQ_CTRL_PATH_MEM_STAT		= 3,
+ 	WMI_REQ_CTRL_PATH_CAL_STAT		= 5,
+	WMI_REQ_CTRL_PATH_AWGN_STAT		= 7,
+ 	WMI_REQ_CTRL_PATH_BTCOEX_STAT		= 8,
 };
 
 enum wmi_ctrl_path_stats_action {

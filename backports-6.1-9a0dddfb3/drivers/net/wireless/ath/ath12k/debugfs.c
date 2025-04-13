@@ -21,6 +21,89 @@
 #define DETECTOR_ID	GENMASK(12,11)
 #define FHSS		BIT(14)
 
+int wmi_ctrl_path_awgn_stat(struct ath12k *ar, char __user *ubuf,
+			    size_t count, loff_t *ppos)
+{
+	struct wmi_ctrl_path_stats_list *stats;
+	struct wmi_ctrl_path_awgn_stats *awgn_stats;
+	const int size = 2048;
+	int len = 0, ret_val;
+	char *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_for_each_entry(stats, &ar->debug.wmi_ctrl_path_stats.pdev_stats, list) {
+
+		if (!stats)
+			break;
+		awgn_stats = stats->stats_ptr;
+
+		if (!awgn_stats)
+			break;
+
+		len += scnprintf(buf + len, size - len,
+				 "WMI_CTRL_PATH_AWGN_STATS_TLV:\n");
+		len += scnprintf(buf + len, size - len,
+				 "awgn_send_evt_cnt = %u\n",
+				 awgn_stats->awgn_send_evt_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_pri_int_cnt = %u\n",
+				 awgn_stats->awgn_pri_int_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_sec_int_cnt = %u\n",
+				 awgn_stats->awgn_sec_int_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_pkt_drop_trigger_cnt = %u\n",
+				 awgn_stats->awgn_pkt_drop_trigger_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_pkt_drop_trigger_reset_cnt = %u\n",
+				 awgn_stats->awgn_pkt_drop_trigger_reset_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_bw_drop_cnt = %u\n",
+				 awgn_stats->awgn_bw_drop_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_bw_drop_reset_cnt = %u\n",
+				 awgn_stats->awgn_bw_drop_reset_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_cca_int_cnt = %u\n",
+				 awgn_stats->awgn_cca_int_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_cca_int_reset_cnt = %u\n",
+				 awgn_stats->awgn_cca_int_reset_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_cca_ack_blk_cnt = %u\n",
+				 awgn_stats->awgn_cca_ack_blk_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_cca_ack_reset_cnt = %u\n",
+				 awgn_stats->awgn_cca_ack_reset_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "awgn_int_bw_cnt-AWGN_20[0]: %u\n",
+				 awgn_stats->awgn_int_bw_cnt[0]);
+		len += scnprintf(buf + len, size - len,
+				 "AWGN_40[1]: %u\n",
+				 awgn_stats->awgn_int_bw_cnt[1]);
+		len += scnprintf(buf + len, size - len,
+				 "AWGN_80[2]: %u\n",
+				 awgn_stats->awgn_int_bw_cnt[2]);
+		len += scnprintf(buf + len, size - len,
+				 "AWGN_160[3]: %u\n",
+				 awgn_stats->awgn_int_bw_cnt[3]);
+		len += scnprintf(buf + len, size - len,
+				 "AWGN_320[5]: %u\n",
+				 awgn_stats->awgn_int_bw_cnt[5]);
+	}
+	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+
+	return ret_val;
+}
+
 int wmi_ctrl_path_cal_stat(struct ath12k *ar, char __user *ubuf,
 			   size_t count, loff_t *ppos)
 {
@@ -1794,6 +1877,9 @@ static ssize_t ath12k_read_wmi_ctrl_path_stats(struct file *file,
 		break;
 	case WMI_CTRL_PATH_BTCOEX_STATS:
 		ret = wmi_ctrl_path_btcoex_stat(ar, ubuf, count, ppos);
+		break;
+	case WMI_CTRL_PATH_AWGN_STATS:
+		ret = wmi_ctrl_path_awgn_stat(ar, ubuf, count, ppos);
 		break;
 		/* Add case for newly wmi ctrl path added stats here */
 	default:
