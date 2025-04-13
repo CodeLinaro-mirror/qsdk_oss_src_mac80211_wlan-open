@@ -311,6 +311,16 @@ enum ath12k_mlo_recovery_mode {
 	ATH12K_MLO_RECOVERY_MODE0 = 1,
 };
 
+#define ATH12K_STATS_MGMT_FRM_TYPE_MAX 16
+
+struct ath12k_mgmt_frame_stats {
+	u32 tx_succ_cnt[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
+	u32 tx_fail_cnt[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
+	u32 rx_cnt[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
+	u32 tx_compl_succ[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
+	u32 tx_compl_fail[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
+};
+
 struct ath12k_tx_conf {
 	bool changed;
 	u16 ac;
@@ -452,6 +462,8 @@ struct ath12k_vif {
 	u32 links_map;
 	u8 last_scan_link;
 	bool chanctx_peer_del_done;
+
+	struct ath12k_mgmt_frame_stats mgmt_stats;
 
 	/* Must be last - ends in a flexible-array member.
 	 *

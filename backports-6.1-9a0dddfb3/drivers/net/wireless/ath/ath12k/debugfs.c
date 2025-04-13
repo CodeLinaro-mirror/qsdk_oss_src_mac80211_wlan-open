@@ -21,6 +21,89 @@
 #define DETECTOR_ID	GENMASK(12,11)
 #define FHSS		BIT(14)
 
+static ssize_t ath12k_dump_mgmt_stats(struct file *file,
+					char __user *ubuf,
+					size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_mgmt_frame_stats *mgmt_stats;
+	int len = 0, ret, i;
+	int size = (TARGET_NUM_VDEVS - 1) * 1500;
+	char *buf;
+	const char *mgmt_frm_type[ATH12K_STATS_MGMT_FRM_TYPE_MAX-1] = {
+		"assoc_req", "assoc_resp",
+		"reassoc_req", "reassoc_resp",
+		"probe_req", "probe_resp",
+		"timing_advertisement", "reserved",
+		"beacon", "atim", "disassoc",
+		"auth", "deauth", "action", "action_no_ack"};
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON)
+		return -ENETDOWN;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	spin_lock_bh(&ar->data_lock);
+
+	list_for_each_entry (arvif, &ar->arvifs, list) {
+		if (!arvif)
+			break;
+
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+			continue;
+		mgmt_stats = &arvif->ahvif->mgmt_stats;
+		len += scnprintf(buf + len, size - len, "MGMT frame stats for vdev %u :\n", arvif->vdev_id);
+		len += scnprintf(buf + len, size - len, "  TX stats :\n ");
+		len += scnprintf(buf + len, size - len, "  Success frames:\n");
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "       %s: %d\n",
+					mgmt_frm_type[i], mgmt_stats->tx_succ_cnt[i]);
+
+		len += scnprintf(buf + len, size - len, "  Failed frames:\n");
+
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "       %s: %d\n",
+					mgmt_frm_type[i], mgmt_stats->tx_fail_cnt[i]);
+
+		len += scnprintf(buf + len, size - len, "  RX stats :\n");
+		len += scnprintf(buf + len, size - len, "  Success frames:\n");
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "       %s: %d\n",
+					mgmt_frm_type[i], mgmt_stats->rx_cnt[i]);
+
+		len += scnprintf(buf + len, size - len, " Tx completion stats :\n");
+		len += scnprintf(buf + len, size - len, " success completions:\n");
+
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "       %s: %d\n",
+					mgmt_frm_type[i], mgmt_stats->tx_compl_succ[i]);
+
+		len += scnprintf(buf + len, size - len, " failure completions:\n");
+
+		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
+			len += scnprintf(buf + len, size - len, "        %s: %d\n", mgmt_frm_type[i], mgmt_stats->tx_compl_fail[i]);
+	}
+
+	spin_unlock_bh(&ar->data_lock);
+
+	if (len > size)
+		len = size;
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	kfree(buf);
+	return ret;
+}
+
+static const struct file_operations fops_dump_mgmt_stats = {
+	.read = ath12k_dump_mgmt_stats,
+	.open = simple_open
+};
+
 static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 						char __user *user_buf,
 						size_t count, loff_t *ppos)
@@ -2766,6 +2849,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
         debugfs_create_file("btcoex_priority", 0600, ar->debug.debugfs_pdev, ar,
                             &fops_btcoex_priority);
+
+	debugfs_create_file("dump_mgmt_stats", 0644,
+				ar->debug.debugfs_pdev, ar,
+				&fops_dump_mgmt_stats);
 
 	ath12k_debugfs_htt_stats_register(ar);
 	ath12k_debugfs_fw_stats_register(ar);

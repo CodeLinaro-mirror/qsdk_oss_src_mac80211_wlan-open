@@ -9090,9 +9090,9 @@ int ath12k_mac_mgmt_tx(struct ath12k *ar, struct sk_buff *skb,
 	 */
 	if (is_prb_rsp &&
 	    atomic_read(&ar->num_pending_mgmt_tx) > ATH12K_PRB_RSP_DROP_THRESHOLD) {
-		ath12k_warn(ar->ab,
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 			    "dropping probe response as pending queue is almost full\n");
-		return -ENOSPC;
+		return -EBUSY;
 	}
 
 	if (skb_queue_len_lockless(q) >= ATH12K_TX_MGMT_NUM_PENDING_MAX) {
@@ -10546,8 +10546,10 @@ err_vdev_del:
 	ath12k_peer_cleanup(ar, arvif->vdev_id);
 	ath12k_ahvif_put_link_cache(ahvif, arvif->link_id);
 
+	spin_lock_bh(&ar->data_lock);
 	idr_for_each(&ar->txmgmt_idr,
 		     ath12k_mac_vif_txmgmt_idr_remove, vif);
+	spin_unlock_bh(&ar->data_lock);
 
 	ath12k_mac_vif_unref(ath12k_ab_to_dp(ab), vif);
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];

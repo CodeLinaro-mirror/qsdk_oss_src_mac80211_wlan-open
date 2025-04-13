@@ -864,6 +864,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath12k_link_vif *arvif = &ahvif->deflink;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_key_conf *key = info->control.hw_key;
+	struct ath12k_mgmt_frame_stats *mgmt_stats = &ahvif->mgmt_stats;
 	struct ieee80211_sta *sta = control->sta;
 	struct ath12k_link_sta *arsta = NULL;
 	struct ath12k_link_vif *tmp_arvif;
@@ -879,6 +880,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	bool is_dvlan = false;
 	struct ethhdr *eth;
 	bool is_prb_rsp;
+	u16 frm_type = 0;
 	u16 mcbc_gsn;
 	u8 link_id;
 	int ret;
@@ -946,11 +948,20 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			memcpy(&mgmt->u.probe_resp.timestamp, &adjusted_tsf,
 			       sizeof(adjusted_tsf));
 		}
+
+		frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 		ret = ath12k_mac_mgmt_tx(ar, skb, is_prb_rsp);
 		if (ret) {
-			ath12k_warn(ar->ab, "failed to queue management frame %d\n",
-				    ret);
+			if (ret != -EBUSY)
+				ath12k_warn(ar->ab, "failed to queue mgmt stype 0x%x frame %d\n", frm_type, ret);
 			ieee80211_free_txskb(hw, skb);
+			spin_lock_bh(&ar->data_lock);
+			mgmt_stats->tx_fail_cnt[frm_type]++;
+			spin_unlock_bh(&ar->data_lock);
+		} else {
+			spin_lock_bh(&ar->data_lock);
+			mgmt_stats->tx_succ_cnt[frm_type]++;
+			spin_unlock_bh(&ar->data_lock);
 		}
 		return;
 	}
