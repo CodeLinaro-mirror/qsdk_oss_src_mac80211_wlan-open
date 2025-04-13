@@ -10042,6 +10042,46 @@ int wmi_print_ctrl_path_awgn_stats_tlv(struct ath12k_base *ab, u16 len,
 	return 0;
 }
 
+int wmi_print_ctrl_path_mem_stats_tlv(struct ath12k_base *ab, u16 len,
+				      const void *ptr, void *data)
+{
+	struct wmi_ctrl_path_stats_ev_parse_param *stats_buff =
+		(struct wmi_ctrl_path_stats_ev_parse_param *)data;
+	struct wmi_ctrl_path_mem_stats_params *mem_stats_skb =
+		(struct wmi_ctrl_path_mem_stats_params *)ptr;
+	struct wmi_ctrl_path_mem_stats_params *mem_stats = NULL;
+	struct wmi_ctrl_path_stats_list *stats;
+	struct ath12k *ar = NULL;
+	int i;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		ar = ab->pdevs[i].ar;
+		if (!ar || !ar->ctrl_mem_stats)
+			continue;
+		stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
+		if (!stats)
+			return -ENOMEM;
+
+		mem_stats = kzalloc(sizeof(*mem_stats), GFP_ATOMIC);
+		if (!mem_stats) {
+			kfree(stats);
+			return -ENOMEM;
+		}
+
+		memcpy(mem_stats, mem_stats_skb, sizeof(*mem_stats));
+		stats->stats_ptr = mem_stats;
+		list_add_tail(&stats->list, &stats_buff->list);
+
+		spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+		ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+		spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+		ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_MEM_STATS;
+		stats_buff->ar = ar;
+	}
+
+	return 0;
+}
+
 static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 					       u16 tag, u16 len,
 					       const void *ptr, void *data)
@@ -10062,6 +10102,9 @@ static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 		break;
 	case WMI_CTRL_PATH_AWGN_STATS:
 		ret = wmi_print_ctrl_path_awgn_stats_tlv(ab, len, ptr, data);
+		break;
+	case WMI_CTRL_PATH_MEM_STATS:
+		ret = wmi_print_ctrl_path_mem_stats_tlv(ab, len, ptr, data);
 		break;
 		/* Add case for newly wmi ctrl path added stats here */
 	default:

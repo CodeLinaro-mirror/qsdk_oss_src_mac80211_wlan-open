@@ -1858,6 +1858,62 @@ static int wmi_ctrl_path_pdev_stat(struct ath12k *ar, char __user *ubuf,
 	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
 }
 
+int wmi_ctrl_path_mem_stat(struct ath12k *ar, char __user *ubuf,
+			   size_t count, loff_t *ppos)
+{
+	struct wmi_ctrl_path_stats_list *stats, *tmp;
+	struct wmi_ctrl_path_mem_stats_params *mem_stats;
+	const int size = 2048;
+	int len = 0, ret_val;
+	char *buf;
+	LIST_HEAD(wmi_stats_list);
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len += scnprintf(buf + len, size - len,
+			"WMI_CTRL_PATH_MEM_STATS:\n");
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_splice_tail_init(&ar->debug.wmi_ctrl_path_stats.pdev_stats, &wmi_stats_list);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_for_each_entry_safe(stats, tmp, &wmi_stats_list, list) {
+		if (!stats)
+			break;
+
+		mem_stats = stats->stats_ptr;
+
+		if (!mem_stats)
+			break;
+
+		if (mem_stats->total_bytes){
+			len += scnprintf(buf + len, size - len,
+				"arena_id = %u\n",
+				le32_to_cpu(mem_stats->arena_id));
+			len += scnprintf(buf + len, size - len,
+				"arena = %s\n",
+				wmi_ctrl_path_fw_arena_id_to_name(le32_to_cpu(mem_stats->arena_id)));
+			len += scnprintf(buf + len, size - len,
+				"total_bytes = %u\n",
+				le32_to_cpu(mem_stats->total_bytes));
+			len += scnprintf(buf + len, size - len,
+				"allocated_bytes = %u\n",
+				le32_to_cpu(mem_stats->allocated_bytes));
+		}
+
+		kfree(stats->stats_ptr);
+		list_del(&stats->list);
+		kfree(stats);
+
+	}
+
+	ar->ctrl_mem_stats = false;
+	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+	return ret_val;
+}
+
 static ssize_t ath12k_read_wmi_ctrl_path_stats(struct file *file,
 					       char __user *ubuf,
 					       size_t count, loff_t *ppos)
@@ -1880,6 +1936,9 @@ static ssize_t ath12k_read_wmi_ctrl_path_stats(struct file *file,
 		break;
 	case WMI_CTRL_PATH_AWGN_STATS:
 		ret = wmi_ctrl_path_awgn_stat(ar, ubuf, count, ppos);
+		break;
+	case WMI_CTRL_PATH_MEM_STATS:
+		ret = wmi_ctrl_path_mem_stat(ar, ubuf, count, ppos);
 		break;
 		/* Add case for newly wmi ctrl path added stats here */
 	default:

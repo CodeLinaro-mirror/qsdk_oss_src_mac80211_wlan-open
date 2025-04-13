@@ -884,6 +884,8 @@ struct ath12k {
 
 	struct completion fw_stats_complete;
 
+	bool ctrl_mem_stats;
+
 	struct completion mlo_setup_done;
 	u32 mlo_setup_status;
 	u8 ftm_msgref;
