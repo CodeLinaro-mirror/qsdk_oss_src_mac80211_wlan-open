@@ -92,6 +92,84 @@ print_array_to_buf_s8(u8 *buf, u32 offset, const char *header, u32 stats_index,
 	return index;
 }
 
+static void ath12k_htt_print_htt_stats_gtx_stats_tlv_v(const void *tag_buf, u16 tag_len,
+						       struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_stats_gtx_stats *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "HTT_STATS_GTX_TAG\n");
+	len += scnprintf(buf + len, buf_len - len, "Green TX Enabled: %u\n",
+			 le32_to_cpu(htt_stats_buf->gtx_enabled));
+	len += scnprintf(buf + len, buf_len - len, "MIN TPC (0.25 dBm) = "
+			 " 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u"
+			 " 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u 15:%u\n",
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[0]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[1]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[2]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[3]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[4]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[5]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[6]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[7]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[8]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[9]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[10]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[11]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[12]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[13]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[14]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_min[15]));
+
+	len += scnprintf(buf + len, buf_len - len, "MAX TPC (0.25 dBm) = "
+			 " 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u"
+			 " 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u 15:%u\n",
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[0]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[1]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[2]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[3]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[4]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[5]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[6]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[7]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[8]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[9]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[10]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[11]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[12]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[13]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[14]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_max[15]));
+
+	len += scnprintf(buf + len, buf_len - len, "TPC DIFF MCS (0.25 dB) = "
+			 " 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u"
+			 " 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u 15:%u\n",
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[0]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[1]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[2]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[3]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[4]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[5]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[6]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[7]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[8]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[9]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[10]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[11]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[12]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[13]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[14]),
+			 le32_to_cpu(htt_stats_buf->mcs_tpc_diff[15]));
+
+	stats_req->buf_len = len;
+}
+
 static inline void
 ath12k_htt_print_ml_peer_details_stats_tlv(const void *tag_buf,
 					   struct debug_htt_stats_req *stats_req)
@@ -7812,6 +7890,9 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		break;
 	case HTT_STATS_ML_LINK_INFO_DETAILS_TAG:
 		ath12k_htt_print_ml_link_info_stats_tlv(tag_buf, stats_req);
+		break;
+	case HTT_STATS_GTX_TAG:
+		ath12k_htt_print_htt_stats_gtx_stats_tlv_v(tag_buf, len, stats_req);
 		break;
 	default:
 		break;

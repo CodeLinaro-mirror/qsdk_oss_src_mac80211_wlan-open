@@ -422,6 +422,7 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_DBG_EXT_PHY_PROF_CAL_STATS		= 52,
 	ATH12K_DGB_HTT_DBG_EXT_STATS_PDEV_BW_MGR		= 53,
 	ATH12K_DGB_HTT_EXT_STATS_PDEV_MBSSID_CTRL_FRAME		= 54,
+	ATH12K_DBG_HTT_STATS_GTX_STATS				= 68,
 
 	/* keep this last */
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
@@ -586,6 +587,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_PEER_AX_OFDMA_STATS_TAG		= 174,
 	HTT_STATS_TX_PDEV_MU_EDCA_PARAMS_STATS_TAG	= 175,
 	HTT_STATS_PDEV_MBSSID_CTRL_FRAME_STATS_TAG	= 176,
+	HTT_STATS_GTX_TAG				= 199,
 
 	HTT_STATS_MAX_TAG,
 };
@@ -745,6 +747,16 @@ enum ath12k_htt_stats_hw_mode {
 	ATH12K_HTT_STATS_HWMODE_AX = 1,
 	ATH12K_HTT_STATS_HWMODE_BE = 2,
 };
+
+#define HTT_NUM_MCS_PER_NSS 16
+
+struct htt_stats_gtx_stats {
+	__le32 gtx_enabled;
+	__le32 mcs_tpc_min[HTT_NUM_MCS_PER_NSS];
+	__le32 mcs_tpc_max[HTT_NUM_MCS_PER_NSS];
+	__le32 mcs_tpc_diff[HTT_NUM_MCS_PER_NSS];
+};
+
 
 struct ath12k_htt_tx_pdev_mu_ppdu_dist_stats_tlv {
 	__le32 hw_mode;
