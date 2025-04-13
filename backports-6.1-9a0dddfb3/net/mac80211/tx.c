@@ -4729,19 +4729,21 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_aggr_check(sdata, sta, skb);
 
-	tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
-	tid_tx = rcu_dereference(sta->ampdu_mlme.tid_tx[tid]);
-	if (tid_tx) {
-		if (!test_bit(HT_AGG_STATE_OPERATIONAL, &tid_tx->state)) {
-			/* fall back to non-offload slow path */
-			__ieee80211_subif_start_xmit(skb, dev, 0,
-						     IEEE80211_TX_CTRL_MLO_LINK_UNSPEC,
-						     NULL);
-			return;
-		}
+	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
+		tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
+		tid_tx = rcu_dereference(sta->ampdu_mlme.tid_tx[tid]);
+		if (tid_tx) {
+			if (!test_bit(HT_AGG_STATE_OPERATIONAL, &tid_tx->state)) {
+				/* fall back to non-offload slow path */
+				__ieee80211_subif_start_xmit(skb, dev, 0,
+						     	IEEE80211_TX_CTRL_MLO_LINK_UNSPEC,
+						     	NULL);
+				return;
+			}
 
-		if (tid_tx->timeout)
-			tid_tx->last_tx = jiffies;
+			if (tid_tx->timeout)
+				tid_tx->last_tx = jiffies;
+		}
 	}
 
 	skb = ieee80211_tx_skb_fixup(skb, ieee80211_sdata_netdev_features(sdata));
@@ -4804,7 +4806,7 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
-	struct ieee80211_key *key;
+	struct ieee80211_key *key = NULL;
 	struct sta_info *sta;
 	bool is_eapol;
 
@@ -4824,7 +4826,11 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	}
 
 	is_eapol = (sdata->control_port_protocol == ehdr->h_proto);
-	if (unlikely(IS_ERR_OR_NULL(sta) || !sta->uploaded ||
+	if (ieee80211_hw_check(&sdata->local->hw, SUPPORTS_NSS_OFFLOAD)) {
+		if (unlikely(IS_ERR_OR_NULL(sta) || !sta->uploaded))
+			sta = NULL;
+		goto tx_offload;
+	} else if (unlikely(IS_ERR_OR_NULL(sta) || !sta->uploaded ||
 	    (!test_sta_flag(sta, WLAN_STA_AUTHORIZED) && !is_eapol) ||
 	    (is_eapol && !(sdata->vif.offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED))))
 		goto skip_offload;
@@ -4837,6 +4843,7 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 		goto skip_offload;
 
 	sk_pacing_shift_update(skb->sk, sdata->local->hw.tx_sk_pacing_shift);
+tx_offload:
 	ieee80211_8023_xmit(sdata, dev, sta, key, skb);
 	goto out;
 
@@ -6361,10 +6368,7 @@ int ieee80211_tx_control_port(struct wiphy *wiphy, struct net_device *dev,
 
 start_xmit:
 	local_bh_disable();
-	if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
-		ieee80211_subif_start_xmit_8023(skb, skb->dev);
-	else
-		__ieee80211_subif_start_xmit(skb, skb->dev, flags, ctrl_flags, cookie);
+	__ieee80211_subif_start_xmit(skb, skb->dev, flags, ctrl_flags, cookie);
 	local_bh_enable();
 
 	return 0;

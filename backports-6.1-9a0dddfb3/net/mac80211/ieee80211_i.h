@@ -216,6 +216,7 @@ enum ieee80211_rx_flags {
 };
 
 struct ieee80211_rx_data {
+	struct napi_struct *napi;
 #if LINUX_VERSION_IS_GEQ(4,19,0)
 	struct list_head *list;
 #else
@@ -304,6 +305,7 @@ struct unsol_bcast_probe_resp_data {
 	int len;
 	u8 data[];
 };
+
 
 struct ps_data {
 	/* yes, this looks ugly, but guarantees that we can later use

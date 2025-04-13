@@ -5625,8 +5625,6 @@ void ieee80211_rx_list(struct ieee80211_hw *hw, struct ieee80211_sta *pubsta,
 
 	status->rx_flags = 0;
 
-	kcov_remote_start_common(skb_get_kcov_handle(skb));
-
 	/*
 	 * Frames with failed FCS/PLCP checksum are not returned,
 	 * all other frames are returned without radiotap header
@@ -5646,7 +5644,6 @@ void ieee80211_rx_list(struct ieee80211_hw *hw, struct ieee80211_sta *pubsta,
 			__ieee80211_rx_handle_packet(hw, pubsta, skb, list);
 	}
 
-	kcov_remote_stop();
 	return;
  drop:
 	kfree_skb(skb);

@@ -1727,7 +1727,6 @@ static void ieee80211_iface_work(struct wiphy *wiphy, struct wiphy_work *work)
 
 	/* first process frames */
 	while ((skb = skb_dequeue(&sdata->skb_queue))) {
-		kcov_remote_start_common(skb_get_kcov_handle(skb));
 
 		if (skb->protocol == cpu_to_be16(ETH_P_TDLS))
 			ieee80211_process_tdls_channel_switch(sdata, skb);
@@ -1735,17 +1734,14 @@ static void ieee80211_iface_work(struct wiphy *wiphy, struct wiphy_work *work)
 			ieee80211_iface_process_skb(local, sdata, skb);
 
 		kfree_skb(skb);
-		kcov_remote_stop();
 	}
 
 	/* process status queue */
 	while ((skb = skb_dequeue(&sdata->status_queue))) {
-		kcov_remote_start_common(skb_get_kcov_handle(skb));
 
 		ieee80211_iface_process_status(sdata, skb);
 		kfree_skb(skb);
 
-		kcov_remote_stop();
 	}
 
 	/* then other type-dependent work */
