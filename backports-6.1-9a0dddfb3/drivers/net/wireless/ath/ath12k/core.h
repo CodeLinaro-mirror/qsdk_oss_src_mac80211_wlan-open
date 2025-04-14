@@ -1243,6 +1243,9 @@ struct ath12k_base {
 	bool is_qdss_tracing;
 	struct ath12k_internal_pci ipci;
 	bool ce_pipe_init_done;
+
+	const struct ieee80211_ops *ath12k_ops;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
