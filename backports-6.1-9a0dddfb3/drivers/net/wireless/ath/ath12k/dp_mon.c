@@ -2090,6 +2090,7 @@ static void ath12k_dp_mon_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev, struct
 	bool is_eapol_tkip = rxcb->is_eapol;
 
 	status->link_valid = 0;
+	status->link_id = 0;
 
 	if ((status->encoding == RX_ENC_HE) && !(status->flag & RX_FLAG_RADIOTAP_HE) &&
 	    !(status->flag & RX_FLAG_SKIP_MONITOR)) {
