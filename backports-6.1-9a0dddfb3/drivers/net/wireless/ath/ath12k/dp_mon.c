@@ -3398,8 +3398,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
 		return;
 
-	peer = ath12k_dp_link_peer_find_by_id(dp, ppdu_info->peer_id);
-
+	peer = ath12k_dp_link_peer_find_by_ast(dp, user_stats->ast_index);
 	if (!peer) {
 		ath12k_warn(ab, "peer with peer id %d can't be found\n",
 			    ppdu_info->peer_id);

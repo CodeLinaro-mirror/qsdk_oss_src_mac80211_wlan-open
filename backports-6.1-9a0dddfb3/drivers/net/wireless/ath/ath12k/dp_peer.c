@@ -93,6 +93,21 @@ ath12k_dp_link_peer_find_by_id(struct ath12k_dp *dp, int peer_id)
 }
 EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_id);
 
+struct ath12k_dp_link_peer *
+ath12k_dp_link_peer_find_by_ast(struct ath12k_dp *dp,
+				int ast_hash)
+{
+	struct ath12k_dp_link_peer *peer;
+
+	lockdep_assert_held(&dp->dp_lock);
+
+	list_for_each_entry(peer, &dp->peers, list)
+		if (ast_hash == peer->ast_hash)
+			return peer;
+
+	return NULL;
+}
+
 bool ath12k_dp_link_peer_exist_by_vdev_id(struct ath12k_dp *dp, int vdev_id)
 {
 	struct ath12k_dp_link_peer *peer;
