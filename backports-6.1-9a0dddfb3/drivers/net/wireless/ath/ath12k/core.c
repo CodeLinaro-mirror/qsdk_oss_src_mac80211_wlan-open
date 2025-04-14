@@ -22,6 +22,7 @@
 #include "hif.h"
 #include "pci.h"
 #include "wow.h"
+#include "dp_cmn.h"
 
 unsigned int ath12k_debug_mask;
 module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
@@ -710,7 +711,7 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 	ath12k_dp_rx_pdev_reo_cleanup(ab);
 	ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
-	ath12k_dp_free(ab);
+	ath12k_dp_cmn_device_deinit(ab->dp);
 
 	/* De-Init of components as needed */
 }
@@ -1284,7 +1285,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 		goto err_firmware_stop;
 	}
 
-	ret = ath12k_dp_alloc(ab);
+	ret = ath12k_dp_cmn_device_init(ab->dp);
 	if (ret) {
 		ath12k_err(ab, "failed to init DP: %d\n", ret);
 		goto err_firmware_stop;
@@ -1330,7 +1331,7 @@ err_core_stop:
 	goto exit;
 
 err_dp_free:
-	ath12k_dp_free(ab);
+	ath12k_dp_cmn_device_deinit(ab->dp);
 	mutex_unlock(&ab->core_lock);
 	mutex_unlock(&ag->mutex);
 
@@ -1352,7 +1353,7 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 	ath12k_dp_rx_pdev_reo_cleanup(ab);
 	mutex_unlock(&ab->core_lock);
 
-	ath12k_dp_free(ab);
+	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_hal_srng_deinit(ab);
 
 	ab->free_vdev_map = (1LL << (ab->num_radios * TARGET_NUM_VDEVS)) - 1;
