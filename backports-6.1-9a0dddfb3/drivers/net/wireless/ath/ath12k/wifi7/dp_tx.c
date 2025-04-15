@@ -701,6 +701,8 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 					     struct sk_buff *skb_ext_desc)
 {
 	struct ieee80211_tx_status status = { 0 };
+	struct ieee80211_rate_status status_rate = { 0 };
+	struct rate_info rate;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
 	struct ieee80211_tx_info *info;
@@ -804,11 +806,19 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 		ieee80211_free_txskb(ath12k_dp_pdev_to_hw(dp_pdev), msdu);
 		goto exit;
 	}
-	spin_unlock_bh(&dp->dp_lock);
 
 	status.sta = peer->sta;
 	status.info = info;
 	status.skb = msdu;
+	rate = peer->last_txrate;
+
+	status_rate.rate_idx = rate;
+	status_rate.try_count = 1;
+
+	status.rates = &status_rate;
+	status.n_rates = 1;
+	spin_unlock_bh(&dp->dp_lock);
+
 	ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
 
 exit:
