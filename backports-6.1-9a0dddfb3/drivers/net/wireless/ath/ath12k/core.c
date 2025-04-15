@@ -28,6 +28,7 @@
 #include "wow.h"
 #include "dp_cmn.h"
 #include "fse.h"
+#include "peer.h"
 
 unsigned int ath12k_debug_mask;
 module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
@@ -61,6 +62,10 @@ MODULE_PARM_DESC(io_coherency, "Enable io_coherency (0 - disable, 1 - enable)");
 static unsigned int ath12k_en_fwlog = true;
 module_param_named(en_fwlog, ath12k_en_fwlog, uint, 0644);
 MODULE_PARM_DESC(en_fwlog, "fwlog: 0-disable, 1-enable");
+
+unsigned int ath12k_ssr_failsafe_mode = true;
+module_param_named(ssr_failsafe_mode, ath12k_ssr_failsafe_mode, uint, 0644);
+MODULE_PARM_DESC(ssr_failsafe_mode, "ssr failsafe mode: 0-disable, 1-enable");
 
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
@@ -1116,6 +1121,9 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		goto err_reo_cleanup;
 	}
 
+	WARN_ON(test_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags));
+	set_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags);
+
 	/* put hardware to DBS mode */
 	if (ab->hw_params->single_pdev_only) {
 		ret = ath12k_wmi_set_hw_mode(ab, WMI_HOST_HW_MODE_DBS);
@@ -1569,7 +1577,9 @@ exit:
 
 static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 {
-	int ret;
+	struct ath12k *ar = NULL;
+	struct ath12k_pdev *pdev;
+	int ret, j;
 
 	mutex_lock(&ab->core_lock);
 	ath12k_core_pdev_deinit(ab);
@@ -1583,6 +1593,18 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 	ath12k_hal_srng_deinit(ab);
 
 	ab->free_vdev_map = (1LL << (ab->num_radios * TARGET_NUM_VDEVS)) - 1;
+	ab->free_vdev_stats_id_map = 0;
+
+	for (j = 0; j < ab->num_radios; j++) {
+		pdev = &ab->pdevs[j];
+		ar = pdev->ar;
+		if (ar) {
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+			ar->num_created_vdevs = 0;
+			ar->allocated_vdev_map = 0;
+			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		}
+	}
 
 	ret = ath12k_hal_srng_init(ab);
 	if (ret)
@@ -1633,18 +1655,64 @@ static void ath12k_rfkill_work(struct work_struct *work)
 	}
 }
 
+static void ath12k_mac_peer_ab_disassoc(struct ath12k_base *ab)
+{
+	struct ath12k_dp_link_peer *peer, *tmp;
+	struct ath12k_sta *ahsta;
+	struct ieee80211_sta *sta;
+
+	spin_lock_bh(&ab->dp->dp_lock);
+	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
+
+		if (!peer->vif)
+			continue;
+
+		/* In case of STA Vif type,
+		 * report disconnect will be sent during sta_restart work.
+		 */
+		if (peer->vif->type == NL80211_IFTYPE_STATION)
+			continue;
+
+		sta = peer->sta;
+		if (!sta)
+			continue;
+
+		ahsta = (struct ath12k_sta *)sta->drv_priv;
+		/* Sending low ack event to hostapd to remove (free) the
+		 * existing STAs since FW is crashed and recovering at the momemt.
+		 * After recovery, FW comes up with no information about peers.
+		 * To stop any operation related to peers coming from upper
+		 * layers.
+		 * Here, 0xFFFF is used to differentiate between low ack event
+		 * sent during recovery versus normal low ack event. In normal,
+		 * low ack event, num_packets is not expected to be 0xFFFF.
+		 */
+		ath12k_mac_peer_disassoc(ab, sta, ahsta, ATH12K_DBG_MAC);
+	}
+	spin_unlock_bh(&ab->dp->dp_lock);
+}
+
 void ath12k_core_halt(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
+	struct ath12k_hw_group *ag = ab->ag;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	ar->num_created_vdevs = 0;
-	ar->allocated_vdev_map = 0;
+	/* Send low ack disassoc to hostapd to free the peers from host
+	 * to associate fresh after recovery. It is expected that, this
+	 * low ack event to hostapd must free the stas from hostapd and
+	 * kernel before new association process starts.
+	 *
+	 * And also during ieee80211_reconfig, it should not add back the
+	 * existing stas as it is already freed from host due to low ack
+	 * event.
+	 */
 
-	ath12k_mac_scan_finish(ar);
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+		ath12k_mac_peer_ab_disassoc(ab);
+
 	ath12k_mac_peer_cleanup_all(ar);
-	cancel_delayed_work_sync(&ar->scan.timeout);
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ab->rfkill_work);
 	cancel_work_sync(&ab->update_11d_work);
@@ -1782,6 +1850,15 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 
 			for (j = 0; j < ah->num_radio; j++) {
 				ar = &ah->radio[j];
+				if (ar->scan.state == ATH12K_SCAN_RUNNING ||
+						ar->scan.state == ATH12K_SCAN_STARTING)
+					ar->scan.state = ATH12K_SCAN_ABORTING;
+				ath12k_mac_scan_finish(ar);
+				mutex_unlock(&ah->hw_mutex);
+				wiphy_unlock(ah->hw->wiphy);
+				cancel_delayed_work_sync(&ar->scan.timeout);
+				wiphy_lock(ah->hw->wiphy);
+				mutex_lock(&ah->hw_mutex);
 				ath12k_core_halt(ar);
 			}
 
@@ -1822,6 +1899,12 @@ static void ath12k_core_restart(struct work_struct *work)
 	ret = ath12k_core_reconfigure_on_crash(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to reconfigure driver on crash recovery\n");
+		/*
+		 * If for any reason, reconfiguration fails, issue bug on for
+		 * Mode 0
+		 */
+		if (ath12k_ssr_failsafe_mode && ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+			BUG_ON(1);
 		return;
 	}
 
@@ -1939,12 +2022,20 @@ static void ath12k_core_reset(struct work_struct *work)
 	 */
 	fail_cont_count = atomic_read(&ab->fail_cont_count);
 
-	if (fail_cont_count >= ATH12K_RESET_MAX_FAIL_COUNT_FINAL)
+	if (fail_cont_count >= ATH12K_RESET_MAX_FAIL_COUNT_FINAL) {
+		ath12k_warn(ab, "Recovery Failed, Fail count:%d MAX_FAIL_COUNT final:%d\n",
+				fail_cont_count,
+				ATH12K_RESET_MAX_FAIL_COUNT_FINAL);
 		return;
+	}
 
 	if (fail_cont_count >= ATH12K_RESET_MAX_FAIL_COUNT_FIRST &&
-	    time_before(jiffies, ab->reset_fail_timeout))
+	    time_before(jiffies, ab->reset_fail_timeout)) {
+		ath12k_warn(ab, "Recovery Failed, Fail count:%d MAX_FAIL_COUNT first:%d\n",
+				fail_cont_count,
+				ATH12K_RESET_MAX_FAIL_COUNT_FIRST);
 		return;
+	}
 
 	reset_count = atomic_inc_return(&ab->reset_count);
 
@@ -1954,6 +2045,9 @@ static void ath12k_core_reset(struct work_struct *work)
 		 * thus below is to avoid that.
 		 */
 		ath12k_warn(ab, "already resetting count %d\n", reset_count);
+
+		if (ath12k_ssr_failsafe_mode && ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+			BUG_ON(1);
 
 		reinit_completion(&ab->reset_complete);
 		time_left = wait_for_completion_timeout(&ab->reset_complete,
@@ -2082,6 +2176,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	INIT_WORK(&ag->reset_group_work, ath12k_core_update_userpd_state);
 	mutex_init(&ag->mutex);
 	ag->mlo_capable = false;
+	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 
 	return ag;
 }

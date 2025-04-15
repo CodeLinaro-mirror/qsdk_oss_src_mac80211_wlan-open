@@ -5877,6 +5877,7 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 			break;
 		case ATH12K_QMI_EVENT_SERVER_EXIT:
 			set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+			clear_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags);
 			break;
 		case ATH12K_QMI_EVENT_REQUEST_MEM:
 			ret = ath12k_qmi_event_mem_request(qmi);

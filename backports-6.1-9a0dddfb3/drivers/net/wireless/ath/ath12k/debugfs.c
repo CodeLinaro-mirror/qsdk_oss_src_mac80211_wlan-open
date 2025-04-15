@@ -2940,6 +2940,37 @@ static const struct file_operations fops_fw_dbglog = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_debug_fw_reset_stats_read(struct file *file,
+						char __user *user_buf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	int ret;
+	size_t len = 0, buf_len = 500;
+
+	void *buf __free(kfree) = kzalloc(buf_len, GFP_ATOMIC);
+	if (!buf)
+		return -ENOMEM;
+
+	spin_lock_bh(&ab->base_lock);
+	len += scnprintf(buf + len, buf_len - len,
+			 "fw_crash_counter\t\t%d\n", ab->stats.fw_crash_counter);
+	len += scnprintf(buf + len, buf_len - len,
+			 "last_recovery_time\t\t%d\n", ab->stats.last_recovery_time);
+	spin_unlock_bh(&ab->base_lock);
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	return ret;
+}
+
+static const struct file_operations fops_fw_reset_stats = {
+	.open = simple_open,
+	.read = ath12k_debug_fw_reset_stats_read,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
 			    &fops_simulate_fw_crash);
@@ -2947,6 +2978,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_fw_recovery);
 	debugfs_create_file("fw_dbglog_config", 0600, ab->debugfs_soc, ab,
 			    &fops_fw_dbglog);
+	debugfs_create_file("fw_reset_stats", 0400, ab->debugfs_soc, ab,
+			    &fops_fw_reset_stats);
 }
 
 void ath12k_debugfs_unregister(struct ath12k *ar)

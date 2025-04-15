@@ -361,6 +361,10 @@ int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 	struct ath12k_wmi_base *wmi_ab = wmi->wmi_ab;
 	int ret = -EOPNOTSUPP;
 
+	if (!(test_bit(ATH12K_FLAG_WMI_INIT_DONE, &wmi_ab->ab->dev_flags)) &&
+		cmd_id != WMI_INIT_CMDID)
+		return -ESHUTDOWN;
+
 	might_sleep();
 
 	wait_event_timeout(wmi_ab->tx_credits_wq, ({
@@ -11248,6 +11252,7 @@ void ath12k_wmi_detach(struct ath12k_base *ab)
 	for (i = 0; i < ab->htc.wmi_ep_count; i++)
 		ath12k_wmi_pdev_detach(ab, i);
 
+	clear_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags);
 	ath12k_wmi_free_dbring_caps(ab);
 }
 

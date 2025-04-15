@@ -303,6 +303,11 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_FTM_SEGMENTED,
 	ATH12K_FLAG_FIXED_MEM_REGION,
 	ATH12K_FLAG_BTCOEX,
+	ATH12K_FLAG_WMI_INIT_DONE,
+};
+
+enum ath12k_mlo_recovery_mode {
+	ATH12K_MLO_RECOVERY_MODE0 = 1,
 };
 
 struct ath12k_tx_conf {
@@ -579,6 +584,7 @@ struct ath12k_sta {
 	struct wiphy_work set_4addr_wk;
 
 	enum ieee80211_sta_state state;
+	bool low_ack_sent;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1
@@ -964,6 +970,8 @@ struct ath12k_mlo_memory {
 	bool init_done;
 };
 
+#define ATH12K_REPORT_LOW_ACK_NUM_PKT	0xFFFF
+
 /* Holds info on the group of devices that are registered as a single
  * wiphy, protected with struct ath12k_hw_group::mutex.
  */
@@ -995,6 +1003,7 @@ struct ath12k_hw_group {
 	bool hw_link_id_init_done;
 	u8 num_userpd_started;
 	struct work_struct reset_group_work;
+	u32 recovery_mode;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -1156,6 +1165,7 @@ struct ath12k_base {
 	struct {
 		/* protected by data_lock */
 		u32 fw_crash_counter;
+		u32 last_recovery_time;
 	} stats;
 	u32 pktlog_defs_checksum;
 
@@ -1165,6 +1175,7 @@ struct ath12k_base {
 	struct completion htc_suspend;
 
 	enum ath12k_fw_recovery_option fw_recovery_support;
+	u32 recovery_start_time;
 
 	u32 fw_dbglog_param;
 	u64 fw_dbglog_val;

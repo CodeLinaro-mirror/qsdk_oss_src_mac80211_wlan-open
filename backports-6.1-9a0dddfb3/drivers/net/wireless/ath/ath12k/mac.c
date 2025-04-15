@@ -1349,6 +1349,7 @@ static int ath12k_mac_monitor_vdev_delete(struct ath12k *ar)
 		ar->ab->free_vdev_map |= 1LL << (ar->monitor_vdev_id);
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac monitor vdev %d deleted\n",
 			   ar->monitor_vdev_id);
+		WARN_ON(!ar->num_created_vdevs);
 		ar->num_created_vdevs--;
 		ar->monitor_vdev_id = -1;
 		ar->monitor_vdev_created = false;
@@ -7248,6 +7249,7 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 		if (ret)
 			ath12k_warn(ar->ab, "Failed to add station: %pM for VDEV: %d\n",
 				    arsta->addr, arvif->vdev_id);
+		arsta->ahsta->low_ack_sent = false;
 
 	/* IEEE80211_STA_AUTH -> IEEE80211_STA_ASSOC: Send station assoc command for
 	 * peer associated to AP/Mesh/ADHOC vif type.
@@ -7294,6 +7296,22 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	}
 
 exit:
+	if (ret) {
+		if (test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags)) {
+			/* If FW recovery is ongoing, no need to move down sta states
+			 * as FW will wake up with a clean slate. Hence we set the
+			 * return value to 0, so that upper layers are not aware
+			 * of the FW being in recovery state.
+			 */
+			if (old_state > new_state) {
+				ath12k_warn(arvif->ar->ab, "Overwriting error with 0 during recovery after removal"
+					    "of non-ml STA %pM for vdev %d with an error: %d.\n", arsta->addr,
+					    arvif->vdev_id, ret);
+				ret = 0;
+			}
+		}
+	}
+
 	return ret;
 }
 
@@ -9930,6 +9948,7 @@ err_vdev_del:
 		ar->monitor_vdev_created = false;
 		ar->monitor_vdev_id = -1;
 	}
+	WARN_ON(!ar->num_created_vdevs);
 	ar->num_created_vdevs--;
 	arvif->is_created = false;
 	arvif->ar = NULL;
@@ -10211,6 +10230,7 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	ab->free_vdev_map |= 1LL << arvif->vdev_id;
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
+	WARN_ON(!ar->num_created_vdevs);
 	ar->num_created_vdevs--;
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
@@ -12819,6 +12839,12 @@ ath12k_mac_op_reconfig_complete(struct ieee80211_hw *hw,
 				complete(&ab->reset_complete);
 				ab->is_reset = false;
 				atomic_set(&ab->fail_cont_count, 0);
+				clear_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags);
+				spin_lock_bh(&ar->ab->base_lock);
+				ar->ab->stats.last_recovery_time =
+					jiffies_to_msecs(jiffies -
+							ar->ab->recovery_start_time);
+				spin_unlock_bh(&ar->ab->base_lock);
 				ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset success\n");
 			}
 		}

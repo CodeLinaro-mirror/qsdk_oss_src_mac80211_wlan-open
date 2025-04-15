@@ -24,6 +24,9 @@ int ath12k_link_sta_rhash_delete(struct ath12k_base *ab, struct ath12k_link_sta 
 int ath12k_link_sta_rhash_add(struct ath12k_base *ab, struct ath12k_link_sta *arsta);
 struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k_base *ab, const u8 *addr);
 u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah);
+void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
+			      struct ath12k_sta *ahsta,
+			      enum ath12k_debug_mask debug_mask);
 static inline
 struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
 						 struct ath12k_dp_link_peer *peer)

@@ -332,6 +332,10 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 		if (!ar)
 			continue;
 
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
+		    test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
+			continue;
+
 		ret = ath12k_wait_for_peer_delete_done(ar, arvif->vdev_id, arsta->addr);
 		if (ret) {
 			err_ret = ret;
@@ -341,6 +345,24 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 	}
 
 	return err_ret;
+}
+
+void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
+			      struct ath12k_sta *ahsta,
+			      enum ath12k_debug_mask debug_mask)
+{
+	if (!ahsta->low_ack_sent) {
+		ath12k_dbg(ab, debug_mask, "sending low ack for/disassoc:%pM\n",
+			   sta->addr);
+		/* set num of packets to maximum so that we distinguish in
+		 * the hostapd to send disassoc irrespective of hostapd conf
+		 */
+		ieee80211_report_low_ack(sta, ATH12K_REPORT_LOW_ACK_NUM_PKT);
+		/* Using this flag to avoid certain known warnings which
+		 * will be triggerred when umac reset is happening
+		 */
+		ahsta->low_ack_sent = true;
+	}
 }
 
 static inline int ath12k_link_sta_rhash_insert(struct ath12k_base *ab,
