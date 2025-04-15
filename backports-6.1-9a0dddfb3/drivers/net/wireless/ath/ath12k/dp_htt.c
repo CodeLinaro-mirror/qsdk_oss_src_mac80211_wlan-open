@@ -228,6 +228,32 @@ static u32 ath12k_dp_rx_ru_alloc_from_ru_size(u16 ru_size)
        return width;
 }
 
+/* Align bw value as per host data structures */
+static u8 ath12k_htt_bw_to_mac_bw(u32 rate_flags)
+{
+       u8 bw = HTT_USR_RATE_BW(rate_flags);
+
+       switch (bw) {
+       case HTT_PPDU_STATS_BANDWIDTH_320MHZ:
+               bw = ATH12K_BW_320;
+               break;
+       case HTT_PPDU_STATS_BANDWIDTH_160MHZ:
+               bw = ATH12K_BW_160;
+               break;
+       case HTT_PPDU_STATS_BANDWIDTH_80MHZ:
+               bw = ATH12K_BW_80;
+               break;
+       case HTT_PPDU_STATS_BANDWIDTH_40MHZ:
+               bw = ATH12K_BW_40;
+               break;
+       default:
+               bw = ATH12K_BW_20;
+       break;
+       }
+
+       return bw;
+}
+
 static void
 ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 				struct htt_ppdu_stats_info *ppdu_info, u8 user)
@@ -299,7 +325,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	flags = HTT_USR_RATE_PREAMBLE(rate_flags);
-	bw = HTT_USR_RATE_BW(rate_flags) - 2;
+	bw = ath12k_htt_bw_to_mac_bw(rate_flags);
 	nss = HTT_USR_RATE_NSS(rate_flags) + 1;
 	mcs = HTT_USR_RATE_MCS(rate_flags);
 	sgi = HTT_USR_RATE_GI(rate_flags);
