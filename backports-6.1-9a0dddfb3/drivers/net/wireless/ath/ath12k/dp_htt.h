@@ -339,6 +339,25 @@ enum htt_stats_internal_ppdu_frametype {
 	HTT_STATS_PPDU_FTYPE_MAX
 };
 
+enum htt_ppdu_stats_ru_size {
+       HTT_PPDU_STATS_RU_26,
+       HTT_PPDU_STATS_RU_52,
+       HTT_PPDU_STATS_RU_52_26,
+       HTT_PPDU_STATS_RU_106,
+       HTT_PPDU_STATS_RU_106_26,
+       HTT_PPDU_STATS_RU_242,
+       HTT_PPDU_STATS_RU_484,
+       HTT_PPDU_STATS_RU_484_242,
+       HTT_PPDU_STATS_RU_996,
+       HTT_PPDU_STATS_RU_996_484,
+       HTT_PPDU_STATS_RU_996_484_242,
+       HTT_PPDU_STATS_RU_996x2,
+       HTT_PPDU_STATS_RU_996x2_484,
+       HTT_PPDU_STATS_RU_996x3,
+       HTT_PPDU_STATS_RU_996x3_484,
+       HTT_PPDU_STATS_RU_996x4,
+};
+
 /* HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG Message
  *
  * details:
@@ -1117,6 +1136,7 @@ enum htt_ppdu_stats_gi {
 
 #define HTT_PPDU_STATS_USER_RATE_INFO0_USER_POS_M	GENMASK(3, 0)
 #define HTT_PPDU_STATS_USER_RATE_INFO0_MU_GROUP_ID_M	GENMASK(11, 4)
+#define HTT_PPDU_STATS_USER_RATE_INFO0_RU_SIZE         GENMASK(15, 12)
 
 enum HTT_PPDU_STATS_PPDU_TYPE {
 	HTT_PPDU_STATS_PPDU_TYPE_SU,
@@ -1131,7 +1151,12 @@ enum HTT_PPDU_STATS_PPDU_TYPE {
 	HTT_PPDU_STATS_PPDU_TYPE_MAX
 };
 
-#define HTT_PPDU_STATS_USER_RATE_INFO1_RESP_TYPE_VALD_M	BIT(0)
+enum HTT_PPDU_STATS_RESP_PPDU_TYPE {
+       HTT_PPDU_STATS_RESP_PPDU_TYPE_MU_MIMO_UL,
+       HTT_PPDU_STATS_RESP_PPDU_TYPE_MU_OFDMA_UL,
+};
+
+#define HTT_PPDU_STATS_USER_RATE_INFO1_RESP_TYPE_VALID BIT(0)
 #define HTT_PPDU_STATS_USER_RATE_INFO1_PPDU_TYPE_M	GENMASK(5, 1)
 
 #define HTT_PPDU_STATS_USER_RATE_FLAGS_LTF_SIZE_M	GENMASK(1, 0)
@@ -1172,6 +1197,10 @@ enum HTT_PPDU_STATS_PPDU_TYPE {
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_GI_M		GENMASK(27, 24)
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_DCM_M		BIT(28)
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_LDPC_M		BIT(29)
+#define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_PPDU_TYPE          GENMASK(31, 30)
+
+#define HTT_USR_RESP_RATE_PPDU_TYPE(_val) \
+       u32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_PPDU_TYPE)
 
 struct htt_ppdu_stats_user_rate {
 	u8 tid_num;
@@ -1186,6 +1215,8 @@ struct htt_ppdu_stats_user_rate {
 	__le32 rate_flags; /* %HTT_PPDU_STATS_USER_RATE_FLAGS_ */
 	/* Note: resp_rate_info is only valid for if resp_type is UL */
 	__le32 resp_rate_flags; /* %HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_ */
+	__le16 punctured;
+	__le16 reserved1;
 } __packed;
 
 #define HTT_PPDU_STATS_TX_INFO_FLAGS_RATECODE_M		GENMASK(7, 0)
@@ -1240,6 +1271,7 @@ struct htt_ppdu_stats_usr_cmpltn_cmn {
 #define HTT_PPDU_STATS_ACK_BA_INFO_TID_NUM	GENMASK(31, 25)
 
 #define HTT_PPDU_STATS_NON_QOS_TID	16
+#define HTT_PPDU_STATS_PPDU_ID         GENMASK(24, 0)
 
 struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	__le32 ppdu_id;

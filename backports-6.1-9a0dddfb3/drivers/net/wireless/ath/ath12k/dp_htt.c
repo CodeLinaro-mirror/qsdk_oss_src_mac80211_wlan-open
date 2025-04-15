@@ -70,6 +70,7 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 	struct htt_ppdu_user_stats *user_stats;
 	int cur_user;
 	u16 peer_id;
+	u32 ppdu_id;
 
 	ppdu_info = data;
 
@@ -100,7 +101,7 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 		user_stats->is_valid_peer_id = true;
 		memcpy(&user_stats->rate, ptr,
 		       sizeof(struct htt_ppdu_stats_user_rate));
-		user_stats->tlv_flags |= BIT(tag);
+		ppdu_info->tlv_bitmap |= BIT(tag);
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMPLTN_COMMON:
 		if (len < sizeof(struct htt_ppdu_stats_usr_cmpltn_cmn)) {
@@ -120,7 +121,7 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 		user_stats->is_valid_peer_id = true;
 		memcpy(&user_stats->cmpltn_cmn, ptr,
 		       sizeof(struct htt_ppdu_stats_usr_cmpltn_cmn));
-		user_stats->tlv_flags |= BIT(tag);
+		ppdu_info->tlv_bitmap |= BIT(tag);
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS:
 		if (len <
@@ -131,6 +132,8 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 		}
 
 		ba_status = ptr;
+		ppdu_id =
+		((struct htt_ppdu_stats_usr_cmpltn_ack_ba_status *)ptr)->ppdu_id;
 		peer_id = le16_to_cpu(ba_status->sw_peer_id);
 		cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
 						      peer_id);
@@ -139,9 +142,13 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 		user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
 		user_stats->peer_id = peer_id;
 		user_stats->is_valid_peer_id = true;
+		ppdu_info->ppdu_id = FIELD_GET(HTT_PPDU_STATS_PPDU_ID, ppdu_id);
 		memcpy(&user_stats->ack_ba, ptr,
 		       sizeof(struct htt_ppdu_stats_usr_cmpltn_ack_ba_status));
-		user_stats->tlv_flags |= BIT(tag);
+		ppdu_info->tlv_bitmap |= BIT(tag);
+		break;
+	case HTT_PPDU_STATS_TAG_SCH_CMD_STATUS:
+		ppdu_info->tlv_bitmap |= BIT(tag);
 		break;
 	}
 	return 0;
@@ -152,10 +159,16 @@ int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
 				       const void *ptr, void *data),
 			   void *data)
 {
+	struct htt_ppdu_stats_info *ppdu_info = NULL;
 	const struct htt_tlv *tlv;
 	const void *begin = ptr;
 	u16 tlv_tag, tlv_len;
 	int ret = -EINVAL;
+
+	if (!data)
+		return ret;
+
+	ppdu_info = (struct htt_ppdu_stats_info *)data;
 
 	while (len > 0) {
 		if (len < sizeof(*tlv)) {
@@ -174,7 +187,7 @@ int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
 				   tlv_tag, ptr - begin, len, tlv_len);
 			return -EINVAL;
 		}
-		ret = iter(ab, tlv_tag, tlv_len, ptr, data);
+		ret = iter(ab, tlv_tag, tlv_len, ptr, ppdu_info);
 		if (ret == -ENOMEM)
 			return ret;
 
@@ -184,35 +197,77 @@ int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
 	return 0;
 }
 
+static u32 ath12k_dp_rx_ru_alloc_from_ru_size(u16 ru_size)
+{
+       u32 width = 0;
+
+       switch (ru_size) {
+       case HTT_PPDU_STATS_RU_26:
+               width = NL80211_RATE_INFO_HE_RU_ALLOC_26;
+               break;
+       case HTT_PPDU_STATS_RU_52:
+               width = NL80211_RATE_INFO_HE_RU_ALLOC_52;
+               break;
+       case HTT_PPDU_STATS_RU_106:
+               width = NL80211_RATE_INFO_HE_RU_ALLOC_106;
+               break;
+       case HTT_PPDU_STATS_RU_242:
+               width = NL80211_RATE_INFO_HE_RU_ALLOC_242;
+               break;
+       case HTT_PPDU_STATS_RU_484:
+               width = NL80211_RATE_INFO_HE_RU_ALLOC_484;
+               break;
+       case HTT_PPDU_STATS_RU_996:
+               width = NL80211_RATE_INFO_HE_RU_ALLOC_996;
+               break;
+       default:
+               width = NL80211_RATE_INFO_HE_RU_ALLOC_26;
+               break;
+       }
+
+       return width;
+}
+
 static void
 ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
-				struct htt_ppdu_stats *ppdu_stats, u8 user)
+				struct htt_ppdu_stats_info *ppdu_info, u8 user)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_link_peer *peer;
 	struct ieee80211_sta *sta;
 	struct htt_ppdu_stats_user_rate *user_rate;
+	struct htt_ppdu_stats *ppdu_stats = &ppdu_info->ppdu_stats;
 	struct ath12k_per_peer_tx_stats *peer_stats = &dp_pdev->peer_tx_stats;
 	struct htt_ppdu_user_stats *usr_stats = &ppdu_stats->user_stats[user];
 	struct htt_ppdu_stats_common *common = &ppdu_stats->common;
 	int ret;
-	u8 flags, mcs, nss, bw, sgi, dcm, ppdu_type, rate_idx = 0;
-	u32 v, succ_bytes = 0;
-	u16 tones, rate = 0, succ_pkts = 0;
-	u32 tx_duration = 0;
+	u8 flags, mcs, nss, bw, sgi, dcm, rate_idx = 0;
+	u32 v, succ_bytes = 0, ppdu_type;
+	u16 tones;
+	u16 rate = 0, succ_pkts = 0, ru_start, ru_end;
+	u32 tx_duration = 0, ru_tones, ru_format, tlv_bitmap, rate_flags;
+	bool is_ampdu = false, resp_type_valid, is_ofdma;
 	u8 tid = HTT_PPDU_STATS_NON_QOS_TID;
-	bool is_ofdma, is_ampdu = false;
 
-	if (!(usr_stats->tlv_flags & BIT(HTT_PPDU_STATS_TAG_USR_RATE)))
+	if (!usr_stats)
 		return;
 
-	if (usr_stats->tlv_flags & BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_COMMON))
+	tlv_bitmap = ppdu_info->tlv_bitmap;
+
+	if (!(tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_RATE)))
+		return;
+
+	if (tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_COMMON)) {
 		is_ampdu =
 			HTT_USR_CMPLTN_IS_AMPDU(usr_stats->cmpltn_cmn.flags);
+		if (tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_SCH_CMD_STATUS)) {
+			succ_pkts = usr_stats->cmpltn_cmn.mpdu_success;
+		        tid = usr_stats->cmpltn_cmn.tid_num;
+		}
+	}
 
-	if (usr_stats->tlv_flags &
-	    BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS)) {
+	if (tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS)) {
 		succ_bytes = le32_to_cpu(usr_stats->ack_ba.success_bytes);
 		succ_pkts = le32_get_bits(usr_stats->ack_ba.info,
 					  HTT_PPDU_STATS_ACK_BA_INFO_NUM_MSDU_M);
@@ -224,13 +279,40 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		tx_duration = le32_to_cpu(common->fes_duration_us);
 
 	user_rate = &usr_stats->rate;
-	flags = HTT_USR_RATE_PREAMBLE(user_rate->rate_flags);
-	bw = HTT_USR_RATE_BW(user_rate->rate_flags) - 2;
-	nss = HTT_USR_RATE_NSS(user_rate->rate_flags) + 1;
-	mcs = HTT_USR_RATE_MCS(user_rate->rate_flags);
-	sgi = HTT_USR_RATE_GI(user_rate->rate_flags);
-	dcm = HTT_USR_RATE_DCM(user_rate->rate_flags);
 	ppdu_type = HTT_USR_RATE_PPDU_TYPE(user_rate->info1);
+
+	resp_type_valid = u32_get_bits(user_rate->info1,
+                               HTT_PPDU_STATS_USER_RATE_INFO1_RESP_TYPE_VALID);
+	if (resp_type_valid) {
+		rate_flags = user_rate->resp_rate_flags;
+	        ru_start = user_rate->resp_ru_start;
+		ru_end = user_rate->ru_end;
+	        ppdu_type = HTT_USR_RESP_RATE_PPDU_TYPE(user_rate->resp_rate_flags);
+		if (ppdu_type == HTT_PPDU_STATS_RESP_PPDU_TYPE_MU_OFDMA_UL)
+	                ppdu_type = HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA;
+		else
+	                ppdu_type = HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO;
+	} else {
+		rate_flags = user_rate->rate_flags;
+	        ru_start = user_rate->ru_start;
+		ru_end = user_rate->ru_end;
+	}
+
+	flags = HTT_USR_RATE_PREAMBLE(rate_flags);
+	bw = HTT_USR_RATE_BW(rate_flags) - 2;
+	nss = HTT_USR_RATE_NSS(rate_flags) + 1;
+	mcs = HTT_USR_RATE_MCS(rate_flags);
+	sgi = HTT_USR_RATE_GI(rate_flags);
+	dcm = HTT_USR_RATE_DCM(rate_flags);
+	ru_format = FIELD_GET(HTT_PPDU_STATS_USER_RATE_INFO0_RU_SIZE,
+		              user_rate->info0);
+	if (ru_format == 1)
+		ru_tones = ath12k_dp_rx_ru_alloc_from_ru_size(ru_start);
+	else if (!ru_format)
+		ru_tones = ru_end - ru_start + 1;
+	else
+		ru_tones = ath12k_dp_rx_ru_alloc_from_ru_size(HTT_PPDU_STATS_RU_26);
+
 	is_ofdma = (ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA) |
 		(ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA);
 
@@ -302,10 +384,8 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		peer->txrate.flags = RATE_INFO_FLAGS_HE_MCS;
 		peer->txrate.he_dcm = dcm;
 		peer->txrate.he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
-		tones = le16_to_cpu(user_rate->ru_end) -
-			le16_to_cpu(user_rate->ru_start) + 1;
-		v = ath12k_he_ru_tones_to_nl80211_he_ru_alloc(tones);
-		peer->txrate.he_ru_alloc = v;
+		peer->txrate.he_ru_alloc = ru_tones;
+		peer_stats->ru_tones = peer->txrate.he_ru_alloc;
 		break;
 	case WMI_RATE_PREAMBLE_EHT:
 		peer->txrate.mcs = mcs;
@@ -340,6 +420,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		peer_stats->succ_bytes = succ_bytes;
 		peer_stats->is_ampdu = is_ampdu;
 		peer_stats->duration = tx_duration;
+		peer_stats->ru_tones = ru_tones;
 		peer_stats->ba_fails =
 			HTT_USR_CMPLTN_LONG_RETRY(usr_stats->cmpltn_cmn.flags) +
 			HTT_USR_CMPLTN_SHORT_RETRY(usr_stats->cmpltn_cmn.flags);
@@ -352,12 +433,12 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 }
 
 static void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
-					 struct htt_ppdu_stats *ppdu_stats)
+					 struct htt_ppdu_stats_info *ppdu_info)
 {
 	u8 user;
 
 	for (user = 0; user < HTT_PPDU_STATS_MAX_USERS - 1; user++)
-		ath12k_update_per_peer_tx_stats(dp_pdev, ppdu_stats, user);
+		ath12k_update_per_peer_tx_stats(dp_pdev, ppdu_info, user);
 }
 
 static
@@ -378,7 +459,7 @@ struct htt_ppdu_stats_info *ath12k_dp_htt_get_ppdu_desc(struct ath12k_pdev_dp *d
 						     typeof(*ppdu_info), list);
 			list_del(&ppdu_info->list);
 			dp_pdev->ppdu_stat_list_depth--;
-			ath12k_htt_update_ppdu_stats(dp_pdev, &ppdu_info->ppdu_stats);
+			ath12k_htt_update_ppdu_stats(dp_pdev, ppdu_info);
 			kfree(ppdu_info);
 		}
 	}
