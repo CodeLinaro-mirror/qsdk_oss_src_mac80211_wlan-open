@@ -1427,6 +1427,7 @@ static ssize_t ath12k_read_wmm_stats(struct file *file,
        ssize_t retval;
        u64 total_wmm_sent_pkts = 0;
        u64 total_wmm_received_pkts = 0;
+       u64 total_wmm_fail_sent = 0;
 
        if (!dp) {
 	       ath12k_warn(ar->ab, "ath12k_dp not present%s\n", __func__);
@@ -1454,12 +1455,15 @@ static ssize_t ath12k_read_wmm_stats(struct file *file,
        for (count = 0; count < WME_NUM_AC; count++) {
                total_wmm_sent_pkts += dp_pdev->wmm_stats.total_wmm_tx_pkts[count];
 	       total_wmm_received_pkts += dp_pdev->wmm_stats.total_wmm_rx_pkts[count];
+	       total_wmm_fail_sent += dp_pdev->wmm_stats.total_wmm_tx_drop[count];
        }
 
        len += scnprintf(buf + len, size - len, "Total number of wmm_sent: %llu\n",
                         total_wmm_sent_pkts);
        len += scnprintf(buf + len, size - len, "total number of wmm_received: %llu\n",
 		        total_wmm_received_pkts);
+       len += scnprintf(buf + len, size - len, "total number of wmm_fail_sent: %llu\n",
+		        total_wmm_fail_sent);
        len += scnprintf(buf + len, size - len, "Num of BE wmm_sent: %llu\n",
                         dp_pdev->wmm_stats.total_wmm_tx_pkts[WME_AC_BE]);
        len += scnprintf(buf + len, size - len, "Num of BK wmm_sent: %llu\n",
@@ -1476,6 +1480,14 @@ static ssize_t ath12k_read_wmm_stats(struct file *file,
 		        dp_pdev->wmm_stats.total_wmm_rx_pkts[WME_AC_VI]);
        len += scnprintf(buf + len, size - len, "num of vo wmm_received: %llu\n",
 		        dp_pdev->wmm_stats.total_wmm_rx_pkts[WME_AC_VO]);
+       len += scnprintf(buf + len, size - len, "num of be wmm_tx_dropped: %llu\n",
+			dp_pdev->wmm_stats.total_wmm_tx_drop[WME_AC_BE]);
+       len += scnprintf(buf + len, size - len, "num of bk wmm_tx_dropped: %llu\n",
+			dp_pdev->wmm_stats.total_wmm_tx_drop[WME_AC_BK]);
+       len += scnprintf(buf + len, size - len, "num of vi wmm_tx_dropped: %llu\n",
+			dp_pdev->wmm_stats.total_wmm_tx_drop[WME_AC_VI]);
+       len += scnprintf(buf + len, size - len, "num of vo wmm_tx_dropped: %llu\n",
+			dp_pdev->wmm_stats.total_wmm_tx_drop[WME_AC_VO]);
 
        wiphy_unlock(dp_pdev->hw->wiphy);
 

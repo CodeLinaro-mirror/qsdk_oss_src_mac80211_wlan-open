@@ -719,6 +719,12 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	skb_cb = ATH12K_SKB_CB(msdu);
 
+	dp_pdev->wmm_stats.tx_type = ath12k_tid_to_ac(ts->tid > ATH12K_DSCP_PRIORITY ? 0:ts->tid);
+	if (dp_pdev->wmm_stats.tx_type) {
+		if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED)
+			dp_pdev->wmm_stats.total_wmm_tx_drop[dp_pdev->wmm_stats.tx_type]++;
+	}
+
 	dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 	if (skb_cb->paddr_ext_desc) {
 		dma_unmap_single(ab->dev, skb_cb->paddr_ext_desc,
@@ -857,6 +863,8 @@ ath12k_wifi7_dp_tx_status_parse(struct ath12k_base *ab,
 		ts->tones = u32_get_bits(info0, HAL_TX_RATE_STATS_INFO0_TONES_IN_RU);
 		ts->ofdma = u32_get_bits(info0, HAL_TX_RATE_STATS_INFO0_OFDMA_TX);
 	}
+
+	ts->tid = FIELD_GET(HAL_WBM_RELEASE_TX_INFO3_TID, desc->info3);
 }
 
 void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id)

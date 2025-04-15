@@ -124,6 +124,7 @@ struct ath12k_wmm_stats {
        int rx_type;
        u64 total_wmm_tx_pkts[WME_NUM_AC];
        u64 total_wmm_rx_pkts[WME_NUM_AC];
+       u64 total_wmm_tx_drop[WME_NUM_AC];
 };
 
 struct dp_mon_mpdu {
