@@ -1798,8 +1798,7 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 	struct hal_srng *srng;
 	struct ath12k_pdev_dp *dp_pdev;
 	dma_addr_t paddr;
-	bool is_frag;
-	bool drop;
+	bool is_frag, drop = false;
 	int pdev_id;
 	struct list_head *used_list;
 	enum hal_wbm_rel_bm_act act;
@@ -1880,6 +1879,9 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 			rcu_read_unlock();
 			continue;
 		}
+
+		if (drop)
+			dp_pdev->wmm_stats.total_wmm_rx_drop[dp_pdev->wmm_stats.rx_type]++;
 
 		for (i = 0; i < num_msdus; i++) {
 			used_list = &rx_desc_used_list[device_id];
