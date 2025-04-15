@@ -652,8 +652,8 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 			/* For TX ring, ensure that the ring mask and the
 			 * tcl_to_wbm_rbm_map point to the same ring number.
 			 */
-			if (ring_mask->tx[i] &
-			    BIT(ab->hal.tcl_to_wbm_rbm_map[j].wbm_ring_num)) {
+			if ((j < DP_TCL_NUM_RING_MAX) && (ring_mask->tx[i] &
+			    BIT(ab->hal.tcl_to_wbm_rbm_map[j].wbm_ring_num))) {
 				irq_grp->irqs[num_irq++] =
 					wbm2host_tx_completions_ring1 - j;
 			}
@@ -829,7 +829,7 @@ static const struct ath12k_hif_ops ath12k_ahb_hif_ops_qcn6432 = {
         .map_service_to_pipe = ath12k_pcic_map_service_to_pipe,
 	.ce_irq_enable = ath12k_pcic_ce_irqs_enable,
 	.ce_irq_disable = ath12k_pcic_ce_irq_disable_sync,
-	.ext_irq_setup = ath12k_ahb_config_ext_irq,
+	.ext_irq_setup = ath12k_pcic_cfg_hybrid_ext_irq,
 	.ext_irq_cleanup = ath12k_pcic_free_ext_irq,
 };
 

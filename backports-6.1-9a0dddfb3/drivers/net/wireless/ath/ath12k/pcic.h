@@ -77,5 +77,10 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 						  struct ath12k_ext_irq_grp *irq_grp,
 						  int budget),
 			       struct ath12k_dp *dp);
+int ath12k_pcic_cfg_hybrid_ext_irq(struct ath12k_base *ab,
+				   int (*irq_handler)(struct ath12k_dp *dp,
+					   struct ath12k_ext_irq_grp *irq_grp,
+					   int budget),
+				   struct ath12k_dp *dp);
 void ath12k_pcic_free_ext_irq(struct ath12k_base *ab);
 #endif

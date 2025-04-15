@@ -208,7 +208,6 @@ void ath12k_pcic_free_hybrid_irq(struct ath12k_base *ab)
 	struct platform_device *pdev = ab->pdev;
 
 	ath12k_pcic_free_irq(ab);
-	ath12k_pcic_free_ext_irq(ab);
 	platform_msi_domain_free_irqs(&pdev->dev);
 }
 
@@ -374,13 +373,18 @@ static void ath12k_pcic_ce_tasklet(struct tasklet_struct *t)
         ath12k_pcic_ce_irq_enable(ce_pipe->ab, ce_pipe->pipe_num);
 }
 
-static int ath12k_pcic_ext_config_gic_msi_irq(struct ath12k_base *ab,
-					      struct platform_device *pdev,
-					      struct msi_desc *msi_desc, int i)
+static
+int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
+				    int (*irq_handler)(struct ath12k_dp *dp,
+						       struct ath12k_ext_irq_grp *irq_grp,
+						       int budget),
+				    struct ath12k_dp *dp,
+				    struct msi_desc *msi_desc, int i)
 {
 	u32 user_base_data = 0, base_vector = 0, base_idx;
 	struct ath12k_ext_irq_grp *irq_grp;
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+	struct platform_device *pdev = ab->pdev;
 	int j, budget, ret = 0, num_vectors = 0;
 	struct net_device *napi_ndev;
 	u8 userpd_id;
@@ -395,7 +399,9 @@ static int ath12k_pcic_ext_config_gic_msi_irq(struct ath12k_base *ab,
 
 	irq_grp = &ab->ext_irq_grp[i];
 	irq_grp->ab = ab;
+	irq_grp->dp = dp;
 	irq_grp->grp_id = i;
+	irq_grp->irq_handler = irq_handler;
 
 #if LINUX_VERSION_IS_GEQ(6,10,0)
 		irq_grp->napi_ndev = alloc_netdev_dummy(0);
@@ -444,9 +450,10 @@ static int ath12k_pcic_ext_config_gic_msi_irq(struct ath12k_base *ab,
 				       ath12k_pcic_ext_interrupt_handler, IRQF_SHARED,
 				       dp_irq_name[userpd_id][i], irq_grp);
 		if (ret) {
-			ath12k_err(ab, "failed request irq %d: %d\n", irq_idx, ret);
+			ath12k_warn(ab, "failed to request irq %d: %d\n", irq_idx, ret);
 			return ret;
 		}
+
 		ab->irq_num[irq_idx] = msi_desc->irq;
 		ab->ipci.dp_irq_num[vector] = msi_desc->irq;
 		ab->ipci.dp_msi_data[i] = msi_desc->msg.data;
@@ -861,6 +868,82 @@ static void ath12k_msi_msg_handler(struct msi_desc *desc, struct msi_msg *msg)
 	desc->msg.data = msg->data;
 }
 
+static
+int ath12k_pcic_msi_desc_assign_irq(struct ath12k_base *ab,
+				    int (*irq_handler)(struct ath12k_dp *dp,
+						       struct ath12k_ext_irq_grp *irq_grp,
+						       int budget),
+				    int base_vector, int num_vectors,
+				    struct platform_device *pdev, struct ath12k_dp *dp,
+				    int *k)
+{
+	struct msi_desc *msi_desc;
+	int ret = 0;
+	int i = 0;
+
+	msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ASSOCIATED) {
+		if (i < base_vector) {
+			i++;
+			continue;
+		}
+
+		if (i >= (base_vector + num_vectors) || *k >= ATH12K_EXT_IRQ_GRP_NUM_MAX)
+			break;
+
+		ret = ath12k_pcic_ext_cfg_gic_msi_irq(ab, irq_handler, dp,
+						      msi_desc, *k);
+		if (ret) {
+			ath12k_warn(ab, "failed to config ext msi irq %d\n", ret);
+			break;
+		}
+
+		(*k)++;
+		i++;
+	}
+
+	return ret;
+}
+
+int ath12k_pcic_cfg_hybrid_ext_irq(struct ath12k_base *ab,
+				   int (*irq_handler)(struct ath12k_dp *dp,
+					   struct ath12k_ext_irq_grp *irq_grp,
+					   int budget),
+				   struct ath12k_dp *dp)
+{
+	int ret, k = 0;
+	struct platform_device *pdev = ab->pdev;
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+	int user_base_data, base_vector, num_vectors = 0;
+
+	if (ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_1 &&
+	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2) {
+		ath12k_warn(ab, "ath12k userpd invalid %d\n", ab_ahb->userpd_id);
+		return -ENODEV;
+	}
+
+	msi_lock_descs(&pdev->dev);
+
+	ret = ath12k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
+						  &user_base_data, &base_vector);
+	if (ret < 0) {
+		ath12k_warn(ab, "failed to fetch msi data for DP");
+		msi_unlock_descs(&pdev->dev);
+		return -EINVAL;
+	}
+
+	ret = ath12k_pcic_msi_desc_assign_irq(ab, irq_handler, base_vector, num_vectors,
+					      pdev, dp, &k);
+
+	/* This is needed to handle the case where the irqs need to be shared
+	 * when there are no enough msi lines available */
+	ret = ath12k_pcic_msi_desc_assign_irq(ab, irq_handler, base_vector, num_vectors,
+					      pdev, dp, &k);
+
+	msi_unlock_descs(&pdev->dev);
+
+	return ret;
+}
+
 int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 {
 	int ret;
@@ -869,7 +952,7 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 	bool ce_done = false;
 	int user_base_data, base_vector, num_vectors = 0;
-	int i = 0, j = 0, k = 0;
+	int i = 0, j = 0;
 
 	if (ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_1 &&
 	    ab_ahb->userpd_id != ATH12K_QCN6432_USERPD_ID_2) {
@@ -888,17 +971,18 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 	}
 
 	msi_lock_descs(&pdev->dev);
-	//TODO: Need to optimize the below code to have one loop
-	msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ALL) {
-		ret = ath12k_pcic_get_user_msi_assignment(ab, "CE", &num_vectors,
-                                                         &user_base_data, &base_vector);
-                if (ret < 0)
-                        return ret;
 
+	ret = ath12k_pcic_get_user_msi_assignment(ab, "CE", &num_vectors,
+						  &user_base_data, &base_vector);
+	if (ret < 0)
+		return ret;
+	//TODO: Need to optimize the below code to have one loop
+	msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ASSOCIATED) {
 		if (i < base_vector) {
 			i++;
 			continue;
 		}
+
 		if (j < ab->hw_params->ce_count && i < (num_vectors + base_vector)) {
 			while(j < ab->hw_params->ce_count &&
 			      ath12k_ce_get_attr_flags(ab, j) & CE_ATTR_DIS_INTR) {
@@ -919,24 +1003,9 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 			}
 
 			j++;
-			if (j != ab->hw_params->ce_count)
-				ce_done = false;
+			if (j >= ab->hw_params->ce_count)
+				ce_done = true;
 
-		} else {
-			ret = ath12k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
-                                                                   &user_base_data, &base_vector);
-                        if (ret < 0)
-                                return ret;
-
-                        if (k >= num_vectors)
-                                break;
-
-			ret = ath12k_pcic_ext_config_gic_msi_irq(ab, pdev, msi_desc, k);
-			if (ret) {
-				ath12k_warn(ab, "failed to config ext msi irq %d\n", ret);
-				return ret;
-			}
-			k++;
 		}
 		i++;
 	}
@@ -945,26 +1014,23 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 	i = 0;
 
 	msi_lock_descs(&pdev->dev);
-	msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ALL) {
-		ret = ath12k_pcic_get_user_msi_assignment(ab, "CE", &num_vectors,
-							  &user_base_data, &base_vector);
-		if (ret < 0)
-                        return ret;
+	msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ASSOCIATED) {
+		if (ce_done)
+			break;
 
                 if (i < base_vector) {
                         i++;
                         continue;
 		}
 		if (i < (num_vectors + base_vector)) {
-			if (!ce_done  && j < ab->hw_params->ce_count) {
+			if (j < ab->hw_params->ce_count) {
 				while(j < ab->hw_params->ce_count &&
 				      ath12k_ce_get_attr_flags(ab, j) & CE_ATTR_DIS_INTR) {
 					j++;
 				}
 				if (j == ab->hw_params->ce_count) {
 					ce_done = true;
-					i++;
-					continue;
+					break;
 				}
 
 				ret = ath12k_pcic_config_gic_msi_irq(ab, pdev, msi_desc, j);
@@ -974,15 +1040,6 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 				}
 				j++;
 			}
-		} else {
-			if (k >= ATH12K_EXT_IRQ_GRP_NUM_MAX)
-				break;
-			ret = ath12k_pcic_ext_config_gic_msi_irq(ab, pdev, msi_desc, k);
-			if (ret) {
-				ath12k_warn(ab, "failed to config ext msi irq %d\n", ret);
-				return ret;
-			}
-			k++;
 		}
 		i++;
 	}
