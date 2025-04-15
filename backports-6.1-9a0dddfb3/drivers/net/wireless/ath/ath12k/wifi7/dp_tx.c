@@ -765,39 +765,35 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	/* skip tx rate update from ieee80211_status*/
 	info->status.rates[0].idx = -1;
 
-	switch (ts->status) {
-	case HAL_WBM_TQM_REL_REASON_FRAME_ACKED:
-		if (!(info->flags & IEEE80211_TX_CTL_NO_ACK)) {
-			info->flags |= IEEE80211_TX_STAT_ACK;
-			info->status.ack_signal = dp_pdev->ar->rssi_offsets.rssi_offset +
-						  ts->ack_rssi;
+	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
+			!(info->flags & IEEE80211_TX_CTL_NO_ACK))	{
+		info->flags |= IEEE80211_TX_STAT_ACK;
+		info->status.ack_signal = dp_pdev->ar->rssi_offsets.rssi_offset +
+					  ts->ack_rssi;
 
-			if (!test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
-				      ab->wmi_ab.svc_map))
-				info->status.ack_signal += ATH12K_DEFAULT_NOISE_FLOOR;
+		if (!test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
+			      ab->wmi_ab.svc_map))
+			info->status.ack_signal += ATH12K_DEFAULT_NOISE_FLOOR;
 
-			info->status.flags = IEEE80211_TX_STATUS_ACK_SIGNAL_VALID;
-		}
-		break;
-	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX:
-		if (info->flags & IEEE80211_TX_CTL_NO_ACK) {
-			info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
-			break;
-		}
-		fallthrough;
-	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU:
-	case HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD:
-	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES:
-		/* The failure status is due to internal firmware tx failure
-		 * hence drop the frame; do not update the status of frame to
-		 * the upper layer
-		 */
-		ieee80211_free_txskb(ath12k_dp_pdev_to_hw(dp_pdev), msdu);
-		goto exit;
-	default:
-		ath12k_dbg(ab, ATH12K_DBG_DP_TX, "tx frame is not acked status %d\n",
-			   ts->status);
-		break;
+		info->status.flags = IEEE80211_TX_STATUS_ACK_SIGNAL_VALID;
+	}
+
+	if (ts->status == HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX &&
+			(info->flags & IEEE80211_TX_CTL_NO_ACK))
+		info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
+
+	if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		switch (ts->status) {
+		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU:
+		case HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD:
+		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES:
+		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX:
+			dev_kfree_skb_any(msdu);
+			goto exit;
+		default:
+			//TODO: Remove this print and add as a stats
+			ath12k_dbg(ab, ATH12K_DBG_DP_TX, "tx frame is not acked status %d\n", ts->status);
+ 		}
 	}
 
 	/* NOTE: Tx rate status reporting. Tx completion status does not have
