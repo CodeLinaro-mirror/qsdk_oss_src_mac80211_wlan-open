@@ -384,8 +384,10 @@ u32 airtime_link_metric_get(struct ieee80211_local *local,
 			return MAX_METRIC;
 
 		rate = ewma_mesh_tx_rate_avg_read(&sta->mesh->tx_rate_avg);
-		if (WARN_ON(!rate))
+		if (!rate) {
+			WARN_ON(!local->hw.perf_mode);
 			return MAX_METRIC;
+		}
 
 		err = (fail_avg << ARITH_SHIFT) / 100;
 	}
