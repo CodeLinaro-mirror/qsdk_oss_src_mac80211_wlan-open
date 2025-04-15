@@ -1299,7 +1299,7 @@ struct htt_ppdu_user_stats {
 	struct htt_ppdu_stats_usr_cmpltn_ack_ba_status ack_ba;
 };
 
-#define HTT_PPDU_STATS_MAX_USERS	8
+#define HTT_PPDU_STATS_MAX_USERS	37
 #define HTT_PPDU_DESC_MAX_DEPTH	16
 
 struct htt_ppdu_stats {
