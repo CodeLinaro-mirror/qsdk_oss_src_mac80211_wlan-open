@@ -570,6 +570,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 		ret = -EINVAL;
 		goto exit;
 	}
+	rcu_read_unlock();
 
 	spin_lock_bh(&dp_pdev->ppdu_list_lock);
 	ppdu_info = ath12k_dp_htt_get_ppdu_desc(dp_pdev, ppdu_id);
@@ -641,8 +642,6 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	spin_unlock_bh(&dp_pdev->ppdu_list_lock);
 
 exit:
-	rcu_read_unlock();
-
 	return ret;
 }
 
