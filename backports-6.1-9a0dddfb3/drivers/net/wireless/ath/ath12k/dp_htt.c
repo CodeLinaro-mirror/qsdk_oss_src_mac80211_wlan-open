@@ -230,7 +230,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	mcs = HTT_USR_RATE_MCS(user_rate->rate_flags);
 	sgi = HTT_USR_RATE_GI(user_rate->rate_flags);
 	dcm = HTT_USR_RATE_DCM(user_rate->rate_flags);
-	ppdu_type = HTT_USR_RATE_PPDU_TYPE(user_rate->rate_flags);
+	ppdu_type = HTT_USR_RATE_PPDU_TYPE(user_rate->info1);
 	is_ofdma = (ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA) |
 		(ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA);
 
@@ -344,6 +344,8 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 			HTT_USR_CMPLTN_LONG_RETRY(usr_stats->cmpltn_cmn.flags) +
 			HTT_USR_CMPLTN_SHORT_RETRY(usr_stats->cmpltn_cmn.flags);
 	}
+
+	peer_stats->ppdu_type = ppdu_type;
 
 	spin_unlock_bh(&dp->dp_lock);
 	rcu_read_unlock();
