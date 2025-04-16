@@ -359,7 +359,7 @@ struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw, u8 *addr)
 
 #define PEER_TABLE_SOC_ID_SHIFT        10
 
-static inline u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
+u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
 {
 	return (peer_id & ATH12K_PEER_ML_ID_VALID) ? peer_id :
 		((dp->device_id << PEER_TABLE_SOC_ID_SHIFT) | peer_id);

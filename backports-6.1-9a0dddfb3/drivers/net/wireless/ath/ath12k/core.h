@@ -1548,4 +1548,9 @@ static inline struct ath12k_dp *ath12k_ab_to_dp(struct ath12k_base *ab)
 
 int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable);
 
+static inline bool ath12k_hw_group_recovery_in_progress(const struct ath12k_hw_group *ag)
+{
+	return test_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
+}
+
 #endif /* _CORE_H_ */

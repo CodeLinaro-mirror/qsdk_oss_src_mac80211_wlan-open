@@ -109,6 +109,13 @@ int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
+		ath12k_warn(ar->ab, "skipped peer delete cmd for vdev_id %d addr %pM during recovery ret:%d\n",
+			    vdev_id, addr, -EHOSTDOWN);
+
+		return -EHOSTDOWN;
+	}
+
 	ath12k_dp_link_peer_unassign(ar, vdev_id, addr);
 
 	ret = ath12k_peer_delete_send(ar, vdev_id, addr);

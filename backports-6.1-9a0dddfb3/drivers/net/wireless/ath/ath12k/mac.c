@@ -1163,11 +1163,39 @@ static int ath12k_mac_set_kickout(struct ath12k_link_vif *arvif)
 	return 0;
 }
 
+void ath12k_mac_link_sta_rhash_cleanup(void *data,
+				       struct ieee80211_sta *sta)
+{
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k *ar = data;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_link_vif *arvif;
+	u8 link_id;
+	unsigned long links_map = ahsta->links_map;
+
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		arsta = ahsta->link[link_id];
+		arvif = arsta->arvif;
+		if (!arsta)
+			continue;
+		if (!(arvif->ar == ar))
+			continue;
+
+		spin_lock_bh(&ab->base_lock);
+		ath12k_link_sta_rhash_delete(ab, arsta);
+		spin_unlock_bh(&ab->base_lock);
+	}
+}
+
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 {
 	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	u16 peerid_index;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -1177,15 +1205,57 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 		if (peer->sta)
 			ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 
+		peer->sta = NULL;
+
+		/* cleanup dp peer */
+		spin_lock_bh(&dp_hw->peer_lock);
+		dp_peer = peer->dp_peer;
+		peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
+		rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
+		spin_unlock_bh(&dp_hw->peer_lock);
+
+		ath12k_dp_link_peer_rhash_delete(dp, peer);
+		peer->dp_peer = NULL;
+
 		list_del(&peer->list);
 		kfree(peer);
 	}
 	spin_unlock_bh(&dp->dp_lock);
 
+	synchronize_rcu();
+
 	ar->num_peers = 0;
 	ar->num_stations = 0;
 
+	/* Cleanup rhash table maintained for arsta by iterating over sta
+	 */
+	ieee80211_iterate_stations_atomic(ar->ah->hw,
+					  ath12k_mac_link_sta_rhash_cleanup,
+					  ar);
+
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "ath12k mac peer cleanup done\n");
+}
+
+void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
+{
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_dp_peer *dp_peer, *tmp;
+	u16 peerid_index;
+
+	spin_lock_bh(&dp_hw->peer_lock);
+	list_for_each_entry_safe(dp_peer, tmp, &dp_hw->peers, list) {
+		if (dp_peer->is_mlo) {
+			peerid_index = dp_peer->peer_id;
+			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+			clear_bit(peerid_index, ar->ah->free_ml_peer_id_map);
+		}
+		list_del(&dp_peer->list);
+		kfree(dp_peer);
+	}
+
+	spin_unlock_bh(&dp_hw->peer_lock);
+
+	synchronize_rcu();
 }
 
 static int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
@@ -4235,8 +4305,13 @@ static struct ath12k_link_vif *ath12k_mac_assign_link_vif(struct ath12k_hw *ah,
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
-	if (arvif)
+	if (arvif) {
+		arvif->link_id = link_id;
+		ath12k_dbg(NULL, ATH12K_DBG_MAC | ATH12K_DBG_BOOT,
+			   "mac assign link vif: arvif found, link_id:%d\n",
+			   link_id);
 		return arvif;
+	}
 
 	/* If this is the first link arvif being created for an ML VIF
 	 * use the preallocated deflink memory except for scan arvifs
@@ -7128,6 +7203,12 @@ exit:
 	return ret;
 }
 
+static void ath12k_mac_map_link_sta(struct ath12k_sta *ahsta,
+                                    const u8 link_id)
+{
+        ahsta->links_map |= BIT(link_id);
+}
+
 static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 				      struct ath12k_sta *ahsta,
 				      struct ath12k_link_sta *arsta,
@@ -7159,7 +7240,7 @@ static int ath12k_mac_assign_link_sta(struct ath12k_hw *ah,
 	arsta->link_idx = ahsta->num_peer++;
 
 	arsta->link_id = link_id;
-	ahsta->links_map |= BIT(arsta->link_id);
+	ath12k_mac_map_link_sta(ahsta, link_id);
 	arsta->arvif = arvif;
 	arsta->ahsta = ahsta;
 	ahsta->ahvif = ahvif;
@@ -7326,6 +7407,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k_link_vif *arvif;
 	struct ath12k_link_sta *arsta;
+	bool is_recovery = false;
 	unsigned long valid_links;
 	u8 link_id = 0;
 	int ret = -EINVAL;
@@ -7424,8 +7506,21 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		ret = ath12k_mac_handle_link_sta_state(hw, arvif, arsta,
 						       old_state, new_state);
 		if (ret) {
-			ath12k_hw_warn(ah, "unable to move link sta %d of sta %pM from state %d to %d",
-				       link_id, arsta->addr, old_state, new_state);
+			if (ret != -ESHUTDOWN)
+				ath12k_hw_warn(ah, "unable to move link sta %d of sta %pM from state %d to %d",
+					       link_id, arsta->addr, old_state, new_state);
+
+			/* If FW recovery is ongoing, no need to move down sta states
+			 * as FW will wake up with a clean slate. Hence we set the
+			 * return value to 0, so that upper layers are not aware
+			 * of the FW being in recovery state.
+			 */
+			if (old_state > new_state) {
+				if (!arvif->ar)
+					continue;
+				if (test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags))
+					is_recovery = true;
+			}
 
 			if (old_state == IEEE80211_STA_NOTEXIST &&
 			    new_state == IEEE80211_STA_NONE)
@@ -7456,6 +7551,10 @@ peer_delete:
 	if (ret)
 		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr);
 exit:
+
+	if (ret && is_recovery)
+		ret = 0;
+
 	/* update the state if everything went well */
 	if (!ret)
 		ahsta->state = new_state;
@@ -7639,8 +7738,14 @@ static struct ath12k_link_sta *ath12k_mac_alloc_assign_link_sta(struct ath12k_hw
 		return NULL;
 
 	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-	if (arsta)
-		return NULL;
+	if (arsta) {
+		arsta = ahsta->link[link_id];
+		ath12k_mac_assign_link_sta(ah, ahsta, arsta, ahvif, link_id);
+		ath12k_dbg(NULL, ATH12K_DBG_MAC | ATH12K_DBG_BOOT,
+			   "mac alloc assign link sta: arsta found, link_id:%d\n",
+			   link_id);
+		return ahsta->link[link_id];
+	}
 
 	arsta = kmalloc(sizeof(*arsta), GFP_KERNEL);
 	if (!arsta)

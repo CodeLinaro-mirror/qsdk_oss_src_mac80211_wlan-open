@@ -1861,6 +1861,14 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 				mutex_lock(&ah->hw_mutex);
 				ath12k_core_halt(ar);
 			}
+			/* At this point link peers will be deleted
+			 * for all the radios through
+			 * ath12k_mac_peer_cleannup()
+			 */
+			for (j = 0; j < ah->num_radio; j++) {
+				ar = &ah->radio[j];
+				ath12k_mac_dp_peer_cleanup(ar);
+			}
 
 			break;
 		case ATH12K_HW_STATE_OFF:

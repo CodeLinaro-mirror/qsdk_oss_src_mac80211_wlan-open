@@ -169,6 +169,8 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 		if (!(test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags))) {
 			ath12k_info(ab, "Schedule SSR Recovery reset work queue\n");
 			set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
+			set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ab->ag->flags);
+			set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 			queue_work(ab->workqueue_aux, &ab->reset_work);
 			ath12k_hal_dump_srng_stats(ab);
 		}
