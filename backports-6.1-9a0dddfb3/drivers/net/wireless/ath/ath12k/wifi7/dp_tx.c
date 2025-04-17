@@ -86,7 +86,7 @@ static int ath12k_wifi7_dp_prepare_htt_metadata(struct sk_buff *skb)
 int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		       struct ath12k_link_vif *arvif,
 		       struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
-		       bool is_mcast)
+		       bool is_mcast, struct ath12k_dp_link_peer *peer)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
@@ -98,6 +98,7 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_tcl_data_cmd *hal_tcl_desc;
 	struct hal_tx_msdu_ext_desc *msg;
 	struct sk_buff *skb_ext_desc = NULL;
+	struct ethhdr *eth = NULL;
 	struct hal_srng *tcl_ring;
 	struct ieee80211_hdr *hdr = (void *)skb->data;
 	struct ath12k_vif *ahvif = arvif->ahvif;
@@ -107,6 +108,7 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u8 pool_id;
 	u8 hal_ring_id;
 	int ret;
+	u16 peer_id;
 	u8 ring_selector, ring_map = 0;
 	bool tcl_ring_retry;
 	bool msdu_ext_desc = false;
@@ -121,6 +123,22 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	    !ieee80211_is_data(hdr->frame_control))
 		return -EOPNOTSUPP;
 
+	if (info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
+		eth = (struct ethhdr *)skb->data;
+
+	if (eth && is_multicast_ether_addr(eth->h_dest) && peer) {
+		ti.meta_data_flags = peer->tcl_metadata;
+		peer_id = u16_get_bits(ti.meta_data_flags, HTT_TCL_META_DATA_PEER_ID_MISSION);
+		ti.bss_ast_hash = peer->ast_hash;
+		ti.bss_ast_idx = peer_id;
+		ti.lookup_override = true;
+	} else if (ieee80211_has_a4(hdr->frame_control) &&
+	    is_multicast_ether_addr(hdr->addr3) && peer) {
+		ti.meta_data_flags = peer->tcl_metadata;
+		ti.flags0 |= FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TO_FW, 1);
+	} else {
+		ti.meta_data_flags = dp_link_vif->tcl_metadata;
+	}
 	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
 
 	/* Let the default ring selection be based on current processor
@@ -146,7 +164,6 @@ tcl_ring_sel:
 		return -ENOMEM;
 
 	ti.bank_id = dp_link_vif->bank_id;
-	ti.meta_data_flags = dp_link_vif->tcl_metadata;
 
 	if (dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_RAW &&
 	    test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ab->dev_flags)) {
@@ -163,7 +180,7 @@ tcl_ring_sel:
 		msdu_ext_desc = true;
 	}
 
-	if (gsn_valid) {
+	if (gsn_valid && !(ti.lookup_override)) {
 		/* Reset and Initialize meta_data_flags with Global Sequence
 		 * Number (GSN) info.
 		 */
@@ -171,6 +188,9 @@ tcl_ring_sel:
 			u32_encode_bits(HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM,
 					HTT_TCL_META_DATA_TYPE) |
 			u32_encode_bits(mcbc_gsn, HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
+
+		if (arvif->nawds_support)
+			ti.meta_data_flags |= u32_encode_bits(1, HTT_TCL_META_DATA_GLOBAL_SEQ_HOST_INSPECTED);
 	}
 
 	ti.encap_type = ath12k_dp_tx_get_encap_type(ab, skb);
@@ -183,9 +203,13 @@ tcl_ring_sel:
 	ti.vdev_id = dp_link_vif->vdev_id;
 	if (gsn_valid)
 		ti.vdev_id += HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
+	else if (arvif->nawds_support && is_mcast && !ti.lookup_override)
+		ti.meta_data_flags |= u32_encode_bits(1, HTT_TCL_META_DATA_HOST_INSPECTED_MISSION);
 
-	ti.bss_ast_hash = dp_link_vif->ast_hash;
-	ti.bss_ast_idx = dp_link_vif->ast_idx;
+	if (!(ti.lookup_override)) {
+		ti.bss_ast_hash = dp_link_vif->ast_hash;
+		ti.bss_ast_idx = dp_link_vif->ast_idx;
+	}
 	ti.dscp_tid_tbl_idx = 0;
 
 	if (skb->ip_summed == CHECKSUM_PARTIAL &&
@@ -265,12 +289,14 @@ map:
 	     !(skb_cb->flags & ATH12K_SKB_CIPHER_SET) &&
 	     ieee80211_has_protected(hdr->frame_control)) ||
 	     is_diff_encap) {
+		if (is_null && msdu_ext_desc)
+			goto skip_htt_metadata;
 		/* Add metadata for sw encrypted vlan group traffic */
 		add_htt_metadata = true;
 		msdu_ext_desc = true;
 		ti.meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+skip_htt_metadata:
 		ti.flags0 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TO_FW);
-		ti.meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
 		ti.encap_type = HAL_TCL_ENCAP_TYPE_RAW;
 		ti.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
 	}

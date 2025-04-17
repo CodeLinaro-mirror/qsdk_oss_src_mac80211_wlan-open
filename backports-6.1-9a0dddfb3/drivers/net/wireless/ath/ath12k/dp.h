@@ -13,6 +13,8 @@
 #include "hal.h"
 #include <linux/rhashtable.h>
 
+#define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
+
 #define MAX_RXDMA_PER_PDEV     2
 
 struct ath12k_base;

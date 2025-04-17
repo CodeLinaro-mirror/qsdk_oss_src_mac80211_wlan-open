@@ -113,6 +113,8 @@ struct ath12k_dp_link_peer {
 	u8 rssi_comb;
 	struct ewma_avg_rssi avg_rssi;
 	struct ath12k_dp_peer_stats peer_stats;
+
+	u16 tcl_metadata;
 };
 
 struct ath12k_dp_peer {
