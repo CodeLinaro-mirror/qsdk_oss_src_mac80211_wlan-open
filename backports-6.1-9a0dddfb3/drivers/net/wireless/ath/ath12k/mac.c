@@ -1417,6 +1417,19 @@ int ath12k_mac_op_config(struct ieee80211_hw *hw, u32 changed)
 }
 EXPORT_SYMBOL(ath12k_mac_op_config);
 
+void ath12k_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
+					struct ieee80211_vif *vif,
+					struct ieee80211_sta *sta, bool enabled)
+{
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+
+	if (enabled && !ahsta->use_4addr_set) {
+		wiphy_work_queue(hw->wiphy, &ahsta->set_4addr_wk);
+		ahsta->use_4addr_set = true;
+	}
+}
+EXPORT_SYMBOL(ath12k_mac_op_sta_set_4addr);
+
 static int ath12k_mac_setup_bcn_p2p_ie(struct ath12k_link_vif *arvif,
 				       struct sk_buff *bcn)
 {
@@ -6036,6 +6049,45 @@ static void ath12k_mac_free_unassign_link_sta(struct ath12k_hw *ah,
 	kfree(arsta);
 }
 
+static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
+{
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_sta *ahsta;
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_sta *arsta;
+	struct ieee80211_sta *sta;
+	unsigned long links;
+	//struct ath12k_peer *peer;
+	int ret = 0;
+	u8 link_id;
+
+	ahsta = container_of(wk, struct ath12k_sta, set_4addr_wk);
+	sta = container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
+	links = ahsta->links_map;
+
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		arsta = rcu_dereference(ahsta->link[link_id]);
+		arvif = arsta->arvif;
+		ahvif = arvif->ahvif;
+		ar = arvif->ar;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "setting USE_4ADDR for peer %pM\n", arsta->addr);
+
+		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
+						arvif->vdev_id,
+						WMI_PEER_USE_4ADDR,
+						WMI_PEER_4ADDR_ALLOW_EAPOL_DATA_FRAME);
+		if (ahvif->dp_vif.tx_encap_type != ATH12K_HW_TXRX_ETHERNET)
+			continue;
+
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+                                                    WMI_VDEV_PARAM_AP_ENABLE_NAWDS,
+                                                    1);
+	}
+}
+
 static int ath12k_mac_inc_num_stations(struct ath12k_link_vif *arvif,
 				       struct ath12k_link_sta *arsta)
 {
@@ -6112,8 +6164,10 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp, arvif->vdev_id,
 							    arsta->addr);
-	if (peer)
+	if (peer) {
 		peer->is_authorized = false;
+		arsta->peer = NULL;
+	}
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
@@ -6147,8 +6201,11 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp, arvif->vdev_id,
 							    arsta->addr);
-	if (peer)
+	if (peer) {
 		peer->is_authorized = true;
+		arsta->peer = peer;
+	} else
+		arsta->peer = NULL;
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
@@ -6500,6 +6557,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		memset(ahsta, 0, sizeof(*ahsta));
 
 		arsta = &ahsta->deflink;
+		wiphy_work_init(&ahsta->set_4addr_wk, ath12k_sta_set_4addr_wk);
 
 		/* ML sta */
 		if (sta->mlo && !ahsta->links_map &&
@@ -6596,8 +6654,10 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		ath12k_mac_ml_station_remove(ahvif, ahsta);
 
 	if (old_state == IEEE80211_STA_NONE &&
-	    new_state == IEEE80211_STA_NOTEXIST)
+	    new_state == IEEE80211_STA_NOTEXIST) {
 		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr);
+		wiphy_work_cancel(hw->wiphy, &ahsta->set_4addr_wk);
+	}
 
 	ret = 0;
 
@@ -9260,6 +9320,9 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		vif->hw_queue[i] = ATH12K_HW_DEFAULT_QUEUE;
 
 	vif->driver_flags |= IEEE80211_VIF_SUPPORTS_UAPSD;
+	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET)
+		vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_4ADDR;
+
 	/* Defer vdev creation until assign_chanctx or hw_scan is initiated as driver
 	 * will not know if this interface is an ML vif at this point.
 	 */

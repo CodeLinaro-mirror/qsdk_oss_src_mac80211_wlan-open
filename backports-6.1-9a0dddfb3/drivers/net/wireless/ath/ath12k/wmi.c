@@ -3855,6 +3855,13 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->ema_max_vap_cnt = cpu_to_le32(tg_cfg->ema_max_vap_cnt);
 	wmi_cfg->ema_max_profile_period = cpu_to_le32(tg_cfg->ema_max_profile_period);
 	wmi_cfg->flags2 |= cpu_to_le32(WMI_RSRC_CFG_FLAGS2_CALC_NEXT_DTIM_COUNT_SET);
+	if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET)
+		wmi_cfg->flags2 |= WMI_RSRC_CFG_FLAGS2_INTRABSS_MEC_WDS_LEARNING_DISABLE;
+	else
+		wmi_cfg->flags2 |= WMI_RSRC_CFG_FLAGS2_FW_AST_INDICATION_DISABLE;
+
+	if (tg_cfg->is_wds_null_frame_supported)
+		wmi_cfg->flags2 |= WMI_RSRC_CFG_FLAGS2_WDS_NULL_FRAME_SUPPORT;
 }
 
 static int ath12k_init_cmd_send(struct ath12k_wmi_pdev *wmi,
@@ -4066,6 +4073,9 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 	if (test_bit(WMI_TLV_SERVICE_REG_CC_EXT_EVENT_SUPPORT,
 		     ab->wmi_ab.svc_map))
 		arg.res_cfg.is_reg_cc_ext_event_supported = true;
+
+	if (test_bit(WMI_SERVICE_WDS_NULL_FRAME_SUPPORT, ab->wmi_ab.svc_map))
+		arg.res_cfg.is_wds_null_frame_supported = true;
 
 	ab->hw_params->wmi_init(ab, &arg.res_cfg);
 	ab->wow.wmi_conf_rx_decap_mode = arg.res_cfg.rx_decap_mode;
@@ -6430,6 +6440,9 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	struct ath12k_wmi_mgmt_rx_arg rx_ev = {0};
 	struct ath12k *ar;
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(skb);
+	struct ieee80211_sta *pubsta = NULL;
+	struct ath12k_link_sta *arsta;
+	bool is_4addr_null_pkt = false;
 	struct ieee80211_hdr *hdr;
 	u16 fc;
 	struct ieee80211_supported_band *sband;
@@ -6499,6 +6512,35 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 
 	hdr = (struct ieee80211_hdr *)skb->data;
 	fc = le16_to_cpu(hdr->frame_control);
+
+	is_4addr_null_pkt = ieee80211_is_nullfunc(hdr->frame_control) &&
+			    ieee80211_has_a4(hdr->frame_control);
+
+	if (ieee80211_is_data(hdr->frame_control) && !is_4addr_null_pkt) {
+		dev_kfree_skb(skb);
+		goto exit;
+	}
+
+	if (is_4addr_null_pkt) {
+		spin_lock_bh(&ab->base_lock);
+		arsta = ath12k_link_sta_find_by_addr(ab, hdr->addr2);
+		if (!arsta) {
+			spin_unlock_bh(&ab->base_lock);
+			ath12k_warn(ab, "arsta not found %pM\n",
+				    hdr->addr2);
+			dev_kfree_skb(skb);
+			goto exit;
+		}
+		pubsta = ieee80211_find_sta_by_ifaddr(ath12k_ar_to_hw(ar),
+						      hdr->addr2, NULL);
+		if (pubsta && pubsta->valid_links) {
+			status->link_valid = 1;
+			status->link_id = arsta->link_id;
+		}
+		spin_unlock_bh(&ab->base_lock);
+		ieee80211_rx_napi(ar->ah->hw, pubsta, skb, NULL);
+		goto exit;
+	}
 
 	/* Firmware is guaranteed to report all essential management frames via
 	 * WMI while it can deliver some extra via HTT. Since there can be
@@ -6965,7 +7007,7 @@ static void ath12k_vdev_install_key_compl_event(struct ath12k_base *ab,
 }
 
 static int ath12k_wmi_tlv_services_parser(struct ath12k_base *ab,
-					  u16 tag, u16 len,
+					  u16 tag, u16 tag_len,
 					  const void *ptr,
 					  void *data)
 {
@@ -6973,11 +7015,12 @@ static int ath12k_wmi_tlv_services_parser(struct ath12k_base *ab,
 	u32 *wmi_ext2_service_bitmap;
 	int i, j;
 	u16 expected_len;
+	u16 wmi_max_ext2_service_words;
 
 	expected_len = WMI_SERVICE_SEGMENT_BM_SIZE32 * sizeof(u32);
-	if (len < expected_len) {
+	if (tag_len < expected_len) {
 		ath12k_warn(ab, "invalid length %d for the WMI services available tag 0x%x\n",
-			    len, tag);
+			    tag_len, tag);
 		return -EINVAL;
 	}
 
@@ -7003,8 +7046,9 @@ static int ath12k_wmi_tlv_services_parser(struct ath12k_base *ab,
 		break;
 	case WMI_TAG_ARRAY_UINT32:
 		wmi_ext2_service_bitmap = (u32 *)ptr;
+		wmi_max_ext2_service_words = tag_len / sizeof(u32);
 		for (i = 0, j = WMI_MAX_EXT_SERVICE;
-		     i < WMI_SERVICE_SEGMENT_BM_SIZE32 && j < WMI_MAX_EXT2_SERVICE;
+		     i < wmi_max_ext2_service_words && j < WMI_MAX_EXT2_SERVICE;
 		     i++) {
 			do {
 				if (wmi_ext2_service_bitmap[i] &
