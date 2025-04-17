@@ -187,4 +187,6 @@ struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_ast(struct ath12k_dp *dp,
 				int ast_hash);
 
+void ath12k_peer_mlo_map_event(struct ath12k_base *ab, struct sk_buff *skb);
+void ath12k_peer_mlo_unmap_event(struct ath12k_base *ab, struct sk_buff *skb);
 #endif
