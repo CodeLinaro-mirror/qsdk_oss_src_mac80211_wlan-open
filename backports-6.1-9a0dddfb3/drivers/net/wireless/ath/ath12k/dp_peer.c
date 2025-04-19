@@ -148,13 +148,6 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 		if (!peer)
 			goto exit;
 
-		peer->peer_stats.rx_stats = kzalloc(sizeof(*peer->peer_stats.rx_stats),
-						    GFP_ATOMIC);
-		if (!peer->peer_stats.rx_stats) {
-			kfree(peer);
-			goto exit;
-		}
-
 		peer->vdev_id = vdev_id;
 		peer->peer_id = peer_id;
 		peer->ast_hash = ast_hash;

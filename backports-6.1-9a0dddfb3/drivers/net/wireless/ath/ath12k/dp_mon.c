@@ -11,6 +11,7 @@
 #include "peer.h"
 #include "wifi7/dp_rx.h"
 #include "wifi7/hal_qcn9274.h"
+#include "debugfs.h"
 
 #define ATH12K_LE32_DEC_ENC(value, dec_bits, enc_bits)	\
 		u32_encode_bits(le32_get_bits(value, dec_bits), enc_bits)
@@ -3207,17 +3208,18 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	stats->rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += len;
 }
 
-static void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_dp_link_peer *peer,
+static void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
+						  struct ath12k_dp_link_peer *peer,
 						  struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct ath12k_rx_peer_stats *rx_stats = peer->peer_stats.rx_stats;
 	u32 num_msdu;
 
-	if (!rx_stats)
-		return;
-
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
+
+	if (!ath12k_debugfs_is_extd_rx_stats_enabled(pdev_dp->ar) || !rx_stats)
+		return;
 
 	num_msdu = ppdu_info->tcp_msdu_count + ppdu_info->tcp_ack_msdu_count +
 		   ppdu_info->udp_msdu_count + ppdu_info->other_msdu_count;
@@ -3366,7 +3368,7 @@ void ath12k_dp_mon_rx_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info)
 }
 
 static void
-ath12k_dp_mon_rx_update_user_stats(struct ath12k_base *ab,
+ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 				   struct hal_rx_mon_ppdu_info *ppdu_info,
 				   u32 uid)
 {
@@ -3375,7 +3377,8 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_base *ab,
 	struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
 	struct ath12k_dp_link_peer *peer;
 	u32 num_msdu;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp *dp = pdev_dp->dp;
+	struct ath12k_base *ab = dp->ab;
 
 	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
 		return;
@@ -3474,17 +3477,20 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_base *ab,
 }
 
 static void
-ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_base *ab,
+ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
 				      struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	u32 num_users, i;
+
+	if (!ath12k_debugfs_is_extd_rx_stats_enabled(pdev_dp->ar))
+		return;
 
 	num_users = ppdu_info->num_users;
 	if (num_users > HAL_MAX_UL_MU_USERS)
 		num_users = HAL_MAX_UL_MU_USERS;
 
 	for (i = 0; i < num_users; i++)
-		ath12k_dp_mon_rx_update_user_stats(ab, ppdu_info, i);
+		ath12k_dp_mon_rx_update_user_stats(pdev_dp, ppdu_info, i);
 }
 
 static void
@@ -3641,12 +3647,12 @@ move_next:
 				dev_kfree_skb_any(skb);
 				continue;
 			}
-			ath12k_dp_mon_rx_update_peer_su_stats(peer,
+			ath12k_dp_mon_rx_update_peer_su_stats(pdev_dp, peer,
 							      ppdu_info);
 		} else if ((ppdu_info->fc_valid) &&
 			   (ppdu_info->ast_index != HAL_AST_IDX_INVALID)) {
 			ath12k_dp_mon_rx_process_ulofdma(ppdu_info);
-			ath12k_dp_mon_rx_update_peer_mu_stats(ab, ppdu_info);
+			ath12k_dp_mon_rx_update_peer_mu_stats(pdev_dp, ppdu_info);
 		}
 
 next_skb:
