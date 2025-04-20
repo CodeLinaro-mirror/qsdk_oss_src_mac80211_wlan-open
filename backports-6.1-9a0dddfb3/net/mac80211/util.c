@@ -571,6 +571,11 @@ void ieee80211_add_pending_skb(struct ieee80211_local *local,
 	pcpu_queue_stop_reason_lock = this_cpu_ptr(local->queue_stop_reason_lock);
 	pcpu_pending = this_cpu_ptr(local->pending[queue]);
 	spin_lock_irqsave(pcpu_queue_stop_reason_lock, flags);
+
+	if (skb_queue_len(pcpu_pending) >=
+			(local->max_skb_queue_length -1))
+		ieee80211_free_txskb(&local->hw, skb_dequeue(pcpu_pending));
+
 	__ieee80211_stop_queue(hw, queue, IEEE80211_QUEUE_STOP_REASON_SKB_ADD,
 			       false);
 	__skb_queue_tail(pcpu_pending, skb);

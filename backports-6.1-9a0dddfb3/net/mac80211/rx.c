@@ -283,6 +283,10 @@ static void __ieee80211_queue_skb_to_iface(struct ieee80211_sub_if_data *sdata,
 		status->link_valid = 0;
 	}
 
+	if (skb_queue_len(&sdata->skb_queue) >=
+			(IEEE80211_PENDING_QUEUE_MAX_LENGTH -1))
+		dev_kfree_skb(skb_dequeue(&sdata->skb_queue));
+
 	skb_queue_tail(&sdata->skb_queue, skb);
 	wiphy_work_queue(sdata->local->hw.wiphy, &sdata->work);
 	if (sta) {

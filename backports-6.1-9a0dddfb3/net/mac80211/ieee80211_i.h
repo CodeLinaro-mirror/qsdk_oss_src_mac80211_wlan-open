@@ -54,6 +54,11 @@ extern const struct cfg80211_ops mac80211_config_ops;
 struct ieee80211_local;
 struct ieee80211_mesh_fast_tx;
 
+/* Maximum number of skbs that can be held
+ * by a percpu SW queue
+ */
+#define IEEE80211_PENDING_QUEUE_MAX_LENGTH 5000
+
 /* Maximum number of broadcast/multicast frames to buffer when some of the
  * associated stations are using power saving. */
 #define AP_MAX_BC_BUFFER 128
@@ -1462,6 +1467,7 @@ struct ieee80211_local {
 		*q_stop_reasons[IEEE80211_MAX_QUEUES][IEEE80211_QUEUE_STOP_REASONS];
 	/* also used to protect ampdu_ac_queue and amdpu_ac_stop_refcnt */
 	spinlock_t __percpu *queue_stop_reason_lock;
+	unsigned int max_skb_queue_length;
 
 	int open_count;
 	int monitors, cooked_mntrs, tx_mntrs;

@@ -1789,7 +1789,7 @@ static bool ieee80211_tx_frags(struct ieee80211_local *local,
 				 */
 				if ((skb_queue_len(pcpu_pending) +
 							skb_queue_len(skbs)) >=
-						IEEE80211_PENDING_QUEUE_MAX_LENGTH) {
+						local->max_skb_queue_length) {
 					spin_unlock_irqrestore(pcpu_queue_stop_reason_lock,
 							flags);
 					ieee80211_purge_tx_queue(&local->hw,
@@ -4753,6 +4753,12 @@ static bool __ieee80211_tx_8023(struct ieee80211_sub_if_data *sdata,
 
 	if (*queue_stop_reasons ||
 	    (!txpending && !skb_queue_empty(pending))) {
+		if (skb_queue_len(pending) >=
+		    (local->max_skb_queue_length -1)) {
+			ieee80211_free_txskb(&local->hw, skb);
+			spin_unlock_irqrestore(queue_stop_reason_lock, flags);
+			return true;
+		}
 		if (txpending)
 			skb_queue_head(pending, skb);
 		else
@@ -4989,6 +4995,12 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 
 	if (*queue_stop_reasons ||
 			!skb_queue_empty(pending)) {
+		if (skb_queue_len(pending) >=
+		    (local->max_skb_queue_length -1)) {
+			ieee80211_free_txskb(&local->hw, skb);
+			spin_unlock_irqrestore(queue_stop_reason_lock, flags);
+			return;
+		}
 		skb_queue_tail(pending, skb);
 		spin_unlock_irqrestore(queue_stop_reason_lock, flags);
 		return;

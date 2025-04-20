@@ -809,6 +809,7 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 	struct wiphy *wiphy;
 	bool emulate_chanctx;
 	int cpu = 0;
+	int num_cores = num_online_cpus();
 
 	if (WARN_ON(!ops->tx || !ops->start || !ops->stop || !ops->config ||
 		    !ops->add_interface || !ops->remove_interface ||
@@ -1088,6 +1089,16 @@ struct ieee80211_hw *ieee80211_alloc_hw_nm(size_t priv_data_len,
 		tasklet_setup(&tasklet_data->tasklet, ieee80211_tx_pending);
 		spin_lock_init(per_cpu_ptr(local->queue_stop_reason_lock, cpu));
 	}
+	/* Based on the number of cores specify
+	 * the skb queue length for each
+	 * percpu pending queue
+	 * Assumption is there should be atleast one core online
+	 */
+	if (num_cores > 1)
+		local->max_skb_queue_length =
+			 IEEE80211_PENDING_QUEUE_MAX_LENGTH / num_cores;
+	else
+		local->max_skb_queue_length = IEEE80211_PENDING_QUEUE_MAX_LENGTH;
 
 	if (!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))
 		tasklet_setup(&local->wake_txqs_tasklet, ieee80211_wake_txqs);
