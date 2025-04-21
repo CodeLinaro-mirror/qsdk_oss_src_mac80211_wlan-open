@@ -72,6 +72,16 @@ void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
         ab->hal.hal_ops->tx_configure_bank_register(ab, bank_config, bank_id);
 }
 
+void ath12k_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab)
+{
+	ab->hal.hal_ops->reoq_lut_addr_read_enable(ab);
+}
+
+void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab)
+{
+	ab->hal.hal_ops->reoq_lut_set_max_peerid(ab);
+}
+
 void ath12k_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr)
 {
 	ab->hal.hal_ops->write_ml_reoq_lut_addr(ab, paddr);

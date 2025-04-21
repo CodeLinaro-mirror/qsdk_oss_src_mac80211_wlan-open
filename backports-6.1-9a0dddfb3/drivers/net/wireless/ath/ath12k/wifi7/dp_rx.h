@@ -9,6 +9,7 @@
 
 #include "../core.h"
 #include "../dp_rx.h"
+#include "hal_desc.h"
 
 int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab, struct ath12k_dp_rx_tid *rx_tid,
 				 enum hal_reo_cmd_type type,

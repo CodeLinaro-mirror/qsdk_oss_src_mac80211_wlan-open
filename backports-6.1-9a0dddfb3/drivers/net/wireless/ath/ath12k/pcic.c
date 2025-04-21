@@ -11,7 +11,7 @@
 #include "hif.h"
 #include "hw.h"
 #include "ahb.h"
-#include "wifi7/dp.h"
+#include "wifi7/hal.h"
 
 unsigned int tx_comp_budget = 0x7F;
 module_param_named(tx_comp_budget, tx_comp_budget, uint, 0644);

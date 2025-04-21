@@ -18,6 +18,7 @@
 #include "debugfs.h"
 #include "fw.h"
 #include "pcic.h"
+#include "wifi7/hal.h"
 
 #define ATH12K_PCI_BAR_NUM		0
 #define ATH12K_PCI_DMA_MASK		32

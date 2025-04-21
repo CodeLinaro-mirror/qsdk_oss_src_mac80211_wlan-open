@@ -613,6 +613,8 @@ const struct hal_ops hal_wcn7850_ops = {
 		ath12k_wifi7_hal_tx_configure_bank_register,
 	.write_reoq_lut_addr = ath12k_wifi7_hal_write_reoq_lut_addr,
 	.write_ml_reoq_lut_addr = ath12k_wifi7_hal_write_ml_reoq_lut_addr,
+	.reoq_lut_addr_read_enable = ath12k_wifi7_hal_reoq_lut_addr_read_enable,
+	.reoq_lut_set_max_peerid = ath12k_wifi7_hal_reoq_lut_set_max_peerid,
 	.setup_link_idle_list = ath12k_wifi7_hal_setup_link_idle_list,
 	.reo_qdesc_setup = ath12k_wifi7_hal_reo_qdesc_setup,
 	.reo_init_cmd_ring = ath12k_wifi7_hal_reo_init_cmd_ring,

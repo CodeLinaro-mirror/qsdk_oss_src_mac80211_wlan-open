@@ -1225,14 +1225,13 @@ struct hal_reo_flush_cache {
 
 #define HAL_TCL_DATA_CMD_INFO5_RING_ID			GENMASK(27, 20)
 #define HAL_TCL_DATA_CMD_INFO5_LOOPING_COUNT		GENMASK(31, 28)
-#define HAL_ENCRYPT_TYPE_MAX 12
 
 enum hal_tcl_encap_type {
 	HAL_TCL_ENCAP_TYPE_RAW,
 	HAL_TCL_ENCAP_TYPE_NATIVE_WIFI,
 	HAL_TCL_ENCAP_TYPE_ETHERNET,
 	HAL_TCL_ENCAP_TYPE_802_3 = 3,
-	HAL_TCL_ENCAP_TYPE_MAX
+	HAL_TCL_ENCAP_TYPE_MAX,
 };
 
 enum hal_tcl_desc_type {
@@ -1775,28 +1774,6 @@ enum hal_wbm_rel_desc_type {
  *	treat this is the same way as a link descriptor.
  */
 
-enum hal_wbm_rel_bm_act {
-	HAL_WBM_REL_BM_ACT_PUT_IN_IDLE,
-	HAL_WBM_REL_BM_ACT_REL_MSDU,
-};
-
-/* hal_wbm_rel_bm_act
- *
- * put_in_idle_list
- *	Put the buffer or descriptor back in the idle list. In case of MSDU or
- *	MDPU link descriptor, BM does not need to check to release any
- *	individual MSDU buffers.
- *
- * release_msdu_list
- *	This BM action can only be used in combination with desc_type being
- *	msdu_link_descriptor. Field first_msdu_index points out which MSDU
- *	pointer in the MSDU link descriptor is the first of an MPDU that is
- *	released. BM shall release all the MSDU buffers linked to this first
- *	MSDU buffer pointer. All related MSDU buffer pointer entries shall be
- *	set to value 0, which represents the 'NULL' pointer. When all MSDU
- *	buffer pointers in the MSDU link descriptor are 'NULL', the MSDU link
- *	descriptor itself shall also be released.
- */
 #define HAL_WBM_COMPL_RX_INFO0_REL_SRC_MODULE		GENMASK(2, 0)
 #define HAL_WBM_COMPL_RX_INFO0_BM_ACTION		GENMASK(5, 3)
 #define HAL_WBM_COMPL_RX_INFO0_DESC_TYPE		GENMASK(8, 6)

@@ -12,21 +12,6 @@
 #include "peer.h"
 #include "mac.h"
 
-enum hal_tcl_encap_type
-ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb)
-{
-	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
-
-	if (test_bit(ATH12K_FLAG_RAW_MODE, &ab->dev_flags))
-		return HAL_TCL_ENCAP_TYPE_RAW;
-
-	if (tx_info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
-		return HAL_TCL_ENCAP_TYPE_ETHERNET;
-
-	return HAL_TCL_ENCAP_TYPE_NATIVE_WIFI;
-}
-EXPORT_SYMBOL(ath12k_dp_tx_get_encap_type);
-
 void ath12k_dp_tx_encap_nwifi(struct sk_buff *skb)
 {
 	struct ieee80211_hdr *hdr = (void *)skb->data;
@@ -44,20 +29,6 @@ void ath12k_dp_tx_encap_nwifi(struct sk_buff *skb)
 	hdr->frame_control &= ~__cpu_to_le16(IEEE80211_STYPE_QOS_DATA);
 }
 EXPORT_SYMBOL(ath12k_dp_tx_encap_nwifi);
-
-u8 ath12k_dp_tx_get_tid(struct sk_buff *skb)
-{
-	struct ieee80211_hdr *hdr = (void *)skb->data;
-	struct ath12k_skb_cb *cb = ATH12K_SKB_CB(skb);
-
-	if (cb->flags & ATH12K_SKB_HW_80211_ENCAP)
-		return skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-	else if (!ieee80211_is_data_qos(hdr->frame_control))
-		return HAL_DESC_REO_NON_QOS_TID;
-	else
-		return skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-}
-EXPORT_SYMBOL(ath12k_dp_tx_get_tid);
 
 void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 				struct ath12k_tx_desc_info *tx_desc,

@@ -10,22 +10,6 @@
 
 #include "../mac.h"
 #include "hal_desc.h"
-struct ath12k_hal_reo_cmd {
-	u32 addr_lo;
-	u32 flag;
-	u32 upd0;
-	u32 upd1;
-	u32 upd2;
-	u32 pn[4];
-	u16 rx_queue_num;
-	u16 min_rel;
-	u16 min_fwd;
-	u8 addr_hi;
-	u8 ac_list;
-	u8 blocking_idx;
-	u16 ba_window_size;
-	u8 pn_size;
-};
 
 /* TODO: check all these data can be managed with struct ath12k_tx_desc_info for perf */
 struct hal_tx_info {

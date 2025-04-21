@@ -583,6 +583,25 @@ void ath12k_wifi7_hal_tx_configure_bank_register(struct ath12k_base *ab,
 			   bank_config);
 }
 
+void ath12k_wifi7_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab)
+{
+	struct ath12k_hal *hal = &ab->hal;
+
+	u32 val = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG +
+				    HAL_REO1_QDESC_ADDR(hal));
+
+	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO1_QDESC_ADDR(hal),
+			   val | HAL_REO_QDESC_ADDR_READ_LUT_ENABLE);
+}
+
+void ath12k_wifi7_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab)
+{
+	struct ath12k_hal *hal = &ab->hal;
+
+	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO1_QDESC_MAX_PEERID(hal),
+			   HAL_REO_QDESC_MAX_PEERID);
+}
+
 void ath12k_wifi7_hal_write_reoq_lut_addr(struct ath12k_base *ab,
 					  dma_addr_t paddr)
 {

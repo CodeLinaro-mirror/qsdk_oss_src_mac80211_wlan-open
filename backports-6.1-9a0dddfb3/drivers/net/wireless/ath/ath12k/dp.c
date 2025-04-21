@@ -1421,8 +1421,6 @@ static int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 static int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_hal *hal = &ab->hal;
-	u32 val;
 	int ret;
 
 	if (!ab->hw_params->reoq_lut_support)
@@ -1451,14 +1449,8 @@ static int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab)
 
 	ath12k_hal_write_reoq_lut_addr(ab, dp->reoq_lut.paddr);
 	ath12k_hal_write_ml_reoq_lut_addr(ab, dp->ml_reoq_lut.paddr >> 8);
-
-	val = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO1_QDESC_ADDR(hal));
-
-	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO1_QDESC_ADDR(hal),
-			   val | HAL_REO_QDESC_ADDR_READ_LUT_ENABLE);
-
-	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO1_QDESC_MAX_PEERID(hal),
-			   HAL_REO_QDESC_MAX_PEERID);
+	ath12k_hal_reoq_lut_addr_read_enable(ab);
+	ath12k_hal_reoq_lut_set_max_peerid(ab);
 
 	return 0;
 }

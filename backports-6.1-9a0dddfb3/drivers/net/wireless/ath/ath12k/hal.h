@@ -89,6 +89,15 @@ struct hal_rx_reo_queue;
 #define HAL_RX_MAX_NSS		8
 #define HAL_RX_MAX_NUM_LEGACY_RATES 12
 
+#define HAL_RX_MAX_MPDU		256
+#define HAL_RX_NUM_WORDS_PER_PPDU_BITMAP	(HAL_RX_MAX_MPDU >> 5)
+
+#define EHT_MAX_USER_INFO	4
+#define HAL_RX_MON_MAX_AGGR_SIZE	128
+#define HAL_MAX_UL_MU_USERS	37
+
+#define HAL_ENCRYPT_TYPE_MAX	12
+
 enum hal_rx_su_mu_coding {
 	HAL_RX_SU_MU_CODING_BCC,
 	HAL_RX_SU_MU_CODING_LDPC,
@@ -425,6 +434,216 @@ enum hal_srng_dir {
 	HAL_SRNG_DIR_SRC,
 	HAL_SRNG_DIR_DST
 };
+
+struct ath12k_hal_reo_cmd {
+	u32 addr_lo;
+	u32 flag;
+	u32 upd0;
+	u32 upd1;
+	u32 upd2;
+	u32 pn[4];
+	u16 rx_queue_num;
+	u16 min_rel;
+	u16 min_fwd;
+	u8 addr_hi;
+	u8 ac_list;
+	u8 blocking_idx;
+	u16 ba_window_size;
+	u8 pn_size;
+};
+
+enum rx_msdu_start_pkt_type {
+	RX_MSDU_START_PKT_TYPE_11A,
+	RX_MSDU_START_PKT_TYPE_11B,
+	RX_MSDU_START_PKT_TYPE_11N,
+	RX_MSDU_START_PKT_TYPE_11AC,
+	RX_MSDU_START_PKT_TYPE_11AX,
+	RX_MSDU_START_PKT_TYPE_11BA,
+	RX_MSDU_START_PKT_TYPE_11BE,
+};
+
+enum rx_msdu_start_sgi {
+	RX_MSDU_START_SGI_0_8_US,
+	RX_MSDU_START_SGI_0_4_US,
+	RX_MSDU_START_SGI_1_6_US,
+	RX_MSDU_START_SGI_3_2_US,
+};
+
+enum rx_msdu_start_recv_bw {
+	RX_MSDU_START_RECV_BW_20MHZ,
+	RX_MSDU_START_RECV_BW_40MHZ,
+	RX_MSDU_START_RECV_BW_80MHZ,
+	RX_MSDU_START_RECV_BW_160MHZ,
+};
+
+enum rx_msdu_start_reception_type {
+	RX_MSDU_START_RECEPTION_TYPE_SU,
+	RX_MSDU_START_RECEPTION_TYPE_DL_MU_MIMO,
+	RX_MSDU_START_RECEPTION_TYPE_DL_MU_OFDMA,
+	RX_MSDU_START_RECEPTION_TYPE_DL_MU_OFDMA_MIMO,
+	RX_MSDU_START_RECEPTION_TYPE_UL_MU_MIMO,
+	RX_MSDU_START_RECEPTION_TYPE_UL_MU_OFDMA,
+	RX_MSDU_START_RECEPTION_TYPE_UL_MU_OFDMA_MIMO,
+};
+
+struct hal_rx_user_status {
+	u32 mcs:4,
+	nss:3,
+	ofdma_info_valid:1,
+	ul_ofdma_ru_start_index:7,
+	ul_ofdma_ru_width:7,
+	ul_ofdma_ru_size:8;
+	u32 ul_ofdma_user_v0_word0;
+	u32 ul_ofdma_user_v0_word1;
+	u32 ast_index;
+	u32 tid;
+	u16 tcp_msdu_count;
+	u16 tcp_ack_msdu_count;
+	u16 udp_msdu_count;
+	u16 other_msdu_count;
+	u16 frame_control;
+	u8 frame_control_info_valid;
+	u8 data_sequence_control_info_valid;
+	u16 first_data_seq_ctrl;
+	u32 preamble_type;
+	u16 ht_flags;
+	u16 vht_flags;
+	u16 he_flags;
+	u8 rs_flags;
+	u8 ldpc;
+	u32 mpdu_cnt_fcs_ok;
+	u32 mpdu_cnt_fcs_err;
+	u32 mpdu_fcs_ok_bitmap[HAL_RX_NUM_WORDS_PER_PPDU_BITMAP];
+	u32 mpdu_ok_byte_count;
+	u32 mpdu_err_byte_count;
+	bool ampdu_present;
+	u16 ampdu_id;
+};
+
+#define HAL_MAX_UL_MU_USERS	37
+
+struct hal_rx_u_sig_info {
+	bool ul_dl;
+	u8 bw;
+	u8 ppdu_type_comp_mode;
+	u8 eht_sig_mcs;
+	u8 num_eht_sig_sym;
+	struct ieee80211_radiotap_eht_usig usig;
+};
+
+#define HAL_RX_MON_MAX_AGGR_SIZE	128
+
+struct hal_rx_tlv_aggr_info {
+	bool in_progress;
+	u16 cur_len;
+	u16 tlv_tag;
+	u8 buf[HAL_RX_MON_MAX_AGGR_SIZE];
+};
+
+struct hal_rx_radiotap_eht {
+	__le32 known;
+	__le32 data[9];
+};
+
+#define EHT_MAX_USER_INFO	4
+
+struct hal_rx_eht_info {
+	u8 num_user_info;
+	struct hal_rx_radiotap_eht eht;
+	u32 user_info[EHT_MAX_USER_INFO];
+};
+
+struct hal_rx_mon_ppdu_info {
+	u32 ppdu_id;
+	u32 last_ppdu_id;
+	u64 ppdu_ts;
+	u32 num_mpdu_fcs_ok;
+	u32 num_mpdu_fcs_err;
+	u32 preamble_type;
+	u32 mpdu_len;
+	u16 chan_num;
+	u16 freq;
+	u16 tcp_msdu_count;
+	u16 tcp_ack_msdu_count;
+	u16 udp_msdu_count;
+	u16 other_msdu_count;
+	u16 peer_id;
+	u8 rate;
+	u8 mcs;
+	u8 nss;
+	u8 bw;
+	u8 vht_flag_values1;
+	u8 vht_flag_values2;
+	u8 vht_flag_values3[4];
+	u8 vht_flag_values4;
+	u8 vht_flag_values5;
+	u16 vht_flag_values6;
+	u8 is_stbc;
+	u8 gi;
+	u8 sgi;
+	u8 ldpc;
+	u8 beamformed;
+	u8 rssi_comb;
+	u16 tid;
+	u8 fc_valid;
+	u16 ht_flags;
+	u16 vht_flags;
+	u16 he_flags;
+	u16 he_mu_flags;
+	u8 dcm;
+	u8 ru_alloc;
+	u8 reception_type;
+	u64 tsft;
+	u64 rx_duration;
+	u16 frame_control;
+	u32 ast_index;
+	u8 rs_fcs_err;
+	u8 rs_flags;
+	u8 cck_flag;
+	u8 ofdm_flag;
+	u8 ulofdma_flag;
+	u8 frame_control_info_valid;
+	u16 he_per_user_1;
+	u16 he_per_user_2;
+	u8 he_per_user_position;
+	u8 he_per_user_known;
+	u16 he_flags1;
+	u16 he_flags2;
+	u8 he_RU[4];
+	u16 he_data1;
+	u16 he_data2;
+	u16 he_data3;
+	u16 he_data4;
+	u16 he_data5;
+	u16 he_data6;
+	u32 ppdu_len;
+	u32 prev_ppdu_id;
+	u32 device_id;
+	u16 first_data_seq_ctrl;
+	u8 monitor_direct_used;
+	u8 data_sequence_control_info_valid;
+	u8 ltf_size;
+	u8 rxpcu_filter_pass;
+	s8 rssi_chain[8][8];
+	u32 num_users;
+	u32 mpdu_fcs_ok_bitmap[HAL_RX_NUM_WORDS_PER_PPDU_BITMAP];
+	u8 addr1[ETH_ALEN];
+	u8 addr2[ETH_ALEN];
+	u8 addr3[ETH_ALEN];
+	u8 addr4[ETH_ALEN];
+	struct hal_rx_user_status userstats[HAL_MAX_UL_MU_USERS];
+	u8 userid;
+	bool first_msdu_in_mpdu;
+	bool is_ampdu;
+	u8 medium_prot_type;
+	bool ppdu_continuation;
+	bool eht_usig;
+	struct hal_rx_u_sig_info u_sig_info;
+	bool is_eht;
+	struct hal_rx_eht_info eht_info;
+	struct hal_rx_tlv_aggr_info tlv_aggr;
+};
+
 
 struct hal_rx_desc_data {
 	u32 freq;
@@ -826,6 +1045,53 @@ struct ath12k_hal {
 	const struct ath12k_hal_tcl_to_wbm_rbm_map *tcl_to_wbm_rbm_map;
 };
 
+enum ath12k_eht_ru_size {
+	ATH12K_EHT_RU_26,
+	ATH12K_EHT_RU_52,
+	ATH12K_EHT_RU_106,
+	ATH12K_EHT_RU_242,
+	ATH12K_EHT_RU_484,
+	ATH12K_EHT_RU_996,
+	ATH12K_EHT_RU_996x2,
+	ATH12K_EHT_RU_996x4,
+	ATH12K_EHT_RU_52_26,
+	ATH12K_EHT_RU_106_26,
+	ATH12K_EHT_RU_484_242,
+	ATH12K_EHT_RU_996_484,
+	ATH12K_EHT_RU_996_484_242,
+	ATH12K_EHT_RU_996x2_484,
+	ATH12K_EHT_RU_996x3,
+	ATH12K_EHT_RU_996x3_484,
+
+	/* Keep last */
+	ATH12K_EHT_RU_INVALID,
+};
+
+#define HAL_RX_RU_ALLOC_TYPE_MAX	ATH12K_EHT_RU_INVALID
+
+enum hal_wbm_rel_bm_act {
+	HAL_WBM_REL_BM_ACT_PUT_IN_IDLE,
+	HAL_WBM_REL_BM_ACT_REL_MSDU,
+};
+
+/* hal_wbm_rel_bm_act
+ *
+ * put_in_idle_list
+ *	Put the buffer or descriptor back in the idle list. In case of MSDU or
+ *	MDPU link descriptor, BM does not need to check to release any
+ *	individual MSDU buffers.
+ *
+ * release_msdu_list
+ *	This BM action can only be used in combination with desc_type being
+ *	msdu_link_descriptor. Field first_msdu_index points out which MSDU
+ *	pointer in the MSDU link descriptor is the first of an MPDU that is
+ *	released. BM shall release all the MSDU buffers linked to this first
+ *	MSDU buffer pointer. All related MSDU buffer pointer entries shall be
+ *	set to value 0, which represents the 'NULL' pointer. When all MSDU
+ *	buffer pointers in the MSDU link descriptor are 'NULL', the MSDU link
+ *	descriptor itself shall also be released.
+ */
+
 /* Maps WBM ring number and Return Buffer Manager Id per TCL ring */
 struct ath12k_hal_tcl_to_wbm_rbm_map  {
 	u8 wbm_ring_num;
@@ -883,6 +1149,8 @@ struct hal_ops {
 	void (*write_ml_reoq_lut_addr)(struct ath12k_base *ab,
 				       dma_addr_t paddr);
 	void (*write_reoq_lut_addr)(struct ath12k_base *ab, dma_addr_t paddr);
+	void (*reoq_lut_addr_read_enable)(struct ath12k_base *ab);
+	void (*reoq_lut_set_max_peerid)(struct ath12k_base *ab);
 	void (*reo_qdesc_setup)(struct hal_rx_reo_queue *qdesc,
 				int tid, u32 ba_window_size,
 				u32 start_seq, enum hal_pn_type type);
@@ -1013,6 +1281,8 @@ void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
 void ath12k_hal_write_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr);
 void
 ath12k_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr);
+void ath12k_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab);
+void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab);
 void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab,
                                  struct hal_srng *srng);
 void ath12k_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);

@@ -7,8 +7,6 @@
 #ifndef ATH12K_DP_H
 #define ATH12K_DP_H
 
-#include "wifi7/hal_desc.h"
-#include "wifi7/hal_rx.h"
 #include "hw.h"
 #include "dp_htt.h"
 #include "dp_cmn.h"
@@ -25,6 +23,9 @@ struct ath12k_link_vif;
 struct hal_tcl_status_ring;
 struct ath12k_ext_irq_grp;
 struct ath12k_dp_rx_tid;
+struct ath12k_hal_reo_cmd;
+struct hal_reo_dest_ring;
+enum hal_wbm_rel_bm_act;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
@@ -284,6 +285,9 @@ struct ath12k_pdev_dp {
 #define DP_REO_QREF_NUM		GENMASK(31, 16)
 #define DP_MAX_PEER_ID		2047
 
+#define DP_TCL_ENCAP_TYPE_MAX	4
+#define DP_TCL_DESC_TYPE_MAX	2
+
 /* Total size of the LUT is based on 2K peers, each having reference
  * for 17tids, note each entry is of type ath12k_reo_queue_ref
  * hence total size is 2048 * 17 * 8 = 278528
@@ -352,9 +356,9 @@ struct ath12k_link_stats {
 	u32 tx_completed;
 	u32 tx_bcast_mcast;
 	u32 tx_dropped;
-	u32 tx_encap_type[HAL_TCL_ENCAP_TYPE_MAX];
+	u32 tx_encap_type[DP_TCL_ENCAP_TYPE_MAX];
 	u32 tx_encrypt_type[HAL_ENCRYPT_TYPE_MAX];
-	u32 tx_desc_type[HAL_TCL_DESC_TYPE_MAX];
+	u32 tx_desc_type[DP_TCL_DESC_TYPE_MAX];
 };
 
 /* DP arch ops to communicate from common module
