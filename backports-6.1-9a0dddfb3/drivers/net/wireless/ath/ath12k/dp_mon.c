@@ -2444,7 +2444,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_base *ab,
 	ath12k_hal_srng_access_begin(ab, srng);
 
 	while (req_entries > 0) {
-		skb = dev_alloc_skb(DP_RX_BUFFER_SIZE + DP_RX_BUFFER_ALIGN_SIZE);
+		skb = dev_alloc_skb(DP_RX_MON_BUFFER_SIZE + DP_RX_BUFFER_ALIGN_SIZE);
 		if (unlikely(!skb))
 			goto fail_alloc_skb;
 
@@ -3580,13 +3580,13 @@ int ath12k_dp_mon_srng_process(struct ath12k_pdev_dp *pdev_dp, int *budget,
 		}
 
 		end_offset = u32_get_bits(info0, HAL_MON_DEST_INFO0_END_OFFSET);
-		if (likely(end_offset <= DP_RX_BUFFER_SIZE)) {
+		if (likely(end_offset <= DP_RX_MON_BUFFER_SIZE)) {
 			skb_put(skb, end_offset);
 		} else {
 			ath12k_warn(ab,
 				    "invalid offset on mon stats destination %u\n",
 				    end_offset);
-			skb_put(skb, DP_RX_BUFFER_SIZE);
+			skb_put(skb, DP_RX_MON_BUFFER_SIZE);
 		}
 
 		__skb_queue_tail(&skb_list, skb);

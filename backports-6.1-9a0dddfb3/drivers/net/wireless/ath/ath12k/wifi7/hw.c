@@ -524,7 +524,9 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_AP) |
 					BIT(NL80211_IFTYPE_MESH_POINT) |
 					BIT(NL80211_IFTYPE_AP_VLAN),
+#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
+#endif
 
 		.idle_ps = false,
 		.cold_boot_calib = true,

@@ -8236,7 +8236,7 @@ static int ath12k_mac_config_mon_status_default(struct ath12k *ar, bool enable)
 		ret = ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id,
 						       ar->dp.mac_id + i,
 						       HAL_RXDMA_MONITOR_DST,
-						       DP_RXDMA_REFILL_RING_SIZE,
+						       DP_RX_MON_BUFFER_SIZE,
 						       &tlv_filter);
 		if (ret) {
 			ath12k_err(ab,

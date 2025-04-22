@@ -187,14 +187,16 @@ struct ath12k_pdev_dp {
 #define ATH12K_NUM_POOL_TX_DESC        8192
 /* TODO: revisit this count during testing */
 #define ATH12K_RX_DESC_COUNT           (6144)
+#define DP_RX_BUFFER_SIZE		1856
 #else
 //#ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Fix the Default profile enablement
 #define DP_TX_COMP_RING_SIZE           32768
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE 4096
-#define DP_RXDMA_MONITOR_DST_RING_SIZE 8092
+#define DP_RXDMA_MONITOR_DST_RING_SIZE 8192
 #define ATH12K_NUM_POOL_TX_DESC                32768
 /* TODO: revisit this count during testing */
 #define ATH12K_RX_DESC_COUNT           (12288)
+#define DP_RX_BUFFER_SIZE		2048
 #endif
 
 #define DP_WBM_RELEASE_RING_SIZE	64
@@ -215,6 +217,7 @@ struct ath12k_pdev_dp {
 #define DP_RXDMA_ERR_DST_RING_SIZE	1024
 #define DP_RXDMA_MON_STATUS_RING_SIZE	1024
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
+#define DP_RX_MON_BUFFER_SIZE		2048
 #define DP_TX_MONITOR_BUF_RING_SIZE	4096
 #define DP_TX_MONITOR_DEST_RING_SIZE	2048
 
@@ -222,7 +225,6 @@ struct ath12k_pdev_dp {
 #define DP_TX_MONITOR_BUF_SIZE_MIN	48
 #define DP_TX_MONITOR_BUF_SIZE_MAX	8192
 
-#define DP_RX_BUFFER_SIZE	2048
 #define DP_RX_BUFFER_SIZE_LITE	1024
 #define DP_RX_BUFFER_ALIGN_SIZE	128
 
