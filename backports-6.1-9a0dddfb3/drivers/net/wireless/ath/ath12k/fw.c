@@ -156,9 +156,9 @@ void ath12k_fw_map(struct ath12k_base *ab)
 
 	ret = ath12k_fw_request_firmware_api_n(ab, ATH12K_FW_API2_FILE);
 	if (ret == 0)
-		ab->fw.api_version = 2;
+		ab->fw.api_version = ATH12K_FW_API_V2;
 	else
-		ab->fw.api_version = 1;
+		ab->fw.api_version = ATH12K_FW_API_V1;
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "using fw api %d\n",
 		   ab->fw.api_version);

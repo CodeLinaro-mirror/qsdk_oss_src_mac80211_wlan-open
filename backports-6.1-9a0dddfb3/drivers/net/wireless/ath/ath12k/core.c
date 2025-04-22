@@ -2202,7 +2202,7 @@ void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag)
 		  * bypassing this check for the both. Need to make this generic
 		  */
 
-		if (ab->hif.bus == ATH12K_BUS_PCI && !test_bit(ATH12K_FW_FEATURE_MLO, ab->fw.fw_features)) {
+		if (ab->fw.api_version == ATH12K_FW_API_V2 && !test_bit(ATH12K_FW_FEATURE_MLO, ab->fw.fw_features)) {
 			ag->mlo_capable = false;
 			return;
 		}

@@ -229,9 +229,10 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 			mhi_ctrl->fw_data = ab->fw.amss_dualmac_data;
 			mhi_ctrl->fw_sz = ab->fw.amss_dualmac_len;
 		} else {
-			ath12k_warn(ab, "dualmac firmware IE not present in firmware-N.bin\n");
-			ret = -ENOENT;
-			goto free_controller;
+			ath12k_core_create_firmware_path(ab, ATH12K_AMSS_DUALMAC_FILE,
+							 ab_pci->amss_path,
+							 sizeof(ab_pci->amss_path));
+			mhi_ctrl->fw_image = ab_pci->amss_path;
 		}
 	} else {
 		if (ab->fw.amss_data && ab->fw.amss_len > 0) {

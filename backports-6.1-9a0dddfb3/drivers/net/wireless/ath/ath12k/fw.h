@@ -30,6 +30,11 @@ enum ath12k_fw_features {
 	ATH12K_FW_FEATURE_COUNT,
 };
 
+enum ath12k_fw_api_version {
+	ATH12K_FW_API_V1 = 1,
+	ATH12K_FW_API_V2,
+};
+
 void ath12k_fw_map(struct ath12k_base *ab);
 void ath12k_fw_unmap(struct ath12k_base *ab);
 
