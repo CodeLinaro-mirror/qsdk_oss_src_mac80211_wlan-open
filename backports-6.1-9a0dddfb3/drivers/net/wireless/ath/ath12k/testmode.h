@@ -15,7 +15,7 @@ void ath12k_tm_process_event(struct ath12k_base *ab, u32 cmd_id,
 			     const struct ath12k_wmi_ftm_event *ftm_msg,
 			     u16 length);
 int ath12k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-		  void *data, int len);
+		  u8 link_id, void *data, int len);
 
 #else
 
@@ -32,7 +32,8 @@ static inline void ath12k_tm_process_event(struct ath12k_base *ab, u32 cmd_id,
 
 static inline int ath12k_tm_cmd(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
-				void *data, int len)
+				u8 link_id, void *data,
+				int len)
 {
 	return 0;
 }

@@ -238,11 +238,12 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 				 int n_vifs,
 				 enum ieee80211_chanctx_switch_mode mode);
 int ath12k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, u8 radio_id,
-				    u32 value);
+				    u32 value, struct ieee80211_vif *vif,
+				    u32 link_id);
 int ath12k_mac_op_set_frag_threshold(struct ieee80211_hw *hw, u32 value);
 int
 ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
-			       struct ieee80211_vif *vif,
+			       struct ieee80211_vif *vif, unsigned int link_id,
 			       const struct cfg80211_bitrate_mask *mask);
 int ath12k_mac_op_get_survey(struct ieee80211_hw *hw, int idx,
 			     struct survey_info *survey);

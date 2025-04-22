@@ -4046,7 +4046,7 @@ static int ath12k_mac_fils_discovery(struct ath12k_link_vif *arvif,
 	if (info->fils_discovery.max_interval) {
 		interval = info->fils_discovery.max_interval;
 
-		tmpl = ieee80211_get_fils_discovery_tmpl(hw, vif);
+		tmpl = ieee80211_get_fils_discovery_tmpl(hw, vif, info->link_id);
 		if (tmpl)
 			ret = ath12k_wmi_fils_discovery_tmpl(ar, arvif->vdev_id,
 							     tmpl);
@@ -4054,7 +4054,7 @@ static int ath12k_mac_fils_discovery(struct ath12k_link_vif *arvif,
 		unsol_bcast_probe_resp_enabled = 1;
 		interval = info->unsol_bcast_probe_resp_interval;
 
-		tmpl = ieee80211_get_unsol_bcast_probe_resp_tmpl(hw, vif);
+		tmpl = ieee80211_get_unsol_bcast_probe_resp_tmpl(hw, vif, info->link_id);
 		if (tmpl)
 			ret = ath12k_wmi_probe_resp_tmpl(ar, arvif->vdev_id,
 							 tmpl);
@@ -9936,7 +9936,8 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP && ctx->radar_enabled &&
 	    cfg80211_chandef_dfs_usable(hw->wiphy, chandef)) {
 		set_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
-		dfs_cac_time = cfg80211_chandef_dfs_cac_time(hw->wiphy, chandef);
+		dfs_cac_time = cfg80211_chandef_dfs_cac_time(hw->wiphy, chandef,
+							     false, false);
 
 		ath12k_dbg(ab, ATH12K_DBG_MAC,
 			   "CAC started dfs_cac_time %u center_freq %d center_freq1 %d for vdev %d\n",
@@ -10516,7 +10517,8 @@ ath12k_set_vdev_param_to_all_vifs(struct ath12k *ar, int param, u32 value)
  * this is set interface specific to firmware from ath12k driver
  */
 int ath12k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, u8 radio_id,
-				    u32 value)
+				    u32 value, struct ieee80211_vif *vif,
+				    u32 link_id)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k *ar;
@@ -11119,7 +11121,7 @@ exit:
 
 int
 ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
-			       struct ieee80211_vif *vif,
+			       struct ieee80211_vif *vif, unsigned int link_id,
 			       const struct cfg80211_bitrate_mask *mask)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);

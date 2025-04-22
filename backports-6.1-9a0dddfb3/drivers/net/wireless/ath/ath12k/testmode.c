@@ -352,7 +352,7 @@ static int ath12k_tm_cmd_wmi(struct ath12k *ar, struct nlattr *tb[])
 }
 
 int ath12k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-		  void *data, int len)
+		  u8 link_id, void *data, int len)
 {
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar = NULL;
