@@ -11463,6 +11463,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_fw_stats_req_params params = {};
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
+	struct ath12k_base *ab;
 	s8 signal;
 	bool db2dbm;
 	struct ath12k_dp *dp;
@@ -11471,9 +11472,12 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	lockdep_assert_wiphy(hw->wiphy);
 
 	arsta = &ahsta->deflink;
+
 	ar = ath12k_get_ar_by_vif(hw, vif, arsta->link_id);
 	if (!ar)
 		return;
+
+	ab = ar->ab;
 
 	dp = ath12k_ab_to_dp(ar->ab);
 	ath12k_link_peer_get_sta_rate_info_stats(dp, arsta->addr, &rate_info);
@@ -11484,6 +11488,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	sinfo->rx_duration = rate_info.rx_duration;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DURATION);
 
+	spin_lock_bh(&ab->base_lock);
 	sinfo->tx_duration = rate_info.tx_duration;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_DURATION);
 
@@ -11504,6 +11509,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
 	}
 
+	spin_unlock_bh(&ab->base_lock);
 	/* TODO: Use real NF instead of default one. */
 	signal = rate_info.rssi_comb;
 
