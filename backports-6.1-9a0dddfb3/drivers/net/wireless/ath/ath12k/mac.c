@@ -3848,6 +3848,7 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	spin_lock_init(&arvif->link_stats_lock);
 
 	INIT_LIST_HEAD(&arvif->list);
+	arvif->key_cipher = INVALID_CIPHER;
 	INIT_DELAYED_WORK(&ahvif->deflink.connection_loss_work,
 			  ath12k_mac_vif_sta_connection_loss_work);
 
@@ -5275,8 +5276,10 @@ install:
 	if (!wait_for_completion_timeout(&ar->install_key_done, 1 * HZ))
 		return -ETIMEDOUT;
 
-	if (ether_addr_equal(macaddr, arvif->bssid))
+	if (ether_addr_equal(macaddr, arvif->bssid)) {
 		arvif->key_cipher = key->cipher;
+		ath12k_dp_tx_update_bank_profile(arvif);
+	}
 
 	return ar->install_key_status ? -EINVAL : 0;
 }
@@ -9409,6 +9412,7 @@ err_vdev_del:
 	ath12k_mac_vif_unref(ath12k_ab_to_dp(ab), vif);
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
 	ath12k_dp_tx_put_bank_profile(ath12k_ab_to_dp(ab), dp_link_vif->bank_id);
+	arvif->key_cipher = INVALID_CIPHER;
 
 	/* Recalc txpower for remaining vdev */
 	ath12k_mac_txpower_recalc(ar);

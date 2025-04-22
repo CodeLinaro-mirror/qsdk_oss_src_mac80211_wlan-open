@@ -72,6 +72,8 @@
 #define ATH12K_MAX_MLO_PEERS            256
 #define ATH12K_MLO_PEER_ID_INVALID      0xFFFF
 
+#define INVALID_CIPHER 0xFFFFFFFF
+
 extern unsigned int ath12k_frame_mode;
 enum ath12k_bdf_search {
 	ATH12K_BDF_SEARCH_DEFAULT,

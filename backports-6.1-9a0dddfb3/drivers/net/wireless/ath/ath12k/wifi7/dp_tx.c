@@ -165,21 +165,6 @@ tcl_ring_sel:
 
 	ti.bank_id = dp_link_vif->bank_id;
 
-	if (dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_RAW &&
-	    test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ab->dev_flags)) {
-		if (skb_cb->flags & ATH12K_SKB_CIPHER_SET) {
-			ti.encrypt_type =
-				ath12k_dp_tx_get_encrypt_type(skb_cb->cipher);
-
-			if (ieee80211_has_protected(hdr->frame_control))
-				skb_put(skb, IEEE80211_CCMP_MIC_LEN);
-		} else {
-			ti.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
-		}
-
-		msdu_ext_desc = true;
-	}
-
 	if (gsn_valid && !(ti.lookup_override)) {
 		/* Reset and Initialize meta_data_flags with Global Sequence
 		 * Number (GSN) info.
@@ -255,6 +240,24 @@ tcl_ring_sel:
 		msdu_ext_desc = true;
 		if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
 			ti.encap_type = HAL_TCL_ENCAP_TYPE_RAW;
+			ti.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
+		}
+	}
+
+	if (unlikely(dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_RAW)) {
+		if (skb->protocol == cpu_to_be16(ETH_P_ARP)) {
+			ti.encap_type = HAL_TCL_ENCAP_TYPE_RAW;
+			ti.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
+			msdu_ext_desc = true;
+		}
+
+		if (skb_cb->flags & ATH12K_SKB_CIPHER_SET) {
+			ti.encrypt_type =
+				ath12k_dp_tx_get_encrypt_type(skb_cb->cipher);
+
+			if (ieee80211_has_protected(hdr->frame_control))
+				skb_put(skb, IEEE80211_CCMP_MIC_LEN);
+		} else {
 			ti.encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
 		}
 	}
@@ -951,6 +954,7 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 {
 	u32 bank_config = 0;
 	u8 link_id = arvif->link_id;
+	enum hal_encrypt_type encrypt_type = 0;
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
@@ -959,13 +963,19 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 	 * With SW crypto, mac80211 sets key per packet
 	 */
 	if (dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_RAW &&
-	    test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ab->dev_flags))
+	    test_bit(ATH12K_FLAG_HW_CRYPTO_DISABLED, &ab->dev_flags) &&
+	    arvif->key_cipher != INVALID_CIPHER)
 		bank_config |=
 			u32_encode_bits(ath12k_dp_tx_get_encrypt_type(arvif->key_cipher),
 					HAL_TX_BANK_CONFIG_ENCRYPT_TYPE);
+	else
+		encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
 
 	bank_config |= u32_encode_bits(dp_vif->tx_encap_type,
-					HAL_TX_BANK_CONFIG_ENCAP_TYPE);
+					HAL_TX_BANK_CONFIG_ENCAP_TYPE) |
+					u32_encode_bits(encrypt_type,
+					HAL_TX_BANK_CONFIG_ENCRYPT_TYPE);
+
 	bank_config |= u32_encode_bits(0, HAL_TX_BANK_CONFIG_SRC_BUFFER_SWAP) |
 			u32_encode_bits(0, HAL_TX_BANK_CONFIG_LINK_META_SWAP) |
 			u32_encode_bits(0, HAL_TX_BANK_CONFIG_EPD);

@@ -636,4 +636,5 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 						  u32 desc_id);
 bool ath12k_dp_wmask_compaction_rx_tlv_supported(struct ath12k_base *ab);
+void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif);
 #endif

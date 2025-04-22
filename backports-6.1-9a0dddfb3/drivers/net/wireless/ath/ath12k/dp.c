@@ -399,6 +399,18 @@ void ath12k_dp_tx_put_bank_profile(struct ath12k_dp *dp, u8 bank_id)
 	spin_unlock_bh(&dp->tx_bank_lock);
 }
 
+void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif)
+{
+	struct ath12k_base *ab = arvif->ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	u8 link_id = arvif->link_id;
+	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
+
+	ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
+	dp_link_vif->bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, dp);
+}
+
 static void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
