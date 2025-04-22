@@ -3367,6 +3367,10 @@ static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_mlo(arsta, arg);
 
 	arsta->peer_nss = arg->peer_nss;
+
+	WARN_ON_ONCE(arsta->peer_nss < 1 ||
+             (arsta->peer_nss > hweight32(ar->pdev->cap.tx_chain_mask)));
+
 	/* TODO: amsdu_disable req? */
 }
 

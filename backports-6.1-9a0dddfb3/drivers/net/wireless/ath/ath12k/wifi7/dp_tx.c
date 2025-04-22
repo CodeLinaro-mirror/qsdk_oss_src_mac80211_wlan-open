@@ -610,6 +610,9 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 		txrate.nss = arsta->peer_nss;
 	spin_unlock_bh(&dp->dp_lock);
 
+	WARN_ON_ONCE(txrate.nss < 1 ||
+             (txrate.nss > hweight32(dp_pdev->ar->pdev->cap.tx_chain_mask)));
+
 	switch (ts->pkt_type) {
 	case HAL_TX_RATE_STATS_PKT_TYPE_11A:
 	case HAL_TX_RATE_STATS_PKT_TYPE_11B:
