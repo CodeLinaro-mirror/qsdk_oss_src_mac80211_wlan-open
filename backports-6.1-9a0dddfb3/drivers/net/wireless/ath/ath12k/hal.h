@@ -832,60 +832,8 @@ struct ath12k_hal_tcl_to_wbm_rbm_map  {
 	u8 rbm_id;
 };
 
-struct hal_rx_ops {
-	bool (*rx_desc_get_first_msdu)(struct hal_rx_desc *desc);
-	bool (*rx_desc_get_last_msdu)(struct hal_rx_desc *desc);
-	u8 (*rx_desc_get_l3_pad_bytes)(struct hal_rx_desc *desc);
-	u8 *(*rx_desc_get_hdr_status)(struct hal_rx_desc *desc);
-	bool (*rx_desc_encrypt_valid)(struct hal_rx_desc *desc);
-	u32 (*rx_desc_get_encrypt_type)(struct hal_rx_desc *desc);
-	u8 (*rx_desc_get_decap_type)(struct hal_rx_desc *desc);
-	u8 (*rx_desc_get_mesh_ctl)(struct hal_rx_desc *desc);
-	bool (*rx_desc_get_mpdu_seq_ctl_vld)(struct hal_rx_desc *desc);
-	bool (*rx_desc_get_mpdu_fc_valid)(struct hal_rx_desc *desc);
-	u16 (*rx_desc_get_mpdu_start_seq_no)(struct hal_rx_desc *desc);
-	u16 (*rx_desc_get_msdu_len)(struct hal_rx_desc *desc);
-	u8 (*rx_desc_get_msdu_sgi)(struct hal_rx_desc *desc);
-	u8 (*rx_desc_get_msdu_rate_mcs)(struct hal_rx_desc *desc);
-	u8 (*rx_desc_get_msdu_rx_bw)(struct hal_rx_desc *desc);
-	u32 (*rx_desc_get_msdu_freq)(struct hal_rx_desc *desc);
-	u8 (*rx_desc_get_msdu_pkt_type)(struct hal_rx_desc *desc);
-	u8 (*rx_desc_get_msdu_nss)(struct hal_rx_desc *desc);
-	u8 (*rx_desc_get_mpdu_tid)(struct hal_rx_desc *desc);
-	u16 (*rx_desc_get_mpdu_peer_id)(struct hal_rx_desc *desc);
-	void (*rx_desc_copy_end_tlv)(struct hal_rx_desc *fdesc,
-				     struct hal_rx_desc *ldesc);
-	u32 (*rx_desc_get_mpdu_start_tag)(struct hal_rx_desc *desc);
-	u32 (*rx_desc_get_mpdu_ppdu_id)(struct hal_rx_desc *desc);
-	void (*rx_desc_set_msdu_len)(struct hal_rx_desc *desc, u16 len);
-	struct rx_attention *(*rx_desc_get_attention)(struct hal_rx_desc *desc);
-	u8 *(*rx_desc_get_msdu_payload)(struct hal_rx_desc *desc);
-	u32 (*rx_desc_get_mpdu_start_offset)(void);
-	u32 (*rx_desc_get_msdu_end_offset)(void);
-	bool (*rx_desc_mac_addr2_valid)(struct hal_rx_desc *desc);
-	u8* (*rx_desc_mpdu_start_addr2)(struct hal_rx_desc *desc);
-	bool (*rx_desc_is_da_mcbc)(struct hal_rx_desc *desc);
-	void (*rx_desc_get_dot11_hdr)(struct hal_rx_desc *desc,
-				      struct ieee80211_hdr *hdr);
-	void (*rx_desc_get_crypto_header)(struct hal_rx_desc *desc,
-					  u8 *crypto_hdr,
-					  enum hal_encrypt_type enctype);
-	bool (*dp_rx_h_msdu_done)(struct hal_rx_desc *desc);
-	bool (*dp_rx_h_l4_cksum_fail)(struct hal_rx_desc *desc);
-	bool (*dp_rx_h_ip_cksum_fail)(struct hal_rx_desc *desc);
-	bool (*dp_rx_h_is_decrypted)(struct hal_rx_desc *desc);
-	u32 (*dp_rx_h_mpdu_err)(struct hal_rx_desc *desc);
-	u32 (*rx_desc_get_desc_size)(void);
-	u8 (*rx_desc_get_msdu_src_link_id)(struct hal_rx_desc *desc);
-};
-
 struct hal_wbm_idle_scatter_list;
 struct hal_wbm_link_desc;
-
-struct hw_regs_version_mapping {
-	u8 hw_version;
-	const struct ath12k_hw_regs *hw_regs;
-};
 
 struct hal_ops {
 	int (*hal_init)(struct ath12k_hal *hal, u8 hw_version);
