@@ -614,7 +614,8 @@ static void ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		ehdr = (struct ethhdr *)msdu->data;
 
 		/* mac80211 allows fast path only for authorized STA */
-		if (ehdr->h_proto == cpu_to_be16(ETH_P_PAE)) {
+		if (ehdr->h_proto == cpu_to_be16(ETH_P_PAE) ||
+		    enctype == HAL_ENCRYPT_TYPE_TKIP_MIC) {
 			ATH12K_SKB_RXCB(msdu)->is_eapol = true;
 			ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, enctype,
 							 status,
