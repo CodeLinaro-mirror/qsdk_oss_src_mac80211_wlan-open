@@ -6411,6 +6411,27 @@ static void ath12k_print_reg_rule(struct ath12k_base *ab, const char *prev,
        }
 }
 
+static u8
+ath12k_invalid_5g_reg_ext_rules_from_wmi(u32 num_reg_rules,
+                                         struct ath12k_wmi_reg_rule_ext_params *wmi_reg_rule)
+{
+        u8 num_invalid_5g_rules = 0;
+        u32 count, start_freq, end_freq;
+
+        for (count = 0; count < num_reg_rules; count++) {
+                start_freq = FIELD_GET(REG_RULE_START_FREQ,
+                                       wmi_reg_rule[count].freq_info);
+                end_freq = FIELD_GET(REG_RULE_END_FREQ,
+                                     wmi_reg_rule[count].freq_info);
+
+                if (start_freq >= ATH12K_MIN_6GHZ_FREQ &&
+                    end_freq <= ATH12K_MAX_6GHZ_FREQ)
+                        num_invalid_5g_rules++;
+        }
+
+        return num_invalid_5g_rules;
+}
+
 static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 						   struct sk_buff *skb,
 						   struct ath12k_reg_info *reg_info)
@@ -6423,7 +6444,7 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 	u32 num_6g_reg_rules_cl[WMI_REG_CURRENT_MAX_AP_TYPE][WMI_REG_MAX_CLIENT_TYPE];
 	u8 num_invalid_5ghz_ext_rules;
 	u32 total_reg_rules = 0;
-	int ret, i, j;
+	int ret, i, j, skip_6g_rules_in_5g_rules = 0;
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
                    "%s: status_code %s", __func__,
@@ -6660,6 +6681,19 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 		num_5g_reg_rules = num_5g_reg_rules - num_invalid_5ghz_ext_rules;
 		reg_info->num_5g_reg_rules = num_5g_reg_rules;
 	}
+
+        skip_6g_rules_in_5g_rules = ath12k_invalid_5g_reg_ext_rules_from_wmi(num_5g_reg_rules,
+                                                                             ext_wmi_reg_rule);
+
+        if(skip_6g_rules_in_5g_rules) {
+                ath12k_dbg(ab, ATH12K_DBG_WMI,
+                           "CC: %s 5g reg rules number %d from fw, %d number of invalid 5g rules",
+                           reg_info->alpha2, reg_info->num_5g_reg_rules,
+                           skip_6g_rules_in_5g_rules);
+
+                num_5g_reg_rules = num_5g_reg_rules - skip_6g_rules_in_5g_rules;
+                reg_info->num_5g_reg_rules = num_5g_reg_rules;
+        }
 
 	if (num_5g_reg_rules) {
 		reg_info->reg_rules_5g_ptr =

@@ -44,6 +44,41 @@ ath12k_ieee80211_ap_pwr_type_convert(enum ieee80211_ap_reg_power power_type)
 	}
 }
 
+static struct ath12k_reg_rule
+*ath12k_get_active_6g_reg_rule(struct ath12k_reg_info *reg_info,
+                              u32 *max_bw_6g, int *max_elements,
+                              enum nl80211_regulatory_power_modes *pwr_mode)
+{
+	struct ath12k_reg_rule *reg_rule = NULL;
+	u8 i = 0, j = 0;
+
+	for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++) {
+		if (reg_info->num_6g_reg_rules_ap[i]) {
+			*max_elements = reg_info->num_6g_reg_rules_ap[i];
+			reg_rule = reg_info->reg_rules_6g_ap_ptr[i];
+			*max_bw_6g = reg_info->max_bw_6g_ap[i];
+			reg_info->num_6g_reg_rules_ap[i] = 0;
+			*pwr_mode = i;
+			return reg_rule;
+		}
+	}
+
+	for (i = 0; i < WMI_REG_MAX_CLIENT_TYPE; i++) {
+		for (j = 0; j < WMI_REG_CURRENT_MAX_AP_TYPE; j++) {
+			if (reg_info->num_6g_reg_rules_cl[j][i]) {
+				*max_elements = reg_info->num_6g_reg_rules_cl[j][i];
+				reg_rule = reg_info->reg_rules_6g_client_ptr[j][i];
+				*max_bw_6g = reg_info->max_bw_6g_client[j][i];
+				reg_info->num_6g_reg_rules_cl[j][i] = 0;
+				*pwr_mode = WMI_REG_CURRENT_MAX_AP_TYPE * (i + 1)  + j;
+				return reg_rule;
+			}
+		}
+	}
+
+       return reg_rule;
+}
+
 static bool ath12k_regdom_changes(struct ieee80211_hw *hw, char *alpha2)
 {
 	const struct ieee80211_regdomain *regd;
@@ -587,8 +622,11 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 	u8 i = 0, j = 0, k = 0;
 	u8 num_rules;
 	u16 max_bw;
-	u32 flags, reg_6g_number, max_bw_6g;
+	int max_elements = 0;
+	u32 flags, reg_6g_number = 0, max_bw_6g = 0;
 	char alpha2[3];
+	bool reg_6g_itr_set = false;
+	enum nl80211_regulatory_power_modes pwr_mode;
 
 	num_rules = reg_info->num_5g_reg_rules + reg_info->num_2g_reg_rules;
 
@@ -597,12 +635,16 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 	 * type and client type, after complete 6G regulatory support is added.
 	 */
 	if (reg_info->is_ext_reg_event) {
-		reg_6g_number = reg_info->num_6g_reg_rules_ap[WMI_REG_INDOOR_AP];
-		reg_rule_6g = reg_info->reg_rules_6g_ap_ptr[WMI_REG_INDOOR_AP];
-		max_bw_6g = reg_info->max_bw_6g_ap[WMI_REG_INDOOR_AP];
-		num_rules += reg_6g_number;
-       }
-
+		/* All 6G APs - (LP, SP, VLP) */
+                for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++)
+                        reg_6g_number += reg_info->num_6g_reg_rules_ap[i];
+                /* All 6G STAs - (LP_DEF, LP_SUB, SP_DEF, SP_SUB, VLP_DEF, VLP_SUB) */
+                for (i = 0; i < WMI_REG_MAX_CLIENT_TYPE; i++) {
+                        for (j = 0; j < WMI_REG_CURRENT_MAX_AP_TYPE; j++)
+                                reg_6g_number += reg_info->num_6g_reg_rules_cl[j][i];
+		}
+	}
+	num_rules += reg_6g_number;
 	if (!num_rules)
 		goto ret;
 
@@ -624,13 +666,14 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 	/* Update reg_rules[] below. Firmware is expected to
 	 * send these rules in order(2G rules first and then 5G)
 	 */
-	for (; i < num_rules; i++) {
+	for (i = 0, j = 0; i < num_rules; i++) {
 		if (reg_info->num_2g_reg_rules &&
 		    (i < reg_info->num_2g_reg_rules)) {
 			reg_rule = reg_info->reg_rules_2g_ptr + i;
 			max_bw = min_t(u16, reg_rule->max_bw,
 				       reg_info->max_bw_2g);
 			flags = 0;
+			pwr_mode = 0;
 			ath12k_copy_reg_rule(&ab->reg_freq_2g, reg_rule);
 		} else if (reg_info->num_5g_reg_rules &&
 			   (j < reg_info->num_5g_reg_rules)) {
@@ -645,19 +688,41 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 			 * per other BW rule flags we pass from here
 			 */
 			flags = NL80211_RRF_AUTO_BW;
-
+			pwr_mode = 0;
 			ath12k_copy_reg_rule(&ab->reg_freq_5g, reg_rule);
+		} else if (reg_info->is_ext_reg_event && reg_6g_number) {
+			if (!reg_6g_itr_set) {
+				reg_rule_6g = ath12k_get_active_6g_reg_rule(reg_info,
+						&max_bw_6g, &max_elements, &pwr_mode);
 
-		} else if (reg_info->is_ext_reg_event &&
-			   reg_info->num_6g_reg_rules_ap[WMI_REG_INDOOR_AP] &&
-			(k < reg_info->num_6g_reg_rules_ap[WMI_REG_INDOOR_AP])) {
-			reg_rule = reg_info->reg_rules_6g_ap_ptr[WMI_REG_INDOOR_AP] + k++;
-			max_bw = min_t(u16, reg_rule->max_bw,
-				       reg_info->max_bw_6g_ap[WMI_REG_INDOOR_AP]);
-			flags = NL80211_RRF_AUTO_BW;
-			if (reg_rule->psd_flag)
-				flags |= NL80211_RRF_PSD;
-			ath12k_copy_reg_rule(&ab->reg_freq_6g, reg_rule);
+				if (!reg_rule_6g) {
+					ath12k_warn(ab,
+							"\nFetching a valid reg_rule_6g_ptr failed."
+							"This shouldn't happen normally. Be carefull with"
+							"the regulatory domain settings\n");
+					break;
+				}
+				reg_6g_itr_set = true;
+			}
+			if (reg_6g_itr_set && k < max_elements) {
+				reg_rule = reg_rule_6g + k++;
+				max_bw = min_t(u16, reg_rule->max_bw, max_bw_6g);
+				flags = NL80211_RRF_AUTO_BW;
+
+				if (reg_rule->psd_flag)
+					flags |= NL80211_RRF_PSD;
+
+				ath12k_copy_reg_rule(&ab->reg_freq_6g, reg_rule);
+			}
+
+			if (reg_6g_itr_set && k >= max_elements) {
+				reg_6g_itr_set = false;
+				reg_rule_6g = NULL;
+				max_bw_6g = 0;
+				max_elements = 0;
+				k = 0;
+			}
+			reg_6g_number--;
 		} else {
 			break;
 		}
