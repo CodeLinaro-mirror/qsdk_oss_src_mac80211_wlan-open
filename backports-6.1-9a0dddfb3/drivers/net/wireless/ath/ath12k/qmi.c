@@ -2485,6 +2485,280 @@ static struct qmi_elem_info qmi_wlanfw_m3_dump_upload_done_resp_msg_v01_ei[] = {
         },
 };
 
+struct qmi_elem_info qmi_wlanfw_mem_read_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct qmi_wlanfw_mem_read_req_msg_v01,
+					   offset),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct qmi_wlanfw_mem_read_req_msg_v01,
+					   mem_type),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x03,
+		.offset         = offsetof(struct qmi_wlanfw_mem_read_req_msg_v01,
+					   data_len),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlanfw_mem_read_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mem_read_resp_msg_v01,
+					   resp),
+		.ei_array       = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mem_read_resp_msg_v01,
+					   data_valid),
+	},
+	{
+		.data_type      = QMI_DATA_LEN,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u16),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mem_read_resp_msg_v01,
+					   data_len),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = QMI_WLANFW_MAX_DATA_SIZE_V01,
+		.elem_size      = sizeof(u8),
+		.array_type     = VAR_LEN_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mem_read_resp_msg_v01,
+					   data),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlanfw_mem_write_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mem_write_req_msg_v01,
+					   offset),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mem_write_req_msg_v01,
+					   mem_type),
+	},
+	{
+		.data_type      = QMI_DATA_LEN,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u16),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x03,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mem_write_req_msg_v01,
+					   data_len),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = QMI_WLANFW_MAX_DATA_SIZE_V01,
+		.elem_size      = sizeof(u8),
+		.array_type     = VAR_LEN_ARRAY,
+		.tlv_type       = 0x03,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mem_write_req_msg_v01,
+					   data),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlanfw_mem_write_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mem_write_resp_msg_v01,
+					   resp),
+		.ei_array       = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+int ath12k_qmi_mem_read(struct ath12k_base *ab, u32 mem_addr, void *mem_value,size_t count)
+{
+	struct qmi_wlanfw_mem_read_req_msg_v01 *req;
+	struct qmi_wlanfw_mem_read_resp_msg_v01 *resp;
+	struct qmi_txn txn = {};
+	int ret;
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
+	if (!resp) {
+		kfree(req);
+		return -ENOMEM;
+	}
+
+	req->offset = mem_addr;
+
+	/* Firmware uses mem type to map to various memory regions.
+	 * If this is set to 0, firmware uses automatic mapping of regions.
+	 * i.e, if mem address is given and mem_type is 0, firmware will
+	 * find under which memory region that address belongs
+	 */
+	req->mem_type = QMI_MEM_REGION_TYPE;
+	req->data_len = count;
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+			   qmi_wlanfw_mem_read_resp_msg_v01_ei, resp);
+	if (ret < 0)
+		goto out;
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLANFW_MEM_READ_REQ_V01,
+			       QMI_WLANFW_MEM_READ_REQ_MSG_V01_MAX_MSG_LEN,
+			       qmi_wlanfw_mem_read_req_msg_v01_ei, req);
+	if (ret < 0) {
+		qmi_txn_cancel(&txn);
+		ath12k_warn(ab, "Failed to send mem read request, err %d\n",
+			    ret);
+
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+	if (ret < 0)
+		goto out;
+
+	if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+		ath12k_warn(ab, "qmi mem read req failed, result: %d, err: %d\n",
+			    resp->resp.result, resp->resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	if (!resp->data_valid || resp->data_len != req->data_len) {
+		ath12k_warn(ab, "qmi mem read is invalid\n");
+		ret = -EINVAL;
+		goto out;
+	}
+	memcpy(mem_value, resp->data, resp->data_len);
+
+out:
+	kfree(req);
+	kfree(resp);
+	return ret;
+}
+
+int ath12k_qmi_mem_write(struct ath12k_base *ab, u32 mem_addr, void* mem_value, size_t count)
+{
+	struct qmi_wlanfw_mem_write_req_msg_v01 *req;
+	struct qmi_wlanfw_mem_write_resp_msg_v01 *resp;
+	struct qmi_txn txn = {};
+	int ret;
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
+	if (!resp) {
+		kfree(req);
+		return -ENOMEM;
+	}
+
+	req->offset = mem_addr;
+	req->mem_type = QMI_MEM_REGION_TYPE;
+	req->data_len = count;
+	memcpy(req->data, mem_value, req->data_len);
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+			   qmi_wlanfw_mem_write_resp_msg_v01_ei, resp);
+	if (ret < 0)
+		goto out;
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLANFW_MEM_WRITE_REQ_V01,
+			       QMI_WLANFW_MEM_WRITE_REQ_MSG_V01_MAX_MSG_LEN,
+			       qmi_wlanfw_mem_write_req_msg_v01_ei, req);
+	if (ret < 0) {
+		qmi_txn_cancel(&txn);
+		ath12k_warn(ab, "Failed to send mem write request, err %d\n",
+			    ret);
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+	if (ret < 0)
+		goto out;
+
+	if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+		ath12k_warn(ab, "qmi mem write req failed, result: %d, err: %d\n",
+			    resp->resp.result, resp->resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+
+out:
+	kfree(req);
+	kfree(resp);
+	return ret;
+}
+
 static int ath12k_qmi_send_qdss_trace_config_download_req(struct ath12k_base *ab,
 							  const u8 *buffer,
 							  unsigned int buffer_len)

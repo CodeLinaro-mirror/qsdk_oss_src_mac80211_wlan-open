@@ -777,6 +777,40 @@ struct ath12k_qmi_event_qdss_trace_save_data {
 	struct qdss_trace_mem_seg mem_seg[QDSS_TRACE_SEG_LEN_MAX];
 };
 
+#define QMI_MEM_REGION_TYPE                             0
+#define QMI_WLANFW_MEM_WRITE_REQ_V01                    0x0031
+#define QMI_WLANFW_MEM_WRITE_REQ_MSG_V01_MAX_MSG_LEN    6163
+#define QMI_WLANFW_MEM_READ_REQ_V01                     0x0030
+#define QMI_WLANFW_MEM_READ_REQ_MSG_V01_MAX_MSG_LEN     21
+
+struct qmi_wlanfw_mem_read_req_msg_v01 {
+	u32 offset;
+	u32 mem_type;
+	u32 data_len;
+};
+
+struct qmi_wlanfw_mem_read_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+	u8 data_valid;
+	u32 data_len;
+	u8 data[QMI_WLANFW_MAX_DATA_SIZE_V01];
+};
+
+struct qmi_wlanfw_mem_write_req_msg_v01 {
+	u32 offset;
+	u32 mem_type;
+	u32 data_len;
+	u8 data[QMI_WLANFW_MAX_DATA_SIZE_V01];
+};
+
+struct qmi_wlanfw_mem_write_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
+int ath12k_qmi_mem_read(struct ath12k_base *ab, u32 mem_addr, void *mem_value,size_t count);
+
+int ath12k_qmi_mem_write(struct ath12k_base *ab, u32 mem_addr, void* mem_value, size_t count);
+
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			      u32 mode);
 void ath12k_qmi_firmware_stop(struct ath12k_base *ab);
