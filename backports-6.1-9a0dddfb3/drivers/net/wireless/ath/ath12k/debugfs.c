@@ -1725,7 +1725,6 @@ void ath12k_debugfs_fw_stats_register(struct ath12k *ar)
 			    &fops_bcn_stats);
 	debugfs_create_file("pdev_stats", 0600, fwstats_dir, ar,
 			    &fops_pdev_stats);
-
 	ath12k_fw_stats_init(ar);
 }
 
@@ -1934,6 +1933,71 @@ static const struct file_operations fops_athdiag = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_write_enable_m3_dump(struct file *file,
+                                           const char __user *ubuf,
+                                           size_t count, loff_t *ppos)
+{
+        struct ath12k *ar = file->private_data;
+	struct wiphy *wiphy = ar->ah->hw->wiphy;
+        bool enable;
+        int ret;
+
+	if (kstrtobool_from_user(ubuf, count, &enable))
+		return -EINVAL;
+
+	wiphy_lock(wiphy);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	if (enable == ar->debug.enable_m3_dump) {
+		ret = count;
+		goto exit;
+	}
+
+	ret = ath12k_wmi_pdev_m3_dump_enable(ar, enable);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to enable m3 ssr dump %d\n",
+			    ret);
+		goto exit;
+	}
+
+	ar->debug.enable_m3_dump = enable;
+	ret = count;
+
+exit:
+	wiphy_unlock(wiphy);
+	return ret;
+}
+
+static ssize_t ath12k_read_enable_m3_dump(struct file *file,
+					  char __user *ubuf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct wiphy *wiphy = ar->ah->hw->wiphy;
+	char buf[32];
+	size_t len = 0;
+
+	wiphy_lock(wiphy);
+	len = scnprintf(buf, sizeof(buf) - len, "%d\n",
+			ar->debug.enable_m3_dump);
+	wiphy_unlock(wiphy);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+
+}
+
+static const struct file_operations fops_enable_m3_dump = {
+	.read = ath12k_read_enable_m3_dump,
+	.write = ath12k_write_enable_m3_dump,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -1969,6 +2033,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
 	debugfs_create_file("athdiag", 0600, ar->debug.debugfs_pdev, ar,
 			    &fops_athdiag);
+	
+	debugfs_create_file("enable_m3_dump", 0600, ar->debug.debugfs_pdev, ar,
+                            &fops_enable_m3_dump);
+
 	ath12k_debugfs_htt_stats_register(ar);
 	ath12k_debugfs_fw_stats_register(ar);
 

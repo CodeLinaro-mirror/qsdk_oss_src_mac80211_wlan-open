@@ -630,6 +630,7 @@ struct ath12k_debug {
 	struct wmi_tpc_stats_arg *tpc_stats;
 	u32 rx_filter;
 	bool extd_rx_stats;
+	bool enable_m3_dump;
 };
 
 enum ath12k_fw_recovery_option {
