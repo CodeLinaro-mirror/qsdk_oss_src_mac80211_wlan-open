@@ -363,6 +363,43 @@ struct ath12k_prb_resp_tmpl_ml_info {
 	u32 cu_vdev_map_cat2_hi;
 };
 
+/**
+ * struct chan_power_info - TPE containing power info per channel chunk
+ * @chan_cfreq: channel center freq (MHz)
+ * e.g.
+ * channel 37/20MHz,  it is 6135
+ * channel 37/40MHz,  it is 6125
+ * channel 37/80MHz,  it is 6145
+ * channel 37/160MHz, it is 6185
+ * @tx_power: transmit power (dBm)
+ */
+struct chan_power_info {
+	u16 chan_cfreq;
+	s8 tx_power;
+};
+
+/**
+ * struct reg_tpc_power_info - regulatory TPC power info
+ * @is_psd_power: is PSD power or not
+ * @eirp_power: Maximum EIRP power (dBm), valid only if power is PSD
+ * @power_type_6g: type of power (SP/LPI/VLP)
+ * @num_pwr_levels: number of power levels
+ * @reg_max: Array of maximum TX power (dBm) per PSD value
+ * @ap_constraint_power: AP constraint power (dBm)
+ * @tpe: TPE values processed from TPE IE
+ * @chan_power_info: power info to send to FW
+ */
+struct ath12k_reg_tpc_power_info {
+	bool is_psd_power;
+	u8 eirp_power;
+	enum wmi_reg_6g_ap_type power_type_6g;
+	u8 num_pwr_levels;
+	u8 reg_max[IEEE80211_MAX_NUM_PWR_LEVEL];
+	u8 ap_constraint_power;
+	s8 tpe[IEEE80211_MAX_NUM_PWR_LEVEL];
+	struct chan_power_info chan_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
+};
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -385,6 +422,7 @@ struct ath12k_link_vif {
 	bool rsnie_present;
 	bool wpaie_present;
 	struct ieee80211_chanctx_conf chanctx;
+	struct ath12k_reg_tpc_power_info reg_tpc_info;
 	u8 vdev_stats_id;
 	u32 punct_bitmap;
 	u8 link_id;
@@ -440,43 +478,6 @@ struct ath12k_dp_vif {
 	u32 key_cipher;
 	atomic_t mcbc_gsn;
 	struct ath12k_dp_link_vif dp_link_vif[ATH12K_NUM_MAX_LINKS];
-};
-
-/**
- * struct chan_power_info - TPE containing power info per channel chunk
- * @chan_cfreq: channel center freq (MHz)
- * e.g.
- * channel 37/20MHz,  it is 6135
- * channel 37/40MHz,  it is 6125
- * channel 37/80MHz,  it is 6145
- * channel 37/160MHz, it is 6185
- * @tx_power: transmit power (dBm)
- */
-struct chan_power_info {
-	u16 chan_cfreq;
-	s8 tx_power;
-};
-
-/**
- * struct reg_tpc_power_info - regulatory TPC power info
- * @is_psd_power: is PSD power or not
- * @eirp_power: Maximum EIRP power (dBm), valid only if power is PSD
- * @power_type_6g: type of power (SP/LPI/VLP)
- * @num_pwr_levels: number of power levels
- * @reg_max: Array of maximum TX power (dBm) per PSD value
- * @ap_constraint_power: AP constraint power (dBm)
- * @tpe: TPE values processed from TPE IE
- * @chan_power_info: power info to send to FW
- */
-struct ath12k_reg_tpc_power_info {
-	bool is_psd_power;
-	u8 eirp_power;
-	enum wmi_reg_6g_ap_type power_type_6g;
-	u8 num_pwr_levels;
-	u8 reg_max[IEEE80211_MAX_NUM_PWR_LEVEL];
-	u8 ap_constraint_power;
-	s8 tpe[IEEE80211_MAX_NUM_PWR_LEVEL];
-	struct chan_power_info chan_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
 };
 
 struct ath12k_vif {
