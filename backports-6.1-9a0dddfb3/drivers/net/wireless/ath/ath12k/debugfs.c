@@ -12,6 +12,7 @@
 #include "debugfs.h"
 #include "debug.h"
 #include "debugfs_htt_stats.h"
+#include "qmi.h"
 
 static ssize_t ath12k_write_simulate_radar(struct file *file,
 					   const char __user *user_buf,
@@ -1833,6 +1834,106 @@ static const struct file_operations fops_wmm_stats = {
        .open = simple_open,
 };
 
+static ssize_t ath12k_athdiag_read(struct file *file,
+				    char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct wiphy *wiphy = ar->ah->hw->wiphy;
+	u8 *buf;
+	int ret;
+
+	if (*ppos <= 0)
+		return -EINVAL;
+
+	if (!count)
+		return 0;
+
+	wiphy_lock(wiphy);
+
+	buf = vmalloc(count);
+	if (!buf) {
+		return -ENOMEM;
+	}
+
+	ret = ath12k_qmi_mem_read(ar->ab, *ppos, buf, count);
+	if (ret < 0) {
+		ath12k_warn(ar->ab, "failed to read address 0x%08x via diagnose window from debugfs: %d\n",
+			    (u32)(*ppos), ret);
+		goto exit;
+	}
+
+	ret = copy_to_user(user_buf, buf, count);
+	if (ret) {
+		ret = -EFAULT;
+		goto exit;
+	}
+
+	count -= ret;
+	*ppos += count;
+	ret = count;
+
+exit:
+	vfree(buf);
+	wiphy_unlock(wiphy);
+	return ret;
+}
+
+static ssize_t ath12k_athdiag_write(struct file *file,
+				    const char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct wiphy *wiphy = ar->ah->hw->wiphy;
+	u8 *buf;
+	int ret;
+
+	if (*ppos <= 0)
+		return -EINVAL;
+
+	if (!count)
+		return 0;
+
+	wiphy_lock(wiphy);
+
+	buf = vmalloc(count);
+	if (!buf) {
+		ret = -ENOMEM;
+		goto error_unlock;
+	}
+
+	ret = copy_from_user(buf, user_buf, count);
+	if (ret) {
+		ret = -EFAULT;
+		goto exit;
+	}
+
+	ret = ath12k_qmi_mem_write(ar->ab, *ppos, buf, count);
+	if (ret < 0) {
+		ath12k_warn(ar->ab, "failed to write address 0x%08x via diagnose window from debugfs: %d\n",
+			     (u32)(*ppos), ret);
+		goto exit;
+	}
+
+	*ppos += count;
+	ret = count;
+
+exit:
+	vfree(buf);
+
+error_unlock:
+	wiphy_unlock(wiphy);
+	return ret;
+}
+
+static const struct file_operations fops_athdiag = {
+	.read = ath12k_athdiag_read,
+	.write = ath12k_athdiag_write,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -1866,6 +1967,8 @@ void ath12k_debugfs_register(struct ath12k *ar)
 		            ar->debug.debugfs_pdev, ar,
 			    &fops_wmm_stats);
 
+	debugfs_create_file("athdiag", 0600, ar->debug.debugfs_pdev, ar,
+			    &fops_athdiag);
 	ath12k_debugfs_htt_stats_register(ar);
 	ath12k_debugfs_fw_stats_register(ar);
 
