@@ -8880,7 +8880,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	else
 		link_id = arvif->link_id;
 
-	if (link_id >= ARRAY_SIZE(vif->link_conf)) {
+	if (!arvif->is_scan_vif && link_id >= ARRAY_SIZE(vif->link_conf)) {
 		ath12k_warn(ar->ab, "link_id %u exceeds max valid links for vif %pM\n",
 			    link_id, vif->addr);
 		return -EINVAL;
