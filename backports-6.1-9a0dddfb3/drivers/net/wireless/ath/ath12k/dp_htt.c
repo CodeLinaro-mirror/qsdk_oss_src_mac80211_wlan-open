@@ -299,6 +299,8 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 					  HTT_PPDU_STATS_ACK_BA_INFO_NUM_MSDU_M);
 		tid = le32_get_bits(usr_stats->ack_ba.info,
 				    HTT_PPDU_STATS_ACK_BA_INFO_TID_NUM);
+		dp_pdev->wmm_stats.tx_type = ath12k_tid_to_ac(tid > ATH12K_DSCP_PRIORITY ? 0: tid);
+		dp_pdev->wmm_stats.total_wmm_tx_pkts[dp_pdev->wmm_stats.tx_type]++;
 	}
 
 	if (common->fes_duration_us)

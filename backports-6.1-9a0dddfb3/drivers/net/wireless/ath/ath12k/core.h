@@ -80,14 +80,6 @@ enum ath12k_bdf_search {
 	ATH12K_BDF_SEARCH_BUS_AND_BOARD,
 };
 
-enum wme_ac {
-	WME_AC_BE,
-	WME_AC_BK,
-	WME_AC_VI,
-	WME_AC_VO,
-	WME_NUM_AC
-};
-
 #define ATH12K_HT_MCS_MAX	7
 #define ATH12K_VHT_MCS_MAX	9
 #define ATH12K_HE_MCS_MAX	11

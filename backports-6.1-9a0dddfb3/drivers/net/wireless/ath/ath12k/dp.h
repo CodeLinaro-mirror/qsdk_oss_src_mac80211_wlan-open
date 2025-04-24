@@ -111,6 +111,19 @@ enum ath12k_dp_ppdu_state {
 	DP_PPDU_STATUS_DONE,
 };
 
+enum wme_ac {
+	WME_AC_BE,
+	WME_AC_BK,
+	WME_AC_VI,
+	WME_AC_VO,
+	WME_NUM_AC
+};
+
+struct ath12k_wmm_stats {
+       int tx_type;
+       u64 total_wmm_tx_pkts[WME_NUM_AC];
+};
+
 struct dp_mon_mpdu {
 	struct list_head list;
 	struct sk_buff *head;
@@ -162,6 +175,7 @@ struct ath12k_pdev_dp {
 
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
+	struct ath12k_wmm_stats wmm_stats;
 };
 
 #define DP_NUM_CLIENTS_MAX 64

@@ -36,6 +36,8 @@ struct ath12k_dp;
 
 #define HTT_TX_WBM_COMP_INFO2_ACK_RSSI		GENMASK(31, 24)
 
+#define ATH12K_DSCP_PRIORITY 7
+
 struct htt_tx_wbm_completion {
 	__le32 rsvd0[2];
 	__le32 info0;

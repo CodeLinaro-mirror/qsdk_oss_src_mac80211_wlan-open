@@ -1374,11 +1374,31 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k *ar = arvif->ar;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
+	struct ath12k_pdev_dp *dp_pdev = NULL;
 	int ret;
+
+	if (!dp) {
+		ath12k_err(ar->ab, "ath12k_dp not present%s",__func__);
+		goto err;
+	}
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	reinit_completion(&ar->vdev_setup_done);
+
+	rcu_read_lock();
+
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, ar->pdev_idx);
+	if (!dp_pdev) {
+		rcu_read_unlock();
+		ath12k_err(ar->ab, "dp_pdev not present%s",__func__);
+		goto err;
+	}
+
+	memset(&dp_pdev->wmm_stats, 0, sizeof(struct ath12k_wmm_stats));
+
+	rcu_read_unlock();
 
 	ret = ath12k_wmi_vdev_stop(ar, arvif->vdev_id);
 	if (ret) {

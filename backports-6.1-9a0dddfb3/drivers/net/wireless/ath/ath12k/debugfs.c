@@ -8,6 +8,7 @@
 #include "dp_tx.h"
 #include "debug.h"
 #include "debugfs.h"
+#include "debug.h"
 #include "debugfs_htt_stats.h"
 
 static ssize_t ath12k_write_simulate_radar(struct file *file,
@@ -1412,6 +1413,74 @@ void ath12k_debugfs_fw_stats_register(struct ath12k *ar)
 	ath12k_fw_stats_init(ar);
 }
 
+static ssize_t ath12k_read_wmm_stats(struct file *file,
+                                    char __user *ubuf,
+                                    size_t count, loff_t *ppos)
+{
+       struct ath12k *ar = file->private_data;
+       struct ath12k_base *ab = ar->ab;
+       struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+       struct ath12k_pdev_dp *dp_pdev = NULL;
+       int len = 0;
+       int size = 2048;
+       char *buf;
+       ssize_t retval;
+       u64 total_wmm_sent_pkts = 0;
+
+       if (!dp) {
+	       ath12k_warn(ar->ab, "ath12k_dp not present%s\n", __func__);
+	       return -ENOMEM;
+       }
+
+	rcu_read_lock();
+
+       dp_pdev = ath12k_dp_to_dp_pdev(dp, ar->pdev_idx);
+       if (!dp_pdev) {
+		rcu_read_unlock();
+	       ath12k_warn(dp, "dp_pdev not present for pdev_idx %d in %s\n",
+			   ar->pdev_idx, __func__);
+	       return -ENOMEM;
+       }
+
+       buf = kzalloc(size, GFP_KERNEL);
+       if (!buf) {
+		rcu_read_unlock();
+               ath12k_warn(dp, "failed to allocate the buffer%s\n", __func__);
+               return -ENOMEM;
+       }
+
+       wiphy_lock(dp_pdev->hw->wiphy);
+       for (count = 0; count < WME_NUM_AC; count++)
+               total_wmm_sent_pkts += dp_pdev->wmm_stats.total_wmm_tx_pkts[count];
+
+       len += scnprintf(buf + len, size - len, "Total number of wmm_sent: %llu\n",
+                        total_wmm_sent_pkts);
+       len += scnprintf(buf + len, size - len, "Num of BE wmm_sent: %llu\n",
+                        dp_pdev->wmm_stats.total_wmm_tx_pkts[WME_AC_BE]);
+       len += scnprintf(buf + len, size - len, "Num of BK wmm_sent: %llu\n",
+                        dp_pdev->wmm_stats.total_wmm_tx_pkts[WME_AC_BK]);
+       len += scnprintf(buf + len, size - len, "Num of VI wmm_sent: %llu\n",
+                        dp_pdev->wmm_stats.total_wmm_tx_pkts[WME_AC_VI]);
+       len += scnprintf(buf + len, size - len, "Num of VO wmm_sent: %llu\n",
+                        dp_pdev->wmm_stats.total_wmm_tx_pkts[WME_AC_VO]);
+
+       wiphy_unlock(dp_pdev->hw->wiphy);
+
+	rcu_read_unlock();
+
+       if (len > size)
+               len = size;
+       retval = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+       kfree(buf);
+
+       return retval;
+}
+
+static const struct file_operations fops_wmm_stats = {
+       .read = ath12k_read_wmm_stats,
+       .open = simple_open,
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -1440,6 +1509,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("tpc_stats_type", 0200, ar->debug.debugfs_pdev,
 			    ar, &fops_tpc_stats_type);
 	init_completion(&ar->debug.tpc_complete);
+
+	debugfs_create_file("wmm_stats", 0644,
+		            ar->debug.debugfs_pdev, ar,
+			    &fops_wmm_stats);
 
 	ath12k_debugfs_htt_stats_register(ar);
 	ath12k_debugfs_fw_stats_register(ar);
