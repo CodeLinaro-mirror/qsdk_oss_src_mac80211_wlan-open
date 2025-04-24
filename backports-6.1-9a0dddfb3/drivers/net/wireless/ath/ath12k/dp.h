@@ -420,6 +420,25 @@ struct ath12k_dp_arch_ops {
 				       dma_addr_t paddr);
 };
 
+struct ath12k_bp_stats {
+       /* Head Pointer reported by the last HTT Backpressure event for the ring */
+       u16 hp;
+
+       /* Tail Pointer reported by the last HTT Backpressure event for the ring */
+       u16 tp;
+
+       /* Number of Backpressure events received for the ring */
+       u32 count;
+
+       /* Last recorded event timestamp */
+       unsigned long jiffies;
+};
+
+struct ath12k_dp_ring_bp_stats {
+       struct ath12k_bp_stats umac_ring_bp_stats[HTT_SW_UMAC_RING_IDX_MAX];
+       struct ath12k_bp_stats lmac_ring_bp_stats[HTT_SW_LMAC_RING_IDX_MAX][MAX_RADIOS];
+};
+
 struct ath12k_device_dp_tx_err_stats {
 	/* TCL Ring Descriptor unavailable */
 	u32 desc_na[DP_TCL_NUM_RING_MAX];
@@ -436,6 +455,7 @@ struct ath12k_device_dp_stats {
 	u32 reo_error[HAL_REO_DEST_RING_ERROR_CODE_MAX];
 	u32 hal_reo_error[DP_REO_DST_RING_MAX];
 	struct ath12k_device_dp_tx_err_stats tx_err;
+	struct ath12k_dp_ring_bp_stats bp_stats;
 };
 
 struct ath12k_dp {
