@@ -1295,7 +1295,9 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 				   le32_encode_bits(arg->ml.link_add,
 						    ATH12K_WMI_FLAG_MLO_LINK_ADD) |
 				   le32_encode_bits(1,
-						    ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID);
+						    ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID) |
+				   le32_encode_bits(arg->ml.mlo_bridge_link,
+						    ATH12K_WMI_FLAG_MLO_BRIDGE_LINK);
 		ml_params->ieee_link_id = arg->ml.ieee_link_id;
 
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "vdev %d start ml flags 0x%x ieee_link_id=%d\n",
@@ -1323,7 +1325,9 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 					arg->ml.partner_info[i].addr);
 			partner_info->ieee_link_id = arg->ml.partner_info[i].logical_link_idx;
 			partner_info->flags = le32_encode_bits(1,
-							       ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID_PARTNER);
+							       ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID_PARTNER) |
+					      le32_encode_bits(arg->ml.partner_info[i].mlo_bridge_link,
+							       ATH12K_WMI_FLAG_MLO_BRIDGE_LINK);
 
 			ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "partner vdev %d hw_link_id %d macaddr%pM flags:0x%x\n",
 				   partner_info->vdev_id, partner_info->hw_link_id,
@@ -7026,6 +7030,8 @@ static void ath12k_update_cu_params(struct ath12k_base *ab,
 				arvif = ath12k_mac_get_arvif(ar, vdev_id);
 				if (!arvif)
 					continue;
+				if (ath12k_mac_is_bridge_vdev(arvif))
+					continue;
 				if (arvif->is_up && arvif->ahvif->vif->valid_links) {
 					critical_flag = cu_params->cu_vdev_map[hw_link_id] & (1 << i);
 					bpcc_bufp = cu_params->bpcc_bufp;
@@ -11781,6 +11787,10 @@ ath12k_wmi_obss_color_collision_event(struct ath12k_base *ab, struct sk_buff *sk
 				ev->vdev_id);
 		goto unlock;
 	}
+
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		goto unlock;
+
 	switch (ev->evt_type) {
 	case WMI_BSS_COLOR_COLLISION_DETECTION:
 		ar = arvif->ar;
@@ -11994,7 +12004,8 @@ static int ath12k_wmi_tbtt_offset_subtlv_parser(struct ath12k_base *ab, u16 tag,
 	}
 
 	vif = arvif->ahvif->vif;
-	if (!arvif->is_up || arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+	if (!arvif->is_up || arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP ||
+	    ath12k_mac_is_bridge_vdev(arvif)) {
 		ret = 0;
 		goto exit;
 	}

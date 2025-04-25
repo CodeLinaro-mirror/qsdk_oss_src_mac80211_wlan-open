@@ -254,6 +254,9 @@ const struct htt_rx_ring_tlv_filter ath12k_mac_mon_status_filter_default = {
 #define ATH12K_MAC_SCAN_TIMEOUT_MSECS 200 /* in msecs */
 /* Overhead due to the processing of channel switch events from FW */
 #define ATH12K_SCAN_CHANNEL_SWITCH_WMI_EVT_OVERHEAD	10 /* in msecs */
+#define ATH12K_MAX_NUM_BRIDGE_PER_MLD 2
+#define BRIDGE_IN_RANGE(ar) (ar->num_created_bridge_vdevs < TARGET_NUM_BRIDGE_VDEVS)
+#define ATH12K_MAX_AR_LINK_IDX	5
 
 static const u32 ath12k_smps_map[] = {
 	[WLAN_HT_CAP_SM_PS_STATIC] = WMI_PEER_SMPS_STATIC,
@@ -265,7 +268,8 @@ static const u32 ath12k_smps_map[] = {
 static int ath12k_start_vdev_delay(struct ath12k *ar,
 				   struct ath12k_link_vif *arvif);
 static void ath12k_mac_stop(struct ath12k *ar);
-static int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif);
+static int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
+				  bool is_bridge_vdev);
 static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arvif);
 
 static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
@@ -627,6 +631,19 @@ bool ath12k_mac_is_bridge_vdev(struct ath12k_link_vif *arvif)
 	return false;
 }
 
+struct ath12k *ath12k_get_ar_by_link_idx(struct ath12k_hw *ah, u16 link_idx)
+{
+	struct ath12k *ar;
+
+	ar = ah->radio;
+	for (int i = 0; i < ah->num_radio; i++) {
+		if (ar->hw_link_id == link_idx) //ToDO: Need to take care that using hw_link_id would serve the purpose
+			return ath12k_mac_get_ar_by_pdev_id(ar->ab, ar->pdev->pdev_id);
+		ar++;
+	}
+	return NULL;
+}
+
 static int ath12k_mac_vif_link_chan(struct ieee80211_vif *vif, u8 link_id,
 				    struct cfg80211_chan_def *def)
 {
@@ -864,6 +881,9 @@ bool ath12k_mac_is_ml_arvif(struct ath12k_link_vif *arvif)
 	struct ath12k_vif *ahvif = arvif->ahvif;
 
 	lockdep_assert_wiphy(ahvif->ah->hw->wiphy);
+
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		return true;
 
 	if (ahvif->vif->valid_links & BIT(arvif->link_id))
 		return true;
@@ -1578,7 +1598,8 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "vdev %pM stopped, vdev_id %d\n",
 		   ahvif->vif->addr, arvif->vdev_id);
 
-	if (test_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags)) {
+	if (!ath12k_mac_is_bridge_vdev(arvif) &&
+	    test_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags)) {
 		clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "CAC Stopped for vdev %d\n",
 			   arvif->vdev_id);
@@ -1844,7 +1865,8 @@ static int ath12k_mac_setup_bcn_tmpl(struct ath12k_link_vif *arvif)
 	struct sk_buff *bcn;
 	int ret;
 
-	if (ahvif->vdev_type != WMI_VDEV_TYPE_AP)
+	if (ahvif->vdev_type != WMI_VDEV_TYPE_AP ||
+	    ath12k_mac_is_bridge_vdev(arvif))
 		return 0;
 
 	link_conf = ath12k_mac_get_link_bss_conf(arvif);
@@ -4268,6 +4290,9 @@ static void ath12k_bss_disassoc(struct ath12k *ar,
 
 	arvif->is_up = false;
 
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		return;
+
 	memset(&arvif->rekey_data, 0, sizeof(arvif->rekey_data));
 
 	cancel_delayed_work(&ahvif->deflink.connection_loss_work);
@@ -4382,7 +4407,8 @@ static void ath12k_update_obss_color_notify_work(struct wiphy *wiphy,
 }
 
 static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
-				  struct ath12k_link_vif *arvif, int link_id)
+				  struct ath12k_link_vif *arvif, int link_id,
+				  bool is_bridge_vdev)
 {
 	struct ath12k_hw *ah = ahvif->ah;
 	u8 _link_id;
@@ -4411,10 +4437,12 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	arvif->key_cipher = INVALID_CIPHER;
 	INIT_DELAYED_WORK(&ahvif->deflink.connection_loss_work,
 			  ath12k_mac_vif_sta_connection_loss_work);
-	wiphy_work_init(&arvif->update_obss_color_notify_work,
-			ath12k_update_obss_color_notify_work);
-	wiphy_work_init(&arvif->update_bcn_template_work,
-			ath12k_update_bcn_template_work);
+	if (!is_bridge_vdev) {
+		wiphy_work_init(&arvif->update_obss_color_notify_work,
+				ath12k_update_obss_color_notify_work);
+		wiphy_work_init(&arvif->update_bcn_template_work,
+				ath12k_update_bcn_template_work);
+	}
 	arvif->num_stations = 0;
 	init_completion(&arvif->peer_ch_width_switch_send);
 	wiphy_work_init(&arvif->peer_ch_width_switch_work,
@@ -4496,10 +4524,12 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	if (arvif == &ahvif->deflink)
 		cancel_delayed_work_sync(&ahvif->deflink.connection_loss_work);
 
-	wiphy_work_cancel(ar->ah->hw->wiphy,
-			  &arvif->update_obss_color_notify_work);
-	wiphy_work_cancel(ah->hw->wiphy,
-			  &arvif->update_bcn_template_work);
+	if (!ath12k_mac_is_bridge_vdev(arvif)) {
+		wiphy_work_cancel(ah->hw->wiphy,
+				  &arvif->update_obss_color_notify_work);
+		wiphy_work_cancel(ah->hw->wiphy,
+				  &arvif->update_bcn_template_work);
+	}
 	wiphy_work_cancel(ah->hw->wiphy,
 			  &arvif->peer_ch_width_switch_work);
 
@@ -4529,9 +4559,9 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	ath12k_mac_ap_ps_recalc(ar);
 }
 
-static struct ath12k_link_vif *ath12k_mac_assign_link_vif(struct ath12k_hw *ah,
-							  struct ieee80211_vif *vif,
-							  u8 link_id)
+static struct ath12k_link_vif *
+ath12k_mac_assign_link_vif(struct ath12k_hw *ah, struct ieee80211_vif *vif,
+			   u8 link_id, bool is_bridge_vdev)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
@@ -4559,7 +4589,7 @@ static struct ath12k_link_vif *ath12k_mac_assign_link_vif(struct ath12k_hw *ah,
 			return NULL;
 	}
 
-	ath12k_mac_init_arvif(ahvif, arvif, link_id);
+	ath12k_mac_init_arvif(ahvif, arvif, link_id, is_bridge_vdev);
 
 	return arvif;
 }
@@ -4611,7 +4641,7 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 			return -EINVAL;
 		}
 
-		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id);
+		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 		if (WARN_ON(!arvif))
 			return -EINVAL;
 	}
@@ -4862,6 +4892,72 @@ static int ath12k_mac_config_obss_pd(struct ath12k *ar,
 	return 0;
 }
 
+bool ath12k_mac_is_bridge_required(u8 device_bitmap, u8 num_devices,
+				   u16 *bridge_bitmap)
+{
+	bool bridge_needed = false;
+	u8 adj_device[ATH12K_MAX_SOCS] = {0};
+	u8 i, next, prev;
+	u8 device_idx = 0;
+
+	/* There is no need to check for bridging in-case of
+	 * number of devices less than 3 and only one link is added.
+	 */
+	if (num_devices < ATH12K_MIN_NUM_DEVICES_NLINK ||
+	    hweight8(device_bitmap) < 2) {
+		return bridge_needed;
+	}
+
+	/* Consider given device_bitmap as circular bitmap of size num_devices.
+	 * For every given index, If set - check either of adjacent indexes
+	 * are set or not. else continue.
+	 */
+	for (i = 0; i < num_devices; i++) {
+		if (!(device_bitmap & BIT(i)))
+			continue;
+
+		next = (i + 1) % num_devices;
+		prev = ((i - 1) + num_devices) % num_devices;
+
+		/* If both adjacent bits are not set, bridging is needed and
+		 * device idx where bridge peer is required will be decided
+		 * based on maximum count of adj_device array
+		 */
+		if (!(device_bitmap & BIT(next) || device_bitmap & BIT(prev))) {
+			adj_device[prev]++;
+			adj_device[next]++;
+			bridge_needed = true;
+			*bridge_bitmap |= BIT(prev);
+			*bridge_bitmap |= BIT(next);
+			if (adj_device[prev] > adj_device[next])
+				device_idx = prev;
+			else
+				device_idx = next;
+		}
+	}
+	if (num_devices > ATH12K_MIN_NUM_DEVICES_NLINK &&
+	    hweight16(device_bitmap) == 2)
+		*bridge_bitmap = BIT(device_idx);
+
+	return bridge_needed;
+}
+
+static bool ath12k_mac_get_link_idx_with_device_idx(struct ath12k_hw *ah,
+						    u32 device_idx,
+						    u8 *link_idx)
+{
+	struct ath12k *ar = ah->radio;
+
+	for (int i = 0; i < ah->num_radio; i++) {
+		if (ar->ab->wsi_info.index == device_idx) {
+			*link_idx = ar->hw_link_id;
+			return true;
+		}
+		ar++;
+	}
+	return false;
+}
+
 void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   u64 changed)
@@ -4982,6 +5078,9 @@ static void ath12k_mac_bss_info_changed(struct ath12k *ar,
 	bool color_collision_detect;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		return;
 
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return;
@@ -5940,7 +6039,7 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	if (link_id >= ATH12K_NUM_MAX_LINKS)
 		return -EBUSY;
 
-	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id);
+	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac link ID %d selected for scan",
 		   arvif->link_id);
@@ -5973,14 +6072,14 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 		/* Previous arvif would've been cleared in radio switch block
 		 * above, assign arvif again for create.
 		 */
-		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id);
+		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 		if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
 		    (!is_broadcast_ether_addr(req->bssid) &&
 		     !is_zero_ether_addr(req->bssid)))
 			memcpy(arvif->bssid, req->bssid, ETH_ALEN);
 
 		arvif->is_scan_vif = true;
-		ret = ath12k_mac_vdev_create(ar, arvif);
+		ret = ath12k_mac_vdev_create(ar, arvif, false);
 		if (ret) {
 			ath12k_mac_unassign_link_vif(arvif);
 			ath12k_warn(ar->ab, "unable to create scan vdev %d\n", ret);
@@ -7053,7 +7152,15 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
         u16 oper_freq = 0, start_freq = 0, center_freq = 0;
 	u8 reg_6g_power_mode;
 
+	rcu_read_lock();
+
 	bss_conf = ath12k_get_link_bss_conf(arvif);
+	if (!bss_conf) {
+		rcu_read_unlock();
+		ath12k_warn(ar->ab, "unable to access bss link conf in tpc reg fill\n");
+		return;
+	}
+
        /* For STA, 6g power mode will be present in the beacon, but for AP,
         * AP cant parse its own beacon. Hence, we get the 6g power mode
         * from the wdev corresponding to the struct ieee80211_vif
@@ -7080,6 +7187,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
         oper_freq = ctx->def.chan->center_freq;
         start_freq = ath12k_mac_get_6g_start_frequency(&ctx->def);
         pwr_reduction = bss_conf->pwr_reduction;
+
+	rcu_read_unlock();
 
         if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 	    arvif->reg_tpc_info.num_pwr_levels) {
@@ -10930,6 +11039,9 @@ static int ath12k_mac_setup_vdev_params_mbssid(struct ath12k_link_vif *arvif,
 	struct ieee80211_vif *tx_vif;
 	struct ath12k_link_vif *tx_arvif;
 
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		return 0;
+
 	link_conf = ath12k_mac_get_link_bss_conf(arvif);
 	if (!link_conf) {
 		ath12k_warn(ar->ab, "unable to access bss link conf in set mbssid params for vif %pM link %u\n",
@@ -10981,6 +11093,7 @@ static int ath12k_mac_setup_vdev_create_arg(struct ath12k_link_vif *arvif,
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_pdev *pdev = ar->pdev;
 	struct ath12k_vif *ahvif = arvif->ahvif;
+	bool is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -10990,8 +11103,12 @@ static int ath12k_mac_setup_vdev_create_arg(struct ath12k_link_vif *arvif,
 	arg->subtype = arvif->vdev_subtype;
 	arg->pdev_id = pdev->pdev_id;
 
-	arg->mbssid_flags = WMI_VDEV_MBSSID_FLAGS_NON_MBSSID_AP;
 	arg->mbssid_tx_vdev_id = 0;
+	if (is_bridge_vdev)
+		arg->mbssid_flags = 0;
+	else
+		arg->mbssid_flags = WMI_VDEV_MBSSID_FLAGS_NON_MBSSID_AP;
+
 	if (!test_bit(WMI_TLV_SERVICE_MBSS_PARAM_IN_VDEV_START_SUPPORT,
 		      ar->ab->wmi_ab.svc_map)) {
 		ret = ath12k_mac_setup_vdev_params_mbssid(arvif,
@@ -11018,7 +11135,8 @@ static int ath12k_mac_setup_vdev_create_arg(struct ath12k_link_vif *arvif,
 	arg->if_stats_id = ath12k_mac_get_vdev_stats_id(arvif);
 
 	if (ath12k_mac_is_ml_arvif(arvif)) {
-		if (hweight16(ahvif->vif->valid_links) > ATH12K_WMI_MLO_MAX_LINKS) {
+		if (!is_bridge_vdev &&
+		    hweight16(ahvif->vif->valid_links) > ATH12K_WMI_MLO_MAX_LINKS) {
 			ath12k_warn(ar->ab, "too many MLO links during setting up vdev: %d",
 				    ahvif->vif->valid_links);
 			return -EINVAL;
@@ -11219,7 +11337,8 @@ void ath12k_mac_11d_scan_stop_all(struct ath12k_base *ab)
 	}
 }
 
-int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
+int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
+			   bool is_bridge_vdev)
 {
 	struct ath12k_hw *ah = ar->ah;
 	struct ath12k_base *ab = ar->ab;
@@ -11237,6 +11356,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	struct ath12k_dp_link_vif *dp_link_vif = NULL;
 	u8 mac_addr[ETH_ALEN];
 	u8 mask[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00};
+	int txpower = NL80211_TX_POWER_AUTOMATIC;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -11254,32 +11374,44 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	else
 		link_id = arvif->link_id;
 
-	if (!arvif->is_scan_vif && link_id >= ARRAY_SIZE(vif->link_conf)) {
-		ath12k_warn(ar->ab, "link_id %u exceeds max valid links for vif %pM\n",
-			    link_id, vif->addr);
-		return -EINVAL;
-	}
+	if (!is_bridge_vdev) {
+		if (!arvif->is_scan_vif && link_id >= ARRAY_SIZE(vif->link_conf)) {
+			ath12k_warn(ar->ab, "link_id %u exceeds max valid links for vif %pM\n",
+				    link_id, vif->addr);
+			return -EINVAL;
+		}
 
-	if (link_id < ATH12K_DEFAULT_SCAN_LINK) {
-		link_conf = wiphy_dereference(hw->wiphy, vif->link_conf[link_id]);
-		if (!link_conf && !arvif->is_scan_vif) {
-			ath12k_warn(ar->ab, "unable to access bss link conf in vdev create for vif %pM link %u\n",
-				    vif->addr, arvif->link_id);
-			return -ENOLINK;
+		if (link_id < ATH12K_DEFAULT_SCAN_LINK) {
+			link_conf = wiphy_dereference(hw->wiphy, vif->link_conf[link_id]);
+			if (!link_conf && !arvif->is_scan_vif) {
+				ath12k_warn(ar->ab, "unable to access bss link conf in vdev create for vif %pM link %u\n",
+					    vif->addr, arvif->link_id);
+				return -ENOLINK;
+			}
+		}
+
+		if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
+		    !is_zero_ether_addr(arvif->bssid)) {
+			memcpy(link_addr, arvif->bssid, ETH_ALEN);
+		} else if (link_conf) {
+			memcpy(link_addr, link_conf->addr, ETH_ALEN);
+			memcpy(arvif->bssid, link_conf->addr, ETH_ALEN);
+		} else {
+			eth_random_addr(link_addr);
+			memcpy(arvif->bssid, link_addr, ETH_ALEN);
+		}
+		if (link_conf)
+			txpower = link_conf->txpower;
+	} else if (is_bridge_vdev) {
+		if (test_bit(ATH12K_FLAG_RECOVERY, &ab->ag->flags)) {
+			memcpy(link_addr, arvif->bssid, ETH_ALEN);
+		} else {
+			/* Generate mac address for bridge vap */
+			/* To Do: Need to check duplicate? */
+			eth_random_addr(arvif->bssid);
+			memcpy(link_addr, arvif->bssid, ETH_ALEN);
 		}
 	}
-
-	if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
-	    !is_zero_ether_addr(arvif->bssid)) {
-		memcpy(link_addr, arvif->bssid, ETH_ALEN);
-	} else if (link_conf) {
-		memcpy(link_addr, link_conf->addr, ETH_ALEN);
-		memcpy(arvif->bssid, link_conf->addr, ETH_ALEN);
-	} else {
-		eth_random_addr(link_addr);
-		memcpy(arvif->bssid, link_addr, ETH_ALEN);
-	}
-
 	/* Send vdev stats offload commands to firmware before first vdev
 	 * creation. ie., when num_created_vdevs = 0
 	 */
@@ -11308,8 +11440,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	/* Assume it as non-mbssid initially, well overwrite it later.
 	 */
 	arvif->tx_vdev_id = vdev_id;
-	arvif->vdev_subtype = WMI_VDEV_SUBTYPE_NONE;
 
+	arvif->vdev_subtype = is_bridge_vdev ? WMI_VDEV_SUBTYPE_BRIDGE : WMI_VDEV_SUBTYPE_NONE;
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
 
 	dp_link_vif->vdev_id = arvif->vdev_id;
@@ -11376,13 +11508,13 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 		return ret;
 	}
 
-	if (ath12k_mac_is_bridge_vdev(arvif))
+	if (is_bridge_vdev)
 		ar->num_created_bridge_vdevs++;
 	else
 		ar->num_created_vdevs++;
 	arvif->is_created = true;
 	ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM created, vdev_id %d\n",
-		   vif->addr, arvif->vdev_id);
+		   arvif->bssid, arvif->vdev_id);
 	ar->allocated_vdev_map |= 1LL << arvif->vdev_id;
 
 	spin_lock_bh(&ar->data_lock);
@@ -11473,10 +11605,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif)
 		break;
 	}
 
-	if (link_conf)
-		arvif->txpower = link_conf->txpower;
-	else
-		arvif->txpower = NL80211_TX_POWER_AUTOMATIC;
+	arvif->txpower = txpower;
 	ret = ath12k_mac_txpower_recalc(ar);
 	if (ret)
 		goto err_peer_del;
@@ -11513,7 +11642,7 @@ err_vdev_del:
 		ar->monitor_vdev_created = false;
 		ar->monitor_vdev_id = -1;
 	}
-	if (ath12k_mac_is_bridge_vdev(arvif)) {
+	if (is_bridge_vdev) {
 		WARN_ON(!ar->num_created_bridge_vdevs);
 		ar->num_created_bridge_vdevs--;
 	} else {
@@ -11613,7 +11742,9 @@ static void ath12k_mac_vif_cache_flush(struct ath12k *ar, struct ath12k_link_vif
 
 static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 						    struct ath12k_link_vif *arvif,
-						    struct ieee80211_chanctx_conf *ctx)
+						    struct ieee80211_chanctx_conf *ctx,
+						    bool is_bridge_vdev,
+						    u16 bridge_ar_link_idx)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
@@ -11624,12 +11755,13 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	u8 link_id = arvif->link_id, scan_link;
 	unsigned long scan_link_map;
 	int ret;
-	bool is_bridge_vdev;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
 	if (ah->num_radio == 1)
 		ar = ah->radio;
+	else if (is_bridge_vdev)
+		ar = ath12k_get_ar_by_link_idx(ah, bridge_ar_link_idx);
 	else if (ctx)
 		ar = ath12k_get_ar_by_ctx(hw, ctx);
 	else
@@ -11645,7 +11777,7 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 		scan_link_map = ahvif->links_map & ATH12K_SCAN_LINKS_MASK;
 		for_each_set_bit(scan_link, &scan_link_map, ATH12K_NUM_MAX_LINKS) {
 			scan_arvif = wiphy_dereference(hw->wiphy, ahvif->link[scan_link]);
-			if (scan_arvif && scan_arvif->ar == ar) {
+			if (scan_arvif && scan_arvif->ar == ar && !is_bridge_vdev) {
 				ar->scan.arvif = NULL;
 				ath12k_mac_remove_link_interface(hw, scan_arvif);
 				ath12k_mac_unassign_link_vif(scan_arvif);
@@ -11682,7 +11814,7 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	/* Assign arvif again here since previous radio switch block
 	 * would've unassigned and cleared it.
 	 */
-	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id);
+	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, is_bridge_vdev);
 	if (vif->type == NL80211_IFTYPE_AP &&
 	    ar->num_peers > (ar->max_num_peers - 1)) {
 		ath12k_warn(ab, "failed to create vdev due to insufficient peer entry resource in firmware\n");
@@ -11692,13 +11824,12 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	if (arvif->is_created)
 		goto flush;
 
-	is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 	if (ath12k_core_is_vdev_limit_reached(ar, is_bridge_vdev)) {
 		ret = -EBUSY;
 		goto unlock;
 	}
 
-	ret = ath12k_mac_vdev_create(ar, arvif);
+	ret = ath12k_mac_vdev_create(ar, arvif, is_bridge_vdev);
 	if (ret) {
 		ath12k_warn(ab, "failed to create vdev %pM ret %d", vif->addr, ret);
 		goto unlock;
@@ -11709,7 +11840,10 @@ flush:
 	 * add_interface(), Apply any parameters for the vdev which were received
 	 * after add_interface, corresponding to this vif.
 	 */
-	ath12k_mac_vif_cache_flush(ar, arvif);
+	if (!is_bridge_vdev)
+		ath12k_mac_vif_cache_flush(ar, arvif);
+
+	arvif->ahvif->device_bitmap |= BIT(ar->ab->wsi_info.index);
 unlock:
 	return arvif->ar;
 }
@@ -11721,17 +11855,23 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
+	struct ath12k *ar = ath12k_ah_to_ar(ah, 0);
 	int i;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	memset(ahvif, 0, sizeof(*ahvif));
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->ag->flags))
+		ahvif->mode0_recover_bridge_vdevs =
+			(ahvif->links_map & ATH12K_BRIDGE_LINKS_MASK) ?
+			true : false;
+	else
+		memset(ahvif, 0, sizeof(*ahvif));
 
 	ahvif->ah = ah;
 	ahvif->vif = vif;
 	arvif = &ahvif->deflink;
 
-	ath12k_mac_init_arvif(ahvif, arvif, -1);
+	ath12k_mac_init_arvif(ahvif, arvif, -1, false);
 
 	/* Allocate Default Queue now and reassign during actual vdev create */
 	vif->cab_queue = ATH12K_HW_DEFAULT_QUEUE;
@@ -11850,6 +11990,8 @@ err_vdev_del:
 
 	/* Recalc txpower for remaining vdev */
 	ath12k_mac_txpower_recalc(ar);
+
+	ahvif->device_bitmap &= ~BIT(ar->ab->wsi_info.index);
 
 	/* TODO: recal traffic pause state based on the available vdevs */
 	arvif->is_created = false;
@@ -12195,10 +12337,14 @@ ath12k_mac_mlo_get_vdev_args(struct ath12k_link_vif *arvif,
 	 */
 	ml_arg->link_add = true;
 	ml_arg->ieee_link_id = arvif->link_id;
+	ml_arg->mlo_bridge_link = ath12k_mac_is_bridge_vdev(arvif);
 	partner_info = ml_arg->partner_info;
 
 	links = ahvif->links_map;
-	for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		if (ATH12K_SCAN_LINKS_MASK & BIT(link_id))
+			continue;
+
 		arvif_p = wiphy_dereference(ahvif->ah->hw->wiphy, ahvif->link[link_id]);
 
 		if (WARN_ON(!arvif_p))
@@ -12210,16 +12356,20 @@ ath12k_mac_mlo_get_vdev_args(struct ath12k_link_vif *arvif,
 		if (!arvif_p->is_created)
 			continue;
 
-		link_conf = wiphy_dereference(ahvif->ah->hw->wiphy,
-					      ahvif->vif->link_conf[arvif_p->link_id]);
-
-		if (!link_conf)
-			continue;
+		if (ath12k_mac_is_bridge_vdev(arvif_p)) {
+			ether_addr_copy(partner_info->addr, arvif_p->bssid);
+		} else {
+			link_conf = wiphy_dereference(ahvif->ah->hw->wiphy,
+						      ahvif->vif->link_conf[arvif_p->link_id]);
+			if (!link_conf)
+				continue;
+			ether_addr_copy(partner_info->addr, link_conf->addr);
+		}
 
 		partner_info->vdev_id = arvif_p->vdev_id;
 		partner_info->hw_link_id = arvif_p->ar->pdev->hw_link_id;
 		partner_info->logical_link_idx = arvif_p->link_id;
-		ether_addr_copy(partner_info->addr, link_conf->addr);
+		partner_info->mlo_bridge_link = ath12k_mac_is_bridge_vdev(arvif_p);
 		ml_arg->num_partner_links++;
 		partner_info++;
 	}
@@ -12299,6 +12449,9 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 	unsigned int dfs_cac_time;
 	int ret;
 
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		return 0;
+
 	/* Enable CAC Running Flag in the driver by checking all sub-channel's DFS
 	 * state as NL80211_DFS_USABLE which indicates CAC needs to be
 	 * done before channel usage. This flag is used to drop rx packets.
@@ -12330,6 +12483,36 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 	return ret;
 }
 
+static struct ieee80211_channel *ath12k_mac_get_a_valid_channel(struct ath12k *ar)
+{
+	struct ieee80211_supported_band *sband;
+	enum nl80211_band band;
+	u32 freq_low, freq_high;
+	int chn;
+
+	for (band = 0; band < NUM_NL80211_BANDS; band++) {
+		if (!(ar->mac.sbands[band].channels))
+			continue;
+		sband = &ar->mac.sbands[band];
+		freq_low = ar->chan_info.low_freq;
+		freq_high = ar->chan_info.high_freq;
+
+		for (chn = 0; chn < sband->n_channels; chn++) {
+			if (sband->channels[chn].flags &
+			    IEEE80211_CHAN_DISABLED)
+				continue;
+
+			if (sband->channels[chn].center_freq <
+			    ar->chan_info.low_freq ||
+			    sband->channels[chn].center_freq >
+			    ar->chan_info.high_freq)
+				continue;
+			return &sband->channels[chn];
+		}
+	}
+	return NULL;
+}
+
 static int
 ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 			      struct ieee80211_chanctx_conf *ctx,
@@ -12338,19 +12521,26 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_base *ab = ar->ab;
 	struct wmi_vdev_start_req_arg arg = {};
-	const struct cfg80211_chan_def *chandef = &ctx->def;
+	const struct cfg80211_chan_def *chandef = ctx ? &ctx->def : NULL;
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_bss_conf *link_conf;
+	struct ieee80211_channel *channel;
 	int ret;
+	u16 ru_punct_bitmap = arvif->punct_bitmap;
+	bool is_bridge_vdev;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	link_conf = ath12k_mac_get_link_bss_conf(arvif);
-	if (!link_conf) {
-		ath12k_warn(ar->ab, "unable to access bss link conf in vdev start for vif %pM link %u\n",
-			    ahvif->vif->addr, arvif->link_id);
-		return -ENOLINK;
+	is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
+
+	if (!is_bridge_vdev) {
+		link_conf = ath12k_mac_get_link_bss_conf(arvif);
+		if (!link_conf) {
+			ath12k_warn(ar->ab, "unable to access bss link conf in vdev start for vif %pM link %u\n",
+				    ahvif->vif->addr, arvif->link_id);
+			return -ENOLINK;
+		}
 	}
 
 	reinit_completion(&ar->vdev_setup_done);
@@ -12358,25 +12548,44 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	arg.vdev_id = arvif->vdev_id;
 	arg.dtim_period = arvif->dtim_period;
 	arg.bcn_intval = arvif->beacon_interval;
-	arg.punct_bitmap = ~arvif->punct_bitmap;
 
-	arg.freq = chandef->chan->center_freq;
-	arg.band_center_freq1 = chandef->center_freq1;
-	arg.band_center_freq2 = chandef->center_freq2;
-	arg.mode = ath12k_phymodes[chandef->chan->band][chandef->width];
+	if (!chandef && is_bridge_vdev) {
+		channel = ath12k_mac_get_a_valid_channel(ar);
+		if (WARN_ON(!channel))
+			return -ENODATA;
+		arg.freq = channel->center_freq;
+		arg.band_center_freq1 = channel->center_freq;
+		arg.band_center_freq2 = channel->center_freq;
+		arg.mode =
+			ath12k_phymodes[channel->band][NL80211_CHAN_WIDTH_20];
+		arg.min_power = 0;
+		arg.max_power = channel->max_power;
+		arg.max_reg_power = channel->max_reg_power;
+		arg.max_antenna_gain = channel->max_antenna_gain;
+	} else {
+		arg.freq = chandef->chan->center_freq;
+		arg.band_center_freq1 = chandef->center_freq1;
+		arg.band_center_freq2 = chandef->center_freq2;
+		arg.mode = ath12k_phymodes[chandef->chan->band][chandef->width];
 
-	arg.mode = ath12k_mac_check_down_grade_phy_mode(ar, arg.mode,
-							chandef->chan->band,
-							ahvif->vif->type);
-	arg.min_power = 0;
-	arg.max_power = chandef->chan->max_power;
-	arg.max_reg_power = chandef->chan->max_reg_power;
-	arg.max_antenna_gain = chandef->chan->max_antenna_gain;
+		arg.mode = ath12k_mac_check_down_grade_phy_mode(ar, arg.mode,
+								chandef->chan->band,
+								ahvif->vif->type);
+		arg.min_power = 0;
+		arg.max_power = chandef->chan->max_power;
+		arg.max_reg_power = chandef->chan->max_reg_power;
+		arg.max_antenna_gain = chandef->chan->max_antenna_gain;
+	}
 
+	arg.punct_bitmap = ~ru_punct_bitmap;
 	arg.pref_tx_streams = ar->num_tx_chains;
 	arg.pref_rx_streams = ar->num_rx_chains;
 
-	arg.mbssid_flags = WMI_VDEV_MBSSID_FLAGS_NON_MBSSID_AP;
+	if (is_bridge_vdev)
+		arg.mbssid_flags = 0;
+	else
+		arg.mbssid_flags = WMI_VDEV_MBSSID_FLAGS_NON_MBSSID_AP;
+
 	arg.mbssid_tx_vdev_id = 0;
 	if (test_bit(WMI_TLV_SERVICE_MBSS_PARAM_IN_VDEV_START_SUPPORT,
 		     ar->ab->wmi_ab.svc_map)) {
@@ -12392,10 +12601,14 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		arg.ssid_len = ahvif->u.ap.ssid_len;
 		arg.hidden_ssid = ahvif->u.ap.hidden_ssid;
 
-		/* For now allow DFS for AP mode */
-		arg.chan_radar = !!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
-
-		arg.freq2_radar = ctx->radar_enabled;
+		/* For now allow DFS in AP mode for vdevs except
+		 * bridge vdev.
+		 */
+		if (chandef && !is_bridge_vdev) {
+			arg.chan_radar =
+				!!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
+			arg.freq2_radar = ctx->radar_enabled;
+		}
 
 		arg.passive = arg.chan_radar;
 
@@ -12406,7 +12619,10 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		/* TODO: Notify if secondary 80Mhz also needs radar detection */
 	}
 
-	arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
+	if (is_bridge_vdev)
+		arg.passive = IEEE80211_CHAN_NO_IR;
+	else
+		arg.passive |= !!(chandef->chan->flags & IEEE80211_CHAN_NO_IR);
 
 	if (!restart)
 		ath12k_mac_mlo_get_vdev_args(arvif, &arg.ml);
@@ -12430,7 +12646,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		return ret;
 	}
 
-	if (ar->supports_6ghz &&
+	if (!is_bridge_vdev && ar->supports_6ghz &&
             chandef->chan->band == NL80211_BAND_6GHZ &&
             (ahvif->vdev_type == WMI_VDEV_TYPE_STA || ahvif->vdev_type == WMI_VDEV_TYPE_AP) &&
             test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map)) {
@@ -12678,7 +12894,8 @@ void ath12k_mac_update_ru_punct_bitmap(struct ath12k_link_vif *arvif,
 	//lockdep_assert_held(&ah->conf_mutex);
 	//lockdep_assert_held(&ar->conf_mutex);
 
-	if (old_ctx->def.punctured == new_ctx->def.punctured)
+	if (!ath12k_mac_is_bridge_vdev(arvif) &&
+	    old_ctx->def.punctured == new_ctx->def.punctured)
 		return;
 
 	ieee80211_iterate_stations_atomic(ah->hw,
@@ -13327,11 +13544,12 @@ static int ath12k_start_vdev_delay(struct ath12k *ar,
 	return 0;
 }
 
-int
-ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
-				 struct ieee80211_vif *vif,
-				 struct ieee80211_bss_conf *link_conf,
-				 struct ieee80211_chanctx_conf *ctx)
+static int
+ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
+				     struct ieee80211_vif *vif,
+				     struct ieee80211_bss_conf *link_conf,
+				     struct ieee80211_chanctx_conf *ctx,
+				     u8 link_id, u16 bridge_ar_link_idx)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k *ar;
@@ -13341,9 +13559,9 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	struct ath12k_link_sta *arsta;
-	u8 link_id = link_conf->link_id;
 	struct ath12k_link_vif *arvif;
 	int ret;
+	bool is_bridge_vdev;
 	enum ieee80211_ap_reg_power power_type;
 
 	lockdep_assert_wiphy(hw->wiphy);
@@ -13351,13 +13569,17 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 	/* For multi radio wiphy, the vdev was not created during add_interface
 	 * create now since we have a channel ctx now to assign to a specific ar/fw
 	 */
-	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id);
+	is_bridge_vdev = (ATH12K_BRIDGE_LINKS_MASK & BIT(link_id)) ?
+			 true : false;
+	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, is_bridge_vdev);
 	if (!arvif) {
 		WARN_ON(1);
 		return -ENOMEM;
 	}
 
-	ar = ath12k_mac_assign_vif_to_vdev(hw, arvif, ctx);
+	ar = ath12k_mac_assign_vif_to_vdev(hw, arvif, ctx,
+					   is_bridge_vdev,
+					   bridge_ar_link_idx);
 	if (!ar) {
 		ath12k_hw_warn(ah, "failed to assign chanctx for vif %pM link id %u link vif is already started",
 			       vif->addr, link_id);
@@ -13368,13 +13590,20 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 
 	ab = ar->ab;
 
-	ath12k_dbg(ab, ATH12K_DBG_MAC,
-		   "mac chanctx assign ptr %p vdev_id %i\n",
-		   ctx, arvif->vdev_id);
+	if (ctx)
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "mac chanctx assign ptr %p vdev_id %i, vdev_subtype=%0x\n",
+			   ctx, arvif->vdev_id, arvif->vdev_subtype);
+	else
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "mac chanctx for vdev_id %i vdev_subtype=%0x\n",
+			   arvif->vdev_id, arvif->vdev_subtype);
 
-	arvif->punct_bitmap = ctx->def.punctured;
 
-	if (ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
+	if (!is_bridge_vdev)
+		arvif->punct_bitmap = ctx->def.punctured;
+
+	if (!is_bridge_vdev && ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
             (ahvif->vdev_type == WMI_VDEV_TYPE_STA ||
              ahvif->vdev_type == WMI_VDEV_TYPE_AP)) {
                 power_type = vif->bss_conf.power_type;
@@ -13439,37 +13668,57 @@ ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
 		goto out;
 	}
 
-	ret = ath12k_mac_vdev_start(arvif, ctx);
-	if (ret) {
-		ath12k_warn(ab, "failed to start vdev %i addr %pM on freq %d: %d\n",
-			    arvif->vdev_id, vif->addr,
-			    ctx->def.chan->center_freq, ret);
-		goto out;
+	if (ctx) {
+		memcpy(&arvif->chanctx, ctx, sizeof(*ctx));
+		ret = ath12k_mac_vdev_start(arvif, ctx);
+		if (ret) {
+			ath12k_warn(ab, "failed to start vdev %i addr %pM on freq %d: %d\n",
+				    arvif->vdev_id, vif->addr,
+				    ctx->def.chan->center_freq, ret);
+			goto out;
+		}
+	} else {
+		memset(&arvif->chanctx, 0, sizeof(*ctx));
+		ret = ath12k_mac_vdev_start(arvif, NULL);
+		if (ret) {
+			ath12k_warn(ab, "failed to start vdev %i addr %pM with ret %d\n",
+				    arvif->vdev_id, arvif->bssid, ret);
+			goto out;
+		}
 	}
 
 	arvif->is_started = true;
 
 	/* TODO: Setup ps and cts/rts protection */
+	if (is_bridge_vdev && ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		ath12k_info(ab, "STA Bridge VAP created\n");
 
 out:
 	return ret;
 }
-EXPORT_SYMBOL(ath12k_mac_op_assign_vif_chanctx);
 
 void
-ath12k_mac_op_unassign_vif_chanctx(struct ieee80211_hw *hw,
-				   struct ieee80211_vif *vif,
-				   struct ieee80211_bss_conf *link_conf,
-				   struct ieee80211_chanctx_conf *ctx)
+ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
+				       struct ieee80211_vif *vif,
+				       struct ieee80211_bss_conf *link_conf,
+				       struct ieee80211_chanctx_conf *ctx,
+				       u8 bridge_link_id)
 {
 	struct ath12k *ar;
 	struct ath12k_base *ab;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
-	u8 link_id = link_conf->link_id;
+	u8 link_id;
 	int ret;
 
-	lockdep_assert_wiphy(hw->wiphy);
+	if (link_conf) {
+        	link_id = link_conf->link_id;
+	} else if (bridge_link_id) {
+        	link_id = bridge_link_id;
+	} else {
+        	ath12k_err(NULL, "unable to get the link id\n");
+	        return;
+	}
 
 	arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
 
@@ -13489,9 +13738,14 @@ ath12k_mac_op_unassign_vif_chanctx(struct ieee80211_hw *hw,
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return;
 
-	ath12k_dbg(ab, ATH12K_DBG_SET(MAC, L2),
-		   "mac chanctx unassign ptr %p vdev_id %i\n",
-		   ctx, arvif->vdev_id);
+	if (ctx)
+		ath12k_dbg(ab, ATH12K_DBG_SET(MAC, L2),
+			   "mac chanctx unassign ptr %p vdev_id %i vdev_subtype %0x\n",
+			   ctx, arvif->vdev_id, arvif->vdev_subtype);
+	else
+		ath12k_dbg(ab, ATH12K_DBG_SET(MAC, L2),
+			   "mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
+			   arvif->vdev_id, arvif->vdev_subtype);
 
 	WARN_ON(!arvif->is_started);
 
@@ -13526,7 +13780,461 @@ ath12k_mac_op_unassign_vif_chanctx(struct ieee80211_hw *hw,
 		ar->state_11d = ATH12K_11D_PREPARING;
 	}
 }
+
+static void
+ath12k_mac_stop_and_delete_bridge_vdev(struct ieee80211_hw *hw,
+				       struct ieee80211_vif *vif,
+				       struct ieee80211_bss_conf *link_conf,
+				       struct ieee80211_chanctx_conf *ctx)
+{
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	int ret;
+	u8 link_id = ATH12K_BRIDGE_LINK_MIN;
+	unsigned long links;
+
+	/* Proceed only for MLO */
+	if (!vif->valid_links)
+		return;
+
+	if (vif->type != NL80211_IFTYPE_AP &&
+	    vif->type != NL80211_IFTYPE_STATION)
+		return;
+
+	ahvif = (void *)vif->drv_priv;
+
+	/* Proceed for bridge only after all the normal vdevs are removed */
+	if (hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) == 0) {
+		links = ahvif->links_map;
+		for_each_set_bit_from(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+			arvif = ahvif->link[link_id];
+			if (!arvif) {
+				ath12k_err(NULL,
+					   "unable to determine the assigned link vif on link id %d\n", link_id);
+				continue;
+			}
+
+			if (arvif->is_up) {
+				/* When interfaces are getting removed,
+				 * during CAC inprogress, the bridge vdevs
+				 * will not be brought down in the normal
+				 * calls since the 5G normal vdev is
+				 * created and started but not brought up.
+				 * However, in this case, all the bridge
+				 * vdevs present will be up and they are
+				 * stopped without bringing them down.
+				 * So bridge vdev will be brought down
+				 * here during these specific scenarios.
+				 */
+				ret = ath12k_wmi_vdev_down(arvif->ar, arvif->vdev_id);
+				if (ret) {
+					ath12k_warn(arvif->ar->ab, "failed to down vdev_id %i: %d\n", arvif->vdev_id, ret);
+					continue;
+				}
+				arvif->is_up = false;
+			}
+			ath12k_mac_unassign_vif_chanctx_handle(hw, vif, NULL, NULL, link_id);
+		}
+	}
+}
+
+void
+ath12k_mac_op_unassign_vif_chanctx(struct ieee80211_hw *hw,
+				   struct ieee80211_vif *vif,
+				   struct ieee80211_bss_conf *link_conf,
+				   struct ieee80211_chanctx_conf *ctx)
+{
+	lockdep_assert_wiphy(hw->wiphy);
+
+	ath12k_mac_unassign_vif_chanctx_handle(hw, vif, link_conf, ctx, 0);
+	ath12k_mac_stop_and_delete_bridge_vdev(hw, vif, link_conf, ctx);
+}
 EXPORT_SYMBOL(ath12k_mac_op_unassign_vif_chanctx);
+
+static int ath12k_mac_target_supp_n_link_mlo(struct ath12k_base *ab)
+{
+	if (!ab)
+		return -ENODATA;
+
+	if (test_bit(WMI_TLV_SERVICE_N_LINK_MLO_SUPPORT, ab->wmi_ab.svc_map) &&
+	    test_bit(WMI_TLV_SERVICE_BRIDGE_VDEV_SUPPORT, ab->wmi_ab.svc_map))
+		return 0;
+
+	return -EOPNOTSUPP;
+}
+
+static int ath12k_mac_get_link_idx_for_bridge(struct ieee80211_hw *hw,
+					      unsigned long *link_idx_bmp)
+{
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_hw_group *ag;
+	struct ath12k *ar1, *ar2;
+	int ret = -ENODATA;
+	u32 adj_device1, adj_device2;
+
+	ar1 = ah->radio;
+	ag = ar1->ab->ag;
+	for (int i = 0; i < ah->num_radio; i++, ar1++) {
+		if (!ar1)
+			continue;
+
+		ret = ath12k_mac_target_supp_n_link_mlo(ar1->ab);
+		if (ret)
+			goto err;
+
+		if (ag->num_devices > ATH12K_MIN_NUM_DEVICES_NLINK) {
+			ret = -EOPNOTSUPP;
+			goto err;
+		}
+
+		if (BRIDGE_IN_RANGE(ar1)) {
+			ar2 = ar1;
+			ar2++;
+			adj_device1 = ar1->ab->wsi_info.adj_chip_idxs[0];
+			adj_device2 = ar1->ab->wsi_info.adj_chip_idxs[1];
+			for (int j = 0; j < ah->num_radio - i; j++, ar2++) {
+				if (ar2 && BRIDGE_IN_RANGE(ar2) &&
+				    (ar2->ab->wsi_info.index == adj_device1 ||
+				     ar2->ab->wsi_info.index == adj_device2)) {
+					*link_idx_bmp = BIT(ar1->hw_link_id) | BIT(ar2->hw_link_id);
+					ret = 0;
+					goto exit;
+				}
+			}
+			ret = -ENOMEM;
+		}
+	}
+
+err:
+	*link_idx_bmp = 0;
+exit:
+	return ret;
+}
+
+static inline struct ath12k *ath12k_mac_get_ar(struct ath12k_hw *ah,
+					       u8 link_idx)
+{
+	struct ath12k *ar;
+	int i = 0;
+
+	if (link_idx >= ah->num_radio)
+		return NULL;
+
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (ar->hw_link_id == link_idx)
+			return ar;
+	}
+
+	return NULL;
+}
+
+static struct ieee80211_chanctx_conf *ath12k_mac_get_ctx_for_bridge(struct ath12k_hw *ah, u8 link_idx)
+{
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+
+	ar = ath12k_mac_get_ar(ah, link_idx);
+	if (!ar)
+		return NULL;
+
+	arvif = list_first_entry_or_null(&ar->arvifs, struct ath12k_link_vif,
+					 list);
+
+	if (arvif && !(ATH12K_SCAN_LINKS_MASK & BIT(arvif->link_id)) &&
+	    arvif->chanctx.def.chan)
+		return &arvif->chanctx;
+	else
+		return NULL;
+}
+
+static bool ath12k_mac_need_ctx_sync(struct ieee80211_chanctx_conf *new_ctx,
+				     struct ieee80211_chanctx_conf *bridge_ctx)
+{
+	struct cfg80211_chan_def *new_def, *bridge_def;
+	struct ieee80211_channel *new_chan, *bridge_chan;
+
+	if (!bridge_ctx->def.chan)
+		return true;
+
+	new_def = &new_ctx->def;
+	bridge_def = &bridge_ctx->def;
+	new_chan = new_ctx->def.chan;
+	bridge_chan = bridge_ctx->def.chan;
+
+	if ((new_chan->center_freq == bridge_chan->center_freq) &&
+	    (new_def->center_freq1 == bridge_def->center_freq1) &&
+	    (new_def->center_freq2 == bridge_def->center_freq2) &&
+	    (ath12k_phymodes[new_chan->band][new_def->width] ==
+	     ath12k_phymodes[bridge_chan->band][bridge_def->width]) &&
+	    (new_chan->max_power == bridge_chan->max_power) &&
+	    (new_chan->max_reg_power == bridge_chan->max_reg_power) &&
+	    (new_chan->max_antenna_gain == bridge_chan->max_antenna_gain))
+		return false;
+	return true;
+}
+
+static int ath12k_mac_sync_ctx_on_radio(struct ieee80211_hw *hw,
+					struct ieee80211_vif *vif,
+					struct ieee80211_chanctx_conf *ctx,
+					int *num_devices)
+{
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+
+	ar = ath12k_get_ar_by_ctx(hw, ctx);
+	if (!ar)
+		return -EINVAL;
+
+	*num_devices = ar->ab->ag->num_devices;
+	if (*num_devices < ATH12K_MIN_NUM_DEVICES_NLINK)
+		goto exit;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (!ath12k_mac_is_bridge_vdev(arvif))
+			continue;
+		if (ath12k_mac_need_ctx_sync(ctx, &arvif->chanctx)) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "ctx syncing\n");
+			ath12k_mac_update_active_vif_chan(ar, ctx);
+		}
+		break;
+	}
+
+exit:
+	return 0;
+}
+
+static void ath12k_mac_handle_failures_bridge_addition(struct ieee80211_hw *hw,
+						       struct ieee80211_vif *vif)
+{
+	struct ath12k_vif *ahvif = (void *)vif->drv_priv;
+	struct ath12k_link_vif *arvif;
+	u8 link_id = ATH12K_BRIDGE_LINK_MIN;
+	unsigned long links = ahvif->links_map;
+
+	for_each_set_bit_from(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		arvif = ahvif->link[link_id];
+
+		if (WARN_ON(!arvif))
+			continue;
+
+		if (arvif->is_started) {
+			ath12k_mac_unassign_vif_chanctx_handle(hw, vif, NULL, NULL, link_id);
+		} else if (arvif->is_created) {
+			ath12k_mac_remove_link_interface(hw, arvif);
+			ath12k_mac_unassign_link_vif(arvif);
+		} else {
+			ath12k_mac_unassign_link_vif(arvif);
+		}
+	}
+}
+
+static void ath12k_mac_configure_bridge_vap_sta_mode(struct ieee80211_hw *hw,
+						     struct ieee80211_vif *vif,
+						     int num_devices)
+{
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_vif *ahvif = (void *)vif->drv_priv;
+	struct ieee80211_chanctx_conf *bridge_ctx = NULL;
+	int ret;
+	u32 device_idx = 0;
+	unsigned long bridge_bitmap = 0;
+	u8 bridge_ar_link_idx;
+
+	ret = ath12k_mac_is_bridge_required(ahvif->device_bitmap,
+					    num_devices,
+					    (u16 *)&bridge_bitmap);
+	if (!ret)
+		return;
+
+	for_each_set_bit_from(device_idx, &bridge_bitmap, num_devices) {
+		ret = ath12k_mac_get_link_idx_with_device_idx(ah, device_idx,
+							      &bridge_ar_link_idx);
+		if (ret) {
+			bridge_ctx = ath12k_mac_get_ctx_for_bridge(ah,
+								   bridge_ar_link_idx);
+			ret = ath12k_mac_assign_vif_chanctx_handle(hw, vif, NULL,
+								   bridge_ctx,
+								   ATH12K_BRIDGE_LINK_MIN,
+								   bridge_ar_link_idx);
+			if (ret) {
+				ath12k_dbg(NULL, ATH12K_DBG_MAC,
+					   "Bridge VAP addition for STA mode failed\n");
+				ath12k_mac_handle_failures_bridge_addition(hw, vif);
+				continue;
+			}
+			break;
+		}
+	}
+}
+
+static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
+					      struct ieee80211_vif *vif,
+					      struct ieee80211_bss_conf *link_conf,
+					      struct ieee80211_chanctx_conf *ctx,
+					      int num_devices)
+{
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k *ar = ah->radio;
+	struct ath12k_hw_group *ag = ar->ab->ag;
+	struct ath12k_vif *ahvif = (void *)vif->drv_priv;
+	struct ieee80211_chanctx_conf *bridge_ctx = NULL;
+	struct ath12k_link_vif *arvif;
+	unsigned long links_map, link_idx_bmp;
+	u32 device_idx;
+	int ret;
+	u8 link_id, bridge_ar_link_idx, curr_link_id;
+	bool bridge_needed = false;
+
+	/* Currently bridge vdev addition is supported in AP and STA mode */
+	if (vif->type != NL80211_IFTYPE_AP &&
+	    vif->type != NL80211_IFTYPE_STATION)
+		goto exit;
+
+	/* Bridge needed only during MLO */
+	if (!vif->valid_links)
+		goto exit;
+
+	/* Currently bridge needed for 4 QCN9274 devices */
+	if (num_devices < ATH12K_MIN_NUM_DEVICES_NLINK)
+		goto exit;
+
+	if (num_devices > ATH12K_MIN_NUM_DEVICES_NLINK) {
+		ath12k_err(NULL, "Bridge vdev not yet supported for more than 4 devices\n");
+		goto exit;
+	}
+
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ag->flags)) {
+		if (ahvif->mode0_recover_bridge_vdevs) {
+			link_id = ATH12K_BRIDGE_LINK_MIN;
+			links_map = ahvif->links_map;
+			for_each_set_bit_from(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+				arvif = ahvif->link[link_id];
+
+				if (WARN_ON(!arvif))
+					continue;
+
+				if (arvif->chanctx.def.chan)
+					bridge_ctx = &arvif->chanctx;
+				else
+					bridge_ctx = NULL;
+
+				ret = ath12k_mac_assign_vif_chanctx_handle(hw, vif, NULL, bridge_ctx, arvif->link_id, arvif->ar->hw_link_id);
+				if (ret) {
+					ath12k_err(NULL, "Bridge VAP addition during Mode0 recovery failed for MLD:%pM\n",
+						   vif->addr);
+					ath12k_mac_handle_failures_bridge_addition(hw, vif);
+					break;
+				} else {
+					ath12k_dbg(NULL, ATH12K_DBG_MAC, "Added Bridge vdev(link_id:%u) during Mode0 recovery for MLD:%pM\n",
+						   link_id, vif->addr);
+				}
+			}
+			ahvif->mode0_recover_bridge_vdevs = false;
+		}
+	} else {
+		/* Only MLO with more than 1 link, needs bridge vdevs */
+		if (ahvif->links_map & ATH12K_BRIDGE_LINKS_MASK)
+			goto exit;
+
+		curr_link_id = link_conf->link_id;
+		arvif = ahvif->link[curr_link_id];
+		if (!arvif) {
+			ath12k_err(NULL, "Bridge cannot be created, vdev not created with link_id=%u\n",
+				   link_id);
+			goto exit;
+		}
+		device_idx = arvif->ar->ab->wsi_info.index;
+
+		links_map = ahvif->links_map;
+		for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+			if (link_id == curr_link_id)
+				continue;
+
+			arvif = ahvif->link[link_id];
+			if (!arvif->ar)
+				continue;
+
+			if (BIT(device_idx) & arvif->ar->ab->wsi_info.diag_device_idx_bmap) {
+				bridge_needed = true;
+				break;
+			}
+		}
+
+		if (!bridge_needed)
+			goto exit;
+
+		/* STA mode Bridge vdev handling */
+		if (vif->type == NL80211_IFTYPE_STATION) {
+			ath12k_mac_configure_bridge_vap_sta_mode(hw, vif,
+								 num_devices);
+			goto exit;
+		}
+
+		/* AP mode Bridge vdev handling */
+		ret = ath12k_mac_get_link_idx_for_bridge(hw, &link_idx_bmp);
+		if (ret) {
+			ath12k_dbg(NULL, ATH12K_DBG_MAC,
+				   "Unable to determine the bridge addition radios, ret:%d\n",
+				   ret);
+			goto exit;
+		}
+
+		if (hweight8(link_idx_bmp) != ATH12K_MAX_NUM_BRIDGE_PER_MLD) {
+			ath12k_dbg(NULL, ATH12K_DBG_MAC, "Incorrect bridge creation count:%d\n",
+				   hweight8(link_idx_bmp));
+			goto exit;
+		}
+
+		for_each_set_bit(bridge_ar_link_idx, &link_idx_bmp, ATH12K_MAX_AR_LINK_IDX) {
+			bridge_ctx = ath12k_mac_get_ctx_for_bridge(ah, bridge_ar_link_idx);
+
+			links_map = ahvif->links_map >> ATH12K_BRIDGE_LINK_MIN;
+			link_id = (ffs(~links_map) - 1) + ATH12K_BRIDGE_LINK_MIN;
+
+			ret = ath12k_mac_assign_vif_chanctx_handle(hw, vif, NULL, bridge_ctx, link_id, bridge_ar_link_idx);
+			if (ret) {
+				ath12k_err(NULL, "Bridge VAP addition failed for MLD:%pM\n", vif->addr);
+				ath12k_mac_handle_failures_bridge_addition(hw, vif);
+				goto exit;
+			}
+		}
+		ath12k_dbg(NULL, ATH12K_DBG_MAC, "Bridge vdevs added for MLD:%pM\n", vif->addr);
+	}
+
+exit:
+	return 0;
+}
+
+int
+ath12k_mac_op_assign_vif_chanctx(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 struct ieee80211_bss_conf *link_conf,
+				 struct ieee80211_chanctx_conf *ctx)
+{
+	int ret, num_devices = 0;
+
+	if (!ctx)
+		return -EINVAL;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	ret = ath12k_mac_sync_ctx_on_radio(hw, vif, ctx, &num_devices);
+	if (ret)
+		goto exit;
+
+	ret = ath12k_mac_assign_vif_chanctx_handle(hw, vif, link_conf, ctx, link_conf->link_id, 0);
+	if (ret) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC, "vif chanctx not assigned\n");
+		goto exit;
+	}
+
+	ret = ath12k_mac_create_and_start_bridge(hw, vif, link_conf, ctx, num_devices);
+
+exit:
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_mac_op_assign_vif_chanctx);
 
 int
 ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
@@ -15070,7 +15778,7 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	 */
 
 	link_id = ath12k_mac_find_link_id_by_ar(ahvif, ar);
-	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id);
+	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 	/* If the vif is already assigned to a specific vdev of an ar,
 	 * check whether its already started, vdev which is started
 	 * are not allowed to switch to a new radio.
@@ -15096,9 +15804,9 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	}
 
 	if (create) {
-		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id);
+		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 
-		ret = ath12k_mac_vdev_create(ar, arvif);
+		ret = ath12k_mac_vdev_create(ar, arvif, false);
 		if (ret) {
 			ath12k_warn(ar->ab, "unable to create scan vdev for roc: %d\n",
 				    ret);

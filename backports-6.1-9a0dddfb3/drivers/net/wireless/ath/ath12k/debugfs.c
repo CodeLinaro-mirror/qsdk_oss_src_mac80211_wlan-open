@@ -1742,7 +1742,9 @@ static int ath12k_open_link_stats(struct inode *inode, struct file *file)
 
 	links_map = ahvif->links_map;
 	for_each_set_bit(link_id, &links_map,
-			 IEEE80211_MLD_MAX_NUM_LINKS) {
+			 ATH12K_NUM_MAX_LINKS) {
+		if (ATH12K_SCAN_LINKS_MASK & BIT(link_id))
+			continue;
 		arvif = rcu_dereference_protected(ahvif->link[link_id],
 						  lockdep_is_held(&wiphy->mtx));
 

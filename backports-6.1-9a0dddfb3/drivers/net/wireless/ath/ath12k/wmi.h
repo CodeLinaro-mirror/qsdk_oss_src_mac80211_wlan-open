@@ -3058,6 +3058,7 @@ struct wmi_vdev_create_mlo_params {
 #define ATH12K_WMI_FLAG_MLO_EMLSR_SUPPORT		BIT(6)
 #define ATH12K_WMI_FLAG_MLO_FORCED_INACTIVE		BIT(7)
 #define ATH12K_WMI_FLAG_MLO_LINK_ADD			BIT(8)
+#define ATH12K_WMI_FLAG_MLO_BRIDGE_LINK			BIT(14)
 #define ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID		BIT(18)
 #define ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID_PARTNER	BIT(19)
 
@@ -3222,6 +3223,9 @@ enum wmi_phy_mode {
 
 #define ATH12K_WMI_MLO_MAX_LINKS 4
 #define ATH12K_WMI_MLO_PEER_MAX_LINKS 3
+#define ATH12K_WMI_MAX_NUM_BRIDGE_LINKS 2
+#define ATH12K_WMI_MLO_MAX_PARTNER_LINKS (ATH12K_WMI_MLO_MAX_LINKS + \
+					 ATH12K_WMI_MAX_NUM_BRIDGE_LINKS - 1)
 
 struct wmi_ml_partner_info {
 	u32 vdev_id;
@@ -3230,6 +3234,7 @@ struct wmi_ml_partner_info {
 	bool assoc_link;
 	bool primary_umac;
 	bool logical_link_idx_valid;
+	bool mlo_bridge_link;
 	u32 logical_link_idx;
 };
 
@@ -3238,9 +3243,10 @@ struct wmi_ml_arg {
 	bool assoc_link;
 	bool mcast_link;
 	bool link_add;
+	bool mlo_bridge_link;
 	u32 ieee_link_id;
 	u8 num_partner_links;
-	struct wmi_ml_partner_info partner_info[ATH12K_WMI_MLO_MAX_LINKS];
+	struct wmi_ml_partner_info partner_info[ATH12K_WMI_MLO_MAX_PARTNER_LINKS];
 };
 
 struct wmi_vdev_start_req_arg {
@@ -4036,9 +4042,6 @@ struct wmi_vdev_install_key_arg {
 #define WMI_HOST_MAX_HE_RATE_SET		3
 #define WMI_HECAP_TXRX_MCS_NSS_IDX_80		0
 #define WMI_HECAP_TXRX_MCS_NSS_IDX_160		1
-
-#define ATH12K_WMI_MLO_MAX_PARTNER_LINKS \
-	(ATH12K_WMI_MLO_MAX_LINKS + ATH12K_MAX_NUM_BRIDGE_LINKS - 1)
 
 struct peer_assoc_mlo_params {
 	bool enabled;

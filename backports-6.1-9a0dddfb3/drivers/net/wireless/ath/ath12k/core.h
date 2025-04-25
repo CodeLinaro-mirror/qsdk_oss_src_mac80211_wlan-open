@@ -522,6 +522,8 @@ struct ath12k_vif {
 	/* indicates bitmap of link vif created in FW */
 	u32 links_map;
 	u8 last_scan_link;
+	bool mode0_recover_bridge_vdevs;
+	u8 device_bitmap;
 	bool chanctx_peer_del_done;
 	u8 primary_link_id;
 	u8 hw_link_id;
@@ -1147,6 +1149,7 @@ struct ath12k_wsi_info {
 	u32 hw_link_id_base;
 	u32 num_adj_chips;
 	u32 adj_chip_idxs[ATH12K_MAX_ADJACENT_CHIPS];
+	u8 diag_device_idx_bmap;
 };
 
 enum ath12k_device_family {

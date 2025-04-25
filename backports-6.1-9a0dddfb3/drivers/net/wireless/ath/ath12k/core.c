@@ -2409,12 +2409,13 @@ static int ath12k_core_get_wsi_info(struct ath12k_hw_group *ag,
 	return 0;
 }
 
-static void ath12k_core_fill_adj_info(struct ath12k_base *ab) {
-
+static void ath12k_core_fill_adj_info(struct ath12k_base *ab)
+{
 	struct device_node* ab_dev = ab->dev->of_node;
 	struct device_node *tx_neighbour, *rx_neighbour;
 	struct ath12k_hw_group *ag = ab->ag;
 	int num_adj_chips = 0, i = 0;
+	u8 adj_device_idx_bmp = 0;
 
 	tx_neighbour = ath12k_get_connected_dev(ab, 0);
 	if (!tx_neighbour) {
@@ -2425,6 +2426,7 @@ static void ath12k_core_fill_adj_info(struct ath12k_base *ab) {
 	for (i = 0; i < ag->num_devices; i++) {
 		if (tx_neighbour == ag->ab[i]->dev->of_node) {
 			ab->wsi_info.adj_chip_idxs[num_adj_chips] = ag->ab[i]->wsi_info.index;
+			adj_device_idx_bmp |= BIT(ab->wsi_info.adj_chip_idxs[num_adj_chips]);
 			break;
 		}
 	}
@@ -2442,6 +2444,7 @@ static void ath12k_core_fill_adj_info(struct ath12k_base *ab) {
 		for (i = 0; i < ag->num_devices; i++) {
 			if (rx_neighbour == ag->ab[i]->dev->of_node) {
 				ab->wsi_info.adj_chip_idxs[num_adj_chips] = ag->ab[i]->wsi_info.index;
+				adj_device_idx_bmp |= BIT(ab->wsi_info.adj_chip_idxs[num_adj_chips]);
 				break;
 			}
 		}
@@ -2453,7 +2456,14 @@ static void ath12k_core_fill_adj_info(struct ath12k_base *ab) {
 	of_node_put(ab_dev);
 
 	ab->wsi_info.num_adj_chips = num_adj_chips;
+	for (i = 0; i < ag->num_devices && adj_device_idx_bmp; i++) {
+		if ((adj_device_idx_bmp & BIT(i)) ||
+		    (i == ab->wsi_info.index))
+			continue;
+		ab->wsi_info.diag_device_idx_bmap |= BIT(i);
+ 	}
 }
+
 static int ath12k_core_get_wsi_index(struct ath12k_hw_group *ag,
 				     struct ath12k_base *ab)
 {
