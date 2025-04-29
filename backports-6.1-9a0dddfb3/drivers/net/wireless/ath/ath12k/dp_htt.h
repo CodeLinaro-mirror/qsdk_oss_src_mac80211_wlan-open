@@ -318,6 +318,10 @@ enum htt_ppdu_stats_tag_type {
 	HTT_PPDU_STATS_TAG_MAX,
 };
 
+#define HTT_STATS_FRAMECTRL_TYPE_MASK GENMASK(3,2)
+#define HTT_STATS_GET_FRAME_CTRL_TYPE(_val)	\
+		u32_get_bits(_val, HTT_STATS_FRAMECTRL_TYPE_MASK)
+
 #define HTT_PPDU_STATS_TAG_DEFAULT (BIT(HTT_PPDU_STATS_TAG_COMMON) \
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMMON) \
 				   | BIT(HTT_PPDU_STATS_TAG_USR_RATE) \
@@ -359,6 +363,11 @@ enum htt_ppdu_stats_ru_size {
        HTT_PPDU_STATS_RU_996x3,
        HTT_PPDU_STATS_RU_996x3_484,
        HTT_PPDU_STATS_RU_996x4,
+};
+
+enum htt_stats_frametype {
+	HTT_STATS_FTYPE_TIDQ_DATA_SU = 15,
+	HTT_STATS_FTYPE_TIDQ_DATA_MU,
 };
 
 /* HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG Message
@@ -1249,6 +1258,38 @@ enum  htt_ppdu_stats_usr_compln_status {
 	HTT_PPDU_STATS_USER_STATUS_ABORT,
 };
 
+#define HTT_STATS_MAX_CHAINS 8
+#define HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA    BIT(14)
+#define HTT_PPDU_STATS_USR_CMN_HDR_SW_PEERID    GENMASK(31, 16)
+#define HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL    GENMASK(15, 0)
+#define HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32 4
+#define HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE HTT_STATS_MAX_CHAINS / \
+						HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32
+
+/* Common stats for both control and data packets */
+struct  htt_ppdu_stats_user_common {
+	u8 tid_num;
+	u8 vdev_id;
+	__le16 sw_peer_id;
+	__le32 info;
+	__le32 ctrl;
+	__le32 buffer_paddr_31_0;
+	__le32 buffer_paddr_39_32;
+	__le32 host_opaque_cookie;
+	__le32 qdepth_bytes;
+	__le32 full_aid;
+	__le32 data_frm_ppdu_id;
+	__le32 sw_rts_prot_dur_us;
+	u8 tx_pwr_multiplier;
+	u8 chain_enable_bits;
+	__le16 reserved;
+	/*
+	*tx_pwr is applicable for each radio chain
+	*tx_pwr for each radio chain is a 8 bit value
+	*/
+	__le32 tx_pwr[HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE];
+} __packed;
+
 #define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_LONG_RETRY_M	GENMASK(3, 0)
 #define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_SHORT_RETRY_M	GENMASK(7, 4)
 #define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_IS_AMPDU_M		BIT(8)
@@ -1278,6 +1319,7 @@ struct htt_ppdu_stats_usr_cmpltn_cmn {
 
 #define HTT_PPDU_STATS_NON_QOS_TID	16
 #define HTT_PPDU_STATS_PPDU_ID         GENMASK(24, 0)
+#define HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_NUM_MPDU GENMASK(16, 8)
 
 struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	__le32 ppdu_id;
@@ -1289,6 +1331,15 @@ struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	__le32 success_bytes;
 } __packed;
 
+/* Flush stats for failed tx completions */
+struct htt_ppdu_stats_cmpltn_flush {
+	__le32 drop_reason;
+	__le32 info;
+	u8 tid_num;
+	u8 queue_type;
+	__le16 sw_peer_id;
+} __packed;
+
 struct htt_ppdu_user_stats {
 	u16 peer_id;
 	u16 delay_ba;
@@ -1297,6 +1348,8 @@ struct htt_ppdu_user_stats {
 	struct htt_ppdu_stats_user_rate rate;
 	struct htt_ppdu_stats_usr_cmpltn_cmn cmpltn_cmn;
 	struct htt_ppdu_stats_usr_cmpltn_ack_ba_status ack_ba;
+	struct htt_ppdu_stats_user_common common;
+	struct htt_ppdu_stats_cmpltn_flush cmpltn_flush;
 };
 
 #define HTT_PPDU_STATS_MAX_USERS	37

@@ -983,6 +983,7 @@ struct ath12k_base {
 	u32 ce_remap_base_addr;
 	bool ce_remap;
 	bool htt_flag;
+	bool stats_disable;
 
 	struct {
 		enum ath12k_bus bus;
