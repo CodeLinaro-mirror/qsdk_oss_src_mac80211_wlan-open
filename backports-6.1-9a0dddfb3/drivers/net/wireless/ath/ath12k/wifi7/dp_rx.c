@@ -635,6 +635,7 @@ static void ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		/* TODO: Handle undecap for these formats */
 		break;
 	}
+	dp_pdev->wmm_stats.total_wmm_rx_pkts[dp_pdev->wmm_stats.rx_type]++;
 }
 
 static void ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
@@ -650,7 +651,10 @@ static void ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_hdr *hdr;
 	struct ath12k_dp_peer *peer;
 	u32 err_bitmap = rx_desc_data->err_bitmap;
+	struct ath12k_dp_rx_tid *rx_tid;
+	u8 tid;
 
+	tid = rx_desc_data->tid;
 	/* PN for multicast packets will be checked in mac80211 */
 	rxcb = ATH12K_SKB_RXCB(msdu);
 	rxcb->is_mcbc = rx_desc_data->fill_crypto_hdr;
@@ -666,9 +670,17 @@ static void ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			enctype = peer->sec_type_grp;
 		else
 			enctype = peer->sec_type;
+
+		rx_tid = &peer->rx_tid[tid];
+		dp_pdev->wmm_stats.rx_type =
+			ath12k_tid_to_ac(rx_tid->tid >
+					 ATH12K_DSCP_PRIORITY ? 0: rx_tid->tid);
+		dp_pdev->wmm_stats.total_wmm_rx_pkts[dp_pdev->wmm_stats.rx_type]++;
+
 	} else {
 		enctype = HAL_ENCRYPT_TYPE_OPEN;
 	}
+
 	spin_unlock_bh(&dp->dp_lock);
 	rcu_read_unlock();
 
@@ -988,6 +1000,10 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			dev_kfree_skb_any(msdu);
 			continue;
 		}
+
+		dp_pdev->wmm_stats.rx_type =
+			ath12k_tid_to_ac(rxcb->tid >
+					 ATH12K_DSCP_PRIORITY ? 0: rxcb->tid);
 
 		ret = ath12k_wifi7_dp_rx_process_msdu(dp_pdev, msdu, msdu_list,
 						      &rx_status, &rx_desc_data);
@@ -2340,6 +2356,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		}
 		ath12k_wifi7_dp_rx_wbm_err(dp_pdev, napi, msdu, &msdu_list);
 	}
+
 	rcu_read_unlock();
 done:
 	return total_num_buffs_reaped;
