@@ -2071,6 +2071,7 @@ static void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 static void ath12k_dp_mon_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev, struct napi_struct *napi,
 					  struct sk_buff *msdu,
 					  struct ieee80211_rx_status *status,
+					  struct hal_rx_mon_ppdu_info *ppduinfo,
 					  u8 decap)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
@@ -2087,8 +2088,6 @@ static void ath12k_dp_mon_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev, struct
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	bool is_mcbc = rxcb->is_mcbc;
 	bool is_eapol_tkip = rxcb->is_eapol;
-	struct hal_rx_desc *rx_desc = (struct hal_rx_desc *)msdu->data;
-	struct hal_rx_desc_data rx_desc_data;
 
 	status->link_valid = 0;
 
@@ -2099,10 +2098,8 @@ static void ath12k_dp_mon_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev, struct
 		status->flag |= RX_FLAG_RADIOTAP_HE;
 	}
 
-	ath12k_wifi7_dp_extract_rx_desc_data(dp, &rx_desc_data, rx_desc, rx_desc);
-
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_rx_h_find_peer(dp, msdu, &rx_desc_data);
+	peer = ath12k_dp_link_peer_find_by_id(dp, ppduinfo->peer_id);
 	if (peer && peer->sta) {
 		pubsta = peer->sta;
 		if (pubsta->valid_links) {
@@ -2194,7 +2191,7 @@ static int ath12k_dp_mon_rx_deliver(struct ath12k_pdev_dp *dp_pdev,
 			decap = mon_mpdu->decap_format;
 
 		ath12k_dp_mon_update_radiotap(dp_pdev, ppduinfo, mon_skb, rxs);
-		ath12k_dp_mon_rx_deliver_msdu(dp_pdev, napi, mon_skb, rxs, decap);
+		ath12k_dp_mon_rx_deliver_msdu(dp_pdev, napi, mon_skb, rxs, ppduinfo, decap);
 		mon_skb = skb_next;
 	} while (mon_skb);
 	rxs->flag = 0;
