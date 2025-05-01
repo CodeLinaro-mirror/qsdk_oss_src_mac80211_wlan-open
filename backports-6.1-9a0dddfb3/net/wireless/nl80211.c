@@ -17607,6 +17607,47 @@ static int nl80211_erp(struct sk_buff *skb, struct genl_info *info)
 	return -EINVAL;
 }
 
+int cfg80211_erp_trigger_exit(struct wiphy *wiphy)
+{
+	struct sk_buff *msg;
+	struct nlattr *attr;
+	void *hdr;
+
+	wiphy_lock(wiphy);
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg) {
+		wiphy_unlock(wiphy);
+		return -ENOMEM;
+	}
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_ERP);
+	if (!hdr)
+		goto nla_put_failure;
+
+	attr = nla_nest_start(msg, NL80211_ATTR_ERP);
+	if (!attr)
+		goto nla_put_failure;
+
+	if (nla_put_flag(msg, NL80211_ERP_ATTR_EXIT))
+		goto nla_put_failure;
+
+	nla_nest_end(msg, attr);
+	genlmsg_end(msg, hdr);
+
+	genlmsg_multicast_netns(&nl80211_fam, wiphy_net(wiphy), msg, 0,
+				NL80211_MCGRP_CONFIG, GFP_KERNEL);
+
+	wiphy_unlock(wiphy);
+	return 0;
+
+nla_put_failure:
+	genlmsg_cancel(msg, hdr);
+	wiphy_unlock(wiphy);
+	return -EMSGSIZE;
+}
+EXPORT_SYMBOL(cfg80211_erp_trigger_exit);
+
 #define NL80211_FLAG_NEED_WIPHY		0x01
 #define NL80211_FLAG_NEED_NETDEV	0x02
 #define NL80211_FLAG_NEED_RTNL		0x04

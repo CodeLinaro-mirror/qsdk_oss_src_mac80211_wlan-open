@@ -10497,4 +10497,12 @@ cfg80211_update_link_reconfig_remove_update(struct net_device *dev,
 					    unsigned int link_id,
 					    u32 tbtt_count, u64 tsf,
 					    enum nl80211_commands cmd);
+
+/**
+ * cfg80211_erp_trigger_exit - notify userspace to initiate ErP exit procedure
+ *
+ * @wiphy: wiphy pointer
+ */
+int cfg80211_erp_trigger_exit(struct wiphy *wiphy);
+
 #endif /* __NET_CFG80211_H */
