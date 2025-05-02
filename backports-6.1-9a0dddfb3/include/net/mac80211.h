@@ -837,6 +837,8 @@ struct ieee80211_bss_conf {
 	bool hidden_ssid;
 	int txpower;
 	enum nl80211_tx_power_setting txpower_type;
+	struct ieee80211_tx_pwr_env tx_pwr_env[IEEE80211_TPE_MAX_IE_COUNT];
+	u8 tx_pwr_env_num;
 	struct ieee80211_p2p_noa_attr p2p_noa_attr;
 	bool allow_p2p_go_ps;
 	u16 max_idle_period;

@@ -2884,7 +2884,18 @@ enum ieee80211_tx_power_category_6ghz {
 
 #define IEEE80211_TPE_MAX_IE_COUNT	8
 
+/*
+ * In "9.4.2.161 Transmit Power Envelope element" of "IEEE Std 802.11ax-2021",
+ * it show four types in "Table 9-275a-Maximum Transmit Power Interpretation
+ * subfield encoding", and two category for each type in "Table E-12-Regulatory
+ * Info subfield encoding in the United States".
+ * So it it totally max 8 Transmit Power Envelope element.
+ */
+#define IEEE80211_TPE_MAX_IE_COUNT      8
+
 #define IEEE80211_MAX_NUM_PWR_LEVEL    16
+
+#define IEEE80211_TPE_MAX_POWER_COUNT   8
 /*
  * For IEEE80211_TPE_LOCAL_EIRP / IEEE80211_TPE_REG_CLIENT_EIRP,
  * setting to 63.5 dBm means no constraint.
