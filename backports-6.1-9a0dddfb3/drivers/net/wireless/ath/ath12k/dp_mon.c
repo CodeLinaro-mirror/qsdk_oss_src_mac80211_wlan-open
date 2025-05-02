@@ -1419,6 +1419,30 @@ ath12k_dp_mon_hal_rx_parse_user_info(const struct hal_receive_user_info *rx_usr_
 	}
 }
 
+static void ath12k_dp_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
+{
+	if (info & RX_MSDU_END_INFO13_FCS_ERR)
+		*errmap |= HAL_RX_MPDU_ERR_FCS;
+
+	if (info & RX_MSDU_END_INFO13_DECRYPT_ERR)
+		*errmap |= HAL_RX_MPDU_ERR_DECRYPT;
+
+	if (info & RX_MSDU_END_INFO13_TKIP_MIC_ERR)
+		*errmap |= HAL_RX_MPDU_ERR_TKIP_MIC;
+
+	if (info & RX_MSDU_END_INFO13_A_MSDU_ERROR)
+		*errmap |= HAL_RX_MPDU_ERR_AMSDU_ERR;
+
+	if (info & RX_MSDU_END_INFO13_OVERFLOW_ERR)
+		*errmap |= HAL_RX_MPDU_ERR_OVERFLOW;
+
+	if (info & RX_MSDU_END_INFO13_MSDU_LEN_ERR)
+		*errmap |= HAL_RX_MPDU_ERR_MSDU_LEN;
+
+	if (info & RX_MSDU_END_INFO13_MPDU_LEN_ERR)
+		*errmap |= HAL_RX_MPDU_ERR_MPDU_LEN;
+}
+
 static enum hal_rx_mon_status
 ath12k_dp_mon_rx_parse_status_tlv(struct ath12k_mon_data *pmon,
 				  const struct hal_tlv_64_hdr *tlv)
@@ -1657,6 +1681,23 @@ ath12k_dp_mon_rx_parse_status_tlv(struct ath12k_mon_data *pmon,
 	case HAL_MON_BUF_ADDR:
 		return HAL_RX_MON_STATUS_BUF_ADDR;
 	case HAL_RX_MSDU_END:
+		struct hal_rx_msdu_end *msdu_end =
+				(struct hal_rx_msdu_end *)tlv_data;
+		u32 errmap = 0;
+		u32 grp_id;
+
+		info[2] = __le32_to_cpu(msdu_end->info2);
+
+		ath12k_dp_mon_parse_rx_msdu_end_err(info[2], &errmap);
+		info[0] = __le32_to_cpu(msdu_end->info0);
+		grp_id = u32_get_bits(info[0], RX_MSDU_END_INFO0_SW_FRAME_GRP_ID);
+		if (grp_id == RX_MSDU_END_INFO0_SW_FRAMEGROUP_UCAST_DATA ||
+				grp_id == RX_MSDU_END_INFO0_SW_FRAMEGROUP_MCAST_DATA) {
+			ppdu_info->errmap = errmap;
+			if (userid < HAL_MAX_UL_MU_USERS) {
+				ppdu_info->userstats[userid].errmap = errmap;
+			}
+		}
 		return HAL_RX_MON_STATUS_MSDU_END;
 	case HAL_RX_MPDU_END:
 		return HAL_RX_MON_STATUS_MPDU_END;
@@ -2225,30 +2266,6 @@ static int ath12k_dp_pkt_set_pktlen(struct sk_buff *skb, u32 len)
 	}
 
 	return 0;
-}
-
-static void ath12k_dp_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
-{
-	if (info & RX_MSDU_END_INFO13_FCS_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_FCS;
-
-	if (info & RX_MSDU_END_INFO13_DECRYPT_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_DECRYPT;
-
-	if (info & RX_MSDU_END_INFO13_TKIP_MIC_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_TKIP_MIC;
-
-	if (info & RX_MSDU_END_INFO13_A_MSDU_ERROR)
-		*errmap |= HAL_RX_MPDU_ERR_AMSDU_ERR;
-
-	if (info & RX_MSDU_END_INFO13_OVERFLOW_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_OVERFLOW;
-
-	if (info & RX_MSDU_END_INFO13_MSDU_LEN_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_MSDU_LEN;
-
-	if (info & RX_MSDU_END_INFO13_MPDU_LEN_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_MPDU_LEN;
 }
 
 static int

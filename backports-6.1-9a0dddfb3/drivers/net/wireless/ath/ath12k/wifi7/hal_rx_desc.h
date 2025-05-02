@@ -764,6 +764,9 @@ struct rx_mpdu_start_qcn9274_compact {
 #define RX_MSDU_END_INFO14_RX_BITMAP_NOT_UPDED	BIT(13)
 #define RX_MSDU_END_INFO14_MSDU_DONE		BIT(31)
 
+#define RX_MSDU_END_INFO0_SW_FRAMEGROUP_MCAST_DATA 1
+#define RX_MSDU_END_INFO0_SW_FRAMEGROUP_UCAST_DATA 2
+
 struct rx_msdu_end_qcn9274 {
 	__le16 info0;
 	__le16 phy_ppdu_id;

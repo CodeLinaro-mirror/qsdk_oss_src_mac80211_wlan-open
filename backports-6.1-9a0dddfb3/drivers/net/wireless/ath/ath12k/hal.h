@@ -519,6 +519,7 @@ struct hal_rx_user_status {
 	u32 mpdu_err_byte_count;
 	bool ampdu_present;
 	u16 ampdu_id;
+	u32 errmap;
 };
 
 #define HAL_MAX_UL_MU_USERS	37
@@ -643,6 +644,7 @@ struct hal_rx_mon_ppdu_info {
 	bool is_eht;
 	struct hal_rx_eht_info eht_info;
 	struct hal_rx_tlv_aggr_info tlv_aggr;
+	u32 errmap;
 };
 
 
