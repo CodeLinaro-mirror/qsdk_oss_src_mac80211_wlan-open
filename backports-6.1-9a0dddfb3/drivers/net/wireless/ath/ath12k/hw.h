@@ -148,7 +148,7 @@ enum ath12k_bus {
 	ATH12K_BUS_HYBRID,
 };
 
-#define ATH12K_EXT_IRQ_GRP_NUM_MAX 11
+#define ATH12K_EXT_IRQ_GRP_NUM_MAX 13
 
 struct hal_rx_desc;
 struct hal_tcl_data_cmd;

@@ -142,6 +142,8 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		ATH12K_TX_RING_MASK_1,
 		ATH12K_TX_RING_MASK_2,
 		ATH12K_TX_RING_MASK_3,
+		0, 0, 0, 0,
+		0, 0, 0, 0, 0,
 	},
 	.rx_mon_dest = {
 		0, 0, 0, 0,
@@ -149,6 +151,7 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		ATH12K_RX_MON_RING_MASK_0,
 		ATH12K_RX_MON_RING_MASK_1,
 		ATH12K_RX_MON_RING_MASK_2,
+		0, 0,
 	},
 	.rx = {
 		0, 0, 0, 0,
@@ -156,25 +159,31 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		ATH12K_RX_RING_MASK_1,
 		ATH12K_RX_RING_MASK_2,
 		ATH12K_RX_RING_MASK_3,
+		0, 0, 0, 0, 0,
 	},
 	.rx_err = {
 		0, 0, 0,
 		ATH12K_RX_ERR_RING_MASK_0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
 	.rx_wbm_rel = {
 		0, 0, 0,
 		ATH12K_RX_WBM_REL_RING_MASK_0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
 	.reo_status = {
 		0, 0, 0,
 		ATH12K_REO_STATUS_RING_MASK_0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
 	.host2rxdma = {
 		0, 0, 0,
 		ATH12K_HOST2RXDMA_RING_MASK_0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
 	.tx_mon_dest = {
 		0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
 };
 
