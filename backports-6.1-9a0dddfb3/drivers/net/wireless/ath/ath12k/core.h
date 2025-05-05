@@ -539,7 +539,8 @@ struct ath12k_link_sta {
 	struct rhash_head rhash_addr;
 	bool rhash_done;
 
-	struct ath12k_dp_link_peer *peer;
+	u16 tcl_metadata;
+	u16 ast_hash;
 };
 
 struct ath12k_sta {

@@ -146,6 +146,8 @@ struct ath12k_dp_peer {
 	u8 ucast_keyidx;
 	u16 sec_type;
 	u16 sec_type_grp;
+	u8 vdev_type_4addr;
+	bool is_reset_mcbc;
 
 	u8 hw_links[ATH12K_GROUP_MAX_RADIO];
 };

@@ -675,6 +675,10 @@ struct hal_rx_desc_data {
 	u8 nss;
 	u8 sgi;
 	u8 tid;
+	bool is_mcbc;
+	bool is_4addr_sta;
+	bool is_drop_packet;
+	bool is_to_ds;
 };
 
 struct ath12k_buffer_address {

@@ -869,10 +869,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	if (sta) {
 		ahsta = ath12k_sta_to_ahsta(sta);
-		if (ahsta->use_4addr_set) {
+		if (ahsta->use_4addr_set)
 			arsta = rcu_dereference(ahsta->link[link_id]);
-			peer = arsta->peer;
-		}
 	}
 
 
@@ -919,7 +917,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	if (!vif->valid_links || !is_mcast || is_dvlan || is_eth ||
 	    test_bit(ATH12K_FLAG_RAW_MODE, &ar->ab->dev_flags)) {
-		ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, peer);
+		ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta);
 		if (unlikely(ret)) {
 			ath12k_warn(ar->ab, "failed to transmit frame %d\n", ret);
 			ieee80211_free_txskb(ar->ah->hw, skb);
@@ -955,6 +953,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			skb_cb->link_id = link_id;
 			skb_cb->vif = vif;
 
+			if (ahsta && ahsta->use_4addr_set)
+				arsta = rcu_dereference(ahsta->link[link_id]);
+
 			/* For open mode, skip peer find logic */
 			if (unlikely(arvif->key_cipher == WMI_CIPHER_NONE))
 				goto skip_peer_find;
@@ -986,7 +987,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 skip_peer_find:
 			ret = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
-						 msdu_copied, true, mcbc_gsn, is_mcast, peer);
+						 msdu_copied, true, mcbc_gsn, is_mcast, arsta);
 			if (unlikely(ret)) {
 				if (ret == -ENOMEM) {
 					/* Drops are expected during heavy multicast

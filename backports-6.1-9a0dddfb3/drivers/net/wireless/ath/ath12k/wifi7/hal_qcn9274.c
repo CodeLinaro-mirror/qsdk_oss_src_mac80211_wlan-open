@@ -770,7 +770,7 @@ void ath12k_wifi7_hal_extract_rx_desc_data_qcn9274(struct hal_rx_desc_data *rx_d
 	rx_desc_data->rate_mcs = ath12k_wifi7_hal_rx_h_rate_mcs_qcn9274(rx_desc);
 	rx_desc_data->nss = hweight8(ath12k_wifi7_hal_rx_h_nss_qcn9274(rx_desc));
 	rx_desc_data->sgi = ath12k_wifi7_hal_rx_h_sgi_qcn9274(rx_desc);
-	rx_desc_data->fill_crypto_hdr =
+	rx_desc_data->is_mcbc =
 		ath12k_wifi7_hal_rx_h_is_da_mcbc_qcn9274(rx_desc);
 	rx_desc_data->seq_no =
 		ath12k_wifi7_hal_rx_h_seq_no_qcn9274(rx_desc);
@@ -795,6 +795,7 @@ void ath12k_wifi7_hal_extract_rx_desc_data_qcn9274(struct hal_rx_desc_data *rx_d
 			ath12k_wifi7_hal_rx_h_seq_ctrl_valid_qcn9274(rx_desc);
 	rx_desc_data->fc_valid = ath12k_wifi7_hal_rx_h_fc_valid_qcn9274(rx_desc);
 	rx_desc_data->enctype = ath12k_wifi7_hal_rx_h_enctype_qcn9274(rx_desc);
+	rx_desc_data->is_to_ds = ath12k_wifi7_hal_rx_h_to_ds_qcn9274(rx_desc);
 }
 
 static int ath12k_wifi7_hal_srng_create_config_qcn9274(struct ath12k_hal *hal)
