@@ -13420,6 +13420,46 @@ int ath12k_wmi_mlo_teardown(struct ath12k *ar)
 	return 0;
 }
 
+int ath12k_wmi_mlo_reconfig_link_removal(struct ath12k *ar, u32 vdev_id,
+					 const u8 *reconfig_ml_ie,
+					 size_t reconfig_ml_ie_len)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_mlo_link_removal_cmd_fixed_param *cmd;
+	struct wmi_tlv *reconfig_ie_tlv;
+	struct sk_buff *skb;
+	int ret, len;
+	u32 reconfig_ie_len_aligned = roundup(reconfig_ml_ie_len,
+					      sizeof(u32));
+	void *ptr;
+
+	len = TLV_HDR_SIZE + sizeof(*cmd) + reconfig_ie_len_aligned;
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_mlo_link_removal_cmd_fixed_param *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM,
+						 sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->reconfig_ml_ie_num_bytes_valid = cpu_to_le32(reconfig_ml_ie_len);
+
+	ptr = skb->data + sizeof(*cmd);
+
+	reconfig_ie_tlv = ptr;
+	reconfig_ie_tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE,
+						     reconfig_ie_len_aligned);
+	memcpy(reconfig_ie_tlv->value, reconfig_ml_ie, reconfig_ml_ie_len);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_MLO_LINK_REMOVAL_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send WMI_MLO_LINK_REMOVAL_CMDID");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_pdev_ap_ps_cmd_send(struct ath12k *ar, u8 pdev_id,
 				   u32 param_value)
 {

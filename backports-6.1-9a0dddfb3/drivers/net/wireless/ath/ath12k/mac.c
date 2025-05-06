@@ -5834,6 +5834,31 @@ err_fallback:
 }
 EXPORT_SYMBOL(ath12k_mac_op_get_txpower);
 
+int ath12k_mac_op_link_reconfig_remove(struct ieee80211_hw *hw,
+				       struct ieee80211_vif *vif,
+				       const struct cfg80211_link_reconfig_removal_params *params)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar;
+	int ret = -EINVAL;
+
+	lockdep_assert_wiphy(hw->wiphy);
+	arvif = ahvif->link[params->link_id];
+	if (!arvif)
+		goto exit;
+
+	ar = arvif->ar;
+
+	ret = ath12k_wmi_mlo_reconfig_link_removal(ar, arvif->vdev_id,
+						   params->reconfigure_elem,
+						   params->elem_len);
+
+exit:
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_mac_op_link_reconfig_remove);
+
 static u8
 ath12k_mac_find_link_id_by_ar(struct ath12k_vif *ahvif, struct ath12k *ar)
 {

@@ -1155,6 +1155,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	.link_sta_add_debugfs           = ath12k_debugfs_link_sta_op_add,
 #endif
+	.link_reconfig_remove           = ath12k_mac_op_link_reconfig_remove,
 };
 
 int ath12k_wifi7_hw_init(struct ath12k_base *ab)

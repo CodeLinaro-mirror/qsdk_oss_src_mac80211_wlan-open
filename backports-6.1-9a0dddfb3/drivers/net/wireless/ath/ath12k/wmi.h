@@ -760,6 +760,9 @@ enum wmi_tlv_cmd_id {
 	WMI_MLO_SETUP_CMDID,
 	WMI_MLO_READY_CMDID,
 	WMI_MLO_TEARDOWN_CMDID,
+	WMI_MLO_PEER_TID_TO_LINK_MAP_CMDID,
+	/* WMI cmd for dynamically deleting a link from a MLD VAP */
+	WMI_MLO_LINK_REMOVAL_CMDID,
 };
 
 enum wmi_tlv_event_id {
@@ -2109,6 +2112,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
 	WMI_TAG_PRB_RESP_TMPL_ML_INFO_CMD = 0x460,
+	WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM = 0x464,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
 	WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM = 0x4be,
 	WMI_TAG_PDEV_UTF_EVENT_FIXED_PARAM,
@@ -6579,6 +6583,12 @@ struct wmi_mlo_teardown_complete_event {
 	__le32 status;
 } __packed;
 
+struct wmi_mlo_link_removal_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 reconfig_ml_ie_num_bytes_valid;
+} __packed;
+
 /* WOW structures */
 enum wmi_wow_wakeup_event {
 	WOW_BMISS_EVENT = 0,
@@ -7689,4 +7699,7 @@ void ath12k_wmi_peer_chan_width_switch_work(struct wiphy *wiphy, struct wiphy_wo
 int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
 				       u32 vdev_id,
 				       struct ath12k_reg_tpc_power_info *param);
+int ath12k_wmi_mlo_reconfig_link_removal(struct ath12k *ar, u32 vdev_id,
+					 const u8 *reconfig_ml_ie,
+					 size_t reconfig_ml_ie_len);
 #endif
