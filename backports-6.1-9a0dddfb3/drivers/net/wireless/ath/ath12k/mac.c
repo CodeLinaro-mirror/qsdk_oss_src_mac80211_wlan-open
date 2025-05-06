@@ -15937,6 +15937,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_PUNCT);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_SET_SCAN_DWELL);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_RATE_LEGACY);
+	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_MLD_LINK_REMOVAL_OFFLOAD);
 
 	if (ar->ab->hw_params->ftm_responder)
 		wiphy_ext_feature_set(wiphy,
