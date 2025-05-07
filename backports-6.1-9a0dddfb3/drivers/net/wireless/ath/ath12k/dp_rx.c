@@ -202,10 +202,28 @@ out:
 }
 EXPORT_SYMBOL(ath12k_dp_rx_h_michael_mic);
 
+static void ath12k_dp_rx_mld_addr_conv(struct ath12k_pdev_dp *dp_pdev,
+				       struct sk_buff *msdu,
+				       struct hal_rx_desc_data *rx_desc_data)
+{
+	struct ath12k_base *ab = dp_pdev->ar->ab;
+	struct ath12k_dp_link_peer *peer;
+	struct ieee80211_hdr *hdr = (void *)msdu->data;
+
+	spin_lock_bh(&dp_pdev->dp->dp_lock);
+	peer = ath12k_dp_rx_h_find_peer(dp_pdev->dp, msdu, rx_desc_data);
+	if (!peer || !peer->mlo) {
+		spin_unlock_bh(&dp_pdev->dp->dp_lock);
+		return;
+	}
+	ether_addr_copy(hdr->addr2, peer->ml_addr);
+	spin_unlock_bh(&dp_pdev->dp->dp_lock);
+}
+
 void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status,
-				bool decrypted)
+				bool decrypted, struct hal_rx_desc_data *rx_desc_data)
 {
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ieee80211_hdr *hdr;
@@ -222,6 +240,8 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 
 	if (!decrypted)
 		return;
+
+	ath12k_dp_rx_mld_addr_conv(dp_pdev, msdu, rx_desc_data);
 
 	hdr = (void *)msdu->data;
 

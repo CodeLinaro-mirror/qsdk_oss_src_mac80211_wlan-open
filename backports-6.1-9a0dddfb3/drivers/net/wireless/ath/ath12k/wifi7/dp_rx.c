@@ -611,7 +611,7 @@ static void ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	case DP_RX_DECAP_TYPE_RAW:
 		ath12k_dp_rx_h_undecap_raw(dp_pdev, msdu, enctype, status,
-					   decrypted);
+					   decrypted, rx_desc_data);
 		break;
 	case DP_RX_DECAP_TYPE_ETHERNET2_DIX:
 		ehdr = (struct ethhdr *)msdu->data;

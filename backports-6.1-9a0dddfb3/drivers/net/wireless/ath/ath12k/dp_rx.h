@@ -183,7 +183,7 @@ int ath12k_dp_rx_h_michael_mic(struct crypto_shash *tfm, u8 *key,
 void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status,
-				bool decrypted);
+				bool decrypted, struct hal_rx_desc_data *rx_desc_data);
 struct ath12k_dp_peer *
 ath12k_dp_rx_h_find_peer_by_peerid_index(struct ath12k_dp *dp,
 					 struct ath12k_pdev_dp *dp_pdev,
