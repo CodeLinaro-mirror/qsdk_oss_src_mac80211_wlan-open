@@ -1717,6 +1717,7 @@ struct ath12k_base {
 	/* Number of ML peers supported by firmware */
 	u32 max_ml_peer_supported;
 	u32 max_ml_peer_ids;
+	bool mm_cal_support;
 
 	u32 max_tid_msduq;
 	u32 def_tid_msduq;

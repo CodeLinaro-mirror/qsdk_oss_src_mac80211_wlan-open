@@ -429,6 +429,9 @@ const struct firmware *ath12k_core_firmware_request(struct ath12k_base *ab,
 	if (ret)
 		return ERR_PTR(ret);
 
+	if (fw && !fw->size)
+		return ERR_PTR(-ENOENT);
+
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "boot firmware request %s size %zu\n",
 		   path, fw->size);
 
@@ -1715,25 +1718,6 @@ void ath12k_fw_stats_reset(struct ath12k *ar)
 	spin_unlock_bh(&ar->data_lock);
 }
 
-static void ath12k_core_trigger_partner(struct ath12k_base *ab)
-{
-	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k_base *partner_ab;
-	bool found = false;
-	int i;
-
-	for (i = 0; i < ag->num_devices; i++) {
-		partner_ab = ag->ab[i];
-		if (!partner_ab)
-			continue;
-
-		if (found)
-			ath12k_qmi_trigger_host_cap(partner_ab);
-
-		found = (partner_ab == ab);
-	}
-}
-
 int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
@@ -1797,8 +1781,6 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 			goto err_core_stop;
 		}
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "group %d started\n", ag->id);
-	} else {
-		ath12k_core_trigger_partner(ab);
 	}
 
 	mutex_unlock(&ag->mutex);
@@ -3957,9 +3939,7 @@ static int ath12k_core_hw_group_create(struct ath12k_hw_group *ag)
 
 		mutex_unlock(&ab->core_lock);
 
-		ath12k_qmi_fwreset_from_cold_boot(ab);
 	}
-
 	return 0;
 }
 
