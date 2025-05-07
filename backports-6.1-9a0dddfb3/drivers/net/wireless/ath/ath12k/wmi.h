@@ -991,6 +991,8 @@ enum wmi_tlv_event_id {
 	WMI_MLO_LINK_SET_ACTIVE_RESP_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_MLO),
 	WMI_MLO_SETUP_COMPLETE_EVENTID,
 	WMI_MLO_TEARDOWN_COMPLETE_EVENTID,
+	/* Response event for Link Removal Cmd */
+	WMI_MLO_LINK_REMOVAL_EVENTID,
 };
 
 enum wmi_tlv_pdev_param {
@@ -2112,6 +2114,9 @@ enum wmi_tlv_tag {
 	WMI_TAG_HALPHY_CTRL_PATH_CMD_FIXED_PARAM = 0x442,
 	WMI_TAG_HALPHY_CTRL_PATH_EVENT_FIXED_PARAM,
 	WMI_TAG_PRB_RESP_TMPL_ML_INFO_CMD = 0x460,
+	WMI_TAG_MLO_LINK_REMOVAL_TBTT_COUNT = 0x461,
+	WMI_TAG_MLO_LINK_REMOVAL_TBTT_UPDATE,
+	WMI_TAG_MLO_LINK_REMOVAL_EVENT_FIXED_PARAM,
 	WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM = 0x464,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
 	WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM = 0x4be,
@@ -4901,6 +4906,39 @@ struct ath12k_mgmt_rx_cu_arg {
 	u16 cu_vdev_map[CU_MAX_MLO_LINKS];
 	u8 *bpcc_bufp;
 };
+
+/**
+ * struct ath12k_mlo_link_removal_tbtt_update - MLO link removal TBTT info.
+ * This information will be in correspondence with an outgoing beacon instance.
+ * @tbtt_count: AP removal timer TBTT count in the reported beacon
+ * @tsf: TSF of the reported beacon
+ * @qtimer_reading: Q-timer reading when the reported beacon is sent out
+ */
+struct ath12k_mlo_link_removal_tbtt_update {
+	__le32 tbtt_count;
+	__le64 tsf;
+	__le64 qtimer_reading;
+} __packed;
+
+struct ath12k_wmi_mlo_link_removal_tbtt_update {
+	__le32 tbtt_count;
+
+	__le32 qtimer_reading_low; /* lower 32 bits */
+	__le32 qtimer_reading_high; /* higher 32 bits */
+
+	__le32 tsf_low; /* lower 32 bits */
+	__le32 tsf_high; /* higher 32 bits */
+} __packed;
+
+/**
+ * struct ath12k_mlo_link_removal_event_params - MLO link removal event parameters
+ * @vdev_id: vdev ID of the link undergoing removal
+ * @tbtt_info: TBTT information of the link undergoing removal
+ */
+struct ath12k_wmi_mlo_link_removal_event_params {
+	__le32 vdev_id;
+	struct ath12k_mlo_link_removal_tbtt_update tbtt_info;
+} __packed;
 
 struct ath12k_wmi_mgmt_rx_arg {
 	u32 chan_freq;

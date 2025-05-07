@@ -11995,6 +11995,79 @@ void ath12k_wmi_event_tbttoffset_update(struct ath12k_base *ab, struct sk_buff *
 		ath12k_warn(ab, "failed to parse tbtt offset event: %d\n", ret);
 }
 
+static int ath12k_wmi_tlv_mlo_reconfig_link_removal_parse(struct ath12k_base *ab,
+							  u16 tag, u16 len,
+							  const void *ptr, void *data)
+{
+	struct ath12k_wmi_mlo_link_removal_event_params *param = data, *tmp;
+	struct ath12k_wmi_mlo_link_removal_tbtt_update *tbtt;
+	int ret = 0;
+
+	switch (tag) {
+	case WMI_TAG_MLO_LINK_REMOVAL_EVENT_FIXED_PARAM:
+		tmp = (struct ath12k_wmi_mlo_link_removal_event_params *)ptr;
+		param->vdev_id = tmp->vdev_id;
+		break;
+	case WMI_TAG_MLO_LINK_REMOVAL_TBTT_UPDATE:
+		tbtt = (struct ath12k_wmi_mlo_link_removal_tbtt_update *)ptr;
+		param->tbtt_info.tbtt_count = le32_to_cpu(tbtt->tbtt_count);
+		param->tbtt_info.tsf = (u64)(le32_to_cpu(tbtt->tsf_high)) << 32 |
+					     le32_to_cpu(tbtt->tsf_low);
+		param->tbtt_info.qtimer_reading = (u64)(le32_to_cpu(tbtt->qtimer_reading_high)) << 32 |
+							le32_to_cpu(tbtt->qtimer_reading_low);
+		break;
+	default:
+		ath12k_warn(ab, "Received invalid tag:%u\n", tag);
+		ret = -EINVAL;
+		break;
+	}
+
+	return ret;
+}
+
+static void ath12k_wmi_event_mlo_reconfig_link_removal(struct ath12k_base *ab,
+						       struct sk_buff *skb)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k_wmi_mlo_link_removal_event_params ev = { };
+	int ret;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_tlv_mlo_reconfig_link_removal_parse,
+				  &ev);
+
+	if (ret) {
+		ath12k_warn(ab, "failed to parse TLV for event:%x ret:%d\n",
+			    WMI_MLO_LINK_REMOVAL_EVENTID, ret);
+		return;
+	}
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, le32_to_cpu(ev.vdev_id));
+	if (!arvif) {
+		rcu_read_unlock();
+		ath12k_warn(ab, "Link removal event received in invalid BSS %d\n",
+			    le32_to_cpu(ev.vdev_id));
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "Link removal event received in vdev :%d\n",
+		   ev.vdev_id);
+
+	ret = ieee80211_update_link_reconfig_remove_update(arvif->ahvif->vif, arvif->link_id,
+							   ev.tbtt_info.tbtt_count,
+							   ev.tbtt_info.tsf,
+							   ev.tbtt_info.tbtt_count ?
+							   NL80211_CMD_LINK_REMOVAL_STARTED :
+							   NL80211_CMD_LINK_REMOVAL_COMPLETED);
+
+	if (ret)
+		ath12k_warn(ab, "sending link removal event FAILED:%d link_id:%d\n",
+			    ret, arvif->link_id);
+
+	rcu_read_unlock();
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -12199,6 +12272,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PDEV_RSSI_DBM_CONVERSION_PARAMS_INFO_EVENTID:
 		ath12k_wmi_rssi_dbm_conversion_param_info(ab, skb);
+		break;
+	case WMI_MLO_LINK_REMOVAL_EVENTID:
+		ath12k_wmi_event_mlo_reconfig_link_removal(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
