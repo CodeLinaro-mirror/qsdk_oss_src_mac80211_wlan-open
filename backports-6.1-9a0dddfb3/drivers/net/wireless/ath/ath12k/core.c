@@ -1324,6 +1324,9 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 		return -EINVAL;
 	}
 
+	if (ath12k_frame_mode == ATH12K_HW_TXRX_RAW)
+		set_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ag->flags);
+
 	ret = ath12k_mac_allocate(ag);
 	if (WARN_ON(ret))
 		return ret;
