@@ -480,6 +480,7 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 
 	ath12k_info(ab, "UserPD%d is now UP\n", ab_ahb->userpd_id);
 	ab->ag->num_userpd_started++;
+	clear_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags);
 
 reset_spawn:
 	qcom_smem_state_update_bits(ab_ahb->spawn_state, BIT(ab_ahb->spawn_bit), 0);
@@ -496,6 +497,9 @@ static void ath12k_ahb_power_down(struct ath12k_base *ab, bool is_suspend)
 	unsigned long time_left;
 	u32 pasid;
 	int ret;
+
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
+		return;
 
 	if (ab_ahb->crash_type == ATH12K_NO_CRASH) {
 		qcom_smem_state_update_bits(ab_ahb->stop_state, BIT(ab_ahb->stop_bit),
@@ -533,6 +537,8 @@ static void ath12k_ahb_power_down(struct ath12k_base *ab, bool is_suspend)
 	    test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)) {
 		rproc_put(ab_ahb->tgt_rproc);
 	}
+
+	set_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags);
 }
 
 static void ath12k_ahb_init_qmi_ce_config(struct ath12k_base *ab)

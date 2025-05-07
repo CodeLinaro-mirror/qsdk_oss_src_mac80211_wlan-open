@@ -2400,6 +2400,9 @@ static void ath12k_debugfs_wmi_ctrl_stats_register(struct ath12k *ar)
 
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab)
 {
+	if(ab->debugfs_soc)
+		return;
+
 	debugfs_remove_recursive(ab->debugfs_soc);
 	ab->debugfs_soc = NULL;
 	/* We are not removing ath12k directory on purpose, even if it

@@ -308,6 +308,7 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_FIXED_MEM_REGION,
 	ATH12K_FLAG_BTCOEX,
 	ATH12K_FLAG_WMI_INIT_DONE,
+	ATH12K_FLAG_Q6_POWER_DOWN,
 };
 
 enum ath12k_mlo_recovery_mode {

@@ -982,6 +982,7 @@ int ath12k_pci_power_up(struct ath12k_base *ab)
 	if (ab->static_window_map)
 		ath12k_pci_select_static_window(ab);
 
+	clear_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags);
 	return 0;
 }
 
@@ -1010,6 +1011,9 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
                ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
 #endif
 
+	if (test_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags))
+		return;
+
 	/* restore aspm in case firmware bootup fails */
 	ath12k_pci_aspm_restore(ab_pci);
 
@@ -1018,6 +1022,7 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend)
 	ath12k_mhi_stop(ab_pci, is_suspend);
 	clear_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags);
 	ath12k_pci_sw_reset(ab_pci->ab, false);
+	set_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags);
 }
 
 static int ath12k_pci_panic_handler(struct ath12k_base *ab)
@@ -1276,45 +1281,14 @@ qmi_fail:
 	ath12k_core_free(ab);
 }
 
-static void ath12k_pci_hw_group_power_down(struct ath12k_hw_group *ag)
-{
-	struct ath12k_base *ab;
-	struct ath12k_pci *ab_pci;
-	int i;
-
-	if (!ag)
-		return;
-
-	mutex_lock(&ag->mutex);
-
-	for (i = 0; i < ag->num_devices; i++) {
-		ab = ag->ab[i];
-		if  (!ab || ab->hif.bus != ATH12K_BUS_PCI)
-			continue;
-
-		ab_pci = ath12k_pci_priv(ab);
-
-		/* TODO: The purpose of the check on ATH12K_PCI_FLAG_INIT_DONE
-		 * is to skip setting the mhi state again and again in case of reboot
-		 * as for every SOC power_down is getting called as many times as
-		 * number of SOC's in the group. But need to check if this is really
-		 * needed and remove later.
-		 */
-
-		if (test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags))
-			ath12k_pci_power_down(ab, false);
-	}
-
-	mutex_unlock(&ag->mutex);
-}
-
 static void ath12k_pci_shutdown(struct pci_dev *pdev)
 {
 	struct ath12k_base *ab = pci_get_drvdata(pdev);
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 
 	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
-	ath12k_pci_hw_group_power_down(ab->ag);
+	ath12k_qmi_firmware_stop(ab);
+	ath12k_pci_power_down(ab, false);
 }
 
 static __maybe_unused int ath12k_pci_pm_suspend(struct device *dev)
