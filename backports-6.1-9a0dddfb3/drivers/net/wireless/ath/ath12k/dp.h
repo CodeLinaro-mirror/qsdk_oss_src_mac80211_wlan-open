@@ -320,6 +320,8 @@ struct ath12k_pdev_dp {
 /* Invalid TX Bank ID value */
 #define DP_INVALID_BANK_ID -1
 
+#define DP_TX_DESC_FLAG_FAST     0x1
+
 struct ath12k_dp_tx_bank_profile {
 	u8 is_configured;
 	u32 num_users;
@@ -352,7 +354,8 @@ struct ath12k_tx_desc_info {
 	struct sk_buff *skb;
 	struct sk_buff *skb_ext_desc;
 	u32 desc_id; /* Cookie */
-	u8 mac_id;
+	u8 mac_id	: 5,
+	   flags	: 1;
 	u8 pool_id;
 };
 
