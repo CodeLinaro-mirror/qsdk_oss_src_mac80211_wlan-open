@@ -437,6 +437,35 @@ ath12k_map_fw_dfs_region(enum ath12k_dfs_region dfs_region)
 	}
 }
 
+static u32 ath12k_update_bw_reg_flags(u16 max_bw)
+{
+	u32 flags = 0;
+	switch (max_bw) {
+	case 20:
+		flags = (NL80211_RRF_NO_HT40 |
+			NL80211_RRF_NO_80MHZ |
+			NL80211_RRF_NO_160MHZ |
+			NL80211_RRF_NO_320MHZ);
+		break;
+	case 40:
+		flags = (NL80211_RRF_NO_80MHZ |
+			NL80211_RRF_NO_160MHZ |
+			NL80211_RRF_NO_320MHZ );
+		break;
+	case 80:
+		flags = (NL80211_RRF_NO_160MHZ |
+			NL80211_RRF_NO_320MHZ);
+		break;
+	case 160:
+		flags = NL80211_RRF_NO_320MHZ;
+		break;
+	default:
+		break;
+	}
+
+	return flags;
+}
+
 static u32 ath12k_map_fw_reg_flags(u16 reg_flags)
 {
 	u32 flags = 0;
@@ -514,13 +543,15 @@ ath12k_reg_adjust_bw(u16 start_freq, u16 end_freq, u16 max_bw)
 static void
 ath12k_reg_update_rule(struct ieee80211_reg_rule *reg_rule, u32 start_freq,
 		       u32 end_freq, u32 bw, u32 ant_gain, u32 reg_pwr,
-		       s8 psd, u32 reg_flags)
+		       s8 psd, u32 reg_flags,
+		       enum nl80211_regulatory_power_modes pwr_mode)
 {
 	reg_rule->freq_range.start_freq_khz = MHZ_TO_KHZ(start_freq);
 	reg_rule->freq_range.end_freq_khz = MHZ_TO_KHZ(end_freq);
 	reg_rule->freq_range.max_bandwidth_khz = MHZ_TO_KHZ(bw);
 	reg_rule->power_rule.max_antenna_gain = DBI_TO_MBI(ant_gain);
 	reg_rule->power_rule.max_eirp = DBM_TO_MBM(reg_pwr);
+	reg_rule->mode = pwr_mode;
 	reg_rule->psd = psd;
 	reg_rule->flags = reg_flags;
 }
@@ -543,7 +574,7 @@ ath12k_reg_update_weather_radar_band(struct ath12k_base *ab,
 	ath12k_reg_update_rule(regd->reg_rules + i, reg_rule->start_freq,
 			       ETSI_WEATHER_RADAR_BAND_LOW, bw,
 			       reg_rule->ant_gain, reg_rule->reg_power,
-			       reg_rule->psd_eirp, flags);
+			       reg_rule->psd_eirp, flags, 0);
 
 	ath12k_dbg(ab, ATH12K_DBG_REG,
 		   "\t%d. (%d - %d @ %d) (%d, %d) (%d ms) (FLAGS %d)\n",
@@ -565,7 +596,7 @@ ath12k_reg_update_weather_radar_band(struct ath12k_base *ab,
 	ath12k_reg_update_rule(regd->reg_rules + i,
 			       ETSI_WEATHER_RADAR_BAND_LOW, end_freq, bw,
 			       reg_rule->ant_gain, reg_rule->reg_power,
-			       reg_rule->psd_eirp, flags);
+			       reg_rule->psd_eirp, flags, 0);
 
 	regd->reg_rules[i].dfs_cac_ms = ETSI_WEATHER_RADAR_BAND_CAC_TIMEOUT;
 
@@ -590,7 +621,7 @@ ath12k_reg_update_weather_radar_band(struct ath12k_base *ab,
 	ath12k_reg_update_rule(regd->reg_rules + i, ETSI_WEATHER_RADAR_BAND_HIGH,
 			       reg_rule->end_freq, bw,
 			       reg_rule->ant_gain, reg_rule->reg_power,
-			       reg_rule->psd_eirp, flags);
+			       reg_rule->psd_eirp, flags, 0);
 
 	ath12k_dbg(ab, ATH12K_DBG_REG,
 		   "\t%d. (%d - %d @ %d) (%d, %d) (%d ms) (FLAGS %d)\n",
@@ -704,15 +735,19 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 				}
 				reg_6g_itr_set = true;
 			}
+
 			if (reg_6g_itr_set && k < max_elements) {
 				reg_rule = reg_rule_6g + k++;
 				max_bw = min_t(u16, reg_rule->max_bw, max_bw_6g);
-				flags = NL80211_RRF_AUTO_BW;
+				flags = NL80211_RRF_AUTO_BW | ath12k_update_bw_reg_flags(max_bw_6g);
 
 				if (reg_rule->psd_flag)
 					flags |= NL80211_RRF_PSD;
 
-				ath12k_copy_reg_rule(&ab->reg_freq_6g, reg_rule);
+				if (reg_rule->end_freq <= ATH12K_MAX_6GHZ_FREQ)
+					ath12k_copy_reg_rule(&ab->reg_freq_6g, reg_rule);
+				else if (reg_rule->start_freq >= ATH12K_MIN_6GHZ_FREQ)
+					ath12k_copy_reg_rule(&ab->reg_freq_6g, reg_rule);
 			}
 
 			if (reg_6g_itr_set && k >= max_elements) {
@@ -734,7 +769,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 				       reg_rule->start_freq,
 				       reg_rule->end_freq, max_bw,
 				       reg_rule->ant_gain, reg_rule->reg_power,
-				       reg_rule->psd_eirp, flags);
+				       reg_rule->psd_eirp, flags, 0);
 
 		/* Update dfs cac timeout if the dfs domain is ETSI and the
 		 * new rule covers weather radar band.
