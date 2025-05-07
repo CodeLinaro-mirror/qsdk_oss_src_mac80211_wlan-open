@@ -25,19 +25,6 @@ ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb)
 	return HAL_TCL_ENCAP_TYPE_NATIVE_WIFI;
 }
 
-static u8 ath12k_dp_tx_get_tid(struct sk_buff *skb)
-{
-	struct ieee80211_hdr *hdr = (void *)skb->data;
-	struct ath12k_skb_cb *cb = ATH12K_SKB_CB(skb);
-
-	if (cb->flags & ATH12K_SKB_HW_80211_ENCAP)
-		return skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-	else if (!ieee80211_is_data_qos(hdr->frame_control))
-		return HAL_DESC_REO_NON_QOS_TID;
-	else
-		return skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-}
-
 static void
 ath12k_wifi7_hal_tx_cmd_ext_desc_setup(struct ath12k_base *ab,
 				       struct hal_tx_msdu_ext_desc *tcl_ext_cmd,
@@ -207,9 +194,6 @@ tcl_ring_sel:
 			     u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TCP6_CKSUM_EN);
 	}
 
-	ti.flags1 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO3_TID_OVERWRITE);
-
-	ti.tid = ath12k_dp_tx_get_tid(skb);
 	switch (ti.encap_type) {
 	case HAL_TCL_ENCAP_TYPE_NATIVE_WIFI:
 		is_null = ieee80211_is_nullfunc(hdr->frame_control);

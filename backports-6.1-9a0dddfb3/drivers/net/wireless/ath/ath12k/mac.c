@@ -14264,6 +14264,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	ieee80211_hw_set(hw, REPORTS_LOW_ACK);
 	ieee80211_hw_set(hw, NO_VIRTUAL_MONITOR);
 	ieee80211_hw_set(hw, SUPPORT_ECM_REGISTRATION);
+	ieee80211_hw_set(hw, SUPPORTS_TID_CLASS_OFFLOAD);
 
 	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET) {
 		ieee80211_hw_set(hw, SUPPORTS_TX_ENCAP_OFFLOAD);
