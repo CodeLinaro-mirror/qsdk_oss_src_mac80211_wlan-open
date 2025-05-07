@@ -352,6 +352,7 @@ enum wmi_cmd_group {
 	WMI_GRP_TWT            = 0x3e,
 	WMI_GRP_MOTION_DET     = 0x3f,
 	WMI_GRP_SPATIAL_REUSE  = 0x40,
+	WMI_GRP_ATF            = 0x45,
 	WMI_GRP_LATENCY        = 0x47,
 	WMI_GRP_MLO            = 0x48,
 	WMI_GRP_SAWF           = 0x49,
@@ -795,6 +796,10 @@ enum wmi_tlv_cmd_id {
 	/** TID Latency Request command */
 	WMI_PEER_TID_LATENCY_CONFIG_CMDID,
 	WMI_PDEV_OBSS_PD_SPATIAL_REUSE_SET_DEF_OBSS_THRESH_CMDID,
+	/** ATF SSID GROUPING REQUEST command */
+	WMI_ATF_SSID_GROUPING_REQUEST_CMDID = WMI_TLV_CMD(WMI_GRP_ATF),
+	/*  WMM ATF Configuration for groups */
+	WMI_ATF_GROUP_WMM_AC_CONFIG_REQUEST_CMDID,
 	WMI_MLO_LINK_SET_ACTIVE_CMDID = WMI_TLV_CMD(WMI_GRP_MLO),
 	WMI_MLO_SETUP_CMDID,
 	WMI_MLO_READY_CMDID,
@@ -1206,6 +1211,8 @@ enum wmi_tlv_pdev_param {
 	WMI_PDEV_PARAM_SET_CMD_OBSS_PD_PER_AC = 0xbe,
 	WMI_PDEV_PARAM_ENABLE_SR_PROHIBIT = 0xc6,
 	WMI_PDEV_PARAM_MPD_USERPD_SSR = 0xce,
+	WMI_PDEV_PARAM_ATF_VO_DEDICATED_TIME = 0xe8,
+	WMI_PDEV_PARAM_ATF_VI_DEDICATED_TIME = 0xe9,
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	WMI_PDEV_PARAM_PWR_REDUCTION_IN_QUARTER_DB = 0xf1,
 #endif
@@ -2126,6 +2133,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_CFR_CAPTURE_PHASE_PARAM = 0x33b,
 	WMI_TAG_SERVICE_READY_EXT2_EVENT = 0x334,
 	WMI_TAG_FILS_DISCOVERY_TMPL_CMD = 0x344,
+	WMI_TAG_ATF_SSID_GRP_REQUEST_FIXED_PARAM = 0x346,
+	WMI_TAG_ATF_GRP_WMM_AC_CFG_REQUEST_FIXED_PARAM = 0x348,
 	WMI_TAG_PEER_CREATE_RESP_EVENT = 0x364,
 	WMI_TAG_MULTIPLE_VDEV_RESTART_RESPONSE_EVENT = 0x365,
 	WMI_TAG_MAC_PHY_CAPABILITIES_EXT = 0x36F,
@@ -8524,6 +8533,18 @@ struct ath12k_wmi_peer_cfr_capture_conf {
 	u32 periodicity;
 	u32 bandwidth;
 	u32 capture_method;
+};
+
+struct wmi_atf_ssid_grp_request_fixed_param {
+	__le32 tlv_header;
+	__le32 pdev_id;
+};
+
+struct wmi_peer_atf_request_fixed_param {
+	__le32 tlv_header;
+	__le32 num_peers;
+	__le32 pdev_id;
+	__le32 atf_flags;
 };
 
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
