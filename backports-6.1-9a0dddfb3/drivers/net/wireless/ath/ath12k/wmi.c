@@ -1695,6 +1695,30 @@ int ath12k_wmi_pdev_set_ps_mode(struct ath12k *ar, int vdev_id, u32 enable)
 	return ret;
 }
 
+int ath12k_wmi_pdev_set_timer_for_mec(struct ath12k *ar, int vdev_id, u32 mec_timer)
+{
+	struct wmi_pdev_set_mec_timer_cmd *cmd;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_set_mec_timer_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS,
+						 sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->mec_aging_timer_threshold = cpu_to_le32(mec_timer);
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_MEC_AGING_TIMER_CONFIG_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to set mec timer\n");
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
 int ath12k_wmi_pdev_suspend(struct ath12k *ar, u32 suspend_opt,
 			    u32 pdev_id)
 {

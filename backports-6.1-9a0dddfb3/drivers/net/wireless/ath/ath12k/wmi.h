@@ -385,6 +385,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_SET_NON_SRG_OBSS_BSSID_ENABLE_BITMAP_CMDID,
 	WMI_PDEV_SET_BIOS_SAR_TABLE_CMDID = 0x4044,
 	WMI_PDEV_SET_BIOS_GEO_TABLE_CMDID = 0x4045,
+	WMI_PDEV_MEC_AGING_TIMER_CONFIG_CMDID = 0x4049,
 	WMI_PDEV_SET_BIOS_INTERFACE_CMDID = 0x404A,
 	WMI_VDEV_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_DELETE_CMDID,
@@ -2028,6 +2029,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_VDEV_CREATE_PARAMS = 0x3D7,
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
 	WMI_TAG_PDEV_SET_BIOS_GEO_TABLE_CMD = 0x3D9,
+	WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS = 0x3E9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
 	WMI_TAG_SPECTRAL_SCAN_BW_CAPABILITIES = 0x415,
 	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
@@ -2277,6 +2279,7 @@ enum wmi_tlv_service {
 
 	WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT = 365,
 	WMI_SERVICE_WDS_NULL_FRAME_SUPPORT = 421,
+	WMI_SERVICE_MEC_AGING_TIMER_SUPPORT = 423,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -2581,6 +2584,7 @@ struct wmi_init_cmd {
 #define WMI_RSRC_CFG_FLAGS2_FW_AST_INDICATION_DISABLE          BIT(18)
 #define WMI_RSRC_CFG_FLAGS2_WDS_NULL_FRAME_SUPPORT             BIT(22)
 #define WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT BIT(25)
+#define WMI_PDEV_MEC_AGING_TIMER_THRESHOLD_VALUE 5000
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;
@@ -3339,6 +3343,12 @@ struct wmi_pdev_set_ps_mode_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
 	__le32 sta_ps_mode;
+} __packed;
+
+struct wmi_pdev_set_mec_timer_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 mec_aging_timer_threshold;
 } __packed;
 
 struct wmi_pdev_suspend_cmd {
@@ -6760,6 +6770,8 @@ int ath12k_wmi_set_peer_param(struct ath12k *ar, const u8 *peer_addr,
 int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 			      u32 param_value, u8 pdev_id);
 int ath12k_wmi_pdev_set_ps_mode(struct ath12k *ar, int vdev_id, u32 enable);
+int ath12k_wmi_pdev_set_timer_for_mec(struct ath12k *ar, int vdev_id,
+				      u32 mec_timer);
 int ath12k_wmi_wait_for_unified_ready(struct ath12k_base *ab);
 int ath12k_wmi_cmd_init(struct ath12k_base *ab);
 int ath12k_wmi_wait_for_service_ready(struct ath12k_base *ab);

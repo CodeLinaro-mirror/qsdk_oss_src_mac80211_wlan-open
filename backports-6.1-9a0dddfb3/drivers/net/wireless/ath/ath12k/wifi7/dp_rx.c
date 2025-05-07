@@ -2132,6 +2132,42 @@ static bool ath12k_wifi7_dp_rx_h_tkip_mic_err(struct ath12k_pdev_dp *dp_pdev,
 	return false;
 }
 
+static bool ath12k_dp_rx_h_mec_drop(struct ath12k_pdev_dp *dp_pdev,
+				    struct hal_rx_desc_data *rx_desc_data)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_link_sta *arsta = NULL;
+	struct ath12k_dp_link_peer *peer;
+
+	spin_lock_bh(&dp_pdev->dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, rx_desc_data->peer_id);
+	if (!peer)
+		goto drop;
+
+	if (peer->vif && peer->vif->type != NL80211_IFTYPE_STATION) {
+		ath12k_warn(ab, "vif type is not station for peer with peer_id %u\n",
+			    rx_desc_data->peer_id);
+		goto drop;
+	}
+
+	if (peer && peer->sta) {
+		rcu_read_lock();
+
+		arsta = ath12k_peer_get_link_sta(ab, peer);
+		if (arsta) {
+			spin_lock_bh(&arsta->arvif->link_stats_lock);
+			arsta->arvif->link_stats.rx_dropped++;
+			spin_unlock_bh(&arsta->arvif->link_stats_lock);
+		}
+
+		rcu_read_unlock();
+	}
+drop:
+	spin_unlock_bh(&dp_pdev->dp->dp_lock);
+	return true;
+}
+
 static bool ath12k_wifi7_dp_rx_h_rxdma_err(struct ath12k_pdev_dp *dp_pdev,
 					   struct sk_buff *msdu,
 					   struct ieee80211_rx_status *status,
@@ -2144,6 +2180,9 @@ static bool ath12k_wifi7_dp_rx_h_rxdma_err(struct ath12k_pdev_dp *dp_pdev,
 	dp->device_stats.rxdma_error[rxcb->err_code]++;
 
 	switch (rxcb->err_code) {
+	case HAL_REO_ENTR_RING_RXDMA_ECODE_MULTICAST_ECHO_ERR:
+		drop = ath12k_dp_rx_h_mec_drop(dp_pdev, rx_desc_data);
+		break;
 	case HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR:
 	case HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR:
 		if (rx_desc_data->err_bitmap & HAL_RX_MPDU_ERR_TKIP_MIC) {

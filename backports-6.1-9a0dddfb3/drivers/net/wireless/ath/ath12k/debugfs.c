@@ -983,6 +983,10 @@ static int ath12k_open_link_stats(struct inode *inode, struct file *file)
 				 linkstat.tx_desc_type[1]);
 
 		len += scnprintf(buf + len, buf_len - len,
+				 "link[%d] Rx Frames Dropped = %d\n",
+				 link_id, linkstat.rx_dropped);
+
+		len += scnprintf(buf + len, buf_len - len,
 				"------------------------------------------------------\n");
 	}
 

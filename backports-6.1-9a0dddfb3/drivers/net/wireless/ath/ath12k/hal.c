@@ -780,3 +780,25 @@ void ath12k_hal_dump_srng_stats(struct ath12k_base *ab)
 				   jiffies_to_msecs(jiffies - srng->timestamp));
 	}
 }
+
+void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
+				    u8 mcast_ctrl_val)
+{
+	u32 reg_addr, val, reg_val;
+	u8 reg_idx, index_in_reg;
+
+	reg_idx = HAL_TCL_VDEV_MCAST_PACKET_CTRL_REG_ID(vdev_id);
+	index_in_reg = HAL_TCL_VDEV_MCAST_PACKET_CTRL_INDEX_IN_REG(vdev_id);
+
+	reg_addr = HAL_TCL_R0_VDEV_MCAST_PACKET_CTRL_MAP_n_ADDR(reg_idx);
+	val = ath12k_hif_read32(ab, reg_addr);
+
+	val &= (~(HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK <<
+		  (HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT * index_in_reg)));
+
+	reg_val = val |
+		  ((HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK & mcast_ctrl_val) <<
+		   (HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT * index_in_reg));
+
+	ath12k_hif_write32(ab, reg_addr, reg_val);
+}

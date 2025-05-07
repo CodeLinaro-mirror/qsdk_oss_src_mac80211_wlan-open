@@ -978,6 +978,7 @@ void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	u8 link_id = arvif->link_id;
 	int bank_id;
+	bool mec_support;
 	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 
 	dp_link_vif->tcl_metadata = u32_encode_bits(1, HTT_TCL_META_DATA_TYPE) |
@@ -993,6 +994,15 @@ void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	dp_link_vif->vdev_id_check_en = true;
 	bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, ath12k_ab_to_dp(ab));
 	dp_link_vif->bank_id = bank_id;
+
+	mec_support = test_bit(WMI_SERVICE_MEC_AGING_TIMER_SUPPORT, ab->wmi_ab.svc_map);
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET && mec_support) {
+		ath12k_wmi_pdev_set_timer_for_mec(ar, arvif->vdev_id,
+						  WMI_PDEV_MEC_AGING_TIMER_THRESHOLD_VALUE);
+		ath12k_hal_vdev_mcast_ctrl_set(ab, arvif->vdev_id,
+					       HAL_TX_PACKET_CONTROL_CONFIG_MEC_NOTIFY);
+	}
 
 	/* TODO: error path for bank id failure */
 	if (bank_id == DP_INVALID_BANK_ID) {

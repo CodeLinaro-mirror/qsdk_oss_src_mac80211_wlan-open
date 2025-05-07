@@ -385,6 +385,7 @@ struct ath12k_link_stats {
 	u32 tx_encap_type[DP_TCL_ENCAP_TYPE_MAX];
 	u32 tx_encrypt_type[HAL_ENCRYPT_TYPE_MAX];
 	u32 tx_desc_type[DP_TCL_DESC_TYPE_MAX];
+	u32 rx_dropped;
 };
 
 struct rx_flow_info {
