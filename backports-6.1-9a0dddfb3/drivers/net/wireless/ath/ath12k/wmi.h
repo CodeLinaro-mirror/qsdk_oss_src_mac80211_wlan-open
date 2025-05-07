@@ -4940,6 +4940,31 @@ struct ath12k_wmi_mlo_link_removal_event_params {
 	struct ath12k_mlo_link_removal_tbtt_update tbtt_info;
 } __packed;
 
+/**
+ * struct ath12k_wmi_mgmt_rx_mlo_link_removal_info - MLO Link removal tbtt
+ * count
+ * @tbtt_info - Contains vdev_id, link_id and tbtt_count for each Link in which
+ * removal is scheduled.
+ */
+#define WMI_MGMT_RX_MLO_LINK_REMOVAL_INFO_VDEV_ID_GET    GENMASK(7, 0)
+#define WMI_MGMT_RX_MLO_LINK_REMOVAL_INFO_HW_LINK_ID_GET GENMASK(15, 8)
+#define WMI_MGMT_RX_MLO_LINK_REMOVAL_INFO_TBTT_COUNT_GET GENMASK(31, 16)
+
+struct ath12k_wmi_mgmt_rx_mlo_link_removal_info {
+	/**
+	 * vdev_id: Lower 0-7 bits
+	 * link_id: 8-15 bits
+	 * tbtt_count: 16-31 bits
+	 */
+	__le32 tbtt_info;
+};
+
+struct ath12k_mgmt_rx_mlo_link_removal_info {
+	__le16 vdev_id;
+	__le16 hw_link_id;
+	__le32 tbtt_count;
+} __packed;
+
 struct ath12k_wmi_mgmt_rx_arg {
 	u32 chan_freq;
 	u32 channel;
@@ -4953,6 +4978,14 @@ struct ath12k_wmi_mgmt_rx_arg {
 	int rssi;
 	u32 tsf_delta;
 	u8 pdev_id;
+	u32 num_link_removal_info;
+#ifdef CPTCFG_ATH12K_MEM_PROFILE_512M
+	struct ath12k_mgmt_rx_mlo_link_removal_info link_removal_info
+		[9 /* TARGET_NUM_VDEVS */ * ATH12K_WMI_MLO_MAX_LINKS];
+#else
+	struct ath12k_mgmt_rx_mlo_link_removal_info link_removal_info
+		[17 /* TARGET_NUM_VDEVS */ * ATH12K_WMI_MLO_MAX_LINKS];
+#endif /* CPTCFG_ATH12K_MEM_PROFILE_512M */
 };
 
 #define ATH_MAX_ANTENNA 4

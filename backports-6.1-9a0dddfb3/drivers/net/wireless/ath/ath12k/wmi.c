@@ -138,8 +138,12 @@ struct wmi_tlv_mgmt_rx_parse {
 	const u8 *frame_buf;
 	bool frame_buf_done;
 	struct ath12k_mgmt_rx_cu_arg cu_params;
+	struct ath12k_wmi_mgmt_rx_mlo_link_removal_info
+		*link_removal_info[TARGET_NUM_VDEVS * ATH12K_WMI_MLO_MAX_LINKS];
+	u32 num_link_removal_info_count;
 	bool mgmt_ml_info_done;
 	bool bpcc_buf_done;
+	bool parse_link_removal_info_done;
 };
 
 static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
@@ -6933,6 +6937,12 @@ static int ath12k_wmi_mgmt_rx_sub_tlv_parse(struct ath12k_base *ab,
 			le32_get_bits(rx_cu_params_tlv->cu_vdev_map_4, CU_VDEV_MAP_HB);
 		parse->mgmt_ml_info_done = true;
 		break;
+	case WMI_TAG_MLO_LINK_REMOVAL_TBTT_COUNT:
+		parse->link_removal_info[parse->num_link_removal_info_count] =
+			(struct ath12k_wmi_mgmt_rx_mlo_link_removal_info *)ptr;
+		parse->num_link_removal_info_count++;
+		parse->parse_link_removal_info_done = true;
+		break;
 	}
 	return 0;
 }
@@ -7031,6 +7041,87 @@ static void ath12k_update_cu_params(struct ath12k_base *ab,
 	}
 }
 
+static void
+ath12k_update_link_removal_params(struct ath12k_base *ab,
+				  const struct ath12k_mgmt_rx_mlo_link_removal_info *params,
+				  u32 num_link_removal_params)
+{
+	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
+	struct ath12k_hw *ah;
+	struct ath12k *ar, *target_ar = NULL;
+	struct ath12k_link_vif *arvif;
+	const struct ath12k_mgmt_rx_mlo_link_removal_info *info;
+	u32 i, j, num_hw;
+
+	/**
+	 * If a broadcast probe request is received on a given pdev, FW sends MLO link
+	 * removal information for all AP MLDs which satisfy both conditions below
+	 *      1) The AP MLD has one APs being removed.
+	 *      2) The AP MLD has a BSS on the pdev on which the broadcast probe request is received
+	 */
+	for (i = 0; i < num_link_removal_params; i++) {
+		info = &params[i];
+
+		if (info->hw_link_id > ATH12K_GROUP_MAX_RADIO) {
+			ath12k_warn(ab, "Wrong hw_link_id received:%d\n",
+				    info->hw_link_id);
+			continue;
+		}
+
+		for (num_hw = 0; num_hw < ag->num_hw; num_hw++) {
+			ah = ath12k_ag_to_ah(ag, num_hw);
+			if (!ah)
+				continue;
+			for_each_ar(ah, ar, j) {
+				if (ar->hw_link_id == info->hw_link_id)
+					target_ar = ar;
+			}
+		}
+		if (!target_ar) {
+			ath12k_warn(ab, "Couldn't fetch hw links for hw_link_id:%d\n",
+				    info->hw_link_id);
+			continue;
+		}
+
+		arvif = ath12k_mac_get_arvif(target_ar, info->vdev_id);
+		if (!arvif) {
+			ath12k_err(ab, "Error in getting arvif from vdev id:%d info link:%d\n",
+				   info->vdev_id, info->hw_link_id);
+			continue;
+		}
+
+		/* update mac80211 only if tbtt_count is greater than 0 */
+		if (arvif->is_up && arvif->ahvif->vif->valid_links && info->tbtt_count)
+			ieee80211_link_removal_count_update(arvif->ahvif->vif,
+							    arvif->link_id,
+							    info->tbtt_count);
+	}
+}
+
+static void ath12k_wmi_update_ml_link_removal_info_count(struct ath12k_base *ab,
+							 struct ath12k_wmi_mgmt_rx_arg *hdr,
+							 struct wmi_tlv_mgmt_rx_parse *parse)
+{
+	u32 tbtt_val;
+	int idx;
+
+	hdr->num_link_removal_info = parse->num_link_removal_info_count;
+
+	for (idx = 0; idx < hdr->num_link_removal_info; idx++) {
+		tbtt_val = le32_to_cpu(parse->link_removal_info[idx]->tbtt_info);
+
+		hdr->link_removal_info[idx].vdev_id =
+			le16_get_bits(tbtt_val,
+				      WMI_MGMT_RX_MLO_LINK_REMOVAL_INFO_VDEV_ID_GET);
+		hdr->link_removal_info[idx].hw_link_id =
+			le16_get_bits(tbtt_val,
+				      WMI_MGMT_RX_MLO_LINK_REMOVAL_INFO_HW_LINK_ID_GET);
+		hdr->link_removal_info[idx].tbtt_count =
+			le32_get_bits(tbtt_val,
+				      WMI_MGMT_RX_MLO_LINK_REMOVAL_INFO_TBTT_COUNT_GET);
+	}
+}
+
 static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 					  struct sk_buff *skb,
 					  struct ath12k_wmi_mgmt_rx_arg *hdr)
@@ -7082,6 +7173,10 @@ static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 		ath12k_warn(ab, "invalid length in mgmt rx hdr ev");
 		return -EPROTO;
 	}
+
+	/* ML link removal info TLV */
+	if (parse.num_link_removal_info_count)
+		ath12k_wmi_update_ml_link_removal_info_count(ab, hdr, &parse);
 
 	/* shift the sk_buff to point to `frame` */
 	skb_trim(skb, 0);
@@ -8075,6 +8170,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	u16 frm_type = 0;
 	struct ath12k_dp *dp;
 
+	rx_ev.num_link_removal_info = 0;
 	if (ath12k_pull_mgmt_rx_params_tlv(ab, skb, &rx_ev) != 0) {
 		ath12k_warn(ab, "failed to extract mgmt rx event");
 		dev_kfree_skb(skb);
@@ -8221,6 +8317,14 @@ skip_mgmt_stats:
 
 	if (ieee80211_is_beacon(hdr->frame_control))
 		ath12k_mac_handle_beacon(ar, skb);
+
+	/**
+	 * RX MLO Link removal info TLV. Parse this TLV only when
+	 * num_link_removal_info is present, otherwise ignore it.
+	 */
+	if (rx_ev.num_link_removal_info)
+		ath12k_update_link_removal_params(ab, rx_ev.link_removal_info,
+						  rx_ev.num_link_removal_info);
 
 	ath12k_dbg(ab, ATH12K_DBG_MGMT,
 		   "event mgmt rx skb %p len %d ftype %02x stype %02x\n",
