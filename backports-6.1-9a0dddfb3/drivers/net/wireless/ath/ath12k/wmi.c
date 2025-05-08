@@ -240,7 +240,7 @@ __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len)
 		le32_encode_bits(len, WMI_TLV_LEN);
 }
 
-static __le32 ath12k_wmi_tlv_cmd_hdr(u32 cmd, u32 len)
+__le32 ath12k_wmi_tlv_cmd_hdr(u32 cmd, u32 len)
 {
 	return ath12k_wmi_tlv_hdr(cmd, len - TLV_HDR_SIZE);
 }

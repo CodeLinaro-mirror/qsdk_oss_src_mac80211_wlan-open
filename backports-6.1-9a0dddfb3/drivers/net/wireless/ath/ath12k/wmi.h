@@ -8721,6 +8721,7 @@ int ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
 int ath12k_wmi_send_stats_request_cmd(struct ath12k *ar, u32 stats_id,
 				      u32 vdev_id, u32 pdev_id);
 __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len);
+__le32 ath12k_wmi_tlv_cmd_hdr(u32 cmd, u32 len);
 
 int ath12k_wmi_send_tpc_stats_request(struct ath12k *ar,
 				      enum wmi_halphy_ctrl_path_stats_id tpc_stats_type);
