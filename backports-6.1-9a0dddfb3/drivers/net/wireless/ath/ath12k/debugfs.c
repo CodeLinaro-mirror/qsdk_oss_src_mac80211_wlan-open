@@ -2975,6 +2975,79 @@ static const struct file_operations fops_fw_reset_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_read_trace_qdss(struct file *file,
+				      char __user *user_buf,
+				      size_t count, loff_t *ppos)
+{
+	const char buf[] =
+	"1 - this will start qdss trace collection\n"
+	"0 - this will stop and save the qdss trace collection\n";
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, strlen(buf));
+}
+
+static ssize_t
+ath12k_write_trace_qdss(struct file *file,
+			const char __user *user_buf,
+			size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_pdev *pdev;
+	struct ath12k *ar;
+	int i, ret;
+	bool radioup = false;
+	bool qdss_enable;
+
+	if (kstrtobool_from_user(user_buf, count, &qdss_enable))
+		return -EINVAL;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		ar = pdev->ar;
+		if (ar && ar->ah->state == ATH12K_HW_STATE_ON) {
+			radioup = true;
+			break;
+		}
+	}
+
+	if (!radioup) {
+		ath12k_err(ab, "radio is not up\n");
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	if (qdss_enable) {
+		if (ab->is_qdss_tracing) {
+			ret = count;
+			goto exit;
+		}
+		ath12k_config_qdss(ab);
+	} else {
+		if (!ab->is_qdss_tracing) {
+			ret = count;
+			goto exit;
+		}
+		ret = ath12k_send_qdss_trace_mode_req(ab,
+						      QMI_WLANFW_QDSS_TRACE_OFF_V01);
+		if (ret < 0)
+			ath12k_warn(ab,
+				    "Failed to stop QDSS: %d\n", ret);
+	}
+
+	ret = count;
+
+exit:
+	return ret;
+}
+
+static const struct file_operations fops_trace_qdss = {
+	.read = ath12k_read_trace_qdss,
+	.write = ath12k_write_trace_qdss,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
 			    &fops_simulate_fw_crash);
@@ -2984,6 +3057,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_fw_dbglog);
 	debugfs_create_file("fw_reset_stats", 0400, ab->debugfs_soc, ab,
 			    &fops_fw_reset_stats);
+	debugfs_create_file("trace_qdss", 0600, ab->debugfs_soc, ab,
+			    &fops_trace_qdss);
 }
 
 void ath12k_debugfs_unregister(struct ath12k *ar)
