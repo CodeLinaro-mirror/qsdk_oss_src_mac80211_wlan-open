@@ -74,6 +74,12 @@
 
 #define INVALID_CIPHER 0xFFFFFFFF
 
+#define ATH12K_PHY_2GHZ "phy00"
+#define ATH12K_PHY_5GHZ "phy01"
+#define ATH12K_PHY_5GHZ_LOW "phy01"
+#define ATH12K_PHY_5GHZ_HIGH "phy02"
+#define ATH12K_PHY_6GHZ "phy03"
+
 extern unsigned int ath12k_frame_mode;
 extern bool ath12k_fse_3_tuple_enabled;
 
@@ -575,6 +581,10 @@ struct ath12k_sta {
 #define ATH12K_MAX_5GHZ_FREQ	(ATH12K_5GHZ_MAX_CENTER + ATH12K_HALF_20MHZ_BW)
 #define ATH12K_MIN_6GHZ_FREQ	(ATH12K_6GHZ_MIN_CENTER - ATH12K_HALF_20MHZ_BW)
 #define ATH12K_MAX_6GHZ_FREQ	(ATH12K_6GHZ_MAX_CENTER + ATH12K_HALF_20MHZ_BW)
+
+#define ATH12K_MAX_5G_LOW_BAND_FREQ  5330
+#define ATH12K_MIN_5G_HIGH_BAND_FREQ 5490
+
 #define ATH12K_NUM_CHANS 101
 #define ATH12K_MAX_5GHZ_CHAN 173
 
@@ -864,6 +874,7 @@ struct ath12k_pdev {
 	struct ath12k_pdev_cap cap;
 	u8 mac_addr[ETH_ALEN];
 	struct mlo_timestamp timestamp;
+	const char *phy_name;
 };
 
 struct ath12k_fw_pdev {

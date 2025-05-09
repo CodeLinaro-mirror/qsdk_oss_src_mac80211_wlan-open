@@ -12874,7 +12874,8 @@ static void ath12k_mac_hw_destroy(struct ath12k_hw *ah)
 
 static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 						struct ath12k_pdev_map *pdev_map,
-						u8 num_pdev_map)
+						u8 num_pdev_map,
+						const char* phy_name)
 {
 	struct ieee80211_hw *hw;
 	struct ath12k *ar;
@@ -12884,8 +12885,9 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 	int i;
 	u8 pdev_idx;
 
-	hw = ieee80211_alloc_hw(struct_size(ah, radio, num_pdev_map),
-				pdev_map[0].ab->ath12k_ops);
+	hw = ieee80211_alloc_hw_nm(struct_size(ah, radio, num_pdev_map),
+				   pdev_map[0].ab->ath12k_ops, phy_name);
+
 	if (!hw)
 		return NULL;
 
@@ -12962,7 +12964,9 @@ static void ath12k_mac_set_device_defaults(struct ath12k_base *ab)
 int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 {
 	struct ath12k_pdev_map pdev_map[ATH12K_GROUP_MAX_RADIO];
-	int mac_id, device_id, total_radio, num_hw;
+	int mac_id, device_id, total_radio, num_hw, pdev_index;
+	const char *phy_name = NULL;
+	struct ath12k_pdev *pdev;
 	struct ath12k_base *ab;
 	struct ath12k_hw *ah;
 	int ret, i, j;
@@ -12976,6 +12980,16 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 
 		ath12k_mac_set_device_defaults(ab);
 		total_radio += ab->num_radios;
+		if (ag->mlo_capable) {
+			for (j = 0; j < ab->num_radios; j++) {
+				pdev = &ab->pdevs[j];
+				if (!phy_name)
+					phy_name = pdev->phy_name;
+				else if(strcmp(phy_name, pdev->phy_name) > 0)
+					phy_name = pdev->phy_name;
+
+			}
+		}
 		ath12k_link_sta_rhash_tbl_init(ab);
 	}
 
@@ -12999,6 +13013,8 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 	ag->num_hw = 0;
 	device_id = 0;
 	mac_id = 0;
+	pdev_index = 0;
+
 	for (i = 0; i < num_hw; i++) {
 		for (j = 0; j < radio_per_hw; j++) {
 			if (device_id >= ag->num_devices || !ag->ab[device_id]) {
@@ -13021,8 +13037,15 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 		}
 
 		ab = pdev_map->ab;
+		if (!ag->mlo_capable) {
+			pdev = &ab->pdevs[pdev_index];
+			pdev_index++;
+			if (pdev_index >= ab->num_radios)
+				pdev_index = 0;
+			phy_name = pdev->phy_name;
+		}
 
-		ah = ath12k_mac_hw_allocate(ag, pdev_map, radio_per_hw);
+		ah = ath12k_mac_hw_allocate(ag, pdev_map, radio_per_hw, phy_name);
 		if (!ah) {
 			ath12k_warn(ab, "failed to allocate mac80211 hw device for hw_idx %d\n",
 				    i);

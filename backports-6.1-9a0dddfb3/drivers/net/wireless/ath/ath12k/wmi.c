@@ -3769,10 +3769,21 @@ ath12k_fill_band_to_mac_param(struct ath12k_base  *soc,
 		case WMI_HOST_WLAN_2GHZ_CAP:
 			arg[i].start_freq = hal_reg_cap->low_2ghz_chan;
 			arg[i].end_freq = hal_reg_cap->high_2ghz_chan;
+			pdev->phy_name = ATH12K_PHY_2GHZ;
 			break;
 		case WMI_HOST_WLAN_5GHZ_CAP:
 			arg[i].start_freq = hal_reg_cap->low_5ghz_chan;
 			arg[i].end_freq = hal_reg_cap->high_5ghz_chan;
+			if (hal_reg_cap->high_5ghz_chan <= ATH12K_MIN_5G_HIGH_BAND_FREQ)
+				pdev->phy_name = ATH12K_PHY_5GHZ_LOW;
+			else if (hal_reg_cap->low_5ghz_chan >= ATH12K_MAX_5G_LOW_BAND_FREQ &&
+				 hal_reg_cap->high_5ghz_chan <= ATH12K_MIN_6GHZ_FREQ)
+				pdev->phy_name = ATH12K_PHY_5GHZ_HIGH;
+			else if (hal_reg_cap->low_5ghz_chan >= ATH12K_MIN_6GHZ_FREQ &&
+				 hal_reg_cap->high_5ghz_chan <= ATH12K_MAX_6GHZ_FREQ)
+				pdev->phy_name = ATH12K_PHY_6GHZ;
+			else
+				pdev->phy_name = ATH12K_PHY_5GHZ;
 			break;
 		default:
 			break;
