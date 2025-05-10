@@ -1834,7 +1834,17 @@ static int ath12k_core_panic_handler(struct notifier_block *nb,
 {
 	struct ath12k_base *ab = container_of(nb, struct ath12k_base,
 					      panic_nb);
+	if (ab->in_panic)
+		goto panic_handler;
+	
+	ab->in_panic = true;
 
+	if (ab->hif.bus == ATH12K_BUS_PCI)
+		ath12k_coredump_download_rddm(ab);
+	else
+		atomic_inc(&ath12k_coredump_ram_info.num_chip);
+
+panic_handler:
 	return ath12k_hif_panic_handler(ab);
 }
 
