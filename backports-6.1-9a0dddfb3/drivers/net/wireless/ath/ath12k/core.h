@@ -1182,6 +1182,7 @@ struct ath12k_base {
 	u32 host_ddr_fixed_mem_off;
 	struct ath12k_internal_pci ipci;
 	bool ce_pipe_init_done;
+	bool rxgainlut_support;
 
 	const struct ieee80211_ops *ath12k_ops;
 
@@ -1190,7 +1191,7 @@ struct ath12k_base {
 
 	struct rhashtable *rhead_sta_addr;
 	struct rhashtable_params rhash_sta_addr_param;
-
+	
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -1301,6 +1302,8 @@ int ath12k_core_fetch_bdf(struct ath12k_base *ath12k,
 			  struct ath12k_board_data *bd);
 void ath12k_core_free_bdf(struct ath12k_base *ab, struct ath12k_board_data *bd);
 int ath12k_core_fetch_regdb(struct ath12k_base *ab, struct ath12k_board_data *bd);
+int ath12k_core_fetch_rxgainlut(struct ath12k_base *ath12k,
+				struct ath12k_board_data *bd);
 int ath12k_core_check_dt(struct ath12k_base *ath12k);
 int ath12k_core_check_smbios(struct ath12k_base *ab);
 void ath12k_core_halt(struct ath12k *ar);

@@ -558,6 +558,62 @@ success:
 	return 0;
 }
 
+int ath12k_core_fetch_rxgainlut(struct ath12k_base *ab, struct ath12k_board_data *bd)
+{
+	char rxgainlutname[BOARD_NAME_SIZE] = {};
+	char rxgainlutdefaultname[BOARD_NAME_SIZE] = {};
+	int ret;
+
+	ret = ath12k_core_create_board_name(ab, rxgainlutname,
+					    BOARD_NAME_SIZE);
+	if (ret) {
+		ath12k_err(ab, "failed to create rxgainlut name: %d", ret);
+	return ret;
+	}
+
+	ret = ath12k_core_fetch_board_data_api_n(ab, bd, rxgainlutname,
+						 ATH12K_BD_IE_RXGAINLUT,
+						 ATH12K_BD_IE_RXGAINLUT_NAME,
+						 ATH12K_BD_IE_RXGAINLUT_DATA);
+	if (!ret)
+		goto exit;
+	
+	ret = ath12k_core_create_fallback_board_name(ab, rxgainlutdefaultname,
+					    	     BOARD_NAME_SIZE);
+	if (ret) {
+		ath12k_err(ab, "failed to create rxgainlut name: %d", ret);
+	return ret;
+	}
+
+	ret = ath12k_core_fetch_board_data_api_n(ab, bd, rxgainlutdefaultname,
+						 ATH12K_BD_IE_RXGAINLUT,
+						 ATH12K_BD_IE_RXGAINLUT_NAME,
+						 ATH12K_BD_IE_RXGAINLUT_DATA);
+	if (!ret)
+		goto exit;
+
+	snprintf(rxgainlutname, sizeof(rxgainlutname), "%s%04x",
+		 ATH12K_RXGAINLUT_FILE_PREFIX, ab->qmi.target.board_id);
+
+	ret = ath12k_core_fetch_board_data_api_1(ab, bd, rxgainlutname);
+	if (ret) {
+		ath12k_dbg(ab, ATH12K_DBG_BOOT, "failed to fetch %s from %s\n",
+			   rxgainlutname, ab->hw_params->fw.dir);
+
+		ret = ath12k_core_fetch_board_data_api_1(ab, bd,
+							 ATH12K_RXGAINLUT_FILE);
+		if (ret) {
+			ath12k_warn(ab, "failed to fetch default %s from %s\n",
+				    ATH12K_RXGAINLUT_FILE, ab->hw_params->fw.dir);
+			return -ENOENT;
+		}
+	}
+
+exit:
+	ath12k_dbg(ab, ATH12K_DBG_BOOT, "fetche rxgainlut");
+	return 0;
+}
+
 int ath12k_core_fetch_regdb(struct ath12k_base *ab, struct ath12k_board_data *bd)
 {
 	char boardname[BOARD_NAME_SIZE], default_boardname[BOARD_NAME_SIZE];

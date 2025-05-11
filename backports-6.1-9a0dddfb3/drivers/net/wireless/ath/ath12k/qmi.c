@@ -1809,6 +1809,24 @@ static const struct qmi_elem_info qmi_wlanfw_cap_resp_msg_v01_ei[] = {
 		.ei_array	= qmi_wlanfw_dev_mem_info_s_v01_ei,
 	},
 	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x25,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   rxgainlut_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_8_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x25,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   rxgainlut_support),
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -3919,6 +3937,11 @@ int ath12k_qmi_request_target_cap(struct ath12k_base *ab)
 		}
 	}
 
+	if (resp.rxgainlut_support_valid)
+		ab->rxgainlut_support = !!resp.rxgainlut_support;
+
+	ath12k_info(ab, "rxgainlut_support %u\n", ab->rxgainlut_support);
+
 	if (resp.eeprom_caldata_read_timeout_valid) {
 		ab->qmi.target.eeprom_caldata = resp.eeprom_caldata_read_timeout;
 		ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi cal data supported from eeprom\n");
@@ -4071,6 +4094,13 @@ int ath12k_qmi_load_bdf_qmi(struct ath12k_base *ab,
 		ret = ath12k_core_fetch_regdb(ab, &bd);
 		if (ret) {
 			ath12k_warn(ab, "qmi failed to load regdb bin:\n");
+			goto out;
+		}
+		break;
+	case ATH12K_QMI_BDF_TYPE_RXGAINLUT:
+		ret = ath12k_core_fetch_rxgainlut(ab, &bd);
+		if (ret < 0) {
+			ath12k_warn(ab, "qmi failed to load rxgainlut\n");
 			goto out;
 		}
 		break;
@@ -5121,6 +5151,12 @@ int ath12k_qmi_event_load_bdf(struct ath12k_qmi *qmi)
 	if (ret < 0) {
 		ath12k_warn(ab, "qmi failed to load board data file:%d\n", ret);
 		return ret;
+	}
+
+	if (ab->rxgainlut_support) {
+		ret = ath12k_qmi_load_bdf_qmi(ab, ATH12K_QMI_BDF_TYPE_RXGAINLUT);
+		if (ret < 0)
+			ath12k_warn(ab, "qmi failed to load rxgainlut: %d\n", ret);
 	}
 
 	if (ab->hw_params->download_calib) {

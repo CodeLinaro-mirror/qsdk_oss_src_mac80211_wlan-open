@@ -79,6 +79,7 @@ enum ath12k_qmi_bdf_type {
 	ATH12K_QMI_BDF_TYPE_ELF			= 1,
 	ATH12K_QMI_BDF_TYPE_REGDB		= 4,
 	ATH12K_QMI_BDF_TYPE_CALIBRATION		= 5,
+	ATH12K_QMI_BDF_TYPE_RXGAINLUT		= 7,
 };
 
 enum ath12k_qmi_event_type {
@@ -606,6 +607,8 @@ struct qmi_wlanfw_cap_resp_msg_v01 {
 	enum qmi_wlanfw_rd_card_chain_cap_v01 rd_card_chain_cap;
 	u8 dev_mem_info_valid;
 	struct qmi_wlanfw_dev_mem_info_s_v01 dev_mem[ATH12K_QMI_WLFW_MAX_DEV_MEM_NUM_V01];
+	u8 rxgainlut_support_valid;
+	u8 rxgainlut_support;
 };
 
 struct qmi_wlanfw_cap_req_msg_v01 {

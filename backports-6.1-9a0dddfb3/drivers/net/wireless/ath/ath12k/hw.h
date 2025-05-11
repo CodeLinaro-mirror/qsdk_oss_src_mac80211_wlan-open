@@ -112,6 +112,8 @@
 #define ATH12K_AMSS_DUALMAC_FILE	"amss_dualmac.bin"
 #define ATH12K_M3_FILE			"m3.bin"
 #define ATH12K_REGDB_FILE_NAME		"regdb.bin"
+#define ATH12K_RXGAINLUT_FILE_PREFIX	"rxgainlut.b"
+#define ATH12K_RXGAINLUT_FILE		"rxgainlut.bin"
 #define ATH12K_DEFAULT_ID		255
 
 #define ATH12K_PCIE_MAX_PAYLOAD_SIZE	128
@@ -307,11 +309,18 @@ enum ath12k_bd_ie_regdb_type {
 	ATH12K_BD_IE_REGDB_DATA = 1,
 };
 
+enum ath12k_bd_ie_rxgainlut_type {
+	 ATH12K_BD_IE_RXGAINLUT_NAME = 0,
+	 ATH12K_BD_IE_RXGAINLUT_DATA = 1,
+};
+
 enum ath12k_bd_ie_type {
 	/* contains sub IEs of enum ath12k_bd_ie_board_type */
 	ATH12K_BD_IE_BOARD = 0,
 	/* contains sub IEs of enum ath12k_bd_ie_regdb_type */
 	ATH12K_BD_IE_REGDB = 1,
+	/* contains sub IEs of enum ath12k_bd_ie_rxgainlut_type */
+	ATH12K_BD_IE_RXGAINLUT = 2,
 };
 
 static inline const char *ath12k_bd_ie_type_str(enum ath12k_bd_ie_type type)
@@ -320,7 +329,9 @@ static inline const char *ath12k_bd_ie_type_str(enum ath12k_bd_ie_type type)
 	case ATH12K_BD_IE_BOARD:
 		return "board data";
 	case ATH12K_BD_IE_REGDB:
-		return "regdb data";
+		return "regdb data";	
+	case ATH12K_BD_IE_RXGAINLUT:
+		return "rxgainlut data";
 	}
 
 	return "unknown";
