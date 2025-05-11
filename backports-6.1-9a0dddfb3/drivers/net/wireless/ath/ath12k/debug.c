@@ -58,18 +58,27 @@ EXPORT_SYMBOL(__ath12k_warn);
 void __ath12k_dbg(struct ath12k_base *ab, enum ath12k_debug_mask mask,
 		  const char *fmt, ...)
 {
-	struct va_format vaf;
-	va_list args;
+#define LEVEL_MASK GENMASK(31,28)
+#define debug_mask GENMASK(27,0)
+        u32 local_mask_level = mask & LEVEL_MASK;
+        u32 global_mask_level = ath12k_debug_mask & LEVEL_MASK;
+        struct va_format vaf;
+        va_list args;
 
-	va_start(args, fmt);
+        va_start(args, fmt);
 
-	vaf.fmt = fmt;
-	vaf.va = &args;
+        vaf.fmt = fmt;
+        vaf.va = &args;
 
-	if (likely(ab))
-		dev_printk(KERN_DEBUG, ab->dev, "%pV", &vaf);
-	else
-		printk(KERN_DEBUG "ath12k: %pV", &vaf);
+	if ((mask & debug_mask) & ath12k_debug_mask) {
+		if (((local_mask_level) && (global_mask_level >= local_mask_level)) ||
+		    (!global_mask_level && (local_mask_level == ATH12K_DBG_L0))) {
+			if (ab)
+                        	dev_dbg(ab->dev, "%pV", &vaf);
+                	else
+                        	pr_devel("ath12k: %pV", &vaf);
+		}
+	}
 
 	/* TODO: trace log */
 

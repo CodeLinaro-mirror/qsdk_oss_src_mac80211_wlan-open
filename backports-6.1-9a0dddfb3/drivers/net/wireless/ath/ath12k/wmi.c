@@ -909,7 +909,7 @@ int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id)
 						 sizeof(*cmd));
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI vdev stop id 0x%x\n", vdev_id);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SET(WMI, L1), "WMI vdev stop id 0x%x\n", vdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_STOP_CMDID);
 	if (ret) {
@@ -937,7 +937,7 @@ int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id)
 						 sizeof(*cmd));
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI vdev down id 0x%x\n", vdev_id);
+	ath12k_dbg(ar->ab, ATH12K_DBG_SET(WMI, L1), "WMI vdev down id 0x%x\n", vdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DOWN_CMDID);
 	if (ret) {
@@ -1478,7 +1478,7 @@ int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 	cmd->param_id = cpu_to_le32(param_id);
 	cmd->param_value = cpu_to_le32(param_value);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+	ath12k_dbg(ar->ab, ATH12K_DBG_SET(WMI, L2),
 		   "WMI pdev set param %d pdev id %d value %d\n",
 		   param_id, pdev_id, param_value);
 
@@ -2940,7 +2940,7 @@ int ath12k_wmi_send_wmm_update_cmd(struct ath12k *ar, u32 vdev_id,
 		wmm_param->acm = cpu_to_le32(wmi_wmm_arg->acm);
 		wmm_param->no_ack = cpu_to_le32(wmi_wmm_arg->no_ack);
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		ath12k_dbg(ar->ab, ATH12K_DBG_SET(WMI, L3),
 			   "wmi wmm set ac %d aifs %d cwmin %d cwmax %d txop %d acm %d no_ack %d\n",
 			   ac, wmm_param->aifs, wmm_param->cwmin,
 			   wmm_param->cwmax, wmm_param->txoplimit,

@@ -32,12 +32,20 @@ enum ath12k_debug_mask {
 	ATH12K_DBG_ANY		= 0xffffffff,
 };
 
+enum ath12k_debug_mask_level {
+	ATH12K_DBG_L0		= 0x00000000,
+        ATH12K_DBG_L1		= 0x10000000,
+        ATH12K_DBG_L2		= 0x20000000,
+        ATH12K_DBG_L3		= 0x30000000,
+};
+
 __printf(2, 3) void ath12k_info(struct ath12k_base *ab, const char *fmt, ...);
 __printf(2, 3) void ath12k_err(struct ath12k_base *ab, const char *fmt, ...);
 __printf(2, 3) void __ath12k_warn(struct device *dev, const char *fmt, ...);
 
 #define ath12k_warn(ab, fmt, ...) __ath12k_warn((ab)->dev, fmt, ##__VA_ARGS__)
 #define ath12k_hw_warn(ah, fmt, ...) __ath12k_warn((ah)->dev, fmt, ##__VA_ARGS__)
+#define ATH12K_DBG_SET(mask, level) ATH12K_DBG_##mask | ATH12K_DBG_##level
 
 extern unsigned int ath12k_debug_mask;
 extern bool ath12k_ftm_mode;
