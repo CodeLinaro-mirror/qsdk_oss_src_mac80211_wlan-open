@@ -30,6 +30,10 @@ module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
 MODULE_PARM_DESC(debug_mask, "Debugging mask");
 EXPORT_SYMBOL(ath12k_debug_mask);
 
+unsigned int ath12k_mlo_capable = true;
+module_param_named(mlo_capable, ath12k_mlo_capable, uint, 0644);
+MODULE_PARM_DESC(mlo_capable, "mlo capable: 0-disable, 1-enable");
+
 bool ath12k_ftm_mode;
 module_param_named(ftm_mode, ath12k_ftm_mode, bool, 0444);
 MODULE_PARM_DESC(ftm_mode, "Boots up in factory test mode");
@@ -2068,7 +2072,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_assign(struct ath12k_base *a
 
 	lockdep_assert_held(&ath12k_hw_group_mutex);
 
-	if (ath12k_ftm_mode)
+	if (ath12k_ftm_mode || !ath12k_mlo_capable)
 		goto invalid_group;
 
 	/* The grouping of multiple devices will be done based on device tree file.
@@ -2268,7 +2272,7 @@ void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag)
 	struct ath12k_base *ab;
 	int i;
 
-	if (ath12k_ftm_mode)
+	if (ath12k_ftm_mode || !ath12k_mlo_capable)
 		return;
 
 	lockdep_assert_held(&ag->mutex);
