@@ -4397,7 +4397,15 @@ ap_and_sta_debugfs_file:
 
 void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 {
-	arvif->debugfs_twt = NULL;
-	debugfs_remove(arvif->ahvif->debugfs_primary_link);
-	arvif->ahvif->debugfs_primary_link = NULL;
+	if (arvif->ahvif->vif->type == NL80211_IFTYPE_AP)
+		arvif->debugfs_twt = NULL;
+	/**
+	 * Remove ahvif debugfs only when all the link is going to be removed.
+	 */
+	if (hweight16(arvif->ahvif->links_map) <= 1) {
+		if (arvif->ahvif->vif->type != NL80211_IFTYPE_MESH_POINT)
+			arvif->ahvif->debugfs_primary_link = NULL;
+		/* TODO: debugfs_rfs_core_mask and debugfs_linkstats
+		 */
+	}
 }

@@ -3219,6 +3219,7 @@ enum wmi_phy_mode {
 };
 
 #define ATH12K_WMI_MLO_MAX_LINKS 4
+#define ATH12K_WMI_MLO_PEER_MAX_LINKS 3
 
 struct wmi_ml_partner_info {
 	u32 vdev_id;

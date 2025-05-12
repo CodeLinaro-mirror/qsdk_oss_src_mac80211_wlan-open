@@ -8785,10 +8785,11 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k_link_vif *arvif;
-	struct ath12k_link_sta *arsta;
+	struct ath12k_link_sta *arsta, *tmp_arsta, *def_arsta;
 	unsigned long valid_links;
 	struct ath12k *ar;
-	u8 link_id;
+	u16 removed_link_map;
+	u8 link_id, tmp_link_id;
 	int ret;
 
 	lockdep_assert_wiphy(hw->wiphy);
@@ -8796,70 +8797,163 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	if (!sta->valid_links)
 		return -EINVAL;
 
-	/* Firmware does not support removal of one of link stas. All sta
-	 * would be removed during ML STA delete in sta_state(), hence link
-	 * sta removal is not handled here.
-	 */
-	if (new_links < old_links)
-		return 0;
+	if (new_links > old_links) {
+		if (ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID) {
+			ath12k_hw_warn(ah, "unable to add link for ml sta %pM", sta->addr);
+			return -EINVAL;
+		}
 
-	if (ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID) {
-		ath12k_hw_warn(ah, "unable to add link for ml sta %pM", sta->addr);
-		return -EINVAL;
-	}
+		/* this op is expected only after initial sta insertion with default link */
+		if (WARN_ON(ahsta->links_map == 0))
+			return -EINVAL;
 
-	/* this op is expected only after initial sta insertion with default link */
-	if (WARN_ON(ahsta->links_map == 0))
-		return -EINVAL;
+		if (hweight16(ahsta->links_map) >= ATH12K_WMI_MLO_PEER_MAX_LINKS) {
+			ath12k_err(NULL, "More than 3 links are not supported for ML STA %pM\n",
+				   sta->addr);
+			return -EINVAL;
+		}
 
-	if ((test_bit(ahvif->primary_link_id, &sta->valid_links))) {
-		arvif = ahvif->link[ahvif->primary_link_id];
-		if (arvif->ar->ab->hw_params->is_plink_preferable) {
-			ahsta->primary_link_id = ahvif->primary_link_id;
-		} else {
-			ahsta->primary_link_id = ahsta->assoc_link_id;
-			arvif = ahvif->link[ahsta->assoc_link_id];
-			if (!arvif->ar->ab->hw_params->is_plink_preferable) {
-				for_each_set_bit(link_id, &sta->valid_links,
-						 IEEE80211_MLD_MAX_NUM_LINKS) {
-					if (link_id != ahsta->primary_link_id) {
-						ahsta->primary_link_id = link_id;
-						break;
+		if ((test_bit(ahvif->primary_link_id, &sta->valid_links))) {
+			arvif = ahvif->link[ahvif->primary_link_id];
+			if (arvif->ar->ab->hw_params->is_plink_preferable) {
+				ahsta->primary_link_id = ahvif->primary_link_id;
+			} else {
+				ahsta->primary_link_id = ahsta->assoc_link_id;
+				arvif = ahvif->link[ahsta->assoc_link_id];
+				if (!arvif->ar->ab->hw_params->is_plink_preferable) {
+					for_each_set_bit(link_id, &sta->valid_links,
+							 IEEE80211_MLD_MAX_NUM_LINKS) {
+						if (link_id != ahsta->primary_link_id) {
+							ahsta->primary_link_id = link_id;
+							break;
+						}
 					}
 				}
 			}
 		}
-	}
 
-	valid_links = new_links;
-	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
-		if (ahsta->links_map & BIT(link_id))
-			continue;
+		valid_links = new_links;
+		for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
+			if (ahsta->links_map & BIT(link_id))
+				continue;
 
-		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
-		arsta = ath12k_mac_alloc_assign_link_sta(ah, ahsta, ahvif, link_id);
+			arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+			arsta = ath12k_mac_alloc_assign_link_sta(ah, ahsta, ahvif, link_id);
 
-		if (!arvif || !arsta) {
-			ath12k_hw_warn(ah, "Failed to alloc/assign link sta");
-			continue;
+			if (!arvif || !arsta) {
+				ath12k_hw_warn(ah, "Failed to alloc/assign link sta");
+				continue;
+			}
+
+			ar = arvif->ar;
+			if (!ar)
+				continue;
+
+			ret = ath12k_mac_station_add(ar, arvif, arsta);
+			if (ret) {
+				ath12k_warn(ar->ab, "Failed to add station: %pM for VDEV: %d\n",
+					    arsta->addr, arvif->vdev_id);
+				ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
+				return ret;
+			}
 		}
+	} else {
+		removed_link_map = old_links ^ new_links;
 
-		ar = arvif->ar;
-		if (!ar)
-			continue;
+		if (hweight16(removed_link_map) > 1)
+			return -EINVAL;
 
-		ret = ath12k_mac_station_add(ar, arvif, arsta);
-		if (ret) {
-			ath12k_warn(ar->ab, "Failed to add station: %pM for VDEV: %d\n",
-				    arsta->addr, arvif->vdev_id);
-			ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
-			return ret;
+		link_id = ffs(removed_link_map) - 1;
+
+		arvif = ahvif->link[link_id];
+		arsta = ahsta->link[link_id];
+
+		if (!arsta)
+			return -EINVAL;
+
+		if (vif->type == NL80211_IFTYPE_AP) {
+			if (!arvif)
+				return -EINVAL;
+
+			ar = arvif->ar;
+
+			if (ahsta->primary_link_id == link_id) {
+				/* WAR: send low_ack if its primary link id is
+				 * getting removed, until primary UMAC
+				 * migration is supported
+				 */
+				ieee80211_report_low_ack(sta, ATH12K_REPORT_LOW_ACK_NUM_PKT);
+				return -EINVAL;
+			}
+
+			ret = ath12k_mac_station_unauthorize(ar, arvif, arsta);
+			if (ret)
+				ath12k_warn(ar->ab, "Failed to unauth station: %pM for VDEV: %d\n",
+					    arsta->addr, arvif->vdev_id);
+
+			ret = ath12k_mac_station_disassoc(ar, arvif, arsta);
+			if (ret)
+				ath12k_warn(ar->ab, "Failed to disassoc station: %pM for VDEV: %d\n",
+					    arsta->addr, arvif->vdev_id);
+
+			ret = ath12k_mac_station_remove(ar, arvif, arsta);
+			if (ret)
+				ath12k_warn(ar->ab, "Failed to remove station: %pM for VDEV: %d\n",
+					    sta->addr, arvif->vdev_id);
+
+			if (ret) {
+				if (test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags)) {
+					ath12k_info(ar->ab, " overwriting ret %d with 0 for %pM",
+						    ret, arsta->addr);
+					ret = 0;
+				}
+			}
+		} else if (vif->type == NL80211_IFTYPE_STATION)
+			ath12k_mac_free_unassign_link_sta(ahsta->ahvif->ah, arsta->ahsta,
+							  arsta->link_id);
+
+		/* If the link that is getting removed is the assoc link id of
+		 * the station, then move the contents of the next link to
+		 * deflink and free the moved link memory
+		 */
+		if (ahsta->assoc_link_id != ahsta->primary_link_id &&
+		    ahsta->assoc_link_id == link_id &&
+		    hweight32(ahsta->links_map) >= 1) {
+			tmp_link_id = ffs(ahsta->links_map) - 1;
+
+			tmp_arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[tmp_link_id]);
+			if (tmp_arsta) {
+				wiphy_work_cancel(ar->ah->hw->wiphy, &tmp_arsta->update_wk);
+				memcpy(&ahsta->deflink, tmp_arsta,
+				       sizeof(*tmp_arsta));
+				def_arsta = &ahsta->deflink;
+				wiphy_work_init(&def_arsta->update_wk, ath12k_sta_rc_update_wk);
+				ahsta->assoc_link_id = tmp_arsta->link_id;
+				rcu_assign_pointer(ahsta->link[tmp_link_id], &ahsta->deflink);
+				synchronize_rcu();
+				kfree(tmp_arsta);
+			}
 		}
 	}
 
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_change_sta_links);
+
+bool ath12k_mac_op_removed_link_is_primary(struct ieee80211_sta *sta,
+					   u16 removed_links)
+{
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	unsigned long removed_link = removed_links;
+	u16 link_id;
+
+	for_each_set_bit(link_id, &removed_link, ATH12K_NUM_MAX_LINKS)
+		if (ahsta->primary_link_id == link_id)
+			return true;
+
+	return false;
+}
+EXPORT_SYMBOL(ath12k_mac_op_removed_link_is_primary);
 
 bool ath12k_mac_op_can_activate_links(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif,
