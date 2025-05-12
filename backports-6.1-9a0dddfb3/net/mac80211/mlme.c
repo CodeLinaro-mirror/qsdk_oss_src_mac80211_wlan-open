@@ -10730,3 +10730,69 @@ void ieee80211_process_epcs_teardown(struct ieee80211_sub_if_data *sdata,
 	ieee80211_epcs_teardown(sdata);
 	ieee80211_epcs_changed(sdata, false);
 }
+
+void ieee80211_mgd_send_epcs_resp(struct ieee80211_sub_if_data *sdata,
+				  u16 status_code)
+{
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_mgmt *mgmt;
+	struct sk_buff *skb;
+	/* frame_len (29): mgmt hdr (24) + action category (1) + action code (1) +
+	 *		   dialog token (1) + status code (2)
+	 */
+	int frame_len = offsetofend(struct ieee80211_mgmt, u.action.u.epcs_resp);
+
+	skb = dev_alloc_skb(local->hw.extra_tx_headroom + frame_len);
+	if (!skb)
+		return;
+
+	skb_reserve(skb, local->hw.extra_tx_headroom);
+	mgmt = skb_put_zero(skb, frame_len);
+	mgmt->frame_control = cpu_to_le16(IEEE80211_FTYPE_MGMT | IEEE80211_STYPE_ACTION);
+	memcpy(mgmt->da, sdata->vif.cfg.ap_addr, ETH_ALEN);
+	memcpy(mgmt->sa, sdata->vif.addr, ETH_ALEN);
+	memcpy(mgmt->bssid, sdata->vif.cfg.ap_addr, ETH_ALEN);
+
+	mgmt->u.action.category = WLAN_CATEGORY_PROTECTED_EHT;
+	mgmt->u.action.u.epcs_resp.action_code =
+		WLAN_PROTECTED_EHT_ACTION_EPCS_ENABLE_RESP;
+	mgmt->u.action.u.epcs_resp.dialog_token = sdata->u.mgd.epcs.dialog_token;
+	mgmt->u.action.u.epcs_resp.status_code = cpu_to_le16(status_code);
+
+	ieee80211_epcs_changed(sdata, !status_code);
+	ieee80211_tx_skb(sdata, skb);
+}
+
+void ieee80211_process_epcs_ena_req(struct ieee80211_sub_if_data *sdata,
+				    struct ieee80211_mgmt *mgmt, size_t len)
+{
+	struct ieee802_11_elems *elems;
+	size_t ies_len;
+	u8 *pos;
+	u16 status_code = WLAN_STATUS_SUCCESS;
+
+	pos = mgmt->u.action.u.epcs.variable;
+	sdata->u.mgd.epcs.dialog_token = *pos;
+
+	if (!ieee80211_mgd_epcs_supp(sdata) || sdata->u.mgd.epcs.enabled ||
+	    !sdata->u.mgd.epcs.dialog_token) {
+		status_code = WLAN_STATUS_EPCS_DENIED;
+		goto send_frame;
+	}
+
+	pos += IEEE80211_EPCS_ENA_REQ_BODY_LEN;
+	ies_len = len - offsetof(struct ieee80211_mgmt, u.action.u.epcs.variable) -
+		  IEEE80211_EPCS_ENA_REQ_BODY_LEN;
+
+	elems = ieee802_11_parse_elems(pos, ies_len, true, NULL);
+	if (!elems) {
+		status_code = WLAN_STATUS_EPCS_DENIED;
+		goto send_frame;
+	}
+
+	ieee80211_ml_epcs(sdata, elems);
+	kfree(elems);
+
+send_frame:
+	ieee80211_mgd_send_epcs_resp(sdata, status_code);
+}

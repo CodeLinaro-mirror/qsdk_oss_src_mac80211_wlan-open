@@ -3582,6 +3582,7 @@ enum ieee80211_statuscode {
 	WLAN_STATUS_UNKNOWN_AUTHENTICATION_SERVER = 109,
 	WLAN_STATUS_SAE_HASH_TO_ELEMENT = 126,
 	WLAN_STATUS_SAE_PK = 127,
+	WLAN_STATUS_EPCS_DENIED = 132,
 	WLAN_STATUS_DENIED_TID_TO_LINK_MAPPING = 133,
 	WLAN_STATUS_PREF_TID_TO_LINK_MAPPING_SUGGESTED = 134,
 };
@@ -5673,6 +5674,7 @@ static inline bool ieee80211_mle_reconf_sta_prof_size_ok(const u8 *data,
 
 #define IEEE80211_MLE_STA_EPCS_CONTROL_LINK_ID			0x000f
 #define IEEE80211_EPCS_ENA_RESP_BODY_LEN                        3
+#define IEEE80211_EPCS_ENA_REQ_BODY_LEN				1
 
 static inline bool ieee80211_tid_to_link_map_size_ok(const u8 *data, size_t len)
 {
