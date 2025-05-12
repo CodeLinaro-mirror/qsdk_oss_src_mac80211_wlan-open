@@ -1183,6 +1183,7 @@ struct ath12k_base {
 	struct ath12k_internal_pci ipci;
 	bool ce_pipe_init_done;
 	bool rxgainlut_support;
+	bool fw_cfg_support;
 
 	const struct ieee80211_ops *ath12k_ops;
 
@@ -1302,6 +1303,8 @@ int ath12k_core_fetch_bdf(struct ath12k_base *ath12k,
 			  struct ath12k_board_data *bd);
 void ath12k_core_free_bdf(struct ath12k_base *ab, struct ath12k_board_data *bd);
 int ath12k_core_fetch_regdb(struct ath12k_base *ab, struct ath12k_board_data *bd);
+int ath12k_core_fetch_fw_cfg(struct ath12k_base *ath12k,
+			     struct ath12k_board_data *bd);
 int ath12k_core_fetch_rxgainlut(struct ath12k_base *ath12k,
 				struct ath12k_board_data *bd);
 int ath12k_core_check_dt(struct ath12k_base *ath12k);

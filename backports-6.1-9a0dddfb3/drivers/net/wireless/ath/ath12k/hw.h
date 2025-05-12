@@ -115,6 +115,7 @@
 #define ATH12K_RXGAINLUT_FILE_PREFIX	"rxgainlut.b"
 #define ATH12K_RXGAINLUT_FILE		"rxgainlut.bin"
 #define ATH12K_DEFAULT_ID		255
+#define ATH12K_FW_CFG_FILE             "firmware.dat"
 
 #define ATH12K_PCIE_MAX_PAYLOAD_SIZE	128
 #define ATH12K_IPQ5332_USERPD_ID	1

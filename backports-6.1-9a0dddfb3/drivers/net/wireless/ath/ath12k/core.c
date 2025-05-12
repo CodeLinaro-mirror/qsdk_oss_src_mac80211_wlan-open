@@ -562,6 +562,24 @@ success:
 	return 0;
 }
 
+int ath12k_core_fetch_fw_cfg(struct ath12k_base *ab,
+			     struct ath12k_board_data *bd)
+{
+	int ret;
+
+	ret = ath12k_core_fetch_board_data_api_1(ab, bd, ATH12K_FW_CFG_FILE);
+	if (ret) {
+		ath12k_dbg(ab, ATH12K_DBG_QMI, "failed to fetch %s from %s\n",
+			   ATH12K_FW_CFG_FILE, ab->hw_params->fw.dir);
+		return -ENOENT;
+	}
+
+	ath12k_info(ab, "fetching %s from %s\n", ATH12K_FW_CFG_FILE,
+		    ab->hw_params->fw.dir);
+
+	return 0;
+}
+
 int ath12k_core_fetch_rxgainlut(struct ath12k_base *ab, struct ath12k_board_data *bd)
 {
 	char rxgainlutname[BOARD_NAME_SIZE] = {};

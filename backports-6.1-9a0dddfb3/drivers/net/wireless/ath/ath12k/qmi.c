@@ -699,6 +699,24 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
 					   feature_list),
 	},
 	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x2E,
+		.offset         = offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+					   fw_cfg_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x2E,
+		.offset         = offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
+					   fw_cfg_support),
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -719,6 +737,131 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_resp_msg_v01_ei[] = {
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info wlanfw_cfg_download_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   file_type_valid),
+	},
+	{
+		.data_type      = QMI_SIGNED_4_BYTE_ENUM,
+		.elem_len       = 1,
+		.elem_size      = sizeof(enum wlanfw_cfg_type_v01),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   file_type),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x11,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   total_size_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x11,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   total_size),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x12,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   seg_id_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x12,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   seg_id),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x13,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   data_valid),
+	},
+	{
+		.data_type      = QMI_DATA_LEN,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u16),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x13,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   data_len),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = QMI_WLANFW_MAX_DATA_SIZE_V01,
+		.elem_size      = sizeof(u8),
+		.array_type     = VAR_LEN_ARRAY,
+		.tlv_type       = 0x13,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   data),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x14,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   end_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x14,
+		.offset         = offsetof(struct wlanfw_cfg_download_req_msg_v01,
+					   end),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info wlanfw_cfg_download_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct wlanfw_cfg_download_resp_msg_v01,
+				   resp),
+		.ei_array       = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
 	},
 };
 
@@ -3035,6 +3178,7 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 {
 	struct qmi_wlanfw_host_cap_req_msg_v01 req = {};
 	struct qmi_wlanfw_host_cap_resp_msg_v01 resp = {};
+	struct ath12k_board_data bd;
 	struct qmi_txn txn;
 	int ret = 0;
 	struct device_node *root;
@@ -3093,6 +3237,15 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 		req.nm_modem |= SLEEP_CLOCK_SELECT_INTERNAL_BIT;
 		req.nm_modem |= PLATFORM_CAP_PCIE_GLOBAL_RESET;
 	}
+	
+
+	ret = ath12k_core_fetch_fw_cfg(ab, &bd);
+	if (!ret) {
+		req.fw_cfg_support_valid = 1;
+		req.fw_cfg_support = 1;
+	}
+	ab->fw_cfg_support = !!req.fw_cfg_support;
+	ath12k_core_free_bdf(ab, &bd);
 
 	ret = ath12k_host_cap_parse_mlo(ab, &req);
 	if (ret < 0)
@@ -4764,6 +4917,91 @@ static struct ath12k_base *ath12k_qmi_hw_group_find_blocked(struct ath12k_hw_gro
 	return NULL;
 }
 
+static int ath12k_qmi_fw_cfg_send_sync(struct ath12k_base *ab,
+				       const u8 *data, u32 len,
+				       enum wlanfw_cfg_type_v01 file_type)
+{
+	struct wlanfw_cfg_download_req_msg_v01 *req;
+	struct wlanfw_cfg_download_resp_msg_v01 *resp;
+	struct qmi_txn txn;
+	int ret = 0;
+	const u8 *temp = data;
+	unsigned int remaining = len;
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
+	if (!resp) {
+		kfree(req);
+		return -ENOMEM;
+	}
+
+	while (remaining) {
+		req->file_type_valid = 1;
+		req->file_type = file_type;
+		req->total_size_valid = 1;
+		req->total_size = remaining;
+		req->seg_id_valid = 1;
+		req->data_valid = 1;
+		req->end_valid = 1;
+
+		if (remaining > QMI_WLANFW_MAX_DATA_SIZE_V01) {
+			req->data_len = QMI_WLANFW_MAX_DATA_SIZE_V01;
+		} else {
+			req->data_len = remaining;
+			req->end = 1;
+		}
+
+		memcpy(req->data, temp, req->data_len);
+
+		ret = qmi_txn_init(&ab->qmi.handle, &txn,
+				   wlanfw_cfg_download_resp_msg_v01_ei,
+				   resp);
+		if (ret < 0) {
+			ath12k_dbg(ab, ATH12K_DBG_QMI, "Failed to initialize txn for FW file download request, err: %d\n",
+				   ret);
+			goto err;
+		}
+
+		ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+				       QMI_WLANFW_CFG_DOWNLOAD_REQ_V01,
+				       WLANFW_CFG_DOWNLOAD_REQ_MSG_V01_MAX_MSG_LEN,
+				       wlanfw_cfg_download_req_msg_v01_ei, req);
+		if (ret < 0) {
+			qmi_txn_cancel(&txn);
+			ath12k_dbg(ab, ATH12K_DBG_QMI, "Failed to send FW File download request, err: %d\n",
+				   ret);
+			goto err;
+		}
+
+		ret = qmi_txn_wait(&txn, ATH12K_QMI_WLANFW_TIMEOUT_MS);
+		if (ret < 0) {
+			ath12k_dbg(ab, ATH12K_DBG_QMI, "Failed to wait for response of FW File download request, err: %d\n",
+				   ret);
+			goto err;
+		}
+
+		if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+			ath12k_dbg(ab, ATH12K_DBG_QMI, "FW file download request failed, result: %d, err: %d\n",
+				   resp->resp.result, resp->resp.error);
+			ret = -resp->resp.result;
+			goto err;
+		}
+
+		remaining -= req->data_len;
+		temp += req->data_len;
+		req->seg_id++;
+	}
+
+err:
+	kfree(req);
+	kfree(resp);
+
+	return ret;
+}
+
 /* clang stack usage explodes if this is inlined */
 static noinline_for_stack
 int ath12k_qmi_event_server_arrive(struct ath12k_qmi *qmi)
@@ -5457,6 +5695,29 @@ static const struct qmi_ops ath12k_qmi_ops = {
 	.del_server = ath12k_qmi_ops_del_server,
 };
 
+static int ath12k_qmi_fw_cfg(struct ath12k_base *ab)
+{
+	struct ath12k_board_data bd;
+	int ret;
+
+	ret = ath12k_core_fetch_fw_cfg(ab, &bd);
+	if (ret < 0) {
+		ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi failed to fetch FW CFG file:%d\n", ret);
+		goto out;
+	}
+	ret = ath12k_qmi_fw_cfg_send_sync(ab, bd.data,
+					  bd.len, WLANFW_CFG_FILE_V01);
+	if (ret < 0)
+		ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi failed to load FW CFG file\n");
+
+out:
+	ath12k_core_free_bdf(ab, &bd);
+	ath12k_dbg(ab, ATH12K_DBG_QMI, "qmi FW CFG download sequence completed, ret: %d\n",
+		   ret);
+
+	return ret;
+}
+
 static int ath12k_qmi_event_host_cap(struct ath12k_qmi *qmi)
 {
 	struct ath12k_base *ab = qmi->ab;
@@ -5468,6 +5729,13 @@ static int ath12k_qmi_event_host_cap(struct ath12k_qmi *qmi)
 			    ab->device_id, ret);
 		return ret;
 	}
+
+	if (!ab->fw_cfg_support) {
+		ath12k_dbg(ab, ATH12K_DBG_QMI, "FW CFG file is not supported\n");
+		return 0;
+	}
+
+	ret = ath12k_qmi_fw_cfg(ab);
 
 	return ret;
 }

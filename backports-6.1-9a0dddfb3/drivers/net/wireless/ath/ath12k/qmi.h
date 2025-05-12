@@ -246,7 +246,7 @@ struct qmi_wlanfw_qdss_trace_mode_resp_msg_v01 {
 	struct qmi_response_type_v01 resp;
 };
 
-#define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		261
+#define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		355
 
 struct qmi_wlanfw_m3_dump_upload_done_req_msg_v01 {
 	u32 pdev_id;
@@ -356,7 +356,8 @@ struct qmi_wlanfw_host_cap_req_msg_v01 {
 	struct wlfw_host_mlo_chip_info_s_v01 mlo_chip_info[QMI_WLFW_MAX_NUM_MLO_CHIPS_V01];
 	u8 feature_list_valid;
 	u64 feature_list;
-
+	u8 fw_cfg_support_valid;
+	u8 fw_cfg_support;
 };
 
 struct qmi_wlanfw_host_cap_resp_msg_v01 {
@@ -810,8 +811,35 @@ struct qmi_wlanfw_mem_write_resp_msg_v01 {
 	struct qmi_response_type_v01 resp;
 };
 
-int ath12k_qmi_mem_read(struct ath12k_base *ab, u32 mem_addr, void *mem_value,size_t count);
+#define QMI_WLANFW_CFG_DOWNLOAD_REQ_V01 0x0056
+#define QMI_WLANFW_CFG_DOWNLOAD_RESP_V01 0x0056
+enum wlanfw_cfg_type_v01 {
+	WLANFW_CFG_TYPE_MIN_VAL_V01 = INT_MIN,
+	WLANFW_CFG_FILE_V01 = 0,
+	WLANFW_CFG_TYPE_MAX_VAL_V01 = INT_MAX,
+};
 
+#define WLANFW_CFG_DOWNLOAD_REQ_MSG_V01_MAX_MSG_LEN 6174
+struct wlanfw_cfg_download_req_msg_v01 {
+	u8 file_type_valid;
+	enum wlanfw_cfg_type_v01 file_type;
+	u8 total_size_valid;
+	u32 total_size;
+	u8 seg_id_valid;
+	u32 seg_id;
+	u8 data_valid;
+	u32 data_len;
+	u8 data[QMI_WLANFW_MAX_DATA_SIZE_V01];
+	u8 end_valid;
+	u8 end;
+};
+
+#define WLANFW_CFG_DOWNLOAD_RESP_MSG_V01_MAX_MSG_LEN 7
+struct wlanfw_cfg_download_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
+int ath12k_qmi_mem_read(struct ath12k_base *ab, u32 mem_addr, void *mem_value,size_t count);
 int ath12k_qmi_mem_write(struct ath12k_base *ab, u32 mem_addr, void* mem_value, size_t count);
 
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
