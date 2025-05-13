@@ -131,7 +131,7 @@ struct ath12k *ath12k_mac_get_ar_by_vdev_id(struct ath12k_base *ab, u32 vdev_id)
 struct ath12k *ath12k_mac_get_ar_by_pdev_id(struct ath12k_base *ab, u32 pdev_id);
 
 void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
-                                  struct ieee80211_vif *vif,
+				  struct ath12k_link_vif *arvif,
                                   struct ieee80211_chanctx_conf *ctx);
 void ath12k_mac_drain_tx(struct ath12k *ar);
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar);

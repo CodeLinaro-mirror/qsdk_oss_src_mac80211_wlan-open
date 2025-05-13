@@ -6854,6 +6854,11 @@ static u16 ath12k_mac_get_6g_start_frequency(struct cfg80211_chan_def *chan_def)
          * bandwidth=160MHz, center frequency is 6025, lowest channel is 1
          * with center frequency 5955, its diff is 6025 - 5955 = 70.
          */
+
+	printk("%s:%d> chandef %p \n", __func__, __LINE__, chan_def);
+	if (!chan_def)
+		return 0;
+
         switch (chan_def->width) {
         case NL80211_CHAN_WIDTH_320:
         	diff_seq = 150;
@@ -6970,13 +6975,30 @@ static void ath12k_mac_get_eirp_power(struct ath12k *ar,
 	}
 }
 
+struct
+ieee80211_bss_conf *ath12k_get_link_bss_conf(struct ath12k_link_vif *arvif)
+{
+        struct ieee80211_vif *vif = arvif->ahvif->vif;
+        struct ieee80211_bss_conf *link_conf = NULL;
+
+        WARN_ON(!rcu_read_lock_held());
+
+        if (arvif->link_id > IEEE80211_MLD_MAX_NUM_LINKS)
+                return NULL;
+
+        link_conf = rcu_dereference(vif->link_conf[arvif->link_id]);
+
+        return link_conf;
+}
+
 void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
-                                  struct ieee80211_vif *vif,
+                                  struct ath12k_link_vif *arvif,
                                   struct ieee80211_chanctx_conf *ctx)
 {
         struct ath12k_base *ab = ar->ab;
-        struct ath12k_vif *arvif = (void *)vif->drv_priv;
-        struct ieee80211_bss_conf *bss_conf = &vif->bss_conf;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_vif *vif = ahvif->vif;
+        struct ieee80211_bss_conf *bss_conf;
         struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
         struct ieee80211_channel *chan, *temp_chan;
         u8 pwr_lvl_idx, num_pwr_levels, pwr_reduction;
@@ -6986,13 +7008,17 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
         u16 oper_freq = 0, start_freq = 0, center_freq = 0;
 	u8 reg_6g_power_mode;
 
+	bss_conf = ath12k_get_link_bss_conf(arvif);
        /* For STA, 6g power mode will be present in the beacon, but for AP,
         * AP cant parse its own beacon. Hence, we get the 6g power mode
         * from the wdev corresponding to the struct ieee80211_vif
         */
-       if (arvif->vdev_type == WMI_VDEV_TYPE_STA)
-               reg_6g_power_mode = vif->bss_conf.power_type;
-       else if (arvif->vdev_type == WMI_VDEV_TYPE_AP) {
+       if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+	       reg_6g_power_mode = bss_conf->power_type;
+
+       if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+	       reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+       else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
                struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
                /* With respect to ieee80211, the 6G AP power mode starts from index
                 * 1 while the power type stored in struct wireless_dev is based on
@@ -7010,7 +7036,7 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
         start_freq = ath12k_mac_get_6g_start_frequency(&ctx->def);
         pwr_reduction = bss_conf->pwr_reduction;
 
-        if (arvif->vdev_type == WMI_VDEV_TYPE_STA &&
+        if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 	    arvif->reg_tpc_info.num_pwr_levels) {
                 is_tpe_present = true;
                 num_pwr_levels = arvif->reg_tpc_info.num_pwr_levels;
@@ -12153,7 +12179,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
             chandef->chan->band == NL80211_BAND_6GHZ &&
             (ahvif->vdev_type == WMI_VDEV_TYPE_STA || ahvif->vdev_type == WMI_VDEV_TYPE_AP) &&
             test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map)) {
-                ath12k_mac_fill_reg_tpc_info(ar, ahvif->vif, &arvif->chanctx);
+                ath12k_mac_fill_reg_tpc_info(ar, arvif, &arvif->chanctx);
                 ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id,
                                                    &arvif->reg_tpc_info);
        }
