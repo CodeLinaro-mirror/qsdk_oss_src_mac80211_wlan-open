@@ -516,6 +516,11 @@ struct ath12k_vif {
 	u32 links_map;
 	u8 last_scan_link;
 	bool chanctx_peer_del_done;
+	u8 primary_link_id;
+	u8 hw_link_id;
+#ifdef CPTCFG_ATH12K_DEBUGFS
+	struct dentry *debugfs_primary_link;
+#endif /* CPTCFG_ATH12K_DEBUGFS */
 
 	struct ath12k_mgmt_frame_stats mgmt_stats;
 

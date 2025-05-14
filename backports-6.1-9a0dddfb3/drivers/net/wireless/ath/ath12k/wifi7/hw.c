@@ -424,6 +424,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.supports_ap_ps = true,
 		.ftm_responder = true,
 		.credit_flow = false,
+		.is_plink_preferable = true,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -516,6 +517,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.support_ce_manual_poll=true,
 		.ftm_responder = false,
 		.credit_flow = false,
+		.is_plink_preferable = true,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -614,6 +616,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.support_ce_manual_poll=true,
 		.ftm_responder = true,
 		.credit_flow = false,
+		.is_plink_preferable = true,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -703,6 +706,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.support_ce_manual_poll=true,
 		.ftm_responder = false,
 		.credit_flow = false,
+		.is_plink_preferable = false,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -772,6 +776,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.support_ce_manual_poll=true,
 		.ftm_responder = true,
 		.credit_flow = false,
+		.is_plink_preferable = true,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -861,6 +866,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.support_ce_manual_poll=true,
 		.ftm_responder = false,
 		.credit_flow = false,
+		.is_plink_preferable = true,
 	},
 };
 

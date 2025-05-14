@@ -4251,6 +4251,79 @@ static const struct file_operations ath12k_fops_twt_resume_dialog = {
 	.open = simple_open
 };
 
+static ssize_t ath12k_write_primary_link(struct file *file,
+					 const char __user *user_buf,
+					 size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	struct ath12k_hw *ah = ahvif->ah;
+	struct ath12k *ar = ah->radio;
+	struct ath12k_link_vif *arvif;
+	u8 primary_link, link_id = 0;
+	bool is_link_found = false;
+	unsigned long links_map = ahvif->links_map;
+
+	if (kstrtou8_from_user(user_buf, count, 0, &primary_link))
+		return -EINVAL;
+
+	/* arvif information not available at this point for STA mode.
+	 * Hence, store the input value and set the primary_link in
+	 * ath12k_mac_ahsta_get_pri_link_id().
+	 */
+	mutex_lock(&ah->hw_mutex);
+	if (ahvif->vif->type == NL80211_IFTYPE_STATION) {
+		ahvif->hw_link_id = primary_link;
+		mutex_unlock(&ah->hw_mutex);
+		return count;
+	}
+
+	for_each_set_bit_from(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+		arvif = ahvif->link[link_id];
+		if (!arvif)
+			continue;
+		ar = arvif->ar;
+		if (primary_link == ar->hw_link_id) {
+			is_link_found = true;
+			break;
+		}
+	}
+
+	if (!is_link_found) {
+		mutex_unlock(&ah->hw_mutex);
+		ath12k_warn(ar->ab, "Invalid link id : %u\n", primary_link);
+		return -EINVAL;
+	}
+
+	ahvif->primary_link_id = arvif->link_id;
+	mutex_unlock(&ah->hw_mutex);
+	return count;
+}
+
+static ssize_t ath12k_read_primary_link(struct file *file,
+					char __user *ubuf,
+					size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	struct ath12k_hw *ah = ahvif->ah;
+	int len = 0;
+	char buf[32] = {0};
+
+	mutex_lock(&ah->hw_mutex);
+	len = scnprintf(buf, sizeof(buf) - len, "Primary link_id: %u\n",
+			ahvif->primary_link_id);
+	mutex_unlock(&ah->hw_mutex);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations ath12k_fops_primary_link = {
+	.open = simple_open,
+	.write = ath12k_write_primary_link,
+	.read = ath12k_read_primary_link,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
@@ -4260,6 +4333,9 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 
 	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
 		return;
+
+	if (ahvif->vif->type == NL80211_IFTYPE_STATION)
+		goto ap_and_sta_debugfs_file;
 
 	if (vif->type != NL80211_IFTYPE_AP)
 		return;
@@ -4293,9 +4369,35 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 
 	debugfs_create_file("resume_dialog", 0200, arvif->debugfs_twt,
 			    arvif, &ath12k_fops_twt_resume_dialog);
+
+	/* Note: Add new AP mode only debugfs file before "ap_and_sta_debugfs_file" label.
+	 * Add new debugfs file for both AP and STA mode after the "ap_and_sta_debugfs_file"
+	 * label.
+	 */
+ap_and_sta_debugfs_file:
+	if (ahvif->debugfs_primary_link)
+		return;
+
+	ahvif->debugfs_primary_link = debugfs_create_file("primary_link",
+							  0644,
+							  vif->debugfs_dir,
+							  ahvif,
+							  &ath12k_fops_primary_link);
+
+	/* If debugfs_primary_link already exist, don't remove */
+	if (IS_ERR(ahvif->debugfs_primary_link) &&
+	    PTR_ERR(ahvif->debugfs_primary_link) != -EEXIST) {
+		ath12k_warn(arvif->ar->ab,
+			    "failed to create primary_link file, vif %pM",
+			    vif->addr);
+		debugfs_remove(ahvif->debugfs_primary_link);
+		ahvif->debugfs_primary_link = NULL;
+	}
 }
 
 void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 {
 	arvif->debugfs_twt = NULL;
+	debugfs_remove(arvif->ahvif->debugfs_primary_link);
+	arvif->ahvif->debugfs_primary_link = NULL;
 }

@@ -3762,8 +3762,10 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 	ml->enabled = true;
 	ml->assoc_link = arsta->is_assoc_link;
 
-	/* For now considering the primary umac based on assoc link */
-	ml->primary_umac = arsta->is_assoc_link;
+	if (arsta->link_id == ahsta->primary_link_id)
+		ml->primary_umac = true;
+	else
+		ml->primary_umac = false;
 	ml->peer_id_valid = true;
 	ml->logical_link_idx_valid = true;
 
@@ -3794,8 +3796,11 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 		ml->partner_info[i].vdev_id = arvif->vdev_id;
 		ml->partner_info[i].hw_link_id = arvif->ar->pdev->hw_link_id;
 		ml->partner_info[i].assoc_link = arsta_p->is_assoc_link;
-		ml->partner_info[i].primary_umac = arsta_p->is_assoc_link;
-		ml->partner_info[i].logical_link_idx_valid = true;
+	       if (arsta_p->link_id == ahsta->primary_link_id)
+			   ml->partner_info[i].primary_umac = true;
+		   else
+			   ml->partner_info[i].primary_umac = false;
+		   ml->partner_info[i].logical_link_idx_valid = true;
 		ml->partner_info[i].logical_link_idx = arsta_p->link_idx;
 		ml->num_partner_links++;
 
@@ -8460,6 +8465,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		if (sta->mlo) {
 			arsta->is_assoc_link = true;
 			ahsta->assoc_link_id = link_id;
+			ahsta->primary_link_id = link_id;
 		}
 	}
 
@@ -8780,6 +8786,25 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	/* this op is expected only after initial sta insertion with default link */
 	if (WARN_ON(ahsta->links_map == 0))
 		return -EINVAL;
+
+	if ((test_bit(ahvif->primary_link_id, &sta->valid_links))) {
+		arvif = ahvif->link[ahvif->primary_link_id];
+		if (arvif->ar->ab->hw_params->is_plink_preferable) {
+			ahsta->primary_link_id = ahvif->primary_link_id;
+		} else {
+			ahsta->primary_link_id = ahsta->assoc_link_id;
+			arvif = ahvif->link[ahsta->assoc_link_id];
+			if (!arvif->ar->ab->hw_params->is_plink_preferable) {
+				for_each_set_bit(link_id, &sta->valid_links,
+						 IEEE80211_MLD_MAX_NUM_LINKS) {
+					if (link_id != ahsta->primary_link_id) {
+						ahsta->primary_link_id = link_id;
+						break;
+					}
+				}
+			}
+		}
+	}
 
 	valid_links = new_links;
 	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
@@ -10240,7 +10265,7 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	 */
 	if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP ||
 	    ieee80211_is_data(hdr->frame_control))
-		return ahsta->assoc_link_id;
+		return ahsta->primary_link_id;
 
 	/* 802.11 frame cases */
 	if (link == IEEE80211_LINK_UNSPECIFIED)

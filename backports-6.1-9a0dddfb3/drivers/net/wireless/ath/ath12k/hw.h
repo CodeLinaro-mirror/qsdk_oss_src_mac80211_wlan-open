@@ -272,6 +272,7 @@ struct ath12k_hw_params {
 	bool support_ce_manual_poll;
 	bool ftm_responder;
 	bool credit_flow;
+	bool is_plink_preferable;
 };
 
 struct ath12k_hw_ops {
