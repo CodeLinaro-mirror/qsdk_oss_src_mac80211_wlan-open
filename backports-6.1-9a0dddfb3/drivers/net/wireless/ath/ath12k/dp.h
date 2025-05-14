@@ -573,6 +573,10 @@ struct ath12k_dp {
 	struct rhashtable *rhead_peer_addr;
 	struct rhashtable_params rhash_peer_addr_param;
 	struct ath12k_device_dp_stats device_stats;
+
+	/*Neighbors Peer list for NAC RSSI*/
+	struct list_head neighbor_peers;
+	int num_nrps;
 };
 /* @brief target -> host extended statistics upload
  *

@@ -1233,6 +1233,9 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 
 	synchronize_rcu();
 
+	if (!list_empty(&dp->neighbor_peers))
+		ath12k_debugfs_nrp_cleanup_all(ar);
+
 	ar->num_peers = 0;
 	ar->num_stations = 0;
 
@@ -7498,10 +7501,14 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 				  struct ath12k_link_sta *arsta)
 {
 	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	struct ath12k_wmi_peer_create_arg peer_param = {0};
+	struct ath12k_neighbor_peer *nrp, *tmp;
+	int nvdev_id;
 	int ret;
+	bool del_nrp = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -7524,6 +7531,32 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	peer_param.peer_addr = arsta->addr;
 	peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
 	peer_param.ml_enabled = sta->mlo;
+
+	/*
+	 * When the neighbor peer associates with this AP and successfully
+	 * becomes a station, check and clear the corresponding MAC from
+	 * NRP list and failing to do so would inadvertently cause the
+	 * STA association(peer creation for STA) to fail due to the NRP
+	 * having created a peer already for the same MAC address
+	 */
+	if (!list_empty(&dp->neighbor_peers)) {
+		spin_lock_bh(&ab->base_lock);
+		list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
+			if (ether_addr_equal(nrp->addr, arsta->addr)) {
+				nvdev_id = nrp->vdev_id;
+				list_del(&nrp->list);
+				kfree(nrp);
+				del_nrp = true;
+				break;
+			}
+		}
+		spin_unlock_bh(&ab->base_lock);
+
+		if (del_nrp) {
+			ath12k_peer_delete(ar, nvdev_id, arsta->addr);
+			ath12k_debugfs_nrp_clean(ar, arsta->addr);
+		}
+	}
 
 	ret = ath12k_peer_create(ar, arvif, sta, &peer_param);
 	if (ret) {
@@ -9992,6 +10025,7 @@ int ath12k_mac_rfkill_enable_radio(struct ath12k *ar, bool enable)
 static void ath12k_mac_stop(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hw *ah = ar->ah;
 	struct htt_ppdu_stats_info *ppdu_stats, *tmp;
 	int ret;
@@ -10020,6 +10054,9 @@ static void ath12k_mac_stop(struct ath12k *ar)
 		kfree(ppdu_stats);
 	}
 	spin_unlock_bh(&dp_pdev->ppdu_list_lock);
+
+	if (!list_empty(&dp->neighbor_peers))
+		ath12k_debugfs_nrp_cleanup_all(ar);
 
 	rcu_assign_pointer(ar->ab->pdevs_active[ar->pdev_idx], NULL);
 

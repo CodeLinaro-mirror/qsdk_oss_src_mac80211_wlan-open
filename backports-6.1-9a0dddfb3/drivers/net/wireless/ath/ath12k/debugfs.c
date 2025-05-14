@@ -14,6 +14,8 @@
 #include "debugfs_htt_stats.h"
 #include "qmi.h"
 #include "wmi.h"
+#include "dp_peer.h"
+#include "peer.h"
 #include "coredump.h"
 
 #define SEGMENT_ID	GENMASK(1,0)
@@ -1354,6 +1356,366 @@ static ssize_t ath12k_read_extd_rx_stats(struct file *file,
 static const struct file_operations fops_extd_rx_stats = {
 	.read = ath12k_read_extd_rx_stats,
 	.write = ath12k_write_extd_rx_stats,
+	.open = simple_open,
+};
+
+static int ath12k_reset_nrp_filter(struct ath12k *ar,
+				   bool reset)
+{
+	int i = 0;
+	int ret = 0;
+	u32 ring_id = 0;
+	u32 rx_filter = 0;
+	struct htt_rx_ring_tlv_filter tlv_filter = {0};
+
+	if (!reset) {
+		rx_filter = ar->debug.rx_filter;
+		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_MPDU_START;
+		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_START;
+		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_END;
+		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_MPDU_END;
+
+		tlv_filter.rx_filter = rx_filter;
+		tlv_filter.pkt_filter_flags0 = HTT_RX_MO_MGMT_FILTER_FLAGS0;
+		tlv_filter.pkt_filter_flags1 = HTT_RX_MO_MGMT_FILTER_FLAGS1;
+		tlv_filter.pkt_filter_flags2 = HTT_RX_MO_CTRL_FILTER_FLASG2;
+		tlv_filter.pkt_filter_flags3 = HTT_RX_MON_MO_CTRL_FILTER_FLASG3 |
+			HTT_RX_MON_MO_DATA_FILTER_FLASG3;
+	} else {
+		tlv_filter.rx_filter = ar->debug.rx_filter;
+	}
+	tlv_filter.offset_valid = false;
+
+	for (i = 0; i < ar->ab->hw_params->num_rxdma_per_pdev; i++) {
+		ring_id = ar->dp.rxdma_mon_dst_ring[i].ring_id;
+		ret = ath12k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id, ar->dp.mac_id + i,
+						       HAL_RXDMA_MONITOR_DST,
+						       DP_RXDMA_REFILL_RING_SIZE,
+						       &tlv_filter);
+		if (ret) {
+			ath12k_err(ar->ab,
+				   "failed to setup filter for monitor buf %d\n", ret);
+			return ret;
+		}
+	}
+	return ret;
+}
+
+void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_neighbor_peer *nrp, *tmp;
+
+	spin_lock_bh(&dp->dp_lock);
+	list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
+		if (nrp->is_filter_on)
+			complete(&nrp->filter_done);
+		list_del(&nrp->list);
+		kfree(nrp);
+	}
+
+	dp->num_nrps = 0;
+	spin_unlock_bh(&dp->dp_lock);
+
+	debugfs_remove_recursive(ar->debug.debugfs_nrp);
+}
+
+void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	int i, j;
+	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
+
+	for (i = 0, j = 0; i < (MAC_UNIT_LEN * ETH_ALEN); i += MAC_UNIT_LEN, j++) {
+		if (j == ETH_ALEN - 1) {
+			snprintf(fname + i, sizeof(fname) - i, "%02x", *(addr + j));
+			break;
+		}
+		snprintf(fname + i, sizeof(fname) - i, "%02x:", *(addr + j));
+	}
+
+	spin_lock_bh(&dp->dp_lock);
+	dp->num_nrps--;
+	spin_unlock_bh(&dp->dp_lock);
+
+	debugfs_lookup_and_remove(fname, ar->debug.debugfs_nrp);
+	if (!dp->num_nrps) {
+		debugfs_remove_recursive(ar->debug.debugfs_nrp);
+		ath12k_reset_nrp_filter(ar, true);
+	}
+}
+
+
+static ssize_t ath12k_read_nrp_rssi(struct file *file,
+				    char __user *ubuf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_neighbor_peer *nrp = NULL, *tmp;
+	struct ath12k_wmi_peer_create_arg peer_param = {0};
+	u8 macaddr[ETH_ALEN] = {0};
+	loff_t file_pos = *ppos;
+	struct path *fpath = &file->f_path;
+	char *fname = fpath->dentry->d_iname;
+	char buf[128] = {0};
+	int i = 0;
+	int j = 0;
+	int len = 0;
+	int vdev_id = -1;
+	bool nrp_found = false;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (file_pos > 0)
+		return 0;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			vdev_id = arvif->vdev_id;
+			break;
+		}
+	}
+	if (vdev_id < 0) {
+		ath12k_warn(ab, "unable to get vdev for AP interface\n");
+		return 0;
+	}
+
+	for (i = 0, j = 0;  i < MAC_UNIT_LEN * ETH_ALEN; i += MAC_UNIT_LEN, j++) {
+		if (sscanf(fname + i, "%hhX", &macaddr[j]) <= 0)
+			return -EINVAL;
+	}
+
+	spin_lock_bh(&dp->dp_lock);
+	list_for_each_entry(nrp, &dp->neighbor_peers, list) {
+		if (ether_addr_equal(macaddr, nrp->addr)) {
+			reinit_completion(&nrp->filter_done);
+			nrp->vdev_id = vdev_id;
+			nrp->is_filter_on = false;
+			break;
+		}
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
+	peer_param.vdev_id = nrp->vdev_id;
+	peer_param.peer_addr = nrp->addr;
+	peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
+
+	if (!ath12k_peer_create(ar, arvif, NULL, &peer_param)) {
+		spin_lock_bh(&dp->dp_lock);
+		list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
+			if (ether_addr_equal(nrp->addr, peer_param.peer_addr)) {
+				nrp_found = true;
+				break;
+			}
+		}
+		spin_unlock_bh(&dp->dp_lock);
+
+		if (nrp_found) {
+			spin_lock_bh(&dp->dp_lock);
+			nrp->is_filter_on = true;
+			spin_unlock_bh(&dp->dp_lock);
+
+			wait_for_completion_interruptible_timeout(&nrp->filter_done, 5 * HZ);
+
+			spin_lock_bh(&dp->dp_lock);
+			nrp->is_filter_on = false;
+			spin_unlock_bh(&dp->dp_lock);
+
+			len = scnprintf(buf, sizeof(buf),
+					"Neighbor Peer MAC\t\tRSSI\t\tTime\n");
+			len += scnprintf(buf + len, sizeof(buf) - len, "%pM\t\t%u\t\t%lld\n",
+					 nrp->addr, nrp->rssi, nrp->timestamp);
+		} else {
+			ath12k_peer_delete(ar, vdev_id, macaddr);
+			ath12k_warn(ab, "%pM not found in nrp list\n", macaddr);
+			return -EINVAL;
+		}
+		ath12k_peer_delete(ar, vdev_id, macaddr);
+	} else {
+		ath12k_warn(ab, "unable to create peer for nrp[%pM]\n", macaddr);
+		return -EINVAL;
+	}
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_read_nrp_rssi = {
+	.read = ath12k_read_nrp_rssi,
+	.open = simple_open,
+};
+
+static ssize_t ath12k_write_nrp_mac(struct file *file,
+				    const char __user *ubuf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_link_peer *peer = NULL;
+	struct ath12k_neighbor_peer *nrp = NULL, *tmp = NULL;
+	u8 mac[ETH_ALEN] = {0};
+	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
+	char *str = NULL, *buf = NULL, *ptr = NULL;
+	int i = 0;
+	int j = 0;
+	int ret = count;
+	int action = 0;
+	ssize_t rc = 0;
+	bool del_nrp = false;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	buf = vmalloc(count);
+	if (!buf)
+		return -ENOMEM;
+
+	ptr = buf;
+	rc = simple_write_to_buffer(buf, count, ppos, ubuf, count);
+	if (rc <= 0)
+		goto exit;
+
+	/* To remove '\n' at end of buffer */
+	buf[count - 1] = '\0';
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	str = strsep(&buf, ",");
+	if (!str) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	if (!strcmp(str, "add"))
+		action = NRP_ACTION_ADD;
+	else if (!strcmp(str, "del"))
+		action = NRP_ACTION_DEL;
+	else {
+		ath12k_err(ab, "error: invalid argument\n");
+		goto exit;
+	}
+
+	memset(mac, 0, sizeof(mac));
+	while ((str = strsep(&buf, ":")) != NULL) {
+		if (i >= ETH_ALEN || kstrtou8(str, 16, mac + i)) {
+			ath12k_warn(ab, "error: invalid mac address\n");
+			goto exit;
+		}
+		i++;
+	}
+
+	if (i != ETH_ALEN) {
+		ath12k_warn(ab, "error: invalid mac address\n");
+		goto exit;
+	}
+
+	if (!is_valid_ether_addr(mac)) {
+		ath12k_err(ab, "error: invalid mac address\n");
+		goto exit;
+	}
+
+	for (i = 0, j = 0; i < (MAC_UNIT_LEN * ETH_ALEN); i += MAC_UNIT_LEN, j++) {
+		if (j == ETH_ALEN - 1) {
+			snprintf(fname + i, sizeof(fname) - i, "%02x", mac[j]);
+			break;
+		}
+		snprintf(fname + i, sizeof(fname) - i, "%02x:", mac[j]);
+	}
+
+	switch (action) {
+	case NRP_ACTION_ADD:
+		if (dp->num_nrps == (ATH12K_MAX_NRPS - 1)) {
+			ath12k_warn(ab, "max nrp reached, cannot create more\n");
+			goto exit;
+		}
+
+		list_for_each_entry(nrp, &dp->neighbor_peers, list) {
+			if (ether_addr_equal(nrp->addr, mac)) {
+				ath12k_warn(ab, "cannot add existing neighbor peer\n");
+				goto exit;
+			}
+		}
+
+		spin_lock_bh(&dp->dp_lock);
+		peer = ath12k_dp_link_peer_find_by_addr(dp, mac);
+		if (peer) {
+			ath12k_warn(ab, "cannot add exisitng peer [%pM] as nrp\n", mac);
+			spin_unlock_bh(&dp->dp_lock);
+			goto exit;
+		}
+		spin_unlock_bh(&dp->dp_lock);
+
+		nrp = kzalloc(sizeof(*nrp), GFP_KERNEL);
+		if (!nrp)
+			goto exit;
+
+		init_completion(&nrp->filter_done);
+		ether_addr_copy(nrp->addr, mac);
+
+		spin_lock_bh(&dp->dp_lock);
+		list_add_tail(&nrp->list, &dp->neighbor_peers);
+		spin_unlock_bh(&dp->dp_lock);
+
+		if (!dp->num_nrps) {
+			ar->debug.debugfs_nrp = debugfs_create_dir("nrp_rssi",
+								   ar->debug.debugfs_pdev);
+			ath12k_reset_nrp_filter(ar, false);
+		}
+		spin_lock_bh(&dp->dp_lock);
+		dp->num_nrps++;
+		spin_unlock_bh(&dp->dp_lock);
+
+		debugfs_create_file(fname, 0644,
+				    ar->debug.debugfs_nrp, ar,
+				    &fops_read_nrp_rssi);
+		break;
+	case NRP_ACTION_DEL:
+		if (!dp->num_nrps) {
+			ath12k_err(ab, "error: no nac added\n");
+			goto exit;
+		}
+
+		spin_lock_bh(&dp->dp_lock);
+		list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
+			if (ether_addr_equal(nrp->addr, mac)) {
+				list_del(&nrp->list);
+				kfree(nrp);
+				del_nrp = true;
+				break;
+			}
+		}
+		spin_unlock_bh(&dp->dp_lock);
+
+		if (!del_nrp)
+			ath12k_warn(ab, "cannot delete %pM not added to list\n", mac);
+		else
+			ath12k_debugfs_nrp_clean(ar, mac);
+		break;
+	default:
+		break;
+	}
+exit:
+	 wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	vfree(ptr);
+	return ret;
+}
+
+
+static const struct file_operations fops_write_nrp_mac = {
+	.write = ath12k_write_nrp_mac,
 	.open = simple_open,
 };
 
@@ -3289,6 +3651,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	}
 	debugfs_create_file("scan_args_config", 0600, ar->debug.debugfs_pdev, ar,
 			    &fops_scan_args_config);
+
+	debugfs_create_file("neighbor_peer", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_write_nrp_mac);
 }
 
 static ssize_t ath12k_read_simulate_fw_crash(struct file *file,

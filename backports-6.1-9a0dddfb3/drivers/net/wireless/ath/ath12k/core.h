@@ -710,6 +710,7 @@ struct ath12k_debug {
 	u32 pktlog_mode;
 	u32 pktlog_peer_valid;
 	u8 pktlog_peer_addr[ETH_ALEN];
+	struct dentry *debugfs_nrp;
 };
 
 enum ath12k_fw_recovery_option {

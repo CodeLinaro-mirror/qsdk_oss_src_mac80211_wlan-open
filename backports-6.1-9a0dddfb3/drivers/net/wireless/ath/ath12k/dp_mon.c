@@ -3530,6 +3530,7 @@ int ath12k_dp_mon_srng_process(struct ath12k_pdev_dp *pdev_dp, int *budget,
 	struct ath12k_link_sta *arsta;
 	struct ath12k_dp_link_peer *peer;
 	struct sk_buff_head skb_list;
+	struct ath12k_neighbor_peer *nrp, *tmp;
 	u64 cookie;
 	int num_buffs_reaped = 0, srng_id, buf_id;
 	u32 hal_status, end_offset, info0, end_reason;
@@ -3644,6 +3645,20 @@ move_next:
 		rcu_read_lock();
 		spin_lock_bh(&dp->dp_lock);
 		peer = ath12k_dp_link_peer_find_by_id(dp, ppdu_info->peer_id);
+
+		if (!list_empty(&dp->neighbor_peers)) {
+			if (peer && !peer->sta) {
+				list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
+					if (nrp->is_filter_on && ether_addr_equal(nrp->addr, peer->addr)) {
+						nrp->rssi = ppdu_info->rssi_comb;
+						nrp->timestamp = ktime_to_ms(ktime_get_real());
+						complete(&nrp->filter_done);
+					}
+				}
+				goto next_skb;
+			}
+		}
+
 		if (!peer || !peer->sta) {
 			ath12k_dbg(ab, ATH12K_DBG_DATA,
 				   "failed to find the peer with monitor peer_id %d\n",

@@ -23,6 +23,25 @@ enum ath12k_dbg_aggr_mode {
 
 void ath12k_wmi_crl_path_stats_list_free(struct ath12k *ar, struct list_head *head);
 
+#define ATH12K_MAX_NRPS 7
+#define MAC_UNIT_LEN 3
+
+enum {
+	NRP_ACTION_ADD,
+	NRP_ACTION_DEL,
+};
+
+struct ath12k_neighbor_peer {
+	struct list_head list;
+	struct completion filter_done;
+	bool is_filter_on;
+	int vdev_id;
+	u8 addr[ETH_ALEN];
+	u8 rssi;
+	s64 timestamp;
+	bool rssi_valid;
+};
+
 #ifdef CPTCFG_ATH12K_DEBUGFS
 void ath12k_debugfs_soc_create(struct ath12k_base *ab);
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab);
@@ -47,6 +66,9 @@ static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 {
 	return ar->debug.rx_filter;
 }
+
+void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr);
+void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar);
 
 void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif);
@@ -229,6 +251,15 @@ static inline void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 static inline void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 {
 }
+
+static inline void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
+{
+}
+
+static inline void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
+{
+}
+
 #endif /* CPTCFG_ATH12K_DEBUGFS */
 
 #endif /* _ATH12K_DEBUGFS_H_ */
