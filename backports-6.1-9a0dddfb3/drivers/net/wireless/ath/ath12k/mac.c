@@ -11206,6 +11206,13 @@ static int ath12k_mac_start(struct ath12k *ar)
 		goto err;
 	}
 
+	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_SET_CONG_CTRL_MAX_MSDUS,
+					ATH12K_NUM_POOL_TX_DESC, pdev->pdev_id);
+	if (ret) {
+		ath12k_err(ab, "failed to set congestion control MAX MSDUS: %d\n", ret);
+		goto err;
+	}
+
 	__ath12k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask);
 
 	/* TODO: Do we need to enable ANI? */
