@@ -140,6 +140,8 @@ struct ath12k_dp_peer {
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
 	struct ath12k_dp_rx_tid rx_tid[IEEE80211_NUM_TIDS + 1];
 
+	bool use_4addr;
+
 	/* Info used in MMIC verification of * RX fragments */
 	struct crypto_shash *tfm_mmic;
 	u8 mcast_keyidx;

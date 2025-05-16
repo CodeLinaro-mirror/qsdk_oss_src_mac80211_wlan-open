@@ -249,6 +249,9 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				   sta ? sta->addr : NULL, arg->peer_addr,
 				   link_id, ar->hw_link_id);
 
+	if (vif->type == NL80211_IFTYPE_AP)
+		peer->dp_peer->is_reset_mcbc = true;
+
 	return 0;
 }
 

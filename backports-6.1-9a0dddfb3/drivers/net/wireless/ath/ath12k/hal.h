@@ -678,7 +678,9 @@ struct hal_rx_desc_data {
 	bool is_mcbc;
 	bool is_4addr_sta;
 	bool is_drop_packet;
-	bool is_to_ds;
+	u8 is_to_ds:1,
+	   is_from_ds:1;
+	bool no_8023_flag;
 };
 
 struct ath12k_buffer_address {

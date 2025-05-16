@@ -564,12 +564,13 @@ static void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
 					     struct sk_buff *msdu,
 					     enum hal_encrypt_type enctype,
 					     struct ieee80211_rx_status *status,
-					     bool mesh_ctrl_present)
+					     struct hal_rx_desc_data *rx_desc_data)
 {
 	struct ieee80211_hdr *hdr;
 	struct ethhdr *eth;
 	u8 da[ETH_ALEN];
 	u8 sa[ETH_ALEN];
+	bool mesh_ctrl_present = rx_desc_data->mesh_ctrl_present;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ath12k_dp_rx_rfc1042_hdr rfc = {0xaa, 0xaa, 0x03, {0x00, 0x00, 0x00}};
 
@@ -589,6 +590,7 @@ static void ath12k_wifi7_dp_rx_h_undecap_eth(struct ath12k_pdev_dp *dp_pdev,
 	hdr = (struct ieee80211_hdr *)msdu->data;
 	ether_addr_copy(ieee80211_get_DA(hdr), da);
 	ether_addr_copy(ieee80211_get_SA(hdr), sa);
+	rx_desc_data->no_8023_flag = true;
 }
 
 static void ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
@@ -597,7 +599,8 @@ static void ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 					 enum hal_encrypt_type enctype,
 					 struct ieee80211_rx_status *status,
 					 bool decrypted,
-					 struct hal_rx_desc_data *rx_desc_data)
+					 struct hal_rx_desc_data *rx_desc_data,
+					 struct ath12k_dp_peer *peer)
 {
 	struct ethhdr *ehdr;
 
@@ -618,8 +621,7 @@ static void ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		    enctype == HAL_ENCRYPT_TYPE_TKIP_MIC) {
 			ATH12K_SKB_RXCB(msdu)->is_eapol = true;
 			ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, enctype,
-							 status,
-							 rx_desc_data->mesh_ctrl_present);
+							 status, rx_desc_data);
 			break;
 		}
 
@@ -632,14 +634,20 @@ static void ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 			return;
 		}
 
+		if (rx_desc_data->is_from_ds && rx_desc_data->is_to_ds && peer && !peer->use_4addr) {
+			ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, enctype,
+							status, rx_desc_data);
+			break;
+		}
+
 
 		/* PN for mcast packets will be validated in mac80211;
 		 * remove eth header and add 802.11 header.
 		 */
 		if (ATH12K_SKB_RXCB(msdu)->is_mcbc && decrypted)
 			ath12k_wifi7_dp_rx_h_undecap_eth(dp_pdev, msdu, enctype,
-							 status,
-							 rx_desc_data->mesh_ctrl_present);
+							 status, rx_desc_data);
+
 		break;
 	case DP_RX_DECAP_TYPE_8023:
 		/* TODO: Handle undecap for these formats */
@@ -729,7 +737,7 @@ static void ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_wifi7_dp_rx_h_csum_offload(msdu, rx_desc_data);
 	ath12k_wifi7_dp_rx_h_undecap(dp_pdev, msdu, rx_desc,
-				     enctype, rx_status, is_decrypted, rx_desc_data);
+				     enctype, rx_status, is_decrypted, rx_desc_data, peer);
 
 	if (!is_decrypted || rxcb->is_mcbc)
 		return;
@@ -1285,7 +1293,7 @@ mic_fail:
 
 	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, rxs, rx_desc_data);
 	ath12k_wifi7_dp_rx_h_undecap(dp_pdev, msdu, rx_desc,
-				     HAL_ENCRYPT_TYPE_TKIP_MIC, rxs, true, rx_desc_data);
+				     HAL_ENCRYPT_TYPE_TKIP_MIC, rxs, true, rx_desc_data, NULL);
 	if (rx_desc_data->is_drop_packet)
 		return -EINVAL;
 
@@ -2117,7 +2125,7 @@ static bool ath12k_wifi7_dp_rx_h_tkip_mic_err(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_wifi7_dp_rx_h_undecap(dp_pdev, msdu, desc,
 				     HAL_ENCRYPT_TYPE_TKIP_MIC, status, false,
-				     rx_desc_data);
+				     rx_desc_data, NULL);
 	if (rx_desc_data->is_drop_packet)
 		return true;
 

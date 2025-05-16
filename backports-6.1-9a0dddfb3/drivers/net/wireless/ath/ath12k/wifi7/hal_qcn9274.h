@@ -62,13 +62,6 @@ u32 ath12k_wifi7_hal_rx_h_enctype_qcn9274(struct hal_rx_desc *desc)
 }
 
 static inline
-bool ath12k_wifi7_hal_rx_h_to_ds_qcn9274(struct hal_rx_desc *desc)
-{
-	return le16_get_bits(desc->u.qcn9274_compact.msdu_end.info5,
-			     RX_MSDU_END_INFO5_TO_DS);
-}
-
-static inline
 u8 ath12k_wifi7_hal_rx_h_decap_type_qcn9274(struct hal_rx_desc *desc)
 {
 	return le32_get_bits(desc->u.qcn9274_compact.msdu_end.info11,
@@ -156,6 +149,20 @@ u8 ath12k_wifi7_hal_rx_h_tid_qcn9274(struct hal_rx_desc *desc)
 {
 	return le16_get_bits(desc->u.qcn9274_compact.msdu_end.info5,
 			     RX_MSDU_END_INFO5_TID);
+}
+
+static inline
+u8 ath12k_wifi7_hal_rx_h_from_ds_qcn9274(struct hal_rx_desc *desc)
+{
+	return le16_get_bits(desc->u.qcn9274_compact.msdu_end.info5,
+			     RX_MSDU_END_INFO5_FROM_DS);
+}
+
+static inline
+u8 ath12k_wifi7_hal_rx_h_to_ds_qcn9274(struct hal_rx_desc *desc)
+{
+	return le16_get_bits(desc->u.qcn9274_compact.msdu_end.info5,
+			     RX_MSDU_END_INFO5_TO_DS);
 }
 
 static inline
