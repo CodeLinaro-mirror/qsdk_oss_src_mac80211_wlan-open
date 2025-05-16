@@ -17,7 +17,10 @@ void ath12k_info(struct ath12k_base *ab, const char *fmt, ...)
 
 	va_start(args, fmt);
 	vaf.va = &args;
-	dev_info(ab->dev, "%pV", &vaf);
+	if (likely(ab))
+		dev_info(ab->dev, "%pV", &vaf);
+	else
+		pr_info("ath12k: %pV", &vaf);
 	/* TODO: Trace the log */
 	va_end(args);
 }
@@ -32,7 +35,10 @@ void ath12k_err(struct ath12k_base *ab, const char *fmt, ...)
 
 	va_start(args, fmt);
 	vaf.va = &args;
-	dev_err(ab->dev, "%pV", &vaf);
+	if (likely(ab))
+		dev_err(ab->dev, "%pV", &vaf);
+	else
+		pr_err("ath12k: %pV", &vaf);
 	/* TODO: Trace the log */
 	va_end(args);
 }
