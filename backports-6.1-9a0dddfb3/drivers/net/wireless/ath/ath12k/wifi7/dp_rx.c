@@ -1819,6 +1819,34 @@ exit:
 	return 0;
 }
 
+static int ath12k_wifi7_handle_msdu_buftype(struct ath12k_dp *dp, dma_addr_t paddr,
+					    struct list_head *rx_desc_used_list)
+{
+	struct ath12k_rx_desc_info *desc_info =
+				(struct ath12k_rx_desc_info *)(uintptr_t)paddr;
+	struct sk_buff *msdu;
+
+	if (!desc_info) {
+		ath12k_warn(dp, " rx exception, hw cookie conversion failed");
+		return -EINVAL;
+	}
+
+	if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC) {
+		ath12k_warn(dp, " rx exception, magic check failed");
+		return -EINVAL;
+	}
+
+	msdu = desc_info->skb;
+	desc_info->skb = NULL;
+
+	list_add_tail(&desc_info->list, rx_desc_used_list);
+	dma_unmap_single(dp->dev, ATH12K_SKB_RXCB(msdu)->paddr,
+			 msdu->len + skb_tailroom(msdu), DMA_FROM_DEVICE);
+	dev_kfree_skb_any(msdu);
+
+	return 0;
+}
+
 int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *napi,
 				   int budget)
 {
@@ -1865,18 +1893,24 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 		drop = false;
 		dp->device_stats.err_ring_pkts++;
 
+		hw_link_id = le32_get_bits(reo_desc->info0,
+					   HAL_REO_DEST_RING_INFO0_SRC_LINK_ID);
+		device_id = hw_links[hw_link_id].device_id;
+		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
+
 		ret = ath12k_wifi7_hal_desc_reo_parse_err(dp, reo_desc, &paddr,
 							  &desc_bank);
 		if (ret) {
 			ath12k_warn(ab, "failed to parse error reo desc %d\n",
 				    ret);
+			if (ret == -EOPNOTSUPP) {
+				used_list = &rx_desc_used_list[device_id];
+				if (!ath12k_wifi7_handle_msdu_buftype(partner_dp, paddr,
+								      used_list))
+					tot_n_bufs_reaped++;
+			}
 			continue;
 		}
-
-		hw_link_id = le32_get_bits(reo_desc->info0,
-					   HAL_REO_DEST_RING_INFO0_SRC_LINK_ID);
-		device_id = hw_links[hw_link_id].device_id;
-		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 
 		pdev_id = ath12k_hw_mac_id_to_pdev_id(partner_dp->hw_params,
 						      hw_links[hw_link_id].pdev_idx);

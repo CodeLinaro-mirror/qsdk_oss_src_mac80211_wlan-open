@@ -329,6 +329,7 @@ int ath12k_wifi7_hal_desc_reo_parse_err(struct ath12k_dp *dp,
 	enum hal_reo_dest_ring_push_reason push_reason;
 	enum hal_reo_dest_ring_error_code err_code;
 	u32 cookie, val;
+	int ret = 0;
 
 	push_reason = le32_get_bits(desc->info0,
 				    HAL_REO_DEST_RING_INFO0_PUSH_REASON);
@@ -344,7 +345,9 @@ int ath12k_wifi7_hal_desc_reo_parse_err(struct ath12k_dp *dp,
 	}
 
 	val = le32_get_bits(desc->info0, HAL_REO_DEST_RING_INFO0_BUFFER_TYPE);
-	if (val != HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
+	if (val == HAL_REO_DEST_RING_BUFFER_TYPE_MSDU) {
+		ret = -EOPNOTSUPP;
+	} else if (val != HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
 		ath12k_warn(ab, "expected buffer type link_desc");
 		return -EINVAL;
 	}
