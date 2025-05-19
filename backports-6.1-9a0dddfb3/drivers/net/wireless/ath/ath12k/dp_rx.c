@@ -563,13 +563,18 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_rx_reo_cmd *cmd, *tmp;
 	struct ath12k_dp_rx_reo_cache_flush_elem *cmd_cache, *tmp_cache;
+	struct ath12k_dp_rx_tid *rx_tid;
 
 	spin_lock_bh(&dp->reo_cmd_lock);
 	list_for_each_entry_safe(cmd, tmp, &dp->reo_cmd_list, list) {
 		list_del(&cmd->list);
-		dma_unmap_single(ab->dev, cmd->data.paddr,
-				 cmd->data.size, DMA_BIDIRECTIONAL);
-		kfree(cmd->data.vaddr);
+		rx_tid = &cmd->data;
+		if (rx_tid->vaddr) {
+			dma_unmap_single(ab->dev, rx_tid->paddr,
+					 rx_tid->size, DMA_BIDIRECTIONAL);
+			kfree(rx_tid->vaddr);
+			rx_tid->vaddr = NULL;
+		}
 		kfree(cmd);
 	}
 
@@ -577,9 +582,13 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 				 &dp->reo_cmd_cache_flush_list, list) {
 		list_del(&cmd_cache->list);
 		dp->reo_cmd_cache_flush_count--;
-		dma_unmap_single(ab->dev, cmd_cache->data.paddr,
-				 cmd_cache->data.size, DMA_BIDIRECTIONAL);
-		kfree(cmd_cache->data.vaddr);
+		rx_tid = &cmd_cache->data;
+		if (rx_tid->vaddr) {
+			dma_unmap_single(ab->dev, rx_tid->paddr,
+					 rx_tid->size, DMA_BIDIRECTIONAL);
+			kfree(rx_tid->vaddr);
+			rx_tid->vaddr = NULL;
+		}
 		kfree(cmd_cache);
 	}
 	spin_unlock_bh(&dp->reo_cmd_lock);
@@ -593,11 +602,12 @@ void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 	if (status != HAL_REO_CMD_SUCCESS)
 		ath12k_warn(dp->ab, "failed to flush rx tid hw desc, tid %d status %d\n",
 			    rx_tid->tid, status);
-
-	dma_unmap_single(dp->ab->dev, rx_tid->paddr, rx_tid->size,
+	if (rx_tid->vaddr) {
+		dma_unmap_single(dp->ab->dev, rx_tid->paddr, rx_tid->size,
 			 DMA_BIDIRECTIONAL);
-	kfree(rx_tid->vaddr);
-	rx_tid->vaddr = NULL;
+		kfree(rx_tid->vaddr);
+		rx_tid->vaddr = NULL;
+	}
 }
 EXPORT_SYMBOL(ath12k_dp_reo_cmd_free);
 
@@ -618,9 +628,11 @@ void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 	}
 
 	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
-	if (!elem)
+	if (!elem) {
+		ath12k_warn(ab, "failed to alloc reo_cache_flush_elem, rx tid %d\n",
+								rx_tid->tid);
 		goto free_desc;
-
+	}
 	elem->ts = jiffies;
 	memcpy(&elem->data, rx_tid, sizeof(*rx_tid));
 
@@ -761,7 +773,8 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 							    ba_win_sz, ssn, true);
 		spin_unlock_bh(&dp->dp_lock);
 		if (ret) {
-			ath12k_warn(ab, "failed to update reo for rx tid %d\n", tid);
+			ath12k_warn(ab, "failed to update reo for peer %pM rx tid %d\n",
+									peer_mac, tid);
 			return ret;
 		}
 

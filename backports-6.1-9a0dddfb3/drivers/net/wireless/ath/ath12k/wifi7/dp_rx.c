@@ -246,6 +246,7 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 	if (!rx_tid->active)
 		return;
 
+	rx_tid->active = false;
 	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
 	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
 	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
@@ -267,7 +268,6 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 	else
 		ath12k_wifi7_peer_rx_tid_qref_reset(ar->ab, peer->peer_id, tid);
 
-	rx_tid->active = false;
 }
 
 void  ath12k_wifi7_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,
