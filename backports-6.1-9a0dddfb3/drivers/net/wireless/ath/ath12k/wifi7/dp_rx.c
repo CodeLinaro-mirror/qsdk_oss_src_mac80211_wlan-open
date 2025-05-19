@@ -146,6 +146,11 @@ int ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 	int ret;
 
 	tot_desc_sz = rx_tid->size;
+	if (rx_tid->pending_desc_size)
+		tot_desc_sz = rx_tid->pending_desc_size;
+	else
+		tot_desc_sz = rx_tid->size;
+
 	desc_sz = ath12k_wifi7_hal_reo_qdesc_size(0, HAL_DESC_REO_NON_QOS_TID);
 
 	while (tot_desc_sz > desc_sz) {
@@ -156,9 +161,7 @@ int ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 						   HAL_REO_CMD_FLUSH_CACHE,
 						   &cmd, NULL);
 		if (ret) {
-			ath12k_warn(ab,
-				    "failed to send HAL_REO_CMD_FLUSH_CACHE, tid %d (%d) desc_sz(%ld)\n",
-				    rx_tid->tid, ret, desc_sz);
+			rx_tid->pending_desc_size = tot_desc_sz + desc_sz;
 			/* If this fails with ring full condition, then
 			 * no need to retry below as it is expected to
 			 * fail within short time */
@@ -167,6 +170,7 @@ int ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 		}
 	}
 
+	rx_tid->pending_desc_size = desc_sz;
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
 	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
@@ -174,9 +178,6 @@ int ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
 					   HAL_REO_CMD_FLUSH_CACHE,
 					   &cmd, ath12k_dp_reo_cmd_free);
-	if (ret)
-		ath12k_err(ab, "failed to send HAL_REO_CMD_FLUSH_CACHE cmd, tid %d (%d)\n",
-			   rx_tid->tid, ret);
 
 exit:
 	return ret;

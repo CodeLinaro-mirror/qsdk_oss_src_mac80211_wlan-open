@@ -17,6 +17,7 @@ struct ath12k_dp_rx_tid {
 	u32 *vaddr;
 	dma_addr_t paddr;
 	u32 size;
+	u32 pending_desc_size;
 	u32 ba_win_sz;
 	bool active;
 
