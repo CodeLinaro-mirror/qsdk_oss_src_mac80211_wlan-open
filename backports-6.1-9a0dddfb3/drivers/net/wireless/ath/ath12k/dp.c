@@ -970,11 +970,8 @@ static void ath12k_dp_update_vdev_search(struct ath12k_link_vif *arvif)
 
 	switch (arvif->ahvif->vdev_type) {
 	case WMI_VDEV_TYPE_STA:
-		/* TODO: Verify the search type and flags since ast hash
-		 * is not part of peer mapv3
-		 */
-		dp_link_vif->hal_addr_search_flags = HAL_TX_ADDRY_EN;
-		dp_link_vif->search_type = HAL_TX_ADDR_SEARCH_DEFAULT;
+		dp_link_vif->hal_addr_search_flags = HAL_TX_ADDRX_EN;
+		dp_link_vif->search_type = HAL_TX_ADDR_SEARCH_INDEX;
 		break;
 	case WMI_VDEV_TYPE_AP:
 	case WMI_VDEV_TYPE_IBSS:

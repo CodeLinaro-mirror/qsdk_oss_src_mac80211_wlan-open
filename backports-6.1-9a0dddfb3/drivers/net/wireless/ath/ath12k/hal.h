@@ -38,7 +38,7 @@ struct hal_rx_reo_queue;
 #define HAL_TX_ADDRY_EN		2
 
 #define HAL_TX_ADDR_SEARCH_DEFAULT	0
-#define HAL_TX_ADDR_SEARCH_INDE		1
+#define HAL_TX_ADDR_SEARCH_INDEX	1
 
 #define HAL_SHADOW_NUM_REGS_MAX			40
 

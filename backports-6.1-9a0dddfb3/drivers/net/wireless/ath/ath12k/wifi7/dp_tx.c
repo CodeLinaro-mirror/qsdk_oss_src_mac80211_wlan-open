@@ -1028,8 +1028,10 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 			u32_encode_bits(0, HAL_TX_BANK_CONFIG_LINK_META_SWAP) |
 			u32_encode_bits(0, HAL_TX_BANK_CONFIG_EPD);
 
-	/* only valid if idx_lookup_override is not set in tcl_data_cmd */
-	bank_config |= u32_encode_bits(0, HAL_TX_BANK_CONFIG_INDEX_LOOKUP_EN);
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		bank_config |= u32_encode_bits(1, HAL_TX_BANK_CONFIG_INDEX_LOOKUP_EN);
+	else
+		bank_config |= u32_encode_bits(0, HAL_TX_BANK_CONFIG_INDEX_LOOKUP_EN);
 
 	bank_config |= u32_encode_bits(dp_link_vif->hal_addr_search_flags & HAL_TX_ADDRX_EN,
 					HAL_TX_BANK_CONFIG_ADDRX_EN) |
