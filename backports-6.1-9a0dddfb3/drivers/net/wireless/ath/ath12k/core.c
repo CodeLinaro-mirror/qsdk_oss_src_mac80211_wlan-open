@@ -67,6 +67,11 @@ unsigned int ath12k_ssr_failsafe_mode = true;
 module_param_named(ssr_failsafe_mode, ath12k_ssr_failsafe_mode, uint, 0644);
 MODULE_PARM_DESC(ssr_failsafe_mode, "ssr failsafe mode: 0-disable, 1-enable");
 
+bool ath12k_rx_nwifi_err_dump = false;
+module_param_named(rx_nwifi_err_dump, ath12k_rx_nwifi_err_dump, bool, 0644);
+MODULE_PARM_DESC(rx_nwifi_err_dump, "rx nwifi err dump: 0-disable, 1-enable");
+EXPORT_SYMBOL(ath12k_rx_nwifi_err_dump);
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 

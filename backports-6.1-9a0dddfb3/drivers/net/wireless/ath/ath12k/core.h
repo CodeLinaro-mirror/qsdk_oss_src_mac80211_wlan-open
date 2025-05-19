@@ -87,6 +87,7 @@
 
 extern unsigned int ath12k_frame_mode;
 extern bool ath12k_fse_3_tuple_enabled;
+extern bool ath12k_rx_nwifi_err_dump;
 
 enum ath12k_bdf_search {
 	ATH12K_BDF_SEARCH_DEFAULT,

@@ -897,7 +897,10 @@ static bool ath12k_dp_rx_check_nwifi_hdr_len_valid(struct ath12k_dp *dp,
 		return true;
 
 	dp->device_stats.invalid_rbm++;
-	WARN_ON_ONCE(1);
+
+	if (ath12k_rx_nwifi_err_dump)
+		WARN_ON_ONCE(1);
+
 	return false;
 }
 
