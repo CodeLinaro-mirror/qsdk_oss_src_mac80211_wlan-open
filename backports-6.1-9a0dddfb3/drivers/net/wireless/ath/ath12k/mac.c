@@ -12179,6 +12179,10 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
             chandef->chan->band == NL80211_BAND_6GHZ &&
             (ahvif->vdev_type == WMI_VDEV_TYPE_STA || ahvif->vdev_type == WMI_VDEV_TYPE_AP) &&
             test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map)) {
+
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			ath12k_mac_parse_tx_pwr_env(ar, arvif->ahvif->vif, &arvif->chanctx);
+
                 ath12k_mac_fill_reg_tpc_info(ar, arvif, &arvif->chanctx);
                 ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id,
                                                    &arvif->reg_tpc_info);
