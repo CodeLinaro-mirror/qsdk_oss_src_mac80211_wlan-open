@@ -654,7 +654,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 	u8 num_rules;
 	u16 max_bw;
 	int max_elements = 0;
-	u32 flags, reg_6g_number = 0, max_bw_6g = 0;
+	u32 flags = 0, reg_6g_number = 0, max_bw_6g = 0;
 	char alpha2[3];
 	bool reg_6g_itr_set = false;
 	enum nl80211_regulatory_power_modes pwr_mode;
@@ -703,7 +703,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 			reg_rule = reg_info->reg_rules_2g_ptr + i;
 			max_bw = min_t(u16, reg_rule->max_bw,
 				       reg_info->max_bw_2g);
-			flags = 0;
+			flags = ath12k_update_bw_reg_flags(reg_info->max_bw_2g);
 			pwr_mode = 0;
 			ath12k_copy_reg_rule(&ab->reg_freq_2g, reg_rule);
 		} else if (reg_info->num_5g_reg_rules &&
@@ -718,7 +718,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 			 * BW correction if required and applies flags as
 			 * per other BW rule flags we pass from here
 			 */
-			flags = NL80211_RRF_AUTO_BW | NL80211_RRF_NO_320MHZ;
+			flags = NL80211_RRF_AUTO_BW | ath12k_update_bw_reg_flags(reg_info->max_bw_5g);
 			pwr_mode = 0;
 			if (reg_rule->end_freq <= ATH12K_MAX_5GHZ_FREQ)
 				ath12k_copy_reg_rule(&ab->reg_freq_5g, reg_rule);
