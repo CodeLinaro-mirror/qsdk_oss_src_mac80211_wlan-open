@@ -1,0 +1,35 @@
+/*
+*Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+*SPDX-License-Identifier: BSD-3-Clause-Clear
+*/
+#ifndef ATH_DBG_IF_H
+#define ATH_DBG_IF_H
+#include "core.h"
+#include <linux/module.h>
+#include <linux/kernel.h>
+
+enum athdbg_service {
+	ATHDBG_SRV_CONFIG_QDSS,
+	ATHDBG_SRV_DO_MINIDUMP,
+	ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES,
+};
+
+struct athdbg_to_ath12k_ops {
+	struct reserved_mem *(*get_reserved_mem_by_name)(struct ath12k_base *ab, const char *name);
+	void (*coredump_qdss_dump)(struct ath12k_base *ab,
+			struct ath12k_qmi_event_qdss_trace_save_data *event_data);
+	void (*coredump_build_inline)(struct ath12k_base *ab,
+			struct ath12k_dump_segment *segments, int num_seg);
+	bool (*dev_running_status)(struct ath12k_base *drv_ab);
+	void (*set_dbg_mask)(unsigned int debug_mask);
+};
+
+bool athdbg_if_check_dev_running(struct ath12k_base *drv_ab);
+void athdbg_if_setmask(unsigned int debug_mask);
+void athdbg_if_register(struct ath12k_base *drv_ab);
+int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv);
+
+extern unsigned int ath12k_debug_mask;
+extern const struct file_operations debugfs_minidump_fops;
+extern const struct file_operations debugfs_mask_fops;
+#endif

@@ -45,6 +45,10 @@
 #include "pktlog.h"
 #include "dp_stats.h"
 
+#ifdef CPTCFG_ATHDEBUG
+#include "athdbg_if.h"
+#endif
+
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
 #define ATH12K_TX_MGMT_NUM_PENDING_MAX	512

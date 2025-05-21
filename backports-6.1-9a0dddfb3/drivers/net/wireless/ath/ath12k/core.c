@@ -41,6 +41,10 @@
 #include "erp.h"
 #include "sdwf.h"
 
+#ifdef CPTCFG_ATHDEBUG
+#include "athdbg_if.h"
+#endif
+
 #define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT 0x8000
 #define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT 1024
 
@@ -4811,6 +4815,12 @@ int ath12k_core_init(struct ath12k_base *ab)
 	 */
 	ab->dp->ppe.ppeds_soc_idx = -1;
 #endif
+
+#ifdef CPTCFG_ATHDEBUG
+	if (is_ready)
+		athdbg_if_register(ab);
+#endif
+
 	return 0;
 
 err:

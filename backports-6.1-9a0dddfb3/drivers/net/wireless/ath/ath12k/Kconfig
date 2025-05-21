@@ -132,3 +132,13 @@ config ATH12K_PPE_DS_SUPPORT
 		Enable ath12k PPE-DS support
 
 		Say Y to enable PPE DS Support. If unsure, say N.
+
+config ATHDEBUG
+	bool "ath12k debugging module"
+	depends on ATH12K
+	help
+	  Enable athdebug module support, this module will help to
+	  enable various debugging feature such as debug mask, minidump,
+	  QDSS.
+
+	  If unsure, say Y to make it easier to debug problems.

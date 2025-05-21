@@ -38,10 +38,12 @@ ath12k-y += core.o \
 	    pktlog.o \
 	    ce_stats.o
 
+ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o
 
 obj-$(CPTCFG_ATH12K) += wifi7/
+obj-$(CPTCFG_ATHDEBUG) += ath_debug/
 
 ath12k-$(CPTCFG_ATH12K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o
 ath12k-$(CONFIG_ACPI) += acpi.o
