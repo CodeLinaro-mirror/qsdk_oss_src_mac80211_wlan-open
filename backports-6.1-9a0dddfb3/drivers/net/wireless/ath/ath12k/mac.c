@@ -4551,9 +4551,9 @@ static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
+	ahvif->links_map &= ~BIT(arvif->link_id);
 	rcu_assign_pointer(ahvif->link[arvif->link_id], NULL);
 	synchronize_rcu();
-	ahvif->links_map &= ~BIT(arvif->link_id);
 
 	if (arvif != &ahvif->deflink)
 		kfree(arvif);
