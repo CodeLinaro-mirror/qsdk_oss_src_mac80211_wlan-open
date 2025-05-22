@@ -23,6 +23,7 @@ ath12k-y += core.o \
 	    fw.o \
 	    p2p.o \
 	    fse.o \
+	    vendor.o \
 	    accel_cfg.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
