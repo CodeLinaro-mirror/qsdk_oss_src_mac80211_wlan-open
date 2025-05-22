@@ -916,13 +916,23 @@ void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id)
 	struct hal_wbm_release_ring *desc;
 	u8 pdev_id;
 	u64 desc_va;
+	int valid_entries;
 
 	spin_lock_bh(&status_ring->lock);
 
 	ath12k_hal_srng_access_begin(ab, status_ring);
 
+	valid_entries = ath12k_hal_srng_dst_num_free(ab, status_ring, false);
+	if (!valid_entries) {
+		ath12k_hal_srng_access_end(ab, status_ring);
+		spin_unlock_bh(&status_ring->lock);
+		return;
+	}
+
+	ath12k_hal_srng_dst_invalidate_entry(ab, status_ring, valid_entries);
+
 	while (ATH12K_TX_COMPL_NEXT(tx_ring->tx_status_head) != tx_ring->tx_status_tail) {
-		desc = ath12k_hal_srng_dst_get_next_entry(ab, status_ring);
+		desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, status_ring);
 		if (!desc)
 			break;
 

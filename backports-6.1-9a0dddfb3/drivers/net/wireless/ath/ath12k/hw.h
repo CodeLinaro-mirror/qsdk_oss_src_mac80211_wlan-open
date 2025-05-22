@@ -282,6 +282,7 @@ struct ath12k_hw_params {
 	bool supports_ap_ps;
 	bool support_ce_manual_poll;
 	bool ftm_responder;
+	bool alloc_cacheable_memory;
 	bool credit_flow;
 	bool is_plink_preferable;
 };

@@ -1103,6 +1103,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct sk_buff *msdu;
 	bool done = false;
 	u64 desc_va;
+	int valid_entries;
 
 	__skb_queue_head_init(&msdu_list);
 
@@ -1116,7 +1117,15 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 try_again:
 	ath12k_hal_srng_access_begin(ab, srng);
 
-	while ((desc = ath12k_hal_srng_dst_get_next_entry(ab, srng))) {
+	valid_entries = ath12k_hal_srng_dst_num_free(ab, srng, false);
+	if (unlikely(!valid_entries)) {
+		ath12k_hal_srng_access_end(ab, srng);
+		spin_unlock_bh(&srng->lock);
+		return -EINVAL;
+	}
+	ath12k_hal_srng_dst_invalidate_entry(ab, srng, valid_entries);
+
+	while ((desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, srng))) {
 		struct rx_mpdu_desc *mpdu_info;
 		struct rx_msdu_desc *msdu_info;
 		enum hal_reo_dest_ring_push_reason push_reason;

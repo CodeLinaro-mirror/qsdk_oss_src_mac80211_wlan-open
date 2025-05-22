@@ -726,6 +726,7 @@ struct wbm_idle_scatter_list {
 #define HAL_SRNG_FLAGS_MSI_INTR			0x00020000
 #define HAL_SRNG_FLAGS_HIGH_THRESH_INTR_EN	0x00080000
 #define HAL_SRNG_FLAGS_LMAC_RING		0x80000000
+#define HAL_SRNG_FLAGS_CACHED                   0x20000000
 
 /* Common SRNG ring structure for source and destination rings */
 struct hal_srng {
@@ -1296,9 +1297,13 @@ void ath12k_hal_srng_get_params(struct ath12k_base *ab, struct hal_srng *srng,
 				struct hal_srng_params *params);
 void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng);
+void *ath12k_hal_srng_dst_get_next_cached_entry(struct ath12k_base *ab,
+						struct hal_srng *srng);
 void *ath12k_hal_srng_dst_peek(struct ath12k_base *ab, struct hal_srng *srng);
 int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 				 bool sync_hw_ptr);
+void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_base *ab,
+					  struct hal_srng *srng, int entries);
 void *ath12k_hal_srng_src_get_next_reaped(struct ath12k_base *ab,
 					  struct hal_srng *srng);
 void *ath12k_hal_srng_src_reap_next(struct ath12k_base *ab,

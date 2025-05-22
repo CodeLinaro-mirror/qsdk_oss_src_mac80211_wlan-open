@@ -322,9 +322,36 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
         if (srng->u.dst_ring.tp == srng->ring_size)
                 srng->u.dst_ring.tp = 0;
 
+	if (srng->flags & HAL_SRNG_FLAGS_CACHED)
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
+					(srng->entry_size * sizeof(u32)),
+					DMA_FROM_DEVICE);
+
 	return desc;
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_entry);
+
+void *ath12k_hal_srng_dst_get_next_cached_entry(struct ath12k_base *ab,
+						struct hal_srng *srng)
+{
+	void *desc;
+
+	lockdep_assert_held(&srng->lock);
+
+	if (srng->u.dst_ring.tp == srng->u.dst_ring.cached_hp)
+		return NULL;
+
+	desc = srng->ring_base_vaddr + srng->u.dst_ring.tp;
+
+	srng->u.dst_ring.tp = (srng->u.dst_ring.tp + srng->entry_size);
+
+        /* wrap around to start of ring*/
+        if (srng->u.dst_ring.tp == srng->ring_size)
+                srng->u.dst_ring.tp = 0;
+
+	return desc;
+}
+EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_cached_entry);
 
 int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 				 bool sync_hw_ptr)
@@ -348,6 +375,37 @@ int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 		return (srng->ring_size - tp + hp) / srng->entry_size;
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_num_free);
+
+void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_base *ab,
+					  struct hal_srng *srng, int entries)
+{
+	u32 *desc, tp, hp;
+
+	lockdep_assert_held(&srng->lock);
+
+	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED) || !entries)
+	        return;
+
+	tp = srng->u.dst_ring.tp;
+	hp = srng->u.dst_ring.cached_hp;
+
+	desc = srng->ring_base_vaddr + tp;
+	if (hp > tp) {
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
+					entries * srng->entry_size * sizeof(u32),
+					DMA_FROM_DEVICE);
+	} else {
+		entries = srng->ring_size - tp;
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
+					entries * sizeof(u32),
+					DMA_FROM_DEVICE);
+		entries = hp;
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(srng->ring_base_vaddr),
+					entries * sizeof(u32),
+					DMA_FROM_DEVICE);
+	}
+}
+EXPORT_SYMBOL(ath12k_hal_srng_dst_invalidate_entry);
 
 /* Returns number of available entries in src ring */
 int ath12k_hal_srng_src_num_free(struct ath12k_base *ab, struct hal_srng *srng,
@@ -547,6 +605,12 @@ int ath12k_hal_srng_setup(struct ath12k_base *ab, enum hal_ring_type type,
 
 	memset(srng->ring_base_vaddr, 0,
 	       (srng->entry_size * srng->num_entries) << 2);
+
+	if (srng->flags & HAL_SRNG_FLAGS_CACHED) {
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(srng->ring_base_vaddr),
+					(srng->entry_size * srng->num_entries * sizeof(u32)),
+					DMA_FROM_DEVICE);
+	}
 
 	if (srng->ring_dir == HAL_SRNG_DIR_SRC) {
 		srng->u.src_ring.hp = 0;
