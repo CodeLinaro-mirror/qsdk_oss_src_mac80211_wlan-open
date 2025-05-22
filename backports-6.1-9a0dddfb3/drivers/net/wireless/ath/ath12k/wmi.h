@@ -422,6 +422,7 @@ enum wmi_tlv_cmd_id {
 	WMI_PDEV_SET_BIOS_GEO_TABLE_CMDID = 0x4045,
 	WMI_PDEV_MEC_AGING_TIMER_CONFIG_CMDID = 0x4049,
 	WMI_PDEV_SET_BIOS_INTERFACE_CMDID = 0x404A,
+	WMI_PDEV_WSI_STATS_INFO_CMDID = 0x4051,
 	WMI_VDEV_CREATE_CMDID = WMI_TLV_CMD(WMI_GRP_VDEV),
 	WMI_VDEV_DELETE_CMDID,
 	WMI_VDEV_START_REQUEST_CMDID,
@@ -2136,6 +2137,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_LINK_REMOVAL_TBTT_UPDATE,
 	WMI_TAG_MLO_LINK_REMOVAL_EVENT_FIXED_PARAM,
 	WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM = 0x464,
+	WMI_TAG_PDEV_WSI_STATS_INFO_CMD = 0x4b1,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
 	WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM = 0x4be,
 	WMI_TAG_PDEV_UTF_EVENT_FIXED_PARAM,
@@ -2380,6 +2382,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT = 365,
 	WMI_TLV_SERVICE_N_LINK_MLO_SUPPORT = 381,
 	WMI_TLV_SERVICE_BRIDGE_VDEV_SUPPORT = 384,
+	WMI_TLV_SERVICE_PDEV_WSI_STATS_INFO_SUPPORT = 388,
 	WMI_TLV_SERVICE_RADAR_FLAGS_SUPPORT = 390,
 	WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI = 394,
 	WMI_SERVICE_WDS_NULL_FRAME_SUPPORT = 421,
@@ -7620,6 +7623,19 @@ struct wmi_tpc_stats_arg {
 	struct wmi_tpc_ctl_pwr_table_arg ctl_array;
 };
 
+struct wmi_pdev_wsi_stats_info_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 wsi_ingress_load_info;
+	__le32 wsi_egress_load_info;
+} __packed;
+
+struct ath12k_wmi_wsi_stats_info_param {
+	u32 wsi_ingress_load_info;
+	u32 wsi_egress_load_info;
+};
+
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
@@ -7842,6 +7858,8 @@ void ath12k_wmi_fw_stats_dump(struct ath12k *ar,
 			      struct ath12k_fw_stats *fw_stats, u32 stats_id,
 			      char *buf);
 int ath12k_wmi_pdev_m3_dump_enable(struct ath12k *ar, u32 enable);
+int ath12k_wmi_send_wsi_stats_info(struct ath12k *ar,
+				   struct ath12k_wmi_wsi_stats_info_param *param);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_wmi_config_peer_ppeds_routing(struct ath12k *ar,
 					 const u8 *peer_addr, u8 vdev_id,

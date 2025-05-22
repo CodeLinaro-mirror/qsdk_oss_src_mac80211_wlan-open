@@ -14047,3 +14047,36 @@ send_cmd:
 	kfree(arvif->peer_ch_width_switch_data);
 	arvif->peer_ch_width_switch_data = NULL;
 }
+
+int ath12k_wmi_send_wsi_stats_info(struct ath12k *ar,
+				   struct ath12k_wmi_wsi_stats_info_param *param)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_pdev_wsi_stats_info_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_wsi_stats_info_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_WSI_STATS_INFO_CMD,
+						 (sizeof(*cmd)));
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->wsi_ingress_load_info = cpu_to_le32(param->wsi_ingress_load_info);
+	cmd->wsi_egress_load_info = cpu_to_le32(param->wsi_egress_load_info);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI pdev wsi stats info pdev_id %d ingress_load_info %d egress_load_info %d\n",
+		   cmd->pdev_id, cmd->wsi_ingress_load_info, cmd->wsi_egress_load_info);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_WSI_STATS_INFO_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_PDEV_WSI_STATS_INFO_CMDID cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
