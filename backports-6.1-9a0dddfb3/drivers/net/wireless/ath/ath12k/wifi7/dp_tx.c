@@ -81,7 +81,6 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_base *ab = dp->ab;
 	struct hal_tx_info ti = {0};
 	struct ath12k_tx_desc_info *tx_desc = NULL;
-	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct hal_tcl_data_cmd *hal_tcl_desc;
 	struct hal_tx_msdu_ext_desc *msg;
@@ -109,11 +108,11 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return -ESHUTDOWN;
 
-	if (!(info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP) &&
+	if (!(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
 	    !ieee80211_is_data(hdr->frame_control))
 		return -EOPNOTSUPP;
 
-	if (info->flags & IEEE80211_TX_CTL_HW_80211_ENCAP)
+	if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)
 		eth = (struct ethhdr *)skb->data;
 
 	if (eth && is_multicast_ether_addr(eth->h_dest) && arsta) {
