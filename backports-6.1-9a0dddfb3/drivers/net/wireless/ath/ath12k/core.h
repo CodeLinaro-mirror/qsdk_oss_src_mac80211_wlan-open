@@ -215,6 +215,8 @@ enum ath12k_smbios_cc_type {
 enum ath12k_msi_supported_hw {
         ATH12K_MSI_CONFIG_PCI,
         ATH12K_MSI_CONFIG_IPCI,
+	/* To support 16 MSI interrupts for PCI devices */
+	ATH12K_MSI_CONFIG_PCI_16,
 };
 
 struct ath12k_smbios_bdf {
@@ -245,6 +247,8 @@ struct ath12k_smbios_bdf {
 #define HECAP_PPET16_PPET8_MAX_SIZE     25
 
 #define HE_PPET16_PPET8_SIZE            8
+
+#define ATH12K_MSI_16	16
 
 /* 802.11ax PPE (PPDU packet Extension) threshold */
 struct he_ppe_threshold {

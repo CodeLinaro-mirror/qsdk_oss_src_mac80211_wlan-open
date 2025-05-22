@@ -136,6 +136,79 @@ static const struct ath12k_hw_ops wcn7850_ops = {
 #define ATH12K_TX_MON_RING_MASK_0 0x1
 #define ATH12K_TX_MON_RING_MASK_1 0x2
 
+/* To support 8 MSI DP grouping */
+static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
+        .tx  = {
+                ATH12K_TX_RING_MASK_0,
+                ATH12K_TX_RING_MASK_1,
+                ATH12K_TX_RING_MASK_2 | ATH12K_TX_RING_MASK_3,
+                0, 0, 0, 0, 0
+        },
+        .rx_mon_dest = {
+                0, 0,
+		ATH12K_RX_MON_RING_MASK_0,
+		ATH12K_RX_MON_RING_MASK_1,
+		ATH12K_RX_MON_RING_MASK_2,
+		0, 0, 0
+        },
+        .rx = {
+                0, 0, 0,
+                ATH12K_RX_RING_MASK_0,
+                ATH12K_RX_RING_MASK_1,
+                ATH12K_RX_RING_MASK_2 | ATH12K_RX_RING_MASK_3,
+		0, 0
+        },
+	.rx_err = {
+                0, 0,
+                ATH12K_RX_ERR_RING_MASK_0,
+                0, 0, 0, 0
+        },
+        .rx_wbm_rel = {
+                0, 0,
+                ATH12K_RX_WBM_REL_RING_MASK_0,
+                0, 0, 0, 0
+        },
+        .reo_status = {
+                0, 0,
+                ATH12K_REO_STATUS_RING_MASK_0,
+                0, 0, 0, 0
+        },
+        .host2rxdma = {
+                0, 0,
+                ATH12K_HOST2RXDMA_RING_MASK_0,
+                0, 0, 0, 0
+        },
+        .tx_mon_dest = {
+                ATH12K_TX_MON_RING_MASK_0,
+                ATH12K_TX_MON_RING_MASK_1,
+                0, 0, 0, 0, 0, 0
+        },
+/*This will be rebased only when ppeds patches are rebased
+ */
+#if 0
+        .ppe2tcl = {
+                0, 0, 0, 0, 0, 0,
+                ATH12K_PPE2TCL_RING_MASK_0,
+		0
+        },
+        .reo2ppe = {
+                0, 0, 0, 0, 0,
+                ATH12K_REO2PPE_RING_MASK_0,
+		0, 0
+        },
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+        .wbm2sw6_ppeds_tx_cmpln = {
+		ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0,
+		0, 0, 0, 0, 0, 0, 0
+        },
+#endif
+        .umac_dp_reset = {
+                0, 0, 0, 0, 0, 0, 0,
+		ATH12K_UMAC_RESET_INTR_MASK_0
+        },
+#endif
+};
+
 static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
@@ -1162,6 +1235,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 {
 	const struct ath12k_hw_params *hw_params = NULL;
+	struct ath12k_hw_params *hw_params_msi8 = NULL;
 	int i;
 
 	for (i = 0; i < ARRAY_SIZE(ath12k_wifi7_hw_params); i++) {
@@ -1177,7 +1251,20 @@ int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 		return -EINVAL;
 	}
 
-	ab->hw_params = hw_params;
+	if (ab->hif.bus == ATH12K_BUS_PCI &&
+	    ab->msi.config->total_vectors == ATH12K_MSI_16) {
+		hw_params_msi8 = kzalloc(sizeof(struct ath12k_hw_params), GFP_KERNEL);
+		if (!hw_params_msi8)
+			return -ENOMEM;
+		memcpy(hw_params_msi8, hw_params, sizeof(struct ath12k_hw_params));
+		/* Include it when PPEDS patch are rebased
+		hw_params_msi8->ext_irq_grp_num_max = 6;
+		 */
+		hw_params_msi8->ring_mask = &ath12k_wifi7_hw_ring_mask_qcn9274_msi8;
+		ab->hw_params = hw_params_msi8;
+	} else {
+		ab->hw_params = hw_params;
+	}
 	ab->ath12k_ops = &ath12k_ops_wifi7;
 
 	ath12k_info(ab, "WiFi7 Hardware name: %s\n", ab->hw_params->name);

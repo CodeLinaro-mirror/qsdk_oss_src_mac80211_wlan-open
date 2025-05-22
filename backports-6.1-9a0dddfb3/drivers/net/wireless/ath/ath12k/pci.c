@@ -318,6 +318,10 @@ reset_msi_config:
 
 static void ath12k_pci_msi_free(struct ath12k_pci *ab_pci)
 {
+	struct ath12k_base *ab = ab_pci->ab;
+
+	if (ab->msi.config->total_vectors == ATH12K_MSI_16)
+		kfree(ab->hw_params);
 	pci_free_irq_vectors(ab_pci->pdev);
 }
 
@@ -1101,6 +1105,7 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	ab_pci->ab = ab;
 	ab_pci->pdev = pdev;
 	ab->hif.ops = &ath12k_pci_hif_ops;
+	ab->hif.bus = ATH12K_BUS_PCI;
 	ab->fw_mode = ATH12K_FIRMWARE_MODE_NORMAL;
 	ab->msi.config = &ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_PCI];
 	pci_set_drvdata(pdev, ab);

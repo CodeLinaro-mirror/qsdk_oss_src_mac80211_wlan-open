@@ -76,6 +76,7 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
 	struct ath12k_base *ab = pci_get_drvdata(pdev);
 	u32 soc_hw_version_major, soc_hw_version_minor;
 	struct ath12k_pci *ab_pci;
+	u32 msi;
 	int ret;
 
 	ab = pci_get_drvdata(pdev);
@@ -88,7 +89,13 @@ static int ath12k_wifi7_pci_probe(struct pci_dev *pdev,
 
 	switch (pci_dev->device) {
 	case QCN9274_DEVICE_ID:
-		ab_pci->msi_config = &ath12k_wifi7_msi_config[0];
+		if(!of_property_read_u32(ab->dev->of_node, "qcom,msi", &msi) &&
+		   msi == ATH12K_MSI_16) {
+			dev_err(&pdev->dev, "ath12k supported MSI %d\n", msi);
+			ab->msi.config = &ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_PCI_16];
+		} else {
+			ab->msi.config = &ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_PCI];
+		}
 		ab->static_window_map = true;
 		ab_pci->pci_ops = &ath12k_wifi7_pci_ops_qcn9274;
 		ath12k_wifi7_pci_read_hw_version(ab, &soc_hw_version_major,

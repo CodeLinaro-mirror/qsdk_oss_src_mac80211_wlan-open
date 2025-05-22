@@ -45,6 +45,16 @@ static const struct ath12k_msi_config ath12k_wifi7_msi_config[] = {
 			{ .name = "DP", .num_vectors = 8, .base_vector = 6 },
 		},
 	},
+	{
+		/* MSI spec expects number of interrupts to be a power of 2 */
+		.total_vectors = 16,
+		.total_users = 3,
+		.users = (struct ath12k_msi_user[]) {
+			{ .name = "MHI", .num_vectors = 3, .base_vector = 0 },
+			{ .name = "CE", .num_vectors = 5, .base_vector = 3 },
+			{ .name = "DP", .num_vectors = 8, .base_vector = 8 },
+		},
+	},
 };
 
 int ath12k_pcic_start(struct ath12k_base *ab);
