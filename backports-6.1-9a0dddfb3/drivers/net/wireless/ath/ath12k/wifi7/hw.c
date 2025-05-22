@@ -1085,6 +1085,15 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	if (!vif->valid_links || !is_mcast || is_dvlan || is_eth ||
 	    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags)) {
+		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
+		if (ret) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "failed due to limit check pdev idx %d\n",
+				   ar->pdev_idx);
+			ieee80211_free_txskb(hw, skb);
+			return;
+		}
+
 		ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta);
 		if (unlikely(ret)) {
 			ath12k_warn(ar->ab, "failed to transmit frame %d\n", ret);
@@ -1105,6 +1114,15 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			tmp_dp_pdev = ath12k_dp_to_dp_pdev(tmp_ar->ab->dp, tmp_ar->pdev_idx);
 			if (!tmp_dp_pdev)
 				continue;
+
+			ret = ath12k_mac_tx_check_max_limit(tmp_dp_pdev, skb);
+			if (ret) {
+				ath12k_dbg(tmp_ar->ab, ATH12K_DBG_MAC,
+					   "failed mcast tx due to limit check pdev idx %d\n",
+					    tmp_ar->pdev_idx);
+				continue;
+			}
+
 			msdu_copied = skb_copy(skb, GFP_ATOMIC);
 			if (!msdu_copied) {
 				ath12k_err(ar->ab,

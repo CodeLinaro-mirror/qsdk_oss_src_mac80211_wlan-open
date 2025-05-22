@@ -70,6 +70,19 @@ static int ath12k_wifi7_dp_prepare_htt_metadata(struct sk_buff *skb)
 	return 0;
 }
 
+bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *skb)
+{
+	if (atomic_read(&dp_pdev->num_tx_pending) > ATH12K_DP_PDEV_TX_LIMIT) {
+		/* Allow EAPOL */
+		if (!(skb->protocol == cpu_to_be16(ETH_P_PAE))) {
+			dp_pdev->dp->device_stats.tx_err.threshold_limit++;
+			return true;
+		}
+	}
+
+	return false;
+}
+
 /* TODO: Remoe the export once this file is built with wifi7 ko */
 int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		       struct ath12k_link_vif *arvif,

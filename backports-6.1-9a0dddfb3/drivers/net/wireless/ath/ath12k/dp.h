@@ -218,6 +218,9 @@ struct ath12k_pdev_dp {
 #define DP_RX_BUFFER_SIZE		2048
 #endif
 
+#define ATH12K_NUM_EAPOL_RESERVE       1024
+#define ATH12K_DP_PDEV_TX_LIMIT        (ATH12K_NUM_POOL_TX_DESC - ATH12K_NUM_EAPOL_RESERVE)
+
 #define DP_WBM_RELEASE_RING_SIZE	64
 #define DP_TCL_DATA_RING_SIZE		512
 #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
@@ -465,6 +468,9 @@ struct ath12k_dp_ring_bp_stats {
 struct ath12k_device_dp_tx_err_stats {
 	/* TCL Ring Descriptor unavailable */
 	u32 desc_na[DP_TCL_NUM_RING_MAX];
+
+	u32 threshold_limit;
+
 	/* Other failures during dp_tx due to mem allocation failure
 	 * idr unavailable etc.
 	 */

@@ -14,4 +14,5 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		       bool is_mcast, struct ath12k_link_sta *arsta);
 u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 					    struct ath12k_link_vif *arvif);
+bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *skb);
 #endif
