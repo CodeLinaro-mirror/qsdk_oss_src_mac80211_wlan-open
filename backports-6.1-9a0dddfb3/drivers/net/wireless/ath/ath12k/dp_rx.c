@@ -357,12 +357,18 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				 PTR_ALIGN(skb->data, DP_RX_BUFFER_ALIGN_SIZE) -
 				 skb->data);
 		}
-
+#ifndef CONFIG_IO_COHERENCY
 		paddr = dma_map_single(dp->dev, skb->data,
 				       skb->len + skb_tailroom(skb),
 				       DMA_FROM_DEVICE);
 		if (dma_mapping_error(dp->dev, paddr))
 			goto fail_free_skb;
+#else
+		paddr = virt_to_phys(skb->data);
+		if(unlikely(!paddr)) {
+			goto fail_free_skb;
+		}
+#endif
 
 		rx_desc = list_first_entry_or_null(used_list,
 						   struct ath12k_rx_desc_info,
@@ -389,8 +395,8 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	goto out;
 
 fail_dma_unmap:
-	dma_unmap_single(dp->dev, paddr, skb->len + skb_tailroom(skb),
-			 DMA_FROM_DEVICE);
+	ath12k_core_dma_unmap_single(dp->dev, paddr, skb->len + skb_tailroom(skb),
+				     DMA_FROM_DEVICE);
 fail_free_skb:
 	dev_kfree_skb_any(skb);
 out:
@@ -417,8 +423,8 @@ static int ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_base *ab,
 		/* TODO: Understand where internal driver does this dma_unmap
 		 * of rxdma_buffer.
 		 */
-		dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
-				 skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
+		ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
+					     skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
 		dev_kfree_skb_any(skb);
 	}
 
@@ -570,8 +576,8 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 		list_del(&cmd->list);
 		rx_tid = &cmd->data;
 		if (rx_tid->vaddr) {
-			dma_unmap_single(ab->dev, rx_tid->paddr,
-					 rx_tid->size, DMA_BIDIRECTIONAL);
+			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
+						     rx_tid->size, DMA_BIDIRECTIONAL);
 			kfree(rx_tid->vaddr);
 			rx_tid->vaddr = NULL;
 		}
@@ -584,8 +590,8 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 		dp->reo_cmd_cache_flush_count--;
 		rx_tid = &cmd_cache->data;
 		if (rx_tid->vaddr) {
-			dma_unmap_single(ab->dev, rx_tid->paddr,
-					 rx_tid->size, DMA_BIDIRECTIONAL);
+			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
+						     rx_tid->size, DMA_BIDIRECTIONAL);
 			kfree(rx_tid->vaddr);
 			rx_tid->vaddr = NULL;
 		}
@@ -603,8 +609,8 @@ void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 		ath12k_warn(dp->ab, "failed to flush rx tid hw desc, tid %d status %d\n",
 			    rx_tid->tid, status);
 	if (rx_tid->vaddr) {
-		dma_unmap_single(dp->ab->dev, rx_tid->paddr, rx_tid->size,
-			 DMA_BIDIRECTIONAL);
+		ath12k_core_dma_unmap_single(dp->ab->dev, rx_tid->paddr, rx_tid->size,
+					     DMA_BIDIRECTIONAL);
 		kfree(rx_tid->vaddr);
 		rx_tid->vaddr = NULL;
 	}
@@ -677,8 +683,8 @@ void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 
 	return;
 free_desc:
-	dma_unmap_single(ab->dev, rx_tid->paddr, rx_tid->size,
-			 DMA_BIDIRECTIONAL);
+	ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr, rx_tid->size,
+				     DMA_BIDIRECTIONAL);
 	kfree(rx_tid->vaddr);
 	rx_tid->vaddr = NULL;
 }

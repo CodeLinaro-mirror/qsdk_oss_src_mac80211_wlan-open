@@ -58,13 +58,18 @@ static int ath12k_dbring_bufs_replenish(struct ath12k *ar,
 	ptr_unaligned = buff->payload;
 	ptr_aligned = PTR_ALIGN(ptr_unaligned, ring->buf_align);
 	ath12k_dbring_fill_magic_value(ar, ptr_aligned, ring->buf_sz);
+#ifndef CONFIG_IO_COHERENCY
 	paddr = dma_map_single(ab->dev, ptr_aligned, ring->buf_sz,
 			       DMA_FROM_DEVICE);
 
 	ret = dma_mapping_error(ab->dev, paddr);
 	if (ret)
 		goto err;
-
+#else
+	paddr = virt_to_phys(ptr_aligned);
+	if (!paddr)
+		goto err;
+#endif
 	spin_lock_bh(&ring->idr_lock);
 	buf_id = idr_alloc(&ring->bufs_idr, buff, 0, ring->bufs_max, gfp);
 	spin_unlock_bh(&ring->idr_lock);
@@ -80,8 +85,9 @@ static int ath12k_dbring_bufs_replenish(struct ath12k *ar,
 	}
 
 	buff->paddr = paddr;
-
+#ifndef CONFIG_IO_COHERENCY
 	dma_sync_single_for_device(ab->dev, paddr, ring->buf_sz, DMA_FROM_DEVICE);
+#endif
 	cookie = u32_encode_bits(ar->pdev_idx, DP_RXDMA_BUF_COOKIE_PDEV_ID) |
 		 u32_encode_bits(buf_id, DP_RXDMA_BUF_COOKIE_BUF_ID);
 
@@ -96,8 +102,8 @@ err_idr_remove:
 	idr_remove(&ring->bufs_idr, buf_id);
 	spin_unlock_bh(&ring->idr_lock);
 err_dma_unmap:
-	dma_unmap_single(ab->dev, paddr, ring->buf_sz,
-			 DMA_FROM_DEVICE);
+	ath12k_core_dma_unmap_single(ab->dev, paddr, ring->buf_sz,
+				     DMA_FROM_DEVICE);
 err:
 	ath12k_hal_srng_access_end(ab, srng);
 	return ret;
@@ -343,8 +349,8 @@ int ath12k_dbring_buffer_release_event(struct ath12k_base *ab,
 		idr_remove(&ring->bufs_idr, buf_id);
 		spin_unlock_bh(&ring->idr_lock);
 
-		dma_unmap_single(ab->dev, buff->paddr, ring->buf_sz,
-				 DMA_FROM_DEVICE);
+		ath12k_core_dma_unmap_single(ab->dev, buff->paddr, ring->buf_sz,
+					     DMA_FROM_DEVICE);
 
 		if (ring->handler) {
 			vaddr_unalign = buff->payload;
@@ -380,8 +386,8 @@ void ath12k_dbring_buf_cleanup(struct ath12k *ar, struct ath12k_dbring *ring)
 	spin_lock_bh(&ring->idr_lock);
 	idr_for_each_entry(&ring->bufs_idr, buff, buf_id) {
 		idr_remove(&ring->bufs_idr, buf_id);
-		dma_unmap_single(ar->ab->dev, buff->paddr,
-				 ring->buf_sz, DMA_FROM_DEVICE);
+		ath12k_core_dma_unmap_single(ar->ab->dev, buff->paddr,
+					     ring->buf_sz, DMA_FROM_DEVICE);
 		kfree(buff);
 	}
 

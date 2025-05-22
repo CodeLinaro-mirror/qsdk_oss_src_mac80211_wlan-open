@@ -77,7 +77,7 @@ static int ath12k_ce_rx_post_pipe(struct ath12k_ce_pipe *pipe)
 		}
 
 		WARN_ON_ONCE(!IS_ALIGNED((unsigned long)skb->data, 4));
-
+#ifndef CONFIG_IO_COHERENCY
 		paddr = dma_map_single(ab->dev, skb->data,
 				       skb->len + skb_tailroom(skb),
 				       DMA_FROM_DEVICE);
@@ -87,15 +87,24 @@ static int ath12k_ce_rx_post_pipe(struct ath12k_ce_pipe *pipe)
 			ret = -EIO;
 			goto exit;
 		}
+#else
+		paddr = virt_to_phys(skb->data);
+		if (unlikely(!paddr)) {
+			ath12k_warn(ab, "failed to dma map ce rx buf\n");
+			dev_kfree_skb_any(skb);
+			ret = -EIO;
+			goto exit;
+		}
+#endif
 
 		ATH12K_SKB_RXCB(skb)->paddr = paddr;
 
 		ret = ath12k_ce_rx_buf_enqueue_pipe(pipe, skb, paddr);
 		if (ret) {
 			ath12k_warn(ab, "failed to enqueue rx buf: %d\n", ret);
-			dma_unmap_single(ab->dev, paddr,
-					 skb->len + skb_tailroom(skb),
-					 DMA_FROM_DEVICE);
+			ath12k_core_dma_unmap_single(ab->dev, paddr,
+						     skb->len + skb_tailroom(skb),
+						     DMA_FROM_DEVICE);
 			dev_kfree_skb_any(skb);
 			goto exit;
 		}
@@ -167,8 +176,8 @@ static void ath12k_ce_recv_process_cb(struct ath12k_ce_pipe *pipe)
 	__skb_queue_head_init(&list);
 	while (ath12k_ce_completed_recv_next(pipe, &skb, &nbytes) == 0) {
 		max_nbytes = skb->len + skb_tailroom(skb);
-		dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
-				 max_nbytes, DMA_FROM_DEVICE);
+		ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
+					     max_nbytes, DMA_FROM_DEVICE);
 
 		if (unlikely(max_nbytes < nbytes)) {
 			ath12k_warn(ab, "rxed more than expected (nbytes %d, max %d)",
@@ -247,8 +256,8 @@ static void ath12k_ce_tx_process_cb(struct ath12k_ce_pipe *pipe)
 		if (!skb)
 			continue;
 
-		dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr, skb->len,
-				 DMA_TO_DEVICE);
+		ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr, skb->len,
+					     DMA_TO_DEVICE);
 		if ((!pipe->send_cb) || ab->hw_params->credit_flow) {
 			dev_kfree_skb_any(skb);
 			continue;
@@ -368,9 +377,9 @@ ath12k_ce_alloc_ring(struct ath12k_base *ab, int nentries, int desc_sz)
 	 * coherent DMA are unsupported
 	 */
 	ce_ring->base_addr_owner_space_unaligned =
-		dma_alloc_coherent(ab->dev,
-				   nentries * desc_sz + CE_DESC_RING_ALIGN,
-				   &base_addr, GFP_KERNEL);
+		ath12k_core_dma_alloc_coherent(ab->dev,
+					       nentries * desc_sz + CE_DESC_RING_ALIGN,
+					       &base_addr, GFP_KERNEL);
 	if (!ce_ring->base_addr_owner_space_unaligned) {
 		kfree(ce_ring);
 		return ERR_PTR(-ENOMEM);
@@ -578,8 +587,8 @@ static void ath12k_ce_rx_pipe_cleanup(struct ath12k_ce_pipe *pipe)
 			continue;
 
 		ring->skb[i] = NULL;
-		dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
-				 skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
+		ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
+					     skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
 		dev_kfree_skb_any(skb);
 	}
 }
@@ -743,11 +752,11 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 		if (pipe->src_ring) {
 			desc_sz = ath12k_hal_ce_get_desc_size(hal,
 							      HAL_CE_DESC_SRC);
-			dma_free_coherent(ab->dev,
-					  pipe->src_ring->nentries * desc_sz +
-					  CE_DESC_RING_ALIGN,
-					  pipe->src_ring->base_addr_owner_space,
-					  pipe->src_ring->base_addr_ce_space);
+			ath12k_core_dma_free_coherent(ab->dev,
+						      pipe->src_ring->nentries * desc_sz +
+						      CE_DESC_RING_ALIGN,
+						      pipe->src_ring->base_addr_owner_space,
+						      pipe->src_ring->base_addr_ce_space);
 			kfree(pipe->src_ring);
 			pipe->src_ring = NULL;
 		}
@@ -755,11 +764,11 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 		if (pipe->dest_ring) {
 			desc_sz = ath12k_hal_ce_get_desc_size(hal,
 							      HAL_CE_DESC_DST);
-			dma_free_coherent(ab->dev,
-					  pipe->dest_ring->nentries * desc_sz +
-					  CE_DESC_RING_ALIGN,
-					  pipe->dest_ring->base_addr_owner_space,
-					  pipe->dest_ring->base_addr_ce_space);
+			ath12k_core_dma_free_coherent(ab->dev,
+						      pipe->dest_ring->nentries * desc_sz +
+						      CE_DESC_RING_ALIGN,
+						      pipe->dest_ring->base_addr_owner_space,
+						      pipe->dest_ring->base_addr_ce_space);
 			kfree(pipe->dest_ring);
 			pipe->dest_ring = NULL;
 		}
@@ -768,11 +777,11 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 			desc_sz =
 			  ath12k_hal_ce_get_desc_size(hal,
 						      HAL_CE_DESC_DST_STATUS);
-			dma_free_coherent(ab->dev,
-					  pipe->status_ring->nentries * desc_sz +
-					  CE_DESC_RING_ALIGN,
-					  pipe->status_ring->base_addr_owner_space,
-					  pipe->status_ring->base_addr_ce_space);
+			ath12k_core_dma_free_coherent(ab->dev,
+						      pipe->status_ring->nentries * desc_sz +
+						      CE_DESC_RING_ALIGN,
+						      pipe->status_ring->base_addr_owner_space,
+						      pipe->status_ring->base_addr_ce_space);
 			kfree(pipe->status_ring);
 			pipe->status_ring = NULL;
 		}

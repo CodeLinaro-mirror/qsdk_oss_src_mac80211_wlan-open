@@ -7232,7 +7232,7 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	spin_unlock_bh(&ar->txmgmt_idr_lock);
 
 	skb_cb = ATH12K_SKB_CB(msdu);
-	dma_unmap_single(ar->ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(ar->ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 
 	hdr = (struct ieee80211_hdr *)msdu->data;
 

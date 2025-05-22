@@ -1701,4 +1701,35 @@ static inline bool ath12k_hw_group_recovery_in_progress(const struct ath12k_hw_g
 	return test_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
 }
 
+static inline void *ath12k_core_dma_alloc_coherent(struct device *dev, size_t size,
+						   dma_addr_t *paddr, gfp_t flag)
+{
+        void *vaddr = NULL;
+#ifdef CONFIG_IO_COHERENCY
+        vaddr = kzalloc(size, flag);
+        *paddr = (dma_addr_t)virt_to_phys(vaddr);
+#else
+        vaddr = dma_alloc_coherent(dev, size, paddr, flag);
+#endif
+        return vaddr;
+}
+
+static inline void ath12k_core_dma_free_coherent(struct device *dev, size_t size,
+						 void *vaddr, dma_addr_t paddr)
+{
+#ifdef CONFIG_IO_COHERENCY
+	kfree(vaddr);
+#else
+	dma_free_coherent(dev, size, vaddr, paddr);
+#endif
+}
+
+static inline void ath12k_core_dma_unmap_single(struct device *dev, dma_addr_t dma_handle,
+						size_t size, enum dma_data_direction direction)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dma_unmap_single(dev, dma_handle, size, direction);
+#endif
+}
+
 #endif /* _CORE_H_ */

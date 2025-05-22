@@ -10563,8 +10563,8 @@ static void ath12k_mac_tx_mgmt_free(struct ath12k *ar, int buf_id)
 	if (!msdu)
 		return;
 
-	dma_unmap_single(ar->ab->dev, ATH12K_SKB_CB(msdu)->paddr, msdu->len,
-			 DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(ar->ab->dev, ATH12K_SKB_CB(msdu)->paddr, msdu->len,
+				     DMA_TO_DEVICE);
 
 	info = IEEE80211_SKB_CB(msdu);
 	memset(&info->status, 0, sizeof(info->status));
@@ -10629,14 +10629,21 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 			skb_put(skb, mic_len);
 		}
 	}
-
+#ifndef CONFIG_IO_COHERENCY
 	paddr = dma_map_single(ab->dev, skb->data, skb->len, DMA_TO_DEVICE);
 	if (dma_mapping_error(ab->dev, paddr)) {
 		ath12k_warn(ab, "failed to DMA map mgmt Tx buffer\n");
 		ret = -EIO;
 		goto err_free_idr;
 	}
-
+#else
+	paddr = virt_to_phys(skb->data);
+	if (!paddr) {
+		ath12k_warn(ab, "failed to DMA map mgmt Tx buffer\n");
+		ret = -EIO;
+		goto err_free_idr;
+	}
+#endif
 	skb_cb->paddr = paddr;
 
 	link_agnostic = ATH12K_SKB_CB(skb)->flags & ATH12K_SKB_MGMT_LINK_AGNOSTIC;
@@ -10651,8 +10658,8 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	return 0;
 
 err_unmap_buf:
-	dma_unmap_single(ab->dev, skb_cb->paddr,
-			 skb->len, DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(ab->dev, skb_cb->paddr,
+				     skb->len, DMA_TO_DEVICE);
 err_free_idr:
 	spin_lock_bh(&ar->txmgmt_idr_lock);
 	idr_remove(&ar->txmgmt_idr, buf_id);

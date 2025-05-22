@@ -141,8 +141,8 @@ static int ath12k_hal_alloc_cont_rdp(struct ath12k_hal *hal)
 	size_t size;
 
 	size = sizeof(u32) * HAL_SRNG_RING_ID_MAX;
-	hal->rdp.vaddr = dma_alloc_coherent(hal->dev, size, &hal->rdp.paddr,
-					    GFP_KERNEL);
+	hal->rdp.vaddr = ath12k_core_dma_alloc_coherent(hal->dev, size, &hal->rdp.paddr,
+							GFP_KERNEL);
 	if (!hal->rdp.vaddr)
 		return -ENOMEM;
 
@@ -157,8 +157,8 @@ static void ath12k_hal_free_cont_rdp(struct ath12k_hal *hal)
 		return;
 
 	size = sizeof(u32) * HAL_SRNG_RING_ID_MAX;
-	dma_free_coherent(hal->dev, size,
-			  hal->rdp.vaddr, hal->rdp.paddr);
+	ath12k_core_dma_free_coherent(hal->dev, size,
+				      hal->rdp.vaddr, hal->rdp.paddr);
 	hal->rdp.vaddr = NULL;
 }
 
@@ -167,8 +167,8 @@ static int ath12k_hal_alloc_cont_wrp(struct ath12k_hal *hal)
 	size_t size;
 
 	size = sizeof(u32) * (HAL_SRNG_NUM_PMAC_RINGS + HAL_SRNG_NUM_DMAC_RINGS);
-	hal->wrp.vaddr = dma_alloc_coherent(hal->dev, size, &hal->wrp.paddr,
-					    GFP_KERNEL);
+	hal->wrp.vaddr = ath12k_core_dma_alloc_coherent(hal->dev, size, &hal->wrp.paddr,
+							GFP_KERNEL);
 	if (!hal->wrp.vaddr)
 		return -ENOMEM;
 
@@ -183,8 +183,8 @@ static void ath12k_hal_free_cont_wrp(struct ath12k_hal *hal)
 		return;
 
 	size = sizeof(u32) * (HAL_SRNG_NUM_PMAC_RINGS + HAL_SRNG_NUM_DMAC_RINGS);
-	dma_free_coherent(hal->dev, size,
-			  hal->wrp.vaddr, hal->wrp.paddr);
+	ath12k_core_dma_free_coherent(hal->dev, size,
+				      hal->wrp.vaddr, hal->wrp.paddr);
 	hal->wrp.vaddr = NULL;
 }
 
@@ -322,11 +322,12 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
         if (srng->u.dst_ring.tp == srng->ring_size)
                 srng->u.dst_ring.tp = 0;
 
+#ifndef CONFIG_IO_COHERENCY
 	if (srng->flags & HAL_SRNG_FLAGS_CACHED)
 		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
 					(srng->entry_size * sizeof(u32)),
 					DMA_FROM_DEVICE);
-
+#endif
 	return desc;
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_entry);

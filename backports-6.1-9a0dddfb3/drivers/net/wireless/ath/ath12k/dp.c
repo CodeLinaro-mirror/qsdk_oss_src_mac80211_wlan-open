@@ -137,8 +137,8 @@ void ath12k_dp_srng_cleanup(struct ath12k_base *ab, struct dp_srng *ring)
 	if (ring->cached)
 		kfree(ring->vaddr_unaligned);
 	else
-		dma_free_coherent(ab->dev, ring->size, ring->vaddr_unaligned,
-				  ring->paddr_unaligned);
+		ath12k_core_dma_free_coherent(ab->dev, ring->size, ring->vaddr_unaligned,
+					      ring->paddr_unaligned);
 
 	ring->vaddr_unaligned = NULL;
 }
@@ -278,6 +278,7 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 		num_entries = max_entries;
 
 	ring->size = (num_entries * entry_sz) + HAL_RING_BASE_ALIGN - 1;
+#ifndef CONFIG_IO_COHERENCY
 	if (ab->hw_params->alloc_cacheable_memory) {
 		/* Allocate the reo dst and tx completion rings from cacheable memory */
 		switch (type) {
@@ -289,6 +290,9 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			cached = false;
 		}
 	}
+#else
+	cached = true;
+#endif
 
 	if (cached) {
 		ring->vaddr_unaligned = kzalloc(ring->size, GFP_KERNEL);
@@ -616,8 +620,8 @@ static void ath12k_dp_scatter_idle_link_desc_cleanup(struct ath12k_base *ab)
 		if (!slist[i].vaddr)
 			continue;
 
-		dma_free_coherent(ab->dev, HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
-				  slist[i].vaddr, slist[i].paddr);
+		ath12k_core_dma_free_coherent(ab->dev, HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
+					      slist[i].vaddr, slist[i].paddr);
 		slist[i].vaddr = NULL;
 	}
 }
@@ -651,9 +655,9 @@ static int ath12k_dp_scatter_idle_link_desc_setup(struct ath12k_base *ab,
 		return -EINVAL;
 
 	for (i = 0; i < num_scatter_buf; i++) {
-		slist[i].vaddr = dma_alloc_coherent(ab->dev,
-						    HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
-						    &slist[i].paddr, GFP_KERNEL);
+		slist[i].vaddr = ath12k_core_dma_alloc_coherent(ab->dev,
+								HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
+								&slist[i].paddr, GFP_KERNEL);
 		if (!slist[i].vaddr) {
 			ret = -ENOMEM;
 			goto err;
@@ -709,10 +713,10 @@ ath12k_dp_link_desc_bank_free(struct ath12k_base *ab,
 
 	for (i = 0; i < DP_LINK_DESC_BANKS_MAX; i++) {
 		if (link_desc_banks[i].vaddr_unaligned) {
-			dma_free_coherent(ab->dev,
-					  link_desc_banks[i].size,
-					  link_desc_banks[i].vaddr_unaligned,
-					  link_desc_banks[i].paddr_unaligned);
+			ath12k_core_dma_free_coherent(ab->dev,
+						      link_desc_banks[i].size,
+						      link_desc_banks[i].vaddr_unaligned,
+						      link_desc_banks[i].paddr_unaligned);
 			link_desc_banks[i].vaddr_unaligned = NULL;
 		}
 	}
@@ -733,9 +737,9 @@ static int ath12k_dp_link_desc_bank_alloc(struct ath12k_base *ab,
 			desc_sz = last_bank_sz;
 
 		desc_bank[i].vaddr_unaligned =
-					dma_alloc_coherent(ab->dev, desc_sz,
-							   &desc_bank[i].paddr_unaligned,
-							   GFP_KERNEL);
+				ath12k_core_dma_alloc_coherent(ab->dev, desc_sz,
+							       &desc_bank[i].paddr_unaligned,
+							       GFP_KERNEL);
 		if (!desc_bank[i].vaddr_unaligned) {
 			ret = -ENOMEM;
 			goto err;
@@ -1079,8 +1083,8 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 			if (!skb)
 				continue;
 
-			dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
-					 skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
+			ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
+						     skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
 			dev_kfree_skb_any(skb);
 		}
 	}
@@ -1108,10 +1112,10 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 				continue;
 
 			if (tx_desc_info->skb_ext_desc) {
-				dma_unmap_single(ab->dev,
-						 ATH12K_SKB_CB(skb)->paddr_ext_desc,
-						 tx_desc_info->skb_ext_desc->len,
-						 DMA_TO_DEVICE);
+				ath12k_core_dma_unmap_single(ab->dev,
+							     ATH12K_SKB_CB(skb)->paddr_ext_desc,
+							     tx_desc_info->skb_ext_desc->len,
+							     DMA_TO_DEVICE);
 				dev_kfree_skb_any(tx_desc_info->skb_ext_desc);
 			}
 
@@ -1126,8 +1130,8 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 					wake_up(&ar->dp.tx_empty_waitq);
 			}
 
-			dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr,
-					 skb->len, DMA_TO_DEVICE);
+			ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr,
+						     skb->len, DMA_TO_DEVICE);
 			dev_kfree_skb_any(skb);
 		}
 
@@ -1154,8 +1158,8 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 		if (!dp->spt_info[i].vaddr)
 			continue;
 
-		dma_free_coherent(ab->dev, ATH12K_PAGE_SIZE,
-				  dp->spt_info[i].vaddr, dp->spt_info[i].paddr);
+		ath12k_core_dma_free_coherent(ab->dev, ATH12K_PAGE_SIZE,
+					      dp->spt_info[i].vaddr, dp->spt_info[i].paddr);
 		dp->spt_info[i].vaddr = NULL;
 	}
 
@@ -1172,17 +1176,17 @@ static void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab)
 
 	if (dp->reoq_lut.vaddr_unaligned) {
 		ath12k_hal_write_reoq_lut_addr(ab, 0);
-		dma_free_coherent(ab->dev, dp->reoq_lut.size,
-				  dp->reoq_lut.vaddr_unaligned,
-				  dp->reoq_lut.paddr_unaligned);
+		ath12k_core_dma_free_coherent(ab->dev, dp->reoq_lut.size,
+					      dp->reoq_lut.vaddr_unaligned,
+					      dp->reoq_lut.paddr_unaligned);
 		dp->reoq_lut.vaddr_unaligned = NULL;
 	}
 
 	if (dp->ml_reoq_lut.vaddr_unaligned) {
 		ath12k_hal_write_ml_reoq_lut_addr(ab, 0);
-		dma_free_coherent(ab->dev, dp->ml_reoq_lut.size,
-				  dp->ml_reoq_lut.vaddr_unaligned,
-				  dp->ml_reoq_lut.paddr_unaligned);
+		ath12k_core_dma_free_coherent(ab->dev, dp->ml_reoq_lut.size,
+					      dp->ml_reoq_lut.vaddr_unaligned,
+					      dp->ml_reoq_lut.paddr_unaligned);
 		dp->ml_reoq_lut.vaddr_unaligned = NULL;
 	}
 }
@@ -1424,10 +1428,10 @@ static int ath12k_dp_cc_init(struct ath12k_base *ab)
 	dp->rx_ppt_base = ab->device_id * ATH12K_NUM_RX_SPT_PAGES;
 
 	for (i = 0; i < dp->num_spt_pages; i++) {
-		dp->spt_info[i].vaddr = dma_alloc_coherent(ab->dev,
-							   ATH12K_PAGE_SIZE,
-							   &dp->spt_info[i].paddr,
-							   GFP_KERNEL);
+		dp->spt_info[i].vaddr = ath12k_core_dma_alloc_coherent(ab->dev,
+								       ATH12K_PAGE_SIZE,
+								       &dp->spt_info[i].paddr,
+								       GFP_KERNEL);
 
 		if (!dp->spt_info[i].vaddr) {
 			ret = -ENOMEM;
@@ -1469,9 +1473,9 @@ static int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 				    struct ath12k_reo_q_addr_lut *lut)
 {
 	lut->size =  DP_REOQ_LUT_SIZE + HAL_REO_QLUT_ADDR_ALIGN - 1;
-	lut->vaddr_unaligned = dma_alloc_coherent(ab->dev, lut->size,
-						  &lut->paddr_unaligned,
-						  GFP_KERNEL | __GFP_ZERO);
+	lut->vaddr_unaligned = ath12k_core_dma_alloc_coherent(ab->dev, lut->size,
+							      &lut->paddr_unaligned,
+							      GFP_KERNEL | __GFP_ZERO);
 	if (!lut->vaddr_unaligned)
 		return -ENOMEM;
 
@@ -1498,9 +1502,9 @@ static int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab)
 	ret = ath12k_dp_alloc_reoq_lut(ab, &dp->ml_reoq_lut);
 	if (ret) {
 		ath12k_warn(ab, "failed to allocate memory for ML reoq table");
-		dma_free_coherent(ab->dev, dp->reoq_lut.size,
-				  dp->reoq_lut.vaddr_unaligned,
-				  dp->reoq_lut.paddr_unaligned);
+		ath12k_core_dma_free_coherent(ab->dev, dp->reoq_lut.size,
+					      dp->reoq_lut.vaddr_unaligned,
+					      dp->reoq_lut.paddr_unaligned);
 		dp->reoq_lut.vaddr_unaligned = NULL;
 		return ret;
 	}

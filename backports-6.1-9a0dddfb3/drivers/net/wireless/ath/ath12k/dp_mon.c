@@ -2309,9 +2309,9 @@ ath12k_dp_mon_parse_status_buf(struct ath12k *ar,
 		return 0;
 	}
 
-	dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(msdu)->paddr,
-			 msdu->len + skb_tailroom(msdu),
-			 DMA_FROM_DEVICE);
+	ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(msdu)->paddr,
+				     msdu->len + skb_tailroom(msdu),
+				     DMA_FROM_DEVICE);
 
 	offset = packet_info->dma_length + ATH12K_MON_RX_DOT11_OFFSET;
 	if (ath12k_dp_pkt_set_pktlen(msdu, offset)) {
@@ -2490,14 +2490,18 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_base *ab,
 				 PTR_ALIGN(skb->data, DP_RX_BUFFER_ALIGN_SIZE) -
 				 skb->data);
 		}
-
+#ifndef CONFIG_IO_COHERENCY
 		paddr = dma_map_single(ab->dev, skb->data,
 				       skb->len + skb_tailroom(skb),
 				       DMA_FROM_DEVICE);
 
 		if (unlikely(dma_mapping_error(ab->dev, paddr)))
 			goto fail_free_skb;
-
+#else
+		paddr = virt_to_phys(skb->data);
+		if(unlikely(!paddr))
+			goto fail_free_skb;
+#endif
 		spin_lock_bh(&buf_ring->idr_lock);
 		buf_id = idr_alloc(&buf_ring->bufs_idr, skb, 0,
 				   buf_ring->bufs_max * 3, GFP_ATOMIC);
@@ -2530,8 +2534,8 @@ fail_idr_remove:
 	idr_remove(&buf_ring->bufs_idr, buf_id);
 	spin_unlock_bh(&buf_ring->idr_lock);
 fail_dma_unmap:
-	dma_unmap_single(ab->dev, paddr, skb->len + skb_tailroom(skb),
-			 DMA_FROM_DEVICE);
+	ath12k_core_dma_unmap_single(ab->dev, paddr, skb->len + skb_tailroom(skb),
+				     DMA_FROM_DEVICE);
 fail_free_skb:
 	dev_kfree_skb_any(skb);
 fail_alloc_skb:
@@ -3593,9 +3597,9 @@ int ath12k_dp_mon_srng_process(struct ath12k_pdev_dp *pdev_dp, int *budget,
 		}
 
 		rxcb = ATH12K_SKB_RXCB(skb);
-		dma_unmap_single(ab->dev, rxcb->paddr,
-				 skb->len + skb_tailroom(skb),
-				 DMA_FROM_DEVICE);
+		ath12k_core_dma_unmap_single(ab->dev, rxcb->paddr,
+					     skb->len + skb_tailroom(skb),
+					     DMA_FROM_DEVICE);
 
 		end_reason = u32_get_bits(info0, HAL_MON_DEST_INFO0_END_REASON);
 

@@ -292,6 +292,7 @@ tcl_ring_sel:
 		hdr = (void *)skb->data;
 	}
 map:
+#ifndef CONFIG_IO_COHERENCY
 	ti.paddr = dma_map_single(dp->dev, skb->data, skb->len, DMA_TO_DEVICE);
 	if (dma_mapping_error(dp->dev, ti.paddr)) {
 		atomic_inc(&dp->device_stats.tx_err.misc_fail);
@@ -299,6 +300,15 @@ map:
 		ret = -ENOMEM;
 		goto fail_remove_tx_buf;
 	}
+#else
+	ti.paddr = virt_to_phys(skb->data);
+	if (!ti.paddr) {
+		atomic_inc(&dp->device_stats.tx_err.misc_fail);
+		ath12k_warn(ab, "failed to DMA map data Tx buffer\n");
+		ret = -ENOMEM;
+		goto fail_remove_tx_buf;
+	}
+#endif
 
 	if ((!test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
 	     !(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
@@ -345,13 +355,17 @@ skip_htt_metadata:
 				goto fail_free_ext_skb;
 			}
 		}
-
+#ifndef CONFIG_IO_COHERENCY
 		ti.paddr = dma_map_single(dp->dev, skb_ext_desc->data,
 					  skb_ext_desc->len, DMA_TO_DEVICE);
 		ret = dma_mapping_error(dp->dev, ti.paddr);
 		if (ret)
 			goto fail_free_ext_skb;
-
+#else
+		ti.paddr = virt_to_phys(skb_ext_desc->data);
+		if (!ti.paddr)
+			goto fail_free_ext_skb;
+#endif
 		ti.data_len = skb_ext_desc->len;
 		ti.type = HAL_TCL_DESC_TYPE_EXT_DESC;
 
@@ -416,15 +430,15 @@ skip_htt_metadata:
 
 fail_unmap_dma_ext:
 	if (skb_cb->paddr_ext_desc)
-		dma_unmap_single(dp->dev, skb_cb->paddr_ext_desc,
-				 skb_ext_desc->len,
-				 DMA_TO_DEVICE);
+		ath12k_core_dma_unmap_single(dp->dev, skb_cb->paddr_ext_desc,
+					     skb_ext_desc->len,
+					     DMA_TO_DEVICE);
 fail_free_ext_skb:
 	if (skb_ext_desc)
 		kfree_skb(skb_ext_desc);
 
 fail_unmap_dma:
-	dma_unmap_single(dp->dev, ti.paddr, ti.data_len, DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(dp->dev, ti.paddr, ti.data_len, DMA_TO_DEVICE);
 
 fail_remove_tx_buf:
 	ath12k_dp_tx_release_txbuf(dp, tx_desc, pool_id);
@@ -452,10 +466,10 @@ static void ath12k_wifi7_dp_tx_free_txbuf(struct ath12k_dp *dp,
 	skb_cb = ATH12K_SKB_CB(msdu);
 	dp_pdev = dp->dp_pdevs[pdev_id];
 
-	dma_unmap_single(dp->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(dp->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 	if (skb_cb->paddr_ext_desc) {
-		dma_unmap_single(dp->dev, skb_cb->paddr_ext_desc,
-				 skb_ext_desc->len, DMA_TO_DEVICE);
+		ath12k_core_dma_unmap_single(dp->dev, skb_cb->paddr_ext_desc,
+					     skb_ext_desc->len, DMA_TO_DEVICE);
 		dev_kfree_skb_any(skb_ext_desc);
 	}
 
@@ -495,10 +509,10 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_base *ab,
 	if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 		wake_up(&ar->dp.tx_empty_waitq);
 
-	dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 	if (skb_cb->paddr_ext_desc) {
-		dma_unmap_single(ab->dev, skb_cb->paddr_ext_desc,
-				 skb_ext_desc->len, DMA_TO_DEVICE);
+		ath12k_core_dma_unmap_single(ab->dev, skb_cb->paddr_ext_desc,
+					     skb_ext_desc->len, DMA_TO_DEVICE);
 		dev_kfree_skb_any(skb_ext_desc);
 	}
 
@@ -754,10 +768,10 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 			dp_pdev->wmm_stats.total_wmm_tx_drop[dp_pdev->wmm_stats.tx_type]++;
 	}
 
-	dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 	if (skb_cb->paddr_ext_desc) {
-		dma_unmap_single(ab->dev, skb_cb->paddr_ext_desc,
-				 skb_ext_desc->len, DMA_TO_DEVICE);
+		ath12k_core_dma_unmap_single(ab->dev, skb_cb->paddr_ext_desc,
+					     skb_ext_desc->len, DMA_TO_DEVICE);
 		dev_kfree_skb_any(skb_ext_desc);
 	}
 
@@ -916,12 +930,14 @@ void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id)
 	struct hal_wbm_release_ring *desc;
 	u8 pdev_id;
 	u64 desc_va;
+#ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
-
+#endif
 	spin_lock_bh(&status_ring->lock);
 
 	ath12k_hal_srng_access_begin(ab, status_ring);
 
+#ifndef CONFIG_IO_COHERENCY
 	valid_entries = ath12k_hal_srng_dst_num_free(ab, status_ring, false);
 	if (!valid_entries) {
 		ath12k_hal_srng_access_end(ab, status_ring);
@@ -930,7 +946,7 @@ void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id)
 	}
 
 	ath12k_hal_srng_dst_invalidate_entry(ab, status_ring, valid_entries);
-
+#endif
 	while (ATH12K_TX_COMPL_NEXT(tx_ring->tx_status_head) != tx_ring->tx_status_tail) {
 		desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, status_ring);
 		if (!desc)

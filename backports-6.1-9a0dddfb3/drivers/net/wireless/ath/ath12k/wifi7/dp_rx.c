@@ -262,8 +262,8 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 	if (ret) {
 		ath12k_err(ar->ab, "failed to send HAL_REO_CMD_UPDATE_RX_QUEUE cmd, tid %d (%d)\n",
 			   tid, ret);
-		dma_unmap_single(ar->ab->dev, rx_tid->paddr, rx_tid->size,
-				 DMA_BIDIRECTIONAL);
+		ath12k_core_dma_unmap_single(ar->ab->dev, rx_tid->paddr, rx_tid->size,
+					     DMA_BIDIRECTIONAL);
 		kfree(rx_tid->vaddr);
 		rx_tid->vaddr = NULL;
 	}
@@ -1103,8 +1103,9 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct sk_buff *msdu;
 	bool done = false;
 	u64 desc_va;
+#ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
-
+#endif
 	__skb_queue_head_init(&msdu_list);
 
 	for (device_id = 0; device_id < ATH12K_MAX_SOCS; device_id++)
@@ -1117,6 +1118,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 try_again:
 	ath12k_hal_srng_access_begin(ab, srng);
 
+#ifndef CONFIG_IO_COHERENCY
 	valid_entries = ath12k_hal_srng_dst_num_free(ab, srng, false);
 	if (unlikely(!valid_entries)) {
 		ath12k_hal_srng_access_end(ab, srng);
@@ -1124,7 +1126,7 @@ try_again:
 		return -EINVAL;
 	}
 	ath12k_hal_srng_dst_invalidate_entry(ab, srng, valid_entries);
-
+#endif
 	while ((desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, srng))) {
 		struct rx_mpdu_desc *mpdu_info;
 		struct rx_msdu_desc *msdu_info;
@@ -1171,9 +1173,9 @@ try_again:
 		list_add_tail(&desc_info->list, &rx_desc_used_list[device_id]);
 
 		rxcb = ATH12K_SKB_RXCB(msdu);
-		dma_unmap_single(partner_dp->dev, rxcb->paddr,
-				 msdu->len + skb_tailroom(msdu),
-				 DMA_FROM_DEVICE);
+		ath12k_core_dma_unmap_single(partner_dp->dev, rxcb->paddr,
+					     msdu->len + skb_tailroom(msdu),
+					     DMA_FROM_DEVICE);
 
 		num_buffs_reaped[device_id]++;
 
@@ -1442,12 +1444,17 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	/* change msdu len in hal rx desc */
 	ath12k_wifi7_dp_rxdesc_set_msdu_len(ab, rx_desc, len_diff);
 
+#ifndef CONFIG_IO_COHERENCY
 	buf_paddr = dma_map_single(ab->dev, defrag_skb->data,
 				   defrag_skb->len + skb_tailroom(defrag_skb),
 				   DMA_TO_DEVICE);
 	if (dma_mapping_error(ab->dev, buf_paddr))
 		return -ENOMEM;
-
+#else
+	buf_paddr = virt_to_phys(defrag_skb->data);
+	if (!buf_paddr)
+		return -ENOMEM;
+#endif
 	spin_lock_bh(&dp->rx_desc_lock);
 	desc_info = list_first_entry_or_null(&dp->rx_desc_free_list,
 					     struct ath12k_rx_desc_info,
@@ -1534,8 +1541,8 @@ err_free_desc:
 	list_add_tail(&desc_info->list, &dp->rx_desc_free_list);
 	spin_unlock_bh(&dp->rx_desc_lock);
 err_unmap_dma:
-	dma_unmap_single(ab->dev, buf_paddr, defrag_skb->len + skb_tailroom(defrag_skb),
-			 DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(ab->dev, buf_paddr, defrag_skb->len + skb_tailroom(defrag_skb),
+				     DMA_TO_DEVICE);
 	return ret;
 }
 
@@ -1784,9 +1791,9 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 	list_add_tail(&desc_info->list, used_list);
 
 	rxcb = ATH12K_SKB_RXCB(msdu);
-	dma_unmap_single(ab->dev, rxcb->paddr,
-			 msdu->len + skb_tailroom(msdu),
-			 DMA_FROM_DEVICE);
+	ath12k_core_dma_unmap_single(ab->dev, rxcb->paddr,
+				     msdu->len + skb_tailroom(msdu),
+				     DMA_FROM_DEVICE);
 
 	if (drop) {
 		dev_kfree_skb_any(msdu);
@@ -1849,8 +1856,8 @@ static int ath12k_wifi7_handle_msdu_buftype(struct ath12k_dp *dp, dma_addr_t pad
 	desc_info->skb = NULL;
 
 	list_add_tail(&desc_info->list, rx_desc_used_list);
-	dma_unmap_single(dp->dev, ATH12K_SKB_RXCB(msdu)->paddr,
-			 msdu->len + skb_tailroom(msdu), DMA_FROM_DEVICE);
+	ath12k_core_dma_unmap_single(dp->dev, ATH12K_SKB_RXCB(msdu)->paddr,
+				     msdu->len + skb_tailroom(msdu), DMA_FROM_DEVICE);
 	dev_kfree_skb_any(msdu);
 
 	return 0;
@@ -2371,9 +2378,9 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		list_add_tail(&desc_info->list, &rx_desc_used_list[device_id]);
 
 		rxcb = ATH12K_SKB_RXCB(msdu);
-		dma_unmap_single(partner_dp->dev, rxcb->paddr,
-				 msdu->len + skb_tailroom(msdu),
-				 DMA_FROM_DEVICE);
+		ath12k_core_dma_unmap_single(partner_dp->dev, rxcb->paddr,
+					     msdu->len + skb_tailroom(msdu),
+					     DMA_FROM_DEVICE);
 
 		num_buffs_reaped[device_id]++;
 		total_num_buffs_reaped++;
@@ -2519,7 +2526,7 @@ int ath12k_wifi7_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 		return -ENOMEM;
 
 	*addr_aligned = PTR_ALIGN(vaddr, HAL_LINK_DESC_ALIGN);
-
+#ifndef CONFIG_IO_COHERENCY
 	paddr = dma_map_single(ab->dev, *addr_aligned, hw_desc_sz,
 			       DMA_BIDIRECTIONAL);
 	ret = dma_mapping_error(ab->dev, paddr);
@@ -2527,7 +2534,13 @@ int ath12k_wifi7_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 		kfree(vaddr);
 		return ret;
 	}
-
+#else
+	paddr = virt_to_phys(*addr_aligned);
+	if (!paddr) {
+		kfree(vaddr);
+		return ret;
+	}
+#endif
 	rx_tid->vaddr = vaddr;
 	rx_tid->paddr = paddr;
 	rx_tid->size = hw_desc_sz;

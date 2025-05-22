@@ -112,12 +112,20 @@ int ath12k_htc_send(struct ath12k_htc *htc,
 	ath12k_htc_prepare_tx_skb(ep, skb);
 	skb_cb->u.eid = eid;
 
+#ifndef CONFIG_IO_COHERENCY
 	skb_cb->paddr = dma_map_single(dev, skb->data, skb->len, DMA_TO_DEVICE);
 	ret = dma_mapping_error(dev, skb_cb->paddr);
 	if (ret) {
 		ret = -EIO;
 		goto err_credits;
 	}
+#else
+	skb_cb->paddr = virt_to_phys(skb->data);
+	if (!skb_cb->paddr) {
+		ret = -EIO;
+		goto err_credits;
+	}
+#endif
 
 	ret = ath12k_ce_send(htc->ab, skb, ep->ul_pipe_id, ep->eid);
 	if (ret)
@@ -126,7 +134,7 @@ int ath12k_htc_send(struct ath12k_htc *htc,
 	return 0;
 
 err_unmap:
-	dma_unmap_single(dev, skb_cb->paddr, skb->len, DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(dev, skb_cb->paddr, skb->len, DMA_TO_DEVICE);
 err_credits:
 	if (credit_flow_enabled) {
 		spin_lock_bh(&htc->tx_lock);

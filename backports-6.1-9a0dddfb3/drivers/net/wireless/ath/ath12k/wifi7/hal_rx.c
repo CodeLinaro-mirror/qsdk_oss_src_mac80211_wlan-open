@@ -1167,7 +1167,7 @@ ath12k_wifi7_hal_rx_fst_attach(struct ath12k_base *ab)
 	ath12k_dbg(ab, ATH12K_DBG_DP_FST, "HAL FST allocation %pK entries %u entry size %u alloc_size %u\n",
 		   fst, fst->max_entries, fst->fst_entry_size, alloc_size);
 
-	fst->base_vaddr = dma_alloc_coherent(ab->dev, alloc_size,
+	fst->base_vaddr = ath12k_core_dma_alloc_coherent(ab->dev, alloc_size,
 					     &fst->base_paddr, GFP_KERNEL);
 	if (!fst->base_vaddr) {
 		kfree(fst);
@@ -1193,9 +1193,9 @@ void ath12k_wifi7_hal_rx_fst_detach(struct ath12k_base *ab, struct hal_rx_fst *f
 		return;
 
 	if (fst->base_vaddr)
-		dma_free_coherent(ab->dev,
-				  (fst->max_entries * fst->fst_entry_size),
-				  fst->base_vaddr, fst->base_paddr);
+		ath12k_core_dma_free_coherent(ab->dev,
+					      (fst->max_entries * fst->fst_entry_size),
+					      fst->base_vaddr, fst->base_paddr);
 	kfree(fst);
 }
 
