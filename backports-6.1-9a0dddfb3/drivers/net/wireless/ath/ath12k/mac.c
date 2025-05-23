@@ -1856,6 +1856,11 @@ static int ath12k_mac_setup_bcn_tmpl(struct ath12k_link_vif *arvif)
 			return ath12k_mac_setup_bcn_tmpl_ema(arvif, tx_arvif,
 							     link_conf->bssid_index);
 	} else {
+		/* Avoid setting beacon for non-tx vdevs if corresponding
+		 * tx vdev is unmapped.
+		 */
+		if (link_conf->nontransmitted)
+			return 0;
 		tx_arvif = arvif;
 	}
 
@@ -1901,7 +1906,7 @@ static int ath12k_mac_setup_bcn_tmpl(struct ath12k_link_vif *arvif)
 		}
 	}
 
-	ret = ath12k_wmi_bcn_tmpl(arvif, &offs, bcn, NULL);
+	ret = ath12k_wmi_bcn_tmpl(tx_arvif, &offs, bcn, NULL);
 
 	if (ret)
 		ath12k_warn(ab, "failed to submit beacon template command: %d\n",
