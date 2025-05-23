@@ -599,6 +599,9 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			"Frame SN equal SSN", "PN check fail", "2k err",
 			"PN err", "Desc blocked"};
 
+	static const char *wbm_rel_src[HAL_WBM_REL_SRC_MODULE_MAX] = {
+                        "TQM", "Rxdma", "Reo", "FW", "SW" };
+
 	char *buf;
 
 	buf = kzalloc(size, GFP_KERNEL);
@@ -628,7 +631,54 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 device_stats->hal_reo_error[2],
 			 device_stats->hal_reo_error[3]);
 
+
 	len += scnprintf(buf + len, size - len, "\nSOC TX STATS:\n");
+	len += scnprintf(buf + len, size - len,
+			"\ntx_wbm_rel_source: 0:%u 1:%u 2:%u 3:%u 4:%u\n",
+			device_stats->tx_wbm_rel_source[0],
+			device_stats->tx_wbm_rel_source[1],
+			device_stats->tx_wbm_rel_source[2],
+			device_stats->tx_wbm_rel_source[3],
+			device_stats->tx_wbm_rel_source[4]);
+
+	len += scnprintf(buf + len, size - len, "\nSOC RX STATS:\n");
+	len += scnprintf(buf + len, size - len, "\nREO Rx Received:\n");
+
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len,
+			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
+				 i + 1,
+	                         device_stats->reo_rx[i][0],
+		                 device_stats->reo_rx[i][1],
+			         device_stats->reo_rx[i][2]);
+
+	len += scnprintf(buf + len, size - len, "\nREO Fast Rx:\n");
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len,
+				 "Ring%d: 0:%u\t1:%u\t2:%u\n",
+				 i + 1,
+				 device_stats->fast_rx[i][0],
+				 device_stats->fast_rx[i][1],
+				 device_stats->fast_rx[i][2]);
+
+	len += scnprintf(buf + len, size - len, "\nREO Non-Fast Rx:\n");
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len,
+				 "Ring%d: 0:%u\t1:%u\t2:%u\n",
+				 i + 1,
+				 device_stats->non_fast_rx[i][0],
+				 device_stats->non_fast_rx[i][1],
+				 device_stats->non_fast_rx[i][2]);
+
+	len += scnprintf(buf + len, size - len, "\nRx WBM REL SRC Errors:\n");
+	for (i = 0; i < HAL_WBM_REL_SRC_MODULE_MAX; i++)
+		len += scnprintf(buf + len, size - len,
+			        "%s\t:0:%u\t1:%u\t2:%u\n",
+				wbm_rel_src[i],
+	                        device_stats->rx_wbm_rel_source[i][0],
+		                device_stats->rx_wbm_rel_source[i][1],
+			        device_stats->rx_wbm_rel_source[i][2]);
+
 	len += scnprintf(buf + len, size - len, "\nTCL Ring Full Failures:\n");
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
@@ -638,7 +688,6 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len,
 			 "\nMisc Transmit Failures: %d\n",
 			 atomic_read(&device_stats->tx_err.misc_fail));
-
 
 	if (len > size)
 		len = size;

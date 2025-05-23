@@ -1250,8 +1250,12 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
-		if (!fast_rx)
+		if (!fast_rx) {
+			ar->ab->dp->device_stats.non_fast_rx[ring_id][ar->ab->device_id]++;
 			ath12k_dp_rx_deliver_msdu(dp_pdev, napi, msdu, &rx_status, &rx_desc_data);
+		} else {
+			ar->ab->dp->device_stats.fast_rx[ring_id][ar->ab->device_id]++;
+		}
 	}
 
 	rcu_read_unlock();
@@ -1376,6 +1380,7 @@ try_again:
 
 		num_buffs_reaped[device_id]++;
 
+		dp->device_stats.reo_rx[ring_id][ab->device_id]++;
 		push_reason = le32_get_bits(desc->info0,
 					    HAL_REO_DEST_RING_INFO0_PUSH_REASON);
 		if (push_reason !=
@@ -2516,6 +2521,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 	int num_buffs_reaped[ATH12K_MAX_SOCS] = {};
 	int total_num_buffs_reaped = 0;
 	struct ath12k_rx_desc_info *desc_info;
+	struct ath12k_device_dp_stats *device_stats = &dp->device_stats;
 	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
 	u8 hw_link_id, device_id;
 	int ret, pdev_id;
@@ -2697,6 +2703,10 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 			dev_kfree_skb_any(msdu);
 			continue;
 		}
+
+		if (rxcb->err_rel_src < HAL_WBM_REL_SRC_MODULE_MAX)
+		        device_stats->rx_wbm_rel_source[rxcb->err_rel_src][ar->ab->device_id]++;
+
 		ath12k_wifi7_dp_rx_wbm_err(dp_pdev, napi, msdu, &msdu_list);
 	}
 

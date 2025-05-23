@@ -418,6 +418,27 @@ enum hal_wbm_htt_tx_comp_status {
 	HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX,
 };
 
+/* hal_wbm_link_desc
+ *
+ *	Producer: WBM
+ *	Consumer: WBM
+ *
+ * buf_addr_info
+ *		Details of the physical address of a buffer or MSDU
+ *		link descriptor.
+ */
+
+enum hal_wbm_rel_src_module {
+	HAL_WBM_REL_SRC_MODULE_TQM,
+	HAL_WBM_REL_SRC_MODULE_RXDMA,
+	HAL_WBM_REL_SRC_MODULE_REO,
+	HAL_WBM_REL_SRC_MODULE_FW,
+	HAL_WBM_REL_SRC_MODULE_SW,
+	HAL_WBM_REL_SRC_MODULE_MAX,
+};
+
+
+
 /**
  * enum hal_reo_cmd_status: Enum for execution status of REO command
  * @HAL_REO_CMD_SUCCESS: Command has successfully executed

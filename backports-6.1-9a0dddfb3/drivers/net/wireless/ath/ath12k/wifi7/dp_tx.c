@@ -977,6 +977,7 @@ void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id)
 		tx_status = &tx_ring->tx_status[tx_ring->tx_status_tail];
 		ath12k_wifi7_dp_tx_status_parse(ab, tx_status, &ts);
 
+		dp->device_stats.tx_wbm_rel_source[ts.buf_rel_source]++;
 		if (le32_get_bits(tx_status->info0, HAL_WBM_COMPL_TX_INFO0_CC_DONE)) {
 			/* HW done cookie conversion */
 			desc_va = ((u64)le32_to_cpu(tx_status->buf_va_hi) << 32 |

@@ -1729,25 +1729,6 @@ struct hal_wbm_link_desc {
 	struct ath12k_buffer_addr buf_addr_info;
 } __packed;
 
-/* hal_wbm_link_desc
- *
- *	Producer: WBM
- *	Consumer: WBM
- *
- * buf_addr_info
- *		Details of the physical address of a buffer or MSDU
- *		link descriptor.
- */
-
-enum hal_wbm_rel_src_module {
-	HAL_WBM_REL_SRC_MODULE_TQM,
-	HAL_WBM_REL_SRC_MODULE_RXDMA,
-	HAL_WBM_REL_SRC_MODULE_REO,
-	HAL_WBM_REL_SRC_MODULE_FW,
-	HAL_WBM_REL_SRC_MODULE_SW,
-	HAL_WBM_REL_SRC_MODULE_MAX,
-};
-
 enum hal_wbm_rel_desc_type {
 	HAL_WBM_REL_DESC_TYPE_REL_MSDU,
 	HAL_WBM_REL_DESC_TYPE_MSDU_LINK,
