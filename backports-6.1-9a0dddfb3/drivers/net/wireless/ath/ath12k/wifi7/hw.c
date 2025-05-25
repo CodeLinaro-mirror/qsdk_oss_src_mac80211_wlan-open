@@ -1035,6 +1035,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			skb_cb = ATH12K_SKB_CB(msdu_copied);
 			skb_cb->link_id = link_id;
 			skb_cb->vif = vif;
+			skb_cb->u.ar = tmp_ar;
 
 			if (ahsta && ahsta->use_4addr_set)
 				arsta = rcu_dereference(ahsta->link[link_id]);
