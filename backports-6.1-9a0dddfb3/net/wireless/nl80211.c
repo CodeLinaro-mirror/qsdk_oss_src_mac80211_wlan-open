@@ -2732,12 +2732,125 @@ fail:
 	return -ENOBUFS;
 }
 
+/**
+ * struct nl80211_dump_wiphy_state - Structure to track the state for
+ * wiphy dump operations.
+ * @filter_wiphy: Wiphy index to filter
+ * @start: The current wiphy dump which is being processed.
+ * @split_start: The current wiphy information which is being processed.
+ * @band_start: The current band dump which is being processed.
+ * @chan_start: The current channel dump which is being processed.
+ * @capa_start: The current capability dump which is being processed.
+ * @power_mode_start: The current 6 GHz power mode dump which is being processed.
+ * @chan_6ghz_start: The current 6 GHz channel dump which is being processed for
+ * the power mode.
+ * @split: Flag for split wiphy dump config.
+ */
 struct nl80211_dump_wiphy_state {
 	s64 filter_wiphy;
 	long start;
 	long split_start, band_start, chan_start, capa_start;
+	long power_mode_start, chan_6ghz_start;
 	bool split;
 };
+
+/**
+ * nl80211_put_6ghz_power_mode_channels - Put 6 GHz channels in the nl80211 message.
+ * @rdev: The registered device.
+ * @state: The state of the wiphy dump.
+ * @msg: The message to put the channels into.
+ * @sband: Pointer to the supported band structure for 6 GHz band.
+ *
+ * This function puts the 6 GHz power mode channels into the nl80211 message.
+ * It handles the splitting of the message if required and keeps track of
+ * the current state of the dump.
+ *
+ * Returns 0 on success, or a negative error code on failure.
+ */
+static int
+nl80211_put_6ghz_power_mode_channels(struct cfg80211_registered_device *rdev,
+				     struct nl80211_dump_wiphy_state *state,
+				     struct sk_buff *msg,
+				     struct ieee80211_supported_band *sband)
+{
+	struct nlattr *nl_6ghz_powermodes;
+	int i, j;
+
+	if (state->chan_start != -1)
+		return 0;
+
+	if (sband->band != NL80211_BAND_6GHZ)
+		return 0;
+
+	if (!state->power_mode_start) {
+		state->power_mode_start = 1;
+		return 0;
+	}
+
+	nl_6ghz_powermodes = nla_nest_start_noflag(msg, NL80211_BAND_ATTR_6GHZ_POWER_MODE_FREQS);
+	if (!nl_6ghz_powermodes)
+		return -ENOBUFS;
+
+	for (i = state->power_mode_start - 1; i < NL80211_REG_NUM_POWER_MODES; i++) {
+		struct nlattr *nl_6ghz_freqs;
+		struct nlattr *nl_power_mode;
+
+		if (!sband->chan_6g[i])
+			continue;
+
+		nl_power_mode = nla_nest_start_noflag(msg, i);
+		if (!nl_power_mode)
+			return -ENOBUFS;
+
+		if (nla_put_u8(msg, NL80211_6GHZ_POWER_MODE_ATTR_POWER_MODE, i))
+			return -ENOBUFS;
+
+		nl_6ghz_freqs = nla_nest_start_noflag(msg,
+						      NL80211_6GHZ_POWER_MODE_ATTR_FREQS);
+		if (!nl_6ghz_freqs)
+			return -ENOBUFS;
+
+		for (j = state->chan_6ghz_start; j < sband->chan_6g[i]->n_channels; j++) {
+			struct nlattr *nl_6ghz_freq = nla_nest_start_noflag(msg, j);
+			struct ieee80211_channel *chan_6ghz;
+
+			if (!nl_6ghz_freq)
+				return -ENOBUFS;
+
+			chan_6ghz = &sband->chan_6g[i]->channels[j];
+			if (nl80211_msg_put_channel(msg, &rdev->wiphy, chan_6ghz, state->split))
+				return -ENOBUFS;
+
+			nla_nest_end(msg, nl_6ghz_freq);
+
+			if (state->split)
+				break;
+		}
+
+		if (j < sband->chan_6g[i]->n_channels)
+			state->chan_6ghz_start = j + 1;
+		else
+			state->chan_6ghz_start = 0;
+
+		nla_nest_end(msg, nl_6ghz_freqs);
+		nla_nest_end(msg, nl_power_mode);
+
+		if (state->split)
+			break;
+	}
+
+	if (i < NL80211_REG_NUM_POWER_MODES) {
+		if (state->chan_6ghz_start == 0)
+			state->power_mode_start = i + 2;
+	} else {
+		state->power_mode_start = 0;
+		state->chan_start = 0;
+	}
+
+	nla_nest_end(msg, nl_6ghz_powermodes);
+
+	return 0;
+}
 
 static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 			      enum nl80211_commands cmd,
@@ -2909,6 +3022,8 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 					break;
 				fallthrough;
 			default:
+				if (state->chan_start == -1)
+					break;
 				/* add frequencies */
 				nl_freqs = nla_nest_start_noflag(msg,
 								 NL80211_BAND_ATTR_FREQS);
@@ -2934,11 +3049,20 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 					if (state->split)
 						break;
 				}
-				if (i < sband->n_channels)
+				if (i < sband->n_channels) {
 					state->chan_start = i + 2;
-				else
-					state->chan_start = 0;
+				} else {
+					if (band == NL80211_BAND_6GHZ)
+						state->chan_start = -1;
+					else
+						state->chan_start = 0;
+				}
 				nla_nest_end(msg, nl_freqs);
+			}
+
+			if (state->chan_start == -1) {
+				if (nl80211_put_6ghz_power_mode_channels(rdev, state, msg, sband))
+					goto nla_put_failure;
 			}
 
 			nla_nest_end(msg, nl_band);
