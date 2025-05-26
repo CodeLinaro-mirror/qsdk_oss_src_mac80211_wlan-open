@@ -8901,7 +8901,6 @@ out_err:
 static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 					 struct ath12k_sta *ahsta)
 {
-	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
 	struct ath12k_hw *ah = ahvif->ah;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_link_sta *arsta;
@@ -8932,11 +8931,7 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 		ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
 	}
 
-	if (sta->mlo) {
-		clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
-		ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
-		ah->num_ml_peers--;
-	}
+	ath12k_peer_ml_free(ah, ahsta);
 }
 
 static void ath12k_sta_migration_wk(struct work_struct *wk)
@@ -9181,13 +9176,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			ath12k_hw_warn(ah, "unable to create ath12k_dp_peer for sta %pM",
 				       sta->addr);
 
-			if (sta->mlo) {
-				clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
-				ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
-				ah->num_ml_peers--;
-			}
-
-			goto exit;
+			goto ml_peer_id_free;
 		}
 
 		ret = ath12k_mac_assign_link_sta(ah, ahsta, arsta, ahvif,
@@ -9195,7 +9184,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		if (ret) {
 			ath12k_hw_warn(ah, "unable assign link %d for sta %pM",
 				       link_id, sta->addr);
-			goto exit;
+			goto peer_delete;
 		}
 
 		/* above arsta will get memset, hence do this after assign
@@ -9299,6 +9288,9 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 peer_delete:
 	if (ret)
 		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr);
+ml_peer_id_free:
+	if (ret)
+		ath12k_peer_ml_free(ah, ahsta);
 exit:
 
 	if (ret && is_recovery)

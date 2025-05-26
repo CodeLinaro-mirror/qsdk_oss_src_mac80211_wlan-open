@@ -330,6 +330,19 @@ u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah)
 	return ml_peer_id;
 }
 
+void ath12k_peer_ml_free(struct ath12k_hw *ah, struct ath12k_sta *ahsta)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
+
+	lockdep_assert_wiphy(ah->hw->wiphy);
+
+	if (sta->mlo) {
+		clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
+		ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+		ah->num_ml_peers--;
+	}
+}
+
 int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_sta *ahsta)
 {
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
