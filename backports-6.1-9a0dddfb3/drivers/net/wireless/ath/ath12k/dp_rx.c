@@ -646,8 +646,6 @@ void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 		if (dp->reo_cmd_cache_flush_count > ATH12K_DP_RX_REO_DESC_FREE_THRES ||
 		    time_after(jiffies, elem->ts +
 			       msecs_to_jiffies(ATH12K_DP_RX_REO_DESC_FREE_TIMEOUT_MS))) {
-			list_del(&elem->list);
-			dp->reo_cmd_cache_flush_count--;
 
 			/* Unlock the reo_cmd_lock before using ath12k_dp_reo_cmd_send()
 			 * within ath12k_wifi7_dp_reo_cache_flush. The reo_cmd_cache_flush_list
@@ -659,9 +657,20 @@ void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			 */
 			spin_unlock_bh(&dp->reo_cmd_lock);
 
-			ath12k_dp_arch_reo_cache_flush(dp, &elem->data);
-			kfree(elem);
+			if (ath12k_dp_arch_reo_cache_flush(dp, &elem->data)) {
+				/* In failure case, just update the timestamp
+				 * for flush cache elem and continue */
+				spin_lock_bh(&dp->reo_cmd_lock);
+				elem->ts = jiffies +
+					msecs_to_jiffies(ATH12K_DP_RX_REO_DESC_FREE_TIMEOUT_MS);
+				ath12k_warn(ab, "Failed to send HAL_REO_CMD_FLUSH_CACHE cmd"
+						"Updating timestamp (%ld) in the list\n", elem->ts);
+				continue;
+			}
 			spin_lock_bh(&dp->reo_cmd_lock);
+			list_del(&elem->list);
+			dp->reo_cmd_cache_flush_count--;
+			kfree(elem);
 		}
 	}
 	spin_unlock_bh(&dp->reo_cmd_lock);

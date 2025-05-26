@@ -138,8 +138,8 @@ int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
 	return 0;
 }
 
-void ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
-				     struct ath12k_dp_rx_tid *rx_tid)
+int ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
+				    struct ath12k_dp_rx_tid *rx_tid)
 {
 	struct ath12k_hal_reo_cmd cmd = {0};
 	unsigned long tot_desc_sz, desc_sz;
@@ -155,10 +155,16 @@ void ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 		ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
 						   HAL_REO_CMD_FLUSH_CACHE,
 						   &cmd, NULL);
-		if (ret)
+		if (ret) {
 			ath12k_warn(ab,
-				    "failed to send HAL_REO_CMD_FLUSH_CACHE, tid %d (%d)\n",
-				    rx_tid->tid, ret);
+				    "failed to send HAL_REO_CMD_FLUSH_CACHE, tid %d (%d) desc_sz(%ld)\n",
+				    rx_tid->tid, ret, desc_sz);
+			/* If this fails with ring full condition, then
+			 * no need to retry below as it is expected to
+			 * fail within short time */
+			if (ret == -ENOBUFS)
+				goto exit;
+		}
 	}
 
 	memset(&cmd, 0, sizeof(cmd));
@@ -168,14 +174,12 @@ void ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
 					   HAL_REO_CMD_FLUSH_CACHE,
 					   &cmd, ath12k_dp_reo_cmd_free);
-	if (ret) {
+	if (ret)
 		ath12k_err(ab, "failed to send HAL_REO_CMD_FLUSH_CACHE cmd, tid %d (%d)\n",
 			   rx_tid->tid, ret);
-		dma_unmap_single(ab->dev, rx_tid->paddr, rx_tid->size,
-				 DMA_BIDIRECTIONAL);
-		kfree(rx_tid->vaddr);
-		rx_tid->vaddr = NULL;
-	}
+
+exit:
+	return ret;
 }
 
 void ath12k_wifi7_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id, u16 tid,

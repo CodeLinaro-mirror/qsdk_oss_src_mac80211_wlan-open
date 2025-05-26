@@ -420,7 +420,7 @@ struct ath12k_dp_arch_ops {
 				       u32 cipher, enum set_key_cmd key_cmd);
 	void (*rx_peer_tid_delete)(struct ath12k *ar,
 				   struct ath12k_dp_link_peer *peer, u8 tid);
-	void (*reo_cache_flush)(struct ath12k_base *ab,
+	int (*reo_cache_flush)(struct ath12k_base *ab,
 				struct ath12k_dp_rx_tid *rx_tid);
 	int (*rx_link_desc_return)(struct ath12k_dp *dp,
 				   struct hal_reo_dest_ring *ring,
@@ -711,10 +711,10 @@ static inline void ath12k_dp_arch_rx_peer_tid_delete(struct ath12k_dp *dp,
 	dp->arch_ops->rx_peer_tid_delete(ar, peer, tid);
 }
 
-static inline void ath12k_dp_arch_reo_cache_flush(struct ath12k_dp *dp,
-						  struct ath12k_dp_rx_tid *rx_tid)
+static inline int ath12k_dp_arch_reo_cache_flush(struct ath12k_dp *dp,
+						 struct ath12k_dp_rx_tid *rx_tid)
 {
-	dp->arch_ops->reo_cache_flush(dp->ab, rx_tid);
+	return dp->arch_ops->reo_cache_flush(dp->ab, rx_tid);
 }
 
 static inline int ath12k_dp_arch_rx_link_desc_return(struct ath12k_dp *dp,
