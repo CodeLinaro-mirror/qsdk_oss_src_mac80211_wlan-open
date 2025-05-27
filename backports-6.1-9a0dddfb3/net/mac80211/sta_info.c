@@ -2796,7 +2796,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 				continue;
 			}
 
-			memcpy(sinfo->links[link_id].addr, link_sta->addr,
+			memcpy(sinfo->links[link_id]->addr, link_sta->addr,
 			       ETH_ALEN);
 
 			link_sta_filled |= link_sta_set_info(link_sta, sinfo,
@@ -2808,8 +2808,8 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 			if (link) {
 				link_conf = link->conf;
 
-				sinfo->links[link_id].dtim_period = link_conf->dtim_period;
-				sinfo->links[link_id].beacon_interval = link_conf->beacon_int;
+				sinfo->links[link_id]->bss_param.dtim_period = link_conf->dtim_period;
+				sinfo->links[link_id]->bss_param.beacon_interval = link_conf->beacon_int;
 			}
 			rcu_read_unlock();
 		}

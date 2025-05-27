@@ -7587,7 +7587,7 @@ static int nl80211_send_station(struct sk_buff *msg, u32 cmd, u32 portid,
 			if (nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id))
 				goto nla_put_failure;
 			if (nla_put(msg, NL80211_ATTR_MAC, ETH_ALEN,
-				    sinfo->links[link_id].addr))
+				    sinfo->links[link_id]->addr))
 				goto nla_put_failure;
 			nla_nest_end(msg, link);
 		}
@@ -7699,10 +7699,10 @@ static int nl80211_send_station(struct sk_buff *msg, u32 cmd, u32 portid,
 				if (!link)
 					goto nla_put_failure;
 				if (nla_put_u8(msg, NL80211_STA_BSS_PARAM_DTIM_PERIOD,
-					       sinfo->links[link_id].dtim_period))
+					       sinfo->links[link_id]->bss_param.dtim_period))
 					goto nla_put_failure;
 				if (nla_put_u16(msg, NL80211_STA_BSS_PARAM_BEACON_INTERVAL,
-						sinfo->links[link_id].beacon_interval))
+						sinfo->links[link_id]->bss_param.beacon_interval))
 					goto nla_put_failure;
 
 				nla_nest_end(msg, link);
