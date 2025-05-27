@@ -6,6 +6,9 @@
 
 #include <linux/inet.h>
 #include "core.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#include "ppe.h"
+#endif
 #include "dp_tx.h"
 #include "dp_rx.h"
 #include "debug.h"
@@ -2713,6 +2716,62 @@ static const struct file_operations fops_vdev_stats_offload = {
 	.open = simple_open
 };
 
+static ssize_t ath12k_write_ppe_rfs_core_mask(struct file *file,
+					      const char __user *user_buf,
+					      size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	struct ath12k_base *ab = ahvif->deflink.ar->ab;
+	u32 core_mask;
+	int ret;
+
+	if (kstrtou32_from_user(user_buf, count, 0, &core_mask))
+		return -EINVAL;
+
+	if (core_mask > 0xF)
+		return -EINVAL;
+
+	wiphy_lock(ahvif->ah->hw->wiphy);
+
+	if (core_mask == ahvif->dp_vif.ppe_core_mask)
+		goto out;
+
+	ret = ath12k_change_core_mask_for_ppe_rfs(ab, ahvif, core_mask);
+	if (ret) {
+		ath12k_warn(ab, "failed to change core_mask\n");
+		goto out;
+	}
+
+out:
+	ret = count;
+	wiphy_unlock(ahvif->ah->hw->wiphy);
+	return ret;
+}
+
+static ssize_t ath12k_read_ppe_rfs_core_mask(struct file *file,
+					     char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	char buf[32] = {0};
+	int len = 0;
+
+	wiphy_lock(ahvif->ah->hw->wiphy);
+	len = scnprintf(buf, sizeof(buf) - len, "%u\n",
+			ahvif->dp_vif.ppe_core_mask);
+
+	wiphy_unlock(ahvif->ah->hw->wiphy);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations ath12k_fops_rfs_core_mask = {
+	.read = ath12k_read_ppe_rfs_core_mask,
+	.write = ath12k_write_ppe_rfs_core_mask,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
 static
 void ath12k_debugfs_fw_stats_register(struct ath12k *ar)
 {
@@ -4371,6 +4430,9 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 
 	debugfs_create_file("resume_dialog", 0200, arvif->debugfs_twt,
 			    arvif, &ath12k_fops_twt_resume_dialog);
+
+	debugfs_create_file("rfs_core_mask", 0644, vif->debugfs_dir,
+			    ahvif, &ath12k_fops_rfs_core_mask);
 
 	/* Note: Add new AP mode only debugfs file before "ap_and_sta_debugfs_file" label.
 	 * Add new debugfs file for both AP and STA mode after the "ap_and_sta_debugfs_file"

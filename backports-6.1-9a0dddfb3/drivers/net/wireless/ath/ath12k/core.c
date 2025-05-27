@@ -92,6 +92,16 @@ module_param_named(rx_nwifi_err_dump, ath12k_rx_nwifi_err_dump, bool, 0644);
 MODULE_PARM_DESC(rx_nwifi_err_dump, "rx nwifi err dump: 0-disable, 1-enable");
 EXPORT_SYMBOL(ath12k_rx_nwifi_err_dump);
 
+bool ath12k_ppe_rfs_support = true;
+module_param_named(ppe_rfs_support, ath12k_ppe_rfs_support, bool, 0644);
+MODULE_PARM_DESC(ppe_rfs_support, "Enable PPE RFS support for DL (0 - disable, 1 - enable)");
+
+unsigned int ath12k_rfs_core_mask[4] = {ATH12K_MAX_CORE_MASK, ATH12K_MAX_CORE_MASK,
+					ATH12K_MAX_CORE_MASK, ATH12K_MAX_CORE_MASK};
+module_param_array_named(rfs_core_mask, ath12k_rfs_core_mask, int, NULL, 0644);
+MODULE_PARM_DESC(rfs_core_mask, "Default RFS core mask, mask for 2G, mask for 5G,\n"
+		 "mask for 6G. One bit for one CPU core\n");
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 

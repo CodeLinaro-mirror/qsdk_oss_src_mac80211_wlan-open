@@ -93,7 +93,7 @@
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
 #endif
-
+extern unsigned int ath12k_rfs_core_mask[4];
 extern unsigned int ath12k_frame_mode;
 extern bool ath12k_fse_3_tuple_enabled;
 extern bool ath12k_rx_nwifi_err_dump;
@@ -515,6 +515,7 @@ struct ath12k_vif {
 	enum wmi_vdev_type vdev_type;
 	struct ieee80211_vif *vif;
 	struct ath12k_hw *ah;
+	struct dentry *debugfs_rfs_core_mask;
 
 	union {
 		struct {

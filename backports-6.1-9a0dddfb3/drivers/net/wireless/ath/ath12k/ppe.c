@@ -1318,6 +1318,48 @@ void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppeds_comp_ring.ppe_wbm2sw_ring);
 }
 
+int ath12k_ppe_rfs_get_core_mask(void)
+{
+	return ATH12K_PPE_DEFAULT_CORE_MASK;
+}
+
+/* User is expected to flush ecm entries before changing core mask */
+int ath12k_change_core_mask_for_ppe_rfs(struct ath12k_base *ab,
+					struct ath12k_vif *ahvif,
+					int core_mask)
+{
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(ahvif->vif);
+	int ret;
+
+	if (!wdev)
+		return -ENODEV;
+
+	if (ahvif->dp_vif.ppe_vp_num <= 0 ||
+	    ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_PASSIVE) {
+		ath12k_warn(ab, "invalid vp for dev %s\n", wdev->netdev->name);
+		return -EINVAL;
+	}
+
+	if (core_mask < 0) {
+		ath12k_warn(ab, "Invalid core_mask for PPE RFS\n");
+		return -EINVAL;
+	}
+
+	if (core_mask == ahvif->dp_vif.ppe_core_mask)
+		return 0;
+
+	ath12k_vif_free_vp(ahvif, wdev->netdev);
+
+	ret = ath12k_vif_alloc_vp(ahvif, PPE_VP_USER_TYPE_PASSIVE, &core_mask, wdev->netdev);
+	if (ret) {
+		ath12k_warn(ab, "error in enabling ppe vp for netdev %s\n",
+			    wdev->netdev->name);
+		return ret;
+	}
+
+	return 0;
+}
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static bool ath12k_stats_update_ppe_vp(struct net_device *dev, ppe_vp_hw_stats_t *vp_stats)
 {
@@ -1381,7 +1423,7 @@ int ath12k_vif_update_vp_config(struct ath12k_vif *ahvif, int ppe_vp_type)
 	/* Direct Switching */
 	switch (ppe_vp_type) {
 	case PPE_VP_USER_TYPE_PASSIVE:
-		vpui.core_mask = ATH12K_PPE_DEFAULT_CORE_MASK;
+		vpui.core_mask = ath12k_ppe_rfs_get_core_mask();
 		break;
 	case PPE_VP_USER_TYPE_DS:
 	case PPE_VP_USER_TYPE_ACTIVE:
@@ -1469,7 +1511,7 @@ int ath12k_vif_alloc_vp(struct ath12k_vif *ahvif, int ppe_vp_type, int *core_mas
 		if (core_mask)
 			vpai.core_mask = *core_mask;
 		else
-			vpai.core_mask = ATH12K_PPE_DEFAULT_CORE_MASK;
+			vpai.core_mask = ath12k_ppe_rfs_get_core_mask();
 
 		ppe_vp_num = ppe_vp_alloc(dev, &vpai);
 		break;

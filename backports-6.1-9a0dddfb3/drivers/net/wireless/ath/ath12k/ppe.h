@@ -29,7 +29,10 @@ enum ppeds_irq_type {
 
 #define DP_PPEDS_SERVICE_BUDGET     256
 
-#define ATH12K_PPE_DEFAULT_CORE_MASK		ATH12K_MAX_CORE_MASK
+#define ATH12K_PPE_DEFAULT_CORE_MASK		ath12k_rfs_core_mask[0]
+#define ATH12K_PPE_RFS_2GHZ_CORE_MASK		ath12k_rfs_core_mask[1]
+#define ATH12K_PPE_RFS_5GHZ_CORE_MASK		ath12k_rfs_core_mask[2]
+#define ATH12K_PPE_RFS_6GHZ_CORE_MASK		ath12k_rfs_core_mask[3]
 
 #define ATH12K_INVALID_PPE_VP_NUM -1
 #define ATH12K_INVALID_PPE_VP_TYPE -1
