@@ -262,7 +262,7 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
-	#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {
 		0, 0, 0, 0,
 		0, 0, 0, 0,
@@ -416,6 +416,23 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn6432 = {
 		ATH12K_TX_MON_RING_MASK_1,
 		0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	.ppe2tcl = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, ATH12K_PPE2TCL_RING_MASK_0,
+	},
+	.reo2ppe = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, ATH12K_REO2PPE_RING_MASK_0,
+	},
+	.wbm2sw6_ppeds_tx_cmpln = {
+		0, 0, 0, 0,
+		0, 0, 0, 0,
+		0, 0, 0, ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0,
+	},
+#endif
 };
 
 static const struct ce_ie_addr ath12k_wifi7_ce_ie_addr_ipq5332 = {

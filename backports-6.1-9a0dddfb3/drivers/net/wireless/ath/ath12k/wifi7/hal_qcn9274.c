@@ -565,6 +565,9 @@ const struct ath12k_hw_regs ipq5424_regs = {
 		HAL_IPQ5424_CE_WFSS_REG_BASE,
 	.hal_umac_ce1_dest_reg_base = 0x00203000 -
 		HAL_IPQ5424_CE_WFSS_REG_BASE,
+	.hal_ppe_rel_ring_base = 0x0000046c,
+	.hal_reo2ppe_ring_base = 0x00000938,
+	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c58,
 };
 
 const struct ath12k_hw_regs qcn6432_regs = {
@@ -653,6 +656,10 @@ const struct ath12k_hw_regs qcn6432_regs = {
 	.hal_umac_ce0_dest_reg_base = 0x01B81000,
 	.hal_umac_ce1_src_reg_base =  0x01B82000,
 	.hal_umac_ce1_dest_reg_base =  0x01B83000,
+
+	.hal_ppe_rel_ring_base = 0x0000046c,
+	.hal_reo2ppe_ring_base = 0x00000938,
+	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c58
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_ipq5332 = {

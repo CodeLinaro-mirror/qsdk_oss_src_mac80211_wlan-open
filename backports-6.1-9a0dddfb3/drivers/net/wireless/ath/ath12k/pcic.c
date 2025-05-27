@@ -387,6 +387,7 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	struct platform_device *pdev = ab->pdev;
 	int j, budget, ret = 0, num_vectors = 0;
 	struct net_device *napi_ndev;
+	int ring_num = 0, ring_type = 0;
 	u8 userpd_id;
 	u32 num_irq = 0;
 
@@ -451,12 +452,13 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 		if (ab->hw_params->ring_mask->ppe2tcl[i] ||
 		    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
 		    ab->hw_params->ring_mask->reo2ppe[i]) {
-			ret = ath12k_pcic_get_msi_data(ab, msi_desc, i);
+			ret = ath12k_pcic_get_msi_data(ab, msi_desc, i, &ring_type, &ring_num);
 			if (ret) {
 				ath12k_err(ab, "failed to get msi data for irq %d: %d",
 					   msi_desc->irq, ret);
 				return ret;
 			}
+			ath12k_hif_ppeds_register_interrupts(ab, ring_type, 0, ring_num);
 		} else {
 			scnprintf(dp_irq_name[userpd_id][i], DP_IRQ_NAME_LEN,
 				  "pci%u_wlan_dp_%u", userpd_id, i);
@@ -655,10 +657,10 @@ void ath12k_pcic_get_msi_address(struct ath12k_base *ab, u32 *msi_addr_lo,
 int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int vector,
 					  int ring_num)
 {
-	int ret, irq;
-	struct ath12k_ahb *ab_ahb;
-	u8 bus_id;
 	struct platform_device *pdev;
+	struct ath12k_ahb *ab_ahb;
+	int ret, irq;
+	u8 bus_id;
 
 	ab_ahb = ath12k_ab_to_ahb(ab);
 	bus_id = ab_ahb->userpd_id;
@@ -757,19 +759,24 @@ irqreturn_t ath12k_pcic_dummy_irq_handler(int irq, void *context)
 }
 
 int ath12k_pcic_get_msi_data(struct ath12k_base *ab, struct msi_desc *msi_desc,
-			     int i)
+			     int i, int *hal_ring_type, int *ring_num)
 {
-	int ret, type;
+	int ret, type, hal_type, ring = 0;
 	struct platform_device *pdev = ab->pdev;
 
-	if (ab->hw_params->ring_mask->ppe2tcl[i])
+	if (ab->hw_params->ring_mask->ppe2tcl[i]) {
 		type = PPEDS_IRQ_PPE2TCL;
-	else if (ab->hw_params->ring_mask->reo2ppe[i])
+		hal_type = HAL_PPE2TCL;
+	} else if (ab->hw_params->ring_mask->reo2ppe[i]) {
 		type = PPEDS_IRQ_REO2PPE;
-	else if (ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i])
+		hal_type = HAL_REO2PPE;
+	} else if (ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i]) {
 		type = PPEDS_IRQ_PPE_WBM2SW_REL;
-	else
+		hal_type = HAL_WBM2SW_RELEASE;
+		ring = HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM;
+	} else {
 		return -EINVAL;
+	}
 
 	/* For multi-platform device, to retrieve msi base address and irq data,
 	 * request a dummy irq  store the base address and data to
@@ -787,7 +794,8 @@ int ath12k_pcic_get_msi_data(struct ath12k_base *ab, struct msi_desc *msi_desc,
 	ab->ipci.dp_msi_data[i] = msi_desc->msg.data;
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[type]);
 	free_irq(ab->dp->ppe.ppeds_irq[type], (void *)ab);
-
+	*hal_ring_type = hal_type;
+	*ring_num = ring;
 	return 0;
 }
 #endif

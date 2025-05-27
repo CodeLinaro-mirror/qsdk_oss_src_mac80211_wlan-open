@@ -40,12 +40,12 @@ static const struct ath12k_msi_config ath12k_wifi7_msi_config[] = {
 		/* In DP, we use num_vectors as 9 (6 REGULAR DP INTERRUPTS + 3 PPEDS
 		 * INTERRUPTS)
 		 */
-		.total_vectors = 15,
+		.total_vectors = 18,
 		.total_users = 3,
 		.users = (struct ath12k_msi_user[]) {
 			{ .name = "QDSS", .num_vectors = 1, .base_vector = 0 },
 			{ .name = "CE", .num_vectors = 5, .base_vector = 1 },
-			{ .name = "DP", .num_vectors = 9, .base_vector = 6 },
+			{ .name = "DP", .num_vectors = 12, .base_vector = 6 },
 		},
 	},
 	{
@@ -97,5 +97,10 @@ int ath12k_pcic_cfg_hybrid_ext_irq(struct ath12k_base *ab,
 				   struct ath12k_dp *dp);
 void ath12k_pcic_free_ext_irq(struct ath12k_base *ab);
 int ath12k_pcic_get_msi_data(struct ath12k_base *ab, struct msi_desc *msi_desc,
-			     int i);
+			     int i, int *hal_ring_type, int *ring_num);
+int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int vector,
+					  int ring_num);
+void ath12k_pcic_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type);
+void ath12k_pcic_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type);
+void ath12k_pcic_ppeds_free_interrupts(struct ath12k_base *ab);
 #endif
