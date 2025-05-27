@@ -162,6 +162,9 @@ void ath12k_dp_ppeds_update_vp_entry(struct ath12k *ar,
 				     struct ath12k_link_vif *arvif);
 void ath12k_dp_rx_ppe_fse_register(void);
 void ath12k_dp_rx_ppe_fse_unregister(void);
+void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
+						 struct ath12k_link_vif *arvif,
+						 bool peer_map);
 int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 				 int *link_ppe_vp_profile_idx,
 				 struct ieee80211_vif *vif);
@@ -272,6 +275,13 @@ static inline int ath12k_vif_update_vp_config(struct ath12k_vif *ahvif,
 
 static inline void ath12k_vif_free_vp(struct ath12k_vif *ahvif,
 				      struct net_device *dev)
+{
+}
+
+static inline
+void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
+						 struct ath12k_link_vif *arvif,
+						 bool peer_map)
 {
 }
 #endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */

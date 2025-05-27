@@ -976,6 +976,36 @@ dealloc_vp_profile:
 	return ret;
 }
 
+void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
+						 struct ath12k_link_vif *arvif,
+						 bool peer_map)
+{
+	u32 ppeds_idx_map_val = 0;
+	int ppe_vp_profile_idx = arvif->ppe_vp_profile_idx;
+	struct ath12k_dp_ppe_vp_profile *vp_profile;
+	u8 link_id = arvif->link_id;
+	struct ath12k_dp_link_vif *dp_link_vif = &arvif->ahvif->dp_vif.dp_link_vif[link_id];
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags) ||
+	    !arvif->primary_sta_link)
+		return;
+
+	vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_profile_idx];
+	if (!vp_profile->is_configured) {
+		ath12k_err(ab, "Invalid PPE VP profile for vdev_id:%d",
+			   arvif->vdev_id);
+		return;
+	}
+	if (arvif->ahvif->vif->type == NL80211_IFTYPE_STATION) {
+		if (peer_map) {
+			ppeds_idx_map_val |=
+				u32_encode_bits(dp_link_vif->ast_idx, HAL_TX_PPEDS_CFG_SEARCH_IDX) |
+				u32_encode_bits(dp_link_vif->ast_hash, HAL_TX_PPEDS_CFG_CACHE_SET);
+		}
+		ath12k_hal_ppeds_cfg_ast_override_map_reg(ab, vp_profile->search_idx_reg_num,
+							  ppeds_idx_map_val);
+	}
+}
 void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif, int ppe_vp_profile_idx)
 {
 	struct ath12k *ar = arvif->ar;

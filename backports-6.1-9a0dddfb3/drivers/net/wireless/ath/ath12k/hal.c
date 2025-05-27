@@ -879,3 +879,13 @@ void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 
 	ath12k_hif_write32(ab, reg_addr, reg_val);
 }
+
+void ath12k_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
+					       u32 ppeds_idx_map_val)
+{
+	u32 reg_addr;
+
+	reg_addr = HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(HAL_SEQ_WCSS_UMAC_TCL_REG, idx);
+
+	ath12k_hif_write32(ab, reg_addr, ppeds_idx_map_val);
+}

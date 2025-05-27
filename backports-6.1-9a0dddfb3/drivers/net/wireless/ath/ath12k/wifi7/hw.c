@@ -1076,7 +1076,6 @@ static int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw,
 
 	return ret;
 }
-#endif
 
 /* Note: called under rcu_read_lock() */
 static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,

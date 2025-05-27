@@ -623,4 +623,7 @@ u32 ath12k_wifi7_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
 void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
 				      u32 start_seq, enum hal_pn_type type);
+
+void ath12k_wifi7_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
+						     u32 ppeds_idx_map_val);
 #endif

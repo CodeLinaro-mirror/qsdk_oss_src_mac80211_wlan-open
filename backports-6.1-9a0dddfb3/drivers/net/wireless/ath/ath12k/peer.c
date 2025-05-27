@@ -110,6 +110,8 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
 {
 	int ret;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_base *ab = ar->ab;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -125,6 +127,15 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
 	ret = ath12k_peer_delete_send(ar, vdev_id, addr);
 	if (ret)
 		return ret;
+
+	arvif = ath12k_mac_get_arvif(ar, vdev_id);
+	if (!arvif) {
+		ath12k_warn(ab,"failed to get arvif with vdev_id %d,"
+			    "skip ppeds ast override\n",
+			    vdev_id);
+	} else if (arvif->ahvif->vif->type == NL80211_IFTYPE_STATION) {
+		ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(ab, arvif, false);
+	}
 
 	ret = ath12k_wait_for_peer_delete_done(ar, vdev_id, addr);
 	if (ret)

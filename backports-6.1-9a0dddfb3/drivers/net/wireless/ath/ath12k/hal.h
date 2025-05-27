@@ -1167,6 +1167,9 @@ struct hal_flow_tuple_info {
 struct hal_wbm_idle_scatter_list;
 struct hal_wbm_link_desc;
 
+#define HAL_TX_PPEDS_CFG_SEARCH_IDX                GENMASK(19, 0)
+#define HAL_TX_PPEDS_CFG_CACHE_SET                 GENMASK(23, 20)
+
 struct hal_ops {
 	int (*hal_init)(struct ath12k_hal *hal, u8 hw_version);
 	int (*create_srng_config)(struct ath12k_hal *hal);
@@ -1372,5 +1375,7 @@ void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries);
 void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
+void ath12k_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
+					       u32 ppeds_idx_map_val);
 #endif
 #endif
