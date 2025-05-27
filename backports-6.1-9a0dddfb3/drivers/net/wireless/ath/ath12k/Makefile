@@ -22,7 +22,8 @@ ath12k-y += core.o \
 	    dp_mon.o \
 	    fw.o \
 	    p2p.o \
-	    fse.o
+	    fse.o \
+	    accel_cfg.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o

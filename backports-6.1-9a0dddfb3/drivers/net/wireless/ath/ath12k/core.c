@@ -1041,6 +1041,7 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 static int ath12k_core_pdev_init(struct ath12k_base *ab)
 {
 	ath12k_fse_init(ab);
+	ath12k_dp_accel_cfg_init(ab);
 	ath12k_thermal_register(ab);
 	ath12k_spectral_init(ab);
 
@@ -1049,6 +1050,7 @@ static int ath12k_core_pdev_init(struct ath12k_base *ab)
 
 static void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 {
+	ath12k_dp_accel_cfg_deinit(ab);
 	ath12k_fse_deinit(ab);
 	ath12k_thermal_unregister(ab);
 	ath12k_spectral_deinit(ab);
