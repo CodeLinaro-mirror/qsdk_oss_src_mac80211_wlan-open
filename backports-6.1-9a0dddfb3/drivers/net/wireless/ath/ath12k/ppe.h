@@ -18,6 +18,7 @@
 
 struct ath12k_base;
 struct ath12k_vif;
+struct ath12k_vlan_iface;
 struct ath12k_link_sta;
 struct dp_srng;
 
@@ -165,6 +166,11 @@ void ath12k_dp_rx_ppe_fse_unregister(void);
 void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
 						 struct ath12k_link_vif *arvif,
 						 bool peer_map);
+void ath12k_ppe_ds_attach_vlan_vif_link(struct ath12k_vlan_iface *vlan_iface,
+					int ppe_vp_num);
+void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *arvif,
+					 struct ath12k_vlan_iface *vlan_iface,
+					 int link_id);
 int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 				 int *link_ppe_vp_profile_idx,
 				 struct ieee80211_vif *vif);
@@ -284,5 +290,17 @@ void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
 						 bool peer_map)
 {
 }
+
+static inline void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *arvif,
+						       struct ath12k_vlan_iface *vlan_iface,
+						       int link_id)
+{
+}
+
+static inline void ath12k_ppe_ds_attach_vlan_vif_link(struct ath12k_vlan_iface *vlan_iface,
+						      int ppe_vp_num)
+{
+}
+
 #endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */
 #endif /* ATH12K_PPE_H */

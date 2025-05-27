@@ -497,6 +497,13 @@ struct ath12k_dp_link_vif {
 	int bank_id;
 };
 
+struct ath12k_vlan_iface {
+	struct list_head list;
+	struct ieee80211_vif *parent_vif;
+	bool attach_link_done;
+	int ppe_vp_profile_idx[ATH12K_NUM_MAX_LINKS];
+};
+
 struct ath12k_dp_vif {
 	u8 tx_encap_type;
 	u32 key_cipher;
@@ -543,6 +550,7 @@ struct ath12k_vif {
 	/* indicates bitmap of link vif created in FW */
 	u32 links_map;
 	u8 last_scan_link;
+	struct ath12k_vlan_iface *vlan_iface;
 	bool mode0_recover_bridge_vdevs;
 	u8 device_bitmap;
 	bool chanctx_peer_del_done;
@@ -704,6 +712,7 @@ struct ath12k_sta {
 	enum ieee80211_sta_state state;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	int ppe_vp_num;
+	struct ath12k_vlan_iface *vlan_iface;
 #endif
 	bool low_ack_sent;
 };

@@ -128,6 +128,7 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
 	if (ret)
 		return ret;
 
+	rcu_read_lock();
 	arvif = ath12k_mac_get_arvif(ar, vdev_id);
 	if (!arvif) {
 		ath12k_warn(ab,"failed to get arvif with vdev_id %d,"
@@ -137,6 +138,7 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
 		ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(ab, arvif, false);
 	}
 
+	rcu_read_unlock();
 	ret = ath12k_wait_for_peer_delete_done(ar, vdev_id, addr);
 	if (ret)
 		return ret;

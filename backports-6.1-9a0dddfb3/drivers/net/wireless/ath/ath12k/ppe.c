@@ -829,6 +829,146 @@ void ath12k_dp_ppeds_update_vp_entry(struct ath12k *ar,
 	ath12k_dp_ppeds_setup_vp_entry(ab, arvif->ar, arvif, vp_profile);
 }
 
+static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, int vp_num,
+					       struct ath12k_vlan_iface *vlan_iface, int link_id)
+{
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_dp_ppe_vp_profile *vp_profile = NULL;
+	int ppe_vp_profile_idx, ppe_vp_tbl_idx = -1;
+	int ppe_vp_search_tbl_idx = -1;
+	int vdev_id = arvif->vdev_id;
+	int ret;
+	enum nl80211_iftype vif_type;
+	unsigned long links_map;
+
+	if (!wdev)
+		return -EOPNOTSUPP;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
+
+	if (vp_num <= 0 || ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
+		return 0;
+
+	if (!ab->dp->ppe.ppeds_handle) {
+		ath12k_dbg(ab, ATH12K_DBG_PPE, "DS not enabled on this chip\n");
+		return 0;
+	}
+
+	/*Allocate a ppe vp profile for a vap */
+	ppe_vp_profile_idx = ath12k_dp_ppeds_alloc_ppe_vp_profile(ab, &vp_profile, vp_num);
+	if (!vp_profile) {
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+			   "flows for %s link %d will use SFE RFS flow distribution",
+			   wdev->netdev->name, arvif->link_id);
+		return 0;
+	}
+
+	if (vp_profile->ref_count == 1) {
+		ppe_vp_tbl_idx = ath12k_dp_ppeds_alloc_vp_tbl_entry(ab);
+		if (ppe_vp_tbl_idx < 0) {
+			ath12k_err(ab, "Failed to allocate PPE VP idx for vdev_id:%d", vdev_id);
+			ret = -ENOSR;
+			goto dealloc_vp_profile;
+		}
+
+		if (arvif->ahvif->vif->type == NL80211_IFTYPE_STATION) {
+			ppe_vp_search_tbl_idx = ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry(ab);
+			if (ppe_vp_search_tbl_idx < 0) {
+				ath12k_err(ab,"Failed to allocate PPE VP search table idx for vdev_id:%d",
+					   vdev_id);
+				ret = -ENOSR;
+				goto dealloc_vp_profile;
+			}
+			vp_profile->search_idx_reg_num = ppe_vp_search_tbl_idx;
+		}
+
+		vp_profile->vp_num = vp_num;
+		vp_profile->ppe_vp_num_idx = ppe_vp_tbl_idx;
+		vp_profile->to_fw = 0;
+		vp_profile->use_ppe_int_pri = 0;
+		vp_profile->drop_prec_enable = 0;
+		vp_profile->arvif = arvif;
+
+		vlan_iface->ppe_vp_profile_idx[link_id] = ppe_vp_profile_idx;
+	} else {
+		int link_idx;
+		struct ath12k_link_vif *iter_arvif;
+
+		vlan_iface->ppe_vp_profile_idx[link_id] = ppe_vp_profile_idx;
+
+		//dp_link_vif->vdev_id_check_en = false;
+		arvif->splitphy_ds_bank_id =
+			ath12k_dp_tx_get_bank_profile(ab, arvif, ab->dp);
+
+		links_map = ahvif->links_map;
+		for_each_set_bit(link_idx, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+			iter_arvif = ahvif->link[link_idx];
+
+			if (!iter_arvif || iter_arvif == arvif ||
+			    ab != iter_arvif->ar->ab)
+				continue;
+
+			iter_arvif->splitphy_ds_bank_id =
+						arvif->splitphy_ds_bank_id;
+		}
+	}
+
+	ath12k_dp_ppeds_setup_vp_entry(ab, ar, arvif, vp_profile);
+
+	ath12k_dbg(ab, ATH12K_DBG_PPE,
+		   "PPEDS vdev attach success soc_idx %d ds_node_id %d vdev_id %d vpnum %d ppe_vp_profile_idx %d "
+		   "ppe_vp_tbl_idx %d to_fw %d int_pri %d prec_en %d search_idx_reg_num %d\n",
+		   ab->dp->ppe.ppeds_soc_idx, ab->dp->ppe.ds_node_id, vdev_id,
+		   vp_num, ppe_vp_profile_idx, ppe_vp_tbl_idx, vp_profile->to_fw,
+		   vp_profile->use_ppe_int_pri, vp_profile->drop_prec_enable,
+		   vp_profile->search_idx_reg_num);
+
+	return 0;
+
+dealloc_vp_profile:
+	vif_type = arvif->ahvif->vif->type;
+	ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab, ppe_vp_profile_idx, vif_type);
+
+	return ret;
+}
+
+void ath12k_ppe_ds_attach_vlan_vif_link(struct ath12k_vlan_iface *vlan_iface,
+					int ppe_vp_num)
+{
+	struct ieee80211_vif *vif = vlan_iface->parent_vif;
+	struct ath12k_vif *ap_ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *ap_arvif;
+	struct ath12k *ar;
+	int link_id, ret;
+	unsigned long links_map;
+
+	if (vlan_iface->attach_link_done)
+		return;
+
+	links_map = ap_ahvif->links_map;
+
+	rcu_read_lock();
+	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		ap_arvif = rcu_dereference(ap_ahvif->link[link_id]);
+
+		if (!ap_arvif)
+			continue;
+
+		ar = ap_arvif->ar;
+		ret = ath12k_ppeds_attach_link_apvlan_vif(ap_arvif, ppe_vp_num, vlan_iface,
+							  link_id);
+		if (ret)
+			ath12k_info(ar->ab, "Unable to attach ppe ds node for arvif %d\n",
+				    ret);
+	}
+	rcu_read_unlock();
+	vlan_iface->attach_link_done = true;
+}
+
 int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 				 int *link_ppe_vp_profile_idx,
 				 struct ieee80211_vif *vif)
@@ -1006,6 +1146,38 @@ void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
 							  ppeds_idx_map_val);
 	}
 }
+
+void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *arvif,
+					 struct ath12k_vlan_iface *vlan_iface,
+					 int link_id)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp_ppe_vp_profile *vp_profile;
+	int ppe_vp_profile_idx = vlan_iface->ppe_vp_profile_idx[link_id];
+	enum nl80211_iftype vif_type;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return;
+
+	if (ahvif->dp_vif.ppe_vp_num <= 0 || ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
+		return;
+
+	vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_profile_idx];
+	if (!vp_profile->is_configured) {
+		ath12k_err(ab, "Invalid PPE VP profile for vdev_id:%d",
+			   arvif->vdev_id);
+		return;
+	}
+
+	vif_type = arvif->ahvif->vif->type;
+	ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab, ppe_vp_profile_idx, vif_type);
+	vlan_iface->ppe_vp_profile_idx[link_id] = ATH12K_INVALID_VP_PROFILE_IDX;
+	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS vdev detach success vpnum %d  ppe_vp_profile_idx %d\n",
+	       vp_profile->vp_num, ppe_vp_profile_idx);
+}
+
 void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif, int ppe_vp_profile_idx)
 {
 	struct ath12k *ar = arvif->ar;
