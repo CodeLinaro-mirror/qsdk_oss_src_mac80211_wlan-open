@@ -84,6 +84,12 @@ module_param_named(io_coherency, ath12k_io_coherency_enabled, bool, 0644);
 MODULE_PARM_DESC(io_coherency, "Enable io_coherency (0 - disable, 1 - enable)");
 #endif
 
+#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
+unsigned int ath12k_max_clients = 256;
+module_param_named(max_clients, ath12k_max_clients, uint, 0644);
+MODULE_PARM_DESC(max_clients, "Max clients support");
+#endif
+
 static unsigned int ath12k_en_fwlog = true;
 module_param_named(en_fwlog, ath12k_en_fwlog, uint, 0644);
 MODULE_PARM_DESC(en_fwlog, "fwlog: 0-disable, 1-enable");

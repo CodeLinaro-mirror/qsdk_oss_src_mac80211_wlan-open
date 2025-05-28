@@ -31,7 +31,9 @@ struct ath12k_cfr_peer_tx_param;
 #define TARGET_NUM_STATIONS_SINGLE     128
 
 /* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS                64
+#define TARGET_NUM_STATIONS_DBS                128
+/* Max num of stations for DBS_SBS */
+#define TARGET_NUM_STATIONS_DBS_SBS	128
 #else
 // #ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Enable default profile
 /* Num VDEVS per radio */
@@ -43,10 +45,13 @@ struct ath12k_cfr_peer_tx_param;
 #define ATH12K_QMI_TARGET_MEM_MODE      ATH12K_QMI_TARGET_MEM_MODE_DEFAULT
 
 /* Max num of stations for Single Radio mode */
-#define TARGET_NUM_STATIONS_SINGLE     512
+#define TARGET_NUM_STATIONS_SINGLE     ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
 
 /* Max num of stations for DBS */
-#define TARGET_NUM_STATIONS_DBS                128
+#define TARGET_NUM_STATIONS_DBS                ((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
+
+/* Max num of stations for DBS_SBS */
+#define TARGET_NUM_STATIONS_DBS_SBS	((ath12k_max_clients > ab->hw_params->max_clients_supported) ? ab->hw_params->max_clients_supported : ath12k_max_clients)
 
 #endif
 
@@ -67,9 +72,6 @@ struct ath12k_cfr_peer_tx_param;
 
 /* Num of peers for DBS_SBS */
 #define TARGET_NUM_PEERS_DBS_SBS	(3 * TARGET_NUM_PEERS_PDEV_DBS_SBS)
-
-/* Max num of stations for DBS_SBS */
-#define TARGET_NUM_STATIONS_DBS_SBS	128
 
 #define TARGET_NUM_PEERS(x)	TARGET_NUM_PEERS_##x
 #define TARGET_NUM_PEER_KEYS	2
@@ -215,6 +217,9 @@ struct ath12k_hw_params {
 		enum ath12k_m3_fw_loaders m3_loader;
 	} fw;
 
+#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
+	u16 max_clients_supported;
+#endif
 	u8 max_radios;
 	bool single_pdev_only:1;
 	u32 qmi_service_ins_id;
