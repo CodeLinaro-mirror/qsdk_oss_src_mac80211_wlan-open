@@ -2498,35 +2498,26 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 			}
 			if (sta->sta.valid_links) {
 				int link_id;
-				for_each_set_bit(link_id,
-						 (unsigned long *)&master->vif.valid_links,
+				unsigned long master_iter = master->vif.valid_links;
+				u16 new_links = master->vif.valid_links &
+						sta->sta.valid_links;
+
+				for_each_set_bit(link_id, &master_iter,
 						 IEEE80211_MLD_MAX_NUM_LINKS) {
 					if (!(sta->sta.valid_links & BIT(link_id))) {
-						rcu_assign_pointer(
-						vlansdata->vif.link_conf[link_id],
-						NULL);
-						rcu_assign_pointer(
-						vlansdata->link[link_id],
-						NULL);
 						memset(wdev->links[link_id].addr,
 						       0, ETH_ALEN);
-						vlansdata->vif.valid_links &=
-								~BIT(link_id);
 						wdev->valid_links &= ~BIT(link_id);
 					}
 					else {
-						rcu_assign_pointer(
-						vlansdata->vif.link_conf[link_id],
-						master->vif.link_conf[link_id]);
-						rcu_assign_pointer(vlansdata->link[link_id],
-								   master->link[link_id]);
 						memcpy(wdev->links[link_id].addr,
 						       vlansdata->vif.link_conf[link_id]->bssid,
 							ETH_ALEN);
-						vlansdata->vif.valid_links |= BIT(link_id);
 						wdev->valid_links |= BIT(link_id);
 					}
 				}
+
+				ieee80211_vif_set_links(vlansdata, new_links, 0);
 			}
 		}
 

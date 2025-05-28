@@ -16,27 +16,25 @@ static void ieee80211_update_apvlan_links(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_sub_if_data *vlan;
 	struct ieee80211_link_data *link;
-	u16 ap_bss_links = sdata->vif.valid_links;
-	u16 new_links, vlan_links;
-	unsigned long add;
 
 	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
+		unsigned long add = sdata->vif.valid_links;
+		unsigned long rem = ~sdata->vif.valid_links & GENMASK(15,0);
 		int link_id;
 
-		if (!vlan)
+		if (add == vlan->vif.valid_links)
 			continue;
 
-		/* No support for 4addr with MLO yet */
-		if (vlan->wdev.use_4addr)
-			return;
+		for_each_set_bit(link_id, &add, IEEE80211_MLD_MAX_NUM_LINKS) {
+			vlan->wdev.valid_links |= BIT(link_id);
+			ether_addr_copy(vlan->wdev.links[link_id].addr,
+					sdata->wdev.links[link_id].addr);
+		}
 
-		vlan_links = vlan->vif.valid_links;
-
-		new_links = ap_bss_links;
-
-		add = new_links & ~vlan_links;
-		if (!add)
-			continue;
+		for_each_set_bit(link_id, &rem, IEEE80211_MLD_MAX_NUM_LINKS) {
+			vlan->wdev.valid_links &= ~BIT(link_id);
+			eth_zero_addr(vlan->wdev.links[link_id].addr);
+		}
 
 		ieee80211_vif_set_links(vlan, add, 0);
 
@@ -103,8 +101,13 @@ void ieee80211_link_init(struct ieee80211_sub_if_data *sdata,
 
 		ap_bss = container_of(sdata->bss,
 				      struct ieee80211_sub_if_data, u.ap);
-		ap_bss_conf = sdata_dereference(ap_bss->vif.link_conf[link_id],
-						ap_bss);
+
+		if (deflink)
+			ap_bss_conf = &ap_bss->vif.bss_conf;
+		else
+			ap_bss_conf = sdata_dereference(ap_bss->vif.link_conf[link_id],
+							ap_bss);
+
 		memcpy(link_conf, ap_bss_conf, sizeof(*link_conf));
 	}
 
@@ -364,8 +367,9 @@ static int ieee80211_vif_update_links(struct ieee80211_sub_if_data *sdata,
 		link = links[link_id];
 		ieee80211_link_init(sdata, link_id, &link->data, &link->conf);
 		ieee80211_link_setup(&link->data);
-		ieee80211_set_wmm_default(&link->data, true,
-			sdata->vif.type != NL80211_IFTYPE_STATION);
+		if (sdata->vif.type != NL80211_IFTYPE_AP_VLAN)
+			ieee80211_set_wmm_default(&link->data, true,
+				     sdata->vif.type != NL80211_IFTYPE_STATION);
 	}
 
 	if (new_links == 0)
