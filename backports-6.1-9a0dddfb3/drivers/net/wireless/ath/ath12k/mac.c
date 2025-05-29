@@ -9643,6 +9643,7 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 	u8 link_id = 0, pri_link_id;
 	bool is_link_found = false;
 	unsigned long links_map;
+	u16 pref_valid_links = 0;
 
 	lockdep_assert_held(&ah->hw_mutex);
 
@@ -9683,29 +9684,37 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 	arvif = ath12k_get_arvif_from_link_id(ahvif, ahvif->primary_link_id);
 	if (arvif->ar->ab->hw_params->is_plink_preferable) {
 		pri_link_id = ahvif->primary_link_id;
-		return pri_link_id;
+		goto exit_pri_link_selection;
 	}
 
 select_pri_link:
-	/* if the configured link id is not present, then take assoc link
-	 * as the primary link
-	 */
-	pri_link_id = ahsta->assoc_link_id;
-
-	arvif = ath12k_get_arvif_from_link_id(ahvif, ahsta->assoc_link_id);
-	if (arvif->ar->ab->hw_params->is_plink_preferable)
-		return pri_link_id;
-
-	/* if assoc link is not preferable, then select any other link as
-	 * primary link
-	 */
+	/* among all available links, get the preferable links bitmap */
 	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
-		if (link_id != ahsta->primary_link_id) {
-			pri_link_id = link_id;
-			break;
-		}
+		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+		if (!arvif || !arvif->ar)
+			continue;
+
+		if (!arvif->ar->ab->hw_params->is_plink_preferable)
+			continue;
+
+		pref_valid_links |= BIT(link_id);
 	}
 
+	/* all the links available currently are not preferable but no
+	 * other choice hence need to select among these
+	 */
+	if (!pref_valid_links)
+		links_map = valid_links;
+	else
+		links_map = pref_valid_links;
+
+	/* TODO: Currently just selecting using ffs(). Proper logic can be
+	 * 	used here to select among these by using some other run
+	 *	time parameters like RSSI.
+	 */
+	pri_link_id = ffs(links_map) - 1;
+
+exit_pri_link_selection:
 	ath12k_mac_assign_middle_link_id(sta, ahsta, &pri_link_id,
 					 arvif->ar->ab->ag->num_devices);
 
