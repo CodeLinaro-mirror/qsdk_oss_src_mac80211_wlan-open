@@ -9721,6 +9721,320 @@ exit_pri_link_selection:
 	return pri_link_id;
 }
 
+static bool ath12k_mac_ahsta_is_migra_link_valid(struct ath12k_sta *ahsta,
+						 u8 link_id)
+{
+	struct ath12k_vif *ahvif = ahsta->ahvif;
+	struct ath12k_hw *ah = ahvif->ah;
+
+	lockdep_assert_held(&ah->hw_mutex);
+
+	if (!(ahsta->links_map & BIT(link_id)))
+		return false;
+
+	if (ahsta->primary_link_id == link_id)
+		return false;
+
+	return true;
+}
+
+static bool ath12k_mac_ahsta_can_migrate(struct ath12k_sta *ahsta)
+{
+	unsigned long int valid_links = ahsta->links_map;
+	struct ath12k_vif *ahvif = ahsta->ahvif;
+	struct ath12k_hw *ah = ahvif->ah;
+	struct ath12k_link_sta *arsta;
+	u8 link_id;
+
+	lockdep_assert_held(&ah->hw_mutex);
+
+	/* Currently bridge peer is not supprted. */
+	valid_links &= ~ATH12K_IEEE80211_MLD_MAX_LINKS_MASK;
+	for_each_set_bit(link_id, &valid_links, ATH12K_NUM_MAX_LINKS) {
+		arsta = ahsta->link[link_id];
+		if (!arsta)
+			continue;
+
+		if (arsta->is_bridge_peer)
+			return false;
+	}
+
+	if (ahsta->state < IEEE80211_STA_ASSOC)
+		return false;
+
+	if (ahsta->is_migration_in_progress)
+		return false;
+
+	return true;
+}
+
+static int ath12k_mac_get_next_pri_link(struct ath12k_sta *ahsta, u8 *pri_link_id)
+{
+	struct ath12k_vif *ahvif = ahsta->ahvif;
+	struct ath12k_hw *ah = ahvif->ah;
+	struct ieee80211_sta *sta;
+	u16 curr_links = ahsta->links_map;
+	u16 links_map;
+
+	lockdep_assert_held(&ah->hw_mutex);
+
+	sta = container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC,
+		   "cur_pri_link %u, valid_links 0x%x for ML sta %pM\n",
+		   ahsta->primary_link_id, curr_links, sta->addr);
+
+	/* exclude the current primary link id from consideration */
+	links_map = curr_links & ~BIT(ahsta->primary_link_id);
+
+	/* if only no link is available then can not really migrate*/
+	if (!links_map)
+		return -EINVAL;
+
+	*pri_link_id = ath12k_mac_ahsta_get_pri_link_id(ahvif, ahsta, links_map);
+	if (*pri_link_id == IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC,
+		   "link %u selected as primary link for ML sta %pM\n",
+		   *pri_link_id, sta->addr);
+
+	return 0;
+}
+
+static void
+ath12k_mac_free_link_migr_peer_list(struct ath12k_hw *ah,
+				    struct list_head *peer_migr_list)
+{
+	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
+	struct ath12k_dp_peer *ml_peer;
+	struct ath12k_sta *ahsta;
+
+	lockdep_assert_held(&ah->dp_hw.peer_lock);
+
+	/* This list contains only the peers failed to send migration
+	 * request to firmware. No need to take further action here,
+	 * the requester of this migration request will handle these
+	 * peers later as per the requirement
+	 */
+	list_for_each_entry_safe(peer_node, tmp_peer, peer_migr_list, list) {
+		rcu_read_lock();
+		/* TODO: Need to check if we ml_peer_id validation
+		 */
+		ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
+		rcu_read_unlock();
+
+		if (ml_peer) {
+			ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+			ahsta->is_migration_in_progress = false;
+		}
+
+		list_del(&peer_node->list);
+		kfree(peer_node);
+	}
+}
+
+static struct ath12k_mac_pri_link_migr_peer_node *
+ath12k_mac_get_link_migr_peer_node(struct ath12k_dp_peer *ml_peer,
+				   u8 pri_link_id)
+{
+	struct ath12k_mac_pri_link_migr_peer_node *node;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+	struct ath12k_vif *ahvif = ahsta->ahvif;
+	struct ath12k_hw *ah = ahvif->ah;
+	struct ath12k_link_sta *arsta = ahsta->link[pri_link_id];
+	struct ath12k_link_vif *arvif;
+	u8 hw_link_id;
+
+	lockdep_assert_held(&ah->hw_mutex);
+
+	if (!arsta)
+		return NULL;
+
+	arvif = arsta->arvif;
+	if (!arvif || !arvif->ar)
+		return NULL;
+
+	hw_link_id = arvif->ar->pdev->hw_link_id;
+
+	node = kzalloc(sizeof(*node), GFP_ATOMIC);
+	if (!node)
+		return NULL;
+
+	INIT_LIST_HEAD(&node->list);
+	node->ml_peer_id = ml_peer->peer_id & ~ATH12K_PEER_ML_ID_VALID;
+	node->hw_link_id = hw_link_id;
+
+	return node;
+}
+
+static int ath12k_mac_handle_sta_migration(struct ath12k_dp_peer *ml_peer,
+					   struct ath12k_sta *ahsta, u8 link_id,
+					   struct list_head *list_head, int *num_peers)
+{
+	struct ath12k_mac_pri_link_migr_peer_node *peer_node;
+	u8 pri_link_id;
+	int ret;
+
+	if (!ath12k_mac_ahsta_can_migrate(ahsta))
+		return -EPERM;
+
+	if (link_id == 0xFF) {
+		ret = ath12k_mac_get_next_pri_link(ahsta, &pri_link_id);
+		if (ret)
+			return ret;
+	} else if (ath12k_mac_ahsta_is_migra_link_valid(ahsta, link_id)) {
+		pri_link_id = link_id;
+	} else {
+		return -EINVAL;
+	}
+
+	peer_node = ath12k_mac_get_link_migr_peer_node(ml_peer, pri_link_id);
+	if (!peer_node)
+		return -ENOMEM;
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC,
+		   "ML sta %pM will migrate pri link to link_id %u hw_link_id %u\n",
+		   ml_peer->addr, pri_link_id, peer_node->hw_link_id);
+
+	list_add(&peer_node->list, list_head);
+	ahsta->is_migration_in_progress = true;
+	(*num_peers)++;
+
+	return 0;
+}
+
+int
+ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
+				    struct ath12k_mac_link_migrate_usr_params *params)
+{
+	struct ath12k_link_vif *arvif, *arvif_itr;
+	struct ath12k_hw *ah = ahvif->ah;
+	struct list_head peer_migr_list;
+	struct ath12k_dp_peer *ml_peer;
+	struct ath12k_link_sta *arsta;
+	unsigned long int valid_links;
+	struct ath12k_sta *ahsta;
+	int ret, num_peers = 0;
+	struct ath12k *ar;
+	u8 link_id;
+	bool found;
+
+	INIT_LIST_HEAD(&peer_migr_list);
+
+	lockdep_assert_held(&ah->hw_mutex);
+
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+
+	/* Request for single MLD peer */
+	if (!is_zero_ether_addr(params->addr)) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "pri link migrate: single peer migration\n");
+
+		ml_peer = ath12k_dp_peer_find(&ah->dp_hw, params->addr);
+		if (!ml_peer) {
+			ret = -ENODEV;
+			goto exit_link_migrate_req;
+		}
+
+		if (!ml_peer->is_mlo || ml_peer->is_vdev_peer) {
+			ret = -EINVAL;
+			goto exit_link_migrate_req;
+		}
+
+		ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+
+		arvif = ath12k_get_arvif_from_link_id(ahvif, ahsta->primary_link_id);
+		if (!arvif || !arvif->is_up || !arvif->ar) {
+			ret = -ENODEV;
+			goto exit_link_migrate_req;
+		}
+
+		ar = arvif->ar;
+
+		ret = ath12k_mac_handle_sta_migration(ml_peer, ahsta, params->link_id,
+						      &peer_migr_list, &num_peers);
+		if (ret)
+			goto exit_link_migrate_req;
+
+		goto send_link_mig_cmd;
+	}
+
+	/* Request for all MLD peers using given link's SOC as primary SOC */
+	if (params->link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+		ret = -EINVAL;
+		goto exit_link_migrate_req;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC, "pri link migrate: link migration\n");
+
+	arvif = ath12k_get_arvif_from_link_id(ahvif, params->link_id);
+	if (!arvif || !arvif->is_up || !arvif->ar) {
+		ret = -EINVAL;
+		goto exit_link_migrate_req;
+	}
+
+	ar = arvif->ar;
+
+	list_for_each_entry(ml_peer, &ah->dp_hw.peers, list) {
+		if (!ml_peer->is_mlo || ml_peer->is_vdev_peer)
+			continue;
+
+		ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+
+		valid_links = ahsta->links_map;
+		found = false;
+
+		for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
+			arsta = ahsta->link[link_id];
+			if (!arsta)
+				continue;
+
+			arvif_itr = arsta->arvif;
+			if (!arvif_itr || !arvif_itr->ar)
+				continue;
+
+			/* If the link arvif is not the same as requested link vdev,
+			 * do not consider for migration
+			 */
+			if (arvif_itr != arvif)
+				continue;
+
+			/* If current primary is not on the provided link pdev, do not
+			 * consider for migration
+			 */
+			if (ahsta->primary_link_id != arvif_itr->link_id)
+				continue;
+
+			found = true;
+			break;
+		}
+
+		if (!found)
+			continue;
+
+		ret = ath12k_mac_handle_sta_migration(ml_peer, ahsta, 0xFF,
+						      &peer_migr_list, &num_peers);
+		if (ret)
+			goto exit_link_migrate_req;
+	}
+
+send_link_mig_cmd:
+	if (num_peers == 0)
+		ret = -EINVAL;
+	else
+		ret = 0;
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC,
+		   "pri link migrate: got num peers %d for vdev_id %d\n",
+		   num_peers, arvif->vdev_id);
+
+exit_link_migrate_req:
+	ath12k_mac_free_link_migr_peer_list(ah, &peer_migr_list);
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	return ret;
+}
+
 bool ath12k_mac_op_removed_link_is_primary(struct ieee80211_sta *sta,
 					   u16 removed_links)
 {

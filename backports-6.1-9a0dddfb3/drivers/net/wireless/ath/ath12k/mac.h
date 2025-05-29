@@ -17,6 +17,7 @@ struct ath12k_base;
 struct ath12k_hw;
 struct ath12k_hw_group;
 struct ath12k_pdev_map;
+struct ath12k_vif;
 
 struct ath12k_generic_iter {
 	struct ath12k *ar;
@@ -118,6 +119,17 @@ extern const struct htt_rx_ring_tlv_filter ath12k_mac_mon_status_filter_default;
 #define ATH12K_SCAN_11D_INTERVAL               600000
 #define ATH12K_11D_INVALID_VDEV_ID             0xFFFF
 #define MAX_NUM_BRIDGE_VDEV_PER_MLD  2
+
+struct ath12k_mac_link_migrate_usr_params {
+	u8 link_id;
+	u8 addr[ETH_ALEN];
+};
+
+struct ath12k_mac_pri_link_migr_peer_node {
+	struct list_head list;
+	u16 ml_peer_id;
+	u8 hw_link_id;
+};
 
 void ath12k_mac_11d_scan_start(struct ath12k *ar, u32 vdev_id);
 void ath12k_mac_11d_scan_stop(struct ath12k *ar);
@@ -329,4 +341,7 @@ struct ieee80211_bss_conf *ath12k_mac_get_link_bss_conf(struct ath12k_link_vif *
 bool ath12k_mac_is_ml_arvif(struct ath12k_link_vif *arvif);
 bool ath12k_mac_is_bridge_vdev(struct ath12k_link_vif *arvif);
 void ath12k_mac_bridge_vdev_up(struct ath12k_link_vif *arvif);
+int
+ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
+				    struct ath12k_mac_link_migrate_usr_params *params);
 #endif

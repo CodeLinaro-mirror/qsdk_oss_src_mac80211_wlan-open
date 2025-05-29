@@ -405,7 +405,6 @@ int ath12k_dp_link_peer_rhash_delete(struct ath12k_dp *dp,
 	return 0;
 }
 
-static
 struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw, u8 *addr)
 {
 	struct ath12k_dp_peer *peer;

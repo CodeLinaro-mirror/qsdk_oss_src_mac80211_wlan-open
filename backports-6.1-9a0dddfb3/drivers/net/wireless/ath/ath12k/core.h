@@ -716,6 +716,7 @@ struct ath12k_sta {
 	struct ath12k_vlan_iface *vlan_iface;
 #endif
 	bool low_ack_sent;
+	bool is_migration_in_progress;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1
