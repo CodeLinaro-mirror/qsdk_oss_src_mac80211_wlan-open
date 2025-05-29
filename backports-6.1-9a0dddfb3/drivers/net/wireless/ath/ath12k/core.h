@@ -1672,6 +1672,16 @@ static inline const char *ath12k_bus_str(enum ath12k_bus bus)
 	return "unknown";
 }
 
+static inline struct ath12k_link_vif *
+ath12k_get_arvif_from_link_id(struct ath12k_vif *ahvif, int link_id)
+{
+	if (link_id >= ATH12K_NUM_MAX_LINKS)
+		return NULL;
+
+	return rcu_dereference_protected(ahvif->link[link_id],
+					 lockdep_is_held(&ahvif->ah->hw_mutex));
+}
+
 static inline struct ath12k_hw *ath12k_hw_to_ah(struct ieee80211_hw  *hw)
 {
 	return hw->priv;

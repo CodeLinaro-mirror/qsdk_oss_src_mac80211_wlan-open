@@ -4645,15 +4645,23 @@ static ssize_t ath12k_write_primary_link(struct file *file,
 			continue;
 		ar = arvif->ar;
 		if (primary_link == ar->hw_link_id) {
+			ahvif->hw_link_id = primary_link;
 			is_link_found = true;
 			break;
 		}
 	}
 
+	/* If configured hw idx is not up then arvif information not available
+	 * at this point. Hence storing the input value and set the primary_link
+	 * in ath12k_mac_ahsta_get_pri_link_id().
+	 */
 	if (!is_link_found) {
+		ahvif->hw_link_id = primary_link;
 		mutex_unlock(&ah->hw_mutex);
-		ath12k_warn(ar->ab, "Invalid link id : %u\n", primary_link);
-		return -EINVAL;
+		ath12k_warn(ar->ab,
+			    "Link is not up primary link will be updated after sta association:%u\n",
+			    primary_link);
+		return count;
 	}
 
 	ahvif->primary_link_id = arvif->link_id;
