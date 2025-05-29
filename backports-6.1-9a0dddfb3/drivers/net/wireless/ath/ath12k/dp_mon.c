@@ -2274,6 +2274,9 @@ ath12k_dp_mon_parse_status_msdu_end(struct ath12k_mon_data *pmon,
 {
 	struct dp_mon_mpdu *mon_mpdu = pmon->mon_mpdu;
 
+	if (!mon_mpdu)
+		return 0;
+
 	ath12k_dp_mon_parse_rx_msdu_end_err(__le32_to_cpu(msdu_end->info2),
 					    &mon_mpdu->err_bitmap);
 
@@ -2316,6 +2319,11 @@ ath12k_dp_mon_parse_status_buf(struct ath12k *ar,
 		goto dest_replenish;
 	}
 
+	if (!pmon->mon_mpdu) {
+		dev_kfree_skb_any(msdu);
+		goto dest_replenish;
+	}
+
 	if (!pmon->mon_mpdu->head)
 		pmon->mon_mpdu->head = msdu;
 	else
@@ -2337,7 +2345,17 @@ ath12k_dp_mon_parse_rx_dest_tlv(struct ath12k *ar,
 {
 	switch (hal_status) {
 	case HAL_RX_MON_STATUS_MPDU_START:
-		if (WARN_ON_ONCE(pmon->mon_mpdu))
+		/* TODO: Hardware may encounter error scenarios such as DROP
+		   descriptor, flush reason, or truncated reason. In these cases, some
+		   status buffers associated with a PPDU may be freed prematurely, while
+		   others continue to be processed. Current code assumes all TLVs for a
+		   PPDU are present and accessible. When some buffers are missing due to
+		   the above hardware conditions, driver may attempt to access NULL
+		   pointers, leading to crashes or kernel warnings. This issue should be
+		   addressed by adding full support for handling these hardware error
+		   reasons which is spread across multiple buffers.
+		   */
+		if (pmon->mon_mpdu)
 			break;
 
 		pmon->mon_mpdu = kzalloc(sizeof(*pmon->mon_mpdu), GFP_ATOMIC);
@@ -2348,6 +2366,9 @@ ath12k_dp_mon_parse_rx_dest_tlv(struct ath12k *ar,
 		return ath12k_dp_mon_parse_status_buf(ar, pmon, tlv_data);
 	case HAL_RX_MON_STATUS_MPDU_END:
 		/* If no MSDU then free empty MPDU */
+		if (!pmon->mon_mpdu)
+			break;
+
 		if (pmon->mon_mpdu->tail) {
 			pmon->mon_mpdu->tail->next = NULL;
 			list_add_tail(&pmon->mon_mpdu->list, &pmon->dp_rx_mon_mpdu_list);
