@@ -13924,20 +13924,28 @@ static void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif
 	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_skb_cb *skb_cb;
 	struct sk_buff *skb;
-	int i;
+	u32 tx_spt_page;
+	int i, j, k;
 
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		spin_lock_bh(&dp->tx_desc_lock[i]);
 
-		list_for_each_entry(tx_desc_info, &dp->tx_desc_used_list[i],
-				    list) {
-			skb = tx_desc_info->skb;
-			if (!skb)
-				continue;
+		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
+			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
+			tx_desc_info = dp->txbaddr[tx_spt_page];
 
-			skb_cb = ATH12K_SKB_CB(skb);
-			if (skb_cb->vif == vif)
-				skb_cb->vif = NULL;
+			for (k = 0; k < ATH12K_MAX_SPT_ENTRIES; k++) {
+				if (!tx_desc_info[k].in_use)
+					continue;
+
+				skb = tx_desc_info[k].skb;
+				if (!skb)
+					continue;
+
+				skb_cb = ATH12K_SKB_CB(skb);
+				if (skb_cb->vif == vif)
+					skb_cb->vif = NULL;
+			}
 		}
 
 		spin_unlock_bh(&dp->tx_desc_lock[i]);

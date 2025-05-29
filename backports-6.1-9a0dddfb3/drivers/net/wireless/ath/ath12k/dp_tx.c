@@ -278,7 +278,8 @@ void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 {
 	spin_lock_bh(&dp->tx_desc_lock[pool_id]);
 	tx_desc->skb_ext_desc = NULL;
-	list_move_tail(&tx_desc->list, &dp->tx_desc_free_list[pool_id]);
+	tx_desc->in_use = false;
+	list_add_tail(&tx_desc->list, &dp->tx_desc_free_list[pool_id]);
 	spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
 }
 EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf);
@@ -298,7 +299,8 @@ struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 		return NULL;
 	}
 
-	list_move_tail(&desc->list, &dp->tx_desc_used_list[pool_id]);
+	list_del(&desc->list);
+	desc->in_use = true;
 	spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
 
 	return desc;

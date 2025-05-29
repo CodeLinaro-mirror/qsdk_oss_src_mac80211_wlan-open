@@ -1260,12 +1260,12 @@ void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif)
 static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_rx_desc_info *desc_info;
-	struct ath12k_tx_desc_info *tx_desc_info, *tmp1;
+	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_skb_cb *skb_cb;
 	struct sk_buff *skb;
 	struct ath12k *ar;
-	int i, j;
+	int i, j, k;
 	u32 pool_id, tx_spt_page;
 
 	if (!dp->spt_info)
@@ -1307,36 +1307,44 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		spin_lock_bh(&dp->tx_desc_lock[i]);
 
-		list_for_each_entry_safe(tx_desc_info, tmp1, &dp->tx_desc_used_list[i],
-					 list) {
-			list_del(&tx_desc_info->list);
-			skb = tx_desc_info->skb;
+		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
+			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
+			tx_desc_info = dp->txbaddr[tx_spt_page];
+			for (k = 0; k < ATH12K_MAX_SPT_ENTRIES; k++) {
+				if (!tx_desc_info[k].in_use)
+					continue;
 
-			if (!skb)
-				continue;
+				skb = tx_desc_info[k].skb;
+				if (!skb)
+					continue;
 
-			if (tx_desc_info->skb_ext_desc) {
-				ath12k_core_dma_unmap_single(ab->dev,
-							     ATH12K_SKB_CB(skb)->paddr_ext_desc,
-							     tx_desc_info->skb_ext_desc->len,
-							     DMA_TO_DEVICE);
-				dev_kfree_skb_any(tx_desc_info->skb_ext_desc);
+				tx_desc_info[k].skb = NULL;
+
+				if (tx_desc_info[k].skb_ext_desc) {
+					ath12k_core_dma_unmap_single(ab->dev,
+								     ATH12K_SKB_CB(skb)->paddr_ext_desc,
+								     tx_desc_info[k].skb_ext_desc->len,
+								     DMA_TO_DEVICE);
+					dev_kfree_skb_any(tx_desc_info[k].skb_ext_desc);
+					tx_desc_info[k].skb_ext_desc = NULL;
+				}
+
+				/* if we are unregistering, hw would've been destroyed and
+				 * ar is no longer valid.
+				 */
+				if (!(test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags))) {
+					skb_cb = ATH12K_SKB_CB(skb);
+					ar = skb_cb->u.ar;
+					if (atomic_dec_and_test(&ar->dp.num_tx_pending))
+						wake_up(&ar->dp.tx_empty_waitq);
+				}
+
+				ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr,
+							     skb->len, DMA_TO_DEVICE);
+				dev_kfree_skb_any(skb);
+
+				tx_desc_info[k].in_use = false;
 			}
-
-			/* if we are unregistering, hw would've been destroyed and
-			 * ar is no longer valid.
-			 */
-			if (!(test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags))) {
-				skb_cb = ATH12K_SKB_CB(skb);
-				ar = skb_cb->u.ar;
-
-				if (atomic_dec_and_test(&ar->dp.num_tx_pending))
-					wake_up(&ar->dp.tx_empty_waitq);
-			}
-
-			ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr,
-						     skb->len, DMA_TO_DEVICE);
-			dev_kfree_skb_any(skb);
 		}
 
 		spin_unlock_bh(&dp->tx_desc_lock[i]);
@@ -1803,7 +1811,6 @@ static int ath12k_dp_cc_init(struct ath12k_base *ab)
 
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		INIT_LIST_HEAD(&dp->tx_desc_free_list[i]);
-		INIT_LIST_HEAD(&dp->tx_desc_used_list[i]);
 		spin_lock_init(&dp->tx_desc_lock[i]);
 	}
 
@@ -2131,10 +2138,11 @@ void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab)
 void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_rx_desc_info *desc_info;
-	struct ath12k_tx_desc_info *tx_desc_info, *tmp;
+	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_dp *dp;
 	struct sk_buff *skb;
-	int i, j;
+	int i, j, k;
+	u32 tx_spt_page;
 
 	dp = ath12k_ab_to_dp(ab);
 	/* RX Descriptor cleanup */
@@ -2168,25 +2176,35 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 	/* TX Descriptor cleanup */
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		spin_lock_bh(&dp->tx_desc_lock[i]);
-		list_for_each_entry_safe(tx_desc_info, tmp, &dp->tx_desc_used_list[i],
-					 list) {
-			skb = tx_desc_info->skb;
-			if (!skb)
-				continue;
+		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
+			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
+			tx_desc_info = dp->txbaddr[tx_spt_page];
 
-			tx_desc_info->skb = NULL;
+			for (k = 0; k < ATH12K_MAX_SPT_ENTRIES; k++) {
+				if (!tx_desc_info[k].in_use)
+					continue;
 
-			if (tx_desc_info->skb_ext_desc) {
-				ath12k_core_dma_unmap_single(ab->dev,
-							     ATH12K_SKB_CB(skb)->paddr_ext_desc,
-							     tx_desc_info->skb_ext_desc->len,
-							     DMA_TO_DEVICE);
-				dev_kfree_skb_any(tx_desc_info->skb_ext_desc);
+				skb = tx_desc_info[k].skb;
+				if (!skb)
+					continue;
+
+				tx_desc_info[k].skb = NULL;
+
+				if (tx_desc_info[k].skb_ext_desc) {
+					ath12k_core_dma_unmap_single(ab->dev,
+								     ATH12K_SKB_CB(skb)->paddr_ext_desc,
+								     tx_desc_info[k].skb_ext_desc->len,
+								     DMA_TO_DEVICE);
+					dev_kfree_skb_any(tx_desc_info[k].skb_ext_desc);
+					tx_desc_info[k].skb_ext_desc = NULL;
+				}
+
+				ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr,
+							     skb->len, DMA_TO_DEVICE);
+				dev_kfree_skb_any(skb);
+
+				tx_desc_info[k].in_use = false;
 			}
-
-			ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr,
-						     skb->len, DMA_TO_DEVICE);
-			dev_kfree_skb_any(skb);
 		}
 		spin_unlock_bh(&dp->tx_desc_lock[i]);
 	}
