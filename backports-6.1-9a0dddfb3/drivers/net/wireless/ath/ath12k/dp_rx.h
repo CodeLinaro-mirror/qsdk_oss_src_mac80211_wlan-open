@@ -74,6 +74,16 @@ struct ath12k_dp_rx_reo_cache_flush_elem {
 	unsigned long ts;
 };
 
+struct dp_reo_update_rx_queue_elem {
+	struct list_head list;
+	struct ath12k_dp_rx_tid data;
+	int peer_id;
+	u8 tid;
+	bool reo_cmd_update_rx_queue_resend_flag;
+	bool is_ml_peer;
+	u16 ml_peer_id;
+};
+
 struct ath12k_dp_rx_reo_cmd {
 	struct list_head list;
 	struct ath12k_dp_rx_tid data;
@@ -192,8 +202,6 @@ u8 ath12k_dp_rx_h_decap_type(struct ath12k_base *ab,
 u32 ath12k_dp_rx_h_mpdu_err(struct ath12k_base *ab,
 			    struct hal_rx_desc *desc);
 void ath12k_dp_rx_process_reo_status(struct ath12k_base *ab);
-void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
-			       enum hal_reo_cmd_status status);
 u16 ath12k_dp_rx_h_seq_no(struct ath12k_base *ab, struct hal_rx_desc *desc);
 void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 			       struct napi_struct *napi,

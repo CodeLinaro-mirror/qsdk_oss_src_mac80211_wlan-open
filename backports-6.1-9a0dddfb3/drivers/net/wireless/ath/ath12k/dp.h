@@ -580,6 +580,11 @@ struct ath12k_dp {
 	 * - reo_cmd_cache_flush_count
 	 */
 	spinlock_t reo_cmd_lock;
+	struct list_head reo_cmd_update_rx_queue_list;
+	/* protects access to below field,
+	 * - reo_cmd_update_rx_queue_list
+	 */
+	spinlock_t reo_cmd_update_rx_queue_lock;
 	struct ath12k_hp_update_timer reo_cmd_timer;
 	struct ath12k_hp_update_timer tx_ring_timer[DP_TCL_NUM_RING_MAX];
 	struct ath12k_spt_info *spt_info;

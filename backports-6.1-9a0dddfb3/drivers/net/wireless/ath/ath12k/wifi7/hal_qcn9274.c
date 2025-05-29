@@ -1006,4 +1006,5 @@ const struct hal_ops hal_qcn9274_ops = {
 	.rx_buf_addr_info_get = ath12k_wifi7_hal_rx_buf_addr_info_get,
 	.cc_config = ath12k_wifi7_hal_cc_config,
 	.get_idle_link_rbm = ath12k_wifi7_hal_get_idle_link_rbm,
+	.reo_shared_qaddr_cache_clear = ath12k_wifi7_hal_reo_shared_qaddr_cache_clear,
 };

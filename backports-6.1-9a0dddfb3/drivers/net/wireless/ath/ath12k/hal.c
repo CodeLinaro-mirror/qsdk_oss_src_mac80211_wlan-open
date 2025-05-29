@@ -136,6 +136,11 @@ ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 	return hal->hal_ops->get_idle_link_rbm(hal, device_id);
 }
 
+void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
+{
+	ab->hal.hal_ops->reo_shared_qaddr_cache_clear(ab);
+}
+
 static int ath12k_hal_alloc_cont_rdp(struct ath12k_hal *hal)
 {
 	size_t size;

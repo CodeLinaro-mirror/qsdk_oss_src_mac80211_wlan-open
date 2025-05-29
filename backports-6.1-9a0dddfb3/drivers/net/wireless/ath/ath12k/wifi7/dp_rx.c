@@ -27,6 +27,11 @@
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
+static int ath12k_wifi7_peer_rx_tid_delete_handler(struct ath12k_base *ab,
+						   struct ath12k_dp_rx_tid *rx_tid,
+						   u8 tid);
+void ath12k_wifi7_peer_rx_tid_qref_reset(struct ath12k_base *ab, u16 peer_id, u16 tid);
+
 static inline u8 ath12k_wifi7_dp_rx_get_msdu_src_link(struct ath12k_dp *dp,
 						      struct hal_rx_desc *desc)
 {
@@ -214,12 +219,125 @@ void ath12k_wifi7_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id, u1
 	qref->info1 = u32_encode_bits(upper_32_bits(paddr),
 				      BUFFER_ADDR_INFO1_ADDR) |
 		      u32_encode_bits(tid, DP_REO_QREF_NUM);
-	ath12k_hal_reo_shared_qaddr_cache_clear(ab);
+	ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
 }
 
-static void
-ath12k_wifi7_peer_rx_tid_qref_reset(struct ath12k_base *ab, u16 peer_id,
-				    u16 tid)
+void ath12k_wifi7_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
+				     enum hal_reo_cmd_status status)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_rx_tid *rx_tid = ctx, *update_rx_tid;
+	struct ath12k_dp_rx_reo_cache_flush_elem *elem, *tmp;
+	struct dp_reo_update_rx_queue_elem *qelem, *qtmp;
+
+	if (status == HAL_REO_CMD_DRAIN) {
+		goto free_desc;
+	} else if (status != HAL_REO_CMD_SUCCESS) {
+		/* Shouldn't happen! Cleanup in case of other failure? */
+		ath12k_warn(ab, "failed to delete rx tid %d hw descriptor %d\n",
+			    rx_tid->tid, status);
+		return;
+	}
+
+	/* Check if there is any pending rx_queue, if yes then update it */
+	spin_lock_bh(&dp->reo_cmd_update_rx_queue_lock);
+	list_for_each_entry_safe(qelem, qtmp, &dp->reo_cmd_update_rx_queue_list,
+				 list) {
+		if (qelem->reo_cmd_update_rx_queue_resend_flag &&
+		    qelem->data.active) {
+			update_rx_tid = &qelem->data;
+
+			if (ath12k_wifi7_peer_rx_tid_delete_handler(ab, update_rx_tid,
+							      qelem->tid)) {
+				update_rx_tid->active = true;
+				break;
+			}
+
+			ath12k_wifi7_peer_rx_tid_qref_reset(ab,
+							    qelem->is_ml_peer ?
+							    qelem->ml_peer_id :
+							    qelem->peer_id,
+							    qelem->tid);
+			ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
+			update_rx_tid->vaddr = NULL;
+			update_rx_tid->paddr = 0;
+			update_rx_tid->size = 0;
+			update_rx_tid->pending_desc_size = 0;
+
+			list_del(&qelem->list);
+			kfree(qelem);
+		}
+	}
+	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
+
+	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
+	if (!elem)
+		goto free_desc;
+
+	elem->ts = jiffies;
+	memcpy(&elem->data, rx_tid, sizeof(*rx_tid));
+
+	spin_lock_bh(&dp->reo_cmd_lock);
+	list_add_tail(&elem->list, &dp->reo_cmd_cache_flush_list);
+	dp->reo_cmd_cache_flush_count++;
+
+	/* Flush and invalidate aged REO desc from HW cache */
+	list_for_each_entry_safe(elem, tmp, &dp->reo_cmd_cache_flush_list,
+				 list) {
+		if (dp->reo_cmd_cache_flush_count > ATH12K_DP_RX_REO_DESC_FREE_THRES ||
+		    time_after(jiffies, elem->ts +
+			       msecs_to_jiffies(ATH12K_DP_RX_REO_DESC_FREE_TIMEOUT_MS))) {
+			list_del(&elem->list);
+			dp->reo_cmd_cache_flush_count--;
+			/* Unlock the reo_cmd_lock before using ath12k_dp_reo_cmd_send()
+			 * within ath12k_wifi7_dp_reo_cache_flush. The reo_cmd_cache_flush_list
+			 * is used in only two contexts, one is in this function called
+			 * from napi and the other in ath12k_dp_free during core destroy.
+			 * Before dp_free, the irqs would be disabled and would wait to
+			 * synchronize. Hence there wouldn’t be any race against add or
+			 * delete to this list. Hence unlock-lock is safe here.
+			 */
+			spin_unlock_bh(&dp->reo_cmd_lock);
+			ath12k_dp_arch_reo_cache_flush(dp, &elem->data);
+			kfree(elem);
+			spin_lock_bh(&dp->reo_cmd_lock);
+		}
+	}
+	spin_unlock_bh(&dp->reo_cmd_lock);
+
+	return;
+free_desc:
+	ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr, rx_tid->size,
+				     DMA_BIDIRECTIONAL);
+	kfree(rx_tid->vaddr);
+	rx_tid->vaddr = NULL;
+}
+
+static int ath12k_wifi7_peer_rx_tid_delete_handler(struct ath12k_base *ab,
+						   struct ath12k_dp_rx_tid *rx_tid,
+						   u8 tid)
+{
+	struct ath12k_hal_reo_cmd cmd = {0};
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	lockdep_assert_held(&dp->reo_cmd_update_rx_queue_lock);
+
+	rx_tid->active = false;
+	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
+	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+	cmd.upd0 |= HAL_REO_CMD_UPD0_VLD;
+	cmd.upd0 |= HAL_REO_CMD_UPD0_BA_WINDOW_SIZE;
+	cmd.ba_window_size = (tid == HAL_DESC_REO_NON_QOS_TID) ?
+			      rx_tid->ba_win_sz : DP_BA_WIN_SZ_MAX;
+	cmd.upd1 |= HAL_REO_CMD_UPD1_VLD;
+
+	return ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
+					    HAL_REO_CMD_UPDATE_RX_QUEUE, &cmd,
+					    ath12k_wifi7_dp_rx_tid_del_func);
+}
+
+void ath12k_wifi7_peer_rx_tid_qref_reset(struct ath12k_base *ab, u16 peer_id, u16 tid)
 {
 	struct ath12k_reo_queue_ref *qref;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -241,42 +359,57 @@ ath12k_wifi7_peer_rx_tid_qref_reset(struct ath12k_base *ab, u16 peer_id,
 				(peer_id * (IEEE80211_NUM_TIDS + 1) + tid);
 
 	qref->info0 = u32_encode_bits(0, BUFFER_ADDR_INFO0_ADDR);
-	qref->info1 = u32_encode_bits(0, BUFFER_ADDR_INFO1_ADDR) |
-		      u32_encode_bits(tid, DP_REO_QREF_NUM);
+	qref->info1 = u32_encode_bits(0, BUFFER_ADDR_INFO1_ADDR);
 }
 
 void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 					struct ath12k_dp_link_peer *peer, u8 tid)
 {
-	struct ath12k_hal_reo_cmd cmd = {0};
 	struct ath12k_dp_rx_tid *rx_tid = &peer->dp_peer->rx_tid[tid];
-	int ret;
+	struct dp_reo_update_rx_queue_elem *elem, *tmp;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp   = ath12k_ab_to_dp(ab);
 
 	if (!rx_tid->active)
 		return;
 
-	rx_tid->active = false;
-	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
-	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
-	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
-	cmd.upd0 = HAL_REO_CMD_UPD0_VLD;
-	ret = ath12k_wifi7_dp_reo_cmd_send(ar->ab, rx_tid,
-					   HAL_REO_CMD_UPDATE_RX_QUEUE, &cmd,
-					   ath12k_dp_rx_tid_del_func);
-	if (ret) {
-		ath12k_err(ar->ab, "failed to send HAL_REO_CMD_UPDATE_RX_QUEUE cmd, tid %d (%d)\n",
-			   tid, ret);
-		ath12k_core_dma_unmap_single(ar->ab->dev, rx_tid->paddr, rx_tid->size,
-					     DMA_BIDIRECTIONAL);
-		kfree(rx_tid->vaddr);
+	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
+	if (!elem)
+		return;
+
+	elem->reo_cmd_update_rx_queue_resend_flag = false;
+	elem->peer_id = peer->peer_id;
+	elem->tid = tid;
+	elem->is_ml_peer = peer->mlo ? true : false;
+	elem->ml_peer_id = peer->ml_id;
+
+	memcpy(&elem->data, rx_tid, sizeof(*rx_tid));
+
+	spin_lock_bh(&dp->reo_cmd_update_rx_queue_lock);
+	list_add_tail(&elem->list, &dp->reo_cmd_update_rx_queue_list);
+
+	list_for_each_entry_safe(elem, tmp, &dp->reo_cmd_update_rx_queue_list,
+			list) {
+		rx_tid = &elem->data;
+
+		if (ath12k_wifi7_peer_rx_tid_delete_handler(ab, rx_tid, elem->tid)) {
+			rx_tid->active = true;
+			elem->reo_cmd_update_rx_queue_resend_flag = true;
+			break;
+		}
+		ath12k_wifi7_peer_rx_tid_qref_reset(ab,
+						    elem->is_ml_peer ? elem->ml_peer_id :
+						    elem->peer_id, elem->tid);
+		ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
 		rx_tid->vaddr = NULL;
+		rx_tid->paddr = 0;
+		rx_tid->size = 0;
+		rx_tid->pending_desc_size = 0;
+
+		list_del(&elem->list);
+		kfree(elem);
 	}
-
-	if (peer->mlo)
-		ath12k_wifi7_peer_rx_tid_qref_reset(ar->ab, peer->ml_id, tid);
-	else
-		ath12k_wifi7_peer_rx_tid_qref_reset(ar->ab, peer->peer_id, tid);
-
+	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
 }
 
 void  ath12k_wifi7_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,

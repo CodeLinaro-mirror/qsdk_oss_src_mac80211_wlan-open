@@ -1235,6 +1235,7 @@ struct hal_ops {
 	void (*cc_config)(struct ath12k_base *ab);
 	enum hal_rx_buf_return_buf_manager
         (*get_idle_link_rbm)(struct ath12k_hal *hal, u8 device_id);
+	void (*reo_shared_qaddr_cache_clear)(struct ath12k_base *ab);
 };
 
 static inline
@@ -1340,7 +1341,6 @@ int ath12k_hal_srng_update_shadow_config(struct ath12k_base *ab,
 void ath12k_hal_srng_shadow_config(struct ath12k_base *ab);
 void ath12k_hal_srng_shadow_update_hp_tp(struct ath12k_base *ab,
 					 struct hal_srng *srng);
-void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 int ath12k_hal_srng_init(struct ath12k_base *ab);
 void ath12k_hal_srng_deinit(struct ath12k_base *ab);
 void ath12k_hal_set_link_desc_addr(struct ath12k_hal *hal,
@@ -1372,6 +1372,7 @@ enum hal_rx_buf_return_buf_manager
 ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
 void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 				    u8 mcast_ctrl_val);
+void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries);

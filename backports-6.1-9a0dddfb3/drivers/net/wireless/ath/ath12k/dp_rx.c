@@ -571,6 +571,22 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp_rx_reo_cmd *cmd, *tmp;
 	struct ath12k_dp_rx_reo_cache_flush_elem *cmd_cache, *tmp_cache;
 	struct ath12k_dp_rx_tid *rx_tid;
+	struct dp_reo_update_rx_queue_elem *cmd_queue, *tmp_queue;
+
+	spin_lock_bh(&dp->reo_cmd_update_rx_queue_lock);
+	list_for_each_entry_safe(cmd_queue, tmp_queue, &dp->reo_cmd_update_rx_queue_list,
+				 list) {
+		list_del(&cmd_queue->list);
+		rx_tid = &cmd_queue->data;
+		if (rx_tid->vaddr) {
+			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
+					 rx_tid->size, DMA_BIDIRECTIONAL);
+			kfree(rx_tid->vaddr);
+			rx_tid->vaddr = NULL;
+		}
+		kfree(cmd_queue);
+	}
+	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
 
 	spin_lock_bh(&dp->reo_cmd_lock);
 	list_for_each_entry_safe(cmd, tmp, &dp->reo_cmd_list, list) {
@@ -609,6 +625,8 @@ void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 	if (status != HAL_REO_CMD_SUCCESS)
 		ath12k_warn(dp->ab, "failed to flush rx tid hw desc, tid %d status %d\n",
 			    rx_tid->tid, status);
+	ath12k_hal_reo_shared_qaddr_cache_clear(dp->ab);
+
 	if (rx_tid->vaddr) {
 		ath12k_core_dma_unmap_single(dp->ab->dev, rx_tid->paddr, rx_tid->size,
 					     DMA_BIDIRECTIONAL);
@@ -617,79 +635,6 @@ void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_reo_cmd_free);
-
-void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
-			       enum hal_reo_cmd_status status)
-{
-	struct ath12k_base *ab = dp->ab;
-	struct ath12k_dp_rx_tid *rx_tid = ctx;
-	struct ath12k_dp_rx_reo_cache_flush_elem *elem, *tmp;
-
-	if (status == HAL_REO_CMD_DRAIN) {
-		goto free_desc;
-	} else if (status != HAL_REO_CMD_SUCCESS) {
-		/* Shouldn't happen! Cleanup in case of other failure? */
-		ath12k_warn(ab, "failed to delete rx tid %d hw descriptor %d\n",
-			    rx_tid->tid, status);
-		return;
-	}
-
-	elem = kzalloc(sizeof(*elem), GFP_ATOMIC);
-	if (!elem) {
-		ath12k_warn(ab, "failed to alloc reo_cache_flush_elem, rx tid %d\n",
-								rx_tid->tid);
-		goto free_desc;
-	}
-	elem->ts = jiffies;
-	memcpy(&elem->data, rx_tid, sizeof(*rx_tid));
-
-	spin_lock_bh(&dp->reo_cmd_lock);
-	list_add_tail(&elem->list, &dp->reo_cmd_cache_flush_list);
-	dp->reo_cmd_cache_flush_count++;
-
-	/* Flush and invalidate aged REO desc from HW cache */
-	list_for_each_entry_safe(elem, tmp, &dp->reo_cmd_cache_flush_list,
-				 list) {
-		if (dp->reo_cmd_cache_flush_count > ATH12K_DP_RX_REO_DESC_FREE_THRES ||
-		    time_after(jiffies, elem->ts +
-			       msecs_to_jiffies(ATH12K_DP_RX_REO_DESC_FREE_TIMEOUT_MS))) {
-
-			/* Unlock the reo_cmd_lock before using ath12k_dp_reo_cmd_send()
-			 * within ath12k_wifi7_dp_reo_cache_flush. The reo_cmd_cache_flush_list
-			 * is used in only two contexts, one is in this function called
-			 * from napi and the other in ath12k_dp_free during core destroy.
-			 * Before dp_free, the irqs would be disabled and would wait to
-			 * synchronize. Hence there wouldn’t be any race against add or
-			 * delete to this list. Hence unlock-lock is safe here.
-			 */
-			spin_unlock_bh(&dp->reo_cmd_lock);
-
-			if (ath12k_dp_arch_reo_cache_flush(dp, &elem->data)) {
-				/* In failure case, just update the timestamp
-				 * for flush cache elem and continue */
-				spin_lock_bh(&dp->reo_cmd_lock);
-				elem->ts = jiffies +
-					msecs_to_jiffies(ATH12K_DP_RX_REO_DESC_FREE_TIMEOUT_MS);
-				ath12k_warn(ab, "Failed to send HAL_REO_CMD_FLUSH_CACHE cmd"
-						"Updating timestamp (%ld) in the list\n", elem->ts);
-				continue;
-			}
-			spin_lock_bh(&dp->reo_cmd_lock);
-			list_del(&elem->list);
-			dp->reo_cmd_cache_flush_count--;
-			kfree(elem);
-		}
-	}
-	spin_unlock_bh(&dp->reo_cmd_lock);
-
-	return;
-free_desc:
-	ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr, rx_tid->size,
-				     DMA_BIDIRECTIONAL);
-	kfree(rx_tid->vaddr);
-	rx_tid->vaddr = NULL;
-}
-EXPORT_SYMBOL(ath12k_dp_rx_tid_del_func);
 
 void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 				       bool rel_link_desc)

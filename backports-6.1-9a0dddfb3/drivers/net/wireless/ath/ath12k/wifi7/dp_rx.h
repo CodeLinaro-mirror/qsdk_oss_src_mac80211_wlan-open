@@ -85,4 +85,6 @@ ssize_t ath12k_wifi7_dp_dump_fst_table(struct ath12k_dp *dp, char *buf, int size
 int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 					 struct ath12k_dp_link_peer *peer,
 					 u16 peer_id, u8 chip_id);
+void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
+			       enum hal_reo_cmd_status status);
 #endif
