@@ -148,47 +148,30 @@ int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
 }
 
 int ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
-				    struct ath12k_dp_rx_tid *rx_tid)
+                                    struct ath12k_dp_rx_tid *rx_tid)
 {
 	struct ath12k_hal_reo_cmd cmd = {0};
-	unsigned long tot_desc_sz, desc_sz;
 	int ret;
 
-	tot_desc_sz = rx_tid->size;
-	if (rx_tid->pending_desc_size)
-		tot_desc_sz = rx_tid->pending_desc_size;
-	else
-		tot_desc_sz = rx_tid->size;
-
-	desc_sz = ath12k_wifi7_hal_reo_qdesc_size(0, HAL_DESC_REO_NON_QOS_TID);
-
-	while (tot_desc_sz > desc_sz) {
-		tot_desc_sz -= desc_sz;
-		cmd.addr_lo = lower_32_bits(rx_tid->paddr + tot_desc_sz);
-		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
-		ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
-						   HAL_REO_CMD_FLUSH_CACHE,
-						   &cmd, NULL);
-		if (ret) {
-			rx_tid->pending_desc_size = tot_desc_sz + desc_sz;
-			/* If this fails with ring full condition, then
-			 * no need to retry below as it is expected to
-			 * fail within short time */
-			if (ret == -ENOBUFS)
-				goto exit;
-		}
-	}
-
-	rx_tid->pending_desc_size = desc_sz;
 	memset(&cmd, 0, sizeof(cmd));
 	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
 	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
-	cmd.flag = HAL_REO_CMD_FLG_NEED_STATUS;
+	cmd.flag |= HAL_REO_CMD_FLG_NEED_STATUS |
+		HAL_REO_CMD_FLG_FLUSH_FWD_ALL_MPDUS;
+
+	/* For all QoS TIDs (except NON_QOS), the driver allocates a maximum
+	 * window size of 1024. In such cases, the driver can issue a single
+	 * 1KB descriptor flush command instead of sending multiple 128-byte
+	 * flush commands for each QoS TID, improving efficiency.
+	 */
+
+	if (rx_tid->tid != HAL_DESC_REO_NON_QOS_TID)
+		cmd.flag |= HAL_REO_CMD_FLG_FLUSH_QUEUE_1K_DESC;
+
 	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
 					   HAL_REO_CMD_FLUSH_CACHE,
 					   &cmd, ath12k_dp_reo_cmd_free);
 
-exit:
 	return ret;
 }
 
@@ -287,8 +270,6 @@ void ath12k_wifi7_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 		if (dp->reo_cmd_cache_flush_count > ATH12K_DP_RX_REO_DESC_FREE_THRES ||
 		    time_after(jiffies, elem->ts +
 			       msecs_to_jiffies(ATH12K_DP_RX_REO_DESC_FREE_TIMEOUT_MS))) {
-			list_del(&elem->list);
-			dp->reo_cmd_cache_flush_count--;
 			/* Unlock the reo_cmd_lock before using ath12k_dp_reo_cmd_send()
 			 * within ath12k_wifi7_dp_reo_cache_flush. The reo_cmd_cache_flush_list
 			 * is used in only two contexts, one is in this function called
@@ -298,9 +279,18 @@ void ath12k_wifi7_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			 * delete to this list. Hence unlock-lock is safe here.
 			 */
 			spin_unlock_bh(&dp->reo_cmd_lock);
-			ath12k_dp_arch_reo_cache_flush(dp, &elem->data);
-			kfree(elem);
+			if (ath12k_wifi7_dp_reo_cache_flush(dp->ab, &elem->data)) {
+				/* In failure case, just update the timestamp
+				 * for flush cache elem and continue
+				 */
+				spin_lock_bh(&dp->reo_cmd_lock);
+				elem->ts = jiffies;
+				break;
+			}
 			spin_lock_bh(&dp->reo_cmd_lock);
+			list_del(&elem->list);
+			dp->reo_cmd_cache_flush_count--;
+			kfree(elem);
 		}
 	}
 	spin_unlock_bh(&dp->reo_cmd_lock);
