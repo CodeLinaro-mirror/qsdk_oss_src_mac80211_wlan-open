@@ -281,6 +281,7 @@ static struct ath12k_link_sta *ath12k_mac_alloc_assign_link_sta(struct ath12k_hw
 static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 					   struct ath12k_sta *ahsta,
 					   unsigned long int valid_links);
+static void ath12k_wmi_migration_cmd_work(struct work_struct *work);
 static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
@@ -1828,6 +1829,42 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 			}
 		}
 	}
+}
+
+static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
+{
+	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
+						     wmi_migration_cmd_work);
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_hw *ah = ar->ah;
+	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
+	struct ath12k_dp_peer *ml_peer;
+	struct ath12k_sta *ahsta;
+
+	if (wait_for_completion_timeout(&arvif->wmi_migration_event_resp,
+					ATH12K_MIGRATION_TIMEOUT_HZ))
+		return;
+
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+
+	arvif->is_umac_migration_in_progress = false;
+
+	list_for_each_entry_safe(peer_node, tmp_peer, &arvif->peer_migrate_list, list) {
+		rcu_read_lock();
+		/* TODO: Need to check if we ml_peer_id validation
+		 */
+		ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
+		rcu_read_unlock();
+
+		if (ml_peer) {
+			ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
+			ahsta->is_migration_in_progress = false;
+		}
+
+		list_del(&peer_node->list);
+		kfree(peer_node);
+	}
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
 }
 
 static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
@@ -4620,6 +4657,12 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	wiphy_work_init(&arvif->peer_ch_width_switch_work,
 		  ath12k_wmi_peer_chan_width_switch_work);
 
+	init_completion(&arvif->wmi_migration_event_resp);
+	INIT_WORK(&arvif->wmi_migration_cmd_work,
+		  ath12k_wmi_migration_cmd_work);
+	INIT_LIST_HEAD(&arvif->peer_migrate_list);
+
+
 	for (i = 0; i < ARRAY_SIZE(arvif->bitrate_mask.control); i++) {
 		arvif->bitrate_mask.control[i].legacy = 0xffffffff;
 		arvif->bitrate_mask.control[i].gi = NL80211_TXRATE_DEFAULT_GI;
@@ -4704,6 +4747,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	}
 	wiphy_work_cancel(ah->hw->wiphy,
 			  &arvif->peer_ch_width_switch_work);
+	cancel_work_sync(&arvif->wmi_migration_cmd_work);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac remove link interface (vdev %d link id %d)",
 		   arvif->vdev_id, arvif->link_id);
@@ -9818,6 +9862,10 @@ ath12k_mac_free_link_migr_peer_list(struct ath12k_hw *ah,
 	 * peers later as per the requirement
 	 */
 	list_for_each_entry_safe(peer_node, tmp_peer, peer_migr_list, list) {
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "pri link migrate: free ml_peer_id %u from migrate list\n",
+			   peer_node->ml_peer_id);
+
 		rcu_read_lock();
 		/* TODO: Need to check if we ml_peer_id validation
 		 */
@@ -9913,7 +9961,7 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 	struct list_head peer_migr_list;
 	struct ath12k_dp_peer *ml_peer;
 	struct ath12k_link_sta *arsta;
-	unsigned long int valid_links;
+	unsigned long int valid_links = ahvif->links_map;
 	struct ath12k_sta *ahsta;
 	int ret, num_peers = 0;
 	struct ath12k *ar;
@@ -9923,6 +9971,19 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 	INIT_LIST_HEAD(&peer_migr_list);
 
 	lockdep_assert_held(&ah->hw_mutex);
+
+	/* Check if firmware supports migration */
+	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
+		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+		if (!arvif)
+			continue;
+
+		if (!arvif->ar)
+			return -ENOTCONN;
+
+		if (!ath12k_wmi_is_umac_migration_supported(arvif->ar->ab))
+			return -EOPNOTSUPP;
+	}
 
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 
@@ -10028,6 +10089,19 @@ send_link_mig_cmd:
 	ath12k_dbg(NULL, ATH12K_DBG_MAC,
 		   "pri link migrate: got num peers %d for vdev_id %d\n",
 		   num_peers, arvif->vdev_id);
+
+	if (ret)
+		goto exit_link_migrate_req;
+
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
+
+	ret = ath12k_wmi_mlo_send_ptqm_migrate_cmd(arvif,
+						   &peer_migr_list, num_peers);
+	if (ret)
+		ath12k_err(arvif->ar->ab, "Failed to migrate pri link ret %d\n",
+			   ret);
+
+	spin_lock_bh(&ah->dp_hw.peer_lock);
 
 exit_link_migrate_req:
 	ath12k_mac_free_link_migr_peer_list(ah, &peer_migr_list);

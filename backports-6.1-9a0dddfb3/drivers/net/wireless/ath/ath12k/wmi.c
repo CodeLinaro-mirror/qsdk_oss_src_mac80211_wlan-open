@@ -12283,6 +12283,156 @@ static void ath12k_wmi_event_mlo_reconfig_link_removal(struct ath12k_base *ab,
 	rcu_read_unlock();
 }
 
+static int ath12k_wmi_tlv_peer_migrate_sub_tlv_parse(struct ath12k_base *ab,
+						     u16 tag, u16 len,
+						     const void *ptr, void *data)
+{
+	struct wmi_mlo_pri_link_peer_migr_compl_event *parse = data;
+
+	switch (tag) {
+	case WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS:
+		parse->peer_info[parse->num_pri_link_peer_mig_status++] =
+			(struct wmi_mlo_primary_link_peer_migration_status *)ptr;
+		break;
+	}
+
+	return 0;
+}
+
+static int ath12k_wmi_tlv_peer_ptqm_migrate_parse(struct ath12k_base *ab,
+						  u16 tag, u16 len,
+						  const void *ptr, void *data)
+{
+	struct wmi_mlo_pri_link_peer_migr_compl_event *parse = data;
+	struct wmi_mlo_pri_link_peer_mig_compl_fixed_param *fixed_param;
+	int ret = 0;
+
+	switch (tag) {
+	case WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_COMPL_FIXED_PARAM:
+		fixed_param = (struct wmi_mlo_pri_link_peer_mig_compl_fixed_param *)ptr;
+		parse->fixed_param.vdev_id = fixed_param->vdev_id;
+		break;
+	case WMI_TAG_ARRAY_STRUCT:
+		ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+					  ath12k_wmi_tlv_peer_migrate_sub_tlv_parse,
+					  parse);
+		if (ret) {
+			ath12k_warn(ab, "failed to parse PTQM event rx sub tlv %d\n", ret);
+			return ret;
+		}
+		break;
+	}
+
+	return 0;
+}
+
+static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
+					      struct sk_buff *skb)
+{
+	struct wmi_mlo_pri_link_peer_migr_compl_event parse = {0};
+	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_dp_link_peer *peer;
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	int vdev_id, num_peers, ret, i;
+	u16 ml_peer_id;
+	u8 status;
+
+	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+				  ath12k_wmi_tlv_peer_ptqm_migrate_parse,
+				  &parse);
+	if (ret) {
+		ath12k_warn(ab, "failed to parse mgmt rx tlv %d\n", ret);
+		return;
+	}
+
+	vdev_id = le32_to_cpu(parse.fixed_param.vdev_id);
+	num_peers = le32_to_cpu(parse.num_pri_link_peer_mig_status);
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+	if (!arvif) {
+		rcu_read_unlock();
+		ath12k_warn(ab, "MLO Peer Migration event for unknow vdev %d\n",
+			    vdev_id);
+		return;
+	}
+
+	ar = arvif->ar;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "MLO Peer Migration event received for vdev %d, num_peers %d\n",
+		   vdev_id, num_peers);
+
+	spin_lock_bh(&ab->dp->dp_lock);
+
+	for (i = 0; i < num_peers; i++) {
+		ml_peer_id = le32_get_bits(parse.peer_info[i]->status_info,
+					   WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS_ML_PEER_ID);
+		status = le32_get_bits(parse.peer_info[i]->status_info,
+				       WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS_STATUS);
+
+		list_for_each_entry_safe(peer_node, tmp_peer, &arvif->peer_migrate_list,
+					 list) {
+			if (peer_node->ml_peer_id == ml_peer_id) {
+				list_del(&peer_node->list);
+				kfree(peer_node);
+			}
+		}
+
+		ml_peer_id |= ATH12K_PEER_ML_ID_VALID;
+		peer = ath12k_dp_link_peer_find_by_ml_peer_vdev_id(ab->dp,
+								   ml_peer_id,
+								   vdev_id);
+		if (!peer) {
+			ath12k_err(ab, "failed to find ML peer with id %d\n", ml_peer_id);
+			goto exit_pri_link_mig_event;
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "peer migration status ML peer id %d status %u\n",
+			   ml_peer_id, status);
+
+		sta = peer->sta;
+		if (!sta)
+			continue;
+
+		ahsta = (struct ath12k_sta *)sta->drv_priv;
+
+		ahsta->is_migration_in_progress = false;
+
+		if (status != WMI_PRIMARY_LINK_PEER_MIGRATION_SUCCESS) {
+			ath12k_mac_peer_disassoc(ab, sta, ahsta,
+						 ATH12K_DBG_WMI);
+			continue;
+		}
+
+		/* if peer is actually migrated, this condition should fail. If not, then
+		 * possibly in HTT part some error occured
+		 */
+		if (ahsta->primary_link_id == peer->link_id) {
+			ath12k_err(ab,
+				   "unknown error occured during peer migration, disconnecting\n");
+			ath12k_mac_peer_disassoc(ab, sta, ahsta,
+						 ATH12K_DBG_WMI);
+		}
+	}
+
+exit_pri_link_mig_event:
+	spin_unlock_bh(&ab->dp->dp_lock);
+	rcu_read_unlock();
+
+	/* Event is received for all queued ML peers in this arvif */
+	if (list_empty(&arvif->peer_migrate_list)) {
+		complete(&arvif->wmi_migration_event_resp);
+		arvif->is_umac_migration_in_progress = false;
+	}
+
+	return;
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -12490,6 +12640,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_MLO_LINK_REMOVAL_EVENTID:
 		ath12k_wmi_event_mlo_reconfig_link_removal(ab, skb);
+		break;
+	case WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_EVENT_ID:
+		ath12k_wmi_peer_migration_event(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
@@ -13746,6 +13899,120 @@ int ath12k_wmi_mlo_reconfig_link_removal(struct ath12k *ar, u32 vdev_id,
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to send WMI_MLO_LINK_REMOVAL_CMDID");
 		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+bool ath12k_wmi_is_umac_migration_supported(struct ath12k_base *ab)
+{
+	struct ath12k_wmi_base *wmi_ab = &ab->wmi_ab;
+
+	return test_bit(WMI_SERVICE_UMAC_MIGRATION_SUPPORT, wmi_ab->svc_map);
+}
+
+int ath12k_wmi_mlo_send_ptqm_migrate_cmd(struct ath12k_link_vif *arvif,
+				         struct list_head *peer_migr_list,
+				         u16 num_peers)
+{
+	struct ath12k_mac_pri_link_migr_peer_node *peer_node, *tmp_peer;
+	struct wmi_mlo_pri_link_peer_mig_fixed_param *cmd;
+	struct wmi_mlo_new_pri_link_peer_info *peer_info;
+	u16 max_entry_per_cmd = 0, max_entry_cnt = 0;
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_tlv *tlv;
+	struct sk_buff *skb;
+	void *ptr;
+	int ret = -EINVAL, len, i;
+
+	max_entry_per_cmd = (wmi->wmi_ab->max_msg_len[ar->pdev_idx] -
+			     sizeof(*cmd) - TLV_HDR_SIZE) /
+			    sizeof(*peer_info);
+
+	reinit_completion(&arvif->wmi_migration_event_resp);
+
+	while (num_peers > 0) {
+		len = sizeof(*cmd) + TLV_HDR_SIZE;
+		max_entry_cnt = min(max_entry_per_cmd, num_peers);
+
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "Setting max entry limit for migration as %u\n",
+			   max_entry_cnt);
+
+		num_peers -= max_entry_cnt;
+		len += sizeof(*peer_info) * max_entry_cnt;
+
+		skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+		if (!skb)
+			return -ENOMEM;
+
+		cmd = (struct wmi_mlo_pri_link_peer_mig_fixed_param *)skb->data;
+		cmd->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_FIXED_PARAM,
+					       (sizeof(*cmd)));
+		cmd->vdev_id = cpu_to_le32(arvif->vdev_id);
+
+		ptr = skb->data + sizeof(*cmd);
+
+		len = sizeof(*peer_info) * max_entry_cnt;
+		tlv = ptr;
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+		ptr += TLV_HDR_SIZE;
+
+		i = 0;
+		list_for_each_entry(peer_node, peer_migr_list, list) {
+			peer_info = ptr;
+			len = sizeof(*peer_info);
+			peer_info->tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_NEW_PRIMARY_LINK_PEER_INFO,
+						       len);
+			peer_info->new_link_info =
+				le32_encode_bits(peer_node->ml_peer_id,
+						 WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_ML_PEER_ID) |
+				le32_encode_bits(peer_node->hw_link_id,
+						 WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_HW_LINK_ID);
+
+			ath12k_dbg(ab, ATH12K_DBG_WMI,
+				   "ml_peer_id %u new hw link id %d\n",
+				   peer_node->ml_peer_id, peer_node->hw_link_id);
+
+			ptr += len;
+
+			if (++i == max_entry_cnt)
+				break;
+		}
+
+		ret = ath12k_wmi_cmd_send(wmi, skb, WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_CMDID);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to send WMI_MLO_PRIMARY_LINK_PEER_MIGRATION cmd\n");
+			dev_kfree_skb(skb);
+			return ret;
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "WMI PTQM command sent. vdev_id %d num_peers %d\n",
+			   arvif->vdev_id, max_entry_cnt);
+
+		/* now that command is sent, remove this from the list so
+		 * that next iteration does not consider it again. Removing
+		 * from list also indicates that command was sent successfully
+		 * to firmware.
+		 */
+		i = 0;
+		list_for_each_entry_safe(peer_node, tmp_peer, peer_migr_list, list) {
+			list_move_tail(&peer_node->list, &arvif->peer_migrate_list);
+			if (++i == max_entry_cnt)
+				break;
+		}
+
+		/* cancel the worker if already there is a worker scheduled and
+		 * schedule a new one. This basically resets the timer
+		 */
+		cancel_work_sync(&arvif->wmi_migration_cmd_work);
+		queue_work(ar->ab->workqueue, &arvif->wmi_migration_cmd_work);
+		arvif->is_umac_migration_in_progress = true;
 	}
 
 	return ret;

@@ -482,6 +482,11 @@ struct ath12k_link_vif {
 	u32 tx_vdev_id;
 	struct ath12k_prb_resp_tmpl_ml_info ml_info;
 	bool ftm_responder;
+
+	struct work_struct wmi_migration_cmd_work;
+	struct completion wmi_migration_event_resp;
+	struct list_head peer_migrate_list;
+	bool is_umac_migration_in_progress;
 };
 
 struct ath12k_dp_link_vif {

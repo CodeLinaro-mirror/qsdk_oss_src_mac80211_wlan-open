@@ -780,6 +780,11 @@ enum wmi_tlv_cmd_id {
 	WMI_MLO_PEER_TID_TO_LINK_MAP_CMDID,
 	/* WMI cmd for dynamically deleting a link from a MLD VAP */
 	WMI_MLO_LINK_REMOVAL_CMDID,
+	WMI_MLO_AP_VDEV_TID_TO_LINK_MAP_CMDID,
+	WMI_MLO_VDEV_GET_LINK_INFO_CMDID,
+	WMI_MLO_LINK_SET_BSS_PARAMS_CMDID,
+	WMI_MLO_LINK_SWITCH_CONF_CMDID,
+	WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_CMDID,
 };
 
 enum wmi_tlv_event_id {
@@ -1010,6 +1015,12 @@ enum wmi_tlv_event_id {
 	WMI_MLO_TEARDOWN_COMPLETE_EVENTID,
 	/* Response event for Link Removal Cmd */
 	WMI_MLO_LINK_REMOVAL_EVENTID,
+
+	WMI_MLO_TID_TO_LIUNK_MAP_EVENT_ID,
+	WMI_MLO_LINK_INFO_EVENT_ID,
+	WMI_MLO_DISABLE_REQ_EVENT_ID,
+	WMI_MLO_SWITCH_REQUEST_EVENT_ID,
+	WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_EVENT_ID,
 };
 
 enum wmi_tlv_pdev_param {
@@ -2137,6 +2148,10 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_LINK_REMOVAL_TBTT_UPDATE,
 	WMI_TAG_MLO_LINK_REMOVAL_EVENT_FIXED_PARAM,
 	WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM = 0x464,
+	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_FIXED_PARAM = 0x4a3,
+	WMI_TAG_MLO_NEW_PRIMARY_LINK_PEER_INFO = 0x4a4,
+	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_COMPL_FIXED_PARAM = 0x4a5,
+	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS = 0x4a6,
 	WMI_TAG_PDEV_WSI_STATS_INFO_CMD = 0x4b1,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
 	WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM = 0x4be,
@@ -2387,6 +2402,8 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI = 394,
 	WMI_SERVICE_WDS_NULL_FRAME_SUPPORT = 421,
 	WMI_SERVICE_MEC_AGING_TIMER_SUPPORT = 423,
+
+	WMI_SERVICE_UMAC_MIGRATION_SUPPORT = 436,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -7636,6 +7653,72 @@ struct ath12k_wmi_wsi_stats_info_param {
 };
 
 
+struct wmi_mlo_new_pri_link_peer_info {
+	__le32 tlv_header;
+	union {
+		__le32 new_link_info;
+		struct {
+			__le32 ml_peer_id :16,
+			       hw_link_id :16;
+		};
+	};
+};
+
+#define WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_ML_PEER_ID GENMASK(15, 0)
+#define WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_HW_LINK_ID GENMASK(31, 16)
+
+/* TODO: As of now setting it to 5 secs, this is based on the failure event
+ * which received. Later it will be updated based on the stress testing.
+ */
+#define ATH12K_MIGRATION_TIMEOUT_HZ	(5 * HZ)
+
+struct wmi_mlo_pri_link_peer_mig_fixed_param {
+	__le32 tlv_header;
+	__le32 vdev_id;
+} __packed;
+
+struct wmi_peer_ptqm_migrate_event_params {
+	__le32 vdev_id;
+	__le16 num_peers;
+};
+
+enum wmi_primary_link_peer_migration_evenr_status {
+	WMI_PRIMARY_LINK_PEER_MIGRATION_SUCCESS,
+	WMI_PRIMARY_LINK_PEER_MIGRATION_IN_PROGRESS,
+	WMI_PRIMARY_LINK_PEER_MIGRATION_DELETE_IN_PROGRESS,
+	WMI_PRIMARY_LINK_PEER_MIGRATION_DELETED,
+	WMI_PRIMARY_LINK_PEER_MIGRATION_TX_PIPES_FAILED,
+	WMI_PRIMARY_LINK_PEER_MIGRATION_RX_PIPES_FAILED,
+
+	/* Add any new status above this line */
+	WMI_PRIMARY_LINK_PEER_MIGRATION_FAIL = 255,
+};
+
+#define WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS_ML_PEER_ID   GENMASK(15, 0)
+#define WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS_STATUS       GENMASK(23, 16)
+
+struct wmi_mlo_primary_link_peer_migration_status {
+	union {
+		__le32 status_info;
+		struct {
+			__le32 ml_peer_id :16,
+			       status     :8, /* WMI_PRIMARY_LINK_PEER_MIGRATION_STATUS */
+			       reserved   :8;
+		};
+	};
+}__packed;
+
+struct wmi_mlo_pri_link_peer_mig_compl_fixed_param {
+	__le32 vdev_id;
+}__packed;
+
+struct wmi_mlo_pri_link_peer_migr_compl_event {
+	struct wmi_mlo_pri_link_peer_mig_compl_fixed_param fixed_param;
+	int num_pri_link_peer_mig_status;
+	/* TODO: need to change into dynamic var */
+	struct wmi_mlo_primary_link_peer_migration_status *peer_info[100];
+};
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
@@ -7879,4 +7962,8 @@ int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
 int ath12k_wmi_mlo_reconfig_link_removal(struct ath12k *ar, u32 vdev_id,
 					 const u8 *reconfig_ml_ie,
 					 size_t reconfig_ml_ie_len);
+bool ath12k_wmi_is_umac_migration_supported(struct ath12k_base *ab);
+int ath12k_wmi_mlo_send_ptqm_migrate_cmd(struct ath12k_link_vif *arvif,
+				         struct list_head *peer_migr_list,
+				         u16 num_peers);
 #endif
