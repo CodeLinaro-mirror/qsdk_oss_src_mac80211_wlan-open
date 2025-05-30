@@ -487,6 +487,9 @@ struct ath12k_link_vif {
 	struct completion wmi_migration_event_resp;
 	struct list_head peer_migrate_list;
 	bool is_umac_migration_in_progress;
+	bool is_link_removal_in_progress;
+	bool is_link_removal_update_pending;
+	struct ath12k_wmi_mlo_link_removal_event_params link_removal_data;
 };
 
 struct ath12k_dp_link_vif {

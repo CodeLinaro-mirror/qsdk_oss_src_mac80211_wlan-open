@@ -6292,6 +6292,7 @@ int ath12k_mac_op_link_reconfig_remove(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
 				       const struct cfg80211_link_reconfig_removal_params *params)
 {
+	struct ath12k_mac_link_migrate_usr_params migrate_params = {0};
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar;
@@ -6303,6 +6304,15 @@ int ath12k_mac_op_link_reconfig_remove(struct ieee80211_hw *hw,
 		goto exit;
 
 	ar = arvif->ar;
+
+	migrate_params.link_id = params->link_id;
+	/* whether WMI command was sent sucessfully or not does not really
+	 * matter here since after link removal if peer is not migrated, it
+	 * will be anyways disconnected
+	 */
+	mutex_lock(&ahvif->ah->hw_mutex);
+	ath12k_mac_process_link_migrate_req(ahvif, &migrate_params);
+	mutex_unlock(&ahvif->ah->hw_mutex);
 
 	ret = ath12k_wmi_mlo_reconfig_link_removal(ar, arvif->vdev_id,
 						   params->reconfigure_elem,
@@ -9666,12 +9676,22 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 			ar = arvif->ar;
 
 			if (ahsta->primary_link_id == link_id) {
-				/* WAR: send low_ack if its primary link id is
-				 * getting removed, until primary UMAC
-				 * migration is supported
+				/* if the peer is not undergoing migration and still the
+				 * primary link is on this removal link, disconnect whole
+				 * MLD sta
 				 */
-				ieee80211_report_low_ack(sta, ATH12K_REPORT_LOW_ACK_NUM_PKT);
-				return -EINVAL;
+				if (!ahsta->is_migration_in_progress) {
+					ieee80211_report_low_ack(sta, ATH12K_REPORT_LOW_ACK_NUM_PKT);
+					return -EINVAL;
+				} else {
+					/* Migration is in progress. The event completion
+					 * will handle this peer. Ignore this.
+					 * But when this path is hit during ML Link Removal
+					 * procedure, this should not really happen
+					 */
+					WARN_ON(arvif->is_link_removal_in_progress);
+					return 0;
+				}
 			}
 
 			ret = ath12k_mac_station_unauthorize(ar, arvif, arsta);
@@ -9791,6 +9811,10 @@ select_pri_link:
 			continue;
 
 		if (!arvif->ar->ab->hw_params->is_plink_preferable)
+			continue;
+
+		/* If link removal in progress, do not consider it */
+		if (arvif->is_link_removal_in_progress)
 			continue;
 
 		pref_valid_links |= BIT(link_id);
@@ -10164,15 +10188,78 @@ exit_link_migrate_req:
 bool ath12k_mac_op_removed_link_is_primary(struct ieee80211_sta *sta,
 					   u16 removed_links)
 {
+	struct ath12k_mac_link_migrate_usr_params migrate_params = {0};
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	unsigned long removed_link = removed_links;
+	struct ath12k_vif *ahvif = ahsta->ahvif;
+	struct ath12k_hw *ah = ahvif->ah;
+	struct ath12k_link_vif *arvif;
+	bool is_primary = false;
+	struct ath12k *ar;
 	u16 link_id;
+	int ret;
 
-	for_each_set_bit(link_id, &removed_link, ATH12K_NUM_MAX_LINKS)
-		if (ahsta->primary_link_id == link_id)
-			return true;
+	mutex_lock(&ah->hw_mutex);
 
-	return false;
+	for_each_set_bit(link_id, &removed_link, ATH12K_NUM_MAX_LINKS) {
+		if (ahsta->primary_link_id == link_id) {
+			is_primary = true;
+			break;
+		}
+	}
+
+	/* if not primary, just return now */
+	if (!is_primary) {
+		mutex_unlock(&ah->hw_mutex);
+		return false;
+	}
+
+	/* if it happens to be primary link, trigger UMAC Migration. */
+	arvif = ath12k_get_arvif_from_link_id(ahvif, ahsta->primary_link_id);
+	if (WARN_ON(!arvif || !arvif->is_up || !arvif->ar)) {
+		mutex_unlock(&ah->hw_mutex);
+		return true;
+	}
+
+	ar = arvif->ar;
+
+	migrate_params.link_id = 0xFF;
+	memcpy(migrate_params.addr, sta->addr, ETH_ALEN);
+
+	arvif->is_link_removal_in_progress = true;
+
+	ret = ath12k_mac_process_link_migrate_req(ahvif, &migrate_params);
+	if (ret) {
+		arvif->is_link_removal_in_progress = false;
+		mutex_unlock(&ah->hw_mutex);
+		return true;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "mac waiting for UMAC migration to finish\n");
+
+	/* Wait for migration to finish. If it timed out, just WARN_ON()
+	 * and continue since in this case, primary link will still match
+	 * and whole MLD will disconnect anyway
+	 */
+	if (!wait_for_completion_timeout(&arvif->wmi_migration_event_resp,
+					 ATH12K_MIGRATION_TIMEOUT_HZ))
+		WARN_ON(1);
+
+	arvif->is_link_removal_in_progress = false;
+
+	/* now check again and accordingly return */
+	is_primary = false;
+	for_each_set_bit(link_id, &removed_link, ATH12K_NUM_MAX_LINKS) {
+		if (ahsta->primary_link_id == link_id) {
+			is_primary = true;
+			break;
+		}
+	}
+
+	mutex_unlock(&ah->hw_mutex);
+
+	return is_primary;
 }
 EXPORT_SYMBOL(ath12k_mac_op_removed_link_is_primary);
 

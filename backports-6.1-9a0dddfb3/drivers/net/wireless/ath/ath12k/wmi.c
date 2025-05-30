@@ -12240,11 +12240,24 @@ static int ath12k_wmi_tlv_mlo_reconfig_link_removal_parse(struct ath12k_base *ab
 	return ret;
 }
 
+static int
+ath12k_wmi_update_link_reconfig_remove_update(struct ath12k_link_vif *arvif,
+					      struct ath12k_wmi_mlo_link_removal_event_params *ev)
+{
+	return ieee80211_update_link_reconfig_remove_update(arvif->ahvif->vif, arvif->link_id,
+							    ev->tbtt_info.tbtt_count,
+							    ev->tbtt_info.tsf,
+							    ev->tbtt_info.tbtt_count ?
+							    NL80211_CMD_LINK_REMOVAL_STARTED :
+							    NL80211_CMD_LINK_REMOVAL_COMPLETED);
+}
+
 static void ath12k_wmi_event_mlo_reconfig_link_removal(struct ath12k_base *ab,
 						       struct sk_buff *skb)
 {
 	struct ath12k_link_vif *arvif;
 	struct ath12k_wmi_mlo_link_removal_event_params ev = { };
+	struct ath12k *ar;
 	int ret;
 
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
@@ -12266,18 +12279,45 @@ static void ath12k_wmi_event_mlo_reconfig_link_removal(struct ath12k_base *ab,
 		return;
 	}
 
+	ar = arvif->ar;
+	if (!ar) {
+		rcu_read_unlock();
+		ath12k_warn(ab, "Link removal event received on invalid vdev %d\n",
+			    le32_to_cpu(ev.vdev_id));
+		return;
+	}
+
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "Link removal event received in vdev :%d\n",
 		   ev.vdev_id);
 
-	ret = ieee80211_update_link_reconfig_remove_update(arvif->ahvif->vif, arvif->link_id,
-							   ev.tbtt_info.tbtt_count,
-							   ev.tbtt_info.tsf,
-							   ev.tbtt_info.tbtt_count ?
-							   NL80211_CMD_LINK_REMOVAL_STARTED :
-							   NL80211_CMD_LINK_REMOVAL_COMPLETED);
+	if (ev.tbtt_info.tbtt_count && !arvif->is_link_removal_in_progress) {
+		arvif->is_link_removal_update_pending = false;
+		arvif->is_link_removal_in_progress = true;
+		memset(&arvif->link_removal_data, 0,
+		       sizeof(struct ath12k_wmi_mlo_link_removal_event_params));
+	}
 
+	if (!ev.tbtt_info.tbtt_count) {
+		/* If UMAC migration is in progress then return now. The migration event
+		 * will notify the upper layer about link removal event
+		 */
+		if (arvif->is_umac_migration_in_progress) {
+			ath12k_dbg(ab, ATH12K_DBG_WMI,
+				   "UMAC Migration is in progress. Defer sending link removal event to upper layer\n");
+			arvif->is_link_removal_update_pending = true;
+			memcpy(&arvif->link_removal_data, &ev,
+			       sizeof(struct ath12k_wmi_mlo_link_removal_event_params));
+
+			rcu_read_unlock();
+			return;
+		}
+
+		arvif->is_link_removal_in_progress = false;
+	}
+
+	ret = ath12k_wmi_update_link_reconfig_remove_update(arvif, &ev);
 	if (ret)
-		ath12k_warn(ab, "sending link removal event FAILED:%d link_id:%d\n",
+		ath12k_warn(arvif->ar->ab, "sending link removal event FAILED:%d link_id:%d\n",
 			    ret, arvif->link_id);
 
 	rcu_read_unlock();
@@ -12403,7 +12443,12 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 
 		ahsta->is_migration_in_progress = false;
 
-		if (status != WMI_PRIMARY_LINK_PEER_MIGRATION_SUCCESS) {
+		/* Only disassoc when ML link removal in not in progress since
+		 * if migration failed, ML link removal handling will take
+		 * care to disconnect this peer
+		 */
+		if (!arvif->is_link_removal_in_progress &&
+		    status != WMI_PRIMARY_LINK_PEER_MIGRATION_SUCCESS) {
 			ath12k_mac_peer_disassoc(ab, sta, ahsta,
 						 ATH12K_DBG_WMI);
 			continue;
@@ -12412,7 +12457,8 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 		/* if peer is actually migrated, this condition should fail. If not, then
 		 * possibly in HTT part some error occured
 		 */
-		if (ahsta->primary_link_id == peer->link_id) {
+		if (!arvif->is_link_removal_in_progress &&
+		    ahsta->primary_link_id == peer->link_id) {
 			ath12k_err(ab,
 				   "unknown error occured during peer migration, disconnecting\n");
 			ath12k_mac_peer_disassoc(ab, sta, ahsta,
@@ -12428,6 +12474,22 @@ exit_pri_link_mig_event:
 	if (list_empty(&arvif->peer_migrate_list)) {
 		complete(&arvif->wmi_migration_event_resp);
 		arvif->is_umac_migration_in_progress = false;
+
+		/* Migration happened because of ML removal */
+		if (arvif->is_link_removal_in_progress &&
+		    arvif->is_link_removal_update_pending) {
+			ath12k_dbg(ab, ATH12K_DBG_WMI,
+				   "ML Link removal update was pending. Send it now\n");
+
+			arvif->is_link_removal_in_progress = false;
+			arvif->is_link_removal_update_pending = false;
+
+			ret = ath12k_wmi_update_link_reconfig_remove_update(arvif,
+									    &arvif->link_removal_data);
+			if (ret)
+				ath12k_warn(arvif->ar->ab, "sending link removal event FAILED:%d link_id:%d\n",
+					    ret, arvif->link_id);
+		}
 	}
 
 	return;
