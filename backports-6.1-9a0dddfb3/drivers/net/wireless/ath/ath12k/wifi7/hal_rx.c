@@ -217,6 +217,49 @@ ath12k_wifi7_hal_reo_cmd_update_rx_queue(struct hal_tlv_64_hdr *tlv,
 	return le32_get_bits(desc->cmd.info0, HAL_REO_CMD_HDR_INFO0_CMD_NUMBER);
 }
 
+static int ath12k_hal_reo_cmd_flush_queue(struct hal_tlv_64_hdr *tlv,
+					  struct ath12k_hal_reo_cmd *cmd)
+{
+	struct hal_reo_flush_queue *desc = (struct hal_reo_flush_queue *)tlv->value;
+
+	tlv->tl = u32_encode_bits(HAL_REO_FLUSH_QUEUE, HAL_TLV_HDR_TAG) |
+		  u32_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+
+	memset_startat(desc, 0, desc_addr_lo);
+
+	desc->cmd.info0 &= ~cpu_to_le32(HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED);
+
+	if (cmd->flag & HAL_REO_CMD_FLG_NEED_STATUS)
+		desc->cmd.info0 |= cpu_to_le32(HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED);
+
+	desc->desc_addr_lo = cpu_to_le32(cmd->addr_lo);
+	desc->info0 = le32_encode_bits(cmd->addr_hi,
+				       HAL_REO_FLUSH_QUEUE_INFO0_DESC_ADDR_HI);
+
+	return le32_get_bits(desc->cmd.info0, HAL_REO_CMD_HDR_INFO0_CMD_NUMBER);
+}
+
+static int ath12k_hal_reo_cmd_unblock_cache(struct hal_tlv_64_hdr *tlv,
+					    struct ath12k_hal_reo_cmd *cmd)
+{
+	struct hal_reo_unblock_cache *desc =
+		(struct hal_reo_unblock_cache *)tlv->value;
+
+	tlv->tl = u32_encode_bits(HAL_REO_UNBLOCK_CACHE, HAL_TLV_HDR_TAG) |
+		u32_encode_bits(sizeof(*desc), HAL_TLV_HDR_LEN);
+
+	memset_startat(desc, 0, info0);
+
+	desc->cmd.info0 &= ~cpu_to_le32(HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED);
+
+	if (cmd->flag & HAL_REO_CMD_FLG_NEED_STATUS)
+		desc->cmd.info0 |= cpu_to_le32(HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED);
+
+	desc->info0 = HAL_REO_UNBLOCK_CACHE_INFO0_UNBLK_CACHE;
+
+	return le32_get_bits(desc->cmd.info0, HAL_REO_CMD_HDR_INFO0_CMD_NUMBER);
+}
+
 int ath12k_wifi7_hal_reo_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 				  enum hal_reo_cmd_type type,
 				  struct ath12k_hal_reo_cmd *cmd)
@@ -245,7 +288,11 @@ int ath12k_wifi7_hal_reo_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 		ret = ath12k_wifi7_hal_reo_cmd_update_rx_queue(reo_desc, cmd);
 		break;
 	case HAL_REO_CMD_FLUSH_QUEUE:
+		ret = ath12k_hal_reo_cmd_flush_queue(reo_desc, cmd);
+		break;
 	case HAL_REO_CMD_UNBLOCK_CACHE:
+		ret = ath12k_hal_reo_cmd_unblock_cache(reo_desc, cmd);
+		break;
 	case HAL_REO_CMD_FLUSH_TIMEOUT_LIST:
 		ath12k_warn(ab, "Unsupported reo command %d\n", type);
 		ret = -EOPNOTSUPP;

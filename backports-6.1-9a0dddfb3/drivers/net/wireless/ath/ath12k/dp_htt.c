@@ -956,7 +956,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	struct ath12k_dp *dp;
 	struct ath12k_sta *ahsta;
 	u8 pdev_id, chip_id;
-	int ret = -EINVAL;
+	int ret;
 
 	msg = (struct ath12k_htt_pri_link_migr_ind_msg *)skb->data;
 
@@ -1011,7 +1011,6 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	if (peer->ml_id != ml_peer_id) {
 		ath12k_warn(pri_ab, "htt ML peer id mis-match. Expected %d got %d\n",
 			    peer->ml_id, ml_peer_id);
-
 		goto exit_pri_link_migr_ind;
 	}
 
@@ -1031,7 +1030,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 
 	reinit_completion(&ahsta->dp_migration_event);
 
-	/* TODO: DP migration changes */
+	ret = ath12k_dp_peer_migrate(ahsta, peer_id, chip_id);
 	if (ret)
 		ath12k_warn(pri_ab, "htt ML peer failed to migrate (%d)\n", ret);
 

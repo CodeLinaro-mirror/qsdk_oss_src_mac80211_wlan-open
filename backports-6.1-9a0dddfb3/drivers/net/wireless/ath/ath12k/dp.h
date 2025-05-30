@@ -465,6 +465,11 @@ struct ath12k_dp_arch_ops {
 	int (*rx_flow_delete_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
 	int (*rx_flow_delete_all_entries)(struct ath12k_dp *dp);
 	ssize_t (*dump_fst_table)(struct ath12k_dp *dp, char *buf, int size);
+
+	int (*peer_migrate_reo_cmd)(struct ath12k_dp *dp,
+				    struct ath12k_dp_link_peer *peer,
+				    u16 peer_id,
+				    u8 chip_id);
 };
 
 struct ath12k_bp_stats {
@@ -868,6 +873,15 @@ ath12k_dp_to_dp_pdev(struct ath12k_dp *dp, u8 pdev_id)
                         "ath12k dp to dp pdev called without rcu lock");
 
 	return rcu_dereference(dp->dp_pdevs[pdev_id]);
+}
+
+static inline int
+ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
+				    struct ath12k_dp_link_peer *peer,
+				     u16 peer_id, u8 chip_id)
+{
+	return dp->arch_ops->peer_migrate_reo_cmd(dp, peer, peer_id,
+						  chip_id);
 }
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);

@@ -61,6 +61,11 @@ struct ath12k_dp_rx_tid {
 	/* Timer info related to fragments */
 	struct timer_list frag_timer;
 	struct ath12k_dp *dp;
+
+	/* Info related to UMAC migration */
+	u16     peer_id;
+	u8      chip_id;
+	struct crypto_shash *tfm;
 };
 
 struct ath12k_dp_rx_reo_cache_flush_elem {
@@ -236,4 +241,10 @@ ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
 int
 ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
 					 struct ath12k_dp_htt_rxdma_ppe_cfg_param *param);
+void
+ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
+				     enum hal_reo_cmd_status status);
+int
+ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
+		       u8 chip_id);
 #endif /* ATH12K_DP_RX_H */

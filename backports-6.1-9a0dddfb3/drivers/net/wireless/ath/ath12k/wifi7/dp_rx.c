@@ -3051,3 +3051,63 @@ int ath12k_wifi7_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp)
 
 	return 0;
 }
+
+int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
+					 struct ath12k_dp_link_peer *peer,
+					 u16 peer_id, u8 chip_id)
+{
+	struct ath12k_hal_reo_cmd cmd = {0};
+	struct ath12k_dp_rx_tid *rx_tid;
+	struct ath12k_base *ab = dp->ab;
+	int ret, tid;
+
+	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+		rx_tid = &peer->dp_peer->rx_tid[tid];
+
+		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+		cmd.flag |= HAL_REO_CMD_FLG_NEED_STATUS;
+		ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
+						   HAL_REO_CMD_FLUSH_QUEUE,
+						   &cmd, NULL);
+		if (ret) {
+			ath12k_warn(ab, "failed to flush rx tid queue, tid %d (%d)\n",
+				    rx_tid->tid, ret);
+			return ret;
+		}
+	}
+
+	cmd.flag = 0;
+	rx_tid = &peer->dp_peer->rx_tid[0];
+	rx_tid->chip_id = chip_id;
+	rx_tid->peer_id = peer_id;
+	rx_tid->tfm = peer->dp_peer->tfm_mmic;
+
+	/* TODO: Synchronize with DP fragment path */
+	peer->dp_peer->tfm_mmic = NULL;
+
+	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
+	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
+	cmd.flag |= HAL_REO_CMD_FLG_NEED_STATUS;
+	cmd.flag |= HAL_REO_CMD_FLG_FLUSH_ALL;
+
+	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
+					   HAL_REO_CMD_FLUSH_CACHE,
+					   &cmd,
+					   ath12k_dp_primary_peer_migrate_setup);
+	if (ret) {
+		ath12k_warn(ab, "failed to flush cache for peer_id %x\n", peer->peer_id);
+		return ret;
+	}
+
+	cmd.flag = 0;
+	cmd.flag = HAL_REO_CMD_UNBLOCK_CACHE;
+
+	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
+					  HAL_REO_CMD_UNBLOCK_CACHE,
+					  &cmd, NULL);
+	if (ret)
+		ath12k_warn(ab, "failed to unblock cache for peer_id %x\n", peer->peer_id);
+
+	return ret;
+}
