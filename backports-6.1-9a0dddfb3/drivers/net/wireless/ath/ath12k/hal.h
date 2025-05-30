@@ -33,7 +33,7 @@ struct hal_rx_reo_queue;
 #define HAL_ADDR_LSB_REG_MASK		0xffffffff
 #define HAL_ADDR_MSB_REG_SHIFT		32
 
-#define HAL_WBM2SW_REL_ERR_RING_NUM 3
+#define HAL_WBM2SW_REL_ERR_RING_NUM 5
 #define HAL_TX_ADDRX_EN		1
 #define HAL_TX_ADDRY_EN		2
 

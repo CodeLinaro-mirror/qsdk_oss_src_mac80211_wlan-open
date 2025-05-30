@@ -389,7 +389,7 @@ int ath12k_wifi7_hal_wbm_desc_parse_err(struct ath12k_dp *dp, void *desc,
 	if (!hw_cc_done) {
 		val = le32_get_bits(wbm_desc->buf_addr_info.info1,
 				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
-		if (val != HAL_RX_BUF_RBM_SW3_BM) {
+		if (val != HAL_RX_BUF_RBM_SW5_BM) {
 			dp->device_stats.invalid_rbm++;
 			return -EINVAL;
 		}
@@ -401,7 +401,7 @@ int ath12k_wifi7_hal_wbm_desc_parse_err(struct ath12k_dp *dp, void *desc,
 	} else {
 		val = le32_get_bits(wbm_cc_desc->info0,
 				    HAL_WBM_RELEASE_RX_CC_INFO0_RBM);
-		if (val != HAL_RX_BUF_RBM_SW3_BM) {
+		if (val != HAL_RX_BUF_RBM_SW5_BM) {
 			dp->device_stats.invalid_rbm++;
 			return -EINVAL;
 		}

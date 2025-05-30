@@ -643,21 +643,23 @@ const struct ath12k_hw_regs qcn6432_regs = {
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_ipq5332 = {
-	.rx_buf_rbm = HAL_RX_BUF_RBM_SW3_BM,
+	.rx_buf_rbm = HAL_RX_BUF_RBM_SW5_BM,
 	.wbm2sw_cc_enable = HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW0_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW1_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN,
+			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN |
+			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
-	.rx_buf_rbm = HAL_RX_BUF_RBM_SW3_BM,
+	.rx_buf_rbm = HAL_RX_BUF_RBM_SW5_BM,
 	.wbm2sw_cc_enable = HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW0_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW1_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN |
-			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN,
+			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN |
+				HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN,
 };
 
 u32 ath12k_wifi7_hal_rx_h_mpdu_err_qcn9274(struct hal_rx_desc *desc)
@@ -925,8 +927,8 @@ ath12k_wifi7_hal_tcl_to_wbm_rbm_map_qcn9274[DP_TCL_NUM_RING_MAX] = {
 		.rbm_id = HAL_RX_BUF_RBM_SW2_BM,
 	},
 	{
-		.wbm_ring_num = 4,
-		.rbm_id = HAL_RX_BUF_RBM_SW4_BM,
+		.wbm_ring_num = 3,
+		.rbm_id = HAL_RX_BUF_RBM_SW3_BM,
 	}
 };
 

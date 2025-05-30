@@ -1453,7 +1453,7 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	info = (struct ath12k_buffer_address *)&msdu0->buf_addr_info;
 	ath12k_wifi7_hal_rx_buf_addr_info_set(info, buf_paddr,
 					      desc_info->cookie,
-					      HAL_RX_BUF_RBM_SW3_BM);
+					      HAL_RX_BUF_RBM_SW5_BM);
 
 	/* Fill mpdu details into reo entrance ring */
 	srng = &hal->srng_list[dp->reo_reinject_ring.ring_id];
@@ -1879,7 +1879,7 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 		ath12k_wifi7_hal_rx_msdu_link_info_get(link_desc_va, &num_msdus,
 						       msdu_cookies, &rbm);
 		if (rbm != partner_dp->idle_link_rbm &&
-		    rbm != HAL_RX_BUF_RBM_SW3_BM &&
+		    rbm != HAL_RX_BUF_RBM_SW5_BM &&
 		    rbm != partner_dp->hal->hal_params->rx_buf_rbm) {
 			act = HAL_WBM_REL_BM_ACT_REL_MSDU;
 			dp->device_stats.invalid_rbm++;

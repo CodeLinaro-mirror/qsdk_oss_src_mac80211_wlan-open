@@ -274,6 +274,7 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN		BIT(3)
 #define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN		BIT(4)
 #define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN		BIT(5)
+#define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN		BIT(6)
 #define HAL_WBM_SW_COOKIE_CONV_CFG_GLOBAL_EN		BIT(8)
 
 /* TCL ring field mask and offset */
@@ -369,7 +370,7 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_RXDMA_RING_MAX_SIZE_BE			0x000fffff
 #define HAL_WBM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE	0x000fffff
 
-#define HAL_WBM2SW_REL_ERR_RING_NUM 3
+#define HAL_WBM2SW_REL_ERR_RING_NUM 5
 
 #define HAL_RX_MAX_BA_WINDOW	256
 
