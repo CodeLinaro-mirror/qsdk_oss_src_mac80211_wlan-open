@@ -694,6 +694,15 @@ struct ath12k_link_sta {
 	bool disable_fixed_rate;
 };
 
+struct ath12k_sta_migration_data {
+	struct ath12k_base *ab;
+	u16 vdev_id;
+	u16 peer_id;
+	u16 ml_peer_id;
+	u8 pdev_id;
+	u8 chip_id;
+};
+
 struct ath12k_sta {
 	struct ath12k_vif *ahvif;
 	enum hal_pn_type pn_type;
@@ -722,6 +731,9 @@ struct ath12k_sta {
 #endif
 	bool low_ack_sent;
 	bool is_migration_in_progress;
+	struct work_struct migration_wk;
+	struct ath12k_sta_migration_data migration_data;
+	struct completion dp_migration_event;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1

@@ -438,3 +438,54 @@ ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask)
 
 	return 0;
 }
+
+int ath12k_dp_tx_htt_pri_link_migr_msg(struct ath12k_base *ab, u16 vdev_id,
+				       u16 peer_id, u16 ml_peer_id, u8 pdev_id,
+				       u8 chip_id, u16 src_info, bool status)
+{
+	struct ath12k_htt_pri_link_migr_h2t_msg *cmd;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	bool src_info_valid = false;
+	int len = sizeof(*cmd);
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_htc_alloc_skb(ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, len);
+
+	cmd = (struct ath12k_htt_pri_link_migr_h2t_msg *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_RESP,
+				      ATH12K_HTT_PRI_LINK_MIGR_MSG_TYPE) |
+		     le32_encode_bits(chip_id, ATH12K_HTT_PRI_LINK_MIGR_CHIP_ID) |
+		     le32_encode_bits(pdev_id, ATH12K_HTT_PRI_LINK_MIGR_PDEV_ID) |
+		     le32_encode_bits(vdev_id, ATH12K_HTT_PRI_LINK_MIGR_VDEV_ID);
+
+	ml_peer_id &= ~ATH12K_PEER_ML_ID_VALID;
+
+	cmd->info1 = le32_encode_bits(peer_id, ATH12K_HTT_PRI_LINK_MIGR_PEER_ID) |
+		     le32_encode_bits(ml_peer_id, ATH12K_HTT_PRI_LINK_MIGR_ML_PEER_ID);
+
+	/* TODO: Need to update src_info once DS support is added */
+	if (src_info != 0)
+		src_info_valid = true;
+
+	cmd->info2 = le32_encode_bits(status, ATH12K_HTT_PRI_LINK_MIGR_STATUS) |
+		     le32_encode_bits(src_info, ATH12K_HTT_PRI_LINK_MIGR_SRC_INFO) |
+		     le32_encode_bits(src_info_valid,
+		     		      ATH12K_HTT_PRI_LINK_MIGR_SRC_INFO_VALID);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_HTT,
+		   "htt MLO send pri link migr resp for peer_id 0x%x ml_peer_id 0x%x vdev_id 0x%x pdev_id 0x%x chip_id 0x%x status %u\n",
+		   peer_id, ml_peer_id, vdev_id, pdev_id, chip_id, status);
+
+	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	if (ret)
+		dev_kfree_skb_any(skb);
+
+	return ret;
+}

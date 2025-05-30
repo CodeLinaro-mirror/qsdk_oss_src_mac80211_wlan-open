@@ -943,6 +943,105 @@ exit:
 	rcu_read_unlock();
 }
 
+static void
+ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
+					    struct sk_buff *skb)
+{
+	struct ath12k_htt_pri_link_migr_ind_msg *msg;
+	struct ath12k_hw_group *ag = ab->ag;
+	u16 vdev_id, peer_id, ml_peer_id;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_base *pri_ab;
+	struct ath12k_dp *dp;
+	struct ath12k_sta *ahsta;
+	u8 pdev_id, chip_id;
+	int ret = -EINVAL;
+
+	msg = (struct ath12k_htt_pri_link_migr_ind_msg *)skb->data;
+
+	chip_id = le32_get_bits(msg->info0, ATH12K_HTT_PRI_LINK_MIGR_CHIP_ID);
+	pdev_id = le32_get_bits(msg->info0, ATH12K_HTT_PRI_LINK_MIGR_PDEV_ID);
+	vdev_id = le32_get_bits(msg->info0, ATH12K_HTT_PRI_LINK_MIGR_VDEV_ID);
+	peer_id = le32_get_bits(msg->info1, ATH12K_HTT_PRI_LINK_MIGR_PEER_ID);
+	ml_peer_id = le32_get_bits(msg->info1, ATH12K_HTT_PRI_LINK_MIGR_ML_PEER_ID);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_HTT,
+		   "htt MLO pri link migr ind for peer_id 0x%x ml_peer_id 0x%x vdev_id 0x%x pdev_id 0x%x chip_id 0x%x\n",
+		   peer_id, ml_peer_id, vdev_id, pdev_id, chip_id);
+
+	ml_peer_id |= ATH12K_PEER_ML_ID_VALID;
+
+	if (chip_id >= ATH12K_MAX_SOCS) {
+		ath12k_warn(ab,
+			    "htt incorrect chip id %d in MLO pri link migration event\n",
+			    chip_id);
+		goto err_pri_link_migr_ind;
+	}
+
+	pri_ab = ag->ab[chip_id];
+	if (!pri_ab) {
+		ath12k_warn(ab,
+			    "htt can not find ab for chip id %d in MLO pri link migration event\n",
+			    chip_id);
+		goto err_pri_link_migr_ind;
+	}
+
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(pri_ab, vdev_id);
+	if (!arvif || !arvif->ar) {
+		ath12k_err(pri_ab, "htt error in getting arvif from vdev id:%d\n",
+			   vdev_id);
+		rcu_read_unlock();
+		goto err_pri_link_migr_ind;
+	}
+	rcu_read_unlock();
+
+	dp = ath12k_ab_to_dp(pri_ab);
+
+	spin_lock_bh(&dp->dp_lock);
+
+	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	if (!peer) {
+		ath12k_warn(pri_ab, "htt can not find peer fo peer id %d\n",
+			    peer_id);
+		goto exit_pri_link_migr_ind;
+	}
+
+	if (peer->ml_id != ml_peer_id) {
+		ath12k_warn(pri_ab, "htt ML peer id mis-match. Expected %d got %d\n",
+			    peer->ml_id, ml_peer_id);
+
+		goto exit_pri_link_migr_ind;
+	}
+
+	if (peer->primary_link) {
+		ath12k_warn(pri_ab, "htt ML peer is already primary\n");
+		goto exit_pri_link_migr_ind;
+	}
+
+	ahsta = ath12k_sta_to_ahsta(peer->sta);
+
+	ahsta->migration_data.ab = ab;
+	ahsta->migration_data.vdev_id = vdev_id;
+	ahsta->migration_data.peer_id = peer_id;
+	ahsta->migration_data.ml_peer_id = ml_peer_id;
+	ahsta->migration_data.pdev_id = pdev_id;
+	ahsta->migration_data.chip_id = chip_id;
+
+	reinit_completion(&ahsta->dp_migration_event);
+
+	/* TODO: DP migration changes */
+	if (ret)
+		ath12k_warn(pri_ab, "htt ML peer failed to migrate (%d)\n", ret);
+
+exit_pri_link_migr_ind:
+	spin_unlock_bh(&dp->dp_lock);
+err_pri_link_migr_ind:
+	ieee80211_queue_work(arvif->ar->ah->hw, &ahsta->migration_wk);
+}
+
+
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb)
 {
@@ -1035,6 +1134,9 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 		break;
 	case HTT_T2H_MSG_TYPE_MLO_RX_PEER_UNMAP:
 		ath12k_peer_mlo_unmap_event(ab, skb);
+		break;
+	case HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND:
+		ath12k_htt_pri_link_peer_migrate_indication(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "dp_htt event %d not handled\n",

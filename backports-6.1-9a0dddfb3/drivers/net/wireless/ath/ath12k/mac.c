@@ -8929,6 +8929,52 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 	}
 }
 
+static void ath12k_sta_migration_wk(struct work_struct *wk)
+{
+	struct ath12k_sta *ahsta = container_of(wk, struct ath12k_sta, migration_wk);
+	struct ath12k_sta_migration_data *data = &ahsta->migration_data;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_base *pri_ab;
+	unsigned long time_left;
+	struct ath12k_dp *dp;
+	bool ret = false;
+
+	time_left = wait_for_completion_timeout(&ahsta->dp_migration_event, 2 * HZ);
+	if (!time_left)
+		goto send_dp_tx_event;
+
+	pri_ab = data->ab;
+	if (WARN_ON(!pri_ab))
+		return;
+
+	dp = ath12k_ab_to_dp(pri_ab);
+
+	spin_lock_bh(&dp->dp_lock);
+
+	peer = ath12k_dp_link_peer_find_by_id(dp, data->peer_id);
+	if (WARN_ON(!peer)) {
+		spin_unlock_bh(&dp->dp_lock);
+		return;
+	}
+
+	/* if everything went good then this peer should be the primary peer now */
+	if (!peer->primary_link)
+		goto err_unlock;
+
+	/* update the new primary link */
+	ahsta->primary_link_id = peer->link_id;
+	ret = false;
+
+err_unlock:
+	spin_unlock_bh(&dp->dp_lock);
+send_dp_tx_event:
+	/* TODO: Need to update src_info once DS support is added */
+	ath12k_dp_tx_htt_pri_link_migr_msg(data->ab, data->vdev_id, data->peer_id,
+					   data->ml_peer_id, data->pdev_id, data->chip_id,
+					   0/*TODO*/, ret);
+
+}
+
 static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 					    struct ath12k_link_vif *arvif,
 					    struct ath12k_link_sta *arsta,
@@ -9149,6 +9195,10 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			arsta->is_assoc_link = true;
 			ahsta->assoc_link_id = link_id;
 			ahsta->primary_link_id = link_id;
+
+			init_completion(&ahsta->dp_migration_event);
+			INIT_WORK(&ahsta->migration_wk, ath12k_sta_migration_wk);
+
 			ath12k_dbg(NULL, ATH12K_DBG_MAC,
 				   "mac ML STA %pM primary link (reconfig) set to %u\n",
 				   sta->addr, ahsta->primary_link_id);
@@ -9223,8 +9273,10 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	 * handler below
 	 */
 	if (old_state == IEEE80211_STA_NONE &&
-	    new_state == IEEE80211_STA_NOTEXIST && sta->mlo)
+	    new_state == IEEE80211_STA_NOTEXIST && sta->mlo) {
 		ath12k_mac_ml_station_remove(ahvif, ahsta);
+		cancel_work_sync(&ahsta->migration_wk);
+	}
 
 	if (old_state == IEEE80211_STA_NONE &&
 	    new_state == IEEE80211_STA_NOTEXIST) {

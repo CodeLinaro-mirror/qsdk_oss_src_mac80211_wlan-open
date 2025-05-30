@@ -62,6 +62,7 @@ enum htt_h2t_msg_type {
 	HTT_H2T_MSG_TYPE_RXDMA_RXOLE_PPE_CFG		= 0x19,
 	HTT_H2T_MSG_TYPE_VDEV_TXRX_STATS_CFG		= 0x1a,
 	HTT_H2T_MSG_TYPE_TX_MONITOR_CFG			= 0x1b,
+	HTT_H2T_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_RESP	= 0x24,
 };
 
 #define HTT_H2T_RXOLE_PPE_CFG_MSG_TYPE			GENMASK(7, 0)
@@ -979,6 +980,7 @@ enum htt_t2h_msg_type {
 	HTT_T2H_MSG_TYPE_MLO_RX_PEER_UNMAP = 0x2a,
 	HTT_T2H_MSG_TYPE_PEER_MAP3	= 0x2b,
 	HTT_T2H_MSG_TYPE_VDEV_TXRX_STATS_PERIODIC_IND = 0x2c,
+	HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND = 0x37,
 };
 
 #define HTT_TARGET_VERSION_MAJOR 3
@@ -1878,6 +1880,42 @@ struct ath12k_htt_mlo_peer_unmap_msg {
 	u32 info0;
 } __packed;
 
+#define ATH12K_HTT_PRI_LINK_MIGR_MSG_TYPE		GENMASK(7, 0)
+#define ATH12K_HTT_PRI_LINK_MIGR_CHIP_ID		GENMASK(11, 8)
+#define ATH12K_HTT_PRI_LINK_MIGR_PDEV_ID		GENMASK(15, 12)
+#define ATH12K_HTT_PRI_LINK_MIGR_VDEV_ID		GENMASK(31, 16)
+#define ATH12K_HTT_PRI_LINK_MIGR_PEER_ID		GENMASK(15, 0)
+#define ATH12K_HTT_PRI_LINK_MIGR_ML_PEER_ID		GENMASK(31, 16)
+#define ATH12K_HTT_PRI_LINK_MIGR_STATUS 		GENMASK(7, 0)
+#define ATH12K_HTT_PRI_LINK_MIGR_SRC_INFO		GENMASK(23, 8)
+#define ATH12K_HTT_PRI_LINK_MIGR_SRC_INFO_VALID 	GENMASK(24, 24)
+
+struct ath12k_htt_pri_link_migr_ind_msg {
+	__le32 info0;
+	__le32 info1;
+} __packed;
+
+struct ath12k_htt_pri_link_migr_h2t_msg {
+	/* Bits 7:0    msg_type
+	 * Bits 11:8   chip_id
+	 * Bits 15:12  pdev_id
+	 * Bits 31:16  vdev_id
+	 */
+	__le32 info0;
+
+	/* Bits 15:0   peer_id
+	 * Bits 31:16  ml_peer_id
+	 */
+	__le32 info1;
+
+	/* Bits 7:0    status
+	 * Bits 23:8   src_info
+	 * Bit  24     src_info_valid
+	 * Bits 31:25  reserved
+	 */
+	__le32 info2;
+} __packed;
+
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
@@ -1911,4 +1949,7 @@ int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
 					struct hal_flow_tuple_info *tuple_info);
 int ath12k_dp_htt_rx_fse_3_tuple_config_send(struct ath12k_base *ab,
 					     u32 tuple_mask, u8 pdev_id);
+int ath12k_dp_tx_htt_pri_link_migr_msg(struct ath12k_base *ab, u16 vdev_id,
+				       u16 peer_id, u16 ml_peer_id, u8 pdev_id,
+				       u8 chip_id, u16 src_info, bool status);
 #endif
