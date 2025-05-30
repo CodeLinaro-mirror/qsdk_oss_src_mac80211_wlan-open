@@ -16215,6 +16215,105 @@ out:
 	return ret;
 }
 
+void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
+				       struct ieee80211_vif *vif,
+				       struct ieee80211_link_sta *link_sta,
+				       struct link_station_info *link_sinfo)
+{
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(link_sta->sta);
+	struct ath12k_dp_link_peer_rate_info rate_info = {0};
+	struct ath12k_fw_stats_req_params params = {};
+	s8 signal, rssi_signal, rssi_offset;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	struct ath12k *ar;
+	bool db2dbm;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_sta->link_id]);
+
+	if (!arsta)
+		return;
+
+	ar = ath12k_get_ar_by_vif(hw, vif, arsta->link_id);
+	if (!ar)
+		return;
+
+	ab = ar->ab;
+	if (!ab) {
+		ath12k_err(NULL,
+			   "unable to determine link sta statistics \n");
+		return;
+	}
+
+	dp = ath12k_ab_to_dp(ab);
+	ath12k_link_peer_get_sta_rate_info_stats(dp, arsta->addr, &rate_info);
+
+	db2dbm = test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
+			  ar->ab->wmi_ab.svc_map);
+
+	link_sinfo->rx_duration = rate_info.rx_duration;
+	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DURATION);
+
+	link_sinfo->tx_duration = rate_info.tx_duration;
+	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_DURATION);
+
+	if (rate_info.txrate.legacy || rate_info.txrate.nss) {
+		if (rate_info.txrate.legacy) {
+			link_sinfo->txrate.legacy = rate_info.txrate.legacy;
+		} else {
+			link_sinfo->txrate.mcs = rate_info.txrate.mcs;
+			link_sinfo->txrate.nss = rate_info.txrate.nss;
+			link_sinfo->txrate.bw = rate_info.txrate.bw;
+			link_sinfo->txrate.he_gi = rate_info.txrate.he_gi;
+			link_sinfo->txrate.he_dcm = rate_info.txrate.he_dcm;
+			link_sinfo->txrate.he_ru_alloc =
+				rate_info.txrate.he_ru_alloc;
+			link_sinfo->txrate.eht_gi = rate_info.txrate.eht_gi;
+			link_sinfo->txrate.eht_ru_alloc =
+				rate_info.txrate.eht_ru_alloc;
+		}
+		link_sinfo->txrate.flags = rate_info.txrate.flags;
+		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
+	}
+
+	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.rssi_offset;
+	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
+		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
+		      rssi_offset;
+
+	signal = rate_info.rssi_comb;
+	params.pdev_id = ar->pdev->pdev_id;
+	params.vdev_id = 0;
+	params.stats_id = WMI_REQUEST_VDEV_STAT;
+
+	/* Limit the requests to Firmware for fetching the signal strength */
+	if (time_after(jiffies, msecs_to_jiffies(ATH12K_PDEV_SIGNAL_UPDATE_TIME_MSECS) +
+				ar->last_signal_update)) {
+		ath12k_mac_get_fw_stats(ar, &params);
+		ar->last_signal_update = jiffies;
+	}
+
+	if (!signal &&
+	    ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    !(ath12k_mac_get_fw_stats(ar, &params)))
+		signal = arsta->rssi_beacon;
+
+	if (signal) {
+		link_sinfo->signal =
+			db2dbm ? rate_info.rssi_comb : rssi_signal;
+		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
+	}
+
+	link_sinfo->signal_avg =
+		rate_info.signal_avg + (!db2dbm ? ar->rssi_offsets.rssi_offset : 0);
+
+	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
+}
+EXPORT_SYMBOL(ath12k_mac_op_link_sta_statistics);
+
 void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 				  struct ieee80211_vif *vif,
 				  struct ieee80211_sta *sta,
