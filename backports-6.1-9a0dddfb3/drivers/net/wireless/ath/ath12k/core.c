@@ -28,7 +28,27 @@
 #include "wow.h"
 #include "dp_cmn.h"
 #include "fse.h"
+#include "accel_cfg.h"
 #include "peer.h"
+#include "ppe.h"
+
+#define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT 0x8000
+#define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT 1024
+
+struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params = {
+	.num_ppeds_desc = ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT,
+	.ppeds_hotlist_len = ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT,
+};
+
+module_param_named(num_ppeds_tx_desc, ath12k_ppeds_desc_params.num_ppeds_desc, uint, 0644);
+MODULE_PARM_DESC(num_ppeds_tx_desc, "Number of PPEDS descriptors");
+
+module_param_named(ppeds_hotlist_len, ath12k_ppeds_desc_params.ppeds_hotlist_len, uint, 0644);
+MODULE_PARM_DESC(ppeds_hotlist_len, "PPEDS hotlist length");
+
+unsigned int ath12k_ppe_ds_enabled = true;
+module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
+MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 
 unsigned int ath12k_debug_mask;
 module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
@@ -1383,6 +1403,10 @@ core_pdev_create:
 		ath12k_debugfs_pdev_create(ab);
 
 		ath12k_hif_irq_enable(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
+		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
+#endif
 
 		if (ab->hw_params->en_qdsslog) {
 			ath12k_info(ab, "QDSS trace enabled\n");
@@ -1524,6 +1548,23 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
 	int ret, i;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	/* TODO: DS: revisit this for new DS design in WDS mode */
+	if (ath12k_ppe_ds_enabled) {
+		if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET) {
+			ath12k_warn(ab,
+				    "Force enabling Ethernet frame mode in PPE DS for" \
+				    " AP and STA modes.\n");
+			/* MESH and WDS VAPs will still use NATIVE_WIFI mode
+			 * @ath12k_mac_update_vif_offload()
+			 * TODO: add device capability check
+			 */
+			ath12k_ppe_ds_enabled = 0;
+		} else if (ab->hw_params->ds_support) {
+			set_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags);
+		}
+	}
+#endif
 	ret = ath12k_core_start_firmware(ab, ab->fw_mode);
 	if (ret) {
 		ath12k_err(ab, "failed to start firmware: %d\n", ret);
@@ -2789,6 +2830,12 @@ int ath12k_core_init(struct ath12k_base *ab)
 		}
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	/* Used for tracking the order of per ab's DS node in bringup sequence
+	 * for the purposes of affinity settings
+	 */
+	ab->dp->ppe.ppeds_soc_idx = -1;
+#endif
 	return 0;
 
 err:

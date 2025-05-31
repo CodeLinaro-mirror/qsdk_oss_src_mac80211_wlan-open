@@ -34,6 +34,8 @@ struct hal_rx_reo_queue;
 #define HAL_ADDR_MSB_REG_SHIFT		32
 
 #define HAL_WBM2SW_REL_ERR_RING_NUM 5
+#define HAL_WBM2SW_PPEDS_TX_CMPLN_MAP_ID 11
+#define HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM 6
 #define HAL_TX_ADDRX_EN		1
 #define HAL_TX_ADDRY_EN		2
 
@@ -303,6 +305,7 @@ enum hal_ring_type {
 	HAL_REO_REINJECT,
 	HAL_REO_CMD,
 	HAL_REO_STATUS,
+	HAL_REO2PPE,
 	HAL_TCL_DATA,
 	HAL_TCL_CMD,
 	HAL_TCL_STATUS,
@@ -725,6 +728,7 @@ struct wbm_idle_scatter_list {
 #define HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN	0x00010000
 #define HAL_SRNG_FLAGS_MSI_INTR			0x00020000
 #define HAL_SRNG_FLAGS_HIGH_THRESH_INTR_EN	0x00080000
+#define HAL_SRNG_FLAGS_CACHED                   0x20000000
 #define HAL_SRNG_FLAGS_LMAC_RING		0x80000000
 #define HAL_SRNG_FLAGS_CACHED                   0x20000000
 
@@ -851,13 +855,16 @@ struct hal_srng {
 };
 
 /* Interrupt mitigation - Batch threshold in terms of number of frames */
+#define HAL_SRNG_INT_BATCH_THRESHOLD_PPE_WBM2SW_REL 256
 #define HAL_SRNG_INT_BATCH_THRESHOLD_TX 256
 #define HAL_SRNG_INT_BATCH_THRESHOLD_RX 128
+#define HAL_SRNG_INT_BATCH_THRESHOLD_PPE2TCL 0
 #define HAL_SRNG_INT_BATCH_THRESHOLD_OTHER 1
 
 /* Interrupt mitigation - timer threshold in us */
 #define HAL_SRNG_INT_TIMER_THRESHOLD_TX 1000
 #define HAL_SRNG_INT_TIMER_THRESHOLD_RX 500
+#define HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL 30
 #define HAL_SRNG_INT_TIMER_THRESHOLD_OTHER 256
 
 enum hal_srng_mac_type {
@@ -993,6 +1000,8 @@ struct ath12k_hw_regs {
 	u32 hal_umac_ce1_dest_reg_base;
 
 	u32 hal_ppe_rel_ring_base;
+	u32 hal_reo2ppe_ring_base;
+	u32 hal_tcl_ppe2tcl_ring_base_lsb;
 
 	u32 hal_reo2_ring_base;
 	u32 hal_reo1_misc_ctrl_addr;
@@ -1359,4 +1368,9 @@ enum hal_rx_buf_return_buf_manager
 ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
 void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 				    u8 mcast_ctrl_val);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
+					 struct hal_srng *srng, int entries);
+void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
+#endif
 #endif

@@ -166,7 +166,10 @@ enum ath12k_bus {
 	ATH12K_BUS_HYBRID,
 };
 
-#define ATH12K_EXT_IRQ_GRP_NUM_MAX 13
+/* Regular 12 Host DP interrupts + 3 PPEDS interrupts */
+#define ATH12K_EXT_IRQ_DP_NUM_VECTORS 15
+#define ATH12K_EXT_IRQ_GRP_NUM_MAX 12
+
 
 struct hal_rx_desc;
 struct hal_tcl_data_cmd;
@@ -174,14 +177,19 @@ struct htt_rx_ring_tlv_filter;
 enum hal_encrypt_type;
 
 struct ath12k_hw_ring_mask {
-	u8 tx[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 rx_mon_dest[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 rx[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 rx_err[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 rx_wbm_rel[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 reo_status[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 host2rxdma[ATH12K_EXT_IRQ_GRP_NUM_MAX];
-	u8 tx_mon_dest[ATH12K_EXT_IRQ_GRP_NUM_MAX];
+	u8 tx[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 rx_mon_dest[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 rx[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 rx_err[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 rx_wbm_rel[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 reo_status[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 host2rxdma[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 tx_mon_dest[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 ppe2tcl[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+	u8 reo2ppe[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	u8 wbm2sw6_ppeds_tx_cmpln[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
+#endif
 };
 
 enum ath12k_m3_fw_loaders {
@@ -279,6 +287,9 @@ struct ath12k_hw_params {
 	bool handle_beacon_miss;
 	bool en_qdsslog;
 	bool support_fse;
+	bool ds_support;
+	u8 ext_irq_grp_num_max;
+	u8 route_wbm_release;
 	bool supports_ap_ps;
 	bool support_ce_manual_poll;
 	bool ftm_responder;

@@ -704,6 +704,15 @@ void ath12k_hal_srng_shadow_config(struct ath12k_base *ab)
 	}
 }
 
+void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
+{
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u32 val = HAL_REO1_REO2PPE_DST_VAL;
+
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_REO2PPE_DST_INFO,
+			   val);
+}
+
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
 				       u32 **cfg, u32 *len)
 {

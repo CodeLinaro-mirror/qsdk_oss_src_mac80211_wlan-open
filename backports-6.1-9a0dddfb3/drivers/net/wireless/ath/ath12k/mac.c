@@ -28,6 +28,9 @@
 #include "debugfs_sta.h"
 #include "dp.h"
 #include "dp_cmn.h"
+#include "dp_tx.h"
+#include "vendor.h"
+#include "ppe.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -4754,6 +4757,11 @@ ath12k_mac_assign_link_vif(struct ath12k_hw *ah, struct ieee80211_vif *vif,
 
 	ath12k_mac_init_arvif(ahvif, arvif, link_id, is_bridge_vdev);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	/* Initialize per link specific PPE data */
+	arvif->ppe_vp_profile_idx = ATH12K_INVALID_VP_PROFILE_IDX;
+#endif
+
 	return arvif;
 }
 
@@ -8936,7 +8944,9 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 		if (ret)
 			ath12k_warn(ar->ab, "Failed to authorize station: %pM\n",
 				    arsta->addr);
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		ath12k_dp_peer_ppeds_route_setup(ar, arvif, arsta);
+#endif
 	/* IEEE80211_STA_AUTHORIZED -> IEEE80211_STA_ASSOC: station may be in removal,
 	 * deauthorize it.
 	 */
@@ -11145,6 +11155,15 @@ static int ath12k_mac_config_mon_status_default(struct ath12k *ar, bool enable)
 
 		if (ath12k_debugfs_rx_filter(ar))
 			tlv_filter.rx_filter = ath12k_debugfs_rx_filter(ar);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ar->ab->dev_flags))
+			tlv_filter.rx_filter |= (HTT_RX_FILTER_TLV_FLAGS_PPDU_START |
+						 HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS |
+						 HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS_EXT |
+						 HTT_RX_FILTER_TLV_FLAGS_PPDU_START_USER_INFO);
+#endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */
+
 	} else {
 		tlv_filter.rxmon_disable = true;
 	}
@@ -11284,7 +11303,6 @@ static int ath12k_mac_start(struct ath12k *ar)
 
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx],
 			   &ab->pdevs[ar->pdev_idx]);
-
 	return 0;
 err:
 
@@ -11642,6 +11660,14 @@ static void ath12k_mac_update_vif_offload(struct ath12k_link_vif *arvif)
 	     vif->type != NL80211_IFTYPE_AP))
 		vif->offload_flags &= ~(IEEE80211_OFFLOAD_ENCAP_ENABLED |
 					IEEE80211_OFFLOAD_DECAP_ENABLED);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	/* TODO: DS: revisit this for DS support in WDS mode */
+	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags) &&
+	    (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION))
+		vif->offload_flags |= (IEEE80211_OFFLOAD_ENCAP_ENABLED |
+				IEEE80211_OFFLOAD_DECAP_ENABLED);
+#endif
 
 	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
 		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
@@ -12333,9 +12359,22 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar = ath12k_ah_to_ar(ah, 0);
-	int i;
+	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM, ppe_core_mask = 0;
+	int i, ppe_vp_type = ATH12K_INVALID_PPE_VP_TYPE;
+	unsigned long links_map = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	/* Reuse existing vp_num during Subsystem Recovery and
+	 * when the VAP is coming up.
+	 * Note: VP is already allocated at the time of netdev init
+	 */
+	if (ahvif->dp_vif.ppe_vp_num > 0) {
+		ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
+		ppe_core_mask = ahvif->dp_vif.ppe_core_mask;
+		ppe_vp_type = ahvif->dp_vif.ppe_vp_type;
+		links_map = ahvif->links_map;
+	}
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->ag->flags))
 		ahvif->mode0_recover_bridge_vdevs =
@@ -12347,8 +12386,36 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	ahvif->ah = ah;
 	ahvif->vif = vif;
 	arvif = &ahvif->deflink;
+	/* Restore the VP information if VP is allocated
+	 * successfully at the time of iface init.
+	 */
+	ahvif->dp_vif.ppe_vp_num = ppe_vp_num;
+	ahvif->dp_vif.ppe_vp_type = ppe_vp_type;
 
 	ath12k_mac_init_arvif(ahvif, arvif, -1, false);
+
+	/* Check the PPE VP type and update it accordingly.
+	 */
+
+	switch (wdev->ppe_vp_type) {
+	case PPE_VP_USER_TYPE_PASSIVE:
+	case PPE_VP_USER_TYPE_ACTIVE:
+	case PPE_VP_USER_TYPE_DS:
+		ppe_vp_type = wdev->ppe_vp_type;
+		break;
+	default:
+		ppe_vp_type = PPE_VP_USER_TYPE_PASSIVE;
+	}
+
+	if (vif->type == NL80211_IFTYPE_MESH_POINT &&
+	    ppe_vp_type == PPE_VP_USER_TYPE_DS) {
+		ppe_vp_type = PPE_VP_USER_TYPE_PASSIVE;
+	}
+
+	if (ppe_vp_num != ATH12K_INVALID_PPE_VP_NUM) {
+		if (ppe_vp_type != ahvif->dp_vif.ppe_vp_type)
+			ath12k_vif_update_vp_config(ahvif, ppe_vp_type);
+	}
 
 	/* Allocate Default Queue now and reassign during actual vdev create */
 	vif->cab_queue = ATH12K_HW_DEFAULT_QUEUE;
@@ -12463,6 +12530,11 @@ err_vdev_del:
 	ath12k_mac_vif_unref(ath12k_ab_to_dp(ab), vif);
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
 	ath12k_dp_tx_put_bank_profile(ath12k_ab_to_dp(ab), dp_link_vif->bank_id);
+
+	if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)
+		ath12k_dp_tx_put_bank_profile(ath12k_ab_to_dp(ab),
+					      arvif->splitphy_ds_bank_id);
+
 	arvif->key_cipher = INVALID_CIPHER;
 
 	/* Recalc txpower for remaining vdev */
@@ -12481,6 +12553,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar;
 	u8 link_id;
@@ -12524,6 +12597,9 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
 	}
+
+	/* free ppe vp allocated for RFS */
+	ath12k_vif_free_vp(ahvif, wdev->netdev);
 }
 EXPORT_SYMBOL(ath12k_mac_op_remove_interface);
 
@@ -14184,6 +14260,11 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	ab = ar->ab;
 
+	ret = ath12k_ppeds_attach_link_vif(arvif, ahvif->dp_vif.ppe_vp_num,
+					   &arvif->ppe_vp_profile_idx, vif);
+	if (ret)
+		ath12k_info(ab, "Unable to attach ppe ds node for arvif\n");
+
 	if (ctx)
 		ath12k_dbg(ab, ATH12K_DBG_MAC,
 			   "mac chanctx assign ptr %p vdev_id %i, vdev_subtype=%0x\n",
@@ -14359,6 +14440,8 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 			ath12k_warn(ab, "failed to stop vdev %i: %d\n",
 				    arvif->vdev_id, ret);
 	}
+
+	ath12k_ppeds_detach_link_vif(arvif, arvif->ppe_vp_profile_idx);
 	arvif->is_started = false;
 
 	if (ar->scan.arvif == arvif && ar->scan.state == ATH12K_SCAN_RUNNING) {
@@ -17501,6 +17584,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET) {
 		ieee80211_hw_set(hw, SUPPORTS_TX_ENCAP_OFFLOAD);
 		ieee80211_hw_set(hw, SUPPORTS_RX_DECAP_OFFLOAD);
+
+		if (ath12k_ppe_ds_enabled)
+			ieee80211_hw_set(hw, SUPPORTS_VLAN_DATA_OFFLOAD);
 	}
 
 	if (cap->nss_ratio_enabled)
@@ -17635,6 +17721,11 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		ath12k_warn(ar->ab, "failed to init wow: %d\n", ret);
 		goto err_cleanup_if_combs;
 	}
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ath12k_vendor_register(ah);
+	ieee80211_hw_set(hw, SUPPORT_ECM_REGISTRATION);
+#endif
 
 	ret = ieee80211_register_hw(hw);
 	if (ret) {

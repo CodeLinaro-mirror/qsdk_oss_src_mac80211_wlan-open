@@ -156,6 +156,9 @@ struct ath12k_dp_peer {
 	bool is_reset_mcbc;
 
 	u8 hw_links[ATH12K_GROUP_MAX_RADIO];
+#if defined(CPTCFG_MAC80211_PPE_SUPPORT) || defined(CPTCFG_ATH12K_PPE_DS_SUPPORT)
+	int ppe_vp_num;
+#endif
 };
 
 void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id);

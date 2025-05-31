@@ -11,11 +11,14 @@
 #include "dp_htt.h"
 #include "dp_cmn.h"
 #include "hal.h"
+#include "ppe.h"
 #include <linux/rhashtable.h>
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
 
 #define MAX_RXDMA_PER_PDEV     2
+
+extern struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params;
 
 struct ath12k_base;
 struct ath12k_dp_link_peer;
@@ -32,16 +35,6 @@ struct dp_rx_fst;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
-
-struct dp_srng {
-	u32 *vaddr_unaligned;
-	u32 *vaddr;
-	dma_addr_t paddr_unaligned;
-	dma_addr_t paddr;
-	int size;
-	u32 ring_id;
-	u8 cached;
-};
 
 struct dp_rxdma_mon_ring {
 	struct dp_srng refill_buf_ring;
@@ -251,6 +244,11 @@ struct ath12k_pdev_dp {
 #define DP_RX_BUFFER_SIZE_LITE	1024
 #define DP_RX_BUFFER_ALIGN_SIZE	128
 
+#define DP_REO2PPE_RING_SIZE 16384
+#define DP_PPE2TCL_RING_SIZE 2048
+#define DP_PPE_WBM2SW_RING_SIZE 8192
+#define HAL_REO2PPE_DST_IND 6
+
 #define DP_RXDMA_BUF_COOKIE_BUF_ID	GENMASK(17, 0)
 #define DP_RXDMA_BUF_COOKIE_PDEV_ID	GENMASK(19, 18)
 
@@ -279,10 +277,16 @@ struct ath12k_pdev_dp {
 #define ATH12K_TX_SPT_PAGES_PER_POOL (ATH12K_NUM_POOL_TX_DESC / \
 					  ATH12K_MAX_SPT_ENTRIES)
 #define ATH12K_NUM_TX_SPT_PAGES	(ATH12K_TX_SPT_PAGES_PER_POOL * ATH12K_HW_MAX_QUEUES)
-#define ATH12K_NUM_SPT_PAGES	(ATH12K_NUM_RX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
 
-#define ATH12K_TX_SPT_PAGE_OFFSET 0
-#define ATH12K_RX_SPT_PAGE_OFFSET ATH12K_NUM_TX_SPT_PAGES
+#define ATH12K_PPEDS_TX_SPT_PAGE_OFFSET 0
+#define ATH12K_TX_SPT_PAGE_OFFSET ATH12K_NUM_PPEDS_TX_SPT_PAGES
+#define ATH12K_RX_SPT_PAGE_OFFSET (ATH12K_NUM_PPEDS_TX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
+
+#define ATH12K_NUM_PPEDS_TX_SPT_PAGES (ath12k_ppeds_desc_params.num_ppeds_desc / \
+					    ATH12K_MAX_SPT_ENTRIES)
+
+#define ATH12K_NUM_SPT_PAGES	(ATH12K_NUM_TX_SPT_PAGES + ATH12K_NUM_RX_SPT_PAGES + \
+				 ATH12K_NUM_PPEDS_TX_SPT_PAGES)
 
 /* The SPT pages are divided for RX and TX, first block for RX
  * and remaining for TX
@@ -346,12 +350,13 @@ struct ath12k_hp_update_timer {
 
 struct ath12k_rx_desc_info {
 	struct list_head list;
-	struct sk_buff *skb;
+	dma_addr_t paddr;
 	u32 cookie;
-	u32 magic;
 	u8 in_use	: 1,
 	   device_id	: 3,
 	   reserved	: 4;
+	struct sk_buff *skb;
+	u32 magic;
 };
 
 struct ath12k_tx_desc_info {
@@ -363,6 +368,19 @@ struct ath12k_tx_desc_info {
 	   flags	: 1;
 	u8 pool_id;
 };
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+struct ath12k_ppeds_tx_desc_info {
+	struct list_head list;
+	struct sk_buff *skb;
+	dma_addr_t paddr;
+	u32 desc_id; /* Cookie */
+	bool in_use;
+	u8 mac_id;
+	u8 pool_id;
+	u8 flags;
+};
+#endif
 
 struct ath12k_spt_info {
 	dma_addr_t paddr;
@@ -387,10 +405,12 @@ struct ath12k_link_stats {
 	u32 tx_completed;
 	u32 tx_bcast_mcast;
 	u32 tx_dropped;
+	u32 tx_errors;
+	u32 rx_errors;
+	u32 rx_dropped;
 	u32 tx_encap_type[DP_TCL_ENCAP_TYPE_MAX];
 	u32 tx_encrypt_type[HAL_ENCRYPT_TYPE_MAX];
 	u32 tx_desc_type[DP_TCL_DESC_TYPE_MAX];
-	u32 rx_dropped;
 };
 
 struct rx_flow_info {
@@ -479,6 +499,9 @@ struct ath12k_device_dp_tx_err_stats {
 };
 
 struct ath12k_device_dp_stats {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	u32 ppe_vp_mode_update_fail;
+#endif
 	u32 err_ring_pkts;
 	u32 invalid_rbm;
 	u32 reo_excep_msdu_buf_type;
@@ -497,6 +520,26 @@ struct dp_fst_config {
 	u8 fst_core_map[4];
 	u8 fst_num_cores;
 	u8 core_idx;
+};
+
+/**
+ * struct ath12k_dp_htt_rxdma_ppe_cfg_param - Rx DMA and RxOLE PPE config
+ * @override: RxDMA override to override the reo_destinatoin_indication
+ * @reo_dst_ind: REO destination indication value
+ * @multi_buffer_msdu_override_en: Override the indication for SG
+ * @intra_bss_override: Rx OLE IntraBSS override
+ * @decap_raw_override: Rx Decap Raw override
+ * @decap_nwifi_override: Rx Native override
+ * @ip_frag_override: IP fragments override
+ */
+struct ath12k_dp_htt_rxdma_ppe_cfg_param {
+	u8 override;
+	u8 reo_dst_ind;
+	u8 multi_buffer_msdu_override_en;
+	u8 intra_bss_override;
+	u8 decap_raw_override;
+	u8 decap_nwifi_override;
+	u8 ip_frag_override;
 };
 
 struct ath12k_dp {
@@ -539,6 +582,8 @@ struct ath12k_dp {
 	u32 rx_ppt_base;
 	struct ath12k_rx_desc_info *rxbaddr[ATH12K_NUM_RX_SPT_PAGES];
 	struct ath12k_tx_desc_info *txbaddr[ATH12K_NUM_TX_SPT_PAGES];
+	struct ath12k_ppeds_tx_desc_info **ppedstxbaddr;
+	struct list_head rx_ppeds_reuse_list;
 	struct list_head rx_desc_free_list;
 	/* protects the free desc list */
 	spinlock_t rx_desc_lock;
@@ -581,6 +626,7 @@ struct ath12k_dp {
 	struct rhashtable *rhead_peer_addr;
 	struct rhashtable_params rhash_peer_addr_param;
 	struct ath12k_device_dp_stats device_stats;
+	struct ath12k_ppe ppe;
 
 	/*Neighbors Peer list for NAC RSSI*/
 	struct list_head neighbor_peers;
@@ -851,4 +897,14 @@ struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 						  u32 desc_id);
 bool ath12k_dp_wmask_compaction_rx_tlv_supported(struct ath12k_base *ab);
 void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
+				  struct ath12k_dp *dp);
+struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
+							      u32 desc_id);
+int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);
+int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
+#endif
 #endif

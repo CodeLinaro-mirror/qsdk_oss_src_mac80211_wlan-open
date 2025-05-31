@@ -1060,6 +1060,12 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 #endif
 	.ext_irq_setup = ath12k_pcic_ext_irq_config,
 	.ext_irq_cleanup = ath12k_pcic_free_ext_irq,
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	.ppeds_register_interrupts = ath12k_pci_ppeds_register_interrupts,
+	.ppeds_free_interrupts = ath12k_pci_ppeds_free_interrupts,
+	.ppeds_irq_enable = ath12k_pci_ppeds_irq_enable,
+	.ppeds_irq_disable = ath12k_pci_ppeds_irq_disable,
+#endif
 };
 
 static enum ath12k_device_family

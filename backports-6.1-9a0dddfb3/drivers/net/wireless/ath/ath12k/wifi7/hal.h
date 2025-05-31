@@ -119,13 +119,15 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_TCL_STATUS_RING_HP			0x00002048
 
 /* PPE2TCL1 Ring address */
-#define HAL_TCL_PPE2TCL1_RING_BASE_LSB		0x00000c48
+#define HAL_TCL_PPE2TCL1_RING_BASE_LSB(hal) \
+	((hal)->regs->hal_tcl_ppe2tcl_ring_base_lsb)
 #define HAL_TCL_PPE2TCL1_RING_HP		0x00002038
 
-/* WBM PPE Release Ring address */
-#define HAL_WBM_PPE_RELEASE_RING_BASE_LSB(hal) \
-	((hal)->regs->hal_ppe_rel_ring_base)
-#define HAL_WBM_PPE_RELEASE_RING_HP		0x00003020
+#define HAL_TCL_PPE_INDEX_MAPPING_OFFSET 0x214
+#define HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE 0x4
+#define HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(base, n) ((base) + \
+			HAL_TCL_PPE_INDEX_MAPPING_OFFSET + \
+			(HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE * (n)))
 
 /* REO2SW(x) R0 ring configuration address */
 #define HAL_REO1_GEN_ENABLE			0x00000000
@@ -135,6 +137,11 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_REO1_DEST_RING_CTRL_IX_1		0x00000008
 #define HAL_REO1_DEST_RING_CTRL_IX_2		0x0000000c
 #define HAL_REO1_DEST_RING_CTRL_IX_3		0x00000010
+
+#define REO2PPE_DST_RING_MAP 11
+#define REO_DEST_CTRL_IX_0_RING6_MAP_MASK 0xF
+#define REO_DEST_CTRL_IX_0_RING6_MAP_SHFT 24
+
 #define HAL_REO1_QDESC_ADDR(hal)                ((hal)->regs->hal_reo1_qdesc_addr)
 #define HAL_REO1_QDESC_MAX_PEERID(hal)  ((hal)->regs->hal_reo1_qdesc_max_peerid)
 #define HAL_REO1_SW_COOKIE_CFG0(hal)	((hal)->regs->hal_reo1_sw_cookie_cfg0)
@@ -159,6 +166,9 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_REO1_AGING_THRESH_IX_1(hal)	((hal)->regs->hal_reo1_aging_thres_ix1)
 #define HAL_REO1_AGING_THRESH_IX_2(hal)	((hal)->regs->hal_reo1_aging_thres_ix2)
 #define HAL_REO1_AGING_THRESH_IX_3(hal)	((hal)->regs->hal_reo1_aging_thres_ix3)
+
+#define HAL_REO1_REO2PPE_DST_VAL		0x2000
+#define HAL_REO1_REO2PPE_DST_INFO		0x00000cf0
 
 /* REO2SW(x) R2 ring pointers (head/tail) address */
 /* REO2SW(x) R2 ring pointers (head/tail) address */
@@ -206,6 +216,11 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_REO_STATUS_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_reo_status_ring_base)
 #define HAL_REO_STATUS_HP			0x000030a8
+
+/* REO2PPE address */
+#define HAL_REO2PPE_RING_BASE_LSB(hal) \
+		((hal)->regs->hal_reo2ppe_ring_base)
+#define HAL_REO2PPE_HP				0x00003090
 
 /* WBM Idle R0 address */
 #define HAL_WBM_IDLE_LINK_RING_BASE_LSB(hal) \
@@ -275,6 +290,7 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN		BIT(4)
 #define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN		BIT(5)
 #define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN		BIT(6)
+#define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW6_EN		BIT(7)
 #define HAL_WBM_SW_COOKIE_CONV_CFG_GLOBAL_EN		BIT(8)
 
 /* TCL ring field mask and offset */
@@ -357,6 +373,8 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_REO_SW2REO_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_REO_CMD_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_REO_STATUS_RING_BASE_MSB_RING_SIZE		0x0000ffff
+#define HAL_REO2PPE_RING_BASE_MSB_RING_SIZE		0xffffffff
+#define HAL_PPE2TCL_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_SW2TCL1_CMD_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_TCL_STATUS_RING_BASE_MSB_RING_SIZE		0x0000ffff
@@ -368,9 +386,11 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_WBM2SW_RELEASE_RING_BASE_MSB_RING_SIZE	0x000fffff
 #define HAL_RXDMA_RING_MAX_SIZE				0x0000ffff
 #define HAL_RXDMA_RING_MAX_SIZE_BE			0x000fffff
-#define HAL_WBM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE	0x000fffff
+#define HAL_WBM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE	0x0000ffff
 
 #define HAL_WBM2SW_REL_ERR_RING_NUM 5
+#define HAL_WBM2SW_PPEDS_TX_CMPLN_MAP_ID 11
+#define HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM 6
 
 #define HAL_RX_MAX_BA_WINDOW	256
 

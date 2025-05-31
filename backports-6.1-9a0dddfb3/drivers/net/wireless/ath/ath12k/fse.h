@@ -10,6 +10,10 @@
 
 #define ATH12K_RX_FSE_FLOW_MATCH_SFE 0xAAAA
 
+#define ATH12K_FSE_MAGIC_NUM      0xAA
+#define ATH12K_FSE_MAGIC_NUM_MASK GENMASK(7, 0)
+#define ATH12K_PPE_VP_NUM         GENMASK(15, 8)
+
 enum fse_operation {
 	FSE_RULE_ADD,
 	FSE_RULE_DELETE,

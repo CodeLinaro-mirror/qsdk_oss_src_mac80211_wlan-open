@@ -8,6 +8,7 @@
 #include "hal_qcn9274.h"
 #include "hw.h"
 #include "hal.h"
+#include <linux/cacheflush.h>
 
 static const struct hal_srng_config hw_srng_config_template[] = {
 	/* TODO: max_rings can populated by querying HW capabilities */
@@ -55,6 +56,14 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_STATUS_RING_BASE_MSB_RING_SIZE,
+	},
+	[HAL_REO2PPE] = {
+		.start_ring_id = HAL_SRNG_RING_ID_REO2PPE,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_reo_dest_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_DST,
+		.max_size = HAL_REO2PPE_RING_BASE_MSB_RING_SIZE,
 	},
 	[HAL_TCL_DATA] = {
 		.start_ring_id = HAL_SRNG_RING_ID_SW2TCL1,
@@ -167,15 +176,15 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.start_ring_id = HAL_SRNG_RING_ID_PPE2TCL1,
 		.max_rings = 1,
 		.entry_size = sizeof(struct hal_tcl_entrance_from_ppe_ring) >> 2,
-		.mac_type = ATH12K_HAL_SRNG_PMAC,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
-		.max_size = HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE,
+		.max_size = HAL_PPE2TCL_RING_BASE_MSB_RING_SIZE,
 	},
 	[HAL_PPE_RELEASE] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WBM_PPE_RELEASE,
 		.max_rings = 1,
 		.entry_size = sizeof(struct hal_wbm_release_ring) >> 2,
-		.mac_type = ATH12K_HAL_SRNG_PMAC,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_WBM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE,
 	},
@@ -288,6 +297,9 @@ const struct ath12k_hw_regs qcn9274_v1_regs = {
 	.hal_umac_ce0_dest_reg_base = 0x01b81000,
 	.hal_umac_ce1_src_reg_base = 0x01b82000,
 	.hal_umac_ce1_dest_reg_base = 0x01b83000,
+	.hal_ppe_rel_ring_base = 0x0000043c,
+	.hal_reo2ppe_ring_base = 0x00000938,
+	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c48,
 };
 
 const struct ath12k_hw_regs qcn9274_v2_regs = {
@@ -334,9 +346,6 @@ const struct ath12k_hw_regs qcn9274_v2_regs = {
 	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
 	.pcie_pcs_osc_dtct_config_base = 0x01e0d45c,
 
-	/* PPE release ring address */
-	.hal_ppe_rel_ring_base = 0x0000046c,
-
 	/* REO DEST ring address */
 	.hal_reo2_ring_base = 0x00000578,
 	.hal_reo1_misc_ctrl_addr = 0x00000b9c,
@@ -379,6 +388,10 @@ const struct ath12k_hw_regs qcn9274_v2_regs = {
 	.hal_umac_ce0_dest_reg_base = 0x01b81000,
 	.hal_umac_ce1_src_reg_base = 0x01b82000,
 	.hal_umac_ce1_dest_reg_base = 0x01b83000,
+
+	.hal_ppe_rel_ring_base = 0x0000043c,
+	.hal_reo2ppe_ring_base = 0x00000938,
+	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c48,
 };
 
 const struct ath12k_hw_regs ipq5332_regs = {
@@ -659,7 +672,8 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN |
-				HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN,
+			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN |
+			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW6_EN,
 };
 
 u32 ath12k_wifi7_hal_rx_h_mpdu_err_qcn9274(struct hal_rx_desc *desc)
@@ -835,6 +849,12 @@ static int ath12k_wifi7_hal_srng_create_config_qcn9274(struct ath12k_hal *hal)
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO_STATUS_HP;
 
+	s = &hal->srng_config[HAL_REO2PPE];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2PPE_RING_BASE_LSB(hal);
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2PPE_HP;
+	s->reg_size[0] = HAL_REO2_RING_BASE_LSB(hal) - HAL_REO1_RING_BASE_LSB(hal);
+	s->reg_size[1] = HAL_REO2_RING_HP - HAL_REO1_RING_HP;
+
 	s = &hal->srng_config[HAL_TCL_DATA];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_HP;
@@ -901,13 +921,8 @@ static int ath12k_wifi7_hal_srng_create_config_qcn9274(struct ath12k_hal *hal)
 	 * RXDMA_RX_MONITOR_BUF, TX_MONITOR_BUF, TX_MONITOR_DST, SW2RXDMA
 	 */
 	s = &hal->srng_config[HAL_PPE2TCL];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_PPE2TCL1_RING_BASE_LSB;
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_PPE2TCL1_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL_PPE2TCL1_RING_HP;
-
-	s = &hal->srng_config[HAL_PPE_RELEASE];
-	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
-				HAL_WBM_PPE_RELEASE_RING_BASE_LSB(hal);
-	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_PPE_RELEASE_RING_HP;
 
 	return 0;
 }

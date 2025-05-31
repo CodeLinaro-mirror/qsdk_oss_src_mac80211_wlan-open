@@ -377,6 +377,7 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 			goto fail_dma_unmap;
 
 		rx_desc->skb = skb;
+		rx_desc->paddr = paddr;
 		cookie = rx_desc->cookie;
 
 		desc = ath12k_hal_srng_src_get_next_entry(ab, srng);
@@ -1225,6 +1226,55 @@ void ath12k_dp_rx_pdev_free(struct ath12k_base *ab, int mac_id)
 	ath12k_dp_rx_pdev_srng_free(ar);
 }
 
+int
+ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
+					 struct ath12k_dp_htt_rxdma_ppe_cfg_param *param)
+{
+	struct htt_h2t_msg_type_rxdma_rxole_ppe_cfg *cmd;
+	struct ath12k_dp *dp = ab->dp;
+	struct sk_buff *skb;
+	int len = sizeof(*cmd), ret, val;
+
+	skb = ath12k_htc_alloc_skb(ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, len);
+
+	cmd = (struct htt_h2t_msg_type_rxdma_rxole_ppe_cfg *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info0 =
+		u32_encode_bits(HTT_H2T_MSG_TYPE_RXDMA_RXOLE_PPE_CFG,
+				HTT_H2T_RXOLE_PPE_CFG_MSG_TYPE) |
+		u32_encode_bits(param->override, HTT_H2T_RXOLE_PPE_CFG_OVERRIDE) |
+		u32_encode_bits(param->reo_dst_ind,
+				HTT_H2T_RXOLE_PPE_CFG_REO_DST_IND) |
+		u32_encode_bits(param->multi_buffer_msdu_override_en,
+				HTT_H2T_RXOLE_PPE_CFG_MULTI_BUF_MSDU_OVRD_EN) |
+		u32_encode_bits(param->intra_bss_override,
+				HTT_H2T_RXOLE_PPE_CFG_INTRA_BUS_OVRD) |
+		u32_encode_bits(param->decap_raw_override,
+				HTT_H2T_RXOLE_PPE_CFG_DECAP_RAW_OVRD) |
+		u32_encode_bits(param->decap_nwifi_override,
+				HTT_H2T_RXOLE_PPE_CFG_NWIFI_OVRD) |
+		u32_encode_bits(param->ip_frag_override,
+				HTT_H2T_RXOLE_PPE_CFG_IP_FRAG_OVRD);
+
+	val = cmd->info0;
+	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	if (ret) {
+		ath12k_warn(ab, "failed to send htt type H2T rx ole ppe config request: %d",
+			    ret);
+		dev_kfree_skb_any(skb);
+		return ret;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_PPE, "RXOLE ppe config request sent val 0x%x\n", val);
+
+	return 0;
+}
+
 int ath12k_dp_rx_htt_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -1464,6 +1514,7 @@ struct dp_rx_fst *ath12k_dp_rx_fst_attach(struct ath12k_base *ab)
 
 	spin_lock_init(&fst->fst_lock);
 
+	ath12k_dp_rx_ppe_fse_register();
 	ath12k_info(ab, "Rx FST attach successful\n");
 
 	return fst;
@@ -1476,6 +1527,7 @@ void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst)
 	if (!fst)
 		return;
 
+	ath12k_dp_rx_ppe_fse_unregister();
 	ath12k_dp_arch_rx_fst_detach(dp, fst);
 	kfree(fst);
 }
@@ -1715,3 +1767,4 @@ ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size)
 
 	return ath12k_dp_arch_dump_fst_table(dp, buf, size);
 }
+

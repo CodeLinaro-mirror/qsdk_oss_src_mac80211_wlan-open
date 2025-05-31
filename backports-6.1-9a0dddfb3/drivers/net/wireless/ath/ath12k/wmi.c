@@ -1485,6 +1485,97 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 	return ret;
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_wmi_config_peer_ppeds_routing(struct ath12k *ar,
+					 const u8 *peer_addr, u8 vdev_id,
+					 u32 service_code, u32 priority_valid,
+					 u32 src_info, bool ppe_routing_enable,
+					 bool use_ppe)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct sk_buff *skb;
+	struct wmi_peer_config_ppeds_cmd *cmd;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_peer_config_ppeds_cmd *)skb->data;
+	cmd->tlv_header  = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_CONFIG_PPEDS_ROUTING,
+						  sizeof(*cmd));
+
+	ether_addr_copy(cmd->peer_macaddr.addr, peer_addr);
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	if (ppe_routing_enable) {
+		if (use_ppe)
+			cmd->ppe_routing_enable = WMI_AST_USE_PPE_ENABLED;
+		else
+			cmd->ppe_routing_enable = WMI_AST_USE_PPE_DISABLED;
+	} else {
+		cmd->ppe_routing_enable = WMI_PPE_ROUTING_DISABLED;
+	}
+	cmd->service_code = cpu_to_le32(service_code);
+	cmd->priority_valid = cpu_to_le32(priority_valid);
+	cmd->src_info = cpu_to_le32(src_info);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_CONFIG_PPE_DS_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send WMI_PEER_CONFIG_PPE_DS cmd" \
+			   "peer_addr %pM num_peer : %d\n",
+			    peer_addr, ar->num_peers);
+		dev_kfree_skb(skb);
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "ppe ds routing cmd peer_addr %pM vdev_id %d service_code %d " \
+		   "priority_valid %d src_info %d ppe_routing_enable %d\n",
+		   peer_addr, vdev_id, service_code, priority_valid,
+		   src_info, ppe_routing_enable);
+
+	return ret;
+}
+#endif
+
+int ath12k_wmi_send_pdev_pkt_route(struct ath12k *ar,
+				   struct ath12k_wmi_pkt_route_param *param)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_pdev_pkt_route_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_pdev_pkt_route_cmd *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+				     WMI_TAG_PDEV_UPDATE_PKT_ROUTING_CMD) |
+				     FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+
+	cmd->pdev_id = ar->pdev->pdev_id;
+	cmd->opcode = param->opcode;
+	cmd->route_type_bmap = param->route_type_bmap;
+	cmd->dst_ring = param->dst_ring;
+	cmd->meta_data = param->meta_data;
+	cmd->dst_ring_handler = param->dst_ring_handler;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "CCE PPE WMI pdev pkt route opcode %d route_bmap %d dst_ring %d meta_data %d" \
+		   "dst_ring_handler %d\n", param->opcode, param->route_type_bmap,
+		   param->dst_ring, param->meta_data, param->dst_ring_handler);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_UPDATE_PKT_ROUTING_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_PDEV_UPDATE_PKT_ROUTING cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_send_pdev_set_regdomain(struct ath12k *ar,
 				       struct ath12k_wmi_pdev_set_regdomain_arg *arg)
 {

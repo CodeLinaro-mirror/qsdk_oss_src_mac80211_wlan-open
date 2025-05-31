@@ -348,7 +348,7 @@ int ath12k_wifi7_hal_desc_reo_parse_err(struct ath12k_dp *dp,
 	if (val == HAL_REO_DEST_RING_BUFFER_TYPE_MSDU) {
 		ret = -EOPNOTSUPP;
 	} else if (val != HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
-		ath12k_warn(ab, "expected buffer type link_desc");
+		ath12k_warn(ab, "expected buffer type link_desc, val %d", val);
 		return -EINVAL;
 	}
 
@@ -364,11 +364,14 @@ int ath12k_wifi7_hal_wbm_desc_parse_err(struct ath12k_dp *dp, void *desc,
 {
 	struct hal_wbm_release_ring *wbm_desc = desc;
 	struct hal_wbm_release_ring_cc_rx *wbm_cc_desc = desc;
+	struct ath12k_base *ab = dp->ab;
 	enum hal_wbm_rel_desc_type type;
 	enum hal_wbm_rel_src_module rel_src;
 	bool hw_cc_done;
 	u64 desc_va;
 	u32 val;
+	int rxdma_push_reason, rxdma_error_code, reo_push_reason, reo_error_code;
+	int wbm_err;
 
 	type = le32_get_bits(wbm_desc->info0, HAL_WBM_RELEASE_INFO0_DESC_TYPE);
 	/* We expect only WBM_REL buffer type */
@@ -380,8 +383,22 @@ int ath12k_wifi7_hal_wbm_desc_parse_err(struct ath12k_dp *dp, void *desc,
 	rel_src = le32_get_bits(wbm_desc->info0,
 				HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE);
 	if (rel_src != HAL_WBM_REL_SRC_MODULE_RXDMA &&
-	    rel_src != HAL_WBM_REL_SRC_MODULE_REO)
+	    rel_src != HAL_WBM_REL_SRC_MODULE_REO) {
+		rxdma_push_reason = le32_get_bits(wbm_desc->info0,
+						  HAL_WBM_RELEASE_RX_INFO0_RXDMA_PUSH_REASON);
+		rxdma_error_code = le32_get_bits(wbm_desc->info0,
+						 HAL_WBM_RELEASE_RX_INFO0_RXDMA_ERROR_CODE);
+		reo_push_reason = le32_get_bits(wbm_desc->info0,
+						HAL_WBM_RELEASE_RX_INFO0_REO_PUSH_REASON);
+		reo_error_code = le32_get_bits(wbm_desc->info0,
+					       HAL_WBM_RELEASE_RX_INFO0_REO_ERROR_CODE);
+		wbm_err =  le32_get_bits(wbm_desc->info0,
+					 HAL_WBM_RELEASE_RX_INFO0_WBM_INTERNAL_ERROR);
+		ath12k_warn(ab, "Invalid src rxmda(%d %d) reo(%d %d) wbm err %d",
+			    rxdma_push_reason, rxdma_error_code,
+			    rxdma_error_code, reo_push_reason, wbm_err);
 		return -EINVAL;
+	}
 
 	/* The format of wbm rel ring desc changes based on the
 	 * hw cookie conversion status
@@ -839,6 +856,20 @@ void ath12k_wifi7_hal_reo_init_cmd_ring(struct ath12k_base *ab,
 	}
 }
 
+void ath12k_hal_reo_ring_ctrl_hash_ix0_setup(struct ath12k_base *ab)
+{
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u32 curr, val;
+
+	curr = ath12k_hif_read32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0);
+	val = curr & ~(REO_DEST_CTRL_IX_0_RING6_MAP_MASK <<
+		       REO_DEST_CTRL_IX_0_RING6_MAP_SHFT);
+	val |= (REO2PPE_DST_RING_MAP << REO_DEST_CTRL_IX_0_RING6_MAP_SHFT);
+
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0,
+			   val);
+}
+
 void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map)
 {
 	struct ath12k_hal *hal = &ab->hal;
@@ -870,6 +901,8 @@ void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map)
 			   HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_USEC);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_AGING_THRESH_IX_3(hal),
 			   HAL_DEFAULT_VO_REO_TIMEOUT_USEC);
+
+	ath12k_hal_reo_ring_ctrl_hash_ix0_setup(ab);
 
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_2,
 			   ring_hash_map);

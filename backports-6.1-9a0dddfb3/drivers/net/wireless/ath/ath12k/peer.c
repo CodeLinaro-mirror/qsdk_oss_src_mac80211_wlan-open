@@ -9,6 +9,10 @@
 #include "dp_peer.h"
 #include "debug.h"
 #include "debugfs.h"
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+#include "ppe.h"
+#endif
+
 
 static int ath12k_wait_for_peer_common(struct ath12k_base *ab, int vdev_id,
 				       const u8 *addr, bool expect_mapped)
@@ -262,6 +266,17 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	if (vif->type == NL80211_IFTYPE_AP)
 		peer->dp_peer->is_reset_mcbc = true;
+
+	/* Do not deliver frames to PPE in fast rx incase of RFS
+	 * RFS is supported only in SFE Mode
+	 */
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (arvif->ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_ACTIVE)
+		peer->dp_peer->ppe_vp_num = arvif->ahvif->dp_vif.ppe_vp_num;
+
+	if (arvif->ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS)
+		peer->dp_peer->ppe_vp_num = arvif->ahvif->dp_vif.ppe_vp_num;
+#endif
 
 	return 0;
 }

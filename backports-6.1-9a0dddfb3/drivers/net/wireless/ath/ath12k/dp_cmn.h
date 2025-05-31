@@ -11,6 +11,16 @@
 struct ath12k_hw_group;
 struct ath12k;
 
+struct dp_srng {
+	u32 *vaddr_unaligned;
+	u32 *vaddr;
+	dma_addr_t paddr_unaligned;
+	dma_addr_t paddr;
+	int size;
+	u32 ring_id;
+	u8 cached;
+};
+
 struct ath12k_dp_hw_link {
 	u8 device_id;
 	u8 pdev_idx;

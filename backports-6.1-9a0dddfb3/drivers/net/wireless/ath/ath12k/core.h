@@ -36,6 +36,10 @@
 #include "coredump.h"
 #include "cmn_defs.h"
 #include "spectral.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#include <ppe_ds_wlan.h>
+#include <ppe_vp_public.h>
+#endif
 
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
@@ -84,6 +88,11 @@
 #define ATH12K_PHY_5GHZ_LOW "phy01"
 #define ATH12K_PHY_5GHZ_HIGH "phy02"
 #define ATH12K_PHY_6GHZ "phy03"
+
+#define ATH12K_MAX_CORE_MASK	(0xFFFF & ((1 << NR_CPUS) - 1))
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+extern unsigned int ath12k_ppe_ds_enabled;
+#endif
 
 extern unsigned int ath12k_frame_mode;
 extern bool ath12k_fse_3_tuple_enabled;
@@ -183,7 +192,7 @@ enum ath12k_firmware_mode {
 
 extern bool ath12k_cold_boot_cal;
 
-#define ATH12K_IRQ_NUM_MAX 57
+#define ATH12K_IRQ_NUM_MAX 60
 #define ATH12K_EXT_IRQ_NUM_MAX	16
 #define ATH12K_MAX_TCL_RING_NUM	3
 
@@ -317,6 +326,7 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_BTCOEX,
 	ATH12K_FLAG_WMI_INIT_DONE,
 	ATH12K_FLAG_Q6_POWER_DOWN,
+	ATH12K_FLAG_PPE_DS_ENABLED,
 };
 
 enum ath12k_mlo_recovery_mode {
@@ -443,6 +453,10 @@ struct ath12k_link_vif {
 	spinlock_t link_stats_lock; /* Protects updates to link_stats */
 	bool is_scan_vif;
 	u32 key_cipher;
+	int ppe_vp_profile_idx;
+	int splitphy_ds_bank_id;
+	bool primary_sta_link;
+	/* Add per link DS specific information here */
 	bool nawds_support;
 	bool spectral_enabled;
 	u32 vht_cap;
@@ -488,6 +502,11 @@ struct ath12k_dp_vif {
 	u32 key_cipher;
 	atomic_t mcbc_gsn;
 	struct ath12k_dp_link_vif dp_link_vif[ATH12K_NUM_MAX_LINKS];
+
+	/* PPE mode independent variables */
+	int ppe_vp_num;
+	int ppe_core_mask;
+	u8 ppe_vp_type;
 };
 
 struct ath12k_vif {
@@ -682,6 +701,9 @@ struct ath12k_sta {
 	struct wiphy_work set_4addr_wk;
 
 	enum ieee80211_sta_state state;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	int ppe_vp_num;
+#endif
 	bool low_ack_sent;
 };
 
@@ -1262,7 +1284,7 @@ struct ath12k_base {
 	bool wmi_ready;
 	u32 wlan_init_status;
 	int irq_num[ATH12K_IRQ_NUM_MAX];
-	struct ath12k_ext_irq_grp ext_irq_grp[ATH12K_EXT_IRQ_GRP_NUM_MAX];
+	struct ath12k_ext_irq_grp ext_irq_grp[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 	struct napi_struct *napi;
 	struct ath12k_wmi_target_cap_arg target_caps;
 	u32 ext_service_bitmap[WMI_SERVICE_EXT_BM_SIZE];

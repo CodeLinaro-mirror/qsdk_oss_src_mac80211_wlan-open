@@ -107,3 +107,12 @@ config ATH12K_SPECTRAL
 	  Enable ath12k spectral scan support
 
 	  Say Y to enable access to the FFT/spectral data via debugfs.
+
+config ATH12K_PPE_DS_SUPPORT
+	bool "QTI ath12k ppe-ds support"
+	depends on ATH12K_DEBUGFS
+	depends on RELAY
+	help
+		Enable ath12k PPE-DS support
+
+		Say Y to enable PPE DS Support. If unsure, say N.

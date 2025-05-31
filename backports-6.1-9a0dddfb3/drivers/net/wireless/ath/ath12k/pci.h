@@ -156,4 +156,9 @@ void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend);
 int ath12k_pci_register_driver(const enum ath12k_device_family device_id,
 			       struct ath12k_pci_driver *driver);
 void ath12k_pci_unregister_driver(const enum ath12k_device_family device_id);
+void ath12k_pci_ppeds_free_interrupts(struct ath12k_base *ab);
+int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type,
+					 int vector, int ring_num);
+void ath12k_pci_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type);
+void ath12k_pci_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type);
 #endif /* ATH12K_PCI_H */

@@ -264,6 +264,15 @@ enum {
 	WMI_AUTORATE_3200NS_GI = BIT(11),
 };
 
+enum ath12k_dp_rx_routing_reo_dest_ring {
+	ATH12K_REO2SW0_RING,
+	ATH12K_REO2SW1_RING,
+	ATH12K_REO2SW2_RING,
+	ATH12K_REO2SW3_RING,
+	ATH12K_REO2SW4_RING,
+	ATH12K_REO_RELEASE_RING,
+};
+
 enum wmi_cmd_group {
 	/* 0 to 2 are reserved */
 	WMI_GRP_START = 0x3,
@@ -492,8 +501,15 @@ enum wmi_tlv_cmd_id {
 	WMI_PEER_REORDER_QUEUE_REMOVE_CMDID,
 	WMI_PEER_SET_RX_BLOCKSIZE_CMDID,
 	WMI_PEER_ANTDIV_INFO_REQ_CMDID,
-	WMI_PEER_CHAN_WIDTH_SWITCH_CMDID =
-		WMI_PEER_ANTDIV_INFO_REQ_CMDID + 5,
+	WMI_PEER_RESERVED0_CMDID,
+	WMI_PEER_TID_MSDUQ_QDEPTH_THRESH_UPDATE_CMDID,
+	WMI_PEER_TID_CONFIGURATIONS_CMDID,
+	WMI_PEER_CFR_CAPTURE_CMDID,
+	WMI_PEER_CHAN_WIDTH_SWITCH_CMDID,
+	WMI_PEER_TX_PN_REQUEST_CMDID,
+	WMI_PEER_UNMAP_RESPONSE_CMDID,
+	WMI_PEER_CONFIG_VLAN_CMDID,
+	WMI_PEER_CONFIG_PPE_DS_CMDID,
 	WMI_BCN_TX_CMDID = WMI_TLV_CMD(WMI_GRP_MGMT),
 	WMI_PDEV_SEND_BCN_CMDID,
 	WMI_BCN_TMPL_CMDID,
@@ -2103,6 +2119,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_BCN_TMPL_ML_PARAMS_CMD = 0x3E6,
 	WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS = 0x3E9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
+	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
 	WMI_TAG_SPECTRAL_SCAN_BW_CAPABILITIES = 0x415,
 	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
 	WMI_TAG_PDEV_SSCAN_CHAN_INFO = 0x417,
@@ -3185,6 +3202,25 @@ struct ath12k_wmi_channel_arg {
 	u8  reg_class_id;
 };
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+struct wmi_peer_config_ppeds_cmd {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 ppe_routing_enable;
+	__le32 service_code;
+	__le32 priority_valid;
+	__le32 src_info;
+	__le32 vdev_id;
+};
+
+enum wmi_ppeds_routing_type {
+	WMI_PPE_ROUTING_DISABLED = 0,
+	WMI_AST_USE_PPE_ENABLED  = 1,
+	WMI_AST_USE_PPE_DISABLED = 2,
+	WMI_PPE_ROUTING_TYPE_MAX,
+};
+#endif
+
 enum wmi_phy_mode {
 	MODE_11A        = 0,
 	MODE_11G        = 1,   /* 11b/g Mode */
@@ -3313,6 +3349,27 @@ struct ath12k_wmi_pdev_set_regdomain_arg {
 	u32 ctl_5g;
 	u8 dfs_domain;
 	u32 pdev_id;
+};
+
+/* Defines various options for routing policy */
+enum wmi_pdev_dest_ring_handler_type {
+	ATH12K_WMI_PKTROUTE_USE_CCE  = 0,
+	ATH12K_WMI_PKTROUTE_USE_ASPT = 1,
+	ATH12K_WMI_PKTROUTE_USE_FSE  = 2,
+	ATH12K_WMI_PKTROUTE_USE_CCE2 = 3,
+};
+
+enum ath12k_wmi_pkt_route_opcode {
+	ATH12K_WMI_PKTROUTE_ADD,
+	ATH12K_WMI_PKTROUTE_DEL,
+};
+
+struct ath12k_wmi_pkt_route_param {
+	enum ath12k_wmi_pkt_route_opcode opcode;
+	u32 route_type_bmap;
+	u32 dst_ring_handler;
+	u32 dst_ring;
+	u32 meta_data;
 };
 
 struct ath12k_wmi_rx_reorder_queue_remove_arg {
@@ -3510,6 +3567,16 @@ struct wmi_pdev_set_regdomain_cmd {
 	__le32 conformance_test_limit_2g;
 	__le32 conformance_test_limit_5g;
 	__le32 dfs_domain;
+} __packed;
+
+struct wmi_pdev_pkt_route_cmd {
+	u32 tlv_header;
+	u32 pdev_id;
+	u32 opcode;
+	u32 route_type_bmap;
+	u32 dst_ring;
+	u32 meta_data;
+	u32 dst_ring_handler;
 } __packed;
 
 struct wmi_peer_set_param_cmd {
@@ -7655,6 +7722,8 @@ int ath12k_wmi_send_11d_scan_stop_cmd(struct ath12k *ar, u32 vdev_id);
 int
 ath12k_wmi_rx_reord_queue_remove(struct ath12k *ar,
 				 struct ath12k_wmi_rx_reorder_queue_remove_arg *arg);
+int ath12k_wmi_send_pdev_pkt_route(struct ath12k *ar,
+				   struct ath12k_wmi_pkt_route_param *param);
 int ath12k_wmi_send_pdev_set_regdomain(struct ath12k *ar,
 				       struct ath12k_wmi_pdev_set_regdomain_arg *arg);
 int ath12k_wmi_simulate_radar(struct ath12k *ar, u32 radar_params);
@@ -7773,6 +7842,13 @@ void ath12k_wmi_fw_stats_dump(struct ath12k *ar,
 			      struct ath12k_fw_stats *fw_stats, u32 stats_id,
 			      char *buf);
 int ath12k_wmi_pdev_m3_dump_enable(struct ath12k *ar, u32 enable);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_wmi_config_peer_ppeds_routing(struct ath12k *ar,
+					 const u8 *peer_addr, u8 vdev_id,
+					 u32 service_code, u32 priority_valid,
+					 u32 src_info, bool ppe_routing_enable,
+					 bool use_ppe);
+#endif
 int ath12k_wmi_dbglog_cfg(struct ath12k *ar, u32 param, u64 value);
 int ath12k_wmi_pdev_ap_ps_cmd_send(struct ath12k *ar, u8 pdev_id, u32 value);
 bool ath12k_wmi_is_mvr_supported(struct ath12k_base *ab);

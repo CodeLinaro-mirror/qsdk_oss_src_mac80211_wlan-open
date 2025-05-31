@@ -8,6 +8,9 @@
 #define ATH12K_HIF_H
 
 #include "core.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#include "pci.h"
+#endif
 
 struct ath12k_hif_ops {
 	u32 (*read32)(struct ath12k_base *ab, u32 address);
@@ -43,6 +46,13 @@ struct ath12k_hif_ops {
 	int (*set_qrtr_endpoint_id)(struct ath12k_base *ab);
 	void (*config_static_window)(struct ath12k_base *ab);
 	int (*get_msi_irq)(struct ath12k_base *ab, unsigned int vector);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	int (*ppeds_register_interrupts)(struct ath12k_base *ab, int type, int vector,
+					 int ring_num);
+	void (*ppeds_free_interrupts)(struct ath12k_base *ab);
+	void (*ppeds_irq_enable)(struct ath12k_base *ab, enum ppeds_irq_type type);
+	void (*ppeds_irq_disable)(struct ath12k_base *ab, enum ppeds_irq_type type);
+#endif
 };
 
 static inline int ath12k_hif_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,
@@ -225,4 +235,62 @@ static inline void ath12k_hif_ext_irq_cleanup(struct ath12k_base *ab)
 	ab->hif.ops->ext_irq_cleanup(ab);
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static inline int ath12k_hif_ppeds_register_interrupts(struct ath12k_base *ab, int type, int vector,
+						       int ring_num)
+{
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
+
+	if (ab->hif.ops->ppeds_register_interrupts)
+		return ab->hif.ops->ppeds_register_interrupts(ab, type, vector,
+							      ring_num);
+	return 0;
+}
+
+static inline void ath12k_hif_ppeds_free_interrupts(struct ath12k_base *ab)
+{
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return;
+
+	if (ab->hif.ops->ppeds_register_interrupts)
+		ab->hif.ops->ppeds_free_interrupts(ab);
+}
+
+static inline void ath12k_hif_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type)
+{
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return;
+
+	if (ab->hif.ops->ppeds_irq_enable)
+		ab->hif.ops->ppeds_irq_enable(ab, type);
+}
+
+static inline void ath12k_hif_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type)
+{
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return;
+
+	if (ab->hif.ops->ppeds_irq_disable)
+		ab->hif.ops->ppeds_irq_disable(ab, type);
+}
+#else
+static inline int ath12k_hif_ppeds_register_interrupts(struct ath12k_base *ab, int type, int vector,
+						       int ring_num)
+{
+	return 0;
+}
+
+static inline void ath12k_hif_ppeds_free_interrupts(struct ath12k_base *ab)
+{
+}
+
+static inline void ath12k_hif_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type)
+{
+}
+
+static inline void ath12k_hif_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type)
+{
+}
+#endif
 #endif /* ATH12K_HIF_H */

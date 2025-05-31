@@ -432,6 +432,11 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	    ab->hw_params->ring_mask->rx_wbm_rel[i] ||
 	    ab->hw_params->ring_mask->reo_status[i] ||
 	    ab->hw_params->ring_mask->host2rxdma[i] ||
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	    ab->hw_params->ring_mask->ppe2tcl[i] ||
+	    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
+	    ab->hw_params->ring_mask->reo2ppe[i] ||
+#endif
 	    ab->hw_params->ring_mask->rx_mon_dest[i]) {
 		num_irq = 1;
 	}
@@ -443,21 +448,32 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 		int irq_idx = irq_grp->irqs[j];
 		int vector = (i % num_vectors);
 
-		scnprintf(dp_irq_name[userpd_id][i], DP_IRQ_NAME_LEN,
-			  "pci%u_wlan_dp_%u", userpd_id, i);
-		irq_set_status_flags(msi_desc->irq, IRQ_DISABLE_UNLAZY);
-		ret = devm_request_irq(&pdev->dev, msi_desc->irq,
-				       ath12k_pcic_ext_interrupt_handler, IRQF_SHARED,
-				       dp_irq_name[userpd_id][i], irq_grp);
-		if (ret) {
-			ath12k_warn(ab, "failed to request irq %d: %d\n", irq_idx, ret);
-			return ret;
-		}
+		if (ab->hw_params->ring_mask->ppe2tcl[i] ||
+		    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
+		    ab->hw_params->ring_mask->reo2ppe[i]) {
+			ret = ath12k_pcic_get_msi_data(ab, msi_desc, i);
+			if (ret) {
+				ath12k_err(ab, "failed to get msi data for irq %d: %d",
+					   msi_desc->irq, ret);
+				return ret;
+			}
+		} else {
+			scnprintf(dp_irq_name[userpd_id][i], DP_IRQ_NAME_LEN,
+				  "pci%u_wlan_dp_%u", userpd_id, i);
+			irq_set_status_flags(msi_desc->irq, IRQ_DISABLE_UNLAZY);
+			ret = devm_request_irq(&pdev->dev, msi_desc->irq,
+					       ath12k_pcic_ext_interrupt_handler, IRQF_SHARED,
+					       dp_irq_name[userpd_id][i], irq_grp);
+			if (ret) {
+				ath12k_warn(ab, "failed to request irq %d: %d\n", irq_idx, ret);
+				return ret;
+			}
 
-		ab->irq_num[irq_idx] = msi_desc->irq;
-		ab->ipci.dp_irq_num[vector] = msi_desc->irq;
-		ab->ipci.dp_msi_data[i] = msi_desc->msg.data;
-		disable_irq_nosync(ab->irq_num[irq_idx]);
+			ab->irq_num[irq_idx] = msi_desc->irq;
+			ab->ipci.dp_irq_num[vector] = msi_desc->irq;
+			ab->ipci.dp_msi_data[i] = msi_desc->msg.data;
+			disable_irq_nosync(ab->irq_num[irq_idx]);
+		}
 	}
 	return ret;
 }
@@ -635,6 +651,147 @@ void ath12k_pcic_get_msi_address(struct ath12k_base *ab, u32 *msi_addr_lo,
 	*msi_addr_hi = ab->msi.addr_hi;
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int vector,
+					  int ring_num)
+{
+	int ret, irq;
+	struct ath12k_ahb *ab_ahb;
+	u8 bus_id;
+	struct platform_device *pdev;
+
+	ab_ahb = ath12k_ab_to_ahb(ab);
+	bus_id = ab_ahb->userpd_id;
+	pdev = ab->pdev;
+
+	if (ab->dp->ppe.ppeds_soc_idx == -1) {
+		ath12k_err(ab, "invalid ppeds_soc_idx in ppeds_register_interrupts\n");
+		return -EINVAL;
+	}
+
+	if (type == HAL_PPE2TCL) {
+		irq = ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL];
+		if (!irq)
+			goto irq_fail;
+		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
+		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
+			 "pcic%d_ppe2tcl_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		ret = devm_request_irq(&pdev->dev, irq,
+				       ath12k_ds_ppe2tcl_irq_handler,
+				       IRQF_NO_SUSPEND,
+				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+				       (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+		if (ret)
+			goto irq_fail;
+		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
+	} else if (type == HAL_REO2PPE) {
+		irq = ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE];
+		if (!irq)
+			goto irq_fail;
+		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
+		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
+			 "pcic%d_reo2ppe_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		ret = devm_request_irq(&pdev->dev, irq,
+				       ath12k_ds_reo2ppe_irq_handler,
+				       IRQF_SHARED,
+				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+				       (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+		if (ret)
+			goto irq_fail;
+		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
+	} else if (type == HAL_WBM2SW_RELEASE && ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
+		irq = ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL];
+		if (!irq)
+			goto irq_fail;
+		irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
+		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
+			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL]),
+			 "pcic%d_ppe_wbm_rel_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		ret = devm_request_irq(&pdev->dev, irq,
+				       ath12k_dp_ppeds_handle_tx_comp,
+				       IRQF_SHARED,
+				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
+				       (void *)ab);
+		if (ret)
+			goto irq_fail;
+		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL] = irq;
+	} else {
+		return 0;
+	}
+
+	disable_irq_nosync(irq);
+
+	return 0;
+
+irq_fail:
+	return ret;
+}
+
+void ath12k_pcic_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type)
+{
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[type]);
+}
+
+void ath12k_pcic_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type)
+{
+	enable_irq(ab->dp->ppe.ppeds_irq[type]);
+}
+
+void ath12k_pcic_ppeds_free_interrupts(struct ath12k_base *ab)
+{
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL]);
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL], ath12k_dp_get_ppe_ds_ctxt(ab));
+
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE]);
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ath12k_dp_get_ppe_ds_ctxt(ab));
+
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL]);
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
+}
+
+irqreturn_t ath12k_pcic_dummy_irq_handler(int irq, void *context)
+{
+	return IRQ_HANDLED;
+}
+
+int ath12k_pcic_get_msi_data(struct ath12k_base *ab, struct msi_desc *msi_desc,
+			     int i)
+{
+	int ret, type;
+	struct platform_device *pdev = ab->pdev;
+
+	if (ab->hw_params->ring_mask->ppe2tcl[i])
+		type = PPEDS_IRQ_PPE2TCL;
+	else if (ab->hw_params->ring_mask->reo2ppe[i])
+		type = PPEDS_IRQ_REO2PPE;
+	else if (ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i])
+		type = PPEDS_IRQ_PPE_WBM2SW_REL;
+	else
+		return -EINVAL;
+
+	/* For multi-platform device, to retrieve msi base address and irq data,
+	 * request a dummy irq  store the base address and data to
+	 * provide the required base address/data info in
+	 * hal_srng_init and srng_msi_setup API calls.
+	 */
+	ab->dp->ppe.ppeds_irq[type] = msi_desc->irq;
+	ret = devm_request_irq(&pdev->dev, msi_desc->irq,
+			       ath12k_pcic_dummy_irq_handler, IRQF_SHARED,
+			       "dummy", (void *)ab);
+
+	if (ret)
+		return -EINVAL;
+
+	ab->ipci.dp_msi_data[i] = msi_desc->msg.data;
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[type]);
+	free_irq(ab->dp->ppe.ppeds_irq[type], (void *)ab);
+
+	return 0;
+}
+#endif
+
 void ath12k_pcic_ext_irq_enable(struct ath12k_base *ab)
 {
 	int i;
@@ -762,6 +919,11 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 		    ab->hw_params->ring_mask->rx_wbm_rel[i] ||
 		    ab->hw_params->ring_mask->reo_status[i] ||
 		    ab->hw_params->ring_mask->host2rxdma[i] ||
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		    ab->hw_params->ring_mask->ppe2tcl[i] ||
+		    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
+		    ab->hw_params->ring_mask->reo2ppe[i] ||
+#endif
 		    ab->hw_params->ring_mask->rx_mon_dest[i]) {
 			num_irq = 1;
 		}
@@ -787,8 +949,6 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 
 			scnprintf(dp_irq_name[bus_id][i], DP_IRQ_NAME_LEN,
 				  "pci%u_wlan_dp_%u", bus_id, i);
-			ath12k_dbg(ab, ATH12K_DBG_PCI, "PCI bus id: pci:%d IRQ Name:%s\n",
-				   bus_id, dp_irq_name[bus_id][i]);
 			irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 			ret = request_irq(irq, ath12k_pcic_ext_interrupt_handler,
 					  IRQF_SHARED,
@@ -1023,12 +1183,14 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
                         i++;
                         continue;
 		}
+
 		if (i < (num_vectors + base_vector)) {
 			if (j < ab->hw_params->ce_count) {
 				while(j < ab->hw_params->ce_count &&
 				      ath12k_ce_get_attr_flags(ab, j) & CE_ATTR_DIS_INTR) {
 					j++;
 				}
+
 				if (j == ab->hw_params->ce_count) {
 					ce_done = true;
 					break;
@@ -1039,14 +1201,112 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 					ath12k_warn(ab, "failed to request irq %d\n", ret);
 					return ret;
 				}
+
 				j++;
 			}
 		}
+
 		i++;
 	}
+
 	msi_unlock_descs(&pdev->dev);
 	ab->ipci.gic_enabled = 1;
 	wake_up(&ab->ipci.gic_msi_waitq);
 
 	return ret;
 }
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type, int vector,
+					 int ring_num)
+{
+	struct ath12k_pci *ar_pci = (struct ath12k_pci *)ab->drv_priv;
+	int irq;
+	u8 bus_id = pci_domain_nr(ar_pci->pdev->bus);
+	int ret;
+
+	if (type != HAL_REO2PPE && type != HAL_PPE2TCL &&
+	    !(type == HAL_WBM2SW_RELEASE &&
+	    ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM)) {
+		return 0;
+	}
+
+	if (ab->dp->ppe.ppeds_soc_idx == -1) {
+		ath12k_err(ab, "invalid ppeds_node_idx in ppeds_register_interrupts\n");
+		return -EINVAL;
+	}
+
+	irq = ath12k_pci_get_msi_irq(ab, vector);
+
+	irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
+	if (type == HAL_PPE2TCL) {
+		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
+			 "pci%d_ppe2tcl_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		ret = request_irq(irq,  ath12k_ds_ppe2tcl_irq_handler,
+				  IRQF_NO_SUSPEND,
+				  ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+				  (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+		if (ret)
+			goto irq_fail;
+
+		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
+	} else if (type == HAL_REO2PPE) {
+		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
+			 "pci%d_reo2ppe%d_irq%d", bus_id, ab->dp->ppe.ppeds_soc_idx,
+			 irq);
+		ret = request_irq(irq, ath12k_ds_reo2ppe_irq_handler,
+				  IRQF_SHARED,
+				  ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+				  (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+		if (ret)
+			goto irq_fail;
+
+		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
+	} else if (type == HAL_WBM2SW_RELEASE &&
+		   ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
+		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
+			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL]),
+			 "pci%d_ppe_wbm_rel_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
+		ret = request_irq(irq,  ath12k_dp_ppeds_handle_tx_comp,
+				  IRQF_SHARED,
+				  ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
+				  (void *)ab);
+		if (ret)
+			goto irq_fail;
+
+		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL] = irq;
+	} else {
+		return 0;
+	}
+
+	disable_irq_nosync(irq);
+
+	return 0;
+irq_fail:
+	return ret;
+}
+
+void ath12k_pci_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type)
+{
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[type]);
+}
+
+void ath12k_pci_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type)
+{
+	enable_irq(ab->dp->ppe.ppeds_irq[type]);
+}
+
+void ath12k_pci_ppeds_free_interrupts(struct ath12k_base *ab)
+{
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL]);
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL], ath12k_dp_get_ppe_ds_ctxt(ab));
+
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE]);
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ath12k_dp_get_ppe_ds_ctxt(ab));
+
+	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL]);
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
+}
+#endif

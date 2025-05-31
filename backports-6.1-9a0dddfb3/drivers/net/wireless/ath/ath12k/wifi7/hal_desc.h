@@ -2019,6 +2019,7 @@ enum hal_wbm_tqm_rel_reason {
 	HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU,
 	HAL_WBM_TQM_REL_REASON_MULTICAST_DROP,
 	HAL_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP,
+	HAL_WBM_TQM_REL_REASON_MAX,
 };
 
 struct hal_wbm_buffer_ring {
@@ -2862,6 +2863,12 @@ struct hal_reo_desc_thresh_reached_status {
 struct hal_tcl_entrance_from_ppe_ring {
 	__le32 buffer_addr;
 	__le32 info0;
+	__le32 opaque_lo;
+	__le32 opaque_hi;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
 } __packed;
 
 struct hal_mon_buf_ring {

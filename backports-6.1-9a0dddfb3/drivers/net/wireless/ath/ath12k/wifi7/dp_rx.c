@@ -20,6 +20,10 @@
 #include "dp_rx.h"
 #include "hal_qcn9274.h"
 #include "hal_wcn7850.h"
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
+#include <ppe_vp_public.h>
+#include <ppe_vp_tx.h>
+#endif
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
@@ -2897,7 +2901,7 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 	flow.fse_metadata = flow_info->fse_metadata;
 	if (flow_info->use_ppe) {
 		flow.use_ppe = flow_info->use_ppe;
-		flow.service_code = 0;
+		flow.service_code = PPE_DRV_SC_SPF_BYPASS;
 	}
 
 	fse->hal_fse = ath12k_wifi7_hal_rx_flow_setup_fse(ab, fst->hal_rx_fst,

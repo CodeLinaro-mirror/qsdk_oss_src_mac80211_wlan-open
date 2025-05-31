@@ -28,6 +28,7 @@ enum ath12k_debug_mask {
 	ATH12K_DBG_WOW		= 0x00008000,
 	ATH12K_DBG_DP_FST       = 0x00010000,
 	ATH12K_DBG_PEER         = 0x00020000,
+	ATH12K_DBG_PPE          = 0x08000000,
 
 	/* keep last*/
 	ATH12K_DBG_ANY		= 0xffffffff,

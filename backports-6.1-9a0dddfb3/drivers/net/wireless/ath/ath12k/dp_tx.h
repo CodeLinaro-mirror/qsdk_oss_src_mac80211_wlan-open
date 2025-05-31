@@ -9,6 +9,11 @@
 
 #include "core.h"
 
+struct ath12k_ppeds_desc_params {
+	unsigned int num_ppeds_desc;
+	unsigned int ppeds_hotlist_len;
+};
+
 struct ath12k_dp_htt_wbm_tx_status {
 	bool acked;
 	s8 ack_rssi;
@@ -25,4 +30,9 @@ void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 						       u8 pool_id);
 int ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int ring_id);
+struct ath12k_ppeds_tx_desc_info *
+ath12k_dp_ppeds_tx_assign_desc_nolock(struct ath12k_dp *dp);
+#endif
 #endif

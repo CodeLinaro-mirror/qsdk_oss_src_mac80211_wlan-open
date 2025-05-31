@@ -12,6 +12,35 @@
 
 #define DP_MAX_NWIFI_HDR_LEN	30
 
+/* different supported pkt types for routing */
+enum ath12k_routing_pkt_type {
+	ATH12K_PKT_TYPE_ARP_IPV4,
+	ATH12K_PKT_TYPE_NS_IPV6,
+	ATH12K_PKT_TYPE_IGMP_IPV4,
+	ATH12K_PKT_TYPE_MLD_IPV6,
+	ATH12K_PKT_TYPE_DHCP_IPV4,
+	ATH12K_PKT_TYPE_DHCP_IPV6,
+	ATH12K_PKT_TYPE_DNS_TCP_IPV4,
+	ATH12K_PKT_TYPE_DNS_TCP_IPV6,
+	ATH12K_PKT_TYPE_DNS_UDP_IPV4,
+	ATH12K_PKT_TYPE_DNS_UDP_IPV6,
+	ATH12K_PKT_TYPE_ICMP_IPV4,
+	ATH12K_PKT_TYPE_ICMP_IPV6,
+	ATH12K_PKT_TYPE_TCP_IPV4,
+	ATH12K_PKT_TYPE_TCP_IPV6,
+	ATH12K_PKT_TYPE_UDP_IPV4,
+	ATH12K_PKT_TYPE_UDP_IPV6,
+	ATH12K_PKT_TYPE_IPV4,
+	ATH12K_PKT_TYPE_IPV6,
+	ATH12K_PKT_TYPE_EAP,
+	ATH12K_PKT_TYPE_MAX
+};
+
+#define ATH12K_RX_PROTOCOL_TAG_START_OFFSET  128
+#define ATH12K_ROUTE_WBM_RELEASE(ab) \
+	((ab)->hw_params->route_wbm_release)
+#define ATH12K_ROUTE_EAP_METADATA       (ATH12K_RX_PROTOCOL_TAG_START_OFFSET + ATH12K_PKT_TYPE_EAP)
+
 struct ath12k_dp_rx_tid {
 	u8 tid;
 	u32 *vaddr;
@@ -202,4 +231,7 @@ void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst);
 void ath12k_dp_fst_core_map_init(struct ath12k_base *ab);
 void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
+int
+ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
+					 struct ath12k_dp_htt_rxdma_ppe_cfg_param *param);
 #endif /* ATH12K_DP_RX_H */

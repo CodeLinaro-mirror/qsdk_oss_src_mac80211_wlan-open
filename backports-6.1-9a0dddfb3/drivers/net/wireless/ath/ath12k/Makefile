@@ -25,6 +25,7 @@ ath12k-y += core.o \
 	    fse.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
+ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o
 
 obj-$(CPTCFG_ATH12K) += wifi7/
 

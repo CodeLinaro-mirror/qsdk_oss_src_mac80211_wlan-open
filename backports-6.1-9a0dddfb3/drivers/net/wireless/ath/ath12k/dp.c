@@ -15,6 +15,9 @@
 #include "dp_mon.h"
 #include "dp_cmn.h"
 #include "debugfs.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#include "ppe.h"
+#endif
 
 /*
  * TODO: fix this
@@ -26,7 +29,35 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 enum ath12k_dp_desc_type {
 	ATH12K_DP_TX_DESC,
 	ATH12K_DP_RX_DESC,
+	ATH12K_DP_PPEDS_TX_DESC,
 };
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab)
+{
+	struct ath12k_dp_htt_rxdma_ppe_cfg_param param = {0};
+	int ret;
+
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return 0;
+
+	param.override = 1;
+	param.reo_dst_ind = HAL_REO2PPE_DST_IND;
+	param.multi_buffer_msdu_override_en = 0;
+
+	/* Override use_ppe to 0 in RxOLE for the following cases */
+	param.intra_bss_override = 0;
+	param.decap_raw_override = 1;
+	param.decap_nwifi_override = 1;
+	param.ip_frag_override = 1;
+
+	ret = ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(ab, &param);
+	if (ret)
+		ath12k_err(ab, "RxOLE and RxDMA PPE config failed %d\n", ret);
+
+	return ret;
+}
+#endif
 
 void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 {
@@ -148,7 +179,7 @@ static int ath12k_dp_srng_find_ring_in_mask(int ring_num, const u8 *grp_mask)
 	int ext_group_num;
 	u8 mask = 1 << ring_num;
 
-	for (ext_group_num = 0; ext_group_num < ATH12K_EXT_IRQ_GRP_NUM_MAX;
+	for (ext_group_num = 0; ext_group_num < ATH12K_EXT_IRQ_DP_NUM_VECTORS;
 	     ext_group_num++) {
 		if (mask & grp_mask[ext_group_num])
 			return ext_group_num;
@@ -169,6 +200,11 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		if (ring_num == HAL_WBM2SW_REL_ERR_RING_NUM) {
 			grp_mask = &ab->hw_params->ring_mask->rx_wbm_rel[0];
 			ring_num = 0;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		} else if (ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
+			grp_mask = &ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[0];
+			ring_num = 0;
+#endif
 		} else {
 			map = ab->hal.tcl_to_wbm_rbm_map;
 			for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
@@ -200,6 +236,14 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	case HAL_RXDMA_BUF:
 		grp_mask = &ab->hw_params->ring_mask->host2rxdma[0];
 		break;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	case HAL_PPE2TCL:
+		grp_mask = &ab->hw_params->ring_mask->ppe2tcl[0];
+		break;
+	case HAL_REO2PPE:
+		grp_mask = &ab->hw_params->ring_mask->reo2ppe[0];
+		break;
+#endif
 	case HAL_RXDMA_MONITOR_BUF:
 	case HAL_TCL_DATA:
 	case HAL_TCL_CMD:
@@ -225,6 +269,7 @@ static void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 	int msi_group_number, msi_data_count;
 	u32 msi_data_start, msi_irq_start, addr_lo, addr_hi;
 	int ret;
+	int vector;
 
 	ret = ath12k_hif_get_user_msi_vector(ab, "DP",
 					     &msi_data_count, &msi_data_start,
@@ -259,6 +304,11 @@ static void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 		ring_params->msi_data = (msi_group_number % msi_data_count)
 			+ msi_data_start;
 	ring_params->flags |= HAL_SRNG_FLAGS_MSI_INTR;
+
+	vector = msi_irq_start  + (msi_group_number % msi_data_count);
+
+	if (ab->hw_params->ds_support)
+		ath12k_hif_ppeds_register_interrupts(ab, type, vector, ring_num);
 }
 
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
@@ -268,6 +318,7 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 	struct hal_srng_params params = { 0 };
 	int entry_sz = ath12k_hal_srng_get_entrysize(ab, type);
 	int max_entries = ath12k_hal_srng_get_max_entries(ab, type);
+	int vector = 0;
 	int ret;
 	bool cached = false;
 
@@ -314,8 +365,12 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 	params.num_entries = num_entries;
 	ath12k_dp_srng_msi_setup(ab, &params, type, ring_num + mac_id);
 
+	if (ab->hw_params->ds_support && ab->hif.bus == ATH12K_BUS_AHB)
+		ath12k_hif_ppeds_register_interrupts(ab, type, vector, ring_num);
+
 	switch (type) {
 	case HAL_REO_DST:
+	case HAL_REO2PPE:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_RX;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
@@ -341,6 +396,12 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			params.intr_timer_thres_us =
 					HAL_SRNG_INT_TIMER_THRESHOLD_TX;
 			break;
+		} else if (ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
+			params.intr_batch_cntr_thres_entries =
+					HAL_SRNG_INT_BATCH_THRESHOLD_PPE_WBM2SW_REL;
+			params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX;
+
+				break;
 		}
 		/* follow through when ring_num != HAL_WBM2SW_REL_ERR_RING_NUM */
 		fallthrough;
@@ -361,6 +422,11 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_OTHER;
 		break;
 	case HAL_RXDMA_DIR_BUF:
+		break;
+	case HAL_PPE2TCL:
+		params.intr_batch_cntr_thres_entries =
+					HAL_SRNG_INT_BATCH_THRESHOLD_PPE2TCL;
+		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL;
 		break;
 	default:
 		ath12k_warn(ab, "Not a valid ring type in dp :%d\n", type);
@@ -384,9 +450,9 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 	return 0;
 }
 
-static int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab,
-					 struct ath12k_link_vif *arvif,
-					 struct ath12k_dp *dp)
+int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab,
+				  struct ath12k_link_vif *arvif,
+				  struct ath12k_dp *dp)
 {
 	int bank_id = DP_INVALID_BANK_ID;
 	int i;
@@ -454,6 +520,8 @@ void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif)
 
 	ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
 	dp_link_vif->bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, dp);
+
+	ath12k_dp_ppeds_update_vp_entry(arvif->ar, arvif);
 }
 
 static void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab)
@@ -502,6 +570,8 @@ static void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_data_ring);
 	}
 	ath12k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
+
+	ath12k_dp_srng_ppeds_cleanup(ab);
 }
 
 static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
@@ -601,6 +671,12 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 			HAL_HASH_ROUTING_RING_SW4 << 28;
 
 	ath12k_hal_reo_hw_setup(ab, ring_hash_map);
+
+	ret = ath12k_dp_srng_ppeds_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
+		goto err;
+	}
 
 	return 0;
 
@@ -922,6 +998,8 @@ void ath12k_dp_pdev_free(struct ath12k_base *ab)
 		ath12k_dp_rx_pdev_free(ab, i);
 		ath12k_fw_stats_free(&ar->fw_stats);
 	}
+
+	ath12k_dp_ppeds_stop(ab);
 }
 
 void ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
@@ -941,6 +1019,15 @@ int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
 	struct ath12k *ar;
 	int ret;
 	int i;
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	ret = ath12k_dp_ppe_rxole_rxdma_cfg(ab);
+	if (ret) {
+		ath12k_err(ab, "Failed to send htt RxOLE and RxDMA messages to target :%d\n",
+			   ret);
+		goto out;
+	}
+#endif
 
 	ret = ath12k_dp_rx_htt_setup(ab);
 	if (ret)
@@ -976,6 +1063,12 @@ int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
 		}
 	}
 
+	ret = ath12k_dp_ppeds_start(ab);
+	if (ret) {
+		ath12k_err(ab, "failed to start DP PPEDS\n");
+		goto err;
+	}
+
 	spin_lock_bh(&dp->dp_lock);
 	for (i = 0; i < ab->num_radios; i++) {
 		ar = ab->pdevs[i].ar;
@@ -985,9 +1078,10 @@ int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
 
 	dp->num_radios = ab->num_radios;
 
-	return 0;
+	return ret;
 err:
 	ath12k_dp_pdev_free(ab);
+	ath12k_dp_ppeds_stop(ab);
 out:
 	return ret;
 }
@@ -1202,6 +1296,7 @@ static void ath12k_dp_cleanup(struct ath12k_base *ab)
 	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
 
+	ath12k_ppeds_detach(ab);
 	ath12k_dp_cc_cleanup(ab);
 	ath12k_dp_reoq_lut_cleanup(ab);
 	ath12k_dp_deinit_bank_profiles(ab);
@@ -1276,6 +1371,157 @@ struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 	return *desc_addr_ptr;
 }
 EXPORT_SYMBOL(ath12k_dp_get_tx_desc);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static u8 *ath12k_dp_cc_find_desc(struct ath12k_base *ab, u32 cookie, bool is_rx)
+{
+	struct ath12k_dp *dp = ab->dp;
+	u16 spt_page_id, spt_idx;
+	u8 *spt_va;
+
+	spt_idx = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_SPT);
+	spt_page_id = u32_get_bits(cookie, ATH12K_DP_CC_COOKIE_PPT);
+
+	if (is_rx) {
+		if (WARN_ON(spt_page_id < dp->rx_ppt_base))
+			return NULL;
+		spt_page_id = spt_page_id - dp->rx_ppt_base;
+	}
+
+	spt_va = (u8 *)dp->spt_info[spt_page_id].vaddr;
+	return (spt_va + spt_idx * sizeof(u64));
+}
+
+struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
+							      u32 desc_id)
+{
+	u8 *desc_addr_ptr;
+
+	desc_addr_ptr = ath12k_dp_cc_find_desc(ab, desc_id, false);
+	return *(struct ath12k_ppeds_tx_desc_info **)desc_addr_ptr;
+}
+#endif
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp)
+{
+	u32 cmem_base;
+	int i;
+
+	cmem_base = ab->qmi.dev_mem[ATH12K_QMI_DEVMEM_CMEM_INDEX].start;
+
+	for (i = ATH12K_PPEDS_TX_SPT_PAGE_OFFSET;
+	     i < (ATH12K_PPEDS_TX_SPT_PAGE_OFFSET + ATH12K_NUM_PPEDS_TX_SPT_PAGES); i++) {
+		/* Write to PPT in CMEM */
+		if (ab->hif.ops->cmem_write32)
+			ath12k_hif_cmem_write32(ab, cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
+						dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
+		else
+			ath12k_hif_write32(ab, cmem_base + ATH12K_PPT_ADDR_OFFSET(i),
+					   dp->spt_info[i].paddr >> ATH12K_SPT_4K_ALIGN_OFFSET);
+	}
+}
+
+int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
+	struct ath12k_dp *dp = ab->dp;
+	struct sk_buff *skb;
+	int i, j;
+
+	if (!dp->ppedstxbaddr) {
+		ath12k_err(ab, "%s failed", __func__);
+		return -EINVAL;
+	}
+
+	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+
+	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
+		ppeds_tx_descs = dp->ppedstxbaddr[i];
+
+		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
+			skb = ppeds_tx_descs[j].skb;
+
+			if (!skb)
+				continue;
+
+			ppeds_tx_descs[j].skb = NULL;
+			ppeds_tx_descs[j].in_use = false;
+			ppeds_tx_descs[j].paddr = (dma_addr_t)NULL;
+			dev_kfree_skb_any(skb);
+		}
+	}
+
+	dp->ppe.ppeds_tx_desc_reuse_list_len = 0;
+
+	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
+		if (!dp->ppedstxbaddr[i])
+			continue;
+
+		kfree(dp->ppedstxbaddr[i]);
+	}
+
+	kfree(dp->ppedstxbaddr);
+	dp->ppedstxbaddr = NULL;
+
+	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
+
+	return 0;
+}
+
+int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
+	struct ath12k_spt_info *ppeds_tx_spt_pages;
+	u32 i, j;
+	u32 ppt_idx;
+
+	INIT_LIST_HEAD(&dp->ppe.ppeds_tx_desc_free_list);
+	INIT_LIST_HEAD(&dp->ppe.ppeds_tx_desc_reuse_list);
+	spin_lock_init(&dp->ppe.ppeds_tx_desc_lock);
+	dp->ppe.ppeds_tx_desc_reuse_list_len = 0;
+
+	dp->ppedstxbaddr = kmalloc_array(ATH12K_NUM_PPEDS_TX_SPT_PAGES,
+					 sizeof(struct ath12k_ppeds_tx_desc_info *),
+					 GFP_KERNEL);
+	if (!dp->ppedstxbaddr)
+		return -ENOMEM;
+
+	/* pointer to start of TX pages */
+	ppeds_tx_spt_pages = &dp->spt_info[ATH12K_PPEDS_TX_SPT_PAGE_OFFSET];
+
+	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
+		ppeds_tx_descs = kcalloc(ATH12K_MAX_SPT_ENTRIES, sizeof(*ppeds_tx_descs),
+					 GFP_ATOMIC);
+		if (!ppeds_tx_descs) {
+			spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+			ath12k_dp_cc_ppeds_desc_cleanup(ab);
+			return -ENOMEM;
+		}
+		dp->ppedstxbaddr[i] = &ppeds_tx_descs[0];
+		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
+			ppt_idx = ATH12K_PPEDS_TX_SPT_PAGE_OFFSET + i;
+			ppeds_tx_descs[j].desc_id = ath12k_dp_cc_cookie_gen(ppt_idx, j);
+			ppeds_tx_descs[j].in_use = false;
+			list_add_tail(&ppeds_tx_descs[j].list,
+				      &dp->ppe.ppeds_tx_desc_free_list);
+			/* Update descriptor VA in SPT */
+			*(struct ath12k_ppeds_tx_desc_info **)
+				((u8 *)ppeds_tx_spt_pages[i].vaddr +
+				 (j * sizeof(u64))) = &ppeds_tx_descs[j];
+		}
+	}
+	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+
+	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
+
+	return 0;
+}
+#endif
 
 static int ath12k_dp_cc_desc_init(struct ath12k_base *ab)
 {
@@ -1577,9 +1823,15 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 		goto fail_hw_cc_cleanup;
 	}
 
+	ret = ath12k_ppeds_attach(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to attach PPE DS %d\n", ret);
+		goto fail_dp_bank_profiles_cleanup;
+	}
+
 	ret = ath12k_dp_srng_common_setup(ab);
 	if (ret)
-		goto fail_dp_bank_profiles_cleanup;
+		goto fail_ppeds_detach;
 
 	size = sizeof(struct hal_wbm_release_ring_tx) * DP_TX_COMP_RING_SIZE;
 
@@ -1623,6 +1875,9 @@ fail_cmn_reoq_cleanup:
 
 fail_cmn_srng_cleanup:
 	ath12k_dp_srng_common_cleanup(ab);
+
+fail_ppeds_detach:
+	ath12k_ppeds_detach(ab);
 
 fail_dp_bank_profiles_cleanup:
 	ath12k_dp_deinit_bank_profiles(ab);
