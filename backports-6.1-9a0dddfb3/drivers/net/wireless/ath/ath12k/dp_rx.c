@@ -343,24 +343,15 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 
 	while (num_remain > 0) {
 #ifdef CPTCFG_MAC80211_SFE_SUPPORT
-		skb = netdev_alloc_skb_fast(NULL, DP_RX_BUFFER_SIZE +
-					    DP_RX_BUFFER_ALIGN_SIZE);
+		skb = netdev_alloc_skb_fast(NULL, DP_RX_BUFFER_SIZE);
 #else
-		skb = dev_alloc_skb(DP_RX_BUFFER_SIZE +
-				    DP_RX_BUFFER_ALIGN_SIZE);
+		skb = dev_alloc_skb(DP_RX_BUFFER_SIZE);
 #endif
 		if (!skb)
 			break;
 
-		if (!IS_ALIGNED((unsigned long)skb->data,
-				DP_RX_BUFFER_ALIGN_SIZE)) {
-			skb_pull(skb,
-				 PTR_ALIGN(skb->data, DP_RX_BUFFER_ALIGN_SIZE) -
-				 skb->data);
-		}
 #ifndef CONFIG_IO_COHERENCY
-		paddr = dma_map_single(dp->dev, skb->data,
-				       skb->len + skb_tailroom(skb),
+		paddr = dma_map_single(dp->dev, skb->data, DP_RX_BUFFER_SIZE,
 				       DMA_FROM_DEVICE);
 		if (dma_mapping_error(dp->dev, paddr))
 			goto fail_free_skb;
@@ -396,7 +387,7 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	goto out;
 
 fail_dma_unmap:
-	ath12k_core_dma_unmap_single(dp->dev, paddr, skb->len + skb_tailroom(skb),
+	ath12k_core_dma_unmap_single(dp->dev, paddr, DP_RX_BUFFER_SIZE,
 				     DMA_FROM_DEVICE);
 fail_free_skb:
 	dev_kfree_skb_any(skb);

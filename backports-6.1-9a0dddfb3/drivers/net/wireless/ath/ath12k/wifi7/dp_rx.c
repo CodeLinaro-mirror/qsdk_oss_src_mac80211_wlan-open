@@ -1447,7 +1447,7 @@ try_again:
 
 		rxcb = ATH12K_SKB_RXCB(msdu);
 		ath12k_core_dma_unmap_single(partner_dp->dev, desc_info->paddr,
-					     msdu->len + skb_tailroom(msdu),
+					     DP_RX_BUFFER_SIZE,
 					     DMA_FROM_DEVICE);
 
 		num_buffs_reaped[device_id]++;
@@ -1820,7 +1820,7 @@ err_free_desc:
 	list_add_tail(&desc_info->list, &dp->rx_desc_free_list);
 	spin_unlock_bh(&dp->rx_desc_lock);
 err_unmap_dma:
-	ath12k_core_dma_unmap_single(ab->dev, buf_paddr, defrag_skb->len + skb_tailroom(defrag_skb),
+	ath12k_core_dma_unmap_single(ab->dev, buf_paddr, DP_RX_BUFFER_SIZE,
 				     DMA_TO_DEVICE);
 	return ret;
 }
@@ -2068,10 +2068,8 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 
 	list_add_tail(&desc_info->list, used_list);
 
-	ath12k_core_dma_unmap_single(ab->dev, desc_info->paddr,
-				     msdu->len + skb_tailroom(msdu),
+	ath12k_core_dma_unmap_single(ab->dev, desc_info->paddr, DP_RX_BUFFER_SIZE,
 				     DMA_FROM_DEVICE);
-
 	if (drop) {
 		dev_kfree_skb_any(msdu);
 		return 0;
@@ -2663,8 +2661,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 
 		rxcb = ATH12K_SKB_RXCB(msdu);
 		ath12k_core_dma_unmap_single(partner_dp->dev, desc_info->paddr,
-					     msdu->len + skb_tailroom(msdu),
-					     DMA_FROM_DEVICE);
+					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
 
 		num_buffs_reaped[device_id]++;
 		total_num_buffs_reaped++;

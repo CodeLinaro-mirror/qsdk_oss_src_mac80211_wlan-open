@@ -1292,7 +1292,8 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 				continue;
 
 			ath12k_core_dma_unmap_single(ab->dev, desc_info[j].paddr,
-						     skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
+						     DP_RX_BUFFER_SIZE,
+						     DMA_FROM_DEVICE);
 			dev_kfree_skb_any(skb);
 		}
 	}
@@ -2160,18 +2161,19 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 				continue;
 
 			skb = desc_info[j].skb;
+			if (!skb)
+				continue;
+
+			ath12k_core_dma_unmap_single(ab->dev, desc_info[j].paddr,
+						     DP_RX_BUFFER_SIZE,
+						     DMA_FROM_DEVICE);
+
+			dev_kfree_skb_any(skb);
+
 			desc_info[j].skb = NULL;
 			desc_info[j].paddr = 0;
 			desc_info[j].in_use = false;
 			list_add_tail(&desc_info[j].list, &dp->rx_desc_free_list);
-
-			if (!skb)
-				continue;
-
-
-			ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
-						     skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
-			dev_kfree_skb_any(skb);
 		}
 	}
 
