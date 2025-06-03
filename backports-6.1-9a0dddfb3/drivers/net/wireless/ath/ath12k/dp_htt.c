@@ -393,6 +393,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	u32 tx_duration = 0, ru_tones, ru_format, tlv_bitmap, rate_flags;
 	bool is_ampdu = false, resp_type_valid, is_ofdma;
 	u8 tid = HTT_PPDU_STATS_NON_QOS_TID;
+	u16 tx_retry_failed = 0, tx_retry_count = 0;
 
 	if (!usr_stats)
 		return;
@@ -409,6 +410,12 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 			succ_pkts = usr_stats->cmpltn_cmn.mpdu_success;
 		        tid = usr_stats->cmpltn_cmn.tid_num;
 		}
+		tx_retry_failed =
+			__le16_to_cpu(usr_stats->cmpltn_cmn.mpdu_tried) -
+			__le16_to_cpu(usr_stats->cmpltn_cmn.mpdu_success);
+		tx_retry_count =
+			HTT_USR_CMPLTN_LONG_RETRY(usr_stats->cmpltn_cmn.flags) +
+			HTT_USR_CMPLTN_SHORT_RETRY(usr_stats->cmpltn_cmn.flags);
 	}
 
 	if (tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS)) {
@@ -545,6 +552,8 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	}
 
+	peer->tx_retry_failed += tx_retry_failed;
+	peer->tx_retry_count += tx_retry_count;
 	peer->txrate.nss = nss;
 	peer->txrate.bw = ath12k_mac_bw_to_mac80211_bw(bw);
 	peer->tx_duration += tx_duration;

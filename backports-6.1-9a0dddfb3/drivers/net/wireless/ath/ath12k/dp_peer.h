@@ -112,6 +112,8 @@ struct ath12k_dp_link_peer {
 	u64 rx_duration;
 	u64 tx_duration;
 	u8 rssi_comb;
+	u16 tx_retry_failed;
+	u16 tx_retry_count;
 	struct ewma_avg_rssi avg_rssi;
 	struct ath12k_dp_peer_stats peer_stats;
 

@@ -16311,6 +16311,11 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		rate_info.signal_avg + (!db2dbm ? ar->rssi_offsets.rssi_offset : 0);
 
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
+
+	link_sinfo->tx_retries = rate_info.tx_retry_count;
+	link_sinfo->tx_failed = rate_info.tx_retry_failed;
+	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_RETRIES);
+	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_FAILED);
 }
 EXPORT_SYMBOL(ath12k_mac_op_link_sta_statistics);
 
@@ -16411,6 +16416,11 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		sinfo->signal_avg += ar->rssi_offsets.rssi_offset;
 
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
+
+	sinfo->tx_retries = rate_info.tx_retry_count;
+	sinfo->tx_failed = rate_info.tx_retry_failed;
+	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_RETRIES);
+	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_FAILED);
 }
 EXPORT_SYMBOL(ath12k_mac_op_sta_statistics);
 
