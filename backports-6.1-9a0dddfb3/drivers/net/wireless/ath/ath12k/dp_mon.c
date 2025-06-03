@@ -1372,6 +1372,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	struct ath12k_link_sta *arsta;
 	struct ath12k_rx_peer_stats *rx_stats = NULL;
 	struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
+	struct ath12k_pdev_dp_stats *pdev_stats = &pdev_dp->stats;
 	struct ath12k_dp_link_peer *peer;
 	u32 num_msdu;
 	struct ath12k_dp *dp = pdev_dp->dp;
@@ -1478,6 +1479,9 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats, ppdu_info,
 						      user_stats, num_msdu);
+
+	pdev_stats->telemetry_stats.rx_data_msdu_cnt = rx_stats->num_msdu;
+	pdev_stats->telemetry_stats.total_rx_data_bytes = user_stats->mpdu_ok_byte_count;
 }
 
 void

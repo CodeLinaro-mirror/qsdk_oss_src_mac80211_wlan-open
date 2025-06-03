@@ -9955,6 +9955,8 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 	arvif->num_stations++;
 	spin_unlock_bh(&ar->data_lock);
 
+	ar->dp.stats.telemetry_stats.time_last_assoc = ktime_get_real_seconds();
+
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 		   "mac station %pM connected to vdev %u. num_stations=%u\n",
 		   arsta->addr,  arvif->vdev_id, arvif->num_stations);
@@ -16070,8 +16072,8 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ar->monitor_vdev_id = -1;
 		ar->monitor_vdev_created = false;
-	}
-	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
+	} else if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
+		ar->dp.stats.telemetry_stats.sta_vap_exist--;
 		ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM deleted, vdev_id %d\n",
 		   vif->addr, arvif->vdev_id);
 	}
@@ -16965,6 +16967,9 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		ath12k_warn(ab, "failed to configure vdev %d after %s: %d\n",
 			    arvif->vdev_id,
 			    restart ? "restart" : "start", ret);
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		ar->dp.stats.telemetry_stats.sta_vap_exist = 1;
 
 	return 0;
 }
