@@ -29,6 +29,7 @@ static const struct nla_policy
 ath12k_cfg80211_afc_response_policy[QCA_WLAN_VENDOR_ATTR_AFC_RESP_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_AFC_RESP_TIME_TO_LIVE] = { .type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_AFC_RESP_REQ_ID] = { .type = NLA_U32 },
+	[QCA_WLAN_VENDOR_ATTR_AFC_RESP_HW_IDX] = { .type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_AFC_RESP_EXP_DATE] = { .type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_AFC_RESP_EXP_TIME] = { .type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_AFC_RESP_AFC_SERVER_RESP_CODE] = { .type = NLA_U32 },
@@ -395,32 +396,44 @@ static int ath12k_vendor_receive_afc_response(struct wiphy *wiphy,
 	struct ath12k_afc_host_resp *afc_rsp = NULL;
 	int afc_resp_len = 0;
 	enum ath12k_nl_afc_resp_type afc_resp_format;
-	int ret = 0;
+	int ret = 0, hw_idx = -1;
 	u8 i;
 
-	ar = ah->radio;
-
-	for (i = 0; i < ah->num_radio; i++, ar++)
-		if (ar->supports_6ghz)
-			break;
-
-	if (!ar)
-		return -ENODATA;
-
-	ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
-		   "Received AFC response event\n");
+	ath12k_dbg(NULL, ATH12K_DBG_AFC, "Received AFC response event\n");
 
 	if (!(data && data_len)) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+		ath12k_dbg(NULL, ATH12K_DBG_AFC,
 			   "Invalid data length data ptr: %pK ", data);
 		return -EINVAL;
 	}
 
 	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_AFC_RESP_MAX, data, data_len,
 		      ath12k_cfg80211_afc_response_policy, NULL)) {
-		ath12k_warn(ar->ab,
+		ath12k_dbg(NULL, ATH12K_DBG_AFC,
 			    "invalid set afc config policy attribute\n");
 		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_AFC_RESP_HW_IDX]) {
+		hw_idx = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_AFC_RESP_HW_IDX]);
+		if (hw_idx >= ah->num_radio) {
+			ath12k_dbg(NULL, ATH12K_DBG_AFC, "Invalid hw_idx attribute\n");
+			ret = -EINVAL;
+			goto out;
+		}
+
+		ar = &ah->radio[hw_idx];
+	} else {
+		ar = ah->radio;
+		for (i = 0; i < ah->num_radio; i++, ar++)
+			if (ar->supports_6ghz)
+				break;
+	}
+
+	if (!ar) {
+		ath12k_err(NULL, "ar is NULL \n");
+		ret = -ENODATA;
+		goto out;
 	}
 
 	afc_resp_format = QCA_WLAN_VENDOR_ATTR_AFC_BIN_RESP;
@@ -439,7 +452,8 @@ static int ath12k_vendor_receive_afc_response(struct wiphy *wiphy,
 			} else {
 				ath12k_warn(ar->ab,
 					    "AFC JSON data is not present!");
-				return -EINVAL;
+				ret = -EINVAL;
+				goto out;
 			}
 
 			/* Extract the AFC response buffer */
@@ -450,13 +464,15 @@ static int ath12k_vendor_receive_afc_response(struct wiphy *wiphy,
 			} else {
 				ath12k_warn(ar->ab,
 					    "Response buffer allocation failed");
-				return -EINVAL;
+				ret = -EINVAL;
+				goto out;
 			}
 
 		} else {
 			ath12k_warn(ar->ab,
 				    "AFC JSON data not found");
-			return -EINVAL;
+			ret = -EINVAL;
+			goto out;
 		}
 		break;
 
@@ -476,8 +492,10 @@ static int ath12k_vendor_receive_afc_response(struct wiphy *wiphy,
 		 */
 		afc_rsp = ath12k_extract_afc_resp(ar->ab, tb, &afc_resp_len);
 
-		if (!afc_rsp)
-			return -EINVAL;
+		if (!afc_rsp) {
+			ret = -EINVAL;
+			goto out;
+		}
 
 		ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
 			   "AFC response extraction successful!\n");
@@ -512,6 +530,7 @@ static int ath12k_vendor_receive_afc_response(struct wiphy *wiphy,
 
 exit:
 	kfree(afc_rsp);
+out:
 	return ret;
 }
 

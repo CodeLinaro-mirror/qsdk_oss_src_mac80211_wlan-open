@@ -14389,9 +14389,6 @@ void ath12k_mac_update_ru_punct_bitmap(struct ath12k_link_vif *arvif,
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_hw *ah = ar->ah;
 
-	//lockdep_assert_held(&ah->conf_mutex);
-	//lockdep_assert_held(&ar->conf_mutex);
-
 	if (!ath12k_mac_is_bridge_vdev(arvif) &&
 	    old_ctx->def.punctured == new_ctx->def.punctured)
 		return;
