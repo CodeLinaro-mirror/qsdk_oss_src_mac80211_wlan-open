@@ -475,6 +475,37 @@ static const struct file_operations fops_device_dp_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_write_stats_disable(struct file *file,
+					  const char __user *user_buf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	bool disable;
+	int ret, i;
+	struct ath12k_pdev *pdev;
+
+	if (kstrtobool_from_user(user_buf, count, &disable))
+		return -EINVAL;
+
+	if (disable != ab->stats_disable)
+		ab->stats_disable = disable;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		if (pdev && pdev->ar)
+			pdev->ar->ah->hw->perf_mode = disable;
+	}
+
+	ret = count;
+
+	return ret;
+}
+
+static const struct file_operations fops_soc_stats_disable = {
+	.open = simple_open,
+	.write = ath12k_write_stats_disable,
+};
+
 static ssize_t ath12k_write_simulate_radar(struct file *file,
 					   const char __user *user_buf,
 					   size_t count, loff_t *ppos)
@@ -4374,6 +4405,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_trace_qdss);
 	debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_device_dp_stats);
+	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
+			    &fops_soc_stats_disable);
 }
 
 void ath12k_debugfs_unregister(struct ath12k *ar)

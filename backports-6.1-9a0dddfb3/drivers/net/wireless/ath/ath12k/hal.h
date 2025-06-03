@@ -680,7 +680,8 @@ struct hal_rx_desc_data {
 	    mac_addr2_valid:1,
 	    fill_crypto_hdr:1,
 	    seq_ctl_valid:1,
-	    fc_valid:1;
+	    fc_valid:1,
+	    is_ip_valid:1;
 	u16 msdu_len;
 	u16 peer_id;
 	u16 seq_no;

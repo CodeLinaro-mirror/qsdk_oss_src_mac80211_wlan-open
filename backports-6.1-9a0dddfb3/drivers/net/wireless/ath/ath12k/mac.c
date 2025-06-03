@@ -9073,7 +9073,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		}
 
 		dp_params.sta = sta;
-		ret = ath12k_dp_peer_create(&ah->dp_hw, sta->addr, &dp_params);
+		ret = ath12k_dp_peer_create(&ah->dp_hw, sta->addr, &dp_params, vif);
 		if (ret) {
 			ath12k_hw_warn(ah, "unable to create ath12k_dp_peer for sta %pM",
 				       sta->addr);

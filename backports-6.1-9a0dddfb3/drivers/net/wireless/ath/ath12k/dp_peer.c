@@ -471,9 +471,11 @@ ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,
 }
 
 int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
-			  struct ath12k_dp_peer_create_params *params)
+			  struct ath12k_dp_peer_create_params *params,
+			  struct ieee80211_vif *vif)
 {
 	struct ath12k_dp_peer *dp_peer;
+	struct wireless_dev *wdev;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
@@ -494,6 +496,11 @@ int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
+
+	/* cache net dev here and reuse it during process rx */
+	wdev = ieee80211_vif_to_wdev(vif);
+	if (wdev)
+		dp_peer->dev = wdev->netdev;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 
@@ -535,7 +542,7 @@ void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr)
 
 int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       u8 *dp_peer_addr, u8 *addr, u8 link_id,
-			       u32 hw_link_id)
+			       u32 hw_link_id, struct ieee80211_vif *vif)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp *dp = dp_pdev->dp;
@@ -551,7 +558,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 		params.is_vdev_peer = true;
 
-		ath12k_dp_peer_create(dp_hw, addr, &params);
+		ath12k_dp_peer_create(dp_hw, addr, &params, vif);
 
 		dp_peer_mac = addr;
 	}

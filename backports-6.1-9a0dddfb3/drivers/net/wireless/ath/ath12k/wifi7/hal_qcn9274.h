@@ -90,6 +90,15 @@ bool ath12k_wifi7_hal_rx_h_fc_valid_qcn9274(struct hal_rx_desc *desc)
 }
 
 static inline
+bool ath12k_wifi7_hal_rx_h_is_ip_valid_qcn9274(struct hal_rx_desc *desc)
+{
+	return !!(le32_get_bits(desc->u.qcn9274_compact.msdu_end.info11,
+				RX_MSDU_END_INFO11_IPV4) ||
+		  le32_get_bits(desc->u.qcn9274_compact.msdu_end.info11,
+				RX_MSDU_END_INFO11_IPV6));
+}
+
+static inline
 u16 ath12k_wifi7_hal_rx_h_seq_no_qcn9274(struct hal_rx_desc *desc)
 {
 	return le32_get_bits(desc->u.qcn9274_compact.mpdu_start.info4,

@@ -88,7 +88,7 @@ void ath12k_dp_cmn_update_hw_links(struct ath12k_dp *dp,
 				   struct ath12k *ar);
 int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       u8 *dp_peer_addr, u8 *addr, u8 link_id,
-			       u32 hw_link_id);
+			       u32 hw_link_id, struct ieee80211_vif *vif);
 void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr);
 void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp *dp, const u8 *addr,
 					      struct ath12k_dp_link_peer_rate_info *rate_info);

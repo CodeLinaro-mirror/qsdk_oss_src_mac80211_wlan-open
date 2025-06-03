@@ -124,6 +124,7 @@ struct ath12k_dp_link_peer {
 struct ath12k_dp_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
+	struct net_device *dev;
 	int peer_id;
 	u8 addr[ETH_ALEN];
 	bool is_mlo;
@@ -182,7 +183,8 @@ int ath12k_dp_link_peer_rhash_add(struct ath12k_dp *dp,
 int ath12k_dp_link_peer_rhash_delete(struct ath12k_dp *dp,
 				     struct ath12k_dp_link_peer *peer);
 int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
-			  struct ath12k_dp_peer_create_params *params);
+			  struct ath12k_dp_peer_create_params *params,
+			  struct ieee80211_vif *vif);
 void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,
