@@ -16,6 +16,10 @@ struct ath12k;
 #define ATH12K_2GHZ_MAX_FREQUENCY	2495
 #define ATH12K_5GHZ_MAX_FREQUENCY	5920
 
+#define AFC_AUTH_STATUS_OFFSET	1
+#define AFC_AUTH_SUCCESS	1
+#define AFC_AUTH_ERROR		0
+
 extern bool ath12k_afc_disable_timer_check;
 extern bool ath12k_afc_disable_req_id_check;
 extern bool ath12k_afc_test_enabled;
@@ -97,6 +101,137 @@ struct ath12k_afc_info {
 	bool afc_regdom_configured;
 };
 
+/**
+ * struct ath12k_afc_host_resp - Structure for AFC Host response to FW
+ * @header:Header for compatibility.
+ *         Valid value: 0
+ * @status:Flag to indicate validity of data. To be updated by TZ
+ *         1:  Success
+ *         -1: Failure
+ * @time_to_live: Period(in seconds) the data is valid for
+ * @length:       Length of the response message
+ * @resp_format:AFC response format.
+ *              0 - JSON format
+ *              1 - Binary data format
+ * @afc_resp:Response message from the AFC server for queried parameters
+ *
+ * The following is the layout of the AFC response.
+ *
+ * struct ath12k_afc_host_resp {
+ *     header;
+ *     status;
+ *     time_to_live;
+ *     length;
+ *     resp_format;
+ *     afc_resp {
+ *          struct ath12k_afc_bin_resp_data fixed_params;
+ *          struct ath12k_afc_resp_freq_psd_info obj[0];
+ *          ....
+ *          struct ath12k_afc_resp_freq_psd_info obj[num_frequency_obj - 1];
+ *          struct ath12k_afc_resp_opclass_info opclass[0];
+ *          {
+ *              struct ath12k_afc_resp_eirp_info eirp[0];
+ *              ....
+ *              struct ath12k_afc_resp_eirp_info eirp[num_channels - 1];
+ *          }
+ *          .
+ *          .
+ *          struct ath12k_afc_resp_opclass_info opclass[num_channel_obj - 1];
+ *          {
+ *              struct ath12k_afc_resp_eirp_info eirp[0];
+ *              ....
+ *              struct ath12k_afc_resp_eirp_info eirp[num_channels - 1];
+ *          }
+ *     }
+ * }
+ *
+ */
+struct ath12k_afc_host_resp {
+	u32 header;
+	s32 status;
+	u32 time_to_live;
+	u32 length;
+	u32 resp_format;
+	s8  afc_resp[];
+} __packed;
+
+/**
+ * struct at12k_afc_resp_opclass_info - Structure to populate operating class
+ * and channel information from AFC response.
+ * @opclass: Operating class
+ * @num_channels: Number of channels received in AFC response
+ */
+struct ath12k_afc_resp_opclass_info {
+	u32 opclass;
+	u32 num_channels;
+} __packed;
+
+/**
+ * struct ath12k_afc_resp_eirp_info - Structure to update EIRP values for channels
+ * @channel_cfi: Channel center frequency index
+ * @max_eirp_pwr: Maximum permissible EIRP(in dBm) for the Channel
+ */
+struct ath12k_afc_resp_eirp_info {
+	u32 channel_cfi;
+	s32 max_eirp_pwr;
+} __packed;
+
+/**
+ * struct ath12k_afc_resp_freq_psd_info - Structure to update PSD values for
+ * queried frequency ranges
+ * @freq_info: Frequency range in MHz :- bits 15:0  = u16 start_freq,
+ *                                       bits 31:16 = u16 end_freq
+ * @max_psd: Maximum PSD in dbm/MHz
+ */
+struct ath12k_afc_resp_freq_psd_info {
+	u32 freq_info;
+	u32 max_psd;
+} __packed;
+
+/**
+ * struct ath12k_afc_bin_resp_data - Structure to populate AFC binary response
+ * @local_err_code: Internal error code between AFC app and FW
+ *                  0 - Success
+ *                  1 - General failure
+ * @version: Internal version between AFC app and FW
+ *           Current version - 1
+ * @afc_wfa_version: AFC spec version info. Bits 15:0  - Minor version
+ *                                          Bits 31:16 - Major version
+ * @request_id: AFC unique request ID
+ * @avail_exp_time_d: Availability expiry date in UTC.
+ *                    Date format- bits 7:0   - DD (Day 1-31)
+ *                                 bits 15:8  - MM (Month 1-12)
+ *                                 bits 31:16 - YYYY (Year)
+ * @avail_exp_time_t: Availability expiry time in UTC.
+ *                    Time format- bits 7:0   - SS (Seconds 0-59)
+ *                                 bits 15:8  - MM (Minutes 0-59)
+ *                                 bits 23:16 - HH (Hours 0-23)
+ *                                 bits 31:24 - Reserved
+ * @afc_serv_resp_code: AFC server response code. The AFC server response codes
+ *                      are defined in the WiFi Spec doc for AFC as follows:
+ *                      0: Success.
+ *                      100 - 199 - General errors related to protocol.
+ *                      300 - 399 - Error events specific to message exchange
+ *                                  for the available Spectrum Inquiry.
+ * @num_frequency_obj: Number of frequency objects
+ * @num_channel_obj: Number of channel objects
+ * @shortdesc: Short description corresponding to resp_code field
+ * @reserved: Reserved for future use
+ */
+struct ath12k_afc_bin_resp_data {
+	u32 local_err_code;
+	u32 version;
+	u32 afc_wfa_version;
+	u32 request_id;
+	u32 avail_exp_time_d;
+	u32 avail_exp_time_t;
+	u32 afc_serv_resp_code;
+	u32 num_frequency_obj;
+	u32 num_channel_obj;
+	u8  shortdesc[64];
+	u32 reserved[2];
+} __packed;
+
 enum ath12k_reg_cc_code {
 	REG_SET_CC_STATUS_PASS = 0,
 	REG_CURRENT_ALPHA2_NOT_FOUND = 1,
@@ -173,4 +308,5 @@ int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait);
 int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 				     struct ieee80211_supported_band *band);
 int ath12k_reg_process_afc_power_event(struct ath12k *ar);
+int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len);
 #endif

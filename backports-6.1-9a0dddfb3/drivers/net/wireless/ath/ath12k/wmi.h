@@ -197,6 +197,7 @@ struct wmi_vdev_set_tpc_power_cmd {
 
 #define WMI_BA_MODE_BUFFER_SIZE_256  3
 
+#define ath12k_REG_AFC_CMD_SERV_RESP_READY     1
 #define WMI_AFC_LOW_FREQUENCY                  GENMASK(15, 0)
 #define WMI_AFC_HIGH_FREQUENCY                 GENMASK(31, 16)
 
@@ -762,6 +763,7 @@ enum wmi_tlv_cmd_id {
 	WMI_11D_SCAN_START_CMDID,
 	WMI_11D_SCAN_STOP_CMDID,
 	WMI_SET_INIT_COUNTRY_CMDID,
+	WMI_AFC_CMDID,
 	WMI_NDI_GET_CAP_REQ_CMDID = WMI_TLV_CMD(WMI_GRP_PROTOTYPE),
 	WMI_NDP_INITIATOR_REQ_CMDID,
 	WMI_NDP_RESPONDER_REQ_CMDID,
@@ -2133,6 +2135,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_VDEV_CREATE_PARAMS = 0x3D7,
 	WMI_TAG_PDEV_SET_BIOS_SAR_TABLE_CMD = 0x3D8,
 	WMI_TAG_PDEV_SET_BIOS_GEO_TABLE_CMD = 0x3D9,
+	WMI_TAG_AFC_CMD_FIXED_PARAM = 0x3DE,
 	WMI_TAG_AFC_EVENT_FIXED_PARAM,
 	WMI_TAG_AFC_EXPIRY_EVENT_PARAM,
 	WMI_TAG_AFC_POWER_EVENT_PARAM,
@@ -6727,6 +6730,12 @@ struct wmi_afc_power_event_param {
 	__le32 avail_exp_time_t;
 };
 
+struct wmi_afc_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 cmd_type;
+	__le32 serv_resp_format;
+} __packed;
 #define ATH12K_FW_STATS_BUF_SIZE (1024 * 1024)
 
 enum wmi_sys_cap_info_flags {
@@ -8018,4 +8027,5 @@ bool ath12k_wmi_is_umac_migration_supported(struct ath12k_base *ab);
 int ath12k_wmi_mlo_send_ptqm_migrate_cmd(struct ath12k_link_vif *arvif,
 				         struct list_head *peer_migr_list,
 				         u16 num_peers);
+int ath12k_wmi_send_afc_resp_rx_ind(struct ath12k *ar, int data_type);
 #endif

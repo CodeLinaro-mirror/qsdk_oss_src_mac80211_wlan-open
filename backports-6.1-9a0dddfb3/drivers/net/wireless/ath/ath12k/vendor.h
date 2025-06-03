@@ -9,6 +9,9 @@
 
 #define QCA_NL80211_AFC_REQ_RESP_BUF_MAX_SIZE          5000
 #define QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX 0
+#define QCA_WLAN_AFC_RESP_DESC_FIELD_START_OCTET       14
+#define QCA_WLAN_AFC_RESP_DESC_FIELD_END_OCTET         30
+
 
 extern unsigned int ath12k_ppe_ds_enabled;
 
@@ -29,6 +32,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_GET_WIFI_CONFIGURATION = 75,
 	QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS = 200,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT = 222,
+	QCA_NL80211_VENDOR_SUBCMD_AFC_RESPONSE = 223,
 	QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE = 256,
 };
 
@@ -448,6 +452,79 @@ enum qca_wlan_vendor_attr_config {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =
 		QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST - 1
+};
+
+/**
+ * enum qca_wlan_vendor_attr_afc_response: Defines attributes to be used
+ * with vendor command QCA_NL80211_VENDOR_SUBCMD_AFC_RESPONSE. These attributes
+ * will support sending only a single AFC response to the driver at a time.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_RESP_DATA: Type is NLA_STRING. Required attribute.
+ * This attribute will be used to send a single Spectrum Inquiry response object
+ * from the 'availableSpectrumInquiryResponses' array object from the response
+ * JSON.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_RESP_TIME_TO_LIVE: Required u32 attribute.
+ *
+ * This attribute indicates the period (in seconds) for which the response
+ * data received is valid for.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_RESP_REQ_ID: Required u32 attribute.
+ *
+ * This attribute indicates the request ID for which the corresponding
+ * response is being sent for. See also QCA_WLAN_VENDOR_ATTR_AFC_EVENT_REQ_ID.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_RESP_EXP_DATE: Required u32 attribute.
+ *
+ * This attribute indicates the date until which the current response is
+ * valid for in UTC format.
+ * Date format: bits 7:0   - DD (Day 1-31)
+ *              bits 15:8  - MM (Month 1-12)
+ *              bits 31:16 - YYYY (Year)
+ *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_RESP_EXP_TIME: Required u32 attribute.
+ *
+ * This attribute indicates the time until which the current response is
+ * valid for in UTC format.
+ * Time format: bits 7:0   - SS (Seconds 0-59)
+ *              bits 15:8  - MM (Minutes 0-59)
+ *              bits 23:16 - HH (Hours 0-23)
+ *              bits 31:24 - Reserved
+ *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_RESP_AFC_SERVER_RESP_CODE: Required s32 attribute.
+ *
+ * This attribute indicates the AFC response code. The AFC response codes are
+ * in the following categories:
+ * -1: General Failure.
+ * 0: Success.
+ * 100 - 199: General errors related to protocol.
+ * 300 - 399: Error events specific to message exchange
+ *            for the Available Spectrum Inquiry.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_RESP_FREQ_PSD_INFO: Array of nested attributes
+ * for PSD info of all the queried frequency ranges. It uses the attributes
+ * defined in enum qca_wlan_vendor_attr_afc_freq_psd_info. Required attribute.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_RESP_OPCLASS_CHAN_EIRP_INFO: Array of nested
+ * attributes for EIRP info of all queried operating class/channels. It uses
+ * the attributes defined in enum qca_wlan_vendor_attr_afc_opclass_info and
+ * enum qca_wlan_vendor_attr_afc_chan_eirp_info. Required attribute.
+ *
+ */
+enum qca_wlan_vendor_attr_afc_response {
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_DATA = 1,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_TIME_TO_LIVE = 2,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_REQ_ID = 3,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_EXP_DATE = 4,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_EXP_TIME = 5,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_AFC_SERVER_RESP_CODE = 6,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_FREQ_PSD_INFO = 7,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_OPCLASS_CHAN_EIRP_INFO = 8,
+
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_MAX =
+	QCA_WLAN_VENDOR_ATTR_AFC_RESP_AFTER_LAST - 1,
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah);

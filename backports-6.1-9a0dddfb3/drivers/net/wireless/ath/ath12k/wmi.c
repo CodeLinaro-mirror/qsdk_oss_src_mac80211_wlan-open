@@ -6696,6 +6696,37 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 	}
 }
 
+int ath12k_wmi_send_afc_resp_rx_ind(struct ath12k *ar, int data_type)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	int ret = 0;
+	struct sk_buff *skb;
+	struct wmi_afc_cmd_fixed_param *cmd = NULL;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_afc_cmd_fixed_param *)skb->data;
+	cmd->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_AFC_CMD_FIXED_PARAM) |
+			  FIELD_PREP(WMI_TLV_LEN, sizeof(*cmd) - TLV_HDR_SIZE);
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->cmd_type = cpu_to_le32(ath12k_REG_AFC_CMD_SERV_RESP_READY);
+	cmd->serv_resp_format = cpu_to_le32(data_type);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "Sending afc indication for pdev id %d resp format %d\n",
+		   cmd->pdev_id, cmd->serv_resp_format);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_AFC_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "Failed to send WMI_AFC_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 static struct ath12k_reg_rule
 *create_ext_reg_rules_from_wmi(u32 num_reg_rules,
 			       struct ath12k_wmi_reg_rule_ext_params *wmi_reg_rule)

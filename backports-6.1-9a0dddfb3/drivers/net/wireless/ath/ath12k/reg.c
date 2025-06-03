@@ -4,8 +4,10 @@
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/rtnetlink.h>
+#include <linux/platform_device.h>
 #include "core.h"
 #include "debug.h"
+#include "ahb.h"
 
 /* World regdom to be used in case default regd from fw is unavailable */
 #define ATH12K_2GHZ_CH01_11      REG_RULE(2412 - 10, 2462 + 10, 40, 0, 20, 0)
@@ -1194,6 +1196,47 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 end:
 	spin_unlock_bh(&ar->data_lock);
 	return ret;
+}
+
+int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct target_mem_chunk *target_mem = ab->qmi.target_mem;
+	void __iomem *mem = NULL;
+	int i;
+	int slotid = ar->pdev_idx;
+	u32 *status;
+
+	if (len > AFC_SLOT_SIZE) {
+		ath12k_warn(ab, "len %d greater than slot size\n", len);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
+		if (target_mem[i].type == AFC_REGION_TYPE) {
+			mem = target_mem[i].v.addr;
+			status = mem + (slotid * AFC_SLOT_SIZE);
+			break;
+		}
+	}
+
+	if (!mem) {
+		ath12k_warn(ab, "AFC mem is not available\n");
+		return -ENOMEM;
+	}
+
+	status[AFC_AUTH_STATUS_OFFSET] = cpu_to_le32(AFC_AUTH_ERROR);
+	if (ab->hif.bus == ATH12K_BUS_HYBRID) {
+		memset_io(mem + (slotid * AFC_SLOT_SIZE), 0, AFC_SLOT_SIZE);
+		memcpy_toio(mem + (slotid * AFC_SLOT_SIZE), afc_resp, len);
+	} else {
+		memset(mem + (slotid * AFC_SLOT_SIZE), 0, AFC_SLOT_SIZE);
+		memcpy(mem + (slotid * AFC_SLOT_SIZE), afc_resp, len);
+	}
+
+	status[AFC_AUTH_STATUS_OFFSET] = cpu_to_le32(AFC_AUTH_SUCCESS);
+
+	return 0;
 }
 
 void ath12k_regd_update_work(struct work_struct *work)
