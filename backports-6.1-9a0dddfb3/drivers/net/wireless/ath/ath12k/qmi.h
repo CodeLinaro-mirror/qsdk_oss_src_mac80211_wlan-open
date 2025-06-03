@@ -287,6 +287,9 @@ struct qmi_wlanfw_m3_dump_upload_done_resp_msg_v01 {
 #define QMI_WLANFW_MAX_PLATFORM_NAME_LEN_V01		64
 #define QMI_WLANFW_MAX_HOST_DDR_RANGE_SIZE_V01		3
 #define QDSS_ETR_MEM_REGION_TYPE                        0x6
+#define AFC_SLOT_SIZE					0x1000
+#define AFC_MAX_SLOT					2
+#define AFC_MEM_SIZE					(AFC_SLOT_SIZE * AFC_MAX_SLOT)
 
 struct qmi_wlanfw_host_ddr_range {
 	u64 start;

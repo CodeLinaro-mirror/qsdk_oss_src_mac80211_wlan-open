@@ -3961,6 +3961,7 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 		switch (chunk->type) {
 		case HOST_DDR_REGION_TYPE:
 		case M3_DUMP_REGION_TYPE:
+		case AFC_REGION_TYPE:
 		case PAGEABLE_MEM_REGION_TYPE:
 		case CALDB_MEM_REGION_TYPE:
 			ret = ath12k_qmi_alloc_chunk(ab, chunk);
@@ -4434,22 +4435,30 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 						  (u32)rmem->size);
 					ret = -EINVAL;
 					goto out;
-			}
+				}
 
 				ab->qmi.target_mem[idx].paddr = rmem->base + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
 				ab->qmi.target_mem[idx].v.ioaddr =
 					ioremap(ab->qmi.target_mem[idx].paddr,
 						ab->qmi.target_mem[idx].size);
 			} else {
-				ab->qmi.target_mem[idx].paddr = 0;
-				ab->qmi.target_mem[idx].v.addr = NULL;
+				ab->qmi.target_mem[idx].v.addr =
+					dma_alloc_coherent(ab->dev, ab->qmi.target_mem[i].size,
+							   &ab->qmi.target_mem[idx].paddr,
+							   GFP_KERNEL);
+
+				if (!ab->qmi.target_mem[idx].v.addr) {
+					ath12k_err(ab, "AFC mem allocation failed\n");
+					ab->qmi.target_mem[idx].paddr = 0;
+					return -ENOMEM;
+				}
 			}
 
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			idx++;
 			break;
-		case PAGEABLE_MEM_REGION_TYPE:
+	case PAGEABLE_MEM_REGION_TYPE:
 			if (ab->hif.bus == ATH12K_BUS_PCI) {
 				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
 				sz += ab->qmi.target_mem[i].size;

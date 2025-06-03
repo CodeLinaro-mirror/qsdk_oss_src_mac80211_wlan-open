@@ -129,7 +129,7 @@
 #define ATH12K_RXGAINLUT_FILE_PREFIX	"rxgainlut.b"
 #define ATH12K_RXGAINLUT_FILE		"rxgainlut.bin"
 #define ATH12K_DEFAULT_ID		255
-#define ATH12K_FW_CFG_FILE             "firmware.dat"
+#define ATH12K_FW_CFG_FILE             "fw_ini_cfg.bin"
 
 #define ATH12K_PCIE_MAX_PAYLOAD_SIZE	128
 #define ATH12K_IPQ5332_USERPD_ID	1
@@ -287,6 +287,7 @@ struct ath12k_hw_params {
 
 	const struct ce_ie_addr *ce_ie_addr;
 	const struct ce_remap *ce_remap;
+	u32 afc_mem_offset;
 	bool send_platform_model;
 	bool handle_beacon_miss;
 	bool en_qdsslog;
