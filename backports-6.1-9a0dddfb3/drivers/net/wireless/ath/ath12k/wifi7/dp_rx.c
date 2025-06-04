@@ -2365,6 +2365,7 @@ static void ath12k_wifi7_dp_rx_wbm_err(struct ath12k_pdev_dp *dp_pdev,
 		dev_kfree_skb_any(msdu);
 		return;
 	}
+	rxs.flag |= RX_FLAG_SKIP_MONITOR;
 
 	ath12k_dp_rx_deliver_msdu(dp_pdev, napi, msdu, &rxs, &rx_desc_data);
 }
