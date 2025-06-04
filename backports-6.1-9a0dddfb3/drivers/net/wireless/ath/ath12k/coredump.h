@@ -52,6 +52,7 @@ struct ath12k_dump_segment {
        void *vaddr;
        unsigned int len;
        unsigned int type;
+	   struct completion dump_done;
 };
 
 struct ath12k_ahb_dump_segment {
@@ -115,6 +116,8 @@ struct ath12k_coredump_info {
 void ath12k_coredump_download_rddm(struct ath12k_base *ab);
 void ath12k_coredump_build_inline(struct ath12k_base *ab,
                                  struct ath12k_dump_segment *segments, int num_seg);
+void ath12k_coredump_dump_segment(struct ath12k_base *ab,
+						    struct ath12k_dump_segment *segments, size_t seg_len);
 void ath12k_coredump_ahb_collect(struct ath12k_base *ab);
 void ath12k_coredump_m3_dump(struct ath12k_base *ab,
                             struct ath12k_qmi_m3_dump_upload_req_data *event_data);

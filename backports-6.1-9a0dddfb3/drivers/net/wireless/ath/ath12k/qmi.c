@@ -5434,7 +5434,7 @@ static int ath12k_qmi_event_qdss_trace_misc_hdlr(struct ath12k_qmi *qmi, void *d
 		segment->len = total_size;
 		segment->vaddr = qdss_trace_data;
 		segment->type = FW_CRASH_DUMP_QDSS_DATA;
-		ath12k_coredump_build_inline(ab, segment, 1);
+		ath12k_coredump_dump_segment(ab, segment, segment->len);
 		vfree(segment);
 	} else {
 		ath12k_err(ab,"dump collection failed: remaining-%u response end-%u\n",

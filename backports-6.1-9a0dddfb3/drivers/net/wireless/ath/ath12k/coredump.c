@@ -102,6 +102,42 @@ static void ath12k_coredump_free_q6dump(void *data)
        complete(&dump_state->dump_done);
 }
 
+static ssize_t ath12k_coredump_read(char *buffer, loff_t offset, size_t count,
+                       void *data, size_t datalen)
+{
+    struct ath12k_dump_segment *segments = data;
+
+    int ret = 0;
+
+    ret = memory_read_from_buffer(buffer, count, &offset,
+                      segments->vaddr, datalen);
+    if (!ret)
+        ath12k_info(NULL, "Ramdump complete, %lld  bytes read\n", offset);
+
+    return ret;
+}
+
+static void ath12k_coredump_free(void *data)
+{
+    struct ath12k_dump_segment *segments = data;
+
+    complete(&segments->dump_done);
+}
+
+void ath12k_coredump_dump_segment(struct ath12k_base *ab,
+                  struct ath12k_dump_segment *segments, size_t seg_len)
+{
+    struct device *dev;
+
+    dev = ab->dev;
+    init_completion(&segments->dump_done);
+
+    dev_coredumpm(dev, THIS_MODULE,segments, seg_len, GFP_KERNEL,
+              ath12k_coredump_read, ath12k_coredump_free);
+
+    wait_for_completion(&segments->dump_done);
+}
+
 void ath12k_coredump_build_inline(struct ath12k_base *ab,
                                  struct ath12k_dump_segment *segments, int num_seg)
 {
@@ -494,7 +530,7 @@ void ath12k_coredump_qdss_dump(struct ath12k_base *ab,
 			   segment->vaddr, segment->len);
 		segment->type = FW_CRASH_DUMP_QDSS_DATA;
 	}
-	ath12k_coredump_build_inline(ab, segment, 1);
+	ath12k_coredump_dump_segment(ab, segment, segment->len);
 out:
 	vfree(segment);
 	vfree(dump);
