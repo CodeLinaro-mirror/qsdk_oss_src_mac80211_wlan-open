@@ -8,7 +8,6 @@
 #define QCA_NL80211_VENDOR_ID 0x001374
 
 #define QCA_NL80211_AFC_REQ_RESP_BUF_MAX_SIZE          5000
-#define QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX 0
 #define QCA_WLAN_AFC_RESP_DESC_FIELD_START_OCTET       14
 #define QCA_WLAN_AFC_RESP_DESC_FIELD_END_OCTET         30
 
@@ -34,6 +33,13 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT = 222,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_RESPONSE = 223,
 	QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE = 256,
+	QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE = 258,
+	QCA_NL80211_VENDOR_SUBCMD_POWER_MODE_CHANGE_COMPLETED = 259,
+};
+
+enum qca_nl80211_vendor_events {
+	QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX = 0,
+	QCA_NL80211_VENDOR_SUBCMD_6GHZ_PWR_MODE_EVT_IDX = 1,
 };
 
 /**
@@ -527,6 +533,66 @@ enum qca_wlan_vendor_attr_afc_response {
 	QCA_WLAN_VENDOR_ATTR_AFC_RESP_MAX =
 	QCA_WLAN_VENDOR_ATTR_AFC_RESP_AFTER_LAST - 1,
 };
+
+/**
+ * enum qca_wlan_vendor_6ghz_power_modes: Defines values of power modes a 6GHz
+ * radio can operate in.
+ * Enum used by QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE attribute.
+ *
+ * @QCA_WLAN_VENDOR_6GHZ_PWR_MODE_AP_LPI: LPI AP
+ *
+ * @QCA_WLAN_VENDOR_6GHZ_PWR_MODE_AP_SP: SP AP
+ *
+ * @QCA_WLAN_VENDOR_6GHZ_PWR_MODE_AP_VLP: VLP AP
+ *
+ * @QCA_WLAN_VENDOR_6GHZ_PWR_MODE_REGULAR_CLIENT_LPI: LPI Regular Client
+ *
+ * @QCA_WLAN_VENDOR_6GHZ_PWR_MODE_REGULAR_CLIENT_SP: SP Regular Client
+ *
+ * @QCA_WLAN_VENDOR_6GHZ_PWR_MODE_REGULAR_CLIENT_VLP: VLP Regular Client
+ *
+ * @QCA_WLAN_VENDOR_6GHZ_PWR_MODE_SUBORDINATE_CLIENT_LPI: LPI Subordinate Client
+ *
+ */
+enum qca_wlan_vendor_6ghz_power_modes {
+	QCA_WLAN_VENDOR_6GHZ_PWR_MODE_AP_LPI = 0,
+	QCA_WLAN_VENDOR_6GHZ_PWR_MODE_AP_SP = 1,
+	QCA_WLAN_VENDOR_6GHZ_PWR_MODE_AP_VLP = 2,
+	QCA_WLAN_VENDOR_6GHZ_PWR_MODE_REGULAR_CLIENT_LPI = 3,
+	QCA_WLAN_VENDOR_6GHZ_PWR_MODE_REGULAR_CLIENT_SP = 4,
+	QCA_WLAN_VENDOR_6GHZ_PWR_MODE_REGULAR_CLIENT_VLP = 5,
+	QCA_WLAN_VENDOR_6GHZ_PWR_MODE_SUBORDINATE_CLIENT_LPI = 6,
+	QCA_WLAN_VENDOR_6GHZ_PWR_MODE_SUBORDINATE_CLIENT_SP = 7,
+	QCA_WLAN_VENDOR_6GHZ_PWR_MODE_SUBORDINATE_CLIENT_VLP = 8,
+};
+
+/**
+ * enum qca_wlan_vendor_set_6ghz_power_mode - Used by the vendor command
+ * QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE command to configure the
+ * 6 GHz power mode.
+ *
+ * QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE: Unsigned 8-bit integer representing
+ * the 6 GHz power mode
+ */
+enum qca_wlan_vendor_set_6ghz_power_mode {
+	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE = 1,
+
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX =
+		QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_AFTER_LAST - 1,
+};
+
+/**
+ * ath12k_vendor_send_6ghz_power_mode_update_complete - Send 6 GHz power mode
+ * update vendor NL event to the application.
+ *
+ * @ar - Pointer to ar
+ * @wdev - Pointer to wdev
+ */
+int ath12k_vendor_send_6ghz_power_mode_update_complete(struct ath12k *ar,
+                                                      struct wireless_dev *wdev);
 
 int ath12k_vendor_register(struct ath12k_hw *ah);
 #endif

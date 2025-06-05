@@ -5515,6 +5515,12 @@ void ath12k_mac_bridge_vdev_up(struct ath12k_link_vif *arvif)
 	arvif->is_up = true;
 }
 
+static void ath12k_mac_send_pwr_mode_update(struct ath12k *ar,
+					    struct wireless_dev *wdev)
+{
+	ath12k_vendor_send_6ghz_power_mode_update_complete(ar, wdev);
+}
+
 void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				struct ath12k_link_vif *arvif,
 				struct ieee80211_bss_conf *info,
@@ -5537,6 +5543,8 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 	u8 rateidx;
 	u32 rate;
 	bool color_collision_detect;
+	u8 link_id = arvif->link_id;
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -5558,6 +5566,29 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				    arvif->vdev_id, ret);
 		else
 			arvif->ftm_responder = info->ftm_responder;
+	}
+
+	if (changed & BSS_CHANGED_6GHZ_POWER_MODE) {
+		if (WARN_ON(ath12k_mac_vif_link_chan(ahvif->vif, link_id, &def))) {
+			ath12k_warn(ar->ab, "Failed to fetch chandef");
+			return;
+		}
+		if (ar->supports_6ghz && def.chan->band == NL80211_BAND_6GHZ &&
+		    ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+		    test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT,
+			     ar->ab->wmi_ab.svc_map)) {
+			ath12k_mac_fill_reg_tpc_info(ar, arvif,
+						     &arvif->chanctx);
+			ret = ath12k_wmi_send_vdev_set_tpc_power(ar,
+								 arvif->vdev_id,
+								 &arvif->reg_tpc_info);
+			if (ret)
+				ath12k_warn(ar->ab, "Failed to set 6GHZ power mode\n");
+			else
+				ath12k_mac_send_pwr_mode_update(ar, wdev);
+		} else {
+			ath12k_warn(ar->ab, "Set 6GHZ power mode not applicable\n");
+		}
 	}
 
 	if (changed & BSS_CHANGED_BEACON_INT) {

@@ -998,6 +998,140 @@ fail:
 	return -EINVAL;
 }
 
+static const struct nla_policy
+ath12k_cfg80211_power_mode_set_policy[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE] = { .type = NLA_U8 },
+};
+
+static struct ath12k *ath12k_get_ar_from_wdev(struct wireless_dev *wdev, u8 link_id)
+{
+	struct ieee80211_vif *vif =  NULL;
+	struct ath12k_vif *ahvif = NULL;
+	struct ieee80211_hw *hw = NULL;
+	struct ath12k *ar = NULL;
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return NULL;
+
+	ahvif = (struct ath12k_vif *)vif->drv_priv;
+	if (!ahvif)
+		return NULL;
+
+	hw = ahvif->ah->hw;
+	if (!hw) {
+		return NULL;
+	}
+
+	ar = ath12k_get_ar_by_vif(hw, vif, link_id);
+
+	return ar;
+}
+
+static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
+						struct wireless_dev *wdev,
+						const void *data,
+						int data_len)
+{
+	struct ath12k *ar;
+	u8 link_id = 0;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE + 1];
+	u8 ap_6ghz_pwr_mode;
+	struct cfg80211_chan_def *chan_def;
+	int err;
+	u32 prohibited_flags;
+
+	if (!wdev)
+		return -EINVAL;
+
+	if (!data || !data_len) {
+		ath12k_err(NULL, "Invalid data length data ptr: %pK ", data);
+		return -EINVAL;
+	}
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE, data,
+		      data_len, ath12k_cfg80211_power_mode_set_policy, NULL)) {
+		ath12k_err(NULL,
+			   "QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE parsing failed");
+		return -EINVAL;
+	}
+
+	for_each_valid_link(wdev, link_id) {
+		if (wdev->links[link_id].ap.chandef.chan->band ==
+		    NL80211_BAND_6GHZ)
+			break;
+	}
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	ar = ath12k_get_ar_from_wdev(wdev, link_id);
+	if (!ar)
+		return -ENODATA;
+
+	chan_def = &wdev->links[link_id].ap.chandef;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE])
+		return -EINVAL;
+
+	ap_6ghz_pwr_mode =
+		nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE]);
+
+	if (ap_6ghz_pwr_mode < QCA_WLAN_VENDOR_6GHZ_PWR_MODE_AP_LPI ||
+	    ap_6ghz_pwr_mode > QCA_WLAN_VENDOR_6GHZ_PWR_MODE_AP_VLP) {
+		ath12k_err(NULL, "Invalid 6 GHZ pwr mode configuration");
+		return -EINVAL;
+	}
+
+	prohibited_flags = IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_IR;
+	err = cfg80211_validate_freq_width_for_pwr_mode(wiphy, chan_def,
+							ap_6ghz_pwr_mode,
+							prohibited_flags);
+	if (err) {
+		ath12k_err(NULL, "Current chan does not support the power mode");
+		return err;
+	}
+
+	err = ieee80211_6ghz_power_mode_change(wiphy, wdev,
+					       ap_6ghz_pwr_mode, link_id);
+
+	return err;
+}
+
+int ath12k_vendor_send_6ghz_power_mode_update_complete(struct ath12k *ar,
+						       struct wireless_dev *wdev)
+{
+	struct sk_buff *vendor_event;
+	int ret = 0;
+	int vendor_buffer_len = nla_total_size(sizeof(u8));
+	u8 ap_power_mode = wdev->reg_6g_power_mode;
+
+	/* NOTE: lockdep_assert_held is called in ath12k_mac_bss_info_changed */
+	vendor_event =
+	cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, wdev, vendor_buffer_len,
+				    QCA_NL80211_VENDOR_SUBCMD_6GHZ_PWR_MODE_EVT_IDX,
+				    GFP_KERNEL);
+	if (!vendor_event) {
+		ath12k_warn(ar->ab, "SKB alloc failed for 6 GHz power mode evt\n");
+		goto out;
+	}
+
+	ret = nla_put_u8(vendor_event,
+			 QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE,
+			 ap_power_mode);
+
+	if (ret) {
+		ath12k_warn(ar->ab, "6 GHZ power mode vendor evt failed\n");
+		goto out;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_REG,
+		   "Send power mode update complete event\n");
+	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+out:
+	return ret;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -1030,12 +1164,24 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_cfg80211_afc_response_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_AFC_RESPONSE_MAX
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE,
+		.doit = ath12k_vendor_6ghz_power_mode_change,
+		.policy = ath12k_cfg80211_power_mode_set_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 };
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_6GHZ_PWR_MODE_EVT_IDX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_POWER_MODE_CHANGE_COMPLETED
 	},
 };
 
