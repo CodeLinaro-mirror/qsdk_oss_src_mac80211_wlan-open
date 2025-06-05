@@ -40,12 +40,12 @@ static const struct ath12k_msi_config ath12k_wifi7_msi_config[] = {
 		/* In DP, we use num_vectors as 9 (6 REGULAR DP INTERRUPTS + 3 PPEDS
 		 * INTERRUPTS)
 		 */
-		.total_vectors = 18,
+		.total_vectors = 32,
 		.total_users = 3,
 		.users = (struct ath12k_msi_user[]) {
 			{ .name = "QDSS", .num_vectors = 1, .base_vector = 0 },
 			{ .name = "CE", .num_vectors = 5, .base_vector = 1 },
-			{ .name = "DP", .num_vectors = 12, .base_vector = 6 },
+			{ .name = "DP", .num_vectors = 15, .base_vector = 6 },
 		},
 	},
 	{

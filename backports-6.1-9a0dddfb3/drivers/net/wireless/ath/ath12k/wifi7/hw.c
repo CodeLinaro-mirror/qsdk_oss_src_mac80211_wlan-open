@@ -372,37 +372,45 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn6432 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
-		ATH12K_TX_RING_MASK_2 |ATH12K_TX_RING_MASK_3,
+		ATH12K_TX_RING_MASK_2,
 		0, 0, 0, 0, 0, 0, 0, 0,
+		ATH12K_TX_RING_MASK_3,
+		0, 0, 0
 	},
 	.rx_mon_dest = {
-		0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0,
 		ATH12K_RX_MON_RING_MASK_0,
 		ATH12K_RX_MON_RING_MASK_1,
 		ATH12K_RX_MON_RING_MASK_2,
-		0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0
 	},
 	.rx = {
-		0, 0, 0,
+		0, 0, 0, 0,
 		ATH12K_RX_RING_MASK_0,
 		ATH12K_RX_RING_MASK_1,
-		ATH12K_RX_RING_MASK_2 | ATH12K_RX_RING_MASK_3,
-		0, 0, 0, 0, 0,
+		ATH12K_RX_RING_MASK_2,
+ 		ATH12K_RX_RING_MASK_3,
+                0, 0, 0, 0,
+                0, 0, 0
+
 	},
 	.rx_err = {
-		0, 0,
+		0, 0, 0,
 		ATH12K_RX_ERR_RING_MASK_0,
 		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0
 	},
 	.rx_wbm_rel = {
-		0, 0,
+		0, 0, 0,
 		ATH12K_RX_WBM_REL_RING_MASK_0,
 		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0
 	},
 	.reo_status = {
-		0, 0,
+		0, 0, 0,
 		ATH12K_REO_STATUS_RING_MASK_0,
 		0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0
 	},
 	.host2rxdma = {
 		0, 0,
@@ -414,23 +422,21 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn6432 = {
 	.tx_mon_dest = {
 		ATH12K_TX_MON_RING_MASK_0,
 		ATH12K_TX_MON_RING_MASK_1,
-		0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, 0
 	},
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	.ppe2tcl = {
-		0, 0, 0, 0,
-		0, 0, 0, 0,
-		0, ATH12K_PPE2TCL_RING_MASK_0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		ATH12K_PPE2TCL_RING_MASK_0, 0, 0
 	},
 	.reo2ppe = {
-		0, 0, 0, 0,
-		0, 0, 0, 0,
-		0, 0, ATH12K_REO2PPE_RING_MASK_0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, ATH12K_REO2PPE_RING_MASK_0, 0
 	},
 	.wbm2sw6_ppeds_tx_cmpln = {
-		0, 0, 0, 0,
-		0, 0, 0, 0,
-		0, 0, 0, ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0,
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		0, 0, ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0
 	},
 #endif
 };

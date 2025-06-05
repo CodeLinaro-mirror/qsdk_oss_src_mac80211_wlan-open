@@ -1056,7 +1056,7 @@ int ath12k_pcic_msi_desc_assign_irq(struct ath12k_base *ab,
 			continue;
 		}
 
-		if (i >= (base_vector + num_vectors) || *k >= ATH12K_EXT_IRQ_GRP_NUM_MAX)
+		if (i >= (base_vector + num_vectors) || *k >= ATH12K_EXT_IRQ_DP_NUM_VECTORS)
 			break;
 
 		ret = ath12k_pcic_ext_cfg_gic_msi_irq(ab, irq_handler, dp,
@@ -1174,7 +1174,6 @@ int ath12k_pcic_config_hybrid_irq(struct ath12k_base *ab)
 			j++;
 			if (j >= ab->hw_params->ce_count)
 				ce_done = true;
-
 		}
 		i++;
 	}
