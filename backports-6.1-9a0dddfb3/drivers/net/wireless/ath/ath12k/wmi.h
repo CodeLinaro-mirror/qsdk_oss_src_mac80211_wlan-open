@@ -2815,6 +2815,7 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT             9
 #define WMI_RSRC_CFG_HOST_AFC_INDOOR_SUPPORT                  10
 #define WMI_RSRC_CFG_HOST_AFC_OUTDOOR_SUPPORT                 11
+#define WMI_RSRC_CFG_HOST_AFC_TRIGGER_ON_DEFAULT_CC_EVENT_BIT 22
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;
