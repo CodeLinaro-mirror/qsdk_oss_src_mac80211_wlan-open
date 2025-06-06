@@ -1241,6 +1241,12 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		clear_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags);
 
 		ath12k_core_device_cleanup(ab);
+		
+		if (ab->hw_params->reoq_lut_support) {
+			mutex_lock(&ab->core_lock);
+			ath12k_dp_reoq_lut_addr_reset(ath12k_ab_to_dp(ab));
+			mutex_unlock(&ab->core_lock);
+		}
 	}
 
 	ath12k_mac_destroy(ag);
