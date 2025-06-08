@@ -301,6 +301,7 @@ struct ath12k_hw_params {
 	bool credit_flow;
 	bool support_umac_reset;
 	u16 umac_reset_ipc;
+	bool umac_irq_line_reset;
 	bool is_plink_preferable;
 };
 

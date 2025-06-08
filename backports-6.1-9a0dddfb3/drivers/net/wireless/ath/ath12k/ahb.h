@@ -32,6 +32,10 @@
 #define ATH12K_USERPD_FW_NAME_LEN		35
 #define ATH12K_AHB_USERPD1			1
 
+#define ATH12K_UMAC_INTR_LINE_RESET_VAL         0x00000100
+/* Here PCIE_MEM_SIZE is of size 4 Bytes*/
+#define PCIE_MEM_SIZE 4
+
 enum ath12k_ahb_smp2p_msg_id {
 	ATH12K_AHB_POWER_SAVE_ENTER = 1,
 	ATH12K_AHB_POWER_SAVE_EXIT,
@@ -86,6 +90,7 @@ struct ath12k_ahb {
 	size_t mem_size;
 	void *mem_region;
 	void *rpd_notifier;
+	void *interrupt_reset_base_addr;
 };
 
 struct ath12k_ahb_driver {

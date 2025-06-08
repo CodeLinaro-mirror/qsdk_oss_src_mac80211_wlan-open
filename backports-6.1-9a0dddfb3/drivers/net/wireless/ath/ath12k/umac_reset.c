@@ -489,6 +489,7 @@ void ath12k_umac_reset_tasklet_handler(struct tasklet_struct *umac_cntxt)
 	struct ath12k_dp_umac_reset *umac_reset = from_tasklet(umac_reset, umac_cntxt, intr_tq);
 	struct ath12k_base *ab = container_of(umac_reset, struct ath12k_base, dp_umac_reset);
 
+	ath12k_hif_dp_umac_intr_line_reset(ab);
 	ath12k_dp_umac_reset_handle(ab);
 	enable_irq(umac_reset->irq_num);
 }

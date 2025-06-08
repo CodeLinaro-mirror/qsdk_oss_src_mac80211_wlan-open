@@ -53,6 +53,7 @@ struct ath12k_hif_ops {
 	void (*ppeds_irq_enable)(struct ath12k_base *ab, enum ppeds_irq_type type);
 	void (*ppeds_irq_disable)(struct ath12k_base *ab, enum ppeds_irq_type type);
 #endif
+	void (*dp_umac_intr_line_reset)(struct ath12k_base *ab);
 	int (*dp_umac_reset_irq_config)(struct ath12k_base *ab);
 	void (*dp_umac_reset_enable_irq)(struct ath12k_base *ab);
 	void (*dp_umac_reset_free_irq)(struct ath12k_base *ab);
@@ -236,6 +237,12 @@ static inline void ath12k_hif_ext_irq_cleanup(struct ath12k_base *ab)
 		return;
 
 	ab->hif.ops->ext_irq_cleanup(ab);
+}
+
+static inline void ath12k_hif_dp_umac_intr_line_reset(struct ath12k_base *ab)
+{
+        if (ab->hif.ops->dp_umac_intr_line_reset)
+                ab->hif.ops->dp_umac_intr_line_reset(ab);
 }
 
 static inline int ath12k_hif_dp_umac_reset_irq_config(struct ath12k_base *ab)

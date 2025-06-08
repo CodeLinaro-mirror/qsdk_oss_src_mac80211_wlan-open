@@ -621,7 +621,8 @@ static void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 	}
 	ath12k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
 
-	ath12k_dp_srng_ppeds_cleanup(ab);
+	if (!ath12k_dp_umac_reset_in_progress(ab))
+		ath12k_dp_srng_ppeds_cleanup(ab);
 }
 
 static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
@@ -725,13 +726,13 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 
 	ath12k_hal_reo_hw_setup(ab, ring_hash_map);
 
-skip_reo_setup:
 	ret = ath12k_dp_srng_ppeds_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
 		goto err;
 	}
 
+skip_reo_setup:
 	return 0;
 
 err:
@@ -2039,11 +2040,10 @@ void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab)
 void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_rx_desc_info *desc_info;
-	struct ath12k_tx_desc_info *tx_desc_info;
+	struct ath12k_tx_desc_info *tx_desc_info, *tmp;
 	struct ath12k_dp *dp;
 	struct sk_buff *skb;
-	int i, j, k;
-	u32  tx_spt_page;
+	int i, j;
 
 	dp = ath12k_ab_to_dp(ab);
 	/* RX Descriptor cleanup */
@@ -2077,24 +2077,25 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 	/* TX Descriptor cleanup */
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		spin_lock_bh(&dp->tx_desc_lock[i]);
+		list_for_each_entry_safe(tx_desc_info, tmp, &dp->tx_desc_used_list[i],
+					 list) {
+			skb = tx_desc_info->skb;
+			if (!skb)
+				continue;
 
-		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
-			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
-			tx_desc_info = dp->txbaddr[tx_spt_page];
+			tx_desc_info->skb = NULL;
 
-			for (k = 0; k < ATH12K_MAX_SPT_ENTRIES; k++) {
-				skb = tx_desc_info[k].skb;
-				if (!skb)
-					continue;
-
-				tx_desc_info[k].skb = NULL;
-				tx_desc_info[k].skb_ext_desc = NULL;
-				list_add_tail(&tx_desc_info[k].list, &dp->tx_desc_free_list[i]);
-				if (tx_desc_info[k].skb_ext_desc) {
-					dev_kfree_skb_any(tx_desc_info[k].skb_ext_desc);
-				}
-				dev_kfree_skb_any(skb);
+			if (tx_desc_info->skb_ext_desc) {
+				ath12k_core_dma_unmap_single(ab->dev,
+							     ATH12K_SKB_CB(skb)->paddr_ext_desc,
+							     tx_desc_info->skb_ext_desc->len,
+							     DMA_TO_DEVICE);
+				dev_kfree_skb_any(tx_desc_info->skb_ext_desc);
 			}
+
+			ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr,
+						     skb->len, DMA_TO_DEVICE);
+			dev_kfree_skb_any(skb);
 		}
 		spin_unlock_bh(&dp->tx_desc_lock[i]);
 	}

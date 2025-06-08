@@ -135,6 +135,7 @@ static const struct ath12k_hw_ops wcn7850_ops = {
 
 #define ATH12K_TX_MON_RING_MASK_0 0x1
 #define ATH12K_TX_MON_RING_MASK_1 0x2
+#define ATH12K_UMAC_RESET_INTR_MASK_0   0x1
 
 /* To support 8 MSI DP grouping */
 static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
@@ -202,17 +203,16 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
 		0, 0, 0, 0, 0, 0, 0
         },
 #endif
+#endif
         .umac_dp_reset = {
                 0, 0, 0, 0, 0, 0, 0,
 		ATH12K_UMAC_RESET_INTR_MASK_0
         },
-#endif
 };
 
 #define ATH12K_PPE2TCL_RING_MASK_0 0x1
 #define ATH12K_REO2PPE_RING_MASK_0 0x1
 #define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
-#define ATH12K_UMAC_RESET_INTR_MASK_0   0x1
 
 static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 	.tx  = {
@@ -566,6 +566,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.credit_flow = false,
 		.is_plink_preferable = true,
 		.support_umac_reset = false,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = 0,
 		.ds_support = false,
 	},
 	{
@@ -661,6 +663,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.credit_flow = false,
 		.is_plink_preferable = true,
 		.support_umac_reset = false,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = 0,
 		.ds_support = false,
 	},
 	{
@@ -763,6 +767,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.credit_flow = false,
 		.is_plink_preferable = true,
 		.support_umac_reset = true,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = 0,
 		.ds_support = true,
 	},
 	{
@@ -856,6 +862,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.credit_flow = false,
 		.is_plink_preferable = false,
 		.support_umac_reset = true,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = ATH12K_UMAC_RESET_IPC_IPQ5332,
 		.ds_support = false,
 	},
 	{
@@ -929,6 +937,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.credit_flow = false,
 		.is_plink_preferable = true,
 		.support_umac_reset = true,
+		.umac_irq_line_reset = true,
+		.umac_reset_ipc = ATH12K_UMAC_RESET_IPC_QCN6432,
 		.ds_support = true,
 	},
 	{
@@ -1022,6 +1032,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.credit_flow = false,
 		.is_plink_preferable = true,
 		.support_umac_reset = true,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = ATH12K_UMAC_RESET_IPC_IPQ5332,
 		.ds_support = true,
 	},
 };

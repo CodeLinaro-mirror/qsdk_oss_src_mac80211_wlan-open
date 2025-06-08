@@ -80,7 +80,7 @@ static const char *irq_name[ATH12K_IRQ_NUM_MAX] = {
 	"tcl2host-status-ring",
 };
 
-char dp_irq_name[ATH12K_MAX_PCI_DOMAINS + 1][ATH12K_EXT_IRQ_GRP_NUM_MAX][DP_IRQ_NAME_LEN] = {};
+char dp_irq_name[ATH12K_MAX_PCI_DOMAINS + 1][ATH12K_EXT_IRQ_DP_NUM_VECTORS][DP_IRQ_NAME_LEN] = {};
 char ce_irq_name[ATH12K_MAX_PCI_DOMAINS + 1][ATH12K_IRQ_NUM_MAX][DP_IRQ_NAME_LEN] = {};
 
 void ath12k_pcic_config_static_window(struct ath12k_base *ab)
@@ -286,6 +286,13 @@ static void __ath12k_pcic_ext_irq_disable(struct ath12k_base *sc)
 		struct ath12k_ext_irq_grp *irq_grp = &sc->ext_irq_grp[i];
 
 		ath12k_pcic_ext_grp_disable(irq_grp);
+
+		/* As Umac reset will happen in atomic context doing napi_synchronize
+		 * will lead to sleep in atmoic context that's why avoiding napi sync
+		 * during umac reset.
+		 */
+		if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &sc->dev_flags))
+			continue;
 
 		if (irq_grp->napi_enabled) {
 			napi_synchronize(&irq_grp->napi);
@@ -825,7 +832,9 @@ void ath12k_pcic_ext_irq_disable(struct ath12k_base *ab)
 		return;
 
 	__ath12k_pcic_ext_irq_disable(ab);
-	ath12k_pcic_sync_ext_irqs(ab);
+
+	if (!test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+		ath12k_pcic_sync_ext_irqs(ab);
 }
 
 void ath12k_pcic_stop(struct ath12k_base *ab)

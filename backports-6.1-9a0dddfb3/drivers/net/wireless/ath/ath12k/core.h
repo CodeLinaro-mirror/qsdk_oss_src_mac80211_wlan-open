@@ -1625,7 +1625,7 @@ void ath12k_fw_stats_bcn_free(struct list_head *head);
 void ath12k_fw_stats_free(struct ath12k_fw_stats *stats);
 void ath12k_fw_stats_reset(struct ath12k *ar);
 irqreturn_t ath12k_umac_reset_interrupt_handler(int irq, void *arg);
-void ath12k_umac_reset_tasklet_handler(struct tasklet_struct *umac_cntxt);
+void ath12k_umac_reset_tasklet_handler(struct tasklet_struct *umac_ctxt);
 void ath12k_dp_umac_reset_handle(struct ath12k_base *ab);
 int ath12k_dp_umac_reset_init(struct ath12k_base *ab);
 void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab);
