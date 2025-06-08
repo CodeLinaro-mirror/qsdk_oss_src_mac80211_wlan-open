@@ -7438,6 +7438,69 @@ ath12k_htt_print_pktlog_and_htt_ring_stats_tlv(const void *tag_buf,
 	stats_req->buf_len = len;
 }
 
+static inline void
+ath12k_htt_print_umac_ssr_stats_tlv(const void *tag_buf,
+				    struct debug_htt_stats_req *stats_req)
+{
+        const struct htt_umac_ssr_stats_tlv *htt_stats_buf = tag_buf;
+        u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+        u32 len = stats_req->buf_len;
+        u8 *buf = stats_req->buf;
+
+        len += scnprintf(buf + len, buf_len - len, "HTT_UMAC_SSR_STATS_TLV:\n");
+        len += scnprintf(buf + len, buf_len - len, "total_done = %u\n",
+                         htt_stats_buf->total_done);
+        len += scnprintf(buf + len, buf_len - len, "trigger_requests_count = %u\n",
+                         htt_stats_buf->trigger_requests_count);
+        len += scnprintf(buf + len, buf_len - len, "total_trig_dropped = %u\n",
+                         htt_stats_buf->total_trig_dropped);
+        len += scnprintf(buf + len, buf_len - len, "umac_disengaged_count = %u\n",
+                         htt_stats_buf->umac_disengaged_count);
+        len += scnprintf(buf + len, buf_len - len, "umac_soft_reset_count = %u\n",
+                         htt_stats_buf->umac_soft_reset_count);
+        len += scnprintf(buf + len, buf_len - len, "umac_engaged_count = %u\n",
+                         htt_stats_buf->umac_engaged_count);
+        len += scnprintf(buf + len, buf_len - len, "last_trigger_request_ms = %u\n",
+                         htt_stats_buf->last_trigger_request_ms);
+        len += scnprintf(buf + len, buf_len - len, "last_start_ms = %u\n",
+                         htt_stats_buf->last_start_ms);
+        len += scnprintf(buf + len, buf_len - len, "last_start_disengage_umac_ms = %u\n",
+                         htt_stats_buf->last_start_disengage_umac_ms);
+        len += scnprintf(buf + len, buf_len - len, "last_enter_ssr_platform_thread_ms = %u\n",
+                         htt_stats_buf->last_enter_ssr_platform_thread_ms);
+        len += scnprintf(buf + len, buf_len - len, "last_exit_ssr_platform_thread_ms = %u\n",
+                         htt_stats_buf->last_exit_ssr_platform_thread_ms);
+        len += scnprintf(buf + len, buf_len - len, "last_start_engage_umac_ms = %u\n",
+                         htt_stats_buf->last_start_engage_umac_ms);
+        len += scnprintf(buf + len, buf_len - len, "post_reset_tqm_sync_cmd_completion_ms = %u\n",
+                         htt_stats_buf->post_reset_tqm_sync_cmd_completion_ms);
+        len += scnprintf(buf + len, buf_len - len, "last_done_successful_ms = %u\n",
+                         htt_stats_buf->last_done_successful_ms);
+        len += scnprintf(buf + len, buf_len - len, "last_e2e_delta_ms = %u\n",
+                         htt_stats_buf->last_e2e_delta_ms);
+        len += scnprintf(buf + len, buf_len - len, "max_e2e_delta_ms = %u\n",
+                         htt_stats_buf->max_e2e_delta_ms);
+        len += scnprintf(buf + len, buf_len - len, "trigger_count_for_umac_hang = %u\n",
+                         htt_stats_buf->trigger_count_for_umac_hang);
+        len += scnprintf(buf + len, buf_len - len, "trigger_count_for_mlo_quick_ssr = %u\n",
+                         htt_stats_buf->trigger_count_for_mlo_quick_ssr);
+        len += scnprintf(buf + len, buf_len - len, "trigger_count_for_unknown_signature = %u\n",
+                         htt_stats_buf->trigger_count_for_unknown_signature);
+        len += scnprintf(buf + len, buf_len - len, "htt_sync_mlo_initiate_umac_recovery_ms = %u\n",
+                         htt_stats_buf->htt_sync_mlo_initiate_umac_recovery_ms);
+        len += scnprintf(buf + len, buf_len - len, "htt_sync_do_pre_reset_ms = %u\n",
+                         htt_stats_buf->htt_sync_do_pre_reset_ms);
+        len += scnprintf(buf + len, buf_len - len, "htt_sync_do_post_reset_start_ms = %u\n",
+                         htt_stats_buf->htt_sync_do_post_reset_start_ms);
+        len += scnprintf(buf + len, buf_len - len, "htt_sync_do_post_reset_complete_ms = %u\n",
+                         htt_stats_buf->htt_sync_do_post_reset_complete_ms);
+
+        len += scnprintf(buf + len, buf_len - len,
+                         "=================================================\n");
+
+        stats_req->buf_len = len;
+}
+
 static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 					  u16 tag, u16 len, const void *tag_buf,
 					  void *user_data)
@@ -7890,6 +7953,9 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		break;
 	case HTT_STATS_ML_LINK_INFO_DETAILS_TAG:
 		ath12k_htt_print_ml_link_info_stats_tlv(tag_buf, stats_req);
+		break;
+	case HTT_STATS_UMAC_SSR_TAG:
+		ath12k_htt_print_umac_ssr_stats_tlv(tag_buf, stats_req);
 		break;
 	case HTT_STATS_GTX_TAG:
 		ath12k_htt_print_htt_stats_gtx_stats_tlv_v(tag_buf, len, stats_req);

@@ -212,8 +212,9 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
 #define ATH12K_PPE2TCL_RING_MASK_0 0x1
 #define ATH12K_REO2PPE_RING_MASK_0 0x1
 #define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
+#define ATH12K_UMAC_RESET_INTR_MASK_0   0x1
 
-static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
+static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
@@ -282,9 +283,13 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		0, 0, ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0
 	},
 #endif
+	.umac_dp_reset = {
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		ATH12K_UMAC_RESET_INTR_MASK_0
+	},
 };
 
-static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
+static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
@@ -338,7 +343,7 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
 #endif
 };
 
-static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_wcn7850 = {
+static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_wcn7850 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
@@ -463,7 +468,7 @@ static const struct ce_remap ath12k_wifi7_ce_remap_ipq5424 = {
 	.size = HAL_IPQ5424_CE_SIZE,
 };
 
-static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
+static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 	{
 		.name = "qcn9274 hw1.0",
 		.hw_rev = ATH12K_HW_QCN9274_HW10,
@@ -560,6 +565,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = true,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = false,
 		.ds_support = false,
 	},
 	{
@@ -654,6 +660,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = false,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = false,
 		.ds_support = false,
 	},
 	{
@@ -755,6 +762,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = true,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = true,
 		.ds_support = true,
 	},
 	{
@@ -847,6 +855,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = false,
 		.credit_flow = false,
 		.is_plink_preferable = false,
+		.support_umac_reset = true,
 		.ds_support = false,
 	},
 	{
@@ -919,6 +928,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = true,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = true,
 		.ds_support = true,
 	},
 	{
@@ -1011,6 +1021,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = false,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = true,
 		.ds_support = true,
 	},
 };
@@ -1404,7 +1415,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 
 int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 {
-	const struct ath12k_hw_params *hw_params = NULL;
+	struct ath12k_hw_params *hw_params = NULL;
 	struct ath12k_hw_params *hw_params_msi8 = NULL;
 	int i;
 

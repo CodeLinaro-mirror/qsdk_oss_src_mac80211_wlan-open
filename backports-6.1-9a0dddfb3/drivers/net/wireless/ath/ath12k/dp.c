@@ -218,17 +218,19 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 					      enum hal_ring_type type, int ring_num)
 {
 	const struct ath12k_hal_tcl_to_wbm_rbm_map *map;
+	struct ath12k_hw_ring_mask *ring_mask;
 	const u8 *grp_mask;
 	int i;
 
+	ring_mask = ab->hw_params->ring_mask;
 	switch (type) {
 	case HAL_WBM2SW_RELEASE:
 		if (ring_num == HAL_WBM2SW_REL_ERR_RING_NUM) {
-			grp_mask = &ab->hw_params->ring_mask->rx_wbm_rel[0];
+			grp_mask = &ring_mask->rx_wbm_rel[0];
 			ring_num = 0;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		} else if (ring_num == HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM) {
-			grp_mask = &ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[0];
+			grp_mask = &ring_mask->wbm2sw6_ppeds_tx_cmpln[0];
 			ring_num = 0;
 #endif
 		} else {
@@ -240,34 +242,34 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 				}
 			}
 
-			grp_mask = &ab->hw_params->ring_mask->tx[0];
+			grp_mask = &ring_mask->tx[0];
 		}
 		break;
 	case HAL_REO_EXCEPTION:
-		grp_mask = &ab->hw_params->ring_mask->rx_err[0];
+		grp_mask = &ring_mask->rx_err[0];
 		break;
 	case HAL_REO_DST:
-		grp_mask = &ab->hw_params->ring_mask->rx[0];
+		grp_mask = &ring_mask->rx[0];
 		break;
 	case HAL_REO_STATUS:
-		grp_mask = &ab->hw_params->ring_mask->reo_status[0];
+		grp_mask = &ring_mask->reo_status[0];
 		break;
 	case HAL_RXDMA_MONITOR_STATUS:
 	case HAL_RXDMA_MONITOR_DST:
-		grp_mask = &ab->hw_params->ring_mask->rx_mon_dest[0];
+		grp_mask = &ring_mask->rx_mon_dest[0];
 		break;
 	case HAL_TX_MONITOR_DST:
-		grp_mask = &ab->hw_params->ring_mask->tx_mon_dest[0];
+		grp_mask = &ring_mask->tx_mon_dest[0];
 		break;
 	case HAL_RXDMA_BUF:
-		grp_mask = &ab->hw_params->ring_mask->host2rxdma[0];
+		grp_mask = &ring_mask->host2rxdma[0];
 		break;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	case HAL_PPE2TCL:
-		grp_mask = &ab->hw_params->ring_mask->ppe2tcl[0];
+		grp_mask = &ring_mask->ppe2tcl[0];
 		break;
 	case HAL_REO2PPE:
-		grp_mask = &ab->hw_params->ring_mask->reo2ppe[0];
+		grp_mask = &ring_mask->reo2ppe[0];
 		break;
 #endif
 	case HAL_RXDMA_MONITOR_BUF:
@@ -337,6 +339,24 @@ static void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 		ath12k_hif_ppeds_register_interrupts(ab, type, vector, ring_num);
 }
 
+bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab)
+{
+        struct ath12k_hw_group *ag = ab->ag;
+        struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+        bool umac_in_progress = false;
+
+        if (!ab->hw_params->support_umac_reset)
+                return umac_in_progress;
+
+        spin_lock_bh(&mlo_umac_reset->lock);
+        if (mlo_umac_reset->umac_reset_info &
+            ATH12K_IS_UMAC_RESET_IN_PROGRESS)
+                umac_in_progress = true;
+        spin_unlock_bh(&mlo_umac_reset->lock);
+
+        return umac_in_progress;
+}
+
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			 enum hal_ring_type type, int ring_num,
 			 int mac_id, int num_entries)
@@ -371,6 +391,9 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 	cached = true;
 #endif
 
+	if (ath12k_dp_umac_reset_in_progress(ab))
+		goto skip_dma_alloc;
+
 	if (cached) {
 		ring->vaddr_unaligned = kzalloc(ring->size, GFP_KERNEL);
 		ring->paddr_unaligned = virt_to_phys(ring->vaddr_unaligned);
@@ -386,6 +409,7 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 	ring->paddr = ring->paddr_unaligned + ((unsigned long)ring->vaddr -
 		      (unsigned long)ring->vaddr_unaligned);
 
+skip_dma_alloc:
 	params.ring_base_vaddr = ring->vaddr;
 	params.ring_base_paddr = ring->paddr;
 	params.num_entries = num_entries;
@@ -681,6 +705,9 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 		goto err;
 	}
 
+	if (ath12k_dp_umac_reset_in_progress(ab))
+		goto skip_reo_setup;
+
 	/* When hash based routing of rx packet is enabled, 32 entries to map
 	 * the hash values to the ring will be configured. Each hash entry uses
 	 * four bits to map to a particular ring. The ring mapping will be
@@ -698,6 +725,7 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 
 	ath12k_hal_reo_hw_setup(ab, ring_hash_map);
 
+skip_reo_setup:
 	ret = ath12k_dp_srng_ppeds_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
@@ -756,13 +784,15 @@ static int ath12k_dp_scatter_idle_link_desc_setup(struct ath12k_base *ab,
 	if (num_scatter_buf > DP_IDLE_SCATTER_BUFS_MAX)
 		return -EINVAL;
 
-	for (i = 0; i < num_scatter_buf; i++) {
-		slist[i].vaddr = ath12k_core_dma_alloc_coherent(ab->dev,
-								HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
-								&slist[i].paddr, GFP_KERNEL);
-		if (!slist[i].vaddr) {
-			ret = -ENOMEM;
-			goto err;
+	if (!ath12k_dp_umac_reset_in_progress(ab)) {
+		for (i = 0; i < num_scatter_buf; i++) {
+			slist[i].vaddr = ath12k_core_dma_alloc_coherent(ab->dev,
+				             HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
+						&slist[i].paddr, GFP_KERNEL);
+			if (!slist[i].vaddr) {
+				ret = -ENOMEM;
+				goto err;
+			}
 		}
 	}
 
@@ -947,10 +977,13 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 	if (n_link_desc_bank > DP_LINK_DESC_BANKS_MAX)
 		return -EINVAL;
 
-	ret = ath12k_dp_link_desc_bank_alloc(ab, link_desc_banks,
-					     n_link_desc_bank, last_bank_sz);
-	if (ret)
-		return ret;
+	if (!ath12k_dp_umac_reset_in_progress(ab)) {
+		ret = ath12k_dp_link_desc_bank_alloc(ab, link_desc_banks,
+						     n_link_desc_bank,
+						     last_bank_sz);
+		if (ret)
+			return ret;
+	}
 
 	/* Setup link desc idle list for HW internal usage */
 	entry_sz = ath12k_hal_srng_get_entrysize(ab, ring_type);

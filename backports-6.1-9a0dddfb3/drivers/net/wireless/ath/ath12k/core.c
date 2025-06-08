@@ -1737,6 +1737,7 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_hal_srng_deinit(ab);
+	ath12k_dp_umac_reset_deinit(ab);
 	ath12k_umac_reset_completion(ab);
 
 	total_vdevs = ath12k_core_get_total_num_vdevs(ab);

@@ -1334,7 +1334,7 @@ struct ath12k_base {
 	u32 ext_service_bitmap[WMI_SERVICE_EXT_BM_SIZE];
 	bool pdevs_macaddr_valid;
 
-	const struct ath12k_hw_params *hw_params;
+	struct ath12k_hw_params *hw_params;
 
 	const struct firmware *cal_file;
 

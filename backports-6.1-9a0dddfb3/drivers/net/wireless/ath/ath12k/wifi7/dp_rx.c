@@ -113,6 +113,10 @@ int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
 	struct hal_srng *cmd_ring;
 	int cmd_num;
 
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) ||
+	    test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+		return -ESHUTDOWN;
+
 	cmd_ring = &ab->hal.srng_list[dp->reo_cmd_ring.ring_id];
 	cmd_num = ath12k_wifi7_hal_reo_cmd_send(ab, cmd_ring, type, cmd);
 

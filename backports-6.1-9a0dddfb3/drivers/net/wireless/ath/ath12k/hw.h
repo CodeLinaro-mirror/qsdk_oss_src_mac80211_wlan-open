@@ -169,8 +169,8 @@ enum ath12k_bus {
 	ATH12K_BUS_HYBRID,
 };
 
-/* Regular 12 Host DP interrupts + 3 PPEDS interrupts */
-#define ATH12K_EXT_IRQ_DP_NUM_VECTORS 15
+/* Regular 12 Host DP interrupts + 3 PPEDS interrupts + 1 DP UMAC RESET interrupt*/
+#define ATH12K_EXT_IRQ_DP_NUM_VECTORS 16
 #define ATH12K_EXT_IRQ_GRP_NUM_MAX 12
 
 
@@ -218,7 +218,7 @@ struct ath12k_hw_params {
 	bool internal_sleep_clock:1;
 
 	const struct ath12k_hw_ops *hw_ops;
-	const struct ath12k_hw_ring_mask *ring_mask;
+	struct ath12k_hw_ring_mask *ring_mask;
 
 	const struct ce_attr *host_ce_config;
 	u32 ce_count;

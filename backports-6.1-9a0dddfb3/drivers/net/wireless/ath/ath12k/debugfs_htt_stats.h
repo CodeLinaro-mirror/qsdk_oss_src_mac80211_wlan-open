@@ -422,6 +422,7 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_DBG_EXT_PHY_PROF_CAL_STATS		= 52,
 	ATH12K_DGB_HTT_DBG_EXT_STATS_PDEV_BW_MGR		= 53,
 	ATH12K_DGB_HTT_EXT_STATS_PDEV_MBSSID_CTRL_FRAME		= 54,
+	ATH12K_DBG_HTT_UMAC_RESET_SSR_STATS                     = 55,
 	ATH12K_DBG_HTT_STATS_GTX_STATS				= 68,
 
 	/* keep this last */
@@ -587,6 +588,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_PEER_AX_OFDMA_STATS_TAG		= 174,
 	HTT_STATS_TX_PDEV_MU_EDCA_PARAMS_STATS_TAG	= 175,
 	HTT_STATS_PDEV_MBSSID_CTRL_FRAME_STATS_TAG	= 176,
+	HTT_STATS_UMAC_SSR_TAG                          = 179,
 	HTT_STATS_GTX_TAG				= 199,
 
 	HTT_STATS_MAX_TAG,
@@ -3493,6 +3495,32 @@ struct htt_rx_pdev_be_ul_ofdma_user_stats_tlv {
 	u32 be_rx_ulofdma_mpdu_fail;
 	u32 be_rx_ulofdma_non_data_nusers;
 	u32 be_rx_ulofdma_data_nusers;
+};
+
+struct htt_umac_ssr_stats_tlv {
+        u32 total_done;
+        u32 trigger_requests_count;
+        u32 total_trig_dropped;
+        u32 umac_disengaged_count;
+        u32 umac_soft_reset_count;
+        u32 umac_engaged_count;
+        u32 last_trigger_request_ms;
+        u32 last_start_ms;
+        u32 last_start_disengage_umac_ms;
+        u32 last_enter_ssr_platform_thread_ms;
+        u32 last_exit_ssr_platform_thread_ms;
+        u32 last_start_engage_umac_ms;
+        u32 last_done_successful_ms;
+        u32 last_e2e_delta_ms;
+        u32 max_e2e_delta_ms;
+        u32 trigger_count_for_umac_hang;
+        u32 trigger_count_for_mlo_quick_ssr;
+        u32 trigger_count_for_unknown_signature;
+        u32 post_reset_tqm_sync_cmd_completion_ms;
+        u32 htt_sync_mlo_initiate_umac_recovery_ms;
+        u32 htt_sync_do_pre_reset_ms;
+        u32 htt_sync_do_post_reset_start_ms;
+        u32 htt_sync_do_post_reset_complete_ms;
 };
 
 #define HTT_PUNCTURE_STATS_MAX_SUBBAND_COUNT 32
