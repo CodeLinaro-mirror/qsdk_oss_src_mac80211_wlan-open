@@ -1972,6 +1972,26 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k *ar,
 	}
 }
 
+static void ath12k_dp_mon_rx_msdus_set_payload(struct ath12k_base *ab,
+					       struct sk_buff *head_msdu,
+					       struct sk_buff *tail_msdu)
+{
+	u32 rx_pkt_offset, l2_hdr_offset, total_offset;
+
+	if (ab->hw_params->rxdma1_enable)
+		total_offset = ATH12K_MON_RX_PKT_OFFSET;
+	else {
+		rx_pkt_offset = ab->hal.hal_desc_sz;
+		l2_hdr_offset =
+			ath12k_hal_rx_h_l3pad_get(&ab->hal,
+						  (struct hal_rx_desc *)tail_msdu->data);
+
+		total_offset = rx_pkt_offset + l2_hdr_offset;
+	}
+
+	skb_pull(head_msdu, total_offset);
+}
+
 static struct sk_buff *
 ath12k_dp_mon_rx_merg_msdus(struct ath12k_pdev_dp *dp_pdev,
 			    struct dp_mon_mpdu *mon_mpdu,
@@ -1982,7 +2002,7 @@ ath12k_dp_mon_rx_merg_msdus(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k *ar = dp_pdev->ar;
 	struct sk_buff *msdu, *mpdu_buf, *prev_buf, *head_frag_list;
-	struct sk_buff *head_msdu;
+	struct sk_buff *head_msdu, *tail_msdu;
 	struct hal_rx_desc *rx_desc;
 	u8 *hdr_desc, *dest, decap_format = mon_mpdu->decap_format;
 	struct ieee80211_hdr_3addr *wh;
@@ -1992,8 +2012,9 @@ ath12k_dp_mon_rx_merg_msdus(struct ath12k_pdev_dp *dp_pdev,
 
 	mpdu_buf = NULL;
 	head_msdu = mon_mpdu->head;
+	tail_msdu = mon_mpdu->tail;
 
-	if (!head_msdu)
+	if (!head_msdu || !tail_msdu)
 		goto err_merge_fail;
 
 	ath12k_dp_mon_fill_rx_stats_info(ppdu_info, rxs);
@@ -2021,14 +2042,14 @@ ath12k_dp_mon_rx_merg_msdus(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_dp_mon_fill_rx_rate(ar, ppdu_info, rxs);
 
 	if (decap_format == DP_RX_DECAP_TYPE_RAW) {
-		skb_pull(head_msdu, ATH12K_MON_RX_PKT_OFFSET);
+		ath12k_dp_mon_rx_msdus_set_payload(ab, head_msdu, tail_msdu);
 
 		prev_buf = head_msdu;
 		msdu = head_msdu->next;
 		head_frag_list = NULL;
 
 		while (msdu) {
-			skb_pull(msdu, ATH12K_MON_RX_PKT_OFFSET);
+			ath12k_dp_mon_rx_msdus_set_payload(ab, head_msdu, tail_msdu);
 
 			if (!head_frag_list)
 				head_frag_list = msdu;
@@ -2063,7 +2084,7 @@ ath12k_dp_mon_rx_merg_msdus(struct ath12k_pdev_dp *dp_pdev,
 		msdu = head_msdu;
 
 		while (msdu) {
-			skb_pull(msdu, ATH12K_MON_RX_PKT_OFFSET);
+			ath12k_dp_mon_rx_msdus_set_payload(ab, head_msdu, tail_msdu);
 			if (qos_pkt) {
 				dest = skb_push(msdu, sizeof(__le16));
 				if (!dest)
