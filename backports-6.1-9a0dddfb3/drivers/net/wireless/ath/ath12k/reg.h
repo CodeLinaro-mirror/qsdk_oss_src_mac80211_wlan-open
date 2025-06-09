@@ -22,6 +22,7 @@ struct ath12k;
 #define REG_SP_CLIENT_TYPE	3
 
 #define ATH12K_MAX_CHANNELS_PER_6GHZ_OPERATING_CLASS	70
+#define DEFAULT_MIN_POWER                             (-10)
 
 extern bool ath12k_afc_disable_timer_check;
 extern bool ath12k_afc_disable_req_id_check;
@@ -47,6 +48,20 @@ enum ath12k_afc_power_update_status {
 
 enum ath12k_afc_event_state {
 	ATH12K_AFC_EVENT_POWER_INFO   = 1,
+};
+
+/**
+ * enum ath12k_afc_expiry_event_subtype - AFC expiry event subtype enumeration
+ * @REG_AFC_EXPIRY_EVENT_START: Start expiry event
+ * @REG_AFC_EXPIRY_EVENT_RENEW: Renew expiry event
+ * @REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI: Switch to LPI expiry event
+ *
+ * Enumeration of different AFC expiry event subtypes.
+ */
+enum ath12k_afc_expiry_event_subtype {
+	REG_AFC_EXPIRY_EVENT_START = 1,
+	REG_AFC_EXPIRY_EVENT_RENEW = 2,
+	REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI = 3,
 };
 
 enum ath12k_afc_power_event_status_code {
@@ -137,11 +152,134 @@ struct ath12k_afc_sp_reg_info {
 	struct ath12k_afc_chan_obj *afc_chan_info;
 };
 
+/**
+ * struct ath12k_afc_freq_range_obj - Frequency range object
+ * @lowfreq: Lower frequency
+ * @highfreq: Higher frequency
+ *
+ * Structure representing a frequency range object.
+ */
+struct ath12k_afc_freq_range_obj {
+	u16 lowfreq;
+	u16 highfreq;
+};
+
+/**
+ * struct ath12k_afc_frange_list - Frequency range list
+ * @num_ranges: Number of ranges
+ * @range_objs: Pointer to array of frequency range objects
+ *
+ * Structure representing a list of frequency ranges.
+ */
+struct ath12k_afc_frange_list {
+	u32 num_ranges;
+	struct ath12k_afc_freq_range_obj *range_objs;
+};
+
+/**
+ * struct ath12k_afc_opclass_obj - Operating class object
+ * @opclass_num_cfis: Number of CFIs in the operating class
+ * @opclass: Operating class
+ * @cfis: Pointer to array of CFIs
+ *
+ * Structure representing an operating class object.
+ */
+struct ath12k_afc_opclass_obj {
+	u8 opclass_num_cfis;
+	u8 opclass;
+	u8 *cfis;
+};
+
+/**
+ * struct ath12k_afc_opclass_obj_list - List of operating class objects
+ * @num_opclass_objs: Number of operating class objects
+ * @opclass_objs: Pointer to array of operating class objects
+ *
+ * Structure representing a list of operating class objects.
+ */
+struct ath12k_afc_opclass_obj_list {
+	u8 num_opclass_objs;
+	struct ath12k_afc_opclass_obj *opclass_objs;
+};
+
+/**
+ * enum ath12k_afc_dev_deploy_type - AFC device deployment type enumeration
+ * @ATH12K_AFC_DEPLOYMENT_UNKNOWN: Unknown deployment type
+ * @ATH12K_AFC_DEPLOYMENT_INDOOR: Indoor deployment type
+ * @ATH12K_AFC_DEPLOYMENT_OUTDOOR: Outdoor deployment type
+ *
+ * Enumeration of different AFC device deployment types.
+ */
+enum ath12k_afc_dev_deploy_type {
+	ATH12K_AFC_DEPLOYMENT_UNKNOWN = 0,
+	ATH12K_AFC_DEPLOYMENT_INDOOR  = 1,
+	ATH12K_AFC_DEPLOYMENT_OUTDOOR = 2,
+};
+
+/**
+ * struct ath12k_afc_location - AFC location object
+ * @deployment_type: Deployment type
+ *
+ * Structure representing an AFC location object.
+ */
+struct ath12k_afc_location {
+	enum ath12k_afc_dev_deploy_type deployment_type;
+};
+
+/**
+ * struct ath12k_afc_host_request - AFC host request
+ * @req_id: Request ID
+ * @version_minor: Minor version
+ * @version_major: Major version
+ * @min_des_power: Minimum desired power
+ * @freq_lst: Pointer to frequency range list
+ * @opclass_obj_lst: Pointer to operating class object list
+ * @afc_location: Pointer to AFC location object
+ *
+ * Structure representing an AFC host request.
+ */
+struct ath12k_afc_host_request {
+	u64 req_id;
+	u16 version_minor;
+	u16 version_major;
+	s16 min_des_power;
+	struct ath12k_afc_frange_list *freq_lst;
+	struct ath12k_afc_opclass_obj_list *opclass_obj_lst;
+	struct ath12k_afc_location *afc_location;
+} __packed;
+
+/**
+ * struct ath12k_afc_info - AFC-related information maintained per device
+ * @request_id: Request ID associated with the current AFC request.
+ *              This ID is typically received from the firmware during AFC expiry
+ *              events and is used to track and correlate AFC requests.
+ *
+ * @expiry_event_subtype: Subtype of the AFC expiry event as defined in
+ *                        enum ath12k_afc_expiry_event_subtype. This helps determine
+ *                        the appropriate action (e.g., renew, switch to LPI).
+ *
+ * @afc_wfa_version: Version of the AFC WFA (Wi-Fi Alliance) specification used
+ *                   in the current request.
+ *
+ * @is_6g_afc_expiry_event_received: Boolean flag indicating whether an AFC expiry
+ *                                   event has occurred. Set to true when the firmware
+ *                                   notifies the host of an expiry condition.
+ *
+ * @afc_req: Pointer to the current AFC host request structure.
+ *           This holds the most recent AFC request data including frequency ranges,
+ *           operating classes, and location (if available).
+ */
+
 struct ath12k_afc_info {
 	enum ath12k_afc_event_state event_type;
 	bool is_6ghz_afc_power_event_received;
 	struct ath12k_afc_sp_reg_info *afc_reg_info;
 	bool afc_regdom_configured;
+	u32 request_id;
+	enum ath12k_afc_expiry_event_subtype event_subtype;
+	u32 afc_wfa_version;
+	bool is_6g_afc_expiry_event_received;
+	struct ath12k_afc_host_request *afc_req;
 };
 
 /**
@@ -423,6 +561,44 @@ int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait);
 int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 				     struct ieee80211_supported_band *band);
 int ath12k_reg_process_afc_power_event(struct ath12k *ar);
+
+/**
+ * ath12k_get_afc_req_info - Get AFC request information
+ * @ar: Pointer to ath12k structure
+ * @afc_req: Pointer to pointer of AFC host request
+ * @request_id: Request ID
+ *
+ * This function gets the AFC request information. It allocates memory for the
+ * AFC host request structure and fills it with the necessary information,
+ * including frequency list, operating class object list, and location object.
+ *
+ * Memory Allocation:
+ * - The function allocates memory for the `ath12k_afc_host_request` structure
+ *   and its substructures (`freq_lst`, `opclass_obj_lst`, and `afc_location`).
+ * - If any of the allocations fail, the function frees the previously
+ *   allocated memory and returns an error code.
+ *
+ * Memory Deallocation:
+ * - The allocated memory should be freed using the `ath12k_free_afc_req`
+ *   function once the AFC request is no longer needed. This function frees
+ *   the `afc_req` structure and its substructures.
+ * - It is recommended to free the memory in the calling function or after the
+ *   AFC request has been processed and the information is no longer required.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_get_afc_req_info(struct ath12k *ar,
+			    struct ath12k_afc_host_request **afc_req,
+			    u64 request_id);
+
+/**
+ * ath12k_process_expiry_event - Process AFC expiry event received from the FW
+ * @ar: Pointer to ath12k structure
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_process_expiry_event(struct ath12k *ar);
+
 int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len);
 u8 ath12k_reg_get_nsubchannels_for_opclass(u8 opclass);
 void ath12k_reg_fill_subchan_centers(u8 nchans, u8 cfi, u8 *subchannels);

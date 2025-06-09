@@ -1465,6 +1465,229 @@ int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len)
 	return 0;
 }
 
+/**
+ * ath12k_free_afc_req - Free AFC request
+ * @afc_req: Pointer to AFC host request
+ *
+ */
+static void ath12k_free_afc_req(struct ath12k_afc_host_request *afc_req)
+{
+	if (!afc_req)
+		return;
+
+	kfree(afc_req);
+}
+
+int ath12k_get_afc_req_info(struct ath12k *ar,
+			    struct ath12k_afc_host_request **afc_req,
+			    u64 request_id)
+{
+	struct ath12k_afc_host_request *p_afc_req;
+
+	*afc_req = kzalloc(sizeof(*afc_req), GFP_ATOMIC);
+	if (!*afc_req)
+		return -ENOMEM;
+
+	p_afc_req = *afc_req;
+	p_afc_req->req_id = request_id;
+	p_afc_req->min_des_power = DEFAULT_MIN_POWER;
+
+	return 0;
+}
+
+/**
+ * ath12k_reg_print_afc_req_info_header_params - Print AFC request header parameters
+ * @ab: Pointer to ath12k_base structure
+ * @afc_req: Pointer to ath12k_afc_host_request structure
+ *
+ */
+static void
+ath12k_reg_print_afc_req_info_header_params(struct ath12k_base *ab,
+					    struct ath12k_afc_host_request *afc_req)
+{
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "req_id=%llu\n", afc_req->req_id);
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "version_minor=%u\n", afc_req->version_minor);
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "version_major=%u\n", afc_req->version_major);
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "min_des_power=%d\n", afc_req->min_des_power);
+}
+
+/**
+ * ath12k_reg_print_afc_req_info_frange_list - Print AFC request frequency range list
+ * @ab: Pointer to ath12k_base structure
+ * @afc_req: Pointer to ath12k_afc_host_request structure
+ *
+ */
+static void
+ath12k_reg_print_afc_req_info_frange_list(struct ath12k_base *ab,
+					  struct ath12k_afc_host_request *afc_req)
+{
+	struct ath12k_afc_frange_list *p_frange_lst;
+	u8 i;
+
+	p_frange_lst = afc_req->freq_lst;
+	if (!p_frange_lst) {
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "p_frange_lst is NULL\n");
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "num_ranges=%u\n", p_frange_lst->num_ranges);
+	for (i = 0; i < p_frange_lst->num_ranges; i++) {
+		struct ath12k_afc_freq_range_obj *p_range_obj;
+
+		p_range_obj = &p_frange_lst->range_objs[i];
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "lowfreq=%u\n", p_range_obj->lowfreq);
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "highfreq=%u\n", p_range_obj->highfreq);
+	}
+}
+
+/**
+ * ath12k_reg_print_afc_req_info_opclass_list - Print AFC request operating class list
+ * @ab: Pointer to ath12k_base structure
+ * @afc_req: Pointer to ath12k_afc_host_request structure
+ *
+ */
+static void
+ath12k_reg_print_afc_req_info_opclass_list(struct ath12k_base *ab,
+					   struct ath12k_afc_host_request *afc_req)
+{
+	u8 i;
+	u8 num_opclasses;
+	struct ath12k_afc_opclass_obj_list *p_opclass_obj_lst;
+	struct ath12k_afc_opclass_obj *p_opclass_obj;
+
+	p_opclass_obj_lst = afc_req->opclass_obj_lst;
+	if (!p_opclass_obj_lst) {
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "p_opclass_obj_lst is NULL\n");
+		return;
+	}
+
+	num_opclasses = p_opclass_obj_lst->num_opclass_objs;
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "num_opclasses=%u\n", num_opclasses);
+	p_opclass_obj = p_opclass_obj_lst->opclass_objs;
+	for (i = 0; i < num_opclasses; i++) {
+		u8 opclass = p_opclass_obj[i].opclass;
+		u8 num_cfis = p_opclass_obj[i].opclass_num_cfis;
+		u8 *cfis = p_opclass_obj[i].cfis;
+		u8 j;
+
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "opclass[%u]=%u\n", i, opclass);
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "num_cfis[%u]=%u\n", i, num_cfis);
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "[\n");
+		for (j = 0; j < num_cfis; j++)
+			ath12k_dbg(ab, ATH12K_DBG_AFC, "%u,\n", cfis[j]);
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "]\n");
+	}
+}
+
+/**
+ * ath12k_reg_print_afc_req_info_location - Print AFC request location information
+ * @ab: Pointer to ath12k_base structure
+ * @afc_req: Pointer to ath12k_afc_host_request structure
+ *
+ */
+static void ath12k_reg_print_afc_req_info_location(struct ath12k_base *ab,
+						   struct ath12k_afc_host_request *afc_req)
+{
+	struct ath12k_afc_location *p_afc_location;
+	u8 *deployment_type_str;
+
+	p_afc_location = afc_req->afc_location;
+	if (!p_afc_location) {
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "p_afc_location is NULL\n");
+		return;
+	}
+
+	switch (p_afc_location->deployment_type) {
+	case ATH12K_AFC_DEPLOYMENT_INDOOR:
+		deployment_type_str = "Indoor";
+		break;
+	case ATH12K_AFC_DEPLOYMENT_OUTDOOR:
+		deployment_type_str = "Outdoor";
+		break;
+	default:
+		deployment_type_str = "Unknown";
+		break;
+	}
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "AFC location=%s\n", deployment_type_str);
+}
+
+/**
+ * ath12k_reg_print_afc_req_info - Print AFC request information
+ * @ab: Pointer to ath12k_base structure
+ * @afc_req: Pointer to ath12k_afc_host_request structure
+ *
+ */
+void ath12k_reg_print_afc_req_info(struct ath12k_base *ab, struct ath12k_afc_host_request *afc_req)
+{
+	if (!afc_req) {
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "afc_req is NULL\n");
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "Printing AFC request\n");
+	ath12k_reg_print_afc_req_info_header_params(ab, afc_req);
+	ath12k_reg_print_afc_req_info_frange_list(ab, afc_req);
+	ath12k_reg_print_afc_req_info_opclass_list(ab, afc_req);
+	ath12k_reg_print_afc_req_info_location(ab, afc_req);
+}
+
+/**
+ * ath12k_reg_afc_start - Get AFC request info to send the AFC request
+ * @ab: Pointer to ath12k_base structure
+ * @afc: Pointer to AFC information structure
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int ath12k_reg_afc_start(struct ath12k_base *ab,
+				struct ath12k_afc_info *afc)
+{
+	struct ath12k *ar = container_of(afc, struct ath12k, afc);
+	struct ath12k_afc_host_request *afc_req = afc->afc_req;
+	int ret;
+
+	ret = ath12k_get_afc_req_info(ar, &afc_req, afc->request_id);
+
+	if (ret) {
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "Creating AFC Request failed\n");
+		return -EINVAL;
+	}
+
+	ath12k_reg_print_afc_req_info(ab, afc_req);
+	ath12k_free_afc_req(afc_req);
+
+	return ret;
+}
+
+int ath12k_process_expiry_event(struct ath12k *ar)
+{
+	struct ath12k_afc_info *afc = &ar->afc;
+	int ret;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC expiry event subtype %d\n",
+		   afc->event_subtype);
+	afc->is_6ghz_afc_power_event_received = false;
+
+	switch (afc->event_subtype) {
+	case REG_AFC_EXPIRY_EVENT_START:
+	case REG_AFC_EXPIRY_EVENT_RENEW:
+		afc->is_6g_afc_expiry_event_received = true;
+		ret = ath12k_reg_afc_start(ar->ab, afc);
+		if (ret) {
+			ath12k_warn(ar->ab, "Failed to notify expiry event\n");
+			return ret;
+		}
+		break;
+	case REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI:
+		/*TBH*/
+		break;
+	default:
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Invalid AFC expiry event subtype %d\n",
+			   afc->event_subtype);
+		break;
+	}
+	return 0;
+}
+
 u8 ath12k_reg_get_nsubchannels_for_opclass(u8 opclass)
 {
 	u8 i, n_opclasses = ARRAY_SIZE(ath12k_opclass_nchans_map);
