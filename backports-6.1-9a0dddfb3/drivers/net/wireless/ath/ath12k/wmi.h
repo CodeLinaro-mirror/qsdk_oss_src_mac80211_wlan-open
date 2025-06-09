@@ -2498,6 +2498,7 @@ enum wmi_direct_buffer_module {
 	WMI_DIRECT_BUF_SPECTRAL = 0,
 	WMI_DIRECT_BUF_CFR = 1,
 	WMI_CONFIG_MODULE_CV_UPLOAD = 2,
+	WMI_CONFIG_MODULE_WIFI_RADAR = 3,
 
 	/* keep it last */
 	WMI_DIRECT_BUF_MAX
