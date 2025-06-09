@@ -75,7 +75,11 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 				int id = i * dp->hw_params->num_rxdma_per_pdev + j;
 
 				if (ring_mask & BIT(id)) {
-					/* TODO: add monitor mode function */
+					work_done =
+					ath12k_dp_mon_process_ring(dp, id, napi, budget,
+								   0);
+					budget -= work_done;
+					tot_work_done += work_done;
 					if (budget <= 0)
 						goto done;
 				}

@@ -3895,6 +3895,14 @@ free_skb:
 	return num_buffs_reaped;
 }
 
+static int
+__ath12k_dp_mon_process_ring(struct ath12k *ar, int mac_id,
+			     struct napi_struct *napi, int *budget)
+{
+	/* TODO:Implement monitor mode for WCN7850 here. */
+	return 0;
+}
+
 int ath12k_dp_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 			       struct napi_struct *napi, int budget,
 			       enum dp_monitor_mode monitor_mode)
@@ -3914,6 +3922,11 @@ int ath12k_dp_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 	if (dp->hw_params->rxdma1_enable) {
 		if (monitor_mode == ATH12K_DP_RX_MONITOR_MODE)
 			num_buffs_reaped = ath12k_dp_mon_srng_process(dp_pdev, &budget, napi);
+	} else {
+		if (dp_pdev->ar->monitor_started)
+			num_buffs_reaped =
+				__ath12k_dp_mon_process_ring(dp_pdev->ar, mac_id, napi,
+							     &budget);
 	}
 
 	rcu_read_unlock();
