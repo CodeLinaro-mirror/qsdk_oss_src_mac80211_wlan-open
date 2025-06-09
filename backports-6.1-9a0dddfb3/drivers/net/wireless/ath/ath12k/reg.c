@@ -25,6 +25,79 @@ bool ath12k_afc_disable_timer_check = true;
 bool ath12k_afc_disable_req_id_check = true;
 bool ath12k_afc_test_enabled = true;
 
+/* Given a global opclass number create the corresponding  array token.
+ * Examples:
+ *     'CFISARR(132)' expands to  'opcls_132_cfis_arr'
+ *     'CFISARR(133)' expands to  'opcls_133_cfis_arr'
+ */
+#define CFISARR(_g_opcls)  opcls_ ## _g_opcls ## _cfis_arr
+
+#define NULL_CFIS_LST NULL
+#define CFISLST(_g_opcls)  opcls_ ## _g_opcls ## _cfis_lst
+
+/* The type of the opclass list objects */
+#define CFISLST_TYPE static const struct ath12k_c_freq_lst
+
+#define NELEMS ARRAY_SIZE
+
+#define CREATE_CFIS_LST(_gopcls) \
+	CFISLST_TYPE CFISLST(_gopcls) = {NELEMS(CFISARR(_gopcls)), CFISARR(_gopcls)}
+
+/* CFIs for global opclass 131: (start Freq=5925 BW=20MHz) */
+static const u8 opcls_131_cfis_arr[] = {
+	  1,   5,   9,  13,  17,  21,  25,  29,  33,
+	 37,  41,  45,  49,  53,  57,  61,  65,  69,
+	 73,  77,  81,  85,  89,  93,  97, 101, 105,
+	109, 113, 117, 121, 125, 129, 133, 137, 141,
+	145, 149, 153, 157, 161, 165, 169, 173, 177,
+	181, 185, 189, 193, 197, 201, 205, 209, 213,
+	217, 221, 225, 229, 233,
+};
+
+/* CFIs for global opclass 132: (start Freq=5925 BW=40MHz) */
+static const u8 opcls_132_cfis_arr[] = {
+	  3,  11,  19,  27,  35,  43,  51,  59,  67,
+	 75,  83,  91,  99, 107, 115, 123, 131, 139,
+	147, 155, 163, 171, 179, 187, 195, 203, 211,
+	219, 227,
+};
+
+/* CFIs for global opclass 133: (start Freq=5925 BW=80MHz) */
+static const u8 opcls_133_cfis_arr[] = {
+	  7,  23,  39,  55,  71,  87, 103, 119, 135,
+	151, 167, 183, 199, 215,
+};
+
+/* CFIs for global opclass 134: (start Freq=5950 BW=160MHz) */
+static const u8 opcls_134_cfis_arr[] = {
+	15, 47, 79, 111, 143, 175, 207,
+};
+
+/* CFIs for global opclass 135: (start Freq=5950 BW=80MHz+80MHz) */
+static const u8 opcls_135_cfis_arr[] = {
+	  7,  23,  39,  55,  71,  87, 103, 119, 135,
+	151, 167, 183, 199, 215,
+};
+
+/* CFIs for global opclass 136: (start Freq=5925 BW=20MHz) */
+static const u8 opcls_136_cfis_arr[] = {
+	2,
+};
+
+/* CFIs for global opclass 137: (start Freq=5950 BW=320MHz) */
+static const u8 opcls_137_cfis_arr[] = {
+	31, 63, 95, 127, 159, 191,
+};
+
+/* Create the CFIS static constant lists */
+CREATE_CFIS_LST(131);
+CREATE_CFIS_LST(132);
+CREATE_CFIS_LST(133);
+CREATE_CFIS_LST(134);
+CREATE_CFIS_LST(135);
+CREATE_CFIS_LST(136);
+CREATE_CFIS_LST(137);
+
 static const struct ieee80211_regdomain ath12k_world_regd = {
 	.n_reg_rules = 3,
 	.alpha2 = "00",
@@ -681,6 +754,138 @@ ath12k_reg_update_weather_radar_band(struct ath12k_base *ab,
 
 	*rule_idx = i;
 }
+
+static const struct ath12k_op_class_map_t global_op_class[] = {
+	{81, 25, BW20, BIT(BEHAV_NONE), 2407,
+	  { 1,  2,  3,  4,  5,  6,  7,  8,  9,
+	   10, 11, 12, 13},
+	  NULL_CFIS_LST },
+	{82, 25, BW20, BIT(BEHAV_NONE), 2414,
+	  {14},
+	  NULL_CFIS_LST },
+	{83, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 2407,
+	  { 1,  2,  3,  4,  5,  6,  7,  8,  9},
+	  NULL_CFIS_LST },
+	{84, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 2407,
+	  { 5,  6,  7,  8,  9, 10, 11, 12, 13},
+	  NULL_CFIS_LST },
+	{115, 20, BW20, BIT(BEHAV_NONE), 5000,
+	  {36, 40, 44, 48},
+	  NULL_CFIS_LST },
+	{116, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 5000,
+	  {36, 44},
+	  NULL_CFIS_LST },
+	{117, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 5000,
+	  {40, 48},
+	  NULL_CFIS_LST },
+	{118, 20, BW20, BIT(BEHAV_NONE), 5000,
+	  {52, 56, 60, 64},
+	  NULL_CFIS_LST },
+	{119, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 5000,
+	  {52, 60},
+	  NULL_CFIS_LST },
+	{120, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 5000,
+	  {56, 64},
+	  NULL_CFIS_LST },
+	{121, 20, BW20, BIT(BEHAV_NONE), 5000,
+	  {100, 104, 108, 112, 116, 120, 124, 128, 132, 136, 140, 144},
+	  NULL_CFIS_LST },
+	{122, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 5000,
+	  {100, 108, 116, 124, 132, 140},
+	  NULL_CFIS_LST },
+	{123, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 5000,
+	  {104, 112, 120, 128, 136, 144},
+	  NULL_CFIS_LST },
+	{125, 20, BW20, BIT(BEHAV_NONE), 5000,
+	  {149, 153, 157, 161, 165, 169, 173, 177},
+	  NULL_CFIS_LST },
+	{126, 40, BW40_LOW_PRIMARY, BIT(BEHAV_BW40_LOW_PRIMARY), 5000,
+	  {149, 157, 165, 173},
+	  NULL_CFIS_LST },
+	{127, 40, BW40_HIGH_PRIMARY, BIT(BEHAV_BW40_HIGH_PRIMARY), 5000,
+	  {153, 161, 169, 177},
+	  NULL_CFIS_LST },
+	{128, 80, BW80, BIT(BEHAV_NONE), 5000,
+	  { 36,  40,  44,  48,  52,  56,  60,  64, 100,
+	   104, 108, 112, 116, 120, 124, 128, 149, 153,
+	   157, 161, 165, 169, 173, 177},
+	  NULL_CFIS_LST },
+	{129, 160, BW80, BIT(BEHAV_NONE), 5000,
+	  { 36,  40,  44,  48,  52,  56,  60,  64, 100,
+	   104, 108, 112, 116, 120, 124, 128, 149, 153,
+	   157, 161, 165, 169, 173, 177},
+	  NULL_CFIS_LST },
+	{130, 80, BW80, BIT(BEHAV_BW80_PLUS), 5000,
+	  { 36,  40,  44,  48,  52,  56,  60,  64, 100,
+	   104, 108, 112, 116, 120, 124, 128, 149, 153,
+	   157, 161, 165, 169, 173, 177},
+	  NULL_CFIS_LST },
+
+	{131, 20, BW20, BIT(BEHAV_NONE), 5950,
+	  {  1,   5,   9,  13,  17,  21,  25,  29,  33,
+	    37,  41,  45,  49,  53,  57,  61,  65,  69,
+	    73,  77,  81,  85,  89,  93,  97, 101, 105,
+	   109, 113, 117, 121, 125, 129, 133, 137, 141,
+	   145, 149, 153, 157, 161, 165, 169, 173, 177,
+	   181, 185, 189, 193, 197, 201, 205, 209, 213,
+	   217, 221, 225, 229, 233},
+	  &CFISLST(131)},
+
+	{132, 40, BW40_LOW_PRIMARY, BIT(BEHAV_NONE), 5950,
+	  {  1,   5,   9,  13,  17,  21,  25,  29,  33,
+	    37,  41,  45,  49,  53,  57,  61,  65,  69,
+	    73,  77,  81,  85,  89,  93,  97, 101, 105,
+	   109, 113, 117, 121, 125, 129, 133, 137, 141,
+	   145, 149, 153, 157, 161, 165, 169, 173, 177,
+	   181, 185, 189, 193, 197, 201, 205, 209, 213,
+	   217, 221, 225, 229, 233},
+	  &CFISLST(132)},
+
+	{133, 80, BW80, BIT(BEHAV_NONE), 5950,
+	  {  1,   5,   9,  13,  17,  21,  25,  29,  33,
+	    37,  41,  45,  49,  53,  57,  61,  65,  69,
+	    73,  77,  81,  85,  89,  93,  97, 101, 105,
+	   109, 113, 117, 121, 125, 129, 133, 137, 141,
+	   145, 149, 153, 157, 161, 165, 169, 173, 177,
+	   181, 185, 189, 193, 197, 201, 205, 209, 213,
+	   217, 221, 225, 229, 233},
+	  &CFISLST(133)},
+
+	{134, 160, BW80, BIT(BEHAV_NONE), 5950,
+	  {  1,   5,   9,  13,  17,  21,  25,  29,  33,
+	    37,  41,  45,  49,  53,  57,  61,  65,  69,
+	    73,  77,  81,  85,  89,  93,  97, 101, 105,
+	   109, 113, 117, 121, 125, 129, 133, 137, 141,
+	   145, 149, 153, 157, 161, 165, 169, 173, 177,
+	   181, 185, 189, 193, 197, 201, 205, 209, 213,
+	   217, 221, 225, 229, 233},
+	  &CFISLST(134)},
+
+	{135, 80, BW80, BIT(BEHAV_BW80_PLUS), 5950,
+	  {  1,   5,   9,  13,  17,  21,  25,  29,  33,
+	    37,  41,  45,  49,  53,  57,  61,  65,  69,
+	    73,  77,  81,  85,  89,  93,  97, 101, 105,
+	   109, 113, 117, 121, 125, 129, 133, 137, 141,
+	   145, 149, 153, 157, 161, 165, 169, 173, 177,
+	   181, 185, 189, 193, 197, 201, 205, 209, 213,
+	   217, 221, 225, 229, 233},
+	  &CFISLST(135)},
+
+	{136, 20, BW20, BIT(BEHAV_NONE), 5925,
+	  {2},
+	  &CFISLST(136)},
+	{137, 320, BW20, BIT(BEHAV_NONE), 5950,
+	  {  1,   5,   9,  13,  17,  21,  25,  29,  33,
+	    37,  41,  45,  49,  53,  57,  61,  65,  69,
+	    73,  77,  81,  85,  89,  93,  97, 101, 105,
+	   109, 113, 117, 121, 125, 129, 133, 137, 141,
+	   145, 149, 153, 157, 161, 165, 169, 173, 177,
+	   181, 185, 189, 193, 197, 201, 205, 209, 213,
+	   217, 221, 225, 229, 233},
+	  &CFISLST(137)},
+	{0, 0, 0, 0, 0, {0},
+	  NULL_CFIS_LST },
+};
 
 static void ath12k_copy_reg_rule(struct ath12k_reg_freq *ath12k_reg_freq,
 				 struct ath12k_reg_rule *reg_rule)

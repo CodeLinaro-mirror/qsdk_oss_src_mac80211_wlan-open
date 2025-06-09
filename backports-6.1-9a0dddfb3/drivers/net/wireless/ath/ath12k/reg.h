@@ -21,6 +21,8 @@ struct ath12k;
 #define AFC_AUTH_ERROR		0
 #define REG_SP_CLIENT_TYPE	3
 
+#define ATH12K_MAX_CHANNELS_PER_6GHZ_OPERATING_CLASS	70
+
 extern bool ath12k_afc_disable_timer_check;
 extern bool ath12k_afc_disable_req_id_check;
 extern bool ath12k_afc_test_enabled;
@@ -272,6 +274,78 @@ struct ath12k_afc_bin_resp_data {
 	u8  shortdesc[64];
 	u32 reserved[2];
 } __packed;
+
+/**
+ * enum offset_t - Offset type enumeration
+ * @BW20: 20 MHz bandwidth
+ * @BW40_LOW_PRIMARY: 40 MHz bandwidth with low primary channel
+ * @BW40_HIGH_PRIMARY: 40 MHz bandwidth with high primary channel
+ * @BW80: 80 MHz bandwidth
+ * @BWALL: All bandwidths
+ * @BW_INVALID: Invalid bandwidth
+ *
+ * Enumeration of different bandwidth offsets.
+ */
+enum offset_t {
+	BW20 = 0,
+	BW40_LOW_PRIMARY = 1,
+	BW40_HIGH_PRIMARY = 3,
+	BW80,
+	BWALL,
+	BW_INVALID = 0xFF
+};
+
+/**
+ * enum behav_limit - Behavior limit enumeration
+ * @BEHAV_NONE: No behavior limit
+ * @BEHAV_BW40_LOW_PRIMARY: Behavior limit for 40 MHz bandwidth with low primary channel
+ * @BEHAV_BW40_HIGH_PRIMARY: Behavior limit for 40 MHz bandwidth with high primary channel
+ * @BEHAV_BW80_PLUS: Behavior limit for 80 MHz bandwidth plus
+ * @BEHAV_INVALID: Invalid behavior limit
+ *
+ * Enumeration of different behavior limits.
+ */
+enum behav_limit {
+	BEHAV_NONE,
+	BEHAV_BW40_LOW_PRIMARY,
+	BEHAV_BW40_HIGH_PRIMARY,
+	BEHAV_BW80_PLUS,
+	BEHAV_INVALID = 0xFF
+};
+
+/**
+ * struct ath12k_c_freq_lst - Frequency list
+ * @num_cfis: Number of CFIs
+ * @p_cfis_arr: Pointer to array of CFIs
+ *
+ * Structure representing a frequency list.
+ */
+struct ath12k_c_freq_lst {
+	u8 num_cfis;
+	const u8 *p_cfis_arr;
+};
+
+/**
+ * struct ath12k_op_class_map_t - Operating class map
+ * @op_class: Operating class
+ * @chan_spacing: Channel spacing
+ * @offset: Offset type
+ * @behav_limit: Behavior limit
+ * @start_freq: Starting frequency
+ * @channels: Array of channels
+ * @p_cfi_lst_obj: Pointer to frequency list object
+ *
+ * Structure representing an operating class map.
+ */
+struct ath12k_op_class_map_t {
+	u8 op_class;
+	u16 chan_spacing;
+	enum offset_t offset;
+	u16 behav_limit;
+	u16 start_freq;
+	u8 channels[ATH12K_MAX_CHANNELS_PER_6GHZ_OPERATING_CLASS];
+	const struct ath12k_c_freq_lst *p_cfi_lst_obj;
+};
 
 enum ath12k_reg_cc_code {
 	REG_SET_CC_STATUS_PASS = 0,
