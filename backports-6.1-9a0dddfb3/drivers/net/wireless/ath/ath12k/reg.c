@@ -1467,6 +1467,247 @@ int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len)
 }
 
 /**
+ * ath12k_reg_intersect_freq_ranges - Intersect two frequency ranges
+ * @ab: Pointer to ath12k_base structure
+ * @first_range: First frequency range
+ * @second_range: Second frequency range
+ *
+ * This function intersects two frequency ranges and returns the resulting range.
+ *
+ * Return: Intersected frequency range
+ */
+static struct ieee80211_freq_range
+ath12k_reg_intersect_freq_ranges(struct ath12k_base *ab,
+				 struct ieee80211_freq_range first_range,
+				 struct ieee80211_freq_range second_range)
+{
+	struct ieee80211_freq_range out_range;
+	u32 l_freq;
+	u32 r_freq;
+
+	l_freq = max(first_range.start_freq_khz, second_range.start_freq_khz);
+	r_freq = min(first_range.end_freq_khz, second_range.end_freq_khz);
+
+	if (l_freq > r_freq) {
+		l_freq = 0;
+		r_freq = 0;
+
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "Ranges do not overlap first= [%u, %u], second = [%u, %u]\n",
+			   first_range.start_freq_khz,
+			   first_range.end_freq_khz,
+			   second_range.start_freq_khz,
+			   second_range.end_freq_khz);
+	}
+	out_range.start_freq_khz = l_freq;
+	out_range.end_freq_khz = r_freq;
+
+	return out_range;
+}
+
+/**
+ * ath12k_afc_get_intersected_ranges - Get intersected frequency ranges
+ * @in_range: Input frequency range
+ * @out_arg: Output argument
+ *
+ * This function gets the intersected frequency ranges.
+ */
+static void ath12k_afc_get_intersected_ranges(struct ieee80211_freq_range *in_range,
+					      void *out_arg)
+{
+	struct ath12k_afc_freq_range_obj *p_range;
+	struct ath12k_afc_freq_range_obj **pp_range;
+	u32 low, high;
+
+	pp_range = (struct ath12k_afc_freq_range_obj **)out_arg;
+	p_range = *pp_range;
+
+	if (in_range->start_freq_khz && in_range->end_freq_khz) {
+		low = KHZ_TO_MHZ(in_range->start_freq_khz);
+		high = KHZ_TO_MHZ(in_range->end_freq_khz);
+		p_range->lowfreq = (uint16_t)low;
+		p_range->highfreq = (uint16_t)high;
+		(*pp_range)++;
+	}
+}
+
+typedef void (*ath12k_act_sp_rule_cb)(struct ieee80211_freq_range *out_range,
+				      void *arg);
+
+/**
+ * ath12k_iterate_sp_rules - Iterate special rules
+ * @ar: Pointer to ath12k structure
+ * @sp_rule_action: Special rule action callback
+ * @arg: Argument for the callback
+ *
+ * This function iterates over special rules and applies the given action.
+ */
+static void ath12k_iterate_sp_rules(struct ath12k *ar,
+				    ath12k_act_sp_rule_cb sp_rule_action,
+				    void *arg)
+{
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
+	struct ieee80211_freq_range chip_range;
+	struct ieee80211_reg_rule *sp_rule;
+	struct ath12k_base *ab;
+	int num_6ghz_sp_rules;
+	u16 i;
+
+	ab = ar->ab;
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
+	chip_range.start_freq_khz = MHZ_TO_KHZ(reg_cap->low_5ghz_chan);
+	chip_range.end_freq_khz = MHZ_TO_KHZ(reg_cap->high_5ghz_chan);
+
+	sp_rule = ab->sp_rule->sp_reg_rule;
+	num_6ghz_sp_rules = ab->sp_rule->num_6ghz_sp_rule;
+	for (i = 0; i < num_6ghz_sp_rules; i++) {
+		struct ieee80211_freq_range in_range;
+
+		in_range = ath12k_reg_intersect_freq_ranges(ab,
+							    sp_rule->freq_range,
+							    chip_range);
+
+		if (sp_rule_action)
+			sp_rule_action(&in_range, arg);
+
+		sp_rule++;
+	}
+}
+
+/**
+ * ath12k_cp_freq_ranges - Copy frequency ranges
+ * @ar: Pointer to ath12k structure
+ * @num_6ghz_sp_rules: Number of 6GHz standard power rules
+ * @p_range_obj: Pointer to frequency range object
+ *
+ * This function copies the frequency ranges.
+ */
+static void ath12k_cp_freq_ranges(struct ath12k *ar,
+				  int num_6ghz_sp_rules,
+				  struct ath12k_afc_freq_range_obj *p_range_obj)
+{
+	struct ath12k_afc_freq_range_obj *p_range;
+
+	p_range = p_range_obj;
+	ath12k_iterate_sp_rules(ar, ath12k_afc_get_intersected_ranges, &p_range);
+}
+
+/**
+ * ath12k_reg_afc_incr_num_ranges - Increment number of AFC frequency ranges
+ * @p_range: Pointer to frequency range
+ * @num_freq_ranges: Pointer to number of frequency ranges
+ *
+ * This function increments the count of AFC frequency ranges for valid ranges.
+ */
+static void
+ath12k_reg_afc_incr_num_ranges(struct ieee80211_freq_range *p_range,
+			       void *num_freq_ranges)
+{
+	if (p_range->start_freq_khz && p_range->end_freq_khz) {
+		(*(u8 *)num_freq_ranges)++;
+	}
+}
+
+/**
+ * ath12k_reg_get_num_sp_freq_ranges - Get number of SP frequency ranges
+ * @ar: Pointer to ath12k structure
+ *
+ * This function iterates over the intersected SP rules and counts the
+ * number of frequency ranges that are valid.
+ *
+ * Return: Number of SP frequency ranges
+ */
+static u8 ath12k_reg_get_num_sp_freq_ranges(struct ath12k *ar)
+{
+	u8 num_freq_ranges;
+
+	num_freq_ranges = 0;
+	ath12k_iterate_sp_rules(ar,
+				ath12k_reg_afc_incr_num_ranges,
+				&num_freq_ranges);
+
+	return num_freq_ranges;
+}
+
+/**
+ * ath12k_reg_fill_afc_freq_ranges - Fill AFC frequency ranges
+ * @ar: Pointer to ath12k structure
+ * @p_frange_lst: Pointer to frequency range list
+ * @num_6ghz_sp_rules: Number of 6 GHz standard power rules
+ *
+ * This function fills the AFC frequency ranges. It iterates over the
+ * standard power rules* and intersects them with the chip's frequency range,
+ * then fills the frequency range  list with the intersected ranges.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_reg_fill_afc_freq_ranges(struct ath12k *ar,
+				struct ath12k_afc_frange_list *p_frange_lst,
+				u8 num_6ghz_sp_rules)
+{
+	struct ath12k_afc_freq_range_obj *p_range_obj;
+
+	p_frange_lst->num_ranges = num_6ghz_sp_rules;
+	if (!num_6ghz_sp_rules)
+		return -EINVAL;
+
+	p_range_obj = kcalloc(num_6ghz_sp_rules, sizeof(*p_range_obj),
+			      GFP_ATOMIC);
+	if (!p_range_obj)
+		return -ENOMEM;
+
+	ath12k_cp_freq_ranges(ar, num_6ghz_sp_rules, p_range_obj);
+	p_frange_lst->range_objs = p_range_obj;
+	return 0;
+}
+
+/**
+ * ath12k_free_afc_freq_list - Free AFC frequency list
+ * @freq_lst: Pointer to frequency list
+ *
+ */
+static void ath12k_free_afc_freq_list(struct ath12k_afc_frange_list *freq_lst)
+{
+	if (freq_lst) {
+		kfree(freq_lst->range_objs);
+		kfree(freq_lst);
+	}
+}
+
+/**
+ * ath12k_reg_fill_freq_lst - Fill frequency list
+ * @ar: Pointer to ath12k structure
+ *
+ * Return: Pointer to filled frequency list, NULL on failure
+ */
+static struct ath12k_afc_frange_list *ath12k_reg_fill_freq_lst(struct ath12k *ar)
+{
+	struct ath12k_afc_frange_list *p_frange_lst_local;
+	int status;
+	u8 num_freq_ranges;
+
+	num_freq_ranges = ath12k_reg_get_num_sp_freq_ranges(ar);
+	if (!num_freq_ranges) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+			   "No AFC frequency ranges found\n");
+		return NULL;
+	}
+
+	p_frange_lst_local = kzalloc(sizeof(*p_frange_lst_local), GFP_ATOMIC);
+	if (!p_frange_lst_local)
+		return NULL;
+
+	status = ath12k_reg_fill_afc_freq_ranges(ar, p_frange_lst_local,
+						 num_freq_ranges);
+	if (status) {
+		ath12k_free_afc_freq_list(p_frange_lst_local);
+		return NULL;
+	}
+
+	return p_frange_lst_local;
+}
+
+/**
  * ath12k_free_afc_req - Free AFC request
  * @afc_req: Pointer to AFC host request
  *
@@ -1476,6 +1717,7 @@ static void ath12k_free_afc_req(struct ath12k_afc_host_request *afc_req)
 	if (!afc_req)
 		return;
 
+	ath12k_free_afc_freq_list(afc_req->freq_lst);
 	kfree(afc_req);
 }
 
@@ -1493,6 +1735,13 @@ int ath12k_get_afc_req_info(struct ath12k *ar,
 	p_afc_req->req_id = request_id;
 	p_afc_req->min_des_power = DEFAULT_MIN_POWER;
 
+	p_afc_req->freq_lst = ath12k_reg_fill_freq_lst(ar);
+	if (!p_afc_req->freq_lst) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+			   "Allocation and filling of freq_lst failed\n");
+		ath12k_free_afc_req(p_afc_req);
+		return -ENOMEM;
+	}
 	return 0;
 }
 
