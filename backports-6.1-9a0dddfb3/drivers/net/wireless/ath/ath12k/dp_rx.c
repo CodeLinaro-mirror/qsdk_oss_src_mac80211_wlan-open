@@ -1004,7 +1004,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	rcu_read_lock();
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, rx_desc_data->peer_id);
+	peer = ath12k_dp_rx_h_find_peer_by_peerid_index(dp, dp_pdev, msdu);
 
 	pubsta = peer ? peer->sta : NULL;
 

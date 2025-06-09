@@ -2601,6 +2601,9 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		rxcb->is_first_msdu = err_info.first_msdu;
 		rxcb->is_last_msdu = err_info.last_msdu;
 		rxcb->is_continuation = err_info.continuation;
+		rxcb->peer_id =
+		ath12k_wifi7_dp_rx_get_peer_id(ab, dp->peer_metadata_ver,
+					       err_info.peer_metadata);
 		rxcb->rx_desc = msdu_data;
 
 		if (err_info.continuation) {
