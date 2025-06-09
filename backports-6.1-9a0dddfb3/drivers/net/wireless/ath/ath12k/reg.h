@@ -23,6 +23,9 @@ struct ath12k;
 
 #define ATH12K_MAX_CHANNELS_PER_6GHZ_OPERATING_CLASS	70
 #define DEFAULT_MIN_POWER                             (-10)
+#define ATH12K_MIN_6GHZ_OPER_CLASS                     131
+#define ATH12K_MAX_6GHZ_OPER_CLASS                     137
+#define ATH12K_FREQ_TO_CHAN_SCALE                        5
 
 extern bool ath12k_afc_disable_timer_check;
 extern bool ath12k_afc_disable_req_id_check;
