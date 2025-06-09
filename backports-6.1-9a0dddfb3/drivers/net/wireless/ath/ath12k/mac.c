@@ -9859,7 +9859,6 @@ ath12k_create_ht_cap(struct ath12k *ar, u32 ar_ht_cap, u32 rate_cap_rx_chainmask
 		ht_cap.cap |= IEEE80211_HT_CAP_MAX_AMSDU;
 
 	for (i = 0; i < ar->num_rx_chains; i++) {
-		if (rate_cap_rx_chainmask & BIT(i))
 			ht_cap.mcs.rx_mask[i] = 0xFF;
 	}
 
@@ -9981,12 +9980,12 @@ ath12k_create_vht_cap(struct ath12k *ar, u32 rate_cap_tx_chainmask,
 	rxmcs_map = 0;
 	txmcs_map = 0;
 	for (i = 0; i < 8; i++) {
-		if (i < ar->num_tx_chains && rate_cap_tx_chainmask & BIT(i))
+		if (i < ar->num_tx_chains)
 			txmcs_map |= IEEE80211_VHT_MCS_SUPPORT_0_9 << (i * 2);
 		else
 			txmcs_map |= IEEE80211_VHT_MCS_NOT_SUPPORTED << (i * 2);
 
-		if (i < ar->num_rx_chains && rate_cap_rx_chainmask & BIT(i))
+		if (i < ar->num_rx_chains)
 			rxmcs_map |= IEEE80211_VHT_MCS_SUPPORT_0_9 << (i * 2);
 		else
 			rxmcs_map |= IEEE80211_VHT_MCS_NOT_SUPPORTED << (i * 2);
@@ -10204,14 +10203,12 @@ static void ath12k_mac_set_hemcsmap(struct ath12k *ar,
 	u32 i;
 
 	for (i = 0; i < 8; i++) {
-		if (i < ar->num_tx_chains &&
-		    (ar->cfg_tx_chainmask >> cap->tx_chain_mask_shift) & BIT(i))
+		if (i < ar->num_rx_chains)
 			txmcs_map |= IEEE80211_HE_MCS_SUPPORT_0_11 << (i * 2);
 		else
 			txmcs_map |= IEEE80211_HE_MCS_NOT_SUPPORTED << (i * 2);
 
-		if (i < ar->num_rx_chains &&
-		    (ar->cfg_rx_chainmask >> cap->tx_chain_mask_shift) & BIT(i))
+		if (i < ar->num_rx_chains)
 			rxmcs_map |= IEEE80211_HE_MCS_SUPPORT_0_11 << (i * 2);
 		else
 			rxmcs_map |= IEEE80211_HE_MCS_NOT_SUPPORTED << (i * 2);
