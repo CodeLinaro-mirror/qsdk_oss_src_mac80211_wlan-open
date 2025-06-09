@@ -1443,6 +1443,16 @@ static void ath12k_dp_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
 		*errmap |= HAL_RX_MPDU_ERR_MPDU_LEN;
 }
 
+static void
+ath12k_dp_mon_parse_status_msdu_end(struct ath12k_mon_data *pmon,
+				    const struct hal_rx_msdu_end *msdu_end)
+{
+	ath12k_dp_mon_parse_rx_msdu_end_err(__le32_to_cpu(msdu_end->info2),
+					    &pmon->err_bitmap);
+	pmon->decap_format = le32_get_bits(msdu_end->info1,
+					   RX_MSDU_END_INFO11_DECAP_FORMAT);
+}
+
 static enum hal_rx_mon_status
 ath12k_dp_mon_rx_parse_status_tlv(struct ath12k_mon_data *pmon,
 				  const struct hal_tlv_64_hdr *tlv)
@@ -1689,19 +1699,18 @@ ath12k_dp_mon_rx_parse_status_tlv(struct ath12k_mon_data *pmon,
 	case HAL_RX_MSDU_END:
 		struct hal_rx_msdu_end *msdu_end =
 				(struct hal_rx_msdu_end *)tlv_data;
-		u32 errmap = 0;
 		u32 grp_id;
 
 		info[2] = __le32_to_cpu(msdu_end->info2);
 
-		ath12k_dp_mon_parse_rx_msdu_end_err(info[2], &errmap);
+		ath12k_dp_mon_parse_status_msdu_end(pmon, tlv_data);
 		info[0] = __le32_to_cpu(msdu_end->info0);
 		grp_id = u32_get_bits(info[0], RX_MSDU_END_INFO0_SW_FRAME_GRP_ID);
 		if (grp_id == RX_MSDU_END_INFO0_SW_FRAMEGROUP_UCAST_DATA ||
 				grp_id == RX_MSDU_END_INFO0_SW_FRAMEGROUP_MCAST_DATA) {
-			ppdu_info->errmap = errmap;
+			ppdu_info->errmap = pmon->err_bitmap;
 			if (userid < HAL_MAX_UL_MU_USERS) {
-				ppdu_info->userstats[userid].errmap = errmap;
+				ppdu_info->userstats[userid].errmap = pmon->err_bitmap;
 			}
 		}
 		return HAL_RX_MON_STATUS_MSDU_END;
@@ -2275,24 +2284,6 @@ static int ath12k_dp_pkt_set_pktlen(struct sk_buff *skb, u32 len)
 }
 
 static int
-ath12k_dp_mon_parse_status_msdu_end(struct ath12k_mon_data *pmon,
-				    const struct hal_rx_msdu_end *msdu_end)
-{
-	struct dp_mon_mpdu *mon_mpdu = pmon->mon_mpdu;
-
-	if (!mon_mpdu)
-		return 0;
-
-	ath12k_dp_mon_parse_rx_msdu_end_err(__le32_to_cpu(msdu_end->info2),
-					    &mon_mpdu->err_bitmap);
-
-	mon_mpdu->decap_format = le32_get_bits(msdu_end->info1,
-					       RX_MSDU_END_INFO11_DECAP_FORMAT);
-
-	return 0;
-}
-
-static int
 ath12k_dp_mon_parse_status_buf(struct ath12k *ar,
 			       struct ath12k_mon_data *pmon,
 			       const struct dp_mon_packet_info *packet_info)
@@ -2384,7 +2375,9 @@ ath12k_dp_mon_parse_rx_dest_tlv(struct ath12k *ar,
 		pmon->mon_mpdu = NULL;
 		break;
 	case HAL_RX_MON_STATUS_MSDU_END:
-		return ath12k_dp_mon_parse_status_msdu_end(pmon, tlv_data);
+		pmon->mon_mpdu->decap_format = pmon->decap_format;
+		pmon->mon_mpdu->err_bitmap = pmon->err_bitmap;
+		break;
 	default:
 		break;
 	}
