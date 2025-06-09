@@ -2234,6 +2234,25 @@ static struct ath12k_afc_frange_list *ath12k_reg_fill_freq_lst(struct ath12k *ar
 }
 
 /**
+ * ath12k_reg_fill_afc_location_obj - Fill AFC location object
+ * @ar: Pointer to ath12k structure
+ *
+ * Return: Pointer to filled AFC location object, NULL on failure
+ */
+static struct ath12k_afc_location *ath12k_reg_fill_afc_location_obj(struct ath12k *ar)
+{
+	struct ath12k_afc_location *p_afc_location;
+
+	p_afc_location = kzalloc(sizeof(*p_afc_location), GFP_ATOMIC);
+	if (!p_afc_location)
+		return NULL;
+
+	p_afc_location->deployment_type = 0;
+
+	return p_afc_location;
+}
+
+/**
  * ath12k_free_afc_req - Free AFC request
  * @afc_req: Pointer to AFC host request
  *
@@ -2245,6 +2264,7 @@ static void ath12k_free_afc_req(struct ath12k_afc_host_request *afc_req)
 
 	ath12k_free_afc_freq_list(afc_req->freq_lst);
 	ath12k_free_afc_opclass_list(afc_req->opclass_obj_lst);
+	kfree(afc_req->afc_location);
 	kfree(afc_req);
 }
 
@@ -2274,6 +2294,14 @@ int ath12k_get_afc_req_info(struct ath12k *ar,
 	if (!p_afc_req->opclass_obj_lst) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
 			   "Allocation and filling of opclass_obj_lst failed\n");
+		ath12k_free_afc_req(p_afc_req);
+		return -ENOMEM;
+	}
+
+	p_afc_req->afc_location = ath12k_reg_fill_afc_location_obj(ar);
+	if (!p_afc_req->afc_location) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+			   "Allocation and filling of afc_location failed\n");
 		ath12k_free_afc_req(p_afc_req);
 		return -ENOMEM;
 	}
