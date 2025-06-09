@@ -272,6 +272,14 @@ struct ath12k_pdev_dp {
 #define DP_PPE_WBM2SW_RING_SIZE 8192
 #define HAL_REO2PPE_DST_IND 6
 
+#define RX_MON_STATUS_BASE_BUF_SIZE	2048
+#define RX_MON_STATUS_BUF_ALIGN		128
+#define RX_MON_STATUS_BUF_RESERVATION	128
+#define RX_MON_STATUS_BUF_SIZE		(RX_MON_STATUS_BASE_BUF_SIZE - \
+				 (RX_MON_STATUS_BUF_RESERVATION + \
+				  RX_MON_STATUS_BUF_ALIGN + \
+				  SKB_DATA_ALIGN(sizeof(struct skb_shared_info))))
+
 #define DP_RXDMA_BUF_COOKIE_BUF_ID	GENMASK(17, 0)
 #define DP_RXDMA_BUF_COOKIE_PDEV_ID	GENMASK(19, 18)
 
@@ -659,6 +667,7 @@ struct ath12k_dp {
 	struct dp_srng rxdma_err_dst_ring[MAX_RXDMA_PER_PDEV];
 	struct dp_rxdma_mon_ring rxdma_mon_buf_ring;
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
+	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
 	struct ath12k_reo_q_addr_lut reoq_lut;
 	struct ath12k_reo_q_addr_lut ml_reoq_lut;
 	const struct ath12k_hw_params *hw_params;
