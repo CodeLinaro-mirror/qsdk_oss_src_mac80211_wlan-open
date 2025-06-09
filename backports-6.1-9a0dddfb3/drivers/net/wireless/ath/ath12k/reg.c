@@ -1765,6 +1765,160 @@ ath12k_reg_generate_valid_afc_ranges(struct ath12k *ar,
 	return 0;
 }
 
+/**
+ * ath12k_calculate_no_ir_ranges() - Calculate the No-IR ranges
+ * @ar: pointer to ath12k
+ * @sp_rule: pointer to the SP reg rules
+ * @num_sp_rules: Number of SP reg rules
+ * @afc_ranges: pointer to the AFC frequency ranges
+ * @num_afc_ranges: Number of AFC frequency ranges
+ * @no_ir_ranges: Output pointer to the No-IR frequency ranges
+ *
+ * This API calculates the No-IR range for those frequency ranges which are
+ * present in the SP regulatory rules but not in the AFC frequency ranges.
+ *
+ * Example:
+ * Consider the following SP reg rules:
+ * {freq_low: 5945, freq_high: 6425}
+ *
+ * Consider the following AFC ranges:
+ * {freq_low: 6105, freq_high: 6345}
+ *
+ * The No-IR ranges will be: (i.e. the ranges which are present in SP reg rules
+ * but not in AFC ranges)
+ * {freq_low: 5945, freq_high: 6105}
+ * {freq_low: 6345, freq_high: 6425}
+ *
+ * Return: Number of No-IR frequency ranges
+ */
+static u16
+ath12k_calculate_no_ir_ranges(struct ath12k *ar,
+			      const struct ath12k_6ghz_sp_reg_rule *sp_rule,
+			      int num_sp_rules,
+			      const struct ath12k_afc_freq_obj *afc_ranges,
+			      u16 num_afc_ranges,
+			      struct ath12k_afc_freq_obj *no_ir_ranges)
+{
+	u16 i, k = 0;
+
+	for (i = 0; i < num_sp_rules; i++) {
+		int j;
+		u32 start_freq, reg_rule_low_freq, reg_rule_high_freq;
+		const struct ieee80211_reg_rule *old_rule = sp_rule->sp_reg_rule + i;
+
+		reg_rule_low_freq = KHZ_TO_MHZ(old_rule->freq_range.start_freq_khz);
+		reg_rule_high_freq = KHZ_TO_MHZ(old_rule->freq_range.end_freq_khz);
+
+		start_freq = reg_rule_low_freq;
+		for (j = 0; j < num_afc_ranges; j++) {
+			if (afc_ranges[j].high_freq < reg_rule_low_freq)
+				continue;
+
+			if (afc_ranges[j].low_freq > reg_rule_high_freq) {
+				/* Assuming that all the afc_ranges are sorted,
+				 * then we can 'break;' instead of 'continue;'
+				 * as this is the first range that is to the
+				 * right of the reg rule.
+				 */
+				break;
+			}
+
+			/* Construct a freq range which are not present in
+			 * the AFC range, but present in SP reg range.
+			 * These will be treated as NO_IR ranges.
+			 */
+			if (start_freq < afc_ranges[j].low_freq) {
+				no_ir_ranges[k].low_freq = start_freq;
+				no_ir_ranges[k].high_freq = afc_ranges[j].low_freq;
+				k++;
+			}
+
+			if (afc_ranges[j].high_freq > start_freq)
+				start_freq = afc_ranges[j].high_freq;
+		}
+
+		/* This is the remaining piece of the reg rule */
+		if (!j || start_freq < reg_rule_high_freq) {
+			no_ir_ranges[k].low_freq = start_freq;
+			no_ir_ranges[k].high_freq = reg_rule_high_freq;
+			k++;
+		}
+	}
+
+	for (i = 0; i < k; i++) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "No-IR Freq Range [%d] %d-%d\n",
+			   i, no_ir_ranges[i].low_freq, no_ir_ranges[i].high_freq);
+	}
+
+	return k;
+}
+
+/**
+ * ath12k_reg_generate_afc_and_no_ir_ranges() - Generate the AFC and No-IR
+ * frequency ranges based on the AFC payload information.
+ * @ar: pointer to ath12k
+ * @afc_reg_info: pointer to the AFC payload information
+ * @afc_ranges: Input / Output pointer to the AFC frequency ranges
+ * @num_afc_ranges: Input / Output pointer to the number of AFC frequency ranges
+ * @no_ir_ranges: Input / Output pointer to the No-IR frequency ranges
+ * @num_no_ir_ranges: Input / Output pointer to the number of No-IR frequency
+ * ranges
+ *
+ * This API generates the AFC and No-IR frequency ranges from the AFC payload
+ * information and SP regulatory rules.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_reg_generate_afc_and_no_ir_ranges(struct ath12k *ar,
+					 const struct ath12k_afc_sp_reg_info *afc_reg_info,
+					 struct ath12k_afc_freq_obj **afc_ranges,
+					 u16 *num_afc_ranges,
+					 struct ath12k_afc_freq_obj **no_ir_ranges,
+					 u16 *num_no_ir_ranges)
+{
+	struct ath12k_base *ab = ar->ab;
+	int num_afc_rules, num_sp_rules;
+	int ret = 0;
+
+	num_afc_rules = afc_reg_info->num_freq_objs;
+	if (num_afc_rules) {
+		*afc_ranges = kcalloc(num_afc_rules, sizeof(**afc_ranges), GFP_ATOMIC);
+		if (!*afc_ranges) {
+			ath12k_err(ab,
+				   "Failed to alloc AFC range\n");
+			return -ENOMEM;
+		}
+
+		ret = ath12k_reg_generate_valid_afc_ranges(ar, afc_reg_info,
+							   afc_ranges,
+							   num_afc_ranges);
+		if (ret) {
+			ath12k_warn(ab, "Failed to coalesce AFC info\n");
+			return ret;
+		}
+	}
+
+	if (!*num_afc_ranges) {
+		ath12k_warn(ab, "No AFC Freq Range Found\n");
+		/* Still update all freq range as NO_IR to clear prev payload */
+	}
+
+	num_sp_rules = ab->sp_rule->num_6ghz_sp_rule;
+	*no_ir_ranges = kcalloc((num_sp_rules * (*num_afc_ranges + 1)),
+				sizeof(**no_ir_ranges), GFP_ATOMIC);
+	if (!*no_ir_ranges)
+		return -ENOMEM;
+
+	*num_no_ir_ranges = ath12k_calculate_no_ir_ranges(ar, ab->sp_rule,
+							  num_sp_rules,
+							  *afc_ranges,
+							  *num_afc_ranges,
+							  *no_ir_ranges);
+
+	return 0;
+}
+
 int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 {
 	int new_reg_rule_cnt, num_regd_rules, num_sp_rules;
@@ -1776,7 +1930,8 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 	struct ieee80211_regdomain *old_regd = NULL;
 	struct ath12k_afc_freq_obj *afc_freq_obj;
 	struct ath12k_afc_freq_obj *afc_ranges = NULL;
-	u16 num_afc_ranges = 0;
+	struct ath12k_afc_freq_obj *no_ir_ranges = NULL;
+	u16 num_afc_ranges = 0, num_no_ir_ranges = 0;
 	struct ieee80211_reg_rule new_rule = {0};
 	struct ieee80211_regdomain *regd = NULL;
 	struct ath12k_base *ab = ar->ab;
@@ -1826,15 +1981,17 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 
 	num_sp_rules = ab->sp_rule->num_6ghz_sp_rule;
 	num_regd_rules = regd->n_reg_rules;
-	afc_ranges = kcalloc(afc_reg_info->num_freq_objs, sizeof(*afc_ranges),
-			     GFP_ATOMIC);
-	if (!afc_ranges) {
-		ret = -ENOMEM;
+
+	ret = ath12k_reg_generate_afc_and_no_ir_ranges(ar, afc_reg_info,
+						       &afc_ranges,
+						       &num_afc_ranges,
+						       &no_ir_ranges,
+						       &num_no_ir_ranges);
+
+	if (ret) {
+		ath12k_warn(ab, "Failed to generate AFC and No-IR ranges\n");
 		goto end;
 	}
-
-	ret = ath12k_reg_generate_valid_afc_ranges(ar, afc_reg_info,
-						   &afc_ranges, &num_afc_ranges);
 
 	for (i = 0; i < num_regd_rules; i++) {
 		old_rule = regd->reg_rules + i;
@@ -1919,6 +2076,7 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 	spin_unlock_bh(&ab->base_lock);
 	kfree(old_regd);
 	kfree(afc_ranges);
+	kfree(no_ir_ranges);
 
 	ah->regd_updated = false;
 	queue_work(ab->workqueue, &ar->regd_update_work);
@@ -1926,6 +2084,7 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 end:
 	spin_unlock_bh(&ar->data_lock);
 	kfree(afc_ranges);
+	kfree(no_ir_ranges);
 	return ret;
 }
 
