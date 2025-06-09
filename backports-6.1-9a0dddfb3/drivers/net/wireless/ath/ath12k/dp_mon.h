@@ -23,10 +23,19 @@ struct dp_rxdma_mon_ring {
 	int bufs_max;
 };
 
+struct ath12k_dp_arch_mon_ops {
+};
+
 struct ath12k_dp_mon {
 	struct dp_rxdma_mon_ring rxdma_mon_buf_ring;
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
 	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+};
+
+enum dp_monitor_type {
+	ATH12K_DP_MON_TYPE_QUAD_RING,
+	ATH12K_DP_MON_TYPE_DUAL_RING
 };
 
 enum dp_monitor_mode {
@@ -93,6 +102,22 @@ struct dp_mon_tx_ppdu_info {
 	struct list_head dp_tx_mon_mpdu_list;
 	struct dp_mon_mpdu *tx_mon_mpdu;
 };
+
+static inline enum dp_monitor_type
+ath12k_dp_get_mon_type(struct ath12k_dp *dp)
+{
+	return ((dp->hw_params->rxdma1_enable) ? ATH12K_DP_MON_TYPE_DUAL_RING :
+				ATH12K_DP_MON_TYPE_QUAD_RING);
+}
+
+static inline
+const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
+{
+	if (dp && dp->dp_mon)
+		return dp->dp_mon->mon_ops;
+
+	return NULL;
+}
 
 enum hal_rx_mon_status
 ath12k_dp_mon_rx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
