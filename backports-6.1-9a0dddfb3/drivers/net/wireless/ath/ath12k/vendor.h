@@ -51,6 +51,15 @@ enum qca_nl80211_vendor_events {
 int ath12k_vendor_send_power_update_complete(struct ath12k *ar);
 
 /**
+ * ath12k_send_afc_request - Send AFC request vendor NL event to the application
+ * @ar: Pointer to ath12k structure
+ * @afc_req: Pointer to AFC host request
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *afc_req);
+
+/**
  * Opclass, channel and EIRP information attribute length
  * Refer kernel doc explanation for attribute
  * QCA_WLAN_VENDOR_ATTR_AFC_RESP_OPCLASS_CHAN_EIRP_INFO
@@ -396,6 +405,10 @@ enum qca_wlan_vendor_afc_evt_status_code {
  * QCA_WLAN_VENDOR_AFC_EVENT_TYPE_EXPIRY or
  * QCA_WLAN_VENDOR_AFC_EVENT_TYPE_POWER_UPDATE_COMPLETE, otherwise unused.
  * It uses the attributes defined in enum qca_wlan_vendor_attr_afc_opclass_info.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX: Required u32 attribute.
+ * It notifies the hardware index for which the AFC request event is sent
+ * to the AFC application.
  */
 enum qca_wlan_vendor_attr_afc_event {
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_INVALID = 0,
@@ -410,6 +423,7 @@ enum qca_wlan_vendor_attr_afc_event {
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_EXP_TIME = 9,
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST = 10,
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST = 11,
+	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX = 12,
 
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_MAX =

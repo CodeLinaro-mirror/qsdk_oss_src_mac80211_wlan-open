@@ -8,6 +8,7 @@
 #include "core.h"
 #include "debug.h"
 #include "ahb.h"
+#include "vendor.h"
 
 /* World regdom to be used in case default regd from fw is unavailable */
 #define ATH12K_2GHZ_CH01_11      REG_RULE(2412 - 10, 2462 + 10, 40, 0, 20, 0)
@@ -1653,6 +1654,7 @@ static int ath12k_reg_afc_start(struct ath12k_base *ab,
 	}
 
 	ath12k_reg_print_afc_req_info(ab, afc_req);
+	ret = ath12k_send_afc_request(ar, afc_req);
 	ath12k_free_afc_req(afc_req);
 
 	return ret;

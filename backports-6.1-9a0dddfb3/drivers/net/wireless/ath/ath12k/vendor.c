@@ -564,6 +564,7 @@ ath12k_afc_power_event_update_or_get_len(struct ath12k *ar,
 	struct nlattr *chan_list;
 	struct nlattr *chan_info = NULL;
 	int i, j, len = NLMSG_HDRLEN;
+	u8 hw_idx;
 
 	if (vendor_event &&
 	    nla_put_u8(vendor_event,
@@ -750,10 +751,271 @@ ath12k_afc_power_event_update_or_get_len(struct ath12k *ar,
 
 	nla_nest_end_checked(vendor_event, nla_attr);
 
+	hw_idx = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy,
+					      pwr_evt->afc_freq_info[0].low_freq + 10);
+	if (vendor_event &&
+	    nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX, hw_idx)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "hw_idx put fail\n");
+		goto fail;
+	} else {
+		len += nla_total_size(sizeof(u8));
+	}
+
 	return vendor_event ? 0 : len;
 
 fail:
 	return -EINVAL;
+}
+
+/**
+ * ath12k_afc_expiry_event_update_or_get_len() - Function to fill vendor evt buffer
+ * with info extracted from AFC request, or get required vendor buffer length.
+ * @ar - Pointer to ath12k structure
+ * @vendor_event: Pointer to vendor event SK buffer structure
+ * @afc_req: Pointer to AFC request from regulatory component
+ *
+ * If vendor_event is NULL, to get vendor buffer length, otherwise
+ * to fill vendor event buffer with info
+ *
+ * Return: If get vendor buffer length, return positive value as length,
+ * If fill vendor event  0 if success, otherwise negative error code
+ */
+static int
+ath12k_afc_expiry_event_update_or_get_len(struct ath12k *ar,
+					  struct sk_buff *vendor_event,
+					  struct ath12k_afc_host_request *afc_req)
+{
+	struct nlattr *nla_attr;
+	struct nlattr *freq_info;
+	struct nlattr *opclass_info = NULL;
+	struct nlattr *chan_list = NULL;
+	struct nlattr *chan_info = NULL;
+	int i, j, len = NLMSG_HDRLEN;
+	struct ath12k_afc_opclass_obj *afc_opclass_obj;
+	u8 hw_idx;
+
+	if (vendor_event &&
+	    nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_TYPE,
+		       QCA_WLAN_VENDOR_AFC_EVENT_TYPE_EXPIRY)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "QCA_WLAN_VENDOR_AFC_EVENT_TYPE_EXPIRY put fail\n");
+		goto fail;
+	} else {
+		len += nla_total_size(sizeof(u8));
+	}
+
+	if (vendor_event &&
+	    nla_put_u32(vendor_event,
+			QCA_WLAN_VENDOR_ATTR_AFC_EVENT_REQ_ID,
+			afc_req->req_id)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "QCA_WLAN_VENDOR_ATTR_AFC_REQ_ID put fail\n");
+		goto fail;
+	} else {
+		len += nla_total_size(sizeof(u32));
+	}
+
+	if (vendor_event &&
+	    nla_put_u32(vendor_event,
+			QCA_WLAN_VENDOR_ATTR_AFC_EVENT_AFC_WFA_VERSION,
+			(afc_req->version_major << 16) |
+			afc_req->version_minor)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC EVENT WFA version put fail\n");
+		goto fail;
+	} else {
+		len += nla_total_size(sizeof(u32));
+	}
+
+	if (vendor_event &&
+	    nla_put_u16(vendor_event,
+			QCA_WLAN_VENDOR_ATTR_AFC_EVENT_MIN_DES_POWER,
+			afc_req->min_des_power)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "QCA_WLAN_VENDOR_ATTR_AFC_REQ_MIN_DES_PWR put fail\n");
+		goto fail;
+	} else {
+		len += nla_total_size(sizeof(u16));
+	}
+
+	if (vendor_event &&
+	    nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_AP_DEPLOYMENT,
+		       afc_req->afc_location->deployment_type)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC EVENT AP deployment put fail\n");
+		goto fail;
+	} else {
+		len += nla_total_size(sizeof(u8));
+	}
+
+	if (vendor_event) {
+		/* Update the frequency range list from the Expiry event */
+		nla_attr = nla_nest_start(vendor_event,
+					  QCA_WLAN_VENDOR_ATTR_AFC_EVENT_FREQ_RANGE_LIST);
+		if (!nla_attr) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC FREQ RANGE LIST start put fail\n");
+			goto fail;
+		}
+	} else {
+		len += nla_total_size(0);
+	}
+
+	for (i = 0; i < afc_req->freq_lst->num_ranges; i++) {
+		if (vendor_event) {
+			freq_info = nla_nest_start(vendor_event, i);
+			if (!freq_info) {
+				ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Fail to put freq list nest %d\n",
+					   i);
+				goto fail;
+			}
+		} else {
+			len += nla_total_size(0);
+		}
+
+		if (vendor_event &&
+		    (nla_put_u32(vendor_event,
+				 QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_RANGE_START,
+				 afc_req->freq_lst->range_objs[i].lowfreq) ||
+		     nla_put_u32(vendor_event,
+				 QCA_WLAN_VENDOR_ATTR_AFC_FREQ_PSD_INFO_RANGE_END,
+				 afc_req->freq_lst->range_objs[i].highfreq))) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC REQ FREQ RANGE LIST put fail, num %d\n",
+				   afc_req->freq_lst->num_ranges);
+			goto fail;
+		} else {
+			len += nla_total_size(sizeof(u32)) * 2;
+		}
+		nla_nest_end_checked(vendor_event, freq_info);
+	}
+	nla_nest_end_checked(vendor_event, nla_attr);
+
+	if (vendor_event) {
+		/* Update the Operating class and channel list */
+		nla_attr = nla_nest_start(vendor_event,
+					  QCA_WLAN_VENDOR_ATTR_AFC_EVENT_OPCLASS_CHAN_LIST);
+		if (!nla_attr) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC OPCLASS CHAN LIST start put fail\n");
+			goto fail;
+		}
+	} else {
+		len += nla_total_size(0);
+	}
+
+	for (i = 0; i < afc_req->opclass_obj_lst->num_opclass_objs; i++) {
+		if (vendor_event) {
+			opclass_info = nla_nest_start(vendor_event, i);
+			if (!opclass_info) {
+				ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Fail to put opclass nest %d\n",
+					   i);
+				goto fail;
+			}
+		} else {
+			len += nla_total_size(0);
+		}
+
+		afc_opclass_obj = &afc_req->opclass_obj_lst->opclass_objs[i];
+
+		if (vendor_event &&
+		    nla_put_u8(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_OPCLASS,
+			       afc_opclass_obj->opclass)) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC OPCLASS INFO OPCLASS put fail, num %d\n",
+				   afc_req->opclass_obj_lst->num_opclass_objs);
+			goto fail;
+		} else {
+			len += nla_total_size(sizeof(u8));
+		}
+
+		if (vendor_event) {
+			chan_list = nla_nest_start(vendor_event,
+						   QCA_WLAN_VENDOR_ATTR_AFC_OPCLASS_INFO_CHAN_LIST);
+			if (!chan_list) {
+				ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC OPCLASS INFO CHAN LIST start put fail\n");
+				goto fail;
+			}
+		} else {
+			len += nla_total_size(0);
+		}
+
+		for (j = 0; j < afc_opclass_obj->opclass_num_cfis; j++) {
+			if (vendor_event) {
+				chan_info = nla_nest_start(vendor_event, j);
+				if (!chan_info) {
+					ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Fail to put opclass cfis nest %d\n",
+						   j);
+					goto fail;
+				}
+			} else {
+				len += nla_total_size(0);
+			}
+
+			if (vendor_event &&
+			    nla_put_u8(vendor_event,
+				       QCA_WLAN_VENDOR_ATTR_AFC_CHAN_EIRP_INFO_CHAN_NUM,
+				       afc_opclass_obj->cfis[j])) {
+				ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC EIRP INFO CHAN NUM put fail, num %d\n",
+					   afc_opclass_obj->opclass_num_cfis);
+				goto fail;
+			} else {
+				len += nla_total_size(sizeof(u8));
+			}
+			nla_nest_end_checked(vendor_event, chan_info);
+		}
+		nla_nest_end_checked(vendor_event, chan_list);
+		nla_nest_end_checked(vendor_event, opclass_info);
+	}
+	nla_nest_end_checked(vendor_event, nla_attr);
+
+	hw_idx = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy,
+					      afc_req->freq_lst->range_objs[0].lowfreq + 10);
+	if (vendor_event &&
+	    nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX, hw_idx)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "hw_idx put fail\n");
+		goto fail;
+	} else {
+		len += nla_total_size(sizeof(u8));
+	}
+
+	return vendor_event ? 0 : len;
+
+fail:
+	return -EINVAL;
+}
+
+int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *afc_req)
+{
+	struct sk_buff *vendor_event;
+	int vendor_buffer_len;
+	int ret;
+
+	if (!afc_req) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC Host request is NULL\n");
+		return -EINVAL;
+	}
+
+	vendor_buffer_len = ath12k_afc_expiry_event_update_or_get_len(ar, NULL, afc_req);
+	vendor_event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy,
+						   NULL,
+						   vendor_buffer_len,
+						   QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX,
+						   GFP_ATOMIC);
+	if (!vendor_event) {
+		ath12k_warn(ar->ab, "failed to allocate skb for afc expiry event\n");
+		goto out;
+	}
+
+	ret = ath12k_afc_expiry_event_update_or_get_len(ar, vendor_event, afc_req);
+
+	if (ret) {
+		ath12k_warn(ar->ab, "Failed to update AFC request vendor event\n");
+		goto out;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+		   "Sending expiry event to higher layer of type %d\n",
+		   QCA_WLAN_VENDOR_AFC_EXPIRY_EVENT);
+	cfg80211_vendor_event(vendor_event, GFP_ATOMIC);
+out:
+	return ret;
 }
 
 static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
