@@ -207,6 +207,8 @@ struct wmi_vdev_set_tpc_power_cmd {
 #define ath12k_REG_AFC_CMD_SERV_RESP_READY     1
 #define WMI_AFC_LOW_FREQUENCY                  GENMASK(15, 0)
 #define WMI_AFC_HIGH_FREQUENCY                 GENMASK(31, 16)
+#define WMI_AFC_WFA_MINOR_VERSION_GET          GENMASK(15, 0)
+#define WMI_AFC_WFA_MAJOR_VERSION_GET	       GENMASK(31, 16)
 
 /* HW mode config type replicated from FW header
  * @WMI_HOST_HW_MODE_SINGLE: Only one PHY is active.
@@ -6869,6 +6871,21 @@ struct wmi_afc_cmd_fixed_param {
 	__le32 cmd_type;
 	__le32 serv_resp_format;
 } __packed;
+
+/**
+ * struct wmi_afc_expiry_event_param - WMI AFC expiry event parameters
+ * @request_id: Request ID
+ * @event_subtype: Event subtype
+ * @afc_wfa_version: AFC WFA version
+ *
+ * Structure representing WMI AFC expiry event parameters.
+ */
+struct wmi_afc_expiry_event_param {
+	__le32 request_id;
+	__le32 event_subtype;
+	__le32 afc_wfa_version;
+} __packed;
+
 #define ATH12K_FW_STATS_BUF_SIZE (1024 * 1024)
 
 enum wmi_sys_cap_info_flags {

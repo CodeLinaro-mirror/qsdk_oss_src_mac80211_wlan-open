@@ -6829,6 +6829,28 @@ static int ath12k_wmi_afc_fill_chan_eirp_obj(struct ath12k_base *ab,
 	return 0;
 }
 
+/**
+ * ath12k_copy_afc_expiry_event - Copy AFC expiry event from WMI params
+ * @ab: Pointer to ath12k_base structure
+ * @afc: Pointer to AFC information structure
+ * @ptr: Pointer to event data
+ * @len: Length of event data
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int ath12k_copy_afc_expiry_event(struct ath12k_base *ab,
+					struct ath12k_afc_info *afc, const void *ptr,
+					u16 len)
+{
+	struct wmi_afc_expiry_event_param *param = (struct wmi_afc_expiry_event_param *)ptr;
+
+	afc->request_id = param->request_id;
+	afc->event_subtype = param->event_subtype;
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "Received AFC expiry request id %u subtye %d\n",
+		   afc->request_id, afc->event_subtype);
+	return 0;
+}
+
 static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 				       u16 tag, u16 len,
 				       const void *ptr, void *data)
@@ -6846,7 +6868,21 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 		/* Fixed param is already processed */
 		break;
 	case WMI_TAG_AFC_EXPIRY_EVENT_PARAM:
-		/* TBD */
+		if (len == 0) {
+			ath12k_warn(ab, "len should not be zero\n");
+			return 0;
+		}
+
+		if (afc->event_type != ATH12K_AFC_EVENT_TIMER_EXPIRY) {
+			ath12k_warn(ab, "Invalid event_type %d received\n", afc->event_type);
+			return 0;
+		}
+
+		ret = ath12k_copy_afc_expiry_event(ab, afc, ptr, len);
+		if (ret) {
+			ath12k_warn(ab, "Failed to copy expiry event\n");
+			return ret;
+		}
 		break;
 	case WMI_TAG_AFC_POWER_EVENT_PARAM:
 		if (len == 0)
@@ -6960,8 +6996,8 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 			    afc_info->event_type, ret);
 		return;
 	}
-
-	if (afc_info->event_type == ATH12K_AFC_EVENT_POWER_INFO) {
+	switch (afc_info->event_type) {
+	case ATH12K_AFC_EVENT_POWER_INFO:
 		ret = ath12k_reg_process_afc_power_event(ar);
 		if (ret)
 			ath12k_warn(ab, "AFC reg rule update failed ret : %d\n",
@@ -6969,7 +7005,16 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 
 		/* Update AFC application with power event update complete */
 		ath12k_vendor_send_power_update_complete(ar);
-	}
+		break;
+	case ATH12K_AFC_EVENT_TIMER_EXPIRY:
+		ret = ath12k_process_expiry_event(ar);
+		if (ret)
+			ath12k_warn(ab, "Failed to process expiry event\n");
+		break;
+	default:
+		ath12k_warn(ab, "AFC reg rule update failed ret : %d\n", ret);
+		break;
+	};
 }
 
 int ath12k_wmi_send_afc_resp_rx_ind(struct ath12k *ar, int data_type)

@@ -49,8 +49,16 @@ enum ath12k_afc_power_update_status {
 	ath12k_AFC_POWER_UPDATE_FAIL = 3,
 };
 
+/**
+ * enum ath12k_afc_event_state - AFC event state enumeration
+ * @ATH12K_AFC_EVENT_POWER_INFO: Power information event
+ * @ATH12K_AFC_EVENT_TIMER_EXPIRY: Timer expiry event
+ *
+ * Enumeration of different AFC event states.
+ */
 enum ath12k_afc_event_state {
 	ATH12K_AFC_EVENT_POWER_INFO   = 1,
+	ATH12K_AFC_EVENT_TIMER_EXPIRY = 2,
 };
 
 /**
