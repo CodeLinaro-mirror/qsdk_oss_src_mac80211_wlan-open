@@ -1479,6 +1479,123 @@ static bool ath12k_is_6ghz_op_class(u8 op_class)
 }
 
 /**
+ * ath12k_is_range_valid - Check if frequency range is valid
+ * @range: Pointer to frequency range
+ *
+ * Return: true if valid, false otherwise
+ */
+static bool ath12k_is_range_valid(struct ieee80211_freq_range *range)
+{
+	return (range->end_freq_khz > range->start_freq_khz);
+}
+
+/**
+ * ath12k_is_subrange - Check if range_first is a subrange of range_second
+ * @range_first: First frequency range
+ * @range_second: Second frequency range
+ *
+ * Return: true if subrange, false otherwise
+ */
+static bool ath12k_is_subrange(struct ieee80211_freq_range *range_first,
+			       struct ieee80211_freq_range *range_second)
+{
+	bool is_subrange;
+	bool is_valid;
+
+	is_valid = ath12k_is_range_valid(range_first) &&
+		ath12k_is_range_valid(range_second);
+
+	if (!is_valid)
+		return false;
+
+	is_subrange = (range_first->start_freq_khz >= range_second->start_freq_khz) &&
+			(range_first->end_freq_khz <= range_second->end_freq_khz);
+
+	return is_subrange;
+}
+
+/**
+ * ath12k_is_cfi_freq_in_ranges - Check if CFI frequency is in ranges
+ * @cfi_freq: CFI frequency
+ * @bw: Bandwidth
+ * @p_frange_lst: Pointer to frequency range list
+ *
+ * This function checks if the CFI frequency is within the given ranges.
+ *
+ * Return: true if in ranges, false otherwise
+ */
+static bool ath12k_is_cfi_freq_in_ranges(u16 cfi_freq, u16 bw,
+					 struct ath12k_afc_frange_list *p_frange_lst)
+{
+	struct ath12k_afc_freq_range_obj *p_range_objs;
+	struct ieee80211_freq_range range_cfi;
+	u16 cfi_band_left, cfi_band_right;
+	bool is_cfi_supported = false;
+	u32 num_ranges;
+	u8 i;
+
+	num_ranges = p_frange_lst->num_ranges;
+	p_range_objs = &p_frange_lst->range_objs[0];
+	cfi_band_left = cfi_freq - bw / 2;
+	cfi_band_right = cfi_freq + bw / 2;
+	range_cfi.start_freq_khz = MHZ_TO_KHZ(cfi_band_left);
+	range_cfi.end_freq_khz = MHZ_TO_KHZ(cfi_band_right);
+
+	for (i = 0; i <  num_ranges; i++) {
+		struct ieee80211_freq_range range_chip;
+
+		range_chip.start_freq_khz = MHZ_TO_KHZ(p_range_objs->lowfreq);
+		range_chip.end_freq_khz = MHZ_TO_KHZ(p_range_objs->highfreq);
+		is_cfi_supported = ath12k_is_subrange(&range_cfi, &range_chip);
+
+		if (is_cfi_supported)
+			return true;
+
+		p_range_objs++;
+	}
+
+	return is_cfi_supported;
+}
+
+/**
+ * ath12k_fill_cfis - Fill CFIs
+ * @op_class_tbl: Pointer to operating class table
+ * @p_lst: Pointer to frequency list
+ * @p_frange_lst: Pointer to frequency range list
+ * @dst: Destination buffer
+ *
+ * This function fills the CFIs (Channel Frequency Indicators) for a given
+ * operating class. It iterates over the CFIs in the frequency list and checks
+ * if each CFI frequency is within the ranges specified in the frequency range
+ * list. If the CFI frequency is within the ranges, it is added to the
+ * destination buffer.
+ *
+ * Return: Number of valid CFIs
+ */
+static u8 ath12k_fill_cfis(const struct ath12k_op_class_map_t *op_class_tbl,
+			   const struct ath12k_c_freq_lst *p_lst,
+			   struct ath12k_afc_frange_list *p_frange_lst,
+			   u8 *dst)
+{
+	u8 j;
+	u8 cfi_idx = 0;
+
+	for (j = 0; j < p_lst->num_cfis; j++) {
+		u8 cfi;
+		u16 cfi_freq;
+		u16 start_freq = op_class_tbl->start_freq;
+		u16 bw = op_class_tbl->chan_spacing;
+
+		cfi = p_lst->p_cfis_arr[j];
+		cfi_freq = start_freq + ATH12K_FREQ_TO_CHAN_SCALE * cfi;
+
+		if (ath12k_is_cfi_freq_in_ranges(cfi_freq, bw, p_frange_lst))
+			dst[cfi_idx++] = cfi;
+	}
+	return cfi_idx;
+}
+
+/**
  * ath12k_fill_6g_opcls_chan_lists - Fill 6GHz operating class channel lists
  * @p_frange_lst: Pointer to frequency range list
  * @chansize_lst: Channel size list
@@ -1504,6 +1621,8 @@ static void ath12k_fill_6g_opcls_chan_lists(struct ath12k_afc_frange_list *p_fra
 			if (!dst)
 				return;
 
+			num_valid_cfi = ath12k_fill_cfis(op_class_tbl, p_lst,
+							 p_frange_lst, dst);
 			if (num_valid_cfi)
 				i++;
 		}
@@ -1606,10 +1725,15 @@ static int ath12k_get_6g_opclasses_and_channels(struct ath12k_afc_frange_list *p
 				u8 cfi;
 				u16 cfi_freq;
 				u16 start_freq = op_class_tbl->start_freq;
+				u16 bw = op_class_tbl->chan_spacing;
 
 				cfi = p_lst->p_cfis_arr[j];
 				cfi_freq = start_freq +
 					ATH12K_FREQ_TO_CHAN_SCALE * cfi;
+				if (ath12k_is_cfi_freq_in_ranges(cfi_freq, bw,
+								 p_frange_lst)) {
+					n_supp_cfis++;
+				}
 			}
 			/* Fill opclass number, num cfis and increment
 			 * num_opclasses only if the cfi of the opclass
