@@ -97,6 +97,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, int vdev_id, const u8 *addr)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
+	struct crypto_shash *tfm;
 
 	/* NOTE: reo_dest ring id starts from 1 unlike mac_id which starts from 0 */
 	reo_dest = ar->dp.mac_id + 1;
@@ -110,12 +111,17 @@ int ath12k_dp_peer_setup(struct ath12k *ar, int vdev_id, const u8 *addr)
 		return ret;
 	}
 
+	tfm = crypto_alloc_shash("michael_mic", 0, 0);
+	if (IS_ERR(tfm))
+		return PTR_ERR(tfm);
+
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
 	if (!peer) {
 		ath12k_warn(ab, "failed to find the peer to del rx tid\n");
 		spin_unlock_bh(&dp->dp_lock);
-		return -ENOENT;
+		ret = -ENOENT;
+		goto free_shash;
 	}
 
 	sta = peer->sta;
@@ -123,7 +129,7 @@ int ath12k_dp_peer_setup(struct ath12k *ar, int vdev_id, const u8 *addr)
 	if (peer->mlo && peer->link_id != ahsta->primary_link_id) {
 		peer->primary_link = false;
 		spin_unlock_bh(&dp->dp_lock);
-		return ret;
+		goto free_shash;
 	}
 
 	peer->primary_link = true;
@@ -139,11 +145,22 @@ int ath12k_dp_peer_setup(struct ath12k *ar, int vdev_id, const u8 *addr)
 		}
 	}
 
-	ret = ath12k_dp_rx_peer_frag_setup(ar, addr, vdev_id);
+	spin_lock_bh(&dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
+	if (!peer) {
+		ath12k_warn(ab, "failed to find the peer to set up fragment info\n");
+		ret = -ENOENT;
+		spin_unlock_bh(&dp->dp_lock);
+		goto free_shash;
+	}
+
+	ret = ath12k_dp_rx_peer_frag_setup(ar, peer, tfm);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup rx defrag context\n");
-		goto peer_clean;
+		goto tid_clean;
 	}
+
+	spin_unlock_bh(&dp->dp_lock);
 
 	/* TODO: Setup other peer specific resource used in data path */
 
@@ -151,12 +168,21 @@ int ath12k_dp_peer_setup(struct ath12k *ar, int vdev_id, const u8 *addr)
 
 peer_clean:
 	spin_lock_bh(&dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
+	if (!peer) {
+		spin_unlock_bh(&dp->dp_lock);
+		ath12k_warn(ab, "failed to find the peer in err case of del rx tid\n");
+		goto free_shash;
+	}
 
+tid_clean:
 	for (; tid >= 0; tid--)
 		ath12k_dp_arch_rx_peer_tid_delete(ab->dp, ar, peer, tid);
 
 	spin_unlock_bh(&dp->dp_lock);
 
+free_shash:
+	crypto_free_shash(tfm);
 	return ret;
 }
 

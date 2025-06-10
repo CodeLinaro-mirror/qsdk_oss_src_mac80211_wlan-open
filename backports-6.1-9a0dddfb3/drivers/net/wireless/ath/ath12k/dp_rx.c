@@ -1143,34 +1143,16 @@ static void ath12k_dp_rx_frag_timer(struct timer_list *timer)
 	spin_unlock_bh(&rx_tid->dp->dp_lock);
 }
 
-int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id)
+int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
+				 struct ath12k_dp_link_peer *peer,
+				 struct crypto_shash *tfm)
 {
 	struct ath12k_base *ab = ar->ab;
-	struct crypto_shash *tfm;
-	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_dp_rx_tid *rx_tid;
 	int i;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
-	tfm = crypto_alloc_shash("michael_mic", 0, 0);
-	if (IS_ERR(tfm))
-		return PTR_ERR(tfm);
-
-	spin_lock_bh(&dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, peer_mac);
-	if (!peer) {
-		spin_unlock_bh(&dp->dp_lock);
-		crypto_free_shash(tfm);
-		ath12k_warn(ab, "failed to find the peer to set up fragment info\n");
-		return -ENOENT;
-	}
-
-	if (!peer->primary_link) {
-		spin_unlock_bh(&dp->dp_lock);
-		crypto_free_shash(tfm);
-		return 0;
-	}
+	lockdep_assert(&dp->dp_lock);
 
 	for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
 		rx_tid = &peer->dp_peer->rx_tid[i];
@@ -1181,7 +1163,6 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar, const u8 *peer_mac, int vdev
 
 	peer->dp_peer->tfm_mmic = tfm;
 	peer->dp_peer->primary_link_frag_setup = true;
-	spin_unlock_bh(&dp->dp_lock);
 
 	return 0;
 }
