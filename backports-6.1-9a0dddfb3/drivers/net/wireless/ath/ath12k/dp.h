@@ -716,6 +716,48 @@ struct ath12k_dp {
  *       4 bytes.
  */
 
+ enum dp_umac_reset_recover_action {
+	 ATH12K_UMAC_RESET_RX_EVENT_NONE,
+	 ATH12K_UMAC_RESET_INIT_UMAC_RECOVERY,
+	 ATH12K_UMAC_RESET_INIT_TARGET_RECOVERY_SYNC_USING_UMAC,
+	 ATH12K_UMAC_RESET_DO_PRE_RESET,
+	 ATH12K_UMAC_RESET_DO_POST_RESET_START,
+	 ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE,
+ };
+
+enum dp_umac_reset_tx_cmd {
+	ATH12K_UMAC_RESET_TX_CMD_TRIGGER_DONE,
+	ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE,
+	ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE,
+	ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE,
+};
+
+struct ath12k_umac_reset_ts {
+	u64 trigger_start;
+	u64 trigger_done;
+	u64 pre_reset_start;
+	u64 pre_reset_done;
+	u64 post_reset_start;
+	u64 post_reset_done;
+	u64 post_reset_complete_start;
+	u64 post_reset_complete_done;
+};
+
+struct ath12k_dp_umac_reset {
+	struct ath12k_base *ab;
+	dma_addr_t shmem_paddr_unaligned;
+	void *shmem_vaddr_unaligned;
+	dma_addr_t shmem_paddr_aligned;
+	struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t *shmem_vaddr_aligned;
+	size_t shmem_size;
+	uint32_t magic_num;
+	int intr_offset;
+	struct tasklet_struct intr_tq;
+	int irq_num;
+	struct ath12k_umac_reset_ts ts;
+	bool umac_pre_reset_in_prog;
+};
+
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)
 #define HTT_T2H_EXT_STATS_INFO1_LENGTH   GENMASK(31, 16)
 
@@ -915,6 +957,9 @@ struct ath12k_rx_desc_info *ath12k_dp_get_rx_desc(struct ath12k_dp *dp,
 struct ath12k_tx_desc_info *ath12k_dp_get_tx_desc(struct ath12k_dp *dp,
 						  u32 desc_id);
 bool ath12k_dp_wmask_compaction_rx_tlv_supported(struct ath12k_base *ab);
+void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
+                                       enum dp_umac_reset_tx_cmd tx_event);
+void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
 void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif);
 void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp);
 

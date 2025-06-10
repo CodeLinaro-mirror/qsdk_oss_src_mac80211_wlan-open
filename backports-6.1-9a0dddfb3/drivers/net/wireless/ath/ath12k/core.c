@@ -1206,7 +1206,7 @@ static void ath12k_core_device_cleanup(struct ath12k_base *ab)
 
 	ath12k_hif_irq_disable(ab);
 	ath12k_core_pdev_destroy(ab);
-
+	ath12k_dp_umac_reset_deinit(ab);
 	mutex_unlock(&ab->core_lock);
 }
 
@@ -1440,6 +1440,13 @@ core_pdev_create:
 		if (ath12k_en_fwlog == true) {
 			if (ath12k_enable_fwlog(ab))
 				ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
+		}
+
+		ret = ath12k_dp_umac_reset_init(ab);
+		if (ret) {
+			mutex_unlock(&ab->core_lock);
+			ath12k_warn(ab, "Failed to initialize UMAC RESET: %d\n", ret);
+			goto err;
 		}
 
 		mutex_unlock(&ab->core_lock);
@@ -1730,6 +1737,7 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_hal_srng_deinit(ab);
+	ath12k_umac_reset_completion(ab);
 
 	total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 	ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;

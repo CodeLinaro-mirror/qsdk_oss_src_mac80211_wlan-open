@@ -62,8 +62,175 @@ enum htt_h2t_msg_type {
 	HTT_H2T_MSG_TYPE_RXDMA_RXOLE_PPE_CFG		= 0x19,
 	HTT_H2T_MSG_TYPE_VDEV_TXRX_STATS_CFG		= 0x1a,
 	HTT_H2T_MSG_TYPE_TX_MONITOR_CFG			= 0x1b,
+	HTT_H2T_MSG_TYPE_UMAC_RESET_PREREQUISITE_SETUP  = 0x21,
+	HTT_H2T_MSG_TYPE_UMAC_RESET_START_PRE_RESET     = 0x22,
 	HTT_H2T_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_RESP	= 0x24,
 };
+
+#define HTT_ATH12K_UMAC_RESET_T2H_DO_PRE_RESET  BIT(0)
+#define HTT_ATH12K_UMAC_RESET_T2H_DO_POST_RESET_START   BIT(1)
+#define HTT_ATH12K_UMAC_RESET_T2H_DO_POST_RESET_COMPLETE        BIT(2)
+#define HTT_ATH12K_UMAC_RESET_T2H_INIT_UMAC_RECOVERY    BIT(3)
+#define HTT_ATH12K_UMAC_RESET_T2H_INIT_TARGET_RECOVERY_SYNC_USING_UMAC  BIT(4)
+
+#define ATH12K_HTT_UMAC_RESET_MSG_SHMEM_PRE_RESET_DONE_SET      BIT(0)
+#define ATH12K_HTT_UMAC_RESET_MSG_SHMEM_POST_RESET_START_DONE_SET BIT(1)
+#define ATH12K_HTT_UMAC_RESET_MSG_SHMEM_POST_RESET_COMPLETE_DONE BIT(2)
+
+struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t {
+        u32 magic_num;
+        union {
+                /*
+                 * BIT [0]        :- T2H msg to do pre-reset
+                 * BIT [1]        :- T2H msg to do post-reset start
+                 * BIT [2]        :- T2H msg to do post-reset complete
+                 * BIT [3]        :- T2H msg to indicate to Host that
+                 *                   a trigger request for MLO UMAC Recovery
+                 *                   is received for UMAC hang.
+                 * BIT [4]        :- T2H msg to indicate to Host that
+                 *                   a trigger request for MLO UMAC Recovery
+                 *                   is received for Mode-1 Target Recovery.
+                 * BIT [31 : 5]   :- reserved
+                 */
+                u32 t2h_msg;
+                u32 recovery_action;
+        };
+        union {
+                /*
+                 * BIT [0]        :- H2T msg to send pre-reset done
+                 * BIT [1]        :- H2T msg to send post-reset start done
+                 * BIT [2]        :- H2T msg to send post-reset complete done
+                 * BIT [3]        :- H2T msg to start pre-reset. This is deprecated.
+                 * BIT [31 : 4]   :- reserved
+                 */
+                u32 h2t_msg;
+                u32 recovery_action_done;
+        };
+};
+
+struct ath12k_htt_umac_reset_setup_cmd_params {
+        uint32_t msi_data;
+        uint32_t addr_lo;
+        uint32_t addr_hi;
+};
+
+struct htt_h2t_paddr_size {
+        u32 size;
+        u32 addr_lo;
+        u32 addr_hi;
+};
+
+#define HTT_H2T_MSG_TYPE_SET    GENMASK(7, 0)
+#define HTT_H2T_MSG_METHOD      GENMASK(11, 8)
+#define HTT_T2H_MSG_METHOD      GENMASK(15, 12)
+
+#define ATH12K_DP_UMAC_RESET_SHMEM_MAGIC_NUM    0xDEADBEEF
+#define ATH12K_DP_UMAC_RESET_SHMEM_ALIGN        8
+
+/**
+ * @brief HTT_H2T_MSG_TYPE_UMAC_RESET_PREREQUISITE_SETUP message
+ *
+ * @details
+ *  The HTT_H2T_MSG_TYPE_UMAC_HANG_RECOVERY_PREREQUISITE_SETUP message is sent
+ *  by the host to provide prerequisite info to target for the UMAC hang
+ *  recovery feature.
+ *  The info sent in this H2T message are T2H message method, H2T message
+ *  method, T2H MSI interrupt number and physical start address, size of
+ *  the shared memory (refers to the shared memory dedicated for messaging
+ *  between host and target when the DUT is in UMAC hang recovery mode).
+ *  This H2T message is expected to be only sent if the WMI service bit
+ *  WMI_SERVICE_UMAC_HANG_RECOVERY_SUPPORT was firstly indicated by the target.
+ *
+ * |31                           16|15          12|11           8|7          0|
+ * |-------------------------------+--------------+--------------+------------|
+ * |            reserved           |h2t msg method|t2h msg method|  msg_type  |
+ * |--------------------------------------------------------------------------|
+ * |                           t2h msi interrupt number                       |
+ * |--------------------------------------------------------------------------|
+ * |                           shared memory area size                        |
+ * |--------------------------------------------------------------------------|
+ * |                     shared memory area physical address low              |
+ * |--------------------------------------------------------------------------|
+ * |                     shared memory area physical address high             |
+ * |--------------------------------------------------------------------------|
+  * The message is interpreted as follows:
+ * dword0 - b'0:7   - msg_type
+ *                    (HTT_H2T_MSG_TYPE_UMAC_RESET_PREREQUISITE_SETUP)
+ *          b'8:11  - t2h_msg_method: indicates method to be used for
+ *                    T2H communication in UMAC hang recovery mode.
+ *                    Value zero indicates MSI interrupt (default method).
+ *                    Refer to htt_umac_hang_recovery_msg_method enum.
+ *          b'12:15 - h2t_msg_method: indicates method to be used for
+ *                    H2T communication in UMAC hang recovery mode.
+ *                    Value zero indicates polling by target for this h2t msg
+ *                    during UMAC hang recovery mode.
+ *                    Refer to htt_umac_hang_recovery_msg_method enum.
+ *          b'16:31 - reserved.
+ * dword1 - b'0:31  - t2h_msi_data: MSI data to be used for
+ *                    T2H communication in UMAC hang recovery mode.
+ * dword2 - b'0:31  - size: size of shared memory dedicated for messaging
+ *                    only when in UMAC hang recovery mode.
+ *                    This refers to size in bytes.
+ * dword3 - b'0:31  - physical_address_lo: lower 32 bit physical address
+ *                    of the shared memory dedicated for messaging only when
+ *                    in UMAC hang recovery mode.
+ * dword4 - b'0:31  - physical_address_hi: higher 32 bit physical address
+ *                    of the shared memory dedicated for messaging only when
+ *                    in UMAC hang recovery mode.
+ */
+
+struct htt_dp_umac_reset_setup_req_cmd {
+        u32 msg_info;
+        u32 msi_data;
+        struct htt_h2t_paddr_size msg_shared_mem;
+}__packed;
+
+/**
+ * @brief HTT_H2T_MSG_TYPE_UMAC_RESET_START_PRE_RESET message
+ *
+ * @details
+ *  The HTT_H2T_MSG_TYPE_UMAC_HANG_RECOVERY_SOC_START_PRE_RESET is a SOC level
+ *  HTT message sent by the host to indicate that the target needs to start the
+ *  UMAC hang recovery feature from the point of pre-reset routine.
+ *  The purpose of this H2T message is to have host synchronize and trigger
+ *  UMAC recovery across all targets.
+ *  The info sent in this H2T message is the flag to indicate whether the
+ *  target needs to execute UMAC-recovery in context of the Initiator or
+ *  Non-Initiator.
+ *  This H2T message is expected to be sent as response to the
+ *  initiate_umac_recovery indication from the Initiator target attached to
+ *  this same host.
+ *  This H2T message is expected to be only sent if the WMI service bit
+ *  WMI_SERVICE_UMAC_HANG_RECOVERY_SUPPORT was firstly indicated by the target
+ *  and HTT_H2T_MSG_TYPE_UMAC_HANG_RECOVERY_PREREQUISITE_SETUP was sent
+ *  beforehand.
+ *
+ * |31                                    10|9|8|7            0|
+ * |-----------------------------------------------------------|
+ * |                 reserved               |U|I|   msg_type   |
+ * |-----------------------------------------------------------|
+ * Where:
+ *     I = is_initiator
+ *     U = is_umac_hang
+ *
+ * The message is interpreted as follows:
+ * dword0 - b'0:7   - msg_type
+ *                    (HTT_H2T_MSG_TYPE_UMAC_RESET_START_PRE_RESET)
+ *          b'8     - is_initiator: indicates whether the target needs to
+ *                    execute the UMAC-recovery in context of the Initiator or
+ *                    Non-Initiator.
+ *                    The value zero indicates this target is Non-Initiator.
+ *          b'9     - is_umac_hang: indicates whether MLO UMAC recovery
+ *                    executed in context of UMAC hang or Target recovery.
+ *          b'10:31 - reserved.
+ */
+struct h2t_umac_hang_recovery_start_pre_reset {
+        u8 hdr;
+} __packed;
+
+#define HTT_H2T_UMAC_RESET_MSG_TYPE     GENMASK(7, 0)
+#define HTT_H2T_UMAC_RESET_IS_INITIATOR_SET     BIT(8)
+#define HTT_H2T_UMAC_RESET_IS_TARGET_RECOVERY_SET       BIT(9)
 
 #define HTT_H2T_RXOLE_PPE_CFG_MSG_TYPE			GENMASK(7, 0)
 #define HTT_H2T_RXOLE_PPE_CFG_OVERRIDE			BIT(8)

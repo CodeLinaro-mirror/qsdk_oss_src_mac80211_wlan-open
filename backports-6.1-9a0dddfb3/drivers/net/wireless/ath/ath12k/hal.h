@@ -1233,6 +1233,8 @@ struct hal_ops {
 				     dma_addr_t *paddr, u32 *msdu_cookies,
 				     u8 *rbm);
 	void (*cc_config)(struct ath12k_base *ab);
+	void (*srng_hw_disable)(struct ath12k_base *ab, struct hal_srng *srng);
+	void (*reset_rx_reo_tid_q)(void *vaddr, u32 ba_window_size, u8 tid);
 	enum hal_rx_buf_return_buf_manager
         (*get_idle_link_rbm)(struct ath12k_hal *hal, u8 device_id);
 	void (*reo_shared_qaddr_cache_clear)(struct ath12k_base *ab);
@@ -1380,4 +1382,8 @@ void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
 void ath12k_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 					       u32 ppeds_idx_map_val);
 #endif
+void ath12k_hal_reset_rx_reo_tid_q(struct ath12k_hal *hal, void *qdesc,
+				   u32 ba_window_size, u8 tid);
+void ath12k_hal_srng_hw_disable(struct ath12k_base *ab,
+                                struct hal_srng *srng);
 #endif

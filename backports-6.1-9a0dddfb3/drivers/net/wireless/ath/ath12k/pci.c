@@ -1036,6 +1036,51 @@ static int ath12k_pci_panic_handler(struct ath12k_base *ab)
 	return NOTIFY_OK;
 }
 
+static int ath12k_dp_umac_pci_config_irq(struct ath12k_base *ab)
+{
+        u32 msi_data_start, msi_data_count, msi_irq_start;
+        unsigned int msi_data;
+        int irq, ret;
+        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+
+        ret = ath12k_pcic_get_user_msi_assignment(ab, "DP", &msi_data_count,
+                                                  &msi_data_start, &msi_irq_start);
+        if (ret)
+                return ret;
+
+        msi_data = (umac_reset->intr_offset % msi_data_count) + msi_irq_start;
+        irq = ath12k_hif_get_msi_irq(ab, msi_data);
+
+        umac_reset->irq_num = irq;
+        tasklet_setup(&umac_reset->intr_tq, ath12k_umac_reset_tasklet_handler);
+
+        ret = request_irq(irq, ath12k_umac_reset_interrupt_handler,
+                          IRQF_NO_SUSPEND, "umac_dp_reset", ab);
+        if (ret) {
+                ath12k_err(ab, "failed to request irq for umac dp reset %d\n", ret);
+                return ret;
+        }
+
+        disable_irq_nosync(umac_reset->irq_num);
+
+        return 0;
+}
+
+static void ath12k_pci_dp_umac_reset_enable_irq(struct ath12k_base *ab)
+{
+        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+
+        enable_irq(umac_reset->irq_num);
+}
+
+static void ath12k_pci_dp_umac_reset_free_irq(struct ath12k_base *ab)
+{
+        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+
+        disable_irq_nosync(umac_reset->irq_num);
+        free_irq(umac_reset->irq_num, ab);
+}
+
 static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.start = ath12k_pci_start,
 	.stop = ath12k_pcic_stop,
@@ -1066,6 +1111,9 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.ppeds_irq_enable = ath12k_pci_ppeds_irq_enable,
 	.ppeds_irq_disable = ath12k_pci_ppeds_irq_disable,
 #endif
+	.dp_umac_reset_irq_config = ath12k_dp_umac_pci_config_irq,
+	.dp_umac_reset_enable_irq = ath12k_pci_dp_umac_reset_enable_irq,
+	.dp_umac_reset_free_irq = ath12k_pci_dp_umac_reset_free_irq,
 };
 
 static enum ath12k_device_family

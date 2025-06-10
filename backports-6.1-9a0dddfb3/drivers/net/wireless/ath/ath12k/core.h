@@ -328,6 +328,9 @@ enum ath12k_dev_flags {
 	ATH12K_FLAG_WMI_INIT_DONE,
 	ATH12K_FLAG_Q6_POWER_DOWN,
 	ATH12K_FLAG_PPE_DS_ENABLED,
+	ATH12K_FLAG_UMAC_PRERESET_START,
+	ATH12K_FLAG_UMAC_RESET_COMPLETE,
+	ATH12K_FLAG_UMAC_RECOVERY_START,
 };
 
 enum ath12k_mlo_recovery_mode {
@@ -1164,6 +1167,14 @@ struct ath12k_mlo_memory {
 };
 
 #define ATH12K_REPORT_LOW_ACK_NUM_PKT	0xFFFF
+#define ATH12K_IS_UMAC_RESET_IN_PROGRESS        BIT(0)
+
+struct ath12k_mlo_dp_umac_reset {
+        atomic_t response_chip;
+        spinlock_t lock;
+        u8 umac_reset_info;
+        u8 initiator_chip;
+};
 
 /* Holds info on the group of devices that are registered as a single
  * wiphy, protected with struct ath12k_hw_group::mutex.
@@ -1197,6 +1208,7 @@ struct ath12k_hw_group {
 	u8 num_userpd_started;
 	struct work_struct reset_group_work;
 	u32 recovery_mode;
+	struct ath12k_mlo_dp_umac_reset mlo_umac_reset;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -1474,6 +1486,7 @@ struct ath12k_base {
 	u32 max_ml_peer_supported;
 	u32 max_ml_peer_ids;
 
+	struct ath12k_dp_umac_reset dp_umac_reset;
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -1611,6 +1624,12 @@ void ath12k_fw_stats_init(struct ath12k *ar);
 void ath12k_fw_stats_bcn_free(struct list_head *head);
 void ath12k_fw_stats_free(struct ath12k_fw_stats *stats);
 void ath12k_fw_stats_reset(struct ath12k *ar);
+irqreturn_t ath12k_umac_reset_interrupt_handler(int irq, void *arg);
+void ath12k_umac_reset_tasklet_handler(struct tasklet_struct *umac_cntxt);
+void ath12k_dp_umac_reset_handle(struct ath12k_base *ab);
+int ath12k_dp_umac_reset_init(struct ath12k_base *ab);
+void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab);
+void ath12k_umac_reset_completion(struct ath12k_base *ab);
 struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab,
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);

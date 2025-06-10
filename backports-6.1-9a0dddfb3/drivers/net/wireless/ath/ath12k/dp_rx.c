@@ -17,9 +17,9 @@
 #include "dp_mon.h"
 #include "debugfs_htt_stats.h"
 
-static size_t ath12k_dp_list_cut_nodes(struct list_head *list,
-				       struct list_head *head,
-				       size_t count)
+size_t ath12k_dp_list_cut_nodes(struct list_head *list,
+				struct list_head *head,
+				size_t count)
 {
 	struct list_head *cur;
 	struct ath12k_rx_desc_info *rx_desc;
@@ -1679,6 +1679,106 @@ ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
 	return ath12k_dp_arch_dump_fst_table(dp, buf, size);
+}
+
+void ath12k_dp_tid_cleanup(struct ath12k_base *ab)
+{
+        struct ath12k_dp_link_peer *peer;
+        struct ath12k_dp_rx_tid *rx_tid;
+        int tid;
+        void *vaddr;
+        u32 *addr_aligned;
+
+        spin_lock_bh(&ab->dp->dp_lock);
+        list_for_each_entry(peer, &ab->dp->peers, list) {
+                for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+                        rx_tid = &peer->dp_peer->rx_tid[tid];
+                        if (rx_tid->active) {
+                                vaddr = rx_tid->vaddr;
+                                addr_aligned = PTR_ALIGN(vaddr, HAL_LINK_DESC_ALIGN);
+                                ath12k_hal_reset_rx_reo_tid_q(&ab->hal, addr_aligned,
+                                                              rx_tid->ba_win_sz, tid);
+                        }
+                }
+        }
+        spin_unlock_bh(&ab->dp->dp_lock);
+}
+
+void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
+                                 const u8 *peer_mac)
+{
+       struct ath12k_dp_rx_tid *rx_tid;
+       struct ath12k_dp_link_peer *peer;
+       struct ath12k_dp *dp;
+       int ret = 0, tid;
+
+       dp = ath12k_ab_to_dp(ar->ab);
+       spin_lock_bh(&dp->dp_lock);
+
+       peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, peer_mac);
+       if (!peer) {
+               spin_unlock_bh(&dp->dp_lock);
+               ath12k_warn(ar->ab, "failed to find the peer to set up rx tid\n");
+               return;
+       }
+
+       for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+               rx_tid = &peer->dp_peer->rx_tid[tid];
+               if (!rx_tid->active)
+                       continue;
+
+               ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar,
+                                                           peer, rx_tid,
+                                                           rx_tid->ba_win_sz,
+                                                           0, false);
+               if (ret) {
+                       ath12k_warn(ar->ab, "failed to update reo for peer %pM rx tid %d\n",
+                                   peer_mac, tid);
+               }
+       }
+       spin_unlock_bh(&dp->dp_lock);
+}
+
+void ath12k_dp_tid_setup(void *data, struct ieee80211_sta *sta)
+{
+        struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+        struct ath12k *ar;
+        struct ath12k_base *ab = data;
+        struct ath12k_link_sta *arsta;
+        struct ath12k_link_vif *arvif;
+        u8 link_id;
+	unsigned long links_map;
+
+        if (sta->mlo)
+                return;
+
+	links_map = ahsta->links_map;
+        for_each_set_bit(link_id, &links_map,
+                         IEEE80211_MLD_MAX_NUM_LINKS) {
+                arsta = ahsta->link[link_id];
+                if (!arsta)
+                        continue;
+                arvif = arsta->arvif;
+                if (arvif && arvif->ar->ab == ab) {
+                        ar = arvif->ar;
+                        if (ar)
+                                ath12k_dp_peer_reo_tid_setup(ar, arvif->vdev_id,
+                                                     arsta->addr);
+                }
+        }
+}
+
+void ath12k_dp_peer_tid_setup(struct ath12k_base *ab)
+{
+        struct ath12k *ar;
+        int i;
+
+        for (i = 0; i <  ab->num_radios; i++) {
+                ar = ab->pdevs[i].ar;
+                ieee80211_iterate_stations_atomic(ar->ah->hw,
+                                                  ath12k_dp_tid_setup,
+                                                  ab);
+        }
 }
 
 void

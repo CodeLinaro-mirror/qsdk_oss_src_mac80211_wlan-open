@@ -246,6 +246,14 @@ void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst);
 void ath12k_dp_fst_core_map_init(struct ath12k_base *ab);
 void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
+size_t ath12k_dp_list_cut_nodes(struct list_head *list,
+				struct list_head *head, size_t count);
+void ath12k_dp_tid_cleanup(struct ath12k_base *ab);
+void ath12k_dp_peer_tid_setup(struct ath12k_base *ab);
+void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
+				  const u8 *peer_mac);
+void ath12k_dp_tid_setup(void *data, struct ieee80211_sta *sta);
+void ath12k_dp_reset_rx_reo_tid_q(void *vaddr, u32 ba_window_size, u8 tid);
 int
 ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
 					 struct ath12k_dp_htt_rxdma_ppe_cfg_param *param);

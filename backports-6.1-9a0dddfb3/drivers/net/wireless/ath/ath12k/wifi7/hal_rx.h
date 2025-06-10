@@ -970,5 +970,7 @@ void *ath12k_wifi7_hal_rx_flow_setup_fse(struct ath12k_base *ab,
 					 struct hal_rx_flow *flow);
 void ath12k_wifi7_hal_rx_flow_delete_entry(struct ath12k_base *ab,
 					   struct hal_rx_fse *hal_fse);
+void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
+					 u32 ba_window_size, u8 tid);
 void ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 #endif

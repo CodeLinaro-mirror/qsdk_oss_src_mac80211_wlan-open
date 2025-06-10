@@ -885,6 +885,19 @@ void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 	ath12k_hif_write32(ab, reg_addr, reg_val);
 }
 
+void ath12k_hal_srng_hw_disable(struct ath12k_base *ab,
+				struct hal_srng *srng)
+{
+	ab->hal.hal_ops->srng_hw_disable(ab, srng);
+}
+
+void ath12k_hal_reset_rx_reo_tid_q(struct ath12k_hal *hal,
+				   void *qdesc,
+				   u32 ba_window_size, u8 tid)
+{
+	hal->hal_ops->reset_rx_reo_tid_q(qdesc, ba_window_size, tid);
+}
+
 void ath12k_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 					       u32 ppeds_idx_map_val)
 {

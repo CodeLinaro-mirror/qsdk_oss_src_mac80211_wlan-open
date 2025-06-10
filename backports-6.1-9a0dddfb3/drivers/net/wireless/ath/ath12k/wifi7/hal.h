@@ -167,6 +167,9 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_REO1_AGING_THRESH_IX_2(hal)	((hal)->regs->hal_reo1_aging_thres_ix2)
 #define HAL_REO1_AGING_THRESH_IX_3(hal)	((hal)->regs->hal_reo1_aging_thres_ix3)
 
+#define HAL_REO1_RING_MISC_OFFSET \
+                (HAL_REO1_RING_MISC(hal) - HAL_REO1_RING_BASE_LSB(hal))
+
 #define HAL_REO1_REO2PPE_DST_VAL		0x2000
 #define HAL_REO1_REO2PPE_DST_INFO		0x00000cf0
 
@@ -627,4 +630,8 @@ void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 
 void ath12k_wifi7_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 						     u32 ppeds_idx_map_val);
+void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
+				      struct hal_srng *srng);
+void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
+					 u32 ba_window_size, u8 tid);
 #endif

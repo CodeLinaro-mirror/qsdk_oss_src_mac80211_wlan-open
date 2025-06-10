@@ -139,6 +139,9 @@
 #define ATH12K_HOST_AFC_QCN6432_MEM_OFFSET 0xD8000
 #define ATH12K_MIN_NUM_DEVICES_NLINK 4
 
+#define ATH12K_UMAC_RESET_IPC_IPQ5332   451
+#define ATH12K_UMAC_RESET_IPC_QCN6432   7
+
 enum ath12k_hw_rate_cck {
 	ATH12K_HW_RATE_CCK_LP_11M = 0,
 	ATH12K_HW_RATE_CCK_LP_5_5M,
@@ -190,6 +193,7 @@ struct ath12k_hw_ring_mask {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u8 wbm2sw6_ppeds_tx_cmpln[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 #endif
+	u8 umac_dp_reset[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 };
 
 enum ath12k_m3_fw_loaders {
@@ -295,6 +299,8 @@ struct ath12k_hw_params {
 	bool ftm_responder;
 	bool alloc_cacheable_memory;
 	bool credit_flow;
+	bool support_umac_reset;
+	u16 umac_reset_ipc;
 	bool is_plink_preferable;
 };
 

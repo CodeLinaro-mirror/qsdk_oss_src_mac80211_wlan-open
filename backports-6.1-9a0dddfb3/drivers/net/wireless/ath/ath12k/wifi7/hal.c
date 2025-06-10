@@ -690,3 +690,26 @@ ath12k_wifi7_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 		return HAL_RX_BUF_RBM_WBM_DEV0_IDLE_DESC_LIST;
 	}
 }
+
+void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
+				      struct hal_srng *srng)
+{
+	u32 reg_base, val, addr;
+	struct ath12k_hal *hal = &ab->hal;
+
+	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
+	if (srng->ring_dir == HAL_SRNG_DIR_SRC) {
+		if (srng->ring_id == HAL_SRNG_RING_ID_WBM_IDLE_LINK)
+			addr = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_IDLE_LINK_RING_MISC_ADDR(hal);
+		else
+			addr = reg_base + HAL_TCL1_RING_MISC_OFFSET(hal);
+		val = ath12k_hif_read32(ab, addr);
+		val &= ~HAL_TCL1_RING_MISC_SRNG_ENABLE;
+		ath12k_hif_write32(ab, addr, val);
+	} else {
+		val = ath12k_hif_read32(ab, reg_base + HAL_REO1_RING_MISC_OFFSET);
+		val &= ~HAL_REO1_RING_MISC_SRNG_ENABLE;
+		ath12k_hif_write32(ab , reg_base + HAL_REO1_RING_MISC_OFFSET, val);
+	}
+}
