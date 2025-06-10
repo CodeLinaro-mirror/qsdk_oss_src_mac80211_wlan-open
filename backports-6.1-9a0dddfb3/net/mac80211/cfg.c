@@ -4738,7 +4738,8 @@ ieee80211_update_mgmt_frame_registrations(struct wiphy *wiphy,
 		ieee80211_configure_filter(local);
 }
 
-static int ieee80211_set_antenna(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant)
+static int ieee80211_set_antenna(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant,
+				 u8 radio_id)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	int ret;
@@ -4746,7 +4747,7 @@ static int ieee80211_set_antenna(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant)
 	if (local->started)
 		return -EOPNOTSUPP;
 
-	ret = drv_set_antenna(local, tx_ant, rx_ant);
+	ret = drv_set_antenna(local, tx_ant, rx_ant, radio_id);
 	if (ret)
 		return ret;
 
@@ -4754,11 +4755,12 @@ static int ieee80211_set_antenna(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant)
 	return 0;
 }
 
-static int ieee80211_get_antenna(struct wiphy *wiphy, u32 *tx_ant, u32 *rx_ant)
+static int ieee80211_get_antenna(struct wiphy *wiphy, u32 *tx_ant, u32 *rx_ant,
+				 u8 radio_id)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 
-	return drv_get_antenna(local, tx_ant, rx_ant);
+	return drv_get_antenna(local, tx_ant, rx_ant, radio_id);
 }
 
 static int ieee80211_set_rekey_data(struct wiphy *wiphy,

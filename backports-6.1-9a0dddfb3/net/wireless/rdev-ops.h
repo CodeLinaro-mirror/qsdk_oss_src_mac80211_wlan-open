@@ -860,21 +860,21 @@ rdev_update_mgmt_frame_registrations(struct cfg80211_registered_device *rdev,
 }
 
 static inline int rdev_set_antenna(struct cfg80211_registered_device *rdev,
-				   u32 tx_ant, u32 rx_ant)
+				   u32 tx_ant, u32 rx_ant, u8 radio_id)
 {
 	int ret;
 	trace_rdev_set_antenna(&rdev->wiphy, tx_ant, rx_ant);
-	ret = rdev->ops->set_antenna(&rdev->wiphy, tx_ant, rx_ant);
+	ret = rdev->ops->set_antenna(&rdev->wiphy, tx_ant, rx_ant, radio_id);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
 
 static inline int rdev_get_antenna(struct cfg80211_registered_device *rdev,
-				   u32 *tx_ant, u32 *rx_ant)
+				   u32 *tx_ant, u32 *rx_ant, u8 radio_id)
 {
 	int ret;
 	trace_rdev_get_antenna(&rdev->wiphy);
-	ret = rdev->ops->get_antenna(&rdev->wiphy, tx_ant, rx_ant);
+	ret = rdev->ops->get_antenna(&rdev->wiphy, tx_ant, rx_ant, radio_id);
 	if (ret)
 		trace_rdev_return_int(&rdev->wiphy, ret);
 	else

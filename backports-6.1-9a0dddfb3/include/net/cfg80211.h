@@ -5116,8 +5116,9 @@ struct cfg80211_ops {
 						   struct wireless_dev *wdev,
 						   struct mgmt_frame_regs *upd);
 
-	int	(*set_antenna)(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant);
-	int	(*get_antenna)(struct wiphy *wiphy, u32 *tx_ant, u32 *rx_ant);
+	int	(*set_antenna)(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant, u8 radio_id);
+	int	(*get_antenna)(struct wiphy *wiphy, u32 *tx_ant, u32 *rx_ant,
+			       u8 radio_id);
 
 	int	(*sched_scan_start)(struct wiphy *wiphy,
 				struct net_device *dev,
@@ -5880,6 +5881,12 @@ struct wiphy_radio_freq_range {
  * @n_iface_combinations: number of entries in @iface_combinations array.
  *
  * @antenna_mask: bitmask of antennas connected to this radio.
+ *
+ * @available_antennas_tx: bitmap of antennas which are available to be
+ * configured as TX antennas for a particular radio.
+ *
+ * @available_antennas_rx: bitmap of antennas which are available to be
+ * configured as RX antennas for a particular radio.
  */
 struct wiphy_radio {
 	const struct wiphy_radio_freq_range *freq_range;
@@ -5889,6 +5896,8 @@ struct wiphy_radio {
 	int n_iface_combinations;
 
 	u32 antenna_mask;
+	u32 available_antennas_tx;
+	u32 available_antennas_rx;
 };
 
 #define CFG80211_HW_TIMESTAMP_ALL_PEERS	0xffff

@@ -4878,8 +4878,10 @@ struct ieee80211_ops {
 	void (*channel_switch)(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif,
 			       struct ieee80211_channel_switch *ch_switch);
-	int (*set_antenna)(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant);
-	int (*get_antenna)(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant);
+	int (*set_antenna)(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
+			   u8 radio_id);
+	int (*get_antenna)(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
+			   u8 radio_id);
 
 	int (*remain_on_channel)(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,

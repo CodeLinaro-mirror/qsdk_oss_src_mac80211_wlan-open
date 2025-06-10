@@ -2619,6 +2619,7 @@ static int nl80211_put_radio(struct wiphy *wiphy, struct sk_buff *msg, int idx)
 {
 	const struct wiphy_radio *r = &wiphy->radio[idx];
 	const struct wiphy_radio_cfg *rcfg = &wiphy->radio_cfg[idx];
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 	struct nlattr *radio, *freq;
 	int i;
 
@@ -2651,6 +2652,30 @@ static int nl80211_put_radio(struct wiphy *wiphy, struct sk_buff *msg, int idx)
 			goto nla_put_failure;
 
 		nla_nest_end(msg, freq);
+	}
+
+	if (nla_put_u32(msg, NL80211_WIPHY_RADIO_ATTR_ANTENNA_AVAIL_TX,
+			r->available_antennas_tx) ||
+	    nla_put_u32(msg, NL80211_WIPHY_RADIO_ATTR_ANTENNA_AVAIL_RX,
+			r->available_antennas_rx))
+		goto nla_put_failure;
+
+	if ((r->available_antennas_tx ||
+	     r->available_antennas_rx) && rdev->ops->get_antenna) {
+		u32 tx_ant = 0, rx_ant = 0;
+		int res;
+
+		res = rdev_get_antenna(rdev, &tx_ant, &rx_ant, idx);
+
+		if (!res) {
+			if (nla_put_u32(msg,
+					NL80211_WIPHY_RADIO_ATTR_ANTENNA_TX,
+					tx_ant) ||
+			    nla_put_u32(msg,
+					NL80211_WIPHY_RADIO_ATTR_ANTENNA_RX,
+					rx_ant))
+				goto nla_put_failure;
+		}
 	}
 
 	for (i = 0; i < r->n_iface_combinations; i++)
@@ -2815,7 +2840,7 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 			u32 tx_ant = 0, rx_ant = 0;
 			int res;
 
-			res = rdev_get_antenna(rdev, &tx_ant, &rx_ant);
+			res = rdev_get_antenna(rdev, &tx_ant, &rx_ant, -1);
 			if (!res) {
 				if (nla_put_u32(msg,
 						NL80211_ATTR_WIPHY_ANTENNA_TX,
@@ -4088,7 +4113,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		tx_ant = tx_ant & rdev->wiphy.available_antennas_tx;
 		rx_ant = rx_ant & rdev->wiphy.available_antennas_rx;
 
-		result = rdev_set_antenna(rdev, tx_ant, rx_ant);
+		result = rdev_set_antenna(rdev, tx_ant, rx_ant, radio_id);
 		if (result)
 			return result;
 	}

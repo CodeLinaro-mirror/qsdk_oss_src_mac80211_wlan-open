@@ -8432,6 +8432,30 @@ enum nl80211_ap_settings_flags {
  * @NL80211_WIPHY_RADIO_ATTR_ANTENNA_MASK: bitmask (u32) of antennas
  *	connected to this radio.
  * @NL80211_WIPHY_RADIO_ATTR_RTS_THRESHOLD: RTS threshold (u32) of this radio.
+ * @NL80211_WIPHY_RADIO_ATTR_ANTENNA_TX: Bitmap of allowed antennas for transmitting.
+ *	This can be used to mask out antennas which are not attached or should
+ *	not be used for transmitting. If an antenna is not selected in this
+ *	bitmap the hardware is not allowed to transmit on this antenna.
+ *
+ *	Each bit represents one antenna, starting with antenna 1 at the first
+ *	bit. Depending on which antennas are selected in the bitmap, 802.11n
+ *	drivers can derive which chainmasks to use (if all antennas belonging to
+ *	a particular chain are disabled this chain should be disabled) and if
+ *	a chain has diversity antennas whether diversity should be used or not.
+ *	HT capabilities (STBC, TX Beamforming, Antenna selection) can be
+ *	derived from the available chains after applying the antenna mask.
+ *	Non-802.11n drivers can derive whether to use diversity or not.
+ *	Drivers may reject configurations or RX/TX mask combinations they cannot
+ *	support by returning -EINVAL.
+ * @NL80211_WIPHY_RADIO_ATTR_ANTENNA_RX: Bitmap of allowed antennas for receiving.
+ *	This can be used to mask out antennas which are not attached or should
+ *	not be used for receiving. If an antenna is not selected in this bitmap
+ *	the hardware should not be configured to receive on this antenna.
+ *	For a more detailed description see @NL80211_ATTR_WIPHY_ANTENNA_TX.
+ * @NL80211_WIPHY_RADIO_ATTR_ANTENNA_AVAIL_TX: Bitmap of antennas which are available
+ *	for configuration as TX antennas via the above parameters.
+ * @NL80211_WIPHY_RADIO_ATTR_ANTENNA_AVAIL_RX: Bitmap of antennas which are available
+ *	for configuration as RX antennas via the above parameters.
  *
  * @__NL80211_WIPHY_RADIO_ATTR_LAST: Internal
  * @NL80211_WIPHY_RADIO_ATTR_MAX: Highest attribute
@@ -8444,6 +8468,10 @@ enum nl80211_wiphy_radio_attrs {
 	NL80211_WIPHY_RADIO_ATTR_INTERFACE_COMBINATION,
 	NL80211_WIPHY_RADIO_ATTR_ANTENNA_MASK,
 	NL80211_WIPHY_RADIO_ATTR_RTS_THRESHOLD,
+	NL80211_WIPHY_RADIO_ATTR_ANTENNA_TX,
+	NL80211_WIPHY_RADIO_ATTR_ANTENNA_RX,
+	NL80211_WIPHY_RADIO_ATTR_ANTENNA_AVAIL_TX,
+	NL80211_WIPHY_RADIO_ATTR_ANTENNA_AVAIL_RX,
 
 	/* keep last */
 	__NL80211_WIPHY_RADIO_ATTR_LAST,
