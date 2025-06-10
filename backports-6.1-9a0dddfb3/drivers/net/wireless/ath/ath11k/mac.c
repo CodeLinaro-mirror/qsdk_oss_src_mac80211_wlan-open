@@ -7054,7 +7054,8 @@ static void ath11k_mac_op_configure_filter(struct ieee80211_hw *hw,
 	mutex_unlock(&ar->conf_mutex);
 }
 
-static int ath11k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant)
+static int ath11k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant,
+				     u32 *rx_ant, u8 radio_id)
 {
 	struct ath11k *ar = hw->priv;
 
@@ -7068,7 +7069,8 @@ static int ath11k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *
 	return 0;
 }
 
-static int ath11k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant)
+static int ath11k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant,
+				     u32 rx_ant, u8 radio_id)
 {
 	struct ath11k *ar = hw->priv;
 	int ret;
