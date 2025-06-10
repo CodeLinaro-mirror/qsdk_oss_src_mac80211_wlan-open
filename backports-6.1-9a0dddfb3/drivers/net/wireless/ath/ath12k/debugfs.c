@@ -585,8 +585,10 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 {
 	struct ath12k_base *ab = file->private_data;
 	struct ath12k_device_dp_stats *device_stats = &ab->dp->device_stats;
-	int len = 0, i, retval;
+	int len = 0, i, j, retval;
 	const int size = 4096;
+	int tx_enqueued[DP_TCL_NUM_RING_MAX];
+	int non_fast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];
 	static const char *rxdma_err[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX] = {
 			"Overflow", "MPDU len", "FCS", "Decrypt", "TKIP MIC",
 			"Unencrypt", "MSDU len", "MSDU limit", "WiFi parse",
@@ -607,6 +609,72 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	buf = kzalloc(size, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+	       tx_enqueued[i] = device_stats->tx_mcast[i] + device_stats->tx_unicast[i] +
+		                 device_stats->tx_eapol[i] + device_stats->tx_null_frame[i];
+
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		for (j = 0; j < ATH12K_MAX_SOCS; j++)
+			non_fast_rx[i][j] = device_stats->non_fast_unicast_rx[i][j] +
+				            device_stats->non_fast_mcast_rx[i][j] +
+					    device_stats->eapol_rx[i][j];
+	}
+
+	len += scnprintf(buf + len, size - len, "SOC TX STATS:\n");
+
+	len += scnprintf(buf + len, size - len,
+		         "tx_enqueued: 0:%u 1:%u 2:%u 3:%u\n",
+			 tx_enqueued[0],
+	                 tx_enqueued[1],
+		         tx_enqueued[2],
+			 tx_enqueued[3]);
+
+	len += scnprintf(buf + len, size - len,
+			 "\ntx_wbm_rel_source: 0:%u 1:%u 2:%u 3:%u 4:%u\n",
+			 device_stats->tx_wbm_rel_source[0],
+			 device_stats->tx_wbm_rel_source[1],
+			 device_stats->tx_wbm_rel_source[2],
+			 device_stats->tx_wbm_rel_source[3],
+			 device_stats->tx_wbm_rel_source[4]);
+
+	len += scnprintf(buf + len, size - len,
+	                 "\ntx_multicast: 0:%u 1:%u 2:%u 3:%u",
+		         device_stats->tx_mcast[0],
+			 device_stats->tx_mcast[1],
+	                 device_stats->tx_mcast[2],
+		         device_stats->tx_mcast[3]);
+
+	len += scnprintf(buf + len, size - len,
+		         "\ntx_unicast: 0:%u 1:%u 2:%u 3:%u",
+			 device_stats->tx_unicast[0],
+	                 device_stats->tx_unicast[1],
+		         device_stats->tx_unicast[2],
+			 device_stats->tx_unicast[3]);
+
+	len += scnprintf(buf + len, size - len,
+		         "\ntx_eapol: 0:%u 1:%u 2:%u 3:%u",
+			 device_stats->tx_eapol[0],
+	                 device_stats->tx_eapol[1],
+		         device_stats->tx_eapol[2],
+			 device_stats->tx_eapol[3]);
+
+	len += scnprintf(buf + len, size - len,
+		         "\ntx_null_frame: 0:%u 1:%u 2:%u 3:%u",
+			 device_stats->tx_null_frame[0],
+	                 device_stats->tx_null_frame[1],
+		         device_stats->tx_null_frame[2],
+			 device_stats->tx_null_frame[3]);
+
+	len += scnprintf(buf + len, size - len, "\nTCL Ring Full Failures:\n");
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
+				 i, device_stats->tx_err.desc_na[i]);
+
+	len += scnprintf(buf + len, size - len,
+			 "\nMisc Transmit Failures: %d\n",
+			 atomic_read(&device_stats->tx_err.misc_fail));
 
 	len += scnprintf(buf + len, size - len, "SOC RX STATS:\n\n");
 	len += scnprintf(buf + len, size - len, "err ring pkts: %u\n",
@@ -632,16 +700,6 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 device_stats->hal_reo_error[3]);
 
 
-	len += scnprintf(buf + len, size - len, "\nSOC TX STATS:\n");
-	len += scnprintf(buf + len, size - len,
-			"\ntx_wbm_rel_source: 0:%u 1:%u 2:%u 3:%u 4:%u\n",
-			device_stats->tx_wbm_rel_source[0],
-			device_stats->tx_wbm_rel_source[1],
-			device_stats->tx_wbm_rel_source[2],
-			device_stats->tx_wbm_rel_source[3],
-			device_stats->tx_wbm_rel_source[4]);
-
-	len += scnprintf(buf + len, size - len, "\nSOC RX STATS:\n");
 	len += scnprintf(buf + len, size - len, "\nREO Rx Received:\n");
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
@@ -664,11 +722,42 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\nREO Non-Fast Rx:\n");
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		len += scnprintf(buf + len, size - len,
-				 "Ring%d: 0:%u\t1:%u\t2:%u\n",
+			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
 				 i + 1,
-				 device_stats->non_fast_rx[i][0],
-				 device_stats->non_fast_rx[i][1],
-				 device_stats->non_fast_rx[i][2]);
+	                         non_fast_rx[i][0],
+		                 non_fast_rx[i][1],
+			         non_fast_rx[i][2]);
+
+	len += scnprintf(buf + len, size - len, "\nMcast Non-Fast Rx:\n");
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len,
+			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
+				 i + 1,
+		                 device_stats->non_fast_mcast_rx[i][0],
+			         device_stats->non_fast_mcast_rx[i][1],
+				 device_stats->non_fast_mcast_rx[i][2]);
+
+	len += scnprintf(buf + len, size - len, "\nUnicast Non-Fast Rx:\n");
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len,
+			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
+				 i + 1,
+	                         device_stats->non_fast_unicast_rx[i][0],
+		                 device_stats->non_fast_unicast_rx[i][1],
+			         device_stats->non_fast_unicast_rx[i][2]);
+
+	len += scnprintf(buf + len, size - len, "\nEapol Rx:\n");
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len,
+			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
+				 i + 1,
+	                         device_stats->eapol_rx[i][0],
+		                 device_stats->eapol_rx[i][1],
+			         device_stats->eapol_rx[i][2]);
+
+	len += scnprintf(buf + len, size - len, "\nNull frame Rx: %u Rx dropped: %u\n",
+			 device_stats->rx_pkt_null_frame_handled,
+			 device_stats->rx_pkt_null_frame_dropped);
 
 	len += scnprintf(buf + len, size - len, "\nRx WBM REL SRC Errors:\n");
 	for (i = 0; i < HAL_WBM_REL_SRC_MODULE_MAX; i++)
@@ -682,16 +771,6 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len,
 			 "\nFIRST/LAST MSDU BIT MISSING COUNT: %u\n",
 			 device_stats->first_and_last_msdu_bit_miss);
-
-	len += scnprintf(buf + len, size - len, "\nTCL Ring Full Failures:\n");
-
-	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
-		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
-				 i, device_stats->tx_err.desc_na[i]);
-
-	len += scnprintf(buf + len, size - len,
-			 "\nMisc Transmit Failures: %d\n",
-			 atomic_read(&device_stats->tx_err.misc_fail));
 
 	if (len > size)
 		len = size;

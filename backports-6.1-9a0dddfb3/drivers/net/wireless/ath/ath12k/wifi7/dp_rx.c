@@ -1187,6 +1187,32 @@ free_out:
 	return ret;
 }
 
+static void ath12k_soc_dp_rx_stats(struct ath12k *ar, struct sk_buff *msdu,
+				   struct hal_rx_desc_data *rx_desc_data,
+				   int ring_id)
+{
+	struct ieee80211_hdr *hdr;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp_rx_rfc1042_hdr *llc;
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
+	size_t hdr_len;
+
+	if (rx_desc_data->is_mcbc) {
+		ab->dp->device_stats.non_fast_mcast_rx[ring_id][ar->ab->device_id]++;
+	} else if (rx_desc_data->decap == DP_RX_DECAP_TYPE_NATIVE_WIFI) {
+		hdr = (struct ieee80211_hdr *)msdu->data;
+		hdr_len = ieee80211_hdrlen(hdr->frame_control);
+		llc = (struct ath12k_dp_rx_rfc1042_hdr *)(msdu->data + hdr_len);
+		if (llc->snap_type == cpu_to_be16(ETH_P_PAE))
+			ab->dp->device_stats.eapol_rx[ring_id][ar->ab->device_id]++;
+	} else if (rx_desc_data->decap == DP_RX_DECAP_TYPE_ETHERNET2_DIX &&
+		   rxcb->is_eapol) {
+			ab->dp->device_stats.eapol_rx[ring_id][ar->ab->device_id]++;
+	} else {
+		ab->dp->device_stats.non_fast_unicast_rx[ring_id][ar->ab->device_id]++;
+	}
+}
+
 static void
 ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 					    struct napi_struct *napi,
@@ -1251,8 +1277,10 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 		}
 
 		if (!fast_rx) {
-			ar->ab->dp->device_stats.non_fast_rx[ring_id][ar->ab->device_id]++;
-			ath12k_dp_rx_deliver_msdu(dp_pdev, napi, msdu, &rx_status, &rx_desc_data);
+			if (!ar->ab->stats_disable)
+			        ath12k_soc_dp_rx_stats(ar, msdu, &rx_desc_data, ring_id);
+			ath12k_dp_rx_deliver_msdu(dp_pdev, napi, msdu, &rx_status,
+						  &rx_desc_data);
 		} else {
 			ar->ab->dp->device_stats.fast_rx[ring_id][ar->ab->device_id]++;
 		}

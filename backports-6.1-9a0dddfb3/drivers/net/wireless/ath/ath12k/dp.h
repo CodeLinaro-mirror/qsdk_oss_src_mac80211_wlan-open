@@ -35,6 +35,7 @@ struct dp_rx_fst;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
+#define MAX_TCL_RING		    4
 
 struct dp_rxdma_mon_ring {
 	struct dp_srng refill_buf_ring;
@@ -531,11 +532,19 @@ struct ath12k_device_dp_stats {
 	u32 tx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX];
 	u32 rx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX] [ATH12K_MAX_SOCS];
 	u32 reo_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
+	u32 non_fast_unicast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];
+	u32 non_fast_mcast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];
+	u32 eapol_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];
 	u32 first_and_last_msdu_bit_miss;
 	u32 fast_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
-	u32 non_fast_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
 	struct ath12k_device_dp_tx_err_stats tx_err;
 	struct ath12k_dp_ring_bp_stats bp_stats;
+	u32 tx_mcast[MAX_TCL_RING];
+	u32 tx_unicast[MAX_TCL_RING];
+	u32 tx_eapol[MAX_TCL_RING];
+	u32 tx_null_frame[MAX_TCL_RING];
+	u32 rx_pkt_null_frame_dropped;
+	u32 rx_pkt_null_frame_handled;
 };
 
 #define ATH12K_DP_MIN_FST_CORE_MASK 0x1

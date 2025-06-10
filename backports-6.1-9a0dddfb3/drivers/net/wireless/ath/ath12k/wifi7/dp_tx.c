@@ -405,6 +405,15 @@ skip_htt_metadata:
 	}
 
 	spin_lock_bh(&arvif->link_stats_lock);
+	if (is_mcast)
+		ab->dp->device_stats.tx_mcast[ti.ring_id]++;
+	else if (skb->protocol == cpu_to_be16(ETH_P_PAE))
+		ab->dp->device_stats.tx_eapol[ti.ring_id]++;
+	else if (is_null)
+		ab->dp->device_stats.tx_null_frame[ti.ring_id]++;
+	else
+		ab->dp->device_stats.tx_unicast[ti.ring_id]++;
+
 	arvif->link_stats.tx_encap_type[ti.encap_type]++;
 	arvif->link_stats.tx_encrypt_type[ti.encrypt_type]++;
 	arvif->link_stats.tx_desc_type[ti.type]++;

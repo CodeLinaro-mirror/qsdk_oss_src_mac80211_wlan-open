@@ -8814,6 +8814,7 @@ skip_mgmt_stats:
 			    ieee80211_has_a4(hdr->frame_control);
 
 	if (ieee80211_is_data(hdr->frame_control) && !is_4addr_null_pkt) {
+		ab->dp->device_stats.rx_pkt_null_frame_dropped++;
 		dev_kfree_skb(skb);
 		goto exit;
 	}
@@ -8835,6 +8836,7 @@ skip_mgmt_stats:
 			status->link_id = arsta->link_id;
 		}
 		spin_unlock_bh(&ab->base_lock);
+		ab->dp->device_stats.rx_pkt_null_frame_handled++;
 		ieee80211_rx_napi(ar->ah->hw, pubsta, skb, NULL);
 		goto exit;
 	}
