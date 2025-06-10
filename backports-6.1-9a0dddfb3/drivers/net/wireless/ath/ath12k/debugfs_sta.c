@@ -763,7 +763,7 @@ static ssize_t ath12k_dbg_sta_dump_rx_stats(struct file *file,
 		return -ENOENT;
 	}
 
-	u8 *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
+	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	if (!buf) {
 		spin_unlock_bh(&dp->dp_lock);
 		wiphy_unlock(ah->hw->wiphy);

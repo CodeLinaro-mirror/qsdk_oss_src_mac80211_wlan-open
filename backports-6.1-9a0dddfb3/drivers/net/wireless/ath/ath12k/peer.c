@@ -8,7 +8,6 @@
 #include "peer.h"
 #include "dp_peer.h"
 #include "debug.h"
-#include "debugfs.h"
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 #include "ppe.h"
 #endif
@@ -203,16 +202,6 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			    "failed to send peer create vdev_id %d ret %d\n",
 			    arg->vdev_id, ret);
 		return ret;
-	}
-
-	if (ath12k_debugfs_is_extd_rx_stats_enabled(ar) &&
-				!peer->peer_stats.rx_stats) {
-		peer->peer_stats.rx_stats = kzalloc(sizeof(*peer->peer_stats.rx_stats),
-				GFP_ATOMIC);
-		if (!peer->peer_stats.rx_stats) {
-			kfree(peer);
-			return -ENOMEM;
-		}
 	}
 
 	ret = ath12k_wait_for_peer_created(ar, arg->vdev_id,

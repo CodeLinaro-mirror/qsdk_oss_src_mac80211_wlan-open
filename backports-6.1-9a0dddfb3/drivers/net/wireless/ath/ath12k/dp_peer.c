@@ -7,6 +7,7 @@
 #include "core.h"
 #include "dp_peer.h"
 #include "debug.h"
+#include "debugfs.h"
 
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_vdev_id_and_addr(struct ath12k_dp *dp,
@@ -187,7 +188,6 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id)
 	ath12k_dbg(ab, ATH12K_DBG_PEER, "htt peer unmap vdev %d peer %pM id %d\n",
 		   peer->vdev_id, peer->addr, peer_id);
 
-	kfree(peer->peer_stats.rx_stats);
 	list_del(&peer->list);
 	kfree(peer);
 	wake_up(&ab->peer_mapping_wq);
@@ -627,6 +627,11 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			      u32_encode_bits(peer->peer_id, HTT_TCL_META_DATA_PEER_ID);
 	peer->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
 
+	if (ath12k_debugfs_is_extd_rx_stats_enabled(dp_pdev->ar) &&
+				!peer->peer_stats.rx_stats) {
+		peer->peer_stats.rx_stats = kzalloc(sizeof(*peer->peer_stats.rx_stats), GFP_ATOMIC);
+	}
+
 	dp_peer->hw_links[peer->hw_link_id] = link_id;
 
 	peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
@@ -681,6 +686,9 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
 
 	spin_unlock_bh(&dp_hw->peer_lock);
+
+	if (peer->peer_stats.rx_stats)
+		kfree(peer->peer_stats.rx_stats);
 
 	ath12k_dp_link_peer_rhash_delete(dp, peer);
 
