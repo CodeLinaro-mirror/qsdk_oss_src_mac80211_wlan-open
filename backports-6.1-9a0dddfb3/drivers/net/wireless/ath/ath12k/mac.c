@@ -12545,7 +12545,8 @@ void ath12k_mac_op_configure_filter(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_configure_filter);
 
-int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant)
+int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
+			      u8 radio_id)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	int antennas_rx = 0, antennas_tx = 0;
@@ -12555,6 +12556,8 @@ int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant)
 	lockdep_assert_wiphy(hw->wiphy);
 
 	for_each_ar(ah, ar, i) {
+		if ((radio_id != 255) && (radio_id != i))
+			continue;
 		antennas_rx = max_t(u32, antennas_rx, ar->cfg_rx_chainmask);
 		antennas_tx = max_t(u32, antennas_tx, ar->cfg_tx_chainmask);
 	}
@@ -12570,7 +12573,8 @@ int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant)
 }
 EXPORT_SYMBOL(ath12k_mac_op_get_antenna);
 
-int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant)
+int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
+			      u8 radio_id)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k *ar;
@@ -12580,6 +12584,8 @@ int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant)
 	lockdep_assert_wiphy(hw->wiphy);
 
 	for_each_ar(ah, ar, i) {
+		if ((radio_id != 255) && (radio_id != i))
+			continue;
 		ret = __ath12k_set_antenna(ar, tx_ant, rx_ant);
 		if (ret)
 			break;
@@ -17076,6 +17082,8 @@ static int ath12k_mac_setup_iface_combinations(struct ath12k_hw *ah)
 	struct ieee80211_iface_combination *combinations, *comb;
 	struct wiphy *wiphy = ah->hw->wiphy;
 	struct wiphy_radio *radio;
+	struct ath12k_pdev_cap *cap;
+	struct ath12k_pdev *pdev;
 	struct ath12k *ar;
 	int i, ret;
 
@@ -17123,6 +17131,12 @@ static int ath12k_mac_setup_iface_combinations(struct ath12k_hw *ah)
 
 		radio[i].iface_combinations = comb;
 		radio[i].n_iface_combinations = 1;
+		/* Save per radio tx/rx chainmask */
+		pdev = ar->pdev;
+		cap = &pdev->cap;
+		radio[i].available_antennas_tx = cap->tx_chain_mask;
+		radio[i].available_antennas_rx = cap->rx_chain_mask;
+
 	}
 
 	ret = ath12k_mac_setup_global_iface_comb(ah, radio, ah->num_radio, combinations);
