@@ -9970,7 +9970,7 @@ static void ath12k_mac_setup_ht_vht_cap(struct ath12k *ar,
 					struct ath12k_pdev_cap *cap,
 					u32 *ht_cap_info)
 {
-	struct ieee80211_supported_band *band;
+	struct ieee80211_supported_band *band, *band_wiphy;
 	u32 rate_cap_tx_chainmask;
 	u32 rate_cap_rx_chainmask;
 	u32 ht_cap;
@@ -9980,6 +9980,7 @@ static void ath12k_mac_setup_ht_vht_cap(struct ath12k *ar,
 
 	if (cap->supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
 		band = &ar->mac.sbands[NL80211_BAND_2GHZ];
+		band_wiphy = ar->ah->hw->wiphy->bands[NL80211_BAND_2GHZ];
 		ht_cap = cap->band[NL80211_BAND_2GHZ].ht_cap_info;
 		if (ht_cap_info)
 			*ht_cap_info = ht_cap;
@@ -9987,6 +9988,14 @@ static void ath12k_mac_setup_ht_vht_cap(struct ath12k *ar,
 						    rate_cap_rx_chainmask);
 		band->vht_cap = ath12k_create_vht_cap(ar, rate_cap_tx_chainmask,
 						    rate_cap_rx_chainmask);
+		/* Update wiphy sband info if sband structure is set/cleared */
+		if (band != band_wiphy) {
+			band_wiphy->ht_cap =  band->ht_cap;
+			band_wiphy->vht_cap = band->vht_cap;
+			/* set/clear the value if it was duped */
+			band_wiphy->vht_cap.vht_mcs.tx_highest ^=
+				cpu_to_le16(IEEE80211_VHT_EXT_NSS_BW_CAPABLE);
+		}
 	}
 
 	if (cap->supported_bands & WMI_HOST_WLAN_5GHZ_CAP &&
