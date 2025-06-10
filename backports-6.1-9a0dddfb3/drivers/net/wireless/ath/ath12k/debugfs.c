@@ -679,6 +679,10 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 		                device_stats->rx_wbm_rel_source[i][1],
 			        device_stats->rx_wbm_rel_source[i][2]);
 
+	len += scnprintf(buf + len, size - len,
+			 "\nFIRST/LAST MSDU BIT MISSING COUNT: %u\n",
+			 device_stats->first_and_last_msdu_bit_miss);
+
 	len += scnprintf(buf + len, size - len, "\nTCL Ring Full Failures:\n");
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)

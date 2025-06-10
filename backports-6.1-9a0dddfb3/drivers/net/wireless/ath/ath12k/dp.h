@@ -516,6 +516,7 @@ struct ath12k_device_dp_stats {
 	u32 tx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX];
 	u32 rx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX] [ATH12K_MAX_SOCS];
 	u32 reo_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
+	u32 first_and_last_msdu_bit_miss;
 	u32 fast_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
 	u32 non_fast_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
 	struct ath12k_device_dp_tx_err_stats tx_err;

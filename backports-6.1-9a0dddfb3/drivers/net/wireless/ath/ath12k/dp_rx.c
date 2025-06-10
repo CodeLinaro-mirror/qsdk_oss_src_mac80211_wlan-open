@@ -232,7 +232,8 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 
 	if (!rxcb->is_first_msdu ||
 	    !(rxcb->is_first_msdu && rxcb->is_last_msdu)) {
-		WARN_ON_ONCE(1);
+		/* TODO: Change below stats increment back to WARN_ON_ONCE(1) */
+		dp_pdev->dp->device_stats.first_and_last_msdu_bit_miss++;
 		return;
 	}
 
