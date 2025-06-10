@@ -172,6 +172,13 @@ struct wmi_vdev_set_tpc_power_cmd {
 #define WMI_VHT_CAP_TX_FIXED_ANT		0x20000000
 
 #define WMI_VHT_CAP_MAX_MPDU_LEN_11454		0x00000002
+#define ATH12K_WMI_SUBID_PERIODICITY_1_SEC     1000
+
+#define WMI_AC_BE                               0
+#define WMI_AC_BK                               1
+#define WMI_AC_VI                               2
+#define WMI_AC_VO                               3
+#define WMI_AC_MAX                              4
 
 /* These macros should be used when we wish to advertise STBC support for
  * only 1SS or 2SS or 3SS.
@@ -2102,6 +2109,9 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_SRG_OBSS_BSSID_ENABLE_BITMAP_CMD,
 	WMI_TAG_PDEV_NON_SRG_OBSS_COLOR_ENABLE_BITMAP_CMD,
 	WMI_TAG_PDEV_NON_SRG_OBSS_BSSID_ENABLE_BITMAP_CMD,
+	/* TODO add all the missing cmds */
+	WMI_CTRL_PATH_STATS_CMD_FIXED_PARAM =
+		WMI_TAG_PDEV_NON_SRG_OBSS_BSSID_ENABLE_BITMAP_CMD + 4,
 	WMI_TAG_CTRL_PATH_STATS_CMD_FIXED_PARAM = 0x388,
 	WMI_TAG_CTRL_PATH_STATS_EV_FIXED_PARAM,
 	WMI_TAG_CTRL_PATH_PDEV_STATS,
@@ -2163,6 +2173,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_LINK_REMOVAL_TBTT_UPDATE,
 	WMI_TAG_MLO_LINK_REMOVAL_EVENT_FIXED_PARAM,
 	WMI_TAG_MLO_LINK_REMOVAL_CMD_FIXED_PARAM = 0x464,
+	WMI_CTRL_PATH_PMLO_STATS = 0x479,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_FIXED_PARAM = 0x4a3,
 	WMI_TAG_MLO_NEW_PRIMARY_LINK_PEER_INFO = 0x4a4,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_COMPL_FIXED_PARAM = 0x4a5,
@@ -2712,6 +2723,32 @@ struct wmi_init_cmd {
 	__le32 tlv_header;
 	struct ath12k_wmi_abi_version_params host_abi_vers;
 	__le32 num_host_mem_chunks;
+} __packed;
+
+struct wmi_ctrl_path_pmlo_telemetry_stats {
+       __le32 pdev_id;
+       __le32 dl_inbss_airtime_per_ac;
+       __le32 ul_inbss_airtime_per_ac;
+       union {
+               struct {
+                       __le32 estimated_air_time_ac_be: 8,
+                              estimated_air_time_ac_bk: 8,
+                              estimated_air_time_ac_vi: 8,
+                              estimated_air_time_ac_vo: 8;
+               };
+               __le32 estimated_air_time_per_ac;
+       };
+       __le32 avg_chan_lat_per_ac[WMI_AC_MAX];
+       __le32 link_obss_airtime : 8,
+              link_idle_airtime : 8,
+              ul_inbss_airtime_non_ac : 8,
+              dl_inbss_airtime_non_ac : 8;
+       __le32 traffic_condition_used_per_ac[WMI_AC_MAX];
+       __le32 payload_ratio_dl_per_ac;
+       __le32 payload_ratio_ul_per_ac;
+       __le32 error_margin_per_ac[WMI_AC_MAX];
+       __le32 num_of_dl_asymmetric_clients_per_ac[WMI_AC_MAX];
+       __le32 num_of_ul_asymmetric_clients_per_ac[WMI_AC_MAX];
 } __packed;
 
 /* WMI_RSRC_CFG_FLAGS2_FW_AST_INDICATION_DISABLE - Flag to indicate
@@ -7415,6 +7452,7 @@ enum  wmi_ctrl_path_stats_id {
 	WMI_REQ_CTRL_PATH_AWGN_STAT		= 7,
  	WMI_REQ_CTRL_PATH_BTCOEX_STAT		= 8,
 	WMI_REQ_CTRL_PATH_AFC_STAT       	= 11,
+	WMI_REQ_CTRL_PATH_PMLO_STAT             = 12,
 };
 
 enum wmi_ctrl_path_stats_action {
@@ -7422,7 +7460,28 @@ enum wmi_ctrl_path_stats_action {
 	WMI_REQUEST_CTRL_PATH_STAT_RESET        = 2,
 	WMI_REQUEST_CTRL_PATH_STAT_START        = 3,
 	WMI_REQUEST_CTRL_PATH_STAT_STOP         = 4,
+	WMI_REQUEST_CTRL_PATH_STAT_PERIODIC_PUBLISH = 5,
 };
+
+struct wmi_request_ctrl_path_stats_cmd_fixed_param {
+        u32 tlv_header;
+        /** Bitmask showing which of stats IDs 0-31 have been requested
+         * These stats ids are defined in enum wmi_ctrl_path_stats_id.
+         */
+        u32 stats_id_mask;
+        /** request ID to store the cookies in wifistats */
+        u32 request_id;
+        /** action
+         * get/reset/start/stop based on stats id
+         * defined as a part of wmi_ctrl_path_stats_action
+         */
+        u32 action;
+        /** Request Halphy subid stats
+         * According to the requested stats_id this halphy_subid varies
+         * For stats_id = 1, the possible values could be enum wmi_halphy_ctrl_path_statsid
+         */
+        u32 subid;
+} __packed;
 
 struct  wmi_ctrl_path_stats_cmd {
 	__le32 tlv_header;
@@ -8053,6 +8112,8 @@ bool ath12k_wmi_is_mvr_supported(struct ath12k_base *ab);
 int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 					  struct wmi_pdev_multiple_vdev_restart_req_arg *arg);
 void ath12k_wmi_peer_chan_width_switch_work(struct wiphy *wiphy, struct wiphy_work *work);
+int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
+                                          struct ath12k *ar);
 int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
 				       u32 vdev_id,
 				       struct ath12k_reg_tpc_power_info *param);

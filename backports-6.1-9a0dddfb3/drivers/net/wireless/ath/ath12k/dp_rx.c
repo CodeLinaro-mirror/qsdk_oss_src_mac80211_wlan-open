@@ -1352,6 +1352,7 @@ static int ath12k_dp_rx_pdev_mon_status_attach(struct ath12k *ar)
 
 	memset(&pmon->rx_mon_stats, 0,
 	       sizeof(pmon->rx_mon_stats));
+	memset(&dp->stats, 0, sizeof(dp->stats));
 	return 0;
 }
 

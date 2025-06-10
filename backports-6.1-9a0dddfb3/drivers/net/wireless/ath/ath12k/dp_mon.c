@@ -1669,6 +1669,7 @@ ath12k_dp_mon_rx_parse_status_tlv(struct ath12k_mon_data *pmon,
 		if (userid < HAL_MAX_UL_MU_USERS) {
 			info[0] = __le32_to_cpu(mpdu_start->info0);
 			ppdu_info->userid = userid;
+			ppdu_info->userstats[userid].sw_peer_id = peer_id;
 			ppdu_info->userstats[userid].ampdu_id =
 				u32_get_bits(info[0], HAL_RX_MPDU_START_INFO0_PPDU_ID);
 		}
@@ -3363,6 +3364,7 @@ void ath12k_dp_mon_rx_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info)
 {
 	struct hal_rx_user_status *rx_user_status;
 	u32 num_users, i, mu_ul_user_v0_word0, mu_ul_user_v0_word1, ru_size;
+	u32 ru_width;
 
 	if (!(ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_MIMO ||
 	      ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_OFDMA ||
@@ -3391,6 +3393,7 @@ void ath12k_dp_mon_rx_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info)
 				u32_get_bits(mu_ul_user_v0_word1,
 					     HAL_RX_UL_OFDMA_USER_INFO_V0_W1_NSS) + 1;
 
+			ppdu_info->usr_nss_sum += rx_user_status->nss;
 			rx_user_status->ofdma_info_valid = 1;
 			rx_user_status->ul_ofdma_ru_start_index =
 				u32_get_bits(mu_ul_user_v0_word1,
@@ -3399,6 +3402,8 @@ void ath12k_dp_mon_rx_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info)
 			ru_size = u32_get_bits(mu_ul_user_v0_word1,
 					       HAL_RX_UL_OFDMA_USER_INFO_V0_W1_RU_SIZE);
 			rx_user_status->ul_ofdma_ru_width = ru_size;
+			ru_width = hal_rx_ul_ofdma_ru_size_to_width(ru_size);
+			rx_user_status->ul_ofdma_ru_width = ru_width;
 			rx_user_status->ul_ofdma_ru_size = ru_size;
 		}
 		rx_user_status->ldpc = u32_get_bits(mu_ul_user_v0_word1,
@@ -3440,6 +3445,9 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	rx_stats = peer->peer_stats.rx_stats;
 	if (!rx_stats)
 		return;
+
+	ppdu_info->usr_nss_sum += user_stats->nss;
+	ppdu_info->usr_ru_tones_sum += user_stats->ul_ofdma_ru_width;
 
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
@@ -3530,6 +3538,81 @@ ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	for (i = 0; i < num_users; i++)
 		ath12k_dp_mon_rx_update_user_stats(pdev_dp, ppdu_info, i);
+}
+
+static void
+ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
+                                          struct hal_rx_mon_ppdu_info *ppdu_info,
+                                          u32 uid)
+{
+       struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
+       struct ath12k_dp_peer_stats *stats = NULL;
+       struct ath12k_link_sta *arsta;
+       struct ath12k_dp_link_peer *peer;
+       u32 nss_ru_width_sum = 0;
+       u64 temp_result = 0;
+       u16 rx_time_us = 0;
+       u8 ac = 0;
+
+       if (!dp_pdev)
+               return;
+
+	RCU_LOCKDEP_WARN(!rcu_read_lock_held(), "PPDU per user rx time update called without rcu lock\n");
+	lockdep_assert_held(&dp_pdev->dp->dp_lock);
+
+       peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, user_stats->sw_peer_id);
+       if (!peer || !peer->sta) {
+               ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
+                          "peer stats not found on ppdu peer id %d\n",
+                          user_stats->sw_peer_id);
+               return;
+       }
+
+       arsta = ath12k_peer_get_link_sta(dp_pdev->ar->ab, peer);
+       if (!arsta) {
+               ath12k_warn(dp_pdev->ar->ab, "link sta not found on peer %pM id %d\n",
+                           peer->addr, peer->peer_id);
+               return;
+       }
+
+       nss_ru_width_sum = ppdu_info->usr_nss_sum * ppdu_info->usr_ru_tones_sum;
+       if (!nss_ru_width_sum)
+               nss_ru_width_sum = 1;
+
+       if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU) {
+               temp_result = ppdu_info->rx_duration * user_stats->nss *
+                             user_stats->ul_ofdma_ru_width;
+               rx_time_us = (u16)div_u64(temp_result, nss_ru_width_sum);
+       } else
+               rx_time_us = ppdu_info->rx_duration;
+
+       ac = ath12k_tid_to_ac(ppdu_info->tid);
+       stats = &peer->peer_stats;
+       stats->dp_mon_stats.mon_stats.rx_airtime_consumption[ac].consumption += rx_time_us;
+       ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_DP_HTT, "peer: %pM tid: %d ac: %d sum nss: %d tones: %d per user nss: %d tone: %d time: %d cons: %d\n",
+                  peer->addr,
+                  ppdu_info->tid, ac,
+                  ppdu_info->usr_nss_sum, ppdu_info->usr_ru_tones_sum,
+                  user_stats->nss, user_stats->ul_ofdma_ru_width,
+                  rx_time_us,
+                  stats->dp_mon_stats.mon_stats.rx_airtime_consumption[ac].consumption);
+}
+
+static void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
+                                             struct hal_rx_mon_ppdu_info *ppdu_info,
+                                             bool is_stat)
+{
+       u32 num_users, uid;
+
+	RCU_LOCKDEP_WARN(!rcu_read_lock_held(), "PPDU rx time update called without rcu lock\n");
+	lockdep_assert_held(&dp_pdev->dp->dp_lock);
+
+       num_users = ppdu_info->num_users;
+       if (num_users > HAL_MAX_UL_MU_USERS)
+               num_users = HAL_MAX_UL_MU_USERS;
+
+       for (uid = 0; uid < num_users; uid++)
+               ath12k_dp_mon_ppdu_per_user_rx_time_update(dp_pdev, ppdu_info, uid);
 }
 
 static void
@@ -3703,10 +3786,12 @@ move_next:
 			}
 			ath12k_dp_mon_rx_update_peer_su_stats(pdev_dp, peer,
 							      ppdu_info);
+			ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);
 		} else if ((ppdu_info->fc_valid) &&
 			   (ppdu_info->ast_index != HAL_AST_IDX_INVALID)) {
 			ath12k_dp_mon_rx_process_ulofdma(ppdu_info);
 			ath12k_dp_mon_rx_update_peer_mu_stats(pdev_dp, ppdu_info);
+			ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);
 		}
 
 next_skb:
@@ -3746,3 +3831,187 @@ int ath12k_dp_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 	return num_buffs_reaped;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_process_ring);
+static void ath12k_dp_mon_clear_pdev_airtime_stats(struct ath12k *ar)
+{
+       struct ath12k_pdev_dp *pdev_dp = &ar->dp;
+       u8 ac;
+
+       for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
+               pdev_dp->stats.telemetry_stats.tx_link_airtime[ac] = 0;
+               pdev_dp->stats.telemetry_stats.rx_link_airtime[ac] = 0;
+       }
+}
+
+static inline u64 ath12k_get_timestamp_in_us(void)
+{
+       struct timespec64 ts;
+
+       ktime_get_ts64(&ts);
+
+       return ((u64)ts.tv_sec * 1000000) + (ts.tv_nsec / 1000);
+}
+
+void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
+                                              struct ath12k_dp_link_peer *peer,
+                                              struct ath12k_pdev *pdev)
+{
+       struct ath12k_mon_peer_airtime_stats *airtime_stats;
+       struct peer_airtime_consumption *peer_consump;
+       u64 current_time = ath12k_get_timestamp_in_us();
+       u32 remainder, time_diff;
+       u32 usage;
+       u16 consump_per_sec;
+       struct ath12k *ar = pdev->ar;
+       struct ath12k_pdev_dp *dp = &ar->dp;
+       struct ath12k_pdev_dp_stats *pdev_stats = &dp->stats;
+       u8 ac;
+
+       airtime_stats = &peer->peer_stats.dp_mon_stats.mon_stats;
+       time_diff = (u32)(current_time - airtime_stats->last_update_time);
+
+       for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
+               /* *_link_airtime refers to the amount of time a peer spends
+                * transmitting or receiving data over the medium
+                * To calculate total pdev's airtime cosumption, then store
+                * each peer airtime consumption in pdev telemetry link airtime
+                */
+
+               /* Tx Airtime Consumption */
+               peer_consump = &airtime_stats->tx_airtime_consumption[ac];
+               usage = peer_consump->consumption;
+               consump_per_sec = (u8)div_u64((u64)(usage * 100), time_diff);
+               div_u64_rem((u64)(usage * 100), time_diff, &remainder);
+               if (remainder < time_diff / 2) {
+                       if (remainder && consump_per_sec == 0)
+                               consump_per_sec++;
+               } else {
+                       if (consump_per_sec < 100)
+                               consump_per_sec++;
+               }
+               peer_consump->avg_consumption_per_sec = consump_per_sec;
+               pdev_stats->telemetry_stats.tx_link_airtime[ac] += peer_consump->consumption;
+               peer_consump->consumption = 0;
+
+               /* Rx Airtime Consumption */
+               peer_consump = &airtime_stats->rx_airtime_consumption[ac];
+               usage = peer_consump->consumption;
+               consump_per_sec = (u8)div_u64((u64)(usage * 100), time_diff);
+               div_u64_rem((u64)(usage * 100), time_diff, &remainder);
+               if (remainder < time_diff / 2) {
+                       if (remainder && consump_per_sec == 0)
+                               consump_per_sec++;
+               } else {
+                       if (consump_per_sec < 100)
+                               consump_per_sec++;
+               }
+               peer_consump->avg_consumption_per_sec = consump_per_sec;
+               pdev_stats->telemetry_stats.rx_link_airtime[ac] += peer_consump->consumption;
+               peer_consump->consumption = 0;
+
+               ath12k_dbg(ab,
+                          ATH12K_DBG_DP_HTT,
+                          "peer: %pM time diff: %d link air tx: %d rx: %d cons tx: %d rx: %d\n",
+                          peer->addr, time_diff,
+                          pdev_stats->telemetry_stats.tx_link_airtime[ac],
+                          pdev_stats->telemetry_stats.rx_link_airtime[ac],
+                          airtime_stats->tx_airtime_consumption[ac].avg_consumption_per_sec,
+                          airtime_stats->rx_airtime_consumption[ac].avg_consumption_per_sec);
+       }
+
+       airtime_stats->last_update_time = current_time;
+}
+
+static inline void ath12k_pdev_dp_iterate_peer(struct ath12k_base *ab,
+                                              struct ath12k_pdev *pdev,
+                                              void (*iter)(struct ath12k_base *ab, struct ath12k_dp_link_peer *peer, struct ath12k_pdev *pdev))
+{
+       struct ath12k_dp_link_peer *peer, *tmp;
+       struct ieee80211_sta *sta;
+       struct ath12k *ar;
+
+       if (!pdev || !pdev->ar)
+               return;
+       ar = pdev->ar;
+       spin_lock_bh(&ab->dp->dp_lock);
+       list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
+               if (!peer->vif)
+                       continue;
+
+               sta = peer->sta;
+               if (!sta)
+                       continue;
+               /* In a split PHY scenario, if a pdev-level event occurs,
+                * halt the operation if the peer belongs to a different pdev
+                * than the one that triggered the event.
+                */
+               if (peer->pdev_idx != ar->pdev_idx)
+                       continue;
+
+               iter(ab, peer, pdev);
+       }
+       spin_unlock_bh(&ab->dp->dp_lock);
+}
+
+int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
+                                             const int pdev_id)
+{
+       struct ath12k_pdev *pdev;
+
+       rcu_read_lock();
+       pdev = rcu_dereference(ab->pdevs_active[pdev_id]);
+       if (!pdev) {
+               rcu_read_unlock();
+               return -EINVAL;
+       }
+
+       if (pdev->ar)
+               ath12k_dp_mon_clear_pdev_airtime_stats(pdev->ar);
+
+       ath12k_pdev_dp_iterate_peer(ab, pdev,
+                                   ath12k_dp_mon_peer_update_telemetry_stats);
+       rcu_read_unlock();
+
+       return 0;
+}
+
+static void ath12k_dp_mon_peer_telemetry_stats(const struct ath12k_dp_link_peer *peer,
+                                              struct ath12k_peer_telemetry_stats *stats)
+{
+       const struct ath12k_dp_mon_peer_stats *dp_stats;
+       u8 ac;
+
+       dp_stats = &peer->peer_stats.dp_mon_stats;
+       for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
+               stats->tx_airtime_consumption[ac] =
+                       dp_stats->mon_stats.tx_airtime_consumption[ac].avg_consumption_per_sec;
+               stats->rx_airtime_consumption[ac] =
+                       dp_stats->mon_stats.rx_airtime_consumption[ac].avg_consumption_per_sec;
+       }
+       stats->snr = 0;
+}
+
+int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
+                                      const u8 *peer_addr,
+                                      struct ath12k_peer_telemetry_stats *stats)
+{
+       struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	spin_lock_bh(&dp->dp_lock);
+
+       peer = ath12k_dp_link_peer_find_by_addr(dp, peer_addr);
+       if (!peer) {
+		spin_unlock_bh(&dp->dp_lock);
+               ath12k_dbg(ab,
+                          ATH12K_DBG_DP_HTT,
+                          "Failed to find peer at addr: %pM\n", peer_addr);
+               return -EINVAL;
+       }
+
+       ath12k_dp_mon_peer_telemetry_stats(peer, stats);
+
+	spin_unlock_bh(&dp->dp_lock);
+
+       return 0;
+}
+

@@ -162,6 +162,7 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 				ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_CTRL;
 			break;
 		}
+		ppdu_info->htt_frame_type = frame_type;
 		break;
 	case HTT_PPDU_STATS_TAG_USR_RATE:
 		if (len < sizeof(struct htt_ppdu_stats_user_rate)) {
@@ -469,6 +470,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	is_ofdma = (ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA) |
 		(ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA);
 
+	ppdu_info->usr_ru_tones_sum += ru_tones;
 	/* Note: If host configured fixed rates and in some other special
 	 * cases, the broadcast/management frames are sent in different rates.
 	 * Firmware rate's control to be skipped for this?
@@ -555,6 +557,8 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	peer->tx_retry_failed += tx_retry_failed;
 	peer->tx_retry_count += tx_retry_count;
 	peer->txrate.nss = nss;
+	usr_stats->nss = nss;
+	ppdu_info->usr_nss_sum += nss;
 	peer->txrate.bw = ath12k_mac_bw_to_mac80211_bw(bw);
 	peer->tx_duration += tx_duration;
 	memcpy(&peer->last_txrate, &peer->txrate, sizeof(struct rate_info));
@@ -582,9 +586,107 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	peer_stats->ppdu_type = ppdu_type;
+	usr_stats->ru_tones = ru_tones;
 
 	spin_unlock_bh(&dp->dp_lock);
 	rcu_read_unlock();
+}
+
+static void
+ath12k_ppdu_per_user_stats_phy_tx_time_update(struct ath12k_base *ab,
+                                             struct ath12k_dp_link_peer *peer,
+                                             const struct htt_ppdu_stats_info *ppdu_info,
+                                             const struct htt_ppdu_user_stats *user)
+{
+       const struct htt_ppdu_stats_common *common = &ppdu_info->ppdu_stats.common;
+       struct ath12k_dp_peer_stats *stats = NULL;
+       u32 ru_nss_width_sum = 0;
+       u16 phy_tx_time_us = 0;
+       u8 tid;
+       u8 ac;
+
+	lockdep_assert_held(&ab->dp->dp_lock);
+
+       if (!peer || !user || !common) {
+               ath12k_warn(ab, "Invalid ppdu user info received\n");
+               return;
+       }
+
+       ru_nss_width_sum = ppdu_info->usr_nss_sum * ppdu_info->usr_ru_tones_sum;
+       if (!ru_nss_width_sum)
+               ru_nss_width_sum = 1;
+
+       if (ppdu_info->htt_frame_type == HTT_STATS_FTYPE_TIDQ_DATA_SU)
+               phy_tx_time_us = common->phy_ppdu_tx_time_us;
+       else
+               phy_tx_time_us = (common->phy_ppdu_tx_time_us *
+                                 user->nss * user->ru_tones) / ru_nss_width_sum;
+
+       tid = user->rate.tid_num;
+       ac = ath12k_tid_to_ac(tid);
+       stats = &peer->peer_stats;
+       stats->dp_mon_stats.mon_stats.tx_airtime_consumption[ac].consumption += phy_tx_time_us;
+       ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "ppdu info id: %d tid: %d htt frame type: %d  ppdu frame type: %d time: %d nss: %d tones: %d sum [nss: %d tone: %d consum: %d]\n",
+                  ppdu_info->ppdu_id,
+                  user->rate.tid_num,
+                  ppdu_info->htt_frame_type,
+                  ppdu_info->frame_type,
+                  common->phy_ppdu_tx_time_us,
+                  user->nss, user->ru_tones,
+                  ppdu_info->usr_nss_sum, ppdu_info->usr_ru_tones_sum,
+                  stats->dp_mon_stats.mon_stats.tx_airtime_consumption[ac].consumption);
+}
+
+static void ath12k_htt_update_peer_telemetry_stats(struct ath12k_pdev_dp *dp_pdev,
+						   struct htt_ppdu_stats_info *ppdu_info)
+{
+       struct ath12k_base *ab = dp_pdev->ar->ab;
+       struct ath12k_dp_link_peer *peer;
+       struct ieee80211_sta *sta;
+       struct ath12k_link_sta *arsta;
+       struct htt_ppdu_stats *ppdu_stats = &ppdu_info->ppdu_stats;
+       struct htt_ppdu_user_stats *user_stats = NULL;
+       u32 tlv_bitmap;
+       u8 uid;
+
+       if (!ppdu_info)
+               return;
+
+       if (ppdu_info->frame_type != HTT_STATS_PPDU_FTYPE_DATA)
+               return;
+
+       tlv_bitmap = ppdu_info->tlv_bitmap;
+       if (!(tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_RATE)))
+               return;
+
+       for (uid = 0; uid < HTT_PPDU_STATS_MAX_USERS; uid++) {
+               user_stats = &ppdu_stats->user_stats[uid];
+
+		spin_lock_bh(&dp_pdev->dp->dp_lock);
+
+               peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp,
+						     user_stats->peer_id);
+               if (!peer || !peer->sta) {
+			spin_unlock_bh(&dp_pdev->dp->dp_lock);
+                       return;
+               }
+
+               sta = peer->sta;
+
+		rcu_read_lock();
+               arsta = ath12k_peer_get_link_sta(ab, peer);
+               if (!arsta) {
+			rcu_read_unlock();
+			spin_unlock_bh(&dp_pdev->dp->dp_lock);
+                       return;
+               }
+		rcu_read_unlock();
+
+               ath12k_ppdu_per_user_stats_phy_tx_time_update(ab, peer,
+                                                             ppdu_info,
+                                                             user_stats);
+		spin_unlock_bh(&dp_pdev->dp->dp_lock);
+       }
 }
 
 static void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
@@ -594,6 +696,8 @@ static void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	for (user = 0; user < HTT_PPDU_STATS_MAX_USERS - 1; user++)
 		ath12k_update_per_peer_tx_stats(dp_pdev, ppdu_info, user);
+
+	ath12k_htt_update_peer_telemetry_stats(dp_pdev, ppdu_info);
 }
 
 static
@@ -614,7 +718,12 @@ struct htt_ppdu_stats_info *ath12k_dp_htt_get_ppdu_desc(struct ath12k_pdev_dp *d
 						     typeof(*ppdu_info), list);
 			list_del(&ppdu_info->list);
 			dp_pdev->ppdu_stat_list_depth--;
-			ath12k_htt_update_ppdu_stats(dp_pdev, ppdu_info);
+			/* Update the stats once per ppdu info as this function can be
+			 * called multiple times per ppdu info with data frame,
+			 * avoid updating the same user stats again for data frame
+			 */
+			if (ppdu_info->frame_type != HTT_STATS_PPDU_FTYPE_DATA)
+			        ath12k_htt_update_ppdu_stats(dp_pdev, ppdu_info);
 			kfree(ppdu_info);
 		}
 	}

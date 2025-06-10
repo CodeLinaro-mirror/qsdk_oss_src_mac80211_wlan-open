@@ -1106,6 +1106,7 @@ int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
 	for (i = 0; i < ab->num_radios; i++) {
 		ar = ab->pdevs[i].ar;
 
+		memset(&ar->stats, 0, sizeof(struct ath12k_pdev_ctrl_path_stats));
 		dp_pdev = &ar->dp;
 
 		dp_pdev->hw = ar->ah->hw;
@@ -1156,6 +1157,43 @@ out:
 	return ret;
 }
 
+int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
+                                      int pdev_id,
+                                      struct ath12k_pdev_telemetry_stats *stats)
+{
+       struct ath12k_pdev_dp *dp;
+       struct ath12k *ar;
+       u8 ac;
+
+       if (!ab) {
+               pr_warn("Failed to fetch pdev dp telemetry stats\n");
+               return -EINVAL;
+       }
+
+       ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+       if (!ar)
+               return -EINVAL;
+
+       dp = &ar->dp;
+
+       spin_lock_bh(&ar->data_lock);
+
+       /* Convert *_link_airtime from telemetry stats to a percentage of
+        * microseconds (us) */
+       for (ac = 0; ac < WLAN_MAX_AC; ac++) {
+               stats->tx_link_airtime[ac] =
+                       ((dp->stats.telemetry_stats.tx_link_airtime[ac] * 100) / 1000000);
+               stats->rx_link_airtime[ac] =
+                       ((dp->stats.telemetry_stats.rx_link_airtime[ac] * 100) / 1000000);
+               stats->link_airtime[ac] =
+                       (((dp->stats.telemetry_stats.tx_link_airtime[ac] +
+                          dp->stats.telemetry_stats.rx_link_airtime[ac]) * 100) / 1000000);
+       }
+
+       spin_unlock_bh(&ar->data_lock);
+
+       return 0;
+}
 static void ath12k_dp_update_vdev_search(struct ath12k_link_vif *arvif)
 {
 	u8 link_id = arvif->link_id;

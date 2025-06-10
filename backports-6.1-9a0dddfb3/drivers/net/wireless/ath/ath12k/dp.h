@@ -152,6 +152,17 @@ struct ath12k_mon_data {
 	struct dp_mon_tx_ppdu_info *tx_data_ppdu_info;
 };
 
+struct ath12k_pdev_telemetry_stats {
+       u32 link_airtime[WLAN_MAX_AC];
+       u32 tx_link_airtime[WLAN_MAX_AC];
+       u32 rx_link_airtime[WLAN_MAX_AC];
+};
+
+struct ath12k_pdev_dp_stats {
+       struct ath12k_pdev_telemetry_stats telemetry_stats;
+       /* Add other new stats if required */
+};
+
 struct ath12k_pdev_dp {
 	u32 mac_id;
 	atomic_t num_tx_pending;
@@ -175,6 +186,10 @@ struct ath12k_pdev_dp {
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
 	struct ath12k_wmm_stats wmm_stats;
+	/* Protected by ab: base lock
+	 * determine when this stats is calculated based on peers
+	 */
+	struct ath12k_pdev_dp_stats stats;
 };
 
 #define DP_NUM_CLIENTS_MAX 64
@@ -943,6 +958,9 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif);
 void ath12k_dp_partner_cc_init(struct ath12k_base *ab);
 int ath12k_dp_pdev_alloc(struct ath12k_base *ab);
+int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
+                                      int pdev_id,
+                                      struct ath12k_pdev_telemetry_stats *stats);
 void ath12k_dp_pdev_pre_alloc(struct ath12k *ar);
 void ath12k_dp_pdev_free(struct ath12k_base *ab);
 int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,

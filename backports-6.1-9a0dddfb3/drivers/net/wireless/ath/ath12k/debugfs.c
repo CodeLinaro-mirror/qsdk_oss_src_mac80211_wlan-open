@@ -2488,12 +2488,82 @@ static ssize_t ath12k_write_wmi_ctrl_path_stats(struct file *file,
 	if (ret != 2)
 		return -EINVAL;
 
-	if (!arg.action || arg.action > WMI_REQUEST_CTRL_PATH_STAT_RESET)
+	if (!arg.action)
 		return -EINVAL;
 
 	guard(mutex)(&ah->hw_mutex);
 	ret = ath12k_wmi_send_wmi_ctrl_stats_cmd(ar, &arg);
 	return ret ? ret : count;
+}
+
+int wmi_ctrl_path_pmlo_stat(struct ath12k *ar, char __user *ubuf,
+                           size_t count, loff_t *ppos)
+{
+       struct wmi_ctrl_path_stats_list *stats, *tmp;
+       struct wmi_ctrl_path_pmlo_telemetry_stats *pmlo_stats;
+       const int size = 2048;
+       int len = 0, ret_val;
+       char *buf;
+       LIST_HEAD(wmi_stats_list);
+       u32 value;
+
+       buf = vmalloc(size);
+       if (!buf)
+               return -ENOMEM;
+
+       len += scnprintf(buf + len, size - len,
+                       "WMI_CTRL_PATH_PMLO_STATS:\n");
+
+       spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
+       spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
+       list_for_each_entry_safe(stats, tmp, &wmi_stats_list, list) {
+               if (!stats)
+                       break;
+
+               pmlo_stats = stats->stats_ptr;
+
+               if (!pmlo_stats)
+                       break;
+
+               if (len < size) {
+                       len += scnprintf(buf + len, size - len,
+                               "pdev_id = %u\n",
+                               le32_to_cpu(pmlo_stats->pdev_id));
+               }
+
+               value = le32_to_cpu(pmlo_stats->estimated_air_time_per_ac);
+               if (len < size) {
+                       len += scnprintf(buf + len, size - len,
+                               "estimated_air_time_ac_be = %u\n",
+                               u32_get_bits(value, GENMASK(7, 0)));
+               }
+
+               if (len < size) {
+                       len += scnprintf(buf + len, size - len,
+                               "estimated_air_time_ac_bk = %u\n",
+                               u32_get_bits(value, GENMASK(15, 8)));
+               }
+
+               if (len < size) {
+                       len += scnprintf(buf + len, size - len,
+                               "estimated_air_time_ac_vi = %u\n",
+                               u32_get_bits(value, GENMASK(23, 16)));
+               }
+
+               if (len < size) {
+                       len += scnprintf(buf + len, size - len,
+                               "estimated_air_time_ac_vo = %u\n",
+                               u32_get_bits(value, GENMASK(31, 24)));
+               }
+
+               kfree(stats->stats_ptr);
+               list_del(&stats->list);
+               kfree(stats);
+       }
+
+       ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
+       vfree(buf);
+       return ret_val;
 }
 
 static int wmi_ctrl_path_pdev_stat(struct ath12k *ar, char __user *ubuf,
@@ -2656,7 +2726,10 @@ static ssize_t ath12k_read_wmi_ctrl_path_stats(struct file *file,
 	case WMI_CTRL_PATH_AFC_STATS:
 		ret = wmi_ctrl_path_afc_stat(ar, ubuf, count, ppos);
 		break;
-		/* Add case for newly wmi ctrl path added stats here */
+	case WMI_CTRL_PATH_PMLO_STATS:
+		ret = wmi_ctrl_path_pmlo_stat(ar, ubuf, count, ppos);
+	        break;
+		 /* Add case for newly wmi ctrl path added stats here */
 	default:
 		/* Unsupported tag */
 		ret = -EINVAL;

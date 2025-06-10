@@ -8,10 +8,12 @@
 #define ATH12K_DP_MON_H
 
 #include "core.h"
+#include "dp_peer.h"
 #include "wifi7/hal_desc.h"
 
 #define ATH12K_MON_RX_DOT11_OFFSET	5
 #define ATH12K_MON_RX_PKT_OFFSET	8
+#define ATH12K_DP_WLAN_MAX_AC		4
 
 enum dp_monitor_mode {
 	ATH12K_DP_TX_MONITOR_MODE,
@@ -103,4 +105,10 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_dp_mon_rx_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info);
 int ath12k_dp_mon_srng_process(struct ath12k_pdev_dp *pdev_dp, int *budget,
 			       struct napi_struct *napi);
+int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
+                                      const u8 *peer_addr,
+                                      struct ath12k_peer_telemetry_stats *stats);
+
+int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
+                                             int pdev_id);
 #endif

@@ -499,6 +499,7 @@ enum htt_ppdu_stats_tag_type {
 	HTT_PPDU_STATS_TAG_USR_COMMON_ARRAY,
 	HTT_PPDU_STATS_TAG_INFO,
 	HTT_PPDU_STATS_TAG_TX_MGMTCTRL_PAYLOAD,
+	HTT_PPDU_STATS_USERS_INFO,
 
 	/* New TLV's are added above to this line */
 	HTT_PPDU_STATS_TAG_MAX,
@@ -516,6 +517,12 @@ enum htt_ppdu_stats_tag_type {
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS) \
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_FLUSH) \
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMMON_ARRAY))
+
+#define HTT_PPDU_STATS_ENHANCED_TX_COMPLN (BIT(HTT_PPDU_STATS_TAG_COMMON) \
+                                   | BIT(HTT_PPDU_STATS_TAG_USR_COMMON) \
+                                   | BIT(HTT_PPDU_STATS_TAG_USR_RATE) \
+                                   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_COMMON) \
+                                   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_FLUSH))
 
 #define HTT_PPDU_STATS_TAG_PKTLOG  (BIT(HTT_PPDU_STATS_TAG_USR_MPDU_ENQ_BITMAP_64) | \
 				    BIT(HTT_PPDU_STATS_TAG_USR_MPDU_ENQ_BITMAP_256) | \
@@ -1394,6 +1401,29 @@ struct htt_ppdu_stats_common {
 	 */
 	__le16 phy_mode;
 	__le16 bw_mhz;
+	__le32 cca_delta_time_us;
+	__le32 rxfrm_delta_time_us;
+	__le32 txfrm_delta_time_us;
+	/*  The phy_ppdu_tx_time_us reports the time it took to transmit
+	 * a PPDU by itself
+	 * BIT [15 :  0] - phy_ppdu_tx_time_us reports the time it took to
+	 *                 transmit by itself (not including response time)
+	 * BIT [23 : 16] - num_ul_expected_users reports the number of users
+	 *                 that are expected to respond to this transmission
+	 * BIT [24 : 24] - beam_change reports the beam forming pattern
+	 *                 between non-HE and HE portion.
+	 *                 If we apply TxBF starting from legacy preamble,
+	 *                 then beam_change = 0.
+	 *                 If we apply TxBF only starting from HE portion,
+	 *                 then beam_change = 1.
+	 * BIT [25 : 25] - doppler_indication
+	 * BIT [29 : 26] - spatial_reuse for HE_SU,HE_MU and HE_EXT_SU format PPDU
+	 *                 HTT_PPDU_STATS_SPATIAL_REUSE
+	 * BIT [31 : 30] - reserved
+	 */
+	__le16 phy_ppdu_tx_time_us;
+	u8 num_ul_expected_users;
+	u8 reserved;
 } __packed;
 
 enum htt_ppdu_stats_gi {
@@ -1402,6 +1432,8 @@ enum htt_ppdu_stats_gi {
 	HTT_PPDU_STATS_SGI_1_6_US,
 	HTT_PPDU_STATS_SGI_3_2_US,
 };
+
+#define HTT_PPDU_STATS_USER_RATE_TLV_TID_NUM_M     GENMASK(7, 0)
 
 #define HTT_PPDU_STATS_USER_RATE_INFO0_USER_POS_M	GENMASK(3, 0)
 #define HTT_PPDU_STATS_USER_RATE_INFO0_MU_GROUP_ID_M	GENMASK(11, 4)
@@ -1599,6 +1631,8 @@ struct htt_ppdu_user_stats {
 	u16 delay_ba;
 	u32 tlv_flags;
 	bool is_valid_peer_id;
+	u8 ru_tones;
+	u8 nss;
 	struct htt_ppdu_stats_user_rate rate;
 	struct htt_ppdu_stats_usr_cmpltn_cmn cmpltn_cmn;
 	struct htt_ppdu_stats_usr_cmpltn_ack_ba_status ack_ba;
@@ -1621,7 +1655,11 @@ struct htt_ppdu_stats_info {
 	u32 frame_ctrl;
 	u32 delay_ba;
 	u32 bar_num_users;
+	u32 max_users;
 	struct htt_ppdu_stats ppdu_stats;
+	u32 usr_ru_tones_sum;
+	u16 htt_frame_type;
+	u8 usr_nss_sum;
 	struct list_head list;
 };
 

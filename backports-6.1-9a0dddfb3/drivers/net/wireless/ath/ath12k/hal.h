@@ -540,7 +540,8 @@ struct hal_rx_user_status {
 	ul_ofdma_ru_size:8;
 	u32 ul_ofdma_user_v0_word0;
 	u32 ul_ofdma_user_v0_word1;
-	u32 ast_index;
+	u16 ast_index;  // End User Stat
+	u16 sw_peer_id; // mpdu start
 	u32 tid;
 	u16 tcp_msdu_count;
 	u16 tcp_ack_msdu_count;
@@ -642,7 +643,7 @@ struct hal_rx_mon_ppdu_info {
 	u64 tsft;
 	u64 rx_duration;
 	u16 frame_control;
-	u32 ast_index;
+	u16 ast_index;
 	u8 rs_fcs_err;
 	u8 rs_flags;
 	u8 cck_flag;
@@ -684,6 +685,8 @@ struct hal_rx_mon_ppdu_info {
 	u8 medium_prot_type;
 	bool ppdu_continuation;
 	bool eht_usig;
+	u8 usr_nss_sum;
+	u32 usr_ru_tones_sum;
 	struct hal_rx_u_sig_info u_sig_info;
 	bool is_eht;
 	struct hal_rx_eht_info eht_info;

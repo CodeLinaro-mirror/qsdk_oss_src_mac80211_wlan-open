@@ -783,6 +783,19 @@ enum ath12k_hw_state {
 	/* Add other states as required */
 };
 
+struct ath12k_ctrl_path_pmlo_telemetry_stats {
+       u32 pdev_id;
+       u8 estimated_air_time_ac_be;
+       u8 estimated_air_time_ac_bk;
+       u8 estimated_air_time_ac_vi;
+       u8 estimated_air_time_ac_vo;
+};
+
+struct ath12k_pdev_ctrl_path_stats {
+       struct ath12k_ctrl_path_pmlo_telemetry_stats telemetry_stats;
+       u8 pdev_freetime_per_sec;
+};
+
 /* Antenna noise floor */
 #define ATH12K_DEFAULT_NOISE_FLOOR -95
 
@@ -1010,6 +1023,7 @@ struct ath12k {
 	bool supports_6ghz:1;
 	bool ch_info_can_report_survey:1;
 	bool target_suspend_ack:1;
+	struct ath12k_pdev_ctrl_path_stats stats;
 	bool dfs_block_radar_events:1;
 	bool monitor_vdev_created:1;
 	bool monitor_started:1;
@@ -1843,6 +1857,46 @@ static inline void ath12k_core_dma_unmap_single(struct device *dev, dma_addr_t d
 #ifndef CONFIG_IO_COHERENCY
 	dma_unmap_single(dev, dma_handle, size, direction);
 #endif
+}
+
+static inline struct ath12k_base *ath12k_pdev_to_ab(struct ath12k_pdev *pdev)
+{
+       if (!pdev)
+               return NULL;
+
+       return pdev->ar->ab;
+}
+
+static inline int ath12k_get_pdev_id(struct ath12k_pdev *pdev)
+{
+       if (!pdev)
+               return -1;
+
+       return pdev->pdev_id;
+}
+
+static inline int ath12k_get_peer_count(struct ath12k_base *ab, bool get_max)
+{
+       struct ath12k_pdev *pdev;
+       int peer_count = 0;
+       int i;
+
+       if (!ab)
+               return 0;
+
+       for (i = 0; i < ab->num_radios; i++) {
+               rcu_read_lock();
+               pdev = rcu_dereference(ab->pdevs_active[i]);
+               if (pdev && pdev->ar) {
+                       if (get_max)
+                               peer_count += pdev->ar->max_num_peers;
+                       else
+                               peer_count += pdev->ar->num_peers;
+               }
+               rcu_read_unlock();
+       }
+
+       return peer_count;
 }
 
 #endif /* _CORE_H_ */

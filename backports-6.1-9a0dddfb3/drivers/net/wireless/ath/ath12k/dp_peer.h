@@ -61,9 +61,35 @@ struct ath12k_wbm_tx_stats {
 	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 };
 
+struct peer_airtime_consumption {
+       u32 consumption;
+       u16 avg_consumption_per_sec;
+};
+
+struct ath12k_mon_peer_airtime_stats {
+       struct peer_airtime_consumption tx_airtime_consumption[WME_NUM_AC];
+       struct peer_airtime_consumption rx_airtime_consumption[WME_NUM_AC];
+       u64 last_update_time;
+};
+
+struct ath12k_peer_telemetry_stats {
+       u32 tx_mpdu_retried;
+       u32 tx_mpdu_total;
+       u32 rx_mpdu_retried;
+       u32 rx_mpdu_total;
+       u16 tx_airtime_consumption[WME_NUM_AC]; // Energy Service FR
+       u16 rx_airtime_consumption[WME_NUM_AC]; // Energy Service FR
+       u8 snr;
+};
+
+struct ath12k_dp_mon_peer_stats {
+       struct ath12k_mon_peer_airtime_stats mon_stats;
+};
+
 struct ath12k_dp_peer_stats {
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_wbm_tx_stats *wbm_tx_stats;
+	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 };
 
 DECLARE_EWMA(avg_rssi, 10, 8)
