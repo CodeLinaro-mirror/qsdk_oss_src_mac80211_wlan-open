@@ -7464,32 +7464,6 @@ ath12k_mac_set_peer_he_fixed_rate(struct ath12k_link_vif *arvif,
 	return ret;
 }
 
-static u8 ath12k_mac_get_tpe_count(u8 txpwr_intrprt, u8 txpwr_cnt)
-{
-        switch (txpwr_intrprt) {
-        /* Refer "Table 9-276-Meaning of Maximum Transmit Power Count subfield
-         * if the Maximum Transmit Power Interpretation subfield is 0 or 2" of
-         * "IEEE Std 802.11ax 2021".
-         */
-        case IEEE80211_TPE_LOCAL_EIRP:
-        case IEEE80211_TPE_REG_CLIENT_EIRP:
-                txpwr_cnt = txpwr_cnt <= 3 ? txpwr_cnt : 3;
-                txpwr_cnt = txpwr_cnt + 1;
-                break;
-        /* Refer "Table 9-277-Meaning of Maximum Transmit Power Count subfield
-         * if Maximum Transmit Power Interpretation subfield is 1 or 3" of
-         * "IEEE Std 802.11ax 2021".
-         */
-        case IEEE80211_TPE_LOCAL_EIRP_PSD:
-        case IEEE80211_TPE_REG_CLIENT_EIRP_PSD:
-                txpwr_cnt = txpwr_cnt <= 4 ? txpwr_cnt : 4;
-                txpwr_cnt = txpwr_cnt ? (BIT(txpwr_cnt - 1)) : 1;
-                break;
-        }
-
-        return txpwr_cnt;
-}
-
 static u8 ath12k_mac_get_num_pwr_levels(struct cfg80211_chan_def *chan_def)
 {
         u8 num_pwr_levels;
@@ -7939,127 +7913,73 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 }
 
 void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
-                                        struct ieee80211_vif *vif,
-                                        struct ieee80211_chanctx_conf *ctx)
+				 struct ath12k_link_vif *arvif)
 {
-        struct ath12k_base *ab = ar->ab;
-        struct ath12k_vif *arvif = (void *)vif->drv_priv;
-        struct ieee80211_bss_conf *bss_conf = &vif->bss_conf;
-        struct ieee80211_tx_pwr_env *single_tpe;
-        enum wmi_reg_6g_client_type client_type;
-        int i;
-        u8 pwr_count, pwr_interpret, pwr_category;
-        u8 psd_index = 0, non_psd_index = 0, local_tpe_count = 0, reg_tpe_count = 0;
-        bool use_local_tpe, non_psd_set = false, psd_set = false;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_vif *vif = ahvif->vif;
+	struct ieee80211_bss_conf *bss_conf = ath12k_mac_get_link_bss_conf(arvif);
+	struct ath12k_reg_tpc_power_info *tpc_info = &arvif->reg_tpc_info;
+	struct ieee80211_parsed_tpe_eirp *local_non_psd, *reg_non_psd;
+	struct ieee80211_parsed_tpe_psd *local_psd, *reg_psd;
+	struct ieee80211_parsed_tpe *tpe = &bss_conf->tpe;
+	enum wmi_reg_6g_client_type client_type;
+	struct ath12k_base *ab = ar->ab;
+	bool psd_valid, non_psd_valid;
+	int i;
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 
-        if (wdev)
-                client_type = wdev->reg_6g_power_mode;
-        else
-                client_type = WMI_REG_DEFAULT_CLIENT;
+	if (wdev)
+		client_type = wdev->reg_6g_power_mode;
+	else
+		client_type = WMI_REG_DEFAULT_CLIENT;
 
-        for (i = 0; i < bss_conf->tx_pwr_env_num; i++) {
-                single_tpe = &bss_conf->tx_pwr_env[i];
-                pwr_category = u8_get_bits(single_tpe->tx_power_info,
-                                           IEEE80211_TX_PWR_ENV_INFO_CATEGORY);
-                pwr_interpret = u8_get_bits(single_tpe->tx_power_info,
-                                            IEEE80211_TX_PWR_ENV_INFO_INTERPRET);
+	local_psd = &tpe->psd_local[client_type];
+	reg_psd = &tpe->psd_reg_client[client_type];
+	local_non_psd = &tpe->max_local[client_type];
+	reg_non_psd = &tpe->max_reg_client[client_type];
 
-                if (pwr_category == client_type) {
-                        if (pwr_interpret == IEEE80211_TPE_LOCAL_EIRP ||
-                            pwr_interpret == IEEE80211_TPE_LOCAL_EIRP_PSD)
-                                local_tpe_count++;
-                        else if (pwr_interpret == IEEE80211_TPE_REG_CLIENT_EIRP ||
-                                 pwr_interpret == IEEE80211_TPE_REG_CLIENT_EIRP_PSD)
-                                reg_tpe_count++;
-                }
-        }
+	psd_valid = local_psd->valid | reg_psd->valid;
+	non_psd_valid = local_non_psd->valid | reg_non_psd->valid;
 
-        if (!reg_tpe_count && !local_tpe_count) {
-                ath12k_warn(ab,
-                            "no transmit power envelope match client power type %d\n",
-                            client_type);
-                return;
-        } else if (!reg_tpe_count) {
-                use_local_tpe = true;
-        } else {
-                use_local_tpe = false;
-        }
-        for (i = 0; i < bss_conf->tx_pwr_env_num; i++) {
-                single_tpe = &bss_conf->tx_pwr_env[i];
-                pwr_category = u8_get_bits(single_tpe->tx_power_info,
-                                           IEEE80211_TX_PWR_ENV_INFO_CATEGORY);
-                pwr_interpret = u8_get_bits(single_tpe->tx_power_info,
-                                            IEEE80211_TX_PWR_ENV_INFO_INTERPRET);
+       if (!psd_valid && !non_psd_valid) {
+               ath12k_warn(ab,
+                           "no transmit power envelope match client power type %d\n",
+                           client_type);
+               return;
+       };
 
-                if (pwr_category != client_type)
-                        continue;
+       if (psd_valid) {
+	       tpc_info->is_psd_power = true;
 
-                /* get local transmit power envelope */
-                if (use_local_tpe) {
-                        if (pwr_interpret == IEEE80211_TPE_LOCAL_EIRP) {
-                                non_psd_index = i;
-                                non_psd_set = true;
-                        } else if (pwr_interpret == IEEE80211_TPE_LOCAL_EIRP_PSD) {
-                                psd_index = i;
-                                psd_set = true;
-                        }
-                /* get regulatory transmit power envelope */
-                } else {
-                        if (pwr_interpret == IEEE80211_TPE_REG_CLIENT_EIRP) {
-                                non_psd_index = i;
-                                non_psd_set = true;
-                        } else if (pwr_interpret == IEEE80211_TPE_REG_CLIENT_EIRP_PSD) {
-                                psd_index = i;
-                                psd_set = true;
-                        }
-                }
-        }
+	       tpc_info->num_pwr_levels = max(local_psd->count,
+					      reg_psd->count);
+	       if (tpc_info->num_pwr_levels > ATH12K_NUM_PWR_LEVELS)
+		       tpc_info->num_pwr_levels = ATH12K_NUM_PWR_LEVELS;
 
-        if (non_psd_set && !psd_set) {
-                single_tpe = &bss_conf->tx_pwr_env[non_psd_index];
-                pwr_count = u8_get_bits(single_tpe->tx_power_info,
-         	                        IEEE80211_TX_PWR_ENV_INFO_COUNT);
-                pwr_interpret = u8_get_bits(single_tpe->tx_power_info,
-                                            IEEE80211_TX_PWR_ENV_INFO_INTERPRET);
-                arvif->reg_tpc_info.is_psd_power = false;
-                arvif->reg_tpc_info.eirp_power = 0;
+	       for (i = 0; i < tpc_info->num_pwr_levels; i++) {
+		       tpc_info->tpe[i] = min(local_psd->power[i],
+					      reg_psd->power[i]) / 2;
+		       ath12k_dbg(ab, ATH12K_DBG_MAC,
+				  "TPE PSD power[%d] : %d\n",
+				  i, tpc_info->tpe[i]);
+	       }
+       } else {
+	       tpc_info->is_psd_power = false;
+	       tpc_info->eirp_power = 0;
 
-                arvif->reg_tpc_info.num_pwr_levels =
-                        ath12k_mac_get_tpe_count(pwr_interpret, pwr_count);
-                for (i = 0; i < arvif->reg_tpc_info.num_pwr_levels; i++) {
-                        ath12k_dbg(ab, ATH12K_DBG_MAC,
-                                   "non PSD power[%d] : %d\n",
-                                   i, single_tpe->tx_power[i]);
-                        arvif->reg_tpc_info.tpe[i] = single_tpe->tx_power[i] / 2;
-                }
-        }
-        if (psd_set) {
-                single_tpe = &bss_conf->tx_pwr_env[psd_index];
-                pwr_count = u8_get_bits(single_tpe->tx_power_info,
-                                        IEEE80211_TX_PWR_ENV_INFO_COUNT);
-                pwr_interpret = u8_get_bits(single_tpe->tx_power_info,
-                                            IEEE80211_TX_PWR_ENV_INFO_INTERPRET);
-                arvif->reg_tpc_info.is_psd_power = true;
+	       tpc_info->num_pwr_levels = max(local_non_psd->count,
+			 	 	      reg_non_psd->count);
+	       if (tpc_info->num_pwr_levels > ATH12K_NUM_PWR_LEVELS)
+		       tpc_info->num_pwr_levels = ATH12K_NUM_PWR_LEVELS;
 
-                if (pwr_count == 0) {
-                        ath12k_dbg(ab, ATH12K_DBG_MAC,
-                                   "TPE PSD power : %d\n", single_tpe->tx_power[0]);
-                        arvif->reg_tpc_info.num_pwr_levels =
-                                ath12k_mac_get_num_pwr_levels(&ctx->def);
-                        for (i = 0; i < arvif->reg_tpc_info.num_pwr_levels; i++)
-                                arvif->reg_tpc_info.tpe[i] = single_tpe->tx_power[0] / 2;
-                } else {
-                        arvif->reg_tpc_info.num_pwr_levels =
-                                ath12k_mac_get_tpe_count(pwr_interpret, pwr_count);
-                        for (i = 0; i < arvif->reg_tpc_info.num_pwr_levels; i++) {
-                                ath12k_dbg(ab, ATH12K_DBG_MAC,
-                                           "TPE PSD power[%d] : %d\n",
-                                           i, single_tpe->tx_power[i]);
-                                arvif->reg_tpc_info.tpe[i] = single_tpe->tx_power[i] / 2;
-                        }
-                }
-        }
+	       for (i = 0; i < tpc_info->num_pwr_levels; i++) {
+		       tpc_info->tpe[i] = min(local_non_psd->power[i],
+				 	      reg_non_psd->power[i]) / 2;
+		       ath12k_dbg(ab, ATH12K_DBG_MAC,
+				  "non PSD power[%d] : %d\n",
+				  i, tpc_info->tpe[i]);
+	       }
+       }
 }
 
 static int
@@ -14450,7 +14370,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
             test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map)) {
 
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
-			ath12k_mac_parse_tx_pwr_env(ar, arvif->ahvif->vif, &arvif->chanctx);
+			ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
                 ath12k_mac_fill_reg_tpc_info(ar, arvif, &arvif->chanctx);
                 ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id,
@@ -15526,7 +15446,7 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		arvif->chanctx = *ctx;
 
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
-                        ath12k_mac_parse_tx_pwr_env(ar, vif, ctx);
+                        ath12k_mac_parse_tx_pwr_env(ar, arvif);
         }
 
 	/* for some targets bss peer must be created before vdev_start */

@@ -2666,7 +2666,7 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 			 */
 			if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 			    ctx->def.width != NL80211_CHAN_WIDTH_320) {
-				ath12k_mac_parse_tx_pwr_env(ar, arvif->ahvif->vif, ctx);
+				ath12k_mac_parse_tx_pwr_env(ar, arvif);
 			}
 		}
 	}

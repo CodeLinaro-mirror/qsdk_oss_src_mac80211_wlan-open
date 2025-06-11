@@ -113,6 +113,9 @@ struct ath12k_mac_get_any_chanctx_conf_arg {
 	struct ieee80211_chanctx_conf *chanctx_conf;
 };
 
+/* ath12k only deals with 320 MHz, so 16 subchannels */
+#define ATH12K_NUM_PWR_LEVELS  16
+
 #define ATH12K_WLAN_PRIO_MAX    0x63
 #define ATH12K_WLAN_PRIO_WEIGHT 0xff
 
@@ -369,8 +372,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 int ath12k_mac_vdev_start(struct ath12k_link_vif *arvif,
 			  struct ieee80211_chanctx_conf *ctx);
 void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
-				struct ieee80211_vif *vif,
-				struct ieee80211_chanctx_conf *ctx);
+				 struct ath12k_link_vif *arvif);
 int ath12k_mac_start(struct ath12k *ar);
 int ath12k_mac_vif_link_chan(struct ieee80211_vif *vif, u8 link_id,
                                     struct cfg80211_chan_def *def);
