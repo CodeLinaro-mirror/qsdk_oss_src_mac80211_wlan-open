@@ -386,7 +386,6 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 			goto fail_dma_unmap;
 
 		list_del(&rx_desc->list);
-		ATH12K_SKB_RXCB(skb)->paddr = paddr;
 
 		num_remain--;
 

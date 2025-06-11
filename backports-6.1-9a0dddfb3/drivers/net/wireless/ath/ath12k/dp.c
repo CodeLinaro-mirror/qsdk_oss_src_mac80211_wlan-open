@@ -1291,7 +1291,7 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 			if (!skb)
 				continue;
 
-			ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
+			ath12k_core_dma_unmap_single(ab->dev, desc_info[j].paddr,
 						     skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
 			dev_kfree_skb_any(skb);
 		}

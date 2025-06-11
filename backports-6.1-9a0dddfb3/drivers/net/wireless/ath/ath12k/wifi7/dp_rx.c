@@ -1447,7 +1447,7 @@ try_again:
 		list_add_tail(&desc_info->list, &rx_desc_used_list[device_id]);
 
 		rxcb = ATH12K_SKB_RXCB(msdu);
-		ath12k_core_dma_unmap_single(partner_dp->dev, rxcb->paddr,
+		ath12k_core_dma_unmap_single(partner_dp->dev, desc_info->paddr,
 					     msdu->len + skb_tailroom(msdu),
 					     DMA_FROM_DEVICE);
 
@@ -2042,7 +2042,6 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_rx_desc_data rx_desc_data = {0};
 	struct hal_rx_desc *rx_desc;
 	struct sk_buff *msdu;
-	struct ath12k_skb_rxcb *rxcb;
 	u16 msdu_len;
 	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
 	struct ath12k_rx_desc_info *desc_info;
@@ -2070,8 +2069,7 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 
 	list_add_tail(&desc_info->list, used_list);
 
-	rxcb = ATH12K_SKB_RXCB(msdu);
-	ath12k_core_dma_unmap_single(ab->dev, rxcb->paddr,
+	ath12k_core_dma_unmap_single(ab->dev, desc_info->paddr,
 				     msdu->len + skb_tailroom(msdu),
 				     DMA_FROM_DEVICE);
 
@@ -2665,7 +2663,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		list_add_tail(&desc_info->list, &rx_desc_used_list[device_id]);
 
 		rxcb = ATH12K_SKB_RXCB(msdu);
-		ath12k_core_dma_unmap_single(partner_dp->dev, rxcb->paddr,
+		ath12k_core_dma_unmap_single(partner_dp->dev, desc_info->paddr,
 					     msdu->len + skb_tailroom(msdu),
 					     DMA_FROM_DEVICE);
 
