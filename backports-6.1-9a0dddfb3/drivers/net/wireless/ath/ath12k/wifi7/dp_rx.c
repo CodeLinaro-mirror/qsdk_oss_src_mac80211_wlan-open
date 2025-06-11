@@ -27,6 +27,8 @@
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
+extern bool ath12k_debug_critical;
+
 static int ath12k_wifi7_peer_rx_tid_delete_handler(struct ath12k_base *ab,
 						   struct ath12k_dp_rx_tid *rx_tid,
 						   u8 tid);
@@ -956,6 +958,8 @@ static void ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 	u8 rate_mcs = rx_desc_data->rate_mcs, nss = rx_desc_data->nss;
 	bool is_cck;
 
+	rx_desc_data->is_invalid_rate_drop = false;
+
 	switch (pkt_type) {
 	case RX_MSDU_START_PKT_TYPE_11A:
 	case RX_MSDU_START_PKT_TYPE_11B:
@@ -967,9 +971,11 @@ static void ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 	case RX_MSDU_START_PKT_TYPE_11N:
 		rx_status->encoding = RX_ENC_HT;
 		if (rate_mcs > ATH12K_HT_MCS_MAX) {
+			rx_desc_data->is_invalid_rate_drop = true;
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in HT mode %d\n",
 				     rate_mcs);
+			WARN_ON_ONCE(1);
 			break;
 		}
 		rx_status->rate_idx = rate_mcs + (8 * (nss - 1));
@@ -981,9 +987,11 @@ static void ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->encoding = RX_ENC_VHT;
 		rx_status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_VHT_MCS_MAX) {
+			rx_desc_data->is_invalid_rate_drop = true;
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in VHT mode %d\n",
 				     rate_mcs);
+			WARN_ON_ONCE(1);
 			break;
 		}
 		rx_status->nss = nss;
@@ -994,9 +1002,11 @@ static void ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 	case RX_MSDU_START_PKT_TYPE_11AX:
 		rx_status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_HE_MCS_MAX) {
+			rx_desc_data->is_invalid_rate_drop = true;
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in HE mode %d\n",
 				    rate_mcs);
+			WARN_ON_ONCE(1);
 			break;
 		}
 		rx_status->encoding = RX_ENC_HE;
@@ -1008,9 +1018,11 @@ static void ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->rate_idx = rate_mcs;
 
 		if (rate_mcs > ATH12K_EHT_MCS_MAX) {
+			rx_desc_data->is_invalid_rate_drop = true;
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in EHT mode %d\n",
 				    rate_mcs);
+			WARN_ON_ONCE(1);
 			break;
 		}
 
@@ -1026,11 +1038,14 @@ static void ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 
 void ath12k_wifi7_dp_rx_h_ppdu(struct ath12k_pdev_dp *dp_pdev,
 			       struct ieee80211_rx_status *rx_status,
-			       struct hal_rx_desc_data *rx_desc_data)
+			       struct hal_rx_desc_data *rx_desc_data,
+			       struct sk_buff *msdu)
 {
 	u8 channel_num;
 	u32 center_freq, meta_data;
 	struct ieee80211_channel *channel;
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 
 	rx_status->freq = 0;
 	rx_status->rate_idx = 0;
@@ -1045,16 +1060,35 @@ void ath12k_wifi7_dp_rx_h_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	channel_num = meta_data;
 	center_freq = meta_data >> 16;
 
+	rx_status->band = NUM_NL80211_BANDS;
+
 	if (center_freq >= ATH12K_MIN_6GHZ_FREQ &&
 	    center_freq <= ATH12K_MAX_6GHZ_FREQ) {
 		rx_status->band = NL80211_BAND_6GHZ;
 		rx_status->freq = center_freq;
-	} else if (channel_num >= 1 && channel_num <= 14) {
+	} else if (center_freq >= ATH12K_MIN_2GHZ_FREQ &&
+		   center_freq <= ATH12K_MAX_2GHZ_FREQ) {
 		rx_status->band = NL80211_BAND_2GHZ;
-	} else if (channel_num >= 36 && channel_num <= 173) {
+	} else if (center_freq >= ATH12K_MIN_5GHZ_FREQ &&
+		   center_freq <= ATH12K_MAX_5GHZ_FREQ) {
 		rx_status->band = NL80211_BAND_5GHZ;
-	} else {
-		struct ath12k *ar = dp_pdev->ar;
+	}
+
+	if (unlikely(rx_status->band == NUM_NL80211_BANDS ||
+		!dp_pdev->hw->wiphy->bands[rx_status->band])) {
+		if (rxcb->err_rel_src == HAL_WBM_REL_SRC_MODULE_REO ||
+		    rxcb->err_rel_src == HAL_WBM_REL_SRC_MODULE_RXDMA) {
+			if(ath12k_debug_critical)
+				WARN_ON_ONCE(1);
+			rx_desc_data->is_invalid_rate_drop = true;
+			return;
+		}
+		else {
+			ath12k_err(ar->ab,
+				   "sband is NULL for status band %d channel_num %d center_freq %d pdev_id %d\n",
+				   rx_status->band, channel_num, center_freq,
+				   ar->pdev_idx);
+		}
 
 		spin_lock_bh(&ar->data_lock);
 		channel = ar->rx_channel;
@@ -1062,14 +1096,21 @@ void ath12k_wifi7_dp_rx_h_ppdu(struct ath12k_pdev_dp *dp_pdev,
 			rx_status->band = channel->band;
 			channel_num =
 				ieee80211_frequency_to_channel(channel->center_freq);
+		} else {
+			ath12k_err(ar->ab, "unable to determine channel, band for rx packet");
 		}
 		spin_unlock_bh(&ar->data_lock);
+
+		rx_status->freq = ieee80211_channel_to_frequency(channel_num,
+								 rx_status->band);
+		goto h_rate;
 	}
 
 	if (rx_status->band != NL80211_BAND_6GHZ)
 		rx_status->freq = ieee80211_channel_to_frequency(channel_num,
 								 rx_status->band);
 
+h_rate:
 	ath12k_wifi7_dp_rx_h_rate(dp_pdev, rx_status, rx_desc_data);
 }
 
@@ -1172,9 +1213,13 @@ static int ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	if (*fast_rx)
 		return 0;
 
-	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, rx_status, rx_desc_data);
-
 	if (rx_desc_data->is_drop_packet) {
+		ret = -EINVAL;
+		goto free_out;
+	}
+
+	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, rx_status, rx_desc_data, msdu);
+	if (unlikely(rx_desc_data->is_invalid_rate_drop)) {
 		ret = -EINVAL;
 		goto free_out;
 	}
@@ -1544,7 +1589,10 @@ mic_fail:
 	if (unlikely(!ath12k_dp_rx_check_nwifi_hdr_len_valid(dp, rx_desc, msdu)))
 		return -EINVAL;
 
-	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, rxs, rx_desc_data);
+	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, rxs, rx_desc_data, msdu);
+	if (unlikely(rx_desc_data->is_invalid_rate_drop))
+		return -EINVAL;
+
 	ath12k_wifi7_dp_rx_h_undecap(dp_pdev, msdu, rx_desc,
 				     HAL_ENCRYPT_TYPE_TKIP_MIC, rxs, true, rx_desc_data, NULL);
 	if (rx_desc_data->is_drop_packet)
@@ -2332,7 +2380,9 @@ static int ath12k_wifi7_dp_rx_h_null_q_desc(struct ath12k_pdev_dp *dp_pdev,
 	if (unlikely(!ath12k_dp_rx_check_nwifi_hdr_len_valid(dp, desc, msdu)))
 		return -EINVAL;
 
-	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, rx_desc_data);
+	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, rx_desc_data, msdu);
+	if (unlikely(rx_desc_data->is_invalid_rate_drop))
+		return -EINVAL;
 
 	ath12k_wifi7_dp_rx_h_mpdu(dp_pdev, msdu, desc, status, rx_desc_data, &fast_rx);
 	if (rx_desc_data->is_drop_packet)
@@ -2411,7 +2461,9 @@ static bool ath12k_wifi7_dp_rx_h_tkip_mic_err(struct ath12k_pdev_dp *dp_pdev,
 	if (unlikely(!ath12k_dp_rx_check_nwifi_hdr_len_valid(dp, desc, msdu)))
 		return true;
 
-	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, rx_desc_data);
+	ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, rx_desc_data, msdu);
+	if (unlikely(rx_desc_data->is_invalid_rate_drop))
+		return true;
 
 	status->flag |= (RX_FLAG_MMIC_STRIPPED | RX_FLAG_MMIC_ERROR |
 				     RX_FLAG_DECRYPTED);

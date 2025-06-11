@@ -102,6 +102,11 @@ module_param_array_named(rfs_core_mask, ath12k_rfs_core_mask, int, NULL, 0644);
 MODULE_PARM_DESC(rfs_core_mask, "Default RFS core mask, mask for 2G, mask for 5G,\n"
 		 "mask for 6G. One bit for one CPU core\n");
 
+bool ath12k_debug_critical = false;
+module_param_named(debug_critical, ath12k_debug_critical, bool, 0644);
+MODULE_PARM_DESC(debug_critical, "Debug critical issue (0 - disable, 1 - enable)");
+EXPORT_SYMBOL(ath12k_debug_critical);
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 
