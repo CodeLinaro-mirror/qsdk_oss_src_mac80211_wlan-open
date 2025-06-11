@@ -1908,8 +1908,9 @@ static int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab)
 	 * design supports paddr upto 4 GB max hence it fits in 32 bit register only
 	 */
 
-	ath12k_hal_write_reoq_lut_addr(ab, dp->reoq_lut.paddr);
+	ath12k_hal_write_reoq_lut_addr(ab, dp->reoq_lut.paddr >> 8);
 	ath12k_hal_write_ml_reoq_lut_addr(ab, dp->ml_reoq_lut.paddr >> 8);
+
 	ath12k_hal_reoq_lut_addr_read_enable(ab);
 	ath12k_hal_reoq_lut_set_max_peerid(ab);
 
