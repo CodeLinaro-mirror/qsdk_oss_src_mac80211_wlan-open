@@ -160,6 +160,60 @@ err:
 	return ret;
 }
 
+static
+int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
+					 struct wireless_dev *wdev,
+					 const void *data, int data_len)
+{
+	struct ieee80211_vif *vif = wdev_to_ieee80211_vif(wdev);
+	struct ath12k_mac_link_migrate_usr_params arg;
+	u8 mac_addr[ETH_ALEN] = {0};
+	struct ath12k_vif *ahvif;
+	u8 link_id;
+	int ret;
+
+	if (WARN_ON(!vif))
+		return -EINVAL;
+
+	/* 1 byte of link ID or(and) 6 bytes of mac address */
+	if (data_len != 1 && data_len != ETH_ALEN + 1)
+		return -EINVAL;
+
+	/* not supported in case of non-ML vif */
+	if (!vif->valid_links)
+		return -EOPNOTSUPP;
+
+	/* get link ID */
+	link_id = *(u8 *)data;
+
+	/* get mac address if it is provided */
+	if (data_len == ETH_ALEN + 1) {
+		data++;
+		memcpy(mac_addr, data, ETH_ALEN);
+	}
+
+	ahvif = (struct ath12k_vif *)vif->drv_priv;
+	if (!ahvif)
+		return -EINVAL;
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC,
+		   "primary link migration command received link_id %u, mac_addr %pM",
+		   link_id, mac_addr);
+
+	arg.link_id = link_id;
+	memcpy(arg.addr, mac_addr, ETH_ALEN);
+
+	mutex_lock(&ahvif->ah->hw_mutex);
+	ret = ath12k_mac_process_link_migrate_req(ahvif, &arg);
+	mutex_unlock(&ahvif->ah->hw_mutex);
+
+	if (ret)
+		ath12k_info(NULL,
+			    "Failed to trigger primary link migration command\n");
+
+	return ret;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -176,6 +230,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_wifi_config_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE,
+		.doit = ath12k_vendor_trigg_pri_link_migrate,
+		.policy = VENDOR_CMD_RAW_DATA,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
 	},
 };
 
