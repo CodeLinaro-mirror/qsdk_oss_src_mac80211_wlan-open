@@ -168,8 +168,10 @@ tcl_ring_sel:
 	tx_ring = &dp->tx_ring[ti.ring_id];
 
 	tx_desc = ath12k_dp_tx_assign_buffer(dp, pool_id);
-	if (!tx_desc)
+	if (!tx_desc) {
+		dp->device_stats.tx_err.txbuf_na[ti.ring_id]++;
 		return -ENOMEM;
+	}
 
 	ti.bank_id = dp_link_vif->bank_id;
 
@@ -514,6 +516,7 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_base *ab,
 	info = IEEE80211_SKB_CB(msdu);
 
 	ar = skb_cb->u.ar;
+	dp->device_stats.tx_completed[tx_ring->tcl_data_ring_id]++;
 
 	if (atomic_dec_and_test(&ar->dp.num_tx_pending))
 		wake_up(&ar->dp.tx_empty_waitq);
@@ -583,17 +586,19 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_base *ab,
 {
 	struct htt_tx_wbm_completion *status_desc;
 	struct ath12k_dp_htt_wbm_tx_status ts = {0};
-	enum hal_wbm_htt_tx_comp_status wbm_status;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	int htt_status;
 	u16 peer_id;
 
 	status_desc = desc;
 
-	wbm_status = le32_get_bits(status_desc->info0,
+	htt_status = le32_get_bits(status_desc->info0,
 				   HTT_TX_WBM_COMP_INFO0_STATUS);
+	dp->device_stats.fw_tx_status[htt_status]++;
 
-	switch (wbm_status) {
+	switch (htt_status) {
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_OK:
-		ts.acked = (wbm_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_OK);
+		ts.acked = (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_OK);
 		ts.ack_rssi = le32_get_bits(status_desc->info2,
 					    HTT_TX_WBM_COMP_INFO2_ACK_RSSI);
 		peer_id = le32_get_bits(((struct hal_wbm_completion_ring_tx *)desc)->
@@ -607,7 +612,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_base *ab,
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT:
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_VDEVID_MISMATCH:
-		ath12k_wifi7_dp_tx_free_txbuf(ab->dp, msdu, tx_ring, tx_desc);
+		ath12k_wifi7_dp_tx_free_txbuf(dp, msdu, tx_ring, tx_desc);
 		break;
 	case HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY:
 		/* This event is to be handled only when the driver decides to
@@ -615,7 +620,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_base *ab,
 		 */
 		break;
 	default:
-		ath12k_warn(ab, "Unknown htt wbm tx status %d\n", wbm_status);
+		ath12k_warn(ab, "Unknown htt tx status %d\n", htt_status);
 		break;
 	}
 
@@ -748,7 +753,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 					     struct sk_buff *msdu,
 					     struct hal_tx_status *ts,
 					     struct ath12k_tx_desc_info *tx_desc,
-					     u8 mac_id)
+					     u8 mac_id, int ring)
 {
 	struct ieee80211_tx_status status = { 0 };
 	struct ieee80211_rate_status status_rate = { 0 };
@@ -777,6 +782,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 			dp_pdev->wmm_stats.total_wmm_tx_drop[dp_pdev->wmm_stats.tx_type]++;
 	}
 
+	dp->device_stats.tx_completed[ring]++;
 	ath12k_core_dma_unmap_single(ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 	if (skb_cb->paddr_ext_desc) {
 		ath12k_core_dma_unmap_single(ab->dev, skb_cb->paddr_ext_desc,
@@ -1012,6 +1018,7 @@ void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id)
 			goto tx_release;
 		}
 
+		dp->device_stats.tqm_rel_reason[ts.status]++;
 		pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, tx_desc->mac_id);
 
 		rcu_read_lock();
@@ -1025,7 +1032,8 @@ void ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id)
 		if (atomic_dec_and_test(&dp_pdev->num_tx_pending))
 			wake_up(&dp_pdev->tx_empty_waitq);
 
-		ath12k_wifi7_dp_tx_complete_msdu(dp_pdev, msdu, &ts, tx_desc, tx_desc->mac_id);
+		ath12k_wifi7_dp_tx_complete_msdu(dp_pdev, msdu, &ts, tx_desc, 
+						 tx_desc->mac_id, tx_ring->tcl_data_ring_id);
 
 		rcu_read_unlock();
 tx_release:

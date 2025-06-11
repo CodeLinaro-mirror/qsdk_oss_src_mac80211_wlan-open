@@ -666,11 +666,51 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 		         device_stats->tx_null_frame[2],
 			 device_stats->tx_null_frame[3]);
 
+	len += scnprintf(buf + len, size - len,
+		"\ntqm_rel_reason: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u\n",
+		device_stats->tqm_rel_reason[0],
+		device_stats->tqm_rel_reason[1],
+		device_stats->tqm_rel_reason[2],
+		device_stats->tqm_rel_reason[3],
+		device_stats->tqm_rel_reason[4],
+		device_stats->tqm_rel_reason[5],
+		device_stats->tqm_rel_reason[6],
+		device_stats->tqm_rel_reason[7],
+		device_stats->tqm_rel_reason[8],
+		device_stats->tqm_rel_reason[9],
+		device_stats->tqm_rel_reason[10],
+		device_stats->tqm_rel_reason[11],
+		device_stats->tqm_rel_reason[12],
+		device_stats->tqm_rel_reason[13],
+		device_stats->tqm_rel_reason[14]);
+
+	len += scnprintf(buf + len, size - len,
+		"\nfw_tx_status: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u\n",
+		device_stats->fw_tx_status[0],
+		device_stats->fw_tx_status[1],
+		device_stats->fw_tx_status[2],
+		device_stats->fw_tx_status[3],
+		device_stats->fw_tx_status[4],
+		device_stats->fw_tx_status[5],
+		device_stats->fw_tx_status[6]);
+
+	len += scnprintf(buf + len, size - len,
+		"\ntx_completed: 0:%u 1:%u 2:%u 3:%u\n",
+		device_stats->tx_completed[0],
+		device_stats->tx_completed[1],
+		device_stats->tx_completed[2],
+		device_stats->tx_completed[3]);
+
 	len += scnprintf(buf + len, size - len, "\nTCL Ring Full Failures:\n");
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
 		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
 				 i, device_stats->tx_err.desc_na[i]);
+
+	len += scnprintf(buf + len, size - len, "\nTCL Ring Buffer Alloc Failures:\n");
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+		len += scnprintf(buf + len, size - len, "ring%d: %u\n",
+			 i, device_stats->tx_err.txbuf_na[i]);
 
 	len += scnprintf(buf + len, size - len,
 			 "\nMisc Transmit Failures: %d\n",
@@ -780,8 +820,34 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	return retval;
 }
 
+static ssize_t
+ath12k_debugfs_write_device_dp_stats(struct file *file,
+                                 const char __user *user_buf,
+                                 size_t count, loff_t *ppos)
+{
+       struct ath12k_base *ab = file->private_data;
+       struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+       struct ath12k_device_dp_stats *device_stats = &dp->device_stats;
+       char buf[20] = {0};
+       int ret;
+
+       if (count > 20)
+               return -EFAULT;
+
+       ret = copy_from_user(buf, user_buf, count);
+       if (ret)
+               return -EFAULT;
+
+       if (strstr(buf, "reset"))
+               memset(device_stats, 0, sizeof(struct ath12k_device_dp_stats));
+
+       return count;
+}
+
+
 static const struct file_operations fops_device_dp_stats = {
 	.read = ath12k_debugfs_dump_device_dp_stats,
+	.write = ath12k_debugfs_write_device_dp_stats,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,

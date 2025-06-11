@@ -7,6 +7,7 @@
 #ifndef ATH12K_DP_H
 #define ATH12K_DP_H
 
+#include "core.h"
 #include "hw.h"
 #include "dp_htt.h"
 #include "dp_cmn.h"
@@ -347,6 +348,10 @@ struct ath12k_pdev_dp {
 
 #define DP_TX_DESC_FLAG_FAST     0x1
 
+#define MAX_TQM_RELEASE_REASON 15
+#define MAX_FW_TX_STATUS 7
+#define MAX_TCL_RING 4
+
 struct ath12k_dp_tx_bank_profile {
 	u8 is_configured;
 	u32 num_users;
@@ -510,6 +515,8 @@ struct ath12k_dp_ring_bp_stats {
 struct ath12k_device_dp_tx_err_stats {
 	/* TCL Ring Descriptor unavailable */
 	u32 desc_na[DP_TCL_NUM_RING_MAX];
+	/* TCL Ring Buffers unavailable */
+	u32 txbuf_na[DP_TCL_NUM_RING_MAX];
 
 	u32 threshold_limit;
 
@@ -523,6 +530,9 @@ struct ath12k_device_dp_stats {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u32 ppe_vp_mode_update_fail;
 #endif
+	u32 tx_completed[MAX_TCL_RING];
+	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON];
+	u32 fw_tx_status[MAX_FW_TX_STATUS];
 	u32 err_ring_pkts;
 	u32 invalid_rbm;
 	u32 reo_excep_msdu_buf_type;
