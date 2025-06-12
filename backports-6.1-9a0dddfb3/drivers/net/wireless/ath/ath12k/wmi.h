@@ -1171,6 +1171,7 @@ enum wmi_tlv_pdev_param {
 	WMI_PDEV_PARAM_SET_CMD_OBSS_PD_THRESHOLD = 0xbc,
 	WMI_PDEV_PARAM_SET_CMD_OBSS_PD_PER_AC = 0xbe,
 	WMI_PDEV_PARAM_ENABLE_SR_PROHIBIT = 0xc6,
+	WMI_PDEV_PARAM_MPD_USERPD_SSR = 0xce,
 };
 
 enum wmi_tlv_vdev_param {
@@ -6741,6 +6742,7 @@ struct wmi_mlo_teardown_cmd {
 	__le32 tlv_header;
 	__le32 pdev_id;
 	__le32 reason_code;
+	__le32 umac_reset;
 } __packed;
 
 struct wmi_mlo_setup_complete_event {
@@ -7937,7 +7939,7 @@ int ath12k_wmi_sta_keepalive(struct ath12k *ar,
 			     const struct wmi_sta_keepalive_arg *arg);
 int ath12k_wmi_mlo_setup(struct ath12k *ar, struct wmi_mlo_setup_arg *mlo_params);
 int ath12k_wmi_mlo_ready(struct ath12k *ar);
-int ath12k_wmi_mlo_teardown(struct ath12k *ar);
+int ath12k_wmi_mlo_teardown(struct ath12k *ar, bool umac_reset);
 void ath12k_wmi_fw_stats_dump(struct ath12k *ar,
 			      struct ath12k_fw_stats *fw_stats, u32 stats_id,
 			      char *buf);

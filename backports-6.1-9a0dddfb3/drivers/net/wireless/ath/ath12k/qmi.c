@@ -3792,11 +3792,27 @@ void ath12k_qmi_reset_mlo_mem(struct ath12k_hw_group *ag)
 	}
 }
 
+/**
+ * ath12k_free_mlo_glb_per_device_crash_info() - Free MLO per_device crash info
+ * @snapshot_info: Pointer to MLO Global crash info
+ *
+ * Return: None
+ */
+static void ath12k_free_mlo_glb_per_device_crash_info(
+	struct ath12k_host_mlo_glb_device_crash_info *global_device_crash_info)
+{
+	if (global_device_crash_info->per_device_crash_info) {
+		kfree(global_device_crash_info->per_device_crash_info);
+		global_device_crash_info->per_device_crash_info = NULL;
+	}
+}
+
 static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 					  struct target_mem_chunk *chunk,
 					  int idx)
 {
 	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_host_mlo_mem_arena *mlomem_arena_ctx = &ag->mlomem_arena;
 	struct target_mem_chunk *mlo_chunk;
 	bool fixed_mem;
 
@@ -3826,12 +3842,20 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 
 	mlo_chunk->paddr = 0;
 	mlo_chunk->size = 0;
+	ag->mlo_mem.is_mlo_mem_avail = false;
 	if (fixed_mem)
 		chunk->v.ioaddr = NULL;
 	else
 		chunk->v.addr = NULL;
+
 	chunk->paddr = 0;
 	chunk->size = 0;
+
+	if (mlomem_arena_ctx->init_done) {
+		mlomem_arena_ctx->init_done = false;
+		ath12k_free_mlo_glb_per_device_crash_info
+			(&mlomem_arena_ctx->global_device_crash_info);
+	}
 }
 
 static void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
@@ -3861,6 +3885,8 @@ static void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 			}
 		}
 	}
+
+	ab->host_ddr_fixed_mem_off = 0;
 
 	if (!ag->num_started && ag->mlo_mem.init_done) {
 		ag->mlo_mem.init_done = false;
@@ -3970,6 +3996,7 @@ static int ath12k_qmi_alloc_target_mem_chunk(struct ath12k_base *ab)
 
 			chunk->paddr = mlo_chunk->paddr;
 			chunk->v.addr = mlo_chunk->v.addr;
+			ag->mlo_mem.is_mlo_mem_avail = true;
 			mlo_idx++;
 
 			break;
@@ -4009,6 +4036,190 @@ err:
 		ret = 0;
 
 	return ret;
+}
+
+static void
+ath12k_mgmt_mlo_global_per_device_crash_info_tlv(struct ath12k_base *ab, const void *ptr,
+					       size_t len, u8 cur_device_id,
+					       struct ath12k_host_mlo_glb_per_device_crash_info *per_device_crash_info)
+{
+	struct mlo_glb_per_device_crash_info *tlv_data;
+	u8 *crash_reason, *recovery_mode;
+
+	tlv_data = (struct mlo_glb_per_device_crash_info *)ptr;
+	per_device_crash_info->device_id = cur_device_id;
+	crash_reason = (u8 *)&tlv_data->crash_reason;
+	recovery_mode = (u8 *)&tlv_data->recovery_mode;
+
+	per_device_crash_info->crash_reason = (void *)crash_reason;
+	per_device_crash_info->recovery_mode = (void *)recovery_mode;
+
+	return;
+}
+
+static int
+ath12k_mgmt_mlo_global_device_crash_info(struct ath12k_base *ab,
+				       const void *ptr,
+				       size_t len,
+				       struct ath12k_host_mlo_glb_device_crash_info *global_device_crash_info)
+{
+	u32 device_info;
+	struct mlo_glb_device_crash_info *tlv_data;
+
+	tlv_data = (struct  mlo_glb_device_crash_info *)ptr;
+	device_info = tlv_data->device_info;
+
+	global_device_crash_info->no_of_devices =
+			MLO_SHMEM_CHIP_CRASH_INFO_PARAM_NO_OF_DEVICES_GET(device_info);
+	global_device_crash_info->valid_devices_bmap =
+			MLO_SHMEM_CHIP_CRASH_INFO_PARAM_VALID_DEVICE_BMAP_GET(device_info);
+
+       /* Allocate memory to extrace per chip crash info */
+        global_device_crash_info->per_device_crash_info = kmalloc_array(
+						global_device_crash_info->no_of_devices,
+						sizeof(*global_device_crash_info->per_device_crash_info),
+						GFP_KERNEL);
+
+	if (!global_device_crash_info->per_device_crash_info) {
+		ath12k_warn(ab, "Couldn't allocate memory for per chip crash info!\n");
+		return -ENOBUFS;
+	}
+
+	return 0;
+}
+
+static const struct ath12k_qmi_shmem_tlv_policy ath12k_qmi_tlv_policies[] = {
+	[ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_DEVICE_CRASH_INFO] =
+			{ .min_len = sizeof(struct mlo_glb_device_crash_info) },
+	[ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_PER_DEVICE_CRASH_INFO] =
+			{ .min_len = sizeof(struct mlo_glb_per_device_crash_info) },
+};
+
+/* TODO:Calculate this dynamically in cleanup*/
+#define QMI_TLV_MAX_LEN	424
+
+/**
+ * ath12k_qmi_parse_mlo_mem_arena() - Parse MLO Global shared memory arena
+ * @ptr: Pointer to the start address of MLO memory
+ * @len: MLO memory size in bytes
+ * @mlomem_arena_ctx: Pointer to MLO Global shared memory arena context.
+ * Extracted information will be populated in this data structure.
+ *
+ * Return: On success, the number of bytes parsed. On failure, errno is returned.
+*/
+
+static int ath12k_qmi_parse_mlo_mem_arena(struct ath12k_base *ab,
+                                          const void *ptr, size_t len,
+        struct ath12k_host_mlo_mem_arena *mlomem_arena_ctx)
+{
+	int parsed_bytes = 0, ret = 0;
+	const struct wmi_tlv *tlv;
+	u16 tlv_tag, tlv_len;
+	u8 valid_devices_bmap = 0, cur_device_id;
+	struct ath12k_host_mlo_glb_device_crash_info *global_device_crash_info;
+	struct ath12k_host_mlo_glb_per_device_crash_info *per_device_crash_info;
+
+	if (!ptr)
+		return -EINVAL;
+
+	while (len > parsed_bytes && parsed_bytes < QMI_TLV_MAX_LEN) {
+		if (len < sizeof(*tlv)) {
+			ath12k_err(ab, "tlv parse failure (%zu bytes left, %zu expected)\n",
+					len, sizeof(*tlv));
+			return -EINVAL;
+		}
+		tlv = ptr;
+		tlv_tag = le32_get_bits(tlv->header, WMI_TLV_TAG);
+		tlv_len = le32_get_bits(tlv->header, WMI_TLV_LEN);
+		ptr += sizeof(*tlv);
+		parsed_bytes += sizeof(*tlv);
+
+		if (tlv_len > len - parsed_bytes) {
+			ath12k_err(ab, "qmi tlv parse failure of tag %u (%zu bytes left, %u expected)\n",
+					tlv_tag, len - parsed_bytes, tlv_len);
+			return -EINVAL;
+		}
+
+		if (tlv_tag < ARRAY_SIZE(ath12k_qmi_tlv_policies) &&
+		    ath12k_qmi_tlv_policies[tlv_tag].min_len &&
+		    ath12k_qmi_tlv_policies[tlv_tag].min_len > tlv_len) {
+			ath12k_err(ab, "qmi tlv parse failure of tag %u at byte %zd (%u bytes is less than min length %zu)\n",
+				   tlv_tag, len - parsed_bytes, tlv_len,
+				   ath12k_qmi_tlv_policies[tlv_tag].min_len);
+			return -EINVAL;
+		}
+
+		switch(tlv_tag) {
+		case ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_DEVICE_CRASH_INFO:
+			global_device_crash_info = &mlomem_arena_ctx->global_device_crash_info;
+			ret = ath12k_mgmt_mlo_global_device_crash_info(ab, ptr, len,
+								     global_device_crash_info);
+			if (ret < 0){
+				ath12k_info(ab,"failed to parse %d so can't proceed to parse per chip crash info\n",tlv_tag);
+				return ret;
+			}
+			valid_devices_bmap = global_device_crash_info->valid_devices_bmap;
+			break;
+		case ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_PER_DEVICE_CRASH_INFO:
+			if(!valid_devices_bmap) {
+				ath12k_info(ab,"This TLV is not expected as the valid_devices_bmap is 0\n");
+				break;
+			}
+			cur_device_id = ffs(valid_devices_bmap) - 1;
+			valid_devices_bmap &= ~BIT(cur_device_id);
+
+			per_device_crash_info = &global_device_crash_info->per_device_crash_info[cur_device_id];
+			ath12k_mgmt_mlo_global_per_device_crash_info_tlv(ab, ptr, len, cur_device_id,
+								       per_device_crash_info);
+			break;
+		default:
+			ath12k_dbg(ab, ATH12K_DBG_QMI,"Un supported tag %d skiping this TLV\n",tlv_tag);
+			break;
+		}
+		ptr += tlv_len;
+		parsed_bytes += tlv_len;
+	}
+
+        return parsed_bytes;
+}
+
+int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab)
+{
+	struct ath12k_host_mlo_mem_arena *mlomem_arena_ctx = &ab->ag->mlomem_arena;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct target_mem_chunk *mlo_chunk;
+	int ret = 0, mlo_idx = 0;
+
+	if (!ag->mlo_mem.is_mlo_mem_avail)
+		return 0;
+
+	mlo_chunk = &ab->ag->mlo_mem.chunk[mlo_idx];
+
+	/* We need to initialize only for the first invocation */
+	if (mlomem_arena_ctx->init_done)
+		return 0;
+
+	if (test_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags))
+		ret = ath12k_qmi_parse_mlo_mem_arena(ab,
+						mlo_chunk->v.ioaddr,
+						mlo_chunk->size,
+						mlomem_arena_ctx);
+	else
+		ret = ath12k_qmi_parse_mlo_mem_arena(ab,
+						mlo_chunk->v.addr,
+						mlo_chunk->size,
+						mlomem_arena_ctx);
+
+	if (ret < 0) {
+		ath12k_err(ab, "parsing of mlo shared memory failed ret %d\n", ret);
+		ath12k_free_mlo_glb_per_device_crash_info
+			(&mlomem_arena_ctx->global_device_crash_info);
+		return ret;
+	}
+
+	mlomem_arena_ctx->init_done = true;
+
+	return 0;
 }
 
 #define MAX_TGT_MEM_MODES 5
@@ -4194,6 +4405,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 					ret = -EINVAL;
 					goto out;
 			}
+			ag->mlo_mem.is_mlo_mem_avail = true;
 			idx++;
 			break;
 		case AFC_REGION_TYPE:

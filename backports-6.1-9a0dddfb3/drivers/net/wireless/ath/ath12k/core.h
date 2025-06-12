@@ -335,6 +335,7 @@ enum ath12k_dev_flags {
 
 enum ath12k_mlo_recovery_mode {
 	ATH12K_MLO_RECOVERY_MODE0 = 1,
+	ATH12K_MLO_RECOVERY_MODE1 = 2,
 };
 
 #define ATH12K_STATS_MGMT_FRM_TYPE_MAX 16
@@ -837,6 +838,7 @@ struct ath12k_debug {
 enum ath12k_fw_recovery_option {
 	 ATH12K_FW_RECOVERY_DISABLE = 0,
 	 ATH12K_FW_RECOVERY_ENABLE_AUTO, /* Automatically recover after FW assert */
+	 ATH12K_FW_RECOVERY_ENABLE_MODE1_AUTO,
 	 /* Enable only recovery. Send MPD SSR WMI */
 	 /* command to unlink UserPD assert from RootPD */
 };
@@ -1058,6 +1060,8 @@ struct ath12k {
 	u32 scan_min_rest_time;
 	u32 scan_max_rest_time;
 	s8 max_allowed_tx_power;
+
+	bool mlo_complete_event;
 };
 
 struct ath12k_hw {
@@ -1164,6 +1168,7 @@ struct ath12k_mlo_memory {
 	struct target_mem_chunk chunk[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
 	int mlo_mem_size;
 	bool init_done;
+	bool is_mlo_mem_avail;
 };
 
 #define ATH12K_REPORT_LOW_ACK_NUM_PKT	0xFFFF
@@ -1204,11 +1209,14 @@ struct ath12k_hw_group {
 	bool mlo_capable;
 	struct device_node *wsi_node[ATH12K_MAX_SOCS];
 	struct ath12k_mlo_memory mlo_mem;
+	struct ath12k_host_mlo_mem_arena mlomem_arena;
 	bool hw_link_id_init_done;
 	u8 num_userpd_started;
 	struct work_struct reset_group_work;
 	u32 recovery_mode;
 	struct ath12k_mlo_dp_umac_reset mlo_umac_reset;
+        struct completion umac_reset_complete;
+        bool trigger_umac_reset;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -1386,6 +1394,10 @@ struct ath12k_base {
 
 	enum ath12k_fw_recovery_option fw_recovery_support;
 	u32 recovery_start_time;
+	bool recovery_start;
+
+        u32 *crash_info_address;
+        u32 *recovery_mode_address;
 
 	u32 fw_dbglog_param;
 	u64 fw_dbglog_val;

@@ -886,6 +886,99 @@ struct wlfw_ini_resp_msg_v01 {
 	struct qmi_response_type_v01 resp;
 };
 
+enum {
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MGMT_RX_REO_SNAPSHOT,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_RX_REO_PER_LINK_SNAPSHOT_INFO,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_RX_REO_SNAPSHOT_INFO,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_LINK,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_LINK_INFO,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_H_SHMEM,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_DEVICE_CRASH_INFO,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_PER_DEVICE_CRASH_INFO,
+};
+
+/**
+ * Macros for getting and setting the required number of bits
+ * from the TLV params.
+ */
+#define ATH12K_MLO_SHMEM_GET_BITS(_val, _index, _num_bits) \
+        (((_val) >> (_index)) & ((1 << (_num_bits)) - 1))
+
+#define MLO_SHMEM_CHIP_CRASH_INFO_PARAM_NO_OF_DEVICES_GET(device_info) \
+        ATH12K_MLO_SHMEM_GET_BITS(device_info, 0, 2) + \
+        (ATH12K_MLO_SHMEM_GET_BITS(device_info, 12, 4) << 2)
+#define MLO_SHMEM_CHIP_CRASH_INFO_PARAM_VALID_DEVICE_BMAP_GET(device_info) \
+        ATH12K_MLO_SHMEM_GET_BITS(device_info, 2, 8)
+struct mlo_glb_device_crash_info {
+	/**
+	 * [1:0]:  no_of_devices
+	 * [4:2]:  valid_devices_bmap
+	 * For number of chips beyond 3, extension fields are added.
+	 * [9:5]:  valid_devices_bmap_ext
+	 * [15:12]: no_of_devices_ext
+	 * [31:16]: reserved
+	 */
+	u32 device_info;
+	/*
+	 * This TLV is followed by array of mlo_glb_per_device_crash_info:
+	 * mlo_glb_per_device_crash_info will have multiple instances equal to
+	 * num of partner devices received by no_of_chips
+	 * mlo_glb_per_device_crash_info per_device_crash_info[];
+	 */
+};
+
+struct mlo_glb_per_device_crash_info {
+	/*
+	 * crash reason, takes value in enum ath12k_mlo_chip_crash_reason
+         */
+        u32 crash_reason;
+
+        /*
+         * recovery mode, takes value in enum ath12k_mlo_recovery_mode
+         */
+        u32 recovery_mode;
+};
+
+/**
+ * ath12k_host_mlo_glb_per_device_crash_info - per chip crash
+ * information in MLO global shared memory
+ * @device_id: MLO chip id
+ * @crash_reason: Address of the crash_reason corresponding to device_id
+ * recovery_mode: Address of recovery mode corressponding to device_id
+ */
+struct ath12k_host_mlo_glb_per_device_crash_info {
+        u8 device_id;
+        void *crash_reason;
+        void *recovery_mode;
+};
+
+/**
+ * ath12k_host_mlo_glb_device_crash_info - chip crash information in MLO
+ * global shared memory
+ * @no_of_devices: No of partner chip to which crash information is shared
+ * @valid_devices_bmap: Valid chip bitmap
+ * @per_device_crash_info: pointer to per chip crash information.
+ */
+struct ath12k_host_mlo_glb_device_crash_info {
+	u8 no_of_devices;
+	u8 valid_devices_bmap;
+	struct ath12k_host_mlo_glb_per_device_crash_info *per_device_crash_info;
+};
+
+/**
+ * ath12k_host_mlo_mem_arena - MLO Global shared memory arena context
+ * @global_device_crash_info: shared memory for crash info, recovery info
+ * @init_done: Initialized snapshot info
+ */
+struct ath12k_host_mlo_mem_arena {
+	struct ath12k_host_mlo_glb_device_crash_info global_device_crash_info;
+        bool init_done;
+};
+
+struct ath12k_qmi_shmem_tlv_policy {
+	size_t min_len;
+};
+
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			      u32 mode);
 void ath12k_qmi_firmware_stop(struct ath12k_base *ab);
@@ -900,4 +993,5 @@ int ath12k_qmi_m3_dump_upload_done_ind_send(struct ath12k_base *ab,
 int ath12k_send_qdss_trace_mode_req(struct ath12k_base *ab,
 				    enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode, u64 value);
 int ath12k_enable_fwlog(struct ath12k_base *ab);
+int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab);
 #endif

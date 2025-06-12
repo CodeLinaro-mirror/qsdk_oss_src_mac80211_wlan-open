@@ -10713,8 +10713,12 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 					       struct sk_buff *skb)
 {
 	const struct wmi_mlo_teardown_complete_event *ev;
+	struct ath12k_hw_group *ag = ab->ag;
+	bool complete_flag = true;
+	struct ath12k_hw *ah;
+	struct ath12k *ar;
 	const void **tb;
-	int ret;
+	int i, j, ret;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
@@ -10731,6 +10735,31 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 	}
 
 	kfree(tb);
+
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, ev->pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid pdev id in teardown complete ev %d",
+			    ev->pdev_id);
+		return;
+	}
+	ar->mlo_complete_event = true;
+
+	for (i = 0; i < ag->num_hw; i++) {
+		ah = ag->ah[i];
+		if (!ah)
+			continue;
+
+		for_each_ar(ah, ar, j) {
+			ar = &ah->radio[j];
+
+			if (!ar->mlo_complete_event)
+				complete_flag = false;
+		}
+	}
+
+        if (complete_flag && ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1)
+                complete(&ag->umac_reset_complete);
+
 }
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
@@ -13866,6 +13895,7 @@ int ath12k_wmi_mlo_setup(struct ath12k *ar, struct wmi_mlo_setup_arg *mlo_params
 		return ret;
 	}
 
+	ar->mlo_complete_event = false;
 	return 0;
 }
 
@@ -13897,7 +13927,7 @@ int ath12k_wmi_mlo_ready(struct ath12k *ar)
 	return 0;
 }
 
-int ath12k_wmi_mlo_teardown(struct ath12k *ar)
+int ath12k_wmi_mlo_teardown(struct ath12k *ar, bool umac_reset)
 {
 	struct wmi_mlo_teardown_cmd *cmd;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
@@ -13914,6 +13944,7 @@ int ath12k_wmi_mlo_teardown(struct ath12k *ar)
 						 sizeof(*cmd));
 	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
 	cmd->reason_code = WMI_MLO_TEARDOWN_SSR_REASON;
+	cmd->umac_reset = umac_reset;
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_MLO_TEARDOWN_CMDID);
 	if (ret) {

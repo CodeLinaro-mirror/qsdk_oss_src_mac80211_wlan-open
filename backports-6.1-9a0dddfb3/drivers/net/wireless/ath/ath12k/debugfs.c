@@ -4099,6 +4099,40 @@ static const struct file_operations fops_simulate_fw_crash = {
 	.llseek = default_llseek,
 };
 
+static void ath12k_debug_multipd_wmi_pdev_set_param(struct ath12k_base *ab,
+						    const unsigned int value)
+{
+	struct ath12k_pdev *pdev;
+	struct ath12k *ar;
+	bool assert_userpd;
+	int i;
+
+	if (ab->hif.bus == ATH12K_BUS_PCI)
+		return;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		ar = pdev->ar;
+
+		/* Set pdev param to let firmware know which pd to use for
+		 * sending fatal IRQ.
+		 * Non-MLO, fatal error comes from asserted radios's user pd
+		 * MLO, fatal error comes from asserted radio's root pd
+		 */
+		if (!ab->ag->mlo_capable) {
+			assert_userpd = true;
+		} else {
+			if (value == ATH12K_FW_RECOVERY_DISABLE)
+				assert_userpd = false;
+			else
+				assert_userpd = true;
+		}
+
+		ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_MPD_USERPD_SSR,
+					  assert_userpd, ar->pdev->pdev_id);
+	}
+}
+
 void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
                             unsigned int value)
 {
@@ -4112,8 +4146,8 @@ void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 	if (!value)
 		recovery_mode = ATH12K_WMI_DISABLE_FW_RECOVERY;
 	else
-		recovery_mode = (value == ATH12K_FW_RECOVERY_ENABLE_AUTO) ?
-			ATH12K_WMI_FW_HANG_RECOVERY_MODE0 : ATH12K_WMI_DISABLE_FW_RECOVERY;
+		recovery_mode = (value == ATH12K_FW_RECOVERY_ENABLE_MODE1_AUTO) ?
+			ATH12K_WMI_FW_HANG_RECOVERY_MODE1 : ATH12K_WMI_FW_HANG_RECOVERY_MODE0;
 
 	if (ag->mlo_capable) {
 		for (i = 0; i < ag->num_devices; i++) {
@@ -4128,7 +4162,7 @@ void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 			 * TLV, need to check WMI caps once the support is
 			 * added from FW.
 			 */
-			//if (ab->recovery_mode_address) {
+			if (ab->recovery_mode_address) {
 				for (radio_idx = 0; radio_idx < ab->num_radios; radio_idx++) {
 
 					pdev = &ab->pdevs[radio_idx];
@@ -4140,13 +4174,14 @@ void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 				}
 
 				if (radioup) {
+					ath12k_debug_multipd_wmi_pdev_set_param(ab, ab->fw_recovery_support);
 					ret = ath12k_wmi_force_fw_hang_cmd(ar,
 									   recovery_mode,
 									   ATH12K_WMI_FW_HANG_DELAY, false);
 					ath12k_info(ab, "setting FW assert mode [%d] ret [%d]\n", recovery_mode, ret);
 				} else
 					continue;
-			//}
+			}
 		}
 	}
 }
@@ -4163,8 +4198,8 @@ static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 		return -EINVAL;
 
 	if (value < ATH12K_FW_RECOVERY_DISABLE ||
-	    value > ATH12K_FW_RECOVERY_ENABLE_AUTO) {
-		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Enable (auto recovery)");
+	    value > ATH12K_FW_RECOVERY_ENABLE_MODE1_AUTO) {
+		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Mode - 0 recovery 2 = Mode - 1 recovery\n");
 		ret = -EINVAL;
 		goto exit;
 	}

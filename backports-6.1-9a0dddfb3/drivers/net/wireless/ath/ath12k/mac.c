@@ -1264,6 +1264,92 @@ void ath12k_mac_link_sta_rhash_cleanup(void *data,
 	}
 }
 
+static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
+					struct ath12k_link_sta *arsta)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	struct ath12k *ar = arvif->ar;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA && !sta->tdls)
+		return;
+
+	WARN_ON(!ar->num_stations);
+	if (ar->num_stations)
+		ar->num_stations--;
+}
+
+int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_base *partner_ab;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	struct ieee80211_sta *sta;
+	struct ieee80211_vif *vif;
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_dp_link_peer *peer, *tmp;
+	struct ath12k *ar;
+	struct ath12k_hw *ah = ath12k_ag_to_ah(ag,0);
+	struct wiphy *wiphy = ah->hw->wiphy;
+	int idx, ret = 0;
+	u8 link_id;
+
+	wiphy_lock(wiphy);
+
+	for (idx = 0; idx < ag->num_devices; idx++) {
+		partner_ab = ag->ab[idx];
+
+		if (ab == partner_ab)
+			continue;
+
+		list_for_each_entry_safe(peer, tmp, &partner_ab->dp->peers, list) {
+			if (!peer->sta || !peer->mlo || !peer->vif)
+				continue;
+
+			link_id = peer->link_id;
+			/* get arsta */
+			sta = peer->sta;
+			ahsta = ath12k_sta_to_ahsta(sta);
+			arsta = ahsta->link[link_id];
+
+			/* get arvif */
+			vif = peer->vif;
+			ahvif = (struct ath12k_vif *)vif->drv_priv;
+			/* TODO: re-write this function or check if a data
+			 * structure needs to be modified to make a critical
+			 * section short.
+			 */
+			arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+
+			ar = arvif->ar;
+			if (!ar)
+			continue;
+
+			ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr);
+			if (ret) {
+				ath12k_err(partner_ab,
+					   "failed to delete peer vdev_id %d addr %pM ret %d\n",
+					   arvif->vdev_id, arsta->addr, ret);
+				continue;
+			}
+
+			spin_lock_bh(&partner_ab->base_lock);
+			ath12k_link_sta_rhash_delete(partner_ab, arsta);
+			spin_unlock_bh(&partner_ab->base_lock);
+
+			arvif->num_stations--;
+			ath12k_mac_dec_num_stations(arvif, arsta);
+			wiphy_work_cancel(wiphy, &arsta->update_wk);
+		}
+	}
+
+	wiphy_unlock(wiphy);
+	return ret;
+}
+
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 {
 	struct ath12k_dp_link_peer *peer, *tmp;
@@ -8470,22 +8556,6 @@ static int ath12k_mac_inc_num_stations(struct ath12k_link_vif *arvif,
 	ar->num_stations++;
 
 	return 0;
-}
-
-static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
-					struct ath12k_link_sta *arsta)
-{
-	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
-	struct ath12k *ar = arvif->ar;
-
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
-
-	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA && !sta->tdls)
-		return;
-
-	WARN_ON(!ar->num_stations);
-	if (ar->num_stations)
-		ar->num_stations--;
 }
 
 static void ath12k_mac_station_post_remove(struct ath12k *ar,
@@ -18620,7 +18690,7 @@ static int __ath12k_mac_mlo_setup(struct ath12k *ar)
 	return 0;
 }
 
-static int __ath12k_mac_mlo_teardown(struct ath12k *ar)
+static int __ath12k_mac_mlo_teardown(struct ath12k *ar, bool umac_reset)
 {
 	struct ath12k_base *ab = ar->ab;
 	int ret;
@@ -18634,7 +18704,7 @@ static int __ath12k_mac_mlo_teardown(struct ath12k *ar)
 	if (num_link == 0)
 		return 0;
 
-	ret = ath12k_wmi_mlo_teardown(ar);
+	ret = ath12k_wmi_mlo_teardown(ar, umac_reset);
 	if (ret) {
 		ath12k_warn(ab, "failed to send MLO teardown WMI command for pdev %d: %d\n",
 			    ar->pdev_idx, ret);
@@ -18644,6 +18714,48 @@ static int __ath12k_mac_mlo_teardown(struct ath12k *ar)
 	ath12k_dbg(ab, ATH12K_DBG_MAC, "mlo teardown for pdev %d\n", ar->pdev_idx);
 
 	return 0;
+}
+
+int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_hw* ah;
+	int i, j, ret = 0;
+	struct ath12k *ar;
+	bool umac_reset;
+
+	for(i = 0; i < ag->num_hw; i++){
+		ah = ag->ah[i];
+		if (!ah)
+			continue;
+
+		for_each_ar(ah, ar, j) {
+			ar = &ah->radio[j];
+
+			if (ar->ab == ab) {
+				/* No need to send teardown event for asserted
+				 * chip, as anyway there will be no completion
+				 * event from FW.
+				 */
+				ar->mlo_complete_event = true;
+				continue;
+			}
+
+			/* Need to umac_reset as 1 for only one chip */
+			umac_reset = false;
+			if (!ag->trigger_umac_reset) {
+                                umac_reset = true;
+                                ag->trigger_umac_reset = true;
+                        }
+
+			ret = __ath12k_mac_mlo_teardown(ar, umac_reset);
+			if (ret)
+				goto out;
+		}
+	}
+
+out:
+        return ret;
 }
 
 int ath12k_mac_mlo_setup(struct ath12k_hw_group *ag)
@@ -18681,7 +18793,7 @@ err_setup:
 			if (!ar)
 				continue;
 
-			__ath12k_mac_mlo_teardown(ar);
+			__ath12k_mac_mlo_teardown(ar, false);
 		}
 	}
 
@@ -18701,7 +18813,7 @@ void ath12k_mac_mlo_teardown(struct ath12k_hw_group *ag)
 
 		for_each_ar(ah, ar, j) {
 			ar = &ah->radio[j];
-			ret = __ath12k_mac_mlo_teardown(ar);
+			ret = __ath12k_mac_mlo_teardown(ar, false);
 			if (ret) {
 				ath12k_err(ar->ab, "failed to teardown MLO: %d\n", ret);
 				break;

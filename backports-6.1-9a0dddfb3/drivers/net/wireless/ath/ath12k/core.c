@@ -1048,6 +1048,64 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 	ath12k_qmi_deinit_service(ab);
 }
 
+static int ath12k_core_mlo_shmem_per_device_crash_info_addresses(
+		struct ath12k_base *ab,
+		struct ath12k_host_mlo_glb_device_crash_info *global_device_crash_info)
+{
+	int i;
+	struct ath12k_host_mlo_glb_per_device_crash_info *per_device_crash_info = NULL;
+
+	for (i = 0; i < global_device_crash_info->no_of_devices; i++)
+	{
+		per_device_crash_info = &global_device_crash_info->per_device_crash_info[i];
+
+		if (!per_device_crash_info)
+			return -EINVAL;
+
+		if (ab->device_id == per_device_crash_info->device_id)
+			break;
+	}
+
+	if (i >= global_device_crash_info->no_of_devices) {
+		ath12k_err(ab, "error in chip id:%d\n", ab->device_id);
+		return 0;
+	}
+
+	if (!per_device_crash_info ||
+	    !per_device_crash_info->crash_reason ||
+	    !per_device_crash_info->recovery_mode) {
+		ath12k_err(ab, "crash_reason address is null\n");
+		return 0;
+	}
+
+	ab->crash_info_address = per_device_crash_info->crash_reason;
+	ab->recovery_mode_address = per_device_crash_info->recovery_mode;
+
+	return 0;
+}
+
+static int ath12k_core_mlo_shmem_crash_info_init(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_host_mlo_mem_arena *mlomem_arena_ctx;
+	struct ath12k_host_mlo_glb_device_crash_info *global_device_crash_info;
+
+	mlomem_arena_ctx = &ab->ag->mlomem_arena;
+
+	if (!(ag->mlo_mem.is_mlo_mem_avail))
+		return 0;
+
+	global_device_crash_info = &mlomem_arena_ctx->global_device_crash_info;
+
+	if (ath12k_core_mlo_shmem_per_device_crash_info_addresses(ab,
+				global_device_crash_info) < 0) {
+		ath12k_warn(ab, "per_device_crash_info is not set\n");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
 static int ath12k_core_pdev_init(struct ath12k_base *ab)
 {
 	ath12k_fse_init(ab);
@@ -1437,6 +1495,11 @@ core_pdev_create:
 			goto err;
 		}
 
+                ret = ath12k_core_mlo_shmem_crash_info_init(ab);
+                if (ret) {
+                        ath12k_err(ab, "failed to parse crash info %d\n", ret);
+                }
+
 		if (ath12k_en_fwlog == true) {
 			if (ath12k_enable_fwlog(ab))
 				ath12k_err(ab, "failed to enable fwlog: %d\n", ret);
@@ -1620,6 +1683,11 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 	mutex_unlock(&ab->core_lock);
 
 	if (ath12k_core_hw_group_start_ready(ag)) {
+		ret = ath12k_qmi_mlo_global_snapshot_mem_init(ab);
+		if (ret) {
+			ath12k_warn(ab, "failure in global mem init\n");
+			goto err_core_stop;
+		}
 		ret = ath12k_core_hw_group_start(ag);
 		if (ret) {
 			ath12k_warn(ab, "unable to start hw group\n");
@@ -1873,6 +1941,35 @@ void ath12k_core_halt(struct ath12k *ar)
 	idr_init(&ar->txmgmt_idr);
 }
 
+static void ath12k_core_mlo_hw_queues_stop(struct ath12k_hw_group *ag)
+{
+	struct ath12k_hw *ah;
+	int i;
+
+	lockdep_assert_held(&ag->mutex);
+
+	for (i = 0; i < ag->num_hw; i++) {
+		ah = ath12k_ag_to_ah(ag,i);
+		if (!ah)
+			continue;
+
+		wiphy_lock(ah->hw->wiphy);
+		/* If queue 0 is stopped, it is safe to assume that all
+		 * other queues are stopped by driver via
+		 * ieee80211_stop_queues() below. This means, there is
+		 * no need to stop it again and hence continue
+		 */
+
+		if (ieee80211_queue_stopped(ah->hw, 0)) {
+			wiphy_unlock(ah->hw->wiphy);
+			return;
+		}
+
+                ieee80211_stop_queues(ah->hw);
+		wiphy_unlock(ah->hw->wiphy);
+	}
+}
+
 static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
@@ -1891,25 +1988,15 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 	for (i = 0; i < ag->num_hw; i++) {
 		ah = ath12k_ag_to_ah(ag, i);
 		if (!ah || ah->state == ATH12K_HW_STATE_OFF ||
-		    ah->state == ATH12K_HW_STATE_TM)
+		    ah->state == ATH12K_HW_STATE_TM ||
+		    ah->state == ATH12K_HW_STATE_RESTARTING)
 			continue;
-
-		wiphy_lock(ah->hw->wiphy);
-
-		/* If queue 0 is stopped, it is safe to assume that all
-		 * other queues are stopped by driver via
-		 * ieee80211_stop_queues() below. This means, there is
-		 * no need to stop it again and hence continue
-		 */
-		if (ieee80211_queue_stopped(ah->hw, 0)) {
-			wiphy_unlock(ah->hw->wiphy);
-			continue;
-		}
-
-		ieee80211_stop_queues(ah->hw);
 
 		for (j = 0; j < ah->num_radio; j++) {
 			ar = &ah->radio[j];
+
+			if(ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !ar->ab->is_reset)
+				continue;
 
 			list_for_each_entry(arvif, &ar->arvifs, list) {
 				if (arvif->is_started)
@@ -2002,6 +2089,10 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 
 			for (j = 0; j < ah->num_radio; j++) {
 				ar = &ah->radio[j];
+
+				if(ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !ar->ab->is_reset)
+					continue;
+
 				if (ar->scan.state == ATH12K_SCAN_RUNNING ||
 						ar->scan.state == ATH12K_SCAN_STARTING)
 					ar->scan.state = ATH12K_SCAN_ABORTING;
@@ -2019,7 +2110,8 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 			 */
 			for (j = 0; j < ah->num_radio; j++) {
 				ar = &ah->radio[j];
-				ath12k_mac_dp_peer_cleanup(ar);
+				if(ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && ar->ab->is_reset)
+					ath12k_mac_dp_peer_cleanup(ar);
 			}
 
 			break;
@@ -2165,10 +2257,105 @@ static void ath12k_core_update_userpd_state(struct work_struct *work)
 	}
 }
 
+/* Asserted target's reboot handling for crash type ATH12K_RPROC_USERPD_CRASH */
+static void ath12k_core_upd_power_down(struct ath12k_base *ab)
+{
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+
+	/*
+	 * Stop user pd
+	 * Collect coredump using user pd
+	 */
+	if (ab_ahb->crash_type == ATH12K_RPROC_USERPD_CRASH) {
+		ath12k_hif_power_down(ab, false);
+		ath12k_coredump_ahb_collect(ab);
+	}
+
+	ab_ahb->crash_type = ATH12K_NO_CRASH;
+}
+
+/*
+ * Trigger umac_reset with umac_reset flag set. This is a
+ * waiting function which will return only after UMAC reset
+ * is complete on non-asserted chip set. UMAC reset completion
+ * is identified by waiting for MLO Teardown complete for all
+ * chipsets
+ */
+
+#define ATH12K_UMAC_RESET_TIMEOUT_IN_MS         1000
+static int ath12k_core_trigger_umac_reset(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	long time_left;
+	int ret = 0;
+
+	reinit_completion(&ag->umac_reset_complete);
+
+	ath12k_mac_mlo_teardown_with_umac_reset(ab);
+
+	time_left = wait_for_completion_timeout(&ag->umac_reset_complete,
+			msecs_to_jiffies(ATH12K_UMAC_RESET_TIMEOUT_IN_MS));
+
+	if (!time_left) {
+		ath12k_warn(ab, "UMAC reset didn't get completed within %d ms\n", ATH12K_UMAC_RESET_TIMEOUT_IN_MS);
+		ret = -ETIMEDOUT;
+	}
+
+	ag->trigger_umac_reset = false;
+	return ret;
+}
+
+static void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_ahb *ab_ahb = NULL;
+	struct ath12k_base *partner_ab;
+	int i;
+
+	lockdep_assert_held(&ag->mutex);
+
+	if (ab->hif.bus == ATH12K_BUS_AHB || ab->hif.bus == ATH12K_BUS_HYBRID)
+		ab_ahb = ath12k_ab_to_ahb(ab);
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (ab == partner_ab)
+			continue;
+
+		/* If the partner chip is either AHB/Hybrid
+		 * and if it is a rootpd crash then the userpd
+		 * won't be responding to the FW Hang command
+		 * So skip to send it for AHB or Hybrid SOC's
+		 * in case of a rootpd crash as queueing this
+		 * reset_work will be taken care of AHB/Hybrid
+		 * inside ath12k_ahb_queue_all_userpd_reset().
+		 */
+		if (partner_ab->hif.bus != ATH12K_BUS_PCI && ab_ahb
+				&& ab_ahb->crash_type == ATH12K_RPROC_ROOTPD_CRASH)
+			continue;
+
+
+		/* issue FW Hang command on partner chips for Mode0. This is a fool proof
+		 * method to ensure recovery of all partner chips in MODE0 instead of
+		 * relying on firmware to crash partner chips
+		 */
+		if (!test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags)) {
+			ath12k_info(ab, "sending fw_hang cmd to partner chipset(s)\n");
+			set_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags);
+			clear_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
+			partner_ab->qmi.num_radios = U8_MAX;
+			ath12k_wmi_force_fw_hang_cmd(partner_ab->pdevs[0].ar,
+					ATH12K_WMI_FW_HANG_ASSERT_TYPE,
+					ATH12K_WMI_FW_HANG_DELAY, true);
+		}
+	}
+}
+
 static void ath12k_core_reset(struct work_struct *work)
 {
-	struct ath12k_base *ab = container_of(work, struct ath12k_base, reset_work);
+	struct ath12k_base *partner_ab, *ab = container_of(work, struct ath12k_base, reset_work);
 	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_hw *ah;
 	int reset_count, fail_cont_count, i;
 	long time_left;
 
@@ -2176,6 +2363,27 @@ static void ath12k_core_reset(struct work_struct *work)
 		ath12k_warn(ab, "ignore reset dev flags 0x%lx\n", ab->dev_flags);
 		return;
 	}
+
+	ab->recovery_start = false;
+
+	if (ab->recovery_mode_address) {
+		switch (*ab->recovery_mode_address) {
+		case ATH12K_MLO_RECOVERY_MODE1:
+			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE1;
+			break;
+		case ATH12K_MLO_RECOVERY_MODE0:
+			fallthrough;
+		default:
+			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+		}
+
+		ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,"mode:%d\n", ag->recovery_mode);
+	} else {
+		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+	}
+	if (ab->fw_recovery_support)
+		ath12k_info(ab, "Recovery is initiated with Mode%s\n",
+				(ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0 ? "0" : "1"));
 
 	/* Sometimes the recovery will fail and then the next all recovery fail,
 	 * this is to avoid infinite recovery since it can not recovery success
@@ -2225,7 +2433,75 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset starting\n");
 
+	mutex_lock(&ag->mutex);
 	ab->is_reset = true;
+
+	ath12k_core_mlo_hw_queues_stop(ab->ag);
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (ab == partner_ab)
+			continue;
+
+		/* Need to check partner_ab flag to select recovery mode
+		 * as Mode0, if continuous reset has happened
+		 */
+
+		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1) {
+			if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags) ||
+			    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags)) {
+				/* On receiving MHI Interrupt for pdev which is
+				 * already in UMAC Recovery, then fallback to
+				 * MODE0
+				 */
+				ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+                        	ath12k_info(ab, "Recovery is falling back to Mode0 as one of the partner chip is already in recovery\n");
+				break;
+			} else {
+				/* Set dev flags to UMAC recovery START
+				 * and set flag to send teardown later
+				 */
+				ath12k_info(ab, "setting teardown to true\n");
+				set_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
+                        }
+                }
+        }
+
+	/* UMAC RESET relies on ag->num_started as barrier to make sure
+	 * umac related interrupts are received from all non-asserted chips
+	 * before writing to the shared memory. So need to decrement the
+	 * before trigerring umac reset.
+	 */
+	ath12k_core_to_group_ref_put(ab);
+
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1) {
+		if (ath12k_core_trigger_umac_reset(ab) ||
+		    ath12k_mac_partner_peer_cleanup(ab)) {
+			/* Fallback to Mode0 if umac reset/peer_cleanup is
+			 * failed
+			 */
+			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+			/* TODO: DS: Handle any clean up necessary for Mode1 SSR */
+			ath12k_info(ab, "Recovery is falling back to Mode0\n");
+		} else {
+			/* wake queues here as ping should continue for
+			 * legacy clients in non-asserted chipsets
+			 */
+			for (i = 0; i < ag->num_hw; i++) {
+				ah = ag->ah[i];
+				if (!ah)
+					continue;
+
+				ieee80211_wake_queues(ah->hw);
+			}
+			ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+					"Queues are started as umac reset is completed for partner chipset\n");
+		}
+	}
+
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+		ath12k_core_trigger_partner_device_crash(ab);
+
 	/* prepare coredump */
 	if (ab->hif.bus == ATH12K_BUS_PCI) {
 		ath12k_coredump_download_rddm(ab);
@@ -2237,6 +2513,7 @@ static void ath12k_core_reset(struct work_struct *work)
 	atomic_set(&ab->recovery_count, 0);
 
 	ath12k_coredump_collect(ab);
+
 	ath12k_core_pre_reconfigure_recovery(ab);
 
 	ath12k_core_post_reconfigure_recovery(ab);
@@ -2246,16 +2523,23 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_ce_irq_disable(ab);
 
-	ath12k_hif_power_down(ab, false);
+	if (ab->hif.bus == ATH12K_BUS_PCI) {
+		ath12k_hif_power_down(ab, false);
+	} else {
+		ath12k_core_upd_power_down(ab);
+	}
 
 	/* prepare for power up */
 	ab->qmi.num_radios = U8_MAX;
 	//ab->single_chip_mlo_supp = false; TODO need to revisit
 
-	mutex_lock(&ag->mutex);
-	ath12k_core_to_group_ref_put(ab);
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1)
+		ab->recovery_start = true;
 
-	if (ag->num_started > 0) {
+	ab->recovery_mode_address = NULL;
+	ab->crash_info_address = NULL;
+
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0 && ag->num_started > 0) {
 		ath12k_dbg(ab, ATH12K_DBG_BOOT,
 			   "waiting for %d partner device(s) to reset\n",
 			   ag->num_started);
@@ -2265,7 +2549,7 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		if (!ab)
+		if (!ab || !ab->is_reset)
 			continue;
 
 		ath12k_qmi_free_resource(ab);
@@ -2335,6 +2619,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	list_add(&ag->list, &ath12k_hw_group_list);
 	INIT_WORK(&ag->reset_group_work, ath12k_core_update_userpd_state);
 	mutex_init(&ag->mutex);
+	init_completion(&ag->umac_reset_complete);
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 
