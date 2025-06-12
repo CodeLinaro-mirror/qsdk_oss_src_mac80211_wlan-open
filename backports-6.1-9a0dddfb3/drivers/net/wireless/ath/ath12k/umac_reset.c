@@ -16,6 +16,9 @@
 #include "debug.h"
 #include "hif.h"
 #include "dp.h"
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+#include "ppe.h"
+#endif
 
 int ath12k_htt_umac_reset_msg_send(struct ath12k_base *ab,
 				   struct ath12k_htt_umac_reset_setup_cmd_params *params)
@@ -347,6 +350,10 @@ void ath12k_umac_reset_notify_pre_reset_done(struct ath12k_base *ab)
 	struct ath12k_dp *dp;
 
 	dp = ath12k_ab_to_dp(ab);
+
+	if (dp->ppeds_service_running)
+		return;
+
 	ath12k_umac_reset_notify_target_sync_and_send(ab,
 						      ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE);
 	ab->dp_umac_reset.umac_pre_reset_in_prog = false;
@@ -360,9 +367,18 @@ void ath12k_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	set_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
 	ath12k_hif_irq_disable(ab);
 	atomic_inc(&mlo_umac_reset->response_chip);
-
-	ath12k_umac_reset_notify_target_sync_and_send(ab,
-						      ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (ab->dp->ppe.ppeds_handle) {
+		ath12k_dp_ppeds_service_enable_disable(ab, true);
+		ab->dp_umac_reset.umac_pre_reset_in_prog = true;
+		ath12k_dp_ppeds_interrupt_stop(ab);
+		ath12k_dp_ppeds_stop(ab);
+		ath12k_dp_ppeds_service_enable_disable(ab, false);
+	}
+#endif
+	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		ath12k_umac_reset_notify_target_sync_and_send(ab,
+				ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE);
 	return;
 }
 
@@ -375,6 +391,12 @@ void ath12k_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 
 	atomic_inc(&mlo_umac_reset->response_chip);
 	ath12k_hif_irq_enable(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (ab->dp->ppe.ppeds_handle) {
+		ath12k_dp_ppeds_start(ab);
+		ath12k_dp_ppeds_interrupt_start(ab);
+	}
+#endif
 	ath12k_umac_reset_notify_target_sync_and_send(ab, ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE);
 	ath12k_dp_peer_tid_setup(ab);
 	return;

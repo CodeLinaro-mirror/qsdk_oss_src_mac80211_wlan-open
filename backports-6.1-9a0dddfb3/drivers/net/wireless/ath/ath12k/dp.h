@@ -641,6 +641,7 @@ struct ath12k_dp {
 	/*Neighbors Peer list for NAC RSSI*/
 	struct list_head neighbor_peers;
 	int num_nrps;
+	unsigned long ppeds_service_running;
 };
 /* @brief target -> host extended statistics upload
  *
@@ -961,8 +962,12 @@ bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
 void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
                                        enum dp_umac_reset_tx_cmd tx_event);
 void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
+bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
 void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif);
 void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp);
+void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
+			      struct hal_srng_params *ring_params,
+			      enum hal_ring_type type, int ring_num);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,

@@ -28,6 +28,14 @@ enum ppeds_irq_type {
 	PPEDS_IRQ_PPE_WBM2SW_REL,
 };
 
+struct dp_ppe_ds_idxs {
+	u32 ppe2tcl_start_idx;
+	u32 reo2ppe_start_idx;
+};
+
+#define ATH12K_DP_PPEDS_NAPI_DONE_BIT		1
+#define ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT	2
+
 #define DP_PPEDS_SERVICE_BUDGET     256
 
 #define ATH12K_PPE_DEFAULT_CORE_MASK		ath12k_rfs_core_mask[0]
@@ -147,7 +155,8 @@ int ath12k_vif_set_mtu(struct ath12k_vif *ahvif, int mtu);
 
 void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab);
 int ath12k_dp_srng_ppeds_setup(struct ath12k_base *ab);
-int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp);
+int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp,
+				 struct dp_ppe_ds_idxs *idx);
 void ath12k_dp_ppeds_stop(struct ath12k_base *ab);
 int ath12k_dp_ppeds_start(struct ath12k_base *ab);
 int ath12k_ppeds_detach(struct ath12k_base *ab);
@@ -178,6 +187,12 @@ void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif,
 				  int ppe_vp_profile_idx);
 void ath12k_vif_free_vp(struct ath12k_vif *ahvif, struct net_device *dev);
 
+void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
+					    bool enable);
+void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab);
+void ath12k_dp_ppeds_stop(struct ath12k_base *ab);
+void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab);
+
 #else
 static inline void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
 {
@@ -188,7 +203,8 @@ static inline int ath12k_dp_srng_ppeds_setup(struct ath12k_base *ab)
 	return 0;
 }
 
-static inline int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp)
+static inline int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp,
+					       struct dp_ppe_ds_idxs *idx)
 {
 	return 0;
 }

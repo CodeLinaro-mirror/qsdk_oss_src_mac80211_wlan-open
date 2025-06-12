@@ -348,7 +348,7 @@ static int ath12k_ce_init_ring(struct ath12k_base *ab,
 
 	/* TODO: Init other params needed by HAL to init the ring */
 
-	ret = ath12k_hal_srng_setup(ab, type, ce_id, 0, &params);
+	ret = ath12k_hal_srng_setup_idx(ab, type, ce_id, 0, &params, 0);
 	if (ret < 0) {
 		ath12k_warn(ab, "failed to setup srng: %d ring_id %d\n",
 			    ret, ce_id);

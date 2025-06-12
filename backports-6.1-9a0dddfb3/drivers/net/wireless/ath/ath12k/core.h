@@ -1659,6 +1659,7 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab);
 int ath12k_dp_umac_reset_init(struct ath12k_base *ab);
 void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab);
 void ath12k_umac_reset_completion(struct ath12k_base *ab);
+void ath12k_umac_reset_notify_pre_reset_done(struct ath12k_base *ab);
 struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab,
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);

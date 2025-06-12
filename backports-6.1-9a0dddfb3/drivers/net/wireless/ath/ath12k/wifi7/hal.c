@@ -103,7 +103,8 @@ void ath12k_wifi7_hal_ce_dst_setup(struct ath12k_base *ab,
 }
 
 void ath12k_wifi7_hal_srng_dst_hw_init(struct ath12k_base *ab,
-				       struct hal_srng *srng)
+				       struct hal_srng *srng,
+				       u32 restore_idx)
 {
 	struct ath12k_hal *hal = &ab->hal;
 	u32 val;
@@ -161,10 +162,11 @@ void ath12k_wifi7_hal_srng_dst_hw_init(struct ath12k_base *ab,
 
 	/* Initialize head and tail pointers to indicate ring is empty */
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R2];
-	ath12k_hif_write32(ab, reg_base, 0);
-	ath12k_hif_write32(ab, reg_base + HAL_REO1_RING_TP_OFFSET, 0);
-	*srng->u.dst_ring.hp_addr = 0;
-	srng->u.dst_ring.tp = 0;
+	ath12k_hif_write32(ab, reg_base,  restore_idx * srng->entry_size);
+	ath12k_hif_write32(ab, reg_base + HAL_REO1_RING_TP_OFFSET,
+			   restore_idx * srng->entry_size);
+	*srng->u.dst_ring.hp_addr =  restore_idx * srng->entry_size;
+	srng->u.dst_ring.tp =  restore_idx * srng->entry_size;
 
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
 	val = 0;
@@ -180,7 +182,8 @@ void ath12k_wifi7_hal_srng_dst_hw_init(struct ath12k_base *ab,
 }
 
 void ath12k_wifi7_hal_srng_src_hw_init(struct ath12k_base *ab,
-				       struct hal_srng *srng)
+				       struct hal_srng *srng,
+				       u32 restore_idx)
 {
 	struct ath12k_hal *hal = &ab->hal;
 	u32 val;
@@ -250,10 +253,11 @@ void ath12k_wifi7_hal_srng_src_hw_init(struct ath12k_base *ab,
 
 	/* Initialize head and tail pointers to indicate ring is empty */
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R2];
-	ath12k_hif_write32(ab, reg_base, 0);
-	ath12k_hif_write32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET, 0);
-	*srng->u.src_ring.tp_addr = 0;
-	srng->u.src_ring.hp = 0;
+	ath12k_hif_write32(ab, reg_base, restore_idx * srng->entry_size);
+	ath12k_hif_write32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET,
+			   restore_idx * srng->entry_size);
+	*srng->u.src_ring.tp_addr =  restore_idx * srng->entry_size;
+	srng->u.src_ring.hp =  restore_idx * srng->entry_size;
 
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
 	val = 0;

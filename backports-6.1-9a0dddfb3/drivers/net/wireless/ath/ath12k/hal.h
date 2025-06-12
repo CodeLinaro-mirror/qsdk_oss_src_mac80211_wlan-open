@@ -33,6 +33,11 @@ struct hal_rx_reo_queue;
 #define HAL_ADDR_LSB_REG_MASK		0xffffffff
 #define HAL_ADDR_MSB_REG_SHIFT		32
 
+#define HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT 10
+#define HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT  18
+#define RING_HALT_TIMEOUT 10
+#define RNG_HALT_STAT_RETRY_COUNT 10
+
 #define HAL_WBM2SW_REL_ERR_RING_NUM 5
 #define HAL_WBM2SW_PPEDS_TX_CMPLN_MAP_ID 11
 #define HAL_WBM2SW_PPEDS_TX_CMPLN_RING_NUM 6
@@ -1192,8 +1197,10 @@ struct hal_ops {
 	void (*set_umac_srng_ptr_addr)(struct ath12k_base *ab,
 				       struct hal_srng *srng,
 				       enum hal_ring_type type, int ring_num);
-	void (*srng_src_hw_init)(struct ath12k_base *ab, struct hal_srng *srng);
-	void (*srng_dst_hw_init)(struct ath12k_base *ab, struct hal_srng *srng);
+	void (*srng_src_hw_init)(struct ath12k_base *ab, struct hal_srng *srng,
+				 u32 restore_idx);
+	void (*srng_dst_hw_init)(struct ath12k_base *ab, struct hal_srng *srng,
+				 u32 restore_idx);
 	int (*srng_update_shadow_config)(struct ath12k_base *ab,
 					 enum hal_ring_type ring_type,
 					 int ring_num);
@@ -1331,9 +1338,10 @@ int ath12k_hal_srng_src_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 void ath12k_hal_srng_access_begin(struct ath12k_base *ab,
 				  struct hal_srng *srng);
 void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng);
-int ath12k_hal_srng_setup(struct ath12k_base *ab, enum hal_ring_type type,
-			  int ring_num, int mac_id,
-			  struct hal_srng_params *params);
+int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
+			      int ring_num, int mac_id,
+			      struct hal_srng_params *params,
+			      u32 restore_idx);
 void ath12k_hal_dump_srng_stats(struct ath12k_base *ab);
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
 				       u32 **cfg, u32 *len);

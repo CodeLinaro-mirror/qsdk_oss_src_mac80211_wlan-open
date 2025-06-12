@@ -15,15 +15,17 @@ static void ath12k_hal_ce_dst_setup(struct ath12k_base *ab,
 }
 
 static void ath12k_hal_srng_src_hw_init(struct ath12k_base *ab,
-					struct hal_srng *srng)
+					struct hal_srng *srng,
+					u32 restore_idx)
 {
-	ab->hal.hal_ops->srng_src_hw_init(ab, srng);
+	ab->hal.hal_ops->srng_src_hw_init(ab, srng, restore_idx);
 }
 
 static void ath12k_hal_srng_dst_hw_init(struct ath12k_base *ab,
-					struct hal_srng *srng)
+					struct hal_srng *srng,
+					u32 restore_idx)
 {
-	ab->hal.hal_ops->srng_dst_hw_init(ab, srng);
+	ab->hal.hal_ops->srng_dst_hw_init(ab, srng, restore_idx);
 }
 
 static void ath12k_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
@@ -194,12 +196,13 @@ static void ath12k_hal_free_cont_wrp(struct ath12k_hal *hal)
 }
 
 static void ath12k_hal_srng_hw_init(struct ath12k_base *ab,
-				    struct hal_srng *srng)
+				    struct hal_srng *srng,
+				    u32 idx)
 {
 	if (srng->ring_dir == HAL_SRNG_DIR_SRC)
-		ath12k_hal_srng_src_hw_init(ab, srng);
+		ath12k_hal_srng_src_hw_init(ab, srng, idx);
 	else
-		ath12k_hal_srng_dst_hw_init(ab, srng);
+		ath12k_hal_srng_dst_hw_init(ab, srng, idx);
 }
 
 int ath12k_hal_srng_get_entrysize(struct ath12k_base *ab, u32 ring_type)
@@ -568,16 +571,70 @@ void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
 					      tot_link_desc, end_offset);
 }
 
-int ath12k_hal_srng_setup(struct ath12k_base *ab, enum hal_ring_type type,
-			  int ring_num, int mac_id,
-			  struct hal_srng_params *params)
+static bool hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab)
+{
+	u32 cmn_reg_addr;
+	u32 regval;
+
+	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
+	regval = ath12k_hif_read32(ab, cmn_reg_addr);
+
+	return (regval &
+			1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+}
+
+static void hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab)
+{
+	u32 cmn_reg_addr;
+	u32 regval;
+
+	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
+	regval = ath12k_hif_read32(ab, cmn_reg_addr);
+
+	regval |= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+
+	/* Enable ring halt for the ppe2tcl ring */
+	ath12k_hif_write32(ab, cmn_reg_addr, regval);
+}
+
+static void hal_tx_ppe2tcl_ring_halt_reset(struct ath12k_base *ab)
+{
+	u32 cmn_reg_addr;
+	u32 regval;
+
+	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
+	regval = ath12k_hif_read32(ab, cmn_reg_addr);
+
+	regval &= ~(1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+
+	/* Disable ring halt for the ppe2tcl ring */
+	ath12k_hif_write32(ab, cmn_reg_addr, regval);
+}
+
+static bool hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
+{
+	u32 cmn_reg_addr;
+	u32 regval;
+
+	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
+
+	regval = ath12k_hif_read32(ab, cmn_reg_addr);
+
+	regval &= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT);
+
+	return !!regval;
+}
+
+int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
+			      int ring_num, int mac_id,
+			      struct hal_srng_params *params, u32 restore_idx)
 {
 	struct ath12k_hal *hal = &ab->hal;
 	struct hal_srng_config *srng_config = &ab->hal.srng_config[type];
 	struct hal_srng *srng;
 	int ring_id;
 	u32 idx;
-	int i;
+	int i, retry_count = 0;
 
 	ring_id = ath12k_hal_srng_get_ring_id(hal, type, ring_num, mac_id);
 	if (ring_id < 0)
@@ -676,7 +733,41 @@ int ath12k_hal_srng_setup(struct ath12k_base *ab, enum hal_ring_type type,
 	if (srng_config->mac_type != ATH12K_HAL_SRNG_UMAC)
 		return ring_id;
 
-	ath12k_hal_srng_hw_init(ab, srng);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (restore_idx) {
+		/* During UMAC reset Tx ring halt is set
+		 * by Wi-Fi FW during pre-reset stage.
+		 * Hence skip halting the rings again
+		 */
+		if (ath12k_dp_umac_reset_in_progress(ab)) {
+			if (!(hal_tx_ppe2tcl_ring_halt_get(ab))) {
+				ath12k_warn(ab, "TX ring halt not set\n");
+				WARN_ON(1);
+			}
+			ath12k_hal_srng_hw_init(ab, srng, restore_idx);
+		} else {
+			hal_tx_ppe2tcl_ring_halt_set(ab);
+			do {
+				ath12k_warn(ab, "Waiting for ring reset, retried count: %d\n",
+					    retry_count);
+				mdelay(RING_HALT_TIMEOUT);
+				retry_count++;
+			} while (!(hal_tx_ppe2tcl_ring_halt_done(ab)) &&
+				 (retry_count < RNG_HALT_STAT_RETRY_COUNT));
+
+			if (retry_count >= RNG_HALT_STAT_RETRY_COUNT)
+				ath12k_err(ab, "Ring halt is failed, retried count: %d\n",
+					   retry_count);
+
+			ath12k_hal_srng_hw_init(ab, srng, restore_idx);
+			hal_tx_ppe2tcl_ring_halt_reset(ab);
+		}
+	} else {
+		ath12k_hal_srng_hw_init(ab, srng, 0);
+	}
+#else
+	ath12k_hal_srng_hw_init(ab, srng, 0);
+#endif
 
 	if (type == HAL_CE_DST) {
 		srng->u.dst_ring.max_buffer_length = params->max_buffer_len;

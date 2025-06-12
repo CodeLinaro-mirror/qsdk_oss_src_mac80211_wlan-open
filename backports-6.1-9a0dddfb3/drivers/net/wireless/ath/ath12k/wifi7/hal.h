@@ -578,9 +578,9 @@ extern const struct hal_ops hal_wcn7850_ops;
 void ath12k_wifi7_hal_ce_dst_setup(struct ath12k_base *ab,
 				   struct hal_srng *srng, int ring_num);
 void ath12k_wifi7_hal_srng_dst_hw_init(struct ath12k_base *ab,
-				       struct hal_srng *srng);
+				       struct hal_srng *srng, u32 restore_idx);
 void ath12k_wifi7_hal_srng_src_hw_init(struct ath12k_base *ab,
-				       struct hal_srng *srng);
+				       struct hal_srng *srng, u32 restore_idx);
 void ath12k_wifi7_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 					     struct hal_srng *srng,
 					     enum hal_ring_type type, int ring_num);

@@ -290,9 +290,9 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	return ath12k_dp_srng_find_ring_in_mask(ring_num, grp_mask);
 }
 
-static void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
-				     struct hal_srng_params *ring_params,
-				     enum hal_ring_type type, int ring_num)
+void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
+			      struct hal_srng_params *ring_params,
+			      enum hal_ring_type type, int ring_num)
 {
 	int msi_group_number, msi_data_count;
 	u32 msi_data_start, msi_irq_start, addr_lo, addr_hi;
@@ -335,7 +335,7 @@ static void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 
 	vector = msi_irq_start  + (msi_group_number % msi_data_count);
 
-	if (ab->hw_params->ds_support)
+	if (ab->hw_params->ds_support && !ath12k_dp_umac_reset_in_progress(ab))
 		ath12k_hif_ppeds_register_interrupts(ab, type, vector, ring_num);
 }
 
@@ -488,7 +488,7 @@ skip_dma_alloc:
 		ring->cached = 1;
 	}
 
-	ret = ath12k_hal_srng_setup(ab, type, ring_num, mac_id, &params);
+	ret = ath12k_hal_srng_setup_idx(ab, type, ring_num, mac_id, &params, 0);
 	if (ret < 0) {
 		ath12k_warn(ab, "failed to setup srng: %d ring_id %d\n",
 			    ret, ring_num);
@@ -621,8 +621,7 @@ static void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 	}
 	ath12k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
 
-	if (!ath12k_dp_umac_reset_in_progress(ab))
-		ath12k_dp_srng_ppeds_cleanup(ab);
+	ath12k_dp_srng_ppeds_cleanup(ab);
 }
 
 static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
@@ -726,15 +725,14 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 
 	ath12k_hal_reo_hw_setup(ab, ring_hash_map);
 
+skip_reo_setup:
 	ret = ath12k_dp_srng_ppeds_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
 		goto err;
 	}
 
-skip_reo_setup:
 	return 0;
-
 err:
 	ath12k_dp_srng_common_cleanup(ab);
 
@@ -1480,6 +1478,46 @@ void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp)
 	}
 }
 
+static void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
+	struct ath12k_dp *dp = ab->dp;
+	struct sk_buff *skb;
+	int i, j;
+
+	/* PPEDS TX Descriptor cleanup */
+	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+
+	for (i = 0; i < ATH12K_NUM_PPEDS_TX_SPT_PAGES; i++) {
+		ppeds_tx_descs = dp->ppedstxbaddr[i];
+
+		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
+			if (!ppeds_tx_descs[j].in_use)
+				continue;
+
+			skb = ppeds_tx_descs[j].skb;
+			if (!skb) {
+				WARN_ON(1);
+				continue;
+			}
+
+			ppeds_tx_descs[j].skb = NULL;
+			ppeds_tx_descs[j].in_use = false;
+			dma_unmap_single_attrs(ab->dev, ppeds_tx_descs[j].paddr,
+					       skb->len, DMA_TO_DEVICE,
+					       DMA_ATTR_SKIP_CPU_SYNC);
+
+			dev_kfree_skb_any(skb);
+
+			list_add_tail(&ppeds_tx_descs[j].list, &dp->ppe.ppeds_tx_desc_free_list);
+		}
+	}
+
+	dp->ppe.ppeds_tx_desc_reuse_list_len = 0;
+
+	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
+}
+
 int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
@@ -2182,7 +2220,7 @@ void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
         if (ret)
                 ath12k_warn(ab, "failed to setup wbm_idle_ring: %d\n", ret);
 
-        dp = ath12k_ab_to_dp(ab);
+	dp = ath12k_ab_to_dp(ab);
         srng = &ab->hal.srng_list[dp->wbm_idle_ring.ring_id];
 
         ret = ath12k_dp_link_desc_setup(ab, dp->link_desc_banks,
@@ -2190,8 +2228,13 @@ void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
         if (ret)
                 ath12k_warn(ab, "failed to setup link desc: %d\n", ret);
 
-        ath12k_dp_srng_common_setup(ab);
+	ath12k_dp_srng_common_setup(ab);
         ath12k_dp_umac_txrx_desc_cleanup(ab);
+
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (ab->dp->ppe.ppeds_handle)
+		ath12k_dp_ppeds_tx_desc_cleanup(ab);
+#endif
 
         ath12k_dp_rxdma_ring_setup(ab);
 
