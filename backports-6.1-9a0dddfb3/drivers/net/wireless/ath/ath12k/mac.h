@@ -18,6 +18,8 @@ struct ath12k_hw;
 struct ath12k_hw_group;
 struct ath12k_pdev_map;
 struct ath12k_vif;
+struct ath12k_link_sta;
+enum ath12k_mlo_recovery_mode;
 
 struct ath12k_generic_iter {
 	struct ath12k *ar;
@@ -162,7 +164,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                   struct ieee80211_chanctx_conf *ctx);
 void ath12k_mac_drain_tx(struct ath12k *ar);
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar);
-void ath12k_mac_dp_peer_cleanup(struct ath12k *ar);
+void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
+				enum ath12k_mlo_recovery_mode recovery_mode);
 int ath12k_mac_tx_mgmt_pending_free(int buf_id, void *skb, void *ctx);
 enum rate_info_bw ath12k_mac_bw_to_mac80211_bw(enum ath12k_supported_bw bw);
 enum ath12k_supported_bw ath12k_mac_mac80211_bw_to_ath12k_bw(enum rate_info_bw bw);
@@ -198,6 +201,9 @@ void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend);
 void
 ath12k_mac_op_reconfig_complete(struct ieee80211_hw *hw,
 				enum ieee80211_reconfig_type reconfig_type);
+void
+ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
+			     enum ieee80211_reconfig_type reconfig_type);
 int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif);
 void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
@@ -346,4 +352,31 @@ void ath12k_mac_bridge_vdev_up(struct ath12k_link_vif *arvif);
 int
 ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 				    struct ath12k_mac_link_migrate_usr_params *params);
+void ath12k_bss_assoc(struct ath12k *ar, struct ath12k_link_vif *arvif,
+		      struct ieee80211_bss_conf *bss_conf);
+void ath12k_bss_disassoc(struct ath12k *ar, struct ath12k_link_vif *arvif);
+void ath12k_mac_vif_cache_flush(struct ath12k *ar, struct ath12k_link_vif *arvif);
+int ath12k_mac_conf_tx(struct ath12k_link_vif *arvif, u16 ac,
+		       const struct ieee80211_tx_queue_params *params);
+
+int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
+                              struct ath12k_link_vif *arvif,
+                              struct ath12k_link_sta *arsta,
+                              struct ieee80211_key_conf *key);
+int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
+			   bool is_bridge_vdev);
+
+int ath12k_mac_vdev_start(struct ath12k_link_vif *arvif,
+			  struct ieee80211_chanctx_conf *ctx);
+void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
+				struct ieee80211_vif *vif,
+				struct ieee80211_chanctx_conf *ctx);
+int ath12k_mac_start(struct ath12k *ar);
+int ath12k_mac_vif_link_chan(struct ieee80211_vif *vif, u8 link_id,
+                                    struct cfg80211_chan_def *def);
+void ath12k_mac_bss_info_changed(struct ath12k *ar,
+                                struct ath12k_link_vif *arvif,
+                                struct ieee80211_bss_conf *info,
+                                u64 changed);
+int ath12k_mac_monitor_start(struct ath12k *ar);
 #endif

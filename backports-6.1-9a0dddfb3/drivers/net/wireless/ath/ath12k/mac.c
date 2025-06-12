@@ -271,8 +271,6 @@ static const u32 ath12k_smps_map[] = {
 static int ath12k_start_vdev_delay(struct ath12k *ar,
 				   struct ath12k_link_vif *arvif);
 static void ath12k_mac_stop(struct ath12k *ar);
-static int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
-				  bool is_bridge_vdev);
 static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arvif);
 static struct ath12k_link_sta *ath12k_mac_alloc_assign_link_sta(struct ath12k_hw *ah,
 								struct ath12k_sta *ahsta,
@@ -672,7 +670,7 @@ enum nl80211_band ath12k_get_band_based_on_freq(u32 freq)
 	return band;
 }
 
-static int ath12k_mac_vif_link_chan(struct ieee80211_vif *vif, u8 link_id,
+int ath12k_mac_vif_link_chan(struct ieee80211_vif *vif, u8 link_id,
 				    struct cfg80211_chan_def *def)
 {
 	struct ieee80211_bss_conf *link_conf;
@@ -1272,12 +1270,13 @@ static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (!ar->num_stations)
+		return;
+
 	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA && !sta->tdls)
 		return;
 
-	WARN_ON(!ar->num_stations);
-	if (ar->num_stations)
-		ar->num_stations--;
+	ar->num_stations--;
 }
 
 int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
@@ -1356,6 +1355,7 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_link_vif *arvif, *tmp_vif;
 	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
 	u16 peerid_index;
 
@@ -1398,25 +1398,47 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 					  ath12k_mac_link_sta_rhash_cleanup,
 					  ar);
 
+	/* Delete all the self dp_peers on asserted radio
+	 */
+	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
+		ath12k_dp_peer_delete(dp_hw, arvif->bssid);
+		arvif->num_stations = 0;
+	}
+
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "ath12k mac peer cleanup done\n");
 }
 
-void ath12k_mac_dp_peer_cleanup(struct ath12k *ar)
+void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
+				enum ath12k_mlo_recovery_mode recovery_mode)
 {
-	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct ath12k_dp_peer *dp_peer, *tmp;
 	struct ath12k_sta *ahsta = NULL;
 	u16 peerid_index;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	list_for_each_entry_safe(dp_peer, tmp, &dp_hw->peers, list) {
+
+		if (!dp_peer->sta || dp_peer->is_vdev_peer) {
+			ath12k_generic_dbg(ATH12K_DBG_MAC,
+				   	   "Skipping vdev self dp_peer delete on addr %pM\n",
+				   	   dp_peer->addr);
+			continue;
+		}
+
+		/* In case of Mode-1 recovery No need free NoN-ML sta dp_peer
+		 */
+
+		if(recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !dp_peer->is_mlo)
+			continue;
+
 		if (dp_peer->is_mlo) {
 			ahsta = ath12k_sta_to_ahsta(dp_peer->sta);
 			peerid_index = dp_peer->peer_id;
 			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-			clear_bit(ahsta->ml_peer_id, ar->ah->free_ml_peer_id_map);
+			clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
 			ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
-			ar->ah->num_ml_peers--;
+			ah->num_ml_peers--;
 		}
 		list_del(&dp_peer->list);
 		kfree(dp_peer);
@@ -1599,7 +1621,7 @@ static int ath12k_mac_monitor_vdev_delete(struct ath12k *ar)
 	return ret;
 }
 
-static int ath12k_mac_monitor_start(struct ath12k *ar)
+int ath12k_mac_monitor_start(struct ath12k *ar)
 {
 	struct ath12k_mac_get_any_chanctx_conf_arg arg;
 	int ret;
@@ -4360,7 +4382,7 @@ ieee80211_link_sta *ath12k_mac_inherit_radio_cap(struct ath12k *ar,
 	return link_sta;
 }
 
-static void ath12k_bss_assoc(struct ath12k *ar,
+void ath12k_bss_assoc(struct ath12k *ar,
 			     struct ath12k_link_vif *arvif,
 			     struct ieee80211_bss_conf *bss_conf)
 {
@@ -4519,6 +4541,13 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 		params.tx_bssid = bss_conf->transmitter_bssid;
 	}
 
+	if (ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 &&
+	    !ar->ab->is_reset)
+	    /* Skip sending vdev up for non-asserted links while
+	     * recovering station vif type
+	     */
+	     goto skip_vdev_up;
+
 	ret = ath12k_wmi_vdev_up(ar, &params);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to set vdev %d up: %d\n",
@@ -4526,6 +4555,7 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 		return;
 	}
 
+skip_vdev_up:
 	arvif->is_up = true;
 	arvif->rekey_data.enable_offload = false;
 
@@ -4567,8 +4597,8 @@ static void ath12k_bss_assoc(struct ath12k *ar,
 
 }
 
-static void ath12k_bss_disassoc(struct ath12k *ar,
-				struct ath12k_link_vif *arvif)
+void ath12k_bss_disassoc(struct ath12k *ar,
+			 struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	int ret;
@@ -5485,10 +5515,10 @@ void ath12k_mac_bridge_vdev_up(struct ath12k_link_vif *arvif)
 	arvif->is_up = true;
 }
 
-static void ath12k_mac_bss_info_changed(struct ath12k *ar,
-					struct ath12k_link_vif *arvif,
-					struct ieee80211_bss_conf *info,
-					u64 changed)
+void ath12k_mac_bss_info_changed(struct ath12k *ar,
+				struct ath12k_link_vif *arvif,
+				struct ieee80211_bss_conf *info,
+				u64 changed)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif, *tx_ahvif;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
@@ -6842,7 +6872,7 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 	return first_errno;
 }
 
-static int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
+int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 			      struct ath12k_link_vif *arvif,
 			      struct ath12k_link_sta *arsta,
 			      struct ieee80211_key_conf *key)
@@ -6859,6 +6889,10 @@ static int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 
 	if (arsta)
 		sta = ath12k_ahsta_to_sta(arsta->ahsta);
+
+	if (sta && sta->mlo &&
+	    (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags)))
+	    	return 0;
 
 	if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags))
 		return 1;
@@ -7042,6 +7076,8 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 							 arsta, key);
 				if (ret)
 					break;
+
+				arsta->keys[key->keyidx] = key;
 			}
 
 			return 0;
@@ -7056,6 +7092,7 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		if (ret)
 			return ret;
 
+		arsta->keys[key->keyidx] = key;
 		return 0;
 	}
 
@@ -7082,6 +7119,9 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	ret = ath12k_mac_set_key(arvif->ar, cmd, arvif, NULL, key);
 	if (ret)
 		return ret;
+
+	/* if sta is null, consider it has self peer */
+	arvif->keys[key->keyidx] = key;
 
 	return 0;
 }
@@ -7805,7 +7845,7 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                 ath12k_ieee80211_ap_pwr_type_convert(reg_6g_power_mode);
 }
 
-static void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
+void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
                                         struct ieee80211_vif *vif,
                                         struct ieee80211_chanctx_conf *ctx)
 {
@@ -9058,12 +9098,18 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 {
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ath12k *ar = arvif->ar;
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	int ret = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return -ESHUTDOWN;
+
+	/* Shouldn't allow MLO STA assoc until UMAC_RECOVERY bit is cleared */
+
+	if (sta->mlo && test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags))
+		return 0;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac handle link %u sta %pM state %d -> %d\n",
 		   arsta->link_id, arsta->addr, old_state, new_state);
@@ -9180,6 +9226,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	unsigned long links_map;
 	bool is_recovery = false;
 	u8 link_id = 0, num_devices = ar->ab->ag->num_devices;
+	u8 t_link_id = 0;
 	u16 bridge_bitmap = 0;
 	int ret = -EINVAL;
 	struct ath12k_dp_peer_create_params dp_params = {0};
@@ -9220,14 +9267,30 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	 */
 	if (old_state == IEEE80211_STA_NOTEXIST &&
 	    new_state == IEEE80211_STA_NONE) {
-		memset(ahsta, 0, sizeof(*ahsta));
 
-		arsta = &ahsta->deflink;
-		wiphy_work_init(&ahsta->set_4addr_wk, ath12k_sta_set_4addr_wk);
+		if (!ahsta->links_map) {
+			memset(ahsta, 0, sizeof(*ahsta));
+			wiphy_work_init(&ahsta->set_4addr_wk, ath12k_sta_set_4addr_wk);
+			arsta = &ahsta->deflink;
+		}
 
 		/* ML sta */
-		if (sta->mlo && !ahsta->links_map &&
-		    (hweight16(sta->valid_links) == 1)) {
+		links_map = ahsta->links_map;
+		if (sta->mlo && ((!ahsta->links_map &&
+		    (hweight16(sta->valid_links) == 1)) ||
+		     test_bit(link_id, &links_map))) {
+
+			links_map = ahvif->links_map;
+		    	/*Add case to prevent MLO assoc from happening when UMAC recovery happens */
+			for_each_set_bit(t_link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS){
+				arvif = wiphy_dereference(hw->wiphy, ahvif->link[t_link_id]);
+				if (!arvif->ar ||
+				    (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START,
+					      &arvif->ar->ab->dev_flags))){
+					ret = -EINVAL;
+					goto exit;
+				}
+			}
 			ahsta->ml_peer_id = ath12k_peer_ml_alloc(ah);
 			if (ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID) {
 				ath12k_hw_warn(ah, "unable to allocate ML peer id for sta %pM",
@@ -9248,29 +9311,31 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 
 			goto ml_peer_id_free;
 		}
+		links_map = ahsta->links_map;
+		if (!test_bit(link_id, &links_map)) {
+			ret = ath12k_mac_assign_link_sta(ah, ahsta, arsta, ahvif,
+							 link_id);
+			if (ret) {
+				ath12k_hw_warn(ah, "unable assign link %d for sta %pM",
+					       link_id, sta->addr);
+				goto peer_delete;
+			}
 
-		ret = ath12k_mac_assign_link_sta(ah, ahsta, arsta, ahvif,
-						 link_id);
-		if (ret) {
-			ath12k_hw_warn(ah, "unable assign link %d for sta %pM",
-				       link_id, sta->addr);
-			goto peer_delete;
-		}
+			/* above arsta will get memset, hence do this after assign
+			 * link sta
+			 */
+			if (sta->mlo) {
+				arsta->is_assoc_link = true;
+				ahsta->assoc_link_id = link_id;
+				ahsta->primary_link_id = link_id;
 
-		/* above arsta will get memset, hence do this after assign
-		 * link sta
-		 */
-		if (sta->mlo) {
-			arsta->is_assoc_link = true;
-			ahsta->assoc_link_id = link_id;
-			ahsta->primary_link_id = link_id;
+				init_completion(&ahsta->dp_migration_event);
+				INIT_WORK(&ahsta->migration_wk, ath12k_sta_migration_wk);
 
-			init_completion(&ahsta->dp_migration_event);
-			INIT_WORK(&ahsta->migration_wk, ath12k_sta_migration_wk);
-
-			ath12k_dbg(NULL, ATH12K_DBG_MAC,
-				   "mac ML STA %pM primary link (reconfig) set to %u\n",
-				   sta->addr, ahsta->primary_link_id);
+				ath12k_dbg(NULL, ATH12K_DBG_MAC,
+					   "mac ML STA %pM primary link (reconfig) set to %u\n",
+					   sta->addr, ahsta->primary_link_id);
+			}
 		}
 	}
 
@@ -9331,11 +9396,24 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			if (old_state == IEEE80211_STA_NOTEXIST &&
 			    new_state == IEEE80211_STA_NONE)
 				goto peer_delete;
+
+			/* If FW recovery is going on and link sta handling for
+			 * IEEE80211_STA_NONE -> IEEE80211_STA_NOT_EXIST
+			 * got failed for that link. Proceed with ml_station_remove
+			 * as anyway we must report success to upper layers
+			 * during recovery so that it can clean up its memory.
+			 */
+
+			else if (is_recovery &&
+				 old_state == IEEE80211_STA_NONE &&
+				 new_state == IEEE80211_STA_NOTEXIST)
+				goto ml_station_remove;
 			else
 				goto exit;
 		}
 	}
 
+ml_station_remove:
 	/* IEEE80211_STA_NONE -> IEEE80211_STA_NOTEXIST:
 	 * Remove the station from driver (handle ML sta here since that
 	 * needs special handling. Normal sta will be handled in generic
@@ -10393,7 +10471,7 @@ exit:
 	return ret;
 }
 
-static int ath12k_mac_conf_tx(struct ath12k_link_vif *arvif, u16 ac,
+int ath12k_mac_conf_tx(struct ath12k_link_vif *arvif, u16 ac,
 			      const struct ieee80211_tx_queue_params *params)
 {
 	struct wmi_wmm_params_arg *p = NULL;
@@ -11891,7 +11969,7 @@ static int ath12k_mac_config_mon_status_default(struct ath12k *ar, bool enable)
 	return ret;
 }
 
-static int ath12k_mac_start(struct ath12k *ar)
+int ath12k_mac_start(struct ath12k *ar)
 {
 	struct ath12k_hw *ah = ar->ah;
 	struct ath12k_base *ab = ar->ab;
@@ -12026,8 +12104,10 @@ static void ath12k_drain_tx(struct ath12k_hw *ah)
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
-	for_each_ar(ah, ar, i)
-		ath12k_mac_drain_tx(ar);
+	for_each_ar(ah, ar, i) {
+		if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE1 || ar->ab->is_reset)
+			ath12k_mac_drain_tx(ar);
+	}
 }
 
 int ath12k_mac_op_start(struct ieee80211_hw *hw)
@@ -12060,16 +12140,22 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 	}
 
 	for_each_ar(ah, ar, i) {
-		ret = ath12k_mac_start(ar);
-		if (ret) {
-			ah->state = ATH12K_HW_STATE_OFF;
+		/* If the recovery mode is already advertised as Mode-1 this means mac op start
+		 * is already done and do mac_start for only asserted ab in case of Mode-1
+		 * can be allowed
+		 */
 
-			ath12k_err(ar->ab, "fail to start mac operations in pdev idx %d ret %d\n",
-				   ar->pdev_idx, ret);
-			goto fail_start;
+		if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE1 || ar->ab->is_reset) {
+			ret = ath12k_mac_start(ar);
+			if (ret) {
+				ah->state = ATH12K_HW_STATE_OFF;
+
+				ath12k_err(ar->ab, "fail to start mac operations in pdev idx %d ret %d\n",
+					   ar->pdev_idx, ret);
+				goto fail_start;
+			}
 		}
 	}
-
 	return 0;
 
 fail_start:
@@ -12726,7 +12812,14 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	ar->allocated_vdev_map |= 1LL << arvif->vdev_id;
 
 	spin_lock_bh(&ar->data_lock);
-	list_add(&arvif->list, &ar->arvifs);
+
+	/* list added is not needed during mode1 recovery
+	 * as the arvif(s) updated are from the existing
+	 * list
+	 */
+	if (!ab->recovery_start)
+		list_add(&arvif->list, &ar->arvifs);
+
 	spin_unlock_bh(&ar->data_lock);
 
 	ath12k_mac_update_vif_offload(arvif);
@@ -12907,7 +13000,7 @@ free_cache:
 	}
 }
 
-static void ath12k_mac_vif_cache_flush(struct ath12k *ar, struct ath12k_link_vif *arvif)
+void ath12k_mac_vif_cache_flush(struct ath12k *ar, struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
@@ -13469,6 +13562,10 @@ static int ath12k_mac_ampdu_action(struct ieee80211_hw *hw,
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return -ESHUTDOWN;
 
+	if (params->sta->mlo &&
+	    (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags)))
+		return 0;
+
 	switch (params->action) {
 	case IEEE80211_AMPDU_RX_START:
 		ret = ath12k_dp_rx_ampdu_start(ar, params, link_id);
@@ -14003,7 +14100,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	return 0;
 }
 
-static int ath12k_mac_vdev_start(struct ath12k_link_vif *arvif,
+int ath12k_mac_vdev_start(struct ath12k_link_vif *arvif,
 				 struct ieee80211_chanctx_conf *ctx)
 {
 	return ath12k_mac_vdev_start_restart(arvif, ctx, false);
@@ -16838,15 +16935,15 @@ out:
 EXPORT_SYMBOL(ath12k_mac_op_set_bitrate_mask);
 
 void
-ath12k_mac_op_reconfig_complete(struct ieee80211_hw *hw,
-				enum ieee80211_reconfig_type reconfig_type)
+ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
+			     enum ieee80211_reconfig_type reconfig_type)
 {
-	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
-	struct ath12k *ar;
-	struct ath12k_base *ab;
-	struct ath12k_vif *ahvif;
-	struct ath12k_link_vif *arvif;
-	int recovery_count, i;
+        struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+        struct ath12k *ar;
+        struct ath12k_base *ab;
+        struct ath12k_vif *ahvif;
+        struct ath12k_link_vif *arvif;
+        int recovery_count, i;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -16859,10 +16956,20 @@ ath12k_mac_op_reconfig_complete(struct ieee80211_hw *hw,
 		return;
 
 	ah->state = ATH12K_HW_STATE_ON;
-	ieee80211_wake_queues(hw);
+
+	/* stop_queues() & wake_queues() will take care to stop/wake
+	 * all the queues. So checking on queue 0's status before
+	 * waking up should be fine.
+	 */
+
+	if (ieee80211_queue_stopped(ah->hw, 0))
+		ieee80211_wake_queues(hw);
 
 	for_each_ar(ah, ar, i) {
 		ab = ar->ab;
+
+		if (!ab->is_reset)
+			continue;
 
 		ath12k_warn(ar->ab, "pdev %d successfully recovered\n",
 			    ar->pdev->pdev_id);
@@ -16875,53 +16982,64 @@ ath12k_mac_op_reconfig_complete(struct ieee80211_hw *hw,
 			ath12k_wmi_send_set_current_country_cmd(ar, &arg);
 		}
 
-		if (ab->is_reset) {
-			recovery_count = atomic_inc_return(&ab->recovery_count);
 
-			ath12k_dbg(ab, ATH12K_DBG_BOOT, "recovery count %d\n",
-				   recovery_count);
+		recovery_count = atomic_inc_return(&ab->recovery_count);
 
-			/* When there are multiple radios in an SOC,
-			 * the recovery has to be done for each radio
-			 */
-			if (recovery_count == ab->num_radios) {
-				atomic_dec(&ab->reset_count);
-				complete(&ab->reset_complete);
-				ab->is_reset = false;
-				atomic_set(&ab->fail_cont_count, 0);
-				clear_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags);
-				spin_lock_bh(&ar->ab->base_lock);
-				ar->ab->stats.last_recovery_time =
-					jiffies_to_msecs(jiffies -
-							ar->ab->recovery_start_time);
-				spin_unlock_bh(&ar->ab->base_lock);
-				ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset success\n");
-			}
+		ath12k_dbg(ab, ATH12K_DBG_BOOT, "recovery count %d\n",
+			   recovery_count);
+
+		/* When there are multiple radios in an SOC,
+		 * the recovery has to be done for each radio
+		 */
+		if (recovery_count == ab->num_radios) {
+			atomic_dec(&ab->reset_count);
+			complete(&ab->reset_complete);
+			ab->is_reset = false;
+			atomic_set(&ab->fail_cont_count, 0);
+			clear_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags);
+			spin_lock_bh(&ar->ab->base_lock);
+			ar->ab->stats.last_recovery_time =
+				jiffies_to_msecs(jiffies -
+						ar->ab->recovery_start_time);
+			spin_unlock_bh(&ar->ab->base_lock);
+			ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset success\n");
 		}
-
-		list_for_each_entry(arvif, &ar->arvifs, list) {
-			ahvif = arvif->ahvif;
-			ath12k_dbg(ab, ATH12K_DBG_BOOT,
-				   "reconfig cipher %d up %d vdev type %d\n",
-				   arvif->key_cipher,
-				   arvif->is_up,
-				   ahvif->vdev_type);
-
-			/* After trigger disconnect, then upper layer will
-			 * trigger connect again, then the PN number of
-			 * upper layer will be reset to keep up with AP
-			 * side, hence PN number mismatch will not happen.
-			 */
-			if (arvif->is_up &&
-			    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-			    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE) {
-				ieee80211_hw_restart_disconnect(ahvif->vif);
-
+		if (ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0) {
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				ahvif = arvif->ahvif;
 				ath12k_dbg(ab, ATH12K_DBG_BOOT,
-					   "restart disconnect\n");
+					   "reconfig cipher %d up %d vdev type %d\n",
+					   arvif->key_cipher,
+					   arvif->is_up,
+					   ahvif->vdev_type);
+
+				/* After trigger disconnect, then upper layer will
+				 * trigger connect again, then the PN number of
+				 * upper layer will be reset to keep up with AP
+				 * side, hence PN number mismatch will not happen.
+				 */
+				if (arvif->is_up &&
+				    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+				    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE) {
+					ieee80211_hw_restart_disconnect(ahvif->vif);
+
+					ath12k_dbg(ab, ATH12K_DBG_BOOT, "restart disconnect\n");
+				}
 			}
 		}
 	}
+
+	clear_bit(ATH12K_GROUP_FLAG_RECOVERY, &ar->ab->ag->flags);
+
+	ath12k_info(NULL, "HW group recovery flag cleared ag dev_flags:0x%lx\n",
+		    ar->ab->ag->flags);
+}
+
+void
+ath12k_mac_op_reconfig_complete(struct ieee80211_hw *hw,
+				enum ieee80211_reconfig_type reconfig_type)
+{
+	ath12k_mac_reconfig_complete(hw, reconfig_type);
 }
 EXPORT_SYMBOL(ath12k_mac_op_reconfig_complete);
 

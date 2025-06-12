@@ -486,6 +486,8 @@ struct ath12k_link_vif {
 	u32 tx_vdev_id;
 	struct ath12k_prb_resp_tmpl_ml_info ml_info;
 	bool ftm_responder;
+	/* will be saved to use during recovery */
+	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
 
 	struct work_struct wmi_migration_cmd_work;
 	struct completion wmi_migration_event_resp;
@@ -699,6 +701,8 @@ struct ath12k_link_sta {
 	bool is_bridge_peer;
 	/* For check disable fixed rate check for peer */
 	bool disable_fixed_rate;
+	/* will be saved to use during recovery */
+	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
 };
 
 struct ath12k_sta_migration_data {
@@ -1498,6 +1502,7 @@ struct ath12k_base {
 	u32 max_ml_peer_supported;
 	u32 max_ml_peer_ids;
 
+	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

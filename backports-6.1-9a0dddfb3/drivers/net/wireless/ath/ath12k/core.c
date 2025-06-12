@@ -1460,6 +1460,11 @@ core_pdev_create:
 
 		mutex_lock(&ab->core_lock);
 
+		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !ab->recovery_start) {
+			mutex_unlock(&ab->core_lock);
+			continue;
+		}
+
 		set_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags);
 
 		ret = ath12k_core_pdev_create(ab);
@@ -1937,7 +1942,9 @@ void ath12k_core_halt(struct ath12k *ar)
 
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx], NULL);
 	synchronize_rcu();
-	INIT_LIST_HEAD(&ar->arvifs);
+
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+		INIT_LIST_HEAD(&ar->arvifs);
 	idr_init(&ar->txmgmt_idr);
 }
 
@@ -2106,13 +2113,9 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 			}
 			/* At this point link peers will be deleted
 			 * for all the radios through
-			 * ath12k_mac_peer_cleannup()
+			 * ath12k_mac_peer_cleannup_all()
 			 */
-			for (j = 0; j < ah->num_radio; j++) {
-				ar = &ah->radio[j];
-				if(ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && ar->ab->is_reset)
-					ath12k_mac_dp_peer_cleanup(ar);
-			}
+			ath12k_mac_dp_peer_cleanup(ah, ag->recovery_mode);
 
 			break;
 		case ATH12K_HW_STATE_OFF:
@@ -2176,6 +2179,12 @@ static void ath12k_core_restart(struct work_struct *work)
 			goto exit_restart;
 		}
 
+		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1) {
+			queue_work(ab->workqueue_aux, &ab->recovery_work);
+			mutex_unlock(&ag->mutex);
+			goto exit_restart;
+		}
+
 		for (i = 0; i < ag->num_hw; i++) {
 			ah = ath12k_ag_to_ah(ag, i);
 			ieee80211_restart_hw(ah->hw);
@@ -2186,6 +2195,791 @@ static void ath12k_core_restart(struct work_struct *work)
 
 exit_restart:
 	complete(&ab->restart_completed);
+}
+
+static void ath12k_core_mode1_recovery_sta_list(void *data, struct ieee80211_sta *sta)
+{
+	struct ath12k_link_sta *arsta;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_vif *arvif = (struct ath12k_link_vif *)data;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_vif *vif = ahvif->vif;
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_base *ab = arvif->ar->ab;
+	struct ath12k_key_conf *key_conf = NULL;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
+	struct ieee80211_key_conf *key;
+	int ret = -1, key_idx;
+	u8 link_id = arvif->link_id;
+	enum ieee80211_sta_state state, prev_state;
+	bool sta_added = false;
+	unsigned long links;
+
+	if (ahsta->ahvif != arvif->ahvif)
+		return;
+
+	/* Check if there is a link sta in the vif link */
+	if (!(BIT(link_id) & ahsta->links_map))
+		return;
+
+	/* From iterator, rcu_read_lock is acquired. Will be revisited
+	 * later to use local list
+	 */
+	arsta = rcu_dereference(ahsta->link[link_id]);
+	if (!arsta)
+		return;
+
+	key_conf = container_of((void *)sta, struct ath12k_key_conf, sta);
+
+	if (vif->type != NL80211_IFTYPE_AP &&
+	    vif->type != NL80211_IFTYPE_AP_VLAN &&
+	    vif->type != NL80211_IFTYPE_STATION &&
+	    vif->type != NL80211_IFTYPE_MESH_POINT)
+		return;
+
+	spin_lock_bh(&dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arsta->addr);
+	if (peer) {
+		sta_added = true;
+		spin_unlock_bh(&dp->dp_lock);
+		goto key_add;
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
+	prev_state = arsta->ahsta->state;
+	for (state = IEEE80211_STA_NOTEXIST;
+			state < prev_state; state++) {
+		/* all station set case */
+		/* TODO: Iterator API is called with rcu lock
+		 * hence need for this unlock/lock statement.
+		 * Need to revisit in next version
+		 */
+		rcu_read_unlock();
+		ath12k_mac_op_sta_state(ar->ah->hw, arvif->ahvif->vif, sta,
+				state, (state + 1));
+		rcu_read_lock();
+		sta_added = true;
+	}
+
+key_add:
+	if (sta_added)
+		for (key_idx = 0; key_idx < WMI_MAX_KEY_INDEX; key_idx++) {
+			key = arsta->keys[key_idx];
+
+			if (key) {
+				/* BIP needs to be done in software */
+				if (key->cipher == WLAN_CIPHER_SUITE_AES_CMAC ||
+				    key->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_128 ||
+				    key->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_256 ||
+				    key->cipher == WLAN_CIPHER_SUITE_BIP_CMAC_256) {
+					return;
+				}
+
+				if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags))
+					return;
+
+				if (!arvif->is_created) {
+					key_conf = kzalloc(sizeof(*key_conf), GFP_ATOMIC);
+
+					if (!key_conf) {
+						return;
+					}
+
+					key_conf->cmd = SET_KEY;
+					key_conf->sta = sta;
+					key_conf->key = key;
+
+					list_add_tail(&key_conf->list,
+							&ahvif->cache[link_id]->key_conf.list);
+
+					ath12k_info(ab, "set key param cached since vif not assign to radio\n");
+					return;
+				}
+
+				if (sta->mlo) {
+					links = ahsta->links_map;
+					for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+						arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+						arsta = rcu_dereference(ahsta->link[link_id]);
+						if (WARN_ON(!arvif || !arsta))
+							continue;
+
+						/* TODO: Iterator API is called with rcu lock
+						 * hence need for this unlock/lock statement.
+						 * Need to revisit in next version
+						 */
+						rcu_read_unlock();
+						ret = ath12k_mac_set_key(arvif->ar, SET_KEY, arvif, arsta, key);
+						rcu_read_lock();
+						if (ret)
+							break;
+					}
+				} else {
+					arsta = &ahsta->deflink;
+					arvif = arsta->arvif;
+					if (WARN_ON(!arvif))
+						return;
+
+					/* TODO: Iterator API is called with rcu lock
+					 * hence need for this unlock/lock statement.
+					 * Need to revisit in next version
+					 */
+					rcu_read_unlock();
+					ret = ath12k_mac_set_key(arvif->ar, SET_KEY, arvif, arsta, key);
+					rcu_read_lock();
+				}
+			}
+		}
+
+	ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+			"Recovered sta:%pM link_id:%d, num_sta:%d\n",
+			arsta->addr, arsta->link_id, arvif->ar->num_stations);
+	return;
+}
+
+static void ath12k_core_iterate_sta_list(struct ath12k *ar,
+                                         struct ath12k_link_vif *arvif)
+{
+	ieee80211_iterate_stations_atomic(ar->ah->hw,
+					  ath12k_core_mode1_recovery_sta_list,
+					  arvif);
+}
+
+static void ath12k_core_ml_sta_add(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif, *tmp;
+	struct ieee80211_bss_conf *info;
+	struct ath12k_vif *ahvif;
+	struct ieee80211_vif *vif;
+
+	lockdep_assert_wiphy(ar->ah->hw->wiphy);
+
+	list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
+		ahvif = arvif->ahvif;
+
+		if (!ahvif)
+			continue;
+
+		vif = ahvif->vif;
+		if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
+			continue;
+
+		if (!vif->valid_links)
+			continue;
+
+		ath12k_core_iterate_sta_list(ar, arvif);
+
+		if (ath12k_mac_is_bridge_vdev(arvif))
+			info = NULL;
+		else
+			info = vif->link_conf[arvif->link_id];
+
+		/* Set is_up to false as we will do
+		 * recovery for that vif in the
+		 * upcoming executions
+		 */
+		arvif->is_up = false;
+		if (vif->cfg.assoc)
+			ath12k_bss_assoc(ar, arvif, info);
+		else
+			ath12k_bss_disassoc(ar, arvif);
+		ath12k_dbg(ar->ab, ATH12K_DBG_MODE1_RECOVERY,
+			   "station vif:%pM recovered\n",
+			   arvif->bssid);
+	}
+}
+
+/* API to recovery station VIF enabled in non-asserted links */
+static void ath12k_core_mlo_recover_station(struct ath12k_hw_group *ag,
+					    struct ath12k_base *assert_ab)
+{
+	struct ath12k_base *ab;
+	struct ath12k_pdev *pdev;
+	struct ath12k *ar;
+	int i, j;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+
+		if (ab == assert_ab)
+			continue;
+
+		for (j = 0; j < ab->num_radios; j++) {
+			pdev = &ab->pdevs[j];
+			ar = pdev->ar;
+
+			if (!ar)
+				continue;
+
+			if (list_empty(&ar->arvifs))
+				continue;
+
+			/* Re-add all MLD station VIF which are
+			 * in non-asserted link
+			 */
+			ath12k_core_ml_sta_add(ar);
+		}
+	}
+}
+
+static int ath12k_mlo_recovery_link_vif_reconfig(struct ath12k *ar,
+						struct ath12k_vif *ahvif,
+						struct ath12k_link_vif *arvif,
+						struct ieee80211_vif *vif,
+						struct ieee80211_bss_conf *link_conf)
+{
+	int i;
+	int link_id = arvif->link_id;
+	struct ath12k_hw *ah = ar->ah;
+	struct ieee80211_tx_queue_params params;
+	struct wmi_wmm_params_arg *p = NULL;
+	struct ieee80211_bss_conf *info;
+	u64 changed = 0;
+	bool bridge_vdev;
+
+	lockdep_assert_wiphy(ah->hw->wiphy);
+
+	switch (vif->type) {
+	case NL80211_IFTYPE_AP_VLAN:
+	case NL80211_IFTYPE_MONITOR:
+		break;
+	case NL80211_IFTYPE_ADHOC:
+		fallthrough;
+	default:
+		ieee80211_iterate_stations_atomic(ar->ah->hw,
+				ath12k_core_mode1_recovery_sta_list,
+				arvif);
+		fallthrough;
+	case NL80211_IFTYPE_AP: /* AP stations are handled later */
+		for (i = 0; i < IEEE80211_NUM_ACS; i++) {
+
+			if ((vif->active_links &&
+			    !(vif->active_links & BIT(link_id))) ||
+			    link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+				break;
+
+			switch (i) {
+			case IEEE80211_AC_VO:
+				p = &arvif->wmm_params.ac_vo;
+				break;
+			case IEEE80211_AC_VI:
+				p = &arvif->wmm_params.ac_vi;
+				break;
+			case IEEE80211_AC_BE:
+				p = &arvif->wmm_params.ac_be;
+				break;
+			case IEEE80211_AC_BK:
+				p = &arvif->wmm_params.ac_bk;
+				break;
+			}
+
+			params.cw_min = p->cwmin;
+			params.cw_max = p->cwmax;
+			params.aifs = p->aifs;
+			params.txop = p->txop;
+
+			ath12k_mac_conf_tx(arvif, i, &params);
+		}
+		break;
+	}
+
+	/* common change flags for all interface types */
+	changed = BSS_CHANGED_ERP_CTS_PROT |
+		BSS_CHANGED_ERP_PREAMBLE |
+		BSS_CHANGED_ERP_SLOT |
+		BSS_CHANGED_HT |
+		BSS_CHANGED_BASIC_RATES |
+		BSS_CHANGED_BEACON_INT |
+		BSS_CHANGED_BSSID |
+		BSS_CHANGED_CQM |
+		BSS_CHANGED_QOS |
+		BSS_CHANGED_TXPOWER |
+		BSS_CHANGED_MCAST_RATE;
+
+	bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
+
+	if (!bridge_vdev && link_conf->mu_mimo_owner)
+		changed |= BSS_CHANGED_MU_GROUPS;
+
+	switch (vif->type) {
+	case NL80211_IFTYPE_STATION:
+		if (!vif->valid_links) {
+			/* Set this only for legacy stations */
+			changed |= BSS_CHANGED_ASSOC |
+				BSS_CHANGED_ARP_FILTER |
+				BSS_CHANGED_PS;
+
+			/* Assume re-send beacon info report to the driver */
+			changed |= BSS_CHANGED_BEACON_INFO;
+
+			if (link_conf->max_idle_period ||
+					link_conf->protected_keep_alive)
+				changed |= BSS_CHANGED_KEEP_ALIVE;
+
+			if (!arvif->is_created) {
+				ath12k_info(NULL,
+					    "bss info parameter changes %llx cached to apply after vdev create on channel assign\n",
+					    changed);
+				ahvif->cache[link_id]->bss_conf_changed |= changed;
+
+				return 0;
+			}
+		}
+
+		/* Set is_up to false as we will do
+		 * recovery for that vif in the
+		 * upcoming executions
+		 */
+		arvif->is_up = false;
+		ath12k_mac_bss_info_changed(ar, arvif, link_conf, changed);
+		if (vif->valid_links) {
+			if (bridge_vdev)
+				info = NULL;
+			else
+				info = vif->link_conf[link_id];
+
+			if (vif->cfg.assoc)
+				ath12k_bss_assoc(ar, arvif, info);
+			else
+				ath12k_bss_disassoc(ar, arvif);
+		}
+		break;
+	case NL80211_IFTYPE_OCB:
+		changed |= BSS_CHANGED_OCB;
+
+		ath12k_mac_bss_info_changed(ar, arvif, link_conf, changed);
+		break;
+	case NL80211_IFTYPE_ADHOC:
+		changed |= BSS_CHANGED_IBSS;
+		fallthrough;
+	case NL80211_IFTYPE_AP:
+		changed |= BSS_CHANGED_P2P_PS;
+
+		if (vif->type == NL80211_IFTYPE_AP) {
+			changed |= BSS_CHANGED_AP_PROBE_RESP;
+			ahvif->u.ap.ssid_len = vif->cfg.ssid_len;
+			if (vif->cfg.ssid_len)
+				memcpy(ahvif->u.ap.ssid, vif->cfg.ssid, vif->cfg.ssid_len);
+		}
+		fallthrough;
+	case NL80211_IFTYPE_MESH_POINT:
+		if (link_conf->enable_beacon) {
+			changed |= BSS_CHANGED_BEACON |
+				BSS_CHANGED_BEACON_ENABLED;
+
+			ath12k_mac_bss_info_changed(ar, arvif, link_conf,
+					changed & ~BSS_CHANGED_IDLE);
+
+		}
+		break;
+	case NL80211_IFTYPE_NAN:
+	case NL80211_IFTYPE_AP_VLAN:
+	case NL80211_IFTYPE_MONITOR:
+	case NL80211_IFTYPE_P2P_DEVICE:
+		/* nothing to do */
+		break;
+	case NL80211_IFTYPE_UNSPECIFIED:
+	case NUM_NL80211_IFTYPES:
+	case NL80211_IFTYPE_P2P_CLIENT:
+	case NL80211_IFTYPE_P2P_GO:
+	case NL80211_IFTYPE_WDS:
+		WARN_ON(1);
+		break;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MODE1_RECOVERY,
+		   "Reconfig link vif done:type:%d\n", vif->type);
+
+	return 0;
+}
+
+static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
+						      struct ieee80211_bss_conf *link_conf,
+						      struct ath12k_vif *ahvif,
+						      struct ath12k_link_vif *arvif)
+{
+	struct ieee80211_vif *vif = arvif->ahvif->vif;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_hw *ah = ar->ah;
+	enum ieee80211_ap_reg_power power_type;
+	struct ath12k_wmi_peer_create_arg param;
+	struct ieee80211_chanctx_conf *ctx = &arvif->chanctx;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	int ret = -1;
+	u8 link_id;
+	bool is_bridge_vdev;
+
+	lockdep_assert_wiphy(ah->hw->wiphy);
+
+	is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
+	link_id = is_bridge_vdev ? arvif->link_id : link_conf->link_id;
+
+	ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+		   "Recovering: link_id:%d addr %pM type:%d subtype:%d\n",
+		   link_id, arvif->bssid, vif->type, arvif->vdev_subtype);
+
+	if (vif->type == NL80211_IFTYPE_AP &&
+		ar->num_peers > (ar->max_num_peers - 1)) {
+		ath12k_err(ab, "Error in peers:%d\n",
+			   ar->num_peers);
+		goto exit;
+	}
+
+	if (ath12k_core_is_vdev_limit_reached(ar, is_bridge_vdev))
+		goto exit;
+
+	ret = ath12k_mac_vdev_create(ar, arvif, is_bridge_vdev);
+	if (!is_bridge_vdev && !ret) {
+		ath12k_mac_vif_cache_flush(ar, arvif);
+
+		if (ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
+		    (ahvif->vdev_type == WMI_VDEV_TYPE_STA ||
+		    ahvif->vdev_type == WMI_VDEV_TYPE_AP)) {
+			power_type = link_conf->power_type;
+                        ath12k_dbg(ab, ATH12K_DBG_MAC, "mac chanctx power type %d\n",
+				   power_type);
+			if (power_type == IEEE80211_REG_UNSET_AP)
+				power_type = IEEE80211_REG_LPI_AP;
+
+			/* TODO: Transmit Power Envelope specification for 320 is not
+			 * available yet. Need to add TPE 320 support when spec is ready
+			 */
+			if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+			    ctx->def.width != NL80211_CHAN_WIDTH_320) {
+				ath12k_mac_parse_tx_pwr_env(ar, arvif->ahvif->vif, ctx);
+			}
+		}
+	}
+	spin_lock_bh(&dp->dp_lock);
+        /* for some targets bss peer must be created before vdev_start */
+	if (ab->hw_params->vdev_start_delay &&
+	    ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
+	    ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR &&
+	    !ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arvif->bssid)) {
+		ret = 0;
+		spin_unlock_bh(&dp->dp_lock);
+		goto exit;
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
+	if (ab->hw_params->vdev_start_delay &&
+	    (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
+	    ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)) {
+		param.vdev_id = arvif->vdev_id;
+		param.peer_type = WMI_PEER_TYPE_DEFAULT;
+		param.peer_addr = ar->mac_addr;
+
+		ret = ath12k_peer_create(ar, arvif, NULL, &param);
+		if (ret) {
+			ath12k_warn(ab, "failed to create peer after vdev start delay: %d",
+					ret);
+			goto exit;
+                }
+        }
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
+		ret = ath12k_mac_monitor_start(ar);
+		if (ret)
+			goto exit;
+		arvif->is_started = true;
+		goto exit;
+	}
+
+	if (is_bridge_vdev && !ctx->def.chan)
+		ret = ath12k_mac_vdev_start(arvif, NULL);
+	else
+		ret = ath12k_mac_vdev_start(arvif, ctx);
+
+	if (ret) {
+		ath12k_err(ab, "vdev start failed during recovery\n");
+		goto exit;
+	}
+
+	arvif->is_started = true;
+	arvif->is_created = true;
+
+        ret = 0;
+exit:
+	ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+		   "ret:%d No. of vdev created:%d, links_map:0x%x, flag:%d\n",
+		   ret,
+		   hweight16(ahvif->links_map),
+		   ahvif->links_map,
+		   arvif->is_created);
+
+	return ret;
+}
+
+static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
+				      struct ath12k_base *assert_ab)
+{
+	struct ath12k_base *ab;
+	struct ath12k_dp_link_peer *peer, *tmp;
+	struct ath12k_sta *ahsta;
+	struct ieee80211_sta *sta;
+	int i;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+
+		spin_lock_bh(&ab->dp->dp_lock);
+		list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
+			if (!peer->sta || !peer->vif)
+				continue;
+
+			/* Allow sending disassoc to legacy peer
+			 * only for asserted radio
+			 */
+			if (!peer->mlo && ab != assert_ab)
+				continue;
+
+			sta = peer->sta;
+			ahsta = (struct ath12k_sta *)sta->drv_priv;
+
+			/* Send low ack to disassoc the MLD station
+			 * Need to check on the sequence as FW has
+			 * discarded the management packet at this
+			 * sequence.
+			 */
+			ath12k_mac_peer_disassoc(ab, sta, ahsta,
+						 ATH12K_DBG_MODE1_RECOVERY);
+		}
+		spin_unlock_bh(&ab->dp->dp_lock);
+	}
+}
+
+/* Wrapper function for recovery after crash */
+int ath12k_mode1_recovery_reconfig(struct ath12k_base *ab)
+{
+	struct ath12k *ar = NULL;
+	struct ath12k_pdev *pdev;
+	struct ath12k_link_vif *arvif, *tmp;
+	struct ath12k_vif *ahvif ;
+	struct ieee80211_bss_conf *link;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_base *partner_ab;
+	struct ath12k_hw *ah = ath12k_ag_to_ah(ag, 0);
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp *dp;
+	struct ieee80211_key_conf *key;
+	struct cfg80211_chan_def def;
+	int i, j, key_idx;
+	int ret = -EINVAL;
+
+	wiphy_lock(ah->hw->wiphy);
+
+	if (!ath12k_ftm_mode) {
+		ret = ath12k_mac_op_start(ah->hw);
+		if (ret) {
+			ath12k_err(ab, "mac radio start failed\n");
+			wiphy_unlock(ah->hw->wiphy);
+			return ret;
+		}
+	}
+
+	/* add chanctx/hw_config/filter part */
+	for (j = 0; j < ab->num_radios; j++) {
+		pdev = &ab->pdevs[j];
+		ar = pdev->ar;
+
+		if (!ar)
+			continue;
+
+		list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
+			ahvif = arvif->ahvif;
+
+			if (!ahvif)
+				continue;
+
+			arvif->is_started = false;
+			arvif->is_created = false;
+
+			if (ath12k_mac_is_bridge_vdev(arvif) ||
+			    WARN_ON(ath12k_mac_vif_link_chan(ahvif->vif, arvif->link_id, &def)))
+				continue;
+
+			spin_lock_bh(&ar->data_lock);
+			ar->rx_channel = def.chan;
+			spin_unlock_bh(&ar->data_lock);
+
+                        /* configure filter - we can use the same flag*/
+		}
+	}
+
+	/* assign chanctx part */
+	for (j = 0; j < ab->num_radios; j++) {
+		pdev = &ab->pdevs[j];
+		ar = pdev->ar;
+
+		if (!ar)
+			continue;
+
+		list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
+			ahvif = arvif->ahvif;
+
+			if (!ahvif)
+				continue;
+
+			if (ath12k_mac_is_bridge_vdev(arvif)) {
+				link = NULL;
+			} else {
+				rcu_read_lock();
+				link = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
+
+				/* Not expected */
+				if (WARN_ON(!link)) {
+					rcu_read_unlock();
+					continue;
+				}
+				rcu_read_unlock();
+			}
+			ret = ath12k_mlo_core_recovery_reconfig_link_bss(ar, link, ahvif, arvif);
+			if (ret) {
+				ath12k_err(ab, "ERROR in reconfig link:%d\n", ret);
+				wiphy_unlock(ah->hw->wiphy);
+                                return ret;
+			}
+			ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+				   "vdev_created getting incremented:%d\n",
+				   hweight16(ahvif->links_map));
+		}
+		ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY, "assign chanctx is completed\n");
+	}
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		clear_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags);
+	}
+
+	/* reconfig_link_bss */
+	for (j = 0; j < ab->num_radios; j++) {
+		pdev = &ab->pdevs[j];
+		ar = pdev->ar;
+
+		if (!ar)
+			continue;
+
+		list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
+			ahvif = arvif->ahvif;
+
+			if (!ahvif)
+				continue;
+
+			if (ath12k_mac_is_bridge_vdev(arvif)) {
+				switch (ahvif->vdev_type) {
+				case WMI_VDEV_TYPE_AP:
+					ath12k_mac_bridge_vdev_up(arvif);
+					break;
+				case WMI_VDEV_TYPE_STA:
+					link = NULL;
+					goto skip_link_info;
+				default:
+					break;
+				}
+				continue;
+			}
+
+			rcu_read_lock();
+			link = rcu_dereference(ahvif->vif->link_conf[arvif->link_id]);
+
+			/* Not expected */
+			if (WARN_ON(!link)) {
+				rcu_read_unlock();
+				continue;
+			}
+			rcu_read_unlock();
+
+skip_link_info:
+			ret = ath12k_mlo_recovery_link_vif_reconfig(ar, ahvif,
+								    arvif,
+								    arvif->ahvif->vif,
+								    link);
+			if (ret) {
+				ath12k_err(ab, "Failed to update reconfig_bss\n");
+				wiphy_unlock(ah->hw->wiphy);
+				return ret;
+			}
+		}
+	}
+
+	/* TODO: Need to check for STA BVAP case */
+	/* recover station VIF enabled in non-asserted links */
+	ath12k_core_mlo_recover_station(ag, ab);
+
+	/* sta state part */
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+
+		for (j = 0; j < partner_ab->num_radios; j++) {
+			pdev = &partner_ab->pdevs[j];
+			ar = pdev->ar;
+
+			if (!ar)
+				continue;
+
+			if (list_empty(&ar->arvifs))
+				continue;
+
+			list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
+				ahvif = arvif->ahvif;
+
+				if (!ahvif)
+					continue;
+
+				if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
+					ath12k_core_iterate_sta_list(ar, arvif);
+				}
+
+				if (ath12k_mac_is_bridge_vdev(arvif))
+					continue;
+
+				dp = ath12k_ab_to_dp(partner_ab);
+				spin_lock_bh(&dp->dp_lock);
+				peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arvif->bssid);
+				if (!peer) {
+					ath12k_info(ab,"Failed to fetch the peer during reconfig\n");
+					spin_unlock_bh(&dp->dp_lock);
+					continue;
+        			}
+				spin_unlock_bh(&dp->dp_lock);
+
+				for (key_idx = 0; key_idx < WMI_MAX_KEY_INDEX; key_idx++) {
+					key = arvif->keys[key_idx];
+					if (key) {
+						ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+								"key:%p cipher:%d idx:%d flags:%d\n",
+								key, key->cipher, key->keyidx, key->flags);
+						ret = ath12k_mac_set_key(arvif->ar, SET_KEY, arvif, NULL, key);
+					}
+				}
+			}
+		}
+	}
+
+	ath12k_mac_reconfig_complete(ah->hw, IEEE80211_RECONFIG_TYPE_RESTART);
+
+	/* Send WMI_FW_HANG_CMD to FW after target has started. This is to
+	 * update the target's SSR recovery mode after it has recovered.
+	 */
+	ath12k_send_fw_hang_cmd(ab, ab->fw_recovery_support);
+
+	/* Send disassoc to MLD STA */
+	ath12k_core_peer_disassoc(ag, ab);
+	ab->recovery_start = false;
+	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+	ath12k_info(ab, "Mode1 recovery completed\n");
+	wiphy_unlock(ah->hw->wiphy);
+	return ret;
+}
+
+
+static void ath12k_core_mode1_recovery_work(struct work_struct *work)
+{
+	struct ath12k_base *ab = container_of(work, struct ath12k_base, recovery_work);
+
+	ath12k_info(ab, "queued recovery work\n");
+	ath12k_mode1_recovery_reconfig(ab);
 }
 
 static void ath12k_core_trigger_bug_on(struct ath12k_base *ab)
@@ -2201,7 +2995,7 @@ static void ath12k_core_trigger_bug_on(struct ath12k_base *ab)
 		dump_count = atomic_read(&ath12k_coredump_ram_info.num_chip);
 		if (dump_count >= ATH12K_MAX_SOCS) {
 			ath12k_err(ab, "invalid chip number %d\n",
-				   dump_count);
+					dump_count);
 			return;
 		}
 	}
@@ -3201,6 +3995,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 	init_waitqueue_head(&ab->qmi.cold_boot_waitq);
 	INIT_WORK(&ab->restart_work, ath12k_core_restart);
 	INIT_WORK(&ab->reset_work, ath12k_core_reset);
+	INIT_WORK(&ab->recovery_work, ath12k_core_mode1_recovery_work);
 	INIT_WORK(&ab->rfkill_work, ath12k_rfkill_work);
 	INIT_WORK(&ab->dump_work, ath12k_coredump_upload);
 	INIT_WORK(&ab->update_11d_work, ath12k_update_11d);

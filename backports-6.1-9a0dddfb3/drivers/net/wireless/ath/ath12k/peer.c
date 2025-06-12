@@ -336,7 +336,7 @@ void ath12k_peer_ml_free(struct ath12k_hw *ah, struct ath12k_sta *ahsta)
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
-	if (sta->mlo) {
+	if (sta->mlo && test_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map)) {
 		clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
 		ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
 		ah->num_ml_peers--;
@@ -400,7 +400,8 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 			continue;
 
 		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags) ||
-		    test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
+		    test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags) ||
+		    test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags))
 			continue;
 
 		ret = ath12k_wait_for_peer_delete_done(ar, arvif->vdev_id, arsta->addr);
