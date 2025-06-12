@@ -22,6 +22,7 @@
 #include "peer.h"
 #include "p2p.h"
 #include "testmode.h"
+#include "vendor.h"
 
 struct ath12k_wmi_svc_ready_parse {
 	bool wmi_svc_bitmap_done;
@@ -6665,6 +6666,9 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 		if (ret)
 			ath12k_warn(ab, "AFC reg rule update failed ret : %d\n",
 				    ret);
+
+		/* Update AFC application with power event update complete */
+		ath12k_vendor_send_power_update_complete(ar);
 	}
 }
 
