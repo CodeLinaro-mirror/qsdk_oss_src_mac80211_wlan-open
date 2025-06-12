@@ -1867,6 +1867,7 @@ void ath12k_fw_stats_init(struct ath12k *ar)
 	INIT_LIST_HEAD(&ar->fw_stats.pdevs);
 	INIT_LIST_HEAD(&ar->fw_stats.bcn);
 	init_completion(&ar->fw_stats_complete);
+	init_completion(&ar->fw_stats_done);
 }
 
 void ath12k_fw_stats_free(struct ath12k_fw_stats *stats)
@@ -1879,7 +1880,6 @@ void ath12k_fw_stats_free(struct ath12k_fw_stats *stats)
 void ath12k_fw_stats_reset(struct ath12k *ar)
 {
 	spin_lock_bh(&ar->data_lock);
-	ar->fw_stats.fw_stats_done = false;
 	ath12k_fw_stats_free(&ar->fw_stats);
 	spin_unlock_bh(&ar->data_lock);
 }

@@ -974,7 +974,6 @@ struct ath12k_fw_stats {
 	struct list_head pdevs;
 	struct list_head vdevs;
 	struct list_head bcn;
-	bool fw_stats_done;
 	bool en_vdev_stats_ol;
 };
 
@@ -1224,6 +1223,7 @@ struct ath12k {
 	u32 num_channels;
 
 	struct completion fw_stats_complete;
+	struct completion fw_stats_done;
 
 	bool ctrl_mem_stats;
 
