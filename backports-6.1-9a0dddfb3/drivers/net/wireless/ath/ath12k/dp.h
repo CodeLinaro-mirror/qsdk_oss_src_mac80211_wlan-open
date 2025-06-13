@@ -630,6 +630,10 @@ struct ath12k_dp {
 	int num_nrps;
 	unsigned long ppeds_service_running;
 	bool stats_disable;
+
+	/* HW link ID position in PPDU_ID */
+	u8 link_id_offset;
+	u8 link_id_bits;
 };
 /* @brief target -> host extended statistics upload
  *

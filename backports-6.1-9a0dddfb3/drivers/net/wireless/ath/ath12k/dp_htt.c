@@ -1064,6 +1064,23 @@ exit:
 	rcu_read_unlock();
 }
 
+static void ath12k_htt_t2h_ppdu_id_fmt_handler(struct ath12k_dp *dp,
+					       struct sk_buff *skb)
+{
+	u8 valid, bits, offset;
+	struct ath12k_htt_ppdu_id_fmt_info *msg;
+
+	msg = (struct ath12k_htt_ppdu_id_fmt_info *)skb->data;
+	valid = le32_get_bits(msg->link_id, HTT_PPDU_ID_FMT_VALID_BITS);
+	bits = le32_get_bits(msg->link_id, HTT_PPDU_ID_FMT_GET_BITS);
+	offset = le32_get_bits(msg->link_id, HTT_PPDU_ID_FMT_GET_OFFSET);
+
+	if (valid) {
+		dp->link_id_bits = bits;
+		dp->link_id_offset = offset;
+	}
+}
+
 static void
 ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 					    struct sk_buff *skb)
@@ -1257,6 +1274,9 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 		break;
 	case HTT_T2H_MSG_TYPE_MLO_RX_PEER_UNMAP:
 		ath12k_peer_mlo_unmap_event(ab, skb);
+		break;
+	case HTT_T2H_MSG_TYPE_PPDU_ID_FMT_IND:
+		ath12k_htt_t2h_ppdu_id_fmt_handler(dp, skb);
 		break;
 	case HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND:
 		ath12k_htt_pri_link_peer_migrate_indication(ab, skb);

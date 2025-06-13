@@ -1074,6 +1074,7 @@ enum htt_t2h_msg_type {
 	HTT_T2H_MSG_TYPE_PEER_MAP3	= 0x2b,
 	HTT_T2H_MSG_TYPE_VDEV_TXRX_STATS_PERIODIC_IND = 0x2c,
 	HTT_T2H_MSG_TYPE_QOS_MSDUQ_INFO_IND = 0x2e,
+	HTT_T2H_MSG_TYPE_PPDU_ID_FMT_IND = 0x30,
 	HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND = 0x37,
 };
 
@@ -2109,6 +2110,25 @@ struct htt_t2h_qos_info_ind {
 	__le32 info1;
 	__le32 info2;
 } __packed;
+
+struct ath12k_htt_ppdu_id_fmt_info {
+	__le32 info;
+	__le32 info1;
+
+	/* Bits 15:0   reserved
+	 * Bit  16     link_id valid
+	 * Bits 21:17  link_id bits
+	 * Bits 26:22  link_id offset
+	 * Bits 31:27  reserved
+	 */
+	__le32 link_id;
+	__le32 info2;
+	__le32 info3;
+} __packed;
+
+#define HTT_PPDU_ID_FMT_VALID_BITS	BIT(16)
+#define HTT_PPDU_ID_FMT_GET_BITS	GENMASK(21, 17)
+#define HTT_PPDU_ID_FMT_GET_OFFSET	GENMASK(26, 22)
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 
