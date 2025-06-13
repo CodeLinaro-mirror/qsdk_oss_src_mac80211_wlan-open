@@ -42,6 +42,7 @@
 #include <ppe_vp_public.h>
 #endif
 #include "cfr.h"
+#include "dp_stats.h"
 
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
@@ -620,6 +621,7 @@ struct ath12k_dp_vif {
 	u32 key_cipher;
 	atomic_t mcbc_gsn;
 	struct ath12k_dp_link_vif dp_link_vif[ATH12K_NUM_MAX_LINKS];
+	struct ath12k_dp_tx_vif_stats stats[DP_TCL_NUM_RING_MAX];
 
 	/* PPE mode independent variables */
 	int ppe_vp_num;

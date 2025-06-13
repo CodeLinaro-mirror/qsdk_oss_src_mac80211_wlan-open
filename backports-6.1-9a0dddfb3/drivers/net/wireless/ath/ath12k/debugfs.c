@@ -1025,7 +1025,6 @@ ath12k_debugfs_write_device_dp_stats(struct file *file,
        return count;
 }
 
-
 static const struct file_operations fops_device_dp_stats = {
 	.read = ath12k_debugfs_dump_device_dp_stats,
 	.write = ath12k_debugfs_write_device_dp_stats,
@@ -2434,6 +2433,123 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 			    &ath12k_fops_link_stats);
 }
 EXPORT_SYMBOL(ath12k_debugfs_op_vif_add);
+
+static ssize_t ath12k_read_mld_stats(struct file *file,
+				    char __user *user_buf,
+				    size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	size_t len = 0, buf_len = (PAGE_SIZE * 2);
+	struct ath12k_dp_vif *dp_vif;
+	struct wiphy *wiphy;
+	u8 i = 0, j = 0;
+	char *buf;
+	u32 tx_packets = 0;
+	u64 tx_bytes = 0;
+	ssize_t retval;
+	static const char *tx_enq_err[DP_TX_ENQ_ERR_MAX] = {
+			"Success", "Miscellaneous", "Monitor Vif",
+			"Invalid Link", "Invalid Arvif", "MGMT Frame",
+			"Max Tx Limit", "Invalid Pdev", "Invalid Peer",
+			"Crash Flush", "NON data Frame", "SW Desc NA",
+			"Encap RAW", "ENCAP 8023", "DMA ERR", "Extended Desc NA",
+			"HTT Metadata Err", "TCL Desc NA", "TCL Desc Retry",
+			"Invalid Arvif Fast", "Invalid Pdev Fast",
+			"Max Tx Limit Fast", "Invalid ENCAP Fast",
+			"Bridge vdev", "Arsta NA"};
+
+	if (!ahvif)
+		return -EINVAL;
+
+	dp_vif = &ahvif->dp_vif;
+	if (!dp_vif)
+		return -EINVAL;
+
+	buf = kzalloc(buf_len, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	wiphy = ahvif->ah->hw->wiphy;
+	wiphy_lock(wiphy);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "Tx Packets Received from Stack\n");
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "  Ring [%u] Packets = %u  \tBytes = %llu\n",
+				 i, dp_vif->stats[i].tx_i.recv_from_stack.packets,
+				 dp_vif->stats[i].tx_i.enque_to_hw.bytes);
+		tx_packets += dp_vif->stats[i].tx_i.recv_from_stack.packets;
+		tx_bytes += dp_vif->stats[i].tx_i.recv_from_stack.bytes;
+	}
+	len += scnprintf(buf + len, buf_len - len,
+			 "Total Packets Received from Stack = %u  \tBytes = %llu\n",
+			 tx_packets, tx_bytes);
+
+	tx_packets = 0;
+	tx_bytes = 0;
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "\nTx Packet Enqueue to HW\n");
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "  Ring [%u] Packets = %u  \tBytes = %llu\n",
+				 i, dp_vif->stats[i].tx_i.enque_to_hw.packets,
+				 dp_vif->stats[i].tx_i.enque_to_hw.bytes);
+		tx_packets += dp_vif->stats[i].tx_i.enque_to_hw.packets;
+		tx_bytes += dp_vif->stats[i].tx_i.enque_to_hw.bytes;
+	}
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "Total Packets Enqueue to HW = %u  \tBytes = %llu\n",
+			 tx_packets, tx_bytes);
+
+	tx_packets = 0;
+	tx_bytes = 0;
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "\nTx Packet Enqueue to HW Fast\n");
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "  Ring [%u] Packets = %u  \tBytes = %llu\n",
+				 i, dp_vif->stats[i].tx_i.enque_to_hw_fast.packets,
+				 dp_vif->stats[i].tx_i.enque_to_hw_fast.bytes);
+		tx_packets += dp_vif->stats[i].tx_i.enque_to_hw_fast.packets;
+		tx_bytes += dp_vif->stats[i].tx_i.enque_to_hw_fast.bytes;
+	}
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "Total Packets Enqueue to HW Fast = %u  \tBytes = %llu\n",
+			 tx_packets, tx_bytes);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "\nDrops in Tx Enqueue\n");
+	for (i = 1; i < DP_TX_ENQ_ERR_MAX; i++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "%s:\t", tx_enq_err[i]);
+
+		for (j = 0; j < DP_TCL_NUM_RING_MAX; j++) {
+			len += scnprintf(buf + len, buf_len - len,
+					 "%u\t",
+					 dp_vif->stats[j].tx_i.drop[i]);
+		}
+		len += scnprintf(buf + len, buf_len - len, "\n");
+	}
+	wiphy_unlock(wiphy);
+	if (len > buf_len)
+		len = buf_len;
+	retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return retval;
+}
+
+static const struct file_operations ath12k_fops_mld_stats = {
+	.read = ath12k_read_mld_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
 
 static ssize_t ath12k_fse_ops_write(struct file *file,
 				    const char __user *ubuf,
@@ -5874,6 +5990,9 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 
 	debugfs_create_file("btwt_remove_sta", 0200, arvif->debugfs_twt,
 			    arvif, &ath12k_fops_btwt_remove_sta);
+
+	debugfs_create_file("mld_stats", 0600, vif->debugfs_dir, ahvif,
+			    &ath12k_fops_mld_stats);
 
 	debugfs_create_file("rfs_core_mask", 0644, vif->debugfs_dir,
 			    ahvif, &ath12k_fops_rfs_core_mask);

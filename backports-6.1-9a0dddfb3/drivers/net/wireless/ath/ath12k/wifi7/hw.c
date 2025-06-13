@@ -28,6 +28,7 @@
 #include "hal_qcn9274.h"
 #include "hal_wcn7850.h"
 #include "../cfr.h"
+#include "../dp_stats.h"
 
 static const guid_t wcn7850_uuid = GUID_INIT(0xf634f534, 0x6147, 0x11ec,
 					     0x90, 0xd6, 0x02, 0x42,
@@ -1262,6 +1263,23 @@ static int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw,
 	return ret;
 }
 
+void ath12k_wifi7_ieee80211_free_txskb(struct ieee80211_hw *hw,
+				       struct sk_buff *skb,
+				       struct ath12k_dp_vif *dp_vif, u8 ring_id,
+				       enum ath12k_dp_tx_enq_error drop_reason,
+				       bool dev_free)
+{
+	if (unlikely(drop_reason > DP_TX_ENQ_ERR_MAX))
+		DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_MISC], 1, ring_id);
+	else
+		DP_STATS_INC(dp_vif, tx_i.drop[drop_reason], 1, ring_id);
+
+	if (dev_free)
+		dev_kfree_skb_any(skb);
+	else
+		ieee80211_free_txskb(hw, skb);
+}
+
 /* Note: called under rcu_read_lock() */
 static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				   struct ieee80211_tx_control *control,
@@ -1285,6 +1303,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath12k *ar, *tmp_ar;
 	struct ath12k_pdev_dp *dp_pdev, *tmp_dp_pdev;
 	struct ath12k_dp_link_peer *peer = NULL;
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k_dp *dp = NULL;
 	unsigned long links_map;
 	bool is_mcast = false, is_eth = false;
 	bool is_dvlan = false;
@@ -1295,9 +1315,13 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	u8 link_id;
 	int ret;
 	u8 qos_tag;
+	enum ath12k_dp_tx_enq_error err;
+	u8 ring_id = 0, ring_selector = 0;
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
-		ieee80211_free_txskb(hw, skb);
+		ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+						  DP_TX_ENQ_DROP_VIF_TYPE_MON,
+						  ring_id, false);
 		return;
 	}
 
@@ -1321,7 +1345,10 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		arvif = rcu_dereference(ahvif->link[link_id]);
 
 		if (!arvif || !arvif->ar) {
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_INV_ARVIF_FAST,
+							  ring_id, false);
+
 			return;
 		}
 
@@ -1329,7 +1356,10 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
 		if (!dp_pdev) {
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_INV_PDEV_FAST,
+							  ring_id, false);
+
 			return;
 		}
 
@@ -1338,26 +1368,34 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 				   "failed due to limit check pdev idx %d\n",
 				   ar->pdev_idx);
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_MAX_TX_LIMIT_FAST,
+							  ring_id, false);
+
 			return;
 		}
+
+		ring_selector = smp_processor_id();
+		ring_id = ring_selector % dp_pdev->dp->hw_params->max_tx_ring;
 
 		switch (ahvif->dp_vif.tx_encap_type) {
 			case ATH12K_HW_TXRX_ETHERNET:
 				skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
-				ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta);
+				err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta, ring_id);
 				break;
 			case ATH12K_HW_TXRX_NATIVE_WIFI:
 				ath12k_dp_tx_encap_nwifi(skb);
-				ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta);
+				err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta, ring_id);
 				break;
 			case ATH12K_HW_TXRX_RAW:
 			default:
-				ret = -EINVAL;
+				err = DP_TX_ENQ_DROP_INV_ENCAP_FAST;
 		}
-		if (unlikely(ret)) {
-			ath12k_warn(ar->ab, "failed to transmit frame %d\n", ret);
-			ieee80211_free_txskb(ar->ah->hw, skb);
+		if (unlikely(err)) {
+			ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
+			ath12k_wifi7_ieee80211_free_txskb(ar->ah->hw, skb, dp_vif,
+							  err, ring_id, false);
+
 			return;
 		}
 
@@ -1369,7 +1407,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		link_id = ath12k_mac_get_tx_link(sta, vif, link_id, skb, info_flags);
 		if (link_id >= ATH12K_NUM_MAX_LINKS ||
 		    (ATH12K_SCAN_LINKS_MASK & BIT(link_id))) {
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_INV_LINK,
+							  ring_id, false);
 			return;
 		}
 	} else {
@@ -1380,7 +1420,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	if (!arvif || !arvif->ar) {
 		ath12k_warn(ahvif->ah, "failed to find arvif link id %u for frame transmission",
 			    link_id);
-		ieee80211_free_txskb(hw, skb);
+		ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+						  DP_TX_ENQ_DROP_INV_ARVIF,
+						  ring_id, false);
 		return;
 	}
 
@@ -1416,7 +1458,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		}
 
 		if (ath12k_mac_is_bridge_vdev(arvif)) {
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_BRIDGE_VDEV,
+							  ring_id, false);
 			return;
 		}
 
@@ -1425,7 +1469,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		if (ret) {
 			if (ret != -EBUSY)
 				ath12k_warn(ar->ab, "failed to queue mgmt stype 0x%x frame %d\n", frm_type, ret);
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_MGMT_FRAME,
+							  ring_id, false);
 			spin_lock_bh(&ar->data_lock);
 			mgmt_stats->tx_fail_cnt[frm_type]++;
 			spin_unlock_bh(&ar->data_lock);
@@ -1446,9 +1492,15 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
 	if (!dp_pdev) {
-		ieee80211_free_txskb(hw, skb);
+		ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+						  DP_TX_ENQ_DROP_INV_PDEV,
+						  ring_id, false);
 		return;
 	}
+
+	dp = dp_pdev->dp;
+	ring_selector = dp->hw_params->hw_ops->get_ring_selector(skb);
+	ring_id = ring_selector % dp->hw_params->max_tx_ring;
 
 	/* Checking if it is a DVLAN frame */
 	if (!test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags) &&
@@ -1464,15 +1516,18 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 				   "failed due to limit check pdev idx %d\n",
 				   ar->pdev_idx);
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_MAX_TX_LIMIT,
+							  ring_id, false);
 			return;
 		}
 
-		ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0,
-					 is_mcast, arsta);
-		if (unlikely(ret)) {
-			ath12k_warn(ar->ab, "failed to transmit frame %d\n", ret);
-			ieee80211_free_txskb(ar->ah->hw, skb);
+		err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
+					 arsta, ring_id);
+		if (unlikely(err)) {
+			ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
+			ath12k_wifi7_ieee80211_free_txskb(ar->ah->hw, skb, dp_vif,
+							  err, ring_id, false);
 			return;
 		}
 	} else {
@@ -1531,7 +1586,11 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 					    "failed to find peer for vdev_id 0x%X addr %pM link_map 0x%X\n",
 					    tmp_arvif->vdev_id, tmp_arvif->bssid,
 					    ahvif->links_map);
-				dev_kfree_skb_any(msdu_copied);
+				ath12k_wifi7_ieee80211_free_txskb(hw, msdu_copied,
+								  dp_vif,
+								  DP_TX_ENQ_DROP_INV_PEER,
+								  ring_id, true);
+
 				continue;
 			}
 
@@ -1548,25 +1607,15 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			spin_unlock_bh(&tmp_ar->ab->dp->dp_lock);
 
 skip_peer_find:
-			ret = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
+			err = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
 						 msdu_copied, true, mcbc_gsn,
-						 is_mcast, arsta);
-			if (unlikely(ret)) {
-				if (ret == -ENOMEM) {
-					/* Drops are expected during heavy multicast
-					 * frame flood. Print with debug log
-					 * level to avoid lot of console prints
-					 */
-					ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-						   "failed to transmit frame %d\n",
-						   ret);
-				} else {
-					ath12k_warn(ar->ab,
-						    "failed to transmit frame %d\n",
-						    ret);
-				}
-
-				dev_kfree_skb_any(msdu_copied);
+						 is_mcast, arsta, ring_id);
+			if (unlikely(err)) {
+				ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+					   "failed to transmit frame %d\n", err);
+				ath12k_wifi7_ieee80211_free_txskb(hw, msdu_copied,
+								  dp_vif, err,
+								  ring_id, true);
 			}
 		}
 		ieee80211_free_txskb(ar->ah->hw, skb);

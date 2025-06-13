@@ -226,10 +226,11 @@ ath12k_core_dma_clean_range_no_dsb(const void *start, const void *end) {
 }
 
 /* TODO: Remoe the export once this file is built with wifi7 ko */
-int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
-		       struct ath12k_link_vif *arvif,
-		       struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
-		       bool is_mcast, struct ath12k_link_sta *arsta)
+enum ath12k_dp_tx_enq_error
+ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
+		   struct ath12k_link_vif *arvif,
+		   struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
+		   bool is_mcast, struct ath12k_link_sta *arsta, u8 ring_id)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
@@ -262,20 +263,20 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u8 qos_tag;
 	bool stats_disable = ab->stats_disable;
 	struct hal_tcl_data_cmd tcl_desc = {0};
-	u8 ring_id;
+	enum ath12k_dp_tx_enq_error err;
+
+	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
-		return -ESHUTDOWN;
+		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
 	if (likely(skb->fast_xmit)) {
 		pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
-		ring_selector = smp_processor_id();
-		ring_id = ring_selector % dp->hw_params->max_tx_ring;
 
 		tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
 		if (unlikely(!tx_desc)) {
 			dp->device_stats.tx_err.txbuf_na[ring_id]++;
-			return -ENOSPC;
+			return DP_TX_ENQ_DROP_SW_DESC_NA;
 		}
 
 		ath12k_core_dma_clean_range_no_dsb(skb->data, skb->data + DP_TX_SFE_BUFFER_SIZE);
@@ -321,7 +322,7 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_hal_srng_access_end(ab, tcl_ring);
 			dp->device_stats.tx_err.desc_na[ring_id]++;
 			spin_unlock_bh(&tcl_ring->lock);
-			ret = -ENOMEM;
+			err = DP_TX_ENQ_DROP_TCL_DESC_NA;
 			goto fail_remove_tx_buf;
 		}
 
@@ -334,14 +335,15 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		dp->device_stats.tx_fast_unicast[ring_id]++;
 		spin_unlock_bh(&tcl_ring->lock);
 
+		DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw_fast, 1, skb->len, ring_id);
 		atomic_inc(&dp_pdev->num_tx_pending);
 
-		return 0;
+		return DP_TX_ENQ_SUCCESS;
 	}
 
 	if (!(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
 	    !ieee80211_is_data(hdr->frame_control))
-		return -EOPNOTSUPP;
+		return DP_TX_ENQ_DROP_NON_DATA_FRAME;
 
 	if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)
 		eth = (struct ethhdr *)skb->data;
@@ -357,7 +359,7 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		ahsta = arsta->ahsta;
 		if (unlikely(!ahsta->link[ahsta->primary_link_id])) {
 			ath12k_err(ab, "arsta not found on primary link");
-			ret = -EINVAL;
+			err = DP_TX_ENQ_DROP_ARSTA_NA;
 			goto fail_remove_tx_buf;
 		}
 		ti.meta_data_flags = ahsta->link[ahsta->primary_link_id]->tcl_metadata;
@@ -388,7 +390,7 @@ tcl_ring_sel:
 	tx_desc = ath12k_dp_tx_assign_buffer(dp, ti.ring_id);
 	if (!tx_desc) {
 		dp->device_stats.tx_err.txbuf_na[ti.ring_id]++;
-		return -ENOMEM;
+		return DP_TX_ENQ_DROP_SW_DESC_NA;
 	}
 
 	ti.bank_id = dp_link_vif->bank_id;
@@ -445,7 +447,7 @@ tcl_ring_sel:
 		break;
 	case HAL_TCL_ENCAP_TYPE_RAW:
 		if (!test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags)) {
-			ret = -EINVAL;
+			err = DP_TX_ENQ_DROP_ENCAP_RAW;
 			goto fail_remove_tx_buf;
 		}
 		break;
@@ -455,7 +457,7 @@ tcl_ring_sel:
 	case HAL_TCL_ENCAP_TYPE_802_3:
 	default:
 		/* TODO: Take care of other encap modes as well */
-		ret = -EINVAL;
+		err = DP_TX_ENQ_DROP_ENCAP_802_3;
 		atomic_inc(&dp->device_stats.tx_err.misc_fail);
 		goto fail_remove_tx_buf;
 	}
@@ -509,7 +511,7 @@ map:
 	if (dma_mapping_error(dp->dev, ti.paddr)) {
 		atomic_inc(&dp->device_stats.tx_err.misc_fail);
 		ath12k_warn(ab, "failed to DMA map data Tx buffer\n");
-		ret = -ENOMEM;
+		err = DP_TX_ENQ_DROP_DMA_ERR;
 		goto fail_remove_tx_buf;
 	}
 #else
@@ -517,7 +519,7 @@ map:
 	if (!ti.paddr) {
 		atomic_inc(&dp->device_stats.tx_err.misc_fail);
 		ath12k_warn(ab, "failed to DMA map data Tx buffer\n");
-		ret = -ENOMEM;
+		err = DP_TX_ENQ_DROP_DMA_ERR;
 		goto fail_remove_tx_buf;
 	}
 #endif
@@ -552,7 +554,7 @@ skip_htt_metadata:
 	if (msdu_ext_desc) {
 		skb_ext_desc = dev_alloc_skb(sizeof(struct hal_tx_msdu_ext_desc));
 		if (!skb_ext_desc) {
-			ret = -ENOMEM;
+			err = DP_TX_ENQ_DROP_EXT_DESC_NA;
 			goto fail_unmap_dma;
 		}
 
@@ -567,6 +569,7 @@ skip_htt_metadata:
 			if (ret < 0) {
 				ath12k_dbg(ab, ATH12K_DBG_DP_TX,
 					   "Failed to add HTT meta data, dropping packet\n");
+				err = DP_TX_ENQ_DROP_HTT_MDATA_ERR;
 				goto fail_free_ext_skb;
 			}
 		}
@@ -574,8 +577,10 @@ skip_htt_metadata:
 		ti.paddr = dma_map_single(dp->dev, skb_ext_desc->data,
 					  skb_ext_desc->len, DMA_TO_DEVICE);
 		ret = dma_mapping_error(dp->dev, ti.paddr);
-		if (ret)
+		if (ret) {
+			err = DP_TX_ENQ_DROP_DMA_ERR;
 			goto fail_free_ext_skb;
+		}
 #else
 		ti.paddr = virt_to_phys(skb_ext_desc->data);
 		if (!ti.paddr)
@@ -604,7 +609,7 @@ skip_htt_metadata:
 		ath12k_hal_srng_access_end(ab, tcl_ring);
 		dp->device_stats.tx_err.desc_na[ti.ring_id]++;
 		spin_unlock_bh(&tcl_ring->lock);
-		ret = -ENOMEM;
+		err = DP_TX_ENQ_DROP_TCL_DESC_NA;
 
 		/* Checking for available tcl descriptors in another ring in
 		 * case of failure due to full tcl ring now, is better than
@@ -613,6 +618,9 @@ skip_htt_metadata:
 		 */
 		if (ring_map != (BIT(dp->hw_params->max_tx_ring) - 1) &&
 		    dp->hw_params->tcl_ring_retry) {
+			DP_STATS_INC(dp_vif,
+				     tx_i.drop[DP_TX_ENQ_TCL_DESC_RETRY],
+				     1, ring_id);
 			tcl_ring_retry = true;
 			ring_selector++;
 		}
@@ -639,6 +647,9 @@ skip_htt_metadata:
 	else
 		arvif->link_stats.tx_enqueued++;
 	spin_unlock_bh(&arvif->link_stats_lock);
+	DP_STATS_INC(dp_vif, tx_i.encap_type[ti.encap_type], 1, ti.ring_id);
+	DP_STATS_INC(dp_vif, tx_i.encrypt_type[ti.encrypt_type], 1, ti.ring_id);
+	DP_STATS_INC(dp_vif, tx_i.desc_type[ti.type], 1, ti.ring_id);
 
 	ath12k_wifi7_hal_tx_cmd_desc_setup(ab, hal_tcl_desc, &ti);
 
@@ -661,12 +672,14 @@ qos_done:
 
 	spin_unlock_bh(&tcl_ring->lock);
 
+	DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw, 1, ti.data_len, ti.ring_id);
+
 	ath12k_dbg_dump(ab, ATH12K_DBG_DP_TX, NULL, "dp tx msdu: ",
 			skb->data, skb->len);
 
 	atomic_inc(&dp_pdev->num_tx_pending);
 
-	return 0;
+	return DP_TX_ENQ_SUCCESS;
 
 fail_unmap_dma_ext:
 	if (tx_desc->paddr_ext_desc)
@@ -691,7 +704,7 @@ fail_remove_tx_buf:
 	if (tcl_ring_retry)
 		goto tcl_ring_sel;
 
-	return ret;
+	return err;
 }
 
 static void ath12k_wifi7_dp_tx_free_txbuf(struct ath12k_dp *dp,

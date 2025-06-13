@@ -433,7 +433,13 @@ enum hal_wbm_rel_src_module {
 	HAL_WBM_REL_SRC_MODULE_MAX,
 };
 
-
+enum hal_tcl_encap_type {
+	HAL_TCL_ENCAP_TYPE_RAW,
+	HAL_TCL_ENCAP_TYPE_NATIVE_WIFI,
+	HAL_TCL_ENCAP_TYPE_ETHERNET,
+	HAL_TCL_ENCAP_TYPE_802_3 = 3,
+	HAL_TCL_ENCAP_TYPE_MAX,
+};
 
 /**
  * enum hal_reo_cmd_status: Enum for execution status of REO command
