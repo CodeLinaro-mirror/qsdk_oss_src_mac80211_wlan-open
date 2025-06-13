@@ -5940,7 +5940,9 @@ skip_pending_cs_up:
 		}
 	}
 
-	ath12k_mac_fils_discovery(arvif, info);
+	if (changed & BSS_CHANGED_FILS_DISCOVERY ||
+	    changed & BSS_CHANGED_UNSOL_BCAST_PROBE_RESP)
+		ath12k_mac_fils_discovery(arvif, info);
 
 	if (changed & BSS_CHANGED_PS &&
 	    ar->ab->hw_params->supports_sta_ps) {
