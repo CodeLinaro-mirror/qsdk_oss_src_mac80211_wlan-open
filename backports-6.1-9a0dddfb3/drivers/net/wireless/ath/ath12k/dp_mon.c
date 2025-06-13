@@ -1404,7 +1404,7 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
                                           u32 uid)
 {
        struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
-       struct ath12k_dp_peer_stats *stats = NULL;
+       struct ath12k_dp_link_peer_stats *stats = NULL;
        struct ath12k_link_sta *arsta;
        struct ath12k_dp_link_peer *peer;
        u32 nss_ru_width_sum = 0;

@@ -14,6 +14,7 @@
 #include "hal.h"
 #include "ppe.h"
 #include <linux/rhashtable.h>
+#include "dp_stats.h"
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
 
@@ -97,14 +98,6 @@ struct dp_link_desc_bank {
 enum ath12k_dp_ppdu_state {
 	DP_PPDU_STATUS_START,
 	DP_PPDU_STATUS_DONE,
-};
-
-enum wme_ac {
-	WME_AC_BE,
-	WME_AC_BK,
-	WME_AC_VI,
-	WME_AC_VO,
-	WME_NUM_AC
 };
 
 struct ath12k_wmm_stats {
@@ -470,6 +463,7 @@ struct ath12k_device_dp_tx_err_stats {
 	 * idr unavailable etc.
 	 */
 	atomic_t misc_fail;
+	u32 tx_comp_err[DP_TX_COMP_ERR_MAX][DP_TCL_NUM_RING_MAX];
 };
 
 struct ath12k_device_dp_stats {

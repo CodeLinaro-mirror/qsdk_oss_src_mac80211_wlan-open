@@ -8,6 +8,9 @@
 
 #include "cmn_defs.h"
 
+/* Max number of links for MLO connection */
+#define ATH12K_DP_MAX_MLO_LINKS 4
+
 struct ath12k_hw_group;
 struct ath12k;
 
@@ -80,6 +83,14 @@ struct ath12k_dp_link_peer_rate_info {
 	u16 tx_retry_count;
 	u16 tx_retry_failed;
 	u32 rx_retries;
+};
+
+enum wme_ac {
+	WME_AC_BE,
+	WME_AC_BK,
+	WME_AC_VI,
+	WME_AC_VO,
+	WME_NUM_AC
 };
 
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp);

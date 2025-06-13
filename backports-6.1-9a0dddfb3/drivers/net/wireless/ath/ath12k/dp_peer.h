@@ -57,35 +57,6 @@ struct ath12k_rx_peer_stats {
 	struct ath12k_rx_peer_rate_stats byte_stats;
 };
 
-struct ath12k_wbm_tx_stats {
-	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
-};
-
-struct peer_airtime_consumption {
-       u32 consumption;
-       u16 avg_consumption_per_sec;
-};
-
-struct ath12k_mon_peer_airtime_stats {
-       struct peer_airtime_consumption tx_airtime_consumption[WME_NUM_AC];
-       struct peer_airtime_consumption rx_airtime_consumption[WME_NUM_AC];
-       u64 last_update_time;
-};
-
-struct ath12k_peer_telemetry_stats {
-       u32 tx_mpdu_retried;
-       u32 tx_mpdu_total;
-       u32 rx_mpdu_retried;
-       u32 rx_mpdu_total;
-       u16 tx_airtime_consumption[WME_NUM_AC]; // Energy Service FR
-       u16 rx_airtime_consumption[WME_NUM_AC]; // Energy Service FR
-       u8 snr;
-};
-
-struct ath12k_dp_mon_peer_stats {
-       struct ath12k_mon_peer_airtime_stats mon_stats;
-};
-
 struct ath12k_htt_tx_stats {
        struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
        u64 tx_duration;
@@ -94,13 +65,6 @@ struct ath12k_htt_tx_stats {
        u16 ru_start;
        u16 ru_tones;
        u32 mu_group[MAX_MU_GROUP_ID];
-};
-
-struct ath12k_dp_peer_stats {
-	struct ath12k_htt_tx_stats *tx_stats;
-	struct ath12k_rx_peer_stats *rx_stats;
-	struct ath12k_dp_mon_peer_stats dp_mon_stats;
-	u32 rx_retries;
 };
 
 DECLARE_EWMA(avg_rssi, 10, 8)
@@ -152,7 +116,7 @@ struct ath12k_dp_link_peer {
 	u16 tx_retry_failed;
 	u16 tx_retry_count;
 	struct ewma_avg_rssi avg_rssi;
-	struct ath12k_dp_peer_stats peer_stats;
+	struct ath12k_dp_link_peer_stats peer_stats;
 
 	u16 tcl_metadata;
 	bool assoc_success; /* information on peer assoc status from firmware */
@@ -195,6 +159,8 @@ struct ath12k_dp_peer {
 	bool is_reset_mcbc;
 
 	u8 hw_links[ATH12K_GROUP_MAX_RADIO];
+	u16 stats_link_id;
+	struct ath12k_dp_peer_stats stats[ATH12K_DP_MAX_MLO_LINKS];
 #if defined(CPTCFG_MAC80211_PPE_SUPPORT) || defined(CPTCFG_ATH12K_PPE_DS_SUPPORT)
 	int ppe_vp_num;
 #endif

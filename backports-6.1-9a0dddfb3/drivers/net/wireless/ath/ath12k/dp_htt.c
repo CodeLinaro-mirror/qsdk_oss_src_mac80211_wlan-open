@@ -610,7 +610,7 @@ ath12k_ppdu_per_user_stats_phy_tx_time_update(struct ath12k_base *ab,
                                              const struct htt_ppdu_user_stats *user)
 {
        const struct htt_ppdu_stats_common *common = &ppdu_info->ppdu_stats.common;
-       struct ath12k_dp_peer_stats *stats = NULL;
+       struct ath12k_dp_link_peer_stats *stats = NULL;
        u32 ru_nss_width_sum = 0;
        u16 phy_tx_time_us = 0;
        u8 tid;

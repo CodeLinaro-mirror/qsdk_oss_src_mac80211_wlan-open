@@ -8,6 +8,8 @@
 
 #include "hal.h"
 #include "dp_cmn.h"
+#include "cmn_defs.h"
+#include "dp.h"
 
 enum ath12k_dp_tx_enq_error {
 	DP_TX_ENQ_SUCCESS = 0,
@@ -38,6 +40,15 @@ enum ath12k_dp_tx_enq_error {
 	DP_TX_ENQ_ERR_MAX,
 };
 
+enum ath12k_dp_tx_comp_error {
+	DP_TX_COMP_ERR_INVALID_DESC,
+	DP_TX_COMP_ERR_INVALID_PDEV,
+	DP_TX_COMP_ERR_INVALID_VIF,
+	DP_TX_COMP_ERR_INVALID_PEER,
+	DP_TX_COMP_ERR_INVALID_LINK_PEER,
+	DP_TX_COMP_ERR_MAX,
+};
+
 /* VIF STATS MACROS */
 #define DP_STATS_INC(_handle, _field, _delta, _ring) \
 	do { \
@@ -51,10 +62,95 @@ enum ath12k_dp_tx_enq_error {
 		DP_STATS_INC(_handle, _field.bytes, _bytes, _ring); \
 	} while (0)
 
+/* DEVICE STATS MACROS */
+#define DP_DEVICE_STATS_INC(_handle, _field, _delta) \
+	do { \
+		if (likely(_handle)) \
+			_handle->device_stats._field += _delta; \
+	} while (0)
+
+/* PEER STATS MACROS */
+#define DP_PEER_STATS_INC(_handle, _dir, _ring, _field, _link, _delta) \
+	do { \
+		if (likely(_handle)) \
+			_handle->stats[_link]._dir[_ring]._field += _delta; \
+	} while (0)
+
+#define DP_PEER_STATS_PKT_LEN(_handle, _dir, _ring, _field, _link, _count, _bytes) \
+	do { \
+		DP_PEER_STATS_INC(_handle, _dir, _ring, _field.packets, _link, _count); \
+		DP_PEER_STATS_INC(_handle, _dir, _ring, _field.bytes, _link, _bytes); \
+	} while (0)
+
+#define DP_PEER_STATS_COND_INC(_handle, _dir, _ring, _field, _link, _cond, _delta) \
+	do { \
+		if (_cond) \
+			DP_PEER_STATS_INC(_handle, _dir, _ring, _field, _link, _delta); \
+	} while (0)
+
+struct ath12k_wbm_tx_stats {
+	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
+};
+
 struct ath12k_dp_pkt_info {
 	u32 packets;
 	u64 bytes;
 } __packed;
+
+struct peer_airtime_consumption {
+       u32 consumption;
+       u16 avg_consumption_per_sec;
+};
+
+struct ath12k_mon_peer_airtime_stats {
+       struct peer_airtime_consumption tx_airtime_consumption[WME_NUM_AC];
+       struct peer_airtime_consumption rx_airtime_consumption[WME_NUM_AC];
+       u64 last_update_time;
+};
+
+struct ath12k_peer_telemetry_stats {
+       u32 tx_mpdu_retried;
+       u32 tx_mpdu_total;
+       u32 rx_mpdu_retried;
+       u32 rx_mpdu_total;
+       u16 tx_airtime_consumption[WME_NUM_AC]; // Energy Service FR
+       u16 rx_airtime_consumption[WME_NUM_AC]; // Energy Service FR
+       u8 snr;
+};
+
+struct ath12k_dp_mon_peer_stats {
+       struct ath12k_mon_peer_airtime_stats mon_stats;
+};
+
+struct ath12k_dp_link_peer_stats {
+	struct ath12k_htt_tx_stats *tx_stats;
+	struct ath12k_rx_peer_stats *rx_stats;
+	struct ath12k_dp_mon_peer_stats dp_mon_stats;
+	u32 rx_retries;
+};
+
+struct ath12k_dp_peer_tx_stats {
+	/* Basic */
+	struct ath12k_dp_pkt_info comp_pkt;
+	struct ath12k_dp_pkt_info tx_success;
+	u32 tx_failed;
+
+	/* Debug and Advance */
+	u32 wbm_rel_reason[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
+	u32 tqm_rel_reason[HAL_WBM_TQM_REL_REASON_MAX];
+	u32 release_src_not_tqm;
+	u32 retry_count;
+	u32 total_msdu_retries;
+	u32 multiple_retry_count;
+	u32 ofdma;
+	u32 amsdu_cnt;
+	u32 non_amsdu_cnt;
+	u32 inval_link_id_pkt_cnt;
+};
+
+struct ath12k_dp_peer_stats {
+	struct ath12k_dp_peer_tx_stats tx[DP_TCL_NUM_RING_MAX];
+};
 
 struct ath12k_dp_tx_ingress_stats {
 	/* Basic */

@@ -22,6 +22,7 @@
 #include "coredump.h"
 #include "dp_mon.h"
 #include "dp_mon_filter.h"
+#include "dp_cmn.h"
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)
