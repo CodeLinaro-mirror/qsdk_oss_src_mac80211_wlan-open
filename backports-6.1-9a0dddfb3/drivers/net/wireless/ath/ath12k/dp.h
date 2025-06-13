@@ -164,8 +164,6 @@ struct ath12k_pdev_dp {
 
 #define DP_BA_WIN_SZ_MAX	1024
 
-#define DP_TCL_NUM_RING_MAX	4
-
 #define DP_IDLE_SCATTER_BUFS_MAX 16
 
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
@@ -191,7 +189,6 @@ struct ath12k_pdev_dp {
 #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32
-#define DP_REO_DST_RING_MAX		4
 #define DP_REO_DST_RING_SIZE		2048
 #define DP_REO_REINJECT_RING_SIZE	32
 #define DP_RX_RELEASE_RING_SIZE		1024
@@ -280,7 +277,6 @@ struct ath12k_pdev_dp {
 #define ATH12K_PEER_ID_INVALID	0x3FFF
 
 #define DP_TCL_ENCAP_TYPE_MAX	4
-#define DP_TCL_DESC_TYPE_MAX	2
 
 /* Total size of the LUT is based on 2K peers, each having reference
  * for 17tids, note each entry is of type ath12k_reo_queue_ref

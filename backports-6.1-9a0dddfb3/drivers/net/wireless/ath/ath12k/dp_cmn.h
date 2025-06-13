@@ -27,6 +27,9 @@ struct ath12k_dp_hw_link {
 };
 
 #define MAX_DP_PEER_LIST_SIZE  16384
+#define DP_TCL_NUM_RING_MAX  4
+#define DP_REO_DST_RING_MAX  8
+#define DP_TCL_DESC_TYPE_MAX 2
 
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
