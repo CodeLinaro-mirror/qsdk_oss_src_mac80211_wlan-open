@@ -8,6 +8,7 @@
 #define ATH12K_HAL_H
 
 #include "hw.h"
+#include "mac.h"
 
 struct ath12k_base;
 struct ath12k_dp;
@@ -457,6 +458,91 @@ enum hal_reo_cmd_status {
 	HAL_REO_CMD_FAILED		= 2,
 	HAL_REO_CMD_RESOURCE_BLOCKED	= 3,
 	HAL_REO_CMD_DRAIN		= 0xff,
+};
+
+/**
+ * enum hal_wbm_tqm_rel_reason - TQM release reason code
+ * @HAL_WBM_TQM_REL_REASON_FRAME_ACKED: ACK or BACK received for the frame
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU: Command remove_mpdus initiated by SW
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX: Command remove transmitted_mpdus
+ *	initiated by sw.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_NOTX: Command remove untransmitted_mpdus
+ *	initiated by sw.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES: Command remove aged msdus or
+ *	mpdus.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON1: Remove command initiated by
+ *	fw with fw_reason1.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON2: Remove command initiated by
+ *	fw with fw_reason2.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON3: Remove command initiated by
+ *	fw with fw_reason3.
+ * @HAL_WBM_TQM_REL_REASON_CMD_DISABLE_QUEUE: Remove command initiated by
+ *	fw with disable queue.
+ * @HAL_WBM_TQM_REL_REASON_CMD_TILL_NONMATCHING: Remove command initiated by
+ *	fw to remove all mpdu until 1st non-match.
+ * @HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD: Dropped due to drop threshold
+ *	criteria
+ * @HAL_WBM_TQM_REL_REASON_DROP_LINK_DESC_UNAVAIL: Dropped due to link desc
+ *	not available
+ * @HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU: Dropped due drop bit set or
+ *	null flow
+ * @HAL_WBM_TQM_REL_REASON_MULTICAST_DROP: Dropped due mcast drop set for VDEV
+ * @HAL_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP: Dropped due to being set with
+ *	'TCL_drop_reason'
+ */
+enum hal_wbm_tqm_rel_reason {
+	HAL_WBM_TQM_REL_REASON_FRAME_ACKED,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_NOTX,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON1,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON2,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON3,
+	HAL_WBM_TQM_REL_REASON_CMD_DISABLE_QUEUE,
+	HAL_WBM_TQM_REL_REASON_CMD_TILL_NONMATCHING,
+	HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD,
+	HAL_WBM_TQM_REL_REASON_DROP_LINK_DESC_UNAVAIL,
+	HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU,
+	HAL_WBM_TQM_REL_REASON_MULTICAST_DROP,
+	HAL_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP,
+
+	/* Keep Last */
+	HAL_WBM_TQM_REL_REASON_MAX,
+};
+
+enum hal_tx_rate_stats_pkt_type {
+	HAL_TX_RATE_STATS_PKT_TYPE_11A,
+	HAL_TX_RATE_STATS_PKT_TYPE_11B,
+	HAL_TX_RATE_STATS_PKT_TYPE_11N,
+	HAL_TX_RATE_STATS_PKT_TYPE_11AC,
+	HAL_TX_RATE_STATS_PKT_TYPE_11AX,
+	HAL_TX_RATE_STATS_PKT_TYPE_11BA,
+	HAL_TX_RATE_STATS_PKT_TYPE_11BE,
+};
+
+enum hal_tx_rate_stats_sgi {
+	HAL_TX_RATE_STATS_SGI_08US,
+	HAL_TX_RATE_STATS_SGI_04US,
+	HAL_TX_RATE_STATS_SGI_16US,
+	HAL_TX_RATE_STATS_SGI_32US,
+};
+
+struct hal_tx_status {
+	enum hal_wbm_rel_src_module buf_rel_source;
+	enum hal_wbm_tqm_rel_reason status;
+	s8 ack_rssi;
+	u32 flags; /* %HAL_TX_STATUS_FLAGS_ */
+	u32 ppdu_id;
+	u8 try_cnt;
+	u8 tid;
+	u16 peer_id;
+	enum hal_tx_rate_stats_pkt_type pkt_type;
+	enum hal_tx_rate_stats_sgi sgi;
+	enum ath12k_supported_bw bw;
+	u8 mcs;
+	u16 tones;
+	u8 ofdma;
 };
 
 struct hal_srng_params {

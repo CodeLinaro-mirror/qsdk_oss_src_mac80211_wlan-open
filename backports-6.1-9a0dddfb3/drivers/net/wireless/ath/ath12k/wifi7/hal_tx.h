@@ -57,24 +57,6 @@ struct hal_tx_info {
 
 #define HAL_TX_STATUS_DESC_LEN		sizeof(struct hal_wbm_release_ring)
 
-/* Tx status parsed from srng desc */
-struct hal_tx_status {
-	enum hal_wbm_rel_src_module buf_rel_source;
-	enum hal_wbm_tqm_rel_reason status;
-	s8 ack_rssi;
-	u32 flags; /* %HAL_TX_STATUS_FLAGS_ */
-	u32 ppdu_id;
-	u8 try_cnt;
-	u8 tid;
-	u16 peer_id;
-	enum hal_tx_rate_stats_pkt_type pkt_type;
-	enum hal_tx_rate_stats_sgi sgi;
-	enum ath12k_supported_bw bw;
-	u8 mcs;
-	u16 tones;
-	u8 ofdma;
-};
-
 #define HAL_TX_BANK_CONFIG_EPD			BIT(0)
 #define HAL_TX_BANK_CONFIG_ENCAP_TYPE		GENMASK(2, 1)
 #define HAL_TX_BANK_CONFIG_ENCRYPT_TYPE		GENMASK(6, 3)
