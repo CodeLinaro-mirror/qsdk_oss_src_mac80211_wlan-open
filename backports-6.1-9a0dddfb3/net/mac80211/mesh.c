@@ -132,6 +132,11 @@ bool mesh_matches_local(struct ieee80211_sub_if_data *sdata,
 	       support_160 = he_phy_cap & IEEE80211_HE_PHY_CAP0_CHANNEL_WIDTH_SET_160MHZ_IN_5G;
 	       ieee80211_chandef_eht_oper((void *)ie->eht_operation->optional, support_160,
 					  support_320, &sta_chan_def);
+	       sta_chan_def.punctured =
+                        ieee80211_eht_oper_dis_subchan_bitmap(ie->eht_operation);
+
+	       if (!cfg80211_chandef_valid(&sta_chan_def))
+			sta_chan_def.punctured = 0;
 	}
 
 out:

@@ -3244,7 +3244,7 @@ u8 *ieee80211_ie_build_eht_oper(u8 *pos, const struct cfg80211_chan_def *chandef
 		eht_oper->params |=
 			  IEEE80211_EHT_OPER_DISABLED_SUBCHANNEL_BITMAP_PRESENT;
 
-		eht_oper_info->optional[0] = chandef->punctured && 0x00FF;
+		eht_oper_info->optional[0] = chandef->punctured & 0x00FF;
 		eht_oper_info->optional[1] = chandef->punctured >> 8;
 	}
 
@@ -3445,17 +3445,6 @@ void ieee80211_chandef_eht_oper(const struct ieee80211_eht_operation_info *info,
 				chandef->center_freq1 += 40;
 		}
 		break;
-	}
-
-	if (chandef->width >= NL80211_CHAN_WIDTH_80 &&
-	    IEEE80211_EHT_OPER_DISABLED_SUBCHANNEL_BITMAP_PRESENT) {
-		chandef->punctured = (info->optional[4] << 8) |
-				      info->optional[3];
-
-		if (!valid_puncturing_bitmap(chandef)) {
-			chandef->punctured = 0;
-			return;
-		}
 	}
 }
 
