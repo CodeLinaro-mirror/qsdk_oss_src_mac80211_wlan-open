@@ -1107,6 +1107,7 @@ int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
 		 */
 		dp_pdev->ar = ar;
 		dp_pdev->dp_hw = &ar->ah->dp_hw;
+		dp_pdev->hw_link_id = ar->hw_link_id;
 
 		ret = ath12k_dp_rx_pdev_alloc(ab, i);
 		if (ret) {

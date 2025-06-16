@@ -1231,7 +1231,7 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
-		dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+		dp_pdev = ath12k_dp_to_dp_pdev(partner_dp, pdev_id);
 		if (!dp_pdev) {
 			dev_kfree_skb_any(msdu);
 			continue;
@@ -2611,7 +2611,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 			continue;
 		}
 
-		hw_link_id = ath12k_wifi7_dp_rx_get_msdu_src_link(dp, rxcb->rx_desc);
+		hw_link_id = ath12k_wifi7_dp_rx_get_msdu_src_link(partner_dp, rxcb->rx_desc);
 
 		if (hw_link_id >= ATH12K_GROUP_MAX_RADIO) {
 			dev_kfree_skb_any(msdu);
@@ -2659,7 +2659,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 		rx_ring = &partner_dp->rx_refill_buf_ring;
 
-		ath12k_dp_rx_bufs_replenish(dp, rx_ring,
+		ath12k_dp_rx_bufs_replenish(partner_dp, rx_ring,
 					    &rx_desc_used_list[device_id],
 					    num_buffs_reaped[device_id]);
 	}
