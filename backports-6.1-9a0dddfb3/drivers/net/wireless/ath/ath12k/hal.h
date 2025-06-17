@@ -543,6 +543,12 @@ struct hal_tx_status {
 	u8 mcs;
 	u16 tones;
 	u8 ofdma;
+	bool acked;
+	u8 transmit_cnt;
+	u8 first_msdu;
+	u8 last_msdu;
+	u8 msdu_part_of_amsdu;
+	u8 hw_link_id;
 };
 
 struct hal_srng_params {

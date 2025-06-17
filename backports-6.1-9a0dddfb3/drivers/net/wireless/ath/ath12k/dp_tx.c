@@ -14,6 +14,8 @@
 #include "mac.h"
 #include "ppe.h"
 #include "hal.h"
+#include "dp_peer.h"
+#include "dp_stats.h"
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static void
@@ -439,6 +441,82 @@ ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask)
 
 	return 0;
 }
+
+u8 ath12k_dp_get_link_id(struct ath12k_pdev_dp *dp_pdev,
+			 struct hal_tx_status *ts,
+			 struct ath12k_dp_peer *peer)
+{
+	u8 hw_link_id = ts->hw_link_id;
+
+	if (hw_link_id >= ATH12K_DP_MAX_MLO_LINKS) {
+		/* For invalid Link_id update stats on primary link */
+		hw_link_id = dp_pdev->hw_link_id;
+	}
+
+	if (peer->hw_links[hw_link_id] > ATH12K_DP_MAX_MLO_LINKS)
+		return peer->hw_links[dp_pdev->hw_link_id];
+
+	return peer->hw_links[hw_link_id];
+}
+EXPORT_SYMBOL(ath12k_dp_get_link_id);
+
+void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
+					  u32 msdu_len, u8 tx_status,
+					  u8 link_id, int ring_id)
+{
+	DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, comp_pkt, link_id, 1, msdu_len);
+
+	if (tx_status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, tx_success, link_id,
+				      1, msdu_len);
+	} else {
+		DP_PEER_STATS_INC(peer, tx, ring_id, tx_failed, link_id, 1);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tx_update_peer_basic_stats);
+
+void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
+					 struct hal_tx_status *ts,
+					 int ring_id)
+{
+	u8 link_id = peer->stats_link_id;
+
+	if (ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM) {
+		DP_PEER_STATS_INC(peer, tx, ring_id, release_src_not_tqm,
+				  link_id, 1);
+		DP_PEER_STATS_INC(peer, tx, ring_id, wbm_rel_reason[ts->status],
+				  link_id, 1);
+		return;
+	}
+
+	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, retry_count, link_id,
+				       ts->transmit_cnt > 1, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, total_msdu_retries,
+				       link_id,
+				       ts->transmit_cnt > 1,
+				       ts->transmit_cnt - 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, multiple_retry_count,
+				       link_id, ts->transmit_cnt > 2, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, ofdma, link_id,
+				       ts->ofdma, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, amsdu_cnt, link_id,
+				       ts->msdu_part_of_amsdu, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, non_amsdu_cnt, link_id,
+				       !ts->msdu_part_of_amsdu, 1);
+	}
+
+	if (ts->status < HAL_WBM_TQM_REL_REASON_MAX) {
+		DP_PEER_STATS_INC(peer, tx, ring_id, tqm_rel_reason[ts->status],
+				  link_id, 1);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tx_comp_update_peer_stats);
 
 int ath12k_dp_tx_htt_pri_link_migr_msg(struct ath12k_base *ab, u16 vdev_id,
 				       u16 peer_id, u16 ml_peer_id, u8 pdev_id,
