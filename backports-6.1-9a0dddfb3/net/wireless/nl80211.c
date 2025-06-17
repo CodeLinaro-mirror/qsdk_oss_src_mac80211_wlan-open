@@ -19210,7 +19210,7 @@ void nl80211_common_reg_change_event(enum nl80211_commands cmd_id,
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
-#if LINUX_VERSION_IS_GEQ(6,11,0)
+#if LINUX_VERSION_IS_GEQ(6,6,59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
 #else
@@ -20009,7 +20009,7 @@ void nl80211_send_beacon_hint_event(struct wiphy *wiphy,
 	nla_nest_end(msg, nl_freq);
 
 	genlmsg_end(msg, hdr);
-#if LINUX_VERSION_IS_GEQ(6,11,0)
+#if LINUX_VERSION_IS_GEQ(6,6,59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
 #else
