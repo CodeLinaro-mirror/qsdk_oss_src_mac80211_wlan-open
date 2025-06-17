@@ -303,4 +303,10 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 enum ath12k_routing_pkt_type pkt_type,
 				 u32 meta_data);
+void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
+					 struct rx_msdu_desc_info *rx_msdu_info,
+					 struct rx_mpdu_desc_info *rx_mpdu_info,
+					 u8 link_id, int ring_id);
+void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
+			   enum ath12k_dp_rx_error drop_reason);
 #endif /* ATH12K_DP_RX_H */

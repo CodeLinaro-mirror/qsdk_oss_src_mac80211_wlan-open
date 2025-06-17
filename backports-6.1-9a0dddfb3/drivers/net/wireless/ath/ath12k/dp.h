@@ -475,6 +475,10 @@ struct ath12k_device_dp_tx_err_stats {
 	u32 tx_comp_err[DP_TX_COMP_ERR_MAX][DP_TCL_NUM_RING_MAX];
 };
 
+struct ath12k_device_dp_rx_err_stats {
+	u32 rx_err[DP_RX_ERR_MAX][DP_REO_DST_RING_MAX];
+};
+
 struct ath12k_device_dp_stats {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u32 ppe_vp_mode_update_fail;
@@ -499,6 +503,7 @@ struct ath12k_device_dp_stats {
 	u32 first_and_last_msdu_bit_miss;
 	u32 fast_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
 	struct ath12k_device_dp_tx_err_stats tx_err;
+	struct ath12k_device_dp_rx_err_stats rx;
 	struct ath12k_dp_ring_bp_stats bp_stats;
 	u32 tx_mcast[MAX_TCL_RING];
 	u32 tx_unicast[MAX_TCL_RING];

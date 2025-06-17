@@ -333,13 +333,15 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 		paddr = dma_map_single(dp->dev, skb->data, DP_RX_BUFFER_SIZE,
 				       DMA_FROM_DEVICE);
 		if (unlikely(dma_mapping_error(dp->dev, paddr))) {
-			dev_kfree_skb_any(skb);
+			ath12k_dp_rx_skb_free(skb, dp, 0,
+					      DP_RX_ERR_DROP_REPLENISH);
 			goto out;
 		}
 #else
 		paddr = virt_to_phys(skb->data);
 		if(unlikely(!paddr)) {
-			dev_kfree_skb_any(skb);
+			ath12k_dp_rx_skb_free(skb, dp, 0,
+					      DP_RX_ERR_DROP_REPLENISH);
 			goto out;
 		}
 #endif
@@ -1715,3 +1717,42 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 
 	return ret;
 }
+
+void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
+			   enum ath12k_dp_rx_error drop_reason)
+{
+	if (unlikely(drop_reason > DP_RX_ERR_MAX))
+		DP_DEVICE_STATS_INC(dp, rx.rx_err[DP_RX_ERR_DROP_MISC][ring], 1);
+	else
+		DP_DEVICE_STATS_INC(dp, rx.rx_err[drop_reason][ring], 1);
+
+	dev_kfree_skb_any(skb);
+}
+EXPORT_SYMBOL(ath12k_dp_rx_skb_free);
+
+void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
+					 struct rx_msdu_desc_info *rx_msdu_info,
+					 struct rx_mpdu_desc_info *rx_mpdu_info,
+					 u8 link_id, int ring_id)
+{
+	bool is_not_msdu;
+
+	if (!peer)
+		return;
+
+	is_not_msdu = rx_msdu_info->first_msdu & rx_msdu_info->last_msdu;
+
+	if (is_not_msdu)
+		DP_PEER_STATS_INC(peer, rx, ring_id, non_amsdu, link_id, 1);
+	else
+		DP_PEER_STATS_INC(peer, rx, ring_id, msdu_part_of_amsdu, link_id, 1);
+
+	if (rx_msdu_info->da_is_mcbc)
+		DP_PEER_STATS_INC(peer, rx, ring_id, mcast, link_id, 1);
+	else
+		DP_PEER_STATS_INC(peer, rx, ring_id, ucast, link_id, 1);
+
+	DP_PEER_STATS_COND_INC(peer, rx, ring_id, mpdu_retry, link_id,
+			       rx_mpdu_info->mpdu_retry_bit, 1);
+}
+EXPORT_SYMBOL(ath12k_dp_rx_update_peer_msdu_stats);

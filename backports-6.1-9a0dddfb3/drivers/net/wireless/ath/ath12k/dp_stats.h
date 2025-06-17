@@ -51,6 +51,24 @@ enum ath12k_dp_tx_comp_error {
 	DP_TX_COMP_ERR_MAX,
 };
 
+enum ath12k_dp_rx_error {
+	DP_RX_SUCCESS = 0,
+	DP_RX_ERR_DROP_MISC,
+	DP_RX_ERR_GET_SW_DESC_FROM_CK,
+	DP_RX_ERR_GET_SW_DESC,
+	DP_RX_ERR_DROP_REPLENISH,
+	DP_RX_ERR_DROP_PARTNER_DP_NA,
+	DP_RX_ERR_DROP_PDEV_NA,
+	DP_RX_ERR_DROP_LAST_MSDU_NOT_FOUND,
+	DP_RX_ERR_DROP_NWIFI_HDR_LEN_INVALID,
+	DP_RX_ERR_DROP_INV_MSDU_LEN,
+	DP_RX_ERR_DROP_MSDU_COALESCE_FAIL,
+	DP_RX_ERR_DROP_H_MPDU,
+	DP_RX_ERR_DROP_H_PPDU,
+	DP_RX_ERR_DROP_INV_PEER,
+	DP_RX_ERR_MAX,
+};
+
 /* VIF STATS MACROS */
 #define DP_STATS_INC(_handle, _field, _delta, _ring) \
 	do { \
@@ -131,6 +149,20 @@ struct ath12k_dp_link_peer_stats {
 	u32 rx_retries;
 };
 
+struct ath12k_dp_peer_rx_stats {
+	/* Basic */
+	struct ath12k_dp_pkt_info recv_from_reo;
+	struct ath12k_dp_pkt_info sent_to_stack;
+	struct ath12k_dp_pkt_info sent_to_stack_fast;
+
+	/* Debug and Advance */
+	u32 mcast;
+	u32 ucast;
+	u32 non_amsdu;
+	u32 msdu_part_of_amsdu;
+	u32 mpdu_retry;
+};
+
 struct ath12k_dp_peer_tx_stats {
 	/* Basic */
 	struct ath12k_dp_pkt_info comp_pkt;
@@ -155,6 +187,7 @@ struct ath12k_dp_peer_tx_stats {
 
 struct ath12k_dp_peer_stats {
 	struct ath12k_dp_peer_tx_stats tx[DP_TCL_NUM_RING_MAX];
+	struct ath12k_dp_peer_rx_stats rx[DP_REO_DST_RING_MAX];
 };
 
 struct ath12k_dp_tx_ingress_stats {
