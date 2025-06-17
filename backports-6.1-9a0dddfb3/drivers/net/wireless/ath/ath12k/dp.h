@@ -284,7 +284,10 @@ struct ath12k_pdev_dp {
 /* Invalid TX Bank ID value */
 #define DP_INVALID_BANK_ID -1
 
-#define DP_TX_DESC_FLAG_FAST     0x1
+/* Tx Desc Flag bit definations */
+#define DP_TX_DESC_FLAG_FAST	0x1
+#define DP_TX_DESC_FLAG_MCAST	0x2
+#define DP_TX_DESC_FLAG_BCAST	0x4
 
 #define MAX_TQM_RELEASE_REASON 15
 #define MAX_FW_TX_STATUS 7
@@ -329,7 +332,9 @@ struct ath12k_tx_desc_info {
 	u16 ext_desc_len;
 	u8 mac_id	: 5,
 	   in_use	: 1,
-	   flags	: 1;
+	   reserved	: 2;
+	u8 flags	: 3,
+	   reserved1	: 5;
 	u8 pool_id;
 };
 

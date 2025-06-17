@@ -477,9 +477,20 @@ EXPORT_SYMBOL(ath12k_dp_tx_update_peer_basic_stats);
 
 void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
 					 struct hal_tx_status *ts,
-					 int ring_id)
+					 int ring_id, u16 tx_desc_flags)
 {
 	u8 link_id = peer->stats_link_id;
+
+	if (peer->is_vdev_peer) {
+		if (ts->status != HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU) {
+			if (tx_desc_flags & DP_TX_DESC_FLAG_BCAST)
+				DP_PEER_STATS_INC(peer, tx, ring_id, bcast, link_id, 1);
+			if (tx_desc_flags & DP_TX_DESC_FLAG_MCAST)
+				DP_PEER_STATS_INC(peer, tx, ring_id, mcast, link_id, 1);
+		}
+	} else {
+			DP_PEER_STATS_INC(peer, tx, ring_id, ucast, link_id, 1);
+	}
 
 	if (ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM) {
 		DP_PEER_STATS_INC(peer, tx, ring_id, release_src_not_tqm,

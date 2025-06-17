@@ -148,6 +148,9 @@ struct ath12k_dp_peer_tx_stats {
 	u32 amsdu_cnt;
 	u32 non_amsdu_cnt;
 	u32 inval_link_id_pkt_cnt;
+	u32 mcast;
+	u32 ucast;
+	u32 bcast;
 };
 
 struct ath12k_dp_peer_stats {
@@ -164,6 +167,7 @@ struct ath12k_dp_tx_ingress_stats {
 	u32 encap_type[HAL_TCL_ENCAP_TYPE_MAX];
 	u32 encrypt_type[HAL_ENCRYPT_TYPE_MAX];
 	u32 desc_type[DP_TCL_DESC_TYPE_MAX];
+	u32 mcast;
 
 	/* Drop */
 	u32 drop[DP_TX_ENQ_ERR_MAX];

@@ -21,8 +21,7 @@ struct ath12k_tx_sw_metadata {
 	u64 paddr : 40,
 	    len   : 16,
 	    mac_id: 5,
-	    flags : 1,
-	    rsvd  : 2;
+	    flags : 3;
 	u64 paddr_ext_desc : 40,
 	    ext_desc_len   : 16,
 	    rsvd2          : 8;
@@ -649,9 +648,24 @@ skip_htt_metadata:
 	else
 		arvif->link_stats.tx_enqueued++;
 	spin_unlock_bh(&arvif->link_stats_lock);
-	DP_STATS_INC(dp_vif, tx_i.encap_type[ti.encap_type], 1, ti.ring_id);
-	DP_STATS_INC(dp_vif, tx_i.encrypt_type[ti.encrypt_type], 1, ti.ring_id);
-	DP_STATS_INC(dp_vif, tx_i.desc_type[ti.type], 1, ti.ring_id);
+
+	if (unlikely(ath12k_debugfs_is_dp_stats_enabled(dp_pdev))) {
+		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
+			if (is_mcast) {
+				eth = (struct ethhdr *)skb->data;
+				if (eth && is_broadcast_ether_addr(eth->h_dest))
+					tx_desc->flags |= DP_TX_DESC_FLAG_BCAST;
+				else
+					tx_desc->flags |= DP_TX_DESC_FLAG_MCAST;
+				DP_STATS_INC(dp_vif, tx_i.mcast, 1, ti.ring_id);
+			}
+			DP_STATS_INC(dp_vif, tx_i.encap_type[ti.encap_type], 1,
+				     ti.ring_id);
+			DP_STATS_INC(dp_vif, tx_i.encrypt_type[ti.encrypt_type], 1,
+				     ti.ring_id);
+			DP_STATS_INC(dp_vif, tx_i.desc_type[ti.type], 1, ti.ring_id);
+		}
+	}
 
 	ath12k_wifi7_hal_tx_cmd_desc_setup(ab, hal_tcl_desc, &ti);
 
@@ -860,6 +874,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 	struct ath12k_dp_peer *peer = NULL;
 	u8 link_id = 0;
 	u32 msdu_len = msdu->len;
+	u8 tx_desc_flags = sw_metadata->flags;
 
 	status_desc = desc;
 
@@ -945,7 +960,8 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		if (unlikely(ath12k_debugfs_is_dp_stats_enabled(dp_pdev))) {
 			if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev))
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
-								    ring_id);
+								    ring_id,
+								    tx_desc_flags);
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring_id], 1);
@@ -1118,6 +1134,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	u8 link_id = 0;
 	enum ath12k_dp_tx_comp_error drop_reason = DP_TX_COMP_ERR_MISC;
 	u32 msdu_len = msdu->len;
+	u8 tx_desc_flags = sw_metadata->flags;
 
 	if (WARN_ON_ONCE(ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM)) {
 		/* Must not happen */
@@ -1183,7 +1200,9 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 		if (unlikely(ath12k_debugfs_is_dp_stats_enabled(dp_pdev))) {
 			if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev))
-				ath12k_dp_tx_comp_update_peer_stats(peer, ts, ring);
+				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
+								    ring,
+								    tx_desc_flags);
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring], 1);

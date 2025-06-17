@@ -39,7 +39,8 @@ void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
 					  u32 msdu_len, u8 tx_status,
 					  u8 link_id, int ring_id);
 void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
-					 struct hal_tx_status *ts, int ring_id);
+					 struct hal_tx_status *ts, int ring_id,
+					 u16 tx_desc_flags);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int ring_id);
 struct ath12k_ppeds_tx_desc_info *
