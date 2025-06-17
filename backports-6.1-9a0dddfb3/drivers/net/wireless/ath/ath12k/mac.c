@@ -8624,6 +8624,8 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 			peer->dp_peer->use_4addr = true;
 			arsta->tcl_metadata = peer->tcl_metadata;
 			arsta->ast_hash = peer->ast_hash;
+			if (peer->vif->type == NL80211_IFTYPE_AP)
+				peer->dp_peer->dev = peer->dp_peer->sta->dev;
 		}
 
 		spin_unlock_bh(&ar->ab->dp->dp_lock);
