@@ -645,7 +645,7 @@ const struct ath12k_hw_regs qcn6432_regs = {
 	.hal_wbm1_release_ring_base_lsb = 0x00000e80,
 
 	/* reo2ppe ring base address */
-	.hal_reo2_ring_base = 0x00000938,
+	.hal_reo2ppe_ring_base = 0x00000938,
 
 	/* PCIe base address */
 	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
@@ -658,7 +658,6 @@ const struct ath12k_hw_regs qcn6432_regs = {
 	.hal_umac_ce1_dest_reg_base =  0x01B83000,
 
 	.hal_ppe_rel_ring_base = 0x0000046c,
-	.hal_reo2ppe_ring_base = 0x00000938,
 	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c58
 };
 

@@ -26,12 +26,14 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	int i = 0, j;
 	int tot_work_done = 0;
 	enum dp_monitor_mode monitor_mode;
-	u8 ring_mask, rx_mask;
+	u8 ring_mask, rx_mask, tx_mask;
 
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
+	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
 
-	if (dp->hw_params->ring_mask->tx[grp_id]) {
-		i = fls(dp->hw_params->ring_mask->tx[grp_id]) - 1;
+	while (tx_mask) {
+		i = fls(tx_mask) - 1;
+		tx_mask ^= 1 << i;
 		ath12k_wifi7_dp_tx_completion_handler(dp, i);
 	}
 
