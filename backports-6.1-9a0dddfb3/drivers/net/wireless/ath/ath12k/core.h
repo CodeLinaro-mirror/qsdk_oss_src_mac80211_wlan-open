@@ -108,6 +108,37 @@ enum ath12k_bdf_search {
 #define ATH12K_HE_MCS_MAX	11
 #define ATH12K_EHT_MCS_MAX	15
 
+/* EHT MCS_NSS_FOR_20_MHZ_ONLY_STA */
+#define EHT_MCS_20_MHZ_ONLY_0_7_RX    GENMASK(3, 0)
+#define EHT_MCS_20_MHZ_ONLY_0_7_TX    GENMASK(7, 4)
+#define EHT_MCS_20_MHZ_ONLY_8_9_RX    GENMASK(11, 8)
+#define EHT_MCS_20_MHZ_ONLY_8_9_TX    GENMASK(15, 12)
+#define EHT_MCS_20_MHZ_ONLY_10_11_RX  GENMASK(19, 16)
+#define EHT_MCS_20_MHZ_ONLY_10_11_TX  GENMASK(23, 20)
+#define EHT_MCS_20_MHZ_ONLY_12_13_RX  GENMASK(27, 24)
+#define EHT_MCS_20_MHZ_ONLY_12_13_TX  GENMASK(31, 28)
+
+/* EHT MCS_NSS FOR AP MLD */
+#define EHT_MCS_NSS_0_9_RX    GENMASK(3, 0)
+#define EHT_MCS_NSS_0_9_TX    GENMASK(7, 4)
+#define EHT_MCS_NSS_10_11_RX  GENMASK(11, 8)
+#define EHT_MCS_NSS_10_11_TX  GENMASK(15, 12)
+#define EHT_MCS_NSS_12_13_RX  GENMASK(19, 16)
+#define EHT_MCS_NSS_12_13_TX  GENMASK(23, 20)
+
+#define EHT_MCS_NSS_IDX_0 0
+#define EHT_MCS_NSS_IDX_1 8
+#define EHT_MCS_NSS_IDX_2 16
+#define EHT_MCS_NSS_IDX_3 24
+
+#define GET_RX_MCS(eht_map, idx, nss) \
+		   (min(u8_get_bits((eht_map) >> (idx), \
+		   IEEE80211_EHT_MCS_NSS_RX), nss))
+
+#define GET_TX_MCS(eht_map, idx, nss) \
+		   (min(u8_get_bits((eht_map) >> (idx), \
+		   IEEE80211_EHT_MCS_NSS_TX), nss))
+
 enum ath12k_crypt_mode {
 	/* Only use hardware crypto engine */
 	ATH12K_CRYPT_MODE_HW,
