@@ -70,6 +70,18 @@ static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 	return ar->debug.rx_filter;
 }
 
+static inline bool
+ath12k_debugfs_is_dp_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return dp_pdev->enable_dp_stats;
+}
+
+static inline bool
+ath12k_debugfs_is_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return dp_pdev->enable_dp_debug_stats;
+}
+
 void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr);
 void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar);
 

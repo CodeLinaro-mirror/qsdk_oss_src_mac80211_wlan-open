@@ -143,6 +143,10 @@ struct ath12k_pdev_dp {
 	 * determine when this stats is calculated based on peers
 	 */
 	struct ath12k_pdev_dp_stats stats;
+
+	/* DP Stats knobs */
+	bool enable_dp_stats;
+	bool enable_dp_debug_stats;
 };
 
 #define DP_NUM_CLIENTS_MAX 64

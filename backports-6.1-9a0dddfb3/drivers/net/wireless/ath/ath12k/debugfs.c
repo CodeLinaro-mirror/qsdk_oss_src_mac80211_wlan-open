@@ -2004,6 +2004,98 @@ static const struct file_operations fops_extd_rx_stats = {
 	.open = simple_open,
 };
 
+static ssize_t ath12k_write_enable_dp_stats(struct file *file,
+					    const char __user *ubuf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_hw *ah = ar->ah;
+	bool enable;
+	int i = 0;
+
+	if (kstrtobool_from_user(ubuf, count, &enable))
+		return -EINVAL;
+
+	/* Enable/Disable for all MLO capable Radios */
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (ar) {
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+			ar->dp.enable_dp_stats = !!enable;
+			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		}
+	}
+	return count;
+}
+
+static ssize_t ath12k_read_enable_dp_stats(struct file *file,
+					   char __user *ubuf,
+					   size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[8];
+	int len = 0;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	len = scnprintf(buf, sizeof(buf), "%d\n",
+			ar->dp.enable_dp_stats);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_enable_dp_stats = {
+	.read = ath12k_read_enable_dp_stats,
+	.write = ath12k_write_enable_dp_stats,
+	.open = simple_open,
+};
+
+static ssize_t ath12k_write_enable_dp_debug_stats(struct file *file,
+						  const char __user *ubuf,
+						  size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_hw *ah = ar->ah;
+	bool enable;
+	int i = 0;
+
+	if (kstrtobool_from_user(ubuf, count, &enable))
+		return -EINVAL;
+
+	/* Enable/Disable for all MLO capable Radios */
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (ar) {
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+			ar->dp.enable_dp_debug_stats = !!enable;
+			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		}
+	}
+	return count;
+}
+
+static ssize_t ath12k_read_enable_dp_debug_stats(struct file *file,
+						 char __user *ubuf,
+						 size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[8];
+	int len = 0;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	len = scnprintf(buf, sizeof(buf), "%d\n",
+			ar->dp.enable_dp_debug_stats);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_enable_dp_debug_stats = {
+	.read = ath12k_read_enable_dp_debug_stats,
+	.write = ath12k_write_enable_dp_debug_stats,
+	.open = simple_open,
+};
+
 static int ath12k_reset_nrp_filter(struct ath12k *ar,
 				   bool reset)
 {
@@ -4992,6 +5084,14 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
 	debugfs_create_file("qos_map_set", 0600, ar->debug.debugfs_pdev, ar,
 			    &fops_qos_map_set);
+
+	debugfs_create_file("enable_dp_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_enable_dp_stats);
+
+	debugfs_create_file("enable_dp_debug_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_enable_dp_debug_stats);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
