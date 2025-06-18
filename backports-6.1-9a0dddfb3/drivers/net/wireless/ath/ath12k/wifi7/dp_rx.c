@@ -1314,6 +1314,13 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 	while ((msdu = __skb_dequeue(msdu_list))) {
 		struct hal_rx_spd_data *spd_desc_l = ATH12K_SKB_RXCB_RAW(msdu);
 
+		prefetch(msdu);
+		prefetch(&msdu->_skb_refdst);
+		prefetch(&msdu->__pkt_type_offset);
+		prefetch(&msdu->head);
+		prefetch(&msdu->data);
+		prefetch(&msdu->data[128]);
+
 		hw_link_id = spd_desc_l->src_link_id;
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp,
 						    hw_links[hw_link_id].device_id);
