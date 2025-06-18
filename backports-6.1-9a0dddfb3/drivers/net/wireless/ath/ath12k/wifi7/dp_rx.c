@@ -1326,11 +1326,6 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
-		if (test_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags)) {
-			dev_kfree_skb_any(msdu);
-			continue;
-		}
-
 		dp_pdev = ath12k_dp_to_dp_pdev(partner_dp, pdev_id);
 		if (!dp_pdev) {
 			dev_kfree_skb_any(msdu);
