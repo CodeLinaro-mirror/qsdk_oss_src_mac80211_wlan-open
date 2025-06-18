@@ -13,6 +13,168 @@
 #include "debugfs.h"
 #include "dp_cmn.h"
 
+
+void ath12k_debugfs_sta_add_tx_stats( struct ath12k_dp_link_peer *peer,
+				     struct ath12k_per_peer_tx_stats *peer_stats,
+				     u8 legacy_rate_idx)
+{
+	struct rate_info *txrate = &peer->txrate;
+	struct ath12k_htt_tx_stats *tx_stats = peer->peer_stats.tx_stats;
+	int gi, mcs, bw, nss, ru_type, ppdu_type;
+
+	if (!tx_stats)
+		return;
+
+	gi = FIELD_GET(RATE_INFO_FLAGS_SHORT_GI, txrate->flags);
+	mcs = txrate->mcs;
+	bw = ath12k_mac_mac80211_bw_to_ath12k_bw(txrate->bw);
+	nss = txrate->nss - 1;
+
+#define STATS_OP_FMT(name) tx_stats->stats[ATH12K_STATS_TYPE_##name]
+
+	if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
+		STATS_OP_FMT(SUCC).he[0][mcs] += peer_stats->succ_bytes;
+		STATS_OP_FMT(SUCC).he[1][mcs] += peer_stats->succ_pkts;
+		STATS_OP_FMT(FAIL).he[0][mcs] += peer_stats->failed_bytes;
+		STATS_OP_FMT(FAIL).he[1][mcs] += peer_stats->failed_pkts;
+		STATS_OP_FMT(RETRY).he[0][mcs] += peer_stats->retry_bytes;
+		STATS_OP_FMT(RETRY).he[1][mcs] += peer_stats->retry_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_VHT_MCS) {
+		STATS_OP_FMT(SUCC).vht[0][mcs] += peer_stats->succ_bytes;
+		STATS_OP_FMT(SUCC).vht[1][mcs] += peer_stats->succ_pkts;
+		STATS_OP_FMT(FAIL).vht[0][mcs] += peer_stats->failed_bytes;
+		STATS_OP_FMT(FAIL).vht[1][mcs] += peer_stats->failed_pkts;
+		STATS_OP_FMT(RETRY).vht[0][mcs] += peer_stats->retry_bytes;
+		STATS_OP_FMT(RETRY).vht[1][mcs] += peer_stats->retry_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_MCS) {
+		STATS_OP_FMT(SUCC).ht[0][mcs] += peer_stats->succ_bytes;
+		STATS_OP_FMT(SUCC).ht[1][mcs] += peer_stats->succ_pkts;
+		STATS_OP_FMT(FAIL).ht[0][mcs] += peer_stats->failed_bytes;
+		STATS_OP_FMT(FAIL).ht[1][mcs] += peer_stats->failed_pkts;
+		STATS_OP_FMT(RETRY).ht[0][mcs] += peer_stats->retry_bytes;
+		STATS_OP_FMT(RETRY).ht[1][mcs] += peer_stats->retry_pkts;
+	} else {
+		mcs = legacy_rate_idx;
+
+		STATS_OP_FMT(SUCC).legacy[0][mcs] += peer_stats->succ_bytes;
+		STATS_OP_FMT(SUCC).legacy[1][mcs] += peer_stats->succ_pkts;
+		STATS_OP_FMT(FAIL).legacy[0][mcs] += peer_stats->failed_bytes;
+		STATS_OP_FMT(FAIL).legacy[1][mcs] += peer_stats->failed_pkts;
+		STATS_OP_FMT(RETRY).legacy[0][mcs] += peer_stats->retry_bytes;
+		STATS_OP_FMT(RETRY).legacy[1][mcs] += peer_stats->retry_pkts;
+	}
+
+	ppdu_type = peer_stats->ppdu_type;
+	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
+	     ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
+	     (txrate->flags & RATE_INFO_FLAGS_HE_MCS)) {
+		ru_type = peer_stats->ru_tones;
+
+		if (ru_type <= NL80211_RATE_INFO_HE_RU_ALLOC_996) {
+			STATS_OP_FMT(SUCC).ru_loc[0][ru_type] += peer_stats->succ_bytes;
+			STATS_OP_FMT(SUCC).ru_loc[1][ru_type] += peer_stats->succ_pkts;
+			STATS_OP_FMT(FAIL).ru_loc[0][ru_type] += peer_stats->failed_bytes;
+			STATS_OP_FMT(FAIL).ru_loc[1][ru_type] += peer_stats->failed_pkts;
+			STATS_OP_FMT(RETRY).ru_loc[0][ru_type] += peer_stats->retry_bytes;
+			STATS_OP_FMT(RETRY).ru_loc[1][ru_type] += peer_stats->retry_pkts;
+			if (peer_stats->is_ampdu) {
+				STATS_OP_FMT(AMPDU).ru_loc[0][ru_type] +=
+					peer_stats->succ_bytes + peer_stats->retry_bytes;
+				STATS_OP_FMT(AMPDU).ru_loc[1][ru_type] +=
+					peer_stats->succ_pkts + peer_stats->retry_pkts;
+			}
+		}
+	}
+
+	if (ppdu_type < HTT_PPDU_STATS_PPDU_TYPE_MAX) {
+		STATS_OP_FMT(SUCC).transmit_type[0][ppdu_type] += peer_stats->succ_bytes;
+		STATS_OP_FMT(SUCC).transmit_type[1][ppdu_type] += peer_stats->succ_pkts;
+		STATS_OP_FMT(FAIL).transmit_type[0][ppdu_type] +=
+							peer_stats->failed_bytes;
+		STATS_OP_FMT(FAIL).transmit_type[1][ppdu_type] += peer_stats->failed_pkts;
+		STATS_OP_FMT(RETRY).transmit_type[0][ppdu_type] +=
+							peer_stats->retry_bytes;
+		STATS_OP_FMT(RETRY).transmit_type[1][ppdu_type] += peer_stats->retry_pkts;
+		if (peer_stats->is_ampdu) {
+			STATS_OP_FMT(AMPDU).transmit_type[0][ppdu_type] +=
+				peer_stats->succ_bytes + peer_stats->retry_bytes;
+			STATS_OP_FMT(AMPDU).transmit_type[1][ppdu_type] +=
+				peer_stats->succ_pkts + peer_stats->retry_pkts;
+		}
+	}
+
+	if (peer_stats->is_ampdu) {
+		tx_stats->ba_fails += peer_stats->ba_fails;
+
+		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
+			STATS_OP_FMT(AMPDU).he[0][mcs] +=
+			peer_stats->succ_bytes + peer_stats->retry_bytes;
+			STATS_OP_FMT(AMPDU).he[1][mcs] +=
+			peer_stats->succ_pkts + peer_stats->retry_pkts;
+		} else if (txrate->flags & RATE_INFO_FLAGS_MCS) {
+			STATS_OP_FMT(AMPDU).ht[0][mcs] +=
+			peer_stats->succ_bytes + peer_stats->retry_bytes;
+			STATS_OP_FMT(AMPDU).ht[1][mcs] +=
+			peer_stats->succ_pkts + peer_stats->retry_pkts;
+		} else {
+			STATS_OP_FMT(AMPDU).vht[0][mcs] +=
+			peer_stats->succ_bytes + peer_stats->retry_bytes;
+			STATS_OP_FMT(AMPDU).vht[1][mcs] +=
+			peer_stats->succ_pkts + peer_stats->retry_pkts;
+		}
+		STATS_OP_FMT(AMPDU).bw[0][bw] +=
+			peer_stats->succ_bytes + peer_stats->retry_bytes;
+		STATS_OP_FMT(AMPDU).nss[0][nss] +=
+			peer_stats->succ_bytes + peer_stats->retry_bytes;
+		STATS_OP_FMT(AMPDU).gi[0][gi] +=
+			peer_stats->succ_bytes + peer_stats->retry_bytes;
+		STATS_OP_FMT(AMPDU).bw[1][bw] +=
+			peer_stats->succ_pkts + peer_stats->retry_pkts;
+		STATS_OP_FMT(AMPDU).nss[1][nss] +=
+			peer_stats->succ_pkts + peer_stats->retry_pkts;
+		STATS_OP_FMT(AMPDU).gi[1][gi] +=
+			peer_stats->succ_pkts + peer_stats->retry_pkts;
+	} else {
+		tx_stats->ack_fails += peer_stats->ba_fails;
+	}
+
+	STATS_OP_FMT(SUCC).bw[0][bw] += peer_stats->succ_bytes;
+	STATS_OP_FMT(SUCC).nss[0][nss] += peer_stats->succ_bytes;
+	STATS_OP_FMT(SUCC).gi[0][gi] += peer_stats->succ_bytes;
+
+	STATS_OP_FMT(SUCC).bw[1][bw] += peer_stats->succ_pkts;
+	STATS_OP_FMT(SUCC).nss[1][nss] += peer_stats->succ_pkts;
+	STATS_OP_FMT(SUCC).gi[1][gi] += peer_stats->succ_pkts;
+
+	STATS_OP_FMT(FAIL).bw[0][bw] += peer_stats->failed_bytes;
+	STATS_OP_FMT(FAIL).nss[0][nss] += peer_stats->failed_bytes;
+	STATS_OP_FMT(FAIL).gi[0][gi] += peer_stats->failed_bytes;
+
+	STATS_OP_FMT(FAIL).bw[1][bw] += peer_stats->failed_pkts;
+	STATS_OP_FMT(FAIL).nss[1][nss] += peer_stats->failed_pkts;
+	STATS_OP_FMT(FAIL).gi[1][gi] += peer_stats->failed_pkts;
+
+	STATS_OP_FMT(RETRY).bw[0][bw] += peer_stats->retry_bytes;
+	STATS_OP_FMT(RETRY).nss[0][nss] += peer_stats->retry_bytes;
+	STATS_OP_FMT(RETRY).gi[0][gi] += peer_stats->retry_bytes;
+
+	STATS_OP_FMT(RETRY).bw[1][bw] += peer_stats->retry_pkts;
+	STATS_OP_FMT(RETRY).nss[1][nss] += peer_stats->retry_pkts;
+	STATS_OP_FMT(RETRY).gi[1][gi] += peer_stats->retry_pkts;
+
+	tx_stats->tx_duration += peer_stats->duration;
+
+	tx_stats->ru_start = peer_stats->ru_start;
+	tx_stats->ru_tones = peer_stats->ru_tones;
+
+	if (peer_stats->mu_grpid < MAX_MU_GROUP_ID &&
+	    peer_stats->ppdu_type != HTT_PPDU_STATS_PPDU_TYPE_SU) {
+		if (peer_stats->mu_grpid & (MAX_MU_GROUP_ID - 1))
+			tx_stats->mu_group[peer_stats->mu_grpid] =
+						(peer_stats->mu_pos + 1);
+	}
+
+}
 static int
 ath12k_dbg_sta_open_htt_peer_stats(struct inode *inode, struct file *file)
 {
@@ -591,6 +753,266 @@ void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 	debugfs_create_file("primary_link_id", 0400, dir, sta, &fops_primary_link_id);
 }
 
+static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
+                                           char __user *user_buf,
+                                           size_t count, loff_t *ppos)
+{
+	struct ieee80211_link_sta *link_sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(link_sta->sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	u8 link_id = link_sta->link_id;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *ar;
+	struct ath12k_dp_link_peer *link_peer;
+        struct ath12k_dp *dp;
+	struct ath12k_htt_tx_stats *tx_stats;
+	struct ath12k_htt_data_stats *stats;
+	static const char *str_name[ATH12K_STATS_TYPE_MAX] = {"success", "fail",
+                                                             "retry", "ampdu"};
+	static const char *str[ATH12K_COUNTER_TYPE_MAX] = {"bytes", "packets"};
+	int len = 0, i, j, k, retval = 0;
+	const int size = 2 * 4096;
+	char mu_group_id[MAX_MU_GROUP_LENGTH] = {0};
+	u32 index;
+
+	wiphy_lock(ah->hw->wiphy);
+
+	if (!(BIT(link_id) & ahsta->links_map)) {
+                wiphy_unlock(ah->hw->wiphy);
+                return -ENOENT;
+        }
+
+        arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+        if (!arsta || !arsta->arvif->ar) {
+                wiphy_unlock(ah->hw->wiphy);
+                return -ENOENT;
+        }
+
+        ar = arsta->arvif->ar;
+
+	dp = ath12k_ab_to_dp(ar->ab);
+        spin_lock_bh(&dp->dp_lock);
+
+        link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
+        if (!link_peer) {
+                spin_unlock_bh(&dp->dp_lock);
+                wiphy_unlock(ah->hw->wiphy);
+                return -ENOENT;
+        }
+
+	tx_stats = link_peer->peer_stats.tx_stats;
+	if (!tx_stats) {
+		spin_unlock_bh(&dp->dp_lock);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
+	if (!buf) {
+		spin_unlock_bh(&dp->dp_lock);
+		wiphy_unlock(ah->hw->wiphy);
+		return -ENOENT;
+	}
+
+
+	for (k = 0; k < ATH12K_STATS_TYPE_MAX; k++) {
+               for (j = 0; j < ATH12K_COUNTER_TYPE_MAX; j++) {
+                       stats = &tx_stats->stats[k];
+                       len += scnprintf(buf + len, size - len, "%s_%s\n",
+                                        str_name[k],
+                                        str[j]);
+                       len += scnprintf(buf + len, size - len, "==========\n");
+                       len += scnprintf(buf + len, size - len,
+                                        " HE MCS %s\n\t",
+                                        str[j]);
+                       for (i = 0; i < ATH12K_HE_MCS_NUM; i++)
+                               len += scnprintf(buf + len, size - len,
+                                                "%llu ",
+                                                stats->he[j][i]);
+                       len += scnprintf(buf + len, size - len, "\n");
+                       len += scnprintf(buf + len, size - len,
+                                        " VHT MCS %s\n\t",
+                                        str[j]);
+                       for (i = 0; i < ATH12K_VHT_MCS_NUM; i++)
+                               len += scnprintf(buf + len, size - len,
+                                                "%llu ",
+                                                stats->vht[j][i]);
+                       len += scnprintf(buf + len, size - len, "\n");
+                       len += scnprintf(buf + len, size - len, " HT MCS %s\n\t",
+                                        str[j]);
+                       for (i = 0; i < ATH12K_HT_MCS_NUM; i++)
+                               len += scnprintf(buf + len, size - len,
+                                                "%llu ", stats->ht[j][i]);
+                       len += scnprintf(buf + len, size - len, "\n");
+                       len += scnprintf(buf + len, size - len,
+                                        " BW %s (20,40,80,160,320 MHz)\n", str[j]);
+                       len += scnprintf(buf + len, size - len,
+                                        "\t%llu %llu %llu %llu %llu\n",
+                                        stats->bw[j][0], stats->bw[j][1],
+                                        stats->bw[j][2], stats->bw[j][3],
+                                        stats->bw[j][4]);
+                       len += scnprintf(buf + len, size - len,
+                                        " NSS %s (1x1,2x2,3x3,4x4)\n", str[j]);
+                       len += scnprintf(buf + len, size - len,
+                                        "\t%llu %llu %llu %llu\n",
+                                        stats->nss[j][0], stats->nss[j][1],
+                                        stats->nss[j][2], stats->nss[j][3]);
+                       len += scnprintf(buf + len, size - len,
+                                        " GI %s (0.4us,0.8us,1.6us,3.2us)\n",
+                                        str[j]);
+                       len += scnprintf(buf + len, size - len,
+                                        "\t%llu %llu %llu %llu\n",
+                                        stats->gi[j][0], stats->gi[j][1],
+                                        stats->gi[j][2], stats->gi[j][3]);
+                       len += scnprintf(buf + len, size - len,
+                                        " legacy rate %s (1,2 ... Mbps)\n  ",
+                                        str[j]);
+                       for (i = 0; i < ATH12K_LEGACY_NUM; i++)
+                               len += scnprintf(buf + len, size - len, "%llu ",
+                                                stats->legacy[j][i]);
+
+                       len += scnprintf(buf + len, size - len, "\n ru %s:\n", str[j]);
+                       len += scnprintf(buf + len, size - len,
+                                        "\tru 26: %llu\n", stats->ru_loc[j][0]);
+                       len += scnprintf(buf + len, size - len,
+                                        "\tru 52: %llu\n", stats->ru_loc[j][1]);
+                       len += scnprintf(buf + len, size - len,
+                                        "\tru 106: %llu\n", stats->ru_loc[j][2]);
+                       len += scnprintf(buf + len, size - len,
+                                        "\tru 242: %llu\n", stats->ru_loc[j][3]);
+                       len += scnprintf(buf + len, size - len,
+                                        "\tru 484: %llu\n", stats->ru_loc[j][4]);
+                       len += scnprintf(buf + len, size - len,
+                                        "\tru 996: %llu\n", stats->ru_loc[j][5]);
+
+                       len += scnprintf(buf + len, size - len,
+                                        " ppdu type %s:\n", str[j]);
+                       if (k == ATH12K_STATS_TYPE_FAIL ||
+                           k == ATH12K_STATS_TYPE_RETRY) {
+                               len += scnprintf(buf + len, size - len,
+                                                "\tSU/MIMO: %llu\n",
+                                                stats->transmit_type[j][0]);
+                               len += scnprintf(buf + len, size - len,
+                                                "\tOFDMA/OFDMA_MIMO: %llu\n",
+                                                stats->transmit_type[j][2]);
+                       } else {
+                               len += scnprintf(buf + len, size - len,
+                                                "\tSU: %llu\n",
+                                                stats->transmit_type[j][0]);
+                               len += scnprintf(buf + len, size - len,
+                                                "\tMIMO: %llu\n",
+                                                stats->transmit_type[j][1]);
+                               len += scnprintf(buf + len, size - len,
+                                                "\tOFDMA: %llu\n",
+                                                stats->transmit_type[j][2]);
+                               len += scnprintf(buf + len, size - len,
+                                                "\tOFDMA_MIMO: %llu\n",
+                                                stats->transmit_type[j][3]);
+                       }
+               }
+       }
+
+       len += scnprintf(buf + len, size - len, "\n");
+
+       for (i = 0; i < MAX_MU_GROUP_ID;) {
+               index = 0;
+               for (j = 0; j < MAX_MU_GROUP_SHOW && i < MAX_MU_GROUP_ID; j++) {
+                       index += snprintf(&mu_group_id[index],
+                                         MAX_MU_GROUP_LENGTH - index,
+                                         " %d",
+                                         tx_stats->mu_group[i]);
+                       i++;
+		}
+	len += scnprintf(buf + len, size - len, "User position list for GID %02d->%d: [%s]\n",
+			i - MAX_MU_GROUP_SHOW, i - 1, mu_group_id);
+	}
+
+       len += scnprintf(buf + len, size - len,
+			"\nLast Packet RU index [%d], Size [%d]\n",
+			tx_stats->ru_start, tx_stats->ru_tones);
+
+	len += scnprintf(buf + len, size - len,
+			"\nTX duration\n %llu usecs\n",
+			tx_stats->tx_duration);
+
+	len += scnprintf(buf + len, size - len,
+			"BA fails\n %llu\n", tx_stats->ba_fails);
+
+	len += scnprintf(buf + len, size - len,
+			"ack fails\n %llu\n\n", tx_stats->ack_fails);
+
+	spin_unlock_bh(&dp->dp_lock);
+
+	if (len)
+		retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	wiphy_unlock(ah->hw->wiphy);
+	return retval;
+
+}
+
+static const struct file_operations fops_tx_stats = {
+       .read = ath12k_dbg_sta_dump_tx_stats,
+       .open = simple_open,
+       .owner = THIS_MODULE,
+       .llseek = default_llseek,
+};
+
+static ssize_t ath12k_dbg_sta_reset_tx_stats(struct file *file,
+                                             const char __user *buf,
+                                             size_t count, loff_t *ppos)
+{
+        struct ieee80211_link_sta *link_sta = file->private_data;
+        struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(link_sta->sta);
+        struct ath12k_hw *ah = ahsta->ahvif->ah;
+        struct ath12k_link_sta *arsta;
+        u8 link_id = link_sta->link_id;
+        struct ath12k *ar;
+        bool reset;
+        int ret;
+        bool result;
+
+        ret = kstrtobool_from_user(buf, count, &reset);
+        if (ret)
+                return ret;
+
+        if (!reset)
+                return -EINVAL;
+
+        wiphy_lock(ah->hw->wiphy);
+
+        if (!(BIT(link_id) & ahsta->links_map)) {
+                ret = -ENOENT;
+                goto out;
+        }
+
+        arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+        if (!arsta || !arsta->arvif->ar) {
+                ret = -ENOENT;
+                goto out;
+        }
+
+        ar = arsta->arvif->ar;
+
+        result = ath12k_dp_link_peer_reset_tx_stats(ath12k_ab_to_dp(ar->ab), arsta->addr);
+        if (!result) {
+                ret = -ENOENT;
+                goto out;
+        }
+
+        ret = count;
+out:
+        wiphy_unlock(ah->hw->wiphy);
+        return ret;
+}
+
+static const struct file_operations fops_reset_tx_stats = {
+        .write = ath12k_dbg_sta_reset_tx_stats,
+        .open = simple_open,
+        .owner = THIS_MODULE,
+        .llseek = default_llseek,
+};
+
 static
 u32 ath12k_dbg_sta_dump_rate_stats(u8 *buf, u32 offset, const int size,
 				   bool he_rates_avail,
@@ -912,6 +1334,13 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 	if (!ar)
 		return;
 
+	if (ath12k_debugfs_is_extd_tx_stats_enabled(ar)) {
+                debugfs_create_file("tx_stats", 0400, dir, link_sta,
+                                    &fops_tx_stats);
+                debugfs_create_file("reset_tx_stats", 0200, dir, link_sta,
+                                    &fops_reset_tx_stats);
+        }
+
 	if (ath12k_debugfs_is_extd_rx_stats_enabled(ar)) {
 		debugfs_create_file("rx_stats", 0400, dir, link_sta,
 				    &fops_rx_stats);
@@ -928,5 +1357,6 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 		     ar->ab->wmi_ab.svc_map))
 		debugfs_create_file("htt_peer_stats_reset", 0600, dir, link_sta,
 				    &fops_htt_peer_stats_reset);
+
 }
 EXPORT_SYMBOL(ath12k_debugfs_link_sta_op_add);

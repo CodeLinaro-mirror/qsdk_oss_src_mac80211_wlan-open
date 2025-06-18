@@ -86,9 +86,19 @@ struct ath12k_dp_mon_peer_stats {
        struct ath12k_mon_peer_airtime_stats mon_stats;
 };
 
+struct ath12k_htt_tx_stats {
+       struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
+       u64 tx_duration;
+       u64 ba_fails;
+       u64 ack_fails;
+       u16 ru_start;
+       u16 ru_tones;
+       u32 mu_group[MAX_MU_GROUP_ID];
+};
+
 struct ath12k_dp_peer_stats {
+	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
-	struct ath12k_wbm_tx_stats *wbm_tx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
 };
 

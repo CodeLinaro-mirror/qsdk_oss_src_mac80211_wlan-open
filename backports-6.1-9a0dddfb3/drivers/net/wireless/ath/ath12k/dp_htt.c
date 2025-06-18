@@ -9,6 +9,7 @@
 #include "htc.h"
 #include "dp_htt.h"
 #include "debugfs_htt_stats.h"
+#include "debugfs_sta.h"
 #include "debugfs.h"
 
 static void ath12k_dp_htt_htc_tx_complete(struct ath12k_base *ab,
@@ -587,6 +588,9 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	peer_stats->ppdu_type = ppdu_type;
 	usr_stats->ru_tones = ru_tones;
+
+	if (ath12k_debugfs_is_extd_tx_stats_enabled(dp_pdev->ar))
+		ath12k_debugfs_sta_add_tx_stats(peer, peer_stats, rate_idx);
 
 	spin_unlock_bh(&dp->dp_lock);
 	rcu_read_unlock();

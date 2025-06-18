@@ -1505,8 +1505,4 @@ struct hal_rx_desc {
 	} u;
 } __packed;
 
-#define MAX_USER_POS 8
-#define MAX_MU_GROUP_SHOW 16
-#define MAX_MU_GROUP_LENGTH (6 * MAX_MU_GROUP_SHOW)
-
 #endif /* ATH12K_RX_DESC_H */

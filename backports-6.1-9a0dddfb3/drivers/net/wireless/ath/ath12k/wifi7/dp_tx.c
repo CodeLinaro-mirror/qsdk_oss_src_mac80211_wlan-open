@@ -11,6 +11,7 @@
 #include "dp_tx.h"
 #include "hal_rx.h"
 #include "../debugfs_sta.h"
+#include "../debugfs.h"
 
 static enum hal_tcl_encap_type
 ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb)
@@ -625,6 +626,25 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_base *ab,
 	}
 
 }
+
+static void 
+ath12k_wifi7_dp_tx_cache_peer_stats(struct ath12k *ar,
+					  struct sk_buff *msdu,
+					  struct hal_tx_status *ts)
+{
+	struct ath12k_per_peer_tx_stats *peer_stats = &ar->cached_stats;
+
+	if (ts->try_cnt > 1) {
+		peer_stats->retry_pkts += ts->try_cnt - 1;
+		peer_stats->retry_bytes += (ts->try_cnt - 1) * msdu->len;
+
+		if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+			peer_stats->failed_pkts += 1;
+			peer_stats->failed_bytes += msdu->len;
+		}
+	}
+}
+
 static void
 ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 				  struct hal_tx_status *ts)
@@ -861,6 +881,29 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	 * necessary information (for example nss) to build the tx rate.
 	 * Might end up reporting it out-of-band from HTT stats.
 	 */
+
+	if (ath12k_debugfs_is_extd_tx_stats_enabled(ar)) {
+		if (ts->flags & HAL_TX_STATUS_FLAGS_FIRST_MSDU) {
+			if (ar->last_ppdu_id == 0) {
+				ar->last_ppdu_id = ts->ppdu_id;
+			} else if (ar->last_ppdu_id == ts->ppdu_id ||
+				ar->cached_ppdu_id == ar->last_ppdu_id) {
+				ar->cached_ppdu_id = ar->last_ppdu_id;
+				ar->cached_stats.is_ampdu = true;
+				ath12k_wifi7_dp_tx_update_txcompl(dp_pdev, ts);
+				memset(&ar->cached_stats, 0,
+						sizeof(struct ath12k_per_peer_tx_stats));
+			} else {
+				ar->cached_stats.is_ampdu = false;
+				ath12k_wifi7_dp_tx_update_txcompl(dp_pdev, ts);
+				memset(&ar->cached_stats, 0, 
+						sizeof(struct ath12k_per_peer_tx_stats));
+			}
+			ar->last_ppdu_id = ts->ppdu_id;
+		}
+
+		ath12k_wifi7_dp_tx_cache_peer_stats(ar, msdu, ts);
+	}
 
        	ath12k_wifi7_dp_tx_update_txcompl(dp_pdev, ts);
 

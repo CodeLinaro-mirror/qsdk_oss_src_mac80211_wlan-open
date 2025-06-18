@@ -1693,6 +1693,60 @@ static const struct file_operations fops_tpc_stats_type = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_write_enable_extd_tx_stats(struct file *file,
+                                                 const char __user *ubuf,
+                                                 size_t count, loff_t *ppos)
+{
+        struct ath12k *ar = file->private_data;
+        bool enable;
+        int ret;
+
+        if (kstrtobool_from_user(ubuf, count, &enable))
+                return -EINVAL;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+                ret = -ENETDOWN;
+                goto out;
+        }
+
+        if (enable == ar->debug.extd_tx_stats) {
+                ret = count;
+                goto out;
+        }
+
+        ar->debug.extd_tx_stats = !!enable;
+        ret = count;
+
+out:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+        return ret;
+}
+
+static ssize_t ath12k_read_enable_extd_tx_stats(struct file *file,
+                                                char __user *ubuf,
+                                                size_t count, loff_t *ppos)
+
+{
+        char buf[32] = {0};
+        struct ath12k *ar = file->private_data;
+        int len = 0;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+        len = scnprintf(buf, sizeof(buf) - len, "%d\n",
+                        ar->debug.extd_tx_stats);
+        wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+        return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_extd_tx_stats = {
+        .read = ath12k_read_enable_extd_tx_stats,
+        .write = ath12k_write_enable_extd_tx_stats,
+        .open = simple_open
+};
+
 static ssize_t ath12k_write_extd_rx_stats(struct file *file,
 					  const char __user *ubuf,
 					  size_t count, loff_t *ppos)
@@ -4469,6 +4523,11 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("ext_rx_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_extd_rx_stats);
+
+	debugfs_create_file("ext_tx_stats", 0644,
+                            ar->debug.debugfs_pdev, ar,
+                            &fops_extd_tx_stats);
+
 	if (ar->mac.sbands[NL80211_BAND_6GHZ].channels) {
 		debugfs_create_file("simulate_awgn", 0200,
 				    ar->debug.debugfs_pdev, ar,

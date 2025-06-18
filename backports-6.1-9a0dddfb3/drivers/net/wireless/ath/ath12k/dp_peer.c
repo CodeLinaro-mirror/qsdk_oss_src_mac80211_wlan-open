@@ -632,6 +632,11 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 		peer->peer_stats.rx_stats = kzalloc(sizeof(*peer->peer_stats.rx_stats), GFP_ATOMIC);
 	}
 
+	if (ath12k_debugfs_is_extd_tx_stats_enabled(dp_pdev->ar) &&
+			(!peer->peer_stats.tx_stats)) {
+		 peer->peer_stats.tx_stats = kzalloc(sizeof(*peer->peer_stats.tx_stats), GFP_ATOMIC);
+	}
+
 	dp_peer->hw_links[peer->hw_link_id] = link_id;
 
 	peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
@@ -690,6 +695,9 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	if (peer->peer_stats.rx_stats)
 		kfree(peer->peer_stats.rx_stats);
 
+	if (peer->peer_stats.tx_stats)
+		kfree(peer->peer_stats.tx_stats);
+
 	ath12k_dp_link_peer_rhash_delete(dp, peer);
 
 	peer->dp_peer = NULL;
@@ -730,6 +738,30 @@ void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp *dp, const u8 *ad
 	rate_info->tx_retry_failed = link_peer->tx_retry_failed;
 
 	spin_unlock_bh(&dp->dp_lock);
+}
+
+bool ath12k_dp_link_peer_reset_tx_stats(struct ath12k_dp *dp, const u8 *addr)
+{
+	struct ath12k_htt_tx_stats *tx_stats = NULL;
+        struct ath12k_dp_link_peer *link_peer;
+
+        spin_lock_bh(&dp->dp_lock);
+        link_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
+        if (!link_peer) {
+                spin_unlock_bh(&dp->dp_lock);
+                return false;
+        }
+
+        if (!link_peer->peer_stats.tx_stats) {
+                spin_unlock_bh(&dp->dp_lock);
+                return false;
+        }
+
+        tx_stats = link_peer->peer_stats.tx_stats;
+        memset(tx_stats, 0, sizeof(*tx_stats));
+
+        spin_unlock_bh(&dp->dp_lock);
+        return true;
 }
 
 bool ath12k_dp_link_peer_reset_rx_stats(struct ath12k_dp *dp, const u8 *addr)
