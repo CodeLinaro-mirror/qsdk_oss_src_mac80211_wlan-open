@@ -1114,6 +1114,25 @@ int wiphy_register(struct wiphy *wiphy)
 				return -EINVAL;
 		}
 
+		for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+			int j;
+
+			if (!sband->chan_6g[i])
+				continue;
+
+			for (j = 0; j < sband->chan_6g[i]->n_channels; j++) {
+				sband->chan_6g[i]->channels[j].orig_flags =
+					sband->chan_6g[i]->channels[j].flags;
+				sband->chan_6g[i]->channels[j].orig_mag = INT_MAX;
+				sband->chan_6g[i]->channels[j].orig_mpwr =
+					sband->chan_6g[i]->channels[j].max_power;
+				sband->chan_6g[i]->channels[j].band = band;
+
+				if (WARN_ON(sband->chan_6g[i]->channels[j].freq_offset >= 1000))
+					return -EINVAL;
+			}
+		}
+
 		for_each_sband_iftype_data(sband, i, iftd) {
 			bool has_ap, has_non_ap;
 			u32 ap_bits = BIT(NL80211_IFTYPE_AP) |
