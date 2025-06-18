@@ -9205,7 +9205,7 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	} else if (old_state == IEEE80211_STA_AUTH &&
 		   new_state == IEEE80211_STA_ASSOC) {
 
-		ret = ath12k_dp_peer_setup(ar, arvif->vdev_id, arsta->addr);
+		ret = ath12k_dp_peer_setup(ar, arvif, arsta->addr);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to setup dp for peer %pM on vdev %i (%d)\n",
 					arsta->addr, arvif->vdev_id, ret);

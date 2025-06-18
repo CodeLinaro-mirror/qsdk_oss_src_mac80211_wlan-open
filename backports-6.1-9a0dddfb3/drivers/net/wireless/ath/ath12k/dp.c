@@ -88,11 +88,12 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 	spin_unlock_bh(&dp->dp_lock);
 }
 
-int ath12k_dp_peer_setup(struct ath12k *ar, int vdev_id, const u8 *addr)
+int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const u8 *addr)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_link_peer *peer;
-	u32 reo_dest;
+	u32 reo_dest, vdev_id = arvif->vdev_id;
+	struct ieee80211_vif *vif = arvif->ahvif->vif;
 	int ret = 0, tid;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ieee80211_sta *sta;
@@ -128,12 +129,17 @@ int ath12k_dp_peer_setup(struct ath12k *ar, int vdev_id, const u8 *addr)
 	ahsta = ath12k_sta_to_ahsta(sta);
 	if (peer->mlo && peer->link_id != ahsta->primary_link_id) {
 		peer->primary_link = false;
+		arvif->primary_sta_link = false;
 		spin_unlock_bh(&dp->dp_lock);
 		goto free_shash;
 	}
 
 	peer->primary_link = true;
+	arvif->primary_sta_link = true;
 	spin_unlock_bh(&dp->dp_lock);
+
+	if (vif->type == NL80211_IFTYPE_STATION)
+		ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(ar->ab, arvif, true);
 
 	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
 		ret = ath12k_wifi7_dp_rx_peer_tid_setup(ar, addr, vdev_id, tid, 1, 0,
@@ -502,7 +508,7 @@ skip_dma_alloc:
 
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab,
 				  struct ath12k_link_vif *arvif,
-				  struct ath12k_dp *dp)
+				  struct ath12k_dp *dp, bool vdev_id_check_en)
 {
 	int bank_id = DP_INVALID_BANK_ID;
 	int i;
@@ -511,7 +517,7 @@ int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab,
 
 
 	/* convert vdev params into hal_tx_bank_config */
-	bank_config = ath12k_dp_arch_tx_get_vdev_bank_config(dp, arvif);
+	bank_config = ath12k_dp_arch_tx_get_vdev_bank_config(dp, arvif, vdev_id_check_en);
 
 	spin_lock_bh(&dp->tx_bank_lock);
 	/* TODO: implement using idr kernel framework*/
@@ -568,8 +574,13 @@ void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif)
 	u8 link_id = arvif->link_id;
 	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 
+	if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID) {
+		ath12k_dp_tx_put_bank_profile(dp, arvif->splitphy_ds_bank_id);
+		arvif->splitphy_ds_bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, dp, false);
+	}
+
 	ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
-	dp_link_vif->bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, dp);
+	dp_link_vif->bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, dp, dp_link_vif->vdev_id_check_en);
 
 	ath12k_dp_ppeds_update_vp_entry(arvif->ar, arvif);
 }
@@ -1187,8 +1198,10 @@ void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif)
 
 	ath12k_dp_update_vdev_search(arvif);
 	dp_link_vif->vdev_id_check_en = true;
-	bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, ath12k_ab_to_dp(ab));
+	bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, ath12k_ab_to_dp(ab), dp_link_vif->vdev_id_check_en);
 	dp_link_vif->bank_id = bank_id;
+	arvif->splitphy_ds_bank_id = DP_INVALID_BANK_ID;
+
 
 	mec_support = test_bit(WMI_SERVICE_MEC_AGING_TIMER_SUPPORT, ab->wmi_ab.svc_map);
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&

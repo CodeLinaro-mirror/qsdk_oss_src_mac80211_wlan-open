@@ -1824,6 +1824,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	}
 
 	if (peer->dp_peer->primary_link_frag_setup) {
+		arsta->arvif->primary_sta_link = true;
 		peer->primary_link = true;
 		ath12k_warn(mig_ab, "peer tid setup is already done for the peer_id %x in migration event\n",
 			    peer->peer_id);
@@ -1834,6 +1835,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	memcpy(addr, peer->addr, sizeof(peer->addr));
 	vdev_id = peer->vdev_id;
 
+	arsta->arvif->primary_sta_link = true;
 	peer->primary_link = true;
 
 	spin_unlock_bh(&mig_dp->dp_lock);
@@ -1928,6 +1930,7 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 		    peer->addr, peer->peer_id, peer->ml_id, peer->link_id);
 
 	peer->primary_link = false;
+	arsta->arvif->primary_sta_link = false;
 
 	ret = ath12k_dp_arch_peer_migrate_reo_cmd(dp, peer, peer_id,
 						  chip_id);

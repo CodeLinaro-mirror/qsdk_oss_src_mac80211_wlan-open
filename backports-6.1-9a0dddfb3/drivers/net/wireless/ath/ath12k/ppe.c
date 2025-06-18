@@ -919,12 +919,12 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 	} else {
 		int link_idx;
 		struct ath12k_link_vif *iter_arvif;
+		bool vdev_id_check_en = false;
 
 		vlan_iface->ppe_vp_profile_idx[link_id] = ppe_vp_profile_idx;
 
-		//dp_link_vif->vdev_id_check_en = false;
 		arvif->splitphy_ds_bank_id =
-			ath12k_dp_tx_get_bank_profile(ab, arvif, ab->dp);
+			ath12k_dp_tx_get_bank_profile(ab, arvif, ab->dp, vdev_id_check_en);
 
 		links_map = ahvif->links_map;
 		for_each_set_bit(link_idx, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
@@ -1068,6 +1068,7 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 	} else {
 		int link_idx;
 		struct ath12k_link_vif *iter_arvif;
+		bool vdev_id_check_en = false;
 
 		if (arvif->ahvif->links_map &&
 		    arvif->ahvif->vif->type == NL80211_IFTYPE_STATION) {
@@ -1103,9 +1104,7 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 		}
 
 		*link_ppe_vp_profile_idx = ppe_vp_profile_idx;
-		//dp_link_vif = &arvif->ahvif->dp_vif.dp_link_vif[link_id];
-//		dp_link_vif->vdev_id_check_en = false;
-		arvif->splitphy_ds_bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, ab->dp);
+		arvif->splitphy_ds_bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, ab->dp, vdev_id_check_en);
 
 		links_map = ahvif->links_map;
 		for_each_set_bit(link_idx, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {

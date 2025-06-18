@@ -429,7 +429,7 @@ struct ath12k_dp_arch_ops {
 	int (*dp_op_device_init)(struct ath12k_dp *dp);
 	void (*dp_op_device_deinit)(struct ath12k_dp *dp);
 	u32 (*dp_tx_get_vdev_bank_config)(struct ath12k_base *ab,
-					  struct ath12k_link_vif *arvif);
+					  struct ath12k_link_vif *arvif, bool vdev_id_check_en);
 	int (*dp_reo_cmd_send)(struct ath12k_base *ab,
 			       struct ath12k_dp_rx_tid *rx_tid,
 			       enum hal_reo_cmd_type type,
@@ -780,9 +780,10 @@ static inline void ath12k_dp_arch_op_device_deinit(struct ath12k_dp *dp)
 }
 
 static inline u32 ath12k_dp_arch_tx_get_vdev_bank_config(struct ath12k_dp *dp,
-							 struct ath12k_link_vif *arvif)
+							 struct ath12k_link_vif *arvif,
+							 bool vdev_id_check_en)
 {
-	return dp->arch_ops->dp_tx_get_vdev_bank_config(dp->ab, arvif);
+	return dp->arch_ops->dp_tx_get_vdev_bank_config(dp->ab, arvif, vdev_id_check_en);
 }
 
 static inline int ath12k_dp_arch_reo_cmd_send(struct ath12k_dp *dp,
@@ -940,7 +941,7 @@ void ath12k_dp_pdev_pre_alloc(struct ath12k *ar);
 void ath12k_dp_pdev_free(struct ath12k_base *ab);
 int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);
-int ath12k_dp_peer_setup(struct ath12k *ar, int vdev_id, const u8 *addr);
+int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const u8 *addr);
 void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr);
 void ath12k_dp_srng_cleanup(struct ath12k_base *ab, struct dp_srng *ring);
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
@@ -971,7 +972,7 @@ void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
-				  struct ath12k_dp *dp);
+				  struct ath12k_dp *dp, bool vdev_id_check_en);
 struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
 							      u32 desc_id);
 int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);

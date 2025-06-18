@@ -113,7 +113,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 
 	rcu_read_lock();
 	arvif  = (!sta->mlo) ? rcu_dereference(ahvif->link[ahsta->deflink.link_id]) :
-			       rcu_dereference(ahvif->link[ahsta->assoc_link_id]);
+			       rcu_dereference(ahvif->link[ahsta->primary_link_id]);
 
 	*link_id = (!sta->mlo) ? ahsta->deflink.link_id : ahsta->assoc_link_id;
 
