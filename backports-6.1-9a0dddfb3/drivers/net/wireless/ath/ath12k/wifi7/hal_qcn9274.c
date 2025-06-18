@@ -827,10 +827,8 @@ void ath12k_wifi7_hal_extract_rx_desc_data_qcn9274(struct hal_rx_desc_data *rx_d
 }
 
 void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_info,
-						  struct hal_rx_desc *rx_desc,
-						  struct hal_rx_desc *ldesc)
+						  struct hal_rx_desc *rx_desc)
 {
-	rx_info->tlv_info.msdu_done = ath12k_wifi7_hal_rx_h_msdu_done_qcn9274(ldesc);
 	rx_info->tlv_info.freq = ath12k_wifi7_hal_rx_h_freq_qcn9274(rx_desc);
 	rx_info->tlv_info.pkt_type = ath12k_wifi7_hal_rx_h_pkt_type_qcn9274(rx_desc);
 	rx_info->tlv_info.bw = ath12k_wifi7_hal_rx_h_rx_bw_qcn9274(rx_desc);

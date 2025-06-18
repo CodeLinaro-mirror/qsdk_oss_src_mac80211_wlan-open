@@ -1173,13 +1173,14 @@ static int ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct rx_mpdu_desc_info *rx_mpdu_info;
 	struct rx_tlv_info_1 *tlv_info;
 	struct ath12k_dp *dp = dp_pdev->dp;
-	struct hal_rx_desc *rx_desc, *lrx_desc;
+	struct hal_rx_desc *rx_desc;
 	struct hal_rx_spd_data *spd_desc_l;
 	struct sk_buff *last_buf;
 	u8 l3_pad_bytes;
 	u16 msdu_len;
 	int ret;
-	u32 hal_rx_desc_sz = dp->hal->hal_desc_sz;
+	struct ath12k_hal *hal = dp->hal;
+	u32 hal_rx_desc_sz = hal->hal_desc_sz;
 
 	spd_desc_l = (struct hal_rx_spd_data *) ATH12K_SKB_RXCB_RAW(msdu);
 	rx_msdu_info = &spd_desc_l->rx_msdu_info;
@@ -1195,9 +1196,7 @@ static int ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 		goto free_out;
 	}
 
-	lrx_desc = (struct hal_rx_desc *)last_buf->data;
-
-	ath12k_wifi7_dp_extract_rx_spd_data(dp, spd_desc_l, rx_desc, lrx_desc);
+	ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc);
 
 	msdu_len = rx_msdu_info->msdu_length;
 	l3_pad_bytes = rx_msdu_info->l3_header_padding_msb ? 2 : 0;
