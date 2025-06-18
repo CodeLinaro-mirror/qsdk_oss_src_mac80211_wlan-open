@@ -1903,7 +1903,7 @@ EXPORT_SYMBOL(ieee80211_unregister_hw);
 
 static int ieee80211_free_ack_frame(int id, void *p, void *data)
 {
-	WARN_ONCE(1, "Have pending ack frames!\n");
+	printk("Have pending ack frames!\n");
 	kfree_skb(p);
 	return 0;
 }
