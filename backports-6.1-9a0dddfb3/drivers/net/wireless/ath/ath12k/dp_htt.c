@@ -482,6 +482,11 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
+	if (flags == WMI_RATE_PREAMBLE_EHT && mcs > ATH12K_EHT_MCS_MAX) {
+		ath12k_warn(ab, "Invalid EHT mcs %d peer stats",  mcs);
+		return;
+	}
+
 	if (flags == WMI_RATE_PREAMBLE_VHT && mcs > ATH12K_VHT_MCS_MAX) {
 		ath12k_warn(ab, "Invalid VHT mcs %d peer stats",  mcs);
 		return;

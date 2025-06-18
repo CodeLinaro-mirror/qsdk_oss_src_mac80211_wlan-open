@@ -32,7 +32,14 @@ void ath12k_debugfs_sta_add_tx_stats( struct ath12k_dp_link_peer *peer,
 
 #define STATS_OP_FMT(name) tx_stats->stats[ATH12K_STATS_TYPE_##name]
 
-	if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
+	if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
+		STATS_OP_FMT(SUCC).eht[0][mcs] += peer_stats->succ_bytes;
+		STATS_OP_FMT(SUCC).eht[1][mcs] += peer_stats->succ_pkts;
+		STATS_OP_FMT(FAIL).eht[0][mcs] += peer_stats->failed_bytes;
+		STATS_OP_FMT(FAIL).eht[1][mcs] += peer_stats->failed_pkts;
+		STATS_OP_FMT(RETRY).eht[0][mcs] += peer_stats->retry_bytes;
+		STATS_OP_FMT(RETRY).eht[1][mcs] += peer_stats->retry_pkts;
+	} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
 		STATS_OP_FMT(SUCC).he[0][mcs] += peer_stats->succ_bytes;
 		STATS_OP_FMT(SUCC).he[1][mcs] += peer_stats->succ_pkts;
 		STATS_OP_FMT(FAIL).he[0][mcs] += peer_stats->failed_bytes;
@@ -67,7 +74,8 @@ void ath12k_debugfs_sta_add_tx_stats( struct ath12k_dp_link_peer *peer,
 	ppdu_type = peer_stats->ppdu_type;
 	if ((ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA ||
 	     ppdu_type == HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA) &&
-	     (txrate->flags & RATE_INFO_FLAGS_HE_MCS)) {
+	     (txrate->flags & RATE_INFO_FLAGS_HE_MCS ||
+	      txrate->flags & RATE_INFO_FLAGS_EHT_MCS)) {
 		ru_type = peer_stats->ru_tones;
 
 		if (ru_type <= NL80211_RATE_INFO_HE_RU_ALLOC_996) {
@@ -106,7 +114,12 @@ void ath12k_debugfs_sta_add_tx_stats( struct ath12k_dp_link_peer *peer,
 	if (peer_stats->is_ampdu) {
 		tx_stats->ba_fails += peer_stats->ba_fails;
 
-		if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
+		if (txrate->flags & RATE_INFO_FLAGS_EHT_MCS) {
+			STATS_OP_FMT(AMPDU).eht[0][mcs] +=
+			peer_stats->succ_bytes + peer_stats->retry_bytes;
+			STATS_OP_FMT(AMPDU).eht[1][mcs] +=
+			peer_stats->succ_pkts + peer_stats->retry_pkts;
+		} else if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
 			STATS_OP_FMT(AMPDU).he[0][mcs] +=
 			peer_stats->succ_bytes + peer_stats->retry_bytes;
 			STATS_OP_FMT(AMPDU).he[1][mcs] +=
@@ -822,11 +835,19 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
                                         str_name[k],
                                         str[j]);
                        len += scnprintf(buf + len, size - len, "==========\n");
-                       len += scnprintf(buf + len, size - len,
+		       len += scnprintf(buf + len, size - len,
+				       " EHT MCS %s\n\t",
+				       str[j]);
+		       for (i = 0; i < ATH12K_EHT_MCS_NUM; i++)
+			       len += scnprintf(buf + len, size - len,
+					     "%llu ",
+					     stats->eht[j][i]);
+		       len += scnprintf(buf + len, size - len, "\n");
+		       len += scnprintf(buf + len, size - len,
                                         " HE MCS %s\n\t",
                                         str[j]);
-                       for (i = 0; i < ATH12K_HE_MCS_NUM; i++)
-                               len += scnprintf(buf + len, size - len,
+		       for (i = 0; i < ATH12K_HE_MCS_NUM; i++)
+			       len += scnprintf(buf + len, size - len,
                                                 "%llu ",
                                                 stats->he[j][i]);
                        len += scnprintf(buf + len, size - len, "\n");

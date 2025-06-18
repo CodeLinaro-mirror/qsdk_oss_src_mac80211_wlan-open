@@ -3229,7 +3229,7 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	u32 gi_idx = ppdu_info->gi;
 	u32 len;
 
-	if (mcs_idx > HAL_RX_MAX_MCS_HT || nss_idx >= HAL_RX_MAX_NSS ||
+	if (mcs_idx > HAL_RX_MAX_MCS_BE || nss_idx >= HAL_RX_MAX_NSS ||
 	    bw_idx >= HAL_RX_BW_MAX || gi_idx >= HAL_RX_GI_MAX) {
 		return;
 	}
