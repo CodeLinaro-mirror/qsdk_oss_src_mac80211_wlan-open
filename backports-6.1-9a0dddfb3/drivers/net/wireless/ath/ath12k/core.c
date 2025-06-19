@@ -31,6 +31,7 @@
 #include "accel_cfg.h"
 #include "peer.h"
 #include "qos.h"
+#include "telemetry.h"
 #include "ppe.h"
 #include "cfr.h"
 #include "ini.h"
@@ -1131,6 +1132,7 @@ static int ath12k_core_mlo_shmem_crash_info_init(struct ath12k_base *ab)
 static int ath12k_core_pdev_init(struct ath12k_base *ab)
 {
 	ath12k_fse_init(ab);
+	ath12k_telemetry_init(ab);
 	ath12k_dp_accel_cfg_init(ab);
 	ath12k_thermal_register(ab);
 	ath12k_spectral_init(ab);
@@ -1147,6 +1149,7 @@ static void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 {
 	ath12k_dp_accel_cfg_deinit(ab);
 	ath12k_fse_deinit(ab);
+	ath12k_telemetry_deinit(ab);
 	ath12k_thermal_unregister(ab);
 	ath12k_spectral_deinit(ab);
 	if (ath12k_cfr_enable_bmap & (1 << ab->device_id))

@@ -12,6 +12,7 @@
 #include "mac.h"
 #include "ppe.h"
 #include "vendor.h"
+#include "telemetry.h"
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -1546,6 +1547,38 @@ ath12k_vendor_sdwf_svc_policy[QCA_WLAN_VENDOR_ATTR_SDWF_SVC_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_SDWF_SVC_UL_MU_MIMO_DISABLE] = {.type = NLA_U8},
 };
 
+static const struct nla_policy
+ath12k_vendor_telemetry_sdwf_sla_samples_config_policy[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_MOVING_AVG_PKT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_MOVING_AVG_WIN] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_SLA_NUM_PKT] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_SLA_TIME_SEC] = {.type = NLA_U32},
+};
+
+static const struct nla_policy
+ath12k_vendor_telemetry_sdwf_sla_thershold_config_policy[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_SVC_ID] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MIN_TP] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MAX_TP] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_BURST_SIZE] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_INTERVAL] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_DELAY_BOUND] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MSDU_TTL] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MSDU_RATE_LOSS] = {.type = NLA_U32},
+};
+
+static const struct nla_policy
+ath12k_vendor_telemetry_sdwf_sla_detect_config_policy[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_PARAM] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MIN_TP] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MAX_TP] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_BURST_SIZE] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_INTERVAL] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_DELAY_BOUND] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MSDU_TTL] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MSDU_RATE_LOSS] = {.type = NLA_U32},
+};
+
 static int ath12k_vendor_set_sdwf_config(struct ath12k_base *ab,
 					 struct wiphy *wiphy,
 					 struct wireless_dev *wdev,
@@ -1944,6 +1977,105 @@ nla_put_failure:
 	return -ENOBUFS;
 }
 
+static int ath12k_vendor_telemetry_sdwf_sla_samples_config(struct nlattr *sla_samples)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_MAX + 1];
+	struct ath12k_sla_samples_cfg t_param = {0};
+	int ret = 0;
+
+	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_MAX,
+			       sla_samples,
+			       ath12k_vendor_telemetry_sdwf_sla_samples_config_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "invalid set telemetry sla samples config policy attribute\n");
+		return ret;
+	}
+
+	t_param.moving_avg_pkt =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_MOVING_AVG_PKT]);
+	t_param.moving_avg_win =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_MOVING_AVG_WIN]);
+	t_param.sla_num_pkt =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_SLA_NUM_PKT]);
+	t_param.sla_time_sec =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_SAMPLES_SLA_TIME_SEC]);
+
+	ret = ath12k_telemetry_sdwf_sla_samples_config(t_param);
+	return ret;
+}
+
+static int ath12k_vendor_telemetry_sdwf_sla_thershold_config(struct nlattr *sla_threshold)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MAX + 1];
+	struct ath12k_sla_thershold_cfg t_param = {0};
+	int ret = 0;
+
+	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MAX,
+			       sla_threshold,
+			       ath12k_vendor_telemetry_sdwf_sla_thershold_config_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "invalid telemetry sla thershold config policy attribute\n");
+		return ret;
+	}
+
+	t_param.svc_id =
+		nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_SVC_ID]);
+	t_param.min_throughput_rate =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MIN_TP]);
+	t_param.max_throughput_rate =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MAX_TP]);
+	t_param.burst_size =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_BURST_SIZE]);
+	t_param.service_interval =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_INTERVAL]);
+	t_param.delay_bound =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_DELAY_BOUND]);
+	t_param.msdu_ttl =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MSDU_TTL]);
+	t_param.msdu_rate_loss =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_THRESHOLD_MSDU_RATE_LOSS]);
+
+	ret = ath12k_telemetry_sdwf_sla_thershold_config(t_param);
+
+	return ret;
+}
+
+static int ath12k_vendor_telemetry_sdwf_sla_detection_config(struct nlattr *sla_detect)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MAX + 1];
+	struct ath12k_sla_detect_cfg t_param = {0};
+	int ret = 0;
+
+	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MAX,
+			       sla_detect,
+			       ath12k_vendor_telemetry_sdwf_sla_detect_config_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "invalid telemetry sdwf sla detection config policy attribute\n");
+		return ret;
+	}
+
+	t_param.sla_detect =
+		nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_PARAM]);
+	t_param.min_throughput_rate =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MIN_TP]);
+	t_param.max_throughput_rate =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MAX_TP]);
+	t_param.burst_size =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_BURST_SIZE]);
+	t_param.service_interval =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_INTERVAL]);
+	t_param.delay_bound =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_DELAY_BOUND]);
+	t_param.msdu_ttl =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MSDU_TTL]);
+	t_param.msdu_rate_loss =
+		nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MSDU_RATE_LOSS]);
+
+	ret = ath12k_telemetry_sdwf_sla_detection_config(t_param);
+
+	return ret;
+}
+
 static int ath12k_vendor_sdwf_phy_operations(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     const void *data,
@@ -1996,6 +2128,33 @@ static int ath12k_vendor_sdwf_phy_operations(struct wiphy *wiphy,
 			ret = ath12k_vendor_disable_sdwf_config(ab, wiphy, wdev, tb[QCA_WLAN_VENDOR_ATTR_SDWF_PHY_SVC_PARAMS]);
 		} else {
 			ath12k_err(ab, "SDWF service id missing with delete");
+			ret = -EINVAL;
+			goto end;
+		}
+		break;
+	case QCA_WLAN_VENDOR_SDWF_PHY_OPER_SLA_SAMPLES_SET:
+		if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_PHY_SLA_SAMPLES_PARAMS]) {
+			ret = ath12k_vendor_telemetry_sdwf_sla_samples_config(tb[QCA_WLAN_VENDOR_ATTR_SDWF_PHY_SLA_SAMPLES_PARAMS]);
+		} else {
+			ath12k_err(NULL, "SDWF sla samples parameters missing\n");
+			ret = -EINVAL;
+			goto end;
+		}
+		break;
+	case QCA_WLAN_VENDOR_SDWF_PHY_OPER_SLA_BREACH_DETECTION_SET:
+		if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_PHY_SLA_DETECT_PARAMS]) {
+			ret = ath12k_vendor_telemetry_sdwf_sla_detection_config(tb[QCA_WLAN_VENDOR_ATTR_SDWF_PHY_SLA_DETECT_PARAMS]);
+		} else {
+			ath12k_err(NULL, "SDWF sla breach detect parameters missing\n");
+			ret = -EINVAL;
+			goto end;
+		}
+		break;
+	case QCA_WLAN_VENDOR_SDWF_PHY_OPER_SLA_THRESHOLD_SET:
+		if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_PHY_SLA_THRESHOLD_PARAMS]) {
+			ret = ath12k_vendor_telemetry_sdwf_sla_thershold_config(tb[QCA_WLAN_VENDOR_ATTR_SDWF_PHY_SLA_THRESHOLD_PARAMS]);
+		} else {
+			ath12k_err(NULL, "SDWF sla threshnew parameters missing\n");
 			ret = -EINVAL;
 			goto end;
 		}
