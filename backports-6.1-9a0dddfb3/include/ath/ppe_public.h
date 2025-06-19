@@ -5,6 +5,8 @@
 #ifndef ATH12K_PPE_PUBLIC_H
 #define ATH12K_PPE_PUBLIC_H
 
+#define ATH_WIFI_NSS_PLUGIN_ENABLE 1
+
 void ath12k_ppeds_set_tcl_prod_idx_v2(int ds_node_id, u16 tcl_prod_idx);
 u16 ath12k_ppeds_get_tcl_cons_idx_v2(int ds_node_id);
 void ath12k_ppeds_set_reo_cons_idx_v2(int ds_node_id, u16 reo_cons_idx);

@@ -15,6 +15,7 @@
 #include "dp.h"
 #include "core.h"
 #include "cmn_defs.h"
+#include <nss_plugins.h>
 
 struct ath12k_base;
 struct ath12k_vif;
@@ -139,6 +140,7 @@ struct ath12k_ppe {
 	u8 ppeds_int_mode_enabled;
 	u8 ppeds_stopped;
 	struct ath12k_ppeds_stats ppeds_stats;
+	struct nss_plugins_ops *nss_plugin_ops;
 };
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -150,8 +152,7 @@ int ath12k_change_core_mask_for_ppe_rfs(struct ath12k_base *ab,
 					struct ath12k_vif *ahvif,
 					int core_mask);
 int ath12k_vif_update_vp_config(struct ath12k_vif *ahvif, int vp_type);
-int ath12k_vif_alloc_vp(struct ath12k_vif *ahvif, int vp_type, int *core_mask,
-			struct net_device *dev);
+int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev);
 int ath12k_vif_set_mtu(struct ath12k_vif *ahvif, int mtu);
 
 void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab);
@@ -171,8 +172,6 @@ irqreturn_t ath12k_ds_reo2ppe_irq_handler(int irq, void *ctxt);
 irqreturn_t ath12k_dp_ppeds_handle_tx_comp(int irq, void *ctxt);
 void ath12k_dp_ppeds_update_vp_entry(struct ath12k *ar,
 				     struct ath12k_link_vif *arvif);
-void ath12k_dp_rx_ppe_fse_register(void);
-void ath12k_dp_rx_ppe_fse_unregister(void);
 void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
 						 struct ath12k_link_vif *arvif,
 						 bool peer_map);
@@ -193,6 +192,8 @@ void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
 void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab);
 void ath12k_dp_ppeds_stop(struct ath12k_base *ab);
 void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab);
+int ath12k_nss_plugin_register_ops(struct ath12k_base *ab);
+void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab);
 
 #else
 static inline void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
@@ -319,5 +320,13 @@ static inline void ath12k_ppe_ds_attach_vlan_vif_link(struct ath12k_vlan_iface *
 {
 }
 
+static inline int ath12k_nss_plugin_register_ops(struct ath12k_base *ab)
+{
+	return 0;
+}
+
+void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab)
+{
+}
 #endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */
 #endif /* ATH12K_PPE_H */

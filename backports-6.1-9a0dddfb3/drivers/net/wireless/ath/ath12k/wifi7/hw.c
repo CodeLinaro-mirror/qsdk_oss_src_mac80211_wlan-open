@@ -1232,18 +1232,7 @@ static int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
 						    struct ieee80211_vif *vif,
 						    struct net_device *dev)
 {
-	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	int ppe_vp_num;
-
-	/* Allocate a PASSIVE VP at VAP init.
-	 * Later update the VP type at the time of add interface
-	 */
-	ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
-	if (ppe_vp_num <= 0) {
-		ahvif->dp_vif.ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
-		WARN_ON(ath12k_vif_alloc_vp(ahvif, PPE_VP_USER_TYPE_PASSIVE, NULL, dev));
-	}
-
+	/* To Do: Check if this op is still needed */
 	return 0;
 }
 
@@ -1251,21 +1240,7 @@ static int ath12k_mac_op_destroy_datapath_offload_if(struct ieee80211_hw *hw,
 						     struct ieee80211_vif *vif,
 						     struct net_device *dev)
 {
-	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	int ppe_vp_num;
-
-	/* No init method is registered for monitor VAP
-	 * and hence no VP will be created for the same.
-	 */
-	if (vif->type == NL80211_IFTYPE_MONITOR)
-		return 0;
-
-	/* Free the VP is not yet done in deinit
-	 */
-	ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
-	if (ppe_vp_num != ATH12K_INVALID_PPE_VP_NUM)
-		ath12k_vif_free_vp(ahvif, dev);
-
+	/* To Do: Check if this op is still needed */
 	return 0;
 }
 

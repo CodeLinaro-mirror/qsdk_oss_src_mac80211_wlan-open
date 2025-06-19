@@ -8,6 +8,8 @@
 #include <linux/if_vlan.h>
 #include <net/mac80211.h>
 
+#define ATH_WIFI_NSS_PLUGIN_ENABLE 1
+
 #define ATH_SAWF_SVID_VALID 0x1
 #define ATH_SAWF_DSCP_VALID 0x2
 #define ATH_SAWF_PCP_VALID  0x4

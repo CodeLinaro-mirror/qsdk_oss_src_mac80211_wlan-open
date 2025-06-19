@@ -896,7 +896,7 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ret = devm_request_irq(&pdev->dev, irq,  ath12k_ds_ppe2tcl_irq_handler,
 				       IRQF_NO_AUTOEN | IRQF_NO_SUSPEND,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
-				       (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+				       (void *)ab);
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;
@@ -922,7 +922,7 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ret = devm_request_irq(&pdev->dev, irq,  ath12k_ds_reo2ppe_irq_handler,
 				       IRQF_SHARED | IRQF_NO_SUSPEND,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
-				       (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+				       (void *)ab);
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;

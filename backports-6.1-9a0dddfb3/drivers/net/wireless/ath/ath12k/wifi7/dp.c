@@ -198,10 +198,16 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_hw_cc_cleanup;
 	}
 
+	ret = ath12k_nss_plugin_register_ops(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to register nss plugin %d\n", ret);
+		goto fail_dp_bank_profiles_cleanup;
+	}
+
 	ret = ath12k_ppeds_attach(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to attach PPE DS %d\n", ret);
-		goto fail_dp_bank_profiles_cleanup;
+		goto fail_nss_plugin_unregister;
 	}
 
 	ret = ath12k_dp_srng_common_setup(ab);
@@ -254,6 +260,9 @@ fail_cmn_srng_cleanup:
 fail_ppeds_detach:
 	ath12k_ppeds_detach(ab);
 
+fail_nss_plugin_unregister:
+	ath12k_nss_plugin_unregister_ops(ab);
+
 fail_dp_bank_profiles_cleanup:
 	ath12k_dp_deinit_bank_profiles(ab);
 
@@ -291,6 +300,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
 	ath12k_dp_mon_rx_free(dp);
+	ath12k_nss_plugin_unregister_ops(ab);
 	ath12k_wifi7_dp_rx_ring_free(ab);
 
 	ath12k_hif_ext_irq_cleanup(dp->ab);

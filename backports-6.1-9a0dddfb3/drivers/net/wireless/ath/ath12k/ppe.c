@@ -24,44 +24,49 @@ static atomic_t num_ppeds_nodes;
 
 static struct ath12k_base *ds_node_map[PPE_DS_MAX_NODE];
 
+struct nss_plugins_ops *nss_plugin_ops_ptr;
+
+struct nss_plugins_ops *ath12k_get_registered_nss_plugin_ops(void)
+{
+	if (!nss_plugin_ops_ptr) {
+		ath12k_err(NULL, "NSS plugin ops not registered with ath12k\n");
+		return NULL;
+	}
+	return nss_plugin_ops_ptr;
+}
+
 extern struct sk_buff *
 ath12k_dp_ppeds_tx_release_desc(struct ath12k_dp *dp,
 				struct ath12k_ppeds_tx_desc_info *tx_desc);
 
 irqreturn_t ath12k_ds_ppe2tcl_irq_handler(int irq, void *ctxt)
 {
-	ppe_ds_ppe2tcl_wlan_handle_intr(ctxt);
+	struct ath12k_base *ab = (struct ath12k_base *)ctxt;
+
+	if (ab->dp->ppe.nss_plugin_ops)
+		ab->dp->ppe.nss_plugin_ops->ds_inst_ppe2tcl_intr(ab->dp->ppe.ds_node_id);
 
 	return IRQ_HANDLED;
 }
 
 irqreturn_t ath12k_ds_reo2ppe_irq_handler(int irq, void *ctxt)
 {
-	ppe_ds_reo2ppe_wlan_handle_intr(ctxt);
+	struct ath12k_base *ab = (struct ath12k_base *)ctxt;
 
+	if (ab->dp->ppe.nss_plugin_ops)
+		ab->dp->ppe.nss_plugin_ops->ds_inst_reo2ppe_intr(ab->dp->ppe.ds_node_id);
 	return IRQ_HANDLED;
 }
 
 void *ath12k_dp_get_ppe_ds_ctxt(struct ath12k_base *ab)
 {
-	if (!ab || !ab->dp->ppe.ppeds_handle)
+	if (!ab)
 		return NULL;
 
-	return ppe_ds_wlan_get_intr_ctxt(ab->dp->ppe.ppeds_handle);
-}
+	if (ab->dp->ppe.nss_plugin_ops)
+		return ab->dp->ppe.nss_plugin_ops->ds_inst_get_ctx(ab->dp->ppe.ds_node_id);
 
-static void ath12k_ppeds_set_tcl_prod_idx(ppe_ds_wlan_handle_t *ppeds_handle, u16 tcl_prod_idx)
-{
-	struct ath12k_base *ab = *(struct ath12k_base **)ppe_ds_wlan_priv(ppeds_handle);
-	struct ath12k_dp *dp = ab->dp;
-	struct hal_srng *srng;
-
-	srng = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring.ring_id];
-	if (!ab->stats_disable)
-		ab->dp->ppe.ppeds_stats.tcl_prod_cnt++;
-
-	srng->u.src_ring.hp = tcl_prod_idx * srng->entry_size;
-	ath12k_hal_srng_access_end(ab, srng);
+	return NULL;
 }
 
 void ath12k_ppeds_set_tcl_prod_idx_v2(int ds_node_id, u16 tcl_prod_idx)
@@ -78,22 +83,6 @@ void ath12k_ppeds_set_tcl_prod_idx_v2(int ds_node_id, u16 tcl_prod_idx)
 	ath12k_hal_srng_access_end(ab, srng);
 }
 EXPORT_SYMBOL(ath12k_ppeds_set_tcl_prod_idx_v2);
-
-static u16 ath12k_ppeds_get_tcl_cons_idx(ppe_ds_wlan_handle_t *ppeds_handle)
-{
-	struct ath12k_base *ab = *(struct ath12k_base **)ppe_ds_wlan_priv(ppeds_handle);
-	struct ath12k_dp *dp = ab->dp;
-	struct hal_srng *srng;
-	u32 tp;
-
-	if (!ab->stats_disable)
-		ab->dp->ppe.ppeds_stats.tcl_cons_cnt++;
-
-	srng = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring.ring_id];
-	tp = *(volatile u32 *)(srng->u.src_ring.tp_addr);
-
-	return tp / srng->entry_size;
-}
 
 u16 ath12k_ppeds_get_tcl_cons_idx_v2(int ds_node_id)
 {
@@ -112,21 +101,6 @@ u16 ath12k_ppeds_get_tcl_cons_idx_v2(int ds_node_id)
 }
 EXPORT_SYMBOL(ath12k_ppeds_get_tcl_cons_idx_v2);
 
-static void ath12k_ppeds_set_reo_cons_idx(ppe_ds_wlan_handle_t *ppeds_handle,
-					  u16 reo_cons_idx)
-{
-	struct ath12k_base *ab = *(struct ath12k_base **)ppe_ds_wlan_priv(ppeds_handle);
-	struct ath12k_dp *dp = ab->dp;
-	struct hal_srng *srng;
-
-	srng = &ab->hal.srng_list[dp->ppe.reo2ppe_ring.ring_id];
-	if (!ab->stats_disable)
-		ab->dp->ppe.ppeds_stats.reo_cons_cnt++;
-
-	srng->u.src_ring.hp = reo_cons_idx * srng->entry_size;
-	ath12k_hal_srng_access_end(ab, srng);
-}
-
 void ath12k_ppeds_set_reo_cons_idx_v2(int ds_node_id,
 				      u16 reo_cons_idx)
 {
@@ -142,20 +116,6 @@ void ath12k_ppeds_set_reo_cons_idx_v2(int ds_node_id,
 	ath12k_hal_srng_access_end(ab, srng);
 }
 EXPORT_SYMBOL(ath12k_ppeds_set_reo_cons_idx_v2);
-
-static u16 ath12k_ppeds_get_reo_prod_idx(ppe_ds_wlan_handle_t *ppeds_handle)
-{
-	struct ath12k_base *ab = *(struct ath12k_base **)ppe_ds_wlan_priv(ppeds_handle);
-	struct ath12k_dp *dp = ab->dp;
-	struct hal_srng *srng;
-	u32 hp;
-
-	srng = &ab->hal.srng_list[dp->ppe.reo2ppe_ring.ring_id];
-	hp = *(volatile u32 *)(srng->u.dst_ring.hp_addr);
-	if (!ab->stats_disable)
-		ab->dp->ppe.ppeds_stats.reo_prod_cnt++;
-	return hp / srng->entry_size;
-}
 
 u16 ath12k_ppeds_get_reo_prod_idx_v2(int ds_node_id)
 {
@@ -173,23 +133,6 @@ u16 ath12k_ppeds_get_reo_prod_idx_v2(int ds_node_id)
 EXPORT_SYMBOL(ath12k_ppeds_get_reo_prod_idx_v2);
 
 /* enable/disable PPE2TCL irq */
-static inline void ath12k_ppeds_enable_srng_intr(ppe_ds_wlan_handle_t *ppeds_handle, bool enable)
-{
-	struct ath12k_base *ab = *(struct ath12k_base **)ppe_ds_wlan_priv(ppeds_handle);
-
-	if (enable) {
-		if (!ab->stats_disable)
-			ab->dp->ppe.ppeds_stats.enable_intr_cnt++;
-
-		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE2TCL);
-	} else {
-		if (!ab->stats_disable)
-			ab->dp->ppe.ppeds_stats.disable_intr_cnt++;
-
-		ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_PPE2TCL);
-	}
-}
-
 void ath12k_ppeds_enable_srng_intr_v2(int ds_node_id, bool enable)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
@@ -207,47 +150,6 @@ void ath12k_ppeds_enable_srng_intr_v2(int ds_node_id, bool enable)
 	}
 }
 EXPORT_SYMBOL(ath12k_ppeds_enable_srng_intr_v2);
-
-static bool ath12k_ppeds_free_rx_desc(struct ppe_ds_wlan_rxdesc_elem *arr,
-			       struct ath12k_base *ab, int index,
-			       u16 *idx_of_ab)
-{
-	struct ath12k_rx_desc_info *rx_desc;
-	struct sk_buff *skb;
-
-	rx_desc = (struct ath12k_rx_desc_info *)arr[idx_of_ab[index]].cookie;
-
-	if (rx_desc->device_id != ab->device_id)
-		return false;
-
-	skb = rx_desc->skb;
-	rx_desc->skb = NULL;
-
-	spin_lock_bh(&ab->dp->rx_desc_lock);
-	list_add_tail(&rx_desc->list, &ab->dp->rx_desc_free_list);
-	spin_unlock_bh(&ab->dp->rx_desc_lock);
-
-	if (!skb) {
-		ath12k_err(ab, "ppeds rx desc with no skb when freeing\n");
-		return false;
-	}
-
-	/* When recycled_for_ds is set, packet is used by DS rings and never has
-	 * touched by host. So, buffer unmap can be skipped.
-	 */
-	if (!skb->recycled_for_ds) {
-		dmac_inv_range_no_dsb(skb->data, skb->data + (skb->len +
-				      skb_tailroom(skb)));
-		dma_unmap_single_attrs(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
-				       skb->len + skb_tailroom(skb),
-				       DMA_FROM_DEVICE, DMA_ATTR_SKIP_CPU_SYNC);
-	}
-
-	skb->recycled_for_ds = 0;
-	skb->fast_recycled = 0;
-	dev_kfree_skb_any(skb);
-	return true;
-}
 
 bool ath12k_ppeds_free_rx_desc_v2(struct ppe_ds_wlan_rxdesc_elem *arr,
 				  struct ath12k_base *ab, int index,
@@ -338,7 +240,7 @@ int ath12k_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab, int req_entries,
 
 	/* move any remaining descriptors to free list */
 	for (; i < req_entries; i++)
-		count += ath12k_ppeds_free_rx_desc(arr, ab, i, idx_of_ab);
+		count += ath12k_ppeds_free_rx_desc_v2(arr, ab, i, idx_of_ab);
 
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.num_rx_desc_freed += count;
@@ -350,79 +252,6 @@ int ath12k_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab, int req_entries,
 #ifndef PPE_DS_TXCMPL_DEF_BUDGET
 #define PPE_DS_TXCMPL_DEF_BUDGET 256
 #endif
-static void ath12k_ppeds_release_rx_desc(ppe_ds_wlan_handle_t *ppeds_handle,
-					 struct ppe_ds_wlan_rxdesc_elem *arr, u16 count)
-{
-	struct ath12k_base *ab = *(struct ath12k_base **)ppe_ds_wlan_priv(ppeds_handle);
-	struct ath12k_base *src_ab = NULL;
-	struct ath12k_hw_group *ag = ab->ag;
-	u32 rx_bufs_reaped[ATH12K_MAX_SOCS] = {0};
-	struct ath12k_rx_desc_info *rx_desc;
-	int device_id;
-	u32 i = 0, new_size, num_free_desc;
-	u16 *tmp;
-
-	if (!ab->stats_disable)
-		ab->dp->ppe.ppeds_stats.release_rx_desc_cnt += count;
-
-	if (unlikely(count > ab->dp->ppe.ppeds_rx_num_elem)) {
-		new_size = sizeof(u16) * count;
-		for (device_id = 0; device_id < ATH12K_MAX_SOCS; device_id++) {
-			tmp = krealloc(ab->dp->ppe.ppeds_rx_idx[device_id], new_size, GFP_ATOMIC);
-			if (!tmp) {
-				ath12k_err(ab, "ppeds: rx desc realloc failed for size %u\n",
-					   count);
-				goto err_h_alloc_failure;
-			}
-
-			ab->dp->ppe.ppeds_rx_idx[device_id] = tmp;
-		}
-
-		ab->dp->ppe.ppeds_rx_num_elem = count;
-		ab->dp->ppe.ppeds_stats.num_rx_desc_realloc += device_id;
-	}
-
-	for (i = 0; i < count; i++) {
-		if ((i + 1) < (count - 1))
-			prefetch((struct ath12k_rx_desc_info *)arr[i + 1].cookie);
-
-		rx_desc = (struct ath12k_rx_desc_info *)arr[i].cookie;
-		if (!rx_desc) {
-			ath12k_err(ab, "error: rx desc is null\n");
-			continue;
-		}
-
-		device_id = rx_desc->device_id;
-		/* Maintain indexes of arr per ab separately, which can accessed easily
-		 * during per ab's rxdma srng replenish
-		 */
-		ab->dp->ppe.ppeds_rx_idx[device_id][rx_bufs_reaped[device_id]] = i;
-		rx_bufs_reaped[device_id]++;
-	}
-
-	for (device_id = 0; device_id < ATH12K_MAX_SOCS; device_id++) {
-		if (!rx_bufs_reaped[device_id])
-			continue;
-
-		src_ab = ag->ab[device_id];
-		ath12k_dp_rx_bufs_replenish_ppeds(src_ab, rx_bufs_reaped[device_id],
-						  &ab->dp->ppe.ppeds_rx_idx[device_id][0], arr);
-	}
-
-	return;
-
-err_h_alloc_failure:
-	for (device_id = 0; device_id < ag->num_hw; device_id++) {
-		src_ab = ag->ab[device_id];
-		num_free_desc = 0;
-		for (i = 0; i < count; i++)
-			num_free_desc +=
-				ath12k_ppeds_free_rx_desc(arr, src_ab, i,
-							  &src_ab->dp->ppe.ppeds_rx_idx[device_id][0]);
-		if (!src_ab->stats_disable)
-			src_ab->dp->ppe.ppeds_stats.num_rx_desc_freed += num_free_desc;
-	}
-}
 
 void ath12k_ppeds_release_rx_desc_v2(int ds_node_id,
 				     struct ppe_ds_wlan_rxdesc_elem *arr, u16 count)
@@ -491,23 +320,13 @@ err_h_alloc_failure:
 		num_free_desc = 0;
 		for (i = 0; i < count; i++)
 			num_free_desc +=
-				ath12k_ppeds_free_rx_desc(arr, src_ab, i,
-							  &src_ab->dp->ppe.ppeds_rx_idx[device_id][0]);
+				ath12k_ppeds_free_rx_desc_v2(arr, src_ab, i,
+							     &src_ab->dp->ppe.ppeds_rx_idx[device_id][0]);
 		if (!src_ab->stats_disable)
 			src_ab->dp->ppe.ppeds_stats.num_rx_desc_freed += num_free_desc;
 	}
 }
 EXPORT_SYMBOL(ath12k_ppeds_release_rx_desc_v2);
-
-static
-void ath12k_ppeds_release_tx_desc_single(ppe_ds_wlan_handle_t *ppeds_handle,
-					 u32 cookie)
-{
-	struct ath12k_base *ab = *(struct ath12k_base **)ppe_ds_wlan_priv(ppeds_handle);
-
-	if (!ab->stats_disable)
-		ab->dp->ppe.ppeds_stats.release_tx_single_cnt++;
-}
 
 void ath12k_ppeds_release_tx_desc_single_v2(int ds_node_id,
 					    u32 cookie)
@@ -518,113 +337,6 @@ void ath12k_ppeds_release_tx_desc_single_v2(int ds_node_id,
 		ab->dp->ppe.ppeds_stats.release_tx_single_cnt++;
 }
 EXPORT_SYMBOL(ath12k_ppeds_release_tx_desc_single_v2);
-
-static u32 ath12k_ppeds_get_batched_tx_desc(ppe_ds_wlan_handle_t *ppeds_handle,
-					    struct ppe_ds_wlan_txdesc_elem *arr,
-					    u32 num_buff_req,
-					    u32 buff_size,
-					    u32 headroom)
-{
-	struct ath12k_base *ab = *(struct ath12k_base **)ppe_ds_wlan_priv(ppeds_handle);
-	struct ath12k_dp *dp = ab->dp;
-	int i = 0;
-	int allocated = 0;
-	struct sk_buff *skb = NULL;
-	int flags = GFP_ATOMIC;
-	dma_addr_t paddr;
-	struct ath12k_ppeds_tx_desc_info *desc = NULL, *tmp;
-	struct ath12k_ppeds_stats *ppeds_stats = &ab->dp->ppe.ppeds_stats;
-
-#if LINUX_VERSION_IS_GEQ(4, 4, 0)
-	flags = flags & ~__GFP_KSWAPD_RECLAIM;
-#endif
-	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
-
-	list_for_each_entry_safe(desc, tmp, &dp->ppe.ppeds_tx_desc_reuse_list, list) {
-		if (!num_buff_req)
-			break;
-
-		list_del(&desc->list);
-		desc->in_use = true;
-
-		dp->ppe.ppeds_tx_desc_reuse_list_len--;
-
-		prefetch(list_next_entry(desc, list));
-		num_buff_req--;
-
-		arr[i].opaque_lo = desc->desc_id;
-		arr[i].opaque_hi = 0;
-		arr[i].buff_addr = desc->paddr;
-		allocated++;
-		i++;
-	}
-
-	if (!num_buff_req) {
-		spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
-		goto update_stats_and_ret;
-	}
-
-	list_for_each_entry_safe(desc, tmp, &dp->ppe.ppeds_tx_desc_free_list, list) {
-		if (!num_buff_req)
-			break;
-
-		list_del(&desc->list);
-		desc->in_use = true;
-
-		if (likely(!desc->skb)) {
-		       /* In skb recycler, if recyler module allocates the buffers
-			* already used by DS module to DS, then memzero, shinfo
-			* reset can be avoided, since the DS packets were not
-			* processed by SW
-			*/
-			skb = __netdev_alloc_skb_no_skb_reset(NULL, buff_size, flags);
-			if (unlikely(!skb)) {
-				desc->in_use = false;
-				list_add_tail(&desc->list, &dp->ppe.ppeds_tx_desc_free_list);
-				break;
-			}
-
-			skb_reserve(skb, headroom);
-			if (!skb->recycled_for_ds) {
-				dmac_inv_range_no_dsb((void *)skb->data,
-						      (void *)skb->data + buff_size - headroom);
-						      skb->recycled_for_ds = 1;
-			}
-
-			paddr = virt_to_phys(skb->data);
-
-			desc->skb = skb;
-			desc->paddr = paddr;
-			desc->in_use = true;
-		} else {
-			pr_warn("skb found in ppeds_tx_desc_free_list");
-		}
-
-		prefetch(list_next_entry(desc, list));
-		num_buff_req--;
-
-		arr[i].opaque_lo = desc->desc_id;
-		arr[i].opaque_hi = 0;
-		arr[i].buff_addr = desc->paddr;
-		allocated++;
-		i++;
-	}
-
-	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
-
-	dsb(st);
-
-update_stats_and_ret:
-	if (unlikely(num_buff_req))
-		ppeds_stats->tx_desc_alloc_fails += num_buff_req;
-
-	if (unlikely(!ab->stats_disable)) {
-		ppeds_stats->get_tx_desc_cnt++;
-		ppeds_stats->tx_desc_allocated += allocated;
-	}
-
-	return allocated;
-}
 
 u32 ath12k_ppeds_get_batched_tx_desc_v2(int ds_node_id,
 					struct ppe_ds_wlan_txdesc_elem *arr,
@@ -805,17 +517,6 @@ static void ath12k_dp_ppeds_del_napi_ctxt(struct ath12k_base *ab)
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
 }
 
-static void ath12k_ppeds_notify_napi_done(ppe_ds_wlan_handle_t *ppeds_handle)
-{
-	struct ath12k_base *ab = *(struct ath12k_base **)ppe_ds_wlan_priv(ppeds_handle);
-	struct ath12k_dp *dp = ab->dp;
-
-	clear_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->ppeds_service_running);
-
-	if (ab->dp_umac_reset.umac_pre_reset_in_prog)
-		ath12k_umac_reset_notify_pre_reset_done(ab);
-}
-
 void ath12k_ppeds_notify_napi_done_v2(int ds_node_id)
 {
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
@@ -828,16 +529,16 @@ void ath12k_ppeds_notify_napi_done_v2(int ds_node_id)
 }
 EXPORT_SYMBOL(ath12k_ppeds_notify_napi_done_v2);
 
-static struct ppe_ds_wlan_ops ppeds_ops = {
-	.get_tx_desc_many = ath12k_ppeds_get_batched_tx_desc,
-	.release_tx_desc_single = ath12k_ppeds_release_tx_desc_single,
-	.enable_tx_consume_intr = ath12k_ppeds_enable_srng_intr,
-	.set_tcl_prod_idx  = ath12k_ppeds_set_tcl_prod_idx,
-	.set_reo_cons_idx = ath12k_ppeds_set_reo_cons_idx,
-	.get_tcl_cons_idx = ath12k_ppeds_get_tcl_cons_idx,
-	.get_reo_prod_idx = ath12k_ppeds_get_reo_prod_idx,
-	.release_rx_desc = ath12k_ppeds_release_rx_desc,
-	.notify_napi_done = ath12k_ppeds_notify_napi_done,
+static struct ppe_ds_wlan_ops_v2 ppeds_ops_v2 = {
+	.get_tx_desc_many = ath12k_ppeds_get_batched_tx_desc_v2,
+	.release_tx_desc_single = ath12k_ppeds_release_tx_desc_single_v2,
+	.enable_tx_consume_intr = ath12k_ppeds_enable_srng_intr_v2,
+	.set_tcl_prod_idx  = ath12k_ppeds_set_tcl_prod_idx_v2,
+	.set_reo_cons_idx = ath12k_ppeds_set_reo_cons_idx_v2,
+	.get_tcl_cons_idx = ath12k_ppeds_get_tcl_cons_idx_v2,
+	.get_reo_prod_idx = ath12k_ppeds_get_reo_prod_idx_v2,
+	.release_rx_desc = ath12k_ppeds_release_rx_desc_v2,
+	.notify_napi_done = ath12k_ppeds_notify_napi_done_v2,
 };
 
 void ath12k_dp_peer_ppeds_route_setup(struct ath12k *ar, struct ath12k_link_vif *arvif,
@@ -1167,11 +868,6 @@ void ath12k_dp_ppeds_update_vp_entry(struct ath12k *ar,
 	    arvif->ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return;
 
-	if (!ab->dp->ppe.ppeds_handle) {
-		ath12k_dbg(ab, ATH12K_DBG_PPE, "DS not enabled on this chip\n");
-		return;
-	}
-
 	ppe_vp_profile_idx = arvif->ppe_vp_profile_idx;
 	vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_profile_idx];
 	if (!vp_profile) {
@@ -1205,11 +901,6 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 
 	if (vp_num <= 0 || ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return 0;
-
-	if (!ab->dp->ppe.ppeds_handle) {
-		ath12k_dbg(ab, ATH12K_DBG_PPE, "DS not enabled on this chip\n");
-		return 0;
-	}
 
 	/*Allocate a ppe vp profile for a vap */
 	ppe_vp_profile_idx = ath12k_dp_ppeds_alloc_ppe_vp_profile(ab, &vp_profile, vp_num);
@@ -1348,11 +1039,6 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 
 	if (vp_num <= 0 || ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return 0;
-
-	if (!ab->dp->ppe.ppeds_handle) {
-		ath12k_dbg(ab, ATH12K_DBG_PPE, "DS not enabled on this chip\n");
-		return 0;
-	}
 
 	if (ahvif->vif->type != NL80211_IFTYPE_AP && ahvif->vif->type != NL80211_IFTYPE_STATION) {
 		ath12k_dbg(ab, ATH12K_DBG_PPE,
@@ -1557,30 +1243,18 @@ void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif, int ppe_vp_prof
 		   vp_profile->vp_num, ppe_vp_profile_idx);
 }
 
-int ath12k_ppeds_get_handle(struct ath12k_base *ab)
-{
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		return 0;
-
-	ab->dp->ppe.ppeds_handle = ppe_ds_wlan_inst_alloc(&ppeds_ops, sizeof(struct ath12k_base *));
-	if (!ab->dp->ppe.ppeds_handle) {
-		ath12k_err(ab, "Failed to allocate ppeds soc instance\n");
-		ath12k_ppeds_detach(ab);
-		return -ENOSR;
-	}
-
-	ath12k_info(ab, "PPEDS handle obtained for ab %px ppeds_handle %px\n",
-		    ab, ab->dp->ppe.ppeds_handle);
-	return 0;
-}
-
 int ath12k_ppeds_attach(struct ath12k_base *ab)
 {
-	struct ath12k_base **abptr;
-	int i, ret;
+	int i, ret, ds_node_id;
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
+
+	if (!ab->dp->ppe.nss_plugin_ops) {
+		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
+			   ab->device_id);
+		return -EOPNOTSUPP;
+	}
 
 	ath12k_dp_ppeds_tx_cmem_init(ab, ab->dp);
 	ret = ath12k_dp_cc_ppeds_desc_init(ab);
@@ -1597,25 +1271,30 @@ int ath12k_ppeds_attach(struct ath12k_base *ab)
 		ab->dp->ppe.ppe_vp_profile[i].is_configured = false;
 	}
 
-	ret = ath12k_ppeds_get_handle(ab);
-	if (ret)
-		return ret;
+	ds_node_id = ab->dp->ppe.nss_plugin_ops->ds_inst_alloc(&ppeds_ops_v2,
+							       sizeof(struct ath12k_base *));
+
+	if (ds_node_id == PPE_VP_DS_INVALID_NODE_ID) {
+		ath12k_err(ab, "Failed to get DS node id for device_id %d\n",
+			   ab->device_id);
+		return -ENOSR;
+	}
+	ab->dp->ppe.ds_node_id = ds_node_id;
+	ds_node_map[ds_node_id] = ab;
 
 	WARN_ON(ab->dp->ppe.ppeds_soc_idx != -1);
 	/* dec ppeds_soc_idx to start from 0 */
 	ab->dp->ppe.ppeds_soc_idx = atomic_inc_return(&num_ppeds_nodes) - 1;
 
 	ath12k_info(ab,
-		   "PPEDS attach ab %px ppeds_handle %px ppeds_soc_idx %d num_ppeds_nodes %d\n",
-		   ab, ab->dp->ppe.ppeds_handle, ab->dp->ppe.ppeds_soc_idx,
+		   "PPEDS attach ab %px ppeds_soc_idx %d num_ppeds_nodes %d\n",
+		   ab, ab->dp->ppe.ppeds_soc_idx,
 		   atomic_read(&num_ppeds_nodes));
 
 	ret = ath12k_dp_ppeds_add_napi_ctxt(ab);
 	if (ret)
 		return -ENOSR;
 
-	abptr = (struct ath12k_base **)ppe_ds_wlan_priv(ab->dp->ppe.ppeds_handle);
-	*abptr = ab;
 	ath12k_info(ab, "PPEDS attach success\n");
 
 	for (i = 0; i < ATH12K_MAX_SOCS; i++) {
@@ -1649,16 +1328,20 @@ int ath12k_ppeds_detach(struct ath12k_base *ab)
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
 
-	if (!ab->dp->ppe.ppeds_handle)
-		return 0;
+	if (!ab->dp->ppe.nss_plugin_ops) {
+		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
+			   ab->device_id);
+		return -EOPNOTSUPP;
+	}
 
 	ath12k_dp_ppeds_del_napi_ctxt(ab);
 	ath12k_dp_cc_ppeds_desc_cleanup(ab);
 
 	/* free ppe-ds interrupts before freeing the instance */
 	ath12k_hif_ppeds_free_interrupts(ab);
-	ppe_ds_wlan_inst_free(ab->dp->ppe.ppeds_handle);
-	ab->dp->ppe.ppeds_handle = NULL;
+
+	ab->dp->ppe.nss_plugin_ops->ds_inst_free(ab->dp->ppe.ds_node_id);
+
 	ab->dp->ppe.ppeds_soc_idx = -1;
 	atomic_dec(&num_ppeds_nodes);
 
@@ -1686,18 +1369,18 @@ int ath12k_dp_ppeds_start(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_napi *napi_ctxt = &ab->dp->ppe.ppeds_napi_ctxt;
 	struct ppe_ds_wlan_ctx_info_handle wlan_info_hdl;
-	int ds_node_id;
 	bool umac_reset_inprogress;
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
 
-	umac_reset_inprogress = ath12k_dp_umac_reset_in_progress(ab);
-
-	if (!ab->dp->ppe.ppeds_handle) {
-		ath12k_err(ab, "ppeds_handle is null");
-		return -EINVAL;
+	if (!ab->dp->ppe.nss_plugin_ops) {
+		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
+			   ab->device_id);
+		return -EOPNOTSUPP;
 	}
+
+	umac_reset_inprogress = ath12k_dp_umac_reset_in_progress(ab);
 
 	if (!umac_reset_inprogress)
 		napi_enable(&napi_ctxt->napi);
@@ -1705,17 +1388,9 @@ int ath12k_dp_ppeds_start(struct ath12k_base *ab)
 	ab->dp->ppe.ppeds_stopped = 0;
 	wlan_info_hdl.umac_reset_inprogress = 0;
 
-	if (ppe_ds_wlan_instance_start(ab->dp->ppe.ppeds_handle,
-				       &wlan_info_hdl) != 0)
+	if (ab->dp->ppe.nss_plugin_ops->ds_inst_start(&wlan_info_hdl,
+						      ab->dp->ppe.ds_node_id) != 0)
 		return -EINVAL;
-
-	ds_node_id = ppe_ds_wlan_get_node_id(ab->dp->ppe.ppeds_handle);
-	if (ds_node_id == PPE_VP_DS_INVALID_NODE_ID) {
-		ath12k_err(ab, "Failed to get DS node id for device_id %d\n",
-			   ab->device_id);
-		return -ENOSR;
-	}
-	ab->dp->ppe.ds_node_id = ds_node_id;
 
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS start success device_id %d ds_node_id %d ppeds_soc_idx %d",
 		   ab->device_id, ab->dp->ppe.ds_node_id, ab->dp->ppe.ppeds_soc_idx);
@@ -1732,9 +1407,14 @@ void ath12k_dp_ppeds_stop(struct ath12k_base *ab)
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return;
 
+	if (!ab->dp->ppe.nss_plugin_ops) {
+		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
+			   ab->device_id);
+	}
+
 	umac_reset_in_progress = ath12k_dp_umac_reset_in_progress(ab);
 
-	if (!ab->dp->ppe.ppeds_handle || ab->dp->ppe.ppeds_stopped) {
+	if (ab->dp->ppe.ppeds_stopped) {
 		ath12k_warn(ab, "PPE DS aleady stopped!\n");
 		return;
 	}
@@ -1746,8 +1426,8 @@ void ath12k_dp_ppeds_stop(struct ath12k_base *ab)
 
 	wlan_info_hdl.umac_reset_inprogress = umac_reset_in_progress;
 
-	ppe_ds_wlan_instance_stop(ab->dp->ppe.ppeds_handle,
-				  &wlan_info_hdl);
+	ab->dp->ppe.nss_plugin_ops->ds_inst_stop(&wlan_info_hdl,
+						 ab->dp->ppe.ds_node_id);
 
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS stop success\n");
 }
@@ -1762,9 +1442,10 @@ int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *id
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		return 0;
 
-	if (!ab->dp->ppe.ppeds_handle) {
-		ath12k_err(ab, "ppeds not attached");
-		return -EINVAL;
+	if (!ab->dp->ppe.nss_plugin_ops) {
+		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
+			   ab->device_id);
+		return -EOPNOTSUPP;
 	}
 
 	ppe2tcl_ring = &ab->hal.srng_list[dp->ppe.ppe2tcl_ring.ring_id];
@@ -1774,7 +1455,9 @@ int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *id
 	reg_info.reo2ppe_ba = dp->ppe.reo2ppe_ring.paddr;
 	reg_info.ppe2tcl_num_desc = DP_PPE2TCL_RING_SIZE;
 	reg_info.reo2ppe_num_desc = DP_REO2PPE_RING_SIZE;
-	if (ppe_ds_wlan_inst_register(ab->dp->ppe.ppeds_handle, &reg_info) != true) {
+
+	if (ab->dp->ppe.nss_plugin_ops->ds_inst_register(&reg_info,
+							 ab->dp->ppe.ds_node_id) != true) {
 		ath12k_err(ab, "ppeds not attached");
 		return -EINVAL;
 	}
@@ -2089,9 +1772,7 @@ int ath12k_change_core_mask_for_ppe_rfs(struct ath12k_base *ab,
 	if (core_mask == ahvif->dp_vif.ppe_core_mask)
 		return 0;
 
-	ath12k_vif_free_vp(ahvif, wdev->netdev);
-
-	ret = ath12k_vif_alloc_vp(ahvif, PPE_VP_USER_TYPE_PASSIVE, &core_mask, wdev->netdev);
+	ret = ath12k_vif_get_vp_num(ahvif, wdev->netdev);
 	if (ret) {
 		ath12k_warn(ab, "error in enabling ppe vp for netdev %s\n",
 			    wdev->netdev->name);
@@ -2150,8 +1831,12 @@ int ath12k_vif_update_vp_config(struct ath12k_vif *ahvif, int ppe_vp_type)
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(ahvif->vif);
 	int ret;
 	uint8_t update_flags = 0;
+	struct nss_plugins_ops *plugin_ops = ath12k_get_registered_nss_plugin_ops();
 
 	if ((ahvif->dp_vif.ppe_vp_num == ATH12K_INVALID_PPE_VP_NUM) || !wdev)
+		return -EINVAL;
+
+	if (!plugin_ops)
 		return -EINVAL;
 
 	memset(&vpui, 0, sizeof(struct ppe_vp_ui));
@@ -2160,6 +1845,7 @@ int ath12k_vif_update_vp_config(struct ath12k_vif *ahvif, int ppe_vp_type)
 	update_flags |= PPE_VP_UPDATE_FLAG_VP_CORE_MASK;
 	update_flags |= PPE_VP_UPDATE_FLAG_VP_USR_TYPE;
 	vpui.update_flags = update_flags;
+	vpui.stats_cb = ath12k_stats_update_ppe_vp;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* Direct Switching */
 	switch (ppe_vp_type) {
@@ -2173,7 +1859,7 @@ int ath12k_vif_update_vp_config(struct ath12k_vif *ahvif, int ppe_vp_type)
 	}
 #endif
 
-	ret = ppe_vp_cfg_update(ahvif->dp_vif.ppe_vp_num, &vpui);
+	ret = plugin_ops->vp_cfg_update(wdev->netdev, &vpui);
 
 	if (ret) {
 		ath12k_err(NULL, "failed to update ppe vp config type %d err %d\n",
@@ -2184,8 +1870,8 @@ int ath12k_vif_update_vp_config(struct ath12k_vif *ahvif, int ppe_vp_type)
 	ahvif->dp_vif.ppe_vp_type = ppe_vp_type;
 
 	ath12k_dbg(NULL, ATH12K_DBG_PPE,
-		    "Updated PPE VP port no %d for dev %s type %d\n",
-		    ahvif->dp_vif.ppe_vp_num, wdev->netdev->name, ahvif->dp_vif.ppe_vp_type);
+		   "Updated PPE VP port no %d for dev %s type %d\n",
+		   ahvif->dp_vif.ppe_vp_num, wdev->netdev->name, ahvif->dp_vif.ppe_vp_type);
 exit:
 	return ret;
 }
@@ -2208,86 +1894,34 @@ int ath12k_vif_set_mtu(struct ath12k_vif *ahvif, int mtu)
 }
 EXPORT_SYMBOL(ath12k_vif_set_mtu);
 
-int ath12k_vif_alloc_vp(struct ath12k_vif *ahvif, int ppe_vp_type, int *core_mask,
-			struct net_device *dev)
+int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
 {
 	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
-	struct ppe_vp_ai vpai;
+	struct nss_plugins_ops *plugin_ops = ath12k_get_registered_nss_plugin_ops();
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
 		return 0;
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (ppe_vp_type == PPE_VP_USER_TYPE_DS && !ath12k_ppe_ds_enabled)
-		return 0;
-
-	if (ppe_vp_type == PPE_VP_USER_TYPE_DS &&
-	    (ahvif->vif->type != NL80211_IFTYPE_AP &&
-	     ahvif->vif->type != NL80211_IFTYPE_AP_VLAN &&
-	     ahvif->vif->type != NL80211_IFTYPE_STATION)) {
-		ath12k_err(NULL, "invalid vif type %d for DS\n", ahvif->vif->type);
+	if (!plugin_ops)
 		return -EINVAL;
-	}
-#endif
 
-	ahvif->dp_vif.ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
-
-	memset(&vpai, 0, sizeof(struct ppe_vp_ai));
-
-	/* Fill all the flags required by active as well as DS mode.
-	 * Later according to the VP type the relevant information is used.
-	 */
-	vpai.type = PPE_VP_TYPE_SW_L2;
-	vpai.net_dev_type = PPE_VP_NET_DEV_TYPE_WIFI;
-	vpai.queue_num = 0;
-	vpai.stats_cb = ath12k_stats_update_ppe_vp;
-	vpai.net_dev_flags = PPE_VP_NET_DEV_FLAG_IS_MLD;
-
-	/* RFS */
-	switch (ppe_vp_type) {
-	case PPE_VP_USER_TYPE_PASSIVE:
-		vpai.usr_type = PPE_VP_USER_TYPE_PASSIVE;
-
-		/* user input takes highest precedence */
-		if (core_mask)
-			vpai.core_mask = *core_mask;
-		else
-			vpai.core_mask = ath12k_ppe_rfs_get_core_mask();
-
-		ppe_vp_num = ppe_vp_alloc(dev, &vpai);
-		break;
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	/* Direct Switching */
-	case PPE_VP_USER_TYPE_DS:
-		vpai.core_mask = ATH12K_PPE_DEFAULT_CORE_MASK;
-		vpai.usr_type = PPE_VP_USER_TYPE_DS;
-		ppe_vp_num = ppe_ds_wlan_vp_alloc(NULL, dev, &vpai);
-		break;
-#endif
-	case PPE_VP_USER_TYPE_ACTIVE:
-		vpai.usr_type = PPE_VP_USER_TYPE_ACTIVE;
-		vpai.core_mask = ATH12K_PPE_DEFAULT_CORE_MASK;
-		ppe_vp_num = ppe_vp_alloc(dev, &vpai);
-		break;
-	}
+	ppe_vp_num = plugin_ops->get_vp_num(dev);
 
 	if (ppe_vp_num <= 0) {
-		ath12k_err(NULL, "Error in enabling PPE VP type %d for netdev %s err %d\n",
-			   vpai.usr_type, dev->name, ppe_vp_num);
+		ath12k_dbg(NULL, ATH12K_DBG_PPE,
+			   "Error in getting VP num for netdev %s err %d\n",
+			   dev->name, ppe_vp_num);
 		return -ENOSR;
 	}
 
 	ahvif->dp_vif.ppe_vp_num = ppe_vp_num;
-	ahvif->dp_vif.ppe_vp_type = ppe_vp_type;
-	ahvif->dp_vif.ppe_core_mask = vpai.core_mask;
 
 	ath12k_dbg(NULL, ATH12K_DBG_PPE,
-		    "Enabling PPE VP type %d for dev %s vp_num %d core_mask 0x%x\n",
-		    ppe_vp_type, dev->name,
-		    ahvif->dp_vif.ppe_vp_num, ahvif->dp_vif.ppe_core_mask);
+		   "PPE VP assignment: device '%s' VP num %d assigned by ath client\n",
+		   dev->name, ahvif->dp_vif.ppe_vp_num);
 	return 0;
 }
-EXPORT_SYMBOL(ath12k_vif_alloc_vp);
+EXPORT_SYMBOL(ath12k_vif_get_vp_num);
 
 static void
 ath12k_dp_rx_ppeds_fse_update_flow_info(struct ath12k_base *ab,
@@ -2444,30 +2078,6 @@ ath12k_dp_rx_ppeds_fse_del_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 }
 EXPORT_SYMBOL(ath12k_dp_rx_ppeds_fse_del_flow_entry);
 
-void ath12k_dp_rx_ppe_fse_register(void)
-{
-	struct ppe_drv_fse_ops ppe_fse_ops;
-	bool ret;
-
-	if (!ath12k_fse_enable)
-		return;
-
-	ppe_fse_ops.create_fse_rule = ath12k_dp_rx_ppeds_fse_add_flow_entry;
-	ppe_fse_ops.destroy_fse_rule = ath12k_dp_rx_ppeds_fse_del_flow_entry;
-
-	ret = ppe_drv_fse_ops_register(&ppe_fse_ops);
-	if (!ret)
-		ath12k_err(NULL, "failed to register FSE callback with PPE driver\n");
-}
-
-void ath12k_dp_rx_ppe_fse_unregister(void)
-{
-	if (!ath12k_fse_enable)
-		return;
-
-	ppe_drv_fse_ops_unregister();
-}
-
 void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
 					    bool enable)
 {
@@ -2476,7 +2086,8 @@ void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
 	if (enable)
 		set_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->ppeds_service_running);
 
-	ppe_ds_wlan_service_status_update(ab->dp->ppe.ppeds_handle, enable);
+	if (ab->dp->ppe.nss_plugin_ops)
+		ab->dp->ppe.nss_plugin_ops->service_status_update(ab->dp->ppe.ds_node_id, enable);
 }
 
 void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
@@ -2494,3 +2105,25 @@ void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab)
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 }
 
+int ath12k_nss_plugin_register_ops(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ab->dp;
+
+	dp->ppe.nss_plugin_ops = qca_nss_wifi_plugins_get_ops();
+	nss_plugin_ops_ptr = dp->ppe.nss_plugin_ops;
+	if (!dp->ppe.nss_plugin_ops) {
+		ath12k_err(ab, " error in registering nss plugin ops\n");
+		return -EINVAL;
+	}
+
+	ath12k_info(ab, "NSS plugin ops registered successfully\n");
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_nss_plugin_register_ops);
+
+void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab)
+{
+	ab->dp->ppe.nss_plugin_ops = NULL;
+}
+EXPORT_SYMBOL(ath12k_nss_plugin_unregister_ops);

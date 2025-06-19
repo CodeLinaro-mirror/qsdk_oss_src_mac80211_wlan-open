@@ -15826,10 +15826,13 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	/* Reuse existing vp_num during Subsystem Recovery and
-	 * when the VAP is coming up.
-	 * Note: VP is already allocated at the time of netdev init
+	/* Get the VP number from the nss-wifi plugin,
+	 * which is allocated during netdev initialization.
+	 * This also handles Subsystem Recovery scenarios.
 	 */
+	if (ath12k_vif_get_vp_num(ahvif, wdev->netdev))
+		ath12k_dbg(NULL, ATH12K_DBG_PPE, "failed to get VP num from nss-wifi-plugin\n");
+
 	if (ahvif->dp_vif.ppe_vp_num > 0) {
 		ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
 		ppe_core_mask = ahvif->dp_vif.ppe_core_mask;
@@ -15866,7 +15869,15 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		ppe_vp_type = wdev->ppe_vp_type;
 		break;
 	default:
-		ppe_vp_type = PPE_VP_USER_TYPE_PASSIVE;
+
+	/* Set default PPE VP type to ACTIVE to ensure VP allocation during interface
+	 * creation in Mesh mode. Previously, the default was PASSIVE, which caused
+	 * VP allocation to be freed in the ath client. This led to failures when
+	 * vendor commands attempted to update VP TYPE as Active, as no VP was associated
+	 * with the netdev. Changing the default to ACTIVE ensures that VP is not freed
+	 * till the vendor command is received which updates the correct PPE VP type.
+	 */
+		ppe_vp_type = PPE_VP_USER_TYPE_ACTIVE;
 	}
 
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
@@ -15908,10 +15919,8 @@ ppe_vp_config:
 			if (ahvif->dp_vif.ppe_vp_type == PPE_VP_USER_TYPE_DS)
 				ret = ath12k_vif_update_vp_config(ahvif, PPE_VP_USER_TYPE_PASSIVE);
 
-			if (ret) {
-				ath12k_vif_free_vp(ahvif, wdev->netdev);
+			if (ret)
 				return ret;
-			}
 		}
 
 		vlan_iface->parent_vif = vlan_master_vif;
@@ -16133,7 +16142,6 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif), *vlan_master_ahvif = NULL;
 	struct ieee80211_vif *vlan_master_vif = NULL;
-	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar;
 	u8 link_id;
@@ -16207,8 +16215,6 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ath12k_mac_unassign_link_vif(arvif);
 	}
 
-	/* free ppe vp allocated for RFS */
-	ath12k_vif_free_vp(ahvif, wdev->netdev);
 	kfree(ahvif->vlan_iface);
 	ahvif->vlan_iface = NULL;
 }

@@ -1190,7 +1190,6 @@ struct dp_rx_fst *ath12k_dp_rx_fst_attach(struct ath12k_base *ab)
 
 	spin_lock_init(&fst->fst_lock);
 
-	ath12k_dp_rx_ppe_fse_register();
 	ath12k_info(ab, "Rx FST attach successful\n");
 
 	return fst;
@@ -1203,7 +1202,6 @@ void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst)
 	if (!fst)
 		return;
 
-	ath12k_dp_rx_ppe_fse_unregister();
 	ath12k_dp_arch_rx_fst_detach(dp, fst);
 	kfree(fst);
 }

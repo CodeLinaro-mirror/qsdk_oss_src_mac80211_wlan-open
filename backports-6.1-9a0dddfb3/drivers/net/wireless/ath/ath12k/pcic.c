@@ -703,7 +703,7 @@ int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int 
 				       ath12k_ds_ppe2tcl_irq_handler,
 				       IRQF_NO_SUSPEND,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
-				       (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+				       (void *)ab);
 		if (ret)
 			goto irq_fail;
 		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL] = irq;
@@ -719,7 +719,7 @@ int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int 
 				       ath12k_ds_reo2ppe_irq_handler,
 				       IRQF_SHARED,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
-				       (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+				       (void *)ab);
 		if (ret)
 			goto irq_fail;
 		ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE] = irq;
@@ -764,10 +764,10 @@ void ath12k_pcic_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type ty
 void ath12k_pcic_ppeds_free_interrupts(struct ath12k_base *ab)
 {
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL]);
-	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL], ath12k_dp_get_ppe_ds_ctxt(ab));
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL], ab);
 
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE]);
-	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ath12k_dp_get_ppe_ds_ctxt(ab));
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ab);
 
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL]);
 	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
@@ -1276,7 +1276,7 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ret = request_irq(irq,  ath12k_ds_ppe2tcl_irq_handler,
 				  IRQF_NO_SUSPEND,
 				  ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
-				  (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+				  (void *)ab);
 		if (ret)
 			goto irq_fail;
 
@@ -1289,7 +1289,7 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ret = request_irq(irq, ath12k_ds_reo2ppe_irq_handler,
 				  IRQF_SHARED,
 				  ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
-				  (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+				  (void *)ab);
 		if (ret)
 			goto irq_fail;
 
@@ -1331,10 +1331,10 @@ void ath12k_pci_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type typ
 void ath12k_pci_ppeds_free_interrupts(struct ath12k_base *ab)
 {
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL]);
-	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL], ath12k_dp_get_ppe_ds_ctxt(ab));
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL], ab);
 
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE]);
-	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ath12k_dp_get_ppe_ds_ctxt(ab));
+	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ab);
 
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL]);
 	free_irq(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
