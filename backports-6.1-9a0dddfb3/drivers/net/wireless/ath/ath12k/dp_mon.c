@@ -4610,6 +4610,73 @@ int ath12k_dp_mon_rx_htt_srng_setup(struct ath12k_dp *dp)
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_htt_srng_setup);
 
+int ath12k_dp_mon_pdev_rx_srng_setup(struct ath12k_pdev_dp *dp_pdev,
+				     u32 mac_id)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	int i;
+	int ret;
+
+	for (i = 0; i < dp->hw_params->num_rxdma_per_pdev; i++) {
+		ret = ath12k_dp_srng_setup(dp->ab,
+					   &dp_pdev->dp_mon_pdev->rxdma_mon_dst_ring[i],
+					   HAL_RXDMA_MONITOR_DST,
+					   0, mac_id + i,
+					   DP_RXDMA_MONITOR_DST_RING_SIZE);
+		if (ret) {
+			ath12k_warn(dp->ab,
+				    "failed to setup HAL_RXDMA_MONITOR_DST\n");
+			return ret;
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_srng_setup);
+
+int ath12k_dp_mon_pdev_rx_htt_srng_setup(struct ath12k_pdev_dp *dp_pdev,
+					 u32 mac_id)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	u32 ring_id;
+	int i;
+	int ret;
+
+	for (i = 0; i < dp->hw_params->num_rxdma_per_pdev; i++) {
+		ring_id = dp_pdev->dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
+		ret = ath12k_dp_tx_htt_srng_setup(dp->ab, ring_id,
+						  mac_id + i,
+						  HAL_RXDMA_MONITOR_DST);
+		if (ret) {
+			ath12k_warn(dp->ab,
+				    "failed to configure rxdma_mon_dst_ring %d %d\n",
+				    i, ret);
+			return ret;
+		}
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_htt_srng_setup);
+
+void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon)
+{
+	INIT_LIST_HEAD(&pmon->dp_rx_mon_mpdu_list);
+	pmon->mon_mpdu = NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_mpdu_list_init);
+
+void ath12k_dp_mon_pdev_rx_srng_cleanup(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	int i;
+
+	for (i = 0; i < dp->hw_params->num_rxdma_per_pdev; i++)
+		ath12k_dp_srng_cleanup(dp->ab,
+				       &dp_pdev->dp_mon_pdev->rxdma_mon_dst_ring[i]);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_srng_cleanup);
+
 int ath12k_dp_mon_init(struct ath12k_dp *dp)
 {
 	struct ath12k_dp_mon *dp_mon;
@@ -4652,6 +4719,30 @@ void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 	dp_pdev->dp_mon_pdev = NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_free);
+
+void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_mon_data *pmon = &dp_mon_pdev->mon_data;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	skb_queue_head_init(&pmon->rx_status_q);
+
+	pmon->mon_ppdu_status = DP_PPDU_STATUS_START;
+
+	memset(&pmon->rx_mon_stats, 0,
+	       sizeof(pmon->rx_mon_stats));
+
+	pmon->mon_last_linkdesc_paddr = 0;
+	pmon->mon_last_buf_cookie = DP_RX_DESC_COOKIE_MAX + 1;
+	spin_lock_init(&pmon->mon_lock);
+
+	mon_ops = ath12k_dp_mon_ops_get(dp_pdev->dp);
+
+	if (mon_ops && mon_ops->mon_pdev_rx_mpdu_list_init)
+		mon_ops->mon_pdev_rx_mpdu_list_init(pmon);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_attach);
 
 static void ath12k_dp_mon_clear_pdev_airtime_stats(struct ath12k *ar)
 {

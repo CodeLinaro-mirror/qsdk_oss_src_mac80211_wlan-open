@@ -19,6 +19,11 @@ struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.rx_htt_srng_setup = ath12k_wifi7_dp_mon_rx_htt_srng_setup,
 	.mon_pdev_alloc = ath12k_dp_mon_pdev_alloc,
 	.mon_pdev_free = ath12k_dp_mon_pdev_free,
+	.mon_pdev_rx_srng_setup = NULL,
+	.mon_pdev_rx_srng_cleanup = NULL,
+	.mon_pdev_rx_htt_srng_setup = NULL,
+	.mon_pdev_rx_attach = ath12k_dp_mon_pdev_rx_attach,
+	.mon_pdev_rx_mpdu_list_init = NULL,
 };
 
 int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)

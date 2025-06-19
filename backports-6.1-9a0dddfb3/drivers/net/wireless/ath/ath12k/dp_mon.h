@@ -10,6 +10,7 @@
 #include "core.h"
 #include "dp_peer.h"
 #include "wifi7/hal_desc.h"
+#include "debug.h"
 
 #define ATH12K_MON_RX_DOT11_OFFSET	5
 #define ATH12K_MON_RX_PKT_OFFSET	8
@@ -40,6 +41,8 @@
 				  RX_MON_STATUS_BUF_ALIGN + \
 				  SKB_DATA_ALIGN(sizeof(struct skb_shared_info))))
 
+struct ath12k_mon_data;
+
 struct dp_rxdma_mon_ring {
 	struct dp_srng refill_buf_ring;
 	struct idr bufs_idr;
@@ -56,6 +59,13 @@ struct ath12k_dp_arch_mon_ops {
 	int (*rx_htt_srng_setup)(struct ath12k_dp *dp);
 	int (*mon_pdev_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_pdev_free)(struct ath12k_pdev_dp *dp_pdev);
+	int (*mon_pdev_rx_srng_setup)(struct ath12k_pdev_dp *dp_pdev,
+				      u32 mac_id);
+	void (*mon_pdev_rx_srng_cleanup)(struct ath12k_pdev_dp *dp_pdev);
+	int (*mon_pdev_rx_htt_srng_setup)(struct ath12k_pdev_dp *dp_pdev,
+					  u32 mac_id);
+	void (*mon_pdev_rx_attach)(struct ath12k_pdev_dp *dp_pdev);
+	void (*mon_pdev_rx_mpdu_list_init)(struct ath12k_mon_data *pmon);
 };
 
 struct ath12k_dp_mon {
@@ -257,6 +267,13 @@ void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp);
 int ath12k_dp_mon_rx_htt_srng_setup(struct ath12k_dp *dp);
 int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_pdev_rx_srng_setup(struct ath12k_pdev_dp *dp_pdev,
+				     u32 mac_id);
+void ath12k_dp_mon_pdev_rx_srng_cleanup(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_pdev_rx_htt_srng_setup(struct ath12k_pdev_dp *dp_pdev,
+					 u32 mac_id);
+void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -335,5 +352,68 @@ void ath12k_dp_mon_pdev_deinit(struct ath12k_pdev_dp *dp_pdev)
 
 	if (mon_ops && mon_ops->mon_pdev_free)
 		mon_ops->mon_pdev_free(dp_pdev);
+}
+
+static inline
+int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
+				u32 mac_id)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops) {
+		ath12k_warn(dp, "mon ops is NULL\n");
+		return -EINVAL;
+	}
+
+	if (mon_ops->mon_pdev_rx_srng_setup) {
+		ret = mon_ops->mon_pdev_rx_srng_setup(dp_pdev,
+						      mac_id);
+		if (ret) {
+			ath12k_warn(dp, "failed to setup HAL_RXDMA_MONITOR_DST\n");
+			return -ENOMEM;
+		}
+	}
+
+	return 0;
+}
+
+static inline
+int ath12k_dp_mon_pdev_rx_htt_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops->mon_pdev_rx_htt_srng_setup) {
+		ret = mon_ops->mon_pdev_rx_htt_srng_setup(dp_pdev,
+							  mac_id);
+		if (ret) {
+			ath12k_warn(dp, "htt setup failed for HAL_RXDMA_MONITOR_DST\n");
+			return ret;
+		}
+	}
+
+	if (mon_ops->mon_pdev_rx_attach)
+		mon_ops->mon_pdev_rx_attach(dp_pdev);
+
+	return 0;
+}
+
+static inline
+void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_pdev_rx_srng_cleanup)
+		mon_ops->mon_pdev_rx_srng_cleanup(dp_pdev);
 }
 #endif

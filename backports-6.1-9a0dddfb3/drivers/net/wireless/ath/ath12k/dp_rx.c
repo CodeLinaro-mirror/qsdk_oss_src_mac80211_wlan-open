@@ -428,17 +428,6 @@ static int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab)
 	return 0;
 }
 
-static void ath12k_dp_rx_pdev_srng_free(struct ath12k *ar)
-{
-	struct ath12k_pdev_dp *dp = &ar->dp;
-	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
-	struct ath12k_base *ab = ar->ab;
-	int i;
-
-	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++)
-		ath12k_dp_srng_cleanup(ab, &dp_mon_pdev->rxdma_mon_dst_ring[i]);
-}
-
 void ath12k_dp_rx_pdev_reo_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -470,31 +459,6 @@ err_reo_cleanup:
 	ath12k_dp_rx_pdev_reo_cleanup(ab);
 
 	return ret;
-}
-
-static int ath12k_dp_rx_pdev_srng_alloc(struct ath12k *ar)
-{
-	struct ath12k_pdev_dp *dp = &ar->dp;
-	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
-	struct ath12k_base *ab = ar->ab;
-	int i;
-	int ret;
-	u32 mac_id = dp->mac_id;
-
-	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		ret = ath12k_dp_srng_setup(ar->ab,
-					   &dp_mon_pdev->rxdma_mon_dst_ring[i],
-					   HAL_RXDMA_MONITOR_DST,
-					   0, mac_id + i,
-					   DP_RXDMA_MONITOR_DST_RING_SIZE);
-		if (ret) {
-			ath12k_warn(ar->ab,
-				    "failed to setup HAL_RXDMA_MONITOR_DST\n");
-			return ret;
-		}
-	}
-
-	return 0;
 }
 
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
@@ -1030,13 +994,6 @@ void ath12k_dp_rx_free(struct ath12k_base *ab)
 		ath12k_dp_srng_cleanup(ab, &dp->rxdma_err_dst_ring[i]);
 }
 
-void ath12k_dp_rx_pdev_free(struct ath12k_base *ab, int mac_id)
-{
-	struct ath12k *ar = ab->pdevs[mac_id].ar;
-
-	ath12k_dp_rx_pdev_srng_free(ar);
-}
-
 int
 ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
 					 struct ath12k_dp_htt_rxdma_ppe_cfg_param *param)
@@ -1183,82 +1140,6 @@ int ath12k_dp_rx_alloc(struct ath12k_base *ab)
 		ath12k_warn(ab, "failed to setup rxdma ring\n");
 		return ret;
 	}
-
-	return 0;
-}
-
-int ath12k_dp_rx_pdev_alloc(struct ath12k_base *ab, int mac_id)
-{
-	struct ath12k *ar = ab->pdevs[mac_id].ar;
-	struct ath12k_pdev_dp *dp = &ar->dp;
-	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
-	u32 ring_id;
-	int i;
-	int ret;
-
-	if (!ab->hw_params->rxdma1_enable)
-		goto out;
-
-	ret = ath12k_dp_rx_pdev_srng_alloc(ar);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rx srngs\n");
-		return ret;
-	}
-
-	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		ring_id = dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
-		ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id,
-						  mac_id + i,
-						  HAL_RXDMA_MONITOR_DST);
-		if (ret) {
-			ath12k_warn(ab,
-				    "failed to configure rxdma_mon_dst_ring %d %d\n",
-				    i, ret);
-			return ret;
-		}
-	}
-out:
-	return 0;
-}
-
-static int ath12k_dp_rx_pdev_mon_status_attach(struct ath12k *ar)
-{
-	struct ath12k_pdev_dp *dp = &ar->dp;
-	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
-	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
-
-	skb_queue_head_init(&pmon->rx_status_q);
-
-	pmon->mon_ppdu_status = DP_PPDU_STATUS_START;
-
-	memset(&pmon->rx_mon_stats, 0,
-	       sizeof(pmon->rx_mon_stats));
-	memset(&dp->stats, 0, sizeof(dp->stats));
-	return 0;
-}
-
-int ath12k_dp_rx_pdev_mon_attach(struct ath12k *ar)
-{
-	struct ath12k_pdev_dp *dp = &ar->dp;
-	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
-	struct ath12k_mon_data *pmon = &dp_mon_pdev->mon_data;
-	int ret = 0;
-
-	ret = ath12k_dp_rx_pdev_mon_status_attach(ar);
-	if (ret) {
-		ath12k_warn(ar->ab, "pdev_mon_status_attach() failed");
-		return ret;
-	}
-
-	pmon->mon_last_linkdesc_paddr = 0;
-	pmon->mon_last_buf_cookie = DP_RX_DESC_COOKIE_MAX + 1;
-	spin_lock_init(&pmon->mon_lock);
-
-	if (!ar->ab->hw_params->rxdma1_enable)
-		return 0;
-
-	INIT_LIST_HEAD(&pmon->dp_rx_mon_mpdu_list);
-	pmon->mon_mpdu = NULL;
 
 	return 0;
 }

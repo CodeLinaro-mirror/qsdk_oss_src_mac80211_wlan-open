@@ -1077,7 +1077,7 @@ void ath12k_dp_pdev_free(struct ath12k_base *ab)
 
 	for (i = 0; i < ab->num_radios; i++) {
 		ar = ab->pdevs[i].ar;
-		ath12k_dp_rx_pdev_free(ab, i);
+		ath12k_dp_mon_pdev_rx_free(&ar->dp);
 		ath12k_fw_stats_free(&ar->fw_stats);
 		ath12k_dp_mon_pdev_deinit(&ar->dp);
 	}
@@ -1141,17 +1141,13 @@ int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
 			goto err;
 		}
 
-		ret = ath12k_dp_rx_pdev_alloc(ab, i);
-		if (ret) {
-			ath12k_warn(ab, "failed to allocate mon pdev rx for pdev_id :%d\n",
-				    i);
+		ret = ath12k_dp_mon_pdev_rx_alloc(dp_pdev, i);
+		if (ret)
 			goto err;
-		}
-		ret = ath12k_dp_rx_pdev_mon_attach(ar);
-		if (ret) {
-			ath12k_warn(ab, "failed to initialize mon pdev %d\n", i);
+
+		ret = ath12k_dp_mon_pdev_rx_htt_setup(dp_pdev, i);
+		if (ret)
 			goto err;
-		}
 	}
 
 	ret = ath12k_dp_ppeds_start(ab);

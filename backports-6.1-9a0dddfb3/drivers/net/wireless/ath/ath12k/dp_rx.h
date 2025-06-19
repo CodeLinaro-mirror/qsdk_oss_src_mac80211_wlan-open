@@ -180,14 +180,11 @@ void ath12k_dp_rx_pdev_reo_cleanup(struct ath12k_base *ab);
 int ath12k_dp_rx_htt_setup(struct ath12k_base *ab);
 int ath12k_dp_rx_alloc(struct ath12k_base *ab);
 void ath12k_dp_rx_free(struct ath12k_base *ab);
-int ath12k_dp_rx_pdev_alloc(struct ath12k_base *ab, int pdev_idx);
-void ath12k_dp_rx_pdev_free(struct ath12k_base *ab, int pdev_idx);
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab);
 int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_ring *rx_ring,
 				struct list_head *used_list,
 				int req_entries);
-int ath12k_dp_rx_pdev_mon_attach(struct ath12k *ar);
 int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 				 struct ath12k_dp_link_peer *peer,
 				 struct crypto_shash *tfm);
