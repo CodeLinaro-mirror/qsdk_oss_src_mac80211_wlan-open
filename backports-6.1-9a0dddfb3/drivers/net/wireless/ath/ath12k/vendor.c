@@ -1037,12 +1037,13 @@ static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
 	u8 link_id = 0;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE + 1];
 	u8 ap_6ghz_pwr_mode;
-	struct cfg80211_chan_def *chan_def;
 	int err;
-	u32 prohibited_flags;
 
 	if (!wdev)
 		return -EINVAL;
+
+	if (wdev->iftype != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
 
 	if (!data || !data_len) {
 		ath12k_err(NULL, "Invalid data length data ptr: %pK ", data);
@@ -1057,7 +1058,11 @@ static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
 	}
 
 	for_each_valid_link(wdev, link_id) {
-		if (wdev->links[link_id].ap.chandef.chan->band ==
+		if (!wdev->links[link_id].ap.beacon_interval)
+			continue;
+
+		if (wdev->links[link_id].ap.chandef.chan &&
+		    wdev->links[link_id].ap.chandef.chan->band ==
 		    NL80211_BAND_6GHZ)
 			break;
 	}
@@ -1069,8 +1074,6 @@ static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
 	if (!ar)
 		return -ENODATA;
 
-	chan_def = &wdev->links[link_id].ap.chandef;
-
 	if (!tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE])
 		return -EINVAL;
 
@@ -1081,15 +1084,6 @@ static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
 	    ap_6ghz_pwr_mode > QCA_WLAN_VENDOR_6GHZ_PWR_MODE_AP_VLP) {
 		ath12k_err(NULL, "Invalid 6 GHZ pwr mode configuration");
 		return -EINVAL;
-	}
-
-	prohibited_flags = IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_IR;
-	err = cfg80211_validate_freq_width_for_pwr_mode(wiphy, chan_def,
-							ap_6ghz_pwr_mode,
-							prohibited_flags);
-	if (err) {
-		ath12k_err(NULL, "Current chan does not support the power mode");
-		return err;
 	}
 
 	err = ieee80211_6ghz_power_mode_change(wiphy, wdev,
@@ -1170,7 +1164,8 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_6ghz_power_mode_change,
 		.policy = ath12k_cfg80211_power_mode_set_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX,
-		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
 	},
 };
 
