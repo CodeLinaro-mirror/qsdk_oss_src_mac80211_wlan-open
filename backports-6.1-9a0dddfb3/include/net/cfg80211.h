@@ -10465,13 +10465,15 @@ void cfg80211_update_muedca_params_event(struct wiphy *wiphy,
  * @wiphy: the wiphy
  * @chan_def: Channel definition
  * @reg_6ghz_power_mode: 6 GHz Power mode
+ * @prohibited_flags: Prohibited flags for the channel taht must not be set
  *
  * Return 0 if frequency and width combination is supported in the input 6 GHz
  * power mode, else return error.
  */
 int cfg80211_validate_freq_width_for_pwr_mode(struct wiphy *wiphy,
 					      struct cfg80211_chan_def *chandef,
-					      u8 reg_6ghz_power_mode0);
+					      u8 reg_6ghz_power_mode,
+					      u32 prohibited_flags);
 
 /**
  * cfg80211_update_link_reconfig_remove_update - Inform userspace about

@@ -1851,37 +1851,17 @@ bool _cfg80211_chandef_usable(struct wiphy *wiphy,
 
 int cfg80211_validate_freq_width_for_pwr_mode(struct wiphy *wiphy,
 					      struct cfg80211_chan_def *chandef,
-					      u8 reg_6ghz_power_mode)
+					      u8 reg_6ghz_power_mode,
+					      u32 prohibited_flags)
 {
-	u8 i, num_20mhz_channels;
-	int start_freq_oper, center_freq;
-	struct ieee80211_channel *chan;
-	u16 width;
+	struct ieee80211_channel *c;
 
-	if (chandef->width == NL80211_CHAN_WIDTH_20)
-		width = 20;
-	else if (chandef->width == NL80211_CHAN_WIDTH_40)
-		width = 40;
-	else if (chandef->width == NL80211_CHAN_WIDTH_80)
-		width = 80;
-	else if (chandef->width == NL80211_CHAN_WIDTH_160)
-		width = 160;
-	else if (chandef->width == NL80211_CHAN_WIDTH_320)
-		width = 320;
-	else
-		return -EINVAL;
+	for_each_subchan(chandef, freq, cf) {
+		c = ieee80211_get_6g_channel_khz(wiphy, freq, reg_6ghz_power_mode);
+		if (!c)
+			return -EINVAL;
 
-	num_20mhz_channels = width / 20;
-	start_freq_oper =
-		cfg80211_get_start_freq(chandef, 1);
-
-	for (i = 0; i < num_20mhz_channels; i++) {
-		center_freq = start_freq_oper + (i * MHZ_TO_KHZ(20));
-		chan = ieee80211_get_6g_channel_khz(wiphy,
-						    center_freq,
-						    reg_6ghz_power_mode);
-
-		if (!chan || chan->flags & IEEE80211_CHAN_DISABLED)
+		if (c->flags & prohibited_flags)
 			return -EOPNOTSUPP;
 	}
 

@@ -3802,6 +3802,31 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		if (attrs[NL80211_ATTR_CENTER_FREQ2])
 			chandef->center_freq2 =
 				nla_get_u32(attrs[NL80211_ATTR_CENTER_FREQ2]);
+
+		if (info->attrs[NL80211_ATTR_PUNCT_BITMAP]) {
+			chandef->punctured =
+				nla_get_u32(info->attrs[NL80211_ATTR_PUNCT_BITMAP]);
+
+			if (chandef->punctured &&
+			    !wiphy_ext_feature_isset(&rdev->wiphy,
+						     NL80211_EXT_FEATURE_PUNCT)) {
+				NL_SET_ERR_MSG(extack,
+					       "driver doesn't support puncturing");
+				return -EINVAL;
+			}
+		}
+
+		if (control_freq >= MHZ_TO_KHZ(5945) && control_freq <= MHZ_TO_KHZ(7125)) {
+			u32 prohibited_flags = IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_IR;
+			err = cfg80211_validate_freq_width_for_pwr_mode(&rdev->wiphy,
+									chandef,
+									mode,
+									prohibited_flags);
+			if (err) {
+				NL_SET_ERR_MSG(extack, "Invalid frequency for power mode");
+				return err;
+			}
+		}
 	}
 
 	if (info->attrs[NL80211_ATTR_WIPHY_EDMG_CHANNELS]) {
@@ -3814,19 +3839,6 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 	} else {
 		chandef->edmg.bw_config = 0;
 		chandef->edmg.channels = 0;
-	}
-
-	if (info->attrs[NL80211_ATTR_PUNCT_BITMAP]) {
-		chandef->punctured =
-			nla_get_u32(info->attrs[NL80211_ATTR_PUNCT_BITMAP]);
-
-		if (chandef->punctured &&
-		    !wiphy_ext_feature_isset(&rdev->wiphy,
-					     NL80211_EXT_FEATURE_PUNCT)) {
-			NL_SET_ERR_MSG(extack,
-				       "driver doesn't support puncturing");
-			return -EINVAL;
-		}
 	}
 
 	if (!cfg80211_chandef_valid(chandef)) {
