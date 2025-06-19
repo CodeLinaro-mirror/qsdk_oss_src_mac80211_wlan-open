@@ -38,6 +38,7 @@ struct hal_reo_dest_ring;
 enum hal_wbm_rel_bm_act;
 struct dp_rx_fst;
 struct ath12k_dp_mon;
+struct ath12k_pdev_mon_dp;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
@@ -57,31 +58,6 @@ struct dp_tx_ring {
 	struct hal_wbm_completion_ring_tx *tx_status;
 	int tx_status_head;
 	int tx_status_tail;
-};
-
-struct ath12k_pdev_mon_stats {
-	u32 status_ppdu_state;
-	u32 status_ppdu_start;
-	u32 status_ppdu_end;
-	u32 status_ppdu_compl;
-	u32 status_ppdu_start_mis;
-	u32 status_ppdu_end_mis;
-	u32 status_ppdu_done;
-	u32 dest_ppdu_done;
-	u32 dest_mpdu_done;
-	u32 dest_mpdu_drop;
-	u32 dup_mon_linkdesc_cnt;
-	u32 dup_mon_buf_cnt;
-	u32 dest_mon_stuck;
-	u32 dest_mon_not_reaped;
-};
-
-enum dp_mon_status_buf_state {
-	DP_MON_STATUS_MATCH,
-	DP_MON_STATUS_NO_DMA,
-	DP_MON_STATUS_LAG,
-	DP_MON_STATUS_LEAD,
-	DP_MON_STATUS_REPLINISH,
 };
 
 struct dp_link_desc_bank {
@@ -132,38 +108,6 @@ struct ath12k_wmm_stats {
        u64 total_wmm_rx_drop[WME_NUM_AC];
 };
 
-struct dp_mon_mpdu {
-	struct list_head list;
-	struct sk_buff *head;
-	struct sk_buff *tail;
-	u32 err_bitmap;
-	u8 decap_format;
-};
-
-#define DP_MON_MAX_STATUS_BUF 32
-
-struct ath12k_mon_data {
-	struct dp_link_desc_bank link_desc_banks[DP_LINK_DESC_BANKS_MAX];
-	struct hal_rx_mon_ppdu_info mon_ppdu_info;
-
-	u32 mon_ppdu_status;
-	u32 mon_last_buf_cookie;
-	u64 mon_last_linkdesc_paddr;
-	u16 chan_noise_floor;
-	u32 err_bitmap;
-	u8 decap_format;
-
-	struct ath12k_pdev_mon_stats rx_mon_stats;
-	enum dp_mon_status_buf_state buf_state;
-	/* lock for monitor data */
-	spinlock_t mon_lock;
-	struct sk_buff_head rx_status_q;
-	struct dp_mon_mpdu *mon_mpdu;
-	struct list_head dp_rx_mon_mpdu_list;
-	struct dp_mon_tx_ppdu_info *tx_prot_ppdu_info;
-	struct dp_mon_tx_ppdu_info *tx_data_ppdu_info;
-};
-
 struct ath12k_pdev_telemetry_stats {
        u32 link_airtime[WLAN_MAX_AC];
        u32 tx_link_airtime[WLAN_MAX_AC];
@@ -192,11 +136,7 @@ struct ath12k_pdev_dp {
 	struct list_head ppdu_stats_info;
 	u32 ppdu_stat_list_depth;
 
-	struct dp_srng rxdma_mon_dst_ring[MAX_RXDMA_PER_PDEV];
-	struct dp_srng tx_mon_dst_ring[MAX_RXDMA_PER_PDEV];
-
-	struct ieee80211_rx_status rx_status;
-	struct ath12k_mon_data mon_data;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k_wmm_stats wmm_stats;
 	/* Protected by ab: base lock
 	 * determine when this stats is calculated based on peers

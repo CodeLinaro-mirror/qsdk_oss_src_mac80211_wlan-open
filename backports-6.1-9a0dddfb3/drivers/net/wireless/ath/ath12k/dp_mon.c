@@ -2357,7 +2357,7 @@ static int ath12k_dp_mon_rx_deliver(struct ath12k_pdev_dp *dp_pdev,
 				    struct napi_struct *napi)
 {
 	struct sk_buff *mon_skb, *skb_next, *header;
-	struct ieee80211_rx_status *rxs = &dp_pdev->rx_status;
+	struct ieee80211_rx_status *rxs = &dp_pdev->dp_mon_pdev->rx_status;
 	u8 decap = DP_RX_DECAP_TYPE_RAW;
 
 	mon_skb = ath12k_dp_mon_rx_merg_msdus(dp_pdev, mon_mpdu, ppduinfo, rxs);
@@ -2557,7 +2557,8 @@ static enum hal_rx_mon_status
 ath12k_dp_mon_parse_rx_dest(struct ath12k_pdev_dp *dp_pdev,
 			    struct sk_buff *skb)
 {
-	struct ath12k_mon_data *pmon = &dp_pdev->mon_data;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct hal_tlv_64_hdr *tlv;
 	struct ath12k_skb_rxcb *rxcb;
 	enum hal_rx_mon_status hal_status;
@@ -3801,7 +3802,8 @@ int ath12k_dp_mon_srng_process(struct ath12k_pdev_dp *pdev_dp, int *budget,
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_base *ab = dp->ab;
-	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&pdev_dp->mon_data;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = pdev_dp->dp_mon_pdev;
+	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
 	struct hal_mon_dest_desc *mon_dst_desc;
 	struct sk_buff *skb;
@@ -3820,7 +3822,7 @@ int ath12k_dp_mon_srng_process(struct ath12k_pdev_dp *pdev_dp, int *budget,
 
 	__skb_queue_head_init(&skb_list);
 	srng_id = ath12k_hw_mac_id_to_srng_id(ab->hw_params, pdev_idx);
-	mon_dst_ring = &pdev_dp->rxdma_mon_dst_ring[srng_id];
+	mon_dst_ring = &pdev_dp->dp_mon_pdev->rxdma_mon_dst_ring[srng_id];
 	buf_ring = &dp_mon->rxdma_mon_buf_ring;
 
 	srng = &ab->hal.srng_list[mon_dst_ring->ring_id];
@@ -3999,7 +4001,7 @@ static int ath12k_dp_rx_reap_mon_status_ring(struct ath12k_base *ab, int mac_id,
 	ar = ab->pdevs[ath12k_hw_mac_id_to_pdev_id(ab->hw_params, mac_id)].ar;
 	dp = ab->dp;
 	dp_mon = dp->dp_mon;
-	pmon = &ar->dp.mon_data;
+	pmon = &ar->dp.dp_mon_pdev->mon_data;
 	srng_id = ath12k_hw_mac_id_to_srng_id(ab->hw_params, mac_id);
 	rx_ring = &dp_mon->rx_mon_status_refill_ring[srng_id];
 
@@ -4132,7 +4134,8 @@ ath12k_dp_rx_mon_mpdu_pop(struct ath12k *ar, int mac_id,
 			  struct list_head *used_list,
 			  u32 *npackets, u32 *ppdu_id)
 {
-	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&ar->dp.mon_data;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = ar->dp.dp_mon_pdev;
+	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct ath12k_buffer_addr *p_buf_addr_info, *p_last_buf_addr_info;
 	u32 msdu_ppdu_id = 0, msdu_cnt = 0, total_len = 0, frag_len = 0;
 	u32 rx_buf_size, rx_pkt_offset, sw_cookie;
@@ -4324,7 +4327,8 @@ next_msdu:
 static void ath12k_dp_rx_mon_dest_process(struct ath12k *ar, int mac_id,
 					  u32 quota, struct napi_struct *napi)
 {
-	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&ar->dp.mon_data;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = ar->dp.dp_mon_pdev;
+	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct ath12k_pdev_mon_stats *rx_mon_stats;
 	u32 ppdu_id, rx_bufs_used = 0, ring_id;
 	u32 mpdu_rx_bufs_used, npackets = 0;
@@ -4428,7 +4432,8 @@ static int
 __ath12k_dp_mon_process_ring(struct ath12k *ar, int mac_id,
 			     struct napi_struct *napi, int *budget)
 {
-	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&ar->dp.mon_data;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = ar->dp.dp_mon_pdev;
+	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct ath12k_pdev_mon_stats *rx_mon_stats = &pmon->rx_mon_stats;
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
 	enum hal_rx_mon_status hal_status;
@@ -4627,6 +4632,27 @@ void ath12k_dp_mon_deinit(struct ath12k_dp *dp)
 }
 EXPORT_SYMBOL(ath12k_dp_mon_deinit);
 
+int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+
+	dp_mon_pdev = kzalloc(sizeof(*dp_mon_pdev), GFP_KERNEL);
+	if (!dp_mon_pdev)
+		return -ENOMEM;
+
+	dp_pdev->dp_mon_pdev = dp_mon_pdev;
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_alloc);
+
+void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev)
+{
+	kfree(dp_pdev->dp_mon_pdev);
+	dp_pdev->dp_mon_pdev = NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pdev_free);
+
 static void ath12k_dp_mon_clear_pdev_airtime_stats(struct ath12k *ar)
 {
        struct ath12k_pdev_dp *pdev_dp = &ar->dp;
@@ -4810,4 +4836,3 @@ int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
 
        return 0;
 }
-

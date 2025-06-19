@@ -1978,7 +1978,7 @@ static ssize_t ath12k_write_extd_rx_stats(struct file *file,
 	ar->debug.rx_filter = tlv_filter.rx_filter;
 
 	for (i = 0; i < ar->ab->hw_params->num_rxdma_per_pdev; i++) {
-		ring_id = ar->dp.rxdma_mon_dst_ring[i].ring_id;
+		ring_id = ar->dp.dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
 		ret = ath12k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id, ar->dp.mac_id + i,
 						       HAL_RXDMA_MONITOR_DST,
 						       DP_RX_MON_BUFFER_SIZE,
@@ -2046,7 +2046,7 @@ static int ath12k_reset_nrp_filter(struct ath12k *ar,
 	tlv_filter.offset_valid = false;
 
 	for (i = 0; i < ar->ab->hw_params->num_rxdma_per_pdev; i++) {
-		ring_id = ar->dp.rxdma_mon_dst_ring[i].ring_id;
+		ring_id = ar->dp.dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
 		ret = ath12k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id, ar->dp.mac_id + i,
 						       HAL_RXDMA_MONITOR_DST,
 						       DP_RXDMA_REFILL_RING_SIZE,

@@ -431,11 +431,12 @@ static int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab)
 static void ath12k_dp_rx_pdev_srng_free(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp = &ar->dp;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
 	struct ath12k_base *ab = ar->ab;
 	int i;
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++)
-		ath12k_dp_srng_cleanup(ab, &dp->rxdma_mon_dst_ring[i]);
+		ath12k_dp_srng_cleanup(ab, &dp_mon_pdev->rxdma_mon_dst_ring[i]);
 }
 
 void ath12k_dp_rx_pdev_reo_cleanup(struct ath12k_base *ab)
@@ -474,6 +475,7 @@ err_reo_cleanup:
 static int ath12k_dp_rx_pdev_srng_alloc(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp = &ar->dp;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
 	struct ath12k_base *ab = ar->ab;
 	int i;
 	int ret;
@@ -481,7 +483,7 @@ static int ath12k_dp_rx_pdev_srng_alloc(struct ath12k *ar)
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
 		ret = ath12k_dp_srng_setup(ar->ab,
-					   &dp->rxdma_mon_dst_ring[i],
+					   &dp_mon_pdev->rxdma_mon_dst_ring[i],
 					   HAL_RXDMA_MONITOR_DST,
 					   0, mac_id + i,
 					   DP_RXDMA_MONITOR_DST_RING_SIZE);
@@ -1189,6 +1191,7 @@ int ath12k_dp_rx_pdev_alloc(struct ath12k_base *ab, int mac_id)
 {
 	struct ath12k *ar = ab->pdevs[mac_id].ar;
 	struct ath12k_pdev_dp *dp = &ar->dp;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
 	u32 ring_id;
 	int i;
 	int ret;
@@ -1203,7 +1206,7 @@ int ath12k_dp_rx_pdev_alloc(struct ath12k_base *ab, int mac_id)
 	}
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		ring_id = dp->rxdma_mon_dst_ring[i].ring_id;
+		ring_id = dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
 		ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id,
 						  mac_id + i,
 						  HAL_RXDMA_MONITOR_DST);
@@ -1221,7 +1224,8 @@ out:
 static int ath12k_dp_rx_pdev_mon_status_attach(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp = &ar->dp;
-	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp->mon_data;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
+	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 
 	skb_queue_head_init(&pmon->rx_status_q);
 
@@ -1236,7 +1240,8 @@ static int ath12k_dp_rx_pdev_mon_status_attach(struct ath12k *ar)
 int ath12k_dp_rx_pdev_mon_attach(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp = &ar->dp;
-	struct ath12k_mon_data *pmon = &dp->mon_data;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp->dp_mon_pdev;
+	struct ath12k_mon_data *pmon = &dp_mon_pdev->mon_data;
 	int ret = 0;
 
 	ret = ath12k_dp_rx_pdev_mon_status_attach(ar);

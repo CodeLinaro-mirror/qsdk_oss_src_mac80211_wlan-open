@@ -1787,7 +1787,7 @@ int ath12k_dp_tx_htt_rx_monitor_mode_ring_config(struct ath12k *ar, bool reset)
 
 	if (ab->hw_params->rxdma1_enable) {
 		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-			ring_id = ar->dp.rxdma_mon_dst_ring[i].ring_id;
+			ring_id = ar->dp.dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
 			ret = ath12k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id,
 							       ar->dp.mac_id + i,
 							       HAL_RXDMA_MONITOR_DST,

@@ -13368,7 +13368,7 @@ int ath12k_mac_config_mon_status_default(struct ath12k *ar, bool enable)
 	}
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		ring_id = ar->dp.rxdma_mon_dst_ring[i].ring_id;
+		ring_id = ar->dp.dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
 		ret = ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id,
 						       ar->dp.mac_id + i,
 						       HAL_RXDMA_MONITOR_DST,

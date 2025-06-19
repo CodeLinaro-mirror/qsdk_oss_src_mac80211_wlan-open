@@ -1079,6 +1079,7 @@ void ath12k_dp_pdev_free(struct ath12k_base *ab)
 		ar = ab->pdevs[i].ar;
 		ath12k_dp_rx_pdev_free(ab, i);
 		ath12k_fw_stats_free(&ar->fw_stats);
+		ath12k_dp_mon_pdev_deinit(&ar->dp);
 	}
 
 	ath12k_dp_ppeds_stop(ab);
@@ -1134,9 +1135,15 @@ int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
 		dp_pdev->dp_hw = &ar->ah->dp_hw;
 		dp_pdev->hw_link_id = ar->hw_link_id;
 
+		ret = ath12k_dp_mon_pdev_init(dp_pdev);
+		if (ret) {
+			ath12k_warn(ab, "failed to initialize mon pdev %d\n", i);
+			goto err;
+		}
+
 		ret = ath12k_dp_rx_pdev_alloc(ab, i);
 		if (ret) {
-			ath12k_warn(ab, "failed to allocate pdev rx for pdev_id :%d\n",
+			ath12k_warn(ab, "failed to allocate mon pdev rx for pdev_id :%d\n",
 				    i);
 			goto err;
 		}

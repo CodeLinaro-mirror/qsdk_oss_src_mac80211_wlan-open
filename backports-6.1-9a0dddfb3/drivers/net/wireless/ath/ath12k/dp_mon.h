@@ -54,6 +54,8 @@ struct ath12k_dp_arch_mon_ops {
 	int (*rx_buf_setup)(struct ath12k_dp *dp);
 	void (*rx_buf_free)(struct ath12k_dp *dp);
 	int (*rx_htt_srng_setup)(struct ath12k_dp *dp);
+	int (*mon_pdev_alloc)(struct ath12k_pdev_dp *dp_pdev);
+	void (*mon_pdev_free)(struct ath12k_pdev_dp *dp_pdev);
 };
 
 struct ath12k_dp_mon {
@@ -100,6 +102,14 @@ enum dp_mon_tx_medium_protection_type {
 	DP_MON_TX_MEDIUM_QOS_NULL_NO_ACK_4ADDR
 };
 
+enum dp_mon_status_buf_state {
+	DP_MON_STATUS_MATCH,
+	DP_MON_STATUS_NO_DMA,
+	DP_MON_STATUS_LAG,
+	DP_MON_STATUS_LEAD,
+	DP_MON_STATUS_REPLINISH,
+};
+
 struct dp_mon_qosframe_addr4 {
 	__le16 frame_control;
 	__le16 duration;
@@ -124,6 +134,14 @@ struct dp_mon_packet_info {
 	bool truncated;
 };
 
+struct dp_mon_mpdu {
+	struct list_head list;
+	struct sk_buff *head;
+	struct sk_buff *tail;
+	u32 err_bitmap;
+	u8 decap_format;
+};
+
 struct dp_mon_tx_ppdu_info {
 	u32 ppdu_id;
 	u8  num_users;
@@ -131,6 +149,55 @@ struct dp_mon_tx_ppdu_info {
 	struct hal_rx_mon_ppdu_info rx_status;
 	struct list_head dp_tx_mon_mpdu_list;
 	struct dp_mon_mpdu *tx_mon_mpdu;
+};
+
+struct ath12k_pdev_mon_stats {
+	u32 status_ppdu_state;
+	u32 status_ppdu_start;
+	u32 status_ppdu_end;
+	u32 status_ppdu_compl;
+	u32 status_ppdu_start_mis;
+	u32 status_ppdu_end_mis;
+	u32 status_ppdu_done;
+	u32 dest_ppdu_done;
+	u32 dest_mpdu_done;
+	u32 dest_mpdu_drop;
+	u32 dup_mon_linkdesc_cnt;
+	u32 dup_mon_buf_cnt;
+	u32 dest_mon_stuck;
+	u32 dest_mon_not_reaped;
+};
+
+#define DP_MON_MAX_STATUS_BUF 32
+
+struct ath12k_mon_data {
+	struct dp_link_desc_bank link_desc_banks[DP_LINK_DESC_BANKS_MAX];
+	struct hal_rx_mon_ppdu_info mon_ppdu_info;
+
+	u32 mon_ppdu_status;
+	u32 mon_last_buf_cookie;
+	u64 mon_last_linkdesc_paddr;
+	u16 chan_noise_floor;
+	u32 err_bitmap;
+	u8 decap_format;
+
+	struct ath12k_pdev_mon_stats rx_mon_stats;
+	enum dp_mon_status_buf_state buf_state;
+	/* lock for monitor data */
+	spinlock_t mon_lock;
+	struct sk_buff_head rx_status_q;
+	struct dp_mon_mpdu *mon_mpdu;
+	struct list_head dp_rx_mon_mpdu_list;
+	struct dp_mon_tx_ppdu_info *tx_prot_ppdu_info;
+	struct dp_mon_tx_ppdu_info *tx_data_ppdu_info;
+};
+
+struct ath12k_pdev_mon_dp {
+	struct dp_srng rxdma_mon_dst_ring[MAX_RXDMA_PER_PDEV];
+	struct dp_srng tx_mon_dst_ring[MAX_RXDMA_PER_PDEV];
+
+	struct ieee80211_rx_status rx_status;
+	struct ath12k_mon_data mon_data;
 };
 
 static inline enum dp_monitor_type
@@ -188,6 +255,8 @@ void ath12k_dp_mon_rx_srng_cleanup(struct ath12k_dp *dp);
 int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp);
 int ath12k_dp_mon_rx_htt_srng_setup(struct ath12k_dp *dp);
+int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -239,5 +308,32 @@ int ath12k_dp_mon_rx_htt_setup(struct ath12k_dp *dp)
 
 	return ret;
 
+}
+
+static inline
+int ath12k_dp_mon_pdev_init(struct ath12k_pdev_dp *dp_pdev)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	int ret = 0;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_pdev_alloc)
+		ret = mon_ops->mon_pdev_alloc(dp_pdev);
+
+	return ret;
+}
+
+static inline
+void ath12k_dp_mon_pdev_deinit(struct ath12k_pdev_dp *dp_pdev)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_dp *dp = dp_pdev->dp;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_pdev_free)
+		mon_ops->mon_pdev_free(dp_pdev);
 }
 #endif
