@@ -5351,6 +5351,12 @@ ieee80211_6ghz_power_mode_change(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 	rcu_read_unlock();
 
+	if (cfg80211_update_chandef_6ghz_power_mode(wdev->netdev,
+						    link_id,
+						    ap_6ghz_pwr_mode)) {
+		return -EINVAL;
+	}
+
 	wdev->reg_6g_power_mode = ap_6ghz_pwr_mode;
 	changed = BSS_CHANGED_6GHZ_POWER_MODE;
 

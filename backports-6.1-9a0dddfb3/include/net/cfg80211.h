@@ -9299,6 +9299,21 @@ void cfg80211_cqm_rssi_notify(struct net_device *dev,
 			      s32 rssi_level, gfp_t gfp);
 
 /**
+ * cfg80211_update_chandef_6ghz_power_mode - Update the power mode
+ * @netdev: the netdev
+ * @link_id: the link ID for MLO, must be 0 for non-MLO
+ * @power_mode: the 6 GHz power mode to be set
+ *
+ * This function is used to validate if the current channel for the netdev
+ * is valid in the input power mode. If so, this function updates the
+ * device's chandef with the channel corresponding to the power mode.
+ */
+int
+cfg80211_update_chandef_6ghz_power_mode(const struct net_device *netdev,
+					u8 link_id,
+					u8 power_mode);
+
+/**
  * cfg80211_cqm_pktloss_notify - notify userspace about packetloss to peer
  * @dev: network device
  * @peer: peer's MAC address
@@ -10052,6 +10067,18 @@ wiphy_ext_feature_isset(struct wiphy *wiphy,
  * Frees all the NAN function and all it's allocated members.
  */
 void cfg80211_free_nan_func(struct cfg80211_nan_func *f);
+
+/**
+ * cfg80211_get_6ghz_power_mode_from_chan - Get the 6 GHz power mode
+ * @wiphy: the wiphy
+ * @chan: Channel for which the power mode is to be fetched
+ *
+ * For 6 GHz band, the chan should be in any of the 6 GHz power mode chan lists.
+ * Find the 6 GHz power mode for the given channel. If the power mode
+ * cannot be determined, return NL80211_REG_NUM_POWER_MODES.
+ */
+u8 cfg80211_get_6ghz_power_mode_from_chan(const struct wiphy *wiphy,
+					  const struct ieee80211_channel *chan);
 
 /**
  * struct cfg80211_nan_match_params - NAN match parameters

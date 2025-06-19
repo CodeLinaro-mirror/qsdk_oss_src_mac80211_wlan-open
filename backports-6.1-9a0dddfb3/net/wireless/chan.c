@@ -1683,6 +1683,7 @@ bool _cfg80211_chandef_usable(struct wiphy *wiphy,
 	struct ieee80211_supported_band *sband;
 	struct ieee80211_channel *c;
 	int i;
+	u8 power_mode = NL80211_REG_NUM_POWER_MODES;
 
 	if (WARN_ON(!cfg80211_chandef_valid(chandef)))
 		return false;
@@ -1836,8 +1837,16 @@ bool _cfg80211_chandef_usable(struct wiphy *wiphy,
 	if (width < 20)
 		prohibited_flags |= IEEE80211_CHAN_NO_OFDM;
 
+	if (chandef->chan->band == NL80211_BAND_6GHZ)
+		power_mode = cfg80211_get_6ghz_power_mode_from_chan(wiphy,
+								    chandef->chan);
+
 	for_each_subchan(chandef, freq, cf) {
-		c = ieee80211_get_channel_khz(wiphy, freq);
+		if (power_mode != NL80211_REG_NUM_POWER_MODES)
+			c = ieee80211_get_6g_channel_khz(wiphy, freq, power_mode);
+		else
+			c = ieee80211_get_channel_khz(wiphy, freq);
+
 		if (!c)
 			return false;
 		if (c->flags & permitting_flags)
@@ -1868,6 +1877,75 @@ int cfg80211_validate_freq_width_for_pwr_mode(struct wiphy *wiphy,
 	return 0;
 }
 EXPORT_SYMBOL(cfg80211_validate_freq_width_for_pwr_mode);
+
+int
+cfg80211_update_chandef_6ghz_power_mode(const struct net_device *netdev,
+					u8 link_id,
+					u8 power_mode)
+{
+	struct wireless_dev *wdev = netdev->ieee80211_ptr;
+	struct ieee80211_channel *chan;
+	struct cfg80211_chan_def *chandef;
+	u32 prohibited_flags;
+
+	lockdep_assert_wiphy(wdev->wiphy);
+
+	chandef = wdev_chandef(wdev, link_id);
+	if (!chandef) {
+		return -EINVAL;
+	}
+
+	prohibited_flags = IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_IR;
+	if (cfg80211_validate_freq_width_for_pwr_mode(wdev->wiphy,
+						      chandef,
+						      power_mode,
+						      prohibited_flags)) {
+		return -EINVAL;
+	}
+
+	chan = ieee80211_get_6g_channel_khz(wdev->wiphy,
+					    MHZ_TO_KHZ(chandef->chan->center_freq),
+					    power_mode);
+	if (!chan) {
+		return -EINVAL;
+	}
+
+	chandef->chan = chan;
+
+	return 0;
+}
+EXPORT_SYMBOL(cfg80211_update_chandef_6ghz_power_mode);
+
+u8
+cfg80211_get_6ghz_power_mode_from_chan(const struct wiphy *wiphy,
+				       const struct ieee80211_channel *chan)
+{
+	const struct ieee80211_supported_band *sband = wiphy->bands[chan->band];
+	u8 i;
+
+	/* For 6 GHz band, the channel should be in any of the
+	 * power mode list.
+	 */
+	for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+		struct ieee80211_channel *chan_6ghz;
+		int n_chans;
+
+		if (!sband->chan_6g[i])
+			continue;
+		chan_6ghz = sband->chan_6g[i]->channels;
+		n_chans = sband->chan_6g[i]->n_channels;
+
+		if (!chan_6ghz || !n_chans)
+			continue;
+
+		if (chan >= chan_6ghz &&
+		    chan <= (chan_6ghz + n_chans - 1)) {
+			return i;
+		}
+	}
+
+	return NL80211_REG_NUM_POWER_MODES;
+}
 
 bool cfg80211_chandef_usable(struct wiphy *wiphy,
 			     const struct cfg80211_chan_def *chandef,

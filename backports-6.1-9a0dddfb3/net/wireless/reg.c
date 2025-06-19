@@ -1179,6 +1179,9 @@ reg_get_max_bandwidth_from_range(const struct ieee80211_regdomain *rd,
 
 	while (no) {
 		tmp = &rd->reg_rules[--no];
+		if (tmp->mode != rule->mode)
+			break;
+
 		freq_range_tmp = &tmp->freq_range;
 
 		if (freq_range_tmp->end_freq_khz < freq_range->start_freq_khz)
@@ -1195,6 +1198,9 @@ reg_get_max_bandwidth_from_range(const struct ieee80211_regdomain *rd,
 
 	while (no < rd->n_reg_rules - 1) {
 		tmp = &rd->reg_rules[++no];
+		if (tmp->mode != rule->mode)
+			break;
+
 		freq_range_tmp = &tmp->freq_range;
 
 		if (freq_range_tmp->start_freq_khz > freq_range->end_freq_khz)
@@ -1602,6 +1608,8 @@ static u32 map_regdom_flags(u32 rd_flags)
 		channel_flags |= IEEE80211_CHAN_NO_6GHZ_AFC_CLIENT;
 	if (rd_flags & NL80211_RRF_PSD)
 		channel_flags |= IEEE80211_CHAN_PSD;
+	if (rd_flags & NL80211_RRF_NO_IR)
+		channel_flags |= IEEE80211_CHAN_NO_IR;
 	if (rd_flags & NL80211_RRF_ALLOW_6GHZ_VLP_AP)
 		channel_flags |= IEEE80211_CHAN_ALLOW_6GHZ_VLP_AP;
 	return channel_flags;
