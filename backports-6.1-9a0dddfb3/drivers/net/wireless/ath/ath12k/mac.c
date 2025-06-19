@@ -11984,7 +11984,7 @@ void ath12k_mac_drain_tx(struct ath12k *ar)
 	ath12k_mgmt_over_wmi_tx_purge(ar);
 }
 
-static int ath12k_mac_config_mon_status_default(struct ath12k *ar, bool enable)
+int ath12k_mac_config_mon_status_default(struct ath12k *ar, bool enable)
 {
 	struct htt_rx_ring_tlv_filter tlv_filter = {};
 	struct ath12k_base *ab = ar->ab;

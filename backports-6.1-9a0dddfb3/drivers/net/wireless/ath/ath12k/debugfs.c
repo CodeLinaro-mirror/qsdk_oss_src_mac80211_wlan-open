@@ -660,20 +660,34 @@ static ssize_t ath12k_write_stats_disable(struct file *file,
 					  size_t count, loff_t *ppos)
 {
 	struct ath12k_base *ab = file->private_data;
-	bool disable;
-	int ret, i;
 	struct ath12k_pdev *pdev;
+	u32 mask = 0;
+	int ret, i;
+	bool disable;
 
 	if (kstrtobool_from_user(user_buf, count, &disable))
 		return -EINVAL;
 
-	if (disable != ab->stats_disable)
+	if (disable != ab->stats_disable) {
 		ab->stats_disable = disable;
 
-	for (i = 0; i < ab->num_radios; i++) {
-		pdev = &ab->pdevs[i];
-		if (pdev && pdev->ar)
-			pdev->ar->ah->hw->perf_mode = disable;
+		for (i = 0; i < ab->num_radios; i++) {
+			pdev = &ab->pdevs[i];
+			if (pdev && pdev->ar) {
+				wiphy_lock(ath12k_ar_to_hw(pdev->ar)->wiphy);
+				ath12k_mac_config_mon_status_default(pdev->ar, !disable);
+				wiphy_unlock(ath12k_ar_to_hw(pdev->ar)->wiphy);
+
+				pdev->ar->ah->hw->perf_mode = disable;
+				if (!disable)
+					mask = HTT_PPDU_STATS_TAG_DEFAULT;
+
+				ath12k_dp_tx_htt_h2t_ppdu_stats_req(pdev->ar, mask);
+
+				ath12k_info(ab, "Monitor disable %u PPDU stats mask 0x%x",
+					    disable, mask);
+			}
+		}
 	}
 
 	ret = count;

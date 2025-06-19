@@ -374,6 +374,7 @@ void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 int ath12k_mac_start(struct ath12k *ar);
 int ath12k_mac_vif_link_chan(struct ieee80211_vif *vif, u8 link_id,
                                     struct cfg80211_chan_def *def);
+int ath12k_mac_config_mon_status_default(struct ath12k *ar, bool enable);
 void ath12k_mac_bss_info_changed(struct ath12k *ar,
                                 struct ath12k_link_vif *arvif,
                                 struct ieee80211_bss_conf *info,
