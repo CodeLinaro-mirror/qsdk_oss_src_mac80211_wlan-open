@@ -12409,6 +12409,13 @@ int ath12k_mac_start(struct ath12k *ar)
 		goto err;
 	}
 
+	ret = ath12k_dp_rx_pkt_type_filter(ar, ATH12K_PKT_TYPE_EAP,
+					   ATH12K_ROUTE_EAP_METADATA);
+	if (ret) {
+		ath12k_err(ar->ab, "failed to configure EAP pkt route: %d\n", ret);
+		goto err;
+	}
+
 	__ath12k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask);
 
 	/* TODO: Do we need to enable ANI? */

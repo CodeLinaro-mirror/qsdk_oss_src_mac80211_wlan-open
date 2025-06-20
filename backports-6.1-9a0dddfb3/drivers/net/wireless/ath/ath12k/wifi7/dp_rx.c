@@ -2623,12 +2623,6 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		if (!err_info.continuation)
 			budget--;
 
-		if (err_info.push_reason !=
-		    HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED) {
-			dev_kfree_skb_any(msdu);
-			continue;
-		}
-
 		msdu_data = (struct hal_rx_desc *)msdu->data;
 		rxcb->err_rel_src = err_info.err_rel_src;
 		rxcb->err_code = err_info.err_code;

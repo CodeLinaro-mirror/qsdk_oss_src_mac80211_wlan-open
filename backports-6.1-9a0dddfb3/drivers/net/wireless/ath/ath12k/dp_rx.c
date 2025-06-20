@@ -1950,3 +1950,29 @@ out:
 	complete(&ahsta->dp_migration_event);
 	return -EINVAL;
 }
+
+/* Sends WMI config to filter packets to route packets to WBM release ring */
+int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
+				 enum ath12k_routing_pkt_type pkt_type,
+				 u32 meta_data)
+{
+	struct ath12k_wmi_pkt_route_param param;
+	int ret;
+
+	/* Routing Eapol/ARP packets to CCE is only allowed now */
+	if (pkt_type != ATH12K_PKT_TYPE_EAP &&
+	    pkt_type != ATH12K_PKT_TYPE_ARP_IPV4)
+		return -EINVAL;
+
+	param.opcode = ATH12K_WMI_PKTROUTE_ADD;
+	param.meta_data = meta_data;
+	param.dst_ring = ATH12K_REO_RELEASE_RING;
+	param.dst_ring_handler = ATH12K_WMI_PKTROUTE_USE_CCE;
+	param.route_type_bmap = 1 << pkt_type;
+
+	ret = ath12k_wmi_send_pdev_pkt_route(ar, &param);
+	if (ret)
+		ath12k_warn(ar->ab, "failed to configure pkt route %d", ret);
+
+	return ret;
+}

@@ -263,4 +263,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 int
 ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 		       u8 chip_id);
+int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
+				 enum ath12k_routing_pkt_type pkt_type,
+				 u32 meta_data);
 #endif /* ATH12K_DP_RX_H */
