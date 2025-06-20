@@ -7561,7 +7561,10 @@ int ieee80211_req_neg_ttlm(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_neg_ttlm neg_ttlm = {};
 	u8 i;
 
-	if (!ieee80211_vif_is_mld(&sdata->vif) ||
+	if (!ieee80211_vif_is_mld(&sdata->vif))
+		return -EINVAL;
+
+	if (sdata->vif.type != NL80211_IFTYPE_AP &&
 	    !(sdata->vif.cfg.mld_capa_op &
 	      IEEE80211_MLD_CAP_OP_TID_TO_LINK_MAP_NEG_SUPP))
 		return -EINVAL;
@@ -7579,15 +7582,39 @@ int ieee80211_req_neg_ttlm(struct ieee80211_sub_if_data *sdata,
 	    NEG_TTLM_RES_ACCEPT)
 		return -EINVAL;
 
-	ieee80211_apply_neg_ttlm(sdata, neg_ttlm);
-	sdata->u.mgd.dialog_token_alloc++;
-	ieee80211_send_neg_ttlm_req(sdata, &sdata->vif.neg_ttlm,
-				    sdata->u.mgd.dialog_token_alloc);
-	wiphy_delayed_work_cancel(sdata->local->hw.wiphy,
-				  &sdata->u.mgd.neg_ttlm_timeout_work);
-	wiphy_delayed_work_queue(sdata->local->hw.wiphy,
-				 &sdata->u.mgd.neg_ttlm_timeout_work,
-				 IEEE80211_NEG_TTLM_REQ_TIMEOUT);
+	if (sdata->vif.type != NL80211_IFTYPE_AP) {
+		ieee80211_apply_neg_ttlm(sdata, neg_ttlm);
+		sdata->u.mgd.dialog_token_alloc++;
+		ieee80211_send_neg_ttlm_req(sdata, &sdata->vif.neg_ttlm,
+					    sdata->u.mgd.dialog_token_alloc);
+		wiphy_delayed_work_cancel(sdata->local->hw.wiphy,
+					  &sdata->u.mgd.neg_ttlm_timeout_work);
+		wiphy_delayed_work_queue(sdata->local->hw.wiphy,
+					 &sdata->u.mgd.neg_ttlm_timeout_work,
+					 IEEE80211_NEG_TTLM_REQ_TIMEOUT);
+	} else {
+		/* On AP mode, action frame exchange already completed from
+		 * external application. Apply the mapping for the given client
+		 * in driver. Disabling the links on AP MLD for negotiation
+		 * with a client is not needed.
+		 */
+		struct sta_info *sta_info = sta_info_get_bss(sdata, params->mld_mac_addr);
+
+		if (!sta_info || !sta_info->uploaded)
+			return -EINVAL;
+
+		sta_info->sta.neg_ttlm = neg_ttlm;
+		/* If set ttlm issued before association,
+		 * handle further as part of association
+		 */
+		if (sta_info->sta_state != IEEE80211_STA_AUTHORIZED)
+			return 0;
+
+		if (sdata->local->ops->apply_neg_ttlm_per_client)
+			sdata->local->ops->apply_neg_ttlm_per_client(&sdata->local->hw,
+								     &sdata->vif,
+								     &sta_info->sta);
+	}
 	return 0;
 }
 

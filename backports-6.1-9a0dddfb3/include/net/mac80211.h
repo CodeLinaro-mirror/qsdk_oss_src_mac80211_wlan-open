@@ -2657,6 +2657,7 @@ struct ieee80211_link_sta {
  * @spp_amsdu: indicates whether the STA uses SPP A-MSDU or not.
  * @eml_cap: EML capabilities of station
  * @mld_cap_op: MLD capabilites and operation field of station
+ * @neg_ttlm: TTLM negotiation parameters of the station
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2688,6 +2689,7 @@ struct ieee80211_sta {
 	u16 eml_cap;
 	u16 mld_cap_op;
 	struct net_device *dev;
+	struct ieee80211_neg_ttlm neg_ttlm;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -4692,6 +4694,9 @@ struct ieee80211_ppe_vp_ds_params {
  * @deinit_interface: Called at the time of netdev deinit stage. This gives drivers
  *	a flexibility to deinit driver specific data at interface deinit time.
  * @erp: Notifies the driver to start ErP enter/exit procedure or to send status.
+ * @apply_neg_ttlm_per_client: Apply the ttlm negotiation on client as per the
+ * negotiation. This can be used to allow drivers to map the TIDs for the given
+ * client as per the negotiation.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5104,6 +5109,9 @@ struct ieee80211_ops {
 				struct net_device *dev);
 	int (*erp)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		   int link_id, struct cfg80211_erp_params *params);
+	void (*apply_neg_ttlm_per_client)(struct ieee80211_hw *hw,
+					  struct ieee80211_vif *vif,
+					  struct ieee80211_sta *sta);
 };
 
 /**
