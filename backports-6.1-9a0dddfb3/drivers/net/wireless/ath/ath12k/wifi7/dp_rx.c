@@ -893,7 +893,7 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_wifi7_dp_rx_h_csum_offload(msdu, rx_msdu_info);
 
 	rcu_read_lock();
-	spin_lock_bh(&dp->dp_lock);
+
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (peer) {
 		/* restting 4addr da mcbc packets as in 4addr mcbc packets are
@@ -909,7 +909,6 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_wifi7_dp_rx_check_fast_rx(dp->ab, msdu, rx_msdu_info,
 							 tlv_info, link_peer)) {
 			msdu->protocol = eth_type_trans(msdu, peer->dev);
-			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock();
 			netif_receive_skb(msdu);
 			return ret;
@@ -931,7 +930,6 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		enctype = HAL_ENCRYPT_TYPE_OPEN;
 	}
 
-	spin_unlock_bh(&dp->dp_lock);
 	rcu_read_unlock();
 
 	*fast_rx = false;
