@@ -20145,3 +20145,24 @@ u16 ath12k_calculate_subchannel_count(enum nl80211_chan_width width) {
 	}
 	return width_num/20;
 }
+
+enum ieee80211_neg_ttlm_res
+ath12k_mac_op_can_neg_ttlm(struct ieee80211_hw *hw,
+			   struct ieee80211_vif *vif,
+			   struct ieee80211_neg_ttlm *neg_ttlm)
+{
+	u8 i;
+
+	/* Verify all TIDs are mapped to the same links
+	 * set in the given direction. When disjoint mapping support
+	 * enabled, below condition to be removed
+	 */
+	for (i = 1; i < IEEE80211_TTLM_NUM_TIDS; i++) {
+		if (neg_ttlm->downlink[i] != neg_ttlm->downlink[0] ||
+		    neg_ttlm->uplink[i] != neg_ttlm->uplink[0])
+			return NEG_TTLM_RES_REJECT;
+	}
+
+	return NEG_TTLM_RES_ACCEPT;
+}
+EXPORT_SYMBOL(ath12k_mac_op_can_neg_ttlm);

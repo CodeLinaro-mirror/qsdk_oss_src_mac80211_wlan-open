@@ -1639,6 +1639,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.init_interface			= ath12k_mac_op_create_datapath_offload_if,
 	.deinit_interface		= ath12k_mac_op_destroy_datapath_offload_if,
 #endif
+	.can_neg_ttlm			= ath12k_mac_op_can_neg_ttlm,
 };
 
 int ath12k_wifi7_hw_init(struct ath12k_base *ab)
