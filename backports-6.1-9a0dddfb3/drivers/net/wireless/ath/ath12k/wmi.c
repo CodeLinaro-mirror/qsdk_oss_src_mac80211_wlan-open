@@ -15614,3 +15614,168 @@ int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
 
 	return ret;
 }
+
+static void *
+ath12k_populate_link_control_tlv(void *buf_ptr,
+				 struct ath12k_wmi_ttlm_peer_params *params)
+{
+	struct wmi_mlo_peer_link_control_param *link_control;
+	u8 pref_link = 0;
+	u8 latency = 0;
+	u8 links = 0;
+	struct wmi_tlv *tlv = buf_ptr;
+
+	/* The Link Preference TLV is planned to be deprecated,
+	 * so the TLV is going to be exlcuded by default.
+	 */
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+	buf_ptr += TLV_HDR_SIZE;
+
+	tlv = buf_ptr;
+	if (params->preferred_links.num_pref_links) {
+		tlv->header =
+			ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					   sizeof(struct wmi_mlo_peer_link_control_param));
+
+		buf_ptr += TLV_HDR_SIZE;
+
+		link_control = (struct wmi_mlo_peer_link_control_param *)buf_ptr;
+		link_control->tlv_header =
+			ath12k_wmi_tlv_hdr(WMI_TAG_MLO_PEER_LINK_CONTROL_PARAM,
+					   sizeof(*link_control) - TLV_HDR_SIZE);
+		link_control->num_links =
+			cpu_to_le32(params->preferred_links.num_pref_links);
+		links = cpu_to_le32(params->preferred_links.num_pref_links);
+
+		for (pref_link = 0; pref_link < links; pref_link++) {
+			link_control->link_priority_order[pref_link] =
+			cpu_to_le32(params->preferred_links.preferred_link_order[pref_link]);
+		}
+		link_control->flags =
+			cpu_to_le32(params->preferred_links.link_control_flags);
+		link_control->tx_link_tuple_bitmap =
+			cpu_to_le32(params->preferred_links.tlt_characterization_params);
+
+		for (latency = 0; latency < WLAN_MAX_AC; latency++) {
+			link_control->max_timeout_ms[latency] =
+				cpu_to_le32(params->preferred_links.timeout[latency]);
+		}
+		buf_ptr += sizeof(struct wmi_mlo_peer_link_control_param);
+	} else {
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		buf_ptr += TLV_HDR_SIZE;
+	}
+	return buf_ptr;
+}
+
+static void*
+ath12k_wmi_fill_tid_to_link_map_info(struct ath12k_wmi_ttlm_peer_params *params,
+				     struct wmi_tid_to_link_map *ttlm,
+				     void *ptr)
+{
+	struct ath12k_wmi_host_ttlm_of_tids *ttlm_of_tids;
+	int dir, tid;
+
+	for (dir = 0; dir < params->num_dir; dir++) {
+		ttlm_of_tids = &params->ttlm_info[dir];
+		for (tid = 0; tid < TTLM_MAX_NUM_TIDS; tid++) {
+			ttlm = (struct wmi_tid_to_link_map *)ptr;
+			ttlm->tlv_header =
+				ath12k_wmi_tlv_hdr(WMI_TAG_TID_TO_LINK_MAP,
+						   sizeof(*ttlm) - TLV_HDR_SIZE);
+			/* populate tid number */
+			ttlm->tid_to_link_map_info |=
+				le32_encode_bits(tid,
+						 WMI_TTLM_TID_MASK);
+
+			/* populate direction */
+			ttlm->tid_to_link_map_info |=
+				le32_encode_bits(ttlm_of_tids->direction,
+						 WMI_TTLM_DIR_MASK);
+
+			/* populate default link mapping value */
+			ttlm->tid_to_link_map_info |=
+				le32_encode_bits(ttlm_of_tids->default_link_mapping,
+						 WMI_TTLM_DEFAULT_MAPPING_MASK);
+
+			/* populate ttlm provisioned links for the
+			 * corressponding tid number
+			 */
+			ttlm->tid_to_link_map_info |=
+				le32_encode_bits(ttlm_of_tids->ttlm_provisioned_links[tid],
+						 WMI_TTLM_LINK_MAPPING_MASK);
+
+			ptr += sizeof(*ttlm);
+		}
+	}
+	return ptr;
+}
+
+int
+ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
+					     struct ath12k_wmi_ttlm_peer_params *params,
+					     bool ttlm_info)
+{
+	struct wmi_peer_tid_to_link_map_fixed_param *cmd;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_tid_to_link_map *ttlm;
+	int ret, buf_len;
+	struct sk_buff *skb;
+	struct wmi_tlv *tlv;
+	void *ptr;
+
+	/* find the buf len pref link */
+	buf_len = sizeof(*cmd);
+
+	buf_len += TLV_HDR_SIZE;
+	if (ttlm_info)
+		buf_len += params->num_dir * TTLM_MAX_NUM_TIDS * sizeof(*ttlm);
+
+	/* Update the length for preferred link tlv.
+	 * The link preference tlv is planned to be deprecated, so the tlv
+	 * is going to be excluded by default
+	 */
+	buf_len += TLV_HDR_SIZE;
+
+	/* update the length for link control tlv */
+	buf_len += TLV_HDR_SIZE;
+	if (params->preferred_links.num_pref_links)
+		buf_len += sizeof(struct wmi_mlo_peer_link_control_param);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, buf_len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_peer_tid_to_link_map_fixed_param *)skb->data;
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_TID_TO_LINK_MAP_FIXED_PARAM,
+				       sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(params->pdev_id);
+	ether_addr_copy(cmd->link_macaddr.addr, params->peer_macaddr);
+
+	ptr = skb->data + sizeof(*cmd);
+	tlv = ptr;
+
+	if (ttlm_info) {
+		buf_len = params->num_dir * TTLM_MAX_NUM_TIDS * sizeof(*ttlm);
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+						 buf_len);
+		ptr += TLV_HDR_SIZE;
+
+		ptr = ath12k_wmi_fill_tid_to_link_map_info(params, ttlm, ptr);
+	} else {
+		tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, 0);
+		ptr += TLV_HDR_SIZE;
+	}
+
+	ptr = ath12k_populate_link_control_tlv(ptr, params);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_MLO_PEER_TID_TO_LINK_MAP_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to submit WMI_MLO_PEER_TID_TO_LINK_MAP_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}

@@ -799,6 +799,10 @@ enum wmi_tlv_cmd_id {
 	WMI_MLO_LINK_SET_BSS_PARAMS_CMDID,
 	WMI_MLO_LINK_SWITCH_CONF_CMDID,
 	WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_CMDID,
+	WMI_MLO_LINK_RECOMMENDATION_CMDID,
+	WMI_MLO_LINK_RECONFIG_CMDID,
+	WMI_MLO_LINK_RECONFIG_COMPLETE_CMDID,
+	WMI_MLO_LINK_TTLM_COMPLETE_CMDID,
 };
 
 enum wmi_tlv_event_id {
@@ -2194,6 +2198,15 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
 	WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM = 0x4be,
 	WMI_TAG_PDEV_UTF_EVENT_FIXED_PARAM,
+	WMI_TAG_TID_TO_LINK_MAP = 0x43B,
+	WMI_TAG_PEER_TID_TO_LINK_MAP_FIXED_PARAM,
+	WMI_TAG_PEER_ASSOC_TID_TO_LINK_MAP,
+	WMI_TAG_MLO_TID_TO_LINK_MAPPING_BCAST_T2LM_INFO = 0x471,
+	WMI_TAG_MLO_TID_TO_LINK_MAPPING_CMD_FIXED_PARAM,
+	WMI_TAG_MLO_TID_TO_LINK_MAPPING_EVENT_FIXED_PARAM,
+	WMI_TAG_MLO_TID_TO_LINK_MAPPING_IE_INFO,
+	WMI_TAG_MLO_PEER_LINK_CONTROL_PARAM = 0x48F,
+	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_MAX
 };
 
@@ -4278,6 +4291,77 @@ struct wmi_rate_set_arg {
 	u32 num_rates;
 	u8 rates[WMI_MAX_SUPPORTED_RATES];
 };
+
+#define WLAN_MAX_AC 4
+#define WLAN_MAX_TTLM_IE 2
+#define TTLM_MAX_NUM_TIDS 8
+#define MAX_PREFERRED_LINKS 4
+
+enum ath12k_wmi_ttlm_direction {
+	ATH12K_WMI_TTLM_DL_DIRECTION,
+	ATH12K_WMI_TTLM_UL_DIRECTION,
+	ATH12K_WMI_TTLM_BIDI_DIRECTION,
+	ATH12K_WMI_TTLM_MAX_DIRECTION,
+	ATH12K_WMI_TTLM_INVALID_DIRECTION,
+};
+
+struct ath12k_wmi_host_ttlm_of_tids {
+	enum ath12k_wmi_ttlm_direction direction;
+	bool default_link_mapping;
+	u16 ttlm_provisioned_links[TTLM_MAX_NUM_TIDS];
+};
+
+struct ath12k_wmi_host_preferred_links {
+	u8 num_pref_links;
+	u8 preferred_link_order[MAX_PREFERRED_LINKS];
+	u32 timeout[WLAN_MAX_AC];
+	u32 tlt_characterization_params;
+	u32 link_control_flags;
+};
+
+struct ath12k_wmi_ttlm_peer_params {
+	u8 pdev_id;
+	u8 peer_macaddr[ETH_ALEN];
+	u8 num_dir;
+	struct ath12k_wmi_host_ttlm_of_tids ttlm_info[ATH12K_WMI_TTLM_MAX_DIRECTION];
+	struct ath12k_wmi_host_preferred_links preferred_links;
+};
+
+#define WMI_MAX_NUM_LINK_PRIORITY_ORDER	5
+#define WMI_MAX_NUM_PREFERRED_LINKS	4
+#define WMI_TTLM_TID_MASK		GENMASK(4, 0)
+#define WMI_TTLM_DIR_MASK		GENMASK(6, 5)
+#define WMI_TTLM_DEFAULT_MAPPING_MASK	BIT(7)
+#define WMI_TTLM_LINK_MAPPING_MASK	GENMASK(23, 8)
+
+struct wmi_peer_tid_to_link_map_fixed_param {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	struct ath12k_wmi_mac_addr_params link_macaddr;
+	__le32 mapping_switch_time;
+	__le32 expected_duration;
+} __packed;
+
+struct wmi_tid_to_link_map {
+	__le32 tlv_header;
+	__le32 tid_to_link_map_info;
+} __packed;
+
+struct wmi_mlo_peer_link_control_param {
+	__le32 tlv_header;
+	__le32 flags;
+	__le32 num_links;
+	__le32 link_priority_order[WMI_MAX_NUM_LINK_PRIORITY_ORDER];
+	__le32 tx_link_tuple_bitmap;
+	__le32 max_timeout_ms[WLAN_MAX_AC];
+} __packed;
+
+struct wmi_peer_preferred_link_map {
+	__le32 tlv_header;
+	__le32 num_preferred_links;
+	__le32 preferred_link_order[WMI_MAX_NUM_PREFERRED_LINKS];
+	__le32 expected_max_latency_ms[WLAN_MAX_AC];
+} __packed;
 
 struct ath12k_wmi_peer_assoc_arg {
 	u32 vdev_id;
@@ -7708,7 +7792,6 @@ struct wmi_per_chain_rssi_stat_params {
 	__le32 num_per_chain_rssi;
 } __packed;
 
-#define WLAN_MAX_AC 4
 #define MAX_TX_RATE_VALUES 10
 
 struct wmi_vdev_stats_params {
@@ -8381,4 +8464,7 @@ int ath12k_wmi_send_afc_resp_rx_ind(struct ath12k *ar, int data_type);
 int ath12k_wmi_peer_set_cfr_capture_conf(struct ath12k *ar,
 					 u32 vdev_id, const u8 *mac,
 					 struct wmi_peer_cfr_capture_conf_arg *arg);
+int ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
+						 struct ath12k_wmi_ttlm_peer_params *params,
+						 bool ttlm_info);
 #endif
