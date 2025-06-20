@@ -1995,6 +1995,7 @@ free_skb:
 
 	return num_buffs_reaped;
 }
+EXPORT_SYMBOL(ath12k_dp_mon_srng_process);
 
 static int ath12k_dp_rx_reap_mon_status_ring(struct ath12k_base *ab, int mac_id,
 					     int *budget, struct sk_buff_head *skb_list)
@@ -2446,9 +2447,8 @@ static void ath12k_dp_rx_mon_dest_process(struct ath12k *ar, int mac_id,
 	}
 }
 
-static int
-__ath12k_dp_mon_process_ring(struct ath12k *ar, int mac_id,
-			     struct napi_struct *napi, int *budget)
+int __ath12k_dp_mon_process_ring(struct ath12k *ar, int mac_id,
+				 struct napi_struct *napi, int *budget)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = ar->dp.dp_mon_pdev;
 	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
@@ -2487,38 +2487,7 @@ __ath12k_dp_mon_process_ring(struct ath12k *ar, int mac_id,
 exit:
 	return num_buffs_reaped;
 }
-
-int ath12k_dp_mon_process_ring(struct ath12k_dp *dp, int mac_id,
-			       struct napi_struct *napi, int budget,
-			       enum dp_monitor_mode monitor_mode)
-{
-	struct ath12k_pdev_dp *dp_pdev;
-	u8 pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
-	int num_buffs_reaped = 0;
-
-	rcu_read_lock();
-
-	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
-	if (!dp_pdev) {
-		rcu_read_unlock();
-		return 0;
-	}
-
-	if (dp->hw_params->rxdma1_enable) {
-		if (monitor_mode == ATH12K_DP_RX_MONITOR_MODE)
-			num_buffs_reaped = ath12k_dp_mon_srng_process(dp_pdev, &budget, napi);
-	} else {
-		if (dp_pdev->ar->monitor_started)
-			num_buffs_reaped =
-				__ath12k_dp_mon_process_ring(dp_pdev->ar, mac_id, napi,
-							     &budget);
-	}
-
-	rcu_read_unlock();
-
-	return num_buffs_reaped;
-}
-EXPORT_SYMBOL(ath12k_dp_mon_process_ring);
+EXPORT_SYMBOL(__ath12k_dp_mon_process_ring);
 
 void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_base *ab,
 				       struct dp_rxdma_mon_ring *rx_ring)

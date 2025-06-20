@@ -18,3 +18,41 @@ void ath12k_wifi7_dp_mon_ops_register(struct ath12k_dp *dp)
 	else
 		dp_mon->mon_ops = &ath12k_wifi7_dp_arch_mon_quad_ring_ops;
 }
+
+static inline
+int ath12k_dp_rx_mon_process_ring(struct ath12k_dp *dp, int mac_id,
+				  struct napi_struct *napi, int budget)
+{
+	struct ath12k_pdev_dp *dp_pdev;
+	u8 pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
+	int num_buffs_reaped = 0;
+
+	rcu_read_lock();
+
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+	if (!dp_pdev) {
+		rcu_read_unlock();
+		return 0;
+	}
+
+	if (dp->hw_params->rxdma1_enable) {
+		num_buffs_reaped = ath12k_dp_mon_srng_process(dp_pdev, &budget, napi);
+	} else {
+		if (dp_pdev->ar->monitor_started)
+			num_buffs_reaped =
+				__ath12k_dp_mon_process_ring(dp_pdev->ar, mac_id, napi,
+							     &budget);
+	}
+
+	rcu_read_unlock();
+
+	return num_buffs_reaped;
+}
+
+static inline
+int ath12k_dp_tx_mon_process_ring(struct ath12k_dp *dp, int mac_id,
+				  struct napi_struct *napi, int budget)
+{
+	/* TODO: Implement Tx Processing */
+	return 0;
+}

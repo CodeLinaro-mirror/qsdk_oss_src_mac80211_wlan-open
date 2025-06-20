@@ -8,7 +8,6 @@
 #include "../dp_rx.h"
 #include "../dp_tx.h"
 #include "../hif.h"
-#include "../dp_mon.h"
 #include "../dp_cmn.h"
 #include "dp_rx.h"
 #include "dp.h"
@@ -26,7 +25,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	int work_done = 0;
 	int i = 0, j;
 	int tot_work_done = 0;
-	enum dp_monitor_mode monitor_mode;
 	u8 ring_mask, rx_mask, tx_mask;
 
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
@@ -77,8 +75,8 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 
 				if (ring_mask & BIT(id)) {
 					work_done =
-					ath12k_dp_mon_process_ring(dp, id, napi, budget,
-								   0);
+					ath12k_dp_rx_mon_process_ring(dp, id,
+								      napi, budget);
 					budget -= work_done;
 					tot_work_done += work_done;
 					if (budget <= 0)
@@ -89,7 +87,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	}
 
 	if (dp->hw_params->ring_mask->rx_mon_dest[grp_id]) {
-		monitor_mode = ATH12K_DP_RX_MONITOR_MODE;
 		ring_mask = dp->hw_params->ring_mask->rx_mon_dest[grp_id];
 		for (i = 0; i < dp->num_radios; i++) {
 			for (j = 0; j < dp->hw_params->num_rxdma_per_pdev; j++) {
@@ -97,8 +94,8 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 
 				if (ring_mask & BIT(id)) {
 					work_done =
-					ath12k_dp_mon_process_ring(dp, id, napi, budget,
-								   monitor_mode);
+					ath12k_dp_rx_mon_process_ring(dp, id,
+								      napi, budget);
 					budget -= work_done;
 					tot_work_done += work_done;
 
@@ -110,7 +107,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	}
 
 	if (dp->hw_params->ring_mask->tx_mon_dest[grp_id]) {
-		monitor_mode = ATH12K_DP_TX_MONITOR_MODE;
 		ring_mask = dp->hw_params->ring_mask->tx_mon_dest[grp_id];
 		for (i = 0; i < dp->num_radios; i++) {
 			for (j = 0; j < dp->hw_params->num_rxdma_per_pdev; j++) {
@@ -118,8 +114,8 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 
 				if (ring_mask & BIT(id)) {
 					work_done =
-					ath12k_dp_mon_process_ring(dp, id, napi, budget,
-								   monitor_mode);
+					ath12k_dp_tx_mon_process_ring(dp, id, napi,
+								      budget);
 					budget -= work_done;
 					tot_work_done += work_done;
 

@@ -81,11 +81,6 @@ enum dp_monitor_type {
 	ATH12K_DP_MON_TYPE_DUAL_RING
 };
 
-enum dp_monitor_mode {
-	ATH12K_DP_TX_MONITOR_MODE,
-	ATH12K_DP_RX_MONITOR_MODE
-};
-
 enum dp_mon_tx_ppdu_info_type {
 	DP_MON_TX_PROT_PPDU_INFO,
 	DP_MON_TX_DATA_PPDU_INFO
@@ -221,9 +216,6 @@ ath12k_dp_mon_rx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_dp_mon_buf_replenish(struct ath12k_base *ab,
 				struct dp_rxdma_mon_ring *buf_ring,
 				int req_entries);
-int ath12k_dp_mon_process_ring(struct ath12k_dp *dp, int mac_id,
-			       struct napi_struct *napi, int budget,
-			       enum dp_monitor_mode monitor_mode);
 struct sk_buff *ath12k_dp_mon_tx_alloc_skb(void);
 enum hal_tx_mon_status
 ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
@@ -234,6 +226,8 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_dp_mon_rx_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info);
 int ath12k_dp_mon_srng_process(struct ath12k_pdev_dp *pdev_dp, int *budget,
 			       struct napi_struct *napi);
+int __ath12k_dp_mon_process_ring(struct ath12k *ar, int mac_id,
+				 struct napi_struct *napi, int *budget);
 int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
                                       const u8 *peer_addr,
                                       struct ath12k_peer_telemetry_stats *stats);
