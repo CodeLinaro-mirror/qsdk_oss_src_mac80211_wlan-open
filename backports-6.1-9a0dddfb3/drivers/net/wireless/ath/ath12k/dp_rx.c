@@ -204,14 +204,14 @@ EXPORT_SYMBOL(ath12k_dp_rx_h_michael_mic);
 
 static void ath12k_dp_rx_mld_addr_conv(struct ath12k_pdev_dp *dp_pdev,
 				       struct sk_buff *msdu,
-				       struct hal_rx_desc *rx_desc)
+				       struct hal_rx_desc *rx_desc, u16 peer_id)
 {
 	struct ath12k_base *ab = dp_pdev->ar->ab;
 	struct ath12k_dp_link_peer *peer;
 	struct ieee80211_hdr *hdr = (void *)msdu->data;
 
 	spin_lock_bh(&dp_pdev->dp->dp_lock);
-	peer = ath12k_dp_rx_h_find_peer(dp_pdev->dp, msdu, rx_desc);
+	peer = ath12k_dp_rx_h_find_peer(dp_pdev->dp, rx_desc, peer_id);
 	if (!peer || !peer->mlo) {
 		spin_unlock_bh(&dp_pdev->dp->dp_lock);
 		return;
@@ -223,7 +223,8 @@ static void ath12k_dp_rx_mld_addr_conv(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				struct hal_rx_desc *rx_desc,
 				enum hal_encrypt_type enctype,
-				struct ieee80211_rx_status *status, bool decrypted)
+				struct ieee80211_rx_status *status, bool decrypted,
+				u16 peer_id)
 {
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ieee80211_hdr *hdr;
@@ -242,7 +243,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 	if (!decrypted)
 		return;
 
-	ath12k_dp_rx_mld_addr_conv(dp_pdev, msdu, rx_desc);
+	ath12k_dp_rx_mld_addr_conv(dp_pdev, msdu, rx_desc, peer_id);
 
 	hdr = (void *)msdu->data;
 
@@ -941,33 +942,15 @@ struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 }
 EXPORT_SYMBOL(ath12k_dp_rx_get_msdu_last_buf);
 
-struct ath12k_dp_peer *
-ath12k_dp_rx_h_find_peer_by_peerid_index(struct ath12k_dp *dp,
-					 struct ath12k_pdev_dp *dp_pdev,
-					 struct sk_buff *msdu)
-{
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
-	struct ath12k_dp_peer *peer = NULL;
-
-	if (rxcb->peer_id)
-		peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, rxcb->peer_id);
-
-	return peer;
-}
-EXPORT_SYMBOL(ath12k_dp_rx_h_find_peer_by_peerid_index);
-
 struct ath12k_dp_link_peer *
-ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct sk_buff *msdu,
-			 struct hal_rx_desc *rx_desc)
+ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct hal_rx_desc *rx_desc, u16 peer_id)
 {
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ath12k_dp_link_peer *peer = NULL;
 	void *peer_mac;
 
 	lockdep_assert_held(&dp->dp_lock);
 
-	if (rxcb->peer_id)
-		peer = ath12k_dp_link_peer_find_by_id(dp, rxcb->peer_id);
+	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
 
 	if (peer)
 		return peer;
@@ -997,7 +980,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	rcu_read_lock();
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_rx_h_find_peer_by_peerid_index(dp, dp_pdev, msdu);
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, rxcb->peer_id);
 
 	pubsta = peer ? peer->sta : NULL;
 

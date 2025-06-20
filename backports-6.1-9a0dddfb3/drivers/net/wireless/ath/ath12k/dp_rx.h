@@ -195,8 +195,7 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 u8 ath12k_dp_rx_h_l3pad(struct ath12k_base *ab,
 			struct hal_rx_desc *desc);
 struct ath12k_dp_link_peer *
-ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct sk_buff *msdu,
-			 struct hal_rx_desc *rx_desc);
+ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct hal_rx_desc *rx_desc, u16 peer_id);
 u8 ath12k_dp_rx_h_decap_type(struct ath12k_base *ab,
 			     struct hal_rx_desc *desc);
 u32 ath12k_dp_rx_h_mpdu_err(struct ath12k_base *ab,
@@ -228,11 +227,8 @@ int ath12k_dp_rx_h_michael_mic(struct crypto_shash *tfm, u8 *key,
 void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				struct hal_rx_desc *rx_desc,
 				enum hal_encrypt_type enctype,
-				struct ieee80211_rx_status *status, bool decrypted);
-struct ath12k_dp_peer *
-ath12k_dp_rx_h_find_peer_by_peerid_index(struct ath12k_dp *dp,
-					 struct ath12k_pdev_dp *dp_pdev,
-					 struct sk_buff *msdu);
+				struct ieee80211_rx_status *status, bool decrypted,
+				u16 peer_id);
 int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
 					 enum dp_htt_flow_fst_operation operation,
 					 struct hal_flow_tuple_info *tuple_info);
