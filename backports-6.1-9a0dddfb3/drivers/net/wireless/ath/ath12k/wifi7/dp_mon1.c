@@ -24,6 +24,7 @@ struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.mon_pdev_rx_htt_srng_setup = NULL,
 	.mon_pdev_rx_attach = ath12k_dp_mon_pdev_rx_attach,
 	.mon_pdev_rx_mpdu_list_init = NULL,
+	.mon_rx_srng_process = ath12k_wifi7_dp_mon_rx_quad_ring_process,
 };
 
 int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
@@ -209,4 +210,14 @@ int ath12k_wifi7_dp_mon_rx_htt_srng_setup(struct ath12k_dp *dp)
 	}
 
 	return 0;
+}
+
+int ath12k_wifi7_dp_mon_rx_quad_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_id,
+					     struct napi_struct *napi, int *budget)
+{
+	int num_buffs_reaped;
+
+	num_buffs_reaped = __ath12k_dp_mon_process_ring(pdev_dp->ar, mac_id, napi,
+							budget);
+	return num_buffs_reaped;
 }

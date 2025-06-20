@@ -1814,8 +1814,8 @@ ath12k_dp_mon_rx_memset_ppdu_info(struct hal_rx_mon_ppdu_info *ppdu_info)
 	ppdu_info->peer_id = HAL_INVALID_PEERID;
 }
 
-int ath12k_dp_mon_srng_process(struct ath12k_pdev_dp *pdev_dp, int *budget,
-			       struct napi_struct *napi)
+int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_id,
+				       struct napi_struct *napi, int *budget)
 {
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
@@ -1995,7 +1995,7 @@ free_skb:
 
 	return num_buffs_reaped;
 }
-EXPORT_SYMBOL(ath12k_dp_mon_srng_process);
+EXPORT_SYMBOL(ath12k_dp_mon_rx_dual_ring_process);
 
 static int ath12k_dp_rx_reap_mon_status_ring(struct ath12k_base *ab, int mac_id,
 					     int *budget, struct sk_buff_head *skb_list)

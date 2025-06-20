@@ -67,6 +67,8 @@ struct ath12k_dp_arch_mon_ops {
 					  u32 mac_id);
 	void (*mon_pdev_rx_attach)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_pdev_rx_mpdu_list_init)(struct ath12k_mon_data *pmon);
+	int (*mon_rx_srng_process)(struct ath12k_pdev_dp *dp_pdev, int mac_id,
+				      struct napi_struct *napi, int *budget);
 };
 
 struct ath12k_dp_mon {
@@ -224,8 +226,8 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 				  struct napi_struct *napi,
 				  u32 ppdu_id);
 void ath12k_dp_mon_rx_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info);
-int ath12k_dp_mon_srng_process(struct ath12k_pdev_dp *pdev_dp, int *budget,
-			       struct napi_struct *napi);
+int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_id,
+				       struct napi_struct *napi, int *budget);
 int __ath12k_dp_mon_process_ring(struct ath12k *ar, int mac_id,
 				 struct napi_struct *napi, int *budget);
 int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,

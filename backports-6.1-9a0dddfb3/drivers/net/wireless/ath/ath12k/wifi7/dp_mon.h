@@ -24,9 +24,11 @@ int ath12k_dp_rx_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 				  struct napi_struct *napi, int budget)
 {
 	struct ath12k_pdev_dp *dp_pdev;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	u8 pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
 	int num_buffs_reaped = 0;
 
+	mon_ops = ath12k_dp_mon_ops_get(dp);
 	rcu_read_lock();
 
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
@@ -35,13 +37,10 @@ int ath12k_dp_rx_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 		return 0;
 	}
 
-	if (dp->hw_params->rxdma1_enable) {
-		num_buffs_reaped = ath12k_dp_mon_srng_process(dp_pdev, &budget, napi);
-	} else {
-		if (dp_pdev->ar->monitor_started)
-			num_buffs_reaped =
-				__ath12k_dp_mon_process_ring(dp_pdev->ar, mac_id, napi,
-							     &budget);
+	if (mon_ops && mon_ops->mon_rx_srng_process) {
+		num_buffs_reaped =
+			mon_ops->mon_rx_srng_process(dp_pdev, mac_id,
+							napi, &budget);
 	}
 
 	rcu_read_unlock();

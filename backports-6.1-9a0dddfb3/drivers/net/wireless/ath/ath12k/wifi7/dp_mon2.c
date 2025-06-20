@@ -21,4 +21,5 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.mon_pdev_rx_htt_srng_setup = ath12k_dp_mon_pdev_rx_htt_srng_setup,
 	.mon_pdev_rx_attach = ath12k_dp_mon_pdev_rx_attach,
 	.mon_pdev_rx_mpdu_list_init = ath12k_dp_mon_pdev_rx_mpdu_list_init,
+	.mon_rx_srng_process = ath12k_dp_mon_rx_dual_ring_process,
 };
