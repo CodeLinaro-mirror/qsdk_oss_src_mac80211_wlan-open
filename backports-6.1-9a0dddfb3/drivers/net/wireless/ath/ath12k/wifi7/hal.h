@@ -485,6 +485,58 @@ struct hal_wbm_idle_scatter_list {
 	struct hal_wbm_link_desc *vaddr;
 };
 
+struct rx_mpdu_desc_info {
+	u32 msdu_count                            :  8,
+	    fragment_flag                         :  1,
+	    mpdu_retry_bit                        :  1,
+	    ampdu_flag                            :  1,
+	    bar_frame                             :  1,
+	    pn_fields_contain_valid_info          :  1,
+	    raw_mpdu                              :  1,
+	    more_fragment_flag                    :  1,
+	    vdev_id                               :  8,
+	    reserved				  :  4,
+	    mpdu_qos_control_valid                :  1,
+	    tid                                   :  4;
+	union {
+		u32 peer_meta_data;
+		u32 peer_id			  : 16;
+	};
+};
+
+struct rx_msdu_desc_info {
+	u32 first_msdu		        :  1,
+	    last_msdu 		        :  1,
+	    msdu_continuation           :  1,
+	    msdu_length                 : 14,
+	    msdu_drop                   :  1,
+	    sa_is_valid                 :  1,
+	    da_is_valid                 :  1,
+	    da_is_mcbc                  :  1,
+	    l3_header_padding_msb       :  1,
+	    tcp_udp_chksum_fail         :  1,
+	    ip_chksum_fail              :  1,
+	    fr_ds                       :  1,
+	    to_ds                       :  1,
+	    intra_bss                   :  1,
+	    dest_chip_id                :  2,
+	    reserved			:  3;
+};
+
+struct rx_tlv_info_1 {
+	u32 freq;
+	u32 decap			: 2,
+	    rate_mcs			: 4,
+	    nss			   	: 7,
+	    sgi			   	: 2,
+	    is_decrypted		: 1,
+	    mesh_ctrl_present	   	: 1,
+	    msdu_done			: 1,
+	    pkt_type			: 4,
+	    is_ip_valid			: 1,
+	    bw			   	: 3;
+};
+
 struct hal_reo_status_queue_stats {
 	u16 ssn;
 	u16 curr_idx;
