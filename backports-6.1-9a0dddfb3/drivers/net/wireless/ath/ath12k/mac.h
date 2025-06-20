@@ -400,5 +400,8 @@ int ath12k_mac_monitor_start(struct ath12k *ar);
 enum ieee80211_neg_ttlm_res ath12k_mac_op_can_neg_ttlm(struct ieee80211_hw *hw,
 						       struct ieee80211_vif *vif,
 						       struct ieee80211_neg_ttlm *neg_ttlm);
+void ath12k_mac_op_apply_neg_ttlm_per_client(struct ieee80211_hw *hw,
+					     struct ieee80211_vif *vif,
+					     struct ieee80211_sta *sta);
 
 #endif
