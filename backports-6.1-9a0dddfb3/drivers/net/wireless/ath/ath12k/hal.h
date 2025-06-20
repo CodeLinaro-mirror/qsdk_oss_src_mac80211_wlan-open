@@ -1289,7 +1289,7 @@ struct hal_ops {
 				     struct hal_rx_desc *rx_desc,
 				     struct hal_rx_desc *ldesc);
 	void (*extract_rx_spd_data)(struct hal_rx_spd_data *rx_info,
-				    struct hal_rx_desc *rx_desc);
+				    struct hal_rx_desc *rx_desc, int set);
 	void (*ce_dst_setup)(struct ath12k_base *ab,
 			     struct hal_srng *srng, int ring_num);
 	void (*set_umac_srng_ptr_addr)(struct ath12k_base *ab,
@@ -1339,6 +1339,7 @@ struct hal_ops {
         (*get_idle_link_rbm)(struct ath12k_hal *hal, u8 device_id);
 	void (*reo_shared_qaddr_cache_clear)(struct ath12k_base *ab);
 	u8 *(*rxdesc_get_mpdu_start_addr2)(struct hal_rx_desc *desc);
+	bool (*rx_h_is_decrypted)(struct hal_rx_desc *desc);
 };
 
 static inline
@@ -1478,6 +1479,7 @@ void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 u8 *
 ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc);
 void ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp);
+bool ath12k_hal_rx_h_is_decrypted(struct ath12k_hal *hal, struct hal_rx_desc *desc);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries);

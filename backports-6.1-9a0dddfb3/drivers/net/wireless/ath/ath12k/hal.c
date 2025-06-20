@@ -164,6 +164,12 @@ ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_des
 	return hal->hal_ops->rxdesc_get_mpdu_start_addr2(desc);
 }
 
+bool ath12k_hal_rx_h_is_decrypted(struct ath12k_hal *hal, struct hal_rx_desc *desc)
+{
+	return hal->hal_ops->rx_h_is_decrypted(desc);
+}
+EXPORT_SYMBOL(ath12k_hal_rx_h_is_decrypted);
+
 static int ath12k_hal_alloc_cont_rdp(struct ath12k_hal *hal)
 {
 	size_t size;

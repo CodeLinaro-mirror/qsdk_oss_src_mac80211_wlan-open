@@ -420,21 +420,20 @@ void ath12k_wifi7_hal_extract_rx_desc_data_wcn7850(struct hal_rx_desc_data *rx_d
 }
 
 void ath12k_wifi7_hal_extract_rx_spd_data_wcn7850(struct hal_rx_spd_data *rx_info,
-                                                 struct hal_rx_desc *rx_desc)
+                                                 struct hal_rx_desc *rx_desc, int set)
 {
-	rx_info->tlv_info.freq = ath12k_wifi7_hal_rx_h_freq_wcn7850(rx_desc);
-	rx_info->tlv_info.pkt_type = ath12k_wifi7_hal_rx_h_pkt_type_wcn7850(rx_desc);
-	rx_info->tlv_info.bw = ath12k_wifi7_hal_rx_h_rx_bw_wcn7850(rx_desc);
-	rx_info->tlv_info.rate_mcs = ath12k_wifi7_hal_rx_h_rate_mcs_wcn7850(rx_desc);
-	rx_info->tlv_info.nss = hweight8(ath12k_wifi7_hal_rx_h_nss_wcn7850(rx_desc));
-	rx_info->tlv_info.sgi = ath12k_wifi7_hal_rx_h_sgi_wcn7850(rx_desc);
-	rx_info->rx_mpdu_info.peer_id = ath12k_wifi7_hal_rx_h_peer_id_wcn7850(rx_desc);
-	rx_info->tlv_info.is_decrypted =
-		ath12k_wifi7_hal_rx_h_is_decrypted_wcn7850(rx_desc);
-	rx_info->tlv_info.decap = ath12k_wifi7_hal_rx_h_decap_type_wcn7850(rx_desc);
-	rx_info->rx_mpdu_info.tid = ath12k_wifi7_hal_rx_h_tid_wcn7850(rx_desc);
-	rx_info->tlv_info.mesh_ctrl_present =
-		ath12k_wifi7_hal_rx_h_mesh_ctl_present_wcn7850(rx_desc);
+	if (set == 0) {
+		rx_info->tlv_info.decap = ath12k_wifi7_hal_rx_h_decap_type_wcn7850(rx_desc);
+		rx_info->tlv_info.mesh_ctrl_present =
+			ath12k_wifi7_hal_rx_h_mesh_ctl_present_wcn7850(rx_desc);
+	} else if (set == 1) {
+		rx_info->tlv_info.freq = ath12k_wifi7_hal_rx_h_freq_wcn7850(rx_desc);
+		rx_info->tlv_info.pkt_type = ath12k_wifi7_hal_rx_h_pkt_type_wcn7850(rx_desc);
+		rx_info->tlv_info.bw = ath12k_wifi7_hal_rx_h_rx_bw_wcn7850(rx_desc);
+		rx_info->tlv_info.rate_mcs = ath12k_wifi7_hal_rx_h_rate_mcs_wcn7850(rx_desc);
+		rx_info->tlv_info.nss = hweight8(ath12k_wifi7_hal_rx_h_nss_wcn7850(rx_desc));
+		rx_info->tlv_info.sgi = ath12k_wifi7_hal_rx_h_sgi_wcn7850(rx_desc);
+	}
 }
 
 static int ath12k_wifi7_hal_srng_create_config_wcn7850(struct ath12k_hal *hal)
@@ -640,4 +639,5 @@ const struct hal_ops hal_wcn7850_ops = {
 	.reo_shared_qaddr_cache_clear = ath12k_wifi7_hal_reo_shared_qaddr_cache_clear,
 	.rxdesc_get_mpdu_start_addr2 =
 			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850,
+	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_wcn7850,
 };

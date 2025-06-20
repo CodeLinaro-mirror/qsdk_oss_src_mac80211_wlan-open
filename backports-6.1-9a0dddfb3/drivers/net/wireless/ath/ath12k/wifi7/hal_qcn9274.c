@@ -827,20 +827,21 @@ void ath12k_wifi7_hal_extract_rx_desc_data_qcn9274(struct hal_rx_desc_data *rx_d
 }
 
 void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_info,
-						  struct hal_rx_desc *rx_desc)
+						  struct hal_rx_desc *rx_desc, int set)
 {
-	rx_info->tlv_info.freq = ath12k_wifi7_hal_rx_h_freq_qcn9274(rx_desc);
-	rx_info->tlv_info.pkt_type = ath12k_wifi7_hal_rx_h_pkt_type_qcn9274(rx_desc);
-	rx_info->tlv_info.bw = ath12k_wifi7_hal_rx_h_rx_bw_qcn9274(rx_desc);
-	rx_info->tlv_info.rate_mcs = ath12k_wifi7_hal_rx_h_rate_mcs_qcn9274(rx_desc);
-	rx_info->tlv_info.nss = hweight8(ath12k_wifi7_hal_rx_h_nss_qcn9274(rx_desc));
-	rx_info->tlv_info.sgi = ath12k_wifi7_hal_rx_h_sgi_qcn9274(rx_desc);
-	rx_info->tlv_info.is_decrypted =
-		ath12k_wifi7_hal_rx_h_is_decrypted_qcn9274(rx_desc);
-	rx_info->tlv_info.decap = ath12k_wifi7_hal_rx_h_decap_type_qcn9274(rx_desc);
-	rx_info->tlv_info.mesh_ctrl_present =
-		ath12k_wifi7_hal_rx_h_mesh_ctl_present_qcn9274(rx_desc);
-	rx_info->tlv_info.is_ip_valid = ath12k_wifi7_hal_rx_h_is_ip_valid_qcn9274(rx_desc);
+	if (set == 0) {
+		rx_info->tlv_info.is_ip_valid = ath12k_wifi7_hal_rx_h_is_ip_valid_qcn9274(rx_desc);
+		rx_info->tlv_info.decap = ath12k_wifi7_hal_rx_h_decap_type_qcn9274(rx_desc);
+		rx_info->tlv_info.mesh_ctrl_present =
+			ath12k_wifi7_hal_rx_h_mesh_ctl_present_qcn9274(rx_desc);
+	} else if (set == 1) {
+		rx_info->tlv_info.freq = ath12k_wifi7_hal_rx_h_freq_qcn9274(rx_desc);
+		rx_info->tlv_info.pkt_type = ath12k_wifi7_hal_rx_h_pkt_type_qcn9274(rx_desc);
+		rx_info->tlv_info.bw = ath12k_wifi7_hal_rx_h_rx_bw_qcn9274(rx_desc);
+		rx_info->tlv_info.rate_mcs = ath12k_wifi7_hal_rx_h_rate_mcs_qcn9274(rx_desc);
+		rx_info->tlv_info.nss = hweight8(ath12k_wifi7_hal_rx_h_nss_qcn9274(rx_desc));
+		rx_info->tlv_info.sgi = ath12k_wifi7_hal_rx_h_sgi_qcn9274(rx_desc);
+	}
 }
 
 static int ath12k_wifi7_hal_srng_create_config_qcn9274(struct ath12k_hal *hal)
@@ -1031,4 +1032,5 @@ const struct hal_ops hal_qcn9274_ops = {
 	.reo_shared_qaddr_cache_clear = ath12k_wifi7_hal_reo_shared_qaddr_cache_clear,
 	.rxdesc_get_mpdu_start_addr2 =
 			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_qcn9274,
+	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_qcn9274,
 };

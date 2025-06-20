@@ -936,6 +936,8 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	*fast_rx = false;
 
+	tlv_info->is_decrypted = ath12k_hal_rx_h_is_decrypted(dp->hal, rx_desc);
+
 	if (enctype != HAL_ENCRYPT_TYPE_OPEN && !err_bitmap)
 		is_decrypted = tlv_info->is_decrypted;
 
@@ -1196,7 +1198,7 @@ static int ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 		goto free_out;
 	}
 
-	ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc);
+	ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc, 0);
 
 	msdu_len = rx_msdu_info->msdu_length;
 	l3_pad_bytes = rx_msdu_info->l3_header_padding_msb ? 2 : 0;
@@ -1242,6 +1244,7 @@ static int ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	if (*fast_rx)
 		return 0;
 
+	ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc, 1);
 
 	ret = ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, rx_status, tlv_info,
 					HAL_WBM_REL_SRC_MODULE_REO);
