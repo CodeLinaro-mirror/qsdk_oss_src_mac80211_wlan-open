@@ -1422,10 +1422,7 @@ err_put_rproc:
 
 static void ath12k_ahb_deconfigure_rproc(struct ath12k_base *ab)
 {
-	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
-
 	ath12k_ahb_unregister_rproc_notifier(ab);
-	rproc_put(ab_ahb->tgt_rproc);
 }
 
 static int ath12k_ahb_resource_init(struct ath12k_base *ab)
