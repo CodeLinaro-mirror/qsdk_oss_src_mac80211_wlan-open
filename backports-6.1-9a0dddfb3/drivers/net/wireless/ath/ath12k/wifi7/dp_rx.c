@@ -640,10 +640,11 @@ static int ath12k_wifi7_dp_rx_msdu_coalesce(struct ath12k_dp *dp,
 }
 
 static void ath12k_wifi7_dp_rx_h_csum_offload(struct sk_buff *msdu,
-					      struct hal_rx_desc_data *rx_desc_data)
+					      struct rx_msdu_desc_info *rx_msdu_info)
 {
-	msdu->ip_summed = (rx_desc_data->ip_csum_fail || rx_desc_data->l4_csum_fail) ?
-			   CHECKSUM_NONE : CHECKSUM_UNNECESSARY;
+	msdu->ip_summed = (rx_msdu_info->tcp_udp_chksum_fail ||
+				rx_msdu_info->ip_chksum_fail) ?
+					CHECKSUM_NONE : CHECKSUM_UNNECESSARY;
 }
 
 static void ath12k_wifi7_dp_rx_h_undecap_nwifi(struct ath12k_pdev_dp *dp_pdev,
@@ -877,7 +878,10 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	if (rx_desc_data->is_mcbc)
 		rxcb->peer_id = rx_desc_data->peer_id;
 
-	ath12k_wifi7_dp_rx_h_csum_offload(msdu, rx_desc_data);
+	rx_msdu_info.tcp_udp_chksum_fail = rx_desc_data->l4_csum_fail;
+	rx_msdu_info.ip_chksum_fail = rx_desc_data->ip_csum_fail;
+
+	ath12k_wifi7_dp_rx_h_csum_offload(msdu, &rx_msdu_info);
 
 	rcu_read_lock();
 	spin_lock_bh(&dp->dp_lock);
