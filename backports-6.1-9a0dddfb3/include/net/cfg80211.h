@@ -1967,10 +1967,13 @@ struct link_station_del_parameters {
  *     (TID-To-Link Mapping element) in Draft P802.11be_D4.0.
  * @ulink: Uplink TID to link mapping, as defined in section 9.4.2.314
  *     (TID-To-Link Mapping element) in Draft P802.11be_D4.0.
+ * @mld_mac_addr: STA mld mac with which negotitation attempted on
+ *      AP MLD
  */
 struct cfg80211_ttlm_params {
-	u16 dlink[8];
-	u16 ulink[8];
+	u16 dlink[IEEE80211_MAX_NUM_TIDS];
+	u16 ulink[IEEE80211_MAX_NUM_TIDS];
+	const u8 *mld_mac_addr;
 };
 
 /**

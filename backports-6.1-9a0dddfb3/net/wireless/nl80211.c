@@ -17561,14 +17561,19 @@ nl80211_set_ttlm(struct sk_buff *skb, struct genl_info *info)
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 
 	if (wdev->iftype != NL80211_IFTYPE_STATION &&
-	    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT)
+	    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT &&
+	    wdev->iftype != NL80211_IFTYPE_AP)
 		return -EOPNOTSUPP;
 
-	if (!wdev->connected)
+	if (wdev->iftype != NL80211_IFTYPE_AP && !wdev->connected)
 		return -ENOLINK;
 
 	if (!info->attrs[NL80211_ATTR_MLO_TTLM_DLINK] ||
 	    !info->attrs[NL80211_ATTR_MLO_TTLM_ULINK])
+		return -EINVAL;
+
+	if (wdev->iftype == NL80211_IFTYPE_AP &&
+	    !info->attrs[NL80211_ATTR_MLD_ADDR])
 		return -EINVAL;
 
 	nla_memcpy(params.dlink,
@@ -17577,6 +17582,10 @@ nl80211_set_ttlm(struct sk_buff *skb, struct genl_info *info)
 	nla_memcpy(params.ulink,
 		   info->attrs[NL80211_ATTR_MLO_TTLM_ULINK],
 		   sizeof(params.ulink));
+
+	if (info->attrs[NL80211_ATTR_MLD_ADDR])
+		params.mld_mac_addr =
+			nla_data(info->attrs[NL80211_ATTR_MLD_ADDR]);
 
 	return rdev_set_ttlm(rdev, dev, &params);
 }
