@@ -1053,6 +1053,8 @@ enum wmi_tlv_event_id {
 	WMI_TWT_DEL_DIALOG_EVENTID,
 	WMI_TWT_PAUSE_DIALOG_EVENTID,
 	WMI_TWT_RESUME_DIALOG_EVENTID,
+	WMI_TWT_BTWT_INVITE_STA_COMPLETE_EVENTID,
+	WMI_TWT_BTWT_REMOVE_STA_COMPLETE_EVENTID,
 	WMI_MLO_LINK_SET_ACTIVE_RESP_EVENTID = WMI_EVT_GRP_START_ID(WMI_GRP_MLO),
 	WMI_MLO_SETUP_COMPLETE_EVENTID,
 	WMI_MLO_TEARDOWN_COMPLETE_EVENTID,
@@ -2136,6 +2138,10 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_INFO,
 	WMI_TAG_PEER_CFR_CAPTURE_EVENT = 0x317,
 	WMI_TAG_MUEDCA_PARAMS_CONFIG_EVENT = 0x32a,
+	WMI_TAG_TWT_BTWT_INVITE_STA_CMD,
+	WMI_TAG_TWT_BTWT_REMOVE_STA_CMD,
+	WMI_TAG_TWT_BTWT_INVITE_STA_COMPLETE_EVENT,
+	WMI_TAG_TWT_BTWT_REMOVE_STA_COMPLETE_EVENT,
 	WMI_TAG_CFR_CAPTURE_PHASE_PARAM = 0x33b,
 	WMI_TAG_SERVICE_READY_EXT2_EVENT = 0x334,
 	WMI_TAG_FILS_DISCOVERY_TMPL_CMD = 0x344,
@@ -6063,6 +6069,8 @@ struct wmi_twt_enable_params_cmd {
 struct wmi_twt_disable_params_cmd {
 	__le32 tlv_header;
 	__le32 pdev_id;
+	__le32 flags;
+	__le32 reason_code;
 } __packed;
 
 enum WMI_HOST_TWT_COMMAND {
@@ -6080,6 +6088,7 @@ enum WMI_HOST_TWT_COMMAND {
 #define WMI_TWT_ADD_DIALOG_FLAG_TRIGGER         BIT(9)
 #define WMI_TWT_ADD_DIALOG_FLAG_FLOW_TYPE       BIT(10)
 #define WMI_TWT_ADD_DIALOG_FLAG_PROTECTION      BIT(11)
+#define WMI_TWT_ADD_DIALOG_BTWT_ID0             BIT(12)
 
 struct wmi_twt_add_dialog_params_cmd {
 	u32 tlv_header;
@@ -6091,6 +6100,18 @@ struct wmi_twt_add_dialog_params_cmd {
 	u32 wake_dura_us;
 	u32 sp_offset_us;
 	u32 flags;
+	u32 b_twt_persistence;
+	u32 b_twt_recommendation;
+	u32 min_wake_intvl_us;
+	u32 max_wake_intvl_us;
+	u32 min_wake_dura_us;
+	u32 max_wake_dura_us;
+	u32 sp_start_tsf_lo;
+	u32 sp_start_tsf_hi;
+	u32 announce_timeout_us;
+	u32 link_id_bitmap;
+	u32 r_twt_dl_tid_bitmap;
+	u32 r_twt_ul_tid_bitmap;
 } __packed;
 
 struct wmi_twt_add_dialog_params {
@@ -6106,6 +6127,17 @@ struct wmi_twt_add_dialog_params {
 	u8 flag_trigger;
 	u8 flag_flow_type;
 	u8 flag_protection;
+	u32 b_twt_persistence;
+	u32 b_twt_recommendation;
+	u32 min_wake_intvl_us;
+	u32 max_wake_intvl_us;
+	u32 min_wake_dura_us;
+	u32 max_wake_dura_us;
+	u64 wake_time_tsf;
+	u32 announce_timeout_us;
+	u32 link_id_bitmap;
+	u32 r_twt_dl_tid_bitmap;
+	u32 r_twt_ul_tid_bitmap;
 } __packed;
 
 enum  wmi_twt_add_dialog_status {
@@ -6119,6 +6151,16 @@ enum  wmi_twt_add_dialog_status {
 	WMI_ADD_TWT_STATUS_NO_RESPONSE,
 	WMI_ADD_TWT_STATUS_DENIED,
 	WMI_ADD_TWT_STATUS_UNKNOWN_ERROR,
+	WMI_ADD_TWT_STATUS_AP_PARAMS_NOT_IN_RANGE,
+	WMI_ADD_TWT_STATUS_AP_IE_VALIDATION_FAILED,
+	WMI_ADD_TWT_STATUS_ROAM_IN_PROGRESS,
+	WMI_ADD_TWT_STATUS_CHAN_SW_IN_PROGRESS,
+	WMI_ADD_TWT_STATUS_SCAN_IN_PROGRESS,
+	WMI_ADD_TWT_STATUS_DIALOG_ID_BUSY,
+	WMI_ADD_TWT_STATUS_BTWT_NOT_ENBABLED,
+	WMI_ADD_TWT_STATUS_RTWT_NOT_ENBABLED,
+	WMI_ADD_TWT_STATUS_LINK_SWITCH_IN_PROGRESS,
+	WMI_ADD_TWT_STATUS_UNSUPPORTED_MODE_MLMR,
 };
 
 struct wmi_twt_add_dialog_event {
@@ -6132,6 +6174,8 @@ struct wmi_twt_del_dialog_params {
 	u32 vdev_id;
 	u8 peer_macaddr[ETH_ALEN];
 	u32 dialog_id;
+	u32 b_twt_persistence;
+	u32 is_bcast_twt;
 } __packed;
 
 struct wmi_twt_del_dialog_params_cmd {
@@ -6139,6 +6183,8 @@ struct wmi_twt_del_dialog_params_cmd {
 	u32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
 	u32 dialog_id;
+	u32 b_twt_persistence;
+	u32 is_bcast_twt;
 } __packed;
 
 struct wmi_twt_pause_dialog_params {
@@ -6171,6 +6217,39 @@ struct wmi_twt_resume_dialog_params_cmd {
 	u32 next_twt_size;
 } __packed;
 
+struct wmi_twt_btwt_invite_sta_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	u32 dialog_id;
+	u32 r_twt_dl_tid_bitmap;
+	u32 r_twt_ul_tid_bitmap;
+} __packed;
+
+struct wmi_twt_btwt_remove_sta_cmd {
+	u32 tlv_header;
+	u32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	u32 dialog_id;
+	u32 r_twt_dl_tid_bitmap;
+	u32 r_twt_ul_tid_bitmap;
+} __packed;
+
+struct wmi_twt_btwt_invite_sta_params {
+	u32 vdev_id;
+	u8 peer_macaddr[ETH_ALEN];
+	u32 dialog_id;
+	u32 r_twt_dl_tid_bitmap;
+	u32 r_twt_ul_tid_bitmap;
+} __packed;
+
+struct wmi_twt_btwt_remove_sta_params {
+	u32 vdev_id;
+	u8 peer_macaddr[ETH_ALEN];
+	u32 dialog_id;
+	u32 r_twt_dl_tid_bitmap;
+	u32 r_twt_ul_tid_bitmap;
+} __packed;
 /**
  * WMI arrays of length WMI_MGMT_FRAME_SUBTYPE_MAX use the
  * IEEE802.11 standard's enumeration of mgmt frame subtypes:
@@ -7289,6 +7368,20 @@ struct wmi_vdev_adfs_ocac_complete_event_fixed_param {
 	};
 	__le32 status;
 	__le32 center_freq2;
+} __packed;
+
+struct wmi_twt_btwt_invite_sta_event {
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 dialog_id;
+	__le32 status;
+} __packed;
+
+struct wmi_twt_btwt_remove_sta_event {
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 dialog_id;
+	__le32 status;
 } __packed;
 
 struct wmi_mlo_setup_cmd {
@@ -8799,6 +8892,10 @@ int ath12k_wmi_send_twt_pause_dialog_cmd(struct ath12k *ar,
 int ath12k_wmi_send_twt_resume_dialog_cmd(struct ath12k *ar,
 					  struct wmi_twt_resume_dialog_params *params);
 int ath12k_wmi_send_twt_vdev_cfg_cmd(struct ath12k *ar, u32 vdev_id, u32 val);
+int ath12k_wmi_send_twt_btwt_invite_sta_cmd(struct ath12k *ar,
+					    struct wmi_twt_btwt_invite_sta_params *params);
+int ath12k_wmi_send_twt_btwt_remove_sta_cmd(struct ath12k *ar,
+					    struct wmi_twt_btwt_remove_sta_params *params);
 int ath12k_wmi_send_obss_spr_cmd(struct ath12k *ar, u32 vdev_id,
 				 struct ieee80211_he_obss_pd *he_obss_pd);
 int ath12k_wmi_pdev_set_srg_bss_color_bitmap(struct ath12k *ar, u32 *bitmap);

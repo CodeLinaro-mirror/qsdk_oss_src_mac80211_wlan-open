@@ -5438,7 +5438,7 @@ static ssize_t ath12k_write_twt_add_dialog(struct file *file,
 
 	buf[ret] = '\0';
 	ret = sscanf(buf,
-		     "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx %u %u %u %u %u %hhu %hhu %hhu %hhu %hhu",
+		     "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx %u %u %u %u %u %hhu %hhu %hhu %hhu %hhu %u %u %u %u %u",
 		     &params.peer_macaddr[0],
 		     &params.peer_macaddr[1],
 		     &params.peer_macaddr[2],
@@ -5454,8 +5454,13 @@ static ssize_t ath12k_write_twt_add_dialog(struct file *file,
 		     &params.flag_bcast,
 		     &params.flag_trigger,
 		     &params.flag_flow_type,
-		     &params.flag_protection);
-	if (ret != 16)
+		     &params.flag_protection,
+		     &params.b_twt_persistence,
+		     &params.b_twt_recommendation,
+		     &params.link_id_bitmap,
+		     &params.r_twt_dl_tid_bitmap,
+		     &params.r_twt_ul_tid_bitmap);
+	if (ret != 18 && ret != 21)
 		return -EINVAL;
 
 	params.vdev_id = arvif->vdev_id;
@@ -5486,15 +5491,17 @@ static ssize_t ath12k_write_twt_del_dialog(struct file *file,
 		return ret;
 
 	buf[ret] = '\0';
-	ret = sscanf(buf, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx %u",
+	ret = sscanf(buf, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx %u %u %u",
 		     &params.peer_macaddr[0],
 		     &params.peer_macaddr[1],
 		     &params.peer_macaddr[2],
 		     &params.peer_macaddr[3],
 		     &params.peer_macaddr[4],
 		     &params.peer_macaddr[5],
-		     &params.dialog_id);
-	if (ret != 7)
+		     &params.dialog_id,
+		     &params.b_twt_persistence,
+		     &params.is_bcast_twt);
+	if (ret != 7 && ret != 9)
 		return -EINVAL;
 
 	params.vdev_id = arvif->vdev_id;
@@ -5586,6 +5593,88 @@ static ssize_t ath12k_write_twt_resume_dialog(struct file *file,
 	return count;
 }
 
+static ssize_t ath12k_write_twt_btwt_invite_sta(struct file *file,
+						const char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k_link_vif *arvif = file->private_data;
+	struct wmi_twt_btwt_invite_sta_params params = { 0 };
+	u8 buf[64] = {0};
+	int ret;
+
+	if (arvif->ar->twt_enabled == 0) {
+		ath12k_err(arvif->ar->ab, "twt support is not enabled\n");
+		return -EOPNOTSUPP;
+	}
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
+	if (ret < 0)
+		return ret;
+
+	buf[ret] = '\0';
+	ret = sscanf(buf, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx %u %u %u",
+		     &params.peer_macaddr[0],
+		     &params.peer_macaddr[1],
+		     &params.peer_macaddr[2],
+		     &params.peer_macaddr[3],
+		     &params.peer_macaddr[4],
+		     &params.peer_macaddr[5],
+		     &params.dialog_id,
+		     &params.r_twt_dl_tid_bitmap,
+		     &params.r_twt_ul_tid_bitmap);
+	if (ret != 7 && ret != 9)
+		return -EINVAL;
+
+	params.vdev_id = arvif->vdev_id;
+
+	ret = ath12k_wmi_send_twt_btwt_invite_sta_cmd(arvif->ar, &params);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
+static ssize_t ath12k_write_twt_btwt_remove_sta(struct file *file,
+						const char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k_link_vif *arvif = file->private_data;
+	struct wmi_twt_btwt_remove_sta_params params = { 0 };
+	u8 buf[64] = {0};
+	int ret;
+
+	if (arvif->ar->twt_enabled == 0) {
+		ath12k_err(arvif->ar->ab, "twt support is not enabled\n");
+		return -EOPNOTSUPP;
+	}
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
+	if (ret < 0)
+		return ret;
+
+	buf[ret] = '\0';
+	ret = sscanf(buf, "%02hhx:%02hhx:%02hhx:%02hhx:%02hhx:%02hhx %u %u %u",
+		     &params.peer_macaddr[0],
+		     &params.peer_macaddr[1],
+		     &params.peer_macaddr[2],
+		     &params.peer_macaddr[3],
+		     &params.peer_macaddr[4],
+		     &params.peer_macaddr[5],
+		     &params.dialog_id,
+		     &params.r_twt_dl_tid_bitmap,
+		     &params.r_twt_ul_tid_bitmap);
+	if (ret != 7 && ret != 9)
+		return -EINVAL;
+
+	params.vdev_id = arvif->vdev_id;
+
+	ret = ath12k_wmi_send_twt_btwt_remove_sta_cmd(arvif->ar, &params);
+	if (ret)
+		return ret;
+
+	return count;
+}
+
 static const struct file_operations ath12k_fops_twt_add_dialog = {
 	.write = ath12k_write_twt_add_dialog,
 	.open = simple_open
@@ -5603,6 +5692,16 @@ static const struct file_operations ath12k_fops_twt_pause_dialog = {
 
 static const struct file_operations ath12k_fops_twt_resume_dialog = {
 	.write = ath12k_write_twt_resume_dialog,
+	.open = simple_open
+};
+
+static const struct file_operations ath12k_fops_btwt_invite_sta = {
+	.write = ath12k_write_twt_btwt_invite_sta,
+	.open = simple_open
+};
+
+static const struct file_operations ath12k_fops_btwt_remove_sta = {
+	.write = ath12k_write_twt_btwt_remove_sta,
 	.open = simple_open
 };
 
@@ -5769,6 +5868,12 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 
 	debugfs_create_file("resume_dialog", 0200, arvif->debugfs_twt,
 			    arvif, &ath12k_fops_twt_resume_dialog);
+
+	debugfs_create_file("btwt_invite_sta", 0200, arvif->debugfs_twt,
+			    arvif, &ath12k_fops_btwt_invite_sta);
+
+	debugfs_create_file("btwt_remove_sta", 0200, arvif->debugfs_twt,
+			    arvif, &ath12k_fops_btwt_remove_sta);
 
 	debugfs_create_file("rfs_core_mask", 0644, vif->debugfs_dir,
 			    ahvif, &ath12k_fops_rfs_core_mask);

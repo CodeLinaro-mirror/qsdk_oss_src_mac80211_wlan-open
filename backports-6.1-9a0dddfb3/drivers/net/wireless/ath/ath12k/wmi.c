@@ -236,6 +236,10 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_twt_add_dialog_event) },
 	[WMI_TAG_OBSS_COLOR_COLLISION_EVT]
 		= { .min_len = sizeof(struct wmi_obss_color_collision_event) },
+	[WMI_TAG_TWT_BTWT_INVITE_STA_COMPLETE_EVENT] = {
+		.min_len = sizeof(struct wmi_twt_btwt_invite_sta_event) },
+	[WMI_TAG_TWT_BTWT_REMOVE_STA_COMPLETE_EVENT] = {
+		.min_len = sizeof(struct wmi_twt_btwt_invite_sta_event) },
 };
 
 __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len)
@@ -4852,6 +4856,19 @@ int ath12k_wmi_send_twt_add_dialog_cmd(struct ath12k *ar,
 	cmd->wake_intvl_mantis = params->wake_intvl_mantis;
 	cmd->wake_dura_us = params->wake_dura_us;
 	cmd->sp_offset_us = params->sp_offset_us;
+	cmd->b_twt_persistence = params->b_twt_persistence;
+	cmd->b_twt_recommendation = params->b_twt_recommendation;
+	cmd->min_wake_intvl_us = params->min_wake_intvl_us;
+	cmd->max_wake_intvl_us = params->max_wake_intvl_us;
+	cmd->min_wake_dura_us = params->min_wake_dura_us;
+	cmd->max_wake_dura_us = params->max_wake_dura_us;
+	cmd->sp_start_tsf_lo = (uint32_t)(params->wake_time_tsf & 0xFFFFFFFF);
+	cmd->sp_start_tsf_hi = (uint32_t)(params->wake_time_tsf >> 32);
+	cmd->announce_timeout_us = params->announce_timeout_us;
+	cmd->link_id_bitmap = params->link_id_bitmap;
+	cmd->r_twt_dl_tid_bitmap = params->r_twt_dl_tid_bitmap;
+	cmd->r_twt_ul_tid_bitmap = params->r_twt_ul_tid_bitmap;
+
 	cmd->flags = params->twt_cmd;
 	if (params->flag_bcast)
 		cmd->flags |= WMI_TWT_ADD_DIALOG_FLAG_BCAST;
@@ -4867,6 +4884,21 @@ int ath12k_wmi_send_twt_add_dialog_cmd(struct ath12k *ar,
 		   cmd->vdev_id, cmd->dialog_id, cmd->wake_intvl_us,
 		   cmd->wake_intvl_mantis, cmd->wake_dura_us, cmd->sp_offset_us,
 		   cmd->flags);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "B-TWT persistence %u B-TWT recommendation %u\n",
+		   cmd->b_twt_persistence, cmd->b_twt_recommendation);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "Wake intveral: Max %u Min %u Wake duration: Max %u Min %u\n",
+		   cmd->min_wake_intvl_us, cmd->max_wake_intvl_us,
+		   cmd->min_wake_dura_us, cmd->min_wake_dura_us);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "SP start tsf lo %u hi %u announcement us %u\n",
+		   cmd->sp_start_tsf_lo, cmd->sp_start_tsf_hi,
+		   cmd->announce_timeout_us);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "RTWT link id bitmap %u dl %u ul %u\n",
+		   cmd->link_id_bitmap, cmd->r_twt_dl_tid_bitmap,
+		   cmd->r_twt_ul_tid_bitmap);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_ADD_DIALOG_CMDID);
 
@@ -4901,6 +4933,8 @@ int ath12k_wmi_send_twt_del_dialog_cmd(struct ath12k *ar,
 	cmd->vdev_id = params->vdev_id;
 	ether_addr_copy(cmd->peer_macaddr.addr, params->peer_macaddr);
 	cmd->dialog_id = params->dialog_id;
+	cmd->b_twt_persistence = params->b_twt_persistence;
+	cmd->is_bcast_twt = params->is_bcast_twt;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 		   "wmi delete twt dialog vdev %u dialog id %u\n",
@@ -11871,6 +11905,66 @@ exit:
 	kfree(tb);
 }
 
+static void ath12k_wmi_twt_btwt_invite_sta_compl_event(struct ath12k_base *ab,
+						       struct sk_buff *skb)
+{
+	const void **tb;
+	const struct wmi_twt_btwt_invite_sta_event *ev;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse wmi btwt invite sta event tlv: %d\n",
+			    ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_TWT_BTWT_INVITE_STA_COMPLETE_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch btwt invite sta event\n");
+		goto exit;
+	}
+
+	ath12k_info(ab, "wmi btwt invite sta event vdev id %u peer %pM dialog %d status %u\n",
+		   le32_to_cpu(ev->vdev_id), ev->peer_macaddr.addr,
+		   le32_to_cpu(ev->dialog_id),
+		   le32_to_cpu(ev->status));
+
+exit:
+	kfree(tb);
+}
+
+static void ath12k_wmi_twt_btwt_remove_sta_compl_event(struct ath12k_base *ab,
+						       struct sk_buff *skb)
+{
+	const void **tb;
+	const struct wmi_twt_btwt_remove_sta_event *ev;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse wmi btwt remove sta event tlv: %d\n",
+			    ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_TWT_BTWT_REMOVE_STA_COMPLETE_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch btwt remove sta event\n");
+		goto exit;
+	}
+
+	ath12k_info(ab, "wmi btwt remove sta event vdev id %u peer %pM dialog %d status %u\n",
+		   le32_to_cpu(ev->vdev_id), ev->peer_macaddr.addr,
+		   le32_to_cpu(ev->dialog_id),
+		   le32_to_cpu(ev->status));
+
+exit:
+	kfree(tb);
+}
+
 static int ath12k_wmi_wow_wakeup_host_parse(struct ath12k_base *ab,
 					    u16 tag, u16 len,
 					    const void *ptr, void *data)
@@ -13287,6 +13381,26 @@ static const char *ath12k_wmi_twt_add_dialog_event_status(u32 status)
 		return "no response";
 	case WMI_ADD_TWT_STATUS_DENIED:
 		return "denied";
+	case WMI_ADD_TWT_STATUS_AP_PARAMS_NOT_IN_RANGE:
+		return "peer AP wake interval, duration not in range";
+	case WMI_ADD_TWT_STATUS_AP_IE_VALIDATION_FAILED:
+		return "peer AP IE Validation Failed";
+	case WMI_ADD_TWT_STATUS_ROAM_IN_PROGRESS:
+		return "Roaming in progress";
+	case WMI_ADD_TWT_STATUS_CHAN_SW_IN_PROGRESS:
+		return "Channel switch in progress";
+	case WMI_ADD_TWT_STATUS_SCAN_IN_PROGRESS:
+		return "Scan in progress";
+	case WMI_ADD_TWT_STATUS_DIALOG_ID_BUSY:
+		return "FW is in the process of handling this dialog";
+	case WMI_ADD_TWT_STATUS_BTWT_NOT_ENBABLED:
+		return "Broadcast TWT is not enabled";
+	case WMI_ADD_TWT_STATUS_RTWT_NOT_ENBABLED:
+		return "Restricted TWT is not enabled";
+	case WMI_ADD_TWT_STATUS_LINK_SWITCH_IN_PROGRESS:
+		return "Link switch is ongoing";
+	case WMI_ADD_TWT_STATUS_UNSUPPORTED_MODE_MLMR:
+		return "Unsupported in MLMR mode";
 	case WMI_ADD_TWT_STATUS_UNKNOWN_ERROR:
 		fallthrough;
 	default:
@@ -14387,6 +14501,12 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_MLO_TID_TO_LINK_MAP_EVENT_ID:
 		ath12k_wmi_tid_to_link_map_event(ab, skb);
 		break;
+	case WMI_TWT_BTWT_INVITE_STA_COMPLETE_EVENTID:
+		ath12k_wmi_twt_btwt_invite_sta_compl_event(ab, skb);
+		break;
+	case WMI_TWT_BTWT_REMOVE_STA_COMPLETE_EVENTID:
+		ath12k_wmi_twt_btwt_remove_sta_compl_event(ab, skb);
+		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
 		break;
@@ -14607,6 +14727,84 @@ int ath12k_wmi_dbglog_cfg(struct ath12k *ar, u32 param, u64 value)
 }
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
+
+int ath12k_wmi_send_twt_btwt_invite_sta_cmd(struct ath12k *ar,
+					    struct wmi_twt_btwt_invite_sta_params *params)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_twt_btwt_invite_sta_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_twt_btwt_invite_sta_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TWT_BTWT_INVITE_STA_CMD,
+						 sizeof(*cmd));
+
+	cmd->vdev_id = params->vdev_id;
+	ether_addr_copy(cmd->peer_macaddr.addr, params->peer_macaddr);
+	cmd->dialog_id = params->dialog_id;
+	cmd->r_twt_dl_tid_bitmap = params->r_twt_dl_tid_bitmap;
+	cmd->r_twt_dl_tid_bitmap = params->r_twt_dl_tid_bitmap;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi BTWT invite sta vdev %u dialog id %u\n",
+		   cmd->vdev_id, cmd->dialog_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_BTWT_INVITE_STA_CMDID);
+	if (ret) {
+		ath12k_warn(ab,
+			    "failed to send wmi command to B-TWT invite sta: %d",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
+int ath12k_wmi_send_twt_btwt_remove_sta_cmd(struct ath12k *ar,
+					    struct wmi_twt_btwt_remove_sta_params *params)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_twt_btwt_remove_sta_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_twt_btwt_remove_sta_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TWT_BTWT_REMOVE_STA_CMD,
+						 sizeof(*cmd));
+
+	cmd->vdev_id = params->vdev_id;
+	ether_addr_copy(cmd->peer_macaddr.addr, params->peer_macaddr);
+	cmd->dialog_id = params->dialog_id;
+	cmd->r_twt_dl_tid_bitmap = params->r_twt_dl_tid_bitmap;
+	cmd->r_twt_dl_tid_bitmap = params->r_twt_dl_tid_bitmap;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi BTWT remove sta vdev %u dialog id %u\n",
+		   cmd->vdev_id, cmd->dialog_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_BTWT_REMOVE_STA_CMDID);
+	if (ret) {
+		ath12k_warn(ab,
+			    "failed to send wmi command to B-TWT remove sta: %d",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
 
 int
 ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
