@@ -1646,6 +1646,7 @@ struct ath12k_base {
 
 	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
+	bool early_cal_support;
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };

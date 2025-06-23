@@ -1202,6 +1202,11 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		}
 	}
 
+	if (of_property_match_string(ab->dev->of_node, "qcom,early_cal_enabled", "okay") >= 0) {
+		ab->early_cal_support = true;
+		ath12k_info(ab,"coldboot calibration supported in uboot\n");
+	}
+
 	ret = ath12k_pci_msi_alloc(ab_pci);
 	if (ret) {
 		ath12k_err(ab, "failed to alloc msi: %d\n", ret);

@@ -3340,7 +3340,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	}
 
 	if (ath12k_cold_boot_cal && ab->qmi.cal_done == 0 &&
-            ab->hw_params->cold_boot_calib &&
+            !ab->early_cal_support && ab->hw_params->cold_boot_calib &&
                 ab->qmi.cal_timeout == 0) {
                 ath12k_dbg(ab, ATH12K_DBG_QMI, "Skip MLO cap send for device id %d since it's in cold_boot\n",
                                 ab->device_id);
@@ -5306,8 +5306,8 @@ int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab)
 {
 	int timeout;
 
-	if (ath12k_cold_boot_cal == 0 ||
-		ab->hw_params->cold_boot_calib == 0){
+	if (ab->early_cal_support || (ath12k_cold_boot_cal == 0 ||
+		ab->hw_params->cold_boot_calib == 0)) {
 		ath12k_info(ab, "Cold boot cal is not supported/enabled\n");
 		return 0;
 	}
@@ -5629,7 +5629,7 @@ int ath12k_qmi_event_server_arrive(struct ath12k_qmi *qmi)
 		return ret;
 	}
 
-	if (ath12k_cold_boot_cal && ab->qmi.cal_done == 0 &&
+	if (!ab->early_cal_support && ath12k_cold_boot_cal && ab->qmi.cal_done == 0 &&
 			ab->hw_params->cold_boot_calib &&
 			ab->qmi.cal_timeout == 0) {
 		/* Coldboot calibration mode */
@@ -6478,7 +6478,7 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 					    ab->hw_rev, ret);
 				break;
 			}
-			if (ath12k_cold_boot_cal && ab->qmi.cal_done == 0 &&
+			if (!ab->early_cal_support && ath12k_cold_boot_cal && ab->qmi.cal_done == 0 &&
 			    ab->hw_params->cold_boot_calib) {
 				ath12k_qmi_process_coldboot_calibration(ab);
 			} else {
