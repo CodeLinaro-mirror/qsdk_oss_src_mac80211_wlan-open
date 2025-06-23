@@ -209,6 +209,23 @@ static int ieee80211_set_ap_mbssid_options(struct ieee80211_sub_if_data *sdata,
 	return 0;
 }
 
+void ieee80211_advertised_ttlm_evt_notify_work(struct wiphy *wiphy,
+					       struct wiphy_work *work)
+{
+	struct ieee80211_link_data *link =
+		container_of(work, struct ieee80211_link_data,
+			     advertised_ttlm_evt_notify_work);
+	struct ieee80211_sub_if_data *sdata = link->sdata;
+
+	if (!ieee80211_sdata_running(sdata))
+		return;
+
+	cfg80211_adv_ttlm_evt_notify(sdata->dev, GFP_KERNEL,
+				     link->advertised_ttlm_status,
+				     link->advertised_ttlm_mst_tsf,
+				     link->link_id);
+}
+
 static struct wireless_dev *ieee80211_add_iface(struct wiphy *wiphy,
 						const char *name,
 						unsigned char name_assign_type,
@@ -5689,6 +5706,43 @@ ieee80211_obss_color_collision_notify(struct ieee80211_vif *vif,
 	cfg80211_obss_color_collision_notify(sdata->dev, color_bitmap, gfp, link_id);
 }
 EXPORT_SYMBOL_GPL(ieee80211_obss_color_collision_notify);
+
+void
+ieee80211_advertised_ttlm_evt_notify(struct ieee80211_vif *vif,
+				     u16 mst_tsf,
+				     enum advertised_ttlm_status_type status,
+				     unsigned int link_id)
+{
+	struct ieee80211_sub_if_data *sdata = vif_to_sdata(vif);
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+	struct ieee80211_link_data *link;
+
+	if (sdata->vif.type != NL80211_IFTYPE_AP)
+		return;
+
+	if (!wdev)
+		return;
+
+	if (WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+
+	rcu_read_lock();
+
+	link = rcu_dereference(sdata->link[link_id]);
+	if (WARN_ON(!link)) {
+		rcu_read_unlock();
+		return;
+	}
+
+	link->advertised_ttlm_status = status;
+	link->advertised_ttlm_mst_tsf = mst_tsf;
+
+	wiphy_work_queue(sdata->local->hw.wiphy,
+			 &link->advertised_ttlm_evt_notify_work);
+
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL_GPL(ieee80211_advertised_ttlm_evt_notify);
 
 static int
 ieee80211_color_change(struct wiphy *wiphy, struct net_device *dev,

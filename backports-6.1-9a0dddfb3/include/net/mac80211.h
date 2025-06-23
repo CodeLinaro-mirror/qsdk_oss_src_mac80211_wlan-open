@@ -8408,4 +8408,20 @@ int ieee80211_6ghz_power_mode_change(struct wiphy *wiphy,
 void ieee80211_link_removal_count_update(struct ieee80211_vif *vif,
 					 unsigned int link_id, u16 count);
 
+/**
+ * ieee80211_advertised_ttlm_evt_notify - notify about driver offloaded
+ *	advertised TTLM status
+ *
+ * @vif: interface
+ * @mst_tsf: Mapping Switch Time in TSF if status is indicating updated MST in
+ *	TSF (ADVERTISED_TTLM_SWITCH_TIMER_TSF)
+ * @staus: Status of the advertised TTLM in offloaded mode.
+ * @link_id: link id of the interface on which status received.
+ */
+void
+ieee80211_advertised_ttlm_evt_notify(struct ieee80211_vif *vif,
+				     u16 mst_tsf,
+				     enum advertised_ttlm_status_type status,
+				     unsigned int link_id);
+
 #endif /* MAC80211_H */

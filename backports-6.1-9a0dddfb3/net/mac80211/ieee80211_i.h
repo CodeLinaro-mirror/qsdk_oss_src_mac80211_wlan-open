@@ -1116,6 +1116,10 @@ struct ieee80211_link_data {
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	struct dentry *debugfs_dir;
 #endif
+	/* advertised ttlm event info */
+	u16 advertised_ttlm_mst_tsf;
+	enum advertised_ttlm_status_type advertised_ttlm_status;
+	struct wiphy_work advertised_ttlm_evt_notify_work;
 };
 
 struct ieee80211_sub_if_data {
@@ -2133,6 +2137,9 @@ void ieee80211_color_change_finalize_work(struct wiphy *wiphy,
 void ieee80211_color_collision_detection_work(struct wiphy *wiphy,
 					      struct wiphy_work *work);
 
+/* advertised ttlm handling */
+void ieee80211_advertised_ttlm_evt_notify_work(struct wiphy *wiphy,
+					       struct wiphy_work *work);
 /* interface handling */
 #define MAC80211_SUPPORTED_FEATURES_TX	(NETIF_F_IP_CSUM | NETIF_F_IPV6_CSUM | \
 					 NETIF_F_HW_CSUM | NETIF_F_SG | \
