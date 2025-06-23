@@ -4036,8 +4036,8 @@ static void ieee80211_set_disassoc(struct ieee80211_sub_if_data *sdata,
 	sdata->vif.cfg.eml_med_sync_delay = 0;
 	sdata->vif.cfg.mld_capa_op = 0;
 
-	memset(&sdata->u.mgd.ttlm_info, 0,
-	       sizeof(sdata->u.mgd.ttlm_info));
+	memset(&sdata->vif.adv_ttlm.u.mgd.ttlm_info, 0,
+	       sizeof(sdata->vif.adv_ttlm.u.mgd.ttlm_info));
 	wiphy_delayed_work_cancel(sdata->local->hw.wiphy, &ifmgd->ttlm_work);
 
 	memset(&sdata->vif.neg_ttlm, 0, sizeof(sdata->vif.neg_ttlm));
@@ -6789,18 +6789,18 @@ static void ieee80211_tid_to_link_map_work(struct wiphy *wiphy,
 		container_of(work, struct ieee80211_sub_if_data,
 			     u.mgd.ttlm_work.work);
 
-	new_active_links = sdata->u.mgd.ttlm_info.map &
-			   sdata->vif.valid_links;
-	new_dormant_links = ~sdata->u.mgd.ttlm_info.map &
-			    sdata->vif.valid_links;
+	new_active_links = sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
+		sdata->vif.valid_links;
+	new_dormant_links = ~sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
+		sdata->vif.valid_links;
 
 	ieee80211_vif_set_links(sdata, sdata->vif.valid_links, 0);
 	if (ieee80211_ttlm_set_links(sdata, new_active_links, new_dormant_links,
 				     0))
 		return;
 
-	sdata->u.mgd.ttlm_info.active = true;
-	sdata->u.mgd.ttlm_info.switch_time = 0;
+	sdata->vif.adv_ttlm.u.mgd.ttlm_info.active = true;
+	sdata->vif.adv_ttlm.u.mgd.ttlm_info.switch_time = 0;
 }
 
 static u16 ieee80211_get_ttlm(u8 bm_size, u8 *data)
@@ -6903,13 +6903,13 @@ static void ieee80211_process_adv_ttlm(struct ieee80211_sub_if_data *sdata,
 		return;
 
 	if (!elems->ttlm_num) {
-		if (sdata->u.mgd.ttlm_info.switch_time) {
+		if (sdata->vif.adv_ttlm.u.mgd.ttlm_info.switch_time) {
 			/* if a planned TID-to-link mapping was cancelled -
 			 * abort it
 			 */
 			wiphy_delayed_work_cancel(sdata->local->hw.wiphy,
 						  &sdata->u.mgd.ttlm_work);
-		} else if (sdata->u.mgd.ttlm_info.active) {
+		} else if (sdata->vif.adv_ttlm.u.mgd.ttlm_info.active) {
 			/* if no TID-to-link element, set to default mapping in
 			 * which all TIDs are mapped to all setup links
 			 */
@@ -6923,8 +6923,8 @@ static void ieee80211_process_adv_ttlm(struct ieee80211_sub_if_data *sdata,
 			ieee80211_vif_cfg_change_notify(sdata,
 							BSS_CHANGED_MLD_VALID_LINKS);
 		}
-		memset(&sdata->u.mgd.ttlm_info, 0,
-		       sizeof(sdata->u.mgd.ttlm_info));
+		memset(&sdata->vif.adv_ttlm.u.mgd.ttlm_info, 0,
+		       sizeof(sdata->vif.adv_ttlm.u.mgd.ttlm_info));
 		return;
 	}
 
@@ -6975,7 +6975,7 @@ static void ieee80211_process_adv_ttlm(struct ieee80211_sub_if_data *sdata,
 			else
 				delay_jiffies = 0;
 
-			sdata->u.mgd.ttlm_info = ttlm_info;
+			sdata->vif.adv_ttlm.u.mgd.ttlm_info = ttlm_info;
 			wiphy_delayed_work_cancel(sdata->local->hw.wiphy,
 						  &sdata->u.mgd.ttlm_work);
 			wiphy_delayed_work_queue(sdata->local->hw.wiphy,

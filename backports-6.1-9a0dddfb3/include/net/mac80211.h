@@ -2072,6 +2072,55 @@ enum ieee80211_neg_ttlm_res {
 };
 
 /**
+ * struct ieee80211_adv_ttlm_conf - advertised ttlm configs on AP
+ *
+ * @link_mapping_size: link_mapping_size configuration of each TTLM IE.
+ * @ieee_link_map: enabled links bitmap of each TTLM IE.
+ * @switch_time: Mapping Switch Time of each TTLM IE.
+ * @duration: Expected Duration of each TTLM IE.
+ */
+struct ieee80211_adv_ttlm_conf {
+	u8 link_mapping_size;
+	u16 ieee_link_bmap;
+	u16 switch_time;
+	u32 duration;
+};
+
+/**
+ * struct ieee80211_advertised_ttlm_config - advertised ttlm configs on AP
+ *
+ * @num_ttlm_ie: Indicates the number of IEs AP advertising, max 2 IEs can be
+ *	advertised per IEEE802.11be draft 4.0
+ * @adv_ttlm_conf: TTLM configurations advertised by AP
+ */
+struct ieee80211_advertised_ttlm_config {
+	u8 num_ttlm_ie;
+	struct ieee80211_adv_ttlm_conf adv_ttlm_conf[IEEE80211_MAX_TTLM_IE];
+};
+
+/* Advertised TID-to-link mapping info parsed from beacon */
+struct ieee80211_adv_ttlm_info {
+	/* time in TUs at which the new mapping is established, or 0 if there i
+	 * no planned advertised TID-to-link mappin
+	 */
+	u16 switch_time;
+	u32 duration; /* duration of the planned T2L map in TUs */
+	u16 map; /* map of usable links for all TIDs */
+	bool active; /* whether the advertised mapping is active or not */
+};
+
+struct ieee80211_advertised_ttlm_info {
+	union {
+		struct {
+			struct ieee80211_advertised_ttlm_config ttlm_config;
+		} ap;
+		struct {
+			struct ieee80211_adv_ttlm_info ttlm_info;
+		} mgd;
+	} u;
+};
+
+/**
  * struct ieee80211_vif - per-interface data
  *
  * Data in this structure is continually present for driver
@@ -2096,6 +2145,9 @@ enum ieee80211_neg_ttlm_res {
  *	0 for non-MLO.
  * @neg_ttlm: negotiated TID to link mapping info.
  *	see &struct ieee80211_neg_ttlm.
+ * @adv_ttlm: Config of advertised TTLM when triggered on AP interface.
+ *	see &struct ieee80211_advertised_ttlm_config. When vif is STA, it
+ *	carries the current TTLM advertised by AP.
  * @addr: address of this interface
  * @addr_valid: indicates if the address is actively used. Set to false for
  *	passive monitor interfaces, true in all other cases.
@@ -2136,6 +2188,7 @@ struct ieee80211_vif {
 	struct ieee80211_bss_conf __rcu *link_conf[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links, active_links, dormant_links, suspended_links;
 	struct ieee80211_neg_ttlm neg_ttlm;
+	struct ieee80211_advertised_ttlm_info adv_ttlm;
 	u8 addr[ETH_ALEN] __aligned(2);
 	bool addr_valid;
 	bool p2p;
