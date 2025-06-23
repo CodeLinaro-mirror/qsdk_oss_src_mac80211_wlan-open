@@ -943,6 +943,12 @@ static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 	memcpy(addr + 4, &addr_h16, ETH_ALEN - 4);
 }
 
+static inline void ath12k_dp_mon_get_mac_addr(u16 addr_l16, u32 addr_h32, u8 *addr)
+{
+	memcpy(addr, &addr_l16, 2);
+	memcpy(addr + 2, &addr_h32, ETH_ALEN - 2);
+}
+
 static inline struct ath12k_dp *
 ath12k_dp_hw_grp_to_dp(struct ath12k_dp_hw_group *dp_hw_grp, u8 device_id)
 {

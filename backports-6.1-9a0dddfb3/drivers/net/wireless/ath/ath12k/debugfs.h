@@ -26,20 +26,12 @@ void ath12k_wmi_crl_path_stats_list_free(struct ath12k *ar, struct list_head *he
 #define ATH12K_MAX_NRPS 7
 #define MAC_UNIT_LEN 3
 
-enum {
-	NRP_ACTION_ADD,
-	NRP_ACTION_DEL,
-};
-
 struct ath12k_neighbor_peer {
 	struct list_head list;
-	struct completion filter_done;
-	bool is_filter_on;
 	int vdev_id;
 	u8 addr[ETH_ALEN];
 	u8 rssi;
 	s64 timestamp;
-	bool rssi_valid;
 };
 
 #ifdef CPTCFG_ATH12K_DEBUGFS

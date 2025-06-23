@@ -308,7 +308,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 				  struct station_info *sinfo);
 int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
-				    struct ieee80211_channel *chan,
+				    struct cfg80211_chan_def *chandef,
 				    int duration,
 				    enum ieee80211_roc_type type);
 int ath12k_mac_op_cancel_remain_on_channel(struct ieee80211_hw *hw,

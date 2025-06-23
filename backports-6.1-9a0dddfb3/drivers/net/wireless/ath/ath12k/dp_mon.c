@@ -3752,21 +3752,18 @@ move_next:
 
 		rcu_read_lock();
 		spin_lock_bh(&dp->dp_lock);
-		peer = ath12k_dp_link_peer_find_by_id(dp, ppdu_info->peer_id);
 
 		if (!list_empty(&dp->neighbor_peers)) {
-			if (peer && !peer->sta) {
-				list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
-					if (nrp->is_filter_on && ether_addr_equal(nrp->addr, peer->addr)) {
-						nrp->rssi = ppdu_info->rssi_comb;
-						nrp->timestamp = ktime_to_ms(ktime_get_real());
-						complete(&nrp->filter_done);
-					}
+			list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
+				if (ether_addr_equal(nrp->addr, ppdu_info->addr2)) {
+					nrp->rssi = ppdu_info->rssi_comb;
+					nrp->timestamp = ktime_to_ms(ktime_get_real());
+					goto next_skb;
 				}
-				goto next_skb;
 			}
 		}
 
+		peer = ath12k_dp_link_peer_find_by_id(dp, ppdu_info->peer_id);
 		if (!peer || !peer->sta) {
 			ath12k_dbg(ab, ATH12K_DBG_DATA,
 				   "failed to find the peer with monitor peer_id %d\n",

@@ -1889,8 +1889,6 @@ void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
-		if (nrp->is_filter_on)
-			complete(&nrp->filter_done);
 		list_del(&nrp->list);
 		kfree(nrp);
 	}
@@ -1935,9 +1933,7 @@ static ssize_t ath12k_read_nrp_rssi(struct file *file,
 	struct ath12k *ar = file->private_data;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_link_vif *arvif = NULL;
-	struct ath12k_neighbor_peer *nrp = NULL, *tmp;
-	struct ath12k_wmi_peer_create_arg peer_param = {0};
+	struct ath12k_neighbor_peer *nrp = NULL;
 	u8 macaddr[ETH_ALEN] = {0};
 	loff_t file_pos = *ppos;
 	struct path *fpath = &file->f_path;
@@ -1946,8 +1942,6 @@ static ssize_t ath12k_read_nrp_rssi(struct file *file,
 	int i = 0;
 	int j = 0;
 	int len = 0;
-	int vdev_id = -1;
-	bool nrp_found = false;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	if (ar->ah->state != ATH12K_HW_STATE_ON) {
@@ -1959,72 +1953,27 @@ static ssize_t ath12k_read_nrp_rssi(struct file *file,
 	if (file_pos > 0)
 		return 0;
 
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			vdev_id = arvif->vdev_id;
-			break;
-		}
-	}
-	if (vdev_id < 0) {
-		ath12k_warn(ab, "unable to get vdev for AP interface\n");
-		return 0;
-	}
-
 	for (i = 0, j = 0;  i < MAC_UNIT_LEN * ETH_ALEN; i += MAC_UNIT_LEN, j++) {
 		if (sscanf(fname + i, "%hhX", &macaddr[j]) <= 0)
 			return -EINVAL;
 	}
 
 	spin_lock_bh(&dp->dp_lock);
-	list_for_each_entry(nrp, &dp->neighbor_peers, list) {
-		if (ether_addr_equal(macaddr, nrp->addr)) {
-			reinit_completion(&nrp->filter_done);
-			nrp->vdev_id = vdev_id;
-			nrp->is_filter_on = false;
+	list_for_each_entry(nrp, &dp->neighbor_peers, list)
+		if (ether_addr_equal(macaddr, nrp->addr))
 			break;
-		}
-	}
 	spin_unlock_bh(&dp->dp_lock);
 
-	peer_param.vdev_id = nrp->vdev_id;
-	peer_param.peer_addr = nrp->addr;
-	peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
-
-	if (!ath12k_peer_create(ar, arvif, NULL, &peer_param)) {
-		spin_lock_bh(&dp->dp_lock);
-		list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
-			if (ether_addr_equal(nrp->addr, peer_param.peer_addr)) {
-				nrp_found = true;
-				break;
-			}
-		}
-		spin_unlock_bh(&dp->dp_lock);
-
-		if (nrp_found) {
-			spin_lock_bh(&dp->dp_lock);
-			nrp->is_filter_on = true;
-			spin_unlock_bh(&dp->dp_lock);
-
-			wait_for_completion_interruptible_timeout(&nrp->filter_done, 5 * HZ);
-
-			spin_lock_bh(&dp->dp_lock);
-			nrp->is_filter_on = false;
-			spin_unlock_bh(&dp->dp_lock);
-
-			len = scnprintf(buf, sizeof(buf),
-					"Neighbor Peer MAC\t\tRSSI\t\tTime\n");
-			len += scnprintf(buf + len, sizeof(buf) - len, "%pM\t\t%u\t\t%lld\n",
-					 nrp->addr, nrp->rssi, nrp->timestamp);
-		} else {
-			ath12k_peer_delete(ar, vdev_id, macaddr);
-			ath12k_warn(ab, "%pM not found in nrp list\n", macaddr);
-			return -EINVAL;
-		}
-		ath12k_peer_delete(ar, vdev_id, macaddr);
-	} else {
-		ath12k_warn(ab, "unable to create peer for nrp[%pM]\n", macaddr);
+	if (!nrp) {
+		ath12k_warn(ab, "cannot find any NAC for mac addr [%pM]\n",
+			    macaddr);
 		return -EINVAL;
 	}
+
+	len = scnprintf(buf, sizeof(buf),
+			"Neighbor Peer MAC\t\tRSSI\t\tTime\n");
+	len += scnprintf(buf + len, sizeof(buf) - len, "%pM\t\t%u\t\t%lld\n",
+			 nrp->addr, nrp->rssi, nrp->timestamp);
 
 	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
 }
@@ -2041,14 +1990,15 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	struct ath12k *ar = file->private_data;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_dp_link_peer *peer = NULL;
 	struct ath12k_neighbor_peer *nrp = NULL, *tmp = NULL;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_set_neighbor_rx_params *param = NULL;
 	u8 mac[ETH_ALEN] = {0};
 	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
 	char *str = NULL, *buf = NULL, *ptr = NULL;
 	int i = 0;
 	int j = 0;
-	int ret = count;
+	int ret = count, ret1 = -1;
 	int action = 0;
 	ssize_t rc = 0;
 	bool del_nrp = false;
@@ -2079,9 +2029,9 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	}
 
 	if (!strcmp(str, "add"))
-		action = NRP_ACTION_ADD;
+		action = WMI_FILTER_NRP_ACTION_ADD;
 	else if (!strcmp(str, "del"))
-		action = NRP_ACTION_DEL;
+		action = WMI_FILTER_NRP_ACTION_REMOVE;
 	else {
 		ath12k_err(ab, "error: invalid argument\n");
 		goto exit;
@@ -2114,8 +2064,14 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		snprintf(fname + i, sizeof(fname) - i, "%02x:", mac[j]);
 	}
 
+	param = kzalloc(sizeof(*param), GFP_KERNEL);
+	if (!param)
+		goto exit;
+
+	param->action = action;
+
 	switch (action) {
-	case NRP_ACTION_ADD:
+	case WMI_FILTER_NRP_ACTION_ADD:
 		if (dp->num_nrps == (ATH12K_MAX_NRPS - 1)) {
 			ath12k_warn(ab, "max nrp reached, cannot create more\n");
 			goto exit;
@@ -2128,25 +2084,30 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			}
 		}
 
-		spin_lock_bh(&dp->dp_lock);
-		peer = ath12k_dp_link_peer_find_by_addr(dp, mac);
-		if (peer) {
-			ath12k_warn(ab, "cannot add exisitng peer [%pM] as nrp\n", mac);
-			spin_unlock_bh(&dp->dp_lock);
-			goto exit;
-		}
-		spin_unlock_bh(&dp->dp_lock);
-
 		nrp = kzalloc(sizeof(*nrp), GFP_KERNEL);
 		if (!nrp)
 			goto exit;
 
-		init_completion(&nrp->filter_done);
 		ether_addr_copy(nrp->addr, mac);
 
 		spin_lock_bh(&dp->dp_lock);
 		list_add_tail(&nrp->list, &dp->neighbor_peers);
 		spin_unlock_bh(&dp->dp_lock);
+
+		nrp->vdev_id = -1;
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+				nrp->vdev_id = arvif->vdev_id;
+				break;
+			}
+		}
+
+		if (nrp->vdev_id < 0) {
+			ath12k_warn(ab, "unable to get vdev for AP interface\n");
+			goto exit;
+		}
+		param->vdev_id = nrp->vdev_id;
+		ether_addr_copy(param->nrp_addr, nrp->addr);
 
 		if (!dp->num_nrps) {
 			ar->debug.debugfs_nrp = debugfs_create_dir("nrp_rssi",
@@ -2161,7 +2122,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 				    ar->debug.debugfs_nrp, ar,
 				    &fops_read_nrp_rssi);
 		break;
-	case NRP_ACTION_DEL:
+	case WMI_FILTER_NRP_ACTION_REMOVE:
 		if (!dp->num_nrps) {
 			ath12k_err(ab, "error: no nac added\n");
 			goto exit;
@@ -2171,21 +2132,34 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
 			if (ether_addr_equal(nrp->addr, mac)) {
 				list_del(&nrp->list);
-				kfree(nrp);
 				del_nrp = true;
 				break;
 			}
 		}
 		spin_unlock_bh(&dp->dp_lock);
 
-		if (!del_nrp)
+		if (!del_nrp) {
 			ath12k_warn(ab, "cannot delete %pM not added to list\n", mac);
-		else
+			goto exit;
+		} else {
 			ath12k_debugfs_nrp_clean(ar, mac);
+			param->vdev_id = nrp->vdev_id;
+			ether_addr_copy(param->nrp_addr, nrp->addr);
+			kfree(nrp);
+		}
 		break;
 	default:
 		break;
 	}
+
+	ret1 = ath12k_wmi_vdev_set_neighbor_rx_cmd(ar, param);
+	if (ret1) {
+		ath12k_err(ar->ab, "ath12k_wmi_vdev_set_neighbor_rx_cmd failed, "
+			   "params vdev id %d action %d, nrp %pM",
+			   param->vdev_id, param->action, param->nrp_addr);
+		ret = ret1;
+	}
+
 exit:
 	 wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 

@@ -6668,16 +6668,19 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 	}
 
 	if (n_channels) {
-		arg->num_chan = n_channels;
-		arg->chan_list = kcalloc(arg->num_chan, sizeof(*arg->chan_list),
-					 GFP_KERNEL);
-		if (!arg->chan_list) {
+		arg->chan_list.num_chan = n_channels;
+		arg->chan_list.chan = kcalloc(arg->chan_list.num_chan,
+					      sizeof(struct chan_info),
+					      GFP_KERNEL);
+
+		if (!arg->chan_list.chan) {
 			ret = -ENOMEM;
 			goto exit;
 		}
 
-		for (i = 0; i < arg->num_chan; i++)
-			arg->chan_list[i] = req->channels[i + from_index]->center_freq;
+		struct chan_info *chan = &arg->chan_list.chan[0];
+		for (i = 0; i < arg->chan_list.num_chan; i++)
+			chan[i].freq = req->channels[i + from_index]->center_freq;
 	}
 
 	/* if duration is set, default dwell times will be overwritten */
@@ -6726,7 +6729,7 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 
 exit:
 	if (arg) {
-		kfree(arg->chan_list);
+		kfree(arg->chan_list.chan);
 		kfree(arg->extraie.ptr);
 		kfree(arg);
 	}
@@ -8839,15 +8842,11 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 				  struct ath12k_link_sta *arsta)
 {
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	struct ath12k_wmi_peer_create_arg peer_param = {0};
-	struct ath12k_neighbor_peer *nrp, *tmp;
-	int nvdev_id;
 	int ret;
-	bool del_nrp = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -8882,32 +8881,6 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 		peer_param.mlo_bridge_peer = false;
 	}
 	peer_param.ml_enabled = sta->mlo;
-
-	/*
-	 * When the neighbor peer associates with this AP and successfully
-	 * becomes a station, check and clear the corresponding MAC from
-	 * NRP list and failing to do so would inadvertently cause the
-	 * STA association(peer creation for STA) to fail due to the NRP
-	 * having created a peer already for the same MAC address
-	 */
-	if (!list_empty(&dp->neighbor_peers)) {
-		spin_lock_bh(&ab->base_lock);
-		list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
-			if (ether_addr_equal(nrp->addr, arsta->addr)) {
-				nvdev_id = nrp->vdev_id;
-				list_del(&nrp->list);
-				kfree(nrp);
-				del_nrp = true;
-				break;
-			}
-		}
-		spin_unlock_bh(&ab->base_lock);
-
-		if (del_nrp) {
-			ath12k_peer_delete(ar, nvdev_id, arsta->addr);
-			ath12k_debugfs_nrp_clean(ar, arsta->addr);
-		}
-	}
 
 	ret = ath12k_peer_create(ar, arvif, sta, &peer_param);
 	if (ret) {
@@ -17833,14 +17806,16 @@ EXPORT_SYMBOL(ath12k_mac_op_cancel_remain_on_channel);
 
 int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
-				    struct ieee80211_channel *chan,
+				    struct cfg80211_chan_def *chandef,
 				    int duration,
 				    enum ieee80211_roc_type type)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k_link_vif *arvif;
+	struct ath12k_base *ab;
 	struct ath12k *ar;
+	struct ieee80211_channel *chan;
 	u32 scan_time_msec;
 	bool create = true;
 	u8 link_id;
@@ -17848,9 +17823,22 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	if (!chandef || !chandef->chan) {
+		ath12k_err(NULL, "%s: null chandef!\n", __func__);
+		return -EINVAL;
+	}
+
+	chan = chandef->chan;
 	ar = ath12k_mac_select_scan_device(hw, vif, chan->center_freq);
 	if (!ar)
 		return -EINVAL;
+
+	ab = ar->ab;
+	if (!test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT,
+		      ab->wmi_ab.svc_map)) {
+		ath12k_err(ab, "ROC feature not supported!\n");
+		return -EOPNOTSUPP;
+	}
 
 	/* check if any of the links of ML VIF is already started on
 	 * radio(ar) correpsondig to given scan frequency and use it,
@@ -17888,7 +17876,7 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 
 		ret = ath12k_mac_vdev_create(ar, arvif, false);
 		if (ret) {
-			ath12k_warn(ar->ab, "unable to create scan vdev for roc: %d\n",
+			ath12k_warn(ab, "unable to create scan vdev for roc: %d\n",
 				    ret);
 			return ret;
 		}
@@ -17917,8 +17905,10 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 
 	spin_unlock_bh(&ar->data_lock);
 
-	if (ret)
+	if (ret) {
+		ath12k_warn(ab, "roc scan state %d, not idle\n", ar->scan.state);
 		return ret;
+	}
 
 	scan_time_msec = hw->wiphy->max_remain_on_channel_duration * 2;
 
@@ -17928,17 +17918,33 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		return -ENOMEM;
 
 	ath12k_wmi_start_scan_init(ar, arg);
-	arg->num_chan = 1;
 
-	u32 *chan_list __free(kfree) = kcalloc(arg->num_chan, sizeof(*chan_list),
-					       GFP_KERNEL);
-	if (!chan_list)
+	arg->chan_list.num_chan = 1;
+	struct chan_info *chaninfo __free(kfree) = kcalloc(arg->chan_list.num_chan,
+							   sizeof(struct chan_info),
+							   GFP_KERNEL);
+	if (!chaninfo) {
+		ath12k_err(ab, "chan list memory allocation failed\n");
 		return -ENOMEM;
+	}
 
-	arg->chan_list = chan_list;
+	arg->chan_list.chan = chaninfo;
+	arg->chan_list.chan[0].freq = chan->center_freq;
+	arg->chan_list.chan[0].phymode = ath12k_phymodes[chandef->chan->band][chandef->width];
+
+	/* Wide Band Scan is required for bandwidth > 20_NoHT mode */
+	if (chandef->width > NL80211_CHAN_WIDTH_20_NOHT) {
+		arg->scan_f_wide_band = true;
+		arg->chandef = chandef;
+		ret = ath12k_wmi_update_scan_chan_list(ar, arg);
+		if (ret) {
+			ath12k_err(ab,"unable to update scan list:%d\n", ret);
+			return ret;
+		}
+	}
+
 	arg->vdev_id = arvif->vdev_id;
 	arg->scan_id = ATH12K_SCAN_ID;
-	arg->chan_list[0] = chan->center_freq;
 	arg->dwell_time_active = scan_time_msec;
 	arg->dwell_time_passive = scan_time_msec;
 	arg->max_scan_time = scan_time_msec;
@@ -18968,6 +18974,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	if (ar->ab->hw_params->ftm_responder)
 		wiphy_ext_feature_set(wiphy,
 				      NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER);
+
+	if (test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT, ar->ab->wmi_ab.svc_map))
+		ieee80211_hw_set(hw, SUPPORTS_EXT_REMAIN_ON_CHAN);
 
 	ath12k_reg_init(hw);
 

@@ -3702,6 +3702,12 @@ struct ath12k_wmi_element_info_arg {
 };
 
 #define WMI_IE_BITMAP_SIZE             8
+#define PROBE_REQ_MAX_OUIS            16
+
+struct wmi_vendor_oui {
+	u32 tlv_header;
+	u32 oui_type_subtype; /* vendor OUI type and subtype */
+};
 
 #define WMI_SCAN_MAX_NUM_SSID                0x0A
 /* prefix used by scan requestor ids on the host */
@@ -3811,6 +3817,9 @@ struct  wmi_start_scan_cmd {
 #define WMI_SCAN_RANDOM_SEQ_NO_IN_PROBE_REQ 0x80000
 #define WMI_SCAN_ENABLE_IE_WHTELIST_IN_PROBE_REQ 0x100000
 
+/* Report Neighbour RX Packets for NAC(Non-Associated Client) */
+#define WMI_SCAN_FLAG_HIGHER_MCS_NAC_SCAN           0x4000000
+
 #define WMI_SCAN_DWELL_MODE_MASK GENMASK(23, 21)
 
 enum {
@@ -3829,6 +3838,22 @@ struct ath12k_wmi_hint_short_ssid_arg {
 struct ath12k_wmi_hint_bssid_arg {
 	u32 freq_flags;
 	struct ath12k_wmi_mac_addr_params bssid;
+};
+
+struct ath12k_wmi_probe_req_whitelist {
+	u32 ie_bitmap[WMI_IE_BITMAP_SIZE];
+	u32 num_vendor_oui;
+	u32 voui[PROBE_REQ_MAX_OUIS];
+};
+
+struct chan_info {
+	u32 freq;
+	u32 phymode;
+};
+
+struct chan_list {
+	u32 num_chan;
+	struct chan_info *chan;
 };
 
 struct ath12k_wmi_scan_req_arg {
@@ -3886,15 +3911,18 @@ struct ath12k_wmi_scan_req_arg {
 	    scan_f_forced:1,
 	    scan_f_2ghz:1,
 	    scan_f_5ghz:1,
-	    scan_f_80mhz:1;
+	    scan_f_80mhz:1,
+	    scan_f_wide_band:1,
+	    scan_f_higher_mcs_nac_scan:1;
 	enum scan_dwelltime_adaptive_mode adaptive_dwell_time_mode;
 	u32 burst_duration;
 	u32 num_chan;
 	u32 num_bssid;
 	u32 num_ssids;
 	u32 n_probes;
-	u32 *chan_list;
+	struct chan_list chan_list;
 	u32 notify_scan_events;
+	struct cfg80211_chan_def *chandef;
 	struct cfg80211_ssid ssid[WLAN_SCAN_MAX_NUM_SSID];
 	struct ath12k_wmi_mac_addr_params bssid_list[WLAN_SCAN_MAX_NUM_BSSID];
 	struct ath12k_wmi_element_info_arg extraie;
@@ -3902,6 +3930,7 @@ struct ath12k_wmi_scan_req_arg {
 	u32 num_hint_bssid;
 	struct ath12k_wmi_hint_short_ssid_arg hint_s_ssid[WLAN_SCAN_MAX_HINT_S_SSID];
 	struct ath12k_wmi_hint_bssid_arg hint_bssid[WLAN_SCAN_MAX_HINT_BSSID];
+	struct ath12k_wmi_probe_req_whitelist ie_whitelist;
 };
 
 struct wmi_ssid_arg {
@@ -4368,6 +4397,7 @@ struct wmi_stop_scan_cmd {
 struct ath12k_wmi_scan_chan_list_arg {
 	u32 pdev_id;
 	u16 nallchans;
+	bool append_chan_list;
 	struct ath12k_wmi_channel_arg channel[];
 };
 
@@ -7875,6 +7905,39 @@ struct wmi_mlo_pri_link_peer_migr_compl_event {
 	struct wmi_mlo_primary_link_peer_migration_status *peer_info[100];
 };
 
+enum wmi_filter_nrp_action {
+	WMI_FILTER_NRP_ACTION_ADD        = 0x1,
+	WMI_FILTER_NRP_ACTION_REMOVE     = 0x2,
+	WMI_FILTER_NRP_ACTION_GET_LIST   = 0x3,
+};
+
+enum wmi_filter_nrp_type {
+	WMI_FILTER_NRP_TYPE_AP_BSSID     = 0x1,
+	WMI_FILTER_NRP_TYPE_STA_MACADDR  = 0x2,
+};
+
+enum wmi_filter_nrp_flag {
+	WMI_FILTER_NRP_CAPTURE_ONLY_RX_PACKETS      = 0x1,
+	WMI_FILTER_NRP_CAPTURE_ONLY_TX_PACKETS      = 0x2,
+	WMI_FILTER_NRP_CAPTURE_BOTH_TXRX_PACKETS    = 0x3,
+};
+
+struct wmi_vdev_set_neighbor_rx_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params macaddr;
+	__le32 action;
+	__le32 type;
+	__le32 flag;
+	__le32 bssid_idx;
+} __packed;
+
+struct ath12k_set_neighbor_rx_params {
+	u32 vdev_id;
+	u32 action;
+	u8 nrp_addr[ETH_ALEN];
+};
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
@@ -7923,6 +7986,8 @@ void ath12k_wmi_start_scan_init(struct ath12k *ar,
 				struct ath12k_wmi_scan_req_arg *arg);
 int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 				   struct ath12k_wmi_scan_req_arg *arg);
+int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
+				     struct ath12k_wmi_scan_req_arg *req_arg);
 int ath12k_wmi_send_scan_stop_cmd(struct ath12k *ar,
 				  struct ath12k_wmi_scan_cancel_arg *arg);
 int ath12k_wmi_send_wmm_update_cmd(struct ath12k *ar, u32 vdev_id,
@@ -8099,6 +8164,8 @@ void ath12k_wmi_fw_stats_dump(struct ath12k *ar,
 int ath12k_wmi_pdev_m3_dump_enable(struct ath12k *ar, u32 enable);
 int ath12k_wmi_send_wsi_stats_info(struct ath12k *ar,
 				   struct ath12k_wmi_wsi_stats_info_param *param);
+int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
+					struct ath12k_set_neighbor_rx_params *param);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_wmi_config_peer_ppeds_routing(struct ath12k *ar,
 					 const u8 *peer_addr, u8 vdev_id,

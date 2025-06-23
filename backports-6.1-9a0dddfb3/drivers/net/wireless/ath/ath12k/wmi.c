@@ -3122,6 +3122,117 @@ send:
 	return ret;
 }
 
+int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
+				     struct ath12k_wmi_scan_req_arg *req_arg)
+{
+	struct ieee80211_supported_band **bands;
+	struct ath12k_wmi_scan_chan_list_arg *arg;
+	struct cfg80211_chan_def *chandef;
+	struct ieee80211_channel *channel, *req_channel;
+	struct ieee80211_hw *hw = ar->ah->hw;
+	struct ath12k_wmi_channel_arg *ch;
+	enum nl80211_band band;
+	int num_channels = 0;
+	int i, ret;
+	bool found = false;
+
+	bands = hw->wiphy->bands;
+	for (band = 0; band < NUM_NL80211_BANDS; band++) {
+		if (!(ar->mac.sbands[band].channels && bands[band]))
+			continue;
+
+		for (i = 0; i < bands[band]->n_channels; i++) {
+			if (bands[band]->channels[i].flags &
+			    IEEE80211_CHAN_DISABLED)
+				continue;
+
+			num_channels++;
+		}
+	}
+
+	if (!num_channels) {
+		ath12k_warn(ar->ab, "pdev is not supported for this country\n");
+		return -ENOTSUPP;
+	}
+
+	arg = kzalloc(struct_size(arg, channel, num_channels), GFP_KERNEL);
+
+	if (!arg)
+		return -ENOMEM;
+
+	arg->pdev_id = ar->pdev->pdev_id;
+	arg->nallchans = num_channels;
+	arg->append_chan_list = true;
+
+	ch = arg->channel;
+	chandef = req_arg ? req_arg->chandef : NULL;
+	req_channel = chandef ? chandef->chan : NULL;
+
+	for (band = 0; band < NUM_NL80211_BANDS; band++) {
+		if (!(ar->mac.sbands[band].channels && bands[band]))
+			continue;
+
+		for (i = 0; i < bands[band]->n_channels; i++) {
+			channel = &bands[band]->channels[i];
+
+			if (channel->flags & IEEE80211_CHAN_DISABLED)
+				continue;
+
+                       if (req_channel && !found &&
+                           req_channel->center_freq == channel->center_freq) {
+                               ch->mhz = req_arg->chan_list.chan[0].freq;
+                               ch->cfreq1 = chandef->center_freq1;
+                               ch->cfreq2 = chandef->center_freq2;
+
+                               ch->phy_mode = req_arg->chan_list.chan[0].phymode;
+                               channel = req_channel;
+                               found = true;
+                       } else {
+                               ch->mhz = channel->center_freq;
+                               ch->cfreq1 = channel->center_freq;
+                               ch->phy_mode = (channel->band == NL80211_BAND_2GHZ) ?
+                                               MODE_11G : MODE_11A;
+                       }
+
+			/* TODO: Set to true/false based on some condition? */
+			ch->allow_ht = true;
+			ch->allow_vht = true;
+			ch->allow_he = true;
+
+			ch->dfs_set =
+				!!(channel->flags & IEEE80211_CHAN_RADAR);
+			ch->is_chan_passive = !!(channel->flags &
+						IEEE80211_CHAN_NO_IR);
+			ch->is_chan_passive |= ch->dfs_set;
+			ch->minpower = 0;
+			ch->maxpower = channel->max_power * 2;
+			ch->maxregpower = channel->max_reg_power * 2;
+			ch->antennamax = channel->max_antenna_gain * 2;
+
+			if (channel->band == NL80211_BAND_6GHZ &&
+			    cfg80211_channel_is_psc(channel))
+				ch->psc_channel = true;
+
+			ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+				   "mac channel [%d/%d] freq %d maxpower %d "
+				   "regpower %d antenna %d cfreq1 %d mode %d\n",
+				   i, arg->nallchans,
+				   ch->mhz, ch->maxpower, ch->maxregpower,
+				   ch->antennamax, ch->cfreq1, ch->phy_mode);
+
+			ch++;
+			/* TODO: use quarrter/half rate, cfreq12, dfs_cfreq2
+			 * set_agile, reg_class_idx
+			 */
+		}
+	}
+
+	ret = ath12k_wmi_send_scan_chan_list_cmd(ar, arg);
+	kfree(arg);
+
+	return ret;
+}
+
 void ath12k_wmi_start_scan_init(struct ath12k *ar,
 				struct ath12k_wmi_scan_req_arg *arg)
 {
@@ -3228,6 +3339,8 @@ static void ath12k_wmi_copy_scan_event_cntrl_flags(struct wmi_start_scan_cmd *cm
 	if (arg->scan_f_en_ie_whitelist_in_probe)
 		cmd->scan_ctrl_flags |=
 			cpu_to_le32(WMI_SCAN_ENABLE_IE_WHTELIST_IN_PROBE_REQ);
+	if (arg->scan_f_higher_mcs_nac_scan)
+		cmd->scan_ctrl_flags |= cpu_to_le32(WMI_SCAN_FLAG_HIGHER_MCS_NAC_SCAN);
 
 	cmd->scan_ctrl_flags |= le32_encode_bits(arg->adaptive_dwell_time_mode,
 						 WMI_SCAN_DWELL_MODE_MASK);
@@ -3237,6 +3350,8 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 				   struct ath12k_wmi_scan_req_arg *arg)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct wmi_start_scan_cmd *cmd;
 	struct ath12k_wmi_ssid_params *ssid = NULL;
 	struct ath12k_wmi_mac_addr_params *bssid;
@@ -3245,14 +3360,16 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 	void *ptr;
 	int i, ret, len;
 	u32 *tmp_ptr, extraie_len_with_pad = 0;
+	u8 *phy_ptr;
 	struct ath12k_wmi_hint_short_ssid_arg *s_ssid = NULL;
 	struct ath12k_wmi_hint_bssid_arg *hint_bssid = NULL;
+	u8 phymode_roundup = 0;
 
 	len = sizeof(*cmd);
 
 	len += TLV_HDR_SIZE;
-	if (arg->num_chan)
-		len += arg->num_chan * sizeof(u32);
+	if (arg->chan_list.num_chan)
+		len += arg->chan_list.num_chan * sizeof(u32);
 
 	len += TLV_HDR_SIZE;
 	if (arg->num_ssids)
@@ -3282,6 +3399,18 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 		extraie_len_with_pad = 0;
 	}
 
+	len += TLV_HDR_SIZE;
+	if (arg->scan_f_en_ie_whitelist_in_probe)
+		len += arg->ie_whitelist.num_vendor_oui *
+				sizeof(struct wmi_vendor_oui);
+
+	len += TLV_HDR_SIZE;
+	if (arg->scan_f_wide_band)
+		phymode_roundup =
+			roundup(arg->chan_list.num_chan * sizeof(u8),
+				sizeof(u32));
+	len += phymode_roundup;
+
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -3301,6 +3430,12 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 		arg->scan_priority = WMI_SCAN_PRIORITY_LOW;
 	cmd->notify_scan_events = cpu_to_le32(arg->notify_scan_events);
 
+	/* Set NAC scan flag if any NRP is set already */
+	spin_lock_bh(&dp->dp_lock);
+	if (arg->scan_f_wide_band && !list_empty(&dp->neighbor_peers))
+		arg->scan_f_higher_mcs_nac_scan = true;
+	spin_unlock_bh(&dp->dp_lock);
+
 	ath12k_wmi_copy_scan_event_cntrl_flags(cmd, arg);
 
 	cmd->dwell_time_active = cpu_to_le32(arg->dwell_time_active);
@@ -3316,7 +3451,7 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 	cmd->max_scan_time = cpu_to_le32(arg->max_scan_time);
 	cmd->probe_delay = cpu_to_le32(arg->probe_delay);
 	cmd->burst_duration = cpu_to_le32(arg->burst_duration);
-	cmd->num_chan = cpu_to_le32(arg->num_chan);
+	cmd->num_chan = cpu_to_le32(arg->chan_list.num_chan);
 	cmd->num_bssid = cpu_to_le32(arg->num_bssid);
 	cmd->num_ssids = cpu_to_le32(arg->num_ssids);
 	cmd->ie_len = cpu_to_le32(arg->extraie.len);
@@ -3324,14 +3459,15 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 
 	ptr += sizeof(*cmd);
 
-	len = arg->num_chan * sizeof(u32);
+	len = arg->chan_list.num_chan * sizeof(u32);
 
 	tlv = ptr;
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_UINT32, len);
 	ptr += TLV_HDR_SIZE;
 	tmp_ptr = (u32 *)ptr;
 
-	memcpy(tmp_ptr, arg->chan_list, arg->num_chan * 4);
+	for (i = 0; i < arg->chan_list.num_chan; ++i)
+		tmp_ptr[i] = arg->chan_list.chan[i].freq;
 
 	ptr += len;
 
@@ -3379,6 +3515,36 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 		       arg->extraie.len);
 
 	ptr += extraie_len_with_pad;
+
+       len = arg->ie_whitelist.num_vendor_oui * sizeof(struct wmi_vendor_oui);
+       tlv = ptr;
+       tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
+                     FIELD_PREP(WMI_TLV_LEN, len);
+       ptr += TLV_HDR_SIZE;
+
+       if (arg->scan_f_en_ie_whitelist_in_probe) {
+               /* TODO: fill vendor OUIs for probe req ie whitelisting */
+               /* currently added for FW TLV validation */
+       }
+
+       ptr += cmd->num_vendor_oui * sizeof(struct wmi_vendor_oui);
+
+       len = phymode_roundup;
+       tlv = ptr;
+       tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_BYTE) |
+                     FIELD_PREP(WMI_TLV_LEN, len);
+       ptr += TLV_HDR_SIZE;
+
+       /* Wide Band Scan */
+       if (arg->scan_f_wide_band) {
+               phy_ptr = ptr;
+               /* Add PHY mode TLV for wide band scan with phymode + 1 value
+                * so that phymode '0' is ignored by FW as default value.
+                */
+               for (i = 0; i < arg->chan_list.num_chan; ++i)
+                       phy_ptr[i] = arg->chan_list.chan[i].phymode + 1;
+       }
+       ptr += phymode_roundup;
 
 	if (arg->num_hint_s_ssid) {
 		len = arg->num_hint_s_ssid * sizeof(*s_ssid);
@@ -3564,12 +3730,12 @@ int ath12k_wmi_send_scan_chan_list_cmd(struct ath12k *ar,
 							 sizeof(*cmd));
 		cmd->pdev_id = cpu_to_le32(arg->pdev_id);
 		cmd->num_scan_chans = cpu_to_le32(num_send_chans);
-		if (num_sends)
+		if (num_sends || arg->append_chan_list)
 			cmd->flags |= cpu_to_le32(WMI_APPEND_TO_EXISTING_CHAN_LIST_FLAG);
 
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-			   "WMI no.of chan = %d len = %d pdev_id = %d num_sends = %d\n",
-			   num_send_chans, len, cmd->pdev_id, num_sends);
+			   "WMI no.of chan = %d len = %d pdev_id = %d num_sends = %d append_chan_list %d\n",
+			   num_send_chans, len, cmd->pdev_id, num_sends, arg->append_chan_list);
 
 		ptr = skb->data + sizeof(*cmd);
 
@@ -15002,6 +15168,41 @@ int ath12k_wmi_send_wsi_stats_info(struct ath12k *ar,
 	if (ret) {
 		ath12k_warn(ar->ab,
 			    "failed to send WMI_PDEV_WSI_STATS_INFO_CMDID cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
+					struct ath12k_set_neighbor_rx_params *param)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_vdev_set_neighbor_rx_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_vdev_set_neighbor_rx_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_FILTER_NRP_CONFIG_CMD,
+						(sizeof(*cmd)));
+	cmd->vdev_id = cpu_to_le32(param->vdev_id);
+	cmd->action = cpu_to_le32(param->action);
+	cmd->type = WMI_FILTER_NRP_TYPE_STA_MACADDR;
+	cmd->bssid_idx = cpu_to_le32(1);
+	ether_addr_copy(cmd->macaddr.addr, param->nrp_addr);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI set nrp config vdev_id %d action %d nrp mac %pM\n",
+		   cmd->vdev_id, cmd->action, param->nrp_addr);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_FILTER_NEIGHBOR_RX_PACKETS_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send VDEV_FILTER_NEIGHBOR_RX_PACKETS_CMDID cmd\n");
 		dev_kfree_skb(skb);
 	}
 

@@ -186,14 +186,7 @@ ath12k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
 
 int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait)
 {
-	struct ieee80211_supported_band **bands;
-	struct ath12k_wmi_scan_chan_list_arg *arg;
-	struct ieee80211_channel *channel;
-	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
-	struct ath12k_wmi_channel_arg *ch;
-	enum nl80211_band band;
-	int num_channels = 0;
-	int i, ret, left;
+	int left;
 
 	if (wait && ar->state_11d != ATH12K_11D_IDLE) {
 		left = wait_for_completion_timeout(&ar->completed_11d_scan,
@@ -223,89 +216,7 @@ int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait)
 	if (ar->ah->state == ATH12K_HW_STATE_RESTARTING)
 		return 0;
 
-	bands = hw->wiphy->bands;
-	for (band = 0; band < NUM_NL80211_BANDS; band++) {
-		if (!(ar->mac.sbands[band].channels && bands[band]))
-			continue;
-
-		for (i = 0; i < bands[band]->n_channels; i++) {
-			if (bands[band]->channels[i].flags &
-			    IEEE80211_CHAN_DISABLED)
-				continue;
-
-			num_channels++;
-		}
-	}
-
-	if (!num_channels) {
-		ath12k_warn(ar->ab, "pdev is not supported for this country\n");
-		return -EOPNOTSUPP;
-	}
-
-	arg = kzalloc(struct_size(arg, channel, num_channels), GFP_KERNEL);
-
-	if (!arg)
-		return -ENOMEM;
-
-	arg->pdev_id = ar->pdev->pdev_id;
-	arg->nallchans = num_channels;
-
-	ch = arg->channel;
-
-	for (band = 0; band < NUM_NL80211_BANDS; band++) {
-		if (!(ar->mac.sbands[band].channels && bands[band]))
-			continue;
-
-		for (i = 0; i < bands[band]->n_channels; i++) {
-			channel = &bands[band]->channels[i];
-
-			if (channel->flags & IEEE80211_CHAN_DISABLED)
-				continue;
-
-			/* TODO: Set to true/false based on some condition? */
-			ch->allow_ht = true;
-			ch->allow_vht = true;
-			ch->allow_he = true;
-
-			ch->dfs_set =
-				!!(channel->flags & IEEE80211_CHAN_RADAR);
-			ch->is_chan_passive = !!(channel->flags &
-						IEEE80211_CHAN_NO_IR);
-			ch->is_chan_passive |= ch->dfs_set;
-			ch->mhz = channel->center_freq;
-			ch->cfreq1 = channel->center_freq;
-			ch->minpower = 0;
-			ch->maxpower = channel->max_power * 2;
-			ch->maxregpower = channel->max_reg_power * 2;
-			ch->antennamax = channel->max_antenna_gain * 2;
-
-			/* TODO: Use appropriate phymodes */
-			if (channel->band == NL80211_BAND_2GHZ)
-				ch->phy_mode = MODE_11G;
-			else
-				ch->phy_mode = MODE_11A;
-
-			if (channel->band == NL80211_BAND_6GHZ &&
-			    cfg80211_channel_is_psc(channel))
-				ch->psc_channel = true;
-
-			ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-				   "mac channel [%d/%d] freq %d maxpower %d regpower %d antenna %d mode %d\n",
-				   i, arg->nallchans,
-				   ch->mhz, ch->maxpower, ch->maxregpower,
-				   ch->antennamax, ch->phy_mode);
-
-			ch++;
-			/* TODO: use quarrter/half rate, cfreq12, dfs_cfreq2
-			 * set_agile, reg_class_idx
-			 */
-		}
-	}
-
-	ret = ath12k_wmi_send_scan_chan_list_cmd(ar, arg);
-	kfree(arg);
-
-	return ret;
+	return ath12k_wmi_update_scan_chan_list(ar, NULL);
 }
 
 static void ath12k_copy_regd(struct ieee80211_regdomain *regd_orig,
