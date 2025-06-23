@@ -68,6 +68,21 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 			goto done;
 	}
 
+	if (dp->hw_params->ring_mask->rx_mon_status[grp_id]) {
+		ring_mask = dp->hw_params->ring_mask->rx_mon_status[grp_id];
+		for (i = 0; i < dp->num_radios; i++) {
+			for (j = 0; j < dp->hw_params->num_rxdma_per_pdev; j++) {
+				int id = i * dp->hw_params->num_rxdma_per_pdev + j;
+
+				if (ring_mask & BIT(id)) {
+					/* TODO: add monitor mode function */
+					if (budget <= 0)
+						goto done;
+				}
+			}
+		}
+	}
+
 	if (dp->hw_params->ring_mask->rx_mon_dest[grp_id]) {
 		monitor_mode = ATH12K_DP_RX_MONITOR_MODE;
 		ring_mask = dp->hw_params->ring_mask->rx_mon_dest[grp_id];

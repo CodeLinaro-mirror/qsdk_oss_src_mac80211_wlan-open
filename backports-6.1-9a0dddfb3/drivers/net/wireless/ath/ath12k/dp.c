@@ -261,6 +261,8 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		grp_mask = &ring_mask->reo_status[0];
 		break;
 	case HAL_RXDMA_MONITOR_STATUS:
+		grp_mask = &ab->hw_params->ring_mask->rx_mon_status[0];
+		break;
 	case HAL_RXDMA_MONITOR_DST:
 		grp_mask = &ring_mask->rx_mon_dest[0];
 		break;
@@ -433,10 +435,15 @@ skip_dma_alloc:
 		break;
 	case HAL_RXDMA_BUF:
 	case HAL_RXDMA_MONITOR_BUF:
-	case HAL_RXDMA_MONITOR_STATUS:
 		params.low_threshold = num_entries >> 3;
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
 		params.intr_batch_cntr_thres_entries = 0;
+		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
+		break;
+	case HAL_RXDMA_MONITOR_STATUS:
+		params.low_threshold = num_entries >> 3;
+		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
+		params.intr_batch_cntr_thres_entries = 1;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
 	case HAL_TX_MONITOR_DST:

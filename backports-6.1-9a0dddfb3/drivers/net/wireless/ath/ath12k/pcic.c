@@ -940,7 +940,8 @@ int ath12k_pcic_ext_irq_config(struct ath12k_base *ab,
 		    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
 		    ab->hw_params->ring_mask->reo2ppe[i] ||
 #endif
-		    ab->hw_params->ring_mask->rx_mon_dest[i]) {
+		    ab->hw_params->ring_mask->rx_mon_dest[i] ||
+		    ab->hw_params->ring_mask->rx_mon_status[i]) {
 			num_irq = 1;
 		}
 
