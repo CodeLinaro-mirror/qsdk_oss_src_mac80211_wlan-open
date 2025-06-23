@@ -4221,6 +4221,37 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 	rcu_read_unlock();
 }
 
+static void ath12k_peer_assoc_h_ttlm(struct ath12k_link_sta *arsta,
+				     struct ath12k_wmi_peer_assoc_arg *arg)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_wmi_ttlm_peer_params *ttlm_params = &arg->ttlm_params;
+	u8 i;
+	u8 is_default_mapping[IEEE80211_MAX_TTLM_DIRECTION] = {0};
+	unsigned long dmap = 0, umap = 0;
+
+	if (!sta->mlo || ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID)
+		return;
+
+	memset(ttlm_params, 0, sizeof(struct ath12k_wmi_ttlm_peer_params *));
+
+	for (i = 0; i < IEEE80211_MAX_NUM_TIDS; i++)
+		dmap |= sta->neg_ttlm.downlink[i];
+	for (i = 0; i < IEEE80211_MAX_NUM_TIDS; i++)
+		umap |= sta->neg_ttlm.uplink[i];
+
+	if (!umap && !dmap)
+		return;
+
+	ath12k_populate_default_mapping_flags(arsta->arvif->ahvif->vif,
+					      &sta->neg_ttlm, is_default_mapping);
+
+	ath12k_populate_wmi_ttlm_peer_params(arsta, ttlm_params,
+					     is_default_mapping,
+					     &sta->neg_ttlm);
+}
+
 static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 				      struct ath12k_link_vif *arvif,
 				      struct ath12k_link_sta *arsta,
@@ -4247,6 +4278,7 @@ static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_phymode(ar, arvif, arsta, arg, link_sta);
 	ath12k_peer_assoc_h_smps(arsta, arg, link_sta);
 	ath12k_peer_assoc_h_mlo(arsta, arg);
+	ath12k_peer_assoc_h_ttlm(arsta, arg);
 
 	arsta->peer_nss = arg->peer_nss;
 
