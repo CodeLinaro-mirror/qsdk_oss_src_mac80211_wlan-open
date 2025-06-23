@@ -8424,4 +8424,13 @@ ieee80211_advertised_ttlm_evt_notify(struct ieee80211_vif *vif,
 				     enum advertised_ttlm_status_type status,
 				     unsigned int link_id);
 
+/** ieee80211_ttlm_info_expec_dur_update - Update expected duration for each
+ * link for which the update was received.
+ * @vif: BSS in which the expected duration is to be update
+ * @link_id: Link id of the link for which expected duration is to be updated
+ * @expec_dur: current expected duration value from driver
+ */
+void ieee80211_ttlm_info_expec_dur_update(struct ieee80211_vif *vif,
+					  unsigned int link_id, u32 expec_dur);
+
 #endif /* MAC80211_H */

@@ -226,6 +226,20 @@ void ieee80211_advertised_ttlm_evt_notify_work(struct wiphy *wiphy,
 				     link->link_id);
 }
 
+void ieee80211_ttlm_info_expec_dur_update(struct ieee80211_vif *vif,
+					  unsigned int link_id, u32 expec_dur)
+{
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+
+	if (!wdev->valid_links ||
+	    WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
+		return;
+
+	wdev->links[link_id].ttlm_expec_dur = expec_dur;
+	wdev->ttlm_expec_dur_update_flag = true;
+}
+EXPORT_SYMBOL(ieee80211_ttlm_info_expec_dur_update);
+
 static struct wireless_dev *ieee80211_add_iface(struct wiphy *wiphy,
 						const char *name,
 						unsigned char name_assign_type,
