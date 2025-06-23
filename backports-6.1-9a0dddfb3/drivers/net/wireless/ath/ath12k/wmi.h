@@ -5453,6 +5453,21 @@ struct ath12k_mgmt_rx_mlo_link_removal_info {
 	__le32 tbtt_count;
 } __packed;
 
+#define WMI_MGMT_RX_MLO_BCAST_TTLM_INFO_VDEV_ID_GET    GENMASK(7, 0)
+#define WMI_MGMT_RX_MLO_BCAST_TTLM_INFO_EXPEC_DUR_GET  GENMASK(31, 8)
+struct ath12k_wmi_mgmt_rx_mlo_bcast_ttlm_info {
+	/**
+	 * vdev_id: Lower 0-7 bits
+	 * expec_dur: 8-31 bits
+	 */
+	__le32 ttlm_info;
+};
+
+struct ath12k_mgmt_rx_mlo_bcast_ttlm_info {
+	__le32 vdev_id;
+	__le32 expec_dur;
+} __packed;
+
 struct ath12k_wmi_mgmt_rx_arg {
 	u32 chan_freq;
 	u32 channel;
@@ -5467,12 +5482,17 @@ struct ath12k_wmi_mgmt_rx_arg {
 	u32 tsf_delta;
 	u8 pdev_id;
 	u32 num_link_removal_info;
+	u32 num_bcast_ttlm_info;
 #ifdef CPTCFG_ATH12K_MEM_PROFILE_512M
 	struct ath12k_mgmt_rx_mlo_link_removal_info link_removal_info
 		[9 /* TARGET_NUM_VDEVS */ * ATH12K_WMI_MLO_MAX_LINKS];
+	struct ath12k_mgmt_rx_mlo_bcast_ttlm_info bcast_ttlm_info
+		[8 /* TARGET_NUM_VDEVS - 1 */];
 #else
 	struct ath12k_mgmt_rx_mlo_link_removal_info link_removal_info
 		[17 /* TARGET_NUM_VDEVS */ * ATH12K_WMI_MLO_MAX_LINKS];
+	struct ath12k_mgmt_rx_mlo_bcast_ttlm_info bcast_ttlm_info
+		[16 /* TARGET_NUM_VDEVS - 1 */];
 #endif /* CPTCFG_ATH12K_MEM_PROFILE_512M */
 };
 

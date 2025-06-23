@@ -157,6 +157,10 @@ struct wmi_tlv_mgmt_rx_parse {
 	bool mgmt_ml_info_done;
 	bool bpcc_buf_done;
 	bool parse_link_removal_info_done;
+	struct ath12k_wmi_mgmt_rx_mlo_bcast_ttlm_info
+		*bcast_ttlm_info[TARGET_NUM_VDEVS - 1];
+	u32 num_bcast_ttlm_info_count;
+	bool parse_bcast_ttlm_info_done;
 };
 
 static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
@@ -8131,6 +8135,14 @@ static int ath12k_wmi_mgmt_rx_sub_tlv_parse(struct ath12k_base *ab,
 		parse->num_link_removal_info_count++;
 		parse->parse_link_removal_info_done = true;
 		break;
+	case WMI_TAG_MLO_TID_TO_LINK_MAPPING_BCAST_T2LM_INFO:
+		if (parse->num_bcast_ttlm_info_count < TARGET_NUM_VDEVS - 1) {
+			parse->bcast_ttlm_info[parse->num_bcast_ttlm_info_count] =
+				(struct ath12k_wmi_mgmt_rx_mlo_bcast_ttlm_info *)ptr;
+			parse->num_bcast_ttlm_info_count++;
+			parse->parse_bcast_ttlm_info_done = true;
+		}
+		break;
 	}
 	return 0;
 }
@@ -8312,6 +8324,27 @@ static void ath12k_wmi_update_ml_link_removal_info_count(struct ath12k_base *ab,
 	}
 }
 
+static void ath12k_wmi_update_ml_bcast_ttlm_info_params(struct ath12k_base *ab,
+							struct ath12k_wmi_mgmt_rx_arg *hdr,
+							struct wmi_tlv_mgmt_rx_parse *parse)
+{
+	struct ath12k_wmi_mgmt_rx_mlo_bcast_ttlm_info *ttlm;
+	int idx;
+
+	hdr->num_bcast_ttlm_info = parse->num_bcast_ttlm_info_count;
+
+	for (idx = 0; idx < hdr->num_bcast_ttlm_info; idx++) {
+		ttlm = parse->bcast_ttlm_info[idx];
+
+		hdr->bcast_ttlm_info[idx].vdev_id =
+			le32_get_bits(ttlm->ttlm_info,
+				      WMI_MGMT_RX_MLO_BCAST_TTLM_INFO_VDEV_ID_GET);
+		hdr->bcast_ttlm_info[idx].expec_dur =
+			le32_get_bits(ttlm->ttlm_info,
+				      WMI_MGMT_RX_MLO_BCAST_TTLM_INFO_EXPEC_DUR_GET);
+	}
+}
+
 static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 					  struct sk_buff *skb,
 					  struct ath12k_wmi_mgmt_rx_arg *hdr)
@@ -8367,6 +8400,10 @@ static int ath12k_pull_mgmt_rx_params_tlv(struct ath12k_base *ab,
 	/* ML link removal info TLV */
 	if (parse.num_link_removal_info_count)
 		ath12k_wmi_update_ml_link_removal_info_count(ab, hdr, &parse);
+
+	/* Bcast TTLM info TLV */
+	if (parse.num_bcast_ttlm_info_count)
+		ath12k_wmi_update_ml_bcast_ttlm_info_params(ab, hdr, &parse);
 
 	/* shift the sk_buff to point to `frame` */
 	skb_trim(skb, 0);
@@ -9354,6 +9391,36 @@ static void ath12k_vdev_stopped_event(struct ath12k_base *ab, struct sk_buff *sk
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "vdev stopped for vdev id %d", vdev_id);
 }
 
+static void
+ath12k_update_bcast_ttlm_params(struct ath12k_base *ab,
+				const struct ath12k_mgmt_rx_mlo_bcast_ttlm_info *params,
+				u32 num_bcast_ttlm_params)
+{
+	struct ath12k_link_vif *arvif;
+	const struct ath12k_mgmt_rx_mlo_bcast_ttlm_info *info;
+	u32 i;
+
+	for (i = 0; i < num_bcast_ttlm_params; i++) {
+		u32 vdev_id, expec_dur;
+
+		info = &params[i];
+		vdev_id = le32_to_cpu(info->vdev_id);
+		expec_dur = le32_to_cpu(info->expec_dur);
+		arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+		if (!arvif) {
+			ath12k_err(ab, "Error in getting arvif from vdev id:%d\n",
+				   info->vdev_id);
+			continue;
+		}
+
+		/* update mac80211 only if expec_dur is greater than 0 */
+		if (arvif->is_up && arvif->ahvif->vif->valid_links && expec_dur)
+			ieee80211_ttlm_info_expec_dur_update(arvif->ahvif->vif,
+							     arvif->link_id,
+							     expec_dur);
+	}
+}
+
 static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_wmi_mgmt_rx_arg rx_ev = {0};
@@ -9529,6 +9596,11 @@ skip_mgmt_stats:
 	if (rx_ev.num_link_removal_info)
 		ath12k_update_link_removal_params(ab, rx_ev.link_removal_info,
 						  rx_ev.num_link_removal_info);
+
+	if (ieee80211_is_probe_req(hdr->frame_control) &&
+	    rx_ev.num_bcast_ttlm_info)
+		ath12k_update_bcast_ttlm_params(ab, rx_ev.bcast_ttlm_info,
+						rx_ev.num_bcast_ttlm_info);
 
 	ath12k_dbg(ab, ATH12K_DBG_MGMT,
 		   "event mgmt rx skb %p len %d ftype %02x stype %02x\n",
