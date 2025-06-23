@@ -2842,14 +2842,16 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	struct ath12k_wmi_vht_rate_set_params *mcs;
 	struct ath12k_wmi_he_rate_set_params *he_mcs;
 	struct ath12k_wmi_eht_rate_set_params *eht_mcs;
+	struct ath12k_wmi_ttlm_peer_params *ttlm_params;
 	struct wmi_peer_assoc_mlo_params *ml_params;
 	struct wmi_peer_assoc_mlo_partner_info_params *partner_info;
+	struct wmi_peer_assoc_tid_to_link_map *ttlm;
 	struct sk_buff *skb;
 	struct wmi_tlv *tlv;
 	void *ptr;
 	u32 peer_legacy_rates_align, eml_delay, eml_trans_timeout;
 	u32 peer_ht_rates_align;
-	int i, ret, len;
+	int i, ret, len, dir, tid_num;
 	u16 eml_cap;
 	__le32 v;
 
@@ -2870,6 +2872,9 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 		       TLV_HDR_SIZE + (arg->ml.num_partner_links * sizeof(*partner_info));
 	else
 		len += (2 * TLV_HDR_SIZE);
+
+	len += TLV_HDR_SIZE + (arg->ttlm_params.num_dir * TTLM_MAX_NUM_TIDS *
+			       sizeof(struct wmi_peer_assoc_tid_to_link_map));
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -3079,7 +3084,7 @@ skip_ml_params:
 	ptr += TLV_HDR_SIZE;
 
 	if (len == 0)
-		goto send;
+		goto ttlm;
 
 	for (i = 0; i < arg->ml.num_partner_links; i++) {
 		u32 cmd = WMI_TAG_MLO_PARTNER_LINK_PARAMS_PEER_ASSOC;
@@ -3112,6 +3117,43 @@ skip_ml_params:
 		partner_info->logical_link_idx =
 			cpu_to_le32(arg->ml.partner_info[i].logical_link_idx);
 		ptr += sizeof(*partner_info);
+	}
+
+ttlm:
+	/* add ttlm params */
+	ttlm_params = &arg->ttlm_params;
+	tlv = ptr;
+	len = ttlm_params->num_dir * TTLM_MAX_NUM_TIDS * sizeof(*ttlm);
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+
+	if (!len)
+		goto send;
+
+	for (dir = 0; dir < ttlm_params->num_dir; dir++) {
+		struct ath12k_wmi_host_ttlm_of_tids *ttlm_of_tids = &ttlm_params->ttlm_info[dir];
+
+		for (tid_num = 0; tid_num < TTLM_MAX_NUM_TIDS; tid_num++) {
+			ttlm = (struct wmi_peer_assoc_tid_to_link_map *)ptr;
+			ttlm->tlv_header =
+				ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_ASSOC_TID_TO_LINK_MAP,
+						       sizeof(*ttlm) - TLV_HDR_SIZE);
+			ttlm->tid_to_link_map_info = 0;
+			/* populate tid number */
+			ttlm->tid_to_link_map_info |= le32_encode_bits(tid_num, WMI_TTLM_TID_MASK);
+			/* populate the direction */
+			ttlm->tid_to_link_map_info |= le32_encode_bits(ttlm_of_tids->direction,
+								       WMI_TTLM_DIR_MASK);
+			/* populate default link mapping value */
+			ttlm->tid_to_link_map_info |=
+				le32_encode_bits(ttlm_of_tids->default_link_mapping,
+						 WMI_TTLM_DEFAULT_MAPPING_MASK);
+			/* populate ttlm provisioned links for the corressponding tid number */
+			ttlm->tid_to_link_map_info |=
+				le32_encode_bits(ttlm_of_tids->ttlm_provisioned_links[tid_num],
+						 WMI_TTLM_LINK_MAPPING_MASK);
+			ptr += sizeof(*ttlm);
+		}
 	}
 
 send:

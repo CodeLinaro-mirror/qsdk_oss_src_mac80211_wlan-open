@@ -4363,6 +4363,11 @@ struct wmi_peer_preferred_link_map {
 	__le32 expected_max_latency_ms[WLAN_MAX_AC];
 } __packed;
 
+struct wmi_peer_assoc_tid_to_link_map {
+	__le32 tlv_header;
+	__le32 tid_to_link_map_info;
+};
+
 struct ath12k_wmi_peer_assoc_arg {
 	u32 vdev_id;
 	u32 peer_new_assoc;
@@ -4435,6 +4440,7 @@ struct ath12k_wmi_peer_assoc_arg {
 	bool is_assoc;
 	struct peer_assoc_mlo_params ml;
 	bool enable_mcs15;
+	struct ath12k_wmi_ttlm_peer_params ttlm_params;
 };
 
 #define ATH12K_WMI_FLAG_MLO_ENABLED			BIT(0)
