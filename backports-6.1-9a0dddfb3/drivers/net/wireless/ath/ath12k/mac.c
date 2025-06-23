@@ -2349,6 +2349,8 @@ static void ath12k_mac_get_hw_link_map(struct ieee80211_vif *vif,
 			continue;
 		for (j = 0; j < ATH12K_NUM_MAX_LINKS; j++) {
 			arvif = rcu_dereference(ahvif->link[j]);
+			if (!arvif)
+				continue;
 			if (arvif->link_id != i)
 				continue;
 			ar = arvif->ar;
@@ -5531,6 +5533,139 @@ static bool ath12k_mac_get_link_idx_with_device_idx(struct ath12k_hw *ah,
 	return false;
 }
 
+static struct ath12k_link_vif *
+ath12k_get_ttlm_preferred_link_to_start(struct ieee80211_vif *vif)
+{
+	u8 link_id;
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k *ar;
+	u16 valid_links = vif->valid_links;
+
+	for (link_id = 0; link_id < ATH12K_NUM_MAX_LINKS; link_id++) {
+		if (!(valid_links & BIT(link_id)))
+			continue;
+
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		WARN_ON(!arvif);
+		ar = arvif->ar;
+		/* Choose 6 GHz vap if present */
+		if (ar->supports_6ghz)
+			return arvif;
+	}
+
+	return arvif;
+}
+
+static void
+ath12k_mac_offload_advertised_ttlm(struct ieee80211_hw *hw,
+				   struct ieee80211_vif *vif)
+{
+	/* prepare the params needed to send the wmi command */
+	struct ath12k_wmi_tid_to_link_map_ap_params map_params = {0};
+	u16 ieee_link_map_value = 0, hw_link_map_value = 0;
+	struct ieee80211_advertised_ttlm_config *ttlm_conf;
+	u16 valid_links = vif->valid_links;
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar;
+	u8 i, j;
+
+	/* get 6g link from vif if present from active links */
+	arvif = ath12k_get_ttlm_preferred_link_to_start(vif);
+	if (!arvif)
+		return;
+
+	ar = arvif->ar;
+	ttlm_conf = &vif->adv_ttlm.u.ap.ttlm_config;
+	map_params.pdev_id = ar->pdev->pdev_id;
+	map_params.vdev_id = arvif->vdev_id;
+	map_params.num_ttlm_info = ttlm_conf->num_ttlm_ie;
+	map_params.hw_link_id = ar->hw_link_id;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "ttlm_conf->num_ttlm_ie %d vdev_id %d hw_link_id %d pdev_id %d\n",
+		   ttlm_conf->num_ttlm_ie, map_params.vdev_id, map_params.hw_link_id,
+		   map_params.pdev_id);
+	for (i = 0; i < ttlm_conf->num_ttlm_ie; i++) {
+		map_params.ie[i].ttlm.direction = ATH12K_WMI_TTLM_BIDI_DIRECTION;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "ttlm_conf->adv_ttlm_conf[%d].ieee_link_bmap = 0x%x\n",
+			   i, ttlm_conf->adv_ttlm_conf[i].ieee_link_bmap);
+		if (!ttlm_conf->adv_ttlm_conf[i].ieee_link_bmap) {
+			/* default mapping */
+			map_params.ie[i].ttlm.default_link_mapping = true;
+			continue;
+		}
+
+		map_params.ie[i].ttlm.mapping_switch_time =
+			ttlm_conf->adv_ttlm_conf[i].switch_time;
+		if (ttlm_conf->adv_ttlm_conf[i].switch_time)
+			map_params.ie[i].ttlm.mapping_switch_time_present = 1;
+
+		if (!ttlm_conf->adv_ttlm_conf[i].duration)
+			return;
+
+		map_params.ie[i].ttlm.expected_duration_present = 1;
+		map_params.ie[i].ttlm.expected_duration =
+			ttlm_conf->adv_ttlm_conf[i].duration;
+
+		map_params.ie[i].ttlm.link_mapping_size =
+			ttlm_conf->adv_ttlm_conf[i].link_mapping_size;
+
+		ieee_link_map_value = ttlm_conf->adv_ttlm_conf[i].ieee_link_bmap;
+		ath12k_mac_get_hw_link_map(vif,
+					   ieee_link_map_value,
+					   &hw_link_map_value);
+
+		if ((valid_links & ieee_link_map_value) != ieee_link_map_value)
+			return;
+
+		for (j = 0; j < TTLM_MAX_NUM_TIDS; j++) {
+			if ((valid_links & ieee_link_map_value) != ieee_link_map_value)
+				return;
+
+			map_params.ie[i].ttlm.ieee_link_map_tid[j] =
+				ieee_link_map_value;
+			map_params.ie[i].ttlm.hw_link_map_tid[j] =
+				hw_link_map_value;
+		}
+
+		map_params.ie[i].disabled_link_bitmap = ~ieee_link_map_value;
+		map_params.ie[i].disabled_link_bitmap &= vif->valid_links;
+
+		for (j = 0; j < TTLM_MAX_NUM_TIDS; j++) {
+			if (map_params.ie[i].ttlm.ieee_link_map_tid[j] == vif->valid_links) {
+				map_params.ie[i].ttlm.default_link_mapping = true;
+			} else {
+				map_params.ie[i].ttlm.default_link_mapping = false;
+				break;
+			}
+		}
+
+		if (map_params.ie[i].disabled_link_bitmap == vif->valid_links)
+			return;
+
+		/* convert the disabled link bitmap to hw link bitmap for target usecase
+		 * this is to removed when target resolves hw link id dependency
+		 */
+		ath12k_mac_get_hw_link_map(vif, map_params.ie[i].disabled_link_bitmap,
+					   &hw_link_map_value);
+		map_params.ie[i].disabled_link_bitmap = hw_link_map_value;
+
+		if (map_params.ie[i].ttlm.default_link_mapping) {
+			memset(&map_params.ie[i].ttlm.ieee_link_map_tid,
+			       0,
+			       sizeof(map_params.ie[i].ttlm.ieee_link_map_tid));
+			memset(&map_params.ie[i].ttlm.hw_link_map_tid,
+			       0,
+			       sizeof(map_params.ie[i].ttlm.hw_link_map_tid));
+		}
+	}
+
+	ath12k_wmi_ap_tid_to_link_map_config(ar, &map_params);
+}
+
 void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   u64 changed)
@@ -5570,6 +5705,13 @@ void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				ath12k_bss_assoc(ar, arvif, info);
 			else
 				ath12k_bss_disassoc(ar, arvif);
+		}
+	}
+
+	if (changed & BSS_CHANGED_MLD_ADV_TTLM) {
+		if (vif->type == NL80211_IFTYPE_AP) {
+			/* advertised ttlm offload start request */
+			ath12k_mac_offload_advertised_ttlm(hw, vif);
 		}
 	}
 }
@@ -20708,6 +20850,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_STA_TX_PWR);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_PROTECTION);
+	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD);
 
 	if (test_bit(WMI_TLV_SERVICE_BSS_COLOR_OFFLOAD, ar->ab->wmi_ab.svc_map))
 		 wiphy_ext_feature_set(ar->ah->hw->wiphy,
