@@ -6546,6 +6546,8 @@ static void ieee80211_ml_reconf_work(struct wiphy *wiphy,
 	struct sta_info *sta;
 	struct ieee80211_local *local = sdata->local;
 	u16 new_valid_links, new_active_links, new_dormant_links, link_id;
+	struct ieee80211_bss_conf *link_conf;
+	struct ieee80211_link_data *link;
 	int ret;
 
 	if (!sdata->u.mgd.removed_links)
@@ -6589,6 +6591,22 @@ static void ieee80211_ml_reconf_work(struct wiphy *wiphy,
 			sdata_info(sdata,
 				   "Failed setting active links\n");
 			goto out;
+		}
+	}
+
+	/* Set the active flag to false and wake up queues if blocked on
+	 * the removed link
+	 */
+	for_each_set_bit(link_id, &sdata->u.mgd.removed_links,
+			 IEEE80211_MLD_MAX_NUM_LINKS) {
+		link = wiphy_dereference(wiphy, sdata->link[link_id]);
+		link_conf = link->conf;
+
+		link_conf->csa_active = false;
+		link_conf->color_change_active = false;
+		if (link->csa_block_tx) {
+			ieee80211_vif_unblock_queues_csa(sdata);
+			link->csa_block_tx = false;
 		}
 	}
 
