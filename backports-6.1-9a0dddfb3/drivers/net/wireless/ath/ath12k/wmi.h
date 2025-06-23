@@ -1053,7 +1053,7 @@ enum wmi_tlv_event_id {
 	/* Response event for Link Removal Cmd */
 	WMI_MLO_LINK_REMOVAL_EVENTID,
 
-	WMI_MLO_TID_TO_LIUNK_MAP_EVENT_ID,
+	WMI_MLO_TID_TO_LINK_MAP_EVENT_ID,
 	WMI_MLO_LINK_INFO_EVENT_ID,
 	WMI_MLO_DISABLE_REQ_EVENT_ID,
 	WMI_MLO_SWITCH_REQUEST_EVENT_ID,
@@ -4340,6 +4340,8 @@ struct wmi_rate_set_arg {
 #define WLAN_MAX_TTLM_IE 2
 #define TTLM_MAX_NUM_TIDS 8
 #define MAX_PREFERRED_LINKS 4
+/* Mapping switch time represented as bits 10 to 25 of the TSF value */
+#define WMI_TTLM_MAPPING_SWITCH_TSF_BITS 0x3FFFC00
 
 enum ath12k_wmi_ttlm_direction {
 	ATH12K_WMI_TTLM_DL_DIRECTION,
@@ -4455,6 +4457,12 @@ struct ath12k_wmi_tid_to_link_map_ap_params {
 	u16 hw_link_id;
 	struct ath12k_wmi_mlo_ttlm_ie ie[WLAN_MAX_TTLM_IE];
 };
+
+struct wmi_tid_to_link_mapping_event {
+	u32 vdev_id;
+	u32 status_type;
+	u32 mapping_switch_tsf;
+} __packed;
 
 struct wmi_mlo_peer_link_control_param {
 	__le32 tlv_header;

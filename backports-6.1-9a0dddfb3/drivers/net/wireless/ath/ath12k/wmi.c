@@ -13991,6 +13991,54 @@ exit:
 	kfree(tb);
 }
 
+static void ath12k_wmi_tid_to_link_map_event(struct ath12k_base *ab,
+					     struct sk_buff *skb)
+{
+	const struct wmi_tid_to_link_mapping_event *ev;
+	struct ath12k_link_vif *arvif;
+	u16 mapping_switch_tsf;
+	u32 status_type;
+	const void **tb;
+	u32 vdev_id;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_MLO_TID_TO_LINK_MAPPING_EVENT_FIXED_PARAM];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch TID to link mapping ev");
+		kfree(tb);
+		return;
+	}
+
+	vdev_id = le32_to_cpu(ev->vdev_id);
+	rcu_read_lock();
+	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
+	if (!arvif) {
+		ath12k_warn(ab, "failed to find arvif with vedv id %d in tid_to_link_map_event_event\n",
+			    vdev_id);
+		goto unlock;
+	}
+
+	mapping_switch_tsf = le32_get_bits(ev->mapping_switch_tsf,
+					   WMI_TTLM_MAPPING_SWITCH_TSF_BITS);
+	status_type = le32_to_cpu(ev->status_type);
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "TID to link mapping event received.  vdev:%d, status:%d, mapping_switch_tsf: %u\n",
+		   vdev_id, status_type, mapping_switch_tsf);
+	ath12k_tid_to_link_mapping_evt_notify(arvif, mapping_switch_tsf,
+					      status_type);
+
+unlock:
+	rcu_read_unlock();
+	kfree(tb);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -14213,6 +14261,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_VDEV_ADFS_OCAC_COMPLETE_EVENTID:
 		ath12k_process_ocac_complete_event(ab, skb);
+		break;
+	case WMI_MLO_TID_TO_LINK_MAP_EVENT_ID:
+		ath12k_wmi_tid_to_link_map_event(ab, skb);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
