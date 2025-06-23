@@ -500,6 +500,9 @@ enum ieee80211_neg_ttlm_res ath12k_mac_op_can_neg_ttlm(struct ieee80211_hw *hw,
 void ath12k_mac_op_apply_neg_ttlm_per_client(struct ieee80211_hw *hw,
 					     struct ieee80211_vif *vif,
 					     struct ieee80211_sta *sta);
+void ath12k_tid_to_link_mapping_evt_notify(struct ath12k_link_vif *arvif,
+					   u16 mapping_switch_tsf,
+					   u32 tid_to_link_mapping_status);
 
 int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 				       struct cfg80211_chan_def *def);

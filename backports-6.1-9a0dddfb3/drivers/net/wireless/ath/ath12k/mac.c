@@ -21608,6 +21608,17 @@ ath12k_mac_op_can_neg_ttlm(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_can_neg_ttlm);
 
+void ath12k_tid_to_link_mapping_evt_notify(struct ath12k_link_vif *arvif,
+					   u16 mapping_switch_tsf,
+					   u32 tid_to_link_mapping_status)
+{
+	if (arvif->is_created)
+		ieee80211_advertised_ttlm_evt_notify(arvif->ahvif->vif,
+						     mapping_switch_tsf,
+						     tid_to_link_mapping_status,
+						     arvif->link_id);
+}
+
 static void ath12k_mac_handle_ttlm_neg(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
 				       struct ieee80211_sta *sta)
