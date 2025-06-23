@@ -1009,7 +1009,8 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	pubsta = peer ? peer->sta : NULL;
 
-	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, rxcb->peer_id);
+	if (rxcb->peer_id)
+		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, rxcb->peer_id);
 
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;

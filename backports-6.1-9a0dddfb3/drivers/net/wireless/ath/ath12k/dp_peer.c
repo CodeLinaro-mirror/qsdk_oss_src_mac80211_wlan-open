@@ -500,7 +500,7 @@ ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
 			 "ath12k dp link peer find by peerid index called without rcu lock");
 
-	if (dp_pdev->hw_link_id >= ATH12K_NUM_MAX_LINKS)
+	if (dp_pdev->hw_link_id >= ATH12K_GROUP_MAX_RADIO)
 		return NULL;
 
 	dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
@@ -621,6 +621,10 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 		goto err_dp_peer;
 	}
 
+	/* Set peer_id in dp_peer for non-mlo client, peer_id for mlo client is
+	   set during dp_peer create */
+	if (!dp_peer->is_mlo)
+		dp_peer->peer_id = peer->peer_id;
 	peer->dp_peer = dp_peer;
 	peer->hw_link_id = hw_link_id;
 	peer->tcl_metadata |= u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
