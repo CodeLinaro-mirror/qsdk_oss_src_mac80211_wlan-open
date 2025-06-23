@@ -2082,6 +2082,18 @@ struct ath12k_htt_tx_de_eapol_packets_stats_tlv {
 	__le32 eapol_start_packets;
 	__le32 eapol_logoff_packets;
 	__le32 eapol_encap_asf_packets;
+	__le32 m1_success;
+	__le32 m1_compl_fail;
+	__le32 m2_success;
+	__le32 m2_compl_fail;
+	__le32 m3_success;
+	__le32 m3_compl_fail;
+	__le32 m4_success;
+	__le32 m4_compl_fail;
+	__le32 g1_success;
+	__le32 g1_compl_fail;
+	__le32 g2_success;
+	__le32 g2_compl_fail;
 } __packed;
 
 struct ath12k_htt_tx_de_classify_stats_tlv {
@@ -2140,6 +2152,7 @@ struct ath12k_htt_tx_de_classify_failed_stats_tlv {
 	__le32 incomplete_llc;
 	__le32 eapol_duplicate_m3;
 	__le32 eapol_duplicate_m4;
+	__le32 eapol_invalid_mac;
 } __packed;
 
 struct ath12k_htt_tx_de_classify_status_stats_tlv {
@@ -2163,6 +2176,9 @@ struct ath12k_htt_tx_de_enqueue_discard_stats_tlv {
 	__le32 discarded_pkts;
 	__le32 local_frames;
 	__le32 is_ext_msdu;
+	__le32 mlo_invalid_routing_discard;
+	__le32 mlo_invalid_routing_dup_entry_discard;
+	__le32 discard_peer_unauthorized_pkts;
 } __packed;
 
 struct ath12k_htt_tx_de_compl_stats_tlv {

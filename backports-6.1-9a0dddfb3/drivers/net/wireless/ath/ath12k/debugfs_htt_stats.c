@@ -3516,16 +3516,40 @@ ath12k_htt_print_tx_de_eapol_packets_stats_tlv(const void *tag_buf, u16 tag_len,
 			 "HTT_TX_DE_EAPOL_PACKETS_STATS_TLV:\n");
 	len += scnprintf(buf + len, buf_len - len, "m1_packets = %u\n",
 			 le32_to_cpu(htt_stats_buf->m1_packets));
+	len += scnprintf(buf + len, buf_len - len, "m1_success = %u\n",
+			 le32_to_cpu(htt_stats_buf->m1_success));
+	len += scnprintf(buf + len, buf_len - len, "m1_compl_fail = %u\n",
+			 le32_to_cpu(htt_stats_buf->m1_compl_fail));
 	len += scnprintf(buf + len, buf_len - len, "m2_packets = %u\n",
 			 le32_to_cpu(htt_stats_buf->m2_packets));
+	len += scnprintf(buf + len, buf_len - len, "m2_success = %u\n",
+			 le32_to_cpu(htt_stats_buf->m2_success));
+	len += scnprintf(buf + len, buf_len - len, "m2_compl_fail = %u\n",
+			 le32_to_cpu(htt_stats_buf->m2_compl_fail));
 	len += scnprintf(buf + len, buf_len - len, "m3_packets = %u\n",
 			 le32_to_cpu(htt_stats_buf->m3_packets));
+	len += scnprintf(buf + len, buf_len - len, "m3_success = %u\n",
+			 le32_to_cpu(htt_stats_buf->m3_success));
+	len += scnprintf(buf + len, buf_len - len, "m3_compl_fail = %u\n",
+			 le32_to_cpu(htt_stats_buf->m3_compl_fail));
 	len += scnprintf(buf + len, buf_len - len, "m4_packets = %u\n",
 			 le32_to_cpu(htt_stats_buf->m4_packets));
+	len += scnprintf(buf + len, buf_len - len, "m4_success = %u\n",
+			 le32_to_cpu(htt_stats_buf->m4_success));
+	len += scnprintf(buf + len, buf_len - len, "m4_compl_fail = %u\n",
+			 le32_to_cpu(htt_stats_buf->m4_compl_fail));
 	len += scnprintf(buf + len, buf_len - len, "g1_packets = %u\n",
 			 le32_to_cpu(htt_stats_buf->g1_packets));
+	len += scnprintf(buf + len, buf_len - len, "g1_success = %u\n",
+			 le32_to_cpu(htt_stats_buf->g1_success));
+	len += scnprintf(buf + len, buf_len - len, "g1_compl_fail = %u\n",
+			 le32_to_cpu(htt_stats_buf->g1_compl_fail));
 	len += scnprintf(buf + len, buf_len - len, "g2_packets = %u\n",
 			 le32_to_cpu(htt_stats_buf->g2_packets));
+	len += scnprintf(buf + len, buf_len - len, "g2_success = %u\n",
+			 le32_to_cpu(htt_stats_buf->g2_success));
+	len += scnprintf(buf + len, buf_len - len, "g2_compl_fail = %u\n",
+			 le32_to_cpu(htt_stats_buf->g2_compl_fail));
 	len += scnprintf(buf + len, buf_len - len, "rc4_packets = %u\n",
 			 le32_to_cpu(htt_stats_buf->rc4_packets));
 	len += scnprintf(buf + len, buf_len - len, "eap_packets = %u\n",
@@ -3675,6 +3699,8 @@ ath12k_htt_print_tx_de_classify_failed_stats_tlv(const void *tag_buf, u16 tag_le
 			 le32_to_cpu(htt_stats_buf->eapol_duplicate_m3));
 	len += scnprintf(buf + len, buf_len - len, "eapol_duplicate_m4 = %u\n\n",
 			 le32_to_cpu(htt_stats_buf->eapol_duplicate_m4));
+	len += scnprintf(buf + len, buf_len - len, "eapol_invalid_mac = %u\n",
+			   le32_to_cpu(htt_stats_buf->eapol_invalid_mac));
 
 	stats_req->buf_len = len;
 }
@@ -3757,6 +3783,12 @@ ath12k_htt_print_tx_de_enqueue_discard_stats_tlv(const void *tag_buf, u16 tag_le
 			 le32_to_cpu(htt_stats_buf->local_frames));
 	len += scnprintf(buf + len, buf_len - len, "is_ext_msdu = %u\n\n",
 			 le32_to_cpu(htt_stats_buf->is_ext_msdu));
+	len += scnprintf(buf + len, buf_len - len, "mlo_invalid_routing_discard = %u\n",
+			 le32_to_cpu(htt_stats_buf->mlo_invalid_routing_discard));
+	len += scnprintf(buf + len, buf_len - len, "mlo_invalid_routing_dup_entry_discard = %u\n",
+			 le32_to_cpu(htt_stats_buf->mlo_invalid_routing_dup_entry_discard));
+	len += scnprintf(buf + len, buf_len - len, "discard_peer_unauthorized_pkts = %u\n",
+			 le32_to_cpu(htt_stats_buf->discard_peer_unauthorized_pkts));
 
 	stats_req->buf_len = len;
 }
