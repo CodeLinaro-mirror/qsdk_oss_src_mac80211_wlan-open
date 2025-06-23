@@ -16201,6 +16201,194 @@ ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 	return ret;
 }
 
+static void
+ath12k_wmi_ttlm_update_ie_info(struct ath12k *ar,
+			       struct wmi_mlo_ap_vdev_tid_to_link_map_ie_info *ie_info,
+			       struct ath12k_wmi_mlo_ttlm_ie *params)
+{
+	ie_info->tid_to_link_map_ctrl |=
+		le32_encode_bits(params->ttlm.direction,
+				 WMI_ADV_TTLM_CTRL_DIRECTION_MASK);
+	ie_info->tid_to_link_map_ctrl |=
+		le32_encode_bits(params->ttlm.default_link_mapping,
+				 WMI_ADV_TTLM_CTRL_DEFAULT_LINK_MAPPING_MASK);
+	ie_info->tid_to_link_map_ctrl |=
+		le32_encode_bits(params->ttlm.mapping_switch_time_present,
+				 WMI_ADV_TTLM_CTRL_MST_PRESENT_MASK);
+	ie_info->tid_to_link_map_ctrl |=
+		le32_encode_bits(params->ttlm.expected_duration_present,
+				 WMI_ADV_TTLM_CTRL_ED_PRESENT_MASK);
+	ie_info->tid_to_link_map_ctrl |=
+		le32_encode_bits(params->ttlm.link_mapping_size,
+				 WMI_ADV_TTLM_CTRL_LINK_MAP_SIZE_MASK);
+
+	ie_info->map_switch_time = cpu_to_le32(params->ttlm.mapping_switch_time);
+	ie_info->expected_duration = cpu_to_le32(params->ttlm.expected_duration);
+	ie_info->disabled_link_bitmap = cpu_to_le32(params->disabled_link_bitmap);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "dir:%d def_map:%d mst_persent:%d ed_present:%d "
+		   "link_map_size:%d mst:%d ed:%d disabled_link_map 0x%x",
+		   le32_get_bits(ie_info->tid_to_link_map_ctrl,
+				 WMI_ADV_TTLM_CTRL_DIRECTION_MASK),
+		   le32_get_bits(ie_info->tid_to_link_map_ctrl,
+				 WMI_ADV_TTLM_CTRL_DEFAULT_LINK_MAPPING_MASK),
+		   le32_get_bits(ie_info->tid_to_link_map_ctrl,
+				 WMI_ADV_TTLM_CTRL_MST_PRESENT_MASK),
+		   le32_get_bits(ie_info->tid_to_link_map_ctrl,
+				 WMI_ADV_TTLM_CTRL_ED_PRESENT_MASK),
+		   le32_get_bits(ie_info->tid_to_link_map_ctrl,
+				 WMI_ADV_TTLM_CTRL_LINK_MAP_SIZE_MASK),
+		   ie_info->map_switch_time,
+		   ie_info->expected_duration,
+		   ie_info->disabled_link_bitmap);
+
+	/* Do not fill link mapping values when default mapping is set to 1 */
+	if (params->ttlm.default_link_mapping)
+		return;
+
+	ie_info->tid_to_link_map_ctrl |=
+		le32_encode_bits(0xff,
+				 WMI_ADV_TTLM_CTRL_MAP_PRESENCE_INDICATOR_MASK);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "link_map_present_indicator: 0x%x",
+		   le32_get_bits(ie_info->tid_to_link_map_ctrl,
+				 WMI_ADV_TTLM_CTRL_MAP_PRESENCE_INDICATOR_MASK));
+
+	ie_info->ieee_tid_0_1_link_map |=
+		le32_encode_bits(params->ttlm.ieee_link_map_tid[0],
+				 WMI_ADV_TTLM_TID0_LINK_MAP_MASK);
+	ie_info->ieee_tid_0_1_link_map |=
+		le32_encode_bits(params->ttlm.ieee_link_map_tid[1],
+				 WMI_ADV_TTLM_TID1_LINK_MAP_MASK);
+	ie_info->ieee_tid_2_3_link_map |=
+		le32_encode_bits(params->ttlm.ieee_link_map_tid[2],
+				 WMI_ADV_TTLM_TID2_LINK_MAP_MASK);
+	ie_info->ieee_tid_2_3_link_map |=
+		le32_encode_bits(params->ttlm.ieee_link_map_tid[3],
+				 WMI_ADV_TTLM_TID3_LINK_MAP_MASK);
+	ie_info->ieee_tid_4_5_link_map |=
+		le32_encode_bits(params->ttlm.ieee_link_map_tid[4],
+				 WMI_ADV_TTLM_TID4_LINK_MAP_MASK);
+	ie_info->ieee_tid_4_5_link_map |=
+		le32_encode_bits(params->ttlm.ieee_link_map_tid[5],
+				 WMI_ADV_TTLM_TID5_LINK_MAP_MASK);
+	ie_info->ieee_tid_6_7_link_map |=
+		le32_encode_bits(params->ttlm.ieee_link_map_tid[6],
+				 WMI_ADV_TTLM_TID6_LINK_MAP_MASK);
+	ie_info->ieee_tid_6_7_link_map |=
+		le32_encode_bits(params->ttlm.ieee_link_map_tid[7],
+				 WMI_ADV_TTLM_TID7_LINK_MAP_MASK);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "ieee link map of tid 0:0x%x 1:0x%x 2:0x%x 3:0x%x 4:0x%x 5:0x%x 6:0x%x 7:0x%x\n",
+		   le32_get_bits(ie_info->ieee_tid_0_1_link_map, WMI_ADV_TTLM_TID0_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->ieee_tid_0_1_link_map, WMI_ADV_TTLM_TID1_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->ieee_tid_2_3_link_map, WMI_ADV_TTLM_TID2_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->ieee_tid_2_3_link_map, WMI_ADV_TTLM_TID3_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->ieee_tid_4_5_link_map, WMI_ADV_TTLM_TID4_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->ieee_tid_4_5_link_map, WMI_ADV_TTLM_TID5_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->ieee_tid_6_7_link_map, WMI_ADV_TTLM_TID6_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->ieee_tid_6_7_link_map, WMI_ADV_TTLM_TID7_LINK_MAP_MASK));
+
+	ie_info->hw_tid_0_1_link_map |=
+		le32_encode_bits(params->ttlm.hw_link_map_tid[0],
+				 WMI_ADV_TTLM_TID0_LINK_MAP_MASK);
+	ie_info->hw_tid_0_1_link_map |=
+		le32_encode_bits(params->ttlm.hw_link_map_tid[1],
+				 WMI_ADV_TTLM_TID1_LINK_MAP_MASK);
+	ie_info->hw_tid_2_3_link_map |=
+		le32_encode_bits(params->ttlm.hw_link_map_tid[2],
+				 WMI_ADV_TTLM_TID2_LINK_MAP_MASK);
+	ie_info->hw_tid_2_3_link_map |=
+		le32_encode_bits(params->ttlm.hw_link_map_tid[3],
+				 WMI_ADV_TTLM_TID3_LINK_MAP_MASK);
+	ie_info->hw_tid_4_5_link_map |=
+		le32_encode_bits(params->ttlm.hw_link_map_tid[4],
+				 WMI_ADV_TTLM_TID4_LINK_MAP_MASK);
+	ie_info->hw_tid_4_5_link_map |=
+		le32_encode_bits(params->ttlm.hw_link_map_tid[5],
+				 WMI_ADV_TTLM_TID5_LINK_MAP_MASK);
+	ie_info->hw_tid_6_7_link_map |=
+		le32_encode_bits(params->ttlm.hw_link_map_tid[6],
+				 WMI_ADV_TTLM_TID6_LINK_MAP_MASK);
+	ie_info->hw_tid_6_7_link_map |=
+		le32_encode_bits(params->ttlm.hw_link_map_tid[7],
+				 WMI_ADV_TTLM_TID7_LINK_MAP_MASK);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "hw link map of tid 0:0x%x 1:0x%x 2:0x%x 3:0x%x 4:0x%x 5:0x%x 6:0x%x 7:0x%x\n",
+		   le32_get_bits(ie_info->hw_tid_0_1_link_map, WMI_ADV_TTLM_TID0_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->hw_tid_0_1_link_map, WMI_ADV_TTLM_TID1_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->hw_tid_2_3_link_map, WMI_ADV_TTLM_TID2_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->hw_tid_2_3_link_map, WMI_ADV_TTLM_TID3_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->hw_tid_4_5_link_map, WMI_ADV_TTLM_TID4_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->hw_tid_4_5_link_map, WMI_ADV_TTLM_TID5_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->hw_tid_6_7_link_map, WMI_ADV_TTLM_TID6_LINK_MAP_MASK),
+		   le32_get_bits(ie_info->hw_tid_6_7_link_map, WMI_ADV_TTLM_TID7_LINK_MAP_MASK));
+}
+
+int
+ath12k_wmi_ap_tid_to_link_map_config(struct ath12k *ar,
+				     struct ath12k_wmi_tid_to_link_map_ap_params *params)
+{
+	struct wmi_mlo_ap_vdev_tid_to_link_map_cmd_fixed_param *cmd;
+	struct wmi_mlo_ap_vdev_tid_to_link_map_ie_info *ie_info;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct sk_buff *skb;
+	struct wmi_tlv *tlv;
+	void *ptr;
+	int i, ret, buf_len;
+
+	if (params->num_ttlm_info > WLAN_MAX_TTLM_IE) {
+		ath12k_warn(ar->ab,
+			    "Failed to send TTLM command to FW for vdev id %d as ttlm info %d is greater than max %d",
+			    params->vdev_id,
+			    params->num_ttlm_info,
+			    WLAN_MAX_TTLM_IE);
+		return -EINVAL;
+	}
+	buf_len = sizeof(*cmd) + TLV_HDR_SIZE + (params->num_ttlm_info *
+						 sizeof(*ie_info));
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, buf_len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_mlo_ap_vdev_tid_to_link_map_cmd_fixed_param *)skb->data;
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_TID_TO_LINK_MAPPING_CMD_FIXED_PARAM,
+				       sizeof(*cmd));
+	cmd->pdev_id = params->pdev_id;
+	cmd->vdev_id = params->vdev_id;
+	ptr = skb->data + sizeof(*cmd);
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 (params->num_ttlm_info *
+					  sizeof(*ie_info)));
+	ptr += TLV_HDR_SIZE;
+
+	for (i = 0; i < params->num_ttlm_info; i++) {
+		ie_info = (struct wmi_mlo_ap_vdev_tid_to_link_map_ie_info *)ptr;
+		ie_info->tlv_header =
+			ath12k_wmi_tlv_hdr(WMI_TAG_MLO_TID_TO_LINK_MAPPING_IE_INFO,
+					   sizeof(*ie_info) - TLV_HDR_SIZE);
+		/* update the ie info params */
+		ath12k_wmi_ttlm_update_ie_info(ar, ie_info, &params->ie[i]);
+		ptr += sizeof(*ie_info);
+	}
+
+	ret = ath12k_wmi_cmd_send(wmi, skb,
+				  WMI_MLO_AP_VDEV_TID_TO_LINK_MAP_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to submit WMI_MLO_AP_VDEV_TID_TO_LINK_MAP_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_dl_qos_profile_create(struct ath12k_base *ab,
 				     struct ath12k_qos_params *param,
 				     u8 qos_profile_id)

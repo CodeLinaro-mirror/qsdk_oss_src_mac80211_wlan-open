@@ -4391,6 +4391,71 @@ struct wmi_tid_to_link_map {
 	__le32 tid_to_link_map_info;
 } __packed;
 
+struct wmi_mlo_ap_vdev_tid_to_link_map_cmd_fixed_param {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 vdev_id;
+	__le32 disabled_link_bitmap;
+} __packed;
+
+#define WMI_ADV_TTLM_CTRL_DIRECTION_MASK		GENMASK(1, 0)
+#define WMI_ADV_TTLM_CTRL_DEFAULT_LINK_MAPPING_MASK	BIT(2)
+#define WMI_ADV_TTLM_CTRL_MST_PRESENT_MASK		BIT(3)
+#define WMI_ADV_TTLM_CTRL_ED_PRESENT_MASK		BIT(4)
+#define WMI_ADV_TTLM_CTRL_LINK_MAP_SIZE_MASK		BIT(5)
+#define WMI_ADV_TTLM_CTRL_RESERVED_MASK			GENMASK(7, 6)
+#define WMI_ADV_TTLM_CTRL_MAP_PRESENCE_INDICATOR_MASK	GENMASK(15, 8)
+
+#define WMI_ADV_TTLM_TID0_LINK_MAP_MASK		GENMASK(15, 0)
+#define WMI_ADV_TTLM_TID1_LINK_MAP_MASK		GENMASK(31, 16)
+#define WMI_ADV_TTLM_TID2_LINK_MAP_MASK		GENMASK(15, 0)
+#define WMI_ADV_TTLM_TID3_LINK_MAP_MASK		GENMASK(31, 16)
+#define WMI_ADV_TTLM_TID4_LINK_MAP_MASK		GENMASK(15, 0)
+#define WMI_ADV_TTLM_TID5_LINK_MAP_MASK		GENMASK(31, 16)
+#define WMI_ADV_TTLM_TID6_LINK_MAP_MASK		GENMASK(15, 0)
+#define WMI_ADV_TTLM_TID7_LINK_MAP_MASK		GENMASK(31, 16)
+
+struct wmi_mlo_ap_vdev_tid_to_link_map_ie_info {
+	__le32 tlv_header;
+	__le32 tid_to_link_map_ctrl;
+	__le32 map_switch_time;
+	__le32 expected_duration;
+	__le32 ieee_tid_0_1_link_map;
+	__le32 ieee_tid_2_3_link_map;
+	__le32 ieee_tid_4_5_link_map;
+	__le32 ieee_tid_6_7_link_map;
+	__le32 hw_tid_0_1_link_map;
+	__le32 hw_tid_2_3_link_map;
+	__le32 hw_tid_4_5_link_map;
+	__le32 hw_tid_6_7_link_map;
+	__le32 disabled_link_bitmap;
+} __packed;
+
+struct ath12k_wmi_ttlm_info {
+	enum ath12k_wmi_ttlm_direction direction;
+	bool default_link_mapping;
+	bool mapping_switch_time_present;
+	bool expected_duration_present;
+	u16 mapping_switch_time;
+	u32 expected_duration;
+	u16 ieee_link_map_tid[TTLM_MAX_NUM_TIDS];
+	u16 hw_link_map_tid[TTLM_MAX_NUM_TIDS];
+	bool link_mapping_size;
+};
+
+struct ath12k_wmi_mlo_ttlm_ie {
+	u16 disabled_link_bitmap;
+	struct ath12k_wmi_ttlm_info ttlm;
+};
+
+struct ath12k_wmi_tid_to_link_map_ap_params {
+	u8 pdev_id;
+	u8 vdev_id;
+	u8 num_ttlm_info;
+	u16 hw_link_id;
+	struct ath12k_wmi_mlo_ttlm_ie ie[WLAN_MAX_TTLM_IE];
+};
+
 struct wmi_mlo_peer_link_control_param {
 	__le32 tlv_header;
 	__le32 flags;
@@ -8825,4 +8890,6 @@ int ath12k_wmi_peer_set_cfr_capture_conf(struct ath12k *ar,
 int ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 						 struct ath12k_wmi_ttlm_peer_params *params,
 						 bool ttlm_info);
+int ath12k_wmi_ap_tid_to_link_map_config(struct ath12k *ar,
+					 struct ath12k_wmi_tid_to_link_map_ap_params *params);
 #endif
