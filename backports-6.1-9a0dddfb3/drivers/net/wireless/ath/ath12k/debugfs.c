@@ -4325,6 +4325,47 @@ static const struct file_operations fops_btcoex_priority = {
         .llseek = default_llseek,
 };
 
+/**
+ * ath12k_write_afc_grace_timer_value() - Read the user programmed afc
+ * grace timer value and send it to firmware.
+ * @file: file pointer
+ * @user_buf: user buffer
+ * @count: size of the buffer
+ * @ppos: file position
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static ssize_t
+ath12k_write_afc_grace_timer_value(struct file *file,
+				   const char __user *user_buf,
+				   size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	int ret;
+	u32 afc_grace_timer_expiry_value;
+
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		ath12k_warn(ar->ab, "Interface not up\n");
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	if (kstrtou32_from_user(user_buf, count, 0, &afc_grace_timer_expiry_value)) {
+		ret = -EINVAL;
+		goto exit;
+	}
+
+	ret = ath12k_wmi_set_afc_grace_timer(ar, afc_grace_timer_expiry_value);
+	if (ret)
+		goto exit;
+
+	ret = count;
+
+exit:
+	return ret;
+}
+
 static ssize_t ath12k_write_simulate_awgn(struct file *file,
 					  const char __user *user_buf,
 					  size_t count, loff_t *ppos)
@@ -4421,6 +4462,11 @@ static const struct file_operations fops_scan_args_config = {
 	.llseek = default_llseek,
 };
 
+static const struct file_operations fops_configure_afc_grace_timer = {
+	.write = ath12k_write_afc_grace_timer_value,
+	.open = simple_open
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -4506,6 +4552,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 		debugfs_create_file("simulate_awgn", 0200,
 				    ar->debug.debugfs_pdev, ar,
 				    &fops_simulate_awgn);
+		debugfs_create_file("configure_afc_grace_timer", 0200,
+				    ar->debug.debugfs_pdev, ar,
+				    &fops_configure_afc_grace_timer);
 	}
 	debugfs_create_file("scan_args_config", 0600, ar->debug.debugfs_pdev, ar,
 			    &fops_scan_args_config);

@@ -4659,6 +4659,27 @@ enum dfs_test_args_idx {
 	DFS_MAX_TEST_ARGS,
 };
 
+/* Grace timer subcmdid maintained in HALPHY */
+#define AFC_UNIT_TEST_GRACE_TIMER_SUBCMDID 82
+/* AFC module id maintained in HALPHY */
+#define AFC_UNIT_TEST_MODULE_ID            67
+/* AFC unit test token id */
+#define AFC_UNIT_TEST_TOKEN                 0
+
+/**
+ * enum afc_test_args_idx - AFC unit test args
+ * @AFC_GRACE_TIMER_SUBCMDID: Grace timer subcmdid
+ * @AFC_GRACE_TIMER_PDEV_ID: Pdev id
+ * @AFC_GRACE_TIMER_VALUE: Grace timer value
+ * @AFC_MAX_TEST_ARGS: Max test args
+ */
+enum afc_test_args_idx {
+	AFC_GRACE_TIMER_SUBCMDID,
+	AFC_GRACE_TIMER_PDEV_ID,
+	AFC_GRACE_TIMER_VALUE,
+	AFC_MAX_TEST_ARGS,
+};
+
 struct wmi_dfs_unit_test_arg {
 	u32 cmd_id;
 	u32 pdev_id;
@@ -8137,6 +8158,16 @@ int ath12k_wmi_send_pdev_pkt_route(struct ath12k *ar,
 int ath12k_wmi_send_pdev_set_regdomain(struct ath12k *ar,
 				       struct ath12k_wmi_pdev_set_regdomain_arg *arg);
 int ath12k_wmi_simulate_radar(struct ath12k *ar, u32 radar_params);
+
+/**
+ * ath12k_wmi_set_afc_grace_timer() - Send the user configured AFC grace timer
+ * value to FW via unit test command.
+ * @ar: pointer to ath12k radio
+ * @afc_grace_timer_value: user configured AFC grace timer value
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_wmi_set_afc_grace_timer(struct ath12k *ar, u32 afc_grace_timer_value);
 int ath12k_wmi_simulate_awgn(struct ath12k *ar, u32 chan_bw_interference_bitmap);
 int ath12k_wmi_send_twt_enable_cmd(struct ath12k *ar, u32 pdev_id);
 int ath12k_wmi_send_twt_disable_cmd(struct ath12k *ar, u32 pdev_id);

@@ -13711,6 +13711,40 @@ ath12k_wmi_send_unit_test_cmd(struct ath12k *ar,
 	return ret;
 }
 
+int ath12k_wmi_set_afc_grace_timer(struct ath12k *ar, u32 afc_grace_timer_value)
+{
+	struct ath12k_link_vif *arvif;
+	u32 afc_args[AFC_MAX_TEST_ARGS];
+	struct wmi_unit_test_cmd wmi_ut;
+	bool arvif_found = false;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->is_started) {
+			arvif_found = true;
+			break;
+		}
+	}
+
+	if (!arvif_found) {
+		ath12k_warn(ar->ab, "No valid vdev found to set AFC grace timer on ar:%d\n",
+			    ar->pdev_idx);
+		return -EINVAL;
+	}
+
+	afc_args[AFC_GRACE_TIMER_SUBCMDID] = AFC_UNIT_TEST_GRACE_TIMER_SUBCMDID;
+	afc_args[AFC_GRACE_TIMER_PDEV_ID] = ar->pdev->pdev_id;
+	afc_args[AFC_GRACE_TIMER_VALUE] = afc_grace_timer_value;
+
+	wmi_ut.vdev_id = cpu_to_le32(arvif->vdev_id);
+	wmi_ut.module_id = cpu_to_le32(AFC_UNIT_TEST_MODULE_ID);
+	wmi_ut.num_args = cpu_to_le32(AFC_MAX_TEST_ARGS);
+	wmi_ut.diag_token = cpu_to_le32(AFC_UNIT_TEST_TOKEN);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_REG, "Sending AFC grace timer value to FW\n");
+
+	return ath12k_wmi_send_unit_test_cmd(ar, wmi_ut, afc_args);
+}
+
 int ath12k_wmi_simulate_radar(struct ath12k *ar, u32 radar_params)
 {
 	struct ath12k_link_vif *arvif;
