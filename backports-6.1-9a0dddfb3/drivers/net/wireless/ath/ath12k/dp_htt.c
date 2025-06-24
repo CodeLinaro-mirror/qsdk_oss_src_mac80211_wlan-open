@@ -1554,8 +1554,7 @@ void ath12k_dp_tx_htt_rx_mgmt_flag0_fp_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_MGMT_ATIM) ? 1 : 0);
 }
 
-static void
-ath12k_dp_tx_htt_rx_mgmt_flag0_mo_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_mgmt_flag0_mo_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MO, MGMT, FLAGS0, ASSOC_REQ,
 				      (filter & FILTER_MGMT_ASSOC_REQ) ? 1 : 0);
@@ -1607,8 +1606,7 @@ void ath12k_dp_tx_htt_rx_mgmt_flag1_fp_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_MGMT_RESERVED_15) ? 1 : 0);
 }
 
-static void
-ath12k_dp_tx_htt_rx_mgmt_flag1_mo_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_mgmt_flag1_mo_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MO, MGMT, FLAGS1, DISASSOC,
 				      (filter & FILTER_MGMT_DISASSOC) ? 1 : 0);
@@ -1660,8 +1658,7 @@ void ath12k_dp_tx_htt_rx_ctrl_flag2_fp_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_CTRL_BA) ? 1 : 0);
 }
 
-static void
-ath12k_dp_tx_htt_rx_ctrl_flag2_mo_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_ctrl_flag2_mo_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MO, CTRL, FLAGS2, CTRL_RESERVED_1,
 				      (filter & FILTER_CTRL_RESERVED_1) ? 1 : 0);
@@ -1723,8 +1720,7 @@ void ath12k_dp_tx_htt_rx_data_flag3_fp_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_DATA_NULL) ? 1 : 0);
 }
 
-static void
-ath12k_dp_tx_htt_rx_ctrl_flag3_mo_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_ctrl_flag3_mo_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MO, CTRL, FLAGS3, PSPOLL,
 				      (filter & FILTER_CTRL_PSPOLL) ? 1 : 0);
@@ -1740,8 +1736,7 @@ ath12k_dp_tx_htt_rx_ctrl_flag3_mo_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_CTRL_CFEND_CFACK) ? 1 : 0);
 }
 
-static void
-ath12k_dp_tx_htt_rx_data_flag3_mo_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_data_flag3_mo_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MO, DATA, FLASG3, MCAST,
 				      (filter & FILTER_DATA_MCAST) ? 1 : 0);

@@ -917,6 +917,7 @@ struct htt_rx_ring_tlv_filter {
 	bool enable_fp;
 	bool enable_mo;
 	bool enable_fp_packet;
+	bool enable_mo_packet;
 	u16 fp_mgmt_filter;
 	u16 fp_ctrl_filter;
 	u16 fp_data_filter;
@@ -926,6 +927,9 @@ struct htt_rx_ring_tlv_filter {
 	u16 fp_packet_mgmt_filter;
 	u16 fp_packet_ctrl_filter;
 	u16 fp_packet_data_filter;
+	u16 mo_packet_mgmt_filter;
+	u16 mo_packet_ctrl_filter;
+	u16 mo_packet_data_filter;
 	u16 rx_packet_offset;
 	u16 rx_header_offset;
 	u16 rx_mpdu_end_offset;
