@@ -39,6 +39,7 @@ struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.rx_monitor_mode_reset = ath12k_wifi7_dp_mon_rx_monitor_mode_reset,
 	.rx_nrp_set = NULL,
 	.rx_nrp_reset = NULL,
+	.mon_rx_wmask = NULL,
 };
 
 int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)

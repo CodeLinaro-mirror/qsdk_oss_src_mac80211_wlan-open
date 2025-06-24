@@ -12,6 +12,7 @@
 #include "debugfs_sta.h"
 #include "debugfs.h"
 #include "dp_mon.h"
+#include "dp_mon_filter.h"
 
 static void ath12k_dp_htt_htc_tx_complete(struct ath12k_base *ab,
 					  struct sk_buff *skb)
@@ -1925,6 +1926,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 			le32_encode_bits(tlv_filter->rx_msdu_end_wmask,
 					 HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_MASK);
 	}
+
+	ath12k_dp_mon_rx_config_wmask(dp, cmd, tlv_filter);
 
 	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
 	if (ret)

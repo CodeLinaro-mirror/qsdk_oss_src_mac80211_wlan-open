@@ -674,6 +674,11 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_MASK	GENMASK(18, 16)
 #define HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_MASK	GENMASK(16, 0)
 
+#define HTT_RX_RING_SELECTION_CFG_RX_MON_MPDU_START_MASK		GENMASK(19, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_MON_MPDU_END_MASK			GENMASK(27, 20)
+#define HTT_RX_RING_SELECTION_CFG_RX_MON_MSDU_END_MASK			GENMASK(19, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_MON_PPDU_END_USR_STATS_MASK	GENMASK(19, 0)
+
 #define HTT_RX_PKT_ENABLE_SUBTYPE_SET( \
 	 word, mode, type, flag, sub_type, val) \
 	do { \
@@ -891,6 +896,9 @@ struct htt_rx_ring_selection_cfg_cmd {
 	__le32 rx_mpdu_start_end_mask;
 	__le32 rx_msdu_end_word_mask;
 	__le32 info3;
+	__le32 rx_mon_mpdu_start_end_mask;
+	__le32 rx_mon_msdu_end_word_mask;
+	__le32 rx_mon_ppdu_end_usr_stats_wmask;
 } __packed;
 
 #define HTT_RX_RING_TLV_DROP_THRESHOLD_VALUE	32
@@ -918,6 +926,10 @@ struct htt_rx_ring_tlv_filter {
 	u16 rx_mpdu_start_wmask;
 	u16 rx_mpdu_end_wmask;
 	u32 rx_msdu_end_wmask;
+	u32 rx_mon_mpdu_start_wmask;
+	u16 rx_mon_mpdu_end_wmask;
+	u32 rx_mon_msdu_end_wmask;
+	u32 rx_mon_ppdu_end_usr_stats_wmask;
 	u32 conf_len_ctrl;
 	u32 conf_len_mgmt;
 	u32 conf_len_data;
