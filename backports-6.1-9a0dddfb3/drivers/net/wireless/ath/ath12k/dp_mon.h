@@ -91,6 +91,8 @@ struct ath12k_dp_arch_mon_ops {
 	int (*rx_filter_update)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_monitor_mode_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_monitor_mode_reset)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_nrp_set)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_nrp_reset)(struct ath12k_pdev_dp *dp_pdev);
 };
 
 struct ath12k_dp_mon {
@@ -291,6 +293,8 @@ void ath12k_dp_mon_rx_stats_disable(struct ath12k_pdev_dp *dp_pdev,
 				    enum dp_mon_stats_mode mode);
 void ath12k_dp_mon_rx_monitor_mode_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_monitor_mode_reset(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_rx_nrp_set(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -514,6 +518,26 @@ void ath12k_dp_mon_rx_config_monitor_mode(struct ath12k *ar, bool reset)
 	} else {
 		if(mon_ops && mon_ops->rx_monitor_mode_reset)
 			mon_ops->rx_monitor_mode_reset(dp_pdev);
+	}
+
+}
+
+static inline
+void ath12k_dp_mon_rx_nrp_config(struct ath12k *ar, bool reset)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!reset) {
+		if (mon_ops && mon_ops->rx_nrp_set)
+			mon_ops->rx_nrp_set(dp_pdev);
+	} else {
+		if (mon_ops && mon_ops->rx_nrp_reset)
+			mon_ops->rx_nrp_reset(dp_pdev);
 	}
 
 }

@@ -2007,41 +2007,13 @@ static const struct file_operations fops_extd_rx_stats = {
 static int ath12k_reset_nrp_filter(struct ath12k *ar,
 				   bool reset)
 {
-	int i = 0;
 	int ret = 0;
-	u32 ring_id = 0;
-	u32 rx_filter = 0;
-	struct htt_rx_ring_tlv_filter tlv_filter = {0};
 
-	if (!reset) {
-		rx_filter = ar->debug.rx_filter;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_MPDU_START;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_START;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_END;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_MPDU_END;
-
-		tlv_filter.rx_filter = rx_filter;
-		tlv_filter.pkt_filter_flags0 = HTT_RX_MO_MGMT_FILTER_FLAGS0;
-		tlv_filter.pkt_filter_flags1 = HTT_RX_MO_MGMT_FILTER_FLAGS1;
-		tlv_filter.pkt_filter_flags2 = HTT_RX_MO_CTRL_FILTER_FLASG2;
-		tlv_filter.pkt_filter_flags3 = HTT_RX_MON_MO_CTRL_FILTER_FLASG3 |
-			HTT_RX_MON_MO_DATA_FILTER_FLASG3;
-	} else {
-		tlv_filter.rx_filter = ar->debug.rx_filter;
-	}
-	tlv_filter.offset_valid = false;
-
-	for (i = 0; i < ar->ab->hw_params->num_rxdma_per_pdev; i++) {
-		ring_id = ar->dp.dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
-		ret = ath12k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id, ar->dp.mac_id + i,
-						       HAL_RXDMA_MONITOR_DST,
-						       DP_RXDMA_REFILL_RING_SIZE,
-						       &tlv_filter);
-		if (ret) {
-			ath12k_err(ar->ab,
-				   "failed to setup filter for monitor buf %d\n", ret);
-			return ret;
-		}
+	ath12k_dp_mon_rx_nrp_config(ar, reset);
+	ret = ath12k_dp_mon_rx_update_filter(ar);
+	if (ret) {
+		ath12k_err(ar->ab,
+			   "failed to setup filter for monitor buf %d\n", ret);
 	}
 	return ret;
 }
