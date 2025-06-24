@@ -36,6 +36,54 @@ enum ath12k_routing_pkt_type {
 	ATH12K_PKT_TYPE_MAX
 };
 
+enum filter_mgmt {
+	FILTER_MGMT_ASSOC_REQ                   = BIT(0),
+	FILTER_MGMT_ASSOC_RESP                  = BIT(1),
+	FILTER_MGMT_REASSOC_REQ                 = BIT(2),
+	FILTER_MGMT_REASSOC_RESP                = BIT(3),
+	FILTER_MGMT_PROBE_REQ                   = BIT(4),
+	FILTER_MGMT_PROBE_RESP                  = BIT(5),
+	FILTER_MGMT_TIM_ADVT                    = BIT(6),
+	FILTER_MGMT_RESERVED_7                  = BIT(7),
+	FILTER_MGMT_BEACON                      = BIT(8),
+	FILTER_MGMT_ATIM                        = BIT(9),
+	FILTER_MGMT_DISASSOC                    = BIT(10),
+	FILTER_MGMT_AUTH                        = BIT(11),
+	FILTER_MGMT_DEAUTH                      = BIT(12),
+	FILTER_MGMT_ACTION                      = BIT(13),
+	FILTER_MGMT_ACT_NO_ACK                  = BIT(14),
+	FILTER_MGMT_RESERVED_15                 = BIT(15),
+	FILTER_MGMT_ALL                         = ~(0)
+};
+
+enum ctrl_filter {
+	FILTER_CTRL_RESERVED_1                  = BIT(0),
+	FILTER_CTRL_RESERVED_2                  = BIT(1),
+	FILTER_CTRL_TRIGGER                     = BIT(2),
+	FILTER_CTRL_RESERVED_4                  = BIT(3),
+	FILTER_CTRL_BF_REP_POLL                 = BIT(4),
+	FILTER_CTRL_VHT_NDP                     = BIT(5),
+	FILTER_CTRL_FRAME_EXT                   = BIT(6),
+	FILTER_CTRL_CTRLWRAP                    = BIT(7),
+	FILTER_CTRL_BA_REQ                      = BIT(8),
+	FILTER_CTRL_BA                          = BIT(9),
+	FILTER_CTRL_PSPOLL                      = BIT(10),
+	FILTER_CTRL_RTS                         = BIT(11),
+	FILTER_CTRL_CTS                         = BIT(12),
+	FILTER_CTRL_ACK                         = BIT(13),
+	FILTER_CTRL_CFEND                       = BIT(14),
+	FILTER_CTRL_CFEND_CFACK                 = BIT(15),
+	FILTER_CTRL_ALL                         = ~(0)
+};
+
+enum data_filter {
+	FILTER_DATA_DATA                        = BIT(0),
+	FILTER_DATA_NULL                        = BIT(3),
+	FILTER_DATA_MCAST                       = BIT(14),
+	FILTER_DATA_UCAST                       = BIT(15),
+	FILTER_DATA_ALL                         = ~(0)
+};
+
 #define ATH12K_RX_PROTOCOL_TAG_START_OFFSET  128
 #define ATH12K_ROUTE_WBM_RELEASE(ab) \
 	((ab)->hw_params->route_wbm_release)

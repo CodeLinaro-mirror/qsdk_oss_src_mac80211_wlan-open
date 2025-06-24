@@ -674,6 +674,15 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_MASK	GENMASK(18, 16)
 #define HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_MASK	GENMASK(16, 0)
 
+#define HTT_RX_PKT_ENABLE_SUBTYPE_SET( \
+	 word, mode, type, flag, sub_type, val) \
+	do { \
+		if (val) { \
+			(word) |= (HTT_RX_##mode##_##type##_PKT_FILTER_TLV_ \
+					##flag##_##sub_type); \
+		} \
+	} while (0)
+
 enum htt_rx_filter_tlv_flags {
 	HTT_RX_FILTER_TLV_FLAGS_MPDU_START		= BIT(0),
 	HTT_RX_FILTER_TLV_FLAGS_MSDU_START		= BIT(1),
@@ -1035,6 +1044,10 @@ struct htt_rx_ring_tlv_filter {
 	u32 pkt_filter_flags2; /* CTRL */
 	u32 pkt_filter_flags3; /* DATA */
 	bool offset_valid;
+	bool enable_fp;
+	u16 fp_mgmt_filter;
+	u16 fp_ctrl_filter;
+	u16 fp_data_filter;
 	u16 rx_packet_offset;
 	u16 rx_header_offset;
 	u16 rx_mpdu_end_offset;
