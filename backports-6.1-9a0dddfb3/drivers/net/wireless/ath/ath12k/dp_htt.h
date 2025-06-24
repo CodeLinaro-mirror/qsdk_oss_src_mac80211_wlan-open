@@ -647,6 +647,7 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_OFFSET_VALID	BIT(26)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_DROP_THRES_VAL	BIT(27)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_EN_RXMON		BIT(28)
+#define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PKT_TYPE_EN_DATA	BIT(29)
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE		GENMASK(15, 0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_MGMT	GENMASK(18, 16)
@@ -899,6 +900,11 @@ struct htt_rx_ring_selection_cfg_cmd {
 	__le32 rx_mon_mpdu_start_end_mask;
 	__le32 rx_mon_msdu_end_word_mask;
 	__le32 rx_mon_ppdu_end_usr_stats_wmask;
+	__le32 reserved1[2];
+	__le32 pkt_type_en_data_flag0;
+	__le32 pkt_type_en_data_flag1;
+	__le32 pkt_type_en_data_flag2;
+	__le32 pkt_type_en_data_flag3;
 } __packed;
 
 #define HTT_RX_RING_TLV_DROP_THRESHOLD_VALUE	32
@@ -910,12 +916,16 @@ struct htt_rx_ring_tlv_filter {
 	bool offset_valid;
 	bool enable_fp;
 	bool enable_mo;
+	bool enable_fp_packet;
 	u16 fp_mgmt_filter;
 	u16 fp_ctrl_filter;
 	u16 fp_data_filter;
 	u16 mo_mgmt_filter;
 	u16 mo_ctrl_filter;
 	u16 mo_data_filter;
+	u16 fp_packet_mgmt_filter;
+	u16 fp_packet_ctrl_filter;
+	u16 fp_packet_data_filter;
 	u16 rx_packet_offset;
 	u16 rx_header_offset;
 	u16 rx_mpdu_end_offset;

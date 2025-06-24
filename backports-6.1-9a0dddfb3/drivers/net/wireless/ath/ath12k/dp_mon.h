@@ -94,6 +94,8 @@ struct ath12k_dp_arch_mon_ops {
 	void (*rx_nrp_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_nrp_reset)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_rx_wmask)(void *ptr, struct htt_rx_ring_tlv_filter *tlv_filter);
+	void (*rx_enable_packet_filters)(void *ptr,
+						struct htt_rx_ring_tlv_filter *filter);
 };
 
 struct ath12k_dp_mon {
@@ -552,5 +554,17 @@ void ath12k_dp_mon_rx_config_wmask(struct ath12k_dp *dp, void *ptr,
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 	if (mon_ops && mon_ops->mon_rx_wmask)
 		mon_ops->mon_rx_wmask(ptr, tlv_filter);
+}
+
+static inline void
+ath12k_dp_mon_rx_config_packet_type_subtype(struct ath12k_dp *dp, void *ptr,
+					    struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_enable_packet_filters)
+		mon_ops->rx_enable_packet_filters(ptr, tlv_filter);
 }
 #endif

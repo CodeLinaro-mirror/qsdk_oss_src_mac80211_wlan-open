@@ -1530,8 +1530,7 @@ err_free:
 	return ret;
 }
 
-static void
-ath12k_dp_tx_htt_rx_mgmt_flag0_fp_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_mgmt_flag0_fp_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, FP, MGMT, FLAGS0, ASSOC_REQ,
 				      (filter & FILTER_MGMT_ASSOC_REQ) ? 1 : 0);
@@ -1592,8 +1591,7 @@ ath12k_dp_tx_htt_rx_mgmt_flag0_filter_set(u32 *ptr,
 							     tlv_filter->mo_mgmt_filter);
 }
 
-static void
-ath12k_dp_tx_htt_rx_mgmt_flag1_fp_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_mgmt_flag1_fp_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, FP, MGMT, FLAGS1, DISASSOC,
 				      (filter & FILTER_MGMT_DISASSOC) ? 1 : 0);
@@ -1638,8 +1636,7 @@ ath12k_dp_tx_htt_rx_mgmt_flag1_filter_set(u32 *ptr,
 							     tlv_filter->mo_mgmt_filter);
 }
 
-static void
-ath12k_dp_tx_htt_rx_ctrl_flag2_fp_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_ctrl_flag2_fp_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, FP, CTRL, FLAGS2, CTRL_RESERVED_1,
 				      (filter & FILTER_CTRL_RESERVED_1) ? 1 : 0);
@@ -1700,8 +1697,7 @@ ath12k_dp_tx_htt_rx_ctrl_flag2_filter_set(u32 *ptr,
 							     tlv_filter->mo_ctrl_filter);
 }
 
-static void
-ath12k_dp_tx_htt_rx_ctrl_flag3_fp_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_ctrl_flag3_fp_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, FP, CTRL, FLAGS3, PSPOLL,
 				      (filter & FILTER_CTRL_PSPOLL) ? 1 : 0);
@@ -1717,8 +1713,7 @@ ath12k_dp_tx_htt_rx_ctrl_flag3_fp_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_CTRL_CFEND_CFACK) ? 1 : 0);
 }
 
-static void
-ath12k_dp_tx_htt_rx_data_flag3_fp_filter_set(u32 *ptr, u16 filter)
+void ath12k_dp_tx_htt_rx_data_flag3_fp_filter_set(u32 *ptr, u16 filter)
 {
 	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, FP, DATA, FLASG3, MCAST,
 				      (filter & FILTER_DATA_MCAST) ? 1 : 0);
@@ -1830,6 +1825,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				 HTT_RX_RING_SELECTION_CFG_CMD_INFO0_DROP_THRES_VAL);
 	cmd->info0 |= le32_encode_bits(!tlv_filter->rxmon_disable,
 				       HTT_RX_RING_SELECTION_CFG_CMD_INFO0_EN_RXMON);
+	cmd->info0 |= le32_encode_bits(!tlv_filter->rxmon_disable,
+				       HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PKT_TYPE_EN_DATA);
 
 	cmd->info1 = le32_encode_bits(rx_buf_size,
 				      HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE);
@@ -1928,6 +1925,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	}
 
 	ath12k_dp_mon_rx_config_wmask(dp, cmd, tlv_filter);
+
+	ath12k_dp_mon_rx_config_packet_type_subtype(dp, cmd, tlv_filter);
 
 	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
 	if (ret)
