@@ -1045,9 +1045,13 @@ struct htt_rx_ring_tlv_filter {
 	u32 pkt_filter_flags3; /* DATA */
 	bool offset_valid;
 	bool enable_fp;
+	bool enable_mo;
 	u16 fp_mgmt_filter;
 	u16 fp_ctrl_filter;
 	u16 fp_data_filter;
+	u16 mo_mgmt_filter;
+	u16 mo_ctrl_filter;
+	u16 mo_data_filter;
 	u16 rx_packet_offset;
 	u16 rx_header_offset;
 	u16 rx_mpdu_end_offset;
