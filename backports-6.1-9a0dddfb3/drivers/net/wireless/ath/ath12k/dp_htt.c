@@ -1855,10 +1855,6 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	ath12k_dp_tx_htt_rx_ctrl_data_flag3_filter_set(&word, tlv_filter);
 	cmd->pkt_type_en_flags3 = cpu_to_le32(word);
 
-	cmd->pkt_type_en_flags0 = cpu_to_le32(tlv_filter->pkt_filter_flags0);
-	cmd->pkt_type_en_flags1 = cpu_to_le32(tlv_filter->pkt_filter_flags1);
-	cmd->pkt_type_en_flags2 = cpu_to_le32(tlv_filter->pkt_filter_flags2);
-	cmd->pkt_type_en_flags3 = cpu_to_le32(tlv_filter->pkt_filter_flags3);
 	cmd->rx_filter_tlv = cpu_to_le32(tlv_filter->rx_filter);
 
 	cmd->info2 = le32_encode_bits(tlv_filter->rx_drop_threshold,

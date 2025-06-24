@@ -2906,10 +2906,11 @@ int ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab)
 	ring_id = dp->rx_refill_buf_ring.refill_buf_ring.ring_id;
 
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
-	tlv_filter.pkt_filter_flags2 = HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_BAR;
-	tlv_filter.pkt_filter_flags3 = HTT_RX_FP_DATA_PKT_FILTER_TLV_FLASG3_MCAST |
-					HTT_RX_FP_DATA_PKT_FILTER_TLV_FLASG3_UCAST |
-					HTT_RX_FP_DATA_PKT_FILTER_TLV_FLASG3_NULL_DATA;
+	tlv_filter.rxmon_disable = true;
+	tlv_filter.enable_fp = 1;
+	tlv_filter.fp_ctrl_filter = FILTER_CTRL_BA_REQ;
+	tlv_filter.fp_data_filter = FILTER_DATA_UCAST | FILTER_DATA_MCAST |
+				    FILTER_DATA_NULL;
 	tlv_filter.offset_valid = true;
 	tlv_filter.rx_packet_offset = hal_rx_desc_sz;
 
@@ -2947,10 +2948,11 @@ int ath12k_wifi7_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab)
 	ring_id = dp->rx_refill_buf_ring.refill_buf_ring.ring_id;
 
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
-	tlv_filter.pkt_filter_flags2 = HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_BAR;
-	tlv_filter.pkt_filter_flags3 = HTT_RX_FP_DATA_PKT_FILTER_TLV_FLASG3_MCAST |
-					HTT_RX_FP_DATA_PKT_FILTER_TLV_FLASG3_UCAST |
-					HTT_RX_FP_DATA_PKT_FILTER_TLV_FLASG3_NULL_DATA;
+	tlv_filter.rxmon_disable = true;
+	tlv_filter.enable_fp = 1;
+	tlv_filter.fp_ctrl_filter = FILTER_CTRL_BA_REQ;
+	tlv_filter.fp_data_filter = FILTER_DATA_UCAST | FILTER_DATA_MCAST |
+				    FILTER_DATA_NULL;
 	tlv_filter.offset_valid = true;
 	tlv_filter.rx_packet_offset = hal_rx_desc_sz;
 
