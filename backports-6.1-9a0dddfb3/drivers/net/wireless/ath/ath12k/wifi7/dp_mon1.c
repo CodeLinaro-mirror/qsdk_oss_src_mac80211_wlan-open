@@ -34,6 +34,9 @@ struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.rx_stats_enable = NULL,
 	.rx_stats_disable = NULL,
 	.rx_filter_update = NULL,
+	.rx_filter_update = ath12k_wifi7_dp_mon_rx_update_ring_filter,
+	.rx_monitor_mode_set = ath12k_wifi7_dp_mon_rx_monitor_mode_set,
+	.rx_monitor_mode_reset = ath12k_wifi7_dp_mon_rx_monitor_mode_reset,
 };
 
 int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
@@ -921,4 +924,14 @@ int ath12k_wifi7_dp_mon_rx_quad_ring_process(struct ath12k_pdev_dp *pdev_dp, int
 	}
 exit:
 	return num_buffs_reaped;
+}
+
+void ath12k_wifi7_dp_mon_rx_monitor_mode_set(struct ath12k_pdev_dp *dp_pdev)
+{
+	ath12k_wifi7_dp_mon_rx_mon_mode_config_filter(dp_pdev);
+}
+
+void ath12k_wifi7_dp_mon_rx_monitor_mode_reset(struct ath12k_pdev_dp *dp_pdev)
+{
+	ath12k_wifi7_dp_mon_rx_mon_mode_reset_filter(dp_pdev);
 }

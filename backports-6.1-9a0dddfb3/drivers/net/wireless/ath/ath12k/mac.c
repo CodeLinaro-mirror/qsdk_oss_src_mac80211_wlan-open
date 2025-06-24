@@ -239,17 +239,6 @@ ath12k_phymodes[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 
 };
 
-const struct htt_rx_ring_tlv_filter ath12k_mac_mon_status_filter_default = {
-	.rx_filter = HTT_RX_FILTER_TLV_FLAGS_MPDU_START |
-		     HTT_RX_FILTER_TLV_FLAGS_PPDU_END |
-		     HTT_RX_FILTER_TLV_FLAGS_PPDU_END_STATUS_DONE,
-	.pkt_filter_flags0 = HTT_RX_FP_MGMT_FILTER_FLAGS0,
-	.pkt_filter_flags1 = HTT_RX_FP_MGMT_FILTER_FLAGS1,
-	.pkt_filter_flags2 = HTT_RX_FP_CTRL_FILTER_FLASG2,
-	.pkt_filter_flags3 = HTT_RX_FP_DATA_FILTER_FLASG3 |
-			     HTT_RX_FP_CTRL_FILTER_FLASG3
-};
-
 #define ATH12K_MAC_FIRST_OFDM_RATE_IDX 4
 #define ath12k_g_rates ath12k_legacy_rates
 #define ath12k_g_rates_size (ARRAY_SIZE(ath12k_legacy_rates))
@@ -1654,7 +1643,8 @@ int ath12k_mac_monitor_start(struct ath12k *ar)
 		return ret;
 	}
 
-	ret = ath12k_dp_tx_htt_monitor_mode_ring_config(ar, false);
+	ath12k_dp_mon_rx_config_monitor_mode(ar, false);
+	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret) {
 		ath12k_warn(ar->ab, "fail to set monitor filter: %d\n", ret);
 		return ret;
@@ -1684,7 +1674,8 @@ static int ath12k_mac_monitor_stop(struct ath12k *ar)
 
 	ar->monitor_started = false;
 	ar->num_started_vdevs--;
-	ret = ath12k_dp_tx_htt_monitor_mode_ring_config(ar, true);
+	ath12k_dp_mon_rx_config_monitor_mode(ar, true);
+	ret = ath12k_dp_mon_rx_update_filter(ar);
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac monitor stopped ret %d\n", ret);
 	return ret;
 }

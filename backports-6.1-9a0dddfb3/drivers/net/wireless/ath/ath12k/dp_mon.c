@@ -1756,6 +1756,18 @@ void ath12k_dp_mon_rx_stats_disable(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_stats_disable);
 
+void ath12k_dp_mon_rx_monitor_mode_set(struct ath12k_pdev_dp *dp_pdev)
+{
+	ath12k_dp_mon_rx_mon_mode_config_filter(dp_pdev, true);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_monitor_mode_set);
+
+void ath12k_dp_mon_rx_monitor_mode_reset(struct ath12k_pdev_dp *dp_pdev)
+{
+	ath12k_dp_mon_rx_mon_mode_config_filter(dp_pdev, false);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_monitor_mode_reset);
+
 static void ath12k_dp_mon_clear_pdev_airtime_stats(struct ath12k *ar)
 {
        struct ath12k_pdev_dp *pdev_dp = &ar->dp;

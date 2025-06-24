@@ -2141,8 +2141,6 @@ int
 ath12k_dp_tx_htt_h2t_ext_stats_req(struct ath12k *ar, u8 type,
 				   struct htt_ext_stats_cfg_params *cfg_params,
 				   u64 cookie);
-int ath12k_dp_tx_htt_rx_monitor_mode_ring_config(struct ath12k *ar, bool reset);
-
 int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int mac_id, enum hal_ring_type ring_type,
 				     int rx_buf_size,
@@ -2151,7 +2149,6 @@ int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int mac_id, enum hal_ring_type ring_type,
 				     int tx_buf_size,
 				     struct htt_tx_ring_tlv_filter *htt_tlv_filter);
-int ath12k_dp_tx_htt_monitor_mode_ring_config(struct ath12k *ar, bool reset);
 int ath12k_dp_htt_rx_flow_fst_setup(struct ath12k_base *ab, struct htt_rx_flow_fst_setup *setup_info);
 int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
 					enum dp_htt_flow_fst_operation op_code,

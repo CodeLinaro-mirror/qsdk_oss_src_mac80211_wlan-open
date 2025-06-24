@@ -17,6 +17,7 @@ ath12k_wifi7-y += core.o \
 		  hal_mon.o \
 		  hal_mon_qcn9274.o \
 		  dp_mon1.o \
-		  dp_mon2.o
+		  dp_mon2.o \
+		  dp_mon1_filter.o
 
 ath12k_wifi7-$(CPTCFG_ATH12K_AHB) += ahb.o

@@ -34,6 +34,8 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_stats_enable = ath12k_dp_mon_rx_stats_enable,
 	.rx_stats_disable = ath12k_dp_mon_rx_stats_disable,
 	.rx_filter_update = ath12k_dp_mon_rx_update_ring_filter,
+	.rx_monitor_mode_set = ath12k_dp_mon_rx_monitor_mode_set,
+	.rx_monitor_mode_reset = ath12k_dp_mon_rx_monitor_mode_reset,
 };
 
 static inline void
