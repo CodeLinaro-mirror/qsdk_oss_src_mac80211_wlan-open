@@ -13342,60 +13342,13 @@ void ath12k_mac_drain_tx(struct ath12k *ar)
 	ath12k_mgmt_over_wmi_tx_purge(ar);
 }
 
-int ath12k_mac_config_mon_status_default(struct ath12k *ar, bool enable)
-{
-	struct htt_rx_ring_tlv_filter tlv_filter = {};
-	struct ath12k_base *ab = ar->ab;
-	u32 ring_id, i;
-	int ret = 0;
-
-	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
-
-	if (!ab->hw_params->rxdma1_enable)
-		return ret;
-
-	if (enable) {
-		tlv_filter = ath12k_mac_mon_status_filter_default;
-
-		if (ath12k_debugfs_rx_filter(ar))
-			tlv_filter.rx_filter = ath12k_debugfs_rx_filter(ar);
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ar->ab->dev_flags))
-			tlv_filter.rx_filter |= (HTT_RX_FILTER_TLV_FLAGS_PPDU_START |
-						 HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS |
-						 HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS_EXT |
-						 HTT_RX_FILTER_TLV_FLAGS_PPDU_START_USER_INFO);
-#endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */
-
-	} else {
-		tlv_filter.rxmon_disable = true;
-	}
-
-	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		ring_id = ar->dp.dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
-		ret = ath12k_dp_tx_htt_rx_filter_setup(ab, ring_id,
-						       ar->dp.mac_id + i,
-						       HAL_RXDMA_MONITOR_DST,
-						       DP_RX_MON_BUFFER_SIZE,
-						       &tlv_filter);
-		if (ret) {
-			ath12k_err(ab,
-				   "failed to setup filter for monitor buf %d\n",
-				   ret);
-		}
-
-	}
-
-	return ret;
-}
-
 int ath12k_mac_start(struct ath12k *ar)
 {
 	struct ath12k_hw *ah = ar->ah;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_pdev *pdev = ar->pdev;
 	int ret;
+	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
 
 	lockdep_assert_held(&ah->hw_mutex);
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -13495,7 +13448,8 @@ int ath12k_mac_start(struct ath12k *ar)
 	/* Configure monitor status ring with default rx_filter to get rx status
 	 * such as rssi, rx_duration.
 	 */
-	ret = ath12k_mac_config_mon_status_default(ar, true);
+	ath12k_dp_mon_rx_stats_config(ar, true, mode);
+	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret && (ret != -EOPNOTSUPP)) {
 		ath12k_err(ab, "failed to configure monitor status ring with default rx_filter: (%d)\n",
 			   ret);
@@ -13665,11 +13619,13 @@ static void ath12k_mac_stop(struct ath12k *ar)
 	struct ath12k_hw *ah = ar->ah;
 	struct htt_ppdu_stats_info *ppdu_stats, *tmp;
 	int ret;
+	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
 
 	lockdep_assert_held(&ah->hw_mutex);
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	ret = ath12k_mac_config_mon_status_default(ar, false);
+	ath12k_dp_mon_rx_stats_config(ar, false, mode);
+	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret && (ret != -EOPNOTSUPP))
 		ath12k_err(ar->ab, "failed to clear rx_filter for monitor status ring: (%d)\n",
 			   ret);

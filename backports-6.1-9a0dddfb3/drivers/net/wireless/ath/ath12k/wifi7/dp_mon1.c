@@ -31,6 +31,9 @@ struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.update_telemetry_stats = NULL,
 	.rx_filter_alloc = ath12k_dp_mon_rx_filter_alloc,
 	.rx_filter_free = ath12k_dp_mon_rx_filter_free,
+	.rx_stats_enable = NULL,
+	.rx_stats_disable = NULL,
+	.rx_filter_update = NULL,
 };
 
 int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)

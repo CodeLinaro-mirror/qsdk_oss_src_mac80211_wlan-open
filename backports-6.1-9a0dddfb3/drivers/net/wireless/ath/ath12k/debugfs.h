@@ -68,6 +68,11 @@ static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 	return ar->debug.rx_filter;
 }
 
+static inline void ath12k_debugfs_set_rx_filter(struct ath12k *ar, u32 rx_filter)
+{
+	ar->debug.rx_filter = rx_filter;
+}
+
 void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr);
 void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar);
 
@@ -238,6 +243,10 @@ static inline bool ath12k_debugfs_is_extd_rx_stats_enabled(struct ath12k *ar)
 static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 {
 	return 0;
+}
+
+static inline void ath12k_debugfs_set_rx_filter(struct ath12k *ar, u32 rx_filter)
+{
 }
 
 static inline void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,

@@ -11,6 +11,7 @@
 #include "peer.h"
 #include "wifi7/hal_qcn9274.h"
 #include "debugfs.h"
+#include "dp_mon_filter.h"
 
 static inline u32
 ath12k_dp_mon_rx_ul_ofdma_ru_size_to_width(enum ath12k_eht_ru_size ru_size)
@@ -1714,6 +1715,46 @@ void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 		mon_ops->mon_pdev_rx_mpdu_list_init(pmon);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_attach);
+
+void ath12k_dp_mon_rx_stats_enable(struct ath12k_pdev_dp *dp_pdev,
+				   enum dp_mon_stats_mode mode)
+{
+	struct ath12k *ar = dp_pdev->ar;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (ath12k_debugfs_is_extd_rx_stats_enabled(ar))
+		mode = ATH12k_DP_MON_EXTD_STATS;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ar->ab->dev_flags))
+		 mode = ATH12k_DP_MON_EXTD_STATS;
+#endif
+	ath12k_dp_mon_rx_stats_config_filter(dp_pdev, mode, true);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_stats_enable);
+
+void ath12k_dp_mon_rx_stats_disable(struct ath12k_pdev_dp *dp_pdev,
+				    enum dp_mon_stats_mode mode)
+{
+	struct ath12k *ar = dp_pdev->ar;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (mode == ATH12k_DP_MON_EXTD_STATS) {
+		/* while disabling extd rx stats, Basic stats filters
+		 * to be configured.
+		 */
+		ath12k_dp_mon_rx_stats_config_filter(dp_pdev, mode,
+						     false);
+		mode = ATH12k_DP_MON_BASIC_STATS;
+		ath12k_dp_mon_rx_stats_config_filter(dp_pdev, mode,
+						     true);
+	} else {
+		ath12k_dp_mon_rx_stats_config_filter(dp_pdev, mode,
+						     false);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_stats_disable);
 
 static void ath12k_dp_mon_clear_pdev_airtime_stats(struct ath12k *ar)
 {

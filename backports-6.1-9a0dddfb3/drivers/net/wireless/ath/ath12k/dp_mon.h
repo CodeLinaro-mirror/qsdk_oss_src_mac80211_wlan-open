@@ -58,6 +58,11 @@ struct dp_rxdma_mon_ring {
 	int bufs_max;
 };
 
+enum dp_mon_stats_mode {
+	ATH12k_DP_MON_BASIC_STATS,
+	ATH12k_DP_MON_EXTD_STATS
+};
+
 struct ath12k_dp_arch_mon_ops {
 	int (*rx_srng_setup)(struct ath12k_dp *dp);
 	void (*rx_srng_cleanup)(struct ath12k_dp *dp);
@@ -79,6 +84,11 @@ struct ath12k_dp_arch_mon_ops {
 				       const int pdev_id);
 	int (*rx_filter_alloc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_filter_free)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_stats_enable)(struct ath12k_pdev_dp *dp_pdev,
+				    enum dp_mon_stats_mode mode);
+	void (*rx_stats_disable)(struct ath12k_pdev_dp *dp_pdev,
+				     enum dp_mon_stats_mode mode);
+	int (*rx_filter_update)(struct ath12k_pdev_dp *dp_pdev);
 };
 
 struct ath12k_dp_mon {
@@ -273,6 +283,10 @@ void ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
 void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 				       struct hal_rx_mon_ppdu_info *ppdu_info,
 				       bool is_stat);
+void ath12k_dp_mon_rx_stats_enable(struct ath12k_pdev_dp *dp_pdev,
+				   enum dp_mon_stats_mode mode);
+void ath12k_dp_mon_rx_stats_disable(struct ath12k_pdev_dp *dp_pdev,
+				    enum dp_mon_stats_mode mode);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -438,5 +452,45 @@ void ath12k_dp_mon_update_telemetry_stats(struct ath12k_base *ab,
 
 	if (mon_ops && mon_ops->update_telemetry_stats)
 		mon_ops->update_telemetry_stats(ab, pdev_id);
+}
+
+static inline
+void ath12k_dp_mon_rx_stats_config(struct ath12k *ar, bool enable,
+				  enum dp_mon_stats_mode mode)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (enable) {
+		if(mon_ops && mon_ops->rx_stats_enable)
+			mon_ops->rx_stats_enable(dp_pdev, mode);
+	} else {
+		if(mon_ops && mon_ops->rx_stats_disable)
+			mon_ops->rx_stats_disable(dp_pdev, mode);
+	}
+}
+
+static inline
+int ath12k_dp_mon_rx_update_filter(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+	int ret;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_filter_update) {
+		ret = mon_ops->rx_filter_update(dp_pdev);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
 }
 #endif

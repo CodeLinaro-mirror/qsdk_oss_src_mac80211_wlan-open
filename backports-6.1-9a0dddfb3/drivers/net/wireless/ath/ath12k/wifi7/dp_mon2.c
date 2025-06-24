@@ -31,6 +31,9 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.update_telemetry_stats = ath12k_dp_mon_pdev_update_telemetry_stats,
 	.rx_filter_alloc = ath12k_dp_mon_rx_filter_alloc,
 	.rx_filter_free = ath12k_dp_mon_rx_filter_free,
+	.rx_stats_enable = ath12k_dp_mon_rx_stats_enable,
+	.rx_stats_disable = ath12k_dp_mon_rx_stats_disable,
+	.rx_filter_update = ath12k_dp_mon_rx_update_ring_filter,
 };
 
 static inline void

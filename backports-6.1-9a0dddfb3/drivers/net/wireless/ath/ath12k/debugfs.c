@@ -21,6 +21,7 @@
 #include "peer.h"
 #include "coredump.h"
 #include "dp_mon.h"
+#include "dp_mon_filter.h"
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)
@@ -1042,6 +1043,7 @@ static ssize_t ath12k_write_stats_disable(struct file *file,
 	u32 mask = 0;
 	int ret, i;
 	bool disable;
+	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
 
 	if (kstrtobool_from_user(user_buf, count, &disable))
 		return -EINVAL;
@@ -1054,7 +1056,10 @@ static ssize_t ath12k_write_stats_disable(struct file *file,
 			pdev = &ab->pdevs[i];
 			if (pdev && pdev->ar) {
 				wiphy_lock(ath12k_ar_to_hw(pdev->ar)->wiphy);
-				ath12k_mac_config_mon_status_default(pdev->ar, !disable);
+				ath12k_dp_mon_rx_stats_config(pdev->ar, !disable, mode);
+				ret = ath12k_dp_mon_rx_update_filter(pdev->ar);
+				if (ret)
+					ath12k_warn(ab, "Failed to configure monitor filters\n");
 				wiphy_unlock(ath12k_ar_to_hw(pdev->ar)->wiphy);
 
 				pdev->ar->ah->hw->perf_mode = disable;
@@ -1933,10 +1938,9 @@ static ssize_t ath12k_write_extd_rx_stats(struct file *file,
 					  size_t count, loff_t *ppos)
 {
 	struct ath12k *ar = file->private_data;
-	struct htt_rx_ring_tlv_filter tlv_filter = {0};
-	u32 ring_id, rx_filter = 0;
 	bool enable;
-	int ret, i;
+	int ret = 0;
+	enum dp_mon_stats_mode mode = 0;
 
 	if (kstrtobool_from_user(ubuf, count, &enable))
 		return -EINVAL;
@@ -1958,37 +1962,17 @@ static ssize_t ath12k_write_extd_rx_stats(struct file *file,
 		goto exit;
 	}
 
+	mode = ATH12k_DP_MON_EXTD_STATS;
 	if (enable) {
-		rx_filter =  HTT_RX_FILTER_TLV_FLAGS_MPDU_START;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_START;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_END;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS_EXT;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_END_STATUS_DONE;
-		rx_filter |= HTT_RX_FILTER_TLV_FLAGS_PPDU_START_USER_INFO;
-
-		tlv_filter.rx_filter = rx_filter;
-		tlv_filter.pkt_filter_flags0 = HTT_RX_FP_MGMT_FILTER_FLAGS0;
-		tlv_filter.pkt_filter_flags1 = HTT_RX_FP_MGMT_FILTER_FLAGS1;
-		tlv_filter.pkt_filter_flags2 = HTT_RX_FP_CTRL_FILTER_FLASG2;
-		tlv_filter.pkt_filter_flags3 = HTT_RX_FP_CTRL_FILTER_FLASG3 |
-			HTT_RX_FP_DATA_FILTER_FLASG3;
+		ath12k_dp_mon_rx_stats_config(ar, true, mode);
 	} else {
-		tlv_filter = ath12k_mac_mon_status_filter_default;
+		ath12k_dp_mon_rx_stats_config(ar, false, mode);
 	}
 
-	ar->debug.rx_filter = tlv_filter.rx_filter;
-
-	for (i = 0; i < ar->ab->hw_params->num_rxdma_per_pdev; i++) {
-		ring_id = ar->dp.dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id;
-		ret = ath12k_dp_tx_htt_rx_filter_setup(ar->ab, ring_id, ar->dp.mac_id + i,
-						       HAL_RXDMA_MONITOR_DST,
-						       DP_RX_MON_BUFFER_SIZE,
-						       &tlv_filter);
-		if (ret) {
-			ath12k_warn(ar->ab, "failed to set rx filter for monitor status ring\n");
-			goto exit;
-		}
+	ret = ath12k_dp_mon_rx_update_filter(ar);
+	if (ret) {
+		ath12k_err(ar->ab, "failed to setup rx extd stats filters %d\n", ret);
+		goto exit;
 	}
 
 	ar->debug.extd_rx_stats = !!enable;
