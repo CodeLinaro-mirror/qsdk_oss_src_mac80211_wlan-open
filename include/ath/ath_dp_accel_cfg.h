@@ -68,7 +68,8 @@ struct  sawf_param {
 struct	ath_dp_metadata_param {
 	uint8_t is_mlo_param_valid:1,
 		is_sawf_param_valid:1,
-		reserved:6;
+		is_scs_mscs:1,
+		reserved:5;
 	struct	mlo_param	mlo_param;
 	struct	sawf_param	sawf_param;
 };
