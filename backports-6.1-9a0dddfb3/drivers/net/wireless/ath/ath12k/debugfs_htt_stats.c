@@ -92,6 +92,70 @@ print_array_to_buf_s8(u8 *buf, u32 offset, const char *header, u32 stats_index,
 	return index;
 }
 
+static void htt_print_hds_prof_stats_tlv(const void *tag_buf, u16 tag_len,
+					  struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_stats_hds_prof_stats_tlv *htt_stats_buf = tag_buf;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE, len = stats_req->buf_len;
+	u8 *buf = stats_req->buf, i, j, k;
+
+	if(tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len, "\nChannel Change Timings:\n");
+	len += scnprintf(buf + len, buf_len - len,
+			"\n|===================================================================="
+			"====================================================================="
+			"===============================================================|\n");
+
+	j = htt_stats_buf->idx < HTT_STATS_HDS_PROF_STATS_CIRCULAR_BUF_LEN ?
+		htt_stats_buf->idx : HTT_STATS_HDS_PROF_STATS_CIRCULAR_BUF_LEN;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"|%-15s|%-15s|%-15s|%-15s|%-15s|"
+			 "%-24s|%-15s|%-15s|"
+			 "%-15s|%-15s|%-15s|%-15s|",
+			"CHANNEL", "CENTER_FREQ", "PHYMODE", "TX_CHAINMASK", "RX_CHAINMASK",
+			"CHANNEL_SWITCH_TIME(us)", "INI(us)", "TPC+CTL(us)",
+			"CAL(us)", "MISC(us)", "CTL(us)", "SW_PROFILE");
+	len += scnprintf(buf + len, buf_len - len,
+			"\n|===================================================================="
+			"====================================================================="
+			"===============================================================|\n");
+
+	for (k = 0; k < j; k++) {
+		i = j-1-k;
+		len += scnprintf(buf + len, buf_len - len,
+				"|%-15u|%-15u|%-15u|%-15u|%-15u|"
+				"%-24u|%-15u|%-15u|"
+				"%-15u|%-15u|%-15u|%-15u|",
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].bandwidth_mhz),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].band_center_freq1),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].phyMode),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].txChainmask),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].rxChainmask),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].channelSwitchTime),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].iniModuleTime),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].tpcModuleTime),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].calModuleTime),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].miscModuleTime),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].ctlModuleTime),
+				le32_to_cpu(htt_stats_buf->channelChange_stats[i].swProfile));
+
+	len += scnprintf(buf + len, buf_len - len,
+			"\n|````````````````````````````````````````````````````````````````"
+			"`````````````````````````````````````````````````````````````````"
+			"`````````````````````````````````````````````````````````````````"
+			"``````|\n");
+	}
+	len += scnprintf(buf + len, buf_len - len,
+			"|===================================================================="
+			"====================================================================="
+			"===============================================================|\n");
+
+	stats_req->buf_len = len;
+}
+
 static void ath12k_htt_print_htt_stats_gtx_stats_tlv_v(const void *tag_buf, u16 tag_len,
 						       struct debug_htt_stats_req *stats_req)
 {
@@ -7991,6 +8055,9 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		break;
 	case HTT_STATS_GTX_TAG:
 		ath12k_htt_print_htt_stats_gtx_stats_tlv_v(tag_buf, len, stats_req);
+		break;
+	case HTT_STATS_HDS_PROF_STATS_TAG:
+		htt_print_hds_prof_stats_tlv(tag_buf, len, stats_req);
 		break;
 	default:
 		break;

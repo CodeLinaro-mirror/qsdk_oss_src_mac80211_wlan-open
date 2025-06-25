@@ -424,6 +424,7 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DGB_HTT_EXT_STATS_PDEV_MBSSID_CTRL_FRAME		= 54,
 	ATH12K_DBG_HTT_UMAC_RESET_SSR_STATS                     = 55,
 	ATH12K_DBG_HTT_STATS_GTX_STATS				= 68,
+	ATH12K_DBG_HTT_DBG_EXT_STATS_HDS_PROF 			= 76,
 
 	/* keep this last */
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
@@ -590,6 +591,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_PDEV_MBSSID_CTRL_FRAME_STATS_TAG	= 176,
 	HTT_STATS_UMAC_SSR_TAG                          = 179,
 	HTT_STATS_GTX_TAG				= 199,
+	HTT_STATS_HDS_PROF_STATS_TAG			= 213,
 
 	HTT_STATS_MAX_TAG,
 };
@@ -3978,6 +3980,31 @@ struct htt_ml_link_info_tlv {
 	};
 
 	u32 primary_tid_mask;
+};
+
+#define HTT_STATS_HDS_PROF_STATS_CIRCULAR_BUF_LEN 10
+
+struct htt_stats_hds_prof_stats_tlv {
+	struct {
+		struct {
+			__le32 bandwidth_mhz:16;
+			__le32 band_center_freq1:16; /* MHz units */
+		};
+		struct {
+			__le32 phyMode:8;     /* phyMode - WLAN_PHY_MODE enum type */
+			__le32 txChainmask:8;
+			__le32 rxChainmask:8;
+			__le32 swProfile:8;
+		};
+		__le32 channelSwitchTime;
+		__le32 calModuleTime;
+		__le32 iniModuleTime;
+		__le32 tpcModuleTime;
+		__le32 miscModuleTime;
+		__le32 ctlModuleTime;
+		__le32 reserved;
+	} channelChange_stats[HTT_STATS_HDS_PROF_STATS_CIRCULAR_BUF_LEN];
+	__le32 idx; /* shows how many channel changes have occurred */
 };
 
 #endif
