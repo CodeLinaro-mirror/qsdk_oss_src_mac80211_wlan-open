@@ -726,7 +726,6 @@ struct hal_rx_desc_data {
 	bool is_mcbc;
 	u8 is_to_ds:1,
 	   is_from_ds:1;
-	bool is_invalid_rate_drop;
 };
 
 struct ath12k_buffer_address {
