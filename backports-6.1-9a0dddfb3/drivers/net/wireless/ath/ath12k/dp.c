@@ -1404,7 +1404,6 @@ static void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab)
 static void ath12k_dp_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	int i;
 
 	if (!dp->ab)
 		return;
@@ -1419,11 +1418,6 @@ static void ath12k_dp_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_common_cleanup(ab);
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
-
-	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
-		kfree(dp->tx_ring[i].tx_status);
-		dp->tx_ring[i].tx_status = NULL;
-	}
 
 	ath12k_dp_rx_free(ab);
 	/* Deinit any SOC level resource */
@@ -1999,20 +1993,8 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 		goto fail_cmn_srng_cleanup;
 	}
 
-	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
+	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
 		dp->tx_ring[i].tcl_data_ring_id = i;
-
-		dp->tx_ring[i].tx_status_head = 0;
-		dp->tx_ring[i].tx_status_tail = DP_TX_COMP_RING_SIZE - 1;
-		dp->tx_ring[i].tx_status = kmalloc(size, GFP_KERNEL);
-		if (!dp->tx_ring[i].tx_status) {
-			ret = -ENOMEM;
-			/* FIXME: The allocated tx status is not freed
-			 * properly here
-			 */
-			goto fail_cmn_reoq_cleanup;
-		}
-	}
 
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
 		ath12k_hal_tx_set_dscp_tid_map(ab, i);
@@ -2028,7 +2010,6 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 fail_dp_rx_free:
 	ath12k_dp_rx_free(ab);
 
-fail_cmn_reoq_cleanup:
 	ath12k_dp_reoq_lut_cleanup(ab);
 
 fail_cmn_srng_cleanup:
@@ -2078,8 +2059,16 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 				     struct ath12k_hw_group *ag)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp = &ag->dp_hw_grp;
+	int i;
 
 	lockdep_assert_held(&ag->mutex);
+
+	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
+		if (!dp_hw_grp->tx_status_buf[i])
+			continue;
+		kfree(dp_hw_grp->tx_status_buf[i]);
+		dp_hw_grp->tx_status_buf[i] = NULL;
+	}
 
 	if (dp_hw_grp->fst) {
 		ath12k_dp_rx_fst_detach(dp->ab, dp_hw_grp->fst);
@@ -2097,6 +2086,7 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_hw_group *dp_hw_grp = &ag->dp_hw_grp;
+	int i;
 
 	dp->dp_hw_grp = dp_hw_grp;
 	dp->device_id = ab->device_id;
@@ -2104,6 +2094,16 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 
 	if (!dp_hw_grp->fst)
 		dp_hw_grp->fst = ath12k_dp_rx_fst_attach(ab);
+
+	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
+		if (dp_hw_grp->tx_status_buf[i])
+			continue;
+
+		/* Each arch tx completion handler can use this buffer by typecasting its own
+		 * entry struct (aligned to 32 or 64 bytes).
+		 */
+		dp_hw_grp->tx_status_buf[i] = kzalloc(TX_STATUS_BUFFER_SIZE, GFP_KERNEL);
+	}
 }
 
 static void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring)

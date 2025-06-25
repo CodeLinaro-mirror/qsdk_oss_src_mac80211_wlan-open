@@ -431,8 +431,8 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	if (ab->hw_params->ring_mask->tx[i])
 		budget = tx_comp_budget;
 
-	netif_napi_add(napi_ndev, &irq_grp->napi,
-		       ath12k_pcic_ext_grp_napi_poll);
+	netif_napi_add_weight(napi_ndev, &irq_grp->napi,
+		       ath12k_pcic_ext_grp_napi_poll, budget);
 
 	if (ab->hw_params->ring_mask->tx[i] ||
 	    ab->hw_params->ring_mask->rx[i] ||

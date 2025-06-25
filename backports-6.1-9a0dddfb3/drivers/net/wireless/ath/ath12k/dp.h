@@ -19,6 +19,10 @@
 
 #define MAX_RXDMA_PER_PDEV     2
 
+#define MAX_NAPI_BUDGET             128
+#define TX_STATUS_ENTRY_MAX_SIZE    64
+#define TX_STATUS_BUFFER_SIZE       (TX_STATUS_ENTRY_MAX_SIZE * MAX_NAPI_BUDGET)
+
 extern struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params;
 
 struct ath12k_base;
