@@ -99,6 +99,30 @@ extern unsigned int ath12k_frame_mode;
 extern bool ath12k_fse_3_tuple_enabled;
 extern bool ath12k_rx_nwifi_err_dump;
 
+/* Wifi classifier metadata
+ * ----------------------------------------------------------------------------
+ * | TAG    | mlo_key_valid| sawf_valid| reserved| MLO key | peer_id | MSDUQ   |
+ * |(8 bits)|   (1 bit)    |  (1 bit)  | (1 bit) | (5 bits)| (10 bit)| (6 bits)|
+ * ----------------------------------------------------------------------------
+ */
+
+/**
+ ** MLO metadata related information.
+ **/
+#define ATH12K_SAWF_VALID 1
+#define ATH12K_MLO_METADATA_VALID 1
+#define ATH12K_MLO_METADATA_VALID_MASK BIT(23)
+#define ATH12K_MLO_METADATA_TAG 0xAA
+#define ATH12K_MLO_METADATA_MLO_ASSIST_TAG 0xAA800000
+#define ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK 0xFF800000
+#define ATH12K_MLO_METADATA_TAG_MASK GENMASK(31, 24)
+#define ATH12K_MLO_METADATA_LINKID_MASK GENMASK(20, 16)
+#define ATH12k_MLO_LINK_ID_INVALID 0xFF
+#define ATH12k_DS_NODE_ID_INVALID 0xFF
+#define ATH12K_SAWF_PCP_VALID  0x4
+#define SAWF_PEER_MSDUQ_INVALID 0xFFFF
+#define SAWF_MSDUQ_ID_INVALID   0x3F
+
 enum ath12k_bdf_search {
 	ATH12K_BDF_SEARCH_DEFAULT,
 	ATH12K_BDF_SEARCH_BUS_AND_BOARD,

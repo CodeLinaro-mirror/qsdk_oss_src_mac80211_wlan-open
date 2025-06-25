@@ -1311,7 +1311,15 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 	/* handle only for MLO case, use deflink for non MLO case */
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
+	if (likely(skb->fast_xmit &&
+		   ((skb->mark & ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK) ==
+		    ATH12K_MLO_METADATA_MLO_ASSIST_TAG))) {
+		link_id =  u32_get_bits(skb->mark, ATH12K_MLO_METADATA_LINKID_MASK);
+	} else if (ieee80211_vif_is_mld(vif)) {
+#else
 	if (ieee80211_vif_is_mld(vif)) {
+#endif
 		link_id = ath12k_mac_get_tx_link(sta, vif, link_id, skb, info_flags);
 		if (link_id >= ATH12K_NUM_MAX_LINKS ||
 		    (ATH12K_SCAN_LINKS_MASK & BIT(link_id))) {
