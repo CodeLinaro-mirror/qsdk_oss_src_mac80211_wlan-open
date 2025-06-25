@@ -830,7 +830,6 @@ void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_inf
 						  struct hal_rx_desc *rx_desc, int set)
 {
 	if (set == 0) {
-		rx_info->tlv_info.is_ip_valid = ath12k_wifi7_hal_rx_h_is_ip_valid_qcn9274(rx_desc);
 		rx_info->tlv_info.decap = ath12k_wifi7_hal_rx_h_decap_type_qcn9274(rx_desc);
 		rx_info->tlv_info.mesh_ctrl_present =
 			ath12k_wifi7_hal_rx_h_mesh_ctl_present_qcn9274(rx_desc);

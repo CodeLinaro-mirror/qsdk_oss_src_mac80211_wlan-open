@@ -1045,6 +1045,7 @@ static ssize_t ath12k_write_stats_disable(struct file *file,
 
 	if (disable != ab->stats_disable) {
 		ab->stats_disable = disable;
+		ab->dp->stats_disable = disable;
 
 		for (i = 0; i < ab->num_radios; i++) {
 			pdev = &ab->pdevs[i];

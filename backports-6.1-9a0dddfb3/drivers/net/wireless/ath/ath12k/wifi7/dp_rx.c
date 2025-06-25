@@ -527,17 +527,13 @@ int ath12k_wifi7_peer_rx_tid_reo_update(struct ath12k *ar,
 	return 0;
 }
 
-static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_base *ab,
+static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_dp *dp,
 					     struct sk_buff *msdu,
 					     struct rx_msdu_desc_info *rx_msdu_info,
 					     struct rx_tlv_info_1 *tlv_info,
 					     struct ath12k_dp_link_peer *peer)
 {
-	struct ethhdr *ehdr;
-
-	lockdep_assert_held(&ab->base_lock);
-
-	if (unlikely(!ab->stats_disable ||
+	if (unlikely(!dp->stats_disable ||
 		     tlv_info->decap != DP_RX_DECAP_TYPE_ETHERNET2_DIX))
 		return false;
 
@@ -547,18 +543,6 @@ static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_base *ab,
 
 	if (unlikely(!peer->is_authorized))
 		return false;
-
-	if (unlikely(!tlv_info->is_ip_valid))
-		return false;
-
-	/* fast rx is supported only on ethernet decap, so
-	 * we can directly gfet the ethernet header
-	 */
-	ehdr = (struct ethhdr *)msdu->data;
-
-	/* requires rebroadcast from mac80211 */
-	if (is_multicast_ether_addr(ehdr->h_dest))
-	        return false;
 
 	/* check if the msdu needs to be bridged to our connected peer */
 	if (unlikely(rx_msdu_info->intra_bss))
@@ -906,7 +890,7 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		link_peer = rcu_dereference(peer->link_peers[link_id]);
 
 		if (*fast_rx &&
-			ath12k_wifi7_dp_rx_check_fast_rx(dp->ab, msdu, rx_msdu_info,
+		    ath12k_wifi7_dp_rx_check_fast_rx(dp, msdu, rx_msdu_info,
 							 tlv_info, link_peer)) {
 			msdu->protocol = eth_type_trans(msdu, peer->dev);
 			rcu_read_unlock();
@@ -1259,29 +1243,28 @@ free_out:
 	return ret;
 }
 
-static void ath12k_soc_dp_rx_stats(struct ath12k *ar, struct sk_buff *msdu,
+static void ath12k_soc_dp_rx_stats(struct ath12k_dp *dp, struct sk_buff *msdu,
 				   struct hal_rx_desc_data *rx_desc_data,
 				   int ring_id)
 {
 	struct ieee80211_hdr *hdr;
-	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_rx_rfc1042_hdr *llc;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	size_t hdr_len;
 
 	if (rx_desc_data->is_mcbc) {
-		ab->dp->device_stats.non_fast_mcast_rx[ring_id][ar->ab->device_id]++;
+		dp->device_stats.non_fast_mcast_rx[ring_id][dp->device_id]++;
 	} else if (rx_desc_data->decap == DP_RX_DECAP_TYPE_NATIVE_WIFI) {
 		hdr = (struct ieee80211_hdr *)msdu->data;
 		hdr_len = ieee80211_hdrlen(hdr->frame_control);
 		llc = (struct ath12k_dp_rx_rfc1042_hdr *)(msdu->data + hdr_len);
 		if (llc->snap_type == cpu_to_be16(ETH_P_PAE))
-			ab->dp->device_stats.eapol_rx[ring_id][ar->ab->device_id]++;
+			dp->device_stats.eapol_rx[ring_id][dp->device_id]++;
 	} else if (rx_desc_data->decap == DP_RX_DECAP_TYPE_ETHERNET2_DIX &&
 		   rxcb->is_eapol) {
-			ab->dp->device_stats.eapol_rx[ring_id][ar->ab->device_id]++;
+			dp->device_stats.eapol_rx[ring_id][dp->device_id]++;
 	} else {
-		ab->dp->device_stats.non_fast_unicast_rx[ring_id][ar->ab->device_id]++;
+		dp->device_stats.non_fast_unicast_rx[ring_id][dp->device_id]++;
 	}
 }
 
@@ -1295,7 +1278,6 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ieee80211_rx_status rx_status = {0};
 	struct sk_buff *msdu;
-	struct ath12k *ar;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
 	struct ath12k_base *partner_ab;
@@ -1325,7 +1307,6 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 		pdev_id = ath12k_hw_mac_id_to_pdev_id(partner_dp->hw_params,
 						      hw_links[hw_link_id].pdev_idx);
 		partner_ab = partner_dp->ab;
-		ar = partner_ab->pdevs[pdev_id].ar;
 		if (!rcu_dereference(partner_ab->pdevs_active[pdev_id])) {
 			dev_kfree_skb_any(msdu);
 			continue;
@@ -1351,15 +1332,16 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 		}
 
 		if (!fast_rx) {
-			if (!ar->ab->stats_disable)
-			        ath12k_soc_dp_rx_stats(ar, msdu, &rx_desc_data, ring_id);
+			if (!partner_dp->stats_disable)
+			        ath12k_soc_dp_rx_stats(partner_dp, msdu,
+						       &rx_desc_data, ring_id);
 			ath12k_dp_rx_deliver_msdu(dp_pdev, napi, msdu, &rx_status,
 						  spd_desc_l->src_link_id,
 						  spd_desc_l->rx_msdu_info.da_is_mcbc,
 						  spd_desc_l->rx_mpdu_info.peer_id,
 						  spd_desc_l->rx_mpdu_info.tid);
 		} else {
-			ar->ab->dp->device_stats.fast_rx[ring_id][ar->ab->device_id]++;
+			partner_dp->device_stats.fast_rx[ring_id][partner_dp->device_id]++;
 		}
 	}
 

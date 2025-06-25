@@ -691,6 +691,7 @@ struct ath12k_dp {
 	struct list_head neighbor_peers;
 	int num_nrps;
 	unsigned long ppeds_service_running;
+	bool stats_disable;
 };
 /* @brief target -> host extended statistics upload
  *
