@@ -143,6 +143,12 @@ void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
 	ab->hal.hal_ops->reo_shared_qaddr_cache_clear(ab);
 }
 
+u8 *
+ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc)
+{
+	return hal->hal_ops->rxdesc_get_mpdu_start_addr2(desc);
+}
+
 static int ath12k_hal_alloc_cont_rdp(struct ath12k_hal *hal)
 {
 	size_t size;

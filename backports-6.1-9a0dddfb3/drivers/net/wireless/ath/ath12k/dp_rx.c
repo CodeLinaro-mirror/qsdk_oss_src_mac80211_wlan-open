@@ -204,14 +204,14 @@ EXPORT_SYMBOL(ath12k_dp_rx_h_michael_mic);
 
 static void ath12k_dp_rx_mld_addr_conv(struct ath12k_pdev_dp *dp_pdev,
 				       struct sk_buff *msdu,
-				       struct hal_rx_desc_data *rx_desc_data)
+				       struct hal_rx_desc *rx_desc)
 {
 	struct ath12k_base *ab = dp_pdev->ar->ab;
 	struct ath12k_dp_link_peer *peer;
 	struct ieee80211_hdr *hdr = (void *)msdu->data;
 
 	spin_lock_bh(&dp_pdev->dp->dp_lock);
-	peer = ath12k_dp_rx_h_find_peer(dp_pdev->dp, msdu, rx_desc_data);
+	peer = ath12k_dp_rx_h_find_peer(dp_pdev->dp, msdu, rx_desc);
 	if (!peer || !peer->mlo) {
 		spin_unlock_bh(&dp_pdev->dp->dp_lock);
 		return;
@@ -221,9 +221,9 @@ static void ath12k_dp_rx_mld_addr_conv(struct ath12k_pdev_dp *dp_pdev,
 }
 
 void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
+				struct hal_rx_desc *rx_desc,
 				enum hal_encrypt_type enctype,
-				struct ieee80211_rx_status *status,
-				bool decrypted, struct hal_rx_desc_data *rx_desc_data)
+				struct ieee80211_rx_status *status, bool decrypted)
 {
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ieee80211_hdr *hdr;
@@ -242,7 +242,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 	if (!decrypted)
 		return;
 
-	ath12k_dp_rx_mld_addr_conv(dp_pdev, msdu, rx_desc_data);
+	ath12k_dp_rx_mld_addr_conv(dp_pdev, msdu, rx_desc);
 
 	hdr = (void *)msdu->data;
 
@@ -958,10 +958,11 @@ EXPORT_SYMBOL(ath12k_dp_rx_h_find_peer_by_peerid_index);
 
 struct ath12k_dp_link_peer *
 ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct sk_buff *msdu,
-			 struct hal_rx_desc_data *rx_desc_data)
+			 struct hal_rx_desc *rx_desc)
 {
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ath12k_dp_link_peer *peer = NULL;
+	void *peer_mac;
 
 	lockdep_assert_held(&dp->dp_lock);
 
@@ -971,8 +972,10 @@ ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct sk_buff *msdu,
 	if (peer)
 		return peer;
 
-	if (rx_desc_data->mac_addr2_valid)
-		peer = ath12k_dp_link_peer_find_by_addr(dp, rx_desc_data->mpdu_start_addr2);
+	peer_mac = ath12k_hal_rxdesc_get_mpdu_start_addr2(dp->hal, rx_desc);
+
+	if (peer_mac)
+		peer = ath12k_dp_link_peer_find_by_addr(dp, peer_mac);
 
 	return peer;
 }
@@ -990,7 +993,6 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_peer *peer;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ath12k_dp_link_peer *link_peer = NULL;
-	u8 decap = rx_desc_data->decap;
 	bool is_mcbc = rxcb->is_mcbc;
 
 	rcu_read_lock();
@@ -1052,14 +1054,6 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	*rx_status = *status;
 
 	/* TODO: trace rx packet */
-
-	/* PN for multicast packets are not validate in HW,
-	 * so skip 802.3 rx path
-	 * Also, fast_rx expects the STA to be authorized, hence
-	 * eapol packets are sent in slow path.
-	 */
-	if (decap == DP_RX_DECAP_TYPE_ETHERNET2_DIX && !rx_desc_data->no_8023_flag)
-		rx_status->flag |= RX_FLAG_8023;
 
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 }

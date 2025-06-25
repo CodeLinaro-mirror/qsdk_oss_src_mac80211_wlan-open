@@ -708,7 +708,6 @@ struct hal_rx_desc_data {
 	    is_first_msdu:1,
 	    is_last_msdu:1,
 	    mesh_ctrl_present:1,
-	    mac_addr2_valid:1,
 	    fill_crypto_hdr:1,
 	    seq_ctl_valid:1,
 	    fc_valid:1,
@@ -716,7 +715,6 @@ struct hal_rx_desc_data {
 	u16 msdu_len;
 	u16 peer_id;
 	u16 seq_no;
-	u8 *mpdu_start_addr2;
 	u8 pkt_type;
 	u8 l3_pad_bytes;
 	u8 decap;
@@ -726,11 +724,8 @@ struct hal_rx_desc_data {
 	u8 sgi;
 	u8 tid;
 	bool is_mcbc;
-	bool is_4addr_sta;
-	bool is_drop_packet;
 	u8 is_to_ds:1,
 	   is_from_ds:1;
-	bool no_8023_flag;
 	bool is_invalid_rate_drop;
 };
 
@@ -1272,6 +1267,7 @@ struct hal_ops {
 	enum hal_rx_buf_return_buf_manager
         (*get_idle_link_rbm)(struct ath12k_hal *hal, u8 device_id);
 	void (*reo_shared_qaddr_cache_clear)(struct ath12k_base *ab);
+	u8 *(*rxdesc_get_mpdu_start_addr2)(struct hal_rx_desc *desc);
 };
 
 static inline
@@ -1410,6 +1406,8 @@ ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
 void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 				    u8 mcast_ctrl_val);
 void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
+u8 *
+ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries);

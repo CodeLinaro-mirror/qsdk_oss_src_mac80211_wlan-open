@@ -230,7 +230,8 @@ bool ath12k_wifi7_hal_rxdesc_mac_addr2_valid_qcn9274(struct hal_rx_desc *desc)
 static inline u8 *
 ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_qcn9274(struct hal_rx_desc *desc)
 {
-	return desc->u.qcn9274_compact.mpdu_start.addr2;
+	return ath12k_wifi7_hal_rxdesc_mac_addr2_valid_qcn9274(desc) ?
+			desc->u.qcn9274_compact.mpdu_start.addr2 : NULL;
 }
 
 static inline

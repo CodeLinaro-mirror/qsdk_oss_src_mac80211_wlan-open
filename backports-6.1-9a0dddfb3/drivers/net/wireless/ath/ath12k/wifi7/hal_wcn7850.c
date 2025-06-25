@@ -411,10 +411,6 @@ void ath12k_wifi7_hal_extract_rx_desc_data_wcn7850(struct hal_rx_desc_data *rx_d
 	rx_desc_data->l4_csum_fail =
 		ath12k_wifi7_hal_rx_h_l4_cksum_fail_wcn7850(rx_desc);
 	rx_desc_data->tid = ath12k_wifi7_hal_rx_h_tid_wcn7850(rx_desc);
-	rx_desc_data->mac_addr2_valid =
-		ath12k_wifi7_hal_rxdesc_mac_addr2_valid_wcn7850(rx_desc);
-	rx_desc_data->mpdu_start_addr2 =
-		ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850(rx_desc);
 	rx_desc_data->mesh_ctrl_present =
 		ath12k_wifi7_hal_rx_h_mesh_ctl_present_wcn7850(rx_desc);
 	rx_desc_data->seq_ctl_valid =
@@ -624,4 +620,6 @@ const struct hal_ops hal_wcn7850_ops = {
 	.cc_config = ath12k_wifi7_hal_cc_config,
 	.get_idle_link_rbm = ath12k_wifi7_hal_get_idle_link_rbm,
 	.reo_shared_qaddr_cache_clear = ath12k_wifi7_hal_reo_shared_qaddr_cache_clear,
+	.rxdesc_get_mpdu_start_addr2 =
+			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850,
 };

@@ -213,7 +213,8 @@ bool ath12k_wifi7_hal_rxdesc_mac_addr2_valid_wcn7850(struct hal_rx_desc *desc)
 static inline u8 *
 ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850(struct hal_rx_desc *desc)
 {
-	return desc->u.wcn7850.mpdu_start.addr2;
+	return ath12k_wifi7_hal_rxdesc_mac_addr2_valid_wcn7850(desc) ?
+			desc->u.wcn7850.mpdu_start.addr2 : NULL;
 }
 
 static inline

@@ -815,10 +815,6 @@ void ath12k_wifi7_hal_extract_rx_desc_data_qcn9274(struct hal_rx_desc_data *rx_d
 	rx_desc_data->l4_csum_fail =
 		ath12k_wifi7_hal_rx_h_l4_cksum_fail_qcn9274(rx_desc);
 	rx_desc_data->tid = ath12k_wifi7_hal_rx_h_tid_qcn9274(rx_desc);
-	rx_desc_data->mac_addr2_valid =
-		ath12k_wifi7_hal_rxdesc_mac_addr2_valid_qcn9274(rx_desc);
-	rx_desc_data->mpdu_start_addr2 =
-		ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_qcn9274(rx_desc);
 	rx_desc_data->mesh_ctrl_present =
 		ath12k_wifi7_hal_rx_h_mesh_ctl_present_qcn9274(rx_desc);
 	rx_desc_data->seq_ctl_valid =
@@ -1016,4 +1012,6 @@ const struct hal_ops hal_qcn9274_ops = {
 	.reset_rx_reo_tid_q = ath12k_wifi7_hal_reset_rx_reo_tid_q,
 	.get_idle_link_rbm = ath12k_wifi7_hal_get_idle_link_rbm,
 	.reo_shared_qaddr_cache_clear = ath12k_wifi7_hal_reo_shared_qaddr_cache_clear,
+	.rxdesc_get_mpdu_start_addr2 =
+			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_qcn9274,
 };
