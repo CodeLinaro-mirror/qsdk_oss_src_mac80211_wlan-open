@@ -108,6 +108,18 @@ enum ath12k_supported_bw {
 	ATH12K_BW_320   = 4,
 };
 
+#define ATH12K_CHWIDTH_20		20  /* Channel width 20 */
+#define ATH12K_CHWIDTH_40		40  /* Channel width 40 */
+#define ATH12K_CHWIDTH_80		80  /* Channel width 80 */
+#define ATH12K_CHWIDTH_160		160 /* Channel width 160 */
+#define ATH12K_CHWIDTH_320		320 /* Channel width 320 */
+
+#define ATH12K_MAX_EIRP_VALS		5
+#define ATH12K_MAX_TX_POWER		127
+#define ATH12K_EIRP_PWR_SCALE		100
+
+#define ATH12K_NUM_20_MHZ_CHAN_IN_320_MHZ_CHAN	16
+
 struct ath12k_mac_get_any_chanctx_conf_arg {
 	struct ath12k *ar;
 	struct ieee80211_chanctx_conf *chanctx_conf;
@@ -165,6 +177,9 @@ struct ath12k *ath12k_mac_get_ar_by_pdev_id(struct ath12k_base *ab, u32 pdev_id)
 void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 				  struct ath12k_link_vif *arvif,
                                   struct ieee80211_chanctx_conf *ctx);
+void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
+						  struct ath12k_link_vif *arvif,
+						  struct ieee80211_chanctx_conf *ctx);
 void ath12k_mac_drain_tx(struct ath12k *ar);
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar);
 void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,

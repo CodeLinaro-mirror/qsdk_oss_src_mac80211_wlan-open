@@ -19,6 +19,7 @@ struct ath12k;
 #define AFC_AUTH_STATUS_OFFSET	1
 #define AFC_AUTH_SUCCESS	1
 #define AFC_AUTH_ERROR		0
+#define REG_SP_CLIENT_TYPE	3
 
 extern bool ath12k_afc_disable_timer_check;
 extern bool ath12k_afc_disable_req_id_check;
@@ -62,6 +63,46 @@ enum ath12k_serv_resp_code {
 	REG_AFC_SERV_RESP_INVALID_VALUE = 103,
 	REG_AFC_SERV_RESP_UNEXPECTED_PARAM = 106,
 	REG_AFC_SERV_RESP_UNSUPPORTED_SPECTRUM = 300,
+};
+
+struct ath12k_bw_10log10_pair {
+	u16 bw;
+	s16 ten_l_ten;
+};
+
+static const struct ath12k_bw_10log10_pair ath12k_bw_to_10log10_map[] = {
+	{ 20, 13}, /* 10* 1.30102 = 13.0102 */
+	{ 40, 16}, /* 10* 1.60205 = 16.0205 */
+	{ 80, 19}, /* 10* 1.90308 = 19.0308 */
+	{160, 22}, /* 10* 2.20411 = 22.0411 */
+	{320, 25}, /* 10* 2.50514 = 25.0514 */
+};
+
+struct ath12k_opclass_bw_pair {
+	u8 opclass;
+	enum nl80211_chan_width bw;
+};
+
+static const struct ath12k_opclass_bw_pair ath12k_opclass_bw_map[] = {
+	{131, ATH12K_CHWIDTH_20},
+	{132, ATH12K_CHWIDTH_40},
+	{133, ATH12K_CHWIDTH_80},
+	{134, ATH12K_CHWIDTH_160},
+	{137, ATH12K_CHWIDTH_320},
+};
+
+struct ath12k_opclass_nchans_pair {
+	u8 opclass;
+	u8 nchans;
+};
+
+static const struct ath12k_opclass_nchans_pair ath12k_opclass_nchans_map[] = {
+	{131, 1},
+	{136, 1},
+	{132, 2},
+	{133, 4},
+	{134, 8},
+	{137, 16},
 };
 
 struct ath12k_afc_freq_obj {
@@ -309,6 +350,17 @@ int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 				     struct ieee80211_supported_band *band);
 int ath12k_reg_process_afc_power_event(struct ath12k *ar);
 int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len);
+u8 ath12k_reg_get_nsubchannels_for_opclass(u8 opclass);
+void ath12k_reg_fill_subchan_centers(u8 nchans, u8 cfi, u8 *subchannels);
+u8 ath12k_reg_get_opclass_from_bw(enum nl80211_chan_width bw);
+s16 ath12k_reg_psd_2_eirp(s16 psd, uint16_t ch_bw);
+void ath12k_reg_get_regulatory_pwrs(struct ath12k *ar, u32 freq,
+				    u8 reg_6g_power_mode, s8 *max_reg_eirp,
+				    s8 *reg_psd);
+void ath12k_reg_get_reg_sp_regulatory_pwrs(struct ath12k_base *ab,
+					   u32 freq,
+					   s8 *max_reg_eirp,
+					   s8 *reg_psd);
 s8 ath12k_reg_get_afc_eirp_power(struct ath12k *ar, enum nl80211_chan_width bw,
 				 int cfi);
 void ath12k_reg_get_afc_eirp_power_for_bw(struct ath12k *ar, u16 *start_freq,

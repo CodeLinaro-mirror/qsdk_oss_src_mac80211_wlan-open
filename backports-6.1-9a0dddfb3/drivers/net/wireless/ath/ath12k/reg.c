@@ -1260,6 +1260,137 @@ int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len)
 	return 0;
 }
 
+u8 ath12k_reg_get_nsubchannels_for_opclass(u8 opclass)
+{
+	u8 i, n_opclasses = ARRAY_SIZE(ath12k_opclass_nchans_map);
+
+	for (i = 0; i < n_opclasses; i++)
+		if (opclass == ath12k_opclass_nchans_map[i].opclass)
+			return ath12k_opclass_nchans_map[i].nchans;
+
+	return 0;
+}
+
+void ath12k_reg_fill_subchan_centers(u8 nchans, u8 cfi, u8 *subchannels)
+{
+#define HALF_IEEE_CH_SEP  2
+#define IEEE_20MHZ_CH_SEP 4
+	u8 offset = HALF_IEEE_CH_SEP;
+	u8 last_idx = nchans - 1;
+	u8 i;
+
+	if (nchans == 1) {
+		subchannels[0] = cfi;
+		return;
+	}
+
+	for (i = nchans / 2; i < nchans; i++) {
+		subchannels[i] = cfi + offset;
+		subchannels[last_idx - i] = cfi - offset;
+		offset += IEEE_20MHZ_CH_SEP;
+	}
+}
+
+u8 ath12k_reg_get_opclass_from_bw(enum nl80211_chan_width bw)
+{
+	u8 i, n_opclass = ARRAY_SIZE(ath12k_opclass_bw_map);
+
+	for (i = 0; i < n_opclass; i++)
+		if (bw == ath12k_opclass_bw_map[i].bw)
+			return ath12k_opclass_bw_map[i].opclass;
+
+	return 0;
+}
+
+s16 ath12k_reg_psd_2_eirp(s16 psd, uint16_t ch_bw)
+{
+	s16 eirp = ATH12K_MAX_TX_POWER;
+	s16 ten_log10_bw;
+	u8 num_bws;
+	u8 i;
+
+	/* EIRP = PSD + (10 * log10(CH_BW)) */
+	num_bws = ARRAY_SIZE(ath12k_bw_to_10log10_map);
+	for (i = 0; i < num_bws; i++) {
+		if (ch_bw == ath12k_bw_to_10log10_map[i].bw) {
+			ten_log10_bw = ath12k_bw_to_10log10_map[i].ten_l_ten;
+			eirp = psd + ten_log10_bw;
+			break;
+		}
+	}
+
+	return eirp;
+}
+
+void ath12k_reg_get_sp_regulatory_pwrs(struct ath12k_base *ab,
+				       u32 freq,
+				       s8 *max_reg_eirp,
+				       s8 *reg_psd)
+{
+	struct ath12k_6ghz_sp_reg_rule *sp_rule = NULL;
+	struct ieee80211_reg_rule *sp_reg_rule;
+	int num_sp_rules;
+	int i;
+
+	if (!ab->sp_rule)
+		return;
+
+	sp_rule = ab->sp_rule;
+
+	if (!sp_rule->num_6ghz_sp_rule) {
+		ath12k_warn(ab, "No default 6 GHz sp rules present\n");
+		return;
+	}
+
+	num_sp_rules = sp_rule->num_6ghz_sp_rule;
+
+	for (i = 0; i < num_sp_rules; i++) {
+		sp_reg_rule = sp_rule->sp_reg_rule + i;
+		if (freq >= sp_reg_rule->freq_range.start_freq_khz &&
+		    freq <= sp_reg_rule->freq_range.end_freq_khz) {
+			*max_reg_eirp = MBM_TO_DBM(sp_reg_rule->power_rule.max_eirp);
+			*reg_psd = sp_reg_rule->psd;
+		}
+	}
+}
+
+void ath12k_reg_get_regulatory_pwrs(struct ath12k *ar,
+				    u32 freq,
+				    u8 reg_6g_power_mode,
+				    s8 *max_reg_eirp,
+				    s8 *reg_psd)
+{
+	struct ieee80211_regdomain *regd = NULL;
+	struct ath12k_base *ab = ar->ab;
+	int pdev_id;
+	int i;
+
+	pdev_id = ar->pdev_idx;
+
+	if (ab->new_regd[pdev_id])
+		regd = ab->new_regd[pdev_id];
+	else
+		regd = ab->default_regd[pdev_id];
+
+	if (!regd)
+		return;
+
+	if (reg_6g_power_mode == NL80211_REG_AP_SP) {
+		ath12k_reg_get_sp_regulatory_pwrs(ab, freq, max_reg_eirp, reg_psd);
+	} else {
+		for (i = 0; i < regd->n_reg_rules; i++) {
+			struct ieee80211_reg_rule reg_rule = regd->reg_rules[i];
+
+			if (reg_rule.mode == reg_6g_power_mode &&
+			    freq >= reg_rule.freq_range.start_freq_khz &&
+			    freq <= reg_rule.freq_range.end_freq_khz) {
+				*max_reg_eirp = MBM_TO_DBM(reg_rule.power_rule.max_eirp);
+				*reg_psd = reg_rule.psd;
+			}
+		}
+	}
+}
+
 void ath12k_regd_update_work(struct work_struct *work)
 {
 	struct ath12k *ar = container_of(work, struct ath12k,

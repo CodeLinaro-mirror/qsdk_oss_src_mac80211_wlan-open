@@ -5606,8 +5606,10 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 		    ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
 		    test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT,
 			     ar->ab->wmi_ab.svc_map)) {
-			ath12k_mac_fill_reg_tpc_info(ar, arvif,
-						     &arvif->chanctx);
+			if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT, ar->ab->wmi_ab.svc_map))
+				ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif, &arvif->chanctx);
+			else
+				ath12k_mac_fill_reg_tpc_info(ar, arvif, &arvif->chanctx);
 			ret = ath12k_wmi_send_vdev_set_tpc_power(ar,
 								 arvif->vdev_id,
 								 &arvif->reg_tpc_info);
@@ -7464,11 +7466,12 @@ ath12k_mac_set_peer_he_fixed_rate(struct ath12k_link_vif *arvif,
 	return ret;
 }
 
-static u8 ath12k_mac_get_num_pwr_levels(struct cfg80211_chan_def *chan_def)
+static u8 ath12k_mac_get_num_pwr_levels(struct cfg80211_chan_def *chan_def,
+					bool is_psd)
 {
         u8 num_pwr_levels;
 
-        if (chan_def->chan->flags & IEEE80211_CHAN_PSD) {
+        if (is_psd) {
                 switch (chan_def->width) {
                 case NL80211_CHAN_WIDTH_20:
                         num_pwr_levels = 1;
@@ -7611,14 +7614,110 @@ static void ath12k_mac_get_psd_channel(struct ath12k *ar,
 	}
 }
 
+static inline bool ath12k_reg_is_320_opclass(u8 opclass)
+{
+	return (opclass == 137);
+}
+
+static s8 ath12k_mac_find_eirp_in_afc_eirp_obj(struct ath12k_chan_eirp_obj *eirp_obj,
+					       u32 freq,
+					       u16 center_freq,
+					       u8 nchans,
+					       u8 opclass)
+{
+	u8 subchannels[ATH12K_NUM_20_MHZ_CHAN_IN_320_MHZ_CHAN];
+	u8 k;
+
+	if (ath12k_reg_is_320_opclass(opclass)) {
+		u32 cfi_freq = ieee80211_channel_to_freq_khz(eirp_obj->cfi,
+							     NL80211_BAND_6GHZ);
+
+		/* FW sends as scaled AFC power value in AFC Power Evenid */
+		if (cfi_freq == MHZ_TO_KHZ(center_freq))
+			return eirp_obj->eirp_power / ATH12K_EIRP_PWR_SCALE;
+
+		return ATH12K_MAX_TX_POWER;
+	}
+
+	ath12k_reg_fill_subchan_centers(nchans, eirp_obj->cfi, subchannels);
+
+	for (k = 0; k < nchans; k++) {
+		if (ieee80211_channel_to_freq_khz(subchannels[k], NL80211_BAND_6GHZ) ==
+		    MHZ_TO_KHZ(freq)) {
+			return eirp_obj->eirp_power / ATH12K_EIRP_PWR_SCALE;
+		}
+	}
+
+	return ATH12K_MAX_TX_POWER;
+}
+
+static s8 ath12k_mac_find_eirp_in_afc_chan_obj(struct ath12k_afc_chan_obj *chan_obj,
+					       u32 freq,
+					       u16 center_freq,
+					       u8 opclass)
+{
+	s8 afc_eirp_pwr = ATH12K_MAX_TX_POWER;
+	u8 j;
+
+	if (chan_obj->global_opclass != opclass)
+		goto fail;
+
+	for (j = 0; j < chan_obj->num_chans; j++) {
+		struct ath12k_chan_eirp_obj *eirp_obj = &chan_obj->chan_eirp_info[j];
+		u8 nchans = ath12k_reg_get_nsubchannels_for_opclass(opclass);
+
+		if (!nchans)
+			goto fail;
+
+		afc_eirp_pwr = ath12k_mac_find_eirp_in_afc_eirp_obj(eirp_obj,
+								    freq,
+								    center_freq,
+								    nchans,
+								    opclass);
+
+		if (afc_eirp_pwr != ATH12K_MAX_TX_POWER)
+			break;
+	}
+
+fail:
+	return afc_eirp_pwr;
+}
+
+static s8 ath12k_mac_get_afc_eirp_power(struct ath12k *ar,
+					u32 freq,
+					u16 center_freq,
+					u16 bw)
+{
+	struct ath12k_afc_sp_reg_info *power_info = ar->afc.afc_reg_info;
+	s8 afc_eirp_pwr = ATH12K_MAX_TX_POWER;
+	u8 i, op_class = 0;
+
+	op_class = ath12k_reg_get_opclass_from_bw(bw);
+	if (!op_class)
+		return afc_eirp_pwr;
+
+	for (i = 0; i < power_info->num_chan_objs; i++) {
+		struct ath12k_afc_chan_obj *chan_obj = &power_info->afc_chan_info[i];
+
+		afc_eirp_pwr = ath12k_mac_find_eirp_in_afc_chan_obj(chan_obj,
+								    freq,
+								    center_freq,
+								    op_class);
+		if (afc_eirp_pwr != ATH12K_MAX_TX_POWER)
+			break;
+	}
+
+	return afc_eirp_pwr;
+}
+
 static void ath12k_mac_get_eirp_power(struct ath12k *ar,
-                                     u16 *start_freq,
-                                     u16 *center_freq,
-                                     u8 i,
-                                     struct ieee80211_channel **temp_chan,
-                                     struct cfg80211_chan_def *def,
-                                     s8 *tx_power,
-				     u8 reg_6g_power_mode)
+				      u16 *start_freq,
+				      u16 *center_freq,
+				      u8 i,
+				      struct ieee80211_channel **temp_chan,
+				      struct cfg80211_chan_def *def,
+				      s8 *tx_power,
+				      u8 reg_6g_power_mode)
 {
        /* It is to get the the center frequency for 40MHz/80MHz/
         * 160MHz&80P80 bandwidth, and then plus 10 to the center frequency,
@@ -7665,6 +7764,17 @@ ieee80211_bss_conf *ath12k_get_link_bss_conf(struct ath12k_link_vif *arvif)
         return link_conf;
 }
 
+static void ath12k_mac_get_root_tpe_power(bool is_tpe_present,
+					  struct ath12k_reg_tpc_power_info *reg_tpc_info,
+					  s8 *tpe_arr)
+{
+	if (is_tpe_present)
+		tpe_arr = reg_tpc_info->tpe;
+	else
+		memset(tpe_arr, ATH12K_MAX_TX_POWER,
+		       ATH12K_MAX_EIRP_VALS * sizeof(s8));
+}
+
 void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                   struct ath12k_link_vif *arvif,
                                   struct ieee80211_chanctx_conf *ctx)
@@ -7696,24 +7806,27 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
        /* For STA, 6g power mode will be present in the beacon, but for AP,
         * AP cant parse its own beacon. Hence, we get the 6g power mode
         * from the wdev corresponding to the struct ieee80211_vif
-        */
-       if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
-	       reg_6g_power_mode = bss_conf->power_type;
+	*/
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		reg_6g_power_mode = bss_conf->power_type;
+		if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+			reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+		else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+			 !ar->afc.is_6ghz_afc_power_event_received)
+			reg_6g_power_mode = NL80211_REG_REGULAR_CLIENT_SP + 1;
 
-       if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
-	       reg_6g_power_mode = IEEE80211_REG_LPI_AP;
-       else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-               struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
-               /* With respect to ieee80211, the 6G AP power mode starts from index
-                * 1 while the power type stored in struct wireless_dev is based on
-                * nl80211 power type indexing which starts from 0. Hence 1 is appended
-                */
-               if (wdev)
-                       reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
-               else
-                       reg_6g_power_mode = 1;
-       } else
-               reg_6g_power_mode = 1;
+	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+		struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+		/* With respect to ieee80211, the 6G AP power mode starts from index
+		 * 1 while the power type stored in struct wireless_dev is based on
+		 * nl80211 power type indexing which starts from 0. Hence 1 is appended
+		 */
+		if (wdev)
+			reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
+		else
+			reg_6g_power_mode = 1;
+	} else
+		reg_6g_power_mode = 1;
 
         chan = ctx->def.chan;
         oper_freq = ctx->def.chan->center_freq;
@@ -7727,7 +7840,10 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                 is_tpe_present = true;
                 num_pwr_levels = arvif->reg_tpc_info.num_pwr_levels;
         } else {
-                num_pwr_levels = ath12k_mac_get_num_pwr_levels(&ctx->def);
+		bool is_psd = ctx->def.chan->flags & IEEE80211_CHAN_PSD;
+
+		num_pwr_levels = ath12k_mac_get_num_pwr_levels(&ctx->def,
+							       is_psd);
         }
 
         for (pwr_lvl_idx = 0; pwr_lvl_idx < num_pwr_levels; pwr_lvl_idx++) {
@@ -7908,8 +8024,227 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
         reg_tpc_info->num_pwr_levels = num_pwr_levels;
         reg_tpc_info->is_psd_power = is_psd_power;
         reg_tpc_info->eirp_power = eirp_power;
-        reg_tpc_info->power_type_6g =
-                ath12k_ieee80211_ap_pwr_type_convert(reg_6g_power_mode);
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    bss_conf->power_type == IEEE80211_REG_SP_AP &&
+	    !ar->afc.is_6ghz_afc_power_event_received)
+		reg_tpc_info->power_type_6g = REG_SP_CLIENT_TYPE;
+	else
+		reg_tpc_info->power_type_6g =
+			ath12k_ieee80211_ap_pwr_type_convert(reg_6g_power_mode);
+}
+
+static int
+ath12k_mac_get_chan_width(enum nl80211_chan_width ch_width)
+{
+	switch (ch_width) {
+	case NL80211_CHAN_WIDTH_320:
+		return ATH12K_CHWIDTH_320;
+	case NL80211_CHAN_WIDTH_160:
+	case NL80211_CHAN_WIDTH_80P80:
+		return ATH12K_CHWIDTH_160;
+	case NL80211_CHAN_WIDTH_80:
+		return ATH12K_CHWIDTH_80;
+	case NL80211_CHAN_WIDTH_40:
+		return ATH12K_CHWIDTH_40;
+	default:
+		return ATH12K_CHWIDTH_20;
+	}
+}
+
+static void ath12k_mac_get_eirp_arr_for_6g(struct ath12k *ar,
+					   struct cfg80211_chan_def *chan_def,
+					   u8 reg_6g_power_mode,
+					   s8 *max_eirp_arr,
+					   u16 start_freq,
+					   u16 oper_freq,
+					   u32 *cfreqs)
+{
+	s8 max_reg_eirp = ATH12K_MAX_TX_POWER;
+	s8 psd_eirp = ATH12K_MAX_TX_POWER;
+	s8 afc_eirp = ATH12K_MAX_TX_POWER;
+	u16 bw, max_bw;
+	s8 reg_psd;
+	u8 i;
+
+	max_bw = ath12k_mac_get_chan_width(chan_def->width);
+
+	for (i = 0, bw = ATH12K_CHWIDTH_20; bw <= max_bw; i++, bw *= 2) {
+		s8 tx_power = ATH12K_MAX_TX_POWER;
+
+		ath12k_reg_get_regulatory_pwrs(ar, MHZ_TO_KHZ(oper_freq),
+					       reg_6g_power_mode - 1,
+					       &max_reg_eirp, &reg_psd);
+
+		if (chan_def->chan->flags & IEEE80211_CHAN_PSD)
+			psd_eirp = ath12k_reg_psd_2_eirp(reg_psd, bw);
+
+		tx_power = min(max_reg_eirp, psd_eirp);
+
+		if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+		    ar->afc.is_6ghz_afc_power_event_received) {
+			afc_eirp = ath12k_mac_get_afc_eirp_power(ar,
+								 chan_def->chan->center_freq,
+								 cfreqs[i], bw);
+			tx_power = min(tx_power, afc_eirp);
+		}
+
+		max_eirp_arr[i] = tx_power;
+	}
+}
+
+void ath12k_mac_get_client_power_for_connecting_ap(struct ath12k *ar,
+						   struct ieee80211_chanctx_conf *ctx,
+						   u8 reg_6g_power_mode,
+						   s8 *max_eirp_arr,
+						   u16 start_freq,
+						   u8 num_pwr_levels)
+{
+	struct ieee80211_channel *temp_chan;
+	u16 bw = ATH12K_CHWIDTH_20;
+	u16 center_freq = 0;
+	u8 pwr_lvl_idx;
+
+	for (pwr_lvl_idx = 0; pwr_lvl_idx < num_pwr_levels; pwr_lvl_idx++) {
+		s8 tx_power = ATH12K_MAX_TX_POWER, eirp = ATH12K_MAX_TX_POWER;
+
+		ath12k_mac_get_psd_channel(ar, 20, &start_freq, &center_freq,
+					   pwr_lvl_idx,
+					   &temp_chan,
+					   &tx_power,
+					   reg_6g_power_mode);
+		if (temp_chan)
+			eirp = ath12k_reg_psd_2_eirp(temp_chan->psd, bw);
+		max_eirp_arr[pwr_lvl_idx] = min(eirp, tx_power);
+		bw *= 2;
+	}
+}
+
+static inline void ath12k_mac_fill_cfreqs(struct cfg80211_chan_def *chan_def,
+					  u32 *cfreqs)
+{
+	cfreqs[0] = chan_def->chan->center_freq;
+	if (chan_def->width != NL80211_CHAN_WIDTH_20)
+		cfg80211_chandef_primary_freqs(chan_def, &cfreqs[1], &cfreqs[2], &cfreqs[3]);
+	cfreqs[4] = chan_def->center_freq1;
+}
+
+void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
+						  struct ath12k_link_vif *arvif,
+						  struct ieee80211_chanctx_conf *ctx)
+{
+	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
+	s8 sta_max_eirp_arr[ATH12K_MAX_EIRP_VALS];
+	s8 ap_max_eirp_arr[ATH12K_MAX_EIRP_VALS];
+	s8 root_tpe_pwr[ATH12K_MAX_EIRP_VALS];
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_vif *vif = ahvif->vif;
+	struct ieee80211_bss_conf *bss_conf;
+	u32 cfreqs[ATH12K_MAX_EIRP_VALS];
+	u16 start_freq = 0, oper_freq = 0;
+	bool is_tpe_present = false;
+	u8 reg_6g_power_mode;
+	u8 num_pwr_levels;
+	u8 count;
+
+	rcu_read_lock();
+
+	bss_conf = ath12k_get_link_bss_conf(arvif);
+
+	if (!bss_conf) {
+		rcu_read_unlock();
+		ath12k_warn(ar->ab, "unable to access bss link conf in tpc reg fill\n");
+		return;
+	}
+
+	/* For STA, 6g power mode will be present in the beacon, but for AP,
+	 * AP cant parse its own beacon. Hence, we get the 6g power mode
+	 * from the wdev corresponding to the struct ieee80211_vif
+	 */
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		reg_6g_power_mode = bss_conf->power_type;
+		if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+			reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+		else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+			 !ar->afc.is_6ghz_afc_power_event_received)
+			reg_6g_power_mode = NL80211_REG_REGULAR_CLIENT_SP + 1;
+	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+		struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+		/* With respect to ieee80211, the 6G AP power mode starts from index
+		 * 1 while the power type stored in struct wireless_dev is based on
+		 * nl80211 power type indexing which starts from 0. Hence 1 is appended
+		 */
+		if (wdev)
+			reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
+		else
+			reg_6g_power_mode = 1;
+	} else {
+		reg_6g_power_mode = 1;
+	}
+
+	start_freq = ath12k_mac_get_6g_start_frequency(&ctx->def);
+	oper_freq = ctx->def.chan->center_freq;
+
+	rcu_read_unlock();
+
+	num_pwr_levels = ath12k_mac_get_num_pwr_levels(&ctx->def, false);
+
+	if (num_pwr_levels > ATH12K_MAX_EIRP_VALS) {
+		ath12k_err(NULL, "num_pwr_levels should not be greater than ATH12K_MAX_EIRP_VALS");
+		return;
+	}
+
+	ath12k_mac_fill_cfreqs(&ctx->def, cfreqs);
+	ath12k_mac_get_root_tpe_power(is_tpe_present, reg_tpc_info, root_tpe_pwr);
+	ath12k_mac_get_eirp_arr_for_6g(ar, &ctx->def, reg_6g_power_mode,
+				       ap_max_eirp_arr, start_freq,
+				       oper_freq, cfreqs);
+
+	/* In case of a Non-AFC capable SP client, calculate the EIRP values
+	 * from regulatory client PSD
+	 */
+	if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+	    !ar->afc.is_6ghz_afc_power_event_received) {
+		ath12k_mac_get_client_power_for_connecting_ap(ar, ctx, reg_6g_power_mode,
+							      sta_max_eirp_arr, start_freq,
+							      num_pwr_levels);
+	} else {
+		ath12k_mac_get_eirp_arr_for_6g(ar, &ctx->def, reg_6g_power_mode,
+					       sta_max_eirp_arr, start_freq,
+					       oper_freq, cfreqs);
+	}
+
+	for (count = 0; count < num_pwr_levels; count++) {
+		s8 sta_tx_pwr;
+		s8 tx_power, max_of_ap_sta_tx_pwr, ap_tx_pwr;
+
+		ap_tx_pwr = (ahvif->vdev_type == WMI_VDEV_TYPE_STA) ? 0 : ap_max_eirp_arr[count];
+		sta_tx_pwr = sta_max_eirp_arr[count];
+		/* Generally, 6GHz client power is less than 6GHz AP power.
+		 * In repeater, we have access tp both client and AP power.
+		 * Therefore, take advantage of the maximum of AP and client power.
+		 */
+		max_of_ap_sta_tx_pwr = max(ap_tx_pwr, sta_tx_pwr);
+		if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+		    ar->afc.is_6ghz_afc_power_event_received)
+			tx_power = max_of_ap_sta_tx_pwr;
+		else
+			tx_power = min(root_tpe_pwr[count], max_of_ap_sta_tx_pwr);
+
+		reg_tpc_info->chan_power_info[count].chan_cfreq = cfreqs[count];
+		reg_tpc_info->chan_power_info[count].tx_power = tx_power;
+	}
+
+	reg_tpc_info->num_pwr_levels = num_pwr_levels;
+	reg_tpc_info->is_psd_power = false;
+	reg_tpc_info->eirp_power = 0;
+	/* In case of a Non-AFC capable SP client, fill the power_type as REG_SP_CLIENT_TYPE */
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    bss_conf->power_type == IEEE80211_REG_SP_AP &&
+	    !ar->afc.is_6ghz_afc_power_event_received)
+		reg_tpc_info->power_type_6g = REG_SP_CLIENT_TYPE;
+	else
+		reg_tpc_info->power_type_6g =
+			ath12k_ieee80211_ap_pwr_type_convert(reg_6g_power_mode);
 }
 
 void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
@@ -14372,7 +14707,11 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 			ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
-                ath12k_mac_fill_reg_tpc_info(ar, arvif, &arvif->chanctx);
+		if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT, ar->ab->wmi_ab.svc_map))
+			ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif, &arvif->chanctx);
+		else
+			ath12k_mac_fill_reg_tpc_info(ar, arvif, &arvif->chanctx);
+
                 ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id,
                                                    &arvif->reg_tpc_info);
        }
