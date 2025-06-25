@@ -663,4 +663,11 @@ void ath12k_mac_add_bridge_vdevs_iter(void *data, u8 *mac,
  */
 int ath12k_mac_op_get_afc_eirp_pwr(struct ieee80211_hw *hw, u32 freq,
 				   u32 *eirp_pwr);
+/**
+ * ath12k_mac_op_get_6ghz_dev_deployment_type - Get the 6 GHz device deployment
+ * type.
+ * @hw: Input hardware
+ */
+enum nl80211_6ghz_dev_deployment_type
+ath12k_mac_op_get_6ghz_dev_deployment_type(struct ieee80211_hw *hw);
 #endif

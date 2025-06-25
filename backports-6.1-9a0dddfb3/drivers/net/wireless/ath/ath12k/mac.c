@@ -23728,3 +23728,41 @@ int ath12k_mac_op_get_afc_eirp_pwr(struct ieee80211_hw *hw,
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_get_afc_eirp_pwr);
+
+enum nl80211_6ghz_dev_deployment_type
+ath12k_mac_op_get_6ghz_dev_deployment_type(struct ieee80211_hw *hw)
+{
+	enum nl80211_6ghz_dev_deployment_type dep_type =
+		NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN;
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_base *ab;
+	struct ath12k *ar = NULL;
+	int i;
+
+	for_each_ar(ah, ar, i) {
+		if (ar->supports_6ghz)
+			break;
+	}
+
+	if (!ar) {
+		ath12k_err(NULL, "ar is NULL\n");
+		return dep_type;
+	}
+
+	ab = ar->ab;
+	switch (ab->afc_dev_deployment) {
+	case ATH12K_AFC_DEPLOYMENT_INDOOR:
+		dep_type = NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_INDOOR;
+		break;
+	case ATH12K_AFC_DEPLOYMENT_OUTDOOR:
+		dep_type = NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_OUTDOOR;
+		break;
+	case ATH12K_AFC_DEPLOYMENT_UNKNOWN:
+	default:
+		dep_type = NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN;
+		break;
+	}
+
+	return dep_type;
+}
+EXPORT_SYMBOL(ath12k_mac_op_get_6ghz_dev_deployment_type);
