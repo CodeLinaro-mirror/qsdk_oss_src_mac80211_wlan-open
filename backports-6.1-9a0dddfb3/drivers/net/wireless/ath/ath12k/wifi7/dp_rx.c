@@ -1173,7 +1173,7 @@ static int ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	rx_desc = (struct hal_rx_desc *)msdu->data;
 
 	last_buf = ath12k_dp_rx_get_msdu_last_buf(msdu_list, msdu);
-	if (!last_buf) {
+	if (unlikely(!last_buf)) {
 		ath12k_warn(dp,
 			    "No valid Rx buffer to access MSDU_END tlv\n");
 		ret = -EIO;
@@ -1218,12 +1218,12 @@ static int ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	ret = ath12k_wifi7_dp_rx_h_mpdu(dp_pdev, msdu, rx_desc, rx_status,
 					rx_msdu_info, rx_mpdu_info, tlv_info, 0,
 					fast_rx);
-	if (ret) {
+	if (unlikely(ret)) {
 		ret = -EINVAL;
 		goto free_out;
 	}
 
-	if (*fast_rx)
+	if (likely(*fast_rx))
 		return 0;
 
 	ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc, 1);
@@ -1286,7 +1286,7 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 	int ret, tid;
 	bool fast_rx = true;
 
-	if (skb_queue_empty(msdu_list))
+	if (unlikely(skb_queue_empty(msdu_list)))
 		return;
 
 	rcu_read_lock();
@@ -1307,13 +1307,13 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 		pdev_id = ath12k_hw_mac_id_to_pdev_id(partner_dp->hw_params,
 						      hw_links[hw_link_id].pdev_idx);
 		partner_ab = partner_dp->ab;
-		if (!rcu_dereference(partner_ab->pdevs_active[pdev_id])) {
+		if (unlikely(!rcu_dereference(partner_ab->pdevs_active[pdev_id]))) {
 			dev_kfree_skb_any(msdu);
 			continue;
 		}
 
 		dp_pdev = ath12k_dp_to_dp_pdev(partner_dp, pdev_id);
-		if (!dp_pdev) {
+		if (unlikely(!dp_pdev)) {
 			dev_kfree_skb_any(msdu);
 			continue;
 		}
@@ -1324,14 +1324,14 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 
 		ret = ath12k_wifi7_dp_rx_process_msdu(dp_pdev, msdu, msdu_list,
 						      &rx_status, &rx_desc_data, &fast_rx);
-		if (ret) {
+		if (unlikely(ret)) {
 			ath12k_dbg(partner_ab, ATH12K_DBG_DATA,
 				   "Unable to process msdu %d", ret);
 			dev_kfree_skb_any(msdu);
 			continue;
 		}
 
-		if (!fast_rx) {
+		if (unlikely(!fast_rx)) {
 			if (!partner_dp->stats_disable)
 			        ath12k_soc_dp_rx_stats(partner_dp, msdu,
 						       &rx_desc_data, ring_id);
