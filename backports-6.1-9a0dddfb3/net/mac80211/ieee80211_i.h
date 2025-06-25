@@ -373,7 +373,7 @@ struct ieee80211_roc_work {
 
 	struct ieee80211_sub_if_data *sdata;
 
-	struct ieee80211_channel *chan;
+	struct cfg80211_chan_def chandef;
 
 	bool started, abort, hw_begun, notified;
 	bool on_channel;
@@ -2123,7 +2123,7 @@ void ieee80211_reconfig_roc(struct ieee80211_local *local);
 void ieee80211_roc_purge(struct ieee80211_local *local,
 			 struct ieee80211_sub_if_data *sdata);
 int ieee80211_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
-				struct ieee80211_channel *chan,
+				struct cfg80211_chan_def *chandef,
 				unsigned int duration, u64 *cookie);
 int ieee80211_cancel_remain_on_channel(struct wiphy *wiphy,
 				       struct wireless_dev *wdev, u64 cookie);

@@ -3024,6 +3024,9 @@ struct ieee80211_txq {
  * @IEEE80211_HW_SUPPORTS_CONC_AP_MON_IN_80211_FORMAT: Hardware supports concurrent
  *	encapsulation decapsulation offload for AP and monitor in 80211 FORMAT.
  *
+ * @IEEE80211_HW_SUPPORTS_EXT_REMAIN_ON_CHAN: Hardware supports extended remain
+ *	on channel for bandwidth higher than 20MHz.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3092,6 +3095,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORT_ECM_REGISTRATION,
 	IEEE80211_HW_SUPPORTS_VLAN_DATA_OFFLOAD,
 	IEEE80211_HW_SUPPORTS_CONC_AP_MON_IN_80211_FORMAT,
+	IEEE80211_HW_SUPPORTS_EXT_REMAIN_ON_CHAN,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
@@ -4886,7 +4890,7 @@ struct ieee80211_ops {
 
 	int (*remain_on_channel)(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
-				 struct ieee80211_channel *chan,
+				 struct cfg80211_chan_def *chandef,
 				 int duration,
 				 enum ieee80211_roc_type type);
 	int (*cancel_remain_on_channel)(struct ieee80211_hw *hw,

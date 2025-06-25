@@ -803,7 +803,7 @@ static inline int drv_get_antenna(struct ieee80211_local *local,
 
 static inline int drv_remain_on_channel(struct ieee80211_local *local,
 					struct ieee80211_sub_if_data *sdata,
-					struct ieee80211_channel *chan,
+					struct cfg80211_chan_def *chandef,
 					unsigned int duration,
 					enum ieee80211_roc_type type)
 {
@@ -812,9 +812,9 @@ static inline int drv_remain_on_channel(struct ieee80211_local *local,
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	trace_drv_remain_on_channel(local, sdata, chan, duration, type);
+	trace_drv_remain_on_channel(local, sdata, chandef, duration, type);
 	ret = local->ops->remain_on_channel(&local->hw, &sdata->vif,
-					    chan, duration, type);
+					    chandef, duration, type);
 	trace_drv_return_int(local, ret);
 
 	return ret;

@@ -1399,17 +1399,16 @@ TRACE_EVENT(drv_get_antenna,
 TRACE_EVENT(drv_remain_on_channel,
 	TP_PROTO(struct ieee80211_local *local,
 		 struct ieee80211_sub_if_data *sdata,
-		 struct ieee80211_channel *chan,
+		 struct cfg80211_chan_def *chandef,
 		 unsigned int duration,
 		 enum ieee80211_roc_type type),
 
-	TP_ARGS(local, sdata, chan, duration, type),
+	TP_ARGS(local, sdata, chandef, duration, type),
 
 	TP_STRUCT__entry(
 		LOCAL_ENTRY
 		VIF_ENTRY
-		__field(int, center_freq)
-		__field(int, freq_offset)
+		CHANDEF_ENTRY
 		__field(unsigned int, duration)
 		__field(u32, type)
 	),
@@ -1417,16 +1416,14 @@ TRACE_EVENT(drv_remain_on_channel,
 	TP_fast_assign(
 		LOCAL_ASSIGN;
 		VIF_ASSIGN;
-		__entry->center_freq = chan->center_freq;
-		__entry->freq_offset = chan->freq_offset;
+		CHANDEF_ASSIGN(chandef);
 		__entry->duration = duration;
 		__entry->type = type;
 	),
 
 	TP_printk(
-		LOCAL_PR_FMT  VIF_PR_FMT " freq:%d.%03dMHz duration:%dms type=%d",
-		LOCAL_PR_ARG, VIF_PR_ARG,
-		__entry->center_freq, __entry->freq_offset,
+		LOCAL_PR_FMT  VIF_PR_FMT CHANDEF_PR_FMT " duration:%dms type=%d",
+		LOCAL_PR_ARG, VIF_PR_ARG, CHANDEF_PR_ARG,
 		__entry->duration, __entry->type
 	)
 );

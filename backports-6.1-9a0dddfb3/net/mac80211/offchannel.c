@@ -183,12 +183,13 @@ static void ieee80211_roc_notify_destroy(struct ieee80211_roc_work *roc)
 
 	if (!roc->mgmt_tx_cookie)
 		cfg80211_remain_on_channel_expired(&roc->sdata->wdev,
-						   roc->cookie, roc->chan,
+						   roc->cookie,
+						   &roc->chandef,
 						   GFP_KERNEL);
 	else
 		cfg80211_tx_mgmt_expired(&roc->sdata->wdev,
 					 roc->mgmt_tx_cookie,
-					 roc->chan, GFP_KERNEL);
+					 &roc->chandef, GFP_KERNEL);
 
 	list_del(&roc->list);
 	atomic_sub(sizeof(*roc),
@@ -242,21 +243,24 @@ static bool ieee80211_recalc_sw_work(struct ieee80211_local *local,
 static void ieee80211_handle_roc_started(struct ieee80211_roc_work *roc,
 					 unsigned long start_time)
 {
+	enum nl80211_band band;
+
 	if (WARN_ON(roc->notified))
 		return;
 
+	band = roc->chandef.chan->band;
 	roc->start_time = start_time;
 	roc->started = true;
 
 	if (roc->mgmt_tx_cookie) {
 		if (!WARN_ON(!roc->frame)) {
 			ieee80211_tx_skb_tid_band(roc->sdata, roc->frame, 7,
-						  roc->chan->band);
+						  band);
 			roc->frame = NULL;
 		}
 	} else {
 		cfg80211_ready_on_channel(&roc->sdata->wdev, roc->cookie,
-					  roc->chan, roc->req_duration,
+					  &roc->chandef, roc->req_duration,
 					  GFP_KERNEL);
 	}
 
@@ -317,7 +321,8 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 	list_for_each_entry(tmp, &local->roc_list, list) {
 		if (tmp == roc)
 			continue;
-		if (tmp->sdata != roc->sdata || tmp->chan != roc->chan)
+		if (tmp->sdata != roc->sdata ||
+		    cfg80211_chandef_identical(&tmp->chandef, &roc->chandef))
 			break;
 		max_dur = max(tmp->duration, max_dur);
 		min_dur = min(tmp->duration, min_dur);
@@ -325,7 +330,8 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 	}
 
 	if (local->ops->remain_on_channel) {
-		int ret = drv_remain_on_channel(local, roc->sdata, roc->chan,
+		int ret = drv_remain_on_channel(local, roc->sdata,
+						&roc->chandef,
 						max_dur, type);
 
 		if (ret) {
@@ -337,7 +343,8 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 			 */
 			list_for_each_entry(tmp, &local->roc_list, list) {
 				if (tmp->sdata != roc->sdata ||
-				    tmp->chan != roc->chan)
+				    cfg80211_chandef_identical(&tmp->chandef,
+							       &roc->chandef))
 					break;
 				tmp->started = true;
 				tmp->abort = true;
@@ -348,7 +355,8 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 
 		/* we'll notify about the start once the HW calls back */
 		list_for_each_entry(tmp, &local->roc_list, list) {
-			if (tmp->sdata != roc->sdata || tmp->chan != roc->chan)
+			if (tmp->sdata != roc->sdata ||
+			    cfg80211_chandef_identical(&tmp->chandef, &roc->chandef))
 				break;
 			tmp->started = true;
 		}
@@ -361,7 +369,7 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 		 * Note: scan can't run, tmp_channel is what we use, so this
 		 * must be the currently active channel.
 		 */
-		roc->on_channel = roc->chan == local->hw.conf.chandef.chan &&
+		roc->on_channel = roc->chandef.chan == local->hw.conf.chandef.chan &&
 				  local->hw.conf.chandef.width != NL80211_CHAN_WIDTH_5 &&
 				  local->hw.conf.chandef.width != NL80211_CHAN_WIDTH_10;
 
@@ -371,7 +379,7 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 		if (!roc->on_channel) {
 			ieee80211_offchannel_stop_vifs(local);
 
-			local->tmp_channel = roc->chan;
+			local->tmp_channel = roc->chandef.chan;
 			ieee80211_hw_conf_chan(local);
 		}
 
@@ -380,7 +388,8 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 
 		/* tell userspace or send frame(s) */
 		list_for_each_entry(tmp, &local->roc_list, list) {
-			if (tmp->sdata != roc->sdata || tmp->chan != roc->chan)
+			if (tmp->sdata != roc->sdata ||
+			    !cfg80211_chandef_identical(&tmp->chandef, &roc->chandef))
 				break;
 
 			tmp->on_channel = roc->on_channel;
@@ -566,12 +575,13 @@ ieee80211_coalesce_hw_started_roc(struct ieee80211_local *local,
 
 static int ieee80211_start_roc_work(struct ieee80211_local *local,
 				    struct ieee80211_sub_if_data *sdata,
-				    struct ieee80211_channel *channel,
+				    struct cfg80211_chan_def *chandef,
 				    unsigned int duration, u64 *cookie,
 				    struct sk_buff *txskb,
 				    enum ieee80211_roc_type type)
 {
 	struct ieee80211_roc_work *roc, *tmp;
+	struct ieee80211_channel *channel = chandef->chan;
 	bool queued = false, combine_started = true;
 	int ret;
 	struct cfg80211_scan_request *req = local->scan_req;
@@ -603,7 +613,7 @@ static int ieee80211_start_roc_work(struct ieee80211_local *local,
 	if (!duration)
 		duration = 10;
 
-	roc->chan = channel;
+	roc->chandef = *chandef;
 	roc->duration = duration;
 	roc->req_duration = duration;
 	roc->frame = txskb;
@@ -633,7 +643,7 @@ static int ieee80211_start_roc_work(struct ieee80211_local *local,
 			/* otherwise actually kick it off here
 			 * (for error handling)
 			 */
-			ret = drv_remain_on_channel(local, sdata, channel,
+			ret = drv_remain_on_channel(local, sdata, chandef,
 						    duration, type);
 			if (ret) {
 				atomic_sub(sizeof(*roc),
@@ -651,7 +661,7 @@ static int ieee80211_start_roc_work(struct ieee80211_local *local,
 	/* otherwise handle queueing */
 
 	list_for_each_entry(tmp, &local->roc_list, list) {
-		if (tmp->chan != channel || tmp->sdata != sdata)
+		if (tmp->chandef.chan != channel || tmp->sdata != sdata)
 			continue;
 
 		/*
@@ -713,7 +723,7 @@ static int ieee80211_start_roc_work(struct ieee80211_local *local,
 }
 
 int ieee80211_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
-				struct ieee80211_channel *chan,
+				struct cfg80211_chan_def *chandef,
 				unsigned int duration, u64 *cookie)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
@@ -721,7 +731,10 @@ int ieee80211_remain_on_channel(struct wiphy *wiphy, struct wireless_dev *wdev,
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	return ieee80211_start_roc_work(local, sdata, chan,
+	if (!ieee80211_hw_check(&local->hw, SUPPORTS_EXT_REMAIN_ON_CHAN))
+		return -EOPNOTSUPP;
+
+	return ieee80211_start_roc_work(local, sdata, chandef,
 					duration, cookie, NULL,
 					IEEE80211_ROC_TYPE_NORMAL);
 }
@@ -947,11 +960,11 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 	/* configurations requiring offchan cannot work if no channel has been
 	 * specified
 	 */
-	if (need_offchan && !params->chan)
+	if (need_offchan && !params->chandef.chan)
 		return -EINVAL;
 
 	/* Check if the operating channel is the requested channel */
-	if (!params->chan && mlo_sta) {
+	if (!params->chandef.chan && mlo_sta) {
 		need_offchan = false;
 	} else if (!need_offchan) {
 		struct ieee80211_chanctx_conf *chanctx_conf = NULL;
@@ -970,7 +983,7 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			if (!chanctx_conf)
 				continue;
 
-			if (mlo_sta && cfg80211_channel_identical(params->chan,
+			if (mlo_sta && cfg80211_channel_identical(params->chandef.chan,
 								  chanctx_conf->def.chan) &&
 			    ether_addr_equal(sdata->vif.addr, mgmt->sa)) {
 				link_id = i;
@@ -978,7 +991,7 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			}
 
 			if (ether_addr_equal(conf->addr, mgmt->sa) &&
-			    cfg80211_channel_identical(params->chan,
+			    cfg80211_channel_identical(params->chandef.chan,
 				    		       chanctx_conf->def.chan)) {
 				/* If userspace requested Tx on a specific link
 				 * use the same link id if the link bss is matching
@@ -986,7 +999,7 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 				 */
 				if (sdata->vif.valid_links &&
 				    params->link_id >= 0 && params->link_id == i &&
-				    params->chan == chanctx_conf->def.chan)
+				    params->chandef.chan == chanctx_conf->def.chan)
 					link_id = i;
 
 				break;
@@ -996,8 +1009,8 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 		}
 
 		if (chanctx_conf) {
-			need_offchan = params->chan &&
-				       !cfg80211_channel_identical(params->chan,
+			need_offchan = params->chandef.chan &&
+				       !cfg80211_channel_identical(params->chandef.chan,
 								   chanctx_conf->def.chan);
 		} else {
 			need_offchan = true;
@@ -1081,11 +1094,11 @@ int ieee80211_mgmt_tx(struct wiphy *wiphy, struct wireless_dev *wdev,
 			local->hw.offchannel_tx_hw_queue;
 
 	/* This will handle all kinds of coalescing and immediate TX */
-	if (!params->chan) {
+	if (!params->chandef.chan) {
 		ret = -EINVAL;
 		goto out_unlock;
 	}
-	ret = ieee80211_start_roc_work(local, sdata, params->chan,
+	ret = ieee80211_start_roc_work(local, sdata, &params->chandef,
 				       params->wait, cookie, skb,
 				       IEEE80211_ROC_TYPE_MGMT_TX);
 	if (ret)

@@ -3936,7 +3936,7 @@ __ieee80211_is_scan_ongoing(struct wiphy *wiphy,
 
 	if (!list_empty(&local->roc_list)) {
 		list_for_each_entry(roc, &local->roc_list, list) {
-			chan_hw_idx = cfg80211_get_hw_idx_by_chan(wiphy, roc->chan);
+			chan_hw_idx = cfg80211_get_hw_idx_by_chan(wiphy, roc->chandef.chan);
 			if (chan_hw_idx == req_hw_idx)
 				return true;
 		}
