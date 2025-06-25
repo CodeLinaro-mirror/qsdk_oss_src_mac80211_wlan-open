@@ -96,7 +96,7 @@ int ath12k_dbring_bufs_replenish(struct ath12k *ar,
 	cookie = u32_encode_bits(ar->pdev_idx, DP_RXDMA_BUF_COOKIE_PDEV_ID) |
 		 u32_encode_bits(buf_id, DP_RXDMA_BUF_COOKIE_BUF_ID);
 
-	ath12k_hal_rx_buf_addr_info_set(&ab->hal, desc, paddr, cookie, 0);
+	ath12k_hal_rx_buf_addr_info_set(desc, paddr, cookie, 0);
 
 	ath12k_hal_srng_access_end(ab, srng);
 
@@ -277,7 +277,7 @@ int ath12k_dbring_buffer_release_event(struct ath12k_base *ab,
 	struct ath12k *ar;
 	struct ath12k_dbring_element *buff;
 	struct ath12k_dbring_data handler_data;
-	struct ath12k_buffer_address desc;
+	struct ath12k_buffer_addr desc;
 	u8 *vaddr_unalign;
 	u32 num_entry, num_buff_reaped;
 	u8 pdev_idx, rbm, module_id;
@@ -345,7 +345,7 @@ int ath12k_dbring_buffer_release_event(struct ath12k_base *ab,
 
 		num_buff_reaped++;
 
-		ath12k_hal_rx_buf_addr_info_get(&ab->hal, &desc, &paddr,
+		ath12k_hal_rx_buf_addr_info_get(&desc, &paddr,
 						&cookie, &rbm);
 
 		buf_id = u32_get_bits(cookie, DP_RXDMA_BUF_COOKIE_BUF_ID);

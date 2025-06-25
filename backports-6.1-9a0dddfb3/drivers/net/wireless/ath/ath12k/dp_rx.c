@@ -302,7 +302,7 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				int req_entries)
 {
 	struct ath12k_base *ab = dp->ab;
-	struct ath12k_buffer_address *desc;
+	struct ath12k_buffer_addr *desc;
 	struct hal_srng *srng;
 	struct sk_buff *skb;
 	int num_free;
@@ -379,8 +379,7 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 
 		num_remain--;
 
-		ath12k_hal_rx_buf_addr_info_set(dp->hal, desc, paddr, cookie,
-						mgr);
+		ath12k_hal_rx_buf_addr_info_set(desc, paddr, cookie, mgr);
 	}
 
 	goto out;

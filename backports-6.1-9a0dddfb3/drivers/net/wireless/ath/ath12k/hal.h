@@ -729,10 +729,84 @@ struct hal_rx_desc_data {
 	   is_from_ds:1;
 };
 
-struct ath12k_buffer_address {
-        __le32 info0;
-        __le32 info1;
+#define BUFFER_ADDR_INFO0_ADDR         GENMASK(31, 0)
+
+#define BUFFER_ADDR_INFO1_ADDR         GENMASK(7, 0)
+#define BUFFER_ADDR_INFO1_RET_BUF_MGR  GENMASK(11, 8)
+#define BUFFER_ADDR_INFO1_SW_COOKIE    GENMASK(31, 12)
+
+struct ath12k_buffer_addr {
+	__le32 info0;
+	__le32 info1;
 } __packed;
+
+/* ath12k_buffer_addr
+ *
+ * buffer_addr_31_0
+ *		Address (lower 32 bits) of the MSDU buffer or MSDU_EXTENSION
+ *		descriptor or Link descriptor
+ *
+ * buffer_addr_39_32
+ *		Address (upper 8 bits) of the MSDU buffer or MSDU_EXTENSION
+ *		descriptor or Link descriptor
+ *
+ * return_buffer_manager (RBM)
+ *		Consumer: WBM
+ *		Producer: SW/FW
+ *		Indicates to which buffer manager the buffer or MSDU_EXTENSION
+ *		descriptor or link descriptor that is being pointed to shall be
+ *		returned after the frame has been processed. It is used by WBM
+ *		for routing purposes.
+ *
+ *		Values are defined in enum %HAL_RX_BUF_RBM_
+ *
+ * sw_buffer_cookie
+ *		Cookie field exclusively used by SW. HW ignores the contents,
+ *		accept that it passes the programmed value on to other
+ *		descriptors together with the physical address.
+ *
+ *		Field can be used by SW to for example associate the buffers
+ *		physical address with the virtual address.
+ *
+ *		NOTE1:
+ *		The three most significant bits can have a special meaning
+ *		 in case this struct is embedded in a TX_MPDU_DETAILS STRUCT,
+ *		and field transmit_bw_restriction is set
+ *
+ *		In case of NON punctured transmission:
+ *		Sw_buffer_cookie[19:17] = 3'b000: 20 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b001: 40 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b010: 80 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b011: 160 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b101: 240 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b100: 320 MHz TX only
+ *		Sw_buffer_cookie[19:18] = 2'b11: reserved
+ *
+ *		In case of punctured transmission:
+ *		Sw_buffer_cookie[19:16] = 4'b0000: pattern 0 only
+ *		Sw_buffer_cookie[19:16] = 4'b0001: pattern 1 only
+ *		Sw_buffer_cookie[19:16] = 4'b0010: pattern 2 only
+ *		Sw_buffer_cookie[19:16] = 4'b0011: pattern 3 only
+ *		Sw_buffer_cookie[19:16] = 4'b0100: pattern 4 only
+ *		Sw_buffer_cookie[19:16] = 4'b0101: pattern 5 only
+ *		Sw_buffer_cookie[19:16] = 4'b0110: pattern 6 only
+ *		Sw_buffer_cookie[19:16] = 4'b0111: pattern 7 only
+ *		Sw_buffer_cookie[19:16] = 4'b1000: pattern 8 only
+ *		Sw_buffer_cookie[19:16] = 4'b1001: pattern 9 only
+ *		Sw_buffer_cookie[19:16] = 4'b1010: pattern 10 only
+ *		Sw_buffer_cookie[19:16] = 4'b1011: pattern 11 only
+ *		Sw_buffer_cookie[19:18] = 2'b11: reserved
+ *
+ *		Note: a punctured transmission is indicated by the presence
+ *		 of TLV TX_PUNCTURE_SETUP embedded in the scheduler TLV
+ *
+ *		Sw_buffer_cookie[20:17]: Tid: The TID field in the QoS control
+ *		 field
+ *
+ *		Sw_buffer_cookie[16]: Mpdu_qos_control_valid: This field
+ *		 indicates MPDUs with a QoS control field.
+ *
+ */
 
 struct hal_ce_srng_dest_desc;
 
@@ -741,7 +815,7 @@ struct hal_ce_srng_dst_status_desc;
 struct hal_ce_srng_src_desc;
 
 struct wbm_link_desc {
-        struct ath12k_buffer_address buf_addr_info;
+        struct ath12k_buffer_addr buf_addr_info;
 } __packed;
 
 struct wbm_idle_scatter_list {
@@ -1259,11 +1333,6 @@ struct hal_ops {
 	void (*reo_init_cmd_ring)(struct ath12k_base *ab,
 				  struct hal_srng *srng);
 	void (*reo_hw_setup)(struct ath12k_base *ab, u32 ring_hash_map);
-	void (*rx_buf_addr_info_set)(struct ath12k_buffer_address *binfo,
-				     dma_addr_t paddr, u32 cookie, u8 manager);
-	void (*rx_buf_addr_info_get)(struct ath12k_buffer_address *binfo,
-				     dma_addr_t *paddr, u32 *msdu_cookies,
-				     u8 *rbm);
 	void (*cc_config)(struct ath12k_base *ab);
 	void (*srng_hw_disable)(struct ath12k_base *ab, struct hal_srng *srng);
 	void (*reset_rx_reo_tid_q)(void *vaddr, u32 ba_window_size, u8 tid);
@@ -1396,11 +1465,9 @@ void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab);
 void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab,
                                  struct hal_srng *srng);
 void ath12k_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);
-void ath12k_hal_rx_buf_addr_info_set(struct ath12k_hal *hal,
-				     struct ath12k_buffer_address *binfo,
+void ath12k_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *binfo,
 				     dma_addr_t paddr, u32 cookie, u8 manager);
-void ath12k_hal_rx_buf_addr_info_get(struct ath12k_hal *hal,
-				     struct ath12k_buffer_address *binfo,
+void ath12k_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,
 				     dma_addr_t *paddr, u32 *msdu_cookies,
 				     u8 *rbm);
 void ath12k_hal_cc_config(struct ath12k_base *ab);

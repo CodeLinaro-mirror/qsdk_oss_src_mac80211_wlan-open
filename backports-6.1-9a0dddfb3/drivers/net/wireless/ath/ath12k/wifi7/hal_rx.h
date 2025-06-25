@@ -928,12 +928,6 @@ ath12k_wifi7_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
 				       struct hal_wbm_release_ring *dst_desc,
 				       struct hal_wbm_release_ring *src_desc,
 				       enum hal_wbm_rel_bm_act action);
-void ath12k_wifi7_hal_rx_buf_addr_info_set(struct ath12k_buffer_address *binfo,
-					   dma_addr_t paddr, u32 cookie,
-					   u8 manager);
-void ath12k_wifi7_hal_rx_buf_addr_info_get(struct ath12k_buffer_address *binfo,
-					   dma_addr_t *paddr,
-					   u32 *cookie, u8 *rbm);
 int ath12k_wifi7_hal_desc_reo_parse_err(struct ath12k_dp *dp,
 					struct hal_reo_dest_ring *desc,
 					dma_addr_t *paddr, u32 *desc_bank);

@@ -313,34 +313,6 @@ out:
 	return ret;
 }
 
-void ath12k_wifi7_hal_rx_buf_addr_info_set(struct ath12k_buffer_address *b_info,
-					   dma_addr_t paddr, u32 cookie,
-					   u8 manager)
-{
-	struct ath12k_buffer_addr *binfo = (struct ath12k_buffer_addr *)b_info;
-	u32 paddr_lo, paddr_hi;
-
-	paddr_lo = lower_32_bits(paddr);
-	paddr_hi = upper_32_bits(paddr);
-	binfo->info0 = le32_encode_bits(paddr_lo, BUFFER_ADDR_INFO0_ADDR);
-	binfo->info1 = le32_encode_bits(paddr_hi, BUFFER_ADDR_INFO1_ADDR) |
-		le32_encode_bits(cookie, BUFFER_ADDR_INFO1_SW_COOKIE) |
-		le32_encode_bits(manager, BUFFER_ADDR_INFO1_RET_BUF_MGR);
-}
-
-void ath12k_wifi7_hal_rx_buf_addr_info_get(struct ath12k_buffer_address *b_info,
-					   dma_addr_t *paddr, u32 *cookie,
-					   u8 *rbm)
-{
-	struct ath12k_buffer_addr *binfo = (struct ath12k_buffer_addr *)b_info;
-
-	*paddr = (((u64)le32_get_bits(binfo->info1,
-				      BUFFER_ADDR_INFO1_ADDR)) << 32) |
-		le32_get_bits(binfo->info0, BUFFER_ADDR_INFO0_ADDR);
-	*cookie = le32_get_bits(binfo->info1, BUFFER_ADDR_INFO1_SW_COOKIE);
-	*rbm = le32_get_bits(binfo->info1, BUFFER_ADDR_INFO1_RET_BUF_MGR);
-}
-
 void
 ath12k_wifi7_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 				       u32 *num_msdus, u32 *msdu_cookies,

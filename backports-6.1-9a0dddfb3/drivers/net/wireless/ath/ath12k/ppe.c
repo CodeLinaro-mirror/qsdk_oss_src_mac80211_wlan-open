@@ -170,7 +170,7 @@ int ath12k_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab, int req_entries,
 {
 	struct dp_rxdma_ring *rx_ring = &ab->dp->rx_refill_buf_ring;
 	struct hal_srng *rxdma_srng;
-	struct ath12k_buffer_address *rxdma_desc;
+	struct ath12k_buffer_addr *rxdma_desc;
 	u32 cookie;
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc;
@@ -203,7 +203,7 @@ int ath12k_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab, int req_entries,
 		if (!rxdma_desc)
 			break;
 
-		ath12k_hal_rx_buf_addr_info_set(&ab->hal, rxdma_desc, paddr, cookie, mgr);
+		ath12k_hal_rx_buf_addr_info_set(rxdma_desc, paddr, cookie, mgr);
 		num_remain--;
 	}
 
