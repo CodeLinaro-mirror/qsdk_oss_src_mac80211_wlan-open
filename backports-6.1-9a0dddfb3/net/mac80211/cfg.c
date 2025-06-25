@@ -6129,6 +6129,18 @@ ieee80211_set_qos_mgmt_cfg(struct wiphy *wiphy, struct net_device *dev,
 	return ieee80211_qos_mgmt_cfg(sdata, qm_req, qm_resp);
 }
 
+static int
+ieee80211_get_afc_eirp_pwr(struct wiphy *wiphy,
+			   u32 freq, u32 *eirp_pwr)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+
+	if (!local->ops->get_afc_eirp_pwr)
+		return -EOPNOTSUPP;
+
+	return local->ops->get_afc_eirp_pwr(&local->hw, freq, eirp_pwr);
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -6250,4 +6262,5 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_epcs = ieee80211_set_epcs,
 	.erp = ieee80211_erp,
 	.set_qos_mgmt_cfg = ieee80211_set_qos_mgmt_cfg,
+	.get_afc_eirp_pwr = ieee80211_get_afc_eirp_pwr,
 };
