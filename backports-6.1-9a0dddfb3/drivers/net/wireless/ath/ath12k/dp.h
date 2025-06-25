@@ -388,7 +388,11 @@ struct ath12k_tx_desc_info {
 	struct list_head list;
 	struct sk_buff *skb;
 	struct sk_buff *skb_ext_desc;
+	dma_addr_t paddr;
+	dma_addr_t paddr_ext_desc;
 	u32 desc_id; /* Cookie */
+	u16 len;
+	u16 ext_desc_len;
 	u8 mac_id	: 5,
 	   in_use	: 1,
 	   flags	: 1;
