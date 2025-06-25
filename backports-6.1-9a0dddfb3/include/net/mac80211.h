@@ -4791,6 +4791,7 @@ struct ieee80211_ppe_vp_ds_params {
  * nl80211. Enable drivers to parse and apply QM request descriptors and
  * populate response data accordingly.
  * @get_afc_eirp_pwr: Get EIRP value for a given freq from the AFC payload.
+ * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5218,6 +5219,8 @@ struct ieee80211_ops {
 			    struct cfg80211_qm_resp_data *qm_resp);
 	int (*get_afc_eirp_pwr)(struct ieee80211_hw *hw,
 				u32 freq, u32 *eirp);
+	enum nl80211_6ghz_dev_deployment_type
+		(*get_6ghz_dev_deployment_type)(struct ieee80211_hw *hw);
 };
 
 /**

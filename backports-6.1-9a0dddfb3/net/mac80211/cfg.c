@@ -6141,6 +6141,21 @@ ieee80211_get_afc_eirp_pwr(struct wiphy *wiphy,
 	return local->ops->get_afc_eirp_pwr(&local->hw, freq, eirp_pwr);
 }
 
+static enum nl80211_6ghz_dev_deployment_type
+ieee80211_get_6ghz_dev_deployment_type(struct wiphy *wiphy)
+{
+	struct ieee80211_local *local = wiphy_priv(wiphy);
+	enum nl80211_6ghz_dev_deployment_type dep_type =
+		NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN;
+
+	if (!local->ops->get_6ghz_dev_deployment_type)
+		return dep_type;
+
+	dep_type = local->ops->get_6ghz_dev_deployment_type(&local->hw);
+
+	return dep_type;
+}
+
 const struct cfg80211_ops mac80211_config_ops = {
 	.add_virtual_intf = ieee80211_add_iface,
 	.del_virtual_intf = ieee80211_del_iface,
@@ -6263,4 +6278,5 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.erp = ieee80211_erp,
 	.set_qos_mgmt_cfg = ieee80211_set_qos_mgmt_cfg,
 	.get_afc_eirp_pwr = ieee80211_get_afc_eirp_pwr,
+	.get_6ghz_dev_deployment_type = ieee80211_get_6ghz_dev_deployment_type,
 };
