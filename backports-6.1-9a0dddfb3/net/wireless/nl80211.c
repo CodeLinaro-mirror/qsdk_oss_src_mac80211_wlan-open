@@ -3025,6 +3025,25 @@ nl80211_put_6ghz_power_mode_channels(struct cfg80211_registered_device *rdev,
 	return 0;
 }
 
+static int nl80211_send_6ghz_dev_deployment_type(struct sk_buff *msg,
+						 struct cfg80211_registered_device *rdev)
+{
+	enum nl80211_6ghz_dev_deployment_type dev_deployment_type =
+		NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN;
+
+	dev_deployment_type = rdev_get_6ghz_dev_deployment_type(rdev);
+
+	if (dev_deployment_type < NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN ||
+	    dev_deployment_type > NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_OUTDOOR)
+		return -EINVAL;
+
+	if (nla_put_u8(msg, NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE,
+		       dev_deployment_type))
+		return -ENOBUFS;
+
+	return 0;
+}
+
 static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 			      enum nl80211_commands cmd,
 			      struct sk_buff *msg, u32 portid, u32 seq,
@@ -3197,6 +3216,7 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 			default:
 				if (state->chan_start == -1)
 					break;
+
 				/* add frequencies */
 				nl_freqs = nla_nest_start_noflag(msg,
 								 NL80211_BAND_ATTR_FREQS);
@@ -3659,6 +3679,11 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 		if (nl80211_put_multi_hw_support(&rdev->wiphy, msg))
 			goto nla_put_failure;
 
+		state->split_start++;
+		break;
+	case 18:
+		if (nl80211_send_6ghz_dev_deployment_type(msg, rdev))
+			goto nla_put_failure;
 		state->split_start = 0;
 		break;
 	}

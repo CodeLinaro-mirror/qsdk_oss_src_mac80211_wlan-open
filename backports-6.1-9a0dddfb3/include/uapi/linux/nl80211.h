@@ -3058,6 +3058,9 @@ enum nl80211_commands {
  *	APs Support". Drivers may set additional flags that they support
  *	in the kernel or device.
  *
+ * @NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE: Attribute denoting the 6 GHz
+ *	device deployment type.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3655,6 +3658,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_QOS_MGMT,
 
 	NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS,
+
+	NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -8953,6 +8958,19 @@ enum nl80211_6ghz_txpower_attr {
 	__NL80211_6GHZ_TXPOWER_ATTR_AFTER_LAST,
 	NL80211_6GHZ_TXPOWER_ATTR_MAX =
 		__NL80211_6GHZ_TXPOWER_ATTR_AFTER_LAST - 1
+};
+
+/**
+ * enum nl80211_6ghz_dev_deployment_type - 6 GHz device deployment types
+ *
+ * @NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN: Unknown deployment type.
+ * @NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_INDOOR: Indoor deployment type.
+ * @NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_OUTDOOR: Outdoor deployment type.
+ */
+enum nl80211_6ghz_dev_deployment_type {
+	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN,
+	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_INDOOR,
+	NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_OUTDOOR,
 };
 
 #endif /* __LINUX_NL80211_H */

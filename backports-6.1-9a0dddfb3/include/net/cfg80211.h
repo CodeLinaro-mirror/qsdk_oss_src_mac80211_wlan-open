@@ -5420,6 +5420,7 @@ struct cfg80211_qm_resp_data {
  *
  * @get_afc_eirp_pwr: Get the EIRP power received in the AFC payload for the
  *	given freq
+ * @get_6ghz_dev_deployment_type: Get the 6 GHz device deployment type
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -5806,6 +5807,8 @@ struct cfg80211_ops {
 				    struct cfg80211_qm_resp_data *qm_resp);
 	int	(*get_afc_eirp_pwr)(struct wiphy *wiphy,
 				    u32 freq, u32 *eirp);
+	enum nl80211_6ghz_dev_deployment_type
+		(*get_6ghz_dev_deployment_type)(struct wiphy *wiphy);
 };
 
 /*

@@ -1660,4 +1660,19 @@ rdev_get_afc_eirp_pwr(struct cfg80211_registered_device *rdev,
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
+
+static inline enum nl80211_6ghz_dev_deployment_type
+rdev_get_6ghz_dev_deployment_type(struct cfg80211_registered_device *rdev)
+{
+	enum nl80211_6ghz_dev_deployment_type dep_type =
+		NL80211_6GHZ_DEV_DEPLOYMENT_TYPE_UNKNOWN;
+
+	if (!rdev->ops->get_6ghz_dev_deployment_type)
+		return dep_type;
+
+	trace_rdev_get_6ghz_dev_deployment_type(&rdev->wiphy);
+	dep_type = rdev->ops->get_6ghz_dev_deployment_type(&rdev->wiphy);
+	trace_rdev_return_int(&rdev->wiphy, (int)dep_type);
+	return dep_type;
+}
 #endif /* __CFG80211_RDEV_OPS */

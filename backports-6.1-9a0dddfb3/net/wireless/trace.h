@@ -4357,6 +4357,22 @@ TRACE_EVENT(rdev_get_afc_eirp_pwr,
 
 	TP_printk(WIPHY_PR_FMT, WIPHY_PR_ARG)
 );
+
+TRACE_EVENT(rdev_get_6ghz_dev_deployment_type,
+	TP_PROTO(struct wiphy *wiphy),
+
+	TP_ARGS(wiphy),
+
+	TP_STRUCT__entry(
+		WIPHY_ENTRY
+	),
+
+	TP_fast_assign(
+		WIPHY_ASSIGN;
+	),
+
+	TP_printk(WIPHY_PR_FMT, WIPHY_PR_ARG)
+);
 #endif /* !__RDEV_OPS_TRACE || TRACE_HEADER_MULTI_READ */
 
 #undef TRACE_INCLUDE_PATH
