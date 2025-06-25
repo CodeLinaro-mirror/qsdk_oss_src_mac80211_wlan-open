@@ -654,4 +654,13 @@ int __ath12k_mac_mlo_setup(struct ath12k *ar);
 int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab);
 void ath12k_mac_add_bridge_vdevs_iter(void *data, u8 *mac,
 				      struct ieee80211_vif *vif);
+
+/**
+ * ath12k_mac_op_get_afc_eirp_pwr - Get the 6 GHz AFC EIRP power value
+ * @hw: Input hardware
+ * @freq: Input freq
+ * @eirp_pwr: Output EIRP power
+ */
+int ath12k_mac_op_get_afc_eirp_pwr(struct ieee80211_hw *hw, u32 freq,
+				   u32 *eirp_pwr);
 #endif

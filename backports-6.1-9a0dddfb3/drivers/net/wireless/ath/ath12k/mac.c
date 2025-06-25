@@ -23696,3 +23696,35 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 
 	return ret;
 }
+
+static struct ath12k *ath12k_mac_get_ar_by_center_freq(struct ieee80211_hw *hw,
+						       u16 center_freq)
+{
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k *ar;
+	int i;
+
+	for_each_ar(ah, ar, i) {
+		if (center_freq >= ar->chan_info.low_freq &&
+		    center_freq <= ar->chan_info.high_freq)
+			return ar;
+	}
+
+	return NULL;
+}
+
+int ath12k_mac_op_get_afc_eirp_pwr(struct ieee80211_hw *hw,
+				   u32 freq,
+				   u32 *eirp_pwr)
+{
+	struct ath12k *ar;
+
+	ar = ath12k_mac_get_ar_by_center_freq(hw, freq);
+	if (ar && ar->afc.is_6ghz_afc_power_event_received)
+		*eirp_pwr = ath12k_mac_get_afc_eirp_power(ar, freq, freq, 20);
+	else
+		*eirp_pwr = ATH12K_MAX_TX_POWER;
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_mac_op_get_afc_eirp_pwr);
