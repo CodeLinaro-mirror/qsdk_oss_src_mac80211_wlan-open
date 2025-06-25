@@ -7547,6 +7547,11 @@ int ath12k_wmi_send_afc_cmd_tlv(struct ath12k *ar, int data_type,
 			   "Sending afc payload clear cmd for pdev id %d\n",
 			   cmd->pdev_id);
 		break;
+	case WMI_AFC_CMD_RESET_AFC:
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "Sending afc reset cmd for pdev id %d\n",
+			   cmd->pdev_id);
+		break;
 	default:
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "Unknown AFC command\n");
 		return -EINVAL;
