@@ -841,7 +841,6 @@ void ath12k_pcic_stop(struct ath12k_base *ab)
 {
 	ath12k_pcic_ce_irq_disable_sync(ab);
 	timer_delete_sync(&ab->rx_replenish_retry);
-	ath12k_ce_cleanup_pipes(ab);
 }
 
 int ath12k_pcic_start(struct ath12k_base *ab)

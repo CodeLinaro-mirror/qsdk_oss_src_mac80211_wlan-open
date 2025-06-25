@@ -370,7 +370,6 @@ static void ath12k_ahb_stop(struct ath12k_base *ab)
 	ath12k_ahb_kill_tasklets(ab);
 #endif
 	del_timer_sync(&ab->rx_replenish_retry);
-	ath12k_ce_cleanup_pipes(ab);
 }
 
 static int ath12k_ahb_power_up(struct ath12k_base *ab)

@@ -914,12 +914,7 @@ void ath12k_core_to_group_ref_put(struct ath12k_base *ab)
 static void ath12k_core_stop(struct ath12k_base *ab)
 {
 	ath12k_core_to_group_ref_put(ab);
-
-	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
-		ath12k_qmi_firmware_stop(ab);
-
 	ath12k_acpi_stop(ab);
-
 	ath12k_dp_rx_pdev_reo_cleanup(ab);
 	ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
@@ -1052,6 +1047,10 @@ err_qmi_deinit:
 
 static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 {
+	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
+		ath12k_qmi_firmware_stop(ab);
+
+	ath12k_ce_cleanup_pipes(ab);
 	ath12k_hif_power_down(ab, false);
 	ath12k_reg_free(ab);
 	ath12k_debugfs_soc_destroy(ab);

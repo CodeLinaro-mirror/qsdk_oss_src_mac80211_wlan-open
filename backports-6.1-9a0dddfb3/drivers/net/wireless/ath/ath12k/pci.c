@@ -607,7 +607,6 @@ void ath12k_pci_stop(struct ath12k_base *ab)
 		return;
 
 	ath12k_pcic_ce_irq_disable_sync(ab);
-	ath12k_ce_cleanup_pipes(ab);
 }
 
 int ath12k_pci_start(struct ath12k_base *ab)
