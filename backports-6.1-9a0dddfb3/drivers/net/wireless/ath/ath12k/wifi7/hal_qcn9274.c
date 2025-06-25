@@ -826,6 +826,27 @@ void ath12k_wifi7_hal_extract_rx_desc_data_qcn9274(struct hal_rx_desc_data *rx_d
 	rx_desc_data->is_to_ds = ath12k_wifi7_hal_rx_h_to_ds_qcn9274(rx_desc);
 }
 
+void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_info,
+						  struct hal_rx_desc *rx_desc,
+						  struct hal_rx_desc *ldesc)
+{
+	rx_info->tlv_info.msdu_done = ath12k_wifi7_hal_rx_h_msdu_done_qcn9274(ldesc);
+	rx_info->tlv_info.freq = ath12k_wifi7_hal_rx_h_freq_qcn9274(rx_desc);
+	rx_info->tlv_info.pkt_type = ath12k_wifi7_hal_rx_h_pkt_type_qcn9274(rx_desc);
+	rx_info->tlv_info.bw = ath12k_wifi7_hal_rx_h_rx_bw_qcn9274(rx_desc);
+	rx_info->tlv_info.rate_mcs = ath12k_wifi7_hal_rx_h_rate_mcs_qcn9274(rx_desc);
+	rx_info->tlv_info.nss = hweight8(ath12k_wifi7_hal_rx_h_nss_qcn9274(rx_desc));
+	rx_info->tlv_info.sgi = ath12k_wifi7_hal_rx_h_sgi_qcn9274(rx_desc);
+	if (rx_info->rx_msdu_info.da_is_mcbc)
+		rx_info->rx_mpdu_info.peer_id = ath12k_wifi7_hal_rx_h_peer_id_qcn9274(rx_desc);
+	rx_info->tlv_info.is_decrypted =
+		ath12k_wifi7_hal_rx_h_is_decrypted_qcn9274(rx_desc);
+	rx_info->tlv_info.decap = ath12k_wifi7_hal_rx_h_decap_type_qcn9274(rx_desc);
+	rx_info->tlv_info.mesh_ctrl_present =
+		ath12k_wifi7_hal_rx_h_mesh_ctl_present_qcn9274(rx_desc);
+	rx_info->tlv_info.is_ip_valid = ath12k_wifi7_hal_rx_h_is_ip_valid_qcn9274(rx_desc);
+}
+
 static int ath12k_wifi7_hal_srng_create_config_qcn9274(struct ath12k_hal *hal)
 {
 	struct hal_srng_config *s;
@@ -983,6 +1004,8 @@ const struct hal_ops hal_qcn9274_ops = {
 			ath12k_wifi7_hal_rx_get_msdu_src_link_qcn9274,
 	.extract_rx_desc_data =
 			ath12k_wifi7_hal_extract_rx_desc_data_qcn9274,
+	.extract_rx_spd_data =
+		ath12k_wifi7_hal_extract_rx_spd_data_qcn9274,
 	.ce_dst_setup = ath12k_wifi7_hal_ce_dst_setup,
 	.srng_src_hw_init = ath12k_wifi7_hal_srng_src_hw_init,
 	.srng_dst_hw_init = ath12k_wifi7_hal_srng_dst_hw_init,

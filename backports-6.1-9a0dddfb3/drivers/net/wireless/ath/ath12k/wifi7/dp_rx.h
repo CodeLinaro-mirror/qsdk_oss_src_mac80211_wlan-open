@@ -68,6 +68,15 @@ int ath12k_wifi7_dp_rx_fst_attach(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 void ath12k_wifi7_dp_rx_fst_detach(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 
 static inline
+void ath12k_wifi7_dp_extract_rx_spd_data(struct ath12k_dp *dp,
+					 struct hal_rx_spd_data *rx_info,
+					 struct hal_rx_desc *rx_desc,
+					 struct hal_rx_desc *ldesc)
+{
+	dp->hw_params->hal_ops->extract_rx_spd_data(rx_info, rx_desc, ldesc);
+}
+
+static inline
 void ath12k_wifi7_dp_extract_rx_desc_data(struct ath12k_dp *dp,
 					  struct hal_rx_desc_data *rx_desc_data,
 					  struct hal_rx_desc *rx_desc,

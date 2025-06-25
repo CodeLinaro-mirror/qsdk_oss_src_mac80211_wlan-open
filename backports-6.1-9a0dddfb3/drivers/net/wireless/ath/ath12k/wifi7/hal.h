@@ -520,7 +520,8 @@ struct rx_msdu_desc_info {
 	    to_ds                       :  1,
 	    intra_bss                   :  1,
 	    dest_chip_id                :  2,
-	    reserved			:  3;
+	    ra_is_mcbc			:  1,
+	    reserved			:  2;
 };
 
 struct rx_tlv_info_1 {
@@ -536,6 +537,35 @@ struct rx_tlv_info_1 {
 	    is_ip_valid			: 1,
 	    bw			   	: 3;
 };
+
+struct hal_rx_spd_data {
+	union {
+		u64 info1;
+		struct rx_mpdu_desc_info rx_mpdu_info;
+	};
+
+	union {
+		u32 info2;
+		struct rx_msdu_desc_info rx_msdu_info;
+	};
+
+	struct rx_tlv_info_1 tlv_info;
+
+	union {
+		u32 info0;
+		struct {
+			u32 reo_dest_buffer_type                :  1,
+			    reo_push_reason                     :  2,
+			    reo_error_code                      :  5,
+			    captured_msdu_data_size             :  4,
+			    sw_exception                        :  1,
+			    src_link_id                         :  3,
+			    reo_destination_struct_signature    :  4,
+			    ring_id                             :  8,
+			    looping_count                       :  4;
+		};
+	};
+} __packed;
 
 struct hal_reo_status_queue_stats {
 	u16 ssn;

@@ -206,13 +206,11 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 			       struct napi_struct *napi,
 			       struct sk_buff *msdu,
 			       struct ieee80211_rx_status *status,
-			       struct hal_rx_desc_data *rx_desc_data);
+			       u8 hw_link_id, bool is_mcbc, u16 peer_id, u16 tid);
 void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 			    enum hal_reo_cmd_status status);
 void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 				bool rel_link_desc);
-struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
-					       struct sk_buff *first);
 int ath12k_dp_rx_crypto_mic_len(struct ath12k_pdev_dp *dp_pdev,
 				enum hal_encrypt_type enctype);
 int ath12k_dp_rx_crypto_param_len(struct ath12k_pdev_dp *dp_pdev,
@@ -228,7 +226,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				struct hal_rx_desc *rx_desc,
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status, bool decrypted,
-				u16 peer_id);
+				u16 peer_id, bool is_first_msdu, bool is_last_msdu);
 int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
 					 enum dp_htt_flow_fst_operation operation,
 					 struct hal_flow_tuple_info *tuple_info);

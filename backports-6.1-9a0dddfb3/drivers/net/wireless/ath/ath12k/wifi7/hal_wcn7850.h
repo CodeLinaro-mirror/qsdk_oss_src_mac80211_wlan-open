@@ -20,6 +20,9 @@ void ath12k_wifi7_hal_rx_desc_get_dot11_hdr_wcn7850(struct hal_rx_desc *desc,
 void ath12k_wifi7_hal_extract_rx_desc_data_wcn7850(struct hal_rx_desc_data *rx_desc_data,
 						   struct hal_rx_desc *rx_desc,
 						   struct hal_rx_desc *ldesc);
+void ath12k_wifi7_hal_extract_rx_spd_data_wcn7850(struct hal_rx_spd_data *rx_info,
+						  struct hal_rx_desc *rx_desc,
+						  struct hal_rx_desc *ldesc);
 static inline
 bool ath12k_wifi7_hal_wmask_compaction_rx_tlv_supported_wcn7850(void)
 {

@@ -224,15 +224,13 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				struct hal_rx_desc *rx_desc,
 				enum hal_encrypt_type enctype,
 				struct ieee80211_rx_status *status, bool decrypted,
-				u16 peer_id)
+				u16 peer_id, bool is_first_msdu, bool is_last_msdu)
 {
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ieee80211_hdr *hdr;
 	size_t hdr_len;
 	size_t crypto_len;
 
-	if (!rxcb->is_first_msdu ||
-	    !(rxcb->is_first_msdu && rxcb->is_last_msdu)) {
+	if (!is_first_msdu || !(is_first_msdu && is_last_msdu)) {
 		/* TODO: Change below stats increment back to WARN_ON_ONCE(1) */
 		dp_pdev->dp->device_stats.first_and_last_msdu_bit_miss++;
 		return;
@@ -940,7 +938,6 @@ struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 
 	return NULL;
 }
-EXPORT_SYMBOL(ath12k_dp_rx_get_msdu_last_buf);
 
 struct ath12k_dp_link_peer *
 ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct hal_rx_desc *rx_desc, u16 peer_id)
@@ -967,29 +964,28 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 			       struct napi_struct *napi,
 			       struct sk_buff *msdu,
 			       struct ieee80211_rx_status *status,
-			       struct hal_rx_desc_data *rx_desc_data)
+			       u8 hw_link_id, bool is_mcbc, u16 peer_id, u16 tid)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_sta *pubsta;
 	struct ath12k_dp_peer *peer;
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
-	struct ath12k_dp_link_peer *link_peer = NULL;
-	bool is_mcbc = rxcb->is_mcbc;
 
 	rcu_read_lock();
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, rxcb->peer_id);
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 
 	pubsta = peer ? peer->sta : NULL;
 
-	if (rxcb->peer_id)
-		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, rxcb->peer_id);
-
 	if (pubsta && pubsta->valid_links) {
+		struct ath12k_dp_link_peer *link_peer = NULL;
+
 		status->link_valid = 1;
-		status->link_id = peer->hw_links[rxcb->hw_link_id];
+		status->link_id = peer->hw_links[hw_link_id];
+
+		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+								     peer_id);
 		if (link_peer && link_peer->is_bridge_peer) {
 			dev_kfree_skb_any(msdu);
 			ath12k_dbg(ab, ATH12K_DBG_DATA,
@@ -1005,13 +1001,12 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	rcu_read_unlock();
 
 	ath12k_dbg(ab, ATH12K_DBG_DATA,
-		   "rx skb %p len %u peer %pM %d %s sn %u %s%s%s%s%s%s%s%s%s%s rate_idx %u vht_nss %u freq %u band %u flag 0x%x fcs-err %i mic-err %i amsdu-more %i\n",
+		   "rx skb %p len %u peer %pM %d %s %s%s%s%s%s%s%s%s%s%s rate_idx %u vht_nss %u freq %u band %u flag 0x%x fcs-err %i mic-err %i amsdu-more %i\n",
 		   msdu,
 		   msdu->len,
 		   peer ? peer->addr : NULL,
-		   rxcb->tid,
+		   tid,
 		   is_mcbc ? "mcast" : "ucast",
-		   rx_desc_data->seq_no,
 		   (status->encoding == RX_ENC_LEGACY) ? "legacy" : "",
 		   (status->encoding == RX_ENC_HT) ? "ht" : "",
 		   (status->encoding == RX_ENC_VHT) ? "vht" : "",

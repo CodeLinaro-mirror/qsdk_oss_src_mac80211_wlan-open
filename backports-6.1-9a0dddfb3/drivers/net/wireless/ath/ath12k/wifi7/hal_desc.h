@@ -842,8 +842,14 @@ enum hal_reo_dest_ring_push_reason {
 
 struct hal_reo_dest_ring {
 	struct ath12k_buffer_addr buf_addr_info;
-	struct rx_mpdu_desc rx_mpdu_info;
-	struct rx_msdu_desc rx_msdu_info;
+	union {
+		struct rx_mpdu_desc rx_mpdu_info;
+		__le64 info1;
+	};
+	union {
+		struct rx_msdu_desc rx_msdu_info;
+		__le32 info2;
+	};
 	__le32 buf_va_lo;
 	__le32 buf_va_hi;
 	__le32 info0; /* %HAL_REO_DEST_RING_INFO0_ */

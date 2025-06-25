@@ -1823,6 +1823,12 @@ static inline struct ath12k_skb_rxcb *ATH12K_SKB_RXCB(struct sk_buff *skb)
 	return (struct ath12k_skb_rxcb *)skb->cb;
 }
 
+static inline void *ATH12K_SKB_RXCB_RAW(struct sk_buff *skb)
+{
+	BUILD_BUG_ON(sizeof(struct ath12k_skb_rxcb) > sizeof(skb->cb));
+	return (void *)skb->cb;
+}
+
 static inline struct ath12k_vif *ath12k_vif_to_ahvif(struct ieee80211_vif *vif)
 {
 	return (struct ath12k_vif *)vif->drv_priv;

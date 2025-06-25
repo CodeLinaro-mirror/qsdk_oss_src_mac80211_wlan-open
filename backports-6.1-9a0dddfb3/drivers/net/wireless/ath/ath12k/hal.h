@@ -11,6 +11,7 @@
 
 struct ath12k_base;
 struct hal_rx_reo_queue;
+struct hal_rx_spd_data;
 
 #define HAL_CE_REMAP_REG_BASE  (ab->ce_remap_base_addr)
 
@@ -1213,6 +1214,9 @@ struct hal_ops {
 	void (*extract_rx_desc_data)(struct hal_rx_desc_data *rx_desc_data,
 				     struct hal_rx_desc *rx_desc,
 				     struct hal_rx_desc *ldesc);
+	void (*extract_rx_spd_data)(struct hal_rx_spd_data *rx_info,
+				    struct hal_rx_desc *rx_desc,
+				    struct hal_rx_desc *ldesc);
 	void (*ce_dst_setup)(struct ath12k_base *ab,
 			     struct hal_srng *srng, int ring_num);
 	void (*set_umac_srng_ptr_addr)(struct ath12k_base *ab,
