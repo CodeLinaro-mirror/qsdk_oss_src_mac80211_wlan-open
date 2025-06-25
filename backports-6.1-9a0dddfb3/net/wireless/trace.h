@@ -2115,9 +2115,9 @@ DEFINE_EVENT(rdev_pmksa, rdev_del_pmksa,
 
 TRACE_EVENT(rdev_remain_on_channel,
 	TP_PROTO(struct wiphy *wiphy, struct wireless_dev *wdev,
-		 struct ieee80211_channel *chan,
+		 struct cfg80211_chan_def *chandef,
 		 unsigned int duration),
-	TP_ARGS(wiphy, wdev, chan, duration),
+	TP_ARGS(wiphy, wdev, chandef, duration),
 	TP_STRUCT__entry(
 		WIPHY_ENTRY
 		WDEV_ENTRY
@@ -2127,7 +2127,7 @@ TRACE_EVENT(rdev_remain_on_channel,
 	TP_fast_assign(
 		WIPHY_ASSIGN;
 		WDEV_ASSIGN;
-		CHAN_ASSIGN(chan);
+		CHAN_ASSIGN(chandef->chan);
 		__entry->duration = duration;
 	),
 	TP_printk(WIPHY_PR_FMT ", " WDEV_PR_FMT ", " CHAN_PR_FMT ", duration: %u",
@@ -2184,7 +2184,7 @@ TRACE_EVENT(rdev_mgmt_tx,
 	TP_fast_assign(
 		WIPHY_ASSIGN;
 		WDEV_ASSIGN;
-		CHAN_ASSIGN(params->chan);
+		CHAN_ASSIGN(params->chandef.chan);
 		__entry->offchan = params->offchan;
 		__entry->wait = params->wait;
 		__entry->no_cck = params->no_cck;
@@ -3289,60 +3289,60 @@ TRACE_EVENT(cfg80211_michael_mic_failure,
 
 TRACE_EVENT(cfg80211_ready_on_channel,
 	TP_PROTO(struct wireless_dev *wdev, u64 cookie,
-		 struct ieee80211_channel *chan,
+		 struct cfg80211_chan_def *chandef,
 		 unsigned int duration),
-	TP_ARGS(wdev, cookie, chan, duration),
+	TP_ARGS(wdev, cookie, chandef, duration),
 	TP_STRUCT__entry(
 		WDEV_ENTRY
 		__field(u64, cookie)
-		CHAN_ENTRY
+		CHAN_DEF_ENTRY
 		__field(unsigned int, duration)
 	),
 	TP_fast_assign(
 		WDEV_ASSIGN;
 		__entry->cookie = cookie;
-		CHAN_ASSIGN(chan);
+		CHAN_DEF_ASSIGN(chandef);
 		__entry->duration = duration;
 	),
-	TP_printk(WDEV_PR_FMT ", cookie: %llu, " CHAN_PR_FMT ", duration: %u",
-		  WDEV_PR_ARG, __entry->cookie, CHAN_PR_ARG,
+	TP_printk(WDEV_PR_FMT ", cookie: %llu, " CHAN_DEF_PR_FMT ", duration: %u",
+		  WDEV_PR_ARG, __entry->cookie, CHAN_DEF_PR_ARG,
 		  __entry->duration)
 );
 
 TRACE_EVENT(cfg80211_ready_on_channel_expired,
 	TP_PROTO(struct wireless_dev *wdev, u64 cookie,
-		 struct ieee80211_channel *chan),
-	TP_ARGS(wdev, cookie, chan),
+		 struct cfg80211_chan_def *chandef),
+	TP_ARGS(wdev, cookie, chandef),
 	TP_STRUCT__entry(
 		WDEV_ENTRY
 		__field(u64, cookie)
-		CHAN_ENTRY
+		CHAN_DEF_ENTRY
 	),
 	TP_fast_assign(
 		WDEV_ASSIGN;
 		__entry->cookie = cookie;
-		CHAN_ASSIGN(chan);
+		CHAN_DEF_ASSIGN(chandef);
 	),
-	TP_printk(WDEV_PR_FMT ", cookie: %llu, " CHAN_PR_FMT,
-		  WDEV_PR_ARG, __entry->cookie, CHAN_PR_ARG)
+	TP_printk(WDEV_PR_FMT ", cookie: %llu, " CHAN_DEF_PR_FMT,
+		  WDEV_PR_ARG, __entry->cookie, CHAN_DEF_PR_ARG)
 );
 
 TRACE_EVENT(cfg80211_tx_mgmt_expired,
 	TP_PROTO(struct wireless_dev *wdev, u64 cookie,
-		 struct ieee80211_channel *chan),
-	TP_ARGS(wdev, cookie, chan),
+		 struct cfg80211_chan_def *chandef),
+	TP_ARGS(wdev, cookie, chandef),
 	TP_STRUCT__entry(
 		WDEV_ENTRY
 		__field(u64, cookie)
-		CHAN_ENTRY
+		CHAN_DEF_ENTRY
 	),
 	TP_fast_assign(
 		WDEV_ASSIGN;
 		__entry->cookie = cookie;
-		CHAN_ASSIGN(chan);
+		CHAN_DEF_ASSIGN(chandef);
 	),
-	TP_printk(WDEV_PR_FMT ", cookie: %llu, " CHAN_PR_FMT,
-		  WDEV_PR_ARG, __entry->cookie, CHAN_PR_ARG)
+	TP_printk(WDEV_PR_FMT ", cookie: %llu, " CHAN_DEF_PR_FMT,
+		  WDEV_PR_ARG, __entry->cookie, CHAN_DEF_PR_ARG)
 );
 
 TRACE_EVENT(cfg80211_new_sta,

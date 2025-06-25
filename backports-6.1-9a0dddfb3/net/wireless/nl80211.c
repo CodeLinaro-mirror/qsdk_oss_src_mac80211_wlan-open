@@ -13672,7 +13672,7 @@ static int nl80211_remain_on_channel(struct sk_buff *skb,
 		goto free_msg;
 	}
 
-	err = rdev_remain_on_channel(rdev, wdev, chandef.chan,
+	err = rdev_remain_on_channel(rdev, wdev, &chandef,
 				     duration, &cookie);
 
 	if (err)
@@ -13897,7 +13897,7 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 		}
 	}
 
-	params.chan = chandef.chan;
+	params.chandef = chandef;
 	err = cfg80211_mlme_mgmt_tx(rdev, wdev, &params, &cookie);
 	if (err)
 		goto free_msg;
@@ -20162,10 +20162,11 @@ nla_put_failure:
 static void nl80211_send_remain_on_chan_event(
 	int cmd, struct cfg80211_registered_device *rdev,
 	struct wireless_dev *wdev, u64 cookie,
-	struct ieee80211_channel *chan,
+	struct cfg80211_chan_def *chandef,
 	unsigned int duration, gfp_t gfp)
 {
 	struct sk_buff *msg;
+	struct ieee80211_channel *chan = chandef->chan;
 	void *hdr;
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
@@ -20243,42 +20244,42 @@ void cfg80211_assoc_comeback(struct net_device *netdev,
 EXPORT_SYMBOL(cfg80211_assoc_comeback);
 
 void cfg80211_ready_on_channel(struct wireless_dev *wdev, u64 cookie,
-			       struct ieee80211_channel *chan,
+			       struct cfg80211_chan_def *chandef,
 			       unsigned int duration, gfp_t gfp)
 {
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 
-	trace_cfg80211_ready_on_channel(wdev, cookie, chan, duration);
+	trace_cfg80211_ready_on_channel(wdev, cookie, chandef, duration);
 	nl80211_send_remain_on_chan_event(NL80211_CMD_REMAIN_ON_CHANNEL,
-					  rdev, wdev, cookie, chan,
+					  rdev, wdev, cookie, chandef,
 					  duration, gfp);
 }
 EXPORT_SYMBOL(cfg80211_ready_on_channel);
 
 void cfg80211_remain_on_channel_expired(struct wireless_dev *wdev, u64 cookie,
-					struct ieee80211_channel *chan,
+					struct cfg80211_chan_def *chandef,
 					gfp_t gfp)
 {
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 
-	trace_cfg80211_ready_on_channel_expired(wdev, cookie, chan);
+	trace_cfg80211_ready_on_channel_expired(wdev, cookie, chandef);
 	nl80211_send_remain_on_chan_event(NL80211_CMD_CANCEL_REMAIN_ON_CHANNEL,
-					  rdev, wdev, cookie, chan, 0, gfp);
+					  rdev, wdev, cookie, chandef, 0, gfp);
 }
 EXPORT_SYMBOL(cfg80211_remain_on_channel_expired);
 
 void cfg80211_tx_mgmt_expired(struct wireless_dev *wdev, u64 cookie,
-					struct ieee80211_channel *chan,
-					gfp_t gfp)
+			      struct cfg80211_chan_def *chandef,
+			      gfp_t gfp)
 {
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 
-	trace_cfg80211_tx_mgmt_expired(wdev, cookie, chan);
+	trace_cfg80211_tx_mgmt_expired(wdev, cookie, chandef);
 	nl80211_send_remain_on_chan_event(NL80211_CMD_FRAME_WAIT_CANCEL,
-					  rdev, wdev, cookie, chan, 0, gfp);
+					  rdev, wdev, cookie, chandef, 0, gfp);
 }
 EXPORT_SYMBOL(cfg80211_tx_mgmt_expired);
 

@@ -3962,7 +3962,7 @@ struct cfg80211_update_ft_ies_params {
  *
  * This structure provides information needed to transmit a mgmt frame
  *
- * @chan: channel to use
+ * @chandef: channel definition
  * @offchan: indicates whether off channel operation is required
  * @wait: duration for ROC
  * @buf: buffer to transmit
@@ -3976,7 +3976,7 @@ struct cfg80211_update_ft_ies_params {
  *	link might not exist (or be used by the receiver STA)
  */
 struct cfg80211_mgmt_tx_params {
-	struct ieee80211_channel *chan;
+	struct cfg80211_chan_def chandef;
 	bool offchan;
 	unsigned int wait;
 	const u8 *buf;
@@ -5131,7 +5131,7 @@ struct cfg80211_ops {
 
 	int	(*remain_on_channel)(struct wiphy *wiphy,
 				     struct wireless_dev *wdev,
-				     struct ieee80211_channel *chan,
+				     struct cfg80211_chan_def *chandef,
 				     unsigned int duration,
 				     u64 *cookie);
 	int	(*cancel_remain_on_channel)(struct wiphy *wiphy,
@@ -8967,35 +8967,35 @@ void cfg80211_disconnected(struct net_device *dev, u16 reason,
  * cfg80211_ready_on_channel - notification of remain_on_channel start
  * @wdev: wireless device
  * @cookie: the request cookie
- * @chan: The current channel (from remain_on_channel request)
+ * @chandef: chandef for the current channel (from remain_on_channel request)
  * @duration: Duration in milliseconds that the driver intents to remain on the
  *	channel
  * @gfp: allocation flags
  */
 void cfg80211_ready_on_channel(struct wireless_dev *wdev, u64 cookie,
-			       struct ieee80211_channel *chan,
+			       struct cfg80211_chan_def *chandef,
 			       unsigned int duration, gfp_t gfp);
 
 /**
  * cfg80211_remain_on_channel_expired - remain_on_channel duration expired
  * @wdev: wireless device
  * @cookie: the request cookie
- * @chan: The current channel (from remain_on_channel request)
+ * @chandef: chandef for the current channel (from remain_on_channel request)
  * @gfp: allocation flags
  */
 void cfg80211_remain_on_channel_expired(struct wireless_dev *wdev, u64 cookie,
-					struct ieee80211_channel *chan,
+					struct cfg80211_chan_def *chandef,
 					gfp_t gfp);
 
 /**
  * cfg80211_tx_mgmt_expired - tx_mgmt duration expired
  * @wdev: wireless device
  * @cookie: the requested cookie
- * @chan: The current channel (from tx_mgmt request)
+ * @chandef: chandef for the current channel (from tx_mgmt request)
  * @gfp: allocation flags
  */
 void cfg80211_tx_mgmt_expired(struct wireless_dev *wdev, u64 cookie,
-			      struct ieee80211_channel *chan, gfp_t gfp);
+			      struct cfg80211_chan_def *chandef, gfp_t gfp);
 
 /**
  * cfg80211_sinfo_alloc_tid_stats - allocate per-tid statistics.

@@ -733,12 +733,12 @@ static inline int rdev_flush_pmksa(struct cfg80211_registered_device *rdev,
 static inline int
 rdev_remain_on_channel(struct cfg80211_registered_device *rdev,
 		       struct wireless_dev *wdev,
-		       struct ieee80211_channel *chan,
+		       struct cfg80211_chan_def *chandef,
 		       unsigned int duration, u64 *cookie)
 {
 	int ret;
-	trace_rdev_remain_on_channel(&rdev->wiphy, wdev, chan, duration);
-	ret = rdev->ops->remain_on_channel(&rdev->wiphy, wdev, chan,
+	trace_rdev_remain_on_channel(&rdev->wiphy, wdev, chandef, duration);
+	ret = rdev->ops->remain_on_channel(&rdev->wiphy, wdev, chandef,
 					   duration, cookie);
 	trace_rdev_return_int_cookie(&rdev->wiphy, ret, *cookie);
 	return ret;
