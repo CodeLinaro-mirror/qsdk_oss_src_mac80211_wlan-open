@@ -41,6 +41,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS = 261,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WIPHY = 262,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WDEV = 263,
+	QCA_NL80211_VENDOR_SUBCMD_AFC_CLEAR_PAYLOAD = 264,
 };
 
 enum qca_nl80211_vendor_events {
@@ -106,10 +107,14 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar);
 
 /* enum qca_nl_afc_resp_type: Defines the format in which user space
  * application will send over the AFC response to driver.
+ * @QCA_WLAN_VENDOR_ATTR_AFC_JSON_RESP: Payload in JSON format
+ * @QCA_WLAN_VENDOR_ATTR_AFC_BIN_RESP: Payload in binary format
+ * @QCA_WLAN_VENDOR_ATTR_AFC_INV_RESP: Invalid payload format
  */
 enum ath12k_nl_afc_resp_type {
 	QCA_WLAN_VENDOR_ATTR_AFC_JSON_RESP,
 	QCA_WLAN_VENDOR_ATTR_AFC_BIN_RESP,
+	QCA_WLAN_VENDOR_ATTR_AFC_INV_RESP,
 };
 
 enum qca_wlan_vendor_afc_response_attr {

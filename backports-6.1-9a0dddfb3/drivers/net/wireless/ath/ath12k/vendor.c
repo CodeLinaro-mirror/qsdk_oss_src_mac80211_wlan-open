@@ -559,7 +559,8 @@ static int ath12k_vendor_receive_afc_response(struct wiphy *wiphy,
 	ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
 		   "AFC response copied to AFC memory\n");
 
-	ret = ath12k_wmi_send_afc_resp_rx_ind(ar, afc_resp_format);
+	ret = ath12k_wmi_send_afc_cmd_tlv(ar, afc_resp_format,
+					  WMI_AFC_CMD_SERV_RESP_READY);
 	if (ret) {
 		ath12k_warn(ar->ab,
 			    "AFC Rx indication to FW failed: %d\n", ret);
@@ -3307,11 +3308,6 @@ fail:
 	return -EINVAL;
 }
 
-static const struct nla_policy
-ath12k_cfg80211_power_mode_set_policy[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX + 1] = {
-	[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE] = { .type = NLA_U8 },
-};
-
 static struct ath12k *ath12k_get_ar_from_wdev(struct wireless_dev *wdev, u8 link_id)
 {
 	struct ieee80211_vif *vif =  NULL;
@@ -3336,6 +3332,53 @@ static struct ath12k *ath12k_get_ar_from_wdev(struct wireless_dev *wdev, u8 link
 
 	return ar;
 }
+
+static const struct nla_policy
+ath12k_afc_clear_payload_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = {.type = NLA_U8 },
+};
+
+static int ath12k_vendor_clear_afc_payload(struct wiphy *wiphy,
+					   struct wireless_dev *wdev,
+					   const void *data,
+					   int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+	struct ath12k *ar;
+	u8 link_id = 0;
+	int err;
+
+	if (!wdev)
+		return -EINVAL;
+
+	if (!data || !data_len) {
+		ath12k_err(NULL, "Invalid data length data ptr: %pK ", data);
+		return -EINVAL;
+	}
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data,
+		      data_len, ath12k_afc_clear_payload_policy, NULL)) {
+		ath12k_err(NULL,
+			   "QCA_WLAN_VENDOR_ATTR_CONFIG_MAX parsing failed");
+		return -EINVAL;
+	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID])
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID]);
+
+	ar = ath12k_get_ar_from_wdev(wdev, link_id);
+	if (!ar)
+		return -ENODATA;
+
+	err = ath12k_wmi_send_afc_cmd_tlv(ar, QCA_WLAN_VENDOR_ATTR_AFC_INV_RESP,
+					  WMI_AFC_CMD_CLEAR_AFC_PAYLOAD);
+
+	return err;
+}
+
+static const struct nla_policy
+ath12k_cfg80211_power_mode_set_policy[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE] = { .type = NLA_U8 },
+};
 
 static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
 						struct wireless_dev *wdev,
@@ -4587,6 +4630,15 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_wlan_telemetry_req_policy,
 		.maxattr = QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_AFC_CLEAR_PAYLOAD,
+		.doit = ath12k_vendor_clear_afc_payload,
+		.policy = ath12k_afc_clear_payload_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
+			 WIPHY_VENDOR_CMD_NEED_RUNNING,
 	},
 };
 

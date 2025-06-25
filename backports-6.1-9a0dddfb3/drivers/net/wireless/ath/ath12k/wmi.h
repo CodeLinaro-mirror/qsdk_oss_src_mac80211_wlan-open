@@ -221,6 +221,18 @@ struct wmi_vdev_set_tpc_power_cmd {
 #define WMI_AFC_WFA_MINOR_VERSION_GET          GENMASK(15, 0)
 #define WMI_AFC_WFA_MAJOR_VERSION_GET	       GENMASK(31, 16)
 
+/* AFC cmd types
+ * @WMI_AFC_CMD_SERV_RESP_READY: Indication to firmware that AFC response has
+ *	been copied to the shared location.
+ * @WMI_AFC_CMD_RESET_AFC: Reset AFC timer
+ * @WMI_AFC_CMD_CLEAR_AFC_PAYLOAD: Clear AFC payload
+ */
+enum wmi_afc_cmd_type {
+	WMI_AFC_CMD_SERV_RESP_READY = 1,
+	WMI_AFC_CMD_RESET_AFC = 2,
+	WMI_AFC_CMD_CLEAR_AFC_PAYLOAD = 3,
+};
+
 /* HW mode config type replicated from FW header
  * @WMI_HOST_HW_MODE_SINGLE: Only one PHY is active.
  * @WMI_HOST_HW_MODE_DBS: Both PHYs are active in different bands,
@@ -9116,7 +9128,15 @@ bool ath12k_wmi_is_umac_migration_supported(struct ath12k_base *ab);
 int ath12k_wmi_mlo_send_ptqm_migrate_cmd(struct ath12k_link_vif *arvif,
 				         struct list_head *peer_migr_list,
 				         u16 num_peers);
-int ath12k_wmi_send_afc_resp_rx_ind(struct ath12k *ar, int data_type);
+/**
+ * ath12k_wmi_send_afc_cmd_tlv - Utility API to send AFC commands to firmware
+ * @ar: pointer to ath12k radio
+ * @data_type: AFC response data type. Can be binary or JSON type
+ * @afc_cmd: AFC command type. See %enum wmi_afc_cmd_type for definition
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_wmi_send_afc_cmd_tlv(struct ath12k *ar, int data_type,
+				enum wmi_afc_cmd_type afc_cmd);
 int ath12k_wmi_peer_set_cfr_capture_conf(struct ath12k *ar,
 					 u32 vdev_id, const u8 *mac,
 					 struct wmi_peer_cfr_capture_conf_arg *arg);
