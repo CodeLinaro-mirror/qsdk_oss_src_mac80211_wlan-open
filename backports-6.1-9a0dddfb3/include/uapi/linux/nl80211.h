@@ -4616,6 +4616,9 @@ enum nl80211_wmm_rule {
  *	very low power (VLP) AP, despite being NO_IR.
  * @NL80211_FREQUENCY_ATTR_ALLOW_20MHZ_ACTIVITY: This channel can be acitve in
  *	20 MHz bandwidth, despite being NO_IR.
+ * @NL80211_FREQUENCY_ATTR_6GHZ_SUPP_PWR_MODES: 6 Ghz power modes supported by
+ *	this channel
+ * @NL80211_FREQUENCY_ATTR_6GHZ_TXPOWERS: Tx powers in each supported power mode
  * @NL80211_FREQUENCY_ATTR_MAX: highest frequency attribute number
  *	currently defined
  * @__NL80211_FREQUENCY_ATTR_AFTER_LAST: internal use
@@ -4661,6 +4664,8 @@ enum nl80211_frequency_attr {
 	NL80211_FREQUENCY_ATTR_CAN_MONITOR,
 	NL80211_FREQUENCY_ATTR_ALLOW_6GHZ_VLP_AP,
 	NL80211_FREQUENCY_ATTR_ALLOW_20MHZ_ACTIVITY,
+	NL80211_FREQUENCY_ATTR_6GHZ_SUPP_PWR_MODES,
+	NL80211_FREQUENCY_ATTR_6GHZ_TXPOWERS,
 
 	/* keep last */
 	__NL80211_FREQUENCY_ATTR_AFTER_LAST,
@@ -8927,6 +8932,27 @@ enum nl80211_qm_attrs {
 	/* keep last */
 	__NL80211_QM_ATTR_LAST,
 	NL80211_QM_ATTR_MAX = __NL80211_QM_ATTR_LAST - 1
+};
+
+/**
+ * enum nl80211_6g_txpower_attr - Tx powers in each power mode
+ * @__NL80211_6GHZ_TXPOWER_ATTR_INVALID: attribute number 0 is reserved
+ * @NL80211_6GHZ_TXPOWER_ATTR_LPI: Tx power in LPI power mode
+ * @NL80211_6GHZ_TXPOWER_ATTR_SP: Tx power in SP power mode
+ * @NL80211_6GHZ_TXPOWER_ATTR_VLP: Tx power in VLP power mode
+ * @NL80211_6GHZ_TXPOWER_ATTR_MAX: Maximum power mode attribute number
+ *     currently defined
+ */
+enum nl80211_6ghz_txpower_attr {
+	__NL80211_6GHZ_TXPOWER_ATTR_INVALID,
+	NL80211_6GHZ_TXPOWER_ATTR_LPI,
+	NL80211_6GHZ_TXPOWER_ATTR_SP,
+	NL80211_6GHZ_TXPOWER_ATTR_VLP,
+
+	/* keep last */
+	__NL80211_6GHZ_TXPOWER_ATTR_AFTER_LAST,
+	NL80211_6GHZ_TXPOWER_ATTR_MAX =
+		__NL80211_6GHZ_TXPOWER_ATTR_AFTER_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */

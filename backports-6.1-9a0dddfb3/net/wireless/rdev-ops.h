@@ -1646,4 +1646,18 @@ rdev_set_qos_mgmt_cfg(struct cfg80211_registered_device *rdev,
 	return ret;
 }
 
+static inline int
+rdev_get_afc_eirp_pwr(struct cfg80211_registered_device *rdev,
+		      u32 freq, u32 *eirp_pwr)
+{
+	int ret;
+
+	if (!rdev->ops->get_afc_eirp_pwr)
+		return -EOPNOTSUPP;
+
+	trace_rdev_get_afc_eirp_pwr(&rdev->wiphy, freq);
+	ret = rdev->ops->get_afc_eirp_pwr(&rdev->wiphy, freq, eirp_pwr);
+	trace_rdev_return_int(&rdev->wiphy, ret);
+	return ret;
+}
 #endif /* __CFG80211_RDEV_OPS */

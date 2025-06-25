@@ -4339,6 +4339,24 @@ TRACE_EVENT(rdev_erp,
 		  WIPHY_PR_ARG, WDEV_PR_ARG,
 		  __entry->cmd, __entry->link_id, __entry->trigger)
 );
+
+TRACE_EVENT(rdev_get_afc_eirp_pwr,
+	TP_PROTO(struct wiphy *wiphy, int freq),
+
+	TP_ARGS(wiphy, freq),
+
+	TP_STRUCT__entry(
+		WIPHY_ENTRY
+		__field(u32, freq)
+	),
+
+	TP_fast_assign(
+		WIPHY_ASSIGN;
+		__entry->freq = freq;
+	),
+
+	TP_printk(WIPHY_PR_FMT, WIPHY_PR_ARG)
+);
 #endif /* !__RDEV_OPS_TRACE || TRACE_HEADER_MULTI_READ */
 
 #undef TRACE_INCLUDE_PATH

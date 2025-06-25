@@ -179,6 +179,20 @@ void regulatory_propagate_dfs_state(struct wiphy *wiphy,
 bool reg_dfs_domain_same(struct wiphy *wiphy1, struct wiphy *wiphy2);
 
 /**
+ * freq_reg_info_regd - Returns the reg rule which matches the given power mode
+ *	and a channel with the given cener_freq with bw fits in.
+ * @center_freq - Input center frequency
+ * @regd - The driver's regulatory domain
+ * @bw - Input bandwidth
+ * @mode - Input power mode
+ */
+const struct ieee80211_reg_rule
+*freq_reg_info_regd(u32 center_freq,
+		    const struct ieee80211_regdomain *regd,
+		    u32 bw,
+		    enum nl80211_regulatory_power_modes mode);
+
+/**
  * reg_reload_regdb - reload the regulatory.db firmware file
  * Return: 0 for success, an error code otherwise
  */

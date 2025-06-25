@@ -1334,6 +1334,66 @@ nla_put_failure:
 	return -ENOBUFS;
 }
 
+static int
+nl80211_msg_put_6ghz_power_attributes(struct sk_buff *msg,
+				      struct wiphy *wiphy,
+				      struct ieee80211_channel *chan)
+{
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	const struct ieee80211_regdomain *regd;
+	struct nlattr *nl_tx_pwrs;
+	u8 supp_pwr_modes = 0;
+	u32 center_freq_khz;
+	int i;
+
+	regd = get_wiphy_regdom(wiphy);
+	nl_tx_pwrs = nla_nest_start_noflag(msg,
+					   NL80211_FREQUENCY_ATTR_6GHZ_TXPOWERS);
+	if (!nl_tx_pwrs)
+		goto nla_put_failure;
+
+	center_freq_khz = ieee80211_channel_to_khz(chan);
+	for (i = NL80211_REG_AP_LPI; i <= NL80211_REG_AP_VLP; i++) {
+		const struct ieee80211_power_rule *power_rule;
+		const struct ieee80211_reg_rule *reg_rule;
+		struct nlattr *nl_txpwr;
+		u32 eirp_pwr;
+
+		nl_txpwr = nla_nest_start(msg, i + 1);
+		if (!nl_txpwr) {
+			nla_nest_end(msg, nl_tx_pwrs);
+			goto nla_put_failure;
+		}
+
+		reg_rule = freq_reg_info_regd(center_freq_khz, regd,
+					      MHZ_TO_KHZ(20), i);
+		if (IS_ERR(reg_rule))
+			continue;
+
+		supp_pwr_modes |= BIT(i);
+		power_rule = &reg_rule->power_rule;
+		if (i == NL80211_REG_AP_SP) {
+			rdev_get_afc_eirp_pwr(rdev, chan->center_freq, &eirp_pwr);
+			eirp_pwr = min(eirp_pwr, MBM_TO_DBM(power_rule->max_eirp));
+		} else {
+			eirp_pwr = MBM_TO_DBM(power_rule->max_eirp);
+		}
+		if (nla_put_u32(msg, i + 1, eirp_pwr))
+			goto nla_put_failure;
+		nla_nest_end(msg, nl_txpwr);
+	}
+	nla_nest_end(msg, nl_tx_pwrs);
+
+	if (nla_put_u8(msg, NL80211_FREQUENCY_ATTR_6GHZ_SUPP_PWR_MODES,
+		       supp_pwr_modes))
+		goto nla_put_failure;
+
+	return 0;
+
+nla_put_failure:
+	return -ENOBUFS;
+}
+
 static int nl80211_msg_put_channel(struct sk_buff *msg, struct wiphy *wiphy,
 				   struct ieee80211_channel *chan,
 				   bool large)
@@ -3157,6 +3217,13 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 							msg, &rdev->wiphy, chan,
 							state->split))
 						goto nla_put_failure;
+
+					if (chan->band == NL80211_BAND_6GHZ) {
+						if (nl80211_msg_put_6ghz_power_attributes(msg,
+											  &rdev->wiphy,
+											  chan))
+							goto nla_put_failure;
+					}
 
 					nla_nest_end(msg, nl_freq);
 					if (state->split)

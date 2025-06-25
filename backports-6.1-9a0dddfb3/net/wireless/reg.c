@@ -1617,7 +1617,7 @@ static u32 map_regdom_flags(u32 rd_flags)
 	return channel_flags;
 }
 
-static const struct ieee80211_reg_rule *
+const struct ieee80211_reg_rule *
 freq_reg_info_regd(u32 center_freq,
 		   const struct ieee80211_regdomain *regd, u32 bw,
 		   enum nl80211_regulatory_power_modes mode)

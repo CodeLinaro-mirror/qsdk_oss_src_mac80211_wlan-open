@@ -5417,6 +5417,9 @@ struct cfg80211_qm_resp_data {
  *	traffic classification (TCLAS) and QoS attributes of a station.
  *	The driver should parse the request, apply the configuration, and
  *	populate the response structure with status for each descriptor.
+ *
+ * @get_afc_eirp_pwr: Get the EIRP power received in the AFC payload for the
+ *	given freq
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -5801,6 +5804,8 @@ struct cfg80211_ops {
 	int	(*set_qos_mgmt_cfg)(struct wiphy *wiphy, struct net_device *dev,
 				    struct cfg80211_qm_req_data *qm_req,
 				    struct cfg80211_qm_resp_data *qm_resp);
+	int	(*get_afc_eirp_pwr)(struct wiphy *wiphy,
+				    u32 freq, u32 *eirp);
 };
 
 /*
