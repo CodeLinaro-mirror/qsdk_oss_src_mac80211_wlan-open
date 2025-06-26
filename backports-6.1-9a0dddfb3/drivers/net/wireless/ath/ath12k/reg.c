@@ -563,8 +563,19 @@ static u32 ath12k_map_fw_phy_flags(u32 phy_flags)
 	return flags;
 }
 
+/**
+ * ath12k_reg_intersect_sp_rules() - Intersect two rules and create a new rule
+ * @ar: Pointer to ath12k
+ * @rule1: Pointer to rule1. This is supposed to be SP regulatory rule
+ * @rule2: Pointer to rule2. This is supposed to be SP rule from AFC
+ * @new_rule: Pointer to new SP rule in the new regd structure.
+ *
+ * This function intersects the regulatory SP rules and AFC SP rules into
+ * the new regd structure.
+ * Return: None
+ **/
 static void ath12k_reg_intersect_sp_rules(struct ath12k *ar,
-					  struct ieee80211_reg_rule *rule1,
+					  const struct ieee80211_reg_rule *rule1,
 					  struct ieee80211_reg_rule *rule2,
 					  struct ieee80211_reg_rule *new_rule)
 {
@@ -587,20 +598,24 @@ static void ath12k_reg_intersect_sp_rules(struct ath12k *ar,
 		new_rule->freq_range.start_freq_khz;
 	new_rule->freq_range.max_bandwidth_khz =
 		min_t(u32, freq_diff, rule1->freq_range.max_bandwidth_khz);
-	new_rule->power_rule.max_eirp = rule1->power_rule.max_eirp;
-	/* Use the flags of both the rules */
-	new_rule->flags = rule1->flags | rule2->flags;
 
-	if ((rule1->flags & NL80211_RRF_PSD) && (rule2->flags & NL80211_RRF_PSD))
-		new_rule->psd = min_t(s8, rule1->psd, rule2->psd);
-	else
-		new_rule->flags &= ~NL80211_RRF_PSD;
+	new_rule->power_rule.max_eirp = rule1->power_rule.max_eirp;
+	new_rule->power_rule.max_antenna_gain = rule1->power_rule.max_antenna_gain;
 
 	new_rule->mode = NL80211_REG_AP_SP;
 
-	/* To be safe, lets use the max cac timeout of both rules */
-	new_rule->dfs_cac_ms = max_t(u32, rule1->dfs_cac_ms,
-				     rule2->dfs_cac_ms);
+	new_rule->flags = rule1->flags;
+
+	if (rule1->flags & NL80211_RRF_PSD)
+		new_rule->psd = rule1->psd;
+
+	if (rule2->flags & NL80211_RRF_NO_IR)
+		new_rule->flags |= NL80211_RRF_NO_IR;
+	else
+		new_rule->flags &= ~NL80211_RRF_NO_IR;
+
+	new_rule->dfs_cac_ms = rule1->dfs_cac_ms;
+
 	ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
 		   "Adding sp rule start freq %u end freq %u mac bw %u max eirp %d psd %d flags 0x%x\n",
 		   new_rule->freq_range.start_freq_khz,
@@ -618,8 +633,8 @@ static void ath12k_reg_intersect_sp_rules(struct ath12k *ar,
  * Return: Return true if 2 rules can be intersected else false
  **/
 static bool
-ath12k_reg_can_intersect(struct ieee80211_reg_rule *rule1,
-			 struct ieee80211_reg_rule *rule2)
+ath12k_reg_can_intersect(const struct ieee80211_reg_rule *rule1,
+			 const struct ieee80211_reg_rule *rule2)
 {
 	u32 start_freq1, end_freq1;
 	u32 start_freq2, end_freq2;
@@ -960,18 +975,16 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 	}
 	ath12k_dbg(ab, ATH12K_DBG_AFC, "Number of sp rules from target %d\n",
 		   num_6ghz_sp_rules);
-	num_rules += (reg_6g_number - num_6ghz_sp_rules);
+	num_rules += reg_6g_number;
 
 	if (!num_rules)
 		goto ret;
 
-
-	/* 6 GHz standard power rules should not be updated to cfg
-	 * until we get afc data with valid rules. Hence save the sp
-	 * rule in ab and use this to intersect with afc rules when we get
-	 * afc power update
+	/* 6 GHz standard power rules will be updated to cfg with NO_IR flag
+	 * until we get afc data with valid rules. Save the sp
+	 * rule in ab and use this to intersect with afc rules each time we get
+	 * afc power info.
 	 */
-
 	sp_rule = kzalloc(sizeof(*sp_rule) +
 			  (num_6ghz_sp_rules * sizeof(struct ieee80211_reg_rule)),
 			  GFP_ATOMIC);
@@ -1001,7 +1014,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 	/* Update reg_rules[] below. Firmware is expected to
 	 * send these rules in order(2G rules first and then 5G)
 	 */
-	for (i = 0, j = 0, idx = 0; i < num_rules + num_6ghz_sp_rules ; i++) {
+	for (i = 0, j = 0, idx = 0; i < num_rules ; i++) {
 		if (reg_info->num_2g_reg_rules &&
 		    (i < reg_info->num_2g_reg_rules)) {
 			reg_rule = reg_info->reg_rules_2g_ptr + i;
@@ -1073,6 +1086,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 		flags |= ath12k_map_fw_phy_flags(reg_info->phybitmap);
 
 		if (pwr_mode == NL80211_REG_AP_SP) {
+			flags |= NL80211_RRF_NO_IR;
 			ath12k_reg_update_rule(sp_rule->sp_reg_rule + sp_idx,
 					       reg_rule->start_freq,
 					       reg_rule->end_freq, max_bw,
@@ -1082,13 +1096,13 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 				   "Target sp rule freq low: %d high: %d bw: %d psd: %d flag: 0x%x\n",
 				   reg_rule->start_freq, reg_rule->end_freq,
 				   max_bw, reg_rule->psd_eirp, flags);
-		} else {
-			ath12k_reg_update_rule(new_regd->reg_rules + idx,
-					       reg_rule->start_freq,
-					       reg_rule->end_freq, max_bw,
-					       reg_rule->ant_gain, reg_rule->reg_power,
-					       reg_rule->psd_eirp, flags, pwr_mode);
 		}
+
+		ath12k_reg_update_rule(new_regd->reg_rules + idx,
+				       reg_rule->start_freq,
+				       reg_rule->end_freq, max_bw,
+				       reg_rule->ant_gain, reg_rule->reg_power,
+				       reg_rule->psd_eirp, flags, pwr_mode);
 
 		/* Update dfs cac timeout if the dfs domain is ETSI and the
 		 * new rule covers weather radar band.
@@ -1133,8 +1147,8 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 		}
 		if (pwr_mode == NL80211_REG_AP_SP)
 			sp_idx++;
-		else
-			idx++;
+
+		idx++;
 	}
 
 	kfree(ab->sp_rule);
@@ -2724,7 +2738,7 @@ void ath12k_reg_fill_subchan_centers(u8 nchans, u8 cfi, u8 *subchannels)
 	}
 }
 
-u8 ath12k_reg_get_opclass_from_bw(enum nl80211_chan_width bw)
+u8 ath12k_reg_get_opclass_from_bw(u16 bw)
 {
 	u8 i, n_opclass = ARRAY_SIZE(ath12k_opclass_bw_map);
 
@@ -2861,5 +2875,17 @@ void ath12k_reg_free(struct ath12k_base *ab)
 		ab->default_regd[i] = NULL;
 		ab->new_regd[i] = NULL;
 		ab->regd_freed = true;
+	}
+
+	for (i = 0; i < ab->num_radios; i++) {
+		struct ath12k *ar = ab->pdevs[i].ar;
+
+		if (ar && ar->supports_6ghz) {
+			ath12k_dbg(ab, ATH12K_DBG_REG,
+				   "Freeing AFC info for radio %d\n", i);
+			spin_lock_bh(&ar->data_lock);
+			ath12k_free_afc_power_event_info(&ar->afc);
+			spin_unlock_bh(&ar->data_lock);
+		}
 	}
 }

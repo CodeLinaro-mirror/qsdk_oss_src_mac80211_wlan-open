@@ -8736,6 +8736,14 @@ static int ath12k_reg_handle_chan_list(struct ath12k_base *ab,
 		goto fallback;
 	}
 
+	if (ar && ar->supports_6ghz) {
+		ath12k_dbg(ab, ATH12K_DBG_REG,
+			   "Freeing AFC info for pdev %d\n", pdev_idx);
+		spin_lock_bh(&ar->data_lock);
+		ath12k_free_afc_power_event_info(&ar->afc);
+		spin_unlock_bh(&ar->data_lock);
+	}
+
 	spin_lock(&ab->base_lock);
 	if (test_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags)) {
 		/* Once mac is registered, ar is valid and all CC events from

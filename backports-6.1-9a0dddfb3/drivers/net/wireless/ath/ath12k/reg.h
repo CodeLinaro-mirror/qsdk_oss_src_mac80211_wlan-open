@@ -109,7 +109,7 @@ static const struct ath12k_bw_10log10_pair ath12k_bw_to_10log10_map[] = {
 
 struct ath12k_opclass_bw_pair {
 	u8 opclass;
-	enum nl80211_chan_width bw;
+	u16 bw;
 };
 
 static const struct ath12k_opclass_bw_pair ath12k_opclass_bw_map[] = {
@@ -118,6 +118,7 @@ static const struct ath12k_opclass_bw_pair ath12k_opclass_bw_map[] = {
 	{133, ATH12K_CHWIDTH_80},
 	{134, ATH12K_CHWIDTH_160},
 	{137, ATH12K_CHWIDTH_320},
+	/* TODO: Enhance to include 2.4 GHz and 5 GHz opclasses */
 };
 
 struct ath12k_opclass_nchans_pair {
@@ -614,7 +615,16 @@ int ath12k_process_expiry_event(struct ath12k *ar);
 int ath12k_copy_afc_response(struct ath12k *ar, char *afc_resp, u32 len);
 u8 ath12k_reg_get_nsubchannels_for_opclass(u8 opclass);
 void ath12k_reg_fill_subchan_centers(u8 nchans, u8 cfi, u8 *subchannels);
-u8 ath12k_reg_get_opclass_from_bw(enum nl80211_chan_width bw);
+
+/**
+ * ath12k_reg_get_opclass_from_bw() - Get operating class from bandwidth
+ * @bw: Bandwidth in MHz
+ *
+ * This API returns the operating class corresponding to the given bandwidth.
+ *
+ * Return: Operating class on success, 0 on failure
+ */
+u8 ath12k_reg_get_opclass_from_bw(u16 bw);
 s16 ath12k_reg_psd_2_eirp(s16 psd, uint16_t ch_bw);
 void ath12k_reg_get_regulatory_pwrs(struct ath12k *ar, u32 freq,
 				    u8 reg_6g_power_mode, s8 *max_reg_eirp,
