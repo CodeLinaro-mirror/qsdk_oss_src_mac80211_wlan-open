@@ -788,6 +788,12 @@ enum wmi_tlv_cmd_id {
 	WMI_TWT_DEL_DIALOG_CMDID,
 	WMI_TWT_PAUSE_DIALOG_CMDID,
 	WMI_TWT_RESUME_DIALOG_CMDID,
+	WMI_TWT_BTWT_INVITE_STA_CMDID,
+	WMI_TWT_BTWT_REMOVE_STA_CMDID,
+	WMI_TWT_NUDGE_DIALOG_CMDID,
+	WMI_VDEV_SET_TWT_EDCA_PARAMS_CMDID,
+	WMI_VDEV_GET_TWT_SESSION_STATS_INFO_CMDID,
+	WMI_TWT_VDEV_CONFIG_CMDID,
 	WMI_PDEV_OBSS_PD_SPATIAL_REUSE_CMDID =
 				WMI_TLV_CMD(WMI_GRP_SPATIAL_REUSE),
 	/** WMI commands specific to Tid level Latency config **/
@@ -2231,6 +2237,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_TID_TO_LINK_MAPPING_EVENT_FIXED_PARAM,
 	WMI_TAG_MLO_TID_TO_LINK_MAPPING_IE_INFO,
 	WMI_TAG_MLO_PEER_LINK_CONTROL_PARAM = 0x48F,
+	WMI_TAG_TWT_VDEV_CONFIG_CMD = 0x4DE,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_MAX
 };
@@ -6023,6 +6030,14 @@ struct wmi_wmm_params_all_arg {
 #define ATH12K_TWT_DEF_ADD_STA_SLOT_INTERVAL		1000
 #define ATH12K_TWT_DEF_REMOVE_STA_SLOT_INTERVAL		5000
 
+#define ATH12K_WMI_TWT_ENABLE_FLAG_BTWT         BIT(0)
+#define ATH12K_WMI_TWT_ENABLE_FLAG_LEGACY_BSSID BIT(1)
+#define ATH12K_WMI_TWT_ENABLE_FLAG_11AX_BSSID   BIT(2)
+#define ATH12K_WMI_TWT_ENABLE_FLAG_SPLIT_CONFIG BIT(3)
+#define ATH12K_WMI_TWT_ENABLE_FLAG_RESPONDER    BIT(4)
+#define ATH12K_WMI_TWT_ENABLE_FLAG_ITWT_BTWT    BIT(5)
+#define ATH12K_WMI_TWT_ENABLE_FLAG_BTWT_RTWT    BIT(6)
+
 struct wmi_twt_enable_params_cmd {
 	__le32 tlv_header;
 	__le32 pdev_id;
@@ -6042,6 +6057,7 @@ struct wmi_twt_enable_params_cmd {
 	__le32 mode_check_interval;
 	__le32 add_sta_slot_interval;
 	__le32 remove_sta_slot_interval;
+	__le32 flags;
 } __packed;
 
 struct wmi_twt_disable_params_cmd {
@@ -6531,6 +6547,17 @@ struct wmi_ctrl_path_afc_stats {
 struct wmi_ctrl_path_stats_ev_parse_param {
 	struct list_head list;
 	struct ath12k *ar;
+} __packed;
+
+#define WMI_TWT_VDEV_CFG_TWT_RESP_DISABLE 0
+#define WMI_TWT_VDEV_CFG_TWT_RESP_ITWT 1
+#define WMI_TWT_VDEV_CFG_TWT_RESP_ITWT_BTWT 2
+#define WMI_TWT_VDEV_CFG_TWT_RESP_ITWT_BTWT_RTWT 3
+struct wmi_twt_vdev_config_cmd {
+	__le32 tlv_header;
+	__le32 pdev_id;
+	__le32 vdev_id;
+	__le32 twt_support;
 } __packed;
 
 struct wmi_obss_spatial_reuse_params_cmd {
@@ -8771,6 +8798,7 @@ int ath12k_wmi_send_twt_pause_dialog_cmd(struct ath12k *ar,
 					 struct wmi_twt_pause_dialog_params *params);
 int ath12k_wmi_send_twt_resume_dialog_cmd(struct ath12k *ar,
 					  struct wmi_twt_resume_dialog_params *params);
+int ath12k_wmi_send_twt_vdev_cfg_cmd(struct ath12k *ar, u32 vdev_id, u32 val);
 int ath12k_wmi_send_obss_spr_cmd(struct ath12k *ar, u32 vdev_id,
 				 struct ieee80211_he_obss_pd *he_obss_pd);
 int ath12k_wmi_pdev_set_srg_bss_color_bitmap(struct ath12k *ar, u32 *bitmap);

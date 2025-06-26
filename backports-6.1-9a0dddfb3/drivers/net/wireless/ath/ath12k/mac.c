@@ -6876,9 +6876,19 @@ skip_pending_cs_up:
 		ath12k_recalculate_mgmt_rate(ar, arvif, &def);
 
 	if (changed & BSS_CHANGED_TWT) {
-		if (info->twt_requester || info->twt_responder)
+		if (info->twt_requester || info->twt_responder) {
 			ath12k_wmi_send_twt_enable_cmd(ar, ar->pdev->pdev_id);
-		else
+			if (info->twt_responder) {
+				u32 twt_support = info->twt_restricted ?
+					WMI_TWT_VDEV_CFG_TWT_RESP_ITWT_BTWT_RTWT :
+					info->twt_broadcast ?
+					WMI_TWT_VDEV_CFG_TWT_RESP_ITWT_BTWT :
+					WMI_TWT_VDEV_CFG_TWT_RESP_ITWT;
+				ath12k_wmi_send_twt_vdev_cfg_cmd(ar,
+								 arvif->vdev_id,
+								 twt_support);
+			}
+		} else
 			ath12k_wmi_send_twt_disable_cmd(ar, ar->pdev->pdev_id);
 	}
 

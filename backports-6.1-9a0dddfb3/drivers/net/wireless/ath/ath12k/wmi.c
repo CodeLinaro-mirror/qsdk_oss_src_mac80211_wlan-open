@@ -4771,6 +4771,16 @@ ath12k_wmi_send_twt_enable_cmd(struct ath12k *ar, u32 pdev_id)
 	/* TODO add MBSSID support */
 	cmd->mbss_support = 0;
 
+	cmd->flags = cpu_to_le32(ATH12K_WMI_TWT_ENABLE_FLAG_BTWT |
+				 ATH12K_WMI_TWT_ENABLE_FLAG_LEGACY_BSSID |
+				 ATH12K_WMI_TWT_ENABLE_FLAG_SPLIT_CONFIG |
+				 ATH12K_WMI_TWT_ENABLE_FLAG_RESPONDER |
+				 ATH12K_WMI_TWT_ENABLE_FLAG_ITWT_BTWT |
+				 ATH12K_WMI_TWT_ENABLE_FLAG_BTWT_RTWT);
+
+	if (cmd->mbss_support)
+		cmd->flags |= cpu_to_le32(ATH12K_WMI_TWT_ENABLE_FLAG_11AX_BSSID);
+
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_ENABLE_CMDID);
 	if (ret) {
 		ath12k_warn(ab, "Failed to send WMI_TWT_ENABLE_CMDID");
@@ -4800,6 +4810,11 @@ ath12k_wmi_send_twt_disable_cmd(struct ath12k *ar, u32 pdev_id)
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TWT_DISABLE_CMD,
 						 len);
 	cmd->pdev_id = cpu_to_le32(pdev_id);
+	cmd->flags = cpu_to_le32(ATH12K_WMI_TWT_ENABLE_FLAG_SPLIT_CONFIG |
+				 ATH12K_WMI_TWT_ENABLE_FLAG_RESPONDER |
+				 ATH12K_WMI_TWT_ENABLE_FLAG_ITWT_BTWT |
+				 ATH12K_WMI_TWT_ENABLE_FLAG_BTWT_RTWT);
+	cmd->reason_code = 0;
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_DISABLE_CMDID);
 	if (ret) {
@@ -4976,9 +4991,44 @@ int ath12k_wmi_send_twt_resume_dialog_cmd(struct ath12k *ar,
 			    "failed to send wmi command to resume twt dialog: %d",
 			    ret);
 		dev_kfree_skb(skb);
- 	}
- 	return ret;
- }
+	}
+	return ret;
+}
+
+int
+ath12k_wmi_send_twt_vdev_cfg_cmd(struct ath12k *ar, u32 vdev_id,
+				 u32 val)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_base *ab = wmi->wmi_ab->ab;
+	struct wmi_twt_vdev_config_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	len = sizeof(*cmd);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_twt_vdev_config_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TWT_VDEV_CONFIG_CMD,
+						 len);
+
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->twt_support = cpu_to_le32(val);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "send twt vdev config %d %d %x\n",
+		   cmd->pdev_id, cmd->vdev_id, cmd->twt_support);
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_TWT_VDEV_CONFIG_CMDID);
+	if (ret) {
+		ath12k_warn(ab, "Failed to send WMI_TWT_VDEV_CONFIG_CMDID");
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
 
 int
 ath12k_wmi_send_obss_spr_cmd(struct ath12k *ar, u32 vdev_id,
