@@ -455,6 +455,7 @@ static const struct ce_ie_addr ath12k_wifi7_ce_ie_addr_ipq5332 = {
 static const struct ce_remap ath12k_wifi7_ce_remap_ipq5332 = {
 	.base = HAL_IPQ5332_CE_WFSS_REG_BASE,
 	.size = HAL_IPQ5332_CE_SIZE,
+	.cmem_offset = HAL_SEQ_WCSS_CMEM_OFFSET,
 };
 
 static const struct ce_ie_addr ath12k_wifi7_ce_ie_addr_ipq5424 = {
@@ -466,6 +467,7 @@ static const struct ce_ie_addr ath12k_wifi7_ce_ie_addr_ipq5424 = {
 static const struct ce_remap ath12k_wifi7_ce_remap_ipq5424 = {
 	.base = HAL_IPQ5424_CE_WFSS_REG_BASE,
 	.size = HAL_IPQ5424_CE_SIZE,
+	.cmem_offset = HAL_SEQ_WCSS_CMEM_OFFSET,
 };
 
 static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {

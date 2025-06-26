@@ -1363,6 +1363,7 @@ struct ath12k_base {
 
 	void __iomem *mem_ce;
 	u32 ce_remap_base_addr;
+	u32 cmem_offset;
 	bool ce_remap;
 	bool htt_flag;
 	bool stats_disable;
