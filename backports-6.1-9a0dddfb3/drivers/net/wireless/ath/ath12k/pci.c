@@ -18,7 +18,6 @@
 #include "debugfs.h"
 #include "fw.h"
 #include "pcic.h"
-#include "wifi7/hal.h"
 
 #define ATH12K_PCI_BAR_NUM		0
 #define ATH12K_PCI_DMA_MASK		32
@@ -62,10 +61,12 @@ static void ath12k_pci_select_window(struct ath12k_pci *ab_pci, u32 offset)
 static void ath12k_pci_select_static_window(struct ath12k_base *ab)
 {
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
-	u32 umac_window = u32_get_bits(HAL_SEQ_WCSS_UMAC_OFFSET, WINDOW_VALUE_MASK);
-	u32 ce_window = u32_get_bits(HAL_CE_WFSS_CE_REG_BASE, WINDOW_VALUE_MASK);
+	u32 umac_window;
+	u32 ce_window;
 	u32 window;
 
+	umac_window = u32_get_bits(ab_pci->reg_base->umac_base, WINDOW_VALUE_MASK);
+	ce_window = u32_get_bits(ab_pci->reg_base->ce_reg_base, WINDOW_VALUE_MASK);
 	window = (umac_window << 12) | (ce_window << 6);
 
 	spin_lock_bh(&ab_pci->window_lock);
@@ -1189,6 +1190,7 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	ath12k_dbg(ab, ATH12K_DBG_PCI, "PCI device family id: %d\n", device_id);
 
 	ab_pci->device_ops = &ath12k_pci_family_drivers[device_id]->ops;
+	ab_pci->reg_base = ath12k_pci_family_drivers[device_id]->reg_base;
 
 	/* Call device specific probe. This is the callback that can
 	 * be used to override any ops in future
