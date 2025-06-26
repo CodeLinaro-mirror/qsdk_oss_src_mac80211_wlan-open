@@ -641,6 +641,7 @@ struct ieee80211_parsed_tpe {
  *	mode only, set if the AP advertises TWT responder role)
  * @twt_protected: does this BSS support protected TWT frames
  * @twt_broadcast: does this BSS support broadcast TWT
+ * @twt_restricted: does this BSS support restricted TWT
  * @use_cts_prot: use CTS protection
  * @use_short_preamble: use 802.11b short preamble
  * @use_short_slot: use short slot time (only relevant for ERP)
@@ -805,6 +806,7 @@ struct ieee80211_bss_conf {
 	bool twt_responder;
 	bool twt_protected;
 	bool twt_broadcast;
+	bool twt_restricted;
 	/* erp related data */
 	bool use_cts_prot;
 	bool use_short_preamble;
