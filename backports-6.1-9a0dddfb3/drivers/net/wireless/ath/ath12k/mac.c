@@ -18306,12 +18306,45 @@ void ath12k_mac_op_set_rekey_data(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_set_rekey_data);
 
+/**
+ * ath12k_disable_chans_outside_limit - disable channels outside the freq limits
+ * @ch_lst: list of channels to check
+ * @num_chans: number of channels in the list
+ * @freq_low: lower frequency limit
+ * @freq_high: upper frequency limit
+ *
+ * This function will set the IEEE80211_CHAN_DISABLED flag for channels
+ * whose center frequency is outside the given frequency limits.
+ */
+static void
+ath12k_disable_chans_outside_limit(struct ieee80211_channel *ch_lst,
+				   int num_chans, u32 freq_low, u32 freq_high)
+{
+	int i;
+
+	for (i = 0; i < num_chans; i++) {
+		if (ch_lst[i].center_freq < freq_low ||
+		    ch_lst[i].center_freq > freq_high)
+			ch_lst[i].flags |= IEEE80211_CHAN_DISABLED;
+	}
+}
+
+/**
+ * ath12k_mac_update_ch_list - disable band chans outside the given frequency
+ * @ar: pointer to ath12k structure
+ * @band: pointer to the band structure
+ * @freq_low: lower frequency limit
+ * @freq_high: upper frequency limit
+ *
+ * This function will set the IEEE80211_CHAN_DISABLED flag for channels
+ * whose center frequency is outside the given frequency limits.
+ * For 6 GHz band, disable channels in all power modes channel lists.
+ */
 static void ath12k_mac_update_ch_list(struct ath12k *ar,
 				      struct ieee80211_supported_band *band,
 				      u32 freq_low, u32 freq_high)
 {
-	struct ieee80211_6ghz_channel *chan_6g;
-	int i, j;
+	int i;
 
 	if (!(freq_low && freq_high))
 		return;
@@ -18321,22 +18354,20 @@ static void ath12k_mac_update_ch_list(struct ath12k *ar,
 	ar->chan_info.low_freq = freq_low;
 	ar->chan_info.high_freq = freq_high;
 
-	if (band->band == NL80211_BAND_6GHZ) {
-		for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
-			chan_6g = band->chan_6g[i];
-			for (j = 0; j < chan_6g->n_channels; j++) {
-				if (chan_6g->channels[j].center_freq < freq_low ||
-				    chan_6g->channels[j].center_freq > freq_high)
-					chan_6g->channels[j].flags |= IEEE80211_CHAN_DISABLED;
-			}
-		}
-		return;
-	}
+	ath12k_disable_chans_outside_limit(band->channels, band->n_channels,
+					   freq_low, freq_high);
 
-	for (i = 0; i < band->n_channels; i++) {
-		if (band->channels[i].center_freq < freq_low ||
-		    band->channels[i].center_freq > freq_high)
-			band->channels[i].flags |= IEEE80211_CHAN_DISABLED;
+	if (band->band != NL80211_BAND_6GHZ)
+		return;
+
+	for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+		const struct ieee80211_6ghz_channel *chan_6g = band->chan_6g[i];
+
+		if (!chan_6g)
+			continue;
+
+		ath12k_disable_chans_outside_limit(chan_6g->channels, chan_6g->n_channels,
+						   freq_low, freq_high);
 	}
 }
 
@@ -18356,12 +18387,48 @@ static u32 ath12k_get_phy_id(struct ath12k *ar, u32 band)
 	return 0;
 }
 
+/**
+ * ath12k_update_band_channels - Update split channels of same band
+ * @new_ch_lst: list of channels in the new band
+ * @old_ch_lst: list of channels in the orig band
+ * @num_chans: number of channels in the list
+ *
+ * This function will enable channels in the orig_band which are
+ * enabled in the new_band.
+ * Note: This function assumes that the new_band and orig_band are of the
+ * same band.
+ *
+ * Returns 0 on success, negative error code on failure.
+ */
+static int
+ath12k_update_band_channels(const struct ieee80211_channel *new_ch_lst,
+			    struct ieee80211_channel *old_ch_lst, int num_chans)
+{
+	int i;
+
+	for (i = 0; i < num_chans; i++) {
+		if (new_ch_lst[i].flags & IEEE80211_CHAN_DISABLED)
+			continue;
+
+		/* An enabled channel in new_band should not be already enabled
+		 * in the orig_band
+		 */
+		if (WARN_ON(!(old_ch_lst[i].flags & IEEE80211_CHAN_DISABLED)))
+			return -ENOTRECOVERABLE;
+
+		old_ch_lst[i].flags &= ~IEEE80211_CHAN_DISABLED;
+	}
+
+	return 0;
+}
+
 static int ath12k_mac_update_band(struct ath12k *ar,
 				  struct ieee80211_supported_band *orig_band,
 				  struct ieee80211_supported_band *new_band)
 {
 	struct ath12k_base *ab = ar->ab;
-	int i;
+	struct ieee80211_6ghz_channel *chan_6g_old, *chan_6g_new;
+	int i, ret;
 
 	if (!orig_band || !new_band)
 		return -EINVAL;
@@ -18372,17 +18439,28 @@ static int ath12k_mac_update_band(struct ath12k *ar,
 	if (WARN_ON(!ab->ag->mlo_capable))
 		return -EOPNOTSUPP;
 
-	for (i = 0; i < new_band->n_channels; i++) {
-		if (new_band->channels[i].flags & IEEE80211_CHAN_DISABLED)
+	ret = ath12k_update_band_channels(new_band->channels,
+					  orig_band->channels,
+					  new_band->n_channels);
+	if (ret)
+		return ret;
+
+	if (new_band->band != NL80211_BAND_6GHZ)
+		return 0;
+
+	for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+		chan_6g_new = new_band->chan_6g[i];
+		chan_6g_old = orig_band->chan_6g[i];
+		if (!chan_6g_new || !chan_6g_old)
 			continue;
-		/* An enabled channel in new_band should not be already enabled
-		 * in the orig_band
-		 */
-		if (WARN_ON(!(orig_band->channels[i].flags &
-			      IEEE80211_CHAN_DISABLED)))
-			return -ENOTRECOVERABLE;
-		orig_band->channels[i].flags &= ~IEEE80211_CHAN_DISABLED;
+
+		ret = ath12k_update_band_channels(chan_6g_new->channels,
+						  chan_6g_old->channels,
+						  chan_6g_new->n_channels);
+		if (ret)
+			return ret;
 	}
+
 	return 0;
 }
 
@@ -18459,8 +18537,15 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 					   sizeof(ath12k_5ghz_channels), GFP_KERNEL);
 			if (!channels) {
 				kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
-				for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++)
+				ar->mac.sbands[NL80211_BAND_2GHZ].channels = NULL;
+				ar->mac.sbands[NL80211_BAND_2GHZ].n_channels = 0;
+				kfree(ar->mac.sbands[NL80211_BAND_6GHZ].channels);
+				ar->mac.sbands[NL80211_BAND_6GHZ].channels = NULL;
+				ar->mac.sbands[NL80211_BAND_6GHZ].n_channels = 0;
+				for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
 					kfree(ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i]);
+					ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i] = NULL;
+				}
 
 				return -ENOMEM;
 			}
@@ -18508,6 +18593,11 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 				chan_6g = kzalloc(sizeof(*chan_6g), GFP_ATOMIC);
 				if (!channels || !chan_6g) {
 					kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
+					ar->mac.sbands[NL80211_BAND_2GHZ].channels = NULL;
+					ar->mac.sbands[NL80211_BAND_2GHZ].n_channels = 0;
+					kfree(ar->mac.sbands[NL80211_BAND_5GHZ].channels);
+					ar->mac.sbands[NL80211_BAND_5GHZ].channels = NULL;
+					ar->mac.sbands[NL80211_BAND_5GHZ].n_channels = 0;
 					break;
 				}
 				chan_6g->channels = channels;
@@ -18529,8 +18619,26 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 			ar->supports_6ghz = true;
 			band->n_bitrates = ath12k_a_rates_size;
 			band->bitrates = ath12k_a_rates;
-			band->n_channels = band->chan_6g[0]->n_channels;
-			band->channels = band->chan_6g[0]->channels;
+
+			channels = kmemdup(ath12k_6ghz_channels,
+					   sizeof(ath12k_6ghz_channels),
+					   GFP_KERNEL);
+			if (!channels) {
+				kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
+				ar->mac.sbands[NL80211_BAND_2GHZ].channels = NULL;
+				ar->mac.sbands[NL80211_BAND_2GHZ].n_channels = 0;
+				kfree(ar->mac.sbands[NL80211_BAND_5GHZ].channels);
+				ar->mac.sbands[NL80211_BAND_5GHZ].channels = NULL;
+				ar->mac.sbands[NL80211_BAND_5GHZ].n_channels = 0;
+				for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+					kfree(ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i]);
+					ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i] = NULL;
+				}
+				return -ENOMEM;
+			}
+
+			band->channels = channels;
+			band->n_channels = ARRAY_SIZE(ath12k_6ghz_channels);
 
 			freq_low = max(reg_cap->low_5ghz_chan,
 				       ab->reg_freq_6g.start_freq);
@@ -18939,9 +19047,11 @@ static void ath12k_mac_cleanup_unregister(struct ath12k *ar)
 
 	kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
 	kfree(ar->mac.sbands[NL80211_BAND_5GHZ].channels);
+	kfree(ar->mac.sbands[NL80211_BAND_6GHZ].channels);
 
 	ar->mac.sbands[NL80211_BAND_2GHZ].channels = NULL;
 	ar->mac.sbands[NL80211_BAND_5GHZ].channels = NULL;
+	ar->mac.sbands[NL80211_BAND_6GHZ].channels = NULL;
 
 	for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
 		if (!ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i])

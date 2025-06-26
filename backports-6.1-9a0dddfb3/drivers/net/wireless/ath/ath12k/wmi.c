@@ -3159,6 +3159,13 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 			    IEEE80211_CHAN_DISABLED)
 				continue;
 
+			if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
+				if (bands[band]->channels[i].center_freq <
+				    ar->chan_info.low_freq ||
+				    bands[band]->channels[i].center_freq >
+				    ar->chan_info.high_freq)
+					continue;
+
 			num_channels++;
 		}
 	}
@@ -3190,6 +3197,20 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 
 			if (channel->flags & IEEE80211_CHAN_DISABLED)
 				continue;
+
+			if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ) {
+				if (bands[band]->channels[i].center_freq <
+				    ar->chan_info.low_freq ||
+				    bands[band]->channels[i].center_freq >
+				    ar->chan_info.high_freq) {
+					ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+						   "skip freq %d outside range %d-%d MHz\n",
+						   bands[band]->channels[i].center_freq,
+						   ar->chan_info.low_freq,
+						   ar->chan_info.high_freq);
+					continue;
+				}
+			}
 
                        if (req_channel && !found &&
                            req_channel->center_freq == channel->center_freq) {
