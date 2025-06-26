@@ -47,8 +47,13 @@ enum qca_nl80211_vendor_events {
  * vendor NL event to the application.
  *
  * @ar - Pointer to ar
+ * @afc - Pointer to AFC info
+ *
+ * Return: 0 on success, negative error code on failure
  */
-int ath12k_vendor_send_power_update_complete(struct ath12k *ar);
+int
+ath12k_vendor_send_power_update_complete(struct ath12k *ar,
+					 struct ath12k_afc_info *afc);
 
 /**
  * ath12k_send_afc_request - Send AFC request vendor NL event to the application

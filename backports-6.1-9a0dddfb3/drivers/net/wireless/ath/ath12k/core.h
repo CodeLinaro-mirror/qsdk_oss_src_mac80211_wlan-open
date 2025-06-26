@@ -1180,6 +1180,10 @@ struct ath12k_hw {
 	enum ath12k_hw_state state;
 	bool regd_updated;
 	bool use_6ghz_regd;
+	/* Protect concurrent access to the wiphy regd when processing AFC
+	 * power event from multple radios.
+	 */
+	spinlock_t afc_lock;
 
 	u8 num_radio;
 

@@ -752,7 +752,7 @@ ath12k_afc_power_event_update_or_get_len(struct ath12k *ar,
 	nla_nest_end_checked(vendor_event, nla_attr);
 
 	hw_idx = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy,
-					      pwr_evt->afc_freq_info[0].low_freq + 10);
+					      ar->freq_range.start_freq);
 	if (vendor_event &&
 	    nla_put_u8(vendor_event,
 		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX, hw_idx)) {
@@ -965,7 +965,7 @@ ath12k_afc_expiry_event_update_or_get_len(struct ath12k *ar,
 	nla_nest_end_checked(vendor_event, nla_attr);
 
 	hw_idx = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy,
-					      afc_req->freq_lst->range_objs[0].lowfreq + 10);
+					      ar->freq_range.start_freq);
 	if (vendor_event &&
 	    nla_put_u8(vendor_event,
 		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX, hw_idx)) {
@@ -1004,8 +1004,6 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar)
 	int ret = -EINVAL;
 	int vendor_buffer_len, hw_index;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
-	u16 freq_low;
 	struct ath12k_link_vif *tmp_arvif = NULL, *arvif;
 	struct wireless_dev *wdev;
 
@@ -1031,16 +1029,10 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar)
 		goto out;
 	}
 
-	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
-	if (!reg_cap) {
-		ath12k_err(ab, "Unable to get reg cap for pdev %d\n", ar->pdev_idx);
-		goto out;
-	}
-
-	freq_low = reg_cap->low_5ghz_chan;
-	hw_index = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy, freq_low);
+	hw_index = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy, ar->freq_range.start_freq);
 	if (hw_index == -1) {
-		ath12k_err(ab, "Failed to get hw index for freq %d\n", freq_low);
+		ath12k_err(ab, "Failed to get hw index for freq %d\n",
+			   ar->freq_range.start_freq);
 		goto out;
 	}
 
@@ -1304,9 +1296,11 @@ int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
 	return ret;
 }
 
-int ath12k_vendor_send_power_update_complete(struct ath12k *ar)
+int
+ath12k_vendor_send_power_update_complete(struct ath12k *ar,
+					 struct ath12k_afc_info *afc)
 {
-	struct ath12k_afc_sp_reg_info *afc_reg_info = ar->afc.afc_reg_info;
+	struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
 	struct ath12k_link_vif *tmp_arvif = NULL, *arvif;
 	struct sk_buff *vendor_event;
 	struct wireless_dev *wdev;

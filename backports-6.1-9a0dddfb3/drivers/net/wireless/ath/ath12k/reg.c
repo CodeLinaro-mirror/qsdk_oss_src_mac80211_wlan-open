@@ -397,8 +397,12 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	/* If one of the radios within ah has already updated the regd for
 	 * the wiphy, then avoid setting regd again
 	 */
-	if (ah->regd_updated)
+	if (ah->regd_updated) {
+		ath12k_dbg(ab, ATH12K_DBG_REG,
+			   "regd already updated for ah, curr pdev id %u\n",
+			   ar->pdev_idx);
 		return 0;
+	}
 
 	pdev_id = ar->pdev_idx;
 
@@ -1270,6 +1274,41 @@ void ath12k_reg_get_afc_eirp_power_for_bw(struct ath12k *ar, u16 *start_freq,
 }
 
 /**
+ * ath12k_find_partner_ar_for_dual_6ghz_afc() - Check if any other radio
+ * in the same hardware has received the AFC payload.
+ * @ar: pointer to current ath12k
+ *
+ * Return: pointer to the partner radio if found, NULL otherwise
+ */
+static struct ath12k *
+ath12k_find_partner_ar_for_dual_6ghz_afc(struct ath12k *ar)
+{
+	struct ath12k *cur_ar = ar;
+	struct ath12k_hw *ah = ar->ah;
+	int i;
+
+	ar = ah->radio;
+	for (i = 0; i < ah->num_radio; i++, ar++) {
+		struct ath12k_base *ab;
+
+		if (ar == cur_ar)
+			continue;
+
+		if (!ar->supports_6ghz)
+			continue;
+
+		ab = ar->ab;
+		if (!ab->sp_rule || !ab->sp_rule->num_6ghz_sp_rule ||
+		    !ar->afc.is_6ghz_afc_power_event_received)
+			continue;
+
+		return ar;
+	}
+
+	return NULL;
+}
+
+/**
  * ath12k_is_reg_rule_subset_of_chip_range() - Check if the rule range
  * is subset of chip range
  * @rule_range: rule range
@@ -1315,15 +1354,19 @@ end:
 }
 
 /**
- * ath12k_mark_sp_reg_rules_as_no_ir() - Mark the SP rules as NO_IR
+ * ath12k_check_and_mark_sp_reg_rules_as_no_ir() - Mark the SP rules as NO_IR
  * @ar: pointer to ath12k
  * @regd: pointer to the regulatory domain
+ * @is_all_no_ir: pointer to a boolean flag to indicate if all SP rules are NO_IR
+ * @check_no_ir: if true, check if the SP rules are already marked as NO_IR.
+ * If false, mark all SP rules as NO_IR.
  *
  * Return: 0 on success, negative error code on failure
  */
 static int
-ath12k_mark_sp_reg_rules_as_no_ir(struct ath12k *ar,
-				  struct ieee80211_regdomain *regd)
+ath12k_check_and_mark_sp_reg_rules_as_no_ir(struct ath12k *ar,
+					    struct ieee80211_regdomain *regd,
+					    bool *is_all_no_ir, bool check_no_ir)
 {
 	struct ieee80211_freq_range chip_range = {0};
 	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
@@ -1340,6 +1383,12 @@ ath12k_mark_sp_reg_rules_as_no_ir(struct ath12k *ar,
 	chip_range.start_freq_khz = MHZ_TO_KHZ(reg_cap->low_5ghz_chan);
 	chip_range.end_freq_khz = MHZ_TO_KHZ(reg_cap->high_5ghz_chan);
 
+	/* Start with the assumption that all SP rules are NO_IR.
+	 * If we find any rule which is not NO_IR, we will set the flag to false.
+	 */
+	if (check_no_ir)
+		*is_all_no_ir = true;
+
 	for (i = 0; i < regd->n_reg_rules; i++) {
 		struct ieee80211_reg_rule *new_rule;
 
@@ -1347,12 +1396,19 @@ ath12k_mark_sp_reg_rules_as_no_ir(struct ath12k *ar,
 		if (new_rule->mode != NL80211_REG_AP_SP)
 			continue;
 		if (ath12k_is_reg_rule_subset_of_chip_range(new_rule->freq_range,
-							    chip_range))
+							    chip_range)) {
+			if (check_no_ir &&
+			    !(new_rule->flags & NL80211_RRF_NO_IR))
+				*is_all_no_ir = false;
+
 			new_rule->flags |= NL80211_RRF_NO_IR;
-		ath12k_dbg(ab, ATH12K_DBG_AFC, "Add NO_IR flag SP rule %u, s_freq %u, e_freq %u\n",
-			   i, new_rule->freq_range.start_freq_khz,
-			   new_rule->freq_range.end_freq_khz);
+			ath12k_dbg(ab, ATH12K_DBG_AFC,
+				   "Add NO_IR flag SP rule %u, s_freq %u, e_freq %u\n",
+				   i, new_rule->freq_range.start_freq_khz,
+				   new_rule->freq_range.end_freq_khz);
+		}
 	}
+
 	return 0;
 }
 
@@ -1369,6 +1425,8 @@ static int ath12k_handle_invalid_afc_payload(struct ath12k *ar)
 	struct ath12k_base *ab = ar->ab;
 	int ret = 0;
 	struct ath12k_6ghz_sp_reg_rule *sp_rule;
+	struct ath12k *partner_ar;
+	bool is_reg_update_needed = true, is_all_no_ir;
 
 	regd = ath12k_get_current_regd(ar);
 	if (!regd) {
@@ -1386,12 +1444,52 @@ static int ath12k_handle_invalid_afc_payload(struct ath12k *ar)
 		return -EINVAL;
 	}
 
-	ar->afc.is_6ghz_afc_power_event_received = false;
-	ret = ath12k_mark_sp_reg_rules_as_no_ir(ar, regd);
+	ath12k_dbg(ab, ATH12K_DBG_AFC,
+		   "Marking all 6 GHz SP rules as NO_IR for pdev %u\n",
+		   ar->pdev_idx);
+	ret = ath12k_check_and_mark_sp_reg_rules_as_no_ir(ar, regd,
+							  &is_all_no_ir,
+							  true);
 	if (ret) {
 		ath12k_warn(ab, "Failed to mark SP rules as NO_IR\n");
 		return ret;
 	}
+
+	if (is_all_no_ir)
+		is_reg_update_needed = false;
+
+	/* If there is a partner radio, update the SP rules in partner radio
+	 * regd as well.
+	 */
+	partner_ar = ath12k_find_partner_ar_for_dual_6ghz_afc(ar);
+	if (partner_ar) {
+		struct ieee80211_regdomain *partner_regd;
+
+		partner_regd = ath12k_get_current_regd(partner_ar);
+		if (partner_regd) {
+			ath12k_dbg(ab, ATH12K_DBG_AFC,
+				   "Marking all 6 GHz SP rules as NO_IR for partner pdev %u\n",
+				   partner_ar->pdev_idx);
+			ret = ath12k_check_and_mark_sp_reg_rules_as_no_ir(ar, partner_regd,
+									  NULL, false);
+			if (ret) {
+				ath12k_warn(ab,
+					    "Failed to mark SP rules as NO_IR for partner ar\n");
+				return -EINVAL;
+			}
+		} else {
+			ath12k_warn(ab, "Partner radio regd not present\n");
+		}
+	}
+
+	if (!is_reg_update_needed) {
+		ath12k_dbg(ab, ATH12K_DBG_AFC,
+			   "No reg update needed as all SP rules are already NO_IR\n");
+		return 0;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "Queuing NO-IR regd update work for pdev %u\n",
+		   ar->pdev_idx);
 	ah->regd_updated = false;
 	queue_work(ab->workqueue, &ar->regd_update_work);
 	return ret;
@@ -1766,6 +1864,147 @@ ath12k_reg_generate_valid_afc_ranges(struct ath12k *ar,
 }
 
 /**
+ * ath12k_concat_sorted_ranges() - Concatenate two sorted AFC ranges
+ * @ab: pointer to ath12k_base
+ * @this_radio_6ghz_ranges: Input / Output pointer to the AFC frequency ranges
+ * @n_this_6ghz_ranges: Input / Output pointer to the number of AFC ranges
+ * @partner_radio_6ghz_ranges: Pointer to the partner radio AFC frequency ranges
+ * @n_partner_6ghz_ranges: Number of partner radio AFC frequency ranges
+ *
+ * This API concatenates the sorted AFC frequency ranges from both radios.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_concat_sorted_ranges(struct ath12k_base *ab,
+			    struct ath12k_afc_freq_obj **this_radio_6ghz_ranges,
+			    u16 *n_this_6ghz_ranges,
+			    const struct ath12k_afc_freq_obj *partner_radio_6ghz_ranges,
+			    u16 n_partner_6ghz_ranges)
+{
+	u16 i;
+	u16 n_local_this_6g_ranges = *n_this_6ghz_ranges;
+	struct ath12k_afc_freq_obj *merged_ranges;
+	const u16 n_merged_ranges = n_local_this_6g_ranges + n_partner_6ghz_ranges;
+
+	merged_ranges =
+	    krealloc(*this_radio_6ghz_ranges,
+		     n_merged_ranges * sizeof(struct ath12k_afc_freq_obj), GFP_ATOMIC);
+	if (!merged_ranges) {
+		ath12k_err(ab, "Failed to realloc merged_ranges\n");
+		return -ENOMEM;
+	}
+
+	if (merged_ranges[0].low_freq < partner_radio_6ghz_ranges[0].low_freq) {
+		memcpy(merged_ranges + n_local_this_6g_ranges,
+		       partner_radio_6ghz_ranges,
+		       n_partner_6ghz_ranges * sizeof(struct ath12k_afc_freq_obj));
+	} else {
+		memmove(merged_ranges + n_partner_6ghz_ranges, merged_ranges,
+			n_local_this_6g_ranges * sizeof(struct ath12k_afc_freq_obj));
+		memcpy(merged_ranges, partner_radio_6ghz_ranges,
+		       n_partner_6ghz_ranges * sizeof(struct ath12k_afc_freq_obj));
+	}
+
+	for (i = 0; i < n_merged_ranges; i++) {
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "Combined AFC Range [%d] %d-%d\n",
+			   i, merged_ranges[i].low_freq, merged_ranges[i].high_freq);
+	}
+
+	*n_this_6ghz_ranges = n_merged_ranges;
+	*this_radio_6ghz_ranges = merged_ranges;
+
+	return 0;
+}
+
+/**
+ * ath12k_reg_intersect_with_partner_afc_info() - Intersect the current radio's
+ * AFC frequency ranges with the partner radio AFC frequency ranges.
+ * @ar: pointer to ath12k
+ * @intersected_afc_ranges: Input / Output pointer to the intersected AFC
+ * frequency ranges
+ * @num_intersected_ranges: Input / Output pointer to the number of AFC frequency
+ * ranges
+ *
+ * This API intersects the AFC frequency ranges with the partner radio
+ * AFC frequency ranges.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_reg_intersect_with_partner_afc_info(struct ath12k *ar,
+					   struct ath12k_afc_freq_obj **intersected_afc_ranges,
+					   u16 *num_intersected_ranges)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_afc_freq_obj *partner_intersected_ranges;
+	u16 num_partner_intersected_ranges;
+	struct ath12k *partner_ar;
+	int num_partner_afc_rules;
+	int ret;
+
+	partner_ar = ath12k_find_partner_ar_for_dual_6ghz_afc(ar);
+	if (!partner_ar) {
+		ath12k_dbg(ab, ATH12K_DBG_AFC,
+			   "No Partner Radio found.\n");
+		return 0;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC,
+		   "Partner Radio has received AFC Resp\n");
+	spin_lock_bh(&partner_ar->data_lock);
+	num_partner_afc_rules = partner_ar->afc.afc_reg_info->num_freq_objs;
+	if (!num_partner_afc_rules) {
+		ath12k_dbg(ab, ATH12K_DBG_AFC,
+			   "No Partner AFC freq info\n");
+		spin_unlock_bh(&partner_ar->data_lock);
+		return 0;
+	}
+
+	partner_intersected_ranges =
+	    kzalloc(num_partner_afc_rules *
+		    sizeof(*partner_intersected_ranges), GFP_ATOMIC);
+
+	if (!partner_intersected_ranges) {
+		ath12k_err(ab, "Failed to alloc partner_intersected_ranges\n");
+		spin_unlock_bh(&partner_ar->data_lock);
+		return -ENOMEM;
+	}
+
+	ret = ath12k_reg_generate_valid_afc_ranges(partner_ar,
+						   partner_ar->afc.afc_reg_info,
+						   &partner_intersected_ranges,
+						   &num_partner_intersected_ranges);
+
+	if (ret) {
+		ath12k_warn(ab, "Failed to coalesce Partner AFC freq info\n");
+		spin_unlock_bh(&partner_ar->data_lock);
+		goto end;
+	}
+
+	spin_unlock_bh(&partner_ar->data_lock);
+
+	if (num_partner_intersected_ranges) {
+		if (!*num_intersected_ranges) {
+			*intersected_afc_ranges = partner_intersected_ranges;
+			*num_intersected_ranges =
+			    num_partner_intersected_ranges;
+
+			return 0;
+		}
+
+		ret = ath12k_concat_sorted_ranges(ab, intersected_afc_ranges,
+						  num_intersected_ranges,
+						  partner_intersected_ranges,
+						  num_partner_intersected_ranges);
+	}
+
+end:
+	kfree(partner_intersected_ranges);
+	return ret;
+}
+
+/**
  * ath12k_calculate_no_ir_ranges() - Calculate the No-IR ranges
  * @ar: pointer to ath12k
  * @sp_rule: pointer to the SP reg rules
@@ -1897,6 +2136,14 @@ ath12k_reg_generate_afc_and_no_ir_ranges(struct ath12k *ar,
 			ath12k_warn(ab, "Failed to coalesce AFC info\n");
 			return ret;
 		}
+	}
+
+	ret = ath12k_reg_intersect_with_partner_afc_info(ar, afc_ranges,
+							 num_afc_ranges);
+	if (ret) {
+		ath12k_warn(ab,
+			    "Failed to intersect with partner AFC info\n");
+		return ret;
 	}
 
 	if (!*num_afc_ranges) {
@@ -2164,6 +2411,7 @@ ath12k_reg_build_new_regd_for_afc(struct ath12k *ar,
  * ath12k_reg_check_afc_payload_validity() - Check the validity of the AFC
  * payload.
  * @ar: pointer to ath12k
+ * @afc: pointer to the AFC payload information
  *
  * This API checks the validity of the AFC payload. This function also handles
  * Invalid / Empty payloads.
@@ -2174,11 +2422,12 @@ ath12k_reg_build_new_regd_for_afc(struct ath12k *ar,
  * Return: 0 on success, negative error code on failure
  */
 static int
-ath12_reg_check_afc_payload_validity(struct ath12k *ar)
+ath12_reg_check_afc_payload_validity(struct ath12k *ar,
+				     const struct ath12k_afc_info *afc)
 {
 	bool is_afc_chan_or_freq_obj_empty;
 	struct ath12k_base *ab = ar->ab;
-	const struct ath12k_afc_sp_reg_info *afc_reg_info = ar->afc.afc_reg_info;
+	const struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
 
 	is_afc_chan_or_freq_obj_empty = (afc_reg_info->num_chan_objs == 0) &&
 					(afc_reg_info->num_freq_objs == 0);
@@ -2200,12 +2449,14 @@ ath12_reg_check_afc_payload_validity(struct ath12k *ar)
 		return 1;
 
 	/* Empty payload is a valid payload. So Mark Power event success */
+	ar->afc = *afc;
 	ar->afc.is_6ghz_afc_power_event_received = true;
 
 	return 1;
 }
 
-int ath12k_reg_process_afc_power_event(struct ath12k *ar)
+int ath12k_reg_process_afc_power_event(struct ath12k *ar,
+				       const struct ath12k_afc_info *afc)
 {
 	struct ieee80211_regdomain *new_regd = NULL;
 	struct ieee80211_regdomain *old_regd = NULL;
@@ -2217,21 +2468,29 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 	u16 num_no_ir_ranges = 0;
 	int ret = 0, pdev_idx;
 
-	if (!ab->sp_rule || !ab->sp_rule->num_6ghz_sp_rule || !ar->afc.afc_reg_info) {
+	if (!ab->sp_rule || !ab->sp_rule->num_6ghz_sp_rule || !afc->afc_reg_info) {
 		ath12k_warn(ab, "SP rule not present or AFC payload is NULL\n");
 		return -EINVAL;
 	}
 
+	/* Make Sure that AFC power event from another radio is not proceessed
+	 * or cleared before we finish processing the current radio's AFC
+	 * power event.
+	 */
+	spin_lock_bh(&ah->afc_lock);
 	spin_lock_bh(&ar->data_lock);
 
-	if (ath12_reg_check_afc_payload_validity(ar)) {
+	if (ath12_reg_check_afc_payload_validity(ar, afc)) {
 		ret = -EINVAL;
 		goto end;
 	}
 
+	ath12k_free_afc_power_event_info(&ar->afc);
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "New AFC info %pK\n", afc->afc_reg_info);
+	ar->afc = *afc;
 	ar->afc.is_6ghz_afc_power_event_received = true;
 
-	ret = ath12k_reg_generate_afc_and_no_ir_ranges(ar, ar->afc.afc_reg_info,
+	ret = ath12k_reg_generate_afc_and_no_ir_ranges(ar, afc->afc_reg_info,
 						       &afc_ranges,
 						       &num_afc_ranges,
 						       &no_ir_ranges,
@@ -2250,6 +2509,7 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 	}
 
 	spin_unlock_bh(&ar->data_lock);
+	spin_unlock_bh(&ah->afc_lock);
 
 	spin_lock_bh(&ab->base_lock);
 	pdev_idx = ar->pdev_idx;
@@ -2260,11 +2520,14 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 	kfree(afc_ranges);
 	kfree(no_ir_ranges);
 
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "Queuing AFC regd update work for pdev %u\n",
+		   ar->pdev_idx);
 	ah->regd_updated = false;
 	queue_work(ab->workqueue, &ar->regd_update_work);
 	return ret;
 end:
 	spin_unlock_bh(&ar->data_lock);
+	spin_unlock_bh(&ah->afc_lock);
 	kfree(afc_ranges);
 	kfree(no_ir_ranges);
 	return ret;
@@ -3320,22 +3583,21 @@ static int ath12k_reg_afc_start(struct ath12k_base *ab,
 
 void ath12k_free_afc_power_event_info(struct ath12k_afc_info *afc)
 {
-	struct ath12k *ar = container_of(afc, struct ath12k, afc);
 	struct ath12k_afc_sp_reg_info *afc_reg_info;
-	struct ath12k_afc_chan_obj *afc_chan_info;
-	struct ath12k_base *ab = ar->ab;
 	int num_chan_objs;
 	int i;
 
 	if (!afc->afc_reg_info)
 		return;
 
-	ath12k_dbg(ab, ATH12K_DBG_AFC, "Freeing afc info\n");
+	ath12k_dbg(NULL, ATH12K_DBG_AFC, "Freeing afc info %pK\n", afc->afc_reg_info);
 	afc_reg_info = afc->afc_reg_info;
 	num_chan_objs = afc_reg_info->num_chan_objs;
 	kfree(afc_reg_info->afc_freq_info);
 
 	for (i = 0; i < num_chan_objs; i++) {
+		struct ath12k_afc_chan_obj *afc_chan_info;
+
 		afc_chan_info = afc_reg_info->afc_chan_info + i;
 		kfree(afc_chan_info->chan_eirp_info);
 	}
@@ -3343,6 +3605,7 @@ void ath12k_free_afc_power_event_info(struct ath12k_afc_info *afc)
 	kfree(afc_reg_info->afc_chan_info);
 	kfree(afc_reg_info);
 	afc->afc_reg_info = NULL;
+	afc->is_6ghz_afc_power_event_received = false;
 }
 
 int ath12k_process_expiry_event(struct ath12k *ar)
@@ -3352,7 +3615,6 @@ int ath12k_process_expiry_event(struct ath12k *ar)
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC expiry event subtype %d\n",
 		   afc->event_subtype);
-	afc->is_6ghz_afc_power_event_received = false;
 
 	switch (afc->event_subtype) {
 	case REG_AFC_EXPIRY_EVENT_START:
@@ -3365,8 +3627,12 @@ int ath12k_process_expiry_event(struct ath12k *ar)
 		}
 		break;
 	case REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI:
+		spin_lock_bh(&ar->ah->afc_lock);
 		ret = ath12k_handle_invalid_afc_payload(ar);
+		spin_lock_bh(&ar->data_lock);
 		ath12k_free_afc_power_event_info(afc);
+		spin_unlock_bh(&ar->data_lock);
+		spin_unlock_bh(&ar->ah->afc_lock);
 		if (ret) {
 			ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Failed to process switch to LPI event\n");
 			return ret;

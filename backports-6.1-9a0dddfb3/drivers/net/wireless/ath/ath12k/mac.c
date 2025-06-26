@@ -19905,6 +19905,7 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 
 	mutex_init(&ah->hw_mutex);
 
+	spin_lock_init(&ah->afc_lock);
 	spin_lock_init(&ah->dp_hw.peer_lock);
 	INIT_LIST_HEAD(&ah->dp_hw.peers);
 

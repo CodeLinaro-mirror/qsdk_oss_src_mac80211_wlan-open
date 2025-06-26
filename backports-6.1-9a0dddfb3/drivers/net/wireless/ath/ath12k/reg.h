@@ -573,7 +573,19 @@ int ath12k_regd_update(struct ath12k *ar, bool init);
 int ath12k_reg_update_chan_list(struct ath12k *ar, bool wait);
 int ath12k_reg_get_num_chans_in_band(struct ath12k *ar,
 				     struct ieee80211_supported_band *band);
-int ath12k_reg_process_afc_power_event(struct ath12k *ar);
+
+/**
+ * ath12k_reg_process_afc_power_event() - Process the AFC power event
+ * @ar: pointer to ath12k
+ * @afc: pointer to the AFC payload information
+ *
+ * This API processes the AFC power event and updates the regulatory domain
+ * accordingly.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_reg_process_afc_power_event(struct ath12k *ar,
+				       const struct ath12k_afc_info *afc);
 
 /**
  * ath12k_get_afc_req_info - Get AFC request information

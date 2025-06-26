@@ -7002,8 +7002,9 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 	return ret;
 }
 
-static struct ath12k *ath12k_wmi_afc_process_fixed_param(struct ath12k_base *ab,
-							 void *ptr, size_t len)
+static struct ath12k *
+ath12k_wmi_afc_process_fixed_param(struct ath12k_base *ab,
+				   void *ptr, size_t len, struct ath12k_afc_info *afc)
 {
 	struct wmi_afc_event_fixed_param *fixed_param;
 	const struct wmi_tlv *tlv;
@@ -7038,9 +7039,7 @@ static struct ath12k *ath12k_wmi_afc_process_fixed_param(struct ath12k_base *ab,
 		return NULL;
 	}
 
-	ath12k_free_afc_power_event_info(&ar->afc);
-	memset(&ar->afc, 0, sizeof(ar->afc));
-	ar->afc.event_type = le32_to_cpu(fixed_param->event_type);
+	afc->event_type = le32_to_cpu(fixed_param->event_type);
 
 	return ar;
 }
@@ -7048,19 +7047,19 @@ static struct ath12k *ath12k_wmi_afc_process_fixed_param(struct ath12k_base *ab,
 static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 				 struct sk_buff *skb)
 {
-	struct ath12k_afc_info *afc_info;
+	struct ath12k_afc_info afc = {};
+	struct ath12k_afc_info *afc_info = &afc;
 	struct ath12k *ar;
 	int ret;
 
-	ar = ath12k_wmi_afc_process_fixed_param(ab, skb->data, skb->len);
+	ar = ath12k_wmi_afc_process_fixed_param(ab, skb->data, skb->len, afc_info);
 	if (!ar) {
 		ath12k_warn(ab, "Failed to get ar for afc processing\n");
 		return;
 	}
 
-	afc_info = &ar->afc;
 	ath12k_dbg(ab, ATH12K_DBG_AFC, "Received AFC event of type %d for pdev: %d\n",
-		   ar->afc.event_type, ar->pdev->pdev_id);
+		   afc_info->event_type, ar->pdev->pdev_id);
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
 				  ath12k_wmi_afc_event_parser, afc_info);
 	if (ret) {
@@ -7071,15 +7070,23 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 	}
 	switch (afc_info->event_type) {
 	case ATH12K_AFC_EVENT_POWER_INFO:
-		ret = ath12k_reg_process_afc_power_event(ar);
+		ret = ath12k_reg_process_afc_power_event(ar, afc_info);
 		if (ret)
 			ath12k_warn(ab, "AFC reg rule update failed ret : %d\n",
 				    ret);
 
 		/* Update AFC application with power event update complete */
-		ath12k_vendor_send_power_update_complete(ar);
+		ath12k_vendor_send_power_update_complete(ar, afc_info);
+		if (afc_info->afc_reg_info->fw_status_code !=
+		    REG_FW_AFC_POWER_EVENT_SUCCESS) {
+			ath12k_free_afc_power_event_info(afc_info);
+		}
+
 		break;
 	case ATH12K_AFC_EVENT_TIMER_EXPIRY:
+		ar->afc.event_type = afc_info->event_type;
+		ar->afc.event_subtype = afc_info->event_subtype;
+		ar->afc.request_id = afc_info->request_id;
 		ret = ath12k_process_expiry_event(ar);
 		if (ret)
 			ath12k_warn(ab, "Failed to process expiry event\n");
