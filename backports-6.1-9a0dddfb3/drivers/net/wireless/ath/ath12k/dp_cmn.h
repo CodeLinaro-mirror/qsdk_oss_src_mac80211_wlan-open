@@ -75,6 +75,7 @@ struct ath12k_dp_link_peer_rate_info {
 	s8 signal_avg;
 	u16 tx_retry_count;
 	u16 tx_retry_failed;
+	u32 rx_retries;
 };
 
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp);

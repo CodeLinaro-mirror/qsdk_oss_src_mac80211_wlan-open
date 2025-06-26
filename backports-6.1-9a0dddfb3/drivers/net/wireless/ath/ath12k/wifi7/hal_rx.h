@@ -287,11 +287,13 @@ struct hal_rx_phyrx_rssi_legacy_info {
 #define HAL_RX_MPDU_START_INFO1_PEERID			GENMASK(29, 16)
 #define HAL_RX_MPDU_START_INFO1_DEVICE_ID		GENMASK(31, 30)
 #define HAL_RX_MPDU_START_INFO2_MPDU_LEN		GENMASK(13, 0)
+#define HAL_RX_MPDU_START_INFO3_MPDU_RETRY		BIT(19)
 struct hal_rx_mpdu_start {
 	__le32 rsvd0[9];
 	__le32 info0;
 	__le32 info1;
-	__le32 rsvd1[2];
+	__le32 info3;
+	__le32 rsvd1;
 	__le32 info2;
 	__le32 rsvd2[16];
 } __packed;

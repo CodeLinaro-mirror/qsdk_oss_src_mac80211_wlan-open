@@ -1342,6 +1342,61 @@ static const struct file_operations fops_reset_rx_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t
+ath12k_dbg_sta_read_rx_retries(struct file *file, char __user *user_buf,
+			       size_t count, loff_t *ppos)
+{
+	struct ieee80211_link_sta *link_sta = file->private_data;
+	struct ieee80211_sta *sta = link_sta->sta;
+	u8 link_id = link_sta->link_id;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_hw *ah = ahsta->ahvif->ah;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *ar;
+        struct ath12k_dp_link_peer *link_peer;
+        struct ath12k_dp *dp;
+	char buf[32];
+	size_t len;
+
+        wiphy_lock(ah->hw->wiphy);
+
+        if (!(BIT(link_id) & ahsta->links_map)) {
+                wiphy_unlock(ah->hw->wiphy);
+                return -ENOENT;
+        }
+
+        arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+        if (!arsta || !arsta->arvif->ar) {
+                wiphy_unlock(ah->hw->wiphy);
+                return -ENOENT;
+        }
+
+        ar = arsta->arvif->ar;
+
+        dp = ath12k_ab_to_dp(ar->ab);
+        spin_lock_bh(&dp->dp_lock);
+
+        link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
+        if (!link_peer) {
+                spin_unlock_bh(&dp->dp_lock);
+                wiphy_unlock(ah->hw->wiphy);
+                return -ENOENT;
+        }
+
+	len = scnprintf(buf, sizeof(buf), "%u\n", link_peer->peer_stats.rx_retries);
+	spin_unlock_bh(&dp->dp_lock);
+	wiphy_unlock(ah->hw->wiphy);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_rx_retries = {
+	.read = ath12k_dbg_sta_read_rx_retries,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_link_sta *link_sta,
@@ -1378,6 +1433,10 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 		     ar->ab->wmi_ab.svc_map))
 		debugfs_create_file("htt_peer_stats_reset", 0600, dir, link_sta,
 				    &fops_htt_peer_stats_reset);
+
+	debugfs_create_file("rx_mpdu_retries", 0400, dir, link_sta,
+			    &fops_rx_retries);
+
 
 }
 EXPORT_SYMBOL(ath12k_debugfs_link_sta_op_add);

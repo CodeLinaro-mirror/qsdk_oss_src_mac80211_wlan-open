@@ -1660,9 +1660,12 @@ ath12k_dp_mon_rx_parse_status_tlv(struct ath12k_mon_data *pmon,
 		u16 peer_id;
 
 		info[1] = __le32_to_cpu(mpdu_start->info1);
+		info[2] = __le32_to_cpu(mpdu_start->info3);
 		peer_id = u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_PEERID);
 		if (peer_id)
 			ppdu_info->peer_id = peer_id;
+
+		ppdu_info->mpdu_retry += info[2] & HAL_RX_MPDU_START_INFO3_MPDU_RETRY;
 
 		ppdu_info->mpdu_len += u32_get_bits(info[1],
 						    HAL_RX_MPDU_START_INFO2_MPDU_LEN);
@@ -1672,6 +1675,8 @@ ath12k_dp_mon_rx_parse_status_tlv(struct ath12k_mon_data *pmon,
 			ppdu_info->userstats[userid].sw_peer_id = peer_id;
 			ppdu_info->userstats[userid].ampdu_id =
 				u32_get_bits(info[0], HAL_RX_MPDU_START_INFO0_PPDU_ID);
+			ppdu_info->userstats[userid].mpdu_retry +=
+				info[2] & HAL_RX_MPDU_START_INFO3_MPDU_RETRY;
 		}
 
 		return HAL_RX_MON_STATUS_MPDU_START;
@@ -3262,6 +3267,7 @@ static void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp
 	if (!ath12k_debugfs_is_extd_rx_stats_enabled(pdev_dp->ar) || !rx_stats)
 		return;
 
+	peer->peer_stats.rx_retries += ppdu_info->mpdu_retry;
 	num_msdu = ppdu_info->tcp_msdu_count + ppdu_info->tcp_ack_msdu_count +
 		   ppdu_info->udp_msdu_count + ppdu_info->other_msdu_count;
 
@@ -3441,6 +3447,11 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 			    peer->addr, peer->peer_id);
 		return;
 	}
+
+	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
+
+	if (!ath12k_debugfs_is_extd_rx_stats_enabled(pdev_dp->ar))
+		return;
 
 	rx_stats = peer->peer_stats.rx_stats;
 	if (!rx_stats)

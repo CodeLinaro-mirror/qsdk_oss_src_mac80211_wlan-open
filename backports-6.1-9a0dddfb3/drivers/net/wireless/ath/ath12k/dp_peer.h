@@ -100,6 +100,7 @@ struct ath12k_dp_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
+	u32 rx_retries;
 };
 
 DECLARE_EWMA(avg_rssi, 10, 8)

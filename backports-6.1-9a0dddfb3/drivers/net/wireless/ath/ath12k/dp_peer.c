@@ -736,6 +736,7 @@ void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp *dp, const u8 *ad
 	rate_info->signal_avg = ewma_avg_rssi_read(&link_peer->avg_rssi);
 	rate_info->tx_retry_count = link_peer->tx_retry_count;
 	rate_info->tx_retry_failed = link_peer->tx_retry_failed;
+	rate_info->rx_retries = link_peer->peer_stats.rx_retries;
 
 	spin_unlock_bh(&dp->dp_lock);
 }

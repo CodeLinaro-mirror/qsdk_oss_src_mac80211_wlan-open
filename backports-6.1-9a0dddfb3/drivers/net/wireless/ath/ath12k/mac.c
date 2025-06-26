@@ -17774,6 +17774,9 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL_AVG);
 
+	sinfo->rx_retries = rate_info.rx_retries;
+	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_RETRIES);
+
 	sinfo->tx_retries = rate_info.tx_retry_count;
 	sinfo->tx_failed = rate_info.tx_retry_failed;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_RETRIES);

@@ -565,6 +565,7 @@ struct hal_rx_user_status {
 	bool ampdu_present;
 	u16 ampdu_id;
 	u32 errmap;
+	u32 mpdu_retry;
 };
 
 #define HAL_MAX_UL_MU_USERS	37
@@ -692,6 +693,7 @@ struct hal_rx_mon_ppdu_info {
 	struct hal_rx_eht_info eht_info;
 	struct hal_rx_tlv_aggr_info tlv_aggr;
 	u32 errmap;
+	u32 mpdu_retry;
 };
 
 
