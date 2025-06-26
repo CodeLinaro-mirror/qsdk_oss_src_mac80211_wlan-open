@@ -277,6 +277,20 @@ enum ath12k_type_req_ctrl_path_stats_id {
        TYPE_REQ_CTRL_PATH_RRM_STA_STAT,
 };
 
+const char *mgmt_frame_name[] = { "AssocReq",
+			    "AssocResp",
+			    "ReAssocReq",
+			    "ReAssocResp",
+			    "ProbeReq",
+			    "ProbeResp",
+			     0, 0,
+			    "Beacon",
+			     0,
+			    "DisAssoc",
+			    "Auth",
+			    "Deauth",
+			    "Action"};
+
 int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
                                            struct ath12k *ar)
 {
@@ -1228,7 +1242,7 @@ int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id)
 						 sizeof(*cmd));
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_SET(WMI, L1), "WMI vdev stop id 0x%x\n", vdev_id);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI, ATH12K_DBG_L1, "WMI vdev stop id 0x%x\n", vdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_STOP_CMDID);
 	if (ret) {
@@ -1256,7 +1270,7 @@ int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id)
 						 sizeof(*cmd));
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_SET(WMI, L1), "WMI vdev down id 0x%x\n", vdev_id);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI, ATH12K_DBG_L1, "WMI vdev down id 0x%x\n", vdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DOWN_CMDID);
 	if (ret) {
@@ -1690,7 +1704,7 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 	ether_addr_copy(cmd->peer_macaddr.addr, peer_addr);
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
 		   "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d\n",
 		   vdev_id,  peer_addr, ar->num_peers);
 
@@ -2001,9 +2015,9 @@ int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 	cmd->param_id = cpu_to_le32(param_id);
 	cmd->param_value = cpu_to_le32(param_value);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_SET(WMI, L2),
-		   "WMI pdev set param %d pdev id %d value %d\n",
-		   param_id, pdev_id, param_value);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI, ATH12K_DBG_L2,
+			 "WMI pdev set param %d pdev id %d value %d\n",
+			 param_id, pdev_id, param_value);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PDEV_SET_PARAM_CMDID);
 	if (ret) {
@@ -2815,7 +2829,7 @@ int ath12k_wmi_vdev_install_key(struct ath12k *ar,
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE, key_len_aligned);
 	memcpy(tlv->value, arg->key_data, arg->key_len);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_EAPOL,
 		   "WMI vdev install key idx %d cipher %d len %d\n",
 		   arg->key_idx, arg->key_cipher, arg->key_len);
 
@@ -3299,7 +3313,7 @@ ttlm:
 	}
 
 send:
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
 		   "wmi peer assoc vdev id %d assoc id %d peer mac %pM peer_flags %x rate_caps %x peer_caps %x listen_intval %d ht_caps %x max_mpdu %d nss %d phymode %d peer_mpdu_density %d vht_caps %x he cap_info %x he ops %x he cap_info_ext %x he phy %x %x %x peer_bw_rxnss_override %x peer_flags_ext %x eht mac_cap %x %x eht phy_cap %x %x %x peer_eht_ops %x\n",
 		   cmd->vdev_id, cmd->peer_associd, arg->peer_mac,
 		   cmd->peer_flags, cmd->peer_rate_caps, cmd->peer_caps,
@@ -4088,11 +4102,11 @@ int ath12k_wmi_send_wmm_update_cmd(struct ath12k *ar, u32 vdev_id,
 		wmm_param->acm = cpu_to_le32(wmi_wmm_arg->acm);
 		wmm_param->no_ack = cpu_to_le32(wmi_wmm_arg->no_ack);
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_SET(WMI, L3),
-			   "wmi wmm set ac %d aifs %d cwmin %d cwmax %d txop %d acm %d no_ack %d\n",
-			   ac, wmm_param->aifs, wmm_param->cwmin,
-			   wmm_param->cwmax, wmm_param->txoplimit,
-			   wmm_param->acm, wmm_param->no_ack);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI, ATH12K_DBG_L3,
+				 "wmi wmm set ac %d aifs %d cwmin %d cwmax %d txop %d acm %d no_ack %d\n",
+				 ac, wmm_param->aifs, wmm_param->cwmin,
+				 wmm_param->cwmax, wmm_param->txoplimit,
+				 wmm_param->acm, wmm_param->no_ack);
 	}
 	ret = ath12k_wmi_cmd_send(wmi, skb,
 				  WMI_VDEV_SET_WMM_PARAMS_CMDID);
@@ -8509,7 +8523,7 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	struct ieee80211_vif *vif;
 	struct ath12k_vif *ahvif;
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
-	u16 frm_type;
+	u16 frm_stype;
 	int num_mgmt;
 
 	spin_lock_bh(&ar->data_lock);
@@ -8533,8 +8547,11 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	hdr = (struct ieee80211_hdr *)msdu->data;
 
 	if (ieee80211_is_mgmt(hdr->frame_control)) {
-		frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
+		frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 		vif = skb_cb->vif;
+		if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
+			ath12k_dbg(ar->ab, ATH12K_DBG_MLME, "Tx completion for %s frame to STA %pM status %u\n",
+				   mgmt_frame_name[frm_stype], hdr->addr1, status);
 
 		if (!vif) {
 			ath12k_warn(ar->ab, "failed to find vif to update txcompl mgmt stats\n");
@@ -8545,9 +8562,9 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 		mgmt_stats = &ahvif->mgmt_stats;
 
 		if (!status)
-			mgmt_stats->tx_compl_succ[frm_type]++;
+			mgmt_stats->tx_compl_succ[frm_stype]++;
 		else
-			mgmt_stats->tx_compl_fail[frm_type]++;
+			mgmt_stats->tx_compl_fail[frm_stype]++;
 	}
 
 skip_mgmt_stats:
@@ -9340,7 +9357,8 @@ static void ath12k_peer_delete_resp_event(struct ath12k_base *ab, struct sk_buff
 
 	complete(&ar->peer_delete_done);
 	rcu_read_unlock();
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "peer delete resp for vdev id %d addr %pM\n",
+	ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
+		   "peer delete resp for vdev id %d addr %pM\n",
 		   peer_del_resp.vdev_id, peer_del_resp.peer_macaddr.addr);
 }
 
@@ -9520,7 +9538,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	struct ieee80211_vif *vif;
 	struct ath12k_vif *ahvif;
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
-	u16 frm_type = 0;
+	u16 frm_stype;
 	struct ath12k_dp *dp;
 
 	rx_ev.num_link_removal_info = 0;
@@ -9589,7 +9607,11 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 
 	hdr = (struct ieee80211_hdr *)skb->data;
 	fc = le16_to_cpu(hdr->frame_control);
-	frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
+	frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, fc);
+
+	if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
+		ath12k_dbg(ar->ab, ATH12K_DBG_MLME, "Received %s frame from STA %pM\n",
+			   mgmt_frame_name[frm_stype], hdr->addr2);
 
 	dp = ath12k_ab_to_dp(ab);
 	spin_lock_bh(&dp->dp_lock);
@@ -9613,7 +9635,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 	mgmt_stats = &ahvif->mgmt_stats;
-	mgmt_stats->rx_cnt[frm_type]++;
+	mgmt_stats->rx_cnt[frm_stype]++;
 
 	spin_unlock_bh(&ar->data_lock);
 
@@ -10115,7 +10137,7 @@ static void ath12k_vdev_install_key_compl_event(struct ath12k_base *ab,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI,
+	ath12k_dbg(ab, ATH12K_DBG_WMI | ATH12K_DBG_EAPOL,
 		   "vdev install key ev idx %d flags %08x macaddr %pM status %d\n",
 		   install_key_compl.key_idx, install_key_compl.key_flags,
 		   install_key_compl.macaddr, install_key_compl.status);
@@ -10223,7 +10245,7 @@ static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff 
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI,
+	ath12k_dbg(ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
 		   "peer assoc conf ev vdev id %d macaddr %pM status:%d\n",
 		   peer_assoc_conf.vdev_id, peer_assoc_conf.macaddr,
 		   peer_assoc_conf.status);

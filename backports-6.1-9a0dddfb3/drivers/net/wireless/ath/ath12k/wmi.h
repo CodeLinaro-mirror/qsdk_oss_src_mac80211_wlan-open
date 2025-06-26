@@ -30,6 +30,16 @@ struct ath12k_fw_stats;
 struct ath12k_reg_tpc_power_info;
 struct ath12k_qos_params;
 
+extern const char *mgmt_frame_name[];
+
+#define ATH12K_MGMT_MLME_FRAME(fc) (ieee80211_is_assoc_req(fc) ||\
+		ieee80211_is_assoc_resp(fc)		||\
+		ieee80211_is_reassoc_req(fc)		||\
+		ieee80211_is_reassoc_resp(fc)		||\
+		ieee80211_is_disassoc(fc)		||\
+		ieee80211_is_deauth(fc)			||\
+		ieee80211_is_auth(fc))
+
 /* There is no signed version of __le32, so for a temporary solution come
  * up with our own version. The idea is from fs/ntfs/endian.h.
  *

@@ -10268,7 +10268,8 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d num_peers: %d\n",
 			    arsta->addr, arvif->vdev_id, ar->num_peers);
 	else
-		ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "Removed peer: %pM for VDEV: %d num_peers:%d\n",
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
+			   "Removed peer: %pM for VDEV: %d num_peers:%d\n",
 			   arsta->addr, arvif->vdev_id, ar->num_peers);
 
 	ath12k_mac_station_post_remove(ar, arvif, arsta);
@@ -13338,6 +13339,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	unsigned int mic_len;
 	bool link_agnostic;
 	dma_addr_t paddr;
+	u8 frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 	int buf_id;
 	int ret;
 
@@ -13396,6 +13398,9 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 		goto err_unmap_buf;
 	}
 
+	if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
+		ath12k_dbg(ab, ATH12K_DBG_MLME, "Transmit %s to STA %pM over WMI\n",
+			   mgmt_frame_name[frm_stype], hdr->addr1);
 	return 0;
 
 err_unmap_buf:
@@ -14718,9 +14723,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		break;
 	}
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_SET(MAC, L1), "mac vdev create id %d type %d subtype %d map %llx\n",
-		   arvif->vdev_id, ahvif->vdev_type, arvif->vdev_subtype,
-		   ab->free_vdev_map);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+			 "mac vdev create id %d type %d subtype %d map %llx\n",
+			 arvif->vdev_id, ahvif->vdev_type, arvif->vdev_subtype,
+			 ab->free_vdev_map);
 
 	vif->cab_queue = arvif->vdev_id % (ATH12K_HW_MAX_QUEUES - 1);
 	for (i = 0; i < ARRAY_SIZE(vif->hw_queue); i++)
@@ -17362,13 +17368,13 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		return;
 
 	if (ctx)
-		ath12k_dbg(ab, ATH12K_DBG_SET(MAC, L2),
-			   "mac chanctx unassign ptr %p vdev_id %i vdev_subtype %0x\n",
-			   ctx, arvif->vdev_id, arvif->vdev_subtype);
+		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+				 "mac chanctx unassign ptr %p vdev_id %i vdev_subtype %0x\n",
+				 ctx, arvif->vdev_id, arvif->vdev_subtype);
 	else
-		ath12k_dbg(ab, ATH12K_DBG_SET(MAC, L2),
-			   "mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
-			   arvif->vdev_id, arvif->vdev_subtype);
+		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+				 "mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
+				 arvif->vdev_id, arvif->vdev_subtype);
 
 	WARN_ON(!arvif->is_started);
 

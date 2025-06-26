@@ -255,9 +255,10 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u8 hal_ring_id;
 	int ret;
 	u16 peer_id;
-	u8 ring_selector, ring_map = 0;
+	u8 ring_selector, subtype, ring_map = 0;
 	bool tcl_ring_retry;
 	bool msdu_ext_desc = false;
+	size_t hdrlen;
 	bool add_htt_metadata = false;
 	u32 iova_mask = dp->hw_params->iova_mask;
 	bool is_diff_encap = false, is_null = false;
@@ -633,9 +634,29 @@ skip_htt_metadata:
 	spin_lock_bh(&arvif->link_stats_lock);
 	if (is_mcast)
 		ab->dp->device_stats.tx_mcast[ti.ring_id]++;
-	else if (skb->protocol == cpu_to_be16(ETH_P_PAE))
+	else if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
 		ab->dp->device_stats.tx_eapol[ti.ring_id]++;
-	else if (is_null)
+		if (ti.encap_type == HAL_TCL_ENCAP_TYPE_NATIVE_WIFI) {
+			hdr = (struct ieee80211_hdr *)skb->data;
+			hdrlen = ieee80211_get_hdrlen_from_skb(skb);
+			subtype = ath12k_dp_get_eapol_subtype
+						  (skb->data + hdrlen + LLC_SNAP_HDR_LEN);
+			if (subtype != DP_EAPOL_KEY_TYPE_MAX)
+				ath12k_dbg(ab, ATH12K_DBG_EAPOL, "Transmit %s%d EAPOL "
+					   "frame to STA %pM\n", subtype <= 4 ? "M" : "G",
+					   subtype <= 4 ? subtype : (subtype - 4),
+					   hdr->addr1);
+		} else {
+			eth = (struct ethhdr *)skb->data;
+			subtype = ath12k_dp_get_eapol_subtype(skb->data + ETH_HLEN);
+			if (subtype != DP_EAPOL_KEY_TYPE_MAX)
+				ath12k_dbg(ab, ATH12K_DBG_EAPOL, "Transmit %s%d EAPOL "
+					   "frame to STA %pM\n", subtype <= 4 ? "M" : "G",
+					   subtype <= 4 ? subtype : (subtype - 4),
+					   eth->h_dest);
+		}
+
+	} else if (is_null)
 		ab->dp->device_stats.tx_null_frame[ti.ring_id]++;
 	else
 		ab->dp->device_stats.tx_unicast[ti.ring_id]++;
@@ -786,6 +807,10 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	struct ath12k_base *ab = dp->ab;
 	struct sk_buff *skb_ext_desc = sw_metadata->skb_ext_desc;
 	struct ath12k_pdev_dp *dp_pdev;
+	struct ethhdr *eth;
+	struct ieee80211_hdr *hdr;
+	size_t hdrlen;
+	enum ath12k_dp_eapol_key_type subtype;
 	u8 pdev_id;
 
 	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, sw_metadata->mac_id);
@@ -824,6 +849,30 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 			spin_lock_bh(&arvif->link_stats_lock);
 			arvif->link_stats.tx_completed++;
 			spin_unlock_bh(&arvif->link_stats_lock);
+		}
+	}
+
+	if (msdu->protocol == cpu_to_be16(ETH_P_PAE)) {
+		if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) {
+			eth = (struct ethhdr *)msdu->data;
+			subtype = ath12k_dp_get_eapol_subtype(msdu->data + ETH_HLEN);
+			if (subtype != DP_EAPOL_KEY_TYPE_MAX)
+				ath12k_dbg(ab, ATH12K_DBG_EAPOL, "Tx completion success for"
+					   " %s%d EAPOL frame to STA %pM\n",
+					   subtype <= 4 ? "M" : "G",
+					   subtype <= 4 ? subtype : (subtype - 4),
+					   eth->h_dest);
+		} else {
+			hdr = (struct ieee80211_hdr *)msdu->data;
+			hdrlen = ieee80211_get_hdrlen_from_skb(msdu);
+			subtype = ath12k_dp_get_eapol_subtype(msdu->data
+					+ hdrlen + LLC_SNAP_HDR_LEN);
+			if (subtype != DP_EAPOL_KEY_TYPE_MAX)
+				ath12k_dbg(ab, ATH12K_DBG_EAPOL, "Tx completion success for"
+					   " %s%d EAPOL frame to STA %pM\n",
+					   subtype <= 4 ? "M" : "G",
+					   subtype <= 4 ? subtype : (subtype - 4),
+					   hdr->addr1);
 		}
 	}
 

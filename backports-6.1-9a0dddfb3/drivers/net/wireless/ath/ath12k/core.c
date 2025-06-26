@@ -65,6 +65,10 @@ module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
 MODULE_PARM_DESC(debug_mask, "Debugging mask");
 EXPORT_SYMBOL(ath12k_debug_mask);
 
+unsigned int ath12k_debug_mask_level;
+module_param_named(debug_level, ath12k_debug_mask_level, uint, 0644);
+MODULE_PARM_DESC(debug_mask, "Debugging level");
+
 unsigned int ath12k_mlo_capable = true;
 module_param_named(mlo_capable, ath12k_mlo_capable, uint, 0644);
 MODULE_PARM_DESC(mlo_capable, "mlo capable: 0-disable, 1-enable");

@@ -149,6 +149,29 @@ struct ath12k_pdev_dp {
 	bool enable_dp_debug_stats;
 };
 
+#define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
+#define EAPOL_WPA_KEY_INFO_ACK			BIT(7)
+#define EAPOL_WPA_KEY_INFO_MIC			BIT(8)
+#define EAPOL_WPA_KEY_INFO_ENCR_KEY_DATA	BIT(12) /* IEEE 802.11i/RSN only */
+
+#define EAPOL_PACKET_TYPE_OFFSET                1
+#define EAPOL_KEY_INFO_OFFSET                   5
+#define EAPOL_KEY_DATA_LENGTH_OFFSET            97
+#define EAPOL_WPA_KEY_NONCE_OFFSET              17
+#define EAPOL_PACKET_TYPE_KEY                   3
+#define LLC_SNAP_HDR_LEN			8
+
+enum ath12k_dp_eapol_key_type {
+	DP_EAPOL_KEY_TYPE_M1 = 1,
+	DP_EAPOL_KEY_TYPE_M2,
+	DP_EAPOL_KEY_TYPE_M3,
+	DP_EAPOL_KEY_TYPE_M4,
+	DP_EAPOL_KEY_TYPE_G1,
+	DP_EAPOL_KEY_TYPE_G2,
+
+	DP_EAPOL_KEY_TYPE_MAX,
+};
+
 #define DP_NUM_CLIENTS_MAX 64
 #define DP_AVG_TIDS_PER_CLIENT 2
 #define DP_NUM_TIDS_MAX (DP_NUM_CLIENTS_MAX * DP_AVG_TIDS_PER_CLIENT)
@@ -983,6 +1006,7 @@ void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct dp_rxdma_ring *rx_ring,
 					       struct list_head *list);
+enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
 				  struct ath12k_dp *dp, bool vdev_id_check_en);

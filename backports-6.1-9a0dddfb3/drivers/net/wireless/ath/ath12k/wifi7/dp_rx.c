@@ -2699,10 +2699,15 @@ static void ath12k_wifi7_dp_rx_wbm_err(struct ath12k_pdev_dp *dp_pdev,
 				       struct sk_buff_head *msdu_list)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_base *ab = dp->ab;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct hal_rx_desc_data rx_desc_data = {0};
 	struct ieee80211_rx_status rxs = {0};
 	bool drop = true;
+	struct ieee80211_hdr *hdr;
+	struct ath12k_dp_rx_rfc1042_hdr *llc;
+	enum ath12k_dp_eapol_key_type subtype;
+	size_t hdr_len;
 	struct hal_rx_desc *rx_desc = (struct hal_rx_desc *)msdu->data;
 
 	ath12k_wifi7_dp_extract_rx_desc_data(dp, &rx_desc_data, rx_desc, rx_desc);
@@ -2727,6 +2732,17 @@ static void ath12k_wifi7_dp_rx_wbm_err(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 	rxs.flag |= RX_FLAG_SKIP_MONITOR;
+
+	hdr = (struct ieee80211_hdr *)msdu->data;
+	hdr_len = ieee80211_hdrlen(hdr->frame_control);
+	llc = (struct ath12k_dp_rx_rfc1042_hdr *)(msdu->data + hdr_len);
+	if (llc->snap_type == cpu_to_be16(ETH_P_PAE)) {
+		subtype = ath12k_dp_get_eapol_subtype(msdu->data + hdr_len + LLC_SNAP_HDR_LEN);
+		if (subtype != DP_EAPOL_KEY_TYPE_MAX)
+			ath12k_dbg(ab, ATH12K_DBG_EAPOL, "Received %s%d EAPOL frame from "
+				   "STA %pM\n", subtype <= 4 ? "M" : "G",
+				   subtype <= 4 ? subtype : (subtype - 4), hdr->addr2);
+	}
 
 	ath12k_dp_rx_deliver_msdu(dp_pdev, napi, msdu, &rxs, rxcb->hw_link_id,
 				  rx_desc_data.is_mcbc, rx_desc_data.peer_id,

@@ -1884,6 +1884,43 @@ free:
 	return ret;
 }
 
+enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data)
+{
+	u8 pkt_type = *(data + EAPOL_PACKET_TYPE_OFFSET);
+	u16 key_info, key_data_length;
+	enum ath12k_dp_eapol_key_type subtype;
+	u64 *key_nonce;
+	bool pairwise;
+
+	if (pkt_type != EAPOL_PACKET_TYPE_KEY)
+		return DP_EAPOL_KEY_TYPE_MAX;
+
+	key_info = be16_to_cpu(*(u16 *)(data + EAPOL_KEY_INFO_OFFSET));
+
+	key_data_length = be16_to_cpu(*(u16 *)(data + EAPOL_KEY_DATA_LENGTH_OFFSET));
+	key_nonce = (u64 *)(data + EAPOL_WPA_KEY_NONCE_OFFSET);
+	pairwise = key_info & EAPOL_WPA_KEY_INFO_KEY_TYPE;
+
+	if (key_info & EAPOL_WPA_KEY_INFO_ACK) {
+		if (key_info &
+		   (EAPOL_WPA_KEY_INFO_MIC | EAPOL_WPA_KEY_INFO_ENCR_KEY_DATA))
+			subtype = pairwise ?
+				DP_EAPOL_KEY_TYPE_M3 :  DP_EAPOL_KEY_TYPE_G1;
+		else
+			subtype =  DP_EAPOL_KEY_TYPE_M1;
+	} else {
+		if (key_data_length == 0 ||
+		    !((*key_nonce) || (*(key_nonce + 1)) ||
+		      (*(key_nonce + 2)) || (*(key_nonce + 3))))
+			subtype = pairwise ?
+				DP_EAPOL_KEY_TYPE_M4 :  DP_EAPOL_KEY_TYPE_G2;
+		else
+			subtype =  DP_EAPOL_KEY_TYPE_M2;
+	}
+	return subtype;
+}
+EXPORT_SYMBOL(ath12k_dp_get_eapol_subtype);
+
 static int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 				    struct ath12k_reo_q_addr_lut *lut)
 {
