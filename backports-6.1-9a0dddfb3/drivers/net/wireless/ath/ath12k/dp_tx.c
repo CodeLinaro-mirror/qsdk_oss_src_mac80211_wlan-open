@@ -295,7 +295,6 @@ struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 					list);
 	if (!desc) {
 		spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
-		ath12k_warn(dp->ab, "failed to allocate data Tx buffer\n");
 		return NULL;
 	}
 
