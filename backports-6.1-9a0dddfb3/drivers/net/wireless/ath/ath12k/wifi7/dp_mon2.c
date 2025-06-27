@@ -191,7 +191,8 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 			tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
 
 		hal_status =
-			ath12k_wifi7_hal_mon_rx_parse_status_tlv(&pmon->mon_ppdu_info,
+			ath12k_wifi7_hal_mon_rx_parse_status_tlv(dp_pdev->dp->hal,
+								 &pmon->mon_ppdu_info,
 								 tlv);
 
 		if (ar->monitor_started &&
