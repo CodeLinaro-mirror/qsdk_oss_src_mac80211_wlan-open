@@ -1404,22 +1404,19 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	INIT_LIST_HEAD(&rx_desc_sg_list);
 	__skb_queue_head_init(&local_msdu_list);
 
-	srng = &ab->hal.srng_list[dp->reo_dst_ring[ring_id].ring_id];
+	srng = &dp->hal->srng_list[dp->reo_dst_ring[ring_id].ring_id];
 
-	spin_lock_bh(&srng->lock);
-
-	first_msdu_tp = ath12k_hal_srng_access_begin(ab, srng);
+	first_msdu_tp = __ath12k_hal_srng_access_begin(srng);
 
 #ifndef CONFIG_IO_COHERENCY
-	valid_entries = ath12k_hal_srng_dst_num_free(ab, srng, false);
+	valid_entries = __ath12k_hal_srng_dst_num_free(srng, false);
 	if (unlikely(!valid_entries)) {
 		ath12k_hal_srng_access_end(ab, srng);
-		spin_unlock_bh(&srng->lock);
 		return -EINVAL;
 	}
-	ath12k_hal_srng_dst_invalidate_entry(ab, srng, valid_entries);
+	__ath12k_hal_srng_dst_invalidate_entry(dp, srng, valid_entries);
 #endif
-	while ((desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, srng, &last_tp))) {
+	while ((desc = __ath12k_hal_srng_dst_get_next_cached_entry(srng, &last_tp))) {
 		struct rx_mpdu_desc_info *mpdu_info;
 		struct hal_rx_spd_data *spd_desc_l;
 
@@ -1517,11 +1514,9 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 			break;
 	}
 
-	ath12k_hal_srng_update_tp(srng, first_msdu_tp);
+	__ath12k_hal_srng_update_tp(srng, first_msdu_tp);
 
-	ath12k_hal_srng_access_end(ab, srng);
-
-	spin_unlock_bh(&srng->lock);
+	__ath12k_hal_srng_access_end(ab, srng);
 
 	if (!total_msdu_reaped)
 		goto exit;

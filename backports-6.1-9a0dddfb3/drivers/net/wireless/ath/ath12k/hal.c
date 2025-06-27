@@ -367,13 +367,10 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_entry);
 
-void *ath12k_hal_srng_dst_get_next_cached_entry(struct ath12k_base *ab,
-						struct hal_srng *srng,
-						u32 *old_tp)
+void *__ath12k_hal_srng_dst_get_next_cached_entry(struct hal_srng *srng,
+						  u32 *old_tp)
 {
 	void *desc;
-
-	lockdep_assert_held(&srng->lock);
 
 	if (srng->u.dst_ring.tp == srng->u.dst_ring.cached_hp)
 		return NULL;
@@ -391,14 +388,22 @@ void *ath12k_hal_srng_dst_get_next_cached_entry(struct ath12k_base *ab,
 
 	return desc;
 }
+EXPORT_SYMBOL(__ath12k_hal_srng_dst_get_next_cached_entry);
+
+void *ath12k_hal_srng_dst_get_next_cached_entry(struct ath12k_base *ab,
+						struct hal_srng *srng,
+						u32 *old_tp)
+{
+	lockdep_assert_held(&srng->lock);
+
+	return __ath12k_hal_srng_dst_get_next_cached_entry(srng, old_tp);
+
+}
 EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_cached_entry);
 
-int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
-				 bool sync_hw_ptr)
+int __ath12k_hal_srng_dst_num_free(struct hal_srng *srng, bool sync_hw_ptr)
 {
 	u32 tp, hp;
-
-	lockdep_assert_held(&srng->lock);
 
 	tp = srng->u.dst_ring.tp;
 
@@ -414,14 +419,21 @@ int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 	else
 		return (srng->ring_size - tp + hp) / srng->entry_size;
 }
+EXPORT_SYMBOL(__ath12k_hal_srng_dst_num_free);
+
+int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
+				 bool sync_hw_ptr)
+{
+	lockdep_assert_held(&srng->lock);
+
+	return __ath12k_hal_srng_dst_num_free(srng, sync_hw_ptr);
+}
 EXPORT_SYMBOL(ath12k_hal_srng_dst_num_free);
 
-void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_base *ab,
+void __ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,
 					  struct hal_srng *srng, int entries)
 {
 	u32 *desc, tp, hp;
-
-	lockdep_assert_held(&srng->lock);
 
 	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED) || !entries)
 	        return;
@@ -431,19 +443,28 @@ void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_base *ab,
 
 	desc = srng->ring_base_vaddr + tp;
 	if (hp > tp) {
-		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
+		dma_sync_single_for_cpu(dp->dev, virt_to_phys(desc),
 					entries * srng->entry_size * sizeof(u32),
 					DMA_FROM_DEVICE);
 	} else {
 		entries = srng->ring_size - tp;
-		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
+		dma_sync_single_for_cpu(dp->dev, virt_to_phys(desc),
 					entries * sizeof(u32),
 					DMA_FROM_DEVICE);
 		entries = hp;
-		dma_sync_single_for_cpu(ab->dev, virt_to_phys(srng->ring_base_vaddr),
+		dma_sync_single_for_cpu(dp->dev, virt_to_phys(srng->ring_base_vaddr),
 					entries * sizeof(u32),
 					DMA_FROM_DEVICE);
 	}
+}
+EXPORT_SYMBOL(__ath12k_hal_srng_dst_invalidate_entry);
+
+void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,
+					  struct hal_srng *srng, int entries)
+{
+	lockdep_assert_held(&srng->lock);
+
+	return __ath12k_hal_srng_dst_invalidate_entry(dp, srng, entries);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_invalidate_entry);
 
@@ -541,7 +562,7 @@ void *ath12k_hal_srng_src_get_next_reaped(struct ath12k_base *ab,
 	return desc;
 }
 
-u32 ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng)
+u32 __ath12k_hal_srng_access_begin(struct hal_srng *srng)
 {
 	lockdep_assert_held(&srng->lock);
 
@@ -554,22 +575,35 @@ u32 ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng)
 		return srng->u.dst_ring.tp;
 	}
 }
+EXPORT_SYMBOL(__ath12k_hal_srng_access_begin);
+
+u32 ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng)
+{
+	lockdep_assert_held(&srng->lock);
+
+	return __ath12k_hal_srng_access_begin(srng);
+}
 EXPORT_SYMBOL(ath12k_hal_srng_access_begin);
+
+void __ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp)
+{
+	srng->u.dst_ring.tp = new_tp;
+}
+EXPORT_SYMBOL(__ath12k_hal_srng_update_tp);
 
 void ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp)
 {
 	lockdep_assert_held(&srng->lock);
 
-	srng->u.dst_ring.tp = new_tp;
+	__ath12k_hal_srng_update_tp(srng, new_tp);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_update_tp);
 
 /* Update cached ring head/tail pointers to HW. ath12k_hal_srng_access_begin()
  * should have been called before this.
  */
-void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng)
+void __ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng)
 {
-	lockdep_assert_held(&srng->lock);
 	/* TODO: See if we need a write memory barrier here */
 	if (srng->flags & HAL_SRNG_FLAGS_LMAC_RING) {
 		/* For LMAC rings, ring pointer updates are done through FW and
@@ -601,6 +635,14 @@ void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng)
 	}
 
 	srng->timestamp = jiffies;
+}
+EXPORT_SYMBOL(__ath12k_hal_srng_access_end);
+
+void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng)
+{
+	lockdep_assert_held(&srng->lock);
+
+	__ath12k_hal_srng_access_end(ab, srng);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_access_end);
 

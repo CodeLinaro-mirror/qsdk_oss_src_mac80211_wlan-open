@@ -1128,7 +1128,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	if (valid_entries > budget)
 		valid_entries = budget;
 
-	ath12k_hal_srng_dst_invalidate_entry(ab, status_ring, valid_entries);
+	ath12k_hal_srng_dst_invalidate_entry(dp, status_ring, valid_entries);
 #endif
 
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
