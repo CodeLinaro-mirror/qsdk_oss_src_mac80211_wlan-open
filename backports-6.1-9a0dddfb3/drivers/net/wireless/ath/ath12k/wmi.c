@@ -6698,35 +6698,6 @@ static int ath12k_pull_vdev_start_resp_tlv(struct ath12k_base *ab, struct sk_buf
 	return 0;
 }
 
-static void ath12k_free_afc_power_event_info(struct ath12k_afc_info *afc)
-{
-	struct ath12k *ar = container_of(afc, struct ath12k, afc);
-	struct ath12k_afc_sp_reg_info *afc_reg_info;
-	struct ath12k_afc_chan_obj *afc_chan_info;
-	struct ath12k_base *ab = ar->ab;
-	int num_chan_objs = 0;
-	int i;
-
-	if (!afc->afc_reg_info)
-		return;
-
-	ath12k_dbg(ab, ATH12K_DBG_AFC, "Freeing afc info\n");
-	spin_lock_bh(&ar->data_lock);
-	afc_reg_info = afc->afc_reg_info;
-	num_chan_objs = afc_reg_info->num_chan_objs;
-	kfree(afc_reg_info->afc_freq_info);
-
-	for (i = 0; i < num_chan_objs; i++) {
-		afc_chan_info = afc_reg_info->afc_chan_info + i;
-		kfree(afc_chan_info->chan_eirp_info);
-	}
-
-	kfree(afc_reg_info->afc_chan_info);
-	kfree(afc_reg_info);
-	afc->afc_reg_info = NULL;
-	spin_unlock_bh(&ar->data_lock);
-}
-
 static int ath12k_copy_afc_power_event_fixed_info(struct ath12k_base *ab,
 						  struct ath12k_afc_info *afc,
 						  const void *ptr,
@@ -6770,10 +6741,12 @@ static int ath12k_wmi_afc_fill_freq_obj(struct ath12k_base *ab,
 	struct wmi_6ghz_afc_frequency_info *freq_buf = NULL;
 	struct ath12k_afc_freq_obj *freq_obj = NULL;
 	int i;
-
+	/* AFC payload with 0 freq objects is still considered a valid payload. Hence,
+	 * do not return an error.
+	 */
 	if (!afc_reg_info->num_freq_objs) {
-		ath12k_warn(ab, "No freq objects in afc power event\n");
-		return -EINVAL;
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "No freq objects in afc power event\n");
+		return 0;
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_AFC, "Num afc freq obj received %d\n",
@@ -6813,9 +6786,12 @@ static int ath12k_wmi_afc_fill_chan_obj(struct ath12k_base *ab,
 	struct wmi_6ghz_afc_channel_info *chan_buf = NULL;
 	int i;
 
+	/* AFC payload with 0 channel objects is still considered a valid payload. Hence,
+	 * do not return an error.
+	 */
 	if (!afc_reg_info->num_chan_objs) {
-		ath12k_warn(ab, "No channel objects in afc power event\n");
-		return -EINVAL;
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "No channel objects in afc power event\n");
+		return 0;
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_AFC, "Num chan objects received %d\n",
@@ -7036,8 +7012,8 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 	}
 
 	afc_info = &ar->afc;
-	ath12k_dbg(ab, ATH12K_DBG_AFC, "Received AFC event of type %d\n",
-		   ar->afc.event_type);
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "Received AFC event of type %d for pdev: %d\n",
+		   ar->afc.event_type, ar->pdev->pdev_id);
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
 				  ath12k_wmi_afc_event_parser, afc_info);
 	if (ret) {

@@ -629,4 +629,11 @@ void ath12k_reg_get_afc_eirp_power_for_bw(struct ath12k *ar, u16 *start_freq,
 					  u16 *center_freq, int pwr_level,
 					  struct cfg80211_chan_def *chan_def,
 					  s8 *tx_power);
+/**
+ * ath12k_free_afc_power_event_info() - Free AFC power event info
+ * @afc: Pointer to ath12k_afc_info
+ *
+ * Return: None
+ */
+void ath12k_free_afc_power_event_info(struct ath12k_afc_info *afc);
 #endif

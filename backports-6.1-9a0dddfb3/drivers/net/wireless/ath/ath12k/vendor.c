@@ -981,6 +981,103 @@ fail:
 	return -EINVAL;
 }
 
+/**
+ * afc_payload_reset_evt_get_data_len: Get the AFC payload resent event data
+ * length.
+ *
+ * Return: Data length.
+ */
+static int afc_payload_reset_evt_get_data_len(void)
+{
+	u32 len = NLMSG_HDRLEN;
+
+	/* Size reserved for event type and HW index */
+	len += nla_total_size(sizeof(u8)) + nla_total_size(sizeof(u32));
+	len = nla_total_size(len);
+
+	return len;
+}
+
+int ath12k_send_afc_payload_reset(struct ath12k *ar)
+{
+	struct sk_buff *vendor_event;
+	int ret = -EINVAL;
+	int vendor_buffer_len, hw_index;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
+	u16 freq_low;
+	struct ath12k_link_vif *tmp_arvif = NULL, *arvif;
+	struct wireless_dev *wdev;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (arvif->is_started) {
+			tmp_arvif = arvif;
+			break;
+		}
+	}
+
+	if (!tmp_arvif || !tmp_arvif->ahvif) {
+		ath12k_warn(ar->ab, "Unable to send AFC payload reset event, no vif started\n");
+		goto out;
+	}
+
+	wdev = ieee80211_vif_to_wdev(tmp_arvif->ahvif->vif);
+	/* Hostapd application is a consumer of this afc payload reset event, without
+	 * the presence of the vif, it cannot take any action on the received payload
+	 * reset event. Hence, send this event only when a vif is present.
+	 */
+	if (!wdev) {
+		ath12k_warn(ar->ab, "Unable to send AFC payload reset event, no wdev\n");
+		goto out;
+	}
+
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
+	if (!reg_cap) {
+		ath12k_err(ab, "Unable to get reg cap for pdev %d\n", ar->pdev_idx);
+		goto out;
+	}
+
+	freq_low = reg_cap->low_5ghz_chan;
+	hw_index = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy, freq_low);
+	if (hw_index == -1) {
+		ath12k_err(ab, "Failed to get hw index for freq %d\n", freq_low);
+		goto out;
+	}
+
+	vendor_buffer_len = afc_payload_reset_evt_get_data_len();
+	vendor_event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy,
+						   wdev,
+						   vendor_buffer_len,
+						   QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX,
+						   GFP_ATOMIC);
+	if (!vendor_event) {
+		ath12k_warn(ar->ab, "failed to allocate skb for afc expiry event\n");
+		goto out;
+	}
+
+	if (nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_TYPE,
+		       QCA_WLAN_VENDOR_AFC_EVENT_TYPE_PAYLOAD_RESET)) {
+		ath12k_warn(ar->ab, "AFC payload reset complete event type put fail");
+		goto out;
+	}
+	if (nla_put_u32(vendor_event,
+			QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX,
+			hw_index)) {
+		ath12k_warn(ar->ab, "AFC payload reset complete event hw index put fail");
+		goto out;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+		   "Sending afc payload reset to higher layer of type %d, hw_index: %d\n",
+		   QCA_WLAN_VENDOR_AFC_EXPIRY_EVENT, hw_index);
+	cfg80211_vendor_event(vendor_event, GFP_ATOMIC);
+	ret = 0;
+
+out:
+	return ret;
+}
+
 int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *afc_req)
 {
 	struct sk_buff *vendor_event;

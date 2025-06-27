@@ -1299,6 +1299,134 @@ void ath12k_reg_get_afc_eirp_power_for_bw(struct ath12k *ar, u16 *start_freq,
 	*tx_power = ath12k_reg_get_afc_eirp_power(ar, bw, cfi);
 }
 
+/**
+ * ath12k_is_reg_rule_subset_of_chip_range() - Check if the rule range
+ * is subset of chip range
+ * @rule_range: rule range
+ * @chip_range: chip range
+ *
+ * Return: true if rule range is subset of chip range
+ */
+static bool
+ath12k_is_reg_rule_subset_of_chip_range(struct ieee80211_freq_range rule_range,
+					struct ieee80211_freq_range chip_range)
+{
+	if (rule_range.start_freq_khz >= chip_range.start_freq_khz &&
+	    rule_range.end_freq_khz <= chip_range.end_freq_khz)
+		return true;
+
+	return false;
+}
+
+/**
+ * ath12k_get_current_regd() - Get the current regulatory domain
+ * @ar: pointer to ath12k
+ *
+ * Return: pointer to the current regulatory domain or NULL in case of error
+ */
+static struct ieee80211_regdomain *ath12k_get_current_regd(struct ath12k *ar)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ieee80211_regdomain *regd;
+
+	spin_lock_bh(&ab->base_lock);
+	if (ab->new_regd[ar->pdev_idx])
+		regd = ab->new_regd[ar->pdev_idx];
+	else
+		regd = ab->default_regd[ar->pdev_idx];
+
+	if (!regd) {
+		ath12k_warn(ab, "Regulatory domain data not present\n");
+		goto end;
+	}
+end:
+	spin_unlock_bh(&ab->base_lock);
+	return regd;
+}
+
+/**
+ * ath12k_mark_sp_reg_rules_as_no_ir() - Mark the SP rules as NO_IR
+ * @ar: pointer to ath12k
+ * @regd: pointer to the regulatory domain
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+static int
+ath12k_mark_sp_reg_rules_as_no_ir(struct ath12k *ar,
+				  struct ieee80211_regdomain *regd)
+{
+	struct ieee80211_freq_range chip_range = {0};
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
+	struct ath12k_base *ab = ar->ab;
+	u8 i;
+
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
+	if (!reg_cap) {
+		ath12k_warn(ab, "Regulatory capabilities not present for pdev_id: %u\n",
+			    ar->pdev_idx);
+		return -EINVAL;
+	}
+
+	chip_range.start_freq_khz = MHZ_TO_KHZ(reg_cap->low_5ghz_chan);
+	chip_range.end_freq_khz = MHZ_TO_KHZ(reg_cap->high_5ghz_chan);
+
+	for (i = 0; i < regd->n_reg_rules; i++) {
+		struct ieee80211_reg_rule *new_rule;
+
+		new_rule =  regd->reg_rules + i;
+		if (new_rule->mode != NL80211_REG_AP_SP)
+			continue;
+		if (ath12k_is_reg_rule_subset_of_chip_range(new_rule->freq_range,
+							    chip_range))
+			new_rule->flags |= NL80211_RRF_NO_IR;
+		ath12k_dbg(ab, ATH12K_DBG_AFC, "Add NO_IR flag SP rule %u, s_freq %u, e_freq %u\n",
+			   i, new_rule->freq_range.start_freq_khz,
+			   new_rule->freq_range.end_freq_khz);
+	}
+	return 0;
+}
+
+/**
+ * ath12k_handle_invalid_afc_payload() - Handle invalid AFC payload by
+ * marking all the SP channels as NO_IR.
+ * @ar: pointer to ath12k
+ * Return: 0 on success, negative error code on failure
+ */
+static int ath12k_handle_invalid_afc_payload(struct ath12k *ar)
+{
+	struct ieee80211_regdomain *regd;
+	struct ath12k_hw *ah = ar->ah;
+	struct ath12k_base *ab = ar->ab;
+	int ret = 0;
+	struct ath12k_6ghz_sp_reg_rule *sp_rule;
+
+	regd = ath12k_get_current_regd(ar);
+	if (!regd) {
+		ath12k_warn(ab, "Regulatory domain data not present\n");
+		return -EINVAL;
+	}
+	if (!ab->sp_rule) {
+		ath12k_warn(ab, "SP rules not present for pdev: %u\n", ar->pdev_idx);
+		return -EINVAL;
+	}
+
+	sp_rule = ab->sp_rule;
+	if (!sp_rule->num_6ghz_sp_rule) {
+		ath12k_warn(ab, "No default 6 GHz sp rules present\n");
+		return -EINVAL;
+	}
+
+	ar->afc.is_6ghz_afc_power_event_received = false;
+	ret = ath12k_mark_sp_reg_rules_as_no_ir(ar, regd);
+	if (ret) {
+		ath12k_warn(ab, "Failed to mark SP rules as NO_IR\n");
+		return ret;
+	}
+	ah->regd_updated = false;
+	queue_work(ab->workqueue, &ar->regd_update_work);
+	return ret;
+}
+
 int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 {
 	int new_reg_rule_cnt, num_regd_rules, num_afc_rules, num_sp_rules;
@@ -1316,6 +1444,7 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 	struct ath12k_hw *ah = ar->ah;
 	int i, j, k, pdev_idx;
 	char alpha2[3] = {0};
+	u16 is_afc_chan_or_freq_obj_empty;
 
 	pdev_idx = ar->pdev_idx;
 
@@ -1326,10 +1455,14 @@ int ath12k_reg_process_afc_power_event(struct ath12k *ar)
 	sp_rule = ab->sp_rule;
 	afc_reg_info = ar->afc.afc_reg_info;
 	afc_freq_info = afc_reg_info->afc_freq_info;
+	is_afc_chan_or_freq_obj_empty = (afc_reg_info->num_chan_objs == 0) ||
+					(afc_reg_info->num_freq_objs == 0);
 
-	if (afc_reg_info->fw_status_code != REG_FW_AFC_POWER_EVENT_SUCCESS) {
-		ath12k_warn(ab, "AFC Power event failure status code %d",
-			    afc_reg_info->fw_status_code);
+	if (afc_reg_info->fw_status_code != REG_FW_AFC_POWER_EVENT_SUCCESS ||
+	    is_afc_chan_or_freq_obj_empty) {
+		ath12k_warn(ab, "AFC Power event failure status code %d, afc_rule_empty: %d\n",
+			    afc_reg_info->fw_status_code, is_afc_chan_or_freq_obj_empty);
+		ath12k_handle_invalid_afc_payload(ar);
 		ret = -EINVAL;
 		goto end;
 	}
@@ -2497,6 +2630,33 @@ static int ath12k_reg_afc_start(struct ath12k_base *ab,
 	return ret;
 }
 
+void ath12k_free_afc_power_event_info(struct ath12k_afc_info *afc)
+{
+	struct ath12k *ar = container_of(afc, struct ath12k, afc);
+	struct ath12k_afc_sp_reg_info *afc_reg_info;
+	struct ath12k_afc_chan_obj *afc_chan_info;
+	struct ath12k_base *ab = ar->ab;
+	int num_chan_objs;
+	int i;
+
+	if (!afc->afc_reg_info)
+		return;
+
+	ath12k_dbg(ab, ATH12K_DBG_AFC, "Freeing afc info\n");
+	afc_reg_info = afc->afc_reg_info;
+	num_chan_objs = afc_reg_info->num_chan_objs;
+	kfree(afc_reg_info->afc_freq_info);
+
+	for (i = 0; i < num_chan_objs; i++) {
+		afc_chan_info = afc_reg_info->afc_chan_info + i;
+		kfree(afc_chan_info->chan_eirp_info);
+	}
+
+	kfree(afc_reg_info->afc_chan_info);
+	kfree(afc_reg_info);
+	afc->afc_reg_info = NULL;
+}
+
 int ath12k_process_expiry_event(struct ath12k *ar)
 {
 	struct ath12k_afc_info *afc = &ar->afc;
@@ -2517,7 +2677,13 @@ int ath12k_process_expiry_event(struct ath12k *ar)
 		}
 		break;
 	case REG_AFC_EXPIRY_EVENT_SWITCH_TO_LPI:
-		/*TBH*/
+		ret = ath12k_handle_invalid_afc_payload(ar);
+		ath12k_free_afc_power_event_info(afc);
+		if (ret) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Failed to process switch to LPI event\n");
+			return ret;
+		}
+		ath12k_send_afc_payload_reset(ar);
 		break;
 	default:
 		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "Invalid AFC expiry event subtype %d\n",

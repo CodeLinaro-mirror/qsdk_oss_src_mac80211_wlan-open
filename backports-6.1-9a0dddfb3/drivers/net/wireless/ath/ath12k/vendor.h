@@ -60,6 +60,15 @@ int ath12k_vendor_send_power_update_complete(struct ath12k *ar);
 int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *afc_req);
 
 /**
+ * ath12k_send_afc_payload_reset - Send AFC payload reset vendor NL event
+ * to userspace.
+ *
+ * @ar: Pointer to ar
+ * Return: 0 on success, negative errno on failure.
+ */
+int ath12k_send_afc_payload_reset(struct ath12k *ar);
+
+/**
  * Opclass, channel and EIRP information attribute length
  * Refer kernel doc explanation for attribute
  * QCA_WLAN_VENDOR_ATTR_AFC_RESP_OPCLASS_CHAN_EIRP_INFO
