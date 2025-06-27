@@ -1963,21 +1963,66 @@ struct link_station_del_parameters {
 };
 
 /**
+ * enum ttlm_cmd_type - the purpose for which set_ttlm command is invoked
+ *
+ * Used to differentiate between different ttlm requests.
+ *
+ * @TTLM_CMD_TYPE_NEGOTIATED: Indicates the set_ttlm is invoked for TTLM
+ *	negotiation.
+ * @TTLM_CMD_TYPE_ADVERTISED: Indicates the set_ttlm is invoked for TTLM
+ *	advertisement.
+ * @TTLM_CMD_TYPE_MAX: Indicates max type supported
+ */
+enum ttlm_cmd_type {
+	TTLM_CMD_TYPE_NEGOTIATED = 0,
+	TTLM_CMD_TYPE_ADVERTISED = 1,
+	TTLM_CMD_TYPE_MAX,
+};
+
+/**
  * struct cfg80211_ttlm_params: TID to link mapping parameters
  *
  * Used for setting a TID to link mapping.
  *
- * @dlink: Downlink TID to link mapping, as defined in section 9.4.2.314
+ * @u.neg.dlink: Downlink TID to link mapping, as defined in section 9.4.2.314
  *     (TID-To-Link Mapping element) in Draft P802.11be_D4.0.
- * @ulink: Uplink TID to link mapping, as defined in section 9.4.2.314
+ * @u.neg.ulink: Uplink TID to link mapping, as defined in section 9.4.2.314
  *     (TID-To-Link Mapping element) in Draft P802.11be_D4.0.
- * @mld_mac_addr: STA mld mac with which negotitation attempted on
+ * @u.neg.mld_mac_addr: STA mld mac with which negotitation attempted on
  *      AP MLD
+ * @u.adv.num_ttlm_info: Indicates the number of ttlm IE info provided
+ *	by userspace to be advertised.
+ * @u.adv.link_mapping_size: size of ttlm mapping either in 2 bytes or
+ *	1 byte form to be used in TTLM IE advertisement.
+ * @u.adv.ieee_link_bmap: indicates bitmap of the links that will be
+ *	enabled and advertised in TTLM IE of beacon. The same bitmap will be
+ *	copied to all TIDs map value of the IE with directection bit set to
+ *	0x3 indicating BiDi direction as defined in section 35.3.7.2.4
+ *	(Advertised TTLM in Beacon and Probe Response frames) in Draft
+ *	P802.11be_D4.0.
+ * @u.adv.switch_time: Indicates the Mapping Switch Time to be used while
+ *	advertising the TTLM in offload mode as defined in section 9.4.2.314
+ *	(TID-To-Link Mapping element) in Draft P802.11be_D4.0.
+ * @u.adv.duration: Indicates the duration for which the advertised TTLM
+ *	is valid as defined in section 9.4.2.314 (TID-To-Link Mapping element)
+ *	in Draft P802.11be_D4.0.
  */
 struct cfg80211_ttlm_params {
-	u16 dlink[IEEE80211_MAX_NUM_TIDS];
-	u16 ulink[IEEE80211_MAX_NUM_TIDS];
-	const u8 *mld_mac_addr;
+	enum ttlm_cmd_type type;
+	union {
+		struct {
+			u16 dlink[IEEE80211_MAX_NUM_TIDS];
+			u16 ulink[IEEE80211_MAX_NUM_TIDS];
+			const u8 *mld_mac_addr;
+		} neg;
+		struct {
+			u8 num_ttlm_info;
+			u8 link_mapping_size[IEEE80211_MAX_TTLM_IE];
+			u16 ieee_link_bmap[IEEE80211_MAX_TTLM_IE];
+			u16 switch_time[IEEE80211_MAX_TTLM_IE];
+			u32 duration[IEEE80211_MAX_TTLM_IE];
+		} adv;
+	} u;
 };
 
 /**

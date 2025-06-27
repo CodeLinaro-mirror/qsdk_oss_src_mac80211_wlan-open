@@ -5715,7 +5715,8 @@ static inline bool ieee80211_tid_to_link_map_size_ok(const u8 *data, size_t len)
 				 _data + ieee80211_mle_common_size(_data),\
 				 _len - ieee80211_mle_common_size(_data))
 
-#define IEEE80211_MAX_TTLM_DIRECTION 2
-#define IEEE80211_MAX_NUM_TIDS 8
+#define IEEE80211_MAX_TTLM_DIRECTION	2
+#define IEEE80211_MAX_TTLM_IE		IEEE80211_MAX_TTLM_DIRECTION
+#define IEEE80211_MAX_NUM_TIDS		8
 
 #endif /* LINUX_IEEE80211_H */

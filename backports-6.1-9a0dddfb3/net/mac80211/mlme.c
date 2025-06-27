@@ -7570,12 +7570,12 @@ int ieee80211_req_neg_ttlm(struct ieee80211_sub_if_data *sdata,
 		return -EINVAL;
 
 	for (i = 0; i < IEEE80211_TTLM_NUM_TIDS; i++) {
-		if ((params->dlink[i] & ~sdata->vif.valid_links) ||
-		    (params->ulink[i] & ~sdata->vif.valid_links))
+		if ((params->u.neg.dlink[i] & ~sdata->vif.valid_links) ||
+		    (params->u.neg.ulink[i] & ~sdata->vif.valid_links))
 			return -EINVAL;
 
-		neg_ttlm.downlink[i] = params->dlink[i];
-		neg_ttlm.uplink[i] = params->ulink[i];
+		neg_ttlm.downlink[i] = params->u.neg.dlink[i];
+		neg_ttlm.uplink[i] = params->u.neg.ulink[i];
 	}
 
 	if (drv_can_neg_ttlm(sdata->local, sdata, &neg_ttlm) !=
@@ -7598,7 +7598,7 @@ int ieee80211_req_neg_ttlm(struct ieee80211_sub_if_data *sdata,
 		 * in driver. Disabling the links on AP MLD for negotiation
 		 * with a client is not needed.
 		 */
-		struct sta_info *sta_info = sta_info_get_bss(sdata, params->mld_mac_addr);
+		struct sta_info *sta_info = sta_info_get_bss(sdata, params->u.neg.mld_mac_addr);
 
 		if (!sta_info || !sta_info->uploaded)
 			return -EINVAL;

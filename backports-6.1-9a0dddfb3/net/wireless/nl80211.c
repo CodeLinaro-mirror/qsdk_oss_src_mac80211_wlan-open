@@ -17985,15 +17985,15 @@ nl80211_set_ttlm(struct sk_buff *skb, struct genl_info *info)
 	    !info->attrs[NL80211_ATTR_MLD_ADDR])
 		return -EINVAL;
 
-	nla_memcpy(params.dlink,
+	nla_memcpy(params.u.neg.dlink,
 		   info->attrs[NL80211_ATTR_MLO_TTLM_DLINK],
-		   sizeof(params.dlink));
-	nla_memcpy(params.ulink,
+		   sizeof(params.u.neg.dlink));
+	nla_memcpy(params.u.neg.ulink,
 		   info->attrs[NL80211_ATTR_MLO_TTLM_ULINK],
-		   sizeof(params.ulink));
+		   sizeof(params.u.neg.ulink));
 
 	if (info->attrs[NL80211_ATTR_MLD_ADDR])
-		params.mld_mac_addr =
+		params.u.neg.mld_mac_addr =
 			nla_data(info->attrs[NL80211_ATTR_MLD_ADDR]);
 
 	return rdev_set_ttlm(rdev, dev, &params);
