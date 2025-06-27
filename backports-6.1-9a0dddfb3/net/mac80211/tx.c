@@ -5026,8 +5026,6 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev), *orig_sdata;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_tx_control control = {};
-	struct sta_info *sta;
-	struct ieee80211_sta *pubsta = NULL;
 	bool perf_mode = sdata->local->hw.perf_mode;
 
 #ifdef CPTCFG_MAC80211_ATHMEMDEBUG
@@ -5045,25 +5043,8 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 						      IEEE80211_TX_CTRL_MLO_LINK);
 		info->flags = IEEE80211_TX_CTL_HW_80211_ENCAP;
 
-		if (hweight16(sdata->vif.valid_links) > 1) {
-			rcu_read_lock();
-
-			if (ieee80211_lookup_ra_sta(orig_sdata, skb, &sta)) {
-				kfree_skb(skb);
-				goto out;
-			}
-
-			if (!IS_ERR_OR_NULL(sta) && sta->uploaded)
-				pubsta = &sta->sta;
-
-			control.sta = pubsta;
-			drv_tx(sdata->local, &control,  skb);
-out:
-			rcu_read_unlock();
-		} else {
-			control.sta = NULL;
-			drv_tx(sdata->local, &control,  skb);
-		}
+		control.sta = NULL;
+		drv_tx(sdata->local, &control,  skb);
 
 		return NETDEV_TX_OK;
 	}
