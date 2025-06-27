@@ -74,6 +74,8 @@ struct ath12k_dp_arch_mon_ops {
 	void (*mon_pdev_rx_mpdu_list_init)(struct ath12k_mon_data *pmon);
 	int (*mon_rx_srng_process)(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 				      struct napi_struct *napi, int *budget);
+	int (*update_telemetry_stats)(struct ath12k_base *ab,
+				       const int pdev_id);
 };
 
 struct ath12k_dp_mon {
@@ -216,11 +218,6 @@ const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
 	return NULL;
 }
 
-enum hal_rx_mon_status
-ath12k_dp_mon_rx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
-				  struct ath12k_mon_data *pmon,
-				  struct sk_buff *skb,
-				  struct napi_struct *napi);
 int ath12k_dp_mon_buf_replenish(struct ath12k_base *ab,
 				struct dp_rxdma_mon_ring *buf_ring,
 				int req_entries);
@@ -231,7 +228,7 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 				  struct sk_buff *skb,
 				  struct napi_struct *napi,
 				  u32 ppdu_id);
-void ath12k_dp_mon_rx_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info);
+void ath12k_dp_mon_rx_process_ulofdma_stats(struct hal_rx_mon_ppdu_info *ppdu_info);
 int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_id,
 				       struct napi_struct *napi, int *budget);
 int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
@@ -259,11 +256,19 @@ void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon);
 void ath12k_dp_rx_mon_dest_process(struct ath12k *ar, int mac_id,
 				   u32 quota, struct napi_struct *napi);
-int ath12k_dp_pkt_set_pktlen(struct sk_buff *skb, u32 len);
+int ath12k_dp_mon_rx_set_pktlen(struct sk_buff *skb, u32 len);
 int ath12k_dp_mon_rx_deliver(struct ath12k_pdev_dp *dp_pdev,
 			     struct dp_mon_mpdu *mon_mpdu,
 			     struct hal_rx_mon_ppdu_info *ppduinfo,
 			     struct napi_struct *napi);
+void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
+					   struct ath12k_dp_link_peer *peer,
+					   struct hal_rx_mon_ppdu_info *ppdu_info);
+void ath12k_dp_mon_rx_update_peer_mu_stats(struct ath12k_pdev_dp *pdev_dp,
+					   struct hal_rx_mon_ppdu_info *ppdu_info);
+void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
+				       struct hal_rx_mon_ppdu_info *ppdu_info,
+				       bool is_stat);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -405,5 +410,18 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 
 	if (mon_ops && mon_ops->mon_pdev_rx_srng_cleanup)
 		mon_ops->mon_pdev_rx_srng_cleanup(dp_pdev);
+}
+
+static inline
+void ath12k_dp_mon_update_telemetry_stats(struct ath12k_base *ab,
+					  const int pdev_id)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->update_telemetry_stats)
+		mon_ops->update_telemetry_stats(ab, pdev_id);
 }
 #endif

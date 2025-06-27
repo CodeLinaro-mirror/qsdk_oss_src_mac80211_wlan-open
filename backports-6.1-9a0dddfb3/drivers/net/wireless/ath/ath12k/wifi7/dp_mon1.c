@@ -27,6 +27,7 @@ struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.mon_pdev_rx_attach = ath12k_dp_mon_pdev_rx_attach,
 	.mon_pdev_rx_mpdu_list_init = NULL,
 	.mon_rx_srng_process = ath12k_wifi7_dp_mon_rx_quad_ring_process,
+	.update_telemetry_stats = NULL,
 };
 
 int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
@@ -410,7 +411,7 @@ static int ath12k_wifi7_dp_mon_rx_reap_status_ring(struct ath12k_base *ab, int m
 					 skb->len + skb_tailroom(skb),
 					 DMA_FROM_DEVICE);
 
-			if (ath12k_dp_pkt_set_pktlen(skb, RX_MON_STATUS_BUF_SIZE)) {
+			if (ath12k_dp_mon_rx_set_pktlen(skb, RX_MON_STATUS_BUF_SIZE)) {
 				dev_kfree_skb_any(skb);
 				goto move_next;
 			}
@@ -716,7 +717,7 @@ ath12k_wifi7_dp_mon_rx_mpdu_pop(struct ath12k *ar, int mac_id,
 							   &frag_len, &msdu_cnt);
 			rx_buf_size = rx_pkt_offset + l2_hdr_offset + frag_len;
 
-			if (ath12k_dp_pkt_set_pktlen(msdu, rx_buf_size)) {
+			if (ath12k_dp_mon_rx_set_pktlen(msdu, rx_buf_size)) {
 				dev_kfree_skb_any(msdu);
 				goto next_msdu;
 			}
