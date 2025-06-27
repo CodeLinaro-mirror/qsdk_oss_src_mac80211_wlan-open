@@ -1483,6 +1483,10 @@ struct ath12k_base {
 	 * response
 	 */
 	struct ath12k_6ghz_sp_reg_rule *sp_rule;
+	/* afc_dev_deployment is used to store the device deployment type
+	 * as advertised by FW.
+	 */
+	enum ath12k_afc_dev_deploy_type afc_dev_deployment;
 
 	/* Current DFS Regulatory */
 	enum ath12k_dfs_region dfs_region;

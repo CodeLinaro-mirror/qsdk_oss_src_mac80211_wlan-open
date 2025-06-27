@@ -2613,6 +2613,14 @@ enum ath12k_peer_metadata_version {
 	ATH12K_PEER_METADATA_V1B
 };
 
+/**
+ * struct ath12k_wmi_resource_config_arg - resource configuration to FW
+ * @afc_support: Bool to indicate if host/user supports AFC
+ * @afc_disable_timer_check: Bool to indicate if user wishes to disable AFC timer check in FW
+ * @afc_disable_req_id_check: Bool to indicate if user wishes to disable AFC req id check in FW
+ * @afc_indoor_support: Bool to indicate if indoor deployment is supported
+ * @afc_outdoor_support: Bool to indicate if outdoor deployment is supported
+ */
 struct ath12k_wmi_resource_config_arg {
 	u32 num_vdevs;
 	u32 num_peers;
@@ -2685,6 +2693,8 @@ struct ath12k_wmi_resource_config_arg {
 	u32 afc_support;
 	u32 afc_disable_timer_check;
 	u32 afc_disable_req_id_check;
+	bool afc_indoor_support;
+	bool afc_outdoor_support;
 };
 
 struct ath12k_wmi_init_cmd_arg {
@@ -2781,9 +2791,11 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT BIT(25)
 #define WMI_PDEV_MEC_AGING_TIMER_THRESHOLD_VALUE 5000
 #define WMI_RSRC_CFG_EMA_INIT_CONFIG_BEACON_SIZE               GENMASK(15, 0)
-#define WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT              7
-#define WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT             8
-#define WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT            9
+#define WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT               7
+#define WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT              8
+#define WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT             9
+#define WMI_RSRC_CFG_HOST_AFC_INDOOR_SUPPORT                  10
+#define WMI_RSRC_CFG_HOST_AFC_OUTDOOR_SUPPORT                 11
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;
@@ -3040,6 +3052,10 @@ enum wmi_channel_width {
 #define WMI_EHT_MCS_NSS_10_11  GENMASK(11, 8)
 #define WMI_EHT_MCS_NSS_12_13  GENMASK(15, 12)
 
+/**
+ * struct wmi_service_ready_ext2_event - extended service ready event params
+ * @afc_deployment_type: AFC deployment type indicated by FW (indoor,outdoor)
+ */
 struct wmi_service_ready_ext2_event {
 	__le32 reg_db_version;
 	__le32 hw_min_max_tx_power_2ghz;
@@ -3053,6 +3069,7 @@ struct wmi_service_ready_ext2_event {
 	__le32 max_num_linkview_peers;
 	__le32 max_num_msduq_supported_per_tid;
 	__le32 default_num_msduq_supported_per_tid;
+	__le32 afc_deployment_type;
 } __packed;
 
 struct ath12k_wmi_caps_ext_params {

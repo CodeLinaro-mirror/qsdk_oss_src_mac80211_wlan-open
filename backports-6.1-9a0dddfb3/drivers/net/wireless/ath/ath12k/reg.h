@@ -29,7 +29,8 @@ struct ath12k;
 
 extern bool ath12k_afc_disable_timer_check;
 extern bool ath12k_afc_disable_req_id_check;
-extern bool ath12k_afc_test_enabled;
+extern bool ath12k_afc_reg_no_action;
+extern bool ath12k_6ghz_sp_pwrmode_supp_enabled;
 
 /* DFS regdomains supported by Firmware */
 enum ath12k_dfs_region {

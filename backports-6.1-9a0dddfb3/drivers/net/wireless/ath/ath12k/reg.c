@@ -21,10 +21,34 @@
 #define ETSI_WEATHER_RADAR_BAND_HIGH		5650
 #define ETSI_WEATHER_RADAR_BAND_CAC_TIMEOUT	600000
 
-/* These variables need to assigned to true for enabling Proxy AFC, else 0 */
-bool ath12k_afc_disable_timer_check = true;
-bool ath12k_afc_disable_req_id_check = true;
-bool ath12k_afc_test_enabled = true;
+/* The default config is enabling retail AFC */
+/* When ath12k_afc_disable_timer_check = false, the AP will enable all
+ * the AFC timers in HALPHY.
+ */
+bool ath12k_afc_disable_timer_check;
+module_param_named(afc_disable_timer_check, ath12k_afc_disable_timer_check, bool, 0644);
+MODULE_PARM_DESC(afc_disable_timer_check, "Disable AFC expiry timer check for enterprise mode: 1-disable, 0-enable");
+
+/* When ath12k_afc_disable_req_id_check = false, the AP will enable request
+ * ID match in the FW.
+ */
+bool ath12k_afc_disable_req_id_check;
+module_param_named(afc_disable_req_id_check, ath12k_afc_disable_req_id_check, bool, 0644);
+MODULE_PARM_DESC(afc_disable_req_id_check, "Disable AFC request id check for enterprise mode: 1-disable, 0-enable");
+
+/* Turn off AFC support in the host. The host driver will notify the firmware
+ * that AFC is not supported,
+ */
+bool ath12k_6ghz_sp_pwrmode_supp_enabled;
+module_param_named(6ghz_sp_pwrmode_supp_enabled, ath12k_6ghz_sp_pwrmode_supp_enabled, bool, 0644);
+MODULE_PARM_DESC(6ghz_sp_pwrmode_supp_enabled, "Enable AFC support to FW: 1-enable, 0-disable");
+
+/* When ath12k_afc_reg_no_action = false, the AP will trigger channel
+ * change on AFC response.
+ */
+bool ath12k_afc_reg_no_action;
+module_param_named(afc_reg_no_action, ath12k_afc_reg_no_action, bool, 0644);
+MODULE_PARM_DESC(afc_reg_no_action, "Do not trigger channel change on AFC response: 1-enable, 0-disable");
 
 /* Given a global opclass number create the corresponding  array token.
  * Examples:
@@ -2247,7 +2271,7 @@ static struct ath12k_afc_location *ath12k_reg_fill_afc_location_obj(struct ath12
 	if (!p_afc_location)
 		return NULL;
 
-	p_afc_location->deployment_type = 0;
+	p_afc_location->deployment_type = ar->ab->afc_dev_deployment;
 
 	return p_afc_location;
 }

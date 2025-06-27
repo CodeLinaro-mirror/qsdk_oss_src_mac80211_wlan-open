@@ -76,6 +76,10 @@ struct ath12k_wmi_svc_rdy_ext_parse {
 	bool dma_ring_cap_done;
 };
 
+/**
+ * ath12k_wmi_svc_rdy_ext2_arg - WMI service ready extended 2
+ * @afc_deployment_type: AFC deployment type (indoor, outdoor)
+ */
 struct ath12k_wmi_svc_rdy_ext2_arg {
 	u32 reg_db_version;
 	u32 hw_min_max_tx_power_2ghz;
@@ -89,6 +93,7 @@ struct ath12k_wmi_svc_rdy_ext2_arg {
 	u32 max_num_linkview_peers;
 	u32 max_num_msduq_supported_per_tid;
 	u32 default_num_msduq_supported_per_tid;
+	u32 afc_deployment_type;
 };
 
 struct ath12k_wmi_svc_rdy_ext2_parse {
@@ -5404,22 +5409,24 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->flags2 = le32_encode_bits(tg_cfg->peer_metadata_ver,
 					   WMI_RSRC_CFG_FLAGS2_RX_PEER_METADATA_VERSION);
 
-	if (tg_cfg->afc_support) {
-		wmi_cfg->host_service_flags &= ~(1 << WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT);
-		wmi_cfg->host_service_flags |= 1 << WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT;
-	}
+	wmi_cfg->host_service_flags = cpu_to_le32(tg_cfg->afc_support <<
+						   WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT);
+	wmi_cfg->host_service_flags |= cpu_to_le32(tg_cfg->afc_disable_timer_check <<
+						   WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT);
+	wmi_cfg->host_service_flags |= cpu_to_le32(tg_cfg->afc_disable_req_id_check <<
+						   WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT);
+	wmi_cfg->host_service_flags |= cpu_to_le32(tg_cfg->afc_indoor_support <<
+						   WMI_RSRC_CFG_HOST_AFC_INDOOR_SUPPORT);
+	wmi_cfg->host_service_flags |= cpu_to_le32(tg_cfg->afc_outdoor_support <<
+						   WMI_RSRC_CFG_HOST_AFC_OUTDOOR_SUPPORT);
 
-	if (tg_cfg->afc_disable_timer_check) {
-		wmi_cfg->host_service_flags &= ~(1 << WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT);
-		wmi_cfg->host_service_flags |= 1 << WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT;
-	}
+	ath12k_dbg(NULL, ATH12K_DBG_WMI, "afc_support: %u "
+		   "dis_timer_check: %u, dis_reqid_check: %u, indoor: %u, outdoor: %u\n",
+		   tg_cfg->afc_support, tg_cfg->afc_disable_timer_check,
+		   tg_cfg->afc_disable_req_id_check, tg_cfg->afc_indoor_support,
+		   tg_cfg->afc_outdoor_support);
 
-	if (tg_cfg->afc_disable_req_id_check) {
-		wmi_cfg->host_service_flags &= ~(1 << WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT);
-		wmi_cfg->host_service_flags |= 1 << WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT;
-	}
-
-	wmi_cfg->host_service_flags = cpu_to_le32(tg_cfg->is_reg_cc_ext_event_supported <<
+	wmi_cfg->host_service_flags |= cpu_to_le32(tg_cfg->is_reg_cc_ext_event_supported <<
 				WMI_RSRC_CFG_HOST_SVC_FLAG_REG_CC_EXT_SUPPORT_BIT);
 	if (ab->hw_params->reoq_lut_support)
 		wmi_cfg->host_service_flags |=
@@ -5442,9 +5449,27 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 					    WMI_RSRC_CFG_EMA_INIT_CONFIG_BEACON_SIZE));
 }
 
-void ath12k_set_afc_config(struct ath12k_wmi_resource_config_arg *config)
+/**
+ * ath12k_set_afc_config() - Set AFC config parameters
+ * @config: WMI resource config
+ * @ab: ath12k base
+ *
+ * Return: None
+ */
+static void ath12k_set_afc_config(struct ath12k_wmi_resource_config_arg *config,
+				  struct ath12k_base *ab)
 {
-	config->afc_support = ath12k_afc_test_enabled;
+	config->afc_indoor_support = false;
+	config->afc_outdoor_support = false;
+
+	if (ab->afc_dev_deployment == ATH12K_AFC_DEPLOYMENT_INDOOR)
+		config->afc_indoor_support = true;
+	else if (ab->afc_dev_deployment == ATH12K_AFC_DEPLOYMENT_OUTDOOR)
+		config->afc_outdoor_support = true;
+	else if (ab->afc_dev_deployment == ATH12K_AFC_DEPLOYMENT_UNKNOWN)
+		config->afc_indoor_support = true;
+
+	config->afc_support = ath12k_6ghz_sp_pwrmode_supp_enabled;
 	config->afc_disable_timer_check = ath12k_afc_disable_timer_check;
 	config->afc_disable_req_id_check = ath12k_afc_disable_req_id_check;
 }
@@ -5670,7 +5695,9 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 	if (test_bit(WMI_SERVICE_WDS_NULL_FRAME_SUPPORT, ab->wmi_ab.svc_map))
 		arg.res_cfg.is_wds_null_frame_supported = true;
 
-	ath12k_set_afc_config(&arg.res_cfg);
+	if (test_bit(WMI_TLV_SERVICE_AFC_SUPPORT, ab->wmi_ab.svc_map))
+		ath12k_set_afc_config(&arg.res_cfg, ab);
+
 	ab->hw_params->wmi_init(ab, &arg.res_cfg);
 	ab->wow.wmi_conf_rx_decap_mode = arg.res_cfg.rx_decap_mode;
 
@@ -6420,6 +6447,7 @@ static int ath12k_pull_svc_ready_ext2(struct ath12k_wmi_pdev *wmi_handle,
 	arg->max_user_per_ppdu_ofdma = le32_to_cpu(ev->max_user_per_ppdu_ofdma);
 	arg->max_user_per_ppdu_mumimo = le32_to_cpu(ev->max_user_per_ppdu_mumimo);
 	arg->target_cap_flags = le32_to_cpu(ev->target_cap_flags);
+	arg->afc_deployment_type = le32_to_cpu(ev->afc_deployment_type);
 	return 0;
 }
 
@@ -6583,6 +6611,7 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			return ret;
 		}
 		ab->chwidth_num_peer_caps = parse->arg.chwidth_num_peer_caps;
+		ab->afc_dev_deployment = parse->arg.afc_deployment_type;
 		break;
 
 	case WMI_TAG_ARRAY_STRUCT:

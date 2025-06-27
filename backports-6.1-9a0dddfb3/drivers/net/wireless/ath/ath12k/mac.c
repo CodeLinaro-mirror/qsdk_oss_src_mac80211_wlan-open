@@ -19366,6 +19366,20 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 				      NL80211_EXT_FEATURE_FILS_DISCOVERY);
 		wiphy_ext_feature_set(wiphy,
 				      NL80211_EXT_FEATURE_UNSOL_BCAST_PROBE_RESP);
+		/* For 6 GHz radios, check if both FW and Host support AFC feature and if so,
+		 * advertise the AFC feature support to the higher layers.
+		 */
+		if (test_bit(WMI_TLV_SERVICE_AFC_SUPPORT, ar->ab->wmi_ab.svc_map) &&
+		    ath12k_6ghz_sp_pwrmode_supp_enabled) {
+		    wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_TARGET_AND_HOST_AFC_SUPPORT);
+		    /* If reg_no_action module param is set, user wishes to operate in
+		     * enterprise mode of AFC.
+		     */
+		    if (!ath12k_afc_reg_no_action) {
+			wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_RETAIL_AFC_SUPPORT);
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "Sending retail AFC feature support to higher layers\n");
+		    }
+		}
 	}
 
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_PUNCT);
