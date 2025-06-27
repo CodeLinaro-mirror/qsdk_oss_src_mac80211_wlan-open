@@ -12,6 +12,8 @@
 #include "wifi7/hal_desc.h"
 #include "debug.h"
 
+#include "hal_mon_cmn.h"
+
 #define ATH12K_MON_RX_DOT11_OFFSET	5
 #define ATH12K_MON_RX_PKT_OFFSET	8
 #define ATH12K_DP_WLAN_MAX_AC		4

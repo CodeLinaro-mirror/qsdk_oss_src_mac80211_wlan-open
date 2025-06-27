@@ -11,6 +11,7 @@
 #include "peer.h"
 #include "wifi7/dp_rx.h"
 #include "wifi7/hal_qcn9274.h"
+#include "wifi7/hal_mon.h"
 #include "debugfs.h"
 
 #define ATH12K_LE32_DEC_ENC(value, dec_bits, enc_bits)	\
