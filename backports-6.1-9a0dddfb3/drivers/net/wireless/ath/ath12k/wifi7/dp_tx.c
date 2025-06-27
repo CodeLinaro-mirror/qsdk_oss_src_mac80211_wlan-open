@@ -1143,7 +1143,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	skb_queue_head_init(&free_list_head);
 
 	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp_hw_grp->tx_status_buf[ring_id];
-	while (budget-- && (desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, status_ring))) {
+	while (budget-- && (desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, status_ring, NULL))) {
 		tx_status = (struct hal_wbm_completion_ring_tx *)desc;
 
 		if (le32_get_bits(tx_status->info0, HAL_WBM_COMPL_TX_INFO0_CC_DONE)) {

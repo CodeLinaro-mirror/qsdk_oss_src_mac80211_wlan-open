@@ -1393,7 +1393,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct list_head rx_desc_used_list[ATH12K_MAX_SOCS];
-	struct list_head rx_desc_local_list;
+	struct list_head rx_desc_sg_list;
 	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
 	int num_buffs_reaped[ATH12K_MAX_SOCS] = {};
 	struct ath12k_rx_desc_info *desc_info;
@@ -1408,6 +1408,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct sk_buff *msdu;
 	bool done = true;
 	u64 desc_va;
+	u32 last_tp, first_msdu_tp;
 #ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
 #endif
@@ -1416,15 +1417,14 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	for (device_id = 0; device_id < ATH12K_MAX_SOCS; device_id++)
 		INIT_LIST_HEAD(&rx_desc_used_list[device_id]);
 
-	INIT_LIST_HEAD(&rx_desc_local_list);
+	INIT_LIST_HEAD(&rx_desc_sg_list);
 	__skb_queue_head_init(&local_msdu_list);
 
 	srng = &ab->hal.srng_list[dp->reo_dst_ring[ring_id].ring_id];
 
 	spin_lock_bh(&srng->lock);
 
-try_again:
-	ath12k_hal_srng_access_begin(ab, srng);
+	first_msdu_tp = ath12k_hal_srng_access_begin(ab, srng);
 
 #ifndef CONFIG_IO_COHERENCY
 	valid_entries = ath12k_hal_srng_dst_num_free(ab, srng, false);
@@ -1435,7 +1435,7 @@ try_again:
 	}
 	ath12k_hal_srng_dst_invalidate_entry(ab, srng, valid_entries);
 #endif
-	while ((desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, srng))) {
+	while ((desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, srng, &last_tp))) {
 		struct rx_mpdu_desc_info *mpdu_info;
 		struct hal_rx_spd_data *spd_desc_l;
 
@@ -1494,37 +1494,46 @@ try_again:
 			ath12k_wifi7_dp_rx_get_peer_id(ab, dp->peer_metadata_ver,
 						       mpdu_info->peer_meta_data);
 
+		/*
+		 * Create local lists for msdus and rx_desc_info descriptors
+		 * to temporarily store in the scatter gather case.
+		 *
+		 * Once msdu_continuation is seen to be 0, append the
+		 * local lists with the actual lists that are taken further
+		 * for processing.
+		 *
+		 * If the list is seen to be incomplete in the current budget,
+		 * discard the local list and set the tp back to the start of
+		 * the beginning of the unprocessed sg list, which will then
+		 * be fetched and processed again in the next NAPI cycle.
+		 *
+		 * For the regular non-sg msdus, we will add the datastructures
+		 * to the corresponding lists directly, without using local lists.
+		 *
+		 */
+
 		if (!spd_desc_l->rx_msdu_info.msdu_continuation) {
-			total_msdu_reaped++;
 			if (!done) {
-				list_splice_tail_init(&rx_desc_local_list,
+				list_splice_tail_init(&rx_desc_sg_list,
 						      &rx_desc_used_list[device_id]);
 				skb_queue_splice_tail_init(&local_msdu_list, &msdu_list);
 			}
 
 			list_add_tail(&desc_info->list, &rx_desc_used_list[device_id]);
 			__skb_queue_tail(&msdu_list, msdu);
+			first_msdu_tp = last_tp;
 			done = true;
 		} else {
-			list_add_tail(&desc_info->list, &rx_desc_local_list);
+			list_add_tail(&desc_info->list, &rx_desc_sg_list);
 			__skb_queue_tail(&local_msdu_list, msdu);
 			done = false;
 		}
 
-		if (total_msdu_reaped >= budget)
+		if (++total_msdu_reaped >= budget)
 			break;
 	}
 
-	/* Hw might have updated the head pointer after we cached it.
-	 * In this case, even though there are entries in the ring we'll
-	 * get rx_desc NULL. Give the read another try with updated cached
-	 * head pointer so that we can reap complete MPDU in the current
-	 * rx processing.
-	 */
-	if (!done && ath12k_hal_srng_dst_num_free(ab, srng, true)) {
-		ath12k_hal_srng_access_end(ab, srng);
-		goto try_again;
-	}
+	ath12k_hal_srng_update_tp(srng, first_msdu_tp);
 
 	ath12k_hal_srng_access_end(ab, srng);
 

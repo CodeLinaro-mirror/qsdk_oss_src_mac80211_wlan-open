@@ -1347,7 +1347,8 @@ void ath12k_hal_srng_get_params(struct ath12k_base *ab, struct hal_srng *srng,
 void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng);
 void *ath12k_hal_srng_dst_get_next_cached_entry(struct ath12k_base *ab,
-						struct hal_srng *srng);
+						struct hal_srng *srng,
+						u32 *old_tp);
 void *ath12k_hal_srng_dst_peek(struct ath12k_base *ab, struct hal_srng *srng);
 int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 				 bool sync_hw_ptr);
@@ -1361,8 +1362,7 @@ void *ath12k_hal_srng_src_get_next_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng);
 int ath12k_hal_srng_src_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 				 bool sync_hw_ptr);
-void ath12k_hal_srng_access_begin(struct ath12k_base *ab,
-				  struct hal_srng *srng);
+u32 ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng);
 void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng);
 int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
 			      int ring_num, int mac_id,
@@ -1411,6 +1411,7 @@ void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 u8 *
 ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc);
+void ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries);

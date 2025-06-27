@@ -347,7 +347,8 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_entry);
 
 void *ath12k_hal_srng_dst_get_next_cached_entry(struct ath12k_base *ab,
-						struct hal_srng *srng)
+						struct hal_srng *srng,
+						u32 *old_tp)
 {
 	void *desc;
 
@@ -363,6 +364,9 @@ void *ath12k_hal_srng_dst_get_next_cached_entry(struct ath12k_base *ab,
         /* wrap around to start of ring*/
         if (srng->u.dst_ring.tp == srng->ring_size)
                 srng->u.dst_ring.tp = 0;
+
+	if (old_tp)
+		*old_tp = srng->u.dst_ring.tp;
 
 	return desc;
 }
@@ -516,17 +520,28 @@ void *ath12k_hal_srng_src_get_next_reaped(struct ath12k_base *ab,
 	return desc;
 }
 
-void ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng)
+u32 ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng)
 {
 	lockdep_assert_held(&srng->lock);
 
-	if (srng->ring_dir == HAL_SRNG_DIR_SRC)
+	if (srng->ring_dir == HAL_SRNG_DIR_SRC) {
 		srng->u.src_ring.cached_tp =
 			*(volatile u32 *)srng->u.src_ring.tp_addr;
-	else
+		return srng->u.src_ring.hp;
+	} else {
 		srng->u.dst_ring.cached_hp = *srng->u.dst_ring.hp_addr;
+		return srng->u.dst_ring.tp;
+	}
 }
 EXPORT_SYMBOL(ath12k_hal_srng_access_begin);
+
+void ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp)
+{
+	lockdep_assert_held(&srng->lock);
+
+	srng->u.dst_ring.tp = new_tp;
+}
+EXPORT_SYMBOL(ath12k_hal_srng_update_tp);
 
 /* Update cached ring head/tail pointers to HW. ath12k_hal_srng_access_begin()
  * should have been called before this.
