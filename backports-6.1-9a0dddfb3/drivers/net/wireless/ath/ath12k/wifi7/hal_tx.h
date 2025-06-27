@@ -38,6 +38,12 @@ struct hal_tx_info {
 	bool lookup_override;
 };
 
+#define TX_IP_CHECKSUM (HAL_TCL_DATA_CMD_INFO2_IP4_CKSUM_EN  | \
+                        HAL_TCL_DATA_CMD_INFO2_UDP4_CKSUM_EN | \
+                        HAL_TCL_DATA_CMD_INFO2_UDP6_CKSUM_EN | \
+                        HAL_TCL_DATA_CMD_INFO2_TCP4_CKSUM_EN | \
+                        HAL_TCL_DATA_CMD_INFO2_TCP6_CKSUM_EN)
+
 /* TODO: Check if the actual desc macros can be used instead */
 #define HAL_TX_STATUS_FLAGS_FIRST_MSDU		BIT(0)
 #define HAL_TX_STATUS_FLAGS_LAST_MSDU		BIT(1)

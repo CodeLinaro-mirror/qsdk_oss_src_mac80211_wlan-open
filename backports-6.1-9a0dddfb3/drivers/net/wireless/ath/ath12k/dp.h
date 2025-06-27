@@ -539,6 +539,7 @@ struct ath12k_device_dp_stats {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u32 ppe_vp_mode_update_fail;
 #endif
+	u32 tx_fast_unicast[MAX_TCL_RING];
 	u32 tx_completed[MAX_TCL_RING];
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON];
 	u32 fw_tx_status[MAX_FW_TX_STATUS];
@@ -1026,7 +1027,8 @@ void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp);
 void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 			      struct hal_srng_params *ring_params,
 			      enum hal_ring_type type, int ring_num);
-
+void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
+				      u8 rbm_id, int ring_type);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
 				  struct ath12k_dp *dp, bool vdev_id_check_en);

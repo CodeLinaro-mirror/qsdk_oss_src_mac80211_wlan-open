@@ -716,7 +716,12 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 "\nMisc Transmit Failures: %d\n",
 			 atomic_read(&device_stats->tx_err.misc_fail));
 
-	len += scnprintf(buf + len, size - len, "SOC RX STATS:\n\n");
+	len += scnprintf(buf + len, size - len, "\nFast xmit Tx stats:\n");
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+	len += scnprintf(buf + len, size - len, "ring%d: fast_unicast:%u \n",
+			 i, device_stats->tx_fast_unicast[i]);
+
+	len += scnprintf(buf + len, size - len, "\nSOC RX STATS:\n\n");
 	len += scnprintf(buf + len, size - len, "err ring pkts: %u\n",
 			 device_stats->err_ring_pkts);
 	len += scnprintf(buf + len, size - len, "Invalid RBM: %u\n\n",

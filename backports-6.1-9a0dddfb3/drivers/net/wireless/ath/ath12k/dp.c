@@ -642,6 +642,7 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 	struct hal_srng *srng;
 	int i, ret, tx_comp_ring_num;
 	u32 ring_hash_map;
+	u8 rbm_id;
 
 	ret = ath12k_dp_srng_setup(ab, &dp->wbm_desc_rel_ring,
 				   HAL_SW2WBM_RELEASE, 0, 0,
@@ -655,6 +656,7 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
 		map = ab->hal.tcl_to_wbm_rbm_map;
 		tx_comp_ring_num = map[i].wbm_ring_num;
+		rbm_id = map[i].rbm_id;
 
 		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_data_ring,
 					   HAL_TCL_DATA, i, 0,
@@ -664,6 +666,8 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 				    i, ret);
 			goto err;
 		}
+
+		ath12k_hal_tx_config_rbm_mapping(ab, i, rbm_id, HAL_TCL_DATA);
 
 		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
 					   HAL_WBM2SW_RELEASE, tx_comp_ring_num, 0,

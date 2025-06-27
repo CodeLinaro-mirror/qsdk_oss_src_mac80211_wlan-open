@@ -106,6 +106,13 @@ bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev, struct sk_buf
 	return false;
 }
 
+static inline void
+ath12k_core_dma_clean_range_no_dsb(const void *start, const void *end) {
+#ifndef CONFIG_IO_COHERENCY
+        dmac_clean_range_no_dsb(start, end);
+#endif
+}
+
 /* TODO: Remoe the export once this file is built with wifi7 ko */
 int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		       struct ath12k_link_vif *arvif,
@@ -140,9 +147,84 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u32 iova_mask = dp->hw_params->iova_mask;
 	bool is_diff_encap = false, is_null = false;
 	bool is_from_recycler;
+	bool stats_disable = ab->stats_disable;
+	struct hal_tcl_data_cmd tcl_desc = {0};
+	u8 ring_id;
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return -ESHUTDOWN;
+
+	if (likely(skb->fast_xmit)) {
+		pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
+		ring_selector = smp_processor_id();
+		ring_id = ring_selector % dp->hw_params->max_tx_ring;
+
+		tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
+		if (unlikely(!tx_desc)) {
+			dp->device_stats.tx_err.txbuf_na[ring_id]++;
+			return -ENOSPC;
+		}
+
+		ath12k_core_dma_clean_range_no_dsb(skb->data, skb->data + DP_TX_SFE_BUFFER_SIZE);
+
+		/* the edma driver uses this flags to optimize the cache invalidation */
+		is_from_recycler = (skb->fast_recycled = !!skb->is_from_recycler);
+		if (likely(is_from_recycler))
+			tx_desc->flags = (DP_TX_DESC_FLAG_FAST & stats_disable);
+		else
+			tx_desc->flags = 0;
+
+		tx_desc->skb = skb;
+		tx_desc->mac_id = dp_link_vif->pdev_idx;
+
+		tcl_desc.buf_addr_info.info0 = (u32)virt_to_phys(skb->data);
+		tcl_desc.buf_addr_info.info1 =
+			(((u64)virt_to_phys(skb->data) >> 32) | (tx_desc->desc_id << 12));
+		tcl_desc.info0 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID,
+					    dp_link_vif->bank_id);
+		tcl_desc.info1 =  FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CMD_NUM,
+					     dp_link_vif->tcl_metadata);
+		tcl_desc.info2 =  skb->len;
+
+		tcl_desc.info2 |= TX_IP_CHECKSUM;
+		tcl_desc.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_PMAC_ID, dp_link_vif->lmac_id) |
+				 FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_VDEV_ID, dp_link_vif->vdev_id);
+		tcl_desc.info4 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO4_SEARCH_INDEX, dp_link_vif->ast_idx) |
+				 FIELD_PREP(HAL_TCL_DATA_CMD_INFO4_CACHE_SET_NUM, dp_link_vif->ast_hash);
+		tcl_desc.info5 = 0;
+
+		tx_ring = &dp->tx_ring[ring_id];
+		hal_ring_id = tx_ring->tcl_data_ring.ring_id;
+		tcl_ring = &hal->srng_list[hal_ring_id];
+
+		spin_lock_bh(&tcl_ring->lock);
+
+		ath12k_hal_srng_access_begin(ab, tcl_ring);
+		hal_tcl_desc = ath12k_hal_srng_src_get_next_entry(ab, tcl_ring);
+		if (unlikely(!hal_tcl_desc)) {
+			/* NOTE: It is highly unlikely we'll be running out of tcl_ring
+			 * desc because the desc is directly enqueued onto hw queue.
+			 */
+			ath12k_hal_srng_access_end(ab, tcl_ring);
+			dp->device_stats.tx_err.desc_na[ring_id]++;
+			spin_unlock_bh(&tcl_ring->lock);
+			ret = -ENOMEM;
+			goto fail_remove_tx_buf;
+		}
+
+		memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
+#ifndef CONFIG_IO_COHERENCY
+		dmb(oshst);
+#endif
+		ath12k_hal_srng_access_end(ab, tcl_ring);
+
+		dp->device_stats.tx_fast_unicast[ring_id]++;
+		spin_unlock_bh(&tcl_ring->lock);
+
+		atomic_inc(&dp_pdev->num_tx_pending);
+
+		return 0;
+	}
 
 	if (!(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
 	    !ieee80211_is_data(hdr->frame_control))
@@ -256,14 +338,6 @@ tcl_ring_sel:
 		break;
 	case HAL_TCL_ENCAP_TYPE_ETHERNET:
 		/* no need to encap */
-#ifdef CPTCFG_MAC80211_SFE_SUPPORT
-		/* the edma driver uses this flags to optimize the cache invalidation */
-		if (likely(skb->fast_xmit)) {
-			is_from_recycler = (skb->fast_recycled = !!skb->is_from_recycler);
-			if (likely(is_from_recycler))
-				tx_desc->flags = DP_TX_DESC_FLAG_FAST;
-		}
-#endif
 		break;
 	case HAL_TCL_ENCAP_TYPE_802_3:
 	default:
@@ -480,7 +554,7 @@ fail_unmap_dma:
 
 fail_remove_tx_buf:
 	if (tx_desc)
-		ath12k_dp_tx_release_txbuf(dp, tx_desc, ti.ring_id);
+		ath12k_dp_tx_release_txbuf(dp, tx_desc, ring_id);
 
 	spin_lock_bh(&arvif->link_stats_lock);
 	arvif->link_stats.tx_dropped++;

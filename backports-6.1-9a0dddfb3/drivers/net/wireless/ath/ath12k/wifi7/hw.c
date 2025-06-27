@@ -23,6 +23,7 @@
 #include "../debugfs.h"
 #include "../testmode.h"
 #include "../dp_peer.h"
+#include "../dp_tx.h"
 #include "dp_tx.h"
 #include "hal_qcn9274.h"
 #include "hal_wcn7850.h"
@@ -1316,6 +1317,52 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		   ((skb->mark & ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK) ==
 		    ATH12K_MLO_METADATA_MLO_ASSIST_TAG))) {
 		link_id =  u32_get_bits(skb->mark, ATH12K_MLO_METADATA_LINKID_MASK);
+		skb_cb->link_id = link_id;
+
+		arvif = rcu_dereference(ahvif->link[link_id]);
+
+		if (!arvif || !arvif->ar) {
+			ieee80211_free_txskb(hw, skb);
+			return;
+		}
+
+		ar = arvif->ar;
+
+		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
+		if (!dp_pdev) {
+			ieee80211_free_txskb(hw, skb);
+			return;
+		}
+
+		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
+		if (ret) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "failed due to limit check pdev idx %d\n",
+				   ar->pdev_idx);
+			ieee80211_free_txskb(hw, skb);
+			return;
+		}
+
+		switch (ahvif->dp_vif.tx_encap_type) {
+			case ATH12K_HW_TXRX_ETHERNET:
+				skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
+				ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta);
+				break;
+			case ATH12K_HW_TXRX_NATIVE_WIFI:
+				ath12k_dp_tx_encap_nwifi(skb);
+				ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta);
+				break;
+			case ATH12K_HW_TXRX_RAW:
+			default:
+				ret = -EINVAL;
+		}
+		if (unlikely(ret)) {
+			ath12k_warn(ar->ab, "failed to transmit frame %d\n", ret);
+			ieee80211_free_txskb(ar->ah->hw, skb);
+			return;
+		}
+
+		return;
 	} else if (ieee80211_vif_is_mld(vif)) {
 #else
 	if (ieee80211_vif_is_mld(vif)) {
