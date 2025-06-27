@@ -16,7 +16,6 @@ ath12k_wifi7-y += core.o \
 		  hal_wcn7850.o \
 		  hal_mon.o \
 		  hal_mon_qcn9274.o \
-		  hal_mon_wcn7850.o \
 		  dp_mon1.o \
 		  dp_mon2.o
 

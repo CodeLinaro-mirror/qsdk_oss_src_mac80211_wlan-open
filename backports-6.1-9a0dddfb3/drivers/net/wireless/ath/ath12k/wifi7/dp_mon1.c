@@ -476,9 +476,9 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 		else
 			tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
 
-		hal_status = ath12k_hal_mon_rx_parse_status(dp_pdev->dp->hal,
-							    &pmon->mon_ppdu_info,
-							    tlv);
+		hal_status =
+			ath12k_wifi7_hal_mon_rx_parse_status_tlv(&pmon->mon_ppdu_info,
+								 tlv);
 		ptr += sizeof(*tlv) + tlv_len;
 		ptr = PTR_ALIGN(ptr, HAL_TLV_64_ALIGN);
 
