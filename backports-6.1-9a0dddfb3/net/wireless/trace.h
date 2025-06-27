@@ -3078,14 +3078,41 @@ TRACE_EVENT(rdev_set_ttlm,
 	TP_STRUCT__entry(
 		WIPHY_ENTRY
 		NETDEV_ENTRY
-		__array(u8, dlink, sizeof(u16) * 8)
-		__array(u8, ulink, sizeof(u16) * 8)
+		__field(enum ttlm_cmd_type, type)
+		__array(u8, dlink, sizeof(u16) * IEEE80211_MAX_NUM_TIDS)
+		__array(u8, ulink, sizeof(u16) * IEEE80211_MAX_NUM_TIDS)
+		MAC_ENTRY(macaddr)
+		__field(u8, num_ttlm_info)
+		__array(u8, link_mapping_size, sizeof(u8) * IEEE80211_MAX_TTLM_IE)
+		__array(u16, ieee_link_bmap, sizeof(u16) * IEEE80211_MAX_TTLM_IE)
+		__array(u16, switch_time, sizeof(u16) * IEEE80211_MAX_TTLM_IE)
+		__array(u32, duration, sizeof(u32) * IEEE80211_MAX_TTLM_IE)
 	),
 	TP_fast_assign(
 		WIPHY_ASSIGN;
 		NETDEV_ASSIGN;
-		memcpy(__entry->dlink, params->dlink, sizeof(params->dlink));
-		memcpy(__entry->ulink, params->ulink, sizeof(params->ulink));
+		__entry->type = params->type;
+		if (__entry->type == TTLM_CMD_TYPE_NEGOTIATED) {
+			memcpy(__entry->dlink, params->u.neg.dlink,
+			       sizeof(params->u.neg.dlink));
+			memcpy(__entry->ulink, params->u.neg.ulink,
+			       sizeof(params->u.neg.ulink));
+			MAC_ASSIGN(macaddr, params->u.neg.mld_mac_addr);
+		} else if (__entry->type == TTLM_CMD_TYPE_ADVERTISED) {
+			__entry->num_ttlm_info = params->u.adv.num_ttlm_info;
+			memcpy(__entry->link_mapping_size,
+			       params->u.adv.link_mapping_size,
+			       sizeof(params->u.adv.link_mapping_size));
+			memcpy(__entry->ieee_link_bmap,
+			       params->u.adv.ieee_link_bmap,
+			       sizeof(params->u.adv.ieee_link_bmap));
+			memcpy(__entry->switch_time,
+			       params->u.adv.switch_time,
+			       sizeof(params->u.adv.switch_time));
+			memcpy(__entry->duration,
+			       params->u.adv.duration,
+			       sizeof(params->u.adv.duration));
+		}
 	),
 	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT,
 		  WIPHY_PR_ARG, NETDEV_PR_ARG)

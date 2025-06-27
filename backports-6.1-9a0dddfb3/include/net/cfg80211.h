@@ -1980,6 +1980,36 @@ enum ttlm_cmd_type {
 };
 
 /**
+ * enum advertised_ttlm_status_type - current status indication from lower layer
+ *
+ * Used to notify the userspace about the current status of the advertised ttlm
+ * in lower layers.
+ *
+ * @ADVERTISED_TTLM_SWITCH_TIMER_TSF: Indicates Mapping switch time value in TSF
+ *	to be included in probe response frames. This status to upper layers
+ *	intern indicates, from next beacon onwards, lower layers starts adding
+ *	TTLM IE in beacon sent from corressponding AP MLD on which advertised
+ *	TTLM is triggered. When this status is not sent to upper layers, there
+ *	should not be any TTLM IE in Probe Response/(Re)Assoc Response frame
+ *	generated in upper layers.
+ * @ADVERTISED_TTLM_SWITCH_TIMER_EXPIRED: Indication that the new proposed T2LM
+ *	has been applied in HW, update the required data structures.
+ * @ADVERTISED_TTLM_EXPECTED_DURATION_EXPIRED: Indication that the proposed T2LM
+ *	ineffective as expected duration completed. And indicates, after this
+ *	status update, all TIDs fallback to default mode.
+ *
+ * @ADVERTISED_TTLM_STATUS_MAX: Indicates max status supported.
+ *
+ * Note: This enum is used by drivers with offload support of TTLM feature.
+ */
+enum advertised_ttlm_status_type {
+	ADVERTISED_TTLM_SWITCH_TIMER_TSF = 0,
+	ADVERTISED_TTLM_SWITCH_TIMER_EXPIRED = 1,
+	ADVERTISED_TTLM_EXPECTED_DURATION_EXPIRED = 2,
+	ADVERTISED_TTLM_STATUS_MAX,
+};
+
+/**
  * struct cfg80211_ttlm_params: TID to link mapping parameters
  *
  * Used for setting a TID to link mapping.
@@ -10701,4 +10731,16 @@ cfg80211_update_link_reconfig_remove_update(struct net_device *dev,
  */
 int cfg80211_erp_trigger_exit(struct wiphy *wiphy);
 
+/**
+ * cfg80211_adv_ttlm_evt_notify - notify about advertised ttlm status
+ *
+ * @dev: The device on which status to be indicated.
+ * @gfp: context flags.
+ * @tid_to_link_mapping_status: advertised ttlm status.
+ * @mapping_switch_tsf: MST in TSF
+ * @link_id: Link on which status to be notified.
+ */
+int cfg80211_adv_ttlm_evt_notify(struct net_device *dev, gfp_t gfp,
+				 enum advertised_ttlm_status_type status,
+				 u16 mapping_switch_tsf, unsigned int link_id);
 #endif /* __NET_CFG80211_H */

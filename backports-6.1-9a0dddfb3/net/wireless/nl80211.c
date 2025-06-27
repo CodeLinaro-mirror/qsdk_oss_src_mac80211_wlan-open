@@ -538,6 +538,26 @@ nl80211_erp_policy[NL80211_ERP_ATTR_MAX + 1] = {
 	[NL80211_ERP_ATTR_TRIGGER] = { .type = NLA_U32 },
 };
 
+/* policy for advertised ttlm attributes */
+static const struct nla_policy
+nl80211_advertised_ttlm_policy[NL80211_ADVERTISED_TTLM_ATTR_MAX + 1] = {
+	[NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT] = { .type = NLA_U8 },
+	[NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE] =
+		NLA_POLICY_EXACT_LEN(sizeof(u8) * IEEE80211_MAX_TTLM_IE),
+	[NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP] =
+		NLA_POLICY_EXACT_LEN(sizeof(u16) * IEEE80211_MAX_TTLM_IE),
+	[NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME] =
+		NLA_POLICY_EXACT_LEN(sizeof(u16) * IEEE80211_MAX_TTLM_IE),
+	[NL80211_ADVERTISED_TTLM_ATTR_DURATION] =
+		NLA_POLICY_EXACT_LEN(sizeof(u32) * IEEE80211_MAX_TTLM_IE),
+	[NL80211_ADVERTISED_TTLM_ATTR_STATUS] =
+		NLA_POLICY_RANGE(NLA_U8, 0,
+				 ADVERTISED_TTLM_EXPECTED_DURATION_EXPIRED),
+	[NL80211_ADVERTISED_TTLM_ATTR_MST_TSF_UPDATE] = { .type = NLA_U16 },
+	[NL80211_ADVERTISED_TTLM_ATTR_ED_UPDATE] =
+		NLA_POLICY_EXACT_LEN(sizeof(u32) * IEEE80211_MLD_MAX_NUM_LINKS),
+};
+
 #if LINUX_VERSION_IS_GEQ(6,7,0)
 static const struct netlink_range_validation nl80211_punct_bitmap_range = {
 	.min = 0,
@@ -960,6 +980,8 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_BEACON_TX_MODE] = NLA_POLICY_RANGE(NLA_U32, 1, 2),
 	[NL80211_ATTR_ERP] = NLA_POLICY_NESTED(nl80211_erp_policy),
 	[NL80211_ATTR_ML_MAX_REC_LINKS] = NLA_POLICY_RANGE(NLA_U8, 0, 15),
+	[NL80211_ATTR_ADVERTISED_TTLM] =
+		NLA_POLICY_NESTED(nl80211_advertised_ttlm_policy),
 };
 
 /* policy for the key attributes */
@@ -17962,12 +17984,55 @@ static int nl80211_set_hw_timestamp(struct sk_buff *skb,
 }
 
 static int
+nl80211_parse_adv_ttlm_params(struct genl_info *info,
+			      struct cfg80211_ttlm_params *params)
+{
+	struct nlattr *tb[NL80211_ADVERTISED_TTLM_ATTR_MAX + 1];
+	int ret;
+
+	ret = nla_parse_nested(tb, NL80211_ADVERTISED_TTLM_ATTR_MAX,
+			       info->attrs[NL80211_ATTR_ADVERTISED_TTLM],
+			       NULL, NULL);
+	if (ret)
+		return ret;
+
+	if (!tb[NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT] ||
+	    !tb[NL80211_ADVERTISED_TTLM_ATTR_DURATION] ||
+	    !tb[NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME] ||
+	    !tb[NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP])
+		return -EINVAL;
+
+	if (tb[NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE])
+		nla_memcpy(params->u.adv.link_mapping_size,
+			   tb[NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE],
+			   sizeof(params->u.adv.link_mapping_size));
+	else
+		memset(params->u.adv.link_mapping_size,
+		       0,
+		       sizeof(params->u.adv.link_mapping_size));
+
+	params->u.adv.num_ttlm_info =
+		nla_get_u8(tb[NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT]);
+	nla_memcpy(params->u.adv.switch_time,
+		   tb[NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME],
+		   sizeof(params->u.adv.switch_time));
+	nla_memcpy(params->u.adv.duration,
+		   tb[NL80211_ADVERTISED_TTLM_ATTR_DURATION],
+		   sizeof(params->u.adv.duration));
+	nla_memcpy(params->u.adv.ieee_link_bmap,
+		   tb[NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP],
+		   sizeof(params->u.adv.ieee_link_bmap));
+	return 0;
+}
+
+static int
 nl80211_set_ttlm(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_ttlm_params params = {};
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	int err;
 
 	if (wdev->iftype != NL80211_IFTYPE_STATION &&
 	    wdev->iftype != NL80211_IFTYPE_P2P_CLIENT &&
@@ -17977,24 +18042,50 @@ nl80211_set_ttlm(struct sk_buff *skb, struct genl_info *info)
 	if (wdev->iftype != NL80211_IFTYPE_AP && !wdev->connected)
 		return -ENOLINK;
 
-	if (!info->attrs[NL80211_ATTR_MLO_TTLM_DLINK] ||
-	    !info->attrs[NL80211_ATTR_MLO_TTLM_ULINK])
-		return -EINVAL;
+	if (info->attrs[NL80211_ATTR_ADVERTISED_TTLM])
+		params.type = TTLM_CMD_TYPE_ADVERTISED;
+	else
+		params.type = TTLM_CMD_TYPE_NEGOTIATED;
 
-	if (wdev->iftype == NL80211_IFTYPE_AP &&
-	    !info->attrs[NL80211_ATTR_MLD_ADDR])
-		return -EINVAL;
+	if (params.type == TTLM_CMD_TYPE_NEGOTIATED) {
+		if (wdev->iftype == NL80211_IFTYPE_AP &&
+		    !info->attrs[NL80211_ATTR_MLD_ADDR])
+			return -EINVAL;
 
-	nla_memcpy(params.u.neg.dlink,
-		   info->attrs[NL80211_ATTR_MLO_TTLM_DLINK],
-		   sizeof(params.u.neg.dlink));
-	nla_memcpy(params.u.neg.ulink,
-		   info->attrs[NL80211_ATTR_MLO_TTLM_ULINK],
-		   sizeof(params.u.neg.ulink));
+		if (!info->attrs[NL80211_ATTR_MLO_TTLM_DLINK] ||
+		    !info->attrs[NL80211_ATTR_MLO_TTLM_ULINK])
+			return -EINVAL;
 
-	if (info->attrs[NL80211_ATTR_MLD_ADDR])
-		params.u.neg.mld_mac_addr =
-			nla_data(info->attrs[NL80211_ATTR_MLD_ADDR]);
+		nla_memcpy(params.u.neg.dlink,
+			   info->attrs[NL80211_ATTR_MLO_TTLM_DLINK],
+			   sizeof(params.u.neg.dlink));
+		nla_memcpy(params.u.neg.ulink,
+			   info->attrs[NL80211_ATTR_MLO_TTLM_ULINK],
+			   sizeof(params.u.neg.ulink));
+
+		if (info->attrs[NL80211_ATTR_MLD_ADDR])
+			params.u.neg.mld_mac_addr =
+				nla_data(info->attrs[NL80211_ATTR_MLD_ADDR]);
+	} else {
+		/* Advertised ttlm support, where all tids in both UL & DL maps
+		 * to same link
+		 */
+		if (wdev->iftype != NL80211_IFTYPE_AP)
+			return -EOPNOTSUPP;
+
+		if (wiphy_ext_feature_isset(&rdev->wiphy,
+					    NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD)) {
+			if (info->attrs[NL80211_ATTR_ADVERTISED_TTLM]) {
+				err = nl80211_parse_adv_ttlm_params(info,
+								    &params);
+				if (err)
+					return err;
+			}
+		} else {
+			/* TO-DO: non-offload mode to be implemented */
+			return -EOPNOTSUPP;
+		}
+	}
 
 	return rdev_set_ttlm(rdev, dev, &params);
 }
@@ -22738,6 +22829,52 @@ cfg80211_update_link_reconfig_remove_update(struct net_device *netdev,
 	return -EINVAL;
 }
 EXPORT_SYMBOL(cfg80211_update_link_reconfig_remove_update);
+
+int cfg80211_adv_ttlm_evt_notify(struct net_device *dev, gfp_t gfp,
+				 enum advertised_ttlm_status_type status,
+				 u16 mapping_switch_tsf, unsigned int link_id)
+{
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct wiphy *wiphy = wdev->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	struct nlattr *ttlm_attr;
+	struct sk_buff *msg;
+	void *hdr;
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
+	if (!msg)
+		return -ENOMEM;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_SET_TID_TO_LINK_MAPPING);
+	if (!hdr)
+		goto nla_put_failure;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, dev->ifindex))
+		goto nla_put_failure;
+
+	if (wdev->valid_links &&
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id))
+		goto nla_put_failure;
+
+	ttlm_attr = nla_nest_start_noflag(msg, NL80211_ATTR_ADVERTISED_TTLM);
+
+	if (nla_put_u8(msg, NL80211_ADVERTISED_TTLM_ATTR_STATUS, status) ||
+	    nla_put_u16(msg, NL80211_ADVERTISED_TTLM_ATTR_MST_TSF_UPDATE,
+			mapping_switch_tsf))
+		goto nla_put_failure;
+
+	nla_nest_end(msg, ttlm_attr);
+
+	genlmsg_end(msg, hdr);
+
+	return genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy),
+				       msg, 0, NL80211_MCGRP_MLME, gfp);
+
+ nla_put_failure:
+	nlmsg_free(msg);
+	return -EINVAL;
+}
+EXPORT_SYMBOL(cfg80211_adv_ttlm_evt_notify);
 
 /* initialisation/exit functions */
 
