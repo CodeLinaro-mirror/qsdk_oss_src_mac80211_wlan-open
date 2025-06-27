@@ -1031,7 +1031,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	int valid_entries;
 #endif
 	int orig_budget = budget;
-	spin_lock_bh(&status_ring->lock);
 
 	ath12k_hal_srng_access_begin(ab, status_ring);
 
@@ -1039,7 +1038,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	valid_entries = ath12k_hal_srng_dst_num_free(ab, status_ring, false);
 	if (!valid_entries) {
 		ath12k_hal_srng_access_end(ab, status_ring);
-		spin_unlock_bh(&status_ring->lock);
 		return 0;
 	}
 
@@ -1095,8 +1093,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	}
 
 	ath12k_hal_srng_access_end(ab, status_ring);
-
-	spin_unlock_bh(&status_ring->lock);
 
 	if (!n_entry)
 		return orig_budget - budget;
