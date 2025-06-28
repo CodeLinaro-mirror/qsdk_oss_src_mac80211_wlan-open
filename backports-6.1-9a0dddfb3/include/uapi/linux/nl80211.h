@@ -3622,6 +3622,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_ERP,
 
 	NL80211_ATTR_ADVERTISED_TTLM,
+	NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -8635,6 +8636,7 @@ enum nl80211_cu_mld_attrs {
  * @NL80211_CU_MLD_LINK_ATTR_CRITICAL_FLAG: critical flag value
  * @NL80211_CU_MLD_LINK_ATTR_BPCC: BSS parameter change count value
  * @NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT: CSA/CCA switch count
+ * @NL80211_CU_ATTR_TTLM_EXPEC_DUR: Current expected duration
  * @__NL80211_CU_MLD_LINK_ATTR_LAST: internal use
  * @NL80211_CU_MLD_LINK ATTR_MAX: maximum per link critical update attribute
  */
@@ -8646,6 +8648,7 @@ enum nl80211_cu_mld_link_attrs {
 	NL80211_CU_MLD_LINK_ATTR_BPCC,
 	NL80211_CU_MLD_LINK_ATTR_SWITCH_COUNT,
 	NL80211_CU_ATTR_AP_REMOVAL_COUNT,
+	NL80211_CU_ATTR_TTLM_EXPEC_DUR,
 
 	/* keep last */
 	__NL80211_CU_MLD_LINK_ATTR_LAST,

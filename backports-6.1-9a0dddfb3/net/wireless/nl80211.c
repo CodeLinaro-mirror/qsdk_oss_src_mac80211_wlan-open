@@ -21177,6 +21177,118 @@ nla_fail:
 	return -ENOBUFS;
 }
 
+static int nl80211_send_mgmt_ttlm_expec_dur_update_len(struct wireless_dev *wdev)
+{
+	struct wiphy *wiphy = wdev->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	struct wireless_dev *tmp_wdev;
+	int link_id;
+	int len;
+
+	/* Add NLA_HEADER length for nested attributes,link_removal_update and MLD list
+	 */
+	len = 8;
+	list_for_each_entry(tmp_wdev, &rdev->wiphy.wdev_list, list) {
+		if (!tmp_wdev->valid_links || !tmp_wdev->ttlm_expec_dur_update_flag)
+			continue;
+		/* Add NLA_HEADER length fo nested attributes namely MLD and list of links
+		 * Add additional 4 bytes of WDEV ifidx
+		 */
+		len += 12;
+		for_each_valid_link(tmp_wdev, link_id) {
+			if (!tmp_wdev->links[link_id].ttlm_expec_dur)
+				continue;
+
+			/* Add NLA_HEADER length for link nested attributes - 4 bytes
+			 * link_id attribute - 1 byte
+			 * expec dur - 4 bytes + roundoff
+			 */
+			len += 12;
+		}
+	}
+	return len;
+}
+
+static int nl80211_send_mgmt_ttlm_expec_dur_update(struct sk_buff *msg,
+						   struct wireless_dev *wdev)
+{
+	struct wiphy *wiphy = wdev->wiphy;
+	struct wireless_dev *tmp_wdev;
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	struct nlattr *expec_dur_update;
+	struct nlattr *mld_list, *mld;
+	struct nlattr *link_list, *link;
+	struct net_device *tmp_netdev;
+	int link_id;
+	int i = 0, j = 0;
+
+	expec_dur_update = nla_nest_start_noflag(msg,
+						 NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE);
+
+	if (!expec_dur_update)
+		goto nla_fail;
+
+	mld_list = nla_nest_start_noflag(msg, NL80211_CU_ATTR_MLD_LIST);
+	if (!mld_list)
+		goto nla_fail_expec_dur_update;
+
+	list_for_each_entry(tmp_wdev, &rdev->wiphy.wdev_list, list) {
+		if (!tmp_wdev->valid_links || !tmp_wdev->ttlm_expec_dur_update_flag)
+			continue;
+
+		mld = nla_nest_start_noflag(msg, ++i);
+		if (!mld)
+			goto nla_fail_mld_list;
+
+		tmp_netdev = tmp_wdev->netdev;
+		if (tmp_netdev &&
+		    nla_put_u32(msg, NL80211_CU_MLD_ATTR_IFINDEX, tmp_netdev->ifindex))
+			goto nla_fail_mld;
+
+		link_list = nla_nest_start_noflag(msg, NL80211_CU_MLD_ATTR_LINK_LIST);
+		if (!link_list)
+			goto nla_fail_mld;
+
+		for_each_valid_link(tmp_wdev, link_id) {
+			u32 expec_dur;
+
+			if (!tmp_wdev->links[link_id].ttlm_expec_dur)
+				continue;
+
+			expec_dur = tmp_wdev->links[link_id].ttlm_expec_dur;
+			tmp_wdev->links[link_id].ttlm_expec_dur = 0;
+			link = nla_nest_start(msg, ++j);
+			if (!link)
+				goto nla_fail_link_list;
+
+			if (nla_put_u8(msg, NL80211_CU_MLD_LINK_ATTR_ID, link_id) ||
+			    nla_put_u32(msg, NL80211_CU_ATTR_TTLM_EXPEC_DUR,
+					expec_dur))
+				goto nla_fail_link;
+
+			nla_nest_end(msg, link);
+		}
+		nla_nest_end(msg, link_list);
+		nla_nest_end(msg, mld);
+	}
+	nla_nest_end(msg, mld_list);
+	nla_nest_end(msg, expec_dur_update);
+	return 0;
+
+nla_fail_link:
+	nla_nest_cancel(msg, link);
+nla_fail_link_list:
+	nla_nest_cancel(msg, link_list);
+nla_fail_mld:
+	nla_nest_cancel(msg, mld);
+nla_fail_mld_list:
+	nla_nest_cancel(msg, mld_list);
+nla_fail_expec_dur_update:
+	nla_nest_cancel(msg, expec_dur_update);
+nla_fail:
+	return -ENOBUFS;
+}
+
 int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 		      struct wireless_dev *wdev, u32 nlportid,
 		      struct cfg80211_rx_info *info, gfp_t gfp)
@@ -21184,7 +21296,7 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 	struct net_device *netdev = wdev->netdev;
 	struct sk_buff *msg;
 	void *hdr;
-	int cu_len = 0, link_removal_update_len = 0;
+	int cu_len = 0, link_removal_update_len = 0, ttlm_expec_dur_update_len = 0;
 
 	if (info->critical_update)
 		cu_len = nl80211_send_mgmt_critical_update_len(wdev);
@@ -21192,7 +21304,11 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 	if (info->link_removal_update)
 		link_removal_update_len = nl80211_send_mgmt_link_removal_update_len(wdev);
 
-	msg = nlmsg_new(100 + info->len + cu_len + link_removal_update_len,
+	if (info->ttlm_expec_dur_update)
+		ttlm_expec_dur_update_len = nl80211_send_mgmt_ttlm_expec_dur_update_len(wdev);
+
+	msg = nlmsg_new(100 + info->len + cu_len + link_removal_update_len +
+			ttlm_expec_dur_update_len,
 			gfp);
 	if (!msg)
 		return -ENOMEM;
@@ -21237,6 +21353,12 @@ int nl80211_send_mgmt(struct cfg80211_registered_device *rdev,
 		if (nl80211_send_mgmt_link_removal_update(msg, wdev))
 			goto nla_put_failure;
 		wdev->link_removal_flag = 0;
+	}
+
+	if (info->ttlm_expec_dur_update) {
+		if (nl80211_send_mgmt_ttlm_expec_dur_update(msg, wdev))
+			goto nla_put_failure;
+		wdev->ttlm_expec_dur_update_flag = 0;
 	}
 
 	genlmsg_end(msg, hdr);

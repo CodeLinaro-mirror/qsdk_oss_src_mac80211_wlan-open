@@ -7113,6 +7113,7 @@ struct wireless_dev {
 		unsigned int cac_time_ms;
 		u8 switch_count;
 		u32 link_removal_tbtt_count;
+		u32 ttlm_expec_dur;
 	} links[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links;
 
@@ -7122,6 +7123,7 @@ struct wireless_dev {
 	bool is_netdev_going_down; /*Indicates netdev going down - wdev specific*/
 	u8 ppe_vp_type;
 	bool link_removal_flag;
+	bool ttlm_expec_dur_update_flag;
 };
 
 static inline const u8 *wdev_address(struct wireless_dev *wdev)
@@ -9283,6 +9285,8 @@ void cfg80211_conn_failed(struct net_device *dev, const u8 *mac_addr,
  * @ack_tstamp: Hardware timestamp of ack TX in nanoseconds
  * @link_removal_update: Indicates whether link removal update is present in
  *	the rx info
+ * @ttlm_expec_dur_update: Indicates whether expected duration update for TTLM
+ *	element is present in the rx info
  */
 struct cfg80211_rx_info {
 	int freq;
@@ -9296,6 +9300,7 @@ struct cfg80211_rx_info {
 	u64 ack_tstamp;
 	bool critical_update;
 	bool link_removal_update;
+	bool ttlm_expec_dur_update;
 };
 
 /**
