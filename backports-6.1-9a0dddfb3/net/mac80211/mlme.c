@@ -7894,6 +7894,32 @@ void ieee80211_send_teardown_neg_ttlm(struct ieee80211_vif *vif)
 }
 EXPORT_SYMBOL(ieee80211_send_teardown_neg_ttlm);
 
+void ieee80211_set_ap_advertised_ttlm_config(struct ieee80211_sub_if_data *sdata,
+					     struct cfg80211_ttlm_params *params)
+{
+	struct ieee80211_advertised_ttlm_config *ttlm_config =
+		&sdata->vif.adv_ttlm.u.ap.ttlm_config;
+	int i;
+
+	memset(ttlm_config, 0, sizeof(*ttlm_config));
+
+	ttlm_config->num_ttlm_ie =
+		params->u.adv.num_ttlm_info;
+	for (i = 0; i < ttlm_config->num_ttlm_ie; i++) {
+		ttlm_config->adv_ttlm_conf[i].link_mapping_size =
+			params->u.adv.link_mapping_size[i];
+		ttlm_config->adv_ttlm_conf[i].ieee_link_bmap =
+			params->u.adv.ieee_link_bmap[i];
+		ttlm_config->adv_ttlm_conf[i].switch_time =
+			params->u.adv.switch_time[i];
+		ttlm_config->adv_ttlm_conf[i].duration =
+			params->u.adv.duration[i];
+	}
+
+	ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_MLD_ADV_TTLM);
+}
+EXPORT_SYMBOL(ieee80211_set_ap_advertised_ttlm_config);
+
 void ieee80211_sta_rx_queued_ext(struct ieee80211_sub_if_data *sdata,
 				 struct sk_buff *skb)
 {

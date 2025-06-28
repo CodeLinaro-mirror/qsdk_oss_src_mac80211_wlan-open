@@ -5913,7 +5913,16 @@ ieee80211_set_ttlm(struct wiphy *wiphy, struct net_device *dev,
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
-	return ieee80211_req_neg_ttlm(sdata, params);
+	switch (params->type) {
+	case TTLM_CMD_TYPE_NEGOTIATED:
+		return ieee80211_req_neg_ttlm(sdata, params);
+	case TTLM_CMD_TYPE_ADVERTISED:
+		ieee80211_set_ap_advertised_ttlm_config(sdata, params);
+		break;
+	default:
+		return -EINVAL;
+	}
+	return 0;
 }
 
 static int
