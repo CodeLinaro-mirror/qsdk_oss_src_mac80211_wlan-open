@@ -8227,7 +8227,7 @@ static int nl80211_dump_station(struct sk_buff *skb,
 				kzalloc(sizeof(*sinfo.links[0]), GFP_KERNEL);
 			if (!sinfo.links[i]) {
 				err = -ENOMEM;
-				goto out_err;
+				goto out_err_and_free;
 			}
 		}
 
@@ -8236,7 +8236,7 @@ static int nl80211_dump_station(struct sk_buff *skb,
 		if (err == -ENOENT)
 			break;
 		if (err)
-			goto out_err;
+			goto out_err_and_free;
 
 		if (sinfo.valid_links)
 			cfg80211_sta_set_mld_sinfo(&sinfo);
@@ -8254,8 +8254,10 @@ static int nl80211_dump_station(struct sk_buff *skb,
  out:
 	cb->args[2] = sta_idx;
 	err = skb->len;
+ out_err_and_free:
+	if (err)
+		cfg80211_sinfo_release_content(&sinfo);
  out_err:
-	cfg80211_sinfo_release_content(&sinfo);
 	wiphy_unlock(&rdev->wiphy);
 
 	return err;
