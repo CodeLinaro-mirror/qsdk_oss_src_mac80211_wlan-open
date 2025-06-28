@@ -2268,6 +2268,7 @@ size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 
         return req_entries;
 }
+EXPORT_SYMBOL(ath12k_dp_get_req_entries_from_buf_ring);
 
 int ath12k_dp_rxdma_ring_setup(struct ath12k_base *ab)
 {

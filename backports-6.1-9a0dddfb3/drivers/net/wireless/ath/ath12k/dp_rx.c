@@ -283,19 +283,28 @@ EXPORT_SYMBOL(ath12k_dp_rx_h_undecap_raw);
 static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 				      struct list_head *used_list)
 {
-	struct ath12k_rx_desc_info *rx_desc, *safe;
-
+	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
+	struct sk_buff *skb;
 	/* Reset the use flag */
-	list_for_each_entry_safe(rx_desc, safe, used_list, list)
+	list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
 		rx_desc->in_use = false;
 
+		if (rx_desc->skb) {
+			skb = rx_desc->skb;
+			ath12k_core_dma_unmap_single(dp->dev, rx_desc->paddr,
+						     DP_RX_BUFFER_SIZE,
+						     DMA_FROM_DEVICE);
+			dev_kfree_skb_any(skb);
+		}
+		dp->device_stats.free_excess_alloc_skb++;
+	}
 	spin_lock_bh(&dp->rx_desc_lock);
 	list_splice_tail(used_list, &dp->rx_desc_free_list);
 	spin_unlock_bh(&dp->rx_desc_lock);
 }
 
 /* Returns number of Rx buffers replenished */
-int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
+void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_ring *rx_ring,
 				struct list_head *used_list,
 				int req_entries)
@@ -304,99 +313,64 @@ int ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	struct ath12k_buffer_addr *desc;
 	struct hal_srng *srng;
 	struct sk_buff *skb;
-	int num_free;
-	int num_remain;
-	u32 cookie;
 	dma_addr_t paddr;
-	struct ath12k_rx_desc_info *rx_desc;
+	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
 	enum hal_rx_buf_return_buf_manager mgr = dp->hal->hal_params->rx_buf_rbm;
-
-	req_entries = min(req_entries, rx_ring->bufs_max);
 
 	srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 
-	spin_lock_bh(&srng->lock);
-
-	ath12k_hal_srng_access_begin(ab, srng);
-
-	num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
-	if (!req_entries && (num_free > (rx_ring->bufs_max * 3) / 4))
-		req_entries = num_free;
-
-	req_entries = min(num_free, req_entries);
-	num_remain = req_entries;
-
-	if (!num_remain)
-		goto out;
-
-	/* Get the descriptor from free list */
-	if (list_empty(used_list)) {
-		spin_lock_bh(&dp->rx_desc_lock);
-		req_entries = ath12k_dp_list_cut_nodes(used_list,
-						       &dp->rx_desc_free_list,
-						       num_remain);
-		spin_unlock_bh(&dp->rx_desc_lock);
-		num_remain = req_entries;
-	}
-
-	while (num_remain > 0) {
+	list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
 #ifdef CPTCFG_MAC80211_SFE_SUPPORT
 		skb = netdev_alloc_skb_fast(NULL, DP_RX_BUFFER_SIZE);
 #else
 		skb = dev_alloc_skb(DP_RX_BUFFER_SIZE);
 #endif
-		if (!skb)
+		if (unlikely(!skb))
 			break;
 
 #ifndef CONFIG_IO_COHERENCY
 		paddr = dma_map_single(dp->dev, skb->data, DP_RX_BUFFER_SIZE,
 				       DMA_FROM_DEVICE);
-		if (dma_mapping_error(dp->dev, paddr))
-			goto fail_free_skb;
+		if (unlikely(dma_mapping_error(dp->dev, paddr))) {
+			dev_kfree_skb_any(skb);
+			goto out;
+		}
 #else
 		paddr = virt_to_phys(skb->data);
 		if(unlikely(!paddr)) {
-			goto fail_free_skb;
+			dev_kfree_skb_any(skb);
+			goto out;
 		}
 #endif
-
-		rx_desc = list_first_entry_or_null(used_list,
-						   struct ath12k_rx_desc_info,
-						   list);
-		if (!rx_desc)
-			goto fail_dma_unmap;
-
 		rx_desc->skb = skb;
 		rx_desc->paddr = paddr;
-		cookie = rx_desc->cookie;
+	}
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+	while (req_entries > 0) {
+		rx_desc = list_first_entry_or_null(used_list, struct ath12k_rx_desc_info, list);
+		if (unlikely(!rx_desc))
+			goto out;
 
 		desc = ath12k_hal_srng_src_get_next_entry(ab, srng);
-		if (!desc)
-			goto fail_dma_unmap;
+		if (unlikely(!desc))
+			goto out;
 
 		list_del(&rx_desc->list);
 
-		num_remain--;
+		req_entries--;
 
-		ath12k_hal_rx_buf_addr_info_set(desc, paddr, cookie, mgr);
+		ath12k_hal_rx_buf_addr_info_set(desc, rx_desc->paddr, rx_desc->cookie, mgr);
 	}
 
-	goto out;
-
-fail_dma_unmap:
-	ath12k_core_dma_unmap_single(dp->dev, paddr, DP_RX_BUFFER_SIZE,
-				     DMA_FROM_DEVICE);
-fail_free_skb:
-	dev_kfree_skb_any(skb);
 out:
 	ath12k_hal_srng_access_end(ab, srng);
 
-	if (!list_empty(used_list))
+	if (unlikely(!list_empty(used_list)))
 		ath12k_dp_rx_enqueue_free(dp, used_list);
 
 	spin_unlock_bh(&srng->lock);
-
-	return req_entries - num_remain;
 }
 EXPORT_SYMBOL(ath12k_dp_rx_bufs_replenish);
 
@@ -404,11 +378,14 @@ static int ath12k_dp_rxdma_ring_buf_setup(struct ath12k_base *ab,
 					  struct dp_rxdma_ring *rx_ring)
 {
 	LIST_HEAD(list);
+	size_t req_entries;
 
 	rx_ring->bufs_max = rx_ring->refill_buf_ring.size /
 			ath12k_hal_srng_get_entrysize(ab, HAL_RXDMA_BUF);
 
-	ath12k_dp_rx_bufs_replenish(ab->dp, rx_ring, &list, 0);
+	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, rx_ring, &list);
+	if (req_entries)
+		ath12k_dp_rx_bufs_replenish(ab->dp, rx_ring, &list, req_entries);
 
 	return 0;
 }

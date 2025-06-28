@@ -479,6 +479,7 @@ struct ath12k_device_dp_stats {
 	u32 err_ring_pkts;
 	u32 invalid_rbm;
 	u32 reo_excep_msdu_buf_type;
+	u32 free_excess_alloc_skb;
 	u32 rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
 	u32 reo_error[HAL_REO_DEST_RING_ERROR_CODE_MAX];
 	u32 hal_reo_error[DP_REO_DST_RING_MAX];
@@ -965,6 +966,9 @@ void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 			      enum hal_ring_type type, int ring_num);
 void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 				      u8 rbm_id, int ring_type);
+size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
+					       struct dp_rxdma_ring *rx_ring,
+					       struct list_head *list);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
 				  struct ath12k_dp *dp, bool vdev_id_check_en);

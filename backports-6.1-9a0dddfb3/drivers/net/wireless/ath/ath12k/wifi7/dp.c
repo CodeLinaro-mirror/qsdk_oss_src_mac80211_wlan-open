@@ -136,8 +136,11 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	if (dp->hw_params->ring_mask->host2rxdma[grp_id]) {
 		struct dp_rxdma_ring *rx_ring = &dp->rx_refill_buf_ring;
 		LIST_HEAD(list);
+		size_t req_entries;
 
-		ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list, 0);
+		req_entries = ath12k_dp_get_req_entries_from_buf_ring(dp->ab, rx_ring, &list);
+		if (req_entries)
+			ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list, req_entries);
 	}
 
 	/* TODO: Implement handler for other interrupts */

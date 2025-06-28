@@ -16,5 +16,4 @@ struct ath12k_dp;
 
 struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab);
 void ath12k_wifi7_dp_deinit(struct ath12k_dp *dp);
-
 #endif

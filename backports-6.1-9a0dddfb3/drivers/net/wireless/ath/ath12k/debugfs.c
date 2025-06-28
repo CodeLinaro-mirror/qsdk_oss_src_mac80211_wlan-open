@@ -899,6 +899,8 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 device_stats->err_ring_pkts);
 	len += scnprintf(buf + len, size - len, "Invalid RBM: %u\n\n",
 			 device_stats->invalid_rbm);
+	len += scnprintf(buf + len, size - len, "free excess alloc skb: %u\n\n",
+			 device_stats->free_excess_alloc_skb);
 	len += scnprintf(buf + len, size - len, "RXDMA errors:\n");
 	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
 		len += scnprintf(buf + len, size - len, "%s: %u\n",
