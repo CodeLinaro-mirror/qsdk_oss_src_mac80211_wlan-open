@@ -356,11 +356,6 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		ATH12K_REO_STATUS_RING_MASK_0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
-	.host2rxdma = {
-		0, 0, 0,
-		ATH12K_HOST2RXDMA_RING_MASK_0,
-		0, 0, 0, 0, 0, 0, 0, 0, 0,
-	},
 	.tx_mon_dest = {
 		0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -420,10 +415,6 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
 	.reo_status = {
 		0, 0, 0,
 		ATH12K_REO_STATUS_RING_MASK_0,
-	},
-	.host2rxdma = {
-		0, 0, 0,
-		ATH12K_HOST2RXDMA_RING_MASK_0,
 	},
 	.tx_mon_dest = {
 		ATH12K_TX_MON_RING_MASK_0,
@@ -524,13 +515,6 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn6432 = {
 		ATH12K_REO_STATUS_RING_MASK_0,
 		0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0
-	},
-	.host2rxdma = {
-		0, 0,
-		ATH12K_HOST2RXDMA_RING_MASK_0,
-		ATH12K_HOST2RXDMA_RING_MASK_1,
-		ATH12K_HOST2RXDMA_RING_MASK_2,
-		0, 0, 0, 0, 0, 0,
 	},
 	.tx_mon_dest = {
 		ATH12K_TX_MON_RING_MASK_0,
