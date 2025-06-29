@@ -1509,6 +1509,7 @@ struct ath12k_base {
 #ifdef CPTCFG_ATH12K_DEBUGFS
 	struct dentry *debugfs_soc;
 #endif
+	struct ath12k_cfg_ctx *cfg_ctx;
 	unsigned long dev_flags;
 	struct completion driver_recovery;
 	struct workqueue_struct *workqueue;

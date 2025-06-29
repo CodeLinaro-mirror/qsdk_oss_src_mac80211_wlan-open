@@ -25,6 +25,7 @@
 #include "dp_mon.h"
 #include "vendor.h"
 #include "cfr.h"
+#include "ini.h"
 
 struct ath12k_wmi_svc_ready_parse {
 	bool wmi_svc_bitmap_done;
@@ -5757,6 +5758,7 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 
 	arg.num_band_to_mac = ab->num_radios;
 	ath12k_fill_band_to_mac_param(ab, arg.band_to_mac);
+	ath12k_cfg_parse_pdev_section(ab);
 
 	dp->peer_metadata_ver = arg.res_cfg.peer_metadata_ver;
 

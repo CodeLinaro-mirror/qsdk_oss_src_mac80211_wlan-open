@@ -32,6 +32,7 @@
 #include "peer.h"
 #include "ppe.h"
 #include "cfr.h"
+#include "ini.h"
 
 #define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT 0x8000
 #define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT 1024
@@ -1065,6 +1066,7 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 	ath12k_reg_free(ab);
 	ath12k_debugfs_soc_destroy(ab);
 	ath12k_qmi_deinit_service(ab);
+	ath12k_cfg_deinit(ab);
 }
 
 static int ath12k_core_mlo_shmem_per_device_crash_info_addresses(
@@ -1546,6 +1548,11 @@ core_pdev_create:
 
 		mutex_unlock(&ab->core_lock);
 	}
+
+	if (ath12k_cfg_init(ab))
+		ath12k_err(ab, "failed to initialize INI data in driver\n");
+	else
+		ath12k_err(ab, "initialize INI data in driver\n");
 
 	return 0;
 

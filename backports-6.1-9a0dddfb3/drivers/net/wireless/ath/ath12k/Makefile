@@ -26,7 +26,9 @@ ath12k-y += core.o \
 	    ahb.o \
 	    vendor.o \
 	    umac_reset.o \
-	    accel_cfg.o
+	    accel_cfg.o \
+	    ini.o \
+	    ini_parse.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o
