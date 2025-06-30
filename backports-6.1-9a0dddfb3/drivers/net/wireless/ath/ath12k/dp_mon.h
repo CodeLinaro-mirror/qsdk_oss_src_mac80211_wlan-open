@@ -15,6 +15,20 @@
 #define ATH12K_MON_RX_PKT_OFFSET	8
 #define ATH12K_DP_WLAN_MAX_AC		4
 
+struct dp_rxdma_mon_ring {
+	struct dp_srng refill_buf_ring;
+	struct idr bufs_idr;
+	/* Protects bufs_idr */
+	spinlock_t idr_lock;
+	int bufs_max;
+};
+
+struct ath12k_dp_mon {
+	struct dp_rxdma_mon_ring rxdma_mon_buf_ring;
+	struct dp_rxdma_mon_ring tx_mon_buf_ring;
+	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
+};
+
 enum dp_monitor_mode {
 	ATH12K_DP_TX_MONITOR_MODE,
 	ATH12K_DP_RX_MONITOR_MODE

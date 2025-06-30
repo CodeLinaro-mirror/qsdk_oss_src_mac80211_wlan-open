@@ -37,18 +37,11 @@ struct ath12k_hal_reo_cmd;
 struct hal_reo_dest_ring;
 enum hal_wbm_rel_bm_act;
 struct dp_rx_fst;
+struct ath12k_dp_mon;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
 #define MAX_TCL_RING		    4
-
-struct dp_rxdma_mon_ring {
-	struct dp_srng refill_buf_ring;
-	struct idr bufs_idr;
-	/* Protects bufs_idr */
-	spinlock_t idr_lock;
-	int bufs_max;
-};
 
 struct dp_rxdma_ring {
 	struct dp_srng refill_buf_ring;
@@ -677,9 +670,6 @@ struct ath12k_dp {
 	struct dp_rxdma_ring rx_refill_buf_ring;
 	struct dp_srng rx_mac_buf_ring[MAX_RXDMA_PER_PDEV];
 	struct dp_srng rxdma_err_dst_ring[MAX_RXDMA_PER_PDEV];
-	struct dp_rxdma_mon_ring rxdma_mon_buf_ring;
-	struct dp_rxdma_mon_ring tx_mon_buf_ring;
-	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
 	struct ath12k_reo_q_addr_lut reoq_lut;
 	struct ath12k_reo_q_addr_lut ml_reoq_lut;
 	const struct ath12k_hw_params *hw_params;
@@ -697,6 +687,8 @@ struct ath12k_dp {
 	struct ath12k_dp_arch_ops *arch_ops;
 
 	struct dp_fst_config fst_config;
+
+	struct ath12k_dp_mon *dp_mon;
 
 	/* Linked list of struct ath12k_dp_link_peer */
 	struct list_head peers;

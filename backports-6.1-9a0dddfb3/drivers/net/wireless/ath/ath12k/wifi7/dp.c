@@ -185,6 +185,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp;
+	int ret;
 
 	dp = kzalloc(sizeof(*dp), GFP_KERNEL);
 	if (!dp)
@@ -197,10 +198,20 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 	dp->hw_params = ab->hw_params;
 	dp->hal = &ab->hal;
 
+	ret = ath12k_dp_mon_init(dp);
+	if (ret) {
+		ath12k_warn(dp, "dp_mon_init failed %d\n", ret);
+		goto dp_err;
+	}
+
 	return dp;
+dp_err:
+	ath12k_wifi7_dp_deinit(dp);
+	return NULL;
 }
 
 void ath12k_wifi7_dp_deinit(struct ath12k_dp *dp)
 {
+	ath12k_dp_mon_deinit(dp);
 	kfree(dp);
 }

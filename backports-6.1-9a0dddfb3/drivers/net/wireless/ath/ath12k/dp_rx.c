@@ -426,16 +426,17 @@ static int ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_base *ab,
 static int ath12k_dp_rxdma_buf_free(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	int i;
 
-	ath12k_dp_rxdma_mon_buf_ring_free(ab, &dp->rxdma_mon_buf_ring);
+	ath12k_dp_rxdma_mon_buf_ring_free(ab, &dp_mon->rxdma_mon_buf_ring);
 
 	if (ab->hw_params->rxdma1_enable)
 		return 0;
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++)
 		ath12k_dp_rxdma_mon_buf_ring_free(ab,
-						  &dp->rx_mon_status_refill_ring[i]);
+						  &dp_mon->rx_mon_status_refill_ring[i]);
 
 	return 0;
 }
@@ -477,6 +478,7 @@ static int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct dp_rxdma_mon_ring *mon_ring;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	int ret, i;
 
 	ret = ath12k_dp_rxdma_ring_buf_setup(ab, &dp->rx_refill_buf_ring);
@@ -488,7 +490,7 @@ static int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab)
 
 	if (ab->hw_params->rxdma1_enable) {
 		ret = ath12k_dp_rxdma_mon_ring_buf_setup(ab,
-							 &dp->rxdma_mon_buf_ring,
+							 &dp_mon->rxdma_mon_buf_ring,
 							 HAL_RXDMA_MONITOR_BUF);
 		if (ret)
 			ath12k_warn(ab,
@@ -497,7 +499,7 @@ static int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab)
 	}
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		mon_ring = &dp->rx_mon_status_refill_ring[i];
+		mon_ring = &dp_mon->rx_mon_status_refill_ring[i];
 		ret = ath12k_dp_rxdma_mon_ring_buf_setup(ab, mon_ring,
 							 HAL_RXDMA_MONITOR_STATUS);
 		if (ret) {
@@ -1097,6 +1099,7 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 void ath12k_dp_rx_free(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct dp_srng *srng;
 	int i;
 
@@ -1106,7 +1109,7 @@ void ath12k_dp_rx_free(struct ath12k_base *ab)
 		if (ab->hw_params->rx_mac_buf_ring)
 			ath12k_dp_srng_cleanup(ab, &dp->rx_mac_buf_ring[i]);
 		if (!ab->hw_params->rxdma1_enable) {
-			srng = &dp->rx_mon_status_refill_ring[i].refill_buf_ring;
+			srng = &dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring;
 			ath12k_dp_srng_cleanup(ab, srng);
 		}
 	}
@@ -1114,7 +1117,7 @@ void ath12k_dp_rx_free(struct ath12k_base *ab)
 	for (i = 0; i < ab->hw_params->num_rxdma_dst_ring; i++)
 		ath12k_dp_srng_cleanup(ab, &dp->rxdma_err_dst_ring[i]);
 
-	ath12k_dp_srng_cleanup(ab, &dp->rxdma_mon_buf_ring.refill_buf_ring);
+	ath12k_dp_srng_cleanup(ab, &dp_mon->rxdma_mon_buf_ring.refill_buf_ring);
 
 	ath12k_dp_rxdma_buf_free(ab);
 }
@@ -1178,6 +1181,7 @@ ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
 int ath12k_dp_rx_htt_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	u32 ring_id;
 	int i, ret;
 
@@ -1215,7 +1219,7 @@ int ath12k_dp_rx_htt_setup(struct ath12k_base *ab)
 	}
 
 	if (ab->hw_params->rxdma1_enable) {
-		ring_id = dp->rxdma_mon_buf_ring.refill_buf_ring.ring_id;
+		ring_id = dp_mon->rxdma_mon_buf_ring.refill_buf_ring.ring_id;
 		ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id,
 						  0, HAL_RXDMA_MONITOR_BUF);
 		if (ret) {
@@ -1226,7 +1230,7 @@ int ath12k_dp_rx_htt_setup(struct ath12k_base *ab)
 	} else {
 		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
 			ring_id =
-				dp->rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
+			    dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
 			ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id, i,
 							  HAL_RXDMA_MONITOR_STATUS);
 			if (ret) {
@@ -1250,11 +1254,12 @@ int ath12k_dp_rx_htt_setup(struct ath12k_base *ab)
 int ath12k_dp_rx_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct dp_srng *srng;
 	int i, ret;
 
-	idr_init(&dp->rxdma_mon_buf_ring.bufs_idr);
-	spin_lock_init(&dp->rxdma_mon_buf_ring.idr_lock);
+	idr_init(&dp_mon->rxdma_mon_buf_ring.bufs_idr);
+	spin_lock_init(&dp_mon->rxdma_mon_buf_ring.idr_lock);
 
 	ret = ath12k_dp_srng_setup(ab,
 				   &dp->rx_refill_buf_ring.refill_buf_ring,
@@ -1291,7 +1296,7 @@ int ath12k_dp_rx_alloc(struct ath12k_base *ab)
 
 	if (ab->hw_params->rxdma1_enable) {
 		ret = ath12k_dp_srng_setup(ab,
-					   &dp->rxdma_mon_buf_ring.refill_buf_ring,
+					   &dp_mon->rxdma_mon_buf_ring.refill_buf_ring,
 					   HAL_RXDMA_MONITOR_BUF, 0, 0,
 					   DP_RXDMA_MONITOR_BUF_RING_SIZE);
 		if (ret) {
@@ -1300,12 +1305,12 @@ int ath12k_dp_rx_alloc(struct ath12k_base *ab)
 		}
 	} else {
 		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-			idr_init(&dp->rx_mon_status_refill_ring[i].bufs_idr);
-			spin_lock_init(&dp->rx_mon_status_refill_ring[i].idr_lock);
+			idr_init(&dp_mon->rx_mon_status_refill_ring[i].bufs_idr);
+			spin_lock_init(&dp_mon->rx_mon_status_refill_ring[i].idr_lock);
 		}
 
 		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-			srng = &dp->rx_mon_status_refill_ring[i].refill_buf_ring;
+			srng = &dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring;
 			ret = ath12k_dp_srng_setup(ab, srng,
 						   HAL_RXDMA_MONITOR_STATUS, 0, i,
 						   DP_RXDMA_MON_STATUS_RING_SIZE);

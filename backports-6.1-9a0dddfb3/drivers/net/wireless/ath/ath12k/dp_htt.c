@@ -11,6 +11,7 @@
 #include "debugfs_htt_stats.h"
 #include "debugfs_sta.h"
 #include "debugfs.h"
+#include "dp_mon.h"
 
 static void ath12k_dp_htt_htc_tx_complete(struct ath12k_base *ab,
 					  struct sk_buff *skb)
@@ -1738,6 +1739,8 @@ int ath12k_dp_tx_htt_monitor_mode_ring_config(struct ath12k *ar, bool reset)
 int ath12k_dp_tx_htt_rx_monitor_mode_ring_config(struct ath12k *ar, bool reset)
 {
 	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct htt_rx_ring_tlv_filter tlv_filter = {0};
 	int ret, ring_id, i;
 
@@ -1817,7 +1820,7 @@ int ath12k_dp_tx_htt_rx_monitor_mode_ring_config(struct ath12k *ar, bool reset)
 	}
 
 	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		ring_id = ab->dp->rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
+		ring_id = dp_mon->rx_mon_status_refill_ring[i].refill_buf_ring.ring_id;
 		if (!reset) {
 			tlv_filter.rx_filter =
 				HTT_RX_MON_FILTER_TLV_FLAGS_MON_STATUS_RING;
