@@ -175,12 +175,14 @@ u32 ath12k_hal_rx_desc_get_mpdu_ppdu_id(struct ath12k_hal *hal,
 {
 	return hal->hal_ops->rx_desc_get_mpdu_ppdu_id(rx_desc);
 }
+EXPORT_SYMBOL(ath12k_hal_rx_desc_get_mpdu_ppdu_id);
 
 u32 hal_rx_desc_get_mpdu_start_tag(struct ath12k_hal *hal,
 				   struct hal_rx_desc *rx_desc)
 {
 	return hal->hal_ops->rx_desc_get_mpdu_start_tag(rx_desc);
 }
+EXPORT_SYMBOL(hal_rx_desc_get_mpdu_start_tag);
 
 void ath12k_hal_rx_reo_ent_buf_paddr_get(struct ath12k_hal *hal,
 					 void *rx_desc, dma_addr_t *paddr,
@@ -192,6 +194,7 @@ void ath12k_hal_rx_reo_ent_buf_paddr_get(struct ath12k_hal *hal,
 					       sw_cookie, pp_buf_addr,
 					       rbm, msdu_cnt);
 }
+EXPORT_SYMBOL(ath12k_hal_rx_reo_ent_buf_paddr_get);
 
 void ath12k_hal_rx_msdu_list_get(struct ath12k_hal *hal,
 				 void *link_desc,
@@ -202,12 +205,14 @@ void ath12k_hal_rx_msdu_list_get(struct ath12k_hal *hal,
 				       msdu_list,
 				       num_msdus);
 }
+EXPORT_SYMBOL(ath12k_hal_rx_msdu_list_get);
 
 u8 ath12k_hal_rx_h_l3pad_get(struct ath12k_hal *hal,
 			     struct hal_rx_desc *desc)
 {
 	return hal->hal_ops->rx_h_l3pad_get(desc);
 }
+EXPORT_SYMBOL(ath12k_hal_rx_h_l3pad_get);
 
 static inline void ath12k_hal_mon_ops_init(struct ath12k_hal *hal,
 					   u8 hw_rev)

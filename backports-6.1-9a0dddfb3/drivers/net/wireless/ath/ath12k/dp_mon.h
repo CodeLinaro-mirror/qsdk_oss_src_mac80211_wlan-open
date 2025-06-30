@@ -41,6 +41,7 @@
 				 (RX_MON_STATUS_BUF_RESERVATION + \
 				  RX_MON_STATUS_BUF_ALIGN + \
 				  SKB_DATA_ALIGN(sizeof(struct skb_shared_info))))
+#define DP_NOT_PPDU_ID_WRAP_AROUND 20000
 
 #define DP_MON_RXDMA_BUF_COOKIE_BUF_ID		GENMASK(17, 0)
 #define DP_MON_RXDMA_BUF_COOKIE_PDEV_ID 	GENMASK(19, 18)
@@ -80,6 +81,7 @@ struct ath12k_dp_mon {
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
 	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	u32 mon_dest_ring_stuck_cnt;
 };
 
 enum dp_monitor_type {
@@ -258,6 +260,10 @@ void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon);
 void ath12k_dp_rx_mon_dest_process(struct ath12k *ar, int mac_id,
 				   u32 quota, struct napi_struct *napi);
 int ath12k_dp_pkt_set_pktlen(struct sk_buff *skb, u32 len);
+int ath12k_dp_mon_rx_deliver(struct ath12k_pdev_dp *dp_pdev,
+			     struct dp_mon_mpdu *mon_mpdu,
+			     struct hal_rx_mon_ppdu_info *ppduinfo,
+			     struct napi_struct *napi);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)

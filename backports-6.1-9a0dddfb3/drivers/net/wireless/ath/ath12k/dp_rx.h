@@ -255,6 +255,4 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 enum ath12k_routing_pkt_type pkt_type,
 				 u32 meta_data);
-bool ath12k_dp_rxdesc_mpdu_valid(struct ath12k_base *ab,
-				 struct hal_rx_desc *rx_desc);
 #endif /* ATH12K_DP_RX_H */

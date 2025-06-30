@@ -1714,13 +1714,3 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 
 	return ret;
 }
-
-bool ath12k_dp_rxdesc_mpdu_valid(struct ath12k_base *ab,
-				 struct hal_rx_desc *rx_desc)
-{
-	u32 tlv_tag;
-
-	tlv_tag = hal_rx_desc_get_mpdu_start_tag(&ab->hal, rx_desc);
-
-	return tlv_tag == HAL_RX_MPDU_START;
-}

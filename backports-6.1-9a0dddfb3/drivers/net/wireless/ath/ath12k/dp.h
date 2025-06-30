@@ -533,7 +533,6 @@ struct ath12k_dp_htt_rxdma_ppe_cfg_param {
 
 struct ath12k_dp {
 	struct ath12k_base *ab;
-	u32 mon_dest_ring_stuck_cnt;
 	u8 num_bank_profiles;
 	/* protects the access and update of bank_profiles */
 	spinlock_t tx_bank_lock;
