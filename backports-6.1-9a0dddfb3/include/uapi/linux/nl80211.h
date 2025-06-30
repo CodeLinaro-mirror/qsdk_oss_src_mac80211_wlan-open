@@ -6941,6 +6941,13 @@ enum nl80211_feature_flags {
  *
  * @NL80211_EXT_FEATURE_ERP: Driver supports ErP low power mode.
  *
+ * @NL80211_EXT_FEATURE_TARGET_AND_HOST_AFC_SUPPORT: Both the host and the
+ *       target supports AFC (Automatic Frequency Control) feature.
+ *
+ * @NL80211_EXT_FEATURE_RETAIL_AFC_SUPPORT: The device supports retail AFC
+ *       mode where channel selection after AFC response will be done
+ *       by the application layers.
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7022,6 +7029,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_DEVICE_BW,
 	NL80211_EXT_FEATURE_MLD_LINK_REMOVAL_OFFLOAD,
 	NL80211_EXT_FEATURE_ERP,
+	NL80211_EXT_FEATURE_TARGET_AND_HOST_AFC_SUPPORT,
+	NL80211_EXT_FEATURE_RETAIL_AFC_SUPPORT,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,
