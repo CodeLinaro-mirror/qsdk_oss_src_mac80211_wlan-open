@@ -192,8 +192,6 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 				 struct ath12k_dp_link_peer *peer,
 				 struct crypto_shash *tfm);
 
-u8 ath12k_dp_rx_h_l3pad(struct ath12k_base *ab,
-			struct hal_rx_desc *desc);
 struct ath12k_dp_link_peer *
 ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct hal_rx_desc *rx_desc, u16 peer_id);
 u8 ath12k_dp_rx_h_decap_type(struct ath12k_base *ab,
@@ -260,4 +258,6 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 enum ath12k_routing_pkt_type pkt_type,
 				 u32 meta_data);
+bool ath12k_dp_rxdesc_mpdu_valid(struct ath12k_base *ab,
+				 struct hal_rx_desc *rx_desc);
 #endif /* ATH12K_DP_RX_H */

@@ -170,6 +170,45 @@ bool ath12k_hal_rx_h_is_decrypted(struct ath12k_hal *hal, struct hal_rx_desc *de
 }
 EXPORT_SYMBOL(ath12k_hal_rx_h_is_decrypted);
 
+u32 ath12k_hal_rx_desc_get_mpdu_ppdu_id(struct ath12k_hal *hal,
+					struct hal_rx_desc *rx_desc)
+{
+	return hal->hal_ops->rx_desc_get_mpdu_ppdu_id(rx_desc);
+}
+
+u32 hal_rx_desc_get_mpdu_start_tag(struct ath12k_hal *hal,
+				   struct hal_rx_desc *rx_desc)
+{
+	return hal->hal_ops->rx_desc_get_mpdu_start_tag(rx_desc);
+}
+
+void ath12k_hal_rx_reo_ent_buf_paddr_get(struct ath12k_hal *hal,
+					 void *rx_desc, dma_addr_t *paddr,
+					 u32 *sw_cookie,
+					 struct ath12k_buffer_addr **pp_buf_addr,
+					 u8 *rbm, u32 *msdu_cnt)
+{
+	hal->hal_ops->rx_reo_ent_buf_paddr_get(rx_desc, paddr,
+					       sw_cookie, pp_buf_addr,
+					       rbm, msdu_cnt);
+}
+
+void ath12k_hal_rx_msdu_list_get(struct ath12k_hal *hal,
+				 void *link_desc,
+				 void *msdu_list,
+				 u16 *num_msdus)
+{
+	hal->hal_ops->rx_msdu_list_get(link_desc,
+				       msdu_list,
+				       num_msdus);
+}
+
+u8 ath12k_hal_rx_h_l3pad_get(struct ath12k_hal *hal,
+			     struct hal_rx_desc *desc)
+{
+	return hal->hal_ops->rx_h_l3pad_get(desc);
+}
+
 static int ath12k_hal_alloc_cont_rdp(struct ath12k_hal *hal)
 {
 	size_t size;

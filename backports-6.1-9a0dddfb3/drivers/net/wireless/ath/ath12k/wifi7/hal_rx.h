@@ -329,6 +329,7 @@ struct hal_rx_msdu_desc_info {
 #define HAL_RX_NUM_MSDU_DESC 6
 struct hal_rx_msdu_list {
 	struct hal_rx_msdu_desc_info msdu_info[HAL_RX_NUM_MSDU_DESC];
+	u64 paddr[HAL_RX_NUM_MSDU_DESC];
 	u32 sw_cookie[HAL_RX_NUM_MSDU_DESC];
 	u8 rbm[HAL_RX_NUM_MSDU_DESC];
 };
@@ -970,4 +971,11 @@ void ath12k_wifi7_hal_rx_flow_delete_entry(struct ath12k_base *ab,
 void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
 					 u32 ba_window_size, u8 tid);
 void ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
+void ath12k_wifi7_hal_rx_msdu_list_get(void *desc,
+				       void *list,
+				       u16 *num_msdus);
+void ath12k_wifi7_hal_rx_reo_ent_buf_paddr_get(void *rx_desc, dma_addr_t *paddr,
+					       u32 *sw_cookie,
+					       struct ath12k_buffer_addr **pp_buf_addr,
+					       u8 *rbm, u32 *msdu_cnt);
 #endif

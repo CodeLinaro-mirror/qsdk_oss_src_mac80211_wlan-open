@@ -640,4 +640,9 @@ const struct hal_ops hal_wcn7850_ops = {
 	.rxdesc_get_mpdu_start_addr2 =
 			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850,
 	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_wcn7850,
+	.rx_desc_get_mpdu_ppdu_id = ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_wcn7850,
+	.rx_desc_get_mpdu_start_tag = ath12k_wifi7_hal_rx_desc_get_mpdu_start_tag_wcn7850,
+	.rx_reo_ent_buf_paddr_get = ath12k_wifi7_hal_rx_reo_ent_buf_paddr_get,
+	.rx_msdu_list_get = ath12k_wifi7_hal_rx_msdu_list_get,
+	.rx_h_l3pad_get = ath12k_wifi7_hal_rx_h_l3pad_wcn7850,
 };
