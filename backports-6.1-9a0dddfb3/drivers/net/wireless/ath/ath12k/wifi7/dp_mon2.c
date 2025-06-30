@@ -12,6 +12,7 @@
 #include "hal_mon.h"
 #include "../peer.h"
 #include "../debugfs.h"
+#include "../dp_mon_filter.h"
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
@@ -28,6 +29,8 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.mon_pdev_rx_mpdu_list_init = ath12k_dp_mon_pdev_rx_mpdu_list_init,
 	.mon_rx_srng_process = ath12k_dp_mon_rx_dual_ring_process,
 	.update_telemetry_stats = ath12k_dp_mon_pdev_update_telemetry_stats,
+	.rx_filter_alloc = ath12k_dp_mon_rx_filter_alloc,
+	.rx_filter_free = ath12k_dp_mon_rx_filter_free,
 };
 
 static inline void

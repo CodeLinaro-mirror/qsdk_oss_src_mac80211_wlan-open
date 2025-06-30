@@ -48,6 +48,7 @@
 
 
 struct ath12k_mon_data;
+struct dp_mon_rx_filter;
 
 struct dp_rxdma_mon_ring {
 	struct dp_srng refill_buf_ring;
@@ -76,6 +77,8 @@ struct ath12k_dp_arch_mon_ops {
 				      struct napi_struct *napi, int *budget);
 	int (*update_telemetry_stats)(struct ath12k_base *ab,
 				       const int pdev_id);
+	int (*rx_filter_alloc)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_filter_free)(struct ath12k_pdev_dp *dp_pdev);
 };
 
 struct ath12k_dp_mon {
@@ -200,6 +203,7 @@ struct ath12k_pdev_mon_dp {
 
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
+	struct dp_mon_rx_filter **rx_filter;
 };
 
 static inline enum dp_monitor_type
@@ -397,6 +401,14 @@ int ath12k_dp_mon_pdev_rx_htt_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
 	if (mon_ops->mon_pdev_rx_attach)
 		mon_ops->mon_pdev_rx_attach(dp_pdev);
 
+	if (mon_ops->rx_filter_alloc) {
+		ret = mon_ops->rx_filter_alloc(dp_pdev);
+		if (ret) {
+			ath12k_warn(dp, "failed to setup monitor rx filter ret = %d\n",
+				    ret);
+		}
+	}
+
 	return 0;
 }
 
@@ -407,6 +419,9 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 
 	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops->rx_filter_free)
+		mon_ops->rx_filter_free(dp_pdev);
 
 	if (mon_ops && mon_ops->mon_pdev_rx_srng_cleanup)
 		mon_ops->mon_pdev_rx_srng_cleanup(dp_pdev);

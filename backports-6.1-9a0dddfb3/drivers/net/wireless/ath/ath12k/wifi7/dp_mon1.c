@@ -12,6 +12,7 @@
 #include "../debug.h"
 #include "hal_mon.h"
 #include "dp_rx.h"
+#include "../dp_mon_filter.h"
 
 struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.rx_srng_setup = ath12k_wifi7_dp_mon_rx_srng_setup,
@@ -28,6 +29,8 @@ struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.mon_pdev_rx_mpdu_list_init = NULL,
 	.mon_rx_srng_process = ath12k_wifi7_dp_mon_rx_quad_ring_process,
 	.update_telemetry_stats = NULL,
+	.rx_filter_alloc = ath12k_dp_mon_rx_filter_alloc,
+	.rx_filter_free = ath12k_dp_mon_rx_filter_free,
 };
 
 int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)
