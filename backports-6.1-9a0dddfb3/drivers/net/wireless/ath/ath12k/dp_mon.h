@@ -9,7 +9,6 @@
 
 #include "core.h"
 #include "dp_peer.h"
-#include "wifi7/hal_desc.h"
 #include "debug.h"
 
 #include "hal_mon_cmn.h"
@@ -92,18 +91,6 @@ enum dp_mon_tx_ppdu_info_type {
 	DP_MON_TX_DATA_PPDU_INFO
 };
 
-enum dp_mon_tx_tlv_status {
-	DP_MON_TX_FES_SETUP,
-	DP_MON_TX_FES_STATUS_END,
-	DP_MON_RX_RESPONSE_REQUIRED_INFO,
-	DP_MON_RESPONSE_END_STATUS_INFO,
-	DP_MON_TX_MPDU_START,
-	DP_MON_TX_MSDU_START,
-	DP_MON_TX_BUFFER_ADDR,
-	DP_MON_TX_DATA,
-	DP_MON_TX_STATUS_PPDU_NOT_DONE,
-};
-
 enum dp_mon_tx_medium_protection_type {
 	DP_MON_TX_MEDIUM_NO_PROTECTION,
 	DP_MON_TX_MEDIUM_RTS_LEGACY,
@@ -155,10 +142,8 @@ struct dp_mon_mpdu {
 };
 
 struct dp_mon_tx_ppdu_info {
-	u32 ppdu_id;
-	u8  num_users;
 	bool is_used;
-	struct hal_rx_mon_ppdu_info rx_status;
+	struct hal_tx_mon_ppdu_info tx_info;
 	struct list_head dp_tx_mon_mpdu_list;
 	struct dp_mon_mpdu *tx_mon_mpdu;
 };
@@ -240,11 +225,7 @@ int ath12k_dp_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 			       struct napi_struct *napi, int budget,
 			       enum dp_monitor_mode monitor_mode);
 struct sk_buff *ath12k_dp_mon_tx_alloc_skb(void);
-enum dp_mon_tx_tlv_status
-ath12k_dp_mon_tx_status_get_num_user(u16 tlv_tag,
-				     struct hal_tlv_hdr *tx_tlv,
-				     u8 *num_users);
-enum hal_rx_mon_status
+enum hal_tx_mon_status
 ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 				  struct ath12k_mon_data *pmon,
 				  struct sk_buff *skb,

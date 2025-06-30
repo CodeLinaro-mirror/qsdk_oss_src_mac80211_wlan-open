@@ -10,6 +10,9 @@
 #include "hw.h"
 #include "hal.h"
 
+extern void ath12k_wifi7_hal_mon_ops_init(struct ath12k_hal *hal,
+					  u8 hw_version);
+
 static const struct hal_srng_config hw_srng_config_template[] = {
 	/* TODO: max_rings can populated by querying HW capabilities */
 	[HAL_REO_DST] = {
@@ -645,4 +648,5 @@ const struct hal_ops hal_wcn7850_ops = {
 	.rx_reo_ent_buf_paddr_get = ath12k_wifi7_hal_rx_reo_ent_buf_paddr_get,
 	.rx_msdu_list_get = ath12k_wifi7_hal_rx_msdu_list_get,
 	.rx_h_l3pad_get = ath12k_wifi7_hal_rx_h_l3pad_wcn7850,
+	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 };

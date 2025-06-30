@@ -209,6 +209,13 @@ u8 ath12k_hal_rx_h_l3pad_get(struct ath12k_hal *hal,
 	return hal->hal_ops->rx_h_l3pad_get(desc);
 }
 
+static inline void ath12k_hal_mon_ops_init(struct ath12k_hal *hal,
+					   u8 hw_rev)
+{
+	if (hal->hal_ops->hal_mon_ops_init)
+		hal->hal_ops->hal_mon_ops_init(hal, hw_rev);
+}
+
 static int ath12k_hal_alloc_cont_rdp(struct ath12k_hal *hal)
 {
 	size_t size;
@@ -1032,6 +1039,8 @@ int ath12k_hal_srng_init(struct ath12k_base *ab)
 		goto err_free_cont_rdp;
 
 	ath12k_hal_register_srng_lock_keys(hal);
+
+	ath12k_hal_mon_ops_init(hal, ab->hw_params->hw_rev);
 
 	return 0;
 

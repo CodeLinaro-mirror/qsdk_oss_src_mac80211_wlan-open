@@ -10,6 +10,9 @@
 #include "hal.h"
 #include <linux/cacheflush.h>
 
+extern void ath12k_wifi7_hal_mon_ops_init(struct ath12k_hal *hal,
+					  u8 hw_version);
+
 static const struct hal_srng_config hw_srng_config_template[] = {
 	/* TODO: max_rings can populated by querying HW capabilities */
 	[HAL_REO_DST] = {
@@ -1033,4 +1036,5 @@ const struct hal_ops hal_qcn9274_ops = {
 			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_qcn9274,
 	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_qcn9274,
 	.rx_desc_get_mpdu_ppdu_id = ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_qcn9274,
+	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 };

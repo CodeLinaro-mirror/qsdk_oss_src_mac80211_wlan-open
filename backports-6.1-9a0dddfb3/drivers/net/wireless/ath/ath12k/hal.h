@@ -1000,6 +1000,7 @@ struct ath12k_hal {
 
 	struct device *dev;
 	const struct hal_ops *hal_ops;
+	const struct hal_mon_ops *hal_mon_ops;
 	const struct ath12k_hw_regs *regs;
 	const struct ath12k_hw_hal_params *hal_params;
 	/* Available REO blocking resources bitmap */
@@ -1185,6 +1186,7 @@ struct hal_ops {
 				 void *msdu_list,
 				 u16 *num_msdus);
 	u8 (*rx_h_l3pad_get)(struct hal_rx_desc *desc);
+	void (*hal_mon_ops_init)(struct ath12k_hal *hal, u8 hw_version);
 };
 
 static inline
