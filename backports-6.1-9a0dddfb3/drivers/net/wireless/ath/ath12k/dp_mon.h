@@ -42,6 +42,10 @@
 				  RX_MON_STATUS_BUF_ALIGN + \
 				  SKB_DATA_ALIGN(sizeof(struct skb_shared_info))))
 
+#define DP_MON_RXDMA_BUF_COOKIE_BUF_ID		GENMASK(17, 0)
+#define DP_MON_RXDMA_BUF_COOKIE_PDEV_ID 	GENMASK(19, 18)
+
+
 struct ath12k_mon_data;
 
 struct dp_rxdma_mon_ring {
@@ -228,8 +232,6 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 void ath12k_dp_mon_rx_process_ulofdma(struct hal_rx_mon_ppdu_info *ppdu_info);
 int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_id,
 				       struct napi_struct *napi, int *budget);
-int __ath12k_dp_mon_process_ring(struct ath12k *ar, int mac_id,
-				 struct napi_struct *napi, int *budget);
 int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
                                       const u8 *peer_addr,
                                       struct ath12k_peer_telemetry_stats *stats);
@@ -253,6 +255,9 @@ int ath12k_dp_mon_pdev_rx_htt_srng_setup(struct ath12k_pdev_dp *dp_pdev,
 					 u32 mac_id);
 void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon);
+void ath12k_dp_rx_mon_dest_process(struct ath12k *ar, int mac_id,
+				   u32 quota, struct napi_struct *napi);
+int ath12k_dp_pkt_set_pktlen(struct sk_buff *skb, u32 len);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
