@@ -651,6 +651,7 @@ EXPORT_SYMBOL(ath12k_dp_reo_cmd_free);
 void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 				       bool rel_link_desc)
 {
+	struct ath12k_buffer_addr *buf_addr_info;
 	struct ath12k_dp *dp = rx_tid->dp;
 	enum hal_wbm_rel_bm_act bm_act;
 
@@ -659,7 +660,8 @@ void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 	if (rx_tid->dst_ring_desc) {
 		if (rel_link_desc) {
 			bm_act = HAL_WBM_REL_BM_ACT_PUT_IN_IDLE;
-			ath12k_dp_arch_rx_link_desc_return(dp, rx_tid->dst_ring_desc,
+			buf_addr_info = &rx_tid->dst_ring_desc->buf_addr_info;
+			ath12k_dp_arch_rx_link_desc_return(dp, buf_addr_info,
 							   bm_act);
 		}
 

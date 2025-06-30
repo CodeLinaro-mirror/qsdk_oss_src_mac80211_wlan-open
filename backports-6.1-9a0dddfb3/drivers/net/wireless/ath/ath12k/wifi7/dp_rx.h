@@ -48,7 +48,7 @@ int ath12k_wifi7_peer_rx_tid_reo_update(struct ath12k *ar,
 void ath12k_wifi7_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id,
 					 u16 tid, dma_addr_t paddr);
 int ath12k_wifi7_dp_rx_link_desc_return(struct ath12k_dp *dp,
-					struct hal_reo_dest_ring *ring,
+					struct ath12k_buffer_addr *buf_addr_info,
 					enum hal_wbm_rel_bm_act action);
 void ath12k_wifi7_dp_rx_process_reo_status(struct ath12k_dp *dp);
 

@@ -457,15 +457,10 @@ void  ath12k_wifi7_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,
 	cmd->addr_hi = upper_32_bits(rx_tid->paddr);
 }
 
-/* TODO: it's strange (and ugly) that struct hal_reo_dest_ring is converted
- * to struct hal_wbm_release_ring, I couldn't figure out the logic behind
- * that.
- */
 int ath12k_wifi7_dp_rx_link_desc_return(struct ath12k_dp *dp,
-					struct hal_reo_dest_ring *ring,
+					struct ath12k_buffer_addr *buf_addr_info,
 					enum hal_wbm_rel_bm_act action)
 {
-	struct hal_wbm_release_ring *link_desc = (struct hal_wbm_release_ring *)ring;
 	struct hal_wbm_release_ring *desc;
 	struct ath12k_base *ab = dp->ab;
 	struct hal_srng *srng;
@@ -483,7 +478,7 @@ int ath12k_wifi7_dp_rx_link_desc_return(struct ath12k_dp *dp,
 		goto exit;
 	}
 
-	ath12k_wifi7_hal_rx_msdu_link_desc_set(ab, desc, link_desc, action);
+	ath12k_wifi7_hal_rx_msdu_link_desc_set(ab, desc, buf_addr_info, action);
 
 exit:
 	ath12k_hal_srng_access_end(ab, srng);
@@ -2013,7 +2008,7 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			goto out_unlock;
 		}
 	} else {
-		ath12k_wifi7_dp_rx_link_desc_return(dp, ring_desc,
+		ath12k_wifi7_dp_rx_link_desc_return(dp, &ring_desc->buf_addr_info,
 						    HAL_WBM_REL_BM_ACT_PUT_IN_IDLE);
 	}
 
@@ -2130,7 +2125,7 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 
 	if (ath12k_wifi7_dp_rx_frag_h_mpdu(dp_pdev, msdu, desc, &rx_desc_data)) {
 		dev_kfree_skb_any(msdu);
-		ath12k_wifi7_dp_rx_link_desc_return(dp, desc,
+		ath12k_wifi7_dp_rx_link_desc_return(dp, &desc->buf_addr_info,
 						    HAL_WBM_REL_BM_ACT_PUT_IN_IDLE);
 	}
 exit:
@@ -2245,7 +2240,8 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 			act = HAL_WBM_REL_BM_ACT_REL_MSDU;
 			dp->device_stats.invalid_rbm++;
 			ath12k_warn(ab, "invalid return buffer manager %d\n", rbm);
-			ath12k_wifi7_dp_rx_link_desc_return(partner_dp, reo_desc,
+			ath12k_wifi7_dp_rx_link_desc_return(partner_dp,
+							    &reo_desc->buf_addr_info,
 							    act);
 			continue;
 		}
@@ -2264,7 +2260,8 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 			act = HAL_WBM_REL_BM_ACT_PUT_IN_IDLE;
 
 			/* Return the link desc back to wbm idle list */
-			ath12k_wifi7_dp_rx_link_desc_return(partner_dp, reo_desc,
+			ath12k_wifi7_dp_rx_link_desc_return(partner_dp,
+							    &reo_desc->buf_addr_info,
 							    act);
 		}
 

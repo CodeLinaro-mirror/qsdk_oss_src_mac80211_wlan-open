@@ -495,7 +495,7 @@ struct ath12k_dp_arch_ops {
 	int (*reo_cache_flush)(struct ath12k_base *ab,
 				struct ath12k_dp_rx_tid *rx_tid);
 	int (*rx_link_desc_return)(struct ath12k_dp *dp,
-				   struct hal_reo_dest_ring *ring,
+				   struct ath12k_buffer_addr *buf_addr_info,
 				   enum hal_wbm_rel_bm_act action);
 	int (*peer_rx_tid_reo_update)(struct ath12k *ar,
 				      struct ath12k_dp_link_peer *peer,
@@ -892,11 +892,12 @@ static inline int ath12k_dp_arch_reo_cache_flush(struct ath12k_dp *dp,
 	return dp->arch_ops->reo_cache_flush(dp->ab, rx_tid);
 }
 
-static inline int ath12k_dp_arch_rx_link_desc_return(struct ath12k_dp *dp,
-						     struct hal_reo_dest_ring *ring,
-						     enum hal_wbm_rel_bm_act action)
+static inline
+int ath12k_dp_arch_rx_link_desc_return(struct ath12k_dp *dp,
+				       struct ath12k_buffer_addr *buf_addr_info,
+				       enum hal_wbm_rel_bm_act action)
 {
-	return dp->arch_ops->rx_link_desc_return(dp, ring, action);
+	return dp->arch_ops->rx_link_desc_return(dp, buf_addr_info, action);
 }
 
 static inline int ath12k_dp_arch_peer_rx_tid_reo_update(struct ath12k_dp *dp,
