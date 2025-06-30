@@ -205,6 +205,7 @@ void ath12k_dp_srng_cleanup(struct ath12k_base *ab, struct dp_srng *ring)
 
 	ring->vaddr_unaligned = NULL;
 }
+EXPORT_SYMBOL(ath12k_dp_srng_cleanup);
 
 static int ath12k_dp_srng_find_ring_in_mask(int ring_num, const u8 *grp_mask)
 {
@@ -512,6 +513,7 @@ skip_dma_alloc:
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_srng_setup);
 
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab,
 				  struct ath12k_link_vif *arvif,
@@ -1431,6 +1433,7 @@ static void ath12k_dp_cleanup(struct ath12k_base *ab)
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
+	ath12k_dp_mon_rx_free(dp);
 	ath12k_dp_rx_free(ab);
 	/* Deinit any SOC level resource */
 }
@@ -2015,9 +2018,18 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 	if (ret)
 		goto fail_dp_rx_free;
 
+	ret = ath12k_dp_mon_rx_alloc(dp);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup rxdma rings ret = %d\n", ret);
+		goto fail_dp_mon_rx_free;
+	}
+
 	/* Init any SOC level resource for DP */
 
 	return 0;
+
+fail_dp_mon_rx_free:
+	ath12k_dp_mon_rx_free(dp);
 
 fail_dp_rx_free:
 	ath12k_dp_rx_free(ab);

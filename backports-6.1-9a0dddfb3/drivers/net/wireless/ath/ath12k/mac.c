@@ -32,6 +32,7 @@
 #include "vendor.h"
 #include "ppe.h"
 #include "cfr.h"
+#include "dp_mon.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \

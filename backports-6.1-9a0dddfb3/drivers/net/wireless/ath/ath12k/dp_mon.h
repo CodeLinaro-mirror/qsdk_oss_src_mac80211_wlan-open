@@ -15,6 +15,31 @@
 #define ATH12K_MON_RX_PKT_OFFSET	8
 #define ATH12K_DP_WLAN_MAX_AC		4
 
+#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
+#define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
+#if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
+#define DP_RXDMA_MONITOR_DST_RING_SIZE  512
+#else
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE 4096
+#define DP_RXDMA_MONITOR_DST_RING_SIZE 8192
+#endif
+#define DP_TX_MONITOR_BUF_RING_SIZE	4096
+#define DP_TX_MONITOR_DEST_RING_SIZE	2048
+
+#define DP_TX_MONITOR_BUF_SIZE		2048
+#define DP_TX_MONITOR_BUF_SIZE_MIN	48
+#define DP_TX_MONITOR_BUF_SIZE_MAX	8192
+
+#define DP_RX_MON_BUFFER_SIZE		2048
+#define RX_MON_STATUS_BASE_BUF_SIZE	2048
+#define RX_MON_STATUS_BUF_ALIGN		128
+#define RX_MON_STATUS_BUF_RESERVATION	128
+#define RX_MON_STATUS_BUF_SIZE		(RX_MON_STATUS_BASE_BUF_SIZE - \
+				 (RX_MON_STATUS_BUF_RESERVATION + \
+				  RX_MON_STATUS_BUF_ALIGN + \
+				  SKB_DATA_ALIGN(sizeof(struct skb_shared_info))))
+
 struct dp_rxdma_mon_ring {
 	struct dp_srng refill_buf_ring;
 	struct idr bufs_idr;
@@ -24,6 +49,11 @@ struct dp_rxdma_mon_ring {
 };
 
 struct ath12k_dp_arch_mon_ops {
+	int (*rx_srng_setup)(struct ath12k_dp *dp);
+	void (*rx_srng_cleanup)(struct ath12k_dp *dp);
+	int (*rx_buf_setup)(struct ath12k_dp *dp);
+	void (*rx_buf_free)(struct ath12k_dp *dp);
+	int (*rx_htt_srng_setup)(struct ath12k_dp *dp);
 };
 
 struct ath12k_dp_mon {
@@ -127,9 +157,6 @@ ath12k_dp_mon_rx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_dp_mon_buf_replenish(struct ath12k_base *ab,
 				struct dp_rxdma_mon_ring *buf_ring,
 				int req_entries);
-int ath12k_dp_mon_status_bufs_replenish(struct ath12k_base *ab,
-					struct dp_rxdma_mon_ring *rx_ring,
-					int req_entries);
 int ath12k_dp_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 			       struct napi_struct *napi, int budget,
 			       enum dp_monitor_mode monitor_mode);
@@ -153,4 +180,64 @@ int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
 
 int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
                                              int pdev_id);
+
+void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_base *ab,
+				       struct dp_rxdma_mon_ring *rx_ring);
+int ath12k_dp_mon_rx_srng_setup(struct ath12k_dp *dp);
+void ath12k_dp_mon_rx_srng_cleanup(struct ath12k_dp *dp);
+int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp);
+void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp);
+int ath12k_dp_mon_rx_htt_srng_setup(struct ath12k_dp *dp);
+
+static inline
+int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_srng_setup) {
+		ret = mon_ops->rx_srng_setup(dp);
+		if (ret)
+			return ret;
+	}
+
+	if (mon_ops && mon_ops->rx_buf_setup) {
+		ret = mon_ops->rx_buf_setup(dp);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+
+static inline
+void ath12k_dp_mon_rx_free(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_srng_cleanup)
+		mon_ops->rx_srng_cleanup(dp);
+
+	if (mon_ops && mon_ops->rx_buf_free)
+		mon_ops->rx_buf_free(dp);
+}
+
+static inline
+int ath12k_dp_mon_rx_htt_setup(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = 0;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->rx_htt_srng_setup)
+		ret = mon_ops->rx_htt_srng_setup(dp);
+
+	return ret;
+
+}
 #endif

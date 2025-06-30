@@ -20,6 +20,7 @@
 #include "dp_peer.h"
 #include "peer.h"
 #include "coredump.h"
+#include "dp_mon.h"
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)
