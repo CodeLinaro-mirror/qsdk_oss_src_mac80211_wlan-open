@@ -435,6 +435,82 @@ struct ath12k_punct_mask {
 	s16 dbr[ATH12K_MAX_PUNC_MASK_LIMITS];
 };
 
+struct ath12k_punct_masks {
+	struct ath12k_punct_mask *l_edge;
+	struct ath12k_punct_mask *r_edge;
+	struct ath12k_punct_mask *l;
+	struct ath12k_punct_mask *r;
+};
+
+struct ath12k_punct_edges {
+	s16 pu_l_edge;
+	s16 pu_r_edge;
+	s16 l_edge;
+	s16 r_edge;
+	s16 pu_edge1;
+	s16 pu_edge2;
+};
+
+struct ath12k_pdbm_set {
+	const s16 *pdbm1;
+	const s16 *pdbm2;
+	const s16 *pdbm3;
+};
+
+struct ath12k_puncture_ctx {
+	struct ath12k_punct_masks masks;
+	struct ath12k_punct_edges edges;
+	struct ath12k_pdbm_set pdbms;
+};
+
+/**
+ * handle_edge_puncture - Populate puncture mask values for edge puncture type
+ * @edge_punct_ctx: Pointer to the puncture context structure containing
+ * edge mask pointers, edge offset values, and dB reduction values.
+ *
+ * This function sets the offset and dB reduction (dbr) values in the left and
+ * right edge puncture mask structures for the PUNCTURE_TYPE_EDGE case. It uses
+ * the provided edge offsets and a predefined dB mask array (typically pdbm1) to
+ * define the regulatory mask shape on both sides of the punctured region.
+ *
+ * The mask is symmetric and ensures a smooth transition from the edge of the
+ * punctured region to the adjacent usable spectrum.
+ */
+void
+handle_edge_puncture(struct ath12k_puncture_ctx *edge_punct_ctx);
+
+/**
+ * handle_interim_20_plus - Populate puncture mask values for INTERIM_20_PLUS type
+ * @interim_20_plus_punct_ctx: Pointer to the puncture context structure containing
+ * edge and interim mask pointers, offset values, and dB reduction arrays.
+ *
+ * This function sets the offset and dB reduction (dbr) values in the puncture
+ * mask structures for the PUNCTURE_TYPE_INTERIM_20_PLUS case. It handles both
+ * edge and interim puncture shaping, ensuring smooth transitions in the
+ * regulatory mask across the punctured and adjacent usable spectrum.
+ *
+ * The function uses predefined dB masks (pdbm1 and pdbm2) to shape the
+ * attenuation profile for both edge and interim regions.
+ */
+void
+handle_interim_20_plus(struct ath12k_puncture_ctx *interim_20_plus_punct_ctx);
+
+/**
+ * handle_interim_20 - Populate puncture mask values for INTERIM_20 type
+ * @interim_20_punct_ctx: Pointer to the puncture context structure containing
+ * interim mask pointers, offset values, and dB reduction array.
+ *
+ * This function sets the offset and dB reduction (dbr) values in the left and
+ * right interim puncture mask structures for the PUNCTURE_TYPE_INTERIM_20 case.
+ * It defines a symmetric attenuation profile across the punctured region using
+ * the provided dB mask array (typically pdbm3).
+ *
+ * The mask ensures a smooth regulatory transition across the 20 MHz interim
+ * puncture region, helping to meet spectral emission constraints.
+ */
+void
+handle_interim_20(struct ath12k_puncture_ctx *interim_20_punct_ctx);
+
 /**
  * enum ath12k_puncture_type - Enumeration of puncture types
  * @ATH12K_PUNCTURE_TYPE_EDGE: Represents edge puncture type
@@ -465,5 +541,10 @@ enum ieee80211_neg_ttlm_res ath12k_mac_op_can_neg_ttlm(struct ieee80211_hw *hw,
 void ath12k_mac_op_apply_neg_ttlm_per_client(struct ieee80211_hw *hw,
 					     struct ieee80211_vif *vif,
 					     struct ieee80211_sta *sta);
+
+/* Used for offset adjustments in shaping the mask */
+#define ATH12K_PUNCTURE_OFFSET_STEP	5
+/* Used for wider shaping in interim puncture logic */
+#define ATH12K_PUNCTURE_MASK_WIDTH		100
 
 #endif

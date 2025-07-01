@@ -5709,6 +5709,185 @@ static void ath12k_mac_send_pwr_mode_update(struct ath12k *ar,
 	ath12k_vendor_send_6ghz_power_mode_update_complete(ar, wdev);
 }
 
+/**
+ * pdbm1, pdbm2 and pdbm3 - Array of dbr values for puncture mask type
+ * PUNCTURE_TYPE_EDGE, PUNCTURE_TYPE_INTERIM_20_PLUS and
+ * PUNCTURE_TYPE_INTERIM_20 respectively.
+ */
+static const s16 pdbm1[3] = {0, -200, -280};
+static const s16 pdbm2[3] = {0, -200, -250};
+static const s16 pdbm3[3] = {0, -200, -230};
+
+/**
+ * handle_edge_puncture - Populate puncture mask values for edge puncture type
+ * @edge_punct_ctx: Pointer to the puncture context structure containing
+ * edge mask pointers, edge offset values, and dB reduction values.
+ *
+ * This function sets the offset and dB reduction (dbr) values in the left and
+ * right edge puncture mask structures for the PUNCTURE_TYPE_EDGE case. It uses
+ * the provided edge offsets and a predefined dB mask array (typically pdbm1) to
+ * define the regulatory mask shape on both sides of the punctured region.
+ *
+ * The mask is symmetric and ensures a smooth transition from the edge of the
+ * punctured region to the adjacent usable spectrum.
+ */
+void
+handle_edge_puncture(struct ath12k_puncture_ctx *edge_punct_ctx)
+{
+	struct ath12k_punct_mask *pu_mask_l_edge, *pu_mask_r_edge;
+	s16 pu_l_edge, pu_r_edge;
+	const s16 *pdbm1;
+
+	pu_mask_l_edge = edge_punct_ctx->masks.l_edge;
+	pu_mask_r_edge = edge_punct_ctx->masks.r_edge;
+	pu_l_edge = edge_punct_ctx->edges.pu_l_edge;
+	pu_r_edge = edge_punct_ctx->edges.pu_r_edge;
+	pdbm1 = edge_punct_ctx->pdbms.pdbm1;
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC, "EDGE puncture\n");
+	pu_mask_l_edge->offset[0] = pu_l_edge - ((pu_r_edge - pu_l_edge) / 2);
+	pu_mask_l_edge->dbr[0] = pdbm1[2];
+
+	pu_mask_l_edge->offset[1] = pu_l_edge - ATH12K_PUNCTURE_OFFSET_STEP;
+	pu_mask_l_edge->dbr[1] = pdbm1[1];
+
+	pu_mask_l_edge->offset[2] = pu_l_edge;
+	pu_mask_l_edge->dbr[2] = pdbm1[0];
+
+	pu_mask_r_edge->offset[0] = pu_r_edge;
+	pu_mask_r_edge->dbr[0] = pdbm1[0];
+
+	pu_mask_r_edge->offset[1] = pu_r_edge + ATH12K_PUNCTURE_OFFSET_STEP;
+	pu_mask_r_edge->dbr[1] = pdbm1[1];
+
+	pu_mask_r_edge->offset[2] = pu_r_edge + ((pu_r_edge - pu_l_edge) / 2);
+	pu_mask_r_edge->dbr[2] = pdbm1[2];
+}
+
+/**
+ * handle_interim_20_plus - Populate puncture mask values for INTERIM_20_PLUS type
+ * @interim_20_plus_punct_ctx: Pointer to the puncture context structure containing
+ * edge and interim mask pointers, offset values, and dB reduction arrays.
+ *
+ * This function sets the offset and dB reduction (dbr) values in the puncture
+ * mask structures for the PUNCTURE_TYPE_INTERIM_20_PLUS case. It handles both
+ * edge and interim puncture shaping, ensuring smooth transitions in the
+ * regulatory mask across the punctured and adjacent usable spectrum.
+ *
+ * The function uses predefined dB masks (pdbm1 and pdbm2) to shape the
+ * attenuation profile for both edge and interim regions.
+ */
+void
+handle_interim_20_plus(struct ath12k_puncture_ctx *interim_20_plus_punct_ctx)
+{
+	struct ath12k_punct_mask *pu_mask_l_edge, *pu_mask_r_edge;
+	struct ath12k_punct_mask *pu_mask_l, *pu_mask_r;
+	s16 pu_l_edge, pu_r_edge;
+	s16 l_edge, r_edge;
+	s16 pu_edge1, pu_edge2;
+	const s16 *pdbm1, *pdbm2;
+
+	pu_mask_l_edge = interim_20_plus_punct_ctx->masks.l_edge;
+	pu_mask_r_edge = interim_20_plus_punct_ctx->masks.r_edge;
+	pu_mask_l = interim_20_plus_punct_ctx->masks.l;
+	pu_mask_r = interim_20_plus_punct_ctx->masks.r;
+	pu_l_edge = interim_20_plus_punct_ctx->edges.pu_l_edge;
+	pu_r_edge = interim_20_plus_punct_ctx->edges.pu_r_edge;
+	l_edge = interim_20_plus_punct_ctx->edges.l_edge;
+	r_edge = interim_20_plus_punct_ctx->edges.r_edge;
+	pu_edge1 = interim_20_plus_punct_ctx->edges.pu_edge1;
+	pu_edge2 = interim_20_plus_punct_ctx->edges.pu_edge2;
+	pdbm1 = interim_20_plus_punct_ctx->pdbms.pdbm1;
+	pdbm2 = interim_20_plus_punct_ctx->pdbms.pdbm2;
+
+	/* type 2 mask */
+	ath12k_dbg(NULL, ATH12K_DBG_MAC, "INTERIM 20 PLUS puncture\n");
+	/* Edge concurrent puncture */
+	if (l_edge != pu_l_edge || r_edge != pu_r_edge) {
+		pu_mask_l_edge->offset[0] = pu_l_edge - ((pu_edge1 - pu_l_edge) / 2);
+		pu_mask_l_edge->dbr[0] = pdbm1[2];
+
+		pu_mask_l_edge->offset[1] = pu_l_edge - ATH12K_PUNCTURE_OFFSET_STEP;
+		pu_mask_l_edge->dbr[1] = pdbm1[1];
+
+		pu_mask_l_edge->offset[2] = pu_l_edge;
+		pu_mask_l_edge->dbr[2] = pdbm1[0];
+
+		pu_mask_r_edge->offset[0] = pu_r_edge;
+		pu_mask_r_edge->dbr[0] = pdbm1[0];
+
+		pu_mask_r_edge->offset[1] = pu_r_edge + ATH12K_PUNCTURE_OFFSET_STEP;
+		pu_mask_r_edge->dbr[1] = pdbm1[1];
+
+		pu_mask_r_edge->offset[2] = pu_r_edge + ((pu_r_edge - pu_edge2) / 2);
+		pu_mask_r_edge->dbr[2] = pdbm1[2];
+	}
+
+	pu_mask_l->offset[0] = pu_edge1;
+	pu_mask_l->dbr[0] = pdbm2[0];
+
+	pu_mask_l->offset[1] = pu_edge1 + ATH12K_PUNCTURE_OFFSET_STEP;
+	pu_mask_l->dbr[1] = pdbm2[1];
+
+	pu_mask_l->offset[2] = pu_edge1 + ((pu_edge1 - pu_l_edge) >> 1);
+	pu_mask_l->dbr[2] = pdbm2[2];
+
+	pu_mask_r->offset[0] = pu_edge2 - ((pu_r_edge - pu_edge2) >> 1);
+	pu_mask_r->dbr[0] = pdbm2[2];
+
+	pu_mask_r->offset[1] = pu_edge2 - ATH12K_PUNCTURE_OFFSET_STEP;
+	pu_mask_r->dbr[1] = pdbm2[1];
+
+	pu_mask_r->offset[2] = pu_edge2;
+	pu_mask_r->dbr[2] = pdbm2[0];
+}
+
+/**
+ * handle_interim_20 - Populate puncture mask values for INTERIM_20 type
+ * @interim_20_punct_ctx: Pointer to the puncture context structure containing
+ * interim mask pointers, offset values, and dB reduction array.
+ *
+ * This function sets the offset and dB reduction (dbr) values in the left and
+ * right interim puncture mask structures for the PUNCTURE_TYPE_INTERIM_20 case.
+ * It defines a symmetric attenuation profile across the punctured region using
+ * the provided dB mask array (typically pdbm3).
+ *
+ * The mask ensures a smooth regulatory transition across the 20 MHz interim
+ * puncture region, helping to meet spectral emission constraints.
+ */
+void
+handle_interim_20(struct ath12k_puncture_ctx *interim_20_punct_ctx)
+{
+	struct ath12k_punct_mask *pu_mask_l, *pu_mask_r;
+	s16 pu_edge1, pu_edge2;
+	const s16 *pdbm3;
+
+	pu_mask_l = interim_20_punct_ctx->masks.l;
+	pu_mask_r = interim_20_punct_ctx->masks.r;
+	pu_edge1 = interim_20_punct_ctx->edges.pu_edge1;
+	pu_edge2 = interim_20_punct_ctx->edges.pu_edge2;
+	pdbm3 = interim_20_punct_ctx->pdbms.pdbm3;
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC, "INTERIM 20 puncture\n");
+	pu_mask_l->offset[0] = pu_edge1;
+	pu_mask_l->dbr[0] = pdbm3[0];
+
+	pu_mask_l->offset[1] = pu_edge1 + ATH12K_PUNCTURE_OFFSET_STEP;
+	pu_mask_l->dbr[1] = pdbm3[1];
+
+	pu_mask_l->offset[2] = pu_edge1 + ATH12K_PUNCTURE_MASK_WIDTH;
+	pu_mask_l->dbr[2] = pdbm3[2];
+
+	pu_mask_r->offset[0] = pu_edge2 - ATH12K_PUNCTURE_MASK_WIDTH;
+	pu_mask_r->dbr[0] = pdbm3[2];
+
+	pu_mask_r->offset[1] = pu_edge2 - ATH12K_PUNCTURE_OFFSET_STEP;
+	pu_mask_r->dbr[1] = pdbm3[1];
+
+	pu_mask_r->offset[2] = pu_edge2;
+	pu_mask_r->dbr[2] = pdbm3[0];
+}
+
 void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				struct ath12k_link_vif *arvif,
 				struct ieee80211_bss_conf *info,
