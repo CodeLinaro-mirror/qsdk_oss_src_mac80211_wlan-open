@@ -13481,10 +13481,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			}
 		}
 
-		if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
-		    !is_zero_ether_addr(arvif->bssid)) {
-			memcpy(link_addr, arvif->bssid, ETH_ALEN);
-		} else if (link_conf) {
+		if (link_conf && !arvif->is_scan_vif) {
 			memcpy(link_addr, link_conf->addr, ETH_ALEN);
 			memcpy(arvif->bssid, link_conf->addr, ETH_ALEN);
 		} else {
