@@ -5374,6 +5374,97 @@ static const struct file_operations fops_pktlog_filter = {
         .open = simple_open
 };
 
+static ssize_t ath12k_write_qos_stats(struct file *file,
+				      const char __user *ubuf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_hw *ah;
+	struct ieee80211_hw *hw = NULL;
+	u8 qos_stats, stats_categ, stats_lvl, cur_stats_lvl;
+	int ret, i;
+
+	if (kstrtou8_from_user(ubuf, count, 0, &qos_stats))
+		return -EINVAL;
+
+	if (qos_stats > ATH12K_QOS_STATS_MAX) {
+		ath12k_err(NULL, "Invalid QoS stats\n");
+		return -EINVAL;
+	}
+
+	if (!ar || !ar->ah) {
+		ath12k_err(NULL, "Radio references not available");
+		return -ENOENT;
+	}
+
+	hw = ath12k_ar_to_hw(ar);
+	if (!hw)
+		return -ENOENT;
+
+	wiphy_lock(hw->wiphy);
+
+	ah = ar->ah;
+	ret = count;
+
+	stats_lvl = qos_stats & ATH12K_QOS_STATS_COLLECTION_MASK;
+	stats_categ = qos_stats & ATH12K_QOS_STATS_CATEG_MASK;
+
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (ar) {
+			cur_stats_lvl = ar->debug.qos_stats &
+					ATH12K_QOS_STATS_COLLECTION_MASK;
+			if (ar->allocated_vdev_map &&
+			    stats_lvl != cur_stats_lvl) {
+				qos_stats = cur_stats_lvl | stats_categ;
+				ath12k_err(ar->ab, "qos stats collection lvl not updated, interfaces up\n");
+				break;
+			}
+		}
+	}
+
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (ar)
+			ar->debug.qos_stats = qos_stats;
+	}
+
+	wiphy_unlock(hw->wiphy);
+	return ret;
+}
+
+static ssize_t ath12k_read_qos_stats(struct file *file,
+				     char __user *ubuf,
+				     size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ieee80211_hw *hw = NULL;
+	int len = 0;
+	char buf[32] = {0};
+
+	if (!ar || !ar->ah) {
+		ath12k_err(NULL, "Radio references not available");
+		return -ENOENT;
+	}
+
+	hw = ath12k_ar_to_hw(ar);
+	if (!hw)
+		return -ENOENT;
+
+	wiphy_lock(hw->wiphy);
+	len = scnprintf(buf, sizeof(buf) - len, "%08x\n",
+			ar->debug.qos_stats);
+	wiphy_unlock(hw->wiphy);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_qos_stats = {
+	.read = ath12k_read_qos_stats,
+	.write = ath12k_write_qos_stats,
+	.open = simple_open
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -5484,6 +5575,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("enable_dp_debug_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_enable_dp_debug_stats);
+
+	debugfs_create_file("qos_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_qos_stats);
 
 	debugfs_create_file("pktlog_filter", 0644,
 			    ar->debug.debugfs_pdev, ar,

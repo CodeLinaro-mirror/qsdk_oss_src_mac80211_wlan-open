@@ -150,6 +150,19 @@ enum qos_profile_dir {
 	QOS_PROFILE_UL,
 };
 
+/* QoS stats Categorization */
+#define ATH12K_QOS_STATS_BASIC		BIT(0)
+#define ATH12K_QOS_STATS_ADVANCED	BIT(1)
+#define ATH12K_QOS_STATS_CATEG_MASK	(ATH12K_QOS_STATS_BASIC |\
+					 ATH12K_QOS_STATS_ADVANCED)
+/* Qos stats collection */
+#define ATH12K_QOS_STATS_COLLECTION_MASK	BIT(2)
+#define ATH12K_QOS_SINGLE_LINK_STATS		0
+#define ATH12K_QOS_MULTI_LINK_STATS		1
+
+#define ATH12K_QOS_STATS_MAX (ATH12K_QOS_STATS_CATEG_MASK |\
+			      ATH12K_QOS_STATS_COLLECTION_MASK)
+
 struct ath12k_qos_ctx *ath12k_get_qos(struct ath12k_base *ab);
 
 void ath12k_qos_set_default(struct ath12k_qos_params *param);

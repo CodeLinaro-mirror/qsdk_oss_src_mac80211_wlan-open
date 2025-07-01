@@ -86,6 +86,11 @@ ath12k_debugfs_is_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 	return dp_pdev->enable_dp_debug_stats;
 }
 
+static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
+{
+	return (ar->debug.qos_stats & ATH12K_QOS_STATS_CATEG_MASK);
+}
+
 void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr);
 void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar);
 
@@ -290,6 +295,11 @@ static inline void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 
 static inline void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 {
+}
+
+static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
+{
+	return 0;
 }
 
 static inline void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
