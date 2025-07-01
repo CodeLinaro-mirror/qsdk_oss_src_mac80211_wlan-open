@@ -397,6 +397,68 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
                                 struct ieee80211_bss_conf *info,
                                 u64 changed);
 int ath12k_mac_monitor_start(struct ath12k *ar);
+
+/* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
+ * punctured
+ */
+#define ATH12K_PUNCTURE_INVALID		0xFFFF
+#define ATH12K_PUNCTURE_NONE		0x0000
+#define ATH12K_PUNCTURE_80MHZ_MASK	0x000F
+#define ATH12K_PUNCTURE_160MHZ_MASK	0x00FF
+#define ATH12K_PUNCTURE_320MHZ_MASK	0xFFFF
+#define ATH12K_PUNCTURE_40MHZ_MASK	0x0003
+
+/* Used to indicate an invalid edge in puncture mask calculations */
+#define ATH12K_INVALID_EDGE	0x0FFF
+/* Used to indicate an invalid dbr in puncture mask calculations */
+#define ATH12K_INVALID_DBR	100
+/* Used to indicate an invalid PSD in calculations */
+#define ATH12K_INVALID_PSD	(-1270) /* -127 multiplied by 10 */
+
+#define ATH12K_MAX_PUNC_MASK_LIMITS	3
+#define ATH12K_CHAN_MAX_PSD_POWER	127
+/* The eirp power values are in 0.01dBm units */
+#define ATH12K_EIRP_PWR_SCALE		100
+
+/**
+ * struct ath12k_punct_mask - Structure to hold puncture mask limits
+ * @offset: Array of offsets for puncture mask limits
+ * @dbr: Array of dbr values corresponding to the offsets
+ *
+ * This structure is used to define the puncture mask limits for different
+ * bandwidths. The `offset` array holds the offset values, and the `dbr` array
+ * holds the corresponding dbr values. The size of both arrays is defined by
+ * `MAX_PUNC_MASK_LIMITS`.
+ */
+struct ath12k_punct_mask {
+	s16 offset[ATH12K_MAX_PUNC_MASK_LIMITS];
+	s16 dbr[ATH12K_MAX_PUNC_MASK_LIMITS];
+};
+
+/**
+ * enum ath12k_puncture_type - Enumeration of puncture types
+ * @ATH12K_PUNCTURE_TYPE_EDGE: Represents edge puncture type
+ * @ATH12K_PUNCTURE_TYPE_INTERIM_20_PLUS: Represents interim puncture type with 20 MHz
+ * plus
+ * @ATH12K_PUNCTURE_TYPE_INTERIM_20: Represents interim puncture type with 20 MHz
+ * @ATH12K_PUNCTURE_TYPE_INVALID: Represents an invalid puncture type
+ * @ATH12K_PUNCTURE_TYPE_FIRST: Place holder to hold first value for boundary checks.
+ * @ATH12K_PUNCTURE_TYPE_LAST: Place holder to hold last value for boundary checks.
+ *
+ * This enumeration defines the different types of punctures that can occur
+ * within a given bandwidth. Each type specifies a unique puncture pattern
+ * and is used to determine the appropriate mask limits for the puncture.
+ */
+enum ath12k_puncture_type {
+	ATH12K_PUNCTURE_TYPE_EDGE = 0,
+	ATH12K_PUNCTURE_TYPE_INTERIM_20_PLUS,
+	ATH12K_PUNCTURE_TYPE_INTERIM_20,
+	ATH12K_PUNCTURE_TYPE_INVALID,
+
+	ATH12K_PUNCTURE_TYPE_FIRST = ATH12K_PUNCTURE_TYPE_EDGE,
+	ATH12K_PUNCTURE_TYPE_LAST  = ATH12K_PUNCTURE_TYPE_INTERIM_20,
+};
+
 enum ieee80211_neg_ttlm_res ath12k_mac_op_can_neg_ttlm(struct ieee80211_hw *hw,
 						       struct ieee80211_vif *vif,
 						       struct ieee80211_neg_ttlm *neg_ttlm);
