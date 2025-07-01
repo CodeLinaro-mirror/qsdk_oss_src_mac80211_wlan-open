@@ -5930,6 +5930,7 @@ static s16 get_y_val(s16 x1, s16 x2, s16 y1, s16 y2, s16 x)
  * Return: The calculated regulatory mask value, or ATH12K_INVALID_DBR if the offset
  * does not fall within the defined puncture mask limits.
  */
+static
 s16 get_reg_mask_puncture(s16 offset, u16 bw, struct ath12k_punct_mask *pu_mask)
 {
 	s16 mask;
@@ -5969,7 +5970,7 @@ s16 get_reg_mask_puncture(s16 offset, u16 bw, struct ath12k_punct_mask *pu_mask)
  *
  * Return: The calculated regulatory mask value.
  */
-s16 get_reg_mask_non_puncture(s16 offset, u16 bw)
+static s16 get_reg_mask_non_puncture(s16 offset, u16 bw)
 {
 	u16 hbw = bw / 2;
 	s16 mask;
@@ -6026,7 +6027,7 @@ is_punc_type_invalid(enum ath12k_puncture_type punc_type)
  *
  * Return: The type of puncture determined (enum puncture_type).
  */
-enum ath12k_puncture_type
+static enum ath12k_puncture_type
 get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
 			    struct ath12k_punct_mask *pu_mask_l_edge,
 			    struct ath12k_punct_mask *pu_mask_l,
@@ -6148,6 +6149,196 @@ get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
 	}
 
 	return punc_type;
+}
+
+/**
+ * get_reg_mask - Calculate the regulatory mask for a given offset and bandwidth
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ * @punc_type: Type of puncture (enum puncture_type)
+ * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
+ * @pu_mask_l: Pointer to the left interim puncture mask structure
+ * @pu_mask_r: Pointer to the right interim puncture mask structure
+ * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
+ *
+ * This function calculates the regulatory mask for a given offset and bandwidth
+ * based on the puncture type and the puncture mask limits defined in the pmask
+ * structures. It determines the appropriate mask value by comparing the
+ * non-puncture mask and puncture mask values.
+ *
+ * Return: The calculated regulatory mask value.
+ */
+static s16 get_reg_mask(s16 offset, u16 bw, enum ath12k_puncture_type punc_type,
+			struct ath12k_punct_mask *pu_mask_l_edge,
+			struct ath12k_punct_mask *pu_mask_l,
+			struct ath12k_punct_mask *pu_mask_r,
+			struct ath12k_punct_mask *pu_mask_r_edge)
+{
+	s16 mask;
+	s16 mask_def;
+	s16 mask_le;
+	s16 mask_re;
+	s16 mask_l;
+	s16 mask_r;
+	s16 mask_punc;
+
+	mask_def = get_reg_mask_non_puncture(offset, bw);
+	if (is_punc_type_invalid(punc_type))
+		return mask_def;
+
+	mask_le = get_reg_mask_puncture(offset, bw, pu_mask_l_edge);
+	mask_re = get_reg_mask_puncture(offset, bw, pu_mask_r_edge);
+	mask_l = get_reg_mask_puncture(offset, bw, pu_mask_l);
+	mask_r = get_reg_mask_puncture(offset, bw, pu_mask_r);
+
+	switch (punc_type) {
+	case ATH12K_PUNCTURE_TYPE_EDGE:
+		mask_punc = min(mask_le, mask_re);
+		break;
+	case ATH12K_PUNCTURE_TYPE_INTERIM_20_PLUS:
+		if ((pu_mask_l->offset[0] <= (offset * 10)) &&
+		    ((offset * 10) <= pu_mask_r->offset[2]))
+			mask_punc = max(mask_l, mask_r);
+		else
+			mask_punc = min(mask_le, mask_re);
+		break;
+	case ATH12K_PUNCTURE_TYPE_INTERIM_20:
+		mask_punc = max(mask_l, mask_r);
+		break;
+	default:
+		return mask_def;
+	}
+
+	mask = min(mask_punc, mask_def);
+
+	return mask;
+}
+
+/**
+ * get_psd_limit - Get the minimum PSD limit for a given frequency
+ * @freq: Frequency for which the PSD limit is to be determined
+ * @num_freq_obj: Number of frequency objects in the AFC response
+ * @afc_freq_info: Pointer to the array of AFC frequency objects
+ *
+ * This function calculates the minimum PSD (Power Spectral Density) limit for
+ * a given frequency by iterating through the AFC frequency objects. It returns
+ * the minimum PSD limit found within the range of the frequency objects.
+ *
+ * Return: Minimum PSD limit for the given frequency, or INVALID_PSD if the
+ * frequency is not found within the AFC frequency objects.
+ */
+static s16
+get_psd_limit(u16 freq, u8 num_freq_obj, struct ath12k_afc_freq_obj *afc_freq_info)
+{
+	u8 i;
+	s16 min_psd = ATH12K_CHAN_MAX_PSD_POWER * ATH12K_EIRP_PWR_SCALE;
+	bool chan_freq_found = false;
+
+	for (i = 0; i < num_freq_obj; i++) {
+		if (freq >= afc_freq_info[i].low_freq &&
+		    freq <= afc_freq_info[i].high_freq) {
+			chan_freq_found = true;
+			if (afc_freq_info[i].max_psd < min_psd)
+				min_psd = afc_freq_info[i].max_psd;
+			/* Even though the frequency object is found, there may
+			 * be more matching frequency-object following it.
+			 * Continue search until the input frequency is out of
+			 * range.
+			 */
+			continue;
+		}
+
+		/* Assuming AFC payload is sorted in increasing order of
+		 * frequencies, stop and return here.
+		 */
+		if (chan_freq_found)
+			return min_psd / 10;
+	}
+
+	/* Handle for last frequency object */
+	if (chan_freq_found)
+		return min_psd / 10;
+
+	return ATH12K_INVALID_PSD;
+}
+
+void
+ath12_mac_reg_get_6g_min_psd(struct ath12k *ar, u16 freq, u16 cfreq,
+			     u16 puncture_bitmap, u16 bw, s16 *min_psd)
+{
+	u16 freq_start;
+	u16 freq_end;
+	s16 psd_limit;
+	u16 hbw;
+	u16 adj_freq_start;
+	u16 adj_freq_end;
+	struct ath12k_afc_freq_obj *afc_freq_info;
+	u8 num_freq_obj;
+	int i;
+
+	*min_psd = ATH12K_CHAN_MAX_PSD_POWER;
+
+	if (!(cfreq >= ATH12K_MIN_6GHZ_FREQ && cfreq <= ATH12K_MAX_6GHZ_FREQ)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_REG, "Not a 6GHz freq %u", cfreq);
+		return;
+	}
+
+	num_freq_obj = ar->afc.afc_reg_info->num_freq_objs;
+	if (!num_freq_obj) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_REG, "No freq object present");
+		return;
+	}
+
+	afc_freq_info = ar->afc.afc_reg_info->afc_freq_info;
+	if (!afc_freq_info) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_REG,
+			   "AFC frequency info is NULL");
+		return;
+	}
+
+	hbw = bw / 2;
+	freq_start = cfreq - hbw;
+	freq_end   = cfreq + hbw;
+	adj_freq_start = max(ATH12K_MIN_6GHZ_FREQ, (cfreq - (3 * hbw)));
+	adj_freq_end   = min((cfreq + (3 * hbw)), ATH12K_MAX_6GHZ_FREQ);
+	*min_psd *= ATH12K_EIRP_PWR_SCALE;
+	for (i = adj_freq_start; i <= adj_freq_end; i++) {
+		s16 offset = i - cfreq;
+		u16 modoffset = abs(offset);
+
+		psd_limit = get_psd_limit(i, num_freq_obj, afc_freq_info);
+		if (psd_limit == ATH12K_INVALID_PSD) {
+			/* If PSD limit is invalid for usable freq and not
+			 * punctured, return failure. Other adjacent freq can be
+			 * ignored.
+			 */
+			if (i >= freq_start && i < freq_end) {
+				if (!(puncture_bitmap &
+				    (1 << ((i - freq_start) /
+					   ATH12K_20MHZ_BW)))) {
+					return;
+				}
+			}
+			continue;
+		}
+
+		if (modoffset <= ((bw * 3) / 2)) {
+			enum ath12k_puncture_type punc_type;
+			s16 mask;
+			struct ath12k_punct_mask pu_mask_l, pu_mask_r;
+			struct ath12k_punct_mask pu_mask_l_edge, pu_mask_r_edge;
+
+			punc_type =
+				get_puncture_type_and_masks(bw, puncture_bitmap,
+							    &pu_mask_l_edge, &pu_mask_l,
+							    &pu_mask_r, &pu_mask_r_edge);
+			mask = get_reg_mask(offset, bw, punc_type, &pu_mask_l_edge,
+					    &pu_mask_l, &pu_mask_r, &pu_mask_r_edge);
+			*min_psd = min((int16_t)(*min_psd),
+				       (int16_t)(psd_limit - mask * 10));
+		}
+	}
+	*min_psd /= ATH12K_EIRP_PWR_SCALE;
 }
 
 void ath12k_mac_bss_info_changed(struct ath12k *ar,

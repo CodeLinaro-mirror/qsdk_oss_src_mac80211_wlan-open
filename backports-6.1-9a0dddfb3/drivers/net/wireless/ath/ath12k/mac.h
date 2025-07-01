@@ -464,108 +464,6 @@ struct ath12k_puncture_ctx {
 };
 
 /**
- * handle_edge_puncture - Populate puncture mask values for edge puncture type
- * @edge_punct_ctx: Pointer to the puncture context structure containing
- * edge mask pointers, edge offset values, and dB reduction values.
- *
- * This function sets the offset and dB reduction (dbr) values in the left and
- * right edge puncture mask structures for the PUNCTURE_TYPE_EDGE case. It uses
- * the provided edge offsets and a predefined dB mask array (typically pdbm1) to
- * define the regulatory mask shape on both sides of the punctured region.
- *
- * The mask is symmetric and ensures a smooth transition from the edge of the
- * punctured region to the adjacent usable spectrum.
- */
-void
-handle_edge_puncture(struct ath12k_puncture_ctx *edge_punct_ctx);
-
-/**
- * handle_interim_20_plus - Populate puncture mask values for INTERIM_20_PLUS type
- * @interim_20_plus_punct_ctx: Pointer to the puncture context structure containing
- * edge and interim mask pointers, offset values, and dB reduction arrays.
- *
- * This function sets the offset and dB reduction (dbr) values in the puncture
- * mask structures for the PUNCTURE_TYPE_INTERIM_20_PLUS case. It handles both
- * edge and interim puncture shaping, ensuring smooth transitions in the
- * regulatory mask across the punctured and adjacent usable spectrum.
- *
- * The function uses predefined dB masks (pdbm1 and pdbm2) to shape the
- * attenuation profile for both edge and interim regions.
- */
-void
-handle_interim_20_plus(struct ath12k_puncture_ctx *interim_20_plus_punct_ctx);
-
-/**
- * handle_interim_20 - Populate puncture mask values for INTERIM_20 type
- * @interim_20_punct_ctx: Pointer to the puncture context structure containing
- * interim mask pointers, offset values, and dB reduction array.
- *
- * This function sets the offset and dB reduction (dbr) values in the left and
- * right interim puncture mask structures for the PUNCTURE_TYPE_INTERIM_20 case.
- * It defines a symmetric attenuation profile across the punctured region using
- * the provided dB mask array (typically pdbm3).
- *
- * The mask ensures a smooth regulatory transition across the 20 MHz interim
- * puncture region, helping to meet spectral emission constraints.
- */
-void
-handle_interim_20(struct ath12k_puncture_ctx *interim_20_punct_ctx);
-
-/**
- * get_regmask_puncture - Calculate the regulatory mask for punctured channels
- * @offset: Offset value for the frequency
- * @bw: Bandwidth of the channel
- * @pu_mask: Pointer to the punct_mask structure containing puncture mask limits
- *
- * This function calculates the regulatory mask for punctured channels based
- * on the given offset, bandwidth, and puncture mask limits. The mask value is
- * determined by the offset relative to the puncture mask limits defined in the
- * punct_mask structure.
- *
- * Return: The calculated regulatory mask value, or INVALID_DBR if the offset
- * does not fall within the defined puncture mask limits.
- */
-s16 get_reg_mask_puncture(s16 offset, u16 bw, struct ath12k_punct_mask *pu_mask);
-
-/**
- * get_reg_mask_non_puncture - Calculate the regulatory mask for non-punctured
- * channels.
- * @offset: Offset value for the frequency
- * @bw: Bandwidth of the channel
- *
- * This function calculates the regulatory mask for non-punctured channels based
- * on the given offset and bandwidth. The mask value is determined by the offset
- * relative to the bandwidth and predefined thresholds.
- *
- * Return: The calculated regulatory mask value.
- */
-s16 get_reg_mask_non_puncture(s16 offset, u16 bw);
-
-/**
- * get_pmask_limits - Determine the puncture mask limits for a given bandwidth
- * and puncture bitmap
- * @bw: Bandwidth for which the puncture mask limits are to be determined
- * @puncture_bitmap: Bitmap indicating the punctured sub-channels
- * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
- * @pu_mask_l: Pointer to the left interim puncture mask structure
- * @pu_mask_r: Pointer to the right interim puncture mask structure
- * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
- *
- * This function calculates the puncture mask limits for a given bandwidth and
- * puncture bitmap. It determines the type of puncture (edge, interim 20 MHz,
- * interim 20 MHz plus, or invalid) and sets the appropriate offset and dbr
- * values in the provided pmask structures.
- *
- * Return: The type of puncture determined (enum puncture_type).
- */
-enum ath12k_puncture_type
-get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
-			    struct ath12k_punct_mask *pu_mask_l_edge,
-			    struct ath12k_punct_mask *pu_mask_l,
-			    struct ath12k_punct_mask *pu_mask_r,
-			    struct ath12k_punct_mask *pu_mask_r_edge);
-
-/**
  * enum ath12k_puncture_type - Enumeration of puncture types
  * @ATH12K_PUNCTURE_TYPE_EDGE: Represents edge puncture type
  * @ATH12K_PUNCTURE_TYPE_INTERIM_20_PLUS: Represents interim puncture type with 20 MHz
@@ -623,4 +521,23 @@ void ath12k_mac_op_apply_neg_ttlm_per_client(struct ieee80211_hw *hw,
 /* No attenuation applied when offset is within half bandwidth */
 #define ATH12K_REG_MASK_DB_NONE	0
 
+/**
+ * ath12_reg_get_6g_min_psd - Calculate the minimum PSD values for a given
+ * frequency and bandwidth
+ * @iface: Pointer to the hostapd_iface structure
+ * @freq: Frequency for which the minimum PSD values are to be calculated
+ * @cfreq: Center frequency of the channel
+ * @punc_bitmap: Bitmap indicating the punctured sub-channels
+ * @bw: Bandwidth of the channel
+ * @min_psd: Pointer to the variable where the minimum PSD value will be stored
+ *
+ * This function calculates the minimum PSD (Power Spectral Density) values for
+ * a given frequency and bandwidth. It determines the puncture type and
+ * calculates the regulatory mask values based on the puncture mask limits. The
+ * minimum PSD value is then calculated by iterating through the adjacent
+ * frequencies and applying the regulatory mask values.
+ */
+void
+ath12_mac_reg_get_6g_min_psd(struct ath12k *ar, u16 freq, u16 cfreq,
+			     u16 puncture_bitmap, u16 bw, s16 *min_psd);
 #endif
