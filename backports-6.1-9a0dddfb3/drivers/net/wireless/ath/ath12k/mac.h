@@ -512,6 +512,36 @@ void
 handle_interim_20(struct ath12k_puncture_ctx *interim_20_punct_ctx);
 
 /**
+ * get_regmask_puncture - Calculate the regulatory mask for punctured channels
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ * @pu_mask: Pointer to the punct_mask structure containing puncture mask limits
+ *
+ * This function calculates the regulatory mask for punctured channels based
+ * on the given offset, bandwidth, and puncture mask limits. The mask value is
+ * determined by the offset relative to the puncture mask limits defined in the
+ * punct_mask structure.
+ *
+ * Return: The calculated regulatory mask value, or INVALID_DBR if the offset
+ * does not fall within the defined puncture mask limits.
+ */
+s16 get_reg_mask_puncture(s16 offset, u16 bw, struct ath12k_punct_mask *pu_mask);
+
+/**
+ * get_reg_mask_non_puncture - Calculate the regulatory mask for non-punctured
+ * channels.
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ *
+ * This function calculates the regulatory mask for non-punctured channels based
+ * on the given offset and bandwidth. The mask value is determined by the offset
+ * relative to the bandwidth and predefined thresholds.
+ *
+ * Return: The calculated regulatory mask value.
+ */
+s16 get_reg_mask_non_puncture(s16 offset, u16 bw);
+
+/**
  * enum ath12k_puncture_type - Enumeration of puncture types
  * @ATH12K_PUNCTURE_TYPE_EDGE: Represents edge puncture type
  * @ATH12K_PUNCTURE_TYPE_INTERIM_20_PLUS: Represents interim puncture type with 20 MHz
@@ -544,7 +574,29 @@ void ath12k_mac_op_apply_neg_ttlm_per_client(struct ieee80211_hw *hw,
 
 /* Used for offset adjustments in shaping the mask */
 #define ATH12K_PUNCTURE_OFFSET_STEP	5
+
 /* Used for wider shaping in interim puncture logic */
-#define ATH12K_PUNCTURE_MASK_WIDTH		100
+#define ATH12K_PUNCTURE_MASK_WIDTH	100
+
+/* Minimum dB reduction applied when offset is beyond 1.5x the bandwidth */
+#define ATH12K_REG_MASK_DB_MIN		-400
+
+/* Base dB reduction applied when offset is beyond the bandwidth */
+#define ATH12K_REG_MASK_DB_MID		-280
+
+/* Base dB reduction applied when offset is beyond half the bandwidth */
+#define ATH12K_REG_MASK_DB_BASE		-200
+
+/* Step size for attenuation slope beyond full bandwidth */
+#define ATH12K_REG_MASK_DB_STEP_MID	120
+
+/* Step size for attenuation slope beyond half bandwidth */
+#define ATH12K_REG_MASK_DB_STEP_BASE	80
+
+/* Offset threshold adjustment used in near-range shaping */
+#define ATH12K_REG_MASK_OFFSET_THRESHOLD	1
+
+/* No attenuation applied when offset is within half bandwidth */
+#define ATH12K_REG_MASK_DB_NONE	0
 
 #endif

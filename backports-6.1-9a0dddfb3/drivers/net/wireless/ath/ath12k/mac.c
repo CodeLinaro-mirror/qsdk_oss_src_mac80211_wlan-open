@@ -5888,6 +5888,127 @@ handle_interim_20(struct ath12k_puncture_ctx *interim_20_punct_ctx)
 	pu_mask_r->dbr[2] = pdbm3[0];
 }
 
+/**
+ * get_y_val - Calculate the interpolated y-value for a given x-value
+ * @x1: First x-coordinate
+ * @x2: Second x-coordinate
+ * @y1: y-coordinate corresponding to x1
+ * @y2: y-coordinate corresponding to x2
+ * @x: x-coordinate for which the interpolated y-value is to be calculated
+ *
+ * This function calculates the interpolated y-value for a given x-value using
+ * linear interpolation between two points (x1, y1) and (x2, y2). The function
+ * returns the interpolated y-value based on the input x-coordinate.
+ *
+ * Return: The interpolated y-value for the given x-coordinate.
+ */
+static s16 get_y_val(s16 x1, s16 x2, s16 y1, s16 y2, s16 x)
+{
+	s16 den = x2 - x1;
+
+	if (!den) {
+		ath12k_err(NULL,
+			   "Invalid x coordinates x1=%d y1=%d x2=%d y2=%d\n",
+			   x1, y1, x2, y2);
+		return ATH12K_INVALID_DBR;
+	}
+
+	return (y1 + (x - x1) * (y2 - y1) / (x2 - x1));
+}
+
+/**
+ * get_regmask_puncture - Calculate the regulatory mask for punctured channels
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ * @pu_mask: Pointer to the punct_mask structure containing puncture mask limits
+ *
+ * This function calculates the regulatory mask for punctured channels based
+ * on the given offset, bandwidth, and puncture mask limits. The mask value is
+ * determined by the offset relative to the puncture mask limits defined in the
+ * punct_mask structure.
+ *
+ * Return: The calculated regulatory mask value, or ATH12K_INVALID_DBR if the offset
+ * does not fall within the defined puncture mask limits.
+ */
+s16 get_reg_mask_puncture(s16 offset, u16 bw, struct ath12k_punct_mask *pu_mask)
+{
+	s16 mask;
+
+	offset *= 10;
+	if (offset <= pu_mask->offset[0]) {
+		mask = pu_mask->dbr[0];
+	} else if ((offset > pu_mask->offset[0]) && (offset < pu_mask->offset[1])) {
+		mask = get_y_val(pu_mask->offset[0], pu_mask->offset[1],
+				 pu_mask->dbr[0], pu_mask->dbr[1], offset);
+	} else if (offset == pu_mask->offset[1]) {
+		mask = pu_mask->dbr[1];
+	} else if ((offset > pu_mask->offset[1]) && (offset < pu_mask->offset[2])) {
+		mask = get_y_val(pu_mask->offset[1], pu_mask->offset[2],
+				 pu_mask->dbr[1], pu_mask->dbr[2], offset);
+	} else if (offset >= pu_mask->offset[2]) {
+		mask = pu_mask->dbr[2];
+	} else {
+		ath12k_err(NULL, "invalid offset %d. Offset range: [%d, %d, %d]",
+			   offset, pu_mask->offset[0], pu_mask->offset[1],
+			   pu_mask->offset[2]);
+		mask = ATH12K_INVALID_DBR;
+	}
+
+	return mask;
+}
+
+/**
+ * get_reg_mask_non_puncture - Calculate the regulatory mask for non-punctured
+ * channels.
+ * @offset: Offset value for the frequency
+ * @bw: Bandwidth of the channel
+ *
+ * This function calculates the regulatory mask for non-punctured channels based
+ * on the given offset and bandwidth. The mask value is determined by the offset
+ * relative to the bandwidth and predefined thresholds.
+ *
+ * Return: The calculated regulatory mask value.
+ */
+s16 get_reg_mask_non_puncture(s16 offset, u16 bw)
+{
+	u16 hbw = bw / 2;
+	s16 mask;
+
+	offset = abs(offset);
+
+	if (offset >= ((bw * 3) / 2))
+		mask = ATH12K_REG_MASK_DB_MIN;
+	else if (offset >= bw)
+		mask = ATH12K_REG_MASK_DB_MID -
+			((ATH12K_REG_MASK_DB_STEP_MID * (offset - bw)) / hbw);
+	else if (offset >= (hbw + ATH12K_REG_MASK_OFFSET_THRESHOLD))
+		mask = ATH12K_REG_MASK_DB_BASE -
+			((ATH12K_REG_MASK_DB_STEP_BASE *
+			  (offset - (hbw + ATH12K_REG_MASK_OFFSET_THRESHOLD))) /
+			 (hbw - ATH12K_REG_MASK_OFFSET_THRESHOLD));
+	else
+		mask = ATH12K_REG_MASK_DB_NONE;
+
+	return mask;
+}
+
+/**
+ * is_punc_type_invalid - Check if a puncture type is invalid
+ * @punc_type: The puncture type to validate
+ *
+ * This function checks whether the given puncture type falls outside
+ * the valid range defined by the enumeration constants
+ * PUNCTURE_TYPE_FIRST and PUNCTURE_TYPE_LAST.
+ *
+ * Return: true if the puncture type is invalid, false otherwise.
+ */
+static inline bool
+is_punc_type_invalid(enum ath12k_puncture_type punc_type)
+{
+	return (punc_type < ATH12K_PUNCTURE_TYPE_FIRST) ||
+	       (punc_type > ATH12K_PUNCTURE_TYPE_LAST);
+}
+
 void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				struct ath12k_link_vif *arvif,
 				struct ieee80211_bss_conf *info,
