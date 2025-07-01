@@ -542,6 +542,30 @@ s16 get_reg_mask_puncture(s16 offset, u16 bw, struct ath12k_punct_mask *pu_mask)
 s16 get_reg_mask_non_puncture(s16 offset, u16 bw);
 
 /**
+ * get_pmask_limits - Determine the puncture mask limits for a given bandwidth
+ * and puncture bitmap
+ * @bw: Bandwidth for which the puncture mask limits are to be determined
+ * @puncture_bitmap: Bitmap indicating the punctured sub-channels
+ * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
+ * @pu_mask_l: Pointer to the left interim puncture mask structure
+ * @pu_mask_r: Pointer to the right interim puncture mask structure
+ * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
+ *
+ * This function calculates the puncture mask limits for a given bandwidth and
+ * puncture bitmap. It determines the type of puncture (edge, interim 20 MHz,
+ * interim 20 MHz plus, or invalid) and sets the appropriate offset and dbr
+ * values in the provided pmask structures.
+ *
+ * Return: The type of puncture determined (enum puncture_type).
+ */
+enum ath12k_puncture_type
+get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
+			    struct ath12k_punct_mask *pu_mask_l_edge,
+			    struct ath12k_punct_mask *pu_mask_l,
+			    struct ath12k_punct_mask *pu_mask_r,
+			    struct ath12k_punct_mask *pu_mask_r_edge);
+
+/**
  * enum ath12k_puncture_type - Enumeration of puncture types
  * @ATH12K_PUNCTURE_TYPE_EDGE: Represents edge puncture type
  * @ATH12K_PUNCTURE_TYPE_INTERIM_20_PLUS: Represents interim puncture type with 20 MHz

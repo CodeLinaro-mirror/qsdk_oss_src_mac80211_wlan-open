@@ -6009,6 +6009,147 @@ is_punc_type_invalid(enum ath12k_puncture_type punc_type)
 	       (punc_type > ATH12K_PUNCTURE_TYPE_LAST);
 }
 
+/**
+ * get_pmask_limits - Determine the puncture mask limits for a given bandwidth
+ * and puncture bitmap
+ * @bw: Bandwidth for which the puncture mask limits are to be determined
+ * @puncture_bitmap: Bitmap indicating the punctured sub-channels
+ * @pu_mask_l_edge: Pointer to the left edge puncture mask structure
+ * @pu_mask_l: Pointer to the left interim puncture mask structure
+ * @pu_mask_r: Pointer to the right interim puncture mask structure
+ * @pu_mask_r_edge: Pointer to the right edge puncture mask structure
+ *
+ * This function calculates the puncture mask limits for a given bandwidth and
+ * puncture bitmap. It determines the type of puncture (edge, interim 20 MHz,
+ * interim 20 MHz plus, or invalid) and sets the appropriate offset and dbr
+ * values in the provided pmask structures.
+ *
+ * Return: The type of puncture determined (enum puncture_type).
+ */
+enum ath12k_puncture_type
+get_puncture_type_and_masks(u16 bw, u16 puncture_bitmap,
+			    struct ath12k_punct_mask *pu_mask_l_edge,
+			    struct ath12k_punct_mask *pu_mask_l,
+			    struct ath12k_punct_mask *pu_mask_r,
+			    struct ath12k_punct_mask *pu_mask_r_edge)
+{
+	u16 punc_mask;
+	u16 pp;
+	s16 i;
+	s16 num_valid_bits;
+	s16 l_edge;
+	s16 r_edge;
+	s16 pu_l_edge;
+	s16 pu_r_edge;
+	s16 pu_edge1;
+	s16 pu_edge2;
+	s16 punc_start;
+	enum ath12k_puncture_type punc_type;
+	struct ath12k_puncture_ctx punct_ctx;
+
+	switch (bw) {
+	case 80:
+		punc_mask = ATH12K_PUNCTURE_80MHZ_MASK;
+		num_valid_bits = 4;
+		break;
+	case 160:
+		punc_mask = ATH12K_PUNCTURE_160MHZ_MASK;
+		num_valid_bits = 8;
+		break;
+	case 320:
+		punc_mask = ATH12K_PUNCTURE_320MHZ_MASK;
+		num_valid_bits = 16;
+		break;
+	default:
+		punc_mask = 0;
+		num_valid_bits = 0;
+		ath12k_dbg(NULL, ATH12K_DBG_MAC, "Bandwidth input invalid");
+		return ATH12K_PUNCTURE_TYPE_INVALID;
+	}
+
+	pp = puncture_bitmap & punc_mask;
+	if (!pp)
+		return ATH12K_PUNCTURE_TYPE_INVALID;
+
+	pu_l_edge = ATH12K_INVALID_EDGE;
+	pu_r_edge = ATH12K_INVALID_EDGE;
+	pu_edge1 = ATH12K_INVALID_EDGE;
+	pu_edge2 = ATH12K_INVALID_EDGE;
+	punc_start = ATH12K_INVALID_EDGE;
+	l_edge        = -(bw / 2);
+	r_edge        =   bw / 2;
+
+	for (i = 0; i < num_valid_bits; i++) {
+		if (!((1 << i) & pp) && pu_l_edge == ATH12K_INVALID_EDGE)
+			pu_l_edge = l_edge + (i * 20);
+
+		if (!((1 << (num_valid_bits - 1 - i)) & pp) &&
+		    pu_r_edge == ATH12K_INVALID_EDGE)
+			pu_r_edge = r_edge - (i * 20);
+
+		if (punc_start != ATH12K_INVALID_EDGE && pu_edge1 == ATH12K_INVALID_EDGE &&
+		    !((1 << i) & pp)) {
+			/* End of interim puncture */
+			pu_edge1 = punc_start;
+			pu_edge2 = l_edge + (i * 20);
+			punc_start = ATH12K_INVALID_EDGE;
+		}
+
+		if (((1 << i) & pp) && punc_start == ATH12K_INVALID_EDGE &&
+		    ((l_edge + (i * 20)) > pu_l_edge))
+			/* Start of interim puncture */
+			punc_start = l_edge + (i * 20);
+	}
+
+	/* Find the puncture type */
+	if (pu_edge1 == ATH12K_INVALID_EDGE && (l_edge != pu_l_edge || r_edge != pu_r_edge))
+		punc_type = ATH12K_PUNCTURE_TYPE_EDGE;
+	else if ((pu_edge2 - pu_edge1) >= 40)
+		punc_type = ATH12K_PUNCTURE_TYPE_INTERIM_20_PLUS;
+	else if ((pu_edge2 - pu_edge1) == 20)
+		punc_type = ATH12K_PUNCTURE_TYPE_INTERIM_20;
+	else
+		punc_type = ATH12K_PUNCTURE_TYPE_INVALID;
+
+	pu_l_edge *= 10;
+	pu_r_edge *= 10;
+	pu_edge1 *= 10;
+	pu_edge2 *= 10;
+	l_edge *= 10;
+	r_edge *= 10;
+
+	punct_ctx.masks.l_edge = pu_mask_l_edge;
+	punct_ctx.masks.r_edge = pu_mask_l_edge;
+	punct_ctx.masks.l = pu_mask_l;
+	punct_ctx.masks.r = pu_mask_r;
+	punct_ctx.edges.pu_l_edge = pu_l_edge;
+	punct_ctx.edges.pu_r_edge = pu_r_edge;
+	punct_ctx.edges.l_edge = l_edge;
+	punct_ctx.edges.r_edge = r_edge;
+	punct_ctx.edges.pu_edge1 = pu_edge1;
+	punct_ctx.edges.pu_edge2 = pu_edge2;
+	punct_ctx.pdbms.pdbm1 = pdbm1;
+	punct_ctx.pdbms.pdbm2 = pdbm2;
+	punct_ctx.pdbms.pdbm3 = pdbm3;
+	switch (punc_type) {
+	case ATH12K_PUNCTURE_TYPE_EDGE:
+		handle_edge_puncture(&punct_ctx);
+		break;
+	case ATH12K_PUNCTURE_TYPE_INTERIM_20_PLUS:
+		handle_interim_20_plus(&punct_ctx);
+		break;
+	case ATH12K_PUNCTURE_TYPE_INTERIM_20:
+		handle_interim_20(&punct_ctx);
+		break;
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_MAC,
+			   "Investigate - Invalid puncture type!!!\n");
+		break;
+	}
+
+	return punc_type;
+}
+
 void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				struct ath12k_link_vif *arvif,
 				struct ieee80211_bss_conf *info,
