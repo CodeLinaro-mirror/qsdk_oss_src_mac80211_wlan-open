@@ -74,6 +74,17 @@ struct	ath_dp_metadata_param {
 	struct	sawf_param	sawf_param;
 };
 
+struct ath_ul_params {
+	struct net_device *dst_dev;
+	struct net_device *src_dev;
+	u8 *dst_mac;
+	u8 *src_mac;
+	u8 fw_service_id;
+	u8 rv_service_id;
+	u8 start_or_stop;
+	u32 fw_mark_metadata;
+	u32 rv_mark_metadata;
+};
 
 /**
  * struct ath_dp_accel_cfg_ops - dp accelerator configuraton ops
@@ -84,7 +95,9 @@ struct ath_dp_accel_cfg_ops {
 	bool (*ppeds_get_node_id)(struct ieee80211_vif *vif,
 				  struct wireless_dev *wdev,
 				  const u8 *peer_mac, u8 *node_id);
+
 	uint32_t (*get_metadata_info)(struct ath_dp_metadata_param *md_param);
+	void (*sdwf_ul_config)(struct ath_ul_params *params);
 };
 
 /**
@@ -124,4 +137,5 @@ void ath_dp_accel_cfg_ops_callback_unregister(void);
 bool ath_dp_accel_cfg_fetch_ds_node_id(struct ath_dp_accel_cfg *info);
 
 u32 ath_get_metadata_info(struct ath_dp_metadata_param *dp_metadata_param);
+void ath_sawf_uplink(struct ath_ul_params *params);
 #endif

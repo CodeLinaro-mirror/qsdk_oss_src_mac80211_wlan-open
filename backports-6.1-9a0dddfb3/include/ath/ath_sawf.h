@@ -21,19 +21,6 @@ struct ath_sawf_callbacks {
 				 u32 rv_mark_metadata);
 };
 
-struct ath_ul_params {
-	struct net_device *dst_dev;
-	struct net_device *src_dev;
-	u8 *dst_mac;
-	u8 *src_mac;
-	u8 fw_service_id;
-	u8 rv_service_id;
-	u8 start_or_stop;
-	u32 fw_mark_metadata;
-	u32 rv_mark_metadata;
-};
-
 int ath_sawf_msduq_callback_register(struct ath_sawf_callbacks *ath_cb);
 void ath_sawf_msduq_callback_unregister(void);
-void ath_sawf_uplink(struct ath_ul_params *ecm_ath_ul_params);
 #endif

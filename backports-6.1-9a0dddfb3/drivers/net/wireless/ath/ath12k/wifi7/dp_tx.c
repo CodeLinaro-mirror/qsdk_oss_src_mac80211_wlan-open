@@ -128,16 +128,30 @@ static inline u8 ath12k_get_qos_tag(u32 mark)
 }
 
 static inline void
-ath12k_dp_qos_update(struct ath12k_dp *dp, u32 mark,
-		     struct hal_tcl_data_cmd *desc, u8 qos_tag,
+ath12k_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
+		     u32 mark, struct hal_tcl_data_cmd *desc, u8 qos_tag,
 		     u8 *addr)
 {
 	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_peer *dp_peer;
 	u8 scs_id;
-	u16 msduq, qos_id;
+	u16 msduq, qos_id, peer_id;
 	int ret;
 
-	if (qos_tag == QOS_SCS_TAG) {
+	if (mark & SDWF_VALID_MASK) {
+		rcu_read_lock();
+		peer_id = u32_get_bits(mark, SDWF_PEER_ID);
+		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev,
+							      peer_id);
+		if (!dp_peer) {
+			rcu_read_unlock();
+			return;
+		}
+		msduq = u32_get_bits(mark, SDWF_MSDUQ_ID);
+		qos_id = dp_peer_msduq_qos_id(dp->ab, dp_peer->qos,
+					      msduq);
+		rcu_read_unlock();
+	} else if (qos_tag == QOS_SCS_TAG) {
 		scs_id = u32_get_bits(mark, QOS_QOS_ID_MASK);
 
 		spin_lock_bh(&dp->dp_lock);
@@ -628,13 +642,21 @@ skip_htt_metadata:
 
 	ath12k_wifi7_hal_tx_cmd_desc_setup(ab, hal_tcl_desc, &ti);
 
+	if (unlikely(skb->mark & SDWF_VALID_MASK)) {
+		ath12k_dp_qos_update(dp, dp_pdev, skb->mark, hal_tcl_desc,
+				     0, NULL);
+		goto qos_done;
+	}
+
 	if (unlikely(arsta)) {
 		qos_tag = ath12k_get_qos_tag(skb->mark);
 		if (qos_tag)
-			ath12k_dp_qos_update(dp, skb->mark, hal_tcl_desc,
+			ath12k_dp_qos_update(dp, dp_pdev, skb->mark,
+					     hal_tcl_desc,
 					     qos_tag, arsta->addr);
 	}
 
+qos_done:
 	ath12k_hal_srng_access_end(ab, tcl_ring);
 
 	spin_unlock_bh(&tcl_ring->lock);
@@ -867,7 +889,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 
 }
 
-static void 
+static void
 ath12k_wifi7_dp_tx_cache_peer_stats(struct ath12k *ar,
 					  struct sk_buff *msdu,
 					  struct hal_tx_status *ts)
@@ -1133,7 +1155,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 			} else {
 				ar->cached_stats.is_ampdu = false;
 				ath12k_wifi7_dp_tx_update_txcompl(dp_pdev, ts);
-				memset(&ar->cached_stats, 0, 
+				memset(&ar->cached_stats, 0,
 						sizeof(struct ath12k_per_peer_tx_stats));
 			}
 			ar->last_ppdu_id = ts->ppdu_id;

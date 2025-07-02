@@ -20,9 +20,3 @@ int unregister_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops){
 	return 0;
 }
 EXPORT_SYMBOL(unregister_telemetry_agent_ops);
-
-void ath_sawf_uplink(struct ath_ul_params *ecm_ath_ul_params)
-{
-	return;
-}
-EXPORT_SYMBOL(ath_sawf_uplink);

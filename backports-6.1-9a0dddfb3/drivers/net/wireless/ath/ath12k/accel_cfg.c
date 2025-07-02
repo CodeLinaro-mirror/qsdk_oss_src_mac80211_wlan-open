@@ -7,6 +7,7 @@
 #include "accel_cfg.h"
 #include "core.h"
 #include "peer.h"
+#include "sdwf.h"
 #include <linux/module.h>
 #include <linux/if_vlan.h>
 
@@ -135,11 +136,12 @@ struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev)
 	return wdev;
 }
 
-u32 ath_get_metadata_info(struct ath_dp_metadata_param *md_param)
+u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 {
 	struct net_device *dest_dev = NULL;
 	struct  wireless_dev *wdev = NULL;
 	u32 metadata = 0;
+	u16 msduq_peer;
 	u8 *dest_mac = NULL;
 	u8 link_id = ATH12k_MLO_LINK_ID_INVALID;
 	u8 node_id = ATH12k_DS_NODE_ID_INVALID;
@@ -172,10 +174,111 @@ u32 ath_get_metadata_info(struct ath_dp_metadata_param *md_param)
 	if (link_id != ATH12k_MLO_LINK_ID_INVALID)
 		metadata |= ath_encode_mlo_metadata(link_id);
 
-	return metadata;
+	if (md_param->is_sawf_param_valid) {
+		msduq_peer = ath12k_sdwf_get_msduq_peer(wdev, dest_mac,
+							&md_param->sawf_param,
+							md_param->is_scs_mscs);
+		 /* Encode SDWF metadata only if msduq_id updated */
+		if (msduq_peer != SDWF_PEER_MSDUQ_INVALID)
+			metadata |= ath_encode_sdwf_metadata(msduq_peer);
+	}
 
+	return metadata;
 }
-EXPORT_SYMBOL(ath_get_metadata_info);
+
+static
+void ath12_sdwf_ul_config_peer(struct ieee80211_vif *vif,
+			       struct wireless_dev *wdev,
+			       u8 *mac, u8 start_or_stop,
+			       u16 svc_id)
+{
+
+	struct ath12k *ar = NULL;
+	u16 qos_id, peer_id;
+	struct ath12k_qos_ctx *qos_ctx;
+
+	ar = ath12k_sdwf_get_ar_from_vif(wdev, vif,
+					 mac, &peer_id);
+
+	if (!ar) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "sdwf_ul_config, ar is null\n");
+		return;
+	}
+
+	if (!ath12k_sdwf_service_configured(ar->ab, svc_id))
+		return;
+
+	qos_id = ath12k_sdwf_get_ul_qos_id(ar->ab, svc_id);
+	if (qos_id == QOS_ID_INVALID)
+		return;
+
+	qos_ctx = ath12k_get_qos(ar->ab);
+	if (!qos_ctx)
+		return;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+		   "UL SDWF Configure: svc id:%d", svc_id);
+
+	ath12k_core_config_ul_qos(ar, &qos_ctx->profiles[qos_id].params,
+				  qos_id, mac, start_or_stop);
+}
+
+void ath12k_sdwf_ul_config(struct ath_ul_params *params)
+{
+	struct ieee80211_hw *hw;
+	struct ieee80211_vif *dest_vif, *src_vif;
+	struct wireless_dev *dest_wdev, *src_wdev;
+
+	src_wdev = ath12k_get_wdev_from_netdev(params->src_dev);
+	dest_wdev = ath12k_get_wdev_from_netdev(params->dst_dev);
+
+	if (!src_wdev && !dest_wdev) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "wdev src_and_dest are null");
+		return;
+	}
+
+	if (src_wdev) {
+		hw = wiphy_to_ieee80211_hw(src_wdev->wiphy);
+		if (!ieee80211_hw_check(hw, SUPPORT_ECM_REGISTRATION)) {
+			ath12k_dbg(NULL, ATH12K_DBG_QOS, "hw1 is null");
+			return;
+		}
+	}
+
+	if (dest_wdev) {
+		hw = wiphy_to_ieee80211_hw(dest_wdev->wiphy);
+		if (!ieee80211_hw_check(hw, SUPPORT_ECM_REGISTRATION)) {
+			ath12k_dbg(NULL, ATH12K_DBG_QOS, "hw2 is null");
+			return;
+		}
+	}
+
+	if (dest_wdev)
+		dest_vif = wdev_to_ieee80211_vif_vlan(dest_wdev, false);
+	else
+		dest_vif = NULL;
+	if (src_wdev)
+		src_vif = wdev_to_ieee80211_vif_vlan(src_wdev, false);
+	else
+		src_vif = NULL;
+
+	if (!dest_vif && !src_vif) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "src_and_dest vif is null");
+		return;
+	}
+	if (src_vif) {
+		ath12_sdwf_ul_config_peer(src_vif, src_wdev,
+					  params->src_mac,
+					  params->start_or_stop,
+					  params->fw_service_id);
+	}
+	if (dest_vif) {
+		ath12_sdwf_ul_config_peer(dest_vif, dest_wdev,
+					  params->src_mac,
+					  params->start_or_stop,
+					  params->rv_service_id);
+	}
+}
 
 /**
  * ath12k_ds_get_node_id() - Retrieve ds node id
@@ -253,7 +356,8 @@ unlock_n_fail:
 
 static const struct ath_dp_accel_cfg_ops ath_dp_accel_cfg_ops_obj = {
 	.ppeds_get_node_id = ath12k_ds_get_node_id,
-	.get_metadata_info = ath_get_metadata_info,
+	.get_metadata_info = ath12k_get_metadata_info,
+	.sdwf_ul_config = ath12k_sdwf_ul_config,
 };
 
 /**
