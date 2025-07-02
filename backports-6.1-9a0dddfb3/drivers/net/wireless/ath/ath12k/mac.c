@@ -20514,21 +20514,23 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_RATE_LEGACY);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_MLD_LINK_REMOVAL_OFFLOAD);
 
-	if (ar->ab->hw_params->ftm_responder)
-		wiphy_ext_feature_set(wiphy,
-				      NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER);
+	for_each_ar(ah, ar, i) {
+		if (ar->ab->hw_params->ftm_responder)
+			wiphy_ext_feature_set(wiphy,
+					      NL80211_EXT_FEATURE_ENABLE_FTM_RESPONDER);
 
-	if (test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT, ar->ab->wmi_ab.svc_map))
-		ieee80211_hw_set(hw, SUPPORTS_EXT_REMAIN_ON_CHAN);
+		if (test_bit(WMI_TLV_SERVICE_SCAN_PHYMODE_SUPPORT, ar->ab->wmi_ab.svc_map))
+			ieee80211_hw_set(hw, SUPPORTS_EXT_REMAIN_ON_CHAN);
 
-	if ((ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP)) {
-		if (test_bit(ar->cfg_rx_chainmask, &cap->adfs_chain_mask)) {
-			wiphy_ext_feature_set(hw->wiphy,
-				      NL80211_EXT_FEATURE_RADAR_BACKGROUND);
-		} else if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
-				  ar->ab->wmi_ab.svc_map)) {
-			wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_DEVICE_BW);
-			wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_RADAR_BACKGROUND);
+		if ((ar->pdev->cap.supported_bands & WMI_HOST_WLAN_5GHZ_CAP)) {
+			if (test_bit(ar->cfg_rx_chainmask, &cap->adfs_chain_mask)) {
+				wiphy_ext_feature_set(hw->wiphy,
+					      NL80211_EXT_FEATURE_RADAR_BACKGROUND);
+			} else if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
+					  ar->ab->wmi_ab.svc_map)) {
+				wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_DEVICE_BW);
+				wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_RADAR_BACKGROUND);
+			}
 		}
 	}
 
