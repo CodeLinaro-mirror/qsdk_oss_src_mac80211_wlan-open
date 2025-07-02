@@ -99,6 +99,7 @@ struct ath12k_dp_arch_mon_ops {
 };
 
 struct ath12k_dp_mon {
+	struct ath12k_dp *dp;
 	struct dp_rxdma_mon_ring rxdma_mon_buf_ring;
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
 	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
@@ -215,6 +216,8 @@ struct ath12k_mon_data {
 };
 
 struct ath12k_pdev_mon_dp {
+	struct ath12k_dp_mon *dp_mon;
+	struct ath12k_pdev_dp *dp_pdev;
 	struct dp_srng rxdma_mon_dst_ring[MAX_RXDMA_PER_PDEV];
 	struct dp_srng tx_mon_dst_ring[MAX_RXDMA_PER_PDEV];
 

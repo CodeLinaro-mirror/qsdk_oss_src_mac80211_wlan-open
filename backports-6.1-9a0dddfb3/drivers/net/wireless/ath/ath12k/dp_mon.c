@@ -1657,6 +1657,7 @@ int ath12k_dp_mon_init(struct ath12k_dp *dp)
 	if (!dp_mon)
 		return -ENOMEM;
 
+	dp_mon->dp = dp;
 	dp->dp_mon = dp_mon;
 
 	return 0;
@@ -1679,6 +1680,8 @@ int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev)
 	if (!dp_mon_pdev)
 		return -ENOMEM;
 
+	dp_mon_pdev->dp_pdev = dp_pdev;
+	dp_mon_pdev->dp_mon = dp_pdev->dp->dp_mon;
 	dp_pdev->dp_mon_pdev = dp_mon_pdev;
 
 	return 0;
