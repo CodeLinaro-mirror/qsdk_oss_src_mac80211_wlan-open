@@ -2290,7 +2290,7 @@ static void mac80211_hwsim_beacon_tx(void *arg, u8 *mac,
 	    vif->type != NL80211_IFTYPE_OCB)
 		return;
 
-	if (vif->mbssid_tx_vif && vif->mbssid_tx_vif != vif)
+	if (link_conf->mbssid_tx_vif && link_conf->mbssid_tx_vif != vif)
 		return;
 
 	if (vif->bss_conf.ema_ap) {
@@ -2663,7 +2663,7 @@ static int mac80211_hwsim_sta_add(struct ieee80211_hw *hw,
 
 	if (sta->valid_links) {
 		WARN(hweight16(sta->valid_links) > 1,
-		     "expect to add STA with single link, have 0x%x\n",
+		     "expect to add STA with single link, have 0x%lx\n",
 		     sta->valid_links);
 		sp->active_links_rx = sta->valid_links;
 	}
@@ -2829,7 +2829,7 @@ static const struct nla_policy hwsim_testmode_policy[HWSIM_TM_ATTR_MAX + 1] = {
 
 static int mac80211_hwsim_testmode_cmd(struct ieee80211_hw *hw,
 				       struct ieee80211_vif *vif,
-				       void *data, int len)
+				       u8 link_id, void *data, int len)
 {
 	struct mac80211_hwsim_data *hwsim = hw->priv;
 	struct nlattr *tb[HWSIM_TM_ATTR_MAX + 1];
@@ -3114,11 +3114,12 @@ static void hw_roc_done(struct work_struct *work)
 
 static int mac80211_hwsim_roc(struct ieee80211_hw *hw,
 			      struct ieee80211_vif *vif,
-			      struct ieee80211_channel *chan,
+			      struct cfg80211_chan_def *chandef,
 			      int duration,
 			      enum ieee80211_roc_type type)
 {
 	struct mac80211_hwsim_data *hwsim = hw->priv;
+	struct ieee80211_channel *chan = chandef->chan;
 
 	mutex_lock(&hwsim->mutex);
 	if (WARN_ON(hwsim->tmp_chan || hwsim->hw_scan_request)) {
@@ -3330,7 +3331,11 @@ static int mac80211_hwsim_tx_last_beacon(struct ieee80211_hw *hw)
 	return 1;
 }
 
-static int mac80211_hwsim_set_rts_threshold(struct ieee80211_hw *hw, u32 value)
+static int mac80211_hwsim_set_rts_threshold(struct ieee80211_hw *hw,
+					    u8 radio_id,
+					    u32 value,
+					    struct ieee80211_vif *vif,
+					    u32 link_id)
 {
 	return -EOPNOTSUPP;
 }
@@ -6668,13 +6673,18 @@ static void hwsim_virtio_rx_done(struct virtqueue *vq)
 
 static int init_vqs(struct virtio_device *vdev)
 {
-	struct virtqueue_info vqs_info[HWSIM_NUM_VQS] = {
-		[HWSIM_VQ_TX] = { "tx", hwsim_virtio_tx_done },
-		[HWSIM_VQ_RX] = { "rx", hwsim_virtio_rx_done },
+	static vq_callback_t *callbacks[HWSIM_NUM_VQS] = {
+		hwsim_virtio_tx_done,
+		hwsim_virtio_rx_done
+	};
+
+	static const char * const names[HWSIM_NUM_VQS] = {
+		"tx",
+		"rx"
 	};
 
 	return virtio_find_vqs(vdev, HWSIM_NUM_VQS,
-			       hwsim_vqs, vqs_info, NULL);
+			       hwsim_vqs, callbacks, names, NULL);
 }
 
 static int fill_vq(struct virtqueue *vq)

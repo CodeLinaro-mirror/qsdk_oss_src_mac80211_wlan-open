@@ -1488,9 +1488,17 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
 
 	BUILD_BUG_ON(
 	    offsetof(struct ieee80211_tx_info, status.ack_signal) != 20);
-	memset(&info->status.ampdu_ack_len, 0,
-	       sizeof(struct ieee80211_tx_info) -
-	       offsetof(struct ieee80211_tx_info, status.ampdu_ack_len));
+
+	/* explicitly clear the rest of the status fields */
+	info->status.ack_signal = 0;
+	info->status.ampdu_ack_len = 0;
+	info->status.ampdu_len = 0;
+	info->status.antenna = 0;
+	info->status.pad = 0;
+	info->status.tx_time = 0;
+	info->status.flags = 0;
+	info->status.pad2 = 0;
+	memset(info->status.status_driver_data, 0, sizeof(info->status.status_driver_data));
 }
 
 
