@@ -4942,10 +4942,18 @@ static void ieee80211_set_wakeup(struct wiphy *wiphy, bool enabled)
 
 static int ieee80211_set_qos_map(struct wiphy *wiphy,
 				 struct net_device *dev,
-				 struct cfg80211_qos_map *qos_map)
+				 struct cfg80211_qos_map *qos_map,
+				 unsigned int link_id)
 {
+	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct mac80211_qos_map *new_qos_map, *old_qos_map;
+
+	if (ieee80211_hw_check(&local->hw, SUPPORTS_DSCP_TID_MAP)) {
+		if (qos_map)
+			drv_set_dscp_tid(local, sdata, qos_map, link_id);
+		return 0;
+	}
 
 	if (qos_map) {
 		new_qos_map = kzalloc(sizeof(*new_qos_map), GFP_KERNEL);

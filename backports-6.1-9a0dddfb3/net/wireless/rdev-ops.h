@@ -1118,13 +1118,14 @@ static inline int rdev_channel_switch(struct cfg80211_registered_device *rdev,
 
 static inline int rdev_set_qos_map(struct cfg80211_registered_device *rdev,
 				   struct net_device *dev,
-				   struct cfg80211_qos_map *qos_map)
+				   struct cfg80211_qos_map *qos_map,
+				   unsigned int link_id)
 {
 	int ret = -EOPNOTSUPP;
 
 	if (rdev->ops->set_qos_map) {
-		trace_rdev_set_qos_map(&rdev->wiphy, dev, qos_map);
-		ret = rdev->ops->set_qos_map(&rdev->wiphy, dev, qos_map);
+		trace_rdev_set_qos_map(&rdev->wiphy, dev, qos_map, link_id);
+		ret = rdev->ops->set_qos_map(&rdev->wiphy, dev, qos_map, link_id);
 		trace_rdev_return_int(&rdev->wiphy, ret);
 	}
 

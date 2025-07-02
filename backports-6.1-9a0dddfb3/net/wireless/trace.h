@@ -2486,8 +2486,8 @@ TRACE_EVENT(rdev_channel_switch,
 
 TRACE_EVENT(rdev_set_qos_map,
 	TP_PROTO(struct wiphy *wiphy, struct net_device *netdev,
-		 struct cfg80211_qos_map *qos_map),
-	TP_ARGS(wiphy, netdev, qos_map),
+		 struct cfg80211_qos_map *qos_map, unsigned int link_id),
+	TP_ARGS(wiphy, netdev, qos_map, link_id),
 	TP_STRUCT__entry(
 		WIPHY_ENTRY
 		NETDEV_ENTRY

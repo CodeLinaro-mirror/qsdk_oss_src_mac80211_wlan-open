@@ -164,7 +164,7 @@ void cfg80211_clear_ibss(struct net_device *dev, bool nowext)
 	kfree_sensitive(wdev->connect_keys);
 	wdev->connect_keys = NULL;
 
-	rdev_set_qos_map(rdev, dev, NULL);
+	rdev_set_qos_map(rdev, dev, NULL, -1);
 
 	/*
 	 * Delete all the keys ... pairwise keys can't really

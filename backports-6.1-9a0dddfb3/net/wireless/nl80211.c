@@ -16505,6 +16505,7 @@ static int nl80211_set_qos_map(struct sk_buff *skb,
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
 	struct cfg80211_qos_map *qos_map = NULL;
 	struct net_device *dev = info->user_ptr[1];
+	unsigned int link_id = nl80211_link_id(info->attrs);
 	u8 *pos, len, num_des, des_len, des;
 	int ret;
 
@@ -16541,7 +16542,7 @@ static int nl80211_set_qos_map(struct sk_buff *skb,
 
 	ret = nl80211_key_allowed(dev->ieee80211_ptr);
 	if (!ret)
-		ret = rdev_set_qos_map(rdev, dev, qos_map);
+		ret = rdev_set_qos_map(rdev, dev, qos_map, link_id);
 
 	kfree(qos_map);
 	return ret;

@@ -1618,6 +1618,20 @@ static inline void drv_sta_set_4addr(struct ieee80211_local *local,
 	trace_drv_return_void(local);
 }
 
+static inline void drv_set_dscp_tid(struct ieee80211_local *local,
+				    struct ieee80211_sub_if_data *sdata,
+				    struct cfg80211_qos_map *qos_map,
+				    unsigned int link_id)
+{
+        if (!check_sdata_in_driver(sdata))
+                return;
+
+	trace_drv_set_dscp_tid(local, sdata, qos_map, link_id);
+        if (local->ops->set_dscp_tid)
+                local->ops->set_dscp_tid(&local->hw, &sdata->vif, qos_map, link_id);
+        trace_drv_return_void(local);
+}
+
 static inline void drv_sta_set_decap_offload(struct ieee80211_local *local,
 					     struct ieee80211_sub_if_data *sdata,
 					     struct ieee80211_sta *sta,

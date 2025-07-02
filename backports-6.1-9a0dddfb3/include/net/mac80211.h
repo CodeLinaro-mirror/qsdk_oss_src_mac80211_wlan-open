@@ -3033,6 +3033,8 @@ struct ieee80211_txq {
  * @IEEE80211_HW_SUPPORTS_EXT_REMAIN_ON_CHAN: Hardware supports extended remain
  *	on channel for bandwidth higher than 20MHz.
  *
+ * @IEEE80211_HW_SUPPORTS_DSCP_TID_MAP: Hardware/driver supports DSCP to TID mapping.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3102,6 +3104,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_VLAN_DATA_OFFLOAD,
 	IEEE80211_HW_SUPPORTS_CONC_AP_MON_IN_80211_FORMAT,
 	IEEE80211_HW_SUPPORTS_EXT_REMAIN_ON_CHAN,
+	IEEE80211_HW_SUPPORTS_DSCP_TID_MAP,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
@@ -4635,6 +4638,7 @@ struct ieee80211_ppe_vp_ds_params {
  *	This callback may sleep.
  * @sta_set_4addr: Called to notify the driver when a station starts/stops using
  *	4-address mode
+ * @set_dscp_tid: Notify the driver when receive qos_map_set events from mac80211.
  * @set_sar_specs: Update the SAR (TX power) settings.
  * @sta_set_decap_offload: Called to notify the driver when a station is allowed
  *	to use rx decapsulation offload
@@ -5049,6 +5053,8 @@ struct ieee80211_ops {
 				   struct ieee80211_vif *vif);
 	void (*sta_set_4addr)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			      struct ieee80211_sta *sta, bool enabled);
+	void (*set_dscp_tid)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			     struct cfg80211_qos_map *qos_map, unsigned int link_id);
 	int (*set_sar_specs)(struct ieee80211_hw *hw,
 			     const struct cfg80211_sar_specs *sar);
 	void (*sta_set_decap_offload)(struct ieee80211_hw *hw,

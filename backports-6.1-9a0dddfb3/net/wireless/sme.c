@@ -1387,7 +1387,7 @@ void __cfg80211_disconnected(struct net_device *dev, const u8 *ie,
 			rdev_del_key(rdev, dev, -1, i, false, NULL);
 	}
 
-	rdev_set_qos_map(rdev, dev, NULL);
+	rdev_set_qos_map(rdev, dev, NULL, -1);
 
 #ifdef CPTCFG_CFG80211_WEXT
 	memset(&wrqu, 0, sizeof(wrqu));

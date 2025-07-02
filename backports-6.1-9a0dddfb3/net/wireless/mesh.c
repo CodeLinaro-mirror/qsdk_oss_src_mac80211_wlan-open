@@ -284,7 +284,7 @@ int cfg80211_leave_mesh(struct cfg80211_registered_device *rdev,
 		wdev->u.mesh.beacon_interval = 0;
 		memset(&wdev->u.mesh.chandef, 0,
 		       sizeof(wdev->u.mesh.chandef));
-		rdev_set_qos_map(rdev, dev, NULL);
+		rdev_set_qos_map(rdev, dev, NULL, -1);
 		cfg80211_sched_dfs_chan_update(rdev);
 	}
 

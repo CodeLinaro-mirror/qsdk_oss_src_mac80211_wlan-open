@@ -1207,7 +1207,7 @@ int cfg80211_change_iface(struct cfg80211_registered_device *rdev,
 			return -EBUSY;
 
 		dev->ieee80211_ptr->use_4addr = false;
-		rdev_set_qos_map(rdev, dev, NULL);
+		rdev_set_qos_map(rdev, dev, NULL, -1);
 
 		switch (otype) {
 		case NL80211_IFTYPE_AP:

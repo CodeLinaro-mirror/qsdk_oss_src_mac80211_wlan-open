@@ -2483,6 +2483,43 @@ DEFINE_EVENT(sta_flag_evt, drv_sta_set_decap_offload,
 	TP_ARGS(local, sdata, sta, enabled)
 );
 
+DECLARE_EVENT_CLASS(dscp_flag_evt,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 struct cfg80211_qos_map *qos_map,
+		 unsigned int link_id),
+
+	TP_ARGS(local, sdata, qos_map, link_id),
+
+	TP_STRUCT__entry(
+		LOCAL_ENTRY
+		VIF_ENTRY
+		__field(struct cfg80211_qos_map *, qos_map)
+		__field(unsigned int, link_id)
+	),
+
+	TP_fast_assign(
+		LOCAL_ASSIGN;
+		VIF_ASSIGN;
+		__entry->qos_map = qos_map;
+		__entry->link_id = link_id;
+	),
+
+	TP_printk(
+		LOCAL_PR_FMT  VIF_PR_FMT " qos_map=%p link_id=%u",
+		LOCAL_PR_ARG, VIF_PR_ARG, __entry->qos_map, __entry->link_id
+	)
+);
+
+DEFINE_EVENT(dscp_flag_evt, drv_set_dscp_tid,
+	TP_PROTO(struct ieee80211_local *local,
+		 struct ieee80211_sub_if_data *sdata,
+		 struct cfg80211_qos_map *qos_map,
+		 unsigned int link_id),
+
+	TP_ARGS(local, sdata, qos_map, link_id)
+);
+
 TRACE_EVENT(drv_add_twt_setup,
 	TP_PROTO(struct ieee80211_local *local,
 		 struct ieee80211_sta *sta,

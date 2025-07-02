@@ -5235,7 +5235,8 @@ struct cfg80211_ops {
 
 	int     (*set_qos_map)(struct wiphy *wiphy,
 			       struct net_device *dev,
-			       struct cfg80211_qos_map *qos_map);
+			       struct cfg80211_qos_map *qos_map,
+			       unsigned int link_id);
 
 	int	(*set_ap_chanwidth)(struct wiphy *wiphy, struct net_device *dev,
 				    unsigned int link_id,
