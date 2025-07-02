@@ -1612,6 +1612,32 @@ err_mlo_teardown:
 	return ret;
 }
 
+int ath12k_core_pdev_enable_telemetry_stats(struct ath12k_base *ab)
+{
+	struct ath12k_pdev *pdev;
+	struct ath12k *ar;
+	int ret, i;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		if (pdev) {
+			ar = pdev->ar;
+			ret = ath12k_wmi_pdev_enable_telemetry_stats(ab, ar);
+			if (ret) {
+				ath12k_err(ab,
+					   "Failed to enable pdev telemetry stats for pdev id:%d\n",
+					   pdev->pdev_id);
+			} else {
+				ath12k_info(ab,
+					    "Enable pdev telemetry stats for pdev id: %d\n",
+					    pdev->pdev_id);
+			}
+		}
+	}
+
+	return 0;
+}
+
 static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
@@ -1743,6 +1769,8 @@ core_pdev_create:
 			ath12k_warn(ab, "Failed to initialize UMAC RESET: %d\n", ret);
 			goto err;
 		}
+
+		ath12k_core_pdev_enable_telemetry_stats(ab);
 
 		mutex_unlock(&ab->core_lock);
 	}
