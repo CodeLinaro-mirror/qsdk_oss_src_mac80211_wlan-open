@@ -148,6 +148,7 @@ struct ath12k_dp_peer {
 	spinlock_t link_peers_lock;
 	struct ath12k_dp_link_peer __rcu *link_peers[ATH12K_NUM_MAX_LINKS];
 
+	u32 peer_links_map;
 	bool primary_link_frag_setup;
 
 	bool is_authorized;
@@ -167,6 +168,8 @@ struct ath12k_dp_peer {
 	u16 sec_type_grp;
 	u8 vdev_type_4addr;
 	bool is_reset_mcbc;
+	struct ath12k_mld_qos_stats mld_qos_stats[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+	bool qos_stats_lvl;
 
 	u8 hw_links[ATH12K_GROUP_MAX_RADIO];
 	u16 stats_link_id;
@@ -177,9 +180,6 @@ struct ath12k_dp_peer {
 	struct ath12k_mscs_ctxt mscs_ctxt;
 	bool mscs_session_exists;
 };
-
-#define QOS_TID_MAX 8
-#define QOS_TID_MDSUQ_MAX 2
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
 
@@ -270,6 +270,9 @@ ath12k_dp_peer_qos_alloc(struct ath12k_dp *dp,
 			 struct ath12k_dp_peer *peer);
 void ath12k_dp_peer_qos_free(struct ath12k_dp *dp,
 			     struct ath12k_dp_peer *peer);
+bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
+			       struct ieee80211_vif *vif,
+			       struct ath12k_dp_link_peer *peer);
 int ath12k_dp_peer_scs_add(struct ath12k_base *ab,
 			   struct ath12k_dp_peer_qos *qos,
 			   u8 scs_id, u16 qos_profile_id);

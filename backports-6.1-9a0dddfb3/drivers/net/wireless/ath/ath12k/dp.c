@@ -163,12 +163,23 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 	if (peer->mlo && peer->link_id != ahsta->primary_link_id) {
 		peer->primary_link = false;
 		arvif->primary_sta_link = false;
+		if (ar->dp.dp_hw) {
+			spin_lock_bh(&ar->dp.dp_hw->peer_lock);
+			if (peer->dp_peer->qos_stats_lvl ==
+			    ATH12K_QOS_MULTI_LINK_STATS)
+				ath12k_dp_qos_stats_alloc(ar, vif, peer);
+			spin_unlock_bh(&ar->dp.dp_hw->peer_lock);
+		}
 		spin_unlock_bh(&dp->dp_lock);
 		goto free_shash;
 	}
 
 	peer->primary_link = true;
 	arvif->primary_sta_link = true;
+
+	/* Allocate qos stats for primary link alone */
+	ath12k_dp_qos_stats_alloc(ar, vif, peer);
+
 	spin_unlock_bh(&dp->dp_lock);
 
 	if (vif->type == NL80211_IFTYPE_STATION)

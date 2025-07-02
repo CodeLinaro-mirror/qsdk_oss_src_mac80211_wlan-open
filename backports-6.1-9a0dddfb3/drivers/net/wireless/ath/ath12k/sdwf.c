@@ -210,7 +210,6 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k_base *ab, u32 svc_id,
 		goto ret;
 
 	msduq = ath12k_dp_peer_qos_msduq(ab, qos, qos_id);
-
 ret:
 	spin_unlock_bh(&ab->dp->dp_lock);
 	return msduq;

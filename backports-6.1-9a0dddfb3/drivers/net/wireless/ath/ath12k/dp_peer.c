@@ -642,11 +642,16 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 		 peer->peer_stats.tx_stats = kzalloc(sizeof(*peer->peer_stats.tx_stats), GFP_ATOMIC);
 	}
 
+	dp_peer->qos_stats_lvl = (ar->debug.qos_stats &
+				  ATH12K_QOS_STATS_COLLECTION_MASK) >> 2;
+
 	dp_peer->hw_links[peer->hw_link_id] = link_id;
 
 	peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
 
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], peer);
+	if (!dp_peer->is_vdev_peer)
+		dp_peer->peer_links_map |= BIT(link_id);
 
 	rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], dp_peer);
 
@@ -691,6 +696,8 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 
 	peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
 
+	if (!dp_peer->is_vdev_peer)
+		dp_peer->peer_links_map &= ~(peer->link_id);
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
 
 	rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
@@ -702,6 +709,8 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 
 	if (peer->peer_stats.tx_stats)
 		kfree(peer->peer_stats.tx_stats);
+
+	kfree(peer->peer_stats.qos_stats);
 
 	ath12k_dp_link_peer_rhash_delete(dp, peer);
 
@@ -823,6 +832,35 @@ ath12k_dp_peer_qos_alloc(struct ath12k_dp *dp,
 
 	ath12k_dbg(dp->ab, ATH12K_DBG_QOS, "Peer QoS allocated");
 	return peer->qos;
+}
+
+bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
+			       struct ieee80211_vif *vif,
+			       struct ath12k_dp_link_peer *peer)
+{
+	struct ath12k_qos_stats *qos_stats = NULL;
+
+	/* already allocated */
+	if (peer->peer_stats.qos_stats)
+		return true;
+
+	if (vif->type != NL80211_IFTYPE_AP ||
+	    peer->dp_peer->is_vdev_peer ||
+	    !ath12k_debugfs_is_qos_stats_enabled(ar))
+		return false;
+
+	qos_stats = kzalloc(sizeof(*qos_stats), GFP_ATOMIC);
+	if (!qos_stats) {
+		ath12k_err(ar->ab, "Peer QoS stats allocation failed for peer: %pM link_id: %u\n",
+			   peer->addr, peer->link_id);
+		return false;
+	}
+
+	peer->peer_stats.qos_stats = qos_stats;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_QOS, "Peer QoS stats allocated for peer: %pM link_id: %u\n",
+		   peer->addr, peer->link_id);
+	return true;
 }
 
 static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,

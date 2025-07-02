@@ -1399,6 +1399,8 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 		spin_lock_bh(&dp_hw->peer_lock);
 		dp_peer = peer->dp_peer;
 		peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
+		if (!dp_peer->is_vdev_peer)
+			dp_peer->peer_links_map &= ~(peer->link_id);
 		rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
 		spin_unlock_bh(&dp_hw->peer_lock);
 

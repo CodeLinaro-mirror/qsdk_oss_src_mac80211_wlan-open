@@ -198,10 +198,138 @@ struct ath12k_dp_mon_peer_stats {
        struct ath12k_mon_peer_airtime_stats mon_stats;
 };
 
+#define QOS_TID_MAX 8
+#define QOS_TID_MDSUQ_MAX 2
+
+#define MAX_MCS_11B 7
+#define MAX_MCS_11A 8
+#define MAX_MCS_11N 8
+#define MAX_MCS_11AC 12
+#define MAX_MCS_11AX 14
+#define MAX_MCS_11BE 16
+#define MAX_MCS (16 + 1)
+
+/* Different Packet Types */
+enum packet_std {
+	DOT11_A = 0,
+	DOT11_B = 1,
+	DOT11_N = 2,
+	DOT11_AC = 3,
+	DOT11_AX = 4,
+	DOT11_BE = 5,
+	DOT11_MAX,
+};
+
+struct pkt_type {
+	u32 mcs_count[MAX_MCS];
+};
+
+struct fw_mpdu_stats {
+	u64 success_cnt;
+	u64 failure_cnt;
+};
+
+struct dp_pkt_info {
+	u64 num;
+	u64 bytes;
+};
+
+struct tx_stats {
+	struct dp_pkt_info tx_success;
+	struct dp_pkt_info tx_failed;
+	struct dp_pkt_info tx_ingress;
+	struct {
+		struct dp_pkt_info fw_rem;
+		u32 fw_rem_notx;
+		u32 fw_rem_tx;
+		u32 age_out;
+		u32 fw_reason1;
+		u32 fw_reason2;
+		u32 fw_reason3;
+		u32 fw_rem_queue_disable;
+		u32 fw_rem_no_match;
+		u32 drop_threshold;
+		u32 drop_link_desc_na;
+		u32 invalid_drop;
+		u32 mcast_vdev_drop;
+		u32 invalid_rr;
+	} dropped;
+	u32 queue_depth;
+	u32 total_retries_count;
+	u32 retry_count;
+	u32 multiple_retry_count;
+	u32 failed_retry_count;
+	u16 reinject_pkt;
+	struct pkt_type pkt_type[DOT11_MAX];
+};
+
+enum hist_bucket_index {
+	HIST_BUCKET_0,
+	HIST_BUCKET_1,
+	HIST_BUCKET_2,
+	HIST_BUCKET_3,
+	HIST_BUCKET_4,
+	HIST_BUCKET_5,
+	HIST_BUCKET_6,
+	HIST_BUCKET_7,
+	HIST_BUCKET_8,
+	HIST_BUCKET_9,
+	HIST_BUCKET_10,
+	HIST_BUCKET_11,
+	HIST_BUCKET_12,
+	HIST_BUCKET_MAX,
+};
+
+enum hist_types {
+	HIST_TYPE_SW_ENQEUE_DELAY,
+	HIST_TYPE_HW_COMP_DELAY,
+	HIST_TYPE_REAP_STACK,
+	HIST_TYPE_HW_TX_COMP_DELAY,
+	HIST_TYPE_DELAY_PERCENTILE,
+	HIST_TYPE_HW_COMP_DELAY_TSF,
+	HIST_TYPE_HW_COMP_DELAY_JITTER_TSF,
+	HIST_TYPE_MAX,
+};
+
+struct hist_bucket {
+	enum hist_types hist_type;
+	u64 freq[HIST_BUCKET_MAX];
+};
+
+struct hist_stats {
+	struct hist_bucket hist;
+	int max;
+	int min;
+	int avg;
+};
+
+struct delay_stats {
+	struct hist_stats delay_hist;
+	u32 invalid_delay_pkts;
+	u64 delay_success;
+	u64 delay_failure;
+};
+
+struct ath12k_qos_stats {
+	struct tx_stats qos_tx[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+	struct delay_stats qos_delay[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+};
+
+struct ath12k_mld_qos_stats {
+	u64 tx_success_pkts;
+	u64 tx_failed_pkts;
+	u64 tx_invalid_delay_pkts;
+	u64 nwdelay_win_total;
+	u64 swdelay_win_total;
+	u64 hwdelay_win_total;
+	struct fw_mpdu_stats svc_intval_stats;
+	struct fw_mpdu_stats burst_size_stats;
+};
 struct ath12k_dp_link_peer_stats {
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_rx_peer_stats *rx_stats;
 	struct ath12k_dp_mon_peer_stats dp_mon_stats;
+	struct ath12k_qos_stats *qos_stats;
 	u32 rx_retries;
 };
 
