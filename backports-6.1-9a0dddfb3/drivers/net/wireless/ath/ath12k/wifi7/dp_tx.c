@@ -68,6 +68,104 @@ ath12k_wifi7_hal_tx_cmd_ext_desc_setup(struct ath12k_base *ab,
 						 HAL_TX_MSDU_EXT_INFO1_ENCRYPT_TYPE);
 }
 
+static inline u32 ath12k_qos_get_metadata(u16 qos_id)
+{
+	u32 tcl_metadata = 0;
+
+	tcl_metadata = u32_encode_bits(HTT_TCL_META_DATA_TYPE_SVC_ID_BASED,
+				       HTT_TCL_META_DATA_TYPE_MISSION) |
+			u32_encode_bits(1, HTT_TCL_META_DATA_SAWF_TID_OVERRIDE) |
+			u32_encode_bits(qos_id, HTT_TCL_META_DATA_SAWF_SVC_ID);
+	return tcl_metadata;
+}
+
+static inline u32 ath12k_qos_get_tcl_cmd(u32 msduq)
+{
+	u32 tid, flow_override, who_classify_info_sel, update = 0;
+
+	tid = u32_get_bits(msduq, MSDUQ_TID);
+	flow_override = u32_get_bits(msduq, MSDUQ_FLOW_OVERRIDE);
+	who_classify_info_sel = u32_get_bits(msduq, MSDUQ_WHO_CL_INFO);
+
+	update = u32_encode_bits(tid, HAL_TCL_DATA_CMD_INFO3_TID) |
+		 u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO3_TID_OVERWRITE) |
+		 u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO3_FLOW_OVERRIDE_EN) |
+		 u32_encode_bits(who_classify_info_sel,
+				 HAL_TCL_DATA_CMD_INFO3_CLASSIFY_INFO_SEL) |
+		 u32_encode_bits(flow_override,
+				 HAL_TCL_DATA_CMD_INFO3_FLOW_OVERRIDE);
+	return update;
+}
+
+static inline
+void ath12k_wifi_qos_desc(struct hal_tcl_data_cmd *desc,
+			  u32 msduq, u16 qos_id)
+{
+	u32 meta_data_flags;
+
+	desc->info3 |= ath12k_qos_get_tcl_cmd(msduq);
+	meta_data_flags = ath12k_qos_get_metadata(qos_id);
+	desc->info1 = u32_encode_bits(meta_data_flags,
+				      HAL_TCL_DATA_CMD_INFO1_CMD_NUM);
+}
+
+static inline
+void ath12k_wifi_qos_hlos_tid(struct hal_tcl_data_cmd *desc,
+			      u8 tid)
+{
+	desc->info3 |= u32_encode_bits(tid, HAL_TCL_DATA_CMD_INFO3_TID) |
+		 u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO3_TID_OVERWRITE);
+}
+
+static inline u8 ath12k_get_qos_tag(u32 mark)
+{
+	u8 qos_tag = u32_get_bits(mark, QOS_TAG_MASK);
+
+	if (qos_tag == QOS_SCS_TAG || qos_tag == QOS_MSCS_TAG)
+		return qos_tag;
+
+	return 0;
+}
+
+static inline void
+ath12k_dp_qos_update(struct ath12k_dp *dp, u32 mark,
+		     struct hal_tcl_data_cmd *desc, u8 qos_tag,
+		     u8 *addr)
+{
+	struct ath12k_dp_link_peer *peer;
+	u8 scs_id;
+	u16 msduq, qos_id;
+	int ret;
+
+	if (qos_tag == QOS_SCS_TAG) {
+		scs_id = u32_get_bits(mark, QOS_QOS_ID_MASK);
+
+		spin_lock_bh(&dp->dp_lock);
+		peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
+		if (!peer) {
+			spin_unlock_bh(&dp->dp_lock);
+			return;
+		}
+		ret = ath12k_dp_peer_scs_data(dp, peer->dp_peer->qos,
+					      scs_id, &msduq, &qos_id);
+		spin_unlock_bh(&dp->dp_lock);
+
+		if (ret != 0) {
+			ath12k_err(dp->ab, "SCS Peer Data is NULL");
+			return;
+		}
+	} else {
+		msduq = u32_get_bits(mark, QOS_QOS_ID_MASK);
+	}
+	/* Update Desc for HLOS TID Override */
+	if (msduq < MSDUQ_MAX_DEF) {
+		ath12k_wifi_qos_hlos_tid(desc, msduq);
+	} else if (msduq < QOS_MSDUQ_MAX){
+	/* Update Desc for User Defined QoS MSDUQ */
+			ath12k_wifi_qos_desc(desc, msduq, qos_id);
+	}
+}
+
 #define HTT_META_DATA_ALIGNMENT 0x8
 
 /* Preparing HTT Metadata when utilized with ext MSDU */
@@ -147,6 +245,7 @@ int ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u32 iova_mask = dp->hw_params->iova_mask;
 	bool is_diff_encap = false, is_null = false;
 	bool is_from_recycler;
+	u8 qos_tag;
 	bool stats_disable = ab->stats_disable;
 	struct hal_tcl_data_cmd tcl_desc = {0};
 	u8 ring_id;
@@ -528,6 +627,13 @@ skip_htt_metadata:
 	spin_unlock_bh(&arvif->link_stats_lock);
 
 	ath12k_wifi7_hal_tx_cmd_desc_setup(ab, hal_tcl_desc, &ti);
+
+	if (unlikely(arsta)) {
+		qos_tag = ath12k_get_qos_tag(skb->mark);
+		if (qos_tag)
+			ath12k_dp_qos_update(dp, skb->mark, hal_tcl_desc,
+					     qos_tag, arsta->addr);
+	}
 
 	ath12k_hal_srng_access_end(ab, tcl_ring);
 

@@ -184,6 +184,7 @@ struct ath12k_dp_peer {
 
 	bool use_4addr;
 
+	struct ath12k_dp_peer_qos *qos;
 	/* Info used in MMIC verification of * RX fragments */
 	struct crypto_shash *tfm_mmic;
 	u8 mcast_keyidx;
@@ -197,6 +198,48 @@ struct ath12k_dp_peer {
 #if defined(CPTCFG_MAC80211_PPE_SUPPORT) || defined(CPTCFG_ATH12K_PPE_DS_SUPPORT)
 	int ppe_vp_num;
 #endif
+};
+
+#define QOS_TID_MAX 8
+#define QOS_TID_MDSUQ_MAX 2
+
+#define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
+
+#define QOS_MAX_SCS_ID 128
+
+#define QOS_TAG_MASK	GENMASK(7, 0)
+#define QOS_QOS_ID_MASK	GENMASK(15, 8)
+
+#define QOS_SCS_TAG	0xB9
+#define QOS_MSCS_TAG	0x58
+
+#define QOS_INVALID_MSDUQ  0x3F
+
+#define SCS_MSDUQ_MASK		GENMASK(5, 0)
+#define SCS_QOS_ID_MASK		GENMASK(15, 6)
+
+#define MSDUQ_MAX_DEF		16
+#define MSDUQ_TID_MASK		GENMASK(2, 0)
+#define MSDUQ_MASK		GENMASK(5, 3)
+
+#define MSDUQ_TID		GENMASK(2, 0)
+#define MSDUQ_FLOW_OVERRIDE	BIT(3)
+#define MSDUQ_WHO_CL_INFO	GENMASK(5, 4)
+
+struct ath12k_msduq {
+	bool reserved;
+	u8 qos_id;
+	u32 tgt_opaque_id;
+	u16 msduq;
+};
+
+struct ath12k_dl_scs {
+	u16 qos_id_msduq;
+};
+
+struct ath12k_dp_peer_qos {
+	struct ath12k_dl_scs scs_map[QOS_MAX_SCS_ID];
+	struct ath12k_msduq msduq_map[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
 };
 
 void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id);
@@ -241,4 +284,28 @@ ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
 
 void ath12k_peer_mlo_map_event(struct ath12k_base *ab, struct sk_buff *skb);
 void ath12k_peer_mlo_unmap_event(struct ath12k_base *ab, struct sk_buff *skb);
+struct ath12k_dp_peer_qos *
+ath12k_dp_peer_qos_get(struct ath12k_dp *dp,
+		       struct ath12k_dp_peer *peer);
+struct ath12k_dp_peer_qos *
+ath12k_dp_peer_qos_alloc(struct ath12k_dp *dp,
+			 struct ath12k_dp_peer *peer);
+void ath12k_dp_peer_qos_free(struct ath12k_dp *dp,
+			     struct ath12k_dp_peer *peer);
+int ath12k_dp_peer_scs_add(struct ath12k_base *ab,
+			   struct ath12k_dp_peer_qos *qos,
+			   u8 scs_id, u16 qos_profile_id);
+int ath12k_dp_peer_scs_del(struct ath12k_base *ab,
+			   struct ath12k_dp_peer_qos *qos,
+			   u8 scs_id);
+int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
+			    struct ath12k_dp_peer_qos *qos, u8 scs_id,
+			    u16 *msduq, u16 *qos_id);
+u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_base *ab,
+				  struct ath12k_dp_peer_qos *qos, u8 scs_id);
+u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
+			     struct ath12k_dp_peer_qos *qos, u16 qos_id);
+u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
+			 struct ath12k_dp_peer_qos *qos,
+			 u16 msduq);
 #endif

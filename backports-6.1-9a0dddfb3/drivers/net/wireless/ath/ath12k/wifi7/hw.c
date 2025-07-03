@@ -1294,6 +1294,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	u16 mcbc_gsn;
 	u8 link_id;
 	int ret;
+	u8 qos_tag;
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ieee80211_free_txskb(hw, skb);
@@ -1388,10 +1389,10 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	if (sta) {
 		ahsta = ath12k_sta_to_ahsta(sta);
-		if (ahsta->use_4addr_set)
+		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
+		if (ahsta->use_4addr_set || qos_tag)
 			arsta = rcu_dereference(ahsta->link[link_id]);
 	}
-
 
 	/* as skb_cb is common currently for dp and mgmt tx processing
 	 * set this in the common mac op tx function.
@@ -1467,7 +1468,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			return;
 		}
 
-		ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta);
+		ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0,
+					 is_mcast, arsta);
 		if (unlikely(ret)) {
 			ath12k_warn(ar->ab, "failed to transmit frame %d\n", ret);
 			ieee80211_free_txskb(ar->ah->hw, skb);
@@ -1547,7 +1549,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 skip_peer_find:
 			ret = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
-						 msdu_copied, true, mcbc_gsn, is_mcast, arsta);
+						 msdu_copied, true, mcbc_gsn,
+						 is_mcast, arsta);
 			if (unlikely(ret)) {
 				if (ret == -ENOMEM) {
 					/* Drops are expected during heavy multicast
