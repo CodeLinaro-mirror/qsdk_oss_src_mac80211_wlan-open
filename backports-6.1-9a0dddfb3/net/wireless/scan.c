@@ -125,8 +125,13 @@ static inline void bss_ref_put(struct cfg80211_registered_device *rdev,
 
 		hbss = bss_from_pub(bss->pub.hidden_beacon_bss);
 		hbss->refcount--;
-		if (hbss->refcount == 0)
+		if (hbss->refcount == 0) {
+			if (hbss->in_rbtree == true) {
+				rb_erase(&hbss->rbn, &rdev->bss_tree);
+				hbss->in_rbtree = false;
+			}
 			bss_free(hbss);
+		}
 	}
 
 	if (bss->pub.transmitted_bss) {
@@ -134,13 +139,23 @@ static inline void bss_ref_put(struct cfg80211_registered_device *rdev,
 
 		tbss = bss_from_pub(bss->pub.transmitted_bss);
 		tbss->refcount--;
-		if (tbss->refcount == 0)
+		if (tbss->refcount == 0) {
+			if (tbss->in_rbtree == true) {
+				rb_erase(&tbss->rbn, &rdev->bss_tree);
+				tbss->in_rbtree = false;
+			}
 			bss_free(tbss);
+		}
 	}
 
 	bss->refcount--;
-	if (bss->refcount == 0)
+	if (bss->refcount == 0) {
+		if (bss->in_rbtree == true) {
+			rb_erase(&bss->rbn, &rdev->bss_tree);
+			bss->in_rbtree = false;
+		}
 		bss_free(bss);
+	}
 }
 
 static bool __cfg80211_unlink_bss(struct cfg80211_registered_device *rdev,
@@ -166,6 +181,7 @@ static bool __cfg80211_unlink_bss(struct cfg80211_registered_device *rdev,
 	list_del_init(&bss->pub.nontrans_list);
 	if (bss->in_rbtree)
 		rb_erase(&bss->rbn, &rdev->bss_tree);
+	bss->in_rbtree = false;
 	rdev->bss_entries--;
 	WARN_ONCE((rdev->bss_entries == 0) ^ list_empty(&rdev->bss_list),
 		  "rdev bss entries[%d]/list[empty:%d] corruption\n",
@@ -1665,9 +1681,9 @@ static bool rb_insert_bss(struct cfg80211_registered_device *rdev,
 			p = &(*p)->rb_right;
 	}
 
-	bss->in_rbtree = true;
 	rb_link_node(&bss->rbn, parent, p);
 	rb_insert_color(&bss->rbn, &rdev->bss_tree);
+	bss->in_rbtree = true;
 	return true;
 }
 
