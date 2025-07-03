@@ -5545,7 +5545,7 @@ void ieee80211_rx_nss_notify_4addr(struct net_device *dev, u8* sta_addr);
  * The TX headroom reserved by mac80211 for its own tx_status functions.
  * This is enough for the radiotap header.
  */
-#define IEEE80211_TX_STATUS_HEADROOM	ALIGN(14, 4)
+#define IEEE80211_TX_STATUS_HEADROOM	ALIGN(24, 4)
 
 /**
  * ieee80211_sta_set_buffered - inform mac80211 about driver-buffered frames
