@@ -2239,4 +2239,5 @@ void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed, u16 link
 void ath12k_core_radio_cleanup(struct ath12k *ar);
 void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 				    bool set_clear, u8 tid);
+struct ath12k_hw_group *ath12k_core_get_ag(void);
 #endif /* _CORE_H_ */

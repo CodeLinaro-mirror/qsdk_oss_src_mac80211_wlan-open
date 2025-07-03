@@ -4773,6 +4773,17 @@ error:
 	return index;
 }
 
+struct ath12k_hw_group *ath12k_core_get_ag(void)
+{
+	struct ath12k_hw_group *ag;
+
+	mutex_lock(&ath12k_hw_group_mutex);
+	ag = list_first_entry_or_null(&ath12k_hw_group_list,
+				      struct ath12k_hw_group, list);
+	mutex_unlock(&ath12k_hw_group_mutex);
+	return ag;
+}
+
 int ath12k_core_init(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag;
