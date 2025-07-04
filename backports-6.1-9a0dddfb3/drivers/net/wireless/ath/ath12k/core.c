@@ -30,6 +30,7 @@
 #include "fse.h"
 #include "accel_cfg.h"
 #include "peer.h"
+#include "qos.h"
 #include "ppe.h"
 #include "cfr.h"
 #include "ini.h"
@@ -1480,6 +1481,8 @@ static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 		goto err_mlo_teardown;
 
 	set_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags);
+
+	spin_lock_init(&ag->qos.profile_lock);
 
 core_pdev_create:
 	for (i = 0; i < ag->num_devices; i++) {

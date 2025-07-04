@@ -36,6 +36,7 @@
 #include "coredump.h"
 #include "cmn_defs.h"
 #include "spectral.h"
+#include "qos.h"
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
 #include <ppe_vp_public.h>
@@ -1361,6 +1362,7 @@ struct ath12k_hw_group {
 	struct ath12k_mlo_dp_umac_reset mlo_umac_reset;
         struct completion umac_reset_complete;
         bool trigger_umac_reset;
+	struct ath12k_qos_ctx qos;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */

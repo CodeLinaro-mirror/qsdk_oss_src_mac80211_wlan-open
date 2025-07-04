@@ -27,6 +27,7 @@ ath12k-y += core.o \
 	    vendor.o \
 	    umac_reset.o \
 	    accel_cfg.o \
+	    qos.o \
 	    ini.o \
 	    ini_parse.o \
 	    dp_mon_filter.o
