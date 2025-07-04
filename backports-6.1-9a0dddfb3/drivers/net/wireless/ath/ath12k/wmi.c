@@ -96,8 +96,8 @@ struct ath12k_wmi_svc_rdy_ext2_arg {
 	u32 target_cap_flags;
 	u32 eht_cap_mac_info[WMI_MAX_EHTCAP_MAC_SIZE];
 	u32 max_num_linkview_peers;
-	u32 max_num_msduq_supported_per_tid;
-	u32 default_num_msduq_supported_per_tid;
+	u32 max_tid_msduq;
+	u32 def_tid_msduq;
 	u32 afc_deployment_type;
 };
 
@@ -5676,6 +5676,9 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->ema_init_config =
 		cpu_to_le32(u32_encode_bits(tg_cfg->max_beacon_size,
 					    WMI_RSRC_CFG_EMA_INIT_CONFIG_BEACON_SIZE));
+	wmi_cfg->flags2 |= (tg_cfg->qos) ?
+			   (WMI_RSRC_CFG_FLAGS2_SAWF_CONFIG_ENABLE_SET) : (0);
+
 }
 
 /**
@@ -6790,6 +6793,8 @@ static int ath12k_pull_svc_ready_ext2(struct ath12k_wmi_pdev *wmi_handle,
 	arg->max_user_per_ppdu_ofdma = le32_to_cpu(ev->max_user_per_ppdu_ofdma);
 	arg->max_user_per_ppdu_mumimo = le32_to_cpu(ev->max_user_per_ppdu_mumimo);
 	arg->target_cap_flags = le32_to_cpu(ev->target_cap_flags);
+	arg->max_tid_msduq = le32_to_cpu(ev->max_num_msduq_supported_per_tid);
+	arg->def_tid_msduq = le32_to_cpu(ev->default_num_msduq_supported_per_tid);
 	arg->afc_deployment_type = le32_to_cpu(ev->afc_deployment_type);
 	return 0;
 }
@@ -6954,6 +6959,8 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			return ret;
 		}
 		ab->chwidth_num_peer_caps = parse->arg.chwidth_num_peer_caps;
+		ab->max_tid_msduq = parse->arg.max_tid_msduq;
+		ab->def_tid_msduq = parse->arg.def_tid_msduq;
 		ab->afc_dev_deployment = parse->arg.afc_deployment_type;
 		break;
 
@@ -7844,7 +7851,7 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 			return -ENOMEM;
 		}
 	}
-	
+
 	ext_wmi_reg_rule += num_2g_reg_rules;
 
 	/* Firmware might include 6 GHz reg rule in 5 GHz rule list
@@ -7892,7 +7899,7 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 		}
 	}
 
-	
+
 	/* We have adjusted the number of 5 GHz reg rules above. But still those
 	 * many rules needs to be adjusted in ext_wmi_reg_rule.
 	 *
@@ -16184,6 +16191,184 @@ ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 	if (ret) {
 		ath12k_warn(ar->ab,
 			    "failed to submit WMI_MLO_PEER_TID_TO_LINK_MAP_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int ath12k_wmi_dl_qos_profile_create(struct ath12k_base *ab,
+				     struct ath12k_qos_params *param,
+				     u8 qos_profile_id)
+{
+	struct ath12k *ar;
+	struct ath12k_wmi_pdev *wmi;
+	struct wmi_sawf_svc_cfg_cmd_fixed_param *cmd;
+	struct sk_buff *skb;
+	int len, ret;
+
+	ar = ab->pdevs[0].ar;
+	if (!ar)
+		return -EINVAL;
+
+	wmi = ar->wmi;
+	if (!wmi)
+		return -EINVAL;
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_sawf_svc_cfg_cmd_fixed_param *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM,
+						 sizeof(*cmd));
+
+	cmd->svc_class_id = cpu_to_le32(qos_profile_id);
+	cmd->min_thruput_kbps = cpu_to_le32(param->min_data_rate);
+	cmd->max_thruput_kbps = cpu_to_le32(param->mean_data_rate);
+	cmd->burst_size_bytes = cpu_to_le32(param->burst_size);
+	cmd->svc_interval_ms = cpu_to_le32(param->min_service_interval);
+	cmd->delay_bound_ms = cpu_to_le32(param->delay_bound);
+	cmd->time_to_live_ms = cpu_to_le32(param->msdu_life_time);
+	cmd->priority = cpu_to_le32(param->priority);
+	cmd->tid = cpu_to_le32(param->tid);
+	cmd->msdu_loss_rate_ppm = cpu_to_le32(param->msdu_delivery_info);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "QoS Profile Configure: Profile ID: %u, min_throughput: %u,"
+		   "max_throughput: %u, burst_size: %u, svc_interval: %u,"
+		   "delay_bound: %u, TTL: %u, priority: %u,"
+		   "tid: %u, msdu_loss_rate: %u",
+		   cmd->svc_class_id, cmd->min_thruput_kbps,
+		   cmd->max_thruput_kbps,
+		   cmd->burst_size_bytes, cmd->svc_interval_ms,
+		   cmd->delay_bound_ms,
+		   cmd->time_to_live_ms, cmd->priority, cmd->tid,
+		   cmd->msdu_loss_rate_ppm);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_SAWF_SERVICE_CLASS_CFG_CMDID);
+	if (ret) {
+		ath12k_err(ab,
+			   "failed to config/reconfig QoS params");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int ath12k_wmi_dl_qos_profile_delete(struct ath12k_base *ab, u8 qos_profile_id)
+{
+	struct ath12k *ar;
+	struct ath12k_wmi_pdev *wmi;
+	struct wmi_sawf_svc_disable_cmd_fixed_param *cmd;
+	struct sk_buff *skb;
+	int len, ret;
+
+	ar = ab->pdevs[0].ar;
+	if (!ar)
+		return -ENOMEM;
+
+	wmi = ar->wmi;
+	if (!wmi)
+		return -ENOMEM;
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_sawf_svc_disable_cmd_fixed_param *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM,
+						 sizeof(*cmd));
+
+	cmd->svc_class_id = cpu_to_le32(qos_profile_id);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "QoS profile WMI disable: qos id: %u",
+		   cmd->svc_class_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb,
+				  WMI_SAWF_SERVICE_CLASS_DISABLE_CMDID);
+	if (ret) {
+		ath12k_err(ar->ab,
+			   "failed to disable qos id: %u\n",
+			   qos_profile_id);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+int ath12k_wmi_ul_qos_profile_config(struct ath12k *ar,
+				     struct ath12k_wmi_ul_qos_params *params)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_tid_latency_info *latency_info;
+	struct wmi_peer_tid_latency_config_fixed_param *cmd;
+	struct sk_buff *skb;
+	struct wmi_tlv *tlv;
+	u32 len;
+	u32 num_peer = 1;
+	int ret;
+
+	if (!params)
+		return -EINVAL;
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE + (num_peer * sizeof(*latency_info));
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb) {
+		ath12k_warn(ar->ab, "wmi cfg peer latency fail-Outof Memory\n");
+		return -ENOMEM;
+	}
+	cmd = (struct wmi_peer_tid_latency_config_fixed_param *)skb->data;
+	cmd->tlv_header =
+		le32_encode_bits(WMI_TAG_PEER_TID_LATENCY_CONFIG_FIXED_PARAM,
+				 WMI_TLV_TAG) |
+		le32_encode_bits((sizeof(*cmd) - TLV_HDR_SIZE),
+				 WMI_TLV_LEN);
+
+	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
+
+	tlv = (struct wmi_tlv *)(skb->data + sizeof(*cmd));
+	len = sizeof(*latency_info) * num_peer;
+
+	tlv->header = le32_encode_bits(WMI_TAG_ARRAY_STRUCT, WMI_TLV_TAG) |
+			le32_encode_bits(len, WMI_TLV_LEN);
+
+	latency_info =
+		(struct wmi_tid_latency_info *)(skb->data + sizeof(*cmd) + TLV_HDR_SIZE);
+
+	latency_info->tlv_header =
+		le32_encode_bits(WMI_TAG_TID_LATENCY_INFO,
+				 WMI_TLV_TAG) |
+		le32_encode_bits((sizeof(*latency_info) - TLV_HDR_SIZE),
+				 WMI_TLV_LEN);
+
+	latency_info->service_interval = cpu_to_le32(params->service_interval);
+	latency_info->burst_size_diff = cpu_to_le32(params->burst_size);
+	latency_info->max_latency = cpu_to_le32(params->max_latency);
+	latency_info->min_tput = cpu_to_le32(params->min_throughput);
+
+	ether_addr_copy(latency_info->destmac.addr, params->peer_mac);
+
+	latency_info->latency_tid_info =
+		le32_encode_bits(params->latency_tid, SDWF_UL_TID_NUM) |
+		le32_encode_bits(params->ac, SDWF_UL_AC) |
+		le32_encode_bits(params->dl_enable, SDWF_UL_DL_EN) |
+		le32_encode_bits(params->ul_enable, SDWF_UL_UL_EN) |
+		le32_encode_bits(params->add_or_sub, SDWF_UL_BURST_SZ_SUM) |
+		le32_encode_bits(params->sawf_ul_param, SDWF_UL_PARAM) |
+		le32_encode_bits(params->ofdma_disable,
+				 SDWF_UL_UL_OFDMA_DISABLE) |
+		le32_encode_bits(params->mu_mimo_disable,
+				 SDWF_UL_UL_MU_MIMO_DISABLE);
+	ret = ath12k_wmi_cmd_send_nowait(wmi, skb,
+					 WMI_PEER_TID_LATENCY_CONFIG_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to submit WMI_PEER_TID_LATENCY_CONFIG_CMDID cmd %d\n",
+			    ret);
 		dev_kfree_skb(skb);
 	}
 

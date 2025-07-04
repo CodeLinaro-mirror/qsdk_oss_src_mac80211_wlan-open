@@ -61,6 +61,9 @@ void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 	if (test_bit(WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT, ab->wmi_ab.svc_map))
 		config->peer_metadata_ver = ATH12K_PEER_METADATA_V1B;
 
+	if (test_bit(WMI_TLV_SERVICE_SDWF_LEVEL0, ab->wmi_ab.svc_map))
+		config->qos = true;
+
 	config->max_beacon_size = TARGET_MAX_BEACON_SIZE;
 }
 

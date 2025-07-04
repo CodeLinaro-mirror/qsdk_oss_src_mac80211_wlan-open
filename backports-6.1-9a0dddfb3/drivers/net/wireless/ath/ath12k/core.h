@@ -1656,6 +1656,9 @@ struct ath12k_base {
 	u32 max_ml_peer_supported;
 	u32 max_ml_peer_ids;
 
+	u32 max_tid_msduq;
+	u32 def_tid_msduq;
+
 	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
 	bool early_cal_support;
@@ -1807,6 +1810,13 @@ struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
 bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar, bool is_bridge_vdev);
+
+int ath12k_core_add_dl_qos(struct ath12k_base *ab,
+			   struct ath12k_qos_params *params, u8 id);
+int ath12k_core_del_dl_qos(struct ath12k_base *ab, u8 id);
+int ath12k_core_config_ul_qos(struct ath12k *ar,
+			      struct ath12k_qos_params *params,
+			      u16 id, u8 *mac_addr, bool add_or_sub);
 
 static inline const char *ath12k_scan_state_str(enum ath12k_scan_state state)
 {

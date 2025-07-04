@@ -28,6 +28,7 @@ struct ath12k;
 struct ath12k_link_vif;
 struct ath12k_fw_stats;
 struct ath12k_reg_tpc_power_info;
+struct ath12k_qos_params;
 
 /* There is no signed version of __le32, so for a temporary solution come
  * up with our own version. The idea is from fs/ntfs/endian.h.
@@ -351,7 +352,9 @@ enum wmi_cmd_group {
 	WMI_GRP_TWT            = 0x3e,
 	WMI_GRP_MOTION_DET     = 0x3f,
 	WMI_GRP_SPATIAL_REUSE  = 0x40,
+	WMI_GRP_LATENCY        = 0x47,
 	WMI_GRP_MLO            = 0x48,
+	WMI_GRP_SAWF           = 0x49,
 };
 
 #define WMI_CMD_GRP(grp_id) (((grp_id) << 12) | 0x1)
@@ -786,11 +789,18 @@ enum wmi_tlv_cmd_id {
 	WMI_TWT_RESUME_DIALOG_CMDID,
 	WMI_PDEV_OBSS_PD_SPATIAL_REUSE_CMDID =
 				WMI_TLV_CMD(WMI_GRP_SPATIAL_REUSE),
+	/** WMI commands specific to Tid level Latency config **/
+	/** VDEV Latency Config command */
+	WMI_VDEV_TID_LATENCY_CONFIG_CMDID = WMI_TLV_CMD(WMI_GRP_LATENCY),
+	/** TID Latency Request command */
+	WMI_PEER_TID_LATENCY_CONFIG_CMDID,
 	WMI_PDEV_OBSS_PD_SPATIAL_REUSE_SET_DEF_OBSS_THRESH_CMDID,
 	WMI_MLO_LINK_SET_ACTIVE_CMDID = WMI_TLV_CMD(WMI_GRP_MLO),
 	WMI_MLO_SETUP_CMDID,
 	WMI_MLO_READY_CMDID,
 	WMI_MLO_TEARDOWN_CMDID,
+	WMI_SAWF_SERVICE_CLASS_CFG_CMDID = WMI_TLV_CMD(WMI_GRP_SAWF),
+	WMI_SAWF_SERVICE_CLASS_DISABLE_CMDID,
 	WMI_MLO_PEER_TID_TO_LINK_MAP_CMDID,
 	/* WMI cmd for dynamically deleting a link from a MLD VAP */
 	WMI_MLO_LINK_REMOVAL_CMDID,
@@ -2144,6 +2154,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_TPC_STATS_REG_PWR_ALLOWED,
 	WMI_TAG_TPC_STATS_RATES_ARRAY,
 	WMI_TAG_TPC_STATS_CTL_PWR_TABLE_EVENT,
+	WMI_TAG_PEER_TID_LATENCY_CONFIG_FIXED_PARAM = 0x3B9,
+	WMI_TAG_TID_LATENCY_INFO,
 	WMI_CTRL_PATH_CAL_STATS = 0x3BC,
 	WMI_CTRL_PATH_BTCOEX_STATS = 0x3FD,
 	WMI_CTRL_PATH_AWGN_STATS = 0x3F9,
@@ -2174,6 +2186,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS = 0x3E9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
 	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
+	WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM = 0x40A,
+	WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM = 0x40B,
 	WMI_TAG_SPECTRAL_SCAN_BW_CAPABILITIES = 0x415,
 	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
 	WMI_TAG_PDEV_SSCAN_CHAN_INFO = 0x417,
@@ -2446,6 +2460,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_11BE = 289,
 	WMI_TLV_SERVICE_AFC_SUPPORT = 295,
 
+	WMI_TLV_SERVICE_SDWF_LEVEL0 = 311,
 	WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT = 352,
 	WMI_TLV_SERVICE_WMSK_COMPACTION_RX_TLVS = 361,
 
@@ -2712,6 +2727,7 @@ struct ath12k_wmi_resource_config_arg {
 	bool is_wds_null_frame_supported;
 	bool is_full_bw_nol_feature_supported;
 	u32 max_beacon_size;
+	bool qos;
 	u32 afc_support;
 	u32 afc_disable_timer_check;
 	u32 afc_disable_req_id_check;
@@ -2807,6 +2823,7 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_FLAGS2_RX_PEER_METADATA_VERSION		GENMASK(5, 4)
 #define WMI_RSRC_CFG_FLAG1_BSS_CHANNEL_INFO_64	BIT(5)
 #define WMI_RSRC_CFG_FLAGS2_CALC_NEXT_DTIM_COUNT_SET      BIT(9)
+#define WMI_RSRC_CFG_FLAGS2_SAWF_CONFIG_ENABLE_SET             BIT(13)
 #define WMI_RSRC_CFG_FLAGS2_INTRABSS_MEC_WDS_LEARNING_DISABLE  BIT(15)
 #define WMI_RSRC_CFG_FLAGS2_FW_AST_INDICATION_DISABLE          BIT(18)
 #define WMI_RSRC_CFG_FLAGS2_WDS_NULL_FRAME_SUPPORT             BIT(22)
@@ -8102,11 +8119,99 @@ struct wmi_pdev_wsi_stats_info_cmd {
 	__le32 wsi_egress_load_info;
 } __packed;
 
+struct wmi_sawf_svc_cfg_cmd_fixed_param {
+	u32 tlv_header; /* TLV tag and len */
+			/* Tag equals WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM */
+	u32 svc_class_id; /* which service class is being configured */
+	/*-----
+	 * The below fields specify the values for the parameters of the
+	 * service class being configured.
+	 * Each such service class parameter has a default value specified in the
+	 * above WMI_SAWF_SVC_CLASS_PARAM_DEFAULTS enum.
+	 * This default value shall be specified for service classes where
+	 * the parameter in question is not applicable.
+	 * For example, for service classes that have no minimum throughput
+	 * requirement, the min_thruput_kbps field should be set to
+	 * WMI_SAWF_SVC_CLASS_PARAM_DEFAULT_MIN_THRUPUT, i.e. 0.
+	 *-----
+	 */
+	/* min_thruput_kbps:
+	 * How much throughput should be "guaranteed" for each MSDU queue
+	 * belonging to this service class.
+	 * Units are kilobits per second.
+	 */
+	u32 min_thruput_kbps;
+	/* max_thruput_kbps:
+	 * What upper limit on throughput shall be applied to MSDU queues beloning
+	 * to this service class, if other peer-TIDs are not meeting their QoS
+	 * service goals.
+	 * Units are kilobits per second.
+	 */
+	u32 max_thruput_kbps;
+	/* burst_size_bytes:
+	 * How much data (i.e. how many MSDUs) should be pulled from a
+	 * MSDU queue belonging to this service class to be formed into MPDUs
+	 * and enqueued for transmission.
+	 * Similarly, how long should a tx op be for MPDUs containing MSDUs from
+	 * this service class, to ensure that the necessary amount of data gets
+	 * delivered to the peer.
+	 * Units are bytes.
+	 */
+	u32 burst_size_bytes;
+	/* svc_interval_ms:
+	 * How frequently MSDUs belonging to this service class should be
+	 * formed into MPDUs and enqueued for transmission.
+	 * The svc_interval_ms parameter is expected to be <= the delay_bound_ms
+	 * parameter.
+	 * Units are milliseconds.
+	 */
+	u32 svc_interval_ms;
+	/* delay_bound_ms:
+	 * How promptly the MSDUs belonging to this service class need to be
+	 * delivered to the recipient peer.
+	 * Units are milliseconds.
+	 */
+	u32 delay_bound_ms;
+	/* time_to_live_ms:
+	 * How long MSDUs belonging to this service class remain valid.
+	 * If the MSDU has not been successfully transmitted before this
+	 * time-to-live time has elapsed, the MSDU should be discarded.
+	 * The time_to_live_ms parameter is expected to be >= the delay_bound_ms
+	 * parameter.
+	 * Units are milliseconds.
+	 */
+	u32 time_to_live_ms;
+	/* priority:
+	 * What degree of precedence shall the WLAN FW's tx scheduler use
+	 * when considering whether to transmit MPDUs generated from MSDUs
+	 * belonging to this service class.
+	 */
+	u32 priority;
+	/* tid:
+	 * Which WLAN TID shall be used for delivering traffic of this
+	 * service class.
+	 */
+	u32 tid;
+	/* msdu_loss_rate_ppm:
+	 * This parameter indicates the acceptable rate of MSDU loss.
+	 * Units are parts per million.
+	 * E.g. if it is acceptable for 1 MSDU of every 10000 to be lost,
+	 * the msdu_loss_rate_ppm value would be 100,
+	 * since 100 / 1000000 = 1 / 10000.
+	 */
+	u32 msdu_loss_rate_ppm;
+} __packed;
+
+struct wmi_sawf_svc_disable_cmd_fixed_param {
+	u32 tlv_header; /* TLV tag and len*/
+			/* Tag equals WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM*/
+	u32 svc_class_id; /* which service class is being disabled */
+} __packed;
+
 struct ath12k_wmi_wsi_stats_info_param {
 	u32 wsi_ingress_load_info;
 	u32 wsi_egress_load_info;
 };
-
 
 struct wmi_mlo_new_pri_link_peer_info {
 	__le32 tlv_header;
@@ -8118,6 +8223,138 @@ struct wmi_mlo_new_pri_link_peer_info {
 		};
 	};
 };
+
+/* struct wmi_peer_tid_latency_config_fixed_param:
+ * Currently wmi_peer_tid_set_latency_request_fixed_param will be sent
+ * per TID per latency configured client.
+ * In future this command might come for multiple latency configured
+ * clients together.
+ * The clients are expected to be associated while receiving this command.
+ * @tlv_header
+ *      TLV tag and len;
+ * @pdev_id
+ *      device ID
+ */
+struct wmi_peer_tid_latency_config_fixed_param {
+	__le32 tlv_header;
+	__le32 pdev_id;
+} __packed;
+
+/** struct wmi_tid_latency_info
+ * @tlv_header:
+ *      TLV Tag and Len
+ * @wmi_mac_addr destmac
+ *      Mac address of end client
+ * @service_interval
+ *      Maximum expected average delay between 2 schedules in milliseconds
+ *      of given TID type when it has active traffic.
+ *      0x0 is considered as invalid service interval.
+ * @burst_size_diff
+ *      Cumulative number of bytes are expected to be transmitted or
+ *      received in the service interval when this specific Peer-TID
+ *      has active traffic.
+ *      If cumulative number of bytes is 0x0, it is considered as
+ *      invalid burst size.  In that case, firmware would try to transmit
+ *      and receive as many bytes as it can for this specific Peer-TID.
+ *      This burst size will be added or subtracted from vdev burst size
+ *      based on burst size sum bit in latency tid info.
+ *      The VDEV burst size will be considered to be 0 when no VDEV latency
+ *      command is received.
+ *      If host needs to set burst size for a peer then they can use the
+ *      peer cmd and set burst size sum bit to 1.
+ * @max_latency
+ *      The maximum end to end latency expectation, in milliseconds.
+ *      If this value is 0x0, it shall be ignored.
+ * @max_per
+ *      The maximum PER (as a percent) for the peer-TID, in range 1 - 100
+ *      If this value is 0x0, it shall be ignored.
+ * @min_tput
+ *      The minimum guaranteed throughput to the peer-TID, in Kbps.
+ *      If this value is 0x0, it shall be ignored.
+ * @latency_tid_info
+ *  Bits 21-31      - Reserved (Shall be zero)
+ *  Bit  20         - Flag to indicate SAWF UL params (and not mesh latenc
+ *  Bit  19         - Disable UL MU-MIMO. If set, UL MU-MIMO is disabled
+ *                    for the specified AC. Note that TID level control is
+ *                    not possible for UL MU-MIMO (the granularity is AC).
+ *  Bit  18         - Disable UL OFDMA. If set, UL OFDMA is disabled for
+ *                    the specified AC. Note that TID level control is not
+ *                    possible for UL OFDMA (the granularity is AC).
+ *  Bits 14-17      - MSDU queue flow id within the TID for configuring
+ *                    latency info per MSDU flow queue
+ *  Bit  12-13      - burst size sum. Bit to indicate whether to add or
+ *                    subtract burst_size_diff from vdev cmd burst size:
+ *                    1 -> addition
+ *                    2 -> subtraction
++ *  Bit   11        - UL latency config indication.
+ *                    If this bit is set then this latency info will
+ *                    be used when triggering UL traffic.  Until the
+ *                    AC specified in bits 8-9 has transferred at least
+ *                    burst_size amount of UL data within the service
+ *                    period, the AP will continue sending UL triggers
+ *                    when the STA has data of the specified access
+ *                    category ready to transmit.
+ *                    Note that the TID specified in bits 0-7 does not
+ *                    apply to UL; the TID-to-AC mapping applied to DL
+ *                    data that can be adjusted by the TID specified
+ *                    in bits 0-7 and the AC specified in bits 8-9 is
+ *                    distinct from the TID-to-AC mapping applied to
+ *                    UL data.
+ *  Bit   10        - DL latency config indication. If the bit is set
+ *                    then DL TID will use this latency config.
+ *  Bits  8 - 9     - This bit has info on the custom AC of DL TID.
+ *                    Also if bit 11 is set, the AP will apply some
+ *                    of these latency specs (in particular, burst_size)
+ *                    to UL traffic for this AC, by sending UL triggers
+ *                    until the desired amount of data has been received
+ *                    within the service period.
+ *  Bits  0 - 7     - Specifies the TID of interest that corresponds
+ *                    to the AC specified in bits 8-9.  This can be
+ *                    used to adjust the TID-to-AC mapping applied to
+ *                    DL data (if bit 10 is set).
+ */
+struct wmi_tid_latency_info {
+	__le32 tlv_header;
+	struct ath12k_wmi_mac_addr_params destmac;
+	__le32 service_interval;
+	__le32 burst_size_diff;
+	__le32 max_latency;
+	__le32 max_per;
+	__le32 min_tput;
+	__le32 latency_tid_info;
+} __packed;
+
+struct ath12k_wmi_ul_qos_params {
+	u8 qos_id;
+	u8 peer_mac[ETH_ALEN];
+	u32 service_interval;
+	u32 burst_size;
+	u32 max_latency;
+	u32 min_throughput;
+	u32	latency_tid:8,
+		ac	   :2,
+		ul_enable  :1,
+		dl_enable  :1,
+		flow_id    :4,
+		add_or_sub :2,
+		sawf_ul_param :1,
+		ofdma_disable :1,
+		mu_mimo_disable :1,
+		reserved    :11;
+};
+
+#define SDWF_UL_BURST_SZ_SUM_ADD 0x1
+#define SDWF_UL_BURST_SZ_SUM_DEL 0x2
+
+#define SDWF_UL_TID_NUM			GENMASK(7, 0)
+#define SDWF_UL_AC			GENMASK(9, 8)
+#define SDWF_UL_DL_EN			BIT(10)
+#define SDWF_UL_UL_EN			BIT(11)
+#define SDWF_UL_BURST_SZ_SUM		GENMASK(13, 12)
+#define SDWF_UL_MSDUQ_ID		GENMASK(17, 14)
+#define SDWF_UL_UL_OFDMA_DISABLE	BIT(18)
+#define SDWF_UL_UL_MU_MIMO_DISABLE	BIT(19)
+#define SDWF_UL_PARAM			BIT(20)
 
 #define WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_ML_PEER_ID GENMASK(15, 0)
 #define WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_HW_LINK_ID GENMASK(31, 16)
@@ -8546,6 +8783,12 @@ int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
 int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
 				       u32 vdev_id,
 				       struct ath12k_reg_tpc_power_info *param);
+int ath12k_wmi_dl_qos_profile_create(struct ath12k_base *ab,
+				     struct ath12k_qos_params *param,
+				     u8 qos_profile_id);
+int ath12k_wmi_dl_qos_profile_delete(struct ath12k_base *ab, u8 qos_profile_id);
+int ath12k_wmi_ul_qos_profile_config(struct ath12k *ar,
+				     struct ath12k_wmi_ul_qos_params *params);
 int ath12k_wmi_mlo_reconfig_link_removal(struct ath12k *ar, u32 vdev_id,
 					 const u8 *reconfig_ml_ie,
 					 size_t reconfig_ml_ie_len);

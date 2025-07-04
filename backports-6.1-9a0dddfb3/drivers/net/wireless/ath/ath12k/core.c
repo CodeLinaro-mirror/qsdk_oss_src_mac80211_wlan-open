@@ -4003,6 +4003,88 @@ void ath12k_wsi_load_info_wsiorder_update(struct ath12k_base *ab)
 	}
 }
 
+int ath12k_core_add_dl_qos(struct ath12k_base *ab,
+			   struct ath12k_qos_params *params, u8 id)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	int ret = 0;
+	u8 ab_id;
+
+	for (ab_id = ag->num_probed; ab_id > 0; ab_id--) {
+		ab = ag->ab[ab_id - 1];
+		if (!test_bit(WMI_TLV_SERVICE_SDWF_LEVEL0,
+			      ab->wmi_ab.svc_map)) {
+			/* QoS not supported by the FW */
+			ath12k_info(ab, "QoS is not supported");
+			continue;
+		}
+		ret = ath12k_wmi_dl_qos_profile_create(ab, params, id);
+		ath12k_dbg(ab, ATH12K_DBG_QOS,
+			   "QoS DL profile %d created in FW", id);
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_core_add_dl_qos);
+
+int ath12k_core_del_dl_qos(struct ath12k_base *ab, u8 id)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	int ret = 0;
+	u8 ab_id;
+
+	for (ab_id = ag->num_probed; ab_id > 0; ab_id--) {
+		ab = ag->ab[ab_id - 1];
+		if (!test_bit(WMI_TLV_SERVICE_SDWF_LEVEL0,
+			      ab->wmi_ab.svc_map)) {
+			/* QoS not supported by the FW */
+			ath12k_info(ab, "QoS is not supported");
+			continue;
+		}
+		ret = ath12k_wmi_dl_qos_profile_delete(ab, id);
+		ath12k_dbg(ab, ATH12K_DBG_QOS,
+			   "QoS DL profile %d deleted in FW", id);
+	}
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_core_del_dl_qos);
+
+int ath12k_core_config_ul_qos(struct ath12k *ar,
+			      struct ath12k_qos_params *params,
+			      u16 id, u8 *mac_addr, bool add_or_sub)
+{
+	struct  ath12k_wmi_ul_qos_params ul_params = {0};
+	int ret;
+
+	if (!ar || !mac_addr)
+		return -ENOMEM;
+
+	ul_params.qos_id = id;
+	ul_params.ul_enable = 1;
+	ul_params.sawf_ul_param = 1;
+	ul_params.ac = ath12k_tid_to_ac(params->tid);
+	ul_params.latency_tid = params->tid;
+	ul_params.service_interval = params->min_service_interval;
+	ul_params.burst_size = params->burst_size;
+	ul_params.min_throughput = params->min_data_rate;
+	ul_params.max_latency = params->delay_bound;
+	ul_params.ofdma_disable = params->ul_ofdma_disable ? 1 : 0;
+	ul_params.mu_mimo_disable = params->ul_mu_mimo_disable ? 1 : 0;
+
+	if (add_or_sub)
+		ul_params.add_or_sub = SDWF_UL_BURST_SZ_SUM_ADD;
+	else
+		ul_params.add_or_sub = SDWF_UL_BURST_SZ_SUM_DEL;
+
+	ether_addr_copy(ul_params.peer_mac, mac_addr);
+
+	ret = ath12k_wmi_ul_qos_profile_config(ar, &ul_params);
+	ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+		   "QoS UL profile %d config(add/del: %d) in FW",
+		   id, add_or_sub);
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_core_config_ul_qos);
+
 int ath12k_core_init(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag;
