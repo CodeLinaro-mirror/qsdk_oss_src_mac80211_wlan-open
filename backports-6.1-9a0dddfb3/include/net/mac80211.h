@@ -371,6 +371,7 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_AP_PS: PS changed for this BSS (AP mode)
  * @BSS_CHANGED_6GHZ_POWER_MODE: Indicate the 6 GHz power mode change.
  * @BSS_CHANGED_INTF_DETECT: Interference Detect parameters changed for this Radio.
+ * @BSS_CHANGED_ML_MAX_REC_LINKS: ML Max Recommended links value changed
  */
 enum ieee80211_bss_change {
 	BSS_CHANGED_ASSOC		= 1<<0,
@@ -411,6 +412,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_AP_PS               = BIT_ULL(36),
 	BSS_CHANGED_6GHZ_POWER_MODE     = BIT_ULL(37),
 	BSS_CHANGED_INTF_DETECT         = BIT_ULL(38),
+	BSS_CHANGED_ML_MAX_REC_LINKS	= BIT_ULL(39),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 
@@ -785,6 +787,7 @@ struct ieee80211_parsed_tpe {
  * @critical_update_flag: indicates any Critical update going on in the BSS.
  * 	see &enum ieee80211_critical_updates
  * @beacon_tx_mode: Beacon Tx Mode setting.
+ * @ml_max_rec_links: ML Max recommended links
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -899,6 +902,7 @@ struct ieee80211_bss_conf {
 	u32 rts_threshold;
 	u8 intf_detect_bitmap;
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
+	u8 ml_max_rec_links;
 };
 
 /**

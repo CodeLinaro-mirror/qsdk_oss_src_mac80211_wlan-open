@@ -1666,6 +1666,16 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		goto error;
 	}
 
+	if (params->ml_max_rec_links_valid &&
+	    params->ml_max_rec_links != link_conf->ml_max_rec_links) {
+		if (!ieee80211_vif_is_mld(&sdata->vif)) {
+			err = -EINVAL;
+			goto error;
+		}
+		link_conf->ml_max_rec_links = params->ml_max_rec_links;
+		changed |= BSS_CHANGED_ML_MAX_REC_LINKS;
+	}
+
 	ieee80211_recalc_dtim(local, sdata);
 	ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_SSID);
 	ieee80211_link_info_change_notify(sdata, link, changed);
@@ -1747,6 +1757,15 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 	    beacon->he_bss_color.enabled != link_conf->he_bss_color.enabled) {
 		link_conf->he_bss_color.enabled = beacon->he_bss_color.enabled;
 		err |= BSS_CHANGED_HE_BSS_COLOR;
+	}
+
+	if (params->ml_max_rec_links_valid &&
+	    params->ml_max_rec_links != link_conf->ml_max_rec_links) {
+		if (!ieee80211_vif_is_mld(&sdata->vif))
+			return -EINVAL;
+
+		link_conf->ml_max_rec_links = params->ml_max_rec_links;
+		err |= BSS_CHANGED_ML_MAX_REC_LINKS;
 	}
 
 	if (err > 0)
