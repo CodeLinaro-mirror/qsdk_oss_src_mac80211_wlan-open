@@ -3023,6 +3023,10 @@ enum nl80211_commands {
  *	params to update ML reconfigure element on corresponding response frame. This
  *	attribute is needed only on ML reconfigure offload case and it is not needed on
  *	ML reconfigure non-offload case since user space itself has these data.
+ *
+ * @NL80211_ATTR_ML_MAX_REC_LINKS: (u8) MLO Max recommended links. Max ML recommended
+ *      links are indication to non-AP MLD that how many max active links ML station can
+ *      initiate with AP MLD
 
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
@@ -3610,6 +3614,7 @@ enum nl80211_attrs {
 	NL80211_ATTR_AP_REMOVAL_COUNT,
 	NL80211_ATTR_TSF,
 	NL80211_ATTR_RXMGMT_LINK_REMOVAL_UPDATE,
+	NL80211_ATTR_ML_MAX_REC_LINKS,
 
 	NL80211_ATTR_ERP,
 

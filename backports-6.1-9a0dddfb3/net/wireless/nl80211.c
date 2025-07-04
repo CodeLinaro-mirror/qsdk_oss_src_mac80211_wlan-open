@@ -959,6 +959,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_VIF_RADIO_MASK] = { .type = NLA_U32 },
 	[NL80211_ATTR_BEACON_TX_MODE] = NLA_POLICY_RANGE(NLA_U32, 1, 2),
 	[NL80211_ATTR_ERP] = NLA_POLICY_NESTED(nl80211_erp_policy),
+	[NL80211_ATTR_ML_MAX_REC_LINKS] = NLA_POLICY_RANGE(NLA_U8, 0, 15),
 };
 
 /* policy for the key attributes */
@@ -7186,6 +7187,12 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		goto out;
 	}
 
+	if (info->attrs[NL80211_ATTR_ML_MAX_REC_LINKS]) {
+		params->ml_max_rec_links = nla_get_u8(
+				info->attrs[NL80211_ATTR_ML_MAX_REC_LINKS]);
+		params->ml_max_rec_links_valid = true;
+	}
+
 	/* FIXME: validate MLO/link-id against driver capabilities */
 
 	err = rdev_start_ap(rdev, dev, params);
@@ -7282,6 +7289,12 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 							   &params->unsol_bcast_probe_resp);
 		if (err)
 			goto out;
+	}
+
+	if (info->attrs[NL80211_ATTR_ML_MAX_REC_LINKS]) {
+		params->ml_max_rec_links = nla_get_u8(
+				info->attrs[NL80211_ATTR_ML_MAX_REC_LINKS]);
+		params->ml_max_rec_links_valid = true;
 	}
 
 	err = rdev_update_ap(rdev, dev, params);

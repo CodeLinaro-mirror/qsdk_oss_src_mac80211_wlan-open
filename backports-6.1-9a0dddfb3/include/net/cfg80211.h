@@ -1688,6 +1688,8 @@ struct cfg80211_unsol_bcast_probe_resp {
  * @intf_detect_bitmap: Interference detection bitmap.
  *	BIT(0) represents - CW Interference.
  * @beacon_tx_mode: Beacon Tx Mode setting
+ * @ml_max_rec_links_valid: Indicates valid ML Max recommended links
+ * @ml_max_rec_links: ML Max recommended links
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -1725,6 +1727,8 @@ struct cfg80211_ap_settings {
 	bool ap_ps_enable;
 	u8 intf_detect_bitmap;
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
+	bool ml_max_rec_links_valid;
+	u8 ml_max_rec_links;
 };
 
 
