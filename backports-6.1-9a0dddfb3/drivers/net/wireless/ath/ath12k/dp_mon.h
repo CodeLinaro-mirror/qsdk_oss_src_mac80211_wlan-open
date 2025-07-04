@@ -14,6 +14,7 @@
 
 #include "hal_mon_cmn.h"
 
+#define ATH12K_MON_MAGIC_VALUE		0xDECAFEED
 #define ATH12K_MON_RX_DOT11_OFFSET	5
 #define ATH12K_MON_RX_PKT_OFFSET	8
 #define ATH12K_DP_WLAN_MAX_AC		4
@@ -46,7 +47,6 @@
 
 #define DP_MON_RXDMA_BUF_COOKIE_BUF_ID		GENMASK(17, 0)
 #define DP_MON_RXDMA_BUF_COOKIE_PDEV_ID 	GENMASK(19, 18)
-
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
@@ -108,6 +108,11 @@ struct ath12k_dp_mon {
 	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	u32 mon_dest_ring_stuck_cnt;
+	struct ath12k_dp_mon_desc *mon_desc_pool;
+	struct list_head mon_desc_free_list;
+
+	/* lock for ath12k_dp_mon_desc */
+	spinlock_t mon_desc_lock;
 };
 
 enum dp_monitor_type {
@@ -229,6 +234,14 @@ struct ath12k_pdev_mon_dp {
 	struct dp_mon_rx_filter **rx_filter;
 };
 
+struct ath12k_dp_mon_desc {
+	struct list_head list;
+	struct sk_buff *skb;
+	dma_addr_t paddr;
+	u32 magic;
+	u8 in_use:1;
+};
+
 static inline enum dp_monitor_type
 ath12k_dp_get_mon_type(struct ath12k_dp *dp)
 {
@@ -247,6 +260,7 @@ const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
 
 int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
+				struct list_head *used_list,
 				int req_entries);
 struct sk_buff *ath12k_dp_mon_tx_alloc_skb(void);
 enum hal_tx_mon_status
@@ -304,6 +318,11 @@ void ath12k_dp_mon_rx_monitor_mode_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_monitor_mode_reset(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
+size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
+				    size_t count);
+size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
+						   struct dp_rxdma_mon_ring *rx_ring,
+						   struct list_head *list);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 				enum ath12k_pktlog_mode mode, bool enable);
 
@@ -589,5 +608,11 @@ ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
 
 	if(mon_ops && mon_ops->pktlog_config)
 		mon_ops->pktlog_config(dp_pdev, mode, enable);
+}
+
+static inline void
+ath12k_dp_mon_desc_reset(struct ath12k_dp_mon_desc *desc)
+{
+	memset((u8 *)desc + sizeof(desc->list), 0, sizeof(*desc) - sizeof(desc->list));
 }
 #endif

@@ -2737,8 +2737,7 @@ struct hal_mon_buf_ring {
 #define HAL_MON_DEST_INFO0_LOOPING_COUNT	GENMASK(31, 28)
 
 struct hal_mon_dest_desc {
-	__le32 cookie;
-	__le32 reserved;
+	__le64 cookie;
 	__le32 ppdu_id;
 	__le32 info0;
 };

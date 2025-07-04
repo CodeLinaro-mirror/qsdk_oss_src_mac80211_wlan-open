@@ -67,18 +67,29 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct dp_rxdma_mon_ring *buf_ring = &dp_mon->rxdma_mon_buf_ring;
 	struct sk_buff *msdu;
-	int buf_id;
+	struct ath12k_dp_mon_desc *mon_desc;
+	struct list_head mon_desc_used_list;
 	u32 offset;
+	int ret = 0;
 
-	buf_id = u32_get_bits(packet_info->cookie, DP_RXDMA_BUF_COOKIE_BUF_ID);
+	INIT_LIST_HEAD(&mon_desc_used_list);
+	mon_desc = (struct ath12k_dp_mon_desc *)(uintptr_t)(packet_info->cookie);
+	if (unlikely(!mon_desc)) {
+		ath12k_warn(dp, "pkt buf: NULL mon desc received in mac_id %d\n",
+			    dp_pdev->mac_id);
+		ret = -ENOMEM;
+		return ret;
+	}
 
-	spin_lock_bh(&buf_ring->idr_lock);
-	msdu = idr_remove(&buf_ring->bufs_idr, buf_id);
-	spin_unlock_bh(&buf_ring->idr_lock);
-
-	if (unlikely(!msdu)) {
-		ath12k_warn(ab, "mon dest desc with inval buf_id %d\n", buf_id);
-		return 0;
+	msdu = mon_desc->skb;
+	mon_desc->skb = NULL;
+	list_add_tail(&mon_desc->list, &mon_desc_used_list);
+	if (unlikely(mon_desc->magic != ATH12K_MON_MAGIC_VALUE)) {
+		ath12k_warn(dp, "pkt buf: invalid magic value in mac_id %d\n",
+			    dp_pdev->mac_id);
+		dev_kfree_skb_any(msdu);
+		ret = -EINVAL;
+		goto buf_replenish;
 	}
 
 	ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(msdu)->paddr,
@@ -104,9 +115,9 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 	pmon->mon_mpdu->tail = msdu;
 
 buf_replenish:
-	ath12k_dp_mon_buf_replenish(dp, buf_ring, 1);
+	ath12k_dp_mon_buf_replenish(dp, buf_ring, &mon_desc_used_list, 1);
 
-	return 0;
+	return ret;
 }
 
 static int
@@ -300,12 +311,15 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 	struct ath12k_dp_link_peer *peer;
 	struct sk_buff_head skb_list;
 	struct ath12k_neighbor_peer *nrp, *tmp;
-	u64 cookie;
-	int num_buffs_reaped = 0, srng_id, buf_id;
+	struct ath12k_dp_mon_desc *mon_desc;
+	struct list_head mon_desc_used_list;
+	u64 desc_va;
+	int num_buffs_reaped = 0, srng_id;
 	u32 hal_status, end_offset, info0, end_reason;
 	u8 pdev_idx = ath12k_hw_mac_id_to_pdev_id(ab->hw_params, pdev_dp->mac_id);
 	u8 filter_category = 0;
 
+	INIT_LIST_HEAD(&mon_desc_used_list);
 	__skb_queue_head_init(&skb_list);
 	srng_id = ath12k_hw_mac_id_to_srng_id(ab->hw_params, pdev_idx);
 	mon_dst_ring = &pdev_dp->dp_mon_pdev->rxdma_mon_dst_ring[srng_id];
@@ -328,16 +342,26 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 		if (u32_get_bits(info0, HAL_MON_DEST_INFO0_EMPTY_DESC))
 			goto move_next;
 
-		cookie = le32_to_cpu(mon_dst_desc->cookie);
-		buf_id = u32_get_bits(cookie, DP_RXDMA_BUF_COOKIE_BUF_ID);
+		desc_va = le64_to_cpu(mon_dst_desc->cookie);
+		mon_desc = (struct ath12k_dp_mon_desc *)(uintptr_t)(desc_va);
+		if (unlikely(!mon_desc)) {
+			ath12k_warn(dp, "mon_dest: NULL mon_desc received in mac_id %d\n",
+				    pdev_dp->mac_id);
+			goto move_next;
+		}
 
-		spin_lock_bh(&buf_ring->idr_lock);
-		skb = idr_remove(&buf_ring->bufs_idr, buf_id);
-		spin_unlock_bh(&buf_ring->idr_lock);
+		skb = mon_desc->skb;
+		mon_desc->skb = NULL;
+		list_add_tail(&mon_desc->list, &mon_desc_used_list);
+		if (unlikely(mon_desc->magic != ATH12K_MON_MAGIC_VALUE)) {
+			ath12k_warn(dp, "mon_dest: invalid magic value in mac_id %d\n",
+				    pdev_dp->mac_id);
+			goto move_next;
+		}
 
 		if (unlikely(!skb)) {
-			ath12k_warn(ab, "monitor destination with invalid buf_id %d\n",
-				    buf_id);
+			ath12k_warn(dp, "mon_dest: NULL skb received in mac_id %d\n",
+				    pdev_dp->mac_id);
 			goto move_next;
 		}
 
@@ -356,7 +380,8 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 		if ((end_reason == HAL_MON_FLUSH_DETECTED) ||
 		    (end_reason == HAL_MON_PPDU_TRUNCATED)) {
 			ath12k_dbg(ab, ATH12K_DBG_DATA,
-				   "Monitor dest descriptor end reason %d", end_reason);
+				   "mon_dest: descriptor end reason %d mac_id %d",
+				   end_reason, pdev_dp->mac_id);
 			dev_kfree_skb_any(skb);
 			goto move_next;
 		}
@@ -375,15 +400,15 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 			skb_put(skb, end_offset);
 		} else {
 			ath12k_warn(ab,
-				    "invalid offset on mon stats destination %u\n",
-				    end_offset);
+				    "mon_dest: invalid offset %u received in mac_id %d\n",
+				    end_offset, pdev_dp->mac_id);
 			skb_put(skb, DP_RX_MON_BUFFER_SIZE);
 		}
 
 		__skb_queue_tail(&skb_list, skb);
 
 move_next:
-		ath12k_dp_mon_buf_replenish(dp, buf_ring, 1);
+		ath12k_dp_mon_buf_replenish(dp, buf_ring, &mon_desc_used_list, 1);
 		ath12k_hal_srng_dst_get_next_entry(ab, srng);
 		num_buffs_reaped++;
 	}
