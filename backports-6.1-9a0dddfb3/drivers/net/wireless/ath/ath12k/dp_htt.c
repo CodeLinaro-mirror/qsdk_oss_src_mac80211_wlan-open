@@ -1578,6 +1578,31 @@ void ath12k_dp_tx_htt_rx_mgmt_flag0_mo_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_MGMT_ATIM) ? 1 : 0);
 }
 
+void
+ath12k_dp_tx_htt_rx_mgmt_flag0_md_filter_set(u32 *ptr, u16 filter)
+{
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, ASSOC_REQ,
+				      (filter & FILTER_MGMT_ASSOC_REQ) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, ASSOC_RESP,
+				      (filter & FILTER_MGMT_ASSOC_RESP) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, REASSOC_REQ,
+				      (filter & FILTER_MGMT_REASSOC_REQ) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, REASSOC_RESP,
+				      (filter & FILTER_MGMT_REASSOC_RESP) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, PROBE_REQ,
+				      (filter & FILTER_MGMT_PROBE_REQ) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, PROBE_RESP,
+				      (filter & FILTER_MGMT_PROBE_RESP) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, PROBE_TIMING_ADV,
+				      (filter & FILTER_MGMT_TIM_ADVT) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, RESERVED_7,
+				      (filter & FILTER_MGMT_RESERVED_7) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, BEACON,
+				      (filter & FILTER_MGMT_BEACON) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS0, ATIM,
+				      (filter & FILTER_MGMT_ATIM) ? 1 : 0);
+}
+
 static void
 ath12k_dp_tx_htt_rx_mgmt_flag0_filter_set(u32 *ptr,
 					  struct htt_rx_ring_tlv_filter *tlv_filter)
@@ -1588,6 +1613,9 @@ ath12k_dp_tx_htt_rx_mgmt_flag0_filter_set(u32 *ptr,
 	if (tlv_filter->enable_mo)
 		ath12k_dp_tx_htt_rx_mgmt_flag0_mo_filter_set(ptr,
 							     tlv_filter->mo_mgmt_filter);
+	if (tlv_filter->enable_md)
+		ath12k_dp_tx_htt_rx_mgmt_flag0_md_filter_set(ptr,
+							     tlv_filter->md_mgmt_filter);
 }
 
 void ath12k_dp_tx_htt_rx_mgmt_flag1_fp_filter_set(u32 *ptr, u16 filter)
@@ -1622,6 +1650,23 @@ void ath12k_dp_tx_htt_rx_mgmt_flag1_mo_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_MGMT_RESERVED_15) ? 1 : 0);
 }
 
+void
+ath12k_dp_tx_htt_rx_mgmt_flag1_md_filter_set(u32 *ptr, u16 filter)
+{
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS1, DISASSOC,
+				      (filter & FILTER_MGMT_DISASSOC) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS1, AUTH,
+				      (filter & FILTER_MGMT_AUTH) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS1, DEAUTH,
+				      (filter & FILTER_MGMT_DEAUTH) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS1, ACTION,
+				      (filter & FILTER_MGMT_ACTION) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS1, ACTION_NOACK,
+				      (filter & FILTER_MGMT_ACT_NO_ACK) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, MGMT, FLAGS1, RESERVED_15,
+				      (filter & FILTER_MGMT_RESERVED_15) ? 1 : 0);
+}
+
 static void
 ath12k_dp_tx_htt_rx_mgmt_flag1_filter_set(u32 *ptr,
 					  struct htt_rx_ring_tlv_filter *tlv_filter)
@@ -1632,6 +1677,9 @@ ath12k_dp_tx_htt_rx_mgmt_flag1_filter_set(u32 *ptr,
 	if (tlv_filter->enable_mo)
 		ath12k_dp_tx_htt_rx_mgmt_flag1_mo_filter_set(ptr,
 							     tlv_filter->mo_mgmt_filter);
+	if (tlv_filter->enable_md)
+		ath12k_dp_tx_htt_rx_mgmt_flag1_md_filter_set(ptr,
+							     tlv_filter->md_mgmt_filter);
 }
 
 void ath12k_dp_tx_htt_rx_ctrl_flag2_fp_filter_set(u32 *ptr, u16 filter)
@@ -1682,6 +1730,31 @@ void ath12k_dp_tx_htt_rx_ctrl_flag2_mo_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_CTRL_BA) ? 1 : 0);
 }
 
+void
+ath12k_dp_tx_htt_rx_ctrl_flag2_md_filter_set(u32 *ptr, u16 filter)
+{
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, CTRL_RESERVED_1,
+				      (filter & FILTER_CTRL_RESERVED_1) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, CTRL_RESERVED_2,
+				      (filter & FILTER_CTRL_RESERVED_2) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, CTRL_TRIGGER,
+				      (filter & FILTER_CTRL_TRIGGER) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, CTRL_RESERVED_4,
+				      (filter & FILTER_CTRL_RESERVED_4) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, CTRL_BF_REP_POLL,
+				      (filter & FILTER_CTRL_BF_REP_POLL) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, CTRL_VHT_NDP,
+				      (filter & FILTER_CTRL_VHT_NDP) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, CTRL_FRAME_EXT,
+				      (filter & FILTER_CTRL_FRAME_EXT) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, CTRL_WRAPPER,
+				      (filter & FILTER_CTRL_CTRLWRAP) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, BAR,
+				      (filter & FILTER_CTRL_BA_REQ) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS2, BA,
+				      (filter & FILTER_CTRL_BA) ? 1 : 0);
+}
+
 static void
 ath12k_dp_tx_htt_rx_ctrl_flag2_filter_set(u32 *ptr,
 					  struct htt_rx_ring_tlv_filter *tlv_filter)
@@ -1692,6 +1765,9 @@ ath12k_dp_tx_htt_rx_ctrl_flag2_filter_set(u32 *ptr,
 	if (tlv_filter->enable_mo)
 		ath12k_dp_tx_htt_rx_ctrl_flag2_mo_filter_set(ptr,
 							     tlv_filter->mo_ctrl_filter);
+	if (tlv_filter->enable_md)
+		ath12k_dp_tx_htt_rx_ctrl_flag2_md_filter_set(ptr,
+							     tlv_filter->md_ctrl_filter);
 }
 
 void ath12k_dp_tx_htt_rx_ctrl_flag3_fp_filter_set(u32 *ptr, u16 filter)
@@ -1746,6 +1822,34 @@ void ath12k_dp_tx_htt_rx_data_flag3_mo_filter_set(u32 *ptr, u16 filter)
 				      (filter & FILTER_DATA_NULL) ? 1 : 0);
 }
 
+void
+ath12k_dp_tx_htt_rx_ctrl_flag3_md_filter_set(u32 *ptr, u16 filter)
+{
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS3, PSPOLL,
+				      (filter & FILTER_CTRL_PSPOLL) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS3, RTS,
+				      (filter & FILTER_CTRL_RTS) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS3, CTS,
+				      (filter & FILTER_CTRL_CTS) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS3, ACK,
+				      (filter & FILTER_CTRL_ACK) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS3, CFEND,
+				      (filter & FILTER_CTRL_CFEND) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, CTRL, FLAGS3, CFEND_ACK,
+				      (filter & FILTER_CTRL_CFEND_CFACK) ? 1 : 0);
+}
+
+void
+ath12k_dp_tx_htt_rx_data_flag3_md_filter_set(u32 *ptr, u16 filter)
+{
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, DATA, FLASG3, MCAST,
+				      (filter & FILTER_DATA_MCAST) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, DATA, FLASG3, UCAST,
+				      (filter & FILTER_DATA_UCAST) ? 1 : 0);
+	HTT_RX_PKT_ENABLE_SUBTYPE_SET(*ptr, MD, DATA, FLASG3, NULL_DATA,
+				      (filter & FILTER_DATA_NULL) ? 1 : 0);
+}
+
 static void
 ath12k_dp_tx_htt_rx_ctrl_data_flag3_filter_set(u32 *ptr,
 					       struct htt_rx_ring_tlv_filter *tlv_filter)
@@ -1761,6 +1865,12 @@ ath12k_dp_tx_htt_rx_ctrl_data_flag3_filter_set(u32 *ptr,
 							     tlv_filter->mo_ctrl_filter);
 		ath12k_dp_tx_htt_rx_data_flag3_mo_filter_set(ptr,
 							     tlv_filter->mo_data_filter);
+	}
+	if (tlv_filter->enable_md) {
+		ath12k_dp_tx_htt_rx_ctrl_flag3_md_filter_set(ptr,
+							     tlv_filter->md_ctrl_filter);
+		ath12k_dp_tx_htt_rx_data_flag3_md_filter_set(ptr,
+							     tlv_filter->md_data_filter);
 	}
 }
 
