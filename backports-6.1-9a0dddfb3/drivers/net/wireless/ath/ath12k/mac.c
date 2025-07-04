@@ -282,6 +282,8 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 					   struct ath12k_sta *ahsta,
 					   unsigned long int valid_links);
 static void ath12k_wmi_migration_cmd_work(struct work_struct *work);
+static void ath12k_mac_vdev_ml_max_rec_links(struct ath12k_link_vif *arvif,
+					     u8 ml_max_rec_links);
 static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
@@ -6777,6 +6779,9 @@ skip_pending_cs_up:
 		ar->ap_ps_enabled = info->ap_ps_enable;
 		ath12k_mac_ap_ps_recalc(ar);
 	}
+
+	if (changed & BSS_CHANGED_ML_MAX_REC_LINKS)
+		ath12k_mac_vdev_ml_max_rec_links(arvif, info->ml_max_rec_links);
 }
 
 static struct ath12k_vif_cache *ath12k_ahvif_get_link_cache(struct ath12k_vif *ahvif,
@@ -17814,6 +17819,34 @@ ath12k_mac_set_auto_rate_gi_ltf(struct ath12k_link_vif *arvif, u16 gi, u8 ltf)
 	}
 
 	return 0;
+}
+
+static void ath12k_mac_vdev_ml_max_rec_links(struct ath12k_link_vif *arvif,
+					     u8 ml_max_rec_links)
+{
+	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
+	struct ath12k *ar = arvif->ar;
+	u32 vdev_param;
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!ieee80211_vif_is_mld(vif)) {
+		ath12k_err(ar->ab, "Vdev %d is non-MLO, RMSL config is not allowed\n",
+			   arvif->vdev_id);
+		return;
+	}
+
+	vdev_param = WMI_VDEV_PARAM_MLO_MAX_RECOM_ACTIVE_LINKS;
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "mac vdev %d max ML recommended links %u\n",
+		   arvif->vdev_id, ml_max_rec_links);
+
+	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+					    vdev_param, ml_max_rec_links);
+	if (ret)
+		ath12k_warn(ar->ab, "failed to send max ml recom active links for vdev %d: %d\n",
+			    arvif->vdev_id, ret);
 }
 
 static u32 ath12k_mac_nlgi_to_wmigi(enum nl80211_txrate_gi gi)
