@@ -7054,11 +7054,62 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 				  ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS, "\n");
 	len += print_array_to_buf(buf, len, "tx_pream", htt_stats_buf->tx_pream,
 				  ATH12K_HTT_TX_PDEV_STATS_NUM_PREAMBLE_TYPES, "\n");
+
+	len += scnprintf(buf + len, buf_len - len, "ofdma_tx_ru_size = ");
+	for (j = 0; j < ATH12K_HTT_TX_RX_PDEV_STATS_NUM_AX_RU_SIZE_CNTRS; j++)
+		len += scnprintf(buf + len, buf_len - len, " %s:%u ",
+				 ath12k_htt_ax_tx_rx_ru_size_to_str(j),
+				 htt_stats_buf->ofdma_tx_ru_size[j]);
+
 	len += print_array_to_buf(buf, len, "tx_dcm", htt_stats_buf->tx_dcm,
 				  ATH12K_HTT_TX_PDEV_STATS_NUM_DCM_COUNTERS, "\n");
 	len += print_array_to_buf(buf, len, "tx_su_punctured_mode",
 				  htt_stats_buf->tx_su_punctured_mode,
 				  ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS, "\n");
+
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES; j++) {
+		len += scnprintf(buf + len, buf_len - len, j == 0 ?
+				 "half_tx_bw = " :"quarter_tx_bw = ");
+		len += print_array_to_buf(buf, len, NULL, htt_stats_buf->reduced_tx_bw[j],
+					  ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS, "\n");
+	}
+
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES; j++) {
+		len += scnprintf(buf + len, buf_len - len, j == 0 ?
+				 "half_ac_mu_mimo_tx_bw = " :"quarter_ac_mu_mimo_tx_bw = ");
+		len += print_array_to_buf(buf, len, NULL, htt_stats_buf->reduced_ac_mu_mimo_tx_bw[j],
+					  ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS, "\n");
+	}
+
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES; j++) {
+		len += scnprintf(buf + len, buf_len - len, j == 0 ?
+				 "half_ax_mu_mimo_tx_bw = " :"quarter_ax_mu_mimo_tx_bw = ");
+		len += print_array_to_buf(buf, len, NULL, htt_stats_buf->reduced_ax_mu_mimo_tx_bw[j],
+					  ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS, "\n");
+	}
+
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES; j++) {
+		len += scnprintf(buf + len, buf_len - len, j == 0 ?
+				 "half_ofdma_tx_bw" :"quarter_ofdma_tx_bw = ");
+		len += print_array_to_buf(buf, len, NULL, htt_stats_buf->reduced_ax_mu_ofdma_tx_bw[j],
+					  ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS, "\n");
+	}
+
+	len += print_array_to_buf(buf, len, "11ax_trigger_type",
+				  htt_stats_buf->trigger_type_11ax,
+				  ATH12K_HTT_TX_PDEV_STATS_NUM_11AX_TRIGGER_TYPES, "\n");
+
+	len += print_array_to_buf(buf, len, "11be_trigger_type",
+				  htt_stats_buf->trigger_type_11be,
+				  ATH12K_HTT_TX_PDEV_STATS_NUM_11BE_TRIGGER_TYPES, "\n");
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "ax_su_embedded_trigger_data_ppdu_cnt = %u\n",
+			 htt_stats_buf->ax_su_embedded_trigger_data_ppdu);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "ax_su_embedded_trigger_data_ppdu_err_cnt = %u\n",
+			 htt_stats_buf->ax_su_embedded_trigger_data_ppdu_err);
 
 	stats_req->buf_len = len;
 }
@@ -7317,6 +7368,16 @@ ath12k_htt_print_rx_pdev_rate_ext_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "rx_bw_ext",
 				  htt_stats_buf->rx_bw_ext,
 				  ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT2_COUNTERS, "\n");
+
+	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES; j++) {
+		len += scnprintf(buf + len, buf_len - len, j == 0 ?
+				 "half_rx_bw = " :
+				 "quarter_rx_bw = ");
+		len += print_array_to_buf(buf, len, NULL,
+					  htt_stats_buf->reduced_rx_bw[j],
+					  ATH12K_HTT_RX_PDEV_STATS_NUM_BW_COUNTERS, "\n");
+	}
+
 	len += print_array_to_buf(buf, len, "rx_su_punctured_mode",
 				  htt_stats_buf->rx_su_punctured_mode,
 				  ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS,
@@ -7348,6 +7409,23 @@ ath12k_htt_print_rx_pdev_rate_ext_stats_tlv(const void *tag_buf, u16 tag_len,
 					  htt_stats_buf->ul_ofdma_rx_gi_ext[j],
 					  ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT,
 					  "\n");
+	}
+
+	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS; j++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "rssi_chain_ext_2[%u] = ",j);
+		len += print_array_to_buf(buf, len, NULL,
+					  htt_stats_buf->rssi_chain_ext_2[j],
+					  ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_2_COUNTERS, "\n");
+	}
+
+	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS; j++) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "rx_per_chain_rssi_ext_2_in_dbm[%u] = ", j);
+		CHAIN_ARRAY_TO_BUF(buf, len,
+				   htt_stats_buf->rx_per_chain_rssi_ext_2_in_dbm[j],
+				   ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_2_COUNTERS);
+               len += scnprintf(buf +len, buf_len -len, "\n");
 	}
 
 	stats_req->buf_len = len;
