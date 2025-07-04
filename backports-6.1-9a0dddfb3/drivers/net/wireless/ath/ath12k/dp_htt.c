@@ -1941,6 +1941,10 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				       HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_CTRL);
 	cmd->info1 |= le32_encode_bits(tlv_filter->conf_len_data,
 				       HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_DATA);
+	if (!tlv_filter->rxmon_disable)
+		cmd->info1 |=
+			le32_encode_bits(tlv_filter->rx_hdr_len,
+					 HTT_RX_RING_SEL_CFG_CMD_INFO1_CONF_HDR_LEN);
 
 	word = 0;
 	ath12k_dp_tx_htt_rx_mgmt_flag0_filter_set(&word, tlv_filter);
