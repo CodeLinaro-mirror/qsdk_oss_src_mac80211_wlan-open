@@ -6857,6 +6857,7 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 					struct debug_htt_stats_req *stats_req)
 {
 	const struct ath12k_htt_tx_pdev_rate_stats_tlv *htt_stats_buf = tag_buf;
+	u32 tx_bw[ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS + 1] = { 0 };
 	u8 *buf = stats_req->buf;
 	u32 len = stats_req->buf_len;
 	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
@@ -7029,6 +7030,12 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 		len += scnprintf(buf + len, buf_len - len, "\n");
 	}
 
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS; j++) {
+		tx_bw[j] = htt_stats_buf->tx_bw[j];
+	}
+	tx_bw[j] = htt_stats_buf->tx_bw_320mhz;
+	len += print_array_to_buf(buf, len, "tx_bw", tx_bw,
+				  ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS + 1, "\n");
 	len += print_array_to_buf(buf, len, "tx_su_mcs", htt_stats_buf->tx_su_mcs,
 				  ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS, "\n");
 	len += print_array_to_buf(buf, len, "tx_mu_mcs", htt_stats_buf->tx_mu_mcs,
@@ -7049,6 +7056,9 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 				  ATH12K_HTT_TX_PDEV_STATS_NUM_PREAMBLE_TYPES, "\n");
 	len += print_array_to_buf(buf, len, "tx_dcm", htt_stats_buf->tx_dcm,
 				  ATH12K_HTT_TX_PDEV_STATS_NUM_DCM_COUNTERS, "\n");
+	len += print_array_to_buf(buf, len, "tx_su_punctured_mode",
+				  htt_stats_buf->tx_su_punctured_mode,
+				  ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS, "\n");
 
 	stats_req->buf_len = len;
 }
