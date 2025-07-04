@@ -1038,3 +1038,75 @@ u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 	return QOS_ID_INVALID;
 }
 EXPORT_SYMBOL(dp_peer_msduq_qos_id);
+
+void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
+				       struct sk_buff *skb)
+{
+	struct htt_t2h_qos_info_ind *resp;
+	struct ath12k_dp_peer_qos *qos;
+	struct ath12k_dp_link_peer *peer = NULL;
+	u32 htt_qtype, remapped_tid, peer_id;
+	u32 def_tid_msduq, max_def_msduq, qos_tid_msduq;
+	u32 hlos_tid, flow_or, ast_idx, who_cl, tgt_opaque_id;
+	u32 max_qos_msduq;
+	u8 msduq_index, q_id;
+
+	resp = (struct htt_t2h_qos_info_ind *)skb->data;
+	htt_qtype = u32_get_bits(__le32_to_cpu(resp->info0),
+				 HTT_T2H_QOS_MSDUQ_INFO_0_IND_HTT_QTYPE_ID);
+	peer_id = u32_get_bits(__le32_to_cpu(resp->info0),
+			       HTT_T2H_QOS_MSDUQ_INFO_0_IND_PEER_ID);
+
+	remapped_tid = u32_get_bits(__le32_to_cpu(resp->info1),
+				    HTT_T2H_QOS_MSDUQ_INFO_1_IND_REMAP_TID_ID);
+	hlos_tid = u32_get_bits(__le32_to_cpu(resp->info1),
+				HTT_T2H_QOS_MSDUQ_INFO_1_IND_HLOS_TID_ID);
+	who_cl = u32_get_bits(__le32_to_cpu(resp->info1),
+			      HTT_T2H_QOS_MSDUQ_INFO_1_IND_WHO_CLSFY_INFO_SEL_ID);
+	flow_or = u32_get_bits(__le32_to_cpu(resp->info1),
+			       HTT_T2H_QOS_MSDUQ_INFO_1_IND_FLOW_OVERRIDE_ID);
+	ast_idx = u32_get_bits(__le32_to_cpu(resp->info1),
+			       HTT_T2H_QOS_MSDUQ_INFO_1_IND_AST_INDEX_ID);
+
+	tgt_opaque_id = u32_get_bits(__le32_to_cpu(resp->info2),
+				     HTT_T2H_QOS_MSDUQ_INFO_2_IND_TGT_OPAQUE_ID);
+
+	ath12k_dbg(ab, ATH12K_DBG_QOS, "QoS MSDUQ Map Ind:\n");
+	ath12k_dbg(ab, ATH12K_DBG_QOS,
+		   "htt_qtype[0x%x]Peer_Id[0x%x]Remp_Tid[0x%x]Hlos_Tid[0x%x]",
+		   htt_qtype,
+		   peer_id,
+		   remapped_tid,
+		   hlos_tid);
+	ath12k_dbg(ab, ATH12K_DBG_QOS,
+		   "who_cl[0x%x]flow_or[0x%x]Ast[0x%x]Op[0x%x]",
+		   who_cl,
+		   flow_or,
+		   ast_idx,
+		   tgt_opaque_id);
+
+	spin_lock_bh(&ab->base_lock);
+	def_tid_msduq = ab->def_tid_msduq;
+	qos_tid_msduq = ab->max_tid_msduq - ab->def_tid_msduq;
+	spin_unlock_bh(&ab->base_lock);
+
+	max_def_msduq = def_tid_msduq * QOS_TID_MAX;
+	max_qos_msduq = qos_tid_msduq * QOS_TID_MAX;
+	msduq_index = ((who_cl * max_def_msduq) +
+		      (flow_or * QOS_TID_MAX) + hlos_tid) -
+		      max_def_msduq;
+
+	spin_lock_bh(&ab->dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
+	if (msduq_index < max_qos_msduq && peer) {
+		q_id = htt_qtype - def_tid_msduq;
+
+		if (hlos_tid < QOS_TID_MAX &&
+		    q_id < (qos_tid_msduq)) {
+			qos = peer->dp_peer->qos;
+			qos->msduq_map[hlos_tid][q_id].tgt_opaque_id =
+							tgt_opaque_id;
+		}
+	}
+	spin_unlock_bh(&ab->dp->dp_lock);
+}

@@ -1073,6 +1073,7 @@ enum htt_t2h_msg_type {
 	HTT_T2H_MSG_TYPE_MLO_RX_PEER_UNMAP = 0x2a,
 	HTT_T2H_MSG_TYPE_PEER_MAP3	= 0x2b,
 	HTT_T2H_MSG_TYPE_VDEV_TXRX_STATS_PERIODIC_IND = 0x2c,
+	HTT_T2H_MSG_TYPE_QOS_MSDUQ_INFO_IND = 0x2e,
 	HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND = 0x37,
 };
 
@@ -2037,6 +2038,75 @@ struct ath12k_htt_pri_link_migr_h2t_msg {
 	 * Bit  24     src_info_valid
 	 * Bits 31:25  reserved
 	 */
+	__le32 info2;
+} __packed;
+
+/* MSG_TYPE => HTT_T2H_QOS_MSDUQ_INFO_IND
+ *
+ * @details
+ * When QOS is enabled and a flow is mapped to a policy during the traffic
+ * flow if the flow is seen the associated service class is conveyed to the
+ * target via TCL Data Command. Target on the other hand internally creates the
+ * MSDUQ. Once the target creates the MSDUQ the target sends the information
+ * of the newly created MSDUQ and some other identifiers to uniquely identity
+ * the newly created MSDUQ
+ *
+ * |31    27|          24|23    16|15|14          11|10|9 8|7     4|3    0|
+ * |------------------------------+------------------------+--------------|
+ * |             peer ID          |         HTT qtype      |   msg type   |
+ * |---------------------------------+--------------+--+---+-------+------|
+ * |            reserved             |AST list index|FO|WC | HLOS  | remap|
+ * |                                 |              |  |   | TID   | TID  |
+ * |---------------------+------------------------------------------------|
+ * |    reserved1        |               tgt_opaque_id                    |
+ * |---------------------+------------------------------------------------|
+ *
+ * Header fields:
+ *
+ * info0 - b'7:0       - msg_type: This will be set to
+ *                        0x2e (HTT_T2H_QOS_MSDUQ_INFO_IND)
+ *          b'15:8      - HTT qtype
+ *          b'31:16     - peer ID
+ *
+ * info1 - b'3:0       - remap TID, as assigned in firmware
+ *          b'7:4       - HLOS TID, as sent by host in TCL Data Command
+ *                        hlos_tid : Common to Lithium and Beryllium
+ *          b'9:8       - who_classify_info_sel (WC), as sent by host in
+ *                        TCL Data Command : Beryllium
+ *          b10         - flow_override (FO), as sent by host in
+ *                        TCL Data Command: Beryllium
+ *          b11:14      - ast_list_idx
+ *                        Array index into the list of extension AST entries
+ *                        (not the actual AST 16-bit index).
+ *                        The ast_list_idx is one-based, with the following
+ *                        range of values:
+ *                          - legacy targets supporting 16 user-defined
+ *                            MSDU queues: 1-2
+ *                          - legacy targets supporting 48 user-defined
+ *                            MSDU queues: 1-6
+ *                          - new targets: 0 (peer_id is used instead)
+ *                        Note that since ast_list_idx is one-based,
+ *                        the host will need to subtract 1 to use it as an
+ *                        index into a list of extension AST entries.
+ *          b15:31      - reserved
+ *
+ * info2 - b'23:0      - tgt_opaque_id Opaque Tx flow number which is a
+ *                        unique MSDUQ id in firmware
+ *          b'24:31     - reserved1
+ */
+
+#define HTT_T2H_QOS_MSDUQ_INFO_0_IND_HTT_QTYPE_ID             GENMASK(15, 8)
+#define HTT_T2H_QOS_MSDUQ_INFO_0_IND_PEER_ID                  GENMASK(31, 16)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_REMAP_TID_ID             GENMASK(3, 0)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_HLOS_TID_ID              GENMASK(7, 4)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_WHO_CLSFY_INFO_SEL_ID    GENMASK(9, 8)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_FLOW_OVERRIDE_ID         BIT(10)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_AST_INDEX_ID             GENMASK(14, 11)
+#define HTT_T2H_QOS_MSDUQ_INFO_2_IND_TGT_OPAQUE_ID            GENMASK(23, 0)
+
+struct htt_t2h_qos_info_ind {
+	__le32 info0;
+	__le32 info1;
 	__le32 info2;
 } __packed;
 
