@@ -1288,12 +1288,14 @@ int ath12k_dp_tx_htt_h2t_ver_req_msg(struct ath12k_base *ab)
 	cmd->ver_reg_info = le32_encode_bits(HTT_H2T_MSG_TYPE_VERSION_REQ,
 					     HTT_OPTION_TAG);
 
-	cmd->tcl_metadata_version = le32_encode_bits(HTT_TAG_TCL_METADATA_VERSION,
-						     HTT_OPTION_TAG) |
-				    le32_encode_bits(HTT_TCL_METADATA_VER_SZ,
-						     HTT_OPTION_LEN) |
-				    le32_encode_bits(HTT_OPTION_TCL_METADATA_VER_V2,
-						     HTT_OPTION_VALUE);
+	if (!ath12k_ftm_mode) {
+		cmd->tcl_metadata_version = le32_encode_bits(HTT_TAG_TCL_METADATA_VERSION,
+							     HTT_OPTION_TAG) |
+					    le32_encode_bits(HTT_TCL_METADATA_VER_SZ,
+							     HTT_OPTION_LEN) |
+					    le32_encode_bits(HTT_OPTION_TCL_METADATA_VER_V2,
+							     HTT_OPTION_VALUE);
+	}
 
 	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
 	if (ret) {
