@@ -204,6 +204,12 @@ struct ath12k_dp_peer {
 #define MSDUQ_FLOW_OVERRIDE	BIT(3)
 #define MSDUQ_WHO_CL_INFO	GENMASK(5, 4)
 
+#define QOS_NW_DELAY_MAX	0x3FFFF
+#define QOS_NW_TAG_SHIFT	GENMASK(23, 16)
+#define QOS_TAG_ID		GENMASK(31, 24)
+#define QOS_NW_DELAY_SHIFT	0x6
+#define QOS_VALID_TAG		BIT(30)
+
 struct ath12k_msduq {
 	bool reserved;
 	u8 qos_id;

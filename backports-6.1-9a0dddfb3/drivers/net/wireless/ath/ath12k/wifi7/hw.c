@@ -1325,6 +1325,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	bool is_dvlan = false;
 	struct ethhdr *eth;
 	bool is_prb_rsp;
+	u32 qos_nw_delay = info->sawf.nw_delay;
 	u16 frm_type = 0;
 	u16 mcbc_gsn;
 	u8 link_id;
@@ -1396,11 +1397,17 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		switch (ahvif->dp_vif.tx_encap_type) {
 			case ATH12K_HW_TXRX_ETHERNET:
 				skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
-				err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta, ring_id);
+				err = ath12k_wifi7_dp_tx(dp_pdev, arvif,
+							 skb, false, 0,
+							 is_mcast, arsta,
+							 ring_id, qos_nw_delay);
 				break;
 			case ATH12K_HW_TXRX_NATIVE_WIFI:
 				ath12k_dp_tx_encap_nwifi(skb);
-				err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta, ring_id);
+				err = ath12k_wifi7_dp_tx(dp_pdev, arvif,
+							 skb, false, 0,
+							 is_mcast, arsta,
+							  ring_id, qos_nw_delay);
 				break;
 			case ATH12K_HW_TXRX_RAW:
 			default:
@@ -1547,7 +1554,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		}
 
 		err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
-					 arsta, ring_id);
+					 arsta, ring_id, qos_nw_delay);
 		if (unlikely(err)) {
 			if (ath12k_wifi7_check_err_code_debug_logging(err))
 				ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "failed to transmit frame %d\n", err);
@@ -1637,7 +1644,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 skip_peer_find:
 			err = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
 						 msdu_copied, true, mcbc_gsn,
-						 is_mcast, arsta, ring_id);
+						 is_mcast, arsta, ring_id,
+						 qos_nw_delay);
 			if (unlikely(err)) {
 				if (ath12k_wifi7_check_err_code_debug_logging(err))
 					ath12k_dbg(ar->ab, ATH12K_DBG_MAC,

@@ -183,6 +183,93 @@ ath12k_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
+static void ath12k_qos_tx_enqueue_peer_stats(struct ath12k_dp_link_peer_stats *peer_stats,
+					     u16 msduq_id,
+					     unsigned int len)
+{
+	struct tx_stats *qos_tx;
+	u8 tid, q_id;
+
+	if (!peer_stats->qos_stats) {
+		ath12k_err(NULL, "Qos stats not initialized\n");
+		return;
+	}
+
+	if (unlikely(msduq_id >= QOS_MSDUQ_MAX &&
+		     msduq_id < MSDUQ_MAX_DEF))
+		return;
+
+	msduq_id -= MSDUQ_MAX_DEF;
+
+	q_id = u16_get_bits(msduq_id, MSDUQ_MASK);
+	tid = u16_get_bits(msduq_id, MSDUQ_TID_MASK);
+
+	qos_tx = &peer_stats->qos_stats->qos_tx[tid][q_id];
+
+	qos_tx->queue_depth++;
+	qos_tx->tx_ingress.num++;
+	qos_tx->tx_ingress.bytes += len;
+}
+
+static void
+ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
+				      u32 *skb_mark, u32 qos_nw_delay,
+				      unsigned int skb_len)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_dp *dp;
+	struct ath12k_dp_link_peer *pri_peer;
+	u16 msduq, peer_id, qos_id;
+
+	if (!ar)
+		return;
+
+	if (!(*skb_mark & SDWF_VALID_MASK))
+		return;
+
+	msduq = u32_get_bits(*skb_mark, SDWF_MSDUQ_ID);
+
+	if ((ath12k_debugfs_is_dp_stats_enabled(&ar->dp) &&
+	    (ath12k_debugfs_is_qos_stats_enabled(ar) &
+	     ATH12K_QOS_STATS_BASIC))) {
+		peer_id = u32_get_bits(*skb_mark, SDWF_PEER_ID);
+
+		if (!ar->dp.dp)
+			return;
+
+		dp = ar->dp.dp;
+
+		spin_lock_bh(&dp->dp_lock);
+
+		pri_peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+		if (!pri_peer || !pri_peer->dp_peer->qos) {
+			spin_unlock_bh(&dp->dp_lock);
+			return;
+		}
+
+		qos_id = dp_peer_msduq_qos_id(ar->ab, pri_peer->dp_peer->qos,
+					      msduq);
+		if (qos_id == QOS_ID_INVALID) {
+			ath12k_err(ar->ab, "msduq_id: %u not yet reserved\n",
+				   msduq);
+			spin_unlock_bh(&dp->dp_lock);
+			return;
+		}
+
+		ath12k_qos_tx_enqueue_peer_stats(&pri_peer->peer_stats,
+						 msduq, skb_len);
+		spin_unlock_bh(&dp->dp_lock);
+	}
+
+	/* Store the NWDELAY to skb->mark which can be fetched
+	 * during tx completion
+	 */
+	if (qos_nw_delay > QOS_NW_DELAY_MAX)
+		qos_nw_delay = QOS_NW_DELAY_MAX;
+
+	*skb_mark = u32_encode_bits((u32_get_bits(*skb_mark, QOS_NW_TAG_SHIFT)), QOS_TAG_ID) | (qos_nw_delay << QOS_NW_DELAY_SHIFT) | msduq;
+}
+
 #define HTT_META_DATA_ALIGNMENT 0x8
 
 /* Preparing HTT Metadata when utilized with ext MSDU */
@@ -233,7 +320,8 @@ enum ath12k_dp_tx_enq_error
 ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		   struct ath12k_link_vif *arvif,
 		   struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
-		   bool is_mcast, struct ath12k_link_sta *arsta, u8 ring_id)
+		   bool is_mcast, struct ath12k_link_sta *arsta, u8 ring_id,
+		   u32 qos_nw_delay)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
@@ -326,9 +414,15 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 			goto fail_remove_tx_buf;
 		}
 
-		if (unlikely(skb->mark & SDWF_VALID_MASK))
+		if (unlikely(skb->mark & SDWF_VALID_MASK)) {
 			ath12k_dp_qos_update(dp, dp_pdev, skb->mark, &tcl_desc,
 					     0, NULL);
+			ath12k_dp_sdwftx_ingress_stats_update(arvif,
+							      &skb->mark,
+							      qos_nw_delay,
+							      skb_headlen(skb));
+			skb->tstamp = net_timedelta(skb->tstamp);
+		}
 
 		memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
 #ifndef CONFIG_IO_COHERENCY
