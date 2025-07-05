@@ -14211,6 +14211,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar;
 	u8 link_id;
+	int ret;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -14239,6 +14240,9 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		}
 		ar = arvif->ar;
 
+		if (!ar)
+			continue;
+
 		/* Scan abortion is in progress since before this, cancel_hw_scan()
 		 * is expected to be executed. Since link is anyways going to be removed
 		 * now, just cancel the worker and send the scan aborted to user space
@@ -14260,6 +14264,17 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 			ar->scan_channel = NULL;
 			ar->scan.roc_freq = 0;
 			spin_unlock_bh(&ar->data_lock);
+		}
+
+		if (arvif->is_scan_vif && arvif->is_started) {
+			ret = ath12k_mac_vdev_stop(arvif);
+			if (ret) {
+				ath12k_warn(ar->ab, "failed to stop vdev %d: %d\n",
+					    arvif->vdev_id, ret);
+				return;
+			}
+			arvif->is_started = false;
+			arvif->is_scan_vif = false;
 		}
 
 		ath12k_mac_remove_link_interface(hw, arvif);
