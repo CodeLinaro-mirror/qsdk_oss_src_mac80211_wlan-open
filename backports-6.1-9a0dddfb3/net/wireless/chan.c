@@ -21,6 +21,10 @@
 #define DISABLED_SUB_CHAN(freq, start_freq, punctured) \
  ((1 << (freq - start_freq)/MHZ_TO_KHZ(20)) & punctured)
 
+static bool enable_dfs_test_mode;
+module_param(enable_dfs_test_mode, bool, 0644);
+MODULE_PARM_DESC(enable_dfs_test_mode, "Enable DFS Test mode");
+
 static bool cfg80211_valid_60g_freq(u32 freq)
 {
 	return freq >= 58320 && freq <= 70200;
@@ -2096,6 +2100,9 @@ static bool _cfg80211_reg_can_beacon(struct wiphy *wiphy,
 		prohibited_flags &= ~IEEE80211_CHAN_NO_IR;
 		check_radar = false;
 	}
+
+	if (enable_dfs_test_mode)
+		check_radar = false;
 
 	if (check_radar &&
 	    !_cfg80211_chandef_usable(wiphy, chandef,
