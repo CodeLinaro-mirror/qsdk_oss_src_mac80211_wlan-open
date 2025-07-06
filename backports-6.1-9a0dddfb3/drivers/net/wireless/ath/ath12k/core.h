@@ -53,6 +53,10 @@
 #endif
 #endif
 
+#ifdef CPTCFG_ATHDEBUG
+#include "ath_debug/athdbg_qmi.h"
+#endif
+
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
 #define ATH12K_TX_MGMT_NUM_PENDING_MAX	512
@@ -1978,7 +1982,9 @@ struct ath12k_base {
 	enum ath12k_wsi_bypass_action wsi_remap_state;
 	bool is_static_bypassed;
 	u32 num_max_vdev_supported;
-
+#ifdef CPTCFG_ATHDEBUG
+	struct athdbg_qmi dbg_qmi;
+#endif
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -2105,7 +2111,6 @@ int ath12k_core_resume_early(struct ath12k_base *ab);
 int ath12k_core_resume(struct ath12k_base *ab);
 int ath12k_core_suspend(struct ath12k_base *ab);
 int ath12k_core_suspend_late(struct ath12k_base *ab);
-int ath12k_config_qdss(struct ath12k_base *ab);
 void ath12k_core_hw_group_unassign(struct ath12k_base *ab);
 u8 ath12k_get_num_partner_link(struct ath12k *ar);
 

@@ -345,8 +345,10 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 
        num_seg = fw_img->entries + rddm_img->entries + rem_seg_cnt;
 
+#ifdef CPTCFG_ATHDEBUG
 	if (ab->is_qdss_tracing)
 		num_seg += qdss_seg_cnt;
+#endif
 
        len = num_seg * sizeof(*segment);
 
@@ -416,14 +418,16 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 
        }
 
-
+#ifdef CPTCFG_ATHDEBUG
 	if (ab->is_qdss_tracing) {
-		seg_info->len = ab->qmi.target_mem[0].size;
-		seg_info->addr = ab->qmi.target_mem[0].paddr;
-		seg_info->vaddr = ab->qmi.target_mem[0].v.ioaddr;
-		seg_info->type = FW_CRASH_DUMP_AFC_DATA;
+		seg_info->len = ab->dbg_qmi.qdss_mem[0].size;
+		seg_info->addr = ab->dbg_qmi.qdss_mem[0].paddr;
+		seg_info->vaddr = ab->dbg_qmi.qdss_mem[0].v.ioaddr;
+		seg_info->type = FW_CRASH_DUMP_QDSS_DATA;
 		seg_info++;
 	}
+#endif
+
 	num_seg = num_seg - skip_count;
 
 	if (!ab->fw_recovery_support || ab->in_panic) {

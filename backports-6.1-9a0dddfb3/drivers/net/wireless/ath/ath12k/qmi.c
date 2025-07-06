@@ -19,6 +19,11 @@
 #include <linux/ioport.h>
 #include <linux/devcoredump.h>
 
+#ifdef CPTCFG_ATHDEBUG
+#include "athdbg_if.h"
+#define qmi_handle_init athdbg_qmi_handle_init
+#endif
+
 #define SLEEP_CLOCK_SELECT_INTERNAL_BIT	0x02
 #define HOST_CSTATE_BIT			0x04
 #define PLATFORM_CAP_PCIE_GLOBAL_RESET	0x08
@@ -7101,6 +7106,9 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	destroy_workqueue(ab->qmi.event_wq);
 	ath12k_qmi_m3_free(ab);
 	ath12k_qmi_free_target_mem_chunk(ab);
+#ifdef CPTCFG_ATHDEBUG
+	athdbg_if_get_service(ab, ATHDBG_SRV_QMI_DEINIT);
+#endif
 	ab->qmi.ab = NULL;
 }
 

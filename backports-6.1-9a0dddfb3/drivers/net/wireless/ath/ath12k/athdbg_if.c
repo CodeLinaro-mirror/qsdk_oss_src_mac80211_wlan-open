@@ -1,7 +1,5 @@
-/*
-*Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-*SPDX-License-Identifier: BSD-3-Clause-Clear
-*/
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+/* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
 #include "athdbg_if.h"
 #include "ath_debug/athdbg_core.h"
 #include "ath_debug/athdbg_minidump.h"
@@ -22,7 +20,8 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 {
 	struct dentry *debugfs_soc_dir,
 				  *debugfs_ath12k_dir,
-				  *athdbg_dir;
+				  *athdbg_dir,
+				  *qdss_dir;
 	struct ath12k_base *partner_ab;
 	char soc_name[MAX_SOC_DIR_NAME_SIZE] = { 0 };
 	int i;
@@ -50,7 +49,18 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 		debugfs_create_file("dbgmask", 0644, athdbg_dir, partner_ab, &debugfs_mask_fops);
 
 		athdbg_create_minidump_debugfs(athdbg_dir, partner_ab);
+
+		qdss_dir = debugfs_create_dir("qdss", athdbg_dir);
+
+		if (IS_ERR_OR_NULL(qdss_dir))
+			return -ENOMEM;
+
+		debugfs_create_file("enable", 0644, qdss_dir, partner_ab,
+							&debugfs_qdss_enable_fops);
+		debugfs_create_file("collect", 0644, qdss_dir, partner_ab,
+							&debugfs_qdss_collect_fops);
 	}
+
 	return 0;
 out:
 	return -ENOMEM;
@@ -67,6 +77,7 @@ void athdbg_if_register(struct ath12k_base *ab)
 	}
 
 	athdbg_base->dbg_to_ath_ops = &dbg_to_ath_ops;
+
 }
 
 void athdbg_if_unregister(struct ath12k_base *ab)
@@ -83,6 +94,7 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 
 	switch (srv) {
 	case ATHDBG_SRV_CONFIG_QDSS:
+		athdbg_config_qdss(ab);
 		break;
 	case ATHDBG_SRV_DO_MINIDUMP:
 		athdbg_collect_reference_segments(ab);
@@ -90,6 +102,9 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 		break;
 	case ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES:
 		athdbg_collect_reference_segments(ab);
+		break;
+	case ATHDBG_SRV_QMI_DEINIT:
+		athdbg_qmi_deinit(ab);
 		break;
 	}
 

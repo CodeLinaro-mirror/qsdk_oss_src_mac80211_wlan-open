@@ -1,7 +1,5 @@
-/*
-*Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-*SPDX-License-Identifier: BSD-3-Clause-Clear
-*/
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+/* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
 #include <linux/debugfs.h>
 #include <linux/init.h>
 
@@ -11,11 +9,13 @@
 extern struct ath_debug_base *athdbg_base;
 const struct file_operations debugfs_req_fops;
 const struct file_operations debugfs_mask_fops;
+const struct file_operations debugfs_qdss_enable_fops;
+const struct file_operations debugfs_qdss_collect_fops;
 
 static ssize_t athdbg_minidump_read(struct file *file, char __user *user_buf,
 									size_t count, loff_t *ppos)
 {
-	const char debugfs_data[] =
+	static const char debugfs_data[] =
 	"USAGE:\n"
 	"echo 1 > collect\n"
 	"echo 1 > show_all_alloc_struct\n"
@@ -87,6 +87,7 @@ const struct file_operations debugfs_minidump_fops = {
 	.open = simple_open,
 	.owner = THIS_MODULE,
 };
+EXPORT_SYMBOL(debugfs_minidump_fops);
 
 void athdbg_create_minidump_debugfs(struct dentry *dbg_dir,
 				    struct ath12k_base *drv_ab)
@@ -109,12 +110,10 @@ void athdbg_create_minidump_debugfs(struct dentry *dbg_dir,
 }
 EXPORT_SYMBOL(athdbg_create_minidump_debugfs);
 
-EXPORT_SYMBOL(debugfs_minidump_fops);
-
 static ssize_t athdbg_mask_read(struct file *file, char __user *user_buf,
 									size_t count, loff_t *ppos)
 {
-	const char debugfs_data[] =
+	static const char debugfs_data[] =
 	"echo <mask>:<mask>:<mask> > dbgmask \t\n"
 	"echo <mask> > dbgmask";
 
@@ -181,5 +180,173 @@ const struct file_operations debugfs_mask_fops = {
 	.open = simple_open,
 	.owner = THIS_MODULE,
 };
-
 EXPORT_SYMBOL(debugfs_mask_fops);
+
+static ssize_t athdbg_qdss_enable_read(struct file *file,
+				       char __user *user_buf,
+				       size_t count,
+					loff_t *ppos)
+{
+	static const char debugfs_data[] =
+		" 1 - enable debugfs\n";
+
+	return simple_read_from_buffer(user_buf, count, ppos,
+					debugfs_data,
+					sizeof(debugfs_data));
+}
+
+
+static ssize_t athdbg_qdss_enable_write(struct file *file,
+					const char __user *user_buf,
+					size_t count,
+					loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct athdbg_request *dbg_req;
+	char buf[128] = {0};
+	u8 enable_qdss;
+	int ret = 0;
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+	if (ret <= 0) {
+		pr_err("Invalid Input %d %zu", ret, count);
+		goto exit;
+	}
+
+	buf[ret] = '\0';
+
+	if (kstrtou8(buf, 10, &enable_qdss))
+		return -EINVAL;
+
+	dbg_req = kzalloc(sizeof(*dbg_req), GFP_ATOMIC);
+	if (!dbg_req)
+		return -ENOMEM;
+
+	dbg_req->req_type = ATH_DBG_REQ_ENABLE_QDSS;
+	dbg_req->ab = ab;
+
+	mutex_lock(&athdbg_base->req_lock);
+	list_add_tail(&dbg_req->req_list, &athdbg_base->req_list);
+	mutex_unlock(&athdbg_base->req_lock);
+
+	queue_work(athdbg_base->dbg_wq, &athdbg_base->dbg_wk);
+
+	ret = count;
+
+exit:
+	return ret;
+}
+
+
+const struct file_operations debugfs_qdss_enable_fops = {
+	.read = athdbg_qdss_enable_read,
+	.write = athdbg_qdss_enable_write,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+};
+EXPORT_SYMBOL(debugfs_qdss_enable_fops);
+
+static ssize_t athdbg_qdss_collect_read(struct file *file,
+					char __user *user_buf,
+					size_t count,
+					loff_t *ppos)
+{
+	static const char debugfs_data[] =
+		"echo 0x1  - QDSS Dump\n"
+		"echo 0x40 - PHYA0 Dump\n"
+		"echo 0x80 - PHYA1 Dump\n";
+
+	return simple_read_from_buffer(user_buf, count, ppos,
+					debugfs_data,
+					sizeof(debugfs_data));
+}
+
+static ssize_t athdbg_qdss_collect_write(struct file *file,
+					 const char __user *user_buf,
+					 size_t count,
+					 loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct athdbg_request *dbg_req;
+	struct ath12k_pdev *pdev;
+	struct ath12k *ar;
+	char buf[128] = {0};
+	bool radioup = false;
+	u32 val;
+	int ret = 0, i;
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+	if (ret <= 0) {
+		pr_err("Invalid Input %d %zu", ret, count);
+		goto exit;
+	}
+
+	buf[ret] = '\0';
+
+	if (kstrtou32(buf, 0, &val))
+		return -EINVAL;
+
+	switch (val) {
+	case ATHDBG_QDSS_DUMP:
+	case ATHDBG_PHYA0_DUMP:
+		break;
+
+	case ATHDBG_PHYA1_DUMP:
+		if (!ab->is_dualmac) {
+			pr_err("PHYA1 dump not supported %x\n", val);
+			return -EINVAL;
+		}
+		break;
+
+	default:
+		pr_err("Invalid value %x\n", val);
+		return -EINVAL;
+	}
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		ar = pdev->ar;
+		if (ar && ar->ah->state == ATH12K_HW_STATE_ON) {
+			radioup = true;
+			break;
+		}
+	}
+
+	if (!radioup && !(ab->fw_mode == ATH12K_FIRMWARE_MODE_FTM)) {
+		pr_err("radio is not up\n");
+		return -ENETDOWN;
+	}
+
+	if (!ab->is_qdss_tracing)
+		return count;
+
+	if (!val)
+		return ret;
+
+	dbg_req = kzalloc(sizeof(*dbg_req), GFP_ATOMIC);
+	if (!dbg_req)
+		return -ENOMEM;
+
+	dbg_req->req_type = ATH_DBG_REQ_DUMP_QDSS;
+	dbg_req->data = val;
+	dbg_req->ab = ab;
+
+	mutex_lock(&athdbg_base->req_lock);
+	list_add_tail(&dbg_req->req_list, &athdbg_base->req_list);
+	mutex_unlock(&athdbg_base->req_lock);
+
+	queue_work(athdbg_base->dbg_wq, &athdbg_base->dbg_wk);
+
+	ret = count;
+
+exit:
+	return ret;
+}
+
+const struct file_operations debugfs_qdss_collect_fops = {
+	.read = athdbg_qdss_collect_read,
+	.write = athdbg_qdss_collect_write,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+};
+EXPORT_SYMBOL(debugfs_qdss_collect_fops);

@@ -1,7 +1,5 @@
-/*
- *Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
- *SPDX-License-Identifier: BSD-3-Clause-Clear
- */
+/* SPDX-License-Identifier: BSD-3-Clause-Clear*/
+/* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
 #include <linux/types.h>
 #include <linux/module.h>
 #include "ath_debug/athdbg_mem.h"

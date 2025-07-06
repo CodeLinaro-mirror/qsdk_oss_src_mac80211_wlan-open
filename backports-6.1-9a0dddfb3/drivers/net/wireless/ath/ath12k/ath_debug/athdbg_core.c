@@ -1,7 +1,5 @@
-/*
-*Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
-*SPDX-License-Identifier: BSD-3-Clause-Clear
-*/
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+/*Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
 #include <linux/module.h>
 #include <linux/kernel.h>
 #include <linux/devcoredump.h>
@@ -73,6 +71,7 @@ static void athdbg_process_request(struct work_struct *work)
 {
 	struct ath_debug_base *athdbg_base = container_of(work, struct ath_debug_base, dbg_wk);
 	struct athdbg_request *dbg_req;
+	int ret;
 
 	mutex_lock(&athdbg_base->req_lock);
 
@@ -91,6 +90,19 @@ static void athdbg_process_request(struct work_struct *work)
 			break;
 		case ATH_DBG_REQ_COLLECT_MINI_DUMP:
 			athdbg_process_minidump_request(dbg_req->ab, dbg_req);
+			break;
+		case ATH_DBG_REQ_ENABLE_QDSS:
+			athdbg_config_qdss(dbg_req->ab);
+			break;
+
+		case ATH_DBG_REQ_DUMP_QDSS:
+		{
+			ret = athdbg_send_qdss_trace_mode_req(dbg_req->ab,
+							QMI_WLANFW_QDSS_TRACE_OFF_V01,
+							dbg_req->data);
+			if (ret < 0)
+				pr_warn("athdbg_core: Failed to stop QDSS: %d\n", ret);
+		}
 			break;
 		case ATH_DBG_REQ_UNKNOWN:
 			pr_err("athdbg_core: Unknown Request");

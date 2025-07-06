@@ -1746,11 +1746,12 @@ core_pdev_create:
 		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 #endif
 
+#ifdef CPTCFG_ATHDEBUG
 		if (ab->hw_params->en_qdsslog) {
 			ath12k_info(ab, "QDSS trace enabled\n");
-			ath12k_config_qdss(ab);
-                }
-
+			athdbg_if_get_service(ab, ATHDBG_SRV_CONFIG_QDSS);
+		}
+#endif
 		ret = ath12k_core_rfkill_config(ab);
 		if (ret && ret != -EOPNOTSUPP) {
 			mutex_unlock(&ab->core_lock);

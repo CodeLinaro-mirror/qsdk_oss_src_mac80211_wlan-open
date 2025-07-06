@@ -1,7 +1,5 @@
-/*
- *Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
- *SPDX-License-Identifier: BSD-3-Clause-Clear
- */
+/* SPDX-License-Identifier: BSD-3-Clause-Clear*/
+/* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.*/
 #ifndef __ATHMEMDEBUG_H
 #define __ATHMEMDEBUG_H
 
