@@ -2962,4 +2962,8 @@ void ieee80211_rearrange_tpe_psd(struct ieee80211_parsed_tpe_psd *psd,
 #define VISIBLE_IF_MAC80211_KUNIT static
 #endif
 
+int ieee80211_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
+			   struct cfg80211_qm_req_data *qm_req,
+			   struct cfg80211_qm_resp_data *qm_resp);
+
 #endif /* IEEE80211_I_H */

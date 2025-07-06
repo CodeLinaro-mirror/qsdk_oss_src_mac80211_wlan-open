@@ -10873,3 +10873,17 @@ void ieee80211_process_epcs_ena_req(struct ieee80211_sub_if_data *sdata,
 send_frame:
 	ieee80211_mgd_send_epcs_resp(sdata, status_code);
 }
+
+int ieee80211_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
+			   struct cfg80211_qm_req_data *qm_req,
+			   struct cfg80211_qm_resp_data *qm_resp)
+{
+	struct ieee80211_local *local = sdata->local;
+	struct sta_info *sta;
+
+	sta = sta_info_get(sdata, qm_req->peer_mac);
+	if (!sta)
+		return -ENOENT;
+
+	return drv_qos_mgmt_cfg(sdata, local, &sta->sta, qm_req, qm_resp);
+}

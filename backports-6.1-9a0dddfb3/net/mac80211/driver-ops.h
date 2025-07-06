@@ -1880,4 +1880,27 @@ static inline int drv_erp(struct ieee80211_local *local,
 	trace_drv_return_int(local, ret);
 	return ret;
 }
+
+static inline int
+drv_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
+		 struct ieee80211_local *local, struct ieee80211_sta *sta,
+		 struct cfg80211_qm_req_data *qm_req,
+		 struct cfg80211_qm_resp_data *qm_resp)
+{
+	int ret = -EOPNOTSUPP;
+
+	might_sleep();
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	if (!check_sdata_in_driver(sdata))
+		return ret;
+
+	if (local->ops->qos_mgmt_cfg)
+		ret = local->ops->qos_mgmt_cfg(&local->hw, &sdata->vif,
+					       sta, qm_req, qm_resp);
+	trace_drv_return_int(local, ret);
+
+	return ret;
+}
+
 #endif /* __MAC80211_DRIVER_OPS */

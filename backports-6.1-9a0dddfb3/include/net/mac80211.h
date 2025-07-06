@@ -4772,6 +4772,11 @@ struct ieee80211_ppe_vp_ds_params {
  * @apply_neg_ttlm_per_client: Apply the ttlm negotiation on client as per the
  * negotiation. This can be used to allow drivers to map the TIDs for the given
  * client as per the negotiation.
+ * @qos_mgmt_cfg: Introduces infrastructure in mac80211 to support forwarding of
+ * QoS Management (QM) configuration parameters from user space to driver.
+ * Drivers can subscribe to this to handle QoS MGMT requests received via
+ * nl80211. Enable drivers to parse and apply QM request descriptors and
+ * populate response data accordingly.
  */
 struct ieee80211_ops {
 	void (*tx)(struct ieee80211_hw *hw,
@@ -5193,6 +5198,10 @@ struct ieee80211_ops {
 	void (*apply_neg_ttlm_per_client)(struct ieee80211_hw *hw,
 					  struct ieee80211_vif *vif,
 					  struct ieee80211_sta *sta);
+	int (*qos_mgmt_cfg)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			    struct ieee80211_sta *sta,
+			    struct cfg80211_qm_req_data *qm_req,
+			    struct cfg80211_qm_resp_data *qm_resp);
 };
 
 /**
