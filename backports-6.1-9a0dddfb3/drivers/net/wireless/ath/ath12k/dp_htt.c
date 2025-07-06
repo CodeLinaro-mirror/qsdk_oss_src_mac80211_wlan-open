@@ -1044,8 +1044,10 @@ static void ath12k_htt_mlo_offset_event_handler(struct ath12k_base *ab,
 						struct sk_buff *skb)
 {
 	struct ath12k_htt_mlo_offset_msg *msg;
+	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_pdev *pdev;
 	struct ath12k *ar;
+	int i, j;
 	u8 pdev_id;
 
 	msg = (struct ath12k_htt_mlo_offset_msg *)skb->data;
@@ -1074,6 +1076,29 @@ static void ath12k_htt_mlo_offset_event_handler(struct ath12k_base *ab,
 	pdev->timestamp.mlo_offset_clks = __le32_to_cpu(msg->mlo_offset_clks);
 	pdev->timestamp.mlo_comp_clks = __le32_to_cpu(msg->mlo_comp_clks);
 	pdev->timestamp.mlo_comp_timer = __le32_to_cpu(msg->mlo_comp_timer);
+
+	ag->mlo_tstamp_offset = ((u64)pdev->timestamp.mlo_offset_hi << 32 |
+				 pdev->timestamp.mlo_offset_lo);
+
+	/* MLO TSAMP OFFSET is common for all chips and
+	 * fetch delta_tsf2 for all the radios for this event
+	 */
+	for (i = 0; i < ag->num_devices; i++) {
+		struct ath12k_base *tmp_ab = ag->ab[i];
+
+		for (j = 0; j < tmp_ab->num_radios; j++) {
+			struct ath12k *tmp_ar;
+
+			pdev = &tmp_ab->pdevs[j];
+			tmp_ar = pdev->ar;
+			if (!tmp_ar || !tmp_ab->ce_pipe_init_done)
+				continue;
+
+			if (tmp_ab->hw_params->hal_ops->hal_get_tsf2_scratch_reg)
+				tmp_ab->hw_params->hal_ops->hal_get_tsf2_scratch_reg(tmp_ab, tmp_ar->lmac_id,
+										     &tmp_ar->delta_tsf2);
+		}
+	}
 
 	spin_unlock_bh(&ar->data_lock);
 exit:

@@ -17,6 +17,7 @@ struct ath12k_qos_ctx *ath12k_get_qos(struct ath12k_base *ab)
 	}
 	return &ab->ag->qos;
 }
+EXPORT_SYMBOL(ath12k_get_qos);
 
 static
 bool ath12k_qos_validate_params(struct ath12k_base *ab,

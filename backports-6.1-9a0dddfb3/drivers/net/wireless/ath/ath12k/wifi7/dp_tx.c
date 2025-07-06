@@ -15,6 +15,7 @@
 #include "../sdwf.h"
 #include "../dp_stats.h"
 #include "../dp_peer.h"
+#include "../telemetry.h"
 
 struct ath12k_tx_sw_metadata {
 	struct sk_buff *skb;
@@ -28,7 +29,7 @@ struct ath12k_tx_sw_metadata {
 	    rsvd2          : 8;
 } __packed __aligned(32);
 
-static_assert(sizeof(struct ath12k_tx_sw_metadata) == 32, "size of struct ath12k_tx_sw_metadata is not 32 bytes!");
+static_assert(sizeof(struct ath12k_tx_sw_metadata) == 32, "size of struct ath12k_tx_sw_metadata is not 64 bytes!");
 
 struct ath12k_wifi7_tx_status_entry {
 	struct hal_wbm_completion_ring_tx tx_status;
@@ -268,6 +269,422 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 		qos_nw_delay = QOS_NW_DELAY_MAX;
 
 	*skb_mark = u32_encode_bits((u32_get_bits(*skb_mark, QOS_NW_TAG_SHIFT)), QOS_TAG_ID) | (qos_nw_delay << QOS_NW_DELAY_SHIFT) | msduq;
+}
+
+void ath12k_sdwf_update_peer_mcs_stats(struct tx_stats *qos_tx,
+				       struct hal_tx_status *ts)
+{
+	u8 mcs = MAX_MCS, pkt_type;
+
+	mcs = ts->mcs;
+	pkt_type = ts->pkt_type;
+
+	if (pkt_type > HAL_TX_RATE_STATS_PKT_TYPE_11BE ||
+	    pkt_type == HAL_TX_RATE_STATS_PKT_TYPE_11BA) {
+		return;
+	}
+
+	if (pkt_type == HAL_TX_RATE_STATS_PKT_TYPE_11BE)
+		pkt_type = DOT11_BE;
+
+	switch (pkt_type) {
+	case DOT11_A:
+		mcs = (mcs >= MAX_MCS_11A) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_B:
+		mcs = (mcs >= MAX_MCS_11B) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_N:
+		mcs = (mcs >= MAX_MCS_11N) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_AC:
+		mcs = (mcs >= MAX_MCS_11AC) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_AX:
+		mcs = (mcs >= MAX_MCS_11AX) ? (MAX_MCS - 1) : mcs;
+		break;
+	case DOT11_BE:
+		mcs = (mcs >= MAX_MCS_11BE) ? (MAX_MCS - 1) : mcs;
+		break;
+	default:
+		break;
+	}
+
+	if (mcs != MAX_MCS)
+		qos_tx->pkt_type[pkt_type].mcs_count[mcs]++;
+}
+
+bool ath12k_get_qos_params_delay_bound(struct ath12k_base *ab, u8 qos_id,
+				       u32 *delay_bound)
+{
+	struct ath12k_qos_ctx *qos_ctx;
+
+	if (qos_id >= QOS_PROFILES_MAX) {
+		ath12k_err(NULL, "Invalid qos id :%u\n", qos_id);
+		return false;
+	}
+
+	qos_ctx = ath12k_get_qos(ab);
+	if (!qos_ctx) {
+		ath12k_err(NULL, "QoS Context is NULL\n");
+		return false;
+	}
+
+	spin_lock_bh(&qos_ctx->profile_lock);
+	if (!qos_ctx->profiles[qos_id].ref_count) {
+		ath12k_err(NULL, "Qos ctx : %u profiles not present\n",
+			   qos_id);
+		spin_unlock_bh(&qos_ctx->profile_lock);
+		return false;
+	}
+
+	*delay_bound = qos_ctx->profiles[qos_id].params.msdu_delivery_info;
+	spin_unlock_bh(&qos_ctx->profile_lock);
+
+	return true;
+}
+
+#define HW_TX_DELAY_MAX				0x1000000
+
+#define TX_COMPL_SHIFT_BUFFER_TIMESTAMP_US	10
+#define HW_TX_DELAY_MASK			0x1FFFFFFF
+#define TX_COMPL_BUFFER_TSTAMP_US(TSTAMP) \
+	(((TSTAMP) << TX_COMPL_SHIFT_BUFFER_TIMESTAMP_US) & \
+	 HW_TX_DELAY_MASK)
+
+#define ATH12K_DP_SAWF_DELAY_BOUND_MS_MULTIPLER 1000
+#define ATH12K_MOV_AVG_PKT_WIN	10
+
+#define ATH12K_HIST_AVG_DIV	2
+
+const u32 ath12k_hist_hw_tx_comp_bucket[] = {
+	250, 500, 750, 1000, 1500, 2000, 2500, 5000, 6000, 7000, 8000, 9000, U32_MAX
+};
+
+void ath12k_hist_fill_buckets(struct hist_bucket *hist, u32 value)
+{
+	int idx;
+
+	hist->hist_type = HIST_TYPE_HW_TX_COMP_DELAY;
+
+	for (idx = HIST_BUCKET_0; idx < ARRAY_SIZE(ath12k_hist_hw_tx_comp_bucket); idx++) {
+		if (value <= ath12k_hist_hw_tx_comp_bucket[idx]) {
+			hist->freq[idx]++;
+			return;
+		}
+	}
+}
+
+void ath12k_update_hist_stats(struct hist_stats *hist_stats, u32 value)
+{
+	if (!hist_stats)
+		return;
+
+	ath12k_hist_fill_buckets(&hist_stats->hist, value);
+
+	if (!hist_stats->min || value < hist_stats->min)
+		hist_stats->min = value;
+
+	if (value > hist_stats->max)
+		hist_stats->max = value;
+
+	if (unlikely(!hist_stats->avg))
+		hist_stats->avg = value;
+	else
+		hist_stats->avg = (hist_stats->avg + value) / ATH12K_HIST_AVG_DIV;
+}
+
+void ath12k_sdwf_compute_hw_delay(struct ath12k *ar, struct hal_tx_status *ts,
+				  u32 *hw_delay)
+{
+	/* low 32 alone will be filled for TSF2 from FW and the value can be
+	 * negative for both TSF2 and TQM delta
+	 */
+	int tmp_delta_tsf2 = ar->delta_tsf2, tmp_delta_tqm = ar->delta_tqm;
+	u32 msdu_tqm_enqueue_tstamp_us, final_msdu_tqm_enqueue_tstamp_us;
+	u32 msdu_compl_tsf_tstamp_us, final_msdu_compl_tsf_tstamp_us;
+	struct ath12k_hw_group *ag = ar->ab->ag;
+	/* MLO TSTAMP OFFSET can be negative
+	 */
+	int mlo_offset = ag->mlo_tstamp_offset;
+	int delta_tsf2, delta_tqm;
+
+	msdu_tqm_enqueue_tstamp_us =
+		TX_COMPL_BUFFER_TSTAMP_US(ts->buffer_timestamp);
+	msdu_compl_tsf_tstamp_us = ts->tsf;
+	delta_tsf2 = mlo_offset - tmp_delta_tsf2;
+	delta_tqm = mlo_offset - tmp_delta_tqm;
+
+	final_msdu_tqm_enqueue_tstamp_us =
+		(msdu_tqm_enqueue_tstamp_us + delta_tqm) & HW_TX_DELAY_MASK;
+	final_msdu_compl_tsf_tstamp_us =
+		(msdu_compl_tsf_tstamp_us + delta_tsf2) & HW_TX_DELAY_MASK;
+
+	*hw_delay = (final_msdu_compl_tsf_tstamp_us -
+			final_msdu_tqm_enqueue_tstamp_us) & HW_TX_DELAY_MASK;
+}
+
+/* reinject_pkt stats - needs to be implemented */
+void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
+			     struct hal_tx_status *ts,
+			     struct ath12k_pdev_dp *dp_pdev,
+			     ktime_t timestamp)
+{
+	struct ath12k_dp_link_peer *link_peer = NULL, *pri_peer = NULL;
+	struct ath12k_dp_peer *mld_peer;
+	struct ath12k_dp *dp = NULL;
+	struct ath12k_dp_hw *dp_hw = NULL;
+	struct ath12k_vif *ahvif = NULL;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_mld_qos_stats *mld_qos;
+	struct tx_stats *qos_tx;
+	struct delay_stats *qos_delay;
+	u64 enqueue_timestamp, total_delay_pkts;
+	u32 len, q_id, tid, hw_delay, nw_delay, sw_delay, delay_bound;
+	u32 nwdelay_avg, hwdelay_avg, swdelay_avg, pkt_win;
+	u16 msduq_id;
+	u8 link_id, pri_link_id, qos_id;
+	bool update_pri_peer = false;
+
+	if (!ts || !dp_pdev)
+		return;
+
+	if (!(skb->mark & QOS_VALID_TAG))
+		return;
+
+	msduq_id = u32_get_bits(skb->mark, SDWF_MSDUQ_ID);
+	if (msduq_id >= QOS_MSDUQ_MAX &&
+	    msduq_id < MSDUQ_MAX_DEF)
+		return;
+
+	msduq_id -= MSDUQ_MAX_DEF;
+
+	q_id = u16_get_bits(msduq_id, MSDUQ_MASK);
+	tid = u16_get_bits(msduq_id, MSDUQ_TID_MASK);
+	len = skb->len;
+
+	if (!(ath12k_debugfs_is_qos_stats_enabled(ar) & ATH12K_QOS_STATS_BASIC))
+		return;
+
+	mld_peer = ath12k_dp_peer_find_by_peerid_index(dp_pdev->dp,
+						       dp_pdev,
+						       ts->peer_id);
+	if (!mld_peer) {
+		ath12k_err(ar->ab, "MLD peer NA with peer_id: %u\n",
+			   ts->peer_id);
+		return;
+	}
+
+	if (mld_peer->qos_stats_lvl == ATH12K_QOS_SINGLE_LINK_STATS) {
+		/* primary link only */
+		link_id = mld_peer->hw_links[dp_pdev->hw_link_id];
+	} else {
+		link_id = ath12k_dp_get_link_id(dp_pdev, ts, mld_peer);
+	}
+
+	if (link_id < ATH12K_NUM_MAX_LINKS) {
+		link_peer = rcu_dereference(mld_peer->link_peers[link_id]);
+		if (!link_peer) {
+			ath12k_err(ar->ab, "link peer not present with link_id: %u\n",
+				   link_id);
+			return;
+		}
+
+		if (link_peer->vif) {
+			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
+		} else {
+			ath12k_err(ar->ab, "vif not present with link_id: %u\n",
+				   link_id);
+			return;
+		}
+
+		if (ahvif) {
+			arvif = rcu_dereference(ahvif->link[link_id]);
+		} else {
+			ath12k_err(ar->ab, "ath12k vif not present with link_id: %u\n",
+				   link_id);
+			return;
+		}
+
+		if (arvif && arvif->ar) {
+			dp = arvif->ar->ab->dp;
+			dp_hw = arvif->ar->dp.dp_hw;
+		} else {
+			ath12k_err(ar->ab, "link vif or link vif radio not present with link_id: %u\n",
+				   link_id);
+			return;
+		}
+
+		if (!dp || !dp_hw) {
+			ath12k_err(ar->ab, "dp or dp_hw not present %u\n",
+				   link_id);
+			return;
+		}
+	} else {
+		ath12k_err(ar->ab, "link peer NA with link_id: %u\n",
+			   link_id);
+		return;
+	}
+
+	spin_lock_bh(&dp->dp_lock);
+	spin_lock_bh(&dp_hw->peer_lock);
+
+	mld_qos = &mld_peer->mld_qos_stats[tid][q_id];
+
+	if (!link_peer->peer_stats.qos_stats) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		spin_unlock_bh(&dp->dp_lock);
+		return;
+	}
+
+	qos_tx = &link_peer->peer_stats.qos_stats->qos_tx[tid][q_id];
+
+	switch (ts->status) {
+	case HAL_WBM_TQM_REL_REASON_FRAME_ACKED:
+		mld_qos->tx_success_pkts++;
+		qos_tx->tx_success.num++;
+		qos_tx->tx_success.bytes += len;
+		if (ts->transmit_cnt > 1) {
+			qos_tx->total_retries_count += (ts->transmit_cnt - 1);
+			qos_tx->retry_count++;
+			if (ts->transmit_cnt > 2)
+				qos_tx->multiple_retry_count++;
+		}
+		ath12k_sdwf_update_peer_mcs_stats(qos_tx, ts);
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU:
+		qos_tx->dropped.fw_rem.num++;
+		qos_tx->dropped.fw_rem.bytes += len;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX:
+		qos_tx->dropped.fw_rem_tx++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_NOTX:
+		qos_tx->dropped.fw_rem_notx++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES:
+		qos_tx->dropped.age_out++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON1:
+		qos_tx->dropped.fw_reason1++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON2:
+		qos_tx->dropped.fw_reason2++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON3:
+		qos_tx->dropped.fw_reason3++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_DISABLE_QUEUE:
+		qos_tx->dropped.fw_rem_queue_disable++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_CMD_TILL_NONMATCHING:
+		qos_tx->dropped.fw_rem_no_match++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD:
+		qos_tx->dropped.drop_threshold++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_DROP_LINK_DESC_UNAVAIL:
+		qos_tx->dropped.drop_link_desc_na++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU:
+		qos_tx->dropped.invalid_drop++;
+		break;
+	case HAL_WBM_TQM_REL_REASON_MULTICAST_DROP:
+		qos_tx->dropped.mcast_vdev_drop++;
+		break;
+	default:
+		qos_tx->dropped.invalid_rr++;
+		break;
+	}
+
+	if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		qos_tx->tx_failed.num++;
+		qos_tx->tx_failed.bytes += len;
+		mld_qos->tx_failed_pkts++;
+		if (ts->transmit_cnt > DP_RETRY_COUNT)
+			qos_tx->failed_retry_count++;
+	}
+
+	pri_link_id = mld_peer->hw_links[dp_pdev->hw_link_id];
+
+	if (link_id == pri_link_id) {
+		qos_tx->queue_depth--;
+	} else {
+		update_pri_peer = true;
+	}
+
+	qos_delay = &link_peer->peer_stats.qos_stats->qos_delay[tid][q_id];
+
+	ath12k_sdwf_compute_hw_delay(ar, ts, &hw_delay);
+	if (hw_delay > HW_TX_DELAY_MAX) {
+		mld_qos->tx_invalid_delay_pkts++;
+		qos_delay->invalid_delay_pkts++;
+		goto out;
+	}
+
+	mld_qos->hwdelay_win_total += hw_delay;
+	ath12k_update_hist_stats(&qos_delay->delay_hist, hw_delay);
+
+	nw_delay = u32_get_bits(skb->mark, QOS_NW_DELAY);
+	mld_qos->nwdelay_win_total += nw_delay;
+
+	enqueue_timestamp = ktime_to_us(timestamp);
+
+	if (!enqueue_timestamp)
+		sw_delay = 0;
+	else
+		sw_delay = (u32) (enqueue_timestamp);
+
+	mld_qos->swdelay_win_total += sw_delay;
+
+	ath12k_telemetry_get_sla_mov_avg_num_pkt(&pkt_win);
+	if (!pkt_win)
+		pkt_win = ATH12K_MOV_AVG_PKT_WIN;
+
+	total_delay_pkts = mld_qos->tx_success_pkts +
+			   mld_qos->tx_failed_pkts -
+			   mld_qos->tx_invalid_delay_pkts;
+	if (!(total_delay_pkts % pkt_win)) {
+		nwdelay_avg = div_u64(mld_qos->nwdelay_win_total,
+				      pkt_win);
+		swdelay_avg = div_u64(mld_qos->swdelay_win_total,
+				      pkt_win);
+		hwdelay_avg = div_u64(mld_qos->hwdelay_win_total,
+				      pkt_win);
+		mld_qos->nwdelay_win_total = 0;
+		mld_qos->swdelay_win_total = 0;
+		mld_qos->hwdelay_win_total = 0;
+	}
+
+	if (!mld_peer->qos) {
+		ath12k_err(ar->ab, "link peer's qos not present\n");
+		goto out;
+	}
+
+	qos_id = mld_peer->qos->msduq_map[tid][q_id].qos_id;
+
+	if (ath12k_get_qos_params_delay_bound(arvif->ar->ab, qos_id,
+					      &delay_bound)) {
+		if (hw_delay > (delay_bound *
+				ATH12K_DP_SAWF_DELAY_BOUND_MS_MULTIPLER))
+			qos_delay->delay_failure++;
+		else
+			qos_delay->delay_success++;
+	}
+
+out:
+	spin_unlock_bh(&dp_hw->peer_lock);
+	spin_unlock_bh(&dp->dp_lock);
+
+	if (update_pri_peer) {
+		 pri_peer = rcu_dereference(mld_peer->link_peers[pri_link_id]);
+		 if (pri_peer) {
+			spin_lock_bh(&dp_pdev->dp->dp_lock);
+			if (pri_peer->peer_stats.qos_stats)
+				pri_peer->peer_stats.qos_stats->qos_tx[tid][q_id].queue_depth--;
+			spin_unlock_bh(&dp_pdev->dp->dp_lock);
+		}
+	}
 }
 
 #define HTT_META_DATA_ALIGNMENT 0x8
@@ -988,6 +1405,12 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		status.sta = peer->sta;
 	spin_unlock_bh(&dp->dp_lock);
 
+	if ((unlikely(ath12k_debugfs_is_dp_stats_enabled(dp_pdev))) &&
+	    (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar)))) {
+		ath12k_qos_stats_update(dp_pdev->ar, msdu, ts, dp_pdev,
+					msdu->tstamp);
+	}
+
 	status.info = info;
 	status.skb = msdu;
 	ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
@@ -1317,6 +1740,8 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	/* skip tx rate update from ieee80211_status*/
 	info->status.rates[0].idx = -1;
 
+	ar = dp_pdev->ar;
+
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer) {
 		link_id = ath12k_dp_get_link_id(dp_pdev, ts, peer);
@@ -1329,6 +1754,10 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
 								    ring,
 								    tx_desc_flags);
+			if (unlikely(ath12k_debugfs_is_qos_stats_enabled(ar)))
+				ath12k_qos_stats_update(ar, msdu, ts,
+							dp_pdev,
+							msdu->tstamp);
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring], 1);
@@ -1370,7 +1799,6 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	 * Might end up reporting it out-of-band from HTT stats.
 	 */
 
-	ar = dp_pdev->ar;
 	if (ath12k_debugfs_is_extd_tx_stats_enabled(ar)) {
 		if (ts->flags & HAL_TX_STATUS_FLAGS_FIRST_MSDU) {
 			if (ar->last_ppdu_id == 0) {
@@ -1460,6 +1888,9 @@ ath12k_wifi7_dp_tx_status_parse(struct ath12k_base *ab,
 	ts->tid = FIELD_GET(HAL_WBM_RELEASE_TX_INFO3_TID, desc->info3);
 	ts->transmit_cnt = le32_get_bits(desc->info1,
 					 HAL_WBM_COMPL_TX_INFO1_TRANSMIT_COUNT);
+	ts->buffer_timestamp = FIELD_GET(HAL_WBM_RELEASE_TX_INFO2_BUFFER_TIMESTAMP,
+					 desc->info2);
+	ts->tsf = desc->rate_stats.tsf;
 	ts->first_msdu = le32_get_bits(desc->info2,
 				       HAL_WBM_COMPL_TX_INFO2_FIRST_MSDU);
 	ts->last_msdu = le32_get_bits(desc->info2,

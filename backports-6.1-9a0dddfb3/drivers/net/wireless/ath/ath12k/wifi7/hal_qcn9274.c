@@ -1046,6 +1046,8 @@ const struct hal_ops hal_qcn9274_ops = {
 	.reset_rx_reo_tid_q = ath12k_wifi7_hal_reset_rx_reo_tid_q,
 	.get_idle_link_rbm = ath12k_wifi7_hal_get_idle_link_rbm,
 	.reo_shared_qaddr_cache_clear = ath12k_wifi7_hal_reo_shared_qaddr_cache_clear,
+	.hal_get_tsf2_scratch_reg = ath12k_hal_qcn9274_get_tsf2_scratch_reg,
+	.hal_get_tqm_scratch_reg = ath12k_hal_qcn9274_get_tqm_scratch_reg,
 	.rxdesc_get_mpdu_start_addr2 =
 			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_qcn9274,
 	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_qcn9274,

@@ -1234,6 +1234,8 @@ struct ath12k {
 	s8 max_allowed_tx_power;
 
 	bool teardown_complete_event;
+	u64 delta_tsf2;
+	u64 delta_tqm;
 	struct ath12k_afc_info afc;
 #ifdef CPTCFG_ATH12K_CFR
 	struct ath12k_cfr cfr;
@@ -1285,6 +1287,11 @@ struct ath12k_hw {
 
 	/* Keep last */
 	struct ath12k radio[] __aligned(sizeof(void *));
+};
+
+struct pmm_remap {
+	u32 base;
+	u32 size;
 };
 
 struct ath12k_band_cap {
@@ -1465,6 +1472,7 @@ struct ath12k_hw_group {
         struct completion umac_reset_complete;
         bool trigger_umac_reset;
 	struct ath12k_qos_ctx qos;
+	u64 mlo_tstamp_offset;
 	struct ath12k_stats_work_context stats_work;
 	u8 num_bypassed;
 	bool wsi_remap_in_progress;
@@ -1539,6 +1547,9 @@ struct ath12k_base {
 	u32 ce_remap_base_addr;
 	u32 cmem_offset;
 	bool ce_remap;
+	void __iomem *mem_pmm;
+	u32 pmm_remap_base_addr;
+	bool pmm_remap;
 	bool htt_flag;
 	bool stats_disable;
 

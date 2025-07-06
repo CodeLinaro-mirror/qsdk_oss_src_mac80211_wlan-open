@@ -17,6 +17,7 @@ struct ath12k_hif_ops {
 	void (*write32)(struct ath12k_base *ab, u32 address, u32 data);
 	u32 (*cmem_read32)(struct ath12k_base *sc, u32 address);
 	void (*cmem_write32)(struct ath12k_base *sc, u32 address, u32 data);
+	u32 (*pmm_read32)(struct ath12k_base *sc, u32 address);
 	void (*irq_enable)(struct ath12k_base *ab);
 	void (*irq_disable)(struct ath12k_base *ab);
 	int (*start)(struct ath12k_base *ab);
@@ -150,6 +151,16 @@ static inline void ath12k_hif_stop(struct ath12k_base *ab)
 static inline u32 ath12k_hif_read32(struct ath12k_base *ab, u32 address)
 {
 	return ab->hif.ops->read32(ab, address);
+}
+
+static inline u32 ath12k_hif_pmm_read32(struct ath12k_base *ab, u32 offset)
+{
+	return ab->hif.ops->pmm_read32(ab, offset);
+}
+
+static inline u32 ath12k_hif_cmem_read32(struct ath12k_base *ab, u32 address)
+{
+	return ab->hif.ops->cmem_read32(ab, address);
 }
 
 static inline void ath12k_hif_cmem_write32(struct ath12k_base *ab, u32 address,

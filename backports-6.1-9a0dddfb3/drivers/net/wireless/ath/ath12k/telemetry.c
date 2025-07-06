@@ -189,3 +189,27 @@ int ath12k_telemetry_sdwf_sla_detection_config(struct ath12k_sla_detect_cfg para
 		   ret);
 	return ret;
 }
+
+bool ath12k_telemetry_get_sla_mov_avg_num_pkt(u32 *mov_avg)
+{
+	if (!telemetry_ctx) {
+		*mov_avg = 1;
+		return false;
+	}
+
+	*mov_avg = telemetry_ctx->sla_samples_params.moving_avg_pkt;
+	return true;
+}
+EXPORT_SYMBOL(ath12k_telemetry_get_sla_mov_avg_num_pkt);
+
+bool ath12k_telemetry_get_sla_num_pkts(u32 *pkt_num)
+{
+	if (!telemetry_ctx) {
+		*pkt_num = 1;
+		return false;
+	}
+
+	*pkt_num = telemetry_ctx->sla_samples_params.sla_num_pkt;
+	return true;
+}
+EXPORT_SYMBOL(ath12k_telemetry_get_sla_num_pkts);

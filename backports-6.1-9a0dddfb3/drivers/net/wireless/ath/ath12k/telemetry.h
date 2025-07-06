@@ -95,5 +95,6 @@ void ath12k_telemetry_deinit(struct ath12k_base *ab);
 int ath12k_telemetry_sdwf_sla_samples_config(struct ath12k_sla_samples_cfg param);
 int ath12k_telemetry_sdwf_sla_thershold_config(struct ath12k_sla_thershold_cfg param);
 int ath12k_telemetry_sdwf_sla_detection_config(struct ath12k_sla_detect_cfg param);
-
+bool ath12k_telemetry_get_sla_num_pkts(u32 *pkt_num);
+bool ath12k_telemetry_get_sla_mov_avg_num_pkt(u32 *mov_avg);
 #endif /* ATH12K_TELEMETRY_H */

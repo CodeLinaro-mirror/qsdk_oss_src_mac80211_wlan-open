@@ -551,6 +551,11 @@ static const struct ce_remap ath12k_wifi7_ce_remap_ipq5332 = {
 	.cmem_offset = HAL_SEQ_WCSS_CMEM_OFFSET,
 };
 
+const struct pmm_remap ath12k_wifi7_pmm_ipq5332 = {
+	.base = HAL_IPQ5332_PMM_REG_BASE,
+	.size = HAL_IPQ5332_PMM_SIZE,
+};
+
 static const struct ce_ie_addr ath12k_wifi7_ce_ie_addr_ipq5424 = {
 	.ie1_reg_addr = CE_HOST_IPQ5424_IE_ADDRESS - HAL_IPQ5424_CE_WFSS_REG_BASE,
 	.ie2_reg_addr = CE_HOST_IPQ5424_IE_2_ADDRESS - HAL_IPQ5424_CE_WFSS_REG_BASE,
@@ -972,6 +977,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 
 		.ce_ie_addr = &ath12k_wifi7_ce_ie_addr_ipq5332,
 		.ce_remap = &ath12k_wifi7_ce_remap_ipq5332,
+		.pmm_remap = &ath12k_wifi7_pmm_ipq5332,
 		.en_qdsslog = true,
 		.support_fse = true,
 		.alloc_cacheable_memory = true,
@@ -1164,6 +1170,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 
 		.ce_ie_addr = &ath12k_wifi7_ce_ie_addr_ipq5424,
 		.ce_remap = &ath12k_wifi7_ce_remap_ipq5424,
+		.pmm_remap = &ath12k_wifi7_pmm_ipq5332,
 		.en_qdsslog = true,
 		.support_fse = true,
 		.alloc_cacheable_memory = true,

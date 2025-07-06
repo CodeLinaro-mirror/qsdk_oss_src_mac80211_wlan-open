@@ -491,6 +491,9 @@ void ath12k_wifi7_hal_rx_flow_delete_entry(struct ath12k_base *ab,
 void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
 					 u32 ba_window_size, u8 tid);
 void ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
+void ath12k_hal_qcn9274_get_tsf2_scratch_reg(struct ath12k_base *ab,
+					     u8 mac_id, u64 *value);
+void ath12k_hal_qcn9274_get_tqm_scratch_reg(struct ath12k_base *ab, u64 *value);
 void ath12k_wifi7_hal_rx_msdu_list_get(void *desc,
 				       void *list,
 				       u16 *num_msdus);

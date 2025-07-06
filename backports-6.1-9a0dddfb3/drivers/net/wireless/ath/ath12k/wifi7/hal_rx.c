@@ -1039,6 +1039,64 @@ void ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
 			   HAL_REO1_QDESC_ADDR(hal), val);
 }
 
+#define PMM_REG_OFFSET  4
+
+static void ath12k_hal_get_tsf_reg(u8 mac_id, enum hal_scratch_reg_enum *tsf_enum_low,
+				   enum hal_scratch_reg_enum *tsf_enum_hi)
+{
+	if (!mac_id) {
+		*tsf_enum_low = PMM_MAC0_TSF2_OFFSET_LO_US;
+		*tsf_enum_hi = PMM_MAC0_TSF2_OFFSET_HI_US;
+	} else if (mac_id == 1) {
+		*tsf_enum_low = PMM_MAC1_TSF2_OFFSET_LO_US;
+		*tsf_enum_hi = PMM_MAC1_TSF2_OFFSET_HI_US;
+	}
+}
+
+void ath12k_hal_qcn9274_get_tsf2_scratch_reg(struct ath12k_base *ab,
+					     u8 mac_id, u64 *value)
+{
+	enum hal_scratch_reg_enum enum_lo, enum_hi;
+	u32 offset_lo, offset_hi;
+
+	ath12k_hal_get_tsf_reg(mac_id, &enum_lo, &enum_hi);
+
+	if (ab->hif.ops->pmm_read32) {
+		offset_lo = ath12k_hif_pmm_read32(ab, ATH12K_PPT_ADDR_OFFSET(enum_lo));
+		offset_hi = ath12k_hif_pmm_read32(ab, ATH12K_PPT_ADDR_OFFSET(enum_hi));
+	} else if (ab->hw_rev == ATH12K_HW_QCN6432_HW10) {
+		offset_lo = ath12k_hif_cmem_read32(ab, PMM_REG_BASE_QCN9224 + ATH12K_PPT_ADDR_OFFSET(enum_lo));
+		offset_hi = ath12k_hif_cmem_read32(ab, PMM_REG_BASE_QCN9224 + ATH12K_PPT_ADDR_OFFSET(enum_hi));
+	} else {
+		offset_lo = ath12k_hif_read32(ab, PMM_REG_BASE_QCN9224 + ATH12K_PPT_ADDR_OFFSET(enum_lo));
+		offset_hi = ath12k_hif_read32(ab, PMM_REG_BASE_QCN9224 + ATH12K_PPT_ADDR_OFFSET(enum_hi));
+	}
+
+	*value = ((u64)(offset_hi) << 32 | offset_lo);
+}
+
+void ath12k_hal_qcn9274_get_tqm_scratch_reg(struct ath12k_base *ab, u64 *value)
+{
+	u32 offset_lo, offset_hi;
+
+	if (ab->hif.ops->pmm_read32) {
+		offset_lo = ath12k_hif_pmm_read32(ab, ATH12K_PPT_ADDR_OFFSET(PMM_TQM_CLOCK_OFFSET_LO_US));
+		offset_hi = ath12k_hif_pmm_read32(ab, ATH12K_PPT_ADDR_OFFSET(PMM_TQM_CLOCK_OFFSET_HI_US));
+	} else if (ab->hw_rev == ATH12K_HW_QCN6432_HW10) {
+		offset_lo = ath12k_hif_cmem_read32(ab,
+						   PMM_REG_BASE_QCN9224 + ATH12K_PPT_ADDR_OFFSET(PMM_TQM_CLOCK_OFFSET_LO_US));
+		offset_hi = ath12k_hif_cmem_read32(ab,
+						   PMM_REG_BASE_QCN9224 + ATH12K_PPT_ADDR_OFFSET(PMM_TQM_CLOCK_OFFSET_HI_US));
+	} else {
+		offset_lo = ath12k_hif_read32(ab,
+					      PMM_REG_BASE_QCN9224 + ATH12K_PPT_ADDR_OFFSET(PMM_TQM_CLOCK_OFFSET_LO_US));
+		offset_hi = ath12k_hif_read32(ab,
+					      PMM_REG_BASE_QCN9224 + ATH12K_PPT_ADDR_OFFSET(PMM_TQM_CLOCK_OFFSET_HI_US));
+	}
+
+	*value = ((u64)(offset_hi) << 32 | offset_lo);
+}
+
 static void
 ath12k_wifi7_key_bitwise_left_shift(u8 *key, int length, int shift)
 {

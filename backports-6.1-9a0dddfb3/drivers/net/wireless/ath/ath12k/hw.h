@@ -296,6 +296,7 @@ struct ath12k_hw_params {
 
 	const struct ce_ie_addr *ce_ie_addr;
 	const struct ce_remap *ce_remap;
+	const struct pmm_remap *pmm_remap;
 	u32 afc_mem_offset;
 	bool send_platform_model;
 	bool handle_beacon_miss;

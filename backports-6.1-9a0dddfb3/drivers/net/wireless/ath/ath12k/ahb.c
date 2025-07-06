@@ -153,6 +153,11 @@ static void ath12k_ahb_write32(struct ath12k_base *ab, u32 offset,
 		iowrite32(value, ab->mem + offset);
 }
 
+static inline u32 ath12k_ahb_pmm_read32(struct ath12k_base *ab, u32 offset)
+{
+	return ioread32(ab->mem_pmm + offset);
+}
+
 #if LINUX_VERSION_IS_GEQ(6,13,0)
 static void ath12k_ahb_cancel_workqueue(struct ath12k_base *ab)
 {
@@ -1022,6 +1027,7 @@ static struct ath12k_hif_ops ath12k_ahb_hif_ops = {
 	.stop = ath12k_ahb_stop,
 	.read32 = ath12k_ahb_read32,
 	.write32 = ath12k_ahb_write32,
+	.pmm_read32 = ath12k_ahb_pmm_read32,
 	.irq_enable = ath12k_ahb_ext_irq_enable,
 	.irq_disable = ath12k_ahb_ext_irq_disable,
 	.map_service_to_pipe = ath12k_ahb_map_service_to_pipe,
@@ -1467,8 +1473,23 @@ static int ath12k_ahb_resource_init(struct ath12k_base *ab)
 		ab->ce_remap_base_addr = ce_remap->base;
 	}
 
+	if (ab->hw_params->pmm_remap) {
+		const struct pmm_remap *pmm = ab->hw_params->pmm_remap;
+
+		ab->mem_pmm = ioremap(pmm->base, pmm->size);
+		if (IS_ERR(ab->mem_pmm)) {
+			dev_err(&pdev->dev, "pmm ioremap error\n");
+			ret = -ENOMEM;
+			goto err_ce_mem_unmap;
+		}
+		ab->pmm_remap = true;
+		ab->pmm_remap_base_addr = pmm->base;
+	}
+
 	return 0;
 
+err_ce_mem_unmap:
+	ab->mem_pmm = NULL;
 err_mem_unmap:
 	ab->mem_ce = NULL;
 	devm_iounmap(ab->dev, ab->mem);

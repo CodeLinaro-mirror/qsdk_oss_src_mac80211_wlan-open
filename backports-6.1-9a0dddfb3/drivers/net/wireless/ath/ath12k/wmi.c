@@ -12412,6 +12412,8 @@ skip_lookup:
 	ar->mlo_setup_status = le32_to_cpu(ev->status);
 	max_ml_peer_ids = le32_to_cpu(ev->max_ml_peer_ids);
 	ar->ah->max_ml_peer_ids = max_ml_peer_ids ? max_ml_peer_ids : ATH12K_MAX_MLO_PEERS;
+	if (ab->hw_params->hal_ops->hal_get_tqm_scratch_reg)
+		ab->hw_params->hal_ops->hal_get_tqm_scratch_reg(ab, &ar->delta_tqm);
 	complete(&ar->mlo_setup_done);
 
 out:

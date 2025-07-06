@@ -332,6 +332,30 @@ enum hal_ring_type {
 	HAL_MAX_RING_TYPES,
 };
 
+#define PMM_REG_BASE_QCN9224    0xB500FC
+#define HAL_IPQ5332_PMM_REG_BASE       0xCB500FC
+#define HAL_IPQ5332_PMM_SIZE           0x100
+
+enum hal_scratch_reg_enum {
+	PMM_QTIMER_GLOBAL_OFFSET_LO_US,
+	PMM_QTIMER_GLOBAL_OFFSET_HI_US,
+	PMM_MAC0_TSF1_OFFSET_LO_US,
+	PMM_MAC0_TSF1_OFFSET_HI_US,
+	PMM_MAC0_TSF2_OFFSET_LO_US,
+	PMM_MAC0_TSF2_OFFSET_HI_US,
+	PMM_MAC1_TSF1_OFFSET_LO_US,
+	PMM_MAC1_TSF1_OFFSET_HI_US,
+	PMM_MAC1_TSF2_OFFSET_LO_US,
+	PMM_MAC1_TSF2_OFFSET_HI_US,
+	PMM_MLO_OFFSET_LO_US,
+	PMM_MLO_OFFSET_HI_US,
+	PMM_TQM_CLOCK_OFFSET_LO_US,
+	PMM_TQM_CLOCK_OFFSET_HI_US,
+	PMM_Q6_CRASH_REASON,
+	PMM_SCRATCH_TWT_OFFSET,
+	PMM_PMM_REG_MAX
+};
+
 /**
  * enum hal_reo_cmd_type: Enum for REO command type
  * @HAL_REO_CMD_GET_QUEUE_STATS: Get REO queue status/stats
@@ -548,6 +572,8 @@ struct hal_tx_status {
 	u16 tones;
 	u8 ofdma;
 	bool acked;
+	u32 buffer_timestamp;
+	u32 tsf;
 	u8 transmit_cnt;
 	u8 first_msdu;
 	u8 last_msdu;
@@ -1292,6 +1318,9 @@ struct hal_ops {
 				 u16 *num_msdus);
 	u8 (*rx_h_l3pad_get)(struct hal_rx_desc *desc);
 	void (*hal_mon_ops_init)(struct ath12k_hal *hal, u8 hw_version);
+	void (*hal_get_tsf2_scratch_reg)(struct ath12k_base *ab, u8 mac_id,
+					 u64 *value);
+	void (*hal_get_tqm_scratch_reg)(struct ath12k_base *ab, u64 *value);
 	void (*get_hw_hptp)(struct ath12k_base *ab, enum hal_ring_type type,
 			    struct hal_srng *srng, uint32_t *hp, uint32_t *tp);
 };
