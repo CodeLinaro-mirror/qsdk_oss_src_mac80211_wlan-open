@@ -3778,8 +3778,8 @@ static int ath12k_vendor_event_iface_reload(struct wiphy *wiphy, u8 radio_idx)
 
 /* Set link-vif level parameters
  * set 'reload' to true to send reload event to userspace */
-static int ath12k_vendor_set_arvif_params(struct ath12k_link_vif *arvif,
-					  u32 param, u32 value, bool *reload)
+static int ath12k_vendor_set_arvif_params(struct ath12k *ar, u32 param,
+					  u32 value, bool *reload)
 {
 	int ret = -1;
 
@@ -3787,6 +3787,12 @@ static int ath12k_vendor_set_arvif_params(struct ath12k_link_vif *arvif,
 	case QCA_WLAN_VENDOR_VDEV_PARAM_TEST_RELOAD:
 		*reload = true;
 		ret = 0;
+		break;
+	case PARAM_RADIO_TXCHAINSOFT:
+		ret = ath12k_mac_set_tx_antenna(ar, value);
+		break;
+	case ACFG_PARAM_RADIO_RXCHAINMASK:
+		ret = ath12k_mac_set_rx_antenna(ar, value);
 		break;
 	default:
 		ath12k_dbg(NULL, ATH12K_DBG_CFG,
@@ -3829,11 +3835,12 @@ static int ath12k_vendor_set_wifi_params(struct wiphy *wiphy,
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_hw *ah = NULL;
-	u32 param = params->value;
+	struct ath12k *ar;
 	u32 *data = (u32 *)params->data;
+	u32 param = params->value;
+	bool reload = false;
 	u32 value = *data;
 	int ret = -1;
-	bool reload = false;
 
 	lockdep_assert_wiphy(wiphy);
 
@@ -3854,18 +3861,20 @@ static int ath12k_vendor_set_wifi_params(struct wiphy *wiphy,
 		if (params->link_id < ATH12K_NUM_MAX_LINKS)
 			arvif = rcu_dereference(ahvif->link[params->link_id]);
 	}
-	if (!arvif) {
+	if (!arvif || !arvif->ar) {
 		rcu_read_unlock();
 		return -EINVAL;
 	}
+
+	ar = arvif->ar;
+	rcu_read_unlock();
 
 	ath12k_dbg(NULL, ATH12K_DBG_CFG,
 		   "vif: %p param: %d value: %d if: %d link: %d\n",
 		   vif, param, value,
 		   params->ifindex, params->link_id);
 
-	ret = ath12k_vendor_set_arvif_params(arvif, param, value, &reload);
-	rcu_read_unlock();
+	ret = ath12k_vendor_set_arvif_params(ar, param, value, &reload);
 
 	if (!ret && reload)
 		ath12k_vendor_event_iface_reload_link(wiphy, wdev, params->link_id);

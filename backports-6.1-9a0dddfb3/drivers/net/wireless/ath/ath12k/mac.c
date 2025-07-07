@@ -10439,6 +10439,10 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 		return ret;
 	}
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "ar->cfg_tx_chainmask: %d (%x) ar->cfg_rx_chainmask: %d (%x)\n",
+		   ar->cfg_tx_chainmask, ar->num_tx_chains,
+		   ar->cfg_rx_chainmask, ar->num_rx_chains);
+
 	return 0;
 }
 
@@ -13690,6 +13694,85 @@ static void ath12k_mac_setup_sband_iftype_data(struct ath12k *ar,
 		_ieee80211_set_sband_iftype_data(sband, ar->mac.iftype[band],
 						 count);
 	}
+}
+
+int ath12k_mac_set_tx_antenna(struct ath12k *ar, u32 tx_ant)
+{
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	/* Since we advertised the max cap of all radios combined during wiphy
+	 * registration, ensure we dont set the antenna config higher than our
+	 * limits
+	 */
+
+	tx_ant = min_t(u32, tx_ant, ar->pdev->cap.tx_chain_mask);
+
+	ar->cfg_tx_chainmask = tx_ant;
+
+	ar->num_tx_chains = hweight32(tx_ant);
+
+	/* Reload HT/VHT/HE capability */
+	ath12k_mac_setup_ht_vht_cap(ar, &ar->pdev->cap, NULL);
+	ath12k_mac_setup_sband_iftype_data(ar, &ar->pdev->cap);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON &&
+	    ar->ah->state != ATH12K_HW_STATE_RESTARTED)
+		return 0;
+
+	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_TX_CHAIN_MASK,
+					tx_ant, ar->pdev->pdev_id);
+	if (ret) {
+		ath12k_err(ar->ab, "failed to set tx-chainmask: %d, req 0x%x\n",
+			   ret, tx_ant);
+		return ret;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "ar->cfg_tx_chainmask: %d (%x) ar->cfg_rx_chainmask: %d (%x)\n",
+		   ar->cfg_tx_chainmask, ar->num_tx_chains,
+		   ar->cfg_rx_chainmask, ar->num_rx_chains);
+
+	return 0;
+}
+
+int ath12k_mac_set_rx_antenna(struct ath12k *ar, u32 rx_ant)
+{
+	int ret;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	/* Since we advertised the max cap of all radios combined during wiphy
+	 * registration, ensure we dont set the antenna config higher than our
+	 * limits
+	 */
+	rx_ant = min_t(u32, rx_ant, ar->pdev->cap.rx_chain_mask);
+
+	ar->cfg_rx_chainmask = rx_ant;
+
+	ar->num_rx_chains = hweight32(rx_ant);
+
+	/* Reload HT/VHT/HE capability */
+	ath12k_mac_setup_ht_vht_cap(ar, &ar->pdev->cap, NULL);
+	ath12k_mac_setup_sband_iftype_data(ar, &ar->pdev->cap);
+
+	if (ar->ah->state != ATH12K_HW_STATE_ON &&
+	    ar->ah->state != ATH12K_HW_STATE_RESTARTED)
+		return 0;
+
+	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_RX_CHAIN_MASK,
+					rx_ant, ar->pdev->pdev_id);
+	if (ret) {
+		ath12k_err(ar->ab, "failed to set rx-chainmask: %d, req 0x%x\n",
+				ret, rx_ant);
+		return ret;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "ar->cfg_tx_chainmask: %d (%x) ar->cfg_rx_chainmask: %d (%x)\n",
+		   ar->cfg_tx_chainmask, ar->num_tx_chains,
+		   ar->cfg_rx_chainmask, ar->num_rx_chains);
+
+	return 0;
 }
 
 static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
