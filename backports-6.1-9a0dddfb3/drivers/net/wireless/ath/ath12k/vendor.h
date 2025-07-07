@@ -7,6 +7,9 @@
 
 #define QCA_NL80211_VENDOR_ID 0x001374
 
+#define INVALID_LINK_ID 0xFF
+#define is_valid_link_id(X) !((X) >= INVALID_LINK_ID)
+
 #define QCA_NL80211_AFC_REQ_RESP_BUF_MAX_SIZE          5000
 #define QCA_WLAN_AFC_RESP_DESC_FIELD_START_OCTET       14
 #define QCA_WLAN_AFC_RESP_DESC_FIELD_END_OCTET         30
@@ -1692,6 +1695,169 @@ enum qca_wlan_vendor_dynamic_init_conf {
 	QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_SERVICE_START = 1,
 	QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_SERVICE_STOP = 2,
 };
+/**
+ * enum qca_wlan_vendor_attr_soc_device_info - Represents the SOC device
+ * information available in the driver. The driver will send this information
+ * to the userspace as part of the registration event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_SOC_ID: u8, represents the SOC device ID.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_NUM_LINKS: u8, represents the number of
+ * links present in the SOC device.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_LINK_INFO: represents the link level
+ * information. Array of nested attributes are defined in enum
+ * qca_wlan_vendor_attr_link_info
+ */
+enum qca_wlan_vendor_attr_soc_device_info {
+	QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_SOC_ID = 1,
+	QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_NUM_LINKS = 2,
+	QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_LINK_INFO = 3,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_INFO_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_INFO_MAX =
+		QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_INFO_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_link_info - Represents the link level information
+ * available in the driver. The driver will send this information to the
+ * userspace as part of the registration event.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_INFO_HW_LINK_ID: u16, represents the hardware link
+ * ID.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_MAC: 6 byte MAC address represents the Link
+ * MAC address.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_CHAN_BW: u8, represents the channel bandwidth,
+ * values are defined in enum qca_wlan_vendor_channel_width
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_CHAN_FREQ: u16, represents the channel frequency
+ * in MHz.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_BAND_CAP: Channel band capability, values are
+ * defined in enum qca_wlan_vendor_link_band_caps
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_TX_CHAIN_MASK: u8, represents the max tx chainmask
+ * value.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_LINK_RX_CHAIN_MASK: u8, represents the max rx chainmask
+ * value.
+ */
+enum qca_wlan_vendor_attr_link_info {
+	QCA_WLAN_VENDOR_ATTR_LINK_INFO_HW_LINK_ID = 1,
+	QCA_WLAN_VENDOR_ATTR_LINK_MAC = 2,
+	QCA_WLAN_VENDOR_ATTR_LINK_CHAN_BW = 3,
+	QCA_WLAN_VENDOR_ATTR_LINK_CHAN_FREQ = 4,
+	QCA_WLAN_VENDOR_ATTR_LINK_BAND_CAP = 5,
+	QCA_WLAN_VENDOR_ATTR_LINK_TX_CHAIN_MASK = 6,
+	QCA_WLAN_VENDOR_ATTR_LINK_RX_CHAIN_MASK = 7,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_LINK_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_LINK_MAX =
+		QCA_WLAN_VENDOR_ATTR_LINK_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_app_generic_category: Represents the Generic
+ * mapping frame category value.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_INVALID: Generic mapping catefory
+ * invalid.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_APP_INIT: The driver includes this
+ * category in the event  sent to the userspace when it receives a APP INIT
+ * request frame.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_LINK_BW_NSS_CHANGE: Represents the
+ * notification message that will be sent to the RM APP for changes observed
+ * in the BW and NSS values at AP side. Array of nested attributes are defined
+ * in enum qca_wlan_vendor_attr_link_bw_nss_change_info
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO: The driver
+ * includes this category in the event sent to the userspace when it receives a
+ * Assoc request frame from the STA without T2LM IE.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_WITH_T2LM_INFO: The driver
+ * includes this category in the event sent to the userspace when it receives a
+ * Assoc request frame from the STA with T2LM IE.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_OMI_NO_T2LM_INFO: The driver includes
+ * this category in the event sent to the userspace when it receives a Operatin
+ * mode change notification from the STA.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_DISASSOC: The driver includes this
+ * category in the event sent to the userspace when it receives a disassoc from
+ * the connected STA.
+ */
+enum qca_wlan_vendor_attr_app_generic_category {
+	QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_APP_INIT = 1,
+	QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_LINK_BW_NSS_CHANGE = 2,
+	QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO = 3,
+	QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_WITH_T2LM_INFO = 4,
+	QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_OMI_NO_T2LM_INFO = 5,
+	QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_DISASSOC = 6,
+};
+
+/**
+ * enum qca_wlan_vendor_channel_width - Represents the channel bandwidth in MHz
+ * available in the driver. The driver will send this information to the
+ * userspace as part of the registration event.
+ *
+ * @QCA_WLAN_VENDOR_CHAN_WIDTH_INVALID: Invalid channel bandwidth
+ *
+ * @QCA_WLAN_VENDOR_CHAN_WIDTH_20MHZ: 20 MHz channel bandwidth
+ *
+ * @QCA_WLAN_VENDOR_CHAN_WIDTH_40MHZ: 40 MHz channel bandwidth
+ *
+ * @QCA_WLAN_VENDOR_CHAN_WIDTH_80MHZ: 80 MHz channel bandwidth
+ *
+ * @QCA_WLAN_VENDOR_CHAN_WIDTH_160MZ: 160 MHz channel bandwidth
+ *
+ * @QCA_WLAN_VENDOR_CHAN_WIDTH_80_80MHZ: 80+80 MHz channel bandwidth
+ *
+ * @QCA_WLAN_VENDOR_CHAN_WIDTH_320MHZ: 320 MHz channel bandwidth
+ */
+enum qca_wlan_vendor_channel_width {
+	QCA_WLAN_VENDOR_CHAN_WIDTH_INVALID = 0,
+	QCA_WLAN_VENDOR_CHAN_WIDTH_20MHZ = 1,
+	QCA_WLAN_VENDOR_CHAN_WIDTH_40MHZ = 2,
+	QCA_WLAN_VENDOR_CHAN_WIDTH_80MHZ = 3,
+	QCA_WLAN_VENDOR_CHAN_WIDTH_160MZ = 4,
+	QCA_WLAN_VENDOR_CHAN_WIDTH_80_80MHZ = 5,
+	QCA_WLAN_VENDOR_CHAN_WIDTH_320MHZ = 6,
+};
+
+#define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \
+	do {                                                            \
+		if (nla_put_##type(vendor_event, attr, param)) {        \
+			ath12k_err(NULL, "Fails to put " #attr "\n");   \
+			return -1;                                      \
+		}                                                       \
+	} while (0)
+
+enum qca_wlan_vendor_channel_width
+ath12k_nl_chan_bw_to_qca_vendor_chan_bw(enum nl80211_chan_width chan_bw);
+
+int ath12k_vendor_put_ar_hw_link_id(struct sk_buff *vendor_event,
+				    struct ath12k *ar);
+int ath12k_vendor_put_ar_link_mac_addr(struct sk_buff *vendor_event,
+				       struct ath12k *ar);
+int ath12k_vendor_put_ar_chan_info(struct sk_buff *vendor_event,
+				   struct ath12k *ar);
+int ath12k_vendor_put_ar_nss_chains(struct sk_buff *vendor_event,
+				    struct ath12k *ar);
+int ath12k_vendor_put_ab_soc_id(struct sk_buff *vendor_event,
+				struct ath12k_base *ab);
+int ath12k_vendor_put_ab_num_links(struct sk_buff *vendor_event,
+				   struct ath12k_base *ab,
+				   const int num_active_links);
+int ath12k_vendor_put_ag_num_socs(struct sk_buff *vendor_event,
+				  struct ath12k_hw_group *ag);
 void ath12k_vendor_telemetry_notify_breach(struct ieee80211_vif *vif, u8 *mac_addr,
 					   u8 svc_id, u8 param, bool set_clear,
 					   u8 tid, u8 *mld_addr);

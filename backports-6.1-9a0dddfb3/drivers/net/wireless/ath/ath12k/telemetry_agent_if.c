@@ -13,6 +13,7 @@
 #include "sdwf.h"
 #include "mac.h"
 #include <linux/module.h>
+#include "vendor_services.h"
 
 struct telemetry_agent_ops *g_agent_ops;
 
@@ -629,6 +630,16 @@ int ath12k_telemetry_dynamic_app_init_deinit_notify(u8 init, u8 id, u64 service_
 	return 0;
 }
 
+void ath12k_telemetry_notify_rm(enum agent_notification_event event,
+				enum rm_services id,
+				uint8_t category)
+{
+	ath12k_err(NULL,
+		   "Handshake received from telemetry for Event:%d id:%d category:%d\n",
+		   event, id, category);
+	ath12k_telemetry_vendor_callback(event, id, category);
+}
+
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 
 {
@@ -646,6 +657,8 @@ int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 	g_agent_ops->sawf_get_drop_stats = ath12k_sawf_get_drop_stats;
 	g_agent_ops->sawf_get_msduq_tx_stats = ath12k_sawf_get_msduq_tx_stats;
 	g_agent_ops->sawf_notify_breach = ath12k_sawf_notify_breach;
+
+	g_agent_ops->agent_notify_host_event = ath12k_telemetry_notify_rm;
 
 	ath12k_info(NULL, "registered telemetry agent ops: %p", g_agent_ops);
 
@@ -668,6 +681,30 @@ EXPORT_SYMBOL(unregister_telemetry_agent_ops);
 bool ath12k_telemetry_is_agent_loaded(void)
 {
 	return (g_agent_ops) ? true : false;
+}
+
+void ath12k_telemetry_destroy_peer_agent_resources(void)
+{
+	struct ath12k_hw_group *ag;
+	struct ath12k_base *ab;
+	int i, ret;
+
+	ag = ath12k_core_get_ag();
+	if (!ag) {
+		ath12k_err(NULL, "Failed to destroy peer agent resources through rm\n");
+		return;
+	}
+
+	mutex_lock(&ag->mutex);
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+
+		ret = ath12k_telemetry_ab_peer_agent_destroy(ab);
+		if (ret)
+			ath12k_err(ab, "Failed to create peer agent for soc: %d\n",
+				   i);
+	}
+	mutex_unlock(&ag->mutex);
 }
 
 int ath12k_telemetry_set_mov_avg_params(u32 num_pkt,

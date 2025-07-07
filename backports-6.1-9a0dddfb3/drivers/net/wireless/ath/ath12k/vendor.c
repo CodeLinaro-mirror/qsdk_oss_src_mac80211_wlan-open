@@ -6324,6 +6324,152 @@ err:
 	kfree(skb);
 }
 
+static struct ath12k_link_vif *
+ath12k_vendor_get_non_scan_arvif(struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (list_empty(&ar->arvifs))
+		return NULL;
+
+	list_for_each_entry(arvif, &ar->arvifs, list)
+		if (!arvif->is_scan_vif && arvif->is_started)
+			return arvif;
+
+	return list_first_entry(&ar->arvifs, typeof(*arvif), list);
+}
+
+int ath12k_vendor_put_ar_hw_link_id(struct sk_buff *vendor_event,
+				    struct ath12k *ar)
+{
+	if (nla_put_u16(vendor_event,
+			QCA_WLAN_VENDOR_ATTR_LINK_INFO_HW_LINK_ID,
+			ar->pdev->hw_link_id)) {
+		ath12k_err(ar->ab, "failed to put hw link id %u for soc %d",
+			   ar->pdev->hw_link_id, ath12k_get_ab_device_id(ar->ab));
+		return -1;
+	}
+
+	return 0;
+}
+
+int ath12k_vendor_put_ar_link_mac_addr(struct sk_buff *vendor_event,
+				       struct ath12k *ar)
+{
+	struct ath12k_link_vif *arvif = ath12k_vendor_get_non_scan_arvif(ar);
+
+	if (nla_put(vendor_event,
+		    QCA_WLAN_VENDOR_ATTR_LINK_MAC,
+		    6, (void *)arvif->bssid)) {
+		ath12k_err(ar->ab, "failed to put mac addr for hw link id %u soc %d",
+			   ar->pdev->hw_link_id, ath12k_get_ab_device_id(ar->ab));
+		return -1;
+	}
+
+	return 0;
+}
+
+enum qca_wlan_vendor_channel_width
+ath12k_nl_chan_bw_to_qca_vendor_chan_bw(enum nl80211_chan_width chan_bw)
+{
+	switch (chan_bw) {
+	case NL80211_CHAN_WIDTH_20:
+		return QCA_WLAN_VENDOR_CHAN_WIDTH_20MHZ;
+	case NL80211_CHAN_WIDTH_40:
+		return QCA_WLAN_VENDOR_CHAN_WIDTH_40MHZ;
+	case NL80211_CHAN_WIDTH_80:
+		return QCA_WLAN_VENDOR_CHAN_WIDTH_80MHZ;
+	case NL80211_CHAN_WIDTH_160:
+		return QCA_WLAN_VENDOR_CHAN_WIDTH_160MZ;
+	case NL80211_CHAN_WIDTH_80P80:
+		return QCA_WLAN_VENDOR_CHAN_WIDTH_80_80MHZ;
+	case NL80211_CHAN_WIDTH_320:
+		return QCA_WLAN_VENDOR_CHAN_WIDTH_320MHZ;
+	default:
+		return QCA_WLAN_VENDOR_CHAN_WIDTH_INVALID;
+	}
+
+	return QCA_WLAN_VENDOR_CHAN_WIDTH_INVALID;
+}
+
+int ath12k_vendor_put_ar_chan_info(struct sk_buff *vendor_event,
+				   struct ath12k *ar)
+{
+	struct ieee80211_chanctx_conf *ctx = NULL;
+
+	ctx = ath12k_mac_get_first_active_arvif_chanctx(ar);
+
+	if (!ctx)
+		return -1;
+
+	if (nla_put_u8(vendor_event, QCA_WLAN_VENDOR_ATTR_LINK_CHAN_BW,
+		       ath12k_nl_chan_bw_to_qca_vendor_chan_bw(ctx->def.width))) {
+		ath12k_err(ar->ab, "failed to put chan bw for hw link id %u soc %d",
+			   ar->pdev->hw_link_id, ath12k_get_ab_device_id(ar->ab));
+		return -1;
+	}
+
+	if (nla_put_u16(vendor_event, QCA_WLAN_VENDOR_ATTR_LINK_CHAN_FREQ,
+			ctx->def.chan->center_freq)) {
+		ath12k_err(ar->ab, "failed to put chan center freq for hw link id %u soc %d",
+			   ar->pdev->hw_link_id, ath12k_get_ab_device_id(ar->ab));
+		return -1;
+	}
+
+	return 0;
+}
+
+int ath12k_vendor_put_ar_nss_chains(struct sk_buff *vendor_event,
+				    struct ath12k *ar)
+{
+	if (nla_put_u8(vendor_event, QCA_WLAN_VENDOR_ATTR_LINK_TX_CHAIN_MASK,
+		       ar->pdev->cap.tx_chain_mask)) {
+		ath12k_err(ar->ab, "failed to put tx chain mask for hw link id %u soc %d",
+			   ar->pdev->hw_link_id, ath12k_get_ab_device_id(ar->ab));
+		return -1;
+	}
+
+	if (nla_put_u8(vendor_event, QCA_WLAN_VENDOR_ATTR_LINK_RX_CHAIN_MASK,
+		     ar->pdev->cap.rx_chain_mask)) {
+		ath12k_err(ar->ab, "failed to put rx chain mask for hw link id %u soc %d",
+			   ar->pdev->hw_link_id, ath12k_get_ab_device_id(ar->ab));
+		return -1;
+	}
+
+	return 0;
+}
+
+int ath12k_vendor_put_ab_soc_id(struct sk_buff *vendor_event,
+				struct ath12k_base *ab)
+{
+	if (nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_SOC_ID,
+		       ab->device_id)) {
+		ath12k_err(ab, "failed to put soc device id for soc %d",
+			   ab->device_id);
+		return -1;
+	}
+
+	return 0;
+}
+
+int ath12k_vendor_put_ab_num_links(struct sk_buff *vendor_event,
+				   struct ath12k_base *ab,
+				   const int num_active_links)
+{
+	if (nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_SOC_DEVICE_NUM_LINKS,
+		       num_active_links)) {
+		ath12k_err(ab, "failed to put number of hw links for soc %d",
+			   ab->device_id);
+		return -1;
+	}
+
+	return 0;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,

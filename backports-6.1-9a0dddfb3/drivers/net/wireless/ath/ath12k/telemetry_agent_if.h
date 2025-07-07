@@ -77,6 +77,9 @@ int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
 					       const u8 *addr);
 int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab);
 int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab);
+void ath12k_telemetry_destroy_peer_agent_resources(void);
+
+void ath12k_telemetry_vendor_callback(u8 init, u8 id, u8 category);
 int ath12k_telemetry_set_mov_avg_params(u32 num_pkt, u32 num_win);
 int ath12k_telemetry_set_sla_params(u32 num_pkt, u32 time_sec);
 int ath12k_telemetry_set_sla_cfg(struct ath12k_sla_thershold_cfg param);

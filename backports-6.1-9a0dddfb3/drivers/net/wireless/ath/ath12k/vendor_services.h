@@ -86,6 +86,30 @@ struct ath12k_vendor_service_info {
 	struct mutex list_lock;
 };
 
+struct ath12k_vendor_mld_peer_link_entry {
+	u16 hw_link_id;
+	u8 vdev_id;
+	u8 ap_mld_mac_addr[6];
+	u8 link_mac_addr[6];
+	u8 link_id;
+	u8 device_id;
+	bool is_assoc_link;
+	u8 chan_bw;
+	u16 chan_freq;
+	u16 available_airtime;
+	u8 link_rssi;
+	enum ath12k_link_band_caps band_cap;
+	u16 eff_chan_bw;
+	u16 peer_capa_flags;
+};
+
+struct ath12k_vendor_generic_peer_assoc_event {
+	u8 mld_mac_addr[6];
+	u8 num_links;
+	enum qca_wlan_vendor_attr_app_generic_category category;
+	struct ath12k_vendor_mld_peer_link_entry link_entry[4];
+};
+
 void ath12k_vendor_services_init(void);
 void ath12k_vendor_services_deinit(void);
 
