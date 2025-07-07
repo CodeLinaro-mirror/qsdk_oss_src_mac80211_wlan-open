@@ -689,6 +689,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 		mon_desc->skb = skb;
 		mon_desc->paddr = paddr;
 		mon_desc->magic = ATH12K_MON_MAGIC_VALUE;
+		mon_desc->buf_len = 0;
 	}
 
 	srng = &ab->hal.srng_list[buf_ring->refill_buf_ring.ring_id];

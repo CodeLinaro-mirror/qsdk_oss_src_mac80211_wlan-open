@@ -239,7 +239,8 @@ struct ath12k_dp_mon_desc {
 	struct sk_buff *skb;
 	dma_addr_t paddr;
 	u32 magic;
-	u8 in_use:1;
+	u16 buf_len:14,
+	    in_use:1;
 };
 
 static inline enum dp_monitor_type

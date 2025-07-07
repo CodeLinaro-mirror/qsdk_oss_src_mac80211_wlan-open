@@ -96,7 +96,14 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 				     msdu->len + skb_tailroom(msdu),
 				     DMA_FROM_DEVICE);
 
-	offset = packet_info->dma_length + ATH12K_MON_RX_DOT11_OFFSET;
+	/* The hardware reports the buffer length as (actual_length - 1),
+	 * likely due to internal indexing or alignment constraints.
+	 * To obtain the true buffer length for processing, increment
+	 * the reported end_offset by 1 before using it.
+	 */
+	offset = packet_info->dma_length + 1;
+	offset += ATH12K_MON_RX_DOT11_OFFSET;
+
 	if (ath12k_dp_mon_rx_set_pktlen(msdu, offset)) {
 		dev_kfree_skb_any(msdu);
 		goto buf_replenish;
@@ -175,14 +182,15 @@ ath12k_wifi7_dp_mon_rx_parse_dest_tlv(struct ath12k_pdev_dp *dp_pdev,
 
 static enum hal_rx_mon_status
 ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
-				  struct sk_buff *skb)
+				  struct ath12k_dp_mon_desc *mon_desc)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct hal_tlv_64_hdr *tlv;
 	struct ath12k_skb_rxcb *rxcb;
+	struct sk_buff *skb = mon_desc->skb;
 	enum hal_rx_mon_status hal_status;
-	u16 tlv_tag, tlv_len;
+	u16 tlv_tag, tlv_len, buf_len = mon_desc->buf_len;
 	u8 *ptr = skb->data;
 	struct ath12k *ar = dp_pdev->ar;
 
@@ -214,7 +222,7 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 		ptr += sizeof(*tlv) + tlv_len;
 		ptr = PTR_ALIGN(ptr, HAL_TLV_64_ALIGN);
 
-		if ((ptr - skb->data) > skb->len)
+		if ((ptr - skb->data) >= buf_len)
 			break;
 
 	} while ((hal_status == HAL_RX_MON_STATUS_PPDU_NOT_DONE) ||
@@ -233,7 +241,7 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 enum hal_rx_mon_status
 ath12k_wifi7_dp_mon_rx_parse_ppdu_status(struct ath12k_pdev_dp *dp_pdev,
 					 struct ath12k_mon_data *pmon,
-					 struct sk_buff *skb,
+					 struct ath12k_dp_mon_desc *mon_desc,
 					 struct napi_struct *napi)
 {
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
@@ -241,7 +249,7 @@ ath12k_wifi7_dp_mon_rx_parse_ppdu_status(struct ath12k_pdev_dp *dp_pdev,
 	struct dp_mon_mpdu *mon_mpdu = pmon->mon_mpdu;
 	enum hal_rx_mon_status hal_status;
 
-	hal_status = ath12k_wifi7_dp_mon_rx_parse_dest(dp_pdev, skb);
+	hal_status = ath12k_wifi7_dp_mon_rx_parse_dest(dp_pdev, mon_desc);
 	if (hal_status != HAL_RX_MON_STATUS_PPDU_DONE)
 		return hal_status;
 
@@ -402,6 +410,19 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 			skb_put(skb, DP_RX_MON_BUFFER_SIZE);
 		}
 
+		if (unlikely(end_offset > DP_RX_BUFFER_SIZE)) {
+			ath12k_warn(dp,
+				    "mon_dest: end_off (%u) exceeds max buff size (%u), clamping to max\n",
+				    end_offset, DP_RX_BUFFER_SIZE);
+			end_offset = DP_RX_BUFFER_SIZE;
+		}
+
+		/* The hardware reports the buffer length as (actual_length - 1),
+		 * likely due to internal indexing or alignment constraints.
+		 * To obtain the true buffer length for processing, increment
+		 * the reported end_offset by 1 before using it.
+		 */
+		mon_desc->buf_len = end_offset + 1;
 move_next:
 		ath12k_hal_srng_dst_get_next_entry(ab, srng);
 		num_buffs_reaped++;
@@ -430,7 +451,7 @@ move_next:
 					    ppdu_info, skb, end_offset);
 
 		hal_status = ath12k_wifi7_dp_mon_rx_parse_ppdu_status(pdev_dp, pmon,
-								      skb, napi);
+								      mon_desc, napi);
 		if (hal_status != HAL_RX_MON_STATUS_PPDU_DONE) {
 			ppdu_info->ppdu_continuation = true;
 			dev_kfree_skb_any(skb);
