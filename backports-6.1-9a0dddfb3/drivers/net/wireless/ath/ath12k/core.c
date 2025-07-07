@@ -2217,6 +2217,8 @@ void ath12k_core_halt(struct ath12k *ar)
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
 		ath12k_mac_peer_ab_disassoc(ab);
 
+	ath12k_telemetry_ab_peer_agent_destroy(ab);
+
 	ath12k_mac_peer_cleanup_all(ar);
 	cancel_work_sync(&ar->regd_update_work);
 	cancel_work_sync(&ab->rfkill_work);
