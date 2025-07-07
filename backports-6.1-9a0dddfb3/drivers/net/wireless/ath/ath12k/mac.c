@@ -12929,7 +12929,8 @@ static void ath12k_mac_setup_sband_iftype_data(struct ath12k *ar,
 	}
 }
 
-static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant)
+static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant,
+				bool is_dynamic)
 {
 	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	int ret;
@@ -12960,7 +12961,7 @@ static int __ath12k_set_antenna(struct ath12k *ar, u32 tx_ant, u32 rx_ant)
 	ath12k_mac_setup_sband_iftype_data(ar, &ar->pdev->cap);
 
 	if (ah->state != ATH12K_HW_STATE_ON &&
-	    ah->state != ATH12K_HW_STATE_RESTARTED)
+	    ah->state != ATH12K_HW_STATE_RESTARTED && !is_dynamic)
 		return 0;
 
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_TX_CHAIN_MASK,
@@ -13667,7 +13668,7 @@ int ath12k_mac_start(struct ath12k *ar)
 		}
 	}
 
-	__ath12k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask);
+	__ath12k_set_antenna(ar, ar->cfg_tx_chainmask, ar->cfg_rx_chainmask, false);
 
 	/* TODO: Do we need to enable ANI? */
 
@@ -15181,7 +15182,7 @@ int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 EXPORT_SYMBOL(ath12k_mac_op_get_antenna);
 
 int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
-			      u8 radio_id)
+			      u8 radio_id, bool is_dynamic)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k *ar;
@@ -15193,7 +15194,7 @@ int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
 	for_each_ar(ah, ar, i) {
 		if ((radio_id != 255) && (radio_id != i))
 			continue;
-		ret = __ath12k_set_antenna(ar, tx_ant, rx_ant);
+		ret = __ath12k_set_antenna(ar, tx_ant, rx_ant, is_dynamic);
 		if (ret)
 			break;
 	}

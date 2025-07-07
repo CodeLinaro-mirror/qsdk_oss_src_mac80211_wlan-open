@@ -280,7 +280,7 @@ int ath12k_mac_op_conf_tx(struct ieee80211_hw *hw,
 			  unsigned int link_id, u16 ac,
 			  const struct ieee80211_tx_queue_params *params);
 int ath12k_mac_op_set_antenna(struct ieee80211_hw *hw, u32 tx_ant, u32 rx_ant,
-			      u8 radio_id);
+			      u8 radio_id, bool is_dynamic);
 int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 			      u8 radio_id);
 int ath12k_mac_op_ampdu_action(struct ieee80211_hw *hw,
