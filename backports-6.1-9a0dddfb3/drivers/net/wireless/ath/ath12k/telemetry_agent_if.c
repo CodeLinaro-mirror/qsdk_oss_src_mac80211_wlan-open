@@ -319,6 +319,24 @@ static u32 ath12k_telemetry_agent_deinit(void)
 	return status;
 }
 
+int ath12k_get_psoc_info(void *obj, struct agent_psoc_iface_init_obj *stats)
+{
+	struct ath12k_base *ab = (struct ath12k_base *)obj;
+
+	if (!ab || !stats)
+		return -EINVAL;
+	memset(stats, 0, sizeof(*stats));
+	stats->soc_id = ath12k_get_ab_device_id(ab);
+	stats->max_peers = ath12k_get_peer_count(ab, true);
+	stats->num_peers = ath12k_get_peer_count(ab, false);
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM,
+		   "Psoc info: id:%d max_peers:%d num_peer:%d\n",
+		   stats->soc_id, stats->max_peers, stats->num_peers);
+
+	return 0;
+}
+
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 {
 	g_agent_ops = agent_ops;
@@ -373,12 +391,6 @@ int ath12k_get_pdev_info(void *obj, struct agent_pdev_iface_init_obj *stats)
 }
 
 int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
-{
-	ath12k_err(NULL, "ath12k_get_peer_stats - not implemented \n");
-	return -1;
-}
-
-int ath12k_get_psoc_info(void *obj, struct agent_psoc_iface_init_obj *stats)
 {
 	ath12k_err(NULL, "ath12k_get_peer_stats - not implemented \n");
 	return -1;
