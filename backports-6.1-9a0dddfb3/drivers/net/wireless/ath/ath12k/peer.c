@@ -11,7 +11,7 @@
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
 #include "ppe.h"
 #endif
-
+#include "telemetry_agent_if.h"
 
 static int ath12k_wait_for_peer_common(struct ath12k_base *ab, int vdev_id,
 				       const u8 *addr, bool expect_mapped)
@@ -89,12 +89,26 @@ int ath12k_wait_for_peer_delete_done(struct ath12k *ar, u32 vdev_id,
 static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *addr)
 {
 	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp_link_peer *peer;
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	reinit_completion(&ar->peer_delete_done);
+	spin_lock_bh(&ar->ab->dp->dp_lock);
 
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp,
+							    vdev_id, addr);
+	if (peer && !peer->is_bridge_peer) {
+		ret = ath12k_telemetry_peer_agent_delete_handler(ar, vdev_id,
+								 addr);
+		if (ret && ret != -EOPNOTSUPP) {
+			ath12k_dbg(ab, ATH12K_DBG_PEER,
+				   "failed to delete peer reference in TA for vdev_id %d addr %pM ret %d\n",
+				   vdev_id, addr, ret);
+		}
+	}
+	 spin_unlock_bh(&ar->ab->dp->dp_lock);
 	ret = ath12k_wmi_send_peer_delete_cmd(ar, addr, vdev_id);
 	if (ret) {
 		ath12k_warn(ab,
@@ -234,6 +248,17 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	if (vif->type == NL80211_IFTYPE_STATION) {
 		dp_link_vif->ast_hash = peer->ast_hash;
 		dp_link_vif->ast_idx = peer->hw_peer_id;
+
+		if (!peer->is_bridge_peer) {
+			ret = ath12k_telemetry_peer_agent_create_handler(ar,
+									 arg->vdev_id,
+									 arg->peer_addr);
+			if (ret && ret != -EOPNOTSUPP) {
+				ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+					   "failed to create peer reference in TA for vdev_id %d addr %pM ret %d\n",
+					   arg->vdev_id, arg->peer_addr, ret);
+			}
+		}
 	}
 
 	if (sta) {

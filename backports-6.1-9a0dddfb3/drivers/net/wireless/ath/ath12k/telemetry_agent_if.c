@@ -510,6 +510,99 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 	return 0;
 }
 
+static int ath12k_telemetry_peer_agent_update(struct ath12k_base *ab,
+					      struct ath12k_pdev *pdev,
+					      struct ath12k_dp_link_peer *peer,
+					      const bool is_create)
+{
+	struct agent_peer_obj peer_obj;
+
+	if (!g_agent_ops ||
+	    !g_agent_ops->agent_peer_create_handler)
+		return -EINVAL;
+
+	memset(&peer_obj, 0, sizeof(peer_obj));
+	memset(&peer->peer_stats.dp_mon_stats, 0,
+	       sizeof(struct ath12k_dp_mon_peer_stats));
+	peer_obj.peer_back_pointer = peer;
+	peer_obj.psoc_back_pointer = ab;
+	peer_obj.pdev_back_pointer = pdev;
+
+	peer_obj.psoc_id = ath12k_get_ab_device_id(ab);
+	peer_obj.pdev_id = ath12k_get_pdev_id(pdev);
+	ether_addr_copy(peer_obj.peer_mac_addr, peer->addr);
+	peer_obj.peer_id = peer->peer_id;
+
+	if (is_create)
+		g_agent_ops->agent_peer_create_handler(peer, &peer_obj);
+	else
+		g_agent_ops->agent_peer_destroy_handler(peer, &peer_obj);
+
+	return 0;
+}
+
+int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,
+					       const int vdev_id,
+					       const u8 *addr)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_pdev *pdev = ar->pdev;
+	struct ath12k_dp_link_peer *peer = NULL;
+
+	if (!pdev || !g_agent_ops ||
+	    !g_agent_ops->agent_peer_create_handler)
+		return -EINVAL;
+
+	lockdep_assert_held(&ab->dp->dp_lock);
+
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, vdev_id, addr);
+	if (!peer)
+		return -EINVAL;
+
+	/* Create only for STA type */
+	if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP)
+		return -EOPNOTSUPP;
+
+	ath12k_telemetry_peer_agent_update(ab, pdev, peer, true);
+
+	return 0;
+}
+
+int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
+					       const int vdev_id,
+					       const u8 *addr)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_pdev *pdev = ar->pdev;
+	struct ath12k_dp_link_peer *peer = NULL;
+
+	if (!pdev || !g_agent_ops ||
+	    !g_agent_ops->agent_peer_destroy_handler) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM, "Invalid peer parameters received\n");
+		return -EOPNOTSUPP;
+	}
+
+	lockdep_assert_held(&ab->dp->dp_lock);
+
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, vdev_id, addr);
+	if (!peer) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			   "No peer found while deleting peer back reference in TA\n");
+		return -EINVAL;
+	}
+
+	/* Create only for STA type */
+	if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			   "Peer reference for non sta type is not supported\n");
+		return -EOPNOTSUPP;
+	}
+
+	ath12k_telemetry_peer_agent_update(ab, pdev, peer, false);
+
+	return 0;
+}
+
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 
 {

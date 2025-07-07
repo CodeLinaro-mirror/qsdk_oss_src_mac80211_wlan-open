@@ -64,6 +64,12 @@ bool ath12k_telemetry_update_msdu_drop(void *telemetry_ctx, u8 tid,
 int ath12k_telemetry_reset_peer_stats(u8 *peer_mac);
 int ath12k_telemetry_pdev_agent_create_handler(struct ath12k_pdev *pdev);
 int ath12k_telemetry_pdev_agent_delete_handler(struct ath12k_pdev *pdev);
+int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,
+					       const int vdev_id,
+					       const u8 *addr);
+int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
+					       const int vdev_id,
+					       const u8 *addr);
 int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab);
 int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab);
 int ath12k_telemetry_set_mov_avg_params(u32 num_pkt, u32 num_win);
