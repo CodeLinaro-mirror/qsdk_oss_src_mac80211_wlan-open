@@ -269,6 +269,7 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 	int num_buffs_reaped = 0, srng_id, buf_id;
 	u32 hal_status, end_offset, info0, end_reason;
 	u8 pdev_idx = ath12k_hw_mac_id_to_pdev_id(ab->hw_params, pdev_dp->mac_id);
+	u8 filter_category = 0;
 
 	__skb_queue_head_init(&skb_list);
 	srng_id = ath12k_hw_mac_id_to_srng_id(ab->hw_params, pdev_idx);
@@ -377,12 +378,15 @@ move_next:
 		if (ppdu_info->peer_id == HAL_INVALID_PEERID)
 			goto free_skb;
 
+		filter_category = ppdu_info->userstats[ppdu_info->userid].filter_category;
 		rcu_read_lock();
 		spin_lock_bh(&dp->dp_lock);
 
 		if (!list_empty(&dp->neighbor_peers)) {
 			list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
-				if (ether_addr_equal(nrp->addr, ppdu_info->addr2)) {
+				if (filter_category == DP_MPDU_FILTER_CATEGORY_MD &&
+					ether_addr_equal(nrp->addr,
+							 ppdu_info->nrp_info.mac_addr2)) {
 					nrp->rssi = ppdu_info->rssi_comb;
 					nrp->timestamp = ktime_to_ms(ktime_get_real());
 					goto next_skb;
