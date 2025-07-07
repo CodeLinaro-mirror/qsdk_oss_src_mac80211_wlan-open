@@ -979,6 +979,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_VIF_RADIO_MASK] = { .type = NLA_U32 },
 	[NL80211_ATTR_BEACON_TX_MODE] = NLA_POLICY_RANGE(NLA_U32, 1, 2),
 	[NL80211_ATTR_ERP] = NLA_POLICY_NESTED(nl80211_erp_policy),
+	[NL80211_ATTR_DYNAMIC_CHAIN_MASK] = { .type = NLA_U8 },
 	[NL80211_ATTR_ML_MAX_REC_LINKS] = NLA_POLICY_RANGE(NLA_U8, 0, 15),
 	[NL80211_ATTR_ADVERTISED_TTLM] =
 		NLA_POLICY_NESTED(nl80211_advertised_ttlm_policy),
@@ -4281,7 +4282,10 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		tx_ant = tx_ant & rdev->wiphy.available_antennas_tx;
 		rx_ant = rx_ant & rdev->wiphy.available_antennas_rx;
 
-		result = rdev_set_antenna(rdev, tx_ant, rx_ant, radio_id);
+		if (info->attrs[NL80211_ATTR_DYNAMIC_CHAIN_MASK])
+			result = rdev_set_antenna(rdev, tx_ant, rx_ant, radio_id, true);
+		else
+			result = rdev_set_antenna(rdev, tx_ant, rx_ant, radio_id, false);
 		if (result)
 			return result;
 	}

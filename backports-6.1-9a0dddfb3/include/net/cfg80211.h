@@ -5337,7 +5337,8 @@ struct cfg80211_ops {
 						   struct wireless_dev *wdev,
 						   struct mgmt_frame_regs *upd);
 
-	int	(*set_antenna)(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant, u8 radio_id);
+	int	(*set_antenna)(struct wiphy *wiphy, u32 tx_ant, u32 rx_ant, u8 radio_id,
+			       bool is_dynamic);
 	int	(*get_antenna)(struct wiphy *wiphy, u32 *tx_ant, u32 *rx_ant,
 			       u8 radio_id);
 
