@@ -448,6 +448,68 @@ int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats)
 	return 0;
 }
 
+int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
+{
+	struct agent_peer_db *peer_db = (struct agent_peer_db *)obj;
+	struct ath12k_dp_link_peer *peer = peer_db->peer_obj_ptr;
+	struct ath12k_pdev *pdev = peer_db->pdev_obj_ptr;
+	struct ath12k_base *ab = peer_db->psoc_obj_ptr;
+	struct ath12k_peer_telemetry_stats dp_stats;
+	const u8 link_id;
+	const u8 *addr;
+	u8 ac;
+
+	/* Telemetry agent is expected to hold lock while fetching this stats
+	 */
+	if (!pdev || !ab) {
+		ath12k_err(NULL, "Invalid peer object received from telemetry agent object\n");
+		return -EINVAL;
+	}
+
+	if (!pdev->ar)
+		return -EINVAL;
+
+	spin_lock_bh(&ab->dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_db->peer_id);
+	if (!peer || peer->is_bridge_peer || !peer->assoc_success) {
+		spin_unlock_bh(&ab->dp->dp_lock);
+		return -EINVAL;
+	}
+
+	memset(stats, 0, sizeof(*stats));
+	ether_addr_copy(stats->peer_mld_mac, peer->ml_addr);
+	ether_addr_copy(stats->peer_link_mac, peer->addr);
+
+	if (ath12k_dp_get_peer_telemetry_stats(ab, peer->addr, &dp_stats))
+		ath12k_err(NULL, "Failed to get telemetry peer stats for %pM\n",
+			   peer->addr);
+
+	addr = peer->addr;
+	link_id = peer->link_id;
+	spin_unlock_bh(&ab->dp->dp_lock);
+
+	for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
+		stats->airtime_consumption[ac] =
+			(u8)(dp_stats.tx_airtime_consumption[ac] +
+			dp_stats.rx_airtime_consumption[ac]);
+
+		stats->tx_airtime_consumption[ac] =
+			dp_stats.tx_airtime_consumption[ac];
+
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			   "peer stats peer: %pM soc: %d pdev: %d link: %d ac: %d airtime_consumption: %d tx: %d rx: %d\n",
+			   addr, ab->device_id, pdev->pdev_id, link_id,
+			   ac, stats->airtime_consumption[ac],
+			   dp_stats.tx_airtime_consumption[ac],
+			   dp_stats.rx_airtime_consumption[ac]);
+	}
+
+	/* To-Do: Implement a way to get rssi */
+	stats->rssi = 0;
+
+	return 0;
+}
+
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 
 {
@@ -483,12 +545,6 @@ int unregister_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 	return 0;
 }
 EXPORT_SYMBOL(unregister_telemetry_agent_ops);
-
-int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
-{
-	ath12k_err(NULL, "ath12k_get_peer_stats - not implemented \n");
-	return -1;
-}
 
 int ath12k_telemetry_set_mov_avg_params(u32 num_pkt,
 					u32 num_win)
