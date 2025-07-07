@@ -4161,6 +4161,19 @@ ath12k_vendor_telemetry_sdwf_sla_detect_config_policy[QCA_WLAN_VENDOR_ATTR_SDWF_
 	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_DETECT_MSDU_RATE_LOSS] = {.type = NLA_U32},
 };
 
+static const struct nla_policy
+ath12k_vendor_sdwf_dev_policy[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_OPERATION] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_STREAMING_STATS_PARAMS] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_sdwf_streaming[QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_BASIC_STATS] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_EXTND_STATS] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_MLO_LINK_ID] = {.type = NLA_U32},
+};
+
 static int ath12k_vendor_set_sdwf_config(struct ath12k_base *ab,
 					 struct wiphy *wiphy,
 					 struct wireless_dev *wdev,
@@ -5341,6 +5354,98 @@ free_eirp:
 	return ret_val;
 }
 
+static int ath12k_vendor_sdwf_streaming_stats_configure(struct wireless_dev *wdev,
+							struct nlattr *streaming_stats)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_MAX + 1];
+	struct ath12k *ar = NULL;
+	int ret = 0;
+	u8 basic_stats_configure, extnd_stats_configure, link_id;
+
+	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_MAX,
+			       streaming_stats,
+			       ath12k_vendor_sdwf_streaming, NULL);
+	if (ret) {
+		ath12k_err(NULL, "invalid sawf streaming stats configuration\n");
+		return ret;
+	}
+
+	if (wdev->valid_links) { /* MLO case */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_SDWF_MLO_LINK_ID])
+			return -EINVAL;
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SDWF_MLO_LINK_ID]);
+		if (!(wdev->valid_links & BIT(link_id)))
+			return -ENOLINK;
+	} else { /* NON-MLO case */
+		if (!tb[QCA_WLAN_VENDOR_ATTR_SDWF_MLO_LINK_ID])
+			link_id = 0;
+		else
+			return -EINVAL;
+	}
+
+	ar = ath12k_get_ar_from_wdev(wdev, link_id);
+	if (!ar)
+		return -ENODATA;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_BASIC_STATS]) {
+		basic_stats_configure = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_BASIC_STATS]);
+		ret = ath12k_htt_sawf_streaming_stats_configure(ar, HTT_STRM_GEN_MPDUS_STATS,
+								basic_stats_configure, 0, 0, 0, 0);
+		if (ret)
+			return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_EXTND_STATS]) {
+		extnd_stats_configure = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_EXTND_STATS]);
+		ret = ath12k_htt_sawf_streaming_stats_configure(ar, HTT_STRM_GEN_MPDUS_DETAILS_STATS,
+								extnd_stats_configure, 0, 0, 0, 0);
+	}
+
+	return ret;
+}
+
+static int ath12k_vendor_sdwf_dev_operations(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     const void *data,
+					     int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_MAX + 1];
+	u8 sdwf_oper;
+	int ret = 0;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_SDWF_DEV_MAX, data, data_len,
+			ath12k_vendor_sdwf_dev_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Invalid attributes with SAWF device level commands\n");
+		goto end;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_OPERATION]) {
+		sdwf_oper = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_OPERATION]);
+	} else {
+		ath12k_err(NULL, "SAWF device level operation missing\n");
+		ret = -EINVAL;
+		goto end;
+	}
+
+	switch (sdwf_oper) {
+	case QCA_WLAN_VENDOR_SDWF_DEV_OPER_STREAMING_STATS:
+		if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_STREAMING_STATS_PARAMS]) {
+			ret = ath12k_vendor_sdwf_streaming_stats_configure(wdev, tb[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_STREAMING_STATS_PARAMS]);
+		} else {
+			ath12k_err(NULL, "SAWF default streaming statsparameters missing\n");
+			ret = -EINVAL;
+			goto end;
+		}
+		break;
+	default:
+		ath12k_err(NULL, "Invalid operation = %d with SAWF device level commands\n", sdwf_oper);
+		ret = -EINVAL;
+	}
+end:
+	return ret;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -5458,6 +5563,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_get_reg_eirp_handler,
 		.policy = ath12k_reg_get_eirp_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_REG_EIRP_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SDWF_DEV_OPS,
+		.doit = ath12k_vendor_sdwf_dev_operations,
+		.policy = ath12k_vendor_sdwf_dev_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_SDWF_DEV_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 };

@@ -7,7 +7,9 @@
 #include "sdwf.h"
 #include "dp_peer.h"
 #include "debug.h"
+#include "htc.h"
 #include <linux/module.h>
+#include "debugfs.h"
 
 bool ath12k_sdwf_service_configured(struct ath12k_base *ab, u16 svc_id)
 {
@@ -543,4 +545,51 @@ ath12k_sdwf_3_link_peer_dl_flow_count(struct wireless_dev *wdev,
 err_unlock:
 	spin_unlock_bh(&dp->dp_lock);
 	return;
+}
+
+int ath12k_htt_sawf_streaming_stats_configure(struct ath12k *ar,
+					      u8 stats_type,
+					      u8 configure,
+					      u32 config_param_0,
+					      u32 config_param_1,
+					      u32 config_param_2,
+					      u32 config_param_3)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ab->dp;
+	struct sk_buff *skb;
+	struct ath12k_htt_h2t_sawf_streaming_req *cmd;
+	int len = sizeof(*cmd);
+	int ret;
+
+	if (!(ath12k_debugfs_is_qos_stats_enabled(ar) &
+	      ATH12K_QOS_STATS_ADVANCED))
+		return -EOPNOTSUPP;
+
+	skb = ath12k_htc_alloc_skb(ab, len);
+	if (!skb) {
+		ath12k_err(ab, "Insufficient Memory\n");
+		return -ENOMEM;
+	}
+
+	skb_put(skb, len);
+	cmd = (struct ath12k_htt_h2t_sawf_streaming_req *)skb->data;
+	cmd->info = u32_encode_bits(HTT_H2T_MSG_TYPE_STREAMING_STATS_REQ,
+				    HTT_H2T_MSG_TYPE_ID) |
+		    u32_encode_bits(stats_type,
+				    HTT_H2T_MSG_TYPE_STREAMING_STATS_TYPE) |
+		    u32_encode_bits(configure,
+				    HTT_H2T_MSG_TYPE_STREAMING_STATS_CONFIGURE);
+
+	cmd->config_param_0 = config_param_0;
+	cmd->config_param_1 = config_param_1;
+	cmd->config_param_2 = config_param_2;
+	cmd->config_param_3 = config_param_3;
+
+	ath12k_dbg(ab, ATH12K_DBG_QOS, "Configure streaming stats :0x%x\n", cmd->info);
+
+	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	if (ret)
+		dev_kfree_skb_any(skb);
+	return ret;
 }

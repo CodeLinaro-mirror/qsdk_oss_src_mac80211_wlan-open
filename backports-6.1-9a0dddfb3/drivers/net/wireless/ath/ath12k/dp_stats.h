@@ -200,6 +200,7 @@ struct ath12k_dp_mon_peer_stats {
 
 #define QOS_TID_MAX 8
 #define QOS_TID_MDSUQ_MAX 2
+#define QOS_TID_DEF_MSDUQ_MAX 2
 
 #define MAX_MCS_11B 7
 #define MAX_MCS_11A 8

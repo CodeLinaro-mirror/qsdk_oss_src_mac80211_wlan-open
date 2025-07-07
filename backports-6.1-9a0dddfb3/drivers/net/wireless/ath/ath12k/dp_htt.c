@@ -1253,6 +1253,181 @@ err_pri_link_migr_ind:
 	ieee80211_queue_work(arvif->ar->ah->hw, &ahsta->migration_wk);
 }
 
+static int ath12k_svc_burst_stats_update(struct ath12k_base *ab,
+					 struct ath12k_dp_peer *mld_peer,
+					 u8 tid, u8 q_type, u16 svc_int_success,
+					 u16 svc_int_fail, u16 burst_sz_success,
+					 u16 burst_sz_fail)
+{
+	struct fw_mpdu_stats *svc_intval_stats;
+	struct fw_mpdu_stats *burst_size_stats;
+	u8 q_id;
+
+	if (tid >= QOS_TID_MAX)
+		return -EINVAL;
+
+	if (q_type >= QOS_TID_DEF_MSDUQ_MAX + QOS_TID_MDSUQ_MAX)
+		return -EINVAL;
+
+	q_id = q_type - QOS_TID_MDSUQ_MAX;
+
+	svc_intval_stats = &mld_peer->mld_qos_stats[tid][q_id].svc_intval_stats;
+	if (!svc_intval_stats)
+		return -ENODATA;
+
+	svc_intval_stats->success_cnt += svc_int_success;
+	svc_intval_stats->failure_cnt += svc_int_fail;
+
+	burst_size_stats = &mld_peer->mld_qos_stats[tid][q_id].burst_size_stats;
+	if (!burst_size_stats)
+		return -ENODATA;
+
+	burst_size_stats->success_cnt += burst_sz_success;
+	burst_size_stats->failure_cnt += burst_sz_fail;
+
+	return 0;
+}
+
+static int ath12k_fw_mpdu_stats_update(struct ath12k_base *ab,
+				       u32 tlv_tag,
+				       u8 *data)
+{
+	struct htt_stats_strm_gen_mpdus_tlv *mpdus_tlv;
+	struct htt_stats_strm_gen_mpdus_details_tlv *mpdus_detail_tlv;
+	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k *ar;
+	struct ath12k_dp_hw *dp_hw;
+	struct ath12k_pdev_dp *dp_pdev;
+	int ret = 0, vdev_id;
+	u16 svc_int_success, svc_int_failure, burst_sz_success;
+	u16 info, burst_sz_failure, peer_id;
+	u8 tid, q_type;
+
+	if (tlv_tag == HTT_STATS_STRM_GEN_MPDUS_TAG) {
+		mpdus_tlv = (struct htt_stats_strm_gen_mpdus_tlv *)data;
+		peer_id = __le16_to_cpu(mpdus_tlv->peer_id);
+		info = __le16_to_cpu(mpdus_tlv->info);
+		svc_int_success = __le16_to_cpu(mpdus_tlv->svc_interval_success);
+		svc_int_failure = __le16_to_cpu(mpdus_tlv->svc_interval_failure);
+		burst_sz_success = __le16_to_cpu(mpdus_tlv->burst_size_success);
+		burst_sz_failure = __le16_to_cpu(mpdus_tlv->burst_size_failure);
+	} else if (tlv_tag == HTT_STATS_STRM_GEN_MPDUS_DETAILS_TAG) {
+		mpdus_detail_tlv = (struct htt_stats_strm_gen_mpdus_details_tlv *)data;
+		info = __le16_to_cpu(mpdus_detail_tlv->info);
+		peer_id = __le16_to_cpu(mpdus_detail_tlv->peer_id);
+	} else {
+		return -ENOENT;
+	}
+
+	tid = u16_get_bits(info, SAWF_TTH_TID_MASK);
+	q_type = u16_get_bits(info, SAWF_TTH_QTYPE_MASK);
+
+	spin_lock_bh(&dp->dp_lock);
+	link_peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	if (!link_peer) {
+		spin_unlock_bh(&dp->dp_lock);
+		return -ENOENT;
+	}
+	vdev_id = link_peer->vdev_id;
+	spin_unlock_bh(&dp->dp_lock);
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, vdev_id);
+	if (!ar) {
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	if (!ar->ah) {
+		rcu_read_unlock();
+		return -ENOENT;
+	}
+
+	dp_hw = &ar->ah->dp_hw;
+	dp_pdev = &ar->dp;
+	if (!(ath12k_debugfs_is_qos_stats_enabled(ar) &
+	      ATH12K_QOS_STATS_ADVANCED)) {
+		rcu_read_unlock();
+		return -EOPNOTSUPP;
+	}
+
+	if (tlv_tag == HTT_STATS_STRM_GEN_MPDUS_TAG) {
+		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
+		if (!dp_peer) {
+			rcu_read_unlock();
+			return -ENOENT;
+		}
+		spin_lock_bh(&dp_hw->peer_lock);
+		ath12k_svc_burst_stats_update(ab, dp_peer, tid,
+					      q_type, svc_int_success,
+					      svc_int_failure,
+					      burst_sz_success,
+					      burst_sz_failure);
+		spin_unlock_bh(&dp_hw->peer_lock);
+		rcu_read_unlock();
+	} else {
+		rcu_read_unlock();
+		ath12k_dbg(ab, ATH12K_DBG_QOS, "SDWF: peer_id %u tid %u qtype %u "
+			   "svc_intvl: ts_prior %ums ts_now %ums "
+			   "intvl_spec %ums margin %ums|"
+			   "burst_size: consumed_bytes_orig %u "
+			   "consumed_bytes_final %u remaining_bytes %u "
+			   "burst_size_spec %u margin_bytes %u\n",
+			   __le16_to_cpu(mpdus_detail_tlv->peer_id),
+			   tid, q_type,
+			   __le16_to_cpu(mpdus_detail_tlv->svc_interval_timestamp_prior_ms),
+			   __le16_to_cpu(mpdus_detail_tlv->svc_interval_timestamp_now_ms),
+			   __le16_to_cpu(mpdus_detail_tlv->svc_interval_interval_spec_ms),
+			   __le16_to_cpu(mpdus_detail_tlv->svc_interval_interval_margin_ms),
+			   __le16_to_cpu(mpdus_detail_tlv->burst_size_consumed_bytes_orig),
+			   __le16_to_cpu(mpdus_detail_tlv->burst_size_consumed_bytes_final),
+			   __le16_to_cpu(mpdus_detail_tlv->burst_size_remaining_bytes),
+			   __le16_to_cpu(mpdus_detail_tlv->burst_size_burst_size_spec),
+			   __le16_to_cpu(mpdus_detail_tlv->burst_size_margin_bytes));
+	}
+	return ret;
+}
+
+void ath12k_htt_sawf_streaming_stats_ind_handler(struct ath12k_base *ab,
+						 struct sk_buff *skb)
+{
+	const struct htt_tlv *tlv;
+	u8 *data = NULL;
+	u8 *tlv_data;
+	u32 len, tlv_tag, tlv_len;
+
+	data = skb->data + HTT_T2H_STREAMING_STATS_IND_HDR_SIZE;
+	len = skb->len;
+
+	if (len > HTT_T2H_STREAMING_STATS_IND_HDR_SIZE)
+		len -= HTT_T2H_STREAMING_STATS_IND_HDR_SIZE;
+	else
+		return;
+
+	while (len > 0) {
+		tlv_data = data;
+		tlv = (struct htt_tlv *)data;
+		tlv_tag = le32_get_bits(tlv->header, HTT_TLV_TAG);
+		tlv_len = le32_get_bits(tlv->header, HTT_TLV_LEN);
+
+		if (!tlv_len)
+			break;
+
+		if (len < tlv_len) {
+			ath12k_err(ab, "SDWF: len %d tlv_len %d\n", len, tlv_len);
+			break;
+		}
+
+		data += sizeof(*tlv);
+
+		ath12k_fw_mpdu_stats_update(ab, tlv_tag, data);
+
+		data = (tlv_data + tlv_len);
+		len -= tlv_len;
+	}
+}
 
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb)
@@ -1355,6 +1530,9 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 		break;
 	case HTT_T2H_MSG_TYPE_PPDU_ID_FMT_IND:
 		ath12k_htt_t2h_ppdu_id_fmt_handler(dp, skb);
+		break;
+	case HTT_T2H_MSG_TYPE_STREAMING_STATS_IND:
+		ath12k_htt_sawf_streaming_stats_ind_handler(ab, skb);
 		break;
 	case HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND:
 		ath12k_htt_pri_link_peer_migrate_indication(ab, skb);
