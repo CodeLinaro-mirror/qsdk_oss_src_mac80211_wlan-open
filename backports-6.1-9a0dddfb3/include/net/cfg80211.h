@@ -4908,6 +4908,9 @@ struct cfg80211_qm_req_desc_data {
 	u8 tclas_processing;
 	bool is_qos_present;
 	struct cfg80211_qm_qos_attributes qos_attr;
+	u8 user_priority_bitmap;
+	u8 user_priority_limit;
+	u8 tclas_mask;
 };
 
 /**

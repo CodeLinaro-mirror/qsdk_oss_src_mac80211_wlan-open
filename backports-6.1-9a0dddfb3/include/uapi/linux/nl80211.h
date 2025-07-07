@@ -8862,6 +8862,20 @@ enum nl80211_qm_qos_attrs {
 	NL80211_QM_QOS_ATTR_MAX = __NL80211_QM_QOS_ATTR_AFTER_LAST - 1
 };
 
+/**
+ * enum nl80211_qm_desc_attrs - QoS Management descriptor attributes
+ *
+ * @NL80211_QM_DESC_ATTR_INVALID: Invalid
+ *
+ * @NL80211_QM_DESC_ATTR_USER_PRIORITY_BITMAP - User priority bitmap
+ * of tid values sent by non-AP STA in an MSCS request
+ *
+ * @NL80211_QM_DESC_ATTR_USER_PRIORITY_LIMIT - User priority limit
+ * sent by non-AP STA in an MSCS request
+ *
+ * @NL80211_QM_DESC_ATTR_TCLAS_MASK - Traffic Classifier Mask with bitmap
+ * of parameters to be matched in an UL flow for DL prioritization
+ */
 enum nl80211_qm_desc_attrs {
 	NL80211_QM_DESC_ATTR_INVALID,
 	NL80211_QM_DESC_ATTR_QM_ID,
@@ -8871,6 +8885,9 @@ enum nl80211_qm_desc_attrs {
 	NL80211_QM_DESC_ATTR_TCLAS_PROCESSING,
 	NL80211_QM_DESC_ATTR_QOS_ATTRIBUTES,
 	NL80211_QM_DESC_ATTR_STATUS,
+	NL80211_QM_DESC_ATTR_USER_PRIORITY_BITMAP,
+	NL80211_QM_DESC_ATTR_USER_PRIORITY_LIMIT,
+	NL80211_QM_DESC_ATTR_TCLAS_MASK,
 
 	/* keep last */
 	__NL80211_QM_DESC_ATTR_LAST,

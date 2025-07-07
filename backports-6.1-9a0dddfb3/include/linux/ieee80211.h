@@ -5727,6 +5727,8 @@ enum ttlm_link_map_size {
 /**
  * enum ieee80211_qos_mgmt_type - Define QoS Management protocol types
  * @IEEE80211_QM_TYPE_SCS: Stream Classification Service (SCS) protocol
+ * @IEEE80211_QM_TYPE_MSCS: Mirrored Stream Classification Service (MSCS)
+ * protocol
  *
  * Enumerate supported QoS Management protocol types. Extend this enum
  * to support additional protocols such as MSCS and other QoS mechanisms in the
@@ -5734,6 +5736,7 @@ enum ttlm_link_map_size {
  */
 enum ieee80211_qos_mgmt_type {
 	IEEE80211_QM_TYPE_SCS,
+	IEEE80211_QM_TYPE_MSCS,
 	/* Future QM protocols to be added here */
 	IEEE80211_QM_TYPE_MAX,
 };

@@ -626,6 +626,9 @@ nl80211_qm_desc_params_policy[NL80211_QM_DESC_ATTR_MAX + 1] = {
 	[NL80211_QM_DESC_ATTR_QOS_ATTRIBUTES] =
 			NLA_POLICY_NESTED(nl80211_qm_qos_policy),
 	[NL80211_QM_DESC_ATTR_STATUS] = { .type = NLA_U8 },
+	[NL80211_QM_DESC_ATTR_USER_PRIORITY_BITMAP] = { .type = NLA_U8 },
+	[NL80211_QM_DESC_ATTR_USER_PRIORITY_LIMIT] = { .type = NLA_U8 },
+	[NL80211_QM_DESC_ATTR_TCLAS_MASK] = { .type = NLA_U8 },
 };
 
 static const struct nla_policy
@@ -18698,6 +18701,18 @@ static int nl80211_parse_qm_desc(struct nlattr *tb_qm_desc,
 
 		qm_req_desc->is_qos_present = true;
 	}
+
+	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_USER_PRIORITY_BITMAP])
+		qm_req_desc->user_priority_bitmap =
+		    nla_get_u8(tb_qm_desc_entry[NL80211_QM_DESC_ATTR_USER_PRIORITY_BITMAP]);
+
+	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_USER_PRIORITY_LIMIT])
+		qm_req_desc->user_priority_limit =
+		    nla_get_u8(tb_qm_desc_entry[NL80211_QM_DESC_ATTR_USER_PRIORITY_LIMIT]);
+
+	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_TCLAS_MASK])
+		qm_req_desc->tclas_mask =
+		    nla_get_u8(tb_qm_desc_entry[NL80211_QM_DESC_ATTR_TCLAS_MASK]);
 
 	return 0;
 }
