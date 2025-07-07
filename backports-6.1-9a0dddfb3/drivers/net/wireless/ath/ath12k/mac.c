@@ -16005,6 +16005,9 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	reinit_completion(&ar->vdev_delete_done);
 
+	ath12k_vendor_link_state_update(ar->pdev_idx, ar->ab, arvif,
+					ATH12K_VENDOR_LINK_STATE_REMOVED);
+
 	if (unlikely(test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)))
 		goto err_vdev_del;
 
@@ -17921,6 +17924,9 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	if (ab->is_bypassed)
 		return 0;
 
+	ath12k_vendor_link_state_update(ar->pdev_idx, ab, arvif,
+					ATH12K_VENDOR_LINK_STATE_ADDED);
+
 	ret = ath12k_ppeds_attach_link_vif(arvif, ahvif->dp_vif.ppe_vp_num,
 					   &arvif->ppe_vp_profile_idx, vif);
 	if (ret)
@@ -18006,6 +18012,12 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	if (ctx) {
 		memcpy(&arvif->chanctx, ctx, sizeof(*ctx));
+
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			ath12k_vendor_link_state_update(ar->pdev_idx, ab, arvif,
+						ATH12K_VENDOR_LINK_STATE_ASSIGNED);
+		}
+
 		ret = ath12k_mac_vdev_start(arvif, ctx);
 		if (ret) {
 			ath12k_warn(ab, "failed to start vdev %i addr %pM on freq %d: %d\n",
@@ -18070,6 +18082,9 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	ar = arvif->ar;
 	ab = ar->ab;
+
+	ath12k_vendor_link_state_update(ar->pdev_idx, ab, arvif,
+					ATH12K_VENDOR_LINK_STATE_UNASSIGNED);
 
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
 		return;

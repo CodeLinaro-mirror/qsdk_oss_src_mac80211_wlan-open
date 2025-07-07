@@ -23,6 +23,15 @@ enum ath12k_vendor_service_id {
 	ATH12K_RM_MAX_SERVICE
 };
 
+enum ath12k_vendor_link_state {
+	ATH12K_VENDOR_LINK_STATE_NO_LINK,
+	ATH12K_VENDOR_LINK_STATE_REMOVED,
+	ATH12K_VENDOR_LINK_STATE_ADDED,
+	ATH12K_VENDOR_LINK_STATE_UNASSIGNED,
+	ATH12K_VENDOR_LINK_STATE_ASSIGNED,
+	ATH12K_VENDOR_LINK_STATE_MAX
+};
+
 struct ath12k_vendor_service_ops {
 	int (*init)(struct ath12k_base *ab, const void *data, size_t len);
 	void (*deinit)(struct ath12k_base *ab);
@@ -120,5 +129,10 @@ bool ath12k_vendor_is_service_enabled(const u8 svc_id);
 
 int ath12k_vendor_send_assoc_event(void *event_data,
 				   u8 category, u8 service_id);
+
+int ath12k_vendor_link_state_update(const u8 mac_id,
+				    struct ath12k_base *ab,
+				    struct ath12k_link_vif *arvif,
+				    enum ath12k_vendor_link_state new_state);
 
 #endif /* ATH12K_VENDOR_SERVICES_H */

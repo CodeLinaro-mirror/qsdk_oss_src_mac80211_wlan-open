@@ -892,3 +892,102 @@ int ath12k_vendor_send_assoc_event(void *event_data,
 	return 0;
 }
 
+static void ath12k_vendor_report_link_info(struct ath12k_base *ab,
+					   struct ath12k_link_vif *arvif)
+{
+	struct ath12k_vendor_soc_device_info *soc_info;
+	struct ath12k_vendor_link_info *link_info;
+	struct ieee80211_chanctx_conf *ctx = NULL;
+	struct ath12k *ar = arvif->ar;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	ctx = &arvif->chanctx;
+	if (!ctx) {
+		ath12k_warn(ab, "Failed to send link info due to no chan ctx");
+		return;
+	}
+
+	/* Only report if the service is enabled */
+	if (!vendor_info.is_vendor_init_done)
+		return;
+
+	soc_info = kmalloc(sizeof(*soc_info), GFP_KERNEL);
+	if (!soc_info) {
+		//ath12k_warn(ab, "Failed to create soc info for rm");
+		return;
+	}
+
+	soc_info->soc_id = ath12k_get_ab_device_id(ab);
+	soc_info->num_radios = ab->num_radios;
+
+	link_info = &soc_info->link_info[0];
+	link_info->hw_link_id = ar->pdev->hw_link_id;
+	ether_addr_copy(link_info->link_mac_addr, arvif->bssid);
+	link_info->chan_bw = ctx->def.width;
+	link_info->chan_freq = ctx->def.chan->center_freq;
+	link_info->tx_chain_mask = ar->pdev->cap.tx_chain_mask;
+	link_info->rx_chain_mask = ar->pdev->cap.rx_chain_mask;
+
+	mutex_lock(&vendor_info.list_lock);
+	list_add(&soc_info->list, &vendor_info.soc_list);
+	mutex_unlock(&vendor_info.list_lock);
+
+	ath12k_vendor_queue_vendor_work();
+}
+
+int ath12k_vendor_link_state_update(const u8 mac_id,
+				    struct ath12k_base *ab,
+				    struct ath12k_link_vif *arvif,
+				    enum ath12k_vendor_link_state new_state)
+{
+	struct ath12k_vendor_soc_device_info *soc_info;
+	struct ath12k_vendor_link_info *link_info;
+	u8 chip_id;
+
+	if (!ab || !arvif)
+		return -EINVAL;
+
+	if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP)
+		return -EOPNOTSUPP;
+
+	if (!ath12k_telemetry_is_agent_loaded()) {
+		ath12k_dbg(ab, ATH12K_DBG_RM,
+			   "vendor: vendor services are not initialized");
+		return -EINVAL;
+	}
+
+	if (new_state >= ATH12K_VENDOR_LINK_STATE_MAX)
+		return -EINVAL;
+
+	chip_id = ath12k_get_ab_device_id(ab);
+	soc_info = &vendor_info.app_info.soc_info[chip_id];
+	link_info = &soc_info->link_info[mac_id];
+
+	link_info->state.prev_state = link_info->state.curr_state;
+	link_info->state.curr_state = new_state;
+
+	if (link_info->state.prev_state == ATH12K_VENDOR_LINK_STATE_ADDED &&
+	    link_info->state.curr_state == ATH12K_VENDOR_LINK_STATE_ASSIGNED) {
+		ath12k_vendor_report_link_info(ab, arvif);
+		ath12k_dbg(ab, ATH12K_DBG_RM,
+			   "Vendor link notification is sent for chip id: %d mac id: %d when prev: %d curr: %d state",
+			   chip_id, mac_id,
+			   link_info->state.prev_state,
+			   link_info->state.curr_state);
+	} else {
+		/*
+		 * For rest of the state transition, no action required
+		 * Currently, RM doesn't support link removal for this
+		 * particular notification
+		 */
+		ath12k_dbg(ab, ATH12K_DBG_RM,
+			   "Vendor link notification is not reported for chip id: %d mac id: %d when prev: %d curr: %d state",
+			   chip_id, mac_id,
+			   link_info->state.prev_state,
+			   link_info->state.curr_state);
+	}
+
+	return 0;
+}
+
