@@ -1506,7 +1506,6 @@ ath12k_wifi7_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 	ppdu_info->nrp_info.fc_valid =
 		u32_get_bits(info[3],
 			     HAL_RX_MPDU_START_INFO3_FC_VALID);
-
 	ppdu_info->mpdu_len += u32_get_bits(info[5],
 					    HAL_RX_MPDU_START_INFO5_MPDU_LEN);
 	ppdu_info->nrp_info.mcast_bcast =
@@ -1577,7 +1576,8 @@ ath12k_wifi7_hal_mon_rx_mpdu_start_info_get_compact(const void *tlv_data, u32 us
 	ppdu_info->nrp_info.fc_valid =
 		u32_get_bits(info[3],
 			     HAL_RX_MPDU_START_INFO3_FC_VALID_CMPCT);
-
+	ppdu_info->mpdu_info.decap_type =
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE_CMPCT);
 	ppdu_info->mpdu_len += u32_get_bits(info[5],
 					    HAL_RX_MPDU_START_INFO5_MPDU_LEN_CMPCT);
 	ppdu_info->nrp_info.mcast_bcast =
@@ -1879,15 +1879,15 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse(const void *tlv_data, u32 useri
 enum hal_rx_mon_status
 ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
-					 const struct hal_tlv_64_hdr *tlv)
+					 struct hal_tlv_parsed_hdr *tlv_parsed_hdr)
 {
-	const void *tlv_data = tlv->value;
+	const void *tlv_data = tlv_parsed_hdr->data;
 	u32 userid;
 	u16 tlv_tag, tlv_len;
 
-	tlv_tag = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_TAG);
-	tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
-	userid = le64_get_bits(tlv->tl, HAL_TLV_64_USR_ID);
+	tlv_tag = tlv_parsed_hdr->tag;
+	tlv_len = tlv_parsed_hdr->len;
+	userid = tlv_parsed_hdr->userid;
 
 	if (ppdu_info->tlv_aggr.in_progress && ppdu_info->tlv_aggr.tlv_tag != tlv_tag) {
 		ath12k_wifi7_hal_mon_parse_eht_sig_hdr(ppdu_info,
@@ -2070,6 +2070,8 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		break;
 	case HAL_DUMMY:
 		return HAL_RX_MON_STATUS_BUF_DONE;
+	case HAL_RX_HEADER:
+		return HAL_RX_MON_STATUS_RX_HDR;
 	case HAL_RX_PPDU_END_STATUS_DONE:
 	case 0:
 		return HAL_RX_MON_STATUS_PPDU_DONE;

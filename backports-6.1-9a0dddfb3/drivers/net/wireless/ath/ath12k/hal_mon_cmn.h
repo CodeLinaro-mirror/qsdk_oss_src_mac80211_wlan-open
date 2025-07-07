@@ -81,6 +81,14 @@ struct hal_rx_eht_info {
 	u32 user_info[EHT_MAX_USER_INFO];
 };
 
+struct hal_rx_mon_mpdu_info {
+	u8  decap_type:3,
+	    mpdu_start_received:1,
+	    first_rx_hdr_rcvd:1,
+	    rx_hdr_rcvd:1;
+	u32 err_bitmap;
+};
+
 struct hal_rx_nrp_info {
 	uint32_t fc_valid : 1,
 		 frame_control : 16,
@@ -186,6 +194,8 @@ struct hal_rx_mon_ppdu_info {
 	u8 grp_id;
 	u8 decap_format;
 	u16 mpdu_retry_cnt;
+	struct hal_rx_mon_mpdu_info mpdu_info;
+	struct sk_buff_head mpdu_q;
 };
 
 struct hal_rx_mon_status_tlv_hdr {
@@ -201,6 +211,7 @@ enum hal_rx_mon_status {
 	HAL_RX_MON_STATUS_MPDU_START,
 	HAL_RX_MON_STATUS_MPDU_END,
 	HAL_RX_MON_STATUS_MSDU_END,
+	HAL_RX_MON_STATUS_RX_HDR,
 };
 
 enum hal_tx_mon_status {

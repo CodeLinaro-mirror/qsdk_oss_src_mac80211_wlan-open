@@ -2136,6 +2136,30 @@ static inline void ath12k_core_dma_unmap_single(struct device *dev, dma_addr_t d
 #endif
 }
 
+static inline dma_addr_t
+ath12k_core_dma_map_page(struct device *dev, struct page *page,
+			 unsigned long offset, size_t size,
+			 enum dma_data_direction dir)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dma_addr_t addr;
+
+	addr = dma_map_page(dev, page, offset, size, dir);
+
+	return addr;
+#else
+	return (virt_to_phys(page_address(page)) + offset);
+#endif
+}
+
+static inline void ath12k_core_dma_unmap_page(struct device *dev, dma_addr_t handle,
+					      size_t size, enum dma_data_direction dir)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dma_unmap_page(dev, handle, size, dir);
+#endif
+}
+
 static inline struct ath12k_base *ath12k_pdev_to_ab(struct ath12k_pdev *pdev)
 {
        if (!pdev)

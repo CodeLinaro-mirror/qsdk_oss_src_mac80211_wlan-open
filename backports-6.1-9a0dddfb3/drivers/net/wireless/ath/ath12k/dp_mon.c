@@ -54,7 +54,7 @@ ath12k_dp_mon_rx_ul_ofdma_ru_size_to_width(enum ath12k_eht_ru_size ru_size)
 	}
 }
 
-static void
+void
 ath12k_dp_mon_fill_rx_stats_info(struct hal_rx_mon_ppdu_info *ppdu_info,
 				 struct ieee80211_rx_status *rx_status)
 {
@@ -80,6 +80,7 @@ ath12k_dp_mon_fill_rx_stats_info(struct hal_rx_mon_ppdu_info *ppdu_info,
 		rx_status->band = NUM_NL80211_BANDS;
 	}
 }
+EXPORT_SYMBOL(ath12k_dp_mon_fill_rx_stats_info);
 
 static void
 ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
@@ -358,10 +359,10 @@ ath12k_dp_mon_rx_update_radiotap_he_mu(struct hal_rx_mon_ppdu_info *rx_status,
 	rtap_buf[rtap_len] = rx_status->he_RU[3];
 }
 
-static void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
-					  struct hal_rx_mon_ppdu_info *ppduinfo,
-					  struct sk_buff *mon_skb,
-					  struct ieee80211_rx_status *rxs)
+void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
+				   struct hal_rx_mon_ppdu_info *ppduinfo,
+				   struct sk_buff *mon_skb,
+				   struct ieee80211_rx_status *rxs)
 {
 	struct ieee80211_supported_band *sband;
 	u8 *ptr = NULL;
@@ -454,12 +455,13 @@ static void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 
 	rxs->mactime = ppduinfo->tsft;
 }
+EXPORT_SYMBOL(ath12k_dp_mon_update_radiotap);
 
-static void ath12k_dp_mon_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev, struct napi_struct *napi,
-					  struct sk_buff *msdu,
-					  struct ieee80211_rx_status *status,
-					  struct hal_rx_mon_ppdu_info *ppduinfo,
-					  u8 decap)
+void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
+				  struct napi_struct *napi,
+				  struct sk_buff *msdu,
+				  struct ieee80211_rx_status *status,
+				  struct hal_rx_mon_ppdu_info *ppduinfo)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
@@ -474,7 +476,6 @@ static void ath12k_dp_mon_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev, struct
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	bool is_mcbc = rxcb->is_mcbc;
-	bool is_eapol_tkip = rxcb->is_eapol;
 
 	status->link_valid = 0;
 	status->link_id = 0;
@@ -527,19 +528,9 @@ static void ath12k_dp_mon_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev, struct
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;
 
-	/* TODO: trace rx packet */
-
-	/* PN for multicast packets are not validate in HW,
-	 * so skip 802.3 rx path
-	 * Also, fast_rx expects the STA to be authorized, hence
-	 * eapol packets are sent in slow path.
-	 */
-	if (decap == DP_RX_DECAP_TYPE_ETHERNET2_DIX && !is_eapol_tkip &&
-	    !(is_mcbc && rx_status->flag & RX_FLAG_DECRYPTED))
-		rx_status->flag |= RX_FLAG_8023;
-
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 }
+EXPORT_SYMBOL(ath12k_dp_mon_rx_deliver_skb);
 
 int ath12k_dp_mon_rx_deliver(struct ath12k_pdev_dp *dp_pdev,
 			     struct dp_mon_mpdu *mon_mpdu,
@@ -579,7 +570,7 @@ int ath12k_dp_mon_rx_deliver(struct ath12k_pdev_dp *dp_pdev,
 			decap = mon_mpdu->decap_format;
 
 		ath12k_dp_mon_update_radiotap(dp_pdev, ppduinfo, mon_skb, rxs);
-		ath12k_dp_mon_rx_deliver_msdu(dp_pdev, napi, mon_skb, rxs, ppduinfo, decap);
+		ath12k_dp_mon_rx_deliver_skb(dp_pdev, napi, mon_skb, rxs, ppduinfo);
 		mon_skb = skb_next;
 	} while (mon_skb);
 	rxs->flag = 0;
@@ -620,13 +611,14 @@ static void
 ath12k_dp_mon_handle_mon_desc(struct ath12k_dp *dp, struct ath12k_dp_mon_desc *mon_desc)
 {
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
-	struct sk_buff *skb = mon_desc->skb;
+	u8 *mon_buf = mon_desc->mon_buf;
 
-	if (skb) {
-		ath12k_core_dma_unmap_single(dp->dev, mon_desc->paddr,
-					     skb->len + skb_tailroom(skb),
-					     DMA_FROM_DEVICE);
-		dev_kfree_skb_any(skb);
+	if (mon_buf) {
+		ath12k_core_dma_unmap_page(dp->dev, mon_desc->paddr,
+					   ATH12K_DP_MON_RX_BUF_SIZE,
+					   DMA_FROM_DEVICE);
+		page_frag_free(mon_buf);
+		mon_desc->mon_buf = NULL;
 	}
 
 	spin_lock_bh(&dp->dp_mon->mon_desc_lock);
@@ -641,13 +633,15 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				int req_entries)
 {
 	struct ath12k_base *ab = dp->ab;
-	struct hal_mon_buf_ring *mon_buf;
-	struct sk_buff *skb;
+	struct hal_mon_buf_ring *mon_buf_desc;
 	struct hal_srng *srng;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_dp_mon_desc *mon_desc, *tmp_mon_desc;
+	struct page *page;
+	u64 offset;
 	dma_addr_t paddr;
 	int ret = 0;
+	u8 *mon_buf;
 
 	list_for_each_entry_safe(mon_desc, tmp_mon_desc, used_list, list) {
 		if (unlikely(!mon_desc->in_use)) {
@@ -657,39 +651,30 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 			continue;
 		}
 
-		skb = dev_alloc_skb(DP_RX_MON_BUFFER_SIZE + DP_RX_BUFFER_ALIGN_SIZE);
-		if (unlikely(!skb)) {
+		mon_buf = page_frag_alloc(&dp_mon->rx_mon_pf_cache,
+					  ATH12K_DP_MON_RX_BUF_SIZE,
+					  GFP_ATOMIC);
+		if (unlikely(!mon_buf)) {
 			ret = -ENOMEM;
 			goto out;
 		}
 
-		if (!IS_ALIGNED((unsigned long)skb->data, DP_RX_BUFFER_ALIGN_SIZE))
-			skb_pull(skb,
-				 PTR_ALIGN(skb->data, DP_RX_BUFFER_ALIGN_SIZE) -
-				 skb->data);
-
-#ifndef CONFIG_IO_COHERENCY
-		paddr = dma_map_single(ab->dev, skb->data, skb->len + skb_tailroom(skb),
-				       DMA_FROM_DEVICE);
+		page = virt_to_head_page(mon_buf);
+		offset = ((void *)mon_buf) - page_address(page);
+		paddr = ath12k_core_dma_map_page(ab->dev, page, offset,
+						 ATH12K_DP_MON_RX_BUF_SIZE,
+						 DMA_FROM_DEVICE);
 		if (unlikely(dma_mapping_error(ab->dev, paddr))) {
-			dev_kfree_skb_any(skb);
+			page_frag_free(mon_buf);
 			ret = -EIO;
 			goto out;
 		}
-#else
-		paddr = virt_to_phys(skb->data);
-		if (unlikely(!paddr)) {
-			dev_kfree_skb_any(skb);
-			ret = -EIO;
-			goto out;
-		}
-#endif
 
-		ATH12K_SKB_RXCB(skb)->paddr = paddr;
-		mon_desc->skb = skb;
+		mon_desc->mon_buf = mon_buf;
 		mon_desc->paddr = paddr;
 		mon_desc->magic = ATH12K_MON_MAGIC_VALUE;
 		mon_desc->buf_len = 0;
+		mon_desc->end_of_ppdu = 0;
 	}
 
 	srng = &ab->hal.srng_list[buf_ring->refill_buf_ring.ring_id];
@@ -704,16 +689,16 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 			goto ring_unlock;
 		}
 
-		mon_buf = ath12k_hal_srng_src_get_next_entry(ab, srng);
-		if (unlikely(!mon_buf)) {
+		mon_buf_desc = ath12k_hal_srng_src_get_next_entry(ab, srng);
+		if (unlikely(!mon_buf_desc)) {
 			ret = -ENOSPC;
 			goto ring_unlock;
 		}
 
 		list_del(&mon_desc->list);
-		mon_buf->paddr_lo = cpu_to_le32(lower_32_bits(mon_desc->paddr));
-		mon_buf->paddr_hi = cpu_to_le32(upper_32_bits(mon_desc->paddr));
-		mon_buf->cookie = cpu_to_le64((uintptr_t)mon_desc);
+		mon_buf_desc->paddr_lo = cpu_to_le32(lower_32_bits(mon_desc->paddr));
+		mon_buf_desc->paddr_hi = cpu_to_le32(upper_32_bits(mon_desc->paddr));
+		mon_buf_desc->cookie = cpu_to_le64((uintptr_t)mon_desc);
 
 		req_entries--;
 	}
@@ -726,12 +711,12 @@ out:
 	if (unlikely(!list_empty(used_list))) {
 		/* Reset the use flag */
 		list_for_each_entry_safe(mon_desc, tmp_mon_desc, used_list, list) {
-			skb = mon_desc->skb;
-			if (skb) {
-				ath12k_core_dma_unmap_single(dp->dev, mon_desc->paddr,
-							     skb->len + skb_tailroom(skb),
-							     DMA_FROM_DEVICE);
-				dev_kfree_skb_any(skb);
+			mon_buf = mon_desc->mon_buf;
+			if (mon_buf) {
+				ath12k_core_dma_unmap_page(ab->dev, mon_desc->paddr,
+							   ATH12K_DP_MON_RX_BUF_SIZE,
+							   DMA_FROM_DEVICE);
+				page_frag_free(mon_buf);
 			}
 
 			ath12k_dp_mon_desc_reset(mon_desc);
@@ -1691,8 +1676,8 @@ EXPORT_SYMBOL(ath12k_dp_mon_rx_buf_setup);
 void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 {
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
-	struct sk_buff *skb;
 	int i;
+	u8 *mon_buf;
 
 	spin_lock_bh(&dp_mon->mon_desc_lock);
 	if (!dp_mon->mon_desc_pool) {
@@ -1704,16 +1689,16 @@ void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 		if (!dp_mon->mon_desc_pool[i].in_use)
 			continue;
 
-		skb = dp_mon->mon_desc_pool[i].skb;
-		if (!skb)
-			continue;
+		mon_buf = dp_mon->mon_desc_pool[i].mon_buf;
+		if (!mon_buf)
+			goto reset_mon_desc;
 
-		dp_mon->mon_desc_pool[i].skb = NULL;
-		dma_unmap_single(dp->dev, ATH12K_SKB_RXCB(skb)->paddr,
-				 skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
-		dp_mon->mon_desc_pool[i].paddr = 0;
-		dp_mon->mon_desc_pool[i].in_use = false;
-		dev_kfree_skb_any(skb);
+		ath12k_core_dma_unmap_page(dp->dev, dp_mon->mon_desc_pool[i].paddr,
+					   ATH12K_DP_MON_RX_BUF_SIZE, DMA_FROM_DEVICE);
+		page_frag_free(mon_buf);
+
+reset_mon_desc:
+		ath12k_dp_mon_desc_reset(&dp_mon->mon_desc_pool[i]);
 	}
 
 	kfree(dp_mon->mon_desc_pool);
@@ -2127,3 +2112,106 @@ int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
 
        return 0;
 }
+
+static inline struct sk_buff *ath12k_mon_get_last_skb_from_fraglist(struct sk_buff *skb)
+{
+	struct sk_buff *last_skb;
+
+	for (last_skb = skb_shinfo(skb)->frag_list;
+	     last_skb && last_skb->next;
+	     last_skb = last_skb->next)
+		;
+
+	return last_skb;
+}
+
+struct sk_buff *
+ath12k_dp_mon_get_skb_valid_frag(struct ath12k_dp *dp, struct sk_buff *skb)
+{
+	struct sk_buff *last_skb;
+	u32 num_frags;
+
+	if (unlikely(!skb)) {
+		ath12k_warn(dp, "invalid skb, cannot retrieve valid skb\n");
+		return NULL;
+	}
+
+	num_frags = skb_shinfo(skb)->nr_frags;
+	if (likely(num_frags < MAX_SKB_FRAGS))
+		return skb;
+
+	if (unlikely(!skb_has_frag_list(skb))) {
+		ath12k_warn(dp, "skb has no frag_list, cannot retrieve last fragment\n");
+		return NULL;
+	}
+
+	last_skb = ath12k_mon_get_last_skb_from_fraglist(skb);
+	if (unlikely(!last_skb)) {
+		ath12k_warn(dp, "frag_list present but no valid last skb found\n");
+		return NULL;
+	}
+
+	num_frags = skb_shinfo(last_skb)->nr_frags;
+	if (likely(num_frags < MAX_SKB_FRAGS))
+		return last_skb;
+
+	ath12k_warn(dp, "no skb with available frag slots found in skb or frag_list\n");
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_get_skb_valid_frag);
+
+void ath12k_dp_mon_update_skb_len(struct sk_buff *skb_head, u32 frag_len)
+{
+	skb_head->data_len += frag_len;
+	skb_head->len += frag_len;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_update_skb_len);
+
+void ath12k_dp_mon_append_skb(struct sk_buff *skb, struct sk_buff *tmp_skb)
+{
+	struct sk_buff *last_skb;
+
+	if (unlikely(!skb_has_frag_list(skb))) {
+		skb_shinfo(skb)->frag_list = tmp_skb;
+	} else {
+		last_skb = ath12k_mon_get_last_skb_from_fraglist(skb);
+		if (last_skb)
+			last_skb->next = tmp_skb;
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_append_skb);
+
+void ath12k_dp_mon_skb_remove_frag(struct ath12k_dp *dp, struct sk_buff *skb,
+				   u16 idx, u16 truesize)
+{
+	struct page *page;
+	u16 frag_len;
+
+	page = skb_frag_page(&skb_shinfo(skb)->frags[idx]);
+	if (unlikely(!page))
+		return;
+
+	frag_len = skb_frag_size(&skb_shinfo(skb)->frags[idx]);
+	put_page(page);
+	skb->len -= frag_len;
+	skb->data_len -= frag_len;
+	skb->truesize -= truesize;
+	skb_shinfo(skb)->nr_frags--;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_skb_remove_frag);
+
+void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
+			       int offset, int frag_len, bool take_frag_ref)
+{
+	struct page *page = virt_to_head_page(mon_buf);
+	int frag_offset = mon_buf - page_address(page);
+	int nr_frags = skb_shinfo(skb)->nr_frags;
+
+	skb_add_rx_frag(skb, nr_frags, page,
+			(frag_offset + offset), frag_len,
+			ATH12K_DP_MON_RX_BUF_SIZE);
+
+	if (unlikely(take_frag_ref))
+		skb_frag_ref(skb, nr_frags);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_add_rx_frag);

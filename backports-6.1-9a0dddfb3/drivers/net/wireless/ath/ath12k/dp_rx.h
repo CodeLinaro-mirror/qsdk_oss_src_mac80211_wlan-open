@@ -150,6 +150,7 @@ enum ath12k_dp_rx_decap_type {
 	DP_RX_DECAP_TYPE_NATIVE_WIFI,
 	DP_RX_DECAP_TYPE_ETHERNET2_DIX,
 	DP_RX_DECAP_TYPE_8023,
+	DP_RX_DECAP_TYPE_INVALID,
 };
 
 struct ath12k_dp_rx_rfc1042_hdr {

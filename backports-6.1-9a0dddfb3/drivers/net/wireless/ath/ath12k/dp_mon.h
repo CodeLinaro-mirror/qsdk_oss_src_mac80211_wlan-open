@@ -14,7 +14,9 @@
 
 #include "hal_mon_cmn.h"
 
+#define ATH12K_DP_MON_RX_BUF_SIZE	2048
 #define ATH12K_MON_MAGIC_VALUE		0xDECAFEED
+#define ATH12K_DP_MON_MAX_RADIO_TAP_HDR 128
 #define ATH12K_MON_RX_DOT11_OFFSET	5
 #define ATH12K_MON_RX_PKT_OFFSET	8
 #define ATH12K_DP_WLAN_MAX_AC		4
@@ -113,11 +115,17 @@ struct ath12k_dp_mon {
 
 	/* lock for ath12k_dp_mon_desc */
 	spinlock_t mon_desc_lock;
+	struct page_frag_cache rx_mon_pf_cache;
 };
 
 enum dp_monitor_type {
 	ATH12K_DP_MON_TYPE_QUAD_RING,
 	ATH12K_DP_MON_TYPE_DUAL_RING
+};
+
+struct ath12k_dp_mon_mpdu_meta {
+	u8 decap_type;
+	u32 err_bitmap;
 };
 
 enum dp_mon_tx_ppdu_info_type {
@@ -236,11 +244,12 @@ struct ath12k_pdev_mon_dp {
 
 struct ath12k_dp_mon_desc {
 	struct list_head list;
-	struct sk_buff *skb;
+	u8 *mon_buf;
 	dma_addr_t paddr;
 	u32 magic;
 	u16 buf_len:14,
-	    in_use:1;
+	    in_use:1,
+	    end_of_ppdu:1;
 };
 
 static inline enum dp_monitor_type
@@ -324,6 +333,26 @@ size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *he
 size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
 						   struct dp_rxdma_mon_ring *rx_ring,
 						   struct list_head *list);
+void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
+				  struct napi_struct *napi, struct sk_buff *msdu,
+				  struct ieee80211_rx_status *status,
+				  struct hal_rx_mon_ppdu_info *ppduinfo);
+void ath12k_dp_mon_fill_rx_stats_info(struct hal_rx_mon_ppdu_info *ppdu_info,
+				      struct ieee80211_rx_status *rx_status);
+void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
+				   struct hal_rx_mon_ppdu_info *ppduinfo,
+				   struct sk_buff *mon_skb,
+				   struct ieee80211_rx_status *rxs);
+struct sk_buff *ath12k_dp_mon_get_skb_valid_frag(struct ath12k_dp *dp,
+						 struct sk_buff *skb);
+void ath12k_dp_mon_add_frag_list(struct sk_buff *skb_head, struct sk_buff *frag_list,
+				 u32 frag_len);
+void ath12k_dp_mon_update_skb_len(struct sk_buff *skb_head, u32 frag_len);
+void ath12k_dp_mon_append_skb(struct sk_buff *skb, struct sk_buff *tmp_skb);
+void ath12k_dp_mon_skb_remove_frag(struct ath12k_dp *dp, struct sk_buff *skb,
+				   u16 idx, u16 truesize);
+void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
+			       int offset, int frag_len, bool take_frag_ref);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 				enum ath12k_pktlog_mode mode, bool enable);
 

@@ -630,6 +630,13 @@ struct hal_tx_phy_desc {
 	__le32 info3;
 } __packed;
 
+struct hal_tlv_parsed_hdr {
+	u16 tag;
+	u16 len;
+	u16 userid;
+	u8 *data;
+};
+
 #define MPDU_START_SELECT_INFO0_ENCYRPT_TYP                      BIT(3)
 #define MPDU_START_SELECT_INFO1_FILTER_GRPID_PPDUID              BIT(4)
 #define MPDU_START_SELECT_INFO2_INFO3                            BIT(5)
@@ -834,7 +841,7 @@ ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
 enum hal_rx_mon_status
 ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
-					 const struct hal_tlv_64_hdr *tlv);
+					 struct hal_tlv_parsed_hdr *tlv_parsed_hdr);
 enum hal_tx_mon_status
 ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct hal_tx_mon_ppdu_info *tx_ppdu_info,
 					 u16 tlv_tag, const void *tlv_data, u32 userid);

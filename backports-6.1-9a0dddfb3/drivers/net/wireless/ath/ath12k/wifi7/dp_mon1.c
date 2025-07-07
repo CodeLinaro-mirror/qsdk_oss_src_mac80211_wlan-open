@@ -474,13 +474,17 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct hal_tlv_64_hdr *tlv;
 	struct ath12k_skb_rxcb *rxcb;
+	struct hal_tlv_parsed_hdr tlv_parsed_hdr = {0};
 	enum hal_rx_mon_status hal_status;
-	u16 tlv_tag, tlv_len;
+	u16 tlv_tag, tlv_len, tlv_userid;
 	u8 *ptr = skb->data;
 
 	do {
 		tlv = (struct hal_tlv_64_hdr *)ptr;
 		tlv_tag = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_TAG);
+		tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
+		tlv_userid = le64_get_bits(tlv->tl, HAL_TLV_USR_ID);
+		ptr += sizeof(*tlv);
 
 		/* The actual length of PPDU_END is the combined length of many PHY
 		 * TLVs that follow. Skip the TLV header and
@@ -493,10 +497,15 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 		else
 			tlv_len = le64_get_bits(tlv->tl, HAL_TLV_64_HDR_LEN);
 
+		tlv_parsed_hdr.tag = tlv_tag;
+		tlv_parsed_hdr.len = tlv_len;
+		tlv_parsed_hdr.userid = tlv_userid;
+		tlv_parsed_hdr.data = ptr;
+
 		hal_status =
 			ath12k_wifi7_hal_mon_rx_parse_status_tlv(dp_pdev->dp->hal,
 								 &pmon->mon_ppdu_info,
-								 tlv);
+								 &tlv_parsed_hdr);
 		ptr += sizeof(*tlv) + tlv_len;
 		ptr = PTR_ALIGN(ptr, HAL_TLV_64_ALIGN);
 
