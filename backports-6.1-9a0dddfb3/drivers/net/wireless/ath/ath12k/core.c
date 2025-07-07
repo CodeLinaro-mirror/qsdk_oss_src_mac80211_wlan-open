@@ -40,6 +40,7 @@
 #include "ini.h"
 #include "erp.h"
 #include "sdwf.h"
+#include "telemetry_agent_if.h"
 
 #ifdef CPTCFG_ATHDEBUG
 #include "athdbg_if.h"
@@ -4827,6 +4828,9 @@ int ath12k_core_init(struct ath12k_base *ab)
 	 */
 	ab->dp->ppe.ppeds_soc_idx = -1;
 #endif
+	ret = ath12k_telemetry_ab_agent_create_handler(ab);
+	if (ret)
+		ath12k_err(ab, "Unable to create telemetry psoc agent object: %d\n", ret);
 
 #ifdef CPTCFG_ATHDEBUG
 	if (is_ready)
@@ -4846,6 +4850,8 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 #if !defined(CPTCFG_ATHDEBUG)
 	athdbg_if_unregister(ab);
 #endif
+	if (ath12k_telemetry_ab_agent_delete_handler(ab))
+		ath12k_err(ab, "failed to destroy soc agent\n");
 	ath12k_core_panic_notifier_unregister(ab);
 	ath12k_core_hw_group_cleanup(ab->ag);
 	ath12k_core_hw_group_destroy(ab->ag);

@@ -4,15 +4,147 @@
  */
 
 #include <linux/export.h>
-#include "debug.h"
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
+#include "telemetry_agent.h"
+#include "debug.h"
 #include "sdwf.h"
 #include <linux/module.h>
 
 struct telemetry_agent_ops *g_agent_ops;
 
 EXPORT_SYMBOL(g_agent_ops);
+
+int ath12k_telemetry_ab_agent_create_handler(struct ath12k_base *ab)
+{
+	struct agent_psoc_obj psoc_obj;
+
+	if (!ab || !g_agent_ops ||
+	    !g_agent_ops->agent_psoc_create_handler)
+		return -EINVAL;
+
+	memset(&psoc_obj, 0, sizeof(psoc_obj));
+
+	psoc_obj.psoc_id = ath12k_get_ab_device_id(ab);
+	psoc_obj.psoc_back_pointer = ab;
+
+	g_agent_ops->agent_psoc_create_handler(ab, &psoc_obj);
+
+	return 0;
+}
+
+/* FIXME: The telemetry_agent is not loaded by default. Due to this limitation,
+ * the telemetry agent must be aware of resources created before its module is loaded.
+ * Therefore, this subroutine needs to be called during the RM initialization path.
+ * RM initiates the handshake, and ath12k invokes the corresponding telemetry agent
+ * operations to create and destroy resources within the telemetry agent module
+ * based on the ath12k context.
+ *
+ * Initialization steps:
+ * 1. Create a psoc reference in the telemetry agent (TA).
+ * 2. Create a pdev reference in TA.
+ * 3. Create a peer reference in TA if the peer exists and is in an associated state.
+ *
+ * Destruction steps:
+ * 3. Destroy the peer reference in TA if the peer exists.
+ * 2. Destroy the pdev reference in TA.
+ * 1. Destroy the psoc reference in TA.
+ *
+ * This routine may become unnecessary once the above limitation is resolved.
+ */
+static void ath12k_telemetry_create_resources(void)
+{
+	struct ath12k_hw_group *ag;
+	struct ath12k_base *ab;
+	int i, ret;
+
+	ag = ath12k_core_get_ag();
+	if (!ag) {
+		ath12k_err(NULL, "Fails to get ag, skipped to create telemetry resources\n");
+		return;
+	}
+
+	mutex_lock(&ag->mutex);
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (!ab)
+			continue;
+
+		ret = ath12k_telemetry_ab_agent_create_handler(ab);
+		if (ret) {
+			ath12k_err(ab,
+				   "Unable to create telemetry psoc agent object: %d\n",
+				    ret);
+			continue;
+		}
+	}
+	mutex_unlock(&ag->mutex);
+}
+
+static u32 ath12k_telemetry_agent_init(void)
+{
+	int status = 0;
+
+	ath12k_telemetry_create_resources();
+	ath12k_info(NULL, "telemetry agent init Done\n");
+	return status;
+}
+
+int ath12k_telemetry_ab_agent_delete_handler(struct ath12k_base *ab)
+{
+	struct agent_psoc_obj psoc_obj;
+
+	if (!ab || !g_agent_ops ||
+	   !g_agent_ops->agent_psoc_create_handler)
+		return -EINVAL;
+
+	psoc_obj.psoc_id = ath12k_get_ab_device_id(ab);
+	psoc_obj.psoc_back_pointer = ab;
+
+	g_agent_ops->agent_psoc_destroy_handler(ab, &psoc_obj);
+
+	return 0;
+}
+
+static void ath12k_telemetry_destroy_resources(void)
+{
+	struct ath12k_hw_group *ag;
+	struct ath12k_base *ab;
+	int i, ret;
+
+	ag = ath12k_core_get_ag();
+	if (!ag) {
+		ath12k_err(NULL, "Fails to get ag, skipped to destroy telemetry resources, expect unknown behavior\n");
+		return;
+	}
+
+	mutex_lock(&ag->mutex);
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (!ab)
+			continue;
+
+		ret = ath12k_telemetry_ab_agent_delete_handler(ab);
+		if (ret) {
+			ath12k_err(ab,
+				   "Unable to destroy telemetry psoc agent object: %d\n",
+				   ret);
+			continue;
+		}
+	}
+
+	mutex_unlock(&ag->mutex);
+}
+
+static u32 ath12k_telemetry_agent_deinit(void)
+{
+	int status = 0;
+
+	ath12k_telemetry_destroy_resources();
+	ath12k_info(NULL, "telemetry agent deinit\n");
+	return status;
+}
 
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 {
@@ -33,35 +165,21 @@ int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 
 	ath12k_info(NULL, "registered telemetry agent ops: %p", g_agent_ops);
 
+	ath12k_telemetry_agent_init();
+	ath12k_info(NULL, "Init telemetry agent resources");
+
 	return 0;
 }
 EXPORT_SYMBOL(register_telemetry_agent_ops);
 
 int unregister_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 {
+	ath12k_telemetry_agent_deinit();
 	g_agent_ops = NULL;
 	ath12k_info(NULL, "unregistered telemetry agent ops: %p", g_agent_ops);
 	return 0;
 }
 EXPORT_SYMBOL(unregister_telemetry_agent_ops);
-
-u32 ath12k_telemetry_agent_init(void)
-{
-	int status = 0;
-
-	/* TODO */
-	ath12k_info(NULL, "telemetry agent init Done\n");
-	return status;
-}
-
-u32 ath12k_telemetry_agent_deinit(void)
-{
-	int status = 0;
-
-	/* TODO */
-	ath12k_info(NULL, "telemetry agent deinit\n");
-	return status;
-}
 
 int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats)
 {

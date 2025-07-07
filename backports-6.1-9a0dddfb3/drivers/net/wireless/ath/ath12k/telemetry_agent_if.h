@@ -8,9 +8,11 @@
 
 #include "telemetry.h"
 #include "telemetry_agent_wifi_driver_if.h"
+#include "core.h"
 
-u32 ath12k_telemetry_agent_init(void);
-u32 ath12k_telemetry_agent_deinit(void);
+int ath12k_telemetry_ab_agent_create_handler(struct ath12k_base *ab);
+int ath12k_telemetry_ab_agent_delete_handler(struct ath12k_base *ab);
+
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops);
 int unregister_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops);
 

@@ -2189,6 +2189,14 @@ static inline struct ath12k_base *ath12k_pdev_to_ab(struct ath12k_pdev *pdev)
        return pdev->ar->ab;
 }
 
+static inline int ath12k_get_ab_device_id(struct ath12k_base *ab)
+{
+	if (!ab)
+		return -1;
+
+	return ab->device_id;
+}
+
 static inline int ath12k_get_pdev_id(struct ath12k_pdev *pdev)
 {
        if (!pdev)
