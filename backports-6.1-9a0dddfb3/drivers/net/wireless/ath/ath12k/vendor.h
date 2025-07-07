@@ -1804,6 +1804,106 @@ enum qca_wlan_vendor_attr_app_generic_category {
 };
 
 /**
+ * enum qca_wlan_vendor_attr_t2lm_mlo_peer_link_info - Represents the MLO peer
+ * link inforamtion.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_HW_LINK_ID: u16, represents the hardware
+ * link id of the MLO peer link. This is included in the commands sent from the
+ * userspace to the driver and used in the events sent from the driver to the
+ * userspace.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_PEER_MAC: 6 byte MAC address represents
+ * the MLO peer mac address. This is included in the commands sent from the
+ * userspace to the driver and used in the events sent from the driver to the
+ * userspace.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_MLO_LINK_ID: u8, represents the mlo peer
+ * link index. This is included in the commands sent from the userspace to the
+ * driver and used in the events sent from the driver to the userspace.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_IS_ASSOC_LINK: u8, this is included in
+ * the event sent from the driver to the userspace to identify the Assoc request
+ * received link. Userspace includes this in all the commands sent to the driver
+ * to identify the Assoc request received list.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_CHAN_BW: u8, this is included in the
+ * event sent from the driver to the userspace to indicate the STA's channel
+ * bandwidth. The values are defined in enum qca_wlan_vendor_channel_width.
+ * The driver includes this attribute in the event sent for
+ * QCA_WLAN_VENDOR_T2LM_CATEGORY_REQUEST,
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO and
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_OMI_NO_T2LM_INFO.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_CHAN_FREQ: u16, this is included in the
+ * event sent from the driver to the userspace to indicate the STA's channel
+ * frequency in MHz. The driver includes this attribute in the event sent for
+ * QCA_WLAN_VENDOR_T2LM_CATEGORY_REQUEST,
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO and
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_OMI_NO_T2LM_INFO.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_AVAILABLE_AIRTIME: u16, this is included
+ * in the event sent from the driver to the userspace to indicate MLO peer
+ * link's available airtime value (unit is percentage). The driver includes this
+ * attribute in the event sent for QCA_WLAN_VENDOR_T2LM_CATEGORY_REQUEST,
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO and
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_OMI_NO_T2LM_INFO.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_RSSI: s8, this is included in the event
+ * sent from the driver to the userspace to indicate MLO peer link's (Assoc
+ * request received link) RSSI value in dBm. The driver includes this attribute
+ * in the event sent for
+ * QCA_WLAN_VENDOR_T2LM_CATEGORY_REQUEST,
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO and
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_OMI_NO_T2LM_INFO.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_EHT_CAPS: This is included in the event
+ * sent from the driver to the userspace to indicate MLO peer link's EHT
+ * capabilities. Values are defined in enum
+ * qca_wlan_vendor_attr_eht_peer_capabilities.
+ * The driver includes this attribute in the event sent for
+ * QCA_WLAN_VENDOR_T2LM_CATEGORY_REQUEST,
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO and
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_OMI_NO_T2LM_INFO.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_BAND_CAP: This is included in the event
+ * sent from the driver to the userspace to indicate MLO peer link's band
+ * capabilities. Values are defined in enum qca_wlan_vendor_link_band_caps.
+ * The driver includes this attribute in the event sent for
+ * QCA_WLAN_VENDOR_T2LM_CATEGORY_REQUEST,
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO and
+ * QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_OMI_NO_T2LM_INFO.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_VDEV_ID: u8, represents the vdev id.
+ * This is included in the commands sent from the userspace to the driver
+ * and used in the events sent from the driver to the userspace.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_AP_MLD_MAC: 6 byte MAC address represents
+ * the vdev mld mac address.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_CAPS: u16, represents peer capabilities.
+ */
+enum qca_wlan_vendor_attr_t2lm_mlo_peer_link_info {
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_HW_LINK_ID = 1,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_PEER_MAC = 2,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_MLO_LINK_ID = 3,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_IS_ASSOC_LINK = 4,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_CHAN_BW = 5,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_CHAN_FREQ = 6,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_AVAILABLE_AIRTIME = 7,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_RSSI = 8,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_EHT_PEER_CAPS = 9,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_BAND_CAP = 10,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_EFF_CHAN_BW = 11,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_VDEV_ID = 12,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_AP_MLD_MAC = 13,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_CAPS = 14,
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_MAX =
+		QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_AFTER_LAST - 1,
+};
+
+/**
  * enum qca_wlan_vendor_channel_width - Represents the channel bandwidth in MHz
  * available in the driver. The driver will send this information to the
  * userspace as part of the registration event.
@@ -1839,6 +1939,13 @@ enum qca_wlan_vendor_channel_width {
 			return -1;                                      \
 		}                                                       \
 	} while (0)
+
+#define ATH_PARAM_MASK     0x1000
+enum ath_cfg_param_radio {
+	ACFG_PARAM_RADIO_TXCHAINMASK	      = 1  | ATH_PARAM_MASK,
+	ACFG_PARAM_RADIO_RXCHAINMASK	      = 2  | ATH_PARAM_MASK,
+	PARAM_RADIO_TXCHAINSOFT               = 361 | ATH_PARAM_MASK,
+};
 
 enum qca_wlan_vendor_channel_width
 ath12k_nl_chan_bw_to_qca_vendor_chan_bw(enum nl80211_chan_width chan_bw);

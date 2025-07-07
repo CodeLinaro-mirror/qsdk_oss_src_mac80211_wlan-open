@@ -35,6 +35,7 @@
 #include "cfr.h"
 #include "dp_mon.h"
 #include "erp.h"
+#include "vendor_services.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -730,7 +731,7 @@ ath12k_mac_get_link_bss_conf(struct ath12k_link_vif *arvif)
 	return link_conf;
 }
 
-static struct ieee80211_link_sta *ath12k_mac_get_link_sta(struct ath12k_link_sta *arsta)
+struct ieee80211_link_sta *ath12k_mac_get_link_sta(struct ath12k_link_sta *arsta)
 {
 	struct ath12k_sta *ahsta = arsta->ahsta;
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
@@ -3830,6 +3831,57 @@ static enum wmi_phy_mode ath12k_mac_get_phymode_eht(struct ath12k *ar,
 
 	return MODE_UNKNOWN;
 }
+
+static void
+ath12k_peer_assoc_build_vendor_event(struct ath12k_sta *ahsta,
+				     struct ieee80211_link_sta *link_sta,
+				     struct ath12k_vendor_generic_peer_assoc_event *ev)
+{
+	struct ath12k_link_sta *arsta;
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_sta *sta;
+	unsigned long links;
+	struct ath12k_vendor_generic_peer_assoc_event *assoc_ev = ev;
+	struct ath12k_vendor_mld_peer_link_entry *link_entry;
+	u8 i = 0, link_id;
+
+	sta = container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
+
+	links = ahsta->links_map;
+
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		if (i >= ATH12K_WMI_MLO_MAX_LINKS)
+			break;
+		arsta = ahsta->link[link_id];
+		arvif = ath12k_get_arvif_from_link_id(ahsta->ahvif, link_id);
+		if (!(arvif && arvif->ar))
+			continue;
+
+		if (!arvif->is_started)
+			continue;
+
+		link_entry = &assoc_ev->link_entry[i];
+		link_entry->hw_link_id = arvif->ar->pdev->hw_link_id;
+		link_entry->link_id = arvif->link_id;
+		link_entry->vdev_id = arvif->vdev_id;
+		link_entry->device_id = ath12k_get_ab_device_id(arvif->ar->ab);
+		link_entry->is_assoc_link = arsta->is_assoc_link;
+		// To-Do: implement rssi_comb
+		//link_entry->link_rssi = arsta->rssi_comb;
+		link_entry->chan_bw = link_sta->bandwidth;
+		// To-Do: Get vif's mld mac addr
+		//ether_addr_copy(link_entry->ap_mld_mac_addr, sta->ml_addr);
+		ether_addr_copy(link_entry->link_mac_addr, arsta->addr);
+
+		assoc_ev->num_links++;
+
+		i++;
+	}
+
+	if (sta->mlo)
+		ether_addr_copy(assoc_ev->mld_mac_addr, sta->addr);
+}
+
 
 static bool
 ath12k_peer_assoc_h_eht_masked(const u16 eht_mcs_mask[NL80211_EHT_NSS_MAX])
@@ -9669,6 +9721,51 @@ ath12k_mac_set_peer_eht_fixed_rate(struct ath12k_link_vif *arvif,
 	return ret;
 }
 
+int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
+					  struct ieee80211_link_sta *link_sta)
+{
+	struct ath12k_vendor_generic_peer_assoc_event vend_event = {0};
+	struct ath12k_sta *ahsta = arsta->ahsta;
+
+	if (!link_sta || !arsta)
+		return -EINVAL;
+
+	vend_event.category = QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_DISASSOC;
+
+	rcu_read_lock();
+	ath12k_peer_assoc_build_vendor_event(ahsta, link_sta,
+					     &vend_event);
+	rcu_read_unlock();
+
+	if (ath12k_vendor_send_assoc_event(&vend_event, vend_event.category, 0))
+		return -EINVAL;
+
+	return 0;
+}
+
+int ath12k_mac_vendor_send_assoc_event(struct ath12k_link_sta *arsta,
+				       struct ieee80211_link_sta *link_sta,
+				       bool reassoc)
+{
+	struct ath12k_vendor_generic_peer_assoc_event vend_event = {0};
+	struct ath12k_sta *ahsta = arsta->ahsta;
+
+	if (!link_sta || !arsta)
+		return -EINVAL;
+
+	vend_event.category = QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO;
+
+	rcu_read_lock();
+	ath12k_peer_assoc_build_vendor_event(ahsta, link_sta,
+					     &vend_event);
+	rcu_read_unlock();
+
+	if (ath12k_vendor_send_assoc_event(&vend_event, vend_event.category, 0))
+		return -EINVAL;
+
+	return 0;
+}
+
 static int ath12k_mac_station_assoc(struct ath12k *ar,
 				    struct ath12k_link_vif *arvif,
 				    struct ath12k_link_sta *arsta,
@@ -9776,6 +9873,8 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 	arsta->bw = bandwidth;
 	spin_unlock_bh(&ar->data_lock);
 
+	ath12k_mac_vendor_send_assoc_event(arsta, link_sta, reassoc);
+
 	if (vht_supp && num_vht_rates == 1) {
 		ret = ath12k_mac_set_peer_vht_fixed_rate(arvif, arsta, mask, band);
 	} else if (has_he && num_he_rates == 1) {
@@ -9846,8 +9945,15 @@ static int ath12k_mac_station_disassoc(struct ath12k *ar,
 				       struct ath12k_link_sta *arsta)
 {
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	struct ieee80211_link_sta *link_sta;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	rcu_read_lock();
+
+	link_sta = arsta->is_bridge_peer ? ath12k_mac_inherit_radio_cap(ar, arsta) :
+		   ath12k_mac_get_link_sta(arsta);
+	rcu_read_unlock();
 
 	spin_lock_bh(&arvif->ar->data_lock);
 
@@ -9863,6 +9969,9 @@ static int ath12k_mac_station_disassoc(struct ath12k *ar,
 	}
 
 	spin_unlock_bh(&arvif->ar->data_lock);
+
+	if (link_sta)
+		ath12k_mac_vendor_send_disassoc_event(arsta, link_sta);
 
 	if (!sta->wme) {
 		arvif->num_legacy_stations--;

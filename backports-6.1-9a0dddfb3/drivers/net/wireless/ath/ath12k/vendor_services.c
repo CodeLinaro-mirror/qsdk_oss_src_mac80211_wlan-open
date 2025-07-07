@@ -431,6 +431,14 @@ void ath12k_vendor_services_deinit(void)
 }
 EXPORT_SYMBOL(ath12k_vendor_services_deinit);
 
+bool ath12k_vendor_is_service_enabled(const u8 svc_id)
+{
+	if (svc_id >= ATH12K_RM_MAX_SERVICE)
+		return false;
+
+	return vendor_info.service_enabled[svc_id] ? true : false;
+}
+
 static int ath12k_vendor_set_wireless_references(struct wiphy *wiphy,
 					     struct wireless_dev *wdev)
 {
@@ -598,6 +606,163 @@ static int ath12k_vendor_get_len_vendor_generic_response(void)
 	return len;
 }
 
+static int ath12k_vendor_generic_report_assoc_info(struct sk_buff *vendor_event,
+						   void *gen_data)
+{
+	struct ath12k_vendor_generic_peer_assoc_event *peer_event;
+	struct ath12k_vendor_mld_peer_link_entry *mld_link_entry;
+	struct nlattr *nl_mld_link_entry;
+	struct nlattr *nl_per_link_entry;
+	u8 index = 0;
+
+	peer_event = (struct ath12k_vendor_generic_peer_assoc_event *)gen_data;
+
+	if (nla_put(vendor_event, QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MLD_MAC_ADDR,
+		    6, &peer_event->mld_mac_addr[0])) {
+		ath12k_err(NULL, "Fails to put QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MLD_MAC_ADDR");
+		return -ENOMEM;
+	}
+
+	if (nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_NUM_LINKS,
+		       peer_event->num_links)) {
+		ath12k_err(NULL,
+			   "Fails to put RM Generic Assoc Num Links");
+		return -ENOMEM;
+	}
+
+	nl_mld_link_entry =
+		nla_nest_start(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_PEER_LINK_ENTRY);
+
+	if (!nl_mld_link_entry) {
+		ath12k_err(NULL, "Fails to start nested attr QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_PEER_LINK_ENTRY");
+		return -ENOMEM;
+	}
+
+	for (index = 0; index < peer_event->num_links; index++) {
+		nl_per_link_entry = nla_nest_start(vendor_event, index);
+
+		if (!nl_per_link_entry) {
+			ath12k_err(NULL, "Fails to start nested attr QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_PEER_LINK_ENTRY");
+			return -ENOMEM;
+		}
+
+		mld_link_entry = &peer_event->link_entry[index];
+
+		if (nla_put_u16(vendor_event,
+				QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_HW_LINK_ID,
+				mld_link_entry->hw_link_id) ||
+		    nla_put_u8(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_VDEV_ID,
+			       mld_link_entry->vdev_id) ||
+		    nla_put(vendor_event,
+			    QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_AP_MLD_MAC,
+			    6, &mld_link_entry->ap_mld_mac_addr[0]) ||
+		    nla_put(vendor_event,
+			    QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_PEER_MAC,
+			    6, &mld_link_entry->link_mac_addr[0]) ||
+		    nla_put_u8(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_MLO_LINK_ID,
+			       mld_link_entry->link_id) ||
+		    nla_put_u8(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_IS_ASSOC_LINK,
+			       mld_link_entry->is_assoc_link) ||
+		    nla_put_u8(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_CHAN_BW,
+			       mld_link_entry->chan_bw) ||
+		    nla_put_u16(vendor_event,
+				QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_CHAN_FREQ,
+				mld_link_entry->chan_freq) ||
+		    nla_put_u8(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_BAND_CAP,
+			       mld_link_entry->band_cap) ||
+		    nla_put_u8(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_RSSI,
+			       mld_link_entry->link_rssi) ||
+		    nla_put_u16(vendor_event,
+				QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_EFF_CHAN_BW,
+				mld_link_entry->eff_chan_bw) ||
+		    nla_put_u16(vendor_event,
+				QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_CAPS,
+				mld_link_entry->peer_capa_flags)) {
+			ath12k_err(NULL, "Fails to put per mld link entry attrs");
+			return -ENOMEM;
+		}
+		nla_nest_end(vendor_event, nl_per_link_entry);
+	}
+
+	nla_nest_end(vendor_event, nl_mld_link_entry);
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM, "Notify vendor app on assoc\n");
+	return 0;
+}
+
+static int ath12k_vendor_generic_report_disassoc(struct sk_buff *vendor_event,
+						 void *gen_data)
+{
+	struct ath12k_vendor_generic_peer_assoc_event *peer_event;
+	struct ath12k_vendor_mld_peer_link_entry *mld_link_entry;
+	struct nlattr *nl_mld_link_entry;
+	struct nlattr *nl_per_link_entry;
+	u8 index = 0;
+
+	peer_event = (struct ath12k_vendor_generic_peer_assoc_event *)gen_data;
+
+	if (nla_put(vendor_event, QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MLD_MAC_ADDR,
+		    6, &peer_event->mld_mac_addr[0])) {
+		ath12k_err(NULL, "Fails to put QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MLD_MAC_ADDR");
+		return -ENOMEM;
+	}
+
+	if (nla_put_u8(vendor_event,
+		       QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_NUM_LINKS,
+		       peer_event->num_links)) {
+		ath12k_err(NULL,
+			   "Fails to put RM Generic Assoc Num Links");
+		return -ENOMEM;
+	}
+
+	nl_mld_link_entry =
+		nla_nest_start(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_PEER_LINK_ENTRY);
+
+	if (!nl_mld_link_entry) {
+		ath12k_err(NULL, "Fails to start nested attr QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_PEER_LINK_ENTRY");
+		return -ENOMEM;
+	}
+
+	for (index = 0; index < peer_event->num_links; index++) {
+		nl_per_link_entry = nla_nest_start(vendor_event, index);
+
+		if (!nl_mld_link_entry) {
+			ath12k_err(NULL, "Fails to start nested attr QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_PEER_LINK_ENTRY");
+			return -ENOMEM;
+		}
+
+		mld_link_entry = &peer_event->link_entry[index];
+
+		if (nla_put_u16(vendor_event,
+				QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_HW_LINK_ID,
+				mld_link_entry->hw_link_id) ||
+		    nla_put(vendor_event,
+			    QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_PEER_MAC,
+			    6, &mld_link_entry->link_mac_addr[0]) ||
+		    nla_put_u8(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_MLO_PEER_LINK_IS_ASSOC_LINK,
+			       mld_link_entry->is_assoc_link)) {
+			ath12k_err(NULL, "Fails to put per mld link entry attrs");
+			return -ENOMEM;
+		}
+		nla_nest_end(vendor_event, nl_per_link_entry);
+	}
+
+	nla_nest_end(vendor_event, nl_mld_link_entry);
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM, "Notify vendor app on disassoc\n");
+	return 0;
+}
+
 static void ath12k_vendor_generic_response(void *out_data,
 					   u8 service_id, u8 category)
 {
@@ -649,6 +814,26 @@ static void ath12k_vendor_generic_response(void *out_data,
 			goto error;
 		}
 		break;
+	case QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO:
+		fallthrough;
+	case QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_WITH_T2LM_INFO:
+		fallthrough;
+	case QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_OMI_NO_T2LM_INFO:
+		if (ath12k_vendor_generic_report_assoc_info(vendor_event,
+							       out_data)) {
+			ath12k_dbg(NULL, ATH12K_DBG_RM,
+				   "vendor: failed to report assoc info to vendor app\n");
+			goto error;
+		}
+		break;
+	case QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_DISASSOC:
+		if (ath12k_vendor_generic_report_disassoc(vendor_event,
+							     out_data)) {
+			ath12k_dbg(NULL, ATH12K_DBG_RM,
+				   "vendor: failed to report disassoc info to vendor app\n");
+			goto error;
+		}
+		break;
 	default:
 		ath12k_dbg(NULL, ATH12K_DBG_RM,
 			   "vendor: Invalid catergory received from telemetry agent\n");
@@ -691,5 +876,19 @@ void ath12k_telemetry_vendor_callback(u8 init,
 	} else {
 		ath12k_telemetry_destroy_peer_agent_resources();
 	}
+}
+
+int ath12k_vendor_send_assoc_event(void *event_data,
+				   u8 category, u8 service_id)
+{
+	if (!ath12k_vendor_is_service_enabled(ATH12K_RM_MAIN_SERVICE)) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			   "skipped to send assoc response to vendor ap as service(s) not initialized\n");
+		return -1;
+	}
+
+	ath12k_vendor_generic_response(event_data, service_id, category);
+
+	return 0;
 }
 

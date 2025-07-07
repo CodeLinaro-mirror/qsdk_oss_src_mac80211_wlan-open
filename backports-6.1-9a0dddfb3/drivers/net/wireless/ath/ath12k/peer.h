@@ -17,6 +17,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 int ath12k_wait_for_peer_delete_done(struct ath12k *ar, u32 vdev_id,
 				     const u8 *addr);
 int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_sta *ahsta);
+int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *peer,
+					   const bool is_assoc);
 
 int ath12k_link_sta_rhash_tbl_init(struct ath12k_base *ab);
 void ath12k_link_sta_rhash_tbl_destroy(struct ath12k_base *ab);

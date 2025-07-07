@@ -118,4 +118,7 @@ int ath12k_vendor_initialize_service(struct wiphy *wiphy,
 				     struct ath12k_vendor_service_info *info);
 bool ath12k_vendor_is_service_enabled(const u8 svc_id);
 
+int ath12k_vendor_send_assoc_event(void *event_data,
+				   u8 category, u8 service_id);
+
 #endif /* ATH12K_VENDOR_SERVICES_H */

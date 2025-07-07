@@ -673,4 +673,11 @@ ath12k_mac_op_get_6ghz_dev_deployment_type(struct ieee80211_hw *hw);
 
 struct ieee80211_chanctx_conf *
 	ath12k_mac_get_first_active_arvif_chanctx(struct ath12k *ar);
+struct ieee80211_link_sta *ath12k_mac_get_link_sta(struct ath12k_link_sta *arsta);
+int ath12k_mac_vendor_send_assoc_event(struct ath12k_link_sta *arsta,
+				       struct ieee80211_link_sta *link_sta,
+				       bool reassoc);
+int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
+					  struct ieee80211_link_sta *link_sta);
+
 #endif

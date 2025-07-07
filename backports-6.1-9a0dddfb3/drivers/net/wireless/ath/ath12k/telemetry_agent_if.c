@@ -14,6 +14,7 @@
 #include "mac.h"
 #include <linux/module.h>
 #include "vendor_services.h"
+#include "peer.h"
 
 struct telemetry_agent_ops *g_agent_ops;
 
@@ -96,7 +97,27 @@ static int ath12k_telemetry_create_destroy_peer_agent(struct ath12k_base *ab,
 
 	return 0;
 }
+static void ath12k_telemetry_send_assoc_event(struct ath12k_dp_link_peer *peer)
+{
+	if (!peer) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			    "peer is null, fails to send peer assoc vendor response\n");
+		return;
+	}
 
+	ath12k_peer_send_assoc_vendor_response(peer, true);
+}
+
+static void ath12k_telemetry_send_disassoc_event(struct ath12k_dp_link_peer *peer)
+{
+	if (!peer) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			    "peer is null, fails to send peer assoc vendor response\n");
+		return;
+	}
+
+	ath12k_peer_send_assoc_vendor_response(peer, false);
+}
 int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
 {
 	struct ath12k_pdev *pdev = NULL;
@@ -118,6 +139,7 @@ int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
 
 		pdev = &ab->pdevs[peer->pdev_idx];
 		ath12k_telemetry_create_destroy_peer_agent(ab, pdev, peer, true);
+		ath12k_telemetry_send_assoc_event(peer);
 	}
 	spin_unlock_bh(&ab->dp->dp_lock);
 
@@ -260,6 +282,7 @@ int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab)
 
 		pdev = &ab->pdevs[peer->pdev_idx];
 		ath12k_telemetry_create_destroy_peer_agent(ab, pdev, peer, false);
+		ath12k_telemetry_send_disassoc_event(peer);
 	}
 	spin_unlock_bh(&ab->dp->dp_lock);
 

@@ -635,3 +635,60 @@ struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k_base *ab,
 	return rhashtable_lookup_fast(ab->rhead_sta_addr, addr,
 				      ab->rhash_sta_addr_param);
 }
+
+int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *peer,
+					   bool is_assoc)
+{
+	struct ieee80211_link_sta *link_sta;
+	struct ath12k_link_sta *arsta;
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	struct ath12k *ar;
+
+	if (!peer) {
+		ath12k_dbg(NULL, ATH12K_DBG_PEER,
+			   "Invalid peer skipped assoc vendor response\n");
+		return -EINVAL;
+	}
+
+	sta = peer->sta;
+	if (!sta) {
+		ath12k_dbg(NULL, ATH12K_DBG_PEER,
+			   "Invalid sta skipped assoc vendor response\n");
+		return -EINVAL;
+	}
+
+	if (peer->link_id < 0) {
+		ath12k_dbg(NULL, ATH12K_DBG_PEER,
+			   "Invalid peer link id skipped assoc vendor response\n");
+		return -EINVAL;
+	}
+	rcu_read_lock();
+	ahsta = ath12k_sta_to_ahsta(sta);
+	arsta = ahsta->link[peer->link_id];
+	if (!(arsta && arsta->arvif)) {
+		rcu_read_unlock();
+		ath12k_dbg(NULL, ATH12K_DBG_PEER,
+			   "invalid arsta for peer: %pM skipped assoc vendor response\n",
+			   peer->addr);
+		return -EINVAL;
+	}
+
+	ar = arsta->arvif->ar;
+
+	link_sta = ath12k_mac_get_link_sta(arsta);
+
+	if (!link_sta) {
+		rcu_read_unlock();
+		ath12k_warn(ar->ab, "unable to access link sta skipped assoc vendor response\n");
+		return -EINVAL;
+	}
+	rcu_read_unlock();
+
+	if (is_assoc)
+		ath12k_mac_vendor_send_assoc_event(arsta, link_sta, true);
+	else
+		ath12k_mac_vendor_send_disassoc_event(arsta, link_sta);
+
+	return 0;
+}
