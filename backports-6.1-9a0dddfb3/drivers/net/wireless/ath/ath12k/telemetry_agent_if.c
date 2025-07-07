@@ -33,6 +33,31 @@ int ath12k_telemetry_ab_agent_create_handler(struct ath12k_base *ab)
 	return 0;
 }
 
+int ath12k_telemetry_pdev_agent_create_handler(struct ath12k_pdev *pdev)
+{
+	struct agent_pdev_obj pdev_obj;
+	struct ath12k_base *ab;
+
+	if (!pdev || !g_agent_ops ||
+	    !g_agent_ops->agent_pdev_create_handler)
+		return -EINVAL;
+
+	memset(&pdev_obj, 0, sizeof(pdev_obj));
+
+	ab = ath12k_pdev_to_ab(pdev);
+	pdev_obj.psoc_back_pointer = ab;
+	pdev_obj.pdev_back_pointer = pdev;
+	pdev_obj.psoc_id = ath12k_get_ab_device_id(ab);
+	pdev_obj.pdev_id = ath12k_get_pdev_id(pdev);
+	ath12k_dbg(NULL, ATH12K_DBG_RM,
+		   "back ptr pdev: %p (pdev: %p) id: %d (pdev id: %d)\n",
+		   pdev_obj.pdev_back_pointer, pdev,
+		   pdev_obj.pdev_id, pdev->pdev_id);
+	g_agent_ops->agent_pdev_create_handler(pdev, &pdev_obj);
+
+	return 0;
+}
+
 /* FIXME: The telemetry_agent is not loaded by default. Due to this limitation,
  * the telemetry agent must be aware of resources created before its module is loaded.
  * Therefore, this subroutine needs to be called during the RM initialization path.
@@ -55,8 +80,9 @@ int ath12k_telemetry_ab_agent_create_handler(struct ath12k_base *ab)
 static void ath12k_telemetry_create_resources(void)
 {
 	struct ath12k_hw_group *ag;
+	struct ath12k_pdev *pdev;
 	struct ath12k_base *ab;
-	int i, ret;
+	int i, ret, pdev_idx;
 
 	ag = ath12k_core_get_ag();
 	if (!ag) {
@@ -76,6 +102,17 @@ static void ath12k_telemetry_create_resources(void)
 				   "Unable to create telemetry psoc agent object: %d\n",
 				    ret);
 			continue;
+		}
+
+		for (pdev_idx = 0; pdev_idx < ab->num_radios; pdev_idx++) {
+			pdev = &ab->pdevs[pdev_idx];
+			ret = ath12k_telemetry_pdev_agent_create_handler(pdev);
+			if (ret) {
+				ath12k_err(ab,
+					   "Unable to create telemetry pdev agent object: %d\n",
+					   ret);
+				continue;
+			}
 		}
 	}
 	mutex_unlock(&ag->mutex);
@@ -106,11 +143,37 @@ int ath12k_telemetry_ab_agent_delete_handler(struct ath12k_base *ab)
 	return 0;
 }
 
+int ath12k_telemetry_pdev_agent_delete_handler(struct ath12k_pdev *pdev)
+{
+	struct agent_pdev_obj pdev_obj;
+	struct ath12k_base *ab;
+
+	if (!pdev || !g_agent_ops ||
+	    !g_agent_ops->agent_pdev_create_handler)
+		return -EINVAL;
+
+	memset(&pdev_obj, 0, sizeof(pdev_obj));
+
+	ab = ath12k_pdev_to_ab(pdev);
+	pdev_obj.psoc_back_pointer = ab;
+	pdev_obj.pdev_back_pointer = pdev;
+	pdev_obj.psoc_id = ath12k_get_ab_device_id(ab);
+	pdev_obj.pdev_id = ath12k_get_pdev_id(pdev);
+	ath12k_dbg(NULL, ATH12K_DBG_RM,
+		   "back ptr pdev: %p (pdev: %p) id: %d (pdev id: %d)\n",
+		   pdev_obj.pdev_back_pointer, pdev,
+		   pdev_obj.pdev_id, pdev->pdev_id);
+	g_agent_ops->agent_pdev_destroy_handler(pdev, &pdev_obj);
+
+	return 0;
+}
+
 static void ath12k_telemetry_destroy_resources(void)
 {
 	struct ath12k_hw_group *ag;
+	struct ath12k_pdev *pdev;
 	struct ath12k_base *ab;
-	int i, ret;
+	int i, ret, pdev_idx;
 
 	ag = ath12k_core_get_ag();
 	if (!ag) {
@@ -124,6 +187,17 @@ static void ath12k_telemetry_destroy_resources(void)
 		ab = ag->ab[i];
 		if (!ab)
 			continue;
+
+		for (pdev_idx = 0; pdev_idx < ab->num_radios; pdev_idx++) {
+			pdev = &ab->pdevs[pdev_idx];
+			ret = ath12k_telemetry_pdev_agent_delete_handler(pdev);
+			if (ret) {
+				ath12k_err(ab,
+					   "Unable to destroy telemetry pdev agent object: %d\n",
+					   ret);
+				continue;
+			}
+		}
 
 		ret = ath12k_telemetry_ab_agent_delete_handler(ab);
 		if (ret) {
