@@ -337,7 +337,32 @@ int ath12k_get_psoc_info(void *obj, struct agent_psoc_iface_init_obj *stats)
 	return 0;
 }
 
+int ath12k_get_pdev_info(void *obj, struct agent_pdev_iface_init_obj *stats)
+{
+	struct ath12k_pdev *pdev = (struct ath12k_pdev *)obj;
+	struct ath12k_base *ab = NULL;
+
+	if (!pdev)
+		return -EINVAL;
+
+	ab = ath12k_pdev_to_ab(pdev);
+	if (!ab)
+		return -EINVAL;
+
+	memset(stats, 0, sizeof(struct agent_pdev_iface_init_obj));
+	stats->link_id = pdev->hw_link_id;
+	/* To-Do: stats->link_id = (ml_grp_id << 8) | stats->link_id; */
+	stats->soc_id = ath12k_get_ab_device_id(ab);
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM,
+		   "Pdev Info: link_id:%d soc_id:%d band:%d\n",
+		   stats->link_id, stats->soc_id, stats->band);
+
+	return 0;
+}
+
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
+
 {
 	g_agent_ops = agent_ops;
 	g_agent_ops->agent_get_psoc_info = ath12k_get_psoc_info;
@@ -381,12 +406,6 @@ int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats)
 int ath12k_get_peer_info(void *obj, struct agent_peer_iface_init_obj *stats)
 {
 	ath12k_err(NULL, "ath12k_get_peer_info - not implemented \n");
-	return -1;
-}
-
-int ath12k_get_pdev_info(void *obj, struct agent_pdev_iface_init_obj *stats)
-{
-	ath12k_err(NULL, "ath12k_get_pdev_info - not implemented \n");
 	return -1;
 }
 
