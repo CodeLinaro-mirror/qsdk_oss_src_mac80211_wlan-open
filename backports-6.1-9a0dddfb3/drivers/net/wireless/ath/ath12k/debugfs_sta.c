@@ -314,6 +314,76 @@ static const struct file_operations fops_htt_peer_stats = {
 	.llseek = default_llseek,
 };
 
+static ssize_t
+ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
+			       size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_sta *arsta = &ahsta->deflink;
+	struct ath12k *ar = arsta->arvif->ar;
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	struct ath12k_dp_peer *peer;
+	struct ath12k_dp_peer_qos *qos;
+	struct ath12k_msduq *msduq_map;
+	const int size = 2048;
+	size_t len = 0;
+	u8 tid, q;
+	int ret  = -EINVAL;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+
+	peer = ath12k_dp_peer_find(&ah->dp_hw, arsta->addr);
+	if (!peer) {
+		goto ret;
+	}
+
+	qos = peer->qos;
+	if (!qos) {
+		goto ret;
+	}
+
+	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
+	for (tid = 0; tid < QOS_TID_MAX; tid++) {
+		for(q = 0; q < QOS_TID_MDSUQ_MAX; q++) {
+			msduq_map = &qos->msduq_map[tid][q];
+			if (msduq_map->reserved) {
+				len += scnprintf(buf + len, size - len,
+						 "**********************\n");
+				len += scnprintf(buf + len, size - len,
+						 "TID: %u\n", tid);
+				len += scnprintf(buf + len, size - len,
+						 "Queue: %u\n", q);
+				len += scnprintf(buf + len, size - len,
+						 "QoS ID: %u\n",
+						 msduq_map->qos_id);
+				len += scnprintf(buf + len, size - len,
+						 "msduq_id: %u\n",
+						 msduq_map->msduq);
+				len += scnprintf(buf + len, size - len,
+						 "tgt_opaque_id: 0x%x\n",
+						 msduq_map->tgt_opaque_id);
+			}
+		}
+	}
+
+	ret = 0;
+ret:
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	return ret;
+}
+
+static const struct file_operations fops_qos_msduq = {
+	.read = ath12k_dbg_sta_read_qos_msduq,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath12k_dbg_sta_write_peer_pktlog(struct file *file,
 						const char __user *buf,
 						size_t count, loff_t *ppos)
@@ -1600,6 +1670,9 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 
 	debugfs_create_file("rx_mpdu_retries", 0400, dir, link_sta,
 			    &fops_rx_retries);
+
+	debugfs_create_file("qos_msduq", 0400, dir, link_sta->sta,
+			    &fops_qos_msduq);
 
 #ifdef CPTCFG_ATH12K_CFR
 	if (test_bit(WMI_TLV_SERVICE_CFR_CAPTURE_SUPPORT,
