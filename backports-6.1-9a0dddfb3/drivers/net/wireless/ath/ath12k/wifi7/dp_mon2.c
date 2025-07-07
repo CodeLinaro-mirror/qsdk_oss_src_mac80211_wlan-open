@@ -309,7 +309,6 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 	struct dp_rxdma_mon_ring *buf_ring;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_dp_link_peer *peer;
-	struct sk_buff_head skb_list;
 	struct ath12k_neighbor_peer *nrp, *tmp;
 	struct ath12k_dp_mon_desc *mon_desc;
 	struct list_head mon_desc_used_list;
@@ -320,7 +319,6 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 	u8 filter_category = 0;
 
 	INIT_LIST_HEAD(&mon_desc_used_list);
-	__skb_queue_head_init(&skb_list);
 	srng_id = ath12k_hw_mac_id_to_srng_id(ab->hw_params, pdev_idx);
 	mon_dst_ring = &pdev_dp->dp_mon_pdev->rxdma_mon_dst_ring[srng_id];
 	buf_ring = &dp_mon->rxdma_mon_buf_ring;
@@ -351,7 +349,6 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 		}
 
 		skb = mon_desc->skb;
-		mon_desc->skb = NULL;
 		list_add_tail(&mon_desc->list, &mon_desc_used_list);
 		if (unlikely(mon_desc->magic != ATH12K_MON_MAGIC_VALUE)) {
 			ath12k_warn(dp, "mon_dest: invalid magic value in mac_id %d\n",
@@ -405,10 +402,7 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 			skb_put(skb, DP_RX_MON_BUFFER_SIZE);
 		}
 
-		__skb_queue_tail(&skb_list, skb);
-
 move_next:
-		ath12k_dp_mon_buf_replenish(dp, buf_ring, &mon_desc_used_list, 1);
 		ath12k_hal_srng_dst_get_next_entry(ab, srng);
 		num_buffs_reaped++;
 	}
@@ -426,7 +420,12 @@ move_next:
 	if (!ppdu_info->ppdu_continuation)
 		ath12k_wifi7_dp_mon_rx_memset_ppdu_info(ppdu_info);
 
-	while ((skb = __skb_dequeue(&skb_list))) {
+	list_for_each_entry(mon_desc, &mon_desc_used_list, list) {
+		if (!mon_desc->skb)
+			continue;
+
+		skb = mon_desc->skb;
+
 		ath12k_dp_rx_pktlog_process(pdev_dp, peer,
 					    ppdu_info, skb, end_offset);
 
@@ -435,6 +434,7 @@ move_next:
 		if (hal_status != HAL_RX_MON_STATUS_PPDU_DONE) {
 			ppdu_info->ppdu_continuation = true;
 			dev_kfree_skb_any(skb);
+			mon_desc->skb = NULL;
 			continue;
 		}
 
@@ -490,8 +490,11 @@ next_skb:
 		rcu_read_unlock();
 free_skb:
 		dev_kfree_skb_any(skb);
+		mon_desc->skb = NULL;
 		ath12k_wifi7_dp_mon_rx_memset_ppdu_info(ppdu_info);
 	}
+
+	ath12k_dp_mon_buf_replenish(dp, buf_ring, &mon_desc_used_list, num_buffs_reaped);
 
 	return num_buffs_reaped;
 }
