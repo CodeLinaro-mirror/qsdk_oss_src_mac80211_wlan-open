@@ -361,6 +361,27 @@ int ath12k_get_pdev_info(void *obj, struct agent_pdev_iface_init_obj *stats)
 	return 0;
 }
 
+int ath12k_get_peer_info(void *obj, struct agent_peer_iface_init_obj *stats)
+{
+	struct ath12k_dp_link_peer *peer = (struct ath12k_dp_link_peer *)obj;
+
+	if (!peer)
+		return -EINVAL;
+
+	if (peer->is_bridge_peer)
+		return -EINVAL;
+
+	memset(stats, 0, sizeof(*stats));
+	ether_addr_copy(stats->peer_mld_mac, peer->ml_addr);
+	ether_addr_copy(stats->peer_link_mac, peer->addr);
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM,
+		   "peer info peer: %p addr: %pM ml addr: %pM\n",
+		   peer, peer->addr, peer->ml_addr);
+
+	return 0;
+}
+
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 
 {
@@ -400,12 +421,6 @@ EXPORT_SYMBOL(unregister_telemetry_agent_ops);
 int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats)
 {
 	ath12k_err(NULL, "ath12k_get_pdev_stats - not implemented \n");
-	return -1;
-}
-
-int ath12k_get_peer_info(void *obj, struct agent_peer_iface_init_obj *stats)
-{
-	ath12k_err(NULL, "ath12k_get_peer_info - not implemented \n");
 	return -1;
 }
 
