@@ -836,6 +836,48 @@ struct ath12k_link_vif *ath12k_mac_get_arvif(struct ath12k *ar, u32 vdev_id)
 	return arvif_iter.arvif;
 }
 
+static void ath12k_get_active_arvif_chanctx_iter_rcu(void *data, u8 *mac,
+						     struct ieee80211_vif *vif)
+{
+	struct ath12k_vif *ahvif = (void *)vif->drv_priv;
+	struct ath12k_vif_chanctx_iter *arvif_iter = data;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ieee80211_bss_conf *link_conf;
+	u8 link_id;
+
+	for_each_vif_active_link(vif, link_conf, link_id) {
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (arvif && arvif->ar == arvif_iter->ar) {
+			if (arvif->link_id != ATH12K_DEFAULT_SCAN_LINK &&
+			    arvif->chanctx.def.chan)
+				arvif_iter->chanctx = &arvif->chanctx;
+			else
+				arvif_iter->chanctx = NULL;
+
+			break;
+		}
+	}
+}
+
+struct ieee80211_chanctx_conf *
+ath12k_mac_get_first_active_arvif_chanctx(struct ath12k *ar)
+{
+	struct ath12k_vif_chanctx_iter arvif_iter = {};
+	u32 flags;
+
+	arvif_iter.ar = ar;
+	arvif_iter.chanctx = NULL;
+
+	flags = IEEE80211_IFACE_ITER_RESUME_ALL;
+	ieee80211_iterate_active_interfaces_atomic(
+		ar->ah->hw,
+		flags,
+		ath12k_get_active_arvif_chanctx_iter_rcu,
+		&arvif_iter
+	);
+	return arvif_iter.chanctx;
+}
+
 struct ath12k_link_vif *ath12k_mac_get_arvif_by_vdev_id(struct ath12k_base *ab,
 							u32 vdev_id)
 {

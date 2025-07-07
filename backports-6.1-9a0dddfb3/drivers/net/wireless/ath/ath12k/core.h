@@ -730,6 +730,11 @@ struct ath12k_bridge_iter {
 	u8 active_num_devices;
 };
 
+struct ath12k_vif_chanctx_iter {
+	struct ath12k *ar;
+	struct ieee80211_chanctx_conf *chanctx;
+};
+
 #define ATH12K_SCAN_TIMEOUT_HZ (20 * HZ)
 
 #define ATH12K_EHT_MCS_NUM	16

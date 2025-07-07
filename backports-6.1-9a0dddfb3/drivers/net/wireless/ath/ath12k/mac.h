@@ -670,4 +670,7 @@ int ath12k_mac_op_get_afc_eirp_pwr(struct ieee80211_hw *hw, u32 freq,
  */
 enum nl80211_6ghz_dev_deployment_type
 ath12k_mac_op_get_6ghz_dev_deployment_type(struct ieee80211_hw *hw);
+
+struct ieee80211_chanctx_conf *
+	ath12k_mac_get_first_active_arvif_chanctx(struct ath12k *ar);
 #endif

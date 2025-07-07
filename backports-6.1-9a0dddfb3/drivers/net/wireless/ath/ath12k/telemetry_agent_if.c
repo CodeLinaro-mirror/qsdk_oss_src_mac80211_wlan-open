@@ -11,6 +11,7 @@
 #include "dp_peer.h"
 #include "dp_mon.h"
 #include "sdwf.h"
+#include "mac.h"
 #include <linux/module.h>
 
 struct telemetry_agent_ops *g_agent_ops;
@@ -382,6 +383,71 @@ int ath12k_get_peer_info(void *obj, struct agent_peer_iface_init_obj *stats)
 	return 0;
 }
 
+int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats)
+{
+	struct ath12k_pdev *pdev = (struct ath12k_pdev *)obj;
+	struct ath12k_pdev_telemetry_stats dp_stats;
+	struct ath12k_pdev_ctrl_path_stats *pdev_stats;
+	struct ieee80211_chanctx_conf *ctx;
+	struct ath12k_base *ab;
+	struct ath12k *ar;
+	int ac;
+
+	if (!pdev)
+		return -EINVAL;
+
+	ar = pdev->ar;
+	if (!ar) {
+		ath12k_err(NULL, "Failed to get ar from telemetry agent object pdev\n");
+		return -EINVAL;
+	}
+
+	ab = ar->ab;
+	pdev_stats = &ar->stats;
+	if (!pdev_stats ||
+	    ath12k_dp_get_pdev_telemetry_stats(ab, pdev->pdev_id, &dp_stats)) {
+		return -EINVAL;
+	}
+
+	memset(stats, 0, sizeof(*stats));
+	if (ar->monitor_started)
+		stats->is_mon_enabled  = true;
+
+	ctx = ath12k_mac_get_first_active_arvif_chanctx(ar);
+	if (!ctx)
+		return -ENOENT;
+
+	stats->freq = ctx->def.chan->center_freq;
+	stats->link_id = pdev->hw_link_id;
+	stats->soc_id = ath12k_get_ab_device_id(ab);
+
+	stats->available_airtime[0] =
+		pdev_stats->telemetry_stats.estimated_air_time_ac_be;
+	stats->available_airtime[1] =
+		pdev_stats->telemetry_stats.estimated_air_time_ac_bk;
+	stats->available_airtime[2] =
+		pdev_stats->telemetry_stats.estimated_air_time_ac_vi;
+	stats->available_airtime[3] =
+		pdev_stats->telemetry_stats.estimated_air_time_ac_vo;
+
+	stats->freetime = pdev_stats->pdev_freetime_per_sec;
+	for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
+		stats->link_airtime[ac] = dp_stats.link_airtime[ac];
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			   "pdev stats soc id : %d pdev id: %d link id: %d freq: %d AC: %d Available Airtime: %d Link Airtime: %d\n",
+			   stats->soc_id, pdev_stats->telemetry_stats.pdev_id,
+			   stats->link_id, stats->freq,
+			   ac, stats->available_airtime[ac], stats->link_airtime[ac]);
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_RM,
+		   "pdev stats soc id : %d link id: %d freetime: %d is_mon_enabled: %d",
+		   stats->soc_id, stats->link_id, stats->freetime,
+		   stats->is_mon_enabled);
+
+	return 0;
+}
+
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 
 {
@@ -417,12 +483,6 @@ int unregister_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 	return 0;
 }
 EXPORT_SYMBOL(unregister_telemetry_agent_ops);
-
-int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats)
-{
-	ath12k_err(NULL, "ath12k_get_pdev_stats - not implemented \n");
-	return -1;
-}
 
 int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 {
