@@ -88,6 +88,11 @@ struct ath12k_sla_detect_cfg {
  */
 struct ath12k_telemetry_ctx {
 	struct ath12k_sla_samples_cfg sla_samples_params;
+	/* Used to protect the list */
+	spinlock_t breach_ind_lock;
+	struct workqueue_struct *workqueue;
+	struct work_struct indicate_breach;
+	struct list_head list;
 };
 
 void ath12k_telemetry_init(struct ath12k_base *ab);
@@ -97,4 +102,6 @@ int ath12k_telemetry_sdwf_sla_thershold_config(struct ath12k_sla_thershold_cfg p
 int ath12k_telemetry_sdwf_sla_detection_config(struct ath12k_sla_detect_cfg param);
 bool ath12k_telemetry_get_sla_num_pkts(u32 *pkt_num);
 bool ath12k_telemetry_get_sla_mov_avg_num_pkt(u32 *mov_avg);
+void ath12k_send_breach_indication(struct work_struct *work);
+void ath12k_telemetry_breach_indication(u8 *mac_addr, u8 svc_id, u8 param, bool set_clear, u8 tid);
 #endif /* ATH12K_TELEMETRY_H */

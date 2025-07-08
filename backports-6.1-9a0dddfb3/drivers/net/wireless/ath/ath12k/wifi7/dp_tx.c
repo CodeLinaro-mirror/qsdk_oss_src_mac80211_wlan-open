@@ -16,6 +16,7 @@
 #include "../dp_stats.h"
 #include "../dp_peer.h"
 #include "../telemetry.h"
+#include "../telemetry_agent_if.h"
 
 struct ath12k_tx_sw_metadata {
 	struct sk_buff *skb;
@@ -439,9 +440,10 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	struct ath12k_mld_qos_stats *mld_qos;
 	struct tx_stats *qos_tx;
 	struct delay_stats *qos_delay;
-	u64 enqueue_timestamp, total_delay_pkts;
+	void *telemetry_peer_ctx;
+	u64 enqueue_timestamp, total_delay_pkts, tmp_div;
 	u32 len, q_id, tid, hw_delay, nw_delay, sw_delay, delay_bound;
-	u32 nwdelay_avg, hwdelay_avg, swdelay_avg, pkt_win;
+	u32 pkt_win, num_pkts, dropped_age_out = 0;
 	u16 msduq_id;
 	u8 link_id, pri_link_id, qos_id;
 	bool update_pri_peer = false;
@@ -613,6 +615,44 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 		update_pri_peer = true;
 	}
 
+	ath12k_telemetry_get_sla_num_pkts(&num_pkts);
+	telemetry_peer_ctx = mld_peer->qos->telemetry_peer_ctx;
+
+	tmp_div = mld_qos->tx_success_pkts + mld_qos->tx_failed_pkts;
+	if ((!(do_div(tmp_div, num_pkts))) &&
+	    telemetry_peer_ctx) {
+		if (mld_peer->qos_stats_lvl ==
+		    ATH12K_QOS_SINGLE_LINK_STATS) {
+			dropped_age_out = qos_tx->dropped.age_out;
+		} else {
+			struct ath12k_dp_link_peer *tmp_peer = NULL;
+			struct tx_stats *tmp_qos_tx = NULL;
+			unsigned long peer_links_map, scan_links_map;
+			u8 tmp_link_id;
+
+			peer_links_map = mld_peer->peer_links_map;
+			scan_links_map = ATH12K_SCAN_LINKS_MASK;
+
+			for_each_andnot_bit(tmp_link_id, &peer_links_map,
+					    &scan_links_map,
+					    ATH12K_NUM_MAX_LINKS) {
+				tmp_peer = rcu_dereference(mld_peer->link_peers[tmp_link_id]);
+				if (!tmp_peer ||
+				    !tmp_peer->peer_stats.qos_stats) {
+					continue;
+				}
+
+				tmp_qos_tx = &tmp_peer->peer_stats.qos_stats->qos_tx[tid][q_id];
+				dropped_age_out += tmp_qos_tx->dropped.age_out;
+				tmp_peer = NULL;
+			}
+		}
+		ath12k_telemetry_update_msdu_drop(telemetry_peer_ctx, tid, msduq_id,
+						  mld_qos->tx_success_pkts,
+						  mld_qos->tx_failed_pkts,
+						  dropped_age_out);
+	}
+
 	qos_delay = &link_peer->peer_stats.qos_stats->qos_delay[tid][q_id];
 
 	ath12k_sdwf_compute_hw_delay(ar, ts, &hw_delay);
@@ -644,7 +684,10 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	total_delay_pkts = mld_qos->tx_success_pkts +
 			   mld_qos->tx_failed_pkts -
 			   mld_qos->tx_invalid_delay_pkts;
-	if (!(total_delay_pkts % pkt_win)) {
+	tmp_div = total_delay_pkts;
+
+	if (telemetry_peer_ctx && !(do_div(tmp_div, pkt_win))) {
+		u32 nwdelay_avg, hwdelay_avg, swdelay_avg;
 		nwdelay_avg = div_u64(mld_qos->nwdelay_win_total,
 				      pkt_win);
 		swdelay_avg = div_u64(mld_qos->swdelay_win_total,
@@ -654,6 +697,12 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 		mld_qos->nwdelay_win_total = 0;
 		mld_qos->swdelay_win_total = 0;
 		mld_qos->hwdelay_win_total = 0;
+
+		ath12k_telemetry_update_delay_mvng(telemetry_peer_ctx,
+						   tid, msduq_id,
+						   nwdelay_avg,
+						   swdelay_avg,
+						   hwdelay_avg);
 	}
 
 	if (!mld_peer->qos) {
@@ -670,6 +719,44 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 			qos_delay->delay_failure++;
 		else
 			qos_delay->delay_success++;
+
+		tmp_div = total_delay_pkts;
+		if (!(do_div(tmp_div, num_pkts)) && telemetry_peer_ctx) {
+			u64 delay_success = 0, delay_failure = 0;
+
+			if (mld_peer->qos_stats_lvl ==
+			    ATH12K_QOS_SINGLE_LINK_STATS) {
+				delay_success = qos_delay->delay_success;
+				delay_failure = qos_delay->delay_failure;
+			} else {
+				struct ath12k_dp_link_peer *tmp_peer = NULL;
+				struct delay_stats *tmp_qos_delay = NULL;
+				unsigned long peer_links_map, scan_links_map;
+				u8 tmp_link_id;
+
+				peer_links_map = mld_peer->peer_links_map;
+				scan_links_map = ATH12K_SCAN_LINKS_MASK;
+
+				for_each_andnot_bit(tmp_link_id, &peer_links_map,
+						    &scan_links_map,
+						    ATH12K_NUM_MAX_LINKS) {
+					tmp_peer = rcu_dereference(mld_peer->link_peers[tmp_link_id]);
+					if (!tmp_peer ||
+					    !tmp_peer->peer_stats.qos_stats) {
+						continue;
+					}
+
+					tmp_qos_delay = &tmp_peer->peer_stats.qos_stats->qos_delay[tid][q_id];
+					delay_success += tmp_qos_delay->delay_success;
+					delay_failure += tmp_qos_delay->delay_failure;
+					tmp_peer = NULL;
+				}
+			}
+			ath12k_telemetry_update_delay(telemetry_peer_ctx,
+						      tid, msduq_id,
+						      delay_success,
+						      delay_failure);
+		}
 	}
 
 out:

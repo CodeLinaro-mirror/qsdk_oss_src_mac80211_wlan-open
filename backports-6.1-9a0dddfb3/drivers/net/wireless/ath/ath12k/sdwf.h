@@ -216,6 +216,17 @@ int ath12k_htt_sawf_streaming_stats_configure(struct ath12k *ar,
 					      u32 config_param_1,
 					      u32 config_param_2,
 					      u32 config_param_3);
+int ath12k_telemetry_get_sawf_tx_stats_tput(void *ptr, void *stats, u64 *in_bytes,
+					    u64 *in_cnt, u64 *tx_bytes,
+					    u64 *tx_cnt, u8 tid_v, u8 msduq_id);
+int ath12k_telemetry_get_sawf_tx_stats_mpdu(void *ptr, void *stats, u64 *svc_int_pass,
+					    u64 *svc_int_fail, u64 *burst_pass,
+					    u64 *burst_fail, u8 tid_v, u8 msduq_id);
+int ath12k_telemetry_get_sawf_tx_stats_drop(void *ptr, void *stats, u64 *pass,
+					    u64 *drop, u64 *drop_ttl,
+					    u8 tid, u8 msduq_id);
+int ath12k_telemetry_get_msduq_tx_stats(void *soc, void *arg,
+					void *msduq_tx_stats, u8 msduq);
 void
 ath12k_sdwf_3_link_peer_dl_flow_count(struct wireless_dev *wdev,
                                       struct ieee80211_vif *vif, u8 *mac_addr,

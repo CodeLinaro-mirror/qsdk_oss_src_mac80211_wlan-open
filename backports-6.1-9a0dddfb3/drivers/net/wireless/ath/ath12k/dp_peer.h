@@ -226,6 +226,7 @@ struct ath12k_dl_scs {
 struct ath12k_dp_peer_qos {
 	struct ath12k_dl_scs scs_map[QOS_MAX_SCS_ID];
 	struct ath12k_msduq msduq_map[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+	void *telemetry_peer_ctx;
 };
 
 void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id);
@@ -293,7 +294,10 @@ int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 u16 ath12k_dp_peer_scs_get_qos_id(struct ath12k_base *ab,
 				  struct ath12k_dp_peer_qos *qos, u8 scs_id);
 u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
-			     struct ath12k_dp_peer_qos *qos, u16 qos_id);
+			     struct ath12k_dp_peer_qos *qos,
+			     struct ath12k_dp_link_peer *link_peer,
+			     struct ath12k *ar,
+			     u16 qos_id, u8 svc_id);
 u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 			 struct ath12k_dp_peer_qos *qos,
 			 u16 msduq);

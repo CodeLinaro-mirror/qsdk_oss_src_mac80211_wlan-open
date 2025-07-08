@@ -235,6 +235,13 @@ struct dp_pkt_info {
 	u64 bytes;
 };
 
+struct msduq_tx_stats {
+	u32 tx_failed;
+	u32 retry_count;
+	u32 total_retries_count;
+	struct pkt_type pkt_type[DOT11_MAX];
+};
+
 struct tx_stats {
 	struct dp_pkt_info tx_success;
 	struct dp_pkt_info tx_failed;

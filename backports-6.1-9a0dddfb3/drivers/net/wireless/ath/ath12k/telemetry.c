@@ -26,6 +26,12 @@ void ath12k_telemetry_init(struct ath12k_base *ab)
 		ath12k_err(NULL, "telemetry context failed to initialize\n");
 		return;
 	}
+
+	spin_lock_init(&telemetry_ctx->breach_ind_lock);
+	telemetry_ctx->workqueue = create_singlethread_workqueue("breach_ind_wq");
+	INIT_WORK(&telemetry_ctx->indicate_breach, ath12k_send_breach_indication);
+	INIT_LIST_HEAD(&telemetry_ctx->list);
+
 	ath12k_info(NULL, "telemetry context initialized\n");
 }
 
@@ -33,6 +39,14 @@ void ath12k_telemetry_deinit(struct ath12k_base *ab)
 {
 	if (!telemetry_ctx)
 		return;
+
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+		cancel_work_sync(&telemetry_ctx->indicate_breach);
+		return;
+	}
+
+	cancel_work_sync(&telemetry_ctx->indicate_breach);
+	destroy_workqueue(telemetry_ctx->workqueue);
 
 	kfree(telemetry_ctx);
 	telemetry_ctx = NULL;
@@ -188,6 +202,62 @@ int ath12k_telemetry_sdwf_sla_detection_config(struct ath12k_sla_detect_cfg para
 	ath12k_err(NULL, "telemetry failed to set sla detection configs ret:%d\n",
 		   ret);
 	return ret;
+}
+
+void ath12k_send_breach_indication(struct work_struct *work)
+{
+	struct ath12k_telemetry_ctx *telemetry_ctx = container_of(work, struct ath12k_telemetry_ctx, indicate_breach);
+	struct ath12k_tele_breach_params *breach_params, *tmp;
+
+	if (!telemetry_ctx) {
+		ath12k_err(NULL, "Telemetry ctx is unavailable\n");
+		return;
+	}
+
+	spin_lock_bh(&telemetry_ctx->breach_ind_lock);
+	list_for_each_entry_safe(breach_params, tmp, &telemetry_ctx->list, list) {
+		list_del(&breach_params->list);
+		spin_unlock_bh(&telemetry_ctx->breach_ind_lock);
+		ath12k_telemetry_notify_breach(breach_params->mac_addr,
+					       breach_params->svc_id,
+					       breach_params->param,
+					       breach_params->set_clear,
+					       breach_params->tid);
+		kfree(breach_params);
+		spin_lock_bh(&telemetry_ctx->breach_ind_lock);
+	}
+	spin_unlock_bh(&telemetry_ctx->breach_ind_lock);
+}
+
+void ath12k_telemetry_breach_indication(u8 *mac_addr, u8 svc_id, u8 param, bool set_clear, u8 tid)
+{
+	struct ath12k_tele_breach_params *breach_params;
+
+	if (!mac_addr)
+		return;
+
+	if (!telemetry_ctx) {
+		ath12k_err(NULL, "Breach detection received when telemetry ctx is unavailable\n");
+		return;
+	}
+
+	breach_params = kzalloc(sizeof(*breach_params), GFP_NOWAIT);
+	if (!breach_params) {
+		ath12k_err(NULL, "Failed to allocate memory to indicate breach detection\n");
+		return;
+	}
+
+	ether_addr_copy(breach_params->mac_addr, mac_addr);
+	breach_params->svc_id = svc_id;
+	breach_params->param = param;
+	breach_params->set_clear = set_clear;
+	breach_params->tid = tid;
+
+	spin_lock_bh(&telemetry_ctx->breach_ind_lock);
+	list_add_tail(&breach_params->list, &telemetry_ctx->list);
+	spin_unlock_bh(&telemetry_ctx->breach_ind_lock);
+
+	queue_work(telemetry_ctx->workqueue, &telemetry_ctx->indicate_breach);
 }
 
 bool ath12k_telemetry_get_sla_mov_avg_num_pkt(u32 *mov_avg)

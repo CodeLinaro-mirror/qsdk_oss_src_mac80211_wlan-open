@@ -8,6 +8,7 @@
 #include "dp_peer.h"
 #include "debug.h"
 #include "debugfs.h"
+#include "telemetry_agent_if.h"
 
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_vdev_id_and_addr(struct ath12k_dp *dp,
@@ -576,6 +577,9 @@ void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr)
 
 	list_del(&dp_peer->list);
 
+	if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
+		ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
+
 	spin_unlock_bh(&dp_hw->peer_lock);
 
 	synchronize_rcu();
@@ -865,8 +869,12 @@ bool ath12k_dp_qos_stats_alloc(struct ath12k *ar,
 
 static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 				struct ath12k_dp_peer_qos *qos,
-				u16 qos_id, u8 tid)
+				struct ath12k_dp_link_peer *link_peer,
+				struct ath12k *ar,
+				u16 qos_id, u8 svc_id, u8 tid)
 {
+	struct ath12k_dp_peer *mld_peer;
+	void *telemetry_peer_ctx;
 	u8 q, msduq = QOS_INVALID_MSDUQ;
 
 	/* Find matching msduq with qos_id in the reserved pool*/
@@ -894,6 +902,23 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 				ath12k_dbg(ab, ATH12K_DBG_QOS,
 					   "New: msduq 0x%x:tid %u usrdefq %u",
 					   msduq, tid, q);
+				if (!qos->telemetry_peer_ctx &&
+				    link_peer && ar && ar->ah) {
+					mld_peer = link_peer->dp_peer;
+					telemetry_peer_ctx =
+						ath12k_telemetry_peer_ctx_alloc(&ar->ah->dp_hw,
+										mld_peer,
+										link_peer->addr,
+										svc_id,
+										(msduq - MSDUQ_MAX_DEF));
+					if (telemetry_peer_ctx) {
+						qos->telemetry_peer_ctx = telemetry_peer_ctx;
+
+					ath12k_dbg(ab, ATH12K_DBG_QOS, "telemetry peer"
+						   " ctx allocation with msduq_id:0x%x\n",
+						   msduq - MSDUQ_MAX_DEF);
+					}
+				}
 				break;
 			}
 		}
@@ -903,7 +928,10 @@ static u16 ath12k_get_tid_msduq(struct ath12k_base *ab,
 }
 
 u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
-			     struct ath12k_dp_peer_qos *qos, u16 qos_id)
+			     struct ath12k_dp_peer_qos *qos,
+			     struct ath12k_dp_link_peer *link_peer,
+			     struct ath12k *ar,
+			     u16 qos_id, u8 svc_id)
 {
 	u16 msduq;
 	u8 qos_tid;
@@ -915,14 +943,16 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 	}
 
 	/* Get MSDUQ for excat QoS profile TID */
-	msduq = ath12k_get_tid_msduq(ab, qos, qos_id, qos_tid);
+	msduq = ath12k_get_tid_msduq(ab, qos, link_peer, ar, qos_id,
+				     svc_id, qos_tid);
 
 	/* Get MSDUQ for lower QoS profile TID */
 	if (msduq == QOS_INVALID_MSDUQ && qos_tid != 0) {
 		u8 tid = qos_tid - 1;
 
 		while (tid < qos_tid) {
-			msduq = ath12k_get_tid_msduq(ab, qos, qos_id, tid);
+			msduq = ath12k_get_tid_msduq(ab, qos, link_peer, ar,
+						     qos_id, svc_id, tid);
 			if (msduq != QOS_INVALID_MSDUQ)
 				break;
 			--tid;
@@ -933,7 +963,8 @@ u16 ath12k_dp_peer_qos_msduq(struct ath12k_base *ab,
 		u8 tid = qos_tid + 1;
 
 		while (tid < QOS_MAX_TID) {
-			msduq = ath12k_get_tid_msduq(ab, qos, qos_id, tid);
+			msduq = ath12k_get_tid_msduq(ab, qos, link_peer, ar,
+						     qos_id, svc_id, tid);
 			if (msduq != QOS_INVALID_MSDUQ)
 				break;
 			++tid;
@@ -1038,7 +1069,8 @@ int ath12k_dp_peer_scs_data(struct ath12k_dp *dp,
 	if (qos_id > QOS_UL_ID_MAX && qos_id < QOS_ID_INVALID)
 		msduq = qos_id - QOS_LEGACY_DL_ID_MIN;
 	else
-		msduq = ath12k_dp_peer_qos_msduq(dp->ab, qos, qos_id);
+		msduq = ath12k_dp_peer_qos_msduq(dp->ab, qos, NULL,
+						 NULL, qos_id, scs_id);
 
 	if (msduq == QOS_INVALID_MSDUQ)
 		goto ret;
@@ -1089,6 +1121,7 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 	struct htt_t2h_qos_info_ind *resp;
 	struct ath12k_dp_peer_qos *qos;
 	struct ath12k_dp_link_peer *peer = NULL;
+	struct ath12k_dp_peer *mld_peer = NULL;
 	u32 htt_qtype, remapped_tid, peer_id;
 	u32 def_tid_msduq, max_def_msduq, qos_tid_msduq;
 	u32 hlos_tid, flow_or, ast_idx, who_cl, tgt_opaque_id;
@@ -1151,6 +1184,13 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 			qos->msduq_map[hlos_tid][q_id].tgt_opaque_id =
 							tgt_opaque_id;
 		}
-	}
+
+		mld_peer = peer->dp_peer;
+		if (mld_peer->qos &&
+		    mld_peer->qos->telemetry_peer_ctx)
+			ath12k_telemetry_update_tid_msduq(mld_peer->qos->telemetry_peer_ctx,
+							  msduq_index, remapped_tid,
+							  (htt_qtype - def_tid_msduq));
+		}
 	spin_unlock_bh(&ab->dp->dp_lock);
 }

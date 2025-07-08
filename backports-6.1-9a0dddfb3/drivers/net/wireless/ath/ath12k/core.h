@@ -2200,4 +2200,6 @@ struct ath12k_wsi_info *ath12k_core_get_current_wsi_info(struct ath12k_base *ab)
 int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab);
 void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed, u16 link_width);
 void ath12k_core_radio_cleanup(struct ath12k *ar);
+void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
+				    bool set_clear, u8 tid);
 #endif /* _CORE_H_ */

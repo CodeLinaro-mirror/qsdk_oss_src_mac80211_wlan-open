@@ -33,6 +33,7 @@
 #include "accel_cfg.h"
 #include "peer.h"
 #include "qos.h"
+#include "vendor.h"
 #include "telemetry.h"
 #include "ppe.h"
 #include "cfr.h"
@@ -4917,5 +4918,62 @@ out:
                     "%d chip dump collected and waiting for partner chips\n",
                     atomic_read(&ath12k_coredump_ram_info.num_chip));
 }
+
+void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
+				    bool set_clear, u8 tid)
+{
+	struct ath12k_hw_group *ag = NULL;
+	struct ieee80211_vif *vif = NULL;
+	struct ath12k_base *ab = NULL;
+	struct ath12k_dp_link_peer *peer = NULL;
+	int soc;
+	u8 *mld_addr = NULL;
+
+	if (!mac_addr)
+		return;
+
+	mutex_lock(&ath12k_hw_group_mutex);
+	list_for_each_entry(ag, &ath12k_hw_group_list, list) {
+		if (!ag) {
+			ath12k_err(NULL, "unable to fetch hw group\n");
+			continue;
+		}
+
+		for (soc = ag->num_probed; soc > 0; soc--) {
+			ab = ag->ab[soc - 1];
+			if (!ab) {
+				/* Control should not reach here */
+				ath12k_info(NULL, "SOC not initialized\n");
+				continue;
+			}
+
+			spin_lock_bh(&ab->dp->dp_lock);
+			peer = ath12k_dp_link_peer_find_by_addr(ab->dp, mac_addr);
+			if (peer) {
+				vif = peer->vif;
+				if (peer->mlo)
+					mld_addr = peer->ml_addr;
+				ath12k_dbg(ab, ATH12K_DBG_QOS, "Breach detected: Peer %pM\n",
+					   mac_addr);
+				spin_unlock_bh(&ab->dp->dp_lock);
+				mutex_unlock(&ath12k_hw_group_mutex);
+				ath12k_vendor_telemetry_notify_breach(vif,
+								      mac_addr,
+								      svc_id,
+								      param,
+								      set_clear,
+								      tid,
+								      mld_addr);
+				return;
+			}
+			spin_unlock_bh(&ab->dp->dp_lock);
+		}
+	}
+	mutex_unlock(&ath12k_hw_group_mutex);
+
+	ath12k_dbg(NULL, ATH12K_DBG_QOS, "Peer(%pM) not found for notifying breach",
+		   mac_addr);
+}
+
 MODULE_DESCRIPTION("Driver support for Qualcomm Technologies WLAN devices");
 MODULE_LICENSE("Dual BSD/GPL");

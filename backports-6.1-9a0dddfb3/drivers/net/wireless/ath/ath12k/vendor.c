@@ -13,6 +13,7 @@
 #include "ppe.h"
 #include "vendor.h"
 #include "telemetry.h"
+#include "telemetry_agent_if.h"
 #include "erp.h"
 
 static const struct nla_policy
@@ -4174,6 +4175,18 @@ ath12k_vendor_sdwf_streaming[QCA_WLAN_VENDOR_ATTR_SDWF_STREAMING_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_SDWF_MLO_LINK_ID] = {.type = NLA_U32},
 };
 
+static const struct nla_policy
+ath12k_telemetric_sla_policy[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MAC] = {.type = NLA_BINARY,
+								 .len = ETH_ALEN},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_SVC_ID] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_TYPE] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_SET_CLEAR] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MLD_MAC] = {.type = NLA_BINARY,
+								     .len = ETH_ALEN},
+	[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_AC] = {.type = NLA_U8},
+};
+
 static int ath12k_vendor_set_sdwf_config(struct ath12k_base *ab,
 					 struct wiphy *wiphy,
 					 struct wireless_dev *wdev,
@@ -4265,6 +4278,14 @@ static int ath12k_vendor_set_sdwf_config(struct ath12k_base *ab,
 								 NULL);
 			}
 		}
+		ath12k_telemetry_set_svclass_cfg(true, svc_id,
+						 param_dl.min_data_rate,
+						 param_dl.mean_data_rate,
+						 param_dl.burst_size,
+						 param_dl.min_service_interval,
+						 param_dl.delay_bound,
+						 param_dl.msdu_life_time,
+						 param_dl.msdu_delivery_info);
 	}
 
 	if (ul_params) {
@@ -4377,11 +4398,14 @@ static int ath12k_vendor_disable_sdwf_config(struct ath12k_base *ab,
 	}
 
 	dl_qos_id = ath12k_sdwf_get_dl_qos_id(ab, svc_id);
-	if (dl_qos_id != QOS_ID_INVALID)
+	if (dl_qos_id != QOS_ID_INVALID) {
 		ret = ath12k_qos_disable(ab, NULL,
 					 QOS_PROFILE_DL,
 					 dl_qos_id,
 					 NULL);
+		ath12k_telemetry_set_svclass_cfg(false, svc_id, 0, 0,
+						 0, 0, 0, 0, 0);
+	}
 
 	ul_qos_id = ath12k_sdwf_get_ul_qos_id(ab, svc_id);
 	if (ul_qos_id != QOS_ID_INVALID)
@@ -5404,6 +5428,40 @@ static int ath12k_vendor_sdwf_streaming_stats_configure(struct wireless_dev *wde
 	return ret;
 }
 
+static int ath12k_vendor_telemetry_sla_reset_stats(struct nlattr *clr_stats)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_MAX + 1];
+	int ret = 0;
+	u8 svc_id, mac_addr[ETH_ALEN] = { 0 }, mld_mac_addr[ETH_ALEN] = { 0 }, set_clear;
+
+	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_MAX,
+			       clr_stats,
+			       ath12k_telemetric_sla_policy, NULL);
+
+	if (ret) {
+		ath12k_err(NULL, "Invalid attribute with telemetry sla reset stats command\n");
+		return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_SVC_ID])
+		svc_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_SVC_ID]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MAC] &&
+	    (nla_len(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MAC]) == ETH_ALEN))
+		memcpy(mac_addr, nla_data(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MAC]),
+		       ETH_ALEN);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MLD_MAC] &&
+	    (nla_len(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MLD_MAC]) == ETH_ALEN))
+		memcpy(mld_mac_addr, nla_data(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MLD_MAC]),
+		       ETH_ALEN);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_SET_CLEAR])
+		set_clear = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_SET_CLEAR]);
+
+	return ath12k_telemetry_reset_peer_stats(mac_addr);
+}
+
 static int ath12k_vendor_sdwf_dev_operations(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     const void *data,
@@ -5438,12 +5496,89 @@ static int ath12k_vendor_sdwf_dev_operations(struct wiphy *wiphy,
 			goto end;
 		}
 		break;
+	case QCA_WLAN_VENDOR_SDWF_DEV_OPER_RESET_STATS:
+		if (tb[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_RESET_STATS]) {
+			ret = ath12k_vendor_telemetry_sla_reset_stats(tb[QCA_WLAN_VENDOR_ATTR_SDWF_DEV_RESET_STATS]);
+		} else {
+			ath12k_err(NULL, "SAWF clear telemetry stats parameters missing\n");
+			ret = -EINVAL;
+			goto end;
+		}
+		break;
 	default:
 		ath12k_err(NULL, "Invalid operation = %d with SAWF device level commands\n", sdwf_oper);
 		ret = -EINVAL;
 	}
 end:
 	return ret;
+}
+
+void ath12k_vendor_telemetry_notify_breach(struct ieee80211_vif *vif, u8 *mac_addr,
+					   u8 svc_id, u8 param, bool set_clear,
+					   u8 tid, u8 *mld_addr)
+{
+	struct nlattr *notify_params;
+	struct wireless_dev *wdev;
+	struct sk_buff *skb;
+	u8 access_category;
+
+	wdev = ieee80211_vif_to_wdev(vif);
+
+	if (!wdev)
+		return;
+
+	if (!wdev->wiphy)
+		return;
+
+	skb = cfg80211_vendor_event_alloc(wdev->wiphy, wdev, NLMSG_DEFAULT_SIZE,
+					  QCA_NL80211_VENDOR_SUBCMD_SDWF_DEV_OPS_INDEX,
+					  GFP_KERNEL);
+	if (!skb) {
+		ath12k_err(NULL, "No memory available to send notify breach event\n");
+		return;
+	}
+
+	switch (tid) {
+	case 0:
+	case 3:
+		access_category = 0; //AC_BE
+		break;
+	case 1:
+	case 2:
+		access_category = 1; //AC_BK
+		break;
+	case 4:
+	case 5:
+		access_category = 2; //AC_VI
+		break;
+	case 6:
+	case 7:
+		access_category = 3; //AC_VO
+		break;
+	default:
+		ath12k_err(NULL, "Invalid TID = %u for notifying breach event\n", tid);
+		goto err;
+	}
+
+	notify_params = nla_nest_start(skb, QCA_WLAN_VENDOR_ATTR_SDWF_DEV_SLA_BREACHED_PARAMS);
+	if (!notify_params)
+		goto err;
+	if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MAC, ETH_ALEN, mac_addr) ||
+	    (mld_addr && nla_put(skb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_PEER_MLD_MAC,
+	    ETH_ALEN, mld_addr)) ||
+	    nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_SVC_ID, svc_id) ||
+	    nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_TYPE, param) ||
+	    nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_SET_CLEAR, set_clear) ||
+	    nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_SDWF_SLA_BREACH_PARAM_AC, access_category)) {
+		ath12k_err(NULL, "No memory available at NL to send notify breach event\n");
+		goto err;
+	}
+
+	nla_nest_end(skb, notify_params);
+	cfg80211_vendor_event(skb, GFP_KERNEL);
+	return;
+err:
+	kfree(skb);
 }
 
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
@@ -5600,6 +5735,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
                 .vendor_id = QCA_NL80211_VENDOR_ID,
                 .subcmd = QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD
         },
+	[QCA_NL80211_VENDOR_SUBCMD_SDWF_DEV_OPS_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SDWF_DEV_OPS,
+	},
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah)

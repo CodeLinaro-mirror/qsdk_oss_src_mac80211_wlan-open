@@ -163,6 +163,15 @@ enum qos_profile_dir {
 #define ATH12K_QOS_STATS_MAX (ATH12K_QOS_STATS_CATEG_MASK |\
 			      ATH12K_QOS_STATS_COLLECTION_MASK)
 
+struct ath12k_tele_breach_params {
+	struct list_head list;
+	u8 mac_addr[ETH_ALEN];
+	u8 svc_id;
+	u8 param;
+	bool set_clear;
+	u8 tid;
+};
+
 struct ath12k_qos_ctx *ath12k_get_qos(struct ath12k_base *ab);
 
 void ath12k_qos_set_default(struct ath12k_qos_params *param);

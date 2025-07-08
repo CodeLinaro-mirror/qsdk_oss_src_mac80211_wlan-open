@@ -7,6 +7,7 @@
 #include "debug.h"
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
+#include "sdwf.h"
 #include <linux/module.h>
 
 struct telemetry_agent_ops *g_agent_ops;
@@ -23,6 +24,12 @@ int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 	g_agent_ops->agent_get_peer_stats = ath12k_get_peer_stats;
 	g_agent_ops->agent_get_emesh_pdev_stats = NULL;
 	g_agent_ops->agent_get_emesh_peer_stats = NULL;
+
+	g_agent_ops->sawf_get_tput_stats = ath12k_sawf_get_tput_stats;
+	g_agent_ops->sawf_get_mpdu_stats = ath12k_sawf_get_mpdu_stats;
+	g_agent_ops->sawf_get_drop_stats = ath12k_sawf_get_drop_stats;
+	g_agent_ops->sawf_get_msduq_tx_stats = ath12k_sawf_get_msduq_tx_stats;
+	g_agent_ops->sawf_notify_breach = ath12k_sawf_notify_breach;
 
 	ath12k_info(NULL, "registered telemetry agent ops: %p", g_agent_ops);
 
@@ -132,4 +139,149 @@ int ath12k_telemetry_set_sla_detect_cfg(struct ath12k_sla_detect_cfg param)
 							   param.msdu_rate_loss));
 
 	return -ENOENT;
+}
+
+void *ath12k_telemetry_peer_ctx_alloc(void *peer, void *sawf_stats,
+				      u8 *mac_addr,
+				      u8 svc_id, u8 hostq_id)
+{
+	if (g_agent_ops)
+		return g_agent_ops->sawf_alloc_peer(peer, sawf_stats,
+						    mac_addr,
+						    svc_id,
+						    hostq_id);
+	return NULL;
+}
+
+void ath12k_telemetry_peer_ctx_free(void *telemetry_peer_ctx)
+{
+	if (g_agent_ops)
+		g_agent_ops->sawf_free_peer(telemetry_peer_ctx);
+}
+
+int ath12k_telemetry_update_tid_msduq(void *telemetry_peer_ctx,
+				      u8 hostq_id, u8 tid, u8 msduq_idx)
+{
+	if (g_agent_ops)
+		return g_agent_ops->sawf_updt_queue_info(telemetry_peer_ctx,
+							 hostq_id, tid,
+							 msduq_idx);
+	return -ENOENT;
+}
+
+int ath12k_telemetry_set_svclass_cfg(bool enable, u8 svc_id,
+				     u32 min_tput_rate,
+				     u32 max_tput_rate,
+				     u32 burst_size,
+				     u32 svc_interval,
+				     u32 delay_bound,
+				     u32 msdu_ttl,
+				     u32 msdu_rate_loss)
+{
+	if (g_agent_ops)
+		return g_agent_ops->sawf_set_svclass_cfg(enable, svc_id,
+							 min_tput_rate,
+							 max_tput_rate,
+							 burst_size,
+							 svc_interval,
+							 delay_bound,
+							 msdu_ttl,
+							 msdu_rate_loss);
+
+	return -ENOENT;
+}
+
+int ath12k_telemetry_update_delay(void *telemetry_ctx, u8 tid,
+				  u8 queue, u64 pass,
+				  u64 fail)
+{
+	if (g_agent_ops)
+		return g_agent_ops->sawf_push_delay(telemetry_ctx, tid,
+						 queue, pass, fail);
+	return -ENOENT;
+}
+EXPORT_SYMBOL(ath12k_telemetry_update_delay);
+
+int ath12k_telemetry_update_delay_mvng(void *telemetry_ctx,
+				       u8 tid, u8 queue,
+				       u64 nwdelay_winavg,
+				       u64 swdelay_winavg,
+				       u64 hwdelay_winavg)
+{
+	if (g_agent_ops)
+		return g_agent_ops->sawf_push_delay_mvng(telemetry_ctx,
+							 tid, queue,
+							 nwdelay_winavg,
+							 swdelay_winavg,
+							 hwdelay_winavg);
+
+	return -ENOENT;
+}
+EXPORT_SYMBOL(ath12k_telemetry_update_delay_mvng);
+
+bool ath12k_telemetry_update_msdu_drop(void *telemetry_ctx,
+				       u8 tid, u8 queue,
+				       u64 success,
+				       u64 failure_drop,
+				       u64 failure_ttl)
+{
+	if (g_agent_ops)
+		return (g_agent_ops->sawf_push_msdu_drop(telemetry_ctx, tid,
+							 queue, success,
+							 failure_drop,
+							 failure_ttl));
+	return -ENOENT;
+}
+EXPORT_SYMBOL(ath12k_telemetry_update_msdu_drop);
+
+int ath12k_telemetry_reset_peer_stats(u8 *peer_mac)
+{
+	if (g_agent_ops)
+		return g_agent_ops->sawf_reset_peer_stats(peer_mac);
+
+	return -ENOENT;
+}
+
+int ath12k_sawf_get_tput_stats(void *soc, void *arg, u64 *in_bytes,
+			       u64 *in_cnt, u64 *tx_bytes,
+			       u64 *tx_cnt, u8 tid, u8 msduq)
+{
+	return ath12k_telemetry_get_sawf_tx_stats_tput(soc, arg,
+						       in_bytes, in_cnt,
+						       tx_bytes, tx_cnt,
+						       tid, msduq);
+}
+
+int ath12k_sawf_get_mpdu_stats(void *soc, void *arg, u64 *svc_int_pass,
+			       u64 *svc_int_fail, u64 *burst_pass,
+			       u64 *burst_fail, u8 tid, u8 msduq)
+{
+	return ath12k_telemetry_get_sawf_tx_stats_mpdu(soc, arg, svc_int_pass,
+						       svc_int_fail, burst_pass,
+						       burst_fail, tid, msduq);
+}
+
+int ath12k_sawf_get_drop_stats(void *soc, void *arg, u64 *pass,
+			       u64 *drop, u64 *drop_ttl,
+			       u8 tid, u8 msduq)
+{
+	return ath12k_telemetry_get_sawf_tx_stats_drop(soc, arg, pass, drop,
+						       drop_ttl, tid, msduq);
+}
+
+int ath12k_sawf_get_msduq_tx_stats(void *soc, void *arg,
+				   void *msduq_tx_stats,
+				   u8 msduq)
+{
+	return ath12k_telemetry_get_msduq_tx_stats(soc, arg,
+						   msduq_tx_stats, msduq);
+}
+
+void ath12k_sawf_notify_breach(u8 *mac_addr,
+			       u8 svc_id,
+			       u8 param,
+			       bool set_clear,
+			       u8 tid, u8 queue)
+{
+	ath12k_telemetry_breach_indication(mac_addr, svc_id, param, set_clear, tid);
 }
