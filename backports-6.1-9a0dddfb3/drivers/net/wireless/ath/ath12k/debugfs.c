@@ -3081,6 +3081,176 @@ void ath12k_debugfs_soc_destroy(struct ath12k_base *ab)
 	 */
 }
 
+int ath12k_update_dscp_tid_pdev(struct ath12k *ar, u8 id)
+{
+	struct ath12k_qos_map *qos_map;
+	u8 dscp_low, dscp_high;
+	u8 dscp;
+	u8 tid, i;
+
+	qos_map = ar->qos_map;
+
+	for (i = 0; i < ATH12K_MAX_TID_VALUE; i++) {
+		dscp_low = qos_map->up[i].low;
+		dscp_high = qos_map->up[i].high;
+		tid = i;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "dscp_low:%d, dscp_high:%d, tid:%d, id:%d\n",
+			   dscp_low, dscp_high, tid, id);
+		if (dscp_low == 0xFF || dscp_high == 0xFF)
+			continue;
+
+		for (dscp = dscp_low; dscp <= dscp_high; dscp++)
+			ath12k_hal_tx_update_dscp_tid_map(ar->ab, id, dscp, tid);
+	}
+
+	if (qos_map->num_des > 0) {
+		for (i = 0; i < qos_map->num_des; i++) {
+			dscp = qos_map->dscp_exception[i].dscp;
+			tid = qos_map->dscp_exception[i].up;
+
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "dscp:%d, tid:%d, id:%d\n",
+				   dscp, tid, id);
+			if (dscp == 0xFF)
+				continue;
+			ath12k_hal_tx_update_dscp_tid_map(ar->ab, id, dscp, tid);
+		}
+	}
+	return 0;
+}
+
+int ath12k_parse_qos_map(struct ath12k *ar, u8 *values, u8 len)
+{
+	struct ath12k_qos_map *qos_map;
+	u8 num_des, des_len, i;
+	int ret;
+
+	qos_map = kzalloc(sizeof(*qos_map), GFP_KERNEL);
+	if (!qos_map)
+		return -ENOMEM;
+
+	num_des = (len - ATH12K_QOS_MAP_LEN_MIN) >> 1;
+	if (num_des) {
+		des_len = num_des *
+			  sizeof(struct ath12k_dscp_exception);
+		memcpy(qos_map->dscp_exception, values, des_len);
+		qos_map->num_des = num_des;
+		for (i = 0; i < num_des; i++) {
+			if (qos_map->dscp_exception[i].up > 7) {
+				ret = -EINVAL;
+				goto free_qos_map;
+			}
+		}
+		values += des_len;
+	}
+	memcpy(qos_map->up, values, ATH12K_QOS_MAP_LEN_MIN);
+	ar->qos_map = qos_map;
+	return 0;
+
+free_qos_map:
+	kfree(qos_map);
+	ar->qos_map = NULL;
+	return ret;
+}
+
+static ssize_t ath12k_write_pdev_qos_map_set(struct file *file,
+					     const char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[256] = {0};
+	char *token, *buf_ptr;
+	u8 values[64];
+	int value_count = 0;
+	u8 id;
+	int ret;
+
+	if (count > sizeof(buf))
+		return -EINVAL;
+
+	if (copy_from_user(buf, user_buf, count))
+		return -EFAULT;
+
+	buf[count - 1] = '\0';
+	buf_ptr = buf;
+	while ((token = strsep(&buf_ptr, ",")) != NULL) {
+		ret = kstrtou8(token, 10, &values[value_count]);
+		if (ret)
+			return ret;
+		value_count++;
+		if (value_count >= ARRAY_SIZE(values))
+			return -EINVAL;
+	}
+
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+	ret = ath12k_parse_qos_map(ar, values, value_count);
+	if (ret)
+		return ret;
+
+	for (id = 0; id < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; id++)
+		ath12k_update_dscp_tid_pdev(ar, id);
+
+	return count;
+}
+
+static ssize_t ath12k_read_pdev_qos_map_set(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[256] = {0};
+	size_t len = 0;
+	struct ath12k_qos_map *qos_map;
+	int ret;
+	u8 i;
+
+	if (*ppos > 0)
+		return 0;
+
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+	qos_map = ar->qos_map;
+
+	if (!qos_map) {
+		ath12k_warn(ar->ab, "qos_map_set is not set\n");
+		return -EFAULT;
+	}
+
+	len += scnprintf(buf + len, sizeof(buf) - len, "%u,", qos_map->num_des);
+	for (i = 0; i < qos_map->num_des; i++) {
+		len += scnprintf(buf + len, sizeof(buf) - len, "%u,%u,",
+				 qos_map->dscp_exception[i].dscp, qos_map->dscp_exception[i].up);
+	}
+	for (i = 0; i < 8; i++) {
+		len += scnprintf(buf + len, sizeof(buf) - len, "%u,%u,",
+				 qos_map->up[i].low, qos_map->up[i].high);
+	}
+
+	/* Remove the trailing comma */
+	if (len > 0 && buf[len - 1] == ',') {
+		buf[len - 1] = '\0';
+		len--;
+	}
+
+	if (len < sizeof(buf) - 1)
+		buf[len++] = '\n';
+
+	ret = copy_to_user(user_buf, buf, len);
+	if (ret)
+		return -EFAULT;
+
+	*ppos += len;
+
+	return len;
+}
+
+static const struct file_operations fops_qos_map_set = {
+	.read = ath12k_read_pdev_qos_map_set,
+	.write = ath12k_write_pdev_qos_map_set,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void
 ath12k_debugfs_fw_stats_process(struct ath12k *ar,
 				struct ath12k_fw_stats *stats)
@@ -4702,6 +4872,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("neighbor_peer", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_write_nrp_mac);
+
+	debugfs_create_file("qos_map_set", 0600, ar->debug.debugfs_pdev, ar,
+			    &fops_qos_map_set);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))

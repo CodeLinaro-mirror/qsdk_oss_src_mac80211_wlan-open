@@ -1202,6 +1202,7 @@ struct ath12k {
 	struct cfg80211_chan_def agile_chandef;
 	struct wiphy_work agile_cac_abort_wq;
 	u32 free_map_id;
+	struct ath12k_qos_map *qos_map;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
