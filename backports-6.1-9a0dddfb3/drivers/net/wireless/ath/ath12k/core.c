@@ -1829,9 +1829,7 @@ exit:
 
 static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 {
-	struct ath12k *ar = NULL;
-	struct ath12k_pdev *pdev;
-	int ret, j;
+	int ret;
 	u8 total_vdevs;
 
 	mutex_lock(&ab->core_lock);
@@ -1850,18 +1848,6 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 	total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 	ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
 	ab->free_vdev_stats_id_map = 0;
-
-	for (j = 0; j < ab->num_radios; j++) {
-		pdev = &ab->pdevs[j];
-		ar = pdev->ar;
-		if (ar) {
-			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-			ar->num_created_vdevs = 0;
-			ar->num_created_bridge_vdevs = 0;
-			ar->allocated_vdev_map = 0;
-			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
-		}
-	}
 
 	ret = ath12k_hal_srng_init(ab);
 	if (ret)
