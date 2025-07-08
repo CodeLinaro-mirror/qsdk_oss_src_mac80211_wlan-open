@@ -1153,6 +1153,7 @@ struct hal_ops {
 				     struct hal_wbm_idle_scatter_list *sbuf,
 				     u32 nsbufs, u32 tot_link_desc,
 				     u32 end_offset);
+	void (*tx_update_dscp_tid_map)(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
 	void (*tx_set_dscp_tid_map)(struct ath12k_base *ab, int id);
 	void (*tx_configure_bank_register)(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id);
@@ -1311,6 +1312,7 @@ void ath12k_hal_set_link_desc_addr(struct ath12k_hal *hal,
 u32
 ath12k_hal_ce_dst_status_get_length(struct ath12k_hal *hal,
 				    struct hal_ce_srng_dst_status_desc *desc);
+void ath12k_hal_tx_update_dscp_tid_map(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
 void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, int id);
 void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id);

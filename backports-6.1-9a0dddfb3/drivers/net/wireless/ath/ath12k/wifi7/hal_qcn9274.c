@@ -1017,6 +1017,7 @@ const struct hal_ops hal_qcn9274_ops = {
 	.ce_dst_status_get_length = ath12k_wifi7_hal_ce_dst_status_get_length,
 	.set_link_desc_addr = ath12k_wifi7_hal_set_link_desc_addr,
 	.tx_set_dscp_tid_map = ath12k_wifi7_hal_tx_set_dscp_tid_map,
+	.tx_update_dscp_tid_map = ath12k_wifi7_hal_tx_update_dscp_tid_map,
 	.tx_configure_bank_register =
 				ath12k_wifi7_hal_tx_configure_bank_register,
 	.write_reoq_lut_addr = ath12k_wifi7_hal_write_reoq_lut_addr,

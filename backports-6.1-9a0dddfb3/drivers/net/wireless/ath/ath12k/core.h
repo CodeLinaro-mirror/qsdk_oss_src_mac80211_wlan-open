@@ -91,6 +91,9 @@
 #define ATH12K_PHY_5GHZ_HIGH "phy02"
 #define ATH12K_PHY_6GHZ "phy03"
 
+#define ATH12K_MAX_TID_VALUE 8
+#define ATH12K_FREE_MAP_ID_MASK GENMASK(31, 0)
+
 #define ATH12K_MAX_CORE_MASK	(0xFFFF & ((1 << NR_CPUS) - 1))
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
@@ -421,10 +424,15 @@ struct ath12k_key_conf {
 	struct ieee80211_key_conf *key;
 };
 
+struct ath12k_cache_qos_map {
+	struct ath12k_qos_map *qos_map;
+};
+
 struct ath12k_vif_cache {
 	struct ath12k_tx_conf tx_conf;
 	struct ath12k_key_conf key_conf;
 	u32 bss_conf_changed;
+	struct ath12k_cache_qos_map cache_qos_map;
 };
 
 struct ath12k_rekey_data {
@@ -488,6 +496,22 @@ struct ath12k_reg_tpc_power_info {
 	u8 num_tpe_psd;
 	u8 num_tpe_eirp;
 	struct chan_power_info chan_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
+};
+
+struct ath12k_dscp_range {
+	u8 low;
+	u8 high;
+};
+
+struct ath12k_dscp_exception {
+	u8 dscp;
+	u8 up;
+};
+
+struct ath12k_qos_map {
+	u8 num_des;
+	struct ath12k_dscp_exception dscp_exception[IEEE80211_QOS_MAP_MAX_EX];
+	struct ath12k_dscp_range up[ATH12K_MAX_TID_VALUE];
 };
 
 struct ath12k_link_vif {
@@ -564,6 +588,9 @@ struct ath12k_link_vif {
 	bool is_link_removal_in_progress;
 	bool is_link_removal_update_pending;
 	struct ath12k_wmi_mlo_link_removal_event_params link_removal_data;
+	u8 map_id;
+	struct ath12k_qos_map *qos_map;
+	struct wiphy_work set_dscp_tid_work;
 };
 
 struct ath12k_dp_link_vif {
@@ -578,6 +605,7 @@ struct ath12k_dp_link_vif {
 	u8 vdev_id_check_en;
 	u8 lmac_id;
 	int bank_id;
+	u8 map_id;
 };
 
 struct ath12k_vlan_iface {
@@ -1173,6 +1201,7 @@ struct ath12k {
 #endif
 	struct cfg80211_chan_def agile_chandef;
 	struct wiphy_work agile_cac_abort_wq;
+	u32 free_map_id;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

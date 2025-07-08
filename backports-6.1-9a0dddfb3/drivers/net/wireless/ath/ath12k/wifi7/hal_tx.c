@@ -11,6 +11,8 @@
 #include "hal_rx.h"
 
 #define DSCP_TID_MAP_TBL_ENTRY_SIZE 64
+#define HAL_TX_BITS_PER_TID 3
+#define HAL_TX_NUM_DSCP_REG_SIZE 32
 
 /* dscp_tid_map - Default DSCP-TID mapping
  *=================
@@ -67,6 +69,68 @@ void ath12k_wifi7_hal_tx_cmd_desc_setup(struct ath12k_base *ab,
 			 le32_encode_bits(ti->bss_ast_hash,
 					  HAL_TCL_DATA_CMD_INFO4_CACHE_SET_NUM);
 	tcl_cmd->info5 = 0;
+}
+
+void ath12k_update_dscp_register(struct ath12k_base *ab, u32 addr, u32 mask, u32 value)
+{
+	u32 reg_val;
+
+	reg_val = ath12k_hif_read32(ab, addr);
+	reg_val &= ~mask;
+	reg_val |= value;
+	ath12k_hif_write32(ab, addr, reg_val);
+}
+
+void ath12k_wifi7_hal_tx_update_dscp_tid_map(struct ath12k_base *ab, int id, u8 dscp, u8 tid)
+{
+	u32 ctrl_reg_val;
+	u32 addr;
+	u32 start_index, end_index;
+	u32 mask;
+	u32 value;
+
+	ctrl_reg_val = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+					 HAL_TCL1_RING_CMN_CTRL_REG);
+	/* Enable read/write access */
+	ctrl_reg_val |= HAL_TCL1_RING_CMN_CTRL_DSCP_TID_MAP_PROG_EN;
+	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+			   HAL_TCL1_RING_CMN_CTRL_REG, ctrl_reg_val);
+
+	addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_DSCP_TID_MAP +
+	       (4 * id * (HAL_DSCP_TID_TBL_SIZE / 4));
+
+	/* Calculate start and end indices within the register */
+	start_index = dscp * HAL_TX_BITS_PER_TID;
+	end_index = (start_index + (HAL_TX_BITS_PER_TID - 1)) %
+		    HAL_TX_NUM_DSCP_REG_SIZE;
+	addr += (4 * (start_index / HAL_TX_NUM_DSCP_REG_SIZE));
+	start_index %= HAL_TX_NUM_DSCP_REG_SIZE;
+
+	if (end_index < start_index) {
+		/* Handle the case where the TID value spans two registers */
+		mask = GENMASK((HAL_TX_NUM_DSCP_REG_SIZE - 1), start_index);
+		value = (tid << start_index) & mask;
+		/* Update the first register */
+		ath12k_update_dscp_register(ab, addr, mask, value);
+
+		/* Update the second register */
+		addr = addr+4;
+		mask = GENMASK(end_index, 0);
+		value = (tid >> (HAL_TX_NUM_DSCP_REG_SIZE - start_index)) & mask;
+		ath12k_update_dscp_register(ab, addr, mask, value);
+	} else {
+		/* Handle the case where the TID value fits within one register */
+		mask = GENMASK(end_index, start_index);
+		value = (tid << start_index) & mask;
+		ath12k_update_dscp_register(ab, addr, mask, value);
+	}
+
+	/* Disable read/write access */
+	ctrl_reg_val = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+					 HAL_TCL1_RING_CMN_CTRL_REG);
+	ctrl_reg_val &= ~HAL_TCL1_RING_CMN_CTRL_DSCP_TID_MAP_PROG_EN;
+	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+			   HAL_TCL1_RING_CMN_CTRL_REG,ctrl_reg_val);
 }
 
 void ath12k_wifi7_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, int id)

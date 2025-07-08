@@ -1452,7 +1452,7 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 			u32_encode_bits(vdev_id_check_en,
 					HAL_TX_BANK_CONFIG_VDEV_ID_CHECK_EN);
 
-	bank_config |= u32_encode_bits(0, HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID);
+	bank_config |= u32_encode_bits(dp_link_vif->map_id, HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID);
 
 	return bank_config;
 }

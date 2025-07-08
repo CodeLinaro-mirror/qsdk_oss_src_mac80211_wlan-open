@@ -587,6 +587,15 @@ void ath12k_wifi7_hal_tx_configure_bank_register(struct ath12k_base *ab,
 			   bank_config);
 }
 
+u32 ath12k_wifi7_hal_tx_read_bank_register(struct ath12k_base *ab, u8 bank_id)
+{
+	u32 reg_val;
+
+	reg_val = ath12k_hif_read32(ab, HAL_TCL_SW_CONFIG_BANK_ADDR + 4 * bank_id);
+
+	return reg_val;
+}
+
 void ath12k_wifi7_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;

@@ -273,6 +273,7 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 static void ath12k_wmi_migration_cmd_work(struct work_struct *work);
 static void ath12k_mac_vdev_ml_max_rec_links(struct ath12k_link_vif *arvif,
 					     u8 ml_max_rec_links);
+static void ath12k_set_dscp_tid_work(struct wiphy *wiphy, struct wiphy_work *work);
 static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
@@ -4975,7 +4976,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	INIT_WORK(&arvif->wmi_migration_cmd_work,
 		  ath12k_wmi_migration_cmd_work);
 	INIT_LIST_HEAD(&arvif->peer_migrate_list);
-
+	wiphy_work_init(&arvif->set_dscp_tid_work,
+			ath12k_set_dscp_tid_work);
 
 	for (i = 0; i < ARRAY_SIZE(arvif->bitrate_mask.control); i++) {
 		arvif->bitrate_mask.control[i].legacy = 0xffffffff;
@@ -5061,6 +5063,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 	}
 	wiphy_work_cancel(ah->hw->wiphy,
 			  &arvif->peer_ch_width_switch_work);
+	wiphy_work_cancel(ah->hw->wiphy, &arvif->set_dscp_tid_work);
 	cancel_work_sync(&arvif->wmi_migration_cmd_work);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac remove link interface (vdev %d link id %d)",
@@ -11457,6 +11460,136 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_change_sta_links);
 
+void ath12k_mac_op_set_dscp_tid(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct cfg80211_qos_map *qos_map,
+				unsigned int link_id)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k_link_vif *arvif;
+	struct ath12k_qos_map *new_qos_map;
+	struct ath12k *ar;
+	struct ath12k_vif_cache *cache;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	guard(mutex)(&ah->hw_mutex);
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return;
+
+	new_qos_map = kzalloc(sizeof(*new_qos_map), GFP_KERNEL);
+	if (!new_qos_map) {
+		return;
+	}
+	memcpy(new_qos_map, qos_map, sizeof(*qos_map));
+
+	arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+	if (!arvif || !arvif->is_created) {
+		ath12k_info(NULL,
+			    "qos map changes cached to apply after vdev create\n");
+		cache = ath12k_ahvif_get_link_cache(ahvif, link_id);
+		if (!cache) {
+			kfree(new_qos_map);
+			return;
+		}
+		cache->cache_qos_map.qos_map = new_qos_map;
+		return;
+	}
+
+	ar = arvif->ar;
+	if (!ar) {
+		ath12k_err(NULL, "Failed to set DSCP to TID mapping\n");
+		kfree(new_qos_map);
+		return;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	arvif->qos_map = new_qos_map;
+	wiphy_work_queue(hw->wiphy, &arvif->set_dscp_tid_work);
+	spin_unlock_bh(&ar->data_lock);
+}
+EXPORT_SYMBOL(ath12k_mac_op_set_dscp_tid);
+
+static void ath12k_mac_update_qos_map(struct ath12k *ar, struct ath12k_link_vif *arvif)
+{
+	struct ath12k_qos_map *qos_map;
+	struct ath12k_dp_link_vif *dp_link_vif;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	u8 dscp_low, dscp_high;
+	u8 dscp;
+	u8 tid, map_id, bank_id;
+	u8 i;
+
+	qos_map = arvif->qos_map;
+	map_id = arvif->map_id;
+	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
+	bank_id = dp_link_vif->bank_id;
+
+	if (map_id >= HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX) {
+		ath12k_err(ar->ab, "failed to find free map_id\n");
+		goto free_qos_map;
+	}
+
+	if (bank_id == DP_INVALID_BANK_ID) {
+		ath12k_err(ar->ab, "unable to find TX bank profile\n");
+		goto free_qos_map;
+	}
+
+	for (i = 0; i < ATH12K_MAX_TID_VALUE; i++) {
+		dscp_low = qos_map->up[i].low;
+		dscp_high = qos_map->up[i].high;
+		tid = i;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "dscp_low:%d, dscp_high:%d, tid:%d, map_id:%d, bank_id:%d\n",
+			   dscp_low, dscp_high, tid, map_id, bank_id);
+		if (dscp_low == 0xFF || dscp_high == 0xFF)
+			continue;
+		for (dscp = dscp_low; dscp <= dscp_high; dscp++) {
+			ath12k_hal_tx_update_dscp_tid_map(ar->ab, map_id, dscp, tid);
+		}
+	}
+
+	if (qos_map->num_des > 0) {
+		for (i = 0; i < qos_map->num_des; i++) {
+			dscp = qos_map->dscp_exception[i].dscp;
+			tid = qos_map->dscp_exception[i].up;
+
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "dscp:%d, tid: %d, map_id:%d, bank_id:%d\n",
+				   dscp, tid, map_id, bank_id);
+			if (dscp == 0xFF)
+				continue;
+			ath12k_hal_tx_update_dscp_tid_map(ar->ab, map_id, dscp, tid);
+		}
+	}
+
+free_qos_map:
+	kfree(qos_map);
+	qos_map = NULL;
+	return;
+}
+
+static void ath12k_set_dscp_tid_work(struct wiphy *wiphy, struct wiphy_work *work)
+{
+	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif, set_dscp_tid_work);
+	struct ath12k_qos_map *qos_map;
+	struct ath12k *ar;
+
+	lockdep_assert_wiphy(wiphy);
+	qos_map = arvif->qos_map;
+	ar = arvif->ar;
+	if (!ar) {
+		ath12k_err(NULL, "Failed to set DSCP to TID mapping\n");
+		kfree(arvif->qos_map);
+		arvif->qos_map = NULL;
+		return;
+	}
+
+	spin_lock_bh(&ar->data_lock);
+	ath12k_mac_update_qos_map(ar, arvif);
+	spin_unlock_bh(&ar->data_lock);
+}
+
 static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 					   struct ath12k_sta *ahsta,
 					   unsigned long int valid_links)
@@ -14289,6 +14422,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	u8 mac_addr[ETH_ALEN];
 	u8 mask[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00};
 	int txpower = NL80211_TX_POWER_AUTOMATIC;
+	u8 map_id;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -14371,11 +14505,22 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	arvif->tx_vdev_id = vdev_id;
 
 	arvif->vdev_subtype = is_bridge_vdev ? WMI_VDEV_SUBTYPE_BRIDGE : WMI_VDEV_SUBTYPE_NONE;
+	
+	if (!ar->free_map_id) {
+		ath12k_err(ar->ab, "No free map_id available\n");
+		ret = -EINVAL;
+		goto err;
+	}
+	map_id =  __ffs(ar->free_map_id);
+	ar->free_map_id &= ~(1 << map_id);
+	arvif->map_id = map_id;
+
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
 
 	dp_link_vif->vdev_id = arvif->vdev_id;
 	dp_link_vif->lmac_id = ar->lmac_id;
 	dp_link_vif->pdev_idx = ar->pdev_idx;
+	dp_link_vif->map_id = arvif->map_id;
 
 	switch (vif->type) {
 	case NL80211_IFTYPE_UNSPECIFIED:
@@ -14425,6 +14570,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	        spin_lock_bh(&ar->ab->base_lock);
 		ab->free_vdev_map |= 1LL << arvif->vdev_id;
 		spin_unlock_bh(&ar->ab->base_lock);
+		ar->free_map_id |= 1 << arvif->map_id;
 
 		goto err;
 	}
@@ -14591,6 +14737,7 @@ err_vdev_del:
 	spin_lock_bh(&ar->ab->base_lock);
 	ab->free_vdev_map |= 1LL << arvif->vdev_id;
 	spin_unlock_bh(&ar->ab->base_lock);
+	ar->free_map_id |= 1 << arvif->map_id;
 	ab->free_vdev_stats_id_map &= ~(1LL << arvif->vdev_stats_id);
 	spin_lock_bh(&ar->data_lock);
 	if (!list_empty(&ar->arvifs))
@@ -14668,6 +14815,14 @@ void ath12k_mac_vif_cache_flush(struct ath12k *ar, struct ath12k_link_vif *arvif
 		}
 		ath12k_mac_bss_info_changed(ar, arvif, link_conf,
 					    cache->bss_conf_changed);
+	}
+
+	if (cache->cache_qos_map.qos_map) {
+		spin_lock_bh(&ar->data_lock);
+		arvif->qos_map = cache->cache_qos_map.qos_map;
+		ath12k_mac_update_qos_map(ar, arvif);
+		spin_unlock_bh(&ar->data_lock);
+		cache->cache_qos_map.qos_map = NULL;
 	}
 
 	if (!list_empty(&cache->key_conf.list))
@@ -14988,6 +15143,7 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	spin_unlock_bh(&ar->ab->base_lock);
 
 	ar->allocated_vdev_map &= ~(1LL << arvif->vdev_id);
+	ar->free_map_id |= 1 << arvif->map_id;
 	if (!ath12k_mac_is_bridge_vdev(arvif)) {
 		WARN_ON(!ar->num_created_vdevs);
 		ar->num_created_vdevs--;
@@ -20319,6 +20475,7 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 	ar->max_num_stations = ath12k_core_get_max_station_per_radio(ar->ab);
 	ar->max_num_peers = ath12k_core_get_max_peers_per_radio(ar->ab);
 	ar->rssi_offsets.rssi_offset = ATH12K_DEFAULT_NOISE_FLOOR;
+	ar->free_map_id = ATH12K_FREE_MAP_ID_MASK;
 
 	total_vdevs = ath12k_core_get_total_num_vdevs(ar->ab);
 	if (total_vdevs == ATH12K_MAX_NUM_VDEVS_NLINK)
@@ -20470,6 +20627,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	ieee80211_hw_set(hw, SUPPORT_ECM_REGISTRATION);
 	ieee80211_hw_set(hw, SUPPORTS_TID_CLASS_OFFLOAD);
 	ieee80211_hw_set(hw, HAS_TX_QUEUE);
+	ieee80211_hw_set(hw, SUPPORTS_DSCP_TID_MAP);
 
 	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET) {
 		ieee80211_hw_set(hw, SUPPORTS_TX_ENCAP_OFFLOAD);

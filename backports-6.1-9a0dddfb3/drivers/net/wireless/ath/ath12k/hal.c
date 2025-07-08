@@ -63,6 +63,11 @@ u32 ath12k_hal_ce_get_desc_size(struct ath12k_hal *hal, enum hal_ce_desc type)
 	return hal->hal_ops->ce_get_desc_size(type);
 }
 
+void ath12k_hal_tx_update_dscp_tid_map(struct ath12k_base *ab, int id, u8 dscp, u8 tid)
+{
+	ab->hal.hal_ops->tx_update_dscp_tid_map(ab, id, dscp, tid);
+}
+
 void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, int id)
 {
         ab->hal.hal_ops->tx_set_dscp_tid_map(ab, id);

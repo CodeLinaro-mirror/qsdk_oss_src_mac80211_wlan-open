@@ -400,6 +400,10 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
                                 struct ieee80211_bss_conf *info,
                                 u64 changed);
 int ath12k_mac_monitor_start(struct ath12k *ar);
+void ath12k_mac_op_set_dscp_tid(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct cfg80211_qos_map *qos_map,
+				unsigned int link_id);
 
 /* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured

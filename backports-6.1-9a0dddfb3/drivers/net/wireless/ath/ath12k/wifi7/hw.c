@@ -1617,6 +1617,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.cancel_remain_on_channel       = ath12k_mac_op_cancel_remain_on_channel,
 	.change_sta_links               = ath12k_mac_op_change_sta_links,
 	.can_activate_links             = ath12k_mac_op_can_activate_links,
+	.set_dscp_tid                   = ath12k_mac_op_set_dscp_tid,
 #ifdef CONFIG_PM
 	.suspend			= ath12k_wow_op_suspend,
 	.resume				= ath12k_wow_op_resume,

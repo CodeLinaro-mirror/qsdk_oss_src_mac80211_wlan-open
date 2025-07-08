@@ -90,6 +90,7 @@ struct hal_tx_status {
 #define HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID	GENMASK(22, 17)
 
 void ath12k_wifi7_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, int id);
+void ath12k_wifi7_hal_tx_update_dscp_tid_map(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
 void ath12k_wifi7_hal_tx_cmd_desc_setup(struct ath12k_base *ab,
 					struct hal_tcl_data_cmd *tcl_cmd,
 					struct hal_tx_info *ti);
@@ -99,4 +100,5 @@ int ath12k_wifi7_hal_reo_cmd_send(struct ath12k_base *ab, struct hal_srng *srng,
 void ath12k_wifi7_hal_tx_configure_bank_register(struct ath12k_base *ab,
 						 u32 bank_config,
 						 u8 bank_id);
+u32 ath12k_hal_tx_read_bank_register_internal(struct ath12k_base *ab, u8 bank_id);
 #endif

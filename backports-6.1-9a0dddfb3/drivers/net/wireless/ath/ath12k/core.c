@@ -2040,6 +2040,7 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 				arvif->is_up = false;
 			}
 
+			ar->free_map_id = ATH12K_FREE_MAP_ID_MASK;
 			ath12k_mac_drain_tx(ar);
 			ar->state_11d = ATH12K_11D_IDLE;
 			complete(&ar->completed_11d_scan);
