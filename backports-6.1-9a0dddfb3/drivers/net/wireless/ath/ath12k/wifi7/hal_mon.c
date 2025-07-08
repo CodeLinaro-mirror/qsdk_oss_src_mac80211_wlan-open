@@ -2072,6 +2072,9 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		return HAL_RX_MON_STATUS_BUF_DONE;
 	case HAL_RX_HEADER:
 		return HAL_RX_MON_STATUS_RX_HDR;
+	case HAL_MON_DROP:
+		ppdu_info->is_drop_tlv = true;
+		break;
 	case HAL_RX_PPDU_END_STATUS_DONE:
 	case 0:
 		return HAL_RX_MON_STATUS_PPDU_DONE;

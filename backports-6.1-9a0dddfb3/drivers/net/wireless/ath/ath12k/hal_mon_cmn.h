@@ -196,6 +196,7 @@ struct hal_rx_mon_ppdu_info {
 	u16 mpdu_retry_cnt;
 	struct hal_rx_mon_mpdu_info mpdu_info;
 	struct sk_buff_head mpdu_q;
+	bool is_drop_tlv;
 };
 
 struct hal_rx_mon_status_tlv_hdr {
@@ -212,6 +213,7 @@ enum hal_rx_mon_status {
 	HAL_RX_MON_STATUS_MPDU_END,
 	HAL_RX_MON_STATUS_MSDU_END,
 	HAL_RX_MON_STATUS_RX_HDR,
+	HAL_RX_MON_STATUS_DROP_TLV,
 };
 
 enum hal_tx_mon_status {
