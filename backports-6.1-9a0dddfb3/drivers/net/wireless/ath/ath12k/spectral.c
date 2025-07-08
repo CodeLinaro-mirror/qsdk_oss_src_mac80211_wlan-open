@@ -997,23 +997,23 @@ void ath12k_spectral_deinit(struct ath12k_base *ab)
 		ar = ab->pdevs[i].ar;
 		sp = &ar->spectral;
 
-		wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 		if (sp->spectral_cap.fft_size_caps) {
 			kfree(sp->spectral_cap.fft_size_caps);
 			sp->spectral_cap.fft_size_caps = NULL;
 		}
 
-		if (!sp->enabled) {
-			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		if (!sp->enabled)
 			continue;
-		}
-
-		ath12k_spectral_scan_config(ar, ATH12K_SPECTRAL_DISABLED);
-		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 		spin_lock_bh(&sp->lock);
 		sp->enabled = false;
 		spin_unlock_bh(&sp->lock);
+
+		if (ar->spectral.mode != ATH12K_SPECTRAL_DISABLED) {
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+			ath12k_spectral_scan_config(ar, ATH12K_SPECTRAL_DISABLED);
+			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		}
 
 		ath12k_spectral_debug_unregister(ar);
 		ath12k_spectral_ring_free(ar);
