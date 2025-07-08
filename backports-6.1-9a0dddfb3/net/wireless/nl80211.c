@@ -1067,6 +1067,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_ADVERTISED_TTLM] =
 		NLA_POLICY_NESTED(nl80211_advertised_ttlm_policy),
 	[NL80211_ATTR_QOS_MGMT] = NLA_POLICY_NESTED(nl80211_qm_policy),
+	[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS] = { .type = NLA_U16 },
 };
 
 /* policy for the key attributes */
@@ -12920,6 +12921,10 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 			err = -EINVAL;
 			goto free;
 		}
+
+		if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS])
+			req.ext_mld_capa_ops =
+				nla_get_u16(info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS]);
 	} else {
 		if (req.link_id >= 0)
 			return -EINVAL;
@@ -12929,6 +12934,9 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 		if (IS_ERR(req.bss))
 			return PTR_ERR(req.bss);
 		ap_addr = req.bss->bssid;
+
+		if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS])
+			return -EINVAL;
 	}
 
 	err = nl80211_crypto_settings(rdev, info, &req.crypto, 1);
@@ -18230,6 +18238,10 @@ static int nl80211_assoc_ml_reconf(struct sk_buff *skb, struct genl_info *info)
 		err = -EINVAL;
 		goto out;
 	}
+
+	if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS])
+		req.ext_mld_capa_ops =
+			nla_get_u16(info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS]);
 
 	err = cfg80211_assoc_ml_reconf(rdev, dev, &req);
 

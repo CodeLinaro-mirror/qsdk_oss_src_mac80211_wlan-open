@@ -11,7 +11,7 @@
  * Copyright 2008 Jouni Malinen <jouni.malinen@atheros.com>
  * Copyright 2008 Colin McCabe <colin@cozybit.com>
  * Copyright 2015-2017	Intel Deutschland GmbH
- * Copyright (C) 2018-2024 Intel Corporation
+ * Copyright (C) 2018-2025 Intel Corporation
  *
  * Permission to use, copy, modify, and/or distribute this software for any
  * purpose with or without fee is hereby granted, provided that the above
@@ -3043,6 +3043,12 @@ enum nl80211_commands {
  *	attribute containing various QoS-related parameters defined by the
  *	nl80211_qm_policy.
  *
+ * @NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS: Extended MLD capabilities and
+ *	operations that userspace implements to use during association/ML
+ *	link reconfig, currently only "BTM MLD Recommendation For Multiple
+ *	APs Support". Drivers may set additional flags that they support
+ *	in the kernel or device.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3638,6 +3644,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_ADVERTISED_TTLM_EXPEC_DUR_UPDATE,
 
 	NL80211_ATTR_QOS_MGMT,
+
+	NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS,
 
 	/* add attributes here, update the policy in nl80211.c */
 
