@@ -18190,70 +18190,81 @@ nl80211_set_ttlm(struct sk_buff *skb, struct genl_info *info)
 
 	return rdev_set_ttlm(rdev, dev, &params);
 }
-
-static int nl80211_assoc_ml_reconf(struct sk_buff *skb, struct genl_info *info)
+static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
+				     struct net_device *dev,
+				     struct genl_info *info)
 {
-	struct cfg80211_registered_device *rdev = info->user_ptr[0];
-	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct cfg80211_ml_reconf_req req = {};
+	struct nlattr *attr;
 	unsigned int link_id;
-	u16 add_links;
+	u16 add_links = 0;
 	int err;
+	enum nl80211_iftype iftype = NL80211_IFTYPE_MONITOR;
 
-	if (!wdev->valid_links)
+	if (!wdev || !wdev->valid_links)
 		return -EINVAL;
 
-	if (dev->ieee80211_ptr->conn_owner_nlportid &&
-	    dev->ieee80211_ptr->conn_owner_nlportid != info->snd_portid)
-		return -EPERM;
-
-	if (dev->ieee80211_ptr->iftype != NL80211_IFTYPE_STATION &&
-	    dev->ieee80211_ptr->iftype != NL80211_IFTYPE_P2P_CLIENT)
-		return -EOPNOTSUPP;
-
-	add_links = 0;
-	if (info->attrs[NL80211_ATTR_MLO_LINKS]) {
-		err = nl80211_process_links(rdev, req.add_links,
-					    /* mark as MLO, but not assoc */
-					    IEEE80211_MLD_MAX_NUM_LINKS,
-					    NULL, 0, info);
-		if (err)
-			return err;
-
-		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
-		     link_id++) {
-			if (!req.add_links[link_id].bss)
-				continue;
-			add_links |= BIT(link_id);
-		}
-	}
+	iftype = wdev->iftype;
 
 	if (info->attrs[NL80211_ATTR_MLO_RECONF_REM_LINKS])
 		req.rem_links =
 			nla_get_u16(info->attrs[NL80211_ATTR_MLO_RECONF_REM_LINKS]);
 
-	/* Validate that existing links are not added, removed links are valid
-	 * and don't allow adding and removing the same links
-	 */
-	if ((add_links & req.rem_links) || !(add_links | req.rem_links) ||
-	    (wdev->valid_links & add_links) ||
-	    ((wdev->valid_links & req.rem_links) != req.rem_links)) {
-		err = -EINVAL;
-		goto out;
-	}
+	switch (iftype) {
+	case NL80211_IFTYPE_STATION:
+	case NL80211_IFTYPE_P2P_CLIENT:
+		if (wdev->conn_owner_nlportid &&
+		    wdev->conn_owner_nlportid != info->snd_portid)
+			return -EPERM;
 
-	if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS])
-		req.ext_mld_capa_ops =
-			nla_get_u16(info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS]);
+		if (info->attrs[NL80211_ATTR_MLO_LINKS]) {
+			err = nl80211_process_links(rdev, req.add_links,
+						    /* mark as MLO, but not assoc */
+						    IEEE80211_MLD_MAX_NUM_LINKS,
+						    NULL, 0, info);
+			if (err)
+				return err;
 
-	err = cfg80211_assoc_ml_reconf(rdev, dev, &req);
+			for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
+			     link_id++) {
+				if (!req.add_links[link_id].bss)
+					continue;
+				add_links |= BIT(link_id);
+			}
+		}
 
+		/* Validate that existing links are not added, removed links are valid
+		 * and don't allow adding and removing the same links
+		 */
+		if ((add_links & req.rem_links) || !(add_links | req.rem_links) ||
+		    (wdev->valid_links & add_links) ||
+		    ((wdev->valid_links & req.rem_links) != req.rem_links)) {
+			err = -EINVAL;
+			goto out;
+		}
+
+		if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS]) {
+			attr = info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS];
+			req.ext_mld_capa_ops = nla_get_u16(attr);
+		}
+
+		err = cfg80211_assoc_ml_reconf(rdev, dev, &req);
 out:
-	for (link_id = 0; link_id < ARRAY_SIZE(req.add_links); link_id++)
-		cfg80211_put_bss(&rdev->wiphy, req.add_links[link_id].bss);
+		for (link_id = 0; link_id < ARRAY_SIZE(req.add_links); link_id++)
+			cfg80211_put_bss(&rdev->wiphy, req.add_links[link_id].bss);
+		return err;
+	default:
+		return -EOPNOTSUPP;
+	}
+}
 
-	return err;
+static int nl80211_assoc_ml_reconf(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct net_device *dev = info->user_ptr[1];
+
+	return __nl80211_assoc_ml_reconf(rdev, dev, info);
 }
 
 static int
