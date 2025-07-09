@@ -69,6 +69,26 @@ enum ath12k_dp_rx_error {
 	DP_RX_ERR_MAX,
 };
 
+enum ath12k_wbm_err_drop_reason {
+	WBM_ERR_GET_SW_DESC_ERROR,
+	WBM_ERR_GET_SW_DESC_FROM_CK_ERROR,
+	WBM_ERR_INVALID_PEER_ID_ERROR,
+	WBM_ERR_DESC_PARSE_ERROR,
+	WBM_ERR_DROP_INVALID_COOKIE,
+	WBM_ERR_DROP_INVALID_PUSH_REASON,
+	WBM_ERR_DROP_INVALID_HW_ID,
+	WBM_ERR_DROP_NULL_PARTNER_DP,
+	WBM_ERR_DROP_PROCESS_NULL_PARTNER_DP,
+	WBM_ERR_DROP_NULL_PDEV,
+	WBM_ERR_DROP_NULL_AR,
+	WBM_ERR_DROP_CAC_RUNNING,
+	WBM_ERR_DROP_SCATTER_GATHER,
+	WBM_ERR_DROP_INVALID_NWIFI_HDR_LEN,
+	WBM_ERR_DROP_REO_GENERIC,
+	WBM_ERR_DROP_RXDMA_GENERIC,
+	WBM_ERR_DROP_MAX,
+};
+
 /* VIF STATS MACROS */
 #define DP_STATS_INC(_handle, _field, _delta, _ring) \
 	do { \
@@ -108,8 +128,24 @@ enum ath12k_dp_rx_error {
 			DP_PEER_STATS_INC(_handle, _dir, _ring, _field, _link, _delta); \
 	} while (0)
 
+#define DP_PEER_STATS_FIELD_INC(_handle, _field, _delta) \
+	do { \
+		if (likely(_handle)) \
+		_handle->_field += _delta; \
+	} while (0)
+
+#define DP_PEER_LINK_STATS_CNT(_handle, _field, _delta, _link) \
+	do { \
+		DP_PEER_STATS_FIELD_INC(_handle, stats[_link]._field, _delta); \
+	} while (0)
+
 struct ath12k_wbm_tx_stats {
 	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
+};
+
+struct ath12k_wbm_rx_stats {
+	u32 rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
+	u32 reo_error[HAL_REO_DEST_RING_ERROR_CODE_MAX];
 };
 
 struct ath12k_dp_pkt_info {
@@ -188,6 +224,7 @@ struct ath12k_dp_peer_tx_stats {
 struct ath12k_dp_peer_stats {
 	struct ath12k_dp_peer_tx_stats tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats rx[DP_REO_DST_RING_MAX];
+	struct ath12k_wbm_rx_stats wbm_err;
 };
 
 struct ath12k_dp_tx_ingress_stats {

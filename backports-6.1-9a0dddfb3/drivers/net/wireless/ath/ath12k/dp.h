@@ -479,6 +479,12 @@ struct ath12k_device_dp_rx_err_stats {
 	u32 rx_err[DP_RX_ERR_MAX][DP_REO_DST_RING_MAX];
 };
 
+struct ath12k_device_dp_rx_wbm_err_stats {
+	u32 rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
+	u32 reo_error[HAL_REO_DEST_RING_ERROR_CODE_MAX];
+	u32 drop[WBM_ERR_DROP_MAX];
+};
+
 struct ath12k_device_dp_stats {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u32 ppe_vp_mode_update_fail;
@@ -491,8 +497,6 @@ struct ath12k_device_dp_stats {
 	u32 invalid_rbm;
 	u32 reo_excep_msdu_buf_type;
 	u32 free_excess_alloc_skb;
-	u32 rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
-	u32 reo_error[HAL_REO_DEST_RING_ERROR_CODE_MAX];
 	u32 hal_reo_error[DP_REO_DST_RING_MAX];
 	u32 tx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX];
 	u32 rx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX] [ATH12K_MAX_SOCS];
@@ -505,6 +509,7 @@ struct ath12k_device_dp_stats {
 	struct ath12k_device_dp_tx_err_stats tx_err;
 	struct ath12k_device_dp_rx_err_stats rx;
 	struct ath12k_dp_ring_bp_stats bp_stats;
+	struct ath12k_device_dp_rx_wbm_err_stats wbm_err;
 	u32 tx_mcast[MAX_TCL_RING];
 	u32 tx_unicast[MAX_TCL_RING];
 	u32 tx_eapol[MAX_TCL_RING];

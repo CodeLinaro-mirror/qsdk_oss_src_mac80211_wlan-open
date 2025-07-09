@@ -768,13 +768,19 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			"Overflow", "MPDU len", "FCS", "Decrypt", "TKIP MIC",
 			"Unencrypt", "MSDU len", "MSDU limit", "WiFi parse",
 			"AMSDU parse", "SA timeout", "DA timeout",
-			"Flow timeout", "Flush req"};
+			"Flow timeout", "Flush req", "AMSDU frag", "Multicast echo"};
 	static const char *reo_err[HAL_REO_DEST_RING_ERROR_CODE_MAX] = {
 			"Desc addr zero", "Desc inval", "AMPDU in non BA",
 			"Non BA dup", "BA dup", "Frame 2k jump", "BAR 2k jump",
 			"Frame OOR", "BAR OOR", "No BA session",
 			"Frame SN equal SSN", "PN check fail", "2k err",
 			"PN err", "Desc blocked"};
+	static const char *wbm_rx_drop[WBM_ERR_DROP_MAX] = {
+			"SW desc error", "SW desc from cookie error", "Invalid Peer id error",
+			"Desc parse error", "Invalid Cookie", "Invalid Push reason",
+			"Invalid hw id", "Null Partner dp", "Process Null Partner dp",
+			"Null Pdev", "Null ar", "CAC Running", "Scatter Gather",
+			"Invalid NWifi Hdr len", "REO Generic", "RXDMA Generic"};
 
 	static const char *wbm_rel_src[HAL_WBM_REL_SRC_MODULE_MAX] = {
                         "TQM", "Rxdma", "Reo", "FW", "SW" };
@@ -906,12 +912,17 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "RXDMA errors:\n");
 	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
 		len += scnprintf(buf + len, size - len, "%s: %u\n",
-				 rxdma_err[i], device_stats->rxdma_error[i]);
+				 rxdma_err[i], device_stats->wbm_err.rxdma_error[i]);
 
 	len += scnprintf(buf + len, size - len, "\nREO errors:\n");
 	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
 		len += scnprintf(buf + len, size - len, "%s: %u\n",
-				 reo_err[i], device_stats->reo_error[i]);
+				 reo_err[i], device_stats->wbm_err.reo_error[i]);
+
+	len += scnprintf(buf + len, size - len, "\n WBM Rx Drop Count:\n");
+	for (i = 0; i < WBM_ERR_DROP_MAX; i++)
+		len += scnprintf(buf + len, size - len, "%s: %u\n",
+				 wbm_rx_drop[i], device_stats->wbm_err.drop[i]);
 
 	len += scnprintf(buf + len, size - len, "\nHAL REO errors:\n");
 	len += scnprintf(buf + len, size - len,
