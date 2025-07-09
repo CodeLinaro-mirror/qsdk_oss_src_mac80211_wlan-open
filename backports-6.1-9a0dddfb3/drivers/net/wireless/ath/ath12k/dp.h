@@ -991,5 +991,16 @@ struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base
 int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);
 int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
+void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
+				struct ath12k_device_dp_stats *device_stats);
+int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
+			     struct ath12k_dp_peer_stats *peer_stats,
+			     u8 *addr, u8 link_id);
+void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
+			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+			     u8 link_id);
+void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
+			      struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats);
+
 #endif
 #endif

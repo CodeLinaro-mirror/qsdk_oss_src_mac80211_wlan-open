@@ -15,6 +15,8 @@
 #include "dp_mon.h"
 #include "dp_cmn.h"
 #include "debugfs.h"
+#include "dp_stats.h"
+#include "dp_peer.h"
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
@@ -2379,4 +2381,434 @@ void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp)
 		if (dp->ml_reoq_lut.vaddr_unaligned)
 			ath12k_hal_write_ml_reoq_lut_addr(ab, 0);
 	}
+}
+
+static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
+					      struct ath12k_dp_peer_stats *dst_peer_stats,
+					      struct ath12k_dp_peer_stats *src_peer_stats,
+					      bool is_vdev_peer)
+{
+	int i, j;
+
+	/*tx peer stats*/
+	for(i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		dst_peer_stats->tx[i].comp_pkt.packets +=
+			src_peer_stats->tx[i].comp_pkt.packets;
+		dst_peer_stats->tx[i].comp_pkt.bytes +=
+			src_peer_stats->tx[i].comp_pkt.bytes;
+		dst_peer_stats->tx[i].tx_success.packets +=
+			src_peer_stats->tx[i].tx_success.packets;
+		dst_peer_stats->tx[i].tx_success.bytes +=
+			src_peer_stats->tx[i].tx_success.bytes;
+		dst_peer_stats->tx[i].tx_failed +=
+			src_peer_stats->tx[i].tx_failed;
+
+		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
+			for(j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
+				dst_peer_stats->tx[i].wbm_rel_reason[j] +=
+					src_peer_stats->tx[i].wbm_rel_reason[j];
+			for(j = 0; j < HAL_WBM_TQM_REL_REASON_MAX; j++)
+				dst_peer_stats->tx[i].tqm_rel_reason[j] +=
+					src_peer_stats->tx[i].tqm_rel_reason[j];
+
+			dst_peer_stats->tx[i].release_src_not_tqm +=
+				src_peer_stats->tx[i].release_src_not_tqm;
+			dst_peer_stats->tx[i].retry_count +=
+				src_peer_stats->tx[i].retry_count;
+			dst_peer_stats->tx[i].total_msdu_retries +=
+				src_peer_stats->tx[i].total_msdu_retries;
+			dst_peer_stats->tx[i].multiple_retry_count +=
+				src_peer_stats->tx[i].multiple_retry_count;
+			dst_peer_stats->tx[i].ofdma +=
+				src_peer_stats->tx[i].ofdma;
+			dst_peer_stats->tx[i].amsdu_cnt +=
+				src_peer_stats->tx[i].amsdu_cnt;
+			dst_peer_stats->tx[i].non_amsdu_cnt +=
+				src_peer_stats->tx[i].non_amsdu_cnt;
+			dst_peer_stats->tx[i].inval_link_id_pkt_cnt +=
+				src_peer_stats->tx[i].inval_link_id_pkt_cnt;
+			dst_peer_stats->tx[i].ucast +=
+				src_peer_stats->tx[i].ucast;
+
+			if (is_vdev_peer) {
+				dst_peer_stats->tx[i].mcast +=
+					src_peer_stats->tx[i].mcast;
+				dst_peer_stats->tx[i].bcast +=
+					src_peer_stats->tx[i].bcast;
+			}
+		}
+	}
+
+	/*rx peer stats*/
+	for(i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		dst_peer_stats->rx[i].recv_from_reo.packets +=
+			src_peer_stats->rx[i].recv_from_reo.packets;
+		dst_peer_stats->rx[i].recv_from_reo.bytes +=
+			src_peer_stats->rx[i].recv_from_reo.bytes;
+
+		dst_peer_stats->rx[i].sent_to_stack.packets +=
+			src_peer_stats->rx[i].sent_to_stack.packets;
+		dst_peer_stats->rx[i].sent_to_stack.bytes +=
+			src_peer_stats->rx[i].sent_to_stack.bytes;
+
+		dst_peer_stats->rx[i].sent_to_stack_fast.packets +=
+			src_peer_stats->rx[i].sent_to_stack_fast.packets;
+		dst_peer_stats->rx[i].sent_to_stack_fast.bytes +=
+			src_peer_stats->rx[i].sent_to_stack_fast.bytes;
+
+		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
+			dst_peer_stats->rx[i].mcast +=
+				src_peer_stats->rx[i].mcast;
+			dst_peer_stats->rx[i].ucast +=
+				src_peer_stats->rx[i].ucast;
+			dst_peer_stats->rx[i].non_amsdu +=
+				src_peer_stats->rx[i].non_amsdu;
+			dst_peer_stats->rx[i].msdu_part_of_amsdu +=
+				src_peer_stats->rx[i].msdu_part_of_amsdu;
+			dst_peer_stats->rx[i].mpdu_retry +=
+				src_peer_stats->rx[i].mpdu_retry;
+		}
+	}
+
+	/*rx error stats*/
+	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
+		dst_peer_stats->wbm_err.rxdma_error[i] +=
+			src_peer_stats->wbm_err.rxdma_error[i];
+	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
+		dst_peer_stats->wbm_err.reo_error[i] +=
+			src_peer_stats->wbm_err.reo_error[i];
+}
+
+static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
+						struct ath12k_dp_peer_stats *dst_peer_stats,
+						struct ath12k_dp_peer_stats *src_peer_stats,
+						bool is_vdev_peer)
+{
+	int i, j;
+
+	/*tx peer stats*/
+	for(i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		dst_peer_stats->tx[i].comp_pkt.packets =
+			src_peer_stats->tx[i].comp_pkt.packets;
+		dst_peer_stats->tx[i].comp_pkt.bytes =
+			src_peer_stats->tx[i].comp_pkt.bytes;
+		dst_peer_stats->tx[i].tx_success.packets =
+			src_peer_stats->tx[i].tx_success.packets;
+		dst_peer_stats->tx[i].tx_success.bytes =
+			src_peer_stats->tx[i].tx_success.bytes;
+		dst_peer_stats->tx[i].tx_failed =
+			src_peer_stats->tx[i].tx_failed;
+
+		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
+			for(j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
+				dst_peer_stats->tx[i].wbm_rel_reason[j] =
+					src_peer_stats->tx[i].wbm_rel_reason[j];
+
+			for(j = 0; j < HAL_WBM_TQM_REL_REASON_MAX; j++)
+				dst_peer_stats->tx[i].tqm_rel_reason[j] =
+                                        src_peer_stats->tx[i].tqm_rel_reason[j];
+
+			dst_peer_stats->tx[i].release_src_not_tqm =
+				src_peer_stats->tx[i].release_src_not_tqm;
+			dst_peer_stats->tx[i].retry_count =
+				src_peer_stats->tx[i].retry_count;
+			dst_peer_stats->tx[i].total_msdu_retries =
+				src_peer_stats->tx[i].total_msdu_retries;
+			dst_peer_stats->tx[i].multiple_retry_count =
+				src_peer_stats->tx[i].multiple_retry_count;
+			dst_peer_stats->tx[i].ofdma =
+				src_peer_stats->tx[i].ofdma;
+			dst_peer_stats->tx[i].amsdu_cnt =
+				src_peer_stats->tx[i].amsdu_cnt;
+			dst_peer_stats->tx[i].non_amsdu_cnt =
+				src_peer_stats->tx[i].non_amsdu_cnt;
+			dst_peer_stats->tx[i].inval_link_id_pkt_cnt =
+				src_peer_stats->tx[i].inval_link_id_pkt_cnt;
+			dst_peer_stats->tx[i].ucast =
+				src_peer_stats->tx[i].ucast;
+
+			if (is_vdev_peer) {
+				dst_peer_stats->tx[i].mcast =
+					src_peer_stats->tx[i].mcast;
+				dst_peer_stats->tx[i].bcast =
+					src_peer_stats->tx[i].bcast;
+			}
+		}
+	}
+
+	/*rx peer stats*/
+	for(i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		dst_peer_stats->rx[i].recv_from_reo.packets =
+			src_peer_stats->rx[i].recv_from_reo.packets;
+		dst_peer_stats->rx[i].recv_from_reo.bytes =
+			src_peer_stats->rx[i].recv_from_reo.bytes;
+
+		dst_peer_stats->rx[i].sent_to_stack.packets =
+			src_peer_stats->rx[i].sent_to_stack.packets;
+		dst_peer_stats->rx[i].sent_to_stack.bytes =
+			src_peer_stats->rx[i].sent_to_stack.bytes;
+		dst_peer_stats->rx[i].sent_to_stack_fast.packets =
+			src_peer_stats->rx[i].sent_to_stack_fast.packets;
+		dst_peer_stats->rx[i].sent_to_stack_fast.bytes =
+			src_peer_stats->rx[i].sent_to_stack_fast.bytes;
+
+		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
+			dst_peer_stats->rx[i].mcast =
+				src_peer_stats->rx[i].mcast;
+			dst_peer_stats->rx[i].ucast =
+				src_peer_stats->rx[i].ucast;
+			dst_peer_stats->rx[i].non_amsdu =
+				src_peer_stats->rx[i].non_amsdu;
+			dst_peer_stats->rx[i].msdu_part_of_amsdu =
+				src_peer_stats->rx[i].msdu_part_of_amsdu;
+			dst_peer_stats->rx[i].mpdu_retry =
+				src_peer_stats->rx[i].mpdu_retry;
+		}
+	}
+
+	/*rx error stats*/
+	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
+		dst_peer_stats->wbm_err.rxdma_error[i] =
+			src_peer_stats->wbm_err.rxdma_error[i];
+	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
+		dst_peer_stats->wbm_err.reo_error[i] =
+			src_peer_stats->wbm_err.reo_error[i];
+}
+
+static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
+				      struct ath12k_dp_link_peer *link_peer,
+				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
+{
+	struct ath12k_dp_peer *peer = link_peer->dp_peer;
+	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
+	struct ath12k *ar = arvif->ar;
+	int stats_link_id = peer->hw_links[ar->hw_link_id];
+
+	ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
+					  &peer->stats[stats_link_id],
+					  peer->is_vdev_peer);
+}
+
+static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
+				    struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
+{
+
+	struct ath12k_dp *dp = arvif ->ar->ab->dp;
+	u32 vdev_id = arvif-> vdev_id;
+	struct ath12k_dp_link_peer *link_peer;
+
+	spin_lock_bh(&dp->dp_lock);
+	list_for_each_entry(link_peer, &dp->peers, list)  {
+		if (link_peer->vdev_id != vdev_id)
+			continue;
+		ath12k_dp_aggr_peer_stats(arvif, link_peer, aggr_vif_stats);
+	}
+	spin_unlock_bh(&dp->dp_lock);
+}
+
+static void ath12k_dp_aggr_vif_ingress_stats(struct ath12k_pdev_dp *dp_pdev,
+					     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,
+                                             struct ath12k_dp_vif *vif)
+{
+	int i, j;
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		aggr_vif_stats->stats[i].tx_i.recv_from_stack.packets +=
+			vif->stats[i].tx_i.recv_from_stack.packets;
+		aggr_vif_stats->stats[i].tx_i.recv_from_stack.bytes +=
+			vif->stats[i].tx_i.recv_from_stack.bytes;
+		aggr_vif_stats->stats[i].tx_i.enque_to_hw.packets +=
+			vif->stats[i].tx_i.enque_to_hw.packets;
+		aggr_vif_stats->stats[i].tx_i.enque_to_hw.bytes +=
+			vif->stats[i].tx_i.enque_to_hw.bytes;
+		aggr_vif_stats->stats[i].tx_i.enque_to_hw_fast.packets +=
+			vif->stats[i].tx_i.enque_to_hw_fast.packets;
+		aggr_vif_stats->stats[i].tx_i.enque_to_hw_fast.bytes +=
+			vif->stats[i].tx_i.enque_to_hw_fast.bytes;
+
+
+		for (j = 0 ;j < DP_TX_ENQ_ERR_MAX; j++)
+			aggr_vif_stats->stats[i].tx_i.drop[j] +=
+				vif->stats[i].tx_i.drop[j];
+
+		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
+			aggr_vif_stats->stats[i].tx_i.mcast +=
+				vif->stats[i].tx_i.mcast;
+
+			for (j = 0 ;j < HAL_TCL_ENCAP_TYPE_MAX; j++)
+				aggr_vif_stats->stats[i].tx_i.encap_type[j] +=
+					vif->stats[i].tx_i.encap_type[j];
+
+			for (j = 0 ;j < HAL_ENCRYPT_TYPE_MAX; j++)
+				aggr_vif_stats->stats[i].tx_i.encrypt_type[j] +=
+					vif->stats[i].tx_i.encrypt_type[j];
+			for (j = 0 ;j < DP_TCL_DESC_TYPE_MAX; j++)
+				aggr_vif_stats->stats[i].tx_i.desc_type[j] +=
+					vif->stats[i].tx_i.desc_type[j];
+		}
+	}
+}
+
+void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
+			      struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats)
+{
+	struct ath12k *ar = pdev->ar;
+	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats;
+	struct ath12k_link_vif *arvif;
+
+	aggr_vif_stats = vmalloc(sizeof(*aggr_vif_stats));
+	if (aggr_vif_stats) {
+		memset(aggr_vif_stats, 0, sizeof(*aggr_vif_stats));
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+			ath12k_dp_aggr_per_pkt_peer_stats(pdev, &aggr_pdev_stats->peer_stats,
+							  &aggr_vif_stats->peer_stats, 1);
+		}
+		vfree(aggr_vif_stats);
+	}
+}
+
+void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
+			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats, u8 link_id)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k *ar = &ahvif->ah->radio[0];
+	unsigned long links_map = ahvif->links_map;
+
+	if (links_map & BIT(link_id)) {
+		rcu_read_lock();
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (arvif)
+			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+		rcu_read_unlock();
+	} else {
+		ath12k_dp_aggr_vif_ingress_stats(&ar->dp, aggr_vif_stats, dp_vif);
+
+		if (hweight16(links_map) == 0) {
+			arvif =  &ahvif->deflink;
+			if (arvif)
+				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+		} else {
+			for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+				rcu_read_lock();
+				arvif = rcu_dereference(ahvif->link[link_id]);
+				if (!arvif || !arvif->is_created) {
+					rcu_read_unlock();
+					continue;
+				}
+				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+				rcu_read_unlock();
+			}
+		}
+	}
+}
+
+static int ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
+					 struct ath12k_dp_peer_stats *peer_stats,
+					 u8 *addr, u8 link_id, bool valid_link)
+{
+	struct ath12k_dp *dp = arvif->ar->ab->dp;
+	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *peer;
+	int hw_link_id = arvif->ar->hw_link_id;
+	int stats_link_id;
+
+	spin_lock_bh(&dp->dp_lock);
+	link_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
+	if(link_peer) {
+		if (!link_peer->mlo && valid_link) {
+			spin_unlock_bh(&dp->dp_lock);
+			ath12k_err(NULL, "Error legacy peer with valid link id");
+			return -EINVAL;
+		}
+
+		if (link_peer->hw_link_id == hw_link_id) {
+			peer = link_peer->dp_peer;
+			stats_link_id = peer->hw_links[hw_link_id];
+			ath12k_dp_update_per_pkt_peer_stats(dp_pdev, peer_stats,
+						     &peer->stats[stats_link_id],
+						     peer->is_vdev_peer);
+			spin_unlock_bh(&dp->dp_lock);
+			return 0;
+		}
+	}
+
+	spin_unlock_bh(&dp->dp_lock);
+	ath12k_err(NULL, "Error link peer not found");
+	return -EINVAL;
+}
+
+int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
+			     struct ath12k_dp_peer_stats *peer_stats,
+			     u8 *addr, u8 link_id)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k_dp_hw *dp_hw = &ahvif->ah->dp_hw;
+	struct ath12k *ar = &ahvif->ah->radio[0];
+	struct ath12k_dp_peer *peer;
+	int stats_link_id, i, ret = 0;
+	unsigned long links_map = ahvif->links_map;
+	bool valid_link = ahvif->links_map & BIT(link_id);
+
+	spin_lock_bh(&dp_hw->peer_lock);
+	peer = ath12k_dp_peer_find(dp_hw, addr);
+
+	if (peer) {
+		if (!peer->is_mlo && valid_link) {
+			spin_unlock_bh(&dp_hw->peer_lock);
+			ath12k_err(NULL, "Error legacy peer with valid link id");
+			return -EINVAL;
+		}
+
+		if (valid_link) {
+			rcu_read_lock();
+			arvif = rcu_dereference(ahvif->link[link_id]);
+			if (arvif) {
+				stats_link_id = peer->hw_links[arvif->ar->hw_link_id];
+				ath12k_dp_update_per_pkt_peer_stats(&ar->dp, peer_stats, &peer->stats[stats_link_id],
+							     peer->is_vdev_peer);
+			}
+			goto unlock;
+		} else {
+			for (i = 0; i < ATH12K_DP_MAX_MLO_LINKS; i++)
+				ath12k_dp_aggr_per_pkt_peer_stats(&ar->dp, peer_stats, &peer->stats[i],
+								  peer->is_vdev_peer);
+			spin_unlock_bh(&dp_hw->peer_lock);
+			return ret;
+		}
+	} else {
+		if (valid_link) {
+			rcu_read_lock();
+			arvif = rcu_dereference(ahvif->link[link_id]);
+			if (arvif)
+				ret = ath12k_dp_get_link_peer_stats(arvif, peer_stats, addr,
+								    link_id, valid_link);
+			goto unlock;
+		} else {
+			rcu_read_lock();
+			for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+				arvif = rcu_dereference(ahvif->link[link_id]);
+				if (!arvif || !arvif->is_created) {
+					continue;
+				}
+				ret = ath12k_dp_get_link_peer_stats(arvif, peer_stats, addr,
+								    link_id, valid_link);
+				if (!ret)
+					goto unlock;
+			}
+		}
+	}
+
+unlock:
+	rcu_read_unlock();
+	spin_unlock_bh(&dp_hw->peer_lock);
+	return ret;
+}
+
+void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
+                                struct ath12k_device_dp_stats *device_stats) {
+
+	memcpy(device_stats, &dp->device_stats, sizeof(*device_stats));
 }

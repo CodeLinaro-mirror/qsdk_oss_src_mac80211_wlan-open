@@ -246,4 +246,14 @@ struct ath12k_dp_tx_ingress_stats {
 struct ath12k_dp_tx_vif_stats {
 	struct ath12k_dp_tx_ingress_stats tx_i;
 };
+
+struct ath12k_dp_aggr_vif_stats {
+	struct ath12k_dp_tx_vif_stats stats[DP_TCL_NUM_RING_MAX];
+	struct ath12k_dp_peer_stats peer_stats;
+};
+
+struct ath12k_dp_aggr_pdev_stats {
+	struct ath12k_dp_peer_stats peer_stats;
+};
+
 #endif
