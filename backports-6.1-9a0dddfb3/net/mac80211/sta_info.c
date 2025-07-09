@@ -3429,6 +3429,7 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 			return;
 		}
 
+	sta->sta.reconf.removed_links &= ~BIT(link_id);
 	sta_remove_link(sta, link_id, true);
 
 	/* If deflink is getting removed, then move the contents of the next

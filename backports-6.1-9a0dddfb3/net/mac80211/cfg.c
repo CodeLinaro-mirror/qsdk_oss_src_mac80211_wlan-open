@@ -5993,6 +5993,93 @@ ieee80211_set_ttlm(struct wiphy *wiphy, struct net_device *dev,
 	return 0;
 }
 
+static int ieee80211_sta_assoc_ml_reconf(struct wiphy *wiphy,
+					 struct net_device *dev,
+					 struct cfg80211_ml_reconf_req *req)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct sta_info *sta;
+	struct link_station_parameters *link_params;
+	const struct wiphy_iftype_ext_capab *ift_ext_capa;
+	unsigned long added_links = 0, link_id = 0, added_ok = 0;
+	u16 new_active_links;
+	int ret = 0;
+	__le16 mld_capa_ops = 0;
+
+	ift_ext_capa = cfg80211_get_iftype_ext_capa(sdata->local->hw.wiphy,
+						    NL80211_IFTYPE_AP);
+	if (ift_ext_capa) {
+		mld_capa_ops = cpu_to_le16(ift_ext_capa->mld_capa_and_ops);
+		if (!ieee80211_vif_is_mld(&sdata->vif) ||
+		    !(le16_to_cpu(mld_capa_ops) &
+		      IEEE80211_MLD_CAP_OP_LINK_RECONF_SUPPORT))
+			return -EINVAL;
+	}
+	sta = sta_info_get(sdata, req->mld_addr);
+	if (!sta)
+		return -ENOLINK;
+
+	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+		if (!req->u.link_sta_params[link_id].link_mac)
+			continue;
+
+		if (sta->sta.valid_links & BIT(link_id))
+			continue;
+
+		added_links |= BIT(link_id);
+	}
+	/* Reject if:
+	 * any link is both added and removed,
+	 * no links are being changed,
+	 * removed links are not active,
+	 * all valid links would be removed.
+	 */
+	if ((added_links & req->rem_links) ||
+	    !(added_links | req->rem_links) ||
+	    ((sta->sta.valid_links & req->rem_links) != req->rem_links) ||
+	    !(sta->sta.valid_links & ~req->rem_links))
+		return -EINVAL;
+
+	new_active_links = sta->sta.valid_links & ~req->rem_links;
+
+	if (added_links) {
+		for_each_set_bit(link_id, &added_links,
+				 IEEE80211_MLD_MAX_NUM_LINKS) {
+			link_params = &req->u.link_sta_params[link_id];
+			link_params->mld_mac = req->mld_addr;
+
+			ret = ieee80211_add_link_station(wiphy, dev,
+							 link_params);
+			if (ret) {
+				for_each_set_bit(link_id, &added_ok,
+						 IEEE80211_MLD_MAX_NUM_LINKS) {
+					struct link_station_del_parameters del_params = {
+						.link_id = link_id,
+						.mld_mac = req->mld_addr,
+					};
+
+					ieee80211_del_link_station(wiphy, dev,
+								   &del_params);
+				}
+				return ret;
+			}
+
+			added_ok |= BIT(link_id);
+		}
+	}
+
+	sta->sta.reconf.added_links = added_links;
+	sta->sta.reconf.removed_links = req->rem_links;
+
+	ret = drv_change_sta_links(sdata->local, sdata,
+				   &sta->sta,
+				   sta->sta.valid_links,
+				   new_active_links);
+	sta->sta.reconf.added_links = 0;
+
+	return ret;
+}
+
 static int
 ieee80211_assoc_ml_reconf(struct wiphy *wiphy, struct net_device *dev,
 			  struct cfg80211_ml_reconf_req *req)
@@ -6001,7 +6088,10 @@ ieee80211_assoc_ml_reconf(struct wiphy *wiphy, struct net_device *dev,
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
-	return ieee80211_mgd_assoc_ml_reconf(sdata, req);
+	if (sdata->vif.type == NL80211_IFTYPE_AP)
+		return ieee80211_sta_assoc_ml_reconf(wiphy, dev, req);
+	else
+		return ieee80211_mgd_assoc_ml_reconf(sdata, req);
 }
 
 static int

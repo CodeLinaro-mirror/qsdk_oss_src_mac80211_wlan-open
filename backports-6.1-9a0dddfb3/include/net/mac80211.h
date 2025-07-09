@@ -2720,6 +2720,8 @@ struct ieee80211_link_sta {
  * @eml_cap: EML capabilities of station
  * @mld_cap_op: MLD capabilites and operation field of station
  * @neg_ttlm: TTLM negotiation parameters of the station
+ * @reconf: bitmap of links added and removed during multi-link
+ *	reconfiguration.
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2747,6 +2749,11 @@ struct ieee80211_sta {
 	u16 valid_links;
 	struct ieee80211_link_sta deflink;
 	struct ieee80211_link_sta __rcu *link[IEEE80211_MLD_MAX_NUM_LINKS];
+	/* multi-link reconfiguration */
+	struct {
+		u16 removed_links;
+		u16 added_links;
+	} reconf;
 
 	u16 eml_cap;
 	u16 mld_cap_op;
