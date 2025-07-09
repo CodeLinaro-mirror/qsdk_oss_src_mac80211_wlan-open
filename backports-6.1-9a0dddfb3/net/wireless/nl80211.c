@@ -12745,6 +12745,96 @@ static int nl80211_process_links(struct cfg80211_registered_device *rdev,
 	return 0;
 }
 
+static int nl80211_process_sta_links(struct cfg80211_registered_device *rdev,
+				     struct link_station_parameters *links,
+				     struct genl_info *info)
+{
+	unsigned int attrsize = NUM_NL80211_ATTR * sizeof(struct nlattr *);
+	struct nlattr **attrs __free(kfree) = kzalloc(attrsize, GFP_KERNEL);
+	struct nlattr *link;
+	int link_id;
+	int rem;
+	const u8 *he, *eht;
+	u8 len;
+
+	if (!attrs)
+		return -ENOMEM;
+
+	nla_for_each_nested(link, info->attrs[NL80211_ATTR_MLO_LINKS], rem) {
+		memset(attrs, 0, attrsize);
+
+		nla_parse_nested(attrs, NL80211_ATTR_MAX, link, NULL, NULL);
+
+		link_id = nl80211_link_id_or_invalid(attrs);
+		if (link_id < 0 || link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+			NL_SET_BAD_ATTR(info->extack, link);
+			return -EINVAL;
+		}
+		/* cannot use the same link mac again */
+		if (links[link_id].link_mac) {
+			NL_SET_BAD_ATTR(info->extack, link);
+			return -EINVAL;
+		}
+
+		if (attrs[NL80211_ATTR_MAC]) {
+			links[link_id].link_mac =
+				nla_data(attrs[NL80211_ATTR_MAC]);
+			if (!is_valid_ether_addr(links[link_id].link_mac)) {
+				NL_SET_ERR_MSG(info->extack,
+					       "Invalid Link MAC address");
+				return -EINVAL;
+			}
+		}
+
+		links[link_id].link_id = nla_get_u8(attrs[NL80211_ATTR_MLO_LINK_ID]);
+
+		if (attrs[NL80211_ATTR_STA_SUPPORTED_RATES]) {
+			links[link_id].supported_rates =
+				nla_data(attrs[NL80211_ATTR_STA_SUPPORTED_RATES]);
+			links[link_id].supported_rates_len =
+				nla_len(attrs[NL80211_ATTR_STA_SUPPORTED_RATES]);
+		}
+
+		if (attrs[NL80211_ATTR_HT_CAPABILITY])
+			links[link_id].ht_capa =
+				nla_data(attrs[NL80211_ATTR_HT_CAPABILITY]);
+
+		if (attrs[NL80211_ATTR_VHT_CAPABILITY])
+			links[link_id].vht_capa =
+				nla_data(attrs[NL80211_ATTR_VHT_CAPABILITY]);
+
+		if (attrs[NL80211_ATTR_HE_CAPABILITY]) {
+			links[link_id].he_capa =
+				nla_data(attrs[NL80211_ATTR_HE_CAPABILITY]);
+			links[link_id].he_capa_len =
+				nla_len(attrs[NL80211_ATTR_HE_CAPABILITY]);
+
+			if (attrs[NL80211_ATTR_EHT_CAPABILITY]) {
+				links[link_id].eht_capa =
+					nla_data(attrs[NL80211_ATTR_EHT_CAPABILITY]);
+				links[link_id].eht_capa_len =
+					nla_len(attrs[NL80211_ATTR_EHT_CAPABILITY]);
+				he = (const u8 *)links[link_id].he_capa;
+				eht = (const u8 *)links[link_id].eht_capa;
+				len = links[link_id].eht_capa_len;
+				if (!ieee80211_eht_capa_size_ok(he, eht, len, false))
+					return -EINVAL;
+			}
+		}
+
+		if (info->attrs[NL80211_ATTR_HE_6GHZ_CAPABILITY])
+			links[link_id].he_6ghz_capa =
+				nla_data(info->attrs[NL80211_ATTR_HE_6GHZ_CAPABILITY]);
+
+		if (info->attrs[NL80211_ATTR_OPMODE_NOTIF]) {
+			links[link_id].opmode_notif_used = true;
+			links[link_id].opmode_notif =
+				nla_get_u8(info->attrs[NL80211_ATTR_OPMODE_NOTIF]);
+		}
+	}
+	return 0;
+}
+
 static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -18257,6 +18347,27 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 out:
 		for (link_id = 0; link_id < ARRAY_SIZE(req->u.add_links); link_id++)
 			cfg80211_put_bss(&rdev->wiphy, req->u.add_links[link_id].bss);
+		return err;
+	case NL80211_IFTYPE_AP:
+		err = nl80211_process_sta_links(rdev, req->u.link_sta_params, info);
+		if (err)
+			return err;
+
+		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
+		     link_id++) {
+			if (!req->u.link_sta_params[link_id].link_mac)
+				continue;
+			add_links |= BIT(link_id);
+		}
+
+		if (!info->attrs[NL80211_ATTR_MLD_ADDR])
+			return -EINVAL;
+
+		req->mld_addr = nla_data(info->attrs[NL80211_ATTR_MLD_ADDR]);
+		if (!is_valid_ether_addr(req->mld_addr))
+			return -EINVAL;
+
+		err = rdev_assoc_ml_reconf(rdev, dev, req);
 		return err;
 	default:
 		return -EOPNOTSUPP;

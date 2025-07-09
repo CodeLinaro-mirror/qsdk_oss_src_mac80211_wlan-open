@@ -1348,6 +1348,15 @@
  * @NL80211_CMD_ASSOC_MLO_RECONF: For a non-AP MLD station, request to
  *      add/remove links to/from the association.
  *
+ *      This command is also used by an AP MLD to process reconfiguration
+ *      requests from stations associated with the AP. The following attributes
+ *      are used in %NL80211_CMD_ASSOC_MLO_RECONF:
+ *      %NL80211_ATTR_MLD_ADDR - MLD MAC address of the station
+ *      associated with the AP,
+ *      %NL80211_ATTR_MLO_LINKS - per-link station parameters for links
+ *      to be added,
+ *      %NL80211_ATTR_MLO_RECONF_REM_LINKS - bitmap of links to be removed.
+ *
  * @NL80211_CMD_EPCS_CFG: EPCS configuration for a station. Used by userland to
  *	control EPCS configuration. Used to notify userland on the current state
  *	of EPCS.

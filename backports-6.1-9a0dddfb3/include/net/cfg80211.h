@@ -3536,17 +3536,23 @@ struct cfg80211_assoc_link {
  * struct cfg80211_ml_reconf_req - MLO link reconfiguration request
  * @u: union containing data for links to add
  * @u.add_links: data for links to add, see &struct cfg80211_assoc_link
+ * @u.link_sta_params: data for station link related params,
+ *	see &struct link_station_parameters
  * @rem_links: bitmap of links to remove
  * @ext_mld_capa_ops: extended MLD capabilities and operations set by
  *	userspace for the ML reconfiguration action frame
+ * @mld_addr: MAC address of the station
  */
 struct cfg80211_ml_reconf_req {
 	union {
 		struct cfg80211_assoc_link
 			add_links[IEEE80211_MLD_MAX_NUM_LINKS];
+		struct link_station_parameters
+			link_sta_params[IEEE80211_MLD_MAX_NUM_LINKS];
 	} u;
 	u16 rem_links;
 	u16 ext_mld_capa_ops;
+	const u8 *mld_addr;
 };
 
 /**
