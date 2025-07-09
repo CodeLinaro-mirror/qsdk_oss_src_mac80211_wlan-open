@@ -18195,12 +18195,16 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 				     struct genl_info *info)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
-	struct cfg80211_ml_reconf_req req = {};
+	struct cfg80211_ml_reconf_req *req __free(kfree) =
+		kzalloc(sizeof(*req), GFP_KERNEL);
 	struct nlattr *attr;
 	unsigned int link_id;
 	u16 add_links = 0;
 	int err;
 	enum nl80211_iftype iftype = NL80211_IFTYPE_MONITOR;
+
+	if (!req)
+		return -ENOMEM;
 
 	if (!wdev || !wdev->valid_links)
 		return -EINVAL;
@@ -18208,7 +18212,7 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 	iftype = wdev->iftype;
 
 	if (info->attrs[NL80211_ATTR_MLO_RECONF_REM_LINKS])
-		req.rem_links =
+		req->rem_links =
 			nla_get_u16(info->attrs[NL80211_ATTR_MLO_RECONF_REM_LINKS]);
 
 	switch (iftype) {
@@ -18219,7 +18223,7 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 			return -EPERM;
 
 		if (info->attrs[NL80211_ATTR_MLO_LINKS]) {
-			err = nl80211_process_links(rdev, req.u.add_links,
+			err = nl80211_process_links(rdev, req->u.add_links,
 						    /* mark as MLO, but not assoc */
 						    IEEE80211_MLD_MAX_NUM_LINKS,
 						    NULL, 0, info);
@@ -18228,7 +18232,7 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 
 			for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
 			     link_id++) {
-				if (!req.u.add_links[link_id].bss)
+				if (!req->u.add_links[link_id].bss)
 					continue;
 				add_links |= BIT(link_id);
 			}
@@ -18237,22 +18241,22 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 		/* Validate that existing links are not added, removed links are valid
 		 * and don't allow adding and removing the same links
 		 */
-		if ((add_links & req.rem_links) || !(add_links | req.rem_links) ||
+		if ((add_links & req->rem_links) || !(add_links | req->rem_links) ||
 		    (wdev->valid_links & add_links) ||
-		    ((wdev->valid_links & req.rem_links) != req.rem_links)) {
+		    ((wdev->valid_links & req->rem_links) != req->rem_links)) {
 			err = -EINVAL;
 			goto out;
 		}
 
 		if (info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS]) {
 			attr = info->attrs[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS];
-			req.ext_mld_capa_ops = nla_get_u16(attr);
+			req->ext_mld_capa_ops = nla_get_u16(attr);
 		}
 
-		err = cfg80211_assoc_ml_reconf(rdev, dev, &req);
+		err = cfg80211_assoc_ml_reconf(rdev, dev, req);
 out:
-		for (link_id = 0; link_id < ARRAY_SIZE(req.u.add_links); link_id++)
-			cfg80211_put_bss(&rdev->wiphy, req.u.add_links[link_id].bss);
+		for (link_id = 0; link_id < ARRAY_SIZE(req->u.add_links); link_id++)
+			cfg80211_put_bss(&rdev->wiphy, req->u.add_links[link_id].bss);
 		return err;
 	default:
 		return -EOPNOTSUPP;
