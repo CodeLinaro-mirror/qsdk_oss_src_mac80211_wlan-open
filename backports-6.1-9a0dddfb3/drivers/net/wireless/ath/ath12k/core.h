@@ -107,6 +107,7 @@ extern unsigned int ath12k_frame_mode;
 extern bool ath12k_fse_3_tuple_enabled;
 extern bool ath12k_rx_nwifi_err_dump;
 extern bool ath12k_carrier_vow_optimization;
+extern unsigned int ath12k_reorder_VI_timeout;
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 extern unsigned int ath12k_max_clients;
 #endif

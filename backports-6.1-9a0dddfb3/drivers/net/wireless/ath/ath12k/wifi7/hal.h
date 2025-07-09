@@ -398,6 +398,8 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 
 #define HAL_RX_MAX_BA_WINDOW	256
 
+#define MIN_VI_REORDER_TIMEOUT_MS 100
+#define MAX_VI_REORDER_TIMEOUT_MS 600
 #define HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_USEC	(100 * 1000)
 #define HAL_DEFAULT_VO_REO_TIMEOUT_USEC		(40 * 1000)
 

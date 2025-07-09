@@ -980,7 +980,7 @@ void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map)
 	struct ath12k_hal *hal = &ab->hal;
 
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
-	u32 val;
+	u32 val, VI_reorder_timeout;
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_GEN_ENABLE);
 
@@ -1003,8 +1003,17 @@ void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map)
 			   HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_USEC);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_AGING_THRESH_IX_1(hal),
 			   HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_USEC);
+
+	if (ath12k_reorder_VI_timeout &&
+	    ath12k_reorder_VI_timeout >= MIN_VI_REORDER_TIMEOUT_MS &&
+	    ath12k_reorder_VI_timeout <= MAX_VI_REORDER_TIMEOUT_MS) {
+		VI_reorder_timeout = ath12k_reorder_VI_timeout * 1000;
+	} else {
+		VI_reorder_timeout = HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_USEC;
+	}
+
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_AGING_THRESH_IX_2(hal),
-			   HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_USEC);
+			   VI_reorder_timeout);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_AGING_THRESH_IX_3(hal),
 			   HAL_DEFAULT_VO_REO_TIMEOUT_USEC);
 
