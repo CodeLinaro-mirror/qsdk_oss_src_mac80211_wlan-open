@@ -43,15 +43,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 	struct  ath12k_sta *ahsta;
 	struct  ath12k_link_vif *arvif;
 	struct  ath12k_base *ab;
-	struct  ieee80211_hw *hw;
 	struct  ieee80211_vif *vif;
-
-	if (!wdev)
-		return;
-
-	hw = wiphy_to_ieee80211_hw(wdev->wiphy);
-	if (!ieee80211_hw_check(hw, SUPPORT_ECM_REGISTRATION))
-		return;
 
 	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
 
@@ -140,6 +132,7 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 {
 	struct net_device *dest_dev = NULL;
 	struct  wireless_dev *wdev = NULL;
+	struct  ieee80211_hw *hw;
 	u32 metadata = 0;
 	u16 msduq_peer;
 	u8 *dest_mac = NULL;
@@ -163,6 +156,16 @@ u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 	}
 
 	wdev = ath12k_get_wdev_from_netdev(dest_dev);
+
+	if (!wdev)
+		return metadata;
+
+	hw = wiphy_to_ieee80211_hw(wdev->wiphy);
+	if (!ieee80211_hw_check(hw, SUPPORT_ECM_REGISTRATION)) {
+		ath12k_err(NULL, "ECM cb not supported");
+		return metadata;
+	}
+
 	ath12k_get_ingress_mlo_dev_info(dest_dev, wdev, dest_mac,
 					&node_id, &link_id);
 

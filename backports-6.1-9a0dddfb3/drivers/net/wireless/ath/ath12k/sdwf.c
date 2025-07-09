@@ -255,7 +255,8 @@ struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 
 	sta = ieee80211_find_sta_by_ifaddr(ahvif->ah->hw, peer_mac, NULL);
 	if (!sta) {
-		pr_err("Peer:%pM not present", peer_mac);
+		ath12k_dbg(ab, ATH12K_DBG_QOS,
+			   "Peer: %pM not present", peer_mac);
 		sta = wdev_to_ieee80211_vlan_sta(wdev);
 		if (!sta)
 			return NULL;
@@ -323,7 +324,7 @@ u16 ath12k_sdwf_get_msduq(struct wireless_dev *wdev,
 
 	ar = ath12k_sdwf_get_ar_from_vif(wdev, vif, peer_mac, &peer_id);
 	if (!ar) {
-		ath12k_err(NULL, "ar is NULL");
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "ar is NULL");
 		return ret_msduq;
 	}
 
