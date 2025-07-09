@@ -18703,6 +18703,92 @@ static int nl80211_parse_qm_desc(struct nlattr *tb_qm_desc,
 }
 
 static int
+nl80211_set_qm_resp_desc(struct sk_buff *msg,
+			 struct cfg80211_qm_resp_desc_data qm_resp_desc,
+			 int idx)
+{
+	struct nlattr *qm_desc_entry;
+	int ret = -ENOBUFS;
+
+	qm_desc_entry = nla_nest_start(msg, idx);
+	if (!qm_desc_entry)
+		goto nla_fail;
+
+	if (nla_put_u8(msg, NL80211_QM_DESC_ATTR_QM_ID, qm_resp_desc.qm_id) ||
+	    nla_put_u8(msg, NL80211_QM_DESC_ATTR_STATUS, qm_resp_desc.status))
+		goto nla_qm_desc_entry_fail;
+
+	nla_nest_end(msg, qm_desc_entry);
+	return 0;
+
+nla_qm_desc_entry_fail:
+	nla_nest_cancel(msg, qm_desc_entry);
+nla_fail:
+	return ret;
+}
+
+static int
+nl80211_qm_send_resp(struct genl_info *info,
+		     struct cfg80211_qm_req_data *qm_req,
+		     struct cfg80211_qm_resp_data *qm_resp)
+{
+	struct nlattr *qm, *qm_desc;
+	struct sk_buff *msg;
+	int ret;
+	void *hdr;
+	int idx;
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+	if (!msg)
+		return -ENOMEM;
+
+	hdr = nl80211hdr_put(msg, info->snd_portid, info->snd_seq, 0,
+			     NL80211_CMD_QOS_MGMT);
+	if (!hdr)
+		goto nla_fail;
+
+	qm = nla_nest_start(msg, NL80211_ATTR_QOS_MGMT);
+	if (!qm)
+		goto nla_fail;
+
+	if (nla_put(msg, NL80211_QM_ATTR_MAC_ADDR, ETH_ALEN,
+		    qm_req->peer_mac) ||
+	    nla_put_u8(msg, NL80211_QM_ATTR_QM_TYPE, qm_req->qm_type) ||
+	    nla_put_u8(msg, NL80211_QM_ATTR_DIALOG_TOKEN, qm_req->dialog_token))
+		goto nla_qm_fail;
+
+	qm_desc = nla_nest_start(msg, NL80211_QM_ATTR_DESCRIPTOR_PARAMS);
+	if (!qm_desc)
+		goto nla_qm_fail;
+
+	/* Nest the response descriptor params array */
+	for (idx = 0; idx < qm_req->num_qm_desc; idx++) {
+		ret = nl80211_set_qm_resp_desc(msg, qm_resp->qm_resp_desc[idx],
+					       idx);
+		if (ret) {
+			GENL_SET_ERR_MSG(info,
+					 "QM set response descriptor failed");
+			goto nla_qm_desc_fail;
+		}
+	}
+
+	nla_nest_end(msg, qm_desc);
+	nla_nest_end(msg, qm);
+	genlmsg_end(msg, hdr);
+
+	/* Send synchronous response */
+	return genlmsg_reply(msg, info);
+
+nla_qm_desc_fail:
+	nla_nest_cancel(msg, qm_desc);
+nla_qm_fail:
+	nla_nest_cancel(msg, qm);
+nla_fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+static int
 nl80211_qos_mgmt_cfg(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -18760,6 +18846,12 @@ nl80211_qos_mgmt_cfg(struct sk_buff *skb, struct genl_info *info)
 	ret = rdev_set_qos_mgmt_cfg(rdev, dev, &qm_req, &qm_resp);
 	if (ret) {
 		GENL_SET_ERR_MSG(info, "rdev_set_qos_mgmt_cfg failed");
+		return ret;
+	}
+
+	ret = nl80211_qm_send_resp(info, &qm_req, &qm_resp);
+	if (ret) {
+		GENL_SET_ERR_MSG(info, "QM send response failed");
 		return ret;
 	}
 
