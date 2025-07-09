@@ -970,22 +970,22 @@ static int ath12k_wifi7_hal_srng_create_config_qcn9274(struct ath12k_hal *hal)
 	return 0;
 }
 
-static const struct ath12k_hal_tcl_to_wbm_rbm_map
-ath12k_wifi7_hal_tcl_to_wbm_rbm_map_qcn9274[DP_TCL_NUM_RING_MAX] = {
+static const struct ath12k_hal_tcl_to_cmp_rbm_map
+ath12k_wifi7_hal_tcl_to_cmp_rbm_map_qcn9274[DP_TCL_NUM_RING_MAX] = {
 	{
-		.wbm_ring_num = 0,
+		.cmp_ring_num = 0,
 		.rbm_id = HAL_RX_BUF_RBM_SW0_BM,
 	},
 	{
-		.wbm_ring_num = 1,
+		.cmp_ring_num = 1,
 		.rbm_id = HAL_RX_BUF_RBM_SW1_BM,
 	},
 	{
-		.wbm_ring_num = 2,
+		.cmp_ring_num = 2,
 		.rbm_id = HAL_RX_BUF_RBM_SW2_BM,
 	},
 	{
-		.wbm_ring_num = 3,
+		.cmp_ring_num = 3,
 		.rbm_id = HAL_RX_BUF_RBM_SW3_BM,
 	}
 };
@@ -993,7 +993,7 @@ ath12k_wifi7_hal_tcl_to_wbm_rbm_map_qcn9274[DP_TCL_NUM_RING_MAX] = {
 static int ath12k_wifi7_hal_init_qcn9274(struct ath12k_hal *hal, u8 hw_version)
 {
 	hal->regs = ath12k_wifi7_hw_ver_map[hw_version].hw_regs;
-	hal->tcl_to_wbm_rbm_map = ath12k_wifi7_hal_tcl_to_wbm_rbm_map_qcn9274;
+	hal->tcl_to_cmp_rbm_map = ath12k_wifi7_hal_tcl_to_cmp_rbm_map_qcn9274;
 	hal->hal_ops = &hal_qcn9274_ops;
 	hal->hal_desc_sz = ath12k_wifi7_hal_get_rx_desc_size_qcn9274();
 	hal->hal_params = ath12k_wifi7_hw_ver_map[hw_version].hal_params;

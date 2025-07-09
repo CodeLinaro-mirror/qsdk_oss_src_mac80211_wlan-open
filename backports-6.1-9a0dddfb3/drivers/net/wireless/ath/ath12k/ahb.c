@@ -687,10 +687,10 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 
 		for (j = 0; j < ATH12K_EXT_IRQ_NUM_MAX; j++) {
 			/* For TX ring, ensure that the ring mask and the
-			 * tcl_to_wbm_rbm_map point to the same ring number.
+			 * tcl_to_cmp_rbm_map point to the same ring number.
 			 */
 			if ((j < DP_TCL_NUM_RING_MAX) && (ring_mask->tx[i] &
-			    BIT(ab->hal.tcl_to_wbm_rbm_map[j].wbm_ring_num))) {
+			    BIT(ab->hal.tcl_to_cmp_rbm_map[j].cmp_ring_num))) {
 				irq_grp->irqs[num_irq++] =
 					wbm2host_tx_completions_ring1 - j;
 			}

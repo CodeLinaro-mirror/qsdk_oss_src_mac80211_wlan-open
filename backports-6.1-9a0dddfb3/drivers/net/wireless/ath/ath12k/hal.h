@@ -1146,7 +1146,7 @@ struct ath12k_hal {
 
 	u32 hal_desc_sz;
 
-	const struct ath12k_hal_tcl_to_wbm_rbm_map *tcl_to_wbm_rbm_map;
+	const struct ath12k_hal_tcl_to_cmp_rbm_map *tcl_to_cmp_rbm_map;
 };
 
 enum ath12k_eht_ru_size {
@@ -1196,9 +1196,9 @@ enum hal_wbm_rel_bm_act {
  *	descriptor itself shall also be released.
  */
 
-/* Maps WBM ring number and Return Buffer Manager Id per TCL ring */
-struct ath12k_hal_tcl_to_wbm_rbm_map  {
-	u8 wbm_ring_num;
+/* Maps Completion ring number and Return Buffer Manager Id per TCL ring */
+struct ath12k_hal_tcl_to_cmp_rbm_map  {
+	u8 cmp_ring_num;
 	u8 rbm_id;
 };
 

@@ -268,7 +268,7 @@ static int ath12k_dp_srng_find_ring_in_mask(int ring_num, const u8 *grp_mask)
 static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 					      enum hal_ring_type type, int ring_num)
 {
-	const struct ath12k_hal_tcl_to_wbm_rbm_map *map;
+	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
 	struct ath12k_hw_ring_mask *ring_mask;
 	const u8 *grp_mask;
 	int i;
@@ -285,9 +285,9 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 			ring_num = 0;
 #endif
 		} else {
-			map = ab->hal.tcl_to_wbm_rbm_map;
+			map = ab->hal.tcl_to_cmp_rbm_map;
 			for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
-				if (ring_num == map[i].wbm_ring_num) {
+				if (ring_num == map[i].cmp_ring_num) {
 					ring_num = i;
 					break;
 				}
@@ -699,7 +699,7 @@ static void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	const struct ath12k_hal_tcl_to_wbm_rbm_map *map;
+	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
 	struct hal_srng *srng;
 	int i, ret, tx_comp_ring_num;
 	u32 ring_hash_map;
@@ -715,8 +715,8 @@ static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 	}
 
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
-		map = ab->hal.tcl_to_wbm_rbm_map;
-		tx_comp_ring_num = map[i].wbm_ring_num;
+		map = ab->hal.tcl_to_cmp_rbm_map;
+		tx_comp_ring_num = map[i].cmp_ring_num;
 		rbm_id = map[i].rbm_id;
 
 		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_data_ring,

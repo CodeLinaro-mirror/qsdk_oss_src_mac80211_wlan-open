@@ -994,7 +994,7 @@ tcl_ring_sel:
 	ti.ring_id = ring_selector % dp->hw_params->max_tx_ring;
 
 	ring_map |= BIT(ti.ring_id);
-	ti.rbm_id = hal->tcl_to_wbm_rbm_map[ti.ring_id].rbm_id;
+	ti.rbm_id = hal->tcl_to_cmp_rbm_map[ti.ring_id].rbm_id;
 
 	tx_ring = &dp->tx_ring[ti.ring_id];
 
