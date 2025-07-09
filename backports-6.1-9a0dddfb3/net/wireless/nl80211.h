@@ -137,5 +137,9 @@ int nl80211_pmsr_start(struct sk_buff *skb, struct genl_info *info);
 
 void nl80211_mlo_reconf_add_done(struct net_device *dev,
 				 struct cfg80211_mlo_reconf_done_data *data);
+int nl80211_send_mscs_flow_info(struct cfg80211_registered_device *rdev,
+				const u8 *mac_addr,
+				struct cfg80211_qm_tclas4_params flow_params,
+				u8 tid);
 
 #endif /* __NET_WIRELESS_NL80211_H */

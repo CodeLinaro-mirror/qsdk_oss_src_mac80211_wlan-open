@@ -18382,6 +18382,126 @@ nla_put_failure:
 }
 EXPORT_SYMBOL(cfg80211_erp_trigger_exit);
 
+int nl80211_send_mscs_flow_info(struct cfg80211_registered_device *rdev,
+				const u8 *mac_addr,
+				struct cfg80211_qm_tclas4_params flow_params,
+				u8 tid)
+{
+	struct nlattr *qos_mgmt, *qos_mgmt_desc, *qm_desc_entry;
+	struct nlattr *tclas_type4_element, *tclas_elements, *tclas_entry;
+	struct sk_buff *msg;
+	void *hdr;
+
+	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_ATOMIC);
+	if (!msg)
+		return -ENOMEM;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, NL80211_CMD_QOS_MGMT);
+	if (!hdr)
+		goto error;
+
+	qos_mgmt = nla_nest_start(msg, NL80211_ATTR_QOS_MGMT);
+	if (!qos_mgmt)
+		goto error;
+
+	if (nla_put(msg, NL80211_QM_ATTR_MAC_ADDR, ETH_ALEN, mac_addr))
+		goto nla_fail;
+
+	qos_mgmt_desc = nla_nest_start(msg,
+				       NL80211_QM_ATTR_DESCRIPTOR_PARAMS);
+	if (!qos_mgmt_desc)
+		goto nla_fail;
+
+	qm_desc_entry = nla_nest_start(msg, QM_MAX_MSCS_DESCRIPTORS);
+	if (!qm_desc_entry)
+		goto nla_qm_fail;
+
+	tclas_elements = nla_nest_start(msg,
+					NL80211_QM_DESC_ATTR_TCLAS_ELEMENTS);
+	if (!tclas_elements)
+		goto nla_qm_desc_fail;
+
+	tclas_entry = nla_nest_start(msg, 1);
+	if (!tclas_entry)
+		goto nla_qm_tclas_fail;
+
+	if (nla_put_u8(msg, NL80211_TCLAS_ATTR_USER_PRIORITY, tid) ||
+	    nla_put_u8(msg, NL80211_TCLAS_ATTR_CLASSIFIER_TYPE,
+		       TCLAS_CLASSIFIER_TYPE4))
+		goto nla_qm_tclas_entry_fail;
+
+	tclas_type4_element =
+		nla_nest_start(msg, NL80211_TCLAS_ATTR_TYPE4_PARAMS);
+	if (!tclas_type4_element)
+		goto nla_qm_tclas_entry_fail;
+
+	if (nla_put_u8(msg, NL80211_TCLAS_TYPE4_ATTR_CLASSIFIER_MASK,
+		       flow_params.classifier_mask) ||
+	    nla_put_u8(msg, NL80211_TCLAS_TYPE4_ATTR_IP_VERSION,
+		       flow_params.ip_ver))
+		goto nla_qm_tclas4_fail;
+
+	/**
+	 * Send the reverse of the UL flow to match
+	 * the DL packets.
+	 * If the DL flow matches with this configured
+	 * flow, then prioritization will happen
+	 */
+	if (flow_params.ip_ver == IP_VERSION_4) {
+		if (nla_put(msg, NL80211_TCLAS_TYPE4_ATTR_SRC_IP, IPV4_LEN,
+			    flow_params.dst_ip.ipv4) ||
+		    nla_put(msg, NL80211_TCLAS_TYPE4_ATTR_DST_IP, IPV4_LEN,
+			    flow_params.src_ip.ipv4) ||
+		    nla_put_u8(msg, NL80211_TCLAS_TYPE4_ATTR_PROTOCOL,
+			       flow_params.protocol))
+			goto nla_qm_tclas4_fail;
+	} else if (nla_put(msg, NL80211_TCLAS_TYPE4_ATTR_SRC_IP, IPV6_LEN,
+			   flow_params.dst_ip.ipv6) ||
+		nla_put(msg, NL80211_TCLAS_TYPE4_ATTR_DST_IP, IPV6_LEN,
+			flow_params.src_ip.ipv6) ||
+		nla_put_u8(msg, NL80211_TCLAS_TYPE4_ATTR_PROTOCOL,
+			   flow_params.protocol))
+		goto nla_qm_tclas4_fail;
+
+	if (nla_put_u16(msg, NL80211_TCLAS_TYPE4_ATTR_SRC_PORT,
+			flow_params.dst_port) ||
+	    nla_put_u16(msg, NL80211_TCLAS_TYPE4_ATTR_DST_PORT,
+			flow_params.src_port) ||
+	    nla_put_u8(msg, NL80211_TCLAS_TYPE4_ATTR_DSCP,
+		       flow_params.dscp))
+		goto nla_qm_tclas4_fail;
+
+	nla_nest_end(msg, tclas_type4_element);
+	nla_nest_end(msg, tclas_entry);
+	nla_nest_end(msg, tclas_elements);
+	nla_nest_end(msg, qm_desc_entry);
+	nla_nest_end(msg, qos_mgmt_desc);
+
+	nla_nest_end(msg, qos_mgmt);
+	genlmsg_end(msg, hdr);
+
+	genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy), msg, 0,
+				NL80211_MCGRP_MLME, GFP_ATOMIC);
+
+	return 0;
+
+nla_qm_tclas4_fail:
+	nla_nest_cancel(msg, tclas_type4_element);
+nla_qm_tclas_entry_fail:
+	nla_nest_cancel(msg, tclas_entry);
+nla_qm_tclas_fail:
+	nla_nest_cancel(msg, tclas_elements);
+nla_qm_desc_fail:
+	nla_nest_cancel(msg, qm_desc_entry);
+nla_qm_fail:
+	nla_nest_cancel(msg, qos_mgmt_desc);
+nla_fail:
+	nla_nest_cancel(msg, qos_mgmt);
+error:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
 static int
 nl80211_parse_qm_tclas4_elem(struct nlattr *tb_tclas_entry[],
 			     struct cfg80211_qm_tclas4_params *type4_params)

@@ -4713,6 +4713,7 @@ struct cfg80211_erp_params {
 #define QM_MAX_DESCRIPTORS_PER_PEER			10
 #define QM_MAX_DESCPRIPTORS_PER_REQUEST		4
 #define QM_MAX_TCLAS_ELEMENTS_PER_QM_DESCRIPTOR	2
+#define QM_MAX_MSCS_DESCRIPTORS	1
 
 /* Control Info Bitfield Masks using GENMASK */
 #define QM_CTRL_INFO_DIRECTION_MASK	GENMASK(1, 0)
@@ -11015,4 +11016,19 @@ int cfg80211_erp_trigger_exit(struct wiphy *wiphy);
 int cfg80211_adv_ttlm_evt_notify(struct net_device *dev, gfp_t gfp,
 				 enum advertised_ttlm_status_type status,
 				 u16 mapping_switch_tsf, unsigned int link_id);
+
+/**
+ * cfg80211_rx_send_mscs_tuple - notify userspace about a newly received
+ * UL flow sent by a non-AP STA supporting MSCS.
+ * The equivalent mirrored DL flow should be classified with tid same
+ * as that of this UL flow
+ *
+ * @dev: The device on which status to be indicated.
+ * @addr: The macaddr of the non-AP STA.
+ * @flow_params: The five tuple_info about the UL flow
+ * @tid: The tid value associated with the flow
+ */
+int cfg80211_rx_send_mscs_tuple(struct net_device *dev, const u8 *addr,
+				struct cfg80211_qm_tclas4_params flow_params,
+				u8 tid);
 #endif /* __NET_CFG80211_H */

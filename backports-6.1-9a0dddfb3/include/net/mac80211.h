@@ -8442,4 +8442,15 @@ ieee80211_advertised_ttlm_evt_notify(struct ieee80211_vif *vif,
 void ieee80211_ttlm_info_expec_dur_update(struct ieee80211_vif *vif,
 					  unsigned int link_id, u32 expec_dur);
 
+/**
+ * ieee80211_rx_send_mscs_tuple - Notify the user space about the UL flow
+ * sent by the non-AP STA supporting MSCS
+ * @pubsta: The Non-AP STA which sent the UL flow
+ * @flow_params: The five tuple_info about the UL flow
+ * @tid: tid value associated with the flow
+ */
+int
+ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
+			     struct cfg80211_qm_tclas4_params flow_params,
+			     u8 tid);
 #endif /* MAC80211_H */

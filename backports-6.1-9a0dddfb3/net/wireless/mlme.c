@@ -1486,3 +1486,15 @@ void cfg80211_mlo_reconf_add_done(struct net_device *dev,
 	nl80211_mlo_reconf_add_done(dev, data);
 }
 EXPORT_SYMBOL(cfg80211_mlo_reconf_add_done);
+
+int cfg80211_rx_send_mscs_tuple(struct net_device *dev, const u8 *addr,
+				struct cfg80211_qm_tclas4_params flow_params,
+				u8 tid)
+{
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct wiphy *wiphy = wdev->wiphy;
+	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+
+	return nl80211_send_mscs_flow_info(rdev, addr, flow_params, tid);
+}
+EXPORT_SYMBOL(cfg80211_rx_send_mscs_tuple);

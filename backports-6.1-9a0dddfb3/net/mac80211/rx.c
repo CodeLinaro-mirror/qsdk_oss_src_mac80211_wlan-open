@@ -6034,3 +6034,15 @@ void ieee80211_rx_irqsafe(struct ieee80211_hw *hw, struct sk_buff *skb)
 	tasklet_schedule(&local->tasklet);
 }
 EXPORT_SYMBOL(ieee80211_rx_irqsafe);
+
+int
+ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
+			     struct cfg80211_qm_tclas4_params flow_params,
+			     u8 tid)
+{
+	struct sta_info *sta = container_of(pubsta, struct sta_info, sta);
+
+	return cfg80211_rx_send_mscs_tuple(sta->sdata->dev,
+			sta->addr, flow_params, tid);
+}
+EXPORT_SYMBOL(ieee80211_rx_send_mscs_tuple);
