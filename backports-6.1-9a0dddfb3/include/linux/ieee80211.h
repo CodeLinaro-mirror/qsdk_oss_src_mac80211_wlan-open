@@ -5724,4 +5724,58 @@ enum ttlm_link_map_size {
 	IEEE80211_LINK_MAP_SIZE_ONE_OCTET,
 };
 
+/**
+ * enum ieee80211_qos_mgmt_type - Define QoS Management protocol types
+ * @IEEE80211_QM_TYPE_SCS: Stream Classification Service (SCS) protocol
+ *
+ * Enumerate supported QoS Management protocol types. Extend this enum
+ * to support additional protocols such as MSCS and other QoS mechanisms in the
+ * future.
+ */
+enum ieee80211_qos_mgmt_type {
+	IEEE80211_QM_TYPE_SCS,
+	/* Future QM protocols to be added here */
+	IEEE80211_QM_TYPE_MAX,
+};
+
+
+/**
+ * enum ieee80211_qos_mgmt_desc_qos_direction - Direction of QM Descriptor QoS
+ *						 element
+ * @IEEE80211_QM_DIRECTION_UPLINK: Indicates that the traffic direction is
+ *    uplink from the non-AP STA to the AP.
+ * @IEEE80211_QM_DIRECTION_DOWNLINK: Indicates that the traffic direction is
+ *    downlink from the AP to the non-AP STA.
+ * @IEEE80211_QM_DIRECTION_DIRECT: Indicates direct link traffic between STAs
+ * (P2P scenario).
+ *
+ * Enumerate QoS characteristic element direction subfield encoding which
+ * denotes QoS attributes should be linked to traffic in which direction.
+ */
+enum ieee80211_qos_mgmt_desc_qos_direction {
+	IEEE80211_QM_DIRECTION_UPLINK = 0,
+	IEEE80211_QM_DIRECTION_DOWNLINK = 1,
+	IEEE80211_QM_DIRECTION_DIRECT = 2,
+};
+
+/**
+ * enum ieee80211_qos_mgmt_req_type - Define QoS Management request types
+ * @IEEE80211_QM_ADD_REQ: Add a new QoS Management configuration
+ * @IEEE80211_QM_REMOVE_REQ: Remove an existing QoS Management configuration
+ * @IEEE80211_QM_CHANGE_REQ: Modify an existing QoS Management configuration
+ *
+ * Specify the type of operation requested in a QoS Management transaction.
+ * These request types are used to indicate the intent of the configuration
+ * being applied by user space.
+ */
+enum ieee80211_qos_mgmt_req_type {
+	IEEE80211_QM_ADD_REQ,
+	IEEE80211_QM_REMOVE_REQ,
+	IEEE80211_QM_CHANGE_REQ,
+};
+
+/* QM Status codes */
+#define IEEE80211_QM_REQ_SUCCESS	0
+#define IEEE80211_QM_REQ_DECLINED	1
+
 #endif /* LINUX_IEEE80211_H */
