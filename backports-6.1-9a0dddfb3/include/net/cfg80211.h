@@ -3534,13 +3534,17 @@ struct cfg80211_assoc_link {
 
 /**
  * struct cfg80211_ml_reconf_req - MLO link reconfiguration request
- * @add_links: data for links to add, see &struct cfg80211_assoc_link
+ * @u: union containing data for links to add
+ * @u.add_links: data for links to add, see &struct cfg80211_assoc_link
  * @rem_links: bitmap of links to remove
  * @ext_mld_capa_ops: extended MLD capabilities and operations set by
  *	userspace for the ML reconfiguration action frame
  */
 struct cfg80211_ml_reconf_req {
-	struct cfg80211_assoc_link add_links[IEEE80211_MLD_MAX_NUM_LINKS];
+	union {
+		struct cfg80211_assoc_link
+			add_links[IEEE80211_MLD_MAX_NUM_LINKS];
+	} u;
 	u16 rem_links;
 	u16 ext_mld_capa_ops;
 };

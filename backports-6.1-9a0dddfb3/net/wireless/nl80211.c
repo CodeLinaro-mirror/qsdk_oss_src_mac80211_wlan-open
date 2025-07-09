@@ -18219,7 +18219,7 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 			return -EPERM;
 
 		if (info->attrs[NL80211_ATTR_MLO_LINKS]) {
-			err = nl80211_process_links(rdev, req.add_links,
+			err = nl80211_process_links(rdev, req.u.add_links,
 						    /* mark as MLO, but not assoc */
 						    IEEE80211_MLD_MAX_NUM_LINKS,
 						    NULL, 0, info);
@@ -18228,7 +18228,7 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 
 			for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
 			     link_id++) {
-				if (!req.add_links[link_id].bss)
+				if (!req.u.add_links[link_id].bss)
 					continue;
 				add_links |= BIT(link_id);
 			}
@@ -18251,8 +18251,8 @@ static int __nl80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 
 		err = cfg80211_assoc_ml_reconf(rdev, dev, &req);
 out:
-		for (link_id = 0; link_id < ARRAY_SIZE(req.add_links); link_id++)
-			cfg80211_put_bss(&rdev->wiphy, req.add_links[link_id].bss);
+		for (link_id = 0; link_id < ARRAY_SIZE(req.u.add_links); link_id++)
+			cfg80211_put_bss(&rdev->wiphy, req.u.add_links[link_id].bss);
 		return err;
 	default:
 		return -EOPNOTSUPP;

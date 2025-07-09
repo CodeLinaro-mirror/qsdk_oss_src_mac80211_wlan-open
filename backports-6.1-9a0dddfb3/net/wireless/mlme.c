@@ -1425,11 +1425,11 @@ int cfg80211_assoc_ml_reconf(struct cfg80211_registered_device *rdev,
 
 		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
 		     link_id++) {
-			if (!req->add_links[link_id].bss)
+			if (!req->u.add_links[link_id].bss)
 				continue;
 
-			cfg80211_ref_bss(&rdev->wiphy, req->add_links[link_id].bss);
-			cfg80211_hold_bss(bss_from_pub(req->add_links[link_id].bss));
+			cfg80211_ref_bss(&rdev->wiphy, req->u.add_links[link_id].bss);
+			cfg80211_hold_bss(bss_from_pub(req->u.add_links[link_id].bss));
 		}
 	}
 

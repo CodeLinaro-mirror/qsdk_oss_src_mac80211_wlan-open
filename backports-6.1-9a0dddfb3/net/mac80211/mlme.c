@@ -10453,7 +10453,7 @@ int ieee80211_mgd_assoc_ml_reconf(struct ieee80211_sub_if_data *sdata,
 
 	added_links = 0;
 	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
-		if (!req->add_links[link_id].bss)
+		if (!req->u.add_links[link_id].bss)
 			continue;
 
 		added_links |= BIT(link_id);
@@ -10485,7 +10485,7 @@ int ieee80211_mgd_assoc_ml_reconf(struct ieee80211_sub_if_data *sdata,
 		     link_id++) {
 			struct ieee80211_supported_band *sband;
 			struct cfg80211_bss *link_cbss =
-				req->add_links[link_id].bss;
+				req->u.add_links[link_id].bss;
 			struct ieee80211_bss *bss;
 
 			if (!link_cbss)
@@ -10515,11 +10515,11 @@ int ieee80211_mgd_assoc_ml_reconf(struct ieee80211_sub_if_data *sdata,
 
 			data->link[link_id].bss = link_cbss;
 			data->link[link_id].disabled =
-				req->add_links[link_id].disabled;
+				req->u.add_links[link_id].disabled;
 			data->link[link_id].elems =
-				(u8 *)req->add_links[link_id].elems;
+				(u8 *)req->u.add_links[link_id].elems;
 			data->link[link_id].elems_len =
-				req->add_links[link_id].elems_len;
+				req->u.add_links[link_id].elems_len;
 
 			if (!bss->uapsd_supported)
 				uapsd_supported = false;

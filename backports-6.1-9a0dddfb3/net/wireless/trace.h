@@ -4230,7 +4230,7 @@ TRACE_EVENT(rdev_assoc_ml_reconf,
 		__entry->add_links = 0;
 		__entry->rem_links = req->rem_links;
 		for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++)
-			if (req->add_links[i].bss)
+			if (req->u.add_links[i].bss)
 				__entry->add_links |= BIT(i);
 		__entry->ext_mld_capa_ops = req->ext_mld_capa_ops;
 	),
