@@ -851,6 +851,7 @@ static int ath12k_dp_scatter_idle_link_desc_setup(struct ath12k_base *ab,
 	int ret = 0;
 	u32 end_offset, cookie;
 	enum hal_rx_buf_return_buf_manager rbm = dp->idle_link_rbm;
+	u16 link_desc_size = ab->hal.hal_params->link_desc_size;
 
 	n_entries_per_buf = HAL_WBM_IDLE_SCATTER_BUF_SIZE /
 		ath12k_hal_srng_get_entrysize(ab, HAL_WBM_IDLE_LINK);
@@ -879,14 +880,14 @@ static int ath12k_dp_scatter_idle_link_desc_setup(struct ath12k_base *ab,
 		align_bytes = link_desc_banks[i].vaddr -
 			      link_desc_banks[i].vaddr_unaligned;
 		n_entries = (DP_LINK_DESC_ALLOC_SIZE_THRESH - align_bytes) /
-			     HAL_LINK_DESC_SIZE;
+			     link_desc_size;
 		paddr = link_desc_banks[i].paddr;
 		while (n_entries) {
 			cookie = DP_LINK_DESC_COOKIE_SET(n_entries, i);
 			ath12k_hal_set_link_desc_addr(hal, scatter_buf, cookie,
 						      paddr, rbm);
 			n_entries--;
-			paddr += HAL_LINK_DESC_SIZE;
+			paddr += link_desc_size;
 			if (rem_entries) {
 				rem_entries--;
 				scatter_buf++;
@@ -988,18 +989,18 @@ static int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc)
 	int ret = 0;
 
 	n_mpdu_link_desc = (DP_NUM_TIDS_MAX * DP_AVG_MPDUS_PER_TID_MAX) /
-			   HAL_NUM_MPDUS_PER_LINK_DESC;
+			   ab->hal.hal_params->num_mpdus_per_link_desc;
 
 	n_mpdu_queue_desc = n_mpdu_link_desc /
-			    HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC;
+			    ab->hal.hal_params->num_mpdu_links_per_queue_desc;
 
 	n_tx_msdu_link_desc = (DP_NUM_TIDS_MAX * DP_AVG_FLOWS_PER_TID *
 			       DP_AVG_MSDUS_PER_FLOW) /
-			      HAL_NUM_TX_MSDUS_PER_LINK_DESC;
+			      ab->hal.hal_params->num_tx_msdus_per_link_desc;
 
 	n_rx_msdu_link_desc = (DP_NUM_TIDS_MAX * DP_AVG_MPDUS_PER_TID_MAX *
 			       DP_AVG_MSDUS_PER_MPDU) /
-			      HAL_NUM_RX_MSDUS_PER_LINK_DESC;
+			      ab->hal.hal_params->num_rx_msdus_per_link_desc;
 
 	*n_link_desc = n_mpdu_link_desc + n_mpdu_queue_desc +
 		      n_tx_msdu_link_desc + n_rx_msdu_link_desc;
@@ -1030,8 +1031,9 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 	int i, ret;
 	u32 cookie;
 	enum hal_rx_buf_return_buf_manager rbm = dp->idle_link_rbm;
+	u16 link_desc_size = ab->hal.hal_params->link_desc_size;
 
-	tot_mem_sz = n_link_desc * HAL_LINK_DESC_SIZE;
+	tot_mem_sz = n_link_desc * link_desc_size;
 	tot_mem_sz += HAL_LINK_DESC_ALIGN;
 
 	if (tot_mem_sz <= DP_LINK_DESC_ALLOC_SIZE_THRESH) {
@@ -1088,7 +1090,7 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 		align_bytes = link_desc_banks[i].vaddr -
 			      link_desc_banks[i].vaddr_unaligned;
 		n_entries = (link_desc_banks[i].size - align_bytes) /
-			    HAL_LINK_DESC_SIZE;
+			    link_desc_size;
 		paddr = link_desc_banks[i].paddr;
 		while (n_entries &&
 		       (desc = ath12k_hal_srng_src_get_next_entry(ab, srng))) {
@@ -1096,7 +1098,7 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 			ath12k_hal_set_link_desc_addr(dp->hal, desc, cookie, paddr,
 						      rbm);
 			n_entries--;
-			paddr += HAL_LINK_DESC_SIZE;
+			paddr += link_desc_size;
 		}
 	}
 

@@ -693,6 +693,11 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_ipq5332 = {
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN,
+	.link_desc_size = HAL_LINK_DESC_SIZE,
+	.num_mpdus_per_link_desc = HAL_NUM_MPDUS_PER_LINK_DESC,
+	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
+	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
+	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
@@ -704,6 +709,11 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW6_EN,
+	.link_desc_size = HAL_LINK_DESC_SIZE,
+	.num_mpdus_per_link_desc = HAL_NUM_MPDUS_PER_LINK_DESC,
+	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
+	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
+	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
 };
 
 u32 ath12k_wifi7_hal_rx_h_mpdu_err_qcn9274(struct hal_rx_desc *desc)

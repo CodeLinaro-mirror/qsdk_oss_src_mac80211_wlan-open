@@ -22,12 +22,7 @@ struct rx_mpdu_desc_info;
 #define HAL_RING_BASE_ALIGN	8
 #define HAL_REO_QLUT_ADDR_ALIGN 256
 
-#define HAL_LINK_DESC_SIZE			(32 << 2)
 #define HAL_LINK_DESC_ALIGN			128
-#define HAL_NUM_MPDUS_PER_LINK_DESC		6
-#define HAL_NUM_TX_MSDUS_PER_LINK_DESC		7
-#define HAL_NUM_RX_MSDUS_PER_LINK_DESC		6
-#define HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC	12
 #define HAL_MAX_AVAIL_BLK_RES			3
 
 /* SRNG registers are split into two groups R0 and R2 */
@@ -1019,7 +1014,12 @@ struct hal_reo_status_header {
 
 struct ath12k_hw_hal_params {
 	enum hal_rx_buf_return_buf_manager rx_buf_rbm;
-	u32	  wbm2sw_cc_enable;
+	u32 wbm2sw_cc_enable;
+	u16 link_desc_size;
+	u16 num_mpdus_per_link_desc;
+	u16 num_tx_msdus_per_link_desc;
+	u16 num_rx_msdus_per_link_desc;
+	u16 num_mpdu_links_per_queue_desc;
 };
 
 struct ath12k_hw_regs {
