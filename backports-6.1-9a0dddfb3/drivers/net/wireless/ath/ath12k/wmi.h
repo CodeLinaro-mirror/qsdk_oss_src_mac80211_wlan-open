@@ -2820,6 +2820,7 @@ struct ath12k_wmi_resource_config_arg {
 	enum ath12k_peer_metadata_version peer_metadata_ver;
 	u32 ema_max_vap_cnt;
 	u32 ema_max_profile_period;
+	bool carrier_vow_optimization;
 	bool is_reg_cc_ext_event_supported;
 	bool is_wds_null_frame_supported;
 	bool is_full_bw_nol_feature_supported;
@@ -2919,6 +2920,7 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_HOST_SVC_FLAG_FULL_BW_NOL_SUPPORT_BIT	14
 #define WMI_RSRC_CFG_FLAGS2_RX_PEER_METADATA_VERSION		GENMASK(5, 4)
 #define WMI_RSRC_CFG_FLAG1_BSS_CHANNEL_INFO_64	BIT(5)
+#define WMI_RSRC_CFG_FLAG1_VIDEO_OVER_WIFI_ENABLE        BIT(23)
 #define WMI_RSRC_CFG_FLAGS2_CALC_NEXT_DTIM_COUNT_SET      BIT(9)
 #define WMI_RSRC_CFG_FLAGS2_SAWF_CONFIG_ENABLE_SET             BIT(13)
 #define WMI_RSRC_CFG_FLAGS2_INTRABSS_MEC_WDS_LEARNING_DISABLE  BIT(15)

@@ -143,6 +143,11 @@ module_param_named(wsi_bypass_bmap, ath12k_wsi_bypass_bmap, uint, 0644);
 MODULE_PARM_DESC(wsi_bypass_bmap,
 		 "Bitmap for the chip to be bypassed for WSI interface");
 
+bool ath12k_carrier_vow_optimization;
+module_param_named(carrier_vow_optimization, ath12k_carrier_vow_optimization, bool, 0644);
+MODULE_PARM_DESC(carrier_vow_optimization, "Enable/Disable VoW optimization for carier usecases");
+EXPORT_SYMBOL(ath12k_carrier_vow_optimization);
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 

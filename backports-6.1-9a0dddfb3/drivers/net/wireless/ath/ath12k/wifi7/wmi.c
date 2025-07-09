@@ -56,6 +56,8 @@ void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 	config->twt_ap_sta_count = 1000;
 	config->ema_max_vap_cnt = ab->num_radios * TARGET_MAX_MBSSID_GROUPS;
 	config->ema_max_profile_period = TARGET_EMA_MAX_PROFILE_PERIOD;
+	if (ath12k_carrier_vow_optimization)
+		config->carrier_vow_optimization = ath12k_carrier_vow_optimization;
 	config->beacon_tx_offload_max_vdev += config->ema_max_vap_cnt;
 
 	if (test_bit(WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT, ab->wmi_ab.svc_map))
