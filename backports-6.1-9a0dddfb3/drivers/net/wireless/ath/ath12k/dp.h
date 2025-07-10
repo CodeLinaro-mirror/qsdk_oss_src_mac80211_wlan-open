@@ -1028,7 +1028,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_telemetry_dp_vif *telemetry_vif,
 			     u8 link_id);
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
-			      struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats);
+			      struct ath12k_telemetry_dp_radio *telemetry_radio);
 
 #endif
 #endif

@@ -311,6 +311,12 @@ struct ath12k_telemetry_dp_vif {
 	struct ath12k_dp_aggr_vif_stats aggr_vif_stats;
 };
 
+/* Telemetry Radio Stats */
+struct ath12k_telemetry_dp_radio {
+	bool is_extended;
+	struct ath12k_dp_aggr_pdev_stats aggr_pdev_stats;
+};
+
 /* Telemetry Device Stats */
 struct ath12k_telemetry_dp_device {
 	bool is_extended;

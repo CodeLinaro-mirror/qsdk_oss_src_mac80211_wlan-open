@@ -1792,6 +1792,12 @@ static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
 	return total_size;
 }
 
+static int ath12k_get_dp_radio_attr_len(struct ath12k_telemetry_command *cmd)
+{
+	/*Aggregated Sta Stats Size */
+	return ath12k_get_dp_peer_attr_len(cmd);
+}
+
 int ath12k_get_dp_vendor_event_len(struct ath12k_telemetry_command *cmd)
 {
 	int total_size;
@@ -1804,6 +1810,9 @@ int ath12k_get_dp_vendor_event_len(struct ath12k_telemetry_command *cmd)
 		break;
 	case STATS_OBJ_VIF:
 		total_size += ath12k_get_dp_vif_attr_len(cmd);
+		break;
+	case STATS_OBJ_RADIO:
+		total_size += ath12k_get_dp_radio_attr_len(cmd);
 		break;
 	case STATS_OBJ_DEVICE:
 		total_size += ath12k_get_device_attr_size(cmd);
@@ -2786,6 +2795,151 @@ out:
 	return ret;
 }
 
+static int ath12k_fill_radio_rx_stats(struct sk_buff *vendor_event,
+				      struct ath12k_telemetry_dp_radio *telemetry_radio)
+{
+	int ret;
+
+	/* Aggregated peer rx stats */
+	ret = ath12k_fill_peer_rx_stats(vendor_event,
+					&telemetry_radio->aggr_pdev_stats.peer_stats,
+					telemetry_radio->is_extended);
+
+	return ret;
+}
+
+static int ath12k_fill_radio_tx_stats(struct sk_buff *vendor_event,
+				      struct ath12k_telemetry_dp_radio *telemetry_radio)
+{
+	int ret;
+
+	/* Aggregated peer tx stats */
+	ret = ath12k_fill_peer_tx_stats(vendor_event,
+					&telemetry_radio->aggr_pdev_stats.peer_stats,
+					telemetry_radio->is_extended);
+
+	return ret;
+}
+
+static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
+					     struct ath12k_pdev_dp *dp_pdev,
+					     struct ath12k_telemetry_command *cmd)
+{
+	struct ath12k_telemetry_dp_radio *telemetry_radio;
+	struct ath12k_base *ab = dp_pdev->ar->ab;
+	struct nlattr *attr;
+	int ret = -EINVAL;
+
+	telemetry_radio = vmalloc(sizeof(*telemetry_radio));
+	if (!telemetry_radio) {
+		ath12k_err(ab, "Allocation failure for radio_stats");
+		return -EINVAL;
+	}
+
+	memset(telemetry_radio, 0, sizeof(*telemetry_radio));
+	ath12k_dp_get_pdev_stats(dp_pdev, telemetry_radio);
+
+	if (cmd->feat.feat_rx) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_radio_rx_stats(vendor_event,
+						       telemetry_radio)) {
+				ath12k_err(ab,
+					   "Error filling radio rx feat stats");
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(ab, "nla nest failure: Radio rx feat stats");
+			goto out;
+		}
+	}
+
+	if (cmd->feat.feat_tx) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_radio_tx_stats(vendor_event,
+						       telemetry_radio)) {
+				ath12k_err(ab,
+					   "Error filling radio tx feat stats");
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(ab, "NLA nest failure: Radio tx feat stats");
+			goto out;
+		}
+	}
+
+	ret = 0;
+out:
+	vfree(telemetry_radio);
+	return ret;
+}
+
+static int ath12k_stats_radio_setup(struct ath12k_telemetry_command *cmd)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(cmd->wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_pdev_dp *dp_pdev;
+	struct sk_buff *vendor_event;
+	struct ath12k *ar;
+	int len, ret;
+
+	if (cmd->link_id >= ah->num_radio) {
+		ath12k_err(NULL, "Invalid HW Link ID %d", cmd->link_id);
+		return -EINVAL;
+	}
+
+	ar = &ah->radio[cmd->link_id];
+	if (!ar) {
+		ath12k_err(NULL, "ar not present");
+		return -EINVAL;
+	}
+
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		ath12k_err(ar->ab, "Radio stats return. Recovery in progress\n");
+		return -EINVAL;
+	}
+
+	dp_pdev = &ar->dp;
+	if (!dp_pdev) {
+		ath12k_err(ar->ab, "dp_pdev not present");
+		return -EINVAL;
+	}
+
+	len = ath12k_get_dp_vendor_event_len(cmd);
+	ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY, "Vendor Event Length = %d",
+		   len);
+
+	vendor_event = cfg80211_vendor_event_alloc(cmd->wiphy, cmd->wdev, len,
+						   QCA_NL80211_VENDOR_SUBCMD_WLAN_WIPHY_TELEMETRY_EVENT,
+						   GFP_KERNEL);
+	if (!vendor_event) {
+		ath12k_err(ar->ab, "Error allocating vendor event");
+		return -EINVAL;
+	}
+
+	ret = ath12k_prepare_telemetry_common_vendor_attr(vendor_event, cmd);
+	if (ret)
+		goto out;
+
+	ret = ath12k_prepare_radio_vendor_event(vendor_event, dp_pdev, cmd);
+	if (ret)
+		goto out;
+
+	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+
+	return ret;
+
+out:
+	ath12k_err(ar->ab, "Error sending telemetry vendor event");
+	kfree_skb(vendor_event);
+	return ret;
+}
+
 int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd)
 {
 	int ret;
@@ -2796,6 +2950,9 @@ int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd)
 		break;
 	case STATS_OBJ_VIF:
 		ret = ath12k_stats_vif_setup(cmd);
+		break;
+	case STATS_OBJ_RADIO:
+		ret = ath12k_stats_radio_setup(cmd);
 		break;
 	case STATS_OBJ_DEVICE:
 		ret = ath12k_stats_device_setup(cmd);

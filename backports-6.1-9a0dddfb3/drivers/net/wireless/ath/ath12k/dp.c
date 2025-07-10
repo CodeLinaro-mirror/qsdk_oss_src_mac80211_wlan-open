@@ -2687,11 +2687,16 @@ static void ath12k_dp_aggr_vif_ingress_stats(struct ath12k_pdev_dp *dp_pdev,
 }
 
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
-			      struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats)
+			      struct ath12k_telemetry_dp_radio *telemetry_radio)
 {
 	struct ath12k *ar = pdev->ar;
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats;
 	struct ath12k_link_vif *arvif;
+	struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats =
+					&telemetry_radio->aggr_pdev_stats;
+
+	if (ath12k_debugfs_is_dp_debug_stats_enabled(&ar->dp))
+		telemetry_radio->is_extended = true;
 
 	aggr_vif_stats = vmalloc(sizeof(*aggr_vif_stats));
 	if (aggr_vif_stats) {
