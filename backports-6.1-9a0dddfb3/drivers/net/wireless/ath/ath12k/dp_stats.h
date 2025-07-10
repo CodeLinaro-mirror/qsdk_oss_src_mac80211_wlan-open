@@ -378,10 +378,72 @@ struct ath12k_dp_peer_tx_stats {
 	u32 bcast;
 };
 
+struct ath12k_tele_qos_tx {
+	struct dp_pkt_info tx_success;
+	struct dp_pkt_info tx_failed;
+	struct dp_pkt_info tx_ingress;
+	struct {
+		struct dp_pkt_info fw_rem;
+		u32 fw_rem_notx;
+		u32 fw_rem_tx;
+		u32 age_out;
+		u32 fw_reason1;
+		u32 fw_reason2;
+		u32 fw_reason3;
+		u32 fw_rem_queue_disable;
+		u32 fw_rem_no_match;
+		u32 drop_threshold;
+		u32 drop_link_desc_na;
+		u32 invalid_drop;
+		u32 mcast_vdev_drop;
+		u32 invalid_rr;
+	} dropped;
+	struct fw_mpdu_stats svc_intval_stats;
+	struct fw_mpdu_stats burst_size_stats;
+	u32 queue_depth;
+	u32 throughput;
+	u32 ingress_rate;
+	u32 min_throughput;
+	u32 max_throughput;
+	u32 avg_throughput;
+	u32 per;
+	u32 retries_pct;
+	u32 total_retries_count;
+	u32 retry_count;
+	u32 multiple_retry_count;
+	u32 failed_retry_count;
+	u16 reinject_pkt;
+	struct pkt_type pkt_type[DOT11_MAX];
+};
+
+struct ath12k_tele_qos_delay {
+	struct hist_stats delay_hist;
+	u32 nwdelay_avg;
+	u32 swdelay_avg;
+	u32 hwdelay_avg;
+	u32 invalid_delay_pkts;
+	u64 delay_success;
+	u64 delay_failure;
+};
+
+struct ath12k_tele_qos_tx_ctx {
+	struct ath12k_tele_qos_tx tx[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+	u8 tid;
+	u8 msduq;
+};
+
+struct ath12k_tele_qos_delay_ctx {
+	struct ath12k_tele_qos_delay delay[QOS_TID_MAX][QOS_TID_MDSUQ_MAX];
+	u8 tid;
+	u8 msduq;
+};
+
 struct ath12k_dp_peer_stats {
 	struct ath12k_dp_peer_tx_stats tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats rx[DP_REO_DST_RING_MAX];
 	struct ath12k_wbm_rx_stats wbm_err;
+	struct ath12k_tele_qos_tx_ctx tx_ctx;
+	struct ath12k_tele_qos_delay_ctx delay_ctx;
 };
 
 struct ath12k_dp_tx_ingress_stats {

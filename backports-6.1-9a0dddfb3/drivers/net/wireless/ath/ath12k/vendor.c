@@ -1739,6 +1739,166 @@ static int ath12k_get_feat_tx_peer_attr_size(void)
 	return total_size;
 }
 
+static int get_feat_sdwftx_attr_size_per_msduq(void)
+{
+	int payload_size = 0, attr_size = 0;
+	int nested2_size = 0, nested3_size = 0;
+	struct ath12k_tele_qos_tx_ctx tx_ctx;
+	struct ath12k_tele_qos_tx tx;
+
+	attr_size = nla_total_size(sizeof(tx.tx_success.num));
+	attr_size += nla_total_size(sizeof(tx.tx_success.bytes));
+	nested2_size = nla_total_size_nested(attr_size);
+
+	attr_size = nla_total_size(sizeof(tx.tx_failed.num));
+	attr_size += nla_total_size(sizeof(tx.tx_failed.bytes));
+	nested2_size += nla_total_size_nested(attr_size);
+
+	attr_size = nla_total_size(sizeof(tx.tx_ingress.num));
+	attr_size += nla_total_size(sizeof(tx.tx_ingress.bytes));
+	nested2_size += nla_total_size_nested(attr_size);
+
+	attr_size = nla_total_size(sizeof(tx.dropped.fw_rem.num));
+	attr_size += nla_total_size(sizeof(tx.dropped.fw_rem.bytes));
+	nested3_size = nla_total_size_nested(attr_size);
+
+	attr_size = nla_total_size(sizeof(tx.dropped.fw_rem_notx));
+	attr_size += nla_total_size(sizeof(tx.dropped.fw_rem_tx));
+	attr_size += nla_total_size(sizeof(tx.dropped.age_out));
+	attr_size += nla_total_size(sizeof(tx.dropped.fw_reason1));
+	attr_size += nla_total_size(sizeof(tx.dropped.fw_reason2));
+	attr_size += nla_total_size(sizeof(tx.dropped.fw_reason3));
+	attr_size += nla_total_size(sizeof(tx.dropped.fw_rem_queue_disable));
+	attr_size += nla_total_size(sizeof(tx.dropped.fw_rem_no_match));
+	attr_size += nla_total_size(sizeof(tx.dropped.drop_threshold));
+	attr_size += nla_total_size(sizeof(tx.dropped.drop_link_desc_na));
+	attr_size += nla_total_size(sizeof(tx.dropped.invalid_drop));
+	attr_size += nla_total_size(sizeof(tx.dropped.mcast_vdev_drop));
+	attr_size += nla_total_size(sizeof(tx.dropped.invalid_rr));
+
+	nested2_size += nla_total_size_nested(nested3_size + attr_size);
+
+	attr_size = nla_total_size(sizeof(tx.svc_intval_stats.success_cnt));
+	attr_size = nla_total_size(sizeof(tx.svc_intval_stats.failure_cnt));
+	nested2_size += nla_total_size_nested(attr_size);
+
+	attr_size = nla_total_size(sizeof(tx.burst_size_stats.success_cnt));
+	attr_size = nla_total_size(sizeof(tx.burst_size_stats.failure_cnt));
+	nested2_size += nla_total_size_nested(attr_size);
+
+	attr_size = nla_total_size(sizeof(tx.queue_depth));
+	attr_size += nla_total_size(sizeof(tx.throughput));
+	attr_size += nla_total_size(sizeof(tx.ingress_rate));
+	attr_size += nla_total_size(sizeof(tx.min_throughput));
+	attr_size += nla_total_size(sizeof(tx.max_throughput));
+	attr_size += nla_total_size(sizeof(tx.avg_throughput));
+	attr_size += nla_total_size(sizeof(tx.per));
+	attr_size += nla_total_size(sizeof(tx.retries_pct));
+	attr_size += nla_total_size(sizeof(tx.total_retries_count));
+	attr_size += nla_total_size(sizeof(tx.retry_count));
+	attr_size += nla_total_size(sizeof(tx.multiple_retry_count));
+	attr_size += nla_total_size(sizeof(tx.failed_retry_count));
+	attr_size += nla_total_size(sizeof(tx.reinject_pkt));
+	attr_size += nla_total_size(sizeof(tx_ctx.tid));
+	attr_size += nla_total_size(sizeof(tx_ctx.msduq));
+
+	payload_size = nested2_size + attr_size;
+
+	attr_size = nla_total_size(sizeof(u32)) * MAX_MCS;
+	nested3_size = nla_total_size_nested(attr_size) *DOT11_MAX;
+	/* pkt type */
+	nested2_size = nla_total_size_nested(nested3_size + attr_size);
+	/* sdwftx stats per msduq */
+	payload_size += nla_total_size_nested(nested2_size + payload_size);
+
+	return payload_size;
+}
+
+static int ath12k_get_feat_sdwftx_attr_size(struct ath12k_telemetry_command *cmd)
+{
+	int total_size = 0, per_msduq_size = 0, msduqs_size = 0;
+	int sdwftx_event_size = 0, svc_event_size;
+	u8 msduq = 0, user_def_msduq_per_tid = 0;
+
+	if (cmd->svc_id == 0) {
+		user_def_msduq_per_tid = QOS_TID_MDSUQ_MAX;
+		msduq = user_def_msduq_per_tid * QOS_TID_MAX;
+		per_msduq_size = get_feat_sdwftx_attr_size_per_msduq();
+		msduqs_size = msduq * per_msduq_size;
+		sdwftx_event_size = nla_total_size_nested(msduqs_size);
+	} else {
+		per_msduq_size = get_feat_sdwftx_attr_size_per_msduq();
+		sdwftx_event_size = nla_total_size_nested(per_msduq_size);
+	}
+
+	svc_event_size = nla_total_size(sizeof(u8));
+	total_size = svc_event_size + sdwftx_event_size;
+
+	return total_size;
+}
+
+static int get_feat_sdwfdelay_attr_size_per_msduq(void)
+{
+	int payload_size = 0, attr_size = 0, attr1_size = 0;
+	int nested1_size = 0, nested2_size = 0, nested3_size = 0;
+	struct ath12k_tele_qos_delay_ctx delay_ctx;
+	struct ath12k_tele_qos_delay delay;
+
+	attr_size = nla_total_size(sizeof(delay.nwdelay_avg));
+	attr_size += nla_total_size(sizeof(delay.swdelay_avg));
+	attr_size += nla_total_size(sizeof(delay.hwdelay_avg));
+	attr_size += nla_total_size(sizeof(delay_ctx.tid));
+	attr_size += nla_total_size(sizeof(delay_ctx.msduq));
+
+	payload_size = attr_size;
+
+	attr_size = nla_total_size(sizeof(delay.invalid_delay_pkts));
+	attr_size += nla_total_size(sizeof(delay.delay_success));
+	attr_size += nla_total_size(sizeof(delay.delay_failure));
+	attr_size += nla_total_size(sizeof(delay.delay_hist.min));
+	attr_size += nla_total_size(sizeof(delay.delay_hist.max));
+	attr_size += nla_total_size(sizeof(delay.delay_hist.avg));
+
+	attr1_size = nla_total_size(sizeof(u64)) * HIST_BUCKET_MAX;
+	/* HW_TX_COMP_DELAY nest */
+	nested3_size = nla_total_size_nested(attr1_size);
+
+	/* HWDELAY_HISTOGRAM nest */
+	nested2_size = nla_total_size_nested(nested3_size);
+
+	/* SDWFDELAY_HWDELAY */
+	nested1_size = nla_total_size_nested(nested2_size + attr_size);
+
+	payload_size += nested1_size;
+
+	return payload_size;
+}
+
+static int ath12k_get_feat_sdwfdelay_attr_size(struct ath12k_telemetry_command *cmd)
+{
+	int total_size = 0, per_msduq_size = 0, msduqs_size = 0;
+	int sdwfdelay_event_size = 0, svc_event_size;
+	u8 msduq = 0, user_def_msduq_per_tid = 0;
+
+	if (cmd->svc_id == 0) {
+		user_def_msduq_per_tid = QOS_TID_MDSUQ_MAX;
+		msduq = user_def_msduq_per_tid * QOS_TID_MAX;
+
+		per_msduq_size = get_feat_sdwfdelay_attr_size_per_msduq();
+		msduqs_size = msduq * per_msduq_size;
+
+		sdwfdelay_event_size = nla_total_size_nested(msduqs_size);
+	} else {
+		per_msduq_size = get_feat_sdwfdelay_attr_size_per_msduq();
+		sdwfdelay_event_size = nla_total_size_nested(per_msduq_size);
+	}
+
+	svc_event_size = nla_total_size(sizeof(u8));
+	total_size = svc_event_size + sdwfdelay_event_size;
+
+	return total_size;
+}
+
 static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 {
 	int total_size = 0;
@@ -1748,6 +1908,12 @@ static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 
 	if (cmd->feat.feat_tx)
 		total_size += ath12k_get_feat_tx_peer_attr_size();
+
+	if (cmd->feat.feat_sdwftx)
+		total_size += ath12k_get_feat_sdwftx_attr_size(cmd);
+
+	if (cmd->feat.feat_sdwfdelay)
+		total_size += ath12k_get_feat_sdwfdelay_attr_size(cmd);
 
 	return total_size;
 }
@@ -2335,6 +2501,16 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 			nla_nest_end(vendor_event, attr);
 		} else {
 			ath12k_err(NULL, "nla nest failure: Sta rx feat stats");
+			goto out;
+		}
+	}
+
+	if (cmd->svc_id != INVALID_SVC_ID &&
+	    (cmd->feat.feat_sdwftx || cmd->feat.feat_sdwfdelay)) {
+		ret = ath12k_telemetry_get_qos_stats(ahvif,
+						     telemetry_peer, cmd);
+		if (ret) {
+			ath12k_err(NULL, "SDWF stats get failure\n");
 			goto out;
 		}
 	}

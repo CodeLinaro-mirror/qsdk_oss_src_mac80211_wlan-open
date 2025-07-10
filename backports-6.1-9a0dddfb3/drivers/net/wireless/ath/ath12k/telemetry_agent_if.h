@@ -59,14 +59,20 @@ bool ath12k_telemetry_update_msdu_drop(void *telemetry_ctx, u8 tid,
 				       u8 queue, u64 success,
 				       u64 failure_drop,
 				       u64 failure_ttl);
-bool ath12k_telemetry_get_rate(void *telemetry_ctx, u8 tid, u8 queue,
-			       u32 *egress_rate, u32 *ingress_rate);
-bool ath12k_telemetry_get_mov_avg(void *telemetry_ctx, u8 tid, u8 queue,
-				  u32 *nwdelay_avg, u32 *swdelay_avg,
-				  u32 *hwdelay_avg);
 int ath12k_telemetry_reset_peer_stats(u8 *peer_mac);
 int ath12k_telemetry_set_mov_avg_params(u32 num_pkt, u32 num_win);
 int ath12k_telemetry_set_sla_params(u32 num_pkt, u32 time_sec);
 int ath12k_telemetry_set_sla_cfg(struct ath12k_sla_thershold_cfg param);
 int ath12k_telemetry_set_sla_detect_cfg(struct ath12k_sla_detect_cfg param);
+int ath12k_telemetry_get_rate(void *telemetry_ctx, u8 tid,
+			      u8 queue, u32 *egress_rate,
+			      u32 *ingress_rate);
+int ath12k_telemetry_get_tx_rate(void *telemetry_ctx, u8 tid, u8 msduq,
+				 u32 *min_tput, u32 *max_tput,
+				 u32 *avg_tput, u32 *per,
+				 u32 *retries_pct);
+int ath12k_telemetry_get_mov_avg(void *telemetry_ctx, u8 tid,
+				 u8 queue, u32 *nwdelay_avg,
+				 u32 *swdelay_avg,
+				 u32 *hwdelay_avg);
 #endif /* ATH12K_TELEMETRY_AGENT_IF_H */

@@ -10,6 +10,7 @@
 #include "htc.h"
 #include <linux/module.h>
 #include "debugfs.h"
+#include "telemetry_agent_if.h"
 
 bool ath12k_sdwf_service_configured(struct ath12k_base *ab, u16 svc_id)
 {
@@ -857,6 +858,430 @@ int ath12k_telemetry_get_sawf_tx_stats_tput(void *ptr, void *peer, u64 *in_bytes
 	}
 
 end:
+	rcu_read_unlock();
+	return ret;
+}
+
+static int ath12k_get_msduq_id(struct ath12k_base *ab, u8 svc_id,
+			       struct ath12k_dp_peer *mld_peer,
+			       u8 *tid, u8 *q_id)
+{
+	struct ath12k_dp_peer_qos *qos = NULL;
+	u16 qos_id;
+	u8 tid_l, q_id_l;
+
+	qos_id = ath12k_sdwf_get_dl_qos_id(ab, svc_id);
+	if (qos_id == QOS_DL_ID_MAX) {
+		ath12k_err(NULL, "svc_id: %u not present\n", svc_id);
+		return -ENODATA;
+	}
+
+	qos = mld_peer->qos;
+	if (!qos)
+		return -ENODATA;
+
+	/* Find matching tid and q_id with svc_id in the reserved pool*/
+	for (tid_l = 0; tid_l < QOS_TID_MAX; tid_l++) {
+		for (q_id_l = 0; q_id_l < QOS_TID_MDSUQ_MAX; q_id_l++) {
+			if (qos->msduq_map[tid_l][q_id_l].reserved &&
+			    qos->msduq_map[tid_l][q_id_l].qos_id == qos_id) {
+				ath12k_dbg(ab, ATH12K_DBG_QOS,
+					   "tid %u usrdefq %u\n",
+					   tid_l, q_id_l);
+				*tid = tid_l;
+				*q_id = q_id_l;
+				return 0;
+			}
+		}
+	}
+	ath12k_dbg(ab, ATH12K_DBG_QOS, "Queue and TID not found for svc_id=%u",
+		   svc_id);
+
+	return -EINVAL;
+}
+
+static void ath12k_copy_tx_stats(struct tx_stats *src,
+				 struct ath12k_tele_qos_tx *dst)
+{
+	u8 pkt_type, mcs;
+
+	dst->tx_success.num += src->tx_success.num;
+	dst->tx_success.bytes += src->tx_success.bytes;
+
+	dst->tx_ingress.num += src->tx_ingress.num;
+	dst->tx_ingress.bytes += src->tx_ingress.bytes;
+
+	dst->tx_failed.num += src->tx_failed.num;
+	dst->tx_failed.bytes += src->tx_failed.bytes;
+
+	dst->dropped.fw_rem.num += src->dropped.fw_rem.num;
+	dst->dropped.fw_rem.bytes += src->dropped.fw_rem.bytes;
+	dst->dropped.fw_rem_notx += src->dropped.fw_rem_notx;
+	dst->dropped.fw_rem_tx += src->dropped.fw_rem_tx;
+	dst->dropped.age_out += src->dropped.age_out;
+	dst->dropped.fw_reason1 += src->dropped.fw_reason1;
+	dst->dropped.fw_reason2 += src->dropped.fw_reason2;
+	dst->dropped.fw_reason3 += src->dropped.fw_reason3;
+	dst->dropped.fw_rem_queue_disable += src->dropped.fw_rem_queue_disable;
+	dst->dropped.fw_rem_no_match += src->dropped.fw_rem_no_match;
+	dst->dropped.drop_threshold += src->dropped.drop_threshold;
+	dst->dropped.drop_link_desc_na += src->dropped.drop_link_desc_na;
+	dst->dropped.invalid_drop += src->dropped.invalid_drop;
+	dst->dropped.mcast_vdev_drop += src->dropped.mcast_vdev_drop;
+	dst->dropped.invalid_rr += src->dropped.invalid_rr;
+
+	dst->queue_depth += src->queue_depth;
+	dst->total_retries_count += src->total_retries_count;
+	dst->retry_count += src->retry_count;
+	dst->multiple_retry_count += src->multiple_retry_count;
+	dst->failed_retry_count += src->failed_retry_count;
+	dst->reinject_pkt += src->reinject_pkt;
+
+	for (pkt_type = 0; pkt_type < DOT11_MAX; pkt_type++) {
+		for (mcs = 0; mcs < MAX_MCS; mcs++) {
+			dst->pkt_type[pkt_type].mcs_count[mcs] +=
+				src->pkt_type[pkt_type].mcs_count[mcs];
+		}
+	}
+}
+
+void ath12k_telemetry_update_tx_stats(struct ath12k_tele_qos_tx *tx, u8 link_id,
+				      struct ath12k_dp_link_peer *link_peer,
+				      struct ath12k_dp_peer *mld_peer,
+				      u8 tid, u8 q_idx)
+{
+	struct tx_stats *qos_tx;
+	struct ath12k_dp_peer_qos *qos = NULL;
+	struct ath12k_mld_qos_stats *mld_qos;
+	u32 throughput = 0, ingress_rate = 0, msduq = 0, retries_pct = 0;
+	u32 min_tput = 0, max_tput = 0, avg_tput = 0, per = 0;
+
+	qos = mld_peer->qos;
+	if (!qos)
+		return;
+
+	if (link_id == INVALID_LINK_ID &&
+	    mld_peer->qos_stats_lvl == ATH12K_QOS_MULTI_LINK_STATS) {
+		unsigned long peer_links_map, scan_links_map;
+
+		link_id = 0;
+		peer_links_map = mld_peer->peer_links_map;
+		scan_links_map = ATH12K_SCAN_LINKS_MASK;
+
+		for_each_andnot_bit(link_id, &peer_links_map,
+				    &scan_links_map,
+				    ATH12K_NUM_MAX_LINKS) {
+			link_peer = rcu_dereference(mld_peer->link_peers[link_id]);
+			if (!link_peer ||
+			    !link_peer->peer_stats.qos_stats)
+				continue;
+			qos_tx = &link_peer->peer_stats.qos_stats->qos_tx[tid][q_idx];
+			ath12k_copy_tx_stats(qos_tx, tx);
+		}
+		goto tele_stats_fill;
+	}
+
+	if (link_peer->peer_stats.qos_stats) {
+		qos_tx = &link_peer->peer_stats.qos_stats->qos_tx[tid][q_idx];
+		ath12k_copy_tx_stats(qos_tx, tx);
+	}
+
+tele_stats_fill:
+	if (qos->telemetry_peer_ctx) {
+		msduq = u16_encode_bits(q_idx, MSDUQ_MASK) |
+			u16_encode_bits(tid, MSDUQ_TID_MASK);
+		ath12k_telemetry_get_rate(qos->telemetry_peer_ctx, tid, msduq,
+					  &throughput, &ingress_rate);
+		ath12k_telemetry_get_tx_rate(qos->telemetry_peer_ctx,
+					     tid, msduq,
+					     &min_tput, &max_tput,
+					     &avg_tput, &per,
+					     &retries_pct);
+		tx->throughput = throughput;
+		tx->ingress_rate = ingress_rate;
+		tx->min_throughput = min_tput;
+		tx->max_throughput = max_tput;
+		tx->avg_throughput = avg_tput;
+		tx->per = per;
+		tx->retries_pct = retries_pct;
+	}
+
+	mld_qos = &mld_peer->mld_qos_stats[tid][q_idx];
+	tx->svc_intval_stats.success_cnt =
+		mld_qos->svc_intval_stats.success_cnt;
+	tx->svc_intval_stats.failure_cnt =
+		mld_qos->svc_intval_stats.failure_cnt;
+	tx->burst_size_stats.success_cnt =
+		mld_qos->burst_size_stats.success_cnt;
+	tx->burst_size_stats.failure_cnt =
+		mld_qos->burst_size_stats.failure_cnt;
+}
+
+static int ath12k_telemetry_get_qos_txstats(struct ath12k_base *ab,
+					    struct ath12k_tele_qos_tx_ctx *tx_ctx,
+					    u8 svc_id, u8 link_id,
+					    struct ath12k_dp_link_peer *link_peer)
+{
+	struct ath12k_dp_peer *mld_peer;
+	struct ath12k_tele_qos_tx *tx;
+	u8 tid, q_idx;
+
+	mld_peer = link_peer->dp_peer;
+	if (svc_id == 0) {
+		for (tid = 0; tid < QOS_TID_MAX; tid++) {
+			for (q_idx = 0; q_idx < QOS_TID_MDSUQ_MAX; q_idx++) {
+				tx = &tx_ctx->tx[tid][q_idx];
+				ath12k_telemetry_update_tx_stats(tx, link_id, link_peer,
+								 mld_peer, tid, q_idx);
+			}
+		}
+	} else {
+		tx = &tx_ctx->tx[0][0];
+		if (ath12k_get_msduq_id(ab, svc_id, mld_peer, &tid,
+					&q_idx))
+			return -EINVAL;
+		ath12k_telemetry_update_tx_stats(tx, link_id, link_peer, mld_peer, tid, q_idx);
+		tx_ctx->tid = tid;
+		tx_ctx->msduq = q_idx;
+	}
+	return 0;
+}
+
+static void ath12k_copy_delay_stats(struct delay_stats *src, struct ath12k_tele_qos_delay *dst)
+{
+	struct hist_stats *dst_hist_stats = &dst->delay_hist;
+	struct hist_stats *src_hist_stats = &src->delay_hist;
+	u8 index;
+
+	for (index = 0; index < HIST_BUCKET_MAX; index++)
+		dst_hist_stats->hist.freq[index] += src_hist_stats->hist.freq[index];
+
+	dst_hist_stats->min += src_hist_stats->min;
+	dst_hist_stats->max += src_hist_stats->max;
+	dst_hist_stats->avg += src_hist_stats->avg;
+
+	dst->invalid_delay_pkts += src->invalid_delay_pkts;
+	dst->delay_success += src->delay_success;
+	dst->delay_failure += src->delay_failure;
+}
+
+void ath12k_telemetry_update_delay_stats(struct ath12k_tele_qos_delay *delay, u8 link_id,
+					 struct ath12k_dp_link_peer *link_peer,
+					 struct ath12k_dp_peer *mld_peer,
+					 u8 tid, u8 q_idx)
+{
+	struct delay_stats *qos_delay;
+	struct ath12k_dp_peer_qos *qos = NULL;
+	u32 nwdelay_avg = 0, swdelay_avg = 0, hwdelay_avg = 0;
+
+	qos = mld_peer->qos;
+	if (!qos)
+		return;
+
+	if (link_id == INVALID_LINK_ID &&
+	    mld_peer->qos_stats_lvl == ATH12K_QOS_MULTI_LINK_STATS) {
+		unsigned long peer_links_map, scan_links_map;
+
+		link_id = 0;
+		peer_links_map = mld_peer->peer_links_map;
+		scan_links_map = ATH12K_SCAN_LINKS_MASK;
+
+		for_each_andnot_bit(link_id, &peer_links_map,
+				    &scan_links_map,
+				    ATH12K_NUM_MAX_LINKS) {
+			link_peer = rcu_dereference(mld_peer->link_peers[link_id]);
+			if (!link_peer ||
+			    !link_peer->peer_stats.qos_stats)
+				continue;
+			qos_delay = &link_peer->peer_stats.qos_stats->qos_delay[tid][q_idx];
+			ath12k_copy_delay_stats(qos_delay, delay);
+		}
+		goto tele_stats_fill;
+	}
+
+	if (link_peer->peer_stats.qos_stats) {
+		qos_delay = &link_peer->peer_stats.qos_stats->qos_delay[tid][q_idx];
+		ath12k_copy_delay_stats(qos_delay, delay);
+	}
+
+tele_stats_fill:
+	if (qos->telemetry_peer_ctx) {
+		u16 msduq;
+		msduq = u16_encode_bits(q_idx, MSDUQ_MASK) |
+			u16_encode_bits(tid, MSDUQ_TID_MASK);
+		ath12k_telemetry_get_mov_avg(qos->telemetry_peer_ctx,
+					     tid, msduq, &nwdelay_avg,
+					     &swdelay_avg, &hwdelay_avg);
+		delay->nwdelay_avg = nwdelay_avg;
+		delay->swdelay_avg = swdelay_avg;
+		delay->hwdelay_avg = hwdelay_avg;
+	}
+}
+
+static int ath12k_telemetry_get_qos_delaystats(struct ath12k_base *ab,
+					       struct ath12k_tele_qos_delay_ctx *delay_ctx,
+					       u8 svc_id, u8 link_id,
+					       struct ath12k_dp_link_peer *link_peer)
+{
+	struct ath12k_dp_peer *mld_peer;
+	struct ath12k_tele_qos_delay *delay;
+	u8 tid, q_idx;
+
+	mld_peer = link_peer->dp_peer;
+	if (svc_id == 0) {
+		for (tid = 0; tid < QOS_TID_MAX; tid++) {
+			for (q_idx = 0; q_idx < QOS_TID_MDSUQ_MAX; q_idx++) {
+				delay = &delay_ctx->delay[tid][q_idx];
+				ath12k_telemetry_update_delay_stats(delay,
+								    link_id,
+								    link_peer,
+								    mld_peer,
+								    tid,
+								    q_idx);
+			}
+		}
+	} else {
+		delay = &delay_ctx->delay[0][0];
+		if (ath12k_get_msduq_id(ab, svc_id, mld_peer, &tid,
+					&q_idx))
+			return -EINVAL;
+		ath12k_telemetry_update_delay_stats(delay, link_id,
+						    link_peer, mld_peer,
+						    tid, q_idx);
+		delay_ctx->tid = tid;
+		delay_ctx->msduq = q_idx;
+	}
+	return 0;
+}
+
+int ath12k_telemetry_get_qos_stats(struct ath12k_vif *ahvif,
+				   struct ath12k_telemetry_dp_peer *telemetry_peer,
+				   struct ath12k_telemetry_command *cmd)
+{
+	struct ieee80211_sta *sta;
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar;
+	struct ath12k_base *ab;
+	struct wiphy *wiphy;
+	struct ath12k_dp_link_peer *peer;
+	int ret = 0;
+	u8 link_id, mac_addr[ETH_ALEN] = { 0 };
+	bool qos_stats_lvl;
+
+	link_id = cmd->link_id;
+	memcpy(mac_addr, cmd->mac, ETH_ALEN);
+
+	if (!ahvif)
+		return -ENOENT;
+
+	if (!ahvif->ah || !ahvif->ah->hw)
+		return -ENOENT;
+
+	wiphy = ahvif->ah->hw->wiphy;
+
+	if (!wiphy)
+		return -ENOENT;
+
+	sta = ieee80211_find_sta_by_ifaddr(ahvif->ah->hw, mac_addr, NULL);
+	if (!sta) {
+		return -ENOENT;
+	}
+
+	ahsta = (struct ath12k_sta *)sta->drv_priv;
+	if (!ahsta) {
+		return -ENOENT;
+	}
+
+	rcu_read_lock();
+	if (link_id != INVALID_LINK_ID) {
+		if (!(ahsta->links_map & BIT(link_id))) {
+			ath12k_err(NULL, "link_id : %u not present\n", link_id);
+			ret = -ENOENT;
+			goto out;
+		}
+
+		arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
+		if (!arsta || !arsta->arvif || !arsta->arvif->ar) {
+			ath12k_err(NULL, " Interface or radio NA with link_id %u\n", link_id);
+			ret = -ENOENT;
+			goto out;
+		}
+
+		qos_stats_lvl = (arsta->arvif->ar->debug.qos_stats &
+					  ATH12K_QOS_STATS_COLLECTION_MASK) >> 2;
+		if (qos_stats_lvl == ATH12K_QOS_SINGLE_LINK_STATS) {
+			if (link_id != ahsta->primary_link_id) {
+				ath12k_err(NULL, "Single link stats collection: link_id = %u not the primary link id \n", link_id);
+				ret = -ENOENT;
+				goto out;
+			}
+		} else {
+			memcpy(mac_addr, ahsta->link[link_id]->addr, ETH_ALEN);
+			goto skip_link_mac_fill;
+		}
+
+	}
+
+	if (sta->mlo) {
+		link_id = ahsta->primary_link_id;
+		memcpy(mac_addr, ahsta->link[link_id]->addr, ETH_ALEN);
+	} else if (sta->valid_links) {
+		link_id = ahsta->deflink.link_id;
+	} else {
+		link_id = 0;
+	}
+
+skip_link_mac_fill:
+	arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+
+	if (!arvif) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	ar = arvif->ar;
+	if (!ar) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	ab = ar->ab;
+	if (!ab) {
+		ret = -ENOENT;
+		goto out;
+	}
+
+	spin_lock_bh(&ab->dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_addr(ab->dp, mac_addr);
+	if (!peer) {
+		ath12k_err(ab, "Peer not present\n");
+		ret = -ENOENT;
+		goto end;
+	}
+
+	if (cmd->feat.feat_sdwfdelay) {
+		ret = ath12k_telemetry_get_qos_delaystats(ab,
+							  &telemetry_peer->peer_stats.delay_ctx,
+							  cmd->svc_id,
+							  cmd->link_id,
+							  peer);
+		if (ret)
+			goto end;
+	}
+
+	if (cmd->feat.feat_sdwftx) {
+		ret = ath12k_telemetry_get_qos_txstats(ab,
+						       &telemetry_peer->peer_stats.tx_ctx,
+						       cmd->svc_id,
+						       cmd->link_id,
+						       peer);
+	}
+
+end:
+	spin_unlock_bh(&ab->dp->dp_lock);
+out:
 	rcu_read_unlock();
 	return ret;
 }

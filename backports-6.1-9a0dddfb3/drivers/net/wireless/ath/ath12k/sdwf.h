@@ -227,6 +227,9 @@ int ath12k_telemetry_get_sawf_tx_stats_drop(void *ptr, void *stats, u64 *pass,
 					    u8 tid, u8 msduq_id);
 int ath12k_telemetry_get_msduq_tx_stats(void *soc, void *arg,
 					void *msduq_tx_stats, u8 msduq);
+int ath12k_telemetry_get_qos_stats(struct ath12k_vif *ahvif,
+				   struct ath12k_telemetry_dp_peer *telemetry_peer,
+				   struct ath12k_telemetry_command *cmd);
 void
 ath12k_sdwf_3_link_peer_dl_flow_count(struct wireless_dev *wdev,
                                       struct ieee80211_vif *vif, u8 *mac_addr,

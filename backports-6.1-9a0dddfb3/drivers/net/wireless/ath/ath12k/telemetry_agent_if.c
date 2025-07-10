@@ -285,3 +285,39 @@ void ath12k_sawf_notify_breach(u8 *mac_addr,
 {
 	ath12k_telemetry_breach_indication(mac_addr, svc_id, param, set_clear, tid);
 }
+
+int ath12k_telemetry_get_rate(void *telemetry_ctx, u8 tid,
+			      u8 queue, u32 *egress_rate,
+			      u32 *ingress_rate)
+{
+	if (g_agent_ops)
+		return (g_agent_ops->sawf_pull_rate(telemetry_ctx, tid, queue,
+						    egress_rate, ingress_rate));
+	return -ENOENT;
+}
+
+int ath12k_telemetry_get_tx_rate(void *telemetry_ctx, u8 tid, u8 msduq,
+				 u32 *min_tput, u32 *max_tput,
+				 u32 *avg_tput, u32 *per,
+				 u32 *retries_pct)
+{
+	if (g_agent_ops)
+		return (g_agent_ops->sawf_pull_tx_rate(telemetry_ctx,
+						       tid, msduq,
+						       min_tput, max_tput,
+						       avg_tput, per,
+						       retries_pct));
+	return -ENOENT;
+}
+
+int ath12k_telemetry_get_mov_avg(void *telemetry_ctx, u8 tid,
+				 u8 queue, u32 *nwdelay_avg,
+				 u32 *swdelay_avg,
+				 u32 *hwdelay_avg)
+{
+	if (g_agent_ops)
+		return (g_agent_ops->sawf_pull_mov_avg(telemetry_ctx, tid,
+						   queue, nwdelay_avg,
+						   swdelay_avg, hwdelay_avg));
+	return -ENOENT;
+}
