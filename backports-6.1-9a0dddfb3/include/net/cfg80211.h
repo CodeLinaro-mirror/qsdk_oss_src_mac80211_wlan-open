@@ -5379,6 +5379,11 @@ struct cfg80211_qm_resp_data {
  *	reconfigure element should be sent.
  *
  * @erp: Enter/exit ErP low power mode or get status.
+ *
+ * @set_qos_mgmt_cfg: Configures QoS Management (QM) parameters such as
+ *	traffic classification (TCLAS) and QoS attributes of a station.
+ *	The driver should parse the request, apply the configuration, and
+ *	populate the response structure with status for each descriptor.
  */
 struct cfg80211_ops {
 	int	(*suspend)(struct wiphy *wiphy, struct cfg80211_wowlan *wow);
@@ -5761,6 +5766,9 @@ struct cfg80211_ops {
 					const struct cfg80211_link_reconfig_removal_params *params);
 	int	(*erp)(struct wiphy *wiphy, struct wireless_dev *wdev, int link_id,
 		       struct cfg80211_erp_params *params);
+	int	(*set_qos_mgmt_cfg)(struct wiphy *wiphy, struct net_device *dev,
+				    struct cfg80211_qm_req_data *qm_req,
+				    struct cfg80211_qm_resp_data *qm_resp);
 };
 
 /*

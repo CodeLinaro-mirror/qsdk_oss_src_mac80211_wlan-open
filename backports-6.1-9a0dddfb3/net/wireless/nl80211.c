@@ -18379,6 +18379,393 @@ nla_put_failure:
 }
 EXPORT_SYMBOL(cfg80211_erp_trigger_exit);
 
+static int
+nl80211_parse_qm_tclas4_elem(struct nlattr *tb_tclas_entry[],
+			     struct cfg80211_qm_tclas4_params *type4_params)
+{
+	struct nlattr *tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_MAX + 1];
+	u8 version;
+
+	if (nla_parse_nested(tb_tclas_type4, NL80211_TCLAS_TYPE4_ATTR_MAX,
+			     tb_tclas_entry[NL80211_TCLAS_ATTR_TYPE4_PARAMS],
+			     nl80211_tclas_type4_policy, NULL))
+		return -EINVAL;
+
+	if (!tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_CLASSIFIER_MASK] ||
+	    !tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_IP_VERSION] ||
+	    !tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_SRC_IP] ||
+	    !tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_DST_IP] ||
+	    !tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_SRC_PORT] ||
+	    !tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_DST_PORT] ||
+	    !tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_DSCP])
+		return -EINVAL;
+
+	type4_params->classifier_mask =
+	nla_get_u8(tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_CLASSIFIER_MASK]);
+	type4_params->ip_ver =
+	nla_get_u8(tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_IP_VERSION]);
+	type4_params->src_port =
+	nla_get_u16(tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_SRC_PORT]);
+	type4_params->dst_port =
+	nla_get_u16(tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_DST_PORT]);
+	type4_params->dscp =
+	nla_get_u8(tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_DSCP]);
+
+	version = type4_params->ip_ver;
+	if (version == IP_VERSION_4) {
+		if (!tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_PROTOCOL])
+			return -EINVAL;
+
+		type4_params->protocol =
+		nla_get_u8(tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_PROTOCOL]);
+
+		nla_memcpy(type4_params->src_ip.ipv4,
+			   tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_SRC_IP],
+			   IPV4_LEN);
+		nla_memcpy(type4_params->dst_ip.ipv4,
+			   tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_DST_IP],
+			   IPV4_LEN);
+	} else if (version == IP_VERSION_6) {
+		if (!tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_NEXT_HEADER] ||
+		    !tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_FLOW_LABEL])
+			return -EINVAL;
+
+		nla_memcpy(type4_params->src_ip.ipv6,
+			   tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_SRC_IP],
+			   IPV6_LEN);
+		nla_memcpy(type4_params->dst_ip.ipv6,
+			   tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_DST_IP],
+			   IPV6_LEN);
+
+		type4_params->next_header =
+		nla_get_u8(tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_NEXT_HEADER]);
+
+		nla_memcpy(type4_params->flow_label,
+			   tb_tclas_type4[NL80211_TCLAS_TYPE4_ATTR_FLOW_LABEL],
+			   NL80211_TCLAS_TYPE4_FLOW_LABEL_LEN);
+	}
+
+	return 0;
+}
+
+static int
+nl80211_parse_qm_tclas10_elem(struct nlattr *tb_tclas_entry[],
+			      struct cfg80211_qm_tclas10_params *type10_params)
+{
+	struct nlattr *tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_MAX + 1];
+	u8 filter_value_len, filter_mask_len;
+
+	if (nla_parse_nested(tb_tclas_type10, NL80211_TCLAS_TYPE10_ATTR_MAX,
+			     tb_tclas_entry[NL80211_TCLAS_ATTR_TYPE10_PARAMS],
+			     nl80211_tclas_type10_policy, NULL))
+		return -EINVAL;
+
+	if (!tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_PROT_INSTANCE] ||
+	    !tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_PROT_NUMBER] ||
+	    !tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_FILTER_VALUE] ||
+	    !tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_FILTER_MASK])
+		return -EINVAL;
+
+	type10_params->protocol_instance =
+	nla_get_u8(tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_PROT_INSTANCE]);
+	type10_params->protocol_number =
+	nla_get_u8(tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_PROT_NUMBER]);
+
+	filter_value_len =
+	nla_len(tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_FILTER_VALUE]);
+	filter_mask_len =
+	nla_len(tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_FILTER_MASK]);
+
+	if (filter_value_len != filter_mask_len)
+		return -EINVAL;
+
+	type10_params->filter_len = filter_value_len;
+	nla_memcpy(type10_params->filter_value,
+		   tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_FILTER_VALUE],
+		   type10_params->filter_len);
+	nla_memcpy(type10_params->filter_mask,
+		   tb_tclas_type10[NL80211_TCLAS_TYPE10_ATTR_FILTER_MASK],
+		   type10_params->filter_len);
+
+	return 0;
+}
+
+static int
+nl80211_parse_qm_tclas_elem(struct nlattr *tb_tclas,
+			    struct cfg80211_qm_tclas_elements *tclas)
+{
+	struct nlattr *tb_tclas_entry[NL80211_TCLAS_ATTR_MAX + 1];
+	u8 classifier_type;
+	int ret = -EINVAL;
+
+	if (nla_parse_nested(tb_tclas_entry, NL80211_TCLAS_ATTR_MAX,
+			     tb_tclas, nl80211_tclas_policy, NULL))
+		return ret;
+
+	if (!tb_tclas_entry[NL80211_TCLAS_ATTR_USER_PRIORITY] ||
+	    !tb_tclas_entry[NL80211_TCLAS_ATTR_CLASSIFIER_TYPE])
+		return ret;
+
+	tclas->up =
+		nla_get_u8(tb_tclas_entry[NL80211_TCLAS_ATTR_USER_PRIORITY]);
+	tclas->classifier_type =
+		nla_get_u8(tb_tclas_entry[NL80211_TCLAS_ATTR_CLASSIFIER_TYPE]);
+	classifier_type = tclas->classifier_type;
+
+	switch (classifier_type) {
+	case TCLAS_CLASSIFIER_TYPE4:
+		if (!tb_tclas_entry[NL80211_TCLAS_ATTR_TYPE4_PARAMS])
+			return ret;
+
+		ret = nl80211_parse_qm_tclas4_elem(
+					tb_tclas_entry,
+					&tclas->tclas_elem.type4_params);
+		if (ret)
+			return ret;
+		break;
+
+	case TCLAS_CLASSIFIER_TYPE10:
+		if (!tb_tclas_entry[NL80211_TCLAS_ATTR_TYPE10_PARAMS])
+			return ret;
+
+		ret = nl80211_parse_qm_tclas10_elem(
+					tb_tclas_entry,
+					&tclas->tclas_elem.type10_params);
+		if (ret)
+			return ret;
+		break;
+
+	default:
+		return ret;
+	}
+
+	return 0;
+}
+
+static int nl80211_parse_qm_tclas(struct nlattr *tb_qm_desc_entry[],
+				  struct cfg80211_qm_req_desc_data *qm_req_desc)
+{
+	struct nlattr *tb_tclas;
+	int rem_tclas_desc;
+	int tclas_idx = 0;
+	int ret = -EINVAL;
+
+	nla_for_each_nested(
+		tb_tclas, tb_qm_desc_entry[NL80211_QM_DESC_ATTR_TCLAS_ELEMENTS],
+		rem_tclas_desc) {
+
+		if (!tb_tclas)
+			return ret;
+
+		ret = nl80211_parse_qm_tclas_elem(
+				tb_tclas, &qm_req_desc->tclas[tclas_idx]);
+		if (ret)
+			return ret;
+
+		tclas_idx++;
+	}
+
+	qm_req_desc->num_tclas_elements = tclas_idx;
+
+	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_TCLAS_PROCESSING]) {
+		qm_req_desc->tclas_processing =
+		nla_get_u8(tb_qm_desc_entry[NL80211_QM_DESC_ATTR_TCLAS_PROCESSING]);
+	}
+
+	return 0;
+}
+
+static int
+nl80211_parse_qm_qos_attr(struct nlattr *tb_qm_desc_entry[],
+			  struct cfg80211_qm_qos_attributes *qos_attr)
+{
+	struct nlattr *tb_qm_qos[NL80211_QM_QOS_ATTR_MAX + 1];
+	u8 msdu_delivery_info = 0;
+	u32 control_info = 0;
+
+	if (nla_parse_nested(
+		tb_qm_qos, NL80211_QM_QOS_ATTR_MAX,
+		tb_qm_desc_entry[NL80211_QM_DESC_ATTR_QOS_ATTRIBUTES],
+		nl80211_qm_qos_policy, NULL))
+		return -EINVAL;
+
+	/* Mandatory QoS Parameters */
+	if (!tb_qm_qos[NL80211_QM_QOS_ATTR_CONTROL_INFO] ||
+	    !tb_qm_qos[NL80211_QM_QOS_ATTR_MIN_SVC_INTERVAL] ||
+	    !tb_qm_qos[NL80211_QM_QOS_ATTR_MAX_SVC_INTERVAL] ||
+	    !tb_qm_qos[NL80211_QM_QOS_ATTR_MIN_DATA_RATE] ||
+	    !tb_qm_qos[NL80211_QM_QOS_ATTR_DELAY_BOUND])
+		return -EINVAL;
+
+	control_info = nla_get_u32(tb_qm_qos[NL80211_QM_QOS_ATTR_CONTROL_INFO]);
+	qos_attr->direction = GET_FIELD_FROM_QM_CTRL_INFO(control_info,
+							  DIRECTION);
+	qos_attr->tid = GET_FIELD_FROM_QM_CTRL_INFO(control_info, TID);
+	qos_attr->up = GET_FIELD_FROM_QM_CTRL_INFO(control_info, UP);
+	qos_attr->bitmap = GET_FIELD_FROM_QM_CTRL_INFO(control_info, BITMAP);
+	qos_attr->link_id = GET_FIELD_FROM_QM_CTRL_INFO(control_info, LINK_ID);
+
+	qos_attr->min_service_interval =
+		nla_get_u32(tb_qm_qos[NL80211_QM_QOS_ATTR_MIN_SVC_INTERVAL]);
+	qos_attr->max_service_interval =
+		nla_get_u32(tb_qm_qos[NL80211_QM_QOS_ATTR_MAX_SVC_INTERVAL]);
+	qos_attr->min_data_rate =
+		nla_get_u32(tb_qm_qos[NL80211_QM_QOS_ATTR_MIN_DATA_RATE]);
+	qos_attr->delay_bound =
+		nla_get_u32(tb_qm_qos[NL80211_QM_QOS_ATTR_DELAY_BOUND]);
+
+	/* Optional QoS Parameters */
+	if (tb_qm_qos[NL80211_QM_QOS_ATTR_MAX_MSDU_SIZE])
+		qos_attr->max_msdu_size =
+		nla_get_u16(tb_qm_qos[NL80211_QM_QOS_ATTR_MAX_MSDU_SIZE]);
+
+	if (tb_qm_qos[NL80211_QM_QOS_ATTR_SVC_START_TIME])
+		qos_attr->service_start_time =
+		nla_get_u32(tb_qm_qos[NL80211_QM_QOS_ATTR_SVC_START_TIME]);
+
+	if (tb_qm_qos[NL80211_QM_QOS_ATTR_SVC_START_TIME_LINK_ID])
+		qos_attr->service_start_time_link_id =
+		nla_get_u8(tb_qm_qos[NL80211_QM_QOS_ATTR_SVC_START_TIME_LINK_ID]);
+
+	if (tb_qm_qos[NL80211_QM_QOS_ATTR_MEAN_DATA_RATE])
+		qos_attr->mean_data_rate =
+		nla_get_u32(tb_qm_qos[NL80211_QM_QOS_ATTR_MEAN_DATA_RATE]);
+
+	if (tb_qm_qos[NL80211_QM_QOS_ATTR_BURST_SIZE])
+		qos_attr->burst_size =
+		nla_get_u32(tb_qm_qos[NL80211_QM_QOS_ATTR_BURST_SIZE]);
+
+	if (tb_qm_qos[NL80211_QM_QOS_ATTR_MSDU_LIFETIME])
+		qos_attr->msdu_lifetime =
+		nla_get_u16(tb_qm_qos[NL80211_QM_QOS_ATTR_MSDU_LIFETIME]);
+
+	if (tb_qm_qos[NL80211_QM_QOS_ATTR_MSDU_DELIVERY_INFO]) {
+		msdu_delivery_info =
+		nla_get_u8(tb_qm_qos[NL80211_QM_QOS_ATTR_MSDU_DELIVERY_INFO]);
+
+		qos_attr->msdu_delivery_ratio =
+		GET_FIELD_FROM_QM_MSDU_DELIVERY_INFO(msdu_delivery_info, RATIO);
+		qos_attr->msdu_count_exponent =
+		GET_FIELD_FROM_QM_MSDU_DELIVERY_INFO(msdu_delivery_info,
+						     COUNT_EXPONENT);
+	}
+
+	if (tb_qm_qos[NL80211_QM_QOS_ATTR_MEDIUM_TIME])
+		qos_attr->medium_time =
+		nla_get_u16(tb_qm_qos[NL80211_QM_QOS_ATTR_MEDIUM_TIME]);
+
+	return 0;
+}
+
+static int nl80211_parse_qm_desc(struct nlattr *tb_qm_desc,
+				 struct cfg80211_qm_req_desc_data *qm_req_desc,
+				 int idx)
+{
+	struct nlattr *tb_qm_desc_entry[NL80211_QM_DESC_ATTR_MAX + 1];
+	int ret = -EINVAL;
+
+	if (nla_parse_nested(tb_qm_desc_entry, NL80211_QM_DESC_ATTR_MAX,
+			     tb_qm_desc, nl80211_qm_desc_params_policy, NULL))
+		return ret;
+
+	if (idx >= QM_MAX_DESCPRIPTORS_PER_REQUEST)
+		return ret;
+
+	if (!tb_qm_desc_entry[NL80211_QM_DESC_ATTR_QM_ID] ||
+	    !tb_qm_desc_entry[NL80211_QM_DESC_ATTR_REQUEST_TYPE])
+		return ret;
+
+	qm_req_desc->qm_id =
+		nla_get_u8(tb_qm_desc_entry[NL80211_QM_DESC_ATTR_QM_ID]);
+	qm_req_desc->request_type =
+		nla_get_u8(tb_qm_desc_entry[NL80211_QM_DESC_ATTR_REQUEST_TYPE]);
+
+	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_PRIORITY])
+		qm_req_desc->priority =
+		nla_get_u8(tb_qm_desc_entry[NL80211_QM_DESC_ATTR_PRIORITY]);
+
+	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_TCLAS_ELEMENTS]) {
+		ret = nl80211_parse_qm_tclas(tb_qm_desc_entry, qm_req_desc);
+		if (ret)
+			return ret;
+	}
+
+	if (tb_qm_desc_entry[NL80211_QM_DESC_ATTR_QOS_ATTRIBUTES]) {
+		ret = nl80211_parse_qm_qos_attr(tb_qm_desc_entry,
+						&qm_req_desc->qos_attr);
+		if (ret)
+			return ret;
+
+		qm_req_desc->is_qos_present = true;
+	}
+
+	return 0;
+}
+
+static int
+nl80211_qos_mgmt_cfg(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct nlattr *tb_qm[NL80211_QM_ATTR_MAX + 1];
+	struct net_device *dev = info->user_ptr[1];
+	struct cfg80211_qm_resp_data qm_resp = {0};
+	struct cfg80211_qm_req_data qm_req = {0};
+	struct nlattr *tb_qm_desc;
+	int ret = -EINVAL;
+	int rem_qm_desc;
+	int idx = 0;
+
+	if (!info->attrs[NL80211_ATTR_QOS_MGMT]) {
+		GENL_SET_ERR_MSG(info, "QoS Management attribute missing");
+		return ret;
+	}
+
+	if (nla_parse_nested(tb_qm, NL80211_QM_ATTR_MAX,
+			     info->attrs[NL80211_ATTR_QOS_MGMT],
+			     nl80211_qm_policy, NULL)) {
+		GENL_SET_ERR_MSG(info, "QM attribute nested parsing failed");
+		return ret;
+	}
+
+	if (!tb_qm[NL80211_QM_ATTR_MAC_ADDR] ||
+	    !tb_qm[NL80211_QM_ATTR_QM_TYPE] ||
+	    !tb_qm[NL80211_QM_ATTR_DIALOG_TOKEN] ||
+	    !tb_qm[NL80211_QM_ATTR_DESCRIPTOR_PARAMS]) {
+		GENL_SET_ERR_MSG(info, "QM request attributes missing");
+		return ret;
+	}
+
+	memcpy(qm_req.peer_mac, nla_data(tb_qm[NL80211_QM_ATTR_MAC_ADDR]),
+	       ETH_ALEN);
+	qm_req.qm_type = nla_get_u8(tb_qm[NL80211_QM_ATTR_QM_TYPE]);
+	qm_req.dialog_token = nla_get_u8(tb_qm[NL80211_QM_ATTR_DIALOG_TOKEN]);
+
+	nla_for_each_nested(tb_qm_desc,
+			    tb_qm[NL80211_QM_ATTR_DESCRIPTOR_PARAMS],
+			    rem_qm_desc) {
+		if (!tb_qm_desc)
+			return ret;
+
+		ret = nl80211_parse_qm_desc(tb_qm_desc,
+					    &qm_req.qm_req_desc[idx], idx);
+		if (ret) {
+			GENL_SET_ERR_MSG(info, "QM Descriptor parsing failed");
+			return ret;
+		}
+		idx++;
+	}
+
+	qm_req.num_qm_desc = idx;
+
+	ret = rdev_set_qos_mgmt_cfg(rdev, dev, &qm_req, &qm_resp);
+	if (ret) {
+		GENL_SET_ERR_MSG(info, "rdev_set_qos_mgmt_cfg failed");
+		return ret;
+	}
+
+	return 0;
+}
+
 #define NL80211_FLAG_NEED_WIPHY		0x01
 #define NL80211_FLAG_NEED_NETDEV	0x02
 #define NL80211_FLAG_NEED_RTNL		0x04
@@ -19616,6 +20003,12 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.doit = nl80211_erp,
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_WIPHY),
+	},
+	{
+		.cmd = NL80211_CMD_QOS_MGMT,
+		.doit = nl80211_qos_mgmt_cfg,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
 	},
 };
 
