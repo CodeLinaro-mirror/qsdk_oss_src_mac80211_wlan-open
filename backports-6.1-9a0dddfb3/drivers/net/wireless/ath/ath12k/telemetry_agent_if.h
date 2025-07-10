@@ -62,6 +62,11 @@ bool ath12k_telemetry_update_msdu_drop(void *telemetry_ctx, u8 tid,
 				       u64 failure_drop,
 				       u64 failure_ttl);
 int ath12k_telemetry_reset_peer_stats(u8 *peer_mac);
+int ath12k_telemetry_notify_vendor_app_event(u8 init, u8 id, u64 service_data);
+int ath12k_telemetry_dynamic_app_init_deinit_notify(u8 init, u8 id, u64 service_data);
+bool ath12k_telemetry_is_agent_loaded(void);
+void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag);
+void ath12k_telemetry_destroy_resources(struct ath12k_hw_group *ag);
 int ath12k_telemetry_pdev_agent_create_handler(struct ath12k_pdev *pdev);
 int ath12k_telemetry_pdev_agent_delete_handler(struct ath12k_pdev *pdev);
 int ath12k_telemetry_peer_agent_create_handler(struct ath12k *ar,

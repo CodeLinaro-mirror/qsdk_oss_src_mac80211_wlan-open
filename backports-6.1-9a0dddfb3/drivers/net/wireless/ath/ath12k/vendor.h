@@ -1061,7 +1061,23 @@ enum qca_wlan_vendor_attr_sdwf_sla_threshold {
  * see @enum qca_wlan_vendor_attr_erp_ath for details.
  */
 enum qca_wlan_vendor_attr_rm_generic {
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_APP_VERSION = 1,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_DRIVER_VERSION = 2,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_NUM_SOC_DEVICES = 3,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SOC_DEVICE_INFO = 4,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_TTLM_MAPPING = 5,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_RELAYFS_FILE_NAME_PMLO = 6,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_LINK_BW_NSS_CHANGE = 7,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_RELAYFS_FILE_NAME_DETSCHED = 8,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_CATEGORY = 9,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_NUM_LINKS = 10,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_PEER_LINK_ENTRY = 11,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_TTLM_INFO = 12,
 	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP = 13,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MLD_MAC_ADDR = 14,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_ID = 15,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_DATA = 16,
+	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_DYNAMIC_INIT_CONF = 17,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_RM_GENERIC_AFTER_LAST,
@@ -1658,7 +1674,24 @@ enum qca_wlan_vendor_attr_pri_link_migrate {
        QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX =
        QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_AFTER_LAST - 1,
 };
-
+/**
+ * enum qca_wlan_vendor_dynamic_init_conf - This enum defines the different
+ * dynamic app init/deinit configurations.
+ *
+ * @QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_RM_APP_START: Indicates to driver this
+ * is the initial app init and not an individual service dynamic init/de-init.
+ *
+ * @QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_SERVICE_START: Indicates to driver this
+ * is dynamic service init/start.
+ *
+ * @QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_SERVICE_STOP: Indicates to driver this
+ * is dynamic service de-init/stop.
+ */
+enum qca_wlan_vendor_dynamic_init_conf {
+	QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_RM_APP_START = 0,
+	QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_SERVICE_START = 1,
+	QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_SERVICE_STOP = 2,
+};
 void ath12k_vendor_telemetry_notify_breach(struct ieee80211_vif *vif, u8 *mac_addr,
 					   u8 svc_id, u8 param, bool set_clear,
 					   u8 tid, u8 *mld_addr);

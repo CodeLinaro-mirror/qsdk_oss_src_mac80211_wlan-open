@@ -10,12 +10,15 @@
 #include "../erp.h"
 #include "pci.h"
 #include "ahb.h"
+#include "../vendor_services.h"
 
 static int ahb_err, pci_err;
 
 static int ath12k_wifi7_init(void)
 {
 	ath12k_erp_init();
+
+	ath12k_vendor_services_init();
 
 	ahb_err = ath12k_wifi7_ahb_init();
 	if (ahb_err)
@@ -38,6 +41,8 @@ static void ath12k_wifi7_exit(void)
 
 	if (!ahb_err)
 		ath12k_wifi7_ahb_exit();
+
+	ath12k_vendor_services_deinit();
 
 	ath12k_erp_deinit();
 }

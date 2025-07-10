@@ -142,17 +142,18 @@ int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
  *
  * This routine may become unnecessary once the above limitation is resolved.
  */
-static void ath12k_telemetry_create_resources(void)
+void ath12k_telemetry_create_resources(struct ath12k_hw_group *ag)
 {
-	struct ath12k_hw_group *ag;
 	struct ath12k_pdev *pdev;
 	struct ath12k_base *ab;
 	int i, ret, pdev_idx;
 
-	ag = ath12k_core_get_ag();
 	if (!ag) {
-		ath12k_err(NULL, "Fails to get ag, skipped to create telemetry resources\n");
-		return;
+		ag = ath12k_core_get_ag();
+		if (!ag) {
+			ath12k_err(NULL, "Fails to get ag, skipped to create telemetry resources\n");
+			return;
+		}
 	}
 
 	mutex_lock(&ag->mutex);
@@ -191,7 +192,7 @@ static u32 ath12k_telemetry_agent_init(void)
 {
 	int status = 0;
 
-	ath12k_telemetry_create_resources();
+	ath12k_telemetry_create_resources(NULL);
 	ath12k_info(NULL, "telemetry agent init Done\n");
 	return status;
 }
@@ -264,17 +265,18 @@ int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab)
 	return 0;
 }
 
-static void ath12k_telemetry_destroy_resources(void)
+void ath12k_telemetry_destroy_resources(struct ath12k_hw_group *ag)
 {
-	struct ath12k_hw_group *ag;
 	struct ath12k_pdev *pdev;
 	struct ath12k_base *ab;
 	int i, ret, pdev_idx;
 
-	ag = ath12k_core_get_ag();
 	if (!ag) {
-		ath12k_err(NULL, "Fails to get ag, skipped to destroy telemetry resources, expect unknown behavior\n");
-		return;
+		ag = ath12k_core_get_ag();
+		if (!ag) {
+			ath12k_err(NULL, "Fails to get ag, skipped to create telemetry resources\n");
+			return;
+		}
 	}
 
 	mutex_lock(&ag->mutex);
@@ -315,7 +317,7 @@ static u32 ath12k_telemetry_agent_deinit(void)
 {
 	int status = 0;
 
-	ath12k_telemetry_destroy_resources();
+	ath12k_telemetry_destroy_resources(NULL);
 	ath12k_info(NULL, "telemetry agent deinit\n");
 	return status;
 }
@@ -603,6 +605,30 @@ int ath12k_telemetry_peer_agent_delete_handler(struct ath12k *ar,
 	return 0;
 }
 
+int ath12k_telemetry_notify_vendor_app_event(u8 init, u8 id, u64 service_data)
+{
+	enum agent_notification_event event = init;
+
+	if (!g_agent_ops)
+		return -EOPNOTSUPP;
+	g_agent_ops->agent_notify_app_event(event, id, service_data);
+
+	return 0;
+}
+
+int ath12k_telemetry_dynamic_app_init_deinit_notify(u8 init, u8 id, u64 service_data)
+{
+	enum agent_notification_event event = init;
+
+	if (!g_agent_ops ||
+	    !g_agent_ops->agent_dynamic_app_init_deinit_notify)
+		return -EOPNOTSUPP;
+
+	g_agent_ops->agent_dynamic_app_init_deinit_notify(event, id, service_data);
+
+	return 0;
+}
+
 int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 
 {
@@ -638,6 +664,11 @@ int unregister_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 	return 0;
 }
 EXPORT_SYMBOL(unregister_telemetry_agent_ops);
+
+bool ath12k_telemetry_is_agent_loaded(void)
+{
+	return (g_agent_ops) ? true : false;
+}
 
 int ath12k_telemetry_set_mov_avg_params(u32 num_pkt,
 					u32 num_win)

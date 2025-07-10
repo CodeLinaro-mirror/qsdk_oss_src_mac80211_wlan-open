@@ -35,6 +35,7 @@ ath12k-y += core.o \
 	    ini_parse.o \
 	    dp_mon_filter.o \
 	    erp.o \
+	    vendor_services.o \
 	    pktlog.o \
 	    ce_stats.o
 

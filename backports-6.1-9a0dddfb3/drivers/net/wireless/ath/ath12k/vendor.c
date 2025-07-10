@@ -15,6 +15,7 @@
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
 #include "erp.h"
+#include "vendor_services.h"
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -1159,7 +1160,24 @@ out:
 
 static const struct nla_policy
 ath12k_vendor_rm_generic_policy[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_APP_VERSION] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_DRIVER_VERSION] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_NUM_SOC_DEVICES] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SOC_DEVICE_INFO] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_TTLM_MAPPING] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_RELAYFS_FILE_NAME_PMLO] = {.type = NLA_STRING},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_LINK_BW_NSS_CHANGE] = {
+								 .type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_RELAYFS_FILE_NAME_DETSCHED] = {
+								 .type = NLA_STRING},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_CATEGORY] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_NUM_LINKS] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_PEER_LINK_ENTRY] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_TTLM_INFO] = {.type = NLA_NESTED},
 	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_ID] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_DATA] = {.type = NLA_U64},
+	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_DYNAMIC_INIT_CONF] = {.type = NLA_U8},
 };
 
 static const struct nla_policy
@@ -5884,8 +5902,10 @@ static int ath12k_vendor_parse_rm(struct wiphy *wiphy, struct wireless_dev *wdev
 				  const void *data, int data_len)
 {
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MAX + 1];
+	struct ath12k_vendor_service_info info;
 	int ret;
 
+	memset(&info, 0, sizeof(info));
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MAX,
 			data, data_len, ath12k_vendor_rm_generic_policy, NULL);
 	if (ret) {
@@ -5893,13 +5913,45 @@ static int ath12k_vendor_parse_rm(struct wiphy *wiphy, struct wireless_dev *wdev
 		return ret;
 	}
 
-	if (!tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP]) {
-		ath12k_err(NULL, "invalid attributes provided for QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC\n");
+	if (tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_APP_VERSION])
+		info.app_info.app_version =
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_APP_VERSION]);
+
+	info.app_info.driver_version = 0x1;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP]) {
+		ret = ath12k_vendor_parse_rm_erp(wiphy, wdev,
+						 tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP]);
 		return ret;
+	} else if (tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_ID]) {
+		info.id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_ID]);
+		info.service_data = -EINVAL;
+		if (tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_DATA])
+			info.service_data =
+				nla_get_u64(
+					tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_DATA]);
+
+		ath12k_err(NULL, "service id:%d data:%lld\n",
+			  info.id, info.service_data);
+	} else {
+		ath12k_err(NULL, "invalid service id attributes provided for QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC\n");
+		return -EINVAL;
 	}
 
-	return ath12k_vendor_parse_rm_erp(wiphy, wdev,
-					  tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP]);
+	if (tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_DYNAMIC_INIT_CONF])
+		info.init_config_type =
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_DYNAMIC_INIT_CONF]);
+	else
+		ath12k_err(NULL, "invalid attributes provided for QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC\n");
+
+	ret = ath12k_vendor_initialize_service(wiphy, wdev, &info);
+	if (ret) {
+		ath12k_err(NULL,
+			   "RM Init failed for service id:%d data:%lld\n",
+			   info.id, info.service_data);
+	}
+
+	return ret;
 }
 
 static const struct nla_policy
