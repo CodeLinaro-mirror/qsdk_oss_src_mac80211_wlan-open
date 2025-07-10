@@ -383,6 +383,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_link_peer *peer;
+	struct ath12k_vif *ahvif;
 	struct ieee80211_sta *sta;
 	struct htt_ppdu_stats_user_rate *user_rate;
 	struct htt_ppdu_stats *ppdu_stats = &ppdu_info->ppdu_stats;
@@ -519,6 +520,11 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
+	ahvif = ath12k_vif_to_ahvif(peer->vif);
+	if (tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS)) {
+		ahvif->wmm_stats.tx_type = dp_pdev->wmm_stats.tx_type;
+		ahvif->wmm_stats.total_wmm_tx_pkts[ahvif->wmm_stats.tx_type]++;
+	}
 	sta = peer->sta;
 
 	memset(&peer->txrate, 0, sizeof(peer->txrate));

@@ -1455,6 +1455,12 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	vif = skb_cb->vif;
 	if (vif) {
 		ahvif = ath12k_vif_to_ahvif(vif);
+		if (dp_pdev->wmm_stats.tx_type) {
+			ahvif->wmm_stats.tx_type = dp_pdev->wmm_stats.tx_type;
+			if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED)
+				ahvif->wmm_stats.total_wmm_tx_drop[ahvif->wmm_stats.tx_type]++;
+		}
+
 		arvif = rcu_dereference(ahvif->link[skb_cb->link_id]);
 		if (arvif) {
 			spin_lock_bh(&arvif->link_stats_lock);

@@ -1825,6 +1825,7 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 	}
 
 	memset(&dp_pdev->wmm_stats, 0, sizeof(struct ath12k_wmm_stats));
+	memset(&ahvif->wmm_stats, 0, sizeof(struct ath12k_wmm_stats));
 
 	rcu_read_unlock();
 

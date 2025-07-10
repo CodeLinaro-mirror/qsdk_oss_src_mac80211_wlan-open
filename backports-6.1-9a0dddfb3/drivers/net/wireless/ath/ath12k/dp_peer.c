@@ -527,6 +527,7 @@ ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,
 
 	return rcu_dereference(dp_peer->link_peers[link_id]);
 }
+EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_peerid_index);
 
 int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 			  struct ath12k_dp_peer_create_params *params,
