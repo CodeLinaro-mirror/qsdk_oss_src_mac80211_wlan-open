@@ -1365,8 +1365,10 @@ int ath12k_wifi7_hal_rx_flow_insert_entry(struct ath12k_base *ab,
 		/* Find the matching flow entry in HW FST */
 		if (!memcmp(&hal_tuple_info, flow_tuple_info,
 			    sizeof(struct hal_flow_tuple_info))) {
-			ath12k_err(ab, "Duplicate flow entry in FST %u at skid %u",
+			ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+				   "Flow already exists in FST %u at skid %u",
 				   hal_hash, i);
+			*flow_idx = hal_hash;
 			return -EEXIST;
 		}
 	}
@@ -1400,11 +1402,6 @@ void *ath12k_wifi7_hal_rx_flow_setup_fse(struct ath12k_base *ab,
 
 	hal_fse = &fst->base_vaddr[table_offset];
 
-	if (u32_get_bits(hal_fse->info2, HAL_RX_FSE_VALID)) {
-		ath12k_err(ab, "HAL FSE %pK already valid", hal_fse);
-		return NULL;
-	}
-
 	hal_fse->src_ip_127_96 = htonl(flow->tuple_info.src_ip_127_96);
 	hal_fse->src_ip_95_64 = htonl(flow->tuple_info.src_ip_95_64);
 	hal_fse->src_ip_63_32 = htonl(flow->tuple_info.src_ip_63_32);
@@ -1413,7 +1410,7 @@ void *ath12k_wifi7_hal_rx_flow_setup_fse(struct ath12k_base *ab,
 	hal_fse->dest_ip_95_64 = htonl(flow->tuple_info.dest_ip_95_64);
 	hal_fse->dest_ip_63_32 = htonl(flow->tuple_info.dest_ip_63_32);
 	hal_fse->dest_ip_31_0 = htonl(flow->tuple_info.dest_ip_31_0);
-	hal_fse->metadata = flow->fse_metadata;
+	hal_fse->metadata |= flow->fse_metadata;
 	hal_fse->msdu_byte_count = 0;
 	hal_fse->timestamp = 0;
 	hal_fse->tcp_sequence_number = 0;

@@ -3275,6 +3275,26 @@ ssize_t ath12k_wifi7_dp_dump_fst_table(struct ath12k_dp *dp, char *buf, int size
 	return len;
 }
 
+bool
+ath12k_wifi7_dp_rx_check_if_flow_to_be_updated(struct dp_rx_fse *fse,
+					       struct rx_flow_info *flow_info)
+{
+	struct hal_rx_fse *hal_fse = fse->hal_fse;
+	u32 use_ppe;
+
+	use_ppe = u32_get_bits(hal_fse->info2, HAL_RX_FSE_SERVICE_CODE);
+
+	/* If everything matches, it is a duplicate flow request,
+	 * no need to modify anything,
+	 * else modify the flow entry.
+	 */
+	if (use_ppe == flow_info->use_ppe &&
+	    (hal_fse->metadata & flow_info->fse_metadata))
+		return false;
+
+	return true;
+}
+
 struct dp_rx_fse *
 ath12k_wifi7_dp_rx_flow_alloc_entry(struct ath12k_base *ab,
 				    struct dp_rx_fst *fst,
@@ -3292,6 +3312,22 @@ ath12k_wifi7_dp_rx_flow_alloc_entry(struct ath12k_base *ab,
 						       &flow_info->flow_tuple_info,
 						       &flow_idx);
 	if (status != 0) {
+		if (status == -EEXIST) {
+			/* Even if the flow tuple info exists, there is a possibility
+			 * that the flow entry has to be updated - so check
+			 * for rx_flow_info if it matches exactly with the programmed
+			 * fse entry
+			 */
+			fse = ath12k_dp_rx_flow_get_fse(fst, flow_idx);
+
+			if (ath12k_wifi7_dp_rx_check_if_flow_to_be_updated(fse,
+									   flow_info)) {
+				ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+					   "Flow entry to be updated - hash %u",
+					   flow_hash);
+				return fse;
+			}
+		}
 		ath12k_dbg(ab, ATH12K_DBG_DP_FST, "Add entry failed with status %d for tuple with hash %u",
 			   status, flow_hash);
 		return NULL;
@@ -3343,7 +3379,7 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 
 	fse->reo_indication = flow.reo_indication;
 	flow.reo_destination_handler = HAL_RX_FSE_REO_DEST_FT;
-	flow.fse_metadata = flow_info->fse_metadata;
+	flow.fse_metadata |= flow_info->fse_metadata;
 	if (flow_info->use_ppe) {
 		flow.use_ppe = flow_info->use_ppe;
 		flow.service_code = PPE_DRV_SC_SPF_BYPASS;
