@@ -1163,12 +1163,15 @@ ath12k_wlan_telemetry_req_policy[QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAX + 1] = {
 							.len = ETH_ALEN},
 	[QCA_VENDOR_ATTR_WLAN_TELEMETRY_REQUEST_ID] = {.type = NLA_U64},
 	[QCA_VENDOR_ATTR_WLAN_TELEMETRY_LINK_ID] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_WLAN_TELEMETRY_SVC_ID] = {.type = NLA_U8},
 };
 
 static const struct nla_policy
 ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
 	[QCA_VENDOR_ATTR_WLAN_FEAT_TX] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_RX] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFTX] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFDELAY] = {.type = NLA_FLAG},
 };
 
 int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
@@ -1193,6 +1196,14 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_RX])
 		cmd->feat.feat_rx = true;
 
+	if (cmd->svc_id != INVALID_SVC_ID &&
+	    feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFTX])
+		cmd->feat.feat_sdwftx = true;
+
+	if (cmd->svc_id != INVALID_SVC_ID &&
+	    feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFDELAY])
+		cmd->feat.feat_sdwfdelay = true;
+
 	return ret;
 }
 
@@ -1203,6 +1214,9 @@ static int ath12k_extract_user_inputs(struct nlattr **tb,
 
 	if (tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_HIERARCHY_TYPE])
 		cmd->obj = nla_get_u8(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_HIERARCHY_TYPE]);
+
+	if (tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_SVC_ID])
+		cmd->svc_id = nla_get_u8(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_SVC_ID]);
 
 	if (tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_FEATURE])
 		ret = ath12k_extract_feat_inputs(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_FEATURE],
@@ -3025,6 +3039,7 @@ static int ath12k_vendor_wlan_telemetry_wiphy_getstats(struct wiphy *wiphy,
 	}
 
 	cmd.wiphy = wiphy;
+	cmd.svc_id = INVALID_SVC_ID;
 
 	if (ath12k_extract_user_inputs(tb, &cmd)) {
 		ath12k_err(NULL, "Error parsing user input\n");
@@ -3055,6 +3070,7 @@ static int ath12k_vendor_wlan_telemetry_wdev_getstats(struct wiphy *wiphy,
 
 	cmd.wiphy = wiphy;
 	cmd.wdev = wdev;
+	cmd.svc_id = INVALID_SVC_ID;
 
 	if (ath12k_extract_user_inputs(tb, &cmd)) {
 		ath12k_err(NULL, "Error parsing user input\n");

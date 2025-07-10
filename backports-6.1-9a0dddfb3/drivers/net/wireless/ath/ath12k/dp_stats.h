@@ -11,7 +11,8 @@
 #include "cmn_defs.h"
 #include "dp.h"
 
-#define INVALID_LINK_ID                0xFF
+#define INVALID_LINK_ID			0xFF
+#define INVALID_SVC_ID			0xFF
 #define DP_REO_RING_MAX			4
 
 #define nla_total_size_nested(x) nla_total_size(x)
@@ -415,6 +416,8 @@ struct ath12k_dp_aggr_pdev_stats {
 struct ath12k_stats_feat {
 	bool feat_tx;
 	bool feat_rx;
+	bool feat_sdwftx;
+	bool feat_sdwfdelay;
 };
 
 struct ath12k_telemetry_command {
@@ -424,6 +427,7 @@ struct ath12k_telemetry_command {
 	struct ath12k_stats_feat feat;
 	u64 request_id;
 	u8 link_id;
+	u8 svc_id;
 	char intf_name[IFNAMSIZ];
 	u8 mac[ETH_ALEN];
 };
