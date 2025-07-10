@@ -28,6 +28,8 @@ void ath12k_peer_ml_free(struct ath12k_hw *ah, struct ath12k_sta *ahsta);
 void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 			      struct ath12k_sta *ahsta,
 			      enum ath12k_debug_mask debug_mask);
+int ath12k_peer_mlo_link_peer_delete(struct ath12k_link_vif *arvif,
+				     struct ath12k_link_sta *arsta);
 static inline
 struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
 						 struct ath12k_dp_link_peer *peer)

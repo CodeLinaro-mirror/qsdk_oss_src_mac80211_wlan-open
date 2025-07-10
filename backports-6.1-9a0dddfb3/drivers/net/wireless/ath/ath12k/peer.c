@@ -332,6 +332,32 @@ void ath12k_peer_ml_free(struct ath12k_hw *ah, struct ath12k_sta *ahsta)
 	}
 }
 
+int ath12k_peer_mlo_link_peer_delete(struct ath12k_link_vif *arvif,
+				     struct ath12k_link_sta *arsta)
+{
+	struct ath12k *ar;
+	int ret;
+
+	if (!arvif || !arsta)
+		return 0;
+
+	ar = arvif->ar;
+	if (!ar)
+		return 0;
+
+	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
+	ath12k_dp_link_peer_unassign(ar, arvif->vdev_id, arsta->addr);
+
+	ret = ath12k_peer_delete_send(ar, arvif->vdev_id, arsta->addr);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to delete peer vdev_id %d addr %pM ret %d\n",
+			    arvif->vdev_id, arsta->addr, ret);
+	}
+
+	return ret;
+}
+
 int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_sta *ahsta)
 {
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
@@ -355,25 +381,11 @@ int ath12k_peer_mlo_link_peers_delete(struct ath12k_vif *ahvif, struct ath12k_st
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
 		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-		if (!arvif || !arsta)
-			continue;
 
-		ar = arvif->ar;
-		if (!ar)
-			continue;
-
-		ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
-
-		ath12k_dp_link_peer_unassign(ar, arvif->vdev_id, arsta->addr);
-
-		ret = ath12k_peer_delete_send(ar, arvif->vdev_id, arsta->addr);
-		if (ret) {
-			ath12k_warn(ar->ab,
-				    "failed to delete peer vdev_id %d addr %pM ret %d\n",
-				    arvif->vdev_id, arsta->addr, ret);
+		ret = ath12k_peer_mlo_link_peer_delete(arvif, arsta);
+		if (ret)
 			err_ret = ret;
-			continue;
-		}
+
 	}
 
 	/* Ensure all link peers are deleted and unmapped */

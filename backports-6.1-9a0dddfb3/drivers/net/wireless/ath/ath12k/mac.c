@@ -10725,14 +10725,40 @@ out_err:
 	return ret;
 }
 
+static void ath12k_peer_mlo_link_sta_teardown(struct ath12k_hw *ah,
+					      struct ath12k_vif *ahvif,
+					      struct ath12k_sta *ahsta,
+					      u8 link_id)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *ar;
+
+	arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
+	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+	if (!arvif || !arsta)
+		return;
+
+	ar = arvif->ar;
+	if (!ar)
+		return;
+
+	ath12k_mac_station_post_remove(ar, arvif, arsta);
+
+	ath12k_cfr_decrement_peer_count(ar, arsta);
+
+	spin_lock_bh(&ar->ab->base_lock);
+	ath12k_link_sta_rhash_delete(ar->ab, arsta);
+	spin_unlock_bh(&ar->ab->base_lock);
+
+	ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
+}
+
 static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 					 struct ath12k_sta *ahsta)
 {
 	struct ath12k_hw *ah = ahvif->ah;
-	struct ath12k_link_vif *arvif;
-	struct ath12k_link_sta *arsta;
 	unsigned long links;
-	struct ath12k *ar;
 	u8 link_id;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
@@ -10744,22 +10770,7 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 	/* validate link station removal and clear arsta links */
 	links = ahsta->links_map;
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
-		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
-		arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
-		if (!arvif || !arsta)
-			continue;
-
-		ar = arvif->ar;
-
-		ath12k_mac_station_post_remove(ar, arvif, arsta);
-
-		ath12k_cfr_decrement_peer_count(ar, arsta);
-
-		spin_lock_bh(&ar->ab->base_lock);
-		ath12k_link_sta_rhash_delete(ar->ab, arsta);
-		spin_unlock_bh(&ar->ab->base_lock);
-
-		ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
+		ath12k_peer_mlo_link_sta_teardown(ah, ahvif, ahsta, link_id);
 	}
 
 	ath12k_peer_ml_free(ah, ahsta);
@@ -11521,6 +11532,154 @@ static bool ath12k_is_primary_link_migrate(struct ieee80211_sta *sta,
 	return is_primary;
 }
 
+static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
+					  struct ieee80211_vif *vif,
+					  struct ieee80211_sta *sta,
+					  u16 old_links, u16 new_links)
+{
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_wmi_peer_assoc_arg peer_arg;
+	struct ath12k_link_sta *arsta, *arsta_p;
+	struct ath12k_link_vif *arvif, *arvif_p;
+	struct ieee80211_link_sta *link_sta;
+	struct ath12k_dp_link_peer *peer;
+	unsigned long valid_links;
+	struct ath12k *ar, *ar_p;
+	struct ath12k_dp *dp_p;
+	int i, ret = 0;
+	u32 flags = 0;
+	u8 link_id;
+
+	valid_links = sta->valid_links;
+
+	arsta_p = ahsta->link[ahsta->primary_link_id];
+	arvif_p = wiphy_dereference(hw->wiphy,
+				    ahvif->link[ahsta->primary_link_id]);
+
+	if (!arvif_p || !arsta_p) {
+		ath12k_err(NULL, "unable to determine arsta\n");
+		return -ENOLINK;
+	}
+
+	ar_p = arvif_p->ar;
+
+	dp_p = ath12k_ab_to_dp(ar_p->ab);
+	spin_lock_bh(&dp_p->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar_p->ab->dp,
+							    arvif_p->vdev_id,
+							    arsta_p->addr);
+
+	if (!peer) {
+		ath12k_err(ar_p->ab, "ML reconfig: peer not found");
+		spin_unlock_bh(&dp_p->dp_lock);
+		return -ENOENT;
+	}
+
+	spin_unlock_bh(&dp_p->dp_lock);
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC,
+		   "ML reconfig: old_links=0x%x new_links=0x%x valid_links=0x%lx\n",
+		   old_links, new_links, valid_links);
+
+	mutex_lock(&ah->hw_mutex);
+
+	/* For each valid link:
+	 * - Sends a peer association command to firmware.
+	 * - Installs pairwise keys and authorizes the
+	 *   station on newly added links
+	 */
+	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
+		if (!(ahvif->links_map & BIT(link_id)))
+			continue;
+
+		arsta = ahsta->link[link_id];
+		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+
+		if (!arvif || !arsta) {
+			ath12k_err(NULL, "Failed to alloc/assign link sta");
+			continue;
+		}
+
+		ar = arvif->ar;
+		if (!ar) {
+			ath12k_err(NULL,
+				   "Failed to get ar to change sta links\n");
+			continue;
+		}
+
+		if (arsta->is_bridge_peer) {
+			ath12k_warn(ar->ab, "Bridge Peer Not supported\n");
+			continue;
+		}
+
+		rcu_read_lock();
+		link_sta = ath12k_mac_get_link_sta(arsta);
+		if (!link_sta) {
+			rcu_read_unlock();
+			ath12k_warn(ar->ab, "Link Sta not found\n");
+			goto out;
+		}
+		ath12k_peer_assoc_prepare(ar, arvif, arsta, &peer_arg,
+					  false, link_sta);
+
+		rcu_read_unlock();
+
+		ret = ath12k_wmi_send_peer_assoc_cmd(ar, &peer_arg);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to run peer assoc for vdev %i: %d\n",
+				    arvif->vdev_id, ret);
+			goto out;
+		}
+
+		if (!wait_for_completion_timeout(&ar->peer_assoc_done, 1 * HZ)) {
+			ath12k_warn(ar->ab, "failed to get peer assoc conf event for vdev %i\n",
+				    arvif->vdev_id);
+			goto out;
+		}
+
+		if (sta->reconf.added_links & BIT(link_id)) {
+			for (i = 0; i < ARRAY_SIZE(peer->dp_peer->keys); i++) {
+				if (!peer->dp_peer->keys[i])
+					continue;
+
+				if (!(peer->dp_peer->keys[i]->flags &
+				      IEEE80211_KEY_FLAG_PAIRWISE))
+					continue;
+
+				flags |= WMI_KEY_PAIRWISE;
+				ret = ath12k_install_key(arvif,
+							 peer->dp_peer->keys[i],
+							 SET_KEY, arsta->addr,
+							 flags);
+				if (ret) {
+					ath12k_warn(ar->ab, "failed to add peer key %d: %d\n",
+						    i, ret);
+					goto out;
+				}
+				break;
+			}
+
+			ret = ath12k_mac_station_authorize(ar, arvif, arsta);
+			if (ret) {
+				ath12k_warn(ar->ab, "Unable to authorize peer %pM vdev %d: %d\n",
+					    sta->addr, arvif->vdev_id, ret);
+				goto out;
+			}
+		}
+	}
+	ret = 0;
+
+out:
+	mutex_unlock(&ah->hw_mutex);
+
+	if (sta->reconf.removed_links & BIT(ahsta->primary_link_id))
+		ath12k_is_primary_link_migrate(sta,
+					       sta->reconf.removed_links);
+	return ret;
+}
+
 int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   struct ieee80211_sta *sta,
@@ -11541,6 +11700,12 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 
 	if (!sta->valid_links)
 		return -EINVAL;
+
+	if (sta->reconf.added_links ||
+	    (sta->valid_links & sta->reconf.removed_links)) {
+		return ath12k_sta_ml_reconfig_handler(hw, vif, sta,
+					       old_links, new_links);
+	}
 
 	if (new_links > old_links) {
 		if (ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID) {
@@ -11584,7 +11749,7 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 			}
 		}
 
-		if (!ret) {
+		if (!ret && ahsta->state < IEEE80211_STA_AUTHORIZED) {
 			pri_link_id =
 				ath12k_mac_ahsta_get_pri_link_id(ahvif, ahsta,
 								 ahsta->links_map);
@@ -11607,13 +11772,10 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 		arvif = ahvif->link[link_id];
 		arsta = ahsta->link[link_id];
 
-		if (!arsta)
+		if (!arsta || !arvif)
 			return -EINVAL;
 
 		if (vif->type == NL80211_IFTYPE_AP) {
-			if (!arvif)
-				return -EINVAL;
-
 			ar = arvif->ar;
 
 			if (ahsta->primary_link_id == link_id) {
@@ -11658,6 +11820,39 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 					ret = 0;
 				}
 			}
+
+			if (sta->mlo) {
+				ret = ath12k_peer_mlo_link_peer_delete(arvif,
+								       arsta);
+				if (ret)
+					ath12k_warn(ar->ab, "Failed to remove ml station: %pM for VDEV: %d\n",
+						    arsta->addr, arvif->vdev_id);
+
+				ret = ath12k_wait_for_peer_delete_done(ar,
+								       arvif->vdev_id,
+								       arsta->addr);
+				if (ret) {
+					if (test_bit(ATH12K_FLAG_CRASH_FLUSH,
+						     &ar->ab->dev_flags) ||
+					    test_bit(ATH12K_FLAG_RECOVERY,
+						     &ar->ab->dev_flags) ||
+					    test_bit(ATH12K_FLAG_UMAC_RECOVERY_START,
+						     &ar->ab->dev_flags)) {
+						ath12k_info(ar->ab, " overwriting ret %d with 0 for %pM",
+							    ret, arsta->addr);
+						ret = 0;
+					}
+					ath12k_warn(ar->ab, "peer delete timeout for station %pM for VDEV: %d\n",
+						    arsta->addr, arvif->vdev_id);
+				}
+
+				ar->num_peers--;
+				ath12k_peer_mlo_link_sta_teardown(ah,
+								  ahvif,
+								  ahsta,
+								  link_id);
+			}
+
 			ath12k_wsi_load_info_stats_update(ahvif, ahsta, true);
 		} else if (vif->type == NL80211_IFTYPE_STATION)
 			ath12k_mac_free_unassign_link_sta(ahsta->ahvif->ah, arsta->ahsta,
