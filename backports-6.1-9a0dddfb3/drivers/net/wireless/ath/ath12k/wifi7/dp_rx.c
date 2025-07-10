@@ -2392,7 +2392,7 @@ static int ath12k_wifi7_dp_rx_h_null_q_desc(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct rx_msdu_desc_info rx_msdu_info;
 	struct rx_mpdu_desc_info rx_mpdu_info;
-	struct rx_tlv_info_1 tlv_info;
+	struct rx_tlv_info_1 tlv_info = {0};
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
 	u16 msdu_len = rx_desc_data->msdu_len;
@@ -2461,6 +2461,10 @@ static int ath12k_wifi7_dp_rx_h_null_q_desc(struct ath12k_pdev_dp *dp_pdev,
 	tlv_info.decap = rx_desc_data->decap;
 	tlv_info.rate_mcs = rx_desc_data->rate_mcs;
 	tlv_info.freq = rx_desc_data->freq;
+	tlv_info.nss = rx_desc_data->nss;
+	tlv_info.pkt_type = rx_desc_data->pkt_type;
+	tlv_info.bw = rx_desc_data->bw;
+	tlv_info.sgi = rx_desc_data->sgi;
 
 	ret = ath12k_wifi7_dp_rx_h_ppdu(dp_pdev, status, &tlv_info,
 					(ATH12K_SKB_RXCB(msdu))->err_rel_src);
