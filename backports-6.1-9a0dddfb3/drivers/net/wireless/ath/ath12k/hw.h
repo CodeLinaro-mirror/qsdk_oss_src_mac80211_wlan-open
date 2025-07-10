@@ -317,6 +317,7 @@ struct ath12k_hw_params {
 	u32 cfr_dma_hdr_size;
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;
+	bool mlo_3_link_tx_support;
 };
 
 struct ath12k_hw_ops {

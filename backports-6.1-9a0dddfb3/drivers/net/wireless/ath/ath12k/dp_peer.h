@@ -10,6 +10,8 @@
 #include "dp_rx.h"
 
 #define ATH12K_DP_PEER_ID_INVALID              0xFFFF
+#define ATH12K_3LINK_MLO_MAX_STA_LINKS         3
+#define ATH12K_DATA_TID_MAX 8
 
 struct ppdu_user_delayba {
 	u16 sw_peer_id;
@@ -120,6 +122,8 @@ struct ath12k_dp_link_peer {
 
 	u16 tcl_metadata;
 	bool assoc_success; /* information on peer assoc status from firmware */
+	u32 flow_cnt[ATH12K_DATA_TID_MAX];
+	u8 tid_weight[ATH12K_DATA_TID_MAX];
 };
 
 struct ath12k_dp_peer {

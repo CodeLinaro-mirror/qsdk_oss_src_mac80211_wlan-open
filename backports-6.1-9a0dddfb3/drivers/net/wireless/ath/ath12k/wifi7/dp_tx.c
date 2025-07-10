@@ -12,6 +12,7 @@
 #include "hal_rx.h"
 #include "../debugfs_sta.h"
 #include "../debugfs.h"
+#include "../sdwf.h"
 #include "../dp_stats.h"
 #include "../dp_peer.h"
 

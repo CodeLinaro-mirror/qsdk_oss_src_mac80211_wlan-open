@@ -106,6 +106,7 @@ extern bool ath12k_rx_nwifi_err_dump;
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 extern unsigned int ath12k_max_clients;
 #endif
+extern bool ath12k_mlo_3_link_tx;
 
 /* Wifi classifier metadata
  * ----------------------------------------------------------------------------

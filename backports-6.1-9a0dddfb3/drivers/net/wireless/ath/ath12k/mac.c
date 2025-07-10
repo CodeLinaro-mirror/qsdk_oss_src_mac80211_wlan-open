@@ -13936,6 +13936,17 @@ int ath12k_mac_start(struct ath12k *ar)
 		goto err;
 	}
 
+	if (ath12k_mlo_3_link_tx) {
+		ret = ath12k_wmi_pdev_set_param(ar,
+						WMI_PDEV_PARAM_TID_MAPPING_3LINK_MLO,
+						ath12k_mlo_3_link_tx, pdev->pdev_id);
+		if (ret) {
+			ath12k_err(ab,
+				   "Failed to enable 3-link tid mapping"
+				   "for pdev id:%d\n", pdev->pdev_id);
+		}
+	}
+
 	ret = ath12k_dp_rx_pkt_type_filter(ar, ATH12K_PKT_TYPE_EAP,
 					   ATH12K_ROUTE_EAP_METADATA);
 	if (ret) {
@@ -14843,6 +14854,20 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	ret = ath12k_mac_txpower_recalc(ar);
 	if (ret)
 		goto err_peer_del;
+
+	if (ath12k_mlo_3_link_tx) {
+		param_id = WMI_VDEV_PARAM_MLO_MAX_RECOM_ACTIVE_LINKS;
+
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+						    param_id, MLO_3LINK_MAX_RECOM_ACTIVE_LINKS);
+
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "failed to set max recom active links"
+				    "for vdev %d: %d\n",
+				    arvif->vdev_id, ret);
+		}
+	}
 
 	ath12k_debugfs_add_interface(arvif);
 

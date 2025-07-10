@@ -1066,6 +1066,7 @@ enum wmi_tlv_event_id {
 	WMI_MLO_DISABLE_REQ_EVENT_ID,
 	WMI_MLO_SWITCH_REQUEST_EVENT_ID,
 	WMI_MLO_PRIMARY_LINK_PEER_MIGRATION_EVENT_ID,
+	WMI_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENTID = 0x4800C,
 };
 
 enum wmi_tlv_pdev_param {
@@ -1221,6 +1222,7 @@ enum wmi_tlv_pdev_param {
 	WMI_PDEV_PARAM_MPD_USERPD_SSR = 0xce,
 	WMI_PDEV_PARAM_ATF_VO_DEDICATED_TIME = 0xe8,
 	WMI_PDEV_PARAM_ATF_VI_DEDICATED_TIME = 0xe9,
+	WMI_PDEV_PARAM_TID_MAPPING_3LINK_MLO = 0xec,
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	WMI_PDEV_PARAM_PWR_REDUCTION_IN_QUARTER_DB = 0xf1,
 #endif
@@ -2244,6 +2246,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_TID_TO_LINK_MAPPING_IE_INFO,
 	WMI_TAG_MLO_PEER_LINK_CONTROL_PARAM = 0x48F,
 	WMI_TAG_TWT_VDEV_CONFIG_CMD = 0x4DE,
+	WMI_TAG_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENT_FIXED_PARAM = 0x4e0,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_MAX
 };
@@ -8758,6 +8761,56 @@ struct wmi_peer_atf_request_fixed_param {
 	__le32 num_peers;
 	__le32 pdev_id;
 	__le32 atf_flags;
+};
+
+#define WMI_TLT_MAX_LINKS 5
+#define WMI_TLT_NUM_TID_PER_AC 2
+#define MLO_3LINK_MAX_RECOM_ACTIVE_LINKS 3
+#define WMI_HOST_DSCP_MAP_MAX (64)
+#define GET_3_LINK_TX_HW_LINK_ID(bitmap) (bitmap >> 1)
+#define INVALID_HW_LINK_ID 0xFFFF
+#define ATH12K_MAX_MLO_LINK_PEERS 2
+struct wmi_mlo_tlt_selection_for_tid_spray_event {
+        struct ath12k_wmi_mac_addr_params mld_mac;
+        /* hwlink_priority:
+         * Based on capacity, hw chip is ordered here.
+         * hwlink_priority[0] holds the HW chip ID which is the top priority,
+         * hwlink_priority[1] holds the HW chip ID which is the 2nd priority,
+         * etc.
+         */
+        __le32 hwlink_priority[WMI_TLT_MAX_LINKS];
+        /* link_bmap:
+         * Bitmap segments for the primary TIDs (0/1/4/6)
+         * are provided in link_bmap[0].
+         * Bitmap segments for the secondary TIDs (3/2/5/7)
+         * are provided in link_bmap[1].
+         * link_bmap[0]:
+         *     bits  4:0  are used to indicate which links are used for TID 0
+         *     bits  9:5  are used to indicate which links are used for TID 1
+         *     bits 14:10 are used to indicate which links are used for TID 4
+         *     bits 19:15 are used to indicate which links are used for TID 6
+         *     bits 31:20 are unused
+         * link_bmap[0]:
+         *     bits  4:0  are used to indicate which links are used for TID 3
+         *     bits  9:5  are used to indicate which links are used for TID 2
+         *     bits 14:10 are used to indicate which links are used for TID 5
+         *     bits 19:15 are used to indicate which links are used for TID 7
+         *     bits 31:20 are unused
+         */
+        __le32 link_bmap[WMI_TLT_NUM_TID_PER_AC];
+};
+
+/**
+ * struct mlo_tlt_selection_evt_params - MLO tlt selection
+ * request params
+ * @mld_addr: mld address
+ * @link_priority: link priority order based on hw chip id
+ * @link_bmap: Link priority bitmap
+ */
+struct mlo_tlt_selection_evt_params {
+        u8 mld_addr[ETH_ALEN];
+        u32 link_priority[WMI_TLT_MAX_LINKS];
+        u32 link_bmap[WMI_TLT_NUM_TID_PER_AC];
 };
 
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,

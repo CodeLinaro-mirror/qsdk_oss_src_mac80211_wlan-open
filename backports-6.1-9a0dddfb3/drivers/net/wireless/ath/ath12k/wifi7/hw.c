@@ -673,6 +673,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
 				(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
 				CFR_DATA_MAX_LEN_QCN9274,
+		.mlo_3_link_tx_support = false,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -779,6 +780,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
 					(CFR_HDR_MAX_LEN_WORDS_WCN7850 *4) +
 					CFR_DATA_MAX_LEN_WCN7850,
+		.mlo_3_link_tx_support = false,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -893,6 +895,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
 					(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
 					CFR_DATA_MAX_LEN_QCN9274,
+		.mlo_3_link_tx_support = true,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -998,6 +1001,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
 					(CFR_HDR_MAX_LEN_WORDS_IPQ5332 *4) +
 					CFR_DATA_MAX_LEN_IPQ5332,
+		.mlo_3_link_tx_support = false,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -1083,6 +1087,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
 					(CFR_HDR_MAX_LEN_WORDS_QCN6432 *4) +
 					CFR_DATA_MAX_LEN_QCN6432,
+		.mlo_3_link_tx_support = false,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -1192,6 +1197,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
 					(CFR_HDR_MAX_LEN_WORDS_IPQ5424 * 4) +
 					CFR_DATA_MAX_LEN_IPQ5424,
+		.mlo_3_link_tx_support = false,
 	},
 };
 

@@ -8,6 +8,7 @@
 #include "core.h"
 #include "peer.h"
 #include "sdwf.h"
+#include "wifi7/hal_rx.h"
 #include <linux/module.h>
 #include <linux/if_vlan.h>
 
@@ -269,6 +270,7 @@ void ath12k_sdwf_ul_config(struct ath_ul_params *params)
 		ath12k_dbg(NULL, ATH12K_DBG_QOS, "src_and_dest vif is null");
 		return;
 	}
+
 	if (src_vif) {
 		ath12_sdwf_ul_config_peer(src_vif, src_wdev,
 					  params->src_mac,
@@ -281,6 +283,23 @@ void ath12k_sdwf_ul_config(struct ath_ul_params *params)
 					  params->start_or_stop,
 					  params->rv_service_id);
 	}
+
+	if (params->fw_mark_metadata != SDWF_METADATA_INVALID &&
+	    (params->start_or_stop == FLOW_STOP)) {
+		ath12k_sdwf_3_link_peer_dl_flow_count(dest_wdev, dest_vif,
+						      params->dst_mac,
+						      params->fw_mark_metadata,
+						      params->fw_service_id);
+	}
+
+	if (params->rv_mark_metadata != SDWF_METADATA_INVALID &&
+	    (params->start_or_stop == FLOW_STOP)) {
+		ath12k_sdwf_3_link_peer_dl_flow_count(src_wdev, src_vif,
+						      params->src_mac,
+						      params->rv_mark_metadata,
+						      params->rv_service_id);
+	}
+
 }
 
 /**

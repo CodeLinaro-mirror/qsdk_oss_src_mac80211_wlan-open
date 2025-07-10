@@ -1028,6 +1028,12 @@ u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 {
 	u8 tid, q;
 
+	if (msduq < (ab->def_tid_msduq * SDWF_MAX_TID_SUPPORT)) {
+		ath12k_dbg(ab, ATH12K_DBG_QOS,
+			   "Invalid msduq: 0x%x in mark\n", msduq);
+		return 0;
+	}
+
 	msduq = msduq - MSDUQ_MAX_DEF;
 	q = u16_get_bits(msduq, MSDUQ_MASK);
 	tid = u16_get_bits(msduq, MSDUQ_TID_MASK);

@@ -36,6 +36,7 @@
 #include "cfr.h"
 #include "ini.h"
 #include "erp.h"
+#include "sdwf.h"
 
 #define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT 0x8000
 #define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT 1024
@@ -125,6 +126,10 @@ EXPORT_SYMBOL(ath12k_debug_critical);
 unsigned int ath12k_cfr_enable_bmap = 0;
 module_param_named(cfr_enable_bmap, ath12k_cfr_enable_bmap, uint, 0644);
 MODULE_PARM_DESC(cfr_enable_bmap, "cfr_enable_bmap: 0-disable, enable-(0x7 for 3 chipsets)");
+
+bool ath12k_mlo_3_link_tx;
+module_param_named(mlo_3_link_tx, ath12k_mlo_3_link_tx, bool, 0644);
+MODULE_PARM_DESC(mlo_3_link_tx, "3 link MLO active TX support (0 - disable, 1 - enable)");
 
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);

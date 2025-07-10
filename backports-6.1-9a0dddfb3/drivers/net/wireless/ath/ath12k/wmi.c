@@ -14275,6 +14275,231 @@ unlock:
 	kfree(tb);
 }
 
+static int ath12k_wmi_tlv_mlo_3_link_tlt_evt_parse(struct ath12k_base *ab,
+                                                   u16 tag, u16  len,
+                                                   const void *ptr, void *data)
+{
+        struct mlo_tlt_selection_evt_params *tlt_sel_params;
+        struct wmi_mlo_tlt_selection_for_tid_spray_event *ev;
+        int i;
+
+        switch (tag) {
+        case WMI_TAG_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENT_FIXED_PARAM:
+                tlt_sel_params = (struct mlo_tlt_selection_evt_params *)data;
+                ev = (struct wmi_mlo_tlt_selection_for_tid_spray_event *)ptr;
+
+                /* copy mld mac address */
+                ether_addr_copy(tlt_sel_params->mld_addr, ev->mld_mac.addr);
+
+                for (i = 0; i < WMI_TLT_MAX_LINKS; i++) {
+                        /* fill link bit map values */
+                        if (i < WMI_TLT_NUM_TID_PER_AC)
+                                tlt_sel_params->link_bmap[i] =
+                                        __le32_to_cpu(ev->link_bmap[i]);
+
+                        /* fill link priority */
+                        tlt_sel_params->link_priority[i] =
+                                __le32_to_cpu(ev->hwlink_priority[i]);
+                }
+                break;
+
+        default:
+                ath12k_warn(ab, "Invalid tag received tag %d len %d\n",
+                            tag, len);
+                break;
+        }
+        return 0;
+}
+
+static u32 ath12k_mlo_get_link_maxphyrate(struct ath12k_base *ab,
+                                          struct ath12k_dp_link_peer *peer,
+                                          u16 hw_link_id)
+{
+       u32 maxphyrate;
+
+       if (hw_link_id == INVALID_HW_LINK_ID) {
+               ath12k_err(ab, "invalid hw link id is passed: %d",
+                          hw_link_id);
+               return 0;
+       }
+
+       if (hw_link_id != peer->hw_link_id)
+               return 0;
+
+       maxphyrate = cfg80211_calculate_bitrate(&peer->txrate);
+
+       return maxphyrate;
+}
+
+static void
+ath12k_update_peer_tlt_selection(struct ath12k_base *ab,
+                                struct ath12k_dp_link_peer *peer,
+                       struct mlo_tlt_selection_evt_params *evt_params)
+{
+	u8 tid_weight[ATH12K_DATA_TID_MAX] = {0};
+	u8 primary_tid_weight = 0;
+	u8 secondary_tid_weight = 0;
+	u32 primary_tid_capacity = 0;
+	u32 secondary_tid_capacity = 0;
+	u64 total_capacity = 0;
+	u8 i = 0;
+	u8 tid_bitmap = 0;
+	u8 common_link_tid_bitmap = 0;
+	u32 common_link_capacity = 0;
+
+	/* check whether link bitmap is valid or not */
+	if ((evt_params->link_bmap[0] == 0) ||
+	    (evt_params->link_bmap[1] == 0)) {
+		ath12k_err(ab, "invalid link bitmap received "
+			   "primary tid bitmap = %d secondary tid bitmap = %d",
+			   evt_params->link_bmap[0], evt_params->link_bmap[1]);
+		return;
+	}
+
+	if (!peer->sta || !peer->sta->valid_links)
+		return;
+
+	/* non 3 link association */
+	if (hweight16(peer->sta->valid_links) !=
+	    ATH12K_3LINK_MLO_MAX_STA_LINKS)
+		return;
+
+	/* find the common link */
+	common_link_tid_bitmap =
+		evt_params->link_bmap[0] & evt_params->link_bmap[1];
+	if (common_link_tid_bitmap) {
+		common_link_capacity =
+			ath12k_mlo_get_link_maxphyrate(ab, peer,
+						       GET_3_LINK_TX_HW_LINK_ID(common_link_tid_bitmap));
+		/* distribute the common link capacity */
+		if (common_link_capacity) {
+			primary_tid_capacity = common_link_capacity / 2;
+			secondary_tid_capacity = common_link_capacity / 2;
+		}
+	}
+
+	/* calulate primary tid capacity */
+	for (i = 0; i < ATH12K_DATA_TID_MAX; i++) {
+		/* skip the common link capacity addition */
+		tid_bitmap = ((evt_params->link_bmap[0])  & (1 << i));
+		if (tid_bitmap && (tid_bitmap != common_link_tid_bitmap)) {
+			primary_tid_capacity +=
+				ath12k_mlo_get_link_maxphyrate(ab, peer,
+							       GET_3_LINK_TX_HW_LINK_ID(tid_bitmap));
+		}
+	}
+
+	/* calulate secondary tid capacity */
+	for (i = 0; i < ATH12K_DATA_TID_MAX; i++) {
+		/* skip the common link capacity addition */
+		tid_bitmap = ((evt_params->link_bmap[1])  & (1 << i));
+		if (tid_bitmap && (tid_bitmap != common_link_tid_bitmap)) {
+			secondary_tid_capacity +=
+				ath12k_mlo_get_link_maxphyrate(ab, peer,
+							       GET_3_LINK_TX_HW_LINK_ID(tid_bitmap));
+		}
+	}
+
+	if (!primary_tid_capacity || !secondary_tid_capacity) {
+		ath12k_err(ab, "Invalid link phy rate peer mld mac address: %pM"
+			   " link_priority = %d:%d:%d primary tid bitmap = %d"
+			   " secondary tid bitmap= %d common link bit map = %d",
+			   evt_params->mld_addr, evt_params->link_priority[0],
+			   evt_params->link_priority[1],
+			   evt_params->link_priority[2],
+			   evt_params->link_bmap[0], evt_params->link_bmap[1],
+			   common_link_tid_bitmap);
+		return;
+	}
+
+	total_capacity = primary_tid_capacity + secondary_tid_capacity;
+
+	/* percentage calculation */
+	primary_tid_weight = div64_u64((u64)(primary_tid_capacity * 100),
+				       total_capacity);
+	secondary_tid_weight = div64_u64((u64)(secondary_tid_capacity * 100),
+					 total_capacity);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "peer mld mac address: %pM, link_priority = %d:%d:%d"
+		   " primary_link_capacity = %d secondary_link_capacity = %d"
+		   " primary_tid_weight = %d secondary_tid_weight = %d"
+		   " primary tid bitmap = %d secondary tid bitmap = %d"
+		   " common link capacity = %d common link bit map = %d",
+		   evt_params->mld_addr, evt_params->link_priority[0],
+		   evt_params->link_priority[1], evt_params->link_priority[2],
+		   primary_tid_capacity, secondary_tid_capacity,
+		   primary_tid_weight, secondary_tid_weight,
+		   evt_params->link_bmap[0], evt_params->link_bmap[1],
+		   common_link_capacity, common_link_tid_bitmap);
+
+	/* best effort */
+	tid_weight[0] = primary_tid_weight;
+	tid_weight[3] = secondary_tid_weight;
+
+	/* background */
+	tid_weight[1] = primary_tid_weight;
+	tid_weight[2] = secondary_tid_weight;
+
+	/* video */
+	tid_weight[4] = primary_tid_weight;
+	tid_weight[5] = secondary_tid_weight;
+
+	/* voice */
+	tid_weight[6] = primary_tid_weight;
+	tid_weight[7] = secondary_tid_weight;
+
+	for (i = 0; i < ATH12K_DATA_TID_MAX; i++) {
+		if (peer->tid_weight[i] != tid_weight[i])
+			peer->tid_weight[i] = tid_weight[i];
+	}
+
+	return;
+}
+
+static void ath12k_wmi_mlo_3_link_tlt_selection(struct ath12k_base *ab,
+                                                struct sk_buff *skb)
+{
+        struct mlo_tlt_selection_evt_params tlt_sel_params = {0};
+        struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp *dp;
+        int ret, i;
+
+        ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
+                                  ath12k_wmi_tlv_mlo_3_link_tlt_evt_parse,
+                                  &tlt_sel_params);
+        if (ret) {
+                ath12k_warn(ab, "failed to fetch tlt selection tlv %d", ret);
+                return;
+        }
+
+	dp = ath12k_ab_to_dp(ab);
+	spin_lock_bh(&dp->dp_lock);
+
+        for (i = 0; i < ab->num_radios; i++) {
+               if (!is_zero_ether_addr(tlt_sel_params.mld_addr)) {
+                       peer = ath12k_dp_link_peer_find_by_addr(dp, tlt_sel_params.mld_addr);
+                       if (!peer) {
+			       spin_unlock_bh(&dp->dp_lock);
+                               continue;
+		       }
+		       break;
+               }
+       }
+
+        if (!peer) {
+                ath12k_warn(ab, "peer not found %pM",
+                            tlt_sel_params.mld_addr);
+                goto exit;
+        }
+
+        ath12k_update_peer_tlt_selection(ab, peer, &tlt_sel_params);
+
+exit:
+	spin_unlock_bh(&dp->dp_lock);
+        return;
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -14507,6 +14732,10 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_TWT_BTWT_REMOVE_STA_COMPLETE_EVENTID:
 		ath12k_wmi_twt_btwt_remove_sta_compl_event(ab, skb);
 		break;
+	case WMI_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENTID:
+		ath12k_wmi_mlo_3_link_tlt_selection(ab, skb);
+		break;
+
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
 		break;

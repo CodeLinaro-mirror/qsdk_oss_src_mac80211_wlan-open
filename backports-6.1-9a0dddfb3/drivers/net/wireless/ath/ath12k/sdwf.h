@@ -9,6 +9,11 @@
 #include "ath/ath_dp_accel_cfg.h"
 
 #define SDWF_PEER_MSDUQ_INVALID 0xFFFF
+#define SDWF_METADATA_INVALID   0xFFFFFFFF
+#define SDWF_MAX_TID_SUPPORT 8
+#define SDWF_PCP_VALID  0x4
+#define FLOW_START 1
+#define FLOW_STOP  2
 
 #define SDWF_VALID		1
 #define SDWF_VALID_MASK		BIT(22)
@@ -45,4 +50,8 @@ u16 ath12k_sdwf_get_msduq_peer(struct wireless_dev *wdev, u8 *peer_mac,
 struct ath12k *ath12k_sdwf_get_ar_from_vif(struct wireless_dev *wdev,
 					   struct ieee80211_vif *vif,
 					   u8 *peer_mac, u16 *peer_id);
+void
+ath12k_sdwf_3_link_peer_dl_flow_count(struct wireless_dev *wdev,
+                                      struct ieee80211_vif *vif, u8 *mac_addr,
+                                      u32 mark_metadata, u16 svc_id);
 #endif
