@@ -6913,6 +6913,108 @@ static const struct file_operations ath12k_fops_primary_link = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_read_wmm_stats_vdev(struct file *file,
+					  char __user *ubuf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	struct ath12k_hw *ah = ahvif->ah;
+	int len = 0;
+	int size = 2048;
+	char *buf;
+	u64 total_wmm_sent_pkts = 0;
+	u64 total_wmm_received_pkts = 0;
+	u64 total_wmm_fail_sent = 0;
+	u64 total_wmm_fail_received = 0;
+	ssize_t retval, buf_len = PAGE_SIZE * 2;
+
+	if (!ahvif)
+		return -EINVAL;
+	ah = ahvif->ah;
+
+	buf = kzalloc(buf_len, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	mutex_lock(&ah->hw_mutex);
+	for (count = 0; count < WME_NUM_AC; count++) {
+		total_wmm_sent_pkts += ahvif->wmm_stats.total_wmm_tx_pkts[count];
+		total_wmm_received_pkts += ahvif->wmm_stats.total_wmm_rx_pkts[count];
+		total_wmm_fail_sent += ahvif->wmm_stats.total_wmm_tx_drop[count];
+		total_wmm_fail_received += ahvif->wmm_stats.total_wmm_rx_drop[count];
+	}
+
+	len += scnprintf(buf + len, size - len, "Total Tx: %llu\n",
+			 total_wmm_sent_pkts);
+	len += scnprintf(buf + len, size - len, "Total Rx: %llu\n",
+			 total_wmm_received_pkts);
+	len += scnprintf(buf + len, size - len, "Total Tx_fail: %llu\n",
+			 total_wmm_fail_sent);
+	len += scnprintf(buf + len, size - len, "Total Rx_fai: %llu\n",
+			 total_wmm_fail_received);
+
+	len += scnprintf(buf + len, size - len,
+			 "Tx Count: BE: %llu, BK: %llu, VI: %llu, VO: %llu\n",
+			 ahvif->wmm_stats.total_wmm_tx_pkts[0],
+			 ahvif->wmm_stats.total_wmm_tx_pkts[1],
+			 ahvif->wmm_stats.total_wmm_tx_pkts[2],
+			 ahvif->wmm_stats.total_wmm_tx_pkts[3]);
+	len += scnprintf(buf + len, size - len,
+			 "Tx Drop: BE: %llu, BK: %llu, VI: %llu, VO: %llu\n",
+			 ahvif->wmm_stats.total_wmm_tx_drop[0],
+			 ahvif->wmm_stats.total_wmm_tx_drop[1],
+			 ahvif->wmm_stats.total_wmm_tx_drop[2],
+			 ahvif->wmm_stats.total_wmm_tx_drop[3]);
+	len += scnprintf(buf + len, size - len,
+			 "Rx Count: BE: %llu, BK: %llu, VI: %llu, VO: %llu\n",
+			 ahvif->wmm_stats.total_wmm_rx_pkts[0],
+			 ahvif->wmm_stats.total_wmm_rx_pkts[1],
+			 ahvif->wmm_stats.total_wmm_rx_pkts[2],
+			 ahvif->wmm_stats.total_wmm_rx_pkts[3]);
+	len += scnprintf(buf + len, size - len,
+			 "Rx Drop: BE: %llu, BK: %llu, VI: %llu, VO: %llu\n",
+			 ahvif->wmm_stats.total_wmm_rx_drop[0],
+			 ahvif->wmm_stats.total_wmm_rx_drop[1],
+			 ahvif->wmm_stats.total_wmm_rx_drop[2],
+			 ahvif->wmm_stats.total_wmm_rx_drop[3]);
+
+	mutex_unlock(&ah->hw_mutex);
+
+	if (len > size)
+		len = size;
+
+	retval = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+	return retval;
+}
+
+static const struct file_operations fops_wmm_stats_vdev = {
+	.read = ath12k_read_wmm_stats_vdev,
+	.open = simple_open,
+};
+
+static ssize_t ath12k_write_reset_vdev_wmm_stats(struct file *file,
+						 const char __user *ubuf,
+						 size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	bool enable;
+
+	if (kstrtobool_from_user(ubuf, count, &enable))
+		return -EINVAL;
+	if (enable)
+		memset(&ahvif->wmm_stats, 0, sizeof(struct ath12k_wmm_stats));
+	else
+		return -EINVAL;
+
+	return count;
+}
+
+static const struct file_operations ath12k_fops_reset_vdev_wmm_stats = {
+	.write = ath12k_write_reset_vdev_wmm_stats,
+	.open = simple_open,
+};
+
 static ssize_t ath12k_write_power_save_gtx(struct file *file,
 					   const char __user *user_buf,
 					   size_t count, loff_t *ppos)
@@ -7026,6 +7128,23 @@ ap_and_sta_debugfs_file:
 							  vif->debugfs_dir,
 							  ahvif,
 							  &ath12k_fops_primary_link);
+
+	if (ahvif->debugfs_wmm_stats_vdev)
+		return;
+
+	ahvif->debugfs_wmm_stats_vdev = debugfs_create_file("wmm_stats", 0644,
+							    vif->debugfs_dir,
+							    ahvif,
+							    &fops_wmm_stats_vdev);
+
+	if (ahvif->debugfs_reset_wmm_stats)
+		return;
+
+	ahvif->debugfs_reset_wmm_stats = debugfs_create_file("reset_wmm_stats",
+							     0644,
+							     vif->debugfs_dir,
+							     ahvif,
+							     &ath12k_fops_reset_vdev_wmm_stats);
 
 	/* If debugfs_primary_link already exist, don't remove */
 	if (IS_ERR(ahvif->debugfs_primary_link) &&
