@@ -4206,6 +4206,12 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 	ml->num_partner_links = 0;
 	links = ahsta->links_map;
 
+	if (sta->reconf.removed_links & BIT(arsta->link_id))
+		ml->ml_reconfig = ml->mlo_link_del = true;
+
+	if (sta->reconf.added_links & BIT(arsta->link_id))
+		ml->ml_reconfig = ml->mlo_link_add = true;
+
 	rcu_read_lock();
 
 	i = 0;
@@ -4233,6 +4239,10 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 			   ml->partner_info[i].primary_umac = false;
 		   ml->partner_info[i].logical_link_idx_valid = true;
 		ml->partner_info[i].logical_link_idx = arsta_p->link_idx;
+		if (sta->reconf.removed_links & BIT(arsta_p->link_id))
+			ml->ml_reconfig = ml->partner_info[i].mlo_link_del = true;
+		if (sta->reconf.added_links & BIT(arsta_p->link_id))
+			ml->ml_reconfig = ml->partner_info[i].mlo_link_add = true;
 		ml->num_partner_links++;
 
 		i++;
@@ -21095,6 +21105,11 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 		if(!is_raw_mode)
 			ieee80211_hw_set(hw, MLO_MCAST_MULTI_LINK_TX);
+
+		if (test_bit(WMI_SERVICE_STA_MLO_RCFG_SUPPORT,
+			     ar->ab->wmi_ab.svc_map))
+			ath12k_iftypes_ext_capa[2].mld_capa_and_ops |=
+				IEEE80211_MLD_CAP_OP_LINK_RECONF_SUPPORT;
 	}
 
 	hw->queues = ATH12K_HW_MAX_QUEUES;

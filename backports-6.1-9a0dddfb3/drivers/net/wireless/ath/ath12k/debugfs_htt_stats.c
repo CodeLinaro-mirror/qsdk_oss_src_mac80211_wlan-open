@@ -2365,6 +2365,9 @@ static int ath12k_prep_htt_stats_cfg_params(struct ath12k *ar, u8 type,
 	case ATH12K_DBG_HTT_EXT_STATS_TX_SOUNDING_INFO:
 		cfg_params->cfg0 = HTT_STAT_DEFAULT_CFG0_ACTIVE_VDEVS;
 		break;
+	case ATH12K_DBG_HTT_DBG_EXT_STATS_ML_PEERS_INFO:
+		cfg_params->cfg0 = HTT_STAT_DEFAULT_CFG0_MASK;
+		break;
 	default:
 		break;
 	}

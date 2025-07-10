@@ -3182,10 +3182,19 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	if (arg->ml.bridge_peer)
 		ml_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_BRIDGE_PEER);
 
+	if (arg->ml.mlo_link_add)
+		ml_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_LINK_ADD);
+
+	if (arg->ml.mlo_link_del)
+		ml_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_LINK_DEL);
+
 	ether_addr_copy(ml_params->mld_addr.addr, arg->ml.mld_addr);
 	ml_params->logical_link_idx = cpu_to_le32(arg->ml.logical_link_idx);
 	ml_params->ml_peer_id = cpu_to_le32(arg->ml.ml_peer_id);
 	ml_params->ieee_link_id = cpu_to_le32(arg->ml.ieee_link_id);
+
+	if (arg->ml.ml_reconfig)
+		ml_params->ml_reconfig = 1;
 
 	eml_cap = arg->ml.eml_cap;
 	if (u16_get_bits(eml_cap, IEEE80211_EML_CAP_EMLSR_SUPP)) {
@@ -3269,6 +3278,12 @@ skip_ml_params:
 		if (arg->ml.partner_info[i].bridge_peer)
 			partner_info->flags |=
 				cpu_to_le32(ATH12K_WMI_FLAG_MLO_BRIDGE_PEER);
+
+		if (arg->ml.partner_info[i].mlo_link_add)
+			partner_info->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_LINK_ADD);
+
+		if (arg->ml.partner_info[i].mlo_link_del)
+			partner_info->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_LINK_DEL);
 
 		partner_info->logical_link_idx =
 			cpu_to_le32(arg->ml.partner_info[i].logical_link_idx);

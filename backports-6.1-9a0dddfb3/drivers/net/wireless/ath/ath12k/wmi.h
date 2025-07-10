@@ -2514,6 +2514,7 @@ enum wmi_tlv_service {
 	WMI_SERVICE_THERM_THROT_5_LEVELS = 429,
 
 	WMI_SERVICE_UMAC_MIGRATION_SUPPORT = 436,
+	WMI_SERVICE_STA_MLO_RCFG_SUPPORT = 448,
 
 	WMI_MAX_EXT2_SERVICE,
 };
@@ -3271,6 +3272,7 @@ struct wmi_vdev_create_mlo_params {
 #define ATH12K_WMI_FLAG_MLO_EMLSR_SUPPORT		BIT(6)
 #define ATH12K_WMI_FLAG_MLO_FORCED_INACTIVE		BIT(7)
 #define ATH12K_WMI_FLAG_MLO_LINK_ADD			BIT(8)
+#define ATH12K_WMI_FLAG_MLO_LINK_DEL			BIT(9)
 #define ATH12K_WMI_FLAG_MLO_BRIDGE_PEER			BIT(10)
 #define ATH12K_WMI_FLAG_MLO_BRIDGE_LINK			BIT(14)
 #define ATH12K_WMI_FLAG_MLO_IEEE_LINK_IDX_VALID		BIT(18)
@@ -3470,6 +3472,8 @@ struct wmi_ml_partner_info {
 	bool mlo_bridge_link;
 	bool bridge_peer;
 	u32 logical_link_idx;
+	bool mlo_link_add;
+	bool mlo_link_del;
 };
 
 struct wmi_ml_arg {
@@ -4355,6 +4359,9 @@ struct peer_assoc_mlo_params {
 	u8 num_partner_links;
 	struct wmi_ml_partner_info partner_info[ATH12K_WMI_MLO_PEER_MAX_LINKS];
 	u16 eml_cap;
+	bool ml_reconfig;
+	bool mlo_link_add;
+	bool mlo_link_del;
 };
 
 struct wmi_rate_set_arg {
@@ -4610,6 +4617,16 @@ struct wmi_peer_assoc_mlo_params {
 	__le32 emlsr_trans_timeout_us;
 	__le32 emlsr_trans_delay_us;
 	__le32 emlsr_padding_delay_us;
+	__le32 msd_dur_subfield;
+	__le32 msd_ofdm_ed_thr;
+	__le32 msd_max_num_txops;
+	__le32 max_num_simultaneous_links;
+	__le32 nstr_indication_bitmap;
+	__le32 recommended_max_num_simultaneous_links;
+	struct {
+		__le32 ml_reconfig: 1,
+		       unused: 31;
+	};
 } __packed;
 
 struct wmi_peer_assoc_complete_cmd {
