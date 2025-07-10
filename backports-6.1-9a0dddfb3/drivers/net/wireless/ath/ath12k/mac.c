@@ -14673,7 +14673,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	arvif->tx_vdev_id = vdev_id;
 
 	arvif->vdev_subtype = is_bridge_vdev ? WMI_VDEV_SUBTYPE_BRIDGE : WMI_VDEV_SUBTYPE_NONE;
-	
+
 	if (!ar->free_map_id) {
 		ath12k_err(ar->ab, "No free map_id available\n");
 		ret = -EINVAL;
@@ -21724,3 +21724,329 @@ void ath12k_mac_op_apply_neg_ttlm_per_client(struct ieee80211_hw *hw,
 	ath12k_mac_handle_ttlm_neg(hw, vif, sta);
 }
 EXPORT_SYMBOL(ath12k_mac_op_apply_neg_ttlm_per_client);
+
+static void
+ath12k_prepare_scs_desc_resp(struct cfg80211_qm_req_desc_data *qm_req_desc,
+			     struct cfg80211_qm_resp_desc_data *qm_resp_desc,
+			     u8 status)
+{
+	qm_resp_desc->qm_id = qm_req_desc->qm_id;
+	qm_resp_desc->status = status;
+}
+
+static
+void ath12k_compute_qos_params(struct cfg80211_qm_qos_attributes *qos_attr,
+			       u32 *s_int, u32 *b_size)
+{
+	u32 service_interval, burst_size, data_rate;
+
+	service_interval = ((qos_attr->min_service_interval +
+			   qos_attr->max_service_interval) >> 1);
+
+	/* Data rate in Kilo Bytes Per Second */
+	data_rate = qos_attr->min_data_rate / 8;
+
+	/* Resultant burst size (in bytes) is computed as minimum of the
+	 * following 3 calculations:
+	 * 1. Resultant Service Interval * Minimum Data Rate
+	 * 2. Resultant Service Interval * Mean Data Rate (if rcvd from station)
+	 * 3. Burst Size (if rcvd from station in SCS request)
+	 */
+	burst_size = service_interval * data_rate;
+	if (qos_attr->mean_data_rate) {
+		data_rate = qos_attr->mean_data_rate / 8;
+		burst_size = (burst_size < (service_interval * data_rate)) ?
+			      burst_size : service_interval * data_rate;
+	}
+
+	if (qos_attr->burst_size) {
+		burst_size = (burst_size < qos_attr->burst_size) ?
+			      burst_size : qos_attr->burst_size;
+	}
+
+	*s_int = service_interval;
+	*b_size = burst_size;
+}
+
+static
+void ath12k_copy_qos_params(struct ath12k_qos_params *params,
+			    struct cfg80211_qm_qos_attributes *qos_attr)
+{
+	u32 service_interval, burst_size;
+
+	/* Derive the QoS params by converting the units
+	 * and forms as provided in the spec to units ans forms supported
+	 * by our FW scheduler. Only update the prameters that is
+	 * currenlty supported by our FW.
+	 */
+	ath12k_compute_qos_params(qos_attr, &service_interval, &burst_size);
+
+	params->tid = qos_attr->tid;
+	if (qos_attr->min_service_interval)
+		params->min_service_interval = service_interval;
+
+	/* Convert microseconds to miliseconds */
+	if (qos_attr->delay_bound)
+		params->delay_bound = qos_attr->delay_bound / 1000;
+
+	if (qos_attr->burst_size)
+		params->burst_size = burst_size;
+
+	if (qos_attr->msdu_lifetime)
+		params->msdu_life_time = qos_attr->msdu_lifetime;
+}
+
+static int ath12k_process_scs_add(struct ath12k *ar,
+				  u16 peer_id,
+				  enum qos_profile_dir qos_dir,
+				  struct cfg80211_qm_req_desc_data *qm_req,
+				  u8 *addr)
+{
+	struct cfg80211_qm_qos_attributes *qos_attr;
+	struct ath12k_qos_params params = {0};
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_peer_qos *qos;
+	int ret = -EINVAL;
+	u8 qm_id, tid;
+	u16 qos_id;
+
+	qos_attr = &qm_req->qos_attr;
+	tid = qos_attr->tid;
+	qm_id = qm_req->qm_id;
+
+	if (!qm_req->is_qos_present) {
+		qos_id = ath12k_qos_get_legacy_id(ar->ab, tid);
+	} else {
+		ath12k_qos_set_default(&params);
+		ath12k_copy_qos_params(&params, qos_attr);
+		qos_id = ath12k_qos_configure(ar->ab, ar,
+					      &params, qos_dir,
+					      addr);
+	}
+	if (qos_id == QOS_ID_INVALID)
+		return ret;
+
+	rcu_read_lock();
+	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,
+							peer_id);
+	if (!peer) {
+		ath12k_err(ar->ab, "SCS peeer is NULL");
+		goto ret;
+	}
+
+	if (!peer->dp_peer->qos) {
+		qos = ath12k_dp_peer_qos_alloc(ar->ab->dp, peer->dp_peer);
+		if (!qos) {
+			ath12k_err(ar->ab, "SCS QoS is NULL");
+			goto ret;
+		}
+	} else {
+		qos = peer->dp_peer->qos;
+	}
+	ret =  ath12k_dp_peer_scs_add(ar->ab, qos, qm_id, qos_id);
+ret:
+	rcu_read_unlock();
+	return ret;
+}
+
+static int ath12k_process_scs_del(struct ath12k *ar,
+				  u16 peer_id,
+				  struct cfg80211_qm_req_desc_data *qm_req,
+				  u8 *addr)
+{
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_peer_qos *qos;
+	enum qos_profile_dir qos_dir;
+	u8 qm_id = qm_req->qm_id;
+	int ret = -EINVAL;
+	u16 qos_id;
+
+	rcu_read_lock();
+	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,
+							peer_id);
+	if (!peer) {
+		ath12k_err(ar->ab, "SCS peeer is NULL");
+		goto ret;
+	}
+
+	qos = peer->dp_peer->qos;
+	if (!qos) {
+		ath12k_err(ar->ab, "SCS QoS is NULL");
+		goto ret;
+	}
+	qos_id = ath12k_dp_peer_scs_get_qos_id(ar->ab, qos,
+					       qm_id);
+	ret = ath12k_dp_peer_scs_del(ar->ab, qos, qm_id);
+ret:
+	rcu_read_unlock();
+
+	if (qos_id < QOS_LEGACY_DL_ID_MIN) {
+		if (qos_id >= QOS_DL_ID_MIN && qos_id <= QOS_DL_ID_MAX)
+			qos_dir = QOS_PROFILE_DL;
+		else if (qos_id >= QOS_UL_ID_MIN && qos_id <= QOS_UL_ID_MAX)
+			qos_dir = QOS_PROFILE_UL;
+	} else {
+		/* No Qos Profile Disable required for Legacy QoS ID*/
+		return 0;
+	}
+
+	if (ret == 0) {
+		if (qos_id < QOS_LEGACY_DL_ID_MIN)
+			ret = ath12k_qos_disable(ar->ab, ar, qos_dir,
+						 qos_id, addr);
+	}
+	return ret;
+}
+
+static
+int ath12k_process_scs_desc(struct ath12k *ar, u16 peer_id,
+			    struct cfg80211_qm_req_desc_data *qm_req_desc,
+			    u8 *addr)
+{
+	u8 request_type = qm_req_desc->request_type;
+	u8 dir = qm_req_desc->qos_attr.direction;
+	int status = IEEE80211_QM_REQ_SUCCESS;
+	enum qos_profile_dir qos_dir;
+	int ret;
+
+	if (dir == IEEE80211_QM_DIRECTION_UPLINK) {
+		qos_dir = QOS_PROFILE_UL;
+	} else if (dir == IEEE80211_QM_DIRECTION_DOWNLINK) {
+		qos_dir = QOS_PROFILE_DL;
+	} else {
+		ath12k_err(ar->ab, "SCS Add failed: SCS ID: %d", dir);
+		return IEEE80211_QM_REQ_DECLINED;
+	}
+
+	switch (request_type) {
+	case IEEE80211_QM_ADD_REQ:
+		if (!qm_req_desc->is_qos_present &&
+		    dir == IEEE80211_QM_DIRECTION_UPLINK) {
+			ath12k_err(ar->ab, "Legacy SCS UL not supported");
+			return IEEE80211_QM_REQ_DECLINED;
+		}
+		ret = ath12k_process_scs_add(ar, peer_id, qos_dir,
+					     qm_req_desc, addr);
+
+		if (ret != 0) {
+			ath12k_err(ar->ab, "SCS Add failed: SCS ID: %d",
+				   qm_req_desc->qm_id);
+			status = IEEE80211_QM_REQ_DECLINED;
+		}
+		break;
+
+	case IEEE80211_QM_REMOVE_REQ:
+		ret = ath12k_process_scs_del(ar, peer_id, qm_req_desc, addr);
+		if (ret != 0) {
+			ath12k_err(ar->ab, "SCS Delete Failed: SCS ID: %d",
+				   qm_req_desc->qm_id);
+			status = IEEE80211_QM_REQ_DECLINED;
+		}
+		break;
+
+	case IEEE80211_QM_CHANGE_REQ:
+		ret = ath12k_process_scs_del(ar, peer_id, qm_req_desc, addr);
+
+		if (ret != 0) {
+			ath12k_err(ar->ab, "SCS Update DEL failed: SCS ID: %d",
+				   qm_req_desc->qm_id);
+			status = IEEE80211_QM_REQ_DECLINED;
+			return status;
+		}
+
+		ret = ath12k_process_scs_add(ar, peer_id, qos_dir,
+					     qm_req_desc, addr);
+
+		if (ret != 0) {
+			ath12k_err(ar->ab, "SCS Update ADD failed: SCS ID: %d",
+				   qm_req_desc->qm_id);
+			status = IEEE80211_QM_REQ_DECLINED;
+		}
+		break;
+
+	default:
+		ath12k_err(ar->ab, "Invalid SCS request type\n");
+		status = IEEE80211_QM_REQ_DECLINED;
+	}
+
+	return status;
+}
+
+static int
+ath12k_mac_set_scs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
+		   struct ath12k_sta *ahsta,
+		   struct cfg80211_qm_req_data *qm_req,
+		   struct cfg80211_qm_resp_data *qm_resp)
+{
+	struct cfg80211_qm_resp_desc_data *qm_resp_desc;
+	struct cfg80211_qm_req_desc_data *qm_req_desc;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp *dp;
+	struct ath12k *ar;
+	u8 addr[ETH_ALEN];
+	u8 num_scs_desc;
+	u16 peer_id;
+	int idx = 0;
+	int status;
+
+	ar = arsta->arvif->ar;
+	dp = ath12k_ab_to_dp(ar->ab);
+
+	spin_lock_bh(&dp->dp_lock);
+	link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
+	if (!link_peer) {
+		spin_unlock_bh(&dp->dp_lock);
+		return -ENOENT;
+	}
+
+	peer_id = link_peer->peer_id;
+	memcpy(addr, link_peer->addr, ETH_ALEN);
+	spin_unlock_bh(&dp->dp_lock);
+
+	num_scs_desc = qm_req->num_qm_desc;
+
+	while (idx < num_scs_desc) {
+		qm_req_desc = &qm_req->qm_req_desc[idx];
+
+		status = ath12k_process_scs_desc(ar, peer_id,
+						 qm_req_desc, addr);
+		qm_resp_desc = &qm_resp->qm_resp_desc[idx];
+		ath12k_prepare_scs_desc_resp(qm_req_desc, qm_resp_desc,
+					     status);
+		idx++;
+	}
+
+	return 0;
+}
+
+int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
+			       struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta,
+			       struct cfg80211_qm_req_data *qm_req,
+			       struct cfg80211_qm_resp_data *qm_resp)
+{
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	enum ieee80211_qos_mgmt_type qm_type = qm_req->qm_type;
+	u8 link_id = ahsta->primary_link_id;
+	struct ath12k_link_sta *arsta;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
+
+	if (!arsta) {
+		ath12k_err(NULL, "QoS mgmt arsta NULL link_id %d sta %pM\n",
+			   link_id, sta->addr);
+		return -EINVAL;
+	}
+
+	switch (qm_type) {
+	case IEEE80211_QM_TYPE_SCS:
+		return ath12k_mac_set_scs(hw, arsta, ahsta, qm_req, qm_resp);
+
+	default:
+		ath12k_err(NULL, "Invalid QM Protocol\n");
+		return -EINVAL;
+	}
+}
+EXPORT_SYMBOL(ath12k_mac_op_qos_mgmt_cfg);

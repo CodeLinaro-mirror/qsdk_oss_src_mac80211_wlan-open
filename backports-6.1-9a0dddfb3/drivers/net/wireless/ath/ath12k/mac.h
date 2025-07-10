@@ -561,4 +561,10 @@ int ath12k_wmi_vdev_adfs_ch_cfg_cmd_send(struct ath12k *ar,
 void
 ath12_mac_reg_get_6g_min_psd(struct ath12k *ar, u16 freq, u16 cfreq,
 			     u16 puncture_bitmap, u16 bw, s16 *min_psd);
+
+int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
+			       struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta,
+			       struct cfg80211_qm_req_data *qm_req,
+			       struct cfg80211_qm_resp_data *qm_resp);
 #endif
