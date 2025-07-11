@@ -81,7 +81,7 @@ int ath12k_htt_umac_reset_send_start_pre_reset_cmd(struct ath12k_base *ab, int i
 	cmd->hdr = u32_encode_bits(HTT_H2T_MSG_TYPE_UMAC_RESET_START_PRE_RESET,
 				   HTT_H2T_UMAC_RESET_MSG_TYPE);
 	cmd->hdr |= u32_encode_bits(is_initiator, HTT_H2T_UMAC_RESET_IS_INITIATOR_SET);
-	cmd->hdr |= u32_encode_bits(is_target_recovery, HTT_H2T_UMAC_RESET_IS_TARGET_RECOVERY_SET);
+	cmd->hdr |= u32_encode_bits(!is_target_recovery, HTT_H2T_UMAC_RESET_IS_TARGET_RECOVERY_SET);
 
 	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
 	if (ret) {
@@ -302,7 +302,8 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 	return 0;
 }
 
-int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab)
+int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
+					bool target_recovery)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
@@ -320,7 +321,8 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab)
 		return -ECANCELED;
 	}
 	mlo_umac_reset->umac_reset_info = BIT(0); /* UMAC recovery is in progress */
-	mlo_umac_reset->umac_reset_info |= BIT(1); /* Target recovery */
+	if (target_recovery)
+		mlo_umac_reset->umac_reset_info |= BIT(1); /* Target recovery */
 	atomic_set(&mlo_umac_reset->response_chip, 0);
 	mlo_umac_reset->initiator_chip = ab->device_id;
 	spin_unlock_bh(&mlo_umac_reset->lock);
@@ -406,11 +408,14 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 				 enum dp_umac_reset_recover_action rx_event)
 {
 	int ret;
+	bool target_recovery = false;
 
 	switch(rx_event) {
-	case ATH12K_UMAC_RESET_INIT_UMAC_RECOVERY:
 	case ATH12K_UMAC_RESET_INIT_TARGET_RECOVERY_SYNC_USING_UMAC:
-		ret = ath12k_umac_reset_initiate_recovery(ab);
+		target_recovery = true;
+		fallthrough;
+	case ATH12K_UMAC_RESET_INIT_UMAC_RECOVERY:
+		ret = ath12k_umac_reset_initiate_recovery(ab, target_recovery);
 		if (!ret) {
 			ab->dp_umac_reset.ts.trigger_start = jiffies_to_msecs(jiffies);
 			ath12k_umac_reset_notify_target(ab, ATH12K_UMAC_RESET_TX_CMD_TRIGGER_DONE);

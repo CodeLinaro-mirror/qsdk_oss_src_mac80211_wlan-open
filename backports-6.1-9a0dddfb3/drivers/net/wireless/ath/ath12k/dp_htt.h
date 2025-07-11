@@ -225,7 +225,7 @@ struct htt_dp_umac_reset_setup_req_cmd {
  *          b'10:31 - reserved.
  */
 struct h2t_umac_hang_recovery_start_pre_reset {
-        u8 hdr;
+       u32 hdr;
 } __packed;
 
 #define HTT_H2T_UMAC_RESET_MSG_TYPE     GENMASK(7, 0)
