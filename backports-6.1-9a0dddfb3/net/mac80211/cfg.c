@@ -1931,6 +1931,10 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (old_unsol_bcast_probe_resp)
 		kfree_rcu(old_unsol_bcast_probe_resp, rcu_head);
 
+	link_conf->fils_discovery.min_interval = 0;
+	link_conf->fils_discovery.max_interval = 0;
+	link_conf->unsol_bcast_probe_resp_interval = 0;
+
 	/* Reset active flag only for the last link */
 	if (!ieee80211_num_beaconing_links(sdata))
 		sdata->u.ap.active = false;
