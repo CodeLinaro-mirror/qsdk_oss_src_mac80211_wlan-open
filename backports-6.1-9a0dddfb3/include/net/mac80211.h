@@ -618,6 +618,8 @@ struct ieee80211_parsed_tpe_psd {
 struct ieee80211_parsed_tpe {
 	struct ieee80211_parsed_tpe_eirp max_local[2], max_reg_client[2];
 	struct ieee80211_parsed_tpe_psd psd_local[2], psd_reg_client[2];
+	struct ieee80211_parsed_tpe_eirp additional_max_reg_client[2];
+	struct ieee80211_parsed_tpe_psd additional_psd_reg_client[2];
 };
 
 /**

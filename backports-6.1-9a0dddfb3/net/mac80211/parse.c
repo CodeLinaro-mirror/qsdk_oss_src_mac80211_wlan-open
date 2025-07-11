@@ -218,6 +218,11 @@ static void ieee80211_parse_tpe(struct ieee80211_parsed_tpe *tpe,
 		cnt_out = &tpe->max_reg_client[category].count;
 		tpe->max_reg_client[category].valid = true;
 		break;
+	case IEEE80211_TPE_ADDITIONAL_REG_CLIENT_EIRP:
+		out = tpe->additional_max_reg_client[category].power;
+		cnt_out = &tpe->additional_max_reg_client[category].count;
+		tpe->additional_max_reg_client[category].valid = true;
+		break;
 	case IEEE80211_TPE_LOCAL_EIRP_PSD:
 		out = tpe->psd_local[category].power;
 		cnt_out = &tpe->psd_local[category].count;
@@ -230,11 +235,18 @@ static void ieee80211_parse_tpe(struct ieee80211_parsed_tpe *tpe,
 		N_out = &tpe->psd_reg_client[category].n;
 		tpe->psd_reg_client[category].valid = true;
 		break;
+	case IEEE80211_TPE_ADDITIONAL_REG_CLIENT_EIRP_PSD:
+		out = tpe->additional_psd_reg_client[category].power;
+		cnt_out = &tpe->additional_psd_reg_client[category].count;
+		N_out = &tpe->additional_psd_reg_client[category].n;
+		tpe->additional_psd_reg_client[category].valid = true;
+		break;
 	}
 
 	switch (interpret) {
 	case IEEE80211_TPE_LOCAL_EIRP:
 	case IEEE80211_TPE_REG_CLIENT_EIRP:
+	case IEEE80211_TPE_ADDITIONAL_REG_CLIENT_EIRP:
 		/* count was validated <= 3, plus 320 MHz */
 		BUILD_BUG_ON(IEEE80211_TPE_EIRP_ENTRIES_320MHZ < 5);
 		memcpy(out, env->variable, count + 1);
@@ -247,6 +259,7 @@ static void ieee80211_parse_tpe(struct ieee80211_parsed_tpe *tpe,
 		break;
 	case IEEE80211_TPE_LOCAL_EIRP_PSD:
 	case IEEE80211_TPE_REG_CLIENT_EIRP_PSD:
+	case IEEE80211_TPE_ADDITIONAL_REG_CLIENT_EIRP_PSD:
 		if (!count) {
 			memset(out, env->variable[0],
 			       IEEE80211_TPE_PSD_ENTRIES_320MHZ);

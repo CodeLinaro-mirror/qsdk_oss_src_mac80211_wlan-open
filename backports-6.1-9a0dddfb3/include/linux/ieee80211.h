@@ -2938,6 +2938,7 @@ static inline bool ieee80211_valid_tpe_element(const u8 *data, u8 len)
 	switch (interpret) {
 	case IEEE80211_TPE_LOCAL_EIRP:
 	case IEEE80211_TPE_REG_CLIENT_EIRP:
+	case IEEE80211_TPE_ADDITIONAL_REG_CLIENT_EIRP:
 		if (count > 3)
 			return false;
 
@@ -2952,6 +2953,7 @@ static inline bool ieee80211_valid_tpe_element(const u8 *data, u8 len)
 		return true;
 	case IEEE80211_TPE_LOCAL_EIRP_PSD:
 	case IEEE80211_TPE_REG_CLIENT_EIRP_PSD:
+	case IEEE80211_TPE_ADDITIONAL_REG_CLIENT_EIRP_PSD:
 		if (count > 4)
 			return false;
 

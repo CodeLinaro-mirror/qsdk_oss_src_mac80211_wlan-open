@@ -5235,5 +5235,16 @@ void ieee80211_clear_tpe(struct ieee80211_parsed_tpe *tpe)
 		memset(tpe->psd_reg_client[i].power,
 		       IEEE80211_TPE_PSD_NO_LIMIT,
 		       sizeof(tpe->psd_reg_client[i].power));
+
+		tpe->additional_psd_reg_client[i].valid = false;
+		memset(tpe->additional_psd_reg_client[i].power,
+		       IEEE80211_TPE_PSD_NO_LIMIT,
+		       sizeof(tpe->additional_psd_reg_client[i].power));
+
+		tpe->additional_max_reg_client[i].valid = false;
+		memset(tpe->additional_max_reg_client[i].power,
+		       IEEE80211_TPE_MAX_TX_PWR_NO_CONSTRAINT,
+		       sizeof(tpe->additional_max_reg_client[i].power));
+
 	}
 }

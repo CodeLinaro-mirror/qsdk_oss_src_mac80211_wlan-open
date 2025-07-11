@@ -883,6 +883,7 @@ static void ieee80211_rearrange_tpe(struct ieee80211_parsed_tpe *tpe,
 
 		ieee80211_rearrange_tpe_psd(&tpe->psd_local[i], ap, used);
 		ieee80211_rearrange_tpe_psd(&tpe->psd_reg_client[i], ap, used);
+		ieee80211_rearrange_tpe_psd(&tpe->additional_psd_reg_client[i], ap, used);
 
 		/* limit this to the widths we actually need */
 		needed_pwr_count = ieee80211_chandef_num_widths(used);
@@ -890,6 +891,8 @@ static void ieee80211_rearrange_tpe(struct ieee80211_parsed_tpe *tpe,
 			tpe->max_local[i].count = needed_pwr_count;
 		if (needed_pwr_count < tpe->max_reg_client[i].count)
 			tpe->max_reg_client[i].count = needed_pwr_count;
+		if (needed_pwr_count < tpe->additional_max_reg_client[i].count)
+			tpe->additional_max_reg_client[i].count = needed_pwr_count;
 	}
 }
 
@@ -1123,6 +1126,23 @@ free:
 	return ERR_PTR(ret);
 }
 
+static enum ieee80211_ap_reg_power
+ieee80211_ap_power_type(u8 control)
+{
+	switch (u8_get_bits(control, IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO)) {
+	case IEEE80211_6GHZ_CTRL_REG_LPI_AP:
+	case IEEE80211_6GHZ_CTRL_REG_INDOOR_LPI_AP:
+		return IEEE80211_REG_LPI_AP;
+	case IEEE80211_6GHZ_CTRL_REG_SP_AP:
+	case IEEE80211_6GHZ_CTRL_REG_INDOOR_SP_AP:
+		return IEEE80211_REG_SP_AP;
+	case IEEE80211_6GHZ_CTRL_REG_VLP_AP:
+		return IEEE80211_REG_VLP_AP;
+	default:
+		return IEEE80211_REG_UNSET_AP;
+	}
+}
+
 static int ieee80211_config_bw(struct ieee80211_link_data *link,
 			       struct ieee802_11_elems *elems,
 			       bool update, u64 *changed,
@@ -1189,11 +1209,26 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 
 	if (ap_chandef.chan->band == NL80211_BAND_6GHZ &&
 	    link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_HE) {
+		const struct ieee80211_he_6ghz_oper *he_6ghz_oper;
+
 		ieee80211_rearrange_tpe(&elems->tpe, &ap_chandef,
 					&chanreq.oper);
 		if (memcmp(&link->conf->tpe, &elems->tpe, sizeof(elems->tpe))) {
 			link->conf->tpe = elems->tpe;
 			*changed |= BSS_CHANGED_TPE;
+		}
+		he_6ghz_oper = ieee80211_he_6ghz_oper(elems->he_operation);
+		if (he_6ghz_oper) {
+			enum ieee80211_ap_reg_power ap_power_type =
+				ieee80211_ap_power_type(he_6ghz_oper->control);
+			if (ap_power_type != link->conf->power_type) {
+				link_info(link,
+					  "AP changed power type, old type: %d,  new type is %d\n",
+					  link->conf->power_type,
+					  ap_power_type);
+				link->conf->power_type = ap_power_type;
+				*changed |= BSS_CHANGED_6GHZ_POWER_MODE;
+			}
 		}
 	}
 
@@ -5822,22 +5857,6 @@ ieee80211_determine_our_sta_mode_assoc(struct ieee80211_sub_if_data *sdata,
 			       conn->bw_limit, tmp.bw_limit);
 }
 
-static enum ieee80211_ap_reg_power
-ieee80211_ap_power_type(u8 control)
-{
-	switch (u8_get_bits(control, IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO)) {
-	case IEEE80211_6GHZ_CTRL_REG_LPI_AP:
-	case IEEE80211_6GHZ_CTRL_REG_INDOOR_LPI_AP:
-		return IEEE80211_REG_LPI_AP;
-	case IEEE80211_6GHZ_CTRL_REG_SP_AP:
-	case IEEE80211_6GHZ_CTRL_REG_INDOOR_SP_AP:
-		return IEEE80211_REG_SP_AP;
-	case IEEE80211_6GHZ_CTRL_REG_VLP_AP:
-		return IEEE80211_REG_VLP_AP;
-	default:
-		return IEEE80211_REG_UNSET_AP;
-	}
-}
 
 static int ieee80211_prep_channel(struct ieee80211_sub_if_data *sdata,
 				  struct ieee80211_link_data *link,
