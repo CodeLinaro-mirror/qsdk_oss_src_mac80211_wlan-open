@@ -1735,6 +1735,63 @@ static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 	return total_size;
 }
 
+static int ath12k_get_dp_ingress_attr_len(void)
+{
+	struct ath12k_dp_tx_ingress_stats ingress_stats;
+	int total_size = 0;
+	int payload_size;
+	int attr_size;
+	int ring_num;
+
+	for (ring_num = 0; ring_num < DP_TCL_NUM_RING_MAX; ring_num++) {
+		payload_size = nla_total_size(sizeof(ingress_stats.recv_from_stack.packets)) +
+				nla_total_size(sizeof(ingress_stats.recv_from_stack.bytes));
+		attr_size = nla_total_size_nested(payload_size);
+
+		payload_size = nla_total_size(sizeof(ingress_stats.enque_to_hw.packets)) +
+				nla_total_size(sizeof(ingress_stats.enque_to_hw.bytes));
+		attr_size += nla_total_size_nested(payload_size);
+
+		payload_size = nla_total_size(sizeof(ingress_stats.enque_to_hw_fast.packets)) +
+				nla_total_size(sizeof(ingress_stats.enque_to_hw_fast.bytes));
+		attr_size += nla_total_size_nested(payload_size);
+
+		payload_size = nla_total_size(sizeof(uint32_t)) * HAL_TCL_ENCAP_TYPE_MAX;
+		attr_size += nla_total_size_nested(payload_size);
+
+		payload_size = nla_total_size(sizeof(uint32_t)) * HAL_ENCRYPT_TYPE_MAX;
+		attr_size += nla_total_size_nested(payload_size);
+
+		payload_size = nla_total_size(sizeof(uint32_t)) * DP_TCL_DESC_TYPE_MAX;
+		attr_size += nla_total_size_nested(payload_size);
+
+		payload_size = nla_total_size(sizeof(uint32_t)) * DP_TX_ENQ_ERR_MAX;
+		attr_size += nla_total_size_nested(payload_size);
+
+		attr_size += nla_total_size(sizeof(ingress_stats.mcast));
+
+		/* TCL Ring Attr size */
+		total_size += nla_total_size_nested(attr_size);
+	}
+	/* Parent Ingress Stats Attr size */
+	total_size += nla_total_size_nested(total_size);
+
+	return total_size;
+}
+
+static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
+{
+	int total_size = 0;
+
+	if (cmd->feat.feat_tx)
+		total_size += ath12k_get_dp_ingress_attr_len();
+
+	/*Aggregated Sta Stats Size */
+	total_size += ath12k_get_dp_peer_attr_len(cmd);
+
+	return total_size;
+}
+
 int ath12k_get_dp_vendor_event_len(struct ath12k_telemetry_command *cmd)
 {
 	int total_size;
@@ -1744,6 +1801,9 @@ int ath12k_get_dp_vendor_event_len(struct ath12k_telemetry_command *cmd)
 	switch (cmd->obj) {
 	case STATS_OBJ_PEER:
 		total_size += ath12k_get_dp_peer_attr_len(cmd);
+		break;
+	case STATS_OBJ_VIF:
+		total_size += ath12k_get_dp_vif_attr_len(cmd);
 		break;
 	case STATS_OBJ_DEVICE:
 		total_size += ath12k_get_device_attr_size(cmd);
@@ -2373,6 +2433,359 @@ out:
 	return ret;
 }
 
+static int ath12k_fill_vap_rx_stats(struct sk_buff *vendor_event,
+				    struct ath12k_telemetry_dp_vif *telemetry_vif)
+{
+	int ret;
+
+	/* Aggregated Peer Rx Stats */
+	ret = ath12k_fill_peer_rx_stats(vendor_event,
+					&telemetry_vif->aggr_vif_stats.peer_stats,
+					telemetry_vif->is_extended);
+
+	return ret;
+}
+
+static int ath12k_fill_tx_ingress_stats_attrs(struct sk_buff *vendor_event,
+					      struct ath12k_dp_tx_ingress_stats *ingress_tx_stats,
+					      bool is_extended)
+{
+	struct nlattr *attr;
+	int attr_index;
+
+	/* Basic stats */
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_RECV_FROM_STACK);
+	if (!attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: vif ingress stats from stack");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_WLAN_TELEMETRY_ATTR_PKTINFO_PKTS,
+			ingress_tx_stats->recv_from_stack.packets)) {
+		ath12k_err(NULL, "nla put failure: Ingress stats attr %d packets",
+			   QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_RECV_FROM_STACK);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+
+	if (nla_put_u64_64bit(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_ATTR_PKTINFO_BYTES,
+			      ingress_tx_stats->recv_from_stack.bytes,
+			      NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: Ingress stats attr %d bytes",
+			   QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_RECV_FROM_STACK);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_ENQ_TO_HW);
+	if (!attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: vif ingress stats enq to hw");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_WLAN_TELEMETRY_ATTR_PKTINFO_PKTS,
+			ingress_tx_stats->enque_to_hw.packets)) {
+		ath12k_err(NULL, "nla put failure: Ingress stats attr %d packets",
+			   QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_ENQ_TO_HW);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+
+	if (nla_put_u64_64bit(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_ATTR_PKTINFO_BYTES,
+			      ingress_tx_stats->enque_to_hw.bytes,
+			      NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: Ingress stats attr %d bytes",
+			   QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_ENQ_TO_HW);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_ENQ_TO_HW_FAST);
+	if (!attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: vif ingress stats enq to hw fast");
+		return -EINVAL;
+	}
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_WLAN_TELEMETRY_ATTR_PKTINFO_PKTS,
+			ingress_tx_stats->enque_to_hw_fast.packets)) {
+		ath12k_err(NULL, "nla put failure: Ingress stats attr %d packets",
+			   QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_ENQ_TO_HW_FAST);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+
+	if (nla_put_u64_64bit(vendor_event,
+			      QCA_VENDOR_WLAN_TELEMETRY_ATTR_PKTINFO_BYTES,
+			      ingress_tx_stats->enque_to_hw_fast.bytes,
+			      NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: Ingress stats attr %d bytes",
+			   QCA_VENDOR_ATTR_TX_INGRESS_STATS_PKTINFO_ENQ_TO_HW_FAST);
+		nla_nest_end(vendor_event, attr);
+		return -EINVAL;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_TX_INGRESS_STATS_DROP_TYPE);
+	if (!attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: vif ingress stats drop type");
+		return -EINVAL;
+	}
+
+	for (attr_index = 0; attr_index < DP_TX_ENQ_ERR_MAX; attr_index++) {
+		if (nla_put_u32(vendor_event, attr_index + 1,
+				ingress_tx_stats->drop[attr_index])) {
+			ath12k_err(NULL, "nla put failure: Ingress stats attr %d type %d",
+				   QCA_VENDOR_ATTR_TX_INGRESS_STATS_DROP_TYPE,
+				   attr_index + 1);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+
+	if (!is_extended)
+		return 0;
+
+	/* Extended stats */
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_TX_INGRESS_STATS_ENCAP_TYPE);
+	if (!attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: vif ingress stats encap type");
+		return -EINVAL;
+	}
+
+	for (attr_index = 0; attr_index < HAL_TCL_ENCAP_TYPE_MAX; attr_index++) {
+		if (nla_put_u32(vendor_event, attr_index + 1,
+				ingress_tx_stats->encap_type[attr_index])) {
+			ath12k_err(NULL, "nla put failure: Ingress stats attr %d type %d",
+				   QCA_VENDOR_ATTR_TX_INGRESS_STATS_ENCAP_TYPE,
+				   attr_index + 1);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_TX_INGRESS_STATS_ENCRYPT_TYPE);
+	if (!attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: vif ingress stats encrypt type");
+		return -EINVAL;
+	}
+
+	for (attr_index = 0; attr_index < HAL_ENCRYPT_TYPE_MAX; attr_index++) {
+		if (nla_put_u32(vendor_event, attr_index + 1,
+				ingress_tx_stats->encrypt_type[attr_index])) {
+			ath12k_err(NULL, "nla put failure: Ingress stats attr %d type %d",
+				   QCA_VENDOR_ATTR_TX_INGRESS_STATS_ENCRYPT_TYPE,
+				   attr_index + 1);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_TX_INGRESS_STATS_DESC_TYPE);
+	if (!attr) {
+		ath12k_err(NULL,
+			   "nla nest failure: vif ingress stats desc type");
+		return -EINVAL;
+	}
+
+	for (attr_index = 0; attr_index < DP_TCL_DESC_TYPE_MAX; attr_index++) {
+		if (nla_put_u32(vendor_event, attr_index + 1,
+				ingress_tx_stats->desc_type[attr_index])) {
+			ath12k_err(NULL, "nla put failure: Ingress stats attr %d type %d",
+				   QCA_VENDOR_ATTR_TX_INGRESS_STATS_DESC_TYPE,
+				   attr_index + 1);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+
+	if (nla_put_u32(vendor_event, QCA_VENDOR_ATTR_TX_INGRESS_STATS_MCAST,
+			ingress_tx_stats->mcast)) {
+		ath12k_err(NULL, "nla put failure: Tx ingress mcast");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ath12k_fill_tx_ingress_stats(struct sk_buff *vendor_event,
+					struct ath12k_telemetry_dp_vif *telemetry_vif)
+{
+	struct nlattr *attr1;
+	struct nlattr *attr;
+	int ring_num;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_INGRESS_STATS_EVENT);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: vif ingress stats");
+		return -EINVAL;
+	}
+
+	for (ring_num = 0; ring_num < DP_TCL_NUM_RING_MAX; ring_num++) {
+		attr1 = nla_nest_start(vendor_event, ring_num + 1);
+		if (!attr1) {
+			ath12k_err(NULL,
+				   "nla nest failure: vif ingress stats - ring %d",
+				   ring_num + 1);
+			return -EINVAL;
+		}
+
+		if (ath12k_fill_tx_ingress_stats_attrs(vendor_event,
+						       &telemetry_vif->aggr_vif_stats.stats[ring_num].tx_i,
+						       telemetry_vif->is_extended)) {
+			ath12k_err(NULL,
+				   "Error filling peer tx ingress stats for ring %d",
+				   ring_num + 1);
+		}
+		nla_nest_end(vendor_event, attr1);
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int ath12k_fill_vap_tx_stats(struct sk_buff *vendor_event,
+				    struct ath12k_telemetry_dp_vif *telemetry_vif)
+{
+	int ret;
+
+	/* Aggregated sta tx Stats */
+	ret = ath12k_fill_peer_tx_stats(vendor_event,
+					&telemetry_vif->aggr_vif_stats.peer_stats,
+					telemetry_vif->is_extended);
+	if (ret) {
+		ath12k_err(NULL, "Error filling vap tx stats");
+		return ret;
+	}
+
+	/* Ingress tx stats */
+	ret = ath12k_fill_tx_ingress_stats(vendor_event, telemetry_vif);
+
+	return ret;
+}
+
+static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
+					   struct ath12k_vif *ahvif,
+					   struct ath12k_telemetry_command *cmd)
+{
+	struct ath12k_telemetry_dp_vif *telemetry_vif;
+	struct nlattr *attr;
+	int ret = -EINVAL;
+
+	telemetry_vif = vmalloc(sizeof(*telemetry_vif));
+	if (!telemetry_vif) {
+		ath12k_err(NULL, "Allocation failed for vap stats");
+		return -ENOMEM;
+	}
+
+	memset(telemetry_vif, 0, sizeof(*telemetry_vif));
+	ath12k_dp_get_vif_stats(ahvif, telemetry_vif, cmd->link_id);
+
+	if (cmd->feat.feat_rx) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_vap_rx_stats(vendor_event,
+						     telemetry_vif)) {
+				ath12k_err(NULL, "Error filling vap rx stats");
+				goto out;
+			}
+
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: Vap rx feat stats");
+			goto out;
+		}
+	}
+
+	if (cmd->feat.feat_tx) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_vap_tx_stats(vendor_event,
+						     telemetry_vif)) {
+				ath12k_err(NULL, "Error filling vap tx stats");
+				goto out;
+			}
+
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: Vap tx feat stats");
+			goto out;
+		}
+	}
+
+	ret = 0;
+out:
+	vfree(telemetry_vif);
+	return ret;
+}
+
+static int ath12k_stats_vif_setup(struct ath12k_telemetry_command *cmd)
+{
+	struct ath12k_vif *ahvif = NULL;
+	struct sk_buff *vendor_event;
+	int len, ret;
+
+	ahvif = ath12k_get_ahvif_from_wdev(cmd->wdev);
+
+	if (!ahvif) {
+		ath12k_err(NULL, "ahvif not present");
+		return -EINVAL;
+	}
+
+	if (cmd->link_id != INVALID_LINK_ID &&
+	    !(ahvif->links_map & BIT(cmd->link_id))) {
+		ath12k_err(NULL, "Invalid link_id");
+		return -EINVAL;
+	}
+
+	len = ath12k_get_dp_vendor_event_len(cmd);
+	ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY, "Vendor Event Length = %d", len);
+
+	vendor_event = cfg80211_vendor_event_alloc(cmd->wiphy, cmd->wdev, len,
+						   QCA_NL80211_VENDOR_SUBCMD_WLAN_WDEV_TELEMETRY_EVENT,
+						   GFP_KERNEL);
+
+	if (!vendor_event) {
+		ath12k_err(NULL, "Error allocating vendor event");
+		return -EINVAL;
+	}
+
+	ret = ath12k_prepare_telemetry_common_vendor_attr(vendor_event, cmd);
+	if (ret)
+		goto out;
+
+	ret = ath12k_prepare_vif_vendor_event(vendor_event, ahvif, cmd);
+	if (ret)
+		goto out;
+
+	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+
+	return ret;
+out:
+	ath12k_err(NULL, "Error sending telemetry vendor event");
+	kfree_skb(vendor_event);
+	return ret;
+}
+
 int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd)
 {
 	int ret;
@@ -2380,6 +2793,9 @@ int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd)
 	switch (cmd->obj) {
 	case STATS_OBJ_PEER:
 		ret = ath12k_stats_peer_setup(cmd);
+		break;
+	case STATS_OBJ_VIF:
+		ret = ath12k_stats_vif_setup(cmd);
 		break;
 	case STATS_OBJ_DEVICE:
 		ret = ath12k_stats_device_setup(cmd);

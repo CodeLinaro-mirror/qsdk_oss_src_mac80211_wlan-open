@@ -2706,12 +2706,18 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 }
 
 void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
-			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats, u8 link_id)
+			     struct ath12k_telemetry_dp_vif *telemetry_vif,
+			     u8 link_id)
 {
 	struct ath12k_link_vif *arvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k *ar = &ahvif->ah->radio[0];
 	unsigned long links_map = ahvif->links_map;
+	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats =
+						&telemetry_vif->aggr_vif_stats;
+
+	if (ath12k_debugfs_is_dp_debug_stats_enabled(&ar->dp))
+		telemetry_vif->is_extended = true;
 
 	if (links_map & BIT(link_id)) {
 		rcu_read_lock();
