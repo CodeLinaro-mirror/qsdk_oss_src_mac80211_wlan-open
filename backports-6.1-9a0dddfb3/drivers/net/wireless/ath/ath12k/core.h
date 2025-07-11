@@ -1329,6 +1329,30 @@ struct ath12k_mlo_memory {
 	bool is_mlo_mem_avail;
 };
 
+/**
+ * struct ath12k_stats_list_entry: Structure used to represent an entry in
+ * the non-blocking stats work list
+ * @node : linked list node
+ * @usr_command: user inputs
+ */
+struct ath12k_stats_list_entry {
+	struct list_head node;
+	struct ath12k_telemetry_command usr_command;
+};
+
+/**
+ * struct ath12k_stats_work_context: Structure representing the context of
+ * stats work
+ * @stats_nb_work : Instance of work
+ * @list_lock : lock for the work list
+ * @work_list : queue of non-blocking stats requests
+ */
+struct ath12k_stats_work_context {
+	struct wiphy_work stats_nb_work;
+	spinlock_t list_lock;
+	struct list_head work_list;
+};
+
 #define ATH12K_REPORT_LOW_ACK_NUM_PKT	0xFFFF
 #define ATH12K_IS_UMAC_RESET_IN_PROGRESS        BIT(0)
 
@@ -1400,6 +1424,7 @@ struct ath12k_hw_group {
         struct completion umac_reset_complete;
         bool trigger_umac_reset;
 	struct ath12k_qos_ctx qos;
+	struct ath12k_stats_work_context stats_work;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -2092,4 +2117,5 @@ struct ath12k_base *ath12k_core_get_ab_by_wiphy(const struct wiphy *wiphy,
 u8 ath12k_core_get_ab_list_by_wiphy(const struct wiphy *wiphy,
 				    struct ath12k_base **ab_list,
 				    u8 ab_list_size);
+int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd);
 #endif /* _CORE_H_ */

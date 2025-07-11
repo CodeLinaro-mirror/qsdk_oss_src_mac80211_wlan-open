@@ -2845,7 +2845,25 @@ unlock:
 }
 
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
-                                struct ath12k_device_dp_stats *device_stats) {
+				struct ath12k_telemetry_dp_device *telemetry_device)
+{
+	memcpy(&telemetry_device->rxdma_error,
+	       &dp->device_stats.wbm_err.rxdma_error,
+	       sizeof(telemetry_device->rxdma_error));
 
-	memcpy(device_stats, &dp->device_stats, sizeof(*device_stats));
+	memcpy(&telemetry_device->reo_error,
+	       &dp->device_stats.wbm_err.reo_error,
+	       sizeof(telemetry_device->reo_error));
+
+	memcpy(&telemetry_device->tx_comp_err,
+	       &dp->device_stats.tx_err.tx_comp_err,
+	       sizeof(telemetry_device->tx_comp_err));
+
+	memcpy(&telemetry_device->rx_wbm_sw_drop_reason,
+	       &dp->device_stats.wbm_err.drop,
+	       sizeof(telemetry_device->rx_wbm_sw_drop_reason));
+
+	memcpy(&telemetry_device->reo_sw_drop_reason,
+	       &dp->device_stats.rx.rx_err,
+	       sizeof(telemetry_device->reo_sw_drop_reason));
 }

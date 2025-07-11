@@ -11,6 +11,26 @@
 #include "cmn_defs.h"
 #include "dp.h"
 
+#define INVALID_LINK_ID                0xFF
+#define DP_REO_RING_MAX			4
+
+#define nla_total_size_nested(x) nla_total_size(x)
+/**
+ * enum ath12k_stats_object:	Defines the Stats specific to object
+ * @STATS_OBJ_PEER:	Stats for station/peer associated to AP
+ * @STATS_OBJ_VIF:	Stats for vif
+ * @STATS_OBJ_RADIO:	Stats for particular Radio
+ * @STATS_OBJ_DEVICE:	Stats for device
+ * @STATS_OBJ_MAX:	Max supported objects
+ */
+enum ath12k_stats_object {
+	STATS_OBJ_PEER,
+	STATS_OBJ_VIF,
+	STATS_OBJ_RADIO,
+	STATS_OBJ_DEVICE,
+	STATS_OBJ_MAX,
+};
+
 enum ath12k_dp_tx_enq_error {
 	DP_TX_ENQ_SUCCESS = 0,
 	DP_TX_ENQ_DROP_MISC,
@@ -256,4 +276,36 @@ struct ath12k_dp_aggr_pdev_stats {
 	struct ath12k_dp_peer_stats peer_stats;
 };
 
+struct ath12k_stats_feat {
+	bool feat_tx;
+	bool feat_rx;
+};
+
+struct ath12k_telemetry_command {
+	struct wiphy *wiphy;
+	struct wireless_dev *wdev;
+	enum ath12k_stats_object obj;
+	struct ath12k_stats_feat feat;
+	u64 request_id;
+	u8 link_id;
+	char intf_name[IFNAMSIZ];
+	u8 mac[ETH_ALEN];
+};
+
+enum ath12k_wlan_telemetry_feat {
+	TELEMETRY_FEAT_TX,
+	TELEMETRY_FEAT_RX,
+
+	TELEMETRY_FEAT_MAX,
+};
+
+/* Telemetry Device Stats */
+struct ath12k_telemetry_dp_device {
+	bool is_extended;
+	u32 rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_MAX];
+	u32 reo_error[HAL_REO_DEST_RING_ERROR_CODE_MAX];
+	u32 tx_comp_err[DP_TX_COMP_ERR_MAX][DP_TCL_NUM_RING_MAX];
+	u32 rx_wbm_sw_drop_reason[WBM_ERR_DROP_MAX];
+	u32 reo_sw_drop_reason[DP_RX_ERR_MAX][DP_REO_RING_MAX];
+};
 #endif

@@ -1311,9 +1311,54 @@ static void ath12k_core_device_cleanup(struct ath12k_base *ab)
 	mutex_unlock(&ab->core_lock);
 }
 
+static void ath12k_stats_event_work_handler(struct wiphy *wiphy,
+					    struct wiphy_work *work)
+{
+	struct ath12k_stats_work_context *stats_ctx;
+	struct ath12k_stats_list_entry *list_entry;
+	struct list_head temp_list;
+
+	stats_ctx = container_of(work, struct ath12k_stats_work_context,
+				 stats_nb_work);
+
+	INIT_LIST_HEAD(&temp_list);
+
+	spin_lock(&stats_ctx->list_lock);
+	list_splice_tail_init(&stats_ctx->work_list, &temp_list);
+	spin_unlock(&stats_ctx->list_lock);
+
+	while (!list_empty(&temp_list)) {
+		list_entry = list_first_entry(&temp_list,
+					      struct ath12k_stats_list_entry,
+					      node);
+
+		ath12k_wifi_stats_reply_setup(&list_entry->usr_command);
+
+		list_del(&list_entry->node);
+		kfree(list_entry);
+	}
+}
+
+static void ath12k_stats_event_work_free(struct ath12k_stats_work_context *stats_ctx)
+{
+	struct ath12k_stats_list_entry *list_entry;
+
+	spin_lock(&stats_ctx->list_lock);
+	while (!list_empty(&stats_ctx->work_list)) {
+		list_entry = list_first_entry(&stats_ctx->work_list,
+					      struct ath12k_stats_list_entry,
+					      node);
+
+		list_del(&list_entry->node);
+		kfree(list_entry);
+	}
+	spin_unlock(&stats_ctx->list_lock);
+}
+
 static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
+	struct ath12k_hw *ah = ag->ah[0];
 	int i;
 
 	lockdep_assert_held(&ag->mutex);
@@ -1329,6 +1374,9 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		ath12k_core_pdev_deinit(ab);
 		mutex_unlock(&ab->core_lock);
     }
+
+	wiphy_work_cancel(ah->hw->wiphy, &ag->stats_work.stats_nb_work);
+	ath12k_stats_event_work_free(&ag->stats_work);
 
 	ath12k_mac_unregister(ag);
 
@@ -3778,6 +3826,12 @@ exit:
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "wsi group-id %d num-devices %d index %d",
 		   ag->id, ag->num_devices, wsi->index);
+
+	/* stats context Initialization */
+	wiphy_work_init(&ag->stats_work.stats_nb_work,
+			ath12k_stats_event_work_handler);
+	spin_lock_init(&ag->stats_work.list_lock);
+	INIT_LIST_HEAD(&ag->stats_work.work_list);
 
 	return ag;
 }

@@ -1152,6 +1152,618 @@ ath12k_vendor_rm_generic_policy[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP] = {.type = NLA_NESTED},
 };
 
+static const struct nla_policy
+ath12k_wlan_telemetry_req_policy[QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAX + 1] = {
+	[QCA_VENDOR_ATTR_WLAN_TELEMETRY_HIERARCHY_TYPE] = {.type = NLA_U8},
+	[QCA_VENDOR_ATTR_WLAN_TELEMETRY_FEATURE] = {.type = NLA_NESTED},
+	[QCA_VENDOR_ATTR_WLAN_TELEMETRY_STA_MAC] = {.type = NLA_BINARY,
+							.len = ETH_ALEN},
+	[QCA_VENDOR_ATTR_WLAN_TELEMETRY_REQUEST_ID] = {.type = NLA_U64},
+	[QCA_VENDOR_ATTR_WLAN_TELEMETRY_LINK_ID] = {.type = NLA_U8},
+};
+
+static const struct nla_policy
+ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
+	[QCA_VENDOR_ATTR_WLAN_FEAT_TX] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_RX] = {.type = NLA_FLAG},
+};
+
+int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
+			       struct ath12k_telemetry_command *cmd)
+{
+	struct nlattr *feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {0};
+	int ret;
+
+	memset(&cmd->feat, 0, sizeof(struct ath12k_stats_feat));
+
+	ret = nla_parse_nested(feat_attr, QCA_VENDOR_ATTR_WLAN_FEAT_MAX, tb_attr,
+			       ath12k_wlan_telemetry_feat_policy, NULL);
+
+	if (ret) {
+		ath12k_err(NULL, "nla parse failure: Feature input\n");
+		return ret;
+	}
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_TX])
+		cmd->feat.feat_tx = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_RX])
+		cmd->feat.feat_rx = true;
+
+	return ret;
+}
+
+static int ath12k_extract_user_inputs(struct nlattr **tb,
+				      struct ath12k_telemetry_command *cmd)
+{
+	int ret;
+
+	if (tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_HIERARCHY_TYPE])
+		cmd->obj = nla_get_u8(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_HIERARCHY_TYPE]);
+
+	if (tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_FEATURE])
+		ret = ath12k_extract_feat_inputs(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_FEATURE],
+						 cmd);
+
+	/**
+	 * To have a unique request ID for an application, the request ID of
+	 * the command is compounded with the PID of the requesting application
+	 * such that the upper 32 bits represent the PID and the lower
+	 * 32 bits represent the request ID provided for the command by the
+	 * application.
+	 */
+	if (tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_REQUEST_ID])
+		cmd->request_id = nla_get_u64(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_REQUEST_ID]);
+
+	if (tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_LINK_ID])
+		cmd->link_id = nla_get_u8(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_LINK_ID]);
+	else
+		cmd->link_id = INVALID_LINK_ID;
+
+	if (cmd->obj == STATS_OBJ_PEER) {
+		if (tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_STA_MAC] &&
+		    (nla_len(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_STA_MAC]) == ETH_ALEN))
+			memcpy(cmd->mac,
+			       nla_data(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_STA_MAC]),
+			       ETH_ALEN);
+	}
+
+	return ret;
+}
+
+static int ath12k_prepare_telemetry_common_vendor_attr(struct sk_buff *vendor_event,
+						       struct ath12k_telemetry_command *cmd)
+{
+	if (nla_put_u8(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_OBJECT_EVENT,
+		       cmd->obj)) {
+		ath12k_err(NULL, "nla put failure: Common attr obj field");
+		return -EINVAL;
+	}
+
+	if (nla_put_u8(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_LINK_ID_EVENT,
+		       cmd->link_id)) {
+		ath12k_err(NULL, "nla put failure: Common attr link_id field");
+		return -EINVAL;
+	}
+
+	if (nla_put_u64_64bit(vendor_event, QCA_VENDOR_ATTR_WLAN_TELEMETRY_REQUEST_ID_EVENT,
+			      cmd->request_id, NL80211_ATTR_PAD)) {
+		ath12k_err(NULL, "nla put failure: Common attr req_id field");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ath12k_fill_rxdma_err_attrs(struct ath12k_base *ab,
+				       struct sk_buff *vendor_event,
+				       uint32_t *rxdma_error)
+{
+	struct nlattr *attr;
+	int rxdma;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RXDMA_ERR_EVENT);
+
+	if (!attr) {
+		ath12k_err(ab, "nla nest failure: Device rxdma error");
+		return -EINVAL;
+	}
+
+	for (rxdma = 0; rxdma < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; rxdma++)
+		if (nla_put_u32(vendor_event, rxdma + 1, rxdma_error[rxdma])) {
+			ath12k_err(ab,
+				   "nla put failure: Device rxdma err attr %d",
+				   rxdma + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int ath12k_fill_reo_err_attrs(struct ath12k_base *ab,
+				     struct sk_buff *vendor_event,
+				     uint32_t *reo_error)
+{
+	struct nlattr *attr;
+	int reo_attr;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_REO_ERR_EVENT);
+
+	if (!attr) {
+		ath12k_err(ab, "nla nest failure: Device reo error");
+		return -EINVAL;
+	}
+
+	for (reo_attr = 0; reo_attr < HAL_REO_DEST_RING_ERROR_CODE_MAX;
+	     reo_attr++)
+		if (nla_put_u32(vendor_event, reo_attr + 1,
+				reo_error[reo_attr])) {
+			ath12k_err(ab,
+				   "nla put failure: Device reo err attr %d",
+				   reo_attr + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+	nla_nest_end(vendor_event, attr);
+	return 0;
+}
+
+static int ath12k_fill_device_rx_sw_wbm_drop_attrs(struct ath12k_base *ab,
+						   struct sk_buff *vendor_event,
+						   struct ath12k_telemetry_dp_device *device_dp_stats)
+{
+	struct nlattr *attr;
+	int drop;
+
+	attr = nla_nest_start(vendor_event,
+			      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_WBM_SW_DROP_REASON_EVENT);
+
+	if (!attr) {
+		ath12k_err(ab, "nla nest failure: Device rx sw wbm drop");
+		return -EINVAL;
+	}
+
+	for (drop = 0; drop < WBM_ERR_DROP_MAX ; drop++) {
+		if (nla_put_u32(vendor_event, drop + 1,
+				device_dp_stats->rx_wbm_sw_drop_reason[drop])) {
+			ath12k_err(ab,
+				   "nla put failure: Device rx sw wbm drop attr %d",
+				   drop + 1);
+			nla_nest_end(vendor_event, attr);
+			return -EINVAL;
+		}
+	}
+	nla_nest_end(vendor_event, attr);
+	return 0;
+}
+
+static int ath12k_fill_device_rx_sw_reo_drop_attrs(struct ath12k_base *ab,
+						   struct sk_buff *vendor_event,
+						   struct ath12k_telemetry_dp_device *device_dp_stats)
+{
+	int reo_drop_attr, ring_attr;
+	struct nlattr *attr1, *attr2;
+
+	attr1 = nla_nest_start(vendor_event,
+			       QCA_VENDOR_ATTR_WLAN_TELEMETRY_REO_SW_DROP_REASON_EVENT);
+	if (!attr1) {
+		ath12k_err(ab, "nla nest failure: Device reo sw drop");
+		return -EINVAL;
+	}
+
+	for (ring_attr = 0; ring_attr < DP_REO_RING_MAX; ring_attr++) {
+		attr2 = nla_nest_start(vendor_event, ring_attr + 1);
+		if (!attr2) {
+			ath12k_err(ab,
+				   "nla nest failure: Device reo sw drop ring %d",
+				   ring_attr + 1);
+			return -EINVAL;
+		}
+
+		for (reo_drop_attr = 0; reo_drop_attr < DP_RX_ERR_MAX;
+		     reo_drop_attr++) {
+			if (nla_put_u32(vendor_event, reo_drop_attr + 1,
+					device_dp_stats->reo_sw_drop_reason[reo_drop_attr][ring_attr])) {
+				ath12k_err(ab,
+					   "nla put failure: Device rx sw REO drop attr %d ring %d",
+					   reo_drop_attr + 1, ring_attr + 1);
+				nla_nest_end(vendor_event, attr2);
+				return -EINVAL;
+			}
+		}
+		nla_nest_end(vendor_event, attr2);
+	}
+	nla_nest_end(vendor_event, attr1);
+
+	return 0;
+}
+
+static int ath12k_fill_device_rx_stats(struct ath12k_base *ab,
+				       struct sk_buff *vendor_event,
+				       struct ath12k_telemetry_dp_device *device_dp_stats)
+{
+	if (ath12k_fill_rxdma_err_attrs(ab, vendor_event,
+					device_dp_stats->rxdma_error)) {
+		ath12k_err(ab, "Error filling device rxdma err Stats");
+		return -EINVAL;
+	}
+
+	if (ath12k_fill_reo_err_attrs(ab, vendor_event,
+				      device_dp_stats->reo_error)) {
+		ath12k_err(ab, "Error filling device reo err stats");
+		return -EINVAL;
+	}
+
+	if (ath12k_fill_device_rx_sw_wbm_drop_attrs(ab, vendor_event,
+						    device_dp_stats)) {
+		ath12k_err(ab, "Error filling device rx sw wbm drop stats");
+		return -EINVAL;
+	}
+
+	if (ath12k_fill_device_rx_sw_reo_drop_attrs(ab, vendor_event,
+						    device_dp_stats)) {
+		ath12k_err(ab, "Error filling device rx sw reo drop stats");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ath12k_fill_device_tx_comp_err_attr(struct ath12k_base *ab,
+					       struct sk_buff *vendor_event,
+					       struct ath12k_telemetry_dp_device *device_dp_stats)
+{
+	int tx_comp_attr, ring_attr;
+	struct nlattr *attr1;
+	struct nlattr *attr2;
+
+	attr1 = nla_nest_start(vendor_event,
+			       QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_COMP_ERR_EVENT);
+	if (!attr1) {
+		ath12k_err(ab, "nla nest failure: Device tx comp error");
+		return -EINVAL;
+	}
+
+	for (ring_attr = 0; ring_attr < DP_TCL_NUM_RING_MAX; ring_attr++) {
+		attr2 = nla_nest_start(vendor_event, ring_attr + 1);
+		if (!attr2) {
+			ath12k_err(ab,
+				   "nla nest failure: Device tx comp error - ring %d",
+				   ring_attr + 1);
+			return -EINVAL;
+		}
+
+		for (tx_comp_attr = 0; tx_comp_attr < DP_TX_COMP_ERR_MAX;
+		     tx_comp_attr++) {
+			if (nla_put_u32(vendor_event, tx_comp_attr + 1,
+					device_dp_stats->tx_comp_err[tx_comp_attr][ring_attr])) {
+				ath12k_err(ab,
+					   "nla put failure: Device tx comp err attr %d ring %d",
+					   ring_attr + 1, tx_comp_attr + 1);
+				return -EINVAL;
+			}
+		}
+		nla_nest_end(vendor_event, attr2);
+	}
+	nla_nest_end(vendor_event, attr1);
+
+	return 0;
+}
+
+static int ath12k_fill_device_tx_stats(struct ath12k_base *ab,
+				       struct sk_buff *vendor_event,
+				       struct ath12k_telemetry_dp_device *device_dp_stats)
+{
+	if (ath12k_fill_device_tx_comp_err_attr(ab, vendor_event,
+						device_dp_stats)) {
+		ath12k_err(ab, "Error filling device tx comp err stats");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+static int ath12k_prepare_device_vendor_event(struct sk_buff *vendor_event,
+					      struct ath12k_dp *dp,
+					      struct ath12k_telemetry_command *cmd)
+{
+	struct ath12k_telemetry_dp_device *telemetry_device;
+	struct nlattr *attr;
+	int ret = -EINVAL;
+
+	telemetry_device = vmalloc(sizeof(*telemetry_device));
+	if (!telemetry_device) {
+		ath12k_err(dp->ab, "Failed to allocate telemetry_device for device stats");
+		return -ENOMEM;
+	}
+
+	memset(telemetry_device, 0, sizeof(*telemetry_device));
+	ath12k_dp_get_device_stats(dp, telemetry_device);
+
+	if (cmd->feat.feat_rx) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_device_rx_stats(dp->ab, vendor_event,
+							telemetry_device)) {
+				ath12k_err(dp->ab,
+					   "Error filling device rx stats");
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(dp->ab,
+				   "nla nest failure: device rx feat stats");
+			goto out;
+		}
+	}
+
+	if (cmd->feat.feat_tx) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_TX_STATS_EVENT);
+		if (attr) {
+			if (ath12k_fill_device_tx_stats(dp->ab, vendor_event,
+							telemetry_device)) {
+				ath12k_err(dp->ab,
+					   "Error filling device tx stats");
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(dp->ab, "nla nest failure: device tx feat stats");
+			goto out;
+		}
+	}
+
+	ret = 0;
+out:
+	vfree(telemetry_device);
+	return ret;
+}
+
+static int ath12k_get_common_nl_event_attr_size(void)
+{
+	int common_size;
+
+	common_size = nla_total_size(sizeof(u32)) +
+		      nla_total_size(sizeof(u8)) + /* Link Id */
+		      nla_total_size(sizeof(u64)); /* Request Id */
+
+	return common_size;
+}
+
+static int ath12k_get_device_feat_rx_attr_size(void)
+{
+	int payload_size;
+	int total_size;
+	int attr_size;
+	int ring;
+
+	/* RXDMA ERR */
+	payload_size = nla_total_size(sizeof(u32)) *
+			HAL_REO_ENTR_RING_RXDMA_ECODE_MAX;
+	attr_size = nla_total_size_nested(payload_size);
+
+	/* REO ERR */
+	payload_size = nla_total_size(sizeof(u32)) *
+			HAL_REO_DEST_RING_ERROR_CODE_MAX;
+	attr_size += nla_total_size_nested(payload_size);
+
+	/* WBM DROP Reason */
+	payload_size = nla_total_size(sizeof(u32)) * WBM_ERR_DROP_MAX;
+	attr_size += nla_total_size_nested(payload_size);
+
+	/* REO DROP */
+	for (ring = 0; ring < DP_REO_RING_MAX; ring++) {
+		payload_size = nla_total_size(sizeof(u32)) * DP_RX_ERR_MAX;
+		/* Size of each rings */
+		attr_size += nla_total_size_nested(payload_size);
+	}
+	attr_size += nla_total_size_nested(attr_size);
+
+	/* Parent RX STATS */
+	total_size = nla_total_size_nested(attr_size);
+
+	return total_size;
+}
+
+static int ath12k_get_device_feat_tx_attr_size(void)
+{
+	int attr_size = 0;
+	int payload_size;
+	int total_size;
+	int ring;
+
+	/* TX COMP ERR */
+	for (ring = 0; ring < DP_TCL_NUM_RING_MAX; ring++) {
+		payload_size = nla_total_size(sizeof(u32)) *
+				DP_TX_COMP_ERR_MAX;
+		/* Size of each rings */
+		attr_size += nla_total_size_nested(payload_size);
+	}
+
+	attr_size += nla_total_size_nested(attr_size);
+
+	/* Parent TX STATS */
+	total_size = nla_total_size_nested(attr_size);
+
+	return total_size;
+}
+
+static int ath12k_get_device_attr_size(struct ath12k_telemetry_command *cmd)
+{
+	int total_size = 0;
+
+	if (cmd->feat.feat_rx)
+		total_size += ath12k_get_device_feat_rx_attr_size();
+
+	if (cmd->feat.feat_tx)
+		total_size += ath12k_get_device_feat_tx_attr_size();
+
+	return total_size;
+}
+
+int ath12k_get_dp_vendor_event_len(struct ath12k_telemetry_command *cmd)
+{
+	int total_size;
+
+	total_size = ath12k_get_common_nl_event_attr_size();
+
+	switch (cmd->obj) {
+	case STATS_OBJ_DEVICE:
+		total_size += ath12k_get_device_attr_size(cmd);
+		break;
+	default:
+		ath12k_err(NULL, "Invalid obj Type");
+	}
+
+	return NLMSG_HDRLEN + total_size;
+}
+
+static int ath12k_stats_device_setup(struct ath12k_telemetry_command *cmd)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(cmd->wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct sk_buff *vendor_event;
+	struct ath12k *ar;
+	struct ath12k_dp *dp;
+	int len, ret;
+
+	if (cmd->link_id >= ah->num_radio) {
+		ath12k_err(NULL, "Invalid HW Link ID %d", cmd->link_id);
+		return -EINVAL;
+	}
+
+	ar = &ah->radio[cmd->link_id];
+	if (!ar) {
+		ath12k_err(NULL, "ar not present\n");
+		return -EINVAL;
+	}
+
+	dp = ar->ab->dp;
+
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) {
+		ath12k_err(ar->ab, "Device stats return. Recovery in progress\n");
+		return -EINVAL;
+	}
+
+	len = ath12k_get_dp_vendor_event_len(cmd);
+	ath12k_dbg(ar->ab, ATH12K_DBG_TELEMETRY, "Vendor Event Length = %d\n",
+		   len);
+
+	vendor_event = cfg80211_vendor_event_alloc(cmd->wiphy, cmd->wdev, len,
+						   QCA_NL80211_VENDOR_SUBCMD_WLAN_WIPHY_TELEMETRY_EVENT,
+						   GFP_KERNEL);
+	if (!vendor_event) {
+		ath12k_err(ar->ab, "Error allocating vendor event\n");
+		return -EINVAL;
+	}
+
+	ret = ath12k_prepare_telemetry_common_vendor_attr(vendor_event, cmd);
+	if (ret)
+		goto out;
+
+	ret = ath12k_prepare_device_vendor_event(vendor_event, dp, cmd);
+	if (ret)
+		goto out;
+
+	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
+
+	return ret;
+out:
+	ath12k_err(ar->ab, "Error sending telemetry vendor event");
+	kfree_skb(vendor_event);
+	return ret;
+}
+
+int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd)
+{
+	int ret;
+
+	switch (cmd->obj) {
+	case STATS_OBJ_DEVICE:
+		ret = ath12k_stats_device_setup(cmd);
+		break;
+	default:
+		ath12k_err(NULL, "Invalid obj type\n");
+		ret = -EINVAL;
+	}
+
+	return ret;
+}
+
+static int ath12k_wifi_stats_reply_setup_schedule(struct ath12k_telemetry_command *cmd)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(cmd->wiphy);
+	struct ath12k_stats_list_entry *stats_entry;
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_hw_group *ag;
+	struct ath12k *ar;
+
+	stats_entry = kzalloc(sizeof(*stats_entry), GFP_KERNEL);
+	if (!stats_entry) {
+		ath12k_err(NULL, "Allocation failure for stats_entry\n");
+		return -EINVAL;
+	}
+
+	ar = ah->radio;
+	if (!ar) {
+		ath12k_err(NULL, "No radio present\n");
+		kfree(stats_entry);
+		return -EINVAL;
+	}
+
+	if (ar->ab && ar->ab->ag) {
+		ag = ar->ab->ag;
+	} else {
+		ath12k_err(ar->ab, "ag not found\n");
+		kfree(stats_entry);
+		return -EINVAL;
+	}
+
+	memcpy(&stats_entry->usr_command, cmd,
+	       sizeof(struct ath12k_telemetry_command));
+
+	list_add_tail(&stats_entry->node, &ag->stats_work.work_list);
+
+	wiphy_work_queue(ah->hw->wiphy, &ag->stats_work.stats_nb_work);
+
+	return 0;
+}
+
+static int ath12k_vendor_wlan_telemetry_wiphy_getstats(struct wiphy *wiphy,
+						       struct wireless_dev *wdev,
+						       const void *data,
+						       int data_len)
+{
+	struct nlattr *tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAX + 1];
+	struct ath12k_telemetry_command cmd = {0};
+	int ret;
+
+	ret = nla_parse(tb, QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAX, data, data_len,
+			ath12k_wlan_telemetry_req_policy, NULL);
+
+	if (ret) {
+		ath12k_err(NULL, "nla parse failure: Getstats wiphy telemetry\n");
+		return ret;
+	}
+
+	cmd.wiphy = wiphy;
+
+	if (ath12k_extract_user_inputs(tb, &cmd)) {
+		ath12k_err(NULL, "Error parsing user input\n");
+		return -EINVAL;
+	}
+
+	ret = ath12k_wifi_stats_reply_setup_schedule(&cmd);
+
+	return ret;
+}
+
 static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     const void *data, int data_len)
@@ -2662,6 +3274,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WIPHY,
+		.doit = ath12k_vendor_wlan_telemetry_wiphy_getstats,
+		.policy = ath12k_wlan_telemetry_req_policy,
+		.maxattr = QCA_VENDOR_ATTR_WLAN_TELEMETRY_MAX,
+	},
+
 };
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
@@ -2676,6 +3296,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_WLAN_WIPHY_TELEMETRY_EVENT] = {
+	      .vendor_id = QCA_NL80211_VENDOR_ID,
+	      .subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WIPHY,
 	},
 };
 

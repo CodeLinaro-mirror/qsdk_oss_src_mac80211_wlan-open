@@ -1020,7 +1020,7 @@ int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);
 int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
-				struct ath12k_device_dp_stats *device_stats);
+				struct ath12k_telemetry_dp_device *telemetry_device);
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_dp_peer_stats *peer_stats,
 			     u8 *addr, u8 link_id);
