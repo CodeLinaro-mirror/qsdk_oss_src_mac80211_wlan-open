@@ -9,6 +9,13 @@
 
 #include "core.h"
 
+#define DP_SDWF_DEFINED_Q_PTID_MAX 2
+#define DP_SDWF_DEFAULT_Q_PTID_MAX 2
+#define DP_SDWF_TID_MAX 8
+
+#define DP_SDWF_Q_MAX (DP_SDWF_DEFINED_Q_PTID_MAX * DP_SDWF_TID_MAX)
+#define DP_SDWF_DEFAULT_Q_MAX (DP_SDWF_DEFAULT_Q_PTID_MAX * DP_SDWF_TID_MAX)
+
 #define DP_GET_HW_LINK_ID_FRM_PPDU_ID(PPDU_ID, LINK_ID_OFFSET, LINK_ID_BITS) \
 	(((PPDU_ID) >> (LINK_ID_OFFSET)) & ((1 << (LINK_ID_BITS)) - 1))
 
@@ -41,6 +48,8 @@ void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
 void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
 					 struct hal_tx_status *ts, int ring_id,
 					 u16 tx_desc_flags);
+int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
+				 struct htt_tx_wbm_completion *status_desc, u8 mac_id);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int ring_id);
 struct ath12k_ppeds_tx_desc_info *

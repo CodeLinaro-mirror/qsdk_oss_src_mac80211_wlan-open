@@ -18,4 +18,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 					    struct ath12k_link_vif *arvif, bool vdev_id_check_en);
 bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *skb);
+int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
+				       struct ath12k_link_vif *arvif,
+				       struct sk_buff *skb, struct ath12k_link_sta *arsta);
 #endif

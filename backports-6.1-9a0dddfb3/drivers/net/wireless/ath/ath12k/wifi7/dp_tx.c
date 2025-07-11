@@ -1649,3 +1649,15 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 
 	return bank_config;
 }
+
+int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
+				       struct ath12k_link_vif *arvif,
+				       struct sk_buff *skb, struct ath12k_link_sta *arsta)
+{
+	u8 ring_selector = 0, ring_id = 0;
+
+	ring_selector = smp_processor_id();
+	ring_id = ring_selector % dp_pdev->dp->hw_params->max_tx_ring;
+
+	return ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, false, arsta, ring_id, 0);
+}

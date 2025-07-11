@@ -463,6 +463,9 @@ struct ath12k_dp_arch_ops {
 				    struct ath12k_dp_link_peer *peer,
 				    u16 peer_id,
 				    u8 chip_id);
+	int (*sdwf_reinject_handler)(struct ath12k_pdev_dp *dp_pdev,
+				     struct ath12k_link_vif *arvif,
+				     struct sk_buff *skb, struct ath12k_link_sta *arsta);
 };
 
 struct ath12k_bp_stats {
