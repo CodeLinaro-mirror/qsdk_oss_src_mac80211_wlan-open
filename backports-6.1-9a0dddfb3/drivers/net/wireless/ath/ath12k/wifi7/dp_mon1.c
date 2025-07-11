@@ -885,8 +885,7 @@ void ath12k_wifi7_dp_mon_rx_dest_process(struct ath12k *ar, int mac_id,
 		rx_mon_stats->dest_ppdu_done++;
 		ath12k_dp_rx_bufs_replenish(ar->ab->dp,
 					    &dp->rx_refill_buf_ring,
-					    &rx_desc_used_list,
-					    rx_bufs_used);
+					    &rx_desc_used_list);
 	}
 }
 

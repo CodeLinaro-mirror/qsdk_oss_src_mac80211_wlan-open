@@ -136,7 +136,7 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 
 		req_entries = ath12k_dp_get_req_entries_from_buf_ring(dp->ab, rx_ring, &list);
 		if (req_entries)
-			ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list, req_entries);
+			ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list);
 	}
 
 	/* TODO: Implement handler for other interrupts */

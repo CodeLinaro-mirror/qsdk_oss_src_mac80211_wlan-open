@@ -307,8 +307,7 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 /* Returns number of Rx buffers replenished */
 void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_ring *rx_ring,
-				struct list_head *used_list,
-				int req_entries)
+				struct list_head *used_list)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_buffer_addr *desc;
@@ -317,8 +316,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
 	enum hal_rx_buf_return_buf_manager mgr = dp->hal->hal_params->rx_buf_rbm;
-
-	srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+	int allocated_entries = 0;
 
 	list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
 #ifdef CPTCFG_MAC80211_SFE_SUPPORT
@@ -335,23 +333,25 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 		if (unlikely(dma_mapping_error(dp->dev, paddr))) {
 			ath12k_dp_rx_skb_free(skb, dp, 0,
 					      DP_RX_ERR_DROP_REPLENISH);
-			goto out;
+			break;
 		}
 #else
 		paddr = virt_to_phys(skb->data);
 		if(unlikely(!paddr)) {
 			ath12k_dp_rx_skb_free(skb, dp, 0,
 					      DP_RX_ERR_DROP_REPLENISH);
-			goto out;
+			break;
 		}
 #endif
+		allocated_entries++;
 		rx_desc->skb = skb;
 		rx_desc->paddr = paddr;
 	}
 
+	srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 	spin_lock_bh(&srng->lock);
 	ath12k_hal_srng_access_begin(ab, srng);
-	while (req_entries > 0) {
+	while (allocated_entries > 0) {
 		rx_desc = list_first_entry_or_null(used_list, struct ath12k_rx_desc_info, list);
 		if (unlikely(!rx_desc))
 			goto out;
@@ -362,7 +362,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 
 		list_del(&rx_desc->list);
 
-		req_entries--;
+		allocated_entries--;
 
 		ath12k_hal_rx_buf_addr_info_set(desc, rx_desc->paddr, rx_desc->cookie, mgr);
 	}
@@ -370,10 +370,11 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 out:
 	ath12k_hal_srng_access_end(ab, srng);
 
+	spin_unlock_bh(&srng->lock);
+
 	if (unlikely(!list_empty(used_list)))
 		ath12k_dp_rx_enqueue_free(dp, used_list);
 
-	spin_unlock_bh(&srng->lock);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_bufs_replenish);
 
@@ -388,7 +389,7 @@ static int ath12k_dp_rxdma_ring_buf_setup(struct ath12k_base *ab,
 
 	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, rx_ring, &list);
 	if (req_entries)
-		ath12k_dp_rx_bufs_replenish(ab->dp, rx_ring, &list, req_entries);
+		ath12k_dp_rx_bufs_replenish(ab->dp, rx_ring, &list);
 
 	return 0;
 }

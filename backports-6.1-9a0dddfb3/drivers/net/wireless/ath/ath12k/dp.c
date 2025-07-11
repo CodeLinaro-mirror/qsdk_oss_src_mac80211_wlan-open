@@ -2331,7 +2331,7 @@ int ath12k_dp_rxdma_ring_setup(struct ath12k_base *ab)
 
         req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, rx_ring, &list);
         if (req_entries)
-                ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list, req_entries);
+                ath12k_dp_rx_bufs_replenish(dp, rx_ring, &list);
 
         return 0;
 }

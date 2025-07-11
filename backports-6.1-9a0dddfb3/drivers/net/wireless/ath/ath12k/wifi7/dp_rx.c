@@ -1556,8 +1556,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 		rx_ring = &partner_dp->rx_refill_buf_ring;
 
 		ath12k_dp_rx_bufs_replenish(partner_dp, rx_ring,
-					    &rx_desc_used_list[device_id],
-					    num_buffs_reaped[device_id]);
+					    &rx_desc_used_list[device_id]);
 	}
 
 	ath12k_wifi7_dp_rx_process_received_packets(dp, napi, &msdu_list,
@@ -2343,8 +2342,7 @@ exit:
 		rx_ring = &partner_dp->rx_refill_buf_ring;
 
 		ath12k_dp_rx_bufs_replenish(partner_dp, rx_ring,
-					    &rx_desc_used_list[device_id],
-					    num_buffs_reaped[device_id]);
+					    &rx_desc_used_list[device_id]);
 	}
 
 	return tot_n_bufs_reaped;
@@ -2909,8 +2907,7 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		rx_ring = &partner_dp->rx_refill_buf_ring;
 
 		ath12k_dp_rx_bufs_replenish(partner_dp, rx_ring,
-					    &rx_desc_used_list[device_id],
-					    num_buffs_reaped[device_id]);
+					    &rx_desc_used_list[device_id]);
 	}
 
 	rcu_read_lock();
