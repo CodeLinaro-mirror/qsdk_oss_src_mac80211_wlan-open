@@ -477,9 +477,12 @@ static void ieee80211_chan_bw_change(struct ieee80211_local *local,
 			if (!link_sta)
 				continue;
 
-			if (reserved)
-				new_chandef = &link->reserved.oper;
-			else
+			if (reserved) {
+				if (!link->reserved_chanctx)
+					continue;
+				else
+					new_chandef = &link->reserved.oper;
+			} else
 				new_chandef = &link_conf->chanreq.oper;
 
 			new_sta_bw = _ieee80211_sta_cur_vht_bw(link_sta,
