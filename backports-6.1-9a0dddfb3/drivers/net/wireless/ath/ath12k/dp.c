@@ -2778,12 +2778,13 @@ static int ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 }
 
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
-			     struct ath12k_dp_peer_stats *peer_stats,
+			     struct ath12k_telemetry_dp_peer *telemetry_peer,
 			     u8 *addr, u8 link_id)
 {
 	struct ath12k_link_vif *arvif;
 	struct ath12k_dp_hw *dp_hw = &ahvif->ah->dp_hw;
 	struct ath12k *ar = &ahvif->ah->radio[0];
+	struct ath12k_dp_peer_stats *peer_stats;
 	struct ath12k_dp_peer *peer;
 	int stats_link_id, i, ret = 0;
 	unsigned long links_map = ahvif->links_map;
@@ -2791,6 +2792,10 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	peer = ath12k_dp_peer_find(dp_hw, addr);
+	peer_stats = &telemetry_peer->peer_stats;
+
+	if (ath12k_debugfs_is_dp_debug_stats_enabled(&ar->dp))
+		telemetry_peer->is_extended = true;
 
 	if (peer) {
 		if (!peer->is_mlo && valid_link) {

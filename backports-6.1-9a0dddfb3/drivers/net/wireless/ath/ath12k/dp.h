@@ -1022,7 +1022,7 @@ void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 				struct ath12k_telemetry_dp_device *telemetry_device);
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
-			     struct ath12k_dp_peer_stats *peer_stats,
+			     struct ath12k_telemetry_dp_peer *telemetry_peer,
 			     u8 *addr, u8 link_id);
 void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     struct ath12k_dp_aggr_vif_stats *aggr_vif_stats,

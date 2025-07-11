@@ -299,6 +299,12 @@ enum ath12k_wlan_telemetry_feat {
 	TELEMETRY_FEAT_MAX,
 };
 
+/* Telemetry Peer Stats */
+struct ath12k_telemetry_dp_peer {
+	bool is_extended;
+	struct ath12k_dp_peer_stats peer_stats;
+};
+
 /* Telemetry Device Stats */
 struct ath12k_telemetry_dp_device {
 	bool is_extended;
