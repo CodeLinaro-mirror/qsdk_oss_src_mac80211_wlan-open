@@ -85,7 +85,8 @@ struct hal_rx_mon_mpdu_info {
 	u8  decap_type:3,
 	    mpdu_start_received:1,
 	    first_rx_hdr_rcvd:1,
-	    rx_hdr_rcvd:1;
+	    rx_hdr_rcvd:1,
+	    raw_mpdu:1;
 	u32 err_bitmap;
 };
 

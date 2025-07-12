@@ -7,6 +7,7 @@
 #include "hal_rx_desc.h"
 #include "../hal_mon_cmn.h"
 #include "hal_mon.h"
+#include "dp_rx.h"
 
 extern const struct hal_mon_ops hal_qcn9274_mon_ops;
 extern const struct hal_mon_ops hal_wcn7850_mon_ops;
@@ -1470,6 +1471,21 @@ ath12k_wifi7_hal_mon_parse_user_info(const struct hal_receive_user_info *rx_usr_
 	}
 }
 
+static void
+ath12k_wifi7_hal_mon_rx_set_decap_type_raw_mode(struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	/* set decap type to raw mode for management frames, control frames
+	 * and NULL data frames
+	 */
+	if (ppdu_info->nrp_info.fc_valid && ppdu_info->mpdu_info.decap_type) {
+		if (ieee80211_is_mgmt(ppdu_info->nrp_info.frame_control) ||
+		    ieee80211_is_ctl(ppdu_info->nrp_info.frame_control) ||
+		    (ppdu_info->grp_id == HAL_MPDU_START_SW_FRAME_GRP_NULL_DATA)) {
+			ppdu_info->mpdu_info.decap_type = DP_RX_DECAP_TYPE_RAW;
+		}
+	}
+}
+
 static __always_inline void
 ath12k_wifi7_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 					    struct hal_rx_mon_ppdu_info *ppdu_info)
@@ -1506,6 +1522,15 @@ ath12k_wifi7_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 	ppdu_info->nrp_info.fc_valid =
 		u32_get_bits(info[3],
 			     HAL_RX_MPDU_START_INFO3_FC_VALID);
+
+	ppdu_info->mpdu_info.raw_mpdu =
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_RAW_MPDU);
+	if (ppdu_info->mpdu_info.raw_mpdu)
+		ppdu_info->mpdu_info.decap_type = DP_RX_DECAP_TYPE_RAW;
+	else
+		ppdu_info->mpdu_info.decap_type =
+			u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE);
+
 	ppdu_info->mpdu_len += u32_get_bits(info[5],
 					    HAL_RX_MPDU_START_INFO5_MPDU_LEN);
 	ppdu_info->nrp_info.mcast_bcast =
@@ -1538,6 +1563,8 @@ ath12k_wifi7_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 		ppdu_info->userstats[userid].frame_control =
 				ppdu_info->nrp_info.frame_control;
 	}
+
+	ath12k_wifi7_hal_mon_rx_set_decap_type_raw_mode(ppdu_info);
 }
 
 static __always_inline void
@@ -1576,8 +1603,14 @@ ath12k_wifi7_hal_mon_rx_mpdu_start_info_get_compact(const void *tlv_data, u32 us
 	ppdu_info->nrp_info.fc_valid =
 		u32_get_bits(info[3],
 			     HAL_RX_MPDU_START_INFO3_FC_VALID_CMPCT);
-	ppdu_info->mpdu_info.decap_type =
-		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE_CMPCT);
+	ppdu_info->mpdu_info.raw_mpdu =
+		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_RAW_MPDU_CMPCT);
+	if (ppdu_info->mpdu_info.raw_mpdu)
+		ppdu_info->mpdu_info.decap_type = DP_RX_DECAP_TYPE_RAW;
+	else
+		ppdu_info->mpdu_info.decap_type =
+			u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_DECAP_TYPE_CMPCT);
+
 	ppdu_info->mpdu_len += u32_get_bits(info[5],
 					    HAL_RX_MPDU_START_INFO5_MPDU_LEN_CMPCT);
 	ppdu_info->nrp_info.mcast_bcast =
