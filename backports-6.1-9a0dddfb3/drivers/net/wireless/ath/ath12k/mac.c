@@ -20981,7 +20981,6 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	ath12k_reg_init(hw);
 
 	if (!is_raw_mode) {
-		hw->netdev_features = NETIF_F_HW_CSUM;
 		ieee80211_hw_set(hw, SW_CRYPTO_CONTROL);
 		ieee80211_hw_set(hw, SUPPORT_FAST_XMIT);
 	}
