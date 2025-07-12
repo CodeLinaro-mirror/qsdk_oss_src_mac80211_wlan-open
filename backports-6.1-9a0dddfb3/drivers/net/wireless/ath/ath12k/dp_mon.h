@@ -424,6 +424,8 @@ void
 ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 				enum ath12k_pktlog_mode mode, bool enable);
+u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp, struct sk_buff *skb,
+					     u8 idx);
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 {

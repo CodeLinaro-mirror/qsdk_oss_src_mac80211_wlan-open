@@ -516,7 +516,6 @@ ath12k_wifi7_dp_mon_rx_parse_ppdu_status(struct ath12k_pdev_dp *dp_pdev,
 	struct sk_buff *mpdu;
 	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
-	const skb_frag_t *frag;
 	enum hal_rx_mon_status hal_status;
 	u32 buf_size = ATH12K_DP_MON_RX_BUF_SIZE, num_skb = 0, pkt_tlv = 0;
 	u8 fcs_len_left = FCS_LEN, last_frag_idx, last_frag_size;
@@ -546,9 +545,11 @@ ath12k_wifi7_dp_mon_rx_parse_ppdu_status(struct ath12k_pdev_dp *dp_pdev,
 		if (mpdu_meta->decap_type == DP_RX_DECAP_TYPE_RAW) {
 			last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
 			if (skb_shinfo(mpdu)->nr_frags >= 2) {
-				frag = &skb_shinfo(mpdu)->frags[last_frag_idx];
-				last_frag_size = skb_frag_size(frag);
-				if (last_frag_size < FCS_LEN) {
+				last_frag_size =
+				ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp_pdev->dp,
+									 mpdu,
+									 last_frag_idx);
+				if (last_frag_size > 0 && last_frag_size < FCS_LEN) {
 					ath12k_dp_mon_skb_remove_frag(dp_pdev->dp, mpdu,
 								      last_frag_idx,
 								      buf_size);
