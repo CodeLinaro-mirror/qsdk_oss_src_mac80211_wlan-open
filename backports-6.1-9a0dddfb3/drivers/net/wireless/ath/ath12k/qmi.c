@@ -6026,9 +6026,8 @@ int ath12k_qmi_event_server_arrive(struct ath12k_qmi *qmi)
 		/* Coldboot calibration mode */
 		ath12k_qmi_trigger_host_cap(ab);
 	} else {
-		ath12k_core_hw_group_set_mlo_capable(ag);
 		mutex_lock(&ag->mutex);
-
+		ath12k_core_hw_group_set_mlo_capable(ag);
 		if (ath12k_qmi_hw_group_host_cap_ready(ag)) {
 
 			for (i = 0; i < ag->num_devices; i++) {

@@ -149,7 +149,7 @@ int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr)
 {
 	int ret;
 
-	lockdep_assert_held(ath12k_ar_to_hw(ar)->wiphy);
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	ret = __ath12k_peer_delete(ar, vdev_id, addr);
 	if (ret)

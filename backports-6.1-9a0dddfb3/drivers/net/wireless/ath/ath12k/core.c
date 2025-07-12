@@ -4782,18 +4782,18 @@ int ath12k_core_init(struct ath12k_base *ab)
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "num devices %d num probed %d\n",
 		   ag->num_devices, ag->num_probed);
 
-	// TODO: fix the the locking sequence
 	mutex_lock(&ag->mutex);
 	is_ready = ath12k_core_hw_group_create_ready(ag);
-	mutex_unlock(&ag->mutex);
 
 	if (is_ready) {
 		ret = ath12k_core_hw_group_create(ag);
 		if (ret) {
 			ath12k_warn(ab, "unable to create hw group\n");
+			mutex_unlock(&ag->mutex);
 			goto err;
 		}
 	}
+	mutex_unlock(&ag->mutex);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* Used for tracking the order of per ab's DS node in bringup sequence
