@@ -184,7 +184,7 @@ peer_clean:
 	}
 
 tid_clean:
-	for (; tid >= 0; tid--)
+	for (tid--; tid >= 0; tid--)
 		ath12k_dp_arch_rx_peer_tid_delete(ab->dp, ar, peer, tid);
 
 	spin_unlock_bh(&dp->dp_lock);
