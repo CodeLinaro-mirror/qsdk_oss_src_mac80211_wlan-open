@@ -848,6 +848,7 @@ struct hal_srng {
 			 * accessed through SW structure
 			 */
 			u32 *tp_addr;
+			u32 *tp_addr_direct;
 
 			/* Current SW loop cnt */
 			u32 loop_cnt;
@@ -1374,10 +1375,8 @@ void *ath12k_hal_srng_dst_peek(struct ath12k_base *ab, struct hal_srng *srng);
 int __ath12k_hal_srng_dst_num_free(struct hal_srng *srng, bool sync_hw_ptr);
 int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 				 bool sync_hw_ptr);
-void __ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,struct hal_srng *srng,
-					    int entries);
-void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,
-					  struct hal_srng *srng, int entries);
+void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,struct hal_srng *srng,
+					  int entries);
 void *ath12k_hal_srng_src_get_next_reaped(struct ath12k_base *ab,
 					  struct hal_srng *srng);
 void *ath12k_hal_srng_src_reap_next(struct ath12k_base *ab,

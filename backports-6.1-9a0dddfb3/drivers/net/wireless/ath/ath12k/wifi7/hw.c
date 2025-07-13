@@ -605,7 +605,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
+		.tcl_ring_retry = false,
 		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
@@ -826,7 +826,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
+		.tcl_ring_retry = false,
 		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
@@ -940,7 +940,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
+		.tcl_ring_retry = false,
 		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
@@ -1046,7 +1046,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
+		.tcl_ring_retry = false,
 		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
@@ -1131,7 +1131,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
+		.tcl_ring_retry = false,
 		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 

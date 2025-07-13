@@ -719,4 +719,61 @@ void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);
 void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
 					 u32 ba_window_size, u8 tid);
+static inline
+void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
+{
+	void *desc;
+	u32 next_hp;
+
+	/* TODO: Using % is expensive, but we have to do this since size of some
+	 * SRNG rings is not power of 2 (due to descriptor sizes). Need to see
+	 * if separate function is defined for rings having power of 2 ring size
+	 * (TCL2SW, REO2SW, SW2RXDMA and CE rings) so that we can avoid the
+	 * overhead of % by using mask (with &).
+	 */
+	next_hp = (srng->u.src_ring.hp + srng->entry_size) % srng->ring_size;
+
+	if (next_hp == srng->u.src_ring.cached_tp) {
+		srng->u.src_ring.cached_tp = *(volatile u32 *)srng->u.src_ring.tp_addr;
+		if (next_hp == srng->u.src_ring.cached_tp)
+			return NULL;
+	}
+
+	desc = srng->ring_base_vaddr + srng->u.src_ring.hp;
+	srng->u.src_ring.hp = next_hp;
+
+	/* TODO: Reap functionality is not used by all rings. If particular
+	 * ring does not use reap functionality, we need not update reap_hp
+	 * with next_hp pointer. Need to make sure a separate function is used
+	 * before doing any optimization by removing below code updating
+	 * reap_hp.
+	 */
+	srng->u.src_ring.reap_hp = next_hp;
+
+	return desc;
+}
+
+/*
+ * ath12k_hal_srng_access_umac_src_ring_end_nolock_fast can be used
+ * only when the calling context tries to fill 1 entry of the ring at a time
+ */
+static inline
+void ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(struct hal_srng *srng)
+{
+	writel_relaxed(srng->u.src_ring.hp, srng->u.src_ring.hp_addr_direct);
+	srng->timestamp = jiffies;
+}
+static inline
+void ath12k_hal_srng_access_dst_ring_begin_nolock(struct ath12k_base *ab,
+						  struct hal_srng *srng)
+{
+	srng->u.dst_ring.cached_hp = *srng->u.dst_ring.hp_addr;
+}
+static inline
+void ath12k_hal_srng_access_dst_ring_end_nolock(struct hal_srng *srng)
+{
+	srng->u.dst_ring.last_hp = *srng->u.dst_ring.hp_addr;
+	writel_relaxed(srng->u.dst_ring.tp, srng->u.dst_ring.tp_addr_direct);
+	srng->timestamp = jiffies;
+}
 #endif

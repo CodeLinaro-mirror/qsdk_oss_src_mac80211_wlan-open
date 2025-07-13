@@ -1423,7 +1423,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 		ath12k_hal_srng_access_end(ab, srng);
 		return -EINVAL;
 	}
-	__ath12k_hal_srng_dst_invalidate_entry(dp, srng, valid_entries);
+	ath12k_hal_srng_dst_invalidate_entry(dp, srng, valid_entries);
 #endif
 	while ((desc = __ath12k_hal_srng_dst_get_next_cached_entry(srng, &last_tp))) {
 		struct rx_mpdu_desc_info *mpdu_info;

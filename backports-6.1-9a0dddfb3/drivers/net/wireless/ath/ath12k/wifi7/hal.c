@@ -286,17 +286,31 @@ void ath12k_wifi7_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 	u32 reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R2];
 
 	if (srng->ring_dir == HAL_SRNG_DIR_DST) {
-		if (!ab->hw_params->supports_shadow_regs)
+		if (!ab->hw_params->supports_shadow_regs) {
 			srng->u.dst_ring.tp_addr =
 				(u32 *)((unsigned long)ab->mem + reg_base +
 				(HAL_REO1_RING_TP - HAL_REO1_RING_HP));
-		else
+			if (type  == HAL_WBM2SW_RELEASE) {
+				if (ab->hif.bus == ATH12K_BUS_PCI ||
+						ab->hif.bus == ATH12K_BUS_HYBRID){
+					srng->u.dst_ring.tp_addr_direct =
+						(u32 *)((unsigned long)ab->mem +
+						(reg_base & WINDOW_RANGE_MASK) +
+						HAL_DP_REG_WINDOW_OFFSET +
+						(HAL_REO1_RING_TP - HAL_REO1_RING_HP));
+				} else {
+					srng->u.dst_ring.tp_addr_direct =
+						srng->u.dst_ring.tp_addr;
+				}
+			}
+		} else {
 			ath12k_dbg(ab, ATH12K_DBG_HAL,
 				   "type %d ring_num %d target_reg 0x%x shadow 0x%lx\n",
 				   type, ring_num,
 				   reg_base + HAL_REO1_RING_TP - HAL_REO1_RING_HP,
 				   (unsigned long)srng->u.dst_ring.tp_addr -
 				   (unsigned long)ab->mem);
+		}
 	} else  {
 		if (!ab->hw_params->supports_shadow_regs) {
 			srng->u.src_ring.hp_addr =

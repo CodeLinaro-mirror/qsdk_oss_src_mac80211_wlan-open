@@ -314,17 +314,14 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		hal_ring_id = tx_ring->tcl_data_ring.ring_id;
 		tcl_ring = &hal->srng_list[hal_ring_id];
 
-		spin_lock_bh(&tcl_ring->lock);
 
-		ath12k_hal_srng_access_begin(ab, tcl_ring);
-		hal_tcl_desc = ath12k_hal_srng_src_get_next_entry(ab, tcl_ring);
+		hal_tcl_desc = (void *)ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(tcl_ring);
 		if (unlikely(!hal_tcl_desc)) {
 			/* NOTE: It is highly unlikely we'll be running out of tcl_ring
 			 * desc because the desc is directly enqueued onto hw queue.
 			 */
-			ath12k_hal_srng_access_end(ab, tcl_ring);
+			ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
 			dp->device_stats.tx_err.desc_na[ring_id]++;
-			spin_unlock_bh(&tcl_ring->lock);
 			err = DP_TX_ENQ_DROP_TCL_DESC_NA;
 			goto fail_remove_tx_buf;
 		}
@@ -333,10 +330,9 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 #ifndef CONFIG_IO_COHERENCY
 		dmb(oshst);
 #endif
-		ath12k_hal_srng_access_end(ab, tcl_ring);
+		ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
 
 		dp->device_stats.tx_fast_unicast[ring_id]++;
-		spin_unlock_bh(&tcl_ring->lock);
 
 		DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw_fast, 1, skb->len, ring_id);
 		atomic_inc(&dp_pdev->num_tx_pending);
@@ -1416,12 +1412,12 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	int orig_budget = budget;
 	bool fast_flag;
 
-	ath12k_hal_srng_access_begin(ab, status_ring);
+	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
 
 #ifndef CONFIG_IO_COHERENCY
-	valid_entries = ath12k_hal_srng_dst_num_free(ab, status_ring, false);
+	valid_entries = __ath12k_hal_srng_dst_num_free(status_ring, false);
 	if (!valid_entries) {
-		ath12k_hal_srng_access_end(ab, status_ring);
+		ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 		return 0;
 	}
 
@@ -1444,7 +1440,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	skb_queue_head_init(&free_list_head);
 
 	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp_hw_grp->tx_status_buf[tx_status_idx];
-	while (budget-- && (desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, status_ring, NULL))) {
+	while (budget-- && (desc = __ath12k_hal_srng_dst_get_next_cached_entry(status_ring, NULL))) {
 		tx_status = (struct hal_wbm_completion_ring_tx *)desc;
 
 		if (le32_get_bits(tx_status->info0, HAL_WBM_COMPL_TX_INFO0_CC_DONE)) {
@@ -1480,7 +1476,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		tx_status_entry++;
 	}
 
-	ath12k_hal_srng_access_end(ab, status_ring);
+	ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 
 	if (!n_entry)
 		return orig_budget - budget;

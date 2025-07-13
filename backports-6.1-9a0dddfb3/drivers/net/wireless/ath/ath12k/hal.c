@@ -487,12 +487,12 @@ int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_num_free);
 
-void __ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,
+void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,
 					  struct hal_srng *srng, int entries)
 {
 	u32 *desc, tp, hp;
 
-	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED) || !entries)
+	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED))
 	        return;
 
 	tp = srng->u.dst_ring.tp;
@@ -513,15 +513,6 @@ void __ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,
 					entries * sizeof(u32),
 					DMA_FROM_DEVICE);
 	}
-}
-EXPORT_SYMBOL(__ath12k_hal_srng_dst_invalidate_entry);
-
-void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,
-					  struct hal_srng *srng, int entries)
-{
-	lockdep_assert_held(&srng->lock);
-
-	return __ath12k_hal_srng_dst_invalidate_entry(dp, srng, entries);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_invalidate_entry);
 
