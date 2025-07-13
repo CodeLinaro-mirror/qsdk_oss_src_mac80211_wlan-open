@@ -71,6 +71,7 @@ ath12k_wifi7_dp_mon_rx_parse_status_msdu_end(struct ath12k_mon_data *pmon)
 
 	pmon->err_bitmap = ppdu_info->errmap;
 	pmon->mon_ppdu_info.mpdu_info.err_bitmap = ppdu_info->errmap;
+	pmon->mon_ppdu_info.msdu_info.first_buffer = false;
 	pmon->decap_format = ppdu_info->decap_format;
 }
 
@@ -86,6 +87,7 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_mon_desc *mon_desc;
 	struct list_head mon_desc_used_list;
 	struct sk_buff *skb, *tmp_skb;
+	struct hal_rx_mon_msdu_info *msdu_info;
 	u32 pkt_len;
 	u8 *mon_buf;
 	int ret = 0;
@@ -189,8 +191,23 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 
 		mon_stats->pkt_tlv_processed++;
 	} else {
-		page_frag_free(mon_buf);
-		mon_stats->pkt_tlv_free++;
+		ath12k_dp_mon_add_rx_frag(tmp_skb, mon_buf, ATH12K_MON_RX_PKT_OFFSET,
+					  pkt_len, false);
+		if (tmp_skb != skb)
+			ath12k_dp_mon_update_skb_len(skb, pkt_len);
+
+		msdu_info = (struct hal_rx_mon_msdu_info *)mon_buf;
+		if (!ppdu_info->msdu_info.first_buffer) {
+			msdu_info->first_buffer = true;
+			ppdu_info->msdu_info.first_buffer = true;
+		} else {
+			msdu_info->first_buffer = false;
+		}
+
+		if (packet_info->msdu_continuation)
+			msdu_info->last_buffer = false;
+		else
+			msdu_info->last_buffer = true;
 	}
 
 buf_replenish:
@@ -208,11 +225,13 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 					const void *mon_buf)
 {
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
-	struct sk_buff *skb;
+	struct sk_buff *skb, *tmp_skb;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
 	const void *tlv_data = tlv_parsed_hdr->data;
-	int offset;
-	u16 tlv_len = tlv_parsed_hdr->len;
+	int offset, frag_len = tlv_parsed_hdr->len - ATH12K_MON_RX_PKT_OFFSET;
+
+	offset = (const u8 *)tlv_data - (const u8 *)mon_buf;
+	offset += ATH12K_MON_RX_PKT_OFFSET;
 
 	if (!ppdu_info->mpdu_info.mpdu_start_received) {
 		skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
@@ -224,13 +243,30 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 
 		mon_stats->num_skb_alloc++;
 		skb_queue_tail(&ppdu_info->mpdu_q, skb);
-		offset = (const u8 *)tlv_data - (const u8 *)mon_buf;
-		offset += ATH12K_MON_RX_PKT_OFFSET;
-		ath12k_dp_mon_add_rx_frag(skb, mon_buf, offset,
-					  tlv_len - ATH12K_MON_RX_PKT_OFFSET, true);
+		ath12k_dp_mon_add_rx_frag(skb, mon_buf, offset, frag_len, true);
 		ppdu_info->mpdu_info.mpdu_start_received = true;
 		ppdu_info->mpdu_info.first_rx_hdr_rcvd = true;
 		ppdu_info->mpdu_info.decap_type = DP_RX_DECAP_TYPE_INVALID;
+	} else {
+		if (ppdu_info->mpdu_info.decap_type == DP_RX_DECAP_TYPE_RAW)
+			return 0;
+
+		skb = skb_peek_tail(&ppdu_info->mpdu_q);
+		if (unlikely(!skb))
+			return -ENODATA;
+
+		tmp_skb = ath12k_dp_mon_get_skb_valid_frag(dp_pdev->dp, skb);
+		if (!tmp_skb) {
+			tmp_skb = dev_alloc_skb(ATH12K_DP_MON_MAX_RADIO_TAP_HDR);
+			if (!tmp_skb)
+				return -ENOMEM;
+
+			ath12k_dp_mon_append_skb(skb, tmp_skb);
+		}
+
+		ath12k_dp_mon_add_rx_frag(skb, mon_buf, offset, frag_len, true);
+		if (tmp_skb != skb)
+			ath12k_dp_mon_update_skb_len(skb, frag_len);
 	}
 
 	ppdu_info->mpdu_info.rx_hdr_rcvd = true;

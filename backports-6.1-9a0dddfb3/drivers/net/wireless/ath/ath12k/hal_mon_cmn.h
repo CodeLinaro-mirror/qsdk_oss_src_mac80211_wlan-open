@@ -99,6 +99,11 @@ struct hal_rx_nrp_info {
 	uint8_t mac_addr2[ETH_ALEN];
 };
 
+struct hal_rx_mon_msdu_info {
+	u32 first_buffer:1,
+	    last_buffer:1;
+};
+
 struct hal_rx_mon_ppdu_info {
 	u16 ppdu_id;
 	u16 last_ppdu_id;
@@ -198,6 +203,7 @@ struct hal_rx_mon_ppdu_info {
 	struct hal_rx_mon_mpdu_info mpdu_info;
 	struct sk_buff_head mpdu_q;
 	bool is_drop_tlv;
+	struct hal_rx_mon_msdu_info msdu_info;
 };
 
 struct hal_rx_mon_status_tlv_hdr {
