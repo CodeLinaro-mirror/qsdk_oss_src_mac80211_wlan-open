@@ -2212,10 +2212,8 @@ ath12k_dp_mon_get_skb_valid_frag(struct ath12k_dp *dp, struct sk_buff *skb)
 	if (likely(num_frags < MAX_SKB_FRAGS))
 		return skb;
 
-	if (unlikely(!skb_has_frag_list(skb))) {
-		ath12k_warn(dp, "skb has no frag_list, cannot retrieve last fragment\n");
+	if (unlikely(!skb_has_frag_list(skb)))
 		return NULL;
-	}
 
 	last_skb = ath12k_mon_get_last_skb_from_fraglist(skb);
 	if (unlikely(!last_skb)) {
@@ -2360,3 +2358,44 @@ u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp,
 	return size;
 }
 EXPORT_SYMBOL(ath12k_wifi7_dp_mon_get_frag_size_by_idx);
+
+void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx)
+{
+	void *frag = NULL;
+
+	if (likely(idx < MAX_SKB_FRAGS))
+		frag = skb_frag_address(&skb_shinfo(skb)->frags[idx]);
+
+	return frag;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_skb_get_frag_addr);
+
+int ath12k_dp_mon_adj_frag_offset(struct sk_buff *skb, u8 idx, int offset)
+{
+	u32 frag_offset;
+	skb_frag_t *frag;
+
+	if (unlikely(idx >= skb_shinfo(skb)->nr_frags))
+		return -EINVAL;
+
+	frag = &skb_shinfo(skb)->frags[idx];
+	frag_offset = skb_frag_off(frag);
+	frag_offset += offset;
+	skb_frag_off_set(frag, frag_offset);
+	skb_coalesce_rx_frag(skb, idx, -(offset), 0);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_adj_frag_offset);
+
+u32 ath12k_dp_mon_get_num_frags_in_fraglist(struct sk_buff *skb)
+{
+	struct sk_buff *list = NULL;
+	u32 num_frags = skb_shinfo(skb)->nr_frags;
+
+	skb_walk_frags(skb, list)
+		num_frags += skb_shinfo(list)->nr_frags;
+
+	return num_frags;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_get_num_frags_in_fraglist);

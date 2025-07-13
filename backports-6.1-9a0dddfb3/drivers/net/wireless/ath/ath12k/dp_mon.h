@@ -21,6 +21,15 @@
 #define ATH12K_MON_RX_PKT_OFFSET	8
 #define ATH12K_DP_WLAN_MAX_AC		4
 
+#define	ATH12K_DP_MON_MIN_FRAGS_RESTITCH	2
+#define	ATH12K_DP_MON_L3_HDR_PAD		2
+#define	ATH12K_DP_MON_NONRAW_L2_HDR_PAD_BYTE	2
+#define	ATH12K_DP_MON_RAW_L2_HDR_PAD_BYTE	0
+#define	ATH12K_DP_MON_LLC_SIZE			3
+#define	ATH12K_DP_MON_SNAP_SIZE			5
+#define	ATH12K_DP_MON_DECAP_HDR_SIZE		14
+#define	ATH12K_DP_MON_KEYIV			0x20
+
 #define DP_RXDMA_MON_STATUS_RING_SIZE	1024
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
@@ -52,6 +61,13 @@
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
+
+struct ath12k_dp_mon_pad_params {
+	u32 frag_size;
+	u32 msdu_llc_len;
+	u32 pad_byte_holder;
+	u32 frag_idx;
+};
 
 struct dp_rxdma_mon_ring {
 	struct dp_srng refill_buf_ring;
@@ -426,6 +442,9 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 				enum ath12k_pktlog_mode mode, bool enable);
 u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp, struct sk_buff *skb,
 					     u8 idx);
+void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx);
+int ath12k_dp_mon_adj_frag_offset(struct sk_buff *skb, u8 idx, int offset);
+u32 ath12k_dp_mon_get_num_frags_in_fraglist(struct sk_buff *skb);
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 {
