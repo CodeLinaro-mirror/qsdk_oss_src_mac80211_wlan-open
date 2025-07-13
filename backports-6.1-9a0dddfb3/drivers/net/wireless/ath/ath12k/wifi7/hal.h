@@ -676,6 +676,8 @@ u32 ath12k_wifi7_hal_ce_get_desc_size(enum hal_ce_desc type);
 void ath12k_wifi7_hal_cc_config(struct ath12k_base *ab);
 enum hal_rx_buf_return_buf_manager
 ath12k_wifi7_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
+void ath12k_wifi7_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type type,
+				  struct hal_srng *srng, uint32_t *hp, uint32_t *tp);
 void ath12k_wifi7_hal_ce_src_set_desc(struct hal_ce_srng_src_desc *desc,
 				      dma_addr_t paddr,
 				      u32 len, u32 id, u8 byte_swap_data);

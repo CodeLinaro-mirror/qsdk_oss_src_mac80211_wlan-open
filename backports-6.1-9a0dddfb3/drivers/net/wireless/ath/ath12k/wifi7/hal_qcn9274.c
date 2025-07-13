@@ -22,6 +22,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_REO2SW1_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_dst",
 	},
 	[HAL_REO_EXCEPTION] = {
 		/* Designating REO2SW0 ring as exception ring.
@@ -33,6 +34,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_REO2SW0_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_exception",
 	},
 	[HAL_REO_REINJECT] = {
 		.start_ring_id = HAL_SRNG_RING_ID_SW2REO,
@@ -41,6 +43,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_REO_SW2REO_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_reinject",
 	},
 	[HAL_REO_CMD] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO_CMD,
@@ -50,6 +53,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_REO_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_cmd",
 	},
 	[HAL_REO_STATUS] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO_STATUS,
@@ -59,6 +63,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_STATUS_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_status",
 	},
 	[HAL_REO2PPE] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO2PPE,
@@ -75,6 +80,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE,
+		.name = "Tcl_data",
 	},
 	[HAL_TCL_CMD] = {
 		.start_ring_id = HAL_SRNG_RING_ID_SW2TCL_CMD,
@@ -124,6 +130,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_WBM_IDLE_LINK_RING_BASE_MSB_RING_SIZE,
+		.name = "WBM_hw_idle_link",
 	},
 	[HAL_SW2WBM_RELEASE] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WBM_SW0_RELEASE,
@@ -132,6 +139,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_SW2WBM_RELEASE_RING_BASE_MSB_RING_SIZE,
+		.name = "sw2wbm_release",
 	},
 	[HAL_WBM2SW_RELEASE] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WBM2SW0_RELEASE,
@@ -140,6 +148,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_WBM2SW_RELEASE_RING_BASE_MSB_RING_SIZE,
+		.name = "wbm2sw_release",
 	},
 	[HAL_RXDMA_BUF] = {
 		.start_ring_id = HAL_SRNG_SW2RXDMA_BUF0,
@@ -148,6 +157,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_DMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.name = "Rxdma_buf",
 	},
 	[HAL_RXDMA_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_RXDMA2SW0,
@@ -156,6 +166,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.name = "Rxdma_dst",
 	},
 	[HAL_RXDMA_MONITOR_BUF] = {
 		.start_ring_id = HAL_SRNG_SW2RXMON_BUF0,
@@ -164,6 +175,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.name = "Rxdma_monitor_buf",
 	},
 	[HAL_RXDMA_MONITOR_STATUS] = { 0, },
 	[HAL_RXDMA_MONITOR_DESC] = { 0, },
@@ -206,6 +218,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.name = "Rxdma_monitor_dst",
 	},
 	[HAL_TX_MONITOR_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_TXMON2SW0_BUF0,
@@ -1038,4 +1051,5 @@ const struct hal_ops hal_qcn9274_ops = {
 	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_qcn9274,
 	.rx_desc_get_mpdu_ppdu_id = ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_qcn9274,
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
+	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
 };

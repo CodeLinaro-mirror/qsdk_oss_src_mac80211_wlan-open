@@ -5111,6 +5111,35 @@ void ath12k_debugfs_register(struct ath12k *ar)
 #endif
 }
 
+static ssize_t ath12k_debugfs_hal_dump_srng_stats_read(struct file *file,
+                                               char __user *user_buf,
+                                               size_t count, loff_t *ppos)
+{
+       struct ath12k_base *ab = file->private_data;
+       int len = 0, retval;
+       const int size = 4096 * 6;
+       char *buf;
+
+       buf = vmalloc(size);
+       if (!buf)
+               return -ENOMEM;
+
+       len = ath12k_debugfs_hal_dump_srng_stats(ab, buf + len, size - len);
+       if (len > size)
+               len = size;
+       retval = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+       vfree(buf);
+
+       return retval;
+}
+
+static const struct file_operations fops_dump_hal_stats = {
+       .read = ath12k_debugfs_hal_dump_srng_stats_read,
+       .open = simple_open,
+       .owner = THIS_MODULE,
+       .llseek = default_llseek,
+};
+
 static ssize_t ath12k_read_simulate_fw_crash(struct file *file,
 					     char __user *user_buf,
 					     size_t count, loff_t *ppos)
@@ -5628,6 +5657,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_device_dp_stats);
 	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
 			    &fops_soc_stats_disable);
+	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc, ab,
+			    &fops_dump_hal_stats);
 }
 
 void ath12k_debugfs_unregister(struct ath12k *ar)

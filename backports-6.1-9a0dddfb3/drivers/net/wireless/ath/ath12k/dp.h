@@ -1007,6 +1007,8 @@ size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct dp_rxdma_ring *rx_ring,
 					       struct list_head *list);
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);
+ssize_t ath12k_dp_dump_device_ring_stats(struct ath12k_base *ab,
+					 char *buf, int size);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
 				  struct ath12k_dp *dp, bool vdev_id_check_en);

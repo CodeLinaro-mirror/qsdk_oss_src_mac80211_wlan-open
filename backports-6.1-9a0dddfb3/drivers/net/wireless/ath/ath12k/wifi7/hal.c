@@ -726,3 +726,18 @@ void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
 		ath12k_hif_write32(ab , reg_base + HAL_REO1_RING_MISC_OFFSET, val);
 	}
 }
+
+void ath12k_wifi7_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type type,
+				  struct hal_srng *srng, uint32_t *hp, uint32_t *tp)
+{
+	struct ath12k_hal *hal = &ab->hal;
+	struct hal_srng_config *srng_config = &hal->srng_config[type];
+	u32 reg_base;
+
+	if (srng_config->mac_type == ATH12K_HAL_SRNG_UMAC) {
+		reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R2];
+
+		*hp = ath12k_hif_read32(ab, reg_base);
+		*tp = ath12k_hif_read32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET);
+	}
+}

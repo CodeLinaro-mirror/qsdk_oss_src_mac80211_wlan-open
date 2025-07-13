@@ -917,6 +917,7 @@ struct hal_srng_config {
 	enum hal_srng_mac_type mac_type;
 	enum hal_srng_dir ring_dir;
 	u32 max_size;
+	const char name[20];
 };
 
 /**
@@ -1286,6 +1287,8 @@ struct hal_ops {
 				 u16 *num_msdus);
 	u8 (*rx_h_l3pad_get)(struct hal_rx_desc *desc);
 	void (*hal_mon_ops_init)(struct ath12k_hal *hal, u8 hw_version);
+	void (*get_hw_hptp)(struct ath12k_base *ab, enum hal_ring_type type,
+			    struct hal_srng *srng, uint32_t *hp, uint32_t *tp);
 };
 
 static inline
@@ -1394,6 +1397,7 @@ int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
 			      struct hal_srng_params *params,
 			      u32 restore_idx);
 void ath12k_hal_dump_srng_stats(struct ath12k_base *ab);
+ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, int size);
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
 				       u32 **cfg, u32 *len);
 int ath12k_hal_srng_update_shadow_config(struct ath12k_base *ab,
