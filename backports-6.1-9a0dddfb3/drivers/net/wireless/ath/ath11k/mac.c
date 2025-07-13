@@ -9469,24 +9469,9 @@ void ath11k_mac_fill_reg_tpc_info(struct ath11k *ar,
 	u16 start_freq, center_freq;
 	u8 reg_6g_power_mode;
 
-	/* For STA, 6g power mode will be present in the beacon, but for AP,
-	 * AP cant parse its own beacon. Hence, we get the 6g power mode
-	 * from the wdev corresponding to the struct ieee80211_vif
-	 */
-	if (arvif->vdev_type == WMI_VDEV_TYPE_STA)
-		reg_6g_power_mode = vif->bss_conf.power_type;
-	else if (arvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
-		/* With respect to ieee80211, the 6G AP power mode starts from index
-		 * 1 while the power type stored in struct wireless_dev is based on
-		 * nl80211 power type indexing which starts from 0. Hence 1 is appended
-		 */
-		if (wdev)
-			reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
-		else
-			reg_6g_power_mode = 1;
-	} else
-		reg_6g_power_mode = 1;
+	reg_6g_power_mode = vif->bss_conf.power_type;
+	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
 
 	chan = ctx->def.chan;
 	start_freq = ath11k_mac_get_6g_start_frequency(&ctx->def);
