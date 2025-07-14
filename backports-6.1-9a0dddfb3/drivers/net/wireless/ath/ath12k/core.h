@@ -469,7 +469,10 @@ struct chan_power_info {
  * @num_pwr_levels: number of power levels
  * @reg_max: Array of maximum TX power (dBm) per PSD value
  * @ap_constraint_power: AP constraint power (dBm)
- * @tpe: TPE values processed from TPE IE
+ * @tpe_psd: TPE PSD values processed from TPE IE
+ * @tpe_eirp: TPE EIRP values processed from TPE IE
+ * @num_tpe_psd: number of TPE PSD values parsed
+ * @num_tpe_eirp: number of TPE EIRP values parsed
  * @chan_power_info: power info to send to FW
  */
 struct ath12k_reg_tpc_power_info {
@@ -479,7 +482,10 @@ struct ath12k_reg_tpc_power_info {
 	u8 num_pwr_levels;
 	u8 reg_max[IEEE80211_MAX_NUM_PWR_LEVEL];
 	u8 ap_constraint_power;
-	s8 tpe[IEEE80211_MAX_NUM_PWR_LEVEL];
+	s8 tpe_psd[IEEE80211_TPE_PSD_ENTRIES_320MHZ];
+	s8 tpe_eirp[IEEE80211_TPE_EIRP_ENTRIES_320MHZ];
+	u8 num_tpe_psd;
+	u8 num_tpe_eirp;
 	struct chan_power_info chan_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
 };
 

@@ -6404,28 +6404,37 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 			arvif->ftm_responder = info->ftm_responder;
 	}
 
-	if (changed & BSS_CHANGED_6GHZ_POWER_MODE) {
+	if (changed & BSS_CHANGED_6GHZ_POWER_MODE ||
+	    changed & BSS_CHANGED_TPE) {
 		if (WARN_ON(ath12k_mac_vif_link_chan(ahvif->vif, link_id, &def))) {
 			ath12k_warn(ar->ab, "Failed to fetch chandef");
 			return;
 		}
 		if (ar->supports_6ghz && def.chan->band == NL80211_BAND_6GHZ &&
-		    ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+		    (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
+		     ahvif->vdev_type == WMI_VDEV_TYPE_STA) &&
 		    test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT,
 			     ar->ab->wmi_ab.svc_map)) {
+			if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+				ath12k_mac_parse_tx_pwr_env(ar, arvif);
+
 			if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT, ar->ab->wmi_ab.svc_map))
 				ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif, &arvif->chanctx);
 			else
 				ath12k_mac_fill_reg_tpc_info(ar, arvif, &arvif->chanctx);
+
 			ret = ath12k_wmi_send_vdev_set_tpc_power(ar,
 								 arvif->vdev_id,
 								 &arvif->reg_tpc_info);
-			if (ret)
-				ath12k_warn(ar->ab, "Failed to set 6GHZ power mode\n");
-			else
-				ath12k_mac_send_pwr_mode_update(ar, wdev);
+			if (changed & BSS_CHANGED_6GHZ_POWER_MODE &&
+			    ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+				if (ret)
+					ath12k_warn(ar->ab, "Failed to set 6GHZ power mode\n");
+				else
+					ath12k_mac_send_pwr_mode_update(ar, wdev);
+			}
 		} else {
-			ath12k_warn(ar->ab, "Set 6GHZ power mode not applicable\n");
+			ath12k_warn(ar->ab, "Set 6GHZ power mode/TPC not applicable\n");
 		}
 	}
 
@@ -8692,17 +8701,6 @@ ieee80211_bss_conf *ath12k_get_link_bss_conf(struct ath12k_link_vif *arvif)
         return link_conf;
 }
 
-static void ath12k_mac_get_root_tpe_power(bool is_tpe_present,
-					  struct ath12k_reg_tpc_power_info *reg_tpc_info,
-					  s8 *tpe_arr)
-{
-	if (is_tpe_present)
-		tpe_arr = reg_tpc_info->tpe;
-	else
-		memset(tpe_arr, ATH12K_MAX_TX_POWER,
-		       ATH12K_MAX_EIRP_VALS * sizeof(s8));
-}
-
 void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                   struct ath12k_link_vif *arvif,
                                   struct ieee80211_chanctx_conf *ctx)
@@ -8763,16 +8761,30 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 
 	rcu_read_unlock();
 
-        if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-	    arvif->reg_tpc_info.num_pwr_levels) {
-                is_tpe_present = true;
-                num_pwr_levels = arvif->reg_tpc_info.num_pwr_levels;
-        } else {
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+	    (arvif->reg_tpc_info.num_tpe_psd || arvif->reg_tpc_info.num_tpe_eirp)) {
+		is_tpe_present = true;
+		if (reg_tpc_info->is_psd_power)
+			num_pwr_levels = arvif->reg_tpc_info.num_tpe_psd;
+		else
+			num_pwr_levels = arvif->reg_tpc_info.num_tpe_eirp;
+	} else {
 		bool is_psd = ctx->def.chan->flags & IEEE80211_CHAN_PSD;
 
 		num_pwr_levels = ath12k_mac_get_num_pwr_levels(&ctx->def,
 							       is_psd);
-        }
+	}
+	if (!is_tpe_present) {
+		memset(reg_tpc_info->tpe_eirp, ATH12K_MAX_TX_POWER,
+		       IEEE80211_TPE_EIRP_ENTRIES_320MHZ * sizeof(s8));
+		memset(reg_tpc_info->tpe_psd, IEEE80211_TPE_PSD_NO_LIMIT,
+		       IEEE80211_TPE_PSD_ENTRIES_320MHZ * sizeof(s8));
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "num tpe_psd %u, num_tpe_eirp %u num_pwr_levels = %u\n",
+		   arvif->reg_tpc_info.num_tpe_psd, arvif->reg_tpc_info.num_tpe_eirp,
+		   num_pwr_levels);
 
         for (pwr_lvl_idx = 0; pwr_lvl_idx < num_pwr_levels; pwr_lvl_idx++) {
                 /* STA received TPE IE*/
@@ -8789,16 +8801,16 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                                    &temp_chan,
                                                                    &tx_power,
 								   reg_6g_power_mode);
-                                        eirp_power = tx_power;
+					eirp_power = tx_power;
 					if (temp_chan) {
 						psd_power = temp_chan->psd;
 						max_tx_power[pwr_lvl_idx] =
 							min_t(s8,
 							      psd_power,
-							      reg_tpc_info->tpe[pwr_lvl_idx]);
+							      reg_tpc_info->tpe_psd[pwr_lvl_idx]);
 					} else {
 						max_tx_power[pwr_lvl_idx] =
-							reg_tpc_info->tpe[pwr_lvl_idx];
+							reg_tpc_info->tpe_psd[pwr_lvl_idx];
 					}
                                 /* Connecting AP is not psd power */
                                 } else {
@@ -8819,10 +8831,10 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 							min_t(s8, tx_power,
 							      psd_power + 13 + pwr_lvl_idx * 3);
 					}
-                                        max_tx_power[pwr_lvl_idx] =
-                                                min_t(s8,
-                                                      tx_power,
-                                                      reg_tpc_info->tpe[pwr_lvl_idx]);
+					max_tx_power[pwr_lvl_idx] =
+					    min_t(s8,
+						  tx_power,
+						  reg_tpc_info->tpe_eirp[pwr_lvl_idx]);
                                 }
                         /* local power is not PSD power */
                         } else {
@@ -8837,8 +8849,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                                    &tx_power,
 								   reg_6g_power_mode);
                                         eirp_power = tx_power;
-                                        max_tx_power[pwr_lvl_idx] =
-                                                reg_tpc_info->tpe[pwr_lvl_idx];
+					max_tx_power[pwr_lvl_idx] =
+					    reg_tpc_info->tpe_psd[pwr_lvl_idx];
                                 /* Connecting AP is not psd power */
                                 } else {
                                         ath12k_mac_get_eirp_power(ar,
@@ -8850,9 +8862,9 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                                   &tx_power,
 								  reg_6g_power_mode);
                                         max_tx_power[pwr_lvl_idx] =
-                                                min_t(s8,
-                                                      tx_power,
-                                                      reg_tpc_info->tpe[pwr_lvl_idx]);
+					    min_t(s8,
+						  tx_power,
+						  reg_tpc_info->tpe_eirp[pwr_lvl_idx]);
                                 }
                         }
                 /* STA not received TPE IE */
@@ -8898,7 +8910,7 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
                                                           &tx_power,
 							  reg_6g_power_mode);
                                 max_tx_power[pwr_lvl_idx] = tx_power;
-				min_t(s8, tx_power, reg_tpc_info->tpe[pwr_lvl_idx]);
+				min_t(s8, tx_power, reg_tpc_info->tpe_eirp[pwr_lvl_idx]);
 				if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
 				    ar->afc.is_6ghz_afc_power_event_received) {
 					ath12k_reg_get_afc_eirp_power_for_bw(ar, &start_freq,
@@ -9063,7 +9075,6 @@ void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
 	s8 sta_max_eirp_arr[ATH12K_MAX_EIRP_VALS];
 	s8 ap_max_eirp_arr[ATH12K_MAX_EIRP_VALS];
-	s8 root_tpe_pwr[ATH12K_MAX_EIRP_VALS];
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_vif *vif = ahvif->vif;
 	struct ieee80211_bss_conf *bss_conf;
@@ -9122,7 +9133,17 @@ void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 	}
 
 	ath12k_mac_fill_cfreqs(&ctx->def, cfreqs);
-	ath12k_mac_get_root_tpe_power(is_tpe_present, reg_tpc_info, root_tpe_pwr);
+	if (reg_tpc_info->num_tpe_eirp)
+		is_tpe_present = true;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "num tpe_eirp power levels: %u, num_pwr_levels = %u\n",
+		   reg_tpc_info->num_tpe_eirp, num_pwr_levels);
+
+	if (!is_tpe_present)
+		memset(reg_tpc_info->tpe_eirp, ATH12K_MAX_TX_POWER,
+		       ATH12K_MAX_EIRP_VALS * sizeof(s8));
+
 	ath12k_mac_get_eirp_arr_for_6g(ar, &ctx->def, reg_6g_power_mode,
 				       ap_max_eirp_arr, start_freq,
 				       oper_freq, cfreqs);
@@ -9156,7 +9177,7 @@ void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 		    ar->afc.is_6ghz_afc_power_event_received)
 			tx_power = max_of_ap_sta_tx_pwr;
 		else
-			tx_power = min(root_tpe_pwr[count], max_of_ap_sta_tx_pwr);
+			tx_power = min(reg_tpc_info->tpe_eirp[count], max_of_ap_sta_tx_pwr);
 
 		reg_tpc_info->chan_power_info[count].chan_cfreq = cfreqs[count];
 		reg_tpc_info->chan_power_info[count].tx_power = tx_power;
@@ -9182,14 +9203,30 @@ void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 	struct ieee80211_vif *vif = ahvif->vif;
 	struct ieee80211_bss_conf *bss_conf = ath12k_mac_get_link_bss_conf(arvif);
 	struct ath12k_reg_tpc_power_info *tpc_info = &arvif->reg_tpc_info;
-	struct ieee80211_parsed_tpe_eirp *local_non_psd, *reg_non_psd;
-	struct ieee80211_parsed_tpe_psd *local_psd, *reg_psd;
+	struct ieee80211_parsed_tpe_eirp *local_non_psd, *reg_non_psd, *additional_non_psd;
+	struct ieee80211_parsed_tpe_psd *local_psd, *reg_psd, *additional_psd;
 	struct ieee80211_parsed_tpe *tpe = &bss_conf->tpe;
 	enum wmi_reg_6g_client_type client_type;
 	struct ath12k_base *ab = ar->ab;
 	bool psd_valid, non_psd_valid;
 	int i;
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+	enum ieee80211_ap_reg_power root_ap_power_type = bss_conf->power_type;
+	bool is_afc_power_event_received = ar->afc.is_6ghz_afc_power_event_received;
+
+	memset(tpc_info, 0, sizeof(*tpc_info));
+
+	if (root_ap_power_type != IEEE80211_REG_SP_AP) {
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "It is not required to parse TPE for root AP power type %d\n",
+			   root_ap_power_type);
+		return;
+	}
+	if (is_afc_power_event_received) {
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "It is not required to parse TPE for SP client as AFC power event is received\n");
+		return;
+	}
 
 	if (wdev)
 		client_type = wdev->reg_6g_power_mode;
@@ -9200,49 +9237,94 @@ void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 	reg_psd = &tpe->psd_reg_client[client_type];
 	local_non_psd = &tpe->max_local[client_type];
 	reg_non_psd = &tpe->max_reg_client[client_type];
+	additional_psd = &tpe->additional_psd_reg_client[client_type];
+	additional_non_psd = &tpe->additional_max_reg_client[client_type];
 
-	psd_valid = local_psd->valid | reg_psd->valid;
-	non_psd_valid = local_non_psd->valid | reg_non_psd->valid;
+	psd_valid = local_psd->valid | reg_psd->valid | additional_psd->valid;
+	non_psd_valid = local_non_psd->valid | reg_non_psd->valid | additional_non_psd->valid;
 
-       if (!psd_valid && !non_psd_valid) {
-               ath12k_warn(ab,
-                           "no transmit power envelope match client power type %d\n",
-                           client_type);
-               return;
-       };
+	if (!psd_valid && !non_psd_valid) {
+		ath12k_warn(ab,
+			    "no transmit power envelope match client power type %d\n",
+			    client_type);
+		return;
+	};
 
-       if (psd_valid) {
-	       tpc_info->is_psd_power = true;
+	if (psd_valid) {
+		tpc_info->is_psd_power = true;
 
-	       tpc_info->num_pwr_levels = max(local_psd->count,
-					      reg_psd->count);
-	       if (tpc_info->num_pwr_levels > ATH12K_NUM_PWR_LEVELS)
-		       tpc_info->num_pwr_levels = ATH12K_NUM_PWR_LEVELS;
+		if (additional_psd->valid) {
+			tpc_info->num_tpe_psd = max(local_psd->count,
+						    additional_psd->count);
+			ath12k_dbg(ab, ATH12K_DBG_MAC,
+				   "TPE PSD power levels count %d, additional count %d\n",
+				   local_psd->count, additional_psd->count);
+		} else {
+			tpc_info->num_tpe_psd = max(local_psd->count,
+						    reg_psd->count);
+			ath12k_dbg(ab, ATH12K_DBG_MAC,
+				   "TPE PSD power levels count %d, reg_psd count %d\n",
+				   local_psd->count, reg_psd->count);
+		}
+		if (tpc_info->num_tpe_psd > ATH12K_NUM_PWR_LEVELS)
+			tpc_info->num_tpe_psd = ATH12K_NUM_PWR_LEVELS;
 
-	       for (i = 0; i < tpc_info->num_pwr_levels; i++) {
-		       tpc_info->tpe[i] = min(local_psd->power[i],
-					      reg_psd->power[i]) / 2;
-		       ath12k_dbg(ab, ATH12K_DBG_MAC,
-				  "TPE PSD power[%d] : %d\n",
-				  i, tpc_info->tpe[i]);
-	       }
-       } else {
-	       tpc_info->is_psd_power = false;
-	       tpc_info->eirp_power = 0;
+		for (i = 0; i < tpc_info->num_tpe_psd; i++) {
+			if (additional_psd->valid) {
+				tpc_info->tpe_psd[i] = min(local_psd->power[i],
+							   additional_psd->power[i]) / 2;
+				ath12k_dbg(ab, ATH12K_DBG_MAC,
+					   "TPE PSD power[%d] : %d, local psd power : %d, additional psd power : %d\n",
+					   i, tpc_info->tpe_psd[i], local_psd->power[i],
+					   additional_psd->power[i]);
+			} else {
+				tpc_info->tpe_psd[i] = min(local_psd->power[i],
+							   reg_psd->power[i]) / 2;
+				ath12k_dbg(ab, ATH12K_DBG_MAC,
+					   "TPE PSD power[%d] : %d, local psd power : %d, reg psd power : %d\n",
+					   i, tpc_info->tpe_psd[i], local_psd->power[i],
+					   reg_psd->power[i]);
+			}
+		}
+	}
+	if (non_psd_valid) {
+		tpc_info->is_psd_power = false;
+		tpc_info->eirp_power = 0;
 
-	       tpc_info->num_pwr_levels = max(local_non_psd->count,
-			 	 	      reg_non_psd->count);
-	       if (tpc_info->num_pwr_levels > ATH12K_NUM_PWR_LEVELS)
-		       tpc_info->num_pwr_levels = ATH12K_NUM_PWR_LEVELS;
+		if (additional_non_psd->valid) {
+			tpc_info->num_tpe_eirp = max(local_non_psd->count,
+						     additional_non_psd->count);
+			ath12k_dbg(ab, ATH12K_DBG_MAC,
+				   "TPE non PSD power levels count %d, additional count %d\n",
+				   local_non_psd->count, additional_non_psd->count);
+		} else {
+			tpc_info->num_tpe_eirp = max(local_non_psd->count,
+						     reg_non_psd->count);
+			ath12k_dbg(ab, ATH12K_DBG_MAC,
+				   "TPE non PSD power levels count %d, reg_non_psd count %d\n",
+				   local_non_psd->count, reg_non_psd->count);
+		}
+		if (tpc_info->num_tpe_eirp > ATH12K_NUM_PWR_LEVELS)
+			tpc_info->num_tpe_eirp = ATH12K_NUM_PWR_LEVELS;
 
-	       for (i = 0; i < tpc_info->num_pwr_levels; i++) {
-		       tpc_info->tpe[i] = min(local_non_psd->power[i],
-				 	      reg_non_psd->power[i]) / 2;
-		       ath12k_dbg(ab, ATH12K_DBG_MAC,
-				  "non PSD power[%d] : %d\n",
-				  i, tpc_info->tpe[i]);
-	       }
-       }
+		for (i = 0; i < tpc_info->num_tpe_eirp; i++) {
+			if (additional_non_psd->valid) {
+				tpc_info->tpe_eirp[i] = min(local_non_psd->power[i],
+							    additional_non_psd->power[i]) / 2;
+				ath12k_dbg(ab, ATH12K_DBG_MAC,
+					   "TPE non PSD power[%d] : %d, local non psd power : %d, additional non psd power : %d\n",
+					   i, tpc_info->tpe_eirp[i], local_non_psd->power[i],
+					   additional_non_psd->power[i]);
+			} else {
+				tpc_info->tpe_eirp[i] = min(local_non_psd->power[i],
+							    reg_non_psd->power[i]) / 2;
+				ath12k_dbg(ab, ATH12K_DBG_MAC,
+					   "TPE non PSD power[%d] : %d, local non psd power : %d, reg non psd power : %d\n",
+					   i, tpc_info->tpe_eirp[i], local_non_psd->power[i],
+					   reg_non_psd->power[i]);
+			}
+		}
+	}
 }
 
 static int
