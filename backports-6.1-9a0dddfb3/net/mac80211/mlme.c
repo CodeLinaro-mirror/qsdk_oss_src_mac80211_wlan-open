@@ -2346,6 +2346,19 @@ static void ieee80211_csa_switch_work(struct wiphy *wiphy,
 		return;
 	}
 
+	if (link->u.mgd.csa.ap_chandef.chan->band == NL80211_BAND_6GHZ &&
+	    link->csa.power_mode != IEEE80211_REG_UNSET_AP) {
+		/*
+		 * We do not as yet know the actual 6 GHz power mode to which
+		 * the AP will switch to after CSA. Therefore, we temporarily
+		 * use the locally calculated power mode.
+		 * The power mode and TPE will be updated upon receiving the
+		 * first beacon on the new channel.
+		 */
+		link->conf->power_type = link->csa.power_mode;
+		link->csa.power_mode = IEEE80211_REG_UNSET_AP;
+	}
+
 	/*
 	 * using reservation isn't immediate as it may be deferred until later
 	 * with multi-vif. once reservation is complete it will re-schedule the
@@ -2644,6 +2657,7 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 		}
 
 		link->u.mgd.csa.tpe = csa_elems->csa_tpe;
+		link->csa.power_mode = csa_ie.power_mode;
 	} else {
 		/*
 		 * If there was no per-STA profile for this link, we

@@ -1833,6 +1833,7 @@ struct ieee80211_csa_ie {
 	u16 pre_value;
 	u16 reason_code;
 	u32 max_switch_time;
+	enum ieee80211_ap_reg_power power_mode;
 };
 
 enum ieee80211_elems_parse_error {
@@ -2807,7 +2808,8 @@ void ieee80211_chandef_eht_oper(const struct ieee80211_eht_operation_info *info,
 struct ieee80211_channel
 *ieee80211_get_channel_6ghz_pwr_mode(struct ieee80211_sub_if_data *sdata,
 				     const struct ieee80211_he_operation *he_oper,
-				     const int new_chan_idx);
+				     const int new_chan_idx,
+				     enum nl80211_regulatory_power_modes *out_mode);
 
 bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
 				    int link_id,

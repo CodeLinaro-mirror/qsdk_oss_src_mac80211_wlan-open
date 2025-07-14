@@ -3451,43 +3451,21 @@ void ieee80211_chandef_eht_oper(const struct ieee80211_eht_operation_info *info,
 struct ieee80211_channel
 *ieee80211_get_channel_6ghz_pwr_mode(struct ieee80211_sub_if_data *sdata,
 				     const struct ieee80211_he_operation *he_oper,
-				     const int new_chan_idx)
+				     const int new_chan_idx,
+				     enum nl80211_regulatory_power_modes *ap_mode)
 {
 	enum nl80211_regulatory_power_modes mode;
 	struct ieee80211_channel *new_chan;
-	const struct ieee80211_he_6ghz_oper *he_6ghz_oper;
-	u8 reg_info;
 	u32 new_freq;
 
-
-	he_6ghz_oper = ieee80211_he_6ghz_oper(he_oper);
-
-	if (!he_6ghz_oper) {
-		sdata_info(sdata,
-			   "HE 6GHz operation missing (on Channel: %d), expect issues\n",
-			   new_chan_idx);
-		return false;
-	}
-	/* 6G Power mode present in the beacon */
-	reg_info = (he_6ghz_oper->control & IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO) >>
-		   IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO_LSB;
-
-	/*
-	 * If the root AP is Indoor SP AP, convert the received control field
-	 * to SP AP.
-	 */
-	if (reg_info == IEEE80211_6GHZ_CTRL_REG_INDOOR_SP_AP)
-		reg_info = IEEE80211_6GHZ_CTRL_REG_SP_AP;
-
-	mode = GET_POWER_MODE_FOR_NON_AP_STA(NL80211_REG_REGULAR_CLIENT, reg_info);
-
-	/*
-	 * The EHT operation IE does not contain the primary channel so the
-	 * primary channel frequency should be taken from the 6 GHz operation
-	 * information.
-	 */
 	new_freq = ieee80211_channel_to_frequency(new_chan_idx,
 						  NL80211_BAND_6GHZ);
+	*ap_mode = ieee80211_get_valid_6ghz_power_mode(sdata->local->hw.wiphy,
+						       MHZ_TO_KHZ(new_freq));
+	if (*ap_mode == NL80211_REG_NUM_POWER_MODES)
+		return NULL;
+
+	mode = GET_POWER_MODE_FOR_NON_AP_STA(NL80211_REG_REGULAR_CLIENT, *ap_mode);
 	new_chan = ieee80211_get_6g_channel_khz(sdata->local->hw.wiphy,
 						MHZ_TO_KHZ(new_freq), mode);
 	return new_chan;
@@ -3530,8 +3508,8 @@ bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
 	/*
 	 * For AP/AP_VLAN/MESH_POINT interfaces, the 6G power mode depends on the
 	 * mode configured by user (LPI/SP/VLP). For other interfaces (for ex STA)
-	 * mode depends on the power mode present in beacon as well as power mode
-	 * configured by the user for that interface
+	 * mode depends on the power mode present in beacon as well as the client
+	 * type (regular client or subordinate client).
 	 */
 	if (iftype == NL80211_IFTYPE_AP || iftype == NL80211_IFTYPE_AP_VLAN) {
 		mode = sdata->wdev.links[link_id].reg_6g_power_mode;

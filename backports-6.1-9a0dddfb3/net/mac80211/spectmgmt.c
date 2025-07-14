@@ -143,7 +143,8 @@ static void
 validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 				     int link_id,
 				     struct ieee80211_conn_settings *conn,
-				     struct cfg80211_chan_def *chandef)
+				     struct cfg80211_chan_def *chandef,
+				     enum nl80211_regulatory_power_modes pwr_mode_6ghz)
 {
 	u32 control_freq, center_freq1, center_freq2;
 	enum nl80211_chan_width chan_width;
@@ -213,6 +214,10 @@ validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 		eht_oper = &eht._oper;
 	}
 
+	he._6ghz_oper.control &= IEEE80211_HE_6GHZ_OPER_CTRL_CHANWIDTH;
+	he._6ghz_oper.control |= (pwr_mode_6ghz << IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO_LSB) &
+				  IEEE80211_HE_6GHZ_OPER_CTRL_REG_INFO;
+
 	if (!ieee80211_chandef_he_6ghz_oper(sdata, link_id, &he._oper,
 					    eht_oper, chandef))
 		chandef->chan = NULL;
@@ -237,6 +242,7 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 	const struct ieee80211_bandwidth_indication *bwi;
 	const struct ieee80211_ext_chansw_ie *ext_chansw_elem;
 	int secondary_channel_offset = -1;
+	enum nl80211_regulatory_power_modes pwr_mode_6ghz = NL80211_REG_NUM_POWER_MODES;
 
 	memset(csa_ie, 0, sizeof(*csa_ie));
 
@@ -296,7 +302,8 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 	if (new_band == NL80211_BAND_6GHZ) {
 		new_chan = ieee80211_get_channel_6ghz_pwr_mode(sdata,
 							       elems->he_operation,
-							       new_chan_no);
+							       new_chan_no,
+							       &pwr_mode_6ghz);
 	} else {
 		new_freq = ieee80211_channel_to_frequency(new_chan_no, new_band);
 		new_chan = ieee80211_get_channel(sdata->local->hw.wiphy, new_freq);
@@ -374,7 +381,8 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 
 	/* check if the new chandef fits the capabilities */
 	if (new_band == NL80211_BAND_6GHZ)
-		validate_chandef_by_6ghz_he_eht_oper(sdata, link_id, conn, &new_chandef);
+		validate_chandef_by_6ghz_he_eht_oper(sdata, link_id, conn, &new_chandef,
+						     pwr_mode_6ghz);
 	else
 		validate_chandef_by_ht_vht_oper(sdata, conn, vht_cap_info,
 						&new_chandef);
@@ -404,6 +412,11 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 			(elems->max_channel_switch_time[0] << 0) |
 			(elems->max_channel_switch_time[1] <<  8) |
 			(elems->max_channel_switch_time[2] << 16);
+
+	if (pwr_mode_6ghz != NL80211_REG_NUM_POWER_MODES)
+		csa_ie->power_mode = ieee80211_cfg_to_mac_power_type(pwr_mode_6ghz);
+	else
+		csa_ie->power_mode = IEEE80211_REG_UNSET_AP;
 
 	return 0;
 }

@@ -7567,6 +7567,17 @@ ieee80211_frequency_to_channel(int freq)
 }
 
 /**
+ * ieee80211_get_valid_6ghz_power_mode - get a valid 6 Ghz power mode
+ *
+ * @wiphy: the struct wiphy to get the power mode for
+ * @freq: the center frequency (in KHz) of the channel
+ *
+ * Return: The valid 6Ghz power mode for @freq in the order LPI, VLP, SP.
+ */
+enum nl80211_regulatory_power_modes
+ieee80211_get_valid_6ghz_power_mode(struct wiphy *wiphy, u32 freq);
+
+/**
  * ieee80211_get_channel_khz - get channel struct from wiphy for specified
  * frequency
  * @wiphy: the struct wiphy to get the channel for

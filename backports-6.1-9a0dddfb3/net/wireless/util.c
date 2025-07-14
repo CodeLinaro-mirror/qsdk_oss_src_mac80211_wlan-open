@@ -159,6 +159,47 @@ int ieee80211_freq_khz_to_channel(u32 freq)
 }
 EXPORT_SYMBOL(ieee80211_freq_khz_to_channel);
 
+enum nl80211_regulatory_power_modes
+ieee80211_get_valid_6ghz_power_mode(struct wiphy *wiphy, u32 freq)
+{
+	static const enum nl80211_regulatory_power_modes p_mode_order[] = {
+		NL80211_REG_AP_LPI,
+		NL80211_REG_AP_VLP,
+		NL80211_REG_AP_SP,
+	};
+	struct ieee80211_supported_band *sband;
+	int i, j;
+
+	sband = wiphy->bands[NL80211_BAND_6GHZ];
+
+	if (!sband)
+		return NL80211_REG_NUM_POWER_MODES;
+
+	for (i = 0; i < ARRAY_SIZE(p_mode_order); i++) {
+		enum nl80211_regulatory_power_modes mode = p_mode_order[i];
+
+		if (!sband->chan_6g[mode])
+			continue;
+
+		for (j = 0; j < sband->chan_6g[mode]->n_channels; j++) {
+			struct ieee80211_channel *chan =
+				&sband->chan_6g[mode]->channels[j];
+
+			if (ieee80211_channel_to_khz(chan) != freq)
+				continue;
+
+			if (chan->flags &
+			    (IEEE80211_CHAN_DISABLED | IEEE80211_CHAN_NO_IR))
+				break;
+
+			return mode;
+		}
+	}
+
+	return NL80211_REG_NUM_POWER_MODES;
+}
+EXPORT_SYMBOL(ieee80211_get_valid_6ghz_power_mode);
+
 struct ieee80211_channel
 *ieee80211_get_6g_channel_khz(struct wiphy *wiphy, u32 freq,
 			      enum nl80211_regulatory_power_modes mode)
@@ -168,8 +209,15 @@ struct ieee80211_channel
 
 	sband = wiphy->bands[NL80211_BAND_6GHZ];
 
-	if (!sband || mode >= NL80211_REG_NUM_POWER_MODES)
+	if (!sband || mode > NL80211_REG_NUM_POWER_MODES)
 		return NULL;
+
+	if (mode == NL80211_REG_NUM_POWER_MODES) {
+		mode = ieee80211_get_valid_6ghz_power_mode(wiphy, freq);
+
+		if (mode == NL80211_REG_NUM_POWER_MODES)
+			return ieee80211_get_channel_khz(wiphy, freq);
+	}
 
 	if (!sband->chan_6g[mode])
 		return ieee80211_get_channel_khz(wiphy, freq);

@@ -2842,6 +2842,10 @@ static inline bool ieee80211_he_capa_size_ok(const u8 *data, u8 len)
  * struct ieee80211_he_6ghz_oper - HE 6 GHz operation Information field
  * @primary: primary channel
  * @control: control flags
+ *         Bit 0-1: channel width
+ *         Bit 2  : duplicate beacon
+ *         Bit 3-6: regulatory information
+ *         Bit 7  : reserved
  * @ccfs0: channel center frequency segment 0
  * @ccfs1: channel center frequency segment 1
  * @minrate: minimum rate (in 1 Mbps units)
