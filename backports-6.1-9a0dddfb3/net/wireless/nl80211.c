@@ -3908,7 +3908,7 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 {
 	struct netlink_ext_ack *extack = info->extack;
 	struct nlattr **attrs = info->attrs;
-	enum nl80211_regulatory_power_modes mode = NL80211_REG_AP_LPI;
+	enum nl80211_regulatory_power_modes mode = NL80211_REG_NUM_POWER_MODES;
 	u32 control_freq;
 	int err;
 
@@ -3924,20 +3924,19 @@ static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
 		control_freq +=
 		    nla_get_u32(info->attrs[NL80211_ATTR_WIPHY_FREQ_OFFSET]);
 
-	if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE])
-		mode = nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
-	else
-		mode = rdev_get_ap_6ghz_pwr_mode(rdev, wdev);
-
 	memset(chandef, 0, sizeof(*chandef));
 
-	if (control_freq >= MHZ_TO_KHZ(5945) && control_freq <= MHZ_TO_KHZ(7125))
+	if (control_freq >= MHZ_TO_KHZ(5945) && control_freq <= MHZ_TO_KHZ(7125)) {
+		if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE])
+			mode = nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
+
 		chandef->chan = ieee80211_get_6g_channel_khz(&rdev->wiphy,
 							     control_freq,
 							     mode);
-	else
+	} else {
 		chandef->chan = ieee80211_get_channel_khz(&rdev->wiphy,
 							  control_freq);
+	}
 
 	chandef->width = NL80211_CHAN_WIDTH_20_NOHT;
 	chandef->center_freq1 = KHZ_TO_MHZ(control_freq);
@@ -4120,6 +4119,7 @@ static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
 	enum nl80211_iftype iftype = NL80211_IFTYPE_MONITOR;
 	struct wireless_dev *wdev = NULL;
 	int link_id = _link_id;
+	u8 reg_6g_power_mode = NL80211_REG_NUM_POWER_MODES;
 
 	if (dev)
 		wdev = dev->ieee80211_ptr;
@@ -4141,11 +4141,11 @@ static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
 		return result;
 
 	/* Userspace might advertise the 6G power mode (AP). Just parse and store
-	 * it in wdev. No immediate action required. */
-	if (wdev && info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
-		wdev->reg_6g_power_mode =
-				nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
-	}
+	 * it. No immediate action required.
+	 */
+	if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE])
+		reg_6g_power_mode =
+		    nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
 
 	switch (iftype) {
 	case NL80211_IFTYPE_AP:
@@ -4200,6 +4200,7 @@ static int __nl80211_set_channel(struct cfg80211_registered_device *rdev,
 			wdev->links[link_id].ap.chandef = chandef;
 		} else {
 			wdev->u.ap.preset_chandef = chandef;
+			wdev->u.ap.preset_6g_power_mode = reg_6g_power_mode;
 		}
 		return 0;
 	case NL80211_IFTYPE_MESH_POINT:
@@ -4732,10 +4733,6 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 	    nla_put_u32(msg, NL80211_ATTR_VIF_RADIO_MASK, wdev->radio_mask))
 		goto nla_put_failure;
 
-	if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
-		       wdev->reg_6g_power_mode))
-		goto nla_put_failure;
-
 	switch (wdev->iftype) {
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
@@ -4798,6 +4795,13 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 			if (ret == 0 && nl80211_send_chandef(msg, &chandef))
 				goto nla_put_failure;
 
+			if (chandef.chan && chandef.chan->band == NL80211_BAND_6GHZ) {
+				if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
+					       rdev_get_ap_6ghz_pwr_mode(rdev, wdev,
+									 link_id)))
+					goto nla_put_failure;
+			}
+
 			if (rdev->ops->get_tx_power) {
 				int dbm, ret;
 
@@ -4819,6 +4823,13 @@ static int nl80211_send_iface(struct sk_buff *msg, u32 portid, u32 seq, int flag
 			ret = rdev_get_channel(rdev, wdev, 0, &chandef);
 			if (ret == 0 && nl80211_send_chandef(msg, &chandef))
 				goto nla_put_failure;
+
+			if (chandef.chan && chandef.chan->band == NL80211_BAND_6GHZ) {
+				if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE,
+					       rdev_get_ap_6ghz_pwr_mode(rdev,
+									 wdev, 0)))
+					goto nla_put_failure;
+			}
 		}
 		if (rdev->ops->get_tx_power) {
 			int dbm, ret;
@@ -5125,13 +5136,10 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 		params.use_4addr = -1;
 	}
 
-	/* For 6GHz client, userspace could set the client type.
-	 * Just parse and store the value, no action required immediately.
-	 */
 	if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
-		struct wireless_dev *wdev = dev->ieee80211_ptr;
-		wdev->reg_6g_power_mode =
-			nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
+		/* For 6GHz client, userspace could set the client type.
+		 * Ignore Client type and let the driver select the client type
+		 **/
 	}
 
 	err = nl80211_parse_mon_options(rdev, ntype, info, &params);
@@ -7275,12 +7283,30 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		err = nl80211_parse_chandef(rdev, info, &params->chandef, wdev);
 		if (err)
 			goto out;
+
+		/* 6 GHz Frequency requires 6 GHz power mode */
+		if (params->chandef.chan->band == NL80211_BAND_6GHZ) {
+			if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
+				params->he_6ghz_power_type =
+				    nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
+			} else {
+				err = -EINVAL;
+				goto out;
+			}
+		}
 	} else if (wdev->valid_links) {
 		/* with MLD need to specify the channel configuration */
 		err = -EINVAL;
 		goto out;
 	} else if (wdev->u.ap.preset_chandef.chan) {
 		params->chandef = wdev->u.ap.preset_chandef;
+		params->he_6ghz_power_type = wdev->u.ap.preset_6g_power_mode;
+		/* 6 GHz Frequency requires 6 GHz power mode */
+		if (params->chandef.chan->band == NL80211_BAND_6GHZ &&
+		    params->he_6ghz_power_type == NL80211_REG_NUM_POWER_MODES) {
+			err = -EINVAL;
+			goto out;
+		}
 	} else if (!nl80211_get_ap_channel(rdev, params)) {
 		err = -EINVAL;
 		goto out;
@@ -7403,6 +7429,8 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	if (!err) {
 		wdev->links[link_id].ap.beacon_interval = params->beacon_interval;
 		wdev->links[link_id].ap.chandef = params->chandef;
+		wdev->links[link_id].reg_6g_power_mode =
+		    params->he_6ghz_power_type;
 		wdev->u.ap.ssid_len = params->ssid_len;
 		memcpy(wdev->u.ap.ssid, params->ssid,
 		       params->ssid_len);
@@ -12034,6 +12062,17 @@ skip_beacons:
 	err = nl80211_parse_chandef(rdev, info, &params.chandef, wdev);
 	if (err)
 		goto free;
+
+	/* 6 GHz Frequency requires 6 GHz power mode */
+	if (params.chandef.chan->band == NL80211_BAND_6GHZ) {
+		if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
+			params.he_6ghz_power_type =
+			    nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
+		} else {
+			err = -EINVAL;
+			goto free;
+		}
+	}
 
 	if (!cfg80211_reg_can_beacon_relax(&rdev->wiphy, &params.chandef,
 					   wdev->iftype)) {
@@ -22868,6 +22907,30 @@ void cfg80211_pmksa_candidate_notify(struct net_device *dev, int index,
 }
 EXPORT_SYMBOL(cfg80211_pmksa_candidate_notify);
 
+static int nl80211_send_6ghz_power_mode(struct sk_buff *msg,
+					struct cfg80211_chan_def *chandef,
+					struct cfg80211_registered_device *rdev)
+{
+	u8 power_mode;
+
+	if (chandef->chan->band != NL80211_BAND_6GHZ)
+		return 0;
+
+	power_mode = cfg80211_get_6ghz_power_mode_from_chan(&rdev->wiphy,
+							    chandef->chan);
+	if (power_mode == NL80211_REG_NUM_POWER_MODES)
+		return -1;
+
+	/* Client Power type to AP Power type conversion */
+	if (power_mode > NL80211_REG_AP_VLP)
+		power_mode %= 3;
+
+	if (nla_put_u8(msg, NL80211_ATTR_6G_REG_POWER_MODE, power_mode))
+		return -1;
+
+	return 0;
+}
+
 static void nl80211_ch_switch_notify(struct cfg80211_registered_device *rdev,
 				     struct net_device *netdev,
 				     unsigned int link_id,
@@ -22898,6 +22961,9 @@ static void nl80211_ch_switch_notify(struct cfg80211_registered_device *rdev,
 		goto nla_put_failure;
 
 	if (nl80211_send_chandef(msg, chandef))
+		goto nla_put_failure;
+
+	if (nl80211_send_6ghz_power_mode(msg, chandef, rdev))
 		goto nla_put_failure;
 
 	if (notif == NL80211_CMD_CH_SWITCH_STARTED_NOTIFY) {
@@ -22945,6 +23011,8 @@ void cfg80211_ch_switch_notify(struct net_device *dev,
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_P2P_GO:
 		wdev->links[link_id].ap.chandef = *chandef;
+		wdev->links[link_id].reg_6g_power_mode =
+		    rdev_get_ap_6ghz_pwr_mode(rdev, wdev, link_id);
 		break;
 	case NL80211_IFTYPE_ADHOC:
 		wdev->u.ibss.chandef = *chandef;

@@ -141,6 +141,7 @@ validate_chandef_by_ht_vht_oper(struct ieee80211_sub_if_data *sdata,
 
 static void
 validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
+				     int link_id,
 				     struct ieee80211_conn_settings *conn,
 				     struct cfg80211_chan_def *chandef)
 {
@@ -212,12 +213,13 @@ validate_chandef_by_6ghz_he_eht_oper(struct ieee80211_sub_if_data *sdata,
 		eht_oper = &eht._oper;
 	}
 
-	if (!ieee80211_chandef_he_6ghz_oper(sdata, &he._oper,
+	if (!ieee80211_chandef_he_6ghz_oper(sdata, link_id, &he._oper,
 					    eht_oper, chandef))
 		chandef->chan = NULL;
 }
 
 int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
+				 int link_id,
 				 struct ieee802_11_elems *elems,
 				 enum nl80211_band current_band,
 				 u32 vht_cap_info,
@@ -372,7 +374,7 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 
 	/* check if the new chandef fits the capabilities */
 	if (new_band == NL80211_BAND_6GHZ)
-		validate_chandef_by_6ghz_he_eht_oper(sdata, conn, &new_chandef);
+		validate_chandef_by_6ghz_he_eht_oper(sdata, link_id, conn, &new_chandef);
 	else
 		validate_chandef_by_ht_vht_oper(sdata, conn, vht_cap_info,
 						&new_chandef);

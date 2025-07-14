@@ -1915,6 +1915,7 @@ cfg80211_update_chandef_6ghz_power_mode(const struct net_device *netdev,
 	}
 
 	chandef->chan = chan;
+	wdev->links[link_id].reg_6g_power_mode = power_mode;
 
 	return 0;
 }
@@ -1950,6 +1951,7 @@ cfg80211_get_6ghz_power_mode_from_chan(const struct wiphy *wiphy,
 
 	return NL80211_REG_NUM_POWER_MODES;
 }
+EXPORT_SYMBOL(cfg80211_get_6ghz_power_mode_from_chan);
 
 bool cfg80211_chandef_usable(struct wiphy *wiphy,
 			     const struct cfg80211_chan_def *chandef,

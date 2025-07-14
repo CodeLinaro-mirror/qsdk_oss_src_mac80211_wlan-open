@@ -783,7 +783,7 @@ ieee80211_ibss_process_chanswitch(struct ieee80211_sub_if_data *sdata,
 		vht_cap_info = le32_to_cpu(elems->vht_cap_elem->vht_cap_info);
 
 	memset(&params, 0, sizeof(params));
-	err = ieee80211_parse_ch_switch_ie(sdata, elems,
+	err = ieee80211_parse_ch_switch_ie(sdata, 0, elems,
 					   ifibss->chandef.chan->band,
 					   vht_cap_info, &conn,
 					   ifibss->bssid, false,

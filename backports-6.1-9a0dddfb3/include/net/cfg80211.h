@@ -1732,6 +1732,7 @@ struct cfg80211_ap_settings {
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
 	bool ml_max_rec_links_valid;
 	u8 ml_max_rec_links;
+	enum nl80211_regulatory_power_modes he_6ghz_power_type;
 };
 
 
@@ -1782,6 +1783,7 @@ struct cfg80211_csa_settings {
 	u8 count;
 	u8 link_id;
 	struct cfg80211_unsol_bcast_probe_resp unsol_bcast_probe_resp;
+	enum nl80211_regulatory_power_modes he_6ghz_power_type;
 };
 
 /**
@@ -5707,7 +5709,8 @@ struct cfg80211_ops {
 				    struct cfg80211_chan_def *chandef);
 
 	enum nl80211_regulatory_power_modes
-		(*get_ap_6ghz_pwr_mode)(struct wireless_dev *wdev);
+		(*get_ap_6ghz_pwr_mode)(struct wireless_dev *wdev,
+					unsigned int link_id);
 
 	int	(*add_tx_ts)(struct wiphy *wiphy, struct net_device *dev,
 			     u8 tsid, const u8 *peer, u8 user_prio,
@@ -7384,6 +7387,7 @@ struct wireless_dev {
 			struct cfg80211_chan_def preset_chandef;
 			u8 ssid[IEEE80211_MAX_SSID_LEN];
 			u8 ssid_len;
+			u8 preset_6g_power_mode;
 		} ap;
 		struct {
 			struct cfg80211_internal_bss *current_bss;
@@ -7418,11 +7422,11 @@ struct wireless_dev {
 		u8 switch_count;
 		u32 link_removal_tbtt_count;
 		u32 ttlm_expec_dur;
+		u8 reg_6g_power_mode;
 	} links[IEEE80211_MLD_MAX_NUM_LINKS];
 	u16 valid_links;
 
 	u32 radio_mask;
-	u8 reg_6g_power_mode;
 	bool critical_update;
 	bool is_netdev_going_down; /*Indicates netdev going down - wdev specific*/
 	u8 ppe_vp_type;

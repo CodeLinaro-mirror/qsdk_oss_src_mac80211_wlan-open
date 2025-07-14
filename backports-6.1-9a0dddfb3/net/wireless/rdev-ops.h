@@ -1150,12 +1150,14 @@ rdev_set_ap_chanwidth(struct cfg80211_registered_device *rdev,
 
 static inline enum nl80211_regulatory_power_modes
 rdev_get_ap_6ghz_pwr_mode(struct cfg80211_registered_device *rdev,
-			  struct wireless_dev *wdev)
+			  struct wireless_dev *wdev,
+			  unsigned int link_id)
 {
-	enum nl80211_regulatory_power_modes ret = NL80211_REG_AP_LPI;
-	trace_rdev_get_ap_6ghz_pwr_mode(wdev);
+	enum nl80211_regulatory_power_modes ret = NL80211_REG_NUM_POWER_MODES;
+
+	trace_rdev_get_ap_6ghz_pwr_mode(wdev, link_id);
 	if (rdev->ops->get_ap_6ghz_pwr_mode)
-		ret = rdev->ops->get_ap_6ghz_pwr_mode(wdev);
+		ret = rdev->ops->get_ap_6ghz_pwr_mode(wdev, link_id);
 	trace_rdev_return_enum(&rdev->wiphy, ret);
 	return ret;
 }

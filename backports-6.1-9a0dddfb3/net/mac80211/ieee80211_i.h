@@ -1083,6 +1083,7 @@ struct ieee80211_link_data {
 	struct {
 		struct wiphy_work finalize_work;
 		struct ieee80211_chan_req chanreq;
+		enum ieee80211_ap_reg_power power_mode;
 	} csa;
 
 	struct wiphy_work color_change_finalize_work;
@@ -1237,6 +1238,36 @@ static inline
 struct ieee80211_sub_if_data *vif_to_sdata(struct ieee80211_vif *p)
 {
 	return container_of(p, struct ieee80211_sub_if_data, vif);
+}
+
+static inline enum nl80211_regulatory_power_modes
+ieee80211_mac_to_cfg_power_type(enum ieee80211_ap_reg_power power_type)
+{
+	if (power_type < IEEE80211_REG_LPI_AP ||
+	    power_type > IEEE80211_REG_VLP_AP)
+		return NL80211_REG_NUM_POWER_MODES;
+
+	/**
+	 * power_type is of enum ieee80211_ap_reg_power which starts with 1 for
+	 * LPI, but nl80211_regulatory_power_modes starts with 0 for LPI.
+	 * So subtract 1 for conversion.
+	 */
+	return power_type - 1;
+}
+
+static inline enum ieee80211_ap_reg_power
+ieee80211_cfg_to_mac_power_type(enum nl80211_regulatory_power_modes power_type)
+{
+	if (power_type < NL80211_REG_AP_LPI ||
+	    power_type > NL80211_REG_AP_VLP)
+		return IEEE80211_REG_UNSET_AP;
+
+	/**
+	 * power_type is of enum nl80211_regulatory_power_modes which starts with 0
+	 * for LPI, but ieee80211_ap_reg_power starts with 1 for LPI.
+	 * So add 1 for conversion.
+	 */
+	return power_type + 1;
 }
 
 #define sdata_dereference(p, sdata) \
@@ -2395,6 +2426,7 @@ void ieee80211_process_measurement_req(struct ieee80211_sub_if_data *sdata,
 /**
  * ieee80211_parse_ch_switch_ie - parses channel switch IEs
  * @sdata: the sdata of the interface which has received the frame
+ * @link_id: the link ID of the interface which has received the frame
  * @elems: parsed 802.11 elements received with the frame
  * @current_band: indicates the current band
  * @vht_cap_info: VHT capabilities of the transmitter
@@ -2408,6 +2440,7 @@ void ieee80211_process_measurement_req(struct ieee80211_sub_if_data *sdata,
  * Return: 0 on success, <0 on error and >0 if there is nothing to parse.
  */
 int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
+				 int link_id,
 				 struct ieee802_11_elems *elems,
 				 enum nl80211_band current_band,
 				 u32 vht_cap_info,
@@ -2777,6 +2810,7 @@ struct ieee80211_channel
 				     const int new_chan_idx);
 
 bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
+				    int link_id,
 				    const struct ieee80211_he_operation *he_oper,
 				    const struct ieee80211_eht_operation *eht_oper,
 				    struct cfg80211_chan_def *chandef);

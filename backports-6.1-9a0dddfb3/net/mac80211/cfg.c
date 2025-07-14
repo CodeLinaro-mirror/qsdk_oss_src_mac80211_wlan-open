@@ -1646,6 +1646,12 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			params->crypto.control_port_no_preauth;
 	}
 
+	if (params->chandef.chan->band == NL80211_BAND_6GHZ)
+		link_conf->power_type =
+		    ieee80211_cfg_to_mac_power_type(params->he_6ghz_power_type);
+	else
+		link_conf->power_type = IEEE80211_REG_UNSET_AP;
+
 	link_conf->dtim_period = params->dtim_period;
 	link_conf->enable_beacon = true;
 	link_conf->allow_p2p_go_ps = sdata->vif.p2p;
@@ -4345,6 +4351,11 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
+	if (link_data->csa.power_mode != IEEE80211_REG_UNSET_AP) {
+		link_data->conf->power_type = link_data->csa.power_mode;
+		link_data->csa.power_mode = IEEE80211_REG_UNSET_AP;
+	}
+
 	/*
 	 * using reservation isn't immediate as it may be deferred until later
 	 * with multi-vif. once reservation is complete it will re-schedule the
@@ -4670,6 +4681,12 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		ieee80211_link_unreserve_chanctx(link_data);
 		goto out;
 	}
+
+	if (params->chandef.chan->band == NL80211_BAND_6GHZ)
+		link_data->csa.power_mode =
+		    ieee80211_cfg_to_mac_power_type(params->he_6ghz_power_type);
+	else
+		link_data->csa.power_mode = IEEE80211_REG_UNSET_AP;
 
 	link_data->csa.chanreq = chanreq;
 	link_conf->csa_active = true;
@@ -5034,37 +5051,48 @@ static int ieee80211_set_ap_chanwidth(struct wiphy *wiphy,
 }
 
 static enum nl80211_regulatory_power_modes
-ieee80211_get_ap_6ghz_pwr_mode(struct wireless_dev *wdev)
+ieee80211_get_ap_6ghz_pwr_mode(struct wireless_dev *wdev, unsigned int link_id)
 {
 	struct ieee80211_sub_if_data *sdata;
-	enum nl80211_regulatory_power_modes mode = NL80211_REG_AP_LPI;
+	enum nl80211_regulatory_power_modes mode = NL80211_REG_NUM_POWER_MODES;
 	enum ieee80211_ap_reg_power ap_power_type;
 
 	if (!wdev)
 		return mode;
 	switch (wdev->iftype) {
 	case NL80211_IFTYPE_AP:
-		mode = wdev->reg_6g_power_mode;
-		break;
 	case NL80211_IFTYPE_STATION:
+		unsigned long valid_links;
+		struct ieee80211_bss_conf *bss_conf;
+		enum nl80211_reg_client_types client_type;
+		enum nl80211_regulatory_power_modes ap_mode;
+
 		sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 		if (!ieee80211_sdata_running(sdata) ||
 		    !(sdata->flags & IEEE80211_SDATA_IN_DRIVER)) {
 				sdata_info(sdata, "sdata not running");
 				return mode;
 		}
-		/* If STA is not yet associated then assign power type
-		 * by default as IEEE80211_REG_LPI_AP */
-		if (sdata->vif.bss_conf.power_type ==
-		    IEEE80211_REG_UNSET_AP) {
-			ap_power_type = IEEE80211_REG_LPI_AP;
-		} else {
-			ap_power_type = sdata->vif.bss_conf.power_type;
-		}
-		/* ieee80211_ap_reg_power starts with 0 since they used
-		 * IEEE80211_REG_UNSET_AP as first parameter. Hence reduced
-		 * ap_power_type by offset 1 to match with 6g_reg_power_mode */
-		mode = GET_POWER_MODE_FOR_NON_AP_STA(wdev->reg_6g_power_mode, ap_power_type - 1);
+
+		valid_links = sdata->vif.valid_links;
+		if (!valid_links)
+			bss_conf = &sdata->vif.bss_conf;
+		else if (valid_links & BIT(link_id))
+			bss_conf = rcu_dereference(sdata->vif.link_conf[link_id]);
+		else
+			return mode;
+
+		if (bss_conf->power_type != IEEE80211_REG_UNSET_AP)
+			ap_power_type = bss_conf->power_type;
+		else
+			return mode;
+
+		ap_mode = ieee80211_mac_to_cfg_power_type(ap_power_type);
+		if (wdev->iftype == NL80211_IFTYPE_AP)
+			return ap_mode;
+
+		client_type = NL80211_REG_REGULAR_CLIENT;
+		mode = GET_POWER_MODE_FOR_NON_AP_STA(client_type, ap_mode);
 		break;
 	default:
 		/* do nothing */
@@ -5424,10 +5452,10 @@ ieee80211_6ghz_power_mode_change(struct wiphy *wiphy, struct wireless_dev *wdev,
 		return -EINVAL;
 	}
 
-	wdev->reg_6g_power_mode = ap_6ghz_pwr_mode;
+	link->conf->power_type = ieee80211_cfg_to_mac_power_type(ap_6ghz_pwr_mode);
 	changed = BSS_CHANGED_6GHZ_POWER_MODE;
 
-	ieee80211_bss_info_change_notify(sdata, changed);
+	ieee80211_link_info_change_notify(sdata, link, changed);
 
 	return 0;
 }

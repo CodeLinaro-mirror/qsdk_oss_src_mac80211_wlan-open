@@ -109,7 +109,7 @@ bool mesh_matches_local(struct ieee80211_sub_if_data *sdata,
 	ieee80211_chandef_vht_oper(&sdata->local->hw, vht_cap_info,
 				   ie->vht_operation, ie->ht_operation,
 				   &sta_chan_def);
-	ieee80211_chandef_he_6ghz_oper(sdata, ie->he_operation,
+	ieee80211_chandef_he_6ghz_oper(sdata, 0, ie->he_operation,
 				       ie->eht_operation,
 				       &sta_chan_def);
 
@@ -1394,7 +1394,7 @@ ieee80211_mesh_process_chnswitch(struct ieee80211_sub_if_data *sdata,
 			le32_to_cpu(elems->vht_cap_elem->vht_cap_info);
 
 	memset(&params, 0, sizeof(params));
-	err = ieee80211_parse_ch_switch_ie(sdata, elems, sband->band,
+	err = ieee80211_parse_ch_switch_ie(sdata, 0, elems, sband->band,
 					   vht_cap_info, &conn,
 					   sdata->vif.addr, false,
 					   &csa_ie);

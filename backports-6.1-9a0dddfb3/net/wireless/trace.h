@@ -2527,11 +2527,18 @@ TRACE_EVENT(rdev_set_ap_chanwidth,
 );
 
 TRACE_EVENT(rdev_get_ap_6ghz_pwr_mode,
-        TP_PROTO(struct wireless_dev *wdev),
-        TP_ARGS(wdev),
-        TP_STRUCT__entry(WDEV_ENTRY),
-        TP_fast_assign(WDEV_ASSIGN),
-        TP_printk(WDEV_PR_FMT, WDEV_PR_ARG)
+	TP_PROTO(struct wireless_dev *wdev, unsigned int link_id),
+	TP_ARGS(wdev, link_id),
+	TP_STRUCT__entry(
+		WDEV_ENTRY
+		__field(unsigned int, link_id)
+	),
+	TP_fast_assign(
+		WDEV_ASSIGN;
+		__entry->link_id = link_id;
+	),
+	TP_printk(WDEV_PR_FMT ", link:%d",
+		  WDEV_PR_ARG, __entry->link_id)
 );
 
 TRACE_EVENT(rdev_add_tx_ts,

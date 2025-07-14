@@ -161,6 +161,7 @@ static int ecw2cw(int ecw)
 
 static enum ieee80211_conn_mode
 ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
+			    int link_id,
 			    struct ieee80211_channel *channel,
 			    u32 vht_cap_info,
 			    const struct ieee802_11_elems *elems,
@@ -221,7 +222,7 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 			mode = IEEE80211_CONN_MODE_HE;
 		}
 
-		if (!ieee80211_chandef_he_6ghz_oper(sdata, he_oper,
+		if (!ieee80211_chandef_he_6ghz_oper(sdata, link_id, he_oper,
 						    eht_oper, chandef)){
 			sdata_info(sdata, "bad HE/EHT 6 GHz operation\n");
 			return IEEE80211_CONN_MODE_LEGACY;
@@ -950,7 +951,7 @@ again:
 	if (!elems)
 		return ERR_PTR(-ENOMEM);
 
-	ap_mode = ieee80211_determine_ap_chan(sdata, channel, bss->vht_cap_info,
+	ap_mode = ieee80211_determine_ap_chan(sdata, link_id, channel, bss->vht_cap_info,
 					      elems, false, conn, ap_chandef);
 
 	/* this should be impossible since parsing depends on our mode */
@@ -1165,7 +1166,7 @@ static int ieee80211_config_bw(struct ieee80211_link_data *link,
 	if (elems->vht_cap_elem)
 		vht_cap_info = le32_to_cpu(elems->vht_cap_elem->vht_cap_info);
 
-	ap_mode = ieee80211_determine_ap_chan(sdata, channel, vht_cap_info,
+	ap_mode = ieee80211_determine_ap_chan(sdata, link->link_id, channel, vht_cap_info,
 					      elems, true, &link->u.mgd.conn,
 					      &ap_chandef);
 
@@ -2628,7 +2629,7 @@ ieee80211_sta_process_chanswitch(struct ieee80211_link_data *link,
 		current_band = cbss->channel->band;
 		bss = (void *)cbss->priv;
 
-		res = ieee80211_parse_ch_switch_ie(sdata, csa_elems,
+		res = ieee80211_parse_ch_switch_ie(sdata, link->link_id, csa_elems,
 						   current_band,
 						   bss->vht_cap_info,
 						   &link->u.mgd.conn,
