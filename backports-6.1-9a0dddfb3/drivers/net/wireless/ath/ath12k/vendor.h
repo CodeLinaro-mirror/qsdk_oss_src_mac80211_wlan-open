@@ -12,6 +12,10 @@
 #define QCA_WLAN_AFC_RESP_DESC_FIELD_END_OCTET         30
 #define ATF_OFFLOAD_MAX_PAYLOAD                                2048
 
+#define INVALID_LINK_ID 0xFF
+#define is_valid_link_id(X) !((X) >= INVALID_LINK_ID)
+
+#define INVALID_RADIO_INDEX 0xFF
 
 extern unsigned int ath12k_ppe_ds_enabled;
 
@@ -24,6 +28,7 @@ struct ath12k_wifi_generic_params {
 	u32 flags;
 	u32 ifindex;
 	u8 link_id;
+	u8 radio_idx;
 };
 
 enum qca_nl80211_vendor_subcmds {
@@ -43,6 +48,9 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WDEV = 263,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_CLEAR_PAYLOAD = 264,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_RESET = 265,
+	QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD = 267,
+	QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION = 268,
+	QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION = 269,
 };
 
 enum qca_nl80211_vendor_events {
@@ -51,6 +59,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_RM_GENERIC_INDEX = 2,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_WIPHY_TELEMETRY_EVENT = 3,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_WDEV_TELEMETRY_EVENT = 4,
+	QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD_INDEX = 5,
 };
 
 /**
@@ -497,6 +506,13 @@ enum qca_wlan_vendor_attr_config {
 	 * Uses enum qca_wlan_intf_offload_type for values.
 	 */
 	QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE = 120,
+        /* 8-bit unsigned value. Used to specify the HW Radio Index of a wiphy
+         * device that is being configured. This attribute may be included in
+         * %QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION or
+         * %QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION subcmds to
+         * specify a particular Radio of the wiphy device.
+         */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX = 135,
 	/* Keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =
@@ -1270,6 +1286,56 @@ enum qca_vendor_wlan_telemetry_tx_ingress_enq_error {
 	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_AFTER_LAST,
 	QCA_VENDOR_ATTR_TX_INGRESS_ENQ_ERR_MAX =
 		QCA_VENDOR_ATTR_TX_INGRESS_ENQ_AFTER_LAST - 1,
+};
+
+/* TODO: qca_wlan_genric_data, qca_wlan_set_params,
+ * qca_wlan_get_params
+ * These should be align with qca_wlan_vendor_attr_config
+ * in qca-vendor.h
+ * QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND
+ * QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA
+ *
+ * It requires qca_nl80211_lib changes also in reading
+ * responses
+ */
+enum qca_wlan_genric_data {
+	QCA_WLAN_VENDOR_ATTR_GENERIC_PARAM_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_PARAM_DATA,
+	QCA_WLAN_VENDOR_ATTR_PARAM_LENGTH,
+	QCA_WLAN_VENDOR_ATTR_PARAM_FLAGS,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_GENERIC_PARAM_LAST,
+	QCA_WLAN_VENDOR_ATTR_GENERIC_PARAM_MAX =
+	QCA_WLAN_VENDOR_ATTR_GENERIC_PARAM_LAST - 1
+};
+
+enum qca_wlan_vendor_attr_iface_reload {
+	QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_LINKID = 1,
+
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_MAX =
+	QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_AFTER_LAST - 1,
+};
+
+enum qca_vendor_vdev_param {
+	QCA_WLAN_VENDOR_VDEV_PARAM_TEST = 0,
+	QCA_WLAN_VENDOR_VDEV_PARAM_TEST_RELOAD = QCA_WLAN_VENDOR_VDEV_PARAM_TEST,
+
+	/* Add new params above */
+	QCA_WLAN_VENDOR_VDEV_PARAM_LAST,
+	QCA_WLAN_VENDOR_VDEV_PARAM_MAX = QCA_WLAN_VENDOR_VDEV_PARAM_LAST - 1,
+};
+
+enum qca_vendor_radio_param {
+	QCA_WLAN_VENDOR_RADIO_PARAM_TEST = 0,
+	QCA_WLAN_VENDOR_RADIO_PARAM_TEST_RELOAD = QCA_WLAN_VENDOR_RADIO_PARAM_TEST,
+
+	/* Add new params above */
+	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
+	QCA_WLAN_VENDOR_RADIO_PARAM_MAX = QCA_WLAN_VENDOR_RADIO_PARAM_LAST - 1,
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah);

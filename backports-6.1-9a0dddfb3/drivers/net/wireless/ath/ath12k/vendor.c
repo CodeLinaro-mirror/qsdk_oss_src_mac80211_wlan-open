@@ -25,6 +25,7 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_IFINDEX] = {.type = NLA_U32 },
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX] = {.type = NLA_U8 },
 };
 
 static const struct nla_policy
@@ -3064,11 +3065,371 @@ static int ath12k_vendor_wlan_telemetry_wdev_getstats(struct wiphy *wiphy,
 	return ret;
 }
 
+/* Send a 'reload' NL80211 event to userspace
+ * link_id is 'invalid' for non-mlo wdev.
+ * For mlo wdev, if 'invalid' link_id is passed, userspace will reload all
+ * BSSes of the mlo
+ * If valid link_id is passed for mlo wdev, only that BSS is reset
+ * in userspace.
+ */
+static int ath12k_vendor_event_iface_reload_link(struct wiphy *wiphy,
+					    struct wireless_dev *wdev, u8 link_id)
+{
+	struct sk_buff *skb;
+
+	skb = cfg80211_vendor_event_alloc(wiphy, wdev,
+					  NLMSG_DEFAULT_SIZE,
+					  QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD_INDEX,
+					  GFP_KERNEL);
+	if (!skb)
+		return -ENOMEM;
+
+	if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_IFACE_RELOAD_LINKID, link_id)) {
+		kfree_skb(skb);
+		return -EINVAL;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "send event to userspace link_id %d\n", link_id);
+	cfg80211_vendor_event(skb, GFP_KERNEL);
+
+	return 0;
+}
+
+/* Find the wdevs corresponding to the radio index of the wiphy
+ * and send the reload event to userspace
+ */
+static int ath12k_vendor_event_iface_reload(struct wiphy *wiphy, u8 radio_idx)
+{
+	struct ieee80211_hw *hw = NULL;
+	struct ath12k_hw *ah = NULL;
+	struct ath12k *ar = NULL;
+	struct ath12k_link_vif *arvif = NULL;
+	struct wireless_dev *wdev = NULL;
+
+	hw = wiphy_to_ieee80211_hw(wiphy);
+	ah = hw->priv;
+	ar = &ah->radio[radio_idx];
+	if (!ar) {
+		ath12k_err(NULL, "Failed to find ar\n");
+		return -ENODATA;
+	}
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
+		if (!wdev) {
+			ath12k_err(NULL, "Failed to find wdev\n");
+			return -ENODATA;
+		}
+		ath12k_vendor_event_iface_reload_link(wiphy, wdev, arvif->link_id);
+	}
+	return 0;
+}
+
+/* Set link-vif level parameters
+ * set 'reload' to true to send reload event to userspace */
+static int ath12k_vendor_set_arvif_params(struct ath12k_link_vif *arvif,
+					  u32 param, u32 value, bool *reload)
+{
+	int ret = -1;
+
+	switch (param) {
+	case QCA_WLAN_VENDOR_VDEV_PARAM_TEST_RELOAD:
+		*reload = true;
+		ret = 0;
+		break;
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "Un-supported param: %d\n", param);
+		break;
+	}
+
+	return ret;
+}
+
+/* Set radio level parameters
+ * set 'reload' to true to send reload event to userspace */
+static int ath12k_vendor_set_radio_params(struct ath12k *ar,
+					  u32 param, u32 value, bool *reload)
+{
+	int ret = -1;
+
+	switch (param) {
+	case QCA_WLAN_VENDOR_RADIO_PARAM_TEST_RELOAD:
+		*reload = true;
+		ret = 0;
+		break;
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "Un-supported param: %d\n", param);
+		break;
+	}
+
+	return ret;
+}
+
+/* Find the link-vif of the wdev with the link id to set params
+ * If link id is invalid use the default link
+ */
+static int ath12k_vendor_set_wifi_params(struct wiphy *wiphy,
+					 struct wireless_dev *wdev,
+					 struct ath12k_wifi_generic_params *params)
+{
+	struct ieee80211_vif *vif = NULL;
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_hw *ah = NULL;
+	u32 param = params->value;
+	u32 *data = (u32 *)params->data;
+	u32 value = *data;
+	int ret = -1;
+	bool reload = false;
+
+	lockdep_assert_wiphy(wiphy);
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif || !data)
+		return -EINVAL;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif)
+		return -EINVAL;
+
+	ah = ahvif->ah;
+
+	rcu_read_lock();
+	if (ah && params->link_id == INVALID_LINK_ID) {
+		arvif = &ahvif->deflink;
+	} else {
+		if (params->link_id < ATH12K_NUM_MAX_LINKS)
+			arvif = rcu_dereference(ahvif->link[params->link_id]);
+	}
+	if (!arvif) {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "vif: %p param: %d value: %d if: %d link: %d\n",
+		   vif, param, value,
+		   params->ifindex, params->link_id);
+
+	ret = ath12k_vendor_set_arvif_params(arvif, param, value, &reload);
+	rcu_read_unlock();
+
+	if (!ret && reload)
+		ath12k_vendor_event_iface_reload_link(wiphy, wdev, params->link_id);
+
+	return ret;
+}
+
+/* Find the 'ar' radio instance using the radio index of the wiphy
+ * to set params
+ */
+static int ath12k_vendor_set_wiphy_params(struct wiphy *wiphy,
+					  struct ath12k_wifi_generic_params *params)
+{
+	struct ieee80211_hw *hw = NULL;
+	struct ath12k_hw *ah = NULL;
+	struct ath12k *ar = NULL;
+	u32 param = params->value;
+	u32 *data = (u32 *)params->data;
+	u32 value = *data;
+	int ret = -1;
+	bool reload = false;
+
+	lockdep_assert_wiphy(wiphy);
+
+	if (params->radio_idx == INVALID_RADIO_INDEX)
+		return -ENODATA;
+
+	hw = wiphy_to_ieee80211_hw(wiphy);
+	ah = hw->priv;
+	ar = &ah->radio[params->radio_idx];
+	if (!ar) {
+		ath12k_err(NULL, "Failed to find ar\n");
+		return -ENODATA;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "ar: %p param: %d value: %d if: %d radio: %d\n",
+		   ar, param, value,
+		   params->ifindex, params->radio_idx);
+
+	ret = ath12k_vendor_set_radio_params(ar, param, value, &reload);
+
+	if (!ret && reload)
+		ath12k_vendor_event_iface_reload(wiphy, params->radio_idx);
+
+	return ret;
+}
+
+/* Get link-vif level parameters */
+static int ath12k_vendor_get_arvif_params(struct ath12k_link_vif *arvif,
+					  u32 param, u32 *value)
+{
+	int ret = -1;
+
+	switch (param) {
+	case QCA_WLAN_VENDOR_VDEV_PARAM_TEST:
+		*value = 0;
+		ret = 0;
+		break;
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "Un-supported param: %d\n", param);
+		break;
+	}
+
+	return ret;
+}
+
+/* Get radio level parameters */
+static int ath12k_vendor_get_radio_params(struct ath12k *ar,
+					  u32 param, u32 *value)
+{
+	int ret = -1;
+
+	switch (param) {
+	case QCA_WLAN_VENDOR_RADIO_PARAM_TEST:
+		*value = 0;
+		ret = 0;
+		break;
+	default:
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "Un-supported param: %d\n", param);
+		break;
+	}
+
+	return ret;
+}
+
+/* Find the link-vif of the wdev with the link id to get params
+ * If link id is invalid use the default link
+ */
+static int ath12k_vendor_get_wifi_params(struct wiphy *wiphy,
+					 struct wireless_dev *wdev,
+					 struct ath12k_wifi_generic_params *params,
+					 u32 *value)
+{
+	struct ieee80211_vif *vif = NULL;
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	int param = params->value;
+	int ret = -1;
+
+
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif)
+		return -EINVAL;
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif)
+		return -EINVAL;
+
+	ah = ahvif->ah;
+
+	rcu_read_lock();
+	if (ah && params->link_id == INVALID_LINK_ID) {
+		arvif = &ahvif->deflink;
+	} else {
+		if (params->link_id < ATH12K_NUM_MAX_LINKS)
+			arvif = rcu_dereference(ahvif->link[params->link_id]);
+	}
+	if (!arvif) {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "vif: %p param: %d if: %d link: %d\n",
+		   vif, param, params->ifindex, params->link_id);
+
+	ret = ath12k_vendor_get_arvif_params(arvif, param, value);
+	rcu_read_unlock();
+
+	return ret;
+}
+
+/* Find the 'ar' radio instance using the radio index of the wiphy
+ * to get params
+ */
+static int ath12k_vendor_get_wiphy_params(struct wiphy *wiphy,
+					 struct ath12k_wifi_generic_params *params,
+					 u32 *value)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k *ar = NULL;
+	int param = params->value;
+	int ret = -1;
+
+	if (params->radio_idx == INVALID_RADIO_INDEX)
+		return -ENODATA;
+
+	ar = &ah->radio[params->radio_idx];
+	if (!ar) {
+		ath12k_err(NULL, "Failed to find ar\n");
+		return -ENODATA;
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "ar: %p param: %d if: %d radio: %d\n",
+		   ar, param, params->ifindex, params->radio_idx);
+	ret = ath12k_vendor_get_radio_params(ar, param, value);
+
+	return ret;
+}
+
+/* Extract attributes from the NL message */
+static void ath12k_vendor_wifi_extract_generic_command_params(struct nlattr **tb,
+							      struct ath12k_wifi_generic_params *params)
+{
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND])
+		params->command = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_VALUE])
+		params->value = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_VALUE]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA]) {
+		params->data = nla_data(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA]);
+		params->data_len = nla_len(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_DATA]);
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_LENGTH])
+		params->length = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_LENGTH]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_FLAGS])
+		params->flags = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_FLAGS]);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_IFINDEX])
+		params->ifindex = nla_get_u32(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_IFINDEX]);
+	else
+		params->ifindex = 0xFFFFFFFF;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID])
+		params->link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID]);
+	else
+		params->link_id = INVALID_LINK_ID;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX])
+		params->radio_idx = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]);
+	else
+		params->radio_idx = INVALID_RADIO_INDEX;
+
+	ath12k_dbg(NULL, ATH12K_DBG_CFG,
+		   "wifi param: %d data: %p data len: %d ifindex: %d link id: %d radio idx: %d\n",
+		   params->value, params->data, params->data_len,
+		   params->ifindex, params->link_id, params->radio_idx);
+}
+
+
 static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 					     struct wireless_dev *wdev,
 					     const void *data, int data_len)
 {
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+	struct ath12k_wifi_generic_params wifi_params;
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_vif *ahvif = NULL;
 	int ppe_vp_type = 0;
@@ -3079,8 +3440,37 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			ath12k_wifi_config_policy, NULL);
 
 	if (ret) {
-		pr_err("Invalid attribute with vendor wifi config %d\n", ret);
+		ath12k_err(NULL,
+			   "Invalid attribute with vendor wifi config %d\n", ret);
 		return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
+		ath12k_err(NULL,
+			   "wiphy:%p wdev: %p Extract wifi params\n",
+			   wiphy, wdev);
+		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
+		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
+		switch (wifi_params.command) {
+		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
+			if (!wifi_params.data) {
+				ath12k_err(NULL,
+					   "Invalid param command received\n");
+				return -EINVAL;
+			}
+			ret = ath12k_vendor_set_wifi_params(wiphy, wdev,
+							    &wifi_params);
+			if (ret) {
+				ath12k_err(NULL,
+					   "Failed to set wifi params \n");
+				return -EINVAL;
+			}
+			break;
+		default:
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Un-supported generic command\n");
+			return -EOPNOTSUPP;
+		}
 	}
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]) {
@@ -3151,50 +3541,216 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	return 0;
 }
 
+static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
+					     struct wireless_dev *wdev,
+					     const void *data, int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+	struct ath12k_wifi_generic_params wifi_params;
+	int ret = 0;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
+			ath12k_wifi_config_policy, NULL);
+
+	if (ret) {
+		ath12k_err(NULL,
+			   "Invalid attribute with vendor wiphy config %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "wiphy:%p wdev: %p Extract wiphy params\n",
+			   wiphy, wdev);
+		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
+		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
+		switch (wifi_params.command) {
+		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
+			if (!wifi_params.data) {
+				ath12k_err(NULL,
+					   "Invalid param command received\n");
+				return -EINVAL;
+			}
+			ret = ath12k_vendor_set_wiphy_params(wiphy,
+							    &wifi_params);
+			if (ret) {
+				ath12k_err(NULL,
+					   "Failed to set wiphy params \n");
+				return -EINVAL;
+			}
+			break;
+		default:
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Un-supported generic command\n");
+			return -EOPNOTSUPP;
+		}
+	}
+
+	return 0;
+}
+
 static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 						 struct wireless_dev *wdev,
 						 const void *data,
 						 int data_len)
 {
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+	struct ath12k_wifi_generic_params wifi_params;
+	struct sk_buff *skb;
 	struct ieee80211_vif *vif;
 	struct ath12k_vif *ahvif;
-	struct sk_buff *skb;
 	int ret;
+	u32 value = 0;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
+			ath12k_wifi_config_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Invalid attribute with vendor wifi config %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "wiphy:%p wdev: %p Extract wifi params\n",
+			   wiphy, wdev);
+		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
+		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
+		switch (wifi_params.command) {
+		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
+			ret = ath12k_vendor_get_wifi_params(wiphy, wdev,
+							    &wifi_params, &value);
+			if (ret) {
+				ath12k_err(NULL,
+					   "Failed to set wifi params \n");
+				return -EINVAL;
+			}
+			break;
+		default:
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Un-supported generic command\n");
+			return -EOPNOTSUPP;
+		}
+	}
 
 	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
 	if (!skb)
 		return -ENOMEM;
 
-	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
-	if (!vif) {
-		ret = -EINVAL;
-		goto err;
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
+		if ((nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_DATA, value)) ||
+		    (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_LENGTH, sizeof(u32)))
+		    || (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_FLAGS, 0))){
+			ret = -EINVAL;
+			goto err;
+		}
 	}
+	if (tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]) {
+		vif = wdev_to_ieee80211_vif_vlan(wdev, false);
+		if (!vif) {
+			ret = -EINVAL;
+			goto err;
+		}
 
-	ahvif = ath12k_vif_to_ahvif(vif);
-	if (!ahvif) {
-		ret = -EINVAL;
-		goto err;
-	}
+		vif = wdev_to_ieee80211_vif_vlan(wdev, false);
+		if (!vif) {
+			ret = -EINVAL;
+			goto err;
+		}
 
-//	wiphy_lock(ahvif->ah->hw->wiphy);
-	if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE, ahvif->dp_vif.ppe_vp_type)) {
-		wiphy_unlock(ahvif->ah->hw->wiphy);
-		ret = -EINVAL;
-		goto err;
+		ahvif = ath12k_vif_to_ahvif(vif);
+		if (!ahvif) {
+			ret = -EINVAL;
+			goto err;
+		}
+
+		if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE, ahvif->dp_vif.ppe_vp_type)) {
+			ret = -EINVAL;
+			goto err;
+		}
 	}
-//	wiphy_unlock(ahvif->ah->hw->wiphy);
 
 	ret = cfg80211_vendor_cmd_reply(skb);
 	if (ret) {
-		pr_err("offload type send failed with err=%d\n", ret);
+		ath12k_err(NULL,
+			   "send failed with err=%d\n", ret);
 		return ret;
 	}
 
 	return 0;
 
 err:
-	pr_err("get offload type failed with err=%d\n", ret);
+	ath12k_err(NULL,
+		   "get failed with err=%d\n", ret);
+	kfree_skb(skb);
+	return ret;
+}
+
+static int ath12k_vendor_get_wiphy_config_handler(struct wiphy *wiphy,
+						 struct wireless_dev *wdev,
+						 const void *data,
+						 int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+	struct ath12k_wifi_generic_params wifi_params;
+	struct sk_buff *skb;
+	int ret;
+	u32 value = 0;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
+			ath12k_wifi_config_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "Invalid attribute with vendor wiphy config %d\n", ret);
+		return ret;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "wiphy:%p wdev: %p Extract wiphy params\n",
+			   wiphy, wdev);
+		memset(&wifi_params, 0, sizeof(struct ath12k_wifi_generic_params));
+		ath12k_vendor_wifi_extract_generic_command_params(tb, &wifi_params);
+		switch (wifi_params.command) {
+		case QCA_NL80211_VENDOR_SUBCMD_WIFI_PARAMS:
+			ret = ath12k_vendor_get_wiphy_params(wiphy,
+							    &wifi_params, &value);
+			if (ret) {
+				ath12k_err(NULL,
+					   "Failed to set wifi params \n");
+				return -EINVAL;
+			}
+			break;
+		default:
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "Un-supported generic command\n");
+			return -EOPNOTSUPP;
+		}
+	}
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (!skb)
+		return -ENOMEM;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
+		if ((nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_DATA, value)) ||
+		    (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_LENGTH, sizeof(u32)))
+		    || (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_FLAGS, 0))){
+			ret = -EINVAL;
+			goto err;
+		}
+	}
+
+	ret = cfg80211_vendor_cmd_reply(skb);
+	if (ret) {
+		ath12k_err(NULL,
+			   "send failed with err=%d\n", ret);
+		return ret;
+	}
+
+	return 0;
+
+err:
+	ath12k_err(NULL,
+		   "put failed with err=%d\n", ret);
 	kfree_skb(skb);
 	return ret;
 }
@@ -4715,6 +5271,20 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
 			WIPHY_VENDOR_CMD_NEED_RUNNING,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION,
+		.doit = ath12k_vendor_wiphy_config_handler,
+		.policy = ath12k_wifi_config_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION,
+		.doit = ath12k_vendor_get_wiphy_config_handler,
+		.policy = ath12k_wifi_config_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+	},
 };
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
@@ -4738,6 +5308,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_TELEMETRY_WDEV,
 	},
+        [QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD_INDEX] = {
+                .vendor_id = QCA_NL80211_VENDOR_ID,
+                .subcmd = QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD
+        },
 };
 
 int ath12k_vendor_register(struct ath12k_hw *ah)

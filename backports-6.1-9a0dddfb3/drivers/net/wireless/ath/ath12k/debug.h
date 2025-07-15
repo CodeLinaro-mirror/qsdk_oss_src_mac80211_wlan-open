@@ -41,6 +41,7 @@ enum ath12k_debug_mask {
 	ATH12K_DBG_CFR_DUMP     = 0x02000000,
 	ATH12K_DBG_MLME		= 0x10000000,
 	ATH12K_DBG_EAPOL	= 0x20000000,
+	ATH12K_DBG_CFG		= 0x40000000,
 
 	/* keep last*/
 	ATH12K_DBG_ANY		= 0xffffffff,
