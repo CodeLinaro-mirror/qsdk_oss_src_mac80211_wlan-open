@@ -317,6 +317,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
 	enum hal_rx_buf_return_buf_manager mgr = dp->hal->hal_params->rx_buf_rbm;
 	int allocated_entries = 0;
+	bool is_dma_inv_done = false;
 
 	list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
 #ifdef CPTCFG_MAC80211_SFE_SUPPORT
@@ -328,25 +329,25 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 			break;
 
 #ifndef CONFIG_IO_COHERENCY
-		paddr = dma_map_single(dp->dev, skb->data, DP_RX_BUFFER_SIZE,
-				       DMA_FROM_DEVICE);
-		if (unlikely(dma_mapping_error(dp->dev, paddr))) {
-			ath12k_dp_rx_skb_free(skb, dp, 0,
-					      DP_RX_ERR_DROP_REPLENISH);
-			break;
+		if (unlikely(!skb->fast_recycled)) {
+			dmac_inv_range_no_dsb(skb->data, skb->data + DP_RX_BUFFER_SIZE);
+			is_dma_inv_done = true;
 		}
-#else
+#endif
 		paddr = virt_to_phys(skb->data);
 		if(unlikely(!paddr)) {
 			ath12k_dp_rx_skb_free(skb, dp, 0,
 					      DP_RX_ERR_DROP_REPLENISH);
 			break;
 		}
-#endif
+
 		allocated_entries++;
 		rx_desc->skb = skb;
 		rx_desc->paddr = paddr;
 	}
+
+	if (unlikely(is_dma_inv_done))
+		dsb(st);
 
 	srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 	spin_lock_bh(&srng->lock);
