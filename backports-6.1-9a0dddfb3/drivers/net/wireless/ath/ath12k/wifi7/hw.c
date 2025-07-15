@@ -1286,6 +1286,15 @@ void ath12k_wifi7_ieee80211_free_txskb(struct ieee80211_hw *hw,
 		ieee80211_free_txskb(hw, skb);
 }
 
+static inline bool ath12k_wifi7_check_err_code_debug_logging(enum ath12k_dp_tx_enq_error err)
+{
+	if ((err == DP_TX_ENQ_DROP_SW_DESC_NA) || (err == DP_TX_ENQ_DROP_EXT_DESC_NA) ||
+	    (err == DP_TX_ENQ_DROP_TCL_DESC_NA))
+		return true;
+
+	return false;
+}
+
 /* Note: called under rcu_read_lock() */
 static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				   struct ieee80211_tx_control *control,
@@ -1398,7 +1407,11 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				err = DP_TX_ENQ_DROP_INV_ENCAP_FAST;
 		}
 		if (unlikely(err)) {
-			ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
+			if (ath12k_wifi7_check_err_code_debug_logging(err))
+				ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "failed to transmit frame %d\n", err);
+			else
+				ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
+
 			ath12k_wifi7_ieee80211_free_txskb(ar->ah->hw, skb, dp_vif,
 							  err, ring_id, false);
 
@@ -1531,7 +1544,11 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
 					 arsta, ring_id);
 		if (unlikely(err)) {
-			ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
+			if (ath12k_wifi7_check_err_code_debug_logging(err))
+				ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "failed to transmit frame %d\n", err);
+			else
+				ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
+
 			ath12k_wifi7_ieee80211_free_txskb(ar->ah->hw, skb, dp_vif,
 							  err, ring_id, false);
 			return;
@@ -1617,8 +1634,12 @@ skip_peer_find:
 						 msdu_copied, true, mcbc_gsn,
 						 is_mcast, arsta, ring_id);
 			if (unlikely(err)) {
-				ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-					   "failed to transmit frame %d\n", err);
+				if (ath12k_wifi7_check_err_code_debug_logging(err))
+					ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+						   "failed to transmit frame %d\n", err);
+				else
+					ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
+
 				ath12k_wifi7_ieee80211_free_txskb(hw, msdu_copied,
 								  dp_vif, err,
 								  ring_id, true);
