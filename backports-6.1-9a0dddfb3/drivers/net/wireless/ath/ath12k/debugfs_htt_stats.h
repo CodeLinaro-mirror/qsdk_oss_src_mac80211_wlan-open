@@ -591,6 +591,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_PDEV_MBSSID_CTRL_FRAME_STATS_TAG	= 176,
 	HTT_STATS_UMAC_SSR_TAG                          = 179,
 	HTT_STATS_GTX_TAG				= 199,
+	HTT_STATS_TXBF_OFDMA_BE_PARBW_TAG		= 201,
 	HTT_STATS_HDS_PROF_STATS_TAG			= 213,
 
 	HTT_STATS_MAX_TAG,
@@ -797,18 +798,27 @@ enum ATH12K_HTT_TX_RX_PDEV_STATS_AX_RU_SIZE {
 	ATH12K_HTT_TX_RX_PDEV_STATS_NUM_AX_RU_SIZE_CNTRS,
 };
 
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS        12
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_GI_COUNTERS          4
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_DCM_COUNTERS         5
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS          4
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_SPATIAL_STREAMS      8
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_PREAMBLE_TYPES       7
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_LEGACY_CCK_STATS     4
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_LEGACY_OFDM_STATS    8
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_LTF                  4
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS   2
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS  2
-#define ATH12K_HTT_TX_PDEV_STATS_NUM_11AX_TRIGGER_TYPES   6
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS		12
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_GI_COUNTERS		4
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_DCM_COUNTERS		5
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS		4
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_SPATIAL_STREAMS		8
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_PREAMBLE_TYPES		7
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_LEGACY_CCK_STATS		4
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_LEGACY_OFDM_STATS		8
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_LTF			4
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS		2
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS	2
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_11AX_TRIGGER_TYPES		6
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_11BE_TRIGGER_TYPES		6
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES		2
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_HE_SIG_B_MCS_COUNTERS	6
+
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS		4
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT		14
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS	2
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT2_COUNTERS		5
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS	5
 
 struct ath12k_htt_tx_pdev_rate_stats_tlv {
 	__le32 mac_id_word;
@@ -881,6 +891,9 @@ struct ath12k_htt_tx_pdev_rate_stats_tlv {
 	__le32 ax_su_embedded_trigger_data_ppdu_err;
 	/** sta side trigger stats */
 	__le32 trigger_type_11be[ATH12K_HTT_TX_PDEV_STATS_NUM_11BE_TRIGGER_TYPES];
+	__le32 extra_eht_ltf;
+	__le32 extra_eht_ltf_ofdma;
+	__le32 ofdma_ba_ru_size[ATH12K_HTT_TX_RX_PDEV_STATS_NUM_AX_RU_SIZE_CNTRS];
 };
 
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_LEGACY_CCK_STATS		4
@@ -963,12 +976,6 @@ struct ath12k_htt_rx_pdev_rate_stats_tlv {
 	__le32 rx_ulofdma_data_nusers[ATH12K_HTT_RX_PDEV_MAX_OFDMA_NUM_USER];
 	__le32 rx_mcs_ext[ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS];
 };
-
-#define ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS		4
-#define ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT		14
-#define ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS	2
-#define ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT2_COUNTERS		5
-#define ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS	5
 
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES		2
 
@@ -2680,6 +2687,11 @@ struct ath12k_htt_tx_selfgen_be_err_stats_tlv {
 	__le32 be_mu_mimo_ndp_flushed;
 	__le32 be_mu_mimo_brpoll_flushed[ATH12K_HTT_TX_NUM_BE_MUMIMO_USER_STATS - 1];
 	__le32 be_ul_mumimo_trigger_err[ATH12K_HTT_TX_NUM_BE_MUMIMO_USER_STATS];
+	__le32 be_basic_trigger_partial_resp;
+	__le32 be_bsr_trigger_partial_resp;
+	__le32 be_mu_bar_trigger_partial_resp;
+	__le32 be_mu_rts_trigger_blocked;
+	__le32 be_bsr_trigger_blocked;
 } __packed;
 
 enum ath12k_htt_tx_selfgen_sch_tsflag_error_stats {
@@ -3385,6 +3397,36 @@ struct ath12k_htt_dmac_reset_stats_tlv {
 	__le32 drain_dest_ring_mask;
 } __packed;
 
+#define ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_BINS	16
+#define ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_EXT_BINS	6
+#define ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_INTERVAL_US	250
+
+struct ath12k_htt_tx_pdev_ppdu_dur_stats_tlv {
+	__le32 tx_ppdu_dur_hist[ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_BINS];
+	__le32 tx_success_time_us_low;
+	__le32 tx_success_time_us_high;
+	__le32 tx_fail_time_us_low;
+	__le32 tx_fail_time_us_high;
+	__le32 pdev_up_time_us_low;
+	__le32 pdev_up_time_us_high;
+	__le32 tx_ofdma_ppdu_dur_hist[ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_BINS];
+	__le32 tx_ppdu_dur_hist_ext[ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_EXT_BINS];
+} __packed;
+
+#define ATH12K_HTT_MAX_NUM_CHAN_ACC_LAT_INTR	9
+
+enum ath12k_htt_stats_sched_ofdma_txbf_ineligibility {
+	ATH12K_SCHED_OFDMA_TXBF = 0,
+	ATH12K_SCHED_OFDMA_TXBF_IS_SANITY_FAILED,
+	ATH12K_SCHED_OFDMA_TXBF_IS_EBF_ALLOWED_FAILIED,
+	ATH12K_SCHED_OFDMA_TXBF_RU_ALLOC_BW_DROP_COUNT,
+	ATH12K_SCHED_OFDMA_TXBF_INVALID_CV_QUERY_COUNT,
+	ATH12K_SCHED_OFDMA_TXBF_AVG_TXTIME_LESS_THAN_TXBF_SND_THERHOLD,
+	ATH12K_SCHED_OFDMA_TXBF_IS_CANDIDATE_KICKED_OUT,
+	ATH12K_SCHED_OFDMA_TXBF_CV_IMAGE_BUF_INVALID,
+	ATH12K_SCHED_OFDMA_TXBF_INELIGIBILITY_MAX,
+};
+
 struct ath12k_htt_pdev_sched_algo_ofdma_stats_tlv {
 	__le32 mac_id__word;
 	__le32 rate_based_dlofdma_enabled_cnt[ATH12K_HTT_NUM_AC_WMM];
@@ -3401,6 +3443,17 @@ struct ath12k_htt_pdev_sched_algo_ofdma_stats_tlv {
 	__le32 dlofdma_disabled_su_only_eligible[ATH12K_HTT_NUM_AC_WMM];
 	__le32 dlofdma_disabled_consec_no_mpdus_tried[ATH12K_HTT_NUM_AC_WMM];
 	__le32 dlofdma_disabled_consec_no_mpdus_success[ATH12K_HTT_NUM_AC_WMM];
+	__le32 txbf_ofdma_ineligibility_stat[ATH12K_SCHED_OFDMA_TXBF_INELIGIBILITY_MAX];
+	__le32 avg_chan_acc_lat_hist[ATH12K_HTT_MAX_NUM_CHAN_ACC_LAT_INTR];
+	__le32 dl_ofdma_nbinwb_selected_over_mu_mimo[ATH12K_HTT_NUM_AC_WMM];
+	__le32 dl_ofdma_nbinwb_selected_standalone[ATH12K_HTT_NUM_AC_WMM];
+	__le32 running_only_dl_scheduler_cnt[ATH12K_HTT_NUM_AC_WMM];
+	__le32 running_only_ul_scheduler_cnt[ATH12K_HTT_NUM_AC_WMM];
+	__le32 running_additional_dl_scheduler_cnt[ATH12K_HTT_NUM_AC_WMM];
+	__le32 running_additional_ul_scheduler_cnt[ATH12K_HTT_NUM_AC_WMM];
+	__le32 running_ul_scheduler_for_bsrp_cnt[ATH12K_HTT_NUM_AC_WMM];
+	__le32 running_dl_scheduler_due_to_skip_ul[ATH12K_HTT_NUM_AC_WMM];
+	__le32 running_ul_scheduler_due_to_skip_dl[ATH12K_HTT_NUM_AC_WMM];
 } __packed;
 
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_BW_CNTRS		4
@@ -3489,6 +3542,7 @@ struct ath12k_htt_tx_pdev_rate_stats_be_ofdma_tlv {
 	__le32 gi[ATH12K_HTT_TX_PDEV_NUM_GI_CNTRS][ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS];
 	__le32 be_ofdma_tx_ru_size[ATH12K_HTT_TX_RX_PDEV_NUM_BE_RU_SIZE_CNTRS];
 	__le32 be_ofdma_eht_sig_mcs[ATH12K_HTT_TX_PDEV_NUM_EHT_SIG_MCS_CNTRS];
+	__le32 be_ofdma_ba_ru_size[ATH12K_HTT_TX_RX_PDEV_NUM_BE_RU_SIZE_CNTRS];
 } __packed;
 
 struct ath12k_htt_pdev_mbssid_ctrl_frame_tlv {
@@ -4058,5 +4112,11 @@ struct htt_stats_hds_prof_stats_tlv {
 	} channelChange_stats[HTT_STATS_HDS_PROF_STATS_CIRCULAR_BUF_LEN];
 	__le32 idx; /* shows how many channel changes have occurred */
 };
+
+struct ath12k_htt_stats_txbf_ofdma_be_parbw_tlv {
+	__le32 be_ofdma_parbw_user_snd;
+	__le32 be_ofdma_parbw_cv;
+	__le32 be_ofdma_total_cv;
+} __packed;
 
 #endif
