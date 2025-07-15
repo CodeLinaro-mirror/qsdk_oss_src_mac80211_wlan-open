@@ -7163,10 +7163,6 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	if (!params)
 		return -ENOMEM;
 
-	if (info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]) {
-		params->intf_detect_bitmap = nla_get_u8(info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]);
-	}
-
 	err = nl80211_parse_beacon(rdev, info->attrs, &params->beacon,
 				   info->extack);
 	if (err)
@@ -7462,6 +7458,11 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 	if (info->attrs[NL80211_ATTR_AP_PS]) {
 		params->ap_ps_enable = nla_get_u8(info->attrs[NL80211_ATTR_AP_PS]);
 		params->ap_ps_valid = true;
+		haveinfo = true;
+	}
+
+	if (info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]) {
+		params->intf_detect_bitmap = nla_get_u8(info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]);
 		haveinfo = true;
 	}
 
