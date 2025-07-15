@@ -82,11 +82,12 @@ ath12k_dp_mon_fill_rx_stats_info(struct hal_rx_mon_ppdu_info *ppdu_info,
 }
 
 static void
-ath12k_dp_mon_fill_rx_rate(struct ath12k *ar,
+ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 			   struct hal_rx_mon_ppdu_info *ppdu_info,
 			   struct ieee80211_rx_status *rx_status)
 {
 	struct ieee80211_supported_band *sband;
+	struct ath12k *ar = dp_pdev->ar;
 	enum rx_msdu_start_pkt_type pkt_type;
 	u8 rate_mcs, nss, sgi;
 	bool is_cck;
@@ -160,13 +161,14 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k *ar,
 	}
 }
 
-static void ath12k_dp_mon_rx_msdus_set_payload(struct ath12k_base *ab,
+static void ath12k_dp_mon_rx_msdus_set_payload(struct ath12k_dp *dp,
 					       struct sk_buff *head_msdu,
 					       struct sk_buff *tail_msdu)
 {
+	struct ath12k_base *ab = dp->ab;
 	u32 rx_pkt_offset, l2_hdr_offset, total_offset;
 
-	if (ath12k_dp_get_mon_type(ab->dp) == ATH12K_DP_MON_TYPE_DUAL_RING) {
+	if (ath12k_dp_get_mon_type(dp) == ATH12K_DP_MON_TYPE_DUAL_RING) {
 		total_offset = ATH12K_MON_RX_PKT_OFFSET;
 	} else {
 		rx_pkt_offset = ab->hal.hal_desc_sz;
@@ -227,17 +229,17 @@ ath12k_dp_mon_rx_merg_msdus(struct ath12k_pdev_dp *dp_pdev,
 		rxs->freq = ieee80211_channel_to_frequency(channel_num,
 							   rxs->band);
 
-	ath12k_dp_mon_fill_rx_rate(ar, ppdu_info, rxs);
+	ath12k_dp_mon_fill_rx_rate(dp_pdev, ppdu_info, rxs);
 
 	if (decap_format == DP_RX_DECAP_TYPE_RAW) {
-		ath12k_dp_mon_rx_msdus_set_payload(ab, head_msdu, tail_msdu);
+		ath12k_dp_mon_rx_msdus_set_payload(dp, head_msdu, tail_msdu);
 
 		prev_buf = head_msdu;
 		msdu = head_msdu->next;
 		head_frag_list = NULL;
 
 		while (msdu) {
-			ath12k_dp_mon_rx_msdus_set_payload(ab, msdu, tail_msdu);
+			ath12k_dp_mon_rx_msdus_set_payload(dp, msdu, tail_msdu);
 
 			if (!head_frag_list)
 				head_frag_list = msdu;
@@ -272,7 +274,7 @@ ath12k_dp_mon_rx_merg_msdus(struct ath12k_pdev_dp *dp_pdev,
 		msdu = head_msdu;
 
 		while (msdu) {
-			ath12k_dp_mon_rx_msdus_set_payload(ab, msdu, tail_msdu);
+			ath12k_dp_mon_rx_msdus_set_payload(dp, msdu, tail_msdu);
 			if (qos_pkt) {
 				dest = skb_push(msdu, sizeof(__le16));
 				if (!dest)
@@ -614,10 +616,11 @@ int ath12k_dp_mon_rx_set_pktlen(struct sk_buff *skb, u32 len)
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_set_pktlen);
 
-int ath12k_dp_mon_buf_replenish(struct ath12k_base *ab,
+int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
 				int req_entries)
 {
+	struct ath12k_base *ab = dp->ab;
 	struct hal_mon_buf_ring *mon_buf;
 	struct sk_buff *skb;
 	struct hal_srng *srng;
@@ -1474,9 +1477,10 @@ void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_ppdu_rx_time_update);
 
-void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_base *ab,
+void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_dp *dp,
 				       struct dp_rxdma_mon_ring *rx_ring)
 {
+	struct ath12k_base *ab = dp->ab;
 	struct sk_buff *skb;
 	int buf_id;
 
@@ -1544,7 +1548,7 @@ int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
 		ath12k_hal_srng_get_entrysize(ab, HAL_RXDMA_MONITOR_BUF);
 	rx_ring->bufs_max = num_entries;
 
-	ret = ath12k_dp_mon_buf_replenish(ab, rx_ring, num_entries);
+	ret = ath12k_dp_mon_buf_replenish(dp, rx_ring, num_entries);
 
 	return 0;
 }
@@ -1552,13 +1556,12 @@ EXPORT_SYMBOL(ath12k_dp_mon_rx_buf_setup);
 
 void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 {
-	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct dp_rxdma_mon_ring *rx_ring;
 
 	rx_ring = &dp_mon->rxdma_mon_buf_ring;
 
-	ath12k_dp_rxdma_mon_buf_ring_free(ab, rx_ring);
+	ath12k_dp_rxdma_mon_buf_ring_free(dp, rx_ring);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_buf_free);
 

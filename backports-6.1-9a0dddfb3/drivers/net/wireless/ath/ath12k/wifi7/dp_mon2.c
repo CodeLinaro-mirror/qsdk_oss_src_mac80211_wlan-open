@@ -104,7 +104,7 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 	pmon->mon_mpdu->tail = msdu;
 
 buf_replenish:
-	ath12k_dp_mon_buf_replenish(ab, buf_ring, 1);
+	ath12k_dp_mon_buf_replenish(dp, buf_ring, 1);
 
 	return 0;
 }
@@ -348,7 +348,7 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 		__skb_queue_tail(&skb_list, skb);
 
 move_next:
-		ath12k_dp_mon_buf_replenish(ab, buf_ring, 1);
+		ath12k_dp_mon_buf_replenish(dp, buf_ring, 1);
 		ath12k_hal_srng_dst_get_next_entry(ab, srng);
 		num_buffs_reaped++;
 	}

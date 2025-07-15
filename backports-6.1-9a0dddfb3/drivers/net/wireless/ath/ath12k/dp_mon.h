@@ -242,7 +242,7 @@ const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
 	return NULL;
 }
 
-int ath12k_dp_mon_buf_replenish(struct ath12k_base *ab,
+int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
 				int req_entries);
 struct sk_buff *ath12k_dp_mon_tx_alloc_skb(void);
@@ -262,7 +262,7 @@ int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
 int ath12k_dp_mon_pdev_update_telemetry_stats(struct ath12k_base *ab,
                                              int pdev_id);
 
-void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_base *ab,
+void ath12k_dp_rxdma_mon_buf_ring_free(struct ath12k_dp *dp,
 				       struct dp_rxdma_mon_ring *rx_ring);
 int ath12k_dp_mon_rx_srng_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_rx_srng_cleanup(struct ath12k_dp *dp);
