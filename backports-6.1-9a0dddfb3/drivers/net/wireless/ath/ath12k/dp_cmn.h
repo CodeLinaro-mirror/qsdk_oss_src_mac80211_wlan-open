@@ -31,7 +31,7 @@ struct ath12k_dp_hw_link {
 
 #define MAX_DP_PEER_LIST_SIZE  16384
 #define DP_TCL_NUM_RING_MAX  4
-#define DP_REO_DST_RING_MAX  8
+#define DP_REO_DST_RING_MAX  4
 #define DP_TCL_DESC_TYPE_MAX 2
 
 struct ath12k_dp_hw {
@@ -47,6 +47,7 @@ struct ath12k_dp_hw_group {
 	struct ath12k_dp *dp[ATH12K_MAX_SOCS];
 	struct dp_rx_fst *fst;
 	u8 *tx_status_buf[ATH12K_HW_MAX_QUEUES];
+	u8 *rx_status_buf[DP_REO_DST_RING_MAX];
 };
 
 /* TODO: Move this to a seperate dp_stats file */

@@ -2171,6 +2171,13 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 
 	lockdep_assert_held(&ag->mutex);
 
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		if (!dp_hw_grp->rx_status_buf[i])
+			continue;
+		kfree(dp_hw_grp->rx_status_buf[i]);
+		dp_hw_grp->rx_status_buf[i] = NULL;
+	}
+
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		if (!dp_hw_grp->tx_status_buf[i])
 			continue;
@@ -2211,6 +2218,17 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 		 * entry struct (aligned to 32 or 64 bytes).
 		 */
 		dp_hw_grp->tx_status_buf[i] = kzalloc(TX_STATUS_BUFFER_SIZE, GFP_KERNEL);
+	}
+
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		/* Each arch rx process handler can use this buffer by typecasting its own
+		 * entry struct (aligned to 32 bytes).
+		 */
+		dp_hw_grp->rx_status_buf[i] = kzalloc(RX_STATUS_BUFFER_SIZE, GFP_KERNEL);
+		if (!dp_hw_grp->rx_status_buf[i]) {
+			ath12k_err(ab, "Failed to allocate rx_status_buf[%d]", i);
+			BUG_ON(1);
+		}
 	}
 }
 
