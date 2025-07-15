@@ -22452,23 +22452,120 @@ ath12k_mac_fill_reg_tpc_info_with_psd_for_sp_pwr_mode(struct ath12k *ar,
 				      reg_psd, ctx);
 }
 
+/**
+ * ath12k_mac_fill_eirp_power_table - Fill EIRP power table with regulatory
+ * limits.
+ * @reg_tpc_info: Pointer to TPC power info structure.
+ * @cfreqs: Array of center frequencies.
+ * @oobe_eirp: Array of OOBE-based EIRP values.
+ * @reg_psd: Regulatory PSD limit.
+ * @reg_eirp: Regulatory EIRP limit.
+ * @max_bw: Maximum bandwidth.
+ */
+static void
+ath12k_mac_fill_eirp_power_table(struct ath12k_reg_tpc_power_info *reg_tpc_info,
+				 u32 *cfreqs, s16 *oobe_eirp, s8 reg_psd,
+				 s8 reg_eirp, u16 max_bw)
+{
+	u16 bw;
+	int i;
+
+	for (i = 0, bw = ATH12K_CHWIDTH_20; bw <= max_bw; i++, bw *= 2) {
+		s16 eirp_from_psd = ath12k_reg_psd_2_eirp(reg_psd, bw);
+		s16 reg_eirp_tpc = min(eirp_from_psd, reg_eirp);
+		struct chan_power_info *eirp_pwr_info =
+				&reg_tpc_info->chan_eirp_power_info[i];
+
+		eirp_pwr_info->chan_cfreq = cfreqs[i];
+		eirp_pwr_info->tx_power = min(reg_eirp_tpc, oobe_eirp[i]);
+	}
+}
+
+/**
+ * ath12k_mac_compute_oobe_eirp - Compute OOBE-based EIRP values for each
+ * bandwidth. If the bandwidth is punctured, then oobe PSD value is used and
+ * converted to EIRP, else EIRP is taken from AFC response.
+ * @ar: Pointer to ath12k device context
+ * @ctx: Channel context configuration
+ * @pri_freq: Primary channel frequency
+ * @max_bw: Maximum bandwidth
+ * @cfreqs: Array of center frequencies
+ * @oobe_eirp: Output array for computed EIRP values
+ */
+static void ath12k_mac_compute_oobe_eirp(struct ath12k *ar,
+					 struct ieee80211_chanctx_conf *ctx,
+					 u16 pri_freq, u16 max_bw, u32 *cfreqs,
+					 s16 *oobe_eirp)
+{
+	u16 bw;
+	int i;
+
+	for (i = 0, bw = ATH12K_CHWIDTH_20; bw <= max_bw; i++, bw *= 2) {
+		u16 punc_pattern = ath12k_mac_get_punc_pattern_for_bw(ctx, bw);
+
+		if (punc_pattern) {
+			s16 min_psd;
+			u16 eff_bw;
+
+			ath12_mac_reg_get_6g_min_psd(ar, pri_freq, cfreqs[i],
+						     punc_pattern, bw, &min_psd);
+			eff_bw = bw - get_punc_bw(punc_pattern);
+			oobe_eirp[i] = ath12k_reg_psd_2_eirp(min_psd, eff_bw);
+		} else {
+			oobe_eirp[i] =
+				ath12k_mac_get_afc_eirp_power(ar, pri_freq,
+							      cfreqs[i], bw);
+		}
+	}
+}
+
+/**
+ * ath12k_mac_fill_reg_tpc_info_with_eirp_for_sp_pwr_mode - Populate EIRP power
+ * info for SP AP mode
+ * @ar: Pointer to ath12k device context
+ * @arvif: Virtual interface context
+ * @ctx: Channel context configuration
+ *
+ * Calculates and fills EIRP (Equivalent Isotropically Radiated Power) values
+ * for each supported bandwidth in 6 GHz Standard Power (SP) AP mode. It uses
+ * puncture patterns to determine effective bandwidth and computes the minimum
+ * EIRP based on regulatory and OOBE (out-of-band emissions) constraints.
+ */
+static void
+ath12k_mac_fill_reg_tpc_info_with_eirp_for_sp_pwr_mode(struct ath12k *ar,
+						       struct ath12k_link_vif *arvif,
+						       struct ieee80211_chanctx_conf *ctx)
+{
+	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
+	s16 oobe_eirp[ATH12K_MAX_EIRP_VALS];
+	u32 cfreqs[ATH12K_MAX_EIRP_VALS];
+	s8 reg_psd, reg_eirp;
+	u16 pri_freq;
+	u16 max_bw;
+
+	reg_tpc_info->power_type_6g = ath12k_ieee80211_ap_pwr_type_convert(IEEE80211_REG_SP_AP);
+	reg_tpc_info->num_eirp_pwr_levels = ath12k_mac_get_num_pwr_levels(&ctx->def, false);
+
+	pri_freq = ctx->def.chan->center_freq;
+	max_bw = ath12k_mac_get_chan_width(ctx->def.width);
+	ath12k_mac_fill_cfreqs(&ctx->def, cfreqs);
+	ath12k_mac_compute_oobe_eirp(ar, ctx, pri_freq, max_bw, cfreqs,
+				     oobe_eirp);
+	ath12k_reg_get_regulatory_pwrs(ar, MHZ_TO_KHZ(pri_freq),
+				       NL80211_REG_AP_SP, &reg_eirp, &reg_psd);
+	ath12k_mac_fill_eirp_power_table(reg_tpc_info, cfreqs, oobe_eirp,
+					 reg_psd, reg_eirp, max_bw);
+}
+
 void
 ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(struct ath12k *ar,
 						      struct ath12k_link_vif *arvif,
 						      struct ieee80211_chanctx_conf *ctx)
 {
-	u16 punc_bitmap, punc_bw;
-
-	/* Test Code for ultility APIs */
-	punc_bitmap = ath12k_mac_get_punc_pattern_for_bw(ctx, ATH12K_CHWIDTH_80);
-	punc_bw = get_punc_bw(punc_bitmap);
-	ath12k_err(ar->ab,
-		   "punc_bitmap for 80MHz %u punc_bw %u", punc_bitmap, punc_bw);
-	 /* Host support for PSD and EIRP TLV for SP is implemented in subsequent patches */
-	ath12k_warn(ar->ab, "FW supports both PSD and EIRP TLV for SP. Add host support");
-	/* Fill reg psd tpc */
 	ath12k_mac_fill_reg_tpc_info_with_psd_for_sp_pwr_mode(ar, arvif, ctx);
+	ath12k_mac_fill_reg_tpc_info_with_eirp_for_sp_pwr_mode(ar, arvif, ctx);
 }
+
 
 static void
 ath12k_prepare_scs_desc_resp(struct cfg80211_qm_req_desc_data *qm_req_desc,
