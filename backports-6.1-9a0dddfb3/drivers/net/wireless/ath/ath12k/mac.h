@@ -184,6 +184,25 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 						  struct ath12k_link_vif *arvif,
 						  struct ieee80211_chanctx_conf *ctx);
+
+/**
+ * ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp - Populate both PSD and
+ * EIRP power info for SP AP mode
+ * @ar: Pointer to ath12k device context
+ * @arvif: Virtual interface context
+ * @ctx: Channel context configuration
+ *
+ * Invokes both PSD and EIRP power configuration routines to populate
+ * transmit power control (TPC) information for 6 GHz Standard Power (SP)
+ * Access Point (AP) mode. This ensures that both power spectral density
+ * and equivalent isotropically radiated power levels are configured
+ * according to regulatory and hardware constraints.
+ */
+void
+ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(struct ath12k *ar,
+						      struct ath12k_link_vif *arvif,
+						      struct ieee80211_chanctx_conf *ctx);
+
 void ath12k_mac_drain_tx(struct ath12k *ar);
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar);
 void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,

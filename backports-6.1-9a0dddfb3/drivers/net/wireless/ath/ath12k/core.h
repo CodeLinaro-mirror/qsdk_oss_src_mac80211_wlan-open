@@ -478,6 +478,10 @@ struct chan_power_info {
  * @eirp_power: Maximum EIRP power (dBm), valid only if power is PSD
  * @power_type_6g: type of power (SP/LPI/VLP)
  * @num_pwr_levels: number of power levels
+ * @num_psd_pwr_levels: Number of PSD power levels configured for the current
+ *                      channel context in SP power mode.
+ * @num_eirp_pwr_levels: Number of EIRP levels configured for the current
+ *                       channel context in SP power mode.
  * @reg_max: Array of maximum TX power (dBm) per PSD value
  * @ap_constraint_power: AP constraint power (dBm)
  * @tpe_psd: TPE PSD values processed from TPE IE
@@ -485,12 +489,20 @@ struct chan_power_info {
  * @num_tpe_psd: number of TPE PSD values parsed
  * @num_tpe_eirp: number of TPE EIRP values parsed
  * @chan_power_info: power info to send to FW
+ * @chan_psd_power_info: Array of PSD power information per channel center
+ *                       frequency for SP power mode. Each entry includes the
+ *                       channel frequency and corresponding PSD power.
+ * @chan_eirp_power_info: Array of EIRP power information per channel center
+ *                        frequency for SP power mode. Each entry includes the
+ *                        frequency and the corresponding EIRP value.
  */
 struct ath12k_reg_tpc_power_info {
 	bool is_psd_power;
 	u8 eirp_power;
 	enum wmi_reg_6g_ap_type power_type_6g;
 	u8 num_pwr_levels;
+	u8 num_psd_pwr_levels;
+	u8 num_eirp_pwr_levels;
 	u8 reg_max[IEEE80211_MAX_NUM_PWR_LEVEL];
 	u8 ap_constraint_power;
 	s8 tpe_psd[IEEE80211_TPE_PSD_ENTRIES_320MHZ];
@@ -498,6 +510,8 @@ struct ath12k_reg_tpc_power_info {
 	u8 num_tpe_psd;
 	u8 num_tpe_eirp;
 	struct chan_power_info chan_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
+	struct chan_power_info chan_psd_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
+	struct chan_power_info chan_eirp_power_info[ATH12K_MAX_EIRP_VALS];
 };
 
 struct ath12k_dscp_range {

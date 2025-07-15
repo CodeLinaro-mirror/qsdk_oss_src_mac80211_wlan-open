@@ -6424,12 +6424,12 @@ get_psd_limit(u16 freq, u8 num_freq_obj, struct ath12k_afc_freq_obj *afc_freq_in
 		 * frequencies, stop and return here.
 		 */
 		if (chan_freq_found)
-			return min_psd / 10;
+			return min_psd;
 	}
 
 	/* Handle for last frequency object */
 	if (chan_freq_found)
-		return min_psd / 10;
+		return min_psd;
 
 	return ATH12K_INVALID_PSD;
 }
@@ -6511,6 +6511,53 @@ ath12_mac_reg_get_6g_min_psd(struct ath12k *ar, u16 freq, u16 cfreq,
 		}
 	}
 	*min_psd /= ATH12K_EIRP_PWR_SCALE;
+	ath12k_dbg(ar->ab, ATH12K_DBG_REG, "freq %u cfreq %u pp %u bw %u min_psd %u\n",
+		   freq, cfreq, puncture_bitmap, bw, *min_psd);
+}
+
+/**
+ * ath12k_mac_fill_reg_tpc - Populate transmit power control (TPC) info
+ *                           based on regulatory and firmware capabilities
+ * @ar: Pointer to ath12k device context
+ * @wdev: Pointer to wireless device structure
+ * @arvif: Pointer to ath12k virtual interface context
+ * @chanctx: Pointer to channel context configuration
+ *
+ * This function determines the appropriate method to populate the
+ * regulatory TPC information based on the 6 GHz power mode and firmware
+ * capabilities. It selects one of the following:
+ *
+ * - If the firmware supports both PSD and EIRP for SP mode and the
+ *   device is operating in Standard Power (SP) AP mode, it invokes
+ *   ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp().
+ *
+ * - If the firmware prefers EIRP-based power configuration, it calls
+ *   ath12k_mac_fill_reg_tpc_info_with_eirp_power().
+ *
+ * - Otherwise, it falls back to ath12k_mac_fill_reg_tpc_info().
+ *
+ */
+static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev,
+				    struct ath12k_link_vif *arvif,
+				    struct ieee80211_chanctx_conf *chanctx)
+{
+	u8 reg_6g_power_mode;
+
+	if (wdev->reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+	else
+		reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
+
+	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
+		     ar->ab->wmi_ab.svc_map) &&
+	    reg_6g_power_mode == IEEE80211_REG_SP_AP) {
+		ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(ar, arvif, chanctx);
+	} else if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT,
+			    ar->ab->wmi_ab.svc_map)) {
+		ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif, chanctx);
+	} else {
+		ath12k_mac_fill_reg_tpc_info(ar, arvif, chanctx);
+	}
 }
 
 void ath12k_mac_bss_info_changed(struct ath12k *ar,
@@ -6518,6 +6565,7 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				struct ieee80211_bss_conf *info,
 				u64 changed)
 {
+	struct ieee80211_chanctx_conf *chanctx = &arvif->chanctx;
 	struct ath12k_vif *ahvif = arvif->ahvif, *tx_ahvif;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
 	struct ath12k_wmi_vdev_up_params params = { 0 };
@@ -6571,14 +6619,16 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 		     ahvif->vdev_type == WMI_VDEV_TYPE_STA) &&
 		    test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT,
 			     ar->ab->wmi_ab.svc_map)) {
+
 			if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 				ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
-			if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT, ar->ab->wmi_ab.svc_map))
-				ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif, &arvif->chanctx);
-			else
-				ath12k_mac_fill_reg_tpc_info(ar, arvif, &arvif->chanctx);
+			if (!chanctx) {
+				ath12k_err(ar->ab, "channel context is NULL");
+				return;
+			}
 
+			ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx);
 			ret = ath12k_wmi_send_vdev_set_tpc_power(ar,
 								 arvif->vdev_id,
 								 &arvif->reg_tpc_info);
@@ -16219,17 +16269,20 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 			      struct ieee80211_chanctx_conf *ctx,
 			      bool restart)
 {
-	struct ath12k *ar = arvif->ar;
-	struct ath12k_base *ab = ar->ab;
-	struct wmi_vdev_start_req_arg arg = {};
-	const struct cfg80211_chan_def *chandef = ctx ? &ctx->def : NULL;
-	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
-	struct ath12k_vif *ahvif = arvif->ahvif;
-	struct ieee80211_bss_conf *link_conf;
-	u16 punct_bitmap =  arvif->punct_bitmap;
-	struct ieee80211_channel *channel;
-	int ret;
+	const struct cfg80211_chan_def* chandef=ctx ? &ctx->def : NULL;
+	struct ieee80211_chanctx_conf* chanctx=&arvif->chanctx;
+	struct ath12k_vif* ahvif=arvif->ahvif;
+	struct ieee80211_vif* vif=ath12k_ahvif_to_vif(ahvif);
+	struct wireless_dev* wdev=ieee80211_vif_to_wdev(vif);
+	struct ath12k* ar=arvif->ar;
+	struct ieee80211_hw* hw=ath12k_ar_to_hw(ar);
+	struct wmi_vdev_start_req_arg arg={};
+	struct ieee80211_bss_conf* link_conf;
+	s16 punct_bitmap=arvif->punct_bitmap;
+	struct ieee80211_channel* channel;
+	struct ath12k_base* ab=ar->ab;
 	bool is_bridge_vdev;
+	int ret;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -16361,17 +16414,16 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
             chandef->chan->band == NL80211_BAND_6GHZ &&
             (ahvif->vdev_type == WMI_VDEV_TYPE_STA || ahvif->vdev_type == WMI_VDEV_TYPE_AP) &&
             test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map)) {
-
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 			ath12k_mac_parse_tx_pwr_env(ar, arvif);
 
-		if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT, ar->ab->wmi_ab.svc_map))
-			ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif, &arvif->chanctx);
-		else
-			ath12k_mac_fill_reg_tpc_info(ar, arvif, &arvif->chanctx);
+		if (!chanctx) {
+			ath12k_err(ar->ab, "channel context is NULL");
+			return -ENOLINK;
+		}
 
-                ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id,
-                                                   &arvif->reg_tpc_info);
+		ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx);
+		ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id, &arvif->reg_tpc_info);
        }
 
 	ar->num_started_vdevs++;
@@ -21940,6 +21992,15 @@ void ath12k_mac_op_apply_neg_ttlm_per_client(struct ieee80211_hw *hw,
 	ath12k_mac_handle_ttlm_neg(hw, vif, sta);
 }
 EXPORT_SYMBOL(ath12k_mac_op_apply_neg_ttlm_per_client);
+
+void
+ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(struct ath12k *ar,
+						      struct ath12k_link_vif *arvif,
+						      struct ieee80211_chanctx_conf *ctx)
+{
+	 /* Host support for PSD and EIRP TLV for SP is implemented in subsequent patches */
+	ath12k_warn(ar->ab, "FW supports both PSD and EIRP TLV for SP. Add host support");
+}
 
 static void
 ath12k_prepare_scs_desc_resp(struct cfg80211_qm_req_desc_data *qm_req_desc,
