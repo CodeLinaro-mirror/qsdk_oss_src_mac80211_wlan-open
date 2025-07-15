@@ -527,7 +527,7 @@ static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_dp *dp,
 					     struct sk_buff *msdu,
 					     struct rx_msdu_desc_info *rx_msdu_info,
 					     struct rx_tlv_info_1 *tlv_info,
-					     struct ath12k_dp_link_peer *peer)
+					     struct ath12k_dp_peer *peer)
 {
 	if (unlikely(!dp->stats_disable ||
 		     tlv_info->decap != DP_RX_DECAP_TYPE_ETHERNET2_DIX))
@@ -860,9 +860,8 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	bool is_decrypted = false;
 	bool is_4addr_sta = false;
 	struct ieee80211_hdr *hdr;
-	struct ath12k_dp_link_peer *link_peer;
 	struct ath12k_dp_rx_tid *rx_tid;
-	u8 tid, link_id;;
+	u8 tid;
 	int ret = 0;
 	u16 peer_id;
 
@@ -879,12 +878,9 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		rx_msdu_info->ra_is_mcbc =
 				rx_msdu_info->da_is_mcbc && !peer->is_reset_mcbc;
 
-		link_id = peer->hw_links[dp_pdev->hw_link_id];
-		link_peer = rcu_dereference(peer->link_peers[link_id]);
-
 		if (*fast_rx &&
 		    ath12k_wifi7_dp_rx_check_fast_rx(dp, msdu, rx_msdu_info,
-							 tlv_info, link_peer)) {
+							 tlv_info, peer)) {
 			msdu->protocol = eth_type_trans(msdu, peer->dev);
 			netif_receive_skb(msdu);
 			return ret;

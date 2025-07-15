@@ -10263,8 +10263,11 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp, arvif->vdev_id,
 							    arsta->addr);
-	if (peer)
+	if (peer) {
 		peer->is_authorized = false;
+		if (peer->dp_peer)
+			peer->dp_peer->is_authorized = false;
+	}
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
@@ -10298,8 +10301,11 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp, arvif->vdev_id,
 							    arsta->addr);
-	if (peer)
+	if (peer) {
 		peer->is_authorized = true;
+		if (peer->dp_peer)
+			peer->dp_peer->is_authorized = true;
+	}
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
