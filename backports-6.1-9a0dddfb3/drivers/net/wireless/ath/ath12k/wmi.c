@@ -3838,6 +3838,216 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 	return ret;
 }
 
+/* HOST_TO_FW_DBM_MULTIPLIER - Scaling factor for dBm (in 0.25dBm units) values
+ * sent to firmware
+ */
+#define HOST_TO_FW_DBM_MULTIPLIER 4
+/**
+ * ath12k_wmi_fill_tpc_power_cmd_header - Populate the fixed header fields
+ *                                        for the TPC power WMI command
+ * @cmd: Pointer to the WMI command structure to be filled
+ * @vdev_id: Virtual device identifier
+ * @param: Pointer to the TPC power configuration parameters
+ *
+ * This helper function initializes the fixed portion of the
+ * WMI_VDEV_SET_TPC_POWER_CMD structure. It sets the TLV header,
+ * virtual device ID, PSD power flag, EIRP power (converted to firmware
+ * units), and 6 GHz power type.
+ */
+static void
+ath12k_wmi_fill_tpc_power_cmd_header(struct wmi_vdev_set_tpc_power_cmd *cmd,
+				     u32 vdev_id,
+				     struct ath12k_reg_tpc_power_info *param)
+{
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_SET_TPC_POWER_CMD, sizeof(*cmd));
+	cmd->vdev_id = vdev_id;
+	cmd->psd_power = param->is_psd_power;
+	cmd->eirp_power = param->eirp_power * HOST_TO_FW_DBM_MULTIPLIER;
+	cmd->power_type_6ghz = param->power_type_6g;
+}
+
+/**
+ * ath12k_wmi_fill_empty_common_power_tlv - Fill an empty TLV for common power
+ * info.
+ * @ptr: Pointer to the current position in the WMI buffer; will be updated
+ *
+ * This helper function inserts a placeholder TLV for the common power info
+ * array in the WMI command buffer. The TLV is tagged as an array of structures
+ * but has a length of zero, indicating that no common power entries are present.
+ *
+ * This is required to maintain the expected TLV structure layout in the
+ * firmware interface, even when no common power data is provided.
+ */
+static void
+ath12k_wmi_fill_empty_common_power_tlv(u8 **ptr)
+{
+	struct wmi_tlv *tlv = (struct wmi_tlv *)(*ptr);
+
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 0 * sizeof(struct wmi_vdev_ch_power_info));
+	*ptr += TLV_HDR_SIZE;
+}
+
+/**
+ * ath12k_wmi_fill_psd_power_array - Populate the PSD power TLV array in the WMI
+ * buffer.
+ * @ar: Pointer to the ath12k device context
+ * @ptr: Pointer to the current position in the WMI buffer; will be updated
+ * @param: Pointer to the TPC power configuration parameters
+ *
+ * This helper function fills the WMI buffer with an array of TLVs representing
+ * per-channel PSD (Power Spectral Density) power levels. Each entry includes
+ * the channel center frequency and the corresponding PSD power value, scaled
+ * for firmware consumption.
+ *
+ * The function also logs each entry for debugging purposes and advances the
+ * buffer pointer accordingly.
+ */
+static void
+ath12k_wmi_fill_psd_power_array(struct ath12k *ar, u8 **ptr,
+				struct ath12k_reg_tpc_power_info *param)
+{
+	struct wmi_vdev_ch_power_psd_info *ch_power_psd_info;
+	struct wmi_tlv *tlv = (struct wmi_tlv *)(*ptr);
+	u32 psd_info_tlv_header;
+	int i;
+
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 param->num_psd_pwr_levels * sizeof(*ch_power_psd_info));
+	*ptr += TLV_HDR_SIZE;
+
+	psd_info_tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_CH_PSD_POWER_INFO,
+						     sizeof(*ch_power_psd_info));
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "PSD Array:\n");
+	for (i = 0; i < param->num_psd_pwr_levels; ++i) {
+		ch_power_psd_info = (struct wmi_vdev_ch_power_psd_info *)(*ptr);
+		ch_power_psd_info->tlv_header = psd_info_tlv_header;
+		ch_power_psd_info->chan_cfreq =
+			param->chan_psd_power_info[i].chan_cfreq;
+		ch_power_psd_info->psd_power =
+			param->chan_psd_power_info[i].tx_power *
+			HOST_TO_FW_DBM_MULTIPLIER;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "chan_cfreq = %u, psd_power = %d\n",
+			   ch_power_psd_info->chan_cfreq,
+			   ch_power_psd_info->psd_power);
+
+		*ptr += sizeof(*ch_power_psd_info);
+	}
+}
+
+/**
+ * ath12k_wmi_fill_eirp_power_array - Populate the EIRP power TLV array in the
+ * WMI buffer
+ * @ar: Pointer to the ath12k device context
+ * @ptr: Pointer to the current position in the WMI buffer; will be updated
+ * @param: Pointer to the TPC power configuration parameters
+ *
+ * This helper function fills the WMI buffer with an array of TLVs representing
+ * per-channel EIRP (Equivalent Isotropically Radiated Power) power levels.
+ * Each entry includes the channel center frequency and the corresponding
+ * EIRP power value, scaled for firmware consumption.
+ *
+ * The function logs each entry for debugging and advances the buffer pointer
+ * accordingly to maintain correct TLV structure alignment.
+ */
+static void
+ath12k_wmi_fill_eirp_power_array(struct ath12k *ar, u8 **ptr,
+				 struct ath12k_reg_tpc_power_info *param)
+{
+	struct wmi_vdev_ch_power_eirp_info *ch_power_eirp_info;
+	struct wmi_tlv *tlv = (struct wmi_tlv *)(*ptr);
+	u32 eirp_info_tlv_header;
+	int i;
+
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 param->num_eirp_pwr_levels * sizeof(*ch_power_eirp_info));
+	*ptr += TLV_HDR_SIZE;
+
+	eirp_info_tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_CH_EIRP_POWER_INFO,
+						      sizeof(*ch_power_eirp_info));
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "EIRP Array:\n");
+	for (i = 0; i < param->num_eirp_pwr_levels; ++i) {
+		ch_power_eirp_info =
+			(struct wmi_vdev_ch_power_eirp_info *)(*ptr);
+		ch_power_eirp_info->tlv_header = eirp_info_tlv_header;
+		ch_power_eirp_info->chan_cfreq =
+				param->chan_eirp_power_info[i].chan_cfreq;
+		ch_power_eirp_info->eirp_power =
+		    param->chan_eirp_power_info[i].tx_power *
+		    HOST_TO_FW_DBM_MULTIPLIER;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "chan_cfreq = %u, eirp_power = %d\n",
+			   ch_power_eirp_info->chan_cfreq,
+			   ch_power_eirp_info->eirp_power);
+
+		*ptr += sizeof(*ch_power_eirp_info);
+	}
+}
+
+/**
+ * ath12_wmi_send_vdev_set_both_psd_and_eirp_in_tpc_for_sp - Send WMI command
+ * with both PSD and EIRP power levels
+ * @ar: Pointer to ath12k device context
+ * @vdev_id: Virtual device ID
+ * @param: Pointer to TPC power info structure containing PSD and EIRP data
+ *
+ * Constructs and sends a WMI_VDEV_SET_TPC_POWER_CMD to firmware with both PSD
+ * and EIRP values for 6 GHz Standard Power (SP) AP mode. The function allocates
+ * a WMI buffer, populates the command and TLV structures for PSD and EIRP power
+ * levels, and dispatches the command to firmware. It also includes debug
+ * logging and error handling for traceability and robustness.
+ *
+ * Return: 0 on success, negative error code on failure.
+ */
+static int
+ath12_wmi_send_vdev_set_both_psd_and_eirp_in_tpc_for_sp(struct ath12k *ar,
+							u32 vdev_id,
+							struct ath12k_reg_tpc_power_info *param)
+{
+	struct wmi_vdev_set_tpc_power_cmd *cmd;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct sk_buff *skb;
+	int len, ret;
+	u8 *ptr;
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE;
+	len += TLV_HDR_SIZE + (sizeof(struct wmi_vdev_ch_power_psd_info) *
+			       param->num_psd_pwr_levels);
+	len += TLV_HDR_SIZE + (sizeof(struct wmi_vdev_ch_power_eirp_info) *
+			       param->num_eirp_pwr_levels);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+	cmd = (struct wmi_vdev_set_tpc_power_cmd *)ptr;
+
+	ath12k_wmi_fill_tpc_power_cmd_header(cmd, vdev_id, param);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi TPC vdev_id: %d is_psd_power: %d eirp_power: %d power_type_6g: %d\n",
+		   vdev_id, param->is_psd_power, param->eirp_power,
+		   param->power_type_6g);
+
+	ptr += sizeof(*cmd);
+
+	ath12k_wmi_fill_empty_common_power_tlv(&ptr);
+	ath12k_wmi_fill_psd_power_array(ar, &ptr, param);
+	ath12k_wmi_fill_eirp_power_array(ar, &ptr, param);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_SET_TPC_POWER_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send WMI_VDEV_SET_TPC_POWER_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
                                        u32 vdev_id,
                                        struct ath12k_reg_tpc_power_info *param)
@@ -3849,6 +4059,12 @@ int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
         struct wmi_tlv *tlv;
         u8 *ptr;
         int i, ret, len;
+
+	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
+		     ar->ab->wmi_ab.svc_map) &&
+	    param->power_type_6g == WMI_REG_STD_POWER_AP)
+		return ath12_wmi_send_vdev_set_both_psd_and_eirp_in_tpc_for_sp(ar,
+							vdev_id, param);
 
         len = sizeof(*cmd) + TLV_HDR_SIZE;
         len += (sizeof(struct wmi_vdev_ch_power_info) * param->num_pwr_levels);

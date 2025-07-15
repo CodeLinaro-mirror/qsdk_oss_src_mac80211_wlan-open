@@ -96,6 +96,43 @@ struct wmi_vdev_ch_power_info {
         u32 tx_power;
 } __packed;
 
+/**
+ * struct wmi_vdev_ch_power_psd_info - Channel power spectral density info
+ * @tlv_header: TLV (Type-Length-Value) header used for parsing the structure.
+ * @chan_cfreq: Center frequency (in MHz) of the BSS sub-channel.
+ * @psd_power: Power Spectral Density (PSD) of the sub-channel.
+ *             - Unit: 0.25 dBm/MHz
+ *             - Example: A PSD of 1 dBm/MHz is represented as 4.
+ *
+ * This structure is used to convey the out-of-band emission (OOBE) power
+ * spectral density information for a virtual device (vdev) channel.
+ */
+struct wmi_vdev_ch_power_psd_info {
+	__le32 tlv_header;
+	__le32 chan_cfreq;
+	__s32 psd_power;
+} __packed;
+
+/**
+ * struct wmi_vdev_ch_power_eirp_info - EIRP power information for a vdev
+ * channel
+ * @tlv_header: TLV (Type-Length-Value) header used for identifying and parsing
+ * the structure.
+ * @chan_cfreq: Center frequency (in MHz) of the channel for all bandwidths
+ *              less than or equal to the current BSS channel bandwidth.
+ * @eirp_power: Effective Isotropic Radiated Power (EIRP) for the channel.
+ *              - Unit: 0.25 dBm
+ *              - Example: A power of 1 dBm is represented as 4.
+ *
+ * This structure provides the EIRP power measurement for a vdev channel, used
+ * in regulatory compliance and RF performance analysis.
+ */
+struct wmi_vdev_ch_power_eirp_info {
+	__le32 tlv_header;
+	__le32 chan_cfreq;
+	__s32 eirp_power;
+} __packed;
+
 struct wmi_vdev_set_tpc_power_cmd {
         u32 tlv_header;
         u32 vdev_id;
@@ -2257,6 +2294,8 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS = 0x4a6,
 	WMI_TAG_PDEV_WSI_STATS_INFO_CMD = 0x4b1,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
+	WMI_TAG_VDEV_CH_PSD_POWER_INFO = 0x4bc,
+	WMI_TAG_VDEV_CH_EIRP_POWER_INFO = 0x4bd,
 	WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM = 0x4be,
 	WMI_TAG_PDEV_UTF_EVENT_FIXED_PARAM,
 	WMI_TAG_TID_TO_LINK_MAP = 0x43B,
