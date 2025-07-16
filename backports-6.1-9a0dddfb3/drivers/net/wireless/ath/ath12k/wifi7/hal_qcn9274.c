@@ -1054,4 +1054,5 @@ const struct hal_ops hal_qcn9274_ops = {
 	.rx_desc_get_mpdu_ppdu_id = ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_qcn9274,
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
+	.rx_desc_get_fse_info = ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274,
 };

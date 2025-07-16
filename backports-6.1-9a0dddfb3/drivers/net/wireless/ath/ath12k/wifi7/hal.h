@@ -496,12 +496,17 @@ struct rx_mpdu_desc_info {
 	    raw_mpdu                              :  1,
 	    more_fragment_flag                    :  1,
 	    vdev_id                               :  8,
-	    reserved				  :  4,
+	    reserved				  :  2,
+	    flow_idx_invalid                      :  1,
+	    flow_idx_timeout                      :  1,
 	    mpdu_qos_control_valid                :  1,
 	    tid                                   :  4;
 	union {
 		u32 peer_meta_data;
-		u32 peer_id			  : 16;
+		struct {
+			u32 peer_id			  : 16,
+			    flow_metadata                 : 16;
+		} flow_info;
 	};
 };
 

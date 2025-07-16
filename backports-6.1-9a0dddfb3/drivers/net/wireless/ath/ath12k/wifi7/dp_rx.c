@@ -25,6 +25,7 @@
 #include <ppe_vp_public.h>
 #include <ppe_vp_tx.h>
 #endif
+#include "../fse.h"
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
@@ -517,6 +518,29 @@ int ath12k_wifi7_peer_rx_tid_reo_update(struct ath12k *ar,
 	return 0;
 }
 
+static inline
+void ath12k_wifi7_dp_rx_update_ppe_msdu_mark(struct ath12k_base *ab,
+					     struct ath12k_dp_peer *peer,
+					     struct sk_buff *msdu,
+					     struct rx_mpdu_desc_info *rx_mpdu_info,
+					     struct hal_rx_desc *rx_desc)
+{
+	if (peer->ppe_vp_num <= 0)
+		return;
+
+	ab->hw_params->hal_ops->rx_desc_get_fse_info(rx_desc, rx_mpdu_info);
+	if (!rx_mpdu_info->flow_idx_timeout &&
+	    !rx_mpdu_info->flow_idx_invalid &&
+	    rx_mpdu_info->flow_info.flow_metadata &&
+	    (rx_mpdu_info->flow_info.flow_metadata &
+	    ATH12K_RX_FSE_FLOW_MATCH_USE_PPE))
+		msdu->mark =
+			u32_encode_bits(ATH12K_FSE_MAGIC_NUM,
+					ATH12K_FSE_MAGIC_NUM_MASK) |
+			u32_encode_bits(rx_mpdu_info->flow_info.flow_metadata,
+					ATH12K_PPE_VP_NUM);
+}
+
 static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_dp *dp,
 					     struct sk_buff *msdu,
 					     struct rx_msdu_desc_info *rx_msdu_info,
@@ -868,16 +892,39 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	int ret = 0;
 	u16 peer_id;
 
-	peer_id = rx_mpdu_info->peer_id;
+	peer_id = rx_mpdu_info->flow_info.peer_id;
 	tid = rx_mpdu_info->tid;
 	/* PN for multicast packets will be checked in mac80211 */
 
 	ath12k_wifi7_dp_rx_h_csum_offload(msdu, rx_msdu_info);
 
 	if (likely(peer)) {
+		msdu->dev = peer->dev;
 		if (likely(*fast_rx &&
 		    ath12k_wifi7_dp_rx_check_fast_rx(dp, msdu, rx_msdu_info,
 							 tlv_info, peer))) {
+			if (peer->ppe_vp_num) {
+				dp->hal->hal_ops->rx_desc_get_fse_info(rx_desc,
+								       rx_mpdu_info);
+				/**
+				 * Check if flow has been timed out
+				 * or if the flow is invalid
+				 */
+				if (!rx_mpdu_info->flow_idx_timeout &&
+				    !rx_mpdu_info->flow_idx_invalid &&
+				    rx_mpdu_info->flow_info.flow_metadata) {
+					/**
+					 * Based on the metadata tag, send the
+					 * packet to the PPE driver if ppe_vp_num
+					 * is valid.
+					 */
+					if ((rx_mpdu_info->flow_info.flow_metadata &
+					    ATH12K_RX_FSE_FLOW_MATCH_USE_PPE)) {
+						if (peer->dev->offload_ops->recv(peer->dev, msdu))
+							return 0;
+					}
+				}
+			}
 			msdu->protocol = eth_type_trans(msdu, peer->dev);
 			netif_receive_skb(msdu);
 			return ret;
@@ -900,6 +947,9 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_tid_to_ac(rx_tid->tid >
 					 ATH12K_DSCP_PRIORITY ? 0: rx_tid->tid);
 		dp_pdev->wmm_stats.total_wmm_rx_pkts[dp_pdev->wmm_stats.rx_type]++;
+
+		ath12k_wifi7_dp_rx_update_ppe_msdu_mark(dp->ab, peer, msdu,
+							rx_mpdu_info, rx_desc);
 
 	} else {
 		enctype = HAL_ENCRYPT_TYPE_OPEN;
@@ -1165,7 +1215,7 @@ ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	rx_mpdu_info = &spd_desc_l->rx_mpdu_info;
 	tlv_info = &spd_desc_l->tlv_info;
 	rx_desc = (struct hal_rx_desc *)msdu->data;
-	peer_id = rx_mpdu_info->peer_id;
+	peer_id = rx_mpdu_info->flow_info.peer_id;
 
 	ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc, 0);
 
@@ -1356,7 +1406,7 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			ath12k_dp_rx_deliver_msdu(dp_pdev, napi, msdu, &rx_status,
 						  spd_desc_l->src_link_id,
 						  is_mcbc,
-						  spd_desc_l->rx_mpdu_info.peer_id,
+						  spd_desc_l->rx_mpdu_info.flow_info.peer_id,
 						  tid);
 		} else {
 			partner_dp->device_stats.fast_rx[ring_id][partner_dp->device_id]++;
@@ -1484,7 +1534,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 
 		mpdu_info = &spd_desc_l->rx_mpdu_info;
 
-		mpdu_info->peer_id =
+		mpdu_info->flow_info.peer_id =
 			ath12k_wifi7_dp_rx_get_peer_id(ab, dp->peer_metadata_ver,
 						       mpdu_info->peer_meta_data);
 
@@ -2469,7 +2519,7 @@ static int ath12k_wifi7_dp_rx_h_null_q_desc(struct ath12k_pdev_dp *dp_pdev,
 	rx_msdu_info.da_is_mcbc = rx_desc_data->is_mcbc;
 	rx_msdu_info.tcp_udp_chksum_fail = rx_desc_data->l4_csum_fail;
 	rx_msdu_info.ip_chksum_fail = rx_desc_data->ip_csum_fail;
-	rx_mpdu_info.peer_id = rxcb->peer_id;
+	rx_mpdu_info.flow_info.peer_id = rxcb->peer_id;
 	rx_mpdu_info.tid = rx_desc_data->tid;
 	tlv_info.mesh_ctrl_present = rx_desc_data->mesh_ctrl_present;
 	tlv_info.decap = rx_desc_data->decap;
@@ -2487,7 +2537,7 @@ static int ath12k_wifi7_dp_rx_h_null_q_desc(struct ath12k_pdev_dp *dp_pdev,
 
 	rcu_read_lock();
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev,
-						   rx_mpdu_info.peer_id);
+						   rx_mpdu_info.flow_info.peer_id);
 	ret = ath12k_wifi7_dp_rx_h_mpdu(dp_pdev, msdu, desc, status, &rx_msdu_info,
 					&rx_mpdu_info, &tlv_info,
 					rx_desc_data->err_bitmap, &fast_rx,
@@ -2710,7 +2760,7 @@ static int ath12k_wifi7_dp_rx_h_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 	rx_msdu_info.to_ds = rx_desc_data->is_to_ds;
 	rx_msdu_info.fr_ds = rx_desc_data->is_from_ds;
 	rx_msdu_info.da_is_mcbc = rx_desc_data->is_mcbc;
-	rx_mpdu_info.peer_id = rxcb->peer_id;
+	rx_mpdu_info.flow_info.peer_id = rxcb->peer_id;
 	rx_mpdu_info.tid = rx_desc_data->tid;
 	tlv_info.mesh_ctrl_present = rx_desc_data->mesh_ctrl_present;
 	tlv_info.decap = rx_desc_data->decap;

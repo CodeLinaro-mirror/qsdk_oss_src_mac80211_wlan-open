@@ -836,7 +836,10 @@ struct rx_msdu_end_qcn9274 {
 		QCN9274_MSDU_END_SELECT_INFO10_INFO11 |			\
 		QCN9274_MSDU_END_SELECT_INFO12_AND_FLOW_ID_TOEPLITZ |	\
 		QCN9274_MSDU_END_SELECT_PPDU_START_TS_63_32_PHY_MDATA |	\
-		QCN9274_MSDU_END_SELECT_INFO13_INFO14)
+		QCN9274_MSDU_END_SELECT_INFO13_INFO14 | \
+		QCN9274_MSDU_END_SELECT_CCE_MDATA_TCP_UDP_CSUM_INFO7_IP_LEN | \
+		QCN9274_MSDU_END_SELECT_INFO6_FSE_METADATA)
+
 
 /* The below rx_msdu_end_qcn9274_compact structure is tied with the mask value
  * QCN9274_MSDU_END_WMASK. If the mask value changes the structure will also
@@ -849,6 +852,11 @@ struct rx_msdu_end_qcn9274_compact {
 	__le16 info5;
 	__le16 sa_idx;
 	__le16 da_idx_or_sw_peer_id;
+	__le32 info6;
+	__le32 fse_metadata;
+	__le32 rsvd_0;
+	__le16 info7;
+	__le16 rsvd_1;
 	__le32 info10;
 	__le32 info11;
 	__le32 info12;

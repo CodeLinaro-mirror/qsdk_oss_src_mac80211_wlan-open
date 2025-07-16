@@ -9,11 +9,13 @@
 
 #include "hw.h"
 #include "mac.h"
+#include "core.h"
 
 struct ath12k_base;
 struct ath12k_dp;
 struct hal_rx_reo_queue;
 struct hal_rx_spd_data;
+struct rx_mpdu_desc_info;
 
 #define HAL_CE_REMAP_REG_BASE  (ab->ce_remap_base_addr)
 
@@ -1323,6 +1325,8 @@ struct hal_ops {
 	void (*hal_get_tqm_scratch_reg)(struct ath12k_base *ab, u64 *value);
 	void (*get_hw_hptp)(struct ath12k_base *ab, enum hal_ring_type type,
 			    struct hal_srng *srng, uint32_t *hp, uint32_t *tp);
+	void (*rx_desc_get_fse_info)(struct hal_rx_desc *desc,
+				     struct rx_mpdu_desc_info *rx_mpdu_info);
 };
 
 static inline

@@ -48,6 +48,7 @@
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
 
 #define ATH12K_TX_MGMT_NUM_PENDING_MAX	512
+#define ATH12K_DP_RX_FSE_FLOW_METADATA_MASK      0xFFFF
 
 #define ATH12K_TX_MGMT_TARGET_MAX_SUPPORT_WMI 64
 

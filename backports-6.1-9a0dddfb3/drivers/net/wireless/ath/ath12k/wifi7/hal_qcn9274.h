@@ -300,3 +300,22 @@ static inline u32 ath12k_wifi7_hal_rx_msdu_end_wmask_get_qcn9274(void)
 {
 	return QCN9274_MSDU_END_WMASK;
 }
+
+static inline
+void ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274(struct hal_rx_desc *desc,
+						   struct rx_mpdu_desc_info
+						   *rx_mpdu_info)
+{
+	__le32 flow_idx_info = desc->u.qcn9274_compact.msdu_end.info7;
+
+	rx_mpdu_info->flow_idx_timeout =
+		le32_get_bits(flow_idx_info,
+			      RX_MSDU_END_INFO7_FLOW_IDX_TIMEOUT);
+	rx_mpdu_info->flow_idx_invalid =
+		le32_get_bits(flow_idx_info,
+			      RX_MSDU_END_INFO7_FLOW_IDX_INVALID);
+	rx_mpdu_info->flow_info.flow_metadata =
+		le16_get_bits(desc->u.qcn9274_compact.msdu_end.fse_metadata,
+			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
+}
+
