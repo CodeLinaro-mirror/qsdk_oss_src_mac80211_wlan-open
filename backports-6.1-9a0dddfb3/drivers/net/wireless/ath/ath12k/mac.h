@@ -117,6 +117,7 @@ enum ath12k_supported_bw {
 #define ATH12K_MAX_EIRP_VALS		5
 #define ATH12K_MAX_TX_POWER		127
 #define ATH12K_EIRP_PWR_SCALE		100
+#define ATH12K_SP_AP_AND_CLIENT_POWER_DIFF_IN_DBM 6
 
 #define ATH12K_NUM_20_MHZ_CHAN_IN_320_MHZ_CHAN	16
 
@@ -202,6 +203,25 @@ void
 ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(struct ath12k *ar,
 						      struct ath12k_link_vif *arvif,
 						      struct ieee80211_chanctx_conf *ctx);
+
+/**
+ * ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp - Fill PSD and
+ * EIRP-based reg TPC for client SP
+ * @ar: Pointer to ath12k device structure
+ * @arvif: Pointer to ath12k virtual interface structure
+ * @chanctx: Pointer to channel context configuration
+ *
+ * Fills reg_tpc_info with both PSD and EIRP-based TPC values for STA in SP mode (6 GHz).
+ * Internally calls:
+ * - ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode()
+ * - ath12k_mac_fill_reg_tpc_info_with_eirp_for_client_sp_pwr_mode()
+ *
+ * Output is used to build WMI reg TPC TLV for AFC-compliant TXP control.
+ */
+void
+ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp(struct ath12k *ar,
+							     struct ath12k_link_vif *arvif,
+							     struct ieee80211_chanctx_conf *ctx);
 
 void ath12k_mac_drain_tx(struct ath12k *ar);
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar);

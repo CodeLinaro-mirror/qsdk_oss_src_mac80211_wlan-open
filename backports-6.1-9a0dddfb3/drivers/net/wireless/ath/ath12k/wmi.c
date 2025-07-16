@@ -4062,7 +4062,8 @@ int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
 
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
-	    param->power_type_6g == WMI_REG_STD_POWER_AP)
+	    (param->power_type_6g == WMI_REG_STD_POWER_AP ||
+		 param->power_type_6g == REG_SP_CLIENT_TYPE))
 		return ath12_wmi_send_vdev_set_both_psd_and_eirp_in_tpc_for_sp(ar,
 							vdev_id, param);
 

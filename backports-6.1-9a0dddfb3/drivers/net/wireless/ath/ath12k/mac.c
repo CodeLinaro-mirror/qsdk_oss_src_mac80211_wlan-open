@@ -6515,6 +6515,22 @@ ath12_mac_reg_get_6g_min_psd(struct ath12k *ar, u16 freq, u16 cfreq,
 		   freq, cfreq, puncture_bitmap, bw, *min_psd);
 }
 
+static struct
+ieee80211_bss_conf *ath12k_get_link_bss_conf(struct ath12k_link_vif *arvif)
+{
+	struct ieee80211_vif *vif = arvif->ahvif->vif;
+	struct ieee80211_bss_conf *link_conf = NULL;
+
+	WARN_ON(!rcu_read_lock_held());
+
+	if (arvif->link_id > IEEE80211_MLD_MAX_NUM_LINKS)
+		return NULL;
+
+	link_conf = rcu_dereference(vif->link_conf[arvif->link_id]);
+
+	return link_conf;
+}
+
 /**
  * ath12k_mac_fill_reg_tpc - Populate transmit power control (TPC) info
  *                           based on regulatory and firmware capabilities
@@ -6541,17 +6557,35 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 				    struct ath12k_link_vif *arvif,
 				    struct ieee80211_chanctx_conf *chanctx)
 {
+	struct ath12k_vif *ahvif = arvif->ahvif;
 	u8 reg_6g_power_mode;
 
-	if (wdev->reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
-		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
-	else
-		reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		struct ieee80211_bss_conf *bss_conf = ath12k_get_link_bss_conf(arvif);
+
+		reg_6g_power_mode = (bss_conf) ? bss_conf->power_type : IEEE80211_REG_UNSET_AP;
+		if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+			reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+		else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+			 !ar->afc.is_6ghz_afc_power_event_received)
+			reg_6g_power_mode = REG_SP_CLIENT_TYPE;
+	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+		if (wdev->reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+			reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+		else
+			reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
+	}
 
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
-	    reg_6g_power_mode == IEEE80211_REG_SP_AP) {
-		ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(ar, arvif, chanctx);
+	    (reg_6g_power_mode == IEEE80211_REG_SP_AP ||
+	     reg_6g_power_mode == REG_SP_CLIENT_TYPE)) {
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(ar, arvif, chanctx);
+		else if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp(ar,
+										     arvif,
+										     chanctx);
 	} else if (test_bit(WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT,
 			    ar->ab->wmi_ab.svc_map)) {
 		ath12k_mac_fill_reg_tpc_info_with_eirp_power(ar, arvif, chanctx);
@@ -8899,22 +8933,6 @@ static void ath12k_mac_get_eirp_power(struct ath12k *ar,
 		ath12k_err(ar->ab, "failed to get channel definition for center freq: %d\n", *center_freq);
 		*tx_power = ATH12K_MIN_TX_POWER;
 	}
-}
-
-struct
-ieee80211_bss_conf *ath12k_get_link_bss_conf(struct ath12k_link_vif *arvif)
-{
-        struct ieee80211_vif *vif = arvif->ahvif->vif;
-        struct ieee80211_bss_conf *link_conf = NULL;
-
-        WARN_ON(!rcu_read_lock_held());
-
-        if (arvif->link_id > IEEE80211_MLD_MAX_NUM_LINKS)
-                return NULL;
-
-        link_conf = rcu_dereference(vif->link_conf[arvif->link_id]);
-
-        return link_conf;
 }
 
 void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
@@ -22268,7 +22286,7 @@ find_start_idx(u16 *sub_chans, u32 freq, u8 n_subchans)
 }
 
 /**
- * init_chan_def_for_start_freq - Initialize channel definition for a given bandwidth
+ * fill_chan_def_for_start_freq - Initialize channel definition for a given bandwidth
  * @ch_def: Pointer to the channel definition structure to initialize
  * @cfreq: Center frequency (in MHz) to assign to center_freq1
  * @bw: Bandwidth in MHz (e.g., ATH12K_CHWIDTH_20, _40, _80, etc.)
@@ -22278,7 +22296,7 @@ find_start_idx(u16 *sub_chans, u32 freq, u8 n_subchans)
  * prepare a cfg80211_chan_def structure for start frequency calculations.
  */
 static void
-init_chan_def_for_start_freq(struct cfg80211_chan_def *ch_def, u32 cfreq, u16 bw)
+fill_chan_def_for_start_freq(struct cfg80211_chan_def *ch_def, u32 cfreq, u16 bw)
 {
 	ch_def->center_freq1 = cfreq;
 	switch (bw) {
@@ -22336,7 +22354,7 @@ init_chan_def_for_start_freq(struct cfg80211_chan_def *ch_def, u32 cfreq, u16 bw
  */
 static void
 ath12k_mac_map_psd_to_subchans(u32 *cfreqs, s16 *oobe_psd, u16 *sub_chans,
-			       u8 n_subchans, u16 max_bw, s16 *tpc_oobe_psd, u8 num_oobe_psd)
+			       u8 n_subchans, u16 max_bw, s8 *tpc_oobe_psd, u8 num_oobe_psd)
 {
 	u16 bw = max_bw;
 	int i;
@@ -22348,7 +22366,7 @@ ath12k_mac_map_psd_to_subchans(u32 *cfreqs, s16 *oobe_psd, u16 *sub_chans,
 		u8 start_idx;
 		int j;
 
-		init_chan_def_for_start_freq(&ch_def, cfreqs[i - 1], bw);
+		fill_chan_def_for_start_freq(&ch_def, cfreqs[i - 1], bw);
 		start_freq = ath12k_mac_get_6g_start_frequency(&ch_def);
 		num_20mhz_channels = bw / ATH12K_CHWIDTH_20;
 		start_idx = find_start_idx(sub_chans, start_freq, n_subchans);
@@ -22374,7 +22392,6 @@ ath12k_mac_map_psd_to_subchans(u32 *cfreqs, s16 *oobe_psd, u16 *sub_chans,
  * @reg_tpc_info: Pointer to TPC power info structure to populate
  * @sub_chans: Array of 20 MHz sub-channel center frequencies
  * @tpc_oobe_psd: Array of OOBE-based PSD values mapped to sub-channels
- * @reg_psd: Array to store regulatory PSD values per sub-channel
  * @ctx: Channel context configuration
  *
  * For each sub-channel, this function sets the channel center frequency and
@@ -22384,9 +22401,10 @@ ath12k_mac_map_psd_to_subchans(u32 *cfreqs, s16 *oobe_psd, u16 *sub_chans,
 static void
 ath12k_mac_finalize_psd_table(struct ath12k *ar,
 			      struct ath12k_reg_tpc_power_info *reg_tpc_info,
-			      u16 *sub_chans, s16 *tpc_oobe_psd, s16 *reg_psd,
+			      u16 *sub_chans, s8 *tpc_oobe_psd,
 			      struct ieee80211_chanctx_conf *ctx)
 {
+	s16 reg_psd[IEEE80211_MAX_NUM_PWR_LEVEL];
 	u16 start_freq = sub_chans[0];
 	s8 txpower;
 	int i;
@@ -22402,6 +22420,8 @@ ath12k_mac_finalize_psd_table(struct ath12k *ar,
 					   IEEE80211_REG_SP_AP);
 		if (temp_chan) {
 			reg_psd[i] = temp_chan->psd;
+			if (reg_tpc_info->power_type_6g == REG_SP_CLIENT_TYPE)
+				reg_psd[i] -= ATH12K_SP_AP_AND_CLIENT_POWER_DIFF_IN_DBM;
 			reg_tpc_info->chan_psd_power_info[i].tx_power =
 					min(tpc_oobe_psd[i], reg_psd[i]);
 		}
@@ -22428,11 +22448,10 @@ ath12k_mac_fill_reg_tpc_info_with_psd_for_sp_pwr_mode(struct ath12k *ar,
 {
 	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
 	u16 max_bw = ath12k_mac_get_chan_width(ctx->def.width);
-	s16 tpc_oobe_psd[IEEE80211_MAX_NUM_PWR_LEVEL];
 	u16 sub_chans[IEEE80211_MAX_NUM_PWR_LEVEL];
 	u16 pri_freq = ctx->def.chan->center_freq;
-	s16  reg_psd[IEEE80211_MAX_NUM_PWR_LEVEL];
 	s16 oobe_psd[ATH12K_MAX_EIRP_VALS];
+	s8 tpc_oobe_psd[IEEE80211_MAX_NUM_PWR_LEVEL];
 	u32 cfreqs[ATH12K_MAX_EIRP_VALS];
 	u8 num_oobe_psd;
 	u32 start_freq;
@@ -22449,7 +22468,7 @@ ath12k_mac_fill_reg_tpc_info_with_psd_for_sp_pwr_mode(struct ath12k *ar,
 	ath12k_mac_map_psd_to_subchans(cfreqs, oobe_psd, sub_chans, n_subchans,
 				       max_bw, tpc_oobe_psd, num_oobe_psd);
 	ath12k_mac_finalize_psd_table(ar, reg_tpc_info, sub_chans, tpc_oobe_psd,
-				      reg_psd, ctx);
+				      ctx);
 }
 
 /**
@@ -22566,6 +22585,188 @@ ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(struct ath12k *ar,
 	ath12k_mac_fill_reg_tpc_info_with_eirp_for_sp_pwr_mode(ar, arvif, ctx);
 }
 
+
+
+/**
+ * ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode - Finalize
+ * PSD-based reg TPC for client SP
+ * @ar: Pointer to ath12k device structure
+ * @arvif: Pointer to ath12k virtual interface structure
+ * @chanctx: Pointer to channel context configuration
+ *
+ * Uses pre-filled tpe_psd[] (OOBE-bound) and regulatory PSD limits to compute
+ * min(TPE, reg) per sub-CH. Populates chan_psd_power_info[] in reg_tpc_info.
+ * Output is used in WMI reg TPC TLV for STA in SP mode (6 GHz).
+ */
+static void
+ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode(struct ath12k *ar,
+							     struct ath12k_link_vif *arvif,
+							     struct ieee80211_chanctx_conf *ctx)
+{
+	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
+	u32 start_freq;
+	u8 n_subchans;
+	u16 max_bw = ath12k_mac_get_chan_width(ctx->def.width);
+	u16 sub_chans[IEEE80211_MAX_NUM_PWR_LEVEL];
+	s8 *tpe_psd;
+
+	reg_tpc_info->power_type_6g = REG_SP_CLIENT_TYPE;
+	start_freq = ath12k_mac_get_6g_start_frequency(&ctx->def);
+	n_subchans = max_bw / ATH12K_CHWIDTH_20;
+	ath12k_mac_fill_subchans(sub_chans, start_freq, n_subchans);
+	reg_tpc_info->num_psd_pwr_levels = n_subchans;
+	if (reg_tpc_info->num_tpe_psd)
+		tpe_psd = reg_tpc_info->tpe_psd;
+	else
+		memset(tpe_psd, ATH12K_MAX_TX_POWER, IEEE80211_MAX_NUM_PWR_LEVEL * sizeof(s8));
+
+	ath12k_mac_finalize_psd_table(ar, reg_tpc_info, sub_chans, tpe_psd, ctx);
+}
+
+/**
+ * ath12k_mac_get_min_psd_for_eirp - Get min PSD from tpe_psd[] for given sub-CH range
+ * @ar: ath12k HW context
+ * @sub_chans: sub-CH freqs (MHz)
+ * @start_freq: starting freq (MHz) for current BW
+ * @n_subchans: number of sub-CHs in current BW
+ * @tpe_psd: PSD-based TPE array (OOBE-bound)
+ *
+ * Finds the min(TPE) from tpe_psd[] for the sub-CHs starting at @start_freq.
+ * Used to derive EIRP from PSD for client SP mode.
+ *
+ * Return: min PSD (dBm/MHz)
+ */
+static s8
+ath12k_mac_get_min_psd_for_eirp(struct ath12k *ar, u16 *sub_chans,
+				u32 start_freq, u8 n_subchans, s8 *tpe_psd,
+				u8 max_n_subchans)
+{
+	u8 start_idx = find_start_idx(sub_chans, start_freq, max_n_subchans);
+	s8 min_psd = ATH12K_MAX_TX_POWER;
+	u8 i, j;
+
+	for (i = 0, j = start_idx; i < n_subchans && j < max_n_subchans; i++, j++)
+		if (tpe_psd[j] < min_psd)
+			min_psd = tpe_psd[j];
+
+	return min_psd;
+}
+
+/**
+ * ath12k_mac_fill_eirp_power_level - Fill EIRP-based reg TPC entry for a given BW
+ * @ar: ath12k HW context
+ * @ctx: CHANCTX config
+ * @reg_tpc_info: reg TPC info to be updated
+ * @idx: power level index
+ * @cfreq: center freq (MHz) for current BW
+ * @bw: bandwidth (MHz)
+ * @tpe_psd: PSD-based TPE array (OOBE-bound)
+ * @tpe_eirp: EIRP-based TPE array
+ * @reg_eirp: regulatory EIRP limits
+ * @sub_chans: sub-CH freqs (MHz)
+ * @max_n_subchans: number of sub-channel frequencies
+ *
+ * Computes min(TPE, reg) EIRP for the given BW using:
+ * - min PSD from tpe_psd[] → converted to EIRP
+ * - tpe_eirp[] and reg_eirp[] for the same BW
+ *
+ * Updates chan_eirp_power_info[idx] with final TXP and CFREQ.
+ */
+static void
+ath12k_mac_fill_eirp_power_level(struct ath12k *ar,
+				 struct ieee80211_chanctx_conf *ctx,
+				 struct ath12k_reg_tpc_power_info *reg_tpc_info,
+				 u8 idx, u32 cfreq, u16 bw,
+				 s8 *tpe_psd, s8 *tpe_eirp, s8 *reg_eirp,
+				 u16 *sub_chans,
+				 u8 max_n_subchans)
+{
+	struct chan_power_info *eirp_pwr_info = &reg_tpc_info->chan_eirp_power_info[idx];
+	u16 punc = ath12k_mac_get_punc_pattern_for_bw(ctx, bw);
+	u16 eff_bw = bw - get_punc_bw(punc);
+	struct cfg80211_chan_def ch_def = {0};
+	u16 start_freq;
+	s8 min_psd, eirp_psd, min_eirp;
+	u8 n_subchans;
+
+	fill_chan_def_for_start_freq(&ch_def, cfreq, bw);
+	start_freq = ath12k_mac_get_6g_start_frequency(&ch_def);
+	n_subchans = bw / ATH12K_CHWIDTH_20;
+	min_psd = ath12k_mac_get_min_psd_for_eirp(ar, sub_chans, start_freq,
+						  n_subchans, tpe_psd, max_n_subchans);
+	eirp_psd = ath12k_reg_psd_2_eirp(min_psd, eff_bw);
+	min_eirp = min(min(tpe_eirp[idx], eirp_psd), reg_eirp[idx]);
+
+	eirp_pwr_info->chan_cfreq = cfreq;
+	eirp_pwr_info->tx_power = min_eirp;
+}
+
+/**
+ * ath12k_mac_fill_reg_tpc_info_with_eirp_for_client_sp_pwr_mode - Fill
+ * EIRP-based reg TPC for client SP
+ * @ar: Pointer to ath12k device structure
+ * @arvif: Pointer to ath12k virtual interface structure
+ * @chanctx: Pointer to channel context configuration
+ *
+ * Computes EIRP-based reg TPC for STA in SP mode (6 GHz). Uses tpe_psd[] to derive
+ * EIRP from PSD, and compares it with tpe_eirp[] and reg_eirp[] to compute min(TPE, reg).
+ * Populates chan_eirp_power_info[] in reg_tpc_info. Output is used in WMI reg TPC TLV.
+ */
+static void
+ath12k_mac_fill_reg_tpc_info_with_eirp_for_client_sp_pwr_mode(struct ath12k *ar,
+							      struct ath12k_link_vif *arvif,
+							      struct ieee80211_chanctx_conf *ctx)
+{
+	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
+	s8 reg_eirp[ATH12K_MAX_EIRP_VALS];
+	s8 *tpe_eirp;
+	s8 *tpe_psd;
+	u32 cfreqs[ATH12K_MAX_EIRP_VALS];
+	static const u16 bw[] = {ATH12K_CHWIDTH_20, ATH12K_CHWIDTH_40, ATH12K_CHWIDTH_80,
+				 ATH12K_CHWIDTH_160, ATH12K_CHWIDTH_320};
+	u16 sub_chans[IEEE80211_MAX_NUM_PWR_LEVEL];
+	u16 max_bw = ath12k_mac_get_chan_width(ctx->def.width);
+	u8 max_n_subchans = max_bw / ATH12K_CHWIDTH_20;
+	u8 num_pwr_levels, i;
+	u32 start_freq;
+
+	start_freq = ath12k_mac_get_6g_start_frequency(&ctx->def);
+	ath12k_mac_fill_subchans(sub_chans, start_freq, max_n_subchans);
+
+	num_pwr_levels = ath12k_mac_get_num_pwr_levels(&ctx->def, false);
+	reg_tpc_info->num_eirp_pwr_levels = num_pwr_levels;
+
+	ath12k_mac_get_client_power_for_connecting_ap(ar, ctx, IEEE80211_REG_SP_AP,
+						      reg_eirp, start_freq,
+						      num_pwr_levels);
+	for (i = 0; i < ATH12K_MAX_EIRP_VALS; i++)
+		reg_eirp[i] -= ATH12K_SP_AP_AND_CLIENT_POWER_DIFF_IN_DBM;
+
+	if (reg_tpc_info->num_tpe_psd)
+		tpe_psd = reg_tpc_info->tpe_psd;
+	else
+		memset(tpe_psd, ATH12K_MAX_TX_POWER, IEEE80211_MAX_NUM_PWR_LEVEL * sizeof(s8));
+
+	if (reg_tpc_info->num_tpe_eirp)
+		tpe_eirp = reg_tpc_info->tpe_eirp;
+	else
+		memset(tpe_eirp, ATH12K_MAX_TX_POWER, ATH12K_MAX_EIRP_VALS * sizeof(s8));
+
+	ath12k_mac_fill_cfreqs(&ctx->def, cfreqs);
+	for (i = 0; i < num_pwr_levels; i++)
+		ath12k_mac_fill_eirp_power_level(ar, ctx, reg_tpc_info, i, cfreqs[i],
+						 bw[i], tpe_psd, tpe_eirp, reg_eirp,
+						 sub_chans, max_n_subchans);
+}
+
+void
+ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_client_sp(struct ath12k *ar,
+							     struct ath12k_link_vif *arvif,
+							     struct ieee80211_chanctx_conf *ctx)
+{
+	ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode(ar, arvif, ctx);
+	ath12k_mac_fill_reg_tpc_info_with_eirp_for_client_sp_pwr_mode(ar, arvif, ctx);
+}
 
 static void
 ath12k_prepare_scs_desc_resp(struct cfg80211_qm_req_desc_data *qm_req_desc,
