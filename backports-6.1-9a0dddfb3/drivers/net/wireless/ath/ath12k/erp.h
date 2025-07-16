@@ -5,6 +5,12 @@
 #ifndef ATH12K_ERP_H
 #define ATH12K_ERP_H
 
+enum ath12k_erp_states {
+	ATH12K_ERP_OFF,
+	ATH12K_ERP_ENTER_STARTED,
+	ATH12K_ERP_ENTER_COMPLETE,
+};
+
 int ath12k_vendor_parse_rm_erp(struct wiphy *wiphy, struct wireless_dev *wdev,
 			       struct nlattr *attrs);
 void ath12k_erp_init(void);
@@ -15,5 +21,6 @@ void ath12k_erp_handle_ssr(struct ath12k *ar);
 int ath12k_erp_enter(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int link_id,
 		     struct cfg80211_erp_params *params);
 int ath12k_erp_exit(struct wiphy *wiphy, bool send_event);
+enum ath12k_erp_states ath12k_erp_get_sm_state(void);
 #endif /* ATH12K_ERP_H */
 

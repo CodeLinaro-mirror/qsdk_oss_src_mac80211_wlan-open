@@ -374,6 +374,7 @@ enum ath12k_hw_group_flags {
 	ATH12K_GROUP_FLAG_CRASH_FLUSH,
 	ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED,
 	ATH12K_GROUP_FLAG_RAW_MODE,
+	ATH12K_GROUP_FLAG_HIF_POWER_DOWN
 };
 
 enum ath12k_dev_flags {
@@ -1211,7 +1212,7 @@ struct ath12k {
 	u32 scan_max_rest_time;
 	s8 max_allowed_tx_power;
 
-	bool mlo_complete_event;
+	bool teardown_complete_event;
 	struct ath12k_afc_info afc;
 #ifdef CPTCFG_ATH12K_CFR
 	struct ath12k_cfr cfr;
@@ -1223,6 +1224,7 @@ struct ath12k {
 
 	bool erp_trigger_set;
 	struct work_struct erp_handle_trigger_work;
+	struct completion standby_teardown;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
@@ -1739,6 +1741,8 @@ struct ath12k_base {
 	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
 	bool early_cal_support;
+	bool pm_suspend;
+
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
@@ -1887,6 +1891,7 @@ struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
 bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar, bool is_bridge_vdev);
+void ath12k_core_cleanup_power_down_q6(struct ath12k_hw *ah);
 
 int ath12k_core_add_dl_qos(struct ath12k_base *ab,
 			   struct ath12k_qos_params *params, u8 id);
@@ -2041,6 +2046,18 @@ static inline struct ath12k_base *ath12k_ag_to_ab(struct ath12k_hw_group *ag,
 static inline struct ath12k_dp *ath12k_ab_to_dp(struct ath12k_base *ab)
 {
 	return ab->dp;
+}
+
+static inline bool ath12k_check_erp_power_down(struct ath12k_hw_group *ag)
+{
+	return test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
+}
+
+static inline struct ath12k_hw_group *ath12k_ah_to_ag(struct ath12k_hw *ah)
+{
+	struct ath12k *ar = ah->radio;
+
+	return ar->ab->ag;
 }
 
 int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable);

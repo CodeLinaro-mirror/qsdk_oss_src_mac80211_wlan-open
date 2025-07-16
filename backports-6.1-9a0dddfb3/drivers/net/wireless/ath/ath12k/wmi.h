@@ -7487,6 +7487,8 @@ struct wmi_mlo_ready_cmd {
 
 enum wmi_mlo_tear_down_reason_code_type {
 	WMI_MLO_TEARDOWN_SSR_REASON,
+	WMI_MLO_TEARDOWN_REASON_HOST_INITIATED,
+	WMI_MLO_TEARDOWN_REASON_STANDBY_DOWN,
 };
 
 struct wmi_mlo_teardown_cmd {
@@ -7494,6 +7496,7 @@ struct wmi_mlo_teardown_cmd {
 	__le32 pdev_id;
 	__le32 reason_code;
 	__le32 umac_reset;
+	__le32 erp_standby_mode;
 } __packed;
 
 struct wmi_mlo_setup_complete_event {
@@ -9128,7 +9131,8 @@ int ath12k_wmi_sta_keepalive(struct ath12k *ar,
 			     const struct wmi_sta_keepalive_arg *arg);
 int ath12k_wmi_mlo_setup(struct ath12k *ar, struct wmi_mlo_setup_arg *mlo_params);
 int ath12k_wmi_mlo_ready(struct ath12k *ar);
-int ath12k_wmi_mlo_teardown(struct ath12k *ar, bool umac_reset);
+int ath12k_wmi_mlo_teardown(struct ath12k *ar, bool umac_reset,
+			    u32 reason_code, bool erp_standby_mode);
 void ath12k_wmi_fw_stats_dump(struct ath12k *ar,
 			      struct ath12k_fw_stats *fw_stats, u32 stats_id,
 			      char *buf);

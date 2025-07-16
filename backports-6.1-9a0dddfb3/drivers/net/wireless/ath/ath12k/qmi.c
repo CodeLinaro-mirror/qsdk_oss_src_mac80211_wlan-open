@@ -3902,7 +3902,7 @@ static void ath12k_qmi_free_mlo_mem_chunk(struct ath12k_base *ab,
 	}
 }
 
-static void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
+void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	int i, mlo_idx;
@@ -5197,6 +5197,9 @@ void ath12k_qmi_firmware_stop(struct ath12k_base *ab)
 {
 	int ret;
 
+	if (ath12k_check_erp_power_down(ab->ag) && ab->pm_suspend)
+		return;
+
 	clear_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags);
 
 	ret = ath12k_qmi_wlanfw_mode_send(ab, ATH12K_FIRMWARE_MODE_OFF);
@@ -5347,7 +5350,10 @@ int ath12k_qmi_process_coldboot_calibration(struct ath12k_base *ab)
 
 	ath12k_info(ab, "power down to restart firmware in mission mode\n");
 	ath12k_qmi_firmware_stop(ab);
-	ath12k_hif_power_down(ab, true);
+
+	if (!ab->pm_suspend)
+		ath12k_hif_power_down(ab, true);
+
 	ath12k_qmi_free_target_mem_chunk(ab);
 	ath12k_info(ab, "power up to restart firmware in mission mode\n");
 	/* reset host fixed mem off to zero */

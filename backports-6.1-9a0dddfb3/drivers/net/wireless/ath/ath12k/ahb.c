@@ -307,6 +307,9 @@ static void ath12k_ahb_ce_irqs_disable(struct ath12k_base *ab)
 {
 	int i;
 
+	if (ab->pm_suspend)
+		return;
+
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
 		if (ath12k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
 			continue;
@@ -339,6 +342,9 @@ static void ath12k_ahb_ext_irq_enable(struct ath12k_base *ab)
 
 static void ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 {
+	if (ab->pm_suspend)
+		return;
+
 	__ath12k_ahb_ext_irq_disable(ab);
 
 	if (!test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))

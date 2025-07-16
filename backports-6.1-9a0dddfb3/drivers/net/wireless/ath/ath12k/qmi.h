@@ -1001,4 +1001,5 @@ int ath12k_send_qdss_trace_mode_req(struct ath12k_base *ab,
 				    enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode, u64 value);
 int ath12k_enable_fwlog(struct ath12k_base *ab);
 int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab);
+void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab);
 #endif

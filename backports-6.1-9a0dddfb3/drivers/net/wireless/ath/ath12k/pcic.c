@@ -568,6 +568,9 @@ static void ath12k_pcic_sync_ce_irqs(struct ath12k_base *ab)
 
 void ath12k_pcic_ce_irq_disable_sync(struct ath12k_base *ab)
 {
+	if (ab->pm_suspend)
+		return;
+
 	ath12k_pcic_ce_irqs_disable(ab);
 	ath12k_pcic_sync_ce_irqs(ab);
 #if LINUX_VERSION_IS_GEQ(6,13,0)
@@ -828,7 +831,8 @@ void ath12k_pcic_ext_irq_enable(struct ath12k_base *ab)
 void ath12k_pcic_ext_irq_disable(struct ath12k_base *ab)
 {
 
-	if (!test_bit(ATH12K_FLAG_EXT_IRQ_ENABLED, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_EXT_IRQ_ENABLED, &ab->dev_flags) ||
+	    ab->pm_suspend)
 		return;
 
 	__ath12k_pcic_ext_irq_disable(ab);

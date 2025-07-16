@@ -262,7 +262,6 @@ static const u32 ath12k_smps_map[] = {
 
 static int ath12k_start_vdev_delay(struct ath12k *ar,
 				   struct ath12k_link_vif *arvif);
-static void ath12k_mac_stop(struct ath12k *ar);
 static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arvif);
 static struct ath12k_link_sta *ath12k_mac_alloc_assign_link_sta(struct ath12k_hw *ah,
 								struct ath12k_sta *ahsta,
@@ -14442,7 +14441,7 @@ int ath12k_mac_rfkill_enable_radio(struct ath12k *ar, bool enable)
 	return 0;
 }
 
-static void ath12k_mac_stop(struct ath12k *ar)
+void ath12k_mac_stop(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp *dp = dp_pdev->dp;
@@ -14450,6 +14449,9 @@ static void ath12k_mac_stop(struct ath12k *ar)
 	struct htt_ppdu_stats_info *ppdu_stats, *tmp;
 	int ret;
 	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
+
+	if (ar->ab->pm_suspend)
+		return;
 
 	lockdep_assert_held(&ah->hw_mutex);
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -15570,6 +15572,23 @@ static void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif
 	}
 }
 
+bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah)
+{
+	struct ath12k *ar;
+	int i, active_radio = 0;
+
+	for_each_ar(ah, ar, i) {
+		if (ar->allocated_vdev_map) {
+			active_radio++;
+
+		if (active_radio > 1)
+			return false;
+		}
+	}
+
+	return true;
+}
+
 static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
@@ -15651,6 +15670,12 @@ err_vdev_del:
 	ath12k_mac_txpower_recalc(ar);
 
 	ahvif->device_bitmap &= ~BIT(ar->ab->wsi_info.index);
+
+	if (!ar->allocated_vdev_map && !arvif->is_scan_vif) {
+		if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE &&
+		    ath12k_mac_validate_active_radio_count(ar->ah))
+			ath12k_core_cleanup_power_down_q6(ar->ah);
+	}
 
 	/* TODO: recal traffic pause state based on the available vdevs */
 	arvif->is_created = false;
@@ -15893,6 +15918,44 @@ int ath12k_mac_op_ampdu_action(struct ieee80211_hw *hw,
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_ampdu_action);
+
+int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah)
+{
+	struct ath12k *ar;
+	unsigned long time_left;
+	int ret = 0, i;
+	bool erp_standby_mode;
+
+	for_each_ar(ah, ar, i) {
+		if (!ar->teardown_complete_event) {
+			reinit_completion(&ar->standby_teardown);
+			if (ar->allocated_vdev_map)
+				erp_standby_mode = true;
+			else
+				erp_standby_mode = false;
+
+			ret = ath12k_wmi_mlo_teardown(ar, false,
+						      WMI_MLO_TEARDOWN_REASON_STANDBY_DOWN,
+						      erp_standby_mode);
+			if (ret) {
+				ath12k_err(ar->ab, "failed to teardown MLO for pdev_idx  %d: %d\n",
+					   ar->pdev_idx, ret);
+				return ret;
+			}
+
+			time_left = wait_for_completion_timeout(&ar->standby_teardown,
+								ATH12K_TEARDOWN_STANDBY_TIMEOUT);
+
+			if (!time_left) {
+				ath12k_err(ar->ab, "Standby teardown wait timed out\n");
+				ret = -ETIMEDOUT;
+				return ret;
+			}
+		}
+	}
+
+	return ret;
+}
 
 int ath12k_mac_op_add_chanctx(struct ieee80211_hw *hw,
 			      struct ieee80211_chanctx_conf *ctx)
@@ -21409,6 +21472,7 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	init_completion(&ar->completed_11d_scan);
 	init_completion(&ar->thermal.wmi_sync);
 	init_completion(&ar->mvr_complete);
+	init_completion(&ar->standby_teardown);
 
 	INIT_DELAYED_WORK(&ar->scan.timeout, ath12k_scan_timeout_work);
 	wiphy_work_init(&ar->scan.vdev_clean_wk, ath12k_scan_vdev_clean_work);
@@ -21506,7 +21570,8 @@ static int __ath12k_mac_mlo_teardown(struct ath12k *ar, bool umac_reset)
 	if (num_link == 0)
 		return 0;
 
-	ret = ath12k_wmi_mlo_teardown(ar, umac_reset);
+	ret = ath12k_wmi_mlo_teardown(ar, umac_reset,
+				      WMI_MLO_TEARDOWN_SSR_REASON, false);
 	if (ret) {
 		ath12k_warn(ab, "failed to send MLO teardown WMI command for pdev %d: %d\n",
 			    ar->pdev_idx, ret);
@@ -21539,7 +21604,7 @@ int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab)
 				 * chip, as anyway there will be no completion
 				 * event from FW.
 				 */
-				ar->mlo_complete_event = true;
+				ar->teardown_complete_event = true;
 				continue;
 			}
 

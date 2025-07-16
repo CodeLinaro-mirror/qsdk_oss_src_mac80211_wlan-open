@@ -308,7 +308,8 @@ int ath12k_core_suspend_late(struct ath12k_base *ab)
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_ce_irq_disable(ab);
 
-	ath12k_hif_power_down(ab, true);
+	if (!ab->pm_suspend)
+		ath12k_hif_power_down(ab, true);
 
 	return 0;
 }
@@ -937,6 +938,53 @@ void ath12k_core_to_group_ref_put(struct ath12k_base *ab)
 		   ag->id, ag->num_started);
 }
 
+void ath12k_core_cleanup_power_down_q6(struct ath12k_hw *ah)
+{
+	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
+	struct ath12k_base *ab;
+	struct ath12k *ar;
+	int i, j, ret;
+	bool skip_power_down;
+
+	lockdep_assert_wiphy(ah->hw->wiphy);
+
+	ret = ath12k_mac_mlo_standby_teardown(ah);
+	if (ret)
+		return;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		skip_power_down = false;
+
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+
+			if (ar) {
+				if (ar->allocated_vdev_map)
+					skip_power_down = true;
+				else
+					ath12k_mac_stop(ar);
+			}
+		}
+
+		if (!skip_power_down && !ab->pm_suspend) {
+			ab->qmi.num_radios = U8_MAX;
+			ath12k_hif_irq_disable(ab);
+			ath12k_hif_ce_irq_disable(ab);
+			ath12k_dp_ppeds_interrupt_stop(ab);
+			ath12k_qmi_firmware_stop(ab);
+			ath12k_hif_power_down(ab, false);
+			ath12k_core_to_group_ref_put(ab);
+			ath12k_qmi_free_target_mem_chunk(ab);
+			ab->pm_suspend = true;
+			ath12k_info(ab, "Q6 power down\n");
+		}
+	}
+
+	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags))
+		set_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags);
+}
+
 static void ath12k_core_stop(struct ath12k_base *ab)
 {
 	ath12k_core_to_group_ref_put(ab);
@@ -1077,7 +1125,10 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 		ath12k_qmi_firmware_stop(ab);
 
 	ath12k_ce_cleanup_pipes(ab);
-	ath12k_hif_power_down(ab, false);
+
+	if (!ab->pm_suspend)
+		ath12k_hif_power_down(ab, false);
+
 	ath12k_reg_free(ab);
 	ath12k_debugfs_soc_destroy(ab);
 	ath12k_qmi_deinit_service(ab);
@@ -1394,7 +1445,8 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 
 		ath12k_core_device_cleanup(ab);
 		
-		if (ab->hw_params->reoq_lut_support) {
+		if (ab->hw_params->reoq_lut_support &&
+		    !ab->pm_suspend) {
 			mutex_lock(&ab->core_lock);
 			ath12k_dp_reoq_lut_addr_reset(ath12k_ab_to_dp(ab));
 			mutex_unlock(&ab->core_lock);
@@ -1446,6 +1498,7 @@ static int __ath12k_mac_mlo_ready(struct ath12k *ar)
 		return ret;
 	}
 
+	ar->teardown_complete_event = false;
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mlo ready done for pdev %d\n",
 		   ar->pdev_idx);
 
@@ -3133,7 +3186,9 @@ static void ath12k_core_upd_power_down(struct ath12k_base *ab)
 	 * Collect coredump using user pd
 	 */
 	if (ab_ahb->crash_type == ATH12K_RPROC_USERPD_CRASH) {
-		ath12k_hif_power_down(ab, false);
+		if (!ab->pm_suspend)
+			ath12k_hif_power_down(ab, false);
+
 		ath12k_coredump_ahb_collect(ab);
 	}
 
@@ -3390,7 +3445,8 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_hif_ce_irq_disable(ab);
 
 	if (ab->hif.bus == ATH12K_BUS_PCI) {
-		ath12k_hif_power_down(ab, false);
+		if (!ab->pm_suspend)
+			ath12k_hif_power_down(ab, false);
 	} else {
 		ath12k_core_upd_power_down(ab);
 	}

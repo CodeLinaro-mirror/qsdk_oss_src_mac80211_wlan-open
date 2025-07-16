@@ -1369,6 +1369,11 @@ static void ath12k_pci_shutdown(struct pci_dev *pdev)
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 
 	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
+
+	if (ath12k_check_erp_power_down(ab->ag) &&
+	    ab->pm_suspend)
+		return;
+
 	ath12k_qmi_firmware_stop(ab);
 	ath12k_pci_power_down(ab, false);
 }

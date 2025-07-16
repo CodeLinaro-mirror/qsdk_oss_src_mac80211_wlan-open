@@ -13,6 +13,7 @@
 #include "debug.h"
 #include "debugfs.h"
 #include "pci.h"
+#include "mac.h"
 
 #if LINUX_VERSION_IS_GEQ(6,7,0)
 static const struct netlink_range_validation
@@ -40,12 +41,6 @@ ath12k_vendor_erp_policy[QCA_WLAN_VENDOR_ATTR_ERP_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_ERP_CONFIG] =
 		NLA_POLICY_NESTED(ath12k_vendor_erp_config_policy),
 	[QCA_WLAN_VENDOR_ATTR_ERP_EXIT] = { .type = NLA_FLAG },
-};
-
-enum ath12k_erp_states {
-	ATH12K_ERP_OFF,
-	ATH12K_ERP_ENTER_STARTED,
-	ATH12K_ERP_ENTER_COMPLETE,
 };
 
 enum ath12k_erp_pcie_rescan {
@@ -737,6 +732,8 @@ int ath12k_erp_enter(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int lin
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar = NULL;
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -797,6 +794,11 @@ int ath12k_erp_enter(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int lin
 
 	erp_sm.state = ATH12K_ERP_ENTER_COMPLETE;
 	mutex_unlock(&erp_sm.lock);
+
+	if (!ath12k_check_erp_power_down(ag) &&
+	    ath12k_mac_validate_active_radio_count(ah))
+		ath12k_core_cleanup_power_down_q6(ah);
+
 	return 0;
 
 out:
@@ -925,3 +927,14 @@ void ath12k_erp_deinit(void)
 	mutex_destroy(&erp_sm.lock);
 }
 EXPORT_SYMBOL(ath12k_erp_deinit);
+
+enum ath12k_erp_states ath12k_erp_get_sm_state(void)
+{
+	u32 erp_state;
+
+	mutex_lock(&erp_sm.lock);
+	erp_state = erp_sm.state;
+	mutex_unlock(&erp_sm.lock);
+
+	return erp_state;
+}

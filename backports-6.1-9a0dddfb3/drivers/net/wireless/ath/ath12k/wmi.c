@@ -26,6 +26,7 @@
 #include "vendor.h"
 #include "cfr.h"
 #include "ini.h"
+#include "erp.h"
 
 struct ath12k_wmi_svc_ready_parse {
 	bool wmi_svc_bitmap_done;
@@ -12405,6 +12406,7 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 	const struct wmi_mlo_teardown_complete_event *ev;
 	struct ath12k_hw_group *ag = ab->ag;
 	bool complete_flag = true;
+	struct ath12k_pdev *pdev;
 	struct ath12k_hw *ah;
 	struct ath12k *ar;
 	const void **tb;
@@ -12426,13 +12428,24 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 
 	kfree(tb);
 
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, ev->pdev_id);
+	if (ev->pdev_id > ab->num_radios)
+		return;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+
+		if (pdev && pdev->pdev_id == ev->pdev_id)
+			ar = pdev->ar;
+	}
+
 	if (!ar) {
 		ath12k_warn(ab, "invalid pdev id in teardown complete ev %d",
 			    ev->pdev_id);
 		return;
 	}
-	ar->mlo_complete_event = true;
+
+	ar->teardown_complete_event = true;
+	complete(&ar->standby_teardown);
 
 	for (i = 0; i < ag->num_hw; i++) {
 		ah = ag->ah[i];
@@ -12442,7 +12455,7 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 		for_each_ar(ah, ar, j) {
 			ar = &ah->radio[j];
 
-			if (!ar->mlo_complete_event)
+			if (!ar->teardown_complete_event)
 				complete_flag = false;
 		}
 	}
@@ -16289,7 +16302,6 @@ int ath12k_wmi_mlo_setup(struct ath12k *ar, struct wmi_mlo_setup_arg *mlo_params
 		return ret;
 	}
 
-	ar->mlo_complete_event = false;
 	return 0;
 }
 
@@ -16321,7 +16333,8 @@ int ath12k_wmi_mlo_ready(struct ath12k *ar)
 	return 0;
 }
 
-int ath12k_wmi_mlo_teardown(struct ath12k *ar, bool umac_reset)
+int ath12k_wmi_mlo_teardown(struct ath12k *ar, bool umac_reset,
+			    u32 reason_code, bool erp_standby_mode)
 {
 	struct wmi_mlo_teardown_cmd *cmd;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
@@ -16337,8 +16350,9 @@ int ath12k_wmi_mlo_teardown(struct ath12k *ar, bool umac_reset)
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_TEARDOWN_CMD,
 						 sizeof(*cmd));
 	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
-	cmd->reason_code = WMI_MLO_TEARDOWN_SSR_REASON;
 	cmd->umac_reset = umac_reset;
+	cmd->reason_code = cpu_to_le32(reason_code);
+	cmd->erp_standby_mode = cpu_to_le32(erp_standby_mode);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_MLO_TEARDOWN_CMDID);
 	if (ret) {
