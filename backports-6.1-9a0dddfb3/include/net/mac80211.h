@@ -1778,6 +1778,7 @@ struct ieee80211_rx_status {
 	u8 zero_length_psdu_type;
 	u8 link_valid:1, link_id:4;
 	u8 eht_num_user;
+	u8 tid;
 };
 
 static inline u32

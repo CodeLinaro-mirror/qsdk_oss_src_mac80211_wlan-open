@@ -1141,6 +1141,18 @@ struct txrx_tid_stats {
 	u64     tx_monitor_pkts;
 	u64     tx_monitor_pkts_bytes;
 	u64     tx_drop_stats[TX_DROP_REASON_MAX];
+	u64     rx_packets;
+	u64     rx_bytes;
+	u64     rx_drop_packets;
+	u64     rx_drop_bytes;
+	u64     rx_netif_pkts;
+	u64     rx_forwarded_pkts;
+	u64     rx_fast_path_pkts;
+	u64     rx_multicast_pkts;
+	u64     rx_local_stack_pkts;
+	u64     rx_queue_pkts;
+	u64     rx_monitor_pkts;
+	u64     rx_drop_stats[RX_DROP_REASON_MAX];
 };
 
 struct pcpu_txrx_stats {
