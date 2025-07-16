@@ -5600,8 +5600,8 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	struct ieee80211_rx_data rx;
 	struct ieee80211_sub_if_data *prev;
 	struct rhlist_head *tmp;
-	int err = 0;
-	bool is_mgmt = false;
+	int err = 0, prev_linkid;
+	bool prev_flag, is_mgmt = false;
 
 	fc = ((struct ieee80211_hdr *)skb->data)->frame_control;
 	memset(&rx, 0, sizeof(rx));
@@ -5710,6 +5710,8 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	}
 
 	prev = NULL;
+	prev_linkid = -1;
+	prev_flag = false;
 
 	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
 		unsigned int link_id;
@@ -5767,14 +5769,23 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 		if (flag) {
 			if (!prev) {
+				prev_linkid = valid_links ? link_id : -1;
 				prev = sdata;
+				prev_flag = flag;
 				continue;
 			}
 
 			rx.sdata = prev;
+			if (prev_flag) {
+				status->link_valid = (prev_linkid >= 0);
+				if (status->link_valid)
+					status->link_id = prev_linkid;
+			}
 			ieee80211_rx_for_interface(&rx, skb, false, is_mgmt);
 
+			prev_linkid = valid_links ? link_id : -1;
 			prev = sdata;
+			prev_flag = flag;
 		}
 	}
 
@@ -5821,6 +5832,9 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 		if (flag) {
 			rx.sdata = prev;
+			status->link_valid = !!valid_links;
+			if (status->link_valid)
+				status->link_id = link_id;
 
 			if (ieee80211_rx_for_interface(&rx, skb, true, is_mgmt))
 				return;
