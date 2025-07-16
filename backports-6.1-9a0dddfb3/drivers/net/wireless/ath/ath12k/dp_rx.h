@@ -12,6 +12,8 @@
 
 #define DP_MAX_NWIFI_HDR_LEN	30
 
+#define ip_hdrlen(iph) ((iph)->ihl * 4)
+
 /* different supported pkt types for routing */
 enum ath12k_routing_pkt_type {
 	ATH12K_PKT_TYPE_ARP_IPV4,
@@ -308,4 +310,7 @@ void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
 					 u8 link_id, int ring_id);
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 			   enum ath12k_dp_rx_error drop_reason);
+void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,
+				struct ath12k_dp_peer *peer,
+				struct sk_buff *msdu, u8 tid);
 #endif /* ATH12K_DP_RX_H */

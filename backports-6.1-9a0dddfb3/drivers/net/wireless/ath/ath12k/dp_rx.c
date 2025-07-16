@@ -8,6 +8,10 @@
 #include <linux/kernel.h>
 #include <linux/skbuff.h>
 #include <crypto/hash.h>
+#include <linux/tcp.h>
+#include <linux/udp.h>
+#include <linux/ip.h>
+#include <linux/ipv6.h>
 #include "core.h"
 #include "debug.h"
 #include "hw.h"
@@ -17,6 +21,7 @@
 #include "dp_mon.h"
 #include "debugfs_htt_stats.h"
 #include "erp.h"
+#include "fse.h"
 
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 				struct list_head *head,
@@ -127,6 +132,123 @@ int ath12k_dp_rx_crypto_icv_len(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_warn(dp_pdev->dp->ab, "unsupported encryption type %d\n", enctype);
 	return 0;
 }
+
+static int ath12k_dp_rx_extract_tuple(struct sk_buff *skb,
+				      struct cfg80211_qm_tclas4_params *flow_params)
+{
+	struct ethhdr *eth;
+	u16 eth_type;
+	struct udphdr *uh;
+
+	eth = (struct ethhdr *)skb->data;
+	eth_type = ntohs(eth->h_proto);
+
+	if (eth_type != ETH_P_IP &&
+	    eth_type != ETH_P_IPV6)
+		return -EINVAL;
+
+	if (eth_type == ETH_P_IP) {
+		struct iphdr *iph = (struct iphdr *)(skb->data + sizeof(struct ethhdr));
+
+		if (iph->protocol != IPPROTO_TCP &&
+		    iph->protocol != IPPROTO_UDP)
+			return -EINVAL;
+
+		flow_params->protocol = iph->protocol;
+		flow_params->ip_ver = IP_VERSION_4;
+
+		memcpy(flow_params->src_ip.ipv4, &iph->saddr, IPV4_LEN);
+		memcpy(flow_params->dst_ip.ipv4, &iph->daddr, IPV4_LEN);
+
+		uh = (struct udphdr *)((u8 *)iph + ip_hdrlen(iph));
+		flow_params->src_port = ntohs(uh->source);
+		flow_params->dst_port = ntohs(uh->dest);
+
+	} else if (eth_type == ETH_P_IPV6) {
+		struct ipv6hdr *ipv6h = (struct ipv6hdr *)(skb->data +
+				sizeof(struct ethhdr));
+
+		if (ipv6h->nexthdr != IPPROTO_TCP &&
+		    ipv6h->nexthdr != IPPROTO_UDP)
+			return -EINVAL;
+
+		flow_params->ip_ver = IP_VERSION_6;
+		flow_params->protocol = ipv6h->nexthdr;
+
+		memcpy(flow_params->src_ip.ipv6, &ipv6h->saddr, IPV6_LEN);
+		memcpy(flow_params->dst_ip.ipv6, &ipv6h->daddr, IPV6_LEN);
+
+		uh = (struct udphdr *)(ipv6h + 1);
+		flow_params->src_port = ntohs(uh->source);
+		flow_params->dst_port = ntohs(uh->dest);
+	}
+
+	return 0;
+}
+
+static int
+ath12k_dp_rx_mscs_add_fse_flow_entry(struct ath12k_base *ab,
+				     struct cfg80211_qm_tclas4_params
+				     *flow_params)
+{
+	struct rx_flow_info flow_info = {0};
+	struct hal_flow_tuple_info *tuple_info = &flow_info.flow_tuple_info;
+	u32 *src_ip, *dst_ip;
+	u8 version = flow_params->ip_ver;
+
+	tuple_info->src_port = flow_params->src_port;
+	tuple_info->dest_port = flow_params->dst_port;
+	tuple_info->l4_protocol = flow_params->protocol;
+
+	if (version == IP_VERSION_4) {
+		flow_info.is_addr_ipv4 = 1;
+		src_ip = (u32 *)flow_params->src_ip.ipv4;
+		dst_ip = (u32 *)flow_params->dst_ip.ipv4;
+		tuple_info->src_ip_31_0 = *src_ip;
+		tuple_info->dest_ip_31_0 = *dst_ip;
+	} else if (version == IP_VERSION_6) {
+		src_ip = (u32 *)flow_params->src_ip.ipv6;
+		dst_ip = (u32 *)flow_params->dst_ip.ipv6;
+
+		tuple_info->src_ip_127_96 = src_ip[0];
+		tuple_info->src_ip_95_64  = src_ip[1];
+		tuple_info->src_ip_63_32  = src_ip[2];
+		tuple_info->src_ip_31_0   = src_ip[3];
+
+		tuple_info->dest_ip_127_96 = dst_ip[0];
+		tuple_info->dest_ip_95_64  = dst_ip[1];
+		tuple_info->dest_ip_63_32  = dst_ip[2];
+		tuple_info->dest_ip_31_0   = dst_ip[3];
+	} else {
+		return -EINVAL;
+	}
+
+	flow_info.fse_metadata = ATH12K_RX_FSE_FLOW_MSCS_RULE_PROGRAMMED;
+	return ath12k_dp_rx_flow_add_entry(ab, &flow_info);
+}
+
+void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,
+				struct ath12k_dp_peer *peer,
+				struct sk_buff *skb, u8 tid)
+{
+	struct cfg80211_qm_tclas4_params flow_params = {0};
+
+	if (ath12k_dp_rx_extract_tuple(skb, &flow_params))
+		return;
+
+	rcu_read_lock();
+	if (ieee80211_rx_send_mscs_tuple(peer->sta, flow_params, tid)) {
+		rcu_read_unlock();
+		return;
+	}
+	rcu_read_unlock();
+
+	if (ath12k_dp_rx_mscs_add_fse_flow_entry(ab, &flow_params))
+		return;
+
+	return;
+}
+EXPORT_SYMBOL(ath12k_dp_rx_classify_mscs);
 
 void ath12k_dp_rx_h_undecap_frag(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *msdu,
 				 enum hal_encrypt_type enctype, u32 flags)

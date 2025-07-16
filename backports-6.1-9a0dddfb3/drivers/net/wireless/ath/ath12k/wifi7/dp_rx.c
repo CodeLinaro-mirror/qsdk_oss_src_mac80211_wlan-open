@@ -900,6 +900,36 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (likely(peer)) {
 		msdu->dev = peer->dev;
+		if (unlikely(peer->mscs_session_exists)) {
+			if (tlv_info->decap == DP_RX_DECAP_TYPE_ETHERNET2_DIX) {
+				/* Get the FSE metadata to check if flow entry
+				 * has been programmed and if yes, check if
+				 * metadata has the MSCS tag. If it has, do not
+				 * classify the UL packet.
+				 */
+				dp->hal->hal_ops->rx_desc_get_fse_info(rx_desc,
+						rx_mpdu_info);
+				/* Update skb priority with the tid received
+				 * in rx_mpdu_info.
+				 * This has to be done per packet since
+				 * a packet from the same flow can have
+				 * different tid values
+				 */
+				msdu->priority = tid;
+				/** Check if the flow has been timed out
+				 * or if the flow is invalid
+				 * If the flow is invalid, check for five-tuple info and
+				 * then program the FST entry with MSCS tag
+				 * If tid is 0, which is the default case,
+				 * do not program the FSE entry and MSCS rule
+				 */
+				if (tid && !rx_mpdu_info->flow_idx_timeout &&
+				    !(rx_mpdu_info->flow_info.flow_metadata &
+				    ATH12K_RX_FSE_FLOW_MSCS_RULE_PROGRAMMED))
+					ath12k_dp_rx_classify_mscs(dp->ab, peer, msdu, tid);
+			}
+		}
+
 		if (likely(*fast_rx &&
 		    ath12k_wifi7_dp_rx_check_fast_rx(dp, msdu, rx_msdu_info,
 							 tlv_info, peer))) {
