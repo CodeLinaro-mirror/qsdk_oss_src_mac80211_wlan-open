@@ -35,7 +35,9 @@ ieee80211_tx_h_michael_mic_add(struct ieee80211_tx_data *tx)
 	struct ieee80211_hdr *hdr;
 	struct sk_buff *skb = tx->skb;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_local *local = tx->local;
 	int tail;
+	bool tid_stats_disable = local->hw.tid_stats_disable;
 
 	hdr = (struct ieee80211_hdr *)skb->data;
 	if (!tx->key || tx->key->conf.cipher != WLAN_CIPHER_SUITE_TKIP ||
@@ -43,8 +45,12 @@ ieee80211_tx_h_michael_mic_add(struct ieee80211_tx_data *tx)
 		return TX_CONTINUE;
 
 	hdrlen = ieee80211_hdrlen(hdr->frame_control);
-	if (skb->len < hdrlen)
+	if (skb->len < hdrlen) {
+		if (!tid_stats_disable)
+			ieee80211_tx_drop_stats(tx->sdata, info->tid,
+						TX_DROP_SKB_SANITY_CHECK_FAIL);
 		return TX_DROP;
+	}
 
 	data = skb->data + hdrlen;
 	data_len = skb->len - hdrlen;
@@ -71,8 +77,12 @@ ieee80211_tx_h_michael_mic_add(struct ieee80211_tx_data *tx)
 		 skb_headroom(skb) < IEEE80211_TKIP_IV_LEN,
 		 "mmic: not enough head/tail (%d/%d,%d/%d)\n",
 		 skb_headroom(skb), IEEE80211_TKIP_IV_LEN,
-		 skb_tailroom(skb), tail))
+		 skb_tailroom(skb), tail)) {
+		if (!tid_stats_disable)
+			ieee80211_tx_drop_stats(tx->sdata, info->tid,
+						TX_DROP_SKB_SANITY_CHECK_FAIL);
 		return TX_DROP;
+	}
 
 	mic = skb_put(skb, MICHAEL_MIC_LEN);
 

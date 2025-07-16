@@ -2375,6 +2375,11 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 	ieee80211_sdata_init(local, sdata);
 
+	local->hw.tid_stats_disable = true;
+	sdata->txrx_stats = alloc_percpu_gfp(struct pcpu_txrx_stats, GFP_KERNEL);
+	if (!sdata->txrx_stats)
+		return -ENOMEM;
+
 	ieee80211_init_frag_cache(&sdata->frags);
 
 	INIT_LIST_HEAD(&sdata->key_list);
@@ -2473,6 +2478,7 @@ void ieee80211_if_remove(struct ieee80211_sub_if_data *sdata)
 
 	cfg80211_unregister_wdev(&sdata->wdev);
 
+	free_percpu(sdata->txrx_stats);
 	if (!sdata->dev) {
 		ieee80211_teardown_sdata(sdata);
 		kfree(sdata);

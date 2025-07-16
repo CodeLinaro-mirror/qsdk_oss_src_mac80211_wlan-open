@@ -1125,6 +1125,33 @@ struct ieee80211_link_data {
 	struct wiphy_work advertised_ttlm_evt_notify_work;
 };
 
+struct txrx_tid_stats {
+	u64     tx_packets;
+	u64     tx_bytes;
+	u64     tx_drop_packets;
+	u64     tx_drop_bytes;
+	u64     tx_eth_pkts;
+	u64     tx_eth_pkts_bytes;
+	u64     fast_tx_pkts;
+	u64     fast_tx_pkts_bytes;
+	u64     tx_multicast_pkts;
+	u64     tx_multicast_pkts_bytes;
+	u64     tx_nwifi_pkts;
+	u64     tx_nwifi_pkts_bytes;
+	u64     tx_monitor_pkts;
+	u64     tx_monitor_pkts_bytes;
+	u64     tx_drop_stats[TX_DROP_REASON_MAX];
+};
+
+struct pcpu_txrx_stats {
+		struct txrx_tid_stats   tid_stats[IEEE80211_NUM_TIDS];
+		struct u64_stats_sync   syncp;
+};
+
+struct txrx_stats {
+		struct txrx_tid_stats   tid_stats[IEEE80211_NUM_TIDS];
+};
+
 struct ieee80211_sub_if_data {
 	struct list_head list;
 
@@ -1227,6 +1254,7 @@ struct ieee80211_sub_if_data {
 
 	struct work_struct awgn_detected_work;
 
+	struct pcpu_txrx_stats __percpu *txrx_stats;
 	u32 tx_dropped;
 	u32 rx_dropped;
 
@@ -2579,6 +2607,18 @@ extern const int ieee802_1d_to_ac[8];
 static inline int ieee80211_ac_from_tid(int tid)
 {
 	return ieee802_1d_to_ac[tid & 7];
+}
+
+static inline void ieee80211_tx_drop_stats(struct ieee80211_sub_if_data *sdata,
+					   u8 tid, u32 reason)
+{
+	struct pcpu_txrx_stats *txrx_stats = this_cpu_ptr(sdata->txrx_stats);
+
+	if (txrx_stats) {
+		u64_stats_update_begin(&txrx_stats->syncp);
+		txrx_stats->tid_stats[tid].tx_drop_stats[reason]++;
+		u64_stats_update_end(&txrx_stats->syncp);
+	}
 }
 
 void ieee80211_dynamic_ps_enable_work(struct wiphy *wiphy,

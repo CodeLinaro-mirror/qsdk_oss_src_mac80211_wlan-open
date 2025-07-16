@@ -1361,6 +1361,7 @@ struct ieee80211_tx_info {
 			u8 pad[36];
 			u32 nw_delay;
 		} sawf;
+		u8 tid;
 	};
 };
 
@@ -3358,6 +3359,7 @@ struct ieee80211_hw {
 	u32 dbg_mask;
 	u8 medium_busy;
 	bool perf_mode;
+	bool tid_stats_disable;
 };
 
 static inline bool _ieee80211_hw_check(struct ieee80211_hw *hw,

@@ -293,11 +293,15 @@ ieee80211_tx_result
 ieee80211_crypto_wep_encrypt(struct ieee80211_tx_data *tx)
 {
 	struct sk_buff *skb;
+	struct ieee80211_local *local = tx->local;
+	bool tid_stats_disable = local->hw.tid_stats_disable;
 
 	ieee80211_tx_set_protected(tx);
 
 	skb_queue_walk(&tx->skbs, skb) {
 		if (wep_encrypt_skb(tx, skb) < 0) {
+			if (!tid_stats_disable)
+				ieee80211_tx_drop_stats(tx->sdata, 0, TX_DROP_WEP);
 			I802_DEBUG_INC(tx->local->tx_handlers_drop_wep);
 			return TX_DROP;
 		}
