@@ -3011,6 +3011,11 @@ struct ath12k_htt_latency_prof_stats_tlv {
 	__le32 avg;
 	__le32 hist_intvl;
 	__le32 hist[ATH12K_HTT_LATENCY_PROFILE_NUM_MAX_HIST];
+	__le32 page_fault_max;
+	__le32 page_fault_total;
+	__le32 ignored_latency_count;
+	__le32 interrupts_max;
+	__le32 interrupts_hist[ATH12K_HTT_INTERRUPTS_LATENCY_PROFILE_MAX_HIST];
 }  __packed;
 
 struct ath12k_htt_latency_prof_ctx_tlv {

@@ -5305,7 +5305,17 @@ ath12k_htt_print_latency_prof_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += scnprintf(buf + len, buf_len - len, "histogram interval = %u\n",
 			 le32_to_cpu(htt_stats_buf->hist_intvl));
 	len += print_array_to_buf(buf, len, "histogram", htt_stats_buf->hist,
-				  ATH12K_HTT_LATENCY_PROFILE_NUM_MAX_HIST, "\n\n");
+				  ATH12K_HTT_LATENCY_PROFILE_NUM_MAX_HIST, "\n");
+	len += scnprintf(buf + len, buf_len - len, "page fault max = %u\n",
+			 le32_to_cpu(htt_stats_buf->page_fault_max));
+	len += scnprintf(buf + len, buf_len - len, "page fault total = %u\n",
+			 le32_to_cpu(htt_stats_buf->page_fault_total));
+	len += scnprintf(buf + len, buf_len - len, "ignored latency count = %u\n",
+			 le32_to_cpu(htt_stats_buf->ignored_latency_count));
+	len += scnprintf(buf + len, buf_len - len, "interrupts max = %u\n",
+			 le32_to_cpu(htt_stats_buf->interrupts_max));
+	len += print_array_to_buf(buf, len, "interrupts histogram", htt_stats_buf->interrupts_hist,
+				  ATH12K_HTT_INTERRUPTS_LATENCY_PROFILE_MAX_HIST, "\n\n");
 
 	stats_req->buf_len = len;
 }
