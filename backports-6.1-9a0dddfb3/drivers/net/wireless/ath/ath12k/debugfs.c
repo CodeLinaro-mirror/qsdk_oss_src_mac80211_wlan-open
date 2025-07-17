@@ -4625,7 +4625,7 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	} else {
 		char dirname[32] = {0};
 
-		snprintf(dirname, 32, "ath12k_hw%d", ar->hw_link_id);
+		snprintf(dirname, 32, "ath12k_hw%d", ar->radio_idx);
 		ar->debug.debugfs_pdev_symlink =
 			debugfs_create_symlink(dirname,
 					       hw->wiphy->debugfsdir,

@@ -1048,6 +1048,7 @@ struct ath12k {
 	u8 pdev_idx;
 	u8 lmac_id;
 	u8 hw_link_id;
+	u8 radio_idx;
 
 	struct completion peer_assoc_done;
 	struct completion peer_delete_done;
@@ -1916,13 +1917,13 @@ static inline struct ath12k_hw *ath12k_hw_to_ah(struct ieee80211_hw  *hw)
 	return hw->priv;
 }
 
-static inline struct ath12k *ath12k_ah_to_ar(struct ath12k_hw *ah, u8 hw_link_id)
+static inline struct ath12k *ath12k_ah_to_ar(struct ath12k_hw *ah, u8 radio_id)
 {
-	if (WARN(hw_link_id >= ah->num_radio,
-		 "bad hw link id %d, so switch to default link\n", hw_link_id))
-		hw_link_id = 0;
+	if (WARN(radio_id >= ah->num_radio,
+		 "bad radio id %d, so switch to default link\n", radio_id))
+		radio_id = 0;
 
-	return &ah->radio[hw_link_id];
+	return &ah->radio[radio_id];
 }
 
 static inline struct ath12k_hw *ath12k_ar_to_ah(struct ath12k *ar)
