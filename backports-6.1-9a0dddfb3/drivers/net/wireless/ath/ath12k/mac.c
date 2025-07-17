@@ -9827,8 +9827,9 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 
 	rcu_read_unlock();
 
-	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
-	    cfg80211_chandef_device_present(&def)) {
+	if (!is_bridge_vdev &&
+	    (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
+	    cfg80211_chandef_device_present(&def))) {
 		ru_punct_bitmap = ath12k_mac_set_punct_bitmap_device(def.chan->center_freq,
 								     def.width_device,
 								     def.center_freq_device,
@@ -16275,22 +16276,22 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		arg.max_power = chandef->chan->max_power;
 		arg.max_reg_power = chandef->chan->max_reg_power;
 		arg.max_antenna_gain = chandef->chan->max_antenna_gain;
-	}
-
-	arg.pref_tx_streams = ar->num_tx_chains;
-	arg.pref_rx_streams = ar->num_rx_chains;
-
-	if (test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
-	    cfg80211_chandef_device_present(chandef)) {
-		arg.width_device = chandef->width_device;
-		arg.center_freq_device = chandef->center_freq_device;
-		punct_bitmap = ath12k_mac_set_punct_bitmap_device(chandef->chan->center_freq,
-								 chandef->width_device,
-								 chandef->center_freq_device,
-								 punct_bitmap);
+		if (!is_bridge_vdev &&
+		    test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map) &&
+		    cfg80211_chandef_device_present(chandef)) {
+			arg.width_device = chandef->width_device;
+			arg.center_freq_device = chandef->center_freq_device;
+			punct_bitmap = ath12k_mac_set_punct_bitmap_device(chandef->chan->center_freq,
+									 chandef->width_device,
+									 chandef->center_freq_device,
+									 punct_bitmap);
+		}
 	}
 
 	arg.punct_bitmap = ~punct_bitmap;
+	arg.pref_tx_streams = ar->num_tx_chains;
+	arg.pref_rx_streams = ar->num_rx_chains;
+
 	if (is_bridge_vdev)
 		arg.mbssid_flags = 0;
 	else

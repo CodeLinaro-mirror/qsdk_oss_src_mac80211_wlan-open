@@ -831,7 +831,7 @@ struct ath12k_sta {
 	struct ath12k_link_sta deflink;
 	struct ath12k_link_sta __rcu *link[ATH12K_NUM_MAX_LINKS];
 	/* indicates bitmap of link sta created in FW */
-	u16 links_map;
+	u32 links_map;
 	u8 assoc_link_id;
 	u16 ml_peer_id;
 	u8 num_peer;
