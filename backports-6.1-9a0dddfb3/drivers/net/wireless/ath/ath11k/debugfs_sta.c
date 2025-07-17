@@ -46,6 +46,7 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 {
 	struct rate_info *txrate = &arsta->txrate;
 	struct ath11k_htt_tx_stats *tx_stats;
+	struct ath11k_base *ab = arsta->arvif->ar->ab;
 	int gi, mcs, bw, nss, ru_type, ppdu_type, idx;
 	u8 he_gi;
 
@@ -61,7 +62,15 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 	he_gi = ath11k_he_gi_to_nl80211_he_gi(gi);
 	idx = mcs * 12 + 12 * 12 * nss;
 	idx += bw * 3 + he_gi;
-
+	if (mcs < 0 || mcs >= ATH11K_HE_MCS_NUM ||
+	    nss < 0 || nss >= ATH11K_NSS_NUM ||
+	    gi < 0 || gi >= ATH11K_GI_NUM ||
+	    bw < 0 || bw >= ATH11K_BW_NUM ||
+	    idx < 0 || idx >= ATH11K_TX_RATE_TABLE_11AX_NUM) {
+	    ath11k_err(ab, "tx_stats: invalid mcs %d nss %d gi %d bw %d idx %d (out of bounds)",
+			    mcs, nss, gi, bw, idx);
+	    return;
+	}
 #define STATS_OP_FMT(name) tx_stats->stats[ATH11K_STATS_TYPE_##name]
 
 	if (txrate->flags & RATE_INFO_FLAGS_HE_MCS) {
