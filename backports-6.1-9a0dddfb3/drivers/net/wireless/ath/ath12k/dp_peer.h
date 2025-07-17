@@ -71,6 +71,12 @@ struct ath12k_htt_tx_stats {
 
 DECLARE_EWMA(avg_rssi, 10, 8)
 
+struct ath12k_mscs_ctxt {
+	u8 user_priority_bitmap;
+	u8 user_priority_limit;
+	u8 tclas_mask;
+};
+
 struct ath12k_dp_link_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
@@ -168,6 +174,8 @@ struct ath12k_dp_peer {
 #if defined(CPTCFG_MAC80211_PPE_SUPPORT) || defined(CPTCFG_ATH12K_PPE_DS_SUPPORT)
 	int ppe_vp_num;
 #endif
+	struct ath12k_mscs_ctxt mscs_ctxt;
+	bool mscs_session_exists;
 };
 
 #define QOS_TID_MAX 8

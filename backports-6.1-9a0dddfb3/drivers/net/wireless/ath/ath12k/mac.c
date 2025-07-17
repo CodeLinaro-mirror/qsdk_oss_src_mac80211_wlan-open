@@ -19530,6 +19530,75 @@ ath12k_mac_op_reconfig_complete(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_reconfig_complete);
 
+static int
+ath12k_mac_set_mscs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
+		    struct ath12k_sta *ahsta,
+		    struct cfg80211_qm_req_data *qm_req,
+		    struct cfg80211_qm_resp_data *qm_resp)
+{
+	struct ath12k *ar;
+	struct ath12k_dp *dp;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *peer;
+	struct cfg80211_qm_req_desc_data *qm_req_desc = &qm_req->qm_req_desc[0];
+	struct cfg80211_qm_resp_desc_data *qm_resp_desc = &qm_resp->qm_resp_desc[0];
+	u8 req_type = qm_req_desc->request_type;
+
+	ar = arsta->arvif->ar;
+	dp = ath12k_ab_to_dp(ar->ab);
+
+	qm_resp_desc->qm_id = qm_req_desc->qm_id;
+
+	spin_lock_bh(&dp->dp_lock);
+	link_peer = ath12k_dp_link_peer_find_by_addr(dp, arsta->addr);
+	if (!link_peer)
+		goto send_fail_resp;
+
+	peer = link_peer->dp_peer;
+	switch (req_type) {
+	case IEEE80211_QM_ADD_REQ:
+		if (peer->mscs_session_exists)
+			goto send_fail_resp;
+		peer->mscs_session_exists = true;
+		fallthrough;
+	case IEEE80211_QM_CHANGE_REQ:
+		peer->mscs_ctxt.user_priority_bitmap =
+			qm_req_desc->user_priority_bitmap;
+		peer->mscs_ctxt.user_priority_limit =
+			qm_req_desc->user_priority_limit;
+		peer->mscs_ctxt.tclas_mask =
+			qm_req_desc->tclas_mask;
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+			   "MSCS: %s: peer %pM, bmap 0x%x, limit %u mask 0x%x",
+			   (req_type == IEEE80211_QM_CHANGE_REQ) ? "CHANGE" :
+			   "ADD",
+			   peer->addr,
+			   peer->mscs_ctxt.user_priority_bitmap,
+			   peer->mscs_ctxt.user_priority_limit,
+			   peer->mscs_ctxt.tclas_mask);
+		break;
+	case IEEE80211_QM_REMOVE_REQ:
+		peer->mscs_session_exists = false;
+		ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+			   "MSCS: REMOVE peer %pM, mscs_session_exists %u",
+			   peer->addr, peer->mscs_session_exists);
+		break;
+	default:
+		goto send_fail_resp;
+	}
+
+	spin_unlock_bh(&dp->dp_lock);
+
+	qm_resp_desc->status = IEEE80211_QM_REQ_SUCCESS;
+	return 0;
+
+send_fail_resp:
+	spin_unlock_bh(&dp->dp_lock);
+	qm_resp_desc->status = IEEE80211_QM_REQ_DECLINED;
+	return -EINVAL;
+}
+
 static void
 ath12k_mac_update_bss_chan_survey(struct ath12k *ar,
 				  struct ieee80211_channel *channel)
@@ -23192,6 +23261,9 @@ int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
 	switch (qm_type) {
 	case IEEE80211_QM_TYPE_SCS:
 		return ath12k_mac_set_scs(hw, arsta, ahsta, qm_req, qm_resp);
+
+	case IEEE80211_QM_TYPE_MSCS:
+		return ath12k_mac_set_mscs(hw, arsta, ahsta, qm_req, qm_resp);
 
 	default:
 		ath12k_err(NULL, "Invalid QM Protocol\n");
