@@ -3419,6 +3419,7 @@ static int ath12k_vendor_reset_afc(struct wiphy *wiphy,
 static const struct nla_policy
 ath12k_cfg80211_power_mode_set_policy[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_6GHZ_LINK_ID] = {.type = NLA_U8 },
 };
 
 static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
@@ -3428,40 +3429,51 @@ static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
 {
 	struct ath12k *ar;
 	u8 link_id = 0;
-	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE + 1];
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX + 1];
 	u8 ap_6ghz_pwr_mode;
 	int err;
 
 	if (!wdev)
 		return -EINVAL;
 
-	if (wdev->iftype != NL80211_IFTYPE_AP)
-		return -EOPNOTSUPP;
+	if (wdev->iftype != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL, "Invalid iftype %d for 6 GHz power mode change",
+			   wdev->iftype);
+		return -EINVAL;
+	}
 
 	if (!data || !data_len) {
 		ath12k_err(NULL, "Invalid data length data ptr: %pK ", data);
 		return -EINVAL;
 	}
 
-	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE, data,
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX, data,
 		      data_len, ath12k_cfg80211_power_mode_set_policy, NULL)) {
 		ath12k_err(NULL,
 			   "QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE parsing failed");
 		return -EINVAL;
 	}
 
-	for_each_valid_link(wdev, link_id) {
-		if (!wdev->links[link_id].ap.beacon_interval)
-			continue;
-
-		if (wdev->links[link_id].ap.chandef.chan &&
-		    wdev->links[link_id].ap.chandef.chan->band ==
-		    NL80211_BAND_6GHZ)
-			break;
+	if (tb[QCA_WLAN_VENDOR_ATTR_6GHZ_LINK_ID]) {
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_6GHZ_LINK_ID]);
+		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
+			ath12k_err(NULL, "Invalid link id %d", link_id);
+			return -EINVAL;
+		}
 	}
 
-	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+	if (!wdev->links[link_id].ap.beacon_interval) {
+		ath12k_err(NULL, "Beacon interval not set for link id %d",
+			   link_id);
+		return -EOPNOTSUPP;
+	}
+
+	if (!wdev->links[link_id].ap.chandef.chan ||
+		wdev->links[link_id].ap.chandef.chan->band != NL80211_BAND_6GHZ) {
+		ath12k_err(NULL, "Invalid channel / band for link id %d",
+			   link_id);
 		return -EINVAL;
+	}
 
 	ar = ath12k_get_ar_from_wdev(wdev, link_id);
 	if (!ar)
@@ -3479,6 +3491,9 @@ static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_REG,
+		   "6 GHz power mode change request for link id %d, pwr mode %d\n",
+		   link_id, ap_6ghz_pwr_mode);
 	err = ieee80211_6ghz_power_mode_change(wiphy, wdev,
 					       ap_6ghz_pwr_mode, link_id);
 
@@ -3486,12 +3501,13 @@ static int ath12k_vendor_6ghz_power_mode_change(struct wiphy *wiphy,
 }
 
 int ath12k_vendor_send_6ghz_power_mode_update_complete(struct ath12k *ar,
-						       struct wireless_dev *wdev)
+						       struct wireless_dev *wdev,
+						       u8 link_id)
 {
 	struct sk_buff *vendor_event;
 	int ret = 0;
 	int vendor_buffer_len = nla_total_size(sizeof(u8));
-	u8 ap_power_mode = wdev->reg_6g_power_mode;
+	u8 ap_power_mode = wdev->links[link_id].reg_6g_power_mode;
 
 	/* NOTE: lockdep_assert_held is called in ath12k_mac_bss_info_changed */
 	vendor_event =
@@ -3512,8 +3528,17 @@ int ath12k_vendor_send_6ghz_power_mode_update_complete(struct ath12k *ar,
 		goto out;
 	}
 
+	if (wdev->valid_links) {
+		ret = nla_put_u8(vendor_event,
+				 QCA_WLAN_VENDOR_ATTR_6GHZ_LINK_ID, link_id);
+		if (ret) {
+			ath12k_warn(ar->ab, "Failed to put 6 GHz link id\n");
+			goto out;
+		}
+	}
+
 	ath12k_dbg(ar->ab, ATH12K_DBG_REG,
-		   "Send power mode update complete event\n");
+		   "Send power mode update complete for Link id %d\n", link_id);
 	cfg80211_vendor_event(vendor_event, GFP_KERNEL);
 out:
 	return ret;

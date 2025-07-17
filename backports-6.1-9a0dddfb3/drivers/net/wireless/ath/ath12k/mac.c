@@ -5875,9 +5875,10 @@ void ath12k_mac_bridge_vdev_up(struct ath12k_link_vif *arvif)
 }
 
 static void ath12k_mac_send_pwr_mode_update(struct ath12k *ar,
-					    struct wireless_dev *wdev)
+					    struct wireless_dev *wdev,
+					    u8 link_id)
 {
-	ath12k_vendor_send_6ghz_power_mode_update_complete(ar, wdev);
+	ath12k_vendor_send_6ghz_power_mode_update_complete(ar, wdev, link_id);
 }
 
 /**
@@ -6558,22 +6559,19 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	u8 reg_6g_power_mode;
+	struct ieee80211_bss_conf *bss_conf = ath12k_get_link_bss_conf(arvif);
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
-		struct ieee80211_bss_conf *bss_conf = ath12k_get_link_bss_conf(arvif);
-
-		reg_6g_power_mode = (bss_conf) ? bss_conf->power_type : IEEE80211_REG_UNSET_AP;
-		if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
-			reg_6g_power_mode = IEEE80211_REG_LPI_AP;
-		else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
-			 !ar->afc.is_6ghz_afc_power_event_received)
-			reg_6g_power_mode = REG_SP_CLIENT_TYPE;
-	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		if (wdev->reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
-			reg_6g_power_mode = IEEE80211_REG_LPI_AP;
-		else
-			reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
+	if (!bss_conf) {
+		ath12k_warn(ar->ab, "BSS conf is NULL for link %d\n", arvif->link_id);
+		return;
 	}
+
+	reg_6g_power_mode = bss_conf->power_type;
+	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+	else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+		 !ar->afc.is_6ghz_afc_power_event_received)
+		reg_6g_power_mode = REG_SP_CLIENT_TYPE;
 
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
@@ -6670,7 +6668,7 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				if (ret)
 					ath12k_warn(ar->ab, "Failed to set 6GHZ power mode\n");
 				else
-					ath12k_mac_send_pwr_mode_update(ar, wdev);
+					ath12k_mac_send_pwr_mode_update(ar, wdev, link_id);
 			}
 		} else {
 			ath12k_warn(ar->ab, "Set 6GHZ power mode/TPC not applicable\n");
@@ -8949,7 +8947,6 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 {
         struct ath12k_base *ab = ar->ab;
 	struct ath12k_vif *ahvif = arvif->ahvif;
-	struct ieee80211_vif *vif = ahvif->vif;
         struct ieee80211_bss_conf *bss_conf;
         struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
         struct ieee80211_channel *chan, *temp_chan;
@@ -8971,30 +8968,12 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 		return;
 	}
 
-       /* For STA, 6g power mode will be present in the beacon, but for AP,
-        * AP cant parse its own beacon. Hence, we get the 6g power mode
-        * from the wdev corresponding to the struct ieee80211_vif
-	*/
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
-		reg_6g_power_mode = bss_conf->power_type;
-		if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
-			reg_6g_power_mode = IEEE80211_REG_LPI_AP;
-		else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
-			 !ar->afc.is_6ghz_afc_power_event_received)
-			reg_6g_power_mode = NL80211_REG_REGULAR_CLIENT_SP + 1;
-
-	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
-		/* With respect to ieee80211, the 6G AP power mode starts from index
-		 * 1 while the power type stored in struct wireless_dev is based on
-		 * nl80211 power type indexing which starts from 0. Hence 1 is appended
-		 */
-		if (wdev)
-			reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
-		else
-			reg_6g_power_mode = 1;
-	} else
-		reg_6g_power_mode = 1;
+	reg_6g_power_mode = bss_conf->power_type;
+	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+	else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+		 !ar->afc.is_6ghz_afc_power_event_received)
+		reg_6g_power_mode = NL80211_REG_REGULAR_CLIENT_SP + 1;
 
         chan = ctx->def.chan;
         oper_freq = ctx->def.chan->center_freq;
@@ -9318,7 +9297,6 @@ void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 	s8 sta_max_eirp_arr[ATH12K_MAX_EIRP_VALS];
 	s8 ap_max_eirp_arr[ATH12K_MAX_EIRP_VALS];
 	struct ath12k_vif *ahvif = arvif->ahvif;
-	struct ieee80211_vif *vif = ahvif->vif;
 	struct ieee80211_bss_conf *bss_conf;
 	u32 cfreqs[ATH12K_MAX_EIRP_VALS];
 	u16 start_freq = 0, oper_freq = 0;
@@ -9337,30 +9315,12 @@ void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 		return;
 	}
 
-	/* For STA, 6g power mode will be present in the beacon, but for AP,
-	 * AP cant parse its own beacon. Hence, we get the 6g power mode
-	 * from the wdev corresponding to the struct ieee80211_vif
-	 */
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
-		reg_6g_power_mode = bss_conf->power_type;
-		if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
-			reg_6g_power_mode = IEEE80211_REG_LPI_AP;
-		else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
-			 !ar->afc.is_6ghz_afc_power_event_received)
-			reg_6g_power_mode = NL80211_REG_REGULAR_CLIENT_SP + 1;
-	} else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
-		/* With respect to ieee80211, the 6G AP power mode starts from index
-		 * 1 while the power type stored in struct wireless_dev is based on
-		 * nl80211 power type indexing which starts from 0. Hence 1 is appended
-		 */
-		if (wdev)
-			reg_6g_power_mode = wdev->reg_6g_power_mode + 1;
-		else
-			reg_6g_power_mode = 1;
-	} else {
-		reg_6g_power_mode = 1;
-	}
+	reg_6g_power_mode = bss_conf->power_type;
+	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
+		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
+	else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+		 !ar->afc.is_6ghz_afc_power_event_received)
+		reg_6g_power_mode = NL80211_REG_REGULAR_CLIENT_SP + 1;
 
 	start_freq = ath12k_mac_get_6g_start_frequency(&ctx->def);
 	oper_freq = ctx->def.chan->center_freq;
@@ -9393,9 +9353,9 @@ void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 	/* In case of a Non-AFC capable SP client, calculate the EIRP values
 	 * from regulatory client PSD
 	 */
-	if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+	if (bss_conf->power_type == IEEE80211_REG_SP_AP &&
 	    !ar->afc.is_6ghz_afc_power_event_received) {
-		ath12k_mac_get_client_power_for_connecting_ap(ar, ctx, reg_6g_power_mode,
+		ath12k_mac_get_client_power_for_connecting_ap(ar, ctx, IEEE80211_REG_SP_AP,
 							      sta_max_eirp_arr, start_freq,
 							      num_pwr_levels);
 	} else {
@@ -9441,8 +9401,6 @@ void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 				 struct ath12k_link_vif *arvif)
 {
-	struct ath12k_vif *ahvif = arvif->ahvif;
-	struct ieee80211_vif *vif = ahvif->vif;
 	struct ieee80211_bss_conf *bss_conf = ath12k_mac_get_link_bss_conf(arvif);
 	struct ath12k_reg_tpc_power_info *tpc_info = &arvif->reg_tpc_info;
 	struct ieee80211_parsed_tpe_eirp *local_non_psd, *reg_non_psd, *additional_non_psd;
@@ -9452,7 +9410,6 @@ void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 	struct ath12k_base *ab = ar->ab;
 	bool psd_valid, non_psd_valid;
 	int i;
-	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 	enum ieee80211_ap_reg_power root_ap_power_type = bss_conf->power_type;
 	bool is_afc_power_event_received = ar->afc.is_6ghz_afc_power_event_received;
 
@@ -9470,9 +9427,10 @@ void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 		return;
 	}
 
-	if (wdev)
-		client_type = wdev->reg_6g_power_mode;
-	else
+	client_type = WMI_REG_DEFAULT_CLIENT;
+	if (client_type == WMI_REG_SUBORDINATE_CLIENT &&
+	    bss_conf->power_type - 1 == NL80211_REG_AP_SP &&
+	    ar->ab->sp_rule)
 		client_type = WMI_REG_DEFAULT_CLIENT;
 
 	local_psd = &tpe->psd_local[client_type];
@@ -16344,12 +16302,31 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 				   const struct cfg80211_chan_def *chandef)
 {
 	struct ath12k *ar = arvif->ar;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_chanctx_conf *chanctx = &arvif->chanctx;
+	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
+	struct wireless_dev *wdev =ieee80211_vif_to_wdev(vif);
 	struct ath12k_base *ab = ar->ab;
 	unsigned int dfs_cac_time;
 	int ret;
 
 	if (ath12k_mac_is_bridge_vdev(arvif))
 		return 0;
+
+	if (ar->supports_6ghz && chandef->chan->band == NL80211_BAND_6GHZ &&
+            (ahvif->vdev_type == WMI_VDEV_TYPE_STA || ahvif->vdev_type == WMI_VDEV_TYPE_AP) &&
+            test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map)) {
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			ath12k_mac_parse_tx_pwr_env(ar, arvif);
+
+		if (!chanctx) {
+			ath12k_err(ar->ab, "channel context is NULL");
+			return -ENOLINK;
+		}
+
+		ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx);
+		ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id, &arvif->reg_tpc_info);
+	}
 
 	/* Enable CAC Running Flag in the driver by checking all sub-channel's DFS
 	 * state as NL80211_DFS_USABLE which indicates CAC needs to be
@@ -16435,10 +16412,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 			      bool restart)
 {
 	const struct cfg80211_chan_def* chandef=ctx ? &ctx->def : NULL;
-	struct ieee80211_chanctx_conf* chanctx=&arvif->chanctx;
 	struct ath12k_vif* ahvif=arvif->ahvif;
-	struct ieee80211_vif* vif=ath12k_ahvif_to_vif(ahvif);
-	struct wireless_dev* wdev=ieee80211_vif_to_wdev(vif);
 	struct ath12k* ar=arvif->ar;
 	struct ieee80211_hw* hw=ath12k_ar_to_hw(ar);
 	struct wmi_vdev_start_req_arg arg={};
@@ -16574,22 +16548,6 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 			    arg.vdev_id, restart ? "restart" : "start", ret);
 		return ret;
 	}
-
-	if (!is_bridge_vdev && ar->supports_6ghz &&
-            chandef->chan->band == NL80211_BAND_6GHZ &&
-            (ahvif->vdev_type == WMI_VDEV_TYPE_STA || ahvif->vdev_type == WMI_VDEV_TYPE_AP) &&
-            test_bit(WMI_TLV_SERVICE_EXT_TPC_REG_SUPPORT, ar->ab->wmi_ab.svc_map)) {
-		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
-			ath12k_mac_parse_tx_pwr_env(ar, arvif);
-
-		if (!chanctx) {
-			ath12k_err(ar->ab, "channel context is NULL");
-			return -ENOLINK;
-		}
-
-		ath12k_mac_fill_reg_tpc(ar, wdev, arvif, chanctx);
-		ath12k_wmi_send_vdev_set_tpc_power(ar, arvif->vdev_id, &arvif->reg_tpc_info);
-       }
 
 	ar->num_started_vdevs++;
 	ath12k_dbg(ab, ATH12K_DBG_MAC,  "vdev %pM started, vdev_id %d\n",
