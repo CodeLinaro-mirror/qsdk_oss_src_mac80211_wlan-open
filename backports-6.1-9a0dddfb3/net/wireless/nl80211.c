@@ -5143,6 +5143,10 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 	err = nl80211_parse_vif_radio_mask(info, &radio_mask);
 	if (err < 0)
 		return err;
+
+	if (radio_mask)
+		wdev->radio_mask = radio_mask;
+
 	if (err && netif_running(dev))
 		return -EBUSY;
 
@@ -5153,9 +5157,6 @@ static int nl80211_set_interface(struct sk_buff *skb, struct genl_info *info)
 
 	if (!err && params.use_4addr != -1)
 		dev->ieee80211_ptr->use_4addr = params.use_4addr;
-
-	if (radio_mask)
-		wdev->radio_mask = radio_mask;
 
 	if (change && !err)
 		nl80211_notify_iface(rdev, wdev, NL80211_CMD_SET_INTERFACE);
