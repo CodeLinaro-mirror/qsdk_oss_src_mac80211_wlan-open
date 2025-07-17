@@ -22023,15 +22023,14 @@ static int ath12k_process_scs_add(struct ath12k *ar,
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp_peer_qos *qos;
 	int ret = -EINVAL;
-	u8 qm_id, tid;
+	u8 qm_id;
 	u16 qos_id;
 
 	qos_attr = &qm_req->qos_attr;
-	tid = qos_attr->tid;
 	qm_id = qm_req->qm_id;
 
 	if (!qm_req->is_qos_present) {
-		qos_id = ath12k_qos_get_legacy_id(ar->ab, tid);
+		qos_id = ath12k_qos_get_legacy_id(ar->ab, qm_req->priority);
 	} else {
 		ath12k_qos_set_default(&params);
 		ath12k_copy_qos_params(&params, qos_attr);
@@ -22120,10 +22119,13 @@ int ath12k_process_scs_desc(struct ath12k *ar, u16 peer_id,
 			    u8 *addr)
 {
 	u8 request_type = qm_req_desc->request_type;
-	u8 dir = qm_req_desc->qos_attr.direction;
+	u8 dir = IEEE80211_QM_DIRECTION_DOWNLINK;
 	int status = IEEE80211_QM_REQ_SUCCESS;
 	enum qos_profile_dir qos_dir;
 	int ret;
+
+	if (qm_req_desc->is_qos_present)
+		dir = qm_req_desc->qos_attr.direction;
 
 	if (dir == IEEE80211_QM_DIRECTION_UPLINK) {
 		qos_dir = QOS_PROFILE_UL;
@@ -22136,11 +22138,6 @@ int ath12k_process_scs_desc(struct ath12k *ar, u16 peer_id,
 
 	switch (request_type) {
 	case IEEE80211_QM_ADD_REQ:
-		if (!qm_req_desc->is_qos_present &&
-		    dir == IEEE80211_QM_DIRECTION_UPLINK) {
-			ath12k_err(ar->ab, "Legacy SCS UL not supported");
-			return IEEE80211_QM_REQ_DECLINED;
-		}
 		ret = ath12k_process_scs_add(ar, peer_id, qos_dir,
 					     qm_req_desc, addr);
 
