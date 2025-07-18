@@ -37,6 +37,8 @@
 #include "cmn_defs.h"
 #include "spectral.h"
 #include "qos.h"
+#include "qcn_extns/ath12k_cmn_extn.h"
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
 #include <ppe_vp_public.h>
@@ -794,6 +796,9 @@ struct ath12k_vif {
 	enum wmi_vdev_type vdev_type;
 	struct ieee80211_vif *vif;
 	struct ath12k_hw *ah;
+
+	struct ath12k_vif_extn ath12k_vif_extn;
+
 	struct dentry *debugfs_rfs_core_mask;
 
 	union {
@@ -1963,6 +1968,8 @@ struct ath12k_base {
 	enum wide_band_cap wide_band;
 
 	const struct ieee80211_ops *ath12k_ops;
+
+	const struct ieee80211_ops_extn *ath12k_ops_extn;
 
 	/* To synchronize rhash tbl write operation */
 	struct mutex tbl_mtx_lock;

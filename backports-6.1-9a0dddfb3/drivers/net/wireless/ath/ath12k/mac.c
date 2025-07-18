@@ -5154,6 +5154,9 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	INIT_WORK(&arvif->wmi_migration_cmd_work,
 		  ath12k_wmi_migration_cmd_work);
 	INIT_LIST_HEAD(&arvif->peer_migrate_list);
+
+	ath12k_mac_init_arvif_extn(ahvif);
+
 	wiphy_work_init(&arvif->set_dscp_tid_work,
 			ath12k_set_dscp_tid_work);
 
@@ -21619,6 +21622,8 @@ ath12k_mac_setup_radio_iface_comb(struct ath12k *ar,
 					BIT(NL80211_CHAN_WIDTH_80) |
 					BIT(NL80211_CHAN_WIDTH_160);
 
+	ath12k_mac_setup_radio_iface_comb_extn(comb);
+
 	return 0;
 }
 
@@ -22794,6 +22799,8 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 
 	if (!hw)
 		return NULL;
+
+	ath12k_mac_hw_allocate_extn(hw, pdev_map[0].ab->ath12k_ops_extn);
 
 	ah = ath12k_hw_to_ah(hw);
 	ah->hw = hw;

@@ -14677,6 +14677,8 @@ static void ath12k_wmi_peer_migration_event(struct ath12k_base *ab,
 			}
 		}
 
+		ath12k_wmi_peer_migration_event_extn(arvif->ahvif);
+
 		ml_peer_id |= ATH12K_PEER_ML_ID_VALID;
 		peer = ath12k_dp_link_peer_find_by_ml_peer_vdev_id(ab->dp,
 								   ml_peer_id,

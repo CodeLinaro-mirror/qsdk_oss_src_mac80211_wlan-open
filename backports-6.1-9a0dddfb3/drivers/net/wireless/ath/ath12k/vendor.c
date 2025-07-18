@@ -9,6 +9,11 @@
 #include <net/mac80211.h>
 #include "core.h"
 #include "debug.h"
+#include <net/genetlink.h>
+#include <net/cfg80211.h>
+#include "../net/wireless/core.h"
+#include "qcn_extns/ath12k_cmn_extn.h"
+#include "qcn_extns/vendor_extn.h"
 #include "mac.h"
 #include "ppe.h"
 #include "vendor.h"
@@ -7283,6 +7288,18 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_DCS_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
+
+#ifdef CPTCFG_QCN_EXTN
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_240MHZ_INFO,
+		.doit = ath12k_vendor_get_sta_240mhz_info,
+		.policy = ath12k_240mhz_sta_info_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_240MHZ_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+#endif
+
 };
 
 static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
