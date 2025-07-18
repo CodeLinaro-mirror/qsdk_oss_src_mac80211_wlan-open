@@ -7,6 +7,7 @@
 #define _DP_MON_FILTER_H_
 
 #include "debug.h"
+#include "pktlog.h"
 /**
  * struct dp_mon_rx_filter - Monitor RX TLV filter
  * @tlv_filter: Rx ring TLV filter
@@ -21,6 +22,8 @@ enum dp_mon_filter_mode {
 	DP_MON_FILTER_STATS_MODE,
 	DP_MON_FILTER_MONITOR_MODE,
 	DP_MON_FILTER_NRP_MODE,
+	DP_MON_FILTER_PKTLOG_FULL_MODE,
+	DP_MON_FILTER_PKTLOG_LITE_MODE,
 	DP_MON_FILTER_MAX_MODE
 };
 

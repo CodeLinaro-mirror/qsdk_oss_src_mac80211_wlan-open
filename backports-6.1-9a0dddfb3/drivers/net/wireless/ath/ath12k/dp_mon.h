@@ -10,6 +10,7 @@
 #include "core.h"
 #include "dp_peer.h"
 #include "debug.h"
+#include "pktlog.h"
 
 #include "hal_mon_cmn.h"
 
@@ -96,6 +97,8 @@ struct ath12k_dp_arch_mon_ops {
 	void (*mon_rx_wmask)(void *ptr, struct htt_rx_ring_tlv_filter *tlv_filter);
 	void (*rx_enable_packet_filters)(void *ptr,
 						struct htt_rx_ring_tlv_filter *filter);
+	void (*pktlog_config)(struct ath12k_pdev_dp *dp_pdev,
+			      enum ath12k_pktlog_mode mode, bool enable);
 };
 
 struct ath12k_dp_mon {
@@ -301,6 +304,8 @@ void ath12k_dp_mon_rx_monitor_mode_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_monitor_mode_reset(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
+				enum ath12k_pktlog_mode mode, bool enable);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -569,5 +574,20 @@ ath12k_dp_mon_rx_config_packet_type_subtype(struct ath12k_dp *dp, void *ptr,
 
 	if (mon_ops && mon_ops->rx_enable_packet_filters)
 		mon_ops->rx_enable_packet_filters(ptr, tlv_filter);
+}
+
+static inline
+void ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
+				  enum ath12k_pktlog_mode mode)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if(mon_ops && mon_ops->pktlog_config)
+		mon_ops->pktlog_config(dp_pdev, mode, enable);
 }
 #endif

@@ -2036,27 +2036,29 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 					 HTT_RX_RING_SELECTION_CFG_RX_ATTENTION_OFFSET);
 	}
 
-	if (tlv_filter->rx_mpdu_start_wmask > 0 &&
-	    tlv_filter->rx_msdu_end_wmask > 0) {
-		cmd->info2 |=
-			le32_encode_bits(true,
-					 HTT_RX_RING_SELECTION_CFG_WORD_MASK_COMPACT_SET);
-		cmd->rx_mpdu_start_end_mask =
-			le32_encode_bits(tlv_filter->rx_mpdu_start_wmask,
-					 HTT_RX_RING_SELECTION_CFG_RX_MPDU_START_MASK);
-		/* mpdu_end is not used for any hardwares so far
-		 * please assign it in future if any chip is
-		 * using through hal ops
-		 */
-		cmd->rx_mpdu_start_end_mask |=
-			le32_encode_bits(tlv_filter->rx_mpdu_end_wmask,
-					 HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_MASK);
-		cmd->rx_msdu_end_word_mask =
-			le32_encode_bits(tlv_filter->rx_msdu_end_wmask,
-					 HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_MASK);
-	}
+	if (dp->rx_pktlog_mode == ATH12K_PKTLOG_DISABLED) {
+		if (tlv_filter->rx_mpdu_start_wmask > 0 &&
+		    tlv_filter->rx_msdu_end_wmask > 0) {
+			cmd->info2 |=
+				le32_encode_bits(true,
+						 HTT_RX_RING_SELECTION_CFG_WORD_MASK_COMPACT_SET);
+			cmd->rx_mpdu_start_end_mask =
+				le32_encode_bits(tlv_filter->rx_mpdu_start_wmask,
+						 HTT_RX_RING_SELECTION_CFG_RX_MPDU_START_MASK);
+			/* mpdu_end is not used for any hardwares so far
+			 * please assign it in future if any chip is
+			 * using through hal ops
+			 */
+			cmd->rx_mpdu_start_end_mask |=
+				le32_encode_bits(tlv_filter->rx_mpdu_end_wmask,
+						 HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_MASK);
+			cmd->rx_msdu_end_word_mask =
+				le32_encode_bits(tlv_filter->rx_msdu_end_wmask,
+						 HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_MASK);
+		}
 
-	ath12k_dp_mon_rx_config_wmask(dp, cmd, tlv_filter);
+		ath12k_dp_mon_rx_config_wmask(dp, cmd, tlv_filter);
+	}
 
 	ath12k_dp_mon_rx_config_packet_type_subtype(dp, cmd, tlv_filter);
 

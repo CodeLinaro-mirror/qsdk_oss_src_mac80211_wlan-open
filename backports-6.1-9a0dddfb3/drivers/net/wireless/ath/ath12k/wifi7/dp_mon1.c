@@ -41,6 +41,7 @@ struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_quad_ring_ops = {
 	.rx_nrp_reset = NULL,
 	.mon_rx_wmask = NULL,
 	.rx_enable_packet_filters = NULL,
+	.pktlog_config = NULL,
 };
 
 int ath12k_wifi7_dp_mon_rx_srng_setup(struct ath12k_dp *dp)

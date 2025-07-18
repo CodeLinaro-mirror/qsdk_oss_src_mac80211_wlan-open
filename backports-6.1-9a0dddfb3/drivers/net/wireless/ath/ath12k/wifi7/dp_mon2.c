@@ -40,6 +40,7 @@ const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_nrp_reset = ath12k_dp_mon_rx_nrp_reset,
 	.mon_rx_wmask = ath12k_dp_mon_rx_wmask_subscribe,
 	.rx_enable_packet_filters = ath12k_dp_mon_rx_enable_packet_filters,
+	.pktlog_config = ath12k_dp_mon_pktlog_config_filter,
 };
 
 static inline void

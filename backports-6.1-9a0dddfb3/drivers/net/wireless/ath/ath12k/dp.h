@@ -677,6 +677,7 @@ struct ath12k_dp {
 	/* HW link ID position in PPDU_ID */
 	u8 link_id_offset;
 	u8 link_id_bits;
+	u8 rx_pktlog_mode;
 };
 /* @brief target -> host extended statistics upload
  *

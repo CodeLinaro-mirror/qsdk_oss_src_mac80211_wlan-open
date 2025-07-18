@@ -979,6 +979,7 @@ struct ath12k_debug {
 	struct dentry *debugfs_pktlog;
 #endif
 	u32 pktlog_mode;
+	u32 pktlog_filter;
 	u32 pktlog_peer_valid;
 	u8 pktlog_peer_addr[ETH_ALEN];
 	struct dentry *debugfs_nrp;

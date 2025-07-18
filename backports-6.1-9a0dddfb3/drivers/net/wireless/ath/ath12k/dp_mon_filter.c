@@ -674,3 +674,136 @@ void ath12k_dp_mon_rx_enable_packet_filters(void *ptr,
 	cmd->pkt_type_en_data_flag3 = cpu_to_le32(word);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_enable_packet_filters);
+
+static void
+ath12k_dp_mon_rx_pktlog_cmn_status(struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	tlv_filter->enable_mo = 1;
+	tlv_filter->enable_fp = 1;
+	tlv_filter->offset_valid = false;
+	tlv_filter->fp_mgmt_filter = FILTER_MGMT_ALL;
+	tlv_filter->fp_ctrl_filter = FILTER_CTRL_ALL;
+	tlv_filter->fp_data_filter = FILTER_DATA_ALL;
+	tlv_filter->mo_mgmt_filter = FILTER_MGMT_ALL;
+	tlv_filter->mo_ctrl_filter = FILTER_CTRL_ALL;
+	tlv_filter->mo_data_filter = FILTER_DATA_ALL;
+}
+
+static void
+ath12k_dp_mon_rx_setup_pktlog_lite(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_rx_filter rx_filter = {0};
+	enum dp_mon_filter_mode mode = DP_MON_FILTER_PKTLOG_LITE_MODE;
+	enum dp_mon_filter_srng_type srng_type = DP_MON_FILTER_SRNG_TYPE_RXMON_DEST;
+	struct htt_rx_ring_tlv_filter *rx_tlv_filter = &rx_filter.rx_tlv_filter;
+
+	rx_filter.valid = true;
+	rx_tlv_filter->rx_filter = HTT_RX_FILTER_TLV_PKTLOG_LITE;
+	ath12k_dp_mon_rx_pktlog_cmn_status(rx_tlv_filter);
+
+	ath12k_dp_mon_rx_display_filters(dp, mode, &rx_filter);
+	dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
+}
+
+static void
+ath12k_dp_mon_rx_pktlog_reset(struct ath12k_pdev_dp *dp_pdev,
+			      enum dp_mon_filter_mode mode)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_rx_filter rx_filter = {0};
+	enum dp_mon_filter_srng_type srng_type = DP_MON_FILTER_SRNG_TYPE_RXMON_DEST;
+
+	ath12k_dp_mon_rx_display_filters(dp, mode, &rx_filter);
+	dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
+}
+
+static void
+ath12k_dp_mon_rx_setup_pktlog_full(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_rx_filter rx_filter = {0};
+	enum dp_mon_filter_mode mode = DP_MON_FILTER_PKTLOG_FULL_MODE;
+	enum dp_mon_filter_srng_type srng_type = DP_MON_FILTER_SRNG_TYPE_RXMON_DEST;
+	struct htt_rx_ring_tlv_filter *rx_tlv_filter = &rx_filter.rx_tlv_filter;
+
+	rx_filter.valid = true;
+	rx_tlv_filter->rx_filter = HTT_RX_FILTER_TLV_PKTLOG_FULL;
+	ath12k_dp_mon_rx_pktlog_cmn_status(rx_tlv_filter);
+
+	ath12k_dp_mon_rx_display_filters(dp, mode, &rx_filter);
+	dp_mon_pdev->rx_filter[mode][srng_type] = rx_filter;
+}
+
+void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					enum ath12k_pktlog_mode mode,
+					bool enable)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	int ret = 0;
+
+	if (enable) {
+		if (dp->rx_pktlog_mode == mode) {
+			ath12k_err(dp->ab, "This mode is already configured\n");
+			return;
+		}
+
+		switch (mode) {
+		case ATH12K_PKTLOG_MODE_LITE:
+			dp->rx_pktlog_mode = ATH12K_PKTLOG_MODE_LITE;
+			ret = ath12k_dp_tx_htt_h2t_ppdu_stats_req(dp_pdev->ar,
+						HTT_PPDU_STATS_TAG_PKTLOG);
+			if (ret)
+				ath12k_err(dp->ab,
+					   "failed to enable pktlog T2H: %d\n",
+					   ret);
+
+			ath12k_dp_mon_rx_setup_pktlog_lite(dp_pdev);
+			break;
+		case ATH12K_PKTLOG_MODE_FULL:
+			dp->rx_pktlog_mode = ATH12K_PKTLOG_MODE_FULL;
+
+			ath12k_dp_mon_rx_setup_pktlog_full(dp_pdev);
+			break;
+
+		default:
+			ath12k_err(dp->ab, "Please set a valid mode\n");
+			break;
+		}
+	} else {
+		switch (mode) {
+		case ATH12K_PKTLOG_MODE_LITE:
+			ath12k_dp_mon_rx_pktlog_reset(dp_pdev,
+					      DP_MON_FILTER_PKTLOG_LITE_MODE);
+			break;
+		case ATH12K_PKTLOG_MODE_FULL:
+			ath12k_dp_mon_rx_pktlog_reset(dp_pdev,
+					      DP_MON_FILTER_PKTLOG_FULL_MODE);
+			break;
+		case ATH12K_PKTLOG_DISABLED:
+			if (dp->rx_pktlog_mode == ATH12K_PKTLOG_DISABLED)
+				return;
+
+			ret = ath12k_dp_tx_htt_h2t_ppdu_stats_req(dp_pdev->ar,
+						HTT_PPDU_STATS_TAG_DEFAULT);
+			if (ret)
+				ath12k_err(dp->ab,
+				   "failed to reset htt ppdu stats: %d\n",ret);
+
+			ath12k_dp_mon_rx_pktlog_reset(dp_pdev,
+					      DP_MON_FILTER_PKTLOG_LITE_MODE);
+			ath12k_dp_mon_rx_pktlog_reset(dp_pdev,
+					      DP_MON_FILTER_PKTLOG_FULL_MODE);
+			dp->rx_pktlog_mode = ATH12K_PKTLOG_DISABLED;
+			break;
+
+		default:
+			ath12k_err(dp->ab, "Please set a valid mode\n");
+			break;
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_pktlog_config_filter);

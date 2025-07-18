@@ -23,6 +23,7 @@
 #include "dp_mon.h"
 #include "dp_mon_filter.h"
 #include "dp_cmn.h"
+#include "pktlog.h"
 
 #define SEGMENT_ID	GENMASK(1,0)
 #define CHRIP_ID	BIT(2)
@@ -5118,6 +5119,143 @@ static const struct file_operations fops_configure_afc_grace_timer = {
 	.open = simple_open
 };
 
+/**
+ * ath12k_write_pktlog_filter() - This function is responsible for setting
+ * the pktlog mode and htt tlv filter for different pktlog flavors.
+ *
+ * User needs to pass the combination of at least one mode and one filter
+ * while configuring pktlog, such as:
+ * {rx, full}/ {rx,lite}/ {tx,rx,lite}/ {tx,rx,lite,rcu,rcf} etc.
+ *
+ * pktlog modes:
+ * Full: Pktlog full version can be used to capture all PPDU and MPDU TLVs
+ * Lite: Pktlog lite is a lighter version of pktlog, which captures mostly
+ *       PPDU TLVs and MPDU START TLV.
+ *
+ * pktlog filters: Rx/ Tx/ RCU/ RCF/ Hybrid
+ *
+ * EX:
+ * 1. pktlog full rx:
+ * echo "rx, full" > /sys/kernel/debug/ath12k/<HW>/mac0/pktlog_filter
+ * 2. pktlog lite tx/rx:
+ * echo "lite" > /sys/kernel/debug/ath12k/<HW>/mac0/pktlog_filter
+ * 3. pktlog lite tx/rx/rcu/rcf:
+ * echo "lite,rcu,rcf" > /sys/kernel/debug/ath12k/<HW>/mac0/pktlog_filter
+ *
+ * To reset pktlog filters and mode:
+ * echo "reset" > /sys/kernel/debug/ath12k/<HW>/mac0/pktlog_filter
+ */
+static ssize_t ath12k_write_pktlog_filter(struct file *file,
+                                          const char __user *ubuf,
+                                          size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_base *ab = ar->ab;
+	enum ath12k_pktlog_mode mode = ATH12K_PKTLOG_MODE_INVALID;
+	u32 filter = 0;
+	u8 buf[128] = {0};
+	int ret = 0;
+	ssize_t rc;
+	bool enable = true;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	rc = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, ubuf, count);
+	if (rc < 0) {
+		ret = rc;
+		goto exit;
+	}
+	buf[rc] = '\0';
+
+	if (strstr(buf, "reset")) {
+		mode = ATH12K_PKTLOG_DISABLED;
+		enable = false;
+	} else if (strstr(buf, "full")) {
+		mode = ATH12K_PKTLOG_MODE_FULL;
+		if (strstr(buf, "tx"))
+			filter |= ATH12K_PKTLOG_TX;
+		if (strstr(buf, "rx"))
+			filter |= ATH12K_PKTLOG_RX;
+	} else if (strstr(buf, "lite"))
+		mode = ATH12K_PKTLOG_MODE_LITE;
+	else {
+		ath12k_err(ab, "Invalid mode: %d", mode);
+		goto exit;
+	}
+
+	if (enable) {
+		if (strstr(buf, "rcf"))
+			filter |= ATH12K_PKTLOG_RCFIND;
+		if (strstr(buf, "rcu"))
+			filter |= ATH12K_PKTLOG_RCUPDATE;
+		if (strstr(buf, "hybrid"))
+			filter |= ATH12K_PKTLOG_HYBRID;
+		if (strstr(buf, "phy"))
+			filter |= ATH12K_PKTLOG_PHY_LOGGING;
+
+		if ((filter & ATH12K_PKTLOG_RX) &&
+		    (filter & ATH12K_PKTLOG_HYBRID)) {
+			ret = -EINVAL;
+			ath12k_err(ab, "Invalid config. Hybrid mode is allowed"
+				   " only when tx or lite pktlog is used");
+			goto exit;
+		}
+	}
+
+	ath12k_dp_mon_pktlog_config(ar, enable, mode);
+	ret = ath12k_dp_mon_rx_update_filter(ar);
+	if (ret) {
+		ath12k_err(ab, "Failed to configure pktlog filters\n");
+		ath12k_dp_mon_pktlog_config(ar, false, mode);
+		goto exit;
+	}
+
+	ar->debug.pktlog_filter = filter;
+	ar->debug.pktlog_mode = mode;
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "pktlog filter %d mode %s\n",
+		   filter, ((mode == ATH12K_PKTLOG_MODE_FULL) ? "full" :
+			    (mode == ATH12K_PKTLOG_MODE_LITE) ? "lite" :
+			    "disabled"));
+	ret = count;
+exit:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return ret;
+}
+
+static ssize_t ath12k_read_pktlog_filter(struct file *file,
+                                         char __user *ubuf,
+                                         size_t count, loff_t *ppos)
+
+{
+        u8 buf[32] = {0};
+        struct ath12k *ar = file->private_data;
+        int len = 0;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		return -ENETDOWN;
+	}
+
+        len = scnprintf(buf, sizeof(buf) - len, "%08x %08x\n",
+                        ar->debug.pktlog_filter,
+                        ar->debug.pktlog_mode);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+        return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_pktlog_filter = {
+        .read = ath12k_read_pktlog_filter,
+        .write = ath12k_write_pktlog_filter,
+        .open = simple_open
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -5228,6 +5366,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_enable_dp_debug_stats);
 
+	debugfs_create_file("pktlog_filter", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_pktlog_filter);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		debugfs_create_file("ppeds_stats", 0600, ab->debugfs_soc, ab,

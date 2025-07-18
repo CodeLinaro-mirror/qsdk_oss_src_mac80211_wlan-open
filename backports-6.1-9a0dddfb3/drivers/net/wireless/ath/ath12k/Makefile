@@ -49,6 +49,7 @@ ath12k-$(CONFIG_PM) += wow.o
 ath12k-$(CPTCFG_NL80211_TESTMODE) += testmode.o
 ath12k-$(CPTCFG_ATH12K_SPECTRAL) += spectral.o
 ath12k-$(CPTCFG_WANT_DEV_COREDUMP) += coredump.o
+ath12k-$(CPTCFG_ATH12K_PKTLOG) += pktlog.o
 ath12k-$(CONFIG_THERMAL) += thermal.o
 ath12k-$(CPTCFG_ATH12K_CFR) += cfr.o
 
