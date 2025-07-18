@@ -14,6 +14,7 @@
 #include "ce.h"
 #include "../hw.h"
 #include "hw.h"
+#include "../qcn_extns/ath12k_cmn_extn.h"
 #include "../mhi.h"
 #include "mhi.h"
 #include "dp_rx.h"
@@ -1794,6 +1795,8 @@ int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 		ab->hw_params = hw_params;
 	}
 	ab->ath12k_ops = &ath12k_ops_wifi7;
+
+	ath12k_wifi7_hw_init_extn(ab);
 
 	ath12k_info(ab, "WiFi7 Hardware name: %s\n", ab->hw_params->name);
 
