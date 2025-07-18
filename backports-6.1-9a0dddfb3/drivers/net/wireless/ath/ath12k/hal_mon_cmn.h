@@ -247,11 +247,14 @@ struct hal_mon_ops {
 	u32 (*get_mon_msdu_end_wmask)(void);
 	u32 (*get_mon_ppdu_end_usr_stats_wmask)(void);
 	void (*rx_mpdu_start_info_get)(const void *tlv_data, u32 userid,
-				       struct hal_rx_mon_ppdu_info *info);
+				       struct hal_rx_mon_ppdu_info *info,
+				       u32 tlv_len);
 	void (*rx_msdu_end_info_get)(const void *tlv_data, u32 userid,
-				     struct hal_rx_mon_ppdu_info *info);
+				     struct hal_rx_mon_ppdu_info *info,
+				     u32 tlv_len);
 	void (*rx_ppdu_eu_stats_info_get)(const void *tlv_data, u32 userid,
-					  struct hal_rx_mon_ppdu_info *info);
+					  struct hal_rx_mon_ppdu_info *info,
+					  u32 tlv_len);
 };
 
 static inline enum hal_tx_mon_status
@@ -312,30 +315,42 @@ static inline
 void ath12k_hal_mon_rx_mpdu_start_info_get(struct ath12k_hal *hal,
 					   const void *tlv,
 					   u32 userid,
-					   struct hal_rx_mon_ppdu_info *info)
+					   struct hal_rx_mon_ppdu_info *info,
+					   u32 tlv_len)
 {
 	if (hal->hal_mon_ops->rx_mpdu_start_info_get)
-		hal->hal_mon_ops->rx_mpdu_start_info_get(tlv, userid, info);
+		hal->hal_mon_ops->rx_mpdu_start_info_get(tlv,
+							 userid,
+							 info,
+							 tlv_len);
 }
 
 static inline void
 ath12k_hal_mon_rx_msdu_end_info_get(struct ath12k_hal *hal,
 				    const void *tlv,
 				    u32 userid,
-				    struct hal_rx_mon_ppdu_info *info)
+				    struct hal_rx_mon_ppdu_info *info,
+				    u32 tlv_len)
 {
 	if (hal->hal_mon_ops->rx_msdu_end_info_get)
-		hal->hal_mon_ops->rx_msdu_end_info_get(tlv, userid, info);
+		hal->hal_mon_ops->rx_msdu_end_info_get(tlv,
+						       userid,
+						       info,
+						       tlv_len);
 }
 
 static inline void
 ath12k_hal_mon_rx_ppdu_end_usr_stats_info_get(struct ath12k_hal *hal,
 					      const void *tlv,
 					      u32 userid,
-					      struct hal_rx_mon_ppdu_info *info)
+					      struct hal_rx_mon_ppdu_info *info,
+					      u32 tlv_len)
 {
 	if (hal->hal_mon_ops->rx_ppdu_eu_stats_info_get)
-		hal->hal_mon_ops->rx_ppdu_eu_stats_info_get(tlv, userid, info);
+		hal->hal_mon_ops->rx_ppdu_eu_stats_info_get(tlv,
+							    userid,
+							    info,
+							    tlv_len);
 }
 
 #endif

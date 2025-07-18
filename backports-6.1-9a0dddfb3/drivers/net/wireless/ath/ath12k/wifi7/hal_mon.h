@@ -9,7 +9,14 @@
 #ifndef HAL_MON_H
 #define HAL_MON_H
 
+
 #define RX_MON_MPDU_END_WMASK	0xff
+#define HAL_MON_RX_MPDU_START_TLV_SIZE		\
+	sizeof(struct hal_rx_mpdu_start)
+#define HAL_MON_RX_MSDU_END_TLV_SIZE		\
+	sizeof(struct hal_rx_msdu_end)
+#define HAL_MON_RX_PPDU_EU_STATS_TLV_SIZE	\
+	sizeof(struct hal_rx_ppdu_end_user_stats)
 
 #define HAL_RX_PPDU_START_INFO0_PPDU_ID			GENMASK(15, 0)
 #define HAL_RX_PPDU_START_INFO1_CHAN_NUM		GENMASK(15, 0)
@@ -824,13 +831,6 @@ ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
 		*errmap |= HAL_RX_MPDU_ERR_MPDU_LEN;
 }
 
-static __always_inline void
-ath12k_wifi7_hal_mon_get_nrp_mac_addr(u16 addr_l16, u32 addr_h32, u8 *addr)
-{
-	memcpy(addr, &addr_l16, 2);
-	memcpy(addr + 2, &addr_h32, ETH_ALEN - 2);
-}
-
 enum hal_rx_mon_status
 ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -847,13 +847,15 @@ u32 ath12k_wifi7_hal_mon_rx_mpdu_end_wmask_get(void);
 u32 ath12k_wifi7_hal_mon_rx_msdu_end_wmask_get(void);
 u32 ath12k_wifi7_hal_mon_rx_ppdu_end_usr_stats_wmask_get(void);
 void
-ath12k_wifi7_hal_mon_rx_mpdu_start_info_get_compact(const void *tlv_data, u32 userid,
-						    struct hal_rx_mon_ppdu_info *ppdu_info);
+ath12k_wifi7_hal_mon_rx_mpdu_start_info_parse(const void *tlv_data, u32 userid,
+					      struct hal_rx_mon_ppdu_info *ppdu_info,
+					      u32 tlv_len);
 void
-ath12k_wifi7_hal_mon_rx_msdu_end_info_get_compact(const void *tlv_data, u32 userid,
-						  struct hal_rx_mon_ppdu_info *ppdu_info);
+ath12k_wifi7_hal_mon_rx_msdu_end_info_parse(const void *tlv_data, u32 userid,
+					    struct hal_rx_mon_ppdu_info *ppdu_info,
+					    u32 tlv_len);
 void
-ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_compact(const void *tlv_data, u32 userid,
-						       struct hal_rx_mon_ppdu_info *ppdu_info);
-
+ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse(const void *tlv_data, u32 userid,
+						 struct hal_rx_mon_ppdu_info *ppdu_info,
+						 u32 tlv_len);
 #endif
