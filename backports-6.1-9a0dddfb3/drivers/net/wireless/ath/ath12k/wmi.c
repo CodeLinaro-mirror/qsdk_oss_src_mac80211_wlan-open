@@ -7991,9 +7991,7 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 	u32 total_reg_rules = 0;
 	int ret, i, j, skip_6g_rules_in_5g_rules = 0;
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI,
-                   "%s: status_code %s", __func__,
-                   ath12k_cc_status_to_str(reg_info->status_code));
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "processing regulatory ext channel list\n");
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
@@ -8095,21 +8093,6 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 		}
 	}
 
-	if (!total_reg_rules) {
-		ath12k_warn(ab, "No reg rules available\n");
-		kfree(tb);
-		return -EINVAL;
-	}
-
-	memcpy(reg_info->alpha2, &ev->alpha2, REG_ALPHA2_LEN);
-
-	reg_info->dfs_region = le32_to_cpu(ev->dfs_region);
-	reg_info->phybitmap = le32_to_cpu(ev->phybitmap);
-	reg_info->num_phy = le32_to_cpu(ev->num_phy);
-	reg_info->phy_id = le32_to_cpu(ev->phy_id);
-	reg_info->ctry_code = le32_to_cpu(ev->country_id);
-	reg_info->reg_dmn_pair = le32_to_cpu(ev->domain_code);
-
 	switch (le32_to_cpu(ev->status_code)) {
 	case WMI_REG_SET_CC_STATUS_PASS:
 		reg_info->status_code = REG_SET_CC_STATUS_PASS;
@@ -8130,6 +8113,31 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 		reg_info->status_code = REG_SET_CC_STATUS_FAIL;
 		break;
 	}
+
+	if (reg_info->status_code != REG_SET_CC_STATUS_PASS)
+		ath12k_warn(ab, "reg chan list ext event failed status %d: %s\n",
+			    reg_info->status_code,
+			    ath12k_cc_status_to_str(reg_info->status_code));
+
+	if (!total_reg_rules) {
+		ath12k_warn(ab, "No reg rules available, dfs %d, ctry %d domain %d\n",
+			    ev->dfs_region, ev->country_id, ev->domain_code);
+		/* reset dfs_region to UNSET for invalid country setting */
+		spin_lock_bh(&ab->base_lock);
+		ab->dfs_region = ATH12K_DFS_REG_UNSET;
+		spin_unlock_bh(&ab->base_lock);
+		kfree(tb);
+		return -EINVAL;
+	}
+
+	memcpy(reg_info->alpha2, &ev->alpha2, REG_ALPHA2_LEN);
+
+	reg_info->dfs_region = le32_to_cpu(ev->dfs_region);
+	reg_info->phybitmap = le32_to_cpu(ev->phybitmap);
+	reg_info->num_phy = le32_to_cpu(ev->num_phy);
+	reg_info->phy_id = le32_to_cpu(ev->phy_id);
+	reg_info->ctry_code = le32_to_cpu(ev->country_id);
+	reg_info->reg_dmn_pair = le32_to_cpu(ev->domain_code);
 
 	reg_info->is_ext_reg_event = true;
 
@@ -9447,7 +9455,7 @@ static int ath12k_reg_handle_chan_list(struct ath12k_base *ab,
 		spin_unlock_bh(&ar->data_lock);
 	}
 
-	spin_lock(&ab->base_lock);
+	spin_lock_bh(&ab->base_lock);
 	if (test_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags)) {
 		/* Once mac is registered, ar is valid and all CC events from
 		 * fw is considered to be received due to user requests
@@ -9472,7 +9480,7 @@ static int ath12k_reg_handle_chan_list(struct ath12k_base *ab,
 
 	ab->regd_freed = false;
 	ab->dfs_region = reg_info->dfs_region;
-	spin_unlock(&ab->base_lock);
+	spin_unlock_bh(&ab->base_lock);
 
 	return 0;
 
