@@ -91,10 +91,10 @@ ath12k_wifi7_hal_mon_msdu_end_info_get_wcn7850(const void *tlv_data, u32 userid,
 	info[2] = __le32_to_cpu(msdu_end->info2);
 
 	ppdu_info->grp_id = u32_get_bits(info[0],
-					 RX_MSDU_END_INFO0_SW_FRAME_GRP_ID);
+					 HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID);
 
 	ppdu_info->decap_format = u32_get_bits(info[1],
-					       RX_MSDU_END_INFO11_DECAP_FORMAT);
+					       HAL_RX_MSDU_END_INFO1_DECAP_FORMAT);
 	ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(info[2],
 						   &ppdu_info->errmap);
 }
@@ -205,7 +205,7 @@ ath12k_wifi7_hal_mon_ppdu_eu_stats_info_get_wcn7850(const void *tlv_data, u32 us
 								 rxuser_stats);
 		rxuser_stats->retried_msdu_count =
 			u32_get_bits(info[10],
-				     PPDU_END_USER_STATS_SELECT_INFO10_MSDU_RETRY_COUNT);
+				     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT);
 	}
 }
 

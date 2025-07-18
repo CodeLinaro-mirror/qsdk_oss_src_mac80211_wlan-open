@@ -58,6 +58,10 @@ struct hal_rx_ppdu_start {
 #define HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT        GENMASK(31, 16)
 #define HAL_RX_PPDU_END_USER_STATS_INFO11_MPDU_RETRY_CNT        GENMASK(28, 18)
 
+/* The below hal_rx_ppdu_end_user_stats structure is non-compact
+ * structure for PPDU END USER STATS TLV.
+ * Only WCN chipset is using non-compact tlv structures.
+ */
 struct hal_rx_ppdu_end_user_stats {
 	__le32 rsvd0;
 	__le32 info0;
@@ -79,6 +83,7 @@ struct hal_rx_ppdu_end_user_stats {
 	__le32 rsvd4;
 	__le32 usr_resp_ref_ext;
 	__le32 info11;
+	__le32 rsvd5[6];
 } __packed;
 
 struct hal_rx_ppdu_end_user_stats_ext {
@@ -430,6 +435,10 @@ struct hal_rx_phyrx_rssi_legacy_info {
 #define HAL_RX_MPDU_START_INFO7_ADDR2_15_0		GENMASK(31, 16)
 #define HAL_RX_MPDU_START_INFO8_ADDR2_47_16		GENMASK(31, 0)
 
+/* The below hal_rx_mpdu_start structure is non-compact
+ * structure for MPDU START TLV.
+ * Only WCN chipset is using non-compact tlv structures.
+ */
 struct hal_rx_mpdu_start {
 	__le32 rsvd0[7];
 	__le32 info0;
@@ -450,12 +459,16 @@ struct hal_rx_mpdu_start {
 	__le32 rsvd3[8];
 } __packed;
 
+#define HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID			GENMASK(8, 2)
+#define HAL_RX_MSDU_END_INFO1_DECAP_FORMAT			GENMASK(9, 8)
+
+/* The below hal_rx_msdu_end structure is non-compact
+ * structure for MSDU END TLV.
+ * Only WCN chipset is using non-compact tlv structures.
+ */
 struct hal_rx_msdu_end {
 	__le32 info0;
-	__le32 rsvd0[9];
-	__le16 info00;
-	__le16 info01;
-	__le32 rsvd00[8];
+	__le32 rsvd0[18];
 	__le32 info1;
 	__le32 rsvd1[10];
 	__le32 info2;
@@ -629,9 +642,28 @@ struct hal_tx_phy_desc {
 		 MPDU_START_SELECT_INFO9_INF010 |                     \
 		 MPDU_START_SELECT_INF011_INFO12)
 
+#define HAL_RX_MPDU_START_INFO0_ENCYRPT_TYP_CMPCT		GENMASK(5, 2)
+#define HAL_RX_MPDU_START_INFO1_FILTER_CAT_CMPCT		GENMASK(1, 0)
+#define HAL_RX_MPDU_START_INFO1_SW_GRP_ID_CMPCT			GENMASK(8, 2)
+#define HAL_RX_MPDU_START_INFO1_PPDU_ID_CMPCT			GENMASK(31, 16)
+#define HAL_RX_MPDU_START_INFO2_PEERID_CMPCT			GENMASK(29, 16)
+#define HAL_RX_MPDU_START_INFO2_DEVICE_ID_CMPCT			GENMASK(31, 30)
+#define HAL_RX_MPDU_START_INFO3_FC_VALID_CMPCT			BIT(0)
+#define HAL_RX_MPDU_START_INFO3_ADDR2_VALID_CMPCT		BIT(3)
+#define HAL_RX_MPDU_START_INFO3_TO_DS_CMPCT			BIT(17)
+#define HAL_RX_MPDU_START_INFO3_MPDU_RETRY_CMPCT		BIT(19)
+#define HAL_RX_MPDU_START_INFO4_DECAP_TYPE_CMPCT		GENMASK(11, 10)
+#define HAL_RX_MPDU_START_INFO5_MPDU_LEN_CMPCT			GENMASK(13, 0)
+#define HAL_RX_MPDU_START_INFO5_MCAST_BCAST_CMPCT		BIT(15)
+#define HAL_RX_MPDU_START_INFO6_FC_FIELD_CMPCT			GENMASK(15, 0)
+#define HAL_RX_MPDU_START_INFO7_ADDR2_15_0_CMPCT		GENMASK(31, 16)
+#define HAL_RX_MPDU_START_INFO8_ADDR2_47_16_CMPCT		GENMASK(31, 0)
+
 /* The below hal_rx_mon_mpdu_start_compact structure is tied with the mask value
  * RX_MON_MPDU_START_WMASK. If the mask value changes the structure will also
  * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact staructure as they share same
+ * mpdu start wmask.
  */
 struct hal_rx_mon_mpdu_start_compact {
 	__le32 rsvd0;
@@ -661,9 +693,14 @@ struct hal_rx_mon_mpdu_start_compact {
 		 MSDU_END_SELECT_INFO1_DECAP_FORMAT |          \
 		 MSDU_END_SELECT_INFO2_ERR_MAP)
 
+#define HAL_RX_MSDU_END_INFO0_SW_FRAME_GRP_ID_CMPCT		GENMASK(8, 2)
+#define HAL_RX_MSDU_END_INFO1_DECAP_FORMAT_CMPCT		GENMASK(9, 8)
+
 /* The below hal_rx_mon_msdu_end_compact structure is tied with the mask value
  * RX_MON_MSDU_END_WMASK. If the mask value changes the structure will also
  * change.
+ * ipq5424/5332, qcn6432/9274 uses common compact staructure as they share same
+ * msdu end wmask.
  */
 struct hal_rx_mon_msdu_end_compact {
 	__le32 info0;
@@ -698,9 +735,46 @@ struct hal_rx_mon_msdu_end_compact {
 		 PPDU_END_USER_STATS_SELECT_INFO10_MSDU_RETRY_COUNT |\
 		 PPDU_END_USER_STATS_SELECT_USR_RESP_REF_EXT_INFO11)
 
+#define HAL_RX_PPDU_END_USER_STATS_INFO0_MCS_CMPCT			GENMASK(16, 13)
+#define HAL_RX_PPDU_END_USER_STATS_INFO0_NSS_CMPCT			GENMASK(19, 17)
+
+#define HAL_RX_PPDU_END_USER_STATS_INFO1_PEER_ID_CMPCT			GENMASK(13, 0)
+#define HAL_RX_PPDU_END_USER_STATS_INFO1_DEVICE_ID_CMPCT		GENMASK(15, 14)
+#define HAL_RX_PPDU_END_USER_STATS_INFO1_MPDU_CNT_FCS_ERR_CMPCT		GENMASK(26, 16)
+
+#define HAL_RX_PPDU_END_USER_STATS_INFO2_MPDU_CNT_FCS_OK_CMPCT		GENMASK(10, 0)
+#define HAL_RX_PPDU_END_USER_STATS_INFO2_FC_VALID_CMPCT			BIT(11)
+#define HAL_RX_PPDU_END_USER_STATS_INFO2_QOS_CTRL_VALID_CMPCT		BIT(12)
+#define HAL_RX_PPDU_END_USER_STATS_INFO2_HT_CTRL_VALID_CMPCT		BIT(13)
+#define HAL_RX_PPDU_END_USER_STATS_INFO2_SEQ_CTRL_VALID_CMPCT		BIT(14)
+#define HAL_RX_PPDU_END_USER_STATS_INFO2_PKT_TYPE_CMPCT			GENMASK(24, 21)
+
+#define HAL_RX_PPDU_END_USER_STATS_INFO3_AST_INDEX_CMPCT		GENMASK(15, 0)
+#define HAL_RX_PPDU_END_USER_STATS_INFO3_FRAME_CTRL_CMPCT		GENMASK(31, 16)
+
+#define HAL_RX_PPDU_END_USER_STATS_INFO4_SEQ_CTRL_CMPCT			GENMASK(15, 0)
+#define HAL_RX_PPDU_END_USER_STATS_INFO4_QOS_CTRL_CMPCT			GENMASK(31, 16)
+
+#define HAL_RX_PPDU_END_USER_STATS_INFO5_UDP_MSDU_CNT_CMPCT		GENMASK(15, 0)
+#define HAL_RX_PPDU_END_USER_STATS_INFO5_TCP_MSDU_CNT_CMPCT		GENMASK(31, 16)
+
+#define HAL_RX_PPDU_END_USER_STATS_INFO6_OTHER_MSDU_CNT_CMPCT		GENMASK(15, 0)
+#define HAL_RX_PPDU_END_USER_STATS_INFO6_TCP_ACK_MSDU_CNT_CMPCT		GENMASK(31, 16)
+
+#define HAL_RX_PPDU_END_USER_STATS_INFO7_TID_BITMAP_CMPCT		GENMASK(15, 0)
+#define HAL_RX_PPDU_END_USER_STATS_INFO7_TID_EOSP_BITMAP_CMPCT		GENMASK(31, 16)
+
+#define HAL_RX_PPDU_END_USER_STATS_INFO8_MPDU_OK_BYTE_CNT_CMPCT		GENMASK(24, 0)
+#define HAL_RX_PPDU_END_USER_STATS_INFO9_MPDU_ERR_BYTE_CNT_CMPCT	GENMASK(24, 0)
+
+#define HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT_CMPCT		GENMASK(31, 16)
+#define HAL_RX_PPDU_END_USER_STATS_INFO11_MPDU_RETRY_CNT_CMPCT		GENMASK(28, 18)
+
 /* The below hal_rx_mon_ppdu_end_user_stats_compact structure is tied
  * with the mask value RX_MON_PPDU_END_USER_STATS_WMASK.
  * If the mask value changes the structure will also change.
+ * ipq5424/5332, qcn6432 uses common compact staructure as they share same
+ * wmask and qcn9274 uses hal_rx_mon_ppdu_end_user_stats_compact_qcn9274
  */
 struct hal_rx_mon_ppdu_end_user_stats_compact {
 	__le32 rsvd0;
