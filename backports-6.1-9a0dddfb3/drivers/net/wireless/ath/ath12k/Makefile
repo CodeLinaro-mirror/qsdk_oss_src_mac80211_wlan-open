@@ -46,6 +46,10 @@ ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o
 obj-$(CPTCFG_ATH12K) += wifi7/
 obj-$(CPTCFG_ATHDEBUG) += ath_debug/
 
+ath12k-$(CPTCFG_QCN_EXTN) += \
+	qcn_extns/core_extn.o \
+	qcn_extns/vendor_extn.o
+
 ath12k-$(CPTCFG_ATH12K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o
 ath12k-$(CONFIG_ACPI) += acpi.o
 ath12k-$(CPTCFG_ATH12K_TRACING) += trace.o

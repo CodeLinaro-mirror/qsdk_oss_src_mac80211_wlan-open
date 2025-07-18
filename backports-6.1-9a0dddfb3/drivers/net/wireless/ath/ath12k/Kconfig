@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause-Clear
+config BACKPORT_DIR
+	string
+	option env="BACKPORT_DIR"
+
 config ATH12K
 	tristate "Qualcomm Technologies Wi-Fi 7 support (ath12k)"
 	depends on m
@@ -132,6 +136,8 @@ config ATH12K_PPE_DS_SUPPORT
 		Enable ath12k PPE-DS support
 
 		Say Y to enable PPE DS Support. If unsure, say N.
+
+source "$BACKPORT_DIR/drivers/net/wireless/ath/ath12k/qcn_extns/Kconfig"
 
 config ATHDEBUG
 	bool "ath12k debugging module"
