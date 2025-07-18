@@ -2084,6 +2084,28 @@ static ssize_t ath12k_write_enable_dp_stats(struct file *file,
 	struct ath12k_hw *ah = ar->ah;
 	bool enable;
 	int i = 0;
+	char buf[20] = {0};
+	int ret;
+	struct ath12k_dp_peer *dp_peer;
+
+	if (count > 19)
+		return -EFAULT;
+
+	ret = copy_from_user(buf, ubuf, count);
+	if (ret)
+		return -EFAULT;
+
+	buf[count] = '\0';
+
+	if (strstr(buf, "reset")) {
+		spin_lock_bh(&ar->dp.dp_hw->peer_lock);
+		list_for_each_entry(dp_peer, &ar->dp.dp_hw->peers, list) {
+			if (dp_peer)
+				memset(&dp_peer->stats, 0, sizeof(dp_peer->stats));
+		}
+		spin_unlock_bh(&ar->dp.dp_hw->peer_lock);
+		return count;
+	}
 
 	if (kstrtobool_from_user(ubuf, count, &enable))
 		return -EINVAL;
@@ -2599,6 +2621,41 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_debugfs_op_vif_add);
 
+static ssize_t ath12k_write_mld_stats(struct file *file,
+				      const char __user *ubuf,
+				      size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	struct ath12k_dp_vif *dp_vif;
+	char buf[20] = {0};
+	ssize_t ret = -EINVAL;
+
+	if (count > 19)
+		return -EFAULT;
+
+	ret = copy_from_user(buf, ubuf, count);
+	if (ret)
+		return -EFAULT;
+	buf[count] = '\0';
+
+	if (!ahvif)
+		return -EINVAL;
+
+	wiphy_lock(ahvif->ah->hw->wiphy);
+
+	dp_vif = &ahvif->dp_vif;
+	if (!dp_vif)
+		goto out;
+
+	if (strstr(buf, "reset")) {
+		memset(&dp_vif->stats, 0, sizeof(dp_vif->stats));
+		ret = count;
+	}
+out:
+	wiphy_unlock(ahvif->ah->hw->wiphy);
+	return ret;
+}
+
 static ssize_t ath12k_read_mld_stats(struct file *file,
 				    char __user *user_buf,
 				    size_t count, loff_t *ppos)
@@ -2711,6 +2768,7 @@ static ssize_t ath12k_read_mld_stats(struct file *file,
 
 static const struct file_operations ath12k_fops_mld_stats = {
 	.read = ath12k_read_mld_stats,
+	.write = ath12k_write_mld_stats,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
