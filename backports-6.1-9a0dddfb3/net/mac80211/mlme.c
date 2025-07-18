@@ -6105,16 +6105,16 @@ static bool ieee80211_assoc_success(struct ieee80211_sub_if_data *sdata,
 						 &changed[link_id]))
 			goto out_err;
 
-		if (assoc_data->link[link_id].status != WLAN_STATUS_SUCCESS) {
-			valid_links &= ~BIT(link_id);
-			ieee80211_sta_remove_link(sta, link_id, true);
-			continue;
-		}
-
 		if (link_id != assoc_data->assoc_link_id) {
 			err = ieee80211_sta_activate_link(sta, link_id);
 			if (err)
 				goto out_err;
+		}
+
+		if (assoc_data->link[link_id].status != WLAN_STATUS_SUCCESS) {
+			valid_links &= ~BIT(link_id);
+			ieee80211_sta_remove_link(sta, link_id, true);
+			continue;
 		}
 	}
 
