@@ -23,6 +23,7 @@
 
 #include "ieee80211_i.h"
 #include "driver-ops.h"
+#include "qcn_extns/cmn_extn.h"
 #include "mesh.h"
 
 #define IEEE80211_PROBE_DELAY (HZ / 33)
@@ -156,6 +157,8 @@ void ieee80211_inform_bss(struct wiphy *wiphy,
 			le32_to_cpu(elems->vht_cap_elem->vht_cap_info);
 	else
 		bss->vht_cap_info = 0;
+
+	ieee80211_inform_bss_extn(cbss, elems);
 
 	kfree(elems);
 }

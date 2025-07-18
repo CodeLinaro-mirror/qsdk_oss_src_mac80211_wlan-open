@@ -33,6 +33,7 @@
 #include "wme.h"
 #include "led.h"
 #include "wep.h"
+#include "qcn_extns/cmn_extn.h"
 
 struct ieee80211_elems_parse {
 	/* must be first for kfree to work */
@@ -431,6 +432,14 @@ _ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params,
 					}
 				}
 			}
+
+			else {
+				if (calc_crc)
+					crc = crc32_be(crc, pos - 2, elen + 2);
+				ieee802_11_parse_elems_vendor_qcn_extn(pos,
+								       elen, elems);
+			}
+
 			break;
 		case WLAN_EID_RSN:
 			elems->rsn = pos;

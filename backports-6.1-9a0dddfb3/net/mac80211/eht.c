@@ -74,6 +74,8 @@ ieee80211_eht_cap_ie_to_sta_eht_cap(struct ieee80211_sub_if_data *sdata,
 		       &eht_cap_ie_elem->optional[mcs_nss_size],
 		       eht_ppe_size);
 
+	ieee80211_update_eht_cap_from_240mhz_nl(sdata, link_sta, sband);
+
 	eht_cap->has_eht = true;
 
 	link_sta->cur_max_bandwidth = ieee80211_sta_cap_rx_bw(link_sta);

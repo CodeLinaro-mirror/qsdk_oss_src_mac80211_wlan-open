@@ -29,6 +29,7 @@
 #include "driver-ops.h"
 #include "rate.h"
 #include "led.h"
+#include "qcn_extns/cmn_extn.h"
 #include "fils_aead.h"
 
 #include <kunit/static_stub.h>
@@ -378,6 +379,9 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 
 		*chandef = eht_chandef;
 	}
+
+	if (ieee802_11_determine_ap_chan_extn(elems, chandef, sdata))
+		return IEEE80211_CONN_MODE_HE;
 
 	return IEEE80211_CONN_MODE_EHT;
 }
@@ -1774,6 +1778,11 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
 		ieee80211_add_aid_request_ie(sdata, skb);
 		ieee80211_add_s1g_capab_ie(sdata, &sband->s1g_cap, skb);
 	}
+
+	struct ieee80211_bss *bss = (void *)cbss->priv;
+
+	ieee80211_add_qcn_vendor_ie_extn(skb, &bss->bss_extn,
+					 assoc_data->link[link_id].conn.mode);
 
 	if (iftd && iftd->vendor_elems.data && iftd->vendor_elems.len)
 		skb_put_data(skb, iftd->vendor_elems.data, iftd->vendor_elems.len);
@@ -5356,6 +5365,10 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 							    elems->eht_cap_len,
 							    link_sta);
 
+			ieee80211_bss_240mhz_to_sta_eht_cap_extn(sdata, link_sta,
+								 sband,
+								 cbss);
+
 			bss_conf->eht_support = link_sta->pub->eht_cap.has_eht;
 			bss_conf->epcs_support = bss_conf->eht_support &&
 				!!(elems->eht_cap->fixed.mac_cap_info[0] &
@@ -5824,6 +5837,8 @@ ieee80211_determine_our_sta_mode(struct ieee80211_sub_if_data *sdata,
 	/* we have EHT */
 
 	conn->mode = IEEE80211_CONN_MODE_EHT;
+
+	ieee80211_modify_bw_limit_for_240mhz(is_5ghz, conn);
 
 	/* check bandwidth */
 	if (is_6ghz &&
