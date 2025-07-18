@@ -3391,7 +3391,7 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 
 	if (!num_channels) {
 		ath12k_warn(ar->ab, "pdev is not supported for this country\n");
-		return -ENOTSUPP;
+		return -EOPNOTSUPP;
 	}
 
 	arg = kzalloc(struct_size(arg, channel, num_channels), GFP_KERNEL);
