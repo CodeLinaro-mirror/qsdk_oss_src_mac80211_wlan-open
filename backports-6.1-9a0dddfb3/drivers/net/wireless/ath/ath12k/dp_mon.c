@@ -1861,6 +1861,8 @@ void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 
 	if (mon_ops && mon_ops->mon_pdev_rx_mpdu_list_init)
 		mon_ops->mon_pdev_rx_mpdu_list_init(pmon);
+
+	INIT_LIST_HEAD(&dp_mon_pdev->mon_desc_used_list);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_attach);
 

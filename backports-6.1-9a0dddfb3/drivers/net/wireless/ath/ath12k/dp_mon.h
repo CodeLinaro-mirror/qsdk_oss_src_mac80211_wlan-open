@@ -94,6 +94,8 @@ struct ath12k_dp_arch_mon_ops {
 	int (*rx_filter_update)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_monitor_mode_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_monitor_mode_reset)(struct ath12k_pdev_dp *dp_pdev);
+	int (*setup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
+	void (*cleanup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	void (*rx_nrp_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_nrp_reset)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_rx_wmask)(void *ptr, struct htt_rx_ring_tlv_filter *tlv_filter);
@@ -240,6 +242,14 @@ struct ath12k_pdev_mon_dp {
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
 	struct dp_mon_rx_filter **rx_filter;
+	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool;
+	struct list_head ppdu_desc_used_list;
+	struct list_head ppdu_desc_free_list;
+	struct list_head ppdu_desc_proc_list;
+
+	/* lock for ath12k_dp_mon_ppdu_desc */
+	spinlock_t ppdu_desc_lock;
+	struct list_head mon_desc_used_list;
 };
 
 struct ath12k_dp_mon_desc {
@@ -460,6 +470,15 @@ int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
+	if (mon_ops->setup_ppdu_desc) {
+		ret = mon_ops->setup_ppdu_desc(dp_pdev);
+		if (ret) {
+			ath12k_warn(dp, "failed to setup ppdu desc ret = %d\n",
+				    ret);
+			return ret;
+		}
+	}
+
 	return 0;
 }
 
@@ -505,6 +524,9 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 
 	if (mon_ops->rx_filter_free)
 		mon_ops->rx_filter_free(dp_pdev);
+
+	if (mon_ops && mon_ops->cleanup_ppdu_desc)
+		mon_ops->cleanup_ppdu_desc(dp_pdev);
 
 	if (mon_ops && mon_ops->mon_pdev_rx_srng_cleanup)
 		mon_ops->mon_pdev_rx_srng_cleanup(dp_pdev);
