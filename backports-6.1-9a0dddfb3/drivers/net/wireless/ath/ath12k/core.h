@@ -91,6 +91,7 @@
 #define ATH12K_PHY_5GHZ_LOW "phy01"
 #define ATH12K_PHY_5GHZ_HIGH "phy02"
 #define ATH12K_PHY_6GHZ "phy03"
+#define ATH12K_Q6_POWER_UP_TIMEOUT	(20 * HZ)
 
 #define ATH12K_MAX_TID_VALUE 8
 #define ATH12K_FREE_MAP_ID_MASK GENMASK(31, 0)
@@ -1742,6 +1743,8 @@ struct ath12k_base {
 	struct ath12k_dp_umac_reset dp_umac_reset;
 	bool early_cal_support;
 	bool pm_suspend;
+	bool powerup_triggered;
+	struct completion power_up;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -1892,6 +1895,7 @@ struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
 bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar, bool is_bridge_vdev);
 void ath12k_core_cleanup_power_down_q6(struct ath12k_hw *ah);
+int ath12k_core_power_up(struct ath12k_hw_group *ag);
 
 int ath12k_core_add_dl_qos(struct ath12k_base *ab,
 			   struct ath12k_qos_params *params, u8 id);

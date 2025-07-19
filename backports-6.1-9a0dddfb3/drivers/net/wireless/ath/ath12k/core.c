@@ -938,6 +938,38 @@ void ath12k_core_to_group_ref_put(struct ath12k_base *ab)
 		   ag->id, ag->num_started);
 }
 
+int ath12k_core_power_up(struct ath12k_hw_group *ag)
+{
+	struct ath12k_base *ab;
+	unsigned long time_left;
+	int i;
+
+	for (i = 0; i < ag->num_probed; i++) {
+		ab =  ag->ab[i];
+		ath12k_info(ab, "Q6 power up is started\n");
+		if (ab->pm_suspend) {
+			ath12k_hif_power_up(ab);
+			ab->pm_suspend = false;
+			ab->powerup_triggered = true;
+			reinit_completion(&ab->power_up);
+		}
+	}
+
+	for (i = 0; i < ag->num_probed; i++) {
+		ab =  ag->ab[i];
+		if (ab->powerup_triggered) {
+			time_left = wait_for_completion_timeout(&ab->power_up,
+								ATH12K_Q6_POWER_UP_TIMEOUT);
+			if (!time_left) {
+				ath12k_err(ab, "Q6 power up wait timed out\n");
+				return -ETIMEDOUT;
+			}
+		}
+	}
+
+	return 0;
+}
+
 void ath12k_core_cleanup_power_down_q6(struct ath12k_hw *ah)
 {
 	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
@@ -1607,6 +1639,9 @@ core_pdev_create:
 		if (!ab)
 			continue;
 
+		if (ath12k_check_erp_power_down(ag) && !ab->powerup_triggered)
+			continue;
+
 		mutex_lock(&ab->core_lock);
 
 		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !ab->recovery_start) {
@@ -2269,6 +2304,42 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 	complete(&ab->driver_recovery);
 }
 
+static void ath12k_core_radio_start(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k *ar;
+	int i, j;
+
+	mutex_lock(&ag->mutex);
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+
+		for (j = 0; j < ab->num_radios; j++) {
+			ar = ab->pdevs[j].ar;
+
+			if (!ath12k_ftm_mode && ar) {
+				if (ar->allocated_vdev_map) {
+					continue;
+				} else {
+					if (ath12k_mac_start(ar)) {
+						ath12k_err(ar->ab, "mac radio start failed\n");
+						mutex_unlock(&ag->mutex);
+						return;
+					}
+				}
+			}
+		}
+
+		ab->powerup_triggered = false;
+		complete(&ab->power_up);
+	}
+
+	mutex_unlock(&ag->mutex);
+
+	if (test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags))
+		clear_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
+}
+
 static void ath12k_core_restart(struct work_struct *work)
 {
 	struct ath12k_base *ab = container_of(work, struct ath12k_base, restart_work);
@@ -2287,6 +2358,10 @@ static void ath12k_core_restart(struct work_struct *work)
 			BUG_ON(1);
 		return;
 	}
+
+	if (ath12k_core_hw_group_start_ready(ag) &&
+	    ath12k_check_erp_power_down(ag))
+		ath12k_core_radio_start(ab);
 
 	if (ab->is_reset) {
 		if (!test_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags)) {
@@ -4376,6 +4451,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 	init_completion(&ab->restart_completed);
 	init_completion(&ab->wow.wakeup_completed);
 	init_completion(&ab->rddm_reset_done);
+	init_completion(&ab->power_up);
 
 	ab->dev = dev;
 	ab->hif.bus = bus;

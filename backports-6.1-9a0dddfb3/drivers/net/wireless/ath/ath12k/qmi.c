@@ -5528,6 +5528,10 @@ void ath12k_qmi_trigger_host_cap(struct ath12k_base *ab)
 {
 	struct ath12k_qmi *qmi = &ab->qmi;
 
+	if (ath12k_check_erp_power_down(ab->ag) &&
+	    !ab->powerup_triggered)
+		return;
+
 	spin_lock(&qmi->event_lock);
 
 	if (ath12k_qmi_get_event_block(qmi)) {
@@ -6499,7 +6503,8 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 			break;
 		case ATH12K_QMI_EVENT_FW_READY:
 			clear_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
-			if (test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags)) {
+			if (test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags) ||
+			    ath12k_check_erp_power_down(ab->ag)) {
 				if (ab->is_reset)
 					ath12k_hal_dump_srng_stats(ab);
 

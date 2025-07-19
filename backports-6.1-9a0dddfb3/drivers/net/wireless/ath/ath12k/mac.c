@@ -7936,9 +7936,18 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 			  struct ieee80211_scan_request *hw_req)
 {
 	struct ath12k *ar, *prev_ar;
-	int i, from_index, to_index;
+	int i, from_index, to_index, ret;
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if (ath12k_check_erp_power_down(ag)) {
+		ret = ath12k_core_power_up(ag);
+		if (ret)
+			return ret;
+	}
+
 	/* Since the targeted scan device could depend on the frequency
 	 * requested in the hw_req, select the corresponding radio
 	 */
@@ -14327,12 +14336,18 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k *ar;
+	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	int ret, i;
 
 	if (ath12k_ftm_mode)
 		return -EPERM;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if (ath12k_check_erp_power_down(ag)) {
+		ret = ath12k_core_power_up(ag);
+		return ret;
+	}
 
 	ath12k_drain_tx(ah);
 
@@ -14370,8 +14385,16 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 					   ar->pdev_idx, ret);
 				goto fail_start;
 			}
+
+			if (ath12k_check_erp_power_down(ag)) {
+				ar->ab->powerup_triggered = false;
+			}
 		}
 	}
+
+	if (ath12k_check_erp_power_down(ag))
+		clear_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
+
 	return 0;
 
 fail_start:
@@ -15960,10 +15983,19 @@ int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah)
 int ath12k_mac_op_add_chanctx(struct ieee80211_hw *hw,
 			      struct ieee80211_chanctx_conf *ctx)
 {
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	struct ath12k *ar;
 	struct ath12k_base *ab;
+	int ret;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if (ath12k_check_erp_power_down(ag)) {
+		ret = ath12k_core_power_up(ag);
+		if (ret)
+			return ret;
+	}
 
 	ar = ath12k_get_ar_by_ctx(hw, ctx);
 	if (!ar)
@@ -21562,7 +21594,8 @@ static int __ath12k_mac_mlo_teardown(struct ath12k *ar, bool umac_reset)
 	int ret;
 	u8 num_link;
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) ||
+	    ath12k_check_erp_power_down(ab->ag))
 		return 0;
 
 	num_link = ath12k_get_num_partner_link(ar);
