@@ -69,7 +69,6 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
-	struct dp_rxdma_mon_ring *buf_ring = &dp_mon->rxdma_mon_buf_ring;
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
 	struct ath12k_dp_mon_desc *mon_desc;
 	struct list_head mon_desc_used_list;
@@ -103,6 +102,8 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 		ret = -EINVAL;
 		goto buf_replenish;
 	}
+
+	mon_desc->in_use = false;
 
 	ath12k_core_dma_unmap_page(dp->dev, mon_desc->paddr, ATH12K_DP_MON_RX_BUF_SIZE,
 				   DMA_FROM_DEVICE);
@@ -171,7 +172,9 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 buf_replenish:
-	ath12k_dp_mon_buf_replenish(dp, buf_ring, &mon_desc_used_list, 1);
+	spin_lock_bh(&dp_mon->mon_desc_lock);
+	list_splice_tail(&mon_desc_used_list, &dp_mon->mon_desc_free_list);
+	spin_unlock_bh(&dp_mon->mon_desc_lock);
 
 	return ret;
 }
@@ -273,7 +276,7 @@ ath12k_wifi7_dp_mon_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 	struct hal_tlv_64_hdr *tlv;
 	struct ath12k_dp_mon_desc *pkt_desc;
 	struct list_head mon_desc_used_list;
-	struct dp_rxdma_mon_ring *buf_ring = &dp->dp_mon->rxdma_mon_buf_ring;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	u8 *ptr = mon_buf;
 	u16 tlv_tag, tlv_len;
 	int num_buf = 0;
@@ -322,6 +325,7 @@ ath12k_wifi7_dp_mon_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 						   DMA_FROM_DEVICE);
 			page_frag_free(pkt_desc->mon_buf);
 			pkt_desc->mon_buf = NULL;
+			pkt_desc->in_use = false;
 		}
 
 next_tlv:
@@ -329,8 +333,11 @@ next_tlv:
 		ptr = PTR_ALIGN(ptr, HAL_TLV_64_ALIGN);
 	} while ((ptr - mon_buf) < mon_buf_len);
 
-	if (likely(!list_empty(&mon_desc_used_list)))
-		ath12k_dp_mon_buf_replenish(dp, buf_ring, &mon_desc_used_list, num_buf);
+	if (likely(!list_empty(&mon_desc_used_list))) {
+		spin_lock_bh(&dp_mon->mon_desc_lock);
+		list_splice_tail(&mon_desc_used_list, &dp_mon->mon_desc_free_list);
+		spin_unlock_bh(&dp_mon->mon_desc_lock);
+	}
 }
 
 static enum hal_rx_mon_status
@@ -597,7 +604,6 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 	struct hal_mon_dest_desc *mon_dst_desc;
 	struct dp_srng *mon_dst_ring;
 	struct hal_srng *srng;
-	struct dp_rxdma_mon_ring *buf_ring;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_neighbor_peer *nrp, *tmp;
@@ -613,7 +619,6 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 	INIT_LIST_HEAD(&mon_desc_used_list);
 	srng_id = ath12k_hw_mac_id_to_srng_id(ab->hw_params, pdev_idx);
 	mon_dst_ring = &pdev_dp->dp_mon_pdev->rxdma_mon_dst_ring[srng_id];
-	buf_ring = &dp_mon->rxdma_mon_buf_ring;
 
 	srng = &ab->hal.srng_list[mon_dst_ring->ring_id];
 	spin_lock_bh(&srng->lock);
@@ -651,6 +656,7 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 		}
 
 		mon_buf = mon_desc->mon_buf;
+		mon_desc->in_use = false;
 		if (unlikely(!mon_buf)) {
 			ath12k_warn(dp, "mon_dest: NULL mon_buf received in mac_id %d\n",
 				    pdev_dp->mac_id);
@@ -806,7 +812,9 @@ free_buf:
 		ath12k_wifi7_dp_mon_rx_memset_ppdu_info(pdev_dp, ppdu_info);
 	}
 
-	ath12k_dp_mon_buf_replenish(dp, buf_ring, &mon_desc_used_list, num_buffs_reaped);
+	spin_lock_bh(&dp_mon->mon_desc_lock);
+	list_splice_tail(&mon_desc_used_list, &dp_mon->mon_desc_free_list);
+	spin_unlock_bh(&dp_mon->mon_desc_lock);
 
 	return num_buffs_reaped;
 }

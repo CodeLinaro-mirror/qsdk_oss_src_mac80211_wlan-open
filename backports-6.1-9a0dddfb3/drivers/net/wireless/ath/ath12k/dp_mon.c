@@ -2215,3 +2215,40 @@ void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 		skb_frag_ref(skb, nr_frags);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_add_rx_frag);
+
+void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_rxdma_mon_ring *rx_ring;
+	struct hal_srng *srng;
+	int num_free, req_entries;
+	LIST_HEAD(list);
+
+	rx_ring = &dp_mon->rxdma_mon_buf_ring;
+	srng = &dp->hal->srng_list[rx_ring->refill_buf_ring.ring_id];
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
+	/* if ring is less than half filled need to replenish */
+	if (num_free < (rx_ring->bufs_max / 2)) {
+		ath12k_hal_srng_access_end(ab, srng);
+		spin_unlock_bh(&srng->lock);
+		return;
+	}
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	spin_lock_bh(&dp_mon->mon_desc_lock);
+	req_entries = ath12k_dp_mon_list_cut_nodes(&list,
+						   &dp->dp_mon->mon_desc_free_list,
+						   num_free);
+	spin_unlock_bh(&dp_mon->mon_desc_lock);
+
+	if (req_entries)
+		ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_rx_process_low_thres);

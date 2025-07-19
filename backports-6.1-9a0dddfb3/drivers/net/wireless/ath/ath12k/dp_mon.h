@@ -27,7 +27,7 @@
 #define DP_RXDMA_MONITOR_BUF_RING_SIZE  256
 #define DP_RXDMA_MONITOR_DST_RING_SIZE  512
 #else
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE 4096
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE 8192
 #define DP_RXDMA_MONITOR_DST_RING_SIZE 8192
 #endif
 #define DP_TX_MONITOR_BUF_RING_SIZE	4096
@@ -353,6 +353,7 @@ void ath12k_dp_mon_skb_remove_frag(struct ath12k_dp *dp, struct sk_buff *skb,
 				   u16 idx, u16 truesize);
 void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 			       int offset, int frag_len, bool take_frag_ref);
+void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 				enum ath12k_pktlog_mode mode, bool enable);
 
