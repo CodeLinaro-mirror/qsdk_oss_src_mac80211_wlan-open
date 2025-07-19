@@ -14869,6 +14869,66 @@ exit:
         return;
 }
 
+static void
+ath12k_wmi_pktlog_decode_info(struct ath12k_base *ab,
+                                  struct sk_buff *skb)
+{
+	struct ath12k *ar;
+	const void **tb;
+	int ret;
+	u32 pdev_id;
+	struct ath12k_pktlog *pktlog;
+	const struct ath12k_pl_fw_info *pktlog_info;
+
+	if (!test_bit(WMI_TLV_SERVICE_PKTLOG_DECODE_INFO_SUPPORT, ab->wmi_ab.svc_map)) {
+		ath12k_warn(ab, "firmware doesn't support pktlog decode info support\n");
+		return;
+	}
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+		return;
+	}
+	pktlog_info = tb[WMI_TAG_PDEV_PKTLOG_DECODE_INFO];
+	if (!pktlog_info) {
+		ath12k_warn(ab, "failed to fetch pktlog debug info");
+		kfree(tb);
+		return;
+	}
+
+	pdev_id = DP_SW2HW_MACID(pktlog_info->pdev_id);
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "pktlog pktlog_defs_json_version: %d", pktlog_info->pktlog_defs_json_version);
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "pktlog software_image: %s", pktlog_info->software_image);
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "pktlog chip_info: %s", pktlog_info->chip_info);
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "pktlog pdev_id: %d", pdev_id);
+
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid pdev id in pktlog decode info %d", pdev_id);
+		kfree(tb);
+		return;
+	}
+	pktlog = &ar->debug.pktlog;
+	pktlog->fw_version_record = 1;
+	if (pktlog->buf == NULL) {
+		ath12k_warn(ab, "failed to initialize, start pktlog\n");
+		kfree(tb);
+		return;
+	}
+	pktlog->buf->bufhdr.magic_num = PKTLOG_MAGIC_NUM_FW_VERSION_SUPPORT;
+	memcpy(pktlog->buf->bufhdr.software_image, pktlog_info->software_image, sizeof(pktlog_info->software_image));
+	memcpy(pktlog->buf->bufhdr.chip_info, pktlog_info->chip_info, sizeof(pktlog_info->chip_info));
+	pktlog->buf->bufhdr.pktlog_defs_json_version = pktlog_info->pktlog_defs_json_version;
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "pktlog new magic_num: 0x%x\n", pktlog->buf->bufhdr.magic_num);
+	kfree(tb);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -15100,6 +15160,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_MLO_TID_TO_LINK_MAP_EVENT_ID:
 		ath12k_wmi_tid_to_link_map_event(ab, skb);
+		break;
+	case WMI_PDEV_PKTLOG_DECODE_INFO_EVENTID:
+		ath12k_wmi_pktlog_decode_info(ab, skb);
 		break;
 	case WMI_TWT_BTWT_INVITE_STA_COMPLETE_EVENTID:
 		ath12k_wmi_twt_btwt_invite_sta_compl_event(ab, skb);
@@ -17541,6 +17604,66 @@ int ath12k_wmi_ul_qos_profile_config(struct ath12k *ar,
 	}
 
 	return ret;
+}
+
+int ath12k_wmi_pdev_pktlog_enable(struct ath12k *ar, u32 pktlog_filter)
+{
+        struct ath12k_wmi_pdev *wmi = ar->wmi;
+        struct wmi_pktlog_enable_cmd *cmd;
+        struct sk_buff *skb;
+        int ret;
+
+        skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+        if (!skb)
+                return -ENOMEM;
+
+        cmd = (struct wmi_pktlog_enable_cmd *)skb->data;
+
+        cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_PKTLOG_ENABLE_CMD,
+                                                 sizeof(*cmd));
+
+        cmd->pdev_id = cpu_to_le32(DP_HW2SW_MACID(ar->pdev->pdev_id));
+        cmd->evlist = cpu_to_le32(pktlog_filter);
+        cmd->enable = cpu_to_le32(ATH12K_WMI_PKTLOG_ENABLE_FORCE);
+
+        ret = ath12k_wmi_cmd_send(wmi, skb,
+                                  WMI_PDEV_PKTLOG_ENABLE_CMDID);
+        if (ret) {
+                ath12k_err(ar->ab,
+			   "failed to send WMI_PDEV_PKTLOG_ENABLE_CMDID\n");
+                dev_kfree_skb(skb);
+        }
+
+        return ret;
+}
+
+int ath12k_wmi_pdev_pktlog_disable(struct ath12k *ar)
+{
+        struct ath12k_wmi_pdev *wmi = ar->wmi;
+        struct wmi_pktlog_disable_cmd *cmd;
+        struct sk_buff *skb;
+        int ret;
+
+        skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+        if (!skb)
+                return -ENOMEM;
+
+        cmd = (struct wmi_pktlog_disable_cmd *)skb->data;
+
+        cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_PKTLOG_DISABLE_CMD,
+                                                 sizeof(*cmd));
+
+        cmd->pdev_id = cpu_to_le32(DP_HW2SW_MACID(ar->pdev->pdev_id));
+
+        ret = ath12k_wmi_cmd_send(wmi, skb,
+                                  WMI_PDEV_PKTLOG_DISABLE_CMDID);
+        if (ret) {
+                ath12k_err(ar->ab,
+			   "failed to send WMI_PDEV_PKTLOG_DISABLE_CMDID\n");
+                dev_kfree_skb(skb);
+        }
+
+        return ret;
 }
 
 int ath12k_wmi_vdev_adfs_ch_cfg_cmd_send(struct ath12k *ar,

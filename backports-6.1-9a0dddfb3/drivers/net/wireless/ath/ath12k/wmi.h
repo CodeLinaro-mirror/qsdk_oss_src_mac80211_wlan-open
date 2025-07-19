@@ -930,6 +930,8 @@ enum wmi_tlv_event_id {
 	WMI_PDEV_MULTIPLE_VDEV_RESTART_RESP_EVENTID,
 	WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID =
 					WMI_SERVICE_READY_EXT2_EVENTID + 4,
+	WMI_PDEV_PKTLOG_DECODE_INFO_EVENTID =
+		WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 4,
 	WMI_PDEV_RSSI_DBM_CONVERSION_PARAMS_INFO_EVENTID =
 					WMI_PDEV_GET_HALPHY_CAL_STATUS_EVENTID + 5,
 	WMI_VDEV_START_RESP_EVENTID = WMI_TLV_CMD(WMI_GRP_VDEV),
@@ -2271,6 +2273,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
 	WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM = 0x40A,
 	WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM = 0x40B,
+	WMI_TAG_PDEV_PKTLOG_DECODE_INFO = 0x414,
 	WMI_TAG_SPECTRAL_SCAN_BW_CAPABILITIES = 0x415,
 	WMI_TAG_SPECTRAL_FFT_SIZE_CAPABILITIES,
 	WMI_TAG_PDEV_SSCAN_CHAN_INFO = 0x417,
@@ -2550,6 +2553,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_AFC_SUPPORT = 295,
 
 	WMI_TLV_SERVICE_SDWF_LEVEL0 = 311,
+	WMI_TLV_SERVICE_PKTLOG_DECODE_INFO_SUPPORT = 320,
 	WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT = 352,
 	WMI_TLV_SERVICE_WMSK_COMPACTION_RX_TLVS = 361,
 
@@ -8980,6 +8984,8 @@ int ath12k_wmi_send_bcn_offload_control_cmd(struct ath12k *ar,
 					    u32 vdev_id, u32 bcn_ctrl_op);
 int ath12k_wmi_send_init_country_cmd(struct ath12k *ar,
 				     struct ath12k_wmi_init_country_arg *arg);
+int ath12k_wmi_pdev_pktlog_enable(struct ath12k *ar, u32 pktlog_filter);
+int ath12k_wmi_pdev_pktlog_disable(struct ath12k *ar);
 int ath12k_wmi_pdev_peer_pktlog_filter(struct ath12k *ar, u8 *addr, u8 enable);
 int
 ath12k_wmi_send_thermal_mitigation_cmd(struct ath12k *ar,

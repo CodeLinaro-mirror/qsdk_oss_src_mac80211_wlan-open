@@ -5327,6 +5327,7 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
 	ath12k_debugfs_htt_stats_register(ar);
 	ath12k_debugfs_fw_stats_register(ar);
+	ath12k_init_pktlog(ar);
 
 	if (test_bit(WMI_TLV_SERVICE_CTRL_PATH_STATS_REQUEST,
 		     ar->ab->wmi_ab.svc_map))
@@ -5935,6 +5936,7 @@ void ath12k_debugfs_unregister(struct ath12k *ar)
 	if (!ar->debug.debugfs_pdev)
 		return;
 
+	ath12k_deinit_pktlog(ar);
 	/* Remove symlink under ieee80211/phy* */
 	debugfs_remove(ar->debug.debugfs_pdev_symlink);
 	debugfs_remove_recursive(ar->debug.debugfs_pdev);

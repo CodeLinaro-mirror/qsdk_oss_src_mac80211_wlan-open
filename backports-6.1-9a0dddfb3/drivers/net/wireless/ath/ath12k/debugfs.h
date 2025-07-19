@@ -7,6 +7,8 @@
 #ifndef _ATH12K_DEBUGFS_H_
 #define _ATH12K_DEBUGFS_H_
 
+#include "core.h"
+
 #define ATH12K_UDP_TCP_START_PORT		0
 #define ATH12K_UDP_TCP_END_PORT			65535
 #define ATH12K_RX_FSE_FLOW_MATCH_DEBUGFS	0xBBBB
@@ -204,6 +206,17 @@ enum ath12k_debug_tpc_stats_support_modes {
 	ATH12K_TPC_STATS_SUPPORT_BE,
 	ATH12K_TPC_STATS_SUPPORT_BE_PUNC,
 };
+
+struct ath12k_pktlog_hdr {
+        u16 flags;
+        u16 missed_cnt;
+        u16 log_type;
+        u16 size;
+        u32 timestamp;
+        u32 type_specific_data;
+        struct mlo_timestamp m_timestamp;
+        u8 payload[];
+} __packed;
 #else
 
 static inline void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab)
@@ -292,4 +305,7 @@ struct dentry *ath12k_debugfs_erp_create(void)
 
 #endif /* CPTCFG_ATH12K_DEBUGFS */
 
+void ath12k_init_pktlog(struct ath12k *ar);
+void ath12k_deinit_pktlog(struct ath12k *ar);
+void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data);
 #endif /* _ATH12K_DEBUGFS_H_ */

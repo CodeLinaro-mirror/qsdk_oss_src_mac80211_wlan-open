@@ -576,9 +576,9 @@ ath12k_dp_mon_rx_config_packet_type_subtype(struct ath12k_dp *dp, void *ptr,
 		mon_ops->rx_enable_packet_filters(ptr, tlv_filter);
 }
 
-static inline
-void ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
-				  enum ath12k_pktlog_mode mode)
+static inline void
+ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
+			    enum ath12k_pktlog_mode mode)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);

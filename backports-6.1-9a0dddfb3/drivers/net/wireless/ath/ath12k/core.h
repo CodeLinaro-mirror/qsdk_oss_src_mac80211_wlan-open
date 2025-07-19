@@ -42,6 +42,7 @@
 #include <ppe_vp_public.h>
 #endif
 #include "cfr.h"
+#include "pktlog.h"
 #include "dp_stats.h"
 
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
@@ -975,9 +976,9 @@ struct ath12k_debug {
 	bool extd_rx_stats;
 	bool extd_tx_stats;
 	bool enable_m3_dump;
- #ifdef CPTCFG_ATH12K_PKTLOG
 	struct dentry *debugfs_pktlog;
-#endif
+	struct ath12k_pktlog pktlog;
+	bool is_pkt_logging;
 	u32 pktlog_mode;
 	u32 pktlog_filter;
 	u32 pktlog_peer_valid;

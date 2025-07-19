@@ -34,7 +34,8 @@ ath12k-y += core.o \
 	    ini.o \
 	    ini_parse.o \
 	    dp_mon_filter.o \
-	    erp.o
+	    erp.o \
+	    pktlog.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o
@@ -49,7 +50,6 @@ ath12k-$(CONFIG_PM) += wow.o
 ath12k-$(CPTCFG_NL80211_TESTMODE) += testmode.o
 ath12k-$(CPTCFG_ATH12K_SPECTRAL) += spectral.o
 ath12k-$(CPTCFG_WANT_DEV_COREDUMP) += coredump.o
-ath12k-$(CPTCFG_ATH12K_PKTLOG) += pktlog.o
 ath12k-$(CONFIG_THERMAL) += thermal.o
 ath12k-$(CPTCFG_ATH12K_CFR) += cfr.o
 
