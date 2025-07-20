@@ -618,6 +618,7 @@ ath12k_dp_mon_handle_mon_desc(struct ath12k_dp *dp, struct ath12k_dp_mon_desc *m
 					   ATH12K_DP_MON_RX_BUF_SIZE,
 					   DMA_FROM_DEVICE);
 		page_frag_free(mon_buf);
+		dp_mon->num_frag_free++;
 		mon_desc->mon_buf = NULL;
 	}
 
@@ -666,6 +667,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 						 DMA_FROM_DEVICE);
 		if (unlikely(dma_mapping_error(ab->dev, paddr))) {
 			page_frag_free(mon_buf);
+			dp_mon->num_frag_free++;
 			ret = -EIO;
 			goto out;
 		}
@@ -675,6 +677,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 		mon_desc->magic = ATH12K_MON_MAGIC_VALUE;
 		mon_desc->buf_len = 0;
 		mon_desc->end_of_ppdu = 0;
+		dp_mon->num_frag_replenish++;
 	}
 
 	srng = &ab->hal.srng_list[buf_ring->refill_buf_ring.ring_id];
@@ -717,6 +720,7 @@ out:
 							   ATH12K_DP_MON_RX_BUF_SIZE,
 							   DMA_FROM_DEVICE);
 				page_frag_free(mon_buf);
+				dp_mon->num_frag_free++;
 			}
 
 			ath12k_dp_mon_desc_reset(mon_desc);
@@ -1696,6 +1700,7 @@ void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 		ath12k_core_dma_unmap_page(dp->dev, dp_mon->mon_desc_pool[i].paddr,
 					   ATH12K_DP_MON_RX_BUF_SIZE, DMA_FROM_DEVICE);
 		page_frag_free(mon_buf);
+		dp_mon->num_frag_free++;
 
 reset_mon_desc:
 		ath12k_dp_mon_desc_reset(&dp_mon->mon_desc_pool[i]);
@@ -2254,3 +2259,27 @@ void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp)
 		ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_process_low_thres);
+
+void
+ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count)
+{
+	struct sk_buff *iter;
+	u32 total_skb = 0, total_frags = 0;
+
+	if (unlikely(!skb))
+		return;
+
+	total_skb++;
+	total_frags += skb_shinfo(skb)->nr_frags;
+
+	if (skb_has_frag_list(skb)) {
+		for (iter = skb_shinfo(skb)->frag_list; iter; iter = iter->next) {
+			total_skb++;
+			total_frags += skb_shinfo(iter)->nr_frags;
+		}
+	}
+
+	*skb_count += total_skb;
+	*frag_count += total_frags;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_cnt_skb_and_frags);

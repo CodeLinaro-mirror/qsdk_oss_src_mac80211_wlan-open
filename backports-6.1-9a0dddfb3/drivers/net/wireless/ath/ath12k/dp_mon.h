@@ -118,6 +118,9 @@ struct ath12k_dp_mon {
 	/* lock for ath12k_dp_mon_desc */
 	spinlock_t mon_desc_lock;
 	struct page_frag_cache rx_mon_pf_cache;
+
+	u32 num_frag_replenish;
+	u32 num_frag_free;
 };
 
 enum dp_monitor_type {
@@ -233,6 +236,35 @@ struct ath12k_mon_data {
 	struct dp_mon_tx_ppdu_info *tx_data_ppdu_info;
 };
 
+struct ath12k_pdev_mon_dp_stats {
+	u32 status_buf_reaped;
+	u32 status_buf_processed;
+	u32 status_buf_free;
+
+	u32 ring_desc_empty;
+	u32 ring_desc_flush;
+	u32 ring_desc_trunc;
+
+	u32 pkt_tlv_processed;
+	u32 pkt_tlv_free;
+	u32 pkt_tlv_to_mac80211;
+
+	u32 num_skb_alloc;
+	u32 num_skb_free;
+	u32 num_skb_to_mac80211;
+
+	u32 num_ppdu_reaped;
+	u32 num_ppdu_processed;
+
+	u32 num_skb_raw;
+	u32 num_frag_raw;
+
+	u32 num_skb_eth;
+	u32 num_frag_eth;
+
+	u32 drop_tlv;
+};
+
 struct ath12k_pdev_mon_dp {
 	struct ath12k_dp_mon *dp_mon;
 	struct ath12k_pdev_dp *dp_pdev;
@@ -250,6 +282,7 @@ struct ath12k_pdev_mon_dp {
 	/* lock for ath12k_dp_mon_ppdu_desc */
 	spinlock_t ppdu_desc_lock;
 	struct list_head mon_desc_used_list;
+	struct ath12k_pdev_mon_dp_stats mon_stats;
 };
 
 struct ath12k_dp_mon_desc {
@@ -364,9 +397,10 @@ void ath12k_dp_mon_skb_remove_frag(struct ath12k_dp *dp, struct sk_buff *skb,
 void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 			       int offset, int frag_len, bool take_frag_ref);
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp);
+void
+ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 				enum ath12k_pktlog_mode mode, bool enable);
-
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 {

@@ -6390,6 +6390,141 @@ static const struct file_operations fops_trace_qdss = {
 	.llseek = default_llseek,
 };
 
+static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *user_buf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k *ar;
+	struct ath12k_pdev_mon_dp_stats *mon_stats;
+	struct ath12k_pdev *pdev;
+	struct ath12k_dp_mon *dp_mon = ab->dp->dp_mon;
+	u32 tot_used_frags = 0, tot_free_frags = dp_mon->num_frag_free;
+	int len = 0, i, ret, size = 2048;
+	u8 *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len = scnprintf(buf + len, size - len, "device mon specific stats:\n");
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		ar = pdev->ar;
+		if (!ar)
+			continue;
+
+		mon_stats = &ar->dp.dp_mon_pdev->mon_stats;
+		len += scnprintf(buf + len, size - len,
+				 "*******************radio[%u]*****************\n", i);
+		len += scnprintf(buf + len, size - len,
+				 "status frags reap: %u process: %u free: %u\n",
+				 mon_stats->status_buf_reaped,
+				 mon_stats->status_buf_processed,
+				 mon_stats->status_buf_free);
+		len += scnprintf(buf + len, size - len,
+				 "packet frags process %u free %u to_mac80211 %u\n",
+				 mon_stats->pkt_tlv_processed,
+				 mon_stats->pkt_tlv_free,
+				 mon_stats->pkt_tlv_to_mac80211);
+		len += scnprintf(buf + len, size - len,
+				 "Ring desc empty: %u flush %u truncated %u droptlv %u\n",
+				 mon_stats->ring_desc_empty,
+				 mon_stats->ring_desc_flush,
+				 mon_stats->ring_desc_trunc,
+				 mon_stats->drop_tlv);
+		len += scnprintf(buf + len, size - len,
+				 "skb alloc: %u free: %u to_mac80211: %u\n",
+				 mon_stats->num_skb_alloc,
+				 mon_stats->num_skb_free,
+				 mon_stats->num_skb_to_mac80211);
+		len += scnprintf(buf + len, size - len,
+				 "raw mode skb: %u frag %u eth mode skb: %u frag:%u\n",
+				 mon_stats->num_skb_raw,
+				 mon_stats->num_frag_raw,
+				 mon_stats->num_skb_eth,
+				 mon_stats->num_frag_eth);
+		len += scnprintf(buf + len, size - len,
+				 "Num of PPDU reaped %u processed %u\n",
+				 mon_stats->num_ppdu_reaped,
+				 mon_stats->num_ppdu_processed);
+
+		tot_used_frags +=
+			mon_stats->status_buf_processed + mon_stats->pkt_tlv_processed;
+
+		tot_free_frags +=
+			mon_stats->status_buf_free + mon_stats->pkt_tlv_free +
+			mon_stats->pkt_tlv_to_mac80211;
+	}
+
+	len += scnprintf(buf + len, size - len,
+			 "frags replenished_cnt: %u used cnt %u tot_free_frags %u\n",
+			 dp_mon->num_frag_replenish, tot_used_frags, tot_free_frags);
+
+	tot_used_frags = mon_stats->status_buf_reaped + mon_stats->pkt_tlv_processed +
+			 dp_mon->num_frag_free;
+	len += scnprintf(buf + len, size - len, "\nFrags hold by HW: %u\n",
+			 dp_mon->num_frag_replenish - tot_used_frags);
+
+	tot_used_frags = mon_stats->status_buf_reaped + mon_stats->pkt_tlv_processed;
+	tot_free_frags = mon_stats->status_buf_free + mon_stats->pkt_tlv_free +
+			 mon_stats->pkt_tlv_to_mac80211;
+	len += scnprintf(buf + len, size - len, "\nFrags hold by SW: %u\n",
+			 (tot_used_frags - tot_free_frags));
+
+	len += scnprintf(buf + len, size - len, "\n SKBs hold by SW: %u\n",
+			 mon_stats->num_skb_alloc -
+			 (mon_stats->num_skb_free + mon_stats->num_skb_to_mac80211));
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+
+	return ret;
+}
+
+static ssize_t
+ath12k_debugfs_write_dp_mon_stats(struct file *file, const char __user *user_buf,
+				  size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_pdev_mon_dp_stats *mon_stats;
+	struct ath12k *ar;
+	struct ath12k_pdev *pdev;
+	struct ath12k_dp_mon *dp_mon = ab->dp->dp_mon;
+	char buf[20] = {0};
+	int ret, i;
+
+	if (count > 20)
+		return -EFAULT;
+
+	ret = copy_from_user(buf, user_buf, count);
+	if (ret)
+		return -EFAULT;
+
+	if (strstr(buf, "reset")) {
+		dp_mon->num_frag_replenish = 0;
+		dp_mon->num_frag_free = 0;
+		for (i = 0; i < ab->num_radios; i++) {
+			pdev = &ab->pdevs[i];
+			ar = pdev->ar;
+			if (ar) {
+				mon_stats = &ar->dp.dp_mon_pdev->mon_stats;
+				memset(mon_stats, 0, sizeof(*mon_stats));
+			}
+		}
+	}
+
+	return count;
+}
+
+static const struct file_operations fops_device_mon_stats = {
+	.read = ath12k_dump_dp_mon_pdev_stats,
+	.write = ath12k_debugfs_write_dp_mon_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
 			    &fops_simulate_fw_crash);
@@ -6413,6 +6548,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_device_dp_stats);
 	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
 			    &fops_soc_stats_disable);
+	debugfs_create_file("device_mon_stats", 0600, ab->debugfs_soc, ab,
+			    &fops_device_mon_stats);
 	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_dump_hal_stats);
 	if (test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map))
