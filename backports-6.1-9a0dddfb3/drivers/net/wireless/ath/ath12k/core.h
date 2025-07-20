@@ -459,6 +459,9 @@ struct ath12k_prb_resp_tmpl_ml_info {
 	u32 cu_vdev_map_cat2_hi;
 };
 
+/* ath12k only deals with 320 MHz, so 16 subchannels */
+#define ATH12K_NUM_PWR_LEVELS  16
+
 /**
  * struct chan_power_info - TPE containing power info per channel chunk
  * @chan_cfreq: channel center freq (MHz)
@@ -505,14 +508,14 @@ struct ath12k_reg_tpc_power_info {
 	u8 num_pwr_levels;
 	u8 num_psd_pwr_levels;
 	u8 num_eirp_pwr_levels;
-	u8 reg_max[IEEE80211_MAX_NUM_PWR_LEVEL];
+	u8 reg_max[ATH12K_NUM_PWR_LEVELS];
 	u8 ap_constraint_power;
 	s8 tpe_psd[IEEE80211_TPE_PSD_ENTRIES_320MHZ];
 	s8 tpe_eirp[IEEE80211_TPE_EIRP_ENTRIES_320MHZ];
 	u8 num_tpe_psd;
 	u8 num_tpe_eirp;
-	struct chan_power_info chan_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
-	struct chan_power_info chan_psd_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
+	struct chan_power_info chan_power_info[ATH12K_NUM_PWR_LEVELS];
+	struct chan_power_info chan_psd_power_info[ATH12K_NUM_PWR_LEVELS];
 	struct chan_power_info chan_eirp_power_info[ATH12K_MAX_EIRP_VALS];
 };
 

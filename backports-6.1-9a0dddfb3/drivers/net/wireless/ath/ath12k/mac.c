@@ -8955,7 +8955,7 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
         struct ieee80211_channel *chan, *temp_chan;
         u8 pwr_lvl_idx, num_pwr_levels, pwr_reduction;
         bool is_psd_power = false, is_tpe_present = false;
-        s8 max_tx_power[IEEE80211_MAX_NUM_PWR_LEVEL],
+        s8 max_tx_power[ATH12K_NUM_PWR_LEVELS],
                 psd_power, tx_power = 0, eirp_power = 0;
         u16 oper_freq = 0, start_freq = 0, center_freq = 0;
 	u8 reg_6g_power_mode;
@@ -22534,7 +22534,7 @@ ath12k_mac_map_psd_to_subchans(u32 *cfreqs, s16 *oobe_psd, u16 *sub_chans,
 		}
 
 		for (j = start_idx;
-		     num_20mhz_channels > 0 && j < IEEE80211_MAX_NUM_PWR_LEVEL;
+		     num_20mhz_channels > 0 && j < ATH12K_NUM_PWR_LEVELS;
 		     j++, num_20mhz_channels--)
 			tpc_oobe_psd[j] = oobe_psd[i - 1];
 
@@ -22560,7 +22560,7 @@ ath12k_mac_finalize_psd_table(struct ath12k *ar,
 			      u16 *sub_chans, s8 *tpc_oobe_psd,
 			      struct ieee80211_chanctx_conf *ctx)
 {
-	s16 reg_psd[IEEE80211_MAX_NUM_PWR_LEVEL];
+	s16 reg_psd[ATH12K_NUM_PWR_LEVELS];
 	u16 start_freq = sub_chans[0];
 	s8 txpower;
 	int i;
@@ -22604,10 +22604,10 @@ ath12k_mac_fill_reg_tpc_info_with_psd_for_sp_pwr_mode(struct ath12k *ar,
 {
 	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
 	u16 max_bw = ath12k_mac_get_chan_width(ctx->def.width);
-	u16 sub_chans[IEEE80211_MAX_NUM_PWR_LEVEL];
+	u16 sub_chans[ATH12K_NUM_PWR_LEVELS];
 	u16 pri_freq = ctx->def.chan->center_freq;
 	s16 oobe_psd[ATH12K_MAX_EIRP_VALS];
-	s8 tpc_oobe_psd[IEEE80211_MAX_NUM_PWR_LEVEL];
+	s8 tpc_oobe_psd[ATH12K_NUM_PWR_LEVELS];
 	u32 cfreqs[ATH12K_MAX_EIRP_VALS];
 	u8 num_oobe_psd;
 	u32 start_freq;
@@ -22761,7 +22761,7 @@ static void ath12k_mac_init_root_tpe(struct ath12k_reg_tpc_power_info *reg_tpc_i
 		*tpe = reg_tpc_info->tpe_psd;
 		if (!reg_tpc_info->num_tpe_psd)
 			memset(*tpe, ATH12K_MAX_TX_POWER,
-			       IEEE80211_MAX_NUM_PWR_LEVEL * sizeof(s8));
+			       ATH12K_NUM_PWR_LEVELS * sizeof(s8));
 	} else {
 		*tpe = reg_tpc_info->tpe_eirp;
 		if (!reg_tpc_info->num_tpe_eirp)
@@ -22787,7 +22787,7 @@ ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode(struct ath12k *ar,
 {
 	struct ath12k_reg_tpc_power_info *reg_tpc_info = &arvif->reg_tpc_info;
 	u16 max_bw = ath12k_mac_get_chan_width(ctx->def.width);
-	u16 sub_chans[IEEE80211_MAX_NUM_PWR_LEVEL];
+	u16 sub_chans[ATH12K_NUM_PWR_LEVELS];
 	s8 *tpe_psd;
 	u32 start_freq;
 	u8 n_subchans;
@@ -22900,7 +22900,7 @@ ath12k_mac_fill_reg_tpc_info_with_eirp_for_client_sp_pwr_mode(struct ath12k *ar,
 	u32 cfreqs[ATH12K_MAX_EIRP_VALS];
 	static const u16 bw[] = {ATH12K_CHWIDTH_20, ATH12K_CHWIDTH_40, ATH12K_CHWIDTH_80,
 				 ATH12K_CHWIDTH_160, ATH12K_CHWIDTH_320};
-	u16 sub_chans[IEEE80211_MAX_NUM_PWR_LEVEL];
+	u16 sub_chans[ATH12K_NUM_PWR_LEVELS];
 	u16 max_bw = ath12k_mac_get_chan_width(ctx->def.width);
 	u8 max_n_subchans = max_bw / ATH12K_CHWIDTH_20;
 	s8 *tpe_eirp, *tpe_psd;
