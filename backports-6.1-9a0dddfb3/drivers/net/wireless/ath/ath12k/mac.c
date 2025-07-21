@@ -14388,6 +14388,7 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 
 			if (ath12k_check_erp_power_down(ag)) {
 				ar->ab->powerup_triggered = false;
+				ar->pdev_suspend = false;
 			}
 		}
 	}
@@ -14896,6 +14897,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	u8 mask[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00};
 	int txpower = NL80211_TX_POWER_AUTOMATIC;
 	u8 map_id;
+	unsigned long time_left;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -14904,6 +14906,24 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	 */
 	if (vif->type == NL80211_IFTYPE_MONITOR && ar->monitor_vdev_created)
 		return -EINVAL;
+
+	if (ar->pdev_suspend) {
+		reinit_completion(&ar->pdev_resume);
+		ret = ath12k_wmi_pdev_resume(ar, ar->pdev->pdev_id);
+
+		if (ret) {
+			ath12k_err(ar->ab, "failed to send wmi resume command %d\n", ret);
+			return ret;
+		}
+
+		time_left = wait_for_completion_timeout(&ar->pdev_resume,
+							ATH12K_PDEV_RESUME_TIMEOUT);
+		if (!time_left) {
+			ath12k_err(ar->ab, "Timeout in receiving pdev resume response: %d\n",
+				   ar->pdev->pdev_id);
+			return -ETIMEDOUT;
+		}
+	}
 
 	/* If no link is active and scan vdev is requested
 	 * use a default link conf for scan address purpose.
@@ -15612,6 +15632,32 @@ bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah)
 	return true;
 }
 
+int ath12k_mac_pdev_suspend(struct ath12k *ar)
+{
+	unsigned long time_left;
+	int ret = 0;
+
+	if (!test_bit(WMI_SERVICE_PDEV_SUSPEND_EVENT_SUPPORT, ar->ab->wmi_ab.svc_map))
+		goto exit;
+
+	reinit_completion(&ar->suspend);
+	ret = ath12k_wmi_pdev_suspend(ar, WMI_PDEV_SUSPEND_AND_DISABLE_INTR,
+				      ar->pdev->pdev_id);
+	if (ret) {
+		ath12k_err(ar->ab, "failed to send wmi suspend command %d\n", ret);
+		goto exit;
+	}
+	time_left = wait_for_completion_timeout(&ar->suspend,
+						ATH12K_PDEV_SUSPEND_TIMEOUT);
+	if (!time_left) {
+		ath12k_err(ar->ab, "Timeout in receiving pdev suspend response: %d\n", ar->pdev->pdev_id);
+		ret = -ETIMEDOUT;
+		goto exit;
+	}
+exit:
+	return ret;
+}
+
 static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
@@ -15695,9 +15741,14 @@ err_vdev_del:
 	ahvif->device_bitmap &= ~BIT(ar->ab->wsi_info.index);
 
 	if (!ar->allocated_vdev_map && !arvif->is_scan_vif) {
-		if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE &&
-		    ath12k_mac_validate_active_radio_count(ar->ah))
-			ath12k_core_cleanup_power_down_q6(ar->ah);
+		if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) {
+			ret = ath12k_mac_pdev_suspend(ar);
+			if (ret)
+				ath12k_warn(ab, "Pdev suspend command is failed %d\n", ret);
+
+			if (ath12k_mac_validate_active_radio_count(ar->ah))
+				ath12k_core_cleanup_power_down_q6(ar->ah);
+		}
 	}
 
 	/* TODO: recal traffic pause state based on the available vdevs */
@@ -21505,6 +21556,8 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	init_completion(&ar->thermal.wmi_sync);
 	init_completion(&ar->mvr_complete);
 	init_completion(&ar->standby_teardown);
+	init_completion(&ar->suspend);
+	init_completion(&ar->pdev_resume);
 
 	INIT_DELAYED_WORK(&ar->scan.timeout, ath12k_scan_timeout_work);
 	wiphy_work_init(&ar->scan.vdev_clean_wk, ath12k_scan_vdev_clean_work);

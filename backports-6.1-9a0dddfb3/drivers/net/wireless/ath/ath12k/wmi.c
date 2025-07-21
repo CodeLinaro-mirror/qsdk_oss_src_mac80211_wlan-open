@@ -13725,6 +13725,82 @@ exit:
 	kfree(tb);
 }
 
+static void ath12k_wmi_suspend_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	struct ath12k *ar;
+	const struct wmi_suspend_resp_event *ev;
+	const void **tb;
+	u32 pdev_id;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ath12k_warn(ab, "failed to parse tlv: %ld\n", PTR_ERR(tb));
+		return;
+	}
+
+	ev = tb[WMI_PDEV_SUSPEND_EVENT_FIXED_PARAM];
+
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch peer delete all resp ev");
+		kfree(tb);
+		return;
+	}
+
+	pdev_id = le32_to_cpu(ev->pdev_id);
+	kfree(tb);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "WMI suspend event received for pdev_id %d\n", pdev_id);
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid pdev_id received for WMI pdev suspend event\n");
+		rcu_read_unlock();
+		return;
+	}
+
+	ar->pdev_suspend = true;
+	complete(&ar->suspend);
+	rcu_read_unlock();
+}
+
+static void ath12k_wmi_pdev_resume_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	const struct wmi_pdev_resume_resp_event *ev;
+	struct ath12k *ar;
+	const void **tb;
+	u32 pdev_id;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ath12k_warn(ab, "failed to parse tlv: %ld\n", PTR_ERR(tb));
+		return;
+	}
+
+	ev = tb[WMI_TAG_PDEV_RESUME_EVENT];
+
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch peer delete all resp ev");
+		kfree(tb);
+		return;
+	}
+
+	pdev_id = le32_to_cpu(ev->pdev_id);
+	kfree(tb);
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "WMI resume event received for pdev_id %d\n", pdev_id);
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid pdev_id received for WMI pdev resume event\n");
+		rcu_read_unlock();
+		return;
+	}
+
+	ar->pdev_suspend = false;
+	complete(&ar->pdev_resume);
+	rcu_read_unlock();
+}
+
 static void
 ath12k_wmi_obss_color_collision_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
@@ -14968,6 +15044,12 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_SPECTRAL_CAPABILITIES_EVENTID:
 		ath12k_wmi_spectral_capabilities_event(ab, skb);
+		break;
+	case WMI_PDEV_RESUME_EVENTID:
+		ath12k_wmi_pdev_resume_event(ab, skb);
+		break;
+	case WMI_PDEV_SUSPEND_EVENTID:
+		ath12k_wmi_suspend_event(ab, skb);
 		break;
 	case WMI_PDEV_UTF_EVENTID:
 		if (test_bit(ATH12K_FLAG_FTM_SEGMENTED, &ab->dev_flags))

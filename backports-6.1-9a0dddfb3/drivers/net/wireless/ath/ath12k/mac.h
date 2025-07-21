@@ -100,6 +100,8 @@ struct ath12k_generic_iter {
 
 #define ATH12K_MIN_TX_POWER		-127
 #define ATH12K_TEARDOWN_STANDBY_TIMEOUT (2 * HZ)
+#define ATH12K_PDEV_SUSPEND_TIMEOUT	(2 * HZ)
+#define ATH12K_PDEV_RESUME_TIMEOUT	(2 * HZ)
 
 enum ath12k_supported_bw {
 	ATH12K_BW_20    = 0,
@@ -449,6 +451,7 @@ void ath12k_mac_op_set_dscp_tid(struct ieee80211_hw *hw,
 int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah);
 void ath12k_mac_stop(struct ath12k *ar);
 bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah);
+int ath12k_mac_pdev_suspend(struct ath12k *ar);
 
 /* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured

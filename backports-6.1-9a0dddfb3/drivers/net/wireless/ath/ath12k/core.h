@@ -1226,6 +1226,9 @@ struct ath12k {
 	bool erp_trigger_set;
 	struct work_struct erp_handle_trigger_work;
 	struct completion standby_teardown;
+	struct completion suspend;
+	bool pdev_suspend;
+	struct completion pdev_resume;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

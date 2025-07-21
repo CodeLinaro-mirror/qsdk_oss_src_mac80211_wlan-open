@@ -2326,6 +2326,8 @@ static void ath12k_core_radio_start(struct ath12k_base *ab)
 						mutex_unlock(&ag->mutex);
 						return;
 					}
+
+					ar->pdev_suspend = false;
 				}
 			}
 		}
