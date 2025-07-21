@@ -22,5 +22,6 @@ int ath12k_erp_enter(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int lin
 		     struct cfg80211_erp_params *params);
 int ath12k_erp_exit(struct wiphy *wiphy, bool send_event);
 enum ath12k_erp_states ath12k_erp_get_sm_state(void);
+void ath12k_erp_ssr_exit(struct work_struct *work);
 #endif /* ATH12K_ERP_H */
 

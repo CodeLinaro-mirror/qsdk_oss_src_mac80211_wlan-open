@@ -3907,6 +3907,10 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	int i, mlo_idx;
 
+	if (ath12k_check_erp_power_down(ag) &&
+	    ab->pm_suspend)
+		return;
+
 	for (i = 0, mlo_idx = 0; i < ab->qmi.mem_seg_count; i++) {
 
 		if (ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE) {
@@ -6508,7 +6512,6 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 				if (ab->is_reset)
 					ath12k_hal_dump_srng_stats(ab);
 
-				set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
 				queue_work(ab->workqueue, &ab->restart_work);
 				break;
 			}

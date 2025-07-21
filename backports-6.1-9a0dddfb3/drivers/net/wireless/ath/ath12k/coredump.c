@@ -318,6 +318,9 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	bool state = false;
 
+	if (ath12k_check_erp_power_down(ag) && ab->pm_suspend)
+		return;
+
 	if (ab->in_panic)
 		state = true;
 

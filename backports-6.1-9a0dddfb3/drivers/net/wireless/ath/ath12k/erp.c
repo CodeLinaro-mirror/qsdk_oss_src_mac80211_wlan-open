@@ -604,6 +604,16 @@ static void ath12k_vendor_send_erp_trigger(struct wiphy *wiphy)
 	wiphy_unlock(wiphy);
 }
 
+void ath12k_erp_ssr_exit(struct work_struct *work)
+{
+	struct ath12k *ar = container_of(work, struct ath12k, ssr_erp_exit);
+	struct ieee80211_hw *hw = ar->ah->hw;
+	struct wiphy *wiphy = hw->wiphy;
+
+	if (ath12k_erp_exit(wiphy, true))
+		ath12k_err(NULL, "Fail to exit from erp mode after ssr\n");
+}
+
 int ath12k_erp_exit(struct wiphy *wiphy, bool send_event)
 {
 	struct ath12k_erp_active_ar *active_ar;

@@ -1102,6 +1102,7 @@ static void ath12k_ahb_handle_userpd_crash(struct ath12k_base *ab)
 	if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags))) {
 		set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
 		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+		set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ab->ag->flags);
 		ab_ahb->crash_type = ATH12K_RPROC_USERPD_CRASH;
 		queue_work(ab->workqueue_aux, &ab->reset_work);
 	} else {

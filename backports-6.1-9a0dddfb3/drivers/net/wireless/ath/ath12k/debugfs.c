@@ -5412,6 +5412,10 @@ void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 				}
 
 				if (radioup) {
+					if (ath12k_check_erp_power_down(ag) &&
+					    ab->pm_suspend)
+						continue;
+
 					ath12k_debug_multipd_wmi_pdev_set_param(ab, ab->fw_recovery_support);
 					ret = ath12k_wmi_force_fw_hang_cmd(ar,
 									   recovery_mode,

@@ -1229,6 +1229,7 @@ struct ath12k {
 	struct completion suspend;
 	bool pdev_suspend;
 	struct completion pdev_resume;
+	struct work_struct ssr_erp_exit;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

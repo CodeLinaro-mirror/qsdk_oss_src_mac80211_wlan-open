@@ -14344,7 +14344,8 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	if (ath12k_check_erp_power_down(ag)) {
+	if (ath12k_check_erp_power_down(ag) &&
+	    !ath12k_hw_group_recovery_in_progress(ag)) {
 		ret = ath12k_core_power_up(ag);
 		return ret;
 	}
@@ -19576,6 +19577,9 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 
 	ath12k_info(NULL, "HW group recovery flag cleared ag dev_flags:0x%lx\n",
 		    ar->ab->ag->flags);
+
+	if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE)
+		ieee80211_queue_work(hw, &ar->ssr_erp_exit);
 }
 
 void
@@ -21572,6 +21576,7 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	ar->monitor_started = false;
 
 	INIT_WORK(&ar->erp_handle_trigger_work, ath12k_erp_handle_trigger);
+	INIT_WORK(&ar->ssr_erp_exit, ath12k_erp_ssr_exit);
 }
 
 static int __ath12k_mac_mlo_setup(struct ath12k *ar)

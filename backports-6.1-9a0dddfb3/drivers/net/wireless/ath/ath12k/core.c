@@ -2104,6 +2104,7 @@ void ath12k_core_halt(struct ath12k *ar)
 
 	cancel_work_sync(&ar->erp_handle_trigger_work);
 	ar->erp_trigger_set = false;
+	cancel_work_sync(&ar->ssr_erp_exit);
 }
 
 static void ath12k_core_mlo_hw_queues_stop(struct ath12k_hw_group *ag)
@@ -2362,10 +2363,16 @@ static void ath12k_core_restart(struct work_struct *work)
 	}
 
 	if (ath12k_core_hw_group_start_ready(ag) &&
-	    ath12k_check_erp_power_down(ag))
+	    ath12k_check_erp_power_down(ag) &&
+	    !ath12k_hw_group_recovery_in_progress(ag)) {
 		ath12k_core_radio_start(ab);
+		set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
+			&ab->dev_flags);
+	}
 
-	if (ab->is_reset) {
+	if (ab->is_reset ||
+	    (ath12k_check_erp_power_down(ag) &&
+	     ath12k_hw_group_recovery_in_progress(ag))) {
 		if (!test_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags)) {
 			atomic_dec(&ab->reset_count);
 			complete(&ab->reset_complete);
@@ -3263,9 +3270,7 @@ static void ath12k_core_upd_power_down(struct ath12k_base *ab)
 	 * Collect coredump using user pd
 	 */
 	if (ab_ahb->crash_type == ATH12K_RPROC_USERPD_CRASH) {
-		if (!ab->pm_suspend)
-			ath12k_hif_power_down(ab, false);
-
+		ath12k_hif_power_down(ab, false);
 		ath12k_coredump_ahb_collect(ab);
 	}
 
@@ -3379,6 +3384,10 @@ static void ath12k_core_reset(struct work_struct *work)
 	} else {
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	}
+
+	if (ath12k_check_erp_power_down(ag))
+		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
+
 	if (ab->fw_recovery_support)
 		ath12k_info(ab, "Recovery is initiated with Mode%s\n",
 				(ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0 ? "0" : "1"));
@@ -3497,7 +3506,8 @@ static void ath12k_core_reset(struct work_struct *work)
 		}
 	}
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0 &&
+	    !ath12k_check_erp_power_down(ag))
 		ath12k_core_trigger_partner_device_crash(ab);
 
 	/* prepare coredump */
@@ -3522,10 +3532,10 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_hif_ce_irq_disable(ab);
 
 	if (ab->hif.bus == ATH12K_BUS_PCI) {
-		if (!ab->pm_suspend)
-			ath12k_hif_power_down(ab, false);
+		ath12k_hif_power_down(ab, false);
 	} else {
-		ath12k_core_upd_power_down(ab);
+		if (!ab->pm_suspend)
+			ath12k_core_upd_power_down(ab);
 	}
 
 	/* prepare for power up */
@@ -3548,11 +3558,18 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		if (!ab || !ab->is_reset)
+		if (!ab->is_reset &&
+		    !ath12k_check_erp_power_down(ag))
 			continue;
 
 		ath12k_qmi_free_resource(ab);
 		ath12k_hif_power_up(ab);
+
+		if (ath12k_check_erp_power_down(ag)) {
+			ab->pm_suspend = false;
+			ab->powerup_triggered = true;
+		}
+
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset started\n");
 	}
 
