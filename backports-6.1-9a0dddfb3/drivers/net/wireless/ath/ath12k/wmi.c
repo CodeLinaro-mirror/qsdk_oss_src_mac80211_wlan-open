@@ -12623,7 +12623,7 @@ int wmi_print_ctrl_path_btcoex_stats_tlv(struct ath12k_base *ab, u16 len,
 	return 0;
 }
 
-static void
+/*static void
 ath12k_wmi_ctrl_path_pdev_stats_list_free(struct list_head *head)
 {
 	struct wmi_ctrl_path_pdev_stats *stats_list, *tmp;
@@ -12639,6 +12639,8 @@ ath12k_wmi_ctrl_path_stats_list_free(struct ath12k_wmi_ctrl_path_stats_list *par
 {
 	ath12k_wmi_ctrl_path_pdev_stats_list_free(&param->pdev_stats);
 }
+*/
+
 
 int wmi_print_ctrl_path_awgn_stats_tlv(struct ath12k_base *ab, u16 len,
 				       const void *ptr, void *data)
@@ -12795,7 +12797,7 @@ int wmi_print_ctrl_path_pmlo_stats_tlv(struct ath12k_base *ab, u16 len, const vo
        if (!stats)
                return -ENOMEM;
 
-       pmlo_stats = vmalloc(sizeof(*pmlo_stats));
+	pmlo_stats = kzalloc(sizeof(*pmlo_stats), GFP_ATOMIC);
        if (!pmlo_stats) {
                kfree(stats);
                return -ENOMEM;
@@ -12808,7 +12810,7 @@ int wmi_print_ctrl_path_pmlo_stats_tlv(struct ath12k_base *ab, u16 len, const vo
        ar = ath12k_mac_get_ar_by_pdev_id(ab, pmlo_stats_skb->pdev_id);
        if (!ar) {
                ath12k_warn(ab, "Failed to get ar for wmi ctrl stats\n");
-               vfree(pmlo_stats);
+		kfree(pmlo_stats);
                list_del(&stats->list);
                kfree(stats);
                return -EINVAL;
@@ -12825,11 +12827,10 @@ int wmi_print_ctrl_path_pmlo_stats_tlv(struct ath12k_base *ab, u16 len, const vo
        ar->stats.telemetry_stats.estimated_air_time_ac_vo =
                u32_get_bits(value, GENMASK(31, 24));
 
-       //ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.period_wmi_list);
+	ath12k_wmi_crl_path_stats_list_free(ar,
+					    &ar->debug.wmi_ctrl_path_stats.pdev_stats);
        spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
-       ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_PMLO_STATS;
        stats_buff->ar = ar;
-       vfree(pmlo_stats);
        return 0;
 }
 
@@ -12912,7 +12913,7 @@ static int ath12k_wmi_ctrl_stats_event_parser(struct ath12k_base *ab,
 static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct wmi_ctrl_path_stats_event *fixed_param;
-	struct ath12k_wmi_ctrl_path_stats_list param = {0};
+	struct wmi_ctrl_path_stats_ev_parse_param param = {0};
 	struct ath12k_wmi_ctrl_path_stats_list *stats;
 	const struct wmi_tlv *tlv;
 	struct list_head *src, *dst;
@@ -12943,7 +12944,7 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 		return;
 	}
 
-	INIT_LIST_HEAD(&param.pdev_stats);
+	INIT_LIST_HEAD(&param.list);
 
 	fixed_param = ptr;
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
@@ -12966,7 +12967,7 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 
 	switch (tag_id) {
 	case WMI_TAG_CTRL_PATH_PDEV_STATS:
-		src = &param.pdev_stats;
+		src = &param.list;
 		dst = &stats->pdev_stats;
 		break;
 	case WMI_CTRL_PATH_PMLO_STATS:
@@ -12979,15 +12980,14 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	if (!more) {
 		if (!ar->debug.wmi_ctrl_path_stats_more_enabled)
-			ath12k_wmi_ctrl_path_stats_list_free(stats);
+			ath12k_wmi_crl_path_stats_list_free(ar, &stats->pdev_stats);
 		else
 			ar->debug.wmi_ctrl_path_stats_more_enabled = false;
-
 		list_splice_tail_init(src, dst);
 		complete(&ar->debug.wmi_ctrl_path_stats_rcvd);
 	} else {
 		if (!ar->debug.wmi_ctrl_path_stats_more_enabled) {
-			ath12k_wmi_ctrl_path_stats_list_free(stats);
+			ath12k_wmi_crl_path_stats_list_free(ar, &stats->pdev_stats);
 			ar->debug.wmi_ctrl_path_stats_more_enabled = true;
 		}
 		list_splice_tail_init(src, dst);
@@ -12996,7 +12996,7 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 	return;
 free:
 	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
-	ath12k_wmi_ctrl_path_stats_list_free(&param);
+	ath12k_wmi_crl_path_stats_list_free(ar, &param.list);
 	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 }
 #else
