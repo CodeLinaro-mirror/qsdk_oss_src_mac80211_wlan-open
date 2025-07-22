@@ -778,9 +778,6 @@ static void ath12k_wifi7_dp_tx_free_txbuf(struct ath12k_dp *dp,
 		return;
 	}
 
-	if (atomic_dec_and_test(&dp_pdev->num_tx_pending))
-		wake_up(&dp_pdev->tx_empty_waitq);
-
 	if (sw_metadata->flags & DP_TX_DESC_FLAG_FAST)
 		dev_kfree_skb_any(msdu);
 	else
@@ -828,9 +825,6 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		rcu_read_unlock();
 		return;
 	}
-
-	if (atomic_dec_and_test(&dp_pdev->num_tx_pending))
-		wake_up(&dp_pdev->tx_empty_waitq);
 
 	if (sw_metadata->flags & DP_TX_DESC_FLAG_FAST) {
 		dev_kfree_skb_any(msdu);
@@ -943,10 +937,6 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 	}
 
 	if (sw_metadata->flags & DP_TX_DESC_FLAG_FAST) {
-
-		if (atomic_dec_and_test(&dp_pdev->num_tx_pending))
-			wake_up(&dp_pdev->tx_empty_waitq);
-
 		dev_kfree_skb_any(msdu);
 		rcu_read_unlock();
 		return;
@@ -1411,6 +1401,8 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 #endif
 	int orig_budget = budget;
 	bool fast_flag;
+	int pdev_tx_comp_cnt[MAX_RADIOS] = {0};
+	u8 mac_id = 0;
 
 	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
 
@@ -1502,6 +1494,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		sw_metadata->ext_desc_len = tx_desc->ext_desc_len;
 		sw_metadata->flags = tx_desc->flags;
 		sw_metadata->mac_id = tx_desc->mac_id;
+		pdev_tx_comp_cnt[sw_metadata->mac_id]++;
 
 		tx_desc->skb = NULL;
 		tx_desc->skb_ext_desc = NULL;
@@ -1513,6 +1506,21 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	list_splice(&desc_free_list, &dp->tx_desc_free_list[ring_id]);
 
 	spin_unlock_bh(&dp->tx_desc_lock[ring_id]);
+
+	for (mac_id = 0; mac_id < MAX_RADIOS; mac_id++) {
+		if (likely(pdev_tx_comp_cnt[mac_id])) {
+			pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
+			rcu_read_lock();
+			dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+			rcu_read_unlock();
+
+			if (unlikely(!dp_pdev))
+				continue;
+
+			if (atomic_sub_and_test(pdev_tx_comp_cnt[mac_id], &dp_pdev->num_tx_pending))
+				wake_up(&dp_pdev->tx_empty_waitq);
+		}
+	}
 
 	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp_hw_grp->tx_status_buf[tx_status_idx];
 	while (n_entry--) {
@@ -1560,9 +1568,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			rcu_read_unlock();
 			continue;
 		}
-
-		if (atomic_dec_and_test(&dp_pdev->num_tx_pending))
-			wake_up(&dp_pdev->tx_empty_waitq);
 
 		if (!fast_flag && sw_metadata->skb) {
 			ath12k_wifi7_dp_tx_status_parse(ab, tx_status, &ts);
