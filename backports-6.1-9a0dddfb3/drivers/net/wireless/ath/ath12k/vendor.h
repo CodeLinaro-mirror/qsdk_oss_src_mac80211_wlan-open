@@ -51,6 +51,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD = 267,
 	QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION = 268,
 	QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION = 269,
+	QCA_NL80211_VENDOR_SUBCMD_AFC_GET_REG_EIRP = 290,
 };
 
 enum qca_nl80211_vendor_events {
@@ -626,6 +627,19 @@ enum qca_wlan_vendor_6ghz_power_modes {
 };
 
 /**
+ * enum qca_wlan_vendor_client_type - Client types for 6 GHz operation
+ * @QCA_WLAN_VENDOR_CLIENT_TYPE_DEFAULT: Default client type operating under standard rules.
+ * @QCA_WLAN_VENDOR_CLIENT_TYPE_SUBORDINATE: Subordinate client type, typically operating under
+ *                                           a controlling AP.
+ * @QCA_WLAN_VENDOR_CLIENT_TYPE_MAX: Maximum value placeholder for bounds checking and validation.
+ */
+enum qca_wlan_vendor_client_type {
+	QCA_WLAN_VENDOR_CLIENT_TYPE_DEFAULT = 0,
+	QCA_WLAN_VENDOR_CLIENT_TYPE_SUBORDINATE = 1,
+	QCA_WLAN_VENDOR_CLIENT_TYPE_MAX,
+};
+
+/**
  * enum qca_wlan_vendor_set_6ghz_power_mode - Used by the vendor command
  * QCA_NL80211_VENDOR_SUBCMD_SET_6GHZ_POWER_MODE command to configure the
  * 6 GHz power mode.
@@ -642,6 +656,44 @@ enum qca_wlan_vendor_set_6ghz_power_mode {
 	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX =
 		QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_reg_eirp - Vendor attributes for regulatory EIRP handling
+ * @QCA_WLAN_VENDOR_ATTR_REG_EIRP_INVALID: Invalid attribute (placeholder).
+ * @QCA_WLAN_VENDOR_ATTR_REG_EIRP_POWER_TYPE: Attribute indicating the AP power mode type
+ *                                            (e.g., LPI, SP, VLP) for 6 GHz regulatory
+ *                                            configuration.
+ * @QCA_WLAN_VENDOR_ATTR_REG_EIRP_CLIENT_TYPE: Attribute indicating the client type
+ *                                             (e.g., default or subordinate) for 6 GHz
+ *                                             regulatory configuration.
+ * @QCA_WLAN_VENDOR_ATTR_REG_EIRP_MAX: Maximum attribute index (internal use for bounds checking).
+ */
+enum qca_wlan_vendor_attr_reg_eirp {
+	QCA_WLAN_VENDOR_ATTR_REG_EIRP_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_REG_EIRP_POWER_TYPE,
+	QCA_WLAN_VENDOR_ATTR_REG_EIRP_CLIENT_TYPE,
+	QCA_WLAN_VENDOR_ATTR_REG_EIRP_MAX,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_reg_eirp_update - Vendor attributes for EIRP update
+ * @QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_INVALID: Invalid attribute (placeholder).
+ * @QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_CENTER_FREQ: Attribute representing the center
+ *                                                    frequency (in MHz) of the channel.
+ * @QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_CHAN_NUM: Attribute representing the hardware channel
+ *                                                 number.
+ * @QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_TX_POWER: Attribute representing the maximum regulatory
+ *                                                 transmit power (in dBm).
+ * @QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_MAX: Maximum attribute index (used for validation and
+ *                                            bounds checking).
+ */
+enum qca_wlan_vendor_attr_reg_eirp_update {
+	QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_CENTER_FREQ,
+	QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_CHAN_NUM,
+	QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_TX_POWER,
+	QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_MAX,
 };
 
 /**

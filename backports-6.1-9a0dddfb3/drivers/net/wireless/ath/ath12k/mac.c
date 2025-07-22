@@ -23288,3 +23288,104 @@ int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
 	}
 }
 EXPORT_SYMBOL(ath12k_mac_op_qos_mgmt_cfg);
+
+/**
+ * ath12k_get_nl_ap_pwr_mode - Map WMI AP/client power mode to NL80211 regulatory mode
+ * @ap_mode: AP power mode (WMI_REG_INDOOR_AP, WMI_REG_STD_POWER_AP, etc.)
+ * @client_type: Client type (WMI_REG_DEFAULT_CLIENT, WMI_REG_SUBORDINATE_CLIENT)
+ * @is_client_needed: Indicates whether the mapping is for a client or AP
+ *
+ * This function translates the WMI-defined AP or client power mode into the
+ * corresponding NL80211 regulatory power mode used for 6 GHz band configuration.
+ * It handles both AP and client mappings based on the input flags.
+ *
+ * Return: A valid enum nl80211_regulatory_power_modes value on success,
+ *         or NL80211_REG_NUM_POWER_MODES if the input combination is invalid.
+ */
+static enum nl80211_regulatory_power_modes
+ath12k_get_nl_ap_pwr_mode(enum wmi_reg_6g_ap_type ap_mode,
+			  enum wmi_reg_6g_client_type client_type,
+			  bool is_client_needed)
+{
+	if (!is_client_needed) {
+		switch (ap_mode) {
+		case WMI_REG_INDOOR_AP: return NL80211_REG_AP_LPI;
+		case WMI_REG_STD_POWER_AP: return NL80211_REG_AP_SP;
+		case WMI_REG_VLP_AP: return NL80211_REG_AP_VLP;
+		default: return NL80211_REG_NUM_POWER_MODES;
+		}
+	} else if (client_type == WMI_REG_DEFAULT_CLIENT) {
+		switch (ap_mode) {
+		case WMI_REG_INDOOR_AP: return NL80211_REG_REGULAR_CLIENT_LPI;
+		case WMI_REG_STD_POWER_AP: return NL80211_REG_REGULAR_CLIENT_SP;
+		case WMI_REG_VLP_AP: return NL80211_REG_REGULAR_CLIENT_VLP;
+		default: return NL80211_REG_NUM_POWER_MODES;
+		}
+	} else if (client_type == WMI_REG_SUBORDINATE_CLIENT) {
+		switch (ap_mode) {
+		case WMI_REG_INDOOR_AP: return NL80211_REG_SUBORDINATE_CLIENT_LPI;
+		case WMI_REG_STD_POWER_AP: return NL80211_REG_SUBORDINATE_CLIENT_SP;
+		case WMI_REG_VLP_AP: return NL80211_REG_SUBORDINATE_CLIENT_VLP;
+		default: return NL80211_REG_NUM_POWER_MODES;
+		}
+	}
+
+	return NL80211_REG_NUM_POWER_MODES;
+}
+
+/**
+ * ath12k_fill_chan_eirp_list - Populate EIRP list from 6 GHz channel data
+ * @chan_6g: Pointer to the 6 GHz channel structure containing channel info
+ * @chan_eirp_list: Output array to be filled with EIRP values per channel
+ *
+ * This helper function iterates over the list of 6 GHz channels and fills
+ * the corresponding entries in the provided channel_power array with:
+ * - tx_power: maximum regulatory transmit power
+ * - center_freq: center frequency of the channel
+ * - chan_num: hardware channel number
+ *
+ * This function is used to extract regulatory power information for each
+ * channel in the specified power mode band.
+ */
+static void
+ath12k_fill_chan_eirp_list(struct ieee80211_6ghz_channel *chan_6g,
+			   struct channel_power *chan_eirp_list)
+{
+	u8 i;
+
+	for (i = 0; i < chan_6g->n_channels; i++) {
+		struct ieee80211_channel *channels = &chan_6g->channels[i];
+
+		if (channels->flags & IEEE80211_CHAN_DISABLED)
+			continue;
+
+		chan_eirp_list[i].tx_power = channels->max_reg_power;
+		chan_eirp_list[i].center_freq = channels->center_freq;
+		chan_eirp_list[i].chan_num = channels->hw_value;
+	}
+}
+
+int ath12k_mac_reg_get_max_reg_eirp_from_chan_list(struct ath12k *ar,
+						   enum wmi_reg_6g_ap_type ap_6ghz_pwr_mode,
+						   enum wmi_reg_6g_client_type client_type,
+						   bool is_client_needed,
+						   struct channel_power *chan_eirp_list)
+{
+	enum nl80211_regulatory_power_modes nl_ap_pwr_mode;
+	struct ieee80211_6ghz_channel *chan_6g;
+	struct ieee80211_supported_band *band;
+
+	band = &ar->mac.sbands[NL80211_BAND_6GHZ];
+	nl_ap_pwr_mode = ath12k_get_nl_ap_pwr_mode(ap_6ghz_pwr_mode, client_type,
+						   is_client_needed);
+	if (nl_ap_pwr_mode == NL80211_REG_NUM_POWER_MODES)
+		return -EINVAL;
+
+	chan_6g = band->chan_6g[nl_ap_pwr_mode];
+	if (!chan_6g)
+		return -EINVAL;
+
+	ath12k_fill_chan_eirp_list(chan_6g, chan_eirp_list);
+
+	return 0;
+}

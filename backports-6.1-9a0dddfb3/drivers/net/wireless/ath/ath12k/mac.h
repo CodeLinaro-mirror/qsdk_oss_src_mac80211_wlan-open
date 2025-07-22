@@ -613,4 +613,40 @@ int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
 			       struct ieee80211_sta *sta,
 			       struct cfg80211_qm_req_data *qm_req,
 			       struct cfg80211_qm_resp_data *qm_resp);
+
+/**
+ * struct channel_power - Regulatory power information for a 6 GHz channel
+ * @center_freq: Center frequency (in MHz) of the channel
+ * @chan_num: Hardware channel number
+ * @tx_power: Maximum regulatory transmit power (in dBm)
+ *
+ * This structure holds the regulatory EIRP information for a specific 6 GHz
+ * channel. It is typically populated based on regulatory domain data.
+ */
+struct channel_power {
+	u16 center_freq;
+	u8 chan_num;
+	s8 tx_power;
+};
+
+/**
+ * ath12k_mac_reg_get_max_reg_eirp_from_chan_list - Populate EIRP list for 6 GHz channels
+ * @ar: Pointer to the ath12k device structure
+ * @ap_6ghz_pwr_mode: AP power mode (e.g., WMI_REG_INDOOR_AP, WMI_REG_STD_POWER_AP)
+ * @client_type: Client type (e.g., WMI_REG_DEFAULT_CLIENT, WMI_REG_SUBORDINATE_CLIENT)
+ * @is_client_needed: Flag indicating whether the EIRP list is for a client device
+ * @chan_eirp_list: Output array to be filled with channel power information
+ *
+ * This function determines the appropriate NL80211 regulatory power mode based on
+ * the AP/client configuration and fills the provided channel_power array with
+ * maximum regulatory transmit power, center frequency, and channel number for
+ * each 6 GHz channel in that mode.
+ *
+ * Return: 0 on success, -EINVAL if the power mode mapping is invalid.
+ */
+int ath12k_mac_reg_get_max_reg_eirp_from_chan_list(struct ath12k *ar,
+						   enum wmi_reg_6g_ap_type ap_6ghz_pwr_mode,
+						   enum wmi_reg_6g_client_type client_type,
+						   bool is_client_needed,
+						   struct channel_power *chan_eirp_list);
 #endif

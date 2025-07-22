@@ -5174,6 +5174,173 @@ static int ath12k_vendor_parse_rm(struct wiphy *wiphy, struct wireless_dev *wdev
 					  tb[QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ERP]);
 }
 
+static const struct nla_policy
+ath12k_reg_get_eirp_policy[QCA_WLAN_VENDOR_ATTR_REG_EIRP_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_REG_EIRP_POWER_TYPE] = { .type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_REG_EIRP_CLIENT_TYPE] = { .type = NLA_U8 },
+};
+
+/**
+ * wlan_cfg80211_send_reg_eirp_update - Send EIRP update to userspace
+ * @wiphy: Pointer to the wiphy structure
+ * @eirp_list: Array of channel_power structures
+ * @n_channels: Number of channels in the list
+ *
+ * This function packages the EIRP data (center frequency, channel number,
+ * and transmit power) into nested netlink attributes and sends it to
+ * userspace via a vendor command reply.
+ *
+ * Return: 0 on success, negative error code on failure.
+ */
+static int wlan_cfg80211_send_reg_eirp_update(struct wiphy *wiphy,
+					      struct channel_power *eirp_list,
+					      u8 n_channels)
+{
+	struct sk_buff *skb;
+	struct nlattr *nla_attr;
+	int i;
+
+	if (!eirp_list || n_channels == 0)
+		return -EINVAL;
+
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, NLMSG_DEFAULT_SIZE);
+	if (!skb)
+		return -ENOMEM;
+
+	/* Center Frequency */
+	nla_attr = nla_nest_start(skb, QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_CENTER_FREQ);
+	if (!nla_attr)
+		goto fail;
+
+	for (i = 0; i < n_channels; i++) {
+		if (nla_put_u16(skb, i, eirp_list[i].center_freq))
+			goto fail;
+	}
+	nla_nest_end(skb, nla_attr);
+
+	/* Channel Number */
+	nla_attr = nla_nest_start(skb, QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_CHAN_NUM);
+	if (!nla_attr)
+		goto fail;
+
+	for (i = 0; i < n_channels; i++) {
+		if (nla_put_u16(skb, i, eirp_list[i].chan_num))
+			goto fail;
+	}
+	nla_nest_end(skb, nla_attr);
+
+	/* Transmit Power */
+	nla_attr = nla_nest_start(skb, QCA_WLAN_VENDOR_ATTR_REG_EIRP_UPDATE_TX_POWER);
+	if (!nla_attr)
+		goto fail;
+
+	for (i = 0; i < n_channels; i++) {
+		if (nla_put_u16(skb, i, eirp_list[i].tx_power))
+			goto fail;
+	}
+	nla_nest_end(skb, nla_attr);
+
+	return cfg80211_vendor_cmd_reply(skb);
+
+fail:
+	kfree_skb(skb);
+	return -EMSGSIZE;
+}
+
+/**
+ * ath12k_vendor_get_reg_eirp_handler - Handle vendor command to get 6 GHz EIRP data
+ * @wiphy: Pointer to the wiphy structure
+ * @wdev: Pointer to the wireless device
+ * @data: Pointer to vendor command attributes
+ * @data_len: Length of the vendor command data
+ *
+ * This function parses vendor attributes to determine the 6 GHz AP/client power mode,
+ * retrieves the corresponding regulatory EIRP data, and sends it back to userspace.
+ *
+ * Return: 0 on success, negative error code on failure.
+ */
+static int ath12k_vendor_get_reg_eirp_handler(struct wiphy *wiphy, struct wireless_dev *wdev,
+					      const void *data, int data_len)
+{
+	enum wmi_reg_6g_client_type client_type = WMI_REG_MAX_CLIENT_TYPE;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_REG_EIRP_MAX + 1];
+	enum wmi_reg_6g_ap_type ap_6ghz_pwr_mode;
+	struct ieee80211_supported_band *band;
+	struct channel_power *chan_eirp_list;
+	bool is_client_needed;
+	struct ath12k *ar;
+	int ret_val = 0;
+	u8 link_id;
+
+	if (!wdev || !data || !data_len) {
+		ath12k_err(NULL, "Invalid input to EIRP handler");
+		return -EINVAL;
+	}
+
+	for_each_valid_link(wdev, link_id) {
+		if (wdev->links[link_id].ap.chandef.chan &&
+		    wdev->links[link_id].ap.chandef.chan->band == NL80211_BAND_6GHZ)
+			break;
+	}
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -EINVAL;
+
+	ar = ath12k_get_ar_from_wdev(wdev, link_id);
+	if (!ar)
+		return -ENODATA;
+
+	band = &ar->mac.sbands[NL80211_BAND_6GHZ];
+	if (!band || band->n_channels == 0)
+		return -EINVAL;
+
+	chan_eirp_list = kzalloc(band->n_channels * sizeof(*chan_eirp_list), GFP_KERNEL);
+	if (!chan_eirp_list)
+		return -ENOMEM;
+
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_REG_EIRP_POWER_TYPE, data,
+		      data_len, ath12k_reg_get_eirp_policy, NULL)) {
+		ath12k_err(NULL, "Failed to parse EIRP vendor attributes");
+		ret_val = -EINVAL;
+		goto free_eirp;
+	}
+	if (!tb[QCA_WLAN_VENDOR_ATTR_REG_EIRP_POWER_TYPE]) {
+		ath12k_err(NULL, "Missing mandatory EIRP power type attribute");
+		ret_val = -EINVAL;
+		goto free_eirp;
+	}
+
+	ap_6ghz_pwr_mode = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_REG_EIRP_POWER_TYPE]);
+	if (ap_6ghz_pwr_mode < WMI_REG_INDOOR_AP || ap_6ghz_pwr_mode > WMI_REG_VLP_AP) {
+		ath12k_err(NULL, "Invalid 6 GHz AP power mode: %u", ap_6ghz_pwr_mode);
+		ret_val = -EINVAL;
+		goto free_eirp;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_REG_EIRP_CLIENT_TYPE])
+		client_type = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_REG_EIRP_CLIENT_TYPE]);
+	if (client_type >= WMI_REG_MAX_CLIENT_TYPE) {
+		ath12k_err(NULL, "Invalid client type: %u", client_type);
+		ret_val = -EINVAL;
+		goto free_eirp;
+	}
+
+	is_client_needed = (client_type < WMI_REG_MAX_CLIENT_TYPE);
+
+	ret_val = ath12k_mac_reg_get_max_reg_eirp_from_chan_list(ar, ap_6ghz_pwr_mode,
+								 client_type, is_client_needed,
+								 chan_eirp_list);
+	if (ret_val) {
+		ath12k_err(NULL, "Failed to retrieve regulatory EIRP data");
+		goto free_eirp;
+	}
+
+	ret_val = wlan_cfg80211_send_reg_eirp_update(wiphy, chan_eirp_list, band->n_channels);
+
+free_eirp:
+	kfree(chan_eirp_list);
+	return ret_val;
+}
+
 static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
@@ -5284,6 +5451,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.doit = ath12k_vendor_get_wiphy_config_handler,
 		.policy = ath12k_wifi_config_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_AFC_GET_REG_EIRP,
+		.doit = ath12k_vendor_get_reg_eirp_handler,
+		.policy = ath12k_reg_get_eirp_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_REG_EIRP_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
 };
 
