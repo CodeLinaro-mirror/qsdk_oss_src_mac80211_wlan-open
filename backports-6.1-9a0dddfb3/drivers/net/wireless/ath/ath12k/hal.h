@@ -61,6 +61,7 @@ struct hal_rx_spd_data;
 /* TODO: 16 entries per radio times MAX_VAPS_SUPPORTED */
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX	32
 #define HAL_DSCP_TID_TBL_SIZE			24
+#define DSCP_TID_MAP_TBL_ENTRY_SIZE		64
 
 #define RU_INVALID		0
 #define RU_26			1
@@ -1257,7 +1258,7 @@ struct hal_ops {
 				     u32 nsbufs, u32 tot_link_desc,
 				     u32 end_offset);
 	void (*tx_update_dscp_tid_map)(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
-	void (*tx_set_dscp_tid_map)(struct ath12k_base *ab, int id);
+	void (*tx_set_dscp_tid_map)(struct ath12k_base *ab, u8 *map, int id);
 	void (*tx_configure_bank_register)(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id);
 	void (*write_ml_reoq_lut_addr)(struct ath12k_base *ab,
@@ -1417,7 +1418,7 @@ u32
 ath12k_hal_ce_dst_status_get_length(struct ath12k_hal *hal,
 				    struct hal_ce_srng_dst_status_desc *desc);
 void ath12k_hal_tx_update_dscp_tid_map(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
-void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, int id);
+void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
 void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id);
 void ath12k_hal_write_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr);

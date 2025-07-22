@@ -69,9 +69,9 @@ void ath12k_hal_tx_update_dscp_tid_map(struct ath12k_base *ab, int id, u8 dscp, 
 	ab->hal.hal_ops->tx_update_dscp_tid_map(ab, id, dscp, tid);
 }
 
-void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, int id)
+void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id)
 {
-        ab->hal.hal_ops->tx_set_dscp_tid_map(ab, id);
+        ab->hal.hal_ops->tx_set_dscp_tid_map(ab, map, id);
 }
 
 void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,

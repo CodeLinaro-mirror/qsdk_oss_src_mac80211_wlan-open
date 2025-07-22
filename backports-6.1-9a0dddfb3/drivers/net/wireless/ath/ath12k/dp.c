@@ -21,6 +21,37 @@
 #include "ppe.h"
 #endif
 
+/* DSCP TID mapping as per RFC 8325
+ * ===============================
+ * DSCP         User Priority (UP)
+ * ===============================
+ * 56           7
+ * 48           7
+ * 46           6
+ * 44           6
+ * 40           5
+ * 34, 36, 38   4
+ * 32           4
+ * 26, 28, 30   4
+ * 24           4
+ * 18, 20, 22   3
+ * 16           0
+ * 10, 12, 14   0
+ * 0            0
+ * 8            1
+ */
+
+u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE] = {
+	0, 0, 0, 0, 0, 0, 0, 0,
+	1, 1, 0, 1, 0, 1, 0, 1,
+	0, 2, 3, 2, 3, 2, 3, 2,
+	4, 3, 4, 3, 4, 3, 4, 3,
+	4, 4, 4, 4, 4, 4, 4, 4,
+	5, 5, 5, 5, 6, 5, 6, 5,
+	7, 6, 6, 6, 6, 6, 6, 6,
+	7, 7, 7, 7, 7, 7, 7, 7,
+};
+
 /*
  * TODO: fix this
  */
@@ -2054,7 +2085,7 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 		dp->tx_ring[i].tcl_data_ring_id = i;
 
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
-		ath12k_hal_tx_set_dscp_tid_map(ab, i);
+		ath12k_hal_tx_set_dscp_tid_map(ab, ath12k_default_dscp_tid_map, i);
 
 	ret = ath12k_dp_rx_alloc(ab);
 	if (ret)
