@@ -820,6 +820,8 @@ struct ath12k_vif {
 	struct dentry *debugfs_wmm_stats_vdev;
 	struct dentry *debugfs_reset_wmm_stats;
 	struct pcpu_netdev_tid_stats __percpu *tstats;
+	struct dentry *debugfs_vdev_tid_stats;
+	struct dentry *debugfs_reset_dp_tid_stats;
 #endif /* CPTCFG_ATH12K_DEBUGFS */
 
 	struct ath12k_mgmt_frame_stats mgmt_stats;

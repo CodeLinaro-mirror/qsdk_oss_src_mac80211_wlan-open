@@ -2287,6 +2287,52 @@ static const struct file_operations fops_enable_dp_debug_stats = {
 	.open = simple_open,
 };
 
+static ssize_t ath12k_write_enable_dp_tid_stats(struct file *file,
+						const char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_hw *ah = ar->ah;
+	bool enable;
+	int i = 0;
+
+	if (kstrtobool_from_user(ubuf, count, &enable))
+		return -EINVAL;
+
+	/* Enable/Disable for all MLO capable Radios */
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (ar) {
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+			ar->dp.enable_dp_tid_stats = !!enable;
+			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		}
+	}
+	return count;
+}
+
+static ssize_t ath12k_read_enable_dp_tid_stats(struct file *file,
+					       char __user *ubuf,
+					       size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[8];
+	int len = 0;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	len = scnprintf(buf, sizeof(buf), "%d\n",
+			ar->dp.enable_dp_tid_stats);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_enable_dp_tid_stats = {
+	.read = ath12k_read_enable_dp_tid_stats,
+	.write = ath12k_write_enable_dp_tid_stats,
+	.open = simple_open,
+};
+
 static int ath12k_reset_nrp_filter(struct ath12k *ar,
 				   bool reset)
 {
@@ -3696,6 +3742,177 @@ static void ath12k_debugfs_wmi_ctrl_stats_register(struct ath12k *ar)
 	init_completion(&ar->debug.wmi_ctrl_path_stats_rcvd);
 	ar->debug.wmi_ctrl_path_stats_more_enabled = false;
 }
+
+static ssize_t ath12k_read_vdev_tid_stats(struct file *file,
+					  char __user *ubuf,
+					  size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	struct netdev_tid_stats *tstats;
+	int len = 0;
+	int size = 15000;
+	char *buf;
+	ssize_t ret;
+	int cpu;
+	u8 tid, reason;
+
+	buf = vmalloc(size);
+	if (!buf)
+		return -ENOMEM;
+
+	tstats = kzalloc(sizeof(*tstats), GFP_KERNEL);
+	if (!tstats) {
+		vfree(buf);
+		return -ENOMEM;
+	}
+
+	for_each_possible_cpu(cpu) {
+		struct pcpu_netdev_tid_stats *pstats = per_cpu_ptr(ahvif->tstats, cpu);
+
+		u64_stats_update_begin(&pstats->syncp);
+		for (u8 tid = 0; tid < IEEE80211_NUM_TIDS; tid++) {
+			for (reason = 0; reason < ATH_RX_PKT_REASON_MAX; reason++) {
+				tstats->tid_stats[tid].rx_pkt_stats[reason] +=
+					pstats->tid_stats[tid].rx_pkt_stats[reason];
+				tstats->tid_stats[tid].rx_pkt_bytes[reason] +=
+					pstats->tid_stats[tid].rx_pkt_bytes[reason];
+			}
+			for (reason = 0; reason < ATH_RX_DROP_REASON_MAX; reason++) {
+				tstats->tid_stats[tid].rx_drop_stats[reason] +=
+					pstats->tid_stats[tid].rx_drop_stats[reason];
+				tstats->tid_stats[tid].rx_drop_bytes[reason] +=
+					pstats->tid_stats[tid].rx_drop_bytes[reason];
+			}
+			for (reason = 0; reason < ATH_TX_PKT_REASON_MAX; reason++) {
+				tstats->tid_stats[tid].tx_pkt_stats[reason] +=
+					pstats->tid_stats[tid].tx_pkt_stats[reason];
+				tstats->tid_stats[tid].tx_pkt_bytes[reason] +=
+					pstats->tid_stats[tid].tx_pkt_bytes[reason];
+			}
+			for (reason = 0; reason < ATH_TX_DROP_REASON_MAX; reason++) {
+				tstats->tid_stats[tid].tx_drop_stats[reason] +=
+					pstats->tid_stats[tid].tx_drop_stats[reason];
+				tstats->tid_stats[tid].tx_drop_bytes[reason] +=
+					pstats->tid_stats[tid].tx_drop_bytes[reason];
+			}
+		}
+		u64_stats_update_end(&pstats->syncp);
+	}
+
+	len = scnprintf(buf + len, size - len, "\n\t\tath12k RX STATS\t\t\n");
+	len += scnprintf(buf + len, size - len,
+			 "TID \t packets bytes total_hw_pkts frag_pkts  reo_pkts  wbm_err_pkts reo_frag_pkts rxdma native  raw   eth   8023  ppe_vp  hw  sfe ppeds\n");
+	for (tid = 0; tid < IEEE80211_NUM_TIDS; tid++) {
+		len += scnprintf(buf + len, size - len, "TID%d\t", tid);
+		len += scnprintf(buf + len, size - len, "%llu\t, %llu\t",
+				 tstats->tid_stats[tid].rx_pkt_stats[0],
+				 tstats->tid_stats[tid].rx_pkt_bytes[0]);
+		for (reason = 1; reason < ATH_RX_PKT_REASON_MAX; reason++) {
+			len += scnprintf(buf + len, size - len, "%d :%llu\t",
+					 reason,
+					 tstats->tid_stats[tid].rx_pkt_stats[reason]);
+		}
+		len += scnprintf(buf + len, size - len, "\n");
+	}
+	len += scnprintf(buf + len, size - len, "\n\t\tath12k RX DROP STATS\t\t\n");
+	for (tid = 0; tid < IEEE80211_NUM_TIDS; tid++) {
+		u64 total_drop = 0;
+		u64 total_drop_bytes = 0;
+
+		len += scnprintf(buf + len, size - len, "TID%d\t", tid);
+		for (reason = 0; reason < ATH_RX_DROP_REASON_MAX; reason++) {
+			total_drop += tstats->tid_stats[tid].rx_drop_stats[reason];
+			total_drop_bytes += tstats->tid_stats[tid].rx_drop_bytes[reason];
+		}
+		len += scnprintf(buf + len, size - len, "%llu\t, %llu\t",
+				 total_drop, total_drop_bytes);
+		for (reason = 0; reason < ATH_RX_DROP_REASON_MAX; reason++) {
+			len += scnprintf(buf + len, size - len, "%d:%llu\t",
+					 reason,
+					 tstats->tid_stats[tid].rx_drop_stats[reason]);
+		}
+		len += scnprintf(buf + len, size - len, "\n");
+	}
+
+	len += scnprintf(buf + len, size - len, "\n\t\tath12k TX STATS\t\t\n");
+	len += scnprintf(buf + len, size - len,
+			 "TID \t packets bytes sfe_pkts multicast  eapol  null_pkts  unicast null_complete fast_unicast wbm_rel fw_status  ppeds\n");
+	for (tid = 0; tid < IEEE80211_NUM_TIDS; tid++) {
+		len += scnprintf(buf + len, size - len, "TID%d\t", tid);
+		len += scnprintf(buf + len, size - len, "%llu\t, %llu\t",
+				 tstats->tid_stats[tid].tx_pkt_stats[0],
+				 tstats->tid_stats[tid].tx_pkt_bytes[0]);
+		for (reason = 1; reason < ATH_TX_PKT_REASON_MAX; reason++) {
+			len += scnprintf(buf + len, size - len, "%d :%llu\t",
+					 reason,
+					 tstats->tid_stats[tid].tx_pkt_stats[reason]);
+		}
+		len += scnprintf(buf + len, size - len, "\n");
+	}
+	len += scnprintf(buf + len, size - len, "\n\t\tath12k TX DROP STATS\t\t\n");
+	for (tid = 0; tid < IEEE80211_NUM_TIDS; tid++) {
+		u64 total_drop = 0;
+		u64 total_drop_bytes = 0;
+
+		len += scnprintf(buf + len, size - len, "TID%d\t", tid);
+		for (reason = 0; reason < ATH_TX_DROP_REASON_MAX; reason++) {
+			total_drop += tstats->tid_stats[tid].tx_drop_stats[reason];
+			total_drop_bytes += tstats->tid_stats[tid].tx_drop_bytes[reason];
+		}
+		len += scnprintf(buf + len, size - len, "%llu\t, %llu\t",
+				 total_drop, total_drop_bytes);
+		for (reason = 0; reason < ATH_TX_DROP_REASON_MAX; reason++) {
+			len += scnprintf(buf + len, size - len, "%d:%llu\t",
+					 reason,
+					 tstats->tid_stats[tid].tx_drop_stats[reason]);
+		}
+		len += scnprintf(buf + len, size - len, "\n");
+	}
+
+	ret = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	vfree(buf);
+	kfree(tstats);
+	return ret;
+}
+
+static const struct file_operations ath12k_fops_vdev_tid_stats = {
+	.read = ath12k_read_vdev_tid_stats,
+	.open = simple_open,
+};
+
+static void ath12k_reset_vdev_tid_stats(struct ath12k_vif *ahvif)
+{
+	int cpu;
+
+	for_each_possible_cpu(cpu) {
+		struct pcpu_netdev_tid_stats *pstats = per_cpu_ptr(ahvif->tstats, cpu);
+
+		u64_stats_update_begin(&pstats->syncp);
+		memset(pstats->tid_stats, 0, sizeof(pstats->tid_stats));
+		u64_stats_update_end(&pstats->syncp);
+	}
+}
+
+static ssize_t ath12k_write_reset_dp_tid_stats(struct file *file,
+					       const char __user *ubuf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k_vif *ahvif = file->private_data;
+	bool enable;
+
+	if (kstrtobool_from_user(ubuf, count, &enable))
+		return -EINVAL;
+	if (enable)
+		ath12k_reset_vdev_tid_stats(ahvif);
+	else
+		return -EINVAL;
+	return count;
+}
+
+static const struct file_operations ath12k_fops_reset_dp_tid_stats = {
+	.write = ath12k_write_reset_dp_tid_stats,
+	.open = simple_open,
+};
 
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab)
 {
@@ -5691,6 +5908,11 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("pktlog_filter", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_pktlog_filter);
+
+	debugfs_create_file("enable_dp_tid_stats", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_enable_dp_tid_stats);
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		debugfs_create_file("ppeds_stats", 0600, ab->debugfs_soc, ab,
@@ -7145,6 +7367,24 @@ ap_and_sta_debugfs_file:
 							     vif->debugfs_dir,
 							     ahvif,
 							     &ath12k_fops_reset_vdev_wmm_stats);
+
+	if (ahvif->debugfs_vdev_tid_stats)
+		return;
+
+	ahvif->debugfs_vdev_tid_stats = debugfs_create_file("dp_tid_stats",
+							    0644,
+							    vif->debugfs_dir,
+							    ahvif,
+							    &ath12k_fops_vdev_tid_stats);
+
+	if (ahvif->debugfs_reset_dp_tid_stats)
+		return;
+
+	ahvif->debugfs_reset_dp_tid_stats = debugfs_create_file("reset_dp_tid_stats",
+								0644,
+								vif->debugfs_dir,
+								ahvif,
+								&ath12k_fops_reset_dp_tid_stats);
 
 	/* If debugfs_primary_link already exist, don't remove */
 	if (IS_ERR(ahvif->debugfs_primary_link) &&
