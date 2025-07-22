@@ -52,9 +52,10 @@ void ath12k_debugfs_fw_stats_init(struct ath12k *ar);
 void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 			     unsigned int value);
 
-static inline bool ath12k_debugfs_is_pktlog_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *addr)
 {
-	return (!ar->debug.pktlog_peer_valid && ar->debug.pktlog_mode);
+        return (ar->debug.pktlog_peer_valid && ar->debug.pktlog_mode &&
+                ether_addr_equal(addr, ar->debug.pktlog_peer_addr));
 }
 
 static inline int ath12k_debugfs_is_extd_tx_stats_enabled(struct ath12k *ar)
@@ -227,7 +228,7 @@ static inline void ath12k_debugfs_fw_stats_init(struct ath12k *ar)
 {
 }
 
-static inline bool ath12k_debugfs_is_pktlog_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *addr)
 {
 	return false;
 }
@@ -308,4 +309,7 @@ struct dentry *ath12k_debugfs_erp_create(void)
 void ath12k_init_pktlog(struct ath12k *ar);
 void ath12k_deinit_pktlog(struct ath12k *ar);
 void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data);
+void ath12k_htt_ppdu_pktlog_process(struct ath12k *ar, u8 *data, u32 len);
+void ath12k_dp_rx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
+					   u16 log_type, u32 len);
 #endif /* _ATH12K_DEBUGFS_H_ */

@@ -11,7 +11,6 @@
 #include "hal_qcn9274.h"
 #include "hal_mon.h"
 #include "../peer.h"
-#include "../debugfs.h"
 #include "../dp_mon_filter.h"
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
@@ -247,6 +246,41 @@ ath12k_wifi7_dp_mon_rx_parse_ppdu_status(struct ath12k_pdev_dp *dp_pdev,
 	return hal_status;
 }
 
+static void
+ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *pdev_dp,
+			    struct ath12k_dp_link_peer *peer,
+			    struct hal_rx_mon_ppdu_info *ppdu_info,
+			    struct sk_buff *skb, u32 end_offset)
+{
+	struct ath12k *ar = pdev_dp->ar;
+	struct ath12k_dp *dp = pdev_dp->dp;
+	u32 rx_buf_sz;
+	u16 log_type = 0;
+
+	if (!ar->debug.is_pkt_logging)
+		return;
+
+	rx_buf_sz = end_offset + 1;
+	if (ath12k_debugfs_is_pktlog_peer_valid(ar, peer->addr) &&
+	    ppdu_info->peer_id != HAL_INVALID_PEERID) {
+		log_type = ATH12K_PKTLOG_TYPE_RX_STATBUF;
+		trace_ath12k_htt_rxdesc(ar, skb->data, log_type, rx_buf_sz);
+		ath12k_dp_rx_stats_buf_pktlog_process(ar, skb->data, log_type,
+						      rx_buf_sz);
+	} else {
+		if (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_LITE)
+			log_type = ATH12K_PKTLOG_TYPE_LITE_RX;
+		else if (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_FULL)
+			log_type = ATH12K_PKTLOG_TYPE_RX_STATBUF;
+
+		trace_ath12k_htt_rxdesc(ar, skb->data, log_type,
+					rx_buf_sz);
+		ath12k_dp_rx_stats_buf_pktlog_process(ar, skb->data,
+						      log_type,
+						      rx_buf_sz);
+	}
+}
+
 int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_id,
 				       struct napi_struct *napi, int *budget)
 {
@@ -368,6 +402,9 @@ move_next:
 		ath12k_wifi7_dp_mon_rx_memset_ppdu_info(ppdu_info);
 
 	while ((skb = __skb_dequeue(&skb_list))) {
+		ath12k_dp_rx_pktlog_process(pdev_dp, peer,
+					    ppdu_info, skb, end_offset);
+
 		hal_status = ath12k_wifi7_dp_mon_rx_parse_ppdu_status(pdev_dp, pmon,
 								      skb, napi);
 		if (hal_status != HAL_RX_MON_STATUS_PPDU_DONE) {

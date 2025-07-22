@@ -864,6 +864,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	struct htt_ppdu_user_stats *usr_stats = NULL;
 	u32 peer_id = 0;
 	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k *ar;
 	int ret, i;
 	u8 pdev_id;
 	u32 ppdu_id, len;
@@ -886,6 +887,21 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	}
 
 	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (!ar) {
+		/* It is possible that the ar is not yet active (started).
+		 * The above function will only look for the active pdev
+		 * and hence %NULL return is possible. Just silently
+		 * discard this message
+		 */
+		goto exit;
+	}
+
+	if (ar->debug.is_pkt_logging &&
+	    (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_LITE)) {
+		trace_ath12k_htt_ppdu_stats(ar, skb->data, len);
+		ath12k_htt_ppdu_pktlog_process(ar, (u8 *)skb->data, skb->len);
+	}
 
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id - 1);
 	if (!dp_pdev) {
@@ -1062,6 +1078,40 @@ static void ath12k_htt_mlo_offset_event_handler(struct ath12k_base *ab,
 	spin_unlock_bh(&ar->data_lock);
 exit:
 	rcu_read_unlock();
+}
+
+static void
+ath12k_htt_pktlog_tx_handler(struct ath12k_base *ab, struct sk_buff *skb)
+{
+        struct ath12k_pktlog_hdr pl_hdr;
+        struct ath12k *ar;
+        u8 pdev_id;
+        u32 *pl_tgt_hdr, *msg_word;
+        u16 payload_size;
+
+        if (!skb->data)
+                return;
+
+        msg_word = (u32 *)skb->data;
+
+        pdev_id = u32_get_bits(*msg_word, HTT_T2H_PKTLOG_PDEV_ID);
+        ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+        if (!ar) {
+                ath12k_err(ab, "invalid pdev id %d on htt pktlog\n", pdev_id);
+                return;
+        }
+
+        payload_size = u32_get_bits(*msg_word,
+                                    HTT_T2H_PKTLOG_PAYLOAD_SIZE);
+        pl_tgt_hdr = (u32 *)(msg_word + 1);
+        pl_hdr.size = u32_get_bits(*(pl_tgt_hdr +
+				     HTT_T2H_PKTLOG_HDR_SIZE_OFFSET),
+                                   HTT_T2H_PKTLOG_PAYLOAD_SIZE);
+        trace_ath12k_htt_pktlog_tx_handler(ar, pl_tgt_hdr, pl_hdr.size,
+					   ar->ab->pktlog_defs_checksum);
+
+        if (ar->debug.is_pkt_logging)
+                ath12k_htt_pktlog_process(ar, (u8 *)pl_tgt_hdr);
 }
 
 static void ath12k_htt_t2h_ppdu_id_fmt_handler(struct ath12k_dp *dp,
@@ -1265,6 +1315,9 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 		break;
 	case HTT_T2H_MSG_TYPE_MLO_TIMESTAMP_OFFSET_IND:
 		ath12k_htt_mlo_offset_event_handler(ab, skb);
+		break;
+	case HTT_T2H_MSG_TYPE_PKTLOG:
+		ath12k_htt_pktlog_tx_handler(ab, skb);
 		break;
 	case HTT_T2H_MSG_TYPE_MLO_RX_PEER_MAP:
 		ath12k_peer_mlo_map_event(ab, skb);
