@@ -776,4 +776,12 @@ void ath12k_hal_srng_access_dst_ring_end_nolock(struct hal_srng *srng)
 	writel_relaxed(srng->u.dst_ring.tp, srng->u.dst_ring.tp_addr_direct);
 	srng->timestamp = jiffies;
 }
+static inline
+void *ath12k_hal_srng_dst_peek_nolock(struct hal_srng *srng)
+{
+	if (srng->u.dst_ring.tp != srng->u.dst_ring.cached_hp)
+		return (srng->ring_base_vaddr + srng->u.dst_ring.tp);
+
+	return NULL;
+}
 #endif
