@@ -533,13 +533,16 @@ struct rx_tlv_info_1 {
 	    sgi			   	: 2,
 	    is_decrypted		: 1,
 	    mesh_ctrl_present	   	: 1,
-	    msdu_done			: 1,
 	    pkt_type			: 4,
-	    is_ip_valid			: 1,
 	    bw			   	: 3;
 };
 
 struct hal_rx_spd_data {
+	union {
+		u64 info3;
+		struct sk_buff *msdu;
+	};
+
 	union {
 		u64 info1;
 		struct rx_mpdu_desc_info rx_mpdu_info;
@@ -567,6 +570,9 @@ struct hal_rx_spd_data {
 		};
 	};
 } __packed;
+
+static_assert(sizeof(struct hal_rx_spd_data) == 32,
+	      "size of struct hal_rx_spd_data is not 32 bytes!");
 
 struct hal_reo_status_queue_stats {
 	u16 ssn;
