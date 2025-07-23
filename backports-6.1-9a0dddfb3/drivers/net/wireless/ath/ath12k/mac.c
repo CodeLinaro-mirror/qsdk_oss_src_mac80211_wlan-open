@@ -1994,13 +1994,13 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 		/* TODO: Need to check if we ml_peer_id validation
 		 */
 		ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
-		rcu_read_unlock();
 
 		if (ml_peer) {
 			ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
 			ahsta->is_migration_in_progress = false;
 		}
 
+		rcu_read_unlock();
 		list_del(&peer_node->list);
 		kfree(peer_node);
 	}
@@ -12314,13 +12314,13 @@ ath12k_mac_free_link_migr_peer_list(struct ath12k_hw *ah,
 		/* TODO: Need to check if we ml_peer_id validation
 		 */
 		ml_peer = rcu_dereference(ah->dp_hw.dp_peer_list[peer_node->ml_peer_id]);
-		rcu_read_unlock();
 
 		if (ml_peer) {
 			ahsta = ath12k_sta_to_ahsta(ml_peer->sta);
 			ahsta->is_migration_in_progress = false;
 		}
 
+		rcu_read_unlock();
 		list_del(&peer_node->list);
 		kfree(peer_node);
 	}
