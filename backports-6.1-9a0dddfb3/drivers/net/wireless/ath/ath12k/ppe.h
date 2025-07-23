@@ -36,6 +36,7 @@ struct dp_ppe_ds_idxs {
 #define ATH12K_DP_PPEDS_NAPI_DONE_BIT		1
 #define ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT	2
 
+#define PPE_DS_MAX_NODE	            4   /* Max DS node supported */
 #define DP_PPEDS_SERVICE_BUDGET     256
 
 #define ATH12K_PPE_DEFAULT_CORE_MASK		ath12k_rfs_core_mask[0]
