@@ -3794,6 +3794,18 @@ static int ath12k_core_get_wsi_info(struct ath12k_hw_group *ag,
 	return 0;
 }
 
+/* If one of the device is bypassed, use bypass_wsi_info */
+struct ath12k_wsi_info
+*ath12k_core_get_current_wsi_info(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+
+	if (ag->num_bypassed > 0)
+		return &ab->bypass_wsi_info;
+	else
+		return &ab->wsi_info;
+}
+
 static void ath12k_core_fill_adj_info(struct ath12k_base *ab)
 {
 	struct device_node* ab_dev = ab->dev->of_node;

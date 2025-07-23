@@ -1451,6 +1451,7 @@ struct ath12k_hw_group {
         bool trigger_umac_reset;
 	struct ath12k_qos_ctx qos;
 	struct ath12k_stats_work_context stats_work;
+	u8 num_bypassed;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -1754,6 +1755,7 @@ struct ath12k_base {
 	bool pm_suspend;
 	bool powerup_triggered;
 	struct completion power_up;
+	struct ath12k_wsi_info bypass_wsi_info;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -2163,4 +2165,5 @@ u8 ath12k_core_get_ab_list_by_wiphy(const struct wiphy *wiphy,
 				    struct ath12k_base **ab_list,
 				    u8 ab_list_size);
 int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd);
+struct ath12k_wsi_info *ath12k_core_get_current_wsi_info(struct ath12k_base *ab);
 #endif /* _CORE_H_ */

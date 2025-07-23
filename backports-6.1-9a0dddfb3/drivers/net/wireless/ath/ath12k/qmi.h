@@ -331,6 +331,31 @@ struct wlfw_host_mlo_chip_info_s_v02 {
 	struct wlfw_host_mlo_chip_info_s_v01 mlo_adj_chip_info[QMI_WLFW_MAX_NUM_MLO_ADJ_CHIPS_V01];
 };
 
+#define QMI_WLFW_MLO_RECONFIG_INFO_REQ_V01 0x005F
+#define QMI_WLFW_MLO_RECONFIG_INFO_RESP_V01 0x005F
+#define WLFW_MLO_RECONFIG_INFO_REQ_MSG_V01_MAX_MSG_LEN 122
+
+struct qmi_wlanfw_mlo_reconfig_info_req_msg_v01 {
+	u8 mlo_capable_valid;
+	u8 mlo_capable;
+	u8 mlo_chip_id_valid;
+	u16 mlo_chip_id;
+	u8 mlo_group_id_valid;
+	u8 mlo_group_id;
+	u8 max_mlo_peer_valid;
+	u16 max_mlo_peer;
+	u8 mlo_num_chips_valid;
+	u8 mlo_num_chips;
+	u8 mlo_chip_info_valid;
+	struct wlfw_host_mlo_chip_info_s_v01 mlo_chip_info[QMI_WLFW_MAX_NUM_MLO_CHIPS_V01];
+	u8 mlo_chip_info_v2_valid;
+	struct wlfw_host_mlo_chip_info_s_v02 mlo_chip_info_v2[QMI_WLFW_MAX_NUM_MLO_CHIPS_V01];
+};
+
+struct qmi_wlfw_mlo_reconfig_info_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
 enum ath12k_qmi_cnss_feature {
 	CNSS_FEATURE_MIN_ENUM_VAL_V01 = INT_MIN,
 	CNSS_QDSS_CFG_MISS_V01 = 3,
@@ -387,7 +412,7 @@ struct qmi_wlanfw_host_cap_req_msg_v01 {
 	u8 mlo_num_chips;
 	u8 mlo_chip_info_valid;
 	struct wlfw_host_mlo_chip_info_s_v01 mlo_chip_info[QMI_WLFW_MAX_NUM_MLO_CHIPS_V01];
-	u8 mlo_chip_v2_info_valid;
+	u8 mlo_chip_info_v2_valid;
 	struct wlfw_host_mlo_chip_info_s_v02 mlo_chip_info_v2[QMI_WLFW_MAX_NUM_MLO_CHIPS_V01];
 	u8 feature_list_valid;
 	u64 feature_list;
@@ -994,6 +1019,7 @@ int ath12k_qmi_init_service(struct ath12k_base *ab);
 int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab);
 void ath12k_qmi_free_resource(struct ath12k_base *ab);
 void ath12k_qmi_trigger_host_cap(struct ath12k_base *ab);
+void ath12k_qmi_trigger_mlo_reconfig(struct ath12k_base *ab);
 void ath12k_qmi_reset_mlo_mem(struct ath12k_hw_group *ag);
 int ath12k_qmi_m3_dump_upload_done_ind_send(struct ath12k_base *ab,
                                             u32 pdev_id, int status);

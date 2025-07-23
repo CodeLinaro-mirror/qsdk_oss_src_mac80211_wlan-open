@@ -883,7 +883,7 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
 		.array_type     = NO_ARRAY,
 		.tlv_type       = 0x2F,
 		.offset         = offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
-							mlo_chip_v2_info_valid),
+							mlo_chip_info_v2_valid),
 	},
 	{
 		.data_type      = QMI_STRUCT,
@@ -3184,6 +3184,175 @@ static inline bool ath12k_cold_boot_cal_needed(struct ath12k_base *ab)
 	return (!ab->early_cal_support && ab->hw_params->cold_boot_calib && ath12k_cold_boot_cal && ab->qmi.cal_done == 0);
 }
 
+struct qmi_elem_info qmi_wlanfw_mlo_reconfig_info_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_capable_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_capable),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x11,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_chip_id_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_2_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u16),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x11,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_chip_id),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x12,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_group_id_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x12,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_group_id),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x13,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   max_mlo_peer_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_2_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u16),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x13,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   max_mlo_peer),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x14,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_num_chips_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x14,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_num_chips),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x15,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_chip_info_valid),
+	},
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = QMI_WLFW_MAX_NUM_MLO_CHIPS_V01,
+		.elem_size      = sizeof(struct wlfw_host_mlo_chip_info_s_v01),
+		.array_type       = STATIC_ARRAY,
+		.tlv_type       = 0x15,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_chip_info),
+		.ei_array      = wlfw_host_mlo_chip_info_s_v01_ei,
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x16,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_chip_info_v2_valid),
+	},
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = QMI_WLFW_MAX_NUM_MLO_CHIPS_V01,
+		.elem_size      = sizeof(struct wlfw_host_mlo_chip_info_s_v02),
+		.array_type       = STATIC_ARRAY,
+		.tlv_type       = 0x16,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_mlo_reconfig_info_req_msg_v01,
+					   mlo_chip_info_v2),
+		.ei_array      = wlfw_host_mlo_chip_info_s_v02_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlfw_mlo_reconfig_info_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct
+					   qmi_wlfw_mlo_reconfig_info_resp_msg_v01,
+					   resp),
+		.ei_array      = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
 static int ath12k_qmi_send_qdss_trace_config_download_req(struct ath12k_base *ab,
 							  const u8 *buffer,
 							  unsigned int buffer_len)
@@ -3311,6 +3480,7 @@ static void ath12k_host_cap_hw_link_id_init(struct ath12k_hw_group *ag)
 		}
 
 		ab->wsi_info.hw_link_id_base = hw_id_base;
+		ab->bypass_wsi_info.hw_link_id_base = hw_id_base;
 	}
 
 	ag->hw_link_id_init_done = true;
@@ -3323,19 +3493,21 @@ static int ath12k_qmi_fill_adj_info(struct ath12k_base *ab,
 	struct wlfw_host_mlo_chip_info_s_v01 *adj_info;
 	struct ath12k_base *adjacent_ab;
 	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_wsi_info *wsi_info, *adj_wsi_info;
 	u32 chip_idx;
 	bool adj_ab_found = false;
 	int i, j;
 	int adj_index;
 
+	wsi_info = ath12k_core_get_current_wsi_info(ab);
 	for (i = 0; i < info->num_adj_chips; i++) {
-		chip_idx = ab->wsi_info.adj_chip_idxs[i];
+		chip_idx = wsi_info->adj_chip_idxs[i];
 		adj_info = &info->mlo_adj_chip_info[i];
 
 		for (j = 0; j < ag->num_devices; j++) {
 			adjacent_ab = ag->ab[j];
-
-			if (adjacent_ab->wsi_info.index == chip_idx) {
+			adj_wsi_info = ath12k_core_get_current_wsi_info(adjacent_ab);
+			if (adj_wsi_info->index == chip_idx) {
 				adj_ab_found = true;
 				break;
 			}
@@ -3353,7 +3525,7 @@ static int ath12k_qmi_fill_adj_info(struct ath12k_base *ab,
 			   adjacent_ab->device_id, adj_info->num_local_links);
 
 		for (adj_index = 0; adj_index < adj_info->num_local_links; adj_index++) {
-			adj_info->hw_link_id[adj_index] = adjacent_ab->wsi_info.hw_link_id_base + adj_index;
+			adj_info->hw_link_id[adj_index] = adj_wsi_info->hw_link_id_base + adj_index;
 			adj_info->valid_mlo_link_id[adj_index] = true;
 
 			ath12k_dbg(ab, ATH12K_DBG_QMI, "MLO adj chip link id %d\n",
@@ -3370,6 +3542,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	//struct wlfw_host_mlo_chip_info_s_v01 *info;
 	struct wlfw_host_mlo_chip_info_s_v02 *info;
 	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_wsi_info *wsi_info, *adj_wsi_info;
 	struct ath12k_base *partner_ab;
 	u8 hw_link_id = 0;
 	int i, j, ret;
@@ -3380,6 +3553,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 		return 0;
 	}
 
+	wsi_info = ath12k_core_get_current_wsi_info(ab);
 	if (ath12k_cold_boot_cal_needed(ab) && !ab->mm_cal_support &&
             ab->qmi.cal_timeout == 0) {
                 ath12k_dbg(ab, ATH12K_DBG_QMI, "Skip MLO cap send for device id %d since it's in cold_boot\n",
@@ -3425,6 +3599,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	for (i = 0; i < ag->num_devices; i++) {
 		info = &req->mlo_chip_info_v2[i];
 		partner_ab = ag->ab[i];
+		adj_wsi_info = ath12k_core_get_current_wsi_info(partner_ab);
 
 		if (partner_ab->device_id == ATH12K_INVALID_DEVICE_ID ||
 			partner_ab->qmi.num_radios == U8_MAX) {
@@ -3435,14 +3610,14 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 
 		info->mlo_chip_info.chip_id = partner_ab->device_id;
 		info->mlo_chip_info.num_local_links = partner_ab->qmi.num_radios;
-		info->num_adj_chips = ab->wsi_info.num_adj_chips;
+		info->num_adj_chips = wsi_info->num_adj_chips;
 
 		ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo device id %d num_link %d\n",
 			   info->mlo_chip_info.chip_id,
 			   info->mlo_chip_info.num_local_links);
 
 		for (j = 0; j < info->mlo_chip_info.num_local_links; j++) {
-			info->mlo_chip_info.hw_link_id[j] = partner_ab->wsi_info.hw_link_id_base + j;
+			info->mlo_chip_info.hw_link_id[j] = adj_wsi_info->hw_link_id_base + j;
 			info->mlo_chip_info.valid_mlo_link_id[j] = 1; //true
 
 			ath12k_dbg(ab, ATH12K_DBG_QMI, "mlo hw_link_id %d\n",
@@ -3461,7 +3636,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 	if (hw_link_id <= 0)
 		ag->mlo_capable = false;
 
-	req->mlo_chip_v2_info_valid = 1;
+	req->mlo_chip_info_v2_valid = 1;
 
 	mutex_unlock(&ag->mutex);
 
@@ -3593,6 +3768,133 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 
 	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
 		ath12k_warn(ab, "Host capability request failed, result: %d, err: %d\n",
+			    resp.resp.result, resp.resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+
+out:
+	return ret;
+}
+
+static int ath12k_qmi_mlo_reconfig_send(struct ath12k_base *ab)
+{
+	struct qmi_wlanfw_mlo_reconfig_info_req_msg_v01 req = {};
+	struct qmi_wlfw_mlo_reconfig_info_resp_msg_v01 resp = {};
+	struct qmi_txn txn;
+	struct wlfw_host_mlo_chip_info_s_v02 *info;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_wsi_info *wsi_info, *adj_wsi_info;
+	struct ath12k_base *partner_ab;
+	int i, j, k = 0, ret;
+
+	if (!ag->mlo_capable) {
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+			   "MLO is disabled hence skip QMI MLO Reconfig");
+		return 0;
+	}
+
+	wsi_info = ath12k_core_get_current_wsi_info(ab);
+	if (ath12k_cold_boot_cal_needed(ab) && !ab->mm_cal_support &&
+	    ab->qmi.cal_timeout == 0) {
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "Skip MLO Reconfig send for device id %d since it's in cold_boot\n",
+			   ab->device_id);
+		return 0;
+	}
+
+	if (!ab->qmi.num_radios || ab->qmi.num_radios == U8_MAX) {
+		ag->mlo_capable = false;
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+			   "skip QMI MLO Reconfi due to invalid num_radio %d\n",
+			   ab->qmi.num_radios);
+		return 0;
+	}
+
+	if (ab->device_id == ATH12K_INVALID_DEVICE_ID) {
+		ath12k_err(ab, "failed to send MLO Reconfig due to invalid device id\n");
+		return -EINVAL;
+	}
+
+	req.mlo_capable_valid = 1;
+	req.mlo_capable = 1;
+	req.mlo_chip_id_valid = 1;
+	req.mlo_chip_id = ab->device_id;
+	req.mlo_group_id_valid = 1;
+	req.mlo_group_id = ag->id;
+	req.max_mlo_peer_valid = 1;
+	/* Max peer number generally won't change for the same device
+	 * but needs to be synced with host driver.
+	 */
+	req.max_mlo_peer = ab->hw_params->max_mlo_peer;
+	req.mlo_num_chips_valid = 1;
+	/* In MLO reconfig, mlo_num_chips should indicate only active chips */
+	req.mlo_num_chips = ag->num_devices - ag->num_bypassed;
+	req.mlo_chip_info_valid = 0;
+
+	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "mlo reconfig device_id %d group_id %d num_devices %d",
+		   req.mlo_chip_id, req.mlo_group_id, req.mlo_num_chips);
+
+	if (!ag->hw_link_id_init_done)
+		ath12k_host_cap_hw_link_id_init(ag);
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (partner_ab->is_bypassed)
+			continue;
+
+		if (partner_ab->device_id == ATH12K_INVALID_DEVICE_ID) {
+			ath12k_err(ab, "failed to send MLO cap due to invalid partner device id\n");
+			ret = -EINVAL;
+			goto out;
+		}
+		adj_wsi_info = ath12k_core_get_current_wsi_info(partner_ab);
+		info = &req.mlo_chip_info_v2[k++];
+		info->mlo_chip_info.chip_id = partner_ab->device_id;
+		info->mlo_chip_info.num_local_links = partner_ab->qmi.num_radios;
+		info->num_adj_chips = wsi_info->num_adj_chips;
+
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "mlo device id %d num_link %d\n",
+			   info->mlo_chip_info.chip_id,
+			   info->mlo_chip_info.num_local_links);
+
+		for (j = 0; j < info->mlo_chip_info.num_local_links; j++) {
+			info->mlo_chip_info.hw_link_id[j] = adj_wsi_info->hw_link_id_base + j;
+			info->mlo_chip_info.valid_mlo_link_id[j] = 1;
+
+			ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "mlo hw_link_id %d\n",
+				   info->mlo_chip_info.hw_link_id[j]);
+		}
+
+		ret = ath12k_qmi_fill_adj_info(partner_ab, info);
+		if (ret < 0) {
+			ath12k_err(ab, "failed to update adjacent information\n");
+			goto out;
+		}
+	}
+
+	req.mlo_chip_info_v2_valid = 1;
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+			   qmi_wlfw_mlo_reconfig_info_resp_msg_v01_ei, &resp);
+	if (ret < 0)
+		goto out;
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLFW_MLO_RECONFIG_INFO_REQ_V01,
+			       WLFW_MLO_RECONFIG_INFO_REQ_MSG_V01_MAX_MSG_LEN,
+			       qmi_wlanfw_mlo_reconfig_info_req_msg_v01_ei, &req);
+	if (ret < 0) {
+		qmi_txn_cancel(&txn);
+		ath12k_warn(ab, "Failed to send MLO reconfig request,err = %d\n", ret);
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+	if (ret < 0)
+		goto out;
+
+	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
+		ath12k_warn(ab, "MLO reconfig request failed, result: %d, err: %d\n",
 			    resp.resp.result, resp.resp.error);
 		ret = -EINVAL;
 		goto out;
@@ -5550,6 +5852,40 @@ void ath12k_qmi_trigger_host_cap(struct ath12k_base *ab)
 		   ab->device_id);
 
 	ath12k_qmi_driver_event_post(qmi, ATH12K_QMI_EVENT_HOST_CAP, NULL);
+}
+
+static int ath12k_qmi_event_mlo_reconfig(struct ath12k_qmi *qmi)
+{
+	struct ath12k_base *ab = qmi->ab;
+	int ret;
+
+	ret = ath12k_qmi_mlo_reconfig_send(ab);
+	if (ret < 0) {
+		ath12k_warn(ab, "failed to send qmi host cap for device id %d: %d\n",
+			    ab->device_id, ret);
+		return ret;
+	}
+
+	return ret;
+}
+
+void ath12k_qmi_trigger_mlo_reconfig(struct ath12k_base *ab)
+{
+	struct ath12k_qmi *qmi = &ab->qmi;
+	int ret = 0;
+
+	spin_lock(&qmi->event_lock);
+
+	if (ath12k_qmi_get_event_block(qmi))
+		ath12k_qmi_set_event_block(qmi, false);
+
+	spin_unlock(&qmi->event_lock);
+
+	ath12k_err(ab, "trigger MLO reconfig for device id %d\n",
+		   ab->device_id);
+	ret = ath12k_qmi_event_mlo_reconfig(qmi);
+	if (ret < 0)
+		set_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
 }
 
 static bool ath12k_qmi_hw_group_host_cap_ready(struct ath12k_hw_group *ag)
