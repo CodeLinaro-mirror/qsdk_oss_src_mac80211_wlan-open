@@ -1492,7 +1492,7 @@ void ath12k_dp_tid_setup(void *data, struct ieee80211_sta *sta)
         u8 link_id;
 	unsigned long links_map;
 
-        if (sta->mlo)
+	if (sta->mlo && ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2)
                 return;
 
 	links_map = ahsta->links_map;

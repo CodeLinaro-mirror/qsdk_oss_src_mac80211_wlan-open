@@ -404,6 +404,7 @@ enum ath12k_dev_flags {
 enum ath12k_mlo_recovery_mode {
 	ATH12K_MLO_RECOVERY_MODE0 = 1,
 	ATH12K_MLO_RECOVERY_MODE1 = 2,
+	ATH12K_MLO_RECOVERY_MODE2 = 3,
 };
 
 #define ATH12K_STATS_MGMT_FRM_TYPE_MAX 16
@@ -994,7 +995,8 @@ struct ath12k_debug {
 enum ath12k_fw_recovery_option {
 	 ATH12K_FW_RECOVERY_DISABLE = 0,
 	 ATH12K_FW_RECOVERY_ENABLE_AUTO, /* Automatically recover after FW assert */
-	 ATH12K_FW_RECOVERY_ENABLE_MODE1_AUTO,
+	 ATH12K_FW_RECOVERY_ENABLE_MODE1,
+	 ATH12K_FW_RECOVERY_ENABLE_MODE2,
 	 /* Enable only recovery. Send MPD SSR WMI */
 	 /* command to unlink UserPD assert from RootPD */
 };

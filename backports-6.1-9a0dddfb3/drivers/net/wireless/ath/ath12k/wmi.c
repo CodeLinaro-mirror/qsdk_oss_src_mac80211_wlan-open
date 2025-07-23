@@ -1045,7 +1045,12 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	ml_params->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_MLO_TX_SEND_PARAMS) |
 				FIELD_PREP(WMI_TLV_LEN, sizeof(*ml_params) - TLV_HDR_SIZE);
 
-	ml_params->hw_link_id = WMI_MLO_MGMT_TID;
+	if (ath12k_hw_group_recovery_in_progress(ar->ab->ag) &&
+	    ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
+		ml_params->hw_link_id = ar->pdev->hw_link_id;
+	} else {
+		ml_params->hw_link_id = WMI_MLO_MGMT_TID;
+	}
 
 	if (tx_params_valid) {
 		params = (struct wmi_mgmt_send_params *)(skb->data + (len - sizeof(*params)));
@@ -12473,7 +12478,7 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 		}
 	}
 	if (complete_flag &&
-	    (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 || ag->wsi_remap_in_progress))
+	    (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 || ag->wsi_remap_in_progress))
                 complete(&ag->umac_reset_complete);
 
 }

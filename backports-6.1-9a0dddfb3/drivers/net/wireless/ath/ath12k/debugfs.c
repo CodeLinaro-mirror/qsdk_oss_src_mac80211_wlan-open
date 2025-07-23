@@ -5657,12 +5657,26 @@ void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 	int ret, radio_idx, radioup = 0;
 	int i;
 
-	if (!value)
-		recovery_mode = ATH12K_WMI_DISABLE_FW_RECOVERY;
-	else
-		recovery_mode = (value == ATH12K_FW_RECOVERY_ENABLE_MODE1_AUTO) ?
-			ATH12K_WMI_FW_HANG_RECOVERY_MODE1 : ATH12K_WMI_FW_HANG_RECOVERY_MODE0;
 
+	switch (value) {
+	case ATH12K_FW_RECOVERY_ENABLE_MODE2:
+		if (test_bit(WMI_SERVICE_MLO_MODE2_RECOVERY_SUPPORTED, ab->wmi_ab.svc_map)) {
+			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE2;
+		} else {
+			ath12k_info(ab, "FW does not support Mode 2 fallback to Mode 1 recovery");
+			recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE1;
+		}
+		break;
+	case ATH12K_FW_RECOVERY_ENABLE_MODE1:
+		recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE1;
+		break;
+	case ATH12K_FW_RECOVERY_ENABLE_AUTO:
+		recovery_mode = ATH12K_WMI_FW_HANG_RECOVERY_MODE0;
+		break;
+	default:
+		recovery_mode = ATH12K_WMI_DISABLE_FW_RECOVERY;
+		break;
+	}
 	if (ag->mlo_capable) {
 		for (i = 0; i < ag->num_devices; i++) {
 			ab = ag->ab[i];
@@ -5718,8 +5732,8 @@ static ssize_t ath12k_debug_write_fw_recovery(struct file *file,
 		return -EINVAL;
 
 	if (value < ATH12K_FW_RECOVERY_DISABLE ||
-	    value > ATH12K_FW_RECOVERY_ENABLE_MODE1_AUTO) {
-		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Mode - 0 recovery 2 = Mode - 1 recovery\n");
+	    value > ATH12K_FW_RECOVERY_ENABLE_MODE2) {
+		ath12k_warn(ab, "Please enter: 0 = Disable, 1 = Mode - 0 recovery 2 = Mode - 1 recovery 3 = Mode - 2 recovery\n");
 		ret = -EINVAL;
 		goto exit;
 	}

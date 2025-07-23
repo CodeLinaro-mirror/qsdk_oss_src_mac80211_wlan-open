@@ -1318,6 +1318,9 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 	int idx, ret = 0;
 	u8 link_id;
 
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+		return ret;
+
 	wiphy_lock(wiphy);
 
 	for (idx = 0; idx < ag->num_devices; idx++) {
@@ -4762,7 +4765,7 @@ void ath12k_bss_assoc(struct ath12k *ar,
 		params.tx_bssid = bss_conf->transmitter_bssid;
 	}
 
-	if (ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 &&
+	if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
 	    !ar->ab->is_reset)
 	    /* Skip sending vdev up for non-asserted links while
 	     * recovering station vif type
@@ -8611,6 +8614,7 @@ static int ath12k_mac_set_6g_nonht_dup_conf(struct ath12k_link_vif *arvif,
 				ahvif->vif->addr, arvif->vdev_id, param_id, value);
 		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param_id, value);
 	}
+
 	return ret;
 }
 
@@ -10906,13 +10910,17 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)))
+	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) &&
+	    ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2)
 		return -ESHUTDOWN;
 
 	/* Shouldn't allow MLO STA assoc until UMAC_RECOVERY bit is cleared */
 
-	if (sta->mlo && test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags))
-		return 0;
+	if (sta->mlo && test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags)) {
+		if (old_state == IEEE80211_STA_NOTEXIST &&
+		    new_state == IEEE80211_STA_NONE)
+			return 0;
+	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac handle link %u sta %pM state %d -> %d\n",
 		   arsta->link_id, arsta->addr, old_state, new_state);
@@ -14050,6 +14058,10 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	struct ieee80211_link_sta *link_sta;
 	struct ieee80211_bss_conf *bss_conf;
 	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta;
+	u8 link_id;
+	unsigned long links;
+	struct ath12k_base *ab;
 
 	/* Use the link id passed or the default vif link */
 	if (!sta) {
@@ -14095,6 +14107,30 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	if (!ieee80211_is_mgmt(hdr->frame_control))
 		return link;
 
+	if (ahsta->deflink.arvif->ar)
+		ab = ahsta->deflink.arvif->ar->ab;
+
+	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
+	    ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
+		/* If disassoc frame comes in crash link, need to
+		 * change the link which is active at that instance.
+		 */
+		if (ieee80211_is_disassoc(hdr->frame_control)) {
+			link = ahsta->deflink.link_id;
+			links = ahsta->links_map;
+			for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+				arsta = rcu_dereference(ahsta->link[link_id]);
+				if (!arsta)
+					continue;
+				ab = arsta->arvif->ar->ab;
+				if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
+					link = arsta->link_id;
+					ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+					break;
+				}
+			}
+		}
+	}
 	/* Perform address conversion for ML STA Tx */
 	bss_conf = rcu_dereference(vif->link_conf[link]);
 	link_sta = rcu_dereference(sta->link[link]);
@@ -14332,7 +14368,7 @@ static void ath12k_drain_tx(struct ath12k_hw *ah)
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	for_each_ar(ah, ar, i) {
-		if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE1 || ar->ab->is_reset)
+		if (ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0 || ar->ab->is_reset)
 			ath12k_mac_drain_tx(ar);
 	}
 }
@@ -14385,7 +14421,7 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 		if (ar->ab->is_bypassed)
 			continue;
 
-		if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE1 || ar->ab->is_reset) {
+		if (ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0 || ar->ab->is_reset) {
 			ret = ath12k_mac_start(ar);
 			if (ret) {
 				ah->state = ATH12K_HW_STATE_OFF;

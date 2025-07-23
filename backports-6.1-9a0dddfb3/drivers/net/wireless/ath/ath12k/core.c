@@ -1671,7 +1671,7 @@ core_pdev_create:
 
 		mutex_lock(&ab->core_lock);
 
-		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !ab->recovery_start) {
+		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 && !ab->recovery_start) {
 			mutex_unlock(&ab->core_lock);
 			continue;
 		}
@@ -2306,7 +2306,8 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 			if (ar->ab->is_bypassed)
 				continue;
 
-			if(ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !ar->ab->is_reset)
+			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
+			    !ar->ab->is_reset)
 				continue;
 
 			list_for_each_entry(arvif, &ar->arvifs, list) {
@@ -2378,7 +2379,8 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 				if (ar->ab->is_bypassed)
 					continue;
 
-				if(ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !ar->ab->is_reset)
+				if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 &&
+				    !ar->ab->is_reset)
 					continue;
 
 				if (ar->scan.state == ATH12K_SCAN_RUNNING ||
@@ -2396,7 +2398,8 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 			 * for all the radios through
 			 * ath12k_mac_peer_cleannup_all()
 			 */
-			ath12k_mac_dp_peer_cleanup(ah, ag->recovery_mode);
+			if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1)
+				ath12k_mac_dp_peer_cleanup(ah, ag->recovery_mode);
 
 			break;
 		case ATH12K_HW_STATE_OFF:
@@ -2505,7 +2508,7 @@ static void ath12k_core_restart(struct work_struct *work)
 			goto exit_restart;
 		}
 
-		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1) {
+		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0) {
 			queue_work(ab->workqueue_aux, &ab->recovery_work);
 			mutex_unlock(&ag->mutex);
 			goto exit_restart;
@@ -2724,6 +2727,9 @@ static void ath12k_core_mlo_recover_station(struct ath12k_hw_group *ag,
 	struct ath12k_pdev *pdev;
 	struct ath12k *ar;
 	int i, j;
+
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+		return;
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
@@ -3052,6 +3058,11 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 		if (ab->is_bypassed)
 			continue;
 
+		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
+			if (ab != assert_ab)
+				continue;
+		}
+
 		spin_lock_bh(&ab->dp->dp_lock);
 		list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
 			if (!peer->sta || !peer->vif)
@@ -3078,8 +3089,13 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 	}
 }
 
-/* Wrapper function for recovery after crash */
-int ath12k_mode1_recovery_reconfig(struct ath12k_base *ab)
+/* Wrapper function for recovery after crash
+ * This recovery function will be called for
+ * both Mode 1 and Mode 2. Because both Mode
+ * will recover only the crashed radio
+ * without affecting the other active radio
+ */
+int ath12k_recovery_reconfig(struct ath12k_base *ab)
 {
 	struct ath12k *ar = NULL;
 	struct ath12k_pdev *pdev;
@@ -3244,6 +3260,9 @@ skip_link_info:
 		if (partner_ab->is_bypassed)
 			continue;
 
+		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+			continue;
+
 		for (j = 0; j < partner_ab->num_radios; j++) {
 			pdev = &partner_ab->pdevs[j];
 			ar = pdev->ar;
@@ -3260,9 +3279,8 @@ skip_link_info:
 				if (!ahvif)
 					continue;
 
-				if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
+				if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
 					ath12k_core_iterate_sta_list(ar, arvif);
-				}
 
 				if (ath12k_mac_is_bridge_vdev(arvif))
 					continue;
@@ -3271,10 +3289,10 @@ skip_link_info:
 				spin_lock_bh(&dp->dp_lock);
 				peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, arvif->vdev_id, arvif->bssid);
 				if (!peer) {
-					ath12k_info(ab,"Failed to fetch the peer during reconfig\n");
+					ath12k_info(ab, "Failed to fetch the peer during reconfig\n");
 					spin_unlock_bh(&dp->dp_lock);
 					continue;
-        			}
+				}
 				spin_unlock_bh(&dp->dp_lock);
 
 				for (key_idx = 0; key_idx < WMI_MAX_KEY_INDEX; key_idx++) {
@@ -3306,15 +3324,17 @@ skip_link_info:
 	return ret;
 }
 
-
-static void ath12k_core_mode1_recovery_work(struct work_struct *work)
+/* this recovery work is called for both
+ * mode 1 and mode 2 during the recovery.
+ */
+static void ath12k_core_recovery_work(struct work_struct *work)
 {
 	struct ath12k_base *ab = container_of(work, struct ath12k_base, recovery_work);
 	if (ab->is_bypassed)
 		return;
 
 	ath12k_info(ab, "queued recovery work\n");
-	ath12k_mode1_recovery_reconfig(ab);
+	ath12k_recovery_reconfig(ab);
 }
 
 static void ath12k_core_trigger_bug_on(struct ath12k_base *ab)
@@ -3501,6 +3521,9 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	if (ab->recovery_mode_address) {
 		switch (*ab->recovery_mode_address) {
+		case ATH12K_MLO_RECOVERY_MODE2:
+			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE2;
+			break;
 		case ATH12K_MLO_RECOVERY_MODE1:
 			ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE1;
 			break;
@@ -3519,8 +3542,8 @@ static void ath12k_core_reset(struct work_struct *work)
 		ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 
 	if (ab->fw_recovery_support)
-		ath12k_info(ab, "Recovery is initiated with Mode%s\n",
-				(ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0 ? "0" : "1"));
+		ath12k_info(ab, "Recovery is initiated with Mode%d\n",
+				ag->recovery_mode - 1);
 
 	/* Sometimes the recovery will fail and then the next all recovery fail,
 	 * this is to avoid infinite recovery since it can not recovery success
@@ -3584,7 +3607,7 @@ static void ath12k_core_reset(struct work_struct *work)
 		 * as Mode0, if continuous reset has happened
 		 */
 
-		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1) {
+		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0) {
 			if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &partner_ab->dev_flags) ||
 			    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags)) {
 				/* On receiving MHI Interrupt for pdev which is
@@ -3611,7 +3634,7 @@ static void ath12k_core_reset(struct work_struct *work)
 	 */
 	ath12k_core_to_group_ref_put(ab);
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1) {
+	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0) {
 		if (ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_SSR_REASON) ||
 		    ath12k_mac_partner_peer_cleanup(ab)) {
 			/* Fallback to Mode0 if umac reset/peer_cleanup is
@@ -3624,6 +3647,7 @@ static void ath12k_core_reset(struct work_struct *work)
 			/* wake queues here as ping should continue for
 			 * legacy clients in non-asserted chipsets
 			 */
+			ath12k_core_peer_disassoc(ag, ab);
 			for (i = 0; i < ag->num_hw; i++) {
 				ah = ag->ah[i];
 				if (!ah)
@@ -3672,7 +3696,7 @@ static void ath12k_core_reset(struct work_struct *work)
 	ab->qmi.num_radios = U8_MAX;
 	//ab->single_chip_mlo_supp = false; TODO need to revisit
 
-	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1)
+	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
 		ab->recovery_start = true;
 
 	ab->recovery_mode_address = NULL;
@@ -4828,7 +4852,7 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 	init_waitqueue_head(&ab->qmi.cold_boot_waitq);
 	INIT_WORK(&ab->restart_work, ath12k_core_restart);
 	INIT_WORK(&ab->reset_work, ath12k_core_reset);
-	INIT_WORK(&ab->recovery_work, ath12k_core_mode1_recovery_work);
+	INIT_WORK(&ab->recovery_work, ath12k_core_recovery_work);
 	INIT_WORK(&ab->rfkill_work, ath12k_rfkill_work);
 	INIT_WORK(&ab->dump_work, ath12k_coredump_upload);
 	INIT_WORK(&ab->update_11d_work, ath12k_update_11d);
