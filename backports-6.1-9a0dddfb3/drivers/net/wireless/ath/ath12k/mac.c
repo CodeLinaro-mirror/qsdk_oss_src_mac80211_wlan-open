@@ -20257,6 +20257,27 @@ static void ath12k_mac_update_ch_list(struct ath12k *ar,
 	}
 }
 
+#define ATH12K_5_9_MIN_FREQ 5845
+#define ATH12K_5_9_MAX_FREQ 5885
+
+static void ath12k_mac_update_5_9_ch_list(struct ath12k *ar,
+					  struct ieee80211_supported_band *band)
+{
+	int i;
+
+	if (test_bit(WMI_TLV_SERVICE_5_9GHZ_SUPPORT, ar->ab->wmi_ab.svc_map))
+		return;
+
+	if (ar->ab->dfs_region != ATH12K_DFS_REG_FCC)
+		return;
+
+	for (i = 0; i < band->n_channels; i++) {
+		if (band->channels[i].center_freq >= ATH12K_5_9_MIN_FREQ &&
+		    band->channels[i].center_freq <= ATH12K_5_9_MAX_FREQ)
+			band->channels[i].flags |= IEEE80211_CHAN_DISABLED;
+	}
+}
+
 static u32 ath12k_get_phy_id(struct ath12k *ar, u32 band)
 {
 	struct ath12k_pdev *pdev = ar->pdev;
@@ -20368,7 +20389,7 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 		      ARRAY_SIZE(ath12k_6ghz_channels)) !=
 		     ATH12K_NUM_CHANS);
 
-	reg_cap = &ar->ab->hal_reg_cap[ar->pdev_idx];
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
 
 	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
 		channels = kmemdup(ath12k_2ghz_channels,
@@ -20386,7 +20407,7 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 
 		if (ab->hw_params->single_pdev_only) {
 			phy_id = ath12k_get_phy_id(ar, WMI_HOST_WLAN_2GHZ_CAP);
-			reg_cap = &ar->ab->hal_reg_cap[phy_id];
+			reg_cap = &ab->hal_reg_cap[phy_id];
 		}
 
 		freq_low = max(reg_cap->low_2ghz_chan,
@@ -20454,7 +20475,7 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 			ath12k_mac_update_ch_list(ar, band,
 						  freq_low,
 						  freq_high);
-
+			ath12k_mac_update_5_9_ch_list(ar, band);
 			ar->num_channels = ath12k_reg_get_num_chans_in_band(ar, band);
 			if (!bands[NL80211_BAND_5GHZ]) {
 				bands[NL80211_BAND_5GHZ] = band;

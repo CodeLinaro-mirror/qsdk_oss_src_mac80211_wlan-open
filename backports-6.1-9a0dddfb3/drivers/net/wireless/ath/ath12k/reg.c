@@ -937,7 +937,8 @@ static void ath12k_copy_reg_rule(struct ath12k_reg_freq *ath12k_reg_freq,
 	if (!ath12k_reg_freq->start_freq)
 		ath12k_reg_freq->start_freq = reg_rule->start_freq;
 
-	if (!ath12k_reg_freq->end_freq || ath12k_reg_freq->end_freq < reg_rule->end_freq)
+	if (!ath12k_reg_freq->end_freq ||
+	    ath12k_reg_freq->end_freq < reg_rule->end_freq)
 		ath12k_reg_freq->end_freq = reg_rule->end_freq;
 }
 
