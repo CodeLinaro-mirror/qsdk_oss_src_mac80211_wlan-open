@@ -651,4 +651,5 @@ int ath12k_mac_reg_get_max_reg_eirp_from_chan_list(struct ath12k *ar,
 						   bool is_client_needed,
 						   struct channel_power *chan_eirp_list);
 int __ath12k_mac_mlo_setup(struct ath12k *ar);
+int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab);
 #endif

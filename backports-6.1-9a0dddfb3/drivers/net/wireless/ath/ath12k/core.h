@@ -999,6 +999,7 @@ struct ath12k_chan_info {
 	u32 high_freq;
 };
 
+#define ATH12K_MIN_ACTIVE_CHIP_FOR_BYPASS 2
 enum ath12k_wsi_bypass_action {
 	ATH12K_WSI_BYPASS_DEFAULT,
 	ATH12K_WSI_BYPASS_REMOVE_DEVICE,
@@ -1459,6 +1460,7 @@ struct ath12k_hw_group {
 	struct ath12k_stats_work_context stats_work;
 	u8 num_bypassed;
 	bool wsi_remap_in_progress;
+	struct completion peer_cleanup_complete;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -2177,4 +2179,5 @@ int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd);
 struct ath12k_wsi_info *ath12k_core_get_current_wsi_info(struct ath12k_base *ab);
 int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab);
 void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed, u16 link_width);
+void ath12k_core_radio_cleanup(struct ath12k *ar);
 #endif /* _CORE_H_ */

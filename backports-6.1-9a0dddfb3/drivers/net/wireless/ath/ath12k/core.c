@@ -2211,6 +2211,37 @@ static void ath12k_core_mlo_hw_queues_stop(struct ath12k_hw_group *ag)
 	}
 }
 
+void ath12k_core_radio_cleanup(struct ath12k *ar)
+{
+	ar->free_map_id = ATH12K_FREE_MAP_ID_MASK;
+	ath12k_mac_drain_tx(ar);
+	ar->state_11d = ATH12K_11D_IDLE;
+	complete(&ar->completed_11d_scan);
+	complete(&ar->scan.started);
+	complete_all(&ar->scan.completed);
+	complete(&ar->scan.on_channel);
+	complete(&ar->peer_assoc_done);
+	complete(&ar->peer_delete_done);
+	if (!list_empty(&ar->ab->dp->neighbor_peers))
+		ath12k_debugfs_nrp_cleanup_all(ar);
+	complete(&ar->install_key_done);
+	complete(&ar->vdev_setup_done);
+	complete(&ar->vdev_delete_done);
+	complete(&ar->bss_survey_done);
+	complete(&ar->thermal.wmi_sync);
+	complete(&ar->scan.on_channel);
+
+	wake_up(&ar->dp.tx_empty_waitq);
+	idr_for_each(&ar->txmgmt_idr,
+		     ath12k_mac_tx_mgmt_pending_free, ar);
+	idr_destroy(&ar->txmgmt_idr);
+	wake_up(&ar->txmgmt_empty_waitq);
+
+	ar->monitor_vdev_id = -1;
+	ar->monitor_started = false;
+	ar->monitor_vdev_created = false;
+}
+
 static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
@@ -2248,34 +2279,7 @@ static void ath12k_core_pre_reconfigure_recovery(struct ath12k_base *ab)
 				arvif->is_created = false;
 				arvif->is_up = false;
 			}
-
-			ar->free_map_id = ATH12K_FREE_MAP_ID_MASK;
-			ath12k_mac_drain_tx(ar);
-			ar->state_11d = ATH12K_11D_IDLE;
-			complete(&ar->completed_11d_scan);
-			complete(&ar->scan.started);
-			complete_all(&ar->scan.completed);
-			complete(&ar->scan.on_channel);
-			complete(&ar->peer_assoc_done);
-			complete(&ar->peer_delete_done);
-			if (!list_empty(&ab->dp->neighbor_peers))
-				ath12k_debugfs_nrp_cleanup_all(ar);
-			complete(&ar->install_key_done);
-			complete(&ar->vdev_setup_done);
-			complete(&ar->vdev_delete_done);
-			complete(&ar->bss_survey_done);
-			complete(&ar->thermal.wmi_sync);
-			complete(&ar->scan.on_channel);
-
-			wake_up(&ar->dp.tx_empty_waitq);
-			idr_for_each(&ar->txmgmt_idr,
-				     ath12k_mac_tx_mgmt_pending_free, ar);
-			idr_destroy(&ar->txmgmt_idr);
-			wake_up(&ar->txmgmt_empty_waitq);
-
-			ar->monitor_vdev_id = -1;
-			ar->monitor_started = false;
-			ar->monitor_vdev_created = false;
+			ath12k_core_radio_cleanup(ar);
 		}
 
 		wiphy_unlock(ah->hw->wiphy);
@@ -3730,6 +3734,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	INIT_WORK(&ag->reset_group_work, ath12k_core_update_userpd_state);
 	mutex_init(&ag->mutex);
 	init_completion(&ag->umac_reset_complete);
+	init_completion(&ag->peer_cleanup_complete);
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;

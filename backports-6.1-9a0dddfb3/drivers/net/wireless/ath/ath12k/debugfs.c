@@ -98,6 +98,114 @@ static const struct file_operations fops_sensitivity_level = {
 	.llseek = default_llseek,
 };
 
+int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k *ar;
+	int i;
+
+	if (!test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map)) {
+		ath12k_err(ab, "Firmware doesn't support dynamic WSI remap\n");
+		return -EINVAL;
+	}
+
+	if (ab->ag->wsi_remap_in_progress) {
+		ath12k_err(ab, "WSI remap already in progress..\n");
+		return -EINVAL;
+	}
+
+	if (ath12k_hw_group_recovery_in_progress(ag)) {
+		ath12k_err(ab, "SSR is in progress, cannot allow remap\n");
+		return -EINVAL;
+	}
+
+	if (((ag->num_devices - ag->num_bypassed) == ATH12K_MIN_ACTIVE_CHIP_FOR_BYPASS) &&
+	    value == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
+		ath12k_err(ab, "Min 2 Chip has to be active.\n");
+		return -EINVAL;
+	}
+
+	if ((!ab->is_bypassed && value == ATH12K_WSI_BYPASS_ADD_DEVICE) ||
+	    (ab->is_bypassed && value == ATH12K_WSI_BYPASS_REMOVE_DEVICE)) {
+		ath12k_err(ab, "Invalid operation\n");
+		return -EINVAL;
+	}
+
+	for (i = 0; i < ab->num_radios; i++) {
+		ar = ab->pdevs[i].ar;
+		if (!ar) {
+			ath12k_err(ab, "Invalid Radio\n");
+			return -EINVAL;
+		}
+		if (ar->num_created_vdevs > 0) {
+			ath12k_err(ab, "Vaps are active, cannot do bypass\n");
+			return -EINVAL;
+		}
+	}
+
+	return 0;
+}
+
+static ssize_t
+ath12k_debug_write_wsi_bypass_device(struct file *file,
+				     const char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	unsigned int value;
+	int ret;
+
+	if (kstrtouint_from_user(user_buf, count, 0, &value))
+		return -EINVAL;
+
+	if (value > ATH12K_WSI_BYPASS_ADD_DEVICE ||
+	    value <= ATH12K_WSI_BYPASS_DEFAULT) {
+		ath12k_warn(ab, "Please enter: 1 = Bypass device,"
+			    "2 = Re-add device\n");
+		return -EINVAL;
+	}
+
+	mutex_lock(&ab->core_lock);
+	ret = ath12k_wsi_bypass_precheck(ab, value);
+
+	if (ret) {
+		ath12k_err(ab, "WSI Bypass precheck failed\n");
+		mutex_unlock(&ab->core_lock);
+		goto exit;
+	}
+
+	ab->wsi_remap_state = value;
+
+	if (ab->is_bypassed && ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
+		ath12k_warn(ab, "Failed! Device is already in bypass state\n");
+		ret = -EINVAL;
+		mutex_unlock(&ab->core_lock);
+		goto exit;
+	}
+	mutex_unlock(&ab->core_lock);
+
+	ret = ath12k_mac_dynamic_wsi_remap(ab);
+
+	if (ret) {
+		/* Reset the flags if there is a failure */
+		ath12k_err(ab, "WSI bypass has failed with error %d\n", ret);
+		ab->ag->wsi_remap_in_progress = false;
+		ab->wsi_remap_state = ATH12K_WSI_BYPASS_DEFAULT;
+		ab->is_bypassed = false;
+		goto exit;
+	}
+
+	ret = count;
+
+exit:
+	return ret;
+}
+
+static const struct file_operations fops_wsi_bypass_device = {
+	.write = ath12k_debug_write_wsi_bypass_device,
+	.open = simple_open,
+};
+
 int wmi_ctrl_path_awgn_stat(struct ath12k *ar, char __user *ubuf,
 			    size_t count, loff_t *ppos)
 {
@@ -5440,6 +5548,11 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 	if (buf[*ppos - 1] == '\n')
 		buf[*ppos - 1] = '\0';
 
+	if (ab->is_bypassed) {
+		ath12k_err(ab, "Target is in bypassed state, cannot simulate assert\n");
+		return -EINVAL;
+	}
+
 	for (i = 0; i < ab->num_radios; i++) {
 		pdev = &ab->pdevs[i];
 		ar = pdev->ar;
@@ -5458,6 +5571,11 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 			ath12k_err(tmp_ab, "Already in recovery\n");
 			return -EPERM;
 		}
+	}
+
+	if (ag->wsi_remap_in_progress) {
+		ath12k_err(ab, "WSI remap in progress, try later\n");
+		return -EPERM;
 	}
 
 	if (!strcmp(buf, "assert")) {
@@ -5931,6 +6049,9 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_soc_stats_disable);
 	debugfs_create_file("dump_srng_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_dump_hal_stats);
+	if (test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map))
+		debugfs_create_file("wsi_bypass_device", 0600, ab->debugfs_soc, ab,
+				    &fops_wsi_bypass_device);
 }
 
 void ath12k_debugfs_unregister(struct ath12k *ar)

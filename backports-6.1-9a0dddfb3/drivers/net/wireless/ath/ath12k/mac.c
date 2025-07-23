@@ -252,6 +252,7 @@ ath12k_phymodes[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 #define ATH12K_MAX_NUM_BRIDGE_PER_MLD 2
 #define BRIDGE_IN_RANGE(ar) (ar->num_created_bridge_vdevs < TARGET_NUM_BRIDGE_VDEVS)
 #define ATH12K_MAX_AR_LINK_IDX	5
+#define ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS 10000
 
 static const u32 ath12k_smps_map[] = {
 	[WLAN_HT_CAP_SM_PS_STATIC] = WMI_PEER_SMPS_STATIC,
@@ -11025,15 +11026,23 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct ath12k_link_sta *arsta;
 	struct wireless_dev *wdev;
 	struct ath12k *ar = ah->radio;
+	struct ath12k_hw_group *ag = ar->ab->ag;
 	unsigned long links_map;
 	bool is_recovery = false;
-	u8 link_id = 0, num_devices = ar->ab->ag->num_devices;
+	u8 link_id = 0, num_devices = ag->num_devices;
 	u8 t_link_id = 0;
 	u16 bridge_bitmap = 0;
 	int ret = -EINVAL;
 	struct ath12k_dp_peer_create_params dp_params = {0};
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if ((old_state == IEEE80211_STA_NOTEXIST &&
+	     new_state == IEEE80211_STA_NONE) && ag->wsi_remap_in_progress) {
+		ath12k_err(NULL, "cannot allow new station association, WSI bypass is in progress\n");
+		ret = -EINVAL;
+		goto exit;
+	}
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (!ahsta->ppe_vp_num)
@@ -11236,6 +11245,11 @@ ml_station_remove:
 		wiphy_work_cancel(hw->wiphy, &ahsta->set_4addr_wk);
 	}
 
+	if (ag->wsi_remap_in_progress && !ah->num_ml_peers) {
+		ath12k_dbg(NULL, ATH12K_DBG_WSI_BYPASS,
+			   "Bypass: Completing peer cleanup timer\n");
+		complete(&ag->peer_cleanup_complete);
+	}
 	ret = 0;
 
 peer_delete:
@@ -23421,4 +23435,115 @@ int ath12k_mac_reg_get_max_reg_eirp_from_chan_list(struct ath12k *ar,
 	ath12k_fill_chan_eirp_list(chan_6g, chan_eirp_list);
 
 	return 0;
+}
+
+void ath12k_mac_wsi_remap_peer_cleanup(struct ath12k_base *ab,
+				       bool skip_legacy)
+{
+	struct ath12k_dp_link_peer *link_peer, *tmp;
+	struct ath12k_sta *ahsta;
+	struct ieee80211_sta *sta;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "Bypass: Starting peer cleanup\n");
+	spin_lock_bh(&dp->dp_lock);
+	list_for_each_entry_safe(link_peer, tmp, &dp->peers, list) {
+		sta = link_peer->sta;
+		if (!sta)
+			continue;
+
+		if (skip_legacy && !sta->mlo)
+			continue;
+
+		ahsta = (struct ath12k_sta *)sta->drv_priv;
+
+		ath12k_mac_peer_disassoc(ab, sta, ahsta,
+					 ATH12K_DBG_WSI_BYPASS);
+	}
+	spin_unlock_bh(&dp->dp_lock);
+}
+
+int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
+{
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k *ar = ab->pdevs[0].ar;
+	struct ath12k_hw *ah = ar ? ar->ah : NULL;
+	struct ath12k_base *partner_ab;
+	struct ath12k_pdev *pdev;
+	struct wiphy *wiphy;
+	long time_left;
+	u32 num_ml_peers;
+	int idx, ret = 0;
+	bool skip_legacy;
+
+	if (!ah) {
+		ath12k_err(ab, "Failed to find hw, Dynamic remap failed\n");
+		return -EINVAL;
+	}
+	wiphy = ah->hw->wiphy;
+
+	ag->wsi_remap_in_progress = true;
+
+	/* Cleanup ML peers before MLO teardown during bypass
+	 * operation. Ensure to cleanup the legacy clients for the device
+	 * which is bypassed.
+	 */
+	wiphy_lock(wiphy);
+	for (idx = 0; idx < ag->num_devices; idx++) {
+		partner_ab = ag->ab[idx];
+
+		if (partner_ab->is_bypassed)
+			continue;
+
+		if (ab == partner_ab)
+			skip_legacy = false;
+		else
+			skip_legacy = true;
+
+		ath12k_mac_wsi_remap_peer_cleanup(partner_ab, skip_legacy);
+	}
+	num_ml_peers = ah->num_ml_peers;
+	wiphy_unlock(wiphy);
+
+	/* Start a wait timer to ensure all ML peers are cleaned up
+	 * before proceeding with the UMAC reset. This is necessary to
+	 * avoid disrupting inter-device communication in the firmware.
+	 * Skipping this may lead to peer delete timeouts on the host,
+	 * followed by a firmware assert.
+	 */
+	if (num_ml_peers) {
+		reinit_completion(&ag->peer_cleanup_complete);
+		time_left = wait_for_completion_timeout(&ag->peer_cleanup_complete,
+				msecs_to_jiffies(ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS));
+
+		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+			   "Bypass: Waiting for ML peer cleanup\n");
+		if (!time_left) {
+			ath12k_err(ab, "peer cleanup didn't get completed within %d ms\n",
+				   ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS);
+			return -ETIMEDOUT;
+		}
+	}
+
+	/* Cleanup all the ar workqueues, make it to complete/default
+	 * before bypassing an device.
+	 */
+	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
+		for (idx = 0; idx < ab->num_radios; idx++) {
+			pdev = &ab->pdevs[idx];
+			ar = pdev->ar;
+
+			if (!ar)
+				continue;
+			if (ar->scan.state == ATH12K_SCAN_RUNNING) {
+				ath12k_scan_abort(ar);
+				ar->scan.arvif = NULL;
+			}
+			ath12k_core_radio_cleanup(ar);
+		}
+	}
+
+	ret = ath12k_core_dynamic_wsi_remap(ab);
+
+	return ret;
 }
