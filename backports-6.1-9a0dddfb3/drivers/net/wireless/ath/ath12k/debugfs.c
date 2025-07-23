@@ -5452,7 +5452,7 @@ static ssize_t ath12k_write_simulate_fw_crash(struct file *file,
 
 	for (i = 0; i < ag->num_devices; i++) {
 		tmp_ab = ag->ab[i];
-		if(!tmp_ab)
+		if (!tmp_ab || tmp_ab->is_bypassed)
 			continue;
 		if (test_bit(ATH12K_FLAG_RECOVERY, &tmp_ab->dev_flags)) {
 			ath12k_err(tmp_ab, "Already in recovery\n");
@@ -5538,6 +5538,8 @@ void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 	if (ag->mlo_capable) {
 		for (i = 0; i < ag->num_devices; i++) {
 			ab = ag->ab[i];
+			if (ab->is_bypassed)
+				continue;
 			mutex_lock(&ab->core_lock);
 			ab->fw_recovery_support = value;
 			mutex_unlock(&ab->core_lock);

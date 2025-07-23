@@ -735,7 +735,7 @@ static void ath12k_ahb_ce_tasklet(struct tasklet_struct *t)
 	ath12k_ahb_ce_irq_enable(ce_pipe->ab, ce_pipe->pipe_num);
 }
 
-static int ath12k_ahb_config_irq(struct ath12k_base *ab)
+int ath12k_ahb_config_irq(struct ath12k_base *ab)
 {
 	int irq, irq_idx, i;
 	int ret;
@@ -1224,7 +1224,8 @@ static void ath12k_ahb_queue_all_userpd_reset(struct ath12k_base *ab)
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
 
-		if (partner_ab->hif.bus == ATH12K_BUS_PCI)
+		if (partner_ab->is_bypassed ||
+		    partner_ab->hif.bus == ATH12K_BUS_PCI)
 			continue;
 
 		if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)))
@@ -1243,7 +1244,8 @@ static int ath12k_ahb_release_all_userpd(struct ath12k_base *ab)
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
 
-		if (!(partner_ab->hif.bus == ATH12K_BUS_AHB ||
+		if (partner_ab->is_bypassed ||
+		    !(partner_ab->hif.bus == ATH12K_BUS_AHB ||
 		      partner_ab->hif.bus == ATH12K_BUS_HYBRID))
 			continue;
 

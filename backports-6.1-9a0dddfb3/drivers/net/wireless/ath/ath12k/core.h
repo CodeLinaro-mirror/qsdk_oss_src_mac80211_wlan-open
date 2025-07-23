@@ -999,6 +999,12 @@ struct ath12k_chan_info {
 	u32 high_freq;
 };
 
+enum ath12k_wsi_bypass_action {
+	ATH12K_WSI_BYPASS_DEFAULT,
+	ATH12K_WSI_BYPASS_REMOVE_DEVICE,
+	ATH12K_WSI_BYPASS_ADD_DEVICE,
+};
+
 #define ATH12K_FLUSH_TIMEOUT (5 * HZ)
 #define ATH12K_VDEV_DELETE_TIMEOUT_HZ (5 * HZ)
 
@@ -1452,6 +1458,7 @@ struct ath12k_hw_group {
 	struct ath12k_qos_ctx qos;
 	struct ath12k_stats_work_context stats_work;
 	u8 num_bypassed;
+	bool wsi_remap_in_progress;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -1756,6 +1763,8 @@ struct ath12k_base {
 	bool powerup_triggered;
 	struct completion power_up;
 	struct ath12k_wsi_info bypass_wsi_info;
+	bool is_bypassed;
+	enum ath12k_wsi_bypass_action wsi_remap_state;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
@@ -2166,4 +2175,6 @@ u8 ath12k_core_get_ab_list_by_wiphy(const struct wiphy *wiphy,
 				    u8 ab_list_size);
 int ath12k_wifi_stats_reply_setup(struct ath12k_telemetry_command *cmd);
 struct ath12k_wsi_info *ath12k_core_get_current_wsi_info(struct ath12k_base *ab);
+int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab);
+void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed, u16 link_width);
 #endif /* _CORE_H_ */

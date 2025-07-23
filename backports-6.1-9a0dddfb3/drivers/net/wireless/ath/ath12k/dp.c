@@ -1808,7 +1808,7 @@ void ath12k_dp_partner_cc_init(struct ath12k_base *ab)
 	int i;
 
 	for (i = 0; i < ag->num_devices; i++) {
-		if (ag->ab[i] == ab)
+		if (ag->ab[i]->is_bypassed || ag->ab[i] == ab)
 			continue;
 
 		ath12k_dp_cmem_init(ab, ag->ab[i]->dp, ATH12K_DP_RX_DESC);

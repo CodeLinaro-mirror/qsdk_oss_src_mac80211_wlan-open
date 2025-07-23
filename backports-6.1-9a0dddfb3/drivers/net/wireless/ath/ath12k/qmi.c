@@ -4216,6 +4216,9 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 	for (i = 0, mlo_idx = 0; i < ab->qmi.mem_seg_count; i++) {
 
 		if (ab->qmi.target_mem[i].type == MLO_GLOBAL_MEM_REGION_TYPE) {
+			if (ab->is_bypassed)
+				continue;
+
 			ath12k_qmi_free_mlo_mem_chunk(ab,
 						      &ab->qmi.target_mem[i],
 						      mlo_idx++);
@@ -5859,6 +5862,9 @@ static int ath12k_qmi_event_mlo_reconfig(struct ath12k_qmi *qmi)
 	struct ath12k_base *ab = qmi->ab;
 	int ret;
 
+	if (ab->is_bypassed)
+		return 0;
+
 	ret = ath12k_qmi_mlo_reconfig_send(ab);
 	if (ret < 0) {
 		ath12k_warn(ab, "failed to send qmi host cap for device id %d: %d\n",
@@ -5895,6 +5901,9 @@ static bool ath12k_qmi_hw_group_host_cap_ready(struct ath12k_hw_group *ag)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
+
+		if (ab->is_bypassed)
+			continue;
 
 		if (!(ab && ab->qmi.num_radios != U8_MAX))
 			return false;

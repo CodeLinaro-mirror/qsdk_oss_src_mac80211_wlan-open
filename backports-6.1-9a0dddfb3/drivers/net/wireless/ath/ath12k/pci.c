@@ -1289,6 +1289,12 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		ath12k_err(ab, "failed to init core: %d\n", ret);
 		goto err_free_dp;
 	}
+
+	ret = ath12k_pci_get_link_status(ab_pci->pdev, &ab_pci->def_link_speed,
+					 &ab_pci->def_link_width);
+	if (ret)
+		ath12k_err(ab, "failed to get PCIe link status %d\n", ret);
+
 	return 0;
 
 err_free_dp:

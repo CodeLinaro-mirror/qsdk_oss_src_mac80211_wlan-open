@@ -2009,6 +2009,11 @@ int ath12k_wmi_pdev_set_param(struct ath12k *ar, u32 param_id,
 	if (!skb)
 		return -ENOMEM;
 
+	if (ar->ab->is_bypassed) {
+		ath12k_warn(ar->ab, "Chip is bypassed, skip Pdev set cmd");
+		return 0;
+	}
+
 	cmd = (struct wmi_pdev_set_param_cmd *)skb->data;
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PDEV_SET_PARAM_CMD,
 						 sizeof(*cmd));
@@ -12467,8 +12472,8 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 				complete_flag = false;
 		}
 	}
-
-        if (complete_flag && ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1)
+	if (complete_flag &&
+	    (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1 || ag->wsi_remap_in_progress))
                 complete(&ag->umac_reset_complete);
 
 }

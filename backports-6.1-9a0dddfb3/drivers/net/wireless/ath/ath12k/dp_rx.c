@@ -1198,7 +1198,7 @@ int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
 	for (i = 0; i < ag->num_devices; i++) {
 		struct ath12k_base *partner_ab = ag->ab[i];
 
-		if (!partner_ab)
+		if (!partner_ab || partner_ab->is_bypassed)
 			continue;
 
 		/* Skip sending HTT command when recovery in progress */

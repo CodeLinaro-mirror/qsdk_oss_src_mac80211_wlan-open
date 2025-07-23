@@ -1442,7 +1442,7 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 			iter_arvif = ahvif->link[link_idx];
 
 			if (!iter_arvif || iter_arvif == arvif ||
-			    ab != iter_arvif->ar->ab)
+			    !iter_arvif->ar || ab != iter_arvif->ar->ab)
 				continue;
 
 			iter_arvif->splitphy_ds_bank_id = arvif->splitphy_ds_bank_id;

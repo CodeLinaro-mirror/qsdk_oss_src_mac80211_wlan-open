@@ -1322,7 +1322,8 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 	for (idx = 0; idx < ag->num_devices; idx++) {
 		partner_ab = ag->ab[idx];
 
-		if (ab == partner_ab)
+		if (partner_ab->is_bypassed ||
+		    ab == partner_ab)
 			continue;
 
 		list_for_each_entry_safe(peer, tmp, &partner_ab->dp->peers, list) {
@@ -7306,6 +7307,9 @@ static void ath12k_mac_scan_send_complete(struct ath12k *ar,
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
+		if (ab->is_bypassed)
+			continue;
+
 		for (j = 0; j < ab->num_radios; j++) {
 			pdev = &ab->pdevs[j];
 			partner_ar = pdev->ar;
@@ -14358,6 +14362,9 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 		 * can be allowed
 		 */
 
+		if (ar->ab->is_bypassed)
+			continue;
+
 		if (ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE1 || ar->ab->is_reset) {
 			ret = ath12k_mac_start(ar);
 			if (ret) {
@@ -14373,6 +14380,7 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 				ar->pdev_suspend = false;
 			}
 		}
+		ar->pdev_suspend = false;
 	}
 
 	if (ath12k_check_erp_power_down(ag))
@@ -15373,6 +15381,9 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	}
 
 	if (arvif->ar) {
+		if (arvif->ar->ab->is_bypassed)
+			return arvif->ar;
+
 		/* This is not expected really */
 		if (!test_bit(ATH12K_FLAG_RECOVERY,&arvif->ar->ab->dev_flags) && !arvif->is_created) {
 			WARN_ON(1);
@@ -17572,6 +17583,9 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	ab = ar->ab;
 
+	if (ab->is_bypassed)
+		return 0;
+
 	ret = ath12k_ppeds_attach_link_vif(arvif, ahvif->dp_vif.ppe_vp_num,
 					   &arvif->ppe_vp_profile_idx, vif);
 	if (ret)
@@ -17860,6 +17874,7 @@ static int ath12k_mac_get_link_idx_for_bridge(struct ieee80211_hw *hw,
 	struct ath12k *ar1, *ar2;
 	int ret = -ENODATA;
 	u32 adj_device1, adj_device2;
+	struct ath12k_wsi_info *wsi_info, *adj_wsi_info;
 
 	ar1 = ah->radio;
 	ag = ar1->ab->ag;
@@ -17878,13 +17893,15 @@ static int ath12k_mac_get_link_idx_for_bridge(struct ieee80211_hw *hw,
 
 		if (BRIDGE_IN_RANGE(ar1)) {
 			ar2 = ar1;
+			wsi_info = ath12k_core_get_current_wsi_info(ar1->ab);
 			ar2++;
-			adj_device1 = ar1->ab->wsi_info.adj_chip_idxs[0];
-			adj_device2 = ar1->ab->wsi_info.adj_chip_idxs[1];
+			adj_device1 = wsi_info->adj_chip_idxs[0];
+			adj_device2 = wsi_info->adj_chip_idxs[1];
 			for (int j = 0; j < ah->num_radio - i; j++, ar2++) {
+				adj_wsi_info = ath12k_core_get_current_wsi_info(ar2->ab);
 				if (ar2 && BRIDGE_IN_RANGE(ar2) &&
-				    (ar2->ab->wsi_info.index == adj_device1 ||
-				     ar2->ab->wsi_info.index == adj_device2)) {
+				    (adj_wsi_info->index == adj_device1 ||
+				     adj_wsi_info->index == adj_device2)) {
 					*link_idx_bmp = BIT(ar1->hw_link_id) | BIT(ar2->hw_link_id);
 					ret = 0;
 					goto exit;
@@ -18067,6 +18084,7 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar = ah->radio;
 	struct ath12k_hw_group *ag = ar->ab->ag;
+	struct ath12k_wsi_info *wsi_info;
 	struct ath12k_vif *ahvif = (void *)vif->drv_priv;
 	struct ieee80211_chanctx_conf *bridge_ctx = NULL;
 	struct ath12k_link_vif *arvif;
@@ -18144,8 +18162,8 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 			arvif = ahvif->link[link_id];
 			if (!arvif->ar)
 				continue;
-
-			if (BIT(device_idx) & arvif->ar->ab->wsi_info.diag_device_idx_bmap) {
+			wsi_info = ath12k_core_get_current_wsi_info(arvif->ar->ab);
+			if (BIT(device_idx) & wsi_info->diag_device_idx_bmap) {
 				bridge_needed = true;
 				break;
 			}
@@ -21602,7 +21620,7 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	INIT_WORK(&ar->ssr_erp_exit, ath12k_erp_ssr_exit);
 }
 
-static int __ath12k_mac_mlo_setup(struct ath12k *ar)
+int __ath12k_mac_mlo_setup(struct ath12k *ar)
 {
 	u8 num_link = 0, partner_link_id[ATH12K_GROUP_MAX_RADIO] = {};
 	struct ath12k_base *partner_ab, *ab = ar->ab;
@@ -21619,6 +21637,8 @@ static int __ath12k_mac_mlo_setup(struct ath12k *ar)
 
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
+		if (partner_ab->is_bypassed)
+			continue;
 
 		if ((ab != partner_ab) && (max_ml_peers > partner_ab->max_ml_peer_supported))
 			max_ml_peers = min(max_ml_peers, partner_ab->max_ml_peer_supported);
@@ -21672,7 +21692,8 @@ static int __ath12k_mac_mlo_setup(struct ath12k *ar)
 	return 0;
 }
 
-static int __ath12k_mac_mlo_teardown(struct ath12k *ar, bool umac_reset)
+static int __ath12k_mac_mlo_teardown(struct ath12k *ar, bool umac_reset,
+				     enum wmi_mlo_tear_down_reason_code_type reason_code)
 {
 	struct ath12k_base *ab = ar->ab;
 	int ret;
@@ -21688,7 +21709,7 @@ static int __ath12k_mac_mlo_teardown(struct ath12k *ar, bool umac_reset)
 		return 0;
 
 	ret = ath12k_wmi_mlo_teardown(ar, umac_reset,
-				      WMI_MLO_TEARDOWN_SSR_REASON, false);
+				      reason_code, false);
 	if (ret) {
 		ath12k_warn(ab, "failed to send MLO teardown WMI command for pdev %d: %d\n",
 			    ar->pdev_idx, ret);
@@ -21700,7 +21721,8 @@ static int __ath12k_mac_mlo_teardown(struct ath12k *ar, bool umac_reset)
 	return 0;
 }
 
-int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab)
+int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab,
+					    enum wmi_mlo_tear_down_reason_code_type reason_code)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_hw* ah;
@@ -21716,7 +21738,9 @@ int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab)
 		for_each_ar(ah, ar, j) {
 			ar = &ah->radio[j];
 
-			if (ar->ab == ab) {
+			if (ar->ab->is_bypassed ||
+			    (ar->ab == ab &&
+			     reason_code != WMI_MLO_TEARDOWN_REASON_DYNAMIC_WSI_REMAP)) {
 				/* No need to send teardown event for asserted
 				 * chip, as anyway there will be no completion
 				 * event from FW.
@@ -21732,7 +21756,7 @@ int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab)
                                 ag->trigger_umac_reset = true;
                         }
 
-			ret = __ath12k_mac_mlo_teardown(ar, umac_reset);
+			ret = __ath12k_mac_mlo_teardown(ar, umac_reset, reason_code);
 			if (ret)
 				goto out;
 		}
@@ -21756,6 +21780,9 @@ int ath12k_mac_mlo_setup(struct ath12k_hw_group *ag)
 
 		for_each_ar(ah, ar, j) {
 			ar = &ah->radio[j];
+			if (!ar || ar->ab->is_bypassed)
+				continue;
+
 			ret = __ath12k_mac_mlo_setup(ar);
 			if (ret) {
 				ath12k_err(ar->ab, "failed to setup MLO: %d\n", ret);
@@ -21777,7 +21804,8 @@ err_setup:
 			if (!ar)
 				continue;
 
-			__ath12k_mac_mlo_teardown(ar, false);
+			__ath12k_mac_mlo_teardown(ar, false,
+						  WMI_MLO_TEARDOWN_REASON_HOST_INITIATED);
 		}
 	}
 
@@ -21797,7 +21825,12 @@ void ath12k_mac_mlo_teardown(struct ath12k_hw_group *ag)
 
 		for_each_ar(ah, ar, j) {
 			ar = &ah->radio[j];
-			ret = __ath12k_mac_mlo_teardown(ar, false);
+			if (ar->ab->is_bypassed) {
+				ath12k_info(ar->ab, "Chip is in bypassed state, skip mlo teardown");
+				continue;
+			}
+			ret = __ath12k_mac_mlo_teardown(ar, false,
+							WMI_MLO_TEARDOWN_REASON_HOST_INITIATED);
 			if (ret) {
 				ath12k_err(ar->ab, "failed to teardown MLO: %d\n", ret);
 				break;

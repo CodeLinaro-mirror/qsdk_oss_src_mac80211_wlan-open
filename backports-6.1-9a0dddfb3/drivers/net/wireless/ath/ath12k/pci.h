@@ -67,6 +67,9 @@
 #define PCI_MHI_REGION_END	0x1E0EFFC
 #define QRTR_PCI_DOMAIN_NR_MASK		GENMASK(7, 4)
 #define QRTR_PCI_BUS_NUMBER_MASK	GENMASK(3, 0)
+#define PCI_EXP_LNKSTA_CLS     0x000f  /* Current Link Speed */
+#define PCI_EXP_LNKSTA_NLW     0x03f0  /* Negotiated Link Width */
+#define PCI_EXP_LNKSTA_NLW_SHIFT 4     /* start of NLW mask in link status */
 
 struct ath12k_msi_user {
 	const char *name;
@@ -126,6 +129,8 @@ struct ath12k_pci {
 	u32 qmi_instance;
 	const struct ath12k_pci_device_family_ops *device_ops;
 	const struct ath12k_reg_base *reg_base;
+	u16 def_link_speed;
+	u16 def_link_width;
 };
 
 struct ath12k_pci_driver {

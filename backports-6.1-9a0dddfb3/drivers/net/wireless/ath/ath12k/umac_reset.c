@@ -293,7 +293,8 @@ int ath12k_umac_reset_notify_target(struct ath12k_base *ab, int tx_event)
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
 
-		if (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+		if (partner_ab->is_bypassed ||
+		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
 			continue;
 
 		ath12k_umac_reset_send_htt(partner_ab, tx_event);

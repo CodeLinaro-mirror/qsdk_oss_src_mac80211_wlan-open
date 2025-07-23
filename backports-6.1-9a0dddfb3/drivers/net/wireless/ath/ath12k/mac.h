@@ -245,12 +245,13 @@ int ath12k_mac_vif_set_keepalive(struct ath12k_link_vif *arvif,
 u8 ath12k_mac_get_target_pdev_id(struct ath12k *ar);
 int ath12k_mac_mlo_setup(struct ath12k_hw_group *ag);
 int ath12k_mac_mlo_ready(struct ath12k_hw_group *ag);
-void ath12k_mac_mlo_teardown(struct ath12k_hw_group *ag);
 int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif);
+void ath12k_mac_mlo_teardown(struct ath12k_hw_group *ag);
 void ath12k_mac_get_any_chanctx_conf_iter(struct ieee80211_hw *hw,
 					  struct ieee80211_chanctx_conf *conf,
 					  void *data);
-int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab);
+int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab,
+					    enum wmi_mlo_tear_down_reason_code_type reason_code);
 int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab);
 u16 ath12k_mac_he_convert_tones_to_ru_tones(u16 tones);
 enum nl80211_eht_ru_alloc ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(u16 ru_tones);
@@ -649,4 +650,5 @@ int ath12k_mac_reg_get_max_reg_eirp_from_chan_list(struct ath12k *ar,
 						   enum wmi_reg_6g_client_type client_type,
 						   bool is_client_needed,
 						   struct channel_power *chan_eirp_list);
+int __ath12k_mac_mlo_setup(struct ath12k *ar);
 #endif
