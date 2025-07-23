@@ -1849,6 +1849,9 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
 	int ret, i;
+	struct ath12k *ar;
+	struct ath12k_bridge_iter bridge_iter = {};
+	u8 active_num_devices;
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* TODO: DS: revisit this for new DS design in WDS mode */
@@ -1931,9 +1934,19 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 				ar->pdev_suspend = false;
 			}
 
+			active_num_devices = ag->num_devices - ag->num_bypassed;
+			if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
+			    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK) {
+				bridge_iter.ah = ar->ah;
+				bridge_iter.active_num_devices = active_num_devices;
+				ieee80211_iterate_interfaces(ar->ah->hw, IEEE80211_IFACE_ITER_NORMAL,
+							     ath12k_mac_add_bridge_vdevs_iter,
+							     &bridge_iter);
+			}
 			/* Reset the WSI flags */
 			ag->wsi_remap_in_progress = false;
 			ab->wsi_remap_state = 0;
+			ath12k_info(ab, "WSI remap: Device re-addition completed\n");
 		}
 	}
 
@@ -4243,6 +4256,7 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 		/* Reset the flags */
 		ag->wsi_remap_in_progress = false;
 		ab->wsi_remap_state = 0;
+		ath12k_info(ab, "WSI remap: Device bypass completed\n");
 	} else if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE) {
 		ab->is_bypassed = false;
 		ag->num_bypassed--;

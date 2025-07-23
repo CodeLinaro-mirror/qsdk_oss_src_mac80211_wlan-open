@@ -711,6 +711,11 @@ struct ath12k_vif_iter {
 	struct ath12k_link_vif *arvif;
 };
 
+struct ath12k_bridge_iter {
+	struct ath12k_hw *ah;
+	u8 active_num_devices;
+};
+
 #define ATH12K_SCAN_TIMEOUT_HZ (20 * HZ)
 
 #define ATH12K_EHT_MCS_NUM	16

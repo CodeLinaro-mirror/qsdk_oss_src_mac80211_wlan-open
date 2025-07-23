@@ -11029,7 +11029,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct ath12k_hw_group *ag = ar->ab->ag;
 	unsigned long links_map;
 	bool is_recovery = false;
-	u8 link_id = 0, num_devices = ag->num_devices;
+	u8 link_id = 0, active_num_devices;
 	u8 t_link_id = 0;
 	u16 bridge_bitmap = 0;
 	int ret = -EINVAL;
@@ -11044,6 +11044,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		goto exit;
 	}
 
+	active_num_devices = ag->num_devices - ag->num_bypassed;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (!ahsta->ppe_vp_num)
 		ahsta->ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
@@ -11165,7 +11166,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 
 	if ((ahvif->vdev_type == WMI_VDEV_TYPE_AP || ahvif->vdev_type == WMI_VDEV_TYPE_STA) &&
 	    (old_state == IEEE80211_STA_AUTH && new_state == IEEE80211_STA_ASSOC) &&
-	    ath12k_mac_is_bridge_required(ahsta->device_bitmap, num_devices,
+	    ath12k_mac_is_bridge_required(ahsta->device_bitmap, active_num_devices,
 					  &bridge_bitmap)) {
 		ret = ath12k_mac_init_bridge_peer(ah, sta, ahvif, bridge_bitmap);
 		if (ret)
@@ -12110,10 +12111,12 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 	struct ath12k_link_vif *arvif;
 	struct ieee80211_sta *sta;
 	struct ath12k *ar;
+	struct ath12k_hw_group *ag;
 	u8 link_id = 0, pri_link_id;
 	bool is_link_found = false;
 	unsigned long links_map;
 	u16 pref_valid_links = 0;
+	u8 active_num_devices = 0;
 
 	lockdep_assert_held(&ah->hw_mutex);
 
@@ -12189,8 +12192,11 @@ select_pri_link:
 	pri_link_id = ffs(links_map) - 1;
 
 exit_pri_link_selection:
+	ag = arvif->ar->ab->ag;
+	active_num_devices = ag->num_devices - ag->num_bypassed;
+
 	ath12k_mac_assign_middle_link_id(sta, ahsta, &pri_link_id,
-					 arvif->ar->ab->ag->num_devices);
+					 active_num_devices);
 
 	return pri_link_id;
 }
@@ -18001,12 +18007,14 @@ static int ath12k_mac_sync_ctx_on_radio(struct ieee80211_hw *hw,
 {
 	struct ath12k *ar;
 	struct ath12k_link_vif *arvif;
+	struct ath12k_hw_group *ag = NULL;
 
 	ar = ath12k_get_ar_by_ctx(hw, ctx);
 	if (!ar)
 		return -EINVAL;
 
-	*num_devices = ar->ab->ag->num_devices;
+	ag = ar->ab->ag;
+	*num_devices = ag->num_devices - ag->num_bypassed;
 	if (*num_devices < ATH12K_MIN_NUM_DEVICES_NLINK)
 		goto exit;
 
@@ -23437,6 +23445,81 @@ int ath12k_mac_reg_get_max_reg_eirp_from_chan_list(struct ath12k *ar,
 	return 0;
 }
 
+void ath12k_mac_add_bridge_vdevs_iter(void *data, u8 *mac,
+				      struct ieee80211_vif *vif)
+{
+	struct ath12k_bridge_iter *bridge_iter = data;
+	struct ath12k_hw *ah = bridge_iter->ah;
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	u8 active_num_devices = bridge_iter->active_num_devices;
+	u8 link_id;
+
+	if (!vif->valid_links)
+		return;
+
+	if (vif->type != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL, "Cannot re-add B.Vdev other than AP interfaces\n");
+		return;
+	}
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	link_id = ffs(vif->valid_links) - 1;
+
+	rcu_read_lock();
+	arvif = rcu_dereference(ahvif->link[link_id]);
+	rcu_read_unlock();
+
+	ath12k_mac_create_and_start_bridge(ah->hw, vif, vif->link_conf[link_id],
+					   NULL, active_num_devices);
+	ath12k_mac_bridge_vdevs_up(arvif);
+	ath12k_info(NULL, "Bypass: Bridge vdevs re-added for MLD %pM\n", vif->addr);
+}
+
+void ath12k_mac_remove_bridge_vdevs_iter(void *data, u8 *mac,
+					 struct ieee80211_vif *vif)
+{
+	struct ath12k_hw *ah = data;
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	u8 link_id = ATH12K_BRIDGE_LINK_MIN;
+	unsigned long links;
+	int ret;
+
+	if (!vif->valid_links)
+		return;
+
+	if (vif->type != NL80211_IFTYPE_AP) {
+		ath12k_err(NULL, "Cannot delete B.Vdev other than AP interface\n");
+		return;
+	}
+	ahvif = ath12k_vif_to_ahvif(vif);
+
+	links = ahvif->links_map;
+	for_each_set_bit_from(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		rcu_read_lock();
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		rcu_read_unlock();
+		if (!arvif) {
+			ath12k_err(NULL,
+				   "unable to determine the assigned link vif on link id %d\n",
+				   link_id);
+			continue;
+		}
+		ret = ath12k_wmi_vdev_down(arvif->ar, arvif->vdev_id);
+		if (ret) {
+			ath12k_warn(arvif->ar->ab, "failed to down vdev_id %i: %d\n",
+				    arvif->vdev_id, ret);
+			continue;
+		}
+		arvif->is_up = false;
+		ath12k_mac_unassign_vif_chanctx_handle(ah->hw, vif, NULL, NULL, link_id);
+		ath12k_mac_remove_link_interface(ah->hw, arvif);
+		ath12k_mac_unassign_link_vif(arvif);
+	}
+	ath12k_info(NULL, "Bypass: Bridge vdevs removed for MLD %pM\n", vif->addr);
+}
+
 void ath12k_mac_wsi_remap_peer_cleanup(struct ath12k_base *ab,
 				       bool skip_legacy)
 {
@@ -23475,6 +23558,7 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	u32 num_ml_peers;
 	int idx, ret = 0;
 	bool skip_legacy;
+	u8 active_num_devices;
 
 	if (!ah) {
 		ath12k_err(ab, "Failed to find hw, Dynamic remap failed\n");
@@ -23483,6 +23567,10 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	wiphy = ah->hw->wiphy;
 
 	ag->wsi_remap_in_progress = true;
+	active_num_devices = ag->num_devices - ag->num_bypassed;
+	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
+		   "active num_devices before proceeding bypass %d\n",
+		   active_num_devices);
 
 	/* Cleanup ML peers before MLO teardown during bypass
 	 * operation. Ensure to cleanup the legacy clients for the device
@@ -23541,6 +23629,15 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 			}
 			ath12k_core_radio_cleanup(ar);
 		}
+	}
+
+	/* Remove Bridge vdevs during wsi remove if exist
+	 */
+	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE &&
+	    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK) {
+		ieee80211_iterate_interfaces(ah->hw, IEEE80211_IFACE_ITER_NORMAL,
+					     ath12k_mac_remove_bridge_vdevs_iter,
+					     ah);
 	}
 
 	ret = ath12k_core_dynamic_wsi_remap(ab);
