@@ -35,7 +35,8 @@ ath12k-y += core.o \
 	    ini_parse.o \
 	    dp_mon_filter.o \
 	    erp.o \
-	    pktlog.o
+	    pktlog.o \
+	    ce_stats.o
 
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o

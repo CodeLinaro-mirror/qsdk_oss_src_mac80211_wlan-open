@@ -7,6 +7,8 @@
 #ifndef ATH12K_CE_H
 #define ATH12K_CE_H
 
+#include "ce_stats.h"
+
 #define CE_COUNT_MAX 16
 #define ATH12K_QCN6432_CE_COUNT 12
 #define ATH12K_QCN6432_EXT_IRQ_GRP_NUM_MAX 15
@@ -180,6 +182,7 @@ struct ath12k_ce_pipe {
 	unsigned long timestamp;
 	u32 ce_manual_poll_count;
 	u64 last_ce_manual_poll_ts;
+	struct ath12k_ce_stats *ce_stats;
 };
 
 struct ath12k_ce {
@@ -187,6 +190,7 @@ struct ath12k_ce {
 	/* Protects rings of all ce pipes */
 	spinlock_t ce_lock;
 	struct ath12k_hp_update_timer hp_timer[CE_COUNT_MAX];
+	bool enable_ce_stats;
 };
 
 void ath12k_ce_cleanup_pipes(struct ath12k_base *ab);

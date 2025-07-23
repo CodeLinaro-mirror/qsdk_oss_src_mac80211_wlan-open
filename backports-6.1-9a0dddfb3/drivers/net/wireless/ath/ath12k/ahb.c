@@ -607,6 +607,10 @@ static irqreturn_t ath12k_ahb_ce_interrupt_handler(int irq, void *arg)
 #else
 	tasklet_schedule(&ce_pipe->intr_tq);
 #endif
+
+	if (ce_pipe->ab->ce.enable_ce_stats)
+		ath12k_record_sched_entry_ts(ce_pipe->ab, ce_pipe->pipe_num);
+
 	return IRQ_HANDLED;
 }
 
@@ -735,7 +739,13 @@ static void ath12k_ahb_ce_tasklet(struct tasklet_struct *t)
 {
 	struct ath12k_ce_pipe *ce_pipe = from_tasklet(ce_pipe, t, intr_tq);
 
+	if (ce_pipe->ab->ce.enable_ce_stats)
+		ath12k_record_exec_entry_ts(ce_pipe->ab, ce_pipe->pipe_num);
+
 	ath12k_ce_per_engine_service(ce_pipe->ab, ce_pipe->pipe_num);
+
+	if (ce_pipe->ab->ce.enable_ce_stats)
+		ath12k_update_ce_stats_bucket(ce_pipe->ab, ce_pipe->pipe_num);
 
 	ath12k_ahb_ce_irq_enable(ce_pipe->ab, ce_pipe->pipe_num);
 }

@@ -434,6 +434,11 @@ static int ath12k_ce_alloc_pipe(struct ath12k_base *ab, int ce_id)
 		pipe->status_ring = ring;
 	}
 
+	/* As ce_stats are for debug purpose, bring up should not fail
+	 * in case of ce_stats allocation failure.
+	 */
+	pipe->ce_stats = kzalloc(sizeof(*pipe->ce_stats), GFP_KERNEL);
+
 	return 0;
 }
 
@@ -786,6 +791,9 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 			pipe->status_ring = NULL;
 		}
 	}
+
+	kfree(pipe->ce_stats);
+
 	ab->ce_pipe_init_done = false;
 }
 
