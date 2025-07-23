@@ -1993,6 +1993,12 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 	if (ret)
 		goto err_hal_srng_deinit;
 
+	/* ATH12K_FLAG_QMI_FW_READY_COMPLETE flag set during ERP exit*/
+	if (ath12k_check_erp_power_down(ab->ag)) {
+		if (!test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags))
+			set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags);
+	}
+
 	return 0;
 
 err_hal_srng_deinit:
@@ -2364,11 +2370,8 @@ static void ath12k_core_restart(struct work_struct *work)
 
 	if (ath12k_core_hw_group_start_ready(ag) &&
 	    ath12k_check_erp_power_down(ag) &&
-	    !ath12k_hw_group_recovery_in_progress(ag)) {
+	    !ath12k_hw_group_recovery_in_progress(ag))
 		ath12k_core_radio_start(ab);
-		set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
-			&ab->dev_flags);
-	}
 
 	if (ab->is_reset ||
 	    (ath12k_check_erp_power_down(ag) &&
