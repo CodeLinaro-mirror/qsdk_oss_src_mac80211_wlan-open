@@ -315,6 +315,7 @@ enum ath12k_dp_eapol_key_type {
 #define MAX_TQM_RELEASE_REASON 15
 #define MAX_FW_TX_STATUS 7
 #define MAX_TCL_RING 4
+#define MAX_TX_COMP_RING 4
 
 struct ath12k_dp_tx_bank_profile {
 	u8 is_configured;
@@ -508,20 +509,24 @@ struct ath12k_device_dp_rx_wbm_err_stats {
 	u32 drop[WBM_ERR_DROP_MAX];
 };
 
+struct ath12k_tx_comp_stats {
+	u32 tx_completed;
+	u32 tx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX];
+	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON];
+	u32 fw_tx_status[MAX_FW_TX_STATUS];
+};
+
 struct ath12k_device_dp_stats {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u32 ppe_vp_mode_update_fail;
 #endif
+	struct ath12k_tx_comp_stats tx_comp_stats[MAX_TX_COMP_RING];
 	u32 tx_fast_unicast[MAX_TCL_RING];
-	u32 tx_completed[MAX_TCL_RING];
-	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON];
-	u32 fw_tx_status[MAX_FW_TX_STATUS];
 	u32 err_ring_pkts;
 	u32 invalid_rbm;
 	u32 reo_excep_msdu_buf_type;
 	u32 free_excess_alloc_skb;
 	u32 hal_reo_error[DP_REO_DST_RING_MAX];
-	u32 tx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX];
 	u32 rx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX] [ATH12K_MAX_SOCS];
 	u32 reo_rx[DP_REO_DST_RING_MAX] [ATH12K_MAX_SOCS];
 	u32 non_fast_unicast_rx[DP_REO_DST_RING_MAX][ATH12K_MAX_SOCS];

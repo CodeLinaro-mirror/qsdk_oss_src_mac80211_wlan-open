@@ -810,13 +810,15 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 		         tx_enqueued[2],
 			 tx_enqueued[3]);
 
-	len += scnprintf(buf + len, size - len,
-			 "\ntx_wbm_rel_source: 0:%u 1:%u 2:%u 3:%u 4:%u\n",
-			 device_stats->tx_wbm_rel_source[0],
-			 device_stats->tx_wbm_rel_source[1],
-			 device_stats->tx_wbm_rel_source[2],
-			 device_stats->tx_wbm_rel_source[3],
-			 device_stats->tx_wbm_rel_source[4]);
+	len += scnprintf(buf + len, size - len, "\ntx_wbm_rel_source:\n");
+	for (j=0; j < MAX_TX_COMP_RING; j++)
+		len += scnprintf(buf + len, size - len,
+				 "Ring%d: 0:%u 1:%u 2:%u 3:%u 4:%u\n", j,
+				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[0],
+				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[1],
+				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[2],
+				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[3],
+				 device_stats->tx_comp_stats[j].tx_wbm_rel_source[4]);
 
 	len += scnprintf(buf + len, size - len,
 	                 "\ntx_multicast: 0:%u 1:%u 2:%u 3:%u\n",
@@ -872,46 +874,50 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len,
-		         "\ntx_null_frame: 0:%u 1:%u 2:%u 3:%u",
+		         "\ntx_null_frame: 0:%u 1:%u 2:%u 3:%u\n",
 			 device_stats->tx_null_frame[0],
 	                 device_stats->tx_null_frame[1],
 		         device_stats->tx_null_frame[2],
 			 device_stats->tx_null_frame[3]);
 
-	len += scnprintf(buf + len, size - len,
-		"\ntqm_rel_reason: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u\n",
-		device_stats->tqm_rel_reason[0],
-		device_stats->tqm_rel_reason[1],
-		device_stats->tqm_rel_reason[2],
-		device_stats->tqm_rel_reason[3],
-		device_stats->tqm_rel_reason[4],
-		device_stats->tqm_rel_reason[5],
-		device_stats->tqm_rel_reason[6],
-		device_stats->tqm_rel_reason[7],
-		device_stats->tqm_rel_reason[8],
-		device_stats->tqm_rel_reason[9],
-		device_stats->tqm_rel_reason[10],
-		device_stats->tqm_rel_reason[11],
-		device_stats->tqm_rel_reason[12],
-		device_stats->tqm_rel_reason[13],
-		device_stats->tqm_rel_reason[14]);
+	len += scnprintf(buf + len, size - len, "\ntqm_rel_reason:\n");
+	for (j=0; j < MAX_TX_COMP_RING; j++)
+		len += scnprintf(buf + len, size - len,
+			"Ring%d: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u 7:%u 8:%u 9:%u 10:%u 11:%u 12:%u 13:%u 14:%u\n",
+			j, device_stats->tx_comp_stats[j].tqm_rel_reason[0],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[1],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[2],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[3],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[4],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[5],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[6],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[7],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[8],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[9],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[10],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[11],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[12],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[13],
+			device_stats->tx_comp_stats[j].tqm_rel_reason[14]);
 
-	len += scnprintf(buf + len, size - len,
-		"\nfw_tx_status: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u\n",
-		device_stats->fw_tx_status[0],
-		device_stats->fw_tx_status[1],
-		device_stats->fw_tx_status[2],
-		device_stats->fw_tx_status[3],
-		device_stats->fw_tx_status[4],
-		device_stats->fw_tx_status[5],
-		device_stats->fw_tx_status[6]);
+	len += scnprintf(buf + len, size - len, "\nfw_tx_status:\n");
+	for (j=0; j < MAX_TX_COMP_RING; j++)
+		len += scnprintf(buf + len, size - len,
+			"Ring%d: 0:%u 1:%u 2:%u 3:%u 4:%u 5:%u 6:%u\n", j,
+			device_stats->tx_comp_stats[j].fw_tx_status[0],
+			device_stats->tx_comp_stats[j].fw_tx_status[1],
+			device_stats->tx_comp_stats[j].fw_tx_status[2],
+			device_stats->tx_comp_stats[j].fw_tx_status[3],
+			device_stats->tx_comp_stats[j].fw_tx_status[4],
+			device_stats->tx_comp_stats[j].fw_tx_status[5],
+			device_stats->tx_comp_stats[j].fw_tx_status[6]);
 
 	len += scnprintf(buf + len, size - len,
 		"\ntx_completed: 0:%u 1:%u 2:%u 3:%u\n",
-		device_stats->tx_completed[0],
-		device_stats->tx_completed[1],
-		device_stats->tx_completed[2],
-		device_stats->tx_completed[3]);
+		device_stats->tx_comp_stats[0].tx_completed,
+		device_stats->tx_comp_stats[1].tx_completed,
+		device_stats->tx_comp_stats[2].tx_completed,
+		device_stats->tx_comp_stats[3].tx_completed);
 
 	len += scnprintf(buf + len, size - len, "\nTCL Ring Full Failures:\n");
 

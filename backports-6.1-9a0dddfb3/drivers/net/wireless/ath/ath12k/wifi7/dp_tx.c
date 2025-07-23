@@ -909,10 +909,9 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 					   struct dp_tx_ring *tx_ring,
 					   struct ath12k_tx_sw_metadata *sw_metadata,
 					   struct hal_tx_status *ts,
-					   int ring_id)
+					   int ring_id, u32 htt_status)
 {
 	struct htt_tx_wbm_completion *status_desc;
-	int htt_status;
 	struct ath12k_pdev_dp *dp_pdev;
 	u8 pdev_id;
 	struct ath12k_dp_peer *peer = NULL;
@@ -921,10 +920,6 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 	u8 tx_desc_flags = sw_metadata->flags;
 
 	status_desc = desc;
-
-	htt_status = le32_get_bits(status_desc->info0,
-				   HTT_TX_WBM_COMP_INFO0_STATUS);
-	dp->device_stats.fw_tx_status[htt_status]++;
 
 	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, sw_metadata->mac_id);
 
@@ -1422,11 +1417,15 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
 	struct ath12k_wifi7_tx_status_entry *tx_status_entry;
 	struct ath12k_tx_sw_metadata *sw_metadata;
-	u8 n_entry = 0;
+	u8 n_entry = 0, idx = 0;
 	struct list_head desc_free_list, *cur;
 	struct hal_wbm_completion_ring_tx *tx_status, *next_tx_status;
 	struct sk_buff_head free_list_head;
 	int tx_status_idx = smp_processor_id();
+	u32 tx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX] = {0};
+	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
+	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
+	u32 htt_status = 0, tx_completed = 0;
 
 	INIT_LIST_HEAD(&desc_free_list);
 	skb_queue_head_init(&free_list_head);
@@ -1533,24 +1532,26 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		if (!sw_metadata->skb)
 			continue;
 
+		tx_completed++;
 		ts.buf_rel_source =
 			le32_get_bits(tx_status->info0, HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE);
 
-		dp->device_stats.tx_completed[ring_id]++;
+		tx_wbm_rel_source[ts.buf_rel_source]++;
 
-		dp->device_stats.tx_wbm_rel_source[ts.buf_rel_source]++;
-
-		if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW) {
+                if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_TQM) {
+                        ts.status = le32_get_bits(tx_status->info0,
+                                                  HAL_WBM_COMPL_TX_INFO0_TQM_RELEASE_REASON);
+                        tqm_rel_reason[ts.status]++;
+                } else if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW) {
+                        htt_status = le32_get_bits(tx_status->info0,
+                                                   HTT_TX_WBM_COMP_INFO0_STATUS);
+                        fw_tx_status[htt_status]++;
 			ath12k_wifi7_dp_tx_process_htt_tx_complete(dp, (void *)tx_status,
 								   sw_metadata->skb,
-								   tx_ring, sw_metadata, &ts, ring_id);
+								   tx_ring, sw_metadata,
+								   &ts, ring_id, htt_status);
 			continue;
-		}
-
-		ts.status = le32_get_bits(tx_status->info0,
-					  HAL_WBM_COMPL_TX_INFO0_TQM_RELEASE_REASON);
-
-		dp->device_stats.tqm_rel_reason[ts.status]++;
+                }
 
 		if (sw_metadata->flags & DP_TX_DESC_FLAG_FAST) {
 			__skb_queue_head(&free_list_head, sw_metadata->skb);
@@ -1559,6 +1560,9 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		}
 
 		pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, sw_metadata->mac_id);
+
+		if (n_entry == 1)
+			prefetch(&dp->device_stats);
 
 		rcu_read_lock();
 
@@ -1579,6 +1583,17 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		rcu_read_unlock();
 	}
+
+        dp->device_stats.tx_comp_stats[ring_id].tx_completed += tx_completed;
+
+        for (idx = 0; idx < HAL_WBM_REL_SRC_MODULE_MAX; idx++)
+                dp->device_stats.tx_comp_stats[ring_id].tx_wbm_rel_source[idx] += tx_wbm_rel_source[idx];
+
+        for (idx = 0; idx < MAX_TQM_RELEASE_REASON; idx++)
+                dp->device_stats.tx_comp_stats[ring_id].tqm_rel_reason[idx] += tqm_rel_reason[idx];
+
+        for (idx = 0; idx < MAX_FW_TX_STATUS; idx++)
+                dp->device_stats.tx_comp_stats[ring_id].fw_tx_status[idx] += fw_tx_status[idx];
 
 	dev_kfree_skb_list_fast(&free_list_head);
 
