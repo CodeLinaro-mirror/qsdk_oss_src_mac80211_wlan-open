@@ -137,6 +137,11 @@ bool ath12k_mlo_3_link_tx;
 module_param_named(mlo_3_link_tx, ath12k_mlo_3_link_tx, bool, 0644);
 MODULE_PARM_DESC(mlo_3_link_tx, "3 link MLO active TX support (0 - disable, 1 - enable)");
 
+unsigned int ath12k_wsi_bypass_bmap;
+module_param_named(wsi_bypass_bmap, ath12k_wsi_bypass_bmap, uint, 0644);
+MODULE_PARM_DESC(wsi_bypass_bmap,
+		 "Bitmap for the chip to be bypassed for WSI interface");
+
 /* protected with ath12k_hw_group_mutex */
 static struct list_head ath12k_hw_group_list = LIST_HEAD_INIT(ath12k_hw_group_list);
 
@@ -1852,6 +1857,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 	struct ath12k *ar;
 	struct ath12k_bridge_iter bridge_iter = {};
 	u8 active_num_devices;
+	struct ath12k_base *partner_ab;
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* TODO: DS: revisit this for new DS design in WDS mode */
@@ -1950,8 +1956,26 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 		}
 	}
 
+	if (ath12k_core_hw_group_start_ready(ag)) {
+		mutex_unlock(&ag->mutex);
+		for (i = 0; i < ag->num_devices; i++) {
+			partner_ab = ag->ab[i];
+			if (partner_ab->is_static_bypassed) {
+				ret = ath12k_wsi_bypass_precheck(partner_ab, 1);
+				if (ret) {
+					ath12k_err(ab, "WSI Bypass precheck failed");
+					goto out;
+				}
+				partner_ab->wsi_remap_state = 1;
+				ath12k_mac_dynamic_wsi_remap(partner_ab);
+			}
+		}
+		goto out;
+	}
+
 	mutex_unlock(&ag->mutex);
 
+out:
 	return 0;
 
 err_core_stop:
@@ -4085,6 +4109,12 @@ exit:
 	}
 
 	ab->device_id = ag->num_probed++;
+
+	if (ag->id != ATH12K_INVALID_GROUP_ID)
+		ab->is_static_bypassed = (ath12k_wsi_bypass_bmap & (1 << wsi->index));
+	else if (ath12k_wsi_bypass_bmap)
+		ath12k_warn(ab, "single device does not support static WSI bypass\n");
+
 	ag->ab[ab->device_id] = ab;
 	ab->ag = ag;
 

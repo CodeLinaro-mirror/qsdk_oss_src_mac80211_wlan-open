@@ -153,7 +153,9 @@ ath12k_debug_write_wsi_bypass_device(struct file *file,
 {
 	struct ath12k_base *ab = file->private_data;
 	unsigned int value;
-	int ret;
+	int ret, i;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_base *partner_ab;
 
 	if (kstrtouint_from_user(user_buf, count, 0, &value))
 		return -EINVAL;
@@ -165,6 +167,14 @@ ath12k_debug_write_wsi_bypass_device(struct file *file,
 		return -EINVAL;
 	}
 
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (partner_ab->is_static_bypassed) {
+			ath12k_err(ab, "Static WSI Bypass is enabled\n");
+			ret = -EINVAL;
+			goto exit;
+		}
+	}
 	mutex_lock(&ab->core_lock);
 	ret = ath12k_wsi_bypass_precheck(ab, value);
 

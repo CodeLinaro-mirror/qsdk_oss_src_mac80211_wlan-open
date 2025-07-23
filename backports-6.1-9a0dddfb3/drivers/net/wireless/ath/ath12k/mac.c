@@ -885,7 +885,7 @@ struct ath12k *ath12k_mac_get_ar_by_pdev_id(struct ath12k_base *ab, u32 pdev_id)
 		return NULL;
 
 	for (i = 0; i < ab->num_radios; i++) {
-		if (ab->fw_mode == ATH12K_FIRMWARE_MODE_FTM)
+		if (ab->fw_mode == ATH12K_FIRMWARE_MODE_FTM || ab->ag->wsi_remap_in_progress)
 			pdev = &ab->pdevs[i];
 		else
 			pdev = rcu_dereference(ab->pdevs_active[i]);
@@ -14541,8 +14541,11 @@ void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 
 	ah->state = ATH12K_HW_STATE_OFF;
 
-	for_each_ar(ah, ar, i)
+	for_each_ar(ah, ar, i) {
+		if (ar->ab->is_bypassed)
+			continue;
 		ath12k_mac_stop(ar);
+	}
 
 	mutex_unlock(&ah->hw_mutex);
 }
