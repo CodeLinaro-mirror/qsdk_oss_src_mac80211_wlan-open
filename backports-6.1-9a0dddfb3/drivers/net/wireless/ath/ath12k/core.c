@@ -3596,7 +3596,8 @@ static void ath12k_core_reset(struct work_struct *work)
 	mutex_lock(&ag->mutex);
 	ab->is_reset = true;
 
-	ath12k_core_mlo_hw_queues_stop(ab->ag);
+	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
+		ath12k_core_mlo_hw_queues_stop(ab->ag);
 
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];

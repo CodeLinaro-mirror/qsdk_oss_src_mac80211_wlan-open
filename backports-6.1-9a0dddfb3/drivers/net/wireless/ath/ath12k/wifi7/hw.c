@@ -1448,6 +1448,11 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	ar = arvif->ar;
 	skb_cb->link_id = link_id;
 
+	if (unlikely(test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))) {
+		ieee80211_free_txskb(hw, skb);
+		return;
+	}
+
 	if (sta) {
 		ahsta = ath12k_sta_to_ahsta(sta);
 		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
