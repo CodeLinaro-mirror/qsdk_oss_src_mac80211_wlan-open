@@ -3210,6 +3210,199 @@ void ath12k_fst_debugfs_init(struct ath12k_base *ab)
 			    &fops_fse);
 }
 
+static ssize_t ath12k_dump_ce_stats_histogram(struct file *file,
+					      char __user *user_buf,
+					      size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_ce_pipe *pipe;
+	struct ath12k_ce_stats *stats;
+	char header[] = {"CENum\t0-0.5ms\t0.5-1ms\t1-2ms\t2-5ms\t5-10ms\t >10ms"};
+	char *print_buff;
+	int len = 0, size = 12288;
+	int i, retval;
+
+	print_buff = kzalloc(size, GFP_KERNEL);
+	if (!print_buff)
+		return -ENOMEM;
+
+	len += scnprintf(print_buff + len, size - len, "\n----- Tasklet Scheduled  Bucket -----\n");
+	len += scnprintf(print_buff + len, size - len, "%s\n", header);
+
+	for (i = 0; i < ab->hw_params->ce_count; i++) {
+		pipe = &ab->ce.ce_pipe[i];
+		stats = pipe->ce_stats;
+		if (!stats)
+			continue;
+
+		len += scnprintf(print_buff + len, size - len,
+				" CE%02d \t %04llu\t %04llu\t %04llu\t %04llu\t %04llu\t %04llu \t\n",
+				pipe->pipe_num, stats->sched_bucket[CE_BUCKET_500_US],
+				stats->sched_bucket[CE_BUCKET_1_MS],
+				stats->sched_bucket[CE_BUCKET_2_MS],
+				stats->sched_bucket[CE_BUCKET_5_MS],
+				stats->sched_bucket[CE_BUCKET_10_MS],
+				stats->sched_bucket[CE_BUCKET_BEYOND]
+				);
+	}
+
+	len += scnprintf(print_buff + len, size - len, "\n----- Tasklet Execution Bucket -----\n");
+	len += scnprintf(print_buff + len, size - len, "%s\n", header);
+
+	for (i = 0; i < ab->hw_params->ce_count; i++) {
+		pipe = &ab->ce.ce_pipe[i];
+		stats = pipe->ce_stats;
+		if (!stats)
+			continue;
+		len += scnprintf(print_buff + len, size - len,
+				" CE%02d \t %04llu\t %04llu\t %04llu\t %04llu\t %04llu\t %04llu \t\n",
+				pipe->pipe_num, stats->exec_bucket[CE_BUCKET_500_US],
+				stats->exec_bucket[CE_BUCKET_1_MS],
+				stats->exec_bucket[CE_BUCKET_2_MS],
+				stats->exec_bucket[CE_BUCKET_5_MS],
+				stats->exec_bucket[CE_BUCKET_10_MS],
+				stats->exec_bucket[CE_BUCKET_BEYOND]
+				);
+	}
+	len += scnprintf(print_buff + len, size - len, "\n----- Scheduled Last Updated -----\n");
+	len += scnprintf(print_buff + len, size - len, "%s\n", header);
+
+	for (i = 0; i < ab->hw_params->ce_count; i++) {
+		pipe = &ab->ce.ce_pipe[i];
+		stats = pipe->ce_stats;
+		if (!stats)
+			continue;
+		len += scnprintf(print_buff + len, size - len,
+				" CE%02d \t %lluus\t %lluus\t %lluus\t %lluus\t %lluus\t %lluus \t\n",
+				pipe->pipe_num, stats->sched_last_update[CE_BUCKET_500_US],
+				stats->sched_last_update[CE_BUCKET_1_MS],
+				stats->sched_last_update[CE_BUCKET_2_MS],
+				stats->sched_last_update[CE_BUCKET_5_MS],
+				stats->sched_last_update[CE_BUCKET_10_MS],
+				stats->sched_last_update[CE_BUCKET_BEYOND]
+				);
+	}
+
+	len += scnprintf(print_buff + len, size - len, "\n----- Execution Last Updated -----\n");
+	len += scnprintf(print_buff + len, size - len, "%s\n", header);
+
+	for (i = 0; i < ab->hw_params->ce_count; i++) {
+		pipe = &ab->ce.ce_pipe[i];
+		stats = pipe->ce_stats;
+		if (!stats)
+			continue;
+		len += scnprintf(print_buff + len, size - len,
+				" CE%02d \t %lluus\t %lluus\t %lluus\t %lluus\t %lluus\t %lluus \t\n",
+				pipe->pipe_num, stats->exec_last_update[CE_BUCKET_500_US],
+				stats->exec_last_update[CE_BUCKET_1_MS],
+				stats->exec_last_update[CE_BUCKET_2_MS],
+				stats->exec_last_update[CE_BUCKET_5_MS],
+				stats->exec_last_update[CE_BUCKET_10_MS],
+				stats->exec_last_update[CE_BUCKET_BEYOND]
+				);
+	}
+
+	if (len > size)
+		len = size;
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, print_buff, len);
+	kfree(print_buff);
+
+	return retval;
+}
+
+static ssize_t ath12k_dump_ce_stats_history(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_ce_pipe *pipe;
+	struct ath12k_ce_stats *stats;
+	char *print_buff;
+	int len = 0, size = 16384;
+	int i, retval, j, ret;
+
+	print_buff = kzalloc(size, GFP_KERNEL);
+	if (!print_buff)
+		return -ENOMEM;
+
+	for (i = 0; i < ab->hw_params->ce_count; i++) {
+		pipe = &ab->ce.ce_pipe[i];
+		stats = pipe->ce_stats;
+		if (!stats)
+			continue;
+
+		ret = snprintf(print_buff + len, size - len,
+			       "\n-----CE%d Last 20 timing records -----\n", pipe->pipe_num);
+		if (ret < 0 || ret >= size - len)
+			break;
+		len += ret;
+
+		for (j = 0; j < MAX_CE_STATS_RECORDS; j++) {
+			ret = snprintf(print_buff + len, size - len,
+				       "R%02d- schedule time %lldus   execution time %lldus\n",
+				       j, stats->sched_time_record[j],
+				       stats->exec_time_record[j]);
+
+			if (ret < 0 || ret >= size - len)
+				break;
+			len += ret;
+		}
+	}
+
+	if (len > size)
+		len = size;
+
+	retval = simple_read_from_buffer(user_buf, count, ppos, print_buff, len);
+	kfree(print_buff);
+
+	return retval;
+}
+
+static ssize_t ath12k_write_ce_stats_enable(struct file *file,
+					    const char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	bool enable;
+
+	if (kstrtobool_from_user(user_buf, count, &enable))
+		return -EINVAL;
+
+	ab->ce.enable_ce_stats = enable;
+
+	return count;
+}
+
+static const struct file_operations fops_ce_stats_enable = {
+	.open = simple_open,
+	.write = ath12k_write_ce_stats_enable,
+};
+
+static const struct file_operations fops_ce_stats_histogram = {
+	.open = simple_open,
+	.read = ath12k_dump_ce_stats_histogram,
+};
+
+static const struct file_operations fops_ce_stats_history = {
+	.open = simple_open,
+	.read = ath12k_dump_ce_stats_history,
+};
+
+void ath12k_ce_stats_debugfs_init(struct ath12k_base *ab)
+{
+	struct dentry *cestats_dir  = debugfs_create_dir("ce_stats", ab->debugfs_soc);
+
+	debugfs_create_file("ce_histogram", 0400, cestats_dir, ab,
+			    &fops_ce_stats_histogram);
+
+	debugfs_create_file("ce_history", 0400, cestats_dir, ab,
+			    &fops_ce_stats_history);
+
+	debugfs_create_file("enable_ce_stats", 0600, cestats_dir, ab,
+			    &fops_ce_stats_enable);
+}
+
 void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab)
 {
 }
@@ -3240,6 +3433,8 @@ void ath12k_debugfs_soc_create(struct ath12k_base *ab)
 		dput(debugfs_ath12k);
 
 	ath12k_fst_debugfs_init(ab);
+
+	ath12k_ce_stats_debugfs_init(ab);
 }
 
 static ssize_t ath12k_write_wmi_ctrl_path_stats(struct file *file,
