@@ -210,7 +210,7 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 	tx_stats->ru_start = peer_stats->ru_start;
 	tx_stats->ru_tones = peer_stats->ru_tones;
 
-	if (peer_stats->mu_grpid <= MAX_MU_GROUP_ID &&
+	if (peer_stats->mu_grpid < MAX_MU_GROUP_ID &&
 	    peer_stats->ppdu_type != HTT_PPDU_STATS_PPDU_TYPE_SU) {
 		if (peer_stats->mu_grpid & (MAX_MU_GROUP_ID - 1))
 			tx_stats->mu_group[peer_stats->mu_grpid] =
