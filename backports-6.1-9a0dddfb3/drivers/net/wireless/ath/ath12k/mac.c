@@ -19618,13 +19618,14 @@ ath12k_mac_set_mscs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 		    struct cfg80211_qm_req_data *qm_req,
 		    struct cfg80211_qm_resp_data *qm_resp)
 {
-	struct ath12k *ar;
-	struct ath12k_dp *dp;
-	struct ath12k_dp_link_peer *link_peer;
-	struct ath12k_dp_peer *peer;
 	struct cfg80211_qm_req_desc_data *qm_req_desc = &qm_req->qm_req_desc[0];
 	struct cfg80211_qm_resp_desc_data *qm_resp_desc = &qm_resp->qm_resp_desc[0];
+	struct ath12k_dp_link_peer *link_peer;
 	u8 req_type = qm_req_desc->request_type;
+	struct ath12k_dp_peer *peer;
+	struct ath12k_dp *dp;
+	struct ath12k_dp_vif *dp_vif;
+	struct ath12k *ar;
 
 	ar = arsta->arvif->ar;
 	dp = ath12k_ab_to_dp(ar->ab);
@@ -19637,11 +19638,18 @@ ath12k_mac_set_mscs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 		goto send_fail_resp;
 
 	peer = link_peer->dp_peer;
+
+	if (!peer)
+		goto send_fail_resp;
+
+	dp_vif = &ahsta->ahvif->dp_vif;
+
 	switch (req_type) {
 	case IEEE80211_QM_ADD_REQ:
 		if (peer->mscs_session_exists)
 			goto send_fail_resp;
 		peer->mscs_session_exists = true;
+		dp_vif->mscs_hlos_tid_override = true;
 		fallthrough;
 	case IEEE80211_QM_CHANGE_REQ:
 		peer->mscs_ctxt.user_priority_bitmap =
@@ -19662,6 +19670,7 @@ ath12k_mac_set_mscs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 		break;
 	case IEEE80211_QM_REMOVE_REQ:
 		peer->mscs_session_exists = false;
+		dp_vif->mscs_hlos_tid_override = false;
 		ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
 			   "MSCS: REMOVE peer %pM, mscs_session_exists %u",
 			   peer->addr, peer->mscs_session_exists);

@@ -650,6 +650,7 @@ struct ath12k_dp_vif {
 	int ppe_vp_num;
 	int ppe_core_mask;
 	u8 ppe_vp_type;
+	bool mscs_hlos_tid_override;
 };
 
 struct ath12k_vif {

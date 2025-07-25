@@ -918,6 +918,18 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 			goto fail_remove_tx_buf;
 		}
 
+		/**
+		 * Check if the vif supports mscs hlos tid override, which
+		 * will be true if there is an active MSCS session
+		 * In this case, check for skb->priority which would have
+		 * the correct tid value and program it to the TCL metadata
+		 * For accelerated packets with MSCS, skb->mark will not be
+		 * set
+		 */
+		if (unlikely(skb->priority &&
+			     dp_vif->mscs_hlos_tid_override))
+			ath12k_wifi_qos_hlos_tid(&tcl_desc, skb->priority);
+
 		if (unlikely(skb->mark & SDWF_VALID_MASK)) {
 			ath12k_dp_qos_update(dp, dp_pdev, skb->mark, &tcl_desc,
 					     0, NULL);
