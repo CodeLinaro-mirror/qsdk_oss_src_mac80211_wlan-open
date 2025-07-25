@@ -1815,6 +1815,7 @@ struct ath12k_base {
 	bool is_bypassed;
 	enum ath12k_wsi_bypass_action wsi_remap_state;
 	bool is_static_bypassed;
+	u32 num_max_vdev_supported;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

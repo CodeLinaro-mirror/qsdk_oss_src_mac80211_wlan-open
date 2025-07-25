@@ -8561,17 +8561,19 @@ static int ath12k_wmi_tlv_mgmt_rx_parse(struct ath12k_base *ab,
 	return 0;
 }
 
-static u32 ath12k_get_ar_next_vdev_pos(struct ath12k *ar, u32 pos)
+static bool ath12k_get_ar_next_vdev_pos(struct ath12k *ar, u32 *pos)
 {
 	bool bit;
 	u32 i = 0;
 
-	for (i = pos; i < MAX_AP_MLDS_PER_LINK; i++) {
+	for (i = *pos; i < ar->ab->num_max_vdev_supported; i++) {
 		bit = ar->allocated_vdev_map & (1LL << i);
-		if (bit)
-			break;
+		if (bit) {
+			*pos = i;
+			return true;
+		}
 	}
-	return i;
+	return false;
 }
 
 static void ath12k_update_cu_params(struct ath12k_base *ab,
@@ -8600,7 +8602,10 @@ static void ath12k_update_cu_params(struct ath12k_base *ab,
 
 			pos = 0;
 			for (i = 0; i < ar->num_created_vdevs; i++) {
-				pos = ath12k_get_ar_next_vdev_pos(ar, pos);
+				if (!ath12k_get_ar_next_vdev_pos(ar, &pos)) {
+					pos++;
+					continue;
+				}
 				vdev_id = pos;
 				pos++;
 				arvif = ath12k_mac_get_arvif(ar, vdev_id);

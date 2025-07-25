@@ -22383,6 +22383,7 @@ static void ath12k_mac_set_device_defaults(struct ath12k_base *ab)
 	spin_lock_bh(&ab->base_lock);
 	total_vdevs = ath12k_core_get_total_num_vdevs(ab);
 	ab->free_vdev_map = (1LL << (ab->num_radios * total_vdevs)) - 1;
+	ab->num_max_vdev_supported = (ab->num_radios * total_vdevs);
 	spin_unlock_bh(&ab->base_lock);
 }
 
