@@ -15517,6 +15517,8 @@ ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
 		stats_id = (1 << arg->stats_id);
 		break;
 		/* Add case for newly wmi ctrl path stats here */
+	case WMI_REQ_CTRL_PATH_PMLO_STAT:
+		return ath12k_wmi_pdev_enable_telemetry_stats(ab, ar);
 	default:
 		ath12k_warn(ab, "Unsupported stats id %d", arg->stats_id);
 		return -EIO;
@@ -15524,14 +15526,6 @@ ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
 	}
 
 	pdev_id = cpu_to_le32(ath12k_mac_get_target_pdev_id(ar));
-
-	switch (arg->stats_id) {
-	case WMI_REQ_CTRL_PATH_PMLO_STAT:
-		return ath12k_wmi_pdev_enable_telemetry_stats(ab, ar);
-	default:
-	        ath12k_warn(ab, "Unsupported stats id %d", arg->stats_id);
-		break;
-	}
 
 	len = sizeof(*cmd) +
 		TLV_HDR_SIZE + sizeof(u32) +
