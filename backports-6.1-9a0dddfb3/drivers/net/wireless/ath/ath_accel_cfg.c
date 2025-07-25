@@ -85,3 +85,14 @@ void ath_sawf_uplink(struct ath_ul_params *params)
 	ath_dp_accel_cfg_cb->sdwf_ul_config(params);
 }
 EXPORT_SYMBOL(ath_sawf_uplink);
+
+int ath_mscs_peer_lookup_n_get_priority(struct ath_mscs_get_priority_param *params)
+{
+	if (!ath_dp_accel_cfg_cb)
+		return -EINVAL;
+
+	return ath_dp_accel_cfg_cb->get_mscs_priority(params);
+
+}
+EXPORT_SYMBOL(ath_mscs_peer_lookup_n_get_priority);
+

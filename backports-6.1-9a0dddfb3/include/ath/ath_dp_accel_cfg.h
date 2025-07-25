@@ -11,7 +11,7 @@
 #define ATH_SAWF_SVID_VALID 0x1
 #define ATH_SAWF_DSCP_VALID 0x2
 #define ATH_SAWF_PCP_VALID  0x4
-
+#define QCA_WIFI_NSS_PLUGINS_MSCS 1
 /*
  * wifi classifier metadata
  * ----------------------------------------------------------------------------
@@ -87,8 +87,27 @@ struct ath_ul_params {
 };
 
 /**
+ * ath_mscs_get_priority_param
+ *
+ * @dst_dev - Destination netdev
+ * @src_dev - Source netdev
+ * @src_mac - Source mac address
+ * @dest_mac - Destination mac address
+ * @skb - Socket buffer
+ */
+struct ath_mscs_get_priority_param {
+	struct net_device *dst_dev;
+	struct net_device *src_dev;
+	uint8_t *src_mac;
+	uint8_t *dst_mac;
+	struct sk_buff *skb;
+};
+
+/**
  * struct ath_dp_accel_cfg_ops - dp accelerator configuraton ops
  * @ppeds_get_node_id: fetch ds node id from ath driver for given peer mac
+ * @get_mscs_priority: update skb priority based on MSCS context for a given
+ * MSCS session
  *
  */
 struct ath_dp_accel_cfg_ops {
@@ -98,6 +117,7 @@ struct ath_dp_accel_cfg_ops {
 
 	uint32_t (*get_metadata_info)(struct ath_dp_metadata_param *md_param);
 	void (*sdwf_ul_config)(struct ath_ul_params *params);
+	int (*get_mscs_priority)(struct ath_mscs_get_priority_param *params);
 };
 
 /**
@@ -138,4 +158,5 @@ bool ath_dp_accel_cfg_fetch_ds_node_id(struct ath_dp_accel_cfg *info);
 
 u32 ath_get_metadata_info(struct ath_dp_metadata_param *dp_metadata_param);
 void ath_sawf_uplink(struct ath_ul_params *params);
+int ath_mscs_peer_lookup_n_get_priority(struct ath_mscs_get_priority_param *params);
 #endif
