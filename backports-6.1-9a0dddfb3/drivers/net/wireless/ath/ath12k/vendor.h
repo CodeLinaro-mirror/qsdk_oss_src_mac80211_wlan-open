@@ -1626,6 +1626,33 @@ enum qca_wlan_vendor_sdwf_sla_breach_type {
 	QCA_WLAN_VENDOR_SDWF_SLA_BREACH_PARAM_TYPE_MAX,
 };
 
+/**
+ * enum qca_wlan_vendor_attr_pri_link_migrate: Attributes used by the vendor
+ *     subcommand %QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR: 6 byte MAC address. When
+ *     specified, indicates that primary link migration will occur only for
+ *     the ML client with the given MLD MAC address.
+ * @QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_CURRENT_PRI_LINK_ID: Optional u8
+ *     attribute. When specified, all ML clients having their current primary
+ *     link as specified will be considered for migration.
+ * @QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID: Optional u8 attribute.
+ *     Indicates the new primary link to which the selected ML clients
+ *     should be migrated to. If not provided, the driver will select a
+ *     suitable primary link on its own.
+ */
+enum qca_wlan_vendor_attr_pri_link_migrate {
+       QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_INVALID = 0,
+       QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR,
+       QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_CURRENT_PRI_LINK_ID,
+       QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID,
+
+       /* keep this last */
+       QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_AFTER_LAST,
+       QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX =
+       QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_AFTER_LAST - 1,
+};
+
 void ath12k_vendor_telemetry_notify_breach(struct ieee80211_vif *vif, u8 *mac_addr,
 					   u8 svc_id, u8 param, bool set_clear,
 					   u8 tid, u8 *mld_addr);

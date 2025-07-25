@@ -81,6 +81,13 @@ ath12k_vendor_atf_offload_ssid_sched_policy[QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCH
 	[QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED] = {.type = NLA_U8},
 };
 
+static const struct nla_policy
+ath12k_pri_link_migrate_policy[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR] = {.type = NLA_BINARY,
+							     .len = ETH_ALEN},
+	[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID] = {.type =  NLA_U8},
+};
+
 static void
 ath12k_afc_response_buffer_display(struct ath12k_base *ab,
 				   struct ath12k_afc_host_resp *afc_rsp)
@@ -4390,27 +4397,37 @@ int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
 	struct ath12k_mac_link_migrate_usr_params arg;
 	u8 mac_addr[ETH_ALEN] = {0};
 	struct ath12k_vif *ahvif;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1];
 	u8 link_id;
 	int ret;
 
 	if (WARN_ON(!vif))
 		return -EINVAL;
 
-	/* 1 byte of link ID or(and) 6 bytes of mac address */
-	if (data_len != 1 && data_len != ETH_ALEN + 1)
-		return -EINVAL;
-
 	/* not supported in case of non-ML vif */
 	if (!vif->valid_links)
 		return -EOPNOTSUPP;
 
-	/* get link ID */
-	link_id = *(u8 *)data;
+	if (data_len > ETH_ALEN) {
+		ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX, data, data_len,
+				ath12k_pri_link_migrate_policy, NULL);
+		if (ret) {
+			ath12k_err(NULL, "Invalid attribute in %s %d\n", __func__, ret);
+			return ret;
+		}
 
-	/* get mac address if it is provided */
-	if (data_len == ETH_ALEN + 1) {
-		data++;
-		memcpy(mac_addr, data, ETH_ALEN);
+		if (tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR] &&
+		    (nla_len(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR]) == ETH_ALEN)) {
+			memcpy(mac_addr,
+			       nla_data(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR]),
+			       ETH_ALEN);
+		} else {
+			ath12k_err(NULL, "invalid MAC address %s\n", mac_addr);
+			return -EINVAL;
+		}
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID]);
+	} else {
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID]);
 	}
 
 	ahvif = (struct ath12k_vif *)vif->drv_priv;
@@ -6258,7 +6275,8 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE,
 		.doit = ath12k_vendor_trigg_pri_link_migrate,
-		.policy = VENDOR_CMD_RAW_DATA,
+		.policy = ath12k_pri_link_migrate_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
 			 WIPHY_VENDOR_CMD_NEED_RUNNING,
 	},
