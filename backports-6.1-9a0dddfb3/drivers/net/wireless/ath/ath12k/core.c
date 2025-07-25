@@ -3352,7 +3352,7 @@ static void ath12k_core_recovery_work(struct work_struct *work)
 	ath12k_recovery_reconfig(ab);
 }
 
-static void ath12k_core_trigger_bug_on(struct ath12k_base *ab)
+void ath12k_core_trigger_bug_on(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	int dump_count;
@@ -3582,6 +3582,13 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	reset_count = atomic_inc_return(&ab->reset_count);
 
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
+	if (ab) {
+		ath12k_info(ab, "%s : collect minidump\n", __func__);
+		athdbg_if_get_service(ab, ATHDBG_SRV_DO_MINIDUMP);
+	}
+#endif
+
 	if (reset_count > 1) {
 		/* Sometimes it happened another reset worker before the previous one
 		 * completed, then the second reset worker will destroy the previous one,
@@ -3752,6 +3759,11 @@ static int ath12k_core_panic_handler(struct notifier_block *nb,
 {
 	struct ath12k_base *ab = container_of(nb, struct ath12k_base,
 					      panic_nb);
+
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
+	if (ab)
+		athdbg_if_get_service(ab, ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES);
+#endif
 	if (ab->in_panic)
 		goto panic_handler;
 	
@@ -4831,6 +4843,9 @@ err:
 
 void ath12k_core_deinit(struct ath12k_base *ab)
 {
+#if !defined(CPTCFG_ATHDEBUG)
+	athdbg_if_unregister(ab);
+#endif
 	ath12k_core_panic_notifier_unregister(ab);
 	ath12k_core_hw_group_cleanup(ab->ag);
 	ath12k_core_hw_group_destroy(ab->ag);

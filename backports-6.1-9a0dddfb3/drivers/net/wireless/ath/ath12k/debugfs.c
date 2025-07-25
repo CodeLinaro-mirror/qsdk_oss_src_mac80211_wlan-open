@@ -5814,6 +5814,58 @@ static const struct file_operations fops_dump_hal_stats = {
        .llseek = default_llseek,
 };
 
+static ssize_t ath12k_read_simulate_host_crash(struct file *file,
+					       char __user *user_buf,
+					       size_t count, loff_t *ppos)
+{
+	const char buf[] =
+		 "To simulate a Host crash write 1 to this file:\n";
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, strlen(buf)); }
+
+static ssize_t ath12k_write_simulate_host_crash(struct file *file,
+						const char __user *user_buf,
+						size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_hw_group *ag = ab->ag;
+	char buf[32] = {0};
+	int i;
+	unsigned int val = 0;
+	ssize_t rc;
+
+	/* filter partial writes and invalid commands */
+	if (*ppos != 0 || count >= sizeof(buf) || count == 0)
+		return -EINVAL;
+
+	rc = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
+	if (rc < 0)
+		return rc;
+
+	/* drop the possible '\n' from the end */
+	if (buf[*ppos - 1] == '\n')
+		buf[*ppos - 1] = '\0';
+
+	if (kstrtou32(buf, 0, &val))
+		return -EINVAL;
+
+	if (val && ag) {
+		ath12k_info(ab, "simulating Host assert\n");
+		for (i = 0; i < ag->num_devices; i++)
+			ath12k_core_trigger_bug_on(ag->ab[i]);
+	}
+
+	return count;
+}
+
+static const struct file_operations fops_simulate_host_crash = {
+	.read = ath12k_read_simulate_host_crash,
+	.write = ath12k_write_simulate_host_crash,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath12k_read_simulate_fw_crash(struct file *file,
 					     char __user *user_buf,
 					     size_t count, loff_t *ppos)
@@ -6366,6 +6418,10 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	if (test_bit(WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT, ab->wmi_ab.svc_map))
 		debugfs_create_file("wsi_bypass_device", 0600, ab->debugfs_soc, ab,
 				    &fops_wsi_bypass_device);
+
+	debugfs_create_file("simulate_host_crash", 0600, ab->debugfs_soc, ab,
+		&fops_simulate_host_crash);
+
 }
 
 void ath12k_debugfs_unregister(struct ath12k *ar)

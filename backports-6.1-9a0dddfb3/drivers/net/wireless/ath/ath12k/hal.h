@@ -1359,6 +1359,31 @@ enum nl80211_he_ru_alloc ath12k_he_ru_tones_to_nl80211_he_ru_alloc(u16 ru_tones)
 	return ret;
 }
 
+static inline void *ath12k_hal_dma_alloc_coherent(struct device *dev, size_t size,
+						   dma_addr_t *paddr, gfp_t flag)
+{
+	void *vaddr = NULL;
+
+#ifdef CONFIG_IO_COHERENCY
+	vaddr = kzalloc(size, flag);
+	*paddr = (dma_addr_t)virt_to_phys(vaddr);
+#else
+	vaddr = dma_alloc_coherent(dev, size, paddr, flag);
+#endif
+
+	return vaddr;
+}
+
+static inline void ath12k_hal_dma_free_coherent(struct device *dev, size_t size,
+						 void *vaddr, dma_addr_t paddr)
+{
+#ifdef CONFIG_IO_COHERENCY
+	kfree(vaddr);
+#else
+	dma_free_coherent(dev, size, vaddr, paddr);
+#endif
+}
+
 u8 ath12k_hal_rx_get_msdu_src_link(struct ath12k_base *ab,
 				   struct hal_rx_desc *desc);
 void ath12k_hal_rx_desc_end_tlv_copy(struct ath12k_base *ab,

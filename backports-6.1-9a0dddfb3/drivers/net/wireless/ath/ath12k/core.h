@@ -46,7 +46,11 @@
 #include "dp_stats.h"
 
 #ifdef CPTCFG_ATHDEBUG
-#include "athdbg_if.h"
+#if !defined(CONFIG_DEBUG_MEM_USAGE)
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
+#include "athdbg_cmn_if.h"
+#endif
+#endif
 #endif
 
 #define SM(_v, _f) (((_v) << _f##_LSB) & _f##_MASK)
@@ -1953,6 +1957,7 @@ int ath12k_core_del_dl_qos(struct ath12k_base *ab, u8 id);
 int ath12k_core_config_ul_qos(struct ath12k *ar,
 			      struct ath12k_qos_params *params,
 			      u16 id, u8 *mac_addr, bool add_or_sub);
+void ath12k_core_trigger_bug_on(struct ath12k_base *ab);
 
 static inline const char *ath12k_scan_state_str(enum ath12k_scan_state state)
 {
@@ -2119,29 +2124,6 @@ int ath12k_core_config_iocoherency(struct ath12k_base *ab, bool enable);
 static inline bool ath12k_hw_group_recovery_in_progress(const struct ath12k_hw_group *ag)
 {
 	return test_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
-}
-
-static inline void *ath12k_core_dma_alloc_coherent(struct device *dev, size_t size,
-						   dma_addr_t *paddr, gfp_t flag)
-{
-        void *vaddr = NULL;
-#ifdef CONFIG_IO_COHERENCY
-        vaddr = kzalloc(size, flag);
-        *paddr = (dma_addr_t)virt_to_phys(vaddr);
-#else
-        vaddr = dma_alloc_coherent(dev, size, paddr, flag);
-#endif
-        return vaddr;
-}
-
-static inline void ath12k_core_dma_free_coherent(struct device *dev, size_t size,
-						 void *vaddr, dma_addr_t paddr)
-{
-#ifdef CONFIG_IO_COHERENCY
-	kfree(vaddr);
-#else
-	dma_free_coherent(dev, size, vaddr, paddr);
-#endif
 }
 
 static inline void ath12k_core_dma_unmap_single(struct device *dev, dma_addr_t dma_handle,

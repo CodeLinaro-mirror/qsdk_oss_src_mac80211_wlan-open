@@ -377,7 +377,7 @@ ath12k_ce_alloc_ring(struct ath12k_base *ab, int nentries, int desc_sz)
 	 * coherent DMA are unsupported
 	 */
 	ce_ring->base_addr_owner_space_unaligned =
-		ath12k_core_dma_alloc_coherent(ab->dev,
+		ath12k_hal_dma_alloc_coherent(ab->dev,
 					       nentries * desc_sz + CE_DESC_RING_ALIGN,
 					       &base_addr, GFP_KERNEL);
 	if (!ce_ring->base_addr_owner_space_unaligned) {
@@ -757,7 +757,7 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 		if (pipe->src_ring) {
 			desc_sz = ath12k_hal_ce_get_desc_size(hal,
 							      HAL_CE_DESC_SRC);
-			ath12k_core_dma_free_coherent(ab->dev,
+			ath12k_hal_dma_free_coherent(ab->dev,
 						      pipe->src_ring->nentries * desc_sz +
 						      CE_DESC_RING_ALIGN,
 						      pipe->src_ring->base_addr_owner_space,
@@ -769,7 +769,7 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 		if (pipe->dest_ring) {
 			desc_sz = ath12k_hal_ce_get_desc_size(hal,
 							      HAL_CE_DESC_DST);
-			ath12k_core_dma_free_coherent(ab->dev,
+			ath12k_hal_dma_free_coherent(ab->dev,
 						      pipe->dest_ring->nentries * desc_sz +
 						      CE_DESC_RING_ALIGN,
 						      pipe->dest_ring->base_addr_owner_space,
@@ -782,7 +782,7 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 			desc_sz =
 			  ath12k_hal_ce_get_desc_size(hal,
 						      HAL_CE_DESC_DST_STATUS);
-			ath12k_core_dma_free_coherent(ab->dev,
+			ath12k_hal_dma_free_coherent(ab->dev,
 						      pipe->status_ring->nentries * desc_sz +
 						      CE_DESC_RING_ALIGN,
 						      pipe->status_ring->base_addr_owner_space,
