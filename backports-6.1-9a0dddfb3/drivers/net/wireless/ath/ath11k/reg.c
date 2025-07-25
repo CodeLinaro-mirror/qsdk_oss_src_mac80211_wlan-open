@@ -876,6 +876,9 @@ static enum wmi_vdev_type ath11k_reg_get_ar_vdev_type(struct ath11k *ar)
 {
 	struct ath11k_vif *arvif;
 
+	if (!ar)
+		return WMI_VDEV_TYPE_UNSPEC;
+
 	/* Currently each struct ath11k maps to one struct ieee80211_hw/wiphy
 	 * and one struct ieee80211_regdomain, so it could only store one group
 	 * reg rules. It means multi-interface concurrency in the same ath11k is
