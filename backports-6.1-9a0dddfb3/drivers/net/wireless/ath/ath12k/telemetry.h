@@ -41,6 +41,10 @@ struct ath12k_sla_thershold_cfg {
 	u32 delay_bound;
 	u32 msdu_ttl;
 	u32 msdu_rate_loss;
+        u8 per;
+        u8 mcs_min_thres;
+        u8 mcs_max_thres;
+        u8 retries_thres;
 };
 
 /**
@@ -81,6 +85,10 @@ struct ath12k_sla_detect_cfg {
 	u32 delay_bound;
 	u32 msdu_ttl;
 	u32 msdu_rate_loss;
+	u8 per;
+	u8 mcs_min_thres;
+	u8 mcs_max_thres;
+	u8 retries_thres;
 };
 
 /**

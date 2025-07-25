@@ -135,14 +135,19 @@ int ath12k_telemetry_sdwf_sla_thershold_config(struct ath12k_sla_thershold_cfg p
 		ath12k_info(NULL, "telemetry sla thershold configuration done, "
 			    "svcid: %d MinThrRate:%d MaxThrRate:%d BurstSize:%d "
 			    "serviceInt:%d \n DelayBound: %d MsduTtl:%d "
-			    "msdurateloss:%d\n", param.svc_id,
+			    "msdurateloss:%d per:%u, mcs_min_threshold:%u,"
+			    "mcs_max_thres%u, retries_thres:%u\n", param.svc_id,
 			    param.min_throughput_rate,
 			    param.max_throughput_rate,
 			    param.burst_size,
 			    param.service_interval,
 			    param.delay_bound,
 			    param.msdu_ttl,
-			    param.msdu_rate_loss);
+			    param.msdu_rate_loss,
+			    param.per,
+			    param.mcs_min_thres,
+			    param.mcs_max_thres,
+			    param.retries_thres);
 
 	if (!ret || ret == -ENOENT)
 		return 0;
@@ -190,11 +195,14 @@ int ath12k_telemetry_sdwf_sla_detection_config(struct ath12k_sla_detect_cfg para
 	if (!ret)
 		ath12k_info(NULL, "telemetry sla detection configuration done, detect option: %d "
 			    "MinThrRate:%d MaxThrRate:%d BurstSize:%d ServiceInt:%d \n DelayBound: %d "
-			    "MsduTtl:%d MsduRateLoss:%d\n", param.sla_detect,
+			    "MsduTtl:%d MsduRateLoss:%d PktErrorRate:%u, MCSminThreshold:%u"
+			    "MCSmaxThreshold:%u RetriesThreshold:%u\n", param.sla_detect,
 			    param.min_throughput_rate,
 			    param.max_throughput_rate, param.burst_size,
 			    param.service_interval, param.delay_bound,
-			    param.msdu_ttl, param.msdu_rate_loss);
+			    param.msdu_ttl, param.msdu_rate_loss,
+			    param.per, param.mcs_min_thres,
+			    param.mcs_max_thres, param.retries_thres);
 
 	if (!ret || ret == -ENOENT)
 		return 0;

@@ -114,14 +114,18 @@ int ath12k_telemetry_set_sla_params(u32 num_pkt,
 int ath12k_telemetry_set_sla_cfg(struct ath12k_sla_thershold_cfg param)
 {
 	if (g_agent_ops)
-		return (g_agent_ops->sawf_set_sla_cfg(param.svc_id,
-						      param.min_throughput_rate,
-						      param.max_throughput_rate,
-						      param.burst_size,
-						      param.service_interval,
-						      param.delay_bound,
-						      param.msdu_ttl,
-						      param.msdu_rate_loss));
+		return (g_agent_ops->sawf_set_sla_config(param.svc_id,
+							 param.min_throughput_rate,
+							 param.max_throughput_rate,
+							 param.burst_size,
+							 param.service_interval,
+							 param.delay_bound,
+							 param.msdu_ttl,
+							 param.msdu_rate_loss,
+							 param.per,
+							 param.mcs_min_thres,
+							 param.mcs_max_thres,
+							 param.retries_thres));
 
 	return -ENOENT;
 }
@@ -129,14 +133,18 @@ int ath12k_telemetry_set_sla_cfg(struct ath12k_sla_thershold_cfg param)
 int ath12k_telemetry_set_sla_detect_cfg(struct ath12k_sla_detect_cfg param)
 {
 	if (g_agent_ops)
-		return (g_agent_ops->sawf_set_sla_dtct_cfg(param.sla_detect,
-							   param.min_throughput_rate,
-							   param.max_throughput_rate,
-							   param.burst_size,
-							   param.service_interval,
-							   param.delay_bound,
-							   param.msdu_ttl,
-							   param.msdu_rate_loss));
+		return (g_agent_ops->sawf_set_sla_detect_config(param.sla_detect,
+								param.min_throughput_rate,
+								param.max_throughput_rate,
+								param.burst_size,
+								param.service_interval,
+								param.delay_bound,
+								param.msdu_ttl,
+								param.msdu_rate_loss,
+								param.per,
+								param.mcs_min_thres,
+								param.mcs_max_thres,
+								param.retries_thres));
 
 	return -ENOENT;
 }
