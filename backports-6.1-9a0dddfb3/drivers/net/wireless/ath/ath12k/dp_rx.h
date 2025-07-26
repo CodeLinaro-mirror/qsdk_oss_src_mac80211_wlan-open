@@ -115,7 +115,6 @@ struct ath12k_dp_rx_tid {
 	/* Info related to UMAC migration */
 	u16     peer_id;
 	u8      chip_id;
-	struct crypto_shash *tfm;
 };
 
 struct ath12k_dp_rx_reo_cache_flush_elem {

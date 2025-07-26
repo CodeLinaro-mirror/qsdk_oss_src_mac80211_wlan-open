@@ -1657,17 +1657,14 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 				     enum hal_reo_cmd_status status)
 {
 	struct ath12k_dp_rx_tid *rx_tid = ctx;
-	struct crypto_shash *tfm = rx_tid->tfm;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_base *mig_ab;
 	struct ath12k_sta *ahsta;
 	struct ath12k_dp *mig_dp;
-	struct ath12k *ar;
-	u8 addr[ETH_ALEN];
 	u16 peer_id = rx_tid->peer_id;
 	u8 chip_id = rx_tid->chip_id;
-	int ret, tid, vdev_id;
+	int ret, tid;
 
 	if (status != HAL_REO_CMD_SUCCESS)
 		goto migration_fail;
@@ -1690,59 +1687,33 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 
 	ahsta = ath12k_sta_to_ahsta(peer->sta);
 	arsta = ahsta->link[peer->link_id];
-	if (!arsta || !arsta->arvif || !arsta->arvif->ar) {
+	if (!arsta || !arsta->arvif) {
 		spin_unlock_bh(&mig_dp->dp_lock);
 		goto migration_fail;
 	}
 
-	if (peer->dp_peer->primary_link_frag_setup) {
-		arsta->arvif->primary_sta_link = true;
-		peer->primary_link = true;
-		ath12k_warn(mig_ab, "peer tid setup is already done for the peer_id %x in migration event\n",
+	if (!peer->dp_peer->primary_link_frag_setup) {
+		ath12k_warn(mig_ab, "peer tid setup is not done for the peer_id %x in migration event\n",
 			    peer->peer_id);
 		WARN_ON(1);
-		goto migration_success;
+		goto migration_fail;
 	}
 
-	memcpy(addr, peer->addr, sizeof(peer->addr));
-	vdev_id = peer->vdev_id;
+	if (mig_ab->hw_params->reoq_lut_support) {
+		/* Update the REO queue LUT at the corresponding peer id
+		 * and tid with qaddr.
+		 */
+		for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+			ath12k_dp_arch_peer_rx_tid_qref_setup(mig_dp,
+							      peer->mlo ? peer->ml_id : peer->peer_id,
+							      rx_tid->tid,
+							      rx_tid->paddr);
+		}
+	}
 
 	arsta->arvif->primary_sta_link = true;
 	peer->primary_link = true;
 
-	spin_unlock_bh(&mig_dp->dp_lock);
-
-	ar = arsta->arvif->ar;
-
-	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
-		ret = ath12k_wifi7_dp_rx_peer_tid_setup(ar, addr,
-							vdev_id,
-							tid, 1, 0,
-							HAL_PN_TYPE_NONE);
-		if (ret) {
-			ath12k_warn(mig_ab, "failed to setup rxd tid queue for tid %d: %d in migration event\n",
-				    tid, ret);
-			goto peer_tid_clean;
-		}
-	}
-
-	spin_lock_bh(&mig_dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(mig_dp, peer_id);
-	if (!peer) {
-		ath12k_warn(mig_ab, "failed to find the peer id %d\n", peer_id);
-		spin_unlock_bh(&mig_dp->dp_lock);
-		goto migration_fail;
-	}
-
-
-	ret = ath12k_dp_rx_peer_frag_setup(ar, peer, tfm);
-	if (ret) {
-		ath12k_warn(mig_ab, "failed to setup rx defrag context for peer_id %x in migration event\n",
-			    peer->peer_id);
-		goto tid_clean;
-	}
-
-migration_success:
 	spin_unlock_bh(&mig_dp->dp_lock);
 	ret = ath12k_vendor_put_umac_migration_notif(peer->vif, peer->sta->addr, peer->link_id);
 	if (ret)
@@ -1750,22 +1721,9 @@ migration_success:
 	complete(&ahsta->dp_migration_event);
 	return;
 
-peer_tid_clean:
-	spin_lock_bh(&mig_dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(mig_dp, peer_id);
-	if (!peer) {
-		spin_unlock_bh(&mig_dp->dp_lock);
-		ath12k_warn(mig_ab, "failed to find the peer in err case of peer migrate setup\n");
-		goto migration_fail;
-	}
-
-tid_clean:
-	for (tid--; tid >= 0; tid--)
-		ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, tid);
-	spin_unlock_bh(&mig_dp->dp_lock);
 migration_fail:
-	crypto_free_shash(tfm);
 	complete(&ahsta->dp_migration_event);
+	return;
 }
 EXPORT_SYMBOL(ath12k_dp_primary_peer_migrate_setup);
 
@@ -1812,10 +1770,6 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 		ath12k_warn(ab, "failed to send reo cmd, ret:%d\n", ret);
 		goto out;
 	}
-
-	/* TODO: Synchronize with DP fragment path */
-	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
-	peer->dp_peer->primary_link_frag_setup = false;
 
 	return 0;
 out:

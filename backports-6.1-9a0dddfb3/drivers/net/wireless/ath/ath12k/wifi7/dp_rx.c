@@ -3690,6 +3690,11 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
 		rx_tid = &peer->dp_peer->rx_tid[tid];
 
+		ath12k_wifi7_peer_rx_tid_qref_reset(ab,
+						    peer->mlo ? peer->ml_id :
+					    peer->peer_id, tid);
+		ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
+
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);
 		cmd.addr_hi = upper_32_bits(rx_tid->paddr);
 		cmd.flag |= HAL_REO_CMD_FLG_NEED_STATUS;
@@ -3707,10 +3712,6 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	rx_tid = &peer->dp_peer->rx_tid[0];
 	rx_tid->chip_id = chip_id;
 	rx_tid->peer_id = peer_id;
-	rx_tid->tfm = peer->dp_peer->tfm_mmic;
-
-	/* TODO: Synchronize with DP fragment path */
-	peer->dp_peer->tfm_mmic = NULL;
 
 	cmd.addr_lo = lower_32_bits(rx_tid->paddr);
 	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
@@ -3727,7 +3728,7 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	}
 
 	cmd.flag = 0;
-	cmd.flag = HAL_REO_CMD_UNBLOCK_CACHE;
+	cmd.flag = HAL_REO_CMD_FLG_UNBLK_CACHE;
 
 	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
 					  HAL_REO_CMD_UNBLOCK_CACHE,
