@@ -256,13 +256,6 @@ void ath12k_wifi7_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 				update_rx_tid->active = true;
 				break;
 			}
-
-			ath12k_wifi7_peer_rx_tid_qref_reset(ab,
-							    qelem->is_ml_peer ?
-							    qelem->ml_peer_id :
-							    qelem->peer_id,
-							    qelem->tid);
-			ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
 			update_rx_tid->vaddr = NULL;
 			update_rx_tid->paddr = 0;
 			update_rx_tid->size = 0;
@@ -377,6 +370,7 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 					struct ath12k_dp_link_peer *peer, u8 tid)
 {
 	struct ath12k_dp_rx_tid *rx_tid = &peer->dp_peer->rx_tid[tid];
+	struct ath12k_dp_rx_tid *temp_rx_tid = NULL;
 	struct dp_reo_update_rx_queue_elem *elem, *tmp;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp   = ath12k_ab_to_dp(ab);
@@ -401,26 +395,29 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 
 	list_for_each_entry_safe(elem, tmp, &dp->reo_cmd_update_rx_queue_list,
 			list) {
-		rx_tid = &elem->data;
+		temp_rx_tid = &elem->data;
 
-		if (ath12k_wifi7_peer_rx_tid_delete_handler(ab, rx_tid, elem->tid)) {
-			rx_tid->active = true;
+		if (ath12k_wifi7_peer_rx_tid_delete_handler(ab, temp_rx_tid, elem->tid)) {
+			temp_rx_tid->active = true;
 			elem->reo_cmd_update_rx_queue_resend_flag = true;
 			break;
 		}
-		ath12k_wifi7_peer_rx_tid_qref_reset(ab,
-						    elem->is_ml_peer ? elem->ml_peer_id :
-						    elem->peer_id, elem->tid);
-		ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
-		rx_tid->vaddr = NULL;
-		rx_tid->paddr = 0;
-		rx_tid->size = 0;
-		rx_tid->pending_desc_size = 0;
+		temp_rx_tid->vaddr = NULL;
+		temp_rx_tid->paddr = 0;
+		temp_rx_tid->size = 0;
+		temp_rx_tid->pending_desc_size = 0;
 
 		list_del(&elem->list);
 		kfree(elem);
 	}
 	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
+
+	ath12k_wifi7_peer_rx_tid_qref_reset(ab,	peer->mlo ? peer->ml_id : peer->peer_id, tid);
+	ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
+	rx_tid->vaddr = NULL;
+	rx_tid->paddr = 0;
+	rx_tid->size = 0;
+	rx_tid->pending_desc_size = 0;
 }
 
 void  ath12k_wifi7_dp_setup_pn_check_reo_cmd(struct ath12k_hal_reo_cmd *cmd,
@@ -3193,6 +3190,7 @@ int ath12k_wifi7_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 		return -ENOMEM;
 
 	*addr_aligned = PTR_ALIGN(vaddr, HAL_LINK_DESC_ALIGN);
+	ath12k_wifi7_hal_reo_qdesc_setup(*addr_aligned, tid, ba_win_sz, ssn, pn_type);
 #ifndef CONFIG_IO_COHERENCY
 	paddr = dma_map_single(ab->dev, *addr_aligned, hw_desc_sz,
 			       DMA_BIDIRECTIONAL);

@@ -1401,10 +1401,6 @@ void ath12k_hal_rx_desc_get_crypto_header(struct ath12k_base *ab,
 					  enum hal_encrypt_type enctype);
 u16 ath12k_hal_rxdesc_get_mpdu_frame_ctrl(struct ath12k_base *ab,
 					  struct hal_rx_desc *desc);
-void ath12k_hal_reo_qdesc_setup(struct ath12k_hal *hal,
-				struct hal_rx_reo_queue *qdesc,
-				int tid, u32 ba_window_size,
-				u32 start_seq, enum hal_pn_type type);
 void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
 				     struct wbm_idle_scatter_list *sbuf,
 				     u32 nsbufs, u32 tot_link_desc,

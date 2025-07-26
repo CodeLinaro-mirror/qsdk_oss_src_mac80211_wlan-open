@@ -110,14 +110,6 @@ void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab, struct hal_srng *srng)
 	ab->hal.hal_ops->reo_init_cmd_ring(ab, srng);
 }
 
-void ath12k_hal_reo_qdesc_setup(struct ath12k_hal *hal,
-				struct hal_rx_reo_queue *qdesc,
-				int tid, u32 ba_window_size,
-				u32 start_seq, enum hal_pn_type type)
-{
-	hal->hal_ops->reo_qdesc_setup(qdesc, tid, ba_window_size, start_seq, type);
-}
-
 void ath12k_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *b_info,
 				     dma_addr_t paddr, u32 cookie,
 				     u8 manager)

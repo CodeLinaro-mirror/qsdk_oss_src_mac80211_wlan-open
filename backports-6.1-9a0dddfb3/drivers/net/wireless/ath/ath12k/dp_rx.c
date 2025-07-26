@@ -771,8 +771,6 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 		return ret;
 	}
 
-	ath12k_hal_reo_qdesc_setup(&ab->hal, addr_aligned, tid, ba_win_sz, ssn, pn_type);
-
 	rx_tid->active = true;
 
 	if (ab->hw_params->reoq_lut_support) {
@@ -914,6 +912,11 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 		ath12k_warn(ab, "failed to find the peer %pM to configure pn replay detection\n",
 			    peer_addr);
 		return -ENOENT;
+	}
+
+	if (!peer->primary_link) {
+		spin_unlock_bh(&dp->dp_lock);
+		return 0;
 	}
 
 	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
