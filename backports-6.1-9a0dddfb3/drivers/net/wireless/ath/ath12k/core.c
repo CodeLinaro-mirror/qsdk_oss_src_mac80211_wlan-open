@@ -124,6 +124,10 @@ bool ath12k_ppe_rfs_support = true;
 module_param_named(ppe_rfs_support, ath12k_ppe_rfs_support, bool, 0644);
 MODULE_PARM_DESC(ppe_rfs_support, "Enable PPE RFS support for DL (0 - disable, 1 - enable)");
 
+unsigned int ath12k_fw_mem_seg;
+module_param_named(fw_mem_seg, ath12k_fw_mem_seg, uint, 0644);
+MODULE_PARM_DESC(fw_mem_seg, "Enable/Disable FW segmented memory");
+
 unsigned int ath12k_rfs_core_mask[4] = {ATH12K_MAX_CORE_MASK, ATH12K_MAX_CORE_MASK,
 					ATH12K_MAX_CORE_MASK, ATH12K_MAX_CORE_MASK};
 module_param_array_named(rfs_core_mask, ath12k_rfs_core_mask, int, NULL, 0644);
@@ -4944,6 +4948,10 @@ struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,
 
 	if (!of_property_read_u32(ab->dev->of_node, "memory-region", &addr))
 		set_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags);
+
+	/* This is HACK to bring up the qcn9224 with segmented memory */
+	if (ab->hif.bus == ATH12K_BUS_PCI && ath12k_fw_mem_seg)
+		clear_bit(ATH12K_FLAG_FIXED_MEM_REGION, &ab->dev_flags);
 
 	if (of_property_read_u32(ab->dev->of_node, "qcom,wide_band", &wide_band))
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "Wide band property not present");
