@@ -38,12 +38,10 @@ enum ath12k_pktlog_filter {
         ATH12K_PKTLOG_RCUPDATE          = BIT(3),
         ATH12K_PKTLOG_DBG_PRINT         = BIT(4),
         ATH12K_PKTLOG_SMART_ANT         = BIT(5),
-        ATH12K_PKTLOG_H_INFO            = BIT(6),
-        ATH12K_PKTLOG_STEERING          = BIT(7),
-        ATH12K_PKTLOG_TX_DATA_CAPTURE   = BIT(8),
-        ATH12K_PKTLOG_PHY_LOGGING       = BIT(9),
-        ATH12K_PKTLOG_CBF               = BIT(10),
-        ATH12K_PKTLOG_HYBRID            = BIT(11),
+        ATH12K_PKTLOG_SW                = BIT(6),
+        ATH12K_PKTLOG_PHY_LOGGING       = BIT(7),
+        ATH12K_PKTLOG_CBF               = BIT(8),
+        ATH12K_PKTLOG_HYBRID            = BIT(9),
 };
 
 enum ath12k_pktlog_enum {

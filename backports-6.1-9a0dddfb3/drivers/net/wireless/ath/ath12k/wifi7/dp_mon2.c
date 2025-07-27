@@ -709,6 +709,30 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 }
 
 static void
+ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *pdev_dp,
+			    struct ath12k_dp_mon_status_desc *status_desc)
+{
+	struct ath12k *ar = pdev_dp->ar;
+	struct ath12k_dp *dp = pdev_dp->dp;
+	u16 log_type = 0;
+
+	if (!ar->debug.is_pkt_logging ||
+	    !status_desc->mon_buf ||
+	    !status_desc->buf_len)
+		return;
+
+	if (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_LITE)
+		log_type = ATH12K_PKTLOG_TYPE_LITE_RX;
+	else if (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_FULL)
+		log_type = ATH12K_PKTLOG_TYPE_RX_STATBUF;
+
+	trace_ath12k_htt_rxdesc(ar, status_desc->mon_buf,
+				log_type, status_desc->buf_len);
+	ath12k_dp_rx_stats_buf_pktlog_process(ar, status_desc->mon_buf,
+					      log_type, status_desc->buf_len);
+}
+
+static void
 ath12k_wifi7_dp_mon_rx_process_ppdu(struct ath12k_pdev_dp *pdev_dp,
 				    struct napi_struct *napi)
 {
@@ -766,6 +790,8 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct ath12k_pdev_dp *pdev_dp,
 
 				goto next_ppdu;
 			}
+
+			ath12k_dp_rx_pktlog_process(pdev_dp, status_desc);
 
 			if (unlikely(hal_status != HAL_RX_MON_STATUS_PPDU_DONE)) {
 				ppdu_info->ppdu_continuation = true;
@@ -842,41 +868,6 @@ next_ppdu:
 	list_splice_tail_init(&dp_mon_pdev->ppdu_desc_proc_list,
 			      &dp_mon_pdev->ppdu_desc_free_list);
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
-}
-
-static void __maybe_unused
-ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *pdev_dp,
-			    struct ath12k_dp_link_peer *peer,
-			    struct hal_rx_mon_ppdu_info *ppdu_info,
-			    struct sk_buff *skb, u32 end_offset)
-{
-	struct ath12k *ar = pdev_dp->ar;
-	struct ath12k_dp *dp = pdev_dp->dp;
-	u32 rx_buf_sz;
-	u16 log_type = 0;
-
-	if (!ar->debug.is_pkt_logging)
-		return;
-
-	rx_buf_sz = end_offset + 1;
-	if (ath12k_debugfs_is_pktlog_peer_valid(ar, peer->addr) &&
-	    ppdu_info->peer_id != HAL_INVALID_PEERID) {
-		log_type = ATH12K_PKTLOG_TYPE_RX_STATBUF;
-		trace_ath12k_htt_rxdesc(ar, skb->data, log_type, rx_buf_sz);
-		ath12k_dp_rx_stats_buf_pktlog_process(ar, skb->data, log_type,
-						      rx_buf_sz);
-	} else {
-		if (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_LITE)
-			log_type = ATH12K_PKTLOG_TYPE_LITE_RX;
-		else if (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_FULL)
-			log_type = ATH12K_PKTLOG_TYPE_RX_STATBUF;
-
-		trace_ath12k_htt_rxdesc(ar, skb->data, log_type,
-					rx_buf_sz);
-		ath12k_dp_rx_stats_buf_pktlog_process(ar, skb->data,
-						      log_type,
-						      rx_buf_sz);
-	}
 }
 
 int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_id,
