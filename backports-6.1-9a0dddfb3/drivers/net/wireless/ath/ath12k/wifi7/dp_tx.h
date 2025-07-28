@@ -22,4 +22,6 @@ bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev, struct sk_buf
 int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_link_vif *arvif,
 				       struct sk_buff *skb, struct ath12k_link_sta *arsta);
+int ath12k_wifi7_dp_tx_ring_setup(struct ath12k_base *ab);
+void ath12k_wifi7_dp_tx_ring_cleanup(struct ath12k_base *ab);
 #endif

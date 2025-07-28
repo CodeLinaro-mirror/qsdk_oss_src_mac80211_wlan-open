@@ -2294,3 +2294,55 @@ int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 
 	return ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, false, arsta, ring_id, 0);
 }
+
+void ath12k_wifi7_dp_tx_ring_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ab->dp;
+	int i;
+
+	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
+		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_comp_ring);
+		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_data_ring);
+	}
+}
+
+int ath12k_wifi7_dp_tx_ring_setup(struct ath12k_base *ab)
+{
+	int i, tx_comp_ring_num;
+	struct ath12k_dp *dp = ab->dp;
+	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
+	int ret;
+	u8 rbm_id;
+
+	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
+		map = ab->hal.tcl_to_cmp_rbm_map;
+		tx_comp_ring_num = map[i].cmp_ring_num;
+		rbm_id = map[i].rbm_id;
+
+		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_data_ring,
+					   HAL_TCL_DATA, i, 0,
+					   DP_TCL_DATA_RING_SIZE);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up tcl_data ring (%d) :%d\n",
+				    i, ret);
+			goto err;
+		}
+
+		ath12k_hal_tx_config_rbm_mapping(ab, i, rbm_id, HAL_TCL_DATA);
+
+		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
+					   HAL_WBM2SW_RELEASE, tx_comp_ring_num, 0,
+					   DP_TX_COMP_RING_SIZE);
+		if (ret) {
+			ath12k_warn(ab, "failed to set up tcl_comp ring (%d) :%d\n",
+				    tx_comp_ring_num, ret);
+			goto err;
+		}
+	}
+
+	return 0;
+
+err:
+	ath12k_wifi7_dp_tx_ring_cleanup(ab);
+	return ret;
+}

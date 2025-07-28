@@ -1817,6 +1817,7 @@ void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
 			   HAL_TCL_RBM_MAPPING0_ADDR_OFFSET, new_map);
 }
+EXPORT_SYMBOL(ath12k_hal_tx_config_rbm_mapping);
 
 static int ath12k_dp_srng_init_idx(struct ath12k_base *ab, struct dp_srng *ring,
 				   enum hal_ring_type type, int ring_num,

@@ -208,10 +208,14 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	if (ret)
 		goto fail_ppeds_detach;
 
+	ret = ath12k_wifi7_dp_tx_ring_setup(ab);
+	if (ret)
+		goto fail_cmn_srng_cleanup;
+
 	ret = ath12k_dp_reoq_lut_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup reoq table %d\n", ret);
-		goto fail_cmn_srng_cleanup;
+		goto fail_tx_ring_cleanup;
 	}
 
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
@@ -240,6 +244,9 @@ fail_dp_mon_rx_free:
 fail_dp_rx_free:
 	ath12k_dp_rx_free(ab);
 	ath12k_dp_reoq_lut_cleanup(ab);
+
+fail_tx_ring_cleanup:
+	ath12k_wifi7_dp_tx_ring_cleanup(ab);
 
 fail_cmn_srng_cleanup:
 	ath12k_dp_srng_common_cleanup(ab);
@@ -278,6 +285,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_cc_cleanup(ab);
 	ath12k_dp_reoq_lut_cleanup(ab);
 	ath12k_dp_deinit_bank_profiles(ab);
+	ath12k_wifi7_dp_tx_ring_cleanup(ab);
 	ath12k_dp_srng_common_cleanup(ab);
 
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);

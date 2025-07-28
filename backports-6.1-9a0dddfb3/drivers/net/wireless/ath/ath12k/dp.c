@@ -684,17 +684,12 @@ EXPORT_SYMBOL(ath12k_dp_init_bank_profiles);
 void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	int i;
 
 	ath12k_dp_srng_cleanup(ab, &dp->reo_status_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->reo_cmd_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->reo_except_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->rx_rel_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->reo_reinject_ring);
-	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
-		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_comp_ring);
-		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_data_ring);
-	}
 	ath12k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
 
 	ath12k_dp_srng_ppeds_cleanup(ab);
@@ -704,11 +699,9 @@ EXPORT_SYMBOL(ath12k_dp_srng_common_cleanup);
 int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
 	struct hal_srng *srng;
-	int i, ret, tx_comp_ring_num;
+	int ret;
 	u32 ring_hash_map;
-	u8 rbm_id;
 
 	ret = ath12k_dp_srng_setup(ab, &dp->wbm_desc_rel_ring,
 				   HAL_SW2WBM_RELEASE, 0, 0,
@@ -717,32 +710,6 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 		ath12k_warn(ab, "failed to set up wbm2sw_release ring :%d\n",
 			    ret);
 		goto err;
-	}
-
-	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
-		map = ab->hal.tcl_to_cmp_rbm_map;
-		tx_comp_ring_num = map[i].cmp_ring_num;
-		rbm_id = map[i].rbm_id;
-
-		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_data_ring,
-					   HAL_TCL_DATA, i, 0,
-					   DP_TCL_DATA_RING_SIZE);
-		if (ret) {
-			ath12k_warn(ab, "failed to set up tcl_data ring (%d) :%d\n",
-				    i, ret);
-			goto err;
-		}
-
-		ath12k_hal_tx_config_rbm_mapping(ab, i, rbm_id, HAL_TCL_DATA);
-
-		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
-					   HAL_WBM2SW_RELEASE, tx_comp_ring_num, 0,
-					   DP_TX_COMP_RING_SIZE);
-		if (ret) {
-			ath12k_warn(ab, "failed to set up tcl_comp ring (%d) :%d\n",
-				    tx_comp_ring_num, ret);
-			goto err;
-		}
 	}
 
 	ret = ath12k_dp_srng_setup(ab, &dp->reo_reinject_ring, HAL_REO_REINJECT,
