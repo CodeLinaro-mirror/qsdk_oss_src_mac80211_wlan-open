@@ -641,19 +641,23 @@ skip_htt_metadata:
 			hdrlen = ieee80211_get_hdrlen_from_skb(skb);
 			subtype = ath12k_dp_get_eapol_subtype
 						  (skb->data + hdrlen + LLC_SNAP_HDR_LEN);
-			if (subtype != DP_EAPOL_KEY_TYPE_MAX)
+			if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
+				ab->dp->device_stats.tx_eapol_type[subtype-1][ti.ring_id]++;
 				ath12k_dbg(ab, ATH12K_DBG_EAPOL, "Transmit %s%d EAPOL "
 					   "frame to STA %pM\n", subtype <= 4 ? "M" : "G",
 					   subtype <= 4 ? subtype : (subtype - 4),
 					   hdr->addr1);
+			}
 		} else {
 			eth = (struct ethhdr *)skb->data;
 			subtype = ath12k_dp_get_eapol_subtype(skb->data + ETH_HLEN);
-			if (subtype != DP_EAPOL_KEY_TYPE_MAX)
+			if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
+				ab->dp->device_stats.tx_eapol_type[subtype-1][ti.ring_id]++;
 				ath12k_dbg(ab, ATH12K_DBG_EAPOL, "Transmit %s%d EAPOL "
 					   "frame to STA %pM\n", subtype <= 4 ? "M" : "G",
 					   subtype <= 4 ? subtype : (subtype - 4),
 					   eth->h_dest);
+			}
 		}
 
 	} else if (is_null)

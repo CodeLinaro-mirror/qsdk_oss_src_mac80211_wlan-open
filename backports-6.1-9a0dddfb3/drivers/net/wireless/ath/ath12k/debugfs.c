@@ -798,8 +798,7 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
 		for (j = 0; j < ATH12K_MAX_SOCS; j++)
 			non_fast_rx[i][j] = device_stats->non_fast_unicast_rx[i][j] +
-				            device_stats->non_fast_mcast_rx[i][j] +
-					    device_stats->eapol_rx[i][j];
+				            device_stats->non_fast_mcast_rx[i][j];
 	}
 
 	len += scnprintf(buf + len, size - len, "SOC TX STATS:\n");
@@ -820,25 +819,57 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 device_stats->tx_wbm_rel_source[4]);
 
 	len += scnprintf(buf + len, size - len,
-	                 "\ntx_multicast: 0:%u 1:%u 2:%u 3:%u",
+	                 "\ntx_multicast: 0:%u 1:%u 2:%u 3:%u\n",
 		         device_stats->tx_mcast[0],
 			 device_stats->tx_mcast[1],
 	                 device_stats->tx_mcast[2],
 		         device_stats->tx_mcast[3]);
 
 	len += scnprintf(buf + len, size - len,
-		         "\ntx_unicast: 0:%u 1:%u 2:%u 3:%u",
+		         "\ntx_unicast: 0:%u 1:%u 2:%u 3:%u\n",
 			 device_stats->tx_unicast[0],
 	                 device_stats->tx_unicast[1],
 		         device_stats->tx_unicast[2],
 			 device_stats->tx_unicast[3]);
 
 	len += scnprintf(buf + len, size - len,
-		         "\ntx_eapol: 0:%u 1:%u 2:%u 3:%u",
+		         "\ntx_eapol: 0:%u 1:%u 2:%u 3:%u\n",
 			 device_stats->tx_eapol[0],
 	                 device_stats->tx_eapol[1],
 		         device_stats->tx_eapol[2],
 			 device_stats->tx_eapol[3]);
+
+	len += scnprintf(buf + len, size - len, "\ntx eapol M1\t");
+	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+		len += scnprintf(buf + len, size - len,
+				"%u\t",device_stats->tx_eapol_type[0][j]);
+
+	len += scnprintf(buf + len, size - len, "\ntx eapol M2\t");
+	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+		len += scnprintf(buf + len, size - len,
+				 "%u\t",device_stats->tx_eapol_type[1][j]);
+
+	len += scnprintf(buf + len, size - len, "\ntx eapol M3\t");
+	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+		len += scnprintf(buf + len, size - len,
+				 "%u\t",device_stats->tx_eapol_type[2][j]);
+
+	len += scnprintf(buf + len, size - len, "\ntx eapol M4\t");
+	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+		len += scnprintf(buf + len, size - len,
+				 "%u\t",device_stats->tx_eapol_type[3][j]);
+
+	len += scnprintf(buf + len, size - len, "\ntx eapol G1\t");
+	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+		len += scnprintf(buf + len, size - len,
+				"%u\t",device_stats->tx_eapol_type[4][j]);
+
+	len += scnprintf(buf + len, size - len, "\ntx eapol G2\t");
+	for (j=0; j < DP_TCL_NUM_RING_MAX; j++)
+		len += scnprintf(buf + len, size - len,
+				"%u\t",device_stats->tx_eapol_type[5][j]);
+
+	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len,
 		         "\ntx_null_frame: 0:%u 1:%u 2:%u 3:%u",
@@ -979,14 +1010,44 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 		                 device_stats->non_fast_unicast_rx[i][1],
 			         device_stats->non_fast_unicast_rx[i][2]);
 
-	len += scnprintf(buf + len, size - len, "\nEapol Rx:\n");
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
-		len += scnprintf(buf + len, size - len,
-			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
-				 i + 1,
-	                         device_stats->eapol_rx[i][0],
-		                 device_stats->eapol_rx[i][1],
-			         device_stats->eapol_rx[i][2]);
+	len += scnprintf(buf + len, size - len, "\nRx Eapol:\n");
+	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
+				 device_stats->rx_eapol[i]);
+
+	len += scnprintf(buf + len, size - len, "\n");
+
+	len += scnprintf(buf + len, size - len, "\nRx eapol M1\t");
+	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
+				 device_stats->rx_eapol_type[0][i]);
+
+	len += scnprintf(buf + len, size - len, "\nRx eapol M2\t");
+	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
+				 device_stats->rx_eapol_type[1][i]);
+
+	len += scnprintf(buf + len, size - len, "\nRx eapol M3\t");
+	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
+				 device_stats->rx_eapol_type[2][i]);
+
+	len += scnprintf(buf + len, size - len, "\nRx eapol M4\t");
+	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
+                                 device_stats->rx_eapol_type[3][i]);
+
+	len += scnprintf(buf + len, size - len, "\nRx eapol G1\t");
+	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
+				 device_stats->rx_eapol_type[4][i]);
+
+	len += scnprintf(buf + len, size - len,"\nRx eapol G2\t");
+	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+                len += scnprintf(buf + len, size - len, "%d:%u\t", i,
+                                 device_stats->rx_eapol_type[5][i]);
+
+	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "\nNull frame Rx: %u Rx dropped: %u\n",
 			 device_stats->rx_pkt_null_frame_handled,

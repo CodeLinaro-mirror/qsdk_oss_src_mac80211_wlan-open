@@ -1266,22 +1266,8 @@ static void ath12k_soc_dp_rx_stats(struct ath12k_dp *dp, struct sk_buff *msdu,
 				   struct hal_rx_desc_data *rx_desc_data,
 				   int ring_id)
 {
-	struct ieee80211_hdr *hdr;
-	struct ath12k_dp_rx_rfc1042_hdr *llc;
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
-	size_t hdr_len;
-
 	if (rx_desc_data->is_mcbc) {
 		dp->device_stats.non_fast_mcast_rx[ring_id][dp->device_id]++;
-	} else if (rx_desc_data->decap == DP_RX_DECAP_TYPE_NATIVE_WIFI) {
-		hdr = (struct ieee80211_hdr *)msdu->data;
-		hdr_len = ieee80211_hdrlen(hdr->frame_control);
-		llc = (struct ath12k_dp_rx_rfc1042_hdr *)(msdu->data + hdr_len);
-		if (llc->snap_type == cpu_to_be16(ETH_P_PAE))
-			dp->device_stats.eapol_rx[ring_id][dp->device_id]++;
-	} else if (rx_desc_data->decap == DP_RX_DECAP_TYPE_ETHERNET2_DIX &&
-		   rxcb->is_eapol) {
-			dp->device_stats.eapol_rx[ring_id][dp->device_id]++;
 	} else {
 		dp->device_stats.non_fast_unicast_rx[ring_id][dp->device_id]++;
 	}
@@ -2735,11 +2721,14 @@ static void ath12k_wifi7_dp_rx_wbm_err(struct ath12k_pdev_dp *dp_pdev,
 	hdr_len = ieee80211_hdrlen(hdr->frame_control);
 	llc = (struct ath12k_dp_rx_rfc1042_hdr *)(msdu->data + hdr_len);
 	if (llc->snap_type == cpu_to_be16(ETH_P_PAE)) {
+		dp->device_stats.rx_eapol[ab->device_id]++;
 		subtype = ath12k_dp_get_eapol_subtype(msdu->data + hdr_len + LLC_SNAP_HDR_LEN);
-		if (subtype != DP_EAPOL_KEY_TYPE_MAX)
+		if (subtype != DP_EAPOL_KEY_TYPE_MAX && subtype > 0) {
+			dp->device_stats.rx_eapol_type[subtype-1][ab->device_id]++;
 			ath12k_dbg(ab, ATH12K_DBG_EAPOL, "Received %s%d EAPOL frame from "
 				   "STA %pM\n", subtype <= 4 ? "M" : "G",
 				   subtype <= 4 ? subtype : (subtype - 4), hdr->addr2);
+		}
 	}
 
 	ath12k_dp_rx_deliver_msdu(dp_pdev, napi, msdu, &rxs, rxcb->hw_link_id,

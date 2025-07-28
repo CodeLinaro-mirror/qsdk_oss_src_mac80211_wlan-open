@@ -1888,7 +1888,7 @@ enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data)
 {
 	u8 pkt_type = *(data + EAPOL_PACKET_TYPE_OFFSET);
 	u16 key_info, key_data_length;
-	enum ath12k_dp_eapol_key_type subtype;
+	enum ath12k_dp_eapol_key_type subtype = DP_EAPOL_KEY_TYPE_MAX;
 	u64 *key_nonce;
 	bool pairwise;
 
