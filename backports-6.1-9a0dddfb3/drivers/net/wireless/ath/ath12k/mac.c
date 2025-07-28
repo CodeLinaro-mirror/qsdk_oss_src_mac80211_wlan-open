@@ -4221,6 +4221,7 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 	ml->ieee_link_id = arsta->link_id;
 	ml->bridge_peer = arsta->is_bridge_peer;
 	ml->num_partner_links = 0;
+	ml->eml_cap = sta->eml_cap;
 	links = ahsta->links_map;
 
 	if (sta->reconf.removed_links & BIT(arsta->link_id))

@@ -3218,6 +3218,7 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 		/* Transition timeout */
 		eml_trans_timeout = ath12k_wmi_get_emlsr_trans_timeout_us(eml_cap);
 		ml_params->emlsr_trans_timeout_us = cpu_to_le32(eml_trans_timeout);
+		ml_params->flags |= cpu_to_le32(ATH12K_WMI_FLAG_MLO_EMLSR_SUPPORT);
 		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "wmi peer (%pM) emlsr padding delay %u, trans delay %u trans timeout %u",
 			   arg->peer_mac, ml_params->emlsr_padding_delay_us,
 			   ml_params->emlsr_trans_delay_us,
