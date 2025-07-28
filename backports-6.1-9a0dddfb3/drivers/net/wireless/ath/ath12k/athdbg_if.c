@@ -15,6 +15,7 @@ const struct athdbg_to_ath12k_ops dbg_to_ath_ops = {
 	.coredump_build_inline = ath12k_coredump_build_inline,
 	.dev_running_status = athdbg_if_check_dev_running,
 	.set_dbg_mask = athdbg_if_setmask,
+	.get_link_vif_from_vdev_id = ath12k_mac_get_arvif_by_vdev_id,
 };
 
 static int athdbg_if_create_debugfs(struct ath12k_base *ab)
@@ -22,9 +23,6 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 	struct dentry *debugfs_soc_dir,
 				  *debugfs_ath12k_dir,
 				  *athdbg_dir;
-#if !defined(CONFIG_DEBUG_MEM_USAGE)
-	struct dentry	*minidump_dir;
-#endif
 	struct ath12k_base *partner_ab;
 	char soc_name[MAX_SOC_DIR_NAME_SIZE] = { 0 };
 	int i;
@@ -51,16 +49,7 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 
 		debugfs_create_file("dbgmask", 0644, athdbg_dir, partner_ab, &debugfs_mask_fops);
 
-#if !defined(CONFIG_DEBUG_MEM_USAGE)
-#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
-		minidump_dir = debugfs_create_dir("minidump", athdbg_dir);
-
-		if (IS_ERR_OR_NULL(minidump_dir))
-			goto out;
-
-		athdbg_create_minidump_debugfs(minidump_dir, partner_ab);
-#endif
-#endif
+		athdbg_create_minidump_debugfs(athdbg_dir, partner_ab);
 	}
 	return 0;
 out:
@@ -96,6 +85,7 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 	case ATHDBG_SRV_CONFIG_QDSS:
 		break;
 	case ATHDBG_SRV_DO_MINIDUMP:
+		athdbg_collect_reference_segments(ab);
 		athdbg_do_dump_minidump(ab);
 		break;
 	case ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES:

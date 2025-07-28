@@ -401,6 +401,7 @@ static int ath12k_ce_alloc_pipe(struct ath12k_base *ab, int ce_id)
 {
 	struct ath12k_hal *hal = &ab->hal;
 	struct ath12k_ce_pipe *pipe = &ab->ce.ce_pipe[ce_id];
+	struct ath12k_ce_stats *ce_stats;
 	const struct ce_attr *attr = &ab->hw_params->host_ce_config[ce_id];
 	struct ath12k_ce_ring *ring;
 	int nentries;
@@ -437,7 +438,11 @@ static int ath12k_ce_alloc_pipe(struct ath12k_base *ab, int ce_id)
 	/* As ce_stats are for debug purpose, bring up should not fail
 	 * in case of ce_stats allocation failure.
 	 */
-	pipe->ce_stats = kzalloc(sizeof(*pipe->ce_stats), GFP_KERNEL);
+	ce_stats = kzalloc(sizeof(*pipe->ce_stats), GFP_KERNEL);
+	if (!ce_stats)
+		pipe->ce_stats = NULL;
+	else
+		pipe->ce_stats = ce_stats;
 
 	return 0;
 }

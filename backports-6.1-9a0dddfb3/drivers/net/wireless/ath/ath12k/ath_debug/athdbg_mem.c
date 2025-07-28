@@ -9,7 +9,6 @@
 #include <linux/module.h>
 #include <linux/skbuff.h>
 #include <net/netlink.h>
-#include <linux/minidump_tlv.h>
 
 #include "athdbg_minidump.h"
 #include "athdbg_mem.h"
@@ -39,7 +38,7 @@ struct athmem_debug_object {
 	const char *module_name;
 };
 
-struct athmem_visited_node {
+struct athmem_node {
 	const char *struct_name;
 	void *start_addr;
 	const char *module_name;
@@ -102,23 +101,22 @@ static char *athmem_delete_obj_full(unsigned long ptr)
 	return struct_name;
 }
 
-static struct athmem_visited_node *athmem_find_dump_node(const char *struct_name)
+static struct athmem_node *athmem_find_dump_node(const char *struct_name)
 {
-	struct athmem_visited_node *visited_node;
+	struct athmem_node *visited_node;
 
 	list_for_each_entry(visited_node, &athmem_visited_list, dump_list) {
 		if (visited_node->struct_name) {
-			if (strncmp(struct_name, visited_node->struct_name,
-			    strlen(visited_node->struct_name)) == 0)
+			if (strcmp(struct_name, visited_node->struct_name) == 0)
 				return visited_node;
 		}
 	}
 	return NULL;
 }
 
-static void athmem_add_node_to_minidump(struct athmem_visited_node *visited_node)
+static void athmem_add_node_to_minidump(struct athmem_node *visited_node)
 {
-	struct athmem_visited_node *duplicate_node;
+	struct athmem_node *duplicate_node;
 
 	if (visited_node) {
 		athdbg_add_to_minidump_log(visited_node->start_addr,
@@ -138,7 +136,7 @@ static void athmem_add_node_to_minidump(struct athmem_visited_node *visited_node
 static void athmem_find_duplicate(const char *struct_name,
 				  struct athmem_debug_object *obj)
 {
-	struct athmem_visited_node *visited_node, *duplicate_node;
+	struct athmem_node *visited_node, *duplicate_node;
 
 	visited_node = athmem_find_dump_node(obj->struct_name);
 	if (visited_node) {
@@ -175,7 +173,7 @@ static void athmem_find_duplicate(const char *struct_name,
 
 static void athmem_free_minidump_list(void)
 {
-	struct athmem_visited_node *visited_node, *duplicate_node, *tmp_visited_node, *tmp_dup_node;
+	struct athmem_node *visited_node, *duplicate_node, *tmp_visited_node, *tmp_dup_node;
 
 	list_for_each_entry_safe(visited_node, tmp_visited_node,
 				 &athmem_visited_list, dump_list) {
@@ -210,7 +208,7 @@ static void athmem_create_minidump_list(void)
 
 void athmem_find_and_add_entry_in_minidump(const char *struct_name)
 {
-	struct athmem_visited_node *minidump_node;
+	struct athmem_node *minidump_node;
 
 	athmem_create_minidump_list();
 	minidump_node = athmem_find_dump_node(struct_name);
@@ -225,11 +223,11 @@ void athmem_find_and_add_entry_in_minidump(const char *struct_name)
 
 void athmem_print_all_allocated_list(void)
 {
-	struct athmem_visited_node *visited_node;
+	struct athmem_node *visited_node;
 
 	athmem_create_minidump_list();
 	list_for_each_entry(visited_node, &athmem_visited_list, dump_list) {
-		pr_info("Struct name: %-25s Count: %d", visited_node->struct_name,
+		pr_info("Alloc list : Struct name: %-25s Count: %d", visited_node->struct_name,
 			visited_node->count);
 	}
 
@@ -238,15 +236,15 @@ void athmem_print_all_allocated_list(void)
 
 void athmem_find_and_print_minidump_entry(const char *struct_name)
 {
-	struct athmem_visited_node *visited_node;
+	struct athmem_node *visited_node;
 	int count = 0;
 
 	visited_node = athmem_find_dump_node(struct_name);
 	if (visited_node) {
-		pr_info("Struct name: %-25s Count: %d",
+		pr_info("Dump list : Struct name: %-25s Count: %d",
 			visited_node->struct_name, visited_node->count);
 	} else {
-		pr_info("Struct name: %-25s Count: %d",
+		pr_info("Dump list : Struct name: %-25s Count: %d",
 			struct_name, count);
 	}
 }
@@ -264,7 +262,7 @@ static void athmem_clear_minidump_and_rb_tree(void)
 	struct athmem_debug_object *obj;
 	unsigned long flags;
 
-	pr_info("deleting rb tree\n");
+	pr_info("Deleting minidump entries\n");
 
 	if (RB_EMPTY_ROOT(&athmem_obj_tree_root))
 		return;

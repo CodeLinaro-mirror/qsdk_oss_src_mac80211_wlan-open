@@ -46,6 +46,9 @@ static ssize_t athdbg_minidump_write(struct file *file,
 
 	buf[len] = '\0';
 
+	strim(buf);
+
+	len = strlen(buf);
 	dbg_req = kzalloc(sizeof(*dbg_req), GFP_ATOMIC);
 	if (!dbg_req)
 		return -ENOMEM;
@@ -85,9 +88,16 @@ const struct file_operations debugfs_minidump_fops = {
 	.owner = THIS_MODULE,
 };
 
-void athdbg_create_minidump_debugfs(struct dentry *minidump_dir, struct ath12k_base *drv_ab)
+void athdbg_create_minidump_debugfs(struct dentry *dbg_dir,
+				    struct ath12k_base *drv_ab)
 {
+	struct dentry	*minidump_dir;
 	int i = 0;
+
+	minidump_dir = debugfs_create_dir("minidump", dbg_dir);
+
+	if (IS_ERR_OR_NULL(minidump_dir))
+		return;
 
 	while (athdbg_debugfs_handlers[i].filename != NULL) {
 		debugfs_create_file(athdbg_debugfs_handlers[i].filename,

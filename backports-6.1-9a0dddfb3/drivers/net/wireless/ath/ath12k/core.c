@@ -3613,7 +3613,7 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	reset_count = atomic_inc_return(&ab->reset_count);
 
-#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
+#ifdef CPTCFG_ATHDEBUG
 	if (ab) {
 		ath12k_info(ab, "%s : collect minidump\n", __func__);
 		athdbg_if_get_service(ab, ATHDBG_SRV_DO_MINIDUMP);
@@ -3791,7 +3791,7 @@ static int ath12k_core_panic_handler(struct notifier_block *nb,
 	struct ath12k_base *ab = container_of(nb, struct ath12k_base,
 					      panic_nb);
 
-#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
+#ifdef CPTCFG_ATHDEBUG
 	if (ab)
 		athdbg_if_get_service(ab, ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES);
 #endif
@@ -4877,7 +4877,7 @@ err:
 
 void ath12k_core_deinit(struct ath12k_base *ab)
 {
-#if !defined(CPTCFG_ATHDEBUG)
+#ifdef CPTCFG_ATHDEBUG
 	athdbg_if_unregister(ab);
 #endif
 	if (ath12k_telemetry_ab_agent_delete_handler(ab))

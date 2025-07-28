@@ -5,6 +5,7 @@
 #ifndef ATH_DBG_IF_H
 #define ATH_DBG_IF_H
 #include "core.h"
+#include "mac.h"
 #include <linux/module.h>
 #include <linux/kernel.h>
 
@@ -22,11 +23,14 @@ struct athdbg_to_ath12k_ops {
 			struct ath12k_dump_segment *segments, int num_seg);
 	bool (*dev_running_status)(struct ath12k_base *drv_ab);
 	void (*set_dbg_mask)(unsigned int debug_mask);
+	struct ath12k_link_vif *(*get_link_vif_from_vdev_id)(struct ath12k_base *ab,
+							     u32 vdev_id);
 };
 
 bool athdbg_if_check_dev_running(struct ath12k_base *drv_ab);
 void athdbg_if_setmask(unsigned int debug_mask);
 void athdbg_if_register(struct ath12k_base *drv_ab);
+void athdbg_if_unregister(struct ath12k_base *ab);
 int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv);
 
 extern unsigned int ath12k_debug_mask;

@@ -6,21 +6,22 @@
 #include <linux/kernel.h>
 #include <linux/module.h>
 #include <linux/init.h>
+
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
 #include <linux/minidump_tlv.h>
 #include "athdbg_minidump.h"
 
-#ifdef CONFIG_QCA_MINIDUMP
 #define minidump_crash_type (MINIDUMP_CRASH_TYPE_HOST | MINIDUMP_CRASH_TYPE_FW)
-
 enum athdbg_minidump_status minidump_state = ENABLE_MINIDUMP;
 
-const char *ath12k_struct_names[] = {
+const char *ath12k_dump_list[] = {
 	"ath12k",
 	"ath12k_base",
 	"ath12k_dp",
 	"ath12k_hw_group",
 	"ath12k_hw",
 	"ath12k_link_vif",
+	"ath12k_ce_stats",
 	"ieee80211_hw",
 	"dp_rx_fst",
 	"hal_rx_fst",
@@ -44,10 +45,8 @@ struct athdbg_minidump_info *find_dump_node(const char *struct_name)
 	struct athdbg_minidump_info *minidump_node;
 
 	list_for_each_entry(minidump_node, &athdbg_minidump_list, dump_list) {
-		if (minidump_node->struct_name &&
-		    strlen(struct_name) == strlen(minidump_node->struct_name)) {
-			if (strncmp(struct_name, minidump_node->struct_name,
-			    strlen(minidump_node->struct_name)) == 0)
+		if (minidump_node->struct_name) {
+			if (strcmp(struct_name, minidump_node->struct_name) == 0)
 				return minidump_node;
 		}
 	}
@@ -67,13 +66,13 @@ void athdbg_iterate_minidump_list(void)
 void athdbg_create_minidump_struct_list(void)
 {
 	struct athdbg_minidump_info *minidump_node;
-	size_t num_structs = sizeof(ath12k_struct_names) / sizeof(ath12k_struct_names[0]);
+	size_t num_structs = sizeof(ath12k_dump_list) / sizeof(ath12k_dump_list[0]);
 	int i;
 
 	for (i = 0; i < num_structs; i++) {
 		minidump_node = kzalloc(sizeof(*minidump_node), GFP_ATOMIC);
 		if (minidump_node) {
-			minidump_node->struct_name = ath12k_struct_names[i];
+			minidump_node->struct_name = ath12k_dump_list[i];
 
 			INIT_LIST_HEAD(&minidump_node->dump_list);
 			list_add_tail(&minidump_node->dump_list,
@@ -143,9 +142,13 @@ void athdbg_collect_reference_segments(struct ath12k_base *ab)
 {
 	int i = 0, j = 0;
 	struct ath12k_hw_group *ag;
-	struct ath12k *ar;
-	struct ath12k_hw *ah;
-	struct ieee80211_hw *hw;
+	struct ath12k *ar = NULL;
+	struct ath12k_hw *ah = NULL;
+	struct ieee80211_hw *hw = NULL;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_vif *ahvif = NULL;
+	struct ieee80211_vif *vif;
+	u32 vdev_bitmap, bit_pos;
 
 	if (!ab || !ab->ag)
 		return;
@@ -168,14 +171,49 @@ void athdbg_collect_reference_segments(struct ath12k_base *ab)
 			athdbg_minidump_log(ar, sizeof(struct ath12k),
 					    "ath12k",
 					    "ath12k");
-		}
-		hw = ah->hw;
-		if (!hw)
-			continue;
 
-		athdbg_minidump_log(hw, sizeof(struct ieee80211_hw),
-				    "ieee80211_hw",
-				    "ath12k");
+			vdev_bitmap = ar->allocated_vdev_map;
+
+			for (bit_pos = 0; bit_pos < 32; bit_pos++) {
+				if (!(vdev_bitmap & BIT(bit_pos)))
+					continue;
+				if (athdbg_base && athdbg_base->dbg_to_ath_ops)
+					arvif = athdbg_base->dbg_to_ath_ops->get_link_vif_from_vdev_id(ab, bit_pos);
+
+				if (!arvif)
+					continue;
+
+				athdbg_minidump_log(arvif,
+						    sizeof(struct ath12k_link_vif),
+						    "ath12k_link_vif",
+						    "ath12k");
+
+				ahvif = arvif->ahvif;
+				if (!ahvif)
+					continue;
+
+				athdbg_minidump_log(ahvif,
+						    sizeof(struct ath12k_vif),
+						    "ath12k_vif",
+						    "ath12k");
+
+				vif = ahvif->vif;
+				if (!vif)
+					continue;
+
+				athdbg_minidump_log(vif,
+						    sizeof(struct ieee80211_vif),
+						    "ieee80211_vif",
+						    "ath12k");
+			}
+			hw = ah->hw;
+			if (!hw)
+				continue;
+
+			athdbg_minidump_log(hw, sizeof(struct ieee80211_hw),
+					    "ieee80211_hw",
+					    "ath12k");
+		}
 	}
 }
 EXPORT_SYMBOL(athdbg_collect_reference_segments);
@@ -210,7 +248,7 @@ exit:
 }
 EXPORT_SYMBOL(athdbg_collect_minidump);
 
-void athdbg_show_all_minidump_struct(struct athdbg_request *dbg_req)
+static void athdbg_show_all_minidump_struct(struct athdbg_request *dbg_req)
 {
 	int val = 0;
 
@@ -228,7 +266,7 @@ exit:
 	return;
 }
 
-void athdbg_add_struct_to_minidump(struct athdbg_request *dbg_req)
+static void athdbg_add_struct_to_minidump(struct athdbg_request *dbg_req)
 {
 	if (!dbg_req)
 		goto exit;
@@ -244,7 +282,7 @@ exit:
 	return;
 }
 
-void athdbg_show_minidump_entries(struct athdbg_request *dbg_req)
+static void athdbg_show_minidump_entries(struct athdbg_request *dbg_req)
 {
 	int val = 0;
 
@@ -269,7 +307,7 @@ void athdbg_remove_minidump_segment(void *start_addr)
 		minidump_remove_segments((const uintptr_t)start_addr);
 }
 
-void athdbg_disable_minidump(struct athdbg_request *dbg_req)
+static void athdbg_disable_minidump(struct athdbg_request *dbg_req)
 {
 	int val = 0;
 
