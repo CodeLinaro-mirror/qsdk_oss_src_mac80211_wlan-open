@@ -2160,6 +2160,27 @@ static inline void ath12k_core_dma_unmap_page(struct device *dev, dma_addr_t han
 #endif
 }
 
+static inline void ath12k_core_dmac_inv_range_no_dsb(const void *start, const void *end)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dmac_inv_range_no_dsb(start, end);
+#endif
+}
+
+static inline void ath12k_core_dmac_inv_range(const void *start, const void *end)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dmac_inv_range(start, end);
+#endif
+}
+
+static inline void ath12k_core_dsb(void)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dsb(st);
+#endif
+}
+
 static inline struct ath12k_base *ath12k_pdev_to_ab(struct ath12k_pdev *pdev)
 {
        if (!pdev)

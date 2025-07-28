@@ -1343,6 +1343,8 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 	spin_lock_bh(&dp->rx_desc_lock);
 
 	for (i = 0; i < ATH12K_NUM_RX_SPT_PAGES; i++) {
+		const void *end;
+
 		desc_info = dp->rxbaddr[i];
 
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
@@ -1355,9 +1357,8 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 			if (!skb)
 				continue;
 
-			ath12k_core_dma_unmap_single(ab->dev, desc_info[j].paddr,
-						     DP_RX_BUFFER_SIZE,
-						     DMA_FROM_DEVICE);
+			end = desc_info[j].vaddr + DP_RX_BUFFER_SIZE;
+			ath12k_core_dmac_inv_range(desc_info[j].vaddr, end);
 			dev_kfree_skb_any(skb);
 		}
 	}
@@ -2283,6 +2284,8 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 	spin_lock_bh(&dp->rx_desc_lock);
 
 	for (i = 0; i < ATH12K_NUM_RX_SPT_PAGES; i++) {
+		const void *end;
+
 		desc_info = dp->rxbaddr[i];
 
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
@@ -2293,13 +2296,13 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 			if (!skb)
 				continue;
 
-			ath12k_core_dma_unmap_single(ab->dev, desc_info[j].paddr,
-						     DP_RX_BUFFER_SIZE,
-						     DMA_FROM_DEVICE);
+			end = desc_info[j].vaddr + DP_RX_BUFFER_SIZE;
+			ath12k_core_dmac_inv_range(desc_info[j].vaddr, end);
 
 			dev_kfree_skb_any(skb);
 
 			desc_info[j].skb = NULL;
+			desc_info[j].vaddr = NULL;
 			desc_info[j].paddr = 0;
 			desc_info[j].in_use = false;
 			list_add_tail(&desc_info[j].list, &dp->rx_desc_free_list);

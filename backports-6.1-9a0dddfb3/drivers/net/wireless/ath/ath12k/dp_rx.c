@@ -409,15 +409,18 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 {
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
 	struct sk_buff *skb;
+	const void *end;
+
 	/* Reset the use flag */
 	list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
 		rx_desc->in_use = false;
 
 		if (rx_desc->skb) {
 			skb = rx_desc->skb;
-			ath12k_core_dma_unmap_single(dp->dev, rx_desc->paddr,
-						     DP_RX_BUFFER_SIZE,
-						     DMA_FROM_DEVICE);
+
+			end = rx_desc->vaddr + DP_RX_BUFFER_SIZE;
+			ath12k_core_dmac_inv_range(rx_desc->vaddr, end);
+
 			dev_kfree_skb_any(skb);
 		}
 		dp->device_stats.free_excess_alloc_skb++;
