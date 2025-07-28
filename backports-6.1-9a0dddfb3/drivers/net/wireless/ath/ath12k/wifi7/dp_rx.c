@@ -3484,7 +3484,7 @@ ath12k_dp_rx_flow_find_entry_by_tuple(struct ath12k_base *ab,
 ssize_t ath12k_wifi7_dp_dump_fst_table(struct ath12k_dp *dp, char *buf, int size)
 {
 	struct ath12k_base *ab = dp->ab;
-	struct dp_rx_fst *fst = ab->ag->dp_hw_grp.fst;
+	struct dp_rx_fst *fst = ab->ag->dp_hw_grp->fst;
 	int len = 0;
 
 	if (!fst) {

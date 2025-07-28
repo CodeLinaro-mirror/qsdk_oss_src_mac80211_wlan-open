@@ -48,6 +48,9 @@ struct ath12k_dp_hw_group {
 	struct dp_rx_fst *fst;
 	u8 *tx_status_buf[ATH12K_HW_MAX_QUEUES];
 	u8 *rx_status_buf[DP_REO_DST_RING_MAX];
+
+	/* Keep Last */
+	u8 arch_data[] __aligned(sizeof(void *));
 };
 
 /* TODO: Move this to a seperate dp_stats file */

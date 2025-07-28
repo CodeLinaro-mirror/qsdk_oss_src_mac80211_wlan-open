@@ -485,7 +485,7 @@ struct ath12k_dp_arch_ops {
 	int (*rx_flow_delete_entry)(struct ath12k_dp *dp, struct rx_flow_info *flow_info);
 	int (*rx_flow_delete_all_entries)(struct ath12k_dp *dp);
 	ssize_t (*dump_fst_table)(struct ath12k_dp *dp, char *buf, int size);
-
+	struct ath12k_dp_hw_group*(*dp_hw_group_alloc)(void);
 	int (*peer_migrate_reo_cmd)(struct ath12k_dp *dp,
 				    struct ath12k_dp_link_peer *peer,
 				    u16 peer_id,
@@ -962,6 +962,12 @@ static inline ssize_t
 ath12k_dp_arch_dump_fst_table(struct ath12k_dp *dp, char *buf, int size)
 {
 	return dp->arch_ops->dump_fst_table(dp, buf, size);
+}
+
+static inline struct ath12k_dp_hw_group *
+ath12k_core_dp_hw_group_alloc(struct ath12k_dp *dp)
+{
+	return dp->arch_ops->dp_hw_group_alloc();
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

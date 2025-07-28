@@ -2232,7 +2232,7 @@ int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)
 void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 				     struct ath12k_hw_group *ag)
 {
-	struct ath12k_dp_hw_group *dp_hw_grp = &ag->dp_hw_grp;
+	struct ath12k_dp_hw_group *dp_hw_grp = ag->dp_hw_grp;
 	int i;
 
 	lockdep_assert_held(&ag->mutex);
@@ -2266,7 +2266,7 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 				   struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab = dp->ab;
-	struct ath12k_dp_hw_group *dp_hw_grp = &ag->dp_hw_grp;
+	struct ath12k_dp_hw_group *dp_hw_grp = ag->dp_hw_grp;
 	int i;
 
 	dp->dp_hw_grp = dp_hw_grp;
@@ -2530,7 +2530,7 @@ void ath12k_dp_cmn_update_hw_links(struct ath12k_dp *dp,
 				   struct ath12k_hw_group *ag,
 				   struct ath12k *ar)
 {
-	struct ath12k_dp_hw_group *dp_hw_grp = &ag->dp_hw_grp;
+	struct ath12k_dp_hw_group *dp_hw_grp = ag->dp_hw_grp;
 
 	lockdep_assert_held(&ag->mutex);
 

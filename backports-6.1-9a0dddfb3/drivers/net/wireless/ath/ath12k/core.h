@@ -1503,8 +1503,7 @@ struct ath12k_mlo_wsi_load_info {
  * wiphy, protected with struct ath12k_hw_group::mutex.
  */
 struct ath12k_hw_group {
-	/* this should be the first member */
-	struct ath12k_dp_hw_group dp_hw_grp;
+	struct ath12k_dp_hw_group *dp_hw_grp;
 	struct list_head list;
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	u8 dbs_power_reduction;

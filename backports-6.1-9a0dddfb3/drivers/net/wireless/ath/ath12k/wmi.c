@@ -12725,7 +12725,8 @@ int wmi_print_ctrl_path_awgn_stats_tlv(struct ath12k_base *ab, u16 len,
 	awgn_stats_skb = (struct wmi_ctrl_path_awgn_stats *)ptr;
 
 	for (i = 0; i < ATH12K_GROUP_MAX_RADIO; i++) {
-		ar = ath12k_mac_get_ar_by_pdev_id(ab, ab->ag->dp_hw_grp.hw_links[i].pdev_idx);
+		ar = ath12k_mac_get_ar_by_pdev_id(ab,
+						  ab->ag->dp_hw_grp->hw_links[i].pdev_idx);
 		if (!ar) {
 			ath12k_warn(ab, "Failed to get ar for wmi ctrl awgn stats\n");
 			return -EINVAL;
@@ -12814,8 +12815,8 @@ int wmi_print_ctrl_path_afc_stats_tlv(struct ath12k_base *ab, u16 len,
 	afc_stats_skb = (struct wmi_ctrl_path_afc_stats *)ptr;
 
 	for (i = 0; i < ATH12K_GROUP_MAX_RADIO; i++) {
-		device_id = ab->ag->dp_hw_grp.hw_links[i].device_id;
-		pdev_idx = ab->ag->dp_hw_grp.hw_links[i].pdev_idx;
+		device_id = ab->ag->dp_hw_grp->hw_links[i].device_id;
+		pdev_idx = ab->ag->dp_hw_grp->hw_links[i].pdev_idx;
 		partner_ab = ath12k_ag_to_ab(ab->ag, device_id);
 		ar = partner_ab->pdevs[pdev_idx].ar;
 		if (!ar) {

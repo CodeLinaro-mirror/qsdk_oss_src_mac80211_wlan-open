@@ -162,6 +162,19 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	ath12k_hif_ext_irq_cleanup(dp->ab);
 }
 
+static struct ath12k_dp_hw_group *ath12k_wifi7_dp_hw_group_alloc(void)
+{
+	struct ath12k_dp_hw_group *dp_hw_grp;
+
+	dp_hw_grp = kzalloc(sizeof(*dp_hw_grp), GFP_KERNEL);
+	if (!dp_hw_grp) {
+		pr_err("failed to allocate dp_hw_group\n");
+		return NULL;
+	}
+
+	return dp_hw_grp;
+}
+
 static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi7_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi7_dp_op_device_deinit,
@@ -181,6 +194,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.rx_flow_delete_entry = ath12k_wifi7_dp_rx_flow_delete_entry,
 	.rx_flow_delete_all_entries = ath12k_wifi7_dp_rx_flow_delete_all_entries,
 	.dump_fst_table = ath12k_wifi7_dp_dump_fst_table,
+	.dp_hw_group_alloc = ath12k_wifi7_dp_hw_group_alloc,
 	.peer_migrate_reo_cmd = ath12k_wifi7_dp_peer_migrate_reo_cmd,
 	.sdwf_reinject_handler = ath12k_wifi7_sdwf_reinject_handler,
 };

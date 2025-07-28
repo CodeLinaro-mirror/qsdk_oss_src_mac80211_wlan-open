@@ -29,6 +29,7 @@
 #include "pcic.h"
 #include "wow.h"
 #include "dp_cmn.h"
+#include "dp.h"
 #include "fse.h"
 #include "accel_cfg.h"
 #include "peer.h"
@@ -3847,6 +3848,12 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	if (!ag)
 		return NULL;
 
+	ag->dp_hw_grp = ath12k_core_dp_hw_group_alloc(ab->dp);
+	if (!ag->dp_hw_grp) {
+		kfree(ag);
+		return NULL;
+	}
+
 	ag->id = count;
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	ag->dbs_power_reduction = ATH12K_DEFAULT_POWER_REDUCTION;
@@ -3872,6 +3879,7 @@ static void ath12k_core_hw_group_free(struct ath12k_hw_group *ag)
 	mutex_lock(&ath12k_hw_group_mutex);
 
 	list_del(&ag->list);
+	kfree(ag->dp_hw_grp);
 	kfree(ag);
 
 	mutex_unlock(&ath12k_hw_group_mutex);
