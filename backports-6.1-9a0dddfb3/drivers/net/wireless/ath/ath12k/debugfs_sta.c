@@ -384,6 +384,97 @@ static const struct file_operations fops_qos_msduq = {
 	.llseek = default_llseek,
 };
 
+static ssize_t
+ath12k_dbg_sta_read_scs(struct file *file, char __user *user_buf,
+			size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_link_sta *arsta = &ahsta->deflink;
+	struct ath12k *ar = arsta->arvif->ar;
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	struct ath12k_dp_peer_qos *qos;
+	struct ath12k_dp_peer *peer;
+	struct ath12k_dl_scs *scs;
+	u8 index, msduq;
+	u16 qos_id;
+	const int size = 4096;
+	int ret  = -EINVAL;
+	size_t len = 0;
+	u8 *buf;
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+
+	peer = ath12k_dp_peer_find(&ah->dp_hw, arsta->addr);
+	if (!peer)
+		goto ret;
+
+	qos = peer->qos;
+	if (!qos)
+		goto ret;
+
+	for (index = 0; index < QOS_MAX_SCS_ID; index++) {
+		scs = &qos->scs_map[index];
+		msduq = u16_get_bits(scs->qos_id_msduq,
+				     SCS_MSDUQ_MASK);
+		qos_id = u16_get_bits(scs->qos_id_msduq,
+				      SCS_QOS_ID_MASK);
+		if (!scs->qos_id_msduq)
+			continue;
+
+		if (qos_id == QOS_ID_INVALID)
+			continue;
+
+		len += scnprintf(buf + len, size - len,
+				 "**********************\n");
+		len += scnprintf(buf + len, size - len,
+				 "SCS ID: %u\n", index);
+		len += scnprintf(buf + len, size - len,
+				 "QoS ID: %u\n", qos_id);
+		if (qos_id <= QOS_DL_ID_MAX) {
+			len += scnprintf(buf + len, size - len,
+					 "SCS Type: R3 DownLink\n");
+			len += scnprintf(buf + len, size - len,
+					 "MSDUQ: %u\n", msduq);
+		} else if (qos_id <= QOS_UL_ID_MAX) {
+			len += scnprintf(buf + len, size - len,
+					 "SCS Type: R3 UpLink\n");
+		} else {
+			len += scnprintf(buf + len, size - len,
+					 "SCS Type R2 DownLink\n");
+			/* Legacy QoS profile only have TID */
+			len += scnprintf(buf + len, size - len,
+					 "TID: %u\n",
+					 qos_id - QOS_LEGACY_DL_ID_MIN);
+			continue;
+		}
+		len += ath12k_dbg_dump_qos_profile(ar->ab, buf + len,
+						   qos_id, size - len);
+	}
+
+	ret = 0;
+ret:
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+
+	kfree(buf);
+	return ret;
+}
+
+static const struct file_operations fops_scs = {
+	.read = ath12k_dbg_sta_read_scs,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath12k_dbg_sta_write_peer_pktlog(struct file *file,
 						const char __user *buf,
 						size_t count, loff_t *ppos)
@@ -1673,6 +1764,9 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 
 	debugfs_create_file("qos_msduq", 0400, dir, link_sta->sta,
 			    &fops_qos_msduq);
+
+	debugfs_create_file("scs", 0400, dir, link_sta->sta,
+			    &fops_scs);
 
 #ifdef CPTCFG_ATH12K_CFR
 	if (test_bit(WMI_TLV_SERVICE_CFR_CAPTURE_SUPPORT,

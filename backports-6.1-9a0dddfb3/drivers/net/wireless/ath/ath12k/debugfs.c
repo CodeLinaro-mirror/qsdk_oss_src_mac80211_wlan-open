@@ -4299,7 +4299,7 @@ int ath12k_print_arvif_link_stats(struct ath12k_vif *ahvif,
 	bool is_mldev;
 
 	is_mldev = (hweight16(ahvif->vif->valid_links) > 1) ? true : false;
-	
+
 	len += scnprintf(buf + len, size - len, "%s netdev: %s vp_num %d vptype %s core_mask 0x%x addr %pM\n",
 			is_mldev ? "ML" : "",
 			wdev->netdev->name, ahvif->dp_vif.ppe_vp_num,
@@ -5706,7 +5706,7 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
 	debugfs_create_file("athdiag", 0600, ar->debug.debugfs_pdev, ar,
 			    &fops_athdiag);
-	
+
 	debugfs_create_file("enable_m3_dump", 0600, ar->debug.debugfs_pdev, ar,
                             &fops_enable_m3_dump);
 
@@ -6524,6 +6524,51 @@ static const struct file_operations fops_device_mon_stats = {
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
 };
+
+u32 ath12k_dbg_dump_qos_profile(struct ath12k_base *ab,
+				char *buf, u8 qos_id, u32 size)
+{
+	struct ath12k_qos_params params;
+	struct ath12k_qos_ctx *qos;
+	u32 len = 0;
+
+	qos = ath12k_get_qos(ab);
+	if (!qos)
+		return len;
+
+	if (!ath12k_qos_configured(ab, qos_id))
+		return len;
+
+	spin_lock_bh(&qos->profile_lock);
+	memcpy(&params, &qos->profiles[qos_id].params, sizeof(params));
+	spin_unlock_bh(&qos->profile_lock);
+
+	if (params.tid != QOS_PARAM_DEFAULT_TID)
+		len += scnprintf(buf + len, size - len,
+			  "TID: %u\n", params.tid);
+
+	if (params.min_service_interval != QOS_PARAM_DEFAULT_SVC_INTERVAL)
+		len += scnprintf(buf + len, size - len,
+				 "Service Interval: %u ms\n",
+				 params.min_service_interval);
+	if (params.min_data_rate != QOS_PARAM_DEFAULT_MIN_THROUGHPUT)
+		len += scnprintf(buf + len, size - len,
+				 "Min Data Rate: %u Kbps\n",
+				 params.min_data_rate);
+	if (params.burst_size != QOS_PARAM_DEFAULT_BURST_SIZE)
+		len += scnprintf(buf + len, size - len,
+				 "Burst Size: %u Bytes\n",
+				 params.burst_size);
+	if (params.delay_bound != QOS_PARAM_DEFAULT_DELAY_BOUND)
+		len += scnprintf(buf + len, size - len,
+				 "Delay Bound: %u ms\n",
+				 params.delay_bound);
+	if (params.msdu_life_time != QOS_PARAM_DEFAULT_TIME_TO_LIVE)
+		len += scnprintf(buf + len, size - len,
+				 "MSDU Life Time: %u ms\n",
+				 params.msdu_life_time);
+	return len;
+}
 
 void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 	debugfs_create_file("simulate_fw_crash", 0600, ab->debugfs_soc, ab,
