@@ -22,6 +22,7 @@
 #include "debugfs_htt_stats.h"
 #include "erp.h"
 #include "fse.h"
+#include "vendor.h"
 
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 				struct list_head *head,
@@ -1740,7 +1741,9 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 
 migration_success:
 	spin_unlock_bh(&mig_dp->dp_lock);
-
+	ret = ath12k_vendor_put_umac_migration_notif(peer->vif, peer->sta->addr, peer->link_id);
+	if (ret)
+		ath12k_warn(mig_ab, "failed to send notify UMAC migration event\n");
 	complete(&ahsta->dp_migration_event);
 	return;
 

@@ -4452,6 +4452,31 @@ int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
 	return ret;
 }
 
+int ath12k_vendor_put_umac_migration_notif(struct ieee80211_vif *vif, u8 *mac_addr, u8 link_id)
+{
+	struct wireless_dev *wdev;
+	struct sk_buff *skb;
+
+	wdev = ieee80211_vif_to_wdev(vif);
+	if (!wdev)
+		return -EINVAL;
+
+	skb = cfg80211_vendor_event_alloc(wdev->wiphy, wdev, NLMSG_DEFAULT_SIZE,
+					  QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE_INDEX,
+					  GFP_ATOMIC);
+	if (!skb)
+		return -ENOMEM;
+
+	if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR, ETH_ALEN, mac_addr) ||
+	    nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID, link_id)) {
+		kfree(skb);
+		return -1;
+	}
+
+	cfg80211_vendor_event(skb, GFP_ATOMIC);
+	return 0;
+}
+
 int
 ath12k_vendor_send_power_update_complete(struct ath12k *ar,
 					 struct ath12k_afc_info *afc)
@@ -6405,6 +6430,10 @@ static const struct nl80211_vendor_cmd_info ath12k_vendor_events[] = {
 	[QCA_NL80211_VENDOR_SUBCMD_SDWF_DEV_OPS_INDEX] = {
 		.vendor_id = QCA_NL80211_VENDOR_ID,
 		.subcmd = QCA_NL80211_VENDOR_SUBCMD_SDWF_DEV_OPS,
+	},
+	[QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE_INDEX] = {
+		.vendor_id = QCA_NL80211_VENDOR_ID,
+		.subcmd = QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE,
 	},
 };
 

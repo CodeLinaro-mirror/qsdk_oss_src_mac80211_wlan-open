@@ -63,6 +63,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_WDEV_TELEMETRY_EVENT = 4,
 	QCA_NL80211_VENDOR_SUBCMD_IFACE_RELOAD_INDEX = 5,
 	QCA_NL80211_VENDOR_SUBCMD_SDWF_DEV_OPS_INDEX = 6,
+	QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE_INDEX = 7,
 };
 
 /**
@@ -1628,18 +1629,23 @@ enum qca_wlan_vendor_sdwf_sla_breach_type {
 
 /**
  * enum qca_wlan_vendor_attr_pri_link_migrate: Attributes used by the vendor
- *     subcommand %QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE.
+ *     subcommand/event %QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE.
  *
- * @QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR: 6 byte MAC address. When
- *     specified, indicates that primary link migration will occur only for
- *     the ML client with the given MLD MAC address.
+ * @QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MLD_MAC_ADDR: 6 byte MAC address.
+ *	(a) Used in subcommand to indicate that primary link migration
+ * will occur only for the ML client with the given MLD MAC address.
+ *	(b) Used in event to specify the MAC address of the peer for which
+ * the primary link has been modified.
  * @QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_CURRENT_PRI_LINK_ID: Optional u8
  *     attribute. When specified, all ML clients having their current primary
  *     link as specified will be considered for migration.
- * @QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID: Optional u8 attribute.
- *     Indicates the new primary link to which the selected ML clients
- *     should be migrated to. If not provided, the driver will select a
- *     suitable primary link on its own.
+ * @QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_NEW_PRI_LINK_ID: u8 attribute.
+ *	(a) Optional attribute used in subcommand, to indicate the new
+ * primary link to which the selected ML clients should be migrated to.
+ * If not provided, the driver will select a suitable primary link
+ * on its own.
+ *	(b) Used in event, to indicate the new link ID which is set
+ * as primary link.
  */
 enum qca_wlan_vendor_attr_pri_link_migrate {
        QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_INVALID = 0,
@@ -1657,4 +1663,6 @@ void ath12k_vendor_telemetry_notify_breach(struct ieee80211_vif *vif, u8 *mac_ad
 					   u8 svc_id, u8 param, bool set_clear,
 					   u8 tid, u8 *mld_addr);
 int ath12k_vendor_register(struct ath12k_hw *ah);
+int ath12k_vendor_put_umac_migration_notif(struct ieee80211_vif *vif,
+					   u8 *mld_addr, u8 link_id);
 #endif
