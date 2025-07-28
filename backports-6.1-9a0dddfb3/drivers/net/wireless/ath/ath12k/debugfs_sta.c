@@ -334,7 +334,7 @@ ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 
-	peer = ath12k_dp_peer_find(&ah->dp_hw, arsta->addr);
+	peer = ath12k_dp_peer_find_by_addr_and_sta(&ah->dp_hw, arsta->addr, sta);
 	if (!peer) {
 		goto ret;
 	}

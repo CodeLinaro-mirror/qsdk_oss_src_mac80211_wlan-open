@@ -263,7 +263,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
 	ath12k_dp_link_peer_assign(ar, arvif->vdev_id,
-				   sta ? sta->addr : NULL, arg->peer_addr,
+				   sta, arg->peer_addr,
 				   link_id, ar->hw_link_id, vif);
 
 	if (vif->type == NL80211_IFTYPE_AP)

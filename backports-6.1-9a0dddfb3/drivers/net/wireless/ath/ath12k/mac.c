@@ -1430,7 +1430,7 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	/* Delete all the self dp_peers on asserted radio
 	 */
 	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
-		ath12k_dp_peer_delete(dp_hw, arvif->bssid);
+		ath12k_dp_peer_delete(dp_hw, arvif->bssid, NULL);
 		arvif->num_stations = 0;
 	}
 
@@ -10333,6 +10333,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	int ret = 0;
+	struct ath12k_link_sta *temp_arsta = NULL;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -10365,7 +10366,12 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	ath12k_cfr_decrement_peer_count(ar, arsta);
 
 	spin_lock_bh(&ar->ab->base_lock);
-	ath12k_link_sta_rhash_delete(ar->ab, arsta);
+
+	/* To handle roaming and split phy scenario */
+	temp_arsta = ath12k_link_sta_find_by_addr(ar->ab, arsta->addr);
+	if (temp_arsta && temp_arsta->arvif->ar == ar)
+		ath12k_link_sta_rhash_delete(ar->ab, arsta);
+
 	spin_unlock_bh(&ar->ab->base_lock);
 
 	if (ahsta->links_map)
@@ -10385,6 +10391,7 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	struct ath12k_wmi_peer_create_arg peer_param = {0};
 	int ret;
+	struct ath12k_link_sta *temp_arsta = NULL;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -10396,7 +10403,18 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	}
 
 	spin_lock_bh(&ab->base_lock);
+
+	/* In case of Split PHY and roaming scenario, pdev idx
+	 * might differ but both the pdev will share same rhash
+	 * table. In that case update the rhash table if link_sta is
+	 * already present
+	 */
+	temp_arsta = ath12k_link_sta_find_by_addr(ab, arsta->addr);
+	if (temp_arsta && temp_arsta->arvif->ar != ar)
+		ath12k_link_sta_rhash_delete(ab, temp_arsta);
+
 	ret = ath12k_link_sta_rhash_add(ab, arsta);
+
 	spin_unlock_bh(&ab->base_lock);
 	if (ret) {
 		ath12k_warn(ab, "Failed to add peer: %pM to hash table", arsta->addr);
@@ -11263,7 +11281,7 @@ ml_station_remove:
 
 	if (old_state == IEEE80211_STA_NONE &&
 	    new_state == IEEE80211_STA_NOTEXIST) {
-		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr);
+		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta);
 		wiphy_work_cancel(hw->wiphy, &ahsta->set_4addr_wk);
 	}
 
@@ -11276,7 +11294,7 @@ ml_station_remove:
 
 peer_delete:
 	if (ret)
-		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr);
+		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta);
 ml_peer_id_free:
 	if (ret)
 		ath12k_peer_ml_free(ah, ahsta);
