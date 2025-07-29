@@ -15661,8 +15661,12 @@ ppe_vp_config:
 		vif->hw_queue[i] = ATH12K_HW_DEFAULT_QUEUE;
 
 	vif->driver_flags |= IEEE80211_VIF_SUPPORTS_UAPSD;
-	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET)
+	if (ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET) {
 		vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_4ADDR;
+
+		if (vif->type != NL80211_IFTYPE_AP_VLAN)
+			vif->offload_flags |= IEEE80211_OFFLOAD_ENCAP_MCAST;
+	}
 
 	ath12k_dbg(NULL, ATH12K_DBG_MAC, "Add interface vif address:%pM netdev:%s",
 		   vif->addr, wdev->netdev->name);

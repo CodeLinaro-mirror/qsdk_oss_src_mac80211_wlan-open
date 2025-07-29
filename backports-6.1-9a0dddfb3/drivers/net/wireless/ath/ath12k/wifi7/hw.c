@@ -1567,7 +1567,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	    ieee80211_has_protected(hdr->frame_control))
 		is_dvlan = true;
 
-	if (!vif->valid_links || !is_mcast || is_dvlan || is_eth ||
+	if (!vif->valid_links || !is_mcast || is_dvlan ||
+	    (is_eth && (!is_mcast || sta)) ||
 	    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags)) {
 		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
 		if (ret) {
@@ -1615,6 +1616,17 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				continue;
 			}
 
+			if (is_eth) {
+				msdu_copied = skb_clone(skb, GFP_ATOMIC);
+				if (!msdu_copied) {
+					ath12k_err(ar->ab,
+						   "skb clone failure link_id 0x%X vdevid 0x%X\n",
+						   link_id, tmp_arvif->vdev_id);
+					continue;
+				}
+				skb_cb = ATH12K_SKB_CB(msdu_copied);
+				goto skip_nwifi;
+			}
 			msdu_copied = skb_copy(skb, GFP_ATOMIC);
 			if (!msdu_copied) {
 				ath12k_err(ar->ab,
@@ -1628,6 +1640,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 								info_flags);
 
 			skb_cb = ATH12K_SKB_CB(msdu_copied);
+skip_nwifi:
 			skb_cb->link_id = link_id;
 			skb_cb->vif = vif;
 			skb_cb->u.ar = tmp_ar;
@@ -1661,10 +1674,12 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				skb_cb->cipher = key->cipher;
 				skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
 
-				hdr = (struct ieee80211_hdr *)msdu_copied->data;
-				if (!ieee80211_has_protected(hdr->frame_control))
-					hdr->frame_control |=
+				if (!is_eth) {
+					hdr = (struct ieee80211_hdr *)msdu_copied->data;
+					if (!ieee80211_has_protected(hdr->frame_control))
+						hdr->frame_control |=
 						cpu_to_le16(IEEE80211_FCTL_PROTECTED);
+				}
 			}
 			spin_unlock_bh(&tmp_ar->ab->dp->dp_lock);
 
