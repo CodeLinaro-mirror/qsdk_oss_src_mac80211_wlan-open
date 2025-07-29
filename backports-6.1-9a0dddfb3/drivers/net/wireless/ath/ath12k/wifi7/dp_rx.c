@@ -2075,7 +2075,7 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	u8 tid = rx_desc_data->tid;
 	int ret = 0;
 	bool more_frags;
-	enum hal_encrypt_type enctype = rx_desc_data->enctype;
+	enum hal_encrypt_type enctype;
 
 	frag_no = ath12k_wifi7_dp_rx_h_frag_no(ab, msdu);
 	more_frags = ath12k_wifi7_dp_rx_h_more_frags(ab, msdu);
@@ -2100,6 +2100,11 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		ret = -ENOENT;
 		goto out_unlock;
 	}
+
+	if (rx_desc_data->is_mcbc)
+		enctype = peer->sec_type_grp;
+	else
+		enctype = peer->sec_type;
 
 	if (!peer->primary_link_frag_setup) {
 		ath12k_warn(ab, "The peer %pM [%d] has uninitialized datapath\n",

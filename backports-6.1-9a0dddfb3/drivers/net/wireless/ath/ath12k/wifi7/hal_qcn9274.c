@@ -837,7 +837,6 @@ void ath12k_wifi7_hal_extract_rx_desc_data_qcn9274(struct hal_rx_desc_data *rx_d
 			ath12k_wifi7_hal_rx_h_seq_ctrl_valid_qcn9274(rx_desc);
 	rx_desc_data->fc_valid = ath12k_wifi7_hal_rx_h_fc_valid_qcn9274(rx_desc);
 	rx_desc_data->is_ip_valid = ath12k_wifi7_hal_rx_h_is_ip_valid_qcn9274(rx_desc);
-	rx_desc_data->enctype = ath12k_wifi7_hal_rx_h_enctype_qcn9274(rx_desc);
 	rx_desc_data->is_from_ds = ath12k_wifi7_hal_rx_h_from_ds_qcn9274(rx_desc);
 	rx_desc_data->is_to_ds = ath12k_wifi7_hal_rx_h_to_ds_qcn9274(rx_desc);
 }
@@ -1051,7 +1050,6 @@ const struct hal_ops hal_qcn9274_ops = {
 	.rxdesc_get_mpdu_start_addr2 =
 			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_qcn9274,
 	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_qcn9274,
-	.rx_desc_get_mpdu_ppdu_id = ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_qcn9274,
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
 	.rx_desc_get_fse_info = ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274,

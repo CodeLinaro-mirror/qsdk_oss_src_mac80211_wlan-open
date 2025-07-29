@@ -54,16 +54,6 @@ bool ath12k_wifi7_hal_encrypt_valid_qcn9274(struct hal_rx_desc *desc)
 }
 
 static inline
-u32 ath12k_wifi7_hal_rx_h_enctype_qcn9274(struct hal_rx_desc *desc)
-{
-	if (!ath12k_wifi7_hal_encrypt_valid_qcn9274(desc))
-		return HAL_ENCRYPT_TYPE_OPEN;
-
-	return le32_get_bits(desc->u.qcn9274_compact.mpdu_start.info2,
-			     RX_MPDU_START_INFO2_ENC_TYPE);
-}
-
-static inline
 u8 ath12k_wifi7_hal_rx_h_decap_type_qcn9274(struct hal_rx_desc *desc)
 {
 	return le32_get_bits(desc->u.qcn9274_compact.msdu_end.info11,
@@ -187,12 +177,6 @@ void ath12k_wifi7_hal_rx_desc_end_tlv_copy_qcn9274(struct hal_rx_desc *fdesc,
 						   struct hal_rx_desc *ldesc)
 {
 	fdesc->u.qcn9274_compact.msdu_end = ldesc->u.qcn9274_compact.msdu_end;
-}
-
-static inline
-u32 ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_qcn9274(struct hal_rx_desc *desc)
-{
-	return __le16_to_cpu(desc->u.qcn9274_compact.mpdu_start.phy_ppdu_id);
 }
 
 static inline void
