@@ -67,6 +67,9 @@ void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 		config->qos = true;
 
 	config->max_beacon_size = TARGET_MAX_BEACON_SIZE;
+
+	if (of_machine_is_compatible("qcom,ipq5424"))
+		config->def_flow_override = true;
 }
 
 void ath12k_wifi7_wmi_init_wcn7850(struct ath12k_base *ab,

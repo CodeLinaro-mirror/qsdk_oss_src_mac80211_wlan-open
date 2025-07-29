@@ -2826,6 +2826,7 @@ struct ath12k_wmi_resource_config_arg {
 	bool is_full_bw_nol_feature_supported;
 	u32 max_beacon_size;
 	bool qos;
+	bool def_flow_override;
 	u32 afc_support;
 	u32 afc_disable_timer_check;
 	u32 afc_disable_req_id_check;
@@ -2934,6 +2935,7 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT             9
 #define WMI_RSRC_CFG_HOST_AFC_INDOOR_SUPPORT                  10
 #define WMI_RSRC_CFG_HOST_AFC_OUTDOOR_SUPPORT                 11
+#define WMI_RSRC_CFG_HOST_SVC_FLAG_DEF_FLOW_OVERRIDE_SET_BIT  19
 #define WMI_RSRC_CFG_HOST_AFC_TRIGGER_ON_DEFAULT_CC_EVENT_BIT 22
 
 struct ath12k_wmi_resource_config_params {
