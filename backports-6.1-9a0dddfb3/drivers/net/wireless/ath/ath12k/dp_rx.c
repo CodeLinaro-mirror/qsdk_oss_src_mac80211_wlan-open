@@ -466,6 +466,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 		allocated_entries++;
 		rx_desc->skb = skb;
 		rx_desc->paddr = paddr;
+		rx_desc->vaddr = skb->data;
 	}
 
 	if (unlikely(is_dma_inv_done))

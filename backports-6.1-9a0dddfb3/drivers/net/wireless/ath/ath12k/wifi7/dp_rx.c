@@ -1375,6 +1375,7 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 	int tid, msdu_idx;
 	bool fast_rx = true;
 	enum ath12k_dp_rx_error ret;
+	u8 *vaddr;
 
 	rcu_read_lock();
 
@@ -1382,7 +1383,10 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 		struct hal_rx_spd_data *spd_desc_l = &rx_status_desc[msdu_idx];
 
 		msdu = spd_desc_l->msdu;
+		vaddr = spd_desc_l->vaddr;
 
+		prefetch(vaddr);
+		prefetch(&vaddr[64]);
 		prefetch(msdu);
 		prefetch(&msdu->_skb_refdst);
 		prefetch(&msdu->__pkt_type_offset);
@@ -1484,6 +1488,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct hal_rx_spd_data *rx_status_desc =
 		(struct hal_rx_spd_data *)dp_hw_grp->rx_status_buf[cpu_id];
 	struct hal_reo_dest_ring *desc;
+	struct hal_reo_dest_ring *next_desc;
 	struct ath12k_dp *partner_dp;
 	struct sk_buff_head local_msdu_list;
 	int total_msdu_reaped = 0;
@@ -1491,8 +1496,9 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct hal_srng *srng;
 	struct sk_buff *msdu;
 	bool done = true;
-	u64 desc_va;
+	u64 desc_va, next_desc_va;
 	u32 last_tp, first_msdu_tp;
+	void *next_desc_info;
 #ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
 #endif
@@ -1519,6 +1525,16 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	while ((desc = __ath12k_hal_srng_dst_get_next_cached_entry(srng, &last_tp))) {
 		struct rx_mpdu_desc_info *mpdu_info;
 		struct hal_rx_spd_data *spd_desc_l = &rx_status_desc[total_msdu_reaped];
+
+		next_desc = __ath12k_hal_srng_dst_peek(srng);
+		if (next_desc) {
+			next_desc_va = ((u64)le32_to_cpu(next_desc->buf_va_hi) << 32 |
+						le32_to_cpu(next_desc->buf_va_lo));
+			next_desc_info = (void *)((unsigned long)next_desc_va);
+
+			if (next_desc_info)
+				prefetch(next_desc_info);
+		}
 
 		desc_va = ((u64)le32_to_cpu(desc->buf_va_hi) << 32 |
 			   le32_to_cpu(desc->buf_va_lo));
@@ -1575,6 +1591,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 					     DP_RX_BUFFER_SIZE,
 					     DMA_FROM_DEVICE);
 
+		spd_desc_l->vaddr = desc_info->vaddr;
 		msdu = desc_info->skb;
 		desc_info->skb = NULL;
 

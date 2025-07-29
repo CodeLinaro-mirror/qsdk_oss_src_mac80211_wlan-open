@@ -546,6 +546,10 @@ struct rx_tlv_info_1 {
 
 struct hal_rx_spd_data {
 	union {
+		u64 info4;
+		u8 *vaddr;
+	};
+	union {
 		u64 info3;
 		struct sk_buff *msdu;
 	};
@@ -576,10 +580,13 @@ struct hal_rx_spd_data {
 			    looping_count                       :  4;
 		};
 	};
+	u64 rsvd0;
+	u64 rsvd1;
+	u64 rsvd2;
 } __packed;
 
-static_assert(sizeof(struct hal_rx_spd_data) == 32,
-	      "size of struct hal_rx_spd_data is not 32 bytes!");
+static_assert(sizeof(struct hal_rx_spd_data) == 64,
+	      "size of struct hal_rx_spd_data is not 64 bytes!");
 
 struct hal_reo_status_queue_stats {
 	u16 ssn;

@@ -396,6 +396,15 @@ void *ath12k_hal_srng_dst_peek(struct ath12k_base *ab, struct hal_srng *srng)
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_peek);
 
+void *__ath12k_hal_srng_dst_peek(struct hal_srng *srng)
+{
+	if (srng->u.dst_ring.tp != srng->u.dst_ring.cached_hp)
+		return (srng->ring_base_vaddr + srng->u.dst_ring.tp);
+
+	return NULL;
+}
+EXPORT_SYMBOL(__ath12k_hal_srng_dst_peek);
+
 void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng)
 {
@@ -443,6 +452,7 @@ void *__ath12k_hal_srng_dst_get_next_cached_entry(struct hal_srng *srng,
 	if (old_tp)
 		*old_tp = srng->u.dst_ring.tp;
 
+	prefetch(srng->ring_base_vaddr + srng->u.dst_ring.tp);
 	return desc;
 }
 EXPORT_SYMBOL(__ath12k_hal_srng_dst_get_next_cached_entry);

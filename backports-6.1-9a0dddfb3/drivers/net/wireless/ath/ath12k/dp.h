@@ -32,7 +32,7 @@
 #define TX_STATUS_ENTRY_MAX_SIZE    64
 #define TX_STATUS_BUFFER_SIZE       (TX_STATUS_ENTRY_MAX_SIZE * MAX_NAPI_BUDGET)
 
-#define RX_STATUS_ENTRY_MAX_SIZE    32
+#define RX_STATUS_ENTRY_MAX_SIZE    64
 #define RX_STATUS_BUFFER_SIZE       (RX_STATUS_ENTRY_MAX_SIZE * MAX_NAPI_BUDGET)
 
 extern struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params;
@@ -340,12 +340,14 @@ struct ath12k_hp_update_timer {
 struct ath12k_rx_desc_info {
 	struct list_head list;
 	dma_addr_t paddr;
+	u8 *vaddr;
 	u32 cookie;
 	u8 in_use	: 1,
 	   device_id	: 3,
 	   reserved	: 4;
 	struct sk_buff *skb;
 	u32 magic;
+	u64 rsvd0;
 };
 
 struct ath12k_tx_desc_info {
