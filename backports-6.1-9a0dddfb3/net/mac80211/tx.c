@@ -5067,7 +5067,7 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	struct ethhdr *ehdr = (struct ethhdr *)skb->data;
 	struct ieee80211_key *key = NULL;
 	struct sta_info *sta;
-	bool is_eapol;
+	bool is_eapol, is_mcast_offload = false;
 
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
        ieee80211_xmit_nss_fixup(skb, dev);
@@ -5085,9 +5085,15 @@ netdev_tx_t __ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	}
 
 	is_eapol = (sdata->control_port_protocol == ehdr->h_proto);
+	is_mcast_offload = is_multicast_ether_addr(skb->data) &&
+			   !!(sdata->vif.offload_flags & IEEE80211_OFFLOAD_ENCAP_MCAST);
+
 	if (ieee80211_hw_check(&sdata->local->hw, SUPPORTS_NSS_OFFLOAD)) {
 		if (unlikely(IS_ERR_OR_NULL(sta) || !sta->uploaded))
 			sta = NULL;
+		goto tx_offload;
+	} else if (unlikely((IS_ERR_OR_NULL(sta) && is_mcast_offload))) {
+		sta = NULL;
 		goto tx_offload;
 	} else if (unlikely(IS_ERR_OR_NULL(sta) || !sta->uploaded ||
 	    (!test_sta_flag(sta, WLAN_STA_AUTHORIZED) && !is_eapol) ||
