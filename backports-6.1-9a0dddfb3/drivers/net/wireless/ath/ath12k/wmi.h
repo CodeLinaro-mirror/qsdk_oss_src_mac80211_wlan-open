@@ -6642,6 +6642,7 @@ struct wmi_ctrl_path_stats_ev_param {
 
 struct wmi_ctrl_path_stats_list {
 	struct list_head list;
+	u32 tagid;
 	void *stats_ptr;
 } __packed;
 
@@ -9167,7 +9168,8 @@ int ath12k_wmi_pdev_multiple_vdev_restart(struct ath12k *ar,
 					  struct wmi_pdev_multiple_vdev_restart_req_arg *arg);
 void ath12k_wmi_peer_chan_width_switch_work(struct wiphy *wiphy, struct wiphy_work *work);
 int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
-                                          struct ath12k *ar);
+	struct ath12k *ar,
+	struct wmi_request_ctrl_path_stats_cmd_fixed_param *param);
 int ath12k_wmi_send_vdev_set_tpc_power(struct ath12k *ar,
 				       u32 vdev_id,
 				       struct ath12k_reg_tpc_power_info *param);

@@ -1622,7 +1622,7 @@ int ath12k_core_pdev_enable_telemetry_stats(struct ath12k_base *ab)
 		pdev = &ab->pdevs[i];
 		if (pdev) {
 			ar = pdev->ar;
-			ret = ath12k_wmi_pdev_enable_telemetry_stats(ab, ar);
+			ret = ath12k_wmi_pdev_enable_telemetry_stats(ab, ar, NULL);
 			if (ret) {
 				ath12k_err(ab,
 					   "Failed to enable pdev telemetry stats for pdev id:%d\n",

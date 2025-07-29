@@ -987,6 +987,7 @@ struct ath12k_debug {
 	struct ath12k_dbg_htt_stats htt_stats;
 	struct ath12k_wmi_ctrl_path_stats_list wmi_ctrl_path_stats;
 	enum wmi_tlv_tag wmi_ctrl_path_stats_tagid;
+	struct list_head period_wmi_list;
 	struct completion wmi_ctrl_path_stats_rcvd;
 	u8 wmi_ctrl_path_stats_reqid;
 	/* To protect wmi_list manipulation */

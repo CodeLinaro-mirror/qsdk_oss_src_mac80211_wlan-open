@@ -293,11 +293,12 @@ const char *mgmt_frame_name[] = { "AssocReq",
 			    "Action"};
 
 int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
-                                           struct ath12k *ar)
+	struct ath12k *ar,
+	struct wmi_request_ctrl_path_stats_cmd_fixed_param *param)
 {
        struct ath12k_wmi_pdev *wmi = ar->wmi;
        enum ath12k_type_req_ctrl_path_stats_id req_id = TYPE_REQ_CTRL_PATH_PMLO_STAT;
-       struct wmi_request_ctrl_path_stats_cmd_fixed_param *cmd;
+	struct wmi_request_ctrl_path_stats_cmd_fixed_param *cmd;
        u32 pdev_id_array;
        u32 num_pdev_ids = 1;
        int len, ret;
@@ -305,8 +306,8 @@ int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
        struct sk_buff *skb;
        void *ptr;
 
-       len = sizeof(struct wmi_request_ctrl_path_stats_cmd_fixed_param) +
-             TLV_HDR_SIZE + (sizeof(u32) * (num_pdev_ids));
+	len = sizeof(struct wmi_request_ctrl_path_stats_cmd_fixed_param) +
+		TLV_HDR_SIZE + (sizeof(u32) * (num_pdev_ids));
 
        skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
        if (!skb)
@@ -317,9 +318,16 @@ int ath12k_wmi_pdev_enable_telemetry_stats(struct ath12k_base *ab,
                                                 sizeof(*cmd));
 
        cmd->stats_id_mask = (1 << WMI_REQ_CTRL_PATH_PMLO_STAT);
-       cmd->request_id = req_id;
-       cmd->action = WMI_REQUEST_CTRL_PATH_STAT_PERIODIC_PUBLISH;
-       cmd->subid = ATH12K_WMI_SUBID_PERIODICITY_1_SEC;
+	if (!param) {
+		cmd->request_id = req_id;
+		cmd->action = WMI_REQUEST_CTRL_PATH_STAT_PERIODIC_PUBLISH;
+		cmd->subid = ATH12K_WMI_SUBID_PERIODICITY_1_SEC;
+	} else {
+		cmd->request_id = param->request_id;
+		cmd->action = param->action;
+		cmd->subid = param->subid;
+	}
+
        pdev_id_array = ar->pdev->pdev_id;
 
        ptr = skb->data + sizeof(*cmd);
@@ -12523,6 +12531,7 @@ int wmi_print_ctrl_path_pdev_tx_stats_tlv(struct ath12k_base *ab, u16 len, const
 
 	memcpy(pdev_stats, pdev_stats_skb, sizeof(struct wmi_ctrl_path_pdev_stats_params));
 	stats->stats_ptr = pdev_stats;
+	stats->tagid = WMI_TAG_CTRL_PATH_PDEV_STATS;
 	list_add_tail(&stats->list, &stats_buff->list);
 
 	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_stats_skb->pdev_id + 1);
@@ -12562,6 +12571,7 @@ int wmi_print_ctrl_path_cal_stats_tlv(struct ath12k_base *ab, u16 len,
 
 	memcpy(cal_stats, cal_stats_skb, sizeof(struct wmi_ctrl_path_cal_stats));
 	stats->stats_ptr = cal_stats;
+	stats->tagid = WMI_CTRL_PATH_CAL_STATS;
 	list_add_tail(&stats->list, &stats_buff->list);
 
 	ar = ath12k_mac_get_ar_by_pdev_id(ab, cal_stats_skb->pdev_id + 1);
@@ -12604,6 +12614,7 @@ int wmi_print_ctrl_path_btcoex_stats_tlv(struct ath12k_base *ab, u16 len,
 
 	memcpy(btcoex_stats, btcoex_stats_skb, sizeof(*btcoex_stats));
 	stats->stats_ptr = btcoex_stats;
+	stats->tagid = WMI_CTRL_PATH_BTCOEX_STATS;
 	list_add_tail(&stats->list, &stats_buff->list);
 
 	ar = ath12k_mac_get_ar_by_pdev_id(ab, btcoex_stats_skb->pdev_id + 1);
@@ -12717,6 +12728,7 @@ int wmi_print_ctrl_path_mem_stats_tlv(struct ath12k_base *ab, u16 len,
 
 		memcpy(mem_stats, mem_stats_skb, sizeof(*mem_stats));
 		stats->stats_ptr = mem_stats;
+		stats->tagid = WMI_CTRL_PATH_MEM_STATS;
 		list_add_tail(&stats->list, &stats_buff->list);
 
 		spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
@@ -12774,6 +12786,7 @@ int wmi_print_ctrl_path_afc_stats_tlv(struct ath12k_base *ab, u16 len,
 
 	memcpy(afc_stats, afc_stats_skb, sizeof(*afc_stats));
 	stats->stats_ptr = afc_stats;
+	stats->tagid = WMI_CTRL_PATH_AFC_STATS;
 	list_add_tail(&stats->list, &stats_buff->list);
 
 	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
@@ -12805,6 +12818,7 @@ int wmi_print_ctrl_path_pmlo_stats_tlv(struct ath12k_base *ab, u16 len, const vo
 
        memcpy(pmlo_stats, pmlo_stats_skb, sizeof(struct wmi_ctrl_path_pmlo_telemetry_stats));
        stats->stats_ptr = pmlo_stats;
+	stats->tagid = WMI_CTRL_PATH_PMLO_STATS;
        list_add_tail(&stats->list, &stats_buff->list);
 
        ar = ath12k_mac_get_ar_by_pdev_id(ab, pmlo_stats_skb->pdev_id);
@@ -12827,9 +12841,9 @@ int wmi_print_ctrl_path_pmlo_stats_tlv(struct ath12k_base *ab, u16 len, const vo
        ar->stats.telemetry_stats.estimated_air_time_ac_vo =
                u32_get_bits(value, GENMASK(31, 24));
 
-	ath12k_wmi_crl_path_stats_list_free(ar,
-					    &ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.period_wmi_list);
        spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
+	ar->debug.wmi_ctrl_path_stats_tagid = WMI_CTRL_PATH_PMLO_STATS;
        stats_buff->ar = ar;
        return 0;
 }
@@ -12978,19 +12992,21 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 	}
 
 	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
+	if (tag_id == WMI_CTRL_PATH_PMLO_STATS)
+		list_splice_tail_init(&param.list, &ar->debug.period_wmi_list);
+	else
+		list_splice_tail_init(src, dst);
 	if (!more) {
 		if (!ar->debug.wmi_ctrl_path_stats_more_enabled)
 			ath12k_wmi_crl_path_stats_list_free(ar, &stats->pdev_stats);
 		else
 			ar->debug.wmi_ctrl_path_stats_more_enabled = false;
-		list_splice_tail_init(src, dst);
 		complete(&ar->debug.wmi_ctrl_path_stats_rcvd);
 	} else {
 		if (!ar->debug.wmi_ctrl_path_stats_more_enabled) {
 			ath12k_wmi_crl_path_stats_list_free(ar, &stats->pdev_stats);
 			ar->debug.wmi_ctrl_path_stats_more_enabled = true;
 		}
-		list_splice_tail_init(src, dst);
 	}
 	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
 	return;
@@ -15494,6 +15510,7 @@ int
 ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
 				   struct wmi_ctrl_path_stats_arg *arg)
 {
+	struct wmi_request_ctrl_path_stats_cmd_fixed_param fixed_cmd;
 	struct wmi_ctrl_path_stats_cmd *cmd;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct ath12k_base *ab = wmi->wmi_ab->ab;
@@ -15530,7 +15547,11 @@ ath12k_wmi_send_wmi_ctrl_stats_cmd(struct ath12k *ar,
 		break;
 		/* Add case for newly wmi ctrl path stats here */
 	case WMI_REQ_CTRL_PATH_PMLO_STAT:
-		return ath12k_wmi_pdev_enable_telemetry_stats(ab, ar);
+		fixed_cmd.request_id = arg->req_id;
+		fixed_cmd.action = arg->action;
+		fixed_cmd.subid = 0;
+		return ath12k_wmi_pdev_enable_telemetry_stats(ab, ar,
+							      &fixed_cmd);
 	default:
 		ath12k_warn(ab, "Unsupported stats id %d", arg->stats_id);
 		return -EIO;

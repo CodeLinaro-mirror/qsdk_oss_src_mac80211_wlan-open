@@ -216,129 +216,136 @@ static const struct file_operations fops_wsi_bypass_device = {
 	.open = simple_open,
 };
 
-int wmi_ctrl_path_awgn_stat(struct ath12k *ar, char __user *ubuf,
-			    size_t count, loff_t *ppos)
+static int print_btcoex_stats(char *buf, int size, void *stats_ptr)
 {
-	struct wmi_ctrl_path_stats_list *stats;
-	struct wmi_ctrl_path_awgn_stats *awgn_stats;
-	const int size = 2048;
-	int len = 0, ret_val;
-	char *buf;
-
-	buf = kzalloc(size, GFP_KERNEL);
-
-	if (!buf)
-		return -ENOMEM;
-
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
-	list_for_each_entry(stats, &ar->debug.wmi_ctrl_path_stats.pdev_stats, list) {
-
-		if (!stats)
-			break;
-		awgn_stats = stats->stats_ptr;
-
-		if (!awgn_stats)
-			break;
-
-		len += scnprintf(buf + len, size - len,
-				 "WMI_CTRL_PATH_AWGN_STATS_TLV:\n");
-		len += scnprintf(buf + len, size - len,
-				 "awgn_send_evt_cnt = %u\n",
-				 awgn_stats->awgn_send_evt_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_pri_int_cnt = %u\n",
-				 awgn_stats->awgn_pri_int_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_sec_int_cnt = %u\n",
-				 awgn_stats->awgn_sec_int_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_pkt_drop_trigger_cnt = %u\n",
-				 awgn_stats->awgn_pkt_drop_trigger_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_pkt_drop_trigger_reset_cnt = %u\n",
-				 awgn_stats->awgn_pkt_drop_trigger_reset_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_bw_drop_cnt = %u\n",
-				 awgn_stats->awgn_bw_drop_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_bw_drop_reset_cnt = %u\n",
-				 awgn_stats->awgn_bw_drop_reset_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_cca_int_cnt = %u\n",
-				 awgn_stats->awgn_cca_int_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_cca_int_reset_cnt = %u\n",
-				 awgn_stats->awgn_cca_int_reset_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_cca_ack_blk_cnt = %u\n",
-				 awgn_stats->awgn_cca_ack_blk_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_cca_ack_reset_cnt = %u\n",
-				 awgn_stats->awgn_cca_ack_reset_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "awgn_int_bw_cnt-AWGN_20[0]: %u\n",
-				 awgn_stats->awgn_int_bw_cnt[0]);
-		len += scnprintf(buf + len, size - len,
-				 "AWGN_40[1]: %u\n",
-				 awgn_stats->awgn_int_bw_cnt[1]);
-		len += scnprintf(buf + len, size - len,
-				 "AWGN_80[2]: %u\n",
-				 awgn_stats->awgn_int_bw_cnt[2]);
-		len += scnprintf(buf + len, size - len,
-				 "AWGN_160[3]: %u\n",
-				 awgn_stats->awgn_int_bw_cnt[3]);
-		len += scnprintf(buf + len, size - len,
-				 "AWGN_320[5]: %u\n",
-				 awgn_stats->awgn_int_bw_cnt[5]);
-	}
-	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
-	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
-	kfree(buf);
-
-	return ret_val;
-}
-
-int wmi_ctrl_path_cal_stat(struct ath12k *ar, char __user *ubuf,
-			   size_t count, loff_t *ppos)
-{
-	const int size = 4096;
-	char *buf;
-	u8 cal_type_mask, cal_prof_mask, is_periodic_cal;
-	int len = 0, ret_val;
-	struct wmi_ctrl_path_stats_list *stats;
-	struct wmi_ctrl_path_cal_stats *cal_stats;
-
-	buf = kzalloc(size, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
+	struct wmi_ctrl_path_btcoex_stats *btcoex_stats = stats_ptr;
+	int len = 0;
 
 	len += scnprintf(buf + len, size - len,
-			"WMI_CTRL_PATH_CAL_STATS\n");
+				"WMI_CTRL_PATH_BTCOEX_STATS:\n");
+		len += scnprintf(buf + len, size - len,
+				"pdev_id = %u\n",
+				btcoex_stats->pdev_id);
+		len += scnprintf(buf + len, size - len,
+				"bt_tx_req_cntr = %u\n",
+				btcoex_stats->bt_tx_req_cntr);
+		len += scnprintf(buf + len, size - len,
+				"bt_rx_req_cntr = %u\n",
+				btcoex_stats->bt_rx_req_cntr);
+		len += scnprintf(buf + len, size - len,
+				"bt_req_nack_cntr = %u\n",
+				btcoex_stats->bt_req_nack_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_nack_schd_bt_reason_cntr = %u\n",
+				btcoex_stats->wl_tx_req_nack_schd_bt_reason_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_nack_current_bt_reason_cntr = %u\n",
+				btcoex_stats->wl_tx_req_nack_current_bt_reason_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_nack_other_wlan_tx_reason_cntr = %u\n",
+				btcoex_stats->wl_tx_req_nack_other_wlan_tx_reason_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_in_tx_abort_cntr = %u\n",
+				btcoex_stats->wl_in_tx_abort_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_auto_resp_req_cntr = %u\n",
+				btcoex_stats->wl_tx_auto_resp_req_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_ack_cntr = %u\n",
+				btcoex_stats->wl_tx_req_ack_cntr);
+		len += scnprintf(buf + len, size - len,
+				"wl_tx_req_cntr = %u\n",
+				btcoex_stats->wl_tx_req_cntr);
+	return len;
+}
+static int print_mem_stats(char *buf, int size, void *stats_ptr)
+{   struct wmi_ctrl_path_mem_stats_params *mem_stats = stats_ptr;
+	int len = 0;
+
+	len += scnprintf(buf + len, size - len, "WMI_CTRL_PATH_MEM_STATS:\n");
+
+	if (mem_stats->total_bytes) {
+		u32 arena_id = __le32_to_cpu(mem_stats->arena_id);
+		len += scnprintf(buf + len, size - len,
+				 "arena_id = %u\n",
+				 arena_id);
+		len += scnprintf(buf + len, size - len,
+				 "arena = %s\n",
+				 wmi_ctrl_path_fw_arena_id_to_name(arena_id));
+		len += scnprintf(buf + len, size - len,
+				 "total_bytes = %u\n",
+				 __le32_to_cpu(mem_stats->total_bytes));
+		len += scnprintf(buf + len, size - len,
+				 "allocated_bytes = %u\n",
+				 __le32_to_cpu(mem_stats->allocated_bytes));
+	}
+
+	return len;
+
+}
+static int print_awgn_stats(char *buf, int size, void *stats_ptr)
+{
+	struct wmi_ctrl_path_awgn_stats *awgn_stats = stats_ptr;
+	int len = 0;
+
+	len += scnprintf(buf + len, size - len, "WMI_CTRL_PATH_AWGN_STATS_TLV:\n");
+	len += scnprintf(buf + len, size - len, "awgn_send_evt_cnt = %u\n",
+			 awgn_stats->awgn_send_evt_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_pri_int_cnt = %u\n",
+			 awgn_stats->awgn_pri_int_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_sec_int_cnt = %u\n",
+			 awgn_stats->awgn_sec_int_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_pkt_drop_trigger_cnt = %u\n",
+			 awgn_stats->awgn_pkt_drop_trigger_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_pkt_drop_trigger_reset_cnt = %u\n",
+			 awgn_stats->awgn_pkt_drop_trigger_reset_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_bw_drop_cnt = %u\n",
+			 awgn_stats->awgn_bw_drop_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_bw_drop_reset_cnt = %u\n",
+			 awgn_stats->awgn_bw_drop_reset_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_cca_int_cnt = %u\n",
+			 awgn_stats->awgn_cca_int_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_cca_int_reset_cnt = %u\n",
+			 awgn_stats->awgn_cca_int_reset_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_cca_ack_blk_cnt = %u\n",
+			 awgn_stats->awgn_cca_ack_blk_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_cca_ack_reset_cnt = %u\n",
+			 awgn_stats->awgn_cca_ack_reset_cnt);
+	len += scnprintf(buf + len, size - len, "awgn_int_bw_cnt-AWGN_20[0]: %u\n",
+			 awgn_stats->awgn_int_bw_cnt[0]);
+	len += scnprintf(buf + len, size - len, "AWGN_40[1]: %u\n",
+			 awgn_stats->awgn_int_bw_cnt[1]);
+	len += scnprintf(buf + len, size - len, "AWGN_80[2]: %u\n",
+			 awgn_stats->awgn_int_bw_cnt[2]);
+	len += scnprintf(buf + len, size - len, "AWGN_160[3]: %u\n",
+			 awgn_stats->awgn_int_bw_cnt[3]);
+	len += scnprintf(buf + len, size - len, "AWGN_320[5]: %u\n",
+			 awgn_stats->awgn_int_bw_cnt[5]);
+
+	return len;
+}
+
+static int print_cal_stats(char *buf, int size, void *stats_ptr)
+{
+	u8 cal_type_mask, cal_prof_mask, is_periodic_cal;
+	struct wmi_ctrl_path_cal_stats *cal_stats = stats_ptr;
+	int len = 0;
+
+	len += scnprintf(buf + len, size - len, "WMI_CTRL_PATH_CAL_STATS\n");
 	len += scnprintf(buf + len, size - len,
 			"%-25s %-25s %-17s %-16s %-16s %-16s\n",
 			"cal_profile", "cal_type",
 			"cal_triggered_cnt", "cal_fail_cnt",
 			"cal_fcs_cnt", "cal_fcs_fail_cnt");
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
-	list_for_each_entry(stats, &ar->debug.wmi_ctrl_path_stats.pdev_stats, list) {
-		if (!stats)
-			break;
-
-		cal_stats = stats->stats_ptr;
-
-		if (!cal_stats)
-			break;
-
-		cal_prof_mask = FIELD_GET(WMI_CTRL_PATH_CAL_PROF_MASK,
+	cal_prof_mask = FIELD_GET(WMI_CTRL_PATH_CAL_PROF_MASK,
 				cal_stats->cal_info);
-		if (cal_prof_mask == WMI_CTRL_PATH_STATS_CAL_PROFILE_INVALID)
-			continue;
+	if (cal_prof_mask == WMI_CTRL_PATH_STATS_CAL_PROFILE_INVALID)
+		return len;
 
-		cal_type_mask = FIELD_GET(WMI_CTRL_PATH_CAL_TYPE_MASK,
-				cal_stats->cal_info);
-		is_periodic_cal = FIELD_GET(WMI_CTRL_PATH_IS_PERIODIC_CAL,
+	cal_type_mask = FIELD_GET(WMI_CTRL_PATH_CAL_TYPE_MASK,
+			cal_stats->cal_info);
+	is_periodic_cal = FIELD_GET(WMI_CTRL_PATH_IS_PERIODIC_CAL,
 				cal_stats->cal_info);
 
 
@@ -360,195 +367,160 @@ int wmi_ctrl_path_cal_stat(struct ath12k *ar, char __user *ubuf,
 			   cal_stats->cal_fail_cnt,
 			   cal_stats->cal_fcs_cnt,
 			   cal_stats->cal_fcs_fail_cnt);
-		}
-
 	}
 
-	ath12k_wmi_crl_path_stats_list_free(ar, &ar->debug.wmi_ctrl_path_stats.pdev_stats);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
-	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
-	kfree(buf);
-	return ret_val;
+	return len;
 }
 
-static int wmi_ctrl_path_afc_stat(struct ath12k *ar, char __user *ubuf,
-				  size_t count, loff_t *ppos)
+static int print_afc_stats(char *buf, int size, void *stats_ptr)
 {
-	struct wmi_ctrl_path_stats_list *stats, *tmp;
-	struct wmi_ctrl_path_afc_stats *afc_stats;
-	LIST_HEAD(wmi_stats_list);
-	const int size = 2048;
-	int len = 0, ret_val;
-	char *buf;
+	struct wmi_ctrl_path_afc_stats *afc_stats = stats_ptr;
+	int len = 0;
 
-	buf = kzalloc(size, GFP_KERNEL);
+	len += scnprintf(buf + len, size - len, "WMI_CTRL_PATH_AFC_STATS_TLV:\n");
+	len += scnprintf(buf + len, size - len, "\n");
+	len += scnprintf(buf + len, size - len, "****General AFC counters****\n");
 
-	if (!buf)
-		return -ENOMEM;
+	len += scnprintf(buf + len, size - len,
+			 "Total request ID = %u\n",
+			 __le32_to_cpu(afc_stats->request_id_count));
 
-	if (!list_empty(&wmi_stats_list)) {
-		len += scnprintf(buf + len, size - len, "WMI_CTRL_PATH_AFC_STATS_TLV:\n");
-		len += scnprintf(buf + len, size - len, "\n");
-		len += scnprintf(buf + len, size - len, "****General AFC counters****\n");
-	}
+	len += scnprintf(buf + len, size - len,
+			 "Total payload count = %u\n",
+			 __le32_to_cpu(afc_stats->response_count));
 
-	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
-	list_splice_tail_init(&ar->debug.wmi_ctrl_path_stats.pdev_stats, &wmi_stats_list);
-	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
-	list_for_each_entry_safe(stats, tmp, &wmi_stats_list, list) {
-		if (!stats)
-			break;
+	len += scnprintf(buf + len, size - len,
+			 "Total invalid payload count = %u\n",
+			 __le32_to_cpu(afc_stats->invalid_response_count));
 
-		afc_stats = stats->stats_ptr;
+	len += scnprintf(buf + len, size - len,
+			 "Total AFC reset count = %u\n",
+			 __le32_to_cpu(afc_stats->reset_count));
 
-		if (!afc_stats)
-			break;
+	len += scnprintf(buf + len, size - len, "\n");
+	len += scnprintf(buf + len, size - len,
+			 "****AFC Payload Response error counters****\n");
 
-		len += scnprintf(buf + len, size - len,
-				 "Total request ID = %u\n",
-				 __le32_to_cpu(afc_stats->request_id_count));
+	len += scnprintf(buf + len, size - len,
+			 "Payload id mismatch count = %u\n",
+			 __le32_to_cpu(afc_stats->id_mismatch_count));
 
-		len += scnprintf(buf + len, size - len,
-				 "Total payload count = %u\n",
-				 __le32_to_cpu(afc_stats->response_count));
+	len += scnprintf(buf + len, size - len,
+			 "Local error code success = %u\n",
+			 __le32_to_cpu(afc_stats->local_err_code_success));
 
-		len += scnprintf(buf + len, size - len,
-				 "Total invalid payload count = %u\n",
-				 __le32_to_cpu(afc_stats->invalid_response_count));
+	len += scnprintf(buf + len, size - len,
+			 "Local error code failure = %u\n",
+			 __le32_to_cpu(afc_stats->local_err_code_failure));
 
-		len += scnprintf(buf + len, size - len,
-				 "Total AFC reset count = %u\n",
-				 __le32_to_cpu(afc_stats->reset_count));
+	len += scnprintf(buf + len, size - len, "\n");
+	len += scnprintf(buf + len, size - len,
+			 "****AFC Server Response error counters****\n");
 
-		len += scnprintf(buf + len, size - len, "\n");
-		len += scnprintf(buf + len, size - len,
-				 "****AFC Payload Response error counters****\n");
+	len += scnprintf(buf + len, size - len,
+			 "Code_100 | Version not supported = %u\n",
+			 __le32_to_cpu(afc_stats->serv_resp_code_100));
 
-		len += scnprintf(buf + len, size - len,
-				 "Payload id mismatch count = %u\n",
-				 __le32_to_cpu(afc_stats->id_mismatch_count));
+	len += scnprintf(buf + len, size - len,
+			 "Code_101 | Device disallowed = %u\n",
+			 __le32_to_cpu(afc_stats->serv_resp_code_101));
 
-		len += scnprintf(buf + len, size - len,
-				 "Local error code success = %u\n",
-				 __le32_to_cpu(afc_stats->local_err_code_success));
+	len += scnprintf(buf + len, size - len,
+			 "Code_102 | Missing Param = %u\n",
+			 __le32_to_cpu(afc_stats->serv_resp_code_102));
 
-		len += scnprintf(buf + len, size - len,
-				 "Local error code failure = %u\n",
-				 __le32_to_cpu(afc_stats->local_err_code_failure));
+	len += scnprintf(buf + len, size - len,
+			 "Code_103 | Invalid value = %u\n",
+			 __le32_to_cpu(afc_stats->serv_resp_code_103));
 
-		len += scnprintf(buf + len, size - len, "\n");
-		len += scnprintf(buf + len, size - len,
-				 "****AFC Server Response error counters****\n");
+	len += scnprintf(buf + len, size - len,
+			 "Code_106 | Unexpected param = %u\n",
+			 __le32_to_cpu(afc_stats->serv_resp_code_106));
 
-		len += scnprintf(buf + len, size - len,
-				 "Code_100 | Version not supported = %u\n",
-				 __le32_to_cpu(afc_stats->serv_resp_code_100));
+	len += scnprintf(buf + len, size - len,
+			 "Code_300 | Unsupported spectrum = %u\n",
+			 __le32_to_cpu(afc_stats->serv_resp_code_300));
 
-		len += scnprintf(buf + len, size - len,
-				 "Code_101 | Device disallowed = %u\n",
-				 __le32_to_cpu(afc_stats->serv_resp_code_101));
+	len += scnprintf(buf + len, size - len, "\n");
+	len += scnprintf(buf + len, size - len,
+			 "****AFC Compliance tracker****\n");
 
-		len += scnprintf(buf + len, size - len,
-				 "Code_102 | Missing Param = %u\n",
-				 __le32_to_cpu(afc_stats->serv_resp_code_102));
+	len += scnprintf(buf + len, size - len,
+			 "Proxy_standalone 0 = %u\n",
+			 __le32_to_cpu(afc_stats->proxy_standalone_0));
 
-		len += scnprintf(buf + len, size - len,
-				 "Code_103 | Invalid value = %u\n",
-				 __le32_to_cpu(afc_stats->serv_resp_code_103));
+	len += scnprintf(buf + len, size - len,
+			 "Proxy_standalone 1 = %u\n",
+			 __le32_to_cpu(afc_stats->proxy_standalone_1));
 
-		len += scnprintf(buf + len, size - len,
-				 "Code_106 | Unexpected param = %u\n",
-				 __le32_to_cpu(afc_stats->serv_resp_code_106));
+	len += scnprintf(buf + len, size - len,
+			 "Successful power event sent count = %u\n",
+			 __le32_to_cpu(afc_stats->power_event_counter));
 
-		len += scnprintf(buf + len, size - len,
-				 "Code_300 | Unsupported spectrum = %u\n",
-				 __le32_to_cpu(afc_stats->serv_resp_code_300));
+	len += scnprintf(buf + len, size - len,
+			 "Force LPI switch count = %u\n",
+			 __le32_to_cpu(afc_stats->force_LPI_counter));
 
-		len += scnprintf(buf + len, size - len, "\n");
-		len += scnprintf(buf + len, size - len,
-				 "****AFC Compliance tracker****\n");
+	len += scnprintf(buf + len, size - len,
+			 "TPC WMI success count = %u\n",
+			 __le32_to_cpu(afc_stats->tpc_wmi_success_count));
 
-		len += scnprintf(buf + len, size - len,
-				 "Proxy_standalone 0 = %u\n",
-				 __le32_to_cpu(afc_stats->proxy_standalone_0));
+	len += scnprintf(buf + len, size - len,
+			 "TPC WMI failure count = %u\n",
+			 __le32_to_cpu(afc_stats->tpc_wmi_failure_count));
 
-		len += scnprintf(buf + len, size - len,
-				 "Proxy_standalone 1 = %u\n",
-				 __le32_to_cpu(afc_stats->proxy_standalone_1));
+	len += scnprintf(buf + len, size - len, "\n");
+	len += scnprintf(buf + len, size - len,
+			 "****AFC Regulatory Compliance check counter****\n");
 
-		len += scnprintf(buf + len, size - len,
-				 "Successful power event sent count = %u\n",
-				 __le32_to_cpu(afc_stats->power_event_counter));
+	len += scnprintf(buf + len, size - len,
+			 "psd failure = %u\n",
+			 __le32_to_cpu(afc_stats->psd_failure_count));
 
-		len += scnprintf(buf + len, size - len,
-				 "Force LPI switch count = %u\n",
-				 __le32_to_cpu(afc_stats->force_LPI_counter));
+	len += scnprintf(buf + len, size - len,
+			 "psd end freq failure = %u\n",
+			 __le32_to_cpu(afc_stats->psd_end_freq_failure_count));
 
-		len += scnprintf(buf + len, size - len,
-				 "TPC WMI success count = %u\n",
-				 __le32_to_cpu(afc_stats->tpc_wmi_success_count));
+	len += scnprintf(buf + len, size - len,
+			 "psd start freq failure = %u\n",
+			 __le32_to_cpu(afc_stats->psd_start_freq_failure_count));
 
-		len += scnprintf(buf + len, size - len,
-				 "TPC WMI failure count = %u\n",
-				 __le32_to_cpu(afc_stats->tpc_wmi_failure_count));
+	len += scnprintf(buf + len, size - len,
+			 "eirp failure = %u\n",
+			 __le32_to_cpu(afc_stats->eirp_failure_count));
 
-		len += scnprintf(buf + len, size - len, "\n");
-		len += scnprintf(buf + len, size - len,
-				 "****AFC Regulatory Compliance check counter****\n");
+	len += scnprintf(buf + len, size - len,
+			 "centre freq failure = %u\n",
+			 __le32_to_cpu(afc_stats->cfreq_failure_count));
 
-		len += scnprintf(buf + len, size - len,
-				 "psd failure = %u\n",
-				 __le32_to_cpu(afc_stats->psd_failure_count));
+	len += scnprintf(buf + len, size - len, "\n");
+	len += scnprintf(buf + len, size - len,
+			 "****AFC Miscellaneous stats****\n");
 
-		len += scnprintf(buf + len, size - len,
-				 "psd end freq failure = %u\n",
-				 __le32_to_cpu(afc_stats->psd_end_freq_failure_count));
+	len += scnprintf(buf + len, size - len,
+			 "Current request ID = %u\n",
+			 __le32_to_cpu(afc_stats->request_id));
 
-		len += scnprintf(buf + len, size - len,
-				 "psd start freq failure = %u\n",
-				 __le32_to_cpu(afc_stats->psd_start_freq_failure_count));
+	len += scnprintf(buf + len, size - len,
+			 "Grace timer count = %u\n",
+			 __le32_to_cpu(afc_stats->grace_timer_count));
 
-		len += scnprintf(buf + len, size - len, "eirp failure = %u\n",
-				 __le32_to_cpu(afc_stats->eirp_failure_count));
+	len += scnprintf(buf + len, size - len,
+			 "Current TTL timer = %u seconds\n",
+			 __le32_to_cpu(afc_stats->cur_ttl_timer));
 
-		len += scnprintf(buf + len, size - len,
-				 "centre freq failure = %u\n",
-				 __le32_to_cpu(afc_stats->cfreq_failure_count));
+	len += scnprintf(buf + len, size - len,
+			 "Deployment mode = %u (%s)\n",
+			 __le32_to_cpu(afc_stats->deployment_mode),
+			 (__le32_to_cpu(afc_stats->deployment_mode) == 1) ? "indoor" :
+			 (__le32_to_cpu(afc_stats->deployment_mode) == 2) ? "outdoor" :
+			 "(unknown)");
 
-		len += scnprintf(buf + len, size - len, "\n");
-		len += scnprintf(buf + len, size - len,
-				 "****AFC Miscellaneous stats****\n");
+	len += scnprintf(buf + len, size - len,
+			 "Total AFC-Response Payload clear count = %u\n",
+			 __le32_to_cpu(afc_stats->payload_clear_count));
 
-		len += scnprintf(buf + len, size - len,
-				 "Current request ID = %u\n",
-				 __le32_to_cpu(afc_stats->request_id));
-
-		len += scnprintf(buf + len, size - len,
-				 "Grace timer count = %u\n",
-				 __le32_to_cpu(afc_stats->grace_timer_count));
-
-		len += scnprintf(buf + len, size - len,
-				 "Current TTL timer = %u seconds\n",
-				 __le32_to_cpu(afc_stats->cur_ttl_timer));
-
-		len += scnprintf(buf + len, size - len, "Deployment mode = %u (%s)\n",
-				 __le32_to_cpu(afc_stats->deployment_mode),
-				 (__le32_to_cpu(afc_stats->deployment_mode) == 1) ? "indoor" :
-				 (__le32_to_cpu(afc_stats->deployment_mode) == 2) ? "outdoor" :
-				 "(unknown)");
-
-		len += scnprintf(buf + len, size - len,
-				 "Total AFC-Response Payload clear count = %u\n",
-				 __le32_to_cpu(afc_stats->payload_clear_count));
-		kfree(stats->stats_ptr);
-		list_del(&stats->list);
-		kfree(stats);
-	}
-
-	ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
-	kfree(buf);
-
-	return ret_val;
+	return len;
 }
 
 int wmi_ctrl_path_btcoex_stat(struct ath12k *ar, char __user *ubuf,
@@ -3465,149 +3437,85 @@ static ssize_t ath12k_write_wmi_ctrl_path_stats(struct file *file,
 	return ret ? ret : count;
 }
 
-int wmi_ctrl_path_pmlo_stat(struct ath12k *ar, char __user *ubuf,
-                           size_t count, loff_t *ppos)
+static int print_pmlo_stats(char *buf, int size,
+			    struct wmi_ctrl_path_pmlo_telemetry_stats *pmlo_stats)
 {
-       struct wmi_ctrl_path_stats_list *stats, *tmp;
-       struct wmi_ctrl_path_pmlo_telemetry_stats *pmlo_stats;
-       const int size = 2048;
-       int len = 0, ret_val;
-       char *buf;
-       LIST_HEAD(wmi_stats_list);
-       u32 value;
+	int len = 0;
 
-       buf = vmalloc(size);
-       if (!buf)
-               return -ENOMEM;
+	len += scnprintf(buf + len, size - len, "PMLO Telemetry Statistics:\n");
+	len += scnprintf(buf + len, size - len, "pdev_id = %u\n",
+			 le32_to_cpu(pmlo_stats->pdev_id));
 
-       len += scnprintf(buf + len, size - len,
-                       "WMI_CTRL_PATH_PMLO_STATS:\n");
+	u32 estimated_air_time_per_ac =
+		le32_to_cpu(pmlo_stats->estimated_air_time_per_ac);
 
-       spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
-       spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
-       list_for_each_entry_safe(stats, tmp, &wmi_stats_list, list) {
-               if (!stats)
-                       break;
+	len += scnprintf(buf + len, size - len, "Estimated Air Time per AC:\n");
+	len += scnprintf(buf + len, size - len, "BE: %u\n",
+			 u32_get_bits(estimated_air_time_per_ac, GENMASK(7, 0)));
+	len += scnprintf(buf + len, size - len, "BK: %u\n",
+			 u32_get_bits(estimated_air_time_per_ac, GENMASK(15, 8)));
+	len += scnprintf(buf + len, size - len, "VI: %u\n",
+			 u32_get_bits(estimated_air_time_per_ac, GENMASK(23, 16)));
+	len += scnprintf(buf + len, size - len, "VO: %u\n",
+			 u32_get_bits(estimated_air_time_per_ac, GENMASK(31, 24)));
 
-               pmlo_stats = stats->stats_ptr;
-
-               if (!pmlo_stats)
-                       break;
-
-               if (len < size) {
-                       len += scnprintf(buf + len, size - len,
-                               "pdev_id = %u\n",
-                               le32_to_cpu(pmlo_stats->pdev_id));
-               }
-
-               value = le32_to_cpu(pmlo_stats->estimated_air_time_per_ac);
-               if (len < size) {
-                       len += scnprintf(buf + len, size - len,
-                               "estimated_air_time_ac_be = %u\n",
-                               u32_get_bits(value, GENMASK(7, 0)));
-               }
-
-               if (len < size) {
-                       len += scnprintf(buf + len, size - len,
-                               "estimated_air_time_ac_bk = %u\n",
-                               u32_get_bits(value, GENMASK(15, 8)));
-               }
-
-               if (len < size) {
-                       len += scnprintf(buf + len, size - len,
-                               "estimated_air_time_ac_vi = %u\n",
-                               u32_get_bits(value, GENMASK(23, 16)));
-               }
-
-               if (len < size) {
-                       len += scnprintf(buf + len, size - len,
-                               "estimated_air_time_ac_vo = %u\n",
-                               u32_get_bits(value, GENMASK(31, 24)));
-               }
-
-               kfree(stats->stats_ptr);
-               list_del(&stats->list);
-               kfree(stats);
-       }
-
-       ret_val =  simple_read_from_buffer(ubuf, count, ppos, buf, len);
-       vfree(buf);
-       return ret_val;
+	return len;
 }
 
-static int wmi_ctrl_path_pdev_stat(struct ath12k *ar, char __user *ubuf,
-				   size_t count, loff_t *ppos)
+static int print_pdev_stats(char *buf, int size, void *stats_ptr)
 {
 	char fw_tx_mgmt_subtype[WMI_MAX_STRING_LEN] = {0};
 	char fw_rx_mgmt_subtype[WMI_MAX_STRING_LEN] = {0};
-	struct wmi_ctrl_path_pdev_stats *stats, *tmp;
 	u16 index_tx, index_rx;
-	const int size = 2048;
+	struct wmi_ctrl_path_pdev_stats *pdev_stats = stats_ptr;
 	u8 i;
 	int len = 0;
 
-	char *buf __free(kfree) = kzalloc(size, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
-
 	LIST_HEAD(wmi_stats_list);
+	index_tx = 0;
+	index_rx = 0;
 
-	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
-	list_splice_tail_init(&ar->debug.wmi_ctrl_path_stats.pdev_stats, &wmi_stats_list);
-	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
-
-	list_for_each_entry_safe(stats, tmp, &wmi_stats_list, list) {
-		if (!stats)
-			break;
-
-		index_tx = 0;
-		index_rx = 0;
-
-		for (i = 0; i < IEEE80211_MGMT_FRAME_SUBTYPE_MAX; i++) {
-			index_tx += scnprintf(&fw_tx_mgmt_subtype[index_tx],
-					      WMI_MAX_STRING_LEN - index_tx,
-					      " %u:%u,", i,
-					      stats->tx_mgmt_subtype[i]);
-			index_rx += scnprintf(&fw_rx_mgmt_subtype[index_rx],
-					      WMI_MAX_STRING_LEN - index_rx,
-					      " %u:%u,", i,
-					      stats->rx_mgmt_subtype[i]);
-		}
-
-		len += scnprintf(buf + len, size - len,
-				 "WMI_CTRL_PATH_PDEV_TX_STATS:\n");
-		len += scnprintf(buf + len, size - len,
-				 "fw_tx_mgmt_subtype = %s\n",
-				 fw_tx_mgmt_subtype);
-		len += scnprintf(buf + len, size - len,
-				 "fw_rx_mgmt_subtype = %s\n",
-				 fw_rx_mgmt_subtype);
-		len += scnprintf(buf + len, size - len,
-				 "scan_fail_dfs_violation_time_ms = %u\n",
-				 stats->scan_fail_dfs_viol_time_ms);
-		len += scnprintf(buf + len, size - len,
-				 "nol_chk_fail_last_chan_freq = %u\n",
-				 stats->nol_chk_fail_last_chan_freq);
-		len += scnprintf(buf + len, size - len,
-				 "nol_chk_fail_time_stamp_ms = %u\n",
-				 stats->nol_chk_fail_time_stamp_ms);
-		len += scnprintf(buf + len, size - len,
-				 "tot_peer_create_cnt = %u\n",
-				 stats->tot_peer_create_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "tot_peer_del_cnt = %u\n",
-				 stats->tot_peer_del_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "tot_peer_del_resp_cnt = %u\n",
-				 stats->tot_peer_del_resp_cnt);
-		len += scnprintf(buf + len, size - len,
-				 "vdev_pause_fail_rt_to_sched_algo_fifo_full_cnt = %u\n",
-				 stats->sched_algo_fifo_full_cnt);
-		list_del(&stats->list);
-		kfree(stats);
+	for (i = 0; i < IEEE80211_MGMT_FRAME_SUBTYPE_MAX; i++) {
+		index_tx += scnprintf(&fw_tx_mgmt_subtype[index_tx],
+				WMI_MAX_STRING_LEN - index_tx,
+				" %u:%u,", i,
+				pdev_stats->tx_mgmt_subtype[i]);
+		index_rx += scnprintf(&fw_rx_mgmt_subtype[index_rx],
+				WMI_MAX_STRING_LEN - index_rx,
+				" %u:%u,", i,
+				pdev_stats->rx_mgmt_subtype[i]);
 	}
 
-	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	len += scnprintf(buf + len, size - len,
+			"WMI_CTRL_PATH_PDEV_TX_STATS:\n");
+	len += scnprintf(buf + len, size - len,
+			"fw_tx_mgmt_subtype = %s\n",
+			fw_tx_mgmt_subtype);
+	len += scnprintf(buf + len, size - len,
+			"fw_rx_mgmt_subtype = %s\n",
+			fw_rx_mgmt_subtype);
+	len += scnprintf(buf + len, size - len,
+			"scan_fail_dfs_violation_time_ms = %u\n",
+			pdev_stats->scan_fail_dfs_viol_time_ms);
+	len += scnprintf(buf + len, size - len,
+			"nol_chk_fail_last_chan_freq = %u\n",
+			pdev_stats->nol_chk_fail_last_chan_freq);
+	len += scnprintf(buf + len, size - len,
+			"nol_chk_fail_time_stamp_ms = %u\n",
+			pdev_stats->nol_chk_fail_time_stamp_ms);
+	len += scnprintf(buf + len, size - len,
+			"tot_peer_create_cnt = %u\n",
+			pdev_stats->tot_peer_create_cnt);
+	len += scnprintf(buf + len, size - len,
+			"tot_peer_del_cnt = %u\n",
+			pdev_stats->tot_peer_del_cnt);
+	len += scnprintf(buf + len, size - len,
+			"tot_peer_del_resp_cnt = %u\n",
+			pdev_stats->tot_peer_del_resp_cnt);
+	len += scnprintf(buf + len, size - len,
+			"vdev_pause_fail_rt_to_sched_algo_fifo_full_cnt = %u\n",
+			pdev_stats->sched_algo_fifo_full_cnt);
+	return len;
 }
 
 int wmi_ctrl_path_mem_stat(struct ath12k *ar, char __user *ubuf,
@@ -3666,46 +3574,108 @@ int wmi_ctrl_path_mem_stat(struct ath12k *ar, char __user *ubuf,
 	return ret_val;
 }
 
-static ssize_t ath12k_read_wmi_ctrl_path_stats(struct file *file,
+static ssize_t ath12k_read_all_wmi_ctrl_path_stats(struct file *file,
 					       char __user *ubuf,
 					       size_t count, loff_t *ppos)
 {
+	struct wmi_ctrl_path_stats_list *stats, *tmp;
 	struct ath12k *ar = file->private_data;
-	int ret;
-	enum wmi_tlv_tag tagid;
+	int ret_val = 0;
+	const int size = 2048;
+	int len = 0;
+	char *buf;
 
-	tagid = ar->debug.wmi_ctrl_path_stats_tagid;
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
 
-	switch (tagid) {
-	case WMI_TAG_CTRL_PATH_PDEV_STATS:
-		ret = wmi_ctrl_path_pdev_stat(ar, ubuf, count, ppos);
-		break;
-	case WMI_CTRL_PATH_CAL_STATS:
-		ret = wmi_ctrl_path_cal_stat(ar, ubuf, count, ppos);
-		break;
-	case WMI_CTRL_PATH_BTCOEX_STATS:
-		ret = wmi_ctrl_path_btcoex_stat(ar, ubuf, count, ppos);
-		break;
-	case WMI_CTRL_PATH_AWGN_STATS:
-		ret = wmi_ctrl_path_awgn_stat(ar, ubuf, count, ppos);
-		break;
-	case WMI_CTRL_PATH_MEM_STATS:
-		ret = wmi_ctrl_path_mem_stat(ar, ubuf, count, ppos);
-		break;
-	case WMI_CTRL_PATH_AFC_STATS:
-		ret = wmi_ctrl_path_afc_stat(ar, ubuf, count, ppos);
-		break;
-	case WMI_CTRL_PATH_PMLO_STATS:
-		ret = wmi_ctrl_path_pmlo_stat(ar, ubuf, count, ppos);
-	        break;
-		 /* Add case for newly wmi ctrl path added stats here */
-	default:
-		/* Unsupported tag */
-		ret = -EINVAL;
-		break;
+	len += scnprintf(buf + len, size - len, "Periodic Stats:\n");
+
+	LIST_HEAD(periodic_stats_list);
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_splice_tail_init(&ar->debug.period_wmi_list, &periodic_stats_list);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_for_each_entry_safe(stats, tmp, &periodic_stats_list, list) {
+		if (!stats)
+			break;
+
+		switch (stats->tagid) {
+		case WMI_CTRL_PATH_PMLO_STATS:
+			len += print_pmlo_stats(buf + len, size - len, stats->stats_ptr);
+			break;
+		default:
+			/* With current design and a common list,
+			 * all the items are freed from the wmi_list when a
+			 * periodic tlv is processed.
+			 * Refer: ath12k_wmi_crl_path_stats_list_free
+			 * To print wmi ctrl data, we need to re-design this
+			 * path to support multiple periodic tlvs.
+			 * Currently, only 1 tlv is enabled as periodic so it
+			 * works with a new list keeping the same design in
+			 * place.
+			 */
+			len += scnprintf(buf + len, size - len, "Unknown tagid: %u\n",
+					 stats->tagid);
+			break;
+		}
+
+		kfree(stats->stats_ptr);
+		list_del(&stats->list);
+		kfree(stats);
 	}
 
-	return ret;
+	len += scnprintf(buf + len, size - len, "\nOn-Demand Stats:\n");
+	LIST_HEAD(on_demand_stats_list);
+
+	spin_lock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_splice_tail_init(&ar->debug.wmi_ctrl_path_stats.pdev_stats,
+			      &on_demand_stats_list);
+	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
+	list_for_each_entry_safe(stats, tmp, &on_demand_stats_list, list) {
+		if (!stats)
+			break;
+
+		switch (stats->tagid) {
+		case WMI_TAG_CTRL_PATH_PDEV_STATS:
+			len += print_pdev_stats(buf + len, size - len, stats->stats_ptr);
+			break;
+		case WMI_CTRL_PATH_CAL_STATS:
+			len += print_cal_stats(buf + len, size - len, stats->stats_ptr);
+			break;
+		case WMI_CTRL_PATH_BTCOEX_STATS:
+			len += print_btcoex_stats(buf + len, size - len,
+						  stats->stats_ptr);
+			break;
+		case WMI_CTRL_PATH_AWGN_STATS:
+			len += print_awgn_stats(buf + len, size - len, stats->stats_ptr);
+			break;
+		case WMI_CTRL_PATH_MEM_STATS:
+			len += print_mem_stats(buf + len, size - len, stats->stats_ptr);
+			break;
+		case WMI_CTRL_PATH_AFC_STATS:
+			len += print_afc_stats(buf + len, size - len, stats->stats_ptr);
+			break;
+		default:
+			len += scnprintf(buf + len, size - len, "Unknown tagid: %u\n",
+					 stats->tagid);
+			break;
+		}
+
+		kfree(stats->stats_ptr);
+		list_del(&stats->list);
+		kfree(stats);
+	}
+
+	ret_val = simple_read_from_buffer(ubuf, count, ppos, buf, len);
+	kfree(buf);
+	return ret_val;
+}
+static ssize_t ath12k_read_wmi_ctrl_path_stats(struct file *file,
+		char __user *ubuf,
+		size_t count, loff_t *ppos)
+{
+	return ath12k_read_all_wmi_ctrl_path_stats(file, ubuf, count, ppos);
 }
 
 static const struct file_operations ath12k_fops_wmi_ctrl_stats = {
@@ -3721,6 +3691,7 @@ static void ath12k_debugfs_wmi_ctrl_stats_register(struct ath12k *ar)
 			    ar,
 			    &ath12k_fops_wmi_ctrl_stats);
 	INIT_LIST_HEAD(&ar->debug.wmi_ctrl_path_stats.pdev_stats);
+	INIT_LIST_HEAD(&ar->debug.period_wmi_list);
 	spin_lock_init(&ar->debug.wmi_ctrl_path_stats_lock);
 	init_completion(&ar->debug.wmi_ctrl_path_stats_rcvd);
 	ar->debug.wmi_ctrl_path_stats_more_enabled = false;
