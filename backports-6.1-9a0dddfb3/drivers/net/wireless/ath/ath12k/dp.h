@@ -140,6 +140,7 @@ struct ath12k_pdev_dp {
 	struct list_head ppdu_stats_info;
 	u32 ppdu_stat_list_depth;
 
+	bool dp_mon_pdev_configured;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k_wmm_stats wmm_stats;
 	/* Protected by ab: base lock
@@ -985,7 +986,7 @@ int ath12k_dp_pdev_alloc(struct ath12k_base *ab);
 int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
                                       int pdev_id,
                                       struct ath12k_pdev_telemetry_stats *stats);
-void ath12k_dp_pdev_pre_alloc(struct ath12k *ar);
+int ath12k_dp_pdev_pre_alloc(struct ath12k *ar);
 void ath12k_dp_pdev_free(struct ath12k_base *ab);
 int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);

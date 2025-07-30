@@ -1129,22 +1129,68 @@ void ath12k_dp_pdev_free(struct ath12k_base *ab)
 
 	for (i = 0; i < ab->num_radios; i++) {
 		ar = ab->pdevs[i].ar;
-		ath12k_dp_mon_pdev_rx_free(&ar->dp);
 		ath12k_fw_stats_free(&ar->fw_stats);
-		ath12k_dp_mon_pdev_deinit(&ar->dp);
+
+		if (ar->dp.dp_mon_pdev_configured) {
+			ath12k_dp_mon_pdev_rx_free(&ar->dp);
+			ath12k_dp_mon_pdev_deinit(&ar->dp);
+
+			ar->dp.dp_mon_pdev_configured = false;
+		}
 	}
 
 	ath12k_dp_ppeds_stop(ab);
 }
 
-void ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
+int ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
 {
+	struct ath12k_base *ab = ar->ab;
 	struct ath12k_pdev_dp *dp = &ar->dp;
+	int ret;
 
+	dp->hw = ar->ah->hw;
+	dp->dp = ath12k_ab_to_dp(ar->ab);
 	dp->mac_id = ar->pdev_idx;
+	dp->ar = ar;
+	dp->dp_hw = &ar->ah->dp_hw;
+	dp->hw_link_id = ar->hw_link_id;
+
 	atomic_set(&dp->num_tx_pending, 0);
 	init_waitqueue_head(&dp->tx_empty_waitq);
+
+	if (!dp->dp_mon_pdev_configured) {
+		ret = ath12k_dp_mon_pdev_init(dp);
+		if (ret) {
+			ath12k_warn(ab, "failed to initialize mon pdev for pdev with mac_id: %d\n", dp->mac_id);
+			return ret;
+		}
+
+		ret = ath12k_dp_mon_pdev_rx_alloc(dp, dp->mac_id);
+		if (ret) {
+			ath12k_warn(ab, "failed to alloc rx filter for pdev with mac_id: %d\n", dp->mac_id);
+			goto mon_pdev_deinit;
+		}
+
+		ret = ath12k_dp_mon_pdev_rx_htt_setup(dp, dp->mac_id);
+		if (ret) {
+			ath12k_warn(ab, "failed to setup rx htt for pdev with mac_id: %d\n", dp->mac_id);
+			goto mon_pdev_rx_free;
+		}
+
+		dp->dp_mon_pdev_configured = true;
+	}
+
 	/* TODO: Add any RXDMA setup required per pdev */
+
+	return 0;
+
+mon_pdev_rx_free:
+	ath12k_dp_mon_pdev_rx_free(dp);
+
+mon_pdev_deinit:
+	ath12k_dp_mon_pdev_deinit(dp);
+
+	return ret;
 }
 
 int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
@@ -1187,19 +1233,23 @@ int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
 		dp_pdev->dp_hw = &ar->ah->dp_hw;
 		dp_pdev->hw_link_id = ar->hw_link_id;
 
-		ret = ath12k_dp_mon_pdev_init(dp_pdev);
-		if (ret) {
-			ath12k_warn(ab, "failed to initialize mon pdev %d\n", i);
-			goto err;
+		if (!dp_pdev->dp_mon_pdev_configured) {
+			ret = ath12k_dp_mon_pdev_init(dp_pdev);
+			if (ret) {
+				ath12k_warn(ab, "failed to initialize mon pdev %d\n", i);
+				goto err;
+			}
+
+			ret = ath12k_dp_mon_pdev_rx_alloc(dp_pdev, i);
+			if (ret)
+				goto err;
+
+			ret = ath12k_dp_mon_pdev_rx_htt_setup(dp_pdev, i);
+			if (ret)
+				goto err;
+
+			dp_pdev->dp_mon_pdev_configured = true;
 		}
-
-		ret = ath12k_dp_mon_pdev_rx_alloc(dp_pdev, i);
-		if (ret)
-			goto err;
-
-		ret = ath12k_dp_mon_pdev_rx_htt_setup(dp_pdev, i);
-		if (ret)
-			goto err;
 	}
 
 	ret = ath12k_dp_ppeds_start(ab);

@@ -22005,7 +22005,7 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 	struct ath12k_base *ab;
 	struct ath12k_pdev *pdev;
 	struct ath12k_hw *ah;
-	int i;
+	int i, ret;
 	u8 pdev_idx;
 
 	hw = ieee80211_alloc_hw_nm(struct_size(ah, radio, num_pdev_map),
@@ -22041,7 +22041,12 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 		ath12k_dp_cmn_update_hw_links(ab->dp, ag, ar);
 
 		ath12k_mac_setup(ar);
-		ath12k_dp_pdev_pre_alloc(ar);
+		ret = ath12k_dp_pdev_pre_alloc(ar);
+		if (ret) {
+			ath12k_mac_hw_destroy(ah);
+			ah = NULL;
+			break;
+		}
 	}
 
 	return ah;
