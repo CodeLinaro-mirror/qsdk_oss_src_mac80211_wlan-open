@@ -7583,9 +7583,7 @@ int ath12k_mac_op_link_reconfig_remove(struct ieee80211_hw *hw,
 	 * matter here since after link removal if peer is not migrated, it
 	 * will be anyways disconnected
 	 */
-	mutex_lock(&ahvif->ah->hw_mutex);
 	ath12k_mac_process_link_migrate_req(ahvif, &migrate_params);
-	mutex_unlock(&ahvif->ah->hw_mutex);
 
 	ret = ath12k_wmi_mlo_reconfig_link_removal(ar, arvif->vdev_id,
 						   params->reconfigure_elem,
@@ -11504,7 +11502,7 @@ void ath12k_mac_assign_middle_link_id(struct ieee80211_sta *sta,
 	bool adjacent_found = false;
 	unsigned long links;
 
-	lockdep_assert_held(&ah->hw_mutex);
+	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	/* 4 device: In case of 3 link STA association, Make sure to select
 	 * the middle device link as primary_link_id of sta which is adjacent
@@ -11569,14 +11567,12 @@ static bool ath12k_is_primary_link_migrate(struct ieee80211_sta *sta,
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	unsigned long removed_link = removed_links;
 	struct ath12k_vif *ahvif = ahsta->ahvif;
-	struct ath12k_hw *ah = ahvif->ah;
 	struct ath12k_link_vif *arvif;
 	bool is_primary = false;
 	struct ath12k *ar;
 	u16 link_id;
 	int ret;
 
-	mutex_lock(&ah->hw_mutex);
 
 	for_each_set_bit(link_id, &removed_link, ATH12K_NUM_MAX_LINKS) {
 		if (ahsta->primary_link_id == link_id) {
@@ -11586,17 +11582,13 @@ static bool ath12k_is_primary_link_migrate(struct ieee80211_sta *sta,
 	}
 
 	/* if not primary, just return now */
-	if (!is_primary) {
-		mutex_unlock(&ah->hw_mutex);
+	if (!is_primary)
 		return false;
-	}
 
 	/* if it happens to be primary link, trigger UMAC Migration. */
 	arvif = ath12k_get_arvif_from_link_id(ahvif, ahsta->primary_link_id);
-	if (WARN_ON(!arvif || !arvif->is_up || !arvif->ar)) {
-		mutex_unlock(&ah->hw_mutex);
+	if (WARN_ON(!arvif || !arvif->is_up || !arvif->ar))
 		return true;
-	}
 
 	ar = arvif->ar;
 
@@ -11608,7 +11600,6 @@ static bool ath12k_is_primary_link_migrate(struct ieee80211_sta *sta,
 	ret = ath12k_mac_process_link_migrate_req(ahvif, &migrate_params);
 	if (ret) {
 		arvif->is_link_removal_in_progress = false;
-		mutex_unlock(&ah->hw_mutex);
 		return true;
 	}
 
@@ -11633,8 +11624,6 @@ static bool ath12k_is_primary_link_migrate(struct ieee80211_sta *sta,
 			break;
 		}
 	}
-
-	mutex_unlock(&ah->hw_mutex);
 
 	return is_primary;
 }
@@ -12140,7 +12129,7 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 	u16 pref_valid_links = 0;
 	u8 active_num_devices = 0;
 
-	lockdep_assert_held(&ah->hw_mutex);
+	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	if (WARN_ON(!valid_links))
 		return IEEE80211_MLD_MAX_NUM_LINKS;
@@ -12229,7 +12218,7 @@ static bool ath12k_mac_ahsta_is_migra_link_valid(struct ath12k_sta *ahsta,
 	struct ath12k_vif *ahvif = ahsta->ahvif;
 	struct ath12k_hw *ah = ahvif->ah;
 
-	lockdep_assert_held(&ah->hw_mutex);
+	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	if (!(ahsta->links_map & BIT(link_id)))
 		return false;
@@ -12248,7 +12237,7 @@ static bool ath12k_mac_ahsta_can_migrate(struct ath12k_sta *ahsta)
 	struct ath12k_link_sta *arsta;
 	u8 link_id;
 
-	lockdep_assert_held(&ah->hw_mutex);
+	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	/* Currently bridge peer is not supprted. */
 	valid_links &= ~ATH12K_IEEE80211_MLD_MAX_LINKS_MASK;
@@ -12278,7 +12267,7 @@ static int ath12k_mac_get_next_pri_link(struct ath12k_sta *ahsta, u8 *pri_link_i
 	u16 curr_links = ahsta->links_map;
 	u16 links_map;
 
-	lockdep_assert_held(&ah->hw_mutex);
+	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	sta = container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
 
@@ -12352,7 +12341,7 @@ ath12k_mac_get_link_migr_peer_node(struct ath12k_dp_peer *ml_peer,
 	struct ath12k_link_vif *arvif;
 	u8 hw_link_id;
 
-	lockdep_assert_held(&ah->hw_mutex);
+	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	if (!arsta)
 		return NULL;
@@ -12428,7 +12417,7 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 
 	INIT_LIST_HEAD(&peer_migr_list);
 
-	lockdep_assert_held(&ah->hw_mutex);
+	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	/* Check if firmware supports migration */
 	for_each_set_bit(link_id, &valid_links, IEEE80211_MLD_MAX_NUM_LINKS) {
