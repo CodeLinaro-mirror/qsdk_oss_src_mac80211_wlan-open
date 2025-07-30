@@ -4279,10 +4279,6 @@ static void ath12k_core_wsi_remap_reset(struct ath12k_base *ab)
 	ath12k_dp_umac_reset_deinit(ab);
 	ath12k_umac_reset_completion(ab);
 
-	if (ab->hif.bus == ATH12K_BUS_PCI)
-		ath12k_pcic_free_irq(ab);
-	else if (ab->hif.bus == ATH12K_BUS_HYBRID)
-		ath12k_pcic_free_hybrid_irq(ab);
 }
 
 int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
@@ -4343,21 +4339,14 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 		ab->is_bypassed = false;
 		ag->num_bypassed--;
 
+		ath12k_hif_irq_disable(ab);
+		ath12k_hif_ce_irq_disable(ab);
+		ath12k_dp_ppeds_interrupt_stop(ab);
+
 		ath12k_hif_power_down(ab, false);
 		/* Reset the PCIe link speed */
 		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: Reset PCIe link speed");
 		ath12k_core_pci_link_speed(ab, 3, 2);
-
-		/* Reconfigure the irqs for the readded chip */
-		if (ab->hif.bus == ATH12K_BUS_PCI) {
-			ret = ath12k_pcic_config_irq(ab);
-			if (ret) {
-				ath12k_err(ab, "failed to request irq: %d\n", ret);
-				goto fail;
-			}
-		} else {
-			ath12k_ahb_config_irq(ab);
-		}
 
 		/* Update the new adj chip info */
 		ath12k_update_mlo_adj_chip(ag);
