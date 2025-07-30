@@ -8477,4 +8477,11 @@ int
 ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
 			     struct cfg80211_qm_tclas4_params flow_params,
 			     u8 tid);
+
+/** ieee80211_get_radio_idx_by_freq - Get the radio index using the frequency
+ * @wiphy: Pointer to wiphy
+ * @freq: Frequency for which the radio index is needed
+ */
+int ieee80211_get_radio_idx_by_freq(struct wiphy *wiphy, u32 freq);
+
 #endif /* MAC80211_H */

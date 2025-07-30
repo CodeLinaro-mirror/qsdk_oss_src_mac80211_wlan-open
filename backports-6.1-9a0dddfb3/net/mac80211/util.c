@@ -5212,3 +5212,21 @@ void ieee80211_clear_tpe(struct ieee80211_parsed_tpe *tpe)
 
 	}
 }
+
+int ieee80211_get_radio_idx_by_freq(struct wiphy *wiphy, u32 freq)
+{
+	const struct wiphy_radio *radio;
+	u8 i, j;
+
+	for (i = 0; i < wiphy->n_radio; i++) {
+		radio = &wiphy->radio[i];
+		for (j = 0; j < radio->n_freq_range; j++) {
+			if (freq >= radio->freq_range[j].start_freq &&
+			    freq <= radio->freq_range[j].end_freq)
+				return i;
+		}
+	}
+
+	return -1;
+}
+EXPORT_SYMBOL(ieee80211_get_radio_idx_by_freq);
