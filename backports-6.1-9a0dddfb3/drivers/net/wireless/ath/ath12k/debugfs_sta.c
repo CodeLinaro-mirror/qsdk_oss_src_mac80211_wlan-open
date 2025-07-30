@@ -326,10 +326,18 @@ ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
 	struct ath12k_dp_peer *peer;
 	struct ath12k_dp_peer_qos *qos;
 	struct ath12k_msduq *msduq_map;
+	struct ath12k_qos_ctx *qos_ctx;
 	const int size = 2048;
 	size_t len = 0;
+	u16 svc_id, qos_id;
 	u8 tid, q;
 	int ret  = -EINVAL;
+
+	qos_ctx = ath12k_get_qos(ar->ab);
+	if (!qos_ctx) {
+		ath12k_err(ar->ab, "QoS Context is NULL");
+		return ret;
+	}
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	spin_lock_bh(&ah->dp_hw.peer_lock);
@@ -349,8 +357,14 @@ ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
 		for(q = 0; q < QOS_TID_MDSUQ_MAX; q++) {
 			msduq_map = &qos->msduq_map[tid][q];
 			if (msduq_map->reserved) {
+				qos_id = msduq_map->qos_id;
+				svc_id = qos_ctx->profiles[qos_id].svc_id;
 				len += scnprintf(buf + len, size - len,
 						 "**********************\n");
+				if (svc_id) {
+					len += scnprintf(buf + len, size - len,
+							 "SVC ID:%u\n", svc_id);
+				}
 				len += scnprintf(buf + len, size - len,
 						 "TID: %u\n", tid);
 				len += scnprintf(buf + len, size - len,
@@ -367,7 +381,6 @@ ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
 			}
 		}
 	}
-
 	ret = 0;
 ret:
 	spin_unlock_bh(&ah->dp_hw.peer_lock);

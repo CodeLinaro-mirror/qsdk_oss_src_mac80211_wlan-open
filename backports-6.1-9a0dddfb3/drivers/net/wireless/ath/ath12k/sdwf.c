@@ -60,6 +60,13 @@ int ath12k_sdwf_map_service_class(struct ath12k_base *ab, u16 svc_id,
 	qos_ctx->svc_class[svc_id].dl_qos_id = dl_qos_id;
 	qos_ctx->svc_class[svc_id].ul_qos_id = ul_qos_id;
 	qos_ctx->svc_class[svc_id].configured = true;
+
+	if (dl_qos_id != QOS_ID_INVALID)
+		qos_ctx->profiles[dl_qos_id].svc_id = svc_id;
+
+	if (ul_qos_id != QOS_ID_INVALID)
+		qos_ctx->profiles[ul_qos_id].svc_id = svc_id;
+
 	ath12k_dbg(ab, ATH12K_DBG_QOS,
 		   "Service Class %d Config | DL QoS ID:%d | UL QoS ID:%d",
 		   svc_id,

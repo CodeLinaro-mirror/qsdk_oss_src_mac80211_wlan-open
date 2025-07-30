@@ -136,6 +136,7 @@ struct ath12k_qos_params {
 struct ath12k_qos {
 	u8 ref_count;
 	struct ath12k_qos_params params;
+	u16 svc_id;
 };
 
 struct ath12k_qos_ctx {
