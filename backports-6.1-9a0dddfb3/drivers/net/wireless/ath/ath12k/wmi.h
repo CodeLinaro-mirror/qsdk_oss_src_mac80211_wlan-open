@@ -2296,6 +2296,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_NEW_PRIMARY_LINK_PEER_INFO = 0x4a4,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_COMPL_FIXED_PARAM = 0x4a5,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS = 0x4a6,
+	WMI_TAG_ATF_SSID_GROUPING_REQUEST_EVENT_V2 = 0x4a7,
 	WMI_TAG_PDEV_WSI_STATS_INFO_CMD = 0x4b1,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
 	WMI_TAG_VDEV_CH_PSD_POWER_INFO = 0x4bc,
@@ -8849,6 +8850,19 @@ struct wmi_atf_ssid_grp_request_fixed_param {
 	__le32 pdev_id;
 };
 
+#define WMI_ATF_GROUP_SCHED_POLICY GENMASK(3, 0)
+#define WMI_ATF_GROUP_NUM_IMPLICIT_PEERS GENMASK(31, 16)
+#define WMI_ATF_GROUP_NUM_EXPLICIT_PEERS GENMASK(15, 0)
+
+struct wmi_atf_group_info {
+	__le32 tlv_header;
+	__le32 atf_group_id;
+	__le32 atf_group_units;
+	__le32 atf_group_flags;
+	__le32 atf_total_num_peers;
+	__le32 atf_total_implicit_peer_units;
+};
+
 struct wmi_peer_atf_request_fixed_param {
 	__le32 tlv_header;
 	__le32 num_peers;
@@ -9203,4 +9217,5 @@ int ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 						 bool ttlm_info);
 int ath12k_wmi_ap_tid_to_link_map_config(struct ath12k *ar,
 					 struct ath12k_wmi_tid_to_link_map_ap_params *params);
+int ath12k_wmi_atf_send_group_config(struct ath12k *ar);
 #endif

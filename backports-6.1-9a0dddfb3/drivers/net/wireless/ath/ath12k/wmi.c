@@ -17858,3 +17858,76 @@ int ath12k_wmi_vdev_adfs_ocac_abort_cmd_send(struct ath12k *ar, u32 vdev_id)
 	return ret;
 }
 
+int ath12k_wmi_atf_send_group_config(struct ath12k *ar)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ath12k_atf_group_info *group;
+	struct wmi_atf_group_info *group_info;
+	struct wmi_atf_ssid_grp_request_fixed_param *cmd;
+	struct sk_buff *skb;
+	struct wmi_tlv *tlv;
+	void *ptr;
+	int ret, len, i;
+	u32 pdev_id = ar->pdev->pdev_id;
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE + TLV_HDR_SIZE;
+	len += ar->atf_table.total_groups * sizeof(*group_info);
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+
+	cmd = (struct wmi_atf_ssid_grp_request_fixed_param *)ptr;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ATF_SSID_GRP_REQUEST_FIXED_PARAM,
+						 sizeof(*cmd));
+	cmd->pdev_id = cpu_to_le32(pdev_id);
+	ptr += sizeof(*cmd);
+
+	/* Adding two tag array structs because the WMI command structure expects two array
+	 * arguments. Since the first one is deprecated, it will be sent with a size of 0.
+	 */
+	tlv = (struct wmi_tlv *)ptr;
+	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ARRAY_STRUCT, TLV_HDR_SIZE);
+	ptr += TLV_HDR_SIZE;
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 ar->atf_table.total_groups *
+					 sizeof(*group_info));
+	ptr += TLV_HDR_SIZE;
+
+	group_info = (struct wmi_atf_group_info *)ptr;
+	for (i = 0; i < ar->atf_table.total_groups; i++) {
+		group = &ar->atf_table.group_info[i];
+		group_info->tlv_header =
+			ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ATF_SSID_GROUPING_REQUEST_EVENT_V2,
+					       sizeof(*group_info));
+		group_info->atf_group_id = cpu_to_le32(group->group_id);
+		group_info->atf_group_units = cpu_to_le32(group->group_airtime);
+		group_info->atf_group_flags =
+			le32_encode_bits(group->group_policy, WMI_ATF_GROUP_SCHED_POLICY);
+		group_info->atf_total_num_peers =
+			le32_encode_bits(group->unconfigured_peers,
+					 WMI_ATF_GROUP_NUM_IMPLICIT_PEERS) |
+			le32_encode_bits(group->configured_peers,
+					 WMI_ATF_GROUP_NUM_EXPLICIT_PEERS);
+		group_info->atf_total_implicit_peer_units =
+			cpu_to_le32(group->unconfigured_peers_airtime);
+		group_info++;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI ATF SSID group config for pdev id %u total groups %u\n",
+		   ar->pdev->pdev_id, ar->atf_table.total_groups);
+	ret = ath12k_wmi_cmd_send(wmi, skb,
+				  WMI_ATF_SSID_GROUPING_REQUEST_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to submit WMI_ATF_SSID_GROUPING_REQUEST_CMDID cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+

@@ -1073,6 +1073,22 @@ enum ath12k_ap_ps_state {
 	ATH12K_AP_PS_STATE_ON,
 };
 
+#define ATH12K_ATF_MAX_GROUPS 15
+
+struct ath12k_atf_group_info {
+	u32 group_id;
+	u32 group_airtime;
+	u32 group_policy;
+	u16 unconfigured_peers;
+	u16 configured_peers;
+	u32 unconfigured_peers_airtime;
+};
+
+struct ath12k_atf {
+	u32 total_groups;
+	struct ath12k_atf_group_info group_info[ATH12K_ATF_MAX_GROUPS];
+};
+
 struct ath12k {
 	struct ath12k_base *ab;
 	struct ath12k_pdev *pdev;
@@ -1279,6 +1295,7 @@ struct ath12k {
 	bool pdev_suspend;
 	struct completion pdev_resume;
 	struct work_struct ssr_erp_exit;
+	struct ath12k_atf atf_table;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

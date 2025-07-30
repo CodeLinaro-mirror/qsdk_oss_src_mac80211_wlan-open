@@ -49,18 +49,27 @@ ath12k_atf_offload_config_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_OPERATION] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_ID] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_CONFIG] = {.type = NLA_U8},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG] = {.type = NLA_BINARY,
-								.len = ATF_OFFLOAD_MAX_PAYLOAD},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG] = {.type = NLA_NESTED },
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_CONFIG] = {.type = NLA_BINARY,
 							    .len = ATF_OFFLOAD_MAX_PAYLOAD},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG] = {.type = NLA_BINARY,
-							  .len = ATF_OFFLOAD_MAX_PAYLOAD},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG] = {.type = NLA_NESTED},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STATS_CONFIG] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STRICT_SCH_CONFIG] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VO_DEDICATED_TIME_CONFIG] = {.type = NLA_U16},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VI_DEDICATED_TIME_CONFIG] = {.type = NLA_U16},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_CONFIG] = {.type = NLA_NESTED},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_atf_grouping_param_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_AIRTIME_CONFIGURED] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_POLICY] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS] = {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIGURED_PEERS] = {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS_AIRTIME]  = {
+		.type = NLA_U32},
 };
 
 static const struct nla_policy
@@ -5511,49 +5520,59 @@ end:
 	return ret;
 }
 
-static int ath12k_vendor_atf_offload_ssid_grouping_config(struct ath12k *ar,
-							  struct nlattr **tb)
+static int ath12k_vendor_atf_offload_ssid_group_config(struct ath12k *ar,
+						       struct nlattr **tb)
 {
-	struct ath12k_wmi_pdev *wmi = ar->wmi;
-	struct sk_buff *skb;
-	void *buf, *ptr;
-	u32 buf_len, len, pdev_id;
-	int ret;
-	struct wmi_atf_ssid_grp_request_fixed_param *cmd;
+	struct nlattr *group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_MAX + 1];
+	struct ath12k_atf_group_info *group_info;
+	struct nlattr *group_attr;
+	int ret, rem, i = 0;
 
-	len = sizeof(*cmd);
+	nla_for_each_nested(group_attr,
+			    tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG],
+			    rem) {
+		ret = nla_parse_nested(group, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_MAX,
+				       group_attr, ath12k_vendor_atf_grouping_param_policy, NULL);
+		if (ret) {
+			ath12k_warn(ar->ab, "ATF: Group payload has invalid attributes");
+			return -EINVAL;
+		}
 
-	pdev_id = ar->pdev->pdev_id;
+		if (!group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX] ||
+		    !group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_AIRTIME_CONFIGURED] ||
+		    !group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_POLICY] ||
+		    !group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS] ||
+		    !group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIGURED_PEERS] ||
+		    !group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS_AIRTIME]) {
+			ath12k_warn(ar->ab, "ATF: All group parameters not present");
+			return -EINVAL;
+		}
 
-	buf = nla_data(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG]);
-	buf_len = nla_len(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG]);
-	if (!buf_len) {
-		ath12k_warn(ar->ab, "No data present in ATF SSID group config command\n");
-		return -EINVAL;
+		group_info = &ar->atf_table.group_info[i++];
+		if (i >= ATH12K_ATF_MAX_GROUPS) {
+			ath12k_warn(ar->ab, "ATF: Too many groups, maximum allowed is %d",
+				    ATH12K_ATF_MAX_GROUPS);
+			return -EINVAL;
+		}
+
+		group_info->group_id =
+			nla_get_u32(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX]);
+		group_info->group_airtime =
+			nla_get_u32(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_AIRTIME_CONFIGURED]);
+		group_info->group_policy =
+			nla_get_u32(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_POLICY]);
+		group_info->unconfigured_peers =
+			nla_get_u16(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS]);
+		group_info->configured_peers =
+			nla_get_u16(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIGURED_PEERS]);
+		group_info->unconfigured_peers_airtime =
+			nla_get_u32(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS_AIRTIME]);
 	}
-	len += buf_len;
+	ar->atf_table.total_groups = i;
 
-	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
-	if (!skb)
-		return -ENOMEM;
-
-	ptr = skb->data;
-	cmd = (struct wmi_atf_ssid_grp_request_fixed_param *)ptr;
-	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ATF_SSID_GRP_REQUEST_FIXED_PARAM,
-						 sizeof(*cmd));
-	cmd->pdev_id = cpu_to_le32(pdev_id);
-	ptr += sizeof(*cmd);
-	memcpy(skb->data, buf, buf_len);
-
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI ATF SSID group config for pdev id %u\n", ar->pdev->pdev_id);
-
-	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_ATF_SSID_GROUPING_REQUEST_CMDID);
-	if (ret) {
-		ath12k_warn(ar->ab,
-			    "failed to submit WMI_ATF_SSID_GROUPING_REQUEST_CMDID cmd\n");
-		dev_kfree_skb(skb);
-	}
+	ret = ath12k_wmi_atf_send_group_config(ar);
+	if (ret)
+		ath12k_warn(ar->ab, "ATF: Failed to send group config");
 
 	return ret;
 }
@@ -5590,7 +5609,7 @@ static int ath12k_vendor_atf_offload_wmm_ac_config(struct ath12k *ar,
 						 sizeof(*cmd));
 	cmd->pdev_id = cpu_to_le32(pdev_id);
 	ptr += sizeof(*cmd);
-	memcpy(skb->data, buf, buf_len);
+	memcpy(ptr, buf, buf_len);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 		   "WMI ATF WMM ac config for pdev id %u\n", pdev_id);
@@ -5616,8 +5635,9 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 	int ret;
 	struct wmi_peer_atf_request_fixed_param *cmd;
 	u32 num_peers, atf_flags, pdev_id = ar->pdev->pdev_id;
+	struct wmi_tlv *tlv;
 
-	len = sizeof(*cmd);
+	len = sizeof(*cmd) + TLV_HDR_SIZE;
 
 	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER_CONFIG_MAX,
 			       peer_config,
@@ -5650,6 +5670,11 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 	cmd->pdev_id = cpu_to_le32(pdev_id);
 	cmd->atf_flags = cpu_to_le32(atf_flags);
 	ptr += sizeof(*cmd);
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ARRAY_STRUCT, TLV_HDR_SIZE);
+	ptr += TLV_HDR_SIZE;
+
 	memcpy(ptr, buf, buf_len);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
@@ -5799,7 +5824,7 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 			ath12k_err(NULL, "ATF SSID grouping config missing\n");
 			return -EINVAL;
 		}
-		ret = ath12k_vendor_atf_offload_ssid_grouping_config(ar, tb);
+		ret = ath12k_vendor_atf_offload_ssid_group_config(ar, tb);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to set SSID config\n");
 			return ret;
