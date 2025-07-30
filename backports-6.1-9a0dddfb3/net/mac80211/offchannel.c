@@ -322,7 +322,7 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 		if (tmp == roc)
 			continue;
 		if (tmp->sdata != roc->sdata ||
-		    cfg80211_chandef_identical(&tmp->chandef, &roc->chandef))
+		    !cfg80211_chandef_identical(&tmp->chandef, &roc->chandef))
 			break;
 		max_dur = max(tmp->duration, max_dur);
 		min_dur = min(tmp->duration, min_dur);
@@ -343,7 +343,7 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 			 */
 			list_for_each_entry(tmp, &local->roc_list, list) {
 				if (tmp->sdata != roc->sdata ||
-				    cfg80211_chandef_identical(&tmp->chandef,
+				    !cfg80211_chandef_identical(&tmp->chandef,
 							       &roc->chandef))
 					break;
 				tmp->started = true;
@@ -356,7 +356,7 @@ static void _ieee80211_start_next_roc(struct ieee80211_local *local)
 		/* we'll notify about the start once the HW calls back */
 		list_for_each_entry(tmp, &local->roc_list, list) {
 			if (tmp->sdata != roc->sdata ||
-			    cfg80211_chandef_identical(&tmp->chandef, &roc->chandef))
+			    !cfg80211_chandef_identical(&tmp->chandef, &roc->chandef))
 				break;
 			tmp->started = true;
 		}
