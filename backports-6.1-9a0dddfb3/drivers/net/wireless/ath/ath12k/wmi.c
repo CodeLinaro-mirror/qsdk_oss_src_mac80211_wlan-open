@@ -17931,3 +17931,76 @@ int ath12k_wmi_atf_send_group_config(struct ath12k *ar)
 	return ret;
 }
 
+int ath12k_wmi_atf_send_peer_config(struct ath12k *ar,
+				    struct ath12k_atf_peer_params *peer_param)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_peer_atf_request_fixed_param *cmd;
+	struct ath12k_atf_peer_info *param_peer_info;
+	struct wmi_atf_peer_info *peer_info;
+	struct sk_buff *skb;
+	struct wmi_tlv *tlv;
+	void *ptr;
+	int ret, len, i;
+
+	len = sizeof(*cmd) + TLV_HDR_SIZE + TLV_HDR_SIZE;
+	len += peer_param->num_peers * sizeof(*peer_info);
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb) {
+		ath12k_err(ar->ab, "failed to allocate skb");
+		return -ENOMEM;
+	}
+
+	ptr = skb->data;
+
+	cmd = (struct wmi_peer_atf_request_fixed_param *)ptr;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_ATF_REQUEST,
+						 sizeof(*cmd));
+	cmd->num_peers = cpu_to_le32(peer_param->num_peers);
+	cmd->pdev_id = cpu_to_le32(peer_param->pdev_id);
+	cmd->atf_flags = cpu_to_le32(peer_param->atf_flags);
+	ptr += sizeof(*cmd);
+
+	/* Adding two tag array structs because the WMI command structure expects two array
+	 * arguments. Since the first one is deprecated, it will be sent with a size of 0.
+	 */
+	tlv = (struct wmi_tlv *)ptr;
+	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ARRAY_STRUCT, TLV_HDR_SIZE);
+	ptr += TLV_HDR_SIZE;
+
+	tlv = (struct wmi_tlv *)ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
+					 peer_param->num_peers *
+					 sizeof(*peer_info));
+	ptr += TLV_HDR_SIZE;
+
+	param_peer_info = peer_param->peer_info;
+
+	peer_info = (struct wmi_atf_peer_info *)ptr;
+	for (i = 0; i < peer_param->num_peers; i++) {
+		peer_info->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ATF_PEER_REQUEST_EVENT_V2,
+							       sizeof(*peer_info));
+		memcpy(peer_info->peer_macaddr, param_peer_info->peer_macaddr, ETH_ALEN);
+		peer_info->atf_peer_info =
+			le32_encode_bits(param_peer_info->percentage_peer, WMI_ATF_PEER_AIRTIME) |
+			le32_encode_bits(param_peer_info->group_index, WMI_ATF_PEER_GROUP_ID) |
+			le32_encode_bits(param_peer_info->explicit_peer_flag,
+					 WMI_ATF_PEER_CONFIGURED);
+		peer_info++;
+		param_peer_info++;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "ATF: WMI ATF peer config for num_peers %u pdev id %u atf_flags %u peers %u\n",
+		   peer_param->num_peers, peer_param->pdev_id,
+		   peer_param->atf_flags, peer_param->num_peers);
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_ATF_REQUEST_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to submit WMI_PEER_ATF_REQUEST_CMDID cmd\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+

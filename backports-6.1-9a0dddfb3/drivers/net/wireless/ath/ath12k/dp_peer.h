@@ -130,6 +130,8 @@ struct ath12k_dp_link_peer {
 	bool assoc_success; /* information on peer assoc status from firmware */
 	u32 flow_cnt[ATH12K_DATA_TID_MAX];
 	u8 tid_weight[ATH12K_DATA_TID_MAX];
+	u32 atf_peer_conf_airtime;
+	u8 atf_group_index;
 };
 
 struct ath12k_dp_peer {

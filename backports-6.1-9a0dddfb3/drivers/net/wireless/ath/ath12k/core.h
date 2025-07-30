@@ -1084,6 +1084,20 @@ struct ath12k_atf_group_info {
 	u32 unconfigured_peers_airtime;
 };
 
+struct ath12k_atf_peer_info {
+	u8 peer_macaddr[6];
+	u16 percentage_peer;
+	u16 group_index;
+	u32 explicit_peer_flag;
+};
+
+struct ath12k_atf_peer_params {
+	u32 num_peers;
+	u32 pdev_id;
+	u32 atf_flags;
+	struct ath12k_atf_peer_info *peer_info;
+};
+
 struct ath12k_atf {
 	u32 total_groups;
 	struct ath12k_atf_group_info group_info[ATH12K_ATF_MAX_GROUPS];

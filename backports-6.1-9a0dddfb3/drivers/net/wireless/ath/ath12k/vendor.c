@@ -16,6 +16,7 @@
 #include "telemetry_agent_if.h"
 #include "erp.h"
 #include "vendor_services.h"
+#include "dp_peer.h"
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -73,10 +74,20 @@ ath12k_vendor_atf_grouping_param_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GR
 };
 
 static const struct nla_policy
-ath12k_vendor_atf_offload_peer_config_policy[QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER_CONFIG_MAX + 1] = {
-	[QCA_WLAN_VENDOR_ATF_OFFLOAD_NUMBER_OF_PEERS] = {.type = NLA_U32},
-	[QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER_FLAGS] = {.type = NLA_U32},
-	[QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER_PAYLOAD] = {.type = NLA_BINARY},
+ath12k_vendor_atf_offload_peer_config_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUMBER_OF_PEERS] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_FULL_UPDATE] = {.type = NLA_FLAG},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MORE] = {.type = NLA_FLAG},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_PAYLOAD] = {.type = NLA_NESTED},
+};
+
+static const struct nla_policy
+ath12k_vendor_atf_peer_param_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC] = {.type = NLA_BINARY,
+						      .len = ETH_ALEN},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME] = {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX] = {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIGURED] = {.type = NLA_FLAG},
 };
 
 static const struct nla_policy
@@ -5624,70 +5635,123 @@ static int ath12k_vendor_atf_offload_wmm_ac_config(struct ath12k *ar,
 	return ret;
 }
 
+static void ath12k_update_atf_peer_info(struct ath12k *ar,
+					struct ath12k_atf_peer_params *peer_param)
+{
+	struct ath12k_dp *dp;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_atf_peer_info *param_peer_info;
+	struct ath12k_base *ab = ar->ab;
+	int i;
+
+	param_peer_info = peer_param->peer_info;
+
+	dp = ath12k_ab_to_dp(ab);
+	spin_lock_bh(&dp->dp_lock);
+
+	for (i = 0; i < peer_param->num_peers; i++) {
+		link_peer = ath12k_dp_link_peer_find_by_addr(dp, param_peer_info->peer_macaddr);
+		if (!link_peer)
+			continue;
+
+		link_peer->atf_peer_conf_airtime = param_peer_info->percentage_peer;
+		link_peer->atf_group_index = param_peer_info->group_index;
+	}
+
+	spin_unlock_bh(&dp->dp_lock);
+}
+
 static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 						 struct nlattr *peer_config)
 {
-	struct nlattr *tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER_CONFIG_MAX + 1];
-	struct ath12k_wmi_pdev *wmi = ar->wmi;
-	struct sk_buff *skb;
-	void *buf, *ptr;
-	u32 buf_len, len;
-	int ret;
-	struct wmi_peer_atf_request_fixed_param *cmd;
-	u32 num_peers, atf_flags, pdev_id = ar->pdev->pdev_id;
-	struct wmi_tlv *tlv;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MAX + 1];
+	struct nlattr *peer_attr;
+	struct nlattr *peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_MAX + 1];
+	struct ath12k_atf_peer_params atf_peer_param = {0};
+	struct ath12k_atf_peer_info *peer_info;
+	int ret, rem, num_peers = 0;
 
-	len = sizeof(*cmd) + TLV_HDR_SIZE;
-
-	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER_CONFIG_MAX,
+	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MAX,
 			       peer_config,
 			       ath12k_vendor_atf_offload_peer_config_policy, NULL);
 	if (ret) {
-		ath12k_err(ar->ab, "No data present in ATF peer condig command\n");
+		ath12k_err(ar->ab, "ATF: No data present in ATF peer condig command\n");
 		return ret;
 	}
 
-	num_peers = nla_get_u8(tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_NUMBER_OF_PEERS]);
-	atf_flags = nla_get_u8(tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER_FLAGS]);
-	buf = nla_data(tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER_PAYLOAD]);
-	buf_len = nla_len(tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER_PAYLOAD]);
-	if (!buf_len) {
-		ath12k_warn(ar->ab, "No data present in ATF peer config command\n");
-			return -EINVAL;
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUMBER_OF_PEERS]) {
+		ath12k_err(ar->ab, "ATF: Number of peers is missing");
+		return -EINVAL;
 	}
-	len += buf_len;
+	atf_peer_param.num_peers =
+		nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUMBER_OF_PEERS]);
 
-	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
-	if (!skb)
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_PAYLOAD]) {
+		ath12k_err(ar->ab, "ATF: Peer payload is missing");
+		return -EINVAL;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_FULL_UPDATE])
+		atf_peer_param.atf_flags = FIELD_PREP(WMI_ATF_FULL_UPDATE, 1);
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MORE])
+		atf_peer_param.atf_flags = atf_peer_param.atf_flags |
+					   FIELD_PREP(WMI_ATF_PEER_PENDING, 1);
+
+	atf_peer_param.atf_flags = atf_peer_param.atf_flags |
+				   FIELD_PREP(WMI_ATF_PEER_VALID_PDEV, 1);
+
+	atf_peer_param.pdev_id = ar->pdev->pdev_id;
+
+	peer_info = kzalloc(atf_peer_param.num_peers * sizeof(struct ath12k_atf_peer_info),
+			    GFP_KERNEL);
+	if (!peer_info) {
+		ath12k_err(ar->ab, "ATF: Failed to allocate memory for peer_info");
 		return -ENOMEM;
-
-	ptr = skb->data;
-	cmd = (struct wmi_peer_atf_request_fixed_param *)ptr;
-	memcpy(skb->data, buf, buf_len);
-	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_ATF_REQUEST,
-						 sizeof(*cmd));
-	cmd->num_peers = cpu_to_le32(num_peers);
-	cmd->pdev_id = cpu_to_le32(pdev_id);
-	cmd->atf_flags = cpu_to_le32(atf_flags);
-	ptr += sizeof(*cmd);
-
-	tlv = (struct wmi_tlv *)ptr;
-	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ARRAY_STRUCT, TLV_HDR_SIZE);
-	ptr += TLV_HDR_SIZE;
-
-	memcpy(ptr, buf, buf_len);
-
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI ATF peer config for num_peers %u pdev id %u atf_flags %u\n",
-		   num_peers, pdev_id, atf_flags);
-
-	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_ATF_REQUEST_CMDID);
-	if (ret) {
-		ath12k_warn(ar->ab,
-			    "failed to submit WMI_PEER_ATF_REQUEST_CMDID cmd\n");
-		dev_kfree_skb(skb);
 	}
 
+	nla_for_each_nested(peer_attr,
+			    tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_PAYLOAD],
+			    rem) {
+		ret = nla_parse_nested(peer, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_MAX,
+				       peer_attr, ath12k_vendor_atf_peer_param_policy, NULL);
+		if (ret) {
+			ath12k_warn(ar->ab, "ATF: Peer payload is invalid");
+			kfree(peer_info);
+			return -EINVAL;
+		}
+
+		if (!peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC] ||
+		    !(nla_len(peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC]) == ETH_ALEN) ||
+		    !peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME] ||
+		    !peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX]) {
+			ath12k_warn(ar->ab, "ATF: All peer parameters not present");
+			kfree(peer_info);
+			return -EINVAL;
+		}
+
+
+		memcpy(peer_info[num_peers].peer_macaddr,
+		       nla_data(peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC]), ETH_ALEN);
+		peer_info[num_peers].percentage_peer =
+			nla_get_u16(peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME]);
+		peer_info[num_peers].group_index =
+			nla_get_u16(peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX]);
+		if (peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIGURED])
+			peer_info[num_peers].explicit_peer_flag = 1;
+		else
+			peer_info[num_peers].explicit_peer_flag = 0;
+		num_peers++;
+	}
+
+	atf_peer_param.peer_info = peer_info;
+
+	ath12k_update_atf_peer_info(ar, &atf_peer_param);
+	ret = ath12k_wmi_atf_send_peer_config(ar, &atf_peer_param);
+	if (ret)
+		ath12k_warn(ar->ab, "Failed to send peer config");
+
+	kfree(peer_info);
 	return ret;
 }
 

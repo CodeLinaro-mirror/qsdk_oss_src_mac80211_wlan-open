@@ -29,6 +29,7 @@ struct ath12k_link_vif;
 struct ath12k_fw_stats;
 struct ath12k_reg_tpc_power_info;
 struct ath12k_qos_params;
+struct ath12k_atf_peer_params;
 
 extern const char *mgmt_frame_name[];
 
@@ -2297,6 +2298,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_COMPL_FIXED_PARAM = 0x4a5,
 	WMI_TAG_MLO_PRIMARY_LINK_PEER_MIGRATION_STATUS = 0x4a6,
 	WMI_TAG_ATF_SSID_GROUPING_REQUEST_EVENT_V2 = 0x4a7,
+	WMI_TAG_ATF_PEER_REQUEST_EVENT_V2 = 0x4A8,
 	WMI_TAG_PDEV_WSI_STATS_INFO_CMD = 0x4b1,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
 	WMI_TAG_VDEV_CH_PSD_POWER_INFO = 0x4bc,
@@ -8850,6 +8852,12 @@ struct wmi_atf_ssid_grp_request_fixed_param {
 	__le32 pdev_id;
 };
 
+#define WMI_ATF_PEER_AIRTIME GENMASK(15, 0)
+#define WMI_ATF_PEER_GROUP_ID GENMASK(23, 16)
+#define WMI_ATF_PEER_CONFIGURED GENMASK(24, 24)
+#define WMI_ATF_PEER_PENDING GENMASK(1, 1)
+#define WMI_ATF_PEER_VALID_PDEV GENMASK(2, 2)
+#define WMI_ATF_FULL_UPDATE GENMASK(0, 0)
 #define WMI_ATF_GROUP_SCHED_POLICY GENMASK(3, 0)
 #define WMI_ATF_GROUP_NUM_IMPLICIT_PEERS GENMASK(31, 16)
 #define WMI_ATF_GROUP_NUM_EXPLICIT_PEERS GENMASK(15, 0)
@@ -8868,6 +8876,12 @@ struct wmi_peer_atf_request_fixed_param {
 	__le32 num_peers;
 	__le32 pdev_id;
 	__le32 atf_flags;
+};
+
+struct wmi_atf_peer_info {
+	__le32 tlv_header;
+	__u8 peer_macaddr[6];
+	__le32 atf_peer_info;
 };
 
 #define WMI_TLT_MAX_LINKS 5
@@ -9218,4 +9232,6 @@ int ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 int ath12k_wmi_ap_tid_to_link_map_config(struct ath12k *ar,
 					 struct ath12k_wmi_tid_to_link_map_ap_params *params);
 int ath12k_wmi_atf_send_group_config(struct ath12k *ar);
+int ath12k_wmi_atf_send_peer_config(struct ath12k *ar,
+				    struct ath12k_atf_peer_params *peer_param);
 #endif
