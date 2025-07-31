@@ -3105,7 +3105,8 @@ static bool ath12k_wifi7_dp_rx_h_rxdma_err(struct ath12k_pdev_dp *dp_pdev,
 	case HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR:
 	case HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR:
 		if (rx_desc_data->err_bitmap & HAL_RX_MPDU_ERR_TKIP_MIC) {
-			ath12k_wifi7_dp_rx_h_tkip_mic_err(dp_pdev, msdu, status, rx_desc_data);
+			drop = ath12k_wifi7_dp_rx_h_tkip_mic_err(dp_pdev, msdu, status,
+								 rx_desc_data);
 			break;
 		}
 		fallthrough;
