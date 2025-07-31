@@ -535,6 +535,22 @@ ath12k_wifi7_dp_mon_rx_parse_ppdu_status(struct ath12k_pdev_dp *dp_pdev,
 
 	while ((mpdu = skb_dequeue(&ppdu_info->mpdu_q))) {
 		mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)mpdu->data;
+		/* In some cases, an RX_HDR TLV may get received with no content
+		 * and without an accompanying BUFFER ADDR TLV—meaning there is
+		 * no payload attached. In such cases, the skb may have fragments
+		 * present (nr_frags > 0) but its total length (skb->len) is zero.
+		 * To avoid processing an skb with zero length, add a check to
+		 * skip these cases.
+		 */
+		if (!mpdu->len) {
+			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb, &pkt_tlv);
+			mon_stats->num_skb_raw += num_skb;
+			mon_stats->num_frag_raw += pkt_tlv;
+			dev_kfree_skb_any(mpdu);
+			mon_stats->num_skb_free++;
+			continue;
+		}
+
 		if (mpdu_meta->decap_type == DP_RX_DECAP_TYPE_RAW) {
 			last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
 			if (skb_shinfo(mpdu)->nr_frags >= 2) {
