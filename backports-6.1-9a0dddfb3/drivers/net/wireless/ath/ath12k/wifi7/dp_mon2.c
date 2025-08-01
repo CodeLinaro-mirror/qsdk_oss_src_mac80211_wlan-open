@@ -968,13 +968,13 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 					   ATH12K_DP_MON_RX_BUF_SIZE, DMA_FROM_DEVICE);
 
 		end_offset = u32_get_bits(info0, HAL_MON_DEST_INFO0_END_OFFSET);
-		if (unlikely(end_offset > DP_RX_BUFFER_SIZE))
+		if (unlikely(end_offset > ATH12K_DP_MON_RX_BUF_SIZE))
 			ath12k_warn(dp,
 				    "mon_dest: invalid offset %u received in mac_id %d\n",
 				    end_offset, pdev_dp->mac_id);
 
-		if (unlikely(end_offset > DP_RX_BUFFER_SIZE))
-			end_offset = DP_RX_BUFFER_SIZE - 1;
+		if (unlikely(end_offset > ATH12K_DP_MON_RX_BUF_SIZE))
+			end_offset = ATH12K_DP_MON_RX_BUF_SIZE - 1;
 
 		/* The hardware reports the buffer length as (actual_length - 1),
 		 * likely due to internal indexing or alignment constraints.
