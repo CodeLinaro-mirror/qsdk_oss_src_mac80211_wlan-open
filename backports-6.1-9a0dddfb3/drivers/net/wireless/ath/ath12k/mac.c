@@ -20269,9 +20269,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		ar->last_signal_update = jiffies;
 	}
 
-	if (!signal &&
-	    ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-	    !(ath12k_mac_get_fw_stats(ar, &params)))
+	if (!signal && ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		signal = arsta->rssi_beacon;
 
 	if (signal) {
@@ -20370,8 +20368,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		ar->last_signal_update = jiffies;
 	}
 
-	if (!signal && ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-	    (!ath12k_mac_get_fw_stats(ar, &params)))
+	if (!signal && ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		signal = arsta->rssi_beacon;
 
 	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_CHAIN_SIGNAL)) &&
