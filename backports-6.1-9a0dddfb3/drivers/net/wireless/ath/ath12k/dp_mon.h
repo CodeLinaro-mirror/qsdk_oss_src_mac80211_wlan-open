@@ -277,6 +277,10 @@ struct ath12k_pdev_mon_dp_stats {
 	u32 num_frag_eth;
 
 	u32 drop_tlv;
+
+	u32 ppdu_desc_used;
+	u32 ppdu_desc_proc;
+	u32 ppdu_desc_free;
 };
 
 struct ath12k_pdev_mon_dp {

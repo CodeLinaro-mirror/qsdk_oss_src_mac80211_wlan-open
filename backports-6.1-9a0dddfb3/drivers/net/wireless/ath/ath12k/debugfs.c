@@ -6389,6 +6389,15 @@ static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *use
 			 mon_stats->num_skb_alloc -
 			 (mon_stats->num_skb_free + mon_stats->num_skb_to_mac80211));
 
+	len += scnprintf(buf + len, size - len, "\n ppdu_desc_used: %u\n",
+			 mon_stats->ppdu_desc_used);
+
+	len += scnprintf(buf + len, size - len, "\n ppdu_desc_proc: %u\n",
+			 mon_stats->ppdu_desc_proc);
+
+	len += scnprintf(buf + len, size - len, "\n ppdu_desc_free: %u\n",
+			 mon_stats->ppdu_desc_free);
+
 	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 	kfree(buf);
 

@@ -667,6 +667,7 @@ ath12k_wifi7_dp_mon_rx_get_ppdu_desc(struct ath12k_pdev_mon_dp *dp_mon_pdev)
 	if (ppdu_desc)
 		list_del(&ppdu_desc->list);
 
+	dp_mon_pdev->mon_stats.ppdu_desc_free--;
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
 	return ppdu_desc;
@@ -678,6 +679,7 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 	struct ath12k_dp_mon *dp_mon = dp_mon_pdev->dp_mon;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc;
 	struct ath12k_dp_mon_desc *desc;
+	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
 	int desc_cnt;
 
 	ppdu_desc = ath12k_wifi7_dp_mon_rx_get_ppdu_desc(dp_mon_pdev);
@@ -696,6 +698,7 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 			spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 			list_add_tail(&ppdu_desc->list,
 				      &dp_mon_pdev->ppdu_desc_free_list);
+			mon_stats->ppdu_desc_free++;
 			spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 			return -EOVERFLOW;
 		}
@@ -762,12 +765,14 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 	enum hal_rx_mon_status hal_status;
 	u32 *num_skb_free, *pkt_tlv_free;
 	int desc_cnt;
-	u8 filter_category = 0, status_desc_cnt;
+	u8 filter_category = 0, status_desc_cnt, ppdu_desc_prcd = 0;
 	bool is_addr_equal;
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 	list_splice_init(&dp_mon_pdev->ppdu_desc_used_list,
 			 &dp_mon_pdev->ppdu_desc_proc_list);
+	mon_stats->ppdu_desc_proc += mon_stats->ppdu_desc_used;
+	mon_stats->ppdu_desc_used = 0;
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
 	list_for_each_entry(ppdu_desc, &dp_mon_pdev->ppdu_desc_proc_list, list) {
@@ -877,6 +882,7 @@ free_buf:
 		}
 next_ppdu:
 		mon_stats->num_ppdu_processed++;
+		ppdu_desc_prcd++;
 		ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(ppdu_desc);
 		ath12k_wifi7_dp_mon_rx_memset_ppdu_info(pdev_dp, ppdu_info);
 	}
@@ -884,6 +890,8 @@ next_ppdu:
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
 	list_splice_tail_init(&dp_mon_pdev->ppdu_desc_proc_list,
 			      &dp_mon_pdev->ppdu_desc_free_list);
+	mon_stats->ppdu_desc_free += ppdu_desc_prcd;
+	mon_stats->ppdu_desc_proc -= ppdu_desc_prcd;
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 }
 
@@ -1053,6 +1061,7 @@ int ath12k_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev)
 		INIT_LIST_HEAD(&dp_mon_pdev->ppdu_desc_pool[i].list);
 		list_add_tail(&dp_mon_pdev->ppdu_desc_pool[i].list,
 			      &dp_mon_pdev->ppdu_desc_free_list);
+		dp_mon_pdev->mon_stats.ppdu_desc_free++;
 	}
 	spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
