@@ -528,7 +528,10 @@ void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 	rx_status = IEEE80211_SKB_RXCB(msdu);
 	*rx_status = *status;
 
-	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
+	if (!napi)
+		ieee80211_rx_ni(ath12k_dp_pdev_to_hw(dp_pdev), msdu);
+	else
+		ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_deliver_skb);
 

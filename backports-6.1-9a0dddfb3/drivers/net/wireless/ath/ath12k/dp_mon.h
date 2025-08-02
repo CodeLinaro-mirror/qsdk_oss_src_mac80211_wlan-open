@@ -96,6 +96,8 @@ struct ath12k_dp_arch_mon_ops {
 	void (*rx_monitor_mode_reset)(struct ath12k_pdev_dp *dp_pdev);
 	int (*setup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
 	void (*cleanup_ppdu_desc)(struct ath12k_pdev_dp *pdev_dp);
+	int (*mon_rx_wq_init)(struct ath12k_pdev_dp *pdev_dp);
+	void (*mon_rx_wq_deinit)(struct ath12k_pdev_dp *pdev_dp);
 	void (*rx_nrp_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_nrp_reset)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_rx_wmask)(void *ptr, struct htt_rx_ring_tlv_filter *tlv_filter);
@@ -295,6 +297,9 @@ struct ath12k_pdev_mon_dp {
 	spinlock_t ppdu_desc_lock;
 	struct list_head mon_desc_used_list;
 	struct ath12k_pdev_mon_dp_stats mon_stats;
+
+	struct work_struct rxmon_work;
+	struct workqueue_struct *rxmon_wq;
 };
 
 struct ath12k_dp_mon_desc {
@@ -527,7 +532,26 @@ int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
+	if (mon_ops->mon_rx_wq_init) {
+		ret = mon_ops->mon_rx_wq_init(dp_pdev);
+		if (ret) {
+			ath12k_warn(dp,
+				    "failed to init mon workqueue for pdev_id %d\n",
+				    mac_id);
+			goto cleanup;
+		}
+	}
+
 	return 0;
+
+cleanup:
+	if (mon_ops && mon_ops->cleanup_ppdu_desc)
+		mon_ops->cleanup_ppdu_desc(dp_pdev);
+
+	if (mon_ops && mon_ops->mon_pdev_rx_srng_cleanup)
+		mon_ops->mon_pdev_rx_srng_cleanup(dp_pdev);
+
+	return ret;
 }
 
 static inline
@@ -569,6 +593,14 @@ void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 
 	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops) {
+		ath12k_warn(dp, "mon ops is NULL during mon pdev free\n");
+		return;
+	}
+
+	if (mon_ops->mon_rx_wq_deinit)
+		mon_ops->mon_rx_wq_deinit(dp_pdev);
 
 	if (mon_ops->rx_filter_free)
 		mon_ops->rx_filter_free(dp_pdev);
