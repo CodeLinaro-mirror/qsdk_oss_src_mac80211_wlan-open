@@ -53,19 +53,15 @@ ath12k_wifi7_dp_mon_rx_memset_ppdu_info(struct ath12k_pdev_dp *pdev_dp,
 {
 	struct sk_buff *skb;
 	int mpdu_q_len = skb_queue_len(&ppdu_info->mpdu_q);
-	bool monitor_started = pdev_dp->ar->monitor_started;
 
-	if (monitor_started) {
-		if (WARN(mpdu_q_len, "dp_mon: unexpected mpdu_q len %d\n", mpdu_q_len)) {
-			while ((skb = skb_dequeue(&ppdu_info->mpdu_q)))
-				dev_kfree_skb_any(skb);
-		}
+	if (WARN(mpdu_q_len, "dp_mon: unexpected mpdu_q len %d\n", mpdu_q_len)) {
+		while ((skb = skb_dequeue(&ppdu_info->mpdu_q)))
+			dev_kfree_skb_any(skb);
 	}
 
 	memset(ppdu_info, 0, sizeof(*ppdu_info));
 	ppdu_info->peer_id = HAL_INVALID_PEERID;
-	if (monitor_started)
-		skb_queue_head_init(&ppdu_info->mpdu_q);
+	skb_queue_head_init(&ppdu_info->mpdu_q);
 }
 
 static inline void
@@ -250,8 +246,7 @@ ath12k_dp_mon_parse_mpdu_start(struct ath12k_dp *dp, struct ath12k_mon_data *pmo
 	struct sk_buff *skb = skb_peek_tail(&ppdu_info->mpdu_q);
 
 	if (!ppdu_info->mpdu_info.rx_hdr_rcvd) {
-		ath12k_warn(dp, "MPDU start received without rx_hdr\n");
-		return -EINVAL;
+		return 0;
 	}
 
 	if (unlikely(!skb)) {
@@ -377,7 +372,6 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct hal_tlv_64_hdr *tlv;
-	struct ath12k *ar = dp_pdev->ar;
 	struct hal_tlv_parsed_hdr tlv_parsed_hdr = {0};
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
 	enum hal_rx_mon_status hal_status;
@@ -413,18 +407,16 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 								 &pmon->mon_ppdu_info,
 								 &tlv_parsed_hdr);
 
-		if (ar->monitor_started) {
-			ret = ath12k_wifi7_dp_mon_rx_parse_dest_tlv(dp_pdev, pmon,
-								    hal_status,
-								    &tlv_parsed_hdr,
-								    mon_buf);
-			/* During error case scenario, print the error type and continue
-			 * to TLV parsing to free the remaining buffer address TLVs.
-			 */
-			if (ret)
-				ath12k_warn(dp_pdev->dp,
-					    "mon_rx_parse_dest failed with ret %d", ret);
-		}
+		ret = ath12k_wifi7_dp_mon_rx_parse_dest_tlv(dp_pdev, pmon,
+							    hal_status,
+							    &tlv_parsed_hdr,
+							    mon_buf);
+		/* During error case scenario, print the error type and continue
+		 * to TLV parsing to free the remaining buffer address TLVs.
+		 */
+		if (ret)
+			ath12k_warn(dp_pdev->dp,
+				    "mon_rx_parse_dest failed with ret %d", ret);
 
 		ptr += tlv_len;
 		ptr = PTR_ALIGN(ptr, HAL_TLV_64_ALIGN);
