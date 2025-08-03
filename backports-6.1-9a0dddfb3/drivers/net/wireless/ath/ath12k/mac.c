@@ -6929,6 +6929,23 @@ skip_pending_cs_up:
 			arvif->do_not_send_tmpl = true;
 		else
 			arvif->do_not_send_tmpl = false;
+
+		if (arvif->is_up && info->he_support) {
+			param_id = WMI_VDEV_PARAM_BA_MODE;
+
+			if (info->eht_support)
+				param_value = WMI_BA_MODE_BUFFER_SIZE_1024;
+			else
+				param_value = WMI_BA_MODE_BUFFER_SIZE_256;
+
+			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param_id,
+							    param_value);
+
+			if (ret)
+				ath12k_warn(ar->ab,
+					    "failed to set BA BUFFER SIZE %d for vdev: %d\n",
+					     param_value, arvif->vdev_id);
+		}
 	}
 
 	if (changed & (BSS_CHANGED_BEACON_INFO | BSS_CHANGED_BEACON)) {
@@ -6975,24 +6992,15 @@ skip_pending_cs_up:
 		}
 		ath12k_control_beaconing(arvif, info);
 
-		if (arvif->is_up && info->he_support &&
-		    info->he_oper.params) {
-			/* TODO: Extend to support 1024 BA Bitmap size */
-			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-							    WMI_VDEV_PARAM_BA_MODE,
-							    WMI_BA_MODE_BUFFER_SIZE_256);
-			if (ret)
-				ath12k_warn(ar->ab,
-					    "failed to set BA BUFFER SIZE 256 for vdev: %d\n",
-					    arvif->vdev_id);
-
+		if (arvif->is_up && info->he_support && info->he_oper.params) {
 			param_id = WMI_VDEV_PARAM_HEOPS_0_31;
 			param_value = info->he_oper.params;
 			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
-							    param_id, param_value);
+							    param_id,
+							    param_value);
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 					"he oper param: %x set for VDEV: %d\n",
-					param_value, arvif->vdev_id);
+					 param_value, arvif->vdev_id);
 
 			if (ret)
 				ath12k_warn(ar->ab, "Failed to set he oper params %x for VDEV %d: %i\n",

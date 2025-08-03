@@ -252,6 +252,7 @@ struct wmi_vdev_set_tpc_power_cmd {
 #define WMI_APPEND_TO_EXISTING_CHAN_LIST_FLAG 1
 
 #define WMI_BA_MODE_BUFFER_SIZE_256  3
+#define WMI_BA_MODE_BUFFER_SIZE_1024 6
 
 #define ath12k_REG_AFC_CMD_SERV_RESP_READY     1
 #define WMI_AFC_LOW_FREQUENCY                  GENMASK(15, 0)
