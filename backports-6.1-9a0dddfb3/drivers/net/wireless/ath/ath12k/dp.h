@@ -376,14 +376,19 @@ struct ath12k_tx_desc_info {
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_tx_desc_info {
-	struct list_head list;
-	struct sk_buff *skb;
-	dma_addr_t paddr;
-	u32 desc_id; /* Cookie */
-	bool in_use;
-	u8 mac_id;
-	u8 pool_id;
-	u8 flags;
+	union {
+		u8 align[64];
+		struct {
+			struct list_head list;
+			struct sk_buff *skb;
+			dma_addr_t paddr;
+			u32 desc_id; /* Cookie */
+			bool in_use;
+			u8 mac_id;
+			u8 pool_id;
+			u8 flags;
+		};
+	};
 };
 #endif
 
