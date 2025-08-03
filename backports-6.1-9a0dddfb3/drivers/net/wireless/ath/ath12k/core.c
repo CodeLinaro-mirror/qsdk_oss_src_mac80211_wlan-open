@@ -1183,7 +1183,8 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		ath12k_qmi_firmware_stop(ab);
 
-	ath12k_ce_cleanup_pipes(ab);
+	if (ab->ce_pipe_init_done)
+		ath12k_ce_cleanup_pipes(ab);
 
 	if (!ab->pm_suspend)
 		ath12k_hif_power_down(ab, false);
@@ -4487,6 +4488,11 @@ static void ath12k_core_hw_group_cleanup(struct ath12k_hw_group *ag)
 		return;
 
 	mutex_lock(&ag->mutex);
+
+	if (!test_bit(ATH12K_GROUP_FLAG_REGISTERED, &ag->flags)) {
+		mutex_unlock(&ag->mutex);
+		return;
+	}
 
 	if (test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
 		mutex_unlock(&ag->mutex);
