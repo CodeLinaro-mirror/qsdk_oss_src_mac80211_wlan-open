@@ -73,6 +73,7 @@ void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id)
 {
         ab->hal.hal_ops->tx_set_dscp_tid_map(ab, map, id);
 }
+EXPORT_SYMBOL(ath12k_hal_tx_set_dscp_tid_map);
 
 void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id)
@@ -150,6 +151,7 @@ ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 {
 	return hal->hal_ops->get_idle_link_rbm(hal, device_id);
 }
+EXPORT_SYMBOL(ath12k_hal_get_idle_link_rbm);
 
 void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
 {

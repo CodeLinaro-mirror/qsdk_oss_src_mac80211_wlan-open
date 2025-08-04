@@ -1640,6 +1640,7 @@ err_ppeds_attach:
 
 	return -ENOMEM;
 }
+EXPORT_SYMBOL(ath12k_ppeds_attach);
 
 int ath12k_ppeds_detach(struct ath12k_base *ab)
 {
@@ -1679,6 +1680,7 @@ int ath12k_ppeds_detach(struct ath12k_base *ab)
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_ppeds_detach);
 
 int ath12k_dp_ppeds_start(struct ath12k_base *ab)
 {

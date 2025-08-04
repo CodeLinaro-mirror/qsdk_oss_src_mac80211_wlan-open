@@ -623,6 +623,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 	}
 	spin_unlock_bh(&dp->reo_cmd_lock);
 }
+EXPORT_SYMBOL(ath12k_dp_rx_reo_cmd_list_cleanup);
 
 void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 			    enum hal_reo_cmd_status status)
@@ -1107,6 +1108,7 @@ void ath12k_dp_rx_free(struct ath12k_base *ab)
 	for (i = 0; i < ab->hw_params->num_rxdma_dst_ring; i++)
 		ath12k_dp_srng_cleanup(ab, &dp->rxdma_err_dst_ring[i]);
 }
+EXPORT_SYMBOL(ath12k_dp_rx_free);
 
 int
 ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
@@ -1227,6 +1229,7 @@ static int ath12k_dp_rx_flow_send_fst_setup(struct ath12k_base *ab,
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_alloc);
 
 struct dp_rx_fst *ath12k_dp_rx_fst_attach(struct ath12k_base *ab)
 {

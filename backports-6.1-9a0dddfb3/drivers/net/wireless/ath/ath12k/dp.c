@@ -51,6 +51,7 @@ u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE] = {
 	7, 6, 6, 6, 6, 6, 6, 6,
 	7, 7, 7, 7, 7, 7, 7, 7,
 };
+EXPORT_SYMBOL(ath12k_default_dscp_tid_map);
 
 /*
  * TODO: fix this
@@ -647,15 +648,16 @@ void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif)
 	ath12k_dp_ppeds_update_vp_entry(arvif->ar, arvif);
 }
 
-static void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab)
+void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
 	kfree(dp->bank_profiles);
 	dp->bank_profiles = NULL;
 }
+EXPORT_SYMBOL(ath12k_dp_deinit_bank_profiles);
 
-static int ath12k_dp_init_bank_profiles(struct ath12k_base *ab)
+int ath12k_dp_init_bank_profiles(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	u32 num_tcl_banks = ab->hw_params->num_tcl_banks;
@@ -677,8 +679,9 @@ static int ath12k_dp_init_bank_profiles(struct ath12k_base *ab)
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_init_bank_profiles);
 
-static void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
+void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int i;
@@ -696,8 +699,9 @@ static void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 
 	ath12k_dp_srng_ppeds_cleanup(ab);
 }
+EXPORT_SYMBOL(ath12k_dp_srng_common_cleanup);
 
-static int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
+int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	const struct ath12k_hal_tcl_to_cmp_rbm_map *map;
@@ -815,6 +819,7 @@ err:
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_srng_common_setup);
 
 static void ath12k_dp_scatter_idle_link_desc_cleanup(struct ath12k_base *ab)
 {
@@ -981,8 +986,9 @@ void ath12k_dp_link_desc_cleanup(struct ath12k_base *ab,
 		ath12k_dp_scatter_idle_link_desc_cleanup(ab);
 	}
 }
+EXPORT_SYMBOL(ath12k_dp_link_desc_cleanup);
 
-static int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc)
+int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	u32 n_mpdu_link_desc, n_mpdu_queue_desc;
@@ -1017,6 +1023,7 @@ static int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc)
 	}
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_wbm_idle_ring_setup);
 
 int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 			      struct dp_link_desc_bank *link_desc_banks,
@@ -1114,6 +1121,7 @@ fail_desc_bank_free:
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_link_desc_setup);
 
 int ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
 {
@@ -1273,7 +1281,7 @@ void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif)
 	}
 }
 
-static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
+void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_rx_desc_info *desc_info;
 	struct ath12k_tx_desc_info *tx_desc_info;
@@ -1396,8 +1404,9 @@ static void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 	kfree(dp->spt_info);
 	dp->spt_info = NULL;
 }
+EXPORT_SYMBOL(ath12k_dp_cc_cleanup);
 
-static void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab)
+void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
@@ -1418,29 +1427,7 @@ static void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab)
 		dp->ml_reoq_lut.vaddr_unaligned = NULL;
 	}
 }
-
-static void ath12k_dp_cleanup(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-
-	if (!dp->ab)
-		return;
-
-	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
-				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
-
-	ath12k_ppeds_detach(ab);
-	ath12k_dp_cc_cleanup(ab);
-	ath12k_dp_reoq_lut_cleanup(ab);
-	ath12k_dp_deinit_bank_profiles(ab);
-	ath12k_dp_srng_common_cleanup(ab);
-
-	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
-
-	ath12k_dp_mon_rx_free(dp);
-	ath12k_dp_rx_free(ab);
-	/* Deinit any SOC level resource */
-}
+EXPORT_SYMBOL(ath12k_dp_reoq_lut_cleanup);
 
 static u32 ath12k_dp_cc_cookie_gen(u16 ppt_idx, u16 spt_idx)
 {
@@ -1814,7 +1801,7 @@ void ath12k_dp_partner_cc_init(struct ath12k_base *ab)
 	}
 }
 
-static int ath12k_dp_cc_init(struct ath12k_base *ab)
+int ath12k_dp_cc_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int i, ret = 0;
@@ -1882,6 +1869,7 @@ free:
 	ath12k_dp_cc_cleanup(ab);
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_cc_init);
 
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data)
 {
@@ -1936,7 +1924,7 @@ static int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 	return 0;
 }
 
-static int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab)
+int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret;
@@ -1973,127 +1961,20 @@ static int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab)
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_reoq_lut_setup);
 
 static int ath12k_dp_setup(struct ath12k_base *ab)
 {
-	struct ath12k_dp *dp;
-	struct hal_srng *srng = NULL;
-	size_t size = 0;
-	u32 n_link_desc = 0;
-	int ret;
-	int i;
-
-	dp = ath12k_ab_to_dp(ab);
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	dp->ab = ab;
 
 	spin_lock_init(&dp->dp_lock);
-	INIT_LIST_HEAD(&dp->reo_cmd_list);
-	INIT_LIST_HEAD(&dp->reo_cmd_cache_flush_list);
-	INIT_LIST_HEAD(&dp->reo_cmd_update_rx_queue_list);
-	spin_lock_init(&dp->reo_cmd_lock);
-	spin_lock_init(&dp->reo_cmd_update_rx_queue_lock);
-
 	INIT_LIST_HEAD(&dp->peers);
 	INIT_LIST_HEAD(&dp->neighbor_peers);
-
 	mutex_init(&dp->tbl_mtx_lock);
-
-	dp->reo_cmd_cache_flush_count = 0;
-	dp->idle_link_rbm =
-			ath12k_hal_get_idle_link_rbm(&ab->hal, ab->device_id);
-
 	ath12k_dp_link_peer_rhash_tbl_init(dp);
 
-	ret = ath12k_wbm_idle_ring_setup(ab, &n_link_desc);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup wbm_idle_ring: %d\n", ret);
-		return ret;
-	}
-
-	srng = &ab->hal.srng_list[dp->wbm_idle_ring.ring_id];
-
-	ret = ath12k_dp_link_desc_setup(ab, dp->link_desc_banks,
-					HAL_WBM_IDLE_LINK, srng, n_link_desc);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup link desc: %d\n", ret);
-		return ret;
-	}
-
-	ret = ath12k_dp_cc_init(ab);
-
-	if (ret) {
-		ath12k_warn(ab, "failed to setup cookie converter %d\n", ret);
-		goto fail_link_desc_cleanup;
-	}
-	ret = ath12k_dp_init_bank_profiles(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup bank profiles %d\n", ret);
-		goto fail_hw_cc_cleanup;
-	}
-
-	ret = ath12k_ppeds_attach(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to attach PPE DS %d\n", ret);
-		goto fail_dp_bank_profiles_cleanup;
-	}
-
-	ret = ath12k_dp_srng_common_setup(ab);
-	if (ret)
-		goto fail_ppeds_detach;
-
-	size = sizeof(struct hal_wbm_release_ring_tx) * DP_TX_COMP_RING_SIZE;
-
-	ret = ath12k_dp_reoq_lut_setup(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup reoq table %d\n", ret);
-		goto fail_cmn_srng_cleanup;
-	}
-
-	for (i = 0; i < ab->hw_params->max_tx_ring; i++)
-		dp->tx_ring[i].tcl_data_ring_id = i;
-
-	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
-		ath12k_hal_tx_set_dscp_tid_map(ab, ath12k_default_dscp_tid_map, i);
-
-	ret = ath12k_dp_rx_alloc(ab);
-	if (ret)
-		goto fail_dp_rx_free;
-
-	ret = ath12k_dp_mon_rx_alloc(dp);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rxdma rings ret = %d\n", ret);
-		goto fail_dp_mon_rx_free;
-	}
-
-	/* Init any SOC level resource for DP */
-
 	return 0;
-
-fail_dp_mon_rx_free:
-	ath12k_dp_mon_rx_free(dp);
-
-fail_dp_rx_free:
-	ath12k_dp_rx_free(ab);
-
-	ath12k_dp_reoq_lut_cleanup(ab);
-
-fail_cmn_srng_cleanup:
-	ath12k_dp_srng_common_cleanup(ab);
-
-fail_ppeds_detach:
-	ath12k_ppeds_detach(ab);
-
-fail_dp_bank_profiles_cleanup:
-	ath12k_dp_deinit_bank_profiles(ab);
-
-fail_hw_cc_cleanup:
-	ath12k_dp_cc_cleanup(ab);
-
-fail_link_desc_cleanup:
-	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
-				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
-
-	return ret;
 }
 
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
@@ -2101,8 +1982,6 @@ void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_arch_op_device_deinit(dp);
 
 	ath12k_dp_link_peer_rhash_tbl_destroy(dp);
-
-	ath12k_dp_cleanup(dp->ab);
 }
 
 int ath12k_dp_cmn_device_init(struct ath12k_dp *dp)

@@ -1060,6 +1060,15 @@ void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct dp_rxdma_ring *rx_ring,
 					       struct list_head *list);
+int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
+void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);
+int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab);
+void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab);
+int ath12k_dp_cc_init(struct ath12k_base *ab);
+void ath12k_dp_cc_cleanup(struct ath12k_base *ab);
+int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc);
+int ath12k_dp_srng_common_setup(struct ath12k_base *ab);
+void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);
 ssize_t ath12k_dp_dump_device_ring_stats(struct ath12k_base *ab,
 					 char *buf, int size);
