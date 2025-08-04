@@ -224,7 +224,7 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
 		ath12k_hal_tx_set_dscp_tid_map(ab, ath12k_default_dscp_tid_map, i);
 
-	ret = ath12k_dp_rx_alloc(ab);
+	ret = ath12k_wifi7_dp_rx_ring_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "rx allod failed ret = %d\n", ret);
 		goto fail_dp_rx_free;
@@ -242,7 +242,7 @@ fail_dp_mon_rx_free:
 	ath12k_dp_mon_rx_free(dp);
 
 fail_dp_rx_free:
-	ath12k_dp_rx_free(ab);
+	ath12k_wifi7_dp_rx_ring_free(ab);
 	ath12k_dp_reoq_lut_cleanup(ab);
 
 fail_tx_ring_cleanup:
@@ -291,7 +291,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
 	ath12k_dp_mon_rx_free(dp);
-	ath12k_dp_rx_free(ab);
+	ath12k_wifi7_dp_rx_ring_free(ab);
 
 	ath12k_hif_ext_irq_cleanup(dp->ab);
 }

@@ -1049,7 +1049,6 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 {
 	ath12k_core_to_group_ref_put(ab);
 	ath12k_acpi_stop(ab);
-	ath12k_dp_rx_pdev_reo_cleanup(ab);
 	ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
 	ath12k_dp_cmn_device_deinit(ab->dp);
@@ -1359,23 +1358,17 @@ static int ath12k_core_start(struct ath12k_base *ab)
 
 	ath12k_hal_cc_config(ab);
 
-	ret = ath12k_dp_rx_pdev_reo_setup(ab);
-	if (ret) {
-		ath12k_err(ab, "failed to initialize reo destination rings: %d\n", ret);
-		goto err_hif_stop;
-	}
-
 	ret = ath12k_wmi_cmd_init(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to send wmi init cmd: %d\n", ret);
-		goto err_reo_cleanup;
+		goto err_hif_stop;
 	}
 
 	ret = ath12k_wmi_wait_for_unified_ready(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to receive wmi unified ready event: %d\n",
 			   ret);
-		goto err_reo_cleanup;
+		goto err_hif_stop;
 	}
 
 	WARN_ON(test_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags));
@@ -1386,7 +1379,7 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		ret = ath12k_wmi_set_hw_mode(ab, WMI_HOST_HW_MODE_DBS);
 		if (ret) {
 			ath12k_err(ab, "failed to send dbs mode: %d\n", ret);
-			goto err_reo_cleanup;
+			goto err_hif_stop;
 		}
 	}
 
@@ -1394,7 +1387,7 @@ static int ath12k_core_start(struct ath12k_base *ab)
 	if (ret) {
 		ath12k_err(ab, "failed to send htt version request message: %d\n",
 			   ret);
-		goto err_reo_cleanup;
+		goto err_hif_stop;
 	}
 
 	ath12k_acpi_set_dsm_func(ab);
@@ -1407,8 +1400,6 @@ static int ath12k_core_start(struct ath12k_base *ab)
 
 	return 0;
 
-err_reo_cleanup:
-	ath12k_dp_rx_pdev_reo_cleanup(ab);
 err_hif_stop:
 	ath12k_hif_stop(ab);
 err_wmi_detach:
@@ -2127,7 +2118,6 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 	ath12k_dp_arch_pdev_free(ab->dp);
 	ath12k_ce_cleanup_pipes(ab);
 	ath12k_wmi_detach(ab);
-	ath12k_dp_rx_pdev_reo_cleanup(ab);
 	mutex_unlock(&ab->core_lock);
 
 	ath12k_dp_cmn_device_deinit(ab->dp);
@@ -4313,7 +4303,6 @@ static void ath12k_core_wsi_remap_reset(struct ath12k_base *ab)
 	ath12k_dp_arch_pdev_free(ab->dp);
 	ath12k_ce_cleanup_pipes(ab);
 	ath12k_wmi_detach(ab);
-	ath12k_dp_rx_pdev_reo_cleanup(ab);
 	mutex_unlock(&ab->core_lock);
 
 	ath12k_dp_cmn_device_deinit(ab->dp);

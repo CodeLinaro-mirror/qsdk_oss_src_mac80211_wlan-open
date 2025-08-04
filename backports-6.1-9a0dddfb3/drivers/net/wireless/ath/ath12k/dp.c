@@ -719,14 +719,6 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 		goto err;
 	}
 
-	ret = ath12k_dp_srng_setup(ab, &dp->rx_rel_ring, HAL_WBM2SW_RELEASE,
-				   HAL_WBM2SW_REL_ERR_RING_NUM, 0,
-				   DP_RX_RELEASE_RING_SIZE);
-	if (ret) {
-		ath12k_warn(ab, "failed to set up rx_rel ring :%d\n", ret);
-		goto err;
-	}
-
 	ret = ath12k_dp_srng_setup(ab, &dp->reo_except_ring, HAL_REO_EXCEPTION,
 				   0, 0, DP_REO_EXCEPTION_RING_SIZE);
 	if (ret) {

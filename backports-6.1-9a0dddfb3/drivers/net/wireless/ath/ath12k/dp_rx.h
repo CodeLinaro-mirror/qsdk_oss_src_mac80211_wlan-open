@@ -225,8 +225,8 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 				       enum set_key_cmd key_cmd,
 				       struct ieee80211_key_conf *key);
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer *peer);
-int ath12k_dp_rx_pdev_reo_setup(struct ath12k_base *ab);
-void ath12k_dp_rx_pdev_reo_cleanup(struct ath12k_base *ab);
+int ath12k_dp_rx_reo_setup(struct ath12k_base *ab);
+void ath12k_dp_rx_reo_cleanup(struct ath12k_base *ab);
 int ath12k_dp_rx_alloc(struct ath12k_base *ab);
 void ath12k_dp_rx_free(struct ath12k_base *ab);
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab);
@@ -303,6 +303,7 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 enum ath12k_routing_pkt_type pkt_type,
 				 u32 meta_data);
+int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab);
 void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
 					 struct rx_msdu_desc_info *rx_msdu_info,
 					 struct rx_mpdu_desc_info *rx_mpdu_info,

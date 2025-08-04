@@ -524,7 +524,7 @@ static int ath12k_dp_rxdma_ring_buf_setup(struct ath12k_base *ab,
 	return 0;
 }
 
-static int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab)
+int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret;
@@ -538,8 +538,9 @@ static int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab)
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_rxdma_buf_setup);
 
-void ath12k_dp_rx_pdev_reo_cleanup(struct ath12k_base *ab)
+void ath12k_dp_rx_reo_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int i;
@@ -547,8 +548,9 @@ void ath12k_dp_rx_pdev_reo_cleanup(struct ath12k_base *ab)
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		ath12k_dp_srng_cleanup(ab, &dp->reo_dst_ring[i]);
 }
+EXPORT_SYMBOL(ath12k_dp_rx_reo_cleanup);
 
-int ath12k_dp_rx_pdev_reo_setup(struct ath12k_base *ab)
+int ath12k_dp_rx_reo_setup(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret;
@@ -567,10 +569,11 @@ int ath12k_dp_rx_pdev_reo_setup(struct ath12k_base *ab)
 	return 0;
 
 err_reo_cleanup:
-	ath12k_dp_rx_pdev_reo_cleanup(ab);
+	ath12k_dp_rx_reo_cleanup(ab);
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_rx_reo_setup);
 
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 {
@@ -1093,23 +1096,6 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 	return 0;
 }
 
-void ath12k_dp_rx_free(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	int i;
-
-	ath12k_dp_srng_cleanup(ab, &dp->rx_refill_buf_ring.refill_buf_ring);
-
-	for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-		if (ab->hw_params->rx_mac_buf_ring)
-			ath12k_dp_srng_cleanup(ab, &dp->rx_mac_buf_ring[i]);
-	}
-
-	for (i = 0; i < ab->hw_params->num_rxdma_dst_ring; i++)
-		ath12k_dp_srng_cleanup(ab, &dp->rxdma_err_dst_ring[i]);
-}
-EXPORT_SYMBOL(ath12k_dp_rx_free);
-
 int
 ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
 					 struct ath12k_dp_htt_rxdma_ppe_cfg_param *param)
@@ -1159,53 +1145,6 @@ ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
 	return 0;
 }
 
-int ath12k_dp_rx_alloc(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	int i, ret;
-
-	ret = ath12k_dp_srng_setup(ab,
-				   &dp->rx_refill_buf_ring.refill_buf_ring,
-				   HAL_RXDMA_BUF, 0, 0,
-				   DP_RXDMA_BUF_RING_SIZE);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
-		return ret;
-	}
-
-	if (ab->hw_params->rx_mac_buf_ring) {
-		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-			ret = ath12k_dp_srng_setup(ab,
-						   &dp->rx_mac_buf_ring[i],
-						   HAL_RXDMA_BUF, 1,
-						   i, DP_RX_MAC_BUF_RING_SIZE);
-			if (ret) {
-				ath12k_warn(ab, "failed to setup rx_mac_buf_ring %d\n",
-					    i);
-				return ret;
-			}
-		}
-	}
-
-	for (i = 0; i < ab->hw_params->num_rxdma_dst_ring; i++) {
-		ret = ath12k_dp_srng_setup(ab, &dp->rxdma_err_dst_ring[i],
-					   HAL_RXDMA_DST, 0, i,
-					   DP_RXDMA_ERR_DST_RING_SIZE);
-		if (ret) {
-			ath12k_warn(ab, "failed to setup rxdma_err_dst_ring %d\n", i);
-			return ret;
-		}
-	}
-
-	ret = ath12k_dp_rxdma_buf_setup(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rxdma ring\n");
-		return ret;
-	}
-
-	return 0;
-}
-
 static int ath12k_dp_rx_flow_send_fst_setup(struct ath12k_base *ab,
 					    struct dp_rx_fst *fst)
 {
@@ -1229,7 +1168,6 @@ static int ath12k_dp_rx_flow_send_fst_setup(struct ath12k_base *ab,
 
 	return 0;
 }
-EXPORT_SYMBOL(ath12k_dp_rx_alloc);
 
 struct dp_rx_fst *ath12k_dp_rx_fst_attach(struct ath12k_base *ab)
 {
