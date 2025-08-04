@@ -3894,11 +3894,18 @@ static bool nl80211_can_set_dev_channel(struct wireless_dev *wdev)
 	 * whatever else is going on, so they have their own special
 	 * operation to set the monitor channel if possible.
 	 */
-	return !wdev ||
-		wdev->iftype == NL80211_IFTYPE_AP ||
-		wdev->iftype == NL80211_IFTYPE_MESH_POINT ||
-		wdev->iftype == NL80211_IFTYPE_MONITOR ||
-		wdev->iftype == NL80211_IFTYPE_P2P_GO;
+	if (!wdev)
+		return false;
+
+	switch (wdev->iftype) {
+	case NL80211_IFTYPE_AP:
+	case NL80211_IFTYPE_MESH_POINT:
+	case NL80211_IFTYPE_MONITOR:
+	case NL80211_IFTYPE_P2P_GO:
+		return true;
+	default:
+		return false;
+	}
 }
 
 static int _nl80211_parse_chandef(struct cfg80211_registered_device *rdev,
