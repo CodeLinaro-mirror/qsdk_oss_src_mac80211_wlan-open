@@ -205,6 +205,9 @@ enum ath12k_dp_eapol_key_type {
 #if defined(CONFIG_ATH12K_MEM_PROFILE_512M) || defined (CPTCFG_ATH12K_MEM_PROFILE_512M)
 #define DP_TX_COMP_RING_SIZE            8192
 #define ATH12K_NUM_POOL_TX_DESC        8192
+#define DP_REO2PPE_RING_SIZE	2048
+#define DP_PPE2TCL_RING_SIZE	2048
+#define DP_PPE_WBM2SW_RING_SIZE	8192
 /* TODO: revisit this count during testing */
 #define ATH12K_RX_DESC_COUNT           (6144)
 #define DP_RX_BUFFER_SIZE		1856
@@ -212,6 +215,9 @@ enum ath12k_dp_eapol_key_type {
 //#ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Fix the Default profile enablement
 #define DP_TX_COMP_RING_SIZE           32768
 #define ATH12K_NUM_POOL_TX_DESC                32768
+#define DP_REO2PPE_RING_SIZE	16384
+#define DP_PPE2TCL_RING_SIZE	8192
+#define DP_PPE_WBM2SW_RING_SIZE	32768
 /* TODO: revisit this count during testing */
 #define ATH12K_RX_DESC_COUNT           (12288)
 #define DP_RX_BUFFER_SIZE		2048
@@ -239,9 +245,6 @@ enum ath12k_dp_eapol_key_type {
 #define DP_RX_BUFFER_SIZE_LITE	1024
 #define DP_RX_BUFFER_ALIGN_SIZE	128
 
-#define DP_REO2PPE_RING_SIZE 16384
-#define DP_PPE2TCL_RING_SIZE 2048
-#define DP_PPE_WBM2SW_RING_SIZE 8192
 #define HAL_REO2PPE_DST_IND 6
 
 #define DP_RXDMA_BUF_COOKIE_BUF_ID	GENMASK(17, 0)

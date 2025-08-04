@@ -321,14 +321,12 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		stat_size = sizeof(struct hal_wbm_release_ring);
 	INIT_LIST_HEAD(&local_list);
 	INIT_LIST_HEAD(&local_list_no_skb);
-	spin_lock_bh(&status_ring->lock);
 
-	ath12k_hal_srng_access_begin(ab, status_ring);
+	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
 
-	valid_entries = ath12k_hal_srng_dst_num_free(ab, status_ring, false);
+	valid_entries = __ath12k_hal_srng_dst_num_free(status_ring, false);
 	if (!valid_entries) {
-		ath12k_hal_srng_access_end(ab, status_ring);
-		spin_unlock_bh(&status_ring->lock);
+		ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 		return count;
 	}
 
@@ -339,7 +337,7 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 
 	while (likely(valid_entries--)) {
 		desc = (struct hal_wbm_release_ring *)
-			ath12k_hal_srng_dst_get_next_entry(ab, status_ring);
+			__ath12k_hal_srng_dst_get_next_cached_entry(status_ring, NULL);
 		if (!desc || !ath12k_dp_tx_completion_valid(desc))
 			continue;
 
@@ -385,8 +383,7 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 			list_no_skb_count++;
 		}
 	}
-	ath12k_hal_srng_access_end(ab, status_ring);
-	spin_unlock_bh(&status_ring->lock);
+	ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 
 	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp, &local_list, count,
 						  &local_list_no_skb, list_no_skb_count);
