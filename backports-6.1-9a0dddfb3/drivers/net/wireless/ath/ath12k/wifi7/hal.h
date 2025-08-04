@@ -179,6 +179,14 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_REO1_REO2PPE_DST_VAL		0x2000
 #define HAL_REO1_REO2PPE_DST_INFO		0x00000cf0
 
+#define HAL_WIFI7_HASH_ROUTING_RING_TCL 0
+#define HAL_WIFI7_HASH_ROUTING_RING_SW1 1
+#define HAL_WIFI7_HASH_ROUTING_RING_SW2 2
+#define HAL_WIFI7_HASH_ROUTING_RING_SW3 3
+#define HAL_WIFI7_HASH_ROUTING_RING_SW4 4
+#define HAL_WIFI7_HASH_ROUTING_RING_REL 5
+#define HAL_WIFI7_HASH_ROUTING_RING_FW  6
+
 /* REO2SW(x) R2 ring pointers (head/tail) address */
 /* REO2SW(x) R2 ring pointers (head/tail) address */
 #define HAL_REO1_RING_HP			0x00003048
@@ -729,7 +737,7 @@ void ath12k_wifi7_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab,
 					     dma_addr_t paddr);
 void ath12k_wifi7_hal_reo_init_cmd_ring(struct ath12k_base *ab,
 					struct hal_srng *srng);
-void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);
+void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab);
 void
 ath12k_wifi7_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 				       u32 *num_msdus, u32 *msdu_cookies,

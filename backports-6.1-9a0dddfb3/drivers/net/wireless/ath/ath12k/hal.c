@@ -101,9 +101,9 @@ void ath12k_hal_write_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr)
 	ab->hal.hal_ops->write_reoq_lut_addr(ab, paddr);
 }
 
-void ath12k_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map)
+void ath12k_hal_reo_hw_setup(struct ath12k_base *ab)
 {
-	ab->hal.hal_ops->reo_hw_setup(ab, ring_hash_map);
+	ab->hal.hal_ops->reo_hw_setup(ab);
 }
 
 void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab, struct hal_srng *srng)

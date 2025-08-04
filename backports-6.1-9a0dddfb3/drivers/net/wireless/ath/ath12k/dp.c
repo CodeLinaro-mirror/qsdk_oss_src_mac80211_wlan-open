@@ -701,7 +701,6 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct hal_srng *srng;
 	int ret;
-	u32 ring_hash_map;
 
 	ret = ath12k_dp_srng_setup(ab, &dp->wbm_desc_rel_ring,
 				   HAL_SW2WBM_RELEASE, 0, 0,
@@ -756,22 +755,7 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 	if (ath12k_dp_umac_reset_in_progress(ab))
 		goto skip_reo_setup;
 
-	/* When hash based routing of rx packet is enabled, 32 entries to map
-	 * the hash values to the ring will be configured. Each hash entry uses
-	 * four bits to map to a particular ring. The ring mapping will be
-	 * 0:TCL, 1:SW1, 2:SW2, 3:SW3, 4:SW4, 5:Release, 6:FW and 7:SW5
-	 * 8:SW6, 9:SW7, 10:SW8, 11:Not used.
-	 */
-	ring_hash_map = HAL_HASH_ROUTING_RING_SW1 |
-			HAL_HASH_ROUTING_RING_SW2 << 4 |
-			HAL_HASH_ROUTING_RING_SW3 << 8 |
-			HAL_HASH_ROUTING_RING_SW4 << 12 |
-			HAL_HASH_ROUTING_RING_SW1 << 16 |
-			HAL_HASH_ROUTING_RING_SW2 << 20 |
-			HAL_HASH_ROUTING_RING_SW3 << 24 |
-			HAL_HASH_ROUTING_RING_SW4 << 28;
-
-	ath12k_hal_reo_hw_setup(ab, ring_hash_map);
+	ath12k_hal_reo_hw_setup(ab);
 
 skip_reo_setup:
 	ret = ath12k_dp_srng_ppeds_setup(ab);

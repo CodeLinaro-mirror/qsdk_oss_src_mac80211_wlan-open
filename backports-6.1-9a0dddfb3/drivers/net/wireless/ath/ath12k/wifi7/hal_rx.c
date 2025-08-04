@@ -975,9 +975,10 @@ void ath12k_hal_reo_ring_ctrl_hash_ix0_setup(struct ath12k_base *ab)
 			   val);
 }
 
-void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map)
+void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
+	u32 ring_hash_map;
 
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
 	u32 val, VI_reorder_timeout;
@@ -1018,6 +1019,21 @@ void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map)
 			   HAL_DEFAULT_VO_REO_TIMEOUT_USEC);
 
 	ath12k_hal_reo_ring_ctrl_hash_ix0_setup(ab);
+
+	/* When hash based routing of rx packet is enabled, 32 entries to map
+	 * the hash values to the ring will be configured. Each hash entry uses
+	 * four bits to map to a particular ring. The ring mapping will be
+	 * 0:TCL, 1:SW1, 2:SW2, 3:SW3, 4:SW4, 5:Release, 6:FW and 7:SW5
+	 * 8:SW6, 9:SW7, 10:SW8, 11:Not used.
+	 */
+	ring_hash_map = HAL_WIFI7_HASH_ROUTING_RING_SW1 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW2 << 4 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW3 << 8 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 12 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW1 << 16 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW2 << 20 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW3 << 24 |
+			HAL_WIFI7_HASH_ROUTING_RING_SW4 << 28;
 
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_2,
 			   ring_hash_map);

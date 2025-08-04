@@ -997,14 +997,6 @@ enum hal_ce_desc {
 	HAL_CE_DESC_DST_STATUS,
 };
 
-#define HAL_HASH_ROUTING_RING_TCL 0
-#define HAL_HASH_ROUTING_RING_SW1 1
-#define HAL_HASH_ROUTING_RING_SW2 2
-#define HAL_HASH_ROUTING_RING_SW3 3
-#define HAL_HASH_ROUTING_RING_SW4 4
-#define HAL_HASH_ROUTING_RING_REL 5
-#define HAL_HASH_ROUTING_RING_FW  6
-
 struct hal_reo_status_header {
 	u16 cmd_num;
 	enum hal_reo_cmd_status cmd_status;
@@ -1299,7 +1291,7 @@ struct hal_ops {
 				u32 start_seq, enum hal_pn_type type);
 	void (*reo_init_cmd_ring)(struct ath12k_base *ab,
 				  struct hal_srng *srng);
-	void (*reo_hw_setup)(struct ath12k_base *ab, u32 ring_hash_map);
+	void (*reo_hw_setup)(struct ath12k_base *ab);
 	void (*cc_config)(struct ath12k_base *ab);
 	void (*srng_hw_disable)(struct ath12k_base *ab, struct hal_srng *srng);
 	void (*reset_rx_reo_tid_q)(void *vaddr, u32 ba_window_size, u8 tid);
@@ -1483,7 +1475,7 @@ void ath12k_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab);
 void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab);
 void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab,
                                  struct hal_srng *srng);
-void ath12k_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);
+void ath12k_hal_reo_hw_setup(struct ath12k_base *ab);
 void ath12k_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *binfo,
 				     dma_addr_t paddr, u32 cookie, u8 manager);
 void ath12k_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,
