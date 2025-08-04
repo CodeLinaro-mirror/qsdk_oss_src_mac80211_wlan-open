@@ -227,7 +227,6 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer *peer);
 int ath12k_dp_rx_pdev_reo_setup(struct ath12k_base *ab);
 void ath12k_dp_rx_pdev_reo_cleanup(struct ath12k_base *ab);
-int ath12k_dp_rx_htt_setup(struct ath12k_base *ab);
 int ath12k_dp_rx_alloc(struct ath12k_base *ab);
 void ath12k_dp_rx_free(struct ath12k_base *ab);
 void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab);

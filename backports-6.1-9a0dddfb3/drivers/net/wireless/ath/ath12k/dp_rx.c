@@ -1157,60 +1157,6 @@ ath12k_dp_rx_htt_rxdma_rxole_ppe_cfg_set(struct ath12k_base *ab,
 	return 0;
 }
 
-int ath12k_dp_rx_htt_setup(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	u32 ring_id;
-	int i, ret;
-
-	/* TODO: Need to verify the HTT setup for QCN9224 */
-	ring_id = dp->rx_refill_buf_ring.refill_buf_ring.ring_id;
-	ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id, 0, HAL_RXDMA_BUF);
-	if (ret) {
-		ath12k_warn(ab, "failed to configure rx_refill_buf_ring %d\n",
-			    ret);
-		return ret;
-	}
-
-	if (ab->hw_params->rx_mac_buf_ring) {
-		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
-			ring_id = dp->rx_mac_buf_ring[i].ring_id;
-			ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id,
-							  i, HAL_RXDMA_BUF);
-			if (ret) {
-				ath12k_warn(ab, "failed to configure rx_mac_buf_ring%d %d\n",
-					    i, ret);
-				return ret;
-			}
-		}
-	}
-
-	for (i = 0; i < ab->hw_params->num_rxdma_dst_ring; i++) {
-		ring_id = dp->rxdma_err_dst_ring[i].ring_id;
-		ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id,
-						  i, HAL_RXDMA_DST);
-		if (ret) {
-			ath12k_warn(ab, "failed to configure rxdma_err_dest_ring%d %d\n",
-				    i, ret);
-			return ret;
-		}
-	}
-
-	ret = ath12k_dp_mon_rx_htt_setup(dp);
-	if (ret) {
-		ath12k_warn(ab, "Failed to setup rxdma monitor rings\n");
-		return ret;
-	}
-
-	ret = ab->hw_params->hw_ops->rxdma_ring_sel_config(ab);
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rxdma ring selection config\n");
-		return ret;
-	}
-
-	return 0;
-}
-
 int ath12k_dp_rx_alloc(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);

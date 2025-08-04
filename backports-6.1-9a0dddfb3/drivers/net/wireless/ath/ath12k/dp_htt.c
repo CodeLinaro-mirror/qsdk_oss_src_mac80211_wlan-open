@@ -992,7 +992,6 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 exit:
 	return ret;
 }
-EXPORT_SYMBOL(ath12k_dp_tx_htt_srng_setup);
 
 static void ath12k_htt_backpressure_event_handler(struct ath12k_base *ab,
 						  struct sk_buff *skb)
@@ -1812,6 +1811,7 @@ err_free:
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_tx_htt_srng_setup);
 
 void ath12k_dp_tx_htt_rx_mgmt_flag0_fp_filter_set(u32 *ptr, u16 filter)
 {

@@ -477,6 +477,8 @@ struct ath12k_dp_arch_ops {
 			       struct hal_rx_reo_queue **addr_aligned);
 	void (*peer_rx_tid_qref_setup)(struct ath12k_base *ab, u16 peer_id, u16 tid,
 				       dma_addr_t paddr);
+	int (*dp_pdev_alloc)(struct ath12k_base *ab);
+	void (*dp_pdev_free)(struct ath12k_base *ab);
 	int (*rx_fst_attach)(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 	void (*rx_fst_detach)(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 	void (*rx_flow_dump_entry)(struct ath12k_dp *dp,
@@ -970,6 +972,16 @@ ath12k_core_dp_hw_group_alloc(struct ath12k_dp *dp)
 	return dp->arch_ops->dp_hw_group_alloc();
 }
 
+static inline int ath12k_dp_arch_pdev_alloc(struct ath12k_dp *dp)
+{
+	return dp->arch_ops->dp_pdev_alloc(dp->ab);
+}
+
+static inline void ath12k_dp_arch_pdev_free(struct ath12k_dp *dp)
+{
+	dp->arch_ops->dp_pdev_free(dp->ab);
+}
+
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 {
 	memcpy(addr, &addr_l32, 4);
@@ -1009,12 +1021,10 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif);
 void ath12k_dp_partner_cc_init(struct ath12k_base *ab);
-int ath12k_dp_pdev_alloc(struct ath12k_base *ab);
 int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
                                       int pdev_id,
                                       struct ath12k_pdev_telemetry_stats *stats);
 int ath12k_dp_pdev_pre_alloc(struct ath12k *ar);
-void ath12k_dp_pdev_free(struct ath12k_base *ab);
 int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);
 int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const u8 *addr);
@@ -1061,6 +1071,7 @@ struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base
 int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);
 int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
+int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 				struct ath12k_telemetry_dp_device *telemetry_device);
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,

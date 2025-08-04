@@ -66,7 +66,7 @@ enum ath12k_dp_desc_type {
 };
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-static int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab)
+int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab)
 {
 	struct ath12k_dp_htt_rxdma_ppe_cfg_param param = {0};
 	int ret;
@@ -90,6 +90,7 @@ static int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab)
 
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_dp_ppe_rxole_rxdma_cfg);
 #endif
 
 void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
@@ -1114,36 +1115,6 @@ fail_desc_bank_free:
 	return ret;
 }
 
-void ath12k_dp_pdev_free(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k *ar;
-	int i;
-
-	spin_lock_bh(&dp->dp_lock);
-	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
-		rcu_assign_pointer(dp->dp_pdevs[ar->pdev_idx], NULL);
-	}
-	spin_unlock_bh(&dp->dp_lock);
-
-	synchronize_rcu();
-
-	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
-		ath12k_fw_stats_free(&ar->fw_stats);
-
-		if (ar->dp.dp_mon_pdev_configured) {
-			ath12k_dp_mon_pdev_rx_free(&ar->dp);
-			ath12k_dp_mon_pdev_deinit(&ar->dp);
-
-			ar->dp.dp_mon_pdev_configured = false;
-		}
-	}
-
-	ath12k_dp_ppeds_stop(ab);
-}
-
 int ath12k_dp_pdev_pre_alloc(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -1192,88 +1163,6 @@ mon_pdev_rx_free:
 mon_pdev_deinit:
 	ath12k_dp_mon_pdev_deinit(dp);
 
-	return ret;
-}
-
-int ath12k_dp_pdev_alloc(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_pdev_dp *dp_pdev;
-	struct ath12k *ar;
-	int ret;
-	int i;
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	ret = ath12k_dp_ppe_rxole_rxdma_cfg(ab);
-	if (ret) {
-		ath12k_err(ab, "Failed to send htt RxOLE and RxDMA messages to target :%d\n",
-			   ret);
-		goto out;
-	}
-#endif
-
-	ret = ath12k_dp_rx_htt_setup(ab);
-	if (ret)
-		goto out;
-
-	/* TODO: Per-pdev rx ring unlike tx ring which is mapped to different AC's */
-	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
-
-		memset(&ar->stats, 0, sizeof(struct ath12k_pdev_ctrl_path_stats));
-		dp_pdev = &ar->dp;
-
-		dp_pdev->hw = ar->ah->hw;
-		dp_pdev->dp = dp;
-		/* Below linking is a temporary linking to handle few cases like cac timeout,
-		 * active pdev etc in dp rx. Some flags/fileds can be added in dp_pdev
-		 * to remove ar dependencies in the performance critical path.
-		 *
-		 * TODO: remove this once those dependencies are resolved.
-		 */
-		dp_pdev->ar = ar;
-		dp_pdev->dp_hw = &ar->ah->dp_hw;
-		dp_pdev->hw_link_id = ar->hw_link_id;
-
-		if (!dp_pdev->dp_mon_pdev_configured) {
-			ret = ath12k_dp_mon_pdev_init(dp_pdev);
-			if (ret) {
-				ath12k_warn(ab, "failed to initialize mon pdev %d\n", i);
-				goto err;
-			}
-
-			ret = ath12k_dp_mon_pdev_rx_alloc(dp_pdev, i);
-			if (ret)
-				goto err;
-
-			ret = ath12k_dp_mon_pdev_rx_htt_setup(dp_pdev, i);
-			if (ret)
-				goto err;
-
-			dp_pdev->dp_mon_pdev_configured = true;
-		}
-	}
-
-	ret = ath12k_dp_ppeds_start(ab);
-	if (ret) {
-		ath12k_err(ab, "failed to start DP PPEDS\n");
-		goto err;
-	}
-
-	spin_lock_bh(&dp->dp_lock);
-	for (i = 0; i < ab->num_radios; i++) {
-		ar = ab->pdevs[i].ar;
-		rcu_assign_pointer(dp->dp_pdevs[ar->pdev_idx], &ar->dp);
-	}
-	spin_unlock_bh(&dp->dp_lock);
-
-	dp->num_radios = ab->num_radios;
-
-	return ret;
-err:
-	ath12k_dp_pdev_free(ab);
-	ath12k_dp_ppeds_stop(ab);
-out:
 	return ret;
 }
 

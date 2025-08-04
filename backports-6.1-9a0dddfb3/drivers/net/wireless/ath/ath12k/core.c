@@ -1285,7 +1285,7 @@ static int ath12k_core_pdev_create(struct ath12k_base *ab)
 {
 	int ret;
 
-	ret = ath12k_dp_pdev_alloc(ab);
+	ret = ath12k_dp_arch_pdev_alloc(ab->dp);
 	if (ret) {
 		ath12k_err(ab, "failed to attach DP pdev: %d\n", ret);
 		goto err_pdev_debug;
@@ -1300,7 +1300,7 @@ err_pdev_debug:
 
 static void ath12k_core_pdev_destroy(struct ath12k_base *ab)
 {
-	ath12k_dp_pdev_free(ab);
+	ath12k_dp_arch_pdev_free(ab->dp);
 	ath12k_debugfs_pdev_destroy(ab);
 }
 
@@ -1878,6 +1878,7 @@ void ath12k_fw_stats_free(struct ath12k_fw_stats *stats)
 	ath12k_fw_stats_vdevs_free(&stats->vdevs);
 	ath12k_fw_stats_bcn_free(&stats->bcn);
 }
+EXPORT_SYMBOL(ath12k_fw_stats_free);
 
 void ath12k_fw_stats_reset(struct ath12k *ar)
 {
@@ -2123,7 +2124,7 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 
 	mutex_lock(&ab->core_lock);
 	ath12k_core_pdev_deinit(ab);
-	ath12k_dp_pdev_free(ab);
+	ath12k_dp_arch_pdev_free(ab->dp);
 	ath12k_ce_cleanup_pipes(ab);
 	ath12k_wmi_detach(ab);
 	ath12k_dp_rx_pdev_reo_cleanup(ab);
@@ -4309,7 +4310,7 @@ static void ath12k_core_wsi_remap_reset(struct ath12k_base *ab)
 {
 	mutex_lock(&ab->core_lock);
 	ath12k_core_pdev_deinit(ab);
-	ath12k_dp_pdev_free(ab);
+	ath12k_dp_arch_pdev_free(ab->dp);
 	ath12k_ce_cleanup_pipes(ab);
 	ath12k_wmi_detach(ab);
 	ath12k_dp_rx_pdev_reo_cleanup(ab);

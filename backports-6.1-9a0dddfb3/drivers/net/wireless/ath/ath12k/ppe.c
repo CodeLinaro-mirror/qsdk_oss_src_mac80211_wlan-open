@@ -1719,6 +1719,7 @@ int ath12k_dp_ppeds_start(struct ath12k_base *ab)
 		   ab->device_id, ab->dp->ppe.ds_node_id, ab->dp->ppe.ppeds_soc_idx);
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_start);
 
 void ath12k_dp_ppeds_stop(struct ath12k_base *ab)
 {
@@ -1748,6 +1749,7 @@ void ath12k_dp_ppeds_stop(struct ath12k_base *ab)
 
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS stop success\n");
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_stop);
 
 int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp, struct dp_ppe_ds_idxs *idx)
 {
