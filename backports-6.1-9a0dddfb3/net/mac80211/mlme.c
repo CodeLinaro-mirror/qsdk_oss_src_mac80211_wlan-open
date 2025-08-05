@@ -6863,6 +6863,12 @@ out:
 	return ret;
 }
 
+static bool ieee80211_is_ttlm_offload_supported(struct wiphy *wiphy)
+{
+	return wiphy_ext_feature_isset(wiphy,
+		NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD);
+}
+
 static void ieee80211_tid_to_link_map_work(struct wiphy *wiphy,
 					   struct wiphy_work *work)
 {
@@ -6870,17 +6876,22 @@ static void ieee80211_tid_to_link_map_work(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata =
 		container_of(work, struct ieee80211_sub_if_data,
 			     u.mgd.ttlm_work.work);
+	bool offload_mode = ieee80211_is_ttlm_offload_supported(wiphy);
 
-	new_active_links = sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
-		sdata->vif.valid_links;
-	new_dormant_links = ~sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
-		sdata->vif.valid_links;
+	if (!offload_mode) {
+		new_active_links = sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
+			sdata->vif.valid_links;
+		new_dormant_links = ~sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
+			sdata->vif.valid_links;
 
-	ieee80211_vif_set_links(sdata, sdata->vif.valid_links, 0);
-	if (ieee80211_ttlm_set_links(sdata, new_active_links, new_dormant_links,
-				     0))
-		return;
-
+		ieee80211_vif_set_links(sdata, sdata->vif.valid_links, 0);
+		if (ieee80211_ttlm_set_links(sdata, new_active_links,
+					     new_dormant_links,
+					     0))
+			return;
+	} else {
+		ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_MLD_ADV_TTLM);
+	}
 	sdata->vif.adv_ttlm.u.mgd.ttlm_info.active = true;
 	sdata->vif.adv_ttlm.u.mgd.ttlm_info.switch_time = 0;
 }
@@ -6974,12 +6985,34 @@ ieee80211_parse_adv_t2l(struct ieee80211_sub_if_data *sdata,
 	return 0;
 }
 
+static void ieee80211_set_default_mapping(struct ieee80211_sub_if_data *sdata)
+{
+	int ret;
+	bool offload_mode = ieee80211_is_ttlm_offload_supported(sdata->local->hw.wiphy);
+
+	if (!offload_mode) {
+		ret = ieee80211_vif_set_links(sdata,
+					      sdata->vif.valid_links,
+					      0);
+		if (ret) {
+			sdata_info(sdata, "Failed setting valid/dormant links\n");
+			return;
+		}
+		ieee80211_vif_cfg_change_notify(sdata,
+						BSS_CHANGED_MLD_VALID_LINKS);
+	} else {
+		sdata->vif.adv_ttlm.u.mgd.ttlm_info.map =
+			sdata->vif.valid_links;
+		ieee80211_vif_cfg_change_notify(sdata,
+						BSS_CHANGED_MLD_ADV_TTLM);
+	}
+}
+
 static void ieee80211_process_adv_ttlm(struct ieee80211_sub_if_data *sdata,
-					  struct ieee802_11_elems *elems,
-					  u64 beacon_ts)
+				       struct ieee802_11_elems *elems,
+				       u64 beacon_ts)
 {
 	u8 i;
-	int ret;
 
 	if (!ieee80211_vif_is_mld(&sdata->vif))
 		return;
@@ -6995,15 +7028,7 @@ static void ieee80211_process_adv_ttlm(struct ieee80211_sub_if_data *sdata,
 			/* if no TID-to-link element, set to default mapping in
 			 * which all TIDs are mapped to all setup links
 			 */
-			ret = ieee80211_vif_set_links(sdata,
-						      sdata->vif.valid_links,
-						      0);
-			if (ret) {
-				sdata_info(sdata, "Failed setting valid/dormant links\n");
-				return;
-			}
-			ieee80211_vif_cfg_change_notify(sdata,
-							BSS_CHANGED_MLD_VALID_LINKS);
+			ieee80211_set_default_mapping(sdata);
 		}
 		memset(&sdata->vif.adv_ttlm.u.mgd.ttlm_info, 0,
 		       sizeof(sdata->vif.adv_ttlm.u.mgd.ttlm_info));
