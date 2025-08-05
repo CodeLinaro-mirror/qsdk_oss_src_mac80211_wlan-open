@@ -1305,6 +1305,15 @@ skip_htt_metadata:
 
 	ath12k_wifi7_hal_tx_cmd_desc_setup(ab, hal_tcl_desc, &ti);
 
+	/* For SDWF DS support, either the slow packet or the
+	 * reinject packets would not have skb->fast_xmit set
+	 * and the msduq information should be updated if the
+	 * SDWF is valid in skb->mark
+	 */
+	if (unlikely(skb->mark & SDWF_VALID_MASK))
+		ath12k_dp_qos_update(dp, dp_pdev, skb->mark, hal_tcl_desc,
+				     0, NULL);
+
 	if (unlikely(arsta)) {
 		qos_tag = ath12k_get_qos_tag(skb->mark);
 		if (qos_tag)
