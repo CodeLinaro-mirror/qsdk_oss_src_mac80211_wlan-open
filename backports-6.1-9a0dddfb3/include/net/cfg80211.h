@@ -7567,6 +7567,26 @@ ieee80211_frequency_to_channel(int freq)
 }
 
 /**
+ * ieee80211_get_6ghz_client_type - get the 6 GHz client type for the given
+ *                                  6 GHz AP power mode
+ *
+ * @wiphy: pointer to the struct wiphy
+ * @ap_mode: the 6 GHz AP power mode to get the client type for
+ *
+ * If the underlying hardware has advertised preferential support for
+ * a subordinate client type for the regulatory domain, this function
+ * will return the subordinate client type for an LPI AP.
+ *
+ * For other AP power modes, or if the hardware has not advertised
+ * preferential support for any 6 GHz client type, this function will
+ * return the regular client type as default.
+ *
+ * Return: The 6 GHz client type for the given AP power mode.
+ */
+u8 ieee80211_get_6ghz_client_type(struct wiphy *wiphy,
+				  enum nl80211_regulatory_power_modes ap_mode);
+
+/**
  * ieee80211_get_valid_6ghz_power_mode - get a valid 6 Ghz power mode
  *
  * @wiphy: the struct wiphy to get the power mode for

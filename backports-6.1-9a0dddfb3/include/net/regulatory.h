@@ -219,6 +219,7 @@ struct ieee80211_regdomain {
 	struct rcu_head rcu_head;
 	u32 n_reg_rules;
 	char alpha2[3];
+	u8 supp_cli_bitmap_6ghz;
 	enum nl80211_dfs_regions dfs_region;
 	struct ieee80211_reg_rule reg_rules[];
 };

@@ -159,6 +159,32 @@ int ieee80211_freq_khz_to_channel(u32 freq)
 }
 EXPORT_SYMBOL(ieee80211_freq_khz_to_channel);
 
+u8 ieee80211_get_6ghz_client_type(struct wiphy *wiphy,
+				  enum nl80211_regulatory_power_modes ap_mode)
+{
+	const struct ieee80211_regdomain *regd;
+	u8 supp_6ghz_client_types;
+
+	rcu_read_lock();
+	regd = rcu_dereference(wiphy->regd);
+	if (!regd) {
+		rcu_read_unlock();
+		return NL80211_REG_REGULAR_CLIENT;
+	}
+	supp_6ghz_client_types = regd->supp_cli_bitmap_6ghz;
+	rcu_read_unlock();
+
+	/* Currently, subordinate clients are supported only for LPI APs.
+	 * If the AP is not LPI, then use REGULAR_CLIENT.
+	 */
+	if (ap_mode == NL80211_REG_AP_LPI &&
+	    (supp_6ghz_client_types & BIT(NL80211_REG_SUBORDINATE_CLIENT)))
+		return NL80211_REG_SUBORDINATE_CLIENT;
+
+	return NL80211_REG_REGULAR_CLIENT;
+}
+EXPORT_SYMBOL(ieee80211_get_6ghz_client_type);
+
 enum nl80211_regulatory_power_modes
 ieee80211_get_valid_6ghz_power_mode(struct wiphy *wiphy, u32 freq)
 {
