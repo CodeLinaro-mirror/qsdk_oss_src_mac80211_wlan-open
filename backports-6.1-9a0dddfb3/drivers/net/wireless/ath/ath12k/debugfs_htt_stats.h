@@ -572,9 +572,11 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TX_PDEV_BE_DL_MU_OFDMA_STATS_TAG      = 133,
 	HTT_STATS_TX_PDEV_BE_UL_MU_OFDMA_STATS_TAG      = 134,
 	HTT_STATS_TX_PDEV_RATE_STATS_BE_OFDMA_TAG	= 135,
+	HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_BE_STATS_TAG	= 136,
 	HTT_STATS_TX_SELFGEN_BE_ERR_STATS_TAG		= 137,
 	HTT_STATS_TX_SELFGEN_BE_STATS_TAG		= 138,
 	HTT_STATS_TX_SELFGEN_BE_SCHED_STATUS_STATS_TAG	= 139,
+	HTT_STATS_RX_RING_STATS_TAG			= 142,
 	HTT_STATS_RX_PDEV_BE_BN_UL_TRIG_TAG		= 143,
 	HTT_STATS_TX_PDEV_SAWF_RATE_STATS_TAG		= 144,
 	HTT_STATS_STRM_GEN_MPDUS_TAG			= 145,
@@ -612,6 +614,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TX_PDEV_MLO_ABORT_TAG			= 177,
 	HTT_STATS_TX_PDEV_MLO_TXOP_ABORT_TAG		= 178,
 	HTT_STATS_UMAC_SSR_TAG                          = 179,
+	HTT_STATS_PDEV_TDMA_TAG				= 187,
 	HTT_STATS_GTX_TAG				= 199,
 	HTT_STATS_TXBF_OFDMA_BE_PARBW_TAG		= 201,
 	HTT_STATS_HDS_PROF_STATS_TAG			= 213,
@@ -1095,8 +1098,9 @@ struct ath12k_htt_rx_pdev_rate_ext_stats_tlv {
 		[ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS];
 	__le32 rx_su_punctured_mode[ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
 	__le32 reduced_rx_bw[ATH12K_HTT_RX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES][ATH12K_HTT_RX_PDEV_STATS_NUM_BW_COUNTERS];
-	__le32  rssi_chain_ext_2[ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS][ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_2_COUNTERS];
-	__le32 rx_per_chain_rssi_ext_2_in_dbm[ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS]
+	u8 rssi_chain_ext_2[ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS]
+			   [ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_2_COUNTERS];
+	s8 rx_per_chain_rssi_ext_2_in_dbm[ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS]
 					 [ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_2_COUNTERS];
 };
 
@@ -1565,6 +1569,42 @@ struct htt_tx_de_cmn_stats_tlv {
 	u32   wbm2fw_entry_count;
 	u32   invalid_pdev;
 };
+
+#define ATH12K_HTT_STATS_RX_FW_RING_SIZE_NUM_ENTRIES(dword) (((dword) >> 0)  & 0xffff)
+#define ATH12K_HTT_STATS_RX_FW_RING_CURR_NUM_ENTRIES(dword) (((dword) >> 16) & 0xffff)
+#define ATH12K_WAL_RX_REO2SW4_BK_HIST_COUNT 3
+
+/* Rx debug info for status rings */
+struct ath12k_htt_stats_rx_ring_stats_tlv {
+	/**
+	 * BIT [15 :  0] :- max possible number of entries in respective ring
+	 *                  (size of the ring in terms of entries)
+	 * BIT [16 : 31] :- current number of entries occupied in respective ring
+	 */
+	__le32 entry_status_sw2rxdma;
+	__le32 entry_status_rxdma2reo;
+	__le32 entry_status_reo2sw1;
+	__le32 entry_status_reo2sw4;
+	__le32 entry_status_refillringipa;
+	__le32 entry_status_refillringhost;
+	/** datarate - Moving Average of Number of Entries */
+	__le32 datarate_refillringipa;
+	__le32 datarate_refillringhost;
+	/**
+	 * refillringhost_backpress_hist and refillringipa_backpress_hist are
+	 * deprecated, and will be filled with 0x0 by the target.
+	 */
+	__le32 refillringhost_backpress_hist[ATH12K_WAL_RX_REO2SW4_BK_HIST_COUNT];
+	__le32 refillringipa_backpress_hist[ATH12K_WAL_RX_REO2SW4_BK_HIST_COUNT];
+	/**
+	 * Number of times reo2sw4(IPA_DEST_RING) ring is back-pressured
+	 * in recent time periods
+	 * element 0: in last 0 to 250ms
+	 * element 1: 250ms to 500ms
+	 * element 2: above 500ms
+	 */
+	__le32 reo2sw4ringipa_backpress_hist[ATH12K_WAL_RX_REO2SW4_BK_HIST_COUNT];
+} __packed;
 
 /* == RING-IF STATS == */
 #define HTT_STATS_LOW_WM_BINS      5
@@ -2212,6 +2252,118 @@ struct ath12k_htt_tx_tqm_pdev_stats_tlv {
 	__le32 sched_nonudp_notify2;
 } __packed;
 
+#define ATH12K_HTT_TX_PDEV_SIFS_BURST_HIST_STATS	10
+
+struct ath12k_htt_odd_mandatory_pdev_stats_tlv {
+	__le32 hw_queued;
+	__le32 hw_reaped;
+	__le32 hw_paused;
+	__le32 hw_filt;
+	__le32 seq_posted;
+	__le32 seq_completed;
+	__le32 underrun;
+	__le32 hw_flush;
+	__le32 next_seq_posted_dsr;
+	__le32 seq_posted_isr;
+	__le32 mpdu_cnt_fcs_ok;
+	__le32 mpdu_cnt_fcs_err;
+	__le32 msdu_count_tqm;
+	__le32 mpdu_count_tqm;
+	__le32 mpdus_ack_failed;
+	__le32 num_data_ppdus_tried_ota;
+	__le32 ppdu_ok;
+	__le32 num_total_ppdus_tried_ota;
+	__le32 thermal_suspend_cnt;
+	__le32 dfs_suspend_cnt;
+	__le32 tx_abort_suspend_cnt;
+	__le32 suspended_txq_mask;
+	__le32 last_suspend_reason;
+	__le32 seq_failed_queueing;
+	__le32 seq_restarted;
+	__le32 seq_txop_repost_stop;
+	__le32 next_seq_cancel;
+	__le32 seq_min_msdu_repost_stop;
+	__le32 total_phy_err_cnt;
+	__le32 ppdu_recvd;
+	__le32 tcp_msdu_cnt;
+	__le32 tcp_ack_msdu_cnt;
+	__le32 udp_msdu_cnt;
+	__le32 fw_tx_mgmt_subtype[ATH12K_HTT_STATS_SUBTYPE_MAX];
+	__le32 fw_rx_mgmt_subtype[ATH12K_HTT_STATS_SUBTYPE_MAX];
+	__le32 fw_ring_mpdu_err[HTT_RX_STATS_RXDMA_MAX_ERR];
+	__le32 urrn_stats[HTT_TX_PDEV_MAX_URRN_STATS];
+	__le32 sifs_status[ATH12K_HTT_TX_PDEV_MAX_SIFS_BURST_STATS];
+	__le32 sifs_hist_status[ATH12K_HTT_TX_PDEV_SIFS_BURST_HIST_STATS];
+	__le32 rx_suspend_cnt;
+	__le32 rx_suspend_fail_cnt;
+	__le32 rx_resume_cnt;
+	__le32 rx_resume_fail_cnt;
+	__le32 hwq_beacon_cmd_result[HTT_TX_HWQ_MAX_CMD_RESULT_STATS];
+	__le32 hwq_voice_cmd_result[HTT_TX_HWQ_MAX_CMD_RESULT_STATS];
+	__le32 hwq_video_cmd_result[HTT_TX_HWQ_MAX_CMD_RESULT_STATS];
+	__le32 hwq_best_effort_cmd_result[HTT_TX_HWQ_MAX_CMD_RESULT_STATS];
+	__le32 hwq_beacon_mpdu_tried_cnt;
+	__le32 hwq_voice_mpdu_tried_cnt;
+	__le32 hwq_video_mpdu_tried_cnt;
+	__le32 hwq_best_effort_mpdu_tried_cnt;
+	__le32 hwq_beacon_mpdu_queued_cnt;
+	__le32 hwq_voice_mpdu_queued_cnt;
+	__le32 hwq_video_mpdu_queued_cnt;
+	__le32 hwq_best_effort_mpdu_queued_cnt;
+	__le32 hwq_beacon_mpdu_ack_fail_cnt;
+	__le32 hwq_voice_mpdu_ack_fail_cnt;
+	__le32 hwq_video_mpdu_ack_fail_cnt;
+	__le32 hwq_best_effort_mpdu_ack_fail_cnt;
+	__le32 pdev_resets;
+	__le32 phy_warm_reset;
+	__le32 hwsch_reset_count;
+	__le32 phy_warm_reset_ucode_trig;
+	__le32 mac_cold_reset;
+	__le32 mac_warm_reset;
+	__le32 mac_warm_reset_restore_cal;
+	__le32 phy_warm_reset_m3_ssr;
+	__le32 fw_rx_rings_reset;
+	__le32 tx_flush;
+	__le32 hwsch_dev_reset_war;
+	__le32 mac_cold_reset_restore_cal;
+	__le32 mac_only_reset;
+	__le32 mac_sfm_reset;
+	__le32 tx_ldpc; /* Number of tx PPDUs with LDPC coding */
+	__le32 rx_ldpc; /* Number of rx PPDUs with LDPC coding */
+	__le32 gen_mpdu_end_reason[HTT_TX_TQM_MAX_GEN_MPDU_END_REASON];
+	__le32 list_mpdu_end_reason[ATH12K_HTT_TX_TQM_MAX_LIST_MPDU_END_REASON];
+	__le32 tx_mcs[ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS +
+		      ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS +
+		      ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS];
+	__le32 tx_nss[ATH12K_HTT_TX_PDEV_STATS_NUM_SPATIAL_STREAMS];
+	__le32 tx_bw[ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS];
+	__le32 half_tx_bw[ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS];
+	__le32 quarter_tx_bw[ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS];
+	__le32 tx_su_punctured_mode[ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
+	__le32 rx_mcs[ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS +
+		      ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS +
+		      ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS];
+	__le32 rx_nss[ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS];
+	__le32 rx_bw[ATH12K_HTT_RX_PDEV_STATS_NUM_BW_COUNTERS];
+	__le32 rx_stbc[ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS +
+		       ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS +
+		       ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS];
+	__le32 rts_cnt;
+	__le32 rts_success;
+} __packed;
+
+#define ATH12K_HTT_STATS_TDMA_MAC_ID_M	GENMASK(7, 0)
+
+struct ath12k_htt_pdev_tdma_stats_tlv {
+	__le32 mac_id__word;
+	__le32 num_tdma_active_schedules;
+	__le32 num_tdma_reserved_schedules;
+	__le32 num_tdma_restricted_schedules;
+	__le32 num_tdma_unconfigured_schedules;
+	__le32 num_tdma_slot_switches;
+	__le32 num_tdma_edca_switches;
+} __packed;
+
 struct ath12k_htt_tx_de_cmn_stats_tlv {
 	__le32 mac_id__word;
 	__le32 tcl2fw_entry_count;
@@ -2518,22 +2670,32 @@ struct htt_tx_pdev_ul_mu_ofdma_sch_stats_tlv {
 };
 
 struct htt_t2h_vdev_txrx_stats_hw_stats_tlv {
-	u32 vdev_id;
-	u32 rx_msdu_byte_cnt_hi;
-	u32 rx_msdu_byte_cnt_lo;
-	u32 rx_msdu_cnt_hi;
-	u32 rx_msdu_cnt_lo;
-	u32 tx_msdu_byte_cnt_hi;
-	u32 tx_msdu_byte_cnt_lo;
-	u32 tx_msdu_cnt_hi;
-	u32 tx_msdu_cnt_lo;
-	u32 tx_msdu_excessive_retry_discard_cnt_hi;
-	u32 tx_msdu_excessive_retry_discard_cnt_lo;
-	u32 tx_msdu_cong_ctrl_drop_cnt_hi;
-	u32 tx_msdu_cong_ctrl_drop_cnt_lo;
-	u32 tx_msdu_ttl_expire_drop_cnt_hi;
-	u32 tx_msdu_ttl_expire_drop_cnt_lo;
-};
+	__le32 vdev_id;
+	__le32 rx_msdu_byte_cnt_hi;
+	__le32 rx_msdu_byte_cnt_lo;
+	__le32 rx_msdu_cnt_hi;
+	__le32 rx_msdu_cnt_lo;
+	__le32 tx_msdu_byte_cnt_hi;
+	__le32 tx_msdu_byte_cnt_lo;
+	__le32 tx_msdu_cnt_hi;
+	__le32 tx_msdu_cnt_lo;
+	__le32 tx_msdu_excessive_retry_discard_cnt_hi;
+	__le32 tx_msdu_excessive_retry_discard_cnt_lo;
+	__le32 tx_msdu_cong_ctrl_drop_cnt_hi;
+	__le32 tx_msdu_cong_ctrl_drop_cnt_lo;
+	__le32 tx_msdu_ttl_expire_drop_cnt_hi;
+	__le32 tx_msdu_ttl_expire_drop_cnt_lo;
+	__le32 tx_msdu_excessive_retry_discard_byte_cnt_lo;
+	__le32 tx_msdu_excessive_retry_discard_byte_cnt_hi;
+	__le32 tx_msdu_cong_ctrl_drop_byte_cnt_lo;
+	__le32 tx_msdu_cong_ctrl_drop_byte_cnt_hi;
+	__le32 tx_msdu_ttl_expire_drop_byte_cnt_lo;
+	__le32 tx_msdu_ttl_expire_drop_byte_cnt_hi;
+	__le32 tqm_bypass_frame_cnt_lo;
+	__le32 tqm_bypass_frame_cnt_hi;
+	__le32 tqm_bypass_byte_cnt_lo;
+	__le32 tqm_bypass_byte_cnt_hi;
+} __packed;
 
 struct htt_tx_pdev_dl_mu_mimo_sch_stats_tlv {
 	/* Number of MU MIMO schedules posted to HW */
@@ -3009,7 +3171,7 @@ struct ath12k_htt_tx_pdev_mumimo_grp_stats_tlv {
 } __packed;
 
 enum ath12k_htt_stats_tx_sched_modes {
-	ATH12K_HTT_STATS_TX_SCHED_MODE_MU_MIMO_AC = 0,
+	ATH12K_HTT_STATS_TX_SCHED_MODE_MU_MIMO_AC = 1,
 	ATH12K_HTT_STATS_TX_SCHED_MODE_MU_MIMO_AX,
 	ATH12K_HTT_STATS_TX_SCHED_MODE_MU_OFDMA_AX,
 	ATH12K_HTT_STATS_TX_SCHED_MODE_MU_OFDMA_BE,
@@ -3240,6 +3402,9 @@ struct ath12k_htt_latency_prof_cnt_tlv {
 #define ATH12K_HTT_RX_UL_MAX_UPLINK_RSSI_TRACK	5
 #define ATH12K_HTT_RX_NUM_REDUCED_CHAN_TYPES	2
 #define ATH12K_HTT_RX_NUM_EXTRA_MCS_CNTRS	2
+#define ATH12K_HTT_RX_PDEV_STATS_TOTAL_BW_COUNTERS \
+	 (ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS \
+	  + ATH12K_HTT_RX_PDEV_STATS_NUM_BW_COUNTERS)
 
 struct ath12k_htt_rx_pdev_ul_ofdma_user_stats_tlv {
 	__le32 user_index;
@@ -3283,7 +3448,8 @@ struct ath12k_htt_rx_ul_mumimo_trig_stats_tlv {
 	__le32 ul_mumimo_rx_ldpc;
 	__le32 ul_mumimo_rx_mcs_ext[ATH12K_HTT_RX_NUM_EXTRA_MCS_CNTRS];
 	__le32 ul_gi_ext[ATH12K_HTT_RX_NUM_GI_CNTRS][ATH12K_HTT_RX_NUM_EXTRA_MCS_CNTRS];
-	s8 ul_rssi[ATH12K_HTT_RX_NUM_SPATIAL_STREAMS][ATH12K_HTT_RX_NUM_BW_CNTRS];
+	s8 ul_rssi[ATH12K_HTT_RX_NUM_SPATIAL_STREAMS]
+		  [ATH12K_HTT_RX_PDEV_STATS_TOTAL_BW_COUNTERS];
 	s8 tgt_rssi[ATH12K_HTT_TX_UL_MUMIMO_USER_STATS][ATH12K_HTT_RX_NUM_BW_CNTRS];
 	s8 fd[ATH12K_HTT_TX_UL_MUMIMO_USER_STATS][ATH12K_HTT_RX_NUM_SPATIAL_STREAMS];
 	s8 db[ATH12K_HTT_TX_UL_MUMIMO_USER_STATS][ATH12K_HTT_RX_NUM_SPATIAL_STREAMS];
@@ -3437,6 +3603,11 @@ struct ath12k_htt_dl_pager_stats_tlv {
 #define ATH12K_HTT_MAX_PER_BLK_ERR_CNT		20
 #define ATH12K_HTT_MAX_RX_OTA_ERR_CNT		14
 #define ATH12K_HTT_MAX_CH_PWR_INFO_SIZE		16
+#define ATH12K_HTT_MAX_RX_PKT_CNT_EXT		4
+#define ATH12K_HTT_MAX_RX_PKT_CRC_PASS_CNT_EXT	4
+#define ATH12K_HTT_MAX_RX_PKT_MU_CNT		14
+#define ATH12K_HTT_MAX_TX_PKT_CNT		10
+#define ATH12K_HTT_MAX_PHY_TX_ABORT_CNT		10
 
 struct ath12k_htt_phy_stats_tlv {
 	a_sle32 nf_chain[ATH12K_HTT_STATS_MAX_CHAINS];
@@ -3470,6 +3641,11 @@ struct ath12k_htt_phy_counters_tlv {
 	__le32 rx_pkt_crc_pass_cnt[ATH12K_HTT_MAX_RX_PKT_CRC_PASS_CNT];
 	__le32 per_blk_err_cnt[ATH12K_HTT_MAX_PER_BLK_ERR_CNT];
 	__le32 rx_ota_err_cnt[ATH12K_HTT_MAX_RX_OTA_ERR_CNT];
+	__le32 rx_pkt_cnt_ext[ATH12K_HTT_MAX_RX_PKT_CNT_EXT];
+	__le32 rx_pkt_crc_pass_cnt_ext[ATH12K_HTT_MAX_RX_PKT_CRC_PASS_CNT_EXT];
+	__le32 rx_pkt_mu_cnt[ATH12K_HTT_MAX_RX_PKT_MU_CNT];
+	__le32 tx_pkt_cnt[ATH12K_HTT_MAX_TX_PKT_CNT];
+	__le32 phy_tx_abort_cnt[ATH12K_HTT_MAX_PHY_TX_ABORT_CNT];
 } __packed;
 
 struct ath12k_htt_phy_reset_stats_tlv {
@@ -3617,6 +3793,64 @@ struct ath12k_htt_tx_pdev_ppdu_dur_stats_tlv {
 	__le32 tx_ofdma_ppdu_dur_hist[ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_BINS];
 	__le32 tx_ppdu_dur_hist_ext[ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_EXT_BINS];
 } __packed;
+
+struct ath12k_htt_rx_pdev_ppdu_dur_stats_tlv {
+	/** Tx PPDU duration histogram **/
+	__le32 rx_ppdu_dur_hist[ATH12K_HTT_PDEV_STATS_PPDU_DUR_HIST_BINS];
+} __packed;
+
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_BE_MCS_COUNTERS 16 /* 0-13, -2, -1 */
+#define ATH12K_HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS 8
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_BE_BW_COUNTERS  5  /* 20,40,80,160,320 MHz */
+
+struct ath12k_htt_rx_pdev_ul_mumimo_trig_be_stats_tlv {
+	__le32 mac_id__word;
+
+	/* Number of times UL MUMIMO RX packets received */
+	__le32 rx_11be_ul_mumimo;
+
+	/* 11BE EHT UL MU-MIMO RX TB PPDU MCS stats */
+	__le32 be_ul_mumimo_rx_mcs[ATH12K_HTT_RX_PDEV_STATS_NUM_BE_MCS_COUNTERS];
+	/* 11BE EHT UL MU-MIMO RX GI & LTF stats.
+	 * Index 0 indicates 1xLTF + 1.6 msec GI
+	 * Index 1 indicates 2xLTF + 1.6 msec GI
+	 * Index 2 indicates 4xLTF + 3.2 msec GI
+	 */
+	__le32 be_ul_mumimo_rx_gi[ATH12K_HTT_RX_PDEV_STATS_NUM_GI_COUNTERS]
+				 [ATH12K_HTT_RX_PDEV_STATS_NUM_BE_MCS_COUNTERS];
+	/* 11BE EHT UL MU-MIMO RX TB PPDU NSS stats
+	 * (Increments the individual user NSS in the UL MU MIMO PPDU received)
+	 */
+	__le32 be_ul_mumimo_rx_nss[ATH12K_HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS];
+	/* 11BE EHT UL MU-MIMO RX TB PPDU BW stats */
+	__le32 be_ul_mumimo_rx_bw[ATH12K_HTT_RX_PDEV_STATS_NUM_BE_BW_COUNTERS];
+	/* Number of times UL MUMIMO TB PPDUs received with STBC */
+	__le32 be_ul_mumimo_rx_stbc;
+	/* Number of times UL MUMIMO TB PPDUs received with LDPC */
+	__le32 be_ul_mumimo_rx_ldpc;
+
+	/* RSSI in dBm for Rx TB PPDUs */
+	s8 be_rx_ul_mumimo_chain_rssi_in_dbm
+				[ATH12K_HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS]
+				[ATH12K_HTT_RX_PDEV_STATS_NUM_BE_BW_COUNTERS];
+	/* Target RSSI programmed in UL MUMIMO triggers (units dBm) */
+	s8 be_rx_ul_mumimo_target_rssi[ATH12K_HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER]
+				      [ATH12K_HTT_RX_PDEV_STATS_NUM_BE_BW_COUNTERS];
+	/* FD RSSI measured for Rx UL TB PPDUs (units dBm) */
+	s8 be_rx_ul_mumimo_fd_rssi[ATH12K_HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER]
+				  [ATH12K_HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS];
+	/* Average pilot EVM measued for RX UL TB PPDU */
+	s8 be_rx_ulmumimo_pilot_evm_db_mean[ATH12K_HTT_RX_PDEV_MAX_ULMUMIMO_NUM_USER]
+				[ATH12K_HTT_RX_PDEV_STATS_ULMUMIMO_NUM_SPATIAL_STREAMS];
+	/** Number of times UL MUMIMO TB PPDUs received in a punctured mode */
+	__le32 rx_ul_mumimo_punctured_mode
+		[ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
+	/**
+	 * Number of EHT UL MU-MIMO per-user responses containing only a QoS null
+	 * in response to basic trigger. Typically a data response is expected.
+	 */
+	__le32 be_ul_mumimo_basic_trigger_rx_qos_null_only;
+};
 
 #define ATH12K_HTT_MAX_NUM_CHAN_ACC_LAT_INTR	9
 
