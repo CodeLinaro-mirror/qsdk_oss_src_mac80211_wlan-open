@@ -9570,7 +9570,8 @@ void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 		return;
 	}
 
-	client_type = WMI_REG_DEFAULT_CLIENT;
+	client_type = ieee80211_get_6ghz_client_type(ath12k_ar_to_hw(ar)->wiphy,
+						     bss_conf->power_type - 1);
 	if (client_type == WMI_REG_SUBORDINATE_CLIENT &&
 	    bss_conf->power_type - 1 == NL80211_REG_AP_SP &&
 	    ar->ab->sp_rule)

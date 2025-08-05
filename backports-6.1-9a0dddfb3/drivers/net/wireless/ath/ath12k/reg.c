@@ -1158,6 +1158,12 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 
 	kfree(ab->sp_rule);
 	ab->sp_rule = sp_rule;
+	/* Also include the default client type to indicate that it is always
+	 * supported in the 6 GHz band, regardless of the target's preferred
+	 * client type.
+	 */
+	new_regd->supp_cli_bitmap_6ghz = BIT(WMI_REG_DEFAULT_CLIENT);
+	new_regd->supp_cli_bitmap_6ghz |= BIT(reg_info->client_type);
 	new_regd->n_reg_rules = num_rules;
 
 ret:
@@ -2379,6 +2385,7 @@ ath12k_reg_build_new_regd_for_afc(struct ath12k *ar,
 	memcpy(alpha2, regd->alpha2, REG_ALPHA2_LEN + 1);
 	alpha2[2] = '\0';
 	new_regd->dfs_region = regd->dfs_region;
+	new_regd->supp_cli_bitmap_6ghz = regd->supp_cli_bitmap_6ghz;
 	ath12k_dbg(ab, ATH12K_DBG_AFC,
 		   "\nAFC: Country %s, CFG Regdomain %s, num_reg_rules %d\n",
 		   alpha2, ath12k_reg_get_regdom_str(new_regd->dfs_region),
