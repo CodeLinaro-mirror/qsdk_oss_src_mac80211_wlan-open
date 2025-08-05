@@ -3457,6 +3457,7 @@ struct ieee80211_channel
 	enum nl80211_regulatory_power_modes mode;
 	struct ieee80211_channel *new_chan;
 	u32 new_freq;
+	enum nl80211_reg_client_types client_type;
 
 	new_freq = ieee80211_channel_to_frequency(new_chan_idx,
 						  NL80211_BAND_6GHZ);
@@ -3465,7 +3466,9 @@ struct ieee80211_channel
 	if (*ap_mode == NL80211_REG_NUM_POWER_MODES)
 		return NULL;
 
-	mode = GET_POWER_MODE_FOR_NON_AP_STA(NL80211_REG_REGULAR_CLIENT, *ap_mode);
+	client_type = ieee80211_get_6ghz_client_type(sdata->local->hw.wiphy,
+						     *ap_mode);
+	mode = GET_POWER_MODE_FOR_NON_AP_STA(client_type, *ap_mode);
 	new_chan = ieee80211_get_6g_channel_khz(sdata->local->hw.wiphy,
 						MHZ_TO_KHZ(new_freq), mode);
 	return new_chan;
@@ -3519,7 +3522,11 @@ bool ieee80211_chandef_he_6ghz_oper(struct ieee80211_sub_if_data *sdata,
 		mode = cfg80211_get_6ghz_power_mode_from_chan(sdata->local->hw.wiphy,
 							      mesh_chandef->chan);
 	} else {
-		mode = GET_POWER_MODE_FOR_NON_AP_STA(NL80211_REG_REGULAR_CLIENT, reg_info);
+		enum nl80211_reg_client_types client_type;
+
+		client_type = ieee80211_get_6ghz_client_type(sdata->local->hw.wiphy,
+							     reg_info);
+		mode = GET_POWER_MODE_FOR_NON_AP_STA(client_type, reg_info);
 	}
 
 	/*

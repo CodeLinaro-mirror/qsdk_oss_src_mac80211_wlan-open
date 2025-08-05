@@ -5095,7 +5095,8 @@ ieee80211_get_ap_6ghz_pwr_mode(struct wireless_dev *wdev, unsigned int link_id)
 		if (wdev->iftype == NL80211_IFTYPE_AP)
 			return ap_mode;
 
-		client_type = NL80211_REG_REGULAR_CLIENT;
+		client_type = ieee80211_get_6ghz_client_type(sdata->local->hw.wiphy,
+							     ap_mode);
 		mode = GET_POWER_MODE_FOR_NON_AP_STA(client_type, ap_mode);
 		break;
 	default:
