@@ -221,6 +221,7 @@ struct ieee80211_regdomain {
 	char alpha2[3];
 	u8 supp_cli_bitmap_6ghz;
 	enum nl80211_dfs_regions dfs_region;
+	u8 band_mask;
 	struct ieee80211_reg_rule reg_rules[];
 };
 
