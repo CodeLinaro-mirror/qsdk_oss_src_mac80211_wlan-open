@@ -849,7 +849,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	int ret;
 	u16 peer_id;
 	u8 ring_selector, subtype, ring_map = 0;
-	bool tcl_ring_retry;
+	bool tcl_ring_retry = false;
 	bool msdu_ext_desc = false;
 	size_t hdrlen;
 	bool add_htt_metadata = false;
@@ -2180,6 +2180,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 								   sw_metadata->skb,
 								   tx_ring, sw_metadata,
 								   &ts, ring_id, htt_status);
+			sw_metadata->skb = NULL;
 			continue;
                 }
 
@@ -2209,6 +2210,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			ath12k_wifi7_dp_tx_complete_msdu(dp_pdev, sw_metadata->skb, &ts,
 							 sw_metadata, sw_metadata->mac_id,
 							 ring_id);
+			sw_metadata->skb = NULL;
 		}
 
 		rcu_read_unlock();
