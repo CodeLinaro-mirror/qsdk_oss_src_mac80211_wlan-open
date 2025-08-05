@@ -918,6 +918,20 @@ struct wlfw_ini_resp_msg_v01 {
 	struct qmi_response_type_v01 resp;
 };
 
+#define QMI_WLFW_PARTNER_CHIP_STATE_INFO_REQ_V01 0x0066
+#define QMI_WLFW_PARTNER_CHIP_STATE_INFO_RESP_V01 0x0066
+#define WLFW_PARTNER_CHIP_STATE_INFO_REQ_MSG_V01_MAX_MSG_LEN 4
+#define WLFW_PARTNER_CHIP_STATE_INFO_RESP_MSG_V01_MAX_LEN 7
+
+struct qmi_wlanfw_chip_state_info_req_msg_v01 {
+	u8 partner_chip_state_valid;
+	u8 partner_chip_state;
+};
+
+struct qmi_wlanfw_chip_state_info_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
 enum {
         ATH12K_MLO_SHMEM_TLV_STRUCT_MGMT_RX_REO_SNAPSHOT,
         ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_RX_REO_PER_LINK_SNAPSHOT_INFO,
@@ -1014,6 +1028,7 @@ struct ath12k_qmi_shmem_tlv_policy {
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			      u32 mode);
 void ath12k_qmi_firmware_stop(struct ath12k_base *ab);
+int ath12k_qmi_partner_chip_power_info_send(struct ath12k_base *ab, u8 power_state);
 void ath12k_qmi_deinit_service(struct ath12k_base *ab);
 int ath12k_qmi_init_service(struct ath12k_base *ab);
 int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab);

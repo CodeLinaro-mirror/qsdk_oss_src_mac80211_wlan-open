@@ -3061,6 +3061,102 @@ struct qmi_elem_info qmi_wlanfw_mem_write_resp_msg_v01_ei[] = {
 	},
 };
 
+struct qmi_elem_info qmi_wlanfw_chip_state_info_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_chip_state_info_req_msg_v01,
+					   partner_chip_state_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x10,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_chip_state_info_req_msg_v01,
+					   partner_chip_state),
+	},
+
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+
+};
+
+struct qmi_elem_info qmi_wlanfw_chip_state_info_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_chip_state_info_resp_msg_v01,
+					   resp),
+		.ei_array       = qmi_response_type_v01_ei,
+	},
+
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+
+};
+
+int ath12k_qmi_partner_chip_power_info_send(struct ath12k_base *ab, u8 power_state)
+{
+	struct qmi_wlanfw_chip_state_info_req_msg_v01 req = {};
+	struct qmi_wlanfw_chip_state_info_resp_msg_v01 resp = {};
+	struct qmi_txn txn;
+	int ret;
+
+	req.partner_chip_state_valid = 1;
+	req.partner_chip_state = power_state;
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+			   qmi_wlanfw_chip_state_info_resp_msg_v01_ei,
+			   &resp);
+	if (ret < 0) {
+		ath12k_warn(ab, "Failed to initialize QMI transaction: %d\n", ret);
+		goto out;
+	}
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLFW_PARTNER_CHIP_STATE_INFO_REQ_V01,
+			       WLFW_PARTNER_CHIP_STATE_INFO_REQ_MSG_V01_MAX_MSG_LEN,
+			       qmi_wlanfw_chip_state_info_req_msg_v01_ei, &req);
+	if (ret < 0) {
+		qmi_txn_cancel(&txn);
+		ath12k_warn(ab, "Failed to send partner chip power state\n");
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+
+	if (ret < 0) {
+		ath12k_warn(ab, "QMI transaction timeout !\n");
+		goto out;
+	}
+
+	if (resp.resp.result != QMI_RESULT_SUCCESS_V01) {
+		ath12k_warn(ab, "Fail to notify power state result: %d err: %d\n",
+			    resp.resp.result, resp.resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+out:
+	return ret;
+}
+
 int ath12k_qmi_mem_read(struct ath12k_base *ab, u32 mem_addr, void *mem_value,size_t count)
 {
 	struct qmi_wlanfw_mem_read_req_msg_v01 *req;

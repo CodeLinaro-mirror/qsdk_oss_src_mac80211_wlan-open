@@ -3558,6 +3558,25 @@ static void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 	}
 }
 
+static void ath12k_partner_chip_power_state_info(struct ath12k_hw_group *ag,
+						 u8 power_state)
+{
+	struct ath12k_base *ab;
+	int i, ret;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+
+		if (ab->is_reset)
+			continue;
+
+		ret = ath12k_qmi_partner_chip_power_info_send(ab, power_state);
+
+		if (ret < 0)
+			ath12k_err(ab, "Failed to send the power state for the chip\n");
+	}
+}
+
 static void ath12k_core_reset(struct work_struct *work)
 {
 	struct ath12k_base *partner_ab, *ab = container_of(work, struct ath12k_base, reset_work);
@@ -3747,6 +3766,9 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_ce_irq_disable(ab);
 
+	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+		ath12k_partner_chip_power_state_info(ag, FW_ASSERTED_CHIP_PWR_DOWN);
+
 	if (ab->hif.bus == ATH12K_BUS_PCI) {
 		ath12k_hif_power_down(ab, false);
 	} else {
@@ -3786,6 +3808,10 @@ static void ath12k_core_reset(struct work_struct *work)
 			ab->pm_suspend = false;
 			ab->powerup_triggered = true;
 		}
+
+		if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+			ath12k_partner_chip_power_state_info(ag,
+							     FW_ASSERTED_CHIP_PWR_UP);
 
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset started\n");
 	}

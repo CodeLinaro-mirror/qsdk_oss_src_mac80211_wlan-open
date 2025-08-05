@@ -107,6 +107,10 @@
 #define ATH12K_MAX_TID_VALUE 8
 #define ATH12K_FREE_MAP_ID_MASK GENMASK(31, 0)
 
+/* Chip power state definitions for partner chip notification */
+#define FW_ASSERTED_CHIP_PWR_DOWN 1   /* Partner chip is powering down */
+#define FW_ASSERTED_CHIP_PWR_UP   2   /* Partner chip is powering up */
+
 #define ATH12K_MAX_CORE_MASK	(0xFFFF & ((1 << NR_CPUS) - 1))
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
