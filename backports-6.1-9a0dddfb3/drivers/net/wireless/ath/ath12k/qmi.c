@@ -6024,7 +6024,7 @@ static bool ath12k_qmi_hw_group_host_cap_ready(struct ath12k_hw_group *ag)
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
 
-		if (ab->is_bypassed)
+		if (ab && ab->is_bypassed)
 			continue;
 
 		if (!(ab && ab->qmi.num_radios != U8_MAX))

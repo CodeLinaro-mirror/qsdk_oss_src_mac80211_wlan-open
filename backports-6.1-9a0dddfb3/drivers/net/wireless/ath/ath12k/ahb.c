@@ -1685,6 +1685,9 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 	return 0;
 
 err_free_dp:
+	if (test_bit(ATH12K_FLAG_SOC_CREATE_FAIL, &ab->dev_flags))
+		return ret;
+
 	if (ab_ahb->device_ops->dp_deinit)
 		ab_ahb->device_ops->dp_deinit(ab->dp);
 

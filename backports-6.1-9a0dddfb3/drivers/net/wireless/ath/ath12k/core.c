@@ -1149,6 +1149,7 @@ int ath12k_core_check_smbios(struct ath12k_base *ab)
 
 static int ath12k_core_soc_create(struct ath12k_base *ab)
 {
+	struct ath12k_hw_group *ag = ab->ag;
 	int ret;
 
 	if (ath12k_ftm_mode) {
@@ -1174,12 +1175,16 @@ static int ath12k_core_soc_create(struct ath12k_base *ab)
 
 err_qmi_deinit:
 	ath12k_debugfs_soc_destroy(ab);
+	mutex_unlock(&ag->mutex);
 	ath12k_qmi_deinit_service(ab);
+	mutex_lock(&ag->mutex);
 	return ret;
 }
 
 static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 {
+	struct ath12k_hw_group *ag = ab->ag;
+
 	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		ath12k_qmi_firmware_stop(ab);
 
@@ -1191,7 +1196,9 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 
 	ath12k_reg_free(ab);
 	ath12k_debugfs_soc_destroy(ab);
+	mutex_unlock(&ag->mutex);
 	ath12k_qmi_deinit_service(ab);
+	mutex_lock(&ag->mutex);
 	ath12k_cfg_deinit(ab);
 }
 
@@ -4552,7 +4559,7 @@ static void ath12k_core_hw_group_cleanup(struct ath12k_hw_group *ag)
 static int ath12k_core_hw_group_create(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
-	int i, ret;
+	int i;
 
 	lockdep_assert_held(&ag->mutex);
 
@@ -4563,14 +4570,11 @@ static int ath12k_core_hw_group_create(struct ath12k_hw_group *ag)
 
 		mutex_lock(&ab->core_lock);
 
-		ath12k_core_fill_adj_info(ab);
-
-		ret = ath12k_core_soc_create(ab);
-		if (ret) {
+		if (test_bit(ATH12K_FLAG_SOC_CREATE_FAIL, &ab->dev_flags)) {
 			mutex_unlock(&ab->core_lock);
-			ath12k_err(ab, "failed to create soc core: %d\n", ret);
-			return ret;
+			return -ENODEV;
 		}
+		ath12k_core_fill_adj_info(ab);
 
 		mutex_unlock(&ab->core_lock);
 
@@ -4885,6 +4889,16 @@ int ath12k_core_init(struct ath12k_base *ab)
 		   ag->num_devices, ag->num_probed);
 
 	mutex_lock(&ag->mutex);
+	mutex_lock(&ab->core_lock);
+	ret = ath12k_core_soc_create(ab);
+	if (ret) {
+		set_bit(ATH12K_FLAG_SOC_CREATE_FAIL, &ab->dev_flags);
+		mutex_unlock(&ab->core_lock);
+		mutex_unlock(&ag->mutex);
+		ath12k_err(ab, "failed to create soc core: %d\n", ret);
+		return ret;
+	}
+	mutex_unlock(&ab->core_lock);
 	is_ready = ath12k_core_hw_group_create_ready(ag);
 
 	if (is_ready) {
