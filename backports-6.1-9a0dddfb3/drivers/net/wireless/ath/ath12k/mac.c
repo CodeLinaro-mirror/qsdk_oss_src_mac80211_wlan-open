@@ -5951,6 +5951,67 @@ static void ath12k_mac_bss_offload_advertised_ttlm(struct ath12k_link_vif *arvif
 	ath12k_wmi_ap_tid_to_link_map_config(ar, &map_params);
 }
 
+static void ath12k_mac_ttlm_timer_expiry(struct ieee80211_hw *hw,
+					 struct ieee80211_vif *vif,
+					 u16 map)
+{
+	struct ieee80211_sta *ap_sta;
+	struct ieee80211_link_sta *link_sta;
+	struct ath12k_wmi_ttlm_peer_params params = {0};
+	struct ath12k *ar;
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_wmi_host_ttlm_of_tids *ttlm_info;
+	unsigned long links = ahvif->links_map;
+	bool default_mapping = (map == vif->valid_links) ? 1 : 0;
+	u16 hw_link_map = 0;
+	u8 link_id, j;
+
+	ap_sta = ieee80211_find_sta(vif, vif->cfg.ap_addr);
+	if (!ap_sta)
+		return;
+
+	lockdep_assert_wiphy(hw->wiphy);
+	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		memset(&params, 0, sizeof(struct ath12k_wmi_ttlm_peer_params));
+		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		if (!arvif || !arvif->ar)
+			continue;
+
+		ar = arvif->ar;
+		if (ath12k_mac_is_bridge_vdev(arvif))
+			continue;
+
+		params.pdev_id = ath12k_mac_get_target_pdev_id(ar);
+
+		if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+			continue;
+
+		link_sta = wiphy_dereference(hw->wiphy,
+					     ap_sta->link[link_id]);
+		if (!link_sta)
+			continue;
+
+		memcpy(params.peer_macaddr, link_sta->addr, ETH_ALEN);
+		ttlm_info = &params.ttlm_info[params.num_dir];
+		ttlm_info->direction = ATH12K_WMI_TTLM_BIDI_DIRECTION;
+		ttlm_info->default_link_mapping = default_mapping;
+		if (!default_mapping) {
+			ath12k_mac_get_hw_link_map(vif, map, &hw_link_map);
+			for (j = 0; j < TTLM_MAX_NUM_TIDS; j++)
+				ttlm_info->ttlm_provisioned_links[j] =
+					hw_link_map;
+		}
+		params.num_dir++;
+		if (ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(ar,
+								 &params,
+								 true)) {
+			ath12k_warn(ar->ab, "failed to send ttlm command");
+			return;
+		}
+	}
+}
+
 void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
 				   u64 changed)
@@ -5997,6 +6058,9 @@ void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 		if (vif->type == NL80211_IFTYPE_AP) {
 			/* advertised ttlm offload start request */
 			ath12k_mac_offload_advertised_ttlm(hw, vif);
+		} else if (vif->cfg.assoc) {
+			ath12k_mac_ttlm_timer_expiry(hw, vif,
+						     vif->adv_ttlm.u.mgd.ttlm_info.map);
 		}
 	}
 }
