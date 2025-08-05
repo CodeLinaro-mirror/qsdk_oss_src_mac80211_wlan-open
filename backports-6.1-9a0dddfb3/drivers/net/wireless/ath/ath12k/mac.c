@@ -829,8 +829,19 @@ static void ath12k_get_arvif_iter(void *data, u8 *mac,
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 		arvif = rcu_dereference(ahvif->link[link_id]);
 
-		if (WARN_ON(!arvif))
+		if (!arvif) {
+			/* Adding this debug to find out how rcu-dereference
+			 * is returing NULL when link address is present.
+			 * There could be two reasons. Either read lock is
+			 * not proper or link_id retrieved by for_each_set_bit
+			 * is not right
+			 */
+			ath12k_err(NULL,
+				   "func %s arvif is NULL for link_id %d links_map 0x%lx arvif-direct de-ref %p\n",
+				   __func__, link_id, links_map, ahvif->link[link_id]);
+			WARN_ON(1);
 			continue;
+		}
 
 		if (arvif->vdev_id == arvif_iter->vdev_id &&
 		    arvif->ar == arvif_iter->ar) {
