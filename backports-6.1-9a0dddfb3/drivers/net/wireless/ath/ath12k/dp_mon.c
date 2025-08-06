@@ -2019,9 +2019,11 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
        struct ath12k_pdev_dp *dp = &ar->dp;
        struct ath12k_pdev_dp_stats *pdev_stats = &dp->stats;
        u8 ac;
+	struct ath12k_atf_peer_airtime *atf_airtime;
 
        airtime_stats = &peer->peer_stats.dp_mon_stats.mon_stats;
        time_diff = (u32)(current_time - airtime_stats->last_update_time);
+	atf_airtime = &peer->atf_peer_airtime;
 
        for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
                /* *_link_airtime refers to the amount of time a peer spends
@@ -2032,6 +2034,7 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
 
                /* Tx Airtime Consumption */
                peer_consump = &airtime_stats->tx_airtime_consumption[ac];
+	       atf_airtime->tx_airtime_consumption[ac] = airtime_stats->tx_airtime_consumption[ac];
                usage = peer_consump->consumption;
                consump_per_sec = (u8)div_u64((u64)(usage * 100), time_diff);
                div_u64_rem((u64)(usage * 100), time_diff, &remainder);
@@ -2044,10 +2047,12 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
                }
                peer_consump->avg_consumption_per_sec = consump_per_sec;
                pdev_stats->telemetry_stats.tx_link_airtime[ac] += peer_consump->consumption;
+	       pdev_stats->atf_airtime.tx_airtime_consumption[ac] += peer_consump->consumption;
                peer_consump->consumption = 0;
 
                /* Rx Airtime Consumption */
                peer_consump = &airtime_stats->rx_airtime_consumption[ac];
+	       atf_airtime->rx_airtime_consumption[ac] = airtime_stats->rx_airtime_consumption[ac];
                usage = peer_consump->consumption;
                consump_per_sec = (u8)div_u64((u64)(usage * 100), time_diff);
                div_u64_rem((u64)(usage * 100), time_diff, &remainder);
@@ -2060,6 +2065,7 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
                }
                peer_consump->avg_consumption_per_sec = consump_per_sec;
                pdev_stats->telemetry_stats.rx_link_airtime[ac] += peer_consump->consumption;
+	       pdev_stats->atf_airtime.rx_airtime_consumption[ac] += peer_consump->consumption;
                peer_consump->consumption = 0;
 
                ath12k_dbg(ab,

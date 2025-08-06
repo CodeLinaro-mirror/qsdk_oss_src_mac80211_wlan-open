@@ -59,6 +59,12 @@ struct ath12k_rx_peer_stats {
 	struct ath12k_rx_peer_rate_stats byte_stats;
 };
 
+struct ath12k_atf_peer_airtime {
+	struct peer_airtime_consumption tx_airtime_consumption[WME_NUM_AC];
+	struct peer_airtime_consumption rx_airtime_consumption[WME_NUM_AC];
+	u64 last_update_time;
+};
+
 struct ath12k_htt_tx_stats {
        struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
        u64 tx_duration;
@@ -130,7 +136,10 @@ struct ath12k_dp_link_peer {
 	bool assoc_success; /* information on peer assoc status from firmware */
 	u32 flow_cnt[ATH12K_DATA_TID_MAX];
 	u8 tid_weight[ATH12K_DATA_TID_MAX];
+
+	struct ath12k_atf_peer_airtime atf_peer_airtime;
 	u32 atf_peer_conf_airtime;
+	u32 atf_actual_airtime;
 	u8 atf_group_index;
 };
 

@@ -1082,6 +1082,8 @@ struct ath12k_atf_group_info {
 	u16 unconfigured_peers;
 	u16 configured_peers;
 	u32 unconfigured_peers_airtime;
+	/* This is the cumulative actual airtime of all peers in the group.*/
+	u8 atf_actual_airtime;
 };
 
 struct ath12k_atf_peer_info {
@@ -1310,6 +1312,7 @@ struct ath12k {
 	struct completion pdev_resume;
 	struct work_struct ssr_erp_exit;
 	struct ath12k_atf atf_table;
+	u8 atf_stats_enable;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

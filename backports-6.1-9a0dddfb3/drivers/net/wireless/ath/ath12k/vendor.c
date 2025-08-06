@@ -60,6 +60,7 @@ ath12k_atf_offload_config_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VI_DEDICATED_TIME_CONFIG] = {.type = NLA_U16},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_CONFIG] = {.type = NLA_NESTED},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS] = {.type = NLA_NESTED},
 };
 
 static const struct nla_policy
@@ -5755,6 +5756,135 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 	return ret;
 }
 
+static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
+{
+	struct ath12k_dp_link_peer *peer, *tmp;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_atf_peer_airtime *atf_peer_airtime;
+	struct ath12k_dp *dp;
+	struct ath12k_pdev_dp *ar_dp = &ar->dp;
+	struct ath12k_pdev_dp_stats *pdev_stats = &ar_dp->stats;
+	struct ath12k_atf_pdev_airtime *atf_pdev_airtime =
+		&pdev_stats->atf_airtime;
+	u8 group_index;
+	u32 peer_airtime, pdev_actual_airtime = 0;
+	int ac;
+
+	for (ac = 0; ac < WME_NUM_AC; ac++)
+		pdev_actual_airtime += atf_pdev_airtime->tx_airtime_consumption[ac];
+
+	dp = ath12k_ab_to_dp(ar->ab);
+	spin_lock_bh(&dp->dp_lock);
+	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
+		if (peer->pdev_idx != ar->pdev_idx && !peer->sta)
+			continue;
+		peer_airtime = 0;
+
+		group_index = peer->atf_group_index;
+		atf_peer_airtime = &peer->atf_peer_airtime;
+
+		for (ac = 0; ac < WME_NUM_AC; ac++)
+			peer_airtime += atf_peer_airtime->tx_airtime_consumption[ac].consumption;
+
+		if (peer_airtime > 0)
+			peer->atf_actual_airtime =
+				(u32)div_u64((u64)peer_airtime * 100ULL,  pdev_actual_airtime);
+		else
+			peer->atf_actual_airtime = 0;
+
+		if (group_index < ar->atf_table.total_groups)
+			ar->atf_table.group_info[group_index].atf_actual_airtime +=
+				peer->atf_actual_airtime;
+		else
+			ath12k_warn(ar->ab, "ATF: Invalid group index %u for peer %pM (max: %u)",
+				    group_index, peer->addr, ar->atf_table.total_groups - 1);
+	}
+	spin_unlock_bh(&dp->dp_lock);
+}
+
+static void ath12k_atf_offload_print_stats(struct ath12k *ar)
+{
+	struct ath12k_dp_link_peer *peer, *tmp;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp;
+	u8 borrowed, unused;
+	int i, peer_count = 0;
+	struct ath12k_atf *atf_table = &ar->atf_table;
+	struct atf_peer_stat *peer_stats;
+
+	peer_stats = kcalloc(ATH12K_ATF_MAX_PEERS, sizeof(*peer_stats), GFP_ATOMIC);
+	if (!peer_stats) {
+		ath12k_warn(ar->ab, "ATF: Failed to allocate memory for peer stats");
+		return;
+	}
+
+	dp = ath12k_ab_to_dp(ar->ab);
+
+	ath12k_atf_offload_update_peer_airtime(ar);
+	ath12k_info(ar->ab, "******************************* ATF STATS For SSID Groups **************************");
+	ath12k_info(ar->ab, "GroupID  Configured  Actual  Borrowed  Unused");
+
+	for (i = 0; i < atf_table->total_groups; i++) {
+		borrowed = 0;
+		unused = 0;
+
+		if ((atf_table->group_info[i].group_airtime / 10) >
+		    atf_table->group_info[i].atf_actual_airtime)
+			unused = (atf_table->group_info[i].group_airtime / 10) -
+				 atf_table->group_info[i].atf_actual_airtime;
+		else
+			borrowed = atf_table->group_info[i].atf_actual_airtime -
+				   (atf_table->group_info[i].group_airtime / 10);
+
+		ath12k_info(ar->ab, "%d		%d	%d	%d	%d",
+			    atf_table->group_info[i].group_id,
+			    atf_table->group_info[i].group_airtime / 10,
+			    atf_table->group_info[i].atf_actual_airtime,
+			    borrowed,
+			    unused);
+	}
+
+	spin_lock_bh(&dp->dp_lock);
+	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
+		if (peer->pdev_idx != ar->pdev_idx && !peer->sta)
+			continue;
+
+		memcpy(peer_stats[peer_count].addr, peer->addr, ETH_ALEN);
+		peer_stats[peer_count].atf_actual_airtime = peer->atf_actual_airtime;
+		peer_stats[peer_count].atf_peer_conf_airtime = peer->atf_peer_conf_airtime;
+		peer_stats[peer_count].atf_group_index = peer->atf_group_index;
+
+		peer_count++;
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
+	ath12k_info(ar->ab, "******************************************************");
+	ath12k_info(ar->ab, "**************** ATF STATS For PEERs *************************");
+	ath12k_info(ar->ab, "PeerMAC      GroupId  Configured  Actual  Borrowed  Unused");
+
+	for (i = 0; i < peer_count; i++) {
+		borrowed = 0;
+		unused = 0;
+
+		if (peer_stats[i].atf_peer_conf_airtime / 10 > peer_stats[i].atf_actual_airtime)
+			unused = (peer_stats[i].atf_peer_conf_airtime / 10) -
+				 peer_stats[i].atf_actual_airtime;
+		else
+			borrowed = peer_stats[i].atf_actual_airtime -
+				   (peer_stats[i].atf_peer_conf_airtime / 10);
+
+		ath12k_info(ar->ab, "%pM        %d         %d        %d        %d        %d",
+			    peer_stats[i].addr,
+			    peer_stats[i].atf_group_index,
+			    peer_stats[i].atf_peer_conf_airtime / 10,
+			    peer_stats[i].atf_actual_airtime,
+			    borrowed,
+			    unused);
+	}
+	kfree(peer_stats);
+
+}
+
 static int ath12k_vendor_offload_sched_duration_config(struct ath12k *ar,
 						       struct nlattr *sched_duration_param)
 {
@@ -5831,9 +5961,128 @@ static int ath12k_vendor_offload_ssid_scheduling_config(struct ieee80211_hw *hw,
 	return ret;
 }
 
+static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
+					  struct wireless_dev *wdev,
+					  struct sk_buff *msg,
+					  const void *data,
+					  int data_len,
+					  unsigned long *storage)
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	struct ath12k *ar;
+	struct ath12k_dp_link_peer *peer, *tmp;
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1];
+	struct nlattr *peer_attr, *peer_data, *peer_data_1;
+	int ret, j = 0;
+	int tailroom = 0, nest_start_length = 0;
+	int nest_end_length = 0, nested_range = 0;
+	u8 radio_id;
+
+	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX, data, data_len,
+			ath12k_atf_offload_config_policy, NULL);
+	if (ret) {
+		ath12k_err(NULL, "AFT: Invalid attributes in ATF stats view\n");
+		return -EINVAL;
+	}
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_ID]) {
+		ath12k_err(NULL, "ATF: Missing radio ID in ATF stats view\n");
+		return -EINVAL;
+	}
+
+	radio_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_ID]);
+	ar = ath12k_ah_to_ar(ah, radio_id);
+	if (!ar)
+		return -ENODEV;
+
+	ab = ar->ab;
+	if (!ab)
+		return -ENODEV;
+
+	if (!storage)
+		return -ENODATA;
+
+	dp = ath12k_ab_to_dp(ar->ab);
+
+	peer_attr = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS);
+	if (!peer_attr)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_TX_BE_AIRTIME,
+			ar->dp.stats.atf_airtime.tx_airtime_consumption[0]) ||
+			nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_TX_BK_AIRTIME,
+				    ar->dp.stats.atf_airtime.tx_airtime_consumption[1]) ||
+			nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_TX_VI_AIRTIME,
+				    ar->dp.stats.atf_airtime.tx_airtime_consumption[2]) ||
+			nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_TX_VO_AIRTIME,
+				    ar->dp.stats.atf_airtime.tx_airtime_consumption[3]) ||
+			nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_RX_BE_AIRTIME,
+				    ar->dp.stats.atf_airtime.rx_airtime_consumption[0]) ||
+			nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_RX_BK_AIRTIME,
+				    ar->dp.stats.atf_airtime.rx_airtime_consumption[1]) ||
+			nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_RX_VO_AIRTIME,
+				    ar->dp.stats.atf_airtime.rx_airtime_consumption[2]) ||
+			nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_RX_VI_AIRTIME,
+				    ar->dp.stats.atf_airtime.rx_airtime_consumption[3])) {
+		return -ENOBUFS;
+	}
+
+	peer_data_1 = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS);
+	tailroom = skb_tailroom(msg);
+	spin_lock_bh(&dp->dp_lock);
+	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
+		if (peer->pdev_idx != ar->pdev_idx && !peer->sta)
+			continue;
+
+		if (tailroom <= nested_range)
+			break;
+
+		peer_data = nla_nest_start(msg, j++);
+
+		if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAC,
+			    ETH_ALEN, peer->addr) ||
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BE_AIRTIME,
+				peer->atf_peer_airtime.tx_airtime_consumption[0].consumption) ||
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_BK_AIRTIME,
+				peer->atf_peer_airtime.tx_airtime_consumption[1].consumption) ||
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VI_AIRTIME,
+				peer->atf_peer_airtime.tx_airtime_consumption[2].consumption) ||
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_TX_VO_AIRTIME,
+				peer->atf_peer_airtime.tx_airtime_consumption[3].consumption) ||
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BE_AIRTIME,
+				peer->atf_peer_airtime.rx_airtime_consumption[0].consumption) ||
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_BK_AIRTIME,
+				peer->atf_peer_airtime.rx_airtime_consumption[1].consumption) ||
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VI_AIRTIME,
+				peer->atf_peer_airtime.rx_airtime_consumption[2].consumption) ||
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_RX_VO_AIRTIME,
+				peer->atf_peer_airtime.rx_airtime_consumption[3].consumption)) {
+			nla_nest_cancel(msg, peer_data);
+			spin_unlock_bh(&dp->dp_lock);
+			return -ENOBUFS;
+		}
+		nla_nest_end(msg, peer_data);
+
+		*storage += 1;
+		nest_end_length = nla_nest_end(msg, peer_data);
+		nested_range = nest_end_length - nest_start_length;
+		tailroom -= nested_range;
+	}
+	spin_unlock_bh(&dp->dp_lock);
+	nla_nest_end(msg, peer_data_1);
+	nla_nest_end(msg, peer_attr);
+	if (*storage == ar->num_peers)
+		return msg->len;
+
+	return 0;
+}
+
 static int
 ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
-					 struct wireless_dev *wdev,
+		struct wireless_dev *wdev,
 					 const void *data,
 					 int data_len)
 {
@@ -5841,7 +6090,7 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1];
-	u8 config_type, radio_id, atf_enable, atf_stats_enable, atf_strict_scheduling;
+	u8 config_type, radio_id, atf_enable, atf_strict_scheduling;
 	u16 vo_dedicated_time, vi_dedicated_time;
 	int ret;
 
@@ -5922,8 +6171,9 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 			ath12k_err(NULL, "ATF stats config missing\n");
 			return -EINVAL;
 		}
-		atf_stats_enable =
+		ar->atf_stats_enable =
 			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STATS_CONFIG]);
+		ath12k_atf_offload_print_stats(ar);
 		break;
 	case QCA_WLAN_VENDOR_ATF_OFFLOAD_STRICT_SCH:
 		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STRICT_SCH_CONFIG]) {
@@ -6636,6 +6886,7 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
 		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS,
 		.doit = ath12k_vendor_atf_offload_config_handler,
+		.dumpit = ath12k_vendor_atf_stats_dumpit,
 		.policy = ath12k_atf_offload_config_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,

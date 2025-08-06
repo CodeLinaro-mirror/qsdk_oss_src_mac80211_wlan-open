@@ -124,9 +124,15 @@ struct ath12k_pdev_telemetry_stats {
 	u8 sta_vap_exist;
 };
 
+struct ath12k_atf_pdev_airtime {
+	u32 tx_airtime_consumption[WME_NUM_AC];
+	u32 rx_airtime_consumption[WME_NUM_AC];
+};
+
 struct ath12k_pdev_dp_stats {
-       struct ath12k_pdev_telemetry_stats telemetry_stats;
-       /* Add other new stats if required */
+	struct ath12k_pdev_telemetry_stats telemetry_stats;
+	struct ath12k_atf_pdev_airtime atf_airtime;
+	/* Add other new stats if required */
 };
 
 struct ath12k_pdev_dp {
