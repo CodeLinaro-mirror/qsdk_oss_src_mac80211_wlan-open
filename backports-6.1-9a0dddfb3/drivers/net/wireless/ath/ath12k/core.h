@@ -670,6 +670,58 @@ struct ath12k_dp_vif {
 	bool mscs_hlos_tid_override;
 };
 
+enum ath12k_tx_pkt_reasons {
+	ATH_TX_COMPLETED_PKTS,
+	ATH_TX_SFE_PKTS,
+	ATH_TX_MCAST_PKTS,
+	ATH_TX_EAPOL_PKTS,
+	ATH_TX_NULL_PKTS,
+	ATH_TX_UNICAST_PKTS,
+	ATH_TX_NULL_COMPLETE_PKTS,
+	ATH_TX_FAST_UNICAST,
+	ATH_TX_WBM_REL_SRC,
+	ATH_TX_FW_STATUS,
+	ATH_TX_PPEDS_PKTS,
+	ATH_TX_PKT_REASON_MAX
+};
+
+enum ath12k_tx_drop_reasons {
+	ATH_TX_DUP_DESC,
+	ATH_TX_BUF_ERR,
+	ATH_TX_DESC_ERR,
+	ATH_TX_MISC_FAIL,
+	ATH_TX_DESC_NA_ERR,
+	ATH_TX_TQM_REMOVE_MPDU,
+	ATH_TX_TQM_THRESHOLD,
+	ATH_TX_TQM_REMOVE_AGED,
+	ATH_TX_TQM_REMOVE_TX,
+	ATH_TX_TQM_REMOVE_DEF,
+	ATH_TX_DS_TQM_REMOVE_MPDU,
+	ATH_TX_DS_TQM_DROP_THRESHOLD,
+	ATH_TX_DS_TQM_REMOVE_TX,
+	ATH_TX_DS_TQM_REMOVE_AGED,
+	ATH_TX_DS_TQM_REMOVE_DEF,
+	ATH_TX_DROP_REASON_MAX
+};
+
+struct tid_netstats {
+	u64 tx_packets;
+	u64 tx_bytes;
+	u64 tx_pkt_stats[ATH_TX_PKT_REASON_MAX];
+	u64 tx_pkt_bytes[ATH_TX_PKT_REASON_MAX];
+	u64 tx_drop_stats[ATH_TX_DROP_REASON_MAX];
+	u64 tx_drop_bytes[ATH_TX_DROP_REASON_MAX];
+};
+
+struct pcpu_netdev_tid_stats {
+	struct tid_netstats tid_stats[IEEE80211_NUM_TIDS];
+	struct u64_stats_sync   syncp;
+};
+
+struct netdev_tid_stats {
+	struct tid_netstats tid_stats[IEEE80211_NUM_TIDS];
+};
+
 struct ath12k_vif {
 	/* Should be the first member in the structure */
 	struct ath12k_dp_vif dp_vif;
@@ -715,6 +767,7 @@ struct ath12k_vif {
 	struct dentry *debugfs_primary_link;
 	struct dentry *debugfs_wmm_stats_vdev;
 	struct dentry *debugfs_reset_wmm_stats;
+	struct pcpu_netdev_tid_stats __percpu *tstats;
 #endif /* CPTCFG_ATH12K_DEBUGFS */
 
 	struct ath12k_mgmt_frame_stats mgmt_stats;

@@ -1330,7 +1330,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	u32 qos_nw_delay = info->sawf.nw_delay;
 	u16 frm_type = 0;
 	u16 mcbc_gsn;
-	u8 link_id;
+	u8 link_id, tid;
 	int ret;
 	u8 qos_tag;
 	enum ath12k_dp_tx_enq_error err;
@@ -1427,6 +1427,11 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 							  err, ring_id, false);
 
 			return;
+		}
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_stats(ahvif, tid, skb->len, ATH_TX_SFE_PKTS);
 		}
 
 		return;

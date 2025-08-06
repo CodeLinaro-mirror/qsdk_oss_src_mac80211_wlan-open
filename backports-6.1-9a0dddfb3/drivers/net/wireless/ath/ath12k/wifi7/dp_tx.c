@@ -42,6 +42,26 @@ struct ath12k_wifi7_tx_status_entry {
 
 static_assert(sizeof(struct ath12k_wifi7_tx_status_entry) == 64, "size of struct ath12k_wifi7_tx_status_entry is not 64 bytes!");
 
+void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
+{
+	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
+
+	u64_stats_update_begin(&tstats->syncp);
+	tstats->tid_stats[tid].tx_pkt_stats[reason]++;
+	tstats->tid_stats[tid].tx_pkt_bytes[reason] += len;
+	u64_stats_update_end(&tstats->syncp);
+}
+
+void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
+{
+	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
+
+	u64_stats_update_begin(&tstats->syncp);
+	tstats->tid_stats[tid].tx_drop_stats[reason]++;
+	tstats->tid_stats[tid].tx_drop_bytes[reason] += len;
+	u64_stats_update_end(&tstats->syncp);
+}
+
 static enum hal_tcl_encap_type
 ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb)
 {
@@ -850,6 +870,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u8 pool_id;
 	u8 hal_ring_id;
 	int ret;
+	u8 reason, tid;
 	u16 peer_id;
 	u8 ring_selector, subtype, ring_map = 0;
 	bool tcl_ring_retry = false;
@@ -874,6 +895,12 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 
 		tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
 		if (unlikely(!tx_desc)) {
+			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+			    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+				tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+				ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
+							 ATH_TX_BUF_ERR);
+			}
 			dp->device_stats.tx_err.txbuf_na[ring_id]++;
 			return DP_TX_ENQ_DROP_SW_DESC_NA;
 		}
@@ -939,6 +966,12 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 			 */
 			ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
 			dp->device_stats.tx_err.desc_na[ring_id]++;
+			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+			    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+				tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+				ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
+							 ATH_TX_DESC_ERR);
+			}
 			err = DP_TX_ENQ_DROP_TCL_DESC_NA;
 			goto fail_remove_tx_buf;
 		}
@@ -947,6 +980,12 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		dmb(oshst);
 		ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
 
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_stats(ahvif, tid, skb->len,
+					    ATH_TX_FAST_UNICAST);
+		}
 		dp->device_stats.tx_fast_unicast[ring_id]++;
 
 		DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw_fast, 1, skb->len, ring_id);
@@ -1004,6 +1043,12 @@ tcl_ring_sel:
 	tx_desc = ath12k_dp_tx_assign_buffer(dp, ti.ring_id);
 	if (!tx_desc) {
 		dp->device_stats.tx_err.txbuf_na[ti.ring_id]++;
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
+						 ATH_TX_BUF_ERR);
+		}
 		return DP_TX_ENQ_DROP_SW_DESC_NA;
 	}
 
@@ -1072,6 +1117,11 @@ tcl_ring_sel:
 	default:
 		/* TODO: Take care of other encap modes as well */
 		err = DP_TX_ENQ_DROP_ENCAP_802_3;
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_drop_stats(ahvif, tid, 0, ATH_TX_MISC_FAIL);
+		}
 		atomic_inc(&dp->device_stats.tx_err.misc_fail);
 		goto fail_remove_tx_buf;
 	}
@@ -1222,6 +1272,12 @@ skip_htt_metadata:
 		 */
 		ath12k_hal_srng_access_end(ab, tcl_ring);
 		dp->device_stats.tx_err.desc_na[ti.ring_id]++;
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_drop_stats(ahvif, tid, 0,
+						 ATH_TX_DESC_NA_ERR);
+		}
 		spin_unlock_bh(&tcl_ring->lock);
 		err = DP_TX_ENQ_DROP_TCL_DESC_NA;
 
@@ -1243,10 +1299,12 @@ skip_htt_metadata:
 	}
 
 	spin_lock_bh(&arvif->link_stats_lock);
-	if (is_mcast)
+	if (is_mcast) {
+		reason = ATH_TX_MCAST_PKTS;
 		ab->dp->device_stats.tx_mcast[ti.ring_id]++;
-	else if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
+	} else if (skb->protocol == cpu_to_be16(ETH_P_PAE)) {
 		ab->dp->device_stats.tx_eapol[ti.ring_id]++;
+		reason = ATH_TX_EAPOL_PKTS;
 		if (ti.encap_type == HAL_TCL_ENCAP_TYPE_NATIVE_WIFI) {
 			hdr = (struct ieee80211_hdr *)skb->data;
 			hdrlen = ieee80211_get_hdrlen_from_skb(skb);
@@ -1271,10 +1329,19 @@ skip_htt_metadata:
 			}
 		}
 
-	} else if (is_null)
+	} else if (is_null) {
 		ab->dp->device_stats.tx_null_frame[ti.ring_id]++;
-	else
+		reason = ATH_TX_NULL_PKTS;
+	} else {
 		ab->dp->device_stats.tx_unicast[ti.ring_id]++;
+		reason = ATH_TX_UNICAST_PKTS;
+	}
+
+	if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+	    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+		tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+		ath12k_tid_tx_stats(ahvif, tid, skb->len, reason);
+	}
 
 	arvif->link_stats.tx_encap_type[ti.encap_type]++;
 	arvif->link_stats.tx_encrypt_type[ti.encrypt_type]++;
@@ -1796,6 +1863,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k *ar;
 	struct ath12k_dp_peer *peer = NULL;
 	u8 link_id = 0;
+	u8 reason, tid;
 	enum ath12k_dp_tx_comp_error drop_reason = DP_TX_COMP_ERR_MISC;
 	u32 msdu_len = msdu->len;
 	u8 tx_desc_flags = sw_metadata->flags;
@@ -1841,6 +1909,12 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	vif = skb_cb->vif;
 	if (vif) {
 		ahvif = ath12k_vif_to_ahvif(vif);
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_stats(ahvif, tid, msdu->len,
+					    ATH_TX_COMPLETED_PKTS);
+		}
 		arvif = rcu_dereference(ahvif->link[skb_cb->link_id]);
 		if (arvif) {
 			spin_lock_bh(&arvif->link_stats_lock);
@@ -1898,15 +1972,28 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	if (ts->status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
 		switch (ts->status) {
 		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU:
+			reason = ATH_TX_TQM_REMOVE_MPDU;
+			dev_kfree_skb_any(msdu);
+			goto exit;
 		case HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD:
+			reason = ATH_TX_TQM_THRESHOLD;
+			dev_kfree_skb_any(msdu);
+			goto exit;
 		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES:
+			reason = ATH_TX_TQM_REMOVE_AGED;
+			dev_kfree_skb_any(msdu);
+			goto exit;
 		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX:
+			reason = ATH_TX_TQM_REMOVE_TX;
 			dev_kfree_skb_any(msdu);
 			goto exit;
 		default:
 			//TODO: Remove this print and add as a stats
 			ath12k_dbg(ab, ATH12K_DBG_DP_TX, "tx frame is not acked status %d\n", ts->status);
  		}
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev))
+			ath12k_tid_tx_drop_stats(ahvif, ts->tid, msdu->len, reason);
 	}
 
 	/* NOTE: Tx rate status reporting. Tx completion status does not have
@@ -2033,6 +2120,9 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	int valid_entries;
 #endif
 	int orig_budget = budget;
+	struct ath12k_skb_cb *skb_cb;
+	struct sk_buff *msdu;
+	struct ath12k_vif *ahvif;
 	bool fast_flag;
 	int pdev_tx_comp_cnt[MAX_RADIOS] = {0};
 	u8 mac_id = 0;
@@ -2064,6 +2154,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	u32 tqm_rel_reason[MAX_TQM_RELEASE_REASON] = {0};
 	u32 fw_tx_status[MAX_FW_TX_STATUS] = {0};
 	u32 htt_status = 0, tx_completed = 0;
+	u8 tid = 0;
 
 	INIT_LIST_HEAD(&desc_free_list);
 	skb_queue_head_init(&free_list_head);
@@ -2175,6 +2266,16 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		tx_wbm_rel_source[ts.buf_rel_source]++;
 
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			msdu = sw_metadata->skb;
+			skb_cb = ATH12K_SKB_CB(msdu);
+			ahvif = ath12k_vif_to_ahvif(skb_cb->vif);
+			tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_stats(ahvif, tid, msdu->len,
+					    ATH_TX_WBM_REL_SRC);
+		}
+
                 if (ts.buf_rel_source == HAL_WBM_REL_SRC_MODULE_TQM) {
                         ts.status = le32_get_bits(tx_status->info0,
                                                   HAL_WBM_COMPL_TX_INFO0_TQM_RELEASE_REASON);
@@ -2183,6 +2284,13 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
                         htt_status = le32_get_bits(tx_status->info0,
                                                    HTT_TX_WBM_COMP_INFO0_STATUS);
                         fw_tx_status[htt_status]++;
+			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+			    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+				tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
+				ath12k_tid_tx_stats(ahvif, tid, msdu->len,
+						    ATH_TX_FW_STATUS);
+			}
+
 			ath12k_wifi7_dp_tx_process_htt_tx_complete(dp, (void *)tx_status,
 								   sw_metadata->skb,
 								   tx_ring, sw_metadata,
@@ -2212,7 +2320,12 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			}
 
 			ath12k_wifi7_dp_tx_status_parse(ab, tx_status, &ts);
-
+			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+			    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+				tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
+				ath12k_tid_tx_stats(ahvif, tid, msdu->len,
+						    ATH_TX_COMPLETED_PKTS);
+			}
 			ath12k_wifi7_dp_tx_complete_msdu(dp_pdev, sw_metadata->skb, &ts,
 					sw_metadata, sw_metadata->mac_id,
 					ring_id);

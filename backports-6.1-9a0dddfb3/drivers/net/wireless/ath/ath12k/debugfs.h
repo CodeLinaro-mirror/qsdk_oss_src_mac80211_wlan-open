@@ -92,6 +92,14 @@ static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 	return (ar->debug.qos_stats & ATH12K_QOS_STATS_CATEG_MASK);
 }
 
+static inline u8 ath12k_debugfs_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return dp_pdev->enable_dp_tid_stats;
+}
+
+void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
+void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
+
 void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr);
 void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar);
 

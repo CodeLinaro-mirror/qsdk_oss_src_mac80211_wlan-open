@@ -163,6 +163,7 @@ struct ath12k_pdev_dp {
 	/* DP Stats knobs */
 	bool enable_dp_stats;
 	bool enable_dp_debug_stats;
+	bool enable_dp_tid_stats;
 };
 
 #define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
