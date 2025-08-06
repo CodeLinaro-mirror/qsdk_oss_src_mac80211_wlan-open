@@ -6249,15 +6249,15 @@ static int nl80211_parse_tx_bitrate_mask(struct genl_info *info,
 		he_tx_mcs_map = he_get_txmcsmap(info, link_id, he_cap);
 		he_build_mcs_mask(he_tx_mcs_map, mask->control[i].he_mcs);
 
+		mask->control[i].he_gi = 0xFF;
+		mask->control[i].he_ltf = 0xFF;
+
 		eht_cap = ieee80211_get_eht_iftype_cap(sband, wdev->iftype);
 		if (!eht_cap)
 			continue;
 
 		eht_build_mcs_mask(info, he_cap, eht_cap,
 				   mask->control[i].eht_mcs);
-
-		mask->control[i].he_gi = 0xFF;
-		mask->control[i].he_ltf = 0xFF;
 
 		mask->control[i].eht_gi = 0xFF;
 		mask->control[i].eht_ltf = 0xFF;
