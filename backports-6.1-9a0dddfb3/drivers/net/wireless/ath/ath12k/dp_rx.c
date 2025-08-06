@@ -24,6 +24,28 @@
 #include "fse.h"
 #include "vendor.h"
 
+void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
+{
+	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
+
+	u64_stats_update_begin(&tstats->syncp);
+	tstats->tid_stats[tid].rx_pkt_stats[reason]++;
+	tstats->tid_stats[tid].rx_pkt_bytes[reason] += len;
+	u64_stats_update_end(&tstats->syncp);
+}
+EXPORT_SYMBOL(ath12k_tid_rx_stats);
+
+void ath12k_tid_drop_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
+{
+	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
+
+	u64_stats_update_begin(&tstats->syncp);
+	tstats->tid_stats[tid].rx_drop_stats[reason]++;
+	tstats->tid_stats[tid].rx_drop_bytes[reason] += len;
+	u64_stats_update_end(&tstats->syncp);
+}
+EXPORT_SYMBOL(ath12k_tid_drop_rx_stats);
+
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 				struct list_head *head,
 				size_t count)
@@ -994,6 +1016,9 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_sta *pubsta;
 	struct ath12k_dp_peer *peer;
+	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
+	struct ath12k_dp_link_peer *link_peer = NULL;
+	struct ath12k_vif *ahvif;
 
 	rcu_read_lock();
 
@@ -1002,8 +1027,6 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	pubsta = peer ? peer->sta : NULL;
 
 	if (pubsta && pubsta->valid_links) {
-		struct ath12k_dp_link_peer *link_peer = NULL;
-
 		status->link_valid = 1;
 		status->link_id = peer->hw_links[hw_link_id];
 
@@ -1017,6 +1040,18 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 			rcu_read_unlock();
 			return;
 		}
+	}
+
+	if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+	    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+								     peer_id);
+		if (link_peer) {
+			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
+			ath12k_tid_rx_stats(ahvif, rxcb->tid, msdu->len,
+					    ATH_RX_TOTAL_OUT_PKTS);
+		}
+		msdu->priority = rxcb->tid;
 	}
 
 	rcu_read_unlock();

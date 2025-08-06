@@ -704,6 +704,52 @@ enum ath12k_tx_drop_reasons {
 	ATH_TX_DROP_REASON_MAX
 };
 
+enum ath12k_rx_pkt_reasons {
+	ATH_RX_TOTAL_OUT_PKTS,
+	ATH_RX_TOTAL_PKTS,
+	ATH_RX_FRAG_PKTS,
+	ATH_RX_REO_PKTS,
+	ATH_RX_WBM_REL_TOTAL,
+	ATH_RX_REO_ERR_PKTS,
+	ATH_RX_RXDMA_PKTS,
+	ATH_RX_NATIVE_WIFI_PKTS,
+	ATH_RX_RAW_PKTS,
+	ATH_RX_ETH_PKTS,
+	ATH_RX_8023_PKTS,
+	ATH_RX_PPE_VP_PKTS,
+	ATH_RX_HW_PKTS,
+	ATH_RX_SFE_PKTS,
+	ATH_RX_DS_PKTS,
+	ATH_RX_PKT_REASON_MAX
+};
+
+enum ath12k_rx_drop_reasons {
+	ATH_RX_FREE_ALLOC,
+	ATH_RX_MSDU_BIT_MISS,
+	ATH_RX_INVALID_RBM,
+	ATH_RX_NULL_Q_DESC,
+	ATH_RX_REO_ERR,
+	ATH_RX_TKIP_MIC_ERR,
+	ATH_RX_INVALID_RATE,
+	ATH_RX_UNAUTH_WDS_ERR,
+	ATH_RX_ECHO_ERR,
+	ATH_RX_RXDMA_ERR,
+	ATH_RX_RBM_ERR,
+	ATH_RX_3AADR_DUP,
+	ATH_RX_INV_HDR_LEN,
+	ATH_RX_DESC_INVALID,
+	ATH_RX_NON_BA,
+	ATH_RX_NON_BA_DUP,
+	ATH_RX_BA_DUP,
+	ATH_RX_2K_JUMP,
+	ATH_RX_ERR_OOR,
+	ATH_RX_NO_BA,
+	ATH_RX_EQUALS_SSN,
+	ATH_RX_ERR_FLAG_SET,
+	ATH_RX_DESC_BLOCKED,
+	ATH_RX_DROP_REASON_MAX
+};
+
 struct tid_netstats {
 	u64 tx_packets;
 	u64 tx_bytes;
@@ -711,6 +757,12 @@ struct tid_netstats {
 	u64 tx_pkt_bytes[ATH_TX_PKT_REASON_MAX];
 	u64 tx_drop_stats[ATH_TX_DROP_REASON_MAX];
 	u64 tx_drop_bytes[ATH_TX_DROP_REASON_MAX];
+	u64 rx_packets;
+	u64 rx_bytes;
+	u64 rx_pkt_stats[ATH_RX_PKT_REASON_MAX];
+	u64 rx_pkt_bytes[ATH_RX_PKT_REASON_MAX];
+	u64 rx_drop_stats[ATH_RX_DROP_REASON_MAX];
+	u64 rx_drop_bytes[ATH_RX_DROP_REASON_MAX];
 };
 
 struct pcpu_netdev_tid_stats {

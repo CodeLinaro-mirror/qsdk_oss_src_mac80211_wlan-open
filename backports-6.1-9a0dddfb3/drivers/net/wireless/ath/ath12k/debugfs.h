@@ -99,7 +99,8 @@ static inline u8 ath12k_debugfs_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev
 
 void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
-
+void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
+void ath12k_tid_drop_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr);
 void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar);
 
