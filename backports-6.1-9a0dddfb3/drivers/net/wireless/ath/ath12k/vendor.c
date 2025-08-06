@@ -60,6 +60,7 @@ ath12k_atf_offload_config_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VI_DEDICATED_TIME_CONFIG] = {.type = NLA_U16},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_CONFIG] = {.type = NLA_NESTED},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS] = {.type = NLA_NESTED},
 };
 
@@ -5756,6 +5757,37 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 	return ret;
 }
 
+static void ath12k_atf_offload_reset_stats(struct ath12k *ar)
+{
+	struct ath12k_dp_link_peer *peer, *tmp;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_atf_peer_airtime *atf_peer_airtime;
+	struct ath12k_pdev_dp *dp = &ar->dp;
+	struct ath12k_pdev_dp_stats *pdev_stats = &dp->stats;
+	struct ath12k_atf_pdev_airtime *atf_pdev_airtime =
+		&pdev_stats->atf_airtime;
+	struct ath12k_atf *atf_table = &ar->atf_table;
+	struct ath12k_dp *ab_dp = ath12k_ab_to_dp(ab);
+	int i;
+
+	memset(atf_pdev_airtime, 0, sizeof(*atf_pdev_airtime));
+
+	for (i = 0; i < atf_table->total_groups; i++)
+		atf_table->group_info[i].atf_actual_airtime = 0;
+
+	spin_lock_bh(&ab_dp->dp_lock);
+	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
+		if (peer->pdev_idx != ar->pdev_idx && !peer->sta)
+			continue;
+
+		peer->atf_actual_airtime = 0;
+		atf_peer_airtime = &peer->atf_peer_airtime;
+
+		memset(atf_peer_airtime, 0, sizeof(*atf_peer_airtime));
+	}
+	spin_unlock_bh(&ab_dp->dp_lock);
+}
+
 static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
 {
 	struct ath12k_dp_link_peer *peer, *tmp;
@@ -5802,8 +5834,9 @@ static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
 	spin_unlock_bh(&dp->dp_lock);
 }
 
-static void ath12k_atf_offload_print_stats(struct ath12k *ar)
+static void ath12k_atf_offload_print_stats(struct timer_list *t)
 {
+	struct ath12k *ar = from_timer(ar, t, atf_stats_timer);
 	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp;
@@ -5881,8 +5914,12 @@ static void ath12k_atf_offload_print_stats(struct ath12k *ar)
 			    borrowed,
 			    unused);
 	}
-	kfree(peer_stats);
 
+	ath12k_atf_offload_reset_stats(ar);
+	mod_timer(&ar->atf_stats_timer,
+		  jiffies + (ar->atf_stats_timeout * HZ));
+
+	kfree(peer_stats);
 }
 
 static int ath12k_vendor_offload_sched_duration_config(struct ath12k *ar,
@@ -6080,6 +6117,15 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	return 0;
 }
 
+static void
+ath12k_atf_offload_set_atf_stats_timeout(struct ath12k *ar)
+{
+	if (timer_pending(&ar->atf_stats_timer))
+		del_timer_sync(&ar->atf_stats_timer);
+
+	mod_timer(&ar->atf_stats_timer, jiffies + (ar->atf_stats_timeout * HZ));
+}
+
 static int
 ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 		struct wireless_dev *wdev,
@@ -6173,7 +6219,20 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 		}
 		ar->atf_stats_enable =
 			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STATS_CONFIG]);
-		ath12k_atf_offload_print_stats(ar);
+
+		if (timer_pending(&ar->atf_stats_timer)) {
+			del_timer_sync(&ar->atf_stats_timer);
+			break;
+		}
+
+		if (ar->atf_stats_enable) {
+			ath12k_atf_offload_reset_stats(ar);
+			ar->atf_stats_timeout = ATF_OFFLOAD_STATS_DEFAULT_TIMEOUT;
+			timer_setup(&ar->atf_stats_timer,
+				    ath12k_atf_offload_print_stats, 0);
+			mod_timer(&ar->atf_stats_timer, jiffies +
+				  (ar->atf_stats_timeout * HZ));
+		}
 		break;
 	case QCA_WLAN_VENDOR_ATF_OFFLOAD_STRICT_SCH:
 		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STRICT_SCH_CONFIG]) {
@@ -6244,6 +6303,15 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 			ath12k_warn(ar->ab, "failed to set ATF ssid scheduling\n");
 			return ret;
 		}
+		break;
+	case QCA_WLAN_VENDOR_ATF_OFFLOAD_STATS_TIME_OUT:
+		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT]) {
+			ath12k_err(NULL, "ATF: ATF stats timeout parameter is missing\n");
+			return -EINVAL;
+		}
+		ar->atf_stats_timeout =
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT]);
+		ath12k_atf_offload_set_atf_stats_timeout(ar);
 		break;
 	default:
 		ath12k_err(NULL, "Invalid operation with ATF offload commands\n");

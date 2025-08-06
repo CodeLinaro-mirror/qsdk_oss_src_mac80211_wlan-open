@@ -1311,8 +1311,11 @@ struct ath12k {
 	bool pdev_suspend;
 	struct completion pdev_resume;
 	struct work_struct ssr_erp_exit;
+
+	struct timer_list atf_stats_timer;
 	struct ath12k_atf atf_table;
 	u8 atf_stats_enable;
+	u8 atf_stats_timeout;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
