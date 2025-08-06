@@ -4063,17 +4063,16 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 	    	    (chandef.chan == radar_channel))
 		    radar_chandef = &ctx->conf.def;
 	}
-	ieee80211_dfs_cac_cancel(local);
-
-	if (radar_chandef)
-		radar_chandef->radar_bitmap = radar_bitmap;
-
-	chandef.radar_bitmap = radar_bitmap;
 
 	if (num_chanctx > 1) {
 		if (local->hw.wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO) {
 			if (WARN_ON(!radar_chandef))
 				return;
+
+			radar_chandef->radar_bitmap = radar_bitmap;
+
+			if (!radar_bitmap || (radar_bitmap & ~radar_chandef->punctured))
+				ieee80211_dfs_cac_cancel(local);
 
 			cfg80211_radar_event(local->hw.wiphy, radar_chandef, GFP_KERNEL);
 		} else {
@@ -4081,6 +4080,11 @@ ieee80211_dfs_radar_detected_processing(struct ieee80211_local *local,
 			WARN_ON(1);
 		}
 	} else {
+		chandef.radar_bitmap = radar_bitmap;
+
+		if (!radar_bitmap || (radar_bitmap & ~chandef.punctured))
+			ieee80211_dfs_cac_cancel(local);
+
 		cfg80211_radar_event(local->hw.wiphy, &chandef, GFP_KERNEL);
 	}
 }
