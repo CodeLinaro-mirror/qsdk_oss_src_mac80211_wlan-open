@@ -19897,6 +19897,11 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 
 	clear_bit(ATH12K_GROUP_FLAG_RECOVERY, &ar->ab->ag->flags);
 
+	/* Send WMI_FW_HANG_CMD to FW after target has started. This is to
+	 * update the target's SSR recovery mode after it has recovered.
+	 */
+	ath12k_send_fw_hang_cmd(ab, ab->fw_recovery_support);
+
 	ath12k_info(NULL, "HW group recovery flag cleared ag dev_flags:0x%lx\n",
 		    ar->ab->ag->flags);
 

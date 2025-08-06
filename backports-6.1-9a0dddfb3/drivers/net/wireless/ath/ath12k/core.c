@@ -3363,11 +3363,6 @@ skip_link_info:
 
 	ath12k_mac_reconfig_complete(ah->hw, IEEE80211_RECONFIG_TYPE_RESTART);
 
-	/* Send WMI_FW_HANG_CMD to FW after target has started. This is to
-	 * update the target's SSR recovery mode after it has recovered.
-	 */
-	ath12k_send_fw_hang_cmd(ab, ab->fw_recovery_support);
-
 	/* Send disassoc to MLD STA */
 	ath12k_core_peer_disassoc(ag, ab);
 	ab->recovery_start = false;
