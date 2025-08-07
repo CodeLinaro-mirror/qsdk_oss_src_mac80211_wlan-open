@@ -1591,6 +1591,9 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 		if (unlikely(desc_info->magic != ATH12K_DP_RX_DESC_MAGIC))
 			ath12k_warn(ab, "Check HW CC implementation");
 
+		mpdu_info->fragment_flag = desc_info->is_frag;
+		desc_info->is_frag = 0;
+
 		ath12k_core_dmac_inv_range_no_dsb(desc_info->vaddr,
 						  desc_info->vaddr + DP_RX_BUFFER_SIZE);
 
@@ -1816,7 +1819,6 @@ static int ath12k_wifi7_dp_rx_h_defrag(struct ath12k_pdev_dp *dp_pdev,
 
 	hdr = (struct ieee80211_hdr *)(first_frag->data + hal_rx_desc_sz);
 	hdr->frame_control &= ~__cpu_to_le16(IEEE80211_FCTL_MOREFRAGS);
-	ATH12K_SKB_RXCB(first_frag)->is_frag = 1;
 
 	if (ath12k_wifi7_dp_rx_h_verify_tkip_mic(dp_pdev, peer, enctype, first_frag,
 						 rx_desc_data))
@@ -1903,6 +1905,7 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	desc_info->in_use = true;
 	desc_info->paddr = buf_paddr;
 	desc_info->vaddr = defrag_skb->data;
+	desc_info->is_frag = 1;
 
 	list_del(&desc_info->list);
 	spin_unlock_bh(&dp->rx_desc_lock);
@@ -3056,10 +3059,13 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		rxcb->is_first_msdu = err_info.first_msdu;
 		rxcb->is_last_msdu = err_info.last_msdu;
 		rxcb->is_continuation = err_info.continuation;
+		rxcb->is_frag = desc_info->is_frag;
 		rxcb->peer_id =
 		ath12k_wifi7_dp_rx_get_peer_id(ab, dp->peer_metadata_ver,
 					       err_info.peer_metadata);
 		rxcb->rx_desc = msdu_data;
+
+		desc_info->is_frag = 0;
 
 		if (err_info.continuation) {
 			__skb_queue_tail(&scatter_msdu_list, msdu);

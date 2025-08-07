@@ -360,7 +360,8 @@ struct ath12k_rx_desc_info {
 	u32 cookie;
 	u8 in_use	: 1,
 	   device_id	: 3,
-	   reserved	: 4;
+	   is_frag	: 1,
+	   reserved	: 3;
 	struct sk_buff *skb;
 	u32 magic;
 	u64 rsvd0;

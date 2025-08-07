@@ -414,6 +414,7 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 	/* Reset the use flag */
 	list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
 		rx_desc->in_use = false;
+		rx_desc->is_frag = 0;
 
 		if (rx_desc->skb) {
 			skb = rx_desc->skb;
@@ -471,6 +472,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 		rx_desc->skb = skb;
 		rx_desc->paddr = paddr;
 		rx_desc->vaddr = skb->data;
+		rx_desc->is_frag = 0;
 	}
 
 	if (unlikely(is_dma_inv_done))
