@@ -1686,7 +1686,7 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 
 	ptr += sizeof(*ml_param);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
 		   "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d bridge peer %d\n",
 		   arg->vdev_id, arg->peer_addr, ml_param->flags, ar->num_peers, arg->mlo_bridge_peer);
 
@@ -13522,7 +13522,7 @@ static void ath12k_wmi_peer_create_conf_event(struct ath12k_base *ab,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI,
+	ath12k_dbg(ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
 		   "Peer create conf event for %pM status %d",
 		   arg.mac_addr, arg.status);
 }
