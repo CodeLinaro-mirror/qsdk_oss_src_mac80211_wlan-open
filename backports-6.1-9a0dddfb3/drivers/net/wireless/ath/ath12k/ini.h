@@ -188,7 +188,7 @@ struct ath12k_cfg_values {
 #define MAC_ADDR_FMT "%pM"
 #define MAC_ADDR_REF(a) (a)
 
-#define ath12k_cfg_get(ab, id) __ath12_cfg_get(ab, __##id)
+#define ath12k_cfg_get(ab, id) __ath12k_cfg_get(ab, __##id)
 #define __ath12k_cfg_get(ab, id) (ath12k_cfg_get_values( \
 			(struct ath12k_base *)ab)->id##_internal)
 

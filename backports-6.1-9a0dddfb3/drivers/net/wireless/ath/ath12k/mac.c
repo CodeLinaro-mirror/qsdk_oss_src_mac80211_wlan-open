@@ -3039,7 +3039,7 @@ static u8 ath12k_get_nss_320mhz(struct ath12k *ar,
 
 	switch (nss_ratio_info) {
 	case WMI_NSS_RATIO_1BY2_NSS:
-		max_sup_nss = max_nss >> 2;
+		max_sup_nss = max_nss >> 1;
 		break;
 	case WMI_NSS_RATIO_3BY4_NSS:
 		ath12k_warn(ar->ab, "WMI_NSS_RATIO_3BY4_NSS not supported\n");
@@ -13504,7 +13504,7 @@ ath12k_mac_copy_eht_mcs_nss(struct ath12k *ar, struct ath12k_band_cap *band_cap,
 	}
 
 	if (eht_cap->phy_cap_info[0] & IEEE80211_EHT_PHY_CAP0_320MHZ_IN_6GHZ) {
-		eht_map = intersect_eht_mcsnss_map_nss(band_cap->eht_mcs_160,
+		eht_map = intersect_eht_mcsnss_map_nss(band_cap->eht_mcs_320,
 						       maxtxnss_320, false);
 		memcpy(&mcs_nss->bw._320, &eht_map,
 		       sizeof(struct ieee80211_eht_mcs_nss_supp_bw));
