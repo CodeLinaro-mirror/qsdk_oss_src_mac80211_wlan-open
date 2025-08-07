@@ -670,6 +670,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 						 DMA_FROM_DEVICE);
 		if (unlikely(dma_mapping_error(ab->dev, paddr))) {
 			page_frag_free(mon_buf);
+			mon_desc->mon_buf = NULL;
 			dp_mon->num_frag_free++;
 			ret = -EIO;
 			goto out;
@@ -723,6 +724,7 @@ out:
 							   ATH12K_DP_MON_RX_BUF_SIZE,
 							   DMA_FROM_DEVICE);
 				page_frag_free(mon_buf);
+				mon_desc->mon_buf = NULL;
 				dp_mon->num_frag_free++;
 			}
 
@@ -1753,6 +1755,7 @@ void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 		ath12k_core_dma_unmap_page(dp->dev, dp_mon->mon_desc_pool[i].paddr,
 					   ATH12K_DP_MON_RX_BUF_SIZE, DMA_FROM_DEVICE);
 		page_frag_free(mon_buf);
+		dp_mon->mon_desc_pool[i].mon_buf = NULL;
 		dp_mon->num_frag_free++;
 
 reset_mon_desc:

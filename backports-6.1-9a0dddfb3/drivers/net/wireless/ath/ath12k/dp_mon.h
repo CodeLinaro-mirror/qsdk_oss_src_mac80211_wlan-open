@@ -60,6 +60,7 @@
 
 #define DP_MON_RXDMA_BUF_COOKIE_BUF_ID		GENMASK(17, 0)
 #define DP_MON_RXDMA_BUF_COOKIE_PDEV_ID 	GENMASK(19, 18)
+#define DP_MON_RX_HDR_LEN			128
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
