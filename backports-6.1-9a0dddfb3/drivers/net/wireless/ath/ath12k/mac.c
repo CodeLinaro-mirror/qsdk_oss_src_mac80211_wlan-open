@@ -12075,13 +12075,12 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 
 		arvif = ahvif->link[link_id];
 		arsta = ahsta->link[link_id];
+		ar = arvif->ar;
 
 		if (!arsta || !arvif)
 			return -EINVAL;
 
 		if (vif->type == NL80211_IFTYPE_AP) {
-			ar = arvif->ar;
-
 			if (ahsta->primary_link_id == link_id) {
 				/* if the peer is not undergoing migration and still the
 				 * primary link is on this removal link, disconnect whole
@@ -12111,7 +12110,9 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 			if (ret)
 				ath12k_warn(ar->ab, "Failed to disassoc station: %pM for VDEV: %d\n",
 					    arsta->addr, arvif->vdev_id);
+		}
 
+		if (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION) {
 			ret = ath12k_mac_station_remove(ar, arvif, arsta);
 			if (ret)
 				ath12k_warn(ar->ab, "Failed to remove station: %pM for VDEV: %d\n",
@@ -12157,10 +12158,9 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 								  link_id);
 			}
 
-			ath12k_wsi_load_info_stats_update(ahvif, ahsta, true);
-		} else if (vif->type == NL80211_IFTYPE_STATION)
-			ath12k_mac_free_unassign_link_sta(ahsta->ahvif->ah, arsta->ahsta,
-							  arsta->link_id);
+			if (vif->type == NL80211_IFTYPE_AP)
+				ath12k_wsi_load_info_stats_update(ahvif, ahsta, true);
+		}
 
 		/* If the link that is getting removed is the assoc link id of
 		 * the station, then move the contents of the next link to
