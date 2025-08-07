@@ -14064,12 +14064,13 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	unsigned long links;
 	struct ath12k_base *ab;
 
-	/* Use the link id passed or the default vif link */
+	/* Use the link id passed or the first available link */
 	if (!sta) {
 		if (link != IEEE80211_LINK_UNSPECIFIED)
 			return link;
 
-		return ahvif->deflink.link_id;
+		link_id = ffs(ahvif->links_map) - 1;
+		return link_id;
 	}
 
 	ahsta = ath12k_sta_to_ahsta(sta);
