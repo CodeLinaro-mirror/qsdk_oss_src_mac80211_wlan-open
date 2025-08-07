@@ -6718,6 +6718,8 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 		 !ar->afc.is_6ghz_afc_power_event_received)
 		reg_6g_power_mode = REG_SP_CLIENT_TYPE;
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, " reg_6g_power_mode %d\n", reg_6g_power_mode);
+
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
 	    (reg_6g_power_mode == IEEE80211_REG_SP_AP ||
@@ -23031,12 +23033,16 @@ ath12k_mac_finalize_psd_table(struct ath12k *ar,
 		ath12k_mac_get_psd_channel(ar, ATH12K_CHWIDTH_20, &start_freq,
 					   &cfreq, i, &temp_chan, &txpower,
 					   IEEE80211_REG_SP_AP);
+
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "freq %u tpc_oobe_psd %d\n",
+			   sub_chans[i], tpc_oobe_psd[i]);
 		if (temp_chan) {
 			reg_psd[i] = temp_chan->psd;
 			if (reg_tpc_info->power_type_6g == REG_SP_CLIENT_TYPE)
 				reg_psd[i] -= ATH12K_SP_AP_AND_CLIENT_POWER_DIFF_IN_DBM;
 			reg_tpc_info->chan_psd_power_info[i].tx_power =
 					min(tpc_oobe_psd[i], reg_psd[i]);
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "reg_psd %d\n", reg_psd[i]);
 		}
 	}
 }
@@ -23095,7 +23101,8 @@ ath12k_mac_fill_reg_tpc_info_with_psd_for_sp_pwr_mode(struct ath12k *ar,
  * @max_bw: Maximum bandwidth.
  */
 static void
-ath12k_mac_fill_eirp_power_table(struct ath12k_reg_tpc_power_info *reg_tpc_info,
+ath12k_mac_fill_eirp_power_table(struct ath12k *ar,
+				 struct ath12k_reg_tpc_power_info *reg_tpc_info,
 				 u32 *cfreqs, s16 *oobe_eirp, s8 reg_psd,
 				 s8 reg_eirp, u16 max_bw)
 {
@@ -23108,6 +23115,10 @@ ath12k_mac_fill_eirp_power_table(struct ath12k_reg_tpc_power_info *reg_tpc_info,
 		struct chan_power_info *eirp_pwr_info =
 				&reg_tpc_info->chan_eirp_power_info[i];
 
+		ath12k_dbg(ar->ab,
+			   ATH12K_DBG_MAC,
+			   "cfreq %u oobe_eirp %d reg_eirp %d reg_psd_to_eirp %d\n",
+			   cfreqs[i], oobe_eirp[i], reg_eirp, eirp_from_psd);
 		eirp_pwr_info->chan_cfreq = cfreqs[i];
 		eirp_pwr_info->tx_power = min(reg_eirp_tpc, oobe_eirp[i]);
 	}
@@ -23185,7 +23196,7 @@ ath12k_mac_fill_reg_tpc_info_with_eirp_for_sp_pwr_mode(struct ath12k *ar,
 				     oobe_eirp);
 	ath12k_reg_get_regulatory_pwrs(ar, MHZ_TO_KHZ(pri_freq),
 				       NL80211_REG_AP_SP, &reg_eirp, &reg_psd);
-	ath12k_mac_fill_eirp_power_table(reg_tpc_info, cfreqs, oobe_eirp,
+	ath12k_mac_fill_eirp_power_table(ar, reg_tpc_info, cfreqs, oobe_eirp,
 					 reg_psd, reg_eirp, max_bw);
 }
 
@@ -23265,25 +23276,31 @@ ath12k_mac_fill_reg_tpc_info_with_psd_for_client_sp_pwr_mode(struct ath12k *ar,
  * @start_freq: starting freq (MHz) for current BW
  * @n_subchans: number of sub-CHs in current BW
  * @tpe_psd: PSD-based TPE array (OOBE-bound)
+ * @max_n_subchans: number of sub-channels in sub-channel array
+ * @punc: puncture pattern for current BW
  *
  * Finds the min(TPE) from tpe_psd[] for the sub-CHs starting at @start_freq.
  * Used to derive EIRP from PSD for client SP mode.
- *
- * Return: min PSD (dBm/MHz)
+ * Returns the minimum PSD value found, skipping punctured sub-channels.
  */
 static s8
 ath12k_mac_get_min_psd_for_eirp(struct ath12k *ar, u16 *sub_chans,
 				u32 start_freq, u8 n_subchans, s8 *tpe_psd,
-				u8 max_n_subchans)
+				u8 max_n_subchans, u16 punc)
 {
 	u8 start_idx = find_start_idx(sub_chans, start_freq, max_n_subchans);
 	s8 min_psd = ATH12K_MAX_TX_POWER;
 	u8 i, j;
 
-	for (i = 0, j = start_idx; i < n_subchans && j < max_n_subchans; i++, j++)
+	for (i = 0, j = start_idx; i < n_subchans && j < max_n_subchans; i++, j++) {
+		if (punc & (1 << i))
+			continue;
+
 		if (tpe_psd[j] < min_psd)
 			min_psd = tpe_psd[j];
+	}
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "min_psd %d\n", min_psd);
 	return min_psd;
 }
 
@@ -23328,12 +23345,17 @@ ath12k_mac_fill_eirp_power_level(struct ath12k *ar,
 	start_freq = ath12k_mac_get_6g_start_frequency(&ch_def);
 	n_subchans = bw / ATH12K_CHWIDTH_20;
 	min_psd = ath12k_mac_get_min_psd_for_eirp(ar, sub_chans, start_freq,
-						  n_subchans, tpe_psd, max_n_subchans);
+						  n_subchans, tpe_psd, max_n_subchans,
+						  punc);
 	eirp_psd = ath12k_reg_psd_2_eirp(min_psd, eff_bw);
+
 	min_eirp = min(min(tpe_eirp[idx], eirp_psd), reg_eirp[idx]);
 
 	eirp_pwr_info->chan_cfreq = cfreq;
 	eirp_pwr_info->tx_power = min_eirp;
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "cfreq %u tpe_eirp %d eirp_from_tpe_psd %d reg_eirp %d\n",
+		   cfreq, tpe_eirp[idx], eirp_psd, reg_eirp[idx]);
 }
 
 /**
