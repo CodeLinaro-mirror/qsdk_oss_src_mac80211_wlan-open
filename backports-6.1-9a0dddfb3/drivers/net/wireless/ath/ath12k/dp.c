@@ -2287,6 +2287,9 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 	}
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		if (dp_hw_grp->rx_status_buf[i])
+			continue;
+
 		/* Each arch rx process handler can use this buffer by typecasting its own
 		 * entry struct (aligned to 32 bytes).
 		 */

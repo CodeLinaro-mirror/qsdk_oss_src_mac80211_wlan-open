@@ -941,9 +941,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		memcpy(hal_tcl_desc, &tcl_desc, sizeof(tcl_desc));
-#ifndef CONFIG_IO_COHERENCY
 		dmb(oshst);
-#endif
 		ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
 
 		dp->device_stats.tx_fast_unicast[ring_id]++;
