@@ -2796,9 +2796,9 @@ static int ath12k_wifi7_dp_rx_h_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev,
 						   rxcb->peer_id);
 	if (!peer) {
-		ath12k_warn(dp->ab,
-			    "failed to find the peer to process unauth wds err handling peer_id %d\n",
-			    rxcb->peer_id);
+		ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
+			   "failed to find the peer to process unauth wds err handling peer_id %d\n",
+			   rxcb->peer_id);
 		drop = true;
 		goto exit;
 	}
