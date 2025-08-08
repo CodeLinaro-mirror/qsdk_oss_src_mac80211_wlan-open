@@ -34,7 +34,10 @@ static_assert(sizeof(struct ath12k_tx_sw_metadata) == 32, "size of struct ath12k
 
 struct ath12k_wifi7_tx_status_entry {
 	struct hal_wbm_completion_ring_tx tx_status;
-	struct ath12k_tx_sw_metadata sw_metadata;
+	union {
+		struct ath12k_tx_sw_metadata sw_metadata;
+		void *tx_desc;
+	};
 } __packed;
 
 static_assert(sizeof(struct ath12k_wifi7_tx_status_entry) == 64, "size of struct ath12k_wifi7_tx_status_entry is not 64 bytes!");
@@ -2013,12 +2016,13 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	struct ath12k_pdev_dp *dp_pdev;
 	int hal_ring_id = dp->tx_ring[ring_id].tcl_comp_ring.ring_id;
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
-	struct ath12k_tx_desc_info *tx_desc = NULL, *next_tx_desc = NULL;
+	struct ath12k_tx_desc_info *tx_desc = NULL;
 	struct hal_tx_status ts = { 0 };
 	struct dp_tx_ring *tx_ring = &dp->tx_ring[ring_id];
-	struct hal_wbm_release_ring *desc, *next_desc;
+	struct hal_wbm_release_ring *desc;
 	u8 pdev_id;
-	u64 desc_va, next_desc_va;
+	u64 desc_va;
+	int i;
 #ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
 #endif
@@ -2046,8 +2050,8 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	struct ath12k_wifi7_tx_status_entry *tx_status_entry;
 	struct ath12k_tx_sw_metadata *sw_metadata;
 	u8 n_entry = 0, idx = 0;
-	struct list_head desc_free_list, *cur;
-	struct hal_wbm_completion_ring_tx *tx_status, *next_tx_status;
+	struct list_head desc_free_list;
+	struct hal_wbm_completion_ring_tx *tx_status;
 	struct sk_buff_head free_list_head;
 	int tx_status_idx = smp_processor_id();
 	u32 tx_wbm_rel_source[HAL_WBM_REL_SRC_MODULE_MAX] = {0};
@@ -2072,28 +2076,11 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			continue;
 		}
 
-		if (unlikely(!tx_desc->in_use)) {
-			DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_DESC_INUSE][ring_id], 1);
-			continue;
-		}
+		tx_status_entry->tx_desc = tx_desc;
 
-		list_add_tail(&tx_desc->list, &desc_free_list);
 		n_entry++;
 		memcpy(&tx_status_entry->tx_status, tx_status, sizeof(*tx_status));
 		tx_status_entry++;
-
-		next_desc = ath12k_hal_srng_dst_next_peek_nolock(status_ring);
-		if (next_desc) {
-			next_tx_status = (struct hal_wbm_completion_ring_tx *)next_desc;
-			next_desc_va = ((u64)le32_to_cpu(next_tx_status->buf_va_hi) << 32 |
-					le32_to_cpu(next_tx_status->buf_va_lo));
-
-			if (next_desc_va) {
-				next_tx_desc = (struct ath12k_tx_desc_info *)((unsigned long)next_desc_va);
-				prefetch(next_tx_desc);
-			}
-		}
-
 	}
 
 	ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
@@ -2104,12 +2091,27 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	spin_lock_bh(&dp->tx_desc_lock[ring_id]);
 
 	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp_hw_grp->tx_status_buf[tx_status_idx];
-	list_for_each(cur, &desc_free_list) {
+	for (i = 0; i < n_entry; i++) {
+		struct ath12k_wifi7_tx_status_entry *tx_status_entry_next;
 		sw_metadata = &tx_status_entry->sw_metadata;
-
+		tx_desc = tx_status_entry->tx_desc;
 		tx_status_entry++;
 
-		tx_desc = list_entry(cur, struct ath12k_tx_desc_info, list);
+		if ((i + 10) < n_entry) {
+			tx_status_entry_next = tx_status_entry + 8;
+
+			prefetch(tx_status_entry_next->tx_desc);
+			prefetch((tx_status_entry_next + 1));
+		}
+
+		if (unlikely(!tx_desc->in_use)) {
+			sw_metadata->skb = NULL;
+			DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_DESC_INUSE][ring_id], 1);
+			continue;
+		}
+
+		list_add_tail(&tx_desc->list, &desc_free_list);
+
 		sw_metadata->skb = tx_desc->skb;
 		sw_metadata->paddr = tx_desc->paddr;
 		sw_metadata->len = tx_desc->len;
