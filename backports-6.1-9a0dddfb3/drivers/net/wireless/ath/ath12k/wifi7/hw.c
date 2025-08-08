@@ -1344,12 +1344,14 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 	link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
-	memset(skb_cb, 0, sizeof(*skb_cb));
-	skb_cb->vif = vif;
+	if (!skb->fast_xmit || !hw->perf_mode) {
+		memset(skb_cb, 0, sizeof(*skb_cb));
+		skb_cb->vif = vif;
 
-	if (key) {
-		skb_cb->cipher = key->cipher;
-		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
+		if (key) {
+			skb_cb->cipher = key->cipher;
+			skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
+		}
 	}
 
 	/* handle only for MLO case, use deflink for non MLO case */

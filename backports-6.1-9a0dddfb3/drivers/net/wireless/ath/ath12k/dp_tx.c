@@ -426,7 +426,7 @@ EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf);
 struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 						       u8 pool_id)
 {
-	struct ath12k_tx_desc_info *desc;
+	struct ath12k_tx_desc_info *desc, *next_desc;
 
 	spin_lock_bh(&dp->tx_desc_lock[pool_id]);
 	desc = list_first_entry_or_null(&dp->tx_desc_free_list[pool_id],
@@ -437,8 +437,16 @@ struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 		return NULL;
 	}
 
+	prefetch(desc);
 	list_del(&desc->list);
 	desc->in_use = true;
+
+	next_desc = list_first_entry_or_null(&dp->tx_desc_free_list[pool_id],
+					     struct ath12k_tx_desc_info,
+			list);
+	if (next_desc)
+		prefetch(next_desc);
+
 	spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
 
 	return desc;
