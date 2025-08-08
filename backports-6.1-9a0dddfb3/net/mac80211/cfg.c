@@ -4341,7 +4341,6 @@ static int ieee80211_set_after_csa_beacon(struct ieee80211_link_data *link_data,
 		return -EINVAL;
 	}
 
-	link_conf->elemid_modified = 0;
 	return 0;
 }
 
@@ -4444,6 +4443,7 @@ void ieee80211_csa_finalize_work(struct wiphy *wiphy, struct wiphy_work *work)
 		return;
 
 	ieee80211_csa_finalize(link);
+	link->conf->elemid_modified = false;
 }
 
 static int ieee80211_set_csa_beacon(struct ieee80211_link_data *link_data,
