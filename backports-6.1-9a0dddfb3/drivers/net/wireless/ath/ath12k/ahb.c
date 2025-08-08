@@ -825,14 +825,11 @@ static void ath12k_ahb_free_ext_irq(struct ath12k_base *ab)
 {
 	int i, j;
 
-	if (test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags))
-		return;
-
 	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++)
-			free_irq(ab->irq_num[irq_grp->irqs[j]], irq_grp);
+			devm_free_irq(ab->dev, ab->irq_num[irq_grp->irqs[j]], irq_grp);
 
 		netif_napi_del(&irq_grp->napi);
 	}
