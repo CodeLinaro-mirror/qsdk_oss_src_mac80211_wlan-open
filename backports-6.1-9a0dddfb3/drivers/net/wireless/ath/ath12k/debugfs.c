@@ -6479,107 +6479,6 @@ static const struct file_operations fops_fw_reset_stats = {
 	.llseek = default_llseek,
 };
 
-static ssize_t ath12k_read_trace_qdss(struct file *file,
-				      char __user *user_buf,
-				      size_t count, loff_t *ppos)
-{
-	const char buf[] =
-	"1 - this will start qdss trace collection\n"
-	"0 - this will stop and save the qdss trace collection\n";
-
-	return simple_read_from_buffer(user_buf, count, ppos, buf, strlen(buf));
-}
-
-static ssize_t
-ath12k_write_trace_qdss(struct file *file,
-			const char __user *user_buf,
-			size_t count, loff_t *ppos)
-{
-	struct ath12k_base *ab = file->private_data;
-	struct ath12k_pdev *pdev;
-	struct ath12k *ar;
-	int i, ret;
-	bool radioup = false;
-	bool qdss_enable;
-	char input_buf[64];
-	char *log_val = NULL;
-	u64 val = 0;
-
-	if (count > sizeof(input_buf) - 1) {
-		ath12k_err(ab, "Input buffer size is too large\n");
-		return -EINVAL;
-	}
-
-	if (copy_from_user(input_buf, user_buf, count)) {
-		ath12k_err(ab, "Failed to copy data from user buffer\n");
-		return -EFAULT;
-	}
-
-	input_buf[count] = '\0';
-
-	if (kstrtobool(input_buf, &qdss_enable))
-		return -EINVAL;
-
-	if (!qdss_enable) {
-		log_val = strchr(input_buf, ' ');
-		if (log_val && kstrtou64(log_val + 1, 0, &val)) {
-			ath12k_err(ab, "Invalid debug mask\n");
-			return -EINVAL;
-		}
-		switch (val) {
-			case ATH12K_QDSS_DUMP:
-			case ATH12K_PHYA0_DUMP:
-				break;
-			case ATH12K_PHYA1_DUMP:
-				if (!ab->is_dualmac) {
-					ath12k_err(ab, "value is not supported%s\n", log_val);
-					return -EINVAL;
-				}
-				break;
-			default:
-				ath12k_err(ab, "Invalid value %s\n", log_val);
-				return -EINVAL;
-		}
-	}
-
-	for (i = 0; i < ab->num_radios; i++) {
-		pdev = &ab->pdevs[i];
-		ar = pdev->ar;
-		if (ar && ar->ah->state == ATH12K_HW_STATE_ON) {
-			radioup = true;
-			break;
-		}
-	}
-
-	if (!radioup) {
-		ath12k_err(ab, "radio is not up\n");
-		return -ENETDOWN;
-	}
-
-	if (qdss_enable) {
-		if (ab->is_qdss_tracing)
-			return count;
-
-		ath12k_config_qdss(ab);
-	} else {
-		if (!ab->is_qdss_tracing)
-			return count;
-		ret = ath12k_send_qdss_trace_mode_req(ab, QMI_WLANFW_QDSS_TRACE_OFF_V01, val);
-		if (ret < 0)
-			ath12k_warn(ab, "Failed to stop QDSS: %d\n", ret);
-	}
-
-	return count;
-}
-
-static const struct file_operations fops_trace_qdss = {
-	.read = ath12k_read_trace_qdss,
-	.write = ath12k_write_trace_qdss,
-	.open = simple_open,
-	.owner = THIS_MODULE,
-	.llseek = default_llseek,
-};
-
 static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *user_buf,
 					     size_t count, loff_t *ppos)
 {
@@ -6793,8 +6692,6 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_fw_dbglog);
 	debugfs_create_file("fw_reset_stats", 0400, ab->debugfs_soc, ab,
 			    &fops_fw_reset_stats);
-	debugfs_create_file("trace_qdss", 0600, ab->debugfs_soc, ab,
-			    &fops_trace_qdss);
 	debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_device_dp_stats);
 	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
