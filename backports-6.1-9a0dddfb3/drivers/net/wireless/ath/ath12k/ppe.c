@@ -270,7 +270,7 @@ void ath12k_ppeds_release_rx_desc_v2(int ds_node_id,
 
 	if (unlikely(count > ab->dp->ppe.ppeds_rx_num_elem)) {
 		new_size = sizeof(u16) * count;
-		for (device_id = 0; device_id < ATH12K_MAX_SOCS; device_id++) {
+		for (device_id = 0; device_id < ag->num_devices; device_id++) {
 			tmp = krealloc(ab->dp->ppe.ppeds_rx_idx[device_id], new_size, GFP_ATOMIC);
 			if (!tmp) {
 				ath12k_err(ab, "ppeds: rx desc realloc failed for size %u\n",
@@ -303,7 +303,7 @@ void ath12k_ppeds_release_rx_desc_v2(int ds_node_id,
 		rx_bufs_reaped[device_id]++;
 	}
 
-	for (device_id = 0; device_id < ATH12K_MAX_SOCS; device_id++) {
+	for (device_id = 0; device_id < ag->num_devices; device_id++) {
 		if (!rx_bufs_reaped[device_id])
 			continue;
 
@@ -315,7 +315,7 @@ void ath12k_ppeds_release_rx_desc_v2(int ds_node_id,
 	return;
 
 err_h_alloc_failure:
-	for (device_id = 0; device_id < ag->num_hw; device_id++) {
+	for (device_id = 0; device_id < ag->num_devices; device_id++) {
 		src_ab = ag->ab[device_id];
 		num_free_desc = 0;
 		for (i = 0; i < count; i++)
@@ -1297,7 +1297,7 @@ int ath12k_ppeds_attach(struct ath12k_base *ab)
 
 	ath12k_info(ab, "PPEDS attach success\n");
 
-	for (i = 0; i < ATH12K_MAX_SOCS; i++) {
+	for (i = 0; i < ab->ag->num_devices; i++) {
 		ab->dp->ppe.ppeds_rx_idx[i] = kzalloc((sizeof(u16) * PPE_DS_TXCMPL_DEF_BUDGET),
 						      GFP_ATOMIC);
 		if (!ab->dp->ppe.ppeds_rx_idx[i]) {
@@ -1355,7 +1355,7 @@ int ath12k_ppeds_detach(struct ath12k_base *ab)
 
 	if (ab->dp->ppe.ppeds_rx_num_elem) {
 		ab->dp->ppe.ppeds_rx_num_elem = 0;
-		for (i = 0; i < ab->ag->num_hw; i++) {
+		for (i = 0; i < ab->ag->num_devices; i++) {
 			kfree(ab->dp->ppe.ppeds_rx_idx[i]);
 			ab->dp->ppe.ppeds_rx_idx[i] = NULL;
 		}
@@ -1739,6 +1739,8 @@ void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
 
 	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppe2tcl_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->ppe.reo2ppe_ring);
+	kfree(dp->ppe.ppeds_comp_ring.tx_status);
+	dp->ppe.ppeds_comp_ring.tx_status = NULL;
 	ath12k_dp_srng_cleanup(ab, &dp->ppe.ppeds_comp_ring.ppe_wbm2sw_ring);
 }
 
