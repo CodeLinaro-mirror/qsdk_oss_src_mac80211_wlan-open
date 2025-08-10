@@ -139,6 +139,14 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 		goto buf_replenish;
 	}
 
+	if (unlikely(!ppdu_info->mpdu_info.rx_hdr_rcvd)) {
+		ath12k_warn(dp, "pkt buf: packet buffer without rx hdr in mac_id %d\n",
+			    dp_pdev->mac_id);
+		page_frag_free(mon_buf);
+		mon_stats->pkt_tlv_free++;
+		goto buf_replenish;
+	}
+
 	if (unlikely(ppdu_info->mpdu_info.decap_type == DP_RX_DECAP_TYPE_INVALID)) {
 		ath12k_warn(dp, "pkt buf: invalid decap type in mac_id %d\n",
 			    dp_pdev->mac_id);
@@ -269,7 +277,7 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_dp_mon_append_skb(skb, tmp_skb);
 		}
 
-		ath12k_dp_mon_add_rx_frag(skb, mon_buf, offset, frag_len, true);
+		ath12k_dp_mon_add_rx_frag(tmp_skb, mon_buf, offset, frag_len, true);
 		if (tmp_skb != skb)
 			ath12k_dp_mon_update_skb_len(skb, frag_len);
 	}
