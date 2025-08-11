@@ -1498,6 +1498,7 @@ static int ath12k_handle_invalid_afc_payload(struct ath12k *ar)
 	ath12k_dbg(ab, ATH12K_DBG_AFC, "Queuing NO-IR regd update work for pdev %u\n",
 		   ar->pdev_idx);
 	ah->regd_updated = false;
+	regd->band_mask = BIT(NL80211_BAND_6GHZ);
 	queue_work(ab->workqueue, &ar->regd_update_work);
 	return ret;
 }
@@ -2409,7 +2410,7 @@ ath12k_reg_build_new_regd_for_afc(struct ath12k *ar,
 						       num_afc_ranges,
 						       no_ir_ranges,
 						       num_no_ir_ranges);
-
+	new_regd->band_mask = BIT(NL80211_BAND_6GHZ);
 	*regd_afc = new_regd;
 
 	return 0;
