@@ -550,8 +550,8 @@ void ath12k_dp_peer_ppeds_route_setup(struct ath12k *ar, struct ath12k_link_vif 
 	u32 service_code = PPE_DRV_SC_SPF_BYPASS;
 	bool ppe_routing_enable = true;
 	bool use_ppe = true;
-	u32 priority_valid = 0, src_info = ahvif->dp_vif.ppe_vp_num;
 	struct ath12k_sta *ahsta = arsta->ahsta;
+	u32 priority_valid = 0, src_info = ahsta->ppe_vp_num;
 	struct ieee80211_sta *sta;
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR ||
