@@ -19900,6 +19900,25 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 	ath12k_info(NULL, "HW group recovery flag cleared ag dev_flags:0x%lx\n",
 		    ar->ab->ag->flags);
 
+	if (ar->commitatf) {
+		if (ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ATF_DYNAMIC_ENABLE,
+					      ar->commitatf, ar->pdev->pdev_id)) {
+			ath12k_warn(ar->ab, "ATF: failed to enable ATF\n");
+		} else {
+			ar->commitatf = false;
+		}
+	}
+
+	if (ar->atf_strict_scheduling) {
+		if (ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ATF_STRICT_SCH,
+					      ar->atf_strict_scheduling,
+					      ar->pdev->pdev_id)) {
+			ath12k_warn(ar->ab, "ATF: failed to enable strict scheduling\n");
+		} else {
+			ar->atf_strict_scheduling = false;
+		}
+	}
+
 	if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE)
 		ieee80211_queue_work(hw, &ar->ssr_erp_exit);
 }

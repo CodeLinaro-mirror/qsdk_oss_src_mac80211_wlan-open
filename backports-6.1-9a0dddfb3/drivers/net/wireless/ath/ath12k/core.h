@@ -1316,6 +1316,8 @@ struct ath12k {
 	struct ath12k_atf atf_table;
 	u8 atf_stats_enable;
 	u8 atf_stats_timeout;
+	bool commitatf;
+	bool atf_strict_scheduling;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

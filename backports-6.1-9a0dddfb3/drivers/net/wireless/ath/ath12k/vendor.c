@@ -6177,6 +6177,7 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 				    ret);
 			return ret;
 		}
+		ar->commitatf = atf_enable;
 		break;
 	case QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_GROUP:
 		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG]) {
@@ -6250,6 +6251,7 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 				    ret);
 			return ret;
 		}
+		ar->atf_strict_scheduling = atf_strict_scheduling;
 		break;
 	case QCA_WLAN_VENDOR_ATF_OFFLOAD_VO_TIME:
 		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VO_DEDICATED_TIME_CONFIG]) {
