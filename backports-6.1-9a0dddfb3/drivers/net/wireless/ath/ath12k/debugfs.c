@@ -6612,10 +6612,11 @@ static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *use
 				 mon_stats->status_buf_processed,
 				 mon_stats->status_buf_free);
 		len += scnprintf(buf + len, size - len,
-				 "packet frags process %u free %u to_mac80211 %u\n",
-				 mon_stats->pkt_tlv_processed,
+				 "pkt frags proc %u free %u to_mac80211 %u truncated %u\n"
+				 , mon_stats->pkt_tlv_processed,
 				 mon_stats->pkt_tlv_free,
-				 mon_stats->pkt_tlv_to_mac80211);
+				 mon_stats->pkt_tlv_to_mac80211,
+				 mon_stats->pkt_tlv_truncated);
 		len += scnprintf(buf + len, size - len,
 				 "Ring desc empty: %u flush %u truncated %u droptlv %u\n",
 				 mon_stats->ring_desc_empty,

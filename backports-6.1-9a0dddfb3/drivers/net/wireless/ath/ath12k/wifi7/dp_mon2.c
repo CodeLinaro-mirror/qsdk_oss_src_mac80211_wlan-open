@@ -219,6 +219,11 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 			msdu_info->last_buffer = true;
 	}
 
+	if (unlikely(packet_info->truncated)) {
+		mon_stats->pkt_tlv_truncated++;
+		ppdu_info->mpdu_info.truncated = true;
+	}
+
 buf_replenish:
 	spin_lock_bh(&dp_mon->mon_desc_lock);
 	list_splice_tail(&mon_desc_used_list, &dp_mon->mon_desc_free_list);
@@ -309,6 +314,29 @@ ath12k_dp_mon_parse_mpdu_start(struct ath12k_dp *dp, struct ath12k_mon_data *pmo
 	return 0;
 }
 
+static void
+ath12k_wifi7_dp_mon_rx_parse_mpdu_end(struct ath12k_dp *dp, struct ath12k_mon_data *pmon)
+{
+	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
+	struct ath12k_dp_mon_mpdu_meta *mpdu_meta;
+	struct sk_buff *skb = skb_peek_tail(&ppdu_info->mpdu_q);
+
+	if (!ppdu_info->mpdu_info.rx_hdr_rcvd)
+		goto reset_mpdu_info;
+
+	if (unlikely(!skb)) {
+		ath12k_warn(dp, "No skb found in the mpdu skb queue during mpdu_end\n");
+		goto reset_mpdu_info;
+	}
+
+	mpdu_meta = (struct ath12k_dp_mon_mpdu_meta *)skb->data;
+	mpdu_meta->truncated = ppdu_info->mpdu_info.truncated;
+
+reset_mpdu_info:
+	ppdu_info->mpdu_info.truncated = false;
+	ppdu_info->mpdu_info.mpdu_start_received = false;
+}
+
 static int
 ath12k_wifi7_dp_mon_rx_parse_dest_tlv(struct ath12k_pdev_dp *dp_pdev,
 				      struct ath12k_mon_data *pmon,
@@ -324,7 +352,7 @@ ath12k_wifi7_dp_mon_rx_parse_dest_tlv(struct ath12k_pdev_dp *dp_pdev,
 	case HAL_RX_MON_STATUS_BUF_ADDR:
 		return ath12k_wifi7_dp_mon_rx_parse_status_buf(dp_pdev, pmon, tlv_data);
 	case HAL_RX_MON_STATUS_MPDU_END:
-		pmon->mon_ppdu_info.mpdu_info.mpdu_start_received = false;
+		ath12k_wifi7_dp_mon_rx_parse_mpdu_end(dp_pdev->dp, pmon);
 		break;
 	case HAL_RX_MON_STATUS_MSDU_END:
 		ath12k_wifi7_dp_mon_rx_parse_status_msdu_end(pmon);
@@ -983,7 +1011,7 @@ ath12k_wifi7_dp_mon_rx_parse_ppdu_status(struct ath12k_pdev_dp *dp_pdev,
 		 * To avoid processing an skb with zero length, add a check to
 		 * skip these cases.
 		 */
-		if (!mpdu->len) {
+		if ((!mpdu->len) || (mpdu_meta->truncated)) {
 			ath12k_dp_mon_cnt_skb_and_frags(mpdu, &num_skb, &pkt_tlv);
 			mon_stats->num_skb_raw += num_skb;
 			mon_stats->num_frag_raw += pkt_tlv;

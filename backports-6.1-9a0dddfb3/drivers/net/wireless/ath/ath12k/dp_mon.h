@@ -151,6 +151,7 @@ enum dp_monitor_type {
 
 struct ath12k_dp_mon_mpdu_meta {
 	u8 decap_type;
+	u8 truncated:1;
 	u32 err_bitmap;
 };
 
@@ -281,6 +282,7 @@ struct ath12k_pdev_mon_dp_stats {
 	u32 pkt_tlv_processed;
 	u32 pkt_tlv_free;
 	u32 pkt_tlv_to_mac80211;
+	u32 pkt_tlv_truncated;
 
 	u32 num_skb_alloc;
 	u32 num_skb_free;
