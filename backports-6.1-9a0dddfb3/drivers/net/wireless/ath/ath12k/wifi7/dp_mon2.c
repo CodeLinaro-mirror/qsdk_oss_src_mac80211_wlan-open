@@ -6,6 +6,7 @@
 /* This file contains the definitions related to the monitor dual ring
  * model
  */
+#include <linux/if_vlan.h>
 #include "../dp_mon.h"
 #include "../debug.h"
 #include "hal_qcn9274.h"
@@ -832,6 +833,8 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 	u32 tot_msdu_len = 0;
 	u8 mpdu_buf_len;
 	u8 num_frags = ath12k_dp_mon_get_num_frags_in_fraglist(mpdu);
+	struct vlan_ethhdr *ethvlan;
+	void *frag_addr;
 	bool is_amsdu = false;
 	int ret;
 
@@ -884,6 +887,14 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 	 * This ensures the fragment points to the start of the L3 payload.
 	 */
 	frag_page_offset = ATH12K_DP_MON_DECAP_HDR_SIZE + ATH12K_DP_MON_L3_HDR_PAD;
+
+	frag_addr = ath12k_dp_mon_skb_get_frag_addr(mpdu, 1);
+	ethvlan = (struct vlan_ethhdr *)(frag_addr + ATH12K_DP_MON_L3_HDR_PAD);
+	if (ethvlan->h_vlan_proto == htons(ETH_P_8021Q))
+		frag_page_offset += ATH12K_DP_MON_ETH_TYPE_VLAN_LEN;
+	else if (ethvlan->h_vlan_proto == htons(ETH_P_8021AD))
+		frag_page_offset += ATH12K_DP_MON_ETH_TYPE_DOUBLE_VLAN_LEN;
+
 	ret = ath12k_dp_mon_adj_frag_offset(mpdu, 1, frag_page_offset);
 	if (unlikely(ret)) {
 		ath12k_warn(dp,
