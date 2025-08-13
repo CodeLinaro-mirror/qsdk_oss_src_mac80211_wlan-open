@@ -89,6 +89,7 @@ struct ath12k_vendor_service_info {
 	unsigned long dynamic_svc_bitmask;
 	u8 init_config_type;
 	bool service_enabled[ATH12K_RM_MAX_SERVICE];
+	bool is_container_app;
 	bool is_vendor_init_done;
 	struct workqueue_struct *wq;
 	struct list_head soc_list;

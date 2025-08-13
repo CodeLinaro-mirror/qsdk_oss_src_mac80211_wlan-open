@@ -162,7 +162,8 @@ static int ath12k_vendor_dynamic_service_init(struct ath12k_hw *ah,
 	set_bit(info->id, &vendor_info.dynamic_svc_bitmask);
 	if (ath12k_telemetry_dynamic_app_init_deinit_notify(AGENT_NOTIFY_EVENT_INIT,
 							    info->id,
-							    info->service_data))
+							    info->service_data,
+							    info->is_container_app))
 		return -EINVAL;
 	vendor_info.service_enabled[info->id] = true;
 	ath12k_dbg(NULL, ATH12K_DBG_RM, "Dynamic Init service ID: %d Enabled: %d\n",
@@ -176,7 +177,8 @@ static int ath12k_vendor_dynamic_service_deinit(struct ath12k_hw *ah,
 	clear_bit(info->id, &vendor_info.dynamic_svc_bitmask);
 	if (ath12k_telemetry_dynamic_app_init_deinit_notify(AGENT_NOTIFY_EVENT_DEINIT,
 							    info->id,
-							    info->service_data))
+							    info->service_data,
+							    info->is_container_app))
 		return -EINVAL;
 
 	vendor_info.service_enabled[info->id] = false;
@@ -461,8 +463,7 @@ int ath12k_vendor_initialize_service(struct wiphy *wiphy,
 		return -EINVAL;
 
 	if (info->id >= ATH12K_RM_MAX_SERVICE) {
-		ath12k_dbg(NULL, ATH12K_DBG_RM,
-			   "Invalid sevice id received: %d\n", info->id);
+		ath12k_err(NULL, "Invalid sevice id received: %d\n", info->id);
 		return -EINVAL;
 	}
 
@@ -477,16 +478,27 @@ int ath12k_vendor_initialize_service(struct wiphy *wiphy,
 
 	switch (info->init_config_type) {
 	case QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_RM_APP_START:
-		ret = ath12k_vendor_service_init[info->id](NULL, info);
-		break;
 	case QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_SERVICE_START:
-		ret = ath12k_vendor_dynamic_service_init(NULL, info);
+	case QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_CONT_SERVICE_START:
+		/* Set container flag only for container service start */
+		info->is_container_app =
+			(info->init_config_type ==
+			 QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_CONT_SERVICE_START);
+		ret = ath12k_vendor_service_init[info->id](NULL, info);
+		if (info->is_container_app)
+			ath12k_info(NULL, "App init called for containerized service ID: %d\n",
+				    info->id);
 		break;
 	case QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_SERVICE_STOP:
-		ret = ath12k_vendor_dynamic_service_deinit(NULL, info);
+	case QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_CONT_SERVICE_STOP:
+		info->is_container_app =
+			(info->init_config_type ==
+			 QCA_WLAN_VENDOR_DYNAMIC_INIT_CONF_CONT_SERVICE_START);
+		ret = ath12k_vendor_service_deinit[info->id](NULL, info);
 		break;
 	default:
-		ath12k_dbg(NULL, ATH12K_DBG_RM, "Invalid config init received\n");
+		ath12k_err(NULL, "Invalid config init type: %d\n",
+			   info->init_config_type);
 		return -EINVAL;
 	};
 
@@ -859,22 +871,32 @@ void ath12k_telemetry_vendor_callback(u8 init,
 	if (id >= ATH12K_RM_MAX_SERVICE)
 		return;
 
-	if (id == ATH12K_RM_MAIN_SERVICE) {
-		if (ath12k_telemetry_is_agent_loaded()) {
-			if (init == 0) {
-				vendor_info.is_vendor_init_done = true;
-				ath12k_dbg(NULL, ATH12K_DBG_RM,
-					   "Received init event from ta for service main");
-			} else {
-				ath12k_dbg(NULL, ATH12K_DBG_RM,
-					   "Received de-init event from ta for service main");
-			}
+	if (ath12k_telemetry_is_agent_loaded() && init == 0) {
+		/* Set init flag for both main service and
+		 * dynamic/containerized services
+		 * Main service is not applicable in case of containerized
+		 * services. Main service is only applicable in case RM based
+		 * app, driver needs to support initialize handshake for
+		 * both non-containerized based vendor app and containerized
+		 * based vendor app
+		 */
+		if (id == ATH12K_RM_MAIN_SERVICE ||
+		    test_bit(id, &vendor_info.dynamic_svc_bitmask)) {
+			vendor_info.is_vendor_init_done = true;
+			ath12k_dbg(NULL, ATH12K_DBG_RM,
+				   "Received init event from ta for service %s (ID: %d)",
+				   id == ATH12K_RM_MAIN_SERVICE ? "main" : "dynamic", id);
 		}
+	} else if (init != 0) {
+		ath12k_dbg(NULL, ATH12K_DBG_RM,
+			   "Received de-init event from ta for service ID: %d", id);
 	}
 
 	if (init == 0) {
 		ath12k_vendor_generic_response(ptr, id, category);
-		if (id == ATH12K_RM_MAIN_SERVICE)
+		/* Queue vendor work for both main service and dynamic services */
+		if (id == ATH12K_RM_MAIN_SERVICE ||
+		    test_bit(id, &vendor_info.dynamic_svc_bitmask))
 			ath12k_vendor_queue_vendor_work();
 	} else {
 		ath12k_telemetry_destroy_peer_agent_resources();

@@ -719,7 +719,8 @@ int ath12k_telemetry_notify_vendor_app_event(u8 init, u8 id, u64 service_data)
 	return 0;
 }
 
-int ath12k_telemetry_dynamic_app_init_deinit_notify(u8 init, u8 id, u64 service_data)
+int ath12k_telemetry_dynamic_app_init_deinit_notify(u8 init, u8 id, u64 service_data,
+						    bool is_container_app)
 {
 	enum agent_notification_event event = init;
 
@@ -727,7 +728,8 @@ int ath12k_telemetry_dynamic_app_init_deinit_notify(u8 init, u8 id, u64 service_
 	    !g_agent_ops->agent_dynamic_app_init_deinit_notify)
 		return -EOPNOTSUPP;
 
-	g_agent_ops->agent_dynamic_app_init_deinit_notify(event, id, service_data);
+	g_agent_ops->agent_dynamic_app_init_deinit_notify(event, id, service_data,
+							  is_container_app);
 
 	return 0;
 }
