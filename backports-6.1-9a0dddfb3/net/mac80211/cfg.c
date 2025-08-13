@@ -1439,8 +1439,7 @@ static u8 ieee80211_num_beaconing_links(struct ieee80211_sub_if_data *sdata)
 	u8 link_id, num = 0;
 
 	if (sdata->vif.type != NL80211_IFTYPE_AP &&
-	    sdata->vif.type != NL80211_IFTYPE_P2P_GO &&
-	    sdata->vif.type != NL80211_IFTYPE_AP_VLAN)
+	    sdata->vif.type != NL80211_IFTYPE_P2P_GO)
 		return num;
 
 	if (!sdata->vif.valid_links)
@@ -1740,7 +1739,7 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		netif_carrier_on(dev);
 
 	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
-		if (ieee80211_num_beaconing_links(vlan) <= 1)
+		if (sdata->vif.valid_links & (vlan->vif.valid_links | BIT(link_id)))
 			netif_carrier_on(vlan->dev);
 	}
 
@@ -1910,7 +1909,7 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	/* turn off carrier for this interface and dependent VLANs */
 	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
-		if (ieee80211_num_beaconing_links(vlan) < 1)
+		if (!(sdata->vif.valid_links & (vlan->vif.valid_links & ~BIT(link_id))))
 			netif_carrier_off(vlan->dev);
 	}
 
