@@ -2103,15 +2103,15 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 
 				if (tx_desc_info[k].skb_ext_desc) {
 					ath12k_core_dma_unmap_single(ab->dev,
-								     ATH12K_SKB_CB(skb)->paddr_ext_desc,
+								     tx_desc_info[k].paddr_ext_desc,
 								     tx_desc_info[k].skb_ext_desc->len,
 								     DMA_TO_DEVICE);
 					dev_kfree_skb_any(tx_desc_info[k].skb_ext_desc);
 					tx_desc_info[k].skb_ext_desc = NULL;
 				}
 
-				ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_CB(skb)->paddr,
-							     skb->len, DMA_TO_DEVICE);
+				ath12k_core_dma_unmap_single(ab->dev, tx_desc_info[k].paddr,
+							     tx_desc_info[k].len, DMA_TO_DEVICE);
 				dev_kfree_skb_any(skb);
 
 				tx_desc_info[k].in_use = false;
