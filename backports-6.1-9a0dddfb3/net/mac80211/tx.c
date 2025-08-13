@@ -3220,7 +3220,7 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 nss_mesh:
 #endif
 	info->flags |= info_flags;
-	if (info_id) {
+	if (info_id >= 0) {
 		info->status_data = info_id;
 		info->status_data_idr = 1;
 	}
@@ -5124,7 +5124,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 		     !ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))) {
 		info->status_data = ieee80211_store_ack_skb(local, skb,
 							    &info->flags, cookie);
-		if (info->status_data)
+		if (info->status_data >= 0)
 			info->status_data_idr = 1;
 	}
 
@@ -5182,9 +5182,12 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 
 	if (unlikely((skb->sk &&
 		      skb_shinfo(skb)->tx_flags & SKBTX_WIFI_STATUS) ||
-		     ((ctrl_flags & IEEE80211_TX_CTL_REQ_TX_STATUS) && !multicast)))
+		     ((ctrl_flags & IEEE80211_TX_CTL_REQ_TX_STATUS) && !multicast))) {
 		info->status_data = ieee80211_store_ack_skb(local, skb,
 							    &info->flags, cookie);
+		if (info->status_data >= 0)
+			info->status_data_idr = 1;
+	}
 
 	info->flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
 	info->control.vif = &sdata->vif;
