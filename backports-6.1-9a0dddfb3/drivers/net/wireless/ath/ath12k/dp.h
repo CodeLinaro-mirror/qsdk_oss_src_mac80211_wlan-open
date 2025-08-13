@@ -35,6 +35,8 @@
 #define RX_STATUS_ENTRY_MAX_SIZE    64
 #define RX_STATUS_BUFFER_SIZE       (RX_STATUS_ENTRY_MAX_SIZE * MAX_NAPI_BUDGET)
 
+#define TX_NAPI_BUDGET             127
+
 extern struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params;
 
 struct ath12k_base;

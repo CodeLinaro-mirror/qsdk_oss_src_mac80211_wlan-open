@@ -682,8 +682,9 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 		if (!napi_ndev)
 			return -ENOMEM;
 
-		netif_napi_add(napi_ndev, &irq_grp->napi,
-			       ath12k_ahb_ext_grp_napi_poll);
+		netif_napi_add_weight(napi_ndev, &irq_grp->napi,
+				      ath12k_ahb_ext_grp_napi_poll,
+				      TX_NAPI_BUDGET);
 
 		for (j = 0; j < ATH12K_EXT_IRQ_NUM_MAX; j++) {
 			/* For TX ring, ensure that the ring mask and the
