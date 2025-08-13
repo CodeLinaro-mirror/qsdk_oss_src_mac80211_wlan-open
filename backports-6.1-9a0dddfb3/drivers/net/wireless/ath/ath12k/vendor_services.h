@@ -93,7 +93,7 @@ struct ath12k_vendor_service_info {
 	bool is_vendor_init_done;
 	struct workqueue_struct *wq;
 	struct list_head soc_list;
-	struct mutex list_lock;
+	spinlock_t vendor_lock;	/* Protecting vendor info */
 };
 
 struct ath12k_vendor_mld_peer_link_entry {
@@ -135,9 +135,5 @@ int ath12k_vendor_link_state_update(const u8 mac_id,
 				    struct ath12k_base *ab,
 				    struct ath12k_link_vif *arvif,
 				    enum ath12k_vendor_link_state new_state);
-
-int ath12k_vendor_send_link_info(struct ath12k_vendor_soc_device_info *soc_info,
-				 struct ath12k_vendor_link_info *link_info,
-				 u8 service_id);
 
 #endif /* ATH12K_VENDOR_SERVICES_H */
