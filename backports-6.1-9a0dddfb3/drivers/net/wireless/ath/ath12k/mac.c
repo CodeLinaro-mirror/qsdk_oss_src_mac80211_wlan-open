@@ -5211,7 +5211,7 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 		}
 	}
 
-	if (ath12k_vendor_is_service_enabled(ATH12K_RM_ENERGY_SERVICE))
+	if (ath12k_vendor_is_service_enabled(ATH12K_VENDOR_APP_ENERGY_SERVICE))
 		allow_ap_ps = false;
 
 	if (!allow_ap_ps)
