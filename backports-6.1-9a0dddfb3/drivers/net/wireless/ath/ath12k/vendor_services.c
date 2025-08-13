@@ -401,6 +401,10 @@ void ath12k_vendor_services_init(void)
 		ath12k_vendor_service_common_init;
 	ath12k_vendor_service_deinit[ATH12K_VENDOR_APP_ERP_SERVICE] =
 		ath12k_vendor_service_common_deinit;
+	ath12k_vendor_service_init[ATH12K_VENDOR_APP_QOS_OPTIMIZER] =
+		ath12k_vendor_dynamic_service_init;
+	ath12k_vendor_service_deinit[ATH12K_VENDOR_APP_QOS_OPTIMIZER] =
+		ath12k_vendor_dynamic_service_deinit;
 	/* Initialize other serives as needed */
 }
 EXPORT_SYMBOL(ath12k_vendor_services_init);
