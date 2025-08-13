@@ -3676,6 +3676,7 @@ struct ath12k_wmi_rx_reorder_queue_remove_arg {
 #define HE_MODE_DL_OFDMA	BIT(4)
 #define HE_MODE_UL_OFDMA	BIT(5)
 #define HE_MODE_UL_MUMIMO	BIT(6)
+#define HE_MODE_DL_OFDMA_TXBF   BIT(7)
 
 #define HE_DL_MUOFDMA_ENABLE	1
 #define HE_UL_MUOFDMA_ENABLE	1
@@ -3685,6 +3686,7 @@ struct ath12k_wmi_rx_reorder_queue_remove_arg {
 #define HE_SU_BFEE_ENABLE	1
 #define HE_MU_BFER_ENABLE	1
 #define HE_SU_BFER_ENABLE	1
+#define HE_DL_OFDMA_TXBF_ENABLE 1
 
 #define EHT_MODE_SU_TX_BFEE		BIT(0)
 #define EHT_MODE_SU_TX_BFER		BIT(1)
@@ -3705,6 +3707,7 @@ struct ath12k_wmi_rx_reorder_queue_remove_arg {
 #define EHT_SU_BFEE_ENABLE       1
 #define EHT_MU_BFER_ENABLE       1
 #define EHT_SU_BFER_ENABLE       1
+#define EHT_DL_OFDMA_TXBF_ENABLE 1
 
 #define HE_VHT_SOUNDING_MODE_ENABLE		1
 #define HE_SU_MU_SOUNDING_MODE_ENABLE		1

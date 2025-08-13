@@ -4489,7 +4489,7 @@ static int ath12k_setup_peer_smps(struct ath12k *ar, struct ath12k_link_vif *arv
 					 ath12k_smps_map[smps]);
 }
 
-static int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
+int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k *ar = arvif->ar;
@@ -4524,6 +4524,9 @@ static int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
 		if (link_conf->he_su_beamformee)
 			value |= u32_encode_bits(HE_SU_BFEE_ENABLE, HE_MODE_SU_TX_BFEE);
 	}
+
+	if (ar->ofdma_txbf_conf)
+		value |= u32_encode_bits(HE_DL_OFDMA_TXBF_ENABLE, HE_MODE_DL_OFDMA_TXBF);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -4616,7 +4619,7 @@ static int ath12k_mac_vif_recalc_sta_he_txbf(struct ath12k *ar,
 	return 0;
 }
 
-static int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
+int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k *ar = arvif->ar;
@@ -4657,6 +4660,10 @@ static int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
 			value |= u32_encode_bits(EHT_SU_BFEE_ENABLE,
 						 EHT_MODE_SU_TX_BFEE);
 	}
+
+	if (ar->ofdma_txbf_conf)
+		value |= u32_encode_bits(EHT_DL_OFDMA_TXBF_ENABLE,
+					 EHT_MODE_DL_OFDMA_TXBF);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {

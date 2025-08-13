@@ -5790,6 +5790,55 @@ static const struct file_operations fops_qos_stats = {
 	.open = simple_open
 };
 
+static ssize_t ath12k_enable_ofdma_txbf(struct file *file,
+					const char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	struct ath12k_link_vif *arvif;
+	int value, ret;
+	char buf[32] = {0};
+	char mode[3] = {'\0'};
+
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
+				     user_buf, count);
+	if (ret < 0)
+		return ret;
+
+	buf[ret] = '\0';
+	ret = sscanf(buf, "%d %s", &value, mode);
+	if (ret != 2) {
+		ath12k_err(ar->ab, "2 arguments required usage: enable/disable eht/he");
+		return -EINVAL;
+	}
+
+	if (strcmp(mode, "eht") && strcmp(mode, "he")) {
+		ath12k_err(ar->ab, "Mode should be eht/he");
+		return -EINVAL;
+	}
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	ar->ofdma_txbf_conf = value;
+
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (!strcmp(mode, "eht")) {
+			ath12k_mac_set_he_txbf_conf(arvif);
+			ath12k_mac_set_eht_txbf_conf(arvif);
+		} else {
+			ath12k_mac_set_he_txbf_conf(arvif);
+		}
+	}
+
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	return count;
+}
+
+static const struct file_operations ofdma_txbf = {
+	.write = ath12k_enable_ofdma_txbf,
+	.open = simple_open,
+};
+
 void ath12k_debugfs_register(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -5915,6 +5964,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("enable_dp_tid_stats", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_enable_dp_tid_stats);
+
+	debugfs_create_file("ofdma_txbf_enable", 0600,
+			    ar->debug.debugfs_pdev, ar,
+			    &ofdma_txbf);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))

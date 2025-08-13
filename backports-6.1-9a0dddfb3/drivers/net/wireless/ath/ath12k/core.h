@@ -1230,6 +1230,7 @@ struct ath12k {
 	u32 ht_cap_info;
 	u32 vht_cap_info;
 	struct ath12k_he ar_he;
+	bool ofdma_txbf_conf;
 	struct {
 		struct completion started;
 		struct completion completed;
