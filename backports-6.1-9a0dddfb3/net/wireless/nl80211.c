@@ -7472,6 +7472,16 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 		params->ml_max_rec_links_valid = true;
 	}
 
+	/* parse ttlm nl attributes and populate ap params */
+	if (info->attrs[NL80211_ATTR_ADVERTISED_TTLM] &&
+	    wiphy_ext_feature_isset(&rdev->wiphy,
+				    NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD)) {
+		params->ttlm_params.type = TTLM_CMD_TYPE_ADVERTISED;
+		err = nl80211_parse_adv_ttlm_params(info, &params->ttlm_params);
+		if (err)
+			goto out;
+	}
+
 	/* FIXME: validate MLO/link-id against driver capabilities */
 
 	err = rdev_start_ap(rdev, dev, params);

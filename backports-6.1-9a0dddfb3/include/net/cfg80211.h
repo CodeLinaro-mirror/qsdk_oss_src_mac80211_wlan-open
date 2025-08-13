@@ -1786,6 +1786,7 @@ struct cfg80211_ttlm_params {
  * @beacon_tx_mode: Beacon Tx Mode setting
  * @ml_max_rec_links_valid: Indicates valid ML Max recommended links
  * @ml_max_rec_links: ML Max recommended links
+ * @ttlm_params: tid-to-link mapping parameters
  */
 struct cfg80211_ap_settings {
 	struct cfg80211_chan_def chandef;
@@ -1826,6 +1827,7 @@ struct cfg80211_ap_settings {
 	bool ml_max_rec_links_valid;
 	u8 ml_max_rec_links;
 	enum nl80211_regulatory_power_modes he_6ghz_power_type;
+	struct cfg80211_ttlm_params ttlm_params;
 };
 
 
