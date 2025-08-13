@@ -990,6 +990,10 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					}
 				}
 			}
+
+#ifdef CONFIG_IO_COHERENCY
+			prefetch(skb_shinfo(msdu));
+#endif
 			msdu->protocol = eth_type_trans(msdu, peer->dev);
 			netif_receive_skb(msdu);
 			return ret;
@@ -1436,24 +1440,27 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 
 		msdu = spd_desc_l->msdu;
 
-#ifdef CONFIG_IO_COHERENCY
-		{
-			u8 *vaddr = spd_desc_l->vaddr;
-
-			prefetch(vaddr);
-			prefetch(&vaddr[64]);
-			prefetch(&vaddr[128]);
-		}
-#endif
+#ifndef CONFIG_IO_COHERENCY
 		prefetch(msdu);
 		prefetch(&msdu->_skb_refdst);
 		prefetch(&msdu->__pkt_type_offset);
-
+#endif
 		if (likely(msdu_idx + 1 < num_msdus)) {
 			struct hal_rx_spd_data *spd_desc_next =
 				&rx_status_desc[msdu_idx + 1];
 			struct sk_buff *next_msdu = spd_desc_next->msdu;
+#ifdef CONFIG_IO_COHERENCY
+			{
+				u8 *vaddr = spd_desc_next->vaddr;
 
+				prefetch(vaddr);
+				prefetch(&vaddr[64]);
+				prefetch(&vaddr[128]);
+				prefetch(next_msdu);
+				prefetch(&next_msdu->_skb_refdst);
+				prefetch(&next_msdu->__pkt_type_offset);
+			}
+#endif
 			prefetch(&next_msdu->head);
 		}
 
