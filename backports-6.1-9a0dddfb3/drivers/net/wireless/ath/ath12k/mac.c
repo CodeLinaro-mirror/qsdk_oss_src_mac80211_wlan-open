@@ -23541,6 +23541,9 @@ void ath12k_compute_qos_params(struct cfg80211_qm_qos_attributes *qos_attr,
 	service_interval = ((qos_attr->min_service_interval +
 			   qos_attr->max_service_interval) >> 1);
 
+	/* Convert microseconds to milliseconds */
+	service_interval = service_interval / 1000;
+
 	/* Data rate in Kilo Bytes Per Second */
 	data_rate = qos_attr->min_data_rate / 8;
 
@@ -23582,6 +23585,8 @@ void ath12k_copy_qos_params(struct ath12k_qos_params *params,
 	params->tid = qos_attr->tid;
 	if (qos_attr->min_service_interval)
 		params->min_service_interval = service_interval;
+
+	params->min_data_rate = qos_attr->min_data_rate;
 
 	/* Convert microseconds to miliseconds */
 	if (qos_attr->delay_bound)

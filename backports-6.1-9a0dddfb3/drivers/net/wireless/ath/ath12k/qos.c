@@ -117,7 +117,8 @@ u16 ath12k_add_profile(struct ath12k_base *ab,
 			qos_ctx->profiles[index].ref_count++;
 			id = index;
 			ath12k_dbg(ab, ATH12K_DBG_QOS,
-				   "QoS profile %d add", id);
+				   "QoS profile %d add, ref_count:%d", id,
+				   qos_ctx->profiles[id].ref_count);
 			break;
 		}
 	}
@@ -132,7 +133,9 @@ int ath12k_update_profile(struct ath12k_base *ab,
 	memcpy(&qos_ctx->profiles[id].params,
 	       params, sizeof(struct ath12k_qos_params));
 	ath12k_dbg(ab, ATH12K_DBG_QOS,
-		   "QoS profile %d Update", id);
+		   "QoS profile %d Update, ref_count:%d", id,
+		   qos_ctx->profiles[id].ref_count);
+
 	return 0;
 }
 
@@ -150,11 +153,15 @@ int ath12k_del_profile(struct ath12k_base *ab,
 		memset(&qos_ctx->profiles[id].params, 0,
 		       sizeof(struct ath12k_qos_params));
 		ath12k_dbg(ab, ATH12K_DBG_QOS,
-			   "QoS profile %d delete", id);
+			   "QoS profile %d delete, ref_count:%d", id,
+			   qos_ctx->profiles[id].ref_count);
 		return 0;
 	}
-	/*Some reference still exist, profile not deleted*/
-	return -EINVAL;
+
+	ath12k_dbg(ab, ATH12K_DBG_QOS, "QoS profile %d delete, ref_count:%d",
+		   id, qos_ctx->profiles[id].ref_count);
+
+	return 0;
 }
 
 static bool ath12k_qos_id_valid(struct ath12k_base *ab, u16 id,
@@ -279,6 +286,9 @@ u16 ath12k_qos_configure(struct ath12k_base *ab, struct ath12k *ar,
 				      min_id, max_id);
 	if (ath12k_qos_id_valid(ab, id, min_id, max_id)) {
 		qos_ctx->profiles[id].ref_count++;
+		ath12k_dbg(ab, ATH12K_DBG_QOS,
+			   "QoS profile matched - ID:%d, ref_count:%d", id,
+			   qos_ctx->profiles[id].ref_count);
 		spin_unlock_bh(&qos_ctx->profile_lock);
 		return id;
 	}
@@ -335,7 +345,12 @@ int ath12k_qos_disable(struct ath12k_base *ab, struct ath12k *ar,
 	       sizeof(struct ath12k_qos_params));
 	ret = ath12k_del_profile(ab, qos_ctx, id);
 	spin_unlock_bh(&qos_ctx->profile_lock);
-	if (ret != 0)
+
+	/*
+	 * Return if either delete failed or ref_count is decremented and is
+	 * non zero - some reference still exist, profile not deleted.
+	 */
+	if (ret != 0 || qos_ctx->profiles[id].ref_count != 0)
 		return ret;
 
 	if (qos_dir == QOS_PROFILE_DL) {
