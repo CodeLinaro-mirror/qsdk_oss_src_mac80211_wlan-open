@@ -1755,6 +1755,12 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	ieee80211_recalc_dtim(local, sdata);
 	ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_SSID);
+	/* check if ttlm params available and populate vif accordingy */
+	if (params->ttlm_params.type == TTLM_CMD_TYPE_ADVERTISED &&
+	    params->ttlm_params.u.adv.num_ttlm_info) {
+		ieee80211_populate_ap_vif_adv_ttlm_params(sdata, &params->ttlm_params);
+		changed |= BSS_CHANGED_LINK_ADV_TTLM;
+	}
 	ieee80211_link_info_change_notify(sdata, link, changed);
 
 	if (ieee80211_num_beaconing_links(sdata) <= 1)
