@@ -129,7 +129,7 @@ int ath12k_vendor_initialize_service(struct wiphy *wiphy,
 bool ath12k_vendor_is_service_enabled(const u8 svc_id);
 
 int ath12k_vendor_send_assoc_event(void *event_data,
-				   u8 category, u8 service_id);
+				   u8 category);
 
 int ath12k_vendor_link_state_update(const u8 mac_id,
 				    struct ath12k_base *ab,

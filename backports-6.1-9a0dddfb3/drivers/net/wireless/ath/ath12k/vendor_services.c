@@ -811,12 +811,6 @@ static void ath12k_vendor_generic_response(void *out_data,
 	}
 
 	if (nla_put_u8(vendor_event,
-		       QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_ID, service_id)) {
-		ath12k_err(NULL, "failed to put RM generic service id");
-		goto error;
-	}
-
-	if (nla_put_u8(vendor_event,
 		       QCA_WLAN_VENDOR_ATTR_RM_GENERIC_DYNAMIC_INIT_CONF,
 		       vendor_info.init_config_type)) {
 		ath12k_err(NULL, "failed to put RM generic dynamic init config");
@@ -828,6 +822,12 @@ static void ath12k_vendor_generic_response(void *out_data,
 		ath12k_err(NULL, "vendor: Invalid catergory received from telemetry agent");
 		goto error;
 	case QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_APP_INIT:
+		if (nla_put_u8(vendor_event,
+			       QCA_WLAN_VENDOR_ATTR_RM_GENERIC_SERVICE_ID, service_id)) {
+			ath12k_err(NULL, "failed to put RM generic service id");
+			goto error;
+		}
+
 		if (ath12k_vendor_generic_app_init_reply(vendor_event)) {
 			ath12k_err(NULL, "vendor: Failed to response generic app init handshake");
 			goto error;
@@ -907,16 +907,19 @@ void ath12k_telemetry_vendor_callback(u8 init,
 	}
 }
 
-int ath12k_vendor_send_assoc_event(void *event_data,
-				   u8 category, u8 service_id)
+int ath12k_vendor_send_assoc_event(void *event_data, u8 category)
 {
-	if (!ath12k_vendor_is_service_enabled(ATH12K_RM_MAIN_SERVICE)) {
-		ath12k_dbg(NULL, ATH12K_DBG_RM,
-			   "skipped to send assoc response to vendor ap as service(s) not initialized\n");
-		return -1;
-	}
+	/* Only report if any of the vendor app is enabled */
+	if (!vendor_info.is_vendor_init_done)
+		return -EOPNOTSUPP;
 
-	ath12k_vendor_generic_response(event_data, service_id, category);
+	/* Check if vendor serive app is enabled
+	 * for any non-init event, send only 1 notification to vendor app.
+	 * And this vendor app notifies to all enabled vendor services
+	 */
+	ath12k_vendor_generic_response(event_data,
+				       ATH12K_RM_MAIN_SERVICE, category);
+	ath12k_dbg(NULL, ATH12K_DBG_RM, "Sent assoc event to vendor app\n");
 
 	return 0;
 }

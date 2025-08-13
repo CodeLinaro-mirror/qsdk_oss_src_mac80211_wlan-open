@@ -9898,7 +9898,7 @@ int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
 					     &vend_event);
 	rcu_read_unlock();
 
-	if (ath12k_vendor_send_assoc_event(&vend_event, vend_event.category, 0))
+	if (ath12k_vendor_send_assoc_event(&vend_event, vend_event.category))
 		return -EINVAL;
 
 	return 0;
@@ -9921,7 +9921,7 @@ int ath12k_mac_vendor_send_assoc_event(struct ath12k_link_sta *arsta,
 					     &vend_event);
 	rcu_read_unlock();
 
-	if (ath12k_vendor_send_assoc_event(&vend_event, vend_event.category, 0))
+	if (ath12k_vendor_send_assoc_event(&vend_event, vend_event.category))
 		return -EINVAL;
 
 	return 0;
