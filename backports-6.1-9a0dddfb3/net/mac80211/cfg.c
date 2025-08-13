@@ -4406,6 +4406,7 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	struct ieee80211_sub_if_data *sdata = link_data->sdata;
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_bss_conf *link_conf = link_data->conf;
+	struct ieee80211_sub_if_data *mon_sdata = NULL;
 	u64 changed = 0;
 	int err;
 
@@ -4414,6 +4415,27 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	if (link_data->csa.power_mode != IEEE80211_REG_UNSET_AP) {
 		link_data->conf->power_type = link_data->csa.power_mode;
 		link_data->csa.power_mode = IEEE80211_REG_UNSET_AP;
+	}
+
+	list_for_each_entry_rcu(mon_sdata, &local->mon_list, u.mntr.list) {
+		struct cfg80211_chan_def *chandef;
+		struct ieee80211_link_data *mon_link;
+
+		mon_link = &mon_sdata->deflink;
+		chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
+		if (chandef->chan &&
+		    chandef->chan->band != link_conf->chanreq.oper.chan->band)
+			continue;
+
+		if (mon_link->reserved_chanctx) {
+			if (!mon_link->reserved_ready) {
+				err = ieee80211_link_use_reserved_context(mon_link);
+				if (err)
+					return err;
+			}
+			break;
+		}
+		break;
 	}
 
 	/*
@@ -4659,6 +4681,9 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_chanctx *chanctx;
 	struct ieee80211_bss_conf *link_conf;
 	struct ieee80211_link_data *link_data;
+	struct ieee80211_sub_if_data *mon_sdata;
+	struct ieee80211_chanctx_conf *mon_conf;
+	struct ieee80211_chanctx *mon_chanctx;
 	u64 changed = 0;
 	u8 link_id = params->link_id;
 	int err;
@@ -4725,6 +4750,33 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 					     params->radar_required);
 	if (err)
 		goto out;
+
+	list_for_each_entry_rcu(mon_sdata, &local->mon_list, u.mntr.list) {
+		struct cfg80211_chan_def *chandef;
+		struct ieee80211_link_data *mon_link = &mon_sdata->deflink;
+		struct ieee80211_bss_conf *bss_conf = &mon_sdata->vif.bss_conf;
+
+		chandef = &bss_conf->chanreq.oper;
+		if (chandef->chan &&
+		    chandef->chan->band != chanreq.oper.chan->band)
+			continue;
+
+		mon_conf = wiphy_dereference(wiphy, bss_conf->chanctx_conf);
+		if (!mon_conf) {
+			err = -EBUSY;
+			goto out;
+		}
+
+		if (!mon_link->reserved_chanctx) {
+			mon_chanctx = container_of(mon_conf,
+						   struct ieee80211_chanctx, conf);
+			err = ieee80211_link_reserve_chanctx(mon_link, &chanreq,
+							     mon_chanctx->mode,
+							     params->radar_required);
+			if (err)
+				goto out;
+		}
+	}
 
 	/* if reservation is invalid then this will fail */
 	err = ieee80211_check_combinations(sdata, NULL, chanctx->mode, 0, -1);

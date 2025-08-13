@@ -1314,10 +1314,11 @@ ieee80211_link_chanctx_reservation_complete(struct ieee80211_link_data *link)
 		wiphy_delayed_work_queue(sdata->local->hw.wiphy,
 					 &link->u.mgd.csa.switch_work, 0);
 		break;
+	case NL80211_IFTYPE_MONITOR:
+		break;
 	case NL80211_IFTYPE_UNSPECIFIED:
 	case NL80211_IFTYPE_AP_VLAN:
 	case NL80211_IFTYPE_WDS:
-	case NL80211_IFTYPE_MONITOR:
 	case NL80211_IFTYPE_P2P_CLIENT:
 	case NL80211_IFTYPE_P2P_GO:
 	case NL80211_IFTYPE_P2P_DEVICE:
@@ -1612,7 +1613,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 	struct ieee80211_chanctx *ctx, *ctx_tmp, *old_ctx;
 	int err, n_assigned, n_reserved, n_ready;
 	int n_ctx = 0, n_vifs_switch = 0, n_vifs_assign = 0, n_vifs_ctxless = 0;
-	struct ieee80211_sub_if_data *mon_sdata = NULL;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1651,14 +1651,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 
 		list_for_each_entry(link, &ctx->replace_ctx->assigned_links,
 				    assigned_chanctx_list) {
-			/*
-			 * Skip monitor interfaces in the count since they don't have
-			 * reserved contexts and would cause n_assigned > n_reserved
-			 */
-			if (link->sdata->vif.type == NL80211_IFTYPE_MONITOR) {
-				mon_sdata = link->sdata;
-				continue;
-			}
 			n_assigned++;
 			if (link->reserved_chanctx) {
 				n_reserved++;
@@ -1757,7 +1749,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 	 */
 	list_for_each_entry(ctx, &local->chanctx_list, list) {
 		struct ieee80211_link_data *link, *link_tmp;
-		struct ieee80211_chan_req *new_chanreq = NULL;
 
 		if (ctx->replace_state != IEEE80211_CHANCTX_REPLACES_OTHER)
 			continue;
@@ -1790,7 +1781,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 			if (link_conf->chanreq.oper.width != link->reserved.oper.width)
 				changed = BSS_CHANGED_BANDWIDTH;
 
-			new_chanreq = &link->reserved;
 			ieee80211_link_update_chanreq(link, &link->reserved);
 			if (changed)
 				ieee80211_link_info_change_notify(sdata,
@@ -1798,29 +1788,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 								  changed);
 
 			ieee80211_recalc_txpower(link, false, link->link_id);
-		}
-
-		/* If monitor link was present in the old ctx, update the link conf
-		 * and chan req with new ctx.
-		 * Add monitor link to new ctx assigned_links.
-		 */
-		if (mon_sdata && new_chanreq) {
-			struct cfg80211_chan_def *chandef;
-
-			link = &mon_sdata->deflink;
-			chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
-
-			if (chandef->chan &&
-			    chandef->chan->band == ctx->conf.def.chan->band) {
-				synchronize_rcu();
-				link->conf->chanreq = *new_chanreq;
-				rcu_assign_pointer(link->conf->chanctx_conf,
-						   &ctx->conf);
-				list_move(&link->assigned_chanctx_list,
-					  &ctx->assigned_links);
-
-				ieee80211_recalc_txpower(link, false, link->link_id);
-			}
 		}
 
 		ieee80211_recalc_chanctx_chantype(local, ctx);
