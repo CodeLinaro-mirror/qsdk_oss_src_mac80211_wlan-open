@@ -112,7 +112,6 @@ struct ath12k_ppeds_napi {
 
 struct ath12k_ppe {
 	struct ath12k_base *ab;
-	ppe_ds_wlan_handle_t *ppeds_handle;
 	struct dp_srng reo2ppe_ring;
 	struct dp_srng ppe2tcl_ring;
 	struct dp_ppeds_tx_comp_ring ppeds_comp_ring;

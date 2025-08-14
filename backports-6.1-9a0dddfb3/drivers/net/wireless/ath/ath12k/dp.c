@@ -2215,7 +2215,7 @@ void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
         ath12k_dp_umac_txrx_desc_cleanup(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (ab->dp->ppe.ppeds_handle)
+	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		ath12k_dp_ppeds_tx_desc_cleanup(ab);
 #endif
 
