@@ -883,7 +883,11 @@ static int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	case DP_RX_DECAP_TYPE_8023:
 		pkt_reason = ATH_RX_8023_PKTS;
-		/* TODO: Handle undecap for these formats */
+		/* Note that decap_format = 2 indicates that the decapped
+		 * packet is either Ethernet 2 (DIX)  or 802.3 (uses SNAP/LLC).
+		 * So, decap_format = 2 or 3 is all the same.
+		 */
+		status->flag |= RX_FLAG_8023;
 		break;
 	}
 	dp_pdev->wmm_stats.total_wmm_rx_pkts[dp_pdev->wmm_stats.rx_type]++;
