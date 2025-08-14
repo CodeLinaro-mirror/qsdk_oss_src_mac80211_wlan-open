@@ -17250,9 +17250,10 @@ static int ath12k_vdev_restart_sequence(struct ath12k_link_vif *arvif,
 	}
 
 beacon_tmpl_setup:
+
+	ath12k_mac_update_ru_punct_bitmap(arvif, &old_chanctx, new_ctx);
 	if (arvif->pending_csa_up)
 		return 0;
-	ath12k_mac_update_ru_punct_bitmap(arvif, &old_chanctx, new_ctx);
 
 	if (!arvif->is_up)
 		return -EOPNOTSUPP;
@@ -17664,6 +17665,8 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 			memcpy(&arvif->chanctx, vifs[i].new_ctx, sizeof(*vifs[i].new_ctx));
 			continue;
 		}
+
+		arvif->punct_bitmap = vifs[i].new_ctx->def.punctured;
 
 		if (!ath12k_mac_is_bridge_vdev(arvif) &&
 		    vifs[i].link_conf->mbssid_tx_vif &&
