@@ -3064,6 +3064,13 @@ static int ath12k_stats_peer_setup(struct ath12k_telemetry_command *cmd)
 		return -EINVAL;
 	}
 
+	if (cmd->link_id != INVALID_LINK_ID &&
+	    !(ahvif->links_map & BIT(cmd->link_id))) {
+		ath12k_err(NULL, "Invalid link_id %d in peer stats setup",
+			   cmd->link_id);
+		return -EINVAL;
+	}
+
 	len = ath12k_get_dp_vendor_event_len(cmd);
 	ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY, "Vendor Event Length = %d", len);
 
