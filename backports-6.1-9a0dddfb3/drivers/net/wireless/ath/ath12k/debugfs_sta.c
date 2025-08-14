@@ -842,8 +842,61 @@ static ssize_t ath12k_dbg_sta_read_primary_link_id(struct file *file,
 	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
+static ssize_t ath12k_dbg_sta_read_primary_link_info(struct file *file,
+						     char __user *user_buf,
+						     size_t count, loff_t *ppos)
+{
+	struct ieee80211_sta *sta = file->private_data;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_hw *ah;
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	char buf[512];
+	int len = 0;
+
+	if (!ahsta || !ahsta->ahvif || !ahsta->ahvif->ah)
+		return -EINVAL;
+
+	if (ahsta->primary_link_id < 0 || !ahsta->link[ahsta->primary_link_id])
+		return -EINVAL;
+
+	ahvif = ahsta->ahvif;
+	ah = ahsta->ahvif->ah;
+
+	wiphy_lock(ah->hw->wiphy);
+	mutex_lock(&ah->hw_mutex);
+
+	arvif = ath12k_get_arvif_from_link_id(ahvif, ahsta->primary_link_id);
+	if (!arvif) {
+		mutex_unlock(&ah->hw_mutex);
+		wiphy_unlock(ah->hw->wiphy);
+		return -EINVAL;
+	}
+
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			"primary_link_id: %d\n", ahsta->primary_link_id);
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			"bss_id: %pM\n", arvif->bssid);
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			"vdev_id: %u\n", arvif->vdev_id);
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			"pdev_id: %u\n", arvif->ar->pdev->pdev_id);
+
+	mutex_unlock(&ah->hw_mutex);
+	wiphy_unlock(ah->hw->wiphy);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
 static const struct file_operations fops_primary_link_id = {
 	.read = ath12k_dbg_sta_read_primary_link_id,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
+static const struct file_operations fops_primary_link_info = {
+	.read = ath12k_dbg_sta_read_primary_link_info,
 	.open = simple_open,
 	.owner = THIS_MODULE,
 	.llseek = default_llseek,
@@ -1105,6 +1158,7 @@ void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 	debugfs_create_file("addba_resp", 0200, dir, sta, &fops_addba_resp);
 	debugfs_create_file("delba", 0200, dir, sta, &fops_delba);
 	debugfs_create_file("primary_link_id", 0400, dir, sta, &fops_primary_link_id);
+	debugfs_create_file("primary_link_info", 0400, dir, sta, &fops_primary_link_info);
 }
 EXPORT_SYMBOL(ath12k_debugfs_sta_op_add);
 
