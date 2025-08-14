@@ -955,7 +955,103 @@ ath12k_wifi7_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 }
 #endif
 
-/* TODO: Remoe the export once this file is built with wifi7 ko */
+enum ath12k_dp_tx_enq_error
+ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
+			struct ath12k_link_vif *arvif,
+			struct sk_buff *skb,
+			u32 qos_nw_delay)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_hal *hal = dp->hal;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_tx_desc_info *tx_desc = NULL;
+	struct hal_tcl_data_cmd *hal_tcl_desc;
+	struct hal_srng *tcl_ring;
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[arvif->link_id];
+	struct dp_tx_ring *tx_ring;
+	u8 pool_id;
+	u8 hal_ring_id;
+	u8 tid;
+	bool is_from_recycler;
+	bool stats_disable = ab->stats_disable;
+	u8 ring_id = smp_processor_id();
+
+	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
+
+	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
+		return DP_TX_ENQ_DROP_CRASH_FLUSH;
+
+	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
+
+	tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
+	if (unlikely(!tx_desc)) {
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
+						 ATH_TX_BUF_ERR);
+		}
+		dp->device_stats.tx_err.txbuf_na[ring_id]++;
+		return DP_TX_ENQ_DROP_SW_DESC_NA;
+	}
+
+	ath12k_core_dma_clean_range_no_dsb(skb->data, skb->data + DP_TX_SFE_BUFFER_SIZE);
+
+	/* the edma driver uses this flags to optimize the cache invalidation */
+	is_from_recycler = (skb->fast_recycled = !!skb->is_from_recycler);
+	if (likely(is_from_recycler))
+		tx_desc->flags = (DP_TX_DESC_FLAG_FAST & stats_disable);
+	else
+		tx_desc->flags = 0;
+
+	tx_desc->skb = skb;
+	tx_desc->mac_id = dp_link_vif->pdev_idx;
+
+	tx_ring = &dp->tx_ring[ring_id];
+	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
+	tcl_ring = &hal->srng_list[hal_ring_id];
+
+	hal_tcl_desc =
+	(void *)ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(tcl_ring);
+	if (unlikely(!hal_tcl_desc)) {
+		/* NOTE: It is highly unlikely we'll be running out of tcl_ring
+		 * desc because the desc is directly enqueued onto hw queue.
+		 */
+		ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
+		dp->device_stats.tx_err.desc_na[ring_id]++;
+		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
+						 ATH_TX_DESC_ERR);
+		}
+		ath12k_dp_tx_release_txbuf(dp, tx_desc, ring_id);
+		return DP_TX_ENQ_DROP_TCL_DESC_NA;
+	}
+
+	ath12k_wifi7_dp_tx_populate_tcl_desc(dp_pdev, arvif,
+					     dp_link_vif,
+					     skb, hal_tcl_desc,
+					     tx_desc, qos_nw_delay);
+	dmb(oshst);
+	ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
+	if (unlikely(ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+		     ath12k_debugfs_tid_stats_enabled(dp_pdev))) {
+		tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+		ath12k_tid_tx_stats(ahvif, tid, skb->len,
+				    ATH_TX_FAST_UNICAST);
+	}
+	dp->device_stats.tx_fast_unicast[ring_id]++;
+
+	DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw_fast, 1, skb->len, ring_id);
+	atomic_inc(&dp_pdev->num_tx_pending);
+
+	return DP_TX_ENQ_SUCCESS;
+}
+
+/* TODO: Remove the export once this file is built with wifi7 ko */
 enum ath12k_dp_tx_enq_error
 ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		   struct ath12k_link_vif *arvif,
@@ -992,86 +1088,13 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	bool add_htt_metadata = false;
 	u32 iova_mask = dp->hw_params->iova_mask;
 	bool is_diff_encap = false, is_null = false;
-	bool is_from_recycler;
 	u8 qos_tag;
-	bool stats_disable = ab->stats_disable;
 	enum ath12k_dp_tx_enq_error err;
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
-
-	if (likely(skb->fast_xmit)) {
-		pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
-
-		tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
-		if (unlikely(!tx_desc)) {
-			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-			    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
-				tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-				ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
-							 ATH_TX_BUF_ERR);
-			}
-			dp->device_stats.tx_err.txbuf_na[ring_id]++;
-			return DP_TX_ENQ_DROP_SW_DESC_NA;
-		}
-
-		ath12k_core_dma_clean_range_no_dsb(skb->data, skb->data + DP_TX_SFE_BUFFER_SIZE);
-
-		/* the edma driver uses this flags to optimize the cache invalidation */
-		is_from_recycler = (skb->fast_recycled = !!skb->is_from_recycler);
-		if (likely(is_from_recycler))
-			tx_desc->flags = (DP_TX_DESC_FLAG_FAST & stats_disable);
-		else
-			tx_desc->flags = 0;
-
-		tx_desc->skb = skb;
-		tx_desc->mac_id = dp_link_vif->pdev_idx;
-
-		tx_ring = &dp->tx_ring[ring_id];
-		hal_ring_id = tx_ring->tcl_data_ring.ring_id;
-		tcl_ring = &hal->srng_list[hal_ring_id];
-
-		hal_tcl_desc =
-		(void *)ath12k_hal_srng_src_begin_get_next_entry_nolock_fast
-								(tcl_ring);
-		if (unlikely(!hal_tcl_desc)) {
-			/* NOTE: It is highly unlikely we'll be running out of tcl_ring
-			 * desc because the desc is directly enqueued onto hw queue.
-			 */
-			ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
-			dp->device_stats.tx_err.desc_na[ring_id]++;
-			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-			    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
-				tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-				ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
-							 ATH_TX_DESC_ERR);
-			}
-			err = DP_TX_ENQ_DROP_TCL_DESC_NA;
-			goto fail_remove_tx_buf;
-		}
-
-		ath12k_wifi7_dp_tx_populate_tcl_desc(dp_pdev, arvif,
-						     dp_link_vif,
-						     skb, hal_tcl_desc,
-						     tx_desc, qos_nw_delay);
-		dmb(oshst);
-		ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
-
-		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
-			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-			ath12k_tid_tx_stats(ahvif, tid, skb->len,
-					    ATH_TX_FAST_UNICAST);
-		}
-		dp->device_stats.tx_fast_unicast[ring_id]++;
-
-		DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw_fast, 1, skb->len, ring_id);
-		atomic_inc(&dp_pdev->num_tx_pending);
-
-		return DP_TX_ENQ_SUCCESS;
-	}
 
 	if (!(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
 	    !ieee80211_is_data(hdr->frame_control))

@@ -144,6 +144,11 @@ struct ath12k_pdev_dp {
 
 	struct ath12k_dp *dp;
 	struct ieee80211_hw *hw;
+	/* DP Stats knobs */
+	bool enable_dp_stats;
+	bool enable_dp_debug_stats;
+	bool enable_dp_tid_stats;
+
 	u8 hw_link_id;
 	struct ath12k *ar;
 	struct ath12k_dp_hw *dp_hw;
@@ -161,11 +166,6 @@ struct ath12k_pdev_dp {
 	 * determine when this stats is calculated based on peers
 	 */
 	struct ath12k_pdev_dp_stats stats;
-
-	/* DP Stats knobs */
-	bool enable_dp_stats;
-	bool enable_dp_debug_stats;
-	bool enable_dp_tid_stats;
 };
 
 #define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
@@ -230,7 +230,7 @@ enum ath12k_dp_eapol_key_type {
 #define ATH12K_DP_PDEV_TX_LIMIT        (ATH12K_NUM_POOL_TX_DESC - ATH12K_NUM_EAPOL_RESERVE)
 
 #define DP_WBM_RELEASE_RING_SIZE	64
-#define DP_TCL_DATA_RING_SIZE		512
+#define DP_TCL_DATA_RING_SIZE		2048
 #define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32
@@ -555,8 +555,8 @@ struct ath12k_device_dp_stats {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u32 ppe_vp_mode_update_fail;
 #endif
-	struct ath12k_tx_comp_stats tx_comp_stats[MAX_TX_COMP_RING];
 	u32 tx_fast_unicast[MAX_TCL_RING];
+	struct ath12k_tx_comp_stats tx_comp_stats[MAX_TX_COMP_RING];
 	u32 err_ring_pkts;
 	u32 invalid_rbm;
 	u32 reo_excep_msdu_buf_type;
@@ -635,6 +635,7 @@ struct ath12k_dp {
 	enum ath12k_peer_metadata_version peer_metadata_ver;
 	struct dp_srng reo_dst_ring[DP_REO_DST_RING_MAX];
 	struct dp_tx_ring tx_ring[DP_TCL_NUM_RING_MAX];
+	struct ath12k_device_dp_stats device_stats;
 	struct wbm_idle_scatter_list scatter_list[DP_IDLE_SCATTER_BUFS_MAX];
 	struct list_head reo_cmd_list;
 	struct list_head reo_cmd_cache_flush_list;
@@ -700,7 +701,6 @@ struct ath12k_dp {
 	/* The rhashtable containing struct ath12k_peer keyed by mac addr */
 	struct rhashtable *rhead_peer_addr;
 	struct rhashtable_params rhash_peer_addr_param;
-	struct ath12k_device_dp_stats device_stats;
 	struct ath12k_ppe ppe;
 
 	/*Neighbors Peer list for NAC RSSI*/

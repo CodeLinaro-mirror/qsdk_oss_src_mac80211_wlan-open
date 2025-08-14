@@ -437,7 +437,6 @@ struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 		return NULL;
 	}
 
-	prefetch(desc);
 	list_del(&desc->list);
 	desc->in_use = true;
 

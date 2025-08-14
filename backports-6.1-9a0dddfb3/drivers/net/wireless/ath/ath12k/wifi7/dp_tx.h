@@ -16,6 +16,11 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		   struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
 		   bool is_mcast, struct ath12k_link_sta *arsta,
 		   u8 ring_id, u32 qos_nw_delay);
+enum ath12k_dp_tx_enq_error
+ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
+			struct ath12k_link_vif *arvif,
+			struct sk_buff *skb,
+			u32 qos_nw_delay);
 u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 					    struct ath12k_link_vif *arvif, bool vdev_id_check_en);
 bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *skb);

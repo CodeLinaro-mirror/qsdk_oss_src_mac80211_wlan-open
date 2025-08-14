@@ -1221,6 +1221,7 @@ struct ath12k_atf {
 
 struct ath12k {
 	struct ath12k_base *ab;
+	u8 pdev_idx;
 	struct ath12k_pdev *pdev;
 	struct ath12k_hw *ah;
 	struct ath12k_wmi_pdev *wmi;
@@ -1285,7 +1286,6 @@ struct ath12k {
 	u8 num_rx_chains;
 	u8 num_tx_chains;
 	/* pdev_idx starts from 0 whereas pdev->pdev_id starts with 1 */
-	u8 pdev_idx;
 	u8 lmac_id;
 	u8 hw_link_id;
 	u8 radio_idx;

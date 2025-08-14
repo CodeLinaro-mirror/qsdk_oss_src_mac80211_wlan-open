@@ -1344,7 +1344,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	}
 
 	link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
-	if (!skb->fast_xmit || !hw->perf_mode) {
+	if (unlikely(!skb->fast_xmit || !hw->perf_mode)) {
 		memset(skb_cb, 0, sizeof(*skb_cb));
 		skb_cb->vif = vif;
 
@@ -1364,7 +1364,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 		arvif = rcu_dereference(ahvif->link[link_id]);
 
-		if (!arvif || !arvif->ar) {
+		if (unlikely(!arvif || !arvif->ar)) {
 			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
 							  DP_TX_ENQ_DROP_INV_ARVIF_FAST,
 							  ring_id, false);
@@ -1375,7 +1375,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		ar = arvif->ar;
 
 		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
-		if (!dp_pdev) {
+		if (unlikely(!dp_pdev)) {
 			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
 							  DP_TX_ENQ_DROP_INV_PDEV_FAST,
 							  ring_id, false);
@@ -1384,7 +1384,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		}
 
 		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
-		if (ret) {
+		if (unlikely(ret)) {
 			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 				   "failed due to limit check pdev idx %d\n",
 				   ar->pdev_idx);
@@ -1395,29 +1395,26 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			return;
 		}
 
-		ring_selector = smp_processor_id();
-		ring_id = ring_selector % dp_pdev->dp->hw_params->max_tx_ring;
-
 		switch (ahvif->dp_vif.tx_encap_type) {
 			case ATH12K_HW_TXRX_ETHERNET:
 				skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
-				err = ath12k_wifi7_dp_tx(dp_pdev, arvif,
-							 skb, false, 0,
-							 is_mcast, arsta,
-							 ring_id, qos_nw_delay);
+				err = ath12k_wifi7_dp_tx_fast(dp_pdev, arvif,
+							      skb,
+							      qos_nw_delay);
 				break;
 			case ATH12K_HW_TXRX_NATIVE_WIFI:
 				ath12k_dp_tx_encap_nwifi(skb);
-				err = ath12k_wifi7_dp_tx(dp_pdev, arvif,
-							 skb, false, 0,
-							 is_mcast, arsta,
-							  ring_id, qos_nw_delay);
+				err = ath12k_wifi7_dp_tx_fast(dp_pdev, arvif,
+							      skb,
+							      qos_nw_delay);
 				break;
 			case ATH12K_HW_TXRX_RAW:
 			default:
 				err = DP_TX_ENQ_DROP_INV_ENCAP_FAST;
 		}
 		if (unlikely(err)) {
+			ring_id = smp_processor_id();
+
 			if (ath12k_wifi7_check_err_code_debug_logging(err))
 				ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "failed to transmit frame %d\n", err);
 			else
@@ -1428,10 +1425,12 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 			return;
 		}
-		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
-			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-			ath12k_tid_tx_stats(ahvif, tid, skb->len, ATH_TX_SFE_PKTS);
+		if (unlikely(ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
+			     ath12k_debugfs_tid_stats_enabled(dp_pdev))) {
+			tid = skb->priority &
+			      IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_stats(ahvif, tid, skb->len,
+					    ATH_TX_SFE_PKTS);
 		}
 
 		return;
