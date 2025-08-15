@@ -59,3 +59,7 @@ ath12k-$(CPTCFG_ATH12K_CFR) += cfr.o
 
 # for tracing framework to find trace.h
 CFLAGS_trace.o := -I$(src)
+
+ifeq ($(CONFIG_KERNEL_ATH_GCOV_PROFILE),)
+GCOV_PROFILE:=y
+endif
