@@ -66,6 +66,9 @@ void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 	if (test_bit(WMI_TLV_SERVICE_SDWF_LEVEL0, ab->wmi_ab.svc_map))
 		config->qos = true;
 
+	if (test_bit(WMI_TLV_SERVICE_ATF, ab->wmi_ab.svc_map))
+		config->atf_config |= WMI_RSRC_CFG_FLAG1_ATF_OFFLOAD_ENABLE;
+
 	config->max_beacon_size = TARGET_MAX_BEACON_SIZE;
 
 	if (of_machine_is_compatible("qcom,ipq5424"))

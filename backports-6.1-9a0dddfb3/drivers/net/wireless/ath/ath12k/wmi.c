@@ -17914,6 +17914,10 @@ int ath12k_wmi_atf_send_group_config(struct ath12k *ar)
 					 WMI_ATF_GROUP_NUM_EXPLICIT_PEERS);
 		group_info->atf_total_implicit_peer_units =
 			cpu_to_le32(group->unconfigured_peers_airtime);
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "id: %d  airtime %d flags %d num: %d",
+			   group_info->atf_group_id, group_info->atf_group_units,
+			   group_info->atf_group_flags, group_info->atf_total_num_peers);
+
 		group_info++;
 	}
 
