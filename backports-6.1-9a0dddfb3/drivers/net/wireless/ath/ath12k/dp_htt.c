@@ -239,11 +239,6 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 				    len, tag);
 			return -EINVAL;
 		}
-		/* No need to use these stats when SW is already
-		 * doing it on a per packet basis
-		 */
-		if (!ab->stats_disable)
-			break;
 		peer_id = ((struct htt_ppdu_stats_user_common *)ptr)->sw_peer_id;
 		cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
 						      peer_id);
