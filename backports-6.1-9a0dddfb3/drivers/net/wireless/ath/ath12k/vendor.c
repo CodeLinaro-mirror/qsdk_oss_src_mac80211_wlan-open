@@ -5798,12 +5798,14 @@ static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
 	struct ath12k_pdev_dp_stats *pdev_stats = &ar_dp->stats;
 	struct ath12k_atf_pdev_airtime *atf_pdev_airtime =
 		&pdev_stats->atf_airtime;
-	u8 group_index;
-	u32 peer_airtime, pdev_actual_airtime = 0;
-	int ac;
+	u8 group_index = 0xFF;
+	u32 peer_airtime, peer_ul_airtime, pdev_actual_airtime = 0, pdev_ul_airtime = 0;
+	int ac, i;
 
-	for (ac = 0; ac < WME_NUM_AC; ac++)
+	for (ac = 0; ac < WME_NUM_AC; ac++) {
 		pdev_actual_airtime += atf_pdev_airtime->tx_airtime_consumption[ac];
+		pdev_ul_airtime += atf_pdev_airtime->rx_airtime_consumption[ac];
+	}
 
 	dp = ath12k_ab_to_dp(ar->ab);
 	spin_lock_bh(&dp->dp_lock);
@@ -5811,25 +5813,50 @@ static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
 		if (peer->pdev_idx != ar->pdev_idx && !peer->sta)
 			continue;
 		peer_airtime = 0;
+		peer_ul_airtime = 0;
 
-		group_index = peer->atf_group_index;
+		for (i = 0; i < ar->atf_table.total_groups; i++) {
+			if (peer->atf_group_index ==
+					ar->atf_table.group_info[i].group_id) {
+				group_index = i;
+				break;
+			}
+		}
+
 		atf_peer_airtime = &peer->atf_peer_airtime;
 
-		for (ac = 0; ac < WME_NUM_AC; ac++)
+		for (ac = 0; ac < WME_NUM_AC; ac++) {
 			peer_airtime += atf_peer_airtime->tx_airtime_consumption[ac].consumption;
+			peer_ul_airtime += atf_peer_airtime->rx_airtime_consumption[ac].consumption;
+		}
 
-		if (peer_airtime > 0)
+		if (peer_airtime > 0 && pdev_actual_airtime > 0) {
+			peer->atf_actual_duration = peer_airtime;
 			peer->atf_actual_airtime =
 				(u32)div_u64((u64)peer_airtime * 100ULL,  pdev_actual_airtime);
-		else
+		} else {
 			peer->atf_actual_airtime = 0;
+			peer->atf_actual_duration = 0;
+		}
 
-		if (group_index < ar->atf_table.total_groups)
+		if (peer_ul_airtime > 0 && pdev_ul_airtime > 0) {
+			peer->atf_actual_ul_duration = peer_ul_airtime;
+			peer->atf_ul_airtime =
+				(u32)div_u64((u64)peer_ul_airtime * 100ULL, pdev_ul_airtime);
+		} else {
+			peer->atf_ul_airtime = 0;
+			peer->atf_actual_ul_duration = 0;
+		}
+
+		if (group_index < ar->atf_table.total_groups) {
+			ar->atf_table.group_info[group_index].atf_actual_duration += peer_airtime;
+			ar->atf_table.group_info[group_index].atf_actual_ul_duration += peer_ul_airtime;
 			ar->atf_table.group_info[group_index].atf_actual_airtime +=
 				peer->atf_actual_airtime;
-		else
+		} else {
 			ath12k_warn(ar->ab, "ATF: Invalid group index %u for peer %pM (max: %u)",
 				    group_index, peer->addr, ar->atf_table.total_groups - 1);
+		}
 	}
 	spin_unlock_bh(&dp->dp_lock);
 }
@@ -5855,7 +5882,7 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 
 	ath12k_atf_offload_update_peer_airtime(ar);
 	ath12k_info(ar->ab, "******************************* ATF STATS For SSID Groups **************************");
-	ath12k_info(ar->ab, "GroupID  Configured  Actual  Borrowed  Unused");
+	ath12k_info(ar->ab, "GroupID  Configured  Actual    Borrowed  Unused   Duration(us)  ActualUL  UL(us)");
 
 	for (i = 0; i < atf_table->total_groups; i++) {
 		borrowed = 0;
@@ -5869,23 +5896,32 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 			borrowed = atf_table->group_info[i].atf_actual_airtime -
 				   (atf_table->group_info[i].group_airtime / 10);
 
-		ath12k_info(ar->ab, "%d		%d	%d	%d	%d",
+		ath12k_info(ar->ab, "%-8d %-12d %-9d %-11d %-8d %-12d %-9d %-6d",
 			    atf_table->group_info[i].group_id,
 			    atf_table->group_info[i].group_airtime / 10,
 			    atf_table->group_info[i].atf_actual_airtime,
 			    borrowed,
-			    unused);
+			    unused,
+			    ar->atf_table.group_info[i].atf_actual_duration,
+			    ar->atf_table.group_info[i].atf_ul_airtime,
+			    ar->atf_table.group_info[i].atf_actual_ul_duration);
 	}
 
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->pdev_idx != ar->pdev_idx && !peer->sta)
+		if (peer->pdev_idx != ar->pdev_idx)
+			continue;
+
+		if (!peer->sta)
 			continue;
 
 		memcpy(peer_stats[peer_count].addr, peer->addr, ETH_ALEN);
 		peer_stats[peer_count].atf_actual_airtime = peer->atf_actual_airtime;
 		peer_stats[peer_count].atf_peer_conf_airtime = peer->atf_peer_conf_airtime;
 		peer_stats[peer_count].atf_group_index = peer->atf_group_index;
+		peer_stats[peer_count].atf_actual_duration = peer->atf_actual_duration;
+		peer_stats[peer_count].atf_ul_airtime = peer->atf_ul_airtime;
+		peer_stats[peer_count].atf_actual_ul_duration = peer->atf_actual_ul_duration;
 
 		peer_count++;
 	}
@@ -5893,7 +5929,7 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 
 	ath12k_info(ar->ab, "******************************************************");
 	ath12k_info(ar->ab, "**************** ATF STATS For PEERs *************************");
-	ath12k_info(ar->ab, "PeerMAC      GroupId  Configured  Actual  Borrowed  Unused");
+	ath12k_info(ar->ab, "PeerMAC             GroupId  Configured  Actual    Borrowed  Unused    Duration(us)   ActualUL  UL(us)");
 
 	for (i = 0; i < peer_count; i++) {
 		borrowed = 0;
@@ -5906,13 +5942,16 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 			borrowed = peer_stats[i].atf_actual_airtime -
 				   (peer_stats[i].atf_peer_conf_airtime / 10);
 
-		ath12k_info(ar->ab, "%pM        %d         %d        %d        %d        %d",
+		ath12k_info(ar->ab, "%pM  %-12d %-10d %-8d %-11d %-8d %-14d %-10d %-6d",
 			    peer_stats[i].addr,
 			    peer_stats[i].atf_group_index,
 			    peer_stats[i].atf_peer_conf_airtime / 10,
 			    peer_stats[i].atf_actual_airtime,
 			    borrowed,
-			    unused);
+			    unused,
+			    peer_stats[i].atf_actual_duration,
+			    peer_stats[i].atf_ul_airtime,
+			    peer_stats[i].atf_actual_ul_duration);
 	}
 
 	ath12k_atf_offload_reset_stats(ar);

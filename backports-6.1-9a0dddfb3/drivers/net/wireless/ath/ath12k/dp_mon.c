@@ -2034,7 +2034,10 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
 
                /* Tx Airtime Consumption */
                peer_consump = &airtime_stats->tx_airtime_consumption[ac];
-	       atf_airtime->tx_airtime_consumption[ac] = airtime_stats->tx_airtime_consumption[ac];
+		atf_airtime->tx_airtime_consumption[ac].consumption +=
+			airtime_stats->tx_airtime_consumption[ac].consumption;
+		atf_airtime->tx_airtime_consumption[ac].avg_consumption_per_sec +=
+			airtime_stats->tx_airtime_consumption[ac].avg_consumption_per_sec;
                usage = peer_consump->consumption;
                consump_per_sec = (u8)div_u64((u64)(usage * 100), time_diff);
                div_u64_rem((u64)(usage * 100), time_diff, &remainder);
@@ -2052,7 +2055,10 @@ void ath12k_dp_mon_peer_update_telemetry_stats(struct ath12k_base *ab,
 
                /* Rx Airtime Consumption */
                peer_consump = &airtime_stats->rx_airtime_consumption[ac];
-	       atf_airtime->rx_airtime_consumption[ac] = airtime_stats->rx_airtime_consumption[ac];
+		atf_airtime->rx_airtime_consumption[ac].consumption +=
+			airtime_stats->rx_airtime_consumption[ac].consumption;
+		atf_airtime->rx_airtime_consumption[ac].avg_consumption_per_sec +=
+			airtime_stats->rx_airtime_consumption[ac].avg_consumption_per_sec;
                usage = peer_consump->consumption;
                consump_per_sec = (u8)div_u64((u64)(usage * 100), time_diff);
                div_u64_rem((u64)(usage * 100), time_diff, &remainder);

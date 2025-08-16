@@ -41,6 +41,9 @@ struct atf_peer_stat {
 	u32 atf_actual_airtime;
 	u32 atf_peer_conf_airtime;
 	u8 atf_group_index;
+	u8 atf_ul_airtime;
+	u32 atf_actual_duration;
+	u32 atf_actual_ul_duration;
 };
 
 enum qca_nl80211_vendor_subcmds {

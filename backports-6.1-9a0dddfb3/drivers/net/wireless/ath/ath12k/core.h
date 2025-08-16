@@ -1084,6 +1084,9 @@ struct ath12k_atf_group_info {
 	u32 unconfigured_peers_airtime;
 	/* This is the cumulative actual airtime of all peers in the group.*/
 	u8 atf_actual_airtime;
+	u8 atf_ul_airtime;
+	u32 atf_actual_duration;
+	u32 atf_actual_ul_duration;
 };
 
 struct ath12k_atf_peer_info {
