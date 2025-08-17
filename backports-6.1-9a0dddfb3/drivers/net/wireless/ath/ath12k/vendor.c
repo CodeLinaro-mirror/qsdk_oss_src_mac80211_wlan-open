@@ -5658,6 +5658,7 @@ static void ath12k_update_atf_peer_info(struct ath12k *ar,
 
 		link_peer->atf_peer_conf_airtime = param_peer_info->percentage_peer;
 		link_peer->atf_group_index = param_peer_info->group_index;
+		param_peer_info++;
 	}
 
 	spin_unlock_bh(&dp->dp_lock);
