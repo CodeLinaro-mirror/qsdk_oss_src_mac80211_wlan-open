@@ -300,6 +300,9 @@ struct ath12k_pdev_mon_dp_stats {
 	u32 ppdu_desc_used;
 	u32 ppdu_desc_proc;
 	u32 ppdu_desc_free;
+
+	u32 ppdu_desc_free_list_empty_cnt;
+	u32 restitch_insuff_frags_cnt;
 };
 
 struct ath12k_pdev_mon_dp {

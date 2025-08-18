@@ -6639,6 +6639,12 @@ static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *use
 				 "Num of PPDU reaped %u processed %u\n",
 				 mon_stats->num_ppdu_reaped,
 				 mon_stats->num_ppdu_processed);
+		len += scnprintf(buf + len, size - len,
+				 "Empty desc free list: %u\n",
+				 mon_stats->ppdu_desc_free_list_empty_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "Insufficient restitch frags cnt %u\n",
+				 mon_stats->restitch_insuff_frags_cnt);
 
 		tot_used_frags +=
 			mon_stats->status_buf_processed + mon_stats->pkt_tlv_processed;

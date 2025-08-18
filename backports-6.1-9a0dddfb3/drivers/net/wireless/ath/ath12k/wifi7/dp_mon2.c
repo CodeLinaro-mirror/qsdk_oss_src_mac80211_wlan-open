@@ -242,7 +242,8 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 	offset = (const u8 *)tlv_data - (const u8 *)mon_buf;
 	offset += ATH12K_MON_RX_PKT_OFFSET;
 	if (unlikely(frag_len <= 0) || frag_len > DP_MON_RX_HDR_LEN) {
-		ath12k_warn(dp_pdev->dp, "invalid rx header length: %d", frag_len);
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_RX,
+			   "invalid rx header length: %d", frag_len);
 		return -EINVAL;
 	}
 
@@ -841,6 +842,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 	struct sk_buff *head_msdu;
 	struct hal_rx_mon_msdu_info *msdu_meta;
 	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
 	u32 hdr_frag_size, frag_size, frag_page_offset, msdu_llc_len;
 	u32 tot_msdu_len = 0;
 	u8 mpdu_buf_len;
@@ -853,8 +855,10 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 	head_msdu = mpdu;
 
 	if (unlikely(num_frags < ATH12K_DP_MON_MIN_FRAGS_RESTITCH)) {
-		ath12k_warn(dp, "mon_rx_restitch: not enough frags %d to proceed further",
-			    num_frags);
+		mon_stats->restitch_insuff_frags_cnt++;
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
+			   "mon_rx_restitch: not enough frags %d to proceed further",
+			   num_frags);
 		ret = -EINVAL;
 		goto free_mpdu;
 	}
@@ -1141,7 +1145,9 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 
 	ppdu_desc = ath12k_wifi7_dp_mon_rx_get_ppdu_desc(dp_mon_pdev);
 	if (!ppdu_desc) {
-		ath12k_warn(dp_mon->dp, "No entry in the ppdu desc free list\n");
+		mon_stats->ppdu_desc_free_list_empty_cnt++;
+		ath12k_dbg(dp_mon->dp->ab, ATH12K_DBG_DP_MON_RX,
+			   "No entry in the ppdu desc free list\n");
 		return -ENOENT;
 	}
 
@@ -1474,9 +1480,9 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 			ret = ath12k_wifi7_dp_mon_rx_add_ppdu_desc(mon_desc_used_list,
 								   dp_mon_pdev);
 			if (ret) {
-				ath12k_warn(dp,
-					    "mon_dest: Failed to add mon desc to ppdu ret %d",
-					    ret);
+				ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
+					   "mon_dest: Failed to add mon desc to ppdu ret %d",
+					   ret);
 				ath12k_wifi7_dp_mon_flush_used_list(pdev_dp,
 								    mon_desc_used_list);
 			}

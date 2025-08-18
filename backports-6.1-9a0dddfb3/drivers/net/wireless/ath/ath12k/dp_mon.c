@@ -2228,7 +2228,8 @@ ath12k_dp_mon_get_skb_valid_frag(struct ath12k_dp *dp, struct sk_buff *skb)
 	if (likely(num_frags < MAX_SKB_FRAGS))
 		return last_skb;
 
-	ath12k_warn(dp, "no skb with available frag slots found in skb or frag_list\n");
+	ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
+		   "no skb with available frag slots found in skb or frag_list\n");
 	return NULL;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_get_skb_valid_frag);
