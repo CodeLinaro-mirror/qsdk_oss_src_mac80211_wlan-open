@@ -5243,7 +5243,7 @@ static int ath12k_vendor_view_sdwf_config(struct wiphy *wiphy,
 		return -ENOBUFS;
 
 	tailroom = skb_tailroom(msg);
-	for (i = (svc_id);
+	for (i = (svc_id) ? (svc_id - 1) : (*storage);
 	     i < QOS_PROFILES_MAX && tailroom > nested_range;
 	     i += (svc_id) ? (QOS_PROFILES_MAX) : (1)) {
 		u16 id_dl = qos_ctx->svc_class[i].dl_qos_id;
