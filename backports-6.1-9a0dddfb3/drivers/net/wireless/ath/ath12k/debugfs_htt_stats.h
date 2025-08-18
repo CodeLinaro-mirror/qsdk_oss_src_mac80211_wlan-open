@@ -615,6 +615,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TX_PDEV_MLO_TXOP_ABORT_TAG		= 178,
 	HTT_STATS_UMAC_SSR_TAG                          = 179,
 	HTT_STATS_PDEV_TDMA_TAG				= 187,
+	HTT_STATS_MLO_SCHED_STATS_TAG                   = 190,
 	HTT_STATS_GTX_TAG				= 199,
 	HTT_STATS_TXBF_OFDMA_BE_PARBW_TAG		= 201,
 	HTT_STATS_HDS_PROF_STATS_TAG			= 213,
@@ -3378,6 +3379,10 @@ struct ath12k_htt_latency_prof_stats_tlv {
 	__le32 ignored_latency_count;
 	__le32 interrupts_max;
 	__le32 interrupts_hist[ATH12K_HTT_INTERRUPTS_LATENCY_PROFILE_MAX_HIST];
+	__le32 min_pcycles_time;
+	__le32 max_pcycles_time;
+	__le32 total_pcycles_time;
+	__le32 avg_pcycles_time;
 }  __packed;
 
 struct ath12k_htt_latency_prof_ctx_tlv {
@@ -3965,6 +3970,8 @@ struct ath12k_htt_tx_per_rate_stats_tlv {
 	__le32 probe_cnt[ATH12K_HTT_RC_MODE_2D_COUNT];
 	__le32 ru_type;
 	struct ath12k_htt_tx_rate_stats ru[ATH12K_HTT_TX_RX_PDEV_NUM_BE_RU_SIZE_CNTRS];
+	struct ath12k_htt_tx_rate_stats per_tx_su_punctured_mode
+			[ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
 } __packed;
 
 #define ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS		16
@@ -4611,4 +4618,47 @@ struct ath12k_htt_stats_txbf_ofdma_be_parbw_tlv {
 	__le32 be_ofdma_total_cv;
 } __packed;
 
+/*======= Bandwidth Manager stats ====================*/
+
+#define HTT_BW_MGR_STATS_MAC_ID			GENMASK(7, 0)
+
+#define HTT_BW_MGR_STATS_PRI20_IDX		GENMASK(15, 8)
+
+#define HTT_BW_MGR_STATS_PRI20_FREQ		GENMASK(31, 16)
+
+#define HTT_BW_MGR_STATS_CENTER_FREQ1		GENMASK(15, 0)
+
+#define HTT_BW_MGR_STATS_CENTER_FREQ2		GENMASK(31, 16)
+
+#define HTT_BW_MGR_STATS_CHAN_PHY_MODE		GENMASK(7, 0)
+
+#define HTT_BW_MGR_STATS_STATIC_PATTERN		GENMASK(23, 8)
+
+#define HTT_BW_MGR_STATS_WIFI_VERSION		GENMASK(3, 0)
+
+struct ath12k_htt_stats_pdev_bw_mgr_stats_tlv {
+	__le32 mac_id__pri20_idx__freq;
+	__le32 centre_freq1__freq2;
+	__le32 phy_mode__static_pattern;
+	__le32 npca__wifi_version__pri20_idx__freq;
+	__le32 npca__centre_freq1__freq2;
+	__le32 npca__phy_mode__static_pattern;
+} __packed;
+
+struct ath12k_htt_stats_mlo_sched_stats_tlv {
+	__le32 pref_link_num_sec_link_sched;
+	__le32 pref_link_num_pref_link_timeout;
+	__le32 pref_link_num_pref_link_sch_delay_ipc;
+	__le32 pref_link_num_pref_link_timeout_ipc;
+} __packed;
+
+enum HTT_RX_TX_PDEV_STATS_WIFI_VERSION {
+	HTT_WIFI_VER_UNKNOWN = 0,
+	HTT_WIFI_VER_11N  = 4,
+	HTT_WIFI_VER_11AC = 5,
+	HTT_WIFI_VER_11AX = 6,
+	HTT_WIFI_VER_11BE = 7,
+	HTT_WIFI_VER_11BN = 8,
+};
 #endif
+

@@ -5899,6 +5899,7 @@ ath12k_htt_print_latency_prof_stats_tlv(const void *tag_buf, u16 tag_len,
 	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
 	u32 len = stats_req->buf_len;
 	u8 *buf = stats_req->buf;
+	u32 page_fault_avg = 0;
 
 	if (tag_len < sizeof(*htt_stats_buf))
 		return;
@@ -5906,36 +5907,53 @@ ath12k_htt_print_latency_prof_stats_tlv(const void *tag_buf, u16 tag_len,
 	if (le32_to_cpu(htt_stats_buf->print_header) == 1) {
 		len += scnprintf(buf + len, buf_len - len,
 				 "HTT_STATS_LATENCY_PROF_TLV:\n");
+
+		len += scnprintf(buf + len, buf_len - len,
+				 "|%-32s|%8s|%15s|%15s|%8s|%15s|%8s|%8s|%15s|%8s|%15s|",
+				 "prof_name", "cnt", "min", "min_pcycles", "max",
+				 "max_pcycles", "last", "tot", "tot_pcycles", "avg",
+				 "avg_pcycles");
+
+		len += scnprintf(buf + len, buf_len - len,
+				 "%15s|%26s|%8s|%8s|%8s|%10s|%17s|%6s|\n",
+				 "hist_intvl", "hist", "pf_max", "pf_avg",
+				 "pf_tot", "ignoredCnt", "intHist", "intMax");
 	}
 
-	len += scnprintf(buf + len, buf_len - len, "Latency name = %s\n",
-			 htt_stats_buf->latency_prof_name);
-	len += scnprintf(buf + len, buf_len - len, "count = %u\n",
-			 le32_to_cpu(htt_stats_buf->cnt));
-	len += scnprintf(buf + len, buf_len - len, "minimum = %u\n",
-			 le32_to_cpu(htt_stats_buf->min));
-	len += scnprintf(buf + len, buf_len - len, "maximum = %u\n",
-			 le32_to_cpu(htt_stats_buf->max));
-	len += scnprintf(buf + len, buf_len - len, "last = %u\n",
-			 le32_to_cpu(htt_stats_buf->last));
-	len += scnprintf(buf + len, buf_len - len, "total = %u\n",
-			 le32_to_cpu(htt_stats_buf->tot));
-	len += scnprintf(buf + len, buf_len - len, "average = %u\n",
-			 le32_to_cpu(htt_stats_buf->avg));
-	len += scnprintf(buf + len, buf_len - len, "histogram interval = %u\n",
-			 le32_to_cpu(htt_stats_buf->hist_intvl));
-	len += print_array_to_buf(buf, len, "histogram", htt_stats_buf->hist,
-				  ATH12K_HTT_LATENCY_PROFILE_NUM_MAX_HIST, "\n");
-	len += scnprintf(buf + len, buf_len - len, "page fault max = %u\n",
-			 le32_to_cpu(htt_stats_buf->page_fault_max));
-	len += scnprintf(buf + len, buf_len - len, "page fault total = %u\n",
-			 le32_to_cpu(htt_stats_buf->page_fault_total));
-	len += scnprintf(buf + len, buf_len - len, "ignored latency count = %u\n",
-			 le32_to_cpu(htt_stats_buf->ignored_latency_count));
-	len += scnprintf(buf + len, buf_len - len, "interrupts max = %u\n",
+	if (le32_to_cpu(htt_stats_buf->cnt)) {
+		u32 cnt = le32_to_cpu(htt_stats_buf->cnt);
+
+		page_fault_avg = le32_to_cpu(htt_stats_buf->page_fault_total)/cnt;
+	}
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "|%-32s|%8u|%15u|%15u|%8u|%15u|%8u|%8u|%15u|%8u|%15u|",
+			 htt_stats_buf->latency_prof_name,
+			 le32_to_cpu(htt_stats_buf->cnt),
+			 le32_to_cpu(htt_stats_buf->min),
+			 le32_to_cpu(htt_stats_buf->min_pcycles_time),
+			 le32_to_cpu(htt_stats_buf->max),
+			 le32_to_cpu(htt_stats_buf->max_pcycles_time),
+			 le32_to_cpu(htt_stats_buf->last),
+			 le32_to_cpu(htt_stats_buf->tot),
+			 le32_to_cpu(htt_stats_buf->total_pcycles_time),
+			 le32_to_cpu(htt_stats_buf->avg),
+			 le32_to_cpu(htt_stats_buf->avg_pcycles_time));
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "%15u|%8u:%8u:%8u|%8u|%8u|%8u|%10u|%5u:%5u:%5u|%6u|\n",
+			 le32_to_cpu(htt_stats_buf->hist_intvl),
+			 le32_to_cpu(htt_stats_buf->hist[0]),
+			 le32_to_cpu(htt_stats_buf->hist[1]),
+			 le32_to_cpu(htt_stats_buf->hist[2]),
+			 le32_to_cpu(htt_stats_buf->page_fault_max),
+			 page_fault_avg,
+			 le32_to_cpu(htt_stats_buf->page_fault_total),
+			 le32_to_cpu(htt_stats_buf->ignored_latency_count),
+			 le32_to_cpu(htt_stats_buf->interrupts_hist[0]),
+			 le32_to_cpu(htt_stats_buf->interrupts_hist[1]),
+			 le32_to_cpu(htt_stats_buf->interrupts_hist[2]),
 			 le32_to_cpu(htt_stats_buf->interrupts_max));
-	len += print_array_to_buf(buf, len, "interrupts histogram", htt_stats_buf->interrupts_hist,
-				  ATH12K_HTT_INTERRUPTS_LATENCY_PROFILE_MAX_HIST, "\n\n");
 
 	stats_req->buf_len = len;
 }
@@ -7075,7 +7093,36 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += scnprintf(buf + len, buf_len - len, " %u:%u\n", i,
 			 le32_to_cpu(stats_buf->per_bw320.mpdus_failed));
 
-	len += scnprintf(buf + len, buf_len - len, "\nPER per NSS:\n");
+	if (rc_mode == ATH12K_HTT_STATS_RC_MODE_DLSU) {
+		len += scnprintf(buf + len, buf_len - len, "\nPER per punctured_mode:\n");
+
+		len += scnprintf(buf + len, buf_len - len, "ppdus_tried =");
+		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++)
+			len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				le32_to_cpu
+				(stats_buf->per_tx_su_punctured_mode[i].ppdus_tried));
+
+		len += scnprintf(buf + len, buf_len - len, "\nppdus_ack_failed =");
+		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++)
+			len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				le32_to_cpu
+				(stats_buf->per_tx_su_punctured_mode[i].ppdus_ack_failed)
+				);
+
+		len += scnprintf(buf + len, buf_len - len, "\nmpdus_tried =");
+		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++)
+			len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				le32_to_cpu
+				(stats_buf->per_tx_su_punctured_mode[i].mpdus_tried));
+
+		len += scnprintf(buf + len, buf_len - len, "\nmpdus_failed =");
+		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++)
+			len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
+				le32_to_cpu
+				(stats_buf->per_tx_su_punctured_mode[i].mpdus_failed));
+	}
+
+	len += scnprintf(buf + len, buf_len - len, "\n\nPER per NSS:\n");
 	if (rc_mode == ATH12K_HTT_STATS_RC_MODE_ULOFDMA ||
 	    rc_mode == ATH12K_HTT_STATS_RC_MODE_ULMUMIMO)
 		len += scnprintf(buf + len, buf_len - len, "data_ppdus_%s = ",
@@ -9359,6 +9406,94 @@ ath12k_htt_print_ul_mumimo_trig_be_stats(const void *tag_buf, u16 tag_len,
 	stats_req->buf_len = len;
 }
 
+static inline void
+ath12k_htt_print_mlo_sched_stats_tlv(const void *tag_buf, u16 tag_len,
+				     struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_mlo_sched_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_STATS_MLO_SCHED_STATS:\n");
+	len += scnprintf(buf + len, buf_len - len, "===============================\n");
+	len += scnprintf(buf + len, buf_len - len, "num_sec_link_sched: %u\n",
+			 __le32_to_cpu(htt_stats_buf->pref_link_num_sec_link_sched));
+	len += scnprintf(buf + len, buf_len - len, "num_pref_link_timeout: %u\n",
+			 __le32_to_cpu(htt_stats_buf->pref_link_num_pref_link_timeout));
+	len += scnprintf(buf + len, buf_len - len, "num_pref_link_sch_delay_ipc: %u\n",
+			 __le32_to_cpu
+			 (htt_stats_buf->pref_link_num_pref_link_sch_delay_ipc));
+	len += scnprintf(buf + len, buf_len - len, "num_pref_link_timeout_ipc: %u\n",
+			 __le32_to_cpu
+			 (htt_stats_buf->pref_link_num_pref_link_timeout_ipc));
+	len += scnprintf(buf + len, buf_len - len, "================================\n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_pdev_bw_mgr_stats_tlv(const void *tag_buf, u16 tag_len,
+				       struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_pdev_bw_mgr_stats_tlv  *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 info1, centre_freq, phy_mode_info, npca_center_freq;
+	u32 npca_info1, npca_info2;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	info1 = __le32_to_cpu(htt_stats_buf->mac_id__pri20_idx__freq);
+	centre_freq = __le32_to_cpu(htt_stats_buf->centre_freq1__freq2);
+	npca_info1 = __le32_to_cpu(htt_stats_buf->npca__phy_mode__static_pattern);
+	npca_info2 = __le32_to_cpu(htt_stats_buf->npca__wifi_version__pri20_idx__freq);
+	npca_center_freq = __le32_to_cpu(htt_stats_buf->npca__centre_freq1__freq2);
+	phy_mode_info = __le32_to_cpu(htt_stats_buf->phy_mode__static_pattern);
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_PDEV_BW_MGR_STATS_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len, "Mac_id = %u\n",
+			 u32_get_bits(info1, HTT_BW_MGR_STATS_MAC_ID));
+	len += scnprintf(buf + len, buf_len - len, "Phy_mode = %u\n",
+			 u32_get_bits(phy_mode_info, HTT_BW_MGR_STATS_CHAN_PHY_MODE));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Pri20 = %uMhz, centre freq1 = %uMhz, freq2 = %uMhz\n",
+			 u32_get_bits(info1, HTT_BW_MGR_STATS_PRI20_FREQ),
+			 u32_get_bits(centre_freq, HTT_BW_MGR_STATS_CENTER_FREQ1),
+			 u32_get_bits(centre_freq, HTT_BW_MGR_STATS_CENTER_FREQ2));
+	len += scnprintf(buf + len, buf_len - len, "Pri20_index = %u\n",
+			 u32_get_bits(info1, HTT_BW_MGR_STATS_PRI20_IDX));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Configured Static Punctured Pattern = 0x%x\n",
+			 u32_get_bits(phy_mode_info, HTT_BW_MGR_STATS_STATIC_PATTERN));
+
+	if (u32_get_bits(npca_info2,
+			 HTT_BW_MGR_STATS_WIFI_VERSION) >= HTT_WIFI_VER_11BN) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "HTT_PDEV_NPCA_BW_MGR_STATS_TLV:\n");
+		len += scnprintf(buf + len, buf_len - len, "NPCA Phy_mode = %u\n",
+				 u32_get_bits(npca_info1, HTT_BW_MGR_STATS_CHAN_PHY_MODE));
+		len += scnprintf(buf + len, buf_len - len,
+		  "NPCA Pri20 = %uMhz, NPCA centre freq1 = %uMhz, NPCA freq2 = %uMhz\n",
+		  u32_get_bits(npca_info2, HTT_BW_MGR_STATS_PRI20_FREQ),
+		  u32_get_bits(npca_center_freq, HTT_BW_MGR_STATS_CENTER_FREQ1),
+		  u32_get_bits(npca_center_freq, HTT_BW_MGR_STATS_CENTER_FREQ2));
+		len += scnprintf(buf + len, buf_len - len, "NPCA Pri20_index = %u\n",
+				 u32_get_bits(npca_info2, HTT_BW_MGR_STATS_PRI20_IDX));
+		len += scnprintf(buf + len, buf_len - len,
+				 "NPCA Configured Static Punctured Pattern = 0x%x\n",
+				 u32_get_bits(npca_info1,
+					      HTT_BW_MGR_STATS_STATIC_PATTERN));
+	}
+
+	stats_req->buf_len = len;
+}
+
 static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 					  u16 tag, u16 len, const void *tag_buf,
 					  void *user_data)
@@ -9876,6 +10011,12 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		break;
 	case HTT_STATS_RX_PDEV_UL_MUMIMO_TRIG_BE_STATS_TAG:
 		ath12k_htt_print_ul_mumimo_trig_be_stats(tag_buf, len, stats_req);
+		break;
+	case HTT_STATS_PDEV_BW_MGR_STATS_TAG:
+		ath12k_htt_print_pdev_bw_mgr_stats_tlv(tag_buf, len, stats_req);
+		break;
+	case HTT_STATS_MLO_SCHED_STATS_TAG:
+		ath12k_htt_print_mlo_sched_stats_tlv(tag_buf, len, stats_req);
 		break;
 	default:
 		break;
