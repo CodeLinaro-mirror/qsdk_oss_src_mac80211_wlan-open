@@ -1306,9 +1306,7 @@ static ssize_t ath12k_write_simulate_radar(struct file *file,
 	if ((segment > 1) || (radar_type > 2) || (agile > 2))
 		return -EINVAL;
 
-	/* TODO Add agile chandef validation
-	 */
-	if (agile)
+	if (agile && !ar->agile_chandef.chan)
 		return -EINVAL;
 
 send_cmd:
