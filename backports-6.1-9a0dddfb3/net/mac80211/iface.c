@@ -891,6 +891,12 @@ static void ieee80211_uninit(struct net_device *dev)
 	ieee80211_teardown_sdata(sdata);
 }
 
+static void
+ieee80211_get_stats64(struct net_device *dev, struct rtnl_link_stats64 *stats)
+{
+	dev_fetch_sw_netstats(stats, dev->tstats);
+}
+
 static int ieee80211_change_mtu(struct net_device *dev, int mtu)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
@@ -935,6 +941,7 @@ static const struct net_device_ops ieee80211_dataif_ops = {
 	.ndo_change_mtu		= ieee80211_change_mtu,
 	.ndo_select_queue       = ieee80211_netdev_select_queue,
 	.ndo_init               = ieee80211_init,
+	.ndo_get_stats64	= ieee80211_get_stats64,
 };
 
 #if LINUX_VERSION_IS_GEQ(5,2,0)
@@ -985,6 +992,7 @@ static const struct net_device_ops ieee80211_monitorif_ops = {
 	.ndo_set_rx_mode	= ieee80211_set_multicast_list,
 	.ndo_set_mac_address 	= ieee80211_change_mac,
 	.ndo_select_queue	= ieee80211_monitor_select_queue,
+	.ndo_get_stats64	= ieee80211_get_stats64,
 };
 
 static const struct net_device_ops ieee80211_dataif_8023_ops = {
@@ -998,6 +1006,7 @@ static const struct net_device_ops ieee80211_dataif_8023_ops = {
 	.ndo_change_mtu		= ieee80211_change_mtu,
 	.ndo_select_queue       = ieee80211_netdev_select_queue,
 	.ndo_init               = ieee80211_init,
+	.ndo_get_stats64	= ieee80211_get_stats64,
 };
 
 static bool ieee80211_iftype_supports_hdr_offload(enum nl80211_iftype iftype)
