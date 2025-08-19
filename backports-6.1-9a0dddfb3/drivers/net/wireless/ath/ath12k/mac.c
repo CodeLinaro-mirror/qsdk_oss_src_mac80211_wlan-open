@@ -18107,6 +18107,9 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 			goto out;
 		}
 
+		if (ctx)
+			memcpy(&arvif->chanctx, ctx, sizeof(*ctx));
+
 		arvif->is_started = true;
 		goto out;
 	}
