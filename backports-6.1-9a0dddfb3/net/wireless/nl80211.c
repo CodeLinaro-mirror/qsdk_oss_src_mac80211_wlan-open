@@ -10779,11 +10779,11 @@ static bool cfg80211_off_channel_oper_allowed(struct wireless_dev *wdev,
 
 	lockdep_assert_wiphy(wdev->wiphy);
 
-	if (!cfg80211_wdev_channel_allowed(wdev, chan))
-		return false;
-
 	if (!cfg80211_beaconing_iface_active(wdev))
 		return true;
+
+	if (!cfg80211_wdev_channel_allowed(wdev, chan))
+		return false;
 
 	radio_idx = cfg80211_get_hw_idx_by_chan(wdev->wiphy, chan);
 
