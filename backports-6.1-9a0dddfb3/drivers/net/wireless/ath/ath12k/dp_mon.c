@@ -9,7 +9,6 @@
 #include "dp_rx.h"
 #include "dp_tx.h"
 #include "peer.h"
-#include "wifi7/hal_qcn9274.h"
 #include "debugfs.h"
 #include "dp_mon_filter.h"
 
@@ -81,235 +80,6 @@ ath12k_dp_mon_fill_rx_stats_info(struct hal_rx_mon_ppdu_info *ppdu_info,
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_fill_rx_stats_info);
-
-static void
-ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
-			   struct hal_rx_mon_ppdu_info *ppdu_info,
-			   struct ieee80211_rx_status *rx_status)
-{
-	struct ieee80211_supported_band *sband;
-	struct ath12k *ar = dp_pdev->ar;
-	enum rx_msdu_start_pkt_type pkt_type;
-	u8 rate_mcs, nss, sgi;
-	bool is_cck;
-
-	pkt_type = ppdu_info->preamble_type;
-	rate_mcs = ppdu_info->rate;
-	nss = ppdu_info->nss;
-	sgi = ppdu_info->gi;
-
-	switch (pkt_type) {
-	case RX_MSDU_START_PKT_TYPE_11A:
-	case RX_MSDU_START_PKT_TYPE_11B:
-		is_cck = (pkt_type == RX_MSDU_START_PKT_TYPE_11B);
-		if (rx_status->band < NUM_NL80211_BANDS) {
-			sband = &ar->mac.sbands[rx_status->band];
-			rx_status->rate_idx = ath12k_mac_hw_rate_to_idx(sband, rate_mcs,
-									is_cck);
-		}
-		break;
-	case RX_MSDU_START_PKT_TYPE_11N:
-		rx_status->encoding = RX_ENC_HT;
-		if (rate_mcs > ATH12K_HT_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in HT mode %d\n",
-				     rate_mcs);
-			break;
-		}
-		rx_status->rate_idx = rate_mcs + (8 * (nss - 1));
-		if (sgi)
-			rx_status->enc_flags |= RX_ENC_FLAG_SHORT_GI;
-		break;
-	case RX_MSDU_START_PKT_TYPE_11AC:
-		rx_status->encoding = RX_ENC_VHT;
-		rx_status->rate_idx = rate_mcs;
-		if (rate_mcs > ATH12K_VHT_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in VHT mode %d\n",
-				     rate_mcs);
-			break;
-		}
-		if (sgi)
-			rx_status->enc_flags |= RX_ENC_FLAG_SHORT_GI;
-		break;
-	case RX_MSDU_START_PKT_TYPE_11AX:
-		rx_status->rate_idx = rate_mcs;
-		if (rate_mcs > ATH12K_HE_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in HE mode %d\n",
-				    rate_mcs);
-			break;
-		}
-		rx_status->encoding = RX_ENC_HE;
-		rx_status->he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
-		break;
-	case RX_MSDU_START_PKT_TYPE_11BE:
-		rx_status->rate_idx = rate_mcs;
-		if (rate_mcs > ATH12K_EHT_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in EHT mode %d\n",
-				    rate_mcs);
-			break;
-		}
-		rx_status->encoding = RX_ENC_EHT;
-		rx_status->he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
-		break;
-	default:
-		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
-			   "monitor receives invalid preamble type %d",
-			    pkt_type);
-		break;
-	}
-}
-
-static void ath12k_dp_mon_rx_msdus_set_payload(struct ath12k_dp *dp,
-					       struct sk_buff *head_msdu,
-					       struct sk_buff *tail_msdu)
-{
-	struct ath12k_base *ab = dp->ab;
-	u32 rx_pkt_offset, l2_hdr_offset, total_offset;
-
-	if (ath12k_dp_get_mon_type(dp) == ATH12K_DP_MON_TYPE_DUAL_RING) {
-		total_offset = ATH12K_MON_RX_PKT_OFFSET;
-	} else {
-		rx_pkt_offset = ab->hal.hal_desc_sz;
-		l2_hdr_offset =
-			ath12k_hal_rx_h_l3pad_get(&ab->hal,
-						  (struct hal_rx_desc *)tail_msdu->data);
-
-		total_offset = rx_pkt_offset + l2_hdr_offset;
-	}
-
-	skb_pull(head_msdu, total_offset);
-}
-
-static struct sk_buff *
-ath12k_dp_mon_rx_merg_msdus(struct ath12k_pdev_dp *dp_pdev,
-			    struct dp_mon_mpdu *mon_mpdu,
-			    struct hal_rx_mon_ppdu_info *ppdu_info,
-			    struct ieee80211_rx_status *rxs)
-{
-	struct ath12k_dp *dp = dp_pdev->dp;
-	struct ath12k_base *ab = dp->ab;
-	struct ath12k *ar = dp_pdev->ar;
-	struct sk_buff *msdu, *mpdu_buf, *prev_buf, *head_frag_list;
-	struct sk_buff *head_msdu, *tail_msdu;
-	struct hal_rx_desc *rx_desc;
-	u8 *hdr_desc, *dest, decap_format = mon_mpdu->decap_format;
-	struct ieee80211_hdr_3addr *wh;
-	struct ieee80211_channel *channel;
-	u32 frag_list_sum_len = 0;
-	u8 channel_num = ppdu_info->chan_num;
-
-	mpdu_buf = NULL;
-	head_msdu = mon_mpdu->head;
-	tail_msdu = mon_mpdu->tail;
-
-	if (!head_msdu || !tail_msdu)
-		goto err_merge_fail;
-
-	ath12k_dp_mon_fill_rx_stats_info(ppdu_info, rxs);
-
-	if (unlikely(rxs->band == NUM_NL80211_BANDS ||
-		     !ath12k_dp_pdev_to_hw(dp_pdev)->wiphy->bands[rxs->band])) {
-		ath12k_dbg(ab, ATH12K_DBG_DATA,
-			   "sband is NULL for status band %d channel_num %d center_freq %d pdev_id %d\n",
-			   rxs->band, channel_num, ppdu_info->freq, ar->pdev_idx);
-
-		spin_lock_bh(&ar->data_lock);
-		channel = ar->rx_channel;
-		if (channel) {
-			rxs->band = channel->band;
-			channel_num =
-				ieee80211_frequency_to_channel(channel->center_freq);
-		}
-		spin_unlock_bh(&ar->data_lock);
-	}
-
-	if (rxs->band < NUM_NL80211_BANDS)
-		rxs->freq = ieee80211_channel_to_frequency(channel_num,
-							   rxs->band);
-
-	ath12k_dp_mon_fill_rx_rate(dp_pdev, ppdu_info, rxs);
-
-	if (decap_format == DP_RX_DECAP_TYPE_RAW) {
-		ath12k_dp_mon_rx_msdus_set_payload(dp, head_msdu, tail_msdu);
-
-		prev_buf = head_msdu;
-		msdu = head_msdu->next;
-		head_frag_list = NULL;
-
-		while (msdu) {
-			ath12k_dp_mon_rx_msdus_set_payload(dp, msdu, tail_msdu);
-
-			if (!head_frag_list)
-				head_frag_list = msdu;
-
-			frag_list_sum_len += msdu->len;
-			prev_buf = msdu;
-			msdu = msdu->next;
-		}
-
-		prev_buf->next = NULL;
-
-		skb_trim(prev_buf, prev_buf->len);
-		if (head_frag_list) {
-			skb_shinfo(head_msdu)->frag_list = head_frag_list;
-			head_msdu->data_len = frag_list_sum_len;
-			head_msdu->len += head_msdu->data_len;
-			head_msdu->next = NULL;
-		}
-	} else if (decap_format == DP_RX_DECAP_TYPE_NATIVE_WIFI) {
-		u8 qos_pkt = 0;
-
-		rx_desc = (struct hal_rx_desc *)head_msdu->data;
-		hdr_desc =
-		ath12k_wifi7_hal_rx_desc_get_msdu_payload_qcn9274(rx_desc);
-
-		/* Base size */
-		wh = (struct ieee80211_hdr_3addr *)hdr_desc;
-
-		if (ieee80211_is_data_qos(wh->frame_control))
-			qos_pkt = 1;
-
-		msdu = head_msdu;
-
-		while (msdu) {
-			ath12k_dp_mon_rx_msdus_set_payload(dp, msdu, tail_msdu);
-			if (qos_pkt) {
-				dest = skb_push(msdu, sizeof(__le16));
-				if (!dest)
-					goto err_merge_fail;
-				memcpy(dest, hdr_desc, sizeof(struct ieee80211_qos_hdr));
-			}
-			prev_buf = msdu;
-			msdu = msdu->next;
-		}
-		dest = skb_put(prev_buf, HAL_RX_FCS_LEN);
-		if (!dest)
-			goto err_merge_fail;
-
-		ath12k_dbg(ab, ATH12K_DBG_DATA,
-			   "mpdu_buf %p mpdu_buf->len %u",
-			   prev_buf, prev_buf->len);
-	} else {
-		ath12k_dbg(ab, ATH12K_DBG_DATA,
-			   "decap format %d is not supported!\n",
-			   decap_format);
-		goto err_merge_fail;
-	}
-
-	return head_msdu;
-
-err_merge_fail:
-	if (mpdu_buf && decap_format != DP_RX_DECAP_TYPE_RAW) {
-		ath12k_dbg(ab, ATH12K_DBG_DATA,
-			   "err_merge_fail mpdu_buf %p", mpdu_buf);
-		/* Free the head buffer */
-		dev_kfree_skb_any(mpdu_buf);
-	}
-	return NULL;
-}
 
 static void
 ath12k_dp_mon_rx_update_radiotap_he(struct hal_rx_mon_ppdu_info *rx_status,
@@ -536,62 +306,6 @@ void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 		ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_deliver_skb);
-
-int ath12k_dp_mon_rx_deliver(struct ath12k_pdev_dp *dp_pdev,
-			     struct dp_mon_mpdu *mon_mpdu,
-			     struct hal_rx_mon_ppdu_info *ppduinfo,
-			     struct napi_struct *napi)
-{
-	struct sk_buff *mon_skb, *skb_next, *header;
-	struct ieee80211_rx_status *rxs = &dp_pdev->dp_mon_pdev->rx_status;
-	u8 decap = DP_RX_DECAP_TYPE_RAW;
-
-	mon_skb = ath12k_dp_mon_rx_merg_msdus(dp_pdev, mon_mpdu, ppduinfo, rxs);
-	if (!mon_skb)
-		goto mon_deliver_fail;
-
-	header = mon_skb;
-	rxs->flag = 0;
-
-	if (mon_mpdu->err_bitmap & HAL_RX_MPDU_ERR_FCS)
-		rxs->flag = RX_FLAG_FAILED_FCS_CRC;
-
-	do {
-		skb_next = mon_skb->next;
-		if (!skb_next)
-			rxs->flag &= ~RX_FLAG_AMSDU_MORE;
-		else
-			rxs->flag |= RX_FLAG_AMSDU_MORE;
-
-		if (mon_skb == header) {
-			header = NULL;
-			rxs->flag &= ~RX_FLAG_ALLOW_SAME_PN;
-		} else {
-			rxs->flag |= RX_FLAG_ALLOW_SAME_PN;
-		}
-		rxs->flag |= RX_FLAG_ONLY_MONITOR;
-
-		if (!(rxs->flag & RX_FLAG_ONLY_MONITOR))
-			decap = mon_mpdu->decap_format;
-
-		ath12k_dp_mon_update_radiotap(dp_pdev, ppduinfo, mon_skb, rxs);
-		ath12k_dp_mon_rx_deliver_skb(dp_pdev, napi, mon_skb, rxs, ppduinfo);
-		mon_skb = skb_next;
-	} while (mon_skb);
-	rxs->flag = 0;
-
-	return 0;
-
-mon_deliver_fail:
-	mon_skb = mon_mpdu->head;
-	while (mon_skb) {
-		skb_next = mon_skb->next;
-		dev_kfree_skb_any(mon_skb);
-		mon_skb = skb_next;
-	}
-	return -EINVAL;
-}
-EXPORT_SYMBOL(ath12k_dp_mon_rx_deliver);
 
 int ath12k_dp_mon_rx_set_pktlen(struct sk_buff *skb, u32 len)
 {
@@ -1100,11 +814,11 @@ ath12k_dp_mon_tx_process_ppdu_info(struct ath12k_pdev_dp *dp_pdev,
 	list_for_each_entry_safe(mon_mpdu, tmp,
 				 &tx_ppdu_info->dp_tx_mon_mpdu_list, list) {
 		list_del(&mon_mpdu->list);
-
+		/* TODO: Call ath12k_dp_mon_rx_deliver while enabling TX monitor
 		if (mon_mpdu->head)
 			ath12k_dp_mon_rx_deliver(dp_pdev, mon_mpdu,
 						 &tx_ppdu_info->tx_info.rx_status, napi);
-
+		 */
 		kfree(mon_mpdu);
 	}
 }
@@ -1385,7 +1099,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_base *ab = dp->ab;
 
-	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
+	if (ppdu_info->peer_id == HAL_MON_INVALID_PEERID)
 		return;
 
 	peer = ath12k_dp_link_peer_find_by_ast(dp, user_stats->ast_index);

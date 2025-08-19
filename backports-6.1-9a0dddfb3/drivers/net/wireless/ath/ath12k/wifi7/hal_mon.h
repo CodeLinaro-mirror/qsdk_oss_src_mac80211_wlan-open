@@ -820,25 +820,25 @@ static __always_inline void
 ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
 {
 	if (info & RX_MSDU_END_INFO13_FCS_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_FCS;
+		*errmap |= HAL_RX_MON_MPDU_ERR_FCS;
 
 	if (info & RX_MSDU_END_INFO13_DECRYPT_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_DECRYPT;
+		*errmap |= HAL_RX_MON_MPDU_ERR_DECRYPT;
 
 	if (info & RX_MSDU_END_INFO13_TKIP_MIC_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_TKIP_MIC;
+		*errmap |= HAL_RX_MON_MPDU_ERR_TKIP_MIC;
 
 	if (info & RX_MSDU_END_INFO13_A_MSDU_ERROR)
-		*errmap |= HAL_RX_MPDU_ERR_AMSDU_ERR;
+		*errmap |= HAL_RX_MON_MPDU_ERR_AMSDU_ERR;
 
 	if (info & RX_MSDU_END_INFO13_OVERFLOW_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_OVERFLOW;
+		*errmap |= HAL_RX_MON_MPDU_ERR_OVERFLOW;
 
 	if (info & RX_MSDU_END_INFO13_MSDU_LEN_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_MSDU_LEN;
+		*errmap |= HAL_RX_MON_MPDU_ERR_MSDU_LEN;
 
 	if (info & RX_MSDU_END_INFO13_MPDU_LEN_ERR)
-		*errmap |= HAL_RX_MPDU_ERR_MPDU_LEN;
+		*errmap |= HAL_RX_MON_MPDU_ERR_MPDU_LEN;
 }
 
 enum hal_rx_mon_status
@@ -868,4 +868,5 @@ void
 ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse(const void *tlv_data, u32 userid,
 						 struct hal_rx_mon_ppdu_info *ppdu_info,
 						 u32 tlv_len);
+u8 *ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload(void *rx_desc);
 #endif

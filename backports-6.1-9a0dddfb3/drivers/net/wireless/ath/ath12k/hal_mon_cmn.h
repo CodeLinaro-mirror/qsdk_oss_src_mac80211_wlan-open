@@ -8,11 +8,31 @@
 
 #include "hw.h"
 
+#define HAL_MON_INVALID_PEERID	0x3fff
 #define HAL_RX_MON_MAX_AGGR_SIZE	128
 #define HAL_RX_MAX_MPDU				256
 #define HAL_RX_NUM_WORDS_PER_PPDU_BITMAP	(HAL_RX_MAX_MPDU >> 5)
 #define EHT_MAX_USER_INFO	4
 #define HAL_MAX_UL_MU_USERS	37
+#define HAL_RX_MON_FCS_LEN	4
+
+#define HAL_RX_MON_MPDU_ERR_FCS			BIT(0)
+#define HAL_RX_MON_MPDU_ERR_DECRYPT		BIT(1)
+#define HAL_RX_MON_MPDU_ERR_TKIP_MIC		BIT(2)
+#define HAL_RX_MON_MPDU_ERR_AMSDU_ERR		BIT(3)
+#define HAL_RX_MON_MPDU_ERR_OVERFLOW		BIT(4)
+#define HAL_RX_MON_MPDU_ERR_MSDU_LEN		BIT(5)
+#define HAL_RX_MON_MPDU_ERR_MPDU_LEN		BIT(6)
+#define HAL_RX_MON_MPDU_ERR_UNENCRYPTED_FRAME	BIT(7)
+
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W0_VALID		BIT(30)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W0_VER		BIT(31)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_NSS		GENMASK(2, 0)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_MCS		GENMASK(6, 3)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_LDPC		BIT(7)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_DCM		BIT(8)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_RU_START	GENMASK(15, 9)
+#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_RU_SIZE		GENMASK(18, 16)
 
 #define ATH12K_LE32_DEC_ENC(value, dec_bits, enc_bits)	\
 		u32_encode_bits(le32_get_bits(value, dec_bits), enc_bits)
@@ -276,6 +296,7 @@ struct hal_mon_ops {
 	void (*rx_ppdu_eu_stats_info_get)(const void *tlv_data, u32 userid,
 					  struct hal_rx_mon_ppdu_info *info,
 					  u32 tlv_len);
+	u8* (*rx_desc_get_msdu_payload)(void *desc);
 };
 
 static inline enum hal_tx_mon_status
@@ -374,4 +395,13 @@ ath12k_hal_mon_rx_ppdu_end_usr_stats_info_get(struct ath12k_hal *hal,
 							    tlv_len);
 }
 
+static inline u8*
+ath12k_hal_mon_rx_desc_get_msdu_payload(struct ath12k_hal *hal,
+					void *rx_desc)
+{
+	if (hal->hal_mon_ops->rx_desc_get_msdu_payload)
+		return hal->hal_mon_ops->rx_desc_get_msdu_payload(rx_desc);
+
+	return NULL;
+}
 #endif

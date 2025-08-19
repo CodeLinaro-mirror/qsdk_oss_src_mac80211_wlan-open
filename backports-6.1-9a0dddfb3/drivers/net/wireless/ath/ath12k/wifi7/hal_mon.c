@@ -7,6 +7,7 @@
 #include "hal_rx_desc.h"
 #include "../hal_mon_cmn.h"
 #include "hal_mon.h"
+#include "hal_qcn9274.h"
 #include "dp_rx.h"
 
 extern const struct hal_mon_ops hal_qcn9274_mon_ops;
@@ -2452,6 +2453,11 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct hal_tx_mon_ppdu_info *tx_ppdu_in
 	}
 
 	return status;
+}
+
+u8 *ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload(void *rx_desc)
+{
+	return ath12k_wifi7_hal_rx_desc_get_msdu_payload_qcn9274(rx_desc);
 }
 
 void ath12k_wifi7_hal_mon_ops_init(struct ath12k_hal *hal,

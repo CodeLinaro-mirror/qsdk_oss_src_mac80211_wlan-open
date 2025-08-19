@@ -46,7 +46,6 @@ struct hal_rx_wbm_rel_info {
 #define HAL_TLV_STATUS_PPDU_DONE                1
 #define HAL_TLV_STATUS_BUF_DONE                 2
 #define HAL_TLV_STATUS_PPDU_NON_STD_DONE        3
-#define HAL_RX_FCS_LEN                          4
 
 enum hal_rx_vht_sig_a_gi_setting {
 	HAL_RX_VHT_SIG_A_NORMAL_GI = 0,
@@ -91,15 +90,6 @@ struct hal_rx_msdu_list {
 #define REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_1 0xADBEEF
 #define REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_2 0xBDBEEF
 #define REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_3 0xCDBEEF
-
-#define HAL_RX_UL_OFDMA_USER_INFO_V0_W0_VALID		BIT(30)
-#define HAL_RX_UL_OFDMA_USER_INFO_V0_W0_VER		BIT(31)
-#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_NSS		GENMASK(2, 0)
-#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_MCS		GENMASK(6, 3)
-#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_LDPC		BIT(7)
-#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_DCM		BIT(8)
-#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_RU_START	GENMASK(15, 9)
-#define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_RU_SIZE		GENMASK(18, 16)
 
 /* HE Radiotap data1 Mask */
 #define HE_SU_FORMAT_TYPE 0x0000

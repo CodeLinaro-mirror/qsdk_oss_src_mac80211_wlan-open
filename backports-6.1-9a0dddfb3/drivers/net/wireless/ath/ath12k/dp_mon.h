@@ -397,10 +397,6 @@ void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon);
 void ath12k_dp_rx_mon_dest_process(struct ath12k *ar, int mac_id,
 				   u32 quota, struct napi_struct *napi);
 int ath12k_dp_mon_rx_set_pktlen(struct sk_buff *skb, u32 len);
-int ath12k_dp_mon_rx_deliver(struct ath12k_pdev_dp *dp_pdev,
-			     struct dp_mon_mpdu *mon_mpdu,
-			     struct hal_rx_mon_ppdu_info *ppduinfo,
-			     struct napi_struct *napi);
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 					   struct ath12k_dp_link_peer *peer,
 					   struct hal_rx_mon_ppdu_info *ppdu_info);
