@@ -5822,6 +5822,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 		debugfs_create_file("dfs_simulate_radar", 0200,
 				    ar->debug.debugfs_pdev, ar,
 				    &fops_simulate_radar);
+		debugfs_create_bool("dfs_block_radar_events", 0200,
+				    ar->debug.debugfs_pdev,
+				    &ar->dfs_block_radar_events);
 	}
 
 	debugfs_create_file("tpc_stats", 0400, ar->debug.debugfs_pdev, ar,
