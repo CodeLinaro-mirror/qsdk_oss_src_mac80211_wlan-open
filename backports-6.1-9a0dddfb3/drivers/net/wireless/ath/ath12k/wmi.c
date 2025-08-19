@@ -5981,6 +5981,12 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	wmi_cfg->use_pdev_id = cpu_to_le32(tg_cfg->use_pdev_id);
 	wmi_cfg->flag1 = cpu_to_le32(tg_cfg->atf_config |
 				     WMI_RSRC_CFG_FLAG1_BSS_CHANNEL_INFO_64);
+	if (tg_cfg->carrier_config)
+		wmi_cfg->carrier_config = cpu_to_le32(tg_cfg->carrier_config);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "ATF: carrier_config %d",
+		   tg_cfg->carrier_config);
+
 	if (tg_cfg->carrier_vow_optimization)
 		wmi_cfg->flag1 |= WMI_RSRC_CFG_FLAG1_VIDEO_OVER_WIFI_ENABLE;
 	wmi_cfg->peer_map_unmap_version = cpu_to_le32(tg_cfg->peer_map_unmap_version);

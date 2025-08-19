@@ -2836,6 +2836,7 @@ struct ath12k_wmi_resource_config_arg {
 	u32 afc_disable_req_id_check;
 	bool afc_indoor_support;
 	bool afc_outdoor_support;
+	u32 carrier_config;
 };
 
 struct ath12k_wmi_init_cmd_arg {
@@ -3019,6 +3020,7 @@ struct ath12k_wmi_resource_config_params {
 	__le32 max_ap_vaps;
 	__le32 cbc_flow_ena;
 	__le32 ema_init_config;
+	__le32 carrier_config;
 } __packed;
 
 struct wmi_service_ready_event {
