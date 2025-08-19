@@ -932,6 +932,14 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 	 */
 	frag_page_offset = ATH12K_DP_MON_DECAP_HDR_SIZE + ATH12K_DP_MON_L3_HDR_PAD;
 
+	if (unlikely(frag_size <= frag_page_offset)) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
+			   "mon_rx_restitch: pkt size %u is less than frag offset %u\n",
+			   frag_size, frag_page_offset);
+		ret = -EINVAL;
+		goto free_mpdu;
+	}
+
 	frag_addr = ath12k_dp_mon_skb_get_frag_addr(mpdu, 1);
 	ethvlan = (struct vlan_ethhdr *)(frag_addr + ATH12K_DP_MON_L3_HDR_PAD);
 	if (ethvlan->h_vlan_proto == htons(ETH_P_8021Q))
