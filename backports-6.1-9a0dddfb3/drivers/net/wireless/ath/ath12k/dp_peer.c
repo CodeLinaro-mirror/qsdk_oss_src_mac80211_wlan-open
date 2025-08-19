@@ -1035,10 +1035,9 @@ int ath12k_dp_peer_scs_add(struct ath12k_base *ab,
 		   u16_encode_bits(qos_id, SCS_QOS_ID_MASK);
 	scs->qos_id_msduq = qos_data;
 
-	ath12k_dbg(ab, ATH12K_DBG_QOS,
-		   "Peer QoS add scs_id:%d | msduq:%d| qos_id:%d",
-		   scs_id, u16_get_bits(qos_data, SCS_MSDUQ_MASK),
-		   u16_get_bits(qos_data, SCS_QOS_ID_MASK));
+	ath12k_info(ab, "Peer QoS add scs_id:%d | msduq:%d| qos_id:%d",
+		    scs_id, u16_get_bits(qos_data, SCS_MSDUQ_MASK),
+		    u16_get_bits(qos_data, SCS_QOS_ID_MASK));
 
 	return 0;
 }
@@ -1060,10 +1059,9 @@ int ath12k_dp_peer_scs_del(struct ath12k_base *ab,
 		   u16_encode_bits(QOS_ID_INVALID, SCS_QOS_ID_MASK);
 	scs->qos_id_msduq = qos_data;
 
-	ath12k_dbg(ab, ATH12K_DBG_QOS,
-		   "Peer QoS del scs_id:%d | msduq:%d| qos_id:%d",
-		   scs_id, u16_get_bits(qos_data, SCS_MSDUQ_MASK),
-		   u16_get_bits(qos_data, SCS_QOS_ID_MASK));
+	ath12k_info(ab, "Peer QoS del scs_id:%d | msduq:%d| qos_id:%d",
+		    scs_id, u16_get_bits(qos_data, SCS_MSDUQ_MASK),
+		    u16_get_bits(qos_data, SCS_QOS_ID_MASK));
 	return 0;
 }
 
@@ -1193,19 +1191,12 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 	tgt_opaque_id = u32_get_bits(__le32_to_cpu(resp->info2),
 				     HTT_T2H_QOS_MSDUQ_INFO_2_IND_TGT_OPAQUE_ID);
 
-	ath12k_dbg(ab, ATH12K_DBG_QOS, "QoS MSDUQ Map Ind:\n");
-	ath12k_dbg(ab, ATH12K_DBG_QOS,
-		   "htt_qtype[0x%x]Peer_Id[0x%x]Remp_Tid[0x%x]Hlos_Tid[0x%x]",
-		   htt_qtype,
-		   peer_id,
-		   remapped_tid,
-		   hlos_tid);
-	ath12k_dbg(ab, ATH12K_DBG_QOS,
-		   "who_cl[0x%x]flow_or[0x%x]Ast[0x%x]Op[0x%x]",
-		   who_cl,
-		   flow_or,
-		   ast_idx,
-		   tgt_opaque_id);
+	ath12k_info(ab, "QoS MSDUQ Map Ind:\n");
+	ath12k_info(ab,
+		    "htt_qtype[0x%x]Peer_Id[0x%x]Remp_Tid[0x%x]Hlos_Tid[0x%x]",
+		    htt_qtype, peer_id, remapped_tid, hlos_tid);
+	ath12k_info(ab, "who_cl[0x%x]flow_or[0x%x]Ast[0x%x]Op[0x%x]",
+		    who_cl, flow_or, ast_idx, tgt_opaque_id);
 
 	spin_lock_bh(&ab->base_lock);
 	def_tid_msduq = ab->def_tid_msduq;
