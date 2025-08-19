@@ -12979,15 +12979,25 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 	stats = &ar->debug.wmi_ctrl_path_stats;
 	more = __le32_to_cpu(fixed_param->more);
 
+	src = &param.list;
+	dst = &stats->pdev_stats;
+
 	switch (tag_id) {
 	case WMI_TAG_CTRL_PATH_PDEV_STATS:
-		src = &param.list;
-		dst = &stats->pdev_stats;
 		break;
 	case WMI_CTRL_PATH_PMLO_STATS:
 		ath12k_dp_mon_pdev_update_telemetry_stats(ar->ab, ar->pdev_idx);
 		break;
+	case WMI_TAG_CTRL_PATH_STATS_EV_FIXED_PARAM:
+	case WMI_CTRL_PATH_CAL_STATS:
+	case WMI_CTRL_PATH_BTCOEX_STATS:
+	case WMI_CTRL_PATH_AWGN_STATS:
+	case WMI_CTRL_PATH_MEM_STATS:
+	case WMI_CTRL_PATH_AFC_STATS:
+		break;
+	/* Add case for newly wmi ctrl path added stats here */
 	default:
+		ath12k_warn(ab, "Received tag for wmi ctrl path stats %d\n", tag_id);
 		goto free;
 	}
 
