@@ -1452,8 +1452,6 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	arvif = rcu_dereference(ahvif->link[link_id]);
 	if (!arvif || !arvif->ar) {
-		ath12k_warn(ahvif->ah, "failed to find arvif link id %u for frame transmission",
-			    link_id);
 		ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
 						  DP_TX_ENQ_DROP_INV_ARVIF,
 						  ring_id, false);
