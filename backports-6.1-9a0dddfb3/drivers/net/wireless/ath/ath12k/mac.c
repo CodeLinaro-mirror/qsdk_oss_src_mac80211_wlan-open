@@ -20337,19 +20337,22 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		      rssi_offset;
 
 	signal = rate_info.rssi_comb;
-	params.pdev_id = ar->pdev->pdev_id;
-	params.vdev_id = 0;
-	params.stats_id = WMI_REQUEST_VDEV_STAT;
+	if (ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		/* Limit the requests to Firmware for fetching the signal strength */
+		if (time_after(jiffies, msecs_to_jiffies
+						(ATH12K_PDEV_SIGNAL_UPDATE_TIME_MSECS) +
+						 ar->last_signal_update)) {
+			params.pdev_id = ar->pdev->pdev_id;
+			params.vdev_id = 0;
+			params.stats_id = WMI_REQUEST_VDEV_STAT;
 
-	/* Limit the requests to Firmware for fetching the signal strength */
-	if (time_after(jiffies, msecs_to_jiffies(ATH12K_PDEV_SIGNAL_UPDATE_TIME_MSECS) +
-				ar->last_signal_update)) {
-		ath12k_mac_get_fw_stats(ar, &params);
-		ar->last_signal_update = jiffies;
+			ath12k_mac_get_fw_stats(ar, &params);
+			ar->last_signal_update = jiffies;
+		}
+		if (!signal)
+			signal = arsta->rssi_beacon;
 	}
 
-	if (!signal && ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
-		signal = arsta->rssi_beacon;
 
 	if (signal) {
 		link_sinfo->signal =
@@ -20436,19 +20439,22 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		      rssi_offset;
 
 	signal = rate_info.rssi_comb;
-	params.pdev_id = ar->pdev->pdev_id;
-	params.vdev_id = 0;
-	params.stats_id = WMI_REQUEST_VDEV_STAT;
 
-	/* Limit the requests to Firmware for fetching the signal strength */
-	if (time_after(jiffies, msecs_to_jiffies(ATH12K_PDEV_SIGNAL_UPDATE_TIME_MSECS) +
-				ar->last_signal_update)) {
-		ath12k_mac_get_fw_stats(ar, &params);
-		ar->last_signal_update = jiffies;
+	if (ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		/* Limit the requests to Firmware for fetching the signal strength */
+		if (time_after(jiffies, msecs_to_jiffies
+						(ATH12K_PDEV_SIGNAL_UPDATE_TIME_MSECS) +
+						 ar->last_signal_update)) {
+			params.pdev_id = ar->pdev->pdev_id;
+			params.vdev_id = 0;
+			params.stats_id = WMI_REQUEST_VDEV_STAT;
+			ath12k_mac_get_fw_stats(ar, &params);
+			ar->last_signal_update = jiffies;
+		}
+
+		if (!signal)
+			signal = arsta->rssi_beacon;
 	}
-
-	if (!signal && ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
-		signal = arsta->rssi_beacon;
 
 	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_CHAIN_SIGNAL)) &&
 	    ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
