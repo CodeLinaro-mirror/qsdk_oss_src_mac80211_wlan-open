@@ -266,6 +266,13 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 		ppdu_info->mpdu_info.mpdu_start_received = true;
 		ppdu_info->mpdu_info.first_rx_hdr_rcvd = true;
 		ppdu_info->mpdu_info.decap_type = DP_RX_DECAP_TYPE_INVALID;
+
+		/*
+		 * The first 64 bytes of skb->data are used for storing MPDU metadata.
+		 * After allocating a new skb, skb->data may contain junk values.
+		 * Reset the metadata region to zero.
+		 */
+		memset(skb->data, 0, sizeof(struct ath12k_dp_mon_mpdu_meta));
 	} else {
 		if (ppdu_info->mpdu_info.decap_type == DP_RX_DECAP_TYPE_RAW)
 			return 0;
@@ -509,18 +516,21 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 		 (hal_status == HAL_RX_MON_STATUS_MSDU_END) ||
 		 (hal_status == HAL_RX_MON_STATUS_RX_HDR));
 
+	if (status_desc->end_of_ppdu)
+		hal_status = HAL_RX_MON_STATUS_PPDU_DONE;
+
 	if (unlikely(pmon->mon_ppdu_info.is_drop_tlv)) {
 		rem_buf_len = ptr - mon_buf;
 		if (rem_buf_len > 0 && rem_buf_len < buf_len) {
 			buf_len -= rem_buf_len;
 			ath12k_wifi7_dp_mon_free_pkt_buf(dp_pdev, ptr, buf_len);
-			hal_status = HAL_RX_MON_STATUS_DROP_TLV;
 		}
+		hal_status = HAL_RX_MON_STATUS_DROP_TLV;
 		mon_stats->drop_tlv++;
+		page_frag_free(mon_buf);
+		status_desc->mon_buf = NULL;
+		mon_stats->status_buf_free++;
 	}
-
-	if (status_desc->end_of_ppdu)
-		hal_status = HAL_RX_MON_STATUS_PPDU_DONE;
 
 	return hal_status;
 }
@@ -1254,6 +1264,36 @@ ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *pdev_dp,
 }
 
 static void
+ath12k_wifi7_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
+				  struct hal_rx_mon_ppdu_info *ppdu_info,
+				  struct ath12k_dp_mon_ppdu_desc *ppdu_desc,
+				  int desc_cnt)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = pdev_dp->dp_mon_pdev;
+	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
+	struct ath12k_dp_mon_status_desc *status_desc;
+	struct sk_buff *mpdu;
+	u32 *num_skb_free, *pkt_tlv_free;
+	u8 status_desc_cnt;
+
+	status_desc_cnt = ppdu_desc->status_desc_cnt;
+	for (; desc_cnt < status_desc_cnt; desc_cnt++) {
+		status_desc = &ppdu_desc->status_desc[desc_cnt];
+		if (!status_desc->mon_buf)
+			continue;
+
+		ath12k_wifi7_dp_mon_h_flush_tlv(pdev_dp, status_desc);
+	}
+
+	while ((mpdu = skb_dequeue(&ppdu_info->mpdu_q))) {
+		num_skb_free = &mon_stats->num_skb_free;
+		pkt_tlv_free = &mon_stats->pkt_tlv_free;
+		ath12k_dp_mon_cnt_skb_and_frags(mpdu, num_skb_free, pkt_tlv_free);
+		dev_kfree_skb_any(mpdu);
+	}
+}
+
+static void
 ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 {
 	struct ath12k_pdev_mon_dp *dp_mon_pdev =
@@ -1263,16 +1303,14 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 	struct ath12k_dp_mon_status_desc *status_desc;
 	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
-	struct sk_buff *mpdu;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_neighbor_peer *nrp, *tmp;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
 	enum hal_rx_mon_status hal_status;
-	u32 *num_skb_free, *pkt_tlv_free;
 	int desc_cnt;
-	u8 filter_category = 0, status_desc_cnt, ppdu_desc_prcd = 0;
+	u8 filter_category = 0, ppdu_desc_prcd = 0;
 	bool is_addr_equal;
 
 	spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
@@ -1298,24 +1336,8 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 				ath12k_wifi7_dp_mon_rx_parse_ppdu_status(pdev_dp, pmon,
 									 status_desc);
 			if (unlikely(hal_status == HAL_RX_MON_STATUS_DROP_TLV)) {
-				status_desc_cnt = ppdu_desc->status_desc_cnt;
-				for (; desc_cnt < status_desc_cnt; desc_cnt++) {
-					if (!status_desc->mon_buf)
-						continue;
-
-					ath12k_wifi7_dp_mon_h_flush_tlv(pdev_dp,
-									status_desc);
-				}
-
-				while ((mpdu = skb_dequeue(&ppdu_info->mpdu_q))) {
-					num_skb_free = &mon_stats->num_skb_free;
-					pkt_tlv_free = &mon_stats->pkt_tlv_free;
-					ath12k_dp_mon_cnt_skb_and_frags(mpdu,
-									num_skb_free,
-									pkt_tlv_free);
-					dev_kfree_skb_any(mpdu);
-				}
-
+				ath12k_wifi7_dp_mon_rx_h_drop_tlv(pdev_dp, ppdu_info,
+								  ppdu_desc, desc_cnt);
 				goto next_ppdu;
 			}
 
