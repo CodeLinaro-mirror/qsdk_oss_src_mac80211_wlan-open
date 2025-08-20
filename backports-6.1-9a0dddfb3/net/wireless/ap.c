@@ -16,6 +16,8 @@ static int ___cfg80211_stop_ap(struct cfg80211_registered_device *rdev,
 			       bool notify)
 {
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	unsigned int temp_link_id;
+	bool all_links_stopped = true;
 	int err;
 
 	lockdep_assert_wiphy(wdev->wiphy);
@@ -48,8 +50,17 @@ static int ___cfg80211_stop_ap(struct cfg80211_registered_device *rdev,
 			 * link, otherwise consider that some link is present
 			 */
 			wdev->conn_owner_nlportid = 0;
-			wdev->u.ap.ssid_len = 0;
 		}
+
+		for_each_valid_link(wdev, temp_link_id) {
+			if (wdev->links[temp_link_id].ap.beacon_interval) {
+				all_links_stopped = false;
+				break;
+			}
+		}
+
+		if (all_links_stopped)
+			wdev->u.ap.ssid_len = 0;
 
 		rdev_set_qos_map(rdev, dev, NULL, link_id);
 		if (notify)
