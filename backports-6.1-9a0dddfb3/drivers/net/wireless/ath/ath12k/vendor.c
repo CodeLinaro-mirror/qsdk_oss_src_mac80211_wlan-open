@@ -17,6 +17,7 @@
 #include "erp.h"
 #include "vendor_services.h"
 #include "dp_peer.h"
+#include "dp_mon.h"
 
 static const struct nla_policy
 ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
@@ -5779,8 +5780,11 @@ static void ath12k_atf_offload_reset_stats(struct ath12k *ar)
 
 	memset(atf_pdev_airtime, 0, sizeof(*atf_pdev_airtime));
 
-	for (i = 0; i < atf_table->total_groups; i++)
+	for (i = 0; i < atf_table->total_groups; i++) {
 		atf_table->group_info[i].atf_actual_airtime = 0;
+		atf_table->group_info[i].atf_actual_duration = 0;
+		atf_table->group_info[i].atf_actual_ul_duration = 0;
+	}
 
 	spin_lock_bh(&ab_dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
@@ -5793,6 +5797,7 @@ static void ath12k_atf_offload_reset_stats(struct ath12k *ar)
 		memset(atf_peer_airtime, 0, sizeof(*atf_peer_airtime));
 	}
 	spin_unlock_bh(&ab_dp->dp_lock);
+	ar->atf_stats_accum_start_time = ath12k_get_timestamp_in_us();
 }
 
 static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
@@ -5866,6 +5871,8 @@ static void ath12k_atf_offload_update_peer_airtime(struct ath12k *ar)
 		}
 	}
 	spin_unlock_bh(&dp->dp_lock);
+	ath12k_info(ar->ab, "Total Airtime(us)     %u", pdev_actual_airtime);
+	ath12k_info(ar->ab, "Total UL Airtime(us)  %u", pdev_ul_airtime);
 }
 
 static void ath12k_atf_offload_print_stats(struct timer_list *t)
@@ -5878,6 +5885,8 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 	int i, peer_count = 0;
 	struct ath12k_atf *atf_table = &ar->atf_table;
 	struct atf_peer_stat *peer_stats;
+	u64 current_time = ath12k_get_timestamp_in_us();
+	u32 time_diff = (u32)(current_time - ar->atf_stats_accum_start_time);
 
 	peer_stats = kcalloc(ATH12K_ATF_MAX_PEERS, sizeof(*peer_stats), GFP_ATOMIC);
 	if (!peer_stats) {
@@ -5887,9 +5896,10 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 
 	dp = ath12k_ab_to_dp(ar->ab);
 
+	ath12k_info(ar->ab, "Total radio duration(us): %u", time_diff);
 	ath12k_atf_offload_update_peer_airtime(ar);
-	ath12k_info(ar->ab, "******************************* ATF STATS For SSID Groups **************************");
-	ath12k_info(ar->ab, "GroupID  Configured  Actual    Borrowed  Unused   Duration(us)  ActualUL  UL(us)");
+	ath12k_info(ar->ab, "************************************* ATF STATS For SSID Groups **************************************");
+	ath12k_info(ar->ab, "GroupID   Configured   Actual(Relative)   Borrowed   Unused   Duration(us)   ActualUL   UL(us)   Actual");
 
 	for (i = 0; i < atf_table->total_groups; i++) {
 		borrowed = 0;
@@ -5903,7 +5913,7 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 			borrowed = atf_table->group_info[i].atf_actual_airtime -
 				   (atf_table->group_info[i].group_airtime / 10);
 
-		ath12k_info(ar->ab, "%-8d %-12d %-9d %-11d %-8d %-12d %-9d %-6d",
+		ath12k_info(ar->ab, "  %-9d %-15d %-17d %-8d %-10d %-14d %-6d %-10d %-7d",
 			    atf_table->group_info[i].group_id,
 			    atf_table->group_info[i].group_airtime / 10,
 			    atf_table->group_info[i].atf_actual_airtime,
@@ -5911,7 +5921,9 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 			    unused,
 			    ar->atf_table.group_info[i].atf_actual_duration,
 			    ar->atf_table.group_info[i].atf_ul_airtime,
-			    ar->atf_table.group_info[i].atf_actual_ul_duration);
+			    ar->atf_table.group_info[i].atf_actual_ul_duration,
+			    time_diff ?
+			    (u32)div_u64((u64)ar->atf_table.group_info[i].atf_actual_duration * 100ULL, time_diff) : 0);
 	}
 
 	spin_lock_bh(&dp->dp_lock);
@@ -5934,9 +5946,9 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 	}
 	spin_unlock_bh(&dp->dp_lock);
 
-	ath12k_info(ar->ab, "******************************************************");
-	ath12k_info(ar->ab, "**************** ATF STATS For PEERs *************************");
-	ath12k_info(ar->ab, "PeerMAC             GroupId  Configured  Actual    Borrowed  Unused    Duration(us)   ActualUL  UL(us)");
+	ath12k_info(ar->ab, "*****************************************************************************************************");
+	ath12k_info(ar->ab, "**************************************** ATF STATS For PEERs ****************************************");
+	ath12k_info(ar->ab, "PeerMAC             GroupId  Configured  Actual(Relative)    Borrowed    Unused    Duration(us)   ActualUL  UL(us)  Actual");
 
 	for (i = 0; i < peer_count; i++) {
 		borrowed = 0;
@@ -5949,7 +5961,7 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 			borrowed = peer_stats[i].atf_actual_airtime -
 				   (peer_stats[i].atf_peer_conf_airtime / 10);
 
-		ath12k_info(ar->ab, "%pM  %-12d %-10d %-8d %-11d %-8d %-14d %-10d %-6d",
+		ath12k_info(ar->ab, "%-3pM     %-8d %-13d %-19d %-9d %-11d %-13d %-6d %-9d %-7d",
 			    peer_stats[i].addr,
 			    peer_stats[i].atf_group_index,
 			    peer_stats[i].atf_peer_conf_airtime / 10,
@@ -5958,7 +5970,9 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 			    unused,
 			    peer_stats[i].atf_actual_duration,
 			    peer_stats[i].atf_ul_airtime,
-			    peer_stats[i].atf_actual_ul_duration);
+			    peer_stats[i].atf_actual_ul_duration,
+			    time_diff ?
+			    (u32)div_u64((u64)peer_stats[i].atf_actual_duration * 100ULL, time_diff) : 0);
 	}
 
 	ath12k_atf_offload_reset_stats(ar);

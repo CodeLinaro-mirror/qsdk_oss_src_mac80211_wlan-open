@@ -1437,6 +1437,7 @@ struct ath12k {
 	u8 atf_stats_timeout;
 	bool commitatf;
 	bool atf_strict_scheduling;
+	u64 atf_stats_accum_start_time;
 	u8 dcs_enable_bitmap;
 	struct list_head wlan_intf_list;
 	struct work_struct wlan_intf_work;

@@ -453,6 +453,7 @@ u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp, struct sk_buf
 void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx);
 int ath12k_dp_mon_adj_frag_offset(struct sk_buff *skb, u8 idx, int offset);
 u32 ath12k_dp_mon_get_num_frags_in_fraglist(struct sk_buff *skb);
+u64 ath12k_get_timestamp_in_us(void);
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 {

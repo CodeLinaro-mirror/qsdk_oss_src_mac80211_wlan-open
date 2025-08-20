@@ -2002,7 +2002,7 @@ static void ath12k_dp_mon_clear_pdev_airtime_stats(struct ath12k *ar)
        }
 }
 
-static inline u64 ath12k_get_timestamp_in_us(void)
+u64 ath12k_get_timestamp_in_us(void)
 {
        struct timespec64 ts;
 

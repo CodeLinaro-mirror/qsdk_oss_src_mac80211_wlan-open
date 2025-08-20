@@ -18176,6 +18176,10 @@ int ath12k_wmi_atf_send_peer_config(struct ath12k *ar,
 			le32_encode_bits(param_peer_info->group_index, WMI_ATF_PEER_GROUP_ID) |
 			le32_encode_bits(param_peer_info->explicit_peer_flag,
 					 WMI_ATF_PEER_CONFIGURED);
+		ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+			   "ATF: peer mac %pM percentage %u group_id %u explicit_peer_flag %u\n",
+			   param_peer_info->peer_macaddr, param_peer_info->percentage_peer,
+			   param_peer_info->group_index, param_peer_info->explicit_peer_flag);
 		peer_info++;
 		param_peer_info++;
 	}
