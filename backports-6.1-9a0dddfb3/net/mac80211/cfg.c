@@ -1457,6 +1457,28 @@ static u8 ieee80211_num_beaconing_links(struct ieee80211_sub_if_data *sdata)
 	return num;
 }
 
+static void
+ieee80211_populate_ap_vif_adv_ttlm_params(struct ieee80211_sub_if_data *sdata,
+					  struct cfg80211_ttlm_params *params)
+{
+	struct ieee80211_advertised_ttlm_config *ttlm_config =
+		&sdata->vif.adv_ttlm.u.ap.ttlm_config;
+	int i;
+
+	memset(ttlm_config, 0, sizeof(*ttlm_config));
+	ttlm_config->num_ttlm_ie = params->u.adv.num_ttlm_info;
+	for (i = 0; i < ttlm_config->num_ttlm_ie; i++) {
+		ttlm_config->adv_ttlm_conf[i].link_mapping_size =
+			params->u.adv.link_mapping_size[i];
+		ttlm_config->adv_ttlm_conf[i].ieee_link_bmap =
+			params->u.adv.ieee_link_bmap[i];
+		ttlm_config->adv_ttlm_conf[i].switch_time =
+			params->u.adv.switch_time[i];
+		ttlm_config->adv_ttlm_conf[i].duration =
+			params->u.adv.duration[i];
+	}
+}
+
 static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			      struct cfg80211_ap_settings *params)
 {
@@ -6007,7 +6029,8 @@ ieee80211_set_ttlm(struct wiphy *wiphy, struct net_device *dev,
 	case TTLM_CMD_TYPE_NEGOTIATED:
 		return ieee80211_req_neg_ttlm(sdata, params);
 	case TTLM_CMD_TYPE_ADVERTISED:
-		ieee80211_set_ap_advertised_ttlm_config(sdata, params);
+		ieee80211_populate_ap_vif_adv_ttlm_params(sdata, params);
+		ieee80211_set_ap_advertised_ttlm_config(sdata);
 		break;
 	default:
 		return -EINVAL;

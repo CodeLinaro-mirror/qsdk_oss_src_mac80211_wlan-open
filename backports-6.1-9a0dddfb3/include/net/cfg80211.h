@@ -1649,6 +1649,99 @@ struct cfg80211_unsol_bcast_probe_resp {
 };
 
 /**
+ * enum ttlm_cmd_type - the purpose for which set_ttlm command is invoked
+ *
+ * Used to differentiate between different ttlm requests.
+ *
+ * @TTLM_CMD_TYPE_NEGOTIATED: Indicates the set_ttlm is invoked for TTLM
+ *	negotiation.
+ * @TTLM_CMD_TYPE_ADVERTISED: Indicates the set_ttlm is invoked for TTLM
+ *	advertisement.
+ * @TTLM_CMD_TYPE_MAX: Indicates max type supported
+ */
+enum ttlm_cmd_type {
+	TTLM_CMD_TYPE_NEGOTIATED = 0,
+	TTLM_CMD_TYPE_ADVERTISED = 1,
+	TTLM_CMD_TYPE_MAX,
+};
+
+/**
+ * enum advertised_ttlm_status_type - current status indication from lower layer
+ *
+ * Used to notify the userspace about the current status of the advertised ttlm
+ * in lower layers.
+ *
+ * @ADVERTISED_TTLM_SWITCH_TIMER_TSF: Indicates Mapping switch time value in TSF
+ *	to be included in probe response frames. This status to upper layers
+ *	intern indicates, from next beacon onwards, lower layers starts adding
+ *	TTLM IE in beacon sent from corressponding AP MLD on which advertised
+ *	TTLM is triggered. When this status is not sent to upper layers, there
+ *	should not be any TTLM IE in Probe Response/(Re)Assoc Response frame
+ *	generated in upper layers.
+ * @ADVERTISED_TTLM_SWITCH_TIMER_EXPIRED: Indication that the new proposed T2LM
+ *	has been applied in hardware, update the required data structures.
+ * @ADVERTISED_TTLM_EXPECTED_DURATION_EXPIRED: Indication that the proposed T2LM is no
+ *	longer effective as expected duration completed. And indicates, after this
+ *	status update, all TIDs fallback to default mode.
+ *
+ * @ADVERTISED_TTLM_STATUS_MAX: Indicates max status supported.
+ *
+ * Note: This enum is used by drivers with offload support of TTLM feature.
+ */
+enum advertised_ttlm_status_type {
+	ADVERTISED_TTLM_SWITCH_TIMER_TSF = 0,
+	ADVERTISED_TTLM_SWITCH_TIMER_EXPIRED = 1,
+	ADVERTISED_TTLM_EXPECTED_DURATION_EXPIRED = 2,
+	ADVERTISED_TTLM_STATUS_MAX,
+};
+
+/**
+ * struct cfg80211_ttlm_params: TID to link mapping parameters
+ *
+ * Used for setting a TID to link mapping.
+ *
+ * @u.neg.dlink: Downlink TID to link mapping, as defined in section 9.4.2.314
+ *	(TID-To-Link Mapping element) in Draft P802.11be_D4.0.
+ * @u.neg.ulink: Uplink TID to link mapping, as defined in section 9.4.2.314
+ *	(TID-To-Link Mapping element) in Draft P802.11be_D4.0.
+ * @u.neg.mld_mac_addr: STA mld mac with which negotitation attempted on
+ *	AP MLD
+ * @u.adv.num_ttlm_info: Indicates the number of ttlm IE info provided
+ *	by userspace to be advertised.
+ * @u.adv.link_mapping_size: size of ttlm mapping either in 2 bytes or
+ *	1 byte form to be used in TTLM IE advertisement.
+ * @u.adv.ieee_link_bmap: indicates bitmap of the links that will be
+ *	enabled and advertised in TTLM IE of beacon. The same bitmap will be
+ *	copied to all TIDs map value of the IE with directection bit set to
+ *	0x3 indicating BiDi direction as defined in section 35.3.7.2.4
+ *	(Advertised TTLM in Beacon and Probe Response frames) in Draft
+ *	P802.11be_D4.0.
+ * @u.adv.switch_time: Indicates the Mapping Switch Time to be used while
+ *	advertising the TTLM in offload mode as defined in section 9.4.2.314
+ *	(TID-To-Link Mapping element) in Draft P802.11be_D4.0.
+ * @u.adv.duration: Indicates the duration for which the advertised TTLM
+ *	is valid as defined in section 9.4.2.314 (TID-To-Link Mapping element)
+ *	in Draft P802.11be_D4.0.
+ */
+struct cfg80211_ttlm_params {
+	enum ttlm_cmd_type type;
+	union {
+		struct {
+			u16 dlink[IEEE80211_MAX_NUM_TIDS];
+			u16 ulink[IEEE80211_MAX_NUM_TIDS];
+			const u8 *mld_mac_addr;
+		} neg;
+		struct {
+			u8 num_ttlm_info;
+			u8 link_mapping_size[IEEE80211_MAX_TTLM_IE];
+			u16 ieee_link_bmap[IEEE80211_MAX_TTLM_IE];
+			u16 switch_time[IEEE80211_MAX_TTLM_IE];
+			u32 duration[IEEE80211_MAX_TTLM_IE];
+		} adv;
+	} u;
+};
+
+/**
  * struct cfg80211_ap_settings - AP configuration
  *
  * Used to configure an AP interface.
@@ -1965,99 +2058,6 @@ struct link_station_parameters {
 struct link_station_del_parameters {
 	const u8 *mld_mac;
 	u32 link_id;
-};
-
-/**
- * enum ttlm_cmd_type - the purpose for which set_ttlm command is invoked
- *
- * Used to differentiate between different ttlm requests.
- *
- * @TTLM_CMD_TYPE_NEGOTIATED: Indicates the set_ttlm is invoked for TTLM
- *	negotiation.
- * @TTLM_CMD_TYPE_ADVERTISED: Indicates the set_ttlm is invoked for TTLM
- *	advertisement.
- * @TTLM_CMD_TYPE_MAX: Indicates max type supported
- */
-enum ttlm_cmd_type {
-	TTLM_CMD_TYPE_NEGOTIATED = 0,
-	TTLM_CMD_TYPE_ADVERTISED = 1,
-	TTLM_CMD_TYPE_MAX,
-};
-
-/**
- * enum advertised_ttlm_status_type - current status indication from lower layer
- *
- * Used to notify the userspace about the current status of the advertised ttlm
- * in lower layers.
- *
- * @ADVERTISED_TTLM_SWITCH_TIMER_TSF: Indicates Mapping switch time value in TSF
- *	to be included in probe response frames. This status to upper layers
- *	intern indicates, from next beacon onwards, lower layers starts adding
- *	TTLM IE in beacon sent from corressponding AP MLD on which advertised
- *	TTLM is triggered. When this status is not sent to upper layers, there
- *	should not be any TTLM IE in Probe Response/(Re)Assoc Response frame
- *	generated in upper layers.
- * @ADVERTISED_TTLM_SWITCH_TIMER_EXPIRED: Indication that the new proposed T2LM
- *	has been applied in HW, update the required data structures.
- * @ADVERTISED_TTLM_EXPECTED_DURATION_EXPIRED: Indication that the proposed T2LM
- *	ineffective as expected duration completed. And indicates, after this
- *	status update, all TIDs fallback to default mode.
- *
- * @ADVERTISED_TTLM_STATUS_MAX: Indicates max status supported.
- *
- * Note: This enum is used by drivers with offload support of TTLM feature.
- */
-enum advertised_ttlm_status_type {
-	ADVERTISED_TTLM_SWITCH_TIMER_TSF = 0,
-	ADVERTISED_TTLM_SWITCH_TIMER_EXPIRED = 1,
-	ADVERTISED_TTLM_EXPECTED_DURATION_EXPIRED = 2,
-	ADVERTISED_TTLM_STATUS_MAX,
-};
-
-/**
- * struct cfg80211_ttlm_params: TID to link mapping parameters
- *
- * Used for setting a TID to link mapping.
- *
- * @u.neg.dlink: Downlink TID to link mapping, as defined in section 9.4.2.314
- *     (TID-To-Link Mapping element) in Draft P802.11be_D4.0.
- * @u.neg.ulink: Uplink TID to link mapping, as defined in section 9.4.2.314
- *     (TID-To-Link Mapping element) in Draft P802.11be_D4.0.
- * @u.neg.mld_mac_addr: STA mld mac with which negotitation attempted on
- *      AP MLD
- * @u.adv.num_ttlm_info: Indicates the number of ttlm IE info provided
- *	by userspace to be advertised.
- * @u.adv.link_mapping_size: size of ttlm mapping either in 2 bytes or
- *	1 byte form to be used in TTLM IE advertisement.
- * @u.adv.ieee_link_bmap: indicates bitmap of the links that will be
- *	enabled and advertised in TTLM IE of beacon. The same bitmap will be
- *	copied to all TIDs map value of the IE with directection bit set to
- *	0x3 indicating BiDi direction as defined in section 35.3.7.2.4
- *	(Advertised TTLM in Beacon and Probe Response frames) in Draft
- *	P802.11be_D4.0.
- * @u.adv.switch_time: Indicates the Mapping Switch Time to be used while
- *	advertising the TTLM in offload mode as defined in section 9.4.2.314
- *	(TID-To-Link Mapping element) in Draft P802.11be_D4.0.
- * @u.adv.duration: Indicates the duration for which the advertised TTLM
- *	is valid as defined in section 9.4.2.314 (TID-To-Link Mapping element)
- *	in Draft P802.11be_D4.0.
- */
-struct cfg80211_ttlm_params {
-	enum ttlm_cmd_type type;
-	union {
-		struct {
-			u16 dlink[IEEE80211_MAX_NUM_TIDS];
-			u16 ulink[IEEE80211_MAX_NUM_TIDS];
-			const u8 *mld_mac_addr;
-		} neg;
-		struct {
-			u8 num_ttlm_info;
-			u8 link_mapping_size[IEEE80211_MAX_TTLM_IE];
-			u16 ieee_link_bmap[IEEE80211_MAX_TTLM_IE];
-			u16 switch_time[IEEE80211_MAX_TTLM_IE];
-			u32 duration[IEEE80211_MAX_TTLM_IE];
-		} adv;
-	} u;
 };
 
 /**

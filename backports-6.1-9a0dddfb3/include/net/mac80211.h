@@ -373,7 +373,7 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_INTF_DETECT: Interference Detect parameters changed for this Radio.
  * @BSS_CHANGED_ML_MAX_REC_LINKS: ML Max Recommended links value changed
  * @BSS_CHANGED_MLD_ADV_TTLM: Advertised TID to Link mapping changed. Used to
- *	indicate driver to start the advertisement of TTLM (AP mode)
+ *	indicate driver to start the advertisement of TTLM (AP mode) on VIF.
  */
 enum ieee80211_bss_change {
 	BSS_CHANGED_ASSOC		= 1<<0,

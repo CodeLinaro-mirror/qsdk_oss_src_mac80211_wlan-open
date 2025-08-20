@@ -7141,6 +7141,48 @@ static int nl80211_validate_ap_phy_operation(struct cfg80211_ap_settings *params
 	return 0;
 }
 
+static int
+nl80211_parse_adv_ttlm_params(struct genl_info *info,
+			      struct cfg80211_ttlm_params *params)
+{
+	struct nlattr *tb[NL80211_ADVERTISED_TTLM_ATTR_MAX + 1];
+	int ret;
+
+	ret = nla_parse_nested(tb, NL80211_ADVERTISED_TTLM_ATTR_MAX,
+			       info->attrs[NL80211_ATTR_ADVERTISED_TTLM],
+			       NULL, NULL);
+	if (ret)
+		return ret;
+
+	if (!tb[NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT] ||
+	    !tb[NL80211_ADVERTISED_TTLM_ATTR_DURATION] ||
+	    !tb[NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME] ||
+	    !tb[NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP])
+		return -EINVAL;
+
+	if (tb[NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE])
+		nla_memcpy(params->u.adv.link_mapping_size,
+			   tb[NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE],
+			   sizeof(params->u.adv.link_mapping_size));
+	else
+		memset(params->u.adv.link_mapping_size,
+		       0,
+		       sizeof(params->u.adv.link_mapping_size));
+
+	params->u.adv.num_ttlm_info =
+		nla_get_u8(tb[NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT]);
+	nla_memcpy(params->u.adv.switch_time,
+		   tb[NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME],
+		   sizeof(params->u.adv.switch_time));
+	nla_memcpy(params->u.adv.duration,
+		   tb[NL80211_ADVERTISED_TTLM_ATTR_DURATION],
+		   sizeof(params->u.adv.duration));
+	nla_memcpy(params->u.adv.ieee_link_bmap,
+		   tb[NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP],
+		   sizeof(params->u.adv.ieee_link_bmap));
+	return 0;
+}
+
 static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -18323,48 +18365,6 @@ static int nl80211_set_hw_timestamp(struct sk_buff *skb,
 		nla_get_flag(info->attrs[NL80211_ATTR_HW_TIMESTAMP_ENABLED]);
 
 	return rdev_set_hw_timestamp(rdev, dev, &hwts);
-}
-
-static int
-nl80211_parse_adv_ttlm_params(struct genl_info *info,
-			      struct cfg80211_ttlm_params *params)
-{
-	struct nlattr *tb[NL80211_ADVERTISED_TTLM_ATTR_MAX + 1];
-	int ret;
-
-	ret = nla_parse_nested(tb, NL80211_ADVERTISED_TTLM_ATTR_MAX,
-			       info->attrs[NL80211_ATTR_ADVERTISED_TTLM],
-			       NULL, NULL);
-	if (ret)
-		return ret;
-
-	if (!tb[NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT] ||
-	    !tb[NL80211_ADVERTISED_TTLM_ATTR_DURATION] ||
-	    !tb[NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME] ||
-	    !tb[NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP])
-		return -EINVAL;
-
-	if (tb[NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE])
-		nla_memcpy(params->u.adv.link_mapping_size,
-			   tb[NL80211_ADVERTISED_TTLM_ATTR_LINK_MAP_SIZE],
-			   sizeof(params->u.adv.link_mapping_size));
-	else
-		memset(params->u.adv.link_mapping_size,
-		       0,
-		       sizeof(params->u.adv.link_mapping_size));
-
-	params->u.adv.num_ttlm_info =
-		nla_get_u8(tb[NL80211_ADVERTISED_TTLM_ATTR_IE_COUNT]);
-	nla_memcpy(params->u.adv.switch_time,
-		   tb[NL80211_ADVERTISED_TTLM_ATTR_SWITCH_TIME],
-		   sizeof(params->u.adv.switch_time));
-	nla_memcpy(params->u.adv.duration,
-		   tb[NL80211_ADVERTISED_TTLM_ATTR_DURATION],
-		   sizeof(params->u.adv.duration));
-	nla_memcpy(params->u.adv.ieee_link_bmap,
-		   tb[NL80211_ADVERTISED_TTLM_ATTR_IEEE_LINK_MAP],
-		   sizeof(params->u.adv.ieee_link_bmap));
-	return 0;
 }
 
 static int
