@@ -740,7 +740,7 @@ ath12k_dp_mon_rx_setup_pktlog_full(struct ath12k_pdev_dp *dp_pdev)
 
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					enum ath12k_pktlog_mode mode,
-					bool enable)
+					u32 filter, bool enable)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	int ret = 0;
@@ -764,6 +764,9 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_dp_mon_rx_setup_pktlog_lite(dp_pdev);
 			break;
 		case ATH12K_PKTLOG_MODE_FULL:
+			if (!(filter & ATH12K_PKTLOG_RX))
+				return;
+
 			dp->rx_pktlog_mode = ATH12K_PKTLOG_MODE_FULL;
 
 			ath12k_dp_mon_rx_setup_pktlog_full(dp_pdev);

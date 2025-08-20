@@ -877,9 +877,9 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	msg = (struct ath12k_htt_ppdu_stats_msg *)skb->data;
 	len = le32_get_bits(msg->info, HTT_T2H_PPDU_STATS_INFO_PAYLOAD_SIZE);
 	if (len > (skb->len - struct_size(msg, data, 0))) {
-		ath12k_warn(ab,
-			    "HTT PPDU STATS event has unexpected payload size %u, should be smaller than %u\n",
-			    len, skb->len);
+		ath12k_dbg(ab, ATH12K_DBG_DP_HTT,
+			   "HTT PPDU STATS event has unexpected payload size %u, should be smaller than %u\n",
+			   len, skb->len);
 		return -EINVAL;
 	}
 
@@ -1112,35 +1112,34 @@ exit:
 static void
 ath12k_htt_pktlog_tx_handler(struct ath12k_base *ab, struct sk_buff *skb)
 {
-        struct ath12k_pktlog_hdr pl_hdr;
-        struct ath12k *ar;
-        u8 pdev_id;
-        u32 *pl_tgt_hdr, *msg_word;
-        u16 payload_size;
+	struct ath12k *ar;
+	struct ath12k_htt_pktlog_msg *msg;
+	u16 payload_size;
+	u8 pdev_id;
 
-        if (!skb->data)
-                return;
+	if (!skb->data)
+		return;
 
-        msg_word = (u32 *)skb->data;
+	msg = (struct ath12k_htt_pktlog_msg *)skb->data;
 
-        pdev_id = u32_get_bits(*msg_word, HTT_T2H_PKTLOG_PDEV_ID);
-        ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
-        if (!ar) {
-                ath12k_err(ab, "invalid pdev id %d on htt pktlog\n", pdev_id);
-                return;
-        }
+	pdev_id = le32_get_bits(msg->header, HTT_T2H_PKTLOG_PDEV_ID);
+	if (pdev_id < 1) {
+		ath12k_warn(ab, "HTT PKTLOG MSG has invalid pdev id");
+		return;
+	}
 
-        payload_size = u32_get_bits(*msg_word,
-                                    HTT_T2H_PKTLOG_PAYLOAD_SIZE);
-        pl_tgt_hdr = (u32 *)(msg_word + 1);
-        pl_hdr.size = u32_get_bits(*(pl_tgt_hdr +
-				     HTT_T2H_PKTLOG_HDR_SIZE_OFFSET),
-                                   HTT_T2H_PKTLOG_PAYLOAD_SIZE);
-        trace_ath12k_htt_pktlog_tx_handler(ar, pl_tgt_hdr, pl_hdr.size,
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "pktlog tx: failed to get ar\n");
+		return;
+	}
+
+	payload_size = le32_get_bits(msg->header, HTT_T2H_PKTLOG_PAYLOAD_SIZE);
+	trace_ath12k_htt_pktlog_tx_handler(ar, msg->payload, payload_size,
 					   ar->ab->pktlog_defs_checksum);
 
-        if (ar->debug.is_pkt_logging)
-                ath12k_htt_pktlog_process(ar, (u8 *)pl_tgt_hdr);
+	if (ar->debug.is_pkt_logging)
+		ath12k_htt_pktlog_process(ar, (u8 *)msg->payload);
 }
 
 static void ath12k_htt_t2h_ppdu_id_fmt_handler(struct ath12k_dp *dp,

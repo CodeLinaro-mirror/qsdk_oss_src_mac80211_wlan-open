@@ -201,48 +201,65 @@ static int ath12k_pktlog_mmap(struct file *file, struct vm_area_struct
 static ssize_t ath12k_pktlog_read(struct file *file, char __user *userbuf,
                                   size_t count, loff_t *ppos)
 {
-	size_t bufhdr_size;
-	size_t nbytes = 0, ret_val = 0;
-	int rem_len;
-	int start_offset, end_offset;
-	int fold_offset, ppos_data, cur_rd_offset;
 	struct ath12k *ar = file->private_data;
 	struct ath12k_pktlog *info = &ar->debug.pktlog;
 	struct ath12k_pktlog_buf *log_buf;
+	size_t bufhdr_size, rem_len, nbytes = 0, ret_val = 0;
+	size_t start_offset, end_offset = 0;
+	size_t fold_offset = INVALID_OFFSET, ppos_data;
+	int cur_rd_offset;
+	char *buf;
+	ssize_t final_ret = 0;
+
+	if (count == 0 || !userbuf)
+		return 0;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		final_ret = -ENETDOWN;
+		goto unlock;
+	}
+
+	buf = vmalloc(count);
+	if (!buf) {
+		final_ret = -ENOMEM;
+		goto unlock;
+	}
 
 	spin_lock_bh(&info->lock);
 	log_buf = info->buf;
-	if (!log_buf)
-		return 0;
+	if (!log_buf) {
+		spin_unlock_bh(&info->lock);
+		final_ret = 0;
+		goto free;
+	}
 
 	bufhdr_size = sizeof(log_buf->bufhdr);
-
-	if (!info->fw_version_record || info->invalid_decode_info) {
+	if (!info->fw_version_record || info->invalid_decode_info)
 		bufhdr_size -= sizeof(struct ath12k_pktlog_decode_info);
-	}
 
 	/* copy valid log entries from circular buffer into user space */
 	rem_len = count;
 
-	nbytes = 0;
-
 	if (*ppos < bufhdr_size) {
-		nbytes = min((int)(bufhdr_size -  *ppos), rem_len);
-		if (copy_to_user(userbuf,
-				 ((char *)&log_buf->bufhdr) + *ppos, nbytes))
-			return -EFAULT;
+		nbytes = min_t(size_t, bufhdr_size - (size_t)*ppos, rem_len);
+		if (*ppos + nbytes > sizeof(log_buf->bufhdr)) {
+			final_ret = -EFAULT;
+			spin_unlock_bh(&info->lock);
+			goto free;
+		}
+
+		memcpy(buf, ((char *)&log_buf->bufhdr) + *ppos, nbytes);
 		rem_len -= nbytes;
 		ret_val += nbytes;
 	}
 
 	start_offset = log_buf->rd_offset;
-
-	if ((rem_len == 0) || (start_offset < 0)) {
+	if (rem_len == 0 || start_offset == INVALID_OFFSET) {
 		spin_unlock_bh(&info->lock);
-		goto read_done;
+		goto copy_to_user;
 	}
 
-	fold_offset = -1;
 	cur_rd_offset = start_offset;
 
 	/* Find the last offset and fold-offset if the buffer is folded */
@@ -250,17 +267,19 @@ static ssize_t ath12k_pktlog_read(struct file *file, char __user *userbuf,
 		int log_data_offset;
 		struct ath12k_pktlog_hdr *log_hdr;
 
-		log_hdr = (struct ath12k_pktlog_hdr *)(log_buf->log_data + cur_rd_offset);
+		log_hdr = (struct ath12k_pktlog_hdr *)(log_buf->log_data +
+						       cur_rd_offset);
 		log_data_offset = cur_rd_offset + info->hdr_size;
 
-		if ((fold_offset == -1) &&
+		if (fold_offset == INVALID_OFFSET &&
 		    ((info->buf_size - log_data_offset) <= log_hdr->size))
 			fold_offset = log_data_offset - 1;
 
 		ath12k_pktlog_mov_rd_idx(info, &cur_rd_offset);
 
-		if ((fold_offset == -1) && (cur_rd_offset == 0) &&
-		    (cur_rd_offset != log_buf->wr_offset))
+		if (fold_offset == INVALID_OFFSET &&
+		    cur_rd_offset == 0 &&
+		    cur_rd_offset != log_buf->wr_offset)
 			fold_offset = log_data_offset + log_hdr->size - 1;
 
 		end_offset = log_data_offset + log_hdr->size - 1;
@@ -271,59 +290,77 @@ static ssize_t ath12k_pktlog_read(struct file *file, char __user *userbuf,
 
 	ppos_data = *ppos + ret_val - bufhdr_size + start_offset;
 
-	if (fold_offset == -1) {
+	if (fold_offset == INVALID_OFFSET) {
 		if (ppos_data > end_offset)
-			goto read_done;
+			goto copy_to_user;
 
 		nbytes = min(rem_len, end_offset - ppos_data + 1);
 		if (ppos_data < 0 || ppos_data + nbytes > info->buf_size) {
-			ret_val = -EFAULT;
-			goto out;
+			final_ret = -EFAULT;
+			goto free;
 		}
 
-		if (copy_to_user(userbuf + ret_val,
-				 log_buf->log_data + ppos_data, nbytes)) {
-			ret_val = -EFAULT;
-			goto out;
-		}
+		memcpy(buf + ret_val, log_buf->log_data + ppos_data, nbytes);
 		ret_val += nbytes;
-		rem_len -= nbytes;
 	} else {
 		if (ppos_data <= fold_offset) {
 			nbytes = min(rem_len, fold_offset - ppos_data + 1);
-			if (copy_to_user(userbuf + ret_val,
-					 log_buf->log_data + ppos_data,	nbytes)) {
-				ret_val = -EFAULT;
-				goto out;
+			if (ppos_data < 0 || ppos_data + nbytes >
+			    info->buf_size) {
+				final_ret = -EFAULT;
+				goto free;
 			}
+
+			memcpy(buf + ret_val, log_buf->log_data + ppos_data,
+			       nbytes);
 			ret_val += nbytes;
 			rem_len -= nbytes;
 		}
 
-		if (rem_len == 0)
-			goto read_done;
+		if (rem_len > 0) {
+			ppos_data =
+				*ppos + ret_val - (bufhdr_size +
+						   (fold_offset - start_offset + 1));
 
-		ppos_data =
-			*ppos + ret_val - (bufhdr_size +
-					(fold_offset - start_offset + 1));
+			if (ppos_data <= end_offset) {
+				nbytes = min(rem_len, end_offset - ppos_data + 1);
+				if (ppos_data < 0 || ppos_data + nbytes >
+				    info->buf_size) {
+					final_ret = -EFAULT;
+					goto free;
+				}
 
-		if (ppos_data <= end_offset) {
-			nbytes = min(rem_len, end_offset - ppos_data + 1);
-			if (copy_to_user(userbuf + ret_val, log_buf->log_data
-					 + ppos_data,
-					 nbytes)) {
-				ret_val = -EFAULT;
-				goto out;
+				memcpy(buf + ret_val, log_buf->log_data + ppos_data,
+				       nbytes);
+				ret_val += nbytes;
 			}
-			ret_val += nbytes;
-			rem_len -= nbytes;
 		}
 	}
 
-read_done:
+	if (ret_val == 0) {
+		final_ret = 0;
+		goto free;
+	}
+
+copy_to_user:
+	if (ret_val < 0 || ret_val > count || *ppos + ret_val < *ppos) {
+		final_ret = -EFAULT;
+		goto free;
+	}
+
+	if (copy_to_user(userbuf, buf, ret_val)) {
+		final_ret = -EFAULT;
+		goto free;
+	}
+
 	*ppos += ret_val;
-out:
-	return ret_val;
+	final_ret = ret_val;
+
+free:
+	vfree(buf);
+unlock:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return final_ret;
 }
 
 static const struct file_operations fops_pktlog_dump = {
@@ -389,7 +426,9 @@ static ssize_t ath12k_write_pktlog_start(struct file *file, const char __user *u
 		ar->debug.is_pkt_logging = true;
 	} else {
 		ar->debug.is_pkt_logging = false;
-		ath12k_dp_mon_pktlog_config(ar, false, ar->debug.pktlog_mode);
+		ath12k_dp_mon_pktlog_config(ar, false,
+					    ar->debug.pktlog_mode,
+					    ar->debug.pktlog_filter);
 		err = ath12k_dp_mon_rx_update_filter(ar);
 		if (err)
 			ath12k_err(ar->ab,
@@ -528,84 +567,132 @@ void ath12k_deinit_pktlog(struct ath12k *ar)
 }
 
 static void ath12k_pktlog_pull_hdr(struct ath12k_pktlog_hdr_arg *arg,
-                                  struct ath12k *ar, u8 *data)
+				   struct ath12k *ar, u8 *data)
 {
-        struct ath12k_pktlog_hdr *hdr = (struct ath12k_pktlog_hdr *)data;
+	struct ath12k_pktlog_hdr *hdr;
 
-        hdr->flags = __le16_to_cpu(hdr->flags);
-        hdr->missed_cnt = __le16_to_cpu(hdr->missed_cnt);
-        hdr->log_type = __le16_to_cpu(hdr->log_type);
-        hdr->size = __le16_to_cpu(hdr->size);
-        hdr->timestamp = __le32_to_cpu(hdr->timestamp);
-        hdr->type_specific_data = __le32_to_cpu(hdr->type_specific_data);
+	if (!arg || !data) {
+		ath12k_warn(ar->ab, "Invalid arguments to pktlog_pull_hdr\n");
+		return;
+	}
 
-        arg->log_type = hdr->log_type;
-        arg->payload = hdr->payload;
-        arg->payload_size = hdr->size;
-        arg->pktlog_hdr = data;
+	hdr = (struct ath12k_pktlog_hdr *)data;
+
+	arg->flags = __le16_to_cpu(hdr->flags);
+	arg->missed_cnt = __le16_to_cpu(hdr->missed_cnt);
+	arg->log_type = __le16_to_cpu(hdr->log_type);
+	arg->payload_size = __le16_to_cpu(hdr->size);
+	arg->timestamp = __le32_to_cpu(hdr->timestamp);
+	arg->type_specific_data = __le32_to_cpu(hdr->type_specific_data);
+
+	arg->payload = (u8 *)data;
+	arg->pktlog_hdr = (u8 *)hdr;
 }
 
-static void ath12k_pktlog_write_buf(struct ath12k_pktlog *pl_info,
-                                    struct ath12k_pktlog_hdr_arg *hdr_arg) {
+static void ath12k_pktlog_write_buf(struct ath12k *ar,
+				    struct ath12k_pktlog *pl_info,
+				    struct ath12k_pktlog_hdr_arg *hdr_arg)
+{
 	char *log_data;
 
-	log_data = ath12k_pktlog_getbuf(pl_info, hdr_arg);
-	if (!log_data)
+	if (!pl_info || !pl_info->buf || pl_info->buf_size <= 0) {
+		ath12k_warn(ar->ab, "Invalid pl_info or buffer\n");
 		return;
+	}
+
+	if (!hdr_arg || !hdr_arg->payload || hdr_arg->payload_size <= 0) {
+		ath12k_warn(ar->ab, "Invalid hdr_arg or payload\n");
+		return;
+	}
+
+	log_data = ath12k_pktlog_getbuf(pl_info, hdr_arg);
+	if (!log_data) {
+		ath12k_warn(ar->ab, "pktlog data is NULL\n");
+		return;
+	}
+
+	if (hdr_arg->payload_size > pl_info->buf_size) {
+		ath12k_warn(ar->ab,
+			    "Payload size is too large : %d > buf_size: %d\n",
+			    hdr_arg->payload_size, pl_info->buf_size);
+		return;
+	}
+
+	if (log_data < pl_info->buf->log_data ||
+	    (log_data + hdr_arg->payload_size) >
+	    (pl_info->buf->log_data + pl_info->buf_size)) {
+		ath12k_warn(ar->ab,
+			    "memcpy out of bounds : log_data: %p size: %d\n",
+			    log_data, hdr_arg->payload_size);
+		return;
+	}
 
 	memcpy(log_data, hdr_arg->payload, hdr_arg->payload_size);
 }
 
 void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data)
 {
-        struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
-        struct ath12k_pktlog_hdr_arg hdr_arg;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_hdr_arg hdr_arg;
 
-        ath12k_pktlog_pull_hdr(&hdr_arg, ar, data);
-        ath12k_pktlog_write_buf(pl_info, &hdr_arg);
+	if (!ar)
+		return;
+
+	pl_info = &ar->debug.pktlog;
+	ath12k_pktlog_pull_hdr(&hdr_arg, ar, data);
+	ath12k_pktlog_write_buf(ar, pl_info, &hdr_arg);
 }
 
 void ath12k_htt_ppdu_pktlog_process(struct ath12k *ar, u8 *data,
                                     u32 len)
 {
-        struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
-        struct ath12k_pktlog_hdr hdr;
-        struct ath12k_pktlog_hdr_arg hdr_arg;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_hdr hdr;
+	struct ath12k_pktlog_hdr_arg hdr_arg;
 
-        hdr.flags = (1 << PKTLOG_FLG_FRM_TYPE_REMOTE_S);
-        hdr.missed_cnt = 0;
-        hdr.log_type = ATH12K_PKTLOG_TYPE_PPDU_STATS;
-        hdr.timestamp = 0;
-        hdr.size = len;
-        hdr.type_specific_data = 0;
+	if (!ar)
+		return;
 
-        hdr_arg.log_type = hdr.log_type;
-        hdr_arg.payload_size = hdr.size;
-        hdr_arg.payload = (u8 *)data;
-        hdr_arg.pktlog_hdr = (u8 *)&hdr;
+	pl_info = &ar->debug.pktlog;
+	hdr.flags = (1 << PKTLOG_FLG_FRM_TYPE_REMOTE_S);
+	hdr.missed_cnt = 0;
+	hdr.log_type = ATH12K_PKTLOG_TYPE_PPDU_STATS;
+	hdr.timestamp = 0;
+	hdr.size = len;
+	hdr.type_specific_data = 0;
 
-        ath12k_pktlog_write_buf(pl_info, &hdr_arg);
+	hdr_arg.log_type = hdr.log_type;
+	hdr_arg.payload_size = hdr.size;
+	hdr_arg.payload = (u8 *)data;
+	hdr_arg.pktlog_hdr = (u8 *)&hdr;
+
+	ath12k_pktlog_write_buf(ar, pl_info, &hdr_arg);
 }
 
 void ath12k_dp_rx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
                                           u16 log_type, u32 len)
 {
-        struct ath12k_pktlog *pl_info = &ar->debug.pktlog;
-        struct ath12k_pktlog_hdr hdr;
-        struct ath12k_pktlog_hdr_arg hdr_arg;
+	struct ath12k_pktlog *pl_info;
+	struct ath12k_pktlog_hdr hdr;
+	struct ath12k_pktlog_hdr_arg hdr_arg;
 
-        hdr.flags = (1 << PKTLOG_FLG_FRM_TYPE_REMOTE_S);
-        hdr.missed_cnt = 0;
-        hdr.log_type = log_type;
-        hdr.timestamp = 0;
-        hdr.size = len;
-        hdr.type_specific_data = 0;
+	if (!ar)
+		return;
 
-        hdr_arg.log_type = log_type;
-        hdr_arg.payload_size = len;
-        hdr_arg.payload = data;
-        hdr_arg.pktlog_hdr = (u8 *)&hdr;
+	pl_info = &ar->debug.pktlog;
 
-        ath12k_pktlog_write_buf(pl_info, &hdr_arg);
+	hdr.flags = (1 << PKTLOG_FLG_FRM_TYPE_REMOTE_S);
+	hdr.missed_cnt = 0;
+	hdr.log_type = log_type;
+	hdr.timestamp = 0;
+	hdr.size = len;
+	hdr.type_specific_data = 0;
+
+	hdr_arg.log_type = log_type;
+	hdr_arg.payload_size = len;
+	hdr_arg.payload = data;
+	hdr_arg.pktlog_hdr = (u8 *)&hdr;
+
+	ath12k_pktlog_write_buf(ar, pl_info, &hdr_arg);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_stats_buf_pktlog_process);

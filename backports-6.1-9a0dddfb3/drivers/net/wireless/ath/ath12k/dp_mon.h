@@ -123,7 +123,8 @@ struct ath12k_dp_arch_mon_ops {
 	void (*rx_enable_packet_filters)(void *ptr,
 						struct htt_rx_ring_tlv_filter *filter);
 	void (*pktlog_config)(struct ath12k_pdev_dp *dp_pdev,
-			      enum ath12k_pktlog_mode mode, bool enable);
+			      enum ath12k_pktlog_mode mode,
+			      u32 filter, bool enable);
 };
 
 struct ath12k_dp_mon {
@@ -447,7 +448,8 @@ void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp);
 void
 ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
-				enum ath12k_pktlog_mode mode, bool enable);
+					enum ath12k_pktlog_mode mode,
+					u32 filter, bool enable);
 u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp, struct sk_buff *skb,
 					     u8 idx);
 void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx);
@@ -764,7 +766,8 @@ ath12k_dp_mon_rx_config_packet_type_subtype(struct ath12k_dp *dp, void *ptr,
 
 static inline void
 ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
-			    enum ath12k_pktlog_mode mode)
+			    enum ath12k_pktlog_mode mode,
+			    u32 filter)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
@@ -774,7 +777,7 @@ ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if(mon_ops && mon_ops->pktlog_config)
-		mon_ops->pktlog_config(dp_pdev, mode, enable);
+		mon_ops->pktlog_config(dp_pdev, mode, filter, enable);
 }
 
 static inline void

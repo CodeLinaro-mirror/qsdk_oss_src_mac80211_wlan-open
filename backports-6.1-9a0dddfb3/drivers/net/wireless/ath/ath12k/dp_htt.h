@@ -533,6 +533,12 @@ enum htt_ppdu_stats_tag_type {
 	HTT_PPDU_STATS_TAG_INFO,
 	HTT_PPDU_STATS_TAG_TX_MGMTCTRL_PAYLOAD,
 	HTT_PPDU_STATS_USERS_INFO,
+	HTT_PPDU_STATS_USR_MPDU_ENQ_BITMAP_1024_TLV,
+	HTT_PPDU_STATS_USR_COMPLTN_BA_BITMAP_1024_TLV,
+	HTT_PPDU_STATS_RX_MGMTCTRL_PAYLOAD_TLV,
+	HTT_PPDU_STATS_FOR_SMU_TLV,
+	HTT_PPDU_STATS_MLO_TX_RESP_TLV,
+	HTT_PPDU_STATS_MLO_TX_NOTIFICATION_TLV,
 
 	/* New TLV's are added above to this line */
 	HTT_PPDU_STATS_TAG_MAX,
@@ -559,10 +565,13 @@ enum htt_ppdu_stats_tag_type {
 
 #define HTT_PPDU_STATS_TAG_PKTLOG  (BIT(HTT_PPDU_STATS_TAG_USR_MPDU_ENQ_BITMAP_64) | \
 				    BIT(HTT_PPDU_STATS_TAG_USR_MPDU_ENQ_BITMAP_256) | \
+				    BIT(HTT_PPDU_STATS_USR_MPDU_ENQ_BITMAP_1024_TLV) | \
 				    BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_BA_BITMAP_64) | \
 				    BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_BA_BITMAP_256) | \
+				    BIT(HTT_PPDU_STATS_USR_COMPLTN_BA_BITMAP_1024_TLV) | \
 				    BIT(HTT_PPDU_STATS_TAG_INFO) | \
 				    BIT(HTT_PPDU_STATS_TAG_TX_MGMTCTRL_PAYLOAD) | \
+				    BIT(HTT_PPDU_STATS_USERS_INFO) | \
 				    HTT_PPDU_STATS_TAG_DEFAULT)
 
 enum htt_stats_internal_ppdu_frametype {
@@ -1355,9 +1364,13 @@ enum htt_backpressure_lmac_ringid {
  *     Purpose: explicitly specify the payload size
  *     Value: payload size in bytes (payload size is a multiple of 4 bytes)
  */
-#define HTT_T2H_PKTLOG_HDR_SIZE_OFFSET 1
-#define HTT_T2H_PKTLOG_PDEV_ID GENMASK(11, 10)
-#define HTT_T2H_PKTLOG_PAYLOAD_SIZE GENMASK(31, 16)
+#define HTT_T2H_PKTLOG_PDEV_ID		GENMASK(11, 10)
+#define HTT_T2H_PKTLOG_PAYLOAD_SIZE	GENMASK(31, 16)
+
+struct ath12k_htt_pktlog_msg {
+	__le32 header;
+	u8 payload[];
+} __packed;
 
 struct ath12k_htt_ppdu_stats_msg {
 	__le32 info;

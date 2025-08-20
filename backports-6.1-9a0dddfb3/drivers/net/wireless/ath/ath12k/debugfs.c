@@ -5625,6 +5625,7 @@ static ssize_t ath12k_write_pktlog_filter(struct file *file,
 		mode = ATH12K_PKTLOG_MODE_LITE;
 	else {
 		ath12k_err(ab, "Invalid mode: %d", mode);
+		ret = -EINVAL;
 		goto exit;
 	}
 
@@ -5647,11 +5648,11 @@ static ssize_t ath12k_write_pktlog_filter(struct file *file,
 		}
 	}
 
-	ath12k_dp_mon_pktlog_config(ar, enable, mode);
+	ath12k_dp_mon_pktlog_config(ar, enable, mode, filter);
 	ret = ath12k_dp_mon_rx_update_filter(ar);
 	if (ret) {
 		ath12k_err(ab, "Failed to configure pktlog filters\n");
-		ath12k_dp_mon_pktlog_config(ar, false, mode);
+		ath12k_dp_mon_pktlog_config(ar, false, mode, filter);
 		goto exit;
 	}
 

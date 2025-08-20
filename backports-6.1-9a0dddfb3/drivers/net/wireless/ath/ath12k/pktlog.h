@@ -16,6 +16,22 @@
 #define ATH12K_DEBUGFS_PKTLOG_SIZE_DEFAULT (10 * 1024 * 1024)
 #define ATH12K_PKTLOG_SIZE_MIN  (16 * 1024)
 #define ATH12K_PKTLOG_SIZE_MAX  (50 * 1024 * 1024)
+#define INVALID_OFFSET		((size_t)-1)
+
+#define ATH12K_PKTLOG_HDR_FLAGS_MASK 0xffff
+#define ATH12K_PKTLOG_HDR_FLAGS_SHIFT 0
+#define ATH12K_PKTLOG_HDR_FLAGS_OFFSET 0
+#define ATH12K_PKTLOG_HDR_MISSED_CNT_MASK 0xffff0000
+#define ATH12K_PKTLOG_HDR_MISSED_CNT_SHIFT 16
+#define ATH12K_PKTLOG_HDR_MISSED_CNT_OFFSET 0
+#define ATH12K_PKTLOG_HDR_LOG_TYPE_MASK 0xffff
+#define ATH12K_PKTLOG_HDR_LOG_TYPE_SHIFT 0
+#define ATH12K_PKTLOG_HDR_LOG_TYPE_OFFSET 1
+#define ATH12K_PKTLOG_HDR_SIZE_MASK 0xffff0000
+#define ATH12K_PKTLOG_HDR_SIZE_SHIFT 16
+#define ATH12K_PKTLOG_HDR_SIZE_OFFSET 1
+#define ATH12K_PKTLOG_HDR_TIMESTAMP_OFFSET 2
+#define ATH12K_PKTLOG_HDR_TYPE_SPECIFIC_DATA_OFFSET 3
 
 enum ath12k_pktlog_flag {
         PKTLOG_FLG_FRM_TYPE_LOCAL_S = 0,
@@ -70,10 +86,14 @@ enum ath12k_pktlog_enum {
 };
 
 struct ath12k_pktlog_hdr_arg {
-        u16 log_type;
-        u8 *payload;
-        u16 payload_size;
-        u8 *pktlog_hdr;
+	__le16 log_type;
+	u8 *payload;
+	__le16 payload_size;
+	u8 *pktlog_hdr;
+	__le32 flags;
+	__le16 missed_cnt;
+	__le16 timestamp;
+	__le32 type_specific_data;
 };
 
 struct ath12k_pktlog_bufhdr {

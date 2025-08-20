@@ -1231,13 +1231,21 @@ ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *pdev_dp,
 
 	if (!ar->debug.is_pkt_logging ||
 	    !status_desc->mon_buf ||
-	    !status_desc->buf_len)
+	    !status_desc->buf_len) {
 		return;
+	}
 
 	if (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_LITE)
 		log_type = ATH12K_PKTLOG_TYPE_LITE_RX;
-	else if (dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_FULL)
+	else if ((dp->rx_pktlog_mode == ATH12K_PKTLOG_MODE_FULL) &&
+		 (ar->debug.pktlog_filter & ATH12K_PKTLOG_RX))
 		log_type = ATH12K_PKTLOG_TYPE_RX_STATBUF;
+
+	if (!log_type) {
+		ath12k_dbg(dp->ab, ATH12K_DBG_DATA,
+			   "pktlog: skipping processing with no log type\n");
+		return;
+	}
 
 	trace_ath12k_htt_rxdesc(ar, status_desc->mon_buf,
 				log_type, status_desc->buf_len);
