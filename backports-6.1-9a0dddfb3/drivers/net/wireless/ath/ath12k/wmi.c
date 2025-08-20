@@ -15137,7 +15137,6 @@ static void ath12k_wmi_mlo_3_link_tlt_selection(struct ath12k_base *ab,
                if (!is_zero_ether_addr(tlt_sel_params.mld_addr)) {
                        peer = ath12k_dp_link_peer_find_by_addr(dp, tlt_sel_params.mld_addr);
                        if (!peer) {
-			       spin_unlock_bh(&dp->dp_lock);
                                continue;
 		       }
 		       break;

@@ -1940,7 +1940,12 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	spin_lock_bh(&dp->dp_lock);
-	peer->txrate = txrate;
+	peer = ath12k_dp_link_peer_find_by_id(dp, ts->peer_id);
+	if (peer)
+		peer->txrate = txrate;
+	else
+		ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+			   "failed to find the peer by id %u\n", ts->peer_id);
 	spin_unlock_bh(&dp->dp_lock);
 }
 

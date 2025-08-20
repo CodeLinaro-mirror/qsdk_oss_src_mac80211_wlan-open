@@ -1014,17 +1014,21 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_base *ab = dp->ab;
 	struct ieee80211_rx_status *rx_status;
-	struct ieee80211_sta *pubsta;
-	struct ath12k_dp_peer *peer;
+	struct ieee80211_sta *pubsta = NULL;
+	struct ath12k_dp_peer *peer = NULL;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ath12k_dp_link_peer *link_peer = NULL;
 	struct ath12k_vif *ahvif;
+	u8 addr[ETH_ALEN] = {0};
 
 	rcu_read_lock();
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 
-	pubsta = peer ? peer->sta : NULL;
+	if (peer) {
+		pubsta = peer->sta;
+		memcpy(addr, peer->addr, ETH_ALEN);
+	}
 
 	if (pubsta && pubsta->valid_links) {
 		status->link_valid = 1;
@@ -1060,7 +1064,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 		   "rx skb %p len %u peer %pM %d %s %s%s%s%s%s%s%s%s%s%s rate_idx %u vht_nss %u freq %u band %u flag 0x%x fcs-err %i mic-err %i amsdu-more %i\n",
 		   msdu,
 		   msdu->len,
-		   peer ? peer->addr : NULL,
+		   addr,
 		   tid,
 		   is_mcbc ? "mcast" : "ucast",
 		   (status->encoding == RX_ENC_LEGACY) ? "legacy" : "",

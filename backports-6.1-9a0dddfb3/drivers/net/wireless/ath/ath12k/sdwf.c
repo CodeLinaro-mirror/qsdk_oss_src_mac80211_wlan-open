@@ -631,11 +631,9 @@ int ath12k_telemetry_get_msduq_tx_stats(void *ptr, void *arg,
 	spin_lock_bh(&dp_hw->peer_lock);
 	mld_peer = ath12k_dp_peer_find(dp_hw, mld_peer->addr);
 	if (!mld_peer) {
-		spin_unlock_bh(&dp_hw->peer_lock);
 		ret = -ENOENT;
 		goto end;
 	}
-	spin_unlock_bh(&dp_hw->peer_lock);
 
 	mld_qos_stats = &mld_peer->mld_qos_stats[tid][q_id];
 	if (!mld_qos_stats) {
@@ -686,6 +684,7 @@ int ath12k_telemetry_get_msduq_tx_stats(void *ptr, void *arg,
 		tmp_peer = NULL;
 	}
 end:
+	spin_unlock_bh(&dp_hw->peer_lock);
 	rcu_read_unlock();
 	return ret;
 }
@@ -716,11 +715,9 @@ int ath12k_telemetry_get_sawf_tx_stats_drop(void *ptr, void *peer, u64 *pass,
 	spin_lock_bh(&dp_hw->peer_lock);
 	mld_peer = ath12k_dp_peer_find(dp_hw, mld_peer->addr);
 	if (!mld_peer) {
-		spin_unlock_bh(&dp_hw->peer_lock);
 		ret = -ENOENT;
 		goto end;
 	}
-	spin_unlock_bh(&dp_hw->peer_lock);
 
 	mld_qos_stats = &mld_peer->mld_qos_stats[tid][q_id];
 	if (!mld_qos_stats) {
@@ -755,6 +752,7 @@ int ath12k_telemetry_get_sawf_tx_stats_drop(void *ptr, void *peer, u64 *pass,
 		tmp_peer = NULL;
 	}
 end:
+	spin_unlock_bh(&dp_hw->peer_lock);
 	rcu_read_unlock();
 	return ret;
 }
@@ -782,11 +780,9 @@ int ath12k_telemetry_get_sawf_tx_stats_mpdu(void *ptr, void *peer, u64 *svc_int_
 	spin_lock_bh(&dp_hw->peer_lock);
 	mld_peer = ath12k_dp_peer_find(dp_hw, mld_peer->addr);
 	if (!mld_peer) {
-		spin_unlock_bh(&dp_hw->peer_lock);
 		ret = -ENOENT;
 		goto end;
 	}
-	spin_unlock_bh(&dp_hw->peer_lock);
 
 	mld_qos_stats = &mld_peer->mld_qos_stats[tid][q_id];
 	if (!mld_qos_stats) {
@@ -799,6 +795,7 @@ int ath12k_telemetry_get_sawf_tx_stats_mpdu(void *ptr, void *peer, u64 *svc_int_
 	*burst_pass = mld_qos_stats->burst_size_stats.success_cnt;
 	*burst_fail = mld_qos_stats->burst_size_stats.failure_cnt;
 end:
+	spin_unlock_bh(&dp_hw->peer_lock);
 	rcu_read_unlock();
 	return ret;
 }
@@ -828,11 +825,9 @@ int ath12k_telemetry_get_sawf_tx_stats_tput(void *ptr, void *peer, u64 *in_bytes
 	spin_lock_bh(&dp_hw->peer_lock);
 	mld_peer = ath12k_dp_peer_find(dp_hw, mld_peer->addr);
 	if (!mld_peer) {
-		spin_unlock_bh(&dp_hw->peer_lock);
 		ret = -ENOENT;
 		goto end;
 	}
-	spin_unlock_bh(&dp_hw->peer_lock);
 
 	peer_links_map = mld_peer->peer_links_map;
 	scan_links_map = ATH12K_SCAN_LINKS_MASK;
@@ -865,6 +860,7 @@ int ath12k_telemetry_get_sawf_tx_stats_tput(void *ptr, void *peer, u64 *in_bytes
 	}
 
 end:
+	spin_unlock_bh(&dp_hw->peer_lock);
 	rcu_read_unlock();
 	return ret;
 }

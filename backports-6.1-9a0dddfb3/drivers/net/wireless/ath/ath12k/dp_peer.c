@@ -538,10 +538,13 @@ int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, params->sta);
-	spin_unlock_bh(&dp_hw->peer_lock);
 
-	if (dp_peer)
+	if (dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_lock);
 		return -EEXIST;
+	}
+
+	spin_unlock_bh(&dp_hw->peer_lock);
 
 	dp_peer = kzalloc(sizeof(*dp_peer), GFP_ATOMIC);
 	if (!dp_peer)
@@ -605,7 +608,8 @@ void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr, struct ieee8021
 
 int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       struct ieee80211_sta *sta, u8 *addr, u8 link_id,
-			       u32 hw_link_id, struct ieee80211_vif *vif)
+			       u32 hw_link_id, struct ieee80211_vif *vif,
+			       u8 vp_type, int vp_num)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp *dp = dp_pdev->dp;
@@ -665,6 +669,17 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	dp_peer->hw_links[peer->hw_link_id] = link_id;
 
+	if (vif->type == NL80211_IFTYPE_AP)
+		dp_peer->is_reset_mcbc = true;
+
+	/* Do not deliver frames to PPE in fast rx incase of RFS
+	 * RFS is supported only in SFE Mode
+	 */
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (vp_type == PPE_VP_USER_TYPE_ACTIVE || vp_type == PPE_VP_USER_TYPE_DS)
+		dp_peer->ppe_vp_num = vp_num;
+#endif
+
 	peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
 
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], peer);
@@ -707,6 +722,7 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_link_peer *peer, *temp_peer;
 	u16 peerid_index;
+	bool is_vdev_peer = false;
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -725,6 +741,9 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 
 	if (!dp_peer->is_vdev_peer)
 		dp_peer->peer_links_map &= ~(peer->link_id);
+
+	is_vdev_peer = dp_peer->is_vdev_peer;
+
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
 
 	rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
@@ -750,7 +769,7 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 
 	synchronize_rcu();
 
-	if (dp_peer->is_vdev_peer)
+	if (is_vdev_peer)
 		ath12k_dp_peer_delete(dp_hw, addr, NULL);
 }
 

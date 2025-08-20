@@ -236,15 +236,18 @@ int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 	rcu_read_lock();
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
 
+	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
 	if (!peer) {
 		ath12k_err(ab, "Invalid peer id %u", peer_id);
+		spin_unlock_bh(&dp->dp_lock);
 		rcu_read_unlock();
 		return -EINVAL;
 	}
 	qos = peer->dp_peer->qos;
 	if (!qos) {
 		ath12k_err(ab, "QOS ctx for peer id %u", peer_id);
+		spin_unlock_bh(&dp->dp_lock);
 		rcu_read_unlock();
 		return -EINVAL;
 	}
@@ -259,6 +262,8 @@ int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 	skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
 
 	arsta = ath12k_peer_get_link_sta(ab, peer);
+	spin_unlock_bh(&dp->dp_lock);
+
 	arvif = arsta->arvif;
 
 	/* This arch ops is temporary, must be removed once ppeds handler is moved to wifi7 */

@@ -476,6 +476,7 @@ void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	bool is_mcbc = rxcb->is_mcbc;
+	u8 addr[ETH_ALEN] = {0};
 
 	status->link_valid = 0;
 	status->link_id = 0;
@@ -490,6 +491,7 @@ void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_id(dp, ppduinfo->peer_id);
 	if (peer && peer->sta) {
+		memcpy(addr, peer->addr, ETH_ALEN);
 		pubsta = peer->sta;
 		if (pubsta->valid_links) {
 			status->link_valid = 1;
@@ -503,7 +505,7 @@ void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 		   "rx skb %p len %u peer %pM %u %s %s%s%s%s%s%s%s%s %srate_idx %u vht_nss %u freq %u band %u flag 0x%x fcs-err %i mic-err %i amsdu-more %i\n",
 		   msdu,
 		   msdu->len,
-		   peer ? peer->addr : NULL,
+		   addr,
 		   rxcb->tid,
 		   (is_mcbc) ? "mcast" : "ucast",
 		   (status->encoding == RX_ENC_LEGACY) ? "legacy" : "",

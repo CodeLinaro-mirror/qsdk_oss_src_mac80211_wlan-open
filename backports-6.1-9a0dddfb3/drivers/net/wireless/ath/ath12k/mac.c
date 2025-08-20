@@ -8286,8 +8286,9 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 	struct ath12k_dp_link_peer *peer;
 	int first_errno = 0;
 	int ret;
-	int i;
+	int i, len;
 	u32 flags = 0;
+	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1] = {0};
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -8298,14 +8299,24 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 		spin_unlock_bh(&ab->dp->dp_lock);
 		return -ENOENT;
 	}
-	spin_unlock_bh(&ab->dp->dp_lock);
 
-	for (i = 0; i < ARRAY_SIZE(peer->dp_peer->keys); i++) {
+	len = ARRAY_SIZE(peer->dp_peer->keys);
+	for (i = 0; i < len; i++) {
 		if (!peer->dp_peer->keys[i])
 			continue;
 
+		keys[i] = peer->dp_peer->keys[i];
+
+		peer->dp_peer->keys[i] = NULL;
+	}
+	spin_unlock_bh(&ab->dp->dp_lock);
+
+	for (i = 0; i < len; i++) {
+		if (!keys[i])
+			continue;
+
 		/* key flags are not required to delete the key */
-		ret = ath12k_install_key(arvif, peer->dp_peer->keys[i],
+		ret = ath12k_install_key(arvif, keys[i],
 					 DISABLE_KEY, addr, flags);
 		if (ret < 0 && first_errno == 0)
 			first_errno = ret;
@@ -8313,12 +8324,7 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 		if (ret < 0)
 			ath12k_warn(ab, "failed to remove peer key %d: %d\n",
 				    i, ret);
-
-		spin_lock_bh(&ab->dp->dp_lock);
-		peer->dp_peer->keys[i] = NULL;
-		spin_unlock_bh(&ab->dp->dp_lock);
 	}
-
 
 	return first_errno;
 }
@@ -11891,9 +11897,10 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 	unsigned long valid_links;
 	struct ath12k *ar, *ar_p;
 	struct ath12k_dp *dp_p;
-	int i, ret = 0;
+	int i, ret = 0, len = 0;
 	u32 flags = 0;
 	u8 link_id;
+	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1] = {0};
 
 	valid_links = sta->valid_links;
 
@@ -11920,6 +11927,13 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 		return -ENOENT;
 	}
 
+	len = ARRAY_SIZE(peer->dp_peer->keys);
+	for (i = 0; i < len; i++) {
+		if (!peer->dp_peer->keys[i])
+			continue;
+
+		keys[i] = peer->dp_peer->keys[i];
+	}
 	spin_unlock_bh(&dp_p->dp_lock);
 
 	ath12k_dbg(NULL, ATH12K_DBG_MAC,
@@ -11983,17 +11997,16 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 		}
 
 		if (sta->reconf.added_links & BIT(link_id)) {
-			for (i = 0; i < ARRAY_SIZE(peer->dp_peer->keys); i++) {
-				if (!peer->dp_peer->keys[i])
+			for (i = 0; i < len; i++) {
+				if (!keys[i])
 					continue;
 
-				if (!(peer->dp_peer->keys[i]->flags &
-				      IEEE80211_KEY_FLAG_PAIRWISE))
+				if (!(keys[i]->flags & IEEE80211_KEY_FLAG_PAIRWISE))
 					continue;
 
 				flags |= WMI_KEY_PAIRWISE;
 				ret = ath12k_install_key(arvif,
-							 peer->dp_peer->keys[i],
+							 keys[i],
 							 SET_KEY, arsta->addr,
 							 flags);
 				if (ret) {
