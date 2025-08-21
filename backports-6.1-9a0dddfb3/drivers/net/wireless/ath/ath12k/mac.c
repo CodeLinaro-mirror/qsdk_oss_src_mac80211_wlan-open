@@ -14222,6 +14222,23 @@ check_rm_action_frame:
 		 */
 		skb_cb->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
 		break;
+	case WLAN_CATEGORY_WNM:
+		action_code = *buf++;
+
+		switch (action_code) {
+		case WLAN_WNM_ACTION_BSS_TM_REQ:
+		case WLAN_WNM_ACTION_BSS_TM_RESP:
+			/* Set the link agnostic bit for
+			 * BTM request and response as per
+			 * IEEE Std 802.11be Draft 7.0,
+			 * section 35.3.14
+			 */
+			skb_cb->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+			break;
+		default:
+			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+		}
+		break;
 	default:
 		/* nothing to fill */
 		skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;

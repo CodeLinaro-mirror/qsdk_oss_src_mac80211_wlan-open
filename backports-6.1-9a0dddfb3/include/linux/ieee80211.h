@@ -3515,6 +3515,20 @@ ieee80211_bandwidth_indication_size_ok(const u8 *data, u8 len)
 #define WLAN_ERP_USE_PROTECTION (1<<1)
 #define WLAN_ERP_BARKER_PREAMBLE (1<<2)
 
+/* WNM Action field values per IEEE 802.11v-2011 section 7.4.12.1 */
+enum ieee80211_wnm_action {
+	WLAN_WNM_ACTION_EVENT_REQ          = 0,
+	WLAN_WNM_ACTION_EVENT_RESP         = 1,
+	WLAN_WNM_ACTION_DIAGNOSTIC_REQ     = 2,
+	WLAN_WNM_ACTION_DIAGNOSTIC_RESP    = 3,
+	WLAN_WNM_ACTION_LOCATION_CFG_REQ   = 4,
+	WLAN_WNM_ACTION_LOCATION_CFG_RESP  = 5,
+	WLAN_WNM_ACTION_BSS_TM_QUERY       = 6,
+	WLAN_WNM_ACTION_BSS_TM_REQ         = 7,
+	WLAN_WNM_ACTION_BSS_TM_RESP        = 8,
+	/* TODO: Add 9-27 when required */
+};
+
 /* WLAN_ERP_BARKER_PREAMBLE values */
 enum {
 	WLAN_ERP_PREAMBLE_SHORT = 0,
