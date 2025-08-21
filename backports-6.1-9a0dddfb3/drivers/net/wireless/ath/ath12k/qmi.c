@@ -4010,6 +4010,7 @@ static void ath12k_qmi_phy_cap_send(struct ath12k_base *ab)
 	struct qmi_wlanfw_phy_cap_req_msg_v01 req = {};
 	struct qmi_wlanfw_phy_cap_resp_msg_v01 resp = {};
 	struct qmi_txn txn;
+	const char *mm_cal_prop;
 	int ret;
 
 	ret = qmi_txn_init(&ab->qmi.handle, &txn,
@@ -4041,8 +4042,19 @@ static void ath12k_qmi_phy_cap_send(struct ath12k_base *ab)
 		goto out;
 	}
 
-	if (ath12k_cold_boot_cal && resp.mm_coldboot_cal_valid && resp.mm_coldboot_cal)
+	/* if early-cal fails in u-boot, qcom,mm_cal_support will be enabled
+	 * dynamically through u-boot
+	 */
+
+	ret = of_property_read_string(ab->dev->of_node, "qcom,mm_cal_support",
+				     &mm_cal_prop);
+
+	if (!ret && !strcmp(mm_cal_prop, "disabled")) {
+		ab->mm_cal_support = false;
+	} else if (ath12k_cold_boot_cal && resp.mm_coldboot_cal_valid &&
+			resp.mm_coldboot_cal) {
 		ab->mm_cal_support = true;
+	}
 
 	ab->qmi.num_radios = resp.num_phy;
 
