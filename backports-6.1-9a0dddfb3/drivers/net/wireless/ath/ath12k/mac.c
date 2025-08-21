@@ -9256,10 +9256,8 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 	}
 
 	reg_6g_power_mode = bss_conf->power_type;
-	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
-		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
-	else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
-		 !ar->afc.is_6ghz_afc_power_event_received)
+	if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
+	    !ar->afc.is_6ghz_afc_power_event_received)
 		reg_6g_power_mode = NL80211_REG_REGULAR_CLIENT_SP + 1;
 
         chan = ctx->def.chan;
