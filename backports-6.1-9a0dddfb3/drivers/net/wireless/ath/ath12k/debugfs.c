@@ -5628,7 +5628,8 @@ static ssize_t ath12k_write_pktlog_filter(struct file *file,
 	bool enable = true;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+	if (!ath12k_ftm_mode &&
+	    ar->ah->state != ATH12K_HW_STATE_ON) {
 		ret = -ENETDOWN;
 		goto exit;
 	}
@@ -5707,7 +5708,7 @@ static ssize_t ath12k_read_pktlog_filter(struct file *file,
         int len = 0;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+	if (!ath12k_ftm_mode && ar->ah->state != ATH12K_HW_STATE_ON) {
 		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		return -ENETDOWN;
 	}
