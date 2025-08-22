@@ -7935,6 +7935,9 @@ ath12k_htt_print_be_bn_ul_trigger_stats_tlv(const void *tag_buf, u16 tag_len,
 
 	len += scnprintf(buf + len, buf_len - len,
 			 "HTT_RX_PDEV_BE_BN_UL_TRIGGER_STATS_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len, "mac_id = %u\n",
+			u32_get_bits(le32_to_cpu(stats_buf->mac_id_word),
+					ATH12K_HTT_STATS_MAC_ID));
 	len += scnprintf(buf + len, buf_len - len, "rx_11be_ul_ofdma = %u\n",
 			 le32_to_cpu(stats_buf->rx_11be_ul_ofdma));
 	len += print_array_to_buf(buf, len, "be_ul_ofdma_rx_mcs",

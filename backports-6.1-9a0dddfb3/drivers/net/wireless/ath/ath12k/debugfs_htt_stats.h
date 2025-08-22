@@ -4076,6 +4076,7 @@ struct htt_rx_pdev_be_ul_ofdma_user_stats_tlv {
 #define ATH12K_HTT_RX_NUM_BN_BW_COUNTERS	5
 
 struct ath12k_htt_rx_pdev_be_ul_trig_stats_tlv {
+	__le32 mac_id_word;
 	__le32 rx_11be_ul_ofdma;
 	__le32 be_ul_ofdma_rx_mcs[ATH12K_HTT_RX_NUM_BE_MCS_COUNTERS];
 	__le32 be_ul_ofdma_rx_gi[ATH12K_HTT_RX_NUM_GI_COUNTERS]
