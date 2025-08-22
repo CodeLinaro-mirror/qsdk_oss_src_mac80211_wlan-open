@@ -636,13 +636,19 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_MLO_SCHED_STATS_TAG                   = 190,
 	HTT_STATS_PDEV_MLO_IPC_STATS_TAG		= 191,
 	HTT_STATS_WHAL_WSI_TAG				= 192,
+	HTT_STATS_LATENCY_PROF_CAL_DATA_TAG		= 193,
 	HTT_STATS_GTX_TAG				= 199,
 	HTT_STATS_TX_PDEV_WIFI_RADAR_TAG		= 200,
 	HTT_STATS_TXBF_OFDMA_BE_PARBW_TAG		= 201,
+	HTT_STATS_PDEV_SPECTRAL_TAG			= 204,
+	HTT_STATS_PDEV_RTT_DELAY_TAG			= 205,
+	HTT_STATS_PDEV_AOA_TAG				= 206,
+	HTT_STATS_PDEV_FTM_TPCCAL_TAG			= 207,
 	HTT_STATS_PDEV_UL_MUMIMO_GRP_STATS_TAG		= 208,
 	HTT_STATS_PDEV_UL_MUMIMO_DENYLIST_STATS_TAG	= 209,
 	HTT_STATS_PDEV_UL_MUMIMO_SEQ_TERM_STATS_TAG	= 210,
 	HTT_STATS_PDEV_UL_MUMIMO_HIST_INELIGIBILITY_TAG	= 211,
+	HTT_STATS_PHY_PAPRD_PB_TAG			= 212,
 	HTT_STATS_HDS_PROF_STATS_TAG			= 213,
 	HTT_STATS_TX_PDEV_PENDING_SEQ_CNT_ON_SCHED_POST_HIST_TAG	= 215,
 	HTT_STATS_TX_PDEV_PENDING_SEQ_CNT_IN_HWQ_HIST_TAG	= 216,
@@ -3816,6 +3822,10 @@ struct ath12k_htt_dl_pager_stats_tlv {
 #define ATH12K_HTT_MAX_RX_PKT_MU_CNT		14
 #define ATH12K_HTT_MAX_TX_PKT_CNT		10
 #define ATH12K_HTT_MAX_PHY_TX_ABORT_CNT		10
+#define ATH12K_HTT_MAX_NEGATIVE_POWER_LEVEL 10 /* 0 to -10 dBm */
+#define ATH12K_HTT_MAX_POWER_LEVEL 32 /* 0 to 32 dBm */
+
+#define HTT_STATS_ANI_MODE_M	GENMASK(7, 0)
 
 struct ath12k_htt_phy_stats_tlv {
 	a_sle32 nf_chain[ATH12K_HTT_STATS_MAX_CHAINS];
@@ -3833,6 +3843,13 @@ struct ath12k_htt_phy_stats_tlv {
 	__le32 radar_dfs_flags;
 	__le32 band_center_frequency_operating;
 	__le32 band_center_frequency_device;
+	union {
+		u32 dword__ani_mode;
+		struct {
+			u32 ani_mode: 8,
+reserved: 24;
+		};
+	};
 } __packed;
 
 struct ath12k_htt_phy_counters_tlv {
@@ -3855,6 +3872,27 @@ struct ath12k_htt_phy_counters_tlv {
 	__le32 tx_pkt_cnt[ATH12K_HTT_MAX_TX_PKT_CNT];
 	__le32 phy_tx_abort_cnt[ATH12K_HTT_MAX_PHY_TX_ABORT_CNT];
 } __packed;
+
+#define HTT_STATS_PHY_RESET_CAL_DATA_COMPRESSED_M	GENMASK(0, 0)
+#define HTT_STATS_PHY_RESET_CAL_DATA_SOURCE_M		GENMASK(2, 1)
+#define HTT_STATS_PHY_RESET_XTALCAL_M			GENMASK(3, 3)
+#define HTT_STATS_PHY_RESET_TPCCAL2GFPC_M		GENMASK(4, 4)
+#define HTT_STATS_PHY_RESET_TPCCAL2GOPC_M		GENMASK(5, 5)
+#define HTT_STATS_PHY_RESET_TPCCAL5GFPC_M		GENMASK(6, 6)
+#define HTT_STATS_PHY_RESET_TPCCAL5GOPC_M		GENMASK(7, 7)
+#define HTT_STATS_PHY_RESET_TPCCAL6GFPC_M		GENMASK(8, 8)
+#define HTT_STATS_PHY_RESET_TPCCAL6GOPC_M		GENMASK(9, 9)
+#define HTT_STATS_PHY_RESET_RXGAINCAL2G_M		GENMASK(10, 10)
+#define HTT_STATS_PHY_RESET_RXGAINCAL5G_M		GENMASK(11, 11)
+#define HTT_STATS_PHY_RESET_RXGAINCAL6G_M		GENMASK(12, 12)
+#define HTT_STATS_PHY_RESET_AOACAL2G_M			GENMASK(13, 13)
+#define HTT_STATS_PHY_RESET_AOACAL5G_M			GENMASK(14, 14)
+#define HTT_STATS_PHY_RESET_AOACAL6G_M			GENMASK(15, 15)
+#define HTT_STATS_PHY_RESET_XTAL_FROM_OTP_M		GENMASK(16, 16)
+
+#define HTT_STATS_PHY_RESET_GLUT_LINEARITY_M		GENMASK(7, 0)
+#define HTT_STATS_PHY_RESET_PLUT_LINEARITY_M		GENMASK(15, 8)
+#define HTT_STATS_PHY_RESET_WLANDRIVERMODE_M		GENMASK(23, 16)
 
 struct ath12k_htt_phy_reset_stats_tlv {
 	__le32 pdev_id;
@@ -3886,6 +3924,47 @@ struct ath12k_htt_phy_reset_stats_tlv {
 	__le32 dyn_cca_status;
 	__le32 rxdesense_thresh_hw;
 	__le32 rxdesense_thresh_sw;
+	__le32 phy_bw_code;
+	__le32 phy_rate_mode;
+	__le32 phy_band_code;
+	__le32 phy_vreg_base;
+	__le32 phy_vreg_base_ext;
+	__le32 cur_table_index;
+	__le32 whal_config_flag;
+	__le32 nfcal_iteration_counts[3];
+
+	union {
+		u32 calmerge_stats;
+		struct {
+			u32 CalData_Compressed:1,
+				CalDataSource:2,
+				xtalcal:1,
+				tpccal2GFPC:1,
+				tpccal2GOPC:1,
+				tpccal5GFPC:1,
+				tpccal5GOPC:1,
+				tpccal6GFPC:1,
+				tpccal6GOPC:1,
+				rxgaincal2G:1,
+				rxgaincal5G:1,
+				rxgaincal6G:1,
+				aoacal2G:1,
+				aoacal5G:1,
+				aoacal6G:1,
+				XTAL_from_OTP:1,
+				rsvd1:15;
+		};
+	};
+	union {
+		u32 misc_stats;
+		struct {
+			u32 GLUT_linearity:8,
+				PLUT_linearity:8,
+				WlanDriverMode:8,
+				rsvd2:8;
+		};
+	};
+	__le32 BoardIDfromOTP;
 } __packed;
 
 struct ath12k_htt_phy_reset_counters_tlv {
@@ -3897,6 +3976,13 @@ struct ath12k_htt_phy_reset_counters_tlv {
 	__le32 rf_mode_switch_phy_off_cnt;
 	__le32 temperature_recal_cnt;
 } __packed;
+
+#define HTT_MAX_CH_PWR_INFO_SIZE    16
+
+#define HTT_PHY_TPC_STATS_CTL_REGION_GRP_M	GENMASK(7, 0)
+#define HTT_PHY_TPC_STATS_SUB_BAND_INDEX_M    GENMASK(15, 8)
+#define HTT_PHY_TPC_STATS_AG_CAP_EXT2_ENABLED_M    GENMASK(23, 16)
+#define HTT_PHY_TPC_STATS_CTL_FLAG_M    GENMASK(31, 24)
 
 struct ath12k_htt_phy_tpc_stats_tlv {
 	__le32 pdev_id;
@@ -3914,6 +4000,22 @@ struct ath12k_htt_phy_tpc_stats_tlv {
 	__le32 power_type_6ghz;
 	__le32 sub_band_cfreq[ATH12K_HTT_MAX_CH_PWR_INFO_SIZE];
 	__le32 sub_band_txpower[ATH12K_HTT_MAX_CH_PWR_INFO_SIZE];
+	__le32 array_gain_cap[ATH12K_HTT_STATS_MAX_CHAINS *
+((ATH12K_HTT_STATS_MAX_CHAINS / 2) + 1)];
+	union {
+		struct {
+		u32
+			ctl_region_grp:8,
+			sub_band_index:8,
+			array_gain_cap_ext2_enabled:8,
+			ctl_flag:8;
+		};
+		u32 ctl_args;
+	};
+	__le32 max_reg_only_allowed_power[ATH12K_HTT_STATS_MAX_CHAINS];
+	__le32 tx_num_chains[ATH12K_HTT_STATS_MAX_CHAINS];
+	__le32 tx_power[ATH12K_HTT_MAX_POWER_LEVEL];
+	__le32 tx_power_neg[ATH12K_HTT_MAX_NEGATIVE_POWER_LEVEL];
 } __packed;
 
 struct ath12k_htt_t2h_soc_txrx_stats_common_tlv {
@@ -4842,6 +4944,340 @@ struct ath12k_htt_stats_txbf_ofdma_be_parbw_tlv {
 	__le32 be_ofdma_parbw_user_snd;
 	__le32 be_ofdma_parbw_cv;
 	__le32 be_ofdma_total_cv;
+} __packed;
+
+enum {
+	ATH12K_HTT_STATS_CAL_PROF_COLD_BOOT = 0,
+	ATH12K_HTT_STATS_CAL_PROF_FULL_CHAN_SWITCH = 1,
+	ATH12K_HTT_STATS_CAL_PROF_SCAN_CHAN_SWITCH = 2,
+	ATH12K_HTT_STATS_CAL_PROF_DPD_SPLIT_CAL = 3,
+	ATH12K_HTT_STATS_MAX_PROF_CAL = 4,
+};
+
+enum htt_ctrl_path_stats_cal_type_ids {
+	HTT_CTRL_PATH_STATS_CAL_TYPE_ADC                     = 0x0,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_DAC                     = 0x1,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_PROCESS                 = 0x2,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_NOISE_FLOOR             = 0x3,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_RXDCO                   = 0x4,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_COMB_TXLO_TXIQ_RXIQ     = 0x5,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_TXLO                    = 0x6,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_TXIQ                    = 0x7,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_RXIQ                    = 0x8,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_IM2                     = 0x9,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_LNA                     = 0xa,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXDCO            = 0xb,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXIQ             = 0xc,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORYLESS          = 0xd,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORY              = 0xe,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_IBF                     = 0xf,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_PDET_AND_PAL            = 0x10,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_RXDCO_IQ                = 0x11,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_RXDCO_DTIM              = 0x12,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_TPC_CAL                 = 0x13,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_TIMEREQ             = 0x14,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_BWFILTER                = 0x15,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_PEF                     = 0x16,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_PADROOP                 = 0x17,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_SELFCALTPC              = 0x18,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_RXSPUR                  = 0x19,
+	HTT_CTRL_PATH_STATS_CAL_TYPE_INVALID                 = 0xFF
+};
+
+#define ATH12K_HTT_STATS_MAX_CAL_IDX_CNT 8
+
+#define ATH12K_HTT_GET_BITS(_val, _index, _num_bits) \
+	(((_val) >> (_index)) & ((1 << (_num_bits)) - 1))
+
+#define ATH12K_HTT_CTRL_PATH_CALIBRATION_STATS_CAL_TYPE_GET(cal_info) \
+	ATH12K_HTT_GET_BITS(cal_info, 0, 8)
+
+#ifdef HTT_CTRL_PATH_STATS_CAL_TYPE_STRINGS
+static inline u8 *htt_ctrl_path_cal_type_id_to_name(u32 cal_type_id)
+{
+	switch (cal_type_id) {
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_ADC:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_ADC";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_DAC:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_DAC";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_PROCESS:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_PROCESS";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_NOISE_FLOOR:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_NOISE_FLOOR";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_RXDCO:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_RXDCO";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_COMB_TXLO_TXIQ_RXIQ:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_COMB_TXLO_TXIQ_RXIQ";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_TXLO:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_TXLO";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_TXIQ:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_TXIQ";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_RXIQ:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_RXIQ";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_IM2:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_IM2";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_LNA:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_LNA";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXDCO:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXDCO";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXIQ:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_LP_RXIQ";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORYLESS:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORYLESS";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORY:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_MEMORY";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_IBF:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_IBF";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_PDET_AND_PAL:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_PDET_AND_PAL";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_RXDCO_IQ:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_RXDCO_IQ";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_RXDCO_DTIM:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_RXDCO_DTIM";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_TPC_CAL:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_TPC_CAL";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_TIMEREQ:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_DPD_TIMEREQ";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_BWFILTER:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_BWFILTER";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_PEF:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_PEF";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_PADROOP:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_PADROOP";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_SELFCALTPC:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_SELFCALTPC";
+	case HTT_CTRL_PATH_STATS_CAL_TYPE_RXSPUR:
+		return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_RXSPUR";
+	default: return (u8 *)"HTT_CTRL_PATH_STATS_CAL_TYPE_UNKNOWN";
+	}
+}
+#endif
+
+struct ath12k_htt_stats_latency_prof_cal_data_tlv {
+	__le32 enable;
+	__le32 pdev_id;
+	__le32 cal_cnt[ATH12K_HTT_STATS_MAX_PROF_CAL];
+	__le32 latency_prof_name[ATH12K_HTT_STATS_MAX_PROF_CAL]
+[ATH12K_HTT_STATS_MAX_PROF_STATS_NAME_LEN];
+	struct {
+	__le32 cnt;
+	__le32 min;
+	__le32 max;
+	__le32 last;
+	__le32 tot;
+	__le32 hist_intvl;
+	__le32 hist[ATH12K_HTT_INTERRUPTS_LATENCY_PROFILE_MAX_HIST];
+	__le32 pf_last;
+	__le32 pf_tot;
+	__le32 pf_max;
+	__le32 enabled_cal_idx;
+	} latency_data[ATH12K_HTT_STATS_MAX_PROF_CAL][ATH12K_HTT_STATS_MAX_CAL_IDX_CNT];
+};
+
+
+#define ATH12K_HTT_STATS_TPCCAL_LAST_IDX_M		GENMASK(7, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_STATS_MEASPWR_M		GENMASK(15, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_STATS_PDADC_M		GENMASK(7, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_STATS_CHANNEL_M		GENMASK(15, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_STATS_CHAIN_M		GENMASK(23, 16)
+
+#define ATH12K_HTT_STATS_TPCCAL_STATS_GAININDEX_M	GENMASK(31, 24)
+
+#define ATH12K_HTT_STATS_TPCCAL_POSTPROC_CHANNEL_M	GENMASK(15, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_POSTPROC_CHAIN_M	GENMASK(23, 16)
+
+#define ATH12K_HTT_STATS_TPCCAL_POSTPROC_BAND_M		GENMASK(31, 24)
+
+#define ATH12K_HTT_STATS_TPCCAL_POSTPROC_NUMGAIN_M	GENMASK(7, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_POSTPROC_CALDBSTATUS_M	GENMASK(15, 8)
+
+#define ATH12K_HTT_MAX_TPCCAL_STATS 25
+#define ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS 64
+
+struct ath12k_htt_stats_pdev_ftm_tpccal_tlv {
+	union {
+		u32 dword__tpccal_last_idx;
+		struct {
+			u32 tpccal_last_idx:8,
+				rsvd1:24;
+		};
+	};
+
+	struct {
+		union {
+			u32 dword__measPwr;
+			struct {
+				u32 measPwr:16, /* dBm units */
+					rsvd2:16;
+			};
+		};
+
+		union {
+			u32 dword__channel_chain_gainIndex;
+			struct {
+				u32 channel:16, /* MHz units */
+					chain:8,
+					gainIndex:8;
+			};
+		};
+
+		union {
+			u32 dword__pdadc;
+			struct {
+				u32 pdadc:8,
+					rsvd3:24;
+			};
+		};
+	} tpccal_stats[ATH12K_HTT_MAX_TPCCAL_STATS];
+
+	struct {
+		u32 calStatus;
+		u32  measPwr[ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS]; /* dBm units */
+		u32 pdadc[ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS];
+		u32 gainIndex[ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS];
+		union {
+			u32 dword__channel_chain_band;
+			struct {
+				u32 channel:16, /* MHz units */
+				chain:8,
+				band:8; /* 0: 2GHz, 1: 5GHz, 2: 6GHz */
+			};
+		};
+
+		union {
+			u32 dword__numgain_caldbStatus;
+			struct {
+				u32 numgain:8,
+					caldbStatus:8,
+					rsvd4:16;
+			};
+		};
+	} tpccal_stats_postproc;
+} __packed;
+
+struct ath12k_htt_stats_phy_paprd_pb_tlv {
+	__le32 pdev_id;
+	__le32 total_dpd_cal_count;
+	__le32 chan_change_dpd_cal_count;
+	__le32 thermal_dpd_cal_count;
+	__le32 recovery_dpd_cal_count;
+	__le32 pb_cal_count;
+	__le32 total_dpd_fail_count;
+	__le32 chan_change_dpd_fail_count;
+	__le32 thermal_dpd_fail_count;
+	__le32 recovery_dpd_fail_count;
+	__le32 pb_fail_count;
+
+	union {
+		u32 dpd_pb_validity_status;
+		struct {
+			u32 is_dpd_valid:1,
+				is_pb_valid:1,
+				rsvd:30;
+		};
+	};
+
+	__le32 last_dpd_cal_time;
+
+	__le32 last_pb_cal_time;
+
+	__le32 power_boost_gain
+[ATH12K_HTT_TX_PDEV_STATS_NUM_BE_BW_COUNTERS]
+[ATH12K_HTT_TX_PDEV_STATS_NUM_BE_MCS_COUNTERS];
+} __packed;
+
+#define HTT_STATS_PDEV_RTT_DELAY_NUM_INSTANCES (2)
+#define HTT_STATS_PDEV_RTT_DELAY_PKT_BW (6)
+#define HTT_STATS_PDEV_RTT_TX_RX_INSTANCES (2)
+struct ath12k_htt_stats_pdev_rtt_delay_tlv {
+	struct {
+		__le32 base_delay[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES]
+				 [HTT_STATS_PDEV_RTT_DELAY_PKT_BW];
+		__le32 final_delay[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES]
+				  [HTT_STATS_PDEV_RTT_DELAY_PKT_BW];
+		__le32 per_chan_bias[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES];
+		__le32 off_chan_bias[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES];
+		__le32 chan_bw_bias[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES];
+		__le32 rtt_11mc_chain_idx[HTT_STATS_PDEV_RTT_TX_RX_INSTANCES];
+		__le32 chan_freq; /* MHz units */
+		__le32 bandwidth; /* MHz units */
+		__le32 vreg_cache;
+		__le32 rtt_11mc_vreg_set_cnt;
+		__le32 cfr_vreg_set_cnt;
+		__le32 cir_vreg_set_cnt;
+		__le32 digital_block_status;
+	} rtt_delay[HTT_STATS_PDEV_RTT_DELAY_NUM_INSTANCES];
+} __packed;
+
+#define HTT_STATS_PDEV_SPECTRAL_PCFG_MAX_DET (3)
+#define HTT_STATS_PDEV_SPECTRAL_MAX_PCSS_RING_FOR_IPC (3)
+
+struct ath12k_htt_stats_pdev_spectral_tlv {
+	__le32 dbg_num_buf;
+	__le32 dbg_num_events;
+
+	__le32 host_head_idx;
+	__le32 host_tail_idx;
+	__le32 host_shadow_tail_idx;
+
+	__le32 in_ring_head_idx;
+	__le32 in_ring_tail_idx;
+	__le32 in_ring_shadow_tail_idx;
+	__le32 in_ring_shadow_head_idx;
+
+	__le32 out_ring_head_idx;
+	__le32 out_ring_tail_idx;
+	__le32 out_ring_shadow_tail_idx;
+	__le32 out_ring_shadow_head_idx;
+
+	struct {
+		__le32 head_idx;
+		__le32 tail_idx;
+		__le32 shadow_tail_idx;
+		__le32 shadow_head_idx;
+	} ipc_rings[HTT_STATS_PDEV_SPECTRAL_MAX_PCSS_RING_FOR_IPC];
+
+	struct {
+		__le32 scan_priority;
+		__le32 scan_count;
+		__le32 scan_period;
+		__le32 scan_chn_mask;
+		__le32 scan_ena;
+		__le32 scan_update_mask;
+		__le32 scan_ready_intrpt;
+		__le32 scans_performed;
+		__le32 intrpts_sent;
+		__le32 scan_pending_count;
+		__le32 num_pcss_elem_zero;
+		__le32 num_in_elem_zero;
+		__le32 num_out_elem_zero;
+		__le32 num_elem_moved;
+	} pcfg_stats_det[HTT_STATS_PDEV_SPECTRAL_PCFG_MAX_DET];
+
+	struct {
+		__le32 scan_no_ipc_buf_avail;
+		__le32 agile_scan_no_ipc_buf_avail;
+		__le32 scan_FFT_discard_count;
+		__le32 scan_recapture_FFT_discard_count;
+		__le32 scan_recapture_count;
+	} pcfg_stats_vreg;
+} __packed;
+
+#define HTT_STATS_PDEV_AOA_MAX_HISTOGRAM (10)
+#define HTT_STATS_PDEV_AOA_MAX_CHAINS (4)
+struct ath12k_htt_stats_pdev_aoa_tlv {
+	__le32 gain_idx[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM];
+	__le32 gain_table[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM];
+	__le32 phase_calculated[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM]
+			       [HTT_STATS_PDEV_AOA_MAX_CHAINS];
+	__le32 phase_in_degree[HTT_STATS_PDEV_AOA_MAX_HISTOGRAM]
+			      [HTT_STATS_PDEV_AOA_MAX_CHAINS];
 } __packed;
 
 enum ath12k_htt_stats_candidate_sched_compatible_code {
