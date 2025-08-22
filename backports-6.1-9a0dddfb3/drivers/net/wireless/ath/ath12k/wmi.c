@@ -3421,7 +3421,6 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 
 	arg->pdev_id = ar->pdev->pdev_id;
 	arg->nallchans = num_channels;
-	arg->append_chan_list = true;
 
 	ch = arg->channel;
 	chandef = req_arg ? req_arg->chandef : NULL;
@@ -3459,6 +3458,7 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 
                                ch->phy_mode = req_arg->chan_list.chan[0].phymode;
                                channel = req_channel;
+			       arg->append_chan_list = true;
                                found = true;
                        } else {
                                ch->mhz = channel->center_freq;
