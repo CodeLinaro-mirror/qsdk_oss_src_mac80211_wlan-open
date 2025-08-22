@@ -3718,10 +3718,11 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	/* UMAC RESET relies on ag->num_started as barrier to make sure
 	 * umac related interrupts are received from all non-asserted chips
-	 * before writing to the shared memory. So need to decrement the
-	 * before trigerring umac reset.
+	 * before writing to the shared memory. So need to decrement it
+	 * when recovery is enabled before triggering umac reset.
 	 */
-	ath12k_core_to_group_ref_put(ab);
+	if (ab->fw_recovery_support)
+		ath12k_core_to_group_ref_put(ab);
 
 	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0) {
 		if (ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_SSR_REASON) ||
