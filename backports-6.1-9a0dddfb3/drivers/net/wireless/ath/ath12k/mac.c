@@ -7585,7 +7585,7 @@ static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *
 	 * arvif is already deleted. Alternatively, if the scan vdev is not
 	 * being used as an actual vdev, then do not delete it.
 	 */
-	if (!arvif || arvif->is_started)
+	if (!arvif || arvif->is_started || !arvif->is_scan_vif)
 		goto work_complete;
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
@@ -9013,7 +9013,6 @@ static u16 ath12k_mac_get_6g_start_frequency(struct cfg80211_chan_def *chan_def)
          * with center frequency 5955, its diff is 6025 - 5955 = 70.
          */
 
-	printk("%s:%d> chandef %p \n", __func__, __LINE__, chan_def);
 	if (!chan_def)
 		return 0;
 
