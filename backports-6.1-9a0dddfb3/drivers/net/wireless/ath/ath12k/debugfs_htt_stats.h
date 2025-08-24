@@ -190,6 +190,14 @@ struct htt_peer_stats_cmn_tlv {
 #define ATH12K_HTT_PEER_HIST_DETAILS_PEER_HIST1    GENMASK(19, 10)
 #define ATH12K_HTT_PEER_HIST_DETAILS_PEER_HIST2    GENMASK(29, 20)
 
+/* Max seq ctrl can be active in txq at a given instant */
+#define ATH12K_HTT_PDEV_STATS_MAX_SEQ_CTRL_HIST	4
+/* For BE max active seq_ctrl that can be in HWQ */
+#define ATH12K_HTT_PDEV_STATS_MAX_ACTIVE_SEQ_IN_HWQ_HIST 2
+
+#define ATH12K_HTT_STATS_HWMLO_MAX_LINKS 6
+#define ATH12K_HTT_STATS_MLO_MAX_IPC_RINGS 7
+
 struct htt_peer_details_tlv {
 	__le32 peer_type;
 	__le32 sw_peer_id;
@@ -626,6 +634,8 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_UMAC_SSR_TAG                          = 179,
 	HTT_STATS_PDEV_TDMA_TAG				= 187,
 	HTT_STATS_MLO_SCHED_STATS_TAG                   = 190,
+	HTT_STATS_PDEV_MLO_IPC_STATS_TAG		= 191,
+	HTT_STATS_WHAL_WSI_TAG				= 192,
 	HTT_STATS_GTX_TAG				= 199,
 	HTT_STATS_TX_PDEV_WIFI_RADAR_TAG		= 200,
 	HTT_STATS_TXBF_OFDMA_BE_PARBW_TAG		= 201,
@@ -634,6 +644,10 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_PDEV_UL_MUMIMO_SEQ_TERM_STATS_TAG	= 210,
 	HTT_STATS_PDEV_UL_MUMIMO_HIST_INELIGIBILITY_TAG	= 211,
 	HTT_STATS_HDS_PROF_STATS_TAG			= 213,
+	HTT_STATS_TX_PDEV_PENDING_SEQ_CNT_ON_SCHED_POST_HIST_TAG	= 215,
+	HTT_STATS_TX_PDEV_PENDING_SEQ_CNT_IN_HWQ_HIST_TAG	= 216,
+	HTT_STATS_TX_PDEV_PENDING_SEQ_CNT_IN_TXQ_HIST_TAG	= 217,
+	HTT_STATS_SCHED_TXQ_EARLY_COMPL_TAG		= 218,
 
 	HTT_STATS_MAX_TAG,
 };
@@ -784,6 +798,37 @@ struct ath12k_htt_tx_pdev_ap_edca_params_stats_tlv {
 	__le32 ul_muofdma_medium_aggressive[ATH12K_HTT_NUM_AC_WMM];
 	__le32 ul_muofdma_highly_aggressive[ATH12K_HTT_NUM_AC_WMM];
 	__le32 ul_muofdma_default_relaxed[ATH12K_HTT_NUM_AC_WMM];
+} __packed;
+
+struct ath12k_htt_tx_pdev_pending_seq_cnt_on_sched_post_hist_tlv {
+	__le32 mac_id__word;
+	__le32 pending_seq_on_sched_post_hist[ATH12K_HTT_PDEV_STATS_MAX_SEQ_CTRL_HIST];
+} __packed;
+
+struct ath12k_htt_tx_pdev_pending_seq_cnt_in_hwq_hist_tlv {
+	__le32 mac_id__word;
+	__le32 active_seq_in_hwq_hist[ATH12K_HTT_PDEV_STATS_MAX_ACTIVE_SEQ_IN_HWQ_HIST];
+} __packed;
+
+struct ath12k_htt_tx_pdev_pending_seq_cnt_in_txq_hist_tlv {
+	__le32 mac_id__word;
+	__le32 active_seq_in_txq_hist[ATH12K_HTT_PDEV_STATS_MAX_SEQ_CTRL_HIST];
+} __packed;
+
+struct ath12k_htt_sched_txq_early_compl_tlv {
+	__le32 mac_id__word;
+	__le32 ist_txop_end_indicated_cnt;
+	__le32 ist_txop_end_notify_at_cmd_status_end;
+	__le32 ist_txop_end_notify_at_isr_end;
+	__le32 sched_cmd_post_skip_on_seq_unavail;
+	__le32 ist_txop_end_skip_on_seq_unavail;
+	__le32 ist_txop_end_skip_on_mpdu_ownership;
+	__le32 skip_early_schedule_due_to_per;
+	__le32 sched_cmd_posted_at_hw_txop_end;
+	__le32 sched_cmd_missed_at_hw_txop_end;
+	__le32 sched_cmd_posted_at_sched_cmd_compl;
+	__le32 sched_cmd_missed_at_sched_cmd_compl;
+	__le32 num_qos_sched_runs;
 } __packed;
 
 struct ath12k_htt_tx_pdev_mu_edca_params_stats_tlv {
@@ -1783,55 +1828,59 @@ struct htt_rx_soc_fw_refill_ring_num_reo_err_tlv_v {
 #define HTT_STATS_SUBTYPE_MAX     16
 
 struct htt_rx_pdev_fw_stats_tlv {
-	u32 mac_id__word;
-	u32 ppdu_recvd;
-	u32 mpdu_cnt_fcs_ok;
-	u32 mpdu_cnt_fcs_err;
-	u32 tcp_msdu_cnt;
-	u32 tcp_ack_msdu_cnt;
-	u32 udp_msdu_cnt;
-	u32 other_msdu_cnt;
-	u32 fw_ring_mpdu_ind;
-	u32 fw_ring_mgmt_subtype[HTT_STATS_SUBTYPE_MAX];
-	u32 fw_ring_ctrl_subtype[HTT_STATS_SUBTYPE_MAX];
-	u32 fw_ring_mcast_data_msdu;
-	u32 fw_ring_bcast_data_msdu;
-	u32 fw_ring_ucast_data_msdu;
-	u32 fw_ring_null_data_msdu;
-	u32 fw_ring_mpdu_drop;
-	u32 ofld_local_data_ind_cnt;
-	u32 ofld_local_data_buf_recycle_cnt;
-	u32 drx_local_data_ind_cnt;
-	u32 drx_local_data_buf_recycle_cnt;
-	u32 local_nondata_ind_cnt;
-	u32 local_nondata_buf_recycle_cnt;
+	__le32 mac_id__word;
+	__le32 ppdu_recvd;
+	__le32 mpdu_cnt_fcs_ok;
+	__le32 mpdu_cnt_fcs_err;
+	__le32 tcp_msdu_cnt;
+	__le32 tcp_ack_msdu_cnt;
+	__le32 udp_msdu_cnt;
+	__le32 other_msdu_cnt;
+	__le32 fw_ring_mpdu_ind;
+	__le32 fw_ring_mgmt_subtype[HTT_STATS_SUBTYPE_MAX];
+	__le32 fw_ring_ctrl_subtype[HTT_STATS_SUBTYPE_MAX];
+	__le32 fw_ring_mcast_data_msdu;
+	__le32 fw_ring_bcast_data_msdu;
+	__le32 fw_ring_ucast_data_msdu;
+	__le32 fw_ring_null_data_msdu;
+	__le32 fw_ring_mpdu_drop;
+	__le32 ofld_local_data_ind_cnt;
+	__le32 ofld_local_data_buf_recycle_cnt;
+	__le32 drx_local_data_ind_cnt;
+	__le32 drx_local_data_buf_recycle_cnt;
+	__le32 local_nondata_ind_cnt;
+	__le32 local_nondata_buf_recycle_cnt;
 
-	u32 fw_status_buf_ring_refill_cnt;
-	u32 fw_status_buf_ring_empty_cnt;
-	u32 fw_pkt_buf_ring_refill_cnt;
-	u32 fw_pkt_buf_ring_empty_cnt;
-	u32 fw_link_buf_ring_refill_cnt;
-	u32 fw_link_buf_ring_empty_cnt;
+	__le32 fw_status_buf_ring_refill_cnt;
+	__le32 fw_status_buf_ring_empty_cnt;
+	__le32 fw_pkt_buf_ring_refill_cnt;
+	__le32 fw_pkt_buf_ring_empty_cnt;
+	__le32 fw_link_buf_ring_refill_cnt;
+	__le32 fw_link_buf_ring_empty_cnt;
 
-	u32 host_pkt_buf_ring_refill_cnt;
-	u32 host_pkt_buf_ring_empty_cnt;
-	u32 mon_pkt_buf_ring_refill_cnt;
-	u32 mon_pkt_buf_ring_empty_cnt;
-	u32 mon_status_buf_ring_refill_cnt;
-	u32 mon_status_buf_ring_empty_cnt;
-	u32 mon_desc_buf_ring_refill_cnt;
-	u32 mon_desc_buf_ring_empty_cnt;
-	u32 mon_dest_ring_update_cnt;
-	u32 mon_dest_ring_full_cnt;
+	__le32 host_pkt_buf_ring_refill_cnt;
+	__le32 host_pkt_buf_ring_empty_cnt;
+	__le32 mon_pkt_buf_ring_refill_cnt;
+	__le32 mon_pkt_buf_ring_empty_cnt;
+	__le32 mon_status_buf_ring_refill_cnt;
+	__le32 mon_status_buf_ring_empty_cnt;
+	__le32 mon_desc_buf_ring_refill_cnt;
+	__le32 mon_desc_buf_ring_empty_cnt;
+	__le32 mon_dest_ring_update_cnt;
+	__le32 mon_dest_ring_full_cnt;
 
-	u32 rx_suspend_cnt;
-	u32 rx_suspend_fail_cnt;
-	u32 rx_resume_cnt;
-	u32 rx_resume_fail_cnt;
-	u32 rx_ring_switch_cnt;
-	u32 rx_ring_restore_cnt;
-	u32 rx_flush_cnt;
-	u32 rx_recovery_reset_cnt;
+	__le32 rx_suspend_cnt;
+	__le32 rx_suspend_fail_cnt;
+	__le32 rx_resume_cnt;
+	__le32 rx_resume_fail_cnt;
+	__le32 rx_ring_switch_cnt;
+	__le32 rx_ring_restore_cnt;
+	__le32 rx_flush_cnt;
+	__le32 rx_recovery_reset_cnt;
+	__le32 rx_lwm_prom_filter_dis;
+	__le32 rx_hwm_prom_filter_en;
+	__le32 bytes_received_low_32;
+	__le32 bytes_received_high_32;
 };
 
 #define HTT_STATS_PHY_ERR_MAX 43
@@ -2168,6 +2217,15 @@ struct ath12k_htt_hw_stats_whal_tx_tlv {
 	__le32 sch_rx_sifs_resp_trigger;
 } __packed;
 
+struct ath12k_htt_hw_stats_whal_wsib_tlv {
+	__le32 wsib_event_watchdog_timeout;
+	__le32 wsib_event_slave_tlv_length_error;
+	__le32 wsib_event_slave_parity_error;
+	__le32 wsib_event_slave_direct_message;
+	__le32 wsib_event_slave_backpressure_error;
+	__le32 wsib_event_master_tlv_length_error;
+} __packed;
+
 struct ath12k_htt_hw_war_stats_tlv {
 	__le32 mac_id__word;
 	DECLARE_FLEX_ARRAY(__le32, hw_wars);
@@ -2266,6 +2324,9 @@ struct ath12k_htt_tx_tqm_pdev_stats_tlv {
 	__le32 sched_udp_notify2;
 	__le32 sched_nonudp_notify1;
 	__le32 sched_nonudp_notify2;
+	__le32 tqm_enqueue_msdu_count;
+	__le32 tqm_dropped_msdu_count;
+	__le32 tqm_dequeue_msdu_count;
 } __packed;
 
 #define ATH12K_HTT_TX_PDEV_SIFS_BURST_HIST_STATS	10
@@ -2418,10 +2479,24 @@ struct ath12k_htt_tx_de_eapol_packets_stats_tlv {
 	__le32 g1_compl_fail;
 	__le32 g2_success;
 	__le32 g2_compl_fail;
+	__le32 m1_enq_success;
+	__le32 m1_enq_fail;
+	__le32 m2_enq_success;
+	__le32 m2_enq_fail;
+	__le32 m3_enq_success;
+	__le32 m3_enq_fail;
+	__le32 m4_enq_success;
+	__le32 m4_enq_fail;
+	__le32 g1_enq_success;
+	__le32 g1_enq_fail;
+	__le32 g2_enq_success;
+	__le32 g2_enq_fail;
 } __packed;
 
 struct ath12k_htt_tx_de_classify_stats_tlv {
 	__le32 arp_packets;
+	__le32 arp_request;
+	__le32 arp_response;
 	__le32 igmp_packets;
 	__le32 dhcp_packets;
 	__le32 host_inspected;
@@ -4789,6 +4864,11 @@ struct ath12k_htt_stats_mlo_sched_stats_tlv {
 	__le32 pref_link_num_pref_link_timeout;
 	__le32 pref_link_num_pref_link_sch_delay_ipc;
 	__le32 pref_link_num_pref_link_timeout_ipc;
+} __packed;
+
+struct ath12k_htt_pdev_mlo_ipc_stats_tlv {
+	__le32 mlo_ipc_ring_full_cnt[ATH12K_HTT_STATS_HWMLO_MAX_LINKS]
+				    [ATH12K_HTT_STATS_MLO_MAX_IPC_RINGS];
 } __packed;
 
 enum HTT_RX_TX_PDEV_STATS_WIFI_VERSION {
