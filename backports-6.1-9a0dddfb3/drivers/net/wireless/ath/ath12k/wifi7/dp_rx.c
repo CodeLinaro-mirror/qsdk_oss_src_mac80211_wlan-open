@@ -1986,7 +1986,7 @@ ath12k_wifi7_dp_rx_h_defrag_reo_reinject(struct ath12k_dp *dp,
 	ath12k_wifi7_dp_rxdesc_set_msdu_len(ab, rx_desc, len_diff);
 
 	end = defrag_skb->data + DP_RX_BUFFER_SIZE;
-	ath12k_core_dmac_inv_range(defrag_skb->data, end);
+	ath12k_core_dmac_clean_range(defrag_skb->data, end);
 
 	buf_paddr = virt_to_phys(defrag_skb->data);
 	if (!buf_paddr)
@@ -3293,8 +3293,8 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		list_add_tail(&desc_info->list, &rx_desc_used_list[device_id]);
 
 		rxcb = ATH12K_SKB_RXCB(msdu);
-		ath12k_core_dmac_inv_range_no_dsb(desc_info->vaddr,
-						  desc_info->vaddr + DP_RX_BUFFER_SIZE);
+		ath12k_core_dma_unmap_single(partner_dp->dev, desc_info->paddr,
+					     DP_RX_BUFFER_SIZE, DMA_FROM_DEVICE);
 
 		num_buffs_reaped[device_id]++;
 		total_num_buffs_reaped++;
@@ -3349,8 +3349,6 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		rxcb->hw_link_id = hw_link_id;
 		__skb_queue_tail(&msdu_list, msdu);
 	}
-
-	ath12k_core_dsb();
 
 	/* In any case continuation bit is set in the
 	 * last record, cleanup scatter_msdu_list

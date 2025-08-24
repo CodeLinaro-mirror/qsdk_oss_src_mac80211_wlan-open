@@ -2369,6 +2369,13 @@ static inline void ath12k_core_dsb(void)
 #endif
 }
 
+static inline void ath12k_core_dmac_clean_range(const void *start, const void *end)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dmac_clean_range(start, end);
+#endif
+}
+
 static inline struct ath12k_base *ath12k_pdev_to_ab(struct ath12k_pdev *pdev)
 {
        if (!pdev)
