@@ -12080,10 +12080,10 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k_hw *ah = hw->priv;
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif, *tmp_arvif;
 	struct ath12k_link_sta *arsta, *tmp_arsta, *def_arsta;
 	unsigned long valid_links;
-	struct ath12k *ar;
+	struct ath12k *ar, *tmp_ar;
 	u16 removed_link_map;
 	u8 link_id, tmp_link_id, pri_link_id;
 	int ret;
@@ -12259,17 +12259,43 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 		    hweight32(ahsta->links_map) >= 1) {
 			tmp_link_id = ffs(ahsta->links_map) - 1;
 
-			tmp_arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[tmp_link_id]);
+			tmp_arsta = wiphy_dereference(ah->hw->wiphy,
+						      ahsta->link[tmp_link_id]);
+			tmp_arvif = wiphy_dereference(hw->wiphy,
+						      ahvif->link[tmp_link_id]);
+			tmp_ar = tmp_arvif->ar;
+			if (!tmp_ar) {
+				ath12k_warn(ar->ab,
+					    "%s: Failed to remap deflink, ar not found\n",
+					    __func__);
+				return -EINVAL;
+			}
+
 			if (tmp_arsta) {
 				wiphy_work_cancel(ar->ah->hw->wiphy, &tmp_arsta->update_wk);
 				memcpy(&ahsta->deflink, tmp_arsta,
 				       sizeof(*tmp_arsta));
-				def_arsta = &ahsta->deflink;
-				wiphy_work_init(&def_arsta->update_wk, ath12k_sta_rc_update_wk);
-				ahsta->assoc_link_id = tmp_arsta->link_id;
-				rcu_assign_pointer(ahsta->link[tmp_link_id], &ahsta->deflink);
-				synchronize_rcu();
+
+				/* Free the moved link memory after removing
+				 * entry from rhash table.
+				 */
+				spin_lock_bh(&tmp_ar->ab->base_lock);
+				ath12k_link_sta_rhash_delete(tmp_ar->ab, tmp_arsta);
+				spin_unlock_bh(&tmp_ar->ab->base_lock);
 				kfree(tmp_arsta);
+
+				def_arsta = &ahsta->deflink;
+				def_arsta->rhash_done = false;
+				wiphy_work_init(&def_arsta->update_wk, ath12k_sta_rc_update_wk);
+				ahsta->assoc_link_id = tmp_link_id;
+				rcu_assign_pointer(ahsta->link[tmp_link_id], def_arsta);
+				synchronize_rcu();
+
+				/* Re-add the deflink addr to hash table
+				 */
+				spin_lock_bh(&tmp_ar->ab->base_lock);
+				ath12k_link_sta_rhash_add(tmp_ar->ab, def_arsta);
+				spin_unlock_bh(&tmp_ar->ab->base_lock);
 			}
 		}
 	}
