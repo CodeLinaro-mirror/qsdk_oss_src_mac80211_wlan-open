@@ -5924,6 +5924,23 @@ ath12k_mac_offload_advertised_ttlm(struct ieee80211_hw *hw,
 	ath12k_wmi_ap_tid_to_link_map_config(ar, &map_params);
 }
 
+static void ath12k_mac_bss_offload_advertised_ttlm(struct ath12k_link_vif *arvif)
+{
+	/* prepare the params needed to send the wmi command */
+	struct ath12k_wmi_tid_to_link_map_ap_params map_params = {};
+	struct ath12k *ar = arvif->ar;
+
+	if (!arvif->is_created)
+		return;
+
+	if (ath12k_mac_populate_ttlm_params(arvif, &map_params)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "Failed to populate advertised ttlm parameters\n");
+		return;
+	}
+
+	ath12k_wmi_ap_tid_to_link_map_config(ar, &map_params);
+}
 
 void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				   struct ieee80211_vif *vif,
@@ -6954,6 +6971,15 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 					"Beacon interval: %d set for VDEV: %d\n",
 					arvif->beacon_interval, arvif->vdev_id);
 	}
+
+	/* send ttlm config before vdev up, so that first beacon itself can
+	 * advertise ttlm
+	 */
+	if (vif->type == NL80211_IFTYPE_AP &&
+	    changed & BSS_CHANGED_LINK_ADV_TTLM &&
+	    wiphy_ext_feature_isset(ath12k_ar_to_hw(ar)->wiphy,
+				    NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD))
+		ath12k_mac_bss_offload_advertised_ttlm(arvif);
 
 	if (changed & BSS_CHANGED_BEACON) {
 		param_id = WMI_PDEV_PARAM_BEACON_TX_MODE;
