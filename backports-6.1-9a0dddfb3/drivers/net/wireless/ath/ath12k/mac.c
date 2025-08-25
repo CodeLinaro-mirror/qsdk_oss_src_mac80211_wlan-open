@@ -827,7 +827,7 @@ static void ath12k_get_arvif_iter(void *data, u8 *mac,
 	u8 link_id;
 
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
-		arvif = rcu_dereference(ahvif->link[link_id]);
+		arvif = wiphy_dereference(ahvif->ah->hw->wiphy, ahvif->link[link_id]);
 
 		if (!arvif) {
 			/* Adding this debug to find out how rcu-dereference
@@ -837,8 +837,8 @@ static void ath12k_get_arvif_iter(void *data, u8 *mac,
 			 * is not right
 			 */
 			ath12k_err(NULL,
-				   "func %s arvif is NULL for link_id %d links_map 0x%lx arvif-direct de-ref %p\n",
-				   __func__, link_id, links_map, ahvif->link[link_id]);
+				   "func %s arvif is NULL: link_id %d links_map 0x%lx\n",
+				   __func__, link_id, links_map);
 			WARN_ON(1);
 			continue;
 		}
