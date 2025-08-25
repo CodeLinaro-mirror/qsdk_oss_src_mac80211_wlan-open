@@ -21,6 +21,13 @@ const struct firmware *ini_file_read(const char *path)
 		ath12k_dbg(NULL, ATH12K_DBG_INI, "Failed to read file %s", path);
 		return ERR_PTR(ret);
 	}
+	if (fw && !fw->size) {
+		release_firmware(fw);
+		return ERR_PTR(-ENOENT);
+	}
+
+	ath12k_dbg(NULL, ATH12K_DBG_INI, "boot firmware request %s size %zu\n",
+		   path, fw->size);
 
 	return fw;
 }
@@ -139,23 +146,28 @@ int ath12k_ini_parse(const char *ini_path, void *context,
 	int ini_read_count = 0;
 	const struct firmware *fw;
 	char *cursor;
-	char *end;
+	char *fbuf;
 
 	fw = ini_file_read(ini_path);
+
 	if (IS_ERR(fw)) {
 		ath12k_dbg(NULL, ATH12K_DBG_INI, "Failed to read *.ini file @ %s", ini_path);
-		return ret;
+		return PTR_ERR(fw);
 	}
 
-	/* foreach line */
-	cursor = (char *)fw->data;
-	end = cursor + fw->size;
+	fbuf = vmalloc(fw->size + 1);
+	if (!fbuf) {
+		release_firmware(fw);
+		return -ENOMEM;
+	}
 
-	while (cursor < end) {
-		ret  = ini_read_values(&cursor, &read_key, &read_value, &section_item);
-		if (ret)
-			break;
+	memcpy(fbuf, fw->data, fw->size);
+	/* Null terminate the buffer */
+	fbuf[fw->size] = '\0';
+	release_firmware(fw);
 
+	cursor = fbuf;
+	while (ini_read_values(&cursor, &read_key, &read_value, &section_item) == 0) {
 		if (!section_item) {
 			ret = item_cb(context, read_key, read_value);
 			if (ret)
@@ -180,7 +192,7 @@ int ath12k_ini_parse(const char *ini_path, void *context,
 		ath12k_dbg(NULL, ATH12K_DBG_INI, "INI file parse fail: invalid file format");
 		ret = -EINVAL;
 	}
-	release_firmware(fw);
+	vfree(fbuf);
 
 	return ret;
 }
@@ -198,23 +210,27 @@ int ath12k_ini_section_parse(const char *ini_path, void *context,
 	int ini_read_count = 0;
 	const struct firmware *fw;
 	char *cursor;
-	char *end;
+	char *fbuf;
 
 	fw = ini_file_read(ini_path);
 	if (IS_ERR(fw)) {
 		ath12k_dbg(NULL, ATH12K_DBG_INI, "Failed to read *.ini file @ %s", ini_path);
-		return ret;
+		return PTR_ERR(fw);
 	}
 
-	/* foreach line */
-	cursor = (char *)fw->data;
-	end = cursor + fw->size;
+	fbuf = vmalloc(fw->size + 1);
+	if (!fbuf) {
+		release_firmware(fw);
+		return -ENOMEM;
+	}
 
-	while (cursor < end) {
-		ret  = ini_read_values(&cursor, &read_key, &read_value, &section_item);
-		if (ret)
-			break;
+	memcpy(fbuf, fw->data, fw->size);
+	/* Null terminate the buffer */
+	fbuf[fw->size] = '\0';
+	release_firmware(fw);
 
+	cursor = fbuf;
+	while (ini_read_values(&cursor, &read_key, &read_value, &section_item) == 0) {
 		if (section_item) {
 			if (strcmp(read_key, section_name) == 0) {
 				section_found = 1;
@@ -244,6 +260,6 @@ int ath12k_ini_section_parse(const char *ini_path, void *context,
 		ret = -EINVAL;
 	}
 
-	release_firmware(fw);
+	vfree(fbuf);
 	return ret;
 }

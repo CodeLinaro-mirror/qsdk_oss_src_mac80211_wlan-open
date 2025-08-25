@@ -98,8 +98,7 @@ ath12k_cfg_int_item_handler(struct ath12k_cfg_value_store *store,
 	s32 *store_value = ath12k_cfg_value_ptr(store, meta);
 	s32 value;
 
-	ret = kstrtoint(str_value, 10, &value);
-
+	ret = kstrtoint(str_value, 0, &value);
 	if (ret) {
 		ath12k_err(NULL,
 			   "%s=%s -Invalid format (status %d) Using default %d",
@@ -167,10 +166,10 @@ ath12k_cfg_uint_item_handler(struct ath12k_cfg_value_store *store,
 	min = (uint32_t)meta->min;
 	max = (uint32_t)meta->max;
 
-	ret = kstrtouint(str_value, 10, &value);
+	ret = kstrtouint(str_value, 0, &value);
 	if (ret) {
 		ath12k_err(NULL,
-			   "%s=%s-Invalid format (status %d); Using default %u",
+			   "%s = %s - Invalid format (status %d) using default %d",
 			   meta->name, str_value, ret, *store_value);
 		return;
 	}
@@ -374,17 +373,18 @@ static const struct ath12k_cfg_meta *ath12k_cfg_lookup_meta(const char *name)
 	/* linear search for now; optimize in the future if needed */
 	for (i = 0; i < ARRAY_SIZE(ath12k_cfg_meta_lookup_table); i++) {
 		const struct ath12k_cfg_meta *meta = &ath12k_cfg_meta_lookup_table[i];
+		size_t name_len = strnlen(meta->name, ATH12K_CFG_META_NAME_LENGTH_MAX);
 
 		memset(ini_name, 0, ATH12K_CFG_INI_LENGTH_MAX);
 		memset(param, 0, ATH12K_CFG_META_NAME_LENGTH_MAX);
-		if (strlen(meta->name) >= ATH12K_CFG_META_NAME_LENGTH_MAX) {
+		if (name_len >= ATH12K_CFG_META_NAME_LENGTH_MAX) {
 			ath12k_err(NULL, "Invalid meta name %s",
 				   meta->name);
 			continue;
 		}
 
-		memcpy(param, meta->name, strlen(meta->name));
-		param[strlen(meta->name)] = '\0';
+		memcpy(param, meta->name, name_len);
+		param[name_len] = '\0';
 		param1 = param;
 		if (sscanf(param1, "%s", ini_name) != 1) {
 			ath12k_err(NULL,
@@ -427,6 +427,11 @@ ath12k_cfg_ini_item_handler(void *context, const char *key, const char *value)
 	meta = ath12k_cfg_lookup_meta(key);
 	if (!meta) {
 		ath12k_err(NULL, "Unknown cfg item '%s'", key);
+		return 0;
+	}
+
+	if (!value) {
+		ath12k_err(NULL, "Invalid value pointer for %s", meta->name);
 		return 0;
 	}
 
@@ -596,6 +601,7 @@ struct ath12k_cfg_values *ath12k_cfg_get_values(struct ath12k_base *ab)
 {
 	return &ath12k_cfg_get_ctx(ab)->store->values;
 }
+EXPORT_SYMBOL(ath12k_cfg_get_values);
 
 /**
  * ath12k_cfg_ini_parse_to_store - Parse the ini file to populate the cfg store
@@ -610,6 +616,7 @@ ath12k_cfg_ini_parse_to_store(const char *path,
 	int ret;
 
 	ret = ath12k_ini_parse(path, store, ath12k_cfg_ini_item_handler);
+
 	if (ret)
 		ath12k_err(NULL,
 			   "Failed to parse *.ini file @ %s; status:%d",
@@ -772,8 +779,7 @@ ath12k_cfg_ab_parse(struct ath12k_base *ab, const char *path)
 
 	cfg_ctx = ath12k_cfg_get_ctx(ab);
 
-	WARN_ON(!(cfg_ctx->store == ath12k_cfg_global_store));
-	if (cfg_ctx->store != ath12k_cfg_global_store)
+	if (!cfg_ctx || cfg_ctx->store != ath12k_cfg_global_store)
 		return 0;
 
 	/* check if @path has been parsed before */
@@ -935,7 +941,7 @@ ath12k_cfg_ini_config_print(struct ath12k_base *ab, uint8_t *buf,
 int ath12k_cfg_dispatcher_init(struct ath12k_base *ab)
 {
 	if (ath12k_cfg_is_init) {
-		ath12k_err(ab, "cfg dispatcher already initialized\n");
+		ath12k_dbg(ab, ATH12K_DBG_INI, "cfg dispatcher already initialized\n");
 		return 0;
 	}
 
@@ -949,7 +955,7 @@ int ath12k_cfg_dispatcher_init(struct ath12k_base *ab)
 int ath12k_cfg_dispatcher_deinit(struct ath12k_base *ab)
 {
 	if (!ath12k_cfg_is_init) {
-		ath12k_warn(ab, "cfg dispatcher already de-initialized\n");
+		ath12k_dbg(ab, ATH12K_DBG_INI, "cfg dispatcher already de-initialized\n");
 		return -EINVAL;
 	}
 
@@ -965,9 +971,22 @@ int ath12k_cfg_get_ini_file_name(u32 target_type, struct ath12k_ini_file *ini)
 	int ret = 0;
 
 	switch (target_type) {
-	case TARGET_TYPE_QCN9224:
-		ini->external = "QCN9224.ini";
-		ini->internal = "QCN9224_i.ini";
+	case ATH12K_HW_QCN9274_HW10:
+	case ATH12K_HW_QCN9274_HW20:
+		ini->external = "QCN9274.ini";
+		ini->internal = "QCN9274_i.ini";
+		break;
+	case ATH12K_HW_IPQ5332_HW10:
+		ini->external = "IPQ5332.ini";
+		ini->internal = "IPQ5332_i.ini";
+		break;
+	case ATH12K_HW_IPQ5424_HW10:
+		ini->external = "IPQ5424.ini";
+		ini->internal = "IPQ5424_i.ini";
+		break;
+	case ATH12K_HW_QCN6432_HW10:
+		ini->external = "QCN6432.ini";
+		ini->internal = "QCN6432_i.ini";
 		break;
 	default:
 		ini->external = NULL;
@@ -985,36 +1004,41 @@ int ath12k_cfg_init(struct ath12k_base *ab)
 {
 	struct ath12k_ini_file ini;
 	char ini_buf[ATH12K_CFG_FILE_NAME_MAX];
-	char ini_buf_ext[ATH12K_CFG_FILE_NAME_MAX];
 	char global_file[ATH12K_CFG_FILE_NAME_MAX];
+	char global_file_i[ATH12K_CFG_FILE_NAME_MAX];
 	int ret;
 
 	ret = ath12k_cfg_dispatcher_init(ab);
-	if (ret)
-		ath12k_warn(ab, "cfg dispatcher already initialized\n");
-
-	scnprintf(global_file, sizeof(global_file), "%s/global.ini",
-		  ATH12K_FW_DIR);
+	if (ret) {
+		ath12k_err(ab, "Failed to initialize cfg dispatcher\n");
+		return ret;
+	}
+	scnprintf(global_file, sizeof(global_file), "global.ini");
 	if (ath12k_cfg_parse(global_file)) {
-		ath12k_err(ab, "Failed to parse the global ini file\n");
+		ath12k_err(ab, "Failed to parse the global ini %s\n", global_file);
+		ath12k_cfg_deinit(ab);
 		return -EINVAL;
 	}
-	scnprintf(ini_buf, sizeof(ini_buf), "%s/internal/", ATH12K_FW_DIR);
-	scnprintf(ini_buf_ext, sizeof(ini_buf_ext), "%s/", ATH12K_FW_DIR);
+
+	scnprintf(global_file_i, sizeof(global_file_i), "internal/global_i.ini");
+	if (ath12k_cfg_parse(global_file_i)) {
+		ath12k_err(ab, "Failed to parse global_i ini %s\n", global_file_i);
+		ath12k_cfg_deinit(ab);
+		return -EINVAL;
+	}
+
+	scnprintf(ini_buf, sizeof(ini_buf), "internal/");
 	if (ath12k_cfg_on_create(ab)) {
 		ath12k_err(ab, "Failed to create the cfg store context \n");
+		ath12k_cfg_deinit(ab);
 		return -EINVAL;
 	}
 	/* Parse the target specific INI */
-	ret = ath12k_cfg_get_ini_file_name(TARGET_TYPE_QCN9224, &ini);
+	ret = ath12k_cfg_get_ini_file_name(ab->hw_rev, &ini);
 
 	if (!ret) {
-		strlcat(ini_buf, ini.internal,
-			strlen(ini.internal) + strlen(ini_buf) + 1);
-		strlcat(ini_buf_ext,
-			ini.external,
-			strlen(ini.external) + strlen(ini_buf_ext) + 1);
-		if (ath12k_cfg_ab_parse(ab, ini_buf_ext) == 0)
+		strlcat(ini_buf, ini.internal, sizeof(ini_buf));
+		if (ath12k_cfg_ab_parse(ab, ini.external) == 0)
 			ath12k_cfg_parse_to_store(ab, ini_buf);
 		else
 			ath12k_cfg_ab_parse(ab, ini_buf);
@@ -1040,16 +1064,15 @@ void ath12k_cfg_parse_pdev_section(struct ath12k_base *ab)
 	int ret;
 	u32 i;
 
-	scnprintf(ini_buf, sizeof(ini_buf), "%s/internal/", ATH12K_FW_DIR);
+	scnprintf(ini_buf, sizeof(ini_buf), "internal/");
 	if (!ab->cfg_ctx)
 		return;
 	/* Parse the target specific INI */
-	ret = ath12k_cfg_get_ini_file_name(TARGET_TYPE_QCN9224, &ini);
+	ret = ath12k_cfg_get_ini_file_name(ab->hw_rev, &ini);
 	if (ret)
 		return;
 
-	strlcat(ini_buf, ini.internal,
-		strlen(ini.internal) + strlen(ini_buf) + 1);
+	strlcat(ini_buf, ini.internal, sizeof(ini_buf));
 
 	for (i = 0; i < ab->num_radios; i++) {
 		pdev = &ab->pdevs[i];

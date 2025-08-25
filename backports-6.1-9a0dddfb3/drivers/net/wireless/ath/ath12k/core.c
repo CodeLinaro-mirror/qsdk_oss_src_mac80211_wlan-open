@@ -1052,6 +1052,7 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 	ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
 	ath12k_dp_cmn_device_deinit(ab->dp);
+	ath12k_cfg_deinit(ab);
 
 	/* De-Init of components as needed */
 }
@@ -1199,7 +1200,6 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 	mutex_unlock(&ag->mutex);
 	ath12k_qmi_deinit_service(ab);
 	mutex_lock(&ag->mutex);
-	ath12k_cfg_deinit(ab);
 }
 
 static int ath12k_core_mlo_shmem_per_device_crash_info_addresses(
@@ -1780,11 +1780,6 @@ core_pdev_create:
 		mutex_unlock(&ab->core_lock);
 	}
 
-	if (ath12k_cfg_init(ab))
-		ath12k_err(ab, "failed to initialize INI data in driver\n");
-	else
-		ath12k_err(ab, "initialize INI data in driver\n");
-
 	return 0;
 
 err:
@@ -1945,6 +1940,11 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 		ath12k_err(ab, "failed to init DP: %d\n", ret);
 		goto err_firmware_stop;
 	}
+
+	if (ath12k_cfg_init(ab))
+		ath12k_err(ab, "failed to initialize INI data in driver\n");
+	else
+		ath12k_info(ab, "initialized INI data in driver\n");
 
 	mutex_lock(&ag->mutex);
 	mutex_lock(&ab->core_lock);
