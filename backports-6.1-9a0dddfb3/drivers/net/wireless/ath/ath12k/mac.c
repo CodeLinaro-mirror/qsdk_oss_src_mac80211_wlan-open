@@ -381,7 +381,8 @@ u16 ath12k_mac_he_convert_tones_to_ru_tones(u16 tones)
 }
 EXPORT_SYMBOL(ath12k_mac_he_convert_tones_to_ru_tones);
 
-static void ath12k_mac_bridge_vdevs_down(struct ath12k_vif *ahvif, u8 cur_link_id);
+static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
+					 struct ath12k_vif *ahvif, u8 cur_link_id);
 static void ath12k_mac_bridge_vdevs_up(struct ath12k_link_vif *arvif);
 
 enum nl80211_eht_gi ath12k_mac_eht_gi_to_nl80211_eht_gi(u8 sgi)
@@ -2313,7 +2314,8 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 			   "vdev %d down with link_id=%u\n",
 			   arvif->vdev_id, arvif->link_id);
-		ath12k_mac_bridge_vdevs_down(ahvif, arvif->link_id);
+		ath12k_mac_bridge_vdevs_down(ath12k_ar_to_hw(arvif->ar),
+					     ahvif, arvif->link_id);
 		return;
 	}
 
@@ -5341,6 +5343,44 @@ static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
 		memset(arvif, 0, sizeof(*arvif));
 }
 
+static void
+ath12k_mac_remove_and_unassign_bridge_vdevs(struct ieee80211_hw *hw,
+					    struct ieee80211_vif *vif)
+{
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_vif *arvif;
+	unsigned long links;
+	u8 link_id = ATH12K_BRIDGE_LINK_MIN;
+
+	if (!hw || !vif) {
+		ath12k_err(NULL,
+			   "hw or vif NA for bridge vdevs removal\n");
+		return;
+	}
+
+	if (vif->type != NL80211_IFTYPE_AP &&
+	    vif->type != NL80211_IFTYPE_STATION)
+		return;
+
+	ahvif = (void *)vif->drv_priv;
+
+	if (hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) > 0)
+		return;
+
+	links = ahvif->links_map;
+	for_each_set_bit_from(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		if (!arvif) {
+			ath12k_err(NULL,
+				   "arvif data NA on link id %d where links_map: %lu\n",
+				   link_id, links);
+			continue;
+		}
+		ath12k_mac_remove_link_interface(hw, arvif);
+		ath12k_mac_unassign_link_vif(arvif);
+	}
+}
+
 int
 ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif,
@@ -5389,6 +5429,7 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
+		ath12k_mac_remove_and_unassign_bridge_vdevs(hw, vif);
 	}
 
 	return 0;
@@ -5964,24 +6005,37 @@ static void ath12k_mac_vif_setup_ps(struct ath12k_link_vif *arvif)
 			    psmode, arvif->vdev_id, ret);
 }
 
-static void ath12k_mac_bridge_vdevs_down(struct ath12k_vif *ahvif, u8 cur_link_id)
+static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
+					 struct ath12k_vif *ahvif, u8 cur_link_id)
 {
 	struct ath12k_link_vif *arvif;
+	unsigned long links, scan_links;
 	int ret;
-	u8 link_id = ATH12K_BRIDGE_LINK_MIN;
-	unsigned long links;
+	u8 link_id;
 
 	/* Proceed only for MLO */
 	if (!ahvif->vif->valid_links)
 		return;
 
-	/* Proceed bridge vdev down only after all the normal vdevs are down */
-	if (hweight32(ahvif->links_map & ATH12K_IEEE80211_MLD_MAX_LINKS_MASK & ~BIT(cur_link_id)) > 0)
-		return;
-
 	links = ahvif->links_map;
-	for_each_set_bit_from(link_id, &links, ATH12K_NUM_MAX_LINKS) {
-		arvif = ahvif->link[link_id];
+	scan_links = ATH12K_SCAN_LINKS_MASK;
+
+	for_each_andnot_bit(link_id, &links, &scan_links, ATH12K_NUM_MAX_LINKS) {
+		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		if (!arvif) {
+			ath12k_err(NULL,
+				   "unable to determine the assigned link on link id %u\n",
+				   link_id);
+			continue;
+		}
+
+		/* Proceed bridge vdev down only after all the normal vdevs are down */
+		if (link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
+			if (arvif->is_up)
+				return;
+			continue;
+		}
+
 		if (arvif->is_up) {
 			ret = ath12k_wmi_vdev_down(arvif->ar, arvif->vdev_id);
 			if (ret) {
@@ -17118,7 +17172,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 
 	ar->num_started_vdevs++;
 	ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM started, vdev_id %d\n",
-		   ahvif->vif->addr, arvif->vdev_id);
+		   arvif->bssid, arvif->vdev_id);
 
 	ret = ath12k_mac_vdev_config_after_start(arvif, chandef);
 	if (ret)
@@ -18286,13 +18340,13 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		return;
 
 	if (ctx)
-		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-				"mac chanctx unassign ptr %p vdev_id %i vdev_subtype %0x\n",
-				ctx, arvif->vdev_id, arvif->vdev_subtype);
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "mac chanctx unassign ptr %p vdev_id %i vdev_subtype %0x\n",
+			   ctx, arvif->vdev_id, arvif->vdev_subtype);
 	else
-		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-				"mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
-				arvif->vdev_id, arvif->vdev_subtype);
+		ath12k_dbg(ab, ATH12K_DBG_MAC,
+			   "mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
+			   arvif->vdev_id, arvif->vdev_subtype);
 
 	WARN_ON(!arvif->is_started);
 
@@ -18331,59 +18385,70 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 }
 
 static void
-ath12k_mac_stop_and_delete_bridge_vdev(struct ieee80211_hw *hw,
-				       struct ieee80211_vif *vif,
-				       struct ieee80211_bss_conf *link_conf,
-				       struct ieee80211_chanctx_conf *ctx)
+ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
+			     struct ieee80211_vif *vif)
 {
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
+	unsigned long links, scan_links;
 	int ret;
-	u8 link_id = ATH12K_BRIDGE_LINK_MIN;
-	unsigned long links;
+	u8 link_id;
+
+	if (!hw || !vif) {
+		ath12k_err(NULL, "Data NA for AP bridge vdevs stop\n");
+		return;
+	}
 
 	/* Proceed only for MLO */
 	if (!vif->valid_links)
 		return;
 
-	if (vif->type != NL80211_IFTYPE_AP &&
-	    vif->type != NL80211_IFTYPE_STATION)
+	if (vif->type != NL80211_IFTYPE_AP)
 		return;
 
 	ahvif = (void *)vif->drv_priv;
 
-	/* Proceed for bridge only after all the normal vdevs are removed */
-	if (hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) == 0) {
-		links = ahvif->links_map;
-		for_each_set_bit_from(link_id, &links, ATH12K_NUM_MAX_LINKS) {
-			arvif = ahvif->link[link_id];
-			if (!arvif) {
-				ath12k_err(NULL,
-					   "unable to determine the assigned link vif on link id %d\n", link_id);
+	links = ahvif->links_map;
+	scan_links = ATH12K_SCAN_LINKS_MASK;
+
+	for_each_andnot_bit(link_id, &links, &scan_links, ATH12K_NUM_MAX_LINKS) {
+		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		if (!arvif) {
+			ath12k_err(NULL,
+				   "link info NA for link: %u in AP bridge vdevs stop\n",
+				   link_id);
+			continue;
+		}
+
+		/* Proceed bridge vdev stop only after all the normal vdevs are stopped */
+		if (link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
+			if (arvif->is_started)
+				return;
+			continue;
+		}
+
+		if (arvif->is_up) {
+			/* When interfaces are getting removed,
+			 * during CAC inprogress, the bridge vdevs
+			 * will not be brought down in the normal
+			 * flow since the 5G normal vdev is
+			 * created and started but not brought up.
+			 * However, in this case, all the bridge
+			 * vdevs present will be up and they are
+			 * stopped without bringing them down.
+			 * So bridge vdev will be brought down
+			 * here during these specific scenarios.
+			 */
+			ret = ath12k_wmi_vdev_down(arvif->ar, arvif->vdev_id);
+			if (ret) {
+				ath12k_warn(arvif->ar->ab,
+					    "failed to down vdev_id %i: %d\n",
+					    arvif->vdev_id, ret);
 				continue;
 			}
-
-			if (arvif->is_up) {
-				/* When interfaces are getting removed,
-				 * during CAC inprogress, the bridge vdevs
-				 * will not be brought down in the normal
-				 * calls since the 5G normal vdev is
-				 * created and started but not brought up.
-				 * However, in this case, all the bridge
-				 * vdevs present will be up and they are
-				 * stopped without bringing them down.
-				 * So bridge vdev will be brought down
-				 * here during these specific scenarios.
-				 */
-				ret = ath12k_wmi_vdev_down(arvif->ar, arvif->vdev_id);
-				if (ret) {
-					ath12k_warn(arvif->ar->ab, "failed to down vdev_id %i: %d\n", arvif->vdev_id, ret);
-					continue;
-				}
-				arvif->is_up = false;
-			}
-			ath12k_mac_unassign_vif_chanctx_handle(hw, vif, NULL, NULL, link_id);
+			arvif->is_up = false;
 		}
+		ath12k_mac_unassign_vif_chanctx_handle(hw, vif, NULL, NULL, link_id);
 	}
 }
 
@@ -18396,7 +18461,7 @@ ath12k_mac_op_unassign_vif_chanctx(struct ieee80211_hw *hw,
 	lockdep_assert_wiphy(hw->wiphy);
 
 	ath12k_mac_unassign_vif_chanctx_handle(hw, vif, link_conf, ctx, 0);
-	ath12k_mac_stop_and_delete_bridge_vdev(hw, vif, link_conf, ctx);
+	ath12k_mac_stop_bridge_vdevs(hw, vif);
 }
 EXPORT_SYMBOL(ath12k_mac_op_unassign_vif_chanctx);
 

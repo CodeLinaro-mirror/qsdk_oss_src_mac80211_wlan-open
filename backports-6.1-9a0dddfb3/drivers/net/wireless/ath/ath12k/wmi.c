@@ -1257,7 +1257,7 @@ int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id)
 						 sizeof(*cmd));
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI, ATH12K_DBG_L1, "WMI vdev stop id 0x%x\n", vdev_id);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI vdev stop id 0x%x\n", vdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_STOP_CMDID);
 	if (ret) {
@@ -1285,7 +1285,7 @@ int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id)
 						 sizeof(*cmd));
 	cmd->vdev_id = cpu_to_le32(vdev_id);
 
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI, ATH12K_DBG_L1, "WMI vdev down id 0x%x\n", vdev_id);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI vdev down id 0x%x\n", vdev_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DOWN_CMDID);
 	if (ret) {
@@ -13141,8 +13141,9 @@ static int ath12k_wmi_ctrl_stats_event_parser(struct ath12k_base *ab,
 {
 	int ret;
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wmi ctrl path stats tag 0x%x of len %d rcvd\n",
-		   tag, len);
+	ath12k_dbg_level(ab, ATH12K_DBG_WMI, ATH12K_DBG_L3,
+			 "wmi ctrl path stats tag 0x%x of len %d rcvd\n",
+			 tag, len);
 
 	switch (tag) {
 	case WMI_TAG_CTRL_PATH_STATS_EV_FIXED_PARAM:
@@ -15462,7 +15463,8 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 
 	default:
-		ath12k_dbg(ab, ATH12K_DBG_WMI, "Unknown eventid: 0x%x\n", id);
+		ath12k_dbg_level(ab, ATH12K_DBG_WMI, ATH12K_DBG_L1,
+				 "Unknown eventid: 0x%x\n", id);
 		break;
 	}
 
@@ -17801,9 +17803,9 @@ int ath12k_wmi_dl_qos_profile_delete(struct ath12k_base *ab, u8 qos_profile_id)
 
 	cmd->svc_class_id = cpu_to_le32(qos_profile_id);
 
-	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "QoS profile WMI disable: qos id: %u",
-		   cmd->svc_class_id);
+	ath12k_dbg_level(ar->ab, ATH12K_DBG_WMI, ATH12K_DBG_L2,
+			 "QoS profile WMI disable: qos id: %u",
+			 cmd->svc_class_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb,
 				  WMI_SAWF_SERVICE_CLASS_DISABLE_CMDID);
