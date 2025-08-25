@@ -182,6 +182,13 @@ struct htt_peer_stats_cmn_tlv {
 #define ATH12K_HTT_PEER_DETAILS_LINK_IDX           GENMASK(20, 13)
 #define ATH12K_HTT_PEER_DETAILS_USE_PPE            BIT(21)
 #define ATH12K_HTT_PEER_DETAILS_SRC_INFO           GENMASK(11, 0)
+#define ATH12K_HTT_PEER_PS_DETAILS_PEER_PS_ENTRY   GENMASK(7, 0)
+#define ATH12K_HTT_PEER_PS_DETAILS_PEER_PS_EXIT    GENMASK(15, 8)
+#define ATH12K_HTT_PEER_PS_DETAILS_PEER_PSPOLL     GENMASK(23, 16)
+#define ATH12K_HTT_PEER_PS_DETAILS_PEER_UAPSD      GENMASK(31, 24)
+#define ATH12K_HTT_PEER_HIST_DETAILS_PEER_HIST0    GENMASK(9, 0)
+#define ATH12K_HTT_PEER_HIST_DETAILS_PEER_HIST1    GENMASK(19, 10)
+#define ATH12K_HTT_PEER_HIST_DETAILS_PEER_HIST2    GENMASK(29, 20)
 
 struct htt_peer_details_tlv {
 	__le32 peer_type;
@@ -192,6 +199,8 @@ struct htt_peer_details_tlv {
 	__le32 qpeer_flags;
 	__le32 src_info;
 	__le32 peer_details;
+	__le32 peer_ps_details;
+	__le32 peer_hist_details;
 };
 
 /* NOTE: Variable length TLV, use length spec to infer array size .
@@ -437,6 +446,7 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DGB_HTT_EXT_STATS_PDEV_MBSSID_CTRL_FRAME		= 54,
 	ATH12K_DBG_HTT_UMAC_RESET_SSR_STATS                     = 55,
 	ATH12K_DBG_HTT_STATS_GTX_STATS				= 68,
+	ATH12K_DBG_HTT_EXT_STATS_PDEV_UL_MUMIMO_ELIGIBLE        = 74,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_HDS_PROF 			= 76,
 
 	/* keep this last */
@@ -617,7 +627,12 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_PDEV_TDMA_TAG				= 187,
 	HTT_STATS_MLO_SCHED_STATS_TAG                   = 190,
 	HTT_STATS_GTX_TAG				= 199,
+	HTT_STATS_TX_PDEV_WIFI_RADAR_TAG		= 200,
 	HTT_STATS_TXBF_OFDMA_BE_PARBW_TAG		= 201,
+	HTT_STATS_PDEV_UL_MUMIMO_GRP_STATS_TAG		= 208,
+	HTT_STATS_PDEV_UL_MUMIMO_DENYLIST_STATS_TAG	= 209,
+	HTT_STATS_PDEV_UL_MUMIMO_SEQ_TERM_STATS_TAG	= 210,
+	HTT_STATS_PDEV_UL_MUMIMO_HIST_INELIGIBILITY_TAG	= 211,
 	HTT_STATS_HDS_PROF_STATS_TAG			= 213,
 
 	HTT_STATS_MAX_TAG,
@@ -630,7 +645,7 @@ enum ath12k_dbg_htt_tlv_tag {
 #define HTT_TX_HWQ_MAX_CMD_STALL_STATS       5
 #define HTT_TX_HWQ_MAX_FES_RESULT_STATS      10
 
-#define ATH12K_HTT_TX_PDEV_MAX_PHY_ERR_STATS          18
+#define ATH12K_HTT_TX_PDEV_MAX_PHY_ERR_STATS          142
 
 #define ATH12K_HTT_STATS_MAC_ID				GENMASK(7, 0)
 
@@ -2509,6 +2524,10 @@ enum ath12k_htt_tx_mumimo_grp_invalid_reason_code_stats {
 	ATH12K_HTT_TX_MUMIMO_GRP_INVALID_GROUP_INELIGIBLE,
 	ATH12K_HTT_TX_MUMIMO_GRP_INVALID,
 	ATH12K_HTT_TX_MUMIMO_GRP_INVALID_GROUP_EFF_MU_TPUT_OMBPS,
+	ATH12K_HTT_TX_MUMIMO_GRP_INVALID_GRP,
+	ATH12K_HTT_TX_MUMIMO_GRP_INVALID_TOTAL_NSS_LESS_THAN_GROUP_SIZE,
+	ATH12K_HTT_TX_MUMIMO_GRP_INSUFFICIENT_CANDIDATES_UL_MU_1SS_RATE,
+	ATH12K_HTT_TX_MUMIMO_GRP_MU_GRP_NOT_NEEDED,
 	ATH12K_HTT_TX_MUMIMO_GRP_INVALID_MAX_REASON_CODE,
 };
 
@@ -2556,6 +2575,60 @@ struct htt_vdev_rtt_init_stats_tlv {
 	u32 initiator_terminate_cnt;
 	u32 tx_meas_req_count;
 };
+
+#define ATH12K_HTT_STATS_MAX_SCH_CMD_RESULT 25
+#define ATH12K_HTT_STATS_MAX_CHAINS		8
+enum {
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_TYPE_NONE = 0,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_TYPE_GAIN_BINARY_SEARCH = 1,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_TYPE_TX_GAIN_BINARY_SEARCH = 2,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_TYPE_RECAL_GAIN_VALIDATION = 3,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_TYPE_RECAL_GAIN_BINARY_SEARCH = 4,
+	/* the value 5 is reserved for future use */
+
+	ATH12K_HTT_STATS_NUM_WIFI_RADAR_CAL_TYPES = 6
+};
+
+enum {
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_FAILURE_NONE = 0,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_FAILURE_DPD_ABORT = 1,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_FAILURE_CONVERGENCE = 2,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_FAILURE_TX_EXCEEDS_RETRY = 3,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_FAILURE_CAPTURE = 4,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_FAILURE_NEW_CHANNEL_CHANGE = 5,
+	ATH12K_HTT_STATS_WIFI_RADAR_CAL_FAILURE_NEW_CAL_REQ = 6,
+	/* the values 7-9 are reserved for future use */
+
+	ATH12K_HTT_STATS_NUM_WIFI_RADAR_CAL_FAILURE_REASONS = 10
+};
+
+struct htt_stats_tx_pdev_wifi_radar_tlv {
+	__le32 capture_in_progress;
+	__le32 calibration_in_progress;
+	__le32 periodicity;
+	__le32 latest_req_timestamp;
+	__le32 latest_resp_timestamp;
+	__le32 latest_calibration_timing;
+	__le32 calibration_timing_per_chain[ATH12K_HTT_STATS_MAX_CHAINS];
+	__le32 wifi_radar_req_count;
+	__le32 num_wifi_radar_pkt_success;
+	__le32 num_wifi_radar_pkt_queued;
+	__le32 num_wifi_radar_cal_pkt_success;
+	__le32 wifi_radar_cal_init_tx_gain;
+	__le32 latest_wifi_radar_cal_type;
+	__le32 wifi_radar_cal_type_counts[ATH12K_HTT_STATS_NUM_WIFI_RADAR_CAL_TYPES];
+	__le32 latest_wifi_radar_cal_fail_reason;
+	__le32 wifi_radar_cal_fail_reason_counts[
+			ATH12K_HTT_STATS_NUM_WIFI_RADAR_CAL_FAILURE_REASONS];
+	__le32 wifi_radar_licensed;
+	__le32 cmd_results_cts2self[ATH12K_HTT_STATS_MAX_SCH_CMD_RESULT];
+	__le32 cmd_results_wifi_radar[ATH12K_HTT_STATS_MAX_SCH_CMD_RESULT];
+	/* Tx gain index from gain table obtained/used for calibration */
+	__le32 wifi_radar_tx_gains[ATH12K_HTT_STATS_MAX_CHAINS];
+	/* Rx gain index from gain table obtained/used from calibration */
+	__le32 wifi_radar_rx_gains
+			[ATH12K_HTT_STATS_MAX_CHAINS][ATH12K_HTT_STATS_MAX_CHAINS];
+} __packed;
 
 struct htt_pktlog_and_htt_ring_stats_tlv {
 	/* No of pktlog payloads that were dropped in htt_ppdu_stats path */
@@ -3236,6 +3309,7 @@ enum ath12k_htt_stats_sounding_tx_mode {
 	ATH12K_HTT_TX_AX_SOUNDING_MODE		= 1,
 	ATH12K_HTT_TX_BE_SOUNDING_MODE		= 2,
 	ATH12K_HTT_TX_CMN_SOUNDING_MODE		= 3,
+	ATH12K_HTT_TX_CV_CORR_MODE		= 4,
 };
 
 struct ath12k_htt_tx_sounding_stats_tlv {
@@ -3602,7 +3676,6 @@ struct ath12k_htt_dl_pager_stats_tlv {
 	struct ath12k_htt_pgs_info pgs_info[ATH12K_NUM_PG_LOCK_STATE][ATH12K_PAGER_MAX];
 } __packed;
 
-#define ATH12K_HTT_STATS_MAX_CHAINS		8
 #define ATH12K_HTT_MAX_RX_PKT_CNT		8
 #define ATH12K_HTT_MAX_RX_PKT_CRC_PASS_CNT	8
 #define ATH12K_HTT_MAX_PER_BLK_ERR_CNT		20
@@ -4616,6 +4689,72 @@ struct ath12k_htt_stats_txbf_ofdma_be_parbw_tlv {
 	__le32 be_ofdma_parbw_user_snd;
 	__le32 be_ofdma_parbw_cv;
 	__le32 be_ofdma_total_cv;
+} __packed;
+
+enum ath12k_htt_stats_candidate_sched_compatible_code {
+	ATH12K_HTT_STATS_CANDIDATE_MU_NOT_COMPATIBLE = 1,
+	ATH12K_HTT_STATS_CANDIDATE_SKIP_NR_INDEX,
+	ATH12K_HTT_STATS_CANDIDATE_SKIP_BASIC_CHECKS_INELIGIBLE,
+	ATH12K_HTT_STATS_CANDIDATE_SKIP_ZERO_NSS,
+	ATH12K_HTT_STATS_CANDIDATE_SKIP_MCS_THRESHOLD_LIMIT,
+	ATH12K_STATS_CANDIDATE_SKIP_POWER_IMBALANCE,
+	ATH12K_HTT_STATS_CANDIDATE_SKIP_NULL_MU_RC,
+	ATH12K_HTT_STATS_CANDIDATE_SKIP_CV_CORR_SKIP_PEER,
+	ATH12K_HTT_STATS_CANDIDATE_SKIP_SEND_BAR_SET_FOR_AC_MUMIMO,
+	ATH12K_HTT_STATS_CANDIDATE_SKIP_REASON_MAX
+};
+
+struct ath12k_htt_stats_pdev_ulmumimo_grp_stats_tlv {
+	__le32 pdev_id;
+	__le32 mu_grp_eligible[ATH12K_HTT_STATS_NUM_MAX_MUMIMO_SZ];
+	__le32 mu_grp_ineligible[ATH12K_HTT_STATS_NUM_MAX_MUMIMO_SZ];
+	__le32 mu_grp_invalid[ATH12K_HTT_TX_NUM_MUMIMO_GRP_INVALID_WORDS];
+	__le32 mu_grp_candidate_skip[ATH12K_HTT_TX_NUM_AX_MUMIMO_USER_STATS]
+				    [ATH12K_HTT_STATS_CANDIDATE_SKIP_REASON_MAX];
+	__le32 mu_grp_eligible_1ss[ATH12K_HTT_STATS_NUM_MAX_MUMIMO_SZ];
+	__le32 mu_grp_ineligible_1ss[ATH12K_HTT_STATS_NUM_MAX_MUMIMO_SZ];
+	__le32 mu_grp_invalid_1ss[ATH12K_HTT_TX_NUM_MUMIMO_GRP_INVALID_WORDS];
+	__le32 mu_grp_candidate_skip_1ss[ATH12K_HTT_TX_NUM_AX_MUMIMO_USER_STATS]
+		[ATH12K_HTT_STATS_CANDIDATE_SKIP_REASON_MAX];
+} __packed;
+
+struct ath12k_htt_stats_pdev_ulmumimo_denylist_stats_tlv {
+	__le32 num_peer_denylist_cnt;
+	__le32 trig_bitmap_fail_cnt;
+	__le32 trig_consecutive_fail_cnt;
+} __packed;
+
+#define ATH12K_HTT_STATS_SEQ_EFFICIENCY_HISTOGRAM 10
+
+struct ath12k_htt_stats_pdev_ulmumimo_seq_term_stats_tlv {
+	__le32 num_terminate_seq;
+	__le32 num_terminate_low_qdepth;
+	__le32 num_terminate_seq_inefficient;
+	__le32 hist_seq_efficiency[ATH12K_HTT_STATS_SEQ_EFFICIENCY_HISTOGRAM];
+} __packed;
+
+#define ATH12K_HTT_STATS_MAX_ULMUMIMO_TRIGGERS 6
+#define ATH12K_HTT_STATS_TXOP_HISTOGRAM_BINS 24
+#define ATH12K_HTT_STATS_ULMUMIMO_DUR_INTERVAL_US 500
+#define ATH12K_HTT_STATS_ULMUMIMO_MIN_PPDU_DUR_US 1000
+#define ATH12K_HTT_STATS_MAX_PPDU_DURATION_BINS 10
+
+struct ath12k_htt_stats_pdev_ulmumimo_hist_ineligibility_tlv {
+	__le32 num_triggers[ATH12K_HTT_STATS_MAX_ULMUMIMO_TRIGGERS];
+	__le32 txop_history[ATH12K_HTT_STATS_TXOP_HISTOGRAM_BINS];
+	/* ppdu_duration_hist:
+	 * PPDU Duration History (histogram)
+	 * Num PPDUs from 1 to 6
+	 * 0 to 6 ms with interval of 500us
+	 */
+	__le32 ppdu_duration_hist[ATH12K_HTT_STATS_MAX_ULMUMIMO_TRIGGERS]
+				 [ATH12K_HTT_STATS_MAX_PPDU_DURATION_BINS];
+	__le32 ineligible_count;
+	/* history_ineligibility:
+	 * History based ineligibility counter for ULMUMIMO.
+	 * Checks for 8 eligible instances of ULMUMIMO in the past 32 instances.
+	 */
+	__le32 history_ineligibility;
 } __packed;
 
 /*======= Bandwidth Manager stats ====================*/
