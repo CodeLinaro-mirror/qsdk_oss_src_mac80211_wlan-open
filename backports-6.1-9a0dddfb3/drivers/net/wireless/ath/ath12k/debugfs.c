@@ -850,6 +850,7 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 						size_t count, loff_t *ppos)
 {
 	struct ath12k_base *ab = file->private_data;
+	struct ath12k *ar;
 	struct ath12k_device_dp_stats *device_stats = &ab->dp->device_stats;
 	int len = 0, i, j, retval;
 	const int size = 4096;
@@ -876,7 +877,9 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 	static const char *wbm_rel_src[HAL_WBM_REL_SRC_MODULE_MAX] = {
                         "TQM", "Rxdma", "Reo", "FW", "SW" };
 
+	struct ath12k_pdev *pdev;
 	char *buf;
+	u32 center_freq = 0;
 
 	buf = kzalloc(size, GFP_KERNEL);
 	if (!buf)
@@ -887,12 +890,30 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 		                 device_stats->tx_eapol[i] + device_stats->tx_null_frame[i];
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-		for (j = 0; j < ATH12K_MAX_SOCS; j++)
+		for (j = 0; j < ab->ag->num_devices; j++)
 			non_fast_rx[i][j] = device_stats->non_fast_unicast_rx[i][j] +
 				            device_stats->non_fast_mcast_rx[i][j];
 	}
 
-	len += scnprintf(buf + len, size - len, "SOC TX STATS:\n");
+	len += scnprintf(buf + len, size - len,
+			 "SOC DP STATS (timestamp: %llums):\n",
+			 ktime_to_ms(ktime_get()));
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		ar = pdev->ar;
+		if (ar) {
+			spin_lock_bh(&ar->data_lock);
+			if (ar->rx_channel)
+				center_freq = ar->rx_channel->center_freq;
+			spin_unlock_bh(&ar->data_lock);
+			len += scnprintf(buf + len, size - len,
+					 "\nradio_%u centre freq:%u\n",
+					 i, center_freq);
+		}
+	}
+
+	len += scnprintf(buf + len, size - len, "\nSOC TX STATS:\n");
 
 	len += scnprintf(buf + len, size - len,
 		         "tx_enqueued: 0:%u 1:%u 2:%u 3:%u\n",
@@ -1061,86 +1082,92 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 device_stats->hal_reo_error[3]);
 
 
-	len += scnprintf(buf + len, size - len, "\nREO Rx Received:\n");
+	len += scnprintf(buf + len, size - len, "\nREO Rx Received:");
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		for (j = 0; j < ab->ag->num_devices; j++)
+			len += scnprintf(buf + len, size - len,
+					 "%d:%u\t", j,
+					 device_stats->reo_rx[i][j]);
+	}
 
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
-		len += scnprintf(buf + len, size - len,
-			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
-				 i + 1,
-	                         device_stats->reo_rx[i][0],
-		                 device_stats->reo_rx[i][1],
-			         device_stats->reo_rx[i][2]);
+	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "\nREO Fast Rx:\n");
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
-		len += scnprintf(buf + len, size - len,
-				 "Ring%d: 0:%u\t1:%u\t2:%u\n",
-				 i + 1,
-				 device_stats->fast_rx[i][0],
-				 device_stats->fast_rx[i][1],
-				 device_stats->fast_rx[i][2]);
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		for (j = 0; j < ab->ag->num_devices; j++)
+			len += scnprintf(buf + len, size - len,
+					 "%d:%u\t", j,
+					 device_stats->fast_rx[i][j]);
+	}
 
+	len += scnprintf(buf + len, size - len, "\n");
 	len += scnprintf(buf + len, size - len, "\nREO Non-Fast Rx:\n");
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
-		len += scnprintf(buf + len, size - len,
-			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
-				 i + 1,
-	                         non_fast_rx[i][0],
-		                 non_fast_rx[i][1],
-			         non_fast_rx[i][2]);
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		for (j = 0; j < ab->ag->num_devices; j++)
+			len += scnprintf(buf + len, size - len,
+					 "%d:%u\t", j,
+					 non_fast_rx[i][j]);
+	}
 
+	len += scnprintf(buf + len, size - len, "\n");
 	len += scnprintf(buf + len, size - len, "\nMcast Non-Fast Rx:\n");
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
-		len += scnprintf(buf + len, size - len,
-			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
-				 i + 1,
-		                 device_stats->non_fast_mcast_rx[i][0],
-			         device_stats->non_fast_mcast_rx[i][1],
-				 device_stats->non_fast_mcast_rx[i][2]);
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		for (j = 0; j < ab->ag->num_devices; j++)
+			len += scnprintf(buf + len, size - len,
+					 "%d:%u\t", j,
+					 device_stats->non_fast_mcast_rx[i][j]);
+	}
 
+	len += scnprintf(buf + len, size - len, "\n");
 	len += scnprintf(buf + len, size - len, "\nUnicast Non-Fast Rx:\n");
-	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
-		len += scnprintf(buf + len, size - len,
-			         "Ring%d: 0:%u\t1:%u\t2:%u\n",
-				 i + 1,
-	                         device_stats->non_fast_unicast_rx[i][0],
-		                 device_stats->non_fast_unicast_rx[i][1],
-			         device_stats->non_fast_unicast_rx[i][2]);
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+		len += scnprintf(buf + len, size - len, "\nRing%d: ", i + 1);
+		for (j = 0; j < ab->ag->num_devices; j++)
+			len += scnprintf(buf + len, size - len,
+					 "%d:%u\t", j,
+					 device_stats->non_fast_unicast_rx[i][j]);
+	}
 
-	len += scnprintf(buf + len, size - len, "\nRx Eapol:\n");
-	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+	len += scnprintf(buf + len, size - len, "\n");
+
+	len += scnprintf(buf + len, size - len, "\nRx WBM Rel Eapol:\n");
+	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol[i]);
 
 	len += scnprintf(buf + len, size - len, "\n");
 
 	len += scnprintf(buf + len, size - len, "\nRx eapol M1\t");
-	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol_type[0][i]);
 
 	len += scnprintf(buf + len, size - len, "\nRx eapol M2\t");
-	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol_type[1][i]);
 
 	len += scnprintf(buf + len, size - len, "\nRx eapol M3\t");
-	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol_type[2][i]);
 
 	len += scnprintf(buf + len, size - len, "\nRx eapol M4\t");
-	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
                                  device_stats->rx_eapol_type[3][i]);
 
 	len += scnprintf(buf + len, size - len, "\nRx eapol G1\t");
-	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+	for (i = 0; i < ab->ag->num_devices; i++)
 		len += scnprintf(buf + len, size - len, "%d:%u\t", i,
 				 device_stats->rx_eapol_type[4][i]);
 
 	len += scnprintf(buf + len, size - len,"\nRx eapol G2\t");
-	for (i = 0; i < ATH12K_MAX_SOCS; i++)
+	for (i = 0; i < ab->ag->num_devices; i++)
                 len += scnprintf(buf + len, size - len, "%d:%u\t", i,
                                  device_stats->rx_eapol_type[5][i]);
 
@@ -1151,13 +1178,13 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 device_stats->rx_pkt_null_frame_dropped);
 
 	len += scnprintf(buf + len, size - len, "\nRx WBM REL SRC Errors:\n");
-	for (i = 0; i < HAL_WBM_REL_SRC_MODULE_MAX; i++)
-		len += scnprintf(buf + len, size - len,
-			        "%s\t:0:%u\t1:%u\t2:%u\n",
-				wbm_rel_src[i],
-	                        device_stats->rx_wbm_rel_source[i][0],
-		                device_stats->rx_wbm_rel_source[i][1],
-			        device_stats->rx_wbm_rel_source[i][2]);
+	for (i = 0; i < HAL_WBM_REL_SRC_MODULE_MAX; i++) {
+		len += scnprintf(buf + len, size - len, "\n%s\t: ", wbm_rel_src[i]);
+		for (j = 0; j < ab->ag->num_devices; j++)
+			len += scnprintf(buf + len, size - len,
+					 "%d:%u\t", j,
+					 device_stats->rx_wbm_rel_source[i][j]);
+	}
 
 	len += scnprintf(buf + len, size - len,
 			 "\nFIRST/LAST MSDU BIT MISSING COUNT: %u\n",
