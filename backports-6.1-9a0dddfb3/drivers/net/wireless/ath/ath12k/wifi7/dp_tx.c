@@ -1080,8 +1080,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	int ret;
 	u8 reason, tid;
 	u16 peer_id;
-	u8 ring_selector, subtype, ring_map = 0;
-	bool tcl_ring_retry = false;
+	u8 ring_selector, subtype;
 	bool msdu_ext_desc = false;
 	size_t hdrlen;
 	bool add_htt_metadata = false;
@@ -1126,11 +1125,8 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	 */
 	ring_selector = dp->hw_params->hw_ops->get_ring_selector(skb);
 
-tcl_ring_sel:
-	tcl_ring_retry = false;
 	ti.ring_id = ring_selector % dp->hw_params->max_tx_ring;
 
-	ring_map |= BIT(ti.ring_id);
 	ti.rbm_id = hal->tcl_to_cmp_rbm_map[ti.ring_id].rbm_id;
 
 	tx_ring = &dp->tx_ring[ti.ring_id];
@@ -1358,16 +1354,13 @@ skip_htt_metadata:
 	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
 	tcl_ring = &hal->srng_list[hal_ring_id];
 
-	spin_lock_bh(&tcl_ring->lock);
-
-	ath12k_hal_srng_access_begin(ab, tcl_ring);
-
+	ath12k_hal_srng_access_begin_no_lock(tcl_ring);
 	hal_tcl_desc = ath12k_hal_srng_src_get_next_entry(ab, tcl_ring);
 	if (!hal_tcl_desc) {
 		/* NOTE: It is highly unlikely we'll be running out of tcl_ring
 		 * desc because the desc is directly enqueued onto hw queue.
 		 */
-		ath12k_hal_srng_access_end(ab, tcl_ring);
+		ath12k_hal_srng_access_end_no_lock(ab, tcl_ring);
 		dp->device_stats.tx_err.desc_na[ti.ring_id]++;
 		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
 		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
@@ -1375,23 +1368,7 @@ skip_htt_metadata:
 			ath12k_tid_tx_drop_stats(ahvif, tid, 0,
 						 ATH_TX_DESC_NA_ERR);
 		}
-		spin_unlock_bh(&tcl_ring->lock);
 		err = DP_TX_ENQ_DROP_TCL_DESC_NA;
-
-		/* Checking for available tcl descriptors in another ring in
-		 * case of failure due to full tcl ring now, is better than
-		 * checking this ring earlier for each pkt tx.
-		 * Restart ring selection if some rings are not checked yet.
-		 */
-		if (ring_map != (BIT(dp->hw_params->max_tx_ring) - 1) &&
-		    dp->hw_params->tcl_ring_retry) {
-			DP_STATS_INC(dp_vif,
-				     tx_i.drop[DP_TX_ENQ_TCL_DESC_RETRY],
-				     1, ring_id);
-			tcl_ring_retry = true;
-			ring_selector++;
-		}
-
 		goto fail_unmap_dma_ext;
 	}
 
@@ -1487,9 +1464,7 @@ skip_htt_metadata:
 					     qos_tag, arsta->addr);
 	}
 
-	ath12k_hal_srng_access_end(ab, tcl_ring);
-
-	spin_unlock_bh(&tcl_ring->lock);
+	ath12k_hal_srng_access_end_no_lock(ab, tcl_ring);
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw, 1, ti.data_len, ti.ring_id);
 
@@ -1519,10 +1494,6 @@ fail_remove_tx_buf:
 	spin_lock_bh(&arvif->link_stats_lock);
 	arvif->link_stats.tx_dropped++;
 	spin_unlock_bh(&arvif->link_stats_lock);
-
-	if (tcl_ring_retry)
-		goto tcl_ring_sel;
-
 	return err;
 }
 

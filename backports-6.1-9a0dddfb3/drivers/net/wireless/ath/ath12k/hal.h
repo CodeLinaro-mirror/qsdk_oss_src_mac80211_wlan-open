@@ -1439,8 +1439,11 @@ void *ath12k_hal_srng_src_get_next_entry(struct ath12k_base *ab,
 int ath12k_hal_srng_src_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 				 bool sync_hw_ptr);
 u32 ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng);
+u32 ath12k_hal_srng_access_begin_no_lock(struct hal_srng *srng);
 u32 __ath12k_hal_srng_access_begin(struct hal_srng *srng);
 void __ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng);
+void ath12k_hal_srng_access_end_no_lock(struct ath12k_base *ab,
+					struct hal_srng *srng);
 void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng);
 int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
 			      int ring_num, int mac_id,

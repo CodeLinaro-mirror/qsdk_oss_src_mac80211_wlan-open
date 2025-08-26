@@ -261,7 +261,6 @@ struct ath12k_hw_params {
 	bool cold_boot_calib:1;
 	bool download_calib:1;
 	bool supports_suspend:1;
-	bool tcl_ring_retry:1;
 	bool reoq_lut_support:1;
 	bool supports_shadow_regs:1;
 	bool supports_aspm:1;

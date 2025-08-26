@@ -754,6 +754,7 @@ void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);
 void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
 					 u32 ba_window_size, u8 tid);
+
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
 {

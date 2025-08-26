@@ -669,6 +669,12 @@ u32 ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng)
 }
 EXPORT_SYMBOL(ath12k_hal_srng_access_begin);
 
+u32 ath12k_hal_srng_access_begin_no_lock(struct hal_srng *srng)
+{
+	return __ath12k_hal_srng_access_begin(srng);
+}
+EXPORT_SYMBOL(ath12k_hal_srng_access_begin_no_lock);
+
 void __ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp)
 {
 	srng->u.dst_ring.tp = new_tp;
@@ -729,6 +735,13 @@ void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng)
 	__ath12k_hal_srng_access_end(ab, srng);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_access_end);
+
+void ath12k_hal_srng_access_end_no_lock(struct ath12k_base *ab,
+					struct hal_srng *srng)
+{
+	 __ath12k_hal_srng_access_end(ab, srng);
+}
+EXPORT_SYMBOL(ath12k_hal_srng_access_end_no_lock);
 
 void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
 				     struct wbm_idle_scatter_list *sbuf,
