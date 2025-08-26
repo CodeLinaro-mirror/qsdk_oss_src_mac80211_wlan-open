@@ -2608,22 +2608,22 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 				u16 new_links = master->vif.valid_links &
 						sta->sta.valid_links;
 
+				wdev->valid_links = new_links;
+
+				ieee80211_vif_set_links(vlansdata, new_links, 0);
+
 				for_each_set_bit(link_id, &master_iter,
 						 IEEE80211_MLD_MAX_NUM_LINKS) {
 					if (!(sta->sta.valid_links & BIT(link_id))) {
 						memset(wdev->links[link_id].addr,
 						       0, ETH_ALEN);
-						wdev->valid_links &= ~BIT(link_id);
 					}
 					else {
 						memcpy(wdev->links[link_id].addr,
 						       vlansdata->vif.link_conf[link_id]->bssid,
 							ETH_ALEN);
-						wdev->valid_links |= BIT(link_id);
 					}
 				}
-
-				ieee80211_vif_set_links(vlansdata, new_links, 0);
 			}
 		}
 
