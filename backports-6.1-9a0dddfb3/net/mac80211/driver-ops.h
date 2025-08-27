@@ -1625,7 +1625,9 @@ static inline void drv_sta_set_4addr(struct ieee80211_local *local,
 				     struct ieee80211_sub_if_data *sdata,
 				     struct ieee80211_sta *sta, bool enabled)
 {
-	sdata = get_bss_sdata(sdata);
+	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) &&
+	    !ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD))
+		sdata = get_bss_sdata(sdata);
 
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
