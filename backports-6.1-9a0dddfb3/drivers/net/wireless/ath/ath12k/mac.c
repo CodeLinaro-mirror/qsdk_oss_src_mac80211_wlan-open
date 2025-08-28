@@ -7597,23 +7597,14 @@ static int ath12k_start_scan(struct ath12k *ar,
 	return 0;
 }
 
-int ath12k_mac_get_fw_stats(struct ath12k *ar,
-			    struct ath12k_fw_stats_req_params *param)
+static int _ath12k_mac_get_fw_stats(struct ath12k *ar,
+				    struct ath12k_fw_stats_req_params *param)
 {
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
 	unsigned long time_left;
 	int ret;
 
-	guard(mutex)(&ah->hw_mutex);
-
-	if (ah->state != ATH12K_HW_STATE_ON)
-		return -ENETDOWN;
-
-	ath12k_fw_stats_reset(ar);
-
 	reinit_completion(&ar->fw_stats_complete);
-	reinit_completion(&ar->fw_stats_done);
 
 	ret = ath12k_wmi_send_stats_request_cmd(ar, param->stats_id,
 						param->vdev_id, param->pdev_id);
@@ -7632,6 +7623,53 @@ int ath12k_mac_get_fw_stats(struct ath12k *ar,
 		return -ETIMEDOUT;
 	}
 
+	return 0;
+}
+
+int ath12k_mac_get_fw_stats_per_vif(struct ath12k *ar,
+				    struct ath12k_fw_stats_req_params *param)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	int ret;
+
+	guard(mutex)(&ah->hw_mutex);
+
+	if (ah->state != ATH12K_HW_STATE_ON)
+		return -ENETDOWN;
+
+	ret = _ath12k_mac_get_fw_stats(ar, param);
+	if (ret) {
+		ath12k_warn(ab, "Failed to fetch stats per vif\n");
+		return ret;
+	}
+
+	return 0;
+}
+
+int ath12k_mac_get_fw_stats(struct ath12k *ar,
+			    struct ath12k_fw_stats_req_params *param)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	unsigned long time_left;
+	int ret;
+
+	guard(mutex)(&ah->hw_mutex);
+
+	if (ah->state != ATH12K_HW_STATE_ON)
+		return -ENETDOWN;
+
+	ath12k_fw_stats_reset(ar);
+
+	reinit_completion(&ar->fw_stats_done);
+
+	ret = _ath12k_mac_get_fw_stats(ar, param);
+	if (ret) {
+		ath12k_warn(ab, "Failed to fetch stats per vif\n");
+		return ret;
+	}
+
 	/* Firmware sends WMI_UPDATE_STATS_EVENTID back-to-back
 	 * when stats data buffer limit is reached. fw_stats_complete
 	 * is completed once host receives first event from firmware, but
@@ -7639,10 +7677,8 @@ int ath12k_mac_get_fw_stats(struct ath12k *ar,
 	 * until firmware completes sending all the events.
 	 */
 	time_left = wait_for_completion_timeout(&ar->fw_stats_done, 3 * HZ);
-	if (!time_left) {
+	if (!time_left)
 		ath12k_warn(ab, "time out while waiting for fw stats done\n");
-		return -ETIMEDOUT;
-	}
 
 	return 0;
 }

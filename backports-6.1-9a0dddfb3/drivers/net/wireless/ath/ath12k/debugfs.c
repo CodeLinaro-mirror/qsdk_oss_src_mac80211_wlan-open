@@ -4179,17 +4179,18 @@ static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 	param.pdev_id = ath12k_mac_get_target_pdev_id(ar);
 	param.stats_id = WMI_REQUEST_BCN_STAT;
 
+	ath12k_fw_stats_reset(ar);
+
 	/* loop all active VDEVs for bcn stats */
 	list_for_each_entry(arvif, &ar->arvifs, list) {
 		if (!arvif->is_up)
 			continue;
 
 		param.vdev_id = arvif->vdev_id;
-		ret = ath12k_mac_get_fw_stats(ar, &param);
-		if (ret) {
-			ath12k_warn(ar->ab, "failed to request fw bcn stats: %d\n", ret);
-			return ret;
-		}
+		ret = ath12k_mac_get_fw_stats_per_vif(ar, &param);
+		if (ret)
+			ath12k_warn(ar->ab, "failed to request fw bcn stats: %d\n for vdev %d",
+				    ret, arvif->vdev_id);
 	}
 
 	ath12k_wmi_fw_stats_dump(ar, &ar->fw_stats, param.stats_id,
