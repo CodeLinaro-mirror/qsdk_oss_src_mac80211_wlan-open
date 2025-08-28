@@ -4518,18 +4518,21 @@ int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif)
 	}
 
 	if (ahvif->vif->type != NL80211_IFTYPE_MESH_POINT) {
-		value |= u32_encode_bits(HE_DL_MUOFDMA_ENABLE, HE_MODE_DL_OFDMA) |
-			 u32_encode_bits(HE_UL_MUOFDMA_ENABLE, HE_MODE_UL_OFDMA);
-
 		if (link_conf->he_full_ul_mumimo)
 			value |= u32_encode_bits(HE_UL_MUMIMO_ENABLE, HE_MODE_UL_MUMIMO);
-
 		if (link_conf->he_su_beamformee)
 			value |= u32_encode_bits(HE_SU_BFEE_ENABLE, HE_MODE_SU_TX_BFEE);
 	}
-
-	if (ar->ofdma_txbf_conf)
+	if (ar->he_dl_enabled)
+		value |= u32_encode_bits(HE_DL_MUOFDMA_ENABLE, HE_MODE_DL_OFDMA);
+	if (ar->he_ul_enabled)
+		value |= u32_encode_bits(HE_UL_MUOFDMA_ENABLE, HE_MODE_UL_OFDMA);
+	if (ar->he_dlbf_enabled)
 		value |= u32_encode_bits(HE_DL_OFDMA_TXBF_ENABLE, HE_MODE_DL_OFDMA_TXBF);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		  "Set HE TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
+		  ar->he_dl_enabled, ar->he_ul_enabled, ar->he_dlbf_enabled, value);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -4651,22 +4654,23 @@ int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif)
 				 u32_encode_bits(EHT_UL_MUOFDMA_ENABLE,
 						 EHT_MODE_UL_OFDMA_MUMIMO);
 	}
-
 	if (ahvif->vif->type != NL80211_IFTYPE_MESH_POINT) {
-		value |= u32_encode_bits(EHT_DL_MUOFDMA_ENABLE, EHT_MODE_DL_OFDMA) |
-			 u32_encode_bits(EHT_UL_MUOFDMA_ENABLE, EHT_MODE_UL_OFDMA);
-
 		if (link_conf->eht_80mhz_full_bw_ul_mumimo)
 			value |= u32_encode_bits(EHT_UL_MUMIMO_ENABLE, EHT_MODE_MUMIMO);
-
 		if (link_conf->eht_su_beamformee)
-			value |= u32_encode_bits(EHT_SU_BFEE_ENABLE,
-						 EHT_MODE_SU_TX_BFEE);
+			value |= u32_encode_bits(EHT_SU_BFEE_ENABLE, EHT_MODE_SU_TX_BFEE);
 	}
-
-	if (ar->ofdma_txbf_conf)
+	if (ar->eht_dl_enabled)
+		value |= u32_encode_bits(EHT_DL_MUOFDMA_ENABLE, EHT_MODE_DL_OFDMA);
+	if (ar->eht_ul_enabled)
+		value |= u32_encode_bits(EHT_UL_MUOFDMA_ENABLE, EHT_MODE_UL_OFDMA);
+	if (ar->eht_dlbf_enabled)
 		value |= u32_encode_bits(EHT_DL_OFDMA_TXBF_ENABLE,
-					 EHT_MODE_DL_OFDMA_TXBF);
+					EHT_MODE_DL_OFDMA_TXBF);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		  "Set EHT TXBF config: DL=%d UL=%d DLBF=%d, value=0x%x\n",
+		  ar->eht_dl_enabled, ar->eht_ul_enabled, ar->eht_dlbf_enabled, value);
 
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, param, value);
 	if (ret) {
@@ -14839,6 +14843,14 @@ int ath12k_mac_start(struct ath12k *ar)
 			ret = 0;
 		goto err;
 	}
+
+	ar->he_dl_enabled = 1;
+	ar->he_ul_enabled = 1;
+	ar->he_dlbf_enabled = 1;
+
+	ar->eht_dl_enabled = 1;
+	ar->eht_ul_enabled = 1;
+	ar->eht_dlbf_enabled = 1;
 
 	ar->num_started_vdevs = 0;
 	ar->num_created_vdevs = 0;

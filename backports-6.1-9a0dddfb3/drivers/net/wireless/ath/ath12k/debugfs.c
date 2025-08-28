@@ -5820,6 +5820,35 @@ static const struct file_operations fops_qos_stats = {
 	.open = simple_open
 };
 
+static int ath12k_configure_ofdma_feature(struct ath12k *ar,
+					 bool *dl_enabled,
+					 bool *ul_enabled,
+					 bool *dlbf_enabled,
+					 int value,
+					 const char *feature,
+					 const char *mode)
+{
+	if (!strcmp(feature, "default")) {
+		*dl_enabled = value;
+		*ul_enabled = value;
+		*dlbf_enabled = value;
+	} else if (!strcmp(feature, "dl")) {
+		*dl_enabled = value;
+		if (!value)
+			*dlbf_enabled = 0;
+	} else if (!strcmp(feature, "ul")) {
+		*ul_enabled = value;
+	} else if (!strcmp(feature, "dlbf")) {
+		if (!*dl_enabled && value) {
+			ath12k_warn(ar->ab, "%s DLBF requires DL to be enabled\n", mode);
+			return -EINVAL;
+		}
+		*dlbf_enabled = value;
+	}
+
+	return 0;
+}
+
 static ssize_t ath12k_enable_ofdma_txbf(struct file *file,
 					const char __user *user_buf,
 					size_t count, loff_t *ppos)
@@ -5828,45 +5857,97 @@ static ssize_t ath12k_enable_ofdma_txbf(struct file *file,
 	struct ath12k_link_vif *arvif;
 	int value, ret;
 	char buf[32] = {0};
-	char mode[3] = {'\0'};
-
+	char mode[4] = {'\0'};
+	char feature[8] = {'\0'};
 	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
-				     user_buf, count);
+					user_buf, count);
 	if (ret < 0)
 		return ret;
 
 	buf[ret] = '\0';
-	ret = sscanf(buf, "%d %s", &value, mode);
-	if (ret != 2) {
-		ath12k_err(ar->ab, "2 arguments required usage: enable/disable eht/he");
+	ret = sscanf(buf, "%d %3s %7s", &value, mode, feature);
+	if (ret < 2 || ret > 3) {
+		ath12k_err(ar->ab, "3 arguments required usage: enable/disable eht/he ul/dl/dlbf");
 		return -EINVAL;
 	}
-
+	strim(mode);
+	if (ret == 2) {
+		if (strscpy(feature, "default", sizeof(feature)) < 0) {
+			ath12k_err(ar->ab, "Failed to copy default feature string");
+			return -EINVAL;
+		}
+	} else {
+		strim(feature);
+		if (strlen(feature) >= sizeof(feature) - 1) {
+			ath12k_err(ar->ab, "Feature string too long");
+			return -EINVAL;
+		}
+	}
 	if (strcmp(mode, "eht") && strcmp(mode, "he")) {
 		ath12k_err(ar->ab, "Mode should be eht/he");
 		return -EINVAL;
 	}
-
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	ar->ofdma_txbf_conf = value;
-
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (!strcmp(mode, "eht")) {
-			ath12k_mac_set_he_txbf_conf(arvif);
-			ath12k_mac_set_eht_txbf_conf(arvif);
-		} else {
-			ath12k_mac_set_he_txbf_conf(arvif);
-		}
+	if (strcmp(feature, "ul") && strcmp(feature, "dl") &&
+		strcmp(feature, "dlbf") && strcmp(feature, "default")) {
+		ath12k_err(ar->ab,
+			  "Invalid feature: '%s'. Must be 'ul', 'dl','dlbf', or omitted\n",
+			  feature);
+		return -EINVAL;
 	}
 
-	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (!strcmp(mode, "eht")) {
+		ret = ath12k_configure_ofdma_feature(ar,
+						    &ar->eht_dl_enabled,
+						    &ar->eht_ul_enabled,
+						    &ar->eht_dlbf_enabled,
+						    value, feature, "EHT");
+	} else {
+		ret = ath12k_configure_ofdma_feature(ar,
+						    &ar->he_dl_enabled,
+						    &ar->he_ul_enabled,
+						    &ar->he_dlbf_enabled,
+						    value, feature, "HE");
+	}
+	if (ret)
+		goto unlock;
 
-	return count;
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (!strcmp(mode, "eht"))
+			ath12k_mac_set_eht_txbf_conf(arvif);
+		if (!strcmp(mode, "he"))
+			ath12k_mac_set_he_txbf_conf(arvif);
+	}
+unlock:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return ret ? ret : count;
+}
+
+static ssize_t ath12k_show_ofdma_txbf(struct file *file,
+				     char __user *user_buf,
+				     size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[128];
+	int len;
+
+	len = scnprintf(buf, sizeof(buf),
+		       "HE DL: %d\nHE UL: %d\nHE DLBF: %d\n"
+		       "EHT DL: %d\nEHT UL: %d\nEHT DLBF: %d\n",
+		       ar->he_dl_enabled,
+		       ar->he_ul_enabled,
+		       ar->he_dlbf_enabled,
+		       ar->eht_dl_enabled,
+		       ar->eht_ul_enabled,
+		       ar->eht_dlbf_enabled);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
 static const struct file_operations ofdma_txbf = {
 	.write = ath12k_enable_ofdma_txbf,
 	.open = simple_open,
+	.read = ath12k_show_ofdma_txbf,
 };
 
 void ath12k_debugfs_register(struct ath12k *ar)
@@ -5995,7 +6076,7 @@ void ath12k_debugfs_register(struct ath12k *ar)
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_enable_dp_tid_stats);
 
-	debugfs_create_file("ofdma_txbf_enable", 0600,
+	debugfs_create_file("ofdma_conf", 0600,
 			    ar->debug.debugfs_pdev, ar,
 			    &ofdma_txbf);
 

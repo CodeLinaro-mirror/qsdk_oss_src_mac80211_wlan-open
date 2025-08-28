@@ -1241,6 +1241,12 @@ struct ath12k {
 	u32 vht_cap_info;
 	struct ath12k_he ar_he;
 	bool ofdma_txbf_conf;
+	bool he_dl_enabled;
+	bool he_ul_enabled;
+	bool he_dlbf_enabled;
+	bool eht_dl_enabled;
+	bool eht_ul_enabled;
+	bool eht_dlbf_enabled;
 	struct {
 		struct completion started;
 		struct completion completed;
