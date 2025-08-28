@@ -8933,7 +8933,7 @@ ath12k_htt_print_rx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += scnprintf(buf + len, buf_len - len, "per_chain_rssi_pkt_type = %#x\n",
 			 le32_to_cpu(htt_stats_buf->per_chain_rssi_pkt_type));
 
-	len += print_array_to_buf(buf, len, "rx_nss", htt_stats_buf->rx_nss,
+	len += print_array_to_buf_index(buf, len, "rx_nss", 1, htt_stats_buf->rx_nss,
 				  ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS, "\n");
 	len += print_array_to_buf(buf, len, "rx_dcm", htt_stats_buf->rx_dcm,
 				  ATH12K_HTT_RX_PDEV_STATS_NUM_DCM_COUNTERS, "\n");
