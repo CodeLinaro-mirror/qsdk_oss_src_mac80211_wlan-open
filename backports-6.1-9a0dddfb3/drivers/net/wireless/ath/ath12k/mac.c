@@ -15672,6 +15672,9 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	 */
 	if (arvif->link_id >= ATH12K_DEFAULT_SCAN_LINK && vif->valid_links)
 		link_id = ffs(vif->valid_links) - 1;
+	else if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
+		 vif->type == NL80211_IFTYPE_STATION)
+		link_id = 0;
 	else
 		link_id = arvif->link_id;
 
