@@ -1075,7 +1075,6 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[arvif->link_id];
 	struct dp_tx_ring *tx_ring;
-	struct ath12k_sta *ahsta;
 	u8 pool_id;
 	u8 hal_ring_id;
 	int ret;
@@ -1111,13 +1110,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		ti.lookup_override = true;
 	} else if (ieee80211_has_a4(hdr->frame_control) &&
 	    is_multicast_ether_addr(hdr->addr3) && arsta) {
-		ahsta = arsta->ahsta;
-		if (unlikely(!ahsta->link[ahsta->primary_link_id])) {
-			ath12k_err(ab, "arsta not found on primary link");
-			err = DP_TX_ENQ_DROP_ARSTA_NA;
-			goto fail_remove_tx_buf;
-		}
-		ti.meta_data_flags = ahsta->link[ahsta->primary_link_id]->tcl_metadata;
+		ti.meta_data_flags = arsta->tcl_metadata;
 		ti.flags0 |= FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TO_FW, 1);
 	} else {
 		ti.meta_data_flags = dp_link_vif->tcl_metadata;
