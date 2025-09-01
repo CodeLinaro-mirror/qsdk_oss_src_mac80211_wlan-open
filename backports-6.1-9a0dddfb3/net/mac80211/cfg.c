@@ -992,9 +992,13 @@ static int ieee80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 	return ret;
 }
 
-static int ieee80211_set_monitor_channel(struct wiphy *wiphy,
-					 struct net_device *dev,
-					 struct cfg80211_chan_def *chandef)
+/*
+ * ieee80211_set_monitor_channel: Exported for use with radar detection
+ * to ensure monitor interfaces follow AP interfaces to DFS channels
+ */
+int ieee80211_set_monitor_channel(struct wiphy *wiphy,
+				  struct net_device *dev,
+				  struct cfg80211_chan_def *chandef)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata;
@@ -4051,6 +4055,8 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	struct ieee80211_chan_req chanreq = { .oper = *chandef };
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_link_data *link_data;
+	struct ieee80211_sub_if_data *mon_sdata = NULL;
+	struct net_device *mon_dev = NULL;
 	int err;
 	ktime_t ktime = ms_to_ktime(cac_time_ms);
 
@@ -4062,6 +4068,30 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	link_data = sdata_dereference(sdata->link[link_id], sdata);
 	if (!link_data)
 		return -ENOLINK;
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(mon_sdata, &sdata->local->mon_list, u.mntr.list) {
+		struct cfg80211_chan_def *mon_chandef;
+
+		mon_chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
+		if (mon_chandef->chan &&
+		    mon_chandef->chan->band == chandef->chan->band) {
+			mon_dev = mon_sdata->dev;
+			dev_hold(mon_dev);
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	if (mon_dev) {
+		err = ieee80211_set_monitor_channel(local->hw.wiphy, mon_dev, chandef);
+		mon_sdata = IEEE80211_DEV_TO_SUB_IF(mon_dev);
+		if (err)
+			sdata_info(mon_sdata,
+				   "Failed to change monitor interface channel: %d\n",
+				   err);
+		dev_put(mon_dev);
+	}
 
 	/* whatever, but channel contexts should not complain about that one */
 	link_data->smps_mode = IEEE80211_SMPS_OFF;

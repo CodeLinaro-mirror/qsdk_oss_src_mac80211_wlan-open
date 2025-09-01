@@ -3054,4 +3054,8 @@ int ieee80211_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 			   struct cfg80211_qm_req_data *qm_req,
 			   struct cfg80211_qm_resp_data *qm_resp);
 
+int ieee80211_set_monitor_channel(struct wiphy *wiphy,
+				  struct net_device *dev,
+				  struct cfg80211_chan_def *chandef);
+
 #endif /* IEEE80211_I_H */
