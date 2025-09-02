@@ -17604,7 +17604,7 @@ beacon_tmpl_setup:
 	if (arvif->pending_csa_up)
 		return 0;
 
-	if (!arvif->is_up)
+	if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR && !arvif->is_up)
 		return -EOPNOTSUPP;
 
 	if (!is_bridge_vdev) {
@@ -17643,6 +17643,15 @@ beacon_tmpl_setup:
 		ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
 			    arvif->vdev_id, ret);
 		return ret;
+	}
+
+	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
+		ath12k_dp_mon_rx_config_monitor_mode(ar, false);
+		ret = ath12k_dp_mon_rx_update_filter(ar);
+		if (ret) {
+			ath12k_warn(ar->ab, "fail to set monitor filter: %d\n", ret);
+			return ret;
+		}
 	}
 
 	return ret;

@@ -11769,6 +11769,9 @@ ath12k_wmi_process_csa_switch_count_event(struct ath12k_base *ab,
 		}
 		ahvif = arvif->ahvif;
 
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+			continue;
+
 		if (arvif->link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
 			ath12k_warn(ab, "Invalid CSA switch count even link id: %d\n",
 				    arvif->link_id);
