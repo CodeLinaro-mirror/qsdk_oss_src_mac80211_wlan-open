@@ -999,7 +999,7 @@ void ath12k_ppe_ds_attach_vlan_vif_link(struct ath12k_vlan_iface *vlan_iface,
 	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
 		ap_arvif = rcu_dereference(ap_ahvif->link[link_id]);
 
-		if (!ap_arvif)
+		if (!ap_arvif || !ap_arvif->is_created)
 			continue;
 
 		ar = ap_arvif->ar;
