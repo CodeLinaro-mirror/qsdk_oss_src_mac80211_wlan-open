@@ -1901,7 +1901,8 @@ int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
 	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
 	struct nss_plugins_ops *plugin_ops = ath12k_get_registered_nss_plugin_ops();
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)
+	if (dev->ieee80211_ptr &&
+	    dev->ieee80211_ptr->iftype == NL80211_IFTYPE_MONITOR)
 		return 0;
 
 	if (!plugin_ops)
