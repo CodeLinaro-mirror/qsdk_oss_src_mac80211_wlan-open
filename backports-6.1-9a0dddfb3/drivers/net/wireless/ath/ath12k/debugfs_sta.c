@@ -1115,16 +1115,26 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 	struct ath12k_link_sta *arsta;
 	struct ath12k *ar;
 	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer *peer;
+	struct ath12k_dp_peer_stats *peer_stats;
         struct ath12k_dp *dp;
 	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_htt_data_stats *stats;
 	static const char *str_name[ATH12K_STATS_TYPE_MAX] = {"success", "fail",
                                                              "retry", "ampdu"};
 	static const char *str[ATH12K_COUNTER_TYPE_MAX] = {"bytes", "packets"};
-	int len = 0, i, j, k, retval = 0;
+	int len = 0, i, j, k, stats_link_id, retval = 0;
 	const int size = 2 * 4096;
+	u32 wbm_rel_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX] = {0};
 	char mu_group_id[MAX_MU_GROUP_LENGTH] = {0};
 	u32 index;
+	static const char *fields[] =
+		{[HAL_WBM_REL_HTT_TX_COMP_STATUS_OK] = "Acked pkt count",
+		 [HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL] = "Status ttl pkt count",
+		 [HAL_WBM_REL_HTT_TX_COMP_STATUS_DROP] = "Dropped pkt count",
+		 [HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ] = "Reinj pkt count",
+		 [HAL_WBM_REL_HTT_TX_COMP_STATUS_INSPECT] = "Inspect pkt count",
+		 [HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY] = "MEC notify pkt count"};
 
 	wiphy_lock(ah->hw->wiphy);
 
@@ -1164,6 +1174,10 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 		wiphy_unlock(ah->hw->wiphy);
 		return -ENOENT;
 	}
+
+	peer = link_peer->dp_peer;
+	stats_link_id = peer->hw_links[ar->hw_link_id];
+	peer_stats = &peer->stats[stats_link_id];
 
 
 	for (k = 0; k < ATH12K_STATS_TYPE_MAX; k++) {
@@ -1299,6 +1313,20 @@ static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
 
 	len += scnprintf(buf + len, size - len,
 			"ack fails\n %llu\n\n", tx_stats->ack_fails);
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		for (j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
+			wbm_rel_stats[j] += peer_stats->tx[i].wbm_rel_reason[j];
+	}
+
+	len += scnprintf(buf + len, size - len,
+			 "WBM tx completion stats of data pkts :\n");
+	for (j = 0; j <= HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY; j++) {
+		len += scnprintf(buf + len, size - len,
+				 "%-23s :  %d\n",
+				 fields[j],
+				 wbm_rel_stats[j]);
+	}
 
 	spin_unlock_bh(&dp->dp_lock);
 
