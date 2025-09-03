@@ -14,7 +14,8 @@
 #define ATH12K_STA_RX_STATS_BUF_SIZE		(1024 * 16)
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
-
+void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+			       struct ieee80211_sta *sta, struct dentry *dir);
 void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_link_sta *link_sta,

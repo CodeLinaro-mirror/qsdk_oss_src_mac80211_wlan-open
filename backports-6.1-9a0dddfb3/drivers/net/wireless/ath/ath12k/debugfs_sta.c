@@ -1103,6 +1103,7 @@ void ath12k_debugfs_sta_op_add(struct ieee80211_hw *hw, struct ieee80211_vif *vi
 	debugfs_create_file("delba", 0200, dir, sta, &fops_delba);
 	debugfs_create_file("primary_link_id", 0400, dir, sta, &fops_primary_link_id);
 }
+EXPORT_SYMBOL(ath12k_debugfs_sta_op_add);
 
 static ssize_t ath12k_dbg_sta_dump_tx_stats(struct file *file,
                                            char __user *user_buf,
