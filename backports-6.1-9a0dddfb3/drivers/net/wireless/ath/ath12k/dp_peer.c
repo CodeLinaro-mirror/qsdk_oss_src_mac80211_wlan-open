@@ -190,6 +190,16 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id)
 		   peer->vdev_id, peer->addr, peer_id);
 
 	list_del(&peer->list);
+
+	if (peer->peer_stats.rx_stats)
+		kfree(peer->peer_stats.rx_stats);
+
+	if (peer->peer_stats.tx_stats)
+		kfree(peer->peer_stats.tx_stats);
+
+	if (peer->peer_stats.qos_stats)
+		kfree(peer->peer_stats.qos_stats);
+
 	kfree(peer);
 	wake_up(&ab->peer_mapping_wq);
 
@@ -749,14 +759,6 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
 
 	spin_unlock_bh(&dp_hw->peer_lock);
-
-	if (peer->peer_stats.rx_stats)
-		kfree(peer->peer_stats.rx_stats);
-
-	if (peer->peer_stats.tx_stats)
-		kfree(peer->peer_stats.tx_stats);
-
-	kfree(peer->peer_stats.qos_stats);
 
 	/* To handle roaming and split phy scenario */
 	temp_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
