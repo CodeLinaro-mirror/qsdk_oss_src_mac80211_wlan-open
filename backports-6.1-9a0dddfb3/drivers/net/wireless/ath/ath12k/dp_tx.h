@@ -29,6 +29,22 @@ struct ath12k_dp_htt_wbm_tx_status {
 	s8 ack_rssi;
 };
 
+static inline bool ath12k_dp_tx_completion_valid(struct hal_wbm_release_ring *desc)
+{
+	struct htt_tx_wbm_completion *status_desc;
+
+	if (FIELD_GET(HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE, desc->info0) ==
+			HAL_WBM_REL_SRC_MODULE_FW) {
+		status_desc = (struct htt_tx_wbm_completion *)(((u8 *)desc) + HTT_TX_WBM_COMP_STATUS_OFFSET);
+
+		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
+		if (FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS, status_desc->info0) ==
+				HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY)
+			return false;
+	}
+	return true;
+}
+
 void ath12k_dp_tx_put_bank_profile(struct ath12k_dp *dp, u8 bank_id);
 
 void ath12k_dp_tx_encap_nwifi(struct sk_buff *skb);

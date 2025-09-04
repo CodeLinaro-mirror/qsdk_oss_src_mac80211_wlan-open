@@ -2261,6 +2261,9 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp_hw_grp->tx_status_buf[tx_status_idx];
 	while (budget-- && (desc = __ath12k_hal_srng_dst_get_next_cached_entry(status_ring, NULL))) {
+		if (!ath12k_dp_tx_completion_valid(desc))
+			continue;
+
 		tx_status = (struct hal_wbm_completion_ring_tx *)desc;
 
 		/* HW done cookie conversion */

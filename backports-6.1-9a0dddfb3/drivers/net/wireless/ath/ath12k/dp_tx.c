@@ -134,22 +134,6 @@ void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
 	}
 }
 
-static inline bool ath12k_dp_tx_completion_valid(struct hal_wbm_release_ring *desc)
-{
-	struct htt_tx_wbm_completion *status_desc;
-
-	if (FIELD_GET(HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE, desc->info0) ==
-			HAL_WBM_REL_SRC_MODULE_FW) {
-		status_desc = (struct htt_tx_wbm_completion *)(((u8 *)desc) + HTT_TX_WBM_COMP_STATUS_OFFSET);
-
-		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
-		if (FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS, status_desc->info0) ==
-				HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY)
-			return false;
-	}
-	return true;
-}
-
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries)
