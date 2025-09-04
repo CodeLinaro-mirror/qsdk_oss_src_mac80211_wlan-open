@@ -12194,7 +12194,7 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	struct ath12k *ar, *tmp_ar;
 	u16 removed_link_map;
 	u8 link_id, tmp_link_id, pri_link_id;
-	int ret;
+	int ret, assoc_status;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -12253,10 +12253,31 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 			pri_link_id =
 				ath12k_mac_ahsta_get_pri_link_id(ahvif, ahsta,
 								 ahsta->links_map);
-			if (pri_link_id == IEEE80211_MLD_MAX_NUM_LINKS)
+			if (pri_link_id == IEEE80211_MLD_MAX_NUM_LINKS) {
 				pri_link_id = ahsta->assoc_link_id;
+				ahsta->primary_link_id = pri_link_id;
+			} else {
+				arvif =
+				wiphy_dereference(hw->wiphy, ahvif->link[pri_link_id]);
 
-			ahsta->primary_link_id = pri_link_id;
+				if (vif->type == NL80211_IFTYPE_STATION && arvif &&
+				    !ath12k_mac_is_bridge_vdev(arvif)) {
+					assoc_status =
+					ieee80211_get_link_assoc_status(vif, pri_link_id);
+					/* When the assoc is failed for the selected
+					 * link, then avoid updating that link as primary
+					 */
+					if (assoc_status != 0) {
+						ath12k_err(NULL,
+							   "Selected pri_link_id:%u, retain pri_link_id:%u\n",
+							   pri_link_id,
+							   ahsta->primary_link_id);
+						goto skip_pri_link_selection;
+					}
+				}
+				ahsta->primary_link_id = pri_link_id;
+			}
+skip_pri_link_selection:
 			ath12k_dbg(NULL, ATH12K_DBG_MAC,
 				   "mac ML STA %pM primary link set to %u\n",
 				   sta->addr, ahsta->primary_link_id);
