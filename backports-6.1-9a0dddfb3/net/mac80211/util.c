@@ -5241,3 +5241,23 @@ int ieee80211_get_radio_idx_by_freq(struct wiphy *wiphy, u32 freq)
 	return -1;
 }
 EXPORT_SYMBOL(ieee80211_get_radio_idx_by_freq);
+
+int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id)
+{
+	struct ieee80211_sub_if_data *sdata = NULL;
+	struct ieee80211_mgd_assoc_data *assoc_data = NULL;
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -1;
+
+	sdata = vif_to_sdata(vif);
+	if (!sdata)
+		return -1;
+
+	assoc_data = sdata->u.mgd.assoc_data;
+	if (!assoc_data)
+		return -1;
+
+	return (int)assoc_data->link[link_id].status;
+}
+EXPORT_SYMBOL(ieee80211_get_link_assoc_status);

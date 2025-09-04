@@ -8493,4 +8493,5 @@ ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
  */
 int ieee80211_get_radio_idx_by_freq(struct wiphy *wiphy, u32 freq);
 
+int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
 #endif /* MAC80211_H */
