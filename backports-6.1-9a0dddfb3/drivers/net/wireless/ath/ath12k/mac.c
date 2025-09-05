@@ -36,6 +36,7 @@
 #include "dp_mon.h"
 #include "erp.h"
 #include "vendor_services.h"
+#include "ini.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -15491,6 +15492,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	int txpower = NL80211_TX_POWER_AUTOMATIC;
 	u8 map_id;
 	unsigned long time_left;
+	u32 rep_ul_resp;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -15769,6 +15771,41 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE) {
 			reinit_completion(&ar->completed_11d_scan);
 			ar->state_11d = ATH12K_11D_PREPARING;
+		}
+		rep_ul_resp = ((ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP) >>
+							ar->pdev->pdev_id) & 01);
+		if (rep_ul_resp) {
+			param_value = 0;
+			param_id = WMI_VDEV_PARAM_SET_HEMU_MODE;
+			param_value |= u32_encode_bits(HE_UL_MUMIMO_ENABLE,
+							HE_MODE_UL_MUMIMO) |
+					u32_encode_bits(HE_DL_MUOFDMA_ENABLE,
+							HE_MODE_DL_OFDMA) |
+					u32_encode_bits(HE_UL_MUOFDMA_ENABLE,
+					HE_MODE_UL_OFDMA);
+
+			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+							param_id, param_value);
+			if (ret) {
+				ath12k_warn(ar->ab,
+				"failed to set vdev %d HE MU mode: %d\n",
+				arvif->vdev_id, ret);
+			}
+			param_value = 0;
+			param_id = WMI_VDEV_PARAM_SET_EHT_MU_MODE;
+			param_value |= u32_encode_bits(EHT_UL_MUMIMO_ENABLE,
+							EHT_MODE_MUMIMO) |
+					u32_encode_bits(EHT_DL_MUOFDMA_ENABLE,
+							EHT_MODE_DL_OFDMA) |
+					u32_encode_bits(EHT_UL_MUOFDMA_ENABLE,
+							EHT_MODE_UL_OFDMA);
+			ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+							param_id, param_value);
+			if (ret) {
+				ath12k_warn(ar->ab,
+				"failed to set vdev %d EHT MU mode: %d\n",
+				arvif->vdev_id, ret);
+			}
 		}
 
 		break;

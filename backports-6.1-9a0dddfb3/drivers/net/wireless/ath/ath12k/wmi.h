@@ -2837,6 +2837,7 @@ struct ath12k_wmi_resource_config_arg {
 	bool afc_indoor_support;
 	bool afc_outdoor_support;
 	u32 carrier_config;
+	u32 rep_ul_resp;
 };
 
 struct ath12k_wmi_init_cmd_arg {
@@ -2932,6 +2933,7 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_FLAGS2_SAWF_CONFIG_ENABLE_SET             BIT(13)
 #define WMI_RSRC_CFG_FLAGS2_INTRABSS_MEC_WDS_LEARNING_DISABLE  BIT(15)
 #define WMI_RSRC_CFG_FLAGS2_FW_AST_INDICATION_DISABLE          BIT(18)
+#define WMI_RSRC_CFG_FLAGS2_REP_UL_RESP                        GENMASK(3, 0)
 #define WMI_RSRC_CFG_FLAGS2_WDS_NULL_FRAME_SUPPORT             BIT(22)
 #define WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT BIT(25)
 #define WMI_PDEV_MEC_AGING_TIMER_THRESHOLD_VALUE 5000

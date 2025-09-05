@@ -77,6 +77,7 @@ void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 
 	if (of_machine_is_compatible("qcom,ipq5424"))
 		config->def_flow_override = true;
+	config->rep_ul_resp = ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP);
 }
 
 void ath12k_wifi7_wmi_init_wcn7850(struct ath12k_base *ab,
