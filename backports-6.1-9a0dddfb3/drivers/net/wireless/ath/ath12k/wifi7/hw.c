@@ -238,6 +238,10 @@ static const struct ath12k_hw_ops wcn7850_ops = {
 #define ATH12K_TX_MON_RING_MASK_1 0x2
 #define ATH12K_UMAC_RESET_INTR_MASK_0   0x1
 
+#define ATH12K_PPE2TCL_RING_MASK_0 0x1
+#define ATH12K_REO2PPE_RING_MASK_0 0x1
+#define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
+
 /* To support 8 MSI DP grouping */
 static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
         .tx  = {
@@ -289,9 +293,7 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
                 ATH12K_TX_MON_RING_MASK_1,
                 0, 0, 0, 0, 0, 0
         },
-/*This will be rebased only when ppeds patches are rebased
- */
-#if 0
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
         .ppe2tcl = {
                 0, 0, 0, 0, 0, 0,
                 ATH12K_PPE2TCL_RING_MASK_0,
@@ -302,22 +304,16 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
                 ATH12K_REO2PPE_RING_MASK_0,
 		0, 0
         },
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
         .wbm2sw6_ppeds_tx_cmpln = {
 		ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0,
 		0, 0, 0, 0, 0, 0, 0
         },
-#endif
 #endif
         .umac_dp_reset = {
                 0, 0, 0, 0, 0, 0, 0,
 		ATH12K_UMAC_RESET_INTR_MASK_0
         },
 };
-
-#define ATH12K_PPE2TCL_RING_MASK_0 0x1
-#define ATH12K_REO2PPE_RING_MASK_0 0x1
-#define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
 
 #define ATH12K_RX_MON_STATUS_RING_MASK_0 0x1
 #define ATH12K_RX_MON_STATUS_RING_MASK_1 0x2

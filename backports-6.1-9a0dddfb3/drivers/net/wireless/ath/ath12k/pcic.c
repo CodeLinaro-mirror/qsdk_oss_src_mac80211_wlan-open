@@ -1273,7 +1273,7 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
 			 "pci%d_ppe2tcl_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
 		ret = devm_request_irq(ab->dev, irq,  ath12k_ds_ppe2tcl_irq_handler,
-				       IRQF_NO_SUSPEND,
+				       IRQF_SHARED,
 					   ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
 					   (void *)ab);
 		if (ret)
