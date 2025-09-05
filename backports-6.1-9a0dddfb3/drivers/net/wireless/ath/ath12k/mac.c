@@ -5213,7 +5213,8 @@ void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP) {
+		if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
+		    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR) {
 			allow_ap_ps = false;
 			break;
 		}
