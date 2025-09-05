@@ -416,6 +416,9 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 		target_recovery = true;
 		fallthrough;
 	case ATH12K_UMAC_RESET_INIT_UMAC_RECOVERY:
+		if (!target_recovery && ab->is_reset)
+			return;
+
 		ret = ath12k_umac_reset_initiate_recovery(ab, target_recovery);
 		if (!ret) {
 			ab->dp_umac_reset.ts.trigger_start = jiffies_to_msecs(jiffies);
