@@ -230,7 +230,6 @@ void ath12_sdwf_ul_config_peer(struct ieee80211_vif *vif,
 int ath12k_get_mscs_priority(struct ath_mscs_get_priority_param *params)
 {
 	struct ath12k_dp_peer *src_peer, *dst_peer;
-	struct ath12k_dp_link_peer *link_peer;
 	u8 priority, user_bitmap, user_limit;
 	struct sk_buff *skb = params->skb;
 	struct ieee80211_vif *src_vif;
@@ -271,12 +270,11 @@ int ath12k_get_mscs_priority(struct ath_mscs_get_priority_param *params)
 	ab = ar->ab;
 
 	spin_lock_bh(&ab->dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_addr(ab->dp, params->src_mac);
-	if (!link_peer) {
-		link_peer = ath12k_dp_link_peer_find_by_addr(ab->dp,
+	src_peer = ath12k_dp_peer_find(&ar->ah->dp_hw, params->src_mac);
+	if (!src_peer) {
+		dst_peer = ath12k_dp_peer_find(&ar->ah->dp_hw,
 							     params->dst_mac);
-		if (link_peer) {
-			dst_peer = link_peer->dp_peer;
+		if (dst_peer) {
 			if (dst_peer->mscs_session_exists &&
 			    !skb->priority) {
 				/**
@@ -296,11 +294,11 @@ int ath12k_get_mscs_priority(struct ath_mscs_get_priority_param *params)
 		status = ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_PEER_NOT_FOUND;
 		goto skip_priority_update;
 	}
-	src_peer = link_peer->dp_peer;
 
 	if (!src_peer || !src_peer->mscs_session_exists) {
 		ath12k_dbg(ab, ATH12K_DBG_QOS,
-			   "Peer: %pM does have an MSCS session\n", params->src_mac);
+			   "Peer: %pM does not have an MSCS session\n",
+			   params->src_mac);
 		status = ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_ALLOW_INVALID_QOS_TAG_UPDATE;
 		goto skip_priority_update;
 	}
