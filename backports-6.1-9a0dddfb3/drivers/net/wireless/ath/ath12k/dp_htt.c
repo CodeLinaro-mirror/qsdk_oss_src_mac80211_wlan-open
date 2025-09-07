@@ -899,6 +899,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 		 * and hence %NULL return is possible. Just silently
 		 * discard this message
 		 */
+		rcu_read_unlock();
 		goto exit;
 	}
 
@@ -910,6 +911,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id - 1);
 	if (!dp_pdev) {
+		rcu_read_unlock();
 		ret = -EINVAL;
 		goto exit;
 	}
