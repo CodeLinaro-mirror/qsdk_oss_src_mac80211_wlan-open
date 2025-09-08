@@ -6077,7 +6077,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 		    sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 			continue;
 
-		if (valid_links && wiphy->num_hw) {
+		if (valid_links && wiphy->n_radio) {
 			for_each_set_bit(link_id, &valid_links,
 					 IEEE80211_MLD_MAX_NUM_LINKS) {
 				bss_conf = rcu_dereference(sdata->vif.link_conf[link_id]);
@@ -6085,8 +6085,9 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 					continue;
 				conf = rcu_dereference(bss_conf->chanctx_conf);
 				if (conf && conf->def.chan) {
-					u32 ctr_freq = conf->def.chan->center_freq;
-					u32 sts_freq = status->freq;
+					u32 ctr_freq =
+						MHZ_TO_KHZ(conf->def.chan->center_freq);
+					u32 sts_freq = MHZ_TO_KHZ(status->freq);
 
 					if (ieee80211_get_radio_idx_by_freq(hw->wiphy,
 									    ctr_freq) ==
@@ -6102,14 +6103,15 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 			    sdata->vif.is_roc)
 				flag = true;
 
-		} else if (wiphy->num_hw) {
+		} else if (wiphy->n_radio) {
 			bss_conf = &sdata->vif.bss_conf;
 
 			if (bss_conf) {
 				conf = rcu_dereference(bss_conf->chanctx_conf);
 				if (conf && conf->def.chan) {
-					u32 ctr_freq = conf->def.chan->center_freq;
-					u32 sts_freq = status->freq;
+					u32 ctr_freq =
+						MHZ_TO_KHZ(conf->def.chan->center_freq);
+					u32 sts_freq = MHZ_TO_KHZ(status->freq);
 
 					if (ieee80211_get_radio_idx_by_freq(hw->wiphy,
 									    ctr_freq) ==
@@ -6129,7 +6131,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 		 * the loop to avoid copying the SKB once too much
 		 */
 
-		if (!wiphy->num_hw || flag) {
+		if (!wiphy->n_radio || flag) {
 			if (!prev) {
 				prev_linkid = valid_links ? link_id : -1;
 				prev = sdata;
@@ -6151,7 +6153,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 		}
 	}
 
-	if (prev && wiphy->num_hw) {
+	if (prev && wiphy->n_radio) {
 		unsigned int link_id;
 		struct ieee80211_bss_conf *bss_conf;
 		struct ieee80211_chanctx_conf *conf;
@@ -6167,8 +6169,9 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 					continue;
 				conf = rcu_dereference(bss_conf->chanctx_conf);
 				if (conf && conf->def.chan) {
-					u32 ctr_freq = conf->def.chan->center_freq;
-					u32 sts_freq = status->freq;
+					u32 ctr_freq =
+						MHZ_TO_KHZ(conf->def.chan->center_freq);
+					u32 sts_freq = MHZ_TO_KHZ(status->freq);
 
 					if (ieee80211_get_radio_idx_by_freq(hw->wiphy,
 									    ctr_freq) ==
@@ -6189,8 +6192,9 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 			if (bss_conf) {
 				conf = rcu_dereference(bss_conf->chanctx_conf);
 				if (conf && conf->def.chan) {
-					u32 ctr_freq = conf->def.chan->center_freq;
-					u32 sts_freq = status->freq;
+					u32 ctr_freq =
+						MHZ_TO_KHZ(conf->def.chan->center_freq);
+					u32 sts_freq = MHZ_TO_KHZ(status->freq);
 
 					if (ieee80211_get_radio_idx_by_freq(hw->wiphy,
 									    ctr_freq) ==
