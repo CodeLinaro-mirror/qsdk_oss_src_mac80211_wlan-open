@@ -42,6 +42,9 @@ struct athdbg_minidump_info *find_dump_node(const char *struct_name)
 {
 	struct athdbg_minidump_info *minidump_node;
 
+	if (list_empty(&athdbg_minidump_list))
+		return NULL;
+
 	list_for_each_entry(minidump_node, &athdbg_minidump_list, dump_list) {
 		if (minidump_node->struct_name) {
 			if (strcmp(struct_name, minidump_node->struct_name) == 0)
@@ -109,6 +112,13 @@ static void athdbg_add_to_minidump_struct_list(const char *struct_name)
 		}
 	}
 }
+
+void athdbg_clear_minidump_info(void)
+{
+	athmem_clear_minidump_and_rb_tree();
+	athdbg_clear_minidump_struct_list();
+}
+EXPORT_SYMBOL(athdbg_clear_minidump_info);
 
 void athdbg_minidump_log(void *start_addr, size_t size, const char *struct_name,
 			 const char *module_name)
@@ -317,7 +327,7 @@ static void athdbg_disable_minidump(struct athdbg_request *dbg_req)
 	switch (val) {
 	case DISABLE_MINIDUMP:
 		minidump_state = DISABLE_MINIDUMP;
-		athmem_clear_memdebug_info();
+		athdbg_clear_minidump_info();
 		break;
 	case ENABLE_MINIDUMP:
 		minidump_state = ENABLE_MINIDUMP;

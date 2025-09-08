@@ -46,7 +46,6 @@ struct athdbg_request;
 struct ath12k_base;
 
 void athmem_find_and_add_entry_in_minidump(const char *struct_name);
-void athdbg_iterate_minidump_list(void);
 struct athdbg_minidump_info *find_dump_node(const char *struct_name);
 #if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
 void athdbg_process_minidump_request(struct ath12k_base *ab,
@@ -63,6 +62,8 @@ void athdbg_minidump_log(void *start_addr, size_t size, const char *struct_name,
 void athdbg_add_to_minidump_log(void *start_addr, size_t size,
 				const char *struct_name, const char *module_name);
 void athdbg_remove_minidump_segment(void *start_addr);
+void athdbg_iterate_minidump_list(void);
+void athdbg_clear_minidump_info(void);
 #else
 static inline void athdbg_process_minidump_request(struct ath12k_base *ab,
 						   struct athdbg_request *dbg_req)
@@ -108,6 +109,14 @@ static inline void athdbg_minidump_log(void *start_addr, size_t size,
 static inline void athdbg_add_to_minidump_log(void *start_addr, size_t size,
 					      const char *struct_name,
 					      const char *module_name)
+{
+}
+
+static inline void athdbg_iterate_minidump_list(void)
+{
+}
+
+static inline void athdbg_clear_minidump_info(void)
 {
 }
 #endif

@@ -37,7 +37,6 @@ void athdbg_qmi_deinit(struct ath12k_base *ab);
 int athdbg_qmi_worker_init(void *qmi_ab);
 
 extern unsigned int ath12k_debug_mask;
-extern const struct file_operations debugfs_minidump_fops;
 extern const struct file_operations debugfs_mask_fops;
 extern const struct file_operations debugfs_qdss_enable_fops;
 extern const struct file_operations debugfs_qdss_collect_fops;

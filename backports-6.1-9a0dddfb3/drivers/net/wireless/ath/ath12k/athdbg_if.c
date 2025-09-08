@@ -82,7 +82,7 @@ void athdbg_if_register(struct ath12k_base *ab)
 
 void athdbg_if_unregister(struct ath12k_base *ab)
 {
-	athmem_clear_memdebug_info();
+	athdbg_clear_minidump_info();
 }
 
 /* Interface provided to perform any action that need to be done in the
@@ -97,7 +97,6 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 		athdbg_config_qdss(ab);
 		break;
 	case ATHDBG_SRV_DO_MINIDUMP:
-		athdbg_collect_reference_segments(ab);
 		athdbg_do_dump_minidump(ab);
 		break;
 	case ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES:

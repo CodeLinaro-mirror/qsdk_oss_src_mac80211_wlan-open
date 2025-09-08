@@ -12,6 +12,7 @@ const struct file_operations debugfs_mask_fops;
 const struct file_operations debugfs_qdss_enable_fops;
 const struct file_operations debugfs_qdss_collect_fops;
 
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
 static ssize_t athdbg_minidump_read(struct file *file, char __user *user_buf,
 									size_t count, loff_t *ppos)
 {
@@ -87,7 +88,6 @@ const struct file_operations debugfs_minidump_fops = {
 	.open = simple_open,
 	.owner = THIS_MODULE,
 };
-EXPORT_SYMBOL(debugfs_minidump_fops);
 
 void athdbg_create_minidump_debugfs(struct dentry *dbg_dir,
 				    struct ath12k_base *drv_ab)
@@ -109,6 +109,7 @@ void athdbg_create_minidump_debugfs(struct dentry *dbg_dir,
 	}
 }
 EXPORT_SYMBOL(athdbg_create_minidump_debugfs);
+#endif
 
 static ssize_t athdbg_mask_read(struct file *file, char __user *user_buf,
 									size_t count, loff_t *ppos)

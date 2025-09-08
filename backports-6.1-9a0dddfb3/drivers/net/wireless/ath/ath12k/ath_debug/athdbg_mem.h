@@ -26,4 +26,5 @@ void athmem_add_entry_to_minidump(void *start_addr, size_t size,
 				  const char *struct_name,
 				  const char *module_name);
 void athmem_free_entry_in_minidump(const void *start_addr);
+void athmem_clear_minidump_and_rb_tree(void);
 #endif

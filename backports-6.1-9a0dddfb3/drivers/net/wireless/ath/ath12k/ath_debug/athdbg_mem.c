@@ -254,7 +254,7 @@ void athmem_print_minidump_list(void)
 	athmem_free_minidump_list();
 }
 
-static void athmem_clear_minidump_and_rb_tree(void)
+void athmem_clear_minidump_and_rb_tree(void)
 {
 	struct rb_node *node, *next;
 	struct athmem_debug_object *obj;
@@ -278,13 +278,6 @@ static void athmem_clear_minidump_and_rb_tree(void)
 	athmem_stats_num_nodes = 0;
 	spin_unlock_irqrestore(&athmem_spinlock, flags);
 }
-
-void athmem_clear_memdebug_info(void)
-{
-	athmem_clear_minidump_and_rb_tree();
-	athdbg_clear_minidump_struct_list();
-}
-EXPORT_SYMBOL(athmem_clear_memdebug_info);
 
 static void athmem_create_object(unsigned long long ptr, size_t size,
 				 gfp_t gfp, const char *struct_name,

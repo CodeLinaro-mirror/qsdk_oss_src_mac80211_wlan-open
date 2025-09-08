@@ -3651,7 +3651,9 @@ static void ath12k_core_reset(struct work_struct *work)
 #ifdef CPTCFG_ATHDEBUG
 	if (ab) {
 		ath12k_info(ab, "%s : collect minidump\n", __func__);
-		athdbg_if_get_service(ab, ATHDBG_SRV_DO_MINIDUMP);
+		athdbg_if_get_service(ab, ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES);
+		if (ab->fw_recovery_support)
+			athdbg_if_get_service(ab, ATHDBG_SRV_DO_MINIDUMP);
 	}
 #endif
 
@@ -4949,14 +4951,21 @@ err:
 
 void ath12k_core_deinit(struct ath12k_base *ab)
 {
-#ifdef CPTCFG_ATHDEBUG
-	athdbg_if_unregister(ab);
-#endif
+	struct ath12k_hw_group *ag = ab->ag;
+
 	if (ath12k_telemetry_ab_agent_delete_handler(ab))
 		ath12k_err(ab, "failed to destroy soc agent\n");
 	ath12k_core_panic_notifier_unregister(ab);
 	ath12k_core_hw_group_cleanup(ab->ag);
 	ath12k_core_hw_group_destroy(ab->ag);
+#ifdef CPTCFG_ATHDEBUG
+	/* Unregister Minidump after all radios are brought down.
+	 * Num started count will become zero here after all radios
+	 * are brought down
+	 */
+	if (!ag->num_started)
+		athdbg_if_unregister(ab);
+#endif
 	ath12k_core_hw_group_unassign(ab);
 }
 
