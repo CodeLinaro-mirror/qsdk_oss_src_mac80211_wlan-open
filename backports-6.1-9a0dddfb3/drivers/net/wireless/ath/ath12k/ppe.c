@@ -617,8 +617,6 @@ static int ath12k_dp_ppeds_alloc_ppe_vp_profile(struct ath12k_base *ab,
 {
 	int i;
 
-	spin_lock(&ab->dp->ppe.ppe_vp_tbl_lock);
-
 	/* If a VP is already allocated with requested vp number, then return
 	 * the same VP instead of creating a new profile
 	 */
@@ -631,7 +629,6 @@ static int ath12k_dp_ppeds_alloc_ppe_vp_profile(struct ath12k_base *ab,
 	}
 
 	if (ab->dp->ppe.num_ppe_vp_profiles == PPE_VP_ENTRIES_MAX) {
-		spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 		ath12k_err(ab, "Maximum ppe_vp count reached for soc\n");
 		return -ENOSR;
 	}
@@ -643,7 +640,6 @@ static int ath12k_dp_ppeds_alloc_ppe_vp_profile(struct ath12k_base *ab,
 
 	if (i == PPE_VP_ENTRIES_MAX) {
 		WARN_ONCE(1, "All ppe vp profile entries are in use!");
-		spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 		return -ENOSR;
 	}
 	ab->dp->ppe.num_ppe_vp_profiles++;
@@ -653,8 +649,6 @@ static int ath12k_dp_ppeds_alloc_ppe_vp_profile(struct ath12k_base *ab,
 end:
 	ab->dp->ppe.ppe_vp_profile[i].ref_count++;
 	*vp_profile = &ab->dp->ppe.ppe_vp_profile[i];
-	spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
-
 	return i;
 }
 
@@ -716,11 +710,9 @@ ath12k_dp_ppeds_dealloc_ppe_vp_profile(struct ath12k_base *ab,
 		return;
 	}
 
-	spin_lock(&ab->dp->ppe.ppe_vp_tbl_lock);
 	vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_profile_idx];
 
 	if (!vp_profile->is_configured) {
-		spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 		ath12k_err(ab, "PPE VP profile is not configured at idx:%d", ppe_vp_profile_idx);
 		return;
 	}
@@ -738,7 +730,6 @@ ath12k_dp_ppeds_dealloc_ppe_vp_profile(struct ath12k_base *ab,
 
 		ath12k_dp_ppeds_dealloc_vp_tbl_entry(ab, vp_profile->ppe_vp_num_idx);
 	}
-	spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 
 	if (dealloced)
 		ath12k_dbg(ab, ATH12K_DBG_PPE, "%s success\n", __func__);
@@ -748,9 +739,7 @@ static int ath12k_dp_ppeds_alloc_vp_tbl_entry(struct ath12k_base *ab)
 {
 	int i;
 
-	spin_lock(&ab->dp->ppe.ppe_vp_tbl_lock);
 	if (ab->dp->ppe.num_ppe_vp_profiles == PPE_VP_ENTRIES_MAX) {
-		spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 		ath12k_err(ab, "Maximum ppe_vp count reached for soc\n");
 		return -ENOSR;
 	}
@@ -761,14 +750,12 @@ static int ath12k_dp_ppeds_alloc_vp_tbl_entry(struct ath12k_base *ab)
 	}
 
 	if (i == PPE_VP_ENTRIES_MAX) {
-		spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 		WARN_ONCE(1, "All ppe vp table entries are in use!");
 		return -ENOSR;
 	}
 
 	ab->dp->ppe.num_ppe_vp_entries++;
 	ab->dp->ppe.ppe_vp_tbl_registered[i] = 1;
-	spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 
 	return i;
 }
@@ -777,9 +764,7 @@ static int ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry(struct ath12k_base *ab)
 {
 	int i;
 
-	spin_lock(&ab->dp->ppe.ppe_vp_tbl_lock);
 	if (ab->dp->ppe.num_ppe_vp_entries == PPE_VP_ENTRIES_MAX) {
-		spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 		ath12k_err(ab, "Maximum ppe_vp count reached for soc\n");
 		return -ENOSR;
 	}
@@ -790,14 +775,12 @@ static int ath12k_dp_ppeds_alloc_vp_search_idx_tbl_entry(struct ath12k_base *ab)
 	}
 
 	if (i == PPE_VP_ENTRIES_MAX) {
-		spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 		WARN_ONCE(1, "All ppe vp table entries are in use!");
 		return -ENOSR;
 	}
 
 	ab->dp->ppe.num_ppe_vp_search_idx_entries++;
 	ab->dp->ppe.ppe_vp_search_idx_tbl_set[i] = 1;
-	spin_unlock(&ab->dp->ppe.ppe_vp_tbl_lock);
 
 	return i;
 }
@@ -862,20 +845,24 @@ void ath12k_dp_ppeds_update_vp_entry(struct ath12k *ar,
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_ppe_vp_profile *vp_profile;
+	struct ath12k_ppe *ppe = &ab->dp->ppe;
 	int ppe_vp_profile_idx;
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags) ||
 	    arvif->ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return;
 
+	spin_lock(&ppe->ppe_vp_tbl_lock);
 	ppe_vp_profile_idx = arvif->ppe_vp_profile_idx;
 	vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_profile_idx];
 	if (!vp_profile) {
 		ath12k_dbg(ab, ATH12K_DBG_PPE, "vp profile not present for arvif\n");
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
 		return;
 	}
 
 	ath12k_dp_ppeds_setup_vp_entry(ab, arvif->ar, arvif, vp_profile);
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
 }
 
 static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, int vp_num,
@@ -887,6 +874,7 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_ppe_vp_profile *vp_profile = NULL;
 	int ppe_vp_profile_idx, ppe_vp_tbl_idx = -1;
+	struct ath12k_ppe *ppe = &ab->dp->ppe;
 	int ppe_vp_search_tbl_idx = -1;
 	int vdev_id = arvif->vdev_id;
 	int ret;
@@ -902,11 +890,13 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 		return 0;
 
 	/*Allocate a ppe vp profile for a vap */
+	spin_lock(&ppe->ppe_vp_tbl_lock);
 	ppe_vp_profile_idx = ath12k_dp_ppeds_alloc_ppe_vp_profile(ab, &vp_profile, vp_num);
 	if (!vp_profile) {
 		ath12k_dbg(ab, ATH12K_DBG_PPE,
 			   "flows for %s link %d will use SFE RFS flow distribution",
 			   wdev->netdev->name, arvif->link_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
 		return 0;
 	}
 
@@ -957,12 +947,14 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 		   vp_num, ppe_vp_profile_idx, ppe_vp_tbl_idx, vp_profile->to_fw,
 		   vp_profile->use_ppe_int_pri, vp_profile->drop_prec_enable,
 		   vp_profile->search_idx_reg_num);
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
 
 	return 0;
 
 dealloc_vp_profile:
 	vif_type = arvif->ahvif->vif->type;
 	ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab, ppe_vp_profile_idx, vif_type);
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
 
 	return ret;
 }
@@ -1046,6 +1038,7 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_ppe_vp_profile *vp_profile = NULL;
+	struct ath12k_ppe *ppe = &ab->dp->ppe;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
 	int ppe_vp_profile_idx, ppe_vp_tbl_idx = -1;
@@ -1070,11 +1063,13 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 	}
 
 	/*Allocate a ppe vp profile for a vap */
+	spin_lock(&ppe->ppe_vp_tbl_lock);
 	ppe_vp_profile_idx = ath12k_dp_ppeds_alloc_ppe_vp_profile(ab, &vp_profile, vp_num);
 	if (!vp_profile) {
 		ath12k_dbg(ab, ATH12K_DBG_PPE,
 			   "flows for %s link %d will use SFE RFS flow distribution",
 			   wdev->netdev->name, arvif->link_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
 		return 0;
 	}
 
@@ -1107,6 +1102,7 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 		*link_ppe_vp_profile_idx = ppe_vp_profile_idx;
 	} else {
 		bool vdev_id_check_en = false;
+		u8 link_id;
 
 		if (arvif->ahvif->links_map &&
 		    arvif->ahvif->vif->type == NL80211_IFTYPE_STATION) {
@@ -1119,16 +1115,23 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 			if (!sta) {
 				ath12k_warn(ab, "failed to find station entry for %pM",
 					    vif->cfg.ap_addr);
+				spin_unlock(&ppe->ppe_vp_tbl_lock);
 				rcu_read_unlock();
 				return -ENOENT;
 			}
 
 			ahsta = ath12k_sta_to_ahsta(sta);
-			arvif = (!sta->mlo) ? ahvif->link[ahsta->deflink.link_id] :
-				ahvif->link[ahsta->assoc_link_id];
+			link_id = ahsta->deflink.link_id;
+			if (!sta->mlo)
+				link_id = ahsta->deflink.link_id;
+			else
+				link_id = ahsta->assoc_link_id;
+			arvif = rcu_dereference(ahvif->link[link_id]);
+
 			if (!arvif) {
 				ath12k_warn(ab, "arvif not found for station:%pM",
 					    sta->addr);
+				spin_unlock(&ppe->ppe_vp_tbl_lock);
 				rcu_read_unlock();
 				return -EINVAL;
 			}
@@ -1157,12 +1160,14 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 		   vp_num, ppe_vp_profile_idx, ppe_vp_tbl_idx, vp_profile->to_fw,
 		   vp_profile->use_ppe_int_pri, vp_profile->drop_prec_enable,
 		   vp_profile->search_idx_reg_num);
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
 
 	return 0;
 
 dealloc_vp_profile:
 	vif_type = arvif->ahvif->vif->type;
 	ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab, ppe_vp_profile_idx, vif_type);
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
 
 	return ret;
 }
@@ -1174,6 +1179,7 @@ void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
 	u32 ppeds_idx_map_val = 0;
 	int ppe_vp_profile_idx = arvif->ppe_vp_profile_idx;
 	struct ath12k_dp_ppe_vp_profile *vp_profile;
+	struct ath12k_ppe *ppe = &ab->dp->ppe;
 	u8 link_id = arvif->link_id;
 	struct ath12k_dp_link_vif *dp_link_vif = &arvif->ahvif->dp_vif.dp_link_vif[link_id];
 
@@ -1181,10 +1187,12 @@ void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
 	    !arvif->primary_sta_link)
 		return;
 
+	spin_lock(&ppe->ppe_vp_tbl_lock);
 	vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_profile_idx];
 	if (!vp_profile->is_configured) {
 		ath12k_err(ab, "Invalid PPE VP profile for vdev_id:%d",
 			   arvif->vdev_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
 		return;
 	}
 	if (arvif->ahvif->vif->type == NL80211_IFTYPE_STATION) {
@@ -1196,6 +1204,7 @@ void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
 		ath12k_hal_ppeds_cfg_ast_override_map_reg(ab, vp_profile->search_idx_reg_num,
 							  ppeds_idx_map_val);
 	}
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
 }
 
 void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *arvif,
@@ -1207,6 +1216,7 @@ void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *arvif,
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_ppe_vp_profile *vp_profile;
 	int ppe_vp_profile_idx = vlan_iface->ppe_vp_profile_idx[link_id];
+	struct ath12k_ppe *ppe = &ab->dp->ppe;
 	enum nl80211_iftype vif_type;
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
@@ -1215,10 +1225,12 @@ void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *arvif,
 	if (ahvif->dp_vif.ppe_vp_num <= 0 || ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return;
 
+	spin_lock(&ppe->ppe_vp_tbl_lock);
 	vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_profile_idx];
 	if (!vp_profile->is_configured) {
 		ath12k_err(ab, "Invalid PPE VP profile for vdev_id:%d",
 			   arvif->vdev_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
 		return;
 	}
 
@@ -1227,6 +1239,7 @@ void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *arvif,
 	vlan_iface->ppe_vp_profile_idx[link_id] = ATH12K_INVALID_VP_PROFILE_IDX;
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS vdev detach success vpnum %d  ppe_vp_profile_idx %d\n",
 	       vp_profile->vp_num, ppe_vp_profile_idx);
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
 }
 
 void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif, int ppe_vp_profile_idx)
@@ -1235,6 +1248,7 @@ void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif, int ppe_vp_prof
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_ppe_vp_profile *vp_profile;
+	struct ath12k_ppe *ppe = &ab->dp->ppe;
 	enum nl80211_iftype vif_type;
 
 	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
@@ -1243,10 +1257,12 @@ void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif, int ppe_vp_prof
 	if (ahvif->dp_vif.ppe_vp_num <= 0 || ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return;
 
+	spin_lock(&ppe->ppe_vp_tbl_lock);
 	vp_profile = &ab->dp->ppe.ppe_vp_profile[ppe_vp_profile_idx];
 	if (!vp_profile->is_configured) {
 		ath12k_dbg(ab, ATH12K_DBG_PPE,
 			   "No PPE VP profile found for vdev_id:%d", arvif->vdev_id);
+		spin_unlock(&ppe->ppe_vp_tbl_lock);
 		return;
 	}
 
@@ -1254,6 +1270,7 @@ void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif, int ppe_vp_prof
 	ath12k_dp_ppeds_dealloc_ppe_vp_profile(ab, ppe_vp_profile_idx, vif_type);
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS vdev detach success vpnum %d  ppe_vp_profile_idx %d\n",
 		   vp_profile->vp_num, ppe_vp_profile_idx);
+	spin_unlock(&ppe->ppe_vp_tbl_lock);
 }
 
 int ath12k_ppeds_attach(struct ath12k_base *ab)
