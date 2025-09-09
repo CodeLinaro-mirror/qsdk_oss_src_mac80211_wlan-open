@@ -1995,8 +1995,10 @@ ath12k_dp_rx_ppeds_fse_add_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 	wdev = dev->ieee80211_ptr;
 
 	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
-	if (!vif)
+	if (!vif) {
+		pr_warn("FSE flow rule addition failed vif = NULL\n");
 		return false;
+	}
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 
@@ -2040,10 +2042,9 @@ ath12k_dp_rx_ppeds_fse_del_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 {
 	struct rx_flow_info flow_info = { 0 };
 	struct wireless_dev *wdev;
-	struct ieee80211_vif *vif;
 	struct ath12k_hw *ah;
+	struct ieee80211_hw *hw = NULL;
 	struct ath12k_base *ab = NULL;
-	struct ath12k_vif *ahvif;
 	struct net_device *dev = ppe_flow_info->dev;
 
 	if (!ath12k_fse_enable)
@@ -2054,13 +2055,14 @@ ath12k_dp_rx_ppeds_fse_del_flow_entry(struct ppe_drv_fse_rule_info *ppe_flow_inf
 
 	wdev = dev->ieee80211_ptr;
 
-	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
-	if (!vif)
+	hw = wiphy_to_ieee80211_hw(wdev->wiphy);
+
+	if (!hw) {
+		pr_warn("failed to find the ieee80211_hw for netdev %p\n", dev);
 		return false;
+	}
 
-	ahvif = ath12k_vif_to_ahvif(vif);
-
-	ah = ahvif->ah;
+	ah = hw->priv;
 	if (!ah) {
 		pr_warn("FSE flow rule deletion failed ah = NULL \n");
 		return false;
