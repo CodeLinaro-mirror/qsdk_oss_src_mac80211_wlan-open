@@ -20963,6 +20963,31 @@ ath12k_disable_chans_outside_limit(struct ieee80211_channel *ch_lst,
 	}
 }
 
+void ath12k_mac_update_freq_range(struct ath12k *ar,
+				  u32 freq_low, u32 freq_high)
+{
+	if (!(freq_low && freq_high))
+		return;
+
+	ar->chan_info.low_freq = freq_low;
+	ar->chan_info.high_freq = freq_high;
+
+	if (ar->freq_range.start_freq || ar->freq_range.end_freq) {
+		ar->freq_range.start_freq = min(ar->freq_range.start_freq,
+						MHZ_TO_KHZ(freq_low));
+		ar->freq_range.end_freq = max(ar->freq_range.end_freq,
+					      MHZ_TO_KHZ(freq_high));
+	} else {
+		ar->freq_range.start_freq = MHZ_TO_KHZ(freq_low);
+		ar->freq_range.end_freq = MHZ_TO_KHZ(freq_high);
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "mac pdev %u freq limit updated. New range %u->%u MHz\n",
+		   ar->pdev->pdev_id, KHZ_TO_MHZ(ar->freq_range.start_freq),
+		   KHZ_TO_MHZ(ar->freq_range.end_freq));
+}
+
 /**
  * ath12k_mac_update_ch_list - disable band chans outside the given frequency
  * @ar: pointer to ath12k structure
@@ -20982,11 +21007,6 @@ static void ath12k_mac_update_ch_list(struct ath12k *ar,
 
 	if (!(freq_low && freq_high))
 		return;
-
-	ar->freq_range.start_freq = MHZ_TO_KHZ(freq_low);
-        ar->freq_range.end_freq = MHZ_TO_KHZ(freq_high);
-	ar->chan_info.low_freq = freq_low;
-	ar->chan_info.high_freq = freq_high;
 
 	ath12k_disable_chans_outside_limit(band->channels, band->n_channels,
 					   freq_low, freq_high);
@@ -21166,6 +21186,9 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 		ath12k_mac_update_ch_list(ar, band,
 					  freq_low,
 					  freq_high);
+
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+
 		ar->num_channels = ath12k_reg_get_num_chans_in_band(ar, band);
 		if (!bands[NL80211_BAND_2GHZ]) {
 			bands[NL80211_BAND_2GHZ] = band;
@@ -21241,6 +21264,9 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 						  freq_low,
 						  freq_high);
 			ath12k_mac_update_5_9_ch_list(ar, band);
+
+			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+
 			ar->num_channels = ath12k_reg_get_num_chans_in_band(ar, band);
 			if (!bands[NL80211_BAND_5GHZ]) {
 				bands[NL80211_BAND_5GHZ] = band;
@@ -21321,6 +21347,8 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 			ath12k_mac_update_ch_list(ar, band,
 						  freq_low,
 						  freq_high);
+
+			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 
 			ah->use_6ghz_regd = true;
 			ar->num_channels = ath12k_reg_get_num_chans_in_band(ar, band);

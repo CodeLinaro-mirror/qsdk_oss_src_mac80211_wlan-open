@@ -707,5 +707,6 @@ int ath12k_mac_vendor_send_assoc_event(struct ath12k_link_sta *arsta,
 				       bool reassoc);
 int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
 					  struct ieee80211_link_sta *link_sta);
-
+void ath12k_mac_update_freq_range(struct ath12k *ar,
+				  u32 freq_low, u32 freq_high);
 #endif

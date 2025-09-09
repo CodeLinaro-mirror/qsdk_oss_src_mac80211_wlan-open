@@ -354,45 +354,50 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	int ret, regd_len, pdev_id;
 	struct ath12k_base *ab;
 	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
-	u32 phy_id, freq_low, freq_high, supported_bands, band;
+	u32 phy_id, freq_low, freq_high, supported_bands;
 
 	ab = ar->ab;
 
 	supported_bands = ar->pdev->cap.supported_bands;
-	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP)
-		band = NL80211_BAND_2GHZ;
-	else if(supported_bands & WMI_HOST_WLAN_5GHZ_CAP && !ar->supports_6ghz)
-		band = NL80211_BAND_5GHZ;
-	else if(supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz)
-		band = NL80211_BAND_6GHZ;
 
 	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
 
-	if (ab->hw_params->single_pdev_only && !ar->supports_6ghz) {
-		phy_id = ar->pdev->cap.band[band].phy_id;
-		reg_cap = &ab->hal_reg_cap[phy_id];
-	}
-
 	/* Possible that due to reg change, current limits for supported
-	 * frequency changed. Update that
+	 * frequency changed. Update it. As a first step, reset the
+	 * previous values and then compute and set the new values.
 	 */
+	ar->freq_range.start_freq = 0;
+	ar->freq_range.end_freq = 0;
+
 	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
+		if (ab->hw_params->single_pdev_only) {
+			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_2GHZ_CAP].phy_id;
+			reg_cap = &ab->hal_reg_cap[phy_id];
+		}
+
 		freq_low = max(reg_cap->low_2ghz_chan, ab->reg_freq_2g.start_freq);
 		freq_high = min(reg_cap->high_2ghz_chan, ab->reg_freq_2g.end_freq);
-	} else if(supported_bands & WMI_HOST_WLAN_5GHZ_CAP && !ar->supports_6ghz) {
-		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
-		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
-	} else if(supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
-		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_6g.start_freq);
-		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_6g.end_freq);
+
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 	}
 
-	ar->chan_info.low_freq = freq_low;
-	ar->chan_info.high_freq = freq_high;
+	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && !ar->supports_6ghz) {
+		if (ab->hw_params->single_pdev_only) {
+			phy_id = ar->pdev->cap.band[WMI_HOST_WLAN_5GHZ_CAP].phy_id;
+			reg_cap = &ab->hal_reg_cap[phy_id];
+		}
 
-	ath12k_dbg(ab, ATH12K_DBG_REG, "pdev %u reg updated freq limits %u->%u MHz\n",
-		   ar->pdev->pdev_id, ar->chan_info.low_freq,
-		   ar->chan_info.high_freq);
+		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_5g.start_freq);
+		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_5g.end_freq);
+
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+	}
+
+	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
+		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_6g.start_freq);
+		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_6g.end_freq);
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+	}
 
 	/* If one of the radios within ah has already updated the regd for
 	 * the wiphy, then avoid setting regd again
@@ -931,15 +936,14 @@ static const struct ath12k_op_class_map_t global_op_class[] = {
 	  NULL_CFIS_LST },
 };
 
-static void ath12k_copy_reg_rule(struct ath12k_reg_freq *ath12k_reg_freq,
-				 struct ath12k_reg_rule *reg_rule)
+static void ath12k_reg_update_freq_range(struct ath12k_reg_freq *reg_freq,
+					 struct ath12k_reg_rule *reg_rule)
 {
-	if (!ath12k_reg_freq->start_freq)
-		ath12k_reg_freq->start_freq = reg_rule->start_freq;
+	if (reg_freq->start_freq > reg_rule->start_freq)
+		reg_freq->start_freq = reg_rule->start_freq;
 
-	if (!ath12k_reg_freq->end_freq ||
-	    ath12k_reg_freq->end_freq < reg_rule->end_freq)
-		ath12k_reg_freq->end_freq = reg_rule->end_freq;
+	if (reg_freq->end_freq < reg_rule->end_freq)
+		reg_freq->end_freq = reg_rule->end_freq;
 }
 
 struct ieee80211_regdomain *
@@ -1016,6 +1020,16 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 		   "\r\nCountry %s, CFG Regdomain %s FW Regdomain %d, num_reg_rules %d\n",
 		   alpha2, ath12k_reg_get_regdom_str(new_regd->dfs_region),
 		   reg_info->dfs_region, num_rules);
+
+	/* Reset start and end frequency for each band
+	 */
+	ab->reg_freq_5g.start_freq = INT_MAX;
+	ab->reg_freq_5g.end_freq = 0;
+	ab->reg_freq_2g.start_freq = INT_MAX;
+	ab->reg_freq_2g.end_freq = 0;
+	ab->reg_freq_6g.start_freq = INT_MAX;
+	ab->reg_freq_6g.end_freq = 0;
+
 	/* Update reg_rules[] below. Firmware is expected to
 	 * send these rules in order(2G rules first and then 5G)
 	 */
@@ -1027,7 +1041,7 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 				       reg_info->max_bw_2g);
 			flags = ath12k_update_bw_reg_flags(reg_info->max_bw_2g);
 			pwr_mode = 0;
-			ath12k_copy_reg_rule(&ab->reg_freq_2g, reg_rule);
+			ath12k_reg_update_freq_range(&ab->reg_freq_2g, reg_rule);
 		} else if (reg_info->num_5g_reg_rules &&
 			   (j < reg_info->num_5g_reg_rules)) {
 			reg_rule = reg_info->reg_rules_5g_ptr + j++;
@@ -1043,9 +1057,9 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 			flags = NL80211_RRF_AUTO_BW | ath12k_update_bw_reg_flags(reg_info->max_bw_5g);
 			pwr_mode = 0;
 			if (reg_rule->end_freq <= ATH12K_MAX_5GHZ_FREQ)
-				ath12k_copy_reg_rule(&ab->reg_freq_5g, reg_rule);
+				ath12k_reg_update_freq_range(&ab->reg_freq_5g, reg_rule);
 			else if (reg_rule->start_freq >= ATH12K_MIN_6GHZ_FREQ)
-				ath12k_copy_reg_rule(&ab->reg_freq_6g, reg_rule);
+				ath12k_reg_update_freq_range(&ab->reg_freq_6g, reg_rule);
 		} else if (reg_info->is_ext_reg_event && reg_6g_number) {
 			if (!reg_6g_itr_set) {
 				reg_rule_6g = ath12k_get_active_6g_reg_rule(reg_info,
@@ -1070,9 +1084,11 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 					flags |= NL80211_RRF_PSD;
 
 				if (reg_rule->end_freq <= ATH12K_MAX_6GHZ_FREQ)
-					ath12k_copy_reg_rule(&ab->reg_freq_6g, reg_rule);
+					ath12k_reg_update_freq_range(&ab->reg_freq_6g,
+								     reg_rule);
 				else if (reg_rule->start_freq >= ATH12K_MIN_6GHZ_FREQ)
-					ath12k_copy_reg_rule(&ab->reg_freq_6g, reg_rule);
+					ath12k_reg_update_freq_range(&ab->reg_freq_6g,
+								     reg_rule);
 			}
 
 			if (reg_6g_itr_set && k >= max_elements) {
