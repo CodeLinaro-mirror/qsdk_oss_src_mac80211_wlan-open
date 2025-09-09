@@ -887,7 +887,9 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
 	       tx_enqueued[i] = device_stats->tx_mcast[i] + device_stats->tx_unicast[i] +
-		                 device_stats->tx_eapol[i] + device_stats->tx_null_frame[i];
+				device_stats->tx_eapol[i] +
+				device_stats->tx_null_frame[i] +
+				device_stats->tx_fast_unicast[i];
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
 		for (j = 0; j < ab->ag->num_devices; j++)
