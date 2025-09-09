@@ -473,6 +473,7 @@ size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *he
 			break;
 
 		mon_desc = list_entry(cur, struct ath12k_dp_mon_desc, list);
+		ath12k_dp_mon_desc_reset(mon_desc);
 		mon_desc->in_use = true;
 
 		count--;
