@@ -4970,6 +4970,13 @@ static bool __ieee80211_tx_8023(struct ieee80211_sub_if_data *sdata,
 
 	spin_unlock_irqrestore(queue_stop_reason_lock, flags);
 
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+		!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
+		sdata = container_of(sdata->bss,
+				     struct ieee80211_sub_if_data, u.ap);
+	}
+
+	info->control.vif = &sdata->vif;
 	if (sta && sta->uploaded)
 		pubsta = &sta->sta;
 
@@ -5097,11 +5104,6 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	info->sawf.nw_delay = (u32) ktime_to_us(net_timedelta(skb->tstamp));
 	info->hw_queue = sdata->vif.hw_queue[queue];
 	info->tid = tid;
-
-	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
-		!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
-		sdata = container_of(sdata->bss,
-				     struct ieee80211_sub_if_data, u.ap);
 
 	info->flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
 	info->control.vif = &sdata->vif;
