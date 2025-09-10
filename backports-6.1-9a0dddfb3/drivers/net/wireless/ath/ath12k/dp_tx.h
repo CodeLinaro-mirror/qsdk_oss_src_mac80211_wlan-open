@@ -35,7 +35,7 @@ static inline bool ath12k_dp_tx_completion_valid(struct hal_wbm_release_ring *de
 
 	if (FIELD_GET(HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE, desc->info0) ==
 			HAL_WBM_REL_SRC_MODULE_FW) {
-		status_desc = (struct htt_tx_wbm_completion *)(((u8 *)desc) + HTT_TX_WBM_COMP_STATUS_OFFSET);
+		status_desc = (struct htt_tx_wbm_completion *)desc;
 
 		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
 		if (FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS, status_desc->info0) ==

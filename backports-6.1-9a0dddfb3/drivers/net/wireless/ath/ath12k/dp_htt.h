@@ -42,7 +42,6 @@ struct ath12k_dp;
 #define HTT_TX_WBM_COMP_INFO3_VALID		BIT(21)
 
 #define ATH12K_DSCP_PRIORITY 7
-#define HTT_TX_WBM_COMP_STATUS_OFFSET 8
 
 #define SDWF_PEER_ID_SHIFT 0x6
 #define SDWF_PEER_ID_MASK 0x3ff
