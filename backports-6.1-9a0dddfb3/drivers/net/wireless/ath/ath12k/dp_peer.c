@@ -784,8 +784,6 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	if (temp_peer && temp_peer->hw_link_id == ar->hw_link_id)
 		ath12k_dp_link_peer_rhash_delete(dp, peer);
 
-	peer->dp_peer = NULL;
-
 	spin_unlock_bh(&dp->dp_lock);
 
 	synchronize_rcu();
