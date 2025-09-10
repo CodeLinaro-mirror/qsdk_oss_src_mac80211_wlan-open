@@ -13251,20 +13251,28 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 	}
 
 	spin_lock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
-	if (tag_id == WMI_CTRL_PATH_PMLO_STATS)
-		list_splice_tail_init(&param.list, &ar->debug.period_wmi_list);
-	else
-		list_splice_tail_init(src, dst);
 	if (!more) {
-		if (!ar->debug.wmi_ctrl_path_stats_more_enabled)
-			ath12k_wmi_crl_path_stats_list_free(ar, &stats->pdev_stats);
-		else
-			ar->debug.wmi_ctrl_path_stats_more_enabled = false;
+		if (tag_id == WMI_CTRL_PATH_PMLO_STATS) {
+			list_splice_tail_init(&param.list, &ar->debug.period_wmi_list);
+		} else {
+			if (!ar->debug.wmi_ctrl_path_stats_more_enabled)
+				ath12k_wmi_crl_path_stats_list_free(ar,
+								    &stats->pdev_stats);
+			else
+				ar->debug.wmi_ctrl_path_stats_more_enabled = false;
+			list_splice_tail_init(src, dst);
+		}
 		complete(&ar->debug.wmi_ctrl_path_stats_rcvd);
 	} else {
-		if (!ar->debug.wmi_ctrl_path_stats_more_enabled) {
-			ath12k_wmi_crl_path_stats_list_free(ar, &stats->pdev_stats);
-			ar->debug.wmi_ctrl_path_stats_more_enabled = true;
+		if (tag_id == WMI_CTRL_PATH_PMLO_STATS) {
+			list_splice_tail_init(&param.list, &ar->debug.period_wmi_list);
+		} else {
+			if (!ar->debug.wmi_ctrl_path_stats_more_enabled) {
+				ath12k_wmi_crl_path_stats_list_free(ar,
+								    &stats->pdev_stats);
+				ar->debug.wmi_ctrl_path_stats_more_enabled = true;
+			}
+			list_splice_tail_init(src, dst);
 		}
 	}
 	spin_unlock_bh(&ar->debug.wmi_ctrl_path_stats_lock);
