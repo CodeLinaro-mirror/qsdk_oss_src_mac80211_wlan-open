@@ -19382,15 +19382,17 @@ EXPORT_SYMBOL(ath12k_mac_op_set_frag_threshold);
 
 static int ath12k_mac_flush(struct ath12k *ar)
 {
+	int num_tx_pending = atomic_read(&ar->dp.num_tx_pending);
 	long time_left;
 	int ret = 0;
 
 	time_left = wait_event_timeout(ar->dp.tx_empty_waitq,
 				       (atomic_read(&ar->dp.num_tx_pending) == 0),
-				       ATH12K_FLUSH_TIMEOUT);
+				       ar->ah->num_radio * ATH12K_FLUSH_TIMEOUT);
 	if (time_left == 0) {
 		ath12k_warn(ar->ab,
-			    "failed to flush transmit queue, data pkts pending %d\n",
+			    "failed to flush transmit queue, data pkts req %d pending %d\n",
+			    num_tx_pending,
 			    atomic_read(&ar->dp.num_tx_pending));
 		ret = -ETIMEDOUT;
 	}
