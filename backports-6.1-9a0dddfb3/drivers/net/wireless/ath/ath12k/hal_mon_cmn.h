@@ -221,10 +221,11 @@ struct hal_rx_mon_ppdu_info {
 	u8 grp_id;
 	u8 decap_format;
 	u16 mpdu_retry_cnt;
-	struct hal_rx_mon_mpdu_info mpdu_info;
-	struct sk_buff_head mpdu_q;
+	struct hal_rx_mon_mpdu_info mpdu_info[HAL_MAX_UL_MU_USERS];
+	struct sk_buff_head mpdu_q[HAL_MAX_UL_MU_USERS];
 	bool is_drop_tlv;
-	struct hal_rx_mon_msdu_info msdu_info;
+	struct hal_rx_mon_msdu_info msdu_info[HAL_MAX_UL_MU_USERS];
+	u8 user_id;
 };
 
 struct hal_rx_mon_status_tlv_hdr {

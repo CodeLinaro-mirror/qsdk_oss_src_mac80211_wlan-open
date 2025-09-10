@@ -1623,6 +1623,8 @@ void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
 	struct ath12k_mon_data *pmon = &dp_mon_pdev->mon_data;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
+	int i;
 
 	skb_queue_head_init(&pmon->rx_status_q);
 
@@ -1641,6 +1643,9 @@ void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 		mon_ops->mon_pdev_rx_mpdu_list_init(pmon);
 
 	INIT_LIST_HEAD(&dp_mon_pdev->mon_desc_used_list);
+
+	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++)
+		skb_queue_head_init(&ppdu_info->mpdu_q[i]);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_attach);
 
