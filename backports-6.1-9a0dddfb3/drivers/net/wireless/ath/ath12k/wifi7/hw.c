@@ -1601,7 +1601,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			if (is_eth) {
 				msdu_copied = skb_clone(skb, GFP_ATOMIC);
 				if (!msdu_copied) {
-					ath12k_err(ar->ab,
+					ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 						   "skb clone failure link_id 0x%X vdevid 0x%X\n",
 						   link_id, tmp_arvif->vdev_id);
 					continue;
