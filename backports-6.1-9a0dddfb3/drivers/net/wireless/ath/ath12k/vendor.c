@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries. 
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/mutex.h>
 #include <linux/pci.h>
@@ -5244,7 +5244,7 @@ static int ath12k_vendor_view_sdwf_config(struct wiphy *wiphy,
 		return -ENOBUFS;
 
 	tailroom = skb_tailroom(msg);
-	for (i = (svc_id) ? (svc_id - 1) : (*storage);
+	for (i = (svc_id) ? (svc_id) : (*storage);
 	     i < QOS_PROFILES_MAX && tailroom > nested_range;
 	     i += (svc_id) ? (QOS_PROFILES_MAX) : (1)) {
 		u16 id_dl = qos_ctx->svc_class[i].dl_qos_id;
@@ -5307,6 +5307,8 @@ static int ath12k_vendor_view_sdwf_config(struct wiphy *wiphy,
 		    nla_put_u32(msg,
 				QCA_WLAN_VENDOR_ATTR_SDWF_SVC_UL_BURST_SIZE,
 				profile->params.burst_size) ||
+		    nla_put_u32(msg, QCA_WLAN_VENDOR_ATTR_SDWF_SVC_TID,
+				profile->params.tid) ||
 		    nla_put_u8(msg,
 			       QCA_WLAN_VENDOR_ATTR_SDWF_SVC_UL_OFDMA_DISABLE,
 			       profile->params.ul_ofdma_disable) ||
