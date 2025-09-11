@@ -925,7 +925,7 @@ struct hal_srng {
 
 /* Interrupt mitigation - timer threshold in us */
 #define HAL_SRNG_INT_TIMER_THRESHOLD_TX 1000
-#define HAL_SRNG_INT_TIMER_THRESHOLD_RX 500
+#define HAL_SRNG_INT_TIMER_THRESHOLD_RX 200
 #define HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL 30
 #define HAL_SRNG_INT_TIMER_THRESHOLD_OTHER 256
 
