@@ -2870,16 +2870,23 @@ static ssize_t ath12k_read_mld_stats(struct file *file,
 	if (!ahvif)
 		return -EINVAL;
 
-	dp_vif = &ahvif->dp_vif;
-	if (!dp_vif)
+	if (!ahvif->ah->hw->wiphy)
 		return -EINVAL;
-
-	buf = kzalloc(buf_len, GFP_KERNEL);
-	if (!buf)
-		return -ENOMEM;
 
 	wiphy = ahvif->ah->hw->wiphy;
 	wiphy_lock(wiphy);
+
+	dp_vif = &ahvif->dp_vif;
+	if (!dp_vif) {
+		wiphy_unlock(wiphy);
+		return -EINVAL;
+	}
+
+	buf = kzalloc(buf_len, GFP_KERNEL);
+	if (!buf) {
+		wiphy_unlock(wiphy);
+		return -ENOMEM;
+	}
 
 	len += scnprintf(buf + len, buf_len - len,
 			 "Tx Packets Received from Stack\n");
