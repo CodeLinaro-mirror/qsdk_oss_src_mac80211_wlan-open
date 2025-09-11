@@ -627,6 +627,15 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 		mgmt_stats = &arvif->ahvif->mgmt_stats;
 		len += scnprintf(buf + len, size - len, "MGMT frame stats for vdev %u :\n", arvif->vdev_id);
 		len += scnprintf(buf + len, size - len, "  TX stats :\n ");
+		len += scnprintf(buf + len, size - len,
+				 "  Total TX Mgmt frames = %llu\n",
+				 mgmt_stats->aggr_tx_mgmt_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "  Total TX Mgmt success count = %llu\n",
+				 mgmt_stats->aggr_tx_mgmt_success_cnt);
+		len += scnprintf(buf + len, size - len,
+				 "  Total TX Mgmt failure count = %llu\n",
+				 mgmt_stats->aggr_tx_mgmt_fail_cnt);
 		len += scnprintf(buf + len, size - len, "  Success frames:\n");
 		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
@@ -639,6 +648,9 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 					mgmt_frm_type[i], mgmt_stats->tx_fail_cnt[i]);
 
 		len += scnprintf(buf + len, size - len, "  RX stats :\n");
+		len += scnprintf(buf + len, size - len,
+				 "  Total RX Mgmt frames = %llu\n",
+				 mgmt_stats->aggr_rx_mgmt);
 		len += scnprintf(buf + len, size - len, "  Success frames:\n");
 		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
 			len += scnprintf(buf + len, size - len, "       %s: %d\n",
@@ -655,6 +667,11 @@ static ssize_t ath12k_dump_mgmt_stats(struct file *file,
 
 		for (i = 0; i < ATH12K_STATS_MGMT_FRM_TYPE_MAX-1; i++)
 			len += scnprintf(buf + len, size - len, "        %s: %d\n", mgmt_frm_type[i], mgmt_stats->tx_compl_fail[i]);
+
+		len += scnprintf(buf + len, size - len, "  Link Stats :\n ");
+		len += scnprintf(buf + len, size - len,
+				 "  Number of connected clients = %d\n",
+				 arvif->num_stations);
 	}
 
 	spin_unlock_bh(&ar->data_lock);

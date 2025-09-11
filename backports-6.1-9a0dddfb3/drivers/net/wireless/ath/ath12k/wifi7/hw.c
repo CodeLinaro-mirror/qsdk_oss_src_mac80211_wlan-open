@@ -1509,10 +1509,12 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 							  ring_id, false);
 			spin_lock_bh(&ar->data_lock);
 			mgmt_stats->tx_fail_cnt[frm_type]++;
+			mgmt_stats->aggr_tx_mgmt_fail_cnt++;
 			spin_unlock_bh(&ar->data_lock);
 		} else {
 			spin_lock_bh(&ar->data_lock);
 			mgmt_stats->tx_succ_cnt[frm_type]++;
+			mgmt_stats->aggr_tx_mgmt_success_cnt++;
 			spin_unlock_bh(&ar->data_lock);
 		}
 		return;

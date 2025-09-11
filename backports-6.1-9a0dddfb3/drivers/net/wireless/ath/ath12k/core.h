@@ -442,6 +442,10 @@ struct ath12k_mgmt_frame_stats {
 	u32 rx_cnt[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
 	u32 tx_compl_succ[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
 	u32 tx_compl_fail[ATH12K_STATS_MGMT_FRM_TYPE_MAX];
+	u64 aggr_tx_mgmt_cnt;
+	u64 aggr_rx_mgmt;
+	u64 aggr_tx_mgmt_fail_cnt;
+	u64 aggr_tx_mgmt_success_cnt;
 };
 
 struct ath12k_tx_conf {

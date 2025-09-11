@@ -14168,6 +14168,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	struct ath12k_base *ab = ar->ab;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	struct ath12k_mgmt_frame_stats *stats;
 	enum hal_encrypt_type enctype;
 	bool tx_params_valid = false;
 	unsigned int mic_len;
@@ -14224,6 +14225,11 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	    peer_is_in_cfr_unassoc_pool(ar, hdr->addr1))
 		tx_params_valid = true;
 #endif /* CPTCFG_ATH12K_CFR */
+
+	spin_lock_bh(&ar->data_lock);
+	stats = &arvif->ahvif->mgmt_stats;
+	stats->aggr_tx_mgmt_cnt++;
+	spin_unlock_bh(&ar->data_lock);
 
 	ret = ath12k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb,
 				   link_agnostic, tx_params_valid);

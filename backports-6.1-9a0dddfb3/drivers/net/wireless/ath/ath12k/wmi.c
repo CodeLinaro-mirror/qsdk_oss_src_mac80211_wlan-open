@@ -9933,6 +9933,7 @@ static void ath12k_mgmt_rx_event(struct ath12k_base *ab, struct sk_buff *skb)
 	ahvif = ath12k_vif_to_ahvif(vif);
 	mgmt_stats = &ahvif->mgmt_stats;
 	mgmt_stats->rx_cnt[frm_stype]++;
+	mgmt_stats->aggr_rx_mgmt++;
 
 	spin_unlock_bh(&ar->data_lock);
 
