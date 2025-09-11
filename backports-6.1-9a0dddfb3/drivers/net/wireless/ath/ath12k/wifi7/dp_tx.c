@@ -2037,6 +2037,9 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	if (peer) {
 		link_id = ath12k_dp_get_link_id(dp_pdev, ts, peer);
 		peer->stats_link_id = link_id;
+		link_peer = rcu_dereference(peer->link_peers[link_id]);
+		if (link_peer)
+			ts->peer_id = link_peer->peer_id;
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,
 						     link_id, ring);
 
