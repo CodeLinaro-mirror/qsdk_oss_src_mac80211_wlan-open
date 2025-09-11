@@ -86,14 +86,10 @@ enum ath12k_pktlog_enum {
 };
 
 struct ath12k_pktlog_hdr_arg {
-	__le16 log_type;
+	u16 log_type;
 	u8 *payload;
-	__le16 payload_size;
+	u16 payload_size;
 	u8 *pktlog_hdr;
-	__le32 flags;
-	__le16 missed_cnt;
-	__le16 timestamp;
-	__le32 type_specific_data;
 };
 
 struct ath12k_pktlog_bufhdr {

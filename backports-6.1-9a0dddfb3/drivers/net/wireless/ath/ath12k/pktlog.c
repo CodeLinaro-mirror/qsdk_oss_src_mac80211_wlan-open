@@ -578,15 +578,17 @@ static void ath12k_pktlog_pull_hdr(struct ath12k_pktlog_hdr_arg *arg,
 
 	hdr = (struct ath12k_pktlog_hdr *)data;
 
-	arg->flags = __le16_to_cpu(hdr->flags);
-	arg->missed_cnt = __le16_to_cpu(hdr->missed_cnt);
-	arg->log_type = __le16_to_cpu(hdr->log_type);
-	arg->payload_size = __le16_to_cpu(hdr->size);
-	arg->timestamp = __le32_to_cpu(hdr->timestamp);
-	arg->type_specific_data = __le32_to_cpu(hdr->type_specific_data);
+	hdr->flags = __le16_to_cpu(hdr->flags);
+	hdr->missed_cnt = __le16_to_cpu(hdr->missed_cnt);
+	hdr->log_type = __le16_to_cpu(hdr->log_type);
+	hdr->size = __le16_to_cpu(hdr->size);
+	hdr->timestamp = __le32_to_cpu(hdr->timestamp);
+	hdr->type_specific_data = __le32_to_cpu(hdr->type_specific_data);
 
-	arg->payload = (u8 *)data;
-	arg->pktlog_hdr = (u8 *)hdr;
+	arg->log_type = hdr->log_type;
+	arg->payload = hdr->payload;
+	arg->payload_size = hdr->size;
+	arg->pktlog_hdr = data;
 }
 
 static void ath12k_pktlog_write_buf(struct ath12k *ar,
