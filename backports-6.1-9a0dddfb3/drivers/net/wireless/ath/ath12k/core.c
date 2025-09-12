@@ -4363,7 +4363,8 @@ static void ath12k_core_wsi_remap_reset(struct ath12k_base *ab)
 
 int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 {
-	int ret = 0;
+	int ret = 0, i;
+	struct ath12k_hw *ah;
 	struct ath12k_hw_group *ag;
 
 	ag = ab->ag;
@@ -4371,7 +4372,17 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 	ag->wsi_remap_in_progress = true;
 
 	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: MLO teardown with Umac reset");
+	ath12k_core_mlo_hw_queues_stop(ab->ag);
+
 	ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_REASON_DYNAMIC_WSI_REMAP);
+
+	for (i = 0; i < ag->num_hw; i++) {
+		ah = ag->ah[i];
+		if (!ah)
+			continue;
+
+		ieee80211_wake_queues(ah->hw);
+	}
 
 	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
 		/* Send WMI_PDEV_SUSPEND for the chip which is bypassed */
