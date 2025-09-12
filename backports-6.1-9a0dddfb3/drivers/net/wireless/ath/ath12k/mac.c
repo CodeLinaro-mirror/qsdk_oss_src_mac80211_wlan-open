@@ -10719,6 +10719,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		ath12k_bss_disassoc(ar, arvif);
+
 		ret = ath12k_mac_vdev_stop(arvif);
 		if (ret)
 			ath12k_warn(ar->ab, "failed to stop vdev %i: %d\n",
@@ -11314,7 +11315,6 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 {
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ath12k *ar = arvif->ar;
-	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	int ret = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
@@ -11322,14 +11322,6 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 	if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &ar->ab->dev_flags)) &&
 	    ar->ab->ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2)
 		return -ESHUTDOWN;
-
-	/* Shouldn't allow MLO STA assoc until UMAC_RECOVERY bit is cleared */
-
-	if (sta->mlo && test_bit(ATH12K_FLAG_UMAC_RECOVERY_START, &ar->ab->dev_flags)) {
-		if (old_state == IEEE80211_STA_NOTEXIST &&
-		    new_state == IEEE80211_STA_NONE)
-			return 0;
-	}
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "mac handle link %u sta %pM state %d -> %d\n",
 		   arsta->link_id, arsta->addr, old_state, new_state);
@@ -11652,13 +11644,19 @@ ml_station_remove:
 	 * handler below
 	 */
 	if (old_state == IEEE80211_STA_NONE &&
-	    new_state == IEEE80211_STA_NOTEXIST && sta->mlo) {
-		ath12k_mac_ml_station_remove(ahvif, ahsta);
-		cancel_work_sync(&ahsta->migration_wk);
-	}
-
-	if (old_state == IEEE80211_STA_NONE &&
 	    new_state == IEEE80211_STA_NOTEXIST) {
+		if (sta->mlo) {
+			ath12k_mac_ml_station_remove(ahvif, ahsta);
+			cancel_work_sync(&ahsta->migration_wk);
+		} else if (is_recovery) {
+			link_id = ffs(ahsta->links_map) - 1;
+
+			arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+			arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
+
+			if (!WARN_ON(!arvif || !arsta))
+				ath12k_mac_station_remove(arvif->ar, arvif, arsta);
+		}
 		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta);
 		wiphy_work_cancel(hw->wiphy, &ahsta->set_4addr_wk);
 	}
