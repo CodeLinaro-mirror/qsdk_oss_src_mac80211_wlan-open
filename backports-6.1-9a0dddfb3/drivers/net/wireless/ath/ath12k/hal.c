@@ -1232,16 +1232,14 @@ ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab, enum hal_ring_type ty
 
 	spin_lock_bh(&srng->lock);
 	if (srng && srng->initialized) {
-		len += scnprintf(buf + len, size - len,
-				 "napi processed before %ums\n",
-				 jiffies_to_msecs(jiffies - srng->timestamp));
 		ring_name = hal->srng_config[type].name;
 
 		ath12k_hal_get_sw_hptp(srng, &hp, &tp);
 		ring_usage = ath12k_hal_get_ring_usage(hal, srng, type, &hp, &tp);
 		len += scnprintf(buf + len, size - len,
-				 "%s:SW Head: %d Tail: %d Ring Usage %u\n",
-				 ring_name, hp, tp, ring_usage);
+				 "%-20s %-20s %10d %10d %12u %12u\n",
+				 ring_name, "SW ", hp, tp, ring_usage,
+				 jiffies_to_msecs(jiffies - srng->timestamp));
 
 		ath12k_hal_get_hw_hptp(ab, type, srng, &hw_hp, &hw_tp);
 		ring_usage = 0;
@@ -1250,8 +1248,9 @@ ssize_t ath12k_hal_dump_ring_stats(struct ath12k_base *ab, enum hal_ring_type ty
 			ring_usage = ath12k_hal_get_ring_usage(hal, srng, type,
 					&hw_hp, &hw_tp);
 		len += scnprintf(buf + len, size - len,
-				"%s:HW Head: %d Tail: %d Ring Usage %u\n",
-				ring_name, hw_hp, hw_tp, ring_usage);
+				 "%-20s %-20s %10d %10d %12u %12u\n",
+				 ring_name, "HW ", hw_hp, hw_tp, ring_usage,
+				 jiffies_to_msecs(jiffies - srng->timestamp));
 	}
 	spin_unlock_bh(&srng->lock);
 	return len;
@@ -1285,13 +1284,17 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 	}
 
 	len += scnprintf(buf + len, size - len, "\nLast interrupt received for each group:\n");
-	len += scnprintf(buf + len, size - len, "group_id\t delay in ms\n");
+	len += scnprintf(buf + len, size - len, "%5s %20s\n", "group_id", "delay in ms");
 	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
 		irq_grp = &ab->ext_irq_grp[i];
-		len += scnprintf(buf + len, size - len, "%d\t    %ums\n",
-				irq_grp->grp_id,
-				jiffies_to_msecs(jiffies - irq_grp->timestamp));
+		len += scnprintf(buf + len, size - len, "%-20d  %-20u\n",
+				 irq_grp->grp_id,
+				 jiffies_to_msecs(jiffies - irq_grp->timestamp));
 	}
+
+	len += scnprintf(buf + len, size - len, "%-20s %-20s %10s %10s %12s %12s\n",
+			 "Ring Name", "SW/HW", "Head",
+			 "Tail", "Ring Usage", "napi processed before ms");
 
 	/*umac rings*/
 	len += ath12k_hal_dump_ring_stats(ab, HAL_WBM_IDLE_LINK,

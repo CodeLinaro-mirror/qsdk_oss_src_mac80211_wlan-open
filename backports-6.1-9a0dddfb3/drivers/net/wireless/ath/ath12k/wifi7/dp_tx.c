@@ -1088,7 +1088,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u32 iova_mask = dp->hw_params->iova_mask;
 	bool is_diff_encap = false, is_null = false;
 	u8 qos_tag;
-	enum ath12k_dp_tx_enq_error err;
+	enum ath12k_dp_tx_enq_error err = DP_TX_ENQ_SUCCESS;
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
 
@@ -1342,8 +1342,10 @@ skip_htt_metadata:
 		}
 #else
 		ti.paddr = virt_to_phys(skb_ext_desc->data);
-		if (!ti.paddr)
+		if (!ti.paddr) {
+			err = DP_TX_ENQ_DROP_DMA_ERR;
 			goto fail_free_ext_skb;
+		}
 #endif
 		ti.data_len = skb_ext_desc->len;
 		ti.type = HAL_TCL_DESC_TYPE_EXT_DESC;

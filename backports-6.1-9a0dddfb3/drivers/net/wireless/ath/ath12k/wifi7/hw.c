@@ -1273,7 +1273,7 @@ void ath12k_wifi7_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				       enum ath12k_dp_tx_enq_error drop_reason,
 				       bool dev_free)
 {
-	if (unlikely(drop_reason > DP_TX_ENQ_ERR_MAX))
+	if (unlikely(drop_reason >= DP_TX_ENQ_ERR_MAX))
 		DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_MISC], 1, ring_id);
 	else
 		DP_STATS_INC(dp_vif, tx_i.drop[drop_reason], 1, ring_id);

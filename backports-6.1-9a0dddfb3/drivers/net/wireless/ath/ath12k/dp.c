@@ -2466,9 +2466,10 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	struct ath12k *ar = arvif->ar;
 	int stats_link_id = peer->hw_links[ar->hw_link_id];
 
-	ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
-					  &peer->stats[stats_link_id],
-					  peer->is_vdev_peer);
+	if (stats_link_id <= ATH12K_DP_MAX_MLO_LINKS)
+		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
+						  &peer->stats[stats_link_id],
+						  peer->is_vdev_peer);
 }
 
 static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
@@ -2479,6 +2480,7 @@ static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
 	u32 vdev_id = arvif-> vdev_id;
 	struct ath12k_dp_link_peer *link_peer;
 
+	/* Iterate through all peers of particular vif*/
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry(link_peer, &dp->peers, list)  {
 		if (link_peer->vdev_id != vdev_id)
@@ -2569,6 +2571,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	if (ath12k_debugfs_is_dp_debug_stats_enabled(&ar->dp))
 		telemetry_vif->is_extended = true;
 
+	/*Vif stats for requested link*/
 	if (links_map & BIT(link_id)) {
 		rcu_read_lock();
 		arvif = rcu_dereference(ahvif->link[link_id]);
@@ -2576,13 +2579,16 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 		rcu_read_unlock();
 	} else {
+		/*MLD vif stats*/
 		ath12k_dp_aggr_vif_ingress_stats(&ar->dp, aggr_vif_stats, dp_vif);
 
+		/*legacy vif stats handling*/
 		if (hweight16(links_map) == 0) {
 			arvif =  &ahvif->deflink;
 			if (arvif)
 				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
 		} else {
+			/*Aggregate vif stats of all link in MLD vif*/
 			for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 				rcu_read_lock();
 				arvif = rcu_dereference(ahvif->link[link_id]);
@@ -2611,6 +2617,7 @@ static int ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 	spin_lock_bh(&dp->dp_lock);
 	link_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
 	if(link_peer) {
+		/* Error case handling for legacy peer*/
 		if (!link_peer->mlo && valid_link) {
 			spin_unlock_bh(&dp->dp_lock);
 			ath12k_err(NULL, "Error legacy peer with valid link id");
@@ -2620,9 +2627,10 @@ static int ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 		if (link_peer->hw_link_id == hw_link_id) {
 			peer = link_peer->dp_peer;
 			stats_link_id = peer->hw_links[hw_link_id];
-			ath12k_dp_update_per_pkt_peer_stats(dp_pdev, peer_stats,
-						     &peer->stats[stats_link_id],
-						     peer->is_vdev_peer);
+			if (stats_link_id <= ATH12K_DP_MAX_MLO_LINKS)
+				ath12k_dp_update_per_pkt_peer_stats(dp_pdev, peer_stats,
+								    &peer->stats[stats_link_id],
+								    peer->is_vdev_peer);
 			spin_unlock_bh(&dp->dp_lock);
 			return 0;
 		}
@@ -2654,29 +2662,51 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 		telemetry_peer->is_extended = true;
 
 	if (peer) {
+		/*Error case handling for legacy peer*/
 		if (!peer->is_mlo && valid_link) {
 			spin_unlock_bh(&dp_hw->peer_lock);
 			ath12k_err(NULL, "Error legacy peer with valid link id");
 			return -EINVAL;
 		}
 
+		/*Peer stats of MLD peer for requested link id*/
 		if (valid_link) {
 			rcu_read_lock();
 			arvif = rcu_dereference(ahvif->link[link_id]);
 			if (arvif) {
 				stats_link_id = peer->hw_links[arvif->ar->hw_link_id];
-				ath12k_dp_update_per_pkt_peer_stats(&ar->dp, peer_stats, &peer->stats[stats_link_id],
-							     peer->is_vdev_peer);
+				if (stats_link_id <= ATH12K_DP_MAX_MLO_LINKS)
+					ath12k_dp_update_per_pkt_peer_stats(&ar->dp,
+									    peer_stats,
+									    &peer->stats[stats_link_id],
+									    peer->is_vdev_peer);
 			}
 			goto unlock;
 		} else {
-			for (i = 0; i < ATH12K_DP_MAX_MLO_LINKS; i++)
-				ath12k_dp_aggr_per_pkt_peer_stats(&ar->dp, peer_stats, &peer->stats[i],
-								  peer->is_vdev_peer);
+			/*legacy peer stats handling*/
+			if (hweight16(links_map) == 0) {
+				arvif =  &ahvif->deflink;
+				if (arvif) {
+					stats_link_id = peer->hw_links[arvif->ar->hw_link_id];
+					if (stats_link_id <= ATH12K_DP_MAX_MLO_LINKS)
+						ath12k_dp_update_per_pkt_peer_stats(&ar->dp,
+										    peer_stats,
+										    &peer->stats[stats_link_id],
+										    peer->is_vdev_peer);
+				}
+			} else {
+				/* Aggregated peer stats of all link in MLD peer*/
+				for (i = 0; i < ATH12K_DP_MAX_MLO_LINKS; i++)
+					ath12k_dp_aggr_per_pkt_peer_stats(&ar->dp,
+									  peer_stats,
+									  &peer->stats[i],
+									  peer->is_vdev_peer);
+			}
 			spin_unlock_bh(&dp_hw->peer_lock);
 			return ret;
 		}
 	} else {
+		/*Peer stats of link peer for requested link id*/
 		if (valid_link) {
 			rcu_read_lock();
 			arvif = rcu_dereference(ahvif->link[link_id]);
@@ -2685,6 +2715,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 								    link_id, valid_link);
 			goto unlock;
 		} else {
+			/*Peer stats of link peer without link id*/
 			rcu_read_lock();
 			for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
 				arvif = rcu_dereference(ahvif->link[link_id]);
