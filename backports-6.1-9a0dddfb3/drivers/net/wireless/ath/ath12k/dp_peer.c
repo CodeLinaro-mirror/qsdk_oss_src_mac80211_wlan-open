@@ -490,6 +490,25 @@ struct ath12k_dp_peer *ath12k_dp_peer_find_by_addr_and_sta(struct ath12k_dp_hw *
 	return NULL;
 }
 
+struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8 *addr,
+						  struct ieee80211_sta *sta,
+						  bool mlo_peer)
+{
+	struct ath12k_dp_peer *dp_peer;
+
+	lockdep_assert_held(&dp_hw->peer_lock);
+
+	list_for_each_entry(dp_peer, &dp_hw->peers, list) {
+		if (ether_addr_equal(dp_peer->addr, addr)) {
+			if (!sta || mlo_peer || dp_peer->is_mlo ||
+			    dp_peer->sta == sta)
+				return dp_peer;
+		}
+	}
+
+	return NULL;
+}
+
 #define PEER_TABLE_SOC_ID_SHIFT        10
 
 u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
@@ -547,7 +566,7 @@ int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 	struct wireless_dev *wdev;
 
 	spin_lock_bh(&dp_hw->peer_lock);
-	dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, params->sta);
+	dp_peer = ath12k_dp_peer_create_find(dp_hw, addr, params->sta, params->is_mlo);
 
 	if (dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);

@@ -250,6 +250,9 @@ struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw,
 					   u8 *addr);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_addr_and_sta(struct ath12k_dp_hw *dp_hw,
 							   u8 *addr, struct ieee80211_sta *sta);
+struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8 *addr,
+						  struct ieee80211_sta *sta,
+						  bool mlo_peer);
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_vdev_id_and_addr(struct ath12k_dp *dp,
 					     int vdev_id, const u8 *addr);
