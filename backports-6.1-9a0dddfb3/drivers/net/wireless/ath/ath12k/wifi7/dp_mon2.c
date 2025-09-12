@@ -627,6 +627,10 @@ ath12k_wifi7_dp_mon_pad_amsdu(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mp
 
 		pad_start_ptr += ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp,
 									  mpdu, frag_idx);
+		/* pad_start_ptr points at end of frag, to add amsdu padding
+		 * subtract the amsdu pad len in pad_start_ptr.
+		 */
+		pad_start_ptr -= amsdu_pad;
 		memset(pad_start_ptr, 0, amsdu_pad);
 	}
 
