@@ -184,6 +184,8 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 				 struct ieee80211_vif *vif);
 void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif,
 				  int ppe_vp_profile_idx);
+void ath12k_ppeds_update_splitphy_bank_id(struct ath12k_base *ab,
+					  struct ath12k_link_vif *arvif);
 void ath12k_vif_free_vp(struct ath12k_vif *ahvif, struct net_device *dev);
 
 void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,

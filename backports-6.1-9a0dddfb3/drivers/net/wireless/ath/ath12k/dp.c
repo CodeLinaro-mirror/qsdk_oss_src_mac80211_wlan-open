@@ -567,6 +567,22 @@ skip_dma_alloc:
 }
 EXPORT_SYMBOL(ath12k_dp_srng_setup);
 
+void ath12k_dp_increment_bank_num_users(struct ath12k_dp *dp,
+					int bank_id)
+{
+	spin_lock_bh(&dp->tx_bank_lock);
+	dp->bank_profiles[bank_id].num_users++;
+	spin_unlock_bh(&dp->tx_bank_lock);
+}
+
+void ath12k_dp_tx_put_bank_profile(struct ath12k_dp *dp, u8 bank_id)
+{
+	spin_lock_bh(&dp->tx_bank_lock);
+	if (dp->bank_profiles[bank_id].num_users)
+		dp->bank_profiles[bank_id].num_users--;
+	spin_unlock_bh(&dp->tx_bank_lock);
+}
+
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab,
 				  struct ath12k_link_vif *arvif,
 				  struct ath12k_dp *dp, bool vdev_id_check_en)
@@ -620,13 +636,6 @@ inc_ref_and_return:
 	return bank_id;
 }
 
-void ath12k_dp_tx_put_bank_profile(struct ath12k_dp *dp, u8 bank_id)
-{
-	spin_lock_bh(&dp->tx_bank_lock);
-	dp->bank_profiles[bank_id].num_users--;
-	spin_unlock_bh(&dp->tx_bank_lock);
-}
-
 void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_base *ab = arvif->ar->ab;
@@ -638,6 +647,7 @@ void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif)
 	if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID) {
 		ath12k_dp_tx_put_bank_profile(dp, arvif->splitphy_ds_bank_id);
 		arvif->splitphy_ds_bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, dp, false);
+		ath12k_ppeds_update_splitphy_bank_id(ab, arvif);
 	}
 
 	ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);

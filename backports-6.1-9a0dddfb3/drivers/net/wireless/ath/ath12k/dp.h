@@ -1099,5 +1099,7 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
 
+void ath12k_dp_increment_bank_num_users(struct ath12k_dp *dp,
+					int bank_id);
 #endif
 #endif

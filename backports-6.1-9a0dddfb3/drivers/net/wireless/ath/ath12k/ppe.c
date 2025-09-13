@@ -891,7 +891,6 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 	int vdev_id = arvif->vdev_id;
 	int ret;
 	enum nl80211_iftype vif_type;
-	unsigned long links_map;
 
 	if (!wdev)
 		return -EOPNOTSUPP;
@@ -939,8 +938,6 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 
 		vlan_iface->ppe_vp_profile_idx[link_id] = ppe_vp_profile_idx;
 	} else {
-		int link_idx;
-		struct ath12k_link_vif *iter_arvif;
 		bool vdev_id_check_en = false;
 
 		vlan_iface->ppe_vp_profile_idx[link_id] = ppe_vp_profile_idx;
@@ -948,17 +945,7 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 		arvif->splitphy_ds_bank_id =
 			ath12k_dp_tx_get_bank_profile(ab, arvif, ab->dp, vdev_id_check_en);
 
-		links_map = ahvif->links_map;
-		for_each_set_bit(link_idx, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
-			iter_arvif = ahvif->link[link_idx];
-
-			if (!iter_arvif || iter_arvif == arvif ||
-			    !iter_arvif->is_created || ab != iter_arvif->ar->ab)
-				continue;
-
-			iter_arvif->splitphy_ds_bank_id =
-						arvif->splitphy_ds_bank_id;
-		}
+		ath12k_ppeds_update_splitphy_bank_id(ab, arvif);
 	}
 
 	ath12k_dp_ppeds_setup_vp_entry(ab, ar, arvif, vp_profile);
@@ -1013,6 +1000,43 @@ void ath12k_ppe_ds_attach_vlan_vif_link(struct ath12k_vlan_iface *vlan_iface,
 	vlan_iface->attach_link_done = true;
 }
 
+void ath12k_ppeds_update_splitphy_bank_id(struct ath12k_base *ab,
+					  struct ath12k_link_vif *arvif)
+{
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_link_vif *iter_arvif;
+	unsigned long links_map;
+	int link_idx;
+
+	links_map = ahvif->links_map;
+	for_each_set_bit(link_idx, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
+		iter_arvif = ahvif->link[link_idx];
+		int splitphy_ds_bank_id = DP_INVALID_BANK_ID;
+
+		if (!iter_arvif || iter_arvif == arvif ||
+		    !iter_arvif->is_created || ab != iter_arvif->ar->ab)
+			continue;
+
+		splitphy_ds_bank_id = iter_arvif->splitphy_ds_bank_id;
+		/**
+		 * If the link already has a splitphy_ds_bank_id
+		 * then decrement the refcount for that bank_id
+		 * before updating the link with a new bank_id
+		 */
+		if (splitphy_ds_bank_id != DP_INVALID_BANK_ID)
+			ath12k_dp_tx_put_bank_profile(ath12k_ab_to_dp(ab),
+						      splitphy_ds_bank_id);
+
+		iter_arvif->splitphy_ds_bank_id = arvif->splitphy_ds_bank_id;
+		ath12k_dp_increment_bank_num_users(ath12k_ab_to_dp(ab),
+						   arvif->splitphy_ds_bank_id);
+		ath12k_dbg(ab, ATH12K_DBG_PPE,
+			   "splitphy_ds_bank_id %d for vp_num %d vdev_id %d\n",
+			   arvif->splitphy_ds_bank_id,
+			   ahvif->dp_vif.ppe_vp_num, iter_arvif->vdev_id);
+	}
+}
+
 int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 				 int *link_ppe_vp_profile_idx,
 				 struct ieee80211_vif *vif)
@@ -1029,7 +1053,6 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 	int vdev_id = arvif->vdev_id;
 	int ret;
 	enum nl80211_iftype vif_type;
-	unsigned long links_map;
 
 	if (!wdev)
 		return -EOPNOTSUPP;
@@ -1083,8 +1106,6 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 
 		*link_ppe_vp_profile_idx = ppe_vp_profile_idx;
 	} else {
-		int link_idx;
-		struct ath12k_link_vif *iter_arvif;
 		bool vdev_id_check_en = false;
 
 		if (arvif->ahvif->links_map &&
@@ -1123,16 +1144,8 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 		*link_ppe_vp_profile_idx = ppe_vp_profile_idx;
 		arvif->splitphy_ds_bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, ab->dp, vdev_id_check_en);
 
-		links_map = ahvif->links_map;
-		for_each_set_bit(link_idx, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
-			iter_arvif = ahvif->link[link_idx];
+		ath12k_ppeds_update_splitphy_bank_id(ab, arvif);
 
-			if (!iter_arvif || iter_arvif == arvif ||
-			    !iter_arvif->is_created || ab != iter_arvif->ar->ab)
-				continue;
-
-			iter_arvif->splitphy_ds_bank_id = arvif->splitphy_ds_bank_id;
-		}
 	}
 
 	ath12k_dp_ppeds_setup_vp_entry(ab, ar, arvif, vp_profile);
