@@ -473,7 +473,8 @@ skip_dma_alloc:
 	params.num_entries = num_entries;
 	ath12k_dp_srng_msi_setup(ab, &params, type, ring_num + mac_id);
 
-	if (ab->hw_params->ds_support && ab->hif.bus == ATH12K_BUS_AHB)
+	if (ab->hw_params->ds_support && ab->hif.bus == ATH12K_BUS_AHB &&
+	    !ath12k_dp_umac_reset_in_progress(ab))
 		ath12k_hif_ppeds_register_interrupts(ab, type, vector, ring_num);
 
 	switch (type) {
