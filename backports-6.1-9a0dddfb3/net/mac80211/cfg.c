@@ -6118,7 +6118,7 @@ static int ieee80211_sta_assoc_ml_reconf(struct wiphy *wiphy,
 	if ((added_links & req->rem_links) ||
 	    !(added_links | req->rem_links) ||
 	    ((sta->sta.valid_links & req->rem_links) != req->rem_links) ||
-	    !(sta->sta.valid_links & ~req->rem_links))
+	    !((sta->sta.valid_links | added_links) & ~req->rem_links))
 		return -EINVAL;
 
 	new_active_links = sta->sta.valid_links & ~req->rem_links;
