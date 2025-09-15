@@ -1581,6 +1581,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				continue;
 
 			tmp_ar = tmp_arvif->ar;
+			if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &tmp_ar->ab->dev_flags)))
+				continue;
+
 			tmp_dp_pdev = ath12k_dp_to_dp_pdev(tmp_ar->ab->dp, tmp_ar->pdev_idx);
 			if (!tmp_dp_pdev)
 				continue;
