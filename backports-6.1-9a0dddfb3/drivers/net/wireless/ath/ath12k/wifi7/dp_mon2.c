@@ -256,7 +256,7 @@ ath12k_wifi7_dp_mon_parse_status_rx_hdr(struct ath12k_pdev_dp *dp_pdev,
 	if (unlikely(frag_len <= 0) || frag_len > DP_MON_RX_HDR_LEN) {
 		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_MON_RX,
 			   "invalid rx header length: %d", frag_len);
-		return -EINVAL;
+		return 0;
 	}
 
 	if (!ppdu_info->mpdu_info[user_id].mpdu_start_received) {
