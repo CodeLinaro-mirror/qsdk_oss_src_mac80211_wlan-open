@@ -331,7 +331,7 @@ ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
 	size_t len = 0;
 	u16 svc_id, qos_id;
 	u8 tid, q;
-	int ret  = -EINVAL;
+	int ret = -ENOENT;
 
 	qos_ctx = ath12k_get_qos(ar->ab);
 	if (!qos_ctx) {
@@ -339,20 +339,19 @@ ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
 		return ret;
 	}
 
+	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
-	spin_lock_bh(&ah->dp_hw.peer_lock);
 
-	peer = ath12k_dp_peer_find_by_addr_and_sta(&ah->dp_hw, arsta->addr, sta);
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+	peer = ath12k_dp_peer_find(&ah->dp_hw, sta->addr);
 	if (!peer) {
 		goto ret;
 	}
 
 	qos = peer->qos;
-	if (!qos) {
+	if (!qos)
 		goto ret;
-	}
 
-	u8 *buf __free(kfree) = kzalloc(size, GFP_ATOMIC);
 	for (tid = 0; tid < QOS_TID_MAX; tid++) {
 		for(q = 0; q < QOS_TID_MDSUQ_MAX; q++) {
 			msduq_map = &qos->msduq_map[tid][q];
@@ -383,10 +382,14 @@ ath12k_dbg_sta_read_qos_msduq(struct file *file, char __user *user_buf,
 	}
 	ret = 0;
 ret:
+	if (!len)
+		len += scnprintf(buf + len, size - len,
+				 "No MSDUQ allocated\n");
+
 	spin_unlock_bh(&ah->dp_hw.peer_lock);
+	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
-	ret = simple_read_from_buffer(user_buf, count, ppos, buf, len);
 	return ret;
 }
 
