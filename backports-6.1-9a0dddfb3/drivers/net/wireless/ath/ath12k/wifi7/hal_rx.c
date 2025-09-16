@@ -992,8 +992,11 @@ void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab)
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_MISC_CTRL_ADDR(hal));
 
-	val &= ~(HAL_REO1_MISC_CTL_FRAG_DST_RING |
+	val &= ~(HAL_REO1_MISC_CTL_SPARE_CTRL_DST_RING |
+		 HAL_REO1_MISC_CTL_FRAG_DST_RING |
 		 HAL_REO1_MISC_CTL_BAR_DST_RING);
+	val |= u32_encode_bits(1,
+			       HAL_REO1_MISC_CTL_SPARE_CTRL_DST_RING);
 	val |= u32_encode_bits(HAL_SRNG_RING_ID_REO2SW0,
 			       HAL_REO1_MISC_CTL_FRAG_DST_RING);
 	val |= u32_encode_bits(HAL_SRNG_RING_ID_REO2SW0,
