@@ -1070,7 +1070,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	struct sk_buff *skb_ext_desc = NULL;
 	struct ethhdr *eth = NULL;
 	struct hal_srng *tcl_ring;
-	struct ieee80211_hdr *hdr = (void *)skb->data;
+	struct ieee80211_hdr *hdr = NULL;
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[arvif->link_id];
@@ -1094,12 +1094,14 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
+	if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)
+		eth = (struct ethhdr *)skb->data;
+	else
+		hdr = (void *)skb->data;
+
 	if (!(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
 	    !ieee80211_is_data(hdr->frame_control))
 		return DP_TX_ENQ_DROP_NON_DATA_FRAME;
-
-	if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)
-		eth = (struct ethhdr *)skb->data;
 
 	if (eth && is_multicast_ether_addr(eth->h_dest) && arsta) {
 		ti.meta_data_flags = arsta->tcl_metadata;
@@ -1107,7 +1109,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		ti.bss_ast_hash = arsta->ast_hash;
 		ti.bss_ast_idx = peer_id;
 		ti.lookup_override = true;
-	} else if (ieee80211_has_a4(hdr->frame_control) &&
+	} else if (hdr && ieee80211_has_a4(hdr->frame_control) &&
 	    is_multicast_ether_addr(hdr->addr3) && arsta) {
 		ti.meta_data_flags = arsta->tcl_metadata;
 		ti.flags0 |= FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TO_FW, 1);
