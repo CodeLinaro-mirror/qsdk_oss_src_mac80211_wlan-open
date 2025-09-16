@@ -16523,7 +16523,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		 * free the allocated cache.
 		 */
 		ath12k_ahvif_put_link_cache(ahvif, link_id);
-		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		arvif = wiphy_dereference(hw->wiphy, vlan_master_ahvif->link[link_id]);
 		if (!arvif || !arvif->is_created)
 			continue;
 
