@@ -32,14 +32,32 @@ enum ath12k_fw_crash_dump_type {
 };
 
 #define COREDUMP_TLV_HDR_SIZE 8
+#define ATH12K_RAMDUMP_MAGIC    0x574C414E  /* 'WLAN' */
+#define ATH12K_MAX_DUMP_ENTRIES FW_CRASH_DUMP_TYPE_MAX
 
-struct ath12k_elf_coredump_state {
+struct ath12k_dump_entry {
+	u32 type;
+	u32 entry_start;
+	u32 entry_num;
+} __packed;
+
+struct ath12k_pci_dump_file_data {
+	u32 magic;
+	u32 version;
+	u32 chipset;
+	u32 total_entries;
+	struct ath12k_dump_entry entry[];
+} __packed;
+
+struct ath12k_pci_elf_coredump_state {
 	struct ath12k_base *ab;
-	void *header;
-	struct ath12k_ahb_dump_segment *segments;
+	void *elf_hdr;
+	u32   elf_hdr_sz;
+	struct ath12k_dump_segment *chunks;
+	u32   num_chunks;
 	struct completion dump_done;
-	u32 num_seg;
 };
+
 
 struct ath12k_dump_segment {
        unsigned long addr;
@@ -47,6 +65,14 @@ struct ath12k_dump_segment {
        unsigned int len;
        unsigned int type;
 	   struct completion dump_done;
+};
+
+struct ath12k_elf_coredump_state {
+	struct ath12k_base *ab;
+	void *header;
+	struct ath12k_ahb_dump_segment *segments;
+	struct completion dump_done;
+	u32 num_seg;
 };
 
 struct ath12k_ahb_dump_segment {
