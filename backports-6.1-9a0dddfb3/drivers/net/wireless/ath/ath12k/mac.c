@@ -15248,6 +15248,7 @@ static int ath12k_mac_setup_vdev_params_mbssid(struct ath12k_link_vif *arvif,
 		*tx_vdev_id = tx_arvif->vdev_id;
 	} else if (tx_arvif == arvif) {
 		*flags = WMI_VDEV_MBSSID_FLAGS_TRANSMIT_AP;
+		*tx_vdev_id = arvif->vdev_id;
 	} else {
 		return -EINVAL;
 	}
