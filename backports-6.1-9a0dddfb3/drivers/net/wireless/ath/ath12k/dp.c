@@ -72,9 +72,6 @@ int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab)
 	struct ath12k_dp_htt_rxdma_ppe_cfg_param param = {0};
 	int ret;
 
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		return 0;
-
 	param.override = 1;
 	param.reo_dst_ind = HAL_REO2PPE_DST_IND;
 	param.multi_buffer_msdu_override_en = 0;
