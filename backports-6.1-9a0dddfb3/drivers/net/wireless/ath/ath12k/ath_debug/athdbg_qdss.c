@@ -158,7 +158,6 @@ static int athdbg_qmi_send_qdss_config(struct ath12k_base *ab)
 			 ATH12K_QMI_DEFAULT_QDSS_CONFIG_FILE_NAME);
 
 	ret = request_firmware(&fw_entry, filename, dev);
-	pr_info("boot firmware request %s size %zu\n", filename, fw_entry->size);
 	if (ret) {
 		/* for backward compatibility */
 		snprintf(filename, sizeof(filename), "%s",
