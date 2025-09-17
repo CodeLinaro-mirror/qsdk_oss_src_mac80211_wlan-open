@@ -20126,8 +20126,8 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 
 		if (!ath12k_mac_validate_fixed_rate_settings(ar, band,
 							     mask, arvif->link_id))
-			ath12k_warn(ar->ab,
-				    "failed to update fixed rate settings due to mcs/nss incompatibility\n");
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+					"failed to update fixed rate settings due to mcs/nss incompatibility\n");
 
 		mac_nss = max3(ath12k_mac_max_ht_nss(ht_mcs_mask),
 			       ath12k_mac_max_vht_nss(vht_mcs_mask),
