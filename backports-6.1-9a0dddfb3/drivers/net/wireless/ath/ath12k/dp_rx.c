@@ -736,7 +736,7 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 	spin_lock_bh(&dp->dp_lock);
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, peer_mac);
-	if (!peer) {
+	if (!peer || !peer->dp_peer) {
 		spin_unlock_bh(&dp->dp_lock);
 		ath12k_warn(ab, "failed to find the peer to set up rx tid\n");
 		return -ENOENT;
@@ -880,7 +880,7 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 	spin_lock_bh(&dp->dp_lock);
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, arsta->addr);
-	if (!peer) {
+	if (!peer || !peer->dp_peer) {
 		spin_unlock_bh(&dp->dp_lock);
 		ath12k_warn(ab, "failed to find the peer to stop rx aggregation\n");
 		return -ENOENT;
@@ -935,7 +935,7 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp,
 							    arvif->vdev_id, peer_addr);
-	if (!peer) {
+	if (!peer || !peer->dp_peer) {
 		spin_unlock_bh(&dp->dp_lock);
 		ath12k_warn(ab, "failed to find the peer %pM to configure pn replay detection\n",
 			    peer_addr);
@@ -1491,15 +1491,20 @@ void ath12k_dp_tid_cleanup(struct ath12k_base *ab)
 
         spin_lock_bh(&ab->dp->dp_lock);
         list_for_each_entry(peer, &ab->dp->peers, list) {
-                for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
-                        rx_tid = &peer->dp_peer->rx_tid[tid];
-                        if (rx_tid->active) {
-                                vaddr = rx_tid->vaddr;
-                                addr_aligned = PTR_ALIGN(vaddr, HAL_LINK_DESC_ALIGN);
-                                ath12k_hal_reset_rx_reo_tid_q(&ab->hal, addr_aligned,
-                                                              rx_tid->ba_win_sz, tid);
-                        }
-                }
+		if (peer->dp_peer) {
+			for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+				rx_tid = &peer->dp_peer->rx_tid[tid];
+				if (rx_tid->active) {
+					vaddr = rx_tid->vaddr;
+					addr_aligned = PTR_ALIGN(vaddr,
+								 HAL_LINK_DESC_ALIGN);
+					ath12k_hal_reset_rx_reo_tid_q(&ab->hal,
+								      addr_aligned,
+								      rx_tid->ba_win_sz,
+								      tid);
+				}
+			}
+		}
         }
         spin_unlock_bh(&ab->dp->dp_lock);
 }
@@ -1516,11 +1521,11 @@ void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
        spin_lock_bh(&dp->dp_lock);
 
        peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, peer_mac);
-       if (!peer) {
-               spin_unlock_bh(&dp->dp_lock);
-               ath12k_warn(ar->ab, "failed to find the peer to set up rx tid\n");
-               return;
-       }
+	if (!peer || !peer->dp_peer) {
+		spin_unlock_bh(&dp->dp_lock);
+		ath12k_warn(ar->ab, "failed to find the peer to set up rx tid\n");
+		return;
+	}
 
        for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
                rx_tid = &peer->dp_peer->rx_tid[tid];
@@ -1605,7 +1610,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 
 	/* Get peer from the pdev to which the peer is going to migrate */
 	peer = ath12k_dp_link_peer_find_by_id(mig_dp, peer_id);
-	if (!peer) {
+	if (!peer || !peer->dp_peer) {
 		ath12k_warn(mig_ab, "failed to find peer for peer_id %d\n", peer_id);
 		spin_unlock_bh(&mig_dp->dp_lock);
 		goto migration_fail;
@@ -1683,6 +1688,13 @@ ath12k_dp_peer_migrate(struct ath12k_sta *ahsta, u16 peer_id,
 	if (!peer || !peer->primary_link) {
 		ath12k_warn(ab,
 			    "failed to fetch primary peer for peer addr %pM in MLO pri link migration event\n",
+			    arsta->addr);
+		goto out;
+	}
+
+	if (!peer->dp_peer) {
+		ath12k_warn(ab,
+			    "dp_peer is NULL for peer addr %pM in MLO pri link migration event\n",
 			    arsta->addr);
 		goto out;
 	}

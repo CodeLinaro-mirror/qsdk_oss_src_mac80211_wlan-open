@@ -228,6 +228,14 @@ int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 		rcu_read_unlock();
 		return -EINVAL;
 	}
+
+	if (!peer->dp_peer) {
+		ath12k_err(ab, "dp_peer is NULL for peer_id %u", peer_id);
+		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
 	qos = peer->dp_peer->qos;
 	if (!qos) {
 		ath12k_err(ab, "QOS ctx for peer id %u", peer_id);

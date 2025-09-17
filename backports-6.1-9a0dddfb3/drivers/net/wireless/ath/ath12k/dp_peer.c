@@ -1230,7 +1230,7 @@ void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
-	if (msduq_index < max_qos_msduq && peer) {
+	if (msduq_index < max_qos_msduq && peer && peer->dp_peer) {
 		q_id = htt_qtype - def_tid_msduq;
 
 		if (hlos_tid < QOS_TID_MAX &&

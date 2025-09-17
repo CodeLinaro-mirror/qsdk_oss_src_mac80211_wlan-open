@@ -101,7 +101,7 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
-	if (!peer) {
+	if (!peer || !peer->dp_peer) {
 		ath12k_warn(ab, "failed to lookup peer %pM on vdev %d\n",
 			    addr, vdev_id);
 		spin_unlock_bh(&dp->dp_lock);
@@ -2465,11 +2465,16 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 				      struct ath12k_dp_link_peer *link_peer,
 				      struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
 {
-	struct ath12k_dp_peer *peer = link_peer->dp_peer;
+	struct ath12k_dp_peer *peer;
 	struct ath12k_pdev_dp *dp_pdev = &arvif->ar->dp;
 	struct ath12k *ar = arvif->ar;
-	int stats_link_id = peer->hw_links[ar->hw_link_id];
+	int stats_link_id;
 
+	if (!link_peer->dp_peer)
+		return;
+
+	peer = link_peer->dp_peer;
+	stats_link_id = peer->hw_links[ar->hw_link_id];
 	if (stats_link_id <= ATH12K_DP_MAX_MLO_LINKS)
 		ath12k_dp_aggr_per_pkt_peer_stats(dp_pdev, &aggr_vif_stats->peer_stats,
 						  &peer->stats[stats_link_id],

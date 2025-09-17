@@ -267,7 +267,7 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 		spin_lock_bh(&dp->dp_lock);
 
 		pri_peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
-		if (!pri_peer || !pri_peer->dp_peer->qos) {
+		if (!pri_peer || !pri_peer->dp_peer || !pri_peer->dp_peer->qos) {
 			spin_unlock_bh(&dp->dp_lock);
 			return;
 		}

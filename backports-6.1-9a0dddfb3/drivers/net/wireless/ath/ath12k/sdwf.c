@@ -197,6 +197,11 @@ static u8 ath12k_sdwf_alloc_msduq(struct ath12k *ar, u32 svc_id,
 		goto ret;
 	}
 
+	if (!peer->dp_peer) {
+		ath12k_err(ab, "dp_peer is NULL for peer_id %u", peer_id);
+		goto ret;
+	}
+
 	qos = ath12k_sdwf_get_qos_ctx(ab, peer->dp_peer);
 	if (!qos) {
 		ath12k_err(ab, "Unable to find peer qos ctx");

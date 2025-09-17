@@ -1474,18 +1474,20 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &dp->peers, list) {
 		/* Skip Rx TID cleanup for self peer */
-		if (peer->sta)
+		if (peer->sta && peer->dp_peer)
 			ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 
 		peer->sta = NULL;
 
 		/* cleanup dp peer */
 		spin_lock_bh(&dp_hw->peer_lock);
-		dp_peer = peer->dp_peer;
-		peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
-		if (!dp_peer->is_vdev_peer)
-			dp_peer->peer_links_map &= ~(peer->link_id);
-		rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
+		if (peer->dp_peer) {
+			dp_peer = peer->dp_peer;
+			peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
+			if (!dp_peer->is_vdev_peer)
+				dp_peer->peer_links_map &= ~(peer->link_id);
+			rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
+		}
 		spin_unlock_bh(&dp_hw->peer_lock);
 
 		ath12k_dp_link_peer_rhash_delete(dp, peer);
@@ -8510,7 +8512,7 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 	spin_lock_bh(&ab->dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, arvif->vdev_id, addr);
 
-	if (!peer) {
+	if (!peer || !peer->dp_peer) {
 		spin_unlock_bh(&ab->dp->dp_lock);
 		return -ENOENT;
 	}
@@ -8619,7 +8621,7 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	spin_lock_bh(&ab->dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp, arvif->vdev_id,
 							    peer_addr);
-	if (peer && cmd == SET_KEY) {
+	if (peer && peer->dp_peer && cmd == SET_KEY) {
 		peer->dp_peer->keys[key->keyidx] = key;
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE) {
 			peer->dp_peer->ucast_keyidx = key->keyidx;
@@ -8628,7 +8630,7 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 			peer->dp_peer->mcast_keyidx = key->keyidx;
 			peer->dp_peer->sec_type_grp = ath12k_dp_tx_get_encrypt_type(key->cipher);
 		}
-	} else if (peer && cmd == DISABLE_KEY) {
+	} else if (peer && peer->dp_peer && cmd == DISABLE_KEY) {
 		peer->dp_peer->keys[key->keyidx] = NULL;
 		if (key->flags & IEEE80211_KEY_FLAG_PAIRWISE)
 			peer->dp_peer->ucast_keyidx = 0;
@@ -10621,13 +10623,15 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ar->ab->dp, arvif->vdev_id,
 								    arsta->addr);
 		if (peer) {
-			peer->dp_peer->vdev_type_4addr |= BIT(peer->vif->type);
-			peer->dp_peer->is_reset_mcbc = true;
-			peer->dp_peer->use_4addr = true;
 			arsta->tcl_metadata = peer->tcl_metadata;
 			arsta->ast_hash = peer->ast_hash;
-			if (peer->vif->type == NL80211_IFTYPE_AP)
-				peer->dp_peer->dev = peer->dp_peer->sta->dev;
+			if (peer->dp_peer) {
+				peer->dp_peer->vdev_type_4addr |= BIT(peer->vif->type);
+				peer->dp_peer->is_reset_mcbc = true;
+				peer->dp_peer->use_4addr = true;
+				if (peer->vif->type == NL80211_IFTYPE_AP)
+					peer->dp_peer->dev = peer->dp_peer->sta->dev;
+			}
 		}
 
 		spin_unlock_bh(&ar->ab->dp->dp_lock);
@@ -12133,7 +12137,7 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 							    arvif_p->vdev_id,
 							    arsta_p->addr);
 
-	if (!peer) {
+	if (!peer || !peer->dp_peer) {
 		ath12k_err(ar_p->ab, "ML reconfig: peer not found");
 		spin_unlock_bh(&dp_p->dp_lock);
 		return -ENOENT;
