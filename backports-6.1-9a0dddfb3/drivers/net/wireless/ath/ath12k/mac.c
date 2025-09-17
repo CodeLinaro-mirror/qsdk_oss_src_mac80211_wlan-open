@@ -20613,7 +20613,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 				       struct ieee80211_link_sta *link_sta,
 				       struct link_station_info *link_sinfo)
 {
-	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(link_sta->sta);
+	struct ath12k_sta *ahsta;
 	struct ath12k_dp_link_peer_rate_info rate_info = {0};
 	struct ath12k_fw_stats_req_params params = {};
 	s8 signal, rssi_signal, rssi_offset;
@@ -20623,6 +20623,12 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k *ar;
 	bool db2dbm;
 
+	if (!link_sta->sta) {
+		ath12k_err(NULL, "Failed to proceed: link_sta->sta is NULL");
+		return;
+	}
+
+	ahsta = ath12k_sta_to_ahsta(link_sta->sta);
 	lockdep_assert_wiphy(hw->wiphy);
 
 	arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_sta->link_id]);
