@@ -430,6 +430,7 @@ static void sta_remove_link(struct sta_info *sta, unsigned int link_id,
 
 	RCU_INIT_POINTER(sta->link[link_id], NULL);
 	RCU_INIT_POINTER(sta->sta.link[link_id], NULL);
+	link_sta->sta = NULL;
 	if (alloc) {
 		sta_info_free_link(&alloc->info);
 		kfree_rcu(alloc, rcu_head);
