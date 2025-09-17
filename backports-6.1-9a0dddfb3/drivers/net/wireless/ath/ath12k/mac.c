@@ -22565,6 +22565,23 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 			goto err_unregister_hw;
 		}
 
+		if (ar->supports_6ghz && ar->ab->sp_rule &&
+		    ar->ab->sp_rule->num_6ghz_sp_rule) {
+			struct ath12k_afc_expiry_info *exp_info =
+			    &ar->ab->afc_exp_info[ar->pdev_idx];
+
+			if (exp_info->is_afc_exp_valid) {
+				ar->afc.event_type = ATH12K_AFC_EVENT_TIMER_EXPIRY;
+				ar->afc.event_subtype = exp_info->event_subtype;
+				ar->afc.request_id = exp_info->req_id;
+				if (ath12k_process_expiry_event(ar))
+					ath12k_warn(ab,
+						    "Failed to process expiry event\n");
+
+				exp_info->is_afc_exp_valid = false;
+			}
+		}
+
 		if (ar->ab->hw_params->current_cc_support && ab->new_alpha2[0]) {
 			struct wmi_set_current_country_arg current_cc = {};
 

@@ -171,6 +171,12 @@ struct ath12k_afc_sp_reg_info {
 	struct ath12k_afc_chan_obj *afc_chan_info;
 };
 
+struct ath12k_afc_expiry_info {
+	bool is_afc_exp_valid;
+	enum ath12k_afc_expiry_event_subtype event_subtype;
+	u32 req_id;
+};
+
 /**
  * struct ath12k_afc_freq_range_obj - Frequency range object
  * @lowfreq: Lower frequency

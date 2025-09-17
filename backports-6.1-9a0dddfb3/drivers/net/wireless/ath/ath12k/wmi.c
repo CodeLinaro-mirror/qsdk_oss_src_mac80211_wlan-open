@@ -7766,24 +7766,23 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 	return ret;
 }
 
-static struct ath12k *
+static int
 ath12k_wmi_afc_process_fixed_param(struct ath12k_base *ab,
-				   void *ptr, size_t len, struct ath12k_afc_info *afc)
+				   void *ptr, size_t len, struct ath12k_afc_info *afc,
+				   u8 *pdev_id, struct ath12k **ar)
 {
 	struct wmi_afc_event_fixed_param *fixed_param;
 	const struct wmi_tlv *tlv;
-	struct ath12k *ar = NULL;
 	u16 tlv_tag;
-	u8 pdev_id;
 
 	if (!ptr) {
 		ath12k_warn(ab, "No data present in afc event\n");
-		return NULL;
+		return -1;
 	}
 
 	if (len < (sizeof(*fixed_param) + TLV_HDR_SIZE)) {
 		ath12k_warn(ab, "afc event size invalid\n");
-		return NULL;
+		return -1;
 	}
 
 	tlv = (struct wmi_tlv *)ptr;
@@ -7792,20 +7791,18 @@ ath12k_wmi_afc_process_fixed_param(struct ath12k_base *ab,
 
 	if (tlv_tag == WMI_TAG_AFC_EVENT_FIXED_PARAM) {
 		fixed_param = (struct wmi_afc_event_fixed_param *)ptr;
-		pdev_id = le32_to_cpu(fixed_param->pdev_id);
-		ar = ab->pdevs[pdev_id].ar;
-		if (!ar) {
-			ath12k_warn(ab, "Failed to get ar for afc fixed param\n");
-			return NULL;
-		}
+		*pdev_id = le32_to_cpu(fixed_param->pdev_id);
+		*ar = ab->pdevs[*pdev_id].ar;
+		if (!*ar)
+			ath12k_warn(ab, "Cannot get ar for afc fixed param\n");
 	} else {
 		ath12k_warn(ab, "Wrong tag %d in afc fixed param\n", tlv_tag);
-		return NULL;
+		return -1;
 	}
 
 	afc->event_type = le32_to_cpu(fixed_param->event_type);
 
-	return ar;
+	return 0;
 }
 
 static void ath12k_wmi_afc_event(struct ath12k_base *ab,
@@ -7815,15 +7812,17 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 	struct ath12k_afc_info *afc_info = &afc;
 	struct ath12k *ar;
 	int ret;
+	u8 pdev_id;
 
-	ar = ath12k_wmi_afc_process_fixed_param(ab, skb->data, skb->len, afc_info);
-	if (!ar) {
-		ath12k_warn(ab, "Failed to get ar for afc processing\n");
+	ret = ath12k_wmi_afc_process_fixed_param(ab, skb->data, skb->len,
+						 afc_info, &pdev_id, &ar);
+	if (ret) {
+		ath12k_warn(ab, "Failed to process afc fixed param ret %d\n", ret);
 		return;
 	}
 
 	ath12k_dbg(ab, ATH12K_DBG_AFC, "Received AFC event of type %d for pdev: %d\n",
-		   afc_info->event_type, ar->pdev->pdev_id);
+		   afc_info->event_type, pdev_id);
 	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
 				  ath12k_wmi_afc_event_parser, afc_info);
 	if (ret) {
@@ -7832,6 +7831,13 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 			    afc_info->event_type, ret);
 		return;
 	}
+
+	if (!ar && afc_info->event_type != ATH12K_AFC_EVENT_TIMER_EXPIRY) {
+		ath12k_warn(ab, "Failed to get ar for afc processing\n");
+		ath12k_free_afc_power_event_info(afc_info);
+		return;
+	}
+
 	switch (afc_info->event_type) {
 	case ATH12K_AFC_EVENT_POWER_INFO:
 		ret = ath12k_reg_process_afc_power_event(ar, afc_info);
@@ -7848,12 +7854,20 @@ static void ath12k_wmi_afc_event(struct ath12k_base *ab,
 
 		break;
 	case ATH12K_AFC_EVENT_TIMER_EXPIRY:
-		ar->afc.event_type = afc_info->event_type;
-		ar->afc.event_subtype = afc_info->event_subtype;
-		ar->afc.request_id = afc_info->request_id;
-		ret = ath12k_process_expiry_event(ar);
-		if (ret)
-			ath12k_warn(ab, "Failed to process expiry event\n");
+		if (ar) {
+			ar->afc.event_type = afc_info->event_type;
+			ar->afc.event_subtype = afc_info->event_subtype;
+			ar->afc.request_id = afc_info->request_id;
+			ret = ath12k_process_expiry_event(ar);
+			if (ret)
+				ath12k_warn(ab, "Failed to process expiry event\n");
+		} else {
+			ab->afc_exp_info[pdev_id].is_afc_exp_valid = true;
+			ab->afc_exp_info[pdev_id].event_subtype = afc_info->event_subtype;
+			ab->afc_exp_info[pdev_id].req_id = afc_info->request_id;
+			ath12k_dbg(ab, ATH12K_DBG_AFC,
+				   "AFC expiry event received without ar\n");
+		}
 		break;
 	default:
 		ath12k_warn(ab, "AFC reg rule update failed ret : %d\n", ret);

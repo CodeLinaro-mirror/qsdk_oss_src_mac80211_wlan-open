@@ -1828,6 +1828,12 @@ struct ath12k_base {
 	struct ieee80211_regdomain *new_regd[MAX_RADIOS];
 	bool regd_freed;
 
+	/* afc_exp_info is used to store the AFC expiry
+	 * information for each radio. This is used to forward the
+	 * AFC expiry information to the user space during MAC
+	 * registration.
+	 */
+	struct ath12k_afc_expiry_info afc_exp_info[MAX_RADIOS];
 	/* 6 GHz standard power rules from cc ext event are saved here
 	 * as it should not be updated to cfg unless we have a AFC
 	 * response
