@@ -18550,6 +18550,19 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		reinit_completion(&ar->completed_11d_scan);
 		ar->state_11d = ATH12K_11D_PREPARING;
 	}
+
+	/* In legacy station association with the AP,
+	 * arvif is created during channel context assignment.
+	 * However, since mac80211 is unaware of this link,
+	 * it is not deleted automatically. To prevent stale arvif
+	 * entries in ahvif, this link must be explicitly removed
+	 * during channel context unassignment.
+	 */
+	if (!vif->valid_links) {
+		ath12k_mac_remove_link_interface(hw, arvif);
+		ath12k_mac_unassign_link_vif(arvif);
+	}
+
 }
 
 static void
