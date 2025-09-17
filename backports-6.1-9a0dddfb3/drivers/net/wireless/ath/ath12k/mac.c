@@ -14177,6 +14177,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	u8 frm_stype = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
 	int buf_id;
 	int ret;
+	u8 sta_addr[ETH_ALEN];
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -14231,6 +14232,8 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	stats->aggr_tx_mgmt_cnt++;
 	spin_unlock_bh(&ar->data_lock);
 
+	ether_addr_copy(sta_addr, hdr->addr1);
+
 	ret = ath12k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb,
 				   link_agnostic, tx_params_valid);
 	if (ret) {
@@ -14240,7 +14243,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 
 	if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
 		ath12k_dbg(ab, ATH12K_DBG_MLME, "Transmit %s to STA %pM over WMI\n",
-			   mgmt_frame_name[frm_stype], hdr->addr1);
+			   mgmt_frame_name[frm_stype], sta_addr);
 	return 0;
 
 err_unmap_buf:
