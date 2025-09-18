@@ -18,8 +18,8 @@ struct athdbg_to_ath12k_ops {
 	struct reserved_mem *(*get_reserved_mem_by_name)(struct ath12k_base *ab, const char *name);
 	void (*coredump_qdss_dump)(struct ath12k_base *ab,
 			struct ath12k_qmi_event_qdss_trace_save_data *event_data);
-	void (*coredump_build_inline)(struct ath12k_base *ab,
-			struct ath12k_dump_segment *segments, int num_seg);
+	void (*coredump_dump_segment)(struct ath12k_base *ab,
+			struct ath12k_dump_segment *segments, size_t seg_len);
 	bool (*dev_running_status)(struct ath12k_base *drv_ab);
 	void (*set_dbg_mask)(unsigned int debug_mask);
 	struct ath12k_link_vif *(*get_link_vif_from_vdev_id)(struct ath12k_base *ab,

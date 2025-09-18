@@ -333,7 +333,7 @@ void athdbg_coredump_qdss_dump(struct ath12k_base *ab,
 				segment->len);
 		segment->type = FW_CRASH_DUMP_QDSS_DATA;
 	}
-	athdbg_base->dbg_to_ath_ops->coredump_build_inline(ab, segment, 1);
+	athdbg_base->dbg_to_ath_ops->coredump_dump_segment(ab, segment, segment->len);
 out:
 	vfree(segment);
 	vfree(dump);

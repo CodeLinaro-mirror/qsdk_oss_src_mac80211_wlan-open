@@ -419,7 +419,8 @@ int athdbg_qmi_event_qdss_trace_misc_hdlr(struct athdbg_qmi *dbg_qmi, void *data
 		segment->len = total_size;
 		segment->vaddr = qdss_trace_data;
 		segment->type = FW_CRASH_DUMP_QDSS_DATA;
-		athdbg_base->dbg_to_ath_ops->coredump_build_inline(ab, segment, 1);
+		athdbg_base->dbg_to_ath_ops->coredump_dump_segment(ab,
+							segment, segment->len);
 		vfree(segment);
 	} else {
 		pr_err("dump collection failed: remaining-%u response end-%u\n",

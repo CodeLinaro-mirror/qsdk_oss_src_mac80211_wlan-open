@@ -10,7 +10,7 @@ extern struct ath_debug_base *athdbg_base;
 
 const struct athdbg_to_ath12k_ops dbg_to_ath_ops = {
 	.get_reserved_mem_by_name = ath12k_core_get_reserved_mem_by_name,
-	.coredump_build_inline = ath12k_coredump_build_inline,
+	.coredump_dump_segment = ath12k_coredump_dump_segment,
 	.dev_running_status = athdbg_if_check_dev_running,
 	.set_dbg_mask = athdbg_if_setmask,
 	.get_link_vif_from_vdev_id = ath12k_mac_get_arvif_by_vdev_id,
