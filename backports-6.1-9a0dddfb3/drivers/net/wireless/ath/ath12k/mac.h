@@ -140,6 +140,16 @@ enum ath12k_supported_bw {
 
 #define ATH12K_NUM_20_MHZ_CHAN_IN_320_MHZ_CHAN	16
 
+/**
+ * struct ath12k_mac_num_chanctxs_arg - Structure to hold channel context
+ * @ar: Pointer to ath12k device context
+ * @num: Number of channel context for the applicable ar
+ */
+struct ath12k_mac_num_chanctxs_arg {
+	struct ath12k *ar;
+	u8 num;
+};
+
 struct ath12k_mac_get_any_chanctx_conf_arg {
 	struct ath12k *ar;
 	struct ieee80211_chanctx_conf *chanctx_conf;

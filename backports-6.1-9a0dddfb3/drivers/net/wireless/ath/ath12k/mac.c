@@ -17671,20 +17671,25 @@ static void ath12k_mac_num_chanctxs_iter(struct ieee80211_hw *hw,
                                          struct ieee80211_chanctx_conf *conf,
                                          void *data)
 {
-        int *num = data;
+	struct ath12k_mac_num_chanctxs_arg *arg =
+				(struct ath12k_mac_num_chanctxs_arg *)data;
+	struct ath12k *ctx_ar, *ar = arg->ar;
 
-        (*num)++;
+	ctx_ar = ath12k_get_ar_by_ctx(ar->ah->hw, conf);
+
+	if (ctx_ar == ar)
+		arg->num++;
 }
 
 static int ath12k_mac_num_chanctxs(struct ath12k *ar)
 {
-        int num = 0;
+	struct ath12k_mac_num_chanctxs_arg arg = { .ar = ar, .num = 0};
 
         ieee80211_iter_chan_contexts_atomic(ar->ah->hw,
                                             ath12k_mac_num_chanctxs_iter,
-                                            &num);
+					    &arg);
 
-        return num;
+	return arg.num;
 }
 
 static void ath12k_mac_update_rx_channel(struct ath12k *ar,
