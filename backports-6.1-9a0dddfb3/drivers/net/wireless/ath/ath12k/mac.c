@@ -255,7 +255,6 @@ ath12k_phymodes[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 #define ATH12K_MAX_NUM_BRIDGE_PER_MLD 2
 #define BRIDGE_IN_RANGE(ar) (ar->num_created_bridge_vdevs < TARGET_NUM_BRIDGE_VDEVS)
 #define ATH12K_MAX_AR_LINK_IDX	5
-#define ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS 30000
 
 static const u32 ath12k_smps_map[] = {
 	[WLAN_HT_CAP_SM_PS_STATIC] = WMI_PEER_SMPS_STATIC,
@@ -24686,13 +24685,13 @@ int ath12k_mac_dynamic_wsi_remap(struct ath12k_base *ab)
 	if (num_ml_peers) {
 		reinit_completion(&ag->peer_cleanup_complete);
 		time_left = wait_for_completion_timeout(&ag->peer_cleanup_complete,
-				msecs_to_jiffies(ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS));
+				msecs_to_jiffies(ag->wsi_peer_clean_timeout));
 
 		ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS,
 			   "Bypass: Waiting for ML peer cleanup\n");
 		if (!time_left) {
-			ath12k_err(ab, "peer cleanup didn't get completed within %d ms\n",
-				   ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS);
+			ath12k_err(ab, "peer cleanup didn't get completed within %lld ms, pending peers %d\n",
+				   ag->wsi_peer_clean_timeout, ah->num_ml_peers);
 			return -ETIMEDOUT;
 		}
 	}

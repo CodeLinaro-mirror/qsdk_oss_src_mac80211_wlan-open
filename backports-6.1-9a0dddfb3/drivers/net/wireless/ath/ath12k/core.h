@@ -78,6 +78,9 @@
 /* The magic used by QCA spec */
 #define ATH12K_SMBIOS_BDF_EXT_MAGIC "BDF_"
 
+/* Timeout value for the Peer cleanup during WSI bypass */
+#define ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS 30000
+
 #define ATH12K_INVALID_HW_MAC_ID	0xFF
 #define ATH12K_CONNECTION_LOSS_HZ	(3 * HZ)
 #define ATH12K_SMEM_HOST                1
@@ -1684,6 +1687,7 @@ struct ath12k_hw_group {
 	u8 num_bypassed;
 	bool wsi_remap_in_progress;
 	struct completion peer_cleanup_complete;
+	u64 wsi_peer_clean_timeout;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */

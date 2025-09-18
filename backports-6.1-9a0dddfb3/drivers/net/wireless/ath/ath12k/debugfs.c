@@ -153,12 +153,28 @@ ath12k_debug_write_wsi_bypass_device(struct file *file,
 {
 	struct ath12k_base *ab = file->private_data;
 	unsigned int value;
+	u64 peer_timeout;
 	int ret, i;
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_base *partner_ab;
+	char buf[128] = {0};
 
-	if (kstrtouint_from_user(user_buf, count, 0, &value))
+	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos,
+				     user_buf, count);
+
+	if (ret <= 0)
+		goto exit;
+
+	ret = sscanf(buf, "%u %llu", &value, &peer_timeout);
+
+	if (ret < 1 || ret > 2) {
 		return -EINVAL;
+	} else if (ret == 2) {
+		ath12k_info(ab, "Updating peer delete timeout to %llu", peer_timeout);
+		ag->wsi_peer_clean_timeout = peer_timeout;
+	} else {
+		ag->wsi_peer_clean_timeout = ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS;
+	}
 
 	if (value > ATH12K_WSI_BYPASS_ADD_DEVICE ||
 	    value <= ATH12K_WSI_BYPASS_DEFAULT) {

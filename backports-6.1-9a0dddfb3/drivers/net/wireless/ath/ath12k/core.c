@@ -3929,6 +3929,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 	ag->mlo_capable = false;
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
 	ag->wsi_load_info = NULL;
+	ag->wsi_peer_clean_timeout = ATH12K_MAC_PEER_CLEANUP_TIMEOUT_MSECS;
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 	ath12k_global_ps_ctx.ag = ag;
