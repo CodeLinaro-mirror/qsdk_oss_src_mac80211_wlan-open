@@ -192,4 +192,5 @@ int ath12k_qos_update(struct ath12k_base *ab, struct ath12k *ar,
 		      struct ath12k_qos_params *params,
 		      enum qos_profile_dir qos_dir,
 		      u16 id, u8 *mac_addr);
+int ath12k_reconfig_qos_profiles(struct ath12k_base *ab);
 #endif /* ATH12K_QOS_H */

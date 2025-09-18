@@ -425,3 +425,26 @@ ret:
 	}
 	return ret;
 }
+
+int ath12k_reconfig_qos_profiles(struct ath12k_base *ab)
+{
+	struct ath12k_qos_ctx *qos_ctx;
+	struct ath12k_qos_params *params;
+	u8 index;
+
+	qos_ctx = ath12k_get_qos(ab);
+	if (!qos_ctx) {
+		ath12k_err(ab, "QoS Context is NULL");
+		return -EINVAL;
+	}
+
+	for (index = QOS_DL_ID_MIN; index <= QOS_DL_ID_MAX; index++) {
+		if (qos_ctx->profiles[index].ref_count == 0)
+			continue;
+
+		params = &qos_ctx->profiles[index].params;
+		ath12k_core_add_dl_qos(ab, params, index);
+	}
+
+	return 0;
+}

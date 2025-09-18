@@ -20463,6 +20463,7 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 		ath12k_erp_handle_ssr(ar);
 	}
 
+	ath12k_reconfig_qos_profiles(ab);
 	clear_bit(ATH12K_GROUP_FLAG_RECOVERY, &ar->ab->ag->flags);
 
 	/* Send WMI_FW_HANG_CMD to FW after target has started. This is to
@@ -23401,7 +23402,7 @@ static u16 get_lower_bandwidth_puncture_pattern(u16 prifreq, u16 cur_pat,
 {
 	/* Location of the target bandwidth in current bandwidth */
 	u8 target_bw_loc_in_curbw;
-	/* Number of 20 MHz channels in the target bandwidth */ 
+	/* Number of 20 MHz channels in the target bandwidth */
 	u8 n_20chans_in_target_bw;
 	/* Number of bits for the right shift */
 	u8 nbits_to_right_shift;
