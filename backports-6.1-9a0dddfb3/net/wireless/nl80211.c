@@ -8498,6 +8498,7 @@ static int nl80211_dump_station(struct sk_buff *skb,
 	u8 mac_addr[ETH_ALEN];
 	int sta_idx = cb->args[2];
 	int err, i;
+	bool sinfo_alloc = false;
 
 	err = nl80211_prepare_wdev_dump(cb, &rdev, &wdev, NULL);
 	if (err)
@@ -8523,8 +8524,9 @@ static int nl80211_dump_station(struct sk_buff *skb,
 				kzalloc(sizeof(*sinfo.links[0]), GFP_KERNEL);
 			if (!sinfo.links[i]) {
 				err = -ENOMEM;
-				goto out_err_and_free;
+				goto out_err;
 			}
+			sinfo_alloc = true;
 		}
 
 		err = rdev_dump_station(rdev, wdev->netdev, sta_idx,
@@ -8532,10 +8534,15 @@ static int nl80211_dump_station(struct sk_buff *skb,
 		if (err == -ENOENT)
 			break;
 		if (err)
-			goto out_err_and_free;
+			goto out_err;
 
 		if (sinfo.valid_links)
 			cfg80211_sta_set_mld_sinfo(&sinfo);
+
+		/* reset the sinfo_alloc flag as nl80211_send_station()
+		 * always releases sinfo
+		 */
+		sinfo_alloc = false;
 
 		if (nl80211_send_station(skb, NL80211_CMD_NEW_STATION,
 				NETLINK_CB(cb->skb).portid,
@@ -8550,10 +8557,9 @@ static int nl80211_dump_station(struct sk_buff *skb,
  out:
 	cb->args[2] = sta_idx;
 	err = skb->len;
- out_err_and_free:
-	if (err)
-		cfg80211_sinfo_release_content(&sinfo);
  out_err:
+	if (sinfo_alloc)
+		cfg80211_sinfo_release_content(&sinfo);
 	wiphy_unlock(&rdev->wiphy);
 
 	return err;
