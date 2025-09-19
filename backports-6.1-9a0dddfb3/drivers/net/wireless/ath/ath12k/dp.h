@@ -211,7 +211,7 @@ enum ath12k_dp_eapol_key_type {
 #define DP_PPE2TCL_RING_SIZE	2048
 #define DP_PPE_WBM2SW_RING_SIZE	8192
 /* TODO: revisit this count during testing */
-#define ATH12K_RX_DESC_COUNT           (6144)
+#define ATH12K_RX_DESC_COUNT           (8192)
 #define DP_RX_BUFFER_SIZE		1856
 #else
 //#ifdef CONFIG_ATH12K_MEM_PROFILE_DEFAULT TODO Fix the Default profile enablement
