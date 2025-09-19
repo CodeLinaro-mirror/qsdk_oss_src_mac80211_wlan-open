@@ -16595,7 +16595,7 @@ err_vdev_del:
 	if (!ar->allocated_vdev_map && !arvif->is_scan_vif) {
 		if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) {
 			if (ath12k_mac_validate_active_radio_count(ar->ah))
-				ath12k_core_cleanup_power_down_q6(ar->ah);
+				ath12k_core_cleanup_power_down_q6(ab->ag);
 		}
 	}
 
@@ -16852,20 +16852,20 @@ EXPORT_SYMBOL(ath12k_mac_op_ampdu_action);
 
 int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah)
 {
+	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	struct ath12k *ar;
-	unsigned long time_left;
 	int ret = 0, i;
 	bool erp_standby_mode;
 
+	lockdep_assert_wiphy(ah->hw->wiphy);
 	for_each_ar(ah, ar, i) {
 		if (!ar->teardown_complete_event) {
-			reinit_completion(&ar->standby_teardown);
 			if (ar->allocated_vdev_map)
 				erp_standby_mode = true;
 			else
 				erp_standby_mode = false;
 
-			ret = ath12k_wmi_mlo_teardown(ar, false,
+			ret = ath12k_wmi_mlo_teardown(ar, !ag->trigger_umac_reset,
 						      WMI_MLO_TEARDOWN_REASON_STANDBY_DOWN,
 						      erp_standby_mode);
 			if (ret) {
@@ -16874,14 +16874,7 @@ int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah)
 				return ret;
 			}
 
-			time_left = wait_for_completion_timeout(&ar->standby_teardown,
-								ATH12K_TEARDOWN_STANDBY_TIMEOUT);
-
-			if (!time_left) {
-				ath12k_err(ar->ab, "Standby teardown wait timed out\n");
-				ret = -ETIMEDOUT;
-				return ret;
-			}
+			ag->trigger_umac_reset = true;
 		}
 	}
 
@@ -22651,7 +22644,6 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	init_completion(&ar->completed_11d_scan);
 	init_completion(&ar->thermal.wmi_sync);
 	init_completion(&ar->mvr_complete);
-	init_completion(&ar->standby_teardown);
 	init_completion(&ar->suspend);
 	init_completion(&ar->pdev_resume);
 

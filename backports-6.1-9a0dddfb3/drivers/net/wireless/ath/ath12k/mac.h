@@ -101,7 +101,6 @@ struct ath12k_generic_iter {
 	u8_get_bits(hecap_phy[2], IEEE80211_HE_PHY_CAP2_UL_MU_PARTIAL_MU_MIMO)
 
 #define ATH12K_MIN_TX_POWER		-127
-#define ATH12K_TEARDOWN_STANDBY_TIMEOUT (2 * HZ)
 #define ATH12K_PDEV_SUSPEND_TIMEOUT	(2 * HZ)
 #define ATH12K_PDEV_RESUME_TIMEOUT	(2 * HZ)
 

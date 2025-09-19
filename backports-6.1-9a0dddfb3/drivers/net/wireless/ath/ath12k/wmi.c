@@ -12944,8 +12944,6 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 	}
 
 	ar->teardown_complete_event = true;
-	complete(&ar->standby_teardown);
-
 	for (i = 0; i < ag->num_hw; i++) {
 		ah = ag->ah[i];
 		if (!ah)
@@ -12958,10 +12956,10 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 				complete_flag = false;
 		}
 	}
-	if (complete_flag &&
-	    (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0 || ag->wsi_remap_in_progress))
+	if (complete_flag && ag->trigger_umac_reset) {
                 complete(&ag->umac_reset_complete);
-
+		ag->trigger_umac_reset = false;
+	}
 }
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
@@ -17026,7 +17024,7 @@ int ath12k_wmi_mlo_teardown(struct ath12k *ar, bool umac_reset,
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_TEARDOWN_CMD,
 						 sizeof(*cmd));
 	cmd->pdev_id = cpu_to_le32(ar->pdev->pdev_id);
-	cmd->umac_reset = umac_reset;
+	cmd->umac_reset = cpu_to_le32(umac_reset);
 	cmd->reason_code = cpu_to_le32(reason_code);
 	cmd->erp_standby_mode = cpu_to_le32(erp_standby_mode);
 

@@ -998,19 +998,36 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 	return 0;
 }
 
-void ath12k_core_cleanup_power_down_q6(struct ath12k_hw *ah)
+void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag)
 {
-	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	struct ath12k_base *ab;
+	struct ath12k_hw *ah;
 	struct ath12k *ar;
+	unsigned long time_left;
 	int i, j, ret;
 	bool skip_power_down;
 
-	lockdep_assert_wiphy(ah->hw->wiphy);
+	reinit_completion(&ag->umac_reset_complete);
+	for (i = 0; i < ag->num_hw; i++) {
+		ah = ag->ah[i];
+		if (!ah)
+			continue;
 
-	ret = ath12k_mac_mlo_standby_teardown(ah);
-	if (ret)
+		ret = ath12k_mac_mlo_standby_teardown(ah);
+		if (ret) {
+			ath12k_err(NULL, "mlo teardown is failed for ERP\n");
+			return;
+		}
+	}
+
+	time_left = wait_for_completion_timeout(&ag->umac_reset_complete,
+				msecs_to_jiffies(ATH12K_UMAC_RESET_TIMEOUT_IN_MS));
+	if (!time_left) {
+		ath12k_err(NULL, "UMAC reset didn't get completed within %d ms\n",
+			    ATH12K_UMAC_RESET_TIMEOUT_IN_MS);
+		ag->trigger_umac_reset = false;
 		return;
+	}
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
@@ -3478,7 +3495,6 @@ static void ath12k_core_upd_power_down(struct ath12k_base *ab)
  * chipsets
  */
 
-#define ATH12K_UMAC_RESET_TIMEOUT_IN_MS         1000
 static int ath12k_core_trigger_umac_reset(struct ath12k_base *ab,
 					  enum wmi_mlo_tear_down_reason_code_type reason_code)
 {

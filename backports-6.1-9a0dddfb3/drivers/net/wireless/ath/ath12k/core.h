@@ -109,6 +109,7 @@
 #define ATH12K_PHY_5GHZ_HIGH "phy02"
 #define ATH12K_PHY_6GHZ "phy03"
 #define ATH12K_Q6_POWER_UP_TIMEOUT	(20 * HZ)
+#define ATH12K_UMAC_RESET_TIMEOUT_IN_MS         1000
 
 #define ATH12K_MAX_TID_VALUE 8
 #define ATH12K_FREE_MAP_ID_MASK GENMASK(31, 0)
@@ -1444,7 +1445,6 @@ struct ath12k {
 
 	bool erp_trigger_set;
 	struct work_struct erp_handle_trigger_work;
-	struct completion standby_teardown;
 	struct completion suspend;
 	bool pdev_suspend;
 	struct completion pdev_resume;
@@ -2153,7 +2153,7 @@ struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
 bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar, bool is_bridge_vdev);
-void ath12k_core_cleanup_power_down_q6(struct ath12k_hw *ah);
+void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag);
 int ath12k_core_power_up(struct ath12k_hw_group *ag);
 
 int ath12k_core_add_dl_qos(struct ath12k_base *ab,
