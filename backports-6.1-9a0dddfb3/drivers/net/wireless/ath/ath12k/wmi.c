@@ -17138,6 +17138,7 @@ static void ath12k_wmi_put_peer_list(struct ath12k_base *ab,
 	struct wmi_chan_width_peer_list *itr;
 	struct wmi_chan_width_peer_arg *arg_itr;
 	int i;
+	u32 host_chan_width;
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
 		   "wmi peer channel width switch command peer list\n");
@@ -17149,13 +17150,38 @@ static void ath12k_wmi_put_peer_list(struct ath12k_base *ab,
 		itr->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_CHAN_WIDTH_PEER_LIST,
 							 sizeof(*itr));
 		ether_addr_copy(itr->mac_addr.addr, arg_itr->mac_addr.addr);
-		itr->chan_width = cpu_to_le32(arg_itr->chan_width);
+
+		/* Convert ieee80211_sta_rx_bw to wmi_host_chan_width */
+		switch (arg_itr->chan_width) {
+		case IEEE80211_STA_RX_BW_20:
+			host_chan_width = WMI_HOST_CHAN_WIDTH_20;
+		break;
+		case IEEE80211_STA_RX_BW_40:
+			host_chan_width = WMI_HOST_CHAN_WIDTH_40;
+			break;
+		case IEEE80211_STA_RX_BW_80:
+			host_chan_width = WMI_HOST_CHAN_WIDTH_80;
+		break;
+		case IEEE80211_STA_RX_BW_160:
+			host_chan_width = WMI_HOST_CHAN_WIDTH_160;
+		break;
+		case IEEE80211_STA_RX_BW_320:
+			host_chan_width = WMI_HOST_CHAN_WIDTH_320;
+		break;
+		default:
+			ath12k_warn(ab, "invalid bw %d switching back to 20 MHz\n",
+				    arg_itr->chan_width);
+			host_chan_width = WMI_HOST_CHAN_WIDTH_20;
+			break;
+		}
+
+		itr->chan_width = cpu_to_le32(host_chan_width);
 		itr->puncture_20mhz_bitmap = cpu_to_le32(arg_itr->puncture_20mhz_bitmap);
 
 		ath12k_dbg(ab, ATH12K_DBG_WMI,
-			   "   (%u) width %u addr %pM punct_bitmap 0x%x\n",
+			   "   (%u) width %u addr %pM punct_bitmap 0x%x host chan_width: %d\n",
 			   i + 1, arg_itr->chan_width, arg_itr->mac_addr.addr,
-			   arg_itr->puncture_20mhz_bitmap);
+			   arg_itr->puncture_20mhz_bitmap, host_chan_width);
 	}
 }
 
