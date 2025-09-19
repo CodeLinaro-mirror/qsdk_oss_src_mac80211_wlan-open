@@ -2218,6 +2218,12 @@ void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 		ath12k_dp_ppeds_tx_desc_cleanup(ab);
 #endif
 
+	ret = ath12k_dp_srng_setup(ab, &dp->rx_rel_ring, HAL_WBM2SW_RELEASE,
+				   HAL_WBM2SW_REL_ERR_RING_NUM, 0,
+				   DP_RX_RELEASE_RING_SIZE);
+	if (ret)
+		ath12k_warn(ab, "failed to set up rx_rel ring :%d\n", ret);
+
         ath12k_dp_rxdma_ring_setup(ab);
 
         for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
