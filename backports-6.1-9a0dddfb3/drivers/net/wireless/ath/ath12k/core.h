@@ -395,7 +395,6 @@ enum ath12k_hw_group_flags {
 	ATH12K_GROUP_FLAG_REGISTERED,
 	ATH12K_GROUP_FLAG_UNREGISTER,
 	ATH12K_GROUP_FLAG_RECOVERY,
-	ATH12K_GROUP_FLAG_CRASH_FLUSH,
 	ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED,
 	ATH12K_GROUP_FLAG_RAW_MODE,
 	ATH12K_GROUP_FLAG_HIF_POWER_DOWN
@@ -2463,4 +2462,5 @@ void ath12k_vendor_wlan_intf_stats(struct work_struct *work);
 void ath12k_debug_print_dcs_wlan_intf_stats(struct ath12k_base *ab,
 					    struct wmi_dcs_wlan_interference_stats *info);
 struct ath12k_hw_group *ath12k_core_get_ag(void);
+void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab);
 #endif /* _CORE_H_ */

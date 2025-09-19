@@ -396,8 +396,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		}
 
 		if (mem_type == FW_CRASH_DUMP_CALDB_DATA &&
-			!(ath12k_cold_boot_cal &&
-			ab->hw_params->cold_boot_calib))
+		    !(ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib))
 			continue;
 
 		if (!ab->qmi.target_mem[i].paddr) {
@@ -410,7 +409,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		seg_info->vaddr = ab->qmi.target_mem[i].v.ioaddr;
 		seg_info->type = mem_type;
 		ath12k_info(ab,
-		    "seg vaddr is %px len is 0x%x type %d\n",
+			    "seg vaddr is %px len is 0x%x type %d\n",
 			    seg_info->vaddr,
 			    seg_info->len,
 			    seg_info->type);
@@ -430,7 +429,8 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 
 	num_seg = num_seg - skip_count;
 
-	if (!ab->fw_recovery_support || ab->in_panic) {
+	if (!ab->fw_recovery_support || ab->in_panic ||
+	    test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
 		if (ag->mlo_capable) {
 			dump_count = atomic_read(&ath12k_coredump_ram_info.num_chip);
 			if (dump_count >= ATH12K_MAX_SOCS) {

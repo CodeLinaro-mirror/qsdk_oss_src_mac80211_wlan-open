@@ -1108,6 +1108,7 @@ static void ath12k_core_dump_crash_reason(struct ath12k_base *ab)
 static void ath12k_ahb_handle_userpd_crash(struct ath12k_base *ab)
 {
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+	struct ath12k_hw_group *ag = ab->ag;
 
 	if (!test_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags))
 		return;
@@ -1118,15 +1119,15 @@ static void ath12k_ahb_handle_userpd_crash(struct ath12k_base *ab)
 	complete(&ab_ahb->userpd_ready);
 	complete(&ab_ahb->userpd_stopped);
 	ath12k_core_dump_crash_reason(ab);
-	if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags))) {
+	set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+
+	if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
 		set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
-		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
-		set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ab->ag->flags);
+		set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
 		ab_ahb->crash_type = ATH12K_RPROC_USERPD_CRASH;
 		queue_work(ab->workqueue_aux, &ab->reset_work);
 	} else {
-		/* In case of userpd crash during rmmod case */
-		WARN_ON(1);
+		ath12k_core_trigger_bug_on(ab);
 	}
 }
 
@@ -1219,17 +1220,12 @@ int ath12k_ahb_root_pd_fatal_notifier(struct notifier_block *nb,
 	if (ab->fw_recovery_support == ATH12K_FW_RECOVERY_DISABLE)
 		ab_ahb->tgt_rproc->recovery_disabled = true;
 
-	if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags))) {
-		set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
-		set_bit(ATH12K_GROUP_FLAG_CRASH_FLUSH, &ag->flags);
-		set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
-		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
-		ab_ahb->crash_type = ATH12K_RPROC_ROOTPD_CRASH;
-		queue_work(ab->workqueue_aux, &ag->reset_group_work);
-	} else {
-		/* In case of rootpd crash during rmmod case */
-		WARN_ON(1);
-	}
+	set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
+	set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+
+	ab_ahb->crash_type = ATH12K_RPROC_ROOTPD_CRASH;
+	ath12k_core_trigger_partner_device_crash(ab);
+	queue_work(ab->workqueue_aux, &ag->reset_group_work);
 
 	return NOTIFY_OK;
 }
@@ -1247,8 +1243,10 @@ static void ath12k_ahb_queue_all_userpd_reset(struct ath12k_base *ab)
 		    partner_ab->hif.bus == ATH12K_BUS_PCI)
 			continue;
 
-		if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)))
+		if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags))
 			queue_work(partner_ab->workqueue_aux, &partner_ab->reset_work);
+		else
+			ath12k_core_trigger_bug_on(ab);
 	}
 }
 

@@ -1486,7 +1486,7 @@ static void ath12k_core_hw_group_stop(struct ath12k_hw_group *ag)
 		mutex_lock(&ab->core_lock);
 		ath12k_core_pdev_deinit(ab);
 		mutex_unlock(&ab->core_lock);
-    }
+	}
 
 	wiphy_work_cancel(ah->hw->wiphy, &ag->stats_work.stats_nb_work);
 	ath12k_stats_event_work_free(&ag->stats_work);
@@ -3434,40 +3434,22 @@ static void ath12k_core_update_userpd_state(struct work_struct *work)
 		if (ab->is_bypassed)
 			continue;
 
-		if (!ab->fw_recovery_support) {
-			if (ab->hif.bus == ATH12K_BUS_PCI &&
-			    !test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags)) {
-			/* Failsafe. Assert partner chips as crash notification would
-			 * not be propagated to all chips in rare case.
-			 */
-				ath12k_info(ab, "sending fw_hang cmd to partner chip\n");
-				ath12k_wmi_force_fw_hang_cmd(ab->pdevs[0].ar,
-							     ATH12K_WMI_FW_HANG_ASSERT_TYPE,
-							     ATH12K_WMI_FW_HANG_DELAY,
-							     true);
+		if (ab->hif.bus == ATH12K_BUS_AHB || ab->hif.bus == ATH12K_BUS_HYBRID) {
+			ath12k_hal_dump_srng_stats(ab);
+			ab_ahb = ath12k_ab_to_ahb(ab);
 
-			} else if (ab->hif.bus == ATH12K_BUS_AHB ||
-				   ab->hif.bus == ATH12K_BUS_HYBRID) {
-				ath12k_hal_dump_srng_stats(ab);
-				ath12k_core_trigger_bug_on(ab);
-			}
-			continue;
-		} else {
-			if (ab->hif.bus == ATH12K_BUS_PCI)
-				continue;
-		}
-
-		ab_ahb = ath12k_ab_to_ahb(ab);
-		if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags))) {
-			set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
-			set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 			ab_ahb->crash_type = ATH12K_RPROC_ROOTPD_CRASH;
-		}
+			set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 
-		if (!ab->is_reset) {
-			ath12k_hif_irq_disable(ab);
+			if (!ab->is_reset)
+				ath12k_hif_irq_disable(ab);
+
+			if (ab->fw_recovery_support &&
+			    !test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags))
+				set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
+			else
+				ath12k_core_trigger_bug_on(ab);
 		}
-		ath12k_hal_dump_srng_stats(ab);
 	}
 }
 
@@ -3520,7 +3502,7 @@ static int ath12k_core_trigger_umac_reset(struct ath12k_base *ab,
 	return ret;
 }
 
-static void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
+void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_ahb *ab_ahb = NULL;
@@ -3548,7 +3530,6 @@ static void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab)
 		if (partner_ab->hif.bus != ATH12K_BUS_PCI && ab_ahb
 				&& ab_ahb->crash_type == ATH12K_RPROC_ROOTPD_CRASH)
 			continue;
-
 
 		/* issue FW Hang command on partner chips for Mode0. This is a fool proof
 		 * method to ensure recovery of all partner chips in MODE0 instead of
@@ -3582,6 +3563,29 @@ static void ath12k_partner_chip_power_state_info(struct ath12k_hw_group *ag,
 
 		if (ret < 0)
 			ath12k_err(ab, "Failed to send the power state for the chip\n");
+	}
+}
+
+static void ath12k_core_disable_ext_irq_during_recovery(struct ath12k_base *ab)
+{
+	struct ath12k_ahb *ab_ahb;
+
+	if (!ab->is_reset) {
+		/* Disable IRQs only for PCI bus and AHB bus in case of userPD crash
+		 * IRQs will be disabled for AHB rootPD crash from rootPD crash notifier
+		 */
+		switch (ab->hif.bus) {
+		case ATH12K_BUS_AHB:
+		case ATH12K_BUS_HYBRID:
+			ab_ahb = ath12k_ab_to_ahb(ab);
+
+			if (ab_ahb->crash_type == ATH12K_RPROC_ROOTPD_CRASH)
+				break;
+			fallthrough;
+		case ATH12K_BUS_PCI:
+			ath12k_hif_irq_disable(ab);
+			break;
+		}
 	}
 }
 
@@ -3684,6 +3688,9 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset starting\n");
 
 	mutex_lock(&ag->mutex);
+
+	ath12k_core_disable_ext_irq_during_recovery(ab);
+	ath12k_hif_ce_irq_disable(ab);
 	ab->is_reset = true;
 
 	if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0)
@@ -3773,9 +3780,6 @@ static void ath12k_core_reset(struct work_struct *work)
 	ath12k_core_post_reconfigure_recovery(ab);
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "waiting recovery start...\n");
-
-	ath12k_hif_irq_disable(ab);
-	ath12k_hif_ce_irq_disable(ab);
 
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
 		ath12k_partner_chip_power_state_info(ag, FW_ASSERTED_CHIP_PWR_DOWN);
@@ -4530,6 +4534,7 @@ static void ath12k_core_hw_group_destroy(struct ath12k_hw_group *ag)
 		mutex_lock(&ab->core_lock);
 		ath12k_core_soc_destroy(ab);
 		mutex_unlock(&ab->core_lock);
+		ath12k_core_panic_notifier_unregister(ab);
 	}
 	mutex_unlock(&ag->mutex);
 }
@@ -4554,9 +4559,22 @@ static void ath12k_core_hw_group_cleanup(struct ath12k_hw_group *ag)
 		return;
 	}
 
+	ath12k_send_fw_hang_cmd(ag->ab[0], ATH12K_FW_RECOVERY_DISABLE);
+
 	set_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags);
 
 	ath12k_core_hw_group_stop(ag);
+
+	for (i = 0; i < ag->num_devices; i++) {
+		ab = ag->ab[i];
+		if (!ab)
+			continue;
+
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+			if (ab->hif.bus == ATH12K_BUS_PCI)
+				ath12k_coredump_download_rddm(ab);
+		}
+	}
 
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
@@ -4955,7 +4973,6 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 
 	if (ath12k_telemetry_ab_agent_delete_handler(ab))
 		ath12k_err(ab, "failed to destroy soc agent\n");
-	ath12k_core_panic_notifier_unregister(ab);
 	ath12k_core_hw_group_cleanup(ab->ag);
 	ath12k_core_hw_group_destroy(ab->ag);
 #ifdef CPTCFG_ATHDEBUG
