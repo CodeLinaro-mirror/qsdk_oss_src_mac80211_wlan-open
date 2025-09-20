@@ -12819,6 +12819,9 @@ static int ath12k_mac_get_next_pri_link(struct ath12k_sta *ahsta, u8 *pri_link_i
 	/* exclude the current primary link id from consideration */
 	links_map = curr_links & ~BIT(ahsta->primary_link_id);
 
+	/* Also exclude any links marked for removal in ML reconfig */
+	links_map &= ~sta->reconf.removed_links;
+
 	/* if only no link is available then can not really migrate*/
 	if (!links_map)
 		return -EINVAL;
