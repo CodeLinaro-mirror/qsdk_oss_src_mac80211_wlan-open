@@ -4672,6 +4672,180 @@ ath12k_afc_reset_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = {.type = NLA_U8 },
 };
 
+static const struct nla_policy
+ath12k_afc_fetch_power_info_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX] = {.type = NLA_U8 },
+};
+
+/**
+ * ath12k_validate_afc_fetch_input - Validate input parameters for AFC power
+ * info fetch
+ * @data: Pointer to input data
+ * @data_len: Length of input data
+ *
+ * This function validates the input parameters for fetching AFC power
+ * information. It checks if the wireless device and data pointers are
+ * valid and if the data length is non-zero.
+ * Returns 0 if the input is valid, otherwise returns a negative error code.
+ */
+static int ath12k_validate_afc_fetch_input(const void *data, int data_len)
+{
+	if (!data || !data_len) {
+		ath12k_err(NULL, "Invalid data length or NULL data pointer");
+		return -EINVAL;
+	}
+
+	return 0;
+}
+
+/**
+ * ath12k_parse_afc_fetch_attrs - Parse attributes for AFC power info fetch
+ * @data: Pointer to input data
+ * @data_len: Length of input data
+ * @tb: Array to store parsed attributes
+ *
+ * This function parses the attributes from the input data for fetching AFC
+ * power information. It uses nla_parse to extract the attributes
+ * based on the defined policy.
+ * Returns 0 on success or a negative error code on failure.
+ */
+static int ath12k_parse_afc_fetch_attrs(const void *data, int data_len,
+					struct nlattr *tb[])
+{
+	if (nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data,
+		      data_len, ath12k_afc_fetch_power_info_policy, NULL)) {
+		ath12k_err(NULL,
+			   "QCA_WLAN_VENDOR_ATTR_CONFIG_MAX parsing failed");
+		return -EINVAL;
+	}
+	return 0;
+}
+
+/**
+ * ath12k_get_radio_by_index - Get ath12k instance by radio index
+ * @wiphy: Pointer to wiphy
+ * @tb: Array of parsed attributes
+ *
+ * This function retrieves the ath12k instance corresponding to the
+ * specified radio index from the parsed attributes. It checks if the
+ * radio index attribute is present and valid.
+ * Returns a pointer to the ath12k instance or NULL if not found or invalid.
+ */
+static struct ath12k *ath12k_get_radio_by_index(struct wiphy *wiphy,
+						struct nlattr *tb[])
+{
+	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
+	struct ath12k_hw *ah = hw->priv;
+	u8 radio_id;
+
+	if (!tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX])
+		return NULL;
+
+	radio_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]);
+	if (radio_id >= ah->num_radio) {
+		ath12k_err(NULL, "Invalid radio id %d", radio_id);
+		return NULL;
+	}
+
+	return &ah->radio[radio_id];
+}
+
+/**
+ * ath12k_prepare_and_send_afc_response - Prepare and send AFC response
+ * @ar: Pointer to ath12k instance
+ * @wiphy: Pointer to wiphy
+ * @afc_reg_info: Pointer to AFC regulatory info
+ *
+ * This function prepares and sends the AFC response to the user space
+ * application. It allocates a socket buffer, populates it with the AFC
+ * regulatory information, and sends it using cfg80211_vendor_cmd_reply.
+ * Returns 0 on success or a negative error code on failure.
+ */
+static int
+ath12k_prepare_and_send_afc_response(struct ath12k *ar,
+				     struct wiphy *wiphy,
+				     struct ath12k_afc_sp_reg_info *afc_reg_info)
+{
+	struct sk_buff *skb;
+	int skb_buf_len;
+
+	skb_buf_len = ath12k_afc_power_event_update_or_get_len(ar, NULL, afc_reg_info);
+	skb = cfg80211_vendor_cmd_alloc_reply_skb(wiphy, skb_buf_len);
+	if (!skb) {
+		ath12k_err(ar->ab, "skb alloc failed");
+		return -ENOMEM;
+	}
+
+	if (ath12k_afc_power_event_update_or_get_len(ar, skb, afc_reg_info)) {
+		ath12k_warn(ar->ab, "Failed to update AFC power fetch event");
+		kfree_skb(skb);
+		return -EINVAL;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+	     "Sending AFC power fetch complete event to user application");
+
+	return cfg80211_vendor_cmd_reply(skb);
+}
+
+/**
+ * ath12k_vendor_fetch_afc_power_info - Fetch AFC power info from driver
+ * @wiphy: Pointer to wiphy
+ * @wdev: Pointer to wireless device
+ * @data: Pointer to input data
+ * @data_len: Length of input data
+ *
+ * This function handles the vendor command to fetch AFC power information
+ * from the driver. It validates the input, retrieves the appropriate
+ * ath12k instance, and prepares the response to be sent back to the user.
+ * Returns 0 on success or a negative error code on failure.
+ */
+static int ath12k_vendor_fetch_afc_power_info(struct wiphy *wiphy,
+					      struct wireless_dev *wdev,
+					      const void *data,
+					      int data_len)
+{
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1];
+	struct ath12k *ar;
+	struct ath12k_afc_info *afc_info;
+	struct ath12k_afc_sp_reg_info *afc_reg_info;
+	int err;
+
+	err = ath12k_validate_afc_fetch_input(data, data_len);
+	if (err)
+		return err;
+
+	err = ath12k_parse_afc_fetch_attrs(data, data_len, tb);
+	if (err)
+		return err;
+
+	ar = ath12k_get_radio_by_index(wiphy, tb);
+	if (!ar) {
+		ath12k_err(NULL, "ar is NULL in %s", __func__);
+		return -ENODATA;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+		   "AFC fetch power info command received radio_id: %u",
+		   nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX]));
+
+	if (!ar->supports_6ghz || !ar->afc.is_6ghz_afc_power_event_received) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_AFC,
+			   "6 GHz radio: %u, AFC power event received: %u",
+			   ar->supports_6ghz, ar->afc.is_6ghz_afc_power_event_received);
+		return -EOPNOTSUPP;
+	}
+
+	afc_info = &ar->afc;
+	afc_reg_info = afc_info->afc_reg_info;
+	if (!afc_reg_info) {
+		ath12k_err(NULL, "AFC reg info not found");
+		return -EINVAL;
+	}
+
+	return ath12k_prepare_and_send_afc_response(ar, wiphy, afc_reg_info);
+}
+
 static int ath12k_vendor_reset_afc(struct wiphy *wiphy,
 				   struct wireless_dev *wdev,
 				   const void *data,
@@ -4707,7 +4881,6 @@ static int ath12k_vendor_reset_afc(struct wiphy *wiphy,
 
 	return err;
 }
-
 static const struct nla_policy
 ath12k_cfg80211_power_mode_set_policy[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_6GHZ_REG_POWER_MODE] = { .type = NLA_U8 },
@@ -7249,6 +7422,13 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV |
 			WIPHY_VENDOR_CMD_NEED_RUNNING,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT,
+		.doit = ath12k_vendor_fetch_afc_power_info,
+		.policy = ath12k_afc_fetch_power_info_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
 	},
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
