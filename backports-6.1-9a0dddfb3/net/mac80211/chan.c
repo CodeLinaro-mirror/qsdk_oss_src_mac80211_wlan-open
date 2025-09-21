@@ -1917,6 +1917,48 @@ void __ieee80211_link_release_channel(struct ieee80211_link_data *link,
 		ieee80211_vif_use_reserved_switch(local);
 }
 
+int ieee80211_update_chanctx_for_radio(struct ieee80211_local *local,
+				       struct ieee80211_chanctx *ctx,
+				       int radio_idx)
+{
+	struct ieee80211_chanctx *temp_ctx;
+	struct ieee80211_link_data *tmp_link;
+	struct ieee80211_sub_if_data *tmp_sdata;
+	int ret = 0;
+	bool found = false;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	list_for_each_entry(temp_ctx, &local->chanctx_list, list) {
+		if (temp_ctx == ctx)
+			continue;
+		if (temp_ctx->conf.radio_idx == radio_idx) {
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		return 0;
+
+	list_for_each_entry(tmp_link, &temp_ctx->assigned_links, assigned_chanctx_list) {
+		tmp_sdata = tmp_link->sdata;
+		if (tmp_sdata->wdev.iftype != NL80211_IFTYPE_MONITOR)
+			continue;
+
+		sdata_info(tmp_sdata,
+			   "Switching channel for monitor iface to %d\n",
+			   ctx->conf.def.chan->center_freq);
+		ret = ieee80211_set_monitor_channel(tmp_sdata->wdev.wiphy,
+						    tmp_sdata->dev,
+						    &ctx->conf.def);
+		WARN_ON(ieee80211_add_chanctx(local, ctx));
+		break;
+	}
+
+	return ret;
+}
+
 int _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 				const struct ieee80211_chan_req *chanreq,
 				enum ieee80211_chanctx_mode mode,
@@ -1956,14 +1998,28 @@ int _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 
 	ctx = ieee80211_find_chanctx(local, link, chanreq, mode);
 	/* Note: context is now reserved */
-	if (ctx)
+	if (ctx) {
 		reserved = true;
-	else
+	} else {
+		radio_idx = cfg80211_get_hw_idx_by_chan(sdata->wdev.wiphy,
+							chanreq->oper.chan);
 		ctx = ieee80211_new_chanctx(local, chanreq, mode,
 					    assign_on_failure, radio_idx);
+	}
+
 	if (IS_ERR(ctx)) {
 		ret = PTR_ERR(ctx);
 		goto out;
+	}
+
+	/* Check if any Monitor vdev is there on the same radio with
+	 * different chanctx
+	 */
+	if (!reserved && ieee80211_hw_check(&local->hw,
+					    SUPPORTS_SINGLE_CHANNEL)) {
+		ret = ieee80211_update_chanctx_for_radio(local, ctx, radio_idx);
+		if (ret)
+			goto out;
 	}
 
 	ieee80211_link_update_chanreq(link, chanreq);

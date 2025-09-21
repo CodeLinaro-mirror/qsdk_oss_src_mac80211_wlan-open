@@ -3119,6 +3119,9 @@ struct ieee80211_txq {
  *	HW flag so drivers can opt in according to their own control, e.g. in
  *	testing.
  *
+ * @IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL: Hardware only supports single
+ *	channel operation.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3190,6 +3193,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_CONC_AP_MON_IN_80211_FORMAT,
 	IEEE80211_HW_SUPPORTS_EXT_REMAIN_ON_CHAN,
 	IEEE80211_HW_SUPPORTS_DSCP_TID_MAP,
+	IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
