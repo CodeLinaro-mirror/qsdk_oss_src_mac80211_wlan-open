@@ -2709,6 +2709,7 @@ static void ath11k_dp_rx_h_ppdu(struct ath11k *ar, struct hal_rx_desc *rx_desc,
 	u8 channel_num;
 	u32 center_freq, meta_data;
 	struct ieee80211_channel *channel;
+	int no_chan_info = -1;
 
 	rx_status->freq = 0;
 	rx_status->rate_idx = 0;
@@ -2726,20 +2727,39 @@ static void ath11k_dp_rx_h_ppdu(struct ath11k *ar, struct hal_rx_desc *rx_desc,
 	    center_freq <= ATH11K_MAX_6G_FREQ) {
 		rx_status->band = NL80211_BAND_6GHZ;
 		rx_status->freq = center_freq;
+		no_chan_info = 1;
 	} else if (channel_num >= 1 && channel_num <= 14) {
 		rx_status->band = NL80211_BAND_2GHZ;
+		no_chan_info = 1;
 	} else if (channel_num >= 36 && channel_num <= 177) {
 		rx_status->band = NL80211_BAND_5GHZ;
 	} else {
+		no_chan_info = 1;
+	}
+
+	if (unlikely(no_chan_info == -1)) {
+        ath11k_warn(ar->ab, "[Test] not in range channel_num %d center_freq %d\n", channel_num, center_freq);
+        ath11k_warn(ar->ab, "[Test] wiphy-bandinfo %p\n", ar->hw->wiphy->bands[rx_status->band]);
+        ath11k_warn(ar->ab, "[Test] msdu is first msdu %d\n", ath11k_dp_rx_h_msdu_end_first_msdu(ar->ab, rx_desc));
+        ath11k_warn(ar->ab, "[Test] msdu is last msdu %d\n", ath11k_dp_rx_h_msdu_end_first_msdu(ar->ab, rx_desc));
+        ath11k_warn(ar->ab, "[Test] msdu len %d\n", ath11k_dp_rx_h_msdu_start_msdu_len(ar->ab, rx_desc));
+    }
+	if (!ar->hw->wiphy->bands[rx_status->band]) {
+		ath11k_warn(ar->ab, "[Test] band info NULL for band %d\n", rx_status->band);
 		spin_lock_bh(&ar->data_lock);
 		channel = ar->rx_channel;
 		if (channel) {
+			ath11k_warn(ar->ab, "[Test] band %d center_freq %d from rx_channel\n", channel->band, channel->center_freq);
 			rx_status->band = channel->band;
 			channel_num =
 				ieee80211_frequency_to_channel(channel->center_freq);
+			if (rx_status->band == NL80211_BAND_6GHZ) {
+				ath11k_warn(ar->ab, "[Test] filling centre_freq=%d for 6Ghz\n", channel->center_freq);
+				rx_status->freq = channel->center_freq;
+			}
 		}
 		spin_unlock_bh(&ar->data_lock);
-		ath11k_dbg_dump(ar->ab, ATH11K_DBG_DATA, NULL, "rx_desc: ",
+		ath11k_dbg_dump(ar->ab, ATH11K_DBG_DATA, NULL, "[Test] rx_desc: ",
 				rx_desc, sizeof(struct hal_rx_desc));
 	}
 
@@ -3625,6 +3645,12 @@ static int ath11k_dp_rx_reap_mon_status_ring(struct ath11k_base *ab, int mac_id,
 						&cookie, &rbm);
 		if (paddr) {
 			buf_id = FIELD_GET(DP_RXDMA_BUF_COOKIE_BUF_ID, cookie);
+			ar->cookie_pdev_id = FIELD_GET(DP_RXDMA_BUF_COOKIE_PDEV_ID, cookie);
+
+			if (mac_id != ar->cookie_pdev_id) {
+				ath11k_warn(ab, "invalid local mac_id %d pdev_id %d\n",
+					    mac_id, ar->cookie_pdev_id);
+			}
 
 			spin_lock_bh(&rx_ring->idr_lock);
 			skb = idr_find(&rx_ring->bufs_idr, buf_id);
@@ -5845,6 +5871,11 @@ void ath11k_dp_rx_mon_dest_process(struct ath11k *ar, int mac_id,
 	spin_unlock_bh(&pmon->mon_lock);
 
 	if (rx_bufs_used) {
+		if (ar->cookie_pdev_id != dp->mac_id || mac_id != dp->mac_id) {
+			ath11k_warn(ar->ab, "invalid mac_id for rxbuf replenish pdev id %d mac id %d dp mac id %d\n",
+				    ar->cookie_pdev_id, mac_id, dp->mac_id);
+		}
+
 		rx_mon_stats->dest_ppdu_done++;
 		hal_params = ar->ab->hw_params.hal_params;
 

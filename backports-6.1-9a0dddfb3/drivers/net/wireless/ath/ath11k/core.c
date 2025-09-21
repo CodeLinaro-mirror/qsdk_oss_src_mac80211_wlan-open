@@ -26,7 +26,7 @@ module_param_named(nss_offload, nss_offload, uint, 0644);
 MODULE_PARM_DESC(nss_offload, "Enable NSS Offload support");
 #endif
 
-unsigned int ath11k_debug_mask;
+unsigned int ath11k_debug_mask = ATH11K_DBG_TEST;
 EXPORT_SYMBOL(ath11k_debug_mask);
 module_param_named(debug_mask, ath11k_debug_mask, uint, 0644);
 MODULE_PARM_DESC(debug_mask, "Debugging mask");

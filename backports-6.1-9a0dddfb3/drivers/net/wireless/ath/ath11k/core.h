@@ -922,6 +922,7 @@ struct ath11k {
 	bool ps_timekeeper_enable;
 	s8 max_allowed_tx_power;
 	bool ce_latency_stats_enable;
+	int cookie_pdev_id;
 };
 
 struct ath11k_band_cap {

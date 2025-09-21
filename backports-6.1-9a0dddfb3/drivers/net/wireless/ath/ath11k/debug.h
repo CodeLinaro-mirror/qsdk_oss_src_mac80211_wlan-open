@@ -27,6 +27,7 @@ enum ath11k_debug_mask {
 	ATH11K_DBG_DP_TX	= 0x00002000,
 	ATH11K_DBG_DP_RX	= 0x00004000,
 	ATH11K_DBG_CE		= 0x00008000,
+	ATH11K_DBG_TEST         = 0x00080000,
 };
 
 static inline const char *ath11k_dbg_str(enum ath11k_debug_mask mask)

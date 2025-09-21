@@ -4258,7 +4258,8 @@ static int ath11k_mac_op_hw_scan(struct ieee80211_hw *hw,
 
 	ret = ath11k_start_scan(ar, arg);
 	if (ret) {
-		ath11k_warn(ar->ab, "failed to start hw scan: %d\n", ret);
+		ath11k_warn(ar->ab, "failed to start hw scan: %d scan_state %d pdev_idx %d\n",
+			    ret, ar->scan.state, ar->pdev_idx);
 		spin_lock_bh(&ar->data_lock);
 		ar->scan.state = ATH11K_SCAN_IDLE;
 		spin_unlock_bh(&ar->data_lock);
@@ -7578,7 +7579,7 @@ static void ath11k_mac_op_remove_chanctx(struct ieee80211_hw *hw,
 	struct ath11k *ar = hw->priv;
 	struct ath11k_base *ab = ar->ab;
 
-	ath11k_dbg(ab, ATH11K_DBG_MAC,
+	ath11k_dbg(ab, ATH11K_DBG_TEST,
 		   "chanctx remove freq %u width %d ptr %p\n",
 		   ctx->def.chan->center_freq, ctx->def.width, ctx);
 
