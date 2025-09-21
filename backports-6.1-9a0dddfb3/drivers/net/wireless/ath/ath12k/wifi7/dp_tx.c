@@ -1635,8 +1635,7 @@ ath12k_wifi7_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 	if (ts->acked) {
 		if (!(info->flags & IEEE80211_TX_CTL_NO_ACK)) {
 			info->flags |= IEEE80211_TX_STAT_ACK;
-			info->status.ack_signal = dp_pdev->ar->rssi_offsets.rssi_offset +
-						  ts->ack_rssi;
+			info->status.ack_signal = ts->ack_rssi;
 
 			if (!test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
 				      ab->wmi_ab.svc_map))
@@ -2033,8 +2032,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
 			!(info->flags & IEEE80211_TX_CTL_NO_ACK))	{
 		info->flags |= IEEE80211_TX_STAT_ACK;
-		info->status.ack_signal = dp_pdev->ar->rssi_offsets.rssi_offset +
-					  ts->ack_rssi;
+		info->status.ack_signal = ts->ack_rssi;
 
 		if (!test_bit(WMI_TLV_SERVICE_HW_DB2DBM_CONVERSION_SUPPORT,
 			      ab->wmi_ab.svc_map))
