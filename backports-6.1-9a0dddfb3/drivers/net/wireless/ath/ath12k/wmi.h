@@ -4143,7 +4143,7 @@ struct wmi_bssid_arg {
  * is trigger by HOST
  */
 #define ATH12K_SCAN_ID          0xA000
-
+#define ATH12K_ROC_SCAN_ID	0xA001
 enum scan_cancel_req_type {
 	WLAN_SCAN_CANCEL_SINGLE = 1,
 	WLAN_SCAN_CANCEL_VDEV_ALL,
@@ -5707,6 +5707,13 @@ enum wmi_peer_sta_kickout_reason {
 	WMI_PEER_STA_KICKOUT_REASON_SA_QUERY_TIMEOUT = 5,
 	WMI_PEER_STA_KICKOUT_REASON_ROAMING_EVENT = 6,
 };
+
+struct wmi_offchan_data_tx_compl_event {
+	__le32 desc_id;
+	__le32 status;
+	__le32 pdev_id;
+	__le32 ppdu_id;
+} __packed;
 
 struct wmi_peer_sta_kickout_arg {
 	const u8 *mac_addr;
@@ -8991,6 +8998,8 @@ struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
 int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 			 struct sk_buff *frame, bool link_agnostic,
 			 bool tx_params_valid);
+int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
+				 struct sk_buff *frame);
 int ath12k_wmi_p2p_go_bcn_ie(struct ath12k *ar, u32 vdev_id,
 			     const u8 *p2p_ie);
 int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,

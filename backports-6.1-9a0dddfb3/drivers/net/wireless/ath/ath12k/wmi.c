@@ -242,6 +242,8 @@ static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 		.min_len = sizeof(struct wmi_twt_btwt_invite_sta_event) },
 	[WMI_TAG_TWT_BTWT_REMOVE_STA_COMPLETE_EVENT] = {
 		.min_len = sizeof(struct wmi_twt_btwt_invite_sta_event) },
+	[WMI_TAG_OFFCHAN_DATA_TX_COMPL_EVENT] = {
+		.min_len = sizeof(struct wmi_offchan_data_tx_compl_event) },
 };
 
 __le32 ath12k_wmi_tlv_hdr(u32 cmd, u32 len)
@@ -1108,6 +1110,90 @@ int ath12k_wmi_send_stats_request_cmd(struct ath12k *ar, u32 stats_id,
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
 		   "WMI request stats 0x%x vdev id %d pdev id %d\n",
 		   stats_id, vdev_id, pdev_id);
+
+	return ret;
+}
+
+/* For Big Endian Host, Copy Engine byte_swap is enabled
+ * When Copy Engine does byte_swap, need to byte swap again for the
+ * Host to get/put buffer content in the correct byte order
+ */
+void ath12k_ce_byte_swap(void *mem, u32 len)
+{
+	int i;
+
+	if (IS_ENABLED(CONFIG_CPU_BIG_ENDIAN)) {
+		if (!mem)
+			return;
+		for (i = 0; i < (len / 4); i++) {
+			*(u32 *)mem = swab32(*(u32 *)mem);
+			mem += 4;
+		}
+	}
+}
+
+/* Send off-channel managemnt frame to firmware. when driver receive a
+ * packet with off channel tx flag enabled. This API will send the
+ * packet to firmware with WMI command WMI_TAG_OFFCHAN_DATA_TX_SEND_CMD
+ * for off-chan tx.
+ */
+int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
+				 struct sk_buff *frame)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(frame);
+	struct wmi_mgmt_send_cmd *cmd;
+	struct wmi_tlv *frame_tlv;
+	struct sk_buff *skb;
+	u32 buf_len, buf_len_padded;
+	int ret, len;
+	void *ptr;
+	struct wmi_tlv *tlv;
+
+	buf_len = min(frame->len, WMI_MGMT_SEND_DOWNLD_LEN);
+	buf_len_padded = roundup(buf_len, sizeof(u32));
+
+	len = sizeof(*cmd) + sizeof(*frame_tlv) + buf_len_padded +
+	      sizeof(struct wmi_mgmt_send_params);
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	ptr = skb->data;
+	cmd = ptr;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_OFFCHAN_DATA_TX_SEND_CMD,
+						 sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->desc_id = cpu_to_le32(buf_id);
+	cmd->chanfreq = cpu_to_le32(ath12k_wmi_mgmt_get_freq(ar, info));
+	cmd->paddr_lo = cpu_to_le32(lower_32_bits(ATH12K_SKB_CB(frame)->paddr));
+	cmd->paddr_hi = cpu_to_le32(upper_32_bits(ATH12K_SKB_CB(frame)->paddr));
+	cmd->frame_len = cpu_to_le32(frame->len);
+	cmd->buf_len = cpu_to_le32(buf_len);
+	cmd->tx_params_valid = 1;
+	ptr += sizeof(*cmd);
+
+	frame_tlv = ptr;
+	frame_tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_BYTE, buf_len_padded);
+	ptr += sizeof(*frame_tlv);
+
+	memcpy(ptr, frame->data, buf_len);
+	ath12k_ce_byte_swap(ptr, buf_len);
+	ptr += buf_len_padded;
+
+	tlv = ptr;
+	/* Tx params not used currently */
+	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TX_SEND_PARAMS,
+					     sizeof(struct wmi_mgmt_send_params));
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_OFFCHAN_DATA_TX_SEND_CMDID);
+
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to submit WMI_OFFCHAN_DATA_TX_SEND_CMDID cmd\n");
+		dev_kfree_skb(skb);
+	}
 
 	return ret;
 }
@@ -8927,6 +9013,69 @@ static int ath12k_pull_mgmt_tx_compl_param_tlv(struct ath12k_base *ab,
 	return 0;
 }
 
+static void wmi_process_offchan_tx_comp(struct ath12k *ar, u32 desc_id,
+					u32 status)
+{
+	struct sk_buff *msdu;
+	struct ath12k_skb_cb *skb_cb;
+	struct ieee80211_tx_info *info;
+
+	spin_lock_bh(&ar->data_lock);
+	spin_lock_bh(&ar->txmgmt_idr_lock);
+	msdu = idr_find(&ar->txmgmt_idr, desc_id);
+
+	if (!msdu) {
+		spin_unlock_bh(&ar->txmgmt_idr_lock);
+		spin_unlock_bh(&ar->data_lock);
+		ath12k_warn(ar->ab, "received offchan tx compl for invalid msdu_id: %d\n",
+			    desc_id);
+		return;
+	}
+
+	idr_remove(&ar->txmgmt_idr, desc_id);
+	spin_unlock_bh(&ar->txmgmt_idr_lock);
+
+	skb_cb = ATH12K_SKB_CB(msdu);
+	dma_unmap_single(ar->ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
+
+	spin_unlock_bh(&ar->data_lock);
+
+	info = IEEE80211_SKB_CB(msdu);
+	if (!(info->flags & IEEE80211_TX_CTL_NO_ACK) && !status)
+		info->flags |= IEEE80211_TX_STAT_ACK;
+
+	ieee80211_tx_status_irqsafe(ar->ah->hw, msdu);
+}
+
+static int ath12k_pull_offchan_tx_compl_param_tlv(struct ath12k_base *ab,
+						  struct sk_buff *skb,
+						  struct wmi_offchan_data_tx_compl_event
+						  *params)
+{
+	const void **tb;
+	const struct wmi_offchan_data_tx_compl_event *ev;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+		return ret;
+	}
+
+	ev = tb[WMI_TAG_OFFCHAN_DATA_TX_COMPL_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch offchan tx compl ev\n");
+		kfree(tb);
+		return -EPROTO;
+	}
+
+	*params = *ev;
+
+	kfree(tb);
+	return 0;
+}
+
 static void ath12k_wmi_event_scan_started(struct ath12k *ar)
 {
 	lockdep_assert_held(&ar->data_lock);
@@ -8995,7 +9144,7 @@ static void ath12k_wmi_event_scan_completed(struct ath12k *ar)
 	}
 }
 
-static void ath12k_wmi_event_scan_bss_chan(struct ath12k *ar)
+static void ath12k_wmi_event_scan_bss_chan(struct ath12k *ar, u32 scan_id, u32 freq)
 {
 	lockdep_assert_held(&ar->data_lock);
 
@@ -9008,7 +9157,20 @@ static void ath12k_wmi_event_scan_bss_chan(struct ath12k *ar)
 		break;
 	case ATH12K_SCAN_RUNNING:
 	case ATH12K_SCAN_ABORTING:
-		ar->scan_channel = NULL;
+		/*In order to support off channel tx/rx along with off channel scan,
+		 * scan vdev is created and started to do the tx. once we start the scan
+		 * driver will send the ROC scan request to FW. Due to this, the first
+		 * scan request is not treated as off channel scan in FW. So it
+		 * sends bss scan event instead of foreign channel scan
+		 */
+		if (scan_id ==  ATH12K_ROC_SCAN_ID) {
+			ar->scan_channel = ieee80211_get_channel(ar->ah->hw->wiphy,
+								 freq);
+			if (ar->scan.is_roc && ar->scan.roc_freq == freq)
+				complete(&ar->scan.on_channel);
+		} else {
+			ar->scan_channel = NULL;
+		}
 		break;
 	}
 }
@@ -10053,6 +10215,41 @@ exit:
 	rcu_read_unlock();
 }
 
+static void ath12k_offchan_tx_completion_event(struct ath12k_base *ab,
+					       struct sk_buff *skb)
+{
+	struct wmi_offchan_data_tx_compl_event offchan_tx_cmpl_params = {0};
+	u32 desc_id;
+	u32 pdev_id;
+	u32 status;
+	struct ath12k *ar;
+
+	if (ath12k_pull_offchan_tx_compl_param_tlv(ab, skb, &offchan_tx_cmpl_params)
+	    != 0) {
+		ath12k_warn(ab, "failed to extract mgmt tx compl event");
+		return;
+	}
+	status  = __le32_to_cpu(offchan_tx_cmpl_params.status);
+	pdev_id = __le32_to_cpu(offchan_tx_cmpl_params.pdev_id);
+	desc_id = __le32_to_cpu(offchan_tx_cmpl_params.desc_id);
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid pdev id %d in offchan_tx_compl_event\n",
+			    pdev_id);
+		goto exit;
+	}
+
+	wmi_process_offchan_tx_comp(ar, desc_id, status);
+
+	ath12k_dbg(ab, ATH12K_DBG_MGMT,
+		   "off chan tx compl ev pdev_id %d, desc_id %d, status %d",
+		   pdev_id, desc_id, status);
+exit:
+	rcu_read_unlock();
+}
+
 static struct ath12k *ath12k_get_ar_on_scan_state(struct ath12k_base *ab,
 						  u32 vdev_id,
 						  enum ath12k_scan_state state)
@@ -10136,7 +10333,8 @@ static void ath12k_scan_event(struct ath12k_base *ab, struct sk_buff *skb)
 		ath12k_wmi_event_scan_completed(ar);
 		break;
 	case WMI_SCAN_EVENT_BSS_CHANNEL:
-		ath12k_wmi_event_scan_bss_chan(ar);
+		ath12k_wmi_event_scan_bss_chan(ar, le32_to_cpu(scan_ev.scan_id),
+					       le32_to_cpu(scan_ev.channel_freq));
 		break;
 	case WMI_SCAN_EVENT_FOREIGN_CHAN:
 		ath12k_wmi_event_scan_foreign_chan(ar, le32_to_cpu(scan_ev.channel_freq));
@@ -15385,6 +15583,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_HALPHY_STATS_CTRL_PATH_EVENTID:
 		ath12k_wmi_process_tpc_stats(ab, skb);
+		break;
+	case WMI_OFFCHAN_DATA_TX_COMPLETION_EVENTID:
+		ath12k_offchan_tx_completion_event(ab, skb);
 		break;
 	case WMI_CTRL_PATH_STATS_EVENTID:
 		ath12k_wmi_ctrl_path_stats_event(ab, skb);
