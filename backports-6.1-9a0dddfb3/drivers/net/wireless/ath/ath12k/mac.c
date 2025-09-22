@@ -10786,12 +10786,14 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	wiphy_work_cancel(ar->ah->hw->wiphy, &arsta->update_wk);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		WARN_ON(!arvif->is_started);
 		ath12k_bss_disassoc(ar, arvif);
 
 		ret = ath12k_mac_vdev_stop(arvif);
 		if (ret)
 			ath12k_warn(ar->ab, "failed to stop vdev %i: %d\n",
 				    arvif->vdev_id, ret);
+		arvif->is_started = false;
 	}
 
 	if (sta->mlo)
@@ -18586,7 +18588,8 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 			   "mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
 			   arvif->vdev_id, arvif->vdev_subtype);
 
-	WARN_ON(!arvif->is_started);
+	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
+		WARN_ON(!arvif->is_started);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ret = ath12k_mac_monitor_stop(ar);
