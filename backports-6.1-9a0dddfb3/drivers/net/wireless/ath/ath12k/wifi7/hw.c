@@ -1366,6 +1366,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		}
 
 		ar = arvif->ar;
+		skb_cb->u.ar = ar;
 
 		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
 		if (unlikely(!dp_pdev)) {
