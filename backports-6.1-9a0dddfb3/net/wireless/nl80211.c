@@ -6889,8 +6889,10 @@ static int nl80211_parse_fils_discovery(struct cfg80211_registered_device *rdev,
 
 	fd->max_interval = nla_get_u32(tb[NL80211_FILS_DISCOVERY_ATTR_INT_MAX]);
 
-	if (!fd->max_interval)
+	if (!fd->max_interval) {
+		fd->update = true;
 		return 0;
+	}
 
 
 	if (!tb[NL80211_FILS_DISCOVERY_ATTR_INT_MIN] ||
@@ -6931,8 +6933,10 @@ nl80211_parse_unsol_bcast_probe_resp(struct cfg80211_registered_device *rdev,
 
 	presp->interval = nla_get_u32(tb[NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_INT]);
 
-	if (!presp->interval)
+	if (!presp->interval) {
+		presp->update = true;
 		return 0;
+	}
 
 	if (!tb[NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_INT] ||
 	    !tb[NL80211_UNSOL_BCAST_PROBE_RESP_ATTR_TMPL])
