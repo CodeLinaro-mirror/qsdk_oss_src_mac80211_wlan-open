@@ -6018,6 +6018,24 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 			}
 
 			rx.sdata = prev_sta->sdata;
+			if (!status->link_valid && prev_sta->sta.mlo) {
+				struct link_sta_info *link_sta;
+
+				link_sta = link_sta_info_get_bss(rx.sdata,
+								 hdr->addr2);
+				if (!link_sta) {
+					if (tid_stats_disable)
+						continue;
+
+					ieee80211_rx_drop_stats_reason(rx.sdata, skb->len,
+								     status->tid,
+								     RX_DROP_NO_LINK_STA);
+					continue;
+				}
+
+				link_id = link_sta->link_id;
+			}
+
 			if (!ieee80211_rx_data_set_sta(&rx, prev_sta, link_id, only_monitor)) {
 				if (!tid_stats_disable)
 					ieee80211_rx_drop_stats_reason(rx.sdata,
@@ -6027,9 +6045,6 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 				goto out;
 			}
 
-			if (!status->link_valid && prev_sta->sta.mlo)
-				continue;
-
 			ieee80211_prepare_and_rx_handle(&rx, skb, false);
 
 			prev_sta = sta;
@@ -6037,19 +6052,30 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 
 		if (prev_sta) {
 			rx.sdata = prev_sta->sdata;
-			if (!ieee80211_rx_data_set_sta(&rx, prev_sta, link_id, only_monitor)) {
-				if (!tid_stats_disable)
+			if (!status->link_valid && prev_sta->sta.mlo) {
+				struct link_sta_info *link_sta;
+
+				link_sta = link_sta_info_get_bss(rx.sdata,
+								 hdr->addr2);
+				if (!link_sta) {
+					if (tid_stats_disable)
+						goto out;
+
 					ieee80211_rx_drop_stats_reason(rx.sdata, skb->len,
-								       status->tid,
-								       RX_DROP_NO_SET_STA);
-				goto out;
+								     status->tid,
+								     RX_DROP_NO_LINK_STA);
+					goto out;
+				}
+
+				link_id = link_sta->link_id;
 			}
 
-			if (!status->link_valid && prev_sta->sta.mlo) {
+			if (!ieee80211_rx_data_set_sta(&rx, prev_sta, link_id,
+			    only_monitor)) {
 				if (!tid_stats_disable)
 					ieee80211_rx_drop_stats_reason(rx.sdata, skb->len,
-								       status->tid,
-								       RX_DROP_NO_LINK_STA);
+								      status->tid,
+								      RX_DROP_NO_SET_STA);
 				goto out;
 			}
 
