@@ -2928,13 +2928,23 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
 			struct ieee80211_sub_if_data *ap_sdata;
+			struct ieee80211_link_data *ap_link;
 
 			ap_sdata =
 				container_of(sdata->bss, struct ieee80211_sub_if_data, u.ap);
-			link_sinfo->bss_param.dtim_period =
-				ap_sdata->deflink.conf->dtim_period;
-			link_sinfo->bss_param.beacon_interval =
-				ap_sdata->deflink.conf->beacon_int;
+			ap_link = rcu_dereference(ap_sdata->link[link_id]);
+
+			if (ap_link && ap_link->conf) {
+				link_sinfo->bss_param.dtim_period =
+					ap_link->conf->dtim_period;
+				link_sinfo->bss_param.beacon_interval =
+					ap_link->conf->beacon_int;
+			} else {
+				link_sinfo->bss_param.dtim_period =
+					ap_sdata->deflink.conf->dtim_period;
+				link_sinfo->bss_param.beacon_interval =
+					ap_sdata->deflink.conf->beacon_int;
+			}
 	} else {
 		link_sinfo->bss_param.dtim_period = link->conf->dtim_period;
 		link_sinfo->bss_param.beacon_interval = link->conf->beacon_int;
