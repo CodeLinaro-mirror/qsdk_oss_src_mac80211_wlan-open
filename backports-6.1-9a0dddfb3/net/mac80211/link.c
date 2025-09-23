@@ -16,11 +16,18 @@ static void ieee80211_update_apvlan_links(struct ieee80211_sub_if_data *sdata)
 {
 	struct ieee80211_sub_if_data *vlan;
 	struct ieee80211_link_data *link;
+	struct sta_info *sta = NULL;
 
 	list_for_each_entry(vlan, &sdata->u.ap.vlans, u.vlan.list) {
 		unsigned long add = sdata->vif.valid_links;
 		unsigned long rem = ~sdata->vif.valid_links & GENMASK(15,0);
 		int link_id;
+
+		if (vlan->wdev.use_4addr) {
+			sta = rcu_access_pointer(vlan->u.vlan.sta);
+			if (sta)
+				add = add & sta->sta.valid_links;
+		}
 
 		if (add == vlan->vif.valid_links)
 			continue;
