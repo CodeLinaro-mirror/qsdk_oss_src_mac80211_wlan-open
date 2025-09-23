@@ -2186,8 +2186,16 @@ static int ath12k_mac_setup_bcn_tmpl(struct ath12k_link_vif *arvif)
 
 	tx_arvif = ath12k_mac_get_tx_arvif(arvif, link_conf);
 	if (tx_arvif) {
-		if (tx_arvif != arvif && arvif->is_up)
-			return 0;
+		if (tx_arvif != arvif) {
+			if (!tx_arvif->is_started) {
+				ath12k_warn(ab,
+					"Transmit vif is not started before this non Tx beacon setup for vdev %d\n",
+					arvif->vdev_id);
+				return -EINVAL;
+			}
+			if (arvif->is_up)
+				return 0;
+		}
 
 		if (link_conf->ema_ap)
 			return ath12k_mac_setup_bcn_tmpl_ema(arvif, tx_arvif,
