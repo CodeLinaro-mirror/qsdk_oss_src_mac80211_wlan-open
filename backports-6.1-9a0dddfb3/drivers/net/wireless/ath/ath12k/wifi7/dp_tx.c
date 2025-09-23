@@ -1796,14 +1796,22 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_link_peer *peer;
 	struct ieee80211_sta *sta;
 	struct ath12k_sta *ahsta;
+	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_link_sta *arsta;
 	struct rate_info txrate = {0};
 	u16 rate, ru_tones;
 	u8 rate_idx = 0;
 	int ret;
 
+	dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
+	if (!dp_peer) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+			   "MLD peer NA with peer_id: %u\n", ts->peer_id);
+		return;
+	}
+
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, ts->peer_id);
+	peer = rcu_dereference(dp_peer->link_peers[dp_peer->stats_link_id]);
 	if (!peer || !peer->sta) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_TX,
 			   "failed to find the peer by id %u\n", ts->peer_id);
@@ -1907,7 +1915,7 @@ ath12k_wifi7_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, ts->peer_id);
+	peer = rcu_dereference(dp_peer->link_peers[dp_peer->stats_link_id]);
 	if (peer)
 		peer->txrate = txrate;
 	else
@@ -2009,9 +2017,6 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	if (peer) {
 		link_id = ath12k_dp_get_link_id(dp_pdev, ts, peer);
 		peer->stats_link_id = link_id;
-		link_peer = rcu_dereference(peer->link_peers[link_id]);
-		if (link_peer)
-			ts->peer_id = link_peer->peer_id;
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,
 						     link_id, ring);
 
