@@ -13046,8 +13046,10 @@ ath12k_mac_process_link_migrate_req(struct ath12k_vif *ahvif,
 
 		ret = ath12k_mac_handle_sta_migration(ml_peer, ahsta, 0xFF,
 						      &peer_migr_list, &num_peers);
+		/* Errors are now ignored to prevent skipping valid peers*/
 		if (ret)
-			goto exit_link_migrate_req;
+			ath12k_err(ar->ab, "Primary migration skipped for %pM ret:%d\n",
+				   ml_peer->addr, ret);
 	}
 
 send_link_mig_cmd:
