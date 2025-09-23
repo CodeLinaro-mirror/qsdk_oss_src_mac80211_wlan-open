@@ -219,6 +219,9 @@ static ssize_t athdbg_qdss_enable_write(struct file *file,
 	if (kstrtou8(buf, 10, &enable_qdss))
 		return -EINVAL;
 
+	if (enable_qdss == 1 && ab->is_qdss_tracing)
+		return count;
+
 	dbg_req = kzalloc(sizeof(*dbg_req), GFP_ATOMIC);
 	if (!dbg_req)
 		return -ENOMEM;

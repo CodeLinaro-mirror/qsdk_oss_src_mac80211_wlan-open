@@ -251,7 +251,8 @@ int athdbg_qmi_handle_init(struct qmi_handle *qmi, size_t recv_buf_size,
 			goto out;
 		}
 
-		athdbg_base->wdbg_handlers = wdbg_handlers;
+		athdbg_base->wdbg_handlers[athdbg_base->wdbg_handlers_cnt++] =
+							wdbg_handlers;
 	} else {
 		pr_err("Fallback to qmi int without dump handlers");
 		ret = qmi_handle_init(qmi, ATH12K_QMI_RESP_LEN_MAX, ops, handlers);
@@ -680,8 +681,19 @@ EXPORT_SYMBOL(athdbg_qmi_worker_init);
 
 void athdbg_qmi_deinit(struct ath12k_base *ab)
 {
-	cancel_work_sync(&ab->dbg_qmi.event_work);
-	destroy_workqueue(ab->dbg_qmi.event_wq);
-	kfree(athdbg_base->wdbg_handlers);
+	int i;
+
+	if (ab->dbg_qmi.event_wq) {
+		cancel_work_sync(&ab->dbg_qmi.event_work);
+		destroy_workqueue(ab->dbg_qmi.event_wq);
+	}
+
+	for (i = 0; i < athdbg_base->wdbg_handlers_cnt; i++) {
+		if (athdbg_base->wdbg_handlers[i] == NULL)
+			continue;
+
+		kfree(athdbg_base->wdbg_handlers[i]);
+		athdbg_base->wdbg_handlers[i] = NULL;
+	}
 }
 EXPORT_SYMBOL(athdbg_qmi_deinit);

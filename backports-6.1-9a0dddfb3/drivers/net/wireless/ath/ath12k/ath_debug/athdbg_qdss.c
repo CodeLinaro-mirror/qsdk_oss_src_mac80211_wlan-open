@@ -187,7 +187,11 @@ int athdbg_config_qdss(struct ath12k_base *ab)
 {
 	int ret;
 
-	athdbg_qmi_worker_init(ab);
+	ret = athdbg_qmi_worker_init(ab);
+	if (ret < 0) {
+		pr_err("QDSS config:Failed to init dbg qmi worker");
+		return ret;
+	}
 
 	ret = athdbg_qmi_send_qdss_config(ab);
 	if (ret < 0)

@@ -94,7 +94,7 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 
 	switch (srv) {
 	case ATHDBG_SRV_CONFIG_QDSS:
-		athdbg_config_qdss(ab);
+		ret = athdbg_config_qdss(ab);
 		break;
 	case ATHDBG_SRV_DO_MINIDUMP:
 		athdbg_do_dump_minidump(ab);

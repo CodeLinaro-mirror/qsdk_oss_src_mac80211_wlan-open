@@ -11800,7 +11800,8 @@ static int ath12k_open_htt_stats(struct inode *inode,
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
-	if (ah->state != ATH12K_HW_STATE_ON) {
+	if (ah->state != ATH12K_HW_STATE_ON &&
+	    ar->ab->fw_mode != ATH12K_FIRMWARE_MODE_FTM) {
 		ret = -ENETDOWN;
 		goto err_unlock;
 	}

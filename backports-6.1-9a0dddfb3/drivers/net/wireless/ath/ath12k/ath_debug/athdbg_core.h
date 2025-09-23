@@ -8,6 +8,7 @@
 
 #define DEV_NAME_LEN 20
 #define BUS_NAME_LEN 4
+#define QMI_HANDLER 5
 
 struct pci_bus_info{
 	int domain;
@@ -35,7 +36,7 @@ struct athdbg_request{
 	struct list_head req_list;
 	enum athdbg_request_type req_type;
 	unsigned int data;
-	 char *input_buf;
+	char *input_buf;
 };
 
 struct ath_debug_base {
@@ -46,7 +47,8 @@ struct ath_debug_base {
 	struct list_head req_list;
 	struct mutex req_lock;
 	const struct athdbg_to_ath12k_ops *dbg_to_ath_ops;
-	struct qmi_msg_handler *wdbg_handlers;
+	struct qmi_msg_handler *wdbg_handlers[QMI_HANDLER];
+	u8 wdbg_handlers_cnt;
 	char dev[DEV_NAME_LEN];
 	char bus[BUS_NAME_LEN];
 };
