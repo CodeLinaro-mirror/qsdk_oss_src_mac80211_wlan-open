@@ -1852,7 +1852,8 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 			return -EINVAL;
 
 		link_conf->ml_max_rec_links = params->ml_max_rec_links;
-		err |= BSS_CHANGED_ML_MAX_REC_LINKS;
+		/* update beacon template */
+		err |= (changed | BSS_CHANGED_ML_MAX_REC_LINKS);
 	}
 
 	if (err > 0)
