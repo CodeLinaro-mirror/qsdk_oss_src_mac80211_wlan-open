@@ -13066,6 +13066,7 @@ int ath11k_mac_allocate(struct ath11k_base *ab)
 	struct ieee80211_hw *hw;
 	struct ath11k *ar;
 	struct ath11k_pdev *pdev;
+	struct ieee80211_ops *ops;
 	int ret;
 	int i;
 
@@ -13073,11 +13074,18 @@ int ath11k_mac_allocate(struct ath11k_base *ab)
 		return 0;
 
 	for (i = 0; i < ab->num_radios; i++) {
+		ops = kmemdup(&ath11k_ops, sizeof(ath11k_ops), GFP_KERNEL);
+		if (!ops) {
+			ret = -ENOMEM;
+			goto err_free_mac;
+		}
+
 		pdev = &ab->pdevs[i];
-		hw = ieee80211_alloc_hw(sizeof(struct ath11k), &ath11k_ops);
+		hw = ieee80211_alloc_hw(sizeof(struct ath11k), ops);
 		if (!hw) {
 			ath11k_warn(ab, "failed to allocate mac80211 hw device\n");
 			ret = -ENOMEM;
+			kfree(ops);
 			goto err_free_mac;
 		}
 		dev_init_progress = false;
@@ -13086,6 +13094,7 @@ int ath11k_mac_allocate(struct ath11k_base *ab)
 		ar = hw->priv;
 		ar->hw = hw;
 		ar->ab = ab;
+		ar->ops = ops;
 		ar->pdev = pdev;
 		ar->pdev_idx = i;
 		ar->lmac_id = ath11k_hw_get_mac_from_pdev_id(&ab->hw_params, i);
@@ -13148,6 +13157,7 @@ void ath11k_mac_destroy(struct ath11k_base *ab)
 {
 	struct ath11k *ar;
 	struct ath11k_pdev *pdev;
+	struct ieee80211_ops *ops;
 	int i;
 
 	for (i = 0; i < ab->num_radios; i++) {
@@ -13156,8 +13166,9 @@ void ath11k_mac_destroy(struct ath11k_base *ab)
 		if (!ar)
 			continue;
 
-		ath11k_fw_stats_free(&ar->fw_stats);
+		ops = ar->ops;
 		ieee80211_free_hw(ar->hw);
+		kfree(ops);
 		pdev->ar = NULL;
 	}
 }
