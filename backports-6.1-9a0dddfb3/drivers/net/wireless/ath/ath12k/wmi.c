@@ -8683,14 +8683,15 @@ static void ath12k_update_cu_params(struct ath12k_base *ab,
 				    struct ath12k_mgmt_rx_cu_arg *cu_params)
 {
 	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif, *tmp;
+	struct ieee80211_vif *vif;
 	u8 *bpcc_ptr, *bpcc_bufp;
 	struct ath12k_hw *ah;
 	u32 vdev_id, pos = 0;
 	bool critical_flag;
 	struct ath12k *ar;
 	int num_hw, i, j;
-	u8 hw_link_id;
+	u16 vdev_map;
 
 	if (!cu_params->bpcc_bufp)
 		return;
@@ -8711,21 +8712,26 @@ static void ath12k_update_cu_params(struct ath12k_base *ab,
 				}
 				vdev_id = pos;
 				pos++;
-				arvif = ath12k_mac_get_arvif(ar, vdev_id);
-				if (!arvif)
-					continue;
-				if (ath12k_mac_is_bridge_vdev(arvif))
-					continue;
-				if (arvif->is_up && arvif->ahvif->vif->valid_links) {
-					critical_flag = cu_params->cu_vdev_map[hw_link_id] & (1 << i);
-					bpcc_bufp = cu_params->bpcc_bufp;
-					bpcc_ptr = bpcc_bufp +
-						((hw_link_id * MAX_AP_MLDS_PER_LINK) + i);
-					ieee80211_critical_update(arvif->ahvif->vif,
-								  arvif->link_id,
-								  critical_flag,
-								  *bpcc_ptr);
+				spin_lock_bh(&ar->ab->base_lock);
+				list_for_each_entry_safe(arvif, tmp, &ar->arvifs, list) {
+					if (arvif->vdev_id != vdev_id ||
+					    ath12k_mac_is_bridge_vdev(arvif))
+						continue;
+					vif = arvif->ahvif->vif;
+					if (arvif->is_up && vif->valid_links) {
+						vdev_map = cu_params->cu_vdev_map[num_hw];
+						critical_flag = vdev_map & (1 << i);
+						bpcc_bufp = cu_params->bpcc_bufp;
+						bpcc_ptr = bpcc_bufp +
+						    ((num_hw * MAX_AP_MLDS_PER_LINK) + i);
+						ieee80211_critical_update(vif,
+									  arvif->link_id,
+									  critical_flag,
+									  *bpcc_ptr);
+						break;
+					}
 				}
+				spin_unlock_bh(&ar->ab->base_lock);
 			}
 		}
 	}
