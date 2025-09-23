@@ -109,7 +109,6 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 
 	mon_buf = mon_desc->mon_buf;
 	mon_desc->mon_buf = NULL;
-	list_add_tail(&mon_desc->list, &mon_desc_used_list);
 	if (unlikely(mon_desc->magic != ATH12K_MON_MAGIC_VALUE)) {
 		ath12k_warn(dp, "pkt buf: invalid magic value in mac_id %d\n",
 			    dp_pdev->mac_id);
@@ -117,14 +116,17 @@ ath12k_wifi7_dp_mon_rx_parse_status_buf(struct ath12k_pdev_dp *dp_pdev,
 		goto buf_replenish;
 	}
 
-	if (unlikely(!mon_desc->in_use)) {
-		ath12k_warn(dp, "pkt buf: in_use flag not set, mac_id %d\n",
+	if (unlikely(mon_desc->in_use != DP_MON_DESC_TO_HW)) {
+		ath12k_warn(dp,
+			    "pkt buf: invalid in_use=[%d] flag, mac_id %d\n",
+			    mon_desc->in_use,
 			    dp_pdev->mac_id);
 		ret = -EINVAL;
 		goto buf_replenish;
 	}
 
-	mon_desc->in_use = false;
+	list_add_tail(&mon_desc->list, &mon_desc_used_list);
+	mon_desc->in_use = DP_MON_DESC_PACKET_REAP;
 
 	ath12k_core_dma_unmap_page(dp->dev, mon_desc->paddr, ATH12K_DP_MON_RX_BUF_SIZE,
 				   DMA_FROM_DEVICE);
@@ -432,10 +434,11 @@ ath12k_wifi7_dp_mon_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 			list_add_tail(&pkt_desc->list, &mon_desc_used_list);
 			num_buf++;
 
-			if (unlikely(!pkt_desc->in_use)) {
-				ath12k_warn(dp, "mon_flush: in_use flag not set, macid %d\n",
+			if (unlikely(pkt_desc->in_use != DP_MON_DESC_TO_HW)) {
+				ath12k_warn(dp,
+					    "mon_flush: invalid in_use=[%d] flag, macid %d\n",
+					    pkt_desc->in_use,
 					    pdev_dp->mac_id);
-				pkt_desc->in_use = true;
 				goto next_tlv;
 			}
 
@@ -445,7 +448,7 @@ ath12k_wifi7_dp_mon_free_pkt_buf(struct ath12k_pdev_dp *pdev_dp,
 			mon_stats->pkt_tlv_free++;
 			page_frag_free(pkt_desc->mon_buf);
 			pkt_desc->mon_buf = NULL;
-			pkt_desc->in_use = false;
+			pkt_desc->in_use = DP_MON_DESC_H_PROC_ERR;
 		}
 
 next_tlv:
@@ -1158,12 +1161,11 @@ static void ath12k_wifi7_dp_mon_rx_h_empty_desc(struct ath12k_pdev_dp *pdev_dp)
 
 static void
 ath12k_wifi7_dp_mon_desc_list_add_to_free(struct list_head *local_list,
-					  struct list_head *free_list,
-					  spinlock_t *lock)
+					  struct ath12k_dp_mon *dp_mon)
 {
-	spin_lock_bh(lock);
-	list_splice_tail_init(local_list, free_list);
-	spin_unlock_bh(lock);
+	spin_lock_bh(&dp_mon->mon_desc_lock);
+	list_splice_tail_init(local_list, &dp_mon->mon_desc_free_list);
+	spin_unlock_bh(&dp_mon->mon_desc_lock);
 }
 
 static void
@@ -1182,9 +1184,7 @@ ath12k_wifi7_dp_mon_flush_used_list(struct ath12k_pdev_dp *dp_pdev,
 		ath12k_wifi7_dp_mon_h_flush_tlv(dp_pdev, &desc);
 	}
 
-	ath12k_wifi7_dp_mon_desc_list_add_to_free(mon_desc_used_list,
-						  &dp_mon->mon_desc_free_list,
-						  &dp_mon->mon_desc_lock);
+	ath12k_wifi7_dp_mon_desc_list_add_to_free(mon_desc_used_list, dp_mon);
 }
 
 static struct ath12k_dp_mon_ppdu_desc *
@@ -1249,9 +1249,8 @@ static int ath12k_wifi7_dp_mon_rx_add_ppdu_desc(struct list_head *mon_desc_used_
 
 	queue_work(dp_mon_pdev->rxmon_wq, &dp_mon_pdev->rxmon_work);
 
-	ath12k_wifi7_dp_mon_desc_list_add_to_free(mon_desc_used_list,
-						  &dp_mon->mon_desc_free_list,
-						  &dp_mon->mon_desc_lock);
+	ath12k_wifi7_dp_mon_desc_list_add_to_free(mon_desc_used_list, dp_mon);
+
 	return 0;
 }
 
@@ -1506,7 +1505,6 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 			goto move_next;
 		}
 
-		list_add_tail(&mon_desc->list, mon_desc_used_list);
 		mon_stats->status_buf_reaped++;
 		if (unlikely(mon_desc->magic != ATH12K_MON_MAGIC_VALUE)) {
 			ath12k_warn(dp, "mon_dest: invalid magic value in mac_id %d\n",
@@ -1514,8 +1512,17 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 			goto move_next;
 		}
 
+		if (unlikely(mon_desc->in_use != DP_MON_DESC_TO_HW)) {
+			ath12k_warn(dp,
+				    "mon_dest: invalid in_use=[%d] flag, mac_id %d\n",
+				    mon_desc->in_use,
+				    pdev_dp->mac_id);
+			goto move_next;
+		}
+
+		list_add_tail(&mon_desc->list, mon_desc_used_list);
 		mon_buf = mon_desc->mon_buf;
-		mon_desc->in_use = false;
+		mon_desc->in_use = DP_MON_DESC_STATUS_REAP;
 		if (unlikely(!mon_buf)) {
 			ath12k_warn(dp, "mon_dest: NULL mon_buf received in mac_id %d\n",
 				    pdev_dp->mac_id);

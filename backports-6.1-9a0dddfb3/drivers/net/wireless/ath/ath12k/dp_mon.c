@@ -364,9 +364,10 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 	u8 *mon_buf;
 
 	list_for_each_entry_safe(mon_desc, tmp_mon_desc, used_list, list) {
-		if (unlikely(!mon_desc->in_use)) {
+		if (unlikely(mon_desc->in_use != DP_MON_DESC_REPLENISH)) {
 			ath12k_warn(dp,
-				    "In use is not set, possibly desc from freelist\n");
+				    "Invalid in_use %d, possibly desc from freelist\n",
+				    mon_desc->in_use);
 			ath12k_dp_mon_handle_mon_desc(dp, mon_desc);
 			continue;
 		}
@@ -395,6 +396,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 		mon_desc->mon_buf = mon_buf;
 		mon_desc->paddr = paddr;
 		mon_desc->magic = ATH12K_MON_MAGIC_VALUE;
+		mon_desc->in_use = DP_MON_DESC_TO_HW;
 		mon_desc->buf_len = 0;
 		mon_desc->end_of_ppdu = 0;
 		dp_mon->num_frag_replenish++;
@@ -445,6 +447,7 @@ out:
 			}
 
 			ath12k_dp_mon_desc_reset(mon_desc);
+			mon_desc->in_use = DP_MON_DESC_H_REPLENISH_ERR;
 		}
 
 		spin_lock_bh(&dp_mon->mon_desc_lock);
@@ -474,7 +477,7 @@ size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *he
 
 		mon_desc = list_entry(cur, struct ath12k_dp_mon_desc, list);
 		ath12k_dp_mon_desc_reset(mon_desc);
-		mon_desc->in_use = true;
+		mon_desc->in_use = DP_MON_DESC_REPLENISH;
 
 		count--;
 		nodes++;
@@ -1462,7 +1465,7 @@ void ath12k_dp_mon_rx_buf_free(struct ath12k_dp *dp)
 	}
 
 	for (i = 0; i < DP_RXDMA_MONITOR_BUF_RING_SIZE; i++) {
-		if (!dp_mon->mon_desc_pool[i].in_use)
+		if (dp_mon->mon_desc_pool[i].in_use != DP_MON_DESC_TO_HW)
 			continue;
 
 		mon_buf = dp_mon->mon_desc_pool[i].mon_buf;
