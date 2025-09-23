@@ -14512,8 +14512,11 @@ check_rm_action_frame:
 			 * BTM request and response as per
 			 * IEEE Std 802.11be Draft 7.0,
 			 * section 35.3.14
+			 *
+			 * Intentionally leaving the switch case empty
+			 * to avoid resetting the link agnostic bit in
+			 * default case.
 			 */
-			skb_cb->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
 			break;
 		default:
 			skb_cb->flags &= ~ATH12K_SKB_MGMT_LINK_AGNOSTIC;
