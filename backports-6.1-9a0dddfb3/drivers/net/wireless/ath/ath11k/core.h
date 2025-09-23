@@ -464,10 +464,10 @@ struct ath11k_reg_tpc_power_info {
 	u8 eirp_power;
 	enum wmi_reg_6ghz_ap_type power_type_6g;
 	u8 num_pwr_levels;
-	u8 reg_max[IEEE80211_MAX_NUM_PWR_LEVEL];
+	u8 reg_max[ATH11K_NUM_PWR_LEVELS];
 	u8 ap_constraint_power;
-	s8 tpe[IEEE80211_MAX_NUM_PWR_LEVEL];
-	struct chan_power_info chan_power_info[IEEE80211_MAX_NUM_PWR_LEVEL];
+	s8 tpe[ATH11K_NUM_PWR_LEVELS];
+	struct chan_power_info chan_power_info[ATH11K_NUM_PWR_LEVELS];
 };
 
 struct ath11k_vif {

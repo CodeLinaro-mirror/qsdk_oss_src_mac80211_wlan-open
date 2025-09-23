@@ -8806,7 +8806,7 @@ ath11k_mac_vdev_start_restart(struct ath11k_vif *arvif,
 	    cfg80211_chandef_dfs_usable(ar->hw->wiphy, chandef)) {
 		set_bit(ATH11K_CAC_RUNNING, &ar->dev_flags);
 		dfs_cac_time = cfg80211_chandef_dfs_cac_time(ar->hw->wiphy,
-							     chandef,false,false);
+							     chandef, false, false);
 		ath11k_dbg(ab, ATH11K_DBG_MAC,
 			   "cac started dfs_cac_time %u center_freq %d center_freq1 %d for vdev %d\n",
 			   dfs_cac_time, arg.channel.freq, chandef->center_freq1,
@@ -9946,8 +9946,9 @@ ath11k_set_vdev_param_to_all_vifs(struct ath11k *ar, int param, u32 value)
 /* mac80211 stores device specific RTS/Fragmentation threshold value,
  * this is set interface specific to firmware from ath11k driver
  */
-static int ath11k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, u32 value,
-					   struct ieee80211_vif *vif, int link_id)
+static int ath11k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, u8 radio_id,
+					   u32 value, struct ieee80211_vif *vif,
+					   u32 link_id)
 {
 	struct ath11k *ar = hw->priv;
 	int param_id = WMI_VDEV_PARAM_RTS_THRESHOLD;
