@@ -12059,6 +12059,11 @@ ath12k_dfs_calculate_subchannels(struct ath12k_base *ab,
 	int i;
 
 	ar = ath12k_mac_get_ar_by_pdev_id(ab, radar->pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "Failed to fetch ar for pdev %d\n",
+			    radar->pdev_id);
+		return;
+	}
 	arg.ar = ar;
 	arg.chanctx_conf = NULL;
 	if (!radar->detector_id) {
@@ -12144,7 +12149,6 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 	const struct wmi_pdev_radar_flags_param *rf_ev;
 	const struct ath12k_wmi_pdev_radar_event *ev;
 	struct ath12k *ar;
-	int ret;
 	bool do_full_bw_nol = false;
 	bool is_full_bw_nol_feature_supported = false;
 	const struct wmi_tlv *tlv;
@@ -12156,7 +12160,7 @@ ath12k_wmi_pdev_dfs_radar_detected_event(struct ath12k_base *ab, struct sk_buff 
 
 	len += sizeof(*ev) + TLV_HDR_SIZE;
 	if (skb->len < len) {
-		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+		ath12k_warn(ab, "Radar event is of incorrect length\n");
 		return;
 	}
 
