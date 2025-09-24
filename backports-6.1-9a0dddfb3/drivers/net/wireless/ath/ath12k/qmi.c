@@ -5303,7 +5303,7 @@ int ath12k_qmi_process_coldboot_calibration(struct ath12k_base *ab)
 	ath12k_qmi_firmware_stop(ab);
 
 	if (!ab->pm_suspend)
-		ath12k_hif_power_down(ab, true);
+		ath12k_hif_power_down(ab, false);
 
 	ath12k_qmi_free_target_mem_chunk(ab);
 	ath12k_info(ab, "power up to restart firmware in mission mode\n");
