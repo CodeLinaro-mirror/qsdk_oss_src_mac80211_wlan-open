@@ -3482,6 +3482,7 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 
 			memcpy(&sta->deflink, sta_info, sizeof(*sta_info));
 			memcpy(&sta->sta.deflink, link_sta, sizeof(*link_sta));
+			sta->deflink.pub = &sta->sta.deflink;
 
 			/* Free the moved link memory */
 			sta_remove_link(sta, n_link_id, true);
