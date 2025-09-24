@@ -5,7 +5,7 @@
 #ifndef __BACKPORT_LINUX_IOMMU_H
 #define __BACKPORT_LINUX_IOMMU_H
 
-#include <linux/iommu.h>
+#include_next <linux/iommu.h>
 #include <linux/version.h>
 
 #if LINUX_VERSION_IS_LESS(6,3,0)
