@@ -1105,8 +1105,8 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	peer = ath12k_dp_link_peer_find_by_ast(dp, user_stats->ast_index);
 	if (!peer) {
-		ath12k_warn(ab, "peer with peer id %d can't be found\n",
-			    ppdu_info->peer_id);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON_RX, "peer with peer id %d can't be found\n",
+			   ppdu_info->peer_id);
 		return;
 	}
 
