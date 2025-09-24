@@ -22350,9 +22350,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		ieee80211_hw_set(hw, SUPPORTS_TX_ENCAP_OFFLOAD);
 		ieee80211_hw_set(hw, SUPPORTS_RX_DECAP_OFFLOAD);
 
-		if (ath12k_ppe_ds_enabled)
-			ieee80211_hw_set(hw, SUPPORTS_VLAN_DATA_OFFLOAD);
 	}
+
+	ieee80211_hw_set(hw, SUPPORTS_VLAN_DATA_OFFLOAD);
 
 	if (cap->nss_ratio_enabled)
 		ieee80211_hw_set(hw, SUPPORTS_VHT_EXT_NSS_BW);
