@@ -195,6 +195,7 @@ int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 	u8 msduq;
 	int ret;
 	u8 tid;
+	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
 
 	peer_id = le32_get_bits(status_desc->info2, HTT_TX_WBM_REINJECT_SW_PEER_ID_M);
 	data_length = le32_get_bits(status_desc->info2, HTT_TX_WBM_REINJECT_DATA_LEN_M);
@@ -252,6 +253,7 @@ int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 
 	skb_cb = ATH12K_SKB_CB(skb);
 	skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
+	tx_info->flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
 
 	arsta = ath12k_peer_get_link_sta(ab, peer);
 	spin_unlock_bh(&dp->dp_lock);
