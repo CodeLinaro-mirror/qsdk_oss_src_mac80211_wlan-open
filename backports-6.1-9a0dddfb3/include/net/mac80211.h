@@ -2766,6 +2766,7 @@ struct ieee80211_sta {
 	struct {
 		u16 removed_links;
 		u16 added_links;
+		u16 matched_rem_links;
 	} reconf;
 
 	u16 eml_cap;

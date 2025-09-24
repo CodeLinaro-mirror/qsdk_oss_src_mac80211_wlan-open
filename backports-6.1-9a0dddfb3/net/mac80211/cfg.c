@@ -6136,6 +6136,10 @@ static int ieee80211_sta_assoc_ml_reconf(struct wiphy *wiphy,
 	struct link_station_parameters *link_params;
 	const struct wiphy_iftype_ext_capab *ift_ext_capa;
 	unsigned long added_links = 0, link_id = 0, added_ok = 0;
+	unsigned long matched_rem_links = 0;
+	struct link_sta_info *link_sta;
+	unsigned long rem_links = req->rem_links;
+	unsigned long link_id_iter;
 	u16 new_active_links;
 	int ret = 0;
 	__le16 mld_capa_ops = 0;
@@ -6161,6 +6165,31 @@ static int ieee80211_sta_assoc_ml_reconf(struct wiphy *wiphy,
 			continue;
 
 		added_links |= BIT(link_id);
+
+		for_each_set_bit(link_id_iter, &rem_links,
+				 IEEE80211_MLD_MAX_NUM_LINKS) {
+			link_sta = wiphy_dereference(sta->local->hw.wiphy,
+						     sta->link[link_id_iter]);
+
+			if (!link_sta)
+				continue;
+
+			if (ether_addr_equal(link_sta->addr,
+					     req->u.link_sta_params[link_id].link_mac)){
+				/*
+				 * Reject if the same link MAC is specified
+				 * for more than one added link in
+				 * the reconfiguration request.
+				 */
+				if (matched_rem_links & BIT(link_id_iter)) {
+					sta->sta.reconf.matched_rem_links = 0;
+					return -EINVAL;
+				}
+
+				matched_rem_links |= BIT(link_id_iter);
+				sta->sta.reconf.matched_rem_links |= BIT(link_id_iter);
+			}
+		}
 	}
 	/* Reject if:
 	 * any link is both added and removed,
