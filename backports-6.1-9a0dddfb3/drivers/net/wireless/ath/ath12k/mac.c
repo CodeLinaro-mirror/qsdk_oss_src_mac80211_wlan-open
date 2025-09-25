@@ -1512,6 +1512,15 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 					  ath12k_mac_link_sta_rhash_cleanup,
 					  ar);
 
+	/* The rhash table should be empty after cleanup
+	 */
+	if (atomic_read(&ab->rhead_sta_addr->nelems)) {
+		ath12k_warn(ab,
+			    "Destroying rhash table and has stale entries %d\n",
+			    atomic_read(&ab->rhead_sta_addr->nelems));
+		ath12k_link_sta_rhash_tbl_destroy(ab);
+		ath12k_link_sta_rhash_tbl_init(ab);
+	}
 	/* Delete all the self dp_peers on asserted radio
 	 */
 	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
