@@ -76,7 +76,7 @@ void __ath12k_dbg(struct ath12k_base *ab, enum ath12k_debug_mask mask,
 		if (ab)
 			dev_dbg(ab->dev, "%pV", &vaf);
 		else
-			pr_devel("ath12k: %pV", &vaf);
+			pr_info("ath12k: %pV", &vaf);
 	}
 
 	/* TODO: trace log */
