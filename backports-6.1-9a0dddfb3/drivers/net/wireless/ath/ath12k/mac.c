@@ -9939,8 +9939,8 @@ void ath12k_mac_parse_tx_pwr_env(struct ath12k *ar,
 					"TPE non PSD power levels count %d, reg_non_psd count %d\n",
 					local_non_psd->count, reg_non_psd->count);
 		}
-		if (tpc_info->num_tpe_eirp > ATH12K_NUM_PWR_LEVELS)
-			tpc_info->num_tpe_eirp = ATH12K_NUM_PWR_LEVELS;
+		if (tpc_info->num_tpe_eirp > ATH12K_MAX_EIRP_VALS)
+			tpc_info->num_tpe_eirp = ATH12K_MAX_EIRP_VALS;
 
 		for (i = 0; i < tpc_info->num_tpe_eirp; i++) {
 			if (additional_non_psd->valid) {
@@ -24059,6 +24059,10 @@ ath12k_mac_fill_reg_tpc_info_with_eirp_for_client_sp_pwr_mode(struct ath12k *ar,
 	ath12k_mac_fill_subchans(sub_chans, start_freq, max_n_subchans);
 
 	num_pwr_levels = ath12k_mac_get_num_pwr_levels(&ctx->def, false);
+	if (num_pwr_levels > ATH12K_MAX_EIRP_VALS) {
+		ath12k_err(NULL, "num_pwr_levels should not be greater than ATH12K_MAX_EIRP_VALS");
+		return;
+	}
 	reg_tpc_info->num_eirp_pwr_levels = num_pwr_levels;
 
 	ath12k_mac_get_client_power_for_connecting_ap(ar, ctx, IEEE80211_REG_SP_AP,
