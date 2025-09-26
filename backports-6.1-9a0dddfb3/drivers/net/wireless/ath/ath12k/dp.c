@@ -2691,6 +2691,13 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			return -EINVAL;
 		}
 
+		/* Error case handling for non-associated links */
+		if (valid_link && !(peer->peer_links_map & BIT(link_id))) {
+			spin_unlock_bh(&dp_hw->peer_lock);
+			ath12k_err(NULL, "Error MLO peer with invalid link id");
+			return -EINVAL;
+		}
+
 		/*Peer stats of MLD peer for requested link id*/
 		if (valid_link) {
 			rcu_read_lock();
