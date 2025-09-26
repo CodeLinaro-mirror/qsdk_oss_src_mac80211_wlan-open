@@ -999,6 +999,15 @@ void cfg80211_chandef_create(struct cfg80211_chan_def *chandef,
 			     enum nl80211_channel_type chantype);
 
 /**
+ * cfg80211_get_start_freq - retrieve start frequency of the given chandef
+ * @chandef: the channel definition to check
+ * @cf: Whether to use center_freq1 or center_freq2
+ *
+ * Returns: Start frequency in KHz.
+ */
+u32 cfg80211_get_start_freq(const struct cfg80211_chan_def *chandef, u32 cf);
+
+/**
  * cfg80211_channel_identical - check if two channel definitions are identical
  *                     for 6 GHz band alone check center_freq as they have
  *                     different power modes.
