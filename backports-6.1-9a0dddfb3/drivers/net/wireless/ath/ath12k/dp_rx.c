@@ -1594,7 +1594,7 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_base *mig_ab;
-	struct ath12k_sta *ahsta;
+	struct ath12k_sta *ahsta = NULL;
 	struct ath12k_dp *mig_dp;
 	u16 peer_id = rx_tid->peer_id;
 	u8 chip_id = rx_tid->chip_id;
@@ -1656,7 +1656,9 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 	return;
 
 migration_fail:
-	complete(&ahsta->dp_migration_event);
+	if (ahsta)
+		complete(&ahsta->dp_migration_event);
+
 	return;
 }
 EXPORT_SYMBOL(ath12k_dp_primary_peer_migrate_setup);
