@@ -1316,6 +1316,47 @@ static const struct file_operations fops_soc_stats_disable = {
 	.write = ath12k_write_stats_disable,
 };
 
+static ssize_t ath12k_write_block_radar(struct file *file,
+					const char __user *user_buf,
+					size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	bool block_radar;
+	u8 usenol = 1;
+	int ret;
+
+	if (kstrtobool_from_user(user_buf, count, &block_radar))
+		return -EINVAL;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+	if (ar->ah->state != ATH12K_HW_STATE_ON) {
+		ret = -ENETDOWN;
+		goto exit;
+	}
+
+	if (ar->dfs_block_radar_events == block_radar) {
+		ret = count;
+		goto exit;
+	}
+
+	if (block_radar == 1)
+		usenol = 0;
+
+	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_USE_NOL,
+					usenol, ar->pdev->pdev_id);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to set usenol: %d\n", ret);
+		goto exit;
+	}
+
+	ar->dfs_block_radar_events = block_radar;
+	ret = count;
+
+exit:
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return ret;
+}
+
 static ssize_t ath12k_write_simulate_radar(struct file *file,
 					   const char __user *user_buf,
 					   size_t count, loff_t *ppos)
@@ -1398,6 +1439,11 @@ exit:
 
 static const struct file_operations fops_simulate_radar = {
 	.write = ath12k_write_simulate_radar,
+	.open = simple_open
+};
+
+static const struct file_operations fops_dfs_block_radar = {
+	.write = ath12k_write_block_radar,
 	.open = simple_open
 };
 
@@ -6025,9 +6071,9 @@ void ath12k_debugfs_register(struct ath12k *ar)
 		debugfs_create_file("dfs_simulate_radar", 0200,
 				    ar->debug.debugfs_pdev, ar,
 				    &fops_simulate_radar);
-		debugfs_create_bool("dfs_block_radar_events", 0200,
-				    ar->debug.debugfs_pdev,
-				    &ar->dfs_block_radar_events);
+		debugfs_create_file("dfs_block_radar_events", 0200,
+				    ar->debug.debugfs_pdev, ar,
+				    &fops_dfs_block_radar);
 	}
 
 	debugfs_create_file("tpc_stats", 0400, ar->debug.debugfs_pdev, ar,
