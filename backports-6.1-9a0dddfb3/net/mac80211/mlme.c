@@ -744,6 +744,28 @@ static int ieee80211_chandef_num_widths(const struct cfg80211_chan_def *c)
 	}
 }
 
+/* ieee80211_chandef_subchan_index -  This function returns the position
+ * (0 based) of the first subchannel of the used chandef within the ap's
+ * chandef. Both AP and used chandef must be valid and the used chandef must
+ * be a subset of the ap's chandef (same primary channel, same band), possibly
+ * a different width.
+ *
+ * Return: index of the first subchannel of 'used' within 'ap', or -1 on error
+ */
+static int ieee80211_chandef_subchan_index(const struct cfg80211_chan_def *ap,
+					   const struct cfg80211_chan_def *used)
+{
+	int n = ieee80211_chandef_num_subchans(ap);
+	u32 ap_start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(ap, 1));
+	u32 tmp_start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(used, 1));
+	int offset = (tmp_start_freq - ap_start_freq) / 20;
+
+	if (offset < 0 || offset >= n)
+		return -1;
+
+	return offset;
+}
+
 VISIBLE_IF_MAC80211_KUNIT int
 ieee80211_calc_chandef_subchan_offset(const struct cfg80211_chan_def *ap,
 				      u8 n_partial_subchans)
@@ -751,6 +773,7 @@ ieee80211_calc_chandef_subchan_offset(const struct cfg80211_chan_def *ap,
 	int n = ieee80211_chandef_num_subchans(ap);
 	struct cfg80211_chan_def tmp = *ap;
 	int offset = 0;
+	bool chandef_downgraded = false;
 
 	/*
 	 * Given a chandef (in this context, it's the AP's) and a number
@@ -768,16 +791,21 @@ ieee80211_calc_chandef_subchan_offset(const struct cfg80211_chan_def *ap,
 		return 0;
 
 	while (ieee80211_chandef_num_subchans(&tmp) > n_partial_subchans) {
-		u32 prev = tmp.center_freq1;
 
 		ieee80211_chandef_downgrade(&tmp, NULL);
+		chandef_downgraded = true;
+	}
 
+	if (chandef_downgraded) {
 		/*
-		 * if center_freq moved up, half the original channels
-		 * are gone now but were below, so increase offset
+		 * Each subchannel is 20 MHz wide.
+		 * Calculate how far downgraded he chandef is from the
+		 * ap's chandef
 		 */
-		if (prev < tmp.center_freq1)
-			offset += ieee80211_chandef_num_subchans(&tmp);
+		int subchan_idx = ieee80211_chandef_subchan_index(ap, &tmp);
+
+		if (subchan_idx >= 0)
+			offset = subchan_idx;
 	}
 
 	/*
@@ -799,7 +827,7 @@ ieee80211_rearrange_tpe_psd(struct ieee80211_parsed_tpe_psd *psd,
 {
 	u8 needed = ieee80211_chandef_num_subchans(used);
 	u8 have = ieee80211_chandef_num_subchans(ap);
-	u8 tmp[IEEE80211_TPE_PSD_ENTRIES_320MHZ];
+	s8 tmp[IEEE80211_TPE_PSD_ENTRIES_320MHZ];
 	u8 offset;
 
 	if (!psd->valid)
