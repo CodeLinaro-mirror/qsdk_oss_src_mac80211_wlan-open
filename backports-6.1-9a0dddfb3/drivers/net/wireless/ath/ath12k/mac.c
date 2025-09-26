@@ -1567,6 +1567,8 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 		list_del(&dp_peer->list);
 		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
 			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
+
+		kfree(dp_peer->qos);
 		kfree(dp_peer);
 	}
 
