@@ -3140,7 +3140,7 @@ ath12k_reg_intersect_freq_ranges(struct ath12k_base *ab,
 				 struct ieee80211_freq_range first_range,
 				 struct ieee80211_freq_range second_range)
 {
-	struct ieee80211_freq_range out_range;
+	struct ieee80211_freq_range out_range = {0};
 	u32 l_freq;
 	u32 r_freq;
 
