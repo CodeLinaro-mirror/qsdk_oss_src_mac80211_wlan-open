@@ -329,4 +329,5 @@ u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 			 u16 msduq);
 void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
+void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer);
 #endif

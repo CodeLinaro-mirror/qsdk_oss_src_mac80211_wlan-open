@@ -172,6 +172,20 @@ bool ath12k_dp_link_peer_exist_by_vdev_id(struct ath12k_dp *dp, int vdev_id)
 	return false;
 }
 
+void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
+{
+	if (!peer)
+		return;
+
+	list_del(&peer->list);
+
+	kfree(peer->peer_stats.rx_stats);
+	kfree(peer->peer_stats.tx_stats);
+	kfree(peer->peer_stats.qos_stats);
+
+	kfree(peer);
+}
+
 void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id)
 {
 	struct ath12k_dp_link_peer *peer;
@@ -189,18 +203,7 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id)
 	ath12k_dbg(ab, ATH12K_DBG_PEER, "htt peer unmap vdev %d peer %pM id %d\n",
 		   peer->vdev_id, peer->addr, peer_id);
 
-	list_del(&peer->list);
-
-	if (peer->peer_stats.rx_stats)
-		kfree(peer->peer_stats.rx_stats);
-
-	if (peer->peer_stats.tx_stats)
-		kfree(peer->peer_stats.tx_stats);
-
-	if (peer->peer_stats.qos_stats)
-		kfree(peer->peer_stats.qos_stats);
-
-	kfree(peer);
+	ath12k_link_peer_free(peer);
 	wake_up(&ab->peer_mapping_wq);
 
 exit:

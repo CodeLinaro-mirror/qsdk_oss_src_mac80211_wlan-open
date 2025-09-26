@@ -1492,8 +1492,7 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 		ath12k_dp_link_peer_rhash_delete(dp, peer);
 		peer->dp_peer = NULL;
 
-		list_del(&peer->list);
-		kfree(peer);
+		ath12k_link_peer_free(peer);
 	}
 	spin_unlock_bh(&dp->dp_lock);
 
@@ -10706,8 +10705,7 @@ static void ath12k_mac_station_post_remove(struct ath12k *ar,
 			    "num_peers: %d \n",
 			    vif->addr, arvif->vdev_id, ar->num_peers);
 		peer->sta = NULL;
-		list_del(&peer->list);
-		kfree(peer);
+		ath12k_link_peer_free(peer);
 		ar->num_peers--;
 	}
 
