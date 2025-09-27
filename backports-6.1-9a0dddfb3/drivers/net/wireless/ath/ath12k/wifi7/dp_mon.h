@@ -32,7 +32,7 @@ int ath12k_dp_rx_mon_process_ring(struct ath12k_dp *dp, int mac_id,
 	rcu_read_lock();
 
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
-	if (!dp_pdev) {
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev)) {
 		rcu_read_unlock();
 		return 0;
 	}

@@ -470,6 +470,9 @@ int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	int ret;
 
+	if (unlikely(!dp || !dp->dp_mon))
+		return -EINVAL;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (mon_ops && mon_ops->rx_srng_setup) {
@@ -492,6 +495,9 @@ void ath12k_dp_mon_rx_free(struct ath12k_dp *dp)
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (mon_ops && mon_ops->rx_srng_cleanup)
@@ -507,6 +513,9 @@ int ath12k_dp_mon_rx_htt_setup(struct ath12k_dp *dp)
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	int ret = 0;
 
+	if (unlikely(!dp || !dp->dp_mon))
+		return -EINVAL;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (mon_ops && mon_ops->rx_htt_srng_setup)
@@ -520,9 +529,13 @@ static inline
 int ath12k_dp_mon_pdev_init(struct ath12k_pdev_dp *dp_pdev)
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp;
 	int ret = 0;
 
+	if (unlikely(!dp_pdev))
+		return -EINVAL;
+
+	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (mon_ops && mon_ops->mon_pdev_alloc)
@@ -535,8 +548,12 @@ static inline
 void ath12k_dp_mon_pdev_deinit(struct ath12k_pdev_dp *dp_pdev)
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp;
 
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (mon_ops && mon_ops->mon_pdev_free)
@@ -547,10 +564,14 @@ static inline
 int ath12k_dp_mon_pdev_rx_alloc(struct ath12k_pdev_dp *dp_pdev,
 				u32 mac_id)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	int ret;
 
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return -EINVAL;
+
+	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!mon_ops) {
@@ -601,10 +622,14 @@ cleanup:
 static inline
 int ath12k_dp_mon_pdev_rx_htt_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	int ret;
 
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return -EINVAL;
+
+	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (mon_ops->mon_pdev_rx_htt_srng_setup) {
@@ -633,9 +658,13 @@ int ath12k_dp_mon_pdev_rx_htt_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
 static inline
 void ath12k_dp_mon_pdev_rx_free(struct ath12k_pdev_dp *dp_pdev)
 {
-	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp *dp;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!mon_ops) {
@@ -678,6 +707,9 @@ void ath12k_dp_mon_rx_stats_config(struct ath12k *ar, bool enable,
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (enable) {
@@ -698,6 +730,9 @@ int ath12k_dp_mon_rx_update_filter(struct ath12k *ar)
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	int ret;
 
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return -EINVAL;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (mon_ops && mon_ops->rx_filter_update) {
@@ -716,6 +751,9 @@ void ath12k_dp_mon_rx_config_monitor_mode(struct ath12k *ar, bool reset)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
 
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
@@ -737,6 +775,9 @@ void ath12k_dp_mon_rx_nrp_config(struct ath12k *ar, bool reset)
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!reset) {
@@ -755,6 +796,9 @@ void ath12k_dp_mon_rx_config_wmask(struct ath12k_dp *dp, void *ptr,
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 	if (mon_ops && mon_ops->mon_rx_wmask)
 		mon_ops->mon_rx_wmask(ptr, tlv_filter);
@@ -765,6 +809,9 @@ ath12k_dp_mon_rx_config_packet_type_subtype(struct ath12k_dp *dp, void *ptr,
 					    struct htt_rx_ring_tlv_filter *tlv_filter)
 {
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
 
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
@@ -781,6 +828,9 @@ ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
 
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
