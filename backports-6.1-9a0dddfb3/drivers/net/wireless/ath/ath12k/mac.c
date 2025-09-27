@@ -1524,8 +1524,10 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	/* Delete all the self dp_peers on asserted radio
 	 */
 	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
-		ath12k_dp_peer_delete(dp_hw, arvif->bssid, NULL);
-		arvif->num_stations = 0;
+		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			ath12k_dp_peer_delete(dp_hw, arvif->bssid, NULL);
+			arvif->num_stations = 0;
+		}
 	}
 
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
