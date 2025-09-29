@@ -1153,6 +1153,12 @@ static void ath12k_wifi7_dp_mon_rx_h_empty_desc(struct ath12k_pdev_dp *pdev_dp)
 
 	for (desc_cnt = 0; desc_cnt < last_ppdu_desc->status_desc_cnt; desc_cnt++) {
 		status_desc = &last_ppdu_desc->status_desc[desc_cnt];
+		if (unlikely(!status_desc->mon_buf))
+			continue;
+
+		ath12k_core_dma_unmap_page(pdev_dp->dp->dev, status_desc->paddr,
+					   ATH12K_DP_MON_RX_BUF_SIZE,
+					   DMA_FROM_DEVICE);
 		ath12k_wifi7_dp_mon_h_flush_tlv(pdev_dp, status_desc);
 	}
 
@@ -1178,6 +1184,12 @@ ath12k_wifi7_dp_mon_flush_used_list(struct ath12k_pdev_dp *dp_pdev,
 
 	list_for_each_entry_safe(entry_desc, tmp_desc,
 				 mon_desc_used_list, list) {
+		if (unlikely(!entry_desc->mon_buf))
+			continue;
+
+		ath12k_core_dma_unmap_page(dp_pdev->dp->dev, entry_desc->paddr,
+					   ATH12K_DP_MON_RX_BUF_SIZE,
+					   DMA_FROM_DEVICE);
 		desc.mon_buf = entry_desc->mon_buf;
 		desc.buf_len = entry_desc->buf_len;
 		desc.end_of_ppdu = entry_desc->end_of_ppdu;
@@ -1305,6 +1317,8 @@ ath12k_wifi7_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
 		if (!status_desc->mon_buf)
 			continue;
 
+		ath12k_core_dma_unmap_page(pdev_dp->dp->dev, status_desc->paddr,
+					   ATH12K_DP_MON_RX_BUF_SIZE, DMA_FROM_DEVICE);
 		ath12k_wifi7_dp_mon_h_flush_tlv(pdev_dp, status_desc);
 	}
 
