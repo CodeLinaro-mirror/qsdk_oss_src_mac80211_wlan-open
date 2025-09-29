@@ -21480,8 +21480,8 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 				ab->reg_freq_2g.end_freq);
 
 		ath12k_mac_update_ch_list(ar, band,
-					  freq_low,
-					  freq_high);
+					  reg_cap->low_2ghz_chan,
+					  reg_cap->high_2ghz_chan);
 
 		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 
@@ -21557,8 +21557,8 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 					ab->reg_freq_5g.end_freq);
 
 			ath12k_mac_update_ch_list(ar, band,
-						  freq_low,
-						  freq_high);
+						  reg_cap->low_5ghz_chan,
+						  reg_cap->high_5ghz_chan);
 			ath12k_mac_update_5_9_ch_list(ar, band);
 
 			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
@@ -21641,8 +21641,8 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 					ab->reg_freq_6g.end_freq);
 
 			ath12k_mac_update_ch_list(ar, band,
-						  freq_low,
-						  freq_high);
+						  reg_cap->low_5ghz_chan,
+						  reg_cap->high_5ghz_chan);
 
 			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 
