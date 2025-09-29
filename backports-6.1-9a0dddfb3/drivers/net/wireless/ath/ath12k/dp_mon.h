@@ -198,12 +198,9 @@ struct dp_mon_frame_min_one {
 
 struct dp_mon_packet_info {
 	u64 cookie;
-	u32 dma_length:12,
-	    rsvd1:4,
-	    msdu_continuation:1,
-	    truncated:1,
-	    rsvd2:14;
-	u32 rsvd3;
+	u16 dma_length;
+	bool msdu_continuation;
+	bool truncated;
 };
 
 struct dp_mon_mpdu {
@@ -334,23 +331,14 @@ struct ath12k_pdev_mon_dp {
 	struct workqueue_struct *rxmon_wq;
 };
 
-enum ath12k_dp_mon_desc_in_use {
-	DP_MON_DESC_REPLENISH = 1,
-	DP_MON_DESC_STATUS_REAP,
-	DP_MON_DESC_PACKET_REAP,
-	DP_MON_DESC_H_PROC_ERR,
-	DP_MON_DESC_TO_HW,
-	DP_MON_DESC_H_REPLENISH_ERR,
-};
-
 struct ath12k_dp_mon_desc {
 	struct list_head list;
 	u8 *mon_buf;
 	dma_addr_t paddr;
 	u32 magic;
-	u16 buf_len;
-	u8 in_use;
-	u8 end_of_ppdu;
+	u16 buf_len:14,
+	    in_use:1,
+	    end_of_ppdu:1;
 };
 
 static inline enum dp_monitor_type
