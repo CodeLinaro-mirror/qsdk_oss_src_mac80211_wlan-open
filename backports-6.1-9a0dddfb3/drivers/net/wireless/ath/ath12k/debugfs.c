@@ -5961,6 +5961,26 @@ static const struct file_operations fops_dp_stats_mask = {
 	.open = simple_open,
 };
 
+static void ath12k_dp_peer_clear_qos_stats(struct ath12k_dp_peer *dp_peer)
+{
+	struct ath12k_dp_link_peer *link_peer;
+	int link_id;
+
+	/* Clear MLD QOS stats */
+	memset(&dp_peer->mld_qos_stats, 0,
+	       sizeof(dp_peer->mld_qos_stats));
+
+	rcu_read_lock();
+	/* Clear QOS stats for each link peer */
+	for (link_id = 0; link_id < ATH12K_NUM_MAX_LINKS; link_id++) {
+		link_peer = rcu_dereference(dp_peer->link_peers[link_id]);
+		if (link_peer && link_peer->peer_stats.qos_stats)
+			memset(link_peer->peer_stats.qos_stats, 0,
+			       sizeof(*link_peer->peer_stats.qos_stats));
+	}
+	rcu_read_unlock();
+}
+
 static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 					   const char __user *ubuf,
 					   size_t count, loff_t *ppos)
@@ -5983,6 +6003,7 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		memset(&dp_peer->stats, 0, sizeof(dp_peer->stats));
+		ath12k_dp_peer_clear_qos_stats(dp_peer);
 
 		struct ath12k_dp_link_peer *tmp_peer = NULL;
 		unsigned long peer_links_map, scan_links_map;
