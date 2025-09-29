@@ -1523,7 +1523,7 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	 */
 	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			ath12k_dp_peer_delete(dp_hw, arvif->bssid, NULL);
+			ath12k_dp_peer_delete(dp_hw, arvif->bssid, NULL, ar->hw_link_id);
 			arvif->num_stations = 0;
 		}
 	}
@@ -11749,7 +11749,7 @@ ml_station_remove:
 			if (!WARN_ON(!arvif || !arsta))
 				ath12k_mac_station_remove(arvif->ar, arvif, arsta);
 		}
-		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta);
+		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta, ar->hw_link_id);
 		wiphy_work_cancel(hw->wiphy, &ahsta->set_4addr_wk);
 	}
 
@@ -11762,7 +11762,7 @@ ml_station_remove:
 
 peer_delete:
 	if (ret)
-		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta);
+		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta, ar->hw_link_id);
 ml_peer_id_free:
 	if (ret)
 		ath12k_peer_ml_free(ah, ahsta);

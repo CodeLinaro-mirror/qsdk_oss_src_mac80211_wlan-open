@@ -75,6 +75,7 @@ struct ath12k_dp_peer_create_params {
 	struct ieee80211_sta *sta;
 	bool is_mlo;
 	bool is_vdev_peer;
+	u8 hw_link_id;
 	u16 peer_id;
 };
 

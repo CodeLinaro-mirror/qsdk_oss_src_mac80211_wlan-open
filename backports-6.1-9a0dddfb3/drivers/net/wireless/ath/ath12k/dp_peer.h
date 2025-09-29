@@ -154,6 +154,8 @@ struct ath12k_dp_peer {
 	u8 addr[ETH_ALEN];
 	bool is_mlo;
 	bool is_vdev_peer;
+	/* hw_link_id of the radio, valid only for self bss peer */
+	u8 hw_link_id;
 
 	u8 primary_link_id;
 	u8 assoc_link_id;
@@ -273,7 +275,8 @@ int ath12k_dp_link_peer_rhash_delete(struct ath12k_dp *dp,
 int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 			  struct ath12k_dp_peer_create_params *params,
 			  struct ieee80211_vif *vif);
-void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr, struct ieee80211_sta *sta);
+void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr,
+			   struct ieee80211_sta *sta, u8 hw_link_id);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,
 							   u16 peer_id);

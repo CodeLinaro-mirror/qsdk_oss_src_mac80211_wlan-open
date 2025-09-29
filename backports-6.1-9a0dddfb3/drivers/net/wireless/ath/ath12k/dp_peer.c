@@ -493,6 +493,22 @@ struct ath12k_dp_peer *ath12k_dp_peer_find_by_addr_and_sta(struct ath12k_dp_hw *
 	return NULL;
 }
 
+static struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
+						       u8 *addr, u8 hw_link_id)
+{
+	struct ath12k_dp_peer *dp_peer;
+
+	lockdep_assert_held(&dp_hw->peer_lock);
+
+	list_for_each_entry(dp_peer, &dp_hw->peers, list) {
+		if (ether_addr_equal(dp_peer->addr, addr) &&
+		    dp_peer->hw_link_id == hw_link_id)
+			return dp_peer;
+	}
+
+	return NULL;
+}
+
 struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8 *addr,
 						  struct ieee80211_sta *sta,
 						  bool mlo_peer)
@@ -569,7 +585,11 @@ int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 	struct wireless_dev *wdev;
 
 	spin_lock_bh(&dp_hw->peer_lock);
-	dp_peer = ath12k_dp_peer_create_find(dp_hw, addr, params->sta, params->is_mlo);
+	if (!params->is_vdev_peer)
+		dp_peer = ath12k_dp_peer_create_find(dp_hw, addr, params->sta,
+						     params->is_mlo);
+	else
+		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, addr, params->hw_link_id);
 
 	if (dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
@@ -587,7 +607,9 @@ int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 	dp_peer->is_mlo = params->is_mlo;
 	dp_peer->peer_id = params->is_mlo ? params->peer_id : ATH12K_DP_PEER_ID_INVALID;
 	dp_peer->is_vdev_peer = params->is_vdev_peer;
-
+	/* Update hw_link_id for self bss peer */
+	if (dp_peer->is_vdev_peer)
+		dp_peer->hw_link_id = params->hw_link_id;
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
 
@@ -608,14 +630,19 @@ int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 	return 0;
 }
 
-void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr, struct ieee80211_sta *sta)
+void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr,
+			   struct ieee80211_sta *sta, u8 hw_link_id)
 {
 	struct ath12k_dp_peer *dp_peer;
 	u16 peerid_index;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 
-	dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, sta);
+	if (sta)
+		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, addr, sta);
+	else
+		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, addr, hw_link_id);
+
 	if (!dp_peer) {
 		spin_unlock_bh(&dp_hw->peer_lock);
 		return;
@@ -651,11 +678,14 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	u16 peerid_index;
 	int ret;
 	u8 *dp_peer_mac = !sta ? addr : sta->addr;
+	bool is_vdev_peer = false;
 
 	if (!sta) {
 		struct ath12k_dp_peer_create_params params = {0};
 
 		params.is_vdev_peer = true;
+		is_vdev_peer = true;
+		params.hw_link_id = hw_link_id;
 
 		ath12k_dp_peer_create(dp_hw, addr, &params, vif);
 	}
@@ -670,7 +700,11 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	spin_lock_bh(&dp_hw->peer_lock);
 
-	dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, dp_peer_mac, sta);
+	if (!is_vdev_peer)
+		dp_peer = ath12k_dp_peer_find_by_addr_and_sta(dp_hw, dp_peer_mac, sta);
+	else
+		dp_peer = ath12k_dp_vdev_peer_find(dp_hw, dp_peer_mac, hw_link_id);
+
 	if (!dp_peer) {
 		ret = -ENOENT;
 		goto err_dp_peer;
@@ -793,7 +827,7 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	synchronize_rcu();
 
 	if (is_vdev_peer)
-		ath12k_dp_peer_delete(dp_hw, addr, NULL);
+		ath12k_dp_peer_delete(dp_hw, addr, NULL, ar->hw_link_id);
 }
 
 void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp *dp, const u8 *addr,
