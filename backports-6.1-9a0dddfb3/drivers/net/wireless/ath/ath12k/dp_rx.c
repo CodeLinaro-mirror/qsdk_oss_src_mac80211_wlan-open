@@ -1046,8 +1046,8 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 		}
 	}
 
-	if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-	    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+	if (ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_tid_stats_enabled(dp_pdev)) {
 		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
 								     peer_id);
 		if (link_peer) {

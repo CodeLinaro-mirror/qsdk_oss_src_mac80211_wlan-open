@@ -1419,8 +1419,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 			return;
 		}
-		if (unlikely(ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-			     ath12k_debugfs_tid_stats_enabled(dp_pdev))) {
+		if (unlikely(ath12k_dp_stats_enabled(dp_pdev) &&
+			     ath12k_tid_stats_enabled(dp_pdev))) {
 			tid = skb->priority &
 			      IEEE80211_QOS_CTL_TID_MASK;
 			ath12k_tid_tx_stats(ahvif, tid, skb->len,

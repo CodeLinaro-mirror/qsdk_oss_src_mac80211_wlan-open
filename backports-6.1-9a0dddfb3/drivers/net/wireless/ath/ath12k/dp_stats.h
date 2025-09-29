@@ -110,6 +110,14 @@ enum ath12k_wbm_err_drop_reason {
 	WBM_ERR_DROP_MAX,
 };
 
+enum ath12k_dp_debug_stats_mask {
+	DP_ENABLE_STATS          = 0x00000001,
+	DP_ENABLE_DEBUG_STATS    = 0x00000002,
+	DP_ENABLE_EXT_TX_STATS   = 0x00000004,
+	DP_ENABLE_EXT_RX_STATS   = 0x00000008,
+	DP_ENABLE_TID_STATS      = 0x00000010,
+};
+
 /* VIF STATS MACROS */
 #define DP_STATS_INC(_handle, _field, _delta, _ring) \
 	do { \

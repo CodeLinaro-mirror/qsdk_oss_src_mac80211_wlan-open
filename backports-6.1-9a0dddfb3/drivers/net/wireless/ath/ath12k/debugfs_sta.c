@@ -1866,14 +1866,14 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 	if (!ar)
 		return;
 
-	if (ath12k_debugfs_is_extd_tx_stats_enabled(ar)) {
+	if (ath12k_extd_tx_stats_enabled(ar)) {
                 debugfs_create_file("tx_stats", 0400, dir, link_sta,
                                     &fops_tx_stats);
                 debugfs_create_file("reset_tx_stats", 0200, dir, link_sta,
                                     &fops_reset_tx_stats);
         }
 
-	if (ath12k_debugfs_is_extd_rx_stats_enabled(ar)) {
+	if (ath12k_extd_rx_stats_enabled(ar)) {
 		debugfs_create_file("rx_stats", 0400, dir, link_sta,
 				    &fops_rx_stats);
 		debugfs_create_file("reset_rx_stats", 0200, dir, link_sta,

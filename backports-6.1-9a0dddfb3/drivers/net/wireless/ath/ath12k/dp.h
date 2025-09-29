@@ -143,10 +143,9 @@ struct ath12k_pdev_dp {
 
 	struct ath12k_dp *dp;
 	struct ieee80211_hw *hw;
-	/* DP Stats knobs */
-	bool enable_dp_stats;
-	bool enable_dp_debug_stats;
-	bool enable_dp_tid_stats;
+
+	/*Debug mask to set different level of stats*/
+	u32 dp_stats_mask;
 
 	u8 hw_link_id;
 	struct ath12k *ar;

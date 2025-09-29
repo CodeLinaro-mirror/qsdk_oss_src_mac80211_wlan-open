@@ -49,6 +49,7 @@ void ath12k_debugfs_soc_create(struct ath12k_base *ab);
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab);
 void ath12k_debugfs_register(struct ath12k *ar);
 void ath12k_debugfs_unregister(struct ath12k *ar);
+void ath12k_hw_debugfs_register(struct ath12k_hw *ah);
 void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab);
 void ath12k_debugfs_fw_stats_init(struct ath12k *ar);
 void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
@@ -60,14 +61,16 @@ static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *ad
                 ether_addr_equal(addr, ar->debug.pktlog_peer_addr));
 }
 
-static inline int ath12k_debugfs_is_extd_tx_stats_enabled(struct ath12k *ar)
+static inline int ath12k_extd_tx_stats_enabled(struct ath12k *ar)
 {
-	return ar->debug.extd_tx_stats;
+	return ((ar->dp.dp_stats_mask &  DP_ENABLE_STATS) &&
+		(ar->dp.dp_stats_mask & DP_ENABLE_EXT_TX_STATS));
 }
 
-static inline bool ath12k_debugfs_is_extd_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_extd_rx_stats_enabled(struct ath12k *ar)
 {
-	return ar->debug.extd_rx_stats;
+	return ((ar->dp.dp_stats_mask &  DP_ENABLE_STATS) &&
+		(ar->dp.dp_stats_mask & DP_ENABLE_EXT_RX_STATS));
 }
 
 static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
@@ -76,15 +79,15 @@ static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 }
 
 static inline bool
-ath12k_debugfs_is_dp_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+ath12k_dp_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
-	return dp_pdev->enable_dp_stats;
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_STATS);
 }
 
 static inline bool
-ath12k_debugfs_is_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+ath12k_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
-	return dp_pdev->enable_dp_debug_stats;
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_DEBUG_STATS);
 }
 
 static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
@@ -92,9 +95,9 @@ static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 	return (ar->debug.qos_stats & ATH12K_QOS_STATS_CATEG_MASK);
 }
 
-static inline u8 ath12k_debugfs_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+static inline bool ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 {
-	return dp_pdev->enable_dp_tid_stats;
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_TID_STATS);
 }
 
 void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
@@ -265,12 +268,16 @@ static inline void ath12k_debugfs_unregister(struct ath12k *ar)
 {
 }
 
-static inline int ath12k_debugfs_is_extd_tx_stats_enabled(struct ath12k *ar)
+static inline void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
+{
+}
+
+static inline int ath12k_extd_tx_stats_enabled(struct ath12k *ar)
 {
 	return 0;
 }
 
-static inline bool ath12k_debugfs_is_extd_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_extd_rx_stats_enabled(struct ath12k *ar)
 {
 	return false;
 }
@@ -300,6 +307,24 @@ static inline void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 
 static inline void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 {
+}
+
+static inline bool
+ath12k_dp_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline bool
+ath12k_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline bool
+ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
 }
 
 static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)

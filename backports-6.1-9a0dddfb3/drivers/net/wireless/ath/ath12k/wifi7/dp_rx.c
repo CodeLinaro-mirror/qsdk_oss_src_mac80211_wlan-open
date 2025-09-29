@@ -839,8 +839,8 @@ static int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 		 */
 		if (is_4addr_sta && rx_msdu_info->da_is_mcbc &&
 		    !rx_msdu_info->to_ds) {
-			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-			    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			if (ath12k_dp_stats_enabled(dp_pdev) &&
+			    ath12k_tid_stats_enabled(dp_pdev)) {
 				rcu_read_lock();
 				link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
 										     peer_id);
@@ -888,8 +888,8 @@ static int ath12k_wifi7_dp_rx_h_undecap(struct ath12k_pdev_dp *dp_pdev,
 	if (link_peer) {
 		ahvif = ath12k_vif_to_ahvif(link_peer->vif);
 		ahvif->wmm_stats.total_wmm_rx_pkts[ahvif->wmm_stats.rx_type]++;
-		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+		if (ath12k_dp_stats_enabled(dp_pdev) &&
+		    ath12k_tid_stats_enabled(dp_pdev)) {
 			ath12k_tid_rx_stats(ahvif, rx_desc_data.tid, msdu->len,
 					    pkt_reason);
 		}
@@ -1018,8 +1018,8 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
 			ahvif->wmm_stats.rx_type = dp_pdev->wmm_stats.rx_type;
 			ahvif->wmm_stats.total_wmm_rx_pkts[ahvif->wmm_stats.rx_type]++;
-			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-			    ath12k_debugfs_tid_stats_enabled(dp_pdev))
+			if (ath12k_dp_stats_enabled(dp_pdev) &&
+			    ath12k_tid_stats_enabled(dp_pdev))
 				ath12k_tid_rx_stats(ahvif, tid, msdu->len,
 						    ATH_RX_SFE_PKTS);
 		}
@@ -1305,8 +1305,8 @@ ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 		DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, recv_from_reo, link_id,
 				      1, msdu_len);
 
-		if (unlikely(ath12k_debugfs_is_dp_stats_enabled(dp_pdev))) {
-			if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
+		if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
 				ath12k_dp_rx_update_peer_msdu_stats(peer,
 								    rx_msdu_info,
 								    rx_mpdu_info,
@@ -1475,8 +1475,8 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 			continue;
 		}
 
-		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+		if (ath12k_dp_stats_enabled(dp_pdev) &&
+		    ath12k_tid_stats_enabled(dp_pdev)) {
 			rcu_read_lock();
 			link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
 									     spd_desc_l->rx_mpdu_info.flow_info.peer_id);
@@ -1676,8 +1676,8 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 						      hw_links[hw_link_id].pdev_idx);
 
 		dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
-		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-		    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+		if (ath12k_dp_stats_enabled(dp_pdev) &&
+		    ath12k_tid_stats_enabled(dp_pdev)) {
 			rcu_read_lock();
 			link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
 									     mpdu_info->flow_info.peer_id);
@@ -2334,8 +2334,8 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 			ahvif = ath12k_vif_to_ahvif(peer->vif);
 			ahvif->wmm_stats.rx_type = dp_pdev->wmm_stats.rx_type;
 			ahvif->wmm_stats.total_wmm_rx_drop[ahvif->wmm_stats.rx_type]++;
-			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-			    ath12k_debugfs_tid_stats_enabled(dp_pdev))
+			if (ath12k_dp_stats_enabled(dp_pdev) &&
+			    ath12k_tid_stats_enabled(dp_pdev))
 				ath12k_tid_drop_rx_stats(ahvif, rxcb->tid, 0,
 							 ATH_RX_RBM_ERR);
 		}
@@ -2358,8 +2358,8 @@ ath12k_wifi7_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 	rx_desc = (struct hal_rx_desc *)msdu->data;
 	ath12k_wifi7_dp_extract_rx_desc_data(dp, &rx_desc_data, rx_desc, rx_desc);
 
-	if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-	    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+	if (ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_tid_stats_enabled(dp_pdev)) {
 		peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
 								rxcb->peer_id);
 		if (peer) {
@@ -2730,8 +2730,8 @@ static int ath12k_wifi7_dp_rx_h_null_q_desc(struct ath12k_pdev_dp *dp_pdev,
 
 	rxcb->tid = rx_desc_data->tid;
 
-	if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-	    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+	if (ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_tid_stats_enabled(dp_pdev)) {
 		rcu_read_lock();
 		link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
 								     rxcb->peer_id);
@@ -2835,15 +2835,15 @@ static bool ath12k_wifi7_dp_rx_h_reo_err(struct ath12k_pdev_dp *dp_pdev,
 		 */
 		DP_DEVICE_STATS_INC(dp, wbm_err.drop[WBM_ERR_DROP_REO_GENERIC], 1);
 		drop_reason = ATH_RX_REO_ERR;
-		if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-		    ath12k_debugfs_tid_stats_enabled(dp_pdev))
+		if (ath12k_dp_stats_enabled(dp_pdev) &&
+		    ath12k_tid_stats_enabled(dp_pdev))
 			ath12k_fill_reo_drop_reason(rxcb, drop_reason);
 		drop = true;
 		break;
 	}
 
-	if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-	    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+	if (ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_tid_stats_enabled(dp_pdev)) {
 		msdu_len = le32_get_bits(rx_desc->u.qcn9274.msdu_end.info10,
 					 RX_MSDU_END_INFO10_MSDU_LENGTH);
 
@@ -3109,8 +3109,8 @@ static bool ath12k_wifi7_dp_rx_h_rxdma_err(struct ath12k_pdev_dp *dp_pdev,
 		break;
 	}
 
-	if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-	    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+	if (ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_tid_stats_enabled(dp_pdev)) {
 		msdu_len = le32_get_bits(rx_desc->u.qcn9274.msdu_end.info10,
 					 RX_MSDU_END_INFO10_MSDU_LENGTH);
 
@@ -3394,8 +3394,8 @@ int ath12k_wifi7_dp_rx_process_wbm_err(struct ath12k_dp *dp,
 		}
 
 		if (rxcb->err_rel_src < HAL_WBM_REL_SRC_MODULE_MAX) {
-			if (ath12k_debugfs_is_dp_stats_enabled(dp_pdev) &&
-			    ath12k_debugfs_tid_stats_enabled(dp_pdev)) {
+			if (ath12k_dp_stats_enabled(dp_pdev) &&
+			    ath12k_tid_stats_enabled(dp_pdev)) {
 				rcu_read_lock();
 				link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp,
 										     dp_pdev,
@@ -4121,6 +4121,9 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 		dp_pdev->ar = ar;
 		dp_pdev->dp_hw = &ar->ah->dp_hw;
 		dp_pdev->hw_link_id = ar->hw_link_id;
+
+		/* Enable enable_dp_stats by default */
+		ar->dp.dp_stats_mask |= DP_ENABLE_STATS;
 
 		if (!dp_pdev->dp_mon_pdev_configured) {
 			ret = ath12k_dp_mon_pdev_init(dp_pdev);

@@ -1137,8 +1137,6 @@ struct ath12k_debug {
 	struct completion tpc_complete;
 	struct wmi_tpc_stats_arg *tpc_stats;
 	u32 rx_filter;
-	bool extd_rx_stats;
-	bool extd_tx_stats;
 	bool enable_m3_dump;
 	struct dentry *debugfs_pktlog;
 	struct ath12k_pktlog pktlog;

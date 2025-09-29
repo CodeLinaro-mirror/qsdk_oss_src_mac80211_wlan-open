@@ -22542,6 +22542,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		 */
 		wiphy->interface_modes &= ~BIT(NL80211_IFTYPE_MONITOR);
 
+	ath12k_hw_debugfs_register(ah);
+
 	for_each_ar(ah, ar, i) {
 		/* Apply the regd received during initialization */
 		ret = ath12k_regd_update(ar, true);

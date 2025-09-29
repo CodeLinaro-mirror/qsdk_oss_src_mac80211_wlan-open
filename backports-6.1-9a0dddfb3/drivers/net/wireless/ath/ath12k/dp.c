@@ -2289,38 +2289,40 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->tx[i].tx_failed +=
 			src_peer_stats->tx[i].tx_failed;
 
-		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
-			for(j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
-				dst_peer_stats->tx[i].wbm_rel_reason[j] +=
-					src_peer_stats->tx[i].wbm_rel_reason[j];
-			for(j = 0; j < HAL_WBM_TQM_REL_REASON_MAX; j++)
-				dst_peer_stats->tx[i].tqm_rel_reason[j] +=
-					src_peer_stats->tx[i].tqm_rel_reason[j];
+		if (ath12k_dp_stats_enabled(dp_pdev)) {
+			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
+				for (j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
+					dst_peer_stats->tx[i].wbm_rel_reason[j] +=
+						src_peer_stats->tx[i].wbm_rel_reason[j];
+				for (j = 0; j < HAL_WBM_TQM_REL_REASON_MAX; j++)
+					dst_peer_stats->tx[i].tqm_rel_reason[j] +=
+						src_peer_stats->tx[i].tqm_rel_reason[j];
 
-			dst_peer_stats->tx[i].release_src_not_tqm +=
-				src_peer_stats->tx[i].release_src_not_tqm;
-			dst_peer_stats->tx[i].retry_count +=
-				src_peer_stats->tx[i].retry_count;
-			dst_peer_stats->tx[i].total_msdu_retries +=
-				src_peer_stats->tx[i].total_msdu_retries;
-			dst_peer_stats->tx[i].multiple_retry_count +=
-				src_peer_stats->tx[i].multiple_retry_count;
-			dst_peer_stats->tx[i].ofdma +=
-				src_peer_stats->tx[i].ofdma;
-			dst_peer_stats->tx[i].amsdu_cnt +=
-				src_peer_stats->tx[i].amsdu_cnt;
-			dst_peer_stats->tx[i].non_amsdu_cnt +=
-				src_peer_stats->tx[i].non_amsdu_cnt;
-			dst_peer_stats->tx[i].inval_link_id_pkt_cnt +=
-				src_peer_stats->tx[i].inval_link_id_pkt_cnt;
-			dst_peer_stats->tx[i].ucast +=
-				src_peer_stats->tx[i].ucast;
+				dst_peer_stats->tx[i].release_src_not_tqm +=
+					src_peer_stats->tx[i].release_src_not_tqm;
+				dst_peer_stats->tx[i].retry_count +=
+					src_peer_stats->tx[i].retry_count;
+				dst_peer_stats->tx[i].total_msdu_retries +=
+					src_peer_stats->tx[i].total_msdu_retries;
+				dst_peer_stats->tx[i].multiple_retry_count +=
+					src_peer_stats->tx[i].multiple_retry_count;
+				dst_peer_stats->tx[i].ofdma +=
+					src_peer_stats->tx[i].ofdma;
+				dst_peer_stats->tx[i].amsdu_cnt +=
+					src_peer_stats->tx[i].amsdu_cnt;
+				dst_peer_stats->tx[i].non_amsdu_cnt +=
+					src_peer_stats->tx[i].non_amsdu_cnt;
+				dst_peer_stats->tx[i].inval_link_id_pkt_cnt +=
+					src_peer_stats->tx[i].inval_link_id_pkt_cnt;
+				dst_peer_stats->tx[i].ucast +=
+					src_peer_stats->tx[i].ucast;
 
-			if (is_vdev_peer) {
-				dst_peer_stats->tx[i].mcast +=
-					src_peer_stats->tx[i].mcast;
-				dst_peer_stats->tx[i].bcast +=
-					src_peer_stats->tx[i].bcast;
+				if (is_vdev_peer) {
+					dst_peer_stats->tx[i].mcast +=
+						src_peer_stats->tx[i].mcast;
+					dst_peer_stats->tx[i].bcast +=
+						src_peer_stats->tx[i].bcast;
+				}
 			}
 		}
 	}
@@ -2342,17 +2344,19 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->rx[i].sent_to_stack_fast.bytes +=
 			src_peer_stats->rx[i].sent_to_stack_fast.bytes;
 
-		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
-			dst_peer_stats->rx[i].mcast +=
-				src_peer_stats->rx[i].mcast;
-			dst_peer_stats->rx[i].ucast +=
-				src_peer_stats->rx[i].ucast;
-			dst_peer_stats->rx[i].non_amsdu +=
-				src_peer_stats->rx[i].non_amsdu;
-			dst_peer_stats->rx[i].msdu_part_of_amsdu +=
-				src_peer_stats->rx[i].msdu_part_of_amsdu;
-			dst_peer_stats->rx[i].mpdu_retry +=
-				src_peer_stats->rx[i].mpdu_retry;
+		if (ath12k_dp_stats_enabled(dp_pdev)) {
+			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
+				dst_peer_stats->rx[i].mcast +=
+					src_peer_stats->rx[i].mcast;
+				dst_peer_stats->rx[i].ucast +=
+					src_peer_stats->rx[i].ucast;
+				dst_peer_stats->rx[i].non_amsdu +=
+					src_peer_stats->rx[i].non_amsdu;
+				dst_peer_stats->rx[i].msdu_part_of_amsdu +=
+					src_peer_stats->rx[i].msdu_part_of_amsdu;
+				dst_peer_stats->rx[i].mpdu_retry +=
+					src_peer_stats->rx[i].mpdu_retry;
+			}
 		}
 	}
 
@@ -2385,39 +2389,41 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->tx[i].tx_failed =
 			src_peer_stats->tx[i].tx_failed;
 
-		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
-			for(j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
-				dst_peer_stats->tx[i].wbm_rel_reason[j] =
-					src_peer_stats->tx[i].wbm_rel_reason[j];
+		if (ath12k_dp_stats_enabled(dp_pdev)) {
+			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
+				for (j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
+					dst_peer_stats->tx[i].wbm_rel_reason[j] =
+						src_peer_stats->tx[i].wbm_rel_reason[j];
 
-			for(j = 0; j < HAL_WBM_TQM_REL_REASON_MAX; j++)
-				dst_peer_stats->tx[i].tqm_rel_reason[j] =
-                                        src_peer_stats->tx[i].tqm_rel_reason[j];
+				for (j = 0; j < HAL_WBM_TQM_REL_REASON_MAX; j++)
+					dst_peer_stats->tx[i].tqm_rel_reason[j] =
+						src_peer_stats->tx[i].tqm_rel_reason[j];
 
-			dst_peer_stats->tx[i].release_src_not_tqm =
-				src_peer_stats->tx[i].release_src_not_tqm;
-			dst_peer_stats->tx[i].retry_count =
-				src_peer_stats->tx[i].retry_count;
-			dst_peer_stats->tx[i].total_msdu_retries =
-				src_peer_stats->tx[i].total_msdu_retries;
-			dst_peer_stats->tx[i].multiple_retry_count =
-				src_peer_stats->tx[i].multiple_retry_count;
-			dst_peer_stats->tx[i].ofdma =
-				src_peer_stats->tx[i].ofdma;
-			dst_peer_stats->tx[i].amsdu_cnt =
-				src_peer_stats->tx[i].amsdu_cnt;
-			dst_peer_stats->tx[i].non_amsdu_cnt =
-				src_peer_stats->tx[i].non_amsdu_cnt;
-			dst_peer_stats->tx[i].inval_link_id_pkt_cnt =
-				src_peer_stats->tx[i].inval_link_id_pkt_cnt;
-			dst_peer_stats->tx[i].ucast =
-				src_peer_stats->tx[i].ucast;
+				dst_peer_stats->tx[i].release_src_not_tqm =
+					src_peer_stats->tx[i].release_src_not_tqm;
+				dst_peer_stats->tx[i].retry_count =
+					src_peer_stats->tx[i].retry_count;
+				dst_peer_stats->tx[i].total_msdu_retries =
+					src_peer_stats->tx[i].total_msdu_retries;
+				dst_peer_stats->tx[i].multiple_retry_count =
+					src_peer_stats->tx[i].multiple_retry_count;
+				dst_peer_stats->tx[i].ofdma =
+					src_peer_stats->tx[i].ofdma;
+				dst_peer_stats->tx[i].amsdu_cnt =
+					src_peer_stats->tx[i].amsdu_cnt;
+				dst_peer_stats->tx[i].non_amsdu_cnt =
+					src_peer_stats->tx[i].non_amsdu_cnt;
+				dst_peer_stats->tx[i].inval_link_id_pkt_cnt =
+					src_peer_stats->tx[i].inval_link_id_pkt_cnt;
+				dst_peer_stats->tx[i].ucast =
+					src_peer_stats->tx[i].ucast;
 
-			if (is_vdev_peer) {
-				dst_peer_stats->tx[i].mcast =
-					src_peer_stats->tx[i].mcast;
-				dst_peer_stats->tx[i].bcast =
-					src_peer_stats->tx[i].bcast;
+				if (is_vdev_peer) {
+					dst_peer_stats->tx[i].mcast =
+						src_peer_stats->tx[i].mcast;
+					dst_peer_stats->tx[i].bcast =
+						src_peer_stats->tx[i].bcast;
+				}
 			}
 		}
 	}
@@ -2438,17 +2444,19 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 		dst_peer_stats->rx[i].sent_to_stack_fast.bytes =
 			src_peer_stats->rx[i].sent_to_stack_fast.bytes;
 
-		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
-			dst_peer_stats->rx[i].mcast =
-				src_peer_stats->rx[i].mcast;
-			dst_peer_stats->rx[i].ucast =
-				src_peer_stats->rx[i].ucast;
-			dst_peer_stats->rx[i].non_amsdu =
-				src_peer_stats->rx[i].non_amsdu;
-			dst_peer_stats->rx[i].msdu_part_of_amsdu =
-				src_peer_stats->rx[i].msdu_part_of_amsdu;
-			dst_peer_stats->rx[i].mpdu_retry =
-				src_peer_stats->rx[i].mpdu_retry;
+		if (ath12k_dp_stats_enabled(dp_pdev)) {
+			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
+				dst_peer_stats->rx[i].mcast =
+					src_peer_stats->rx[i].mcast;
+				dst_peer_stats->rx[i].ucast =
+					src_peer_stats->rx[i].ucast;
+				dst_peer_stats->rx[i].non_amsdu =
+					src_peer_stats->rx[i].non_amsdu;
+				dst_peer_stats->rx[i].msdu_part_of_amsdu =
+					src_peer_stats->rx[i].msdu_part_of_amsdu;
+				dst_peer_stats->rx[i].mpdu_retry =
+					src_peer_stats->rx[i].mpdu_retry;
+			}
 		}
 	}
 
@@ -2520,24 +2528,26 @@ static void ath12k_dp_aggr_vif_ingress_stats(struct ath12k_pdev_dp *dp_pdev,
 			vif->stats[i].tx_i.enque_to_hw_fast.bytes;
 
 
-		for (j = 0 ;j < DP_TX_ENQ_ERR_MAX; j++)
+		for (j = 0; j < DP_TX_ENQ_ERR_MAX; j++)
 			aggr_vif_stats->stats[i].tx_i.drop[j] +=
 				vif->stats[i].tx_i.drop[j];
 
-		if (ath12k_debugfs_is_dp_debug_stats_enabled(dp_pdev)) {
-			aggr_vif_stats->stats[i].tx_i.mcast +=
-				vif->stats[i].tx_i.mcast;
+		if (ath12k_dp_stats_enabled(dp_pdev)) {
+			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
+				aggr_vif_stats->stats[i].tx_i.mcast +=
+					vif->stats[i].tx_i.mcast;
 
-			for (j = 0 ;j < HAL_TCL_ENCAP_TYPE_MAX; j++)
-				aggr_vif_stats->stats[i].tx_i.encap_type[j] +=
-					vif->stats[i].tx_i.encap_type[j];
+				for (j = 0; j < HAL_TCL_ENCAP_TYPE_MAX; j++)
+					aggr_vif_stats->stats[i].tx_i.encap_type[j] +=
+						vif->stats[i].tx_i.encap_type[j];
 
-			for (j = 0 ;j < HAL_ENCRYPT_TYPE_MAX; j++)
-				aggr_vif_stats->stats[i].tx_i.encrypt_type[j] +=
-					vif->stats[i].tx_i.encrypt_type[j];
-			for (j = 0 ;j < DP_TCL_DESC_TYPE_MAX; j++)
-				aggr_vif_stats->stats[i].tx_i.desc_type[j] +=
-					vif->stats[i].tx_i.desc_type[j];
+				for (j = 0; j < HAL_ENCRYPT_TYPE_MAX; j++)
+					aggr_vif_stats->stats[i].tx_i.encrypt_type[j] +=
+						vif->stats[i].tx_i.encrypt_type[j];
+				for (j = 0; j < DP_TCL_DESC_TYPE_MAX; j++)
+					aggr_vif_stats->stats[i].tx_i.desc_type[j] +=
+						vif->stats[i].tx_i.desc_type[j];
+			}
 		}
 	}
 }
@@ -2551,7 +2561,8 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 	struct ath12k_dp_aggr_pdev_stats *aggr_pdev_stats =
 					&telemetry_radio->aggr_pdev_stats;
 
-	if (ath12k_debugfs_is_dp_debug_stats_enabled(&ar->dp))
+	if (ath12k_dp_stats_enabled(&ar->dp) &&
+	    ath12k_dp_debug_stats_enabled(&ar->dp))
 		telemetry_radio->is_extended = true;
 
 	aggr_vif_stats = vmalloc(sizeof(*aggr_vif_stats));
@@ -2577,7 +2588,8 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	struct ath12k_dp_aggr_vif_stats *aggr_vif_stats =
 						&telemetry_vif->aggr_vif_stats;
 
-	if (ath12k_debugfs_is_dp_debug_stats_enabled(&ar->dp))
+	if (ath12k_dp_stats_enabled(&ar->dp) &&
+	    ath12k_dp_debug_stats_enabled(&ar->dp))
 		telemetry_vif->is_extended = true;
 
 	/*Vif stats for requested link*/
@@ -2667,7 +2679,8 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 	peer = ath12k_dp_peer_find(dp_hw, addr);
 	peer_stats = &telemetry_peer->peer_stats;
 
-	if (ath12k_debugfs_is_dp_debug_stats_enabled(&ar->dp))
+	if (ath12k_dp_stats_enabled(&ar->dp) &&
+	    ath12k_dp_debug_stats_enabled(&ar->dp))
 		telemetry_peer->is_extended = true;
 
 	if (peer) {

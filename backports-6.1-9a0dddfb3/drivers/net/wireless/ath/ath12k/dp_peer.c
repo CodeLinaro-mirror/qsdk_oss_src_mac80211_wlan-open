@@ -683,14 +683,15 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			      u32_encode_bits(peer->peer_id, HTT_TCL_META_DATA_PEER_ID);
 	peer->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
 
-	if (ath12k_debugfs_is_extd_rx_stats_enabled(dp_pdev->ar) &&
-				!peer->peer_stats.rx_stats) {
+	if (ath12k_extd_rx_stats_enabled(dp_pdev->ar) &&
+	    !peer->peer_stats.rx_stats) {
 		peer->peer_stats.rx_stats = kzalloc(sizeof(*peer->peer_stats.rx_stats), GFP_ATOMIC);
 	}
 
-	if (ath12k_debugfs_is_extd_tx_stats_enabled(dp_pdev->ar) &&
-			(!peer->peer_stats.tx_stats)) {
-		 peer->peer_stats.tx_stats = kzalloc(sizeof(*peer->peer_stats.tx_stats), GFP_ATOMIC);
+	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar) &&
+	    !peer->peer_stats.tx_stats) {
+		peer->peer_stats.tx_stats = kzalloc(sizeof(*peer->peer_stats.tx_stats),
+						    GFP_ATOMIC);
 	}
 
 	dp_peer->qos_stats_lvl = (ar->debug.qos_stats &

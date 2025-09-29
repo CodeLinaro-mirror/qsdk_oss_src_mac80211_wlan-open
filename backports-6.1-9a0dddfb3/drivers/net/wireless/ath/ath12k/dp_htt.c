@@ -597,7 +597,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	peer_stats->ppdu_type = ppdu_type;
 	usr_stats->ru_tones = ru_tones;
 
-	if (ath12k_debugfs_is_extd_tx_stats_enabled(dp_pdev->ar))
+	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar))
 		ath12k_debugfs_sta_add_tx_stats(peer, peer_stats, rate_idx);
 
 	spin_unlock_bh(&dp->dp_lock);
