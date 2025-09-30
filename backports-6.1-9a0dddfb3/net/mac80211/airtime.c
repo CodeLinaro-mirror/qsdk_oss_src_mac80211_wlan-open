@@ -596,7 +596,8 @@ u32 ieee80211_calc_rx_airtime(struct ieee80211_hw *hw,
 
 		/* on 60GHz or sub-1GHz band, there are no legacy rates */
 		if (WARN_ON_ONCE(status->band == NL80211_BAND_60GHZ ||
-				 status->band == NL80211_BAND_S1GHZ))
+				 status->band == NL80211_BAND_S1GHZ ||
+				 status->band >= NUM_NL80211_BANDS))
 			return 0;
 
 		sband = hw->wiphy->bands[status->band];
