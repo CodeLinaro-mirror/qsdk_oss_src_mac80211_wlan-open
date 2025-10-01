@@ -1895,11 +1895,9 @@ int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
        struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
-	spin_lock_bh(&dp->dp_lock);
-
+	lockdep_assert_held(&dp->dp_lock);
        peer = ath12k_dp_link_peer_find_by_addr(dp, peer_addr);
        if (!peer) {
-		spin_unlock_bh(&dp->dp_lock);
                ath12k_dbg(ab,
                           ATH12K_DBG_DP_HTT,
                           "Failed to find peer at addr: %pM\n", peer_addr);
@@ -1907,8 +1905,6 @@ int ath12k_dp_get_peer_telemetry_stats(struct ath12k_base *ab,
        }
 
        ath12k_dp_mon_peer_telemetry_stats(peer, stats);
-
-	spin_unlock_bh(&dp->dp_lock);
 
        return 0;
 }
