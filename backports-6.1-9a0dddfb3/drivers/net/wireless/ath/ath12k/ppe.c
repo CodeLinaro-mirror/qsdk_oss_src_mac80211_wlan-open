@@ -1304,7 +1304,7 @@ int ath12k_ppeds_attach(struct ath12k_base *ab)
 	ds_node_id = ab->dp->ppe.nss_plugin_ops->ds_inst_alloc(&ppeds_ops_v2,
 							       sizeof(struct ath12k_base *));
 
-	if (ds_node_id == PPE_VP_DS_INVALID_NODE_ID) {
+	if (ds_node_id < 0 || ds_node_id == PPE_VP_DS_INVALID_NODE_ID) {
 		ath12k_err(ab, "Failed to get DS node id for device_id %d\n",
 			   ab->device_id);
 		return -ENOSR;
