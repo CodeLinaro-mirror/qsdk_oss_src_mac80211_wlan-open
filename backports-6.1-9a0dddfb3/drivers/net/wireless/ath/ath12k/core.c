@@ -3046,7 +3046,13 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 		goto exit;
 
 	ret = ath12k_mac_vdev_create(ar, arvif, is_bridge_vdev);
-	if (!is_bridge_vdev && !ret) {
+
+	if (ret) {
+		ath12k_warn(ab, "failed to create vdev %pM\n", arvif->bssid);
+		goto exit;
+	}
+
+	if (!is_bridge_vdev) {
 		ath12k_mac_vif_cache_flush(ar, arvif);
 
 		if (ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
@@ -3067,6 +3073,7 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 			}
 		}
 	}
+
 	spin_lock_bh(&dp->dp_lock);
         /* for some targets bss peer must be created before vdev_start */
 	if (ab->hw_params->vdev_start_delay &&
@@ -3094,6 +3101,13 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
                 }
         }
 
+	if (!is_bridge_vdev && !ctx->def.chan) {
+		ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+			   "Skipping vdev start for MLD %pM as chanctx is not assigned\n",
+			   arvif->bssid);
+		goto exit;
+	}
+
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ret = ath12k_mac_monitor_start(ar);
 		if (ret)
@@ -3102,10 +3116,10 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 		goto exit;
 	}
 
-	if (is_bridge_vdev && !ctx->def.chan)
-		ret = ath12k_mac_vdev_start(arvif, NULL);
-	else
+	if (ctx->def.chan)
 		ret = ath12k_mac_vdev_start(arvif, ctx);
+	else if (is_bridge_vdev)
+		ret = ath12k_mac_vdev_start(arvif, NULL);
 
 	if (ret) {
 		ath12k_err(ab, "vdev start failed during recovery\n");
@@ -3113,9 +3127,7 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	}
 
 	arvif->is_started = true;
-	arvif->is_created = true;
-
-        ret = 0;
+	ret = 0;
 exit:
 	ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
 		   "ret:%d No. of vdev created:%d, links_map:0x%x, flag:%d\n",
@@ -3195,6 +3207,7 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 	struct cfg80211_chan_def def;
 	int i, j, key_idx;
 	int ret = -EINVAL;
+	bool is_bridge_vdev;
 
 	wiphy_lock(ah->hw->wiphy);
 
@@ -3218,14 +3231,19 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 		list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
 			ahvif = arvif->ahvif;
 
+			is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
+
 			if (!ahvif)
+				continue;
+
+			if (!is_bridge_vdev && !arvif->chanctx.def.chan)
 				continue;
 
 			arvif->is_started = false;
 			arvif->is_created = false;
 
-			if (ath12k_mac_is_bridge_vdev(arvif) ||
-			    WARN_ON(ath12k_mac_vif_link_chan(ahvif->vif, arvif->link_id, &def)))
+			if (is_bridge_vdev ||
+			    ath12k_mac_vif_link_chan(ahvif->vif, arvif->link_id, &def))
 				continue;
 
 			spin_lock_bh(&ar->data_lock);
@@ -3246,11 +3264,12 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 
 		list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
 			ahvif = arvif->ahvif;
+			is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 
 			if (!ahvif)
 				continue;
 
-			if (ath12k_mac_is_bridge_vdev(arvif)) {
+			if (is_bridge_vdev) {
 				link = NULL;
 			} else {
 				rcu_read_lock();
@@ -3264,6 +3283,7 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 				rcu_read_unlock();
 			}
 			ret = ath12k_mlo_core_recovery_reconfig_link_bss(ar, link, ahvif, arvif);
+
 			if (ret) {
 				ath12k_err(ab, "ERROR in reconfig link:%d\n", ret);
 				wiphy_unlock(ah->hw->wiphy);
@@ -3293,11 +3313,15 @@ int ath12k_recovery_reconfig(struct ath12k_base *ab)
 
 		list_for_each_entry_safe_reverse(arvif, tmp, &ar->arvifs, list) {
 			ahvif = arvif->ahvif;
+			is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 
 			if (!ahvif)
 				continue;
 
-			if (ath12k_mac_is_bridge_vdev(arvif)) {
+			if (!is_bridge_vdev && !arvif->chanctx.def.chan)
+				continue;
+
+			if (is_bridge_vdev) {
 				switch (ahvif->vdev_type) {
 				case WMI_VDEV_TYPE_AP:
 					ath12k_mac_bridge_vdev_up(arvif);
