@@ -1588,8 +1588,12 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
 			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
 
-		kfree(dp_peer->qos);
-		kfree(dp_peer);
+		if (!dp_peer->peer_links_map) {
+			kfree(dp_peer->qos);
+			kfree(dp_peer);
+		} else
+			ath12k_err(NULL, "Skipping dp_peer (%pM) due to links_map (%u)",
+				   dp_peer->addr, dp_peer->peer_links_map);
 	}
 }
 

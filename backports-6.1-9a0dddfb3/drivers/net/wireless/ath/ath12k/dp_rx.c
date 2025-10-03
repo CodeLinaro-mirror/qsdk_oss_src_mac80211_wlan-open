@@ -611,6 +611,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 		list_del(&cmd_queue->list);
 		rx_tid = &cmd_queue->data;
 		if (rx_tid->vaddr) {
+			rx_tid->active = false;
 			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
 					 rx_tid->size, DMA_BIDIRECTIONAL);
 			kfree(rx_tid->vaddr);
@@ -625,6 +626,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 		list_del(&cmd->list);
 		rx_tid = &cmd->data;
 		if (rx_tid->vaddr) {
+			rx_tid->active = false;
 			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
 						     rx_tid->size, DMA_BIDIRECTIONAL);
 			kfree(rx_tid->vaddr);
@@ -639,6 +641,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 		dp->reo_cmd_cache_flush_count--;
 		rx_tid = &cmd_cache->data;
 		if (rx_tid->vaddr) {
+			rx_tid->active = false;
 			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
 						     rx_tid->size, DMA_BIDIRECTIONAL);
 			kfree(rx_tid->vaddr);
@@ -661,6 +664,7 @@ void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 	ath12k_hal_reo_shared_qaddr_cache_clear(dp->ab);
 
 	if (rx_tid->vaddr) {
+		rx_tid->active = false;
 		ath12k_core_dma_unmap_single(dp->ab->dev, rx_tid->paddr, rx_tid->size,
 					     DMA_BIDIRECTIONAL);
 		kfree(rx_tid->vaddr);
