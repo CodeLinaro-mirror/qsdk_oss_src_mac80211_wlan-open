@@ -2344,6 +2344,7 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct hal_tx_mon_ppdu_info *tx_ppdu_in
 		u64 ppdu_ts;
 
 		info[0] = __le32_to_cpu(tx_fes_stat_start->info0);
+		info[1] = __le32_to_cpu(tx_fes_stat_start->info1);
 
 		tx_ppdu_info->rx_status.ppdu_ts =
 			u32_get_bits(info[0],
