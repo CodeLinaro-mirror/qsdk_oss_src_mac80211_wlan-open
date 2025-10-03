@@ -458,7 +458,7 @@ const struct firmware *ath12k_core_firmware_request(struct ath12k_base *ab,
 	if (ret)
 		return ERR_PTR(ret);
 
-	if (fw && !fw->size)
+	if (!fw || !fw->size)
 		return ERR_PTR(-ENOENT);
 
 	ath12k_dbg(ab, ATH12K_DBG_BOOT, "boot firmware request %s size %zu\n",
@@ -1058,8 +1058,8 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag)
 		}
 	}
 
-	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags))
-		set_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ab->ag->flags);
+	if (!test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags))
+		set_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags);
 }
 
 static void ath12k_core_stop(struct ath12k_base *ab)
@@ -2009,9 +2009,12 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 				ar->pdev_suspend = false;
 			}
 
+			if (!ar)
+				ath12k_err(ab, "ar is NULL\n");
+
 			active_num_devices = ag->num_devices - ag->num_bypassed;
 			if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_ADD_DEVICE &&
-			    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK) {
+			    active_num_devices == ATH12K_MIN_NUM_DEVICES_NLINK && ar) {
 				bridge_iter.ah = ar->ah;
 				bridge_iter.active_num_devices = active_num_devices;
 				ieee80211_iterate_interfaces(ar->ah->hw, IEEE80211_IFACE_ITER_NORMAL,
@@ -3856,9 +3859,10 @@ static int ath12k_core_panic_handler(struct notifier_block *nb,
 	struct ath12k_base *ab = container_of(nb, struct ath12k_base,
 					      panic_nb);
 
+	if (!ab)
+		return 0;
 #ifdef CPTCFG_ATHDEBUG
-	if (ab)
-		athdbg_if_get_service(ab, ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES);
+	athdbg_if_get_service(ab, ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES);
 #endif
 	if (ab->in_panic)
 		goto panic_handler;
