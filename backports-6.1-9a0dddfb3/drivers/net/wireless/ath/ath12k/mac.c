@@ -1460,6 +1460,7 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 
 void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 {
+	struct list_head peers;
 	struct ath12k_dp_link_peer *peer, *tmp;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_peer *dp_peer;
@@ -1467,6 +1468,8 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	struct ath12k_link_vif *arvif, *tmp_vif;
 	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
 	u16 peerid_index;
+
+	INIT_LIST_HEAD(&peers);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -1492,11 +1495,15 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 		ath12k_dp_link_peer_rhash_delete(dp, peer);
 		peer->dp_peer = NULL;
 
-		ath12k_link_peer_free(peer);
+		list_del(&peer->list);
+		list_add(&peer->list, &peers);
 	}
 	spin_unlock_bh(&dp->dp_lock);
 
 	synchronize_rcu();
+
+	list_for_each_entry_safe(peer, tmp, &peers, list)
+		ath12k_link_peer_free(peer);
 
 	if (!list_empty(&dp->neighbor_peers))
 		ath12k_debugfs_nrp_cleanup_all(ar);
@@ -1539,6 +1546,9 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 	struct ath12k_dp_peer *dp_peer, *tmp;
 	struct ath12k_sta *ahsta = NULL;
 	u16 peerid_index;
+	struct list_head peers;
+
+	INIT_LIST_HEAD(&peers);
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	list_for_each_entry_safe(dp_peer, tmp, &dp_hw->peers, list) {
@@ -1565,16 +1575,22 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 			ah->num_ml_peers--;
 		}
 		list_del(&dp_peer->list);
+		list_add(&dp_peer->list, &peers);
+	}
+
+	spin_unlock_bh(&dp_hw->peer_lock);
+
+	synchronize_rcu();
+
+	list_for_each_entry_safe(dp_peer, tmp, &peers, list) {
+		list_del(&dp_peer->list);
+
 		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
 			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
 
 		kfree(dp_peer->qos);
 		kfree(dp_peer);
 	}
-
-	spin_unlock_bh(&dp_hw->peer_lock);
-
-	synchronize_rcu();
 }
 
 static int ath12k_mac_vdev_setup_sync(struct ath12k *ar)
