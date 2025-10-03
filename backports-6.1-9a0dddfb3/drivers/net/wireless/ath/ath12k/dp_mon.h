@@ -632,6 +632,11 @@ int ath12k_dp_mon_pdev_rx_htt_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
 	dp = dp_pdev->dp;
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
+	if (!mon_ops) {
+		ath12k_warn(dp, "mon ops is NULL\n");
+		return -EINVAL;
+	}
+
 	if (mon_ops->mon_pdev_rx_htt_srng_setup) {
 		ret = mon_ops->mon_pdev_rx_htt_srng_setup(dp_pdev,
 							  mac_id);
