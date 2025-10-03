@@ -243,6 +243,7 @@ void ath12k_wifi7_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 				update_rx_tid->active = true;
 				break;
 			}
+			update_rx_tid->active = false;
 			update_rx_tid->vaddr = NULL;
 			update_rx_tid->paddr = 0;
 			update_rx_tid->size = 0;
@@ -298,6 +299,7 @@ void ath12k_wifi7_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 
 	return;
 free_desc:
+	rx_tid->active = false;
 	ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr, rx_tid->size,
 				     DMA_BIDIRECTIONAL);
 	kfree(rx_tid->vaddr);
@@ -389,6 +391,7 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 			elem->reo_cmd_update_rx_queue_resend_flag = true;
 			break;
 		}
+		temp_rx_tid->active = false;
 		temp_rx_tid->vaddr = NULL;
 		temp_rx_tid->paddr = 0;
 		temp_rx_tid->size = 0;
@@ -399,6 +402,7 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 	}
 	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
 
+	rx_tid->active = false;
 	ath12k_wifi7_peer_rx_tid_qref_reset(ab,	peer->mlo ? peer->ml_id : peer->peer_id, tid);
 	ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
 	rx_tid->vaddr = NULL;

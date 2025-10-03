@@ -1387,6 +1387,7 @@ static void ath12k_mac_dec_num_stations(struct ath12k_link_vif *arvif,
 int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_base *partner_ab;
+	struct ath12k_dp *dp;
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_vif *ahvif;
@@ -1398,7 +1399,8 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 	struct ath12k *ar;
 	struct ath12k_hw *ah = ath12k_ag_to_ah(ag,0);
 	struct wiphy *wiphy = ah->hw->wiphy;
-	int idx, ret = 0;
+	int idx, i, k, ret = 0;
+	struct ar_sta_cookie *sta_cookie;
 	u8 link_id;
 
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
@@ -1407,13 +1409,34 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 	wiphy_lock(wiphy);
 
 	for (idx = 0; idx < ag->num_devices; idx++) {
-		partner_ab = ag->ab[idx];
+		void *cookie_table[MAX_RADIOS] = {0};
+		int cookie_idx[MAX_RADIOS] = {0};
 
-		if (partner_ab->is_bypassed ||
-		    ab == partner_ab)
+		partner_ab = ag->ab[idx];
+		dp = ath12k_ab_to_dp(partner_ab);
+
+		if (partner_ab->is_bypassed || ab == partner_ab)
 			continue;
 
+		for (i = 0; i < partner_ab->num_radios; i++) {
+			ar = partner_ab->pdevs[i].ar;
+
+			if (!ar->num_peers)
+				continue;
+
+			cookie_table[i] =
+				kcalloc(ar->num_peers, sizeof(struct ar_sta_cookie),
+					GFP_KERNEL);
+
+			if (!cookie_table[i])
+				goto free_tables;
+		}
+
+		spin_lock_bh(&dp->dp_lock);
+
 		list_for_each_entry_safe(peer, tmp, &partner_ab->dp->peers, list) {
+			int ix, pdv_id;
+
 			if (!peer->sta || !peer->mlo || !peer->vif)
 				continue;
 
@@ -1421,7 +1444,7 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 			/* get arsta */
 			sta = peer->sta;
 			ahsta = ath12k_sta_to_ahsta(sta);
-			arsta = ahsta->link[link_id];
+			arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
 
 			/* get arvif */
 			vif = peer->vif;
@@ -1434,24 +1457,87 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 
 			ar = arvif->ar;
 			if (!ar)
-			continue;
-
-			ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr);
-			if (ret) {
-				ath12k_err(partner_ab,
-					   "failed to delete peer vdev_id %d addr %pM ret %d\n",
-					   arvif->vdev_id, arsta->addr, ret);
 				continue;
-			}
 
-			spin_lock_bh(&partner_ab->base_lock);
-			ath12k_link_sta_rhash_delete(partner_ab, arsta);
-			spin_unlock_bh(&partner_ab->base_lock);
-
-			arvif->num_stations--;
-			ath12k_mac_dec_num_stations(arvif, arsta);
-			wiphy_work_cancel(wiphy, &arsta->update_wk);
+			ix = cookie_idx[ar->pdev_idx]++;
+			pdv_id = ar->pdev_idx;
+			sta_cookie = &((struct ar_sta_cookie *)cookie_table[pdv_id])[ix];
+			memcpy(sta_cookie->addr, arsta->addr, ETH_ALEN);
+			sta_cookie->vdev_id = arvif->vdev_id;
 		}
+
+		spin_unlock_bh(&dp->dp_lock);
+
+		for (i = 0; i < partner_ab->num_radios; i++) {
+			int pdv_id;
+
+			ar = partner_ab->pdevs[i].ar;
+			if (!ar || !ar->num_peers)
+				continue;
+
+			pdv_id = ar->pdev_idx;
+
+			for (k = 0; k < cookie_idx[pdv_id]; k++) {
+				int vid;
+				u8 *addr;
+
+				sta_cookie =
+				&((struct ar_sta_cookie *)cookie_table[pdv_id])[k];
+
+				vid = sta_cookie->vdev_id;
+				addr = sta_cookie->addr;
+
+				spin_lock_bh(&dp->dp_lock);
+
+				peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp,
+										    vid,
+										    addr);
+				if (!peer || !peer->sta || !peer->mlo || !peer->vif) {
+					spin_unlock_bh(&dp->dp_lock);
+					continue;
+				}
+
+				link_id = peer->link_id;
+				vif = peer->vif;
+				ahvif = (struct ath12k_vif *)vif->drv_priv;
+
+				/* get arsta */
+				sta = peer->sta;
+				ahsta = ath12k_sta_to_ahsta(sta);
+				arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
+
+				/* TODO: re-write this function or check if a data
+				 * structure needs to be modified to make a critical
+				 * section short.
+				 */
+				arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+				ar = arvif->ar;
+
+				spin_unlock_bh(&dp->dp_lock);
+
+				if (!ar)
+					continue;
+
+				ret = ath12k_peer_delete(ar, vid, addr);
+				if (ret) {
+					ath12k_err(partner_ab,
+						   "failed to delete peer vdev_id %d addr %pM ret %d\n",
+						   vid, addr, ret);
+					continue;
+				}
+
+				spin_lock_bh(&partner_ab->base_lock);
+				ath12k_link_sta_rhash_delete(partner_ab, arsta);
+				spin_unlock_bh(&partner_ab->base_lock);
+
+				arvif->num_stations--;
+				ath12k_mac_dec_num_stations(arvif, arsta);
+				wiphy_work_cancel(wiphy, &arsta->update_wk);
+			}
+		}
+free_tables:
+		for (i = 0; i < partner_ab->num_radios; i++)
+			kfree(cookie_table[i]);
 	}
 
 	wiphy_unlock(wiphy);
@@ -1588,8 +1674,12 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
 			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
 
-		kfree(dp_peer->qos);
-		kfree(dp_peer);
+		if (!dp_peer->peer_links_map) {
+			kfree(dp_peer->qos);
+			kfree(dp_peer);
+		} else
+			ath12k_err(NULL, "Skipping dp_peer (%pM) due to links_map (%u)",
+				   dp_peer->addr, dp_peer->peer_links_map);
 	}
 }
 
