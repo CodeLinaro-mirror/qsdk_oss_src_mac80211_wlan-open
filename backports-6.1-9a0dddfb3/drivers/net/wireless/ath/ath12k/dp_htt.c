@@ -1172,9 +1172,9 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	struct ath12k_link_vif *arvif;
 	struct ath12k_base *pri_ab;
 	struct ath12k_dp *dp;
-	struct ath12k_sta *ahsta;
 	u8 pdev_id, chip_id;
 	int ret;
+	struct ath12k_sta *ahsta = NULL;
 
 	msg = (struct ath12k_htt_pri_link_migr_ind_msg *)skb->data;
 
@@ -1194,7 +1194,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 		ath12k_warn(ab,
 			    "htt incorrect chip id %d in MLO pri link migration event\n",
 			    chip_id);
-		goto err_pri_link_migr_ind;
+		return;
 	}
 
 	pri_ab = ag->ab[chip_id];
@@ -1202,7 +1202,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 		ath12k_warn(ab,
 			    "htt can not find ab for chip id %d in MLO pri link migration event\n",
 			    chip_id);
-		goto err_pri_link_migr_ind;
+		return;
 	}
 
 	rcu_read_lock();
@@ -1211,7 +1211,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 		ath12k_err(pri_ab, "htt error in getting arvif from vdev id:%d\n",
 			   vdev_id);
 		rcu_read_unlock();
-		goto err_pri_link_migr_ind;
+		return;
 	}
 	rcu_read_unlock();
 
@@ -1252,10 +1252,13 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	if (ret)
 		ath12k_warn(pri_ab, "htt ML peer failed to migrate (%d)\n", ret);
 
+
 exit_pri_link_migr_ind:
 	spin_unlock_bh(&dp->dp_lock);
-err_pri_link_migr_ind:
-	ieee80211_queue_work(arvif->ar->ah->hw, &ahsta->migration_wk);
+
+	if (ahsta)
+		ieee80211_queue_work(arvif->ar->ah->hw, &ahsta->migration_wk);
+
 }
 
 static int ath12k_svc_burst_stats_update(struct ath12k_base *ab,
