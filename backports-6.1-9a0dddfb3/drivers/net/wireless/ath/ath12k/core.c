@@ -974,11 +974,11 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 
 	for (i = 0; i < ag->num_probed; i++) {
 		ab =  ag->ab[i];
-		ath12k_info(ab, "Q6 power up is started\n");
 		if (ab->pm_suspend) {
 			ath12k_hif_power_up(ab);
 			ab->pm_suspend = false;
 			ab->powerup_triggered = true;
+			ath12k_info(ab, "Q6 power up is started\n");
 			reinit_completion(&ab->power_up);
 		}
 	}
