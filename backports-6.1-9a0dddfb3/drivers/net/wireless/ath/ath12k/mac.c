@@ -18669,10 +18669,13 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		if (ret)
 			ath12k_warn(ab, "failed to stop vdev %i: %d\n",
 				    arvif->vdev_id, ret);
+		else
+			arvif->is_started = false;
 	}
 
 	ath12k_ppeds_detach_link_vif(arvif, arvif->ppe_vp_profile_idx);
-	arvif->is_started = false;
+	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
+		arvif->is_started = false;
 
 	if (ar->scan.arvif == arvif && ar->scan.state == ATH12K_SCAN_RUNNING) {
 		ath12k_scan_abort(ar);
