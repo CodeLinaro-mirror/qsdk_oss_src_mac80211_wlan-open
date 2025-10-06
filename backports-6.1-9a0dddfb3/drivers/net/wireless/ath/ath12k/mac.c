@@ -12793,7 +12793,7 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 			ar = arvif->ar;
 			if (!ar)
 				continue;
-			if (ahvif->hw_link_id == ar->hw_link_id) {
+			if (ahvif->hw_link_id == ar->radio_idx) {
 				is_link_found = true;
 				break;
 			}

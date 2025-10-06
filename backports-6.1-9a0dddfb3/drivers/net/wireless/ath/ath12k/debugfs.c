@@ -7226,7 +7226,7 @@ static ssize_t ath12k_write_primary_link(struct file *file,
 		if (!arvif)
 			continue;
 		ar = arvif->ar;
-		if (primary_link == ar->hw_link_id) {
+		if (primary_link == ar->radio_idx) {
 			ahvif->hw_link_id = primary_link;
 			is_link_found = true;
 			break;
