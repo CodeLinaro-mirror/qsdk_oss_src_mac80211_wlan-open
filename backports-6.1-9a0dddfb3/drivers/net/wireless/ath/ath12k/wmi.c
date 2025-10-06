@@ -12943,7 +12943,7 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 	bool complete_flag = true;
 	struct ath12k_pdev *pdev;
 	struct ath12k_hw *ah;
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
 	const void **tb;
 	int i, j, ret;
 
