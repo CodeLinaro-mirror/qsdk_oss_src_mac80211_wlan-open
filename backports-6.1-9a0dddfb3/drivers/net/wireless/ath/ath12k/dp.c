@@ -1514,9 +1514,10 @@ static void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 
 			ppeds_tx_descs[j].skb = NULL;
 			ppeds_tx_descs[j].in_use = false;
-			dma_unmap_single_attrs(ab->dev, ppeds_tx_descs[j].paddr,
-					       skb->len, DMA_TO_DEVICE,
-					       DMA_ATTR_SKIP_CPU_SYNC);
+			ath12k_core_dma_unmap_single_attrs(ab->dev,
+							   ppeds_tx_descs[j].paddr,
+							   skb->len, DMA_TO_DEVICE,
+							   DMA_ATTR_SKIP_CPU_SYNC);
 
 			dev_kfree_skb_any(skb);
 
