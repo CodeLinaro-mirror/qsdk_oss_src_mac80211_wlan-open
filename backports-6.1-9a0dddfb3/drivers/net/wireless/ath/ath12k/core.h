@@ -2353,6 +2353,17 @@ static inline void ath12k_core_dma_unmap_single(struct device *dev, dma_addr_t d
 #endif
 }
 
+static inline void ath12k_core_dma_unmap_single_attrs(struct device *dev,
+						      dma_addr_t dma_handle, size_t size,
+						      enum dma_data_direction direction,
+						      unsigned long attrs)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dma_unmap_single_attrs(dev, dma_handle, size, direction, attrs);
+#endif
+}
+
+
 static inline dma_addr_t
 ath12k_core_dma_map_page(struct device *dev, struct page *page,
 			 unsigned long offset, size_t size,

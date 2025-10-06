@@ -179,11 +179,12 @@ bool ath12k_ppeds_free_rx_desc_v2(struct ppe_ds_wlan_rxdesc_elem *arr,
 	 * touched by host. So, buffer unmap can be skipped.
 	 */
 	if (!skb->recycled_for_ds) {
-		dmac_inv_range_no_dsb(skb->data, skb->data + (skb->len +
-				      skb_tailroom(skb)));
-		dma_unmap_single_attrs(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
-				       skb->len + skb_tailroom(skb),
-				       DMA_FROM_DEVICE, DMA_ATTR_SKIP_CPU_SYNC);
+		ath12k_core_dmac_inv_range_no_dsb(skb->data, skb->data + (skb->len +
+						  skb_tailroom(skb)));
+		ath12k_core_dma_unmap_single_attrs(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
+						   skb->len + skb_tailroom(skb),
+						   DMA_FROM_DEVICE,
+						   DMA_ATTR_SKIP_CPU_SYNC);
 	}
 
 	skb->recycled_for_ds = 0;
@@ -405,9 +406,10 @@ u32 ath12k_ppeds_get_batched_tx_desc_v2(int ds_node_id,
 
 			skb_reserve(skb, headroom);
 			if (!skb->recycled_for_ds) {
-				dmac_inv_range_no_dsb((void *)skb->data,
-						      (void *)skb->data + buff_size - headroom);
-						      skb->recycled_for_ds = 1;
+				ath12k_core_dmac_inv_range_no_dsb((void *)skb->data,
+								  ((void *)skb->data +
+								  buff_size - headroom));
+				skb->recycled_for_ds = 1;
 			}
 
 			paddr = virt_to_phys(skb->data);
