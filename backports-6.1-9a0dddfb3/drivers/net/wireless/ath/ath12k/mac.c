@@ -2565,7 +2565,7 @@ static void ath12k_mac_get_hw_link_map(struct ieee80211_vif *vif,
 	u8 i, j;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif;
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
 
 	*hw_link_map = 0;
 
@@ -2583,7 +2583,8 @@ static void ath12k_mac_get_hw_link_map(struct ieee80211_vif *vif,
 			ar = arvif->ar;
 			break;
 		}
-		*hw_link_map |= BIT(ar->hw_link_id);
+		if (ar)
+			*hw_link_map |= BIT(ar->hw_link_id);
 	}
 }
 
