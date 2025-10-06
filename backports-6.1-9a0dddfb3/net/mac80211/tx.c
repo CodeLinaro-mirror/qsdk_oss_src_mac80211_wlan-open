@@ -5719,7 +5719,7 @@ u8 ieee80211_beacon_update_cntdwn(struct ieee80211_vif *vif, unsigned int link_i
 		goto unlock;
 
 	count = __ieee80211_beacon_update_cntdwn(beacon);
-	if (wdev->valid_links && wdev->links[link_id].switch_count != count) {
+	if (wdev && wdev->valid_links && wdev->links[link_id].switch_count != count) {
 		wdev->links[link_id].switch_count = count;
 		wdev->critical_update = 1;
 	}
