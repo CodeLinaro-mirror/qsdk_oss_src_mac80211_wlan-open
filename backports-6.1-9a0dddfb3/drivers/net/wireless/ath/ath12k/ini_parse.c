@@ -139,7 +139,7 @@ static int ini_read_values(char **main_cursor,
 int ath12k_ini_parse(const char *ini_path, void *context,
 	      ath12k_ini_item_cb item_cb)
 {
-	int ret;
+	int ret = 0;
 	char *read_key;
 	char *read_value;
 	bool section_item;
@@ -201,7 +201,7 @@ int ath12k_ini_section_parse(const char *ini_path, void *context,
 		      ath12k_ini_item_cb item_cb,
 				 const char *section_name)
 {
-	int ret;
+	int ret = 0;
 	char *read_key;
 	char *read_value;
 	bool section_item;
@@ -250,15 +250,8 @@ int ath12k_ini_section_parse(const char *ini_path, void *context,
 		}
 	}
 
-	if (ini_read_count) {
-		ath12k_dbg(NULL, ATH12K_DBG_INI, "INI parse read: %d from section %s",
-				   ini_read_count, section_name);
-		ret = 0;
-	} else {
-		ath12k_dbg(NULL, ATH12K_DBG_INI, "INI file parse fail: Section not found %s",
-				       section_name);
-		ret = -EINVAL;
-	}
+	ath12k_dbg(NULL, ATH12K_DBG_INI, "Section INI parse read: %d from section %s",
+		   ini_read_count, section_name);
 
 	vfree(fbuf);
 	return ret;

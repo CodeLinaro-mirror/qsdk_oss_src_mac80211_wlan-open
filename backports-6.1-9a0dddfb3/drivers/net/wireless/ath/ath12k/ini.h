@@ -211,7 +211,7 @@ struct ath12k_cfg_values {
 /**
  * ath12k_cfg_init - Initialize the INI
  * @ab: reference to ath12_base
- * Return: void
+ * Return: 0 on success, Non-zero on error
  */
 int ath12k_cfg_init(struct ath12k_base *ab);
 
@@ -223,25 +223,23 @@ int ath12k_cfg_init(struct ath12k_base *ab);
 void ath12k_cfg_deinit(struct ath12k_base *ab);
 
 /**
+ * ath12k_cfg_global_init - Initialize the INI global ctx
+ * Return: void
+ */
+void ath12k_cfg_global_init(void);
+
+/**
+ * ath12k_cfg_global_deinit - Deinitialize the INI global ctx
+ * Return: void
+ */
+void ath12k_cfg_global_deinit(void);
+
+/**
  * ath12k_cfg_parse_pdev_section - Parse pdev section
  * @ab: reference to ath12_base
  * Return: void
  */
 void ath12k_cfg_parse_pdev_section(struct ath12k_base *ab);
-
-/**
- * ath12k_cfg_dispatcher_init - Initialize the store
- * @ab: reference to ath12_base
- * Return: 0 on success, Non-zero on error
- */
-int ath12k_cfg_dispatcher_init(struct ath12k_base *ab);
-
-/**
- * ath12k_cfg_dispatcher_deinit - Deinitialize the store
- * @ab: reference to ath12_base
- * Return: 0 on success, Non-zero on error
- */
-int ath12k_cfg_dispatcher_deinit(struct ath12k_base *ab);
 
 /**
  * ath12k_cfg_store_print - Print the contents of cfg store

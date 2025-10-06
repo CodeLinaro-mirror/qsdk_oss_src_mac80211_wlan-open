@@ -1958,13 +1958,14 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 		goto err_firmware_stop;
 	}
 
-	if (ath12k_cfg_init(ab))
-		ath12k_err(ab, "failed to initialize INI data in driver\n");
-	else
-		ath12k_info(ab, "initialized INI data in driver\n");
 
 	mutex_lock(&ag->mutex);
 	mutex_lock(&ab->core_lock);
+
+	if (ath12k_cfg_init(ab))
+		ath12k_err(ab, "Failed to initialize per radio INI data in driver\n");
+	else
+		ath12k_info(ab, "Initialized per radio INI data in driver\n");
 
 	ret = ath12k_core_start(ab);
 	if (ret) {
