@@ -5605,8 +5605,7 @@ static int ath12k_mac_fils_discovery(struct ath12k_link_vif *arvif,
 
 		tmpl = ieee80211_get_unsol_bcast_probe_resp_tmpl(hw, vif, info->link_id);
 		if (tmpl)
-			ret = ath12k_wmi_probe_resp_tmpl(ar, arvif->vdev_id,
-							 tmpl);
+			ret = ath12k_wmi_probe_resp_tmpl(ar, arvif, tmpl);
 	} else { /* Disable */
 		return ath12k_wmi_fils_discovery(ar, arvif->vdev_id, 0, false);
 	}
