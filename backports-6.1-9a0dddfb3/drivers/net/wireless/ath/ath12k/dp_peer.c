@@ -622,7 +622,7 @@ int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 
 	list_add(&dp_peer->list, &dp_hw->peers);
 
-	if (dp_peer->is_mlo)
+	if (dp_peer->is_mlo && dp_peer->peer_id < MAX_DP_PEER_LIST_SIZE)
 		rcu_assign_pointer(dp_hw->dp_peer_list[dp_peer->peer_id], dp_peer);
 
 	spin_unlock_bh(&dp_hw->peer_lock);
