@@ -10362,10 +10362,12 @@ int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
 					  struct ieee80211_link_sta *link_sta)
 {
 	struct ath12k_vendor_generic_peer_assoc_event vend_event = {0};
-	struct ath12k_sta *ahsta = arsta->ahsta;
+	struct ath12k_sta *ahsta;
 
 	if (!link_sta || !arsta)
 		return -EINVAL;
+
+	ahsta = arsta->ahsta;
 
 	vend_event.category = QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_DISASSOC;
 
@@ -10385,10 +10387,12 @@ int ath12k_mac_vendor_send_assoc_event(struct ath12k_link_sta *arsta,
 				       bool reassoc)
 {
 	struct ath12k_vendor_generic_peer_assoc_event vend_event = {0};
-	struct ath12k_sta *ahsta = arsta->ahsta;
+	struct ath12k_sta *ahsta;
 
 	if (!link_sta || !arsta)
 		return -EINVAL;
+
+	ahsta = arsta->ahsta;
 
 	vend_event.category = QCA_WLAN_VENDOR_ATTR_GENERIC_CATEGORY_ASSOC_NO_T2LM_INFO;
 

@@ -1269,7 +1269,7 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 static int ath12k_extract_user_inputs(struct nlattr **tb,
 				      struct ath12k_telemetry_command *cmd)
 {
-	int ret;
+	int ret = 0;
 
 	if (tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_HIERARCHY_TYPE])
 		cmd->obj = nla_get_u8(tb[QCA_VENDOR_ATTR_WLAN_TELEMETRY_HIERARCHY_TYPE]);
@@ -3874,13 +3874,13 @@ static int ath12k_vendor_set_wifi_params(struct wiphy *wiphy,
 {
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_vif *ahvif;
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_hw *ah = NULL;
 	struct ath12k *ar;
 	u32 *data = (u32 *)params->data;
 	u32 param = params->value;
 	bool reload = false;
-	u32 value = *data;
+	u32 value;
 	int ret = -1;
 
 	lockdep_assert_wiphy(wiphy);
@@ -3888,6 +3888,8 @@ static int ath12k_vendor_set_wifi_params(struct wiphy *wiphy,
 	vif = wdev_to_ieee80211_vif(wdev);
 	if (!vif || !data)
 		return -EINVAL;
+
+	value = *data;
 
 	ahvif = ath12k_vif_to_ahvif(vif);
 	if (!ahvif)
@@ -4014,7 +4016,7 @@ static int ath12k_vendor_get_wifi_params(struct wiphy *wiphy,
 {
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_vif *ahvif;
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif = NULL;
 	struct ieee80211_hw *hw = wiphy_to_ieee80211_hw(wiphy);
 	struct ath12k_hw *ah = hw->priv;
 	int param = params->value;

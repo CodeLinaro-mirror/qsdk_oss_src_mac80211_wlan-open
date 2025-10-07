@@ -414,6 +414,12 @@ ath12k_vendor_send_init_response(const u8 service_id,
 	}
 
 	nl_per_link_info = nla_nest_start(vendor_event, link_info->hw_link_id);
+	if (!nl_per_link_info) {
+		ath12k_err(NULL, "failed to put soc per link info soc:%d",
+			   soc_info->soc_id);
+		goto error;
+	}
+
 	ATH12K_VENDOR_PUT(vendor_event, u16,
 			  QCA_WLAN_VENDOR_ATTR_LINK_INFO_HW_LINK_ID,
 			  link_info->hw_link_id);
@@ -964,7 +970,7 @@ static int ath12k_vendor_generic_report_disassoc(struct sk_buff *vendor_event,
 	for (index = 0; index < peer_event->num_links; index++) {
 		nl_per_link_entry = nla_nest_start(vendor_event, index);
 
-		if (!nl_mld_link_entry) {
+		if (!nl_per_link_entry) {
 			ath12k_err(NULL, "Fails to start nested attr QCA_WLAN_VENDOR_ATTR_RM_GENERIC_ASSOC_PEER_LINK_ENTRY");
 			return -ENOMEM;
 		}
