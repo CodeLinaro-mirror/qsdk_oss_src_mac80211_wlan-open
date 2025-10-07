@@ -909,6 +909,12 @@ static int ieee80211_assign_link_chanctx(struct ieee80211_link_data *link,
 	struct ieee80211_chanctx *curr_ctx = NULL;
 	bool new_idle;
 	int ret;
+	unsigned int cac_time_ms = sdata->wdev.links[link->link_id].cac_time_ms;
+	unsigned long cac_start_time = sdata->wdev.links[link->link_id].cac_start_time;
+	unsigned int total_cac_time = jiffies_to_msecs(jiffies -
+						       cac_start_time);
+	bool radar_detected;
+	bool radar_enabled;
 
 	if (WARN_ON(sdata->vif.type == NL80211_IFTYPE_NAN))
 		return -EOPNOTSUPP;
@@ -922,6 +928,13 @@ static int ieee80211_assign_link_chanctx(struct ieee80211_link_data *link,
 		drv_unassign_vif_chanctx(local, sdata, link->conf, curr_ctx);
 		conf = NULL;
 		list_del(&link->assigned_chanctx_list);
+
+		radar_detected = curr_ctx->radar_detected;
+		radar_enabled = ieee80211_chanctx_radar_required(local, curr_ctx);
+
+		if ((cac_time_ms > total_cac_time) && !radar_detected &&
+		    ieee80211_chanctx_num_assigned(local, curr_ctx) > 0)
+			curr_ctx->conf.radar_enabled = radar_enabled;
 	}
 
 	if (new_ctx) {
