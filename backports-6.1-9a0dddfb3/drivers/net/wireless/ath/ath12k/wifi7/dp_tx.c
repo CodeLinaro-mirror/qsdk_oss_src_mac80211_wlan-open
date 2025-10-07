@@ -162,7 +162,8 @@ ath12k_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp_peer *dp_peer;
 	u8 scs_id;
-	u16 msduq, qos_id, peer_id;
+	u16 msduq, peer_id;
+	u16 qos_id = QOS_ID_MAX;
 	int ret;
 
 	if (mark & SDWF_VALID_MASK) {
