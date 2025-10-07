@@ -1353,9 +1353,9 @@ void ath12k_mac_link_sta_rhash_cleanup(void *data,
 
 	for_each_set_bit(link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS) {
 		arsta = ahsta->link[link_id];
-		arvif = arsta->arvif;
 		if (!arsta)
 			continue;
+		arvif = arsta->arvif;
 		if (!(arvif->ar == ar))
 			continue;
 
