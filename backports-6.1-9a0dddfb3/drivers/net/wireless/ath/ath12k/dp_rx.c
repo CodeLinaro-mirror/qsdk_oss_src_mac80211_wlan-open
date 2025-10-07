@@ -1562,19 +1562,18 @@ void ath12k_dp_tid_setup(void *data, struct ieee80211_sta *sta)
                 return;
 
 	links_map = ahsta->links_map;
-        for_each_set_bit(link_id, &links_map,
-                         IEEE80211_MLD_MAX_NUM_LINKS) {
-                arsta = ahsta->link[link_id];
-                if (!arsta)
-                        continue;
-                arvif = arsta->arvif;
-                if (arvif && arvif->ar->ab == ab) {
-                        ar = arvif->ar;
-                        if (ar)
-                                ath12k_dp_peer_reo_tid_setup(ar, arvif->vdev_id,
-                                                     arsta->addr);
-                }
-        }
+	for_each_set_bit(link_id, &links_map,
+			 IEEE80211_MLD_MAX_NUM_LINKS) {
+		arsta = ahsta->link[link_id];
+		if (!arsta)
+			continue;
+		arvif = arsta->arvif;
+		if (arvif && arvif->ar && arvif->ar->ab == ab) {
+			ar = arvif->ar;
+			ath12k_dp_peer_reo_tid_setup(ar, arvif->vdev_id,
+						     arsta->addr);
+		}
+	}
 }
 
 void ath12k_dp_peer_tid_setup(struct ath12k_base *ab)
