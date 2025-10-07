@@ -10867,6 +10867,8 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 {
 	struct ath12k_dp_link_peer *peer;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
+	struct ath12k_sta *ahsta = arsta->ahsta;
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -10883,7 +10885,8 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
-	if (vif->type == NL80211_IFTYPE_STATION && arvif->is_up) {
+	if ((vif->type == NL80211_IFTYPE_STATION ||
+	     sta->reconf.added_links) && arvif->is_up) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
 						arvif->vdev_id,
 						WMI_PEER_AUTHORIZE,
@@ -12512,11 +12515,6 @@ skip_pri_link_selection:
 				}
 			}
 			ath12k_wsi_load_info_stats_update(ahvif, ahsta, false);
-
-			ret = ath12k_mac_station_unauthorize(ar, arvif, arsta);
-			if (ret)
-				ath12k_warn(ar->ab, "Failed to unauth station: %pM for VDEV: %d\n",
-					    arsta->addr, arvif->vdev_id);
 
 			ret = ath12k_mac_station_disassoc(ar, arvif, arsta);
 			if (ret)
