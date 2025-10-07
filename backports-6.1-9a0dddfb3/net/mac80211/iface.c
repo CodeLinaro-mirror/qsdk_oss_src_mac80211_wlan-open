@@ -1931,8 +1931,10 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 			ieee80211_mesh_init_sdata(sdata);
 		break;
 	case NL80211_IFTYPE_MONITOR:
-		sdata->dev->type = ARPHRD_IEEE80211_RADIOTAP;
-		sdata->dev->netdev_ops = &ieee80211_monitorif_ops;
+		if (sdata->dev) {
+			sdata->dev->type = ARPHRD_IEEE80211_RADIOTAP;
+			sdata->dev->netdev_ops = &ieee80211_monitorif_ops;
+		}
 		sdata->u.mntr.flags = MONITOR_FLAG_CONTROL |
 				      MONITOR_FLAG_OTHER_BSS;
 		break;
