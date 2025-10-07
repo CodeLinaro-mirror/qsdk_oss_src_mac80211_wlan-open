@@ -2350,7 +2350,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 
 		tx_wbm_rel_source[ts.buf_rel_source]++;
 
-		if (ath12k_dp_stats_enabled(dp_pdev) &&
+		if (dp_pdev && ath12k_dp_stats_enabled(dp_pdev) &&
 		    ath12k_tid_stats_enabled(dp_pdev)) {
 			msdu = sw_metadata->skb;
 			skb_cb = ATH12K_SKB_CB(msdu);
@@ -2368,7 +2368,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
                         htt_status = le32_get_bits(tx_status->info0,
                                                    HTT_TX_WBM_COMP_INFO0_STATUS);
                         fw_tx_status[htt_status]++;
-			if (ath12k_dp_stats_enabled(dp_pdev) &&
+			if (dp_pdev && ath12k_dp_stats_enabled(dp_pdev) &&
 			    ath12k_tid_stats_enabled(dp_pdev)) {
 				tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
 				ath12k_tid_tx_stats(ahvif, tid, msdu->len,
