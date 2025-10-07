@@ -1440,6 +1440,7 @@ void ath12k_dp_ppeds_stop(struct ath12k_base *ab)
 	if (!ab->dp->ppe.nss_plugin_ops) {
 		ath12k_err(ab, "nss_plugin_ops not registered for device_id %d\n",
 			   ab->device_id);
+		return;
 	}
 
 	umac_reset_in_progress = ath12k_dp_umac_reset_in_progress(ab);
