@@ -1095,6 +1095,11 @@ static bool ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 	switch (pkt_type) {
 	case RX_MSDU_START_PKT_TYPE_11A:
 	case RX_MSDU_START_PKT_TYPE_11B:
+		if (rx_status->band == NUM_NL80211_BANDS) {
+			ath12k_warn(dp->ab, "Received with invalid band");
+			WARN_ON_ONCE(1);
+			return true;
+		}
 		is_cck = (pkt_type == RX_MSDU_START_PKT_TYPE_11B);
 		sband = &dp_pdev->ar->mac.sbands[rx_status->band];
 		rx_status->rate_idx = ath12k_mac_hw_rate_to_idx(sband, rate_mcs,
