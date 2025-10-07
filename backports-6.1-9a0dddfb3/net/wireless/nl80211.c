@@ -7552,6 +7552,16 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 		haveinfo = true;
 	}
 
+	if (info->attrs[NL80211_ATTR_SSID]) {
+		params->ssid_len =
+		    nla_len(info->attrs[NL80211_ATTR_SSID]);
+		if (params->ssid_len > IEEE80211_MAX_SSID_LEN)
+			return -EINVAL;
+		if (params->ssid_len > 0)
+			params->ssid =
+			    nla_data(info->attrs[NL80211_ATTR_SSID]);
+	}
+
 	if (info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]) {
 		params->intf_detect_bitmap = nla_get_u8(info->attrs[NL80211_ATTR_INTERFERENCE_TYPE]);
 		haveinfo = true;
@@ -7598,6 +7608,13 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 	}
 
 	err = rdev_update_ap(rdev, dev, params);
+	if (!err && params->ssid && params->ssid_len > 0) {
+		wdev->u.ap.ssid_len = params->ssid_len;
+		memcpy(wdev->u.ap.ssid, params->ssid,
+		       params->ssid_len);
+		wdev->u.ap.ssid[params->ssid_len] = '\0';
+	}
+
 
 out:
 	kfree(params->beacon.mbssid_ies);
