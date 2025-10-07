@@ -678,7 +678,7 @@ int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int 
 {
 	struct platform_device *pdev;
 	struct ath12k_ahb *ab_ahb;
-	int ret, irq;
+	int ret = -EINVAL, irq;
 	u8 bus_id;
 
 	ab_ahb = ath12k_ab_to_ahb(ab);
