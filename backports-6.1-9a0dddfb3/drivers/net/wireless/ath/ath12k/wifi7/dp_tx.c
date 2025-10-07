@@ -463,7 +463,7 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	struct ath12k_mld_qos_stats *mld_qos;
 	struct tx_stats *qos_tx;
 	struct delay_stats *qos_delay;
-	void *telemetry_peer_ctx;
+	void *telemetry_peer_ctx = NULL;
 	u64 enqueue_timestamp, total_delay_pkts, tmp_div;
 	u32 len, q_id, tid, hw_delay, nw_delay, sw_delay, delay_bound;
 	u32 pkt_win, num_pkts, dropped_age_out = 0;
@@ -639,7 +639,8 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	}
 
 	ath12k_telemetry_get_sla_num_pkts(&num_pkts);
-	telemetry_peer_ctx = mld_peer->qos->telemetry_peer_ctx;
+	if (mld_peer->qos)
+		telemetry_peer_ctx = mld_peer->qos->telemetry_peer_ctx;
 
 	tmp_div = mld_qos->tx_success_pkts + mld_qos->tx_failed_pkts;
 	if ((!(do_div(tmp_div, num_pkts))) &&
