@@ -3039,6 +3039,8 @@ static int ath12k_wifi7_dp_rx_h_unauth_wds_err(struct ath12k_pdev_dp *dp_pdev,
 	rx_msdu_info.to_ds = rx_desc_data->is_to_ds;
 	rx_msdu_info.fr_ds = rx_desc_data->is_from_ds;
 	rx_msdu_info.da_is_mcbc = rx_desc_data->is_mcbc;
+	rx_msdu_info.tcp_udp_chksum_fail = rx_desc_data->l4_csum_fail;
+	rx_msdu_info.ip_chksum_fail = rx_desc_data->ip_csum_fail;
 	rx_mpdu_info.flow_info.peer_id = rxcb->peer_id;
 	rx_mpdu_info.tid = rx_desc_data->tid;
 	tlv_info.mesh_ctrl_present = rx_desc_data->mesh_ctrl_present;
