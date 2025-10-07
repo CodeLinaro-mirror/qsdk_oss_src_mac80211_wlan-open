@@ -17547,11 +17547,13 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA && arvif->is_scan_vif)
 		return 0;
 
-	ret = ath12k_mac_vdev_config_after_start(arvif, chandef);
-	if (ret)
-		ath12k_warn(ab, "failed to configure vdev %d after %s: %d\n",
-			    arvif->vdev_id,
-			    restart ? "restart" : "start", ret);
+	if (chandef) {
+		ret = ath12k_mac_vdev_config_after_start(arvif, chandef);
+		if (ret)
+			ath12k_warn(ab, "failed to configure vdev %d after %s: %d\n",
+				    arvif->vdev_id,
+				    restart ? "restart" : "start", ret);
+	}
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		ar->dp.stats.telemetry_stats.sta_vap_exist = 1;
