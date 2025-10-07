@@ -19019,8 +19019,10 @@ static int ath12k_mac_get_link_idx_for_bridge(struct ieee80211_hw *hw,
 			adj_device1 = wsi_info->adj_chip_idxs[0];
 			adj_device2 = wsi_info->adj_chip_idxs[1];
 			for (int j = 0; j < ah->num_radio - i; j++, ar2++) {
+				if (!ar2)
+					continue;
 				adj_wsi_info = ath12k_core_get_current_wsi_info(ar2->ab);
-				if (ar2 && BRIDGE_IN_RANGE(ar2) &&
+				if (BRIDGE_IN_RANGE(ar2) &&
 				    (adj_wsi_info->index == adj_device1 ||
 				     adj_wsi_info->index == adj_device2)) {
 					*link_idx_bmp = BIT(ar1->hw_link_id) | BIT(ar2->hw_link_id);
