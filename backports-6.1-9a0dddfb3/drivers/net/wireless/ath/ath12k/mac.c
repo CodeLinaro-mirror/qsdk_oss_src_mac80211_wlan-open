@@ -18781,7 +18781,7 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		ath12k_scan_abort(ar);
 		ar->scan.arvif = NULL;
 	}
-
+	memset(&arvif->chanctx, 0, sizeof(*ctx));
 	if (test_bit(WMI_TLV_SERVICE_11D_OFFLOAD, ab->wmi_ab.svc_map) &&
 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
 	    arvif->vdev_subtype == WMI_VDEV_SUBTYPE_NONE &&
