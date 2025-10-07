@@ -7984,7 +7984,7 @@ int ath12k_mac_get_fw_stats(struct ath12k *ar,
 	 */
 	time_left = wait_for_completion_timeout(&ar->fw_stats_done, 3 * HZ);
 	if (!time_left)
-		ath12k_warn(ab, "time out while waiting for fw stats done\n");
+		ath12k_dbg(ab, ATH12K_DBG_MAC, "time out while waiting for fw stats done\n");
 
 	return 0;
 }
