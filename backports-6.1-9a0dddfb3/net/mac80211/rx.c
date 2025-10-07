@@ -3113,7 +3113,7 @@ ieee80211_deliver_skb(struct ieee80211_rx_data *rx)
 				atomic_inc(&rx->sta->rx_forwarded_pkts);
 				if (!tid_stats_disable)
 					ieee80211_rx_stats_reason(sdata,
-								  skb->len,
+								  xmit_skb->len,
 								  status->tid,
 								  RX_FORWARDED_PKTS);
 			}
@@ -3363,7 +3363,7 @@ ieee80211_rx_mesh_data(struct ieee80211_sub_if_data *sdata, struct sta_info *sta
 		if (skb_cow_head(fwd_skb, hdrlen - sizeof(struct ethhdr))) {
 			if (!tid_stats_disable)
 				ieee80211_rx_drop_stats_reason(sdata,
-							       skb->len,
+							       fwd_skb->len,
 							       status->tid,
 							       RX_DROP_OOM);
 			return RX_DROP_U_OOM;
@@ -3372,7 +3372,7 @@ ieee80211_rx_mesh_data(struct ieee80211_sub_if_data *sdata, struct sta_info *sta
 		if (skb_linearize(fwd_skb)) {
 			if (!tid_stats_disable)
 				ieee80211_rx_drop_stats_reason(sdata,
-							       skb->len,
+							       fwd_skb->len,
 							       status->tid,
 							       RX_DROP_OOM);
 			return RX_DROP_U_OOM;
