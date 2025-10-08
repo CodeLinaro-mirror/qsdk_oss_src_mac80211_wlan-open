@@ -865,7 +865,6 @@ ath12k_wifi7_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 	hal_tcl_desc->info1 =  FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CMD_NUM,
 					  dp_link_vif->tcl_metadata);
 	hal_tcl_desc->info2 =  skb->len;
-	hal_tcl_desc->info2 |= TX_IP_CHECKSUM;
 	hal_tcl_desc->info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_PMAC_ID,
 					 dp_link_vif->lmac_id) |
 			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_VDEV_ID,
@@ -920,7 +919,6 @@ ath12k_wifi7_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 	tcl_desc.info1 =  FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CMD_NUM,
 				     dp_link_vif->tcl_metadata);
 	tcl_desc.info2 =  skb->len;
-	tcl_desc.info2 |= TX_IP_CHECKSUM;
 	tcl_desc.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_PMAC_ID,
 				    dp_link_vif->lmac_id) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_VDEV_ID,
@@ -1178,15 +1176,6 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		ti.bss_ast_idx = dp_link_vif->ast_idx;
 	}
 	ti.dscp_tid_tbl_idx = 0;
-
-	if (skb->ip_summed == CHECKSUM_PARTIAL &&
-	    ti.encap_type != HAL_TCL_ENCAP_TYPE_RAW) {
-		ti.flags0 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_IP4_CKSUM_EN) |
-			     u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_UDP4_CKSUM_EN) |
-			     u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_UDP6_CKSUM_EN) |
-			     u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TCP4_CKSUM_EN) |
-			     u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TCP6_CKSUM_EN);
-	}
 
 	switch (ti.encap_type) {
 	case HAL_TCL_ENCAP_TYPE_NATIVE_WIFI:
