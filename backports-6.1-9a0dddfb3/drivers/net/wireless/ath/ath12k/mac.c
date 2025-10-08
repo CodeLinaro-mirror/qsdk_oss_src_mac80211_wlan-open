@@ -14918,6 +14918,20 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 			}
 		}
 	}
+
+	/* Check if this mgmt frame can be queued at MLD level, in that
+	 * case the FW can decide on which link it needs to be finally
+	 * transmitted based on the power state of that link.
+	 * The link param returned by this function still needs
+	 * to be valid to get queued to one of the valid link FW
+	 */
+	if (ath12k_mac_is_mgmt_link_agnostic(skb)) {
+		ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
+		/* For action frames this will be reset if not needed
+		 * later based on action category.
+		 */
+	}
+
 	/* Perform address conversion for ML STA Tx */
 	bss_conf = rcu_dereference(vif->link_conf[link]);
 	link_sta = rcu_dereference(sta->link[link]);
@@ -14959,18 +14973,6 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 			ether_addr_copy(hdr->addr3, bss_conf->addr);
 	}
 
-	/* Check if this mgmt frame can be queued at MLD level, in that
-	 * case the FW can decide on which link it needs to be finally
-	 * transmitted based on the power state of that link.
-	 * The link param returned by this function still needs
-	 * to be valid to get queued to one of the valid link FW
-	 */
-	if (ath12k_mac_is_mgmt_link_agnostic(skb)) {
-		ATH12K_SKB_CB(skb)->flags |= ATH12K_SKB_MGMT_LINK_AGNOSTIC;
-		/* For action frames this will be reset if not needed
-		 * later based on action category.
-		 */
-	}
 
 	return link;
 }
