@@ -824,6 +824,8 @@ u32 ieee80211_calc_expected_tx_airtime(struct ieee80211_hw *hw,
 	/* No station to get latest rate from, so calculate the worst-case
 	 * duration using the lowest configured basic rate.
 	 */
+	if (band >= NUM_NL80211_BANDS)
+		return 0;
 	sband = hw->wiphy->bands[band];
 
 	basic_rates = vif->bss_conf.basic_rates;
