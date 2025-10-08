@@ -4398,14 +4398,24 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 	ath12k_dbg(ab, ATH12K_DBG_WSI_BYPASS, "WSI Bypass: MLO teardown with Umac reset");
 	ath12k_core_mlo_hw_queues_stop(ab->ag);
 
-	ath12k_core_trigger_umac_reset(ab, WMI_MLO_TEARDOWN_REASON_DYNAMIC_WSI_REMAP);
+	ret = ath12k_core_trigger_umac_reset(ab,
+					     WMI_MLO_TEARDOWN_REASON_DYNAMIC_WSI_REMAP);
+	if (ret) {
+		/* We should not come here. Something wrong with MLO teardown.
+		 * Crash the system to recover.
+		 */
+		ath12k_err(ab, "WSI Bypass: MLO teardown/UMAC reset failed with error %d",
+			   ret);
+		ath12k_err(ab, "WSI Bypass: Abort Bypass procedure! Reset the system...");
+		BUG_ON(1);
+	} else {
+		for (i = 0; i < ag->num_hw; i++) {
+			ah = ag->ah[i];
+			if (!ah)
+				continue;
 
-	for (i = 0; i < ag->num_hw; i++) {
-		ah = ag->ah[i];
-		if (!ah)
-			continue;
-
-		ieee80211_wake_queues(ah->hw);
+			ieee80211_wake_queues(ah->hw);
+		}
 	}
 
 	if (ab->wsi_remap_state == ATH12K_WSI_BYPASS_REMOVE_DEVICE) {
