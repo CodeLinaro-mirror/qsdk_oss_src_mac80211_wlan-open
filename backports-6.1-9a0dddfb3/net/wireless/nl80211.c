@@ -24028,6 +24028,8 @@ int cfg80211_adv_ttlm_evt_notify(struct net_device *dev, gfp_t gfp,
 		goto nla_put_failure;
 
 	ttlm_attr = nla_nest_start_noflag(msg, NL80211_ATTR_ADVERTISED_TTLM);
+	if (!ttlm_attr)
+		goto nla_put_failure;
 
 	if (nla_put_u8(msg, NL80211_ADVERTISED_TTLM_ATTR_STATUS, status) ||
 	    nla_put_u16(msg, NL80211_ADVERTISED_TTLM_ATTR_MST_TSF_UPDATE,
