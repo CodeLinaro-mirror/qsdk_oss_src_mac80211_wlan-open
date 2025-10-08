@@ -488,6 +488,7 @@ bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah);
 int ath12k_mac_pdev_suspend(struct ath12k *ar);
 int ath12k_mac_set_eht_txbf_conf(struct ath12k_link_vif *arvif);
 int ath12k_mac_set_he_txbf_conf(struct ath12k_link_vif *arvif);
+int ath12k_mac_pdev_resume(struct ath12k *ar);
 
 /* In the bitmap 0 indicates no puncturing and 1 indicated that sub channel is
  * punctured

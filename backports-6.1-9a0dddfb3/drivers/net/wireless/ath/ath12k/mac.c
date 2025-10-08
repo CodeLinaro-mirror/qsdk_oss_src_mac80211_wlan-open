@@ -15246,6 +15246,17 @@ int ath12k_mac_start(struct ath12k *ar)
 
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx],
 			   &ab->pdevs[ar->pdev_idx]);
+
+	if (ath12k_check_erp_power_down(ab->ag) &&
+	    !ath12k_hw_group_recovery_in_progress(ab->ag) &&
+	    ar->pdev_suspend && !ab->powerup_triggered) {
+		ret = ath12k_mac_pdev_resume(ar);
+		if (ret) {
+			ath12k_err(ab, "pdev resume command is failed: %d\n", ret);
+			goto err;
+		}
+	}
+
 	return 0;
 err:
 
@@ -15445,6 +15456,13 @@ void ath12k_mac_stop(struct ath12k *ar)
 
 	if (!list_empty(&dp->neighbor_peers))
 		ath12k_debugfs_nrp_cleanup_all(ar);
+
+	if ((ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) &&
+	    !ar->allocated_vdev_map && !ar->pdev_suspend) {
+		ret = ath12k_mac_pdev_suspend(ar);
+		if (ret)
+			ath12k_warn(ar->ab, "pdev suspend command is failed %d\n", ret);
+	}
 
 	rcu_assign_pointer(ar->ab->pdevs_active[ar->pdev_idx], NULL);
 
@@ -15821,6 +15839,30 @@ void ath12k_mac_11d_scan_stop_all(struct ath12k_base *ab)
 	}
 }
 
+int ath12k_mac_pdev_resume(struct ath12k *ar)
+{
+	unsigned long time_left;
+	int ret;
+
+	reinit_completion(&ar->pdev_resume);
+	ret = ath12k_wmi_pdev_resume(ar, ar->pdev->pdev_id);
+
+	if (ret) {
+		ath12k_err(ar->ab, "failed to send wmi resume command %d\n", ret);
+		return ret;
+	}
+
+	time_left = wait_for_completion_timeout(&ar->pdev_resume,
+						ATH12K_PDEV_RESUME_TIMEOUT);
+	if (!time_left) {
+		ath12k_err(ar->ab, "timeout in receiving pdev resume response %d\n",
+			   ar->pdev->pdev_id);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
 int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   bool is_bridge_vdev)
 {
@@ -15843,7 +15885,6 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	u8 mask[ETH_ALEN] = {0xFF, 0xFF, 0xFF, 0x00, 0x00, 0x00};
 	int txpower = NL80211_TX_POWER_AUTOMATIC;
 	u8 map_id;
-	unsigned long time_left;
 	u32 rep_ul_resp;
 
 	lockdep_assert_wiphy(hw->wiphy);
@@ -15855,20 +15896,11 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		return -EINVAL;
 
 	if (ar->pdev_suspend) {
-		reinit_completion(&ar->pdev_resume);
-		ret = ath12k_wmi_pdev_resume(ar, ar->pdev->pdev_id);
-
+		ret = ath12k_mac_pdev_resume(ar);
 		if (ret) {
-			ath12k_err(ar->ab, "failed to send wmi resume command %d\n", ret);
+			ath12k_err(ab,
+				   "vdev could not be created because the pdev failed to resume\n");
 			return ret;
-		}
-
-		time_left = wait_for_completion_timeout(&ar->pdev_resume,
-							ATH12K_PDEV_RESUME_TIMEOUT);
-		if (!time_left) {
-			ath12k_err(ar->ab, "Timeout in receiving pdev resume response: %d\n",
-				   ar->pdev->pdev_id);
-			return -ETIMEDOUT;
 		}
 	}
 
@@ -16684,7 +16716,8 @@ int ath12k_mac_pdev_suspend(struct ath12k *ar)
 	time_left = wait_for_completion_timeout(&ar->suspend,
 						ATH12K_PDEV_SUSPEND_TIMEOUT);
 	if (!time_left) {
-		ath12k_err(ar->ab, "Timeout in receiving pdev suspend response: %d\n", ar->pdev->pdev_id);
+		ath12k_err(ar->ab, "timeout in receiving pdev suspend response %d\n",
+			   ar->pdev->pdev_id);
 		ret = -ETIMEDOUT;
 		goto exit;
 	}
@@ -16780,10 +16813,6 @@ err_vdev_del:
 
 	if (!ar->allocated_vdev_map && !arvif->is_scan_vif) {
 		if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) {
-			ret = ath12k_mac_pdev_suspend(ar);
-			if (ret)
-				ath12k_warn(ab, "Pdev suspend command is failed %d\n", ret);
-
 			if (ath12k_mac_validate_active_radio_count(ar->ah))
 				ath12k_core_cleanup_power_down_q6(ab->ag);
 		}
