@@ -847,6 +847,57 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	stats->rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += len;
 }
 
+void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_rx_peer_stats *rx_stats,
+					 struct hal_rx_mon_ppdu_info *ppdu_info,
+					 u32 num_msdu, u32 uid)
+{
+	struct hal_rx_user_status *user_stats = NULL;
+	u32 ru_width_factor, byte_count;
+	u64 rx_duration_scaled;
+	u16 rx_time_us, num_msdu_retry_count;
+	u8 preamble_type, mcs, nss;
+
+	if (!rx_stats || !ppdu_info)
+		return;
+
+	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU)
+		user_stats = &ppdu_info->userstats[uid];
+
+	preamble_type = user_stats ? user_stats->preamble_type : ppdu_info->preamble_type;
+	mcs = user_stats ? user_stats->mcs : ppdu_info->mcs;
+	nss = user_stats ? user_stats->nss : ppdu_info->nss;
+	byte_count = user_stats ? user_stats->mpdu_ok_byte_count : ppdu_info->mpdu_len;
+	num_msdu_retry_count = user_stats ? user_stats->retried_msdu_count :
+			       ppdu_info->retried_msdu_count;
+
+	rx_stats->num_ppdus += 1;
+	rx_stats->num_mpdu_retry_count += ppdu_info->mpdu_retry_cnt;
+	rx_stats->num_msdu_bytes += byte_count;
+	rx_stats->num_msdu_retry_count += num_msdu_retry_count;
+	rx_stats->bw_info = ppdu_info->bw;
+	rx_stats->gi_info = ppdu_info->gi;
+	rx_stats->mcs_info = mcs;
+	rx_stats->nss_info = nss;
+	rx_stats->preamble_info = ppdu_info->preamble_type;
+	if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
+		rx_time_us = ppdu_info->rx_duration;
+		rx_stats->num_mpdus += ppdu_info->num_mpdu_fcs_ok +
+				       ppdu_info->num_mpdu_fcs_err;
+	} else {
+		/* MU */
+		ru_width_factor = ppdu_info->usr_nss_sum * ppdu_info->usr_ru_tones_sum;
+		if (!ru_width_factor)
+			ru_width_factor = 1;
+
+		rx_duration_scaled = ppdu_info->rx_duration * user_stats->nss *
+				     user_stats->ul_ofdma_ru_width;
+		rx_time_us = (u16)div_u64(rx_duration_scaled, ru_width_factor);
+		rx_stats->num_mpdus += user_stats->mpdu_cnt_fcs_ok +
+				       user_stats->mpdu_cnt_fcs_err;
+	}
+	rx_stats->num_ppdu_duration += rx_time_us;
+}
+
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 					   struct ath12k_dp_link_peer *peer,
 					   struct hal_rx_mon_ppdu_info *ppdu_info)
@@ -957,6 +1008,8 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats, ppdu_info,
 						      NULL, num_msdu);
+
+	ath12k_dp_mon_rx_update_basic_stats(rx_stats, ppdu_info, num_msdu, 0);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_update_peer_su_stats);
 
@@ -1123,6 +1176,8 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	pdev_stats->telemetry_stats.rx_data_msdu_cnt = rx_stats->num_msdu;
 	pdev_stats->telemetry_stats.total_rx_data_bytes = user_stats->mpdu_ok_byte_count;
+
+	ath12k_dp_mon_rx_update_basic_stats(rx_stats, ppdu_info, num_msdu, uid);
 }
 
 void

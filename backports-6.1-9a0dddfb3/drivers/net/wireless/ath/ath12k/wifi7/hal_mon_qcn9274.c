@@ -96,6 +96,10 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_qcn9274(const void *tlv_data,
 	ppdu_info->mpdu_retry_cnt =
 		u32_get_bits(info[11],
 			     HAL_RX_PPDU_END_USER_STATS_INFO11_MPDU_RETRY_CNT_QCN9274);
+	ppdu_info->retried_msdu_count =
+		u32_get_bits(info[10],
+			     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT_QCN9274);
+
 	switch (ppdu_info->preamble_type) {
 	case HAL_RX_PREAMBLE_11N:
 		ppdu_info->ht_flags = 1;
@@ -121,9 +125,6 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_qcn9274(const void *tlv_data,
 							       rxuser_stats);
 		ath12k_wifi7_hal_mon_populate_byte_count_qcn9274(info,
 								 rxuser_stats);
-		rxuser_stats->retried_msdu_count =
-			u32_get_bits(info[10],
-				     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT_QCN9274);
 	}
 }
 
@@ -208,6 +209,10 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_compact_qcn9274(const void *tlv_d
 	ppdu_info->mpdu_retry_cnt =
 		u32_get_bits(info[11],
 			     HAL_RX_PPDU_END_USER_STATS_INFO11_MPDU_RETRY_CNT_CMPCT_QCN9274);
+	ppdu_info->retried_msdu_count =
+		u32_get_bits(info[10],
+			     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT_CMPCT_QCN9274);
+
 	switch (ppdu_info->preamble_type) {
 	case HAL_RX_PREAMBLE_11N:
 		ppdu_info->ht_flags = 1;
@@ -233,9 +238,6 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_get_compact_qcn9274(const void *tlv_d
 								       rxuser_stats);
 		ath12k_wifi7_hal_mon_populate_byte_count_compact_qcn9274(info,
 									 rxuser_stats);
-		rxuser_stats->retried_msdu_count =
-			u32_get_bits(info[10],
-				     HAL_RX_PPDU_END_USER_STATS_INFO10_MSDU_RETRY_CNT_CMPCT_QCN9274);
 	}
 }
 
