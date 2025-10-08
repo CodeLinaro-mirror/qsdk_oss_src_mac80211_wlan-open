@@ -7,8 +7,8 @@
 #include "ini.h"
 #include <linux/vmalloc.h>
 
-/* Variable to track the ath12k cfg initialization */
-static bool ath12k_cfg_is_init;
+/* Variable to track the ath12k cfg global initialization */
+static bool ath12k_cfg_global_init_done;
 /* Pointer to ath12k_cfg_value_store */
 static struct ath12k_cfg_value_store *ath12k_cfg_global_store;
 /* list head to track the ath12k_cfg_store users*/
@@ -19,9 +19,11 @@ static spinlock_t ath12k_cfg_stores_lock;
 /**
  * struct ath12k_cfg_ctx - configuration context
  * @store: cfg value store reference
+ * @initialized: To mark if the ctx has been initialized
  */
 struct ath12k_cfg_ctx {
 	struct ath12k_cfg_value_store *store;
+	bool initialized;
 };
 
 /**
@@ -106,9 +108,6 @@ ath12k_cfg_int_item_handler(struct ath12k_cfg_value_store *store,
 		return;
 	}
 
-	while (*str_value && !isspace(*str_value)) str_value++;
-	while (*str_value && isspace(*str_value)) str_value++;
-
 	WARN_ON(!(meta->min <= meta->max));
 	if (meta->min > meta->max) {
 		ath12k_err(NULL,
@@ -173,8 +172,6 @@ ath12k_cfg_uint_item_handler(struct ath12k_cfg_value_store *store,
 			   meta->name, str_value, ret, *store_value);
 		return;
 	}
-	while (*str_value && !isspace(*str_value)) str_value++;
-	while (*str_value && isspace(*str_value)) str_value++;
 
 	WARN_ON(!(min <= max));
 	if (min > max) {
@@ -234,9 +231,6 @@ ath12k_cfg_bool_item_handler(struct ath12k_cfg_value_store *store,
 			   *store_value ? "true" : "false");
 		return;
 	}
-	// Advance pointer past the parsed boolean token
-	while (*str_value && !isspace(*str_value)) str_value++;  // Skip the token
-	while (*str_value && isspace(*str_value)) str_value++;   // Skip whitespace
 }
 
 /**
@@ -717,16 +711,19 @@ static int
 ath12k_cfg_on_destroy(struct ath12k_base *ab)
 {
 	int ret = 0;
-	struct ath12k_cfg_ctx *cfg_ctx;
 
-	cfg_ctx = ath12k_cfg_get_ctx(ab);
-
-	if (!cfg_ctx)
+	if (!ab || !ab->cfg_ctx)
 		return -EINVAL;
+
+	if (!ab->cfg_ctx->store) {
+		kfree(ab->cfg_ctx);
+		ab->cfg_ctx = NULL;
+		return -EINVAL;
+	}
+
+	ath12k_cfg_store_put(ab->cfg_ctx->store);
+	kfree(ab->cfg_ctx);
 	ab->cfg_ctx = NULL;
-	ath12k_cfg_store_put(cfg_ctx->store);
-	ath12k_cfg_global_store = NULL;
-	kfree(cfg_ctx);
 
 	return ret;
 }
@@ -777,7 +774,7 @@ ath12k_cfg_ab_parse(struct ath12k_base *ab, const char *path)
 	struct ath12k_cfg_value_store *store;
 	struct ath12k_cfg_ctx *cfg_ctx;
 
-	if (!ath12k_cfg_global_store || !ath12k_cfg_is_init || !ab || !path) {
+	if (!ath12k_cfg_global_store || !ath12k_cfg_global_init_done || !ab || !path) {
 		ath12k_err(ab, "Failed to parse the file investigate \n");
 		return -EINVAL;
 	}
@@ -943,34 +940,6 @@ ath12k_cfg_ini_config_print(struct ath12k_base *ab, uint8_t *buf,
 	return 0;
 }
 
-int ath12k_cfg_dispatcher_init(struct ath12k_base *ab)
-{
-	if (ath12k_cfg_is_init) {
-		ath12k_dbg(ab, ATH12K_DBG_INI, "cfg dispatcher already initialized\n");
-		return 0;
-	}
-
-	INIT_LIST_HEAD(&ath12k_cfg_stores_list);
-	spin_lock_init(&ath12k_cfg_stores_lock);
-	ath12k_cfg_is_init = true;
-
-	return 0;
-}
-
-int ath12k_cfg_dispatcher_deinit(struct ath12k_base *ab)
-{
-	if (!ath12k_cfg_is_init) {
-		ath12k_dbg(ab, ATH12K_DBG_INI, "cfg dispatcher already de-initialized\n");
-		return -EINVAL;
-	}
-
-	ath12k_cfg_is_init = false;
-	spin_lock_bh(&ath12k_cfg_stores_lock);
-	spin_unlock_bh(&ath12k_cfg_stores_lock);
-
-	return 0;
-}
-
 int ath12k_cfg_get_ini_file_name(u32 target_type, struct ath12k_ini_file *ini)
 {
 	int ret = 0;
@@ -1005,40 +974,95 @@ int ath12k_cfg_get_ini_file_name(u32 target_type, struct ath12k_ini_file *ini)
 	return ret;
 }
 
+void ath12k_cfg_global_init(void)
+{
+	char global_file[ATH12K_CFG_FILE_NAME_MAX] = {0};
+	char global_file_i[ATH12K_CFG_FILE_NAME_MAX] = {0};
+
+	ath12k_info(NULL, "Initializing global INI configuration");
+
+	/* Check if already initialized */
+	if (ath12k_cfg_global_init_done) {
+		ath12k_dbg(NULL, ATH12K_DBG_INI, "Global INI configuration already initialized");
+		return;
+	}
+
+	INIT_LIST_HEAD(&ath12k_cfg_stores_list);
+	spin_lock_init(&ath12k_cfg_stores_lock);
+
+	/* Parse global configuration files */
+	scnprintf(global_file, sizeof(global_file), "global.ini");
+	if (ath12k_cfg_parse(global_file)) {
+		ath12k_err(NULL, "Failed to parse the global ini %s\n", global_file);
+		ath12k_cfg_global_deinit();
+		return;
+	}
+
+	/* Parse internal global configuration files */
+	scnprintf(global_file_i, sizeof(global_file_i), "internal/global_i.ini");
+	if (ath12k_cfg_parse(global_file_i)) {
+		ath12k_err(NULL, "Failed to parse global_i ini %s\n", global_file_i);
+		ath12k_cfg_global_deinit();
+		return;
+	}
+
+	/* Mark global initialization as complete */
+	ath12k_cfg_global_init_done = true;
+	ath12k_info(NULL, "Global INI configuration initialized successfully");
+}
+EXPORT_SYMBOL(ath12k_cfg_global_init);
+
+void ath12k_cfg_global_deinit(void)
+{
+	ath12k_info(NULL, "Deinitializing INI global configuration");
+
+	if (!ath12k_cfg_global_init_done) {
+		ath12k_dbg(NULL, ATH12K_DBG_INI, "Global INI configuration not initialized");
+		return;
+	}
+	/* Release the global store */
+	ath12k_cfg_store_put(ath12k_cfg_global_store);
+	ath12k_cfg_global_init_done = false;
+	ath12k_cfg_global_store = NULL;
+	ath12k_info(NULL, "Global INI configuration deinitialized successfully");
+}
+EXPORT_SYMBOL(ath12k_cfg_global_deinit);
+
 int ath12k_cfg_init(struct ath12k_base *ab)
 {
 	struct ath12k_ini_file ini;
 	char ini_buf[ATH12K_CFG_FILE_NAME_MAX] = {0};
-	char global_file[ATH12K_CFG_FILE_NAME_MAX] = {0};
-	char global_file_i[ATH12K_CFG_FILE_NAME_MAX] = {0};
 	int ret;
 
-	ret = ath12k_cfg_dispatcher_init(ab);
-	if (ret) {
-		ath12k_err(ab, "Failed to initialize cfg dispatcher\n");
-		return ret;
-	}
-	scnprintf(global_file, sizeof(global_file), "global.ini");
-	if (ath12k_cfg_parse(global_file)) {
-		ath12k_err(ab, "Failed to parse the global ini %s\n", global_file);
-		ath12k_cfg_deinit(ab);
+	ath12k_info(ab, "Initializing per-radio INI configuration");
+
+	if (!ab) {
+		ath12k_err(NULL, "Invalid base pointer");
 		return -EINVAL;
 	}
 
-	scnprintf(global_file_i, sizeof(global_file_i), "internal/global_i.ini");
-	if (ath12k_cfg_parse(global_file_i)) {
-		ath12k_err(ab, "Failed to parse global_i ini %s\n", global_file_i);
-		ath12k_cfg_deinit(ab);
+	/* Ensure global initialization is complete */
+	if (!ath12k_cfg_global_init_done) {
+		ath12k_err(ab, "Global INI configuration not initialized\n");
 		return -EINVAL;
+	}
+	 /* Check if this radio is already initialized */
+	if (ab->cfg_ctx && ab->cfg_ctx->initialized) {
+		ath12k_dbg(ab, ATH12K_DBG_BOOT, "INI Configuration already initialized for this radio\n");
+		return 0;
 	}
 
-	scnprintf(ini_buf, sizeof(ini_buf), "internal/");
-	if (ath12k_cfg_on_create(ab)) {
-		ath12k_err(ab, "Failed to create the cfg store context \n");
-		ath12k_cfg_deinit(ab);
-		return -EINVAL;
+	 /* Create the per-radio context if it doesn't exist */
+	if (!ab->cfg_ctx) {
+		ret = ath12k_cfg_on_create(ab);
+		if (ret) {
+			ath12k_err(ab, "Failed to create the cfg store context\n");
+			return ret;
+		}
 	}
+
 	/* Parse the target specific INI */
+	scnprintf(ini_buf, sizeof(ini_buf), "internal/");
 	ret = ath12k_cfg_get_ini_file_name(ab->hw_rev, &ini);
 
 	if (!ret) {
@@ -1050,15 +1074,27 @@ int ath12k_cfg_init(struct ath12k_base *ab)
 
 		ath12k_cfg_parse_section_store(ab, ini_buf);
 	}
+	/* Mark this radio's configuration as initialized */
+	ab->cfg_ctx->initialized = true;
 	ath12k_info(ab, "Successfully initialized INI info \n");
 	return ret;
 }
 
 void ath12k_cfg_deinit(struct ath12k_base *ab)
 {
-	ath12k_cfg_on_destroy(ab);
-	ath12k_cfg_dispatcher_deinit(ab);
-	ath12k_info(ab, "Successfully deinitialized INI info \n");
+	if (!ab) {
+		ath12k_err(NULL, "Invalid base pointer");
+		return;
+	}
+
+	ath12k_info(ab, "Deinitializing per-radio INI configuration");
+
+	if (ab->cfg_ctx) {
+		ab->cfg_ctx->initialized = false;
+		ath12k_cfg_on_destroy(ab);
+	}
+
+	ath12k_info(ab, "Successfully deinitialized per-radio INI configuration\n");
 }
 
 void ath12k_cfg_parse_pdev_section(struct ath12k_base *ab)
