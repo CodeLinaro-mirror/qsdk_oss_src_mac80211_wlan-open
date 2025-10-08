@@ -149,11 +149,6 @@ struct wmi_vdev_set_tpc_power_cmd {
          */
 } __packed;
 
-struct wmi_peer_delete_all_cmd {
-	__le32 tlv_header;
-	__le32 vdev_id;
-	__le32 peer_type_bitmap;
-} __packed;
 
 #define WMI_TLV_LEN	GENMASK(15, 0)
 #define WMI_TLV_TAG	GENMASK(31, 16)
@@ -949,8 +944,6 @@ enum wmi_tlv_event_id {
 	WMI_VDEV_DELETE_RESP_EVENTID,
 	WMI_VDEV_ENCRYPT_DECRYPT_DATA_RESP_EVENTID,
 	WMI_VDEV_ADD_MAC_ADDR_TO_RX_FILTER_STATUS_EVENTID,
-	WMI_VDEV_DELETE_ALL_PEER_RESP_EVENTID =
-		WMI_VDEV_ADD_MAC_ADDR_TO_RX_FILTER_STATUS_EVENTID + 10,
 	WMI_PEER_STA_KICKOUT_EVENTID = WMI_TLV_CMD(WMI_GRP_PEER),
 	WMI_PEER_INFO_EVENTID,
 	WMI_PEER_TX_FAIL_CNT_THR_EVENTID,
@@ -2216,8 +2209,6 @@ enum wmi_tlv_tag {
 	WMI_TAG_TWT_BTWT_REMOVE_STA_CMD,
 	WMI_TAG_TWT_BTWT_INVITE_STA_COMPLETE_EVENT,
 	WMI_TAG_TWT_BTWT_REMOVE_STA_COMPLETE_EVENT,
-	WMI_TAG_VDEV_DELETE_ALL_PEER_FIXED_PARAMS = 0x32F,
-	WMI_VDEV_DELETE_ALL_PEER_RESP_EVENT_FIXED_PARAM = 0x330,
 	WMI_TAG_CFR_CAPTURE_PHASE_PARAM = 0x33b,
 	WMI_TAG_SERVICE_READY_EXT2_EVENT = 0x334,
 	WMI_TAG_FILS_DISCOVERY_TMPL_CMD = 0x344,
@@ -3404,16 +3395,6 @@ struct wmi_pdev_resume_resp_event {
 
 struct wmi_suspend_resp_event {
 	__le32 pdev_id;
-} __packed;
-
-struct wmi_delete_all_peer_resp_arg {
-	u32 vdev_id;
-	u32 status;
-};
-
-struct wmi_delete_all_peer_resp_ev {
-	__le32 vdev_id;
-	__le32 status;
 } __packed;
 
 #define WMI_VDEV_START_HIDDEN_SSID  BIT(0)
@@ -9314,5 +9295,4 @@ int ath12k_wmi_ap_tid_to_link_map_config(struct ath12k *ar,
 int ath12k_wmi_atf_send_group_config(struct ath12k *ar);
 int ath12k_wmi_atf_send_peer_config(struct ath12k *ar,
 				    struct ath12k_atf_peer_params *peer_param);
-int ath12k_wmi_peer_delete_all(struct ath12k_link_vif *arvif);
 #endif

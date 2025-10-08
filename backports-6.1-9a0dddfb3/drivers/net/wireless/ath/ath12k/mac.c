@@ -277,7 +277,6 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work);
 static void ath12k_mac_vdev_ml_max_rec_links(struct ath12k_link_vif *arvif,
 					     u8 ml_max_rec_links);
 static void ath12k_set_dscp_tid_work(struct wiphy *wiphy, struct wiphy_work *work);
-static bool ath12k_get_link_down(struct ath12k_sta *ahsta, int *link_going_down);
 static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
@@ -1519,7 +1518,7 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 				if (!ar)
 					continue;
 
-				ret = ath12k_peer_delete(ar, vid, addr, false);
+				ret = ath12k_peer_delete(ar, vid, addr);
 				if (ret) {
 					ath12k_err(partner_ab,
 						   "failed to delete peer vdev_id %d addr %pM ret %d\n",
@@ -1532,7 +1531,6 @@ int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab)
 				spin_unlock_bh(&partner_ab->base_lock);
 
 				arvif->num_stations--;
-				arvif->num_peers--;
 				ath12k_mac_dec_num_stations(arvif, arsta);
 				wiphy_work_cancel(wiphy, &arsta->update_wk);
 			}
@@ -1620,7 +1618,6 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
 			ath12k_dp_peer_delete(dp_hw, arvif->bssid, NULL, ar->hw_link_id);
 			arvif->num_stations = 0;
-			arvif->num_peers = 0;
 		}
 	}
 
@@ -1938,33 +1935,6 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	reinit_completion(&ar->vdev_setup_done);
-	reinit_completion(&ar->delete_all_peer_done);
-
-	if (arvif->num_peers &&
-	    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
-		ret = ath12k_wmi_peer_delete_all(arvif);
-		if (ret)
-			ath12k_warn(ar->ab, "failed to submit peer delete all for vdev_id:%d\n",
-				    arvif->vdev_id);
-
-		if (!wait_for_completion_timeout(&ar->delete_all_peer_done,
-						 3 * HZ)) {
-			ath12k_info(ar->ab, "Failed wait to get peer delete all resp:%d cleanup peers",
-				    arvif->vdev_id);
-			ath12k_peer_cleanup(ar, arvif->vdev_id);
-		}
-		/* Per vif num_peers will have count of station which are not
-		 * deleted through individual peer delete.
-		 * Per radio num_stations will have count of total number of
-		 * stations associated to the radio and will be decremented
-		 * after individual peer delete.
-		 */
-		ar->num_stations -= arvif->num_peers;
-		/* All peers with this vdev should be deleted at this point
-		 * through peer delete all or through peer cleanup.
-		 */
-		arvif->num_peers = 0;
-	}
 
 	rcu_read_lock();
 
@@ -5303,7 +5273,6 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 				ath12k_update_bcn_template_work);
 	}
 	arvif->num_stations = 0;
-	arvif->num_peers = 0;
 	init_completion(&arvif->peer_ch_width_switch_send);
 	wiphy_work_init(&arvif->peer_ch_width_switch_work,
 		  ath12k_wmi_peer_chan_width_switch_work);
@@ -5441,7 +5410,7 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 			    arvif->vdev_id, ret);
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid, false);
+		ret = ath12k_peer_delete(ar, arvif->vdev_id, arvif->bssid);
 		if (ret)
 			ath12k_warn(ar->ab, "failed to submit AP self-peer removal on vdev %d link id %d: %d"
 				    "num_peers: %d",
@@ -10936,9 +10905,6 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	struct ath12k_sta *ahsta = arsta->ahsta;
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
 	struct ath12k_vif *ahvif = arvif->ahvif;
-	struct ieee80211_vif *vif = ahvif->vif;
-	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
-	bool skip_peer_del;
 	int ret = 0;
 	struct ath12k_link_sta *temp_arsta = NULL;
 
@@ -10962,21 +10928,16 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 
 	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
 
-	/* is_netdev_going_down: Skip sending peer delete to firmware.
-	 * But delete rhash entry of peer from host
-	 */
-	skip_peer_del = wdev->is_netdev_going_down;
-	ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr, skip_peer_del);
+	ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr);
 	if (ret)
-		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
-			    arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
+		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d num_peers: %d\n",
+			    arsta->addr, arvif->vdev_id, ar->num_peers);
 	else
 		ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
-			   "Removed peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
-			   arsta->addr, arvif->vdev_id, ar->num_peers, arvif->num_peers);
+			   "Removed peer: %pM for VDEV: %d num_peers:%d\n",
+			   arsta->addr, arvif->vdev_id, ar->num_peers);
 
-	if (!skip_peer_del)
-		ath12k_mac_station_post_remove(ar, arvif, arsta);
+	ath12k_mac_station_post_remove(ar, arvif, arsta);
 
 	ath12k_cfr_decrement_peer_count(ar, arsta);
 
@@ -11060,9 +11021,8 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 		goto rhash_delete;
 	}
 
-	arvif->num_peers++;
-	ath12k_dbg(ab, ATH12K_DBG_PEER, "Added peer: %pM for VDEV: %d num_stations: %d num_peers %d\n",
-		   arsta->addr, arvif->vdev_id, ar->num_stations, arvif->num_peers);
+	ath12k_dbg(ab, ATH12K_DBG_PEER, "Added peer: %pM for VDEV: %d num_stations: %d\n",
+		   arsta->addr, arvif->vdev_id, ar->num_stations);
 
 	if (ieee80211_vif_is_mesh(vif)) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
@@ -11088,7 +11048,7 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 	return 0;
 
 free_peer:
-	ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr, false);
+	ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr);
 rhash_delete:
 	spin_lock_bh(&ab->base_lock);
 	ath12k_link_sta_rhash_delete(ab, arsta);
@@ -11450,9 +11410,7 @@ out_err:
 static void ath12k_peer_mlo_link_sta_teardown(struct ath12k_hw *ah,
 					      struct ath12k_vif *ahvif,
 					      struct ath12k_sta *ahsta,
-					      u8 link_id,
-					      bool peer_delete_all,
-					      int link_going_down)
+					      u8 link_id)
 {
 	struct ath12k_link_vif *arvif;
 	struct ath12k_link_sta *arsta;
@@ -11467,10 +11425,7 @@ static void ath12k_peer_mlo_link_sta_teardown(struct ath12k_hw *ah,
 	if (!ar)
 		return;
 
-	if (!peer_delete_all)
-		ath12k_mac_station_post_remove(ar, arvif, arsta);
-	else if (link_id != link_going_down)
-		ath12k_mac_dec_num_stations(arvif, arsta);
+	ath12k_mac_station_post_remove(ar, arvif, arsta);
 
 	ath12k_cfr_decrement_peer_count(ar, arsta);
 
@@ -11481,58 +11436,23 @@ static void ath12k_peer_mlo_link_sta_teardown(struct ath12k_hw *ah,
 	ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
 }
 
-static bool ath12k_get_link_down(struct ath12k_sta *ahsta, int *link_going_down)
-{
-	struct ath12k_link_vif *arvif;
-	struct ath12k_vif *ahvif = ahsta->ahvif;
-	struct wireless_dev *wdev;
-	unsigned long links;
-	u8 link_id;
-
-	links = ahsta->links_map;
-
-	for_each_set_bit(link_id, &links,
-			 IEEE80211_MLD_MAX_NUM_LINKS) {
-		arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
-		wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
-		if (wdev->links[link_id].ap.is_going_down) {
-			*link_going_down = link_id;
-			return true;
-		}
-	}
-	return false;
-}
-
 static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 					 struct ath12k_sta *ahsta)
 {
 	struct ath12k_hw *ah = ahvif->ah;
 	unsigned long links;
 	u8 link_id;
-	struct ieee80211_vif *vif = ahvif->vif;
-	struct wireless_dev *wdev =  ieee80211_vif_to_wdev(vif);
-	int link_going_down;
-	bool peer_del_all, is_link_down;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
-	peer_del_all = false;
-	is_link_down = false;
 	ath12k_wsi_load_info_stats_update(ahvif, ahsta, false);
 
-	is_link_down = ath12k_get_link_down(ahsta, &link_going_down);
-
-	if (vif->type != NL80211_IFTYPE_STATION &&
-	    (wdev->is_netdev_going_down || is_link_down))
-		peer_del_all = true;
-
-	ath12k_peer_mlo_link_peers_delete(ahvif, ahsta, peer_del_all, link_going_down);
+	ath12k_peer_mlo_link_peers_delete(ahvif, ahsta);
 
 	/* validate link station removal and clear arsta links */
 	links = ahsta->links_map;
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
-		ath12k_peer_mlo_link_sta_teardown(ah, ahvif, ahsta, link_id,
-						  peer_del_all, link_going_down);
+		ath12k_peer_mlo_link_sta_teardown(ah, ahvif, ahsta, link_id);
 	}
 
 	ath12k_peer_ml_free(ah, ahsta);
@@ -12620,7 +12540,7 @@ skip_pri_link_selection:
 
 			if (sta->mlo) {
 				ret = ath12k_peer_mlo_link_peer_delete(arvif,
-								       arsta, false, 0);
+								       arsta);
 				if (ret)
 					ath12k_warn(ar->ab, "Failed to remove ml station: %pM for VDEV: %d\n",
 						    arsta->addr, arvif->vdev_id);
@@ -12647,9 +12567,7 @@ skip_pri_link_selection:
 				ath12k_peer_mlo_link_sta_teardown(ah,
 								  ahvif,
 								  ahsta,
-								  link_id,
-								  false,
-								  -1);
+								  link_id);
 			}
 
 			if (vif->type == NL80211_IFTYPE_AP)
@@ -16213,7 +16131,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 err_peer_del:
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-		fbret = ath12k_peer_delete(ar, arvif->vdev_id, link_addr, false);
+		fbret = ath12k_peer_delete(ar, arvif->vdev_id, link_addr);
 		if (fbret) {
 			ath12k_warn(ar->ab, "failed to delete peer %pM vdev_id %d ret %d\n",
 				    link_addr, arvif->vdev_id, fbret);
@@ -22850,7 +22768,6 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	init_completion(&ar->mvr_complete);
 	init_completion(&ar->suspend);
 	init_completion(&ar->pdev_resume);
-	init_completion(&ar->delete_all_peer_done);
 
 	INIT_DELAYED_WORK(&ar->scan.timeout, ath12k_scan_timeout_work);
 	wiphy_work_init(&ar->scan.vdev_clean_wk, ath12k_scan_vdev_clean_work);
