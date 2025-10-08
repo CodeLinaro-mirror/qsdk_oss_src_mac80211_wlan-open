@@ -5207,6 +5207,8 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 		atomic_inc(&sta->tx_netif_pkts);
 	}
 
+	ieee80211_tx_stats(dev, skb->len);
+
 	pending = this_cpu_ptr(local->pending[q]);
 	queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[q]);
 	spin_lock_irqsave(queue_stop_reason_lock, flags);
