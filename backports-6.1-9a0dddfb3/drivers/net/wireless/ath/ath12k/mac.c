@@ -1736,6 +1736,14 @@ static int ath12k_mac_monitor_vdev_start(struct ath12k *ar, int vdev_id,
 	arg.freq = channel->center_freq;
 	arg.band_center_freq1 = chandef->center_freq1;
 	arg.band_center_freq2 = chandef->center_freq2;
+
+	if (channel->band >= NUM_NL80211_BANDS ||
+	    chandef->width >= ATH12K_CHAN_WIDTH_NUM) {
+		ath12k_warn(ar->ab, "Invalid band (%d) or width (%d)\n",
+			    channel->band, chandef->width);
+		return -EINVAL;
+	}
+
 	arg.mode = ath12k_phymodes[chandef->chan->band][chandef->width];
 	arg.chan_radar = !!(channel->flags & IEEE80211_CHAN_RADAR);
 
