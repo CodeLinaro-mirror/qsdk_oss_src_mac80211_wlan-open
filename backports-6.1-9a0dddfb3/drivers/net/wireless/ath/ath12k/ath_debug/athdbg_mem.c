@@ -395,6 +395,7 @@ void athdbg_kfree(const void *ptr)
 	char *struct_name;
 
 	struct_name = ath_minidump_update_free((void *)ptr);
+
 	if ((struct_name) && (strlen(struct_name) > 0))
 		athdbg_remove_minidump_segment((void *)ptr);
 	kfree(struct_name);

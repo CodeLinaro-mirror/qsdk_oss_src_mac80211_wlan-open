@@ -31,7 +31,6 @@ void athdbg_if_setmask(unsigned int debug_mask);
 void athdbg_if_register(struct ath12k_base *drv_ab);
 void athdbg_if_unregister(struct ath12k_base *ab);
 int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv);
-int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv);
 int athdbg_config_qdss(struct ath12k_base *ab);
 void athdbg_qmi_deinit(struct ath12k_base *ab);
 int athdbg_qmi_worker_init(void *qmi_ab);
