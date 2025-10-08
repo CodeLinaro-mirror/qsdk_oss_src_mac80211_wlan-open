@@ -5557,8 +5557,10 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 		if (WARN_ON(!arvif))
 			return -EINVAL;
 
-		if (!arvif->is_created)
+		if (!arvif->is_created) {
+			ath12k_mac_unassign_link_vif(arvif);
 			continue;
+		}
 
 		if (WARN_ON(!arvif->ar))
 			return -EINVAL;
@@ -18548,8 +18550,6 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 	if (!ar) {
 		ath12k_hw_warn(ah, "failed to assign chanctx for vif %pM link id %u link vif is already started",
 			       vif->addr, link_id);
-		ath12k_mac_remove_link_interface(hw, arvif);
-		ath12k_mac_unassign_link_vif(arvif);
 		return -EINVAL;
 	}
 
