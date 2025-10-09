@@ -13339,7 +13339,7 @@ static int ath12k_wmi_ctrl_stats_subtlv_parser(struct ath12k_base *ab,
 					       u16 tag, u16 len,
 					       const void *ptr, void *data)
 {
-	int ret;
+	int ret = -EINVAL;
 
 	switch (tag) {
 	case WMI_TAG_CTRL_PATH_STATS_EV_FIXED_PARAM:
@@ -13419,7 +13419,7 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 	struct ath12k_wmi_ctrl_path_stats_list *stats;
 	const struct wmi_tlv *tlv;
 	struct list_head *src, *dst;
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
 	void *ptr = skb->data;
 	u16 tlv_tag, tag_id;
 	u32 more;
