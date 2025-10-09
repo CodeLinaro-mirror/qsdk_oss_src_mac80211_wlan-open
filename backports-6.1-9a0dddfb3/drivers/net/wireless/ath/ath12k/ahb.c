@@ -561,7 +561,7 @@ static void ath12k_ahb_power_down(struct ath12k_base *ab, bool is_suspend)
 
 	if (!ab->ag->num_userpd_started &&
 	    test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)) {
-		rproc_put(ab_ahb->tgt_rproc);
+		rproc_shutdown(ab_ahb->tgt_rproc);
 	}
 
 	set_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags);
@@ -1447,7 +1447,10 @@ err_put_rproc:
 
 static void ath12k_ahb_deconfigure_rproc(struct ath12k_base *ab)
 {
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+
 	ath12k_ahb_unregister_rproc_notifier(ab);
+	rproc_put(ab_ahb->tgt_rproc);
 }
 
 static int ath12k_ahb_resource_init(struct ath12k_base *ab)
@@ -1735,8 +1738,11 @@ static void ath12k_ahb_free_resources(struct ath12k_base *ab)
 	struct platform_device *pdev = ab->pdev;
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
-	if (ab->hif.bus == ATH12K_BUS_HYBRID)
-		return ath12k_pcic_free_hybrid_irq(ab);
+	if (ab->hif.bus == ATH12K_BUS_HYBRID) {
+		ath12k_pcic_free_hybrid_irq(ab);
+		ath12k_ahb_deconfigure_rproc(ab);
+		return;
+	}
 
 	ath12k_hal_srng_deinit(ab);
 	ath12k_ce_free_pipes(ab);
