@@ -38,9 +38,8 @@ extern int debug_param;
 
 extern bool ap_vlan_without_4addr_null;
 
-#define IEEE80211_FSE_MAGIC_NUM      0xAA
-#define IEEE80211_FSE_MAGIC_NUM_MASK GENMASK(7,0)
-#define IEEE80211_PPE_VP_NUM         GENMASK(23, 8)
+#define IEEE80211_FSE_MAGIC_NUM		0xAA
+#define IEEE80211_FSE_MAGIC_NUM_MASK	GENMASK(23, 16)
 
 static inline void ieee80211_rx_stats(struct net_device *dev, u32 len)
 {
