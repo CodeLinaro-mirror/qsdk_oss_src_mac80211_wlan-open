@@ -1935,7 +1935,7 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	struct ath12k_pdev_dp *dp_pdev = NULL;
-	int ret;
+	int ret = -1;
 
 	if (!dp) {
 		ath12k_err(ar->ab, "ath12k_dp not present%s",__func__);
@@ -4911,8 +4911,8 @@ void ath12k_bss_assoc(struct ath12k *ar,
 			     struct ath12k_link_vif *arvif,
 			     struct ieee80211_bss_conf *bss_conf)
 {
-	struct ath12k_vif *ahvif = arvif->ahvif;
-	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
+	struct ath12k_vif *ahvif;
+	struct ieee80211_vif *vif;
 	struct ath12k_wmi_vdev_up_params params = {};
 	struct ieee80211_link_sta *link_sta;
 	u8 link_id;
@@ -4941,7 +4941,10 @@ void ath12k_bss_assoc(struct ath12k *ar,
 
 	/* bss_conf shouldnt be NULL expect for bridge vdev */
 	if (!arvif || (!bss_conf && !is_bridge_vdev))
- 		return;
+		return;
+
+	ahvif = arvif->ahvif;
+	vif = ath12k_ahvif_to_vif(ahvif);
 
 	if (is_bridge_vdev) {
 		link_id = arvif->link_id;
@@ -13272,7 +13275,7 @@ static int ath12k_conf_tx_uapsd(struct ath12k_link_vif *arvif,
 {
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_vif *ahvif = arvif->ahvif;
-	u32 value;
+	u32 value = 0;
 	int ret;
 
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
@@ -16686,7 +16689,7 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	struct ath12k_dp_link_vif *dp_link_vif;
 	struct ath12k_base *ab = ar->ab;
 	unsigned long time_left;
-	int ret;
+	int ret = -1;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -16918,15 +16921,15 @@ int ath12k_mac_op_get_antenna(struct ieee80211_hw *hw, u32 *tx_ant, u32 *rx_ant,
 			continue;
 		antennas_rx = max_t(u32, antennas_rx, ar->cfg_rx_chainmask);
 		antennas_tx = max_t(u32, antennas_tx, ar->cfg_tx_chainmask);
+
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+				 "mac pdev %u freq limits %u->%u MHz\n",
+				 ar->pdev->pdev_id, ar->chan_info.low_freq,
+				 ar->chan_info.high_freq);
 	}
 
 	*tx_ant = antennas_tx;
 	*rx_ant = antennas_rx;
-
-	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-			"mac pdev %u freq limits %u->%u MHz\n",
-			ar->pdev->pdev_id, ar->chan_info.low_freq,
-			ar->chan_info.high_freq);
 
 	return 0;
 }
@@ -22491,6 +22494,12 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 	wiphy->available_antennas_rx = antennas_rx;
 	wiphy->available_antennas_tx = antennas_tx;
+
+	if (!mac_addr) {
+		ath12k_warn(ab, "mac_addr is NULL, cannot set permanent address\n");
+		ret = -EINVAL;
+		goto err_complete_cleanup_unregister;
+	}
 
 	SET_IEEE80211_PERM_ADDR(hw, mac_addr);
 	SET_IEEE80211_DEV(hw, ab->dev);
