@@ -8336,6 +8336,12 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 
 	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
 
+	if (!arvif) {
+		ath12k_err(ar->ab, "Failed to alloc/assign link vif id %u\n",
+			   link_id);
+		return -ENOMEM;
+	}
+
 	ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
 			"mac link ID %d selected for scan", arvif->link_id);
 
@@ -8368,6 +8374,13 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 		 * above, assign arvif again for create.
 		 */
 		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
+
+		if (!arvif) {
+			ath12k_err(ar->ab, "Failed to alloc/assign link vif id %u\n",
+				   link_id);
+			return -ENOMEM;
+		}
+
 		if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
 		    (!is_broadcast_ether_addr(req->bssid) &&
 		     !is_zero_ether_addr(req->bssid)))
@@ -11278,6 +11291,9 @@ static int ath12k_wsi_load_info_stats_update(struct ath12k_vif *ahvif,
 
 	/* Primary link device id identification */
 	primary_arvif = ath12k_get_arvif_from_link_id(ahvif, ahsta->primary_link_id);
+	if (!primary_arvif || !primary_arvif->ar || !primary_arvif->ar->ab)
+		return ret;
+
 	primary_ab = primary_arvif->ar->ab;
 	ag = primary_ab->ag;
 
@@ -12808,7 +12824,7 @@ static u8 ath12k_mac_ahsta_get_pri_link_id(struct ath12k_vif *ahvif,
 					   unsigned long int valid_links)
 {
 	struct ath12k_hw *ah = ahvif->ah;
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif = NULL;
 	struct ieee80211_sta *sta;
 	struct ath12k *ar;
 	struct ath12k_hw_group *ag;
@@ -12892,6 +12908,9 @@ select_pri_link:
 	pri_link_id = ffs(links_map) - 1;
 
 exit_pri_link_selection:
+	if (!arvif || !arvif->ar || !arvif->ar->ab || !arvif->ar->ab->ag)
+		return pri_link_id;
+
 	ag = arvif->ar->ab->ag;
 	active_num_devices = ag->num_devices - ag->num_bypassed;
 
@@ -16419,6 +16438,13 @@ static struct ath12k *ath12k_mac_assign_vif_to_vdev(struct ieee80211_hw *hw,
 	 * would've unassigned and cleared it.
 	 */
 	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, is_bridge_vdev);
+
+	if (!arvif) {
+		ath12k_err(ab, "Failed to alloc/assign link vif id %u\n",
+			   link_id);
+		return NULL;
+	}
+
 	if (vif->type == NL80211_IFTYPE_AP &&
 	    ar->num_peers > (ar->max_num_peers - 1)) {
 		ath12k_warn(ab, "failed to create vdev due to insufficient peer entry resource in firmware\n");
@@ -17495,6 +17521,13 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 
 	if (!is_bridge_vdev) {
+		if (!chandef) {
+			ath12k_warn(ar->ab,
+				    "Chandef is not valid for vif %pM link %u\n",
+				    ahvif->vif->addr, arvif->link_id);
+			return -EINVAL;
+		}
+
 		link_conf = ath12k_mac_get_link_bss_conf(arvif);
 		if (!link_conf) {
 			ath12k_warn(ar->ab, "unable to access bss link conf in vdev start for vif %pM link %u\n",
@@ -18616,11 +18649,18 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	is_bridge_vdev = (ATH12K_BRIDGE_LINKS_MASK & BIT(link_id)) ?
+			 true : false;
+
+	if (!ctx && !is_bridge_vdev) {
+		ath12k_err(NULL, "Channel ctx is NULL for vif %pM link %u\n",
+			   vif->addr, link_id);
+		return -EINVAL;
+	}
+
 	/* For multi radio wiphy, the vdev was not created during add_interface
 	 * create now since we have a channel ctx now to assign to a specific ar/fw
 	 */
-	is_bridge_vdev = (ATH12K_BRIDGE_LINKS_MASK & BIT(link_id)) ?
-			 true : false;
 	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, is_bridge_vdev);
 	if (!arvif) {
 		WARN_ON(1);
@@ -19267,7 +19307,7 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 		arvif = ahvif->link[curr_link_id];
 		if (!arvif) {
 			ath12k_err(NULL, "Bridge cannot be created, vdev not created with link_id=%u\n",
-				   link_id);
+				   curr_link_id);
 			goto exit;
 		}
 		device_idx = arvif->ar->ab->wsi_info.index;
@@ -21225,6 +21265,12 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	if (link_id == ATH12K_DEFAULT_SCAN_LINK)
 		link_id = 0;
 	arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
+
+	if (!arvif) {
+		ath12k_err(ab, "Failed to alloc/assign link vif id %u\n",
+			   link_id);
+		return -ENOMEM;
+	}
 	/* If the vif is already assigned to a specific vdev of an ar,
 	 * check whether its already started, vdev which is started
 	 * are not allowed to switch to a new radio.
@@ -21251,6 +21297,12 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 
 	if (create) {
 		arvif = ath12k_mac_assign_link_vif(ah, vif, link_id, false);
+
+		if (!arvif) {
+			ath12k_err(ab, "Failed to alloc/assign link vif id %u\n",
+				   link_id);
+			return -ENOMEM;
+		}
 
 		arvif->is_scan_vif = true;
 		ret = ath12k_mac_vdev_create(ar, arvif, false);
