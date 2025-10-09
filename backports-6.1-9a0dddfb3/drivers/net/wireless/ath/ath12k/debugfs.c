@@ -3601,9 +3601,6 @@ static ssize_t ath12k_read_all_wmi_ctrl_path_stats(struct file *file,
 	list_splice_tail_init(&ar->debug.period_wmi_list, &periodic_stats_list);
 	spin_unlock_bh(&ar->wmi_ctrl_path_stats_lock);
 	list_for_each_entry_safe(stats, tmp, &periodic_stats_list, list) {
-		if (!stats)
-			break;
-
 		switch (stats->tagid) {
 		case WMI_CTRL_PATH_PMLO_STATS:
 			len += print_pmlo_stats(buf + len, size - len, stats->stats_ptr);
