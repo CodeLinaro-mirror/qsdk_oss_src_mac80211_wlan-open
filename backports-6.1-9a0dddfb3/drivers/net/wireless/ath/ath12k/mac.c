@@ -20315,6 +20315,10 @@ ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 	lockdep_assert_wiphy(hw->wiphy);
 
 	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+	if (!arvif) {
+		ret = -EINVAL;
+		goto out;
+	}
 
 	ar = arvif->ar;
 	if (ath12k_mac_vif_link_chan(vif, arvif->link_id, &def)) {
