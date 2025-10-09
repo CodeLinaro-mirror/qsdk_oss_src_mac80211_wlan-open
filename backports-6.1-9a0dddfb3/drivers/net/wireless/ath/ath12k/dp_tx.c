@@ -151,15 +151,15 @@ void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 	desc = srng->ring_base_vaddr + tp;
 	if (hp > tp) {
 		last_desc = ((void *)desc + entries * srng->entry_size * sizeof(u32));
-		dmac_inv_range_no_dsb((void *)desc,
-				      (void *)last_desc);
+		ath12k_core_dmac_inv_range_no_dsb((void *)desc, (void *)last_desc);
 	} else {
 		remaining_entries = srng->ring_size - tp;
 		last_desc = ((void *)desc + remaining_entries * sizeof(u32));
-		dmac_inv_range_no_dsb((void *)desc, (void *)last_desc);
+		ath12k_core_dmac_inv_range_no_dsb((void *)desc, (void *)last_desc);
 
 		last_desc = ((void *)srng->ring_base_vaddr + hp * sizeof(u32));
-		dmac_inv_range_no_dsb((void *)srng->ring_base_vaddr, (void *)last_desc);
+		ath12k_core_dmac_inv_range_no_dsb((void *)srng->ring_base_vaddr,
+						  (void *)last_desc);
 	}
 
 	dsb(st);
