@@ -9933,24 +9933,41 @@ static void ath12k_vdev_start_resp_event(struct ath12k_base *ab, struct sk_buff 
 
 static void ath12k_bcn_tx_status_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
+	struct ath12k *ar;
 	struct ath12k_link_vif *arvif;
-	u32 vdev_id, tx_status;
+	u32 vdev_id, tx_status, found = 0;
 
 	if (ath12k_pull_bcn_tx_status_ev(ab, skb, &vdev_id, &tx_status) != 0) {
 		ath12k_warn(ab, "failed to extract bcn tx status");
 		return;
 	}
 
-	rcu_read_lock();
-	arvif = ath12k_mac_get_arvif_by_vdev_id(ab, vdev_id);
-	if (!arvif) {
-		ath12k_warn(ab, "invalid vdev id %d in bcn_tx_status",
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, vdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid vdev id in bcn tx status event %d",
 			    vdev_id);
-		rcu_read_unlock();
 		return;
 	}
-	ath12k_mac_bcn_tx_event(arvif);
-	rcu_read_unlock();
+
+	spin_lock_bh(&ar->data_lock);
+	list_for_each_entry(arvif, &ar->arvifs, list) {
+		if (ath12k_mac_is_bridge_vdev(arvif))
+			continue;
+		if (vdev_id == arvif->vdev_id) {
+			found = 1;
+			break;
+		}
+	}
+	spin_unlock_bh(&ar->data_lock);
+
+	if (!found) {
+		ath12k_warn(ab, "vdev not found in arlist");
+		return;
+	}
+
+	if (arvif->is_up && arvif->ar)
+		wiphy_work_queue(ath12k_ar_to_hw(arvif->ar)->wiphy,
+				 &arvif->update_bcn_tx_status_work);
 }
 
 static void ath12k_vdev_stopped_event(struct ath12k_base *ab, struct sk_buff *skb)
