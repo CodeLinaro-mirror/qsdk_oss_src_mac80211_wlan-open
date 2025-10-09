@@ -4344,7 +4344,7 @@ void ieee80211_link_removal_count_update(struct ieee80211_vif *vif,
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 
 	if (!wdev->valid_links ||
-		WARN_ON(link_id > IEEE80211_MLD_MAX_NUM_LINKS))
+		WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
 		return;
 
 	wdev->links[link_id].link_removal_tbtt_count = count;
