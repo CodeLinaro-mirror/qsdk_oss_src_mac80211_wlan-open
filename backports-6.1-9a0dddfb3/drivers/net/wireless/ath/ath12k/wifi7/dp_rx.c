@@ -2399,17 +2399,29 @@ exit:
 	return 0;
 }
 
-static int ath12k_wifi7_handle_msdu_buftype(struct ath12k_dp *dp, dma_addr_t paddr,
+static int ath12k_wifi7_handle_msdu_buftype(struct ath12k_dp *dp,
+					    struct hal_reo_dest_ring *reo_desc,
 					    struct list_head *rx_desc_used_list)
 {
-	struct ath12k_rx_desc_info *desc_info =
-				(struct ath12k_rx_desc_info *)(uintptr_t)paddr;
+	struct ath12k_rx_desc_info *desc_info;
 	struct sk_buff *msdu;
 	const void *end;
+	u64 desc_va;
+
+	desc_va = ((u64)le32_to_cpu(reo_desc->buf_va_hi) << 32 |
+		   le32_to_cpu(reo_desc->buf_va_lo));
+	desc_info = (struct ath12k_rx_desc_info *)((unsigned long)desc_va);
 
 	if (!desc_info) {
 		ath12k_warn(dp, " rx exception, hw cookie conversion failed");
-		return -EINVAL;
+		u32 cookie = le32_get_bits(reo_desc->buf_addr_info.info1,
+					   BUFFER_ADDR_INFO1_SW_COOKIE);
+		desc_info = ath12k_dp_get_rx_desc(dp, cookie);
+		if (!desc_info) {
+			ath12k_warn(dp->ab, "Unable to retrieve rx_desc for va 0x%lx",
+				    (unsigned long)desc_va);
+			return -EINVAL;
+		}
 	}
 
 	if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC) {
@@ -2480,14 +2492,15 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 		device_id = hw_links[hw_link_id].device_id;
 		partner_dp = ath12k_dp_hw_grp_to_dp(dp_hw_grp, device_id);
 
-		ret = ath12k_wifi7_hal_desc_reo_parse_err(dp, reo_desc, &paddr,
+		ret = ath12k_wifi7_hal_desc_reo_parse_err(partner_dp, reo_desc, &paddr,
 							  &desc_bank);
 		if (ret) {
 			ath12k_warn(ab, "failed to parse error reo desc %d\n",
 				    ret);
 			if (ret == -EOPNOTSUPP) {
 				used_list = &rx_desc_used_list[device_id];
-				if (!ath12k_wifi7_handle_msdu_buftype(partner_dp, paddr,
+				if (!ath12k_wifi7_handle_msdu_buftype(partner_dp,
+								      reo_desc,
 								      used_list))
 					tot_n_bufs_reaped++;
 			}
@@ -2506,7 +2519,7 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 		    rbm != HAL_RX_BUF_RBM_SW5_BM &&
 		    rbm != partner_dp->hal->hal_params->rx_buf_rbm) {
 			act = HAL_WBM_REL_BM_ACT_REL_MSDU;
-			dp->device_stats.invalid_rbm++;
+			partner_dp->device_stats.invalid_rbm++;
 			ath12k_warn(ab, "invalid return buffer manager %d\n", rbm);
 			ath12k_wifi7_dp_rx_link_desc_return(partner_dp,
 							    &reo_desc->buf_addr_info,
@@ -2535,7 +2548,7 @@ int ath12k_wifi7_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *nap
 
 		rcu_read_lock();
 
-		dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+		dp_pdev = ath12k_dp_to_dp_pdev(partner_dp, pdev_id);
 		if (!dp_pdev) {
 			rcu_read_unlock();
 			continue;
