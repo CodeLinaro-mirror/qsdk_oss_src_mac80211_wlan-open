@@ -258,6 +258,10 @@ int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 	arsta = ath12k_peer_get_link_sta(ab, peer);
 	spin_unlock_bh(&dp->dp_lock);
 
+	if (!arsta) {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
 	arvif = arsta->arvif;
 
 	/* This arch ops is temporary, must be removed once ppeds handler is moved to wifi7 */
