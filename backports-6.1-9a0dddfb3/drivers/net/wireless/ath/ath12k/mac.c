@@ -10866,7 +10866,6 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 					struct ath12k_link_sta *arsta)
 {
 	struct ath12k_dp_link_peer *peer;
-	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -10883,7 +10882,7 @@ static int ath12k_mac_station_authorize(struct ath12k *ar,
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
-	if (vif->type == NL80211_IFTYPE_STATION && arvif->is_up) {
+	if (arvif->is_up) {
 		ret = ath12k_wmi_set_peer_param(ar, arsta->addr,
 						arvif->vdev_id,
 						WMI_PEER_AUTHORIZE,
