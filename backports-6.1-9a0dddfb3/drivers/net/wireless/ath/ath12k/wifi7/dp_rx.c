@@ -519,6 +519,7 @@ void ath12k_wifi7_dp_rx_update_ppe_msdu_mark(struct ath12k_base *ab,
 					     struct hal_rx_desc *rx_desc)
 {
 #ifdef CPTCFG_MAC80211_PPE_SUPPORT
+	u8 egress_macid;
 	if (peer->ppe_vp_num <= 0)
 		return;
 
@@ -527,12 +528,18 @@ void ath12k_wifi7_dp_rx_update_ppe_msdu_mark(struct ath12k_base *ab,
 	    !rx_mpdu_info->flow_idx_invalid &&
 	    rx_mpdu_info->flow_info.flow_metadata &&
 	    (rx_mpdu_info->flow_info.flow_metadata &
-	    ATH12K_RX_FSE_FLOW_MATCH_USE_PPE))
+	    ATH12K_RX_FSE_FLOW_MATCH_USE_PPE)) {
+		egress_macid =
+			FIELD_GET(ATH12K_DP_RX_FSE_FL_EGRESS_MACID_MASK,
+				  rx_mpdu_info->flow_info.flow_metadata);
 		msdu->mark =
 			u32_encode_bits(ATH12K_FSE_MAGIC_NUM,
 					ATH12K_FSE_MAGIC_NUM_MASK) |
 			u32_encode_bits(rx_mpdu_info->flow_info.flow_metadata,
-					ATH12K_PPE_VP_NUM);
+					ATH12K_PPE_VP_NUM) |
+			u32_encode_bits(egress_macid,
+					ATH12K_EGRESS_MACID_MASK);
+	}
 #endif
 }
 
@@ -931,6 +938,8 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	u8 tid;
 	int ret = 0;
 	u16 peer_id;
+	u8 macid;
+	u16 flow_metadata;
 
 	peer_id = rx_mpdu_info->flow_info.peer_id;
 	tid = rx_mpdu_info->tid;
@@ -989,6 +998,14 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					 * packet to the PPE driver if ppe_vp_num
 					 * is valid.
 					 */
+					flow_metadata =
+					 rx_mpdu_info->flow_info.flow_metadata;
+					macid =
+					 FIELD_GET(ATH12K_DP_RX_FSE_FL_EGRESS_MACID_MASK,
+						   flow_metadata);
+					msdu->mark =
+					 u32_replace_bits(msdu->mark, macid,
+							  ATH12K_EGRESS_MACID_MASK);
 					if ((rx_mpdu_info->flow_info.flow_metadata &
 					    ATH12K_RX_FSE_FLOW_MATCH_USE_PPE)) {
 						if (peer->dev->offload_ops->recv(peer->dev, msdu))
