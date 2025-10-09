@@ -15027,7 +15027,13 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	link_sta = rcu_dereference(sta->link[link]);
 
 	if (bss_conf && link_sta) {
-		ether_addr_copy(hdr->addr1, link_sta->addr);
+		if (!(vif->type == NL80211_IFTYPE_AP &&
+		    (ieee80211_is_probe_resp(hdr->frame_control) ||
+		     ieee80211_is_auth(hdr->frame_control) ||
+		     ieee80211_is_reassoc_resp(hdr->frame_control) ||
+		     ieee80211_is_assoc_resp(hdr->frame_control))))
+			ether_addr_copy(hdr->addr1, link_sta->addr);
+
 		ether_addr_copy(hdr->addr2, bss_conf->addr);
 		if (vif->type == NL80211_IFTYPE_STATION && bss_conf->bssid)
 			ether_addr_copy(hdr->addr3, bss_conf->bssid);
