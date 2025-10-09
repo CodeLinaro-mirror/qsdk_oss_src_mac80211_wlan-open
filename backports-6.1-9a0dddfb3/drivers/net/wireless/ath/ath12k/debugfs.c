@@ -7488,7 +7488,7 @@ static ssize_t ath12k_read_wmm_stats_vdev(struct file *file,
 					  size_t count, loff_t *ppos)
 {
 	struct ath12k_vif *ahvif = file->private_data;
-	struct ath12k_hw *ah = ahvif->ah;
+	struct ath12k_hw *ah;
 	int len = 0;
 	int size = 2048;
 	char *buf;

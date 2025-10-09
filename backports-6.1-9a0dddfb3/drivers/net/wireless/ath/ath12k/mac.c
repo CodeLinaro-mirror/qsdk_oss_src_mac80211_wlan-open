@@ -17441,16 +17441,17 @@ ppe_vp_config:
 
 			if (ret)
 				return ret;
+		} else {
+			vlan_iface->parent_vif = vlan_master_vif;
+			if (!links_map && vlan_master_ahvif)
+				links_map = vlan_master_ahvif->links_map;
+
+			ahvif->links_map = links_map;
+			ahvif->vlan_iface = vlan_iface;
+			ath12k_ppe_ds_attach_vlan_vif_link(ahvif->vlan_iface,
+							   ahvif->dp_vif.ppe_vp_num);
+			goto exit;
 		}
-
-		vlan_iface->parent_vif = vlan_master_vif;
-		if (!links_map && vlan_master_ahvif)
-			links_map = vlan_master_ahvif->links_map;
-
-		ahvif->links_map = links_map;
-		ahvif->vlan_iface = vlan_iface;
-		ath12k_ppe_ds_attach_vlan_vif_link(ahvif->vlan_iface, ahvif->dp_vif.ppe_vp_num);
-		goto exit;
 	}
 
 	/* Allocate Default Queue now and reassign during actual vdev create */

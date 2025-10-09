@@ -7013,7 +7013,7 @@ static int ath12k_wmi_ext_hal_reg_caps(struct ath12k_base *soc,
 {
 	struct ath12k_wmi_pdev *wmi_handle = &soc->wmi_ab.wmi[0];
 	struct ath12k_wmi_svc_rdy_ext_parse *svc_rdy_ext = data;
-	struct ath12k_wmi_hal_reg_capabilities_ext_arg reg_cap;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg reg_cap = {0};
 	int ret;
 	u32 i;
 
@@ -7378,7 +7378,7 @@ ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 				      struct ath12k_pdev *pdev)
 {
 	struct ath12k_band_cap *cap_band;
-	u32 bands, support_320mhz;
+	u32 bands = 0, support_320mhz;
 	int i;
 
 	if (ab->hw_params->single_pdev_only) {
@@ -15524,7 +15524,7 @@ static void ath12k_wmi_mlo_3_link_tlt_selection(struct ath12k_base *ab,
                                                 struct sk_buff *skb)
 {
         struct mlo_tlt_selection_evt_params tlt_sel_params = {0};
-        struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_link_peer *peer = NULL;
 	struct ath12k_dp *dp;
         int ret, i;
 

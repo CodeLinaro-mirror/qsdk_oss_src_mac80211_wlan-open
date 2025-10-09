@@ -1174,6 +1174,7 @@ int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *a
 						   GFP_ATOMIC);
 	if (!vendor_event) {
 		ath12k_warn(ar->ab, "failed to allocate skb for afc expiry event\n");
+		ret = -ENOMEM;
 		goto out;
 	}
 
@@ -1181,6 +1182,7 @@ int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *a
 
 	if (ret) {
 		ath12k_warn(ar->ab, "Failed to update AFC request vendor event\n");
+		ret = -EINVAL;
 		goto out;
 	}
 
