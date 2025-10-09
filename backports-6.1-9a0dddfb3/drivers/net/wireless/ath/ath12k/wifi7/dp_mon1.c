@@ -621,7 +621,7 @@ ath12k_wifi7_dp_mon_rx_mpdu_pop(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 	struct hal_rx_desc *rx_desc, *tail_rx_desc;
 	struct hal_rx_msdu_link *msdu_link_desc;
 	struct sk_buff *msdu = NULL, *last = NULL;
-	struct ath12k_rx_desc_info *desc_info;
+	struct ath12k_rx_desc_info *desc_info, *desc_info_tail;
 	struct ath12k_buffer_addr buf_info;
 	struct hal_rx_msdu_list msdu_list;
 	struct ath12k_skb_rxcb *rxcb;
@@ -668,11 +668,11 @@ ath12k_wifi7_dp_mon_rx_mpdu_pop(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 
 		ath12k_hal_rx_msdu_list_get(&ab->hal, msdu_link_desc, &msdu_list,
 					    &num_msdus);
-		desc_info = ath12k_dp_get_rx_desc(dp,
-						  msdu_list.sw_cookie[num_msdus - 1]);
-		tail_rx_desc = (struct hal_rx_desc *)(desc_info->skb)->data;
+		desc_info_tail =
+			ath12k_dp_get_rx_desc(dp,
+					      msdu_list.sw_cookie[num_msdus - 1]);
 
-		for (i = 0; i < num_msdus; i++) {
+		for (i = 0; i < num_msdus && desc_info_tail; i++) {
 			u32 l2_hdr_offset;
 
 			if (pmon->mon_last_buf_cookie == msdu_list.sw_cookie[i]) {
@@ -686,6 +686,13 @@ ath12k_wifi7_dp_mon_rx_mpdu_pop(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 
 			desc_info =
 				ath12k_dp_get_rx_desc(dp, msdu_list.sw_cookie[i]);
+			if (!desc_info) {
+				ath12k_warn(ab, "Unable to retrieve rx_desc - sw_cookie 0x%x",
+					    msdu_list.sw_cookie[i]);
+				continue;
+			}
+
+
 			msdu = desc_info->skb;
 
 			if (!msdu) {
@@ -720,6 +727,7 @@ ath12k_wifi7_dp_mon_rx_mpdu_pop(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 			}
 
 			rx_desc = (struct hal_rx_desc *)msdu->data;
+			tail_rx_desc = (struct hal_rx_desc *)(desc_info_tail->skb)->data;
 			l2_hdr_offset = ath12k_hal_rx_h_l3pad_get(&ab->hal,
 								  tail_rx_desc);
 			if (is_first_msdu) {
