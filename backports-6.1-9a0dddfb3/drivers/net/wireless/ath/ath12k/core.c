@@ -1661,7 +1661,7 @@ int ath12k_core_pdev_enable_telemetry_stats(struct ath12k_base *ab)
 
 static int ath12k_core_hw_group_start(struct ath12k_hw_group *ag)
 {
-	struct ath12k_base *ab;
+	struct ath12k_base *ab = NULL;
 	int ret, i;
 
 	lockdep_assert_held(&ag->mutex);
@@ -1918,7 +1918,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
 	int ret, i;
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
 	struct ath12k_bridge_iter bridge_iter = {};
 	u8 active_num_devices;
 	struct ath12k_base *partner_ab;
@@ -4373,11 +4373,13 @@ void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed,
 
 	ath12k_info(ab, "Link speed is %d and width is %d\n", link_speed, link_width);
 
+#ifndef PLATFORM_SDX85
 	if (pcie_set_link_speed(root_port, link_speed))
 		ath12k_err(ab, "Failed to set the link speed\n");
 
 	if (pcie_set_link_width(root_port, link_width))
 		ath12k_err(ab, "Failed to set the link width\n");
+#endif
 }
 
 static int ath12k_core_wsi_remap_pdev_suspend(struct ath12k_base *ab)
