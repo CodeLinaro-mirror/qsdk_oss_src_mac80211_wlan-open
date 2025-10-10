@@ -14853,7 +14853,7 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	struct ath12k_link_sta *arsta;
 	u8 link_id;
 	unsigned long links;
-	struct ath12k_base *ab;
+	struct ath12k_base *ab = NULL;
 
 	/* Use the link id passed or the first available link */
 	if (!sta) {
@@ -14903,7 +14903,7 @@ u8 ath12k_mac_get_tx_link(struct ieee80211_sta *sta, struct ieee80211_vif *vif,
 	if (ahsta->deflink.arvif->ar)
 		ab = ahsta->deflink.arvif->ar->ab;
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
+	if (ab && test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
 	    ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
 		/* If disassoc frame comes in crash link, need to
 		 * change the link which is active at that instance.
