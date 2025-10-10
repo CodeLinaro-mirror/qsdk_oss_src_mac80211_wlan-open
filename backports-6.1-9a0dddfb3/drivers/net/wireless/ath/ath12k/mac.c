@@ -2007,11 +2007,14 @@ void ath12k_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 					struct ieee80211_sta *sta, bool enabled)
 {
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 
 	if (enabled && !ahsta->use_4addr_set) {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+		struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+
 		ahsta->ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
 		ahsta->vlan_iface = ahvif->vlan_iface;
+#endif
 		wiphy_work_queue(hw->wiphy, &ahsta->set_4addr_wk);
 		ahsta->use_4addr_set = true;
 	}
@@ -2742,7 +2745,7 @@ static void ath12k_peer_assoc_h_crypto(struct ath12k *ar,
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	struct ieee80211_bss_conf *info;
-	struct cfg80211_chan_def def;
+	struct cfg80211_chan_def def = {0};
 	struct cfg80211_bss *bss;
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
 	const u8 *rsnie = NULL;
@@ -2917,7 +2920,7 @@ static void ath12k_peer_assoc_h_rates(struct ath12k *ar,
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	struct wmi_rate_set_arg *rateset = &arg->peer_legacy_rates;
-	struct cfg80211_chan_def def;
+	struct cfg80211_chan_def def = {0};
 	const struct ieee80211_supported_band *sband;
 	const struct ieee80211_rate *rates;
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
@@ -2993,7 +2996,7 @@ static void ath12k_peer_assoc_h_ht(struct ath12k *ar,
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	const struct ieee80211_sta_ht_cap *ht_cap;
-	struct cfg80211_chan_def def;
+	struct cfg80211_chan_def def = {0};
 	enum nl80211_band band;
 	const u8 *ht_mcs_mask;
 	int i, n;
@@ -3231,7 +3234,7 @@ static void ath12k_peer_assoc_h_vht(struct ath12k *ar,
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
 	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
 	const struct ieee80211_sta_vht_cap *vht_cap;
-	struct cfg80211_chan_def def;
+	struct cfg80211_chan_def def = {0};
 	enum nl80211_band band;
 	u16 *vht_mcs_mask;
 	u16 tx_mcs_map;
@@ -4278,7 +4281,7 @@ static void ath12k_peer_assoc_h_eht(struct ath12k *ar,
 	const struct ieee80211_eht_mcs_nss_supp_bw *bw;
 	const struct ieee80211_sta_eht_cap *eht_cap;
 	const struct ieee80211_sta_he_cap *he_cap;
-	struct ieee80211_bss_conf *link_conf;
+	struct ieee80211_bss_conf *link_conf = NULL;
 	bool user_rate_valid = true;
 	struct cfg80211_chan_def def;
 	enum nl80211_band band;
@@ -4566,7 +4569,7 @@ static void ath12k_peer_assoc_h_ttlm(struct ath12k_link_sta *arsta,
 	if (!sta->mlo || ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID)
 		return;
 
-	memset(ttlm_params, 0, sizeof(struct ath12k_wmi_ttlm_peer_params *));
+	memset(ttlm_params, 0, sizeof(struct ath12k_wmi_ttlm_peer_params));
 
 	for (i = 0; i < IEEE80211_MAX_NUM_TIDS; i++)
 		dmap |= sta->neg_ttlm.downlink[i];
@@ -7129,7 +7132,7 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
 	struct ath12k_wmi_vdev_up_params params = { 0 };
 	struct ieee80211_vif_cfg *vif_cfg = &vif->cfg;
-	struct ath12k_link_vif *tx_arvif;
+	struct ath12k_link_vif *tx_arvif = NULL;
 	struct cfg80211_chan_def def;
 	u32 param_id, param_value;
 	enum nl80211_band band;
@@ -10499,7 +10502,7 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 	struct wmi_chan_width_peer_arg *peer_arg;
 	struct ieee80211_link_sta *link_sta;
 	struct ieee80211_vif *vif = arvif->ahvif->vif;
-	struct cfg80211_chan_def def;
+	struct cfg80211_chan_def def = {0};
 	u16 ru_punct_bitmap;
 	bool is_bridge_vdev;
 
@@ -10573,7 +10576,7 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	struct ath12k *ar;
 	struct ath12k_link_vif *arvif;
 	struct ieee80211_sta *sta;
-	struct cfg80211_chan_def def;
+	struct cfg80211_chan_def def = {0};
 	enum nl80211_band band;
 	const u8 *ht_mcs_mask;
 	const u16 *vht_mcs_mask;
@@ -10804,8 +10807,10 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 	sta = container_of((void *)ahsta, struct ieee80211_sta, drv_priv);
 	links = ahsta->links_map;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ahsta->vlan_iface)
 		ath12k_ppe_ds_attach_vlan_vif_link(ahsta->vlan_iface, ahsta->ppe_vp_num);
+#endif
 
 	for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
 		arsta = rcu_dereference(ahsta->link[link_id]);
@@ -11709,9 +11714,8 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
-	struct ath12k_link_vif *arvif;
-	struct ath12k_link_sta *arsta;
-	struct wireless_dev *wdev;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_link_sta *arsta = NULL;
 	struct ath12k *ar = ah->radio;
 	struct ath12k_hw_group *ag = ar->ab->ag;
 	unsigned long links_map;
@@ -11721,7 +11725,9 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	u16 bridge_bitmap = 0;
 	int ret = -EINVAL;
 	struct ath12k_dp_peer_create_params dp_params = {0};
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	struct wireless_dev *wdev;
+#endif
 	lockdep_assert_wiphy(hw->wiphy);
 
 	if ((old_state == IEEE80211_STA_NOTEXIST &&
@@ -11733,6 +11739,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 
 	active_num_devices = ag->num_devices - ag->num_bypassed;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+
 	if (!ahsta->ppe_vp_num)
 		ahsta->ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
 
@@ -16512,8 +16519,11 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar = ath12k_ah_to_ar(ah, 0);
 	int ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM, ppe_core_mask = 0;
-	int i, ppe_vp_type = ATH12K_INVALID_PPE_VP_TYPE;
+	int ppe_vp_type = ATH12K_INVALID_PPE_VP_TYPE;
 	unsigned long links_map = 0;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	int i = 0;
+#endif
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -16526,9 +16536,10 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	 * which is allocated during netdev initialization.
 	 * This also handles Subsystem Recovery scenarios.
 	 */
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ath12k_vif_get_vp_num(ahvif, wdev->netdev))
 		ath12k_dbg(NULL, ATH12K_DBG_PPE, "failed to get VP num from nss-wifi-plugin\n");
-
+#endif
 	if (ahvif->dp_vif.ppe_vp_num > 0) {
 		ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
 		ppe_core_mask = ahvif->dp_vif.ppe_core_mask;
@@ -16560,6 +16571,7 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	/* Check the PPE VP type and update it accordingly.
 	 */
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	switch (wdev->ppe_vp_type) {
 	case PPE_VP_USER_TYPE_PASSIVE:
 	case PPE_VP_USER_TYPE_ACTIVE:
@@ -16577,6 +16589,7 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	 */
 		ppe_vp_type = PPE_VP_USER_TYPE_ACTIVE;
 	}
+#endif
 
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		vlan_master_vif = wdev_to_ieee80211_vif_vlan(wdev, true);
@@ -16584,11 +16597,14 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		ahvif->vdev_type = WMI_VDEV_TYPE_AP;
 		if (!vlan_master_ahvif)
 			goto exit;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ppe_vp_type = vlan_master_ahvif->dp_vif.ppe_vp_type;
 		ppe_core_mask = vlan_master_ahvif->dp_vif.ppe_core_mask;
 		goto ppe_vp_config;
+#endif
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (vif->type == NL80211_IFTYPE_MESH_POINT &&
 	    ppe_vp_type == PPE_VP_USER_TYPE_DS) {
 		ppe_vp_type = PPE_VP_USER_TYPE_PASSIVE;
@@ -16650,6 +16666,7 @@ ppe_vp_config:
 	/* Defer vdev creation until assign_chanctx or hw_scan is initiated as driver
 	 * will not know if this interface is an ML vif at this point.
 	 */
+#endif
 exit:
 	return 0;
 }
@@ -19278,7 +19295,7 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 	unsigned long links_map, link_idx_bmp;
 	u32 device_idx;
 	int ret;
-	u8 link_id, bridge_ar_link_idx, curr_link_id;
+	u8 link_id = 0, bridge_ar_link_idx, curr_link_id;
 	bool bridge_needed = false;
 
 	/* Currently bridge vdev addition is supported in AP and STA mode */
@@ -20622,8 +20639,8 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 			     enum ieee80211_reconfig_type reconfig_type)
 {
         struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
-        struct ath12k *ar;
-        struct ath12k_base *ab;
+	struct ath12k *ar = NULL;
+	struct ath12k_base *ab = NULL;
         struct ath12k_vif *ahvif;
         struct ath12k_link_vif *arvif;
         int recovery_count, i;
@@ -24508,7 +24525,7 @@ static int ath12k_process_scs_del(struct ath12k *ar,
 	enum qos_profile_dir qos_dir;
 	u8 qm_id = qm_req->qm_id;
 	int ret = -EINVAL;
-	u16 qos_id;
+	u16 qos_id = 0;
 
 	rcu_read_lock();
 	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,

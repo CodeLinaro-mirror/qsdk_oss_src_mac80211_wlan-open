@@ -5098,7 +5098,7 @@ ath12k_wmi_send_twt_enable_cmd(struct ath12k *ar, u32 pdev_id)
 	struct ath12k_base *ab = wmi->wmi_ab->ab;
 	struct wmi_twt_enable_params_cmd *cmd;
 	struct sk_buff *skb;
-	int ret, len;
+	int ret = 0, len;
 
 	len = sizeof(*cmd);
 
@@ -7696,6 +7696,7 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 	int total_eirp_obj, sub_tlv_size, ret = 0;
 	struct wmi_tlv *tlv;
 	u16 tlv_tag;
+	struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
 
 	ath12k_dbg(ab, ATH12K_DBG_AFC, "AFC event tag 0x%x of len %d type %d\n",
 		   tag, len, afc->event_type);
@@ -7735,8 +7736,6 @@ static int ath12k_wmi_afc_event_parser(struct ath12k_base *ab,
 		}
 		break;
 	case WMI_TAG_ARRAY_STRUCT:
-		struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
-
 		if (len == 0)
 			return 0;
 
@@ -13432,7 +13431,7 @@ static void ath12k_wmi_ctrl_path_stats_event(struct ath12k_base *ab, struct sk_b
 	struct wmi_ctrl_path_stats_ev_parse_param param = {0};
 	struct ath12k_wmi_ctrl_path_stats_list *stats;
 	const struct wmi_tlv *tlv;
-	struct list_head *src, *dst;
+	struct list_head *src, *dst = NULL;
 	struct ath12k *ar = NULL;
 	void *ptr = skb->data;
 	u16 tlv_tag, tag_id;
@@ -17761,7 +17760,7 @@ ath12k_wmi_send_mlo_peer_tid_to_link_map_cmd(struct ath12k *ar,
 {
 	struct wmi_peer_tid_to_link_map_fixed_param *cmd;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
-	struct wmi_tid_to_link_map *ttlm;
+	struct wmi_tid_to_link_map *ttlm = NULL;
 	int ret, buf_len;
 	struct sk_buff *skb;
 	struct wmi_tlv *tlv;

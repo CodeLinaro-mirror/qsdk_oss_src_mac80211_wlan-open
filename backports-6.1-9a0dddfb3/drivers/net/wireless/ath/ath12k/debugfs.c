@@ -1363,7 +1363,7 @@ static ssize_t ath12k_write_simulate_radar(struct file *file,
 {
 	u8 agile = 0, segment = 0, radar_type = 0, chirp = 0, fhss = 0;
 	struct ath12k *ar = file->private_data;
-	char buf[64], *token, *sptr;
+	char buf[64] = {0}, *token, *sptr;
 	u32 radar_params;
 	int offset = 0;
 	int ret;
@@ -4295,6 +4295,7 @@ static const struct file_operations fops_vdev_stats_offload = {
 	.open = simple_open
 };
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static ssize_t ath12k_write_ppe_rfs_core_mask(struct file *file,
 					      const char __user *user_buf,
 					      size_t count, loff_t *ppos)
@@ -4352,7 +4353,6 @@ static const struct file_operations ath12k_fops_rfs_core_mask = {
 	.llseek = default_llseek,
 };
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static inline char *get_ppe_str(int ppe_vp_type)
 {
 	char *type = NULL;
@@ -6684,7 +6684,7 @@ static ssize_t ath12k_dump_dp_mon_pdev_stats(struct file *file, char __user *use
 {
 	struct ath12k_base *ab = file->private_data;
 	struct ath12k *ar;
-	struct ath12k_pdev_mon_dp_stats *mon_stats;
+	struct ath12k_pdev_mon_dp_stats *mon_stats = NULL;
 	struct ath12k_pdev *pdev;
 	struct ath12k_dp_mon *dp_mon = ab->dp->dp_mon;
 	u32 tot_used_frags = 0, tot_free_frags = dp_mon->num_frag_free;
@@ -7488,8 +7488,10 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 	debugfs_create_file("mld_stats", 0600, vif->debugfs_dir, ahvif,
 			    &ath12k_fops_mld_stats);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	debugfs_create_file("rfs_core_mask", 0644, vif->debugfs_dir,
 			    ahvif, &ath12k_fops_rfs_core_mask);
+#endif
 
 	arvif->debugfs_power_save_gtx = debugfs_create_file("power_save_gtx", 0644,
 							    vif->link_debugfs[link_id],
