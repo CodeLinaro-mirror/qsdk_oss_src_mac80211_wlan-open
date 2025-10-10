@@ -460,7 +460,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_buffer_addr *desc;
-	struct hal_srng *srng;
+	struct hal_srng *srng = NULL;
 	struct sk_buff *skb;
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
@@ -479,7 +479,9 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 
 #ifndef CONFIG_IO_COHERENCY
 		if (unlikely(!skb->fast_recycled)) {
+#ifndef PLATFORM_SDX85
 			dmac_inv_range_no_dsb(skb->data, skb->data + DP_RX_BUFFER_SIZE);
+#endif
 			is_dma_inv_done = true;
 		}
 #endif

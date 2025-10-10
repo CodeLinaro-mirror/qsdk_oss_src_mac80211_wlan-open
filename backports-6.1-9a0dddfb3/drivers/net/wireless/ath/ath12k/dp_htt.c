@@ -870,7 +870,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	u32 peer_id = 0;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k *ar;
-	int ret, i;
+	int ret = 0, i;
 	u8 pdev_id;
 	u32 ppdu_id, len;
 
@@ -1170,7 +1170,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	struct ath12k_hw_group *ag = ab->ag;
 	u16 vdev_id, peer_id, ml_peer_id;
 	struct ath12k_dp_link_peer *peer;
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_base *pri_ab;
 	struct ath12k_dp *dp;
 	u8 pdev_id, chip_id;

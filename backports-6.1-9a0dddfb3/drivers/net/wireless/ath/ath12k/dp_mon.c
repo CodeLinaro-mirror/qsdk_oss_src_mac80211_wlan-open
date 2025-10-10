@@ -150,7 +150,7 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 		struct ieee80211_radiotap_tlv *tlv;
 		struct ieee80211_radiotap_eht *eht;
 		struct ieee80211_radiotap_eht_usig *usig;
-		u16 len = 0, i, eht_len, usig_len;
+		u16 len = 0, i, eht_len = 0, usig_len;
 		u8 user;
 
 		if (ppduinfo->is_eht) {
@@ -785,11 +785,10 @@ ath12k_dp_mon_tx_process_status_tlv(u32 tlv_status,
 				    struct dp_mon_tx_ppdu_info *tx_ppdu_info)
 {
 	int ret = 0;
+	struct dp_mon_mpdu *mon_mpdu = tx_ppdu_info->tx_mon_mpdu;
 
 	switch (tlv_status) {
 	case HAL_TX_MON_MPDU_START:
-		struct dp_mon_mpdu *mon_mpdu = tx_ppdu_info->tx_mon_mpdu;
-
 		mon_mpdu = kzalloc(sizeof(*mon_mpdu), GFP_ATOMIC);
 		break;
 	case HAL_TX_MON_MPDU_END:

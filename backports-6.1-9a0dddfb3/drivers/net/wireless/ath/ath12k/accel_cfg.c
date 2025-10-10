@@ -40,9 +40,9 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 				     u8 *node_id, u8 *link_id)
 {
 	struct  ath12k_vif *ahvif;
-	struct  ieee80211_sta *sta;
+	struct  ieee80211_sta *sta = NULL;
 	struct  ath12k_sta *ahsta;
-	struct  ath12k_link_vif *arvif;
+	struct  ath12k_link_vif *arvif = NULL;
 	struct  ath12k_base *ab;
 	struct  ieee80211_vif *vif;
 
@@ -89,6 +89,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 
 	ab = arvif->ar->ab;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* Update DS node_id only if the chipset support DS */
 	if (ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS ||
 	    !test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
@@ -97,7 +98,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 	*node_id = ab->dp->ppe.ds_node_id;
 unlock:
 	rcu_read_unlock();
-
+#endif
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
 			"Wifi-classifer mark peer %pM link_id %x node_id %x\n",
 			peer_mac, *link_id, *node_id);
@@ -416,7 +417,7 @@ static bool ath12k_ds_get_node_id(struct ieee80211_vif *vif,
 				  const u8 *peer_mac, u8 *node_id)
 {
 	struct ath12k_vif *ahvif;
-	struct ieee80211_sta *sta;
+	struct ieee80211_sta *sta = NULL;
 	struct ath12k_sta *ahsta;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_base *ab;
@@ -428,9 +429,10 @@ static bool ath12k_ds_get_node_id(struct ieee80211_vif *vif,
 	if (!ahvif)
 		return false;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return false;
-
+#endif
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA &&
 	    ahvif->vdev_type != WMI_VDEV_TYPE_AP)
 		return false;
