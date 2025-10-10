@@ -1640,6 +1640,13 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO;
 	}
 
+
+	if (params->chandef.chan->band == NL80211_BAND_6GHZ)
+		link_conf->power_type =
+		    ieee80211_cfg_to_mac_power_type(params->he_6ghz_power_type);
+	else
+		link_conf->power_type = IEEE80211_REG_UNSET_AP;
+
 	err = ieee80211_link_use_channel(link, &chanreq,
 					 IEEE80211_CHANCTX_SHARED);
 	if (!err)
@@ -1670,12 +1677,6 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		vlan->control_port_no_preauth =
 			params->crypto.control_port_no_preauth;
 	}
-
-	if (params->chandef.chan->band == NL80211_BAND_6GHZ)
-		link_conf->power_type =
-		    ieee80211_cfg_to_mac_power_type(params->he_6ghz_power_type);
-	else
-		link_conf->power_type = IEEE80211_REG_UNSET_AP;
 
 	link_conf->dtim_period = params->dtim_period;
 	link_conf->enable_beacon = true;
