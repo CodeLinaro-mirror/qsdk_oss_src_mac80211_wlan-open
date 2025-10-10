@@ -1428,7 +1428,7 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *link_peer;
 	u8 hw_link_id, pdev_id;
-	int tid, msdu_idx;
+	int msdu_idx;
 	bool fast_rx = true;
 	enum ath12k_dp_rx_error ret;
 
@@ -1519,7 +1519,7 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 						  spd_desc_l->src_link_id,
 						  is_mcbc,
 						  spd_desc_l->rx_mpdu_info.flow_info.peer_id,
-						  tid);
+						  spd_desc_l->rx_mpdu_info.tid);
 		} else {
 			partner_dp->device_stats.fast_rx[ring_id][partner_dp->device_id]++;
 		}
