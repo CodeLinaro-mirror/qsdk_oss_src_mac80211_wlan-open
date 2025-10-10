@@ -218,9 +218,12 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 		rxs->rate_idx = ppduinfo->rate;
 	} else {
 		rxs->encoding = RX_ENC_LEGACY;
-		sband = &dp_pdev->ar->mac.sbands[rxs->band];
-		rxs->rate_idx = ath12k_mac_hw_rate_to_idx(sband, ppduinfo->rate,
+		if (rxs->band < NUM_NL80211_BANDS) {
+			sband = &dp_pdev->ar->mac.sbands[rxs->band];
+			rxs->rate_idx =
+				ath12k_mac_hw_rate_to_idx(sband, ppduinfo->rate,
 							  ppduinfo->cck_flag);
+		}
 	}
 
 	rxs->mactime = ppduinfo->tsft;
