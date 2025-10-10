@@ -1483,10 +1483,16 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 				goto err_stop;
 
 			ieee80211_set_vif_encap_ops(sdata);
+#ifndef PLATFORM_SDX85
+			/* ieee80211_check_queues was disabled for SDX
+			 *  due to Warn on for invalid hw queue for SDX
+			 *  during VAP up
+			 */
 			res = ieee80211_check_queues(sdata,
 				ieee80211_vif_type_p2p(&sdata->vif));
 			if (res)
 				goto err_del_interface;
+#endif
 		}
 
 		if (sdata->vif.type == NL80211_IFTYPE_AP) {

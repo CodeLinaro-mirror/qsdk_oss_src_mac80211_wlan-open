@@ -3330,7 +3330,7 @@ void ieee80211_dynamic_ps_enable_work(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata = local->ps_sdata;
 	struct ieee80211_if_managed *ifmgd;
 	unsigned long flags;
-	int q;
+	int q = 0;
 	spinlock_t *pcpu_queue_stop_reason_lock;
 	unsigned long *queue_stop_reasons;
 
@@ -10520,7 +10520,7 @@ int ieee80211_mgd_assoc_ml_reconf(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_mgd_assoc_data *data = NULL;
 	struct sta_info *sta;
 	struct sk_buff *skb;
-	u16 added_links, new_valid_links;
+	u16 added_links, new_valid_links = 0;
 	int link_id, err;
 
 	if (!ieee80211_vif_is_mld(&sdata->vif) ||
@@ -10837,7 +10837,7 @@ static void ieee80211_ml_epcs(struct ieee80211_sub_if_data *sdata,
 	for_each_mle_subelement(sub, (const u8 *)elems->ml_epcs,
 				elems->ml_epcs_len) {
 		struct ieee80211_link_data *link;
-		struct ieee802_11_elems *link_elems __free(kfree);
+		struct ieee802_11_elems *link_elems __free(kfree) = NULL;
 		u8 *pos = (void *)sub->data;
 		u16 control;
 		ssize_t len;

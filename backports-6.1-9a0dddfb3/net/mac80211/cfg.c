@@ -5174,17 +5174,16 @@ ieee80211_get_ap_6ghz_pwr_mode(struct wireless_dev *wdev, unsigned int link_id)
 	struct ieee80211_sub_if_data *sdata;
 	enum nl80211_regulatory_power_modes mode = NL80211_REG_NUM_POWER_MODES;
 	enum ieee80211_ap_reg_power ap_power_type;
+	unsigned long valid_links;
+	struct ieee80211_bss_conf *bss_conf;
+	enum nl80211_reg_client_types client_type;
+	enum nl80211_regulatory_power_modes ap_mode;
 
 	if (!wdev)
 		return mode;
 	switch (wdev->iftype) {
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_STATION:
-		unsigned long valid_links;
-		struct ieee80211_bss_conf *bss_conf;
-		enum nl80211_reg_client_types client_type;
-		enum nl80211_regulatory_power_modes ap_mode;
-
 		sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 		if (!ieee80211_sdata_running(sdata) ||
 		    !(sdata->flags & IEEE80211_SDATA_IN_DRIVER)) {
@@ -5675,7 +5674,7 @@ ieee80211_color_change_bss_config_notify(struct ieee80211_link_data *link,
 	if (!link->conf->nontransmitted &&
 	    rcu_access_pointer(link->conf->tx_bss_conf)) {
 		struct ieee80211_link_data *tmp;
-		unsigned int link_id_iter;
+		unsigned int link_id_iter = 0;
 		struct ieee80211_link_data *link_iter;
 
 		for_each_sdata_link(sdata->local, tmp) {

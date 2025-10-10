@@ -428,7 +428,7 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 	struct ieee80211_radiotap_lsig lsig = {};
 	struct ieee80211_radiotap_usig usig = {};
 	struct ieee80211_radiotap_eht eht = {};
-	u32 *user_info;
+	u32 *user_info = NULL;
 	bool rhdr_ext = false;
 
 	if ((status->flag & RX_FLAG_USIG_HEADER) ||
@@ -3623,7 +3623,7 @@ ieee80211_rx_h_data(struct ieee80211_rx_data *rx)
 	struct ieee80211_rx_status *status = IEEE80211_SKB_RXCB(rx->skb);
 	__le16 fc = hdr->frame_control;
 	ieee80211_rx_result res;
-	bool port_control;
+	bool port_control = false;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 
 	if (unlikely(!ieee80211_is_data(hdr->frame_control)))
@@ -5563,7 +5563,7 @@ static bool ieee80211_invoke_fast_rx(struct ieee80211_rx_data *rx,
 		u8 da[ETH_ALEN];
 		u8 sa[ETH_ALEN];
 	} addrs __aligned(2);
-	struct ieee80211_sta_rx_stats *stats;
+	struct ieee80211_sta_rx_stats *stats = NULL;
 	u8 da_offs = fast_rx->da_offs, sa_offs = fast_rx->sa_offs;
 	u32 last_rate;
 
@@ -6095,7 +6095,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	prev_flag = false;
 
 	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
-		unsigned int link_id;
+		unsigned int link_id = 0;
 		struct ieee80211_bss_conf *bss_conf;
 		struct ieee80211_chanctx_conf *conf;
 		unsigned long valid_links = sdata->vif.valid_links;
@@ -6185,7 +6185,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	}
 
 	if (prev && wiphy->n_radio) {
-		unsigned int link_id;
+		unsigned int link_id = 0;
 		struct ieee80211_bss_conf *bss_conf;
 		struct ieee80211_chanctx_conf *conf;
 		unsigned long valid_links = prev->vif.valid_links;

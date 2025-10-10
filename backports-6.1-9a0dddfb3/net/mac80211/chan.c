@@ -1982,7 +1982,7 @@ int _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 	struct ieee80211_chanctx *ctx;
 	u8 radar_detect_width = 0;
 	bool reserved = false;
-	int radio_idx;
+	int radio_idx = -1;
 	int ret;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
