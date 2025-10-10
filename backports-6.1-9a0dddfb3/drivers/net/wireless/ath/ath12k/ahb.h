@@ -108,4 +108,5 @@ int ath12k_ahb_register_driver(const enum ath12k_device_family device_id,
 			       struct ath12k_ahb_driver *driver);
 void ath12k_ahb_unregister_driver(const enum ath12k_device_family device_id);
 int ath12k_ahb_config_irq(struct ath12k_base *ab);
+int ath12k_ahb_boot_root_pd(struct ath12k_base *ab);
 #endif
