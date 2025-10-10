@@ -130,8 +130,9 @@ void athdbg_minidump_log(void *start_addr, size_t size, const char *struct_name,
 					  module_name);
 		if (minidump_state == ENABLE_MINIDUMP &&
 		    find_dump_node(struct_name)) {
-			pr_debug("%s, ptr addr %p, structure name %s, module name %s, size %zu\n",
-				__func__, start_addr, struct_name, module_name,
+			pr_debug("%s, addr %lx, sname %s, mname %s, size %zx\n",
+				__func__, (const uintptr_t)start_addr,
+				struct_name, module_name,
 				size);
 
 			athdbg_add_to_minidump_struct_list(struct_name);
@@ -226,12 +227,84 @@ void athdbg_collect_reference_segments(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(athdbg_collect_reference_segments);
 
+void athdbg_free_reference_segments(struct ath12k_base *ab)
+{
+	int i = 0, j = 0;
+	struct ath12k_hw_group *ag;
+	struct ath12k *ar = NULL;
+	struct ath12k_hw *ah = NULL;
+	struct ieee80211_hw *hw = NULL;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k_vif *ahvif = NULL;
+	struct ieee80211_vif *vif;
+	u32 vdev_bitmap, bit_pos;
+	const struct athdbg_to_ath12k_ops *ops;
+
+	if (!ab || !ab->ag)
+		return;
+
+	ag = ab->ag;
+
+	for (i = 0; i < ag->num_hw; i++) {
+		ah = ath12k_ag_to_ah(ag, i);
+		if (!ah)
+			continue;
+
+		athmem_free_entry_in_minidump(ah);
+
+		for (j = 0; j < ah->num_radio; j++) {
+			ar = &ah->radio[j];
+			if (!ar)
+				continue;
+
+			athmem_free_entry_in_minidump(ar);
+
+			vdev_bitmap = ar->allocated_vdev_map;
+
+			for (bit_pos = 0; bit_pos < 32; bit_pos++) {
+				if (!(vdev_bitmap & BIT(bit_pos)))
+					continue;
+				if (athdbg_base &&
+				   athdbg_base->dbg_to_ath_ops) {
+					ops = athdbg_base->dbg_to_ath_ops;
+					arvif = ops->get_link_vif_from_vdev_id(
+						ab, bit_pos);
+				}
+
+				if (!arvif)
+					continue;
+
+				athmem_free_entry_in_minidump(arvif);
+
+				ahvif = arvif->ahvif;
+				if (!ahvif)
+					continue;
+
+				athmem_free_entry_in_minidump(ahvif);
+
+				vif = ahvif->vif;
+				if (!vif)
+					continue;
+
+				athmem_free_entry_in_minidump(vif);
+			}
+			hw = ah->hw;
+			if (!hw)
+				continue;
+
+			athmem_free_entry_in_minidump(hw);
+		}
+	}
+}
+EXPORT_SYMBOL(athdbg_free_reference_segments);
+
 void athdbg_do_dump_minidump(struct ath12k_base *ab)
 {
 	if (!ab || minidump_state != ENABLE_MINIDUMP)
 		return;
 
 	do_dump_minidump(minidump_crash_type);
+	athdbg_free_reference_segments(ab);
 }
 EXPORT_SYMBOL(athdbg_do_dump_minidump);
 
