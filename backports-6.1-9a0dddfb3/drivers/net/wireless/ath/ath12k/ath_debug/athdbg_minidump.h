@@ -57,6 +57,7 @@ void athdbg_collect_minidump(struct athdbg_request *dbg_req,
 			     struct ath12k_base *ab);
 void athdbg_do_dump_minidump(struct ath12k_base *ab);
 void athdbg_collect_reference_segments(struct ath12k_base *ab);
+void athdbg_free_reference_segments(struct ath12k_base *ab);
 void athdbg_minidump_log(void *start_addr, size_t size, const char *struct_name,
 			 const char *module_name);
 void athdbg_add_to_minidump_log(void *start_addr, size_t size,
@@ -93,6 +94,10 @@ static inline void athdbg_do_dump_minidump(struct ath12k_base *ab)
 }
 
 static inline void athdbg_collect_reference_segments(struct ath12k_base *ab)
+{
+}
+
+static inline void athdbg_free_reference_segments(struct ath12k_base *ab)
 {
 }
 
