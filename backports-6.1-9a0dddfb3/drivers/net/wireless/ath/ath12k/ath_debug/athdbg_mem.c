@@ -250,7 +250,9 @@ void athmem_find_and_print_minidump_entry(const char *struct_name)
 void athmem_print_minidump_list(void)
 {
 	athmem_create_minidump_list();
+#if !defined(CPTCFG_MAC80211_ATHMEMDEBUG) && defined(CONFIG_QCA_MINIDUMP)
 	athdbg_iterate_minidump_list();
+#endif
 	athmem_free_minidump_list();
 }
 

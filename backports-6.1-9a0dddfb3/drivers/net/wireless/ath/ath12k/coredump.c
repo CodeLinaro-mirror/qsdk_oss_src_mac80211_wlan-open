@@ -865,8 +865,19 @@ static int ath12k_coredump_build_seg_info(struct ath12k_base *ab, void *segment,
         for (index = 0; index < ehdr->e_phnum; index++) {
                 phdr = &phdrs[index];
 
+#ifdef PLATFORM_SDX85
+		if (phdr->p_type != PT_LOAD)
+			continue;
+
+		if ((phdr->p_flags & QCOM_MDT_TYPE_MASK) == QCOM_MDT_TYPE_HASH)
+			continue;
+
+		if (!phdr->p_memsz)
+			continue;
+#else
                 if (!mdt_phdr_valid(phdr))
                         continue;
+#endif
 
                 offset = phdr->p_paddr - ab_ahb->mem_phys;
                 if (offset < 0 || offset + phdr->p_memsz > ab_ahb->mem_size) {
