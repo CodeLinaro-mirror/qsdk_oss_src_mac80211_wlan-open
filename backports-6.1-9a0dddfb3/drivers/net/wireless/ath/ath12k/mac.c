@@ -22382,7 +22382,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	struct ath12k *ar = ath12k_ah_to_ar(ah, 0);
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_pdev *pdev;
-	struct ath12k_pdev_cap *cap;
+	struct ath12k_pdev_cap *cap = NULL;
 	static const u32 cipher_suites[] = {
 		WLAN_CIPHER_SUITE_TKIP,
 		WLAN_CIPHER_SUITE_CCMP,
