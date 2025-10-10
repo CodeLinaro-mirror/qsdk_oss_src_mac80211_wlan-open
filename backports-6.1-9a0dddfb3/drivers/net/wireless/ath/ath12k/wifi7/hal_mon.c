@@ -2163,7 +2163,7 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct hal_tx_mon_ppdu_info *tx_ppdu_in
 					 u16 tlv_tag, const void *tlv_data, u32 userid)
 {
 	enum hal_tx_mon_status status = HAL_TX_MON_STATUS_PPDU_NOT_DONE;
-	u32 info[7];
+	u32 info[7] = {0};
 
 	switch (tlv_tag) {
 	case HAL_TX_FES_SETUP: {

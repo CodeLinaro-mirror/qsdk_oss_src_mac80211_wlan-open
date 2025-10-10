@@ -104,7 +104,7 @@ struct ath12k_pktlog_buf {
         struct ath12k_pktlog_bufhdr bufhdr;
         int rd_offset;
         int wr_offset;
-        char log_data[0];
+	char log_data[];
 };
 
 struct ath12k_pktlog {
