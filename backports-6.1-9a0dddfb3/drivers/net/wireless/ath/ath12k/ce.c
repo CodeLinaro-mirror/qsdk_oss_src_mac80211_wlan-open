@@ -696,6 +696,11 @@ int ath12k_ce_init_pipes(struct ath12k_base *ab)
 	ath12k_ce_get_shadow_config(ab, &ab->qmi.ce_cfg.shadow_reg_v3,
 				    &ab->qmi.ce_cfg.shadow_reg_v3_len);
 
+	if (ab->hw_params->ce_count > CE_COUNT_MAX) {
+		ath12k_err(ab, "Invalid CE count %d\n", ab->hw_params->ce_count);
+		return -EINVAL;
+	}
+
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
 		pipe = &ab->ce.ce_pipe[i];
 
@@ -752,7 +757,7 @@ int ath12k_ce_init_pipes(struct ath12k_base *ab)
 void ath12k_ce_free_pipes(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
-	struct ath12k_ce_pipe *pipe;
+	struct ath12k_ce_pipe *pipe = NULL;
 	int desc_sz;
 	int i;
 
@@ -795,9 +800,9 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 			kfree(pipe->status_ring);
 			pipe->status_ring = NULL;
 		}
-	}
 
-	kfree(pipe->ce_stats);
+		kfree(pipe->ce_stats);
+	}
 
 	ab->ce_pipe_init_done = false;
 }

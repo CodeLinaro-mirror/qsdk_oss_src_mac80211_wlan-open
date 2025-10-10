@@ -754,7 +754,7 @@ static void ath12k_ahb_ce_tasklet(struct tasklet_struct *t)
 int ath12k_ahb_config_irq(struct ath12k_base *ab)
 {
 	int irq, irq_idx, i;
-	int ret;
+	int ret = -1;
 
 	if (ab->hif.bus == ATH12K_BUS_HYBRID) {
 		init_waitqueue_head(&ab->ipci.gic_msi_waitq);
