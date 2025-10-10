@@ -1876,6 +1876,8 @@ static int ath12k_wifi7_dp_rx_h_defrag(struct ath12k_pdev_dp *dp_pdev,
 
 	first_frag = skb_peek(&rx_tid->rx_frags);
 	last_frag = skb_peek_tail(&rx_tid->rx_frags);
+	if (!first_frag || !last_frag)
+		return -EINVAL;
 
 	skb_queue_walk(&rx_tid->rx_frags, skb) {
 		flags = 0;
@@ -2137,6 +2139,8 @@ ath12k_wifi7_dp_rx_h_defrag_validate_incr_pn(struct ath12k_pdev_dp *dp_pdev,
 	u64 cur_pn;
 
 	first_frag = skb_peek(&rx_tid->rx_frags);
+	if (!first_frag)
+		return false;
 
 	if (encrypt_type != HAL_ENCRYPT_TYPE_CCMP_128 &&
 	    encrypt_type != HAL_ENCRYPT_TYPE_CCMP_256 &&
