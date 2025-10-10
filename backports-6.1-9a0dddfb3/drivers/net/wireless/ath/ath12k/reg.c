@@ -952,9 +952,9 @@ ath12k_reg_build_regd(struct ath12k_base *ab,
 {
 	struct ieee80211_regdomain *updated_new_regd = NULL;
 	struct ieee80211_regdomain *new_regd = NULL;
-	struct ath12k_reg_rule *reg_rule, *reg_rule_6g;
+	struct ath12k_reg_rule *reg_rule = NULL, *reg_rule_6g;
 	u8 i = 0, j = 0, k = 0, idx = 0;
-	u8 num_rules, num_6ghz_sp_rules;
+	u8 num_rules, num_6ghz_sp_rules = 0;
 	u16 max_bw = 0;
 	int max_elements = 0, sp_idx = 0;
 	struct ath12k_6ghz_sp_reg_rule *sp_rule = NULL;
@@ -3407,7 +3407,8 @@ int ath12k_get_afc_req_info(struct ath12k *ar,
 {
 	struct ath12k_afc_host_request *p_afc_req;
 
-	*afc_req = kzalloc(sizeof(*afc_req), GFP_ATOMIC);
+	*afc_req = kzalloc(sizeof(**afc_req), GFP_ATOMIC);
+
 	if (!*afc_req)
 		return -ENOMEM;
 

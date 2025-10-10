@@ -544,7 +544,7 @@ ath12k_cfg_store_get(const char *path, struct ath12k_cfg_value_store **out_store
 
 	spin_lock_bh(&ath12k_cfg_stores_lock);
 	ret = list_peek_front(&ath12k_cfg_stores_list, &node);
-	while ((ret == 0)) {
+	while (ret == 0) {
 		struct ath12k_cfg_value_store *store =
 		    container_of(node, struct ath12k_cfg_value_store, node);
 
