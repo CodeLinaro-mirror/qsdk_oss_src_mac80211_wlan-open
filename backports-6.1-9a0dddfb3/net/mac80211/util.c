@@ -1974,7 +1974,7 @@ static void ieee80211_reconfig_ap_links(struct ieee80211_local *local,
 int ieee80211_reconfig(struct ieee80211_local *local)
 {
 	struct ieee80211_hw *hw = &local->hw;
-	struct ieee80211_sub_if_data *sdata;
+	struct ieee80211_sub_if_data *sdata = NULL;
 	struct ieee80211_chanctx *ctx;
 	struct sta_info *sta;
 	int res, i;

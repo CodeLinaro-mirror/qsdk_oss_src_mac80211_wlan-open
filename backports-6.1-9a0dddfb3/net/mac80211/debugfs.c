@@ -129,7 +129,7 @@ static ssize_t aqm_write(struct file *file,
 			 loff_t *ppos)
 {
 	struct ieee80211_local *local = file->private_data;
-	char buf[100];
+	char buf[100] = {0};
 
 	if (count >= sizeof(buf))
 		return -EINVAL;
@@ -193,7 +193,7 @@ static ssize_t airtime_flags_write(struct file *file,
 				   size_t count, loff_t *ppos)
 {
 	struct ieee80211_local *local = file->private_data;
-	char buf[16];
+	char buf[16] = {0};
 
 	if (count >= sizeof(buf))
 		return -EINVAL;
@@ -297,7 +297,7 @@ static ssize_t aql_txq_limit_write(struct file *file,
 				   loff_t *ppos)
 {
 	struct ieee80211_local *local = file->private_data;
-	char buf[100];
+	char buf[100] = {0};
 	u32 ac, q_limit_low, q_limit_high, q_limit_low_old, q_limit_high_old;
 	struct sta_info *sta;
 
@@ -369,7 +369,7 @@ static ssize_t aql_enable_write(struct file *file, const char __user *user_buf,
 				size_t count, loff_t *ppos)
 {
 	bool aql_disabled = static_key_false(&aql_disable.key);
-	char buf[3];
+	char buf[3] = {0};
 	size_t len;
 
 	if (count > sizeof(buf))
@@ -432,7 +432,7 @@ static ssize_t force_tx_status_write(struct file *file,
 				     loff_t *ppos)
 {
 	struct ieee80211_local *local = file->private_data;
-	char buf[3];
+	char buf[3] = {0};
 
 	if (count >= sizeof(buf))
 		return -EINVAL;
@@ -682,7 +682,7 @@ static ssize_t hwflags_write(struct file *file, const char __user *user_buf,
 			     size_t count, loff_t *ppos)
 {
 	struct ieee80211_local *local = file->private_data;
-	char buf[100];
+	char buf[100] = {0};
 	int val;
 
 	if (count >= sizeof(buf))
