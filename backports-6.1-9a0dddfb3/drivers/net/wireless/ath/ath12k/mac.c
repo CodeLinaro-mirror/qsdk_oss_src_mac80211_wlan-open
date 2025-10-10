@@ -277,6 +277,8 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work);
 static void ath12k_mac_vdev_ml_max_rec_links(struct ath12k_link_vif *arvif,
 					     u8 ml_max_rec_links);
 static void ath12k_set_dscp_tid_work(struct wiphy *wiphy, struct wiphy_work *work);
+static bool ath12k_mac_is_bridge_required(u8 device_bitmap, u8 num_devices,
+					  u16 *bridge_bitmap);
 static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
@@ -4911,11 +4913,13 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	struct ieee80211_sta_he_cap he_cap;
 	struct ieee80211_sta_ht_cap ht_cap;
 	struct ieee80211_he_6ghz_capa he_6ghz_cap;
+	struct ath12k_hw_group *ag;
 	bool is_auth = false;
 	u32 hemode = 0, bandwidth;
 	int ret;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
-	u8 bssid[ETH_ALEN];
+	u16 bridge_bitmap;
+	u8 bssid[ETH_ALEN], num_devices;
 	bool is_bridge_vdev = ath12k_mac_is_bridge_vdev(arvif);
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -4958,9 +4962,27 @@ void ath12k_bss_assoc(struct ath12k *ar,
 
 	arsta = wiphy_dereference(ath12k_ar_to_hw(ar)->wiphy,
 				  ahsta->link[link_id]);
-	if (WARN_ON(!arsta)) {
+	if (!arsta) {
+		if (is_bridge_vdev) {
+			if (!ar || !ar->ab || !ar->ab->ag) {
+				rcu_read_unlock();
+				return;
+			}
+
+			ag = ar->ab->ag;
+			num_devices = ag->num_devices - ag->num_bypassed;
+
+			if (!ath12k_mac_is_bridge_required(ahsta->device_bitmap,
+							   num_devices,
+							   &bridge_bitmap)) {
+				rcu_read_unlock();
+				return;
+			}
+		}
+
 		ath12k_warn(ar->ab, "arsta NULL link_id %d for sta %pM in bss assoc\n",
 			    link_id, ap_sta->addr);
+		WARN_ON(1);
 		rcu_read_unlock();
 		return;
 	}
@@ -5845,8 +5867,8 @@ int ath12k_mac_get_bridge_link_id_from_ahvif(struct ath12k_vif *ahvif,
 	return ret;
 }
 
-bool ath12k_mac_is_bridge_required(u8 device_bitmap, u8 num_devices,
-				   u16 *bridge_bitmap)
+static bool ath12k_mac_is_bridge_required(u8 device_bitmap, u8 num_devices,
+					  u16 *bridge_bitmap)
 {
 	bool bridge_needed = false;
 	u8 adj_device[ATH12K_MAX_SOCS] = {0};
