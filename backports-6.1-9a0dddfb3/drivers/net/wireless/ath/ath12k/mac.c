@@ -17698,13 +17698,17 @@ ath12k_mac_change_chanctx_cnt_iter(void *data, u8 *mac,
 			link_conf = wiphy_dereference(ahvif->ah->hw->wiphy,
 						      vif->link_conf[link_id]);
 
-			/* For repeater (AP + STA) mode on 5G DFS channels,
-			 * start_ap will be coming post CAC and STA vif
+			/* For AP + STA/Monitor mode on 5G DFS channels,
+			 * start_ap will be coming post CAC and AP, STA vif
 			 * won't have link_conf assigned until CAC is completed
-			 * This is expected and no WARN_ON required for STA */
-			if (vif->type == NL80211_IFTYPE_STATION && !link_conf)
-				continue;
-			else if (WARN_ON(!link_conf))
+			 * This is expected and no WARN_ON required for them
+			 */
+			if (cfg80211_chandef_dfs_cac_time(ahvif->ah->hw->wiphy,
+							  &arg->ctx->def, false,
+							  false)) {
+				if (!link_conf)
+					continue;
+			} else if (WARN_ON(!link_conf))
 				continue;
 
 			if (rcu_access_pointer(link_conf->chanctx_conf) != arg->ctx)
@@ -17751,13 +17755,17 @@ ath12k_mac_change_chanctx_fill_iter(void *data, u8 *mac,
 			link_conf = wiphy_dereference(ahvif->ah->hw->wiphy,
 						      vif->link_conf[arvif->link_id]);
 
-			/* For repeater (AP + STA) mode on 5G DFS channels,
-			 * start_ap will be coming post CAC and STA vif
+			/* For AP + STA/Monitor mode on 5G DFS channels,
+			 * start_ap will be coming post CAC and AP, STA vif
 			 * won't have link_conf assigned until CAC is completed
-			 * This is expected and no WARN_ON required for STA */
-			if (vif->type == NL80211_IFTYPE_STATION && !link_conf)
-				continue;
-			else if (WARN_ON(!link_conf))
+			 * This is expected and no WARN_ON required for them
+			 */
+			if (cfg80211_chandef_dfs_cac_time(ahvif->ah->hw->wiphy,
+							  &arg->ctx->def, false,
+							  false)) {
+				if (!link_conf)
+					continue;
+			} else if (WARN_ON(!link_conf))
 				continue;
 
 			ctx = rcu_access_pointer(link_conf->chanctx_conf);
