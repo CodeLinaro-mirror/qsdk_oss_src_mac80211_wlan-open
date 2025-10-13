@@ -4653,7 +4653,8 @@ struct htt_ml_peer_details_tlv {
 	union {
 		struct {
 			u32 participating_chips_bitmap:8,
-			    reserved1:24;
+			    status_required:8,
+			    reserved1:16;
 		};
 		u32 msg_dword_2;
 	};
@@ -4735,11 +4736,13 @@ struct htt_ml_peer_ext_details_tlv {
 #define HTT_ML_LINK_INFO_ANCHOR_LINK_S		21
 #define HTT_ML_LINK_INFO_INITIALIZED_M		0x00400000
 #define HTT_ML_LINK_INFO_INITIALIZED_S		22
+#define HTT_STATS_ML_LINK_INFO_BRIDGE_PEER BIT(23)
 
 #define HTT_ML_LINK_INFO_SW_PEER_ID_M		0x0000ffff
 #define HTT_ML_LINK_INFO_SW_PEER_ID_S		0
 #define HTT_ML_LINK_INFO_VDEV_ID_M		0x00ff0000
 #define HTT_ML_LINK_INFO_VDEV_ID_S		16
+#define HTT_STATS_ML_LINK_INFO_PS_STATE  BIT(24)
 
 #define HTT_ML_LINK_INFO_VALID_GET(_var) \
 	(((_var) & HTT_ML_LINK_INFO_VALID_M) >> \
@@ -4898,7 +4901,8 @@ struct htt_ml_link_info_tlv {
 			    master_link:1,
 			    anchor_link:1,
 			    initialized:1,
-			    reserved:9;
+			    bridge_peer     : 1,
+			    reserved        : 8;
 		};
 		u32 msg_dword_1;
 	};
@@ -4907,7 +4911,8 @@ struct htt_ml_link_info_tlv {
 		struct {
 			u32 sw_peer_id:16,
 			    vdev_id:8,
-			    reserved1:8;
+			    ps              : 1,
+			    reserved1       : 7;
 		};
 		u32 msg_dword_2;
 	};

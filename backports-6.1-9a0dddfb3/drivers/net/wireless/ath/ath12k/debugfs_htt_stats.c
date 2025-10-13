@@ -367,6 +367,8 @@ ath12k_htt_print_ml_link_info_stats_tlv(const void *tag_buf,
 	u8 *buf = stats_req->buf;
 	u32 len = stats_req->buf_len;
 	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	u32 msg_dword_1     = le32_to_cpu(htt_stats_buf->msg_dword_1);
+	u32 msg_dword_2     = le32_to_cpu(htt_stats_buf->msg_dword_2);
 
 	len += scnprintf(buf + len, buf_len - len, "HTT_ML_LINK_INFO_TLV:\n");
 	len += scnprintf(buf + len, buf_len - len, "=====================\n");
@@ -403,6 +405,9 @@ ath12k_htt_print_ml_link_info_stats_tlv(const void *tag_buf,
 	len += scnprintf(buf + len, buf_len - len,
 			 "initialized       = %u\n",
 			 HTT_ML_LINK_INFO_INITIALIZED_GET(htt_stats_buf->msg_dword_1));
+	len += scnprintf(buf + len, buf_len - len,
+			 "bridge_peer       = %u\n",
+			 u32_get_bits(msg_dword_1, HTT_STATS_ML_LINK_INFO_BRIDGE_PEER));
 
 	len += scnprintf(buf + len, buf_len - len,
 			 "sw_peer_id        = %u\n",
@@ -410,6 +415,9 @@ ath12k_htt_print_ml_link_info_stats_tlv(const void *tag_buf,
 	len += scnprintf(buf + len, buf_len - len,
 			 "vdev_id           = %u\n",
 			 HTT_ML_LINK_INFO_VDEV_ID_GET(htt_stats_buf->msg_dword_2));
+	len += scnprintf(buf + len, buf_len - len,
+			 "PS state          = %u\n",
+			 u32_get_bits(msg_dword_2, HTT_STATS_ML_LINK_INFO_PS_STATE));
 
 	len += scnprintf(buf + len, buf_len - len,
 			 "primary_tid_mask  = 0x%x\n",
