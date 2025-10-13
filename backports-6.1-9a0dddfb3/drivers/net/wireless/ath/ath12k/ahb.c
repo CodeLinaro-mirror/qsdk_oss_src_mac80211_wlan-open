@@ -20,6 +20,7 @@
 #include "pcic.h"
 #include "wifi7/hal.h"
 #include "ppe.h"
+#include "erp.h"
 
 #define ATH12K_IRQ_PPE_OFFSET 54
 #define ATH12K_IRQ_CE0_OFFSET 4
@@ -395,6 +396,16 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 	u32 pasid;
 	int ret;
 
+	if (ath12k_check_erp_power_down(ab->ag)) {
+		if (ab_ahb->tgt_rproc->state != RPROC_RUNNING) {
+			ret = ath12k_ahb_boot_root_pd(ab);
+			if (ret < 0) {
+				ath12k_err(ab, "failed to boot the remote processor Q6\n");
+				return ret;
+			}
+		}
+	}
+
 	rmem = ath12k_core_get_reserved_mem_by_name(ab, "q6-region");
 	if (!rmem)
 		return -ENODEV;
@@ -560,7 +571,8 @@ static void ath12k_ahb_power_down(struct ath12k_base *ab, bool is_suspend)
 	 */
 
 	if (!ab->ag->num_userpd_started &&
-	    test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)) {
+	    (test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags) ||
+	     ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE)) {
 		rproc_shutdown(ab_ahb->tgt_rproc);
 	}
 
@@ -1335,7 +1347,7 @@ static int ath12k_ahb_register_rproc_notifier(struct ath12k_base *ab)
         return 0;
 }
 
-static void ath12k_ahb_unregister_rproc_notifier(struct ath12k_base *ab)
+void ath12k_ahb_unregister_rproc_notifier(struct ath12k_base *ab)
 {
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
@@ -1385,7 +1397,7 @@ static int ath12k_ahb_get_rproc(struct ath12k_base *ab)
 	return 0;
 }
 
-static int ath12k_ahb_boot_root_pd(struct ath12k_base *ab)
+int ath12k_ahb_boot_root_pd(struct ath12k_base *ab)
 {
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 	unsigned long time_left;
