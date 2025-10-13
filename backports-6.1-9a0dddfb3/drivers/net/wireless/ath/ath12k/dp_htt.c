@@ -874,6 +874,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	u8 pdev_id;
 	u32 ppdu_id, len;
 
+	ret = -EINVAL;
 	msg = (struct ath12k_htt_ppdu_stats_msg *)skb->data;
 	len = le32_get_bits(msg->info, HTT_T2H_PPDU_STATS_INFO_PAYLOAD_SIZE);
 	if (len > (skb->len - struct_size(msg, data, 0))) {
