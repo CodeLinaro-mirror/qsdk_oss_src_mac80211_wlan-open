@@ -2616,9 +2616,9 @@ exit_restart:
 
 static void ath12k_core_mode1_recovery_sta_list(void *data, struct ieee80211_sta *sta)
 {
-	struct ath12k_link_sta *arsta;
+	struct ath12k_link_sta *arsta, *p_arsta;
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
-	struct ath12k_link_vif *arvif = (struct ath12k_link_vif *)data;
+	struct ath12k_link_vif *arvif = (struct ath12k_link_vif *)data, *p_arvif;
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_vif *vif = ahvif->vif;
 	struct ath12k *ar = arvif->ar;
@@ -2679,76 +2679,82 @@ static void ath12k_core_mode1_recovery_sta_list(void *data, struct ieee80211_sta
 		sta_added = true;
 	}
 
+	if (!sta_added)
+		goto skip_key_add;
+
 key_add:
-	if (sta_added)
-		for (key_idx = 0; key_idx < WMI_MAX_KEY_INDEX; key_idx++) {
-			key = arsta->keys[key_idx];
+	for (key_idx = 0; key_idx < WMI_MAX_KEY_INDEX; key_idx++) {
+		key = arsta->keys[key_idx];
 
-			if (key) {
-				/* BIP needs to be done in software */
-				if (key->cipher == WLAN_CIPHER_SUITE_AES_CMAC ||
-				    key->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_128 ||
-				    key->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_256 ||
-				    key->cipher == WLAN_CIPHER_SUITE_BIP_CMAC_256) {
+		if (key) {
+			/* BIP needs to be done in software */
+			if (key->cipher == WLAN_CIPHER_SUITE_AES_CMAC ||
+			    key->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_128 ||
+			    key->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_256 ||
+			    key->cipher == WLAN_CIPHER_SUITE_BIP_CMAC_256) {
+				return;
+			}
+
+			if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED,
+				     &ab->ag->flags))
+				return;
+
+			if (!arvif->is_created) {
+				key_conf = kzalloc(sizeof(*key_conf), GFP_ATOMIC);
+
+				if (!key_conf)
 					return;
-				}
 
-				if (test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags))
-					return;
+				key_conf->cmd = SET_KEY;
+				key_conf->sta = sta;
+				key_conf->key = key;
 
-				if (!arvif->is_created) {
-					key_conf = kzalloc(sizeof(*key_conf), GFP_ATOMIC);
+				list_add_tail(&key_conf->list,
+					      &ahvif->cache[link_id]->key_conf.list);
 
-					if (!key_conf) {
-						return;
-					}
+				ath12k_info(ab, "set key param cached since vif not assign to radio\n");
+				return;
+			}
 
-					key_conf->cmd = SET_KEY;
-					key_conf->sta = sta;
-					key_conf->key = key;
-
-					list_add_tail(&key_conf->list,
-							&ahvif->cache[link_id]->key_conf.list);
-
-					ath12k_info(ab, "set key param cached since vif not assign to radio\n");
-					return;
-				}
-
-				if (sta->mlo) {
-					links = ahsta->links_map;
-					for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
-						arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
-						arsta = rcu_dereference(ahsta->link[link_id]);
-						if (WARN_ON(!arvif || !arsta))
-							continue;
-
-						/* TODO: Iterator API is called with rcu lock
-						 * hence need for this unlock/lock statement.
-						 * Need to revisit in next version
-						 */
-						rcu_read_unlock();
-						ret = ath12k_mac_set_key(arvif->ar, SET_KEY, arvif, arsta, key);
-						rcu_read_lock();
-						if (ret)
-							break;
-					}
-				} else {
-					arsta = &ahsta->deflink;
-					arvif = arsta->arvif;
-					if (WARN_ON(!arvif))
-						return;
+			if (sta->mlo) {
+				links = ahsta->links_map;
+				for_each_set_bit(link_id, &links, ATH12K_NUM_MAX_LINKS) {
+					p_arvif = ath12k_get_arvif_from_link_id(ahvif,
+										link_id);
+					p_arsta = rcu_dereference(ahsta->link[link_id]);
+					if (WARN_ON(!p_arvif || !p_arsta))
+						continue;
 
 					/* TODO: Iterator API is called with rcu lock
 					 * hence need for this unlock/lock statement.
 					 * Need to revisit in next version
 					 */
 					rcu_read_unlock();
-					ret = ath12k_mac_set_key(arvif->ar, SET_KEY, arvif, arsta, key);
+					ret = ath12k_mac_set_key(p_arvif->ar, SET_KEY,
+								 p_arvif,  p_arsta, key);
 					rcu_read_lock();
+					if (ret)
+						break;
 				}
+			} else {
+				p_arsta = &ahsta->deflink;
+				p_arvif = p_arsta->arvif;
+				if (WARN_ON(!p_arvif))
+					return;
+
+				/* TODO: Iterator API is called with rcu lock
+				 * hence need for this unlock/lock statement.
+				 * Need to revisit in next version
+				 */
+				rcu_read_unlock();
+				ret = ath12k_mac_set_key(p_arvif->ar, SET_KEY, p_arvif,
+							 p_arsta, key);
+				rcu_read_lock();
 			}
 		}
+	}
 
+skip_key_add:
 	ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
 			"Recovered sta:%pM link_id:%d, num_sta:%d\n",
 			arsta->addr, arsta->link_id, arvif->ar->num_stations);
