@@ -1725,7 +1725,6 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 		} else {
 			list_add_tail(&desc_info->list, &rx_desc_sg_list);
 			spd_desc_l->msdu = msdu;
-			first_msdu_tp = last_tp;
 			incomplete_msdu_chain++;
 			done = false;
 		}
