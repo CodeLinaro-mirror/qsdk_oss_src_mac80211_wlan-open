@@ -4068,6 +4068,12 @@ static int ath12k_core_get_wsi_info(struct ath12k_hw_group *ag,
 		return -ENODEV;
 
 	do {
+		if (device_count >= ATH12K_MAX_SOCS) {
+			ath12k_warn(ab, "device count in DT %d has reached or exceeded the limit %d\n",
+				    device_count, ATH12K_MAX_SOCS);
+			of_node_put(next_wsi_dev);
+			return -EINVAL;
+		}
 		ag->wsi_node[device_count] = next_wsi_dev;
 
 		tx_endpoint = of_graph_get_endpoint_by_regs(next_wsi_dev, 0, -1);
@@ -4094,12 +4100,6 @@ static int ath12k_core_get_wsi_info(struct ath12k_hw_group *ag,
 		of_node_put(next_wsi_dev);
 
 		device_count++;
-		if (device_count > ATH12K_MAX_SOCS) {
-			ath12k_warn(ab, "device count in DT %d is more than limit %d\n",
-				    device_count, ATH12K_MAX_SOCS);
-			of_node_put(next_wsi_dev);
-			return -EINVAL;
-		}
 	} while (wsi_dev != next_wsi_dev);
 
 	of_node_put(next_wsi_dev);

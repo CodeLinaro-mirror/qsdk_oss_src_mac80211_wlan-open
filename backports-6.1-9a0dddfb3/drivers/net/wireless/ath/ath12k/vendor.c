@@ -4467,7 +4467,7 @@ int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
 	struct ath12k_mac_link_migrate_usr_params arg;
 	u8 mac_addr[ETH_ALEN] = {0};
 	struct ath12k_vif *ahvif;
-	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1];
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_PRI_LINK_MIGR_MAX + 1] = {0};
 	u8 link_id;
 	int ret;
 
