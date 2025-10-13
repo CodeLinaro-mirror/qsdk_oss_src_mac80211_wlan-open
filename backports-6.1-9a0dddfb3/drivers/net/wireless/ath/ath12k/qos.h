@@ -118,6 +118,7 @@ struct ath12k_qos_params {
 	u8 tid;
 	u32 min_service_interval;
 	u32 max_service_interval;
+	u32 enabled_param_mask;
 	u32 min_data_rate;
 	u32 delay_bound;
 	u16 max_msdu_size;
@@ -132,7 +133,17 @@ struct ath12k_qos_params {
 	bool ul_ofdma_disable;
 	bool ul_mu_mimo_disable;
 };
-
+enum telemetry_sdwf_param {
+	SDWF_PARAM_INVALID,
+	SDWF_PARAM_MIN_THROUGHPUT,
+	SDWF_PARAM_MAX_THROUGHPUT,
+	SDWF_PARAM_BURST_SIZE,
+	SDWF_PARAM_SERVICE_INTERVAL,
+	SDWF_PARAM_DELAY_BOUND,
+	SDWF_PARAM_MSDU_TTL,
+	SDWF_PARAM_MSDU_LOSS,
+	SDWF_PARAM_MAX,
+};
 struct ath12k_qos {
 	u8 ref_count;
 	struct ath12k_qos_params params;
@@ -193,4 +204,6 @@ int ath12k_qos_update(struct ath12k_base *ab, struct ath12k *ar,
 		      enum qos_profile_dir qos_dir,
 		      u16 id, u8 *mac_addr);
 int ath12k_reconfig_qos_profiles(struct ath12k_base *ab);
+void ath12k_get_peer_sla_config(struct ath12k_base *ab,
+				struct ath12k_dp_link_peer *peer, u16 *sla_mask);
 #endif /* ATH12K_QOS_H */

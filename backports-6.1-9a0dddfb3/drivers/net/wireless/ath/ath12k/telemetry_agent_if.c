@@ -534,6 +534,10 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 		ath12k_err(NULL, "Failed to get telemetry peer stats for %pM\n",
 			   peer->addr);
 
+	stats->rssi = ath12k_calculate_link_rssi(peer);
+	if (peer->primary_link) {
+		ath12k_get_peer_sla_config(ab, peer, &stats->sla_mask);
+	}
 	for (ac = 0; ac < ATH12K_DP_WLAN_MAX_AC; ac++) {
 		stats->airtime_consumption[ac] =
 			(u8)(dp_stats.tx_airtime_consumption[ac] +
@@ -549,14 +553,6 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 			   dp_stats.tx_airtime_consumption[ac],
 			   dp_stats.rx_airtime_consumption[ac]);
 	}
-	stats->rssi = ath12k_calculate_link_rssi(peer);
-
-	/*
-	 * TODO
-	 * if (peer->primary_link)
-	 *      ath12k_get_peer_sla_config(peer, &stats->sla_mask);
-	 */
-
 	spin_unlock_bh(&ab->dp->dp_lock);
 
 	return 0;
