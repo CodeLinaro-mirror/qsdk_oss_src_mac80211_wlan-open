@@ -12619,11 +12619,11 @@ static void ath12k_rfkill_state_change_event(struct ath12k_base *ab,
 		return;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_MAC,
-		   "wmi tlv rfkill state change gpio %d type %d radio_state %d\n",
-		   le32_to_cpu(ev->gpio_pin_num),
-		   le32_to_cpu(ev->int_type),
-		   le32_to_cpu(ev->radio_state));
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "wmi tlv rfkill state change gpio %d type %d radio_state %d\n",
+			 le32_to_cpu(ev->gpio_pin_num),
+			 le32_to_cpu(ev->int_type),
+			 le32_to_cpu(ev->radio_state));
 
 	spin_lock_bh(&ab->base_lock);
 	ab->rfkill_radio_on = (ev->radio_state == cpu_to_le32(WMI_RFKILL_RADIO_STATE_ON));
@@ -12680,9 +12680,10 @@ static void ath12k_wmi_twt_enable_event(struct ath12k_base *ab,
 		goto exit;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_MAC, "wmi twt enable event pdev id %u status %u\n",
-		   le32_to_cpu(ev->pdev_id),
-		   le32_to_cpu(ev->status));
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "wmi twt enable event pdev id %u status %u\n",
+			 le32_to_cpu(ev->pdev_id),
+			 le32_to_cpu(ev->status));
 
 exit:
 	kfree(tb);
@@ -12709,9 +12710,10 @@ static void ath12k_wmi_twt_disable_event(struct ath12k_base *ab,
 		goto exit;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_MAC, "wmi twt disable event pdev id %d status %u\n",
-		   le32_to_cpu(ev->pdev_id),
-		   le32_to_cpu(ev->status));
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "wmi twt disable event pdev id %d status %u\n",
+			 le32_to_cpu(ev->pdev_id),
+			 le32_to_cpu(ev->status));
 
 exit:
 	kfree(tb);

@@ -69,7 +69,7 @@ MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
 #endif
 
-unsigned int ath12k_debug_mask;
+unsigned int ath12k_debug_mask = 0x00000010;
 module_param_named(debug_mask, ath12k_debug_mask, uint, 0644);
 MODULE_PARM_DESC(debug_mask, "Debugging mask");
 EXPORT_SYMBOL(ath12k_debug_mask);
@@ -77,6 +77,7 @@ EXPORT_SYMBOL(ath12k_debug_mask);
 unsigned int ath12k_debug_mask_level;
 module_param_named(debug_level, ath12k_debug_mask_level, uint, 0644);
 MODULE_PARM_DESC(debug_mask, "Debugging level");
+EXPORT_SYMBOL(ath12k_debug_mask_level);
 
 unsigned int ath12k_mlo_capable = true;
 module_param_named(mlo_capable, ath12k_mlo_capable, uint, 0644);
@@ -3069,8 +3070,8 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 		    (ahvif->vdev_type == WMI_VDEV_TYPE_STA ||
 		    ahvif->vdev_type == WMI_VDEV_TYPE_AP)) {
 			power_type = link_conf->power_type;
-                        ath12k_dbg(ab, ATH12K_DBG_MAC, "mac chanctx power type %d\n",
-				   power_type);
+			ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L3,
+					 "mac chanctx power type %d\n", power_type);
 			if (power_type == IEEE80211_REG_UNSET_AP)
 				power_type = IEEE80211_REG_LPI_AP;
 
@@ -4750,7 +4751,8 @@ int ath12k_wsi_load_info_init(struct ath12k_base *ab)
 		mlo_grp_info->num_devices = 0;
 		for (i = 0; i < ATH12K_MAX_SOCS; i++)
 			mlo_grp_info->wsi_order[i] = WSI_INVALID_ORDER;
-		ath12k_dbg(ab, ATH12K_DBG_MAC, "successfully initialized wsi load info\n");
+		ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+				 "successfully initialized wsi load info\n");
 	}
 	return ret;
 }
@@ -4758,7 +4760,8 @@ int ath12k_wsi_load_info_init(struct ath12k_base *ab)
 void ath12k_wsi_load_info_deinit(struct ath12k_base *ab,
 				 struct ath12k_mlo_wsi_load_info *wsi_load_info)
 {
-	ath12k_dbg(ab, ATH12K_DBG_MAC, "successfully deinitialized wsi load info\n");
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "successfully deinitialized wsi load info\n");
 	kfree(wsi_load_info);
 }
 
@@ -4782,9 +4785,9 @@ void ath12k_wsi_load_info_wsiorder_update(struct ath12k_base *ab)
 		if (mlo_grp_info->wsi_order[i] == WSI_INVALID_ORDER) {
 			mlo_grp_info->wsi_order[i] = ab->wsi_info.index;
 			mlo_grp_info->num_devices++;
-			ath12k_dbg(ab, ATH12K_DBG_MAC,
-				   "wsi load info update for wsi order %d\n",
-				   ab->wsi_info.index);
+			ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+					 "wsi load info update for wsi order %d\n",
+					 ab->wsi_info.index);
 			break;
 		}
 	}

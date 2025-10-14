@@ -99,9 +99,9 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 unlock:
 	rcu_read_unlock();
 #endif
-	ath12k_dbg(ab, ATH12K_DBG_MAC,
-			"Wifi-classifer mark peer %pM link_id %x node_id %x\n",
-			peer_mac, *link_id, *node_id);
+	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "Wifi-classifer mark peer %pM link_id %x node_id %x\n",
+			 peer_mac, *link_id, *node_id);
 }
 
 struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev)

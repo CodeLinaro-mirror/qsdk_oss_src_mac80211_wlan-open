@@ -4509,9 +4509,9 @@ int ath12k_vendor_trigg_pri_link_migrate(struct wiphy *wiphy,
 	if (!ahvif)
 		return -EINVAL;
 
-	ath12k_dbg(NULL, ATH12K_DBG_MAC,
-		   "primary link migration command received link_id %u, mac_addr %pM",
-		   link_id, mac_addr);
+	ath12k_dbg_level(NULL, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+			 "primary link migration command received link_id %u, mac_addr %pM",
+			 link_id, mac_addr);
 
 	arg.link_id = link_id;
 	memcpy(arg.addr, mac_addr, ETH_ALEN);

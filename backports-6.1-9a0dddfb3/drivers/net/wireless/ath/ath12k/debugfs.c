@@ -3897,8 +3897,9 @@ int ath12k_update_dscp_tid_pdev(struct ath12k *ar, u8 id)
 		dscp_high = qos_map->up[i].high;
 		tid = i;
 
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "dscp_low:%d, dscp_high:%d, tid:%d, id:%d\n",
-			   dscp_low, dscp_high, tid, id);
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+				 "dscp_low:%d, dscp_high:%d, tid:%d, id:%d\n",
+				 dscp_low, dscp_high, tid, id);
 		if (dscp_low == 0xFF || dscp_high == 0xFF)
 			continue;
 
@@ -3911,8 +3912,8 @@ int ath12k_update_dscp_tid_pdev(struct ath12k *ar, u8 id)
 			dscp = qos_map->dscp_exception[i].dscp;
 			tid = qos_map->dscp_exception[i].up;
 
-			ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "dscp:%d, tid:%d, id:%d\n",
-				   dscp, tid, id);
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+					 "dscp:%d, tid:%d, id:%d\n", dscp, tid, id);
 			if (dscp == 0xFF)
 				continue;
 			ath12k_hal_tx_update_dscp_tid_map(ar->ab, id, dscp, tid);
