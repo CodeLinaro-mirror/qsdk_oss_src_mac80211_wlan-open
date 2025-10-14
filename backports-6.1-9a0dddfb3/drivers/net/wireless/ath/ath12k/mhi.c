@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/msi.h>
@@ -187,7 +187,13 @@ static int ath12k_mhi_op_read_reg(struct mhi_controller *mhi_cntrl,
 				  void __iomem *addr,
 				  u32 *out)
 {
-	*out = readl(addr);
+	u32 tmp = readl(addr);
+
+	/* If the value is invalid, the link is down */
+	if (PCI_INVALID_READ(tmp))
+		return -EIO;
+
+	*out = tmp;
 
 	return 0;
 }
