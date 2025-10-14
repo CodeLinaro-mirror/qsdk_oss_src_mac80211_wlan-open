@@ -2379,6 +2379,16 @@ free_bcn_skb:
 	return ret;
 }
 
+static void ath12k_update_bcn_tx_status_work(struct wiphy *wiphy,
+					     struct wiphy_work *work)
+{
+	struct ath12k_link_vif *arvif = container_of(work, struct ath12k_link_vif,
+						     update_bcn_tx_status_work);
+
+	lockdep_assert_wiphy(wiphy);
+	ath12k_mac_bcn_tx_event(arvif);
+}
+
 static void ath12k_update_bcn_template_work(struct wiphy *wiphy,
 					    struct wiphy_work *work)
 {
@@ -5310,6 +5320,8 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	init_completion(&arvif->peer_ch_width_switch_send);
 	wiphy_work_init(&arvif->peer_ch_width_switch_work,
 		  ath12k_wmi_peer_chan_width_switch_work);
+	wiphy_work_init(&arvif->update_bcn_tx_status_work,
+			ath12k_update_bcn_tx_status_work);
 
 	init_completion(&arvif->wmi_migration_event_resp);
 	INIT_WORK(&arvif->wmi_migration_cmd_work,
@@ -16770,6 +16782,9 @@ err_vdev_del:
 	arvif->is_created = false;
 	arvif->is_scan_vif = false;
 	arvif->ar = NULL;
+
+	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy,
+			  &arvif->update_bcn_tx_status_work);
 
 	return ret;
 }
