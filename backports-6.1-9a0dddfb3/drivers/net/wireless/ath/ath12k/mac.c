@@ -16475,6 +16475,11 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	if (!wdev) {
+		ath12k_warn(ar->ab, "Failed to get wdev from vif\n");
+		return -ENODEV;
+	}
+
 	/* Get the VP number from the nss-wifi plugin,
 	 * which is allocated during netdev initialization.
 	 * This also handles Subsystem Recovery scenarios.
