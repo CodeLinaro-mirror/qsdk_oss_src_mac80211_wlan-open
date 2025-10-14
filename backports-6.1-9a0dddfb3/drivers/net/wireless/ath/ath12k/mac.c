@@ -5379,13 +5379,13 @@ void ath12k_mac_set_vendor_intf_detect(struct ath12k *ar, u8 intf_detect_bitmap)
 void ath12k_mac_ap_ps_recalc(struct ath12k *ar)
 {
 	enum ath12k_ap_ps_state state = ATH12K_AP_PS_STATE_OFF;
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif, *tmp;
 	bool allow_ap_ps = true;
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	list_for_each_entry(arvif, &ar->arvifs, list) {
+	list_for_each_entry_safe(arvif, tmp, &ar->arvifs, list) {
 		if (arvif->ahvif->vdev_type != WMI_VDEV_TYPE_AP &&
 		    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_MONITOR) {
 			allow_ap_ps = false;
