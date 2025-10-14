@@ -248,16 +248,6 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		dp_link_vif->ast_hash = peer->ast_hash;
 		dp_link_vif->ast_idx = peer->hw_peer_id;
 
-		if (!peer->is_bridge_peer) {
-			ret = ath12k_telemetry_peer_agent_create_handler(ar,
-									 arg->vdev_id,
-									 arg->peer_addr);
-			if (ret && ret != -EOPNOTSUPP) {
-				ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
-					   "failed to create peer reference in TA for vdev_id %d addr %pM ret %d\n",
-					   arg->vdev_id, arg->peer_addr, ret);
-			}
-		}
 	}
 
 	if (sta) {
@@ -266,6 +256,17 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 					  ahsta->link[link_id]);
 
 		peer->link_id = arsta->link_id;
+
+		if (!peer->is_bridge_peer) {
+			ret = ath12k_telemetry_peer_agent_create_handler(ar,
+					arg->vdev_id,
+					arg->peer_addr);
+			if (ret && ret != -EOPNOTSUPP) {
+				ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+						"failed to create peer reference in TA for vdev_id %d addr %pM ret %d\n",
+						arg->vdev_id, arg->peer_addr, ret);
+			}
+		}
 
 		/* Fill ML info into created peer */
 		if (sta->mlo) {
