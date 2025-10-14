@@ -5875,7 +5875,8 @@ int ath12k_wmi_peer_set_cfr_capture_conf(struct ath12k *ar,
 	return ret;
 }
 
-int ath12k_wmi_probe_resp_tmpl(struct ath12k *ar, u32 vdev_id,
+int ath12k_wmi_probe_resp_tmpl(struct ath12k *ar,
+			       struct ath12k_link_vif *arvif,
 			       struct sk_buff *tmpl)
 {
 	struct wmi_probe_tmpl_cmd *cmd;
@@ -5885,10 +5886,9 @@ int ath12k_wmi_probe_resp_tmpl(struct ath12k *ar, u32 vdev_id,
 	void *ptr;
 	int ret, len, mlinfo_tlv_len = 0;
 	size_t aligned_len = roundup(tmpl->len, 4);
-	struct ath12k_link_vif *arvif = ath12k_mac_get_arvif(ar, vdev_id);
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
-		   "WMI vdev %i set probe response template\n", vdev_id);
+		   "WMI vdev %i set probe response template\n", arvif->vdev_id);
 
 	if (ath12k_mac_is_ml_arvif(arvif))
 		mlinfo_tlv_len = TLV_HDR_SIZE + sizeof(struct wmi_prb_resp_tmpl_ml_info_params);
@@ -5903,7 +5903,7 @@ int ath12k_wmi_probe_resp_tmpl(struct ath12k *ar, u32 vdev_id,
 	cmd = (struct wmi_probe_tmpl_cmd *)skb->data;
 	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PRB_TMPL_CMD,
 						 sizeof(*cmd));
-	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->vdev_id = cpu_to_le32(arvif->vdev_id);
 	cmd->buf_len = cpu_to_le32(tmpl->len);
 
 	ptr = skb->data + sizeof(*cmd);
@@ -5923,13 +5923,13 @@ int ath12k_wmi_probe_resp_tmpl(struct ath12k *ar, u32 vdev_id,
 	ptr += (TLV_HDR_SIZE + aligned_len);
 
 	if (ath12k_mac_is_ml_arvif(arvif))
-		ptr = ath12k_wmi_append_prb_resp_cu_params(ar, vdev_id, ptr);
+		ptr = ath12k_wmi_append_prb_resp_cu_params(ar, arvif->vdev_id, ptr);
 
 	ret = ath12k_wmi_cmd_send(ar->wmi, skb, WMI_PRB_TMPL_CMDID);
 	if (ret) {
 		ath12k_warn(ar->ab,
 			    "WMI vdev %i failed to send probe response template command\n",
-			    vdev_id);
+			    arvif->vdev_id);
 		dev_kfree_skb(skb);
 	}
 	return ret;
