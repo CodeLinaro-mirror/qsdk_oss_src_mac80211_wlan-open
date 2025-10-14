@@ -1119,18 +1119,18 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 static enum ath12k_device_family
 ath12k_get_device_family(const struct pci_device_id *pci_dev)
 {
-	enum ath12k_device_family device_id;
+	enum ath12k_device_family device_family_id;
 	const struct pci_device_id *id;
 
-	for (device_id = ATH12K_DEVICE_FAMILY_WIFI7;
-	     device_id < ATH12K_DEVICE_FAMILY_MAX; device_id++) {
-		if (!ath12k_pci_family_drivers[device_id])
+	for (device_family_id = ATH12K_DEVICE_FAMILY_START;
+	     device_family_id < ATH12K_DEVICE_FAMILY_MAX; device_family_id++) {
+		if (!ath12k_pci_family_drivers[device_family_id])
 			continue;
 
-		id = ath12k_pci_family_drivers[device_id]->id_table;
-		while (id) {
+		id = ath12k_pci_family_drivers[device_family_id]->id_table;
+		while (id->device) {
 			if (id->device == pci_dev->device)
-				return device_id;
+				return device_family_id;
 			id += 1;
 		}
 	}
