@@ -16,6 +16,7 @@
 #include "hw.h"
 #include "../mhi.h"
 #include "mhi.h"
+#include "wmi.h"
 #include "../wow.h"
 #include "../debugfs_sta.h"
 #include "../debugfs.h"
@@ -247,6 +248,8 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.max_tx_ring = 4,
 
 		.mhi_config = &ath12k_wifi8_mhi_config_qcn9625,
+
+		.wmi_init = ath12k_wifi8_wmi_init_qcn9625,
 
 		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
 

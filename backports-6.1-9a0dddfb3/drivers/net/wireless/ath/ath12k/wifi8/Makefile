@@ -4,4 +4,5 @@ ath12k_wifi8-y += core.o \
 	          pci.o \
 		  hw.o \
 		  mhi.o \
-		  ce.o
+		  ce.o \
+		  wmi.o
