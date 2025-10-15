@@ -3,6 +3,9 @@
 #include "athdbg_if.h"
 #include "ath_debug/athdbg_core.h"
 #include "ath_debug/athdbg_minidump.h"
+#include "ath_debug/athdbg_mhi.h"
+#include "mhi.h"
+#include "pci.h"
 
 extern struct ath_debug_base *athdbg_base;
 
@@ -14,6 +17,8 @@ const struct athdbg_to_ath12k_ops dbg_to_ath_ops = {
 	.dev_running_status = athdbg_if_check_dev_running,
 	.set_dbg_mask = athdbg_if_setmask,
 	.get_link_vif_from_vdev_id = ath12k_mac_get_arvif_by_vdev_id,
+	.pci_read32 = ath12k_pci_read32,
+	.pci_get_priv = ath12k_pci_get_priv,
 };
 
 static int athdbg_if_create_debugfs(struct ath12k_base *ab)
@@ -66,6 +71,12 @@ out:
 	return -ENOMEM;
 }
 
+void athdbg_ops_register(struct ath12k_base *ab)
+{
+	if (!athdbg_base->dbg_to_ath_ops)
+		athdbg_base->dbg_to_ath_ops = &dbg_to_ath_ops;
+}
+
 void athdbg_if_register(struct ath12k_base *ab)
 {
 	int ret;
@@ -75,14 +86,12 @@ void athdbg_if_register(struct ath12k_base *ab)
 		pr_err("athdbg_if: debugfs entry create failure %d", ret);
 		return;
 	}
-
-	athdbg_base->dbg_to_ath_ops = &dbg_to_ath_ops;
-
 }
 
 void athdbg_if_unregister(struct ath12k_base *ab)
 {
 	athdbg_clear_minidump_info();
+	athdbg_base->dbg_to_ath_ops = NULL;
 }
 
 /* Interface provided to perform any action that need to be done in the
@@ -107,6 +116,12 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 		break;
 	case ATHDBG_SRV_QDSS_MEM_FREE:
 		athdbg_qmi_qdss_mem_free(ab);
+		break;
+	case ATHDBG_SRV_MHI_Q6_DUMP_BL_SRAM:
+		athdbg_mhi_q6_dump_bl_sram_mem(ab);
+		break;
+	case ATHDBG_SRV_MHI_Q6_BOOT_DEBUG_TIMEOUT:
+		athdbg_mhi_q6_boot_debug_timeout_hdlr_internal(ab);
 		break;
 	}
 
