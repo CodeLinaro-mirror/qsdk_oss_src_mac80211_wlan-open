@@ -8539,6 +8539,21 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 			return ret;
 	}
 
+	if (!hw_req) {
+		ath12k_warn(ar->ab, "hw_req is NULL\n");
+		return -EINVAL;
+	}
+
+	if (!hw_req->req.n_channels) {
+		ath12k_warn(ar->ab, "Scan request has zero channels\n");
+		return -EINVAL;
+	}
+
+	if (!hw_req->req.channels[0]) {
+		ath12k_warn(ar->ab, "First channel in scan request is NULL\n");
+		return -EINVAL;
+	}
+
 	/* Since the targeted scan device could depend on the frequency
 	 * requested in the hw_req, select the corresponding radio
 	 */
