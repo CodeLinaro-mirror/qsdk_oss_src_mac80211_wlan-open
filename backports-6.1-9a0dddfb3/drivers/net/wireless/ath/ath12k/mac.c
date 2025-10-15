@@ -18877,8 +18877,11 @@ ath12k_mac_unassign_vif_chanctx_handle(struct ieee80211_hw *hw,
 			   "mac chanctx unassign for vdev_id %i vdev_subtype %0x\n",
 			   arvif->vdev_id, arvif->vdev_subtype);
 
-	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA)
-		WARN_ON(!arvif->is_started);
+	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
+		if (!arvif->is_started)
+			ath12k_warn(ab, "interface not started vdev_id %i vdev_subtype %0x\n",
+				    arvif->vdev_id, arvif->vdev_subtype);
+	}
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ret = ath12k_mac_monitor_stop(ar);
