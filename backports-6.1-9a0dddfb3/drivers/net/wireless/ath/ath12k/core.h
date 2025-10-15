@@ -653,6 +653,7 @@ struct ath12k_link_vif {
 	struct ath12k_qos_map *qos_map;
 	struct wiphy_work set_dscp_tid_work;
 	bool set_wds_vdev_param;
+	int num_peers;
 	struct wiphy_work update_bcn_tx_status_work;
 };
 
@@ -1464,6 +1465,7 @@ struct ath12k {
 	u8 dcs_enable_bitmap;
 	struct list_head wlan_intf_list;
 	struct work_struct wlan_intf_work;
+	struct completion delete_all_peer_done;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
