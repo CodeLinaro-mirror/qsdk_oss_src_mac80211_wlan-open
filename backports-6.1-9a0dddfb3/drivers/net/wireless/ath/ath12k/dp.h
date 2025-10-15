@@ -209,6 +209,7 @@ enum ath12k_dp_eapol_key_type {
 #define DP_REO2PPE_RING_SIZE	2048
 #define DP_PPE2TCL_RING_SIZE	2048
 #define DP_PPE_WBM2SW_RING_SIZE	8192
+#define DP_RXDMA_BUF_RING_SIZE		4096
 /* TODO: revisit this count during testing */
 #define ATH12K_RX_DESC_COUNT           (8192)
 #define DP_RX_BUFFER_SIZE		1856
@@ -219,6 +220,7 @@ enum ath12k_dp_eapol_key_type {
 #define DP_REO2PPE_RING_SIZE	16384
 #define DP_PPE2TCL_RING_SIZE	8192
 #define DP_PPE_WBM2SW_RING_SIZE	32768
+#define DP_RXDMA_BUF_RING_SIZE		8192
 /* TODO: revisit this count during testing */
 #define ATH12K_RX_DESC_COUNT           (12288)
 #define DP_RX_BUFFER_SIZE		2048
@@ -237,7 +239,6 @@ enum ath12k_dp_eapol_key_type {
 #define DP_REO_EXCEPTION_RING_SIZE	128
 #define DP_REO_CMD_RING_SIZE		256
 #define DP_REO_STATUS_RING_SIZE		2048
-#define DP_RXDMA_BUF_RING_SIZE		8192
 #define DP_RX_MAC_BUF_RING_SIZE		2048
 #define DP_RXDMA_REFILL_RING_SIZE	2048
 #define DP_RXDMA_ERR_DST_RING_SIZE	1024
