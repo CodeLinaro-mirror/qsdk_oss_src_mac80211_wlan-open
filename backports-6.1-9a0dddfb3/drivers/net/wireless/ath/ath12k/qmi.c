@@ -3223,7 +3223,7 @@ static int ath12k_host_cap_parse_mlo(struct ath12k_base *ab,
 		adj_wsi_info = ath12k_core_get_current_wsi_info(partner_ab);
 
 		if (partner_ab->device_id == ATH12K_INVALID_DEVICE_ID ||
-			partner_ab->qmi.num_radios == U8_MAX) {
+			partner_ab->qmi.num_radios > QMI_WLFW_MAX_NUM_MLO_LINKS_PER_CHIP_V01) {
 			ath12k_err(ab, "failed to send MLO cap due to invalid partner device id\n");
 			ret = -EINVAL;
 			goto device_cleanup;

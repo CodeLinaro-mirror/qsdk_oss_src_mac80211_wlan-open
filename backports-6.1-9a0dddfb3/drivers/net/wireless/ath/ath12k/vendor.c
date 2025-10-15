@@ -6254,7 +6254,7 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 	struct ath12k_base *ab;
 	struct ath12k_dp *dp;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1];
-	struct nlattr *peer_attr, *peer_data, *peer_data_1;
+	struct nlattr *peer_attr, *peer_data, *peers_data;
 	int ret, j = 0;
 	int tailroom = 0, nest_start_length = 0;
 	int nest_end_length = 0, nested_range = 0;
@@ -6309,7 +6309,10 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 		return -ENOBUFS;
 	}
 
-	peer_data_1 = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS);
+	peers_data = nla_nest_start(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS);
+	if (!peers_data)
+		return -ENOBUFS;
+
 	tailroom = skb_tailroom(msg);
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
@@ -6320,6 +6323,8 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 			break;
 
 		peer_data = nla_nest_start(msg, j++);
+		if (!peer_data)
+			return -ENOBUFS;
 
 		if (nla_put(msg, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_MAC,
 			    ETH_ALEN, peer->addr) ||
@@ -6351,7 +6356,7 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 		tailroom -= nested_range;
 	}
 	spin_unlock_bh(&dp->dp_lock);
-	nla_nest_end(msg, peer_data_1);
+	nla_nest_end(msg, peers_data);
 	nla_nest_end(msg, peer_attr);
 	if (*storage == ar->num_peers)
 		return msg->len;

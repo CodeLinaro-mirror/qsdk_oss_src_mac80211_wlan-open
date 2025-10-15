@@ -12396,7 +12396,7 @@ static int ath12k_wmi_stats_parser(struct ath12k_base *ab,
 				   void *data)
 {
 	int ret = 0;
-	u16 tlv_tag, tlv_len, len;
+	u16 tlv_tag, tlv_len, len = 0;
 	const struct wmi_tlv *tlv;
 	struct wmi_therm_throt_level_stats_info *tt_stats = data;
 
