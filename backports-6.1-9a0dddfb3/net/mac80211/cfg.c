@@ -4059,7 +4059,7 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	struct ieee80211_link_data *link_data;
 	struct ieee80211_sub_if_data *mon_sdata = NULL;
 	struct net_device *mon_dev = NULL;
-	int err;
+	int err, radio_idx;
 	ktime_t ktime = ms_to_ktime(cac_time_ms);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -4071,13 +4071,16 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	if (!link_data)
 		return -ENOLINK;
 
+	radio_idx = cfg80211_get_hw_idx_by_chan(wiphy, chandef->chan);
+
 	rcu_read_lock();
 	list_for_each_entry_rcu(mon_sdata, &sdata->local->mon_list, u.mntr.list) {
 		struct cfg80211_chan_def *mon_chandef;
 
 		mon_chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
 		if (mon_chandef->chan &&
-		    mon_chandef->chan->band == chandef->chan->band) {
+		    mon_chandef->chan->band == chandef->chan->band &&
+		    radio_idx == cfg80211_get_hw_idx_by_chan(wiphy, mon_chandef->chan)) {
 			mon_dev = mon_sdata->dev;
 			dev_hold(mon_dev);
 			break;
