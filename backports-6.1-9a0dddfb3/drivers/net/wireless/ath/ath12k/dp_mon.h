@@ -14,6 +14,7 @@
 
 #include "hal_mon_cmn.h"
 
+#define ATH12K_DP_MON_TX_BUF_SIZE	2048
 #define ATH12K_DP_MON_RX_BUF_SIZE	2048
 #define ATH12K_MON_MAGIC_VALUE		0xDECAFEED
 #define ATH12K_DP_MON_MAX_RADIO_TAP_HDR 128
@@ -43,8 +44,8 @@
 #define DP_RXDMA_MONITOR_DST_RING_SIZE 8192
 #define ATH12K_DP_SMART_MON_FILTER_DEFAULT 0
 #endif
-#define DP_TX_MONITOR_BUF_RING_SIZE	4096
-#define DP_TX_MONITOR_DEST_RING_SIZE	2048
+#define DP_TX_MONITOR_BUF_RING_SIZE	8192
+#define DP_TX_MONITOR_DEST_RING_SIZE	8192
 
 #define DP_TX_MONITOR_BUF_SIZE		2048
 #define DP_TX_MONITOR_BUF_SIZE_MIN	48
@@ -83,6 +84,15 @@ struct dp_rxdma_mon_ring {
 	/* Protects bufs_idr */
 	spinlock_t idr_lock;
 	int bufs_max;
+};
+
+struct dp_mon_desc_list_params {
+	/* Lock for  @free_list */
+	spinlock_t *desc_lock;
+	struct list_head *free_list;
+	struct list_head *list_local;
+	struct page_frag_cache *pf_cache;
+	size_t buff_size;
 };
 
 enum dp_mon_stats_mode {
@@ -163,6 +173,15 @@ struct ath12k_dp_arch_mon_ops {
 	void (*pktlog_config)(struct ath12k_pdev_dp *dp_pdev,
 			      enum ath12k_pktlog_mode mode,
 			      u32 filter, bool enable);
+
+	/* Below are TxMonitor ops */
+	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
+	void (*mon_tx_srng_cleanup)(struct ath12k_dp *dp);
+	int (*mon_tx_htt_srng_setup)(struct ath12k_dp *dp);
+	void (*mon_tx_htt_srng_cleanup)(struct ath12k_dp *dp);
+	int (*mon_tx_dst_ring_alloc_setup)(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+	void (*mon_tx_dst_ring_cleanup)(struct ath12k_pdev_dp *dp_pdev);
+
 };
 
 struct ath12k_dp_mon {
@@ -175,12 +194,21 @@ struct ath12k_dp_mon {
 	struct ath12k_dp_mon_desc *mon_desc_pool;
 	struct list_head mon_desc_free_list;
 
-	/* lock for ath12k_dp_mon_desc */
+	/* lock for mon_desc_pool */
 	spinlock_t mon_desc_lock;
 	struct page_frag_cache rx_mon_pf_cache;
 
 	u32 num_frag_replenish;
 	u32 num_frag_free;
+
+	struct ath12k_dp_mon_desc *tx_mon_desc_pool;
+	/* lock for tx_mon_desc_pool */
+	spinlock_t tx_mon_desc_lock;
+	struct list_head tx_mon_desc_free_list;
+	struct page_frag_cache tx_mon_pf_cache;
+	u32 tx_num_frag_replenish;
+	u32 tx_num_frag_free;
+	bool tx_mon_buf_ring_ready;
 };
 
 enum dp_monitor_type {
@@ -359,7 +387,7 @@ struct ath12k_pdev_mon_dp {
 	struct ath12k_dp_mon *dp_mon;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct dp_srng rxdma_mon_dst_ring[MAX_RXDMA_PER_PDEV];
-	struct dp_srng tx_mon_dst_ring[MAX_RXDMA_PER_PDEV];
+	struct dp_srng tx_mon_dst_ring;
 
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
@@ -439,10 +467,20 @@ const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
 	return NULL;
 }
 
+/* Wrapper functions for RX and TX buffer replenishment */
+int ath12k_dp_mon_rx_buf_replenish(struct ath12k_dp *dp,
+				   struct dp_rxdma_mon_ring *buf_ring,
+				   struct list_head *used_list,
+				   int req_entries);
+int ath12k_dp_mon_tx_buf_replenish(struct ath12k_dp *dp,
+				   struct dp_rxdma_mon_ring *buf_ring,
+				   struct list_head *used_list,
+				   int req_entries);
+/* Core buffer replenishment function */
 int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
-				struct list_head *used_list,
-				int req_entries);
+				int req_entries,
+				struct dp_mon_desc_list_params *list_params);
 struct sk_buff *ath12k_dp_mon_tx_alloc_skb(void);
 enum hal_tx_mon_status
 ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
@@ -500,9 +538,6 @@ void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
 size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
 				    size_t count);
-size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
-						   struct dp_rxdma_mon_ring *rx_ring,
-						   struct list_head *list);
 void ath12k_dp_mon_rx_deliver_skb(struct ath12k_pdev_dp *dp_pdev,
 				  struct napi_struct *napi, struct sk_buff *msdu,
 				  struct ieee80211_rx_status *status,
@@ -539,6 +574,18 @@ u64 ath12k_get_timestamp_in_us(void);
 void ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 				struct hal_rx_mon_ppdu_info *ppdu_info,
 				struct ieee80211_rx_status *rx_status);
+
+int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp);
+int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 {
@@ -597,7 +644,6 @@ int ath12k_dp_mon_rx_htt_setup(struct ath12k_dp *dp)
 		ret = mon_ops->rx_htt_srng_setup(dp);
 
 	return ret;
-
 }
 
 static inline
@@ -850,7 +896,6 @@ void ath12k_dp_mon_rx_config_monitor_mode(struct ath12k *ar, bool reset)
 		if(mon_ops && mon_ops->rx_monitor_mode_reset)
 			mon_ops->rx_monitor_mode_reset(dp_pdev);
 	}
-
 }
 
 static inline
@@ -873,7 +918,6 @@ void ath12k_dp_mon_rx_nrp_config(struct ath12k *ar, bool reset)
 		if (mon_ops && mon_ops->rx_nrp_reset)
 			mon_ops->rx_nrp_reset(dp_pdev);
 	}
-
 }
 
 static inline
@@ -939,7 +983,6 @@ ath12k_dp_mon_rx_config_packet_type_hdr_len(struct ath12k_dp *dp, void *ptr,
 		return;
 
 	mon_ops = ath12k_dp_mon_ops_get(dp);
-
 }
 
 static inline void
@@ -1015,5 +1058,119 @@ ath12k_dp_smart_mon_enabled(struct ath12k *ar)
 		return true;
 
 	return false;
+}
+
+static inline
+int ath12k_dp_mon_tx_srng_alloc(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = -EOPNOTSUPP;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops) {
+		ath12k_err(dp->ab, "TX Monitor: No monitor ops available");
+		return -EINVAL;
+	}
+
+	if (mon_ops->mon_tx_srng_alloc_setup) {
+		ret = mon_ops->mon_tx_srng_alloc_setup(dp);
+		if (ret) {
+			ath12k_err(dp->ab, "TX Monitor: SRNG setup failed, ret=%d", ret);
+			return -EINVAL;
+		}
+	}
+
+	return ret;
+}
+
+static inline
+void ath12k_dp_mon_tx_htt_src_ring_cleanup(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops  = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_tx_htt_srng_cleanup)
+		mon_ops->mon_tx_htt_srng_cleanup(dp);
+}
+
+static inline
+void ath12k_dp_mon_tx_srng_free(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	ath12k_dp_mon_tx_htt_src_ring_cleanup(dp);
+
+	if (mon_ops && mon_ops->mon_tx_srng_cleanup)
+		mon_ops->mon_tx_srng_cleanup(dp);
+}
+
+static inline
+int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
+				u32 mac_id)
+{
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret;
+
+	if (unlikely(!dp_pdev)) {
+		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
+		return -EINVAL;
+	}
+
+	dp = dp_pdev->dp;
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops) {
+		ath12k_warn(dp, "Tx Mon: mon ops is NULL\n");
+		return -EINVAL;
+	}
+
+	if (mon_ops->mon_tx_dst_ring_alloc_setup) {
+		ret = mon_ops->mon_tx_dst_ring_alloc_setup(dp_pdev, mac_id);
+		if (ret)
+			ath12k_warn(dp, "Tx Mon: failed to alloc dst ring\n");
+	}
+
+	return ret;
+}
+
+static inline
+void ath12k_dp_mon_tx_pdev_free(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp_pdev)) {
+		ath12k_err(NULL, "Tx Mon: Invalid DP Pdev\n");
+		return;
+	}
+
+	dp = dp_pdev->dp;
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!mon_ops)
+		return;
+
+	if (mon_ops->mon_tx_dst_ring_cleanup)
+		mon_ops->mon_tx_dst_ring_cleanup(dp_pdev);
+}
+
+static inline
+int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	int ret = -EINVAL;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->mon_tx_htt_srng_setup) {
+		ret = mon_ops->mon_tx_htt_srng_setup(dp);
+		if (ret)
+			ath12k_err(dp->ab, "TX Monitor: srng htt setup failed(%d)", ret);
+	}
+
+	return ret;
 }
 #endif

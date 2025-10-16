@@ -120,19 +120,17 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	if (dp->hw_params->ring_mask->tx_mon_dest[grp_id]) {
 		ring_mask = dp->hw_params->ring_mask->tx_mon_dest[grp_id];
 		for (i = 0; i < dp->num_radios; i++) {
-			for (j = 0; j < dp->hw_params->num_rxdma_per_pdev; j++) {
-				int id = i * dp->hw_params->num_rxdma_per_pdev + j;
+			int mac_id = i;
 
-				if (ring_mask & BIT(id)) {
-					work_done =
-					ath12k_dp_tx_mon_process_ring(dp, id, napi,
-								      budget);
-					budget -= work_done;
-					tot_work_done += work_done;
+			if (ring_mask & BIT(mac_id)) {
+				work_done =
+				ath12k_dp_tx_mon_process_ring(dp, mac_id, napi,
+							      budget);
+				budget -= work_done;
+				tot_work_done += work_done;
 
-					if (budget <= 0)
-						goto done;
-				}
+				if (budget <= 0)
+					goto done;
 			}
 		}
 	}
@@ -324,7 +322,16 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_dp_mon_rx_free;
 	}
 
+	ret = ath12k_dp_mon_tx_srng_alloc(dp);
+	if (ret) {
+		ath12k_warn(ab, "Tx Mon: failed to setup rings ret = %d\n", ret);
+		goto fail_dp_mon_tx_free;
+	}
+
 	return 0;
+
+fail_dp_mon_tx_free:
+	ath12k_dp_mon_tx_srng_free(dp);
 
 fail_dp_mon_rx_free:
 	ath12k_dp_mon_rx_free(dp);
@@ -386,6 +393,8 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
 	ath12k_dp_mon_rx_free(dp);
+	ath12k_dp_mon_tx_srng_free(dp);
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
 #endif

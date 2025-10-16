@@ -287,30 +287,63 @@ int ath12k_dp_mon_rx_set_pktlen(struct sk_buff *skb, u32 len)
 EXPORT_SYMBOL(ath12k_dp_mon_rx_set_pktlen);
 
 static void
-ath12k_dp_mon_handle_mon_desc(struct ath12k_dp *dp, struct ath12k_dp_mon_desc *mon_desc)
+ath12k_dp_mon_handle_mon_desc(struct ath12k_dp *dp, struct ath12k_dp_mon_desc *mon_desc,
+			      struct dp_mon_desc_list_params *list_params)
 {
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	u8 *mon_buf = mon_desc->mon_buf;
 
 	if (mon_buf) {
 		ath12k_core_dma_unmap_page(dp->dev, mon_desc->paddr,
-					   ATH12K_DP_MON_RX_BUF_SIZE,
+					   list_params->buff_size,
 					   DMA_FROM_DEVICE);
 		page_frag_free(mon_buf);
 		dp_mon->num_frag_free++;
 		mon_desc->mon_buf = NULL;
 	}
 
-	spin_lock_bh(&dp->dp_mon->mon_desc_lock);
+	spin_lock_bh(list_params->desc_lock);
 	list_del(&mon_desc->list);
-	list_add_tail(&mon_desc->list, &dp_mon->mon_desc_free_list);
-	spin_unlock_bh(&dp->dp_mon->mon_desc_lock);
+	list_add_tail(&mon_desc->list, list_params->free_list);
+	spin_unlock_bh(list_params->desc_lock);
+}
+
+int ath12k_dp_mon_rx_buf_replenish(struct ath12k_dp *dp,
+				   struct dp_rxdma_mon_ring *buf_ring,
+				   struct list_head *used_list,
+				   int req_entries)
+{
+	struct dp_mon_desc_list_params list_params = {
+		.desc_lock = &dp->dp_mon->mon_desc_lock,
+		.free_list = &dp->dp_mon->mon_desc_free_list,
+		.list_local = used_list,
+		.pf_cache = &dp->dp_mon->rx_mon_pf_cache,
+		.buff_size = ATH12K_DP_MON_RX_BUF_SIZE,
+	};
+
+	return ath12k_dp_mon_buf_replenish(dp, buf_ring, req_entries, &list_params);
+}
+
+int ath12k_dp_mon_tx_buf_replenish(struct ath12k_dp *dp,
+				   struct dp_rxdma_mon_ring *buf_ring,
+				   struct list_head *used_list,
+				   int req_entries)
+{
+	struct dp_mon_desc_list_params list_params = {
+		.desc_lock = &dp->dp_mon->tx_mon_desc_lock,
+		.free_list = &dp->dp_mon->tx_mon_desc_free_list,
+		.list_local = used_list,
+		.pf_cache = &dp->dp_mon->tx_mon_pf_cache,
+		.buff_size = ATH12K_DP_MON_TX_BUF_SIZE
+	};
+
+	return ath12k_dp_mon_buf_replenish(dp, buf_ring, req_entries, &list_params);
 }
 
 int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				struct dp_rxdma_mon_ring *buf_ring,
-				struct list_head *used_list,
-				int req_entries)
+				int req_entries,
+				struct dp_mon_desc_list_params *list_params)
 {
 	struct ath12k_base *ab = dp->ab;
 	void *mon_buf_desc;
@@ -324,18 +357,17 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 	int ret = 0;
 	u8 *mon_buf;
 
-	list_for_each_entry_safe(mon_desc, tmp_mon_desc, used_list, list) {
+	list_for_each_entry_safe(mon_desc, tmp_mon_desc, list_params->list_local, list) {
 		if (unlikely(mon_desc->in_use != DP_MON_DESC_REPLENISH)) {
 			ath12k_warn(dp,
 				    "Invalid in_use %d, possibly desc from freelist\n",
 				    mon_desc->in_use);
-			ath12k_dp_mon_handle_mon_desc(dp, mon_desc);
+			ath12k_dp_mon_handle_mon_desc(dp, mon_desc, list_params);
 			continue;
 		}
 
-		mon_buf = page_frag_alloc(&dp_mon->rx_mon_pf_cache,
-					  ATH12K_DP_MON_RX_BUF_SIZE,
-					  GFP_ATOMIC);
+		mon_buf = page_frag_alloc(list_params->pf_cache,
+					  list_params->buff_size, GFP_ATOMIC);
 		if (unlikely(!mon_buf)) {
 			ret = -ENOMEM;
 			goto out;
@@ -344,8 +376,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 		page = virt_to_head_page(mon_buf);
 		offset = ((void *)mon_buf) - page_address(page);
 		paddr = ath12k_core_dma_map_page(ab->dev, page, offset,
-						 ATH12K_DP_MON_RX_BUF_SIZE,
-						 DMA_FROM_DEVICE);
+						 list_params->buff_size, DMA_FROM_DEVICE);
 		if (unlikely(dma_mapping_error(ab->dev, paddr))) {
 			page_frag_free(mon_buf);
 			mon_desc->mon_buf = NULL;
@@ -368,7 +399,7 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 	ath12k_hal_srng_access_begin(ab, srng);
 
 	while (req_entries > 0) {
-		mon_desc = list_first_entry_or_null(used_list,
+		mon_desc = list_first_entry_or_null(list_params->list_local,
 						    struct ath12k_dp_mon_desc, list);
 		if (unlikely(!mon_desc)) {
 			ret = -ENOSPC;
@@ -395,13 +426,14 @@ ring_unlock:
 	spin_unlock_bh(&srng->lock);
 
 out:
-	if (unlikely(!list_empty(used_list))) {
+	if (unlikely(!list_empty(list_params->list_local))) {
 		/* Reset the use flag */
-		list_for_each_entry_safe(mon_desc, tmp_mon_desc, used_list, list) {
+		list_for_each_entry_safe(mon_desc, tmp_mon_desc,
+					 list_params->list_local, list) {
 			mon_buf = mon_desc->mon_buf;
 			if (mon_buf) {
 				ath12k_core_dma_unmap_page(ab->dev, mon_desc->paddr,
-							   ATH12K_DP_MON_RX_BUF_SIZE,
+							   list_params->buff_size,
 							   DMA_FROM_DEVICE);
 				page_frag_free(mon_buf);
 				mon_desc->mon_buf = NULL;
@@ -412,14 +444,13 @@ out:
 			mon_desc->in_use = DP_MON_DESC_H_REPLENISH_ERR;
 		}
 
-		spin_lock_bh(&dp_mon->mon_desc_lock);
-		list_splice_tail(used_list, &dp_mon->mon_desc_free_list);
-		spin_unlock_bh(&dp_mon->mon_desc_lock);
+		spin_lock_bh(list_params->desc_lock);
+		list_splice_tail(list_params->list_local, list_params->free_list);
+		spin_unlock_bh(list_params->desc_lock);
 	}
 
 	return ret;
 }
-EXPORT_SYMBOL(ath12k_dp_mon_buf_replenish);
 
 size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
 				    size_t count)
@@ -451,13 +482,13 @@ out:
 	return nodes;
 }
 
-size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
-						   struct dp_rxdma_mon_ring *rx_ring,
-						   struct list_head *list)
+static size_t
+ath12k_dp_mon_get_free_desc_list(struct ath12k_dp *dp,
+				 struct dp_rxdma_mon_ring *rx_ring,
+				 struct dp_mon_desc_list_params *list_params)
 {
 	struct hal_srng *srng;
 	struct ath12k_base *ab = dp->ab;
-	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	size_t num_free, req_entries;
 
 	srng = &dp->hal->srng_list[rx_ring->refill_buf_ring.ring_id];
@@ -472,13 +503,39 @@ size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
 	ath12k_hal_srng_access_end(ab, srng);
 	spin_unlock_bh(&srng->lock);
 
-	spin_lock_bh(&dp_mon->mon_desc_lock);
-	req_entries = ath12k_dp_mon_list_cut_nodes(list,
-						   &dp_mon->mon_desc_free_list,
+	spin_lock_bh(list_params->desc_lock);
+	req_entries = ath12k_dp_mon_list_cut_nodes(list_params->list_local,
+						   list_params->free_list,
 						   num_free);
-	spin_unlock_bh(&dp_mon->mon_desc_lock);
+	spin_unlock_bh(list_params->desc_lock);
 
 	return req_entries;
+}
+
+size_t ath12k_dp_mon_get_rx_free_desc_list(struct ath12k_dp *dp,
+					   struct dp_rxdma_mon_ring *rx_ring,
+					   struct list_head *list)
+{
+	struct dp_mon_desc_list_params list_params = {
+		.desc_lock = &dp->dp_mon->mon_desc_lock,
+		.free_list = &dp->dp_mon->mon_desc_free_list,
+		.list_local = list,
+	};
+
+	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params);
+}
+
+size_t ath12k_dp_mon_get_tx_free_desc_list(struct ath12k_dp *dp,
+					   struct dp_rxdma_mon_ring *rx_ring,
+					   struct list_head *list)
+{
+	struct dp_mon_desc_list_params list_params = {
+		.desc_lock = &dp->dp_mon->tx_mon_desc_lock,
+		.free_list = &dp->dp_mon->tx_mon_desc_free_list,
+		.list_local = list,
+	};
+
+	return ath12k_dp_mon_get_free_desc_list(dp, rx_ring, &list_params);
 }
 
 static struct dp_mon_tx_ppdu_info *
@@ -1824,9 +1881,10 @@ int ath12k_dp_mon_rx_buf_setup(struct ath12k_dp *dp)
 		ath12k_hal_srng_get_entrysize(ab, HAL_RXDMA_MONITOR_BUF);
 	rx_ring->bufs_max = num_entries;
 
-	req_entries = ath12k_dp_mon_get_req_entries_from_buf_ring(dp, rx_ring, &list);
+	req_entries =
+		ath12k_dp_mon_get_rx_free_desc_list(dp, rx_ring, &list);
 	if (req_entries)
-		ret = ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries);
+		ret = ath12k_dp_mon_rx_buf_replenish(dp, rx_ring, &list, req_entries);
 	else
 		ath12k_warn(dp, "No required entries available for mon buf ring\n");
 
@@ -1939,6 +1997,246 @@ int ath12k_dp_mon_pdev_rx_htt_srng_setup(struct ath12k_pdev_dp *dp_pdev,
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_htt_srng_setup);
 
+int ath12k_dp_mon_tx_srng_alloc_setup(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	int ret;
+
+	/*Todo : DP_TX_MONITOR_BUF_RING_SIZE is 8192 - 512M profile will need
+	 *	 smaller size
+	 */
+	ret = ath12k_dp_srng_setup(ab,
+				   &dp_mon->tx_mon_buf_ring.refill_buf_ring,
+				   HAL_TX_MONITOR_BUF, 0, 0,
+				   DP_TX_MONITOR_BUF_RING_SIZE);
+	if (ret) {
+		ath12k_warn(dp, "Tx Mon: failed to setup buffer srng (%d)\n", ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_desc_pool_alloc(dp);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_alloc_setup);
+
+void ath12k_dp_mon_tx_srng_cleanup(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_srng *srng;
+
+	srng = &dp_mon->tx_mon_buf_ring.refill_buf_ring;
+	ath12k_dp_mon_tx_desc_pool_free(dp);
+	ath12k_dp_srng_cleanup(ab, srng);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_srng_cleanup);
+
+int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev,
+					  u32 mac_id)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	int ret;
+
+	ret = ath12k_dp_srng_setup(dp->ab,
+				   &dp_pdev->dp_mon_pdev->tx_mon_dst_ring,
+				   HAL_TX_MONITOR_DST, 0, mac_id,
+				   DP_TX_MONITOR_DEST_RING_SIZE);
+	if (ret) {
+		ath12k_warn(dp->ab, "Tx Mon: failed dest. ring allocation/setup\n");
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_htt_dst_ring_setup(dp_pdev, mac_id);
+
+	if (ret)
+		ath12k_warn(dp->ab, "Tx Mon: failed dest. ring config\n");
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_dst_ring_alloc_setup);
+
+void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+
+	ath12k_dp_srng_cleanup(dp->ab, &dp_pdev->dp_mon_pdev->tx_mon_dst_ring);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_dst_ring_cleanup);
+
+int ath12k_dp_mon_tx_desc_pool_alloc(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	int ret = 0;
+
+	spin_lock_init(&dp_mon->tx_mon_desc_lock);
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	dp_mon->tx_mon_buf_ring_ready = false;
+	dp_mon->tx_mon_desc_pool = kcalloc(DP_TX_MONITOR_BUF_RING_SIZE,
+					   sizeof(*dp_mon->tx_mon_desc_pool),
+					   GFP_ATOMIC);
+	if (!dp_mon->tx_mon_desc_pool) {
+		ath12k_warn(dp, "failed to allocate memory for tx mon desc pool\n");
+		ret = -ENOMEM;
+	}
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+	return ret;
+}
+
+void ath12k_dp_mon_tx_desc_pool_free(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	kfree(dp_mon->tx_mon_desc_pool);
+	dp_mon->tx_mon_desc_pool = NULL;
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+}
+
+int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_rxdma_mon_ring *tx_ring;
+	int num_entries, ret = -EINVAL, i, free_list_count;
+	LIST_HEAD(list);
+
+	INIT_LIST_HEAD(&dp_mon->tx_mon_desc_free_list);
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	if (!dp_mon->tx_mon_desc_pool) {
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+		ath12k_warn(dp, "tx mon desc pool not available\n");
+		return -ENOMEM;
+	}
+
+	if (dp_mon->tx_mon_buf_ring_ready) {
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+		ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
+			   "TX monitor: Buffers available\n");
+		return 0;
+	}
+
+	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+		dp_mon->tx_mon_desc_pool[i].magic = ATH12K_MON_MAGIC_VALUE;
+		INIT_LIST_HEAD(&dp_mon->tx_mon_desc_pool[i].list);
+		list_add_tail(&dp_mon->tx_mon_desc_pool[i].list,
+			      &dp_mon->tx_mon_desc_free_list);
+	}
+
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+
+	tx_ring = &dp_mon->tx_mon_buf_ring;
+
+	num_entries =  tx_ring->refill_buf_ring.size /
+		ath12k_hal_srng_get_entrysize(ab, HAL_TX_MONITOR_BUF);
+	tx_ring->bufs_max = num_entries;
+
+	free_list_count =
+		ath12k_dp_mon_get_tx_free_desc_list(dp, tx_ring, &list);
+
+	if (unlikely(!free_list_count)) {
+		ath12k_warn(dp, "Tx Mon: No entries available for mon buf ring\n");
+		return -ENOMEM;
+	}
+
+	ret = ath12k_dp_mon_tx_buf_replenish(dp, tx_ring, &list, free_list_count);
+	if (ret) {
+		ath12k_warn(dp, "Tx Mon: Replenish of mon buf ring failed\n");
+		return ret;
+	}
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	dp_mon->tx_mon_buf_ring_ready = true;
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_buff_alloc);
+
+void ath12k_dp_mon_tx_buff_free(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	dma_addr_t dma_paddr;
+	int i;
+	u8 *tx_mon_buf;
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+	dp_mon->tx_mon_buf_ring_ready = false;
+
+	if (!dp_mon->tx_mon_desc_pool) {
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+		return;
+	}
+
+	for (i = 0; i < DP_TX_MONITOR_BUF_RING_SIZE; i++) {
+		if (dp_mon->tx_mon_desc_pool[i].in_use != DP_MON_DESC_TO_HW)
+			continue;
+
+		tx_mon_buf = dp_mon->tx_mon_desc_pool[i].mon_buf;
+
+		if (tx_mon_buf) {
+			dma_paddr = dp_mon->tx_mon_desc_pool[i].paddr;
+			ath12k_core_dma_unmap_page(dp->dev, dma_paddr,
+						   ATH12K_DP_MON_TX_BUF_SIZE,
+						   DMA_FROM_DEVICE);
+			page_frag_free(tx_mon_buf);
+			dp_mon->tx_num_frag_free++;
+		}
+		ath12k_dp_mon_desc_reset(&dp_mon->tx_mon_desc_pool[i]);
+	}
+
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_buff_free);
+
+void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp)
+{
+	ath12k_dp_mon_tx_buff_free(dp);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_srng_cleanup);
+
+int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	u32 ring_id;
+	int ret;
+
+	/* This is deferred buffer initialization, This is freed at mon_tx_srng_cleanup */
+	ret = ath12k_dp_mon_tx_buff_alloc(dp);
+	if (ret) {
+		ath12k_warn(dp->ab, "TX Monitor: Buffer setup failed(%d)\n", ret);
+		return ret;
+	}
+
+	ring_id = dp_mon->tx_mon_buf_ring.refill_buf_ring.ring_id;
+	ret = ath12k_dp_tx_htt_srng_setup(ab, ring_id,
+					  0, HAL_TX_MONITOR_BUF);
+	if (ret)
+		ath12k_warn(ab, "TX Monitor:failed to configure buffer ring %d\n", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_srng_setup);
+
+int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	u32 ring_id;
+	int ret;
+
+	ring_id = dp_pdev->dp_mon_pdev->tx_mon_dst_ring.ring_id;
+	ret = ath12k_dp_tx_htt_srng_setup(dp->ab, ring_id, mac_id,
+					  HAL_TX_MONITOR_DST);
+	if (ret)
+		ath12k_warn(dp->ab, "TX Monitor: failed to configure dst ring %d\n", ret);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_dst_ring_setup);
+
 void ath12k_dp_mon_pdev_rx_mpdu_list_init(struct ath12k_mon_data *pmon)
 {
 	INIT_LIST_HEAD(&pmon->dp_rx_mon_mpdu_list);
@@ -1967,6 +2265,8 @@ int ath12k_dp_mon_init(struct ath12k_dp *dp)
 
 	dp_mon->dp = dp;
 	dp->dp_mon = dp_mon;
+	spin_lock_init(&dp_mon->tx_mon_desc_lock);
+	dp_mon->tx_mon_buf_ring_ready = false;
 
 	return 0;
 }
@@ -2445,7 +2745,7 @@ void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp)
 	spin_unlock_bh(&dp_mon->mon_desc_lock);
 
 	if (req_entries)
-		ath12k_dp_mon_buf_replenish(dp, rx_ring, &list, req_entries);
+		ath12k_dp_mon_rx_buf_replenish(dp, rx_ring, &list, req_entries);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_process_low_thres);
 
