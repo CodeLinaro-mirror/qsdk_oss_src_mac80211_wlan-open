@@ -143,15 +143,16 @@ int drv_change_interface(struct ieee80211_local *local,
 void drv_remove_interface(struct ieee80211_local *local,
 			  struct ieee80211_sub_if_data *sdata);
 
-static inline int drv_config(struct ieee80211_local *local, u32 changed)
+static inline int drv_config(struct ieee80211_local *local, int radio_idx,
+			     u32 changed)
 {
 	int ret;
 
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	trace_drv_config(local, changed);
-	ret = local->ops->config(&local->hw, changed);
+	trace_drv_config(local, radio_idx, changed);
+	ret = local->ops->config(&local->hw, radio_idx, changed);
 	trace_drv_return_int(local, ret);
 	return ret;
 }
@@ -404,49 +405,45 @@ static inline void drv_get_key_seq(struct ieee80211_local *local,
 }
 
 static inline int drv_set_frag_threshold(struct ieee80211_local *local,
-					u32 value)
+					int radio_idx, u32 value)
 {
 	int ret = 0;
 
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	trace_drv_set_frag_threshold(local, value);
+	trace_drv_set_frag_threshold(local, radio_idx, value);
 	if (local->ops->set_frag_threshold)
-		ret = local->ops->set_frag_threshold(&local->hw, value);
+		ret = local->ops->set_frag_threshold(&local->hw, radio_idx, value);
 	trace_drv_return_int(local, ret);
 	return ret;
 }
 
 static inline int drv_set_rts_threshold(struct ieee80211_local *local,
-					u8 radio_id, u32 value,
-					struct ieee80211_sub_if_data *sdata,
-					u32 link_id)
+					int radio_idx, u32 value)
 {
 	int ret = 0;
 
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	trace_drv_set_rts_threshold(local, radio_id, value, sdata, link_id);
-	if (sdata && local->ops->set_rts_threshold)
-		ret = local->ops->set_rts_threshold(&local->hw, radio_id, value, &sdata->vif, link_id);
-	else if (local->ops->set_rts_threshold)
-		ret = local->ops->set_rts_threshold(&local->hw, radio_id, value, NULL, link_id);
+	trace_drv_set_rts_threshold(local, radio_idx, value);
+	if (local->ops->set_rts_threshold)
+		ret = local->ops->set_rts_threshold(&local->hw, radio_idx, value);
 	trace_drv_return_int(local, ret);
 	return ret;
 }
 
 static inline int drv_set_coverage_class(struct ieee80211_local *local,
-					 s16 value)
+					 int radio_idx, s16 value)
 {
 	int ret = 0;
 	might_sleep();
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	trace_drv_set_coverage_class(local, value);
+	trace_drv_set_coverage_class(local, radio_idx, value);
 	if (local->ops->set_coverage_class)
-		local->ops->set_coverage_class(&local->hw, value);
+		local->ops->set_coverage_class(&local->hw, radio_idx, value);
 	else
 		ret = -EOPNOTSUPP;
 

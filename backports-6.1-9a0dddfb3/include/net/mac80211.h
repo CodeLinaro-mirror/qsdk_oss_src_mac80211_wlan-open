@@ -4830,7 +4830,7 @@ struct ieee80211_ops {
 				enum nl80211_iftype new_type, bool p2p);
 	void (*remove_interface)(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif);
-	int (*config)(struct ieee80211_hw *hw, u32 changed);
+	int (*config)(struct ieee80211_hw *hw, int radio_idx, u32 changed);
 	void (*bss_info_changed)(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_bss_conf *info,
@@ -4892,9 +4892,10 @@ struct ieee80211_ops {
 	void (*get_key_seq)(struct ieee80211_hw *hw,
 			    struct ieee80211_key_conf *key,
 			    struct ieee80211_key_seq *seq);
-	int (*set_frag_threshold)(struct ieee80211_hw *hw, u32 value);
-	int (*set_rts_threshold)(struct ieee80211_hw *hw, u8 radio_id, u32 value,
-			struct ieee80211_vif *vif, u32 link_id);
+	int (*set_frag_threshold)(struct ieee80211_hw *hw, int radio_idx,
+				  u32 value);
+	int (*set_rts_threshold)(struct ieee80211_hw *hw, int radio_idx,
+				 u32 value);
 	int (*sta_add)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 		       struct ieee80211_sta *sta);
 	int (*sta_remove)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
@@ -4991,7 +4992,8 @@ struct ieee80211_ops {
 	int (*get_survey)(struct ieee80211_hw *hw, int idx,
 		struct survey_info *survey);
 	void (*rfkill_poll)(struct ieee80211_hw *hw);
-	void (*set_coverage_class)(struct ieee80211_hw *hw, s16 coverage_class);
+	void (*set_coverage_class)(struct ieee80211_hw *hw, int radio_idx,
+				   s16 coverage_class);
 #ifdef CPTCFG_NL80211_TESTMODE
 	int (*testmode_cmd)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			    u8 link_id, void *data, int len);
