@@ -609,9 +609,9 @@ void ath12k_vendor_services_init(void)
 	ath12k_vendor_service_deinit[ATH12K_RM_MAIN_SERVICE] =
 		ath12k_vendor_main_service_deinit;
 	ath12k_vendor_service_init[ATH12K_VENDOR_APP_ENERGY_SERVICE] =
-		ath12k_vendor_service_common_init;
+		ath12k_vendor_dynamic_service_init;
 	ath12k_vendor_service_deinit[ATH12K_VENDOR_APP_ENERGY_SERVICE] =
-		ath12k_vendor_service_common_deinit;
+		ath12k_vendor_dynamic_service_deinit;
 	ath12k_vendor_service_init[ATH12K_VENDOR_APP_ERP_SERVICE] =
 		ath12k_vendor_service_common_init;
 	ath12k_vendor_service_deinit[ATH12K_VENDOR_APP_ERP_SERVICE] =
