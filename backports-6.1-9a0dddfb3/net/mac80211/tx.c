@@ -1004,7 +1004,7 @@ static int ieee80211_fragment(struct ieee80211_tx_data *tx,
 			      int frag_threshold)
 {
 	struct ieee80211_local *local = tx->local;
-	struct ieee80211_tx_info *info;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct sk_buff *tmp;
 	int per_fragm = frag_threshold - hdrlen - FCS_LEN;
 	int pos = hdrlen + per_fragm;
