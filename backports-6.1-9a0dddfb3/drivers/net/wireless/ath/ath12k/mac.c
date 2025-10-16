@@ -12455,7 +12455,7 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	struct ath12k *ar, *tmp_ar;
 	u16 removed_link_map;
 	u8 link_id, tmp_link_id, pri_link_id;
-	int ret, assoc_status;
+	int ret, assoc_status, result;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -12506,6 +12506,41 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 				ath12k_warn(ar->ab, "Failed to add station: %pM for VDEV: %d\n",
 					    arsta->addr, arvif->vdev_id);
 				ath12k_mac_free_unassign_link_sta(ah, ahsta, link_id);
+				return ret;
+			}
+
+			ret = ath12k_dp_peer_setup(ar, arvif, arsta->addr);
+			if (ret) {
+				ath12k_warn(ar->ab, "peer %pM setup failed ret: %d\n",
+					    arsta->addr, ret);
+
+				result = ath12k_mac_station_remove(ar, arvif, arsta);
+				if (result)
+					ath12k_warn(ar->ab, "arsta %pM remove failed\n",
+						    arsta->addr);
+
+				if (sta->mlo) {
+					result = ath12k_peer_mlo_link_peer_delete(arvif,
+										  arsta);
+					if (result)
+						ath12k_warn(ar->ab, "ml arsta %pM remove failed\n",
+							    arsta->addr);
+
+					result =
+					ath12k_wait_for_peer_delete_done(ar,
+									 arvif->vdev_id,
+									 arsta->addr);
+					if (result)
+						ath12k_warn(ar->ab, "peer delete timeout for arsta %pM\n",
+							    arsta->addr);
+
+					ar->num_peers--;
+					ath12k_peer_mlo_link_sta_teardown(ah,
+									  ahvif,
+									  ahsta,
+									  link_id);
+				}
+
 				return ret;
 			}
 		}
