@@ -116,6 +116,12 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625_msi8 = {
 		0, 0, 0, 0, 0, 0, 0,
 		ATH12K_UMAC_RESET_INTR_MASK_0
 	},
+	.tx_exception = {
+		ATH12K_TX_EXCEPTION_RING_MASK_0,
+	},
+	.tcl_status = {
+		ATH12K_TCL_STATUS_RING_MASK_0,
+	},
 };
 
 #define ATH12K_PPE2TCL_RING_MASK_0 0x1
@@ -193,6 +199,12 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625 = {
 	.umac_dp_reset = {
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 		ATH12K_UMAC_RESET_INTR_MASK_0
+	},
+	.tx_exception = {
+		ATH12K_TX_EXCEPTION_RING_MASK_0,
+	},
+	.tcl_status = {
+		ATH12K_TCL_STATUS_RING_MASK_0,
 	},
 };
 
