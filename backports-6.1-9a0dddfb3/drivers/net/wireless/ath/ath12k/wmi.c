@@ -165,6 +165,9 @@ struct wmi_tlv_mgmt_rx_parse {
 	bool parse_bcast_ttlm_info_done;
 };
 
+static void
+ath12k_wmi_delete_all_peer_resp_event(struct ath12k_base *ab, struct sk_buff *skb);
+
 static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 	[WMI_TAG_ARRAY_BYTE] = { .min_len = 0 },
 	[WMI_TAG_ARRAY_UINT32] = { .min_len = 0 },
@@ -15730,7 +15733,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENTID:
 		ath12k_wmi_mlo_3_link_tlt_selection(ab, skb);
 		break;
-
+	case WMI_VDEV_DELETE_ALL_PEER_RESP_EVENTID:
+		ath12k_wmi_delete_all_peer_resp_event(ab, skb);
+		break;
 	default:
 		ath12k_dbg_level(ab, ATH12K_DBG_WMI, ATH12K_DBG_L1,
 				 "Unknown eventid: 0x%x\n", id);
@@ -18492,5 +18497,98 @@ int ath12k_wmi_atf_send_peer_config(struct ath12k *ar,
 	}
 
 	return ret;
+}
+
+int ath12k_wmi_peer_delete_all(struct ath12k_link_vif *arvif)
+{
+	struct ath12k *ar = arvif->ar;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_peer_delete_all_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_peer_delete_all_cmd *)skb->data;
+
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_DELETE_ALL_PEER_FIXED_PARAMS,
+				       sizeof(*cmd));
+
+	cmd->vdev_id = cpu_to_le32(arvif->vdev_id);
+	cmd->peer_type_bitmap = 0;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER, "WMI VDEV Peer delete all for vdev_id:%d",
+		   arvif->vdev_id);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_DELETE_ALL_PEER_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to submit PEER DELETE ALL cmd vdev_id: %d\n",
+			    arvif->vdev_id);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
+static long
+ath12k_wmi_delete_all_peer_resp_pull(struct ath12k_base *ab,
+				     struct sk_buff *skb,
+				     struct wmi_delete_all_peer_resp_arg *arg)
+{
+	const void **tb;
+	const struct wmi_delete_all_peer_resp_ev *ev;
+	long ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %ld\n", ret);
+		return ret;
+	}
+
+	ev = tb[WMI_VDEV_DELETE_ALL_PEER_RESP_EVENT_FIXED_PARAM];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch peer delete all resp ev");
+		kfree(tb);
+		return -EPROTO;
+	}
+
+	arg->vdev_id = __le32_to_cpu(ev->vdev_id);
+	arg->status = __le32_to_cpu(ev->status);
+
+	kfree(tb);
+	return 0;
+}
+
+static void
+ath12k_wmi_delete_all_peer_resp_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	struct ath12k *ar;
+	struct wmi_delete_all_peer_resp_arg arg = {};
+
+	if (ath12k_wmi_delete_all_peer_resp_pull(ab, skb, &arg)) {
+		ath12k_warn(ab, "failed to parse vdev delete all peer response\n");
+		return;
+	}
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, arg.vdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid vdev id in vdev delete resp ev %d",
+			    arg.vdev_id);
+		rcu_read_unlock();
+		return;
+	}
+
+	if (arg.status)
+		complete(&ar->delete_all_peer_done);
+
+	rcu_read_unlock();
+
+	ath12k_dbg(ab, ATH12K_DBG_PEER, "Delete all peer response status:%d for vdev:%d\n",
+		   arg.status, arg.vdev_id);
 }
 
