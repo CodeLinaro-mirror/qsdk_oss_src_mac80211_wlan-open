@@ -5578,14 +5578,13 @@ struct cfg80211_ops {
 	int	(*set_mcast_rate)(struct wiphy *wiphy, struct net_device *dev,
 				  int rate[NUM_NL80211_BANDS]);
 
-	int	(*set_wiphy_params)(struct wiphy *wiphy, u8 radio_id, u32 changed,
-				    struct wireless_dev *wdev, unsigned int link_id);
+	int	(*set_wiphy_params)(struct wiphy *wiphy, int radio_idx, u32 changed);
 
 	int	(*set_tx_power)(struct wiphy *wiphy, struct wireless_dev *wdev,
 				u8 radio_id, enum nl80211_tx_power_setting type, int mbm,
 				unsigned int link_id);
 	int	(*get_tx_power)(struct wiphy *wiphy, struct wireless_dev *wdev,
-				unsigned int link_id, int *dbm);
+				int radio_idx, unsigned int link_id, int *dbm);
 	int     (*set_antenna_gain)(struct wiphy *wiphy, int dbi);
 	void	(*rfkill_poll)(struct wiphy *wiphy);
 
