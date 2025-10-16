@@ -5567,6 +5567,11 @@ static bool ieee80211_invoke_fast_rx(struct ieee80211_rx_data *rx,
 	u8 da_offs = fast_rx->da_offs, sa_offs = fast_rx->sa_offs;
 	u32 last_rate;
 
+	if (fast_rx->uses_rss)
+		stats = this_cpu_ptr(rx->link_sta->pcpu_rx_stats);
+	else
+		stats = &rx->link_sta->rx_stats;
+
 	/* for parallel-rx, we need to have DUP_VALIDATED, otherwise we write
 	 * to a common data structure; drivers can implement that per queue
 	 * but we don't have that information in mac80211
@@ -5667,11 +5672,6 @@ static bool ieee80211_invoke_fast_rx(struct ieee80211_rx_data *rx,
 	}
 	/* push the addresses in front */
 	memcpy(skb_push(skb, sizeof(addrs)), &addrs, sizeof(addrs));
-
-	if (fast_rx->uses_rss)
-		stats = this_cpu_ptr(rx->link_sta->pcpu_rx_stats);
-	else
-		stats = &rx->link_sta->rx_stats;
 
 	last_rate = sta_stats_encode_rate(status);
 	res = ieee80211_rx_mesh_data(rx->sdata, rx->sta, rx->skb);
