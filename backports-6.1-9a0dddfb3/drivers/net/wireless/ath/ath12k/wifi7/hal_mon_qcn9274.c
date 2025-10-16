@@ -326,6 +326,7 @@ const struct hal_mon_ops hal_qcn9274_mon_ops = {
 		ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload,
 	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
+	.get_tx_mon_wmask_config = ath12k_wifi7_hal_tx_mon_get_wmask_config,
 };
 
 const struct hal_mon_ops hal_ipq5332_mon_ops = {
@@ -349,6 +350,7 @@ const struct hal_mon_ops hal_ipq5332_mon_ops = {
 		ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload,
 	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
+	.get_tx_mon_wmask_config = ath12k_wifi7_hal_tx_mon_get_wmask_config,
 };
 
 const struct hal_mon_ops hal_ipq5424_mon_ops = {
@@ -372,6 +374,7 @@ const struct hal_mon_ops hal_ipq5424_mon_ops = {
 		ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload,
 	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
+	.get_tx_mon_wmask_config = ath12k_wifi7_hal_tx_mon_get_wmask_config,
 };
 
 const struct hal_mon_ops hal_qcn6432_mon_ops = {
@@ -395,4 +398,5 @@ const struct hal_mon_ops hal_qcn6432_mon_ops = {
 		ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload,
 	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
+	.get_tx_mon_wmask_config = ath12k_wifi7_hal_tx_mon_get_wmask_config,
 };

@@ -69,6 +69,7 @@
 
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
+struct dp_mon_tx_filter;
 
 struct ath12k_dp_mon_pad_params {
 	u32 frag_size;
@@ -179,9 +180,10 @@ struct ath12k_dp_arch_mon_ops {
 	void (*mon_tx_srng_cleanup)(struct ath12k_dp *dp);
 	int (*mon_tx_htt_srng_setup)(struct ath12k_dp *dp);
 	void (*mon_tx_htt_srng_cleanup)(struct ath12k_dp *dp);
+	int (*mon_tx_filter_configure)(struct ath12k_pdev_dp *dp_pdev, bool state);
+	int (*mon_tx_filter_update)(struct ath12k_pdev_dp *dp_pdev);
 	int (*mon_tx_dst_ring_alloc_setup)(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
 	void (*mon_tx_dst_ring_cleanup)(struct ath12k_pdev_dp *dp_pdev);
-
 };
 
 struct ath12k_dp_mon {
@@ -392,6 +394,7 @@ struct ath12k_pdev_mon_dp {
 	struct ieee80211_rx_status rx_status;
 	struct ath12k_mon_data mon_data;
 	struct dp_mon_rx_filter **rx_filter;
+	struct dp_mon_tx_filter **tx_mon_filter;
 	struct ath12k_dp_mon_ppdu_desc *ppdu_desc_pool;
 	struct list_head ppdu_desc_used_list;
 	struct list_head ppdu_desc_free_list;
@@ -430,6 +433,8 @@ struct ath12k_pdev_mon_dp {
 	 */
 	u8 smart_mon_filter;
 	enum ath12k_dp_smart_mon_state smart_mon_state;
+
+	bool tx_monitor_started:1;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -585,6 +590,8 @@ int ath12k_dp_mon_tx_buff_alloc(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_htt_srng_setup(struct ath12k_dp *dp);
 void ath12k_dp_mon_tx_htt_srng_cleanup(struct ath12k_dp *dp);
 int ath12k_dp_mon_tx_htt_dst_ring_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id);
+int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev, bool enable);
+int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state);
 
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
@@ -776,6 +783,33 @@ int ath12k_dp_mon_pdev_rx_htt_setup(struct ath12k_pdev_dp *dp_pdev, u32 mac_id)
 			ath12k_warn(dp, "failed to setup monitor rx filter ret = %d\n",
 				    ret);
 		}
+	}
+	return 0;
+}
+
+static inline
+int ath12k_dp_mon_tx_update_filter(struct ath12k *ar)
+{
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev;
+	int ret;
+
+	if (unlikely(!ar || !ar->ab)) {
+		ath12k_err(NULL, "Invalid Radio / Radio base\n");
+		return -EINVAL;
+	}
+
+	ab = ar->ab;
+	dp_pdev = &ar->dp;
+	dp = ath12k_ab_to_dp(ab);
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && dp_pdev && mon_ops->mon_tx_filter_update) {
+		ret = mon_ops->mon_tx_filter_update(dp_pdev);
+		if (ret)
+			return ret;
 	}
 
 	return 0;
@@ -1132,7 +1166,6 @@ int ath12k_dp_mon_tx_pdev_alloc(struct ath12k_pdev_dp *dp_pdev,
 		if (ret)
 			ath12k_warn(dp, "Tx Mon: failed to alloc dst ring\n");
 	}
-
 	return ret;
 }
 
@@ -1169,6 +1202,43 @@ int ath12k_dp_mon_tx_htt_src_ring_setup(struct ath12k_dp *dp)
 		ret = mon_ops->mon_tx_htt_srng_setup(dp);
 		if (ret)
 			ath12k_err(dp->ab, "TX Monitor: srng htt setup failed(%d)", ret);
+	}
+
+	return ret;
+}
+
+static inline
+int ath12k_dp_mon_tx_config_monitor_mode(struct ath12k *ar, bool set)
+{
+	struct ath12k_base *ab;
+	struct ath12k_dp *dp;
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev;
+	int ret = -EINVAL;
+
+	if (unlikely(!ar || !ar->ab)) {
+		ath12k_err(NULL, "Invalid Radio / Radio base\n");
+		return -EINVAL;
+	}
+
+	ab = ar->ab;
+	dp = ath12k_ab_to_dp(ab);
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+	dp_pdev = &ar->dp;
+
+	if (set) {
+		ret = ath12k_dp_mon_tx_htt_src_ring_setup(dp);
+		if (ret) {
+			ath12k_err(dp->ab, "TX Monitor: HTT setup failed, ret=%d", ret);
+			return ret;
+		}
+	}
+
+	if (mon_ops && mon_ops->mon_tx_filter_configure) {
+		ret = mon_ops->mon_tx_filter_configure(dp_pdev, set);
+		if (ret)
+			ath12k_err(dp->ab, "TX Monitor: Filter config failed, ret=%d",
+				   ret);
 	}
 
 	return ret;

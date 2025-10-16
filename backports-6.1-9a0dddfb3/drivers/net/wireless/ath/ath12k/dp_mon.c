@@ -2050,8 +2050,14 @@ int ath12k_dp_mon_tx_dst_ring_alloc_setup(struct ath12k_pdev_dp *dp_pdev,
 
 	ret = ath12k_dp_mon_tx_htt_dst_ring_setup(dp_pdev, mac_id);
 
-	if (ret)
+	if (ret) {
 		ath12k_warn(dp->ab, "Tx Mon: failed dest. ring config\n");
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_filter_alloc(dp_pdev);
+	if (ret)
+		ath12k_warn(dp->ab, "Tx Mon: failed filter alloc\n");
 
 	return ret;
 }
@@ -2061,6 +2067,7 @@ void ath12k_dp_mon_tx_dst_ring_cleanup(struct ath12k_pdev_dp *dp_pdev)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 
+	ath12k_dp_mon_tx_filter_free(dp_pdev);
 	ath12k_dp_srng_cleanup(dp->ab, &dp_pdev->dp_mon_pdev->tx_mon_dst_ring);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_tx_dst_ring_cleanup);
@@ -2975,3 +2982,36 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_fill_rx_rate);
+
+int ath12k_dp_mon_tx_monitor_start_stop(struct ath12k *ar, bool state)
+{
+	int ret = -EOPNOTSUPP;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	dp_mon_pdev = ar->dp.dp_mon_pdev;
+	if (!dp_mon_pdev) {
+		ath12k_warn(ar->ab, "Tx Monitor: Invalid Pdev (%d)\n",
+			    ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_config_monitor_mode(ar, state);
+	if (ret) {
+		ath12k_warn(ar->ab, "Tx Monitor: Configuration Failure %d\n",
+			    ret);
+		return ret;
+	}
+
+	ret = ath12k_dp_mon_tx_update_filter(ar);
+	if (ret) {
+		ath12k_warn(ar->ab, "Tx Monitor: fail tx monitor filter update ret %d\n",
+			    ret);
+		/* always set tx mon mode as false in case of failure*/
+		ath12k_dp_mon_tx_config_monitor_mode(ar, false);
+		return ret;
+	}
+	dp_mon_pdev->tx_monitor_started = state;
+	return ret;
+}

@@ -3143,13 +3143,13 @@ ath12k_dp_tx_htt_h2t_ext_stats_req(struct ath12k *ar, u8 type,
 	return 0;
 }
 
-int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
-				     int mac_id, enum hal_ring_type ring_type,
-				     int tx_buf_size,
-				     struct htt_tx_ring_tlv_filter *htt_tlv_filter)
+int ath12k_dp_htt_mon_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
+				      int mac_id, enum hal_ring_type ring_type,
+				      int tx_buf_size,
+				      struct htt_tx_ring_tlv_filter *htt_tlv_filter)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct htt_tx_ring_selection_cfg_cmd *cmd;
+	struct htt_tx_mon_ring_selection_cfg_cmd *cmd;
 	struct hal_srng *srng = &ab->hal.srng_list[ring_id];
 	struct hal_srng_params params;
 	struct sk_buff *skb;
@@ -3173,73 +3173,185 @@ int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 		goto err_free;
 
 	skb_put(skb, len);
-	cmd = (struct htt_tx_ring_selection_cfg_cmd *)skb->data;
+	cmd = (struct htt_tx_mon_ring_selection_cfg_cmd *)skb->data;
+	memset(cmd, 0, len);
+
+	/*word 0*/
 	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_TX_MONITOR_CFG,
-				      HTT_TX_RING_SELECTION_CFG_CMD_INFO0_MSG_TYPE);
+				      HTT_TX_MON_RING_CFG_CMD_INFO0_MSG_TYPE);
 	if (htt_ring_type == HTT_SW_TO_HW_RING ||
 	    htt_ring_type == HTT_HW_TO_SW_RING)
 		cmd->info0 |=
 			le32_encode_bits(DP_SW2HW_MACID(mac_id),
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PDEV_ID);
+					 HTT_TX_MON_RING_CFG_CMD_INFO0_PDEV_ID);
 	else
 		cmd->info0 |=
 			le32_encode_bits(mac_id,
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PDEV_ID);
-	cmd->info0 |= le32_encode_bits(htt_ring_id,
-				       HTT_TX_RING_SELECTION_CFG_CMD_INFO0_RING_ID);
-	cmd->info0 |= le32_encode_bits(!!(params.flags & HAL_SRNG_FLAGS_MSI_SWAP),
-				       HTT_TX_RING_SELECTION_CFG_CMD_INFO0_SS);
-	cmd->info0 |= le32_encode_bits(!!(params.flags & HAL_SRNG_FLAGS_DATA_TLV_SWAP),
-				       HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PS);
+					 HTT_TX_MON_RING_CFG_CMD_INFO0_PDEV_ID);
 
+	cmd->info0 |= le32_encode_bits(!htt_tlv_filter->txmon_disable,
+				       HTT_TX_MON_RING_CFG_CMD_INFO0_EN_TXMON);
+	cmd->info0 |= le32_encode_bits(htt_ring_id,
+				       HTT_TX_MON_RING_CFG_CMD_INFO0_RING_ID);
+	cmd->info0 |= le32_encode_bits(!!(params.flags & HAL_SRNG_FLAGS_MSI_SWAP),
+				       HTT_TX_MON_RING_CFG_CMD_INFO0_SS);
+	cmd->info0 |= le32_encode_bits(!!(params.flags & HAL_SRNG_FLAGS_DATA_TLV_SWAP),
+				       HTT_TX_MON_RING_CFG_CMD_INFO0_PS);
+
+	/*Custom Classify Filter*/
+	cmd->info0 |=
+		le32_encode_bits(!!htt_tlv_filter->mac_addr_filter_en,
+				 HTT_TX_MON_RING_CFG_CMD_INFO0_MAC_ADDR_FLTR_CMD);
+	/*word 1*/
 	cmd->info1 |=
 		le32_encode_bits(tx_buf_size,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_RING_BUFF_SIZE);
+				 HTT_TX_MON_RING_CFG_CMD_INFO1_RING_BUFF_SIZE);
 
+	/*word 1 & 2*/
 	if (htt_tlv_filter->tx_mon_mgmt_filter) {
 		cmd->info1 |=
-			le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_MGMT,
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_PKT_TYPE);
-		cmd->info1 |=
-		le32_encode_bits(htt_tlv_filter->tx_mon_pkt_dma_len,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_MGMT);
+		le32_encode_bits(htt_tlv_filter->tx_mon_mgmt_pkt_dma_len,
+				 HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_MGMT);
 		cmd->info2 |=
-		le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_MGMT,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO2_PKT_TYPE_EN_FLAG);
+		le32_encode_bits(!!htt_tlv_filter->tx_mon_mgmt_filter,
+				 HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_MGMT);
 	}
-
+	/*word 1 & 2*/
 	if (htt_tlv_filter->tx_mon_data_filter) {
 		cmd->info1 |=
-			le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_CTRL,
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_PKT_TYPE);
-		cmd->info1 |=
-		le32_encode_bits(htt_tlv_filter->tx_mon_pkt_dma_len,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_CTRL);
+		le32_encode_bits(htt_tlv_filter->tx_mon_data_pkt_dma_len,
+				 HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_DATA);
 		cmd->info2 |=
-		le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_CTRL,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO2_PKT_TYPE_EN_FLAG);
+		le32_encode_bits(!!htt_tlv_filter->tx_mon_data_filter,
+				 HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_DATA);
 	}
-
+	/*word 1 & 2*/
 	if (htt_tlv_filter->tx_mon_ctrl_filter) {
 		cmd->info1 |=
-			le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_DATA,
-					 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_PKT_TYPE);
-		cmd->info1 |=
-		le32_encode_bits(htt_tlv_filter->tx_mon_pkt_dma_len,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_DATA);
+		le32_encode_bits(htt_tlv_filter->tx_mon_ctrl_pkt_dma_len,
+				 HTT_TX_MON_RING_CFG_CMD_INFO1_CONF_DMA_LEN_CTRL);
 		cmd->info2 |=
-		le32_encode_bits(HTT_STATS_FRAME_CTRL_TYPE_DATA,
-				 HTT_TX_RING_SELECTION_CFG_CMD_INFO2_PKT_TYPE_EN_FLAG);
+		le32_encode_bits(!!htt_tlv_filter->tx_mon_ctrl_filter,
+				 HTT_TX_MON_FRAME_CTRL_INFO2_TYPE_CTRL);
 	}
+	/*word 2*/
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->mgmt_mpdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPSM);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->ctrl_mpdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPSC);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->data_mpdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPSD);
 
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->mgmt_msdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSSM);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->ctrl_msdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSSC);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->data_msdu_start,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSSD);
+
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->mgmt_mpdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPEM);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->ctrl_mpdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPEC);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->data_mpdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MPED);
+
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->mgmt_msdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSEM);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->ctrl_msdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSEC);
+	cmd->info2 |= le32_encode_bits(!!htt_tlv_filter->data_msdu_end,
+				       HTT_TX_MON_FRAME_CTRL_INFO2_MSED);
+	cmd->info2 |=
+		le32_encode_bits(!!htt_tlv_filter->wmask.compaction_enable,
+				 HTT_TX_MON_FRAME_CTRL_INFO2_EN_COMPACTION);
+
+	/*word 3*/
 	cmd->tlv_filter_mask_in0 =
 		cpu_to_le32(htt_tlv_filter->tx_mon_downstream_tlv_flags);
+
+	/*word 4*/
 	cmd->tlv_filter_mask_in1 =
 		cpu_to_le32(htt_tlv_filter->tx_mon_upstream_tlv_flags0);
+
+	/*word 5*/
 	cmd->tlv_filter_mask_in2 =
 		cpu_to_le32(htt_tlv_filter->tx_mon_upstream_tlv_flags1);
+
+	/*word 6*/
 	cmd->tlv_filter_mask_in3 =
 		cpu_to_le32(htt_tlv_filter->tx_mon_upstream_tlv_flags2);
+
+	/*word 7*/
+	cmd->tlv_word_mask_in0 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_fes_setup,
+				 HTT_TX_MON_WMASK_IN0_FES_SETUP_MASK);
+
+	cmd->tlv_word_mask_in0 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_peer_entry,
+				 HTT_TX_MON_WMASK_IN0_PEER_ENTRY_MASK_V1);
+
+	cmd->tlv_word_mask_in0 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_queue_ext,
+				 HTT_TX_MON_WMASK_IN0_TX_QUEUE_EXT_MASK_V1);
+
+	cmd->tlv_word_mask_in0 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_msdu_start,
+				 HTT_TX_MON_WMASK_IN0_MSDU_START_MASK);
+
+	/*word 8*/
+	cmd->tlv_word_mask_in1 |=
+		le32_encode_bits(htt_tlv_filter->wmask.pcu_ppdu_setup_init,
+				 HTT_TX_MON_WMASK_IN1_PCU_PPDU_SETUP_INIT_MASK);
+
+	/*word 9*/
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_mpdu_start,
+				 HTT_TX_MON_WMASK_IN2_MPDU_START_MASK);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(htt_tlv_filter->wmask.rxpcu_user_setup,
+				 HTT_TX_MON_WMASK_IN2_RXPCU_USER_SETUP_MASK);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(htt_tlv_filter->mgmt_mpdu_msdu_log_en,
+				 HTT_TX_MON_WMASK_IN2_MGMT_MPDU_MSDU_LOG_EN);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->ctrl_mpdu_msdu_log_en,
+				 HTT_TX_MON_WMASK_IN2_CTRL_MPDU_MSDU_LOG_EN);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->data_mpdu_msdu_log_en,
+				 HTT_TX_MON_WMASK_IN2_DATA_MPDU_MSDU_LOG_EN);
+
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->mgmt_log_typ,
+				 HTT_TX_MON_WMASK_IN2_MGMT_LOG_TYP);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->ctrl_log_typ,
+				 HTT_TX_MON_WMASK_IN2_CTRL_LOG_TYP);
+	cmd->tlv_word_mask_in2 |=
+		le32_encode_bits(!!htt_tlv_filter->data_log_typ,
+				 HTT_TX_MON_WMASK_IN2_DATA_LOG_TYP);
+
+	/*word 10*/
+	cmd->tlv_word_mask_in3 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_queue_ext,
+				 HTT_TX_MON_WMASK_IN3_TX_QUEUE_EXT_MASK_V2);
+
+	cmd->tlv_word_mask_in3 |=
+	le32_encode_bits(htt_tlv_filter->wmask.tx_peer_entry,
+			 HTT_TX_MON_WMASK_IN3_PEER_ENTRY_MASK_V2);
+
+	/*word 11*/
+	cmd->tlv_word_mask_in4 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_fes_status_end,
+				 HTT_TX_MON_WMASK_IN4_FES_STATUS_END_MASK);
+	cmd->tlv_word_mask_in4 |=
+		le32_encode_bits(htt_tlv_filter->wmask.response_end_status,
+				 HTT_TX_MON_WMASK_IN4_RESPONSE_END_STATUS_MASK);
+
+	/*word 12*/
+	cmd->tlv_word_mask_in5 |=
+		le32_encode_bits(htt_tlv_filter->wmask.tx_fes_status_prot,
+				 HTT_TX_MON_WMASK_IN5_FES_STATUS_PROT_MASK);
 
 	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_TX_MONITOR_CFG,
 			      (u8 *)cmd);

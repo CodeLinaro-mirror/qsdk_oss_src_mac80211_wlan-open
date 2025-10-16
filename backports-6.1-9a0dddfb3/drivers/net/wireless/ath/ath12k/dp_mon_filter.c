@@ -951,3 +951,403 @@ void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pktlog_config_filter);
+
+int ath12k_dp_mon_tx_filter_alloc(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct dp_mon_tx_filter **tx_mon_filter = NULL;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	enum dp_mon_tx_filter_mode mode;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	size_t rq_size = sizeof(struct dp_mon_tx_filter *) * DP_MON_TX_FILTER_MAX;
+
+	if (!dp_mon_pdev || !dp) {
+		ath12k_err(NULL, "Monitor pdev/dp is NULL\n");
+		return -EINVAL;
+	}
+
+	tx_mon_filter = kzalloc(rq_size, GFP_KERNEL);
+	if (!tx_mon_filter)
+		return -ENOMEM;
+
+	dp_mon_pdev->tx_mon_filter = tx_mon_filter;
+	rq_size = sizeof(struct dp_mon_tx_filter) * DP_MON_TX_FILTER_SRNG_TYPE_MAX;
+	for (mode = 0; mode < DP_MON_TX_FILTER_MAX; mode++) {
+		tx_mon_filter[mode] = kzalloc(rq_size, GFP_KERNEL);
+		if (!tx_mon_filter[mode])
+			goto free_tx_filter;
+	}
+
+	return 0;
+
+free_tx_filter:
+	ath12k_dp_mon_tx_filter_free(dp_pdev);
+	return -ENOMEM;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_filter_alloc);
+
+void ath12k_dp_mon_tx_filter_free(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct dp_mon_tx_filter **tx_mon_filter = NULL;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	enum dp_mon_tx_filter_mode mode;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+
+	if (!dp_mon_pdev || !dp) {
+		ath12k_err(NULL, "Monitor pdev/dp is NULL - skip free\n");
+		return;
+	}
+
+	tx_mon_filter = dp_mon_pdev->tx_mon_filter;
+
+	if (!tx_mon_filter) {
+		ath12k_warn(dp, "Monitor tx filter is NULL - skip free\n");
+		return;
+	}
+
+	for (mode = 0; mode < DP_MON_TX_FILTER_MAX; mode++) {
+		if (!tx_mon_filter[mode])
+			continue;
+		kfree(tx_mon_filter[mode]);
+		tx_mon_filter[mode] = NULL;
+	}
+
+	kfree(tx_mon_filter);
+	dp_mon_pdev->tx_mon_filter = NULL;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_filter_free);
+
+void ath12k_dp_mon_tx_display_filters(struct ath12k_dp *dp,
+				      enum dp_mon_tx_filter_mode mode,
+				      struct dp_mon_tx_filter *filter)
+{
+	struct ath12k_base *ab =  dp->ab;
+	struct htt_tx_ring_tlv_filter *src_tlv_filter =
+				&filter->filter;
+	if (!ab) {
+		ath12k_err(NULL, "ath12k base invalid - skip tx filter display\n");
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_MON, "TX MON RING TLV FILTER CONFIG");
+	ath12k_dbg(ab, ATH12K_DBG_DP_MON, "[Mode: %d]: Valid: %d",
+		   mode, filter->valid);
+	if (filter->valid) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "downstream TLV Flags: 0x%X",
+			   src_tlv_filter->tx_mon_downstream_tlv_flags);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "upstream TLV Flags-0: 0x%X",
+			   src_tlv_filter->tx_mon_upstream_tlv_flags0);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "upstream TLV Flags-1: 0x%X",
+			   src_tlv_filter->tx_mon_upstream_tlv_flags1);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "upstream TLV Flags-2: 0x%X",
+			   src_tlv_filter->tx_mon_upstream_tlv_flags2);
+
+		/* Print wmask configuration */
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask pcu_ppdu_setup_init: 0x%X",
+			   src_tlv_filter->wmask.pcu_ppdu_setup_init);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_peer_entry: 0x%X",
+			   src_tlv_filter->wmask.tx_peer_entry);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_queue_ext: 0x%X",
+			   src_tlv_filter->wmask.tx_queue_ext);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_fes_status_end: 0x%X",
+			   src_tlv_filter->wmask.tx_fes_status_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask response_end_status: 0x%X",
+			   src_tlv_filter->wmask.response_end_status);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_fes_status_prot: 0x%X",
+			   src_tlv_filter->wmask.tx_fes_status_prot);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_fes_setup: 0x%X",
+			   src_tlv_filter->wmask.tx_fes_setup);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_msdu_start: 0x%X",
+			   src_tlv_filter->wmask.tx_msdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask tx_mpdu_start: 0x%X",
+			   src_tlv_filter->wmask.tx_mpdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask rxpcu_user_setup: 0x%X",
+			   src_tlv_filter->wmask.rxpcu_user_setup);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "wmask compaction_enable: %d",
+			   src_tlv_filter->wmask.compaction_enable);
+
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt filter enable: %d",
+			   src_tlv_filter->tx_mon_mgmt_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data filter enable: %d",
+			   src_tlv_filter->tx_mon_data_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl filter enable: %d",
+			   src_tlv_filter->tx_mon_ctrl_filter);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "packet dma length data: %d",
+			   src_tlv_filter->tx_mon_data_pkt_dma_len);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "packet dma length ctrl: %d",
+			   src_tlv_filter->tx_mon_ctrl_pkt_dma_len);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "packet dma length mgmt: %d",
+			   src_tlv_filter->tx_mon_mgmt_pkt_dma_len);
+
+		/* Print MPDU/MSDU start/end flags */
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_mpdu_end: %d",
+			   src_tlv_filter->mgmt_mpdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_msdu_end: %d",
+			   src_tlv_filter->mgmt_msdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_msdu_start: %d",
+			   src_tlv_filter->mgmt_msdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_mpdu_start: %d",
+			   src_tlv_filter->mgmt_mpdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_mpdu_end: %d",
+			   src_tlv_filter->ctrl_mpdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_msdu_end: %d",
+			   src_tlv_filter->ctrl_msdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_msdu_start: %d",
+			   src_tlv_filter->ctrl_msdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_mpdu_start: %d",
+			   src_tlv_filter->ctrl_mpdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_mpdu_end: %d",
+			   src_tlv_filter->data_mpdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_msdu_end: %d",
+			   src_tlv_filter->data_msdu_end);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_msdu_start: %d",
+			   src_tlv_filter->data_msdu_start);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_mpdu_start: %d",
+			   src_tlv_filter->data_mpdu_start);
+
+		/* Print additional boolean flags */
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "txmon_disable: %d",
+			   src_tlv_filter->txmon_disable);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_mpdu_msdu_log_en: %d",
+			   src_tlv_filter->mgmt_mpdu_msdu_log_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_mpdu_msdu_log_en: %d",
+			   src_tlv_filter->ctrl_mpdu_msdu_log_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_mpdu_msdu_log_en: %d",
+			   src_tlv_filter->data_mpdu_msdu_log_en);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mgmt_log_typ: %d",
+			   src_tlv_filter->mgmt_log_typ);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "ctrl_log_typ: %d",
+			   src_tlv_filter->ctrl_log_typ);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "data_log_typ: %d",
+			   src_tlv_filter->data_log_typ);
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "mac_addr_filter_en: %d",
+			   src_tlv_filter->mac_addr_filter_en);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_display_filters);
+
+void
+ath12k_dp_mon_tx_setup_mon_mode_filter(struct ath12k_dp *dp,
+				       struct htt_tx_ring_tlv_filter *src_tlv_filter)
+{
+	src_tlv_filter->tx_mon_downstream_tlv_flags =
+					HTT_TX_MON_FILTER_DW_STRM_TLV_DEFAULT_MODE;
+	src_tlv_filter->tx_mon_upstream_tlv_flags0 =
+					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG0;
+	src_tlv_filter->tx_mon_upstream_tlv_flags1 =
+					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG1;
+	src_tlv_filter->tx_mon_upstream_tlv_flags2 =
+					HTT_TX_MON_FILTER_UP_STRM_TLV_FLAG2;
+
+	src_tlv_filter->tx_mon_mgmt_filter = 0x1;
+	src_tlv_filter->tx_mon_data_filter = 0x1;
+	src_tlv_filter->tx_mon_ctrl_filter = 0x1;
+
+	src_tlv_filter->mgmt_mpdu_end = 1;
+	src_tlv_filter->mgmt_msdu_end = 1;
+	src_tlv_filter->mgmt_msdu_start = 1;
+	src_tlv_filter->mgmt_mpdu_start = 1;
+	src_tlv_filter->ctrl_mpdu_end = 1;
+	src_tlv_filter->ctrl_msdu_end = 1;
+	src_tlv_filter->ctrl_msdu_start = 1;
+	src_tlv_filter->ctrl_mpdu_start = 1;
+	src_tlv_filter->data_mpdu_end = 1;
+	src_tlv_filter->data_msdu_end = 1;
+	src_tlv_filter->data_msdu_start = 1;
+	src_tlv_filter->data_mpdu_start = 1;
+
+	src_tlv_filter->mgmt_mpdu_msdu_log_en = 1;
+	src_tlv_filter->ctrl_mpdu_msdu_log_en = 1;
+	src_tlv_filter->data_mpdu_msdu_log_en = 1;
+
+	src_tlv_filter->mgmt_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+	src_tlv_filter->ctrl_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+	src_tlv_filter->data_log_typ = HTT_TX_MON_WMASK_IN2_MPDU_LOG;
+
+	src_tlv_filter->tx_mon_mgmt_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+	src_tlv_filter->tx_mon_data_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+	src_tlv_filter->tx_mon_ctrl_pkt_dma_len = DP_TX_MON_MAX_DMA_LENGTH;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_setup_mon_mode_filter);
+
+int ath12k_dp_mon_tx_config_filter(struct ath12k_pdev_dp *dp_pdev,
+				   bool enable)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_tx_filter filter = {0};
+
+	struct htt_tx_ring_tlv_filter *src_tlv_filter;
+	enum dp_mon_tx_filter_mode mode = DP_MON_TX_FULL_MONITOR;
+	enum dp_mon_tx_filter_srng_type srng_type =
+		DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
+
+	if (!dp || !dp->hal) {
+		ath12k_err(NULL, "dp / dp hal  invalid - skipping tx mon mode config\n");
+		return -EINVAL;
+	}
+
+	if (enable) {
+		filter.valid = true;
+		src_tlv_filter = &filter.filter;
+		ath12k_dp_mon_tx_setup_mon_mode_filter(dp, src_tlv_filter);
+		ath12k_hal_mon_tx_get_wmask_config(dp->hal, &src_tlv_filter->wmask);
+		dp_mon_pdev->tx_mon_filter[mode][srng_type] = filter;
+	} else {
+		dp_mon_pdev->tx_mon_filter[mode][srng_type] = filter;
+	}
+	ath12k_dp_mon_tx_display_filters(dp, mode, &filter);
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_config_filter);
+
+void ath12k_dp_mon_tx_prepare_filter(struct ath12k_dp *dp,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     enum dp_mon_tx_filter_srng_type srng_type,
+				     struct dp_mon_tx_filter *tx_mon_filter)
+{
+	enum dp_mon_tx_filter_mode mode = 0;
+	struct htt_tx_ring_tlv_filter *dst_tlv_filter = &tx_mon_filter->filter;
+	struct htt_tx_ring_tlv_filter *src_tlv_filter;
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	struct dp_mon_tx_filter *src_tx_mon_filter;
+	struct hal_tx_mon_wmask_config *src_wmask;
+	struct hal_tx_mon_wmask_config *dest_wmask = &tx_mon_filter->filter.wmask;
+
+	/*
+	 * loop through all the modes
+	 */
+	for (mode = 0; mode < DP_MON_TX_FILTER_MAX; mode++) {
+		src_tx_mon_filter = &dp_mon_pdev->tx_mon_filter[mode][srng_type];
+		src_tlv_filter = &src_tx_mon_filter->filter;
+		src_wmask = &src_tlv_filter->wmask;
+
+		if (!src_tx_mon_filter->valid)
+			continue;
+
+		tx_mon_filter->valid = true;
+		dst_tlv_filter->tx_mon_downstream_tlv_flags |=
+			src_tlv_filter->tx_mon_downstream_tlv_flags;
+		dst_tlv_filter->tx_mon_upstream_tlv_flags0 |=
+			src_tlv_filter->tx_mon_upstream_tlv_flags0;
+		dst_tlv_filter->tx_mon_upstream_tlv_flags1 |=
+			src_tlv_filter->tx_mon_upstream_tlv_flags1;
+		dst_tlv_filter->tx_mon_upstream_tlv_flags2 |=
+			src_tlv_filter->tx_mon_upstream_tlv_flags2;
+		dst_tlv_filter->tx_mon_mgmt_filter |=
+					src_tlv_filter->tx_mon_mgmt_filter;
+		dst_tlv_filter->tx_mon_data_filter |=
+					src_tlv_filter->tx_mon_data_filter;
+		dst_tlv_filter->tx_mon_ctrl_filter |=
+					src_tlv_filter->tx_mon_ctrl_filter;
+
+		dst_tlv_filter->mgmt_mpdu_end |= src_tlv_filter->mgmt_mpdu_end;
+		dst_tlv_filter->mgmt_msdu_end |= src_tlv_filter->mgmt_msdu_end;
+		dst_tlv_filter->mgmt_msdu_start |= src_tlv_filter->mgmt_msdu_start;
+		dst_tlv_filter->mgmt_mpdu_start |= src_tlv_filter->mgmt_mpdu_start;
+		dst_tlv_filter->ctrl_mpdu_end |= src_tlv_filter->ctrl_mpdu_end;
+		dst_tlv_filter->ctrl_msdu_end |= src_tlv_filter->ctrl_msdu_end;
+		dst_tlv_filter->ctrl_msdu_start |= src_tlv_filter->ctrl_msdu_start;
+		dst_tlv_filter->ctrl_mpdu_start |= src_tlv_filter->ctrl_mpdu_start;
+		dst_tlv_filter->data_mpdu_end |= src_tlv_filter->data_mpdu_end;
+		dst_tlv_filter->data_msdu_end |= src_tlv_filter->data_msdu_end;
+		dst_tlv_filter->data_msdu_start |= src_tlv_filter->data_msdu_start;
+		dst_tlv_filter->data_mpdu_start |= src_tlv_filter->data_mpdu_start;
+		dst_tlv_filter->mgmt_mpdu_msdu_log_en |=
+					src_tlv_filter->mgmt_mpdu_msdu_log_en;
+		dst_tlv_filter->ctrl_mpdu_msdu_log_en |=
+					src_tlv_filter->ctrl_mpdu_msdu_log_en;
+		dst_tlv_filter->data_mpdu_msdu_log_en |=
+					src_tlv_filter->data_mpdu_msdu_log_en;
+
+		dst_tlv_filter->mgmt_log_typ |= src_tlv_filter->mgmt_log_typ;
+		dst_tlv_filter->ctrl_log_typ |= src_tlv_filter->ctrl_log_typ;
+		dst_tlv_filter->data_log_typ |= src_tlv_filter->data_log_typ;
+
+		dst_tlv_filter->txmon_disable |= src_tlv_filter->txmon_disable;
+		dst_tlv_filter->tx_mon_mgmt_pkt_dma_len |=
+					src_tlv_filter->tx_mon_mgmt_pkt_dma_len;
+		dst_tlv_filter->tx_mon_data_pkt_dma_len |=
+					src_tlv_filter->tx_mon_data_pkt_dma_len;
+		dst_tlv_filter->tx_mon_ctrl_pkt_dma_len |=
+					src_tlv_filter->tx_mon_ctrl_pkt_dma_len;
+
+		dest_wmask->pcu_ppdu_setup_init |= src_wmask->pcu_ppdu_setup_init;
+		dest_wmask->tx_peer_entry |= src_wmask->tx_peer_entry;
+		dest_wmask->tx_queue_ext |= src_wmask->tx_queue_ext;
+		dest_wmask->tx_fes_status_end |= src_wmask->tx_fes_status_end;
+		dest_wmask->response_end_status |= src_wmask->response_end_status;
+		dest_wmask->tx_fes_status_prot |= src_wmask->tx_fes_status_prot;
+		dest_wmask->tx_fes_setup |= src_wmask->tx_fes_setup;
+		dest_wmask->tx_msdu_start |= src_wmask->tx_msdu_start;
+		dest_wmask->tx_mpdu_start |= src_wmask->tx_mpdu_start;
+		dest_wmask->rxpcu_user_setup |= src_wmask->rxpcu_user_setup;
+		dest_wmask->compaction_enable |= src_wmask->compaction_enable;
+
+		ath12k_generic_dbg(ATH12K_DBG_DP_MON, "Updated Tx filters for mode: %d",
+				   mode);
+		ath12k_dp_mon_tx_display_filters(dp, mode, tx_mon_filter);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_prepare_filter);
+
+int
+ath12k_dp_mon_tx_htt_update_filters(struct ath12k_dp *dp,
+				    struct ath12k_pdev_dp *dp_pdev,
+				    enum dp_mon_tx_filter_srng_type srng_type,
+				    struct htt_tx_ring_tlv_filter *tx_tlv_filter)
+{
+	struct ath12k_pdev_mon_dp *dp_mon_pdev = dp_pdev->dp_mon_pdev;
+	int ret = -EINVAL;
+	enum hal_ring_type ring_type = HAL_TX_MONITOR_DST;
+
+	int ring_buf_size, mac_id, ring_id;
+
+	if (!dp_mon_pdev || !dp->ab) {
+		ath12k_err(NULL, "Tx Mon: mon pdev/base invalid - skip filter config\n");
+		return ret;
+	}
+
+	ring_id = dp_mon_pdev->tx_mon_dst_ring.ring_id;
+	mac_id = dp_pdev->mac_id;
+	ring_buf_size = DP_RXDMA_REFILL_RING_SIZE;
+
+	ret = ath12k_dp_htt_mon_tx_filter_setup(dp->ab, ring_id, mac_id,
+						ring_type, ring_buf_size,
+						tx_tlv_filter);
+	if (ret) {
+		ath12k_err(dp->ab,
+			   "Tx Mon filter setup fail ring = %d srng_type = %d (%d)\n",
+			   ring_id, srng_type, ret);
+		return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_htt_update_filters);
+
+int ath12k_dp_mon_tx_update_ring_filter(struct ath12k_pdev_dp *dp_pdev)
+{
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct dp_mon_tx_filter tx_mon_filter = {0};
+	struct htt_tx_ring_tlv_filter *tx_tlv_filter;
+	int ret = -EINVAL;
+	enum dp_mon_tx_filter_srng_type srng_type = DP_MON_TX_FILTER_SRNG_TYPE_TXMON_DEST;
+
+	if (!dp) {
+		ath12k_err(NULL, "dp invalid - skipping tx mon filter update\n");
+		return ret;
+	}
+
+	tx_tlv_filter = &tx_mon_filter.filter;
+	ath12k_dp_mon_tx_prepare_filter(dp, dp_pdev, srng_type, &tx_mon_filter);
+	if (tx_mon_filter.valid)
+		tx_tlv_filter->txmon_disable = false;
+	else
+		tx_tlv_filter->txmon_disable = true;
+
+	ret = ath12k_dp_mon_tx_htt_update_filters(dp, dp_pdev, srng_type,
+						  tx_tlv_filter);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_update_ring_filter);

@@ -18,6 +18,18 @@ extern const struct hal_mon_ops hal_ipq5332_mon_ops;
 extern const struct hal_mon_ops hal_ipq5424_mon_ops;
 extern const struct hal_mon_ops hal_qcn6432_mon_ops;
 
+#define HAL_TX_MON_WMASK_COMPACT_EN_CFG			0x1
+#define HAL_TX_MON_WMASK_PCU_PPDU_SETUP_INIT_CFG	0x1E800000
+#define HAL_TX_MON_WMASK_FES_SETUP_CFG			0x3
+#define HAL_TX_MON_WMASK_PEER_ENTRY_CFG			0x103
+#define HAL_TX_MON_WMASK_QUEUE_EXT_CFG			0x1
+#define HAL_TX_MON_WMASK_MSDU_START_CFG			0x1
+#define HAL_TX_MON_WMASK_MPDU_START_CFG			0x3
+#define HAL_TX_MON_WMASK_FES_STATUS_END_CFG		0x7
+#define HAL_TX_MON_WMASK_RESPONSE_END_STATUS_CFG	0xD
+#define HAL_TX_MON_WMASK_FES_STATUS_PROT_CFG		0x3
+#define HAL_TX_MON_WMASK_RXPCU_USER_SETUP_CFG		0xFF
+
 u32 ath12k_wifi7_hal_mon_rx_mpdu_start_wmask_get(void)
 {
 	return RX_MON_MPDU_START_WMASK;
@@ -2651,4 +2663,20 @@ void ath12k_wifi7_hal_mon_ops_init(struct ath12k_hal *hal,
 	default:
 		break;
 	}
+}
+
+void
+ath12k_wifi7_hal_tx_mon_get_wmask_config(struct hal_tx_mon_wmask_config *wmsk)
+{
+	wmsk->compaction_enable = HAL_TX_MON_WMASK_COMPACT_EN_CFG;
+	wmsk->tx_fes_setup = HAL_TX_MON_WMASK_FES_SETUP_CFG;
+	wmsk->tx_peer_entry = HAL_TX_MON_WMASK_PEER_ENTRY_CFG;
+	wmsk->tx_queue_ext = HAL_TX_MON_WMASK_QUEUE_EXT_CFG;
+	wmsk->tx_msdu_start = HAL_TX_MON_WMASK_MSDU_START_CFG;
+	wmsk->pcu_ppdu_setup_init = HAL_TX_MON_WMASK_PCU_PPDU_SETUP_INIT_CFG;
+	wmsk->tx_mpdu_start = HAL_TX_MON_WMASK_MPDU_START_CFG;
+	wmsk->rxpcu_user_setup = HAL_TX_MON_WMASK_RXPCU_USER_SETUP_CFG;
+	wmsk->tx_fes_status_end = HAL_TX_MON_WMASK_FES_STATUS_END_CFG;
+	wmsk->response_end_status = HAL_TX_MON_WMASK_RESPONSE_END_STATUS_CFG;
+	wmsk->tx_fes_status_prot = HAL_TX_MON_WMASK_FES_STATUS_PROT_CFG;
 }
