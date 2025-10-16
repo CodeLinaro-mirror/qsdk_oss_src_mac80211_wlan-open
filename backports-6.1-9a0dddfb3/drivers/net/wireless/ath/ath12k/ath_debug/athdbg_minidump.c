@@ -25,6 +25,19 @@ const char *ath12k_dump_list[] = {
 	"hal_rx_fst",
 	"ath12k_reg_info",
 	"ieee80211_regdomain",
+	"ath12k_wmi_scan_chan_list_arg",
+	"ath12k_ce_ring",
+	"ath12k_mac_pri_link_migr_peer_node",
+	"ath12k_vlan_iface",
+	"ath12k_key_conf",
+	"ath12k_link_sta",
+	"ath12k_peer_ch_width_switch_data",
+	"ath12k_qos_map",
+	"ath12k_wmi_scan_req_arg",
+	"ath12k_neighbor_peer",
+	"ath12k_set_neighbor_rx_params",
+	"ath12k_chan_eirp_obj",
+	"ath12k_dcs_wlan_interference"
 };
 
 struct list_head athdbg_minidump_list = LIST_HEAD_INIT(athdbg_minidump_list);
