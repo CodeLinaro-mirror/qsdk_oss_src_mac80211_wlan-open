@@ -5051,6 +5051,8 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	if (unlikely(!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))) {
 		queue = ieee80211_select_queue(sdata, sta, skb);
 		skb_set_queue_mapping(skb, queue);
+	} else {
+		queue = skb_get_queue_mapping(skb);
 	}
 
 	skb->priority = cfg80211_classify8021d(skb, NULL);
