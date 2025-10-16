@@ -3858,7 +3858,12 @@ ieee80211_xmit_fast_finish(struct ieee80211_sub_if_data *sdata,
 	if (pn_offs) {
 		u64 pn;
 		u8 *crypto_hdr = skb->data + pn_offs;
-
+		if (!key) {
+			if (!tid_stats_disable)
+				ieee80211_tx_drop_stats(sdata, info->tid,
+							TX_DROP_KEY_FAIL);
+			return TX_DROP;
+		}
 		switch (key->conf.cipher) {
 		case WLAN_CIPHER_SUITE_CCMP:
 		case WLAN_CIPHER_SUITE_CCMP_256:
