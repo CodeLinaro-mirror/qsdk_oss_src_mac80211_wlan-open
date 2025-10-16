@@ -3502,11 +3502,19 @@ __ieee80211_rx_h_amsdu(struct ieee80211_rx_data *rx, u8 data_offset)
 		rx->sta->amsdu_mesh_control = valid;
 	}
 
-	ieee80211_amsdu_to_8023s(skb, &frame_list, dev->dev_addr,
-				 rx->sdata->vif.type,
-				 rx->local->hw.extra_tx_headroom,
-				 check_da, check_sa,
-				 rx->sta->amsdu_mesh_control);
+	if (rx->sta) {
+		ieee80211_amsdu_to_8023s(skb, &frame_list, dev->dev_addr,
+					 rx->sdata->vif.type,
+					 rx->local->hw.extra_tx_headroom,
+					 check_da, check_sa,
+					 rx->sta->amsdu_mesh_control);
+	} else {
+		if (!tid_stats_disable)
+			ieee80211_rx_drop_stats_reason(rx->sdata, skb->len,
+						       status->tid,
+						       RX_DROP_BAD_AMSDU);
+		return RX_DROP_U_BAD_AMSDU;
+	}
 
 	while (!skb_queue_empty(&frame_list)) {
 		rx->skb = __skb_dequeue(&frame_list);
