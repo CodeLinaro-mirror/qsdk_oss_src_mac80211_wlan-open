@@ -1458,10 +1458,6 @@ static int _sta_info_move_state(struct sta_info *sta,
 				synchronize_net();
 				if (local->ops->flush_sta)
 					drv_flush_sta(local, sta->sdata, sta);
-				else
-					ieee80211_flush_queues(local,
-							       sta->sdata,
-							       false);
 			}
 
 			ieee80211_clear_fast_xmit(sta);
