@@ -247,10 +247,14 @@ static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
 static struct ath12k_dp_hw_group *ath12k_wifi8_dp_hw_group_alloc(void)
 {
 	struct ath12k_dp_hw_group *dp_hw_grp;
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8;
 
-	dp_hw_grp = kzalloc(sizeof(*dp_hw_grp), GFP_KERNEL);
+	dp_hw_grp = kzalloc(sizeof(*dp_hw_grp) + sizeof(*dp_hw_grp_wifi8), GFP_KERNEL);
 	if (!dp_hw_grp)
 		return NULL;
+
+	dp_hw_grp_wifi8 = ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	dp_hw_grp_wifi8->dp_hw_grp = dp_hw_grp;
 
 	return dp_hw_grp;
 }
@@ -286,11 +290,15 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp;
+	struct ath12k_dp_wifi8 *dp_wifi8;
 	int ret;
 
-	dp = kzalloc(sizeof(*dp), GFP_KERNEL);
+	dp = kzalloc(sizeof(*dp) + sizeof(*dp_wifi8), GFP_KERNEL);
 	if (!dp)
 		return NULL;
+
+	dp_wifi8 = ath12k_get_dp_wifi8(dp);
+	dp_wifi8->dp = dp;
 
 	dp->arch_ops = &ath12k_wifi8_dp_arch_ops;
 	dp->ppe.ppeds_wlanops = &ppeds_wlanops_v2;
