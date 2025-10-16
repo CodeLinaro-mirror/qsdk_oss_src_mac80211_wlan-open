@@ -1080,15 +1080,6 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);
 ssize_t ath12k_dp_dump_device_ring_stats(struct ath12k_base *ab,
 					 char *buf, int size);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
-				  struct ath12k_dp *dp, bool vdev_id_check_en);
-struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
-							      u32 desc_id);
-int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);
-int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab);
-void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
-int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 				struct ath12k_telemetry_dp_device *telemetry_device);
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
@@ -1099,7 +1090,15 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     u8 link_id);
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
+				  struct ath12k_dp *dp, bool vdev_id_check_en);
+struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
+							      u32 desc_id);
+int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);
+int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
+int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
 void ath12k_dp_increment_bank_num_users(struct ath12k_dp *dp,
 					int bank_id);
 #endif

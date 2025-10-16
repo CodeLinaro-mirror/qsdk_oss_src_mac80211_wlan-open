@@ -643,10 +643,10 @@ ath12k_afc_power_event_update_or_get_len(struct ath12k *ar,
 {
 	struct ath12k_afc_chan_obj *pow_evt_chan_info = NULL;
 	struct ath12k_chan_eirp_obj *pow_evt_eirp_info = NULL;
-	struct nlattr *nla_attr;
+	struct nlattr *nla_attr = NULL;
 	struct nlattr *freq_info;
-	struct nlattr *opclass_info;
-	struct nlattr *chan_list;
+	struct nlattr *opclass_info = NULL;
+	struct nlattr *chan_list = NULL;
 	struct nlattr *chan_info = NULL;
 	int i, j, len = NLMSG_HDRLEN;
 	u8 hw_idx;
@@ -871,7 +871,7 @@ ath12k_afc_expiry_event_update_or_get_len(struct ath12k *ar,
 					  struct sk_buff *vendor_event,
 					  struct ath12k_afc_host_request *afc_req)
 {
-	struct nlattr *nla_attr;
+	struct nlattr *nla_attr = NULL;
 	struct nlattr *freq_info;
 	struct nlattr *opclass_info = NULL;
 	struct nlattr *chan_list = NULL;
@@ -1159,7 +1159,7 @@ int ath12k_send_afc_request(struct ath12k *ar, struct ath12k_afc_host_request *a
 {
 	struct sk_buff *vendor_event;
 	int vendor_buffer_len;
-	int ret;
+	int ret = 0;
 
 	if (!afc_req) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_AFC, "AFC Host request is NULL\n");
@@ -1237,7 +1237,7 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 			       struct ath12k_telemetry_command *cmd)
 {
 	struct nlattr *feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {0};
-	int ret;
+	int ret = 0;
 
 	memset(&cmd->feat, 0, sizeof(struct ath12k_stats_feat));
 
@@ -1558,6 +1558,7 @@ static int ath12k_prepare_device_vendor_event(struct sk_buff *vendor_event,
 	}
 
 	memset(telemetry_device, 0, sizeof(*telemetry_device));
+
 	ath12k_dp_get_device_stats(dp, telemetry_device);
 
 	if (cmd->feat.feat_rx) {
@@ -3397,6 +3398,7 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 	}
 
 	memset(telemetry_vif, 0, sizeof(*telemetry_vif));
+
 	ath12k_dp_get_vif_stats(ahvif, telemetry_vif, cmd->link_id);
 
 	if (cmd->feat.feat_rx) {
@@ -3529,6 +3531,7 @@ static int ath12k_prepare_radio_vendor_event(struct sk_buff *vendor_event,
 	}
 
 	memset(telemetry_radio, 0, sizeof(*telemetry_radio));
+
 	ath12k_dp_get_pdev_stats(dp_pdev, telemetry_radio);
 
 	if (cmd->feat.feat_rx) {
@@ -4179,6 +4182,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	if (tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]) {
 		ppe_vp_type = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ppe_vp_type > PPE_VP_USER_TYPE_DS) {
 		ath12k_dbg(NULL, ATH12K_DBG_PPE, "ppe_vp_type value greater than 4 (%d)(%s)\n",
 			   ppe_vp_type, wdev->netdev->name);
@@ -4200,6 +4204,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 		ppe_vp_type = 1;
 		break;
 	}
+#endif
 
 	if (!ath12k_ppe_ds_enabled) {
 		type = "passive";
