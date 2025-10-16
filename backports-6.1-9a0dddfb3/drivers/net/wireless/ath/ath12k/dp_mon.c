@@ -2756,6 +2756,53 @@ void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp)
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_process_low_thres);
 
+void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp)
+{
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
+	struct dp_rxdma_mon_ring *tx_buff_ring;
+	struct hal_srng *srng;
+	int num_free, free_list_count;
+	LIST_HEAD(list);
+
+	spin_lock_bh(&dp_mon->tx_mon_desc_lock);
+
+	/* Rings are not initialized - deffer the refill
+	 * This IRQ group is shared by Rx Mon dest. ring interrupts - Likely to happen
+	 */
+	if (!dp_mon->tx_mon_buf_ring_ready) {
+		spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+		return;
+	}
+
+	tx_buff_ring = &dp_mon->tx_mon_buf_ring;
+	srng = &dp->hal->srng_list[tx_buff_ring->refill_buf_ring.ring_id];
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
+	/* if ring is less than half filled need to replenish */
+	if (num_free < (tx_buff_ring->bufs_max / 2)) {
+		ath12k_hal_srng_access_end(ab, srng);
+		spin_unlock_bh(&srng->lock);
+		return;
+	}
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	free_list_count =
+		ath12k_dp_mon_list_cut_nodes(&list,
+					     &dp->dp_mon->tx_mon_desc_free_list,
+					     num_free);
+	spin_unlock_bh(&dp_mon->tx_mon_desc_lock);
+
+	if (free_list_count)
+		ath12k_dp_mon_tx_buf_replenish(dp, tx_buff_ring, &list, free_list_count);
+}
+EXPORT_SYMBOL(ath12k_dp_mon_tx_process_low_thres);
+
 void
 ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count)
 {

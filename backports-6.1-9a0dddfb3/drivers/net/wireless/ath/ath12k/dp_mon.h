@@ -565,6 +565,7 @@ void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 			       int offset, int frag_len, bool take_frag_ref);
 int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw);
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp);
+void ath12k_dp_mon_tx_process_low_thres(struct ath12k_dp *dp);
 void
 ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count);
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,

@@ -154,6 +154,9 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	if (dp->hw_params->ring_mask->host2rxmon[grp_id])
 		ath12k_dp_mon_rx_process_low_thres(dp);
 
+	if (dp->hw_params->ring_mask->tx_mon_buff[grp_id])
+		ath12k_dp_mon_tx_process_low_thres(dp);
+
 	/* TODO: Implement handler for other interrupts */
 
 done:
