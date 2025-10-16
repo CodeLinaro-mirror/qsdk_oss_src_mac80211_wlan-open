@@ -98,4 +98,6 @@ void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			       enum hal_reo_cmd_status status);
 void ath12k_wifi8_dp_rx_ring_free(struct ath12k_base *ab);
 int ath12k_wifi8_dp_rx_ring_setup(struct ath12k_base *ab);
+int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab);
+void ath12k_wifi8_dp_pdev_free(struct ath12k_base *ab);
 #endif

@@ -47,6 +47,4 @@ static inline struct ath12k_dp_hw_group *
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab);
 void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp);
-int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab);
-void ath12k_wifi8_dp_pdev_free(struct ath12k_base *ab);
 #endif
