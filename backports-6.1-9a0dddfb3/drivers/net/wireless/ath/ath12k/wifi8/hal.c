@@ -684,22 +684,7 @@ void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab)
 enum hal_rx_buf_return_buf_manager
 ath12k_wifi8_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 {
-	switch (device_id) {
-	case 0:
-		return HAL_RX_BUF_RBM_WBM_DEV0_IDLE_DESC_LIST;
-	case 1:
-		return HAL_RX_BUF_RBM_WBM_DEV1_IDLE_DESC_LIST;
-	case 2:
-		return HAL_RX_BUF_RBM_WBM_DEV2_IDLE_DESC_LIST;
-	case 3:
-		return HAL_RX_BUF_RBM_WBM_DEV3_IDLE_DESC_LIST;
-	default:
-		ath12k_warn(hal,
-			    "invalid %d device id, so choose default rbm\n",
-			    device_id);
-		WARN_ON(1);
-		return HAL_RX_BUF_RBM_WBM_DEV0_IDLE_DESC_LIST;
-	}
+	return HAL_RX_BUF_RBM_WBM_DEV0_IDLE_DESC_LIST;
 }
 
 void ath12k_wifi8_hal_srng_hw_disable(struct ath12k_base *ab,
