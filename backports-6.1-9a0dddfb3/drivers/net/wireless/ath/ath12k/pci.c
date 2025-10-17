@@ -1163,6 +1163,19 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	struct ath12k_base *ab;
 	int ret;
 
+#ifdef PLATFORM_SDX85
+	/* init memory-region idx 0 for the dev, so the further dma alloc will get
+	 * allocated from this region
+	 */
+	ret = of_reserved_mem_device_init(&pdev->dev);
+	if (ret) {
+		dev_err(&pdev->dev,
+			"Failed to init reserved mem device, err = %d\n",
+			ret);
+		return -ENOMEM;
+	}
+#endif
+
 	ab = ath12k_core_alloc(&pdev->dev, sizeof(*ab_pci), ATH12K_BUS_PCI);
 	if (!ab) {
 		dev_err(&pdev->dev, "failed to allocate ath12k base\n");

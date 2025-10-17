@@ -1219,6 +1219,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 	},
 };
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
 						    struct ieee80211_vif *vif,
 						    struct net_device *dev)
@@ -1261,6 +1262,7 @@ static int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw,
 
 	return ret;
 }
+#endif
 
 void ath12k_wifi7_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				       struct sk_buff *skb,
@@ -1321,7 +1323,10 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	u32 qos_nw_delay = info->sawf.nw_delay;
 	u16 frm_type = 0;
 	u16 mcbc_gsn;
-	u8 link_id, tid;
+	u8 link_id;
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
+	u8 tid;
+#endif
 	int ret;
 	u8 qos_tag;
 	enum ath12k_dp_tx_enq_error err;
@@ -1643,7 +1648,6 @@ skip_nwifi:
 								  dp_vif,
 								  DP_TX_ENQ_DROP_INV_PEER,
 								  ring_id, true);
-
 				continue;
 			}
 

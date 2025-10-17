@@ -50,9 +50,18 @@ int athdbg_qmi_pci_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 
 		ab->dbg_qmi.qdss_mem[0].paddr =
 			ddr_rmem->base + ab->host_ddr_fixed_mem_off;
+
+#ifdef PLATFORM_SDX85
+		dma_alloc_attrs(ab->dev,
+				ab->dbg_qmi.qdss_mem[0].size,
+				&ab->dbg_qmi.qdss_mem[0].paddr,
+				GFP_KERNEL,
+				DMA_ATTR_FORCE_CONTIGUOUS);
+#else
 		ab->dbg_qmi.qdss_mem[0].v.ioaddr =
 			ioremap(ab->dbg_qmi.qdss_mem[0].paddr,
 				ab->dbg_qmi.qdss_mem[0].size);
+#endif
 		if (!ab->dbg_qmi.qdss_mem[0].v.ioaddr) {
 			pr_err("WARNING etr-addr remap failed\n");
 			return -ENOMEM;
@@ -88,9 +97,17 @@ int athdbg_qmi_qdss_mem_alloc(struct athdbg_qmi *dbg_qmi)
 			ab->dbg_qmi.qdss_mem[i].paddr = rmem->base;
 			ab->dbg_qmi.qdss_mem[i].size = rmem->size;
 			ab->dbg_qmi.qdss_mem[i].type = QDSS_ETR_MEM_REGION_TYPE;
+#ifdef PLATFORM_SDX85
+			dma_alloc_attrs(ab->dev,
+					ab->dbg_qmi.qdss_mem[0].size,
+					&ab->dbg_qmi.qdss_mem[0].paddr,
+					GFP_KERNEL,
+					DMA_ATTR_FORCE_CONTIGUOUS);
+#else
 			ab->dbg_qmi.qdss_mem[i].v.ioaddr =
 				ioremap(ab->dbg_qmi.qdss_mem[i].paddr,
 					ab->dbg_qmi.qdss_mem[i].size);
+#endif
 			if (!ab->dbg_qmi.qdss_mem[i].v.ioaddr) {
 				pr_err("Error: etr-addr remap failed\n");
 				return -ENOMEM;

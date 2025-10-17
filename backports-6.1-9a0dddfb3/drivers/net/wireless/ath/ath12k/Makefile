@@ -23,7 +23,6 @@ ath12k-y += core.o \
 	    fw.o \
 	    p2p.o \
 	    fse.o \
-	    ahb.o \
 	    vendor.o \
 	    umac_reset.o \
 	    accel_cfg.o \
