@@ -8309,7 +8309,7 @@ static void cfg80211_sta_set_mld_sinfo(struct station_info *sinfo)
 {
 	struct link_station_info *link_sinfo;
 	int link_id, init = 0;
-	u32 link_inactive_time;
+	u32 link_inactive_time = 0;
 
 	sinfo->signal = -99;
 
@@ -20875,15 +20875,20 @@ void nl80211_common_reg_change_event(enum nl80211_commands cmd_id,
 		goto nla_put_failure;
 
 	genlmsg_end(msg, hdr);
+#ifndef PLATFORM_SDX85
 #if LINUX_VERSION_IS_GEQ(6,6,59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
 #else
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
-                                NL80211_MCGRP_REGULATORY,
+				NL80211_MCGRP_REGULATORY,
 				GFP_ATOMIC);
 #endif
-
+#else
+	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
+				NL80211_MCGRP_REGULATORY,
+				GFP_ATOMIC);
+#endif
 	return;
 
 nla_put_failure:
@@ -21674,12 +21679,18 @@ void nl80211_send_beacon_hint_event(struct wiphy *wiphy,
 	nla_nest_end(msg, nl_freq);
 
 	genlmsg_end(msg, hdr);
+#ifndef PLATFORM_SDX85
 #if LINUX_VERSION_IS_GEQ(6,6,59)
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
 				NL80211_MCGRP_REGULATORY);
 #else
 	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
-                                NL80211_MCGRP_REGULATORY,
+				NL80211_MCGRP_REGULATORY,
+				GFP_ATOMIC);
+#endif
+#else
+	genlmsg_multicast_allns(&nl80211_fam, msg, 0,
+				NL80211_MCGRP_REGULATORY,
 				GFP_ATOMIC);
 #endif
 	return;

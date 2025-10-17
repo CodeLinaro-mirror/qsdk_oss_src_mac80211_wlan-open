@@ -2278,7 +2278,7 @@ cfg80211_inform_single_bss_data(struct wiphy *wiphy,
 	struct cfg80211_internal_bss tmp = {}, *res;
 	int bss_type;
 	bool signal_valid;
-	unsigned long ts;
+	unsigned long ts = 0;
 
 	if (WARN_ON(!wiphy))
 		return NULL;

@@ -2847,7 +2847,7 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 	bool multicast;
 	u16 info_id = 0;
 	struct ieee80211_chanctx_conf *chanctx_conf = NULL;
-	enum nl80211_band band;
+	enum nl80211_band band = 0;
 	int ret;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 	u8 link_id = u32_get_bits(ctrl_flags, IEEE80211_TX_CTRL_MLO_LINK);
@@ -4583,7 +4583,7 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 	struct sk_buff *next;
 	int len = skb->len;
 	struct ieee80211_key *key = NULL;
-	struct ieee80211_tx_info *info;
+	struct ieee80211_tx_info *info = NULL;
 	struct ieee80211_sub_if_data *ap_sdata;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 
@@ -5042,7 +5042,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	struct tid_ampdu_tx *tid_tx;
 	struct sk_buff *seg, *next;
 	unsigned int skbs = 0, len = 0;
-	u16 queue;
+	u16 queue = 0;
 	unsigned char *ra = ehdr->h_dest;
 	bool multicast;
 	bool tid_stats_disable = sdata->local->hw.tid_stats_disable;

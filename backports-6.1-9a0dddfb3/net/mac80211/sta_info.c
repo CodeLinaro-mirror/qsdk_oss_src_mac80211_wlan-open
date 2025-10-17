@@ -2486,7 +2486,7 @@ void ieee80211_sta_update_pending_airtime(struct ieee80211_local *local,
 static struct ieee80211_sta_rx_stats *
 sta_get_last_rx_stats(struct sta_info *sta, bool is_rx_bitrate, int link_id)
 {
-	struct ieee80211_sta_rx_stats *stats;
+	struct ieee80211_sta_rx_stats *stats = NULL;
 	struct link_sta_info *link_sta_info;
 	int cpu;
 
