@@ -10716,6 +10716,11 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 				ath12k_warn(ar->ab,
 					    "failed to disable peer fixed rate for STA %pM ret %d\n",
 					    arsta->addr, err);
+			/* Do not initiate peer assoc with the reassoc flag
+			 * unless the new assoc has been successfully established
+			 */
+			if (arsta->ahsta->state < IEEE80211_STA_ASSOC)
+				goto exit;
 
 			ath12k_peer_assoc_prepare(ar, arvif, arsta,
 						  peer_arg, true, link_sta);
@@ -10730,6 +10735,7 @@ static void ath12k_sta_rc_update_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 				ath12k_warn(ar->ab, "failed to get peer assoc conf event for %pM vdev %i\n",
 					    arsta->addr, arvif->vdev_id);
 		}
+exit:
 		if (arsta->is_bridge_peer)
 			kfree(link_sta);
 	}
