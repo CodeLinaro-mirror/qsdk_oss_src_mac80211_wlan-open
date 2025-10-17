@@ -3076,20 +3076,6 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 		goto free;
 	}
 
-	if (!chanctx_conf) {
-		if (!ieee80211_vif_is_mld(&sdata->vif)) {
-			ret = -ENOTCONN;
-			if (!tid_stats_disable)
-				ieee80211_tx_drop_stats(sdata, info->tid,
-							TX_DROP_BAD_CHANCTX_CONF);
-			goto free;
-		}
-		/* MLD transmissions must not rely on the band */
-		band = 0;
-	} else {
-		band = chanctx_conf->def.chan->band;
-	}
-
 	multicast = is_multicast_ether_addr(hdr.addr1);
 
 	/* sta is always NULL for mesh */
@@ -3219,6 +3205,21 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 #ifdef CPTCFG_MAC80211_MESH
 nss_mesh:
 #endif
+
+	if (!chanctx_conf) {
+		if (!ieee80211_vif_is_mld(&sdata->vif)) {
+			ret = -ENOTCONN;
+			if (!tid_stats_disable)
+				ieee80211_tx_drop_stats(sdata, info->tid,
+							TX_DROP_BAD_CHANCTX_CONF);
+			goto free;
+		}
+		/* MLD transmissions must not rely on the band */
+		band = 0;
+	} else {
+		band = chanctx_conf->def.chan->band;
+	}
+
 	info->flags |= info_flags;
 	if (info_id >= 0) {
 		info->status_data = info_id;
