@@ -3802,7 +3802,7 @@ int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 
 	/* Set NAC scan flag if any NRP is set already */
 	spin_lock_bh(&dp->dp_lock);
-	if (arg->scan_f_wide_band && !list_empty(&dp->neighbor_peers))
+	if (!list_empty(&dp->neighbor_peers))
 		arg->scan_f_higher_mcs_nac_scan = true;
 	spin_unlock_bh(&dp->dp_lock);
 
