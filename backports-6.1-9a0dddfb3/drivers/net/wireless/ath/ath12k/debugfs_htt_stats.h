@@ -14,6 +14,7 @@
 #define ATH12K_HTT_STATS_SUBTYPE_MAX		16
 #define ATH12K_HTT_MAX_STRING_LEN		256
 
+
 #define ATH12K_HTT_STATS_RESET_BITMAP32_OFFSET(_idx)	((_idx) & 0x1f)
 #define ATH12K_HTT_STATS_RESET_BITMAP64_OFFSET(_idx)	((_idx) & 0x3f)
 #define ATH12K_HTT_STATS_RESET_BITMAP32_BIT(_idx)	(1 << \
@@ -715,6 +716,7 @@ struct debug_htt_stats_req {
 	u8 buf[];
 };
 
+#define ATH12K_HTT_NUM_AC_WMM   0x4
 struct ath12k_htt_tx_pdev_stats_cmn_tlv {
 	__le32 mac_id__word;
 	__le32 hw_queued;
@@ -797,9 +799,9 @@ struct ath12k_htt_tx_pdev_stats_cmn_tlv {
 		__le32 low_32;
 		__le32 high_32;
 	} bytes_sent;
+	__le32 num_ppdu_tried_ota_per_ac[ATH12K_HTT_NUM_AC_WMM];
 } __packed;
 
-#define ATH12K_HTT_NUM_AC_WMM	0x4
 
 struct ath12k_htt_tx_pdev_ap_edca_params_stats_tlv {
 	__le32 ul_mumimo_less_aggressive[ATH12K_HTT_NUM_AC_WMM];
