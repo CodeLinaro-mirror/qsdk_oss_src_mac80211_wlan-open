@@ -1347,7 +1347,7 @@ static int ath12k_ahb_register_rproc_notifier(struct ath12k_base *ab)
         return 0;
 }
 
-void ath12k_ahb_unregister_rproc_notifier(struct ath12k_base *ab)
+static void ath12k_ahb_unregister_rproc_notifier(struct ath12k_base *ab)
 {
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
