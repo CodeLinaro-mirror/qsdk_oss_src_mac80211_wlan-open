@@ -3482,7 +3482,7 @@ __ieee80211_rx_h_amsdu(struct ieee80211_rx_data *rx, u8 data_offset)
 		return RX_DROP_U_BAD_AMSDU;
 	}
 
-	if (rx->sta && rx->sta->amsdu_mesh_control < 0) {
+	if (rx->sta->amsdu_mesh_control < 0) {
 		s8 valid = -1;
 		int i;
 
