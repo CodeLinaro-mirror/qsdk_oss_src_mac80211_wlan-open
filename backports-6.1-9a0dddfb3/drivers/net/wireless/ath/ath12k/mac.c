@@ -8560,7 +8560,8 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 			  struct ieee80211_vif *vif,
 			  struct ieee80211_scan_request *hw_req)
 {
-	struct ath12k *ar, *prev_ar;
+	struct ath12k *ar = NULL;
+	struct ath12k *prev_ar = NULL;
 	int i, from_index, to_index, ret;
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
