@@ -4584,7 +4584,7 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 	struct sk_buff *next;
 	int len = skb->len;
 	struct ieee80211_key *key = NULL;
-	struct ieee80211_tx_info *info = NULL;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_sub_if_data *ap_sdata;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 
