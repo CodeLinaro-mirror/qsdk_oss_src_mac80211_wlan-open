@@ -3651,8 +3651,8 @@ ieee80211_rx_h_data(struct ieee80211_rx_data *rx)
 			cfg80211_rx_unexpected_4addr_frame(
 				rx->sdata->dev, rx->sta->sta.addr, GFP_ATOMIC, rx->link_id);
 			if (sdata->vif.offload_flags & IEEE80211_OFFLOAD_ENCAP_4ADDR) {
-				pr_warn("4addr non-null data frame: %d with frame_control: %x",
-					port_control, hdr->frame_control);
+				pr_warn("4addr non-null data frame with frame_control: %x",
+					hdr->frame_control);
 				if (!ap_vlan_without_4addr_null)
 					WARN_ON_ONCE(1);
 			}
