@@ -1009,6 +1009,7 @@ struct ath12k_sta_migration_data {
 	u16 ml_peer_id;
 	u8 pdev_id;
 	u8 chip_id;
+	int ppe_vp_num;
 };
 
 struct ath12k_sta {
