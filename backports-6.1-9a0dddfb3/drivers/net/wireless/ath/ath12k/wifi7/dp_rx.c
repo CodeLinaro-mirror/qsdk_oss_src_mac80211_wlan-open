@@ -1111,7 +1111,6 @@ static bool ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in HT mode %d\n",
 				     rate_mcs);
-			WARN_ON_ONCE(1);
 			return true;
 		}
 		rx_status->rate_idx = rate_mcs + (8 * (nss - 1));
@@ -1126,7 +1125,6 @@ static bool ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in VHT mode %d\n",
 				     rate_mcs);
-			WARN_ON_ONCE(1);
 			return true;
 		}
 		rx_status->nss = nss;
@@ -1140,7 +1138,6 @@ static bool ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in HE mode %d\n",
 				    rate_mcs);
-			WARN_ON_ONCE(1);
 			return true;
 		}
 		rx_status->encoding = RX_ENC_HE;
@@ -1155,7 +1152,6 @@ static bool ath12k_wifi7_dp_rx_h_rate(struct ath12k_pdev_dp *dp_pdev,
 			ath12k_warn(dp->ab,
 				    "Received with invalid mcs in EHT mode %d\n",
 				    rate_mcs);
-			WARN_ON_ONCE(1);
 			return true;
 		}
 
