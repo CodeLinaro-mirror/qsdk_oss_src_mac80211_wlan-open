@@ -5521,7 +5521,7 @@ static void ieee80211_rx_8023(struct ieee80211_rx_data *rx,
 			atomic_inc(&rx->sta->rx_forwarded_pkts);
 			if (!tid_stats_disable)
 				ieee80211_rx_stats_reason(rx->sdata,
-							  skb->len,
+							  xmit_skb->len,
 							  status->tid,
 							  RX_FORWARDED_PKTS);
 		}
