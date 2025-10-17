@@ -840,7 +840,9 @@ bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev, struct sk_buf
 static inline void
 ath12k_core_dma_clean_range_no_dsb(const void *start, const void *end) {
 #ifndef CONFIG_IO_COHERENCY
-        dmac_clean_range_no_dsb(start, end);
+#ifndef PLATFORM_SDX85
+	dmac_clean_range_no_dsb(start, end);
+#endif
 #endif
 }
 
@@ -1724,6 +1726,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 			break;
 		case HAL_WBM_REL_HTT_TX_COMP_STATUS_TTL:
 			ts->status = HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX;
+			fallthrough;
 		default:
 			break;
 		}
@@ -1936,7 +1939,8 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k *ar;
 	struct ath12k_dp_peer *peer = NULL;
 	u8 link_id = 0;
-	u8 reason, tid;
+	u8 reason = 0;
+	u8 tid = 0;
 	enum ath12k_dp_tx_comp_error drop_reason = DP_TX_COMP_ERR_MISC;
 	u32 msdu_len = msdu->len;
 	u8 tx_desc_flags = sw_metadata->flags;
@@ -2178,7 +2182,7 @@ ath12k_wifi7_dp_tx_status_parse(struct ath12k_base *ab,
 int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int budget)
 {
 	struct ath12k_base *ab = dp->ab;
-	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_pdev_dp *dp_pdev = NULL;
 	int hal_ring_id = dp->tx_ring[ring_id].tcl_comp_ring.ring_id;
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
 	struct ath12k_tx_desc_info *tx_desc = NULL;
@@ -2525,7 +2529,9 @@ int ath12k_wifi7_dp_tx_ring_setup(struct ath12k_base *ab)
 			goto err;
 		}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_hal_tx_config_rbm_mapping(ab, i, rbm_id, HAL_TCL_DATA);
+#endif
 
 		ret = ath12k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
 					   HAL_WBM2SW_RELEASE, tx_comp_ring_num, 0,

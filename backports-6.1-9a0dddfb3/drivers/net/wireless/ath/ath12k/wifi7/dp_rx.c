@@ -513,6 +513,7 @@ void ath12k_wifi7_dp_rx_update_ppe_msdu_mark(struct ath12k_base *ab,
 					     struct rx_mpdu_desc_info *rx_mpdu_info,
 					     struct hal_rx_desc *rx_desc)
 {
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
 	if (peer->ppe_vp_num <= 0)
 		return;
 
@@ -527,6 +528,7 @@ void ath12k_wifi7_dp_rx_update_ppe_msdu_mark(struct ath12k_base *ab,
 					ATH12K_FSE_MAGIC_NUM_MASK) |
 			u32_encode_bits(rx_mpdu_info->flow_info.flow_metadata,
 					ATH12K_PPE_VP_NUM);
+#endif
 }
 
 static bool ath12k_wifi7_dp_rx_check_fast_rx(struct ath12k_dp *dp,
@@ -966,6 +968,7 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 		if (likely(*fast_rx &&
 		    ath12k_wifi7_dp_rx_check_fast_rx(dp, msdu, rx_msdu_info,
 							 tlv_info, peer))) {
+#ifdef CPTCFG_MAC80211_PPE_SUPPORT
 			if (peer->ppe_vp_num) {
 				dp->hal->hal_ops->rx_desc_get_fse_info(rx_desc,
 								       rx_mpdu_info);
@@ -988,6 +991,7 @@ static int ath12k_wifi7_dp_rx_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 					}
 				}
 			}
+#endif
 
 #ifdef CONFIG_IO_COHERENCY
 			prefetch(skb_shinfo(msdu));
@@ -1423,7 +1427,7 @@ ath12k_wifi7_dp_rx_process_received_packets(struct ath12k_dp *dp,
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *link_peer;
 	u8 hw_link_id, pdev_id;
-	int msdu_idx;
+	int msdu_idx = 0;
 	bool fast_rx = true;
 	enum ath12k_dp_rx_error ret;
 
@@ -2819,8 +2823,9 @@ static bool ath12k_wifi7_dp_rx_h_reo_err(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_rx_desc *rx_desc = (struct hal_rx_desc *)msdu->data;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k *ar = dp_pdev->ar;
 	bool drop = false;
-	u32 drop_reason;
+	u32 drop_reason = 0;
 	u16 msdu_len;
 
 	DP_DEVICE_STATS_INC(dp, wbm_err.reo_error[rxcb->err_code], 1);
@@ -2828,8 +2833,6 @@ static bool ath12k_wifi7_dp_rx_h_reo_err(struct ath12k_pdev_dp *dp_pdev,
 
 	switch (rxcb->err_code) {
 	case HAL_REO_DEST_RING_ERROR_CODE_DESC_ADDR_ZERO:
-		struct ath12k *ar = dp_pdev->ar;
-
 		if (ath12k_wifi7_dp_rx_h_null_q_desc(dp_pdev, msdu, status, msdu_list,
 						     rx_desc_data)) {
 			drop = true;
@@ -3096,7 +3099,7 @@ static bool ath12k_wifi7_dp_rx_h_rxdma_err(struct ath12k_pdev_dp *dp_pdev,
 	struct hal_rx_desc *rx_desc = (struct hal_rx_desc *)msdu->data;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *link_peer;
-	u32 drop_reason;
+	u32 drop_reason = 0;
 	u16 msdu_len;
 	bool drop = false;
 
@@ -3877,7 +3880,9 @@ int ath12k_wifi7_dp_rx_flow_add_entry(struct ath12k_dp *dp,
 	flow.fse_metadata |= flow_info->fse_metadata;
 	if (flow_info->use_ppe) {
 		flow.use_ppe = flow_info->use_ppe;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		flow.service_code = PPE_DRV_SC_SPF_BYPASS;
+#endif
 	}
 
 	fse->hal_fse = ath12k_wifi7_hal_rx_flow_setup_fse(ab, fst->hal_rx_fst,

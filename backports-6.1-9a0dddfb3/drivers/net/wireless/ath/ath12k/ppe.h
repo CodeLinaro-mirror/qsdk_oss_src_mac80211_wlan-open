@@ -6,16 +6,18 @@
 #ifndef ATH12K_PPE_H
 #define ATH12K_PPE_H
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
 #include <ppe_vp_public.h>
 #include <ppe_drv_sc.h>
 #include <ppe_drv.h>
+#include <nss_plugins.h>
+#endif
 #include "wifi7/hal.h"
 #include "dp_cmn.h"
 #include "dp.h"
 #include "core.h"
 #include "cmn_defs.h"
-#include <nss_plugins.h>
 
 struct ath12k_base;
 struct ath12k_vif;
@@ -326,8 +328,5 @@ static inline int ath12k_nss_plugin_register_ops(struct ath12k_base *ab)
 	return 0;
 }
 
-void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab)
-{
-}
 #endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */
 #endif /* ATH12K_PPE_H */
