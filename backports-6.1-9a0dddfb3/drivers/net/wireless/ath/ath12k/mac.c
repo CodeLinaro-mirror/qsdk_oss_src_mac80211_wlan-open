@@ -24467,9 +24467,8 @@ void ath12k_copy_qos_params(struct ath12k_qos_params *params,
 		params->msdu_life_time = qos_attr->msdu_lifetime;
 }
 
-static int ath12k_process_scs_add(struct ath12k *ar,
-				  u16 peer_id,
-				  enum qos_profile_dir qos_dir,
+static int ath12k_process_scs_add(struct ath12k *ar, struct ath12k_sta *ahsta,
+				  u16 peer_id, enum qos_profile_dir qos_dir,
 				  struct cfg80211_qm_req_desc_data *qm_req,
 				  u8 *addr)
 {
@@ -24477,9 +24476,13 @@ static int ath12k_process_scs_add(struct ath12k *ar,
 	struct ath12k_qos_params params = {0};
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp_peer_qos *qos;
+	struct ath12k_link_sta *arsta;
+	struct ath12k *temp_ar;
+	unsigned long links;
 	int ret = -EINVAL;
-	u8 qm_id;
 	u16 qos_id;
+	u8 link_id;
+	u8 qm_id;
 
 	qos_attr = &qm_req->qos_attr;
 	qm_id = qm_req->qm_id;
@@ -24489,18 +24492,51 @@ static int ath12k_process_scs_add(struct ath12k *ar,
 	} else {
 		ath12k_qos_set_default(&params);
 		ath12k_copy_qos_params(&params, qos_attr);
-		qos_id = ath12k_qos_configure(ar->ab, ar,
-					      &params, qos_dir,
-					      addr);
+		qos_id = ath12k_qos_configure(ar->ab, NULL, &params, qos_dir,
+					      NULL);
 	}
+
 	if (qos_id == QOS_ID_INVALID)
 		return ret;
+
+	if (qos_dir == QOS_PROFILE_UL) {
+		links = ahsta->links_map;
+
+		for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+			arsta = ahsta->link[link_id];
+
+			if (!arsta || !arsta->arvif || !arsta->arvif->ar)
+				continue;
+
+			temp_ar = arsta->arvif->ar;
+
+			ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+				   "Configure UL qos for link:%d", link_id);
+			ret = ath12k_core_config_ul_qos(temp_ar, &params,
+							qos_id, arsta->addr,
+							true);
+
+			if (ret) {
+				ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+					   "Configure UL qos failed, link:%d",
+					   link_id);
+				break;
+			}
+		}
+
+		if (ret) {
+			ath12k_qos_disable(ar->ab, NULL, QOS_PROFILE_UL, qos_id,
+					   NULL);
+			return ret;
+		}
+	}
 
 	rcu_read_lock();
 	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,
 							peer_id);
 	if (!peer) {
-		ath12k_err(ar->ab, "SCS peeer is NULL");
+		ath12k_err(ar->ab, "SCS peer is NULL");
+		ret = -EINVAL;
 		goto ret;
 	}
 
@@ -24508,46 +24544,56 @@ static int ath12k_process_scs_add(struct ath12k *ar,
 		qos = ath12k_dp_peer_qos_alloc(ar->ab->dp, peer->dp_peer);
 		if (!qos) {
 			ath12k_err(ar->ab, "SCS QoS is NULL");
+			ret = -EINVAL;
 			goto ret;
 		}
 	} else {
 		qos = peer->dp_peer->qos;
 	}
+
 	ret =  ath12k_dp_peer_scs_add(ar->ab, qos, qm_id, qos_id);
 ret:
 	rcu_read_unlock();
 	return ret;
 }
 
-static int ath12k_process_scs_del(struct ath12k *ar,
+static int ath12k_process_scs_del(struct ath12k *ar, struct ath12k_sta *ahsta,
 				  u16 peer_id,
 				  struct cfg80211_qm_req_desc_data *qm_req,
 				  u8 *addr)
 {
 	struct ath12k_dp_link_peer *peer;
+	struct ath12k_qos_params params;
+	struct ath12k_qos_ctx *qos_ctx;
 	struct ath12k_dp_peer_qos *qos;
+	struct ath12k_link_sta *arsta;
 	enum qos_profile_dir qos_dir;
 	u8 qm_id = qm_req->qm_id;
+	struct ath12k *temp_ar;
+	unsigned long links;
 	int ret = -EINVAL;
 	u16 qos_id;
+	u8 link_id;
 
 	rcu_read_lock();
 	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,
 							peer_id);
 	if (!peer) {
-		ath12k_err(ar->ab, "SCS peeer is NULL");
-		goto ret;
+		ath12k_err(ar->ab, "SCS peer is NULL");
+		rcu_read_unlock();
+		return ret;
 	}
 
 	qos = peer->dp_peer->qos;
 	if (!qos) {
 		ath12k_err(ar->ab, "SCS QoS is NULL");
-		goto ret;
+		rcu_read_unlock();
+		return ret;
 	}
-	qos_id = ath12k_dp_peer_scs_get_qos_id(ar->ab, qos,
-					       qm_id);
+
+	qos_id = ath12k_dp_peer_scs_get_qos_id(ar->ab, qos, qm_id);
 	ret = ath12k_dp_peer_scs_del(ar->ab, qos, qm_id);
-ret:
+
 	rcu_read_unlock();
 
 	if (qos_id < QOS_LEGACY_DL_ID_MIN) {
@@ -24560,16 +24606,52 @@ ret:
 		return 0;
 	}
 
+	if (qos_dir == QOS_PROFILE_UL) {
+		qos_ctx = ath12k_get_qos(ar->ab);
+		if (!qos_ctx) {
+			ath12k_err(ar->ab, "QoS Context is NULL");
+			return -EINVAL;
+		}
+
+		if (qos_id < QOS_UL_ID_MIN || qos_id > QOS_UL_ID_MAX) {
+			ath12k_err(ar->ab, "Invalid  QoS ID: %d", qos_id);
+			return -EINVAL;
+		}
+
+		links = ahsta->links_map;
+
+		spin_lock_bh(&qos_ctx->profile_lock);
+		memcpy(&params, &qos_ctx->profiles[qos_id].params,
+		       sizeof(struct ath12k_qos_params));
+		spin_unlock_bh(&qos_ctx->profile_lock);
+
+		for_each_set_bit(link_id, &links, IEEE80211_MLD_MAX_NUM_LINKS) {
+			arsta = ahsta->link[link_id];
+
+			if (!arsta || !arsta->arvif || !arsta->arvif->ar)
+				continue;
+
+			temp_ar = arsta->arvif->ar;
+
+			ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+				   "Disabling UL qos for link:%d", link_id);
+			ath12k_core_config_ul_qos(temp_ar, &params, qos_id,
+						  arsta->addr,	false);
+		}
+	}
+
 	if (ret == 0) {
 		if (qos_id < QOS_LEGACY_DL_ID_MIN)
-			ret = ath12k_qos_disable(ar->ab, ar, qos_dir,
-						 qos_id, addr);
+			ret = ath12k_qos_disable(ar->ab, NULL, qos_dir,
+						 qos_id, NULL);
 	}
+
 	return ret;
 }
 
 static
-int ath12k_process_scs_desc(struct ath12k *ar, u16 peer_id,
+int ath12k_process_scs_desc(struct ath12k *ar, struct ath12k_sta *ahsta,
+			    u16 peer_id,
 			    struct cfg80211_qm_req_desc_data *qm_req_desc,
 			    u8 *addr)
 {
@@ -24591,9 +24673,17 @@ int ath12k_process_scs_desc(struct ath12k *ar, u16 peer_id,
 		return IEEE80211_QM_REQ_DECLINED;
 	}
 
+	ath12k_dbg(ar->ab, ATH12K_DBG_QOS, "Process scs descriptor in driver");
+	ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+		   "STA:%pM, SCS ID:%u, Request type:%u, Num TCLAS:%u",
+		   addr, qm_req_desc->qm_id, qm_req_desc->request_type,
+		   qm_req_desc->num_tclas_elements);
+	ath12k_dbg(ar->ab, ATH12K_DBG_QOS, "QoS present:%d, Priority:%u",
+		   qm_req_desc->is_qos_present, qm_req_desc->priority);
+
 	switch (request_type) {
 	case IEEE80211_QM_ADD_REQ:
-		ret = ath12k_process_scs_add(ar, peer_id, qos_dir,
+		ret = ath12k_process_scs_add(ar, ahsta, peer_id, qos_dir,
 					     qm_req_desc, addr);
 
 		if (ret != 0) {
@@ -24604,7 +24694,7 @@ int ath12k_process_scs_desc(struct ath12k *ar, u16 peer_id,
 		break;
 
 	case IEEE80211_QM_REMOVE_REQ:
-		ret = ath12k_process_scs_del(ar, peer_id, qm_req_desc, addr);
+		ret = ath12k_process_scs_del(ar, ahsta, peer_id, qm_req_desc, addr);
 		if (ret != 0) {
 			ath12k_err(ar->ab, "SCS Delete Failed: SCS ID: %d",
 				   qm_req_desc->qm_id);
@@ -24613,7 +24703,7 @@ int ath12k_process_scs_desc(struct ath12k *ar, u16 peer_id,
 		break;
 
 	case IEEE80211_QM_CHANGE_REQ:
-		ret = ath12k_process_scs_del(ar, peer_id, qm_req_desc, addr);
+		ret = ath12k_process_scs_del(ar, ahsta, peer_id, qm_req_desc, addr);
 
 		if (ret != 0) {
 			ath12k_err(ar->ab, "SCS Update DEL failed: SCS ID: %d",
@@ -24622,7 +24712,7 @@ int ath12k_process_scs_desc(struct ath12k *ar, u16 peer_id,
 			return status;
 		}
 
-		ret = ath12k_process_scs_add(ar, peer_id, qos_dir,
+		ret = ath12k_process_scs_add(ar, ahsta, peer_id, qos_dir,
 					     qm_req_desc, addr);
 
 		if (ret != 0) {
@@ -24676,7 +24766,7 @@ ath12k_mac_set_scs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 	while (idx < num_scs_desc) {
 		qm_req_desc = &qm_req->qm_req_desc[idx];
 
-		status = ath12k_process_scs_desc(ar, peer_id,
+		status = ath12k_process_scs_desc(ar, ahsta, peer_id,
 						 qm_req_desc, addr);
 		qm_resp_desc = &qm_resp->qm_resp_desc[idx];
 		ath12k_prepare_scs_desc_resp(qm_req_desc, qm_resp_desc,
