@@ -24,6 +24,27 @@ struct ath12k_dp_tx_comp_status;
 struct hal_rx_desc;
 enum ath12k_supported_bw;
 
+#define HAL_TLV_HDR_TAG		GENMASK(9, 1)
+#define HAL_TLV_HDR_LEN		GENMASK(25, 10)
+#define HAL_TLV_USR_ID          GENMASK(31, 26)
+
+#define HAL_TLV_ALIGN	4
+
+struct hal_tlv_hdr {
+	__le32 tl;
+	u8 value[];
+} __packed;
+
+#define HAL_TLV_64_HDR_TAG		GENMASK(9, 1)
+#define HAL_TLV_64_HDR_LEN		GENMASK(21, 10)
+#define HAL_TLV_64_USR_ID		GENMASK(31, 26)
+#define HAL_TLV_64_ALIGN		8
+
+struct hal_tlv_64_hdr {
+	__le64 tl;
+	u8 value[];
+} __packed;
+
 #define HAL_CE_REMAP_REG_BASE  (ab->ce_remap_base_addr)
 
 #define HAL_RING_BASE_ALIGN	8
