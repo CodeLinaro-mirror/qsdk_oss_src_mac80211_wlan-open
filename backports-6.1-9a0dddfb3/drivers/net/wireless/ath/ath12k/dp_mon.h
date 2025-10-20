@@ -70,6 +70,7 @@ struct ath12k_dp_mon_pad_params {
 	u32 msdu_llc_len;
 	u32 pad_byte_holder;
 	u32 frag_idx;
+	bool is_head_msdu;
 };
 
 struct dp_rxdma_mon_ring {
