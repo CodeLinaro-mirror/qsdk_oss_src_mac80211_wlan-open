@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2019 The Linux Foundation. All rights reserved.
- * Copyright (c) 2022-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/dma-mapping.h>
@@ -876,7 +876,8 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL]),
 			 "ppe_wbm_rel_%d", ab->dp->ppe.ds_node_id);
 
-		ret = devm_request_irq(&pdev->dev, irq,  ath12k_dp_ppeds_handle_tx_comp,
+		ret = devm_request_irq(&pdev->dev, irq,
+				       ab->dp->ppe.ppe_ops->ppe2tcl_tx_compln,
 				       IRQF_NO_AUTOEN | IRQF_NO_SUSPEND,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
 				       (void *)ab);
@@ -903,7 +904,8 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
 			 "ppe2tcl_%d",  ab->dp->ppe.ds_node_id);
 
-		ret = devm_request_irq(&pdev->dev, irq,  ath12k_ds_ppe2tcl_irq_handler,
+		ret = devm_request_irq(&pdev->dev, irq,
+				       ab->dp->ppe.ppe_ops->ppe2tcl_irq_handler,
 				       IRQF_NO_AUTOEN | IRQF_NO_SUSPEND,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
 				       (void *)ab);
@@ -929,7 +931,8 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
 			 "reo2ppe_%d", ab->dp->ppe.ds_node_id);
 
-		ret = devm_request_irq(&pdev->dev, irq,  ath12k_ds_reo2ppe_irq_handler,
+		ret = devm_request_irq(&pdev->dev, irq,
+				       ab->dp->ppe.ppe_ops->reo2ppe_irq_handler,
 				       IRQF_SHARED | IRQF_NO_SUSPEND,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
 				       (void *)ab);

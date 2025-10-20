@@ -22,7 +22,6 @@
 #include "htc.h"
 #include "wmi.h"
 #include "hal.h"
-#include "dp.h"
 #include "ce.h"
 #include "mac.h"
 #include "hw.h"
@@ -137,6 +136,8 @@ extern unsigned int ath12k_reorder_VI_timeout;
 extern unsigned int ath12k_max_clients;
 #endif
 extern bool ath12k_mlo_3_link_tx;
+struct ath12k_dp;
+struct ath12k_hp_update_timer;
 
 /* Wifi classifier metadata
  * ----------------------------------------------------------------------------
@@ -943,6 +944,16 @@ struct ath12k_htt_data_stats {
 	u64 gi[ATH12K_COUNTER_TYPE_MAX][ATH12K_GI_NUM];
 	u64 transmit_type[ATH12K_COUNTER_TYPE_MAX][HTT_PPDU_STATS_PPDU_TYPE_MAX];
 	u64 ru_loc[ATH12K_COUNTER_TYPE_MAX][HAL_RX_RU_ALLOC_TYPE_MAX];
+};
+
+struct ath12k_htt_tx_stats {
+	struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
+	u64 tx_duration;
+	u64 ba_fails;
+	u64 ack_fails;
+	u16 ru_start;
+	u16 ru_tones;
+	u32 mu_group[MAX_MU_GROUP_ID];
 };
 
 struct ath12k_per_peer_cfr_capture {

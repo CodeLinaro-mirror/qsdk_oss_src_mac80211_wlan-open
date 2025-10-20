@@ -1,8 +1,12 @@
+/* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
- * SPDX-License-Identifier: BSD-3-Clause-Clear
  */
 
+#include "dp_stats.h"
+#include "dp.h"
+#include "dp_rx.h"
+#include "dp_peer.h"
 #include "sdwf.h"
 
 #ifndef ATH12K_QOS_H

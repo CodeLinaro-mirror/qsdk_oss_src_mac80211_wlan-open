@@ -22,7 +22,7 @@ ath12k_wifi7-y += core.o \
 		  dp_mon1_filter.o
 
 ath12k_wifi7-$(CPTCFG_QCN_EXTN) += qcn_extns/wifi7_hw_extn.o
-
+ath12k_wifi7-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppeds.o
 ath12k_wifi7-$(CPTCFG_ATH12K_AHB) += ahb.o
 
 ifeq ($(CONFIG_KERNEL_ATH_GCOV_PROFILE),)

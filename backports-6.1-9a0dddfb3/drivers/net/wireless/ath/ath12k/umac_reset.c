@@ -361,6 +361,7 @@ void ath12k_umac_reset_notify_pre_reset_done(struct ath12k_base *ab)
 						      ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE);
 	ab->dp_umac_reset.umac_pre_reset_in_prog = false;
 }
+EXPORT_SYMBOL(ath12k_umac_reset_notify_pre_reset_done);
 
 void ath12k_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {

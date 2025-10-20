@@ -1,21 +1,28 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_HAL_H
 #define ATH12K_HAL_H
-
-#include "hw.h"
+#include <linux/nl80211.h>
+#include <linux/types.h>
+#include <linux/bitfield.h>
+#include <linux/ctype.h>
 #include "mac.h"
-#include "core.h"
 
 struct ath12k_base;
 struct ath12k_dp;
 struct hal_rx_reo_queue;
+struct hal_reo_dest_ring;
 struct hal_rx_spd_data;
 struct rx_mpdu_desc_info;
+struct hal_wbm_completion_ring_tx;
+struct ath12k_dp_ppe_vp_profile;
+struct ath12k_dp_tx_comp_status;
+struct hal_rx_desc;
+enum ath12k_supported_bw;
 
 #define HAL_CE_REMAP_REG_BASE  (ab->ce_remap_base_addr)
 
@@ -46,6 +53,10 @@ struct rx_mpdu_desc_info;
 
 #define HAL_TX_ADDR_SEARCH_DEFAULT	0
 #define HAL_TX_ADDR_SEARCH_INDEX	1
+
+#define HAL_WILDCARD_LMAC_ID 0xFF
+
+#define HAL_NON_QOS_TID	16
 
 #define HAL_SHADOW_NUM_REGS_MAX			40
 
@@ -1319,6 +1330,22 @@ struct hal_ops {
 			    struct hal_srng *srng, uint32_t *hp, uint32_t *tp);
 	void (*rx_desc_get_fse_info)(struct hal_rx_desc *desc,
 				     struct rx_mpdu_desc_info *rx_mpdu_info);
+	bool (*hal_tx_ppe2tcl_ring_halt_get)(struct ath12k_base *ab);
+	void (*hal_tx_ppe2tcl_ring_halt_set)(struct ath12k_base *ab);
+	void (*hal_tx_ppe2tcl_ring_halt_reset)(struct ath12k_base *ab);
+	bool (*hal_tx_ppe2tcl_ring_halt_done)(struct ath12k_base *ab);
+	void (*hal_tx_config_rbm_mapping)(struct ath12k_base *ab, u8 ring_num,
+					  u8 rbm_id, int ring_type);
+	void (*hal_tx_set_ppe_vp_entry)(struct ath12k_base *ab,
+					struct ath12k_dp_ppe_vp_profile *ppe_vp_profile,
+					u32 ppe_vp_idx, u32 vdev_id,
+					u32 bank_id, u32 lmac_id);
+	void (*hal_ppeds_cfg_ast_override_map_reg)(struct ath12k_base *ab, u8 idx,
+						   u32 ppeds_idx_map_val);
+	void (*hal_reo_config_reo2ppe_dest_info)(struct ath12k_base *ab);
+	bool (*hal_tx_completion_process)(struct hal_wbm_completion_ring_tx *desc,
+					  struct ath12k_dp_tx_comp_status *tx_status);
+
 };
 
 static inline
@@ -1364,6 +1391,50 @@ static inline void *ath12k_hal_dma_alloc_coherent(struct device *dev, size_t siz
 #endif
 
 	return vaddr;
+}
+
+/*
+ * ath12k_hal_srng_access_umac_src_ring_end_nolock_fast can be used
+ * only when the calling context tries to fill 1 entry of the ring at a time
+ */
+static inline
+void ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(struct hal_srng *srng)
+{
+	writel_relaxed(srng->u.src_ring.hp, srng->u.src_ring.hp_addr_direct);
+	srng->timestamp = jiffies;
+}
+
+static inline
+void ath12k_hal_srng_access_dst_ring_begin_nolock(struct ath12k_base *ab,
+						  struct hal_srng *srng)
+{
+	srng->u.dst_ring.cached_hp = *srng->u.dst_ring.hp_addr;
+}
+
+static inline
+void ath12k_hal_srng_access_dst_ring_end_nolock(struct hal_srng *srng)
+{
+	srng->u.dst_ring.last_hp = *srng->u.dst_ring.hp_addr;
+	writel_relaxed(srng->u.dst_ring.tp, srng->u.dst_ring.tp_addr_direct);
+	srng->timestamp = jiffies;
+}
+
+static inline
+void *ath12k_hal_srng_dst_peek_nolock(struct hal_srng *srng)
+{
+	if (srng->u.dst_ring.tp != srng->u.dst_ring.cached_hp)
+		return (srng->ring_base_vaddr + srng->u.dst_ring.tp);
+
+	return NULL;
+}
+
+static inline
+void *ath12k_hal_srng_dst_next_peek_nolock(struct hal_srng *srng)
+{
+	if ((srng->u.dst_ring.tp +  srng->entry_size) != srng->u.dst_ring.cached_hp)
+		return (srng->ring_base_vaddr + (srng->u.dst_ring.tp + srng->entry_size));
+
+	return NULL;
 }
 
 static inline void ath12k_hal_dma_free_coherent(struct device *dev, size_t size,
@@ -1521,4 +1592,7 @@ void ath12k_hal_rx_msdu_list_get(struct ath12k_hal *hal,
 				 u16 *num_msdus);
 u8 ath12k_hal_rx_h_l3pad_get(struct ath12k_hal *hal,
 			     struct hal_rx_desc *desc);
+bool ath12k_hal_tx_completion_process(struct ath12k_base *ab,
+				      struct hal_wbm_completion_ring_tx *desc,
+				      struct ath12k_dp_tx_comp_status *tx_comp_status);
 #endif

@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/ieee80211.h>
 #include <linux/kernel.h>
@@ -173,7 +173,7 @@ int ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 	 * flush commands for each QoS TID, improving efficiency.
 	 */
 
-	if (rx_tid->tid != HAL_DESC_REO_NON_QOS_TID)
+	if (rx_tid->tid != HAL_NON_QOS_TID)
 		cmd.flag |= HAL_REO_CMD_FLG_FLUSH_QUEUE_1K_DESC;
 
 	ret = ath12k_wifi7_dp_reo_cmd_send(ab, rx_tid,
@@ -321,7 +321,7 @@ static int ath12k_wifi7_peer_rx_tid_delete_handler(struct ath12k_base *ab,
 	cmd.addr_hi = upper_32_bits(rx_tid->paddr);
 	cmd.upd0 |= HAL_REO_CMD_UPD0_VLD;
 	cmd.upd0 |= HAL_REO_CMD_UPD0_BA_WINDOW_SIZE;
-	cmd.ba_window_size = (tid == HAL_DESC_REO_NON_QOS_TID) ?
+	cmd.ba_window_size = (tid == HAL_NON_QOS_TID) ?
 			      rx_tid->ba_win_sz : DP_BA_WIN_SZ_MAX;
 	cmd.upd1 |= HAL_REO_CMD_UPD1_VLD;
 
@@ -1268,6 +1268,32 @@ static bool ath12k_dp_rx_check_nwifi_hdr_len_valid(struct ath12k_dp *dp,
 		WARN_ON_ONCE(1);
 
 	return false;
+}
+
+static void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
+						struct rx_msdu_desc_info *rx_msdu_info,
+						struct rx_mpdu_desc_info *rx_mpdu_info,
+						u8 link_id, int ring_id)
+{
+	bool is_not_msdu;
+
+	if (!peer)
+		return;
+
+	is_not_msdu = rx_msdu_info->first_msdu & rx_msdu_info->last_msdu;
+
+	if (is_not_msdu)
+		DP_PEER_STATS_INC(peer, rx, ring_id, non_amsdu, link_id, 1);
+	else
+		DP_PEER_STATS_INC(peer, rx, ring_id, msdu_part_of_amsdu, link_id, 1);
+
+	if (rx_msdu_info->da_is_mcbc)
+		DP_PEER_STATS_INC(peer, rx, ring_id, mcast, link_id, 1);
+	else
+		DP_PEER_STATS_INC(peer, rx, ring_id, ucast, link_id, 1);
+
+	DP_PEER_STATS_COND_INC(peer, rx, ring_id, mpdu_retry, link_id,
+			       rx_mpdu_info->mpdu_retry_bit, 1);
 }
 
 static enum ath12k_dp_rx_error
@@ -3465,7 +3491,7 @@ int ath12k_wifi7_dp_alloc_reo_qdesc(struct ath12k_base *ab,
 	/* TODO: Optimize the memory allocation for qos tid based on
 	 * the actual BA window size in REO tid update path.
 	 */
-	if (tid == HAL_DESC_REO_NON_QOS_TID)
+	if (tid == HAL_NON_QOS_TID)
 		hw_desc_sz = ath12k_wifi7_hal_reo_qdesc_size(ba_win_sz, tid);
 	else
 		hw_desc_sz = ath12k_wifi7_hal_reo_qdesc_size(DP_BA_WIN_SZ_MAX, tid);

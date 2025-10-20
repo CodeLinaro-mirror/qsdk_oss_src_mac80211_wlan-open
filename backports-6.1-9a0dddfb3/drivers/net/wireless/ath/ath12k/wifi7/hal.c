@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
+#include <linux/nl80211.h>
+#include <linux/types.h>
+#include <linux/bitfield.h>
+#include <linux/ctype.h>
 #include "hw.h"
 #include "hal_desc.h"
 #include "../hal.h"
@@ -11,6 +15,7 @@
 #include "../debug.h"
 #include "../hif.h"
 #include "../pcic.h"
+#include "ppeds.h"
 
 const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[] = {
 	{
@@ -755,3 +760,174 @@ void ath12k_wifi7_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type typ
 		*tp = ath12k_hif_read32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET);
 	}
 }
+
+bool ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab)
+{
+	u32 cmn_reg_addr;
+	u32 regval;
+
+	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
+	regval = ath12k_hif_read32(ab, cmn_reg_addr);
+
+	return (regval &
+			1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+}
+
+void ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab)
+{
+	u32 cmn_reg_addr;
+	u32 regval;
+
+	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
+	regval = ath12k_hif_read32(ab, cmn_reg_addr);
+
+	regval |= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+
+	/* Enable ring halt for the ppe2tcl ring */
+	ath12k_hif_write32(ab, cmn_reg_addr, regval);
+}
+
+void ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_reset(struct ath12k_base *ab)
+{
+	u32 cmn_reg_addr;
+	u32 regval;
+
+	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
+	regval = ath12k_hif_read32(ab, cmn_reg_addr);
+
+	regval &= ~(1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+
+	/* Disable ring halt for the ppe2tcl ring */
+	ath12k_hif_write32(ab, cmn_reg_addr, regval);
+}
+
+bool ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
+{
+	u32 cmn_reg_addr;
+	u32 regval;
+
+	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
+
+	regval = ath12k_hif_read32(ab, cmn_reg_addr);
+
+	regval &= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT);
+
+	return !!regval;
+}
+
+#define HAL_TCL_RBM_MAPPING0_ADDR_OFFSET        0x00000088
+#define HAL_TCL_RBM_MAPPING_SHFT 4
+#define HAL_TCL_RBM_MAPPING_BMSK 0xF
+#define HAL_TCL_RBM_MAPPING_PPE2TCL_OFFSET  7
+#define HAL_TCL_RBM_MAPPING_TCL_CMD_CREDIT_OFFSET  6
+
+void ath12k_wifi7_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
+					    u8 rbm_id, int ring_type)
+{
+	u32 curr_map, new_map;
+
+	if (ring_type == HAL_PPE2TCL)
+		ring_num = ring_num + HAL_TCL_RBM_MAPPING_PPE2TCL_OFFSET;
+	else if (ring_type == HAL_TCL_CMD)
+		ring_num = ring_num + HAL_TCL_RBM_MAPPING_TCL_CMD_CREDIT_OFFSET;
+
+	curr_map = ath12k_hif_read32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+				     HAL_TCL_RBM_MAPPING0_ADDR_OFFSET);
+
+	/* Protect the other values and clear the specific fields to be updated */
+	curr_map &= (~(HAL_TCL_RBM_MAPPING_BMSK <<
+		     (HAL_TCL_RBM_MAPPING_SHFT * ring_num)));
+	new_map = curr_map | ((HAL_TCL_RBM_MAPPING_BMSK & rbm_id) <<
+			      (HAL_TCL_RBM_MAPPING_SHFT * ring_num));
+
+	ath12k_hif_write32(ab, HAL_SEQ_WCSS_UMAC_TCL_REG +
+			   HAL_TCL_RBM_MAPPING0_ADDR_OFFSET, new_map);
+}
+
+#define HAL_TX_PPE_VP_CONFIG_TABLE_ADDR  0x00a44194
+#define HAL_TX_PPE_VP_CONFIG_TABLE_OFFSET 4
+void ath12k_wifi7_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
+					  struct ath12k_dp_ppe_vp_profile *ppe_vp_profile,
+					  u32 ppe_vp_idx, u32 vdev_id,
+					  u32 bank_id, u32 lmac_id)
+{
+	u32 ppe_vp_config;
+
+	if (lmac_id == HAL_WILDCARD_LMAC_ID)
+		lmac_id = HAL_TX_PPE_VP_CFG_WILDCARD_LMAC_ID;
+
+	if (!ppe_vp_profile) {
+		ppe_vp_config = 0;
+		goto reg_write;
+	}
+
+	ppe_vp_config |=
+		u32_encode_bits(ppe_vp_profile->vp_num,
+				HAL_TX_PPE_VP_CFG_VP_NUM) |
+		u32_encode_bits(ppe_vp_profile->search_idx_reg_num,
+				HAL_TX_PPE_VP_CFG_SRCH_IDX_REG_NUM) |
+		u32_encode_bits(ppe_vp_profile->use_ppe_int_pri,
+				HAL_TX_PPE_VP_CFG_USE_PPE_INT_PRI) |
+		u32_encode_bits(ppe_vp_profile->to_fw,
+				HAL_TX_PPE_VP_CFG_TO_FW) |
+		u32_encode_bits(ppe_vp_profile->drop_prec_enable,
+				HAL_TX_PPE_VP_CFG_DROP_PREC_EN) |
+		u32_encode_bits(bank_id, HAL_TX_PPE_VP_CFG_BANK_ID) |
+		u32_encode_bits(lmac_id, HAL_TX_PPE_VP_CFG_PMAC_ID) |
+		u32_encode_bits(vdev_id, HAL_TX_PPE_VP_CFG_VDEV_ID);
+
+reg_write:
+	ath12k_hif_write32(ab, HAL_TX_PPE_VP_CONFIG_TABLE_ADDR +
+			   HAL_TX_PPE_VP_CONFIG_TABLE_OFFSET * ppe_vp_idx,
+			   ppe_vp_config);
+}
+
+void ath12k_wifi7_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
+						     u32 ppeds_idx_map_val)
+{
+	u32 reg_addr;
+
+	reg_addr = HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(HAL_SEQ_WCSS_UMAC_TCL_REG, idx);
+
+	ath12k_hif_write32(ab, reg_addr, ppeds_idx_map_val);
+}
+
+void ath12k_wifi7_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
+{
+	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
+	u32 val = HAL_REO1_REO2PPE_DST_VAL;
+
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_REO2PPE_DST_INFO,
+			   val);
+}
+
+bool ath12k_wifi7_hal_tx_completion_process(struct hal_wbm_completion_ring_tx *desc,
+					    struct ath12k_dp_tx_comp_status *tx_status)
+{
+	u64 desc_va = 0;
+
+	tx_status->buf_rel_source = FIELD_GET(HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE,
+						   desc->info0);
+	tx_status->tx_desc = NULL;
+
+	if (likely(HAL_WBM_COMPL_TX_INFO0_CC_DONE & desc->info0)) {
+		desc_va = ((u64)desc->buf_va_hi << 32 | desc->buf_va_lo);
+		tx_status->tx_desc = (struct ath12k_ppeds_tx_desc_info *)
+						((unsigned long)desc_va);
+	} else {
+		tx_status->desc_id = u32_get_bits(desc->buf_va_hi,
+						       BUFFER_ADDR_INFO1_SW_COOKIE);
+	}
+
+	if (tx_status->buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW) {
+		tx_status->htt_status =
+			le32_get_bits(desc->info0, HAL_TX_COMP_TQM_RELEASE_REASON_MASK);
+
+		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
+		if (tx_status->htt_status ==
+				HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY)
+			return false;
+	}
+	return true;
+}
+

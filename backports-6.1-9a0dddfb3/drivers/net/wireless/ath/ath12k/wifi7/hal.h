@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_HAL_WIFI7_H
@@ -754,6 +754,21 @@ void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);
 void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
 					 u32 ba_window_size, u8 tid);
+bool ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab);
+void ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab);
+void ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_reset(struct ath12k_base *ab);
+bool ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab);
+void ath12k_wifi7_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
+					    u8 rbm_id, int ring_type);
+void ath12k_wifi7_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
+					  struct ath12k_dp_ppe_vp_profile *ppe_vp_profile,
+					  u32 ppe_vp_idx, u32 vdev_id,
+					  u32 bank_id, u32 lmac_id);
+void ath12k_wifi7_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
+						     u32 ppeds_idx_map_val);
+void ath12k_wifi7_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
+bool ath12k_wifi7_hal_tx_completion_process(struct hal_wbm_completion_ring_tx *desc,
+					    struct ath12k_dp_tx_comp_status *tx_status);
 
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
@@ -789,45 +804,5 @@ void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng
 	return desc;
 }
 
-/*
- * ath12k_hal_srng_access_umac_src_ring_end_nolock_fast can be used
- * only when the calling context tries to fill 1 entry of the ring at a time
- */
-static inline
-void ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(struct hal_srng *srng)
-{
-	writel_relaxed(srng->u.src_ring.hp, srng->u.src_ring.hp_addr_direct);
-	srng->timestamp = jiffies;
-}
-static inline
-void ath12k_hal_srng_access_dst_ring_begin_nolock(struct ath12k_base *ab,
-						  struct hal_srng *srng)
-{
-	srng->u.dst_ring.cached_hp = *srng->u.dst_ring.hp_addr;
-}
-static inline
-void ath12k_hal_srng_access_dst_ring_end_nolock(struct hal_srng *srng)
-{
-	srng->u.dst_ring.last_hp = *srng->u.dst_ring.hp_addr;
-	writel_relaxed(srng->u.dst_ring.tp, srng->u.dst_ring.tp_addr_direct);
-	srng->timestamp = jiffies;
-}
-static inline
-void *ath12k_hal_srng_dst_peek_nolock(struct hal_srng *srng)
-{
-	if (srng->u.dst_ring.tp != srng->u.dst_ring.cached_hp)
-		return (srng->ring_base_vaddr + srng->u.dst_ring.tp);
-
-	return NULL;
-}
-
-static inline
-void *ath12k_hal_srng_dst_next_peek_nolock(struct hal_srng *srng)
-{
-	if ((srng->u.dst_ring.tp +  srng->entry_size) != srng->u.dst_ring.cached_hp)
-		return (srng->ring_base_vaddr + (srng->u.dst_ring.tp +  srng->entry_size));
-
-	return NULL;
-}
 
 #endif

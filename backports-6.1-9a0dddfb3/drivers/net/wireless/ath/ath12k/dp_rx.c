@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/ieee80211.h>
@@ -15,6 +15,7 @@
 #include "core.h"
 #include "debug.h"
 #include "hw.h"
+#include "dp.h"
 #include "dp_rx.h"
 #include "dp_tx.h"
 #include "peer.h"
@@ -687,7 +688,8 @@ void ath12k_dp_rx_frags_cleanup(struct ath12k_dp_rx_tid *rx_tid,
 	if (rx_tid->dst_ring_desc) {
 		if (rel_link_desc) {
 			bm_act = HAL_WBM_REL_BM_ACT_PUT_IN_IDLE;
-			buf_addr_info = &rx_tid->dst_ring_desc->buf_addr_info;
+			buf_addr_info =
+				(struct ath12k_buffer_addr *)rx_tid->dst_ring_desc;
 			ath12k_dp_arch_rx_link_desc_return(dp, buf_addr_info,
 							   bm_act);
 		}
@@ -1763,29 +1765,3 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 }
 EXPORT_SYMBOL(ath12k_dp_rx_skb_free);
 
-void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
-					 struct rx_msdu_desc_info *rx_msdu_info,
-					 struct rx_mpdu_desc_info *rx_mpdu_info,
-					 u8 link_id, int ring_id)
-{
-	bool is_not_msdu;
-
-	if (!peer)
-		return;
-
-	is_not_msdu = rx_msdu_info->first_msdu & rx_msdu_info->last_msdu;
-
-	if (is_not_msdu)
-		DP_PEER_STATS_INC(peer, rx, ring_id, non_amsdu, link_id, 1);
-	else
-		DP_PEER_STATS_INC(peer, rx, ring_id, msdu_part_of_amsdu, link_id, 1);
-
-	if (rx_msdu_info->da_is_mcbc)
-		DP_PEER_STATS_INC(peer, rx, ring_id, mcast, link_id, 1);
-	else
-		DP_PEER_STATS_INC(peer, rx, ring_id, ucast, link_id, 1);
-
-	DP_PEER_STATS_COND_INC(peer, rx, ring_id, mpdu_retry, link_id,
-			       rx_mpdu_info->mpdu_retry_bit, 1);
-}
-EXPORT_SYMBOL(ath12k_dp_rx_update_peer_msdu_stats);

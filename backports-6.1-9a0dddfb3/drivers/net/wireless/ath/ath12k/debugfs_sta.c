@@ -625,7 +625,7 @@ static ssize_t ath12k_dbg_sta_write_delba(struct file *file,
 		return -EINVAL;
 
 	/* Valid TID values are 0 through 15 */
-	if (tid > HAL_DESC_REO_NON_QOS_TID - 1)
+	if (tid > HAL_NON_QOS_TID - 1)
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
@@ -677,7 +677,7 @@ static ssize_t ath12k_dbg_sta_write_addba_resp(struct file *file,
 		return -EINVAL;
 
 	/* Valid TID values are 0 through 15 */
-	if (tid > HAL_DESC_REO_NON_QOS_TID - 1)
+	if (tid > HAL_NON_QOS_TID - 1)
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
@@ -728,7 +728,7 @@ static ssize_t ath12k_dbg_sta_write_addba(struct file *file,
 		return -EINVAL;
 
 	/* Valid TID values are 0 through 15 */
-	if (tid > HAL_DESC_REO_NON_QOS_TID - 1)
+	if (tid > HAL_NON_QOS_TID - 1)
 		return -EINVAL;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);

@@ -8,7 +8,6 @@
 #include "core.h"
 #include "peer.h"
 #include "sdwf.h"
-#include "wifi7/hal_rx.h"
 #include <linux/module.h>
 #include <linux/if_vlan.h>
 

@@ -1,14 +1,16 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef ATH12K_DP_RX_H
 #define ATH12K_DP_RX_H
 
 #include "core.h"
-#include "debug.h"
 #include <crypto/hash.h>
+#include "hal.h"
+
+struct ath12k_sta;
 
 #define DP_MAX_NWIFI_HDR_LEN	30
 
@@ -304,10 +306,6 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 				 enum ath12k_routing_pkt_type pkt_type,
 				 u32 meta_data);
 int ath12k_dp_rxdma_buf_setup(struct ath12k_base *ab);
-void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
-					 struct rx_msdu_desc_info *rx_msdu_info,
-					 struct rx_mpdu_desc_info *rx_mpdu_info,
-					 u8 link_id, int ring_id);
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 			   enum ath12k_dp_rx_error drop_reason);
 void ath12k_dp_rx_classify_mscs(struct ath12k_base *ab,

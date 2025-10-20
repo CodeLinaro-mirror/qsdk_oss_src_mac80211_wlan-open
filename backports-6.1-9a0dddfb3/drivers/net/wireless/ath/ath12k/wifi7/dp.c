@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include "../core.h"
 #include "../debug.h"
@@ -14,6 +14,7 @@
 #include "dp_tx.h"
 #include "dp_rx.h"
 #include "hal.h"
+#include "ppeds.h"
 #include "dp_mon.h"
 
 static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
@@ -365,6 +366,8 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 		return NULL;
 
 	dp->arch_ops = &ath12k_wifi7_dp_arch_ops;
+	dp->ppe.ppeds_wlanops = &ppeds_wlanops_v2;
+	dp->ppe.ppe_ops = &ath12k_wifi7_arch_ppeds_ops;
 
 	dp->ab = ab;
 	dp->dev = ab->dev;

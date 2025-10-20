@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include "hal_desc.h"
 #include "hal_rx_desc.h"
@@ -1063,4 +1063,14 @@ const struct hal_ops hal_qcn9274_ops = {
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
 	.rx_desc_get_fse_info = ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274,
+	.hal_tx_ppe2tcl_ring_halt_get = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_get,
+	.hal_tx_ppe2tcl_ring_halt_set = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_set,
+	.hal_tx_ppe2tcl_ring_halt_reset = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_reset,
+	.hal_tx_ppe2tcl_ring_halt_done = ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_done,
+	.hal_tx_config_rbm_mapping = ath12k_wifi7_hal_tx_config_rbm_mapping,
+	.hal_ppeds_cfg_ast_override_map_reg =
+			ath12k_wifi7_hal_ppeds_cfg_ast_override_map_reg,
+	.hal_reo_config_reo2ppe_dest_info = ath12k_wifi7_hal_reo_config_reo2ppe_dest_info,
+	.hal_tx_set_ppe_vp_entry = ath12k_wifi7_hal_tx_set_ppe_vp_entry,
+	.hal_tx_completion_process = ath12k_wifi7_hal_tx_completion_process,
 };

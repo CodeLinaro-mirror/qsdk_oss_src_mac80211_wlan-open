@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_DP_TX_H
@@ -29,20 +29,12 @@ struct ath12k_dp_htt_wbm_tx_status {
 	s8 ack_rssi;
 };
 
-static inline bool ath12k_dp_tx_completion_valid(struct hal_wbm_release_ring *desc)
+static inline
+bool ath12k_dp_tx_completion_process(struct ath12k_base *ab,
+				     struct hal_wbm_completion_ring_tx *desc,
+				     struct ath12k_dp_tx_comp_status *tx_comp_status)
 {
-	struct htt_tx_wbm_completion *status_desc;
-
-	if (FIELD_GET(HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE, desc->info0) ==
-			HAL_WBM_REL_SRC_MODULE_FW) {
-		status_desc = (struct htt_tx_wbm_completion *)desc;
-
-		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
-		if (FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS, status_desc->info0) ==
-				HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY)
-			return false;
-	}
-	return true;
+	return ab->hal.hal_ops->hal_tx_completion_process(desc, tx_comp_status);
 }
 
 void ath12k_dp_tx_put_bank_profile(struct ath12k_dp *dp, u8 bank_id);

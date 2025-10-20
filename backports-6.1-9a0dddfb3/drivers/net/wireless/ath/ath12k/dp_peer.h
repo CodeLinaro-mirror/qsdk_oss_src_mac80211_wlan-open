@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_DP_PEER_H
@@ -65,15 +65,6 @@ struct ath12k_atf_peer_airtime {
 	u64 last_update_time;
 };
 
-struct ath12k_htt_tx_stats {
-       struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
-       u64 tx_duration;
-       u64 ba_fails;
-       u64 ack_fails;
-       u16 ru_start;
-       u16 ru_tones;
-       u32 mu_group[MAX_MU_GROUP_ID];
-};
 
 DECLARE_EWMA(avg_rssi, 10, 8)
 

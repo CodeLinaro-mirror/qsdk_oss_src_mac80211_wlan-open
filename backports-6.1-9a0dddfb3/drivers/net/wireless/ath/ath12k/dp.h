@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_DP_H
@@ -9,9 +9,9 @@
 
 #include "core.h"
 #include "hw.h"
+#include "hal.h"
 #include "dp_htt.h"
 #include "dp_cmn.h"
-#include "hal.h"
 #include "ppe.h"
 #include <linux/rhashtable.h>
 #include "dp_stats.h"
@@ -52,6 +52,7 @@ enum hal_wbm_rel_bm_act;
 struct dp_rx_fst;
 struct ath12k_dp_mon;
 struct ath12k_pdev_mon_dp;
+struct ath12k_hp_update_timer;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
@@ -349,16 +350,6 @@ struct ath12k_dp_tx_bank_profile {
 	u32 bank_config;
 };
 
-struct ath12k_hp_update_timer {
-	struct timer_list timer;
-	bool started;
-	bool init;
-	u32 tx_num;
-	u32 timer_tx_num;
-	u32 ring_id;
-	u32 interval;
-	struct ath12k_base *ab;
-};
 
 struct ath12k_rx_desc_info {
 	struct list_head list;
@@ -406,6 +397,13 @@ struct ath12k_ppeds_tx_desc_info {
 			u8 flags;
 		};
 	};
+};
+
+struct ath12k_dp_tx_comp_status {
+	int buf_rel_source;
+	struct ath12k_ppeds_tx_desc_info *tx_desc;
+	u32 desc_id;
+	int htt_status;
 };
 #endif
 
