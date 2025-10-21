@@ -11028,7 +11028,7 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_vif *vif = ahvif->vif;
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
-	bool skip_peer_del;
+	bool skip_peer_del = false;
 	int ret = 0;
 	struct ath12k_link_sta *temp_arsta = NULL;
 
@@ -11055,7 +11055,10 @@ static int ath12k_mac_station_remove(struct ath12k *ar,
 	/* is_netdev_going_down: Skip sending peer delete to firmware.
 	 * But delete rhash entry of peer from host
 	 */
-	skip_peer_del = wdev->is_netdev_going_down;
+
+	if (vif->type != NL80211_IFTYPE_STATION)
+		skip_peer_del = wdev->is_netdev_going_down;
+
 	ret = ath12k_peer_delete(ar, arvif->vdev_id, arsta->addr, skip_peer_del);
 	if (ret)
 		ath12k_warn(ar->ab, "Failed to delete peer: %pM for VDEV: %d ar->num_peers: %d arvif->num_peers: %d\n",
