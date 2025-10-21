@@ -21648,8 +21648,6 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 
 			ah->use_6ghz_regd = true;
 			ar->num_channels = ath12k_reg_get_num_chans_in_band(ar, band);
-			band->n_channels = band->chan_6g[NL80211_REG_AP_LPI]->n_channels;
-			band->channels = band->chan_6g[NL80211_REG_AP_LPI]->channels;
 			if (!bands[NL80211_BAND_6GHZ]) {
 				bands[NL80211_BAND_6GHZ] = band;
 			} else {
