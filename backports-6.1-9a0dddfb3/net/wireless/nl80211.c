@@ -642,6 +642,15 @@ nl80211_qm_policy[NL80211_QM_ATTR_MAX + 1] = {
 			NLA_POLICY_NESTED_ARRAY(nl80211_qm_desc_params_policy),
 };
 
+static const struct nla_policy
+nl80211_pcie_policy[NL80211_PCIE_ATTR_MAX + 1] = {
+	[NL80211_PCIE_ATTR_TYPE] = { .type = NLA_U8 },
+	[NL80211_PCIE_ATTR_ENABLE] = { .type = NLA_U8 },
+	[NL80211_PCIE_ATTR_CONFIG_TYPE] = { .type = NLA_U8 },
+	[NL80211_PCIE_ATTR_GEN] = { .type = NLA_U8 },
+	[NL80211_PCIE_ATTR_LANE] = { .type = NLA_U8 },
+};
+
 #if LINUX_VERSION_IS_GEQ(6,7,0)
 static const struct netlink_range_validation nl80211_punct_bitmap_range = {
 	.min = 0,
@@ -1077,6 +1086,9 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_UHR_CAPABILITY] =
 		NLA_POLICY_BINARY_RANGE(NL80211_UHR_MIN_CAPABILITY_LEN, NL80211_UHR_MAX_CAPABILITY_LEN),
 	[NL80211_ATTR_DISABLE_UHR] = { .type = NLA_FLAG },
+	[NL80211_ATTR_PCIE] = NLA_POLICY_NESTED(nl80211_pcie_policy),
+	[NL80211_ATTR_DCVS] = { .type = NLA_U32 },
+	[NL80211_ATTR_DPS_ASSIST] = { .type = NLA_U8 },
 };
 
 /* policy for the key attributes */
@@ -19598,6 +19610,124 @@ nl80211_qos_mgmt_cfg(struct sk_buff *skb, struct genl_info *info)
 	return 0;
 }
 
+static int nl80211_send_ap_powersave(struct cfg80211_registered_device *rdev,
+				     struct sk_buff *msg,
+				     enum nl80211_commands cmd,
+				     int ifindex, u8 link_id,
+				     bool dps_assist_enable)
+{
+	void *hdr;
+
+	hdr = nl80211hdr_put(msg, 0, 0, 0, cmd);
+	if (!hdr)
+		return -ENOBUFS;
+
+	if (nla_put_u32(msg, NL80211_ATTR_IFINDEX, ifindex) ||
+	    nla_put_u8(msg, NL80211_ATTR_MLO_LINK_ID, link_id) ||
+	    nla_put_u8(msg, NL80211_ATTR_DPS_ASSIST, dps_assist_enable)) {
+		goto nla_ap_ps_fail;
+	}
+
+	genlmsg_end(msg, hdr);
+
+	genlmsg_multicast_netns(&nl80211_fam, wiphy_net(&rdev->wiphy), msg, 0,
+				NL80211_MCGRP_CONFIG, GFP_KERNEL);
+
+	return 0;
+
+nla_ap_ps_fail:
+	nlmsg_free(msg);
+	return -ENOBUFS;
+}
+
+static int nl80211_ap_power_save(struct sk_buff *skb, struct genl_info *info)
+{
+	struct cfg80211_registered_device *rdev = info->user_ptr[0];
+	struct net_device *dev = info->user_ptr[1];
+	struct wireless_dev *wdev = dev->ieee80211_ptr;
+	struct nlattr *attrs[NL80211_PCIE_ATTR_MAX + 1];
+	struct cfg80211_ap_power_save_params params = {};
+	struct sk_buff *msg;
+	int err;
+
+	if (info->attrs[NL80211_ATTR_PCIE]) {
+		struct cfg80211_pcie_params *pcie = &params.pcie;
+
+		params.types |= CFG80211_TYPE_PCIE;
+
+		err = nla_parse_nested(attrs, NL80211_PCIE_ATTR_MAX,
+				       info->attrs[NL80211_ATTR_PCIE],
+				       nl80211_pcie_policy, NULL);
+		if (err)
+			return err;
+
+		if (!attrs[NL80211_PCIE_ATTR_TYPE] ||
+		    !attrs[NL80211_PCIE_ATTR_ENABLE] ||
+		    !attrs[NL80211_PCIE_ATTR_CONFIG_TYPE])
+			return -EINVAL;
+
+		pcie->cmd = nla_get_u8(attrs[NL80211_PCIE_ATTR_TYPE]);
+		pcie->enable = nla_get_u8(attrs[NL80211_PCIE_ATTR_ENABLE]);
+		pcie->config_type = nla_get_u8(attrs[NL80211_PCIE_ATTR_CONFIG_TYPE]);
+
+		if (pcie->cmd == CFG80211_PCIE_CMD_GEN_LANE) {
+			if (pcie->config_type == CFG80211_PCIE_GEN_LANE_STATIC) {
+				if (!attrs[NL80211_PCIE_ATTR_GEN] ||
+				    !attrs[NL80211_PCIE_ATTR_LANE])
+					return -EINVAL;
+				pcie->pcie_gen = nla_get_u8(attrs[NL80211_PCIE_ATTR_GEN]);
+				pcie->pcie_lane =
+						nla_get_u8(attrs[NL80211_PCIE_ATTR_LANE]);
+			}
+		}
+	}
+
+	if (info->attrs[NL80211_ATTR_DCVS]) {
+		params.types |= CFG80211_TYPE_DCVS;
+
+		switch (nla_get_u32(info->attrs[NL80211_ATTR_DCVS])) {
+		case NL80211_DCVS_ATTR_ON:
+			params.dcvs_mode = CFG80211_DCVS_CMD_ON;
+			break;
+		case NL80211_DCVS_ATTR_OFF:
+			params.dcvs_mode = CFG80211_DCVS_CMD_OFF;
+			break;
+		case NL80211_DCVS_ATTR_NO_LIMIT:
+			params.dcvs_mode = CFG80211_DCVS_CMD_NO_LIMIT;
+			break;
+		default:
+			return -EINVAL;
+		}
+	}
+
+	if (info->attrs[NL80211_ATTR_DPS_ASSIST]) {
+		params.types |= CFG80211_TYPE_DPS_ASSIST;
+		params.dps_assist_enable = CFG80211_DPS_ASSIST_CMD_DISABLE;
+
+		if (nla_get_u8(info->attrs[NL80211_ATTR_DPS_ASSIST]))
+			params.dps_assist_enable = CFG80211_DPS_ASSIST_CMD_ENABLE;
+	}
+
+	err = rdev_ap_power_save(rdev, wdev,
+				 nl80211_link_id_or_invalid(info->attrs),
+				 &params);
+	if (err)
+		return err;
+
+	if (params.types & CFG80211_TYPE_DPS_ASSIST) {
+		msg = nlmsg_new(NLMSG_DEFAULT_SIZE, GFP_KERNEL);
+		if (!msg)
+			return -ENOMEM;
+
+		return nl80211_send_ap_powersave(rdev, msg, NL80211_CMD_AP_POWER_SAVE,
+						 wdev->netdev->ifindex,
+						 nl80211_link_id_or_invalid(info->attrs),
+						 params.dps_assist_enable);
+	}
+
+	return 0;
+}
+
 #define NL80211_FLAG_NEED_WIPHY		0x01
 #define NL80211_FLAG_NEED_NETDEV	0x02
 #define NL80211_FLAG_NEED_RTNL		0x04
@@ -20842,6 +20972,13 @@ static const struct genl_small_ops nl80211_small_ops[] = {
 		.doit = nl80211_qos_mgmt_cfg,
 		.flags = GENL_UNS_ADMIN_PERM,
 		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV_UP),
+	},
+	{
+		.cmd = NL80211_CMD_AP_POWER_SAVE,
+		.doit = nl80211_ap_power_save,
+		.flags = GENL_UNS_ADMIN_PERM,
+		.internal_flags = IFLAGS(NL80211_FLAG_NEED_NETDEV |
+					 NL80211_FLAG_MLO_VALID_LINK_ID),
 	},
 };
 

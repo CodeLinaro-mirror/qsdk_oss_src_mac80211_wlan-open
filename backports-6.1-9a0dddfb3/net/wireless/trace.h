@@ -4417,6 +4417,47 @@ TRACE_EVENT(rdev_get_6ghz_dev_deployment_type,
 
 	TP_printk(WIPHY_PR_FMT, WIPHY_PR_ARG)
 );
+
+TRACE_EVENT(rdev_ap_power_save,
+	TP_PROTO(struct wiphy *wiphy, struct wireless_dev *wdev,
+		 int link_id, struct cfg80211_ap_power_save_params *params),
+
+	TP_ARGS(wiphy, wdev, link_id, params),
+
+	TP_STRUCT__entry(
+		WIPHY_ENTRY
+		WDEV_ENTRY
+		__field(int, link_id)
+		__field(u32, cmd)
+		__field(bool, enable)
+		__field(u8, config_type)
+		__field(u8, pcie_gen)
+		__field(u8, pcie_lane)
+		__field(u32, dcvs_mode)
+		__field(bool, dps_assist_enable)
+	),
+
+	TP_fast_assign(
+		WIPHY_ASSIGN;
+		WDEV_ASSIGN;
+		__entry->link_id = link_id;
+		__entry->cmd = params->pcie.cmd;
+		__entry->enable = params->pcie.enable;
+		__entry->config_type = params->pcie.config_type;
+		__entry->pcie_gen = params->pcie.pcie_gen;
+		__entry->pcie_lane = params->pcie.pcie_lane;
+		__entry->dcvs_mode = params->dcvs_mode;
+		__entry->dps_assist_enable = params->dps_assist_enable;
+	),
+
+	TP_printk(WIPHY_PR_FMT ", " WDEV_PR_FMT
+		  ",link_id: %d, PCIe (cmd: %u, enable: %d, config_type: %u, pcie_gen: %u,"
+		  " pcie_lane: %u) DCVS (dcvs_mode: %d) DPS Assist (dps_assist_enable %d)",
+		  WIPHY_PR_ARG, WDEV_PR_ARG,
+		  __entry->link_id, __entry->cmd, __entry->enable,
+		  __entry->config_type, __entry->pcie_gen, __entry->pcie_lane,
+		  __entry->dcvs_mode, __entry->dps_assist_enable)
+);
 #endif /* !__RDEV_OPS_TRACE || TRACE_HEADER_MULTI_READ */
 
 #undef TRACE_INCLUDE_PATH
