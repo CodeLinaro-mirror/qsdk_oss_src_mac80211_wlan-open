@@ -2639,9 +2639,11 @@ static void ath12k_wmi_bcn_fill_ml_info(struct ath12k_link_vif *arvif,
 	struct ath12k_base *ab = arvif->ar->ab;
 	struct ath12k_link_vif *arvif_iter;
 	u32 vdev_id = arvif->vdev_id;
-	unsigned long vdev_map_cat1 = 0;
-	unsigned long vdev_map_cat2 = 0;
+	DECLARE_BITMAP(vdev_map_cat1, 64);
+	DECLARE_BITMAP(vdev_map_cat2, 64);
 
+	bitmap_zero(vdev_map_cat1, 64);
+	bitmap_zero(vdev_map_cat2, 64);
 	rcu_read_lock();
 
 	tx_link_conf = ath12k_mac_get_link_bss_conf(arvif);
@@ -2664,13 +2666,13 @@ static void ath12k_wmi_bcn_fill_ml_info(struct ath12k_link_vif *arvif,
 			 * to non-tx vdev as well.
 			 */
 			if (link_conf->elemid_added || tx_link_conf->elemid_added)
-				set_bit(arvif_iter->vdev_id, &vdev_map_cat1);
+				set_bit(arvif_iter->vdev_id, vdev_map_cat1);
 			/* If arvif is not up, current set beacon will be bringing it up
 			 * So for link addition, set critical update even if arvif is
 			 * not up.
 			 */
 			if (link_conf->elemid_modified || !arvif_iter->is_up)
-				set_bit(arvif_iter->vdev_id, &vdev_map_cat2);
+				set_bit(arvif_iter->vdev_id, vdev_map_cat2);
 		}
 	}
 
@@ -2681,20 +2683,27 @@ static void ath12k_wmi_bcn_fill_ml_info(struct ath12k_link_vif *arvif,
 	ml_info->hw_link_id = cpu_to_le32(arvif->ar->pdev->hw_link_id);
 
 	if (tx_link_conf->elemid_added)
-		set_bit(vdev_id, &vdev_map_cat1);
+		set_bit(vdev_id, vdev_map_cat1);
 
 	if (tx_link_conf->elemid_modified)
-		set_bit(vdev_id, &vdev_map_cat2);
+		set_bit(vdev_id, vdev_map_cat2);
 
 err_fill_ml_info:
+#if BITS_PER_LONG == 32
+	ml_info->cu_vdev_map_cat1_lo = cpu_to_le32(vdev_map_cat1[0]);
+	ml_info->cu_vdev_map_cat1_hi = cpu_to_le32(vdev_map_cat1[1]);
+	ml_info->cu_vdev_map_cat2_lo = cpu_to_le32(vdev_map_cat2[0]);
+	ml_info->cu_vdev_map_cat2_hi = cpu_to_le32(vdev_map_cat2[1]);
+#else
 	ml_info->cu_vdev_map_cat1_lo =
-			   cpu_to_le32(ATH12K_GET_LOWER_32_BITS(vdev_map_cat1));
+			   cpu_to_le32(ATH12K_GET_LOWER_32_BITS(vdev_map_cat1[0]));
 	ml_info->cu_vdev_map_cat1_hi =
-			   cpu_to_le32(ATH12K_GET_UPPER_32_BITS(vdev_map_cat1));
+			   cpu_to_le32(ATH12K_GET_UPPER_32_BITS(vdev_map_cat1[0]));
 	ml_info->cu_vdev_map_cat2_lo =
-			   cpu_to_le32(ATH12K_GET_LOWER_32_BITS(vdev_map_cat2));
+			   cpu_to_le32(ATH12K_GET_LOWER_32_BITS(vdev_map_cat2[0]));
 	ml_info->cu_vdev_map_cat2_hi =
-			   cpu_to_le32(ATH12K_GET_UPPER_32_BITS(vdev_map_cat2));
+			   cpu_to_le32(ATH12K_GET_UPPER_32_BITS(vdev_map_cat2[0]));
+#endif
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,
 		   "wmi CU filled ml info cat1_lo=0x%x cat1_hi=0x%x cat2_lo=0x%x cat2_hi=0x%x\n",
