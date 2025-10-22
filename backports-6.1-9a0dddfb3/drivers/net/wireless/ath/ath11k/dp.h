@@ -8,6 +8,7 @@
 #define ATH11K_DP_H
 
 #include "hal_rx.h"
+#include "hw.h"
 
 #define MAX_RXDMA_PER_PDEV     2
 
@@ -20,8 +21,10 @@ struct ath11k_ext_irq_grp;
 
 struct dp_rx_tid {
 	u8 tid;
+	u32 *vaddr;
 	dma_addr_t paddr;
 	u32 size;
+	u32 pending_desc_size;
 	u32 ba_win_sz;
 	bool active;
 
@@ -46,10 +49,20 @@ struct dp_rx_tid {
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
 
+#define ATH11K_REO_STATUS_POLL_TIMEOUT_MS 10
+
 struct dp_reo_cache_flush_elem {
 	struct list_head list;
 	struct dp_rx_tid data;
 	unsigned long ts;
+};
+
+struct dp_reo_update_rx_queue_elem {
+	struct list_head list;
+	struct dp_rx_tid data;
+	int peer_id;
+	u8 tid;
+	bool reo_cmd_update_rx_queue_resend_flag;
 };
 
 struct dp_reo_cmd {
@@ -80,6 +93,13 @@ struct dp_rxdma_ring {
 
 #define ATH11K_TX_COMPL_NEXT(x)	(((x) + 1) % DP_TX_COMP_RING_SIZE)
 
+struct idr_entry {
+	int id;
+	void *buf;
+};
+
+#define DP_TX_IDR_SIZE	ATH11K_DP_TX_COMP_RING_SIZE
+
 struct dp_tx_ring {
 	u8 tcl_data_ring_id;
 	struct dp_srng tcl_data_ring;
@@ -90,6 +110,8 @@ struct dp_tx_ring {
 	struct hal_wbm_release_ring *tx_status;
 	int tx_status_head;
 	int tx_status_tail;
+	DECLARE_BITMAP(idrs, DP_TX_IDR_SIZE);
+	struct idr_entry *idr_pool;
 };
 
 enum dp_mon_status_buf_state {
@@ -195,6 +217,7 @@ struct ath11k_pdev_dp {
 #define DP_AVG_MSDUS_PER_MPDU 4
 
 #define DP_RX_HASH_ENABLE	1 /* Enable hash based Rx steering */
+#define DP_RX_HASH_DISABLE	0 /* Disable hash based Rx steering */
 
 #define DP_BA_WIN_SZ_MAX	256
 
@@ -206,8 +229,8 @@ struct ath11k_pdev_dp {
 #define DP_WBM_RELEASE_RING_SIZE	64
 #define DP_TCL_DATA_RING_SIZE		512
 #define DP_TCL_DATA_RING_SIZE_WCN6750	2048
-#define DP_TX_COMP_RING_SIZE		32768
-#define DP_TX_IDR_SIZE			DP_TX_COMP_RING_SIZE
+#define DP_TX_COMP_RING_SIZE		ATH11K_DP_TX_COMP_RING_SIZE
+#define DP_TX_COMP_MAX_ALLOWED         DP_TX_COMP_RING_SIZE
 #define DP_TCL_CMD_RING_SIZE		32
 #define DP_TCL_STATUS_RING_SIZE		32
 #define DP_REO_DST_RING_MAX		4
@@ -218,11 +241,12 @@ struct ath11k_pdev_dp {
 #define DP_REO_CMD_RING_SIZE		256
 #define DP_REO_STATUS_RING_SIZE		2048
 #define DP_RXDMA_BUF_RING_SIZE		4096
-#define DP_RXDMA_REFILL_RING_SIZE	2048
+#define DP_RXDMA_REFILL_RING_SIZE	ATH11K_DP_RXDMA_REFILL_RING_SIZE
+#define DP_RXDMA_NSS_REFILL_RING_SIZE	ATH11K_DP_RXDMA_NSS_REFILL_RING_SIZE
 #define DP_RXDMA_ERR_DST_RING_SIZE	1024
-#define DP_RXDMA_MON_STATUS_RING_SIZE	1024
-#define DP_RXDMA_MONITOR_BUF_RING_SIZE	4096
-#define DP_RXDMA_MONITOR_DST_RING_SIZE	2048
+#define DP_RXDMA_MON_STATUS_RING_SIZE	ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE
+#define DP_RXDMA_MONITOR_BUF_RING_SIZE	ATH11K_DP_RXDMA_MONITOR_BUF_RING_SIZE
+#define DP_RXDMA_MONITOR_DST_RING_SIZE	ATH11K_DP_RXDMA_MONITOR_BUF_RING_SIZE
 #define DP_RXDMA_MONITOR_DESC_RING_SIZE	4096
 
 #define DP_RX_RELEASE_RING_NUM	3
@@ -285,8 +309,18 @@ struct ath11k_dp {
 	 * - reo_cmd_cache_flush_count
 	 */
 	spinlock_t reo_cmd_lock;
+	struct list_head reo_cmd_update_rx_queue_list;
+	/**
+	 * protects access to below field,
+	 * - reo_cmd_update_rx_queue_list
+	 */
+	spinlock_t reo_cmd_update_queue_lock;
 	struct ath11k_hp_update_timer reo_cmd_timer;
 	struct ath11k_hp_update_timer tx_ring_timer[DP_TCL_NUM_RING_MAX];
+
+	/* reo status timer and flags */
+	struct timer_list reo_status_timer;
+	bool reo_status_timer_running;
 };
 
 /* HTT definitions */
@@ -574,6 +608,7 @@ enum htt_ppdu_stats_tag_type {
 	HTT_PPDU_STATS_TAG_USR_COMMON_ARRAY,
 	HTT_PPDU_STATS_TAG_INFO,
 	HTT_PPDU_STATS_TAG_TX_MGMTCTRL_PAYLOAD,
+	HTT_PPDU_STATS_TAG_RX_MGMTCTRL_PAYLOAD = 17,
 
 	/* New TLV's are added above to this line */
 	HTT_PPDU_STATS_TAG_MAX,
@@ -596,6 +631,45 @@ enum htt_ppdu_stats_tag_type {
 				    BIT(HTT_PPDU_STATS_TAG_TX_MGMTCTRL_PAYLOAD) | \
 				    HTT_PPDU_STATS_TAG_DEFAULT)
 
+#define HTT_STATS_FRAMECTRL_TYPE_MASK 0x0C
+#define HTT_STATS_GET_FRAME_CTRL_TYPE(_val)	\
+		(((_val) & HTT_STATS_FRAMECTRL_TYPE_MASK) >> 2)
+#define HTT_STATS_FRAME_CTRL_TYPE_MGMT	0x0
+#define HTT_STATS_FRAME_CTRL_TYPE_CTRL	0x1
+#define HTT_STATS_FRAME_CTRL_TYPE_DATA	0x2
+#define HTT_STATS_FRAME_CTRL_TYPE_RESV	0x3
+
+enum htt_stats_frametype {
+	HTT_STATS_FTYPE_SGEN_NDPA = 0,
+	HTT_STATS_FTYPE_SGEN_NDP,
+	HTT_STATS_FTYPE_SGEN_BRP,
+	HTT_STATS_FTYPE_SGEN_BAR,
+	HTT_STATS_FTYPE_SGEN_RTS,
+	HTT_STATS_FTYPE_SGEN_CTS,
+	HTT_STATS_FTYPE_SGEN_CFEND,
+	HTT_STATS_FTYPE_SGEN_AX_NDPA,
+	HTT_STATS_FTYPE_SGEN_AX_NDP,
+	HTT_STATS_FTYPE_SGEN_MU_TRIG,
+	HTT_STATS_FTYPE_SGEN_MU_BAR,
+	HTT_STATS_FTYPE_SGEN_MU_BRP,
+	HTT_STATS_FTYPE_SGEN_MU_RTS,
+	HTT_STATS_FTYPE_SGEN_MU_BSR,
+	HTT_STATS_FTYPE_SGEN_UL_BSR,
+	HTT_STATS_FTYPE_SGEN_UL_BSR_TRIGGER = HTT_STATS_FTYPE_SGEN_UL_BSR,
+	HTT_STATS_FTYPE_TIDQ_DATA_SU,
+	HTT_STATS_FTYPE_TIDQ_DATA_MU,
+	HTT_STATS_FTYPE_SGEN_UL_BSR_RESP,
+	HTT_STATS_FTYPE_SGEN_QOS_NULL,
+	HTT_STATS_FTYPE_MAX,
+};
+
+enum htt_stats_internal_ppdu_frametype {
+	HTT_STATS_PPDU_FTYPE_CTRL,
+	HTT_STATS_PPDU_FTYPE_DATA,
+	HTT_STATS_PPDU_FTYPE_BAR,
+	HTT_STATS_PPDU_FTYPE_MAX
+};
+
 /* HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG Message
  *
  * details:
@@ -608,7 +682,7 @@ enum htt_ppdu_stats_tag_type {
  *
  *    |31       26|25|24|23            16|15             8|7             0|
  *    |-----------------+----------------+----------------+---------------|
- *    |   rsvd1   |PS|SS|     ring_id    |     pdev_id    |    msg_type   |
+ *    |   rsvd1|OV|PS|SS|     ring_id    |     pdev_id    |    msg_type   |
  *    |-------------------------------------------------------------------|
  *    |              rsvd2               |           ring_buffer_size     |
  *    |-------------------------------------------------------------------|
@@ -621,6 +695,14 @@ enum htt_ppdu_stats_tag_type {
  *    |                        packet_type_enable_flags_3                 |
  *    |-------------------------------------------------------------------|
  *    |                         tlv_filter_in_flags                       |
+ *    |-------------------------------------------------------------------|
+ *    |         rx_header_offset         |       rx_packet_offset         |
+ *    |-------------------------------------------------------------------|
+ *    |       rx_mpdu_start_offset       |      rx_mpdu_end_offset        |
+ *    |-------------------------------------------------------------------|
+ *    |       rx_msdu_start_offset       |      rx_msdu_end_offset        |
+ *    |-------------------------------------------------------------------|
+ *    |              rsvd3               |      rx_attention_offset       |
  *    |-------------------------------------------------------------------|
  * Where:
  *     PS = pkt_swap
@@ -635,7 +717,9 @@ enum htt_ppdu_stats_tag_type {
  *                    More details can be got from enum htt_srng_ring_id
  *          b'24    - status_swap: 1 is to swap status TLV
  *          b'25    - pkt_swap:  1 is to swap packet TLV
- *          b'26:31 - rsvd1:  reserved for future use
+ *          b'26    - rx_offset_valid (OV): flag to indicate rx offsets
+ *
+ *          b'27:31 - rsvd1:  reserved for future use
  * dword1 - b'0:16  - ring_buffer_size: size of buffers referenced by rx ring,
  *                    in byte units.
  *                    Valid only for HW_TO_SW_RING and SW_TO_HW_RING
@@ -664,6 +748,42 @@ enum htt_ppdu_stats_tag_type {
  * dword6 - b'0:31 -  tlv_filter_in_flags:
  *                    Filter in Attention/MPDU/PPDU/Header/User tlvs
  *                    Refer to CFG_TLV_FILTER_IN_FLAG defs
+ * dword7 - b'0:15 -  rx_packet_offset: rx_packet_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_1 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ *	  - b'16:31 - rx_header_offset: rx_header_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_1 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ * dword8 - b'0:15 -  rx_mpdu_end_offset: rx_mpdu_end_offset in byte units
+ *	              Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_2 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ *	  - b'16:31 - rx_mpdu_start_offset: rx_mpdu_start_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_2 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ * dword9 - b'0:15 -  rx_msdu_end_offset: rx_msdu_end_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_3 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ *	  - b'16:31 - rx_msdu_start_offset: rx_msdu_start_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_3 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ * dword10- b'0:15  - rx_attention_offset: rx_attention_offset in byte units
+ *		      Valid only for HW_TO_SW_RING and SW_TO_HW_RING
+ *		      A value of 0 will be considered as ignore this config.
+ *		      Refer to BUF_RING_CFG_4 defs within HW .h files,
+ *		      e.g. wmac_top_reg_seq_hwioreg.h
+ *	  - b'16:31 - rsvd3 for future use
  */
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_MSG_TYPE	GENMASK(7, 0)
@@ -671,8 +791,16 @@ enum htt_ppdu_stats_tag_type {
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_RING_ID	GENMASK(23, 16)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_SS		BIT(24)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PS		BIT(25)
+#define HTT_RX_RING_SELECTION_CFG_CMD_OFFSET_VALID      BIT(26)
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE	GENMASK(15, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_PACKET_OFFSET      GENMASK(15, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_HEADER_OFFSET      GENMASK(31, 16)
+#define HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_OFFSET    GENMASK(15, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_MPDU_START_OFFSET  GENMASK(31, 16)
+#define HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_OFFSET    GENMASK(15, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_MSDU_START_OFFSET  GENMASK(31, 16)
+#define HTT_RX_RING_SELECTION_CFG_RX_ATTENTION_OFFSET   GENMASK(15, 0)
 
 enum htt_rx_filter_tlv_flags {
 	HTT_RX_FILTER_TLV_FLAGS_MPDU_START		= BIT(0),
@@ -976,6 +1104,14 @@ enum htt_rx_data_pkt_filter_tlv_flasg3 {
 		HTT_RX_FILTER_TLV_FLAGS_PER_MSDU_HEADER | \
 		HTT_RX_FILTER_TLV_FLAGS_ATTENTION)
 
+#define HTT_RX_RXDMA_FILTER_TLV_FLAGS_BUF_RING \
+		(HTT_RX_FILTER_TLV_FLAGS_MPDU_START | \
+		HTT_RX_FILTER_TLV_FLAGS_MSDU_START | \
+		HTT_RX_FILTER_TLV_FLAGS_RX_PACKET | \
+		HTT_RX_FILTER_TLV_FLAGS_MSDU_END | \
+		HTT_RX_FILTER_TLV_FLAGS_MPDU_END | \
+		HTT_RX_FILTER_TLV_FLAGS_ATTENTION)
+
 struct htt_rx_ring_selection_cfg_cmd {
 	u32 info0;
 	u32 info1;
@@ -984,6 +1120,10 @@ struct htt_rx_ring_selection_cfg_cmd {
 	u32 pkt_type_en_flags2;
 	u32 pkt_type_en_flags3;
 	u32 rx_filter_tlv;
+	u32 rx_packet_offset;
+	u32 rx_mpdu_offset;
+	u32 rx_msdu_offset;
+	u32 rx_attn_offset;
 } __packed;
 
 struct htt_rx_ring_tlv_filter {
@@ -992,6 +1132,14 @@ struct htt_rx_ring_tlv_filter {
 	u32 pkt_filter_flags1; /* MGMT */
 	u32 pkt_filter_flags2; /* CTRL */
 	u32 pkt_filter_flags3; /* DATA */
+	bool offset_valid;
+	u16 rx_packet_offset;
+	u16 rx_header_offset;
+	u16 rx_mpdu_end_offset;
+	u16 rx_mpdu_start_offset;
+	u16 rx_msdu_end_offset;
+	u16 rx_msdu_start_offset;
+	u16 rx_attn_offset;
 };
 
 #define HTT_RX_FULL_MON_MODE_CFG_CMD_INFO0_MSG_TYPE	GENMASK(7, 0)
@@ -1065,13 +1213,16 @@ struct htt_t2h_peer_map_event {
 #define HTT_T2H_PEER_UNMAP_INFO_PEER_ID	HTT_T2H_PEER_MAP_INFO_PEER_ID
 #define HTT_T2H_PEER_UNMAP_INFO1_MAC_ADDR_H16 \
 					HTT_T2H_PEER_MAP_INFO1_MAC_ADDR_H16
-#define HTT_T2H_PEER_MAP_INFO1_NEXT_HOP_M HTT_T2H_PEER_MAP_INFO2_NEXT_HOP_M
-#define HTT_T2H_PEER_MAP_INFO1_NEXT_HOP_S HTT_T2H_PEER_MAP_INFO2_NEXT_HOP_S
+#define HTT_T2H_PEER_UNMAP_INFO1_NEXT_HOP_M HTT_T2H_PEER_MAP_INFO2_NEXT_HOP_M
+#define HTT_T2H_PEER_UNMAP_INFO1_NEXT_HOP_S HTT_T2H_PEER_MAP_INFO2_NEXT_HOP_S
+#define HTT_T2H_PEER_UNMAP_INFO3_WDS_FREE_COUNT	GENMASK(15, 0)
 
 struct htt_t2h_peer_unmap_event {
 	u32 info;
 	u32 mac_addr_l32;
 	u32 info1;
+	u32 info2;
+	u32 info3;
 } __packed;
 
 struct htt_resp_msg {
@@ -1235,6 +1386,19 @@ enum htt_ppdu_stats_gi {
 #define HTT_PPDU_STATS_USER_RATE_INFO0_USER_POS_M	GENMASK(3, 0)
 #define HTT_PPDU_STATS_USER_RATE_INFO0_MU_GROUP_ID_M	GENMASK(11, 4)
 
+enum HTT_PPDU_STATS_PPDU_TYPE {
+	HTT_PPDU_STATS_PPDU_TYPE_SU,
+	HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO,
+	HTT_PPDU_STATS_PPDU_TYPE_MU_OFDMA,
+	HTT_PPDU_STATS_PPDU_TYPE_MU_MIMO_OFDMA,
+	HTT_PPDU_STATS_PPDU_TYPE_UL_TRIG,
+	HTT_PPDU_STATS_PPDU_TYPE_BURST_BCN,
+	HTT_PPDU_STATS_PPDU_TYPE_UL_BSR_RESP,
+	HTT_PPDU_STATS_PPDU_TYPE_UL_BSR_TRIG,
+	HTT_PPDU_STATS_PPDU_TYPE_UL_RESP,
+	HTT_PPDU_STATS_PPDU_TYPE_MAX
+};
+
 #define HTT_PPDU_STATS_USER_RATE_INFO1_RESP_TYPE_VALD_M	BIT(0)
 #define HTT_PPDU_STATS_USER_RATE_INFO1_PPDU_TYPE_M	GENMASK(5, 1)
 
@@ -1262,6 +1426,12 @@ enum htt_ppdu_stats_gi {
 		FIELD_GET(HTT_PPDU_STATS_USER_RATE_FLAGS_GI_M, _val)
 #define HTT_USR_RATE_DCM(_val) \
 		FIELD_GET(HTT_PPDU_STATS_USER_RATE_FLAGS_DCM_M, _val)
+#define HTT_USR_RATE_PPDU_TYPE(_val) \
+		FIELD_GET(HTT_PPDU_STATS_USER_RATE_INFO1_PPDU_TYPE_M, _val)
+#define HTT_USR_RATE_MU_GRPID(_val) \
+		FIELD_GET(HTT_PPDU_STATS_USER_RATE_INFO0_MU_GROUP_ID_M, _val)
+#define HTT_USR_RATE_USR_POS(_val) \
+		FIELD_GET(HTT_PPDU_STATS_USER_RATE_INFO0_USER_POS_M, _val)
 
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_LTF_SIZE_M		GENMASK(1, 0)
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_STBC_M		BIT(2)
@@ -1326,6 +1496,9 @@ enum  htt_ppdu_stats_usr_compln_status {
 #define HTT_USR_CMPLTN_SHORT_RETRY(_val) \
 	    FIELD_GET(HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_SHORT_RETRY_M, _val)
 
+#define HTT_STATS_NUM_SUPPORTED_BW_SMART_ANTENNA 4
+#define HTT_STATS_MAX_CHAINS 8
+
 struct htt_ppdu_stats_usr_cmpltn_cmn {
 	u8 status;
 	u8 tid_num;
@@ -1334,7 +1507,29 @@ struct htt_ppdu_stats_usr_cmpltn_cmn {
 	u32 ack_rssi;
 	u16 mpdu_tried;
 	u16 mpdu_success;
-	u32 flags; /* %HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_LONG_RETRIES*/
+	/* %HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_LONG_RETRIES
+	 * BIT [3 : 0] - long retries
+	 * BIT [7 : 4] - short_retries
+	 * BIT [8 : 8] - is_ampdu
+	 * BIT [12 : 9] - resp_type
+	 * BIT [15 : 13] - mprot_type
+	 * BIT [16 : 16] - rts_success
+	 * BIT [17 : 17] - rts_failure
+	 * BIT [18 : 18] - pream_punc_tx
+	 * BIT [31 : 19] - reserved0
+	 */
+	u32 flags;
+	u32 chain_rssi[HTT_STATS_MAX_CHAINS];
+	u32 tx_antenna_mask;
+	/* For SmartAntenna: Holds number of pending training packets during training. */
+	u16 pending_training_pkts;
+	/* BIT [0 : 0] - is_training: This flag indicates if peer is under training.
+	 * BIT [15 : 1] - reserved1:
+	 */
+	u16 is_training;
+	u32 max_rates[HTT_STATS_NUM_SUPPORTED_BW_SMART_ANTENNA];
+	u32 current_rate_per;
+	u32 sw_rts;
 } __packed;
 
 #define HTT_PPDU_STATS_ACK_BA_INFO_NUM_MPDU_M	GENMASK(8, 0)
@@ -1342,6 +1537,7 @@ struct htt_ppdu_stats_usr_cmpltn_cmn {
 #define HTT_PPDU_STATS_ACK_BA_INFO_TID_NUM	GENMASK(31, 25)
 
 #define HTT_PPDU_STATS_NON_QOS_TID	16
+#define HTT_PPDU_STATS_PPDU_ID		GENMASK(24, 0)
 
 struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	u32 ppdu_id;
@@ -1353,16 +1549,62 @@ struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	u32 success_bytes;
 } __packed;
 
+#define HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA    BIT(14)
+#define HTT_PPDU_STATS_USR_CMN_HDR_SW_PEERID   GENMASK(31, 16)
+#define HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL    GENMASK(15, 0)
+#define HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32 4
+#define HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE HTT_STATS_MAX_CHAINS / \
+						HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32
+
+struct htt_ppdu_stats_user_common {
+	u8 tid_num;
+	u8 vdev_id;
+	u16 sw_peer_id;
+	u32 info;
+	u32 ctrl;
+	u32 buffer_paddr_31_0;
+	u32 buffer_paddr_39_32;
+	u32 host_opaque_cookie;
+	u32 qdepth_bytes;
+	u32 full_aid;
+	u32 data_frm_ppdu_id;
+	u32 sw_rts_prot_dur_us;
+	u8 tx_pwr_multiplier;
+	u8 chain_enable_bits;
+	u16 reserved;
+	/*
+	 *tx_pwr is applicable for each radio chain
+	 *tx_pwr for each radio chain is a 8 bit value
+	 */
+	u32 tx_pwr[HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE];
+} __packed;
+
+#define HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_FLOW_TYPE GENMASK(7, 0)
+#define HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_NUM_MPDU GENMASK(16, 8)
+#define HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_NUM_MSDU GENMASK(30, 17)
+
+struct htt_ppdu_stats_cmpltn_flush {
+	u32 drop_reason;
+	u32 info;
+	u8 tid_num;
+	u8 queue_type;
+	u16 sw_peer_id;
+} __packed;
+
 struct htt_ppdu_user_stats {
 	u16 peer_id;
+	u16 delay_ba;
 	u32 tlv_flags;
 	bool is_valid_peer_id;
+	bool rate_stats_updated;
 	struct htt_ppdu_stats_user_rate rate;
 	struct htt_ppdu_stats_usr_cmpltn_cmn cmpltn_cmn;
 	struct htt_ppdu_stats_usr_cmpltn_ack_ba_status ack_ba;
+	struct htt_ppdu_stats_user_common common;
+	struct htt_ppdu_stats_cmpltn_flush cmpltn_flush;
 };
 
-#define HTT_PPDU_STATS_MAX_USERS	8
+#define HTT_PPDU_STATS_MAX_USERS	37
 #define HTT_PPDU_DESC_MAX_DEPTH	16
 
 struct htt_ppdu_stats {
@@ -1371,7 +1613,7 @@ struct htt_ppdu_stats {
 };
 
 struct htt_ppdu_stats_info {
-	u32 ppdu_id;
+	u32 tlv_bitmap, ppdu_id, frame_type, frame_ctrl, delay_ba, bar_num_users;
 	struct htt_ppdu_stats ppdu_stats;
 	struct list_head list;
 };
@@ -1534,12 +1776,13 @@ struct htt_ext_stats_cfg_cmd {
  *   4 bit htt_tx_tid_stats_tlv/htt_tx_tid_stats_v1_tlv
  *   5 bit htt_rx_tid_stats_tlv
  *   6 bit htt_msdu_flow_stats_tlv
+ *   7 bit htt_peer_sched_stats_tlv
  * @config_param2: [Bit31 : Bit0] mac_addr31to0
  * @config_param3: [Bit15 : Bit0] mac_addr47to32
  *                [Bit31 : Bit16] reserved
  */
 #define HTT_STAT_PEER_INFO_MAC_ADDR BIT(0)
-#define HTT_STAT_DEFAULT_PEER_REQ_TYPE 0x7f
+#define HTT_STAT_DEFAULT_PEER_REQ_TYPE 0xff
 
 /* Used to set different configs to the specified stats type.*/
 struct htt_ext_stats_cfg_params {
@@ -1656,6 +1899,37 @@ static inline void ath11k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 	memcpy(addr + 4, &addr_h16, ETH_ALEN - 4);
 }
 
+#define IEEE80211_STYPE_ACTION_NO_ACK	0xE0
+#define PPDU_STATS_IND_MAC_ID_SHIFT	8
+#define PPDU_STATS_IND_PDEV_ID_SHIFT	10
+#define PKTLOG_ALIGN	4
+#define PPDU_STATS_PAYLOAD_LEN_SHIFT	16
+#define MGMT_STATS_PAYLOAD_LEN_SHIFT	12
+
+struct htt_t2h_ppdu_stats_ind_hdr {
+	/* bits[7:0] = msg_type
+	 * bits[9:8] = mac_id
+	 * bits[11:10] = pdev_id
+	 * bits[15:12] = rsvd
+	 * bits 31:16 = payload_size */
+	u32 header;
+	u32 ppdu_id;
+	u32 timestamp_us;
+	u32 rsvd;
+};
+
+struct htt_ppdu_stats_rx_mgmtctrl_payload_tlv {
+	u32 header;
+	/*
+	 * BIT [ 15 :   0]   :- frame_length (in bytes)
+	 * BIT [ 31 :  16]   :- reserved1
+	 */
+	u32 frame_length;
+	u32 rsvd1; /* set to 0x0 */
+	u32 rsvd2; /* set to 0x0 */
+	u8 payload[];
+};
+
 int ath11k_dp_service_srng(struct ath11k_base *ab,
 			   struct ath11k_ext_irq_grp *irq_grp,
 			   int budget);
@@ -1665,7 +1939,7 @@ void ath11k_dp_free(struct ath11k_base *ab);
 int ath11k_dp_alloc(struct ath11k_base *ab);
 int ath11k_dp_pdev_alloc(struct ath11k_base *ab);
 void ath11k_dp_pdev_pre_alloc(struct ath11k_base *ab);
-void ath11k_dp_pdev_free(struct ath11k_base *ab);
+void ath11k_dp_pdev_free(struct ath11k_base *ab, bool ureg_dbgfs);
 int ath11k_dp_tx_htt_srng_setup(struct ath11k_base *ab, u32 ring_id,
 				int mac_id, enum hal_ring_type ring_type);
 int ath11k_dp_peer_setup(struct ath11k *ar, int vdev_id, const u8 *addr);
@@ -1690,5 +1964,6 @@ void ath11k_dp_shadow_init_timer(struct ath11k_base *ab,
 				 struct ath11k_hp_update_timer *update_timer,
 				 u32 interval, u32 ring_id);
 void ath11k_dp_stop_shadow_timers(struct ath11k_base *ab);
+void ath11k_dp_start_reo_status_timer(struct ath11k_base *ab);
 
 #endif

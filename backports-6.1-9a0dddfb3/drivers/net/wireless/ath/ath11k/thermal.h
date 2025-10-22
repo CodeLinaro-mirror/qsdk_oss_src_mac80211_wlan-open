@@ -17,6 +17,7 @@
 struct ath11k_thermal {
 	struct thermal_cooling_device *cdev;
 	struct completion wmi_sync;
+	struct device *hwmon_dev;
 
 	/* protected by conf_mutex */
 	u32 throttle_state;

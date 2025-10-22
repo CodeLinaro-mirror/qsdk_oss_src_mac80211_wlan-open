@@ -629,7 +629,11 @@ static void ath12k_wow_generate_ns_mc_addr(struct ath12k_base *ab,
 static void ath12k_wow_prepare_ns_offload(struct ath12k_link_vif *arvif,
 					  struct wmi_arp_ns_offload_arg *offload)
 {
-	struct net_device *ndev = ieee80211_vif_to_wdev(arvif->ahvif->vif)->netdev;
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(arvif->ahvif->vif);
+
+	if (!wdev || !wdev->netdev)
+		return;
+	struct net_device *ndev = wdev->netdev;
 	struct ath12k_base *ab = arvif->ar->ab;
 	struct inet6_ifaddr *ifa6;
 	struct ifacaddr6 *ifaca6;

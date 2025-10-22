@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
- * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries. 
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <ath/ath_dp_accel_cfg.h>
@@ -67,3 +67,32 @@ bool ath_dp_accel_cfg_fetch_ds_node_id(struct ath_dp_accel_cfg *info)
 						&info->out_ppe_ds_node_id);
 }
 EXPORT_SYMBOL(ath_dp_accel_cfg_fetch_ds_node_id);
+
+u32 ath_get_metadata_info(struct ath_dp_metadata_param *md_param)
+{
+	if (!ath_dp_accel_cfg_cb)
+		return 0;
+
+	return ath_dp_accel_cfg_cb->get_metadata_info(md_param);
+}
+EXPORT_SYMBOL(ath_get_metadata_info);
+
+void ath_sawf_uplink(struct ath_ul_params *params)
+{
+	if (!ath_dp_accel_cfg_cb)
+		return;
+
+	ath_dp_accel_cfg_cb->sdwf_ul_config(params);
+}
+EXPORT_SYMBOL(ath_sawf_uplink);
+
+int ath_mscs_peer_lookup_n_get_priority(struct ath_mscs_get_priority_param *params)
+{
+	if (!ath_dp_accel_cfg_cb)
+		return -EINVAL;
+
+	return ath_dp_accel_cfg_cb->get_mscs_priority(params);
+
+}
+EXPORT_SYMBOL(ath_mscs_peer_lookup_n_get_priority);
+

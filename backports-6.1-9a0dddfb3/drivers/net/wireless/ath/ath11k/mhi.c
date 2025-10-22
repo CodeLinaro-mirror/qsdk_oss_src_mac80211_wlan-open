@@ -20,6 +20,11 @@
 #define MHI_TIMEOUT_DEFAULT_MS	20000
 #define RDDM_DUMP_SIZE	0x420000
 #define MHI_CB_INVALID	0xff
+#ifdef CONFIG_64BIT
+#define MAX_RAM_ADDR 0xFFFFFFFFFFFFFFFF
+#else
+#define MAX_RAM_ADDR 0xFFFFFFFF
+#endif
 
 static const struct mhi_channel_config ath11k_mhi_channels_qca6390[] = {
 	{
@@ -35,6 +40,9 @@ static const struct mhi_channel_config ath11k_mhi_channels_qca6390[] = {
 		.offload_channel = false,
 		.doorbell_mode_switch = false,
 		.auto_queue = false,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+		.auto_start = false,
+#endif
 	},
 	{
 		.num = 21,
@@ -100,6 +108,9 @@ static const struct mhi_channel_config ath11k_mhi_channels_qcn9074[] = {
 		.offload_channel = false,
 		.doorbell_mode_switch = false,
 		.auto_queue = false,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+		.auto_start = false,
+#endif
 	},
 	{
 		.num = 21,
@@ -114,6 +125,9 @@ static const struct mhi_channel_config ath11k_mhi_channels_qcn9074[] = {
 		.offload_channel = false,
 		.doorbell_mode_switch = false,
 		.auto_queue = true,
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+		.auto_start = true,
+#endif
 	},
 };
 
@@ -341,7 +355,7 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 	const struct mhi_controller_config *ath11k_mhi_config;
 	int ret;
 
-	mhi_ctrl = mhi_alloc_controller();
+	mhi_ctrl = kzalloc(sizeof(*mhi_ctrl), GFP_KERNEL);
 	if (!mhi_ctrl)
 		return -ENOMEM;
 
@@ -351,6 +365,7 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 #if LINUX_VERSION_IS_GEQ(5,15,0)
 	mhi_ctrl->reg_len = ab->mem_len;
 #endif
+	mhi_ctrl->rddm_size = ATH11K_PCI_FW_RDDM_SZ;
 
 	if (ab->fw.amss_data && ab->fw.amss_len > 0) {
 		/* use MHI firmware file from firmware-N.bin */
@@ -370,8 +385,10 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 		goto free_controller;
 	}
 
+#if LINUX_VERSION_IS_GEQ(5,15,0)
 	if (!test_bit(ATH11K_FLAG_MULTI_MSI_VECTORS, &ab->dev_flags))
 		mhi_ctrl->irq_flags = IRQF_SHARED | IRQF_NOBALANCING;
+#endif
 
 	if (test_bit(ATH11K_FLAG_FIXED_MEM_RGN, &ab->dev_flags)) {
 		ret = ath11k_mhi_read_addr_from_dt(mhi_ctrl);
@@ -379,8 +396,11 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 			goto free_controller;
 	} else {
 		mhi_ctrl->iova_start = 0;
-		mhi_ctrl->iova_stop = ab_pci->dma_mask;
+		mhi_ctrl->iova_stop = MAX_RAM_ADDR;
 	}
+
+	ath11k_info(ab, "mhi_ctrl start addr %llx end addr %llx\n",
+		    (u64)mhi_ctrl->iova_start, (u64)mhi_ctrl->iova_stop);
 
 	mhi_ctrl->rddm_size = RDDM_DUMP_SIZE;
 	mhi_ctrl->sbl_size = SZ_512K;
@@ -420,7 +440,7 @@ int ath11k_mhi_register(struct ath11k_pci *ab_pci)
 	return 0;
 
 free_controller:
-	mhi_free_controller(mhi_ctrl);
+	kfree(mhi_ctrl);
 	ab_pci->mhi_ctrl = NULL;
 	return ret;
 }
@@ -485,7 +505,8 @@ int ath11k_mhi_resume(struct ath11k_pci *ab_pci)
 	 * are not in M3 state but they are functional. So just ignore
 	 * the MHI state while resuming.
 	 */
-	ret = mhi_pm_resume_force(ab_pci->mhi_ctrl);
+	//ret = mhi_pm_resume_force(ab_pci->mhi_ctrl);
+	ret = 0;
 	if (ret) {
 		ath11k_warn(ab, "failed to resume mhi: %d", ret);
 		return ret;

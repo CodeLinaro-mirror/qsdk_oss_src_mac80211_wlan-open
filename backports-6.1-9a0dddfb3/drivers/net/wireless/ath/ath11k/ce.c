@@ -217,7 +217,7 @@ const struct ce_attr ath11k_host_ce_config_qcn9074[] = {
 		.flags = CE_ATTR_FLAGS,
 		.src_nentries = 0,
 		.src_sz_max = 2048,
-		.dest_nentries = 32,
+		.dest_nentries = 128,
 		.recv_cb = ath11k_htc_rx_completion_handler,
 	},
 
@@ -247,6 +247,96 @@ const struct ce_attr ath11k_host_ce_config_qcn9074[] = {
 		.recv_cb = ath11k_dp_htt_htc_t2h_msg_handler,
 	},
 };
+
+const struct ce_attr ath11k_host_ce_config_ipq9574[] = {
+	/* CE0: host->target HTC control and raw streams */
+	{
+		.flags = CE_ATTR_FLAGS,
+		.src_nentries = 16,
+		.src_sz_max = 2048,
+		.dest_nentries = 0,
+		.send_cb = ath11k_htc_tx_completion_handler,
+	},
+
+	/* CE1: target->host HTT + HTC control */
+	{
+		.flags = CE_ATTR_FLAGS,
+		.src_nentries = 0,
+		.src_sz_max = 2048,
+		.dest_nentries = 512,
+		.recv_cb = ath11k_htc_rx_completion_handler,
+	},
+
+	/* CE2: target->host WMI */
+	{
+		.flags = CE_ATTR_FLAGS,
+		.src_nentries = 0,
+		.src_sz_max = 2048,
+		.dest_nentries = 512,
+		.recv_cb = ath11k_htc_rx_completion_handler,
+	},
+
+	/* CE3: host->target WMI (mac0) */
+	{
+		.flags = CE_ATTR_FLAGS,
+		.src_nentries = 32,
+		.src_sz_max = 2048,
+		.dest_nentries = 0,
+		.send_cb = ath11k_htc_tx_completion_handler,
+	},
+
+	/* CE4: host->target HTT */
+	{
+		.flags = CE_ATTR_FLAGS | CE_ATTR_DIS_INTR,
+		.src_nentries = 2048,
+		.src_sz_max = 256,
+		.dest_nentries = 0,
+	},
+
+	/* CE5: target->host pktlog */
+	{
+		.flags = CE_ATTR_FLAGS,
+		.src_nentries = 0,
+		.src_sz_max = 2048,
+		.dest_nentries = 512,
+		.recv_cb = ath11k_dp_htt_htc_t2h_msg_handler,
+	},
+
+	/* CE6: target autonomous hif_memcpy */
+	{
+		.flags = CE_ATTR_FLAGS | CE_ATTR_DIS_INTR,
+		.src_nentries = 0,
+		.src_sz_max = 0,
+		.dest_nentries = 0,
+	},
+
+	/* CE7: host->target WMI (mac1) */
+	{
+		.flags = CE_ATTR_FLAGS,
+		.src_nentries = 32,
+		.src_sz_max = 2048,
+		.dest_nentries = 0,
+		.send_cb = ath11k_htc_tx_completion_handler,
+	},
+
+	/* CE8: target autonomous hif_memcpy */
+	{
+		.flags = CE_ATTR_FLAGS | CE_ATTR_DIS_INTR,
+		.src_nentries = 0,
+		.src_sz_max = 0,
+		.dest_nentries = 0,
+	},
+
+	/* CE9: host->target WMI (mac2) */
+	{
+		.flags = CE_ATTR_FLAGS,
+		.src_nentries = 32,
+		.src_sz_max = 2048,
+		.dest_nentries = 0,
+		.send_cb = ath11k_htc_tx_completion_handler,
+	},
+};
+
 
 static bool ath11k_ce_need_shadow_fix(int ce_id)
 {
@@ -359,6 +449,9 @@ static int ath11k_ce_rx_post_pipe(struct ath11k_ce_pipe *pipe)
 			dev_kfree_skb_any(skb);
 			goto exit;
 		}
+
+		ATH11K_MEMORY_STATS_INC(ab, ce_rx_pipe, skb->truesize);
+
 	}
 
 exit:
@@ -427,6 +520,9 @@ static void ath11k_ce_recv_process_cb(struct ath11k_ce_pipe *pipe)
 	__skb_queue_head_init(&list);
 	while (ath11k_ce_completed_recv_next(pipe, &skb, &nbytes) == 0) {
 		max_nbytes = skb->len + skb_tailroom(skb);
+
+		ATH11K_MEMORY_STATS_DEC(ab, ce_rx_pipe, skb->truesize);
+
 		dma_unmap_single(ab->dev, ATH11K_SKB_RXCB(skb)->paddr,
 				 max_nbytes, DMA_FROM_DEVICE);
 
@@ -548,7 +644,11 @@ static void ath11k_ce_srng_msi_ring_params_setup(struct ath11k_base *ab, u32 ce_
 
 	ring_params->msi_addr = addr_lo;
 	ring_params->msi_addr |= (dma_addr_t)(((uint64_t)addr_hi) << 32);
-	ring_params->msi_data = (msi_data_idx % msi_data_count) + msi_data_start;
+	if (ab->hw_params.internal_pci)
+		ring_params->msi_data = ab->ipci.ce_msi_data[ce_id];
+	else
+		ring_params->msi_data = (msi_data_idx % msi_data_count) + msi_data_start;
+
 	ring_params->flags |= HAL_SRNG_FLAGS_MSI_INTR;
 }
 
@@ -620,6 +720,9 @@ ath11k_ce_alloc_ring(struct ath11k_base *ab, int nentries, int desc_sz)
 	if (ce_ring == NULL)
 		return ERR_PTR(-ENOMEM);
 
+	ATH11K_MEMORY_STATS_INC(ab, ce_ring_alloc,
+				struct_size(ce_ring, skb, nentries));
+
 	ce_ring->nentries = nentries;
 	ce_ring->nentries_mask = nentries - 1;
 
@@ -634,6 +737,9 @@ ath11k_ce_alloc_ring(struct ath11k_base *ab, int nentries, int desc_sz)
 		kfree(ce_ring);
 		return ERR_PTR(-ENOMEM);
 	}
+
+	ATH11K_MEMORY_STATS_INC(ab, ce_ring_alloc,
+				nentries * desc_sz + CE_DESC_RING_ALIGN);
 
 	ce_ring->base_addr_ce_space_unaligned = base_addr;
 
@@ -708,6 +814,31 @@ void ath11k_ce_poll_send_completed(struct ath11k_base *ab, u8 pipe_id)
 }
 EXPORT_SYMBOL(ath11k_ce_per_engine_service);
 
+#define ATH11K_CE_RING_FULL_THRESHOLD_TIME_MS 500
+#define ATH11K_MAX_CE_MANUAL_RETRY	3
+/* Ths function is called from ce_send path. Returns true If there is no buffer
+ * to send packet via HTC, then check if interrupts are not processed from that
+ * CE for last 500ms. If so, poll manually to reap available entries.
+ */
+static bool ath11k_is_manual_ce_poll_needed(struct ath11k_base *ab,
+					    struct ath11k_ce_pipe *pipe,
+					    struct hal_srng *srng)
+{
+	if (!ab->hw_params.support_ce_manual_poll)
+		return false;
+
+	if (time_after
+	    (jiffies, pipe->timestamp + msecs_to_jiffies(ATH11K_CE_RING_FULL_THRESHOLD_TIME_MS)) &&
+	    (srng->u.src_ring.hp == srng->u.src_ring.reap_hp) &&
+		 (srng->u.src_ring.reap_hp == *srng->u.src_ring.tp_addr)) {
+		pipe->ce_manual_poll_count++;
+		pipe->last_ce_manual_poll_ts = jiffies;
+		return true;
+	}
+
+	return false;
+}
+
 int ath11k_ce_send(struct ath11k_base *ab, struct sk_buff *skb, u8 pipe_id,
 		   u16 transfer_id)
 {
@@ -718,7 +849,7 @@ int ath11k_ce_send(struct ath11k_base *ab, struct sk_buff *skb, u8 pipe_id,
 	unsigned int nentries_mask;
 	int ret = 0;
 	u8 byte_swap_data = 0;
-	int num_used;
+	int num_used, retry = 0;
 
 	/* Check if some entries could be regained by handling tx completion if
 	 * the CE has interrupts disabled and the used entries is more than the
@@ -745,6 +876,7 @@ int ath11k_ce_send(struct ath11k_base *ab, struct sk_buff *skb, u8 pipe_id,
 	if (test_bit(ATH11K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return -ESHUTDOWN;
 
+retry:
 	spin_lock_bh(&ab->ce.ce_lock);
 
 	write_index = pipe->src_ring->write_index;
@@ -765,8 +897,17 @@ int ath11k_ce_send(struct ath11k_base *ab, struct sk_buff *skb, u8 pipe_id,
 	desc = ath11k_hal_srng_src_get_next_reaped(ab, srng);
 	if (!desc) {
 		ath11k_hal_srng_access_end(ab, srng);
-		ret = -ENOBUFS;
-		goto err_unlock;
+		if (retry++ < ATH11K_MAX_CE_MANUAL_RETRY &&
+		    ath11k_is_manual_ce_poll_needed(ab, pipe, srng)) {
+			spin_unlock_bh(&srng->lock);
+			spin_unlock_bh(&ab->ce.ce_lock);
+
+			ath11k_ce_tx_process_cb(pipe);
+			goto retry;
+		} else {
+			ret = -ENOBUFS;
+			goto err_unlock;
+		}
 	}
 
 	if (pipe->attr_flags & CE_ATTR_BYTE_SWAP_DATA)
@@ -814,6 +955,9 @@ static void ath11k_ce_rx_pipe_cleanup(struct ath11k_ce_pipe *pipe)
 			continue;
 
 		ring->skb[i] = NULL;
+
+		ATH11K_MEMORY_STATS_DEC(ab, ce_rx_pipe, skb->truesize);
+
 		dma_unmap_single(ab->dev, ATH11K_SKB_RXCB(skb)->paddr,
 				 skb->len + skb_tailroom(skb), DMA_FROM_DEVICE);
 		dev_kfree_skb_any(skb);
@@ -895,8 +1039,6 @@ void ath11k_ce_rx_post_buf(struct ath11k_base *ab)
 			if (ret == -ENOSPC)
 				continue;
 
-			ath11k_warn(ab, "failed to post rx buf to pipe: %d err: %d\n",
-				    i, ret);
 			mod_timer(&ab->rx_replenish_retry,
 				  jiffies + ATH11K_CE_RX_POST_RETRY_JIFFIES);
 
@@ -992,6 +1134,9 @@ void ath11k_ce_free_pipes(struct ath11k_base *ab)
 					  CE_DESC_RING_ALIGN,
 					  ce_ring->base_addr_owner_space_unaligned,
 					  ce_ring->base_addr_ce_space_unaligned);
+			ATH11K_MEMORY_STATS_DEC(ab, ce_ring_alloc,
+						pipe->src_ring->nentries * desc_sz +
+						CE_DESC_RING_ALIGN);
 			kfree(pipe->src_ring);
 			pipe->src_ring = NULL;
 		}
@@ -1004,6 +1149,9 @@ void ath11k_ce_free_pipes(struct ath11k_base *ab)
 					  CE_DESC_RING_ALIGN,
 					  ce_ring->base_addr_owner_space_unaligned,
 					  ce_ring->base_addr_ce_space_unaligned);
+			ATH11K_MEMORY_STATS_DEC(ab, ce_ring_alloc,
+						pipe->dest_ring->nentries * desc_sz +
+						CE_DESC_RING_ALIGN);
 			kfree(pipe->dest_ring);
 			pipe->dest_ring = NULL;
 		}
@@ -1017,6 +1165,9 @@ void ath11k_ce_free_pipes(struct ath11k_base *ab)
 					  CE_DESC_RING_ALIGN,
 					  ce_ring->base_addr_owner_space_unaligned,
 					  ce_ring->base_addr_ce_space_unaligned);
+			ATH11K_MEMORY_STATS_DEC(ab, ce_ring_alloc,
+						pipe->status_ring->nentries * desc_sz +
+						CE_DESC_RING_ALIGN);
 			kfree(pipe->status_ring);
 			pipe->status_ring = NULL;
 		}
@@ -1030,6 +1181,8 @@ int ath11k_ce_alloc_pipes(struct ath11k_base *ab)
 	int i;
 	int ret;
 	const struct ce_attr *attr;
+
+	ab->ce_latency_stats_enable = 1;
 
 	spin_lock_init(&ab->ce.ce_lock);
 
@@ -1079,3 +1232,37 @@ int ath11k_ce_get_attr_flags(struct ath11k_base *ab, int ce_id)
 	return ab->hw_params.host_ce_config[ce_id].flags;
 }
 EXPORT_SYMBOL(ath11k_ce_get_attr_flags);
+
+void ce_update_tasklet_time_duration_stats(struct ath11k_ce_pipe *ce_pipe)
+{
+	s64 sched_us, exec_us;
+
+#if LINUX_VERSION_IS_LESS(5,4,0)
+	sched_us = (ce_pipe->tasklet_ts.exec_entry_ts.tv64 -
+		    ce_pipe->tasklet_ts.sched_entry_ts.tv64);
+	exec_us = (ce_pipe->tasklet_ts.exec_complete_ts.tv64 -
+		   ce_pipe->tasklet_ts.exec_entry_ts.tv64);
+#elif LINUX_VERSION_IS_GEQ(5,4,0)
+	sched_us = (ce_pipe->tasklet_ts.exec_entry_ts -
+		    ce_pipe->tasklet_ts.sched_entry_ts);
+	exec_us = (ce_pipe->tasklet_ts.exec_complete_ts -
+		   ce_pipe->tasklet_ts.exec_entry_ts);
+#endif
+
+	sched_us = div_s64(sched_us, CE_TIME_DURATION_USEC * NSEC_PER_USEC);
+	if (sched_us > CE_TIME_DURATION_USEC_500) {
+	        ce_pipe->sched_delay_gt_500US++;
+	} else if (sched_us >= 0){
+	        ce_pipe->tracker[sched_us].sched_count++;
+	        ce_pipe->tracker[sched_us].sched_last_update = jiffies;
+	}
+
+	exec_us = div_s64(exec_us, CE_TIME_DURATION_USEC * NSEC_PER_USEC);
+	if (exec_us > CE_TIME_DURATION_USEC_500) {
+	        ce_pipe->exec_delay_gt_500US++;
+	} else if (exec_us >= 0){
+	        ce_pipe->tracker[exec_us].exec_count++;
+	        ce_pipe->tracker[exec_us].exec_last_update = jiffies;
+	}
+}
+EXPORT_SYMBOL(ce_update_tasklet_time_duration_stats);

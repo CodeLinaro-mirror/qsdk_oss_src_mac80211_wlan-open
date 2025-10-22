@@ -32,8 +32,6 @@
 #define ATH12K_QMI_WLFW_MAX_DEV_MEM_NUM_V01 4
 #define ATH12K_QMI_DEVMEM_CMEM_INDEX	0
 #define ATH12K_QMI_M3_DUMP_SIZE                 0x100000
-#define ATH12K_QMI_MAX_QDSS_CONFIG_FILE_NAME_SIZE      64
-#define ATH12K_QMI_DEFAULT_QDSS_CONFIG_FILE_NAME       "qdss_trace_config.bin"
 
 #define QMI_WLFW_REQUEST_MEM_IND_V01		0x0035
 #define QMI_WLFW_FW_MEM_READY_IND_V01		0x0037
@@ -41,12 +39,6 @@
 #define QMI_WLFW_FW_READY_IND_V01		0x0038
 #define QMI_WLFW_M3_DUMP_UPLOAD_REQ_IND_V01    	0x004D
 #define QMI_WLFW_M3_DUMP_UPLOAD_DONE_REQ_V01   	0x004E
-#define QMI_WLFW_QDSS_TRACE_REQ_MEM_IND_V01     0x003F
-#define QMI_Q6_QDSS_ETR_SIZE_QCN9274            0x100000
-#define QMI_WLFW_QDSS_TRACE_SAVE_IND_V01        0x0041
-#define QMI_WLFW_QDSS_TRACE_DATA_REQ_V01 0x0042
-#define QMI_WLFW_QDSS_TRACE_DATA_RESP_V01 0x0042
-#define QMI_Q6_QDSS_ETR_OFFSET_QCN9274		0x2500000
 
 #define QMI_WLANFW_MAX_DATA_SIZE_V01		6144
 #define ATH12K_FIRMWARE_MODE_OFF		4
@@ -98,9 +90,6 @@ enum ath12k_qmi_event_type {
 	ATH12K_QMI_EVENT_FORCE_FW_ASSERT,
 	ATH12K_QMI_EVENT_POWER_UP,
 	ATH12K_QMI_EVENT_POWER_DOWN,
-	ATH12K_QMI_EVENT_QDSS_TRACE_REQ_MEM = 15,
-	ATH12K_QMI_EVENT_QDSS_TRACE_SAVE,
-	ATH12K_QMI_EVENT_QDSS_TRACE_REQ_DATA,
 	ATH12K_QMI_EVENT_HOST_CAP,
 	ATH12K_QMI_EVENT_M3_DUMP_UPLOAD_REQ,
 	ATH12K_QMI_EVENT_MAX,
@@ -181,8 +170,6 @@ struct ath12k_qmi {
 	struct ath12k_qmi_ce_cfg ce_cfg;
 	struct target_mem_chunk target_mem[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
 	u32 mem_seg_count;
-	struct target_mem_chunk qdss_mem[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
-	u32 qdss_mem_seg_len;
 	u32 target_mem_mode;
 	bool target_mem_delayed;
 	u8 cal_done;
@@ -204,71 +191,6 @@ struct ath12k_qmi_m3_dump_upload_req_data {
         u64 size;
 };
 
-#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_REQ_MSG_V01_MAX_LEN 6167
-#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_RESP_MSG_V01_MAX_LEN 7
-#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_REQ_V01 0x0044
-#define QMI_WLANFW_QDSS_TRACE_CONFIG_DOWNLOAD_RESP_V01 0x0044
-
-struct qmi_wlanfw_qdss_trace_config_download_req_msg_v01 {
-	u8 total_size_valid;
-	u32 total_size;
-	u8 seg_id_valid;
-	u32 seg_id;
-	u8 data_valid;
-	u32 data_len;
-	u8 data[QMI_WLANFW_MAX_DATA_SIZE_V01];
-	u8 end_valid;
-	u8 end;
-};
-
-struct qmi_wlanfw_qdss_trace_config_download_resp_msg_v01 {
-	struct qmi_response_type_v01 resp;
-};
-
-#define QMI_WLANFW_QDSS_TRACE_MODE_REQ_V01 0x0045
-#define QMI_WLANFW_QDSS_TRACE_MODE_REQ_MSG_V01_MAX_LEN 18
-#define QMI_WLANFW_QDSS_TRACE_MODE_RESP_MSG_V01_MAX_LEN 7
-#define QMI_WLANFW_QDSS_TRACE_MODE_RESP_V01 0x0045
-#define QMI_WLANFW_QDSS_STOP_ALL_TRACE 0x01
-
-enum qmi_wlanfw_qdss_trace_mode_enum_v01 {
-	WLFW_QDSS_TRACE_MODE_ENUM_MIN_VAL_V01 = INT_MIN,
-	QMI_WLANFW_QDSS_TRACE_OFF_V01 = 0,
-	QMI_WLANFW_QDSS_TRACE_ON_V01 = 1,
-	WLFW_QDSS_TRACE_MODE_ENUM_MAX_VAL_V01 = INT_MAX,
-};
-
-struct qmi_wlanfw_qdss_trace_mode_req_msg_v01 {
-	u8 mode_valid;
-	enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode;
-	u8 option_valid;
-	u64 option;
-};
-
-struct qmi_wlanfw_qdss_trace_mode_resp_msg_v01 {
-	struct qmi_response_type_v01 resp;
-};
-
-#define QMI_WLFW_QDSS_TRACE_DATA_REQ_MSG_V01_MAX_MSG_LEN 7
-#define QMI_WLFW_QDSS_TRACE_DATA_RESP_MSG_V01_MAX_MSG_LEN 6174
-
-struct qmi_wlfw_qdss_trace_data_req_msg_v01 {
-	u32 seg_id;
-};
-
-struct qmi_wlfw_qdss_trace_data_resp_msg_v01 {
-	struct qmi_response_type_v01 resp;
-	u8 total_size_valid;
-	u32 total_size;
-	u8 seg_id_valid;
-	u32 seg_id;
-	u8 data_valid;
-	u32 data_len;
-	u8 data[QMI_WLANFW_MAX_DATA_SIZE_V01];
-	u8 end_valid;
-	u8 end;
-};
-
 #define QMI_WLANFW_HOST_CAP_REQ_MSG_V01_MAX_LEN		355
 
 struct qmi_wlanfw_m3_dump_upload_done_req_msg_v01 {
@@ -286,7 +208,9 @@ struct qmi_wlanfw_m3_dump_upload_done_resp_msg_v01 {
 #define QMI_WLFW_MAX_NUM_GPIO_V01			32
 #define QMI_WLANFW_MAX_PLATFORM_NAME_LEN_V01		64
 #define QMI_WLANFW_MAX_HOST_DDR_RANGE_SIZE_V01		3
-#define QDSS_ETR_MEM_REGION_TYPE                        0x6
+#define AFC_SLOT_SIZE					0x1000
+#define AFC_MAX_SLOT					2
+#define AFC_MEM_SIZE					(AFC_SLOT_SIZE * AFC_MAX_SLOT)
 
 struct qmi_wlanfw_host_ddr_range {
 	u64 start;
@@ -326,6 +250,31 @@ struct wlfw_host_mlo_chip_info_s_v02 {
 	struct wlfw_host_mlo_chip_info_s_v01 mlo_chip_info;
 	u8 num_adj_chips;
 	struct wlfw_host_mlo_chip_info_s_v01 mlo_adj_chip_info[QMI_WLFW_MAX_NUM_MLO_ADJ_CHIPS_V01];
+};
+
+#define QMI_WLFW_MLO_RECONFIG_INFO_REQ_V01 0x005F
+#define QMI_WLFW_MLO_RECONFIG_INFO_RESP_V01 0x005F
+#define WLFW_MLO_RECONFIG_INFO_REQ_MSG_V01_MAX_MSG_LEN 122
+
+struct qmi_wlanfw_mlo_reconfig_info_req_msg_v01 {
+	u8 mlo_capable_valid;
+	u8 mlo_capable;
+	u8 mlo_chip_id_valid;
+	u16 mlo_chip_id;
+	u8 mlo_group_id_valid;
+	u8 mlo_group_id;
+	u8 max_mlo_peer_valid;
+	u16 max_mlo_peer;
+	u8 mlo_num_chips_valid;
+	u8 mlo_num_chips;
+	u8 mlo_chip_info_valid;
+	struct wlfw_host_mlo_chip_info_s_v01 mlo_chip_info[QMI_WLFW_MAX_NUM_MLO_CHIPS_V01];
+	u8 mlo_chip_info_v2_valid;
+	struct wlfw_host_mlo_chip_info_s_v02 mlo_chip_info_v2[QMI_WLFW_MAX_NUM_MLO_CHIPS_V01];
+};
+
+struct qmi_wlfw_mlo_reconfig_info_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
 };
 
 enum ath12k_qmi_cnss_feature {
@@ -384,7 +333,7 @@ struct qmi_wlanfw_host_cap_req_msg_v01 {
 	u8 mlo_num_chips;
 	u8 mlo_chip_info_valid;
 	struct wlfw_host_mlo_chip_info_s_v01 mlo_chip_info[QMI_WLFW_MAX_NUM_MLO_CHIPS_V01];
-	u8 mlo_chip_v2_info_valid;
+	u8 mlo_chip_info_v2_valid;
 	struct wlfw_host_mlo_chip_info_s_v02 mlo_chip_info_v2[QMI_WLFW_MAX_NUM_MLO_CHIPS_V01];
 	u8 feature_list_valid;
 	u64 feature_list;
@@ -412,6 +361,8 @@ struct qmi_wlanfw_phy_cap_resp_msg_v01 {
 	u32 board_id;
 	u8 single_chip_mlo_support_valid;
 	u8 single_chip_mlo_support;
+	u8 mm_coldboot_cal_valid;
+	u8 mm_coldboot_cal;
 };
 
 #define QMI_WLANFW_IND_REGISTER_REQ_MSG_V01_MAX_LEN		54
@@ -469,7 +420,6 @@ struct qmi_wlanfw_ind_register_resp_msg_v01 {
 #define QMI_WLANFW_RESPOND_MEM_REQ_V01			0x0036
 #define QMI_WLANFW_RESPOND_MEM_RESP_V01			0x0036
 #define QMI_WLANFW_MAX_NUM_MEM_CFG_V01			2
-#define QMI_WLFW_QDSS_TRACE_MEM_INFO_REQ_V01            0x0040
 #define QMI_WLANFW_MAX_STR_LEN_V01                      16
 
 struct qmi_wlanfw_mem_cfg_s_v01 {
@@ -705,7 +655,7 @@ struct qmi_wlanfw_m3_info_resp_msg_v01 {
 	struct qmi_response_type_v01 resp;
 };
 
-#define QMI_WLANFW_WLAN_MODE_REQ_MSG_V01_MAX_LEN	11
+#define QMI_WLANFW_WLAN_MODE_REQ_MSG_V01_MAX_LEN	15
 #define QMI_WLANFW_WLAN_MODE_RESP_MSG_V01_MAX_LEN	7
 #define QMI_WLANFW_WLAN_CFG_REQ_MSG_V01_MAX_LEN		803
 #define QMI_WLANFW_WLAN_CFG_RESP_MSG_V01_MAX_LEN	7
@@ -723,6 +673,8 @@ struct qmi_wlanfw_wlan_mode_req_msg_v01 {
 	u32 mode;
 	u8 hw_debug_valid;
 	u8 hw_debug;
+	u8 do_coldboot_cal_valid;
+	u8 do_coldboot_cal;
 };
 
 struct qmi_wlanfw_wlan_mode_resp_msg_v01 {
@@ -787,30 +739,6 @@ struct qmi_wlanfw_m3_dump_upload_req_ind_msg_v01 {
 	u32 pdev_id;
 	u64 addr;
 	u64 size;
-};
-
-struct qmi_wlanfw_qdss_trace_save_ind_msg_v01 {
-	u32 source;
-	u32 total_size;
-	u8 mem_seg_valid;
-	u32 mem_seg_len;
-	struct qmi_wlanfw_mem_seg_resp_s_v01
-			mem_seg[ATH12K_QMI_WLANFW_MAX_NUM_MEM_SEG_V01];
-	u8 file_name_valid;
-	char file_name[QMI_WLANFW_MAX_STR_LEN_V01 + 1];
-};
-
-#define QDSS_TRACE_SEG_LEN_MAX 32
-
-struct qdss_trace_mem_seg {
-	u64 addr;
-	u32 size;
-};
-
-struct ath12k_qmi_event_qdss_trace_save_data {
-	u32 total_size;
-	u32 mem_seg_len;
-	struct qdss_trace_mem_seg mem_seg[QDSS_TRACE_SEG_LEN_MAX];
 };
 
 #define QMI_MEM_REGION_TYPE                             0
@@ -886,18 +814,127 @@ struct wlfw_ini_resp_msg_v01 {
 	struct qmi_response_type_v01 resp;
 };
 
+#define QMI_WLFW_PARTNER_CHIP_STATE_INFO_REQ_V01 0x0066
+#define QMI_WLFW_PARTNER_CHIP_STATE_INFO_RESP_V01 0x0066
+#define WLFW_PARTNER_CHIP_STATE_INFO_REQ_MSG_V01_MAX_MSG_LEN 4
+#define WLFW_PARTNER_CHIP_STATE_INFO_RESP_MSG_V01_MAX_LEN 7
+
+struct qmi_wlanfw_chip_state_info_req_msg_v01 {
+	u8 partner_chip_state_valid;
+	u8 partner_chip_state;
+};
+
+struct qmi_wlanfw_chip_state_info_resp_msg_v01 {
+	struct qmi_response_type_v01 resp;
+};
+
+enum {
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MGMT_RX_REO_SNAPSHOT,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_RX_REO_PER_LINK_SNAPSHOT_INFO,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_RX_REO_SNAPSHOT_INFO,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_LINK,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_LINK_INFO,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_H_SHMEM,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_DEVICE_CRASH_INFO,
+        ATH12K_MLO_SHMEM_TLV_STRUCT_MLO_GLB_PER_DEVICE_CRASH_INFO,
+};
+
+/**
+ * Macros for getting and setting the required number of bits
+ * from the TLV params.
+ */
+#define ATH12K_MLO_SHMEM_GET_BITS(_val, _index, _num_bits) \
+        (((_val) >> (_index)) & ((1 << (_num_bits)) - 1))
+
+#define MLO_SHMEM_CHIP_CRASH_INFO_PARAM_NO_OF_DEVICES_GET(device_info) \
+        ATH12K_MLO_SHMEM_GET_BITS(device_info, 0, 2) + \
+        (ATH12K_MLO_SHMEM_GET_BITS(device_info, 12, 4) << 2)
+#define MLO_SHMEM_CHIP_CRASH_INFO_PARAM_VALID_DEVICE_BMAP_GET(device_info) \
+        ATH12K_MLO_SHMEM_GET_BITS(device_info, 2, 8)
+struct mlo_glb_device_crash_info {
+	/**
+	 * [1:0]:  no_of_devices
+	 * [4:2]:  valid_devices_bmap
+	 * For number of chips beyond 3, extension fields are added.
+	 * [9:5]:  valid_devices_bmap_ext
+	 * [15:12]: no_of_devices_ext
+	 * [31:16]: reserved
+	 */
+	u32 device_info;
+	/*
+	 * This TLV is followed by array of mlo_glb_per_device_crash_info:
+	 * mlo_glb_per_device_crash_info will have multiple instances equal to
+	 * num of partner devices received by no_of_chips
+	 * mlo_glb_per_device_crash_info per_device_crash_info[];
+	 */
+};
+
+struct mlo_glb_per_device_crash_info {
+	/*
+	 * crash reason, takes value in enum ath12k_mlo_chip_crash_reason
+         */
+        u32 crash_reason;
+
+        /*
+         * recovery mode, takes value in enum ath12k_mlo_recovery_mode
+         */
+        u32 recovery_mode;
+};
+
+/**
+ * ath12k_host_mlo_glb_per_device_crash_info - per chip crash
+ * information in MLO global shared memory
+ * @device_id: MLO chip id
+ * @crash_reason: Address of the crash_reason corresponding to device_id
+ * recovery_mode: Address of recovery mode corressponding to device_id
+ */
+struct ath12k_host_mlo_glb_per_device_crash_info {
+        u8 device_id;
+        void *crash_reason;
+        void *recovery_mode;
+};
+
+/**
+ * ath12k_host_mlo_glb_device_crash_info - chip crash information in MLO
+ * global shared memory
+ * @no_of_devices: No of partner chip to which crash information is shared
+ * @valid_devices_bmap: Valid chip bitmap
+ * @per_device_crash_info: pointer to per chip crash information.
+ */
+struct ath12k_host_mlo_glb_device_crash_info {
+	u8 no_of_devices;
+	u8 valid_devices_bmap;
+	struct ath12k_host_mlo_glb_per_device_crash_info *per_device_crash_info;
+};
+
+/**
+ * ath12k_host_mlo_mem_arena - MLO Global shared memory arena context
+ * @global_device_crash_info: shared memory for crash info, recovery info
+ * @init_done: Initialized snapshot info
+ */
+struct ath12k_host_mlo_mem_arena {
+	struct ath12k_host_mlo_glb_device_crash_info global_device_crash_info;
+        bool init_done;
+};
+
+struct ath12k_qmi_shmem_tlv_policy {
+	size_t min_len;
+};
+
 int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			      u32 mode);
 void ath12k_qmi_firmware_stop(struct ath12k_base *ab);
+int ath12k_qmi_partner_chip_power_info_send(struct ath12k_base *ab, u8 power_state);
 void ath12k_qmi_deinit_service(struct ath12k_base *ab);
 int ath12k_qmi_init_service(struct ath12k_base *ab);
 int ath12k_qmi_fwreset_from_cold_boot(struct ath12k_base *ab);
 void ath12k_qmi_free_resource(struct ath12k_base *ab);
 void ath12k_qmi_trigger_host_cap(struct ath12k_base *ab);
+void ath12k_qmi_trigger_mlo_reconfig(struct ath12k_base *ab);
 void ath12k_qmi_reset_mlo_mem(struct ath12k_hw_group *ag);
 int ath12k_qmi_m3_dump_upload_done_ind_send(struct ath12k_base *ab,
                                             u32 pdev_id, int status);
-int ath12k_send_qdss_trace_mode_req(struct ath12k_base *ab,
-				    enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode, u64 value);
 int ath12k_enable_fwlog(struct ath12k_base *ab);
+int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab);
+void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab);
 #endif

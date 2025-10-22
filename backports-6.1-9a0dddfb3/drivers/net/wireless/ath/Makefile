@@ -25,3 +25,7 @@ ath-$(CPTCFG_ATH_DEBUG) += debug.o
 ath-$(CPTCFG_ATH_TRACEPOINTS) += trace.o
 
 CFLAGS_trace.o := -I$(src)
+
+ifeq ($(CONFIG_KERNEL_ATH_GCOV_PROFILE),)
+GCOV_PROFILE:=y
+endif

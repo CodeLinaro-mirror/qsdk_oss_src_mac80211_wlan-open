@@ -348,7 +348,7 @@ static int ath12k_ce_init_ring(struct ath12k_base *ab,
 
 	/* TODO: Init other params needed by HAL to init the ring */
 
-	ret = ath12k_hal_srng_setup(ab, type, ce_id, 0, &params);
+	ret = ath12k_hal_srng_setup_idx(ab, type, ce_id, 0, &params, 0);
 	if (ret < 0) {
 		ath12k_warn(ab, "failed to setup srng: %d ring_id %d\n",
 			    ret, ce_id);
@@ -377,7 +377,7 @@ ath12k_ce_alloc_ring(struct ath12k_base *ab, int nentries, int desc_sz)
 	 * coherent DMA are unsupported
 	 */
 	ce_ring->base_addr_owner_space_unaligned =
-		ath12k_core_dma_alloc_coherent(ab->dev,
+		ath12k_hal_dma_alloc_coherent(ab->dev,
 					       nentries * desc_sz + CE_DESC_RING_ALIGN,
 					       &base_addr, GFP_KERNEL);
 	if (!ce_ring->base_addr_owner_space_unaligned) {
@@ -401,6 +401,7 @@ static int ath12k_ce_alloc_pipe(struct ath12k_base *ab, int ce_id)
 {
 	struct ath12k_hal *hal = &ab->hal;
 	struct ath12k_ce_pipe *pipe = &ab->ce.ce_pipe[ce_id];
+	struct ath12k_ce_stats *ce_stats;
 	const struct ce_attr *attr = &ab->hw_params->host_ce_config[ce_id];
 	struct ath12k_ce_ring *ring;
 	int nentries;
@@ -433,6 +434,15 @@ static int ath12k_ce_alloc_pipe(struct ath12k_base *ab, int ce_id)
 			return PTR_ERR(ring);
 		pipe->status_ring = ring;
 	}
+
+	/* As ce_stats are for debug purpose, bring up should not fail
+	 * in case of ce_stats allocation failure.
+	 */
+	ce_stats = kzalloc(sizeof(*pipe->ce_stats), GFP_KERNEL);
+	if (!ce_stats)
+		pipe->ce_stats = NULL;
+	else
+		pipe->ce_stats = ce_stats;
 
 	return 0;
 }
@@ -686,6 +696,11 @@ int ath12k_ce_init_pipes(struct ath12k_base *ab)
 	ath12k_ce_get_shadow_config(ab, &ab->qmi.ce_cfg.shadow_reg_v3,
 				    &ab->qmi.ce_cfg.shadow_reg_v3_len);
 
+	if (ab->hw_params->ce_count > CE_COUNT_MAX) {
+		ath12k_err(ab, "Invalid CE count %d\n", ab->hw_params->ce_count);
+		return -EINVAL;
+	}
+
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
 		pipe = &ab->ce.ce_pipe[i];
 
@@ -742,7 +757,7 @@ int ath12k_ce_init_pipes(struct ath12k_base *ab)
 void ath12k_ce_free_pipes(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
-	struct ath12k_ce_pipe *pipe;
+	struct ath12k_ce_pipe *pipe = NULL;
 	int desc_sz;
 	int i;
 
@@ -752,7 +767,7 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 		if (pipe->src_ring) {
 			desc_sz = ath12k_hal_ce_get_desc_size(hal,
 							      HAL_CE_DESC_SRC);
-			ath12k_core_dma_free_coherent(ab->dev,
+			ath12k_hal_dma_free_coherent(ab->dev,
 						      pipe->src_ring->nentries * desc_sz +
 						      CE_DESC_RING_ALIGN,
 						      pipe->src_ring->base_addr_owner_space,
@@ -764,7 +779,7 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 		if (pipe->dest_ring) {
 			desc_sz = ath12k_hal_ce_get_desc_size(hal,
 							      HAL_CE_DESC_DST);
-			ath12k_core_dma_free_coherent(ab->dev,
+			ath12k_hal_dma_free_coherent(ab->dev,
 						      pipe->dest_ring->nentries * desc_sz +
 						      CE_DESC_RING_ALIGN,
 						      pipe->dest_ring->base_addr_owner_space,
@@ -777,7 +792,7 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 			desc_sz =
 			  ath12k_hal_ce_get_desc_size(hal,
 						      HAL_CE_DESC_DST_STATUS);
-			ath12k_core_dma_free_coherent(ab->dev,
+			ath12k_hal_dma_free_coherent(ab->dev,
 						      pipe->status_ring->nentries * desc_sz +
 						      CE_DESC_RING_ALIGN,
 						      pipe->status_ring->base_addr_owner_space,
@@ -785,7 +800,10 @@ void ath12k_ce_free_pipes(struct ath12k_base *ab)
 			kfree(pipe->status_ring);
 			pipe->status_ring = NULL;
 		}
+
+		kfree(pipe->ce_stats);
 	}
+
 	ab->ce_pipe_init_done = false;
 }
 

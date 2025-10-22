@@ -8,85 +8,6 @@
 #ifndef ATH12K_HAL_DESC_H
 #define ATH12K_HAL_DESC_H
 
-#define BUFFER_ADDR_INFO0_ADDR         GENMASK(31, 0)
-
-#define BUFFER_ADDR_INFO1_ADDR         GENMASK(7, 0)
-#define BUFFER_ADDR_INFO1_RET_BUF_MGR  GENMASK(11, 8)
-#define BUFFER_ADDR_INFO1_SW_COOKIE    GENMASK(31, 12)
-
-struct ath12k_buffer_addr {
-	__le32 info0;
-	__le32 info1;
-} __packed;
-
-/* ath12k_buffer_addr
- *
- * buffer_addr_31_0
- *		Address (lower 32 bits) of the MSDU buffer or MSDU_EXTENSION
- *		descriptor or Link descriptor
- *
- * buffer_addr_39_32
- *		Address (upper 8 bits) of the MSDU buffer or MSDU_EXTENSION
- *		descriptor or Link descriptor
- *
- * return_buffer_manager (RBM)
- *		Consumer: WBM
- *		Producer: SW/FW
- *		Indicates to which buffer manager the buffer or MSDU_EXTENSION
- *		descriptor or link descriptor that is being pointed to shall be
- *		returned after the frame has been processed. It is used by WBM
- *		for routing purposes.
- *
- *		Values are defined in enum %HAL_RX_BUF_RBM_
- *
- * sw_buffer_cookie
- *		Cookie field exclusively used by SW. HW ignores the contents,
- *		accept that it passes the programmed value on to other
- *		descriptors together with the physical address.
- *
- *		Field can be used by SW to for example associate the buffers
- *		physical address with the virtual address.
- *
- *		NOTE1:
- *		The three most significant bits can have a special meaning
- *		 in case this struct is embedded in a TX_MPDU_DETAILS STRUCT,
- *		and field transmit_bw_restriction is set
- *
- *		In case of NON punctured transmission:
- *		Sw_buffer_cookie[19:17] = 3'b000: 20 MHz TX only
- *		Sw_buffer_cookie[19:17] = 3'b001: 40 MHz TX only
- *		Sw_buffer_cookie[19:17] = 3'b010: 80 MHz TX only
- *		Sw_buffer_cookie[19:17] = 3'b011: 160 MHz TX only
- *		Sw_buffer_cookie[19:17] = 3'b101: 240 MHz TX only
- *		Sw_buffer_cookie[19:17] = 3'b100: 320 MHz TX only
- *		Sw_buffer_cookie[19:18] = 2'b11: reserved
- *
- *		In case of punctured transmission:
- *		Sw_buffer_cookie[19:16] = 4'b0000: pattern 0 only
- *		Sw_buffer_cookie[19:16] = 4'b0001: pattern 1 only
- *		Sw_buffer_cookie[19:16] = 4'b0010: pattern 2 only
- *		Sw_buffer_cookie[19:16] = 4'b0011: pattern 3 only
- *		Sw_buffer_cookie[19:16] = 4'b0100: pattern 4 only
- *		Sw_buffer_cookie[19:16] = 4'b0101: pattern 5 only
- *		Sw_buffer_cookie[19:16] = 4'b0110: pattern 6 only
- *		Sw_buffer_cookie[19:16] = 4'b0111: pattern 7 only
- *		Sw_buffer_cookie[19:16] = 4'b1000: pattern 8 only
- *		Sw_buffer_cookie[19:16] = 4'b1001: pattern 9 only
- *		Sw_buffer_cookie[19:16] = 4'b1010: pattern 10 only
- *		Sw_buffer_cookie[19:16] = 4'b1011: pattern 11 only
- *		Sw_buffer_cookie[19:18] = 2'b11: reserved
- *
- *		Note: a punctured transmission is indicated by the presence
- *		 of TLV TX_PUNCTURE_SETUP embedded in the scheduler TLV
- *
- *		Sw_buffer_cookie[20:17]: Tid: The TID field in the QoS control
- *		 field
- *
- *		Sw_buffer_cookie[16]: Mpdu_qos_control_valid: This field
- *		 indicates MPDUs with a QoS control field.
- *
- */
-
 enum hal_tlv_tag {
 	HAL_MACTX_CBF_START					= 0 /* 0x0 */,
 	HAL_PHYRX_DATA						= 1 /* 0x1 */,
@@ -707,7 +628,7 @@ enum hal_rx_msdu_desc_reo_dest_ind {
 #define RX_MSDU_DESC_INFO0_DECAP_FORMAT		GENMASK(30, 29)
 
 #define HAL_RX_MSDU_PKT_LENGTH_GET(val)		\
-	(u32_get_bits((val), RX_MSDU_DESC_INFO0_MSDU_LENGTH))
+	(le32_get_bits((val), RX_MSDU_DESC_INFO0_MSDU_LENGTH))
 
 struct rx_msdu_desc {
 	__le32 info0;
@@ -842,8 +763,14 @@ enum hal_reo_dest_ring_push_reason {
 
 struct hal_reo_dest_ring {
 	struct ath12k_buffer_addr buf_addr_info;
-	struct rx_mpdu_desc rx_mpdu_info;
-	struct rx_msdu_desc rx_msdu_info;
+	union {
+		struct rx_mpdu_desc rx_mpdu_info;
+		__le64 info1;
+	};
+	union {
+		struct rx_msdu_desc rx_msdu_info;
+		__le32 info2;
+	};
 	__le32 buf_va_lo;
 	__le32 buf_va_hi;
 	__le32 info0; /* %HAL_REO_DEST_RING_INFO0_ */
@@ -1211,6 +1138,7 @@ struct hal_reo_flush_cache {
 #define HAL_TCL_DATA_CMD_INFO2_TO_FW		BIT(21)
 #define HAL_TCL_DATA_CMD_INFO2_PKT_OFFSET	GENMASK(31, 23)
 
+#define HAL_TCL_DATA_CMD_INFO3_TID_OVERWRITE		BIT(0)
 #define HAL_TCL_DATA_CMD_INFO3_FLOW_OVERRIDE_EN		BIT(1)
 #define HAL_TCL_DATA_CMD_INFO3_CLASSIFY_INFO_SEL	GENMASK(3, 2)
 #define HAL_TCL_DATA_CMD_INFO3_TID			GENMASK(7, 4)
@@ -1225,14 +1153,6 @@ struct hal_reo_flush_cache {
 
 #define HAL_TCL_DATA_CMD_INFO5_RING_ID			GENMASK(27, 20)
 #define HAL_TCL_DATA_CMD_INFO5_LOOPING_COUNT		GENMASK(31, 28)
-
-enum hal_tcl_encap_type {
-	HAL_TCL_ENCAP_TYPE_RAW,
-	HAL_TCL_ENCAP_TYPE_NATIVE_WIFI,
-	HAL_TCL_ENCAP_TYPE_ETHERNET,
-	HAL_TCL_ENCAP_TYPE_802_3 = 3,
-	HAL_TCL_ENCAP_TYPE_MAX,
-};
 
 enum hal_tcl_desc_type {
 	HAL_TCL_DESC_TYPE_BUFFER,
@@ -1703,23 +1623,6 @@ enum hal_tx_rate_stats_bw {
 	HAL_TX_RATE_STATS_BW_160,
 };
 
-enum hal_tx_rate_stats_pkt_type {
-	HAL_TX_RATE_STATS_PKT_TYPE_11A,
-	HAL_TX_RATE_STATS_PKT_TYPE_11B,
-	HAL_TX_RATE_STATS_PKT_TYPE_11N,
-	HAL_TX_RATE_STATS_PKT_TYPE_11AC,
-	HAL_TX_RATE_STATS_PKT_TYPE_11AX,
-	HAL_TX_RATE_STATS_PKT_TYPE_11BA,
-	HAL_TX_RATE_STATS_PKT_TYPE_11BE,
-};
-
-enum hal_tx_rate_stats_sgi {
-	HAL_TX_RATE_STATS_SGI_08US,
-	HAL_TX_RATE_STATS_SGI_04US,
-	HAL_TX_RATE_STATS_SGI_16US,
-	HAL_TX_RATE_STATS_SGI_32US,
-};
-
 struct hal_tx_rate_stats {
 	__le32 info0;
 	__le32 tsf;
@@ -1728,25 +1631,6 @@ struct hal_tx_rate_stats {
 struct hal_wbm_link_desc {
 	struct ath12k_buffer_addr buf_addr_info;
 } __packed;
-
-/* hal_wbm_link_desc
- *
- *	Producer: WBM
- *	Consumer: WBM
- *
- * buf_addr_info
- *		Details of the physical address of a buffer or MSDU
- *		link descriptor.
- */
-
-enum hal_wbm_rel_src_module {
-	HAL_WBM_REL_SRC_MODULE_TQM,
-	HAL_WBM_REL_SRC_MODULE_RXDMA,
-	HAL_WBM_REL_SRC_MODULE_REO,
-	HAL_WBM_REL_SRC_MODULE_FW,
-	HAL_WBM_REL_SRC_MODULE_SW,
-	HAL_WBM_REL_SRC_MODULE_MAX,
-};
 
 enum hal_wbm_rel_desc_type {
 	HAL_WBM_REL_DESC_TYPE_REL_MSDU,
@@ -1854,6 +1738,7 @@ struct hal_wbm_completion_ring_tx {
 
 #define HAL_WBM_RELEASE_TX_INFO3_PEER_ID		GENMASK(15, 0)
 #define HAL_WBM_RELEASE_TX_INFO3_TID			GENMASK(19, 16)
+#define HAL_WBM_RELEASE_TX_INFO3_TRANSMIT_CNT		GENMASK(30, 24)
 #define HAL_WBM_RELEASE_TX_INFO3_SW_BUFFER_COOKIE_19_12	GENMASK(27, 20)
 #define HAL_WBM_RELEASE_TX_INFO3_LOOPING_COUNT		GENMASK(31, 28)
 
@@ -1973,55 +1858,6 @@ struct hal_wbm_release_ring {
  *	Also note that SW if it wants only needs to look at the
  *	LSB bit of this count value.
  */
-
-/**
- * enum hal_wbm_tqm_rel_reason - TQM release reason code
- * @HAL_WBM_TQM_REL_REASON_FRAME_ACKED: ACK or BACK received for the frame
- * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU: Command remove_mpdus initiated by SW
- * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX: Command remove transmitted_mpdus
- *	initiated by sw.
- * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_NOTX: Command remove untransmitted_mpdus
- *	initiated by sw.
- * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES: Command remove aged msdus or
- *	mpdus.
- * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON1: Remove command initiated by
- *	fw with fw_reason1.
- * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON2: Remove command initiated by
- *	fw with fw_reason2.
- * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON3: Remove command initiated by
- *	fw with fw_reason3.
- * @HAL_WBM_TQM_REL_REASON_CMD_DISABLE_QUEUE: Remove command initiated by
- *	fw with disable queue.
- * @HAL_WBM_TQM_REL_REASON_CMD_TILL_NONMATCHING: Remove command initiated by
- *	fw to remove all mpdu until 1st non-match.
- * @HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD: Dropped due to drop threshold
- *	criteria
- * @HAL_WBM_TQM_REL_REASON_DROP_LINK_DESC_UNAVAIL: Dropped due to link desc
- *	not available
- * @HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU: Dropped due drop bit set or
- *	null flow
- * @HAL_WBM_TQM_REL_REASON_MULTICAST_DROP: Dropped due mcast drop set for VDEV
- * @HAL_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP: Dropped due to being set with
- *	'TCL_drop_reason'
- */
-enum hal_wbm_tqm_rel_reason {
-	HAL_WBM_TQM_REL_REASON_FRAME_ACKED,
-	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU,
-	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX,
-	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_NOTX,
-	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES,
-	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON1,
-	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON2,
-	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON3,
-	HAL_WBM_TQM_REL_REASON_CMD_DISABLE_QUEUE,
-	HAL_WBM_TQM_REL_REASON_CMD_TILL_NONMATCHING,
-	HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD,
-	HAL_WBM_TQM_REL_REASON_DROP_LINK_DESC_UNAVAIL,
-	HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU,
-	HAL_WBM_TQM_REL_REASON_MULTICAST_DROP,
-	HAL_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP,
-	HAL_WBM_TQM_REL_REASON_MAX,
-};
 
 struct hal_wbm_buffer_ring {
 	struct ath12k_buffer_addr buf_addr_info;
@@ -2901,8 +2737,7 @@ struct hal_mon_buf_ring {
 #define HAL_MON_DEST_INFO0_LOOPING_COUNT	GENMASK(31, 28)
 
 struct hal_mon_dest_desc {
-	__le32 cookie;
-	__le32 reserved;
+	__le64 cookie;
 	__le32 ppdu_id;
 	__le32 info0;
 };

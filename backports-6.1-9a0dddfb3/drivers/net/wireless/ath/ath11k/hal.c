@@ -182,7 +182,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 	},
 	{ /* RXDMA DIR BUF */
 		.start_ring_id = HAL_SRNG_RING_ID_RXDMA_DIR_BUF,
-		.max_rings = 1,
+		.max_rings = 2,
 		.entry_size = 8 >> 2, /* TODO: Define the struct */
 		.lmac_ring = true,
 		.ring_dir = HAL_SRNG_DIR_SRC,
@@ -201,6 +201,8 @@ static int ath11k_hal_alloc_cont_rdp(struct ath11k_base *ab)
 	if (!hal->rdp.vaddr)
 		return -ENOMEM;
 
+	ATH11K_MEMORY_STATS_INC(ab, dma_alloc, size);
+
 	return 0;
 }
 
@@ -215,6 +217,7 @@ static void ath11k_hal_free_cont_rdp(struct ath11k_base *ab)
 	size = sizeof(u32) * HAL_SRNG_RING_ID_MAX;
 	dma_free_coherent(ab->dev, size,
 			  hal->rdp.vaddr, hal->rdp.paddr);
+	ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, size);
 	hal->rdp.vaddr = NULL;
 }
 
@@ -228,6 +231,8 @@ static int ath11k_hal_alloc_cont_wrp(struct ath11k_base *ab)
 					    GFP_KERNEL);
 	if (!hal->wrp.vaddr)
 		return -ENOMEM;
+
+	ATH11K_MEMORY_STATS_INC(ab, dma_alloc, size);
 
 	return 0;
 }
@@ -243,6 +248,7 @@ static void ath11k_hal_free_cont_wrp(struct ath11k_base *ab)
 	size = sizeof(u32) * HAL_SRNG_NUM_LMAC_RINGS;
 	dma_free_coherent(ab->dev, size,
 			  hal->wrp.vaddr, hal->wrp.paddr);
+	ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, size);
 	hal->wrp.vaddr = NULL;
 }
 
@@ -668,7 +674,8 @@ u32 *ath11k_hal_srng_dst_get_next_entry(struct ath11k_base *ab,
 
 	desc = srng->ring_base_vaddr + srng->u.dst_ring.tp;
 
-	srng->u.dst_ring.tp += srng->entry_size;
+	srng->u.dst_ring.tp = (srng->u.dst_ring.tp + srng->entry_size) %
+			      srng->ring_size;
 
 	/* wrap around to start of ring*/
 	if (srng->u.dst_ring.tp == srng->ring_size)
@@ -681,8 +688,63 @@ u32 *ath11k_hal_srng_dst_get_next_entry(struct ath11k_base *ab,
 	return desc;
 }
 
+u32 *ath11k_hal_srng_dst_get_next_cache_entry(struct ath11k_base *ab,
+					      struct hal_srng *srng)
+{
+	u32 *desc,*desc_next;
+	lockdep_assert_held(&srng->lock);
+
+	if (srng->u.dst_ring.tp == srng->u.dst_ring.cached_hp)
+		return NULL;
+
+	desc = srng->ring_base_vaddr + srng->u.dst_ring.tp;
+
+	srng->u.dst_ring.tp = (srng->u.dst_ring.tp + srng->entry_size) %
+		srng->ring_size;
+
+	/* Try to prefetch the next descriptor in the ring */
+	if (srng->u.dst_ring.tp != srng->u.dst_ring.cached_hp) {
+		/* prefetch only if desc is available */
+		desc_next = srng->ring_base_vaddr + srng->u.dst_ring.tp;
+		prefetch(desc_next);
+	}
+	return desc;
+}
+
+void ath11k_hal_srng_dst_invalidate_entry(struct ath11k_base *ab,
+					struct hal_srng *srng, int entries)
+{
+	u32 *desc;
+	u32 tp, hp;
+
+	lockdep_assert_held(&srng->lock);
+
+	if (!(srng->flags & HAL_SRNG_FLAGS_CACHED) || !entries)
+		return;
+
+	tp = srng->u.dst_ring.tp;
+	hp = srng->u.dst_ring.cached_hp;
+
+	desc = srng->ring_base_vaddr + tp;
+	if (hp > tp) {
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
+				entries * srng->entry_size * sizeof(u32),
+				DMA_FROM_DEVICE);
+	} else {
+		entries = srng->ring_size - tp;
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(desc),
+				entries * sizeof(u32),
+				DMA_FROM_DEVICE);
+
+		entries = hp;
+		dma_sync_single_for_cpu(ab->dev, virt_to_phys(srng->ring_base_vaddr),
+				entries * sizeof(u32),
+				DMA_FROM_DEVICE);
+	}
+}
+
 int ath11k_hal_srng_dst_num_free(struct ath11k_base *ab, struct hal_srng *srng,
-				 bool sync_hw_ptr)
+				bool sync_hw_ptr)
 {
 	u32 tp, hp;
 
@@ -945,6 +1007,16 @@ void ath11k_hal_setup_link_idle_list(struct ath11k_base *ab,
 			   FIELD_PREP(BUFFER_ADDR_INFO0_ADDR,
 				      sbuf[0].paddr));
 
+       ath11k_hif_write32(ab,
+                           HAL_SEQ_WCSS_UMAC_WBM_REG +
+                           HAL_WBM_SCATTERED_DESC_PTR_HEAD_INFO_IX1,
+                           FIELD_PREP(
+                                HAL_WBM_SCATTERED_DESC_MSB_BASE_ADDR_39_32,
+                                ((u64)sbuf[0].paddr >>
+                                 HAL_ADDR_MSB_REG_SHIFT)) |
+                           FIELD_PREP(HAL_WBM_SCATTERED_DESC_HEAD_P_OFFSET_IX1,
+                                      (end_offset >> 2)));
+
 	ath11k_hif_write32(ab,
 			   HAL_SEQ_WCSS_UMAC_WBM_REG +
 			   HAL_WBM_SCATTERED_DESC_PTR_TAIL_INFO_IX0,
@@ -980,6 +1052,7 @@ int ath11k_hal_srng_setup(struct ath11k_base *ab, enum hal_ring_type type,
 	u32 lmac_idx;
 	int i;
 	u32 reg_base;
+	unsigned long *mem;
 
 	ring_id = ath11k_hal_srng_get_ring_id(ab, type, ring_num, mac_id);
 	if (ring_id < 0)
@@ -1008,6 +1081,8 @@ int ath11k_hal_srng_setup(struct ath11k_base *ab, enum hal_ring_type type,
 		srng->hwreg_base[i] = srng_config->reg_start[i] +
 				      (ring_num * srng_config->reg_size[i]);
 	}
+
+	mem = ab->mem;
 
 	memset(srng->ring_base_vaddr, 0,
 	       (srng->entry_size * srng->num_entries) << 2);
@@ -1355,12 +1430,80 @@ void ath11k_hal_srng_deinit(struct ath11k_base *ab)
 }
 EXPORT_SYMBOL(ath11k_hal_srng_deinit);
 
+ssize_t ath11k_debugfs_hal_dump_srng_stats(struct ath11k_base *ab, char *buf, int size)
+{
+	struct hal_srng *srng;
+	struct ath11k_ext_irq_grp *irq_grp;
+	struct ath11k_ce_pipe *ce_pipe;
+	unsigned int len = 0;
+	int i;
+
+	len += scnprintf(buf + len, size - len, "Last interrupt received for each CE:\n");
+	for (i = 0; i < ab->hw_params.ce_count; i++) {
+		ce_pipe = &ab->ce.ce_pipe[i];
+
+		if (ath11k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
+			continue;
+
+		spin_lock_bh(&ab->ce.ce_lock);
+		len += scnprintf(buf + len, size - len,
+				"CE_id %d pipe_num %d %ums before ce_manual_poll_count %d ce_last_manual_tasklet_schedule_ts %ums before\n",
+			   i, ce_pipe->pipe_num,
+			   jiffies_to_msecs(jiffies - ce_pipe->timestamp),
+			   ce_pipe->ce_manual_poll_count,
+			   jiffies_to_msecs(jiffies - ce_pipe->last_ce_manual_poll_ts));
+		spin_unlock_bh(&ab->ce.ce_lock);
+	}
+
+	len += scnprintf(buf + len, size - len, "\nLast interrupt received for each group:\n");
+	for (i = 0; i < ATH11K_EXT_IRQ_GRP_NUM_MAX; i++) {
+		irq_grp = &ab->ext_irq_grp[i];
+		len += scnprintf(buf + len, size - len, "group_id %d %ums before\n",
+			   irq_grp->grp_id,
+			   jiffies_to_msecs(jiffies - irq_grp->timestamp));
+	}
+
+	for (i = 0; i < HAL_SRNG_RING_ID_MAX; i++) {
+		srng = &ab->hal.srng_list[i];
+
+		spin_lock_bh(&srng->lock);
+		if (!srng->initialized) {
+			spin_unlock_bh(&srng->lock);
+			continue;
+		}
+
+		if (srng->ring_dir == HAL_SRNG_DIR_SRC)
+			len += scnprintf(buf + len, size - len,
+				   "src srng id %u hp %u, reap_hp %u, cur tp %u, cached tp %u last tp %u napi processed before %ums\n",
+				   srng->ring_id, srng->u.src_ring.hp,
+				   srng->u.src_ring.reap_hp,
+				   *srng->u.src_ring.tp_addr, srng->u.src_ring.cached_tp,
+				   srng->u.src_ring.last_tp,
+				   jiffies_to_msecs(jiffies - srng->timestamp));
+		else if (srng->ring_dir == HAL_SRNG_DIR_DST)
+			len += scnprintf(buf + len, size - len,
+				   "dst srng id %u tp %u, cur hp %u, cached hp %u last hp %u napi processed before %ums\n",
+				   srng->ring_id, srng->u.dst_ring.tp,
+				   *srng->u.dst_ring.hp_addr,
+				   srng->u.dst_ring.cached_hp,
+				   srng->u.dst_ring.last_hp,
+				   jiffies_to_msecs(jiffies - srng->timestamp));
+		spin_unlock_bh(&srng->lock);
+	}
+
+	return len;
+}
+
 void ath11k_hal_dump_srng_stats(struct ath11k_base *ab)
 {
 	struct hal_srng *srng;
 	struct ath11k_ext_irq_grp *irq_grp;
 	struct ath11k_ce_pipe *ce_pipe;
-	int i;
+	int i, j;
+	unsigned int last_sched, last_exec;
+	char *ce_time_dur[CE_TIME_DURATION_MAX] = {
+		"ce_time_dur_100US", "ce_time_dur_200US", "ce_time_dur_300US",
+		"ce_time_dur_400US", "ce_time_dur_500US"};
 
 	ath11k_err(ab, "Last interrupt received for each CE:\n");
 	for (i = 0; i < ab->hw_params.ce_count; i++) {
@@ -1369,9 +1512,25 @@ void ath11k_hal_dump_srng_stats(struct ath11k_base *ab)
 		if (ath11k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
 			continue;
 
-		ath11k_err(ab, "CE_id %d pipe_num %d %ums before\n",
+		ath11k_info(ab, "CE_id %d pipe_num %d %ums before, sched_delay_gt_500US %u, exec_delay_gt_500US %u ce_manual_poll_count %d ce_last_manual_poll_done %ums before\n",
 			   i, ce_pipe->pipe_num,
-			   jiffies_to_msecs(jiffies - ce_pipe->timestamp));
+			   jiffies_to_msecs(jiffies - ce_pipe->timestamp),
+			   ce_pipe->sched_delay_gt_500US, ce_pipe->exec_delay_gt_500US,
+			   ce_pipe->ce_manual_poll_count,
+			   jiffies_to_msecs(jiffies - ce_pipe->last_ce_manual_poll_ts));
+
+		for (j = 0; j < CE_TIME_DURATION_MAX; j++) {
+			last_sched = jiffies_to_msecs(jiffies -
+						      ce_pipe->tracker[j].sched_last_update);
+			last_exec = jiffies_to_msecs(jiffies -
+						     ce_pipe->tracker[j].exec_last_update);
+			ath11k_info(ab, "%-17s,\t last_sched_before %10ums,\t tot_sched_cnt %20llu,\t last_exec_before %10ums,\t tot_exec_cnt %20llu\n",
+				    ce_time_dur[j],
+				    ((ce_pipe->tracker[j].sched_last_update > 0) ? last_sched : 0),
+				    ce_pipe->tracker[j].sched_count,
+				    ((ce_pipe->tracker[j].exec_last_update > 0) ? last_exec : 0),
+				    ce_pipe->tracker[j].exec_count);
+		}
 	}
 
 	ath11k_err(ab, "\nLast interrupt received for each group:\n");

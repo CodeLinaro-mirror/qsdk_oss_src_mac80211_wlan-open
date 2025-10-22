@@ -5,13 +5,16 @@
  */
 
 #include "core.h"
+#include "hif.h"
 
+#define WMI_TLV_HDR_SIZE 4
 #ifdef CPTCFG_NL80211_TESTMODE
 
 void ath11k_tm_wmi_event(struct ath11k_base *ab, u32 cmd_id, struct sk_buff *skb);
 int ath11k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-		  void *data, int len);
+		  u8 link_id, void *data, int len);
 
+void ath11k_fwlog_write(struct ath11k_base *ab,  u8 *data, int len);
 #else
 
 static inline void ath11k_tm_wmi_event(struct ath11k_base *ab, u32 cmd_id,
@@ -21,9 +24,14 @@ static inline void ath11k_tm_wmi_event(struct ath11k_base *ab, u32 cmd_id,
 
 static inline int ath11k_tm_cmd(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
-				void *data, int len)
+				u8 link_id, void *data, int len)
 {
 	return 0;
 }
 
+static inline void ath11k_fwlog_write(struct ath11k_base *ab,  u8 *data,
+				     int len)
+{
+
+}
 #endif

@@ -18,7 +18,6 @@
 #include "debugfs.h"
 #include "fw.h"
 #include "pcic.h"
-#include "wifi7/hal.h"
 
 #define ATH12K_PCI_BAR_NUM		0
 #define ATH12K_PCI_DMA_MASK		32
@@ -62,10 +61,12 @@ static void ath12k_pci_select_window(struct ath12k_pci *ab_pci, u32 offset)
 static void ath12k_pci_select_static_window(struct ath12k_base *ab)
 {
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
-	u32 umac_window = u32_get_bits(HAL_SEQ_WCSS_UMAC_OFFSET, WINDOW_VALUE_MASK);
-	u32 ce_window = u32_get_bits(HAL_CE_WFSS_CE_REG_BASE, WINDOW_VALUE_MASK);
+	u32 umac_window;
+	u32 ce_window;
 	u32 window;
 
+	umac_window = u32_get_bits(ab_pci->reg_base->umac_base, WINDOW_VALUE_MASK);
+	ce_window = u32_get_bits(ab_pci->reg_base->ce_reg_base, WINDOW_VALUE_MASK);
 	window = (umac_window << 12) | (ce_window << 6);
 
 	spin_lock_bh(&ab_pci->window_lock);
@@ -606,7 +607,6 @@ void ath12k_pci_stop(struct ath12k_base *ab)
 		return;
 
 	ath12k_pcic_ce_irq_disable_sync(ab);
-	ath12k_ce_cleanup_pipes(ab);
 }
 
 int ath12k_pci_start(struct ath12k_base *ab)
@@ -1036,6 +1036,51 @@ static int ath12k_pci_panic_handler(struct ath12k_base *ab)
 	return NOTIFY_OK;
 }
 
+static int ath12k_dp_umac_pci_config_irq(struct ath12k_base *ab)
+{
+        u32 msi_data_start, msi_data_count, msi_irq_start;
+        unsigned int msi_data;
+        int irq, ret;
+        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+
+        ret = ath12k_pcic_get_user_msi_assignment(ab, "DP", &msi_data_count,
+                                                  &msi_data_start, &msi_irq_start);
+        if (ret)
+                return ret;
+
+        msi_data = (umac_reset->intr_offset % msi_data_count) + msi_irq_start;
+        irq = ath12k_hif_get_msi_irq(ab, msi_data);
+
+        umac_reset->irq_num = irq;
+        tasklet_setup(&umac_reset->intr_tq, ath12k_umac_reset_tasklet_handler);
+
+        ret = request_irq(irq, ath12k_umac_reset_interrupt_handler,
+                          IRQF_NO_SUSPEND, "umac_dp_reset", ab);
+        if (ret) {
+                ath12k_err(ab, "failed to request irq for umac dp reset %d\n", ret);
+                return ret;
+        }
+
+        disable_irq_nosync(umac_reset->irq_num);
+
+        return 0;
+}
+
+static void ath12k_pci_dp_umac_reset_enable_irq(struct ath12k_base *ab)
+{
+        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+
+        enable_irq(umac_reset->irq_num);
+}
+
+static void ath12k_pci_dp_umac_reset_free_irq(struct ath12k_base *ab)
+{
+        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+
+        disable_irq_nosync(umac_reset->irq_num);
+        free_irq(umac_reset->irq_num, ab);
+}
+
 static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.start = ath12k_pci_start,
 	.stop = ath12k_pcic_stop,
@@ -1066,6 +1111,9 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.ppeds_irq_enable = ath12k_pci_ppeds_irq_enable,
 	.ppeds_irq_disable = ath12k_pci_ppeds_irq_disable,
 #endif
+	.dp_umac_reset_irq_config = ath12k_dp_umac_pci_config_irq,
+	.dp_umac_reset_enable_irq = ath12k_pci_dp_umac_reset_enable_irq,
+	.dp_umac_reset_free_irq = ath12k_pci_dp_umac_reset_free_irq,
 };
 
 static enum ath12k_device_family
@@ -1090,6 +1138,23 @@ ath12k_get_device_family(const struct pci_device_id *pci_dev)
 	return ATH12K_DEVICE_FAMILY_MAX;
 }
 
+int ath12k_pci_get_link_status(struct pci_dev *pdev, u16 *speed, u16 *width)
+{
+	u16 link_status;
+	int ret;
+
+	if (!pdev || !speed || !width)
+		return -EINVAL;
+
+	ret = pcie_capability_read_word(pdev, PCI_EXP_LNKSTA, &link_status);
+	if (ret)
+		return ret;
+
+	*speed = u16_get_bits(link_status, PCI_EXP_LNKSTA_CLS);
+	*width = u16_get_bits(link_status, PCI_EXP_LNKSTA_NLW);
+	return 0;
+}
+
 static int ath12k_pci_probe(struct pci_dev *pdev,
 			    const struct pci_device_id *pci_dev)
 {
@@ -1097,6 +1162,19 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	struct ath12k_pci *ab_pci;
 	struct ath12k_base *ab;
 	int ret;
+
+#ifdef PLATFORM_SDX85
+	/* init memory-region idx 0 for the dev, so the further dma alloc will get
+	 * allocated from this region
+	 */
+	ret = of_reserved_mem_device_init(&pdev->dev);
+	if (ret) {
+		dev_err(&pdev->dev,
+			"Failed to init reserved mem device, err = %d\n",
+			ret);
+		return -ENOMEM;
+	}
+#endif
 
 	ab = ath12k_core_alloc(&pdev->dev, sizeof(*ab_pci), ATH12K_BUS_PCI);
 	if (!ab) {
@@ -1141,6 +1219,7 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 	ath12k_dbg(ab, ATH12K_DBG_PCI, "PCI device family id: %d\n", device_id);
 
 	ab_pci->device_ops = &ath12k_pci_family_drivers[device_id]->ops;
+	ab_pci->reg_base = ath12k_pci_family_drivers[device_id]->reg_base;
 
 	/* Call device specific probe. This is the callback that can
 	 * be used to override any ops in future
@@ -1151,6 +1230,11 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 			ath12k_err(ab, "failed to probe device: %d\n", ret);
 			goto err_pci_free_region;
 		}
+	}
+
+	if (of_property_match_string(ab->dev->of_node, "qcom,early_cal_enabled", "okay") >= 0) {
+		ab->early_cal_support = true;
+		ath12k_info(ab,"coldboot calibration supported in uboot\n");
 	}
 
 	ret = ath12k_pci_msi_alloc(ab_pci);
@@ -1218,9 +1302,18 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		ath12k_err(ab, "failed to init core: %d\n", ret);
 		goto err_free_dp;
 	}
+
+	ret = ath12k_pci_get_link_status(ab_pci->pdev, &ab_pci->def_link_speed,
+					 &ab_pci->def_link_width);
+	if (ret)
+		ath12k_err(ab, "failed to get PCIe link status %d\n", ret);
+
 	return 0;
 
 err_free_dp:
+	if (test_bit(ATH12K_FLAG_SOC_CREATE_FAIL, &ab->dev_flags))
+		return ret;
+
 	if (ab_pci->device_ops->dp_deinit)
 		ab_pci->device_ops->dp_deinit(ab->dp);
 
@@ -1298,6 +1391,11 @@ static void ath12k_pci_shutdown(struct pci_dev *pdev)
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 
 	ath12k_pci_set_irq_affinity_hint(ab_pci, NULL);
+
+	if (ath12k_check_erp_power_down(ab->ag) &&
+	    ab->pm_suspend)
+		return;
+
 	ath12k_qmi_firmware_stop(ab);
 	ath12k_pci_power_down(ab, false);
 }
@@ -1399,3 +1497,13 @@ void ath12k_pci_unregister_driver(const enum ath12k_device_family device_id)
 	ath12k_pci_family_drivers[device_id] = NULL;
 }
 EXPORT_SYMBOL(ath12k_pci_unregister_driver);
+
+struct pci_dev *ath12k_pci_get_dev_by_ab(struct ath12k_base *ab)
+{
+	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+
+	if (!ab_pci)
+		return NULL;
+
+	return ab_pci->pdev;
+}

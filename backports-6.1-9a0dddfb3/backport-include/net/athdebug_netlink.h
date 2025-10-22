@@ -1,6 +1,6 @@
 /*
  *Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
- *SPDX-License-Identifier: BSD-3-Clause-Clear
+ *SPDX-License-Identifier: GPL-2.0-only
  */
 #ifndef __ATHDEBUG_NETLINK_H
 #define __ATHDEBUG_NETLINK_H

@@ -231,7 +231,7 @@ void ieee80211_ttlm_info_expec_dur_update(struct ieee80211_vif *vif,
 {
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 
-	if (!wdev->valid_links ||
+	if (!wdev || !wdev->valid_links ||
 	    WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
 		return;
 
@@ -992,9 +992,13 @@ static int ieee80211_get_station(struct wiphy *wiphy, struct net_device *dev,
 	return ret;
 }
 
-static int ieee80211_set_monitor_channel(struct wiphy *wiphy,
-					 struct net_device *dev,
-					 struct cfg80211_chan_def *chandef)
+/*
+ * ieee80211_set_monitor_channel: Exported for use with radar detection
+ * to ensure monitor interfaces follow AP interfaces to DFS channels
+ */
+int ieee80211_set_monitor_channel(struct wiphy *wiphy,
+				  struct net_device *dev,
+				  struct cfg80211_chan_def *chandef)
 {
 	struct ieee80211_local *local = wiphy_priv(wiphy);
 	struct ieee80211_sub_if_data *sdata;
@@ -1457,6 +1461,28 @@ static u8 ieee80211_num_beaconing_links(struct ieee80211_sub_if_data *sdata)
 	return num;
 }
 
+static void
+ieee80211_populate_ap_vif_adv_ttlm_params(struct ieee80211_sub_if_data *sdata,
+					  struct cfg80211_ttlm_params *params)
+{
+	struct ieee80211_advertised_ttlm_config *ttlm_config =
+		&sdata->vif.adv_ttlm.u.ap.ttlm_config;
+	int i;
+
+	memset(ttlm_config, 0, sizeof(*ttlm_config));
+	ttlm_config->num_ttlm_ie = params->u.adv.num_ttlm_info;
+	for (i = 0; i < ttlm_config->num_ttlm_ie; i++) {
+		ttlm_config->adv_ttlm_conf[i].link_mapping_size =
+			params->u.adv.link_mapping_size[i];
+		ttlm_config->adv_ttlm_conf[i].ieee_link_bmap =
+			params->u.adv.ieee_link_bmap[i];
+		ttlm_config->adv_ttlm_conf[i].switch_time =
+			params->u.adv.switch_time[i];
+		ttlm_config->adv_ttlm_conf[i].duration =
+			params->u.adv.duration[i];
+	}
+}
+
 static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			      struct cfg80211_ap_settings *params)
 {
@@ -1614,6 +1640,13 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 			IEEE80211_HE_PHY_CAP2_UL_MU_FULL_MU_MIMO;
 	}
 
+
+	if (params->chandef.chan->band == NL80211_BAND_6GHZ)
+		link_conf->power_type =
+		    ieee80211_cfg_to_mac_power_type(params->he_6ghz_power_type);
+	else
+		link_conf->power_type = IEEE80211_REG_UNSET_AP;
+
 	err = ieee80211_link_use_channel(link, &chanreq,
 					 IEEE80211_CHANCTX_SHARED);
 	if (!err)
@@ -1644,12 +1677,6 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 		vlan->control_port_no_preauth =
 			params->crypto.control_port_no_preauth;
 	}
-
-	if (params->chandef.chan->band == NL80211_BAND_6GHZ)
-		link_conf->power_type =
-		    ieee80211_cfg_to_mac_power_type(params->he_6ghz_power_type);
-	else
-		link_conf->power_type = IEEE80211_REG_UNSET_AP;
 
 	link_conf->dtim_period = params->dtim_period;
 	link_conf->enable_beacon = true;
@@ -1733,6 +1760,12 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	ieee80211_recalc_dtim(local, sdata);
 	ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_SSID);
+	/* check if ttlm params available and populate vif accordingy */
+	if (params->ttlm_params.type == TTLM_CMD_TYPE_ADVERTISED &&
+	    params->ttlm_params.u.adv.num_ttlm_info) {
+		ieee80211_populate_ap_vif_adv_ttlm_params(sdata, &params->ttlm_params);
+		changed |= BSS_CHANGED_LINK_ADV_TTLM;
+	}
 	ieee80211_link_info_change_notify(sdata, link, changed);
 
 	if (ieee80211_num_beaconing_links(sdata) <= 1)
@@ -1820,7 +1853,8 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 			return -EINVAL;
 
 		link_conf->ml_max_rec_links = params->ml_max_rec_links;
-		err |= BSS_CHANGED_ML_MAX_REC_LINKS;
+		/* update beacon template */
+		err |= (changed | BSS_CHANGED_ML_MAX_REC_LINKS);
 	}
 
 	if (err > 0)
@@ -1956,9 +1990,12 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	/* With dynamic link removal support, any non-tx bss can be removed
 	 * individually. Hence, call ieee80211_stop_mbssid when the wdev is
-	 * removed through any other user application(s).
+	 * removed through any other user application(s). However, the MBSSID
+	 * group should be stopped if the TX BSS is being stopped,
+	 * regardless of the netdev state.
 	 */
-	if (wdev->is_netdev_going_down)
+	if ((rcu_access_pointer(link->conf->tx_bss_conf) == link->conf) ||
+	    wdev->is_netdev_going_down)
 		ieee80211_stop_mbssid(sdata, link_id);
 	RCU_INIT_POINTER(link_conf->tx_bss_conf, NULL);
 
@@ -2580,22 +2617,22 @@ static int ieee80211_change_station(struct wiphy *wiphy,
 				u16 new_links = master->vif.valid_links &
 						sta->sta.valid_links;
 
+				wdev->valid_links = new_links;
+
+				ieee80211_vif_set_links(vlansdata, new_links, 0);
+
 				for_each_set_bit(link_id, &master_iter,
 						 IEEE80211_MLD_MAX_NUM_LINKS) {
 					if (!(sta->sta.valid_links & BIT(link_id))) {
 						memset(wdev->links[link_id].addr,
 						       0, ETH_ALEN);
-						wdev->valid_links &= ~BIT(link_id);
 					}
 					else {
 						memcpy(wdev->links[link_id].addr,
 						       vlansdata->vif.link_conf[link_id]->bssid,
 							ETH_ALEN);
-						wdev->valid_links |= BIT(link_id);
 					}
 				}
-
-				ieee80211_vif_set_links(vlansdata, new_links, 0);
 			}
 		}
 
@@ -4023,7 +4060,9 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	struct ieee80211_chan_req chanreq = { .oper = *chandef };
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_link_data *link_data;
-	int err;
+	struct ieee80211_sub_if_data *mon_sdata = NULL;
+	struct net_device *mon_dev = NULL;
+	int err, radio_idx;
 	ktime_t ktime = ms_to_ktime(cac_time_ms);
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -4034,6 +4073,33 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	link_data = sdata_dereference(sdata->link[link_id], sdata);
 	if (!link_data)
 		return -ENOLINK;
+
+	radio_idx = cfg80211_get_hw_idx_by_chan(wiphy, chandef->chan);
+
+	rcu_read_lock();
+	list_for_each_entry_rcu(mon_sdata, &sdata->local->mon_list, u.mntr.list) {
+		struct cfg80211_chan_def *mon_chandef;
+
+		mon_chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
+		if (mon_chandef->chan &&
+		    mon_chandef->chan->band == chandef->chan->band &&
+		    radio_idx == cfg80211_get_hw_idx_by_chan(wiphy, mon_chandef->chan)) {
+			mon_dev = mon_sdata->dev;
+			dev_hold(mon_dev);
+			break;
+		}
+	}
+	rcu_read_unlock();
+
+	if (mon_dev) {
+		err = ieee80211_set_monitor_channel(local->hw.wiphy, mon_dev, chandef);
+		mon_sdata = IEEE80211_DEV_TO_SUB_IF(mon_dev);
+		if (err)
+			sdata_info(mon_sdata,
+				   "Failed to change monitor interface channel: %d\n",
+				   err);
+		dev_put(mon_dev);
+	}
 
 	/* whatever, but channel contexts should not complain about that one */
 	link_data->smps_mode = IEEE80211_SMPS_OFF;
@@ -4281,7 +4347,7 @@ void ieee80211_link_removal_count_update(struct ieee80211_vif *vif,
 	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
 
 	if (!wdev->valid_links ||
-		WARN_ON(link_id > IEEE80211_MLD_MAX_NUM_LINKS))
+		WARN_ON(link_id >= IEEE80211_MLD_MAX_NUM_LINKS))
 		return;
 
 	wdev->links[link_id].link_removal_tbtt_count = count;
@@ -4348,6 +4414,7 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	struct ieee80211_sub_if_data *sdata = link_data->sdata;
 	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_bss_conf *link_conf = link_data->conf;
+	struct ieee80211_sub_if_data *mon_sdata = NULL;
 	u64 changed = 0;
 	int err;
 
@@ -4356,6 +4423,27 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	if (link_data->csa.power_mode != IEEE80211_REG_UNSET_AP) {
 		link_data->conf->power_type = link_data->csa.power_mode;
 		link_data->csa.power_mode = IEEE80211_REG_UNSET_AP;
+	}
+
+	list_for_each_entry_rcu(mon_sdata, &local->mon_list, u.mntr.list) {
+		struct cfg80211_chan_def *chandef;
+		struct ieee80211_link_data *mon_link;
+
+		mon_link = &mon_sdata->deflink;
+		chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
+		if (chandef->chan &&
+		    chandef->chan->band != link_conf->chanreq.oper.chan->band)
+			continue;
+
+		if (mon_link->reserved_chanctx) {
+			if (!mon_link->reserved_ready) {
+				err = ieee80211_link_use_reserved_context(mon_link);
+				if (err)
+					return err;
+			}
+			break;
+		}
+		break;
 	}
 
 	/*
@@ -4601,6 +4689,9 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_chanctx *chanctx;
 	struct ieee80211_bss_conf *link_conf;
 	struct ieee80211_link_data *link_data;
+	struct ieee80211_sub_if_data *mon_sdata;
+	struct ieee80211_chanctx_conf *mon_conf;
+	struct ieee80211_chanctx *mon_chanctx;
 	u64 changed = 0;
 	u8 link_id = params->link_id;
 	int err;
@@ -4667,6 +4758,33 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 					     params->radar_required);
 	if (err)
 		goto out;
+
+	list_for_each_entry_rcu(mon_sdata, &local->mon_list, u.mntr.list) {
+		struct cfg80211_chan_def *chandef;
+		struct ieee80211_link_data *mon_link = &mon_sdata->deflink;
+		struct ieee80211_bss_conf *bss_conf = &mon_sdata->vif.bss_conf;
+
+		chandef = &bss_conf->chanreq.oper;
+		if (chandef->chan &&
+		    chandef->chan->band != chanreq.oper.chan->band)
+			continue;
+
+		mon_conf = wiphy_dereference(wiphy, bss_conf->chanctx_conf);
+		if (!mon_conf) {
+			err = -EBUSY;
+			goto out;
+		}
+
+		if (!mon_link->reserved_chanctx) {
+			mon_chanctx = container_of(mon_conf,
+						   struct ieee80211_chanctx, conf);
+			err = ieee80211_link_reserve_chanctx(mon_link, &chanreq,
+							     mon_chanctx->mode,
+							     params->radar_required);
+			if (err)
+				goto out;
+		}
+	}
 
 	/* if reservation is invalid then this will fail */
 	err = ieee80211_check_combinations(sdata, NULL, chanctx->mode, 0, -1);
@@ -5059,17 +5177,16 @@ ieee80211_get_ap_6ghz_pwr_mode(struct wireless_dev *wdev, unsigned int link_id)
 	struct ieee80211_sub_if_data *sdata;
 	enum nl80211_regulatory_power_modes mode = NL80211_REG_NUM_POWER_MODES;
 	enum ieee80211_ap_reg_power ap_power_type;
+	unsigned long valid_links;
+	struct ieee80211_bss_conf *bss_conf;
+	enum nl80211_reg_client_types client_type;
+	enum nl80211_regulatory_power_modes ap_mode;
 
 	if (!wdev)
 		return mode;
 	switch (wdev->iftype) {
 	case NL80211_IFTYPE_AP:
 	case NL80211_IFTYPE_STATION:
-		unsigned long valid_links;
-		struct ieee80211_bss_conf *bss_conf;
-		enum nl80211_reg_client_types client_type;
-		enum nl80211_regulatory_power_modes ap_mode;
-
 		sdata = IEEE80211_WDEV_TO_SUB_IF(wdev);
 		if (!ieee80211_sdata_running(sdata) ||
 		    !(sdata->flags & IEEE80211_SDATA_IN_DRIVER)) {
@@ -5560,7 +5677,7 @@ ieee80211_color_change_bss_config_notify(struct ieee80211_link_data *link,
 	if (!link->conf->nontransmitted &&
 	    rcu_access_pointer(link->conf->tx_bss_conf)) {
 		struct ieee80211_link_data *tmp;
-		unsigned int link_id_iter;
+		unsigned int link_id_iter = 0;
 		struct ieee80211_link_data *link_iter;
 
 		for_each_sdata_link(sdata->local, tmp) {
@@ -6007,7 +6124,8 @@ ieee80211_set_ttlm(struct wiphy *wiphy, struct net_device *dev,
 	case TTLM_CMD_TYPE_NEGOTIATED:
 		return ieee80211_req_neg_ttlm(sdata, params);
 	case TTLM_CMD_TYPE_ADVERTISED:
-		ieee80211_set_ap_advertised_ttlm_config(sdata, params);
+		ieee80211_populate_ap_vif_adv_ttlm_params(sdata, params);
+		ieee80211_set_ap_advertised_ttlm_config(sdata);
 		break;
 	default:
 		return -EINVAL;
@@ -6024,6 +6142,10 @@ static int ieee80211_sta_assoc_ml_reconf(struct wiphy *wiphy,
 	struct link_station_parameters *link_params;
 	const struct wiphy_iftype_ext_capab *ift_ext_capa;
 	unsigned long added_links = 0, link_id = 0, added_ok = 0;
+	unsigned long matched_rem_links = 0;
+	struct link_sta_info *link_sta;
+	unsigned long rem_links = req->rem_links;
+	unsigned long link_id_iter;
 	u16 new_active_links;
 	int ret = 0;
 	__le16 mld_capa_ops = 0;
@@ -6049,6 +6171,31 @@ static int ieee80211_sta_assoc_ml_reconf(struct wiphy *wiphy,
 			continue;
 
 		added_links |= BIT(link_id);
+
+		for_each_set_bit(link_id_iter, &rem_links,
+				 IEEE80211_MLD_MAX_NUM_LINKS) {
+			link_sta = wiphy_dereference(sta->local->hw.wiphy,
+						     sta->link[link_id_iter]);
+
+			if (!link_sta)
+				continue;
+
+			if (ether_addr_equal(link_sta->addr,
+					     req->u.link_sta_params[link_id].link_mac)){
+				/*
+				 * Reject if the same link MAC is specified
+				 * for more than one added link in
+				 * the reconfiguration request.
+				 */
+				if (matched_rem_links & BIT(link_id_iter)) {
+					sta->sta.reconf.matched_rem_links = 0;
+					return -EINVAL;
+				}
+
+				matched_rem_links |= BIT(link_id_iter);
+				sta->sta.reconf.matched_rem_links |= BIT(link_id_iter);
+			}
+		}
 	}
 	/* Reject if:
 	 * any link is both added and removed,
@@ -6059,7 +6206,7 @@ static int ieee80211_sta_assoc_ml_reconf(struct wiphy *wiphy,
 	if ((added_links & req->rem_links) ||
 	    !(added_links | req->rem_links) ||
 	    ((sta->sta.valid_links & req->rem_links) != req->rem_links) ||
-	    !(sta->sta.valid_links & ~req->rem_links))
+	    !((sta->sta.valid_links | added_links) & ~req->rem_links))
 		return -EINVAL;
 
 	new_active_links = sta->sta.valid_links & ~req->rem_links;

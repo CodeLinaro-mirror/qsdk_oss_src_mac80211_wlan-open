@@ -18,7 +18,7 @@
 
 struct hal_tx_info {
 	u16 meta_data_flags; /* %HAL_TCL_DATA_CMD_INFO0_META_ */
-	u8 ring_id;
+	u8 buf_id;
 	u32 desc_id;
 	enum hal_tcl_desc_type type;
 	enum hal_tcl_encap_type encap_type;
@@ -36,7 +36,6 @@ struct hal_tx_info {
 	u8 lmac_id;
 	u8 dscp_tid_tbl_idx;
 	bool enable_mesh;
-	u8 rbm_id;
 };
 
 /* TODO: Check if the actual desc macros can be used instead */
@@ -70,5 +69,5 @@ int ath11k_hal_reo_cmd_send(struct ath11k_base *ab, struct hal_srng *srng,
 			    enum hal_reo_cmd_type type,
 			    struct ath11k_hal_reo_cmd *cmd);
 void ath11k_hal_tx_init_data_ring(struct ath11k_base *ab,
-				  struct hal_srng *srng);
+				  struct hal_srng *srng, enum hal_ring_type type);
 #endif

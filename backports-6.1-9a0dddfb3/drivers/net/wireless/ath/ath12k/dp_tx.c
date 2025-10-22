@@ -14,12 +14,17 @@
 #include "mac.h"
 #include "ppe.h"
 #include "hal.h"
+#include "dp_peer.h"
+#include "dp_stats.h"
+#include "dp_htt.h"
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static void
 ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
 					  struct list_head *local_list,
-					  int local_list_len)
+					  int local_list_len,
+					  struct list_head *local_list_no_skb,
+					  int list_no_skb_count)
 {
 	struct ath12k_ppeds_tx_desc_info *desc = NULL, *first_desc = NULL, *last_desc = NULL, *tmp;
 	int hotlist_remaining_len;
@@ -29,6 +34,15 @@ ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
 	struct list_head local_list_for_reuse;
 
 	spin_lock_bh(&dp->ppe.ppeds_tx_desc_lock);
+
+	if (unlikely(list_no_skb_count)) {
+		list_for_each_entry_safe(desc, tmp, local_list_no_skb, list) {
+			desc->paddr = (dma_addr_t)NULL;
+			desc->in_use = false;
+		}
+
+		list_splice_tail(local_list_no_skb, &dp->ppe.ppeds_tx_desc_free_list);
+	}
 
 	hotlist_remaining_len = ath12k_ppeds_desc_params.ppeds_hotlist_len -
 						dp->ppe.ppeds_tx_desc_reuse_list_len;
@@ -120,22 +134,6 @@ void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
 	}
 }
 
-static inline bool ath12k_dp_tx_completion_valid(struct hal_wbm_release_ring *desc)
-{
-	struct htt_tx_wbm_completion *status_desc;
-
-	if (FIELD_GET(HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE, desc->info0) ==
-			HAL_WBM_REL_SRC_MODULE_FW) {
-		status_desc = (struct htt_tx_wbm_completion *)(((u8 *)desc) + HTT_TX_WBM_COMP_STATUS_OFFSET);
-
-		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
-		if (FIELD_GET(HTT_TX_WBM_COMP_INFO0_STATUS, status_desc->info0) ==
-				HAL_WBM_REL_HTT_TX_COMP_STATUS_MEC_NOTIFY)
-			return false;
-	}
-	return true;
-}
-
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries)
@@ -153,20 +151,151 @@ void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 	desc = srng->ring_base_vaddr + tp;
 	if (hp > tp) {
 		last_desc = ((void *)desc + entries * srng->entry_size * sizeof(u32));
-		dmac_inv_range_no_dsb((void *)desc,
-				      (void *)last_desc);
+		ath12k_core_dmac_inv_range_no_dsb((void *)desc, (void *)last_desc);
 	} else {
 		remaining_entries = srng->ring_size - tp;
 		last_desc = ((void *)desc + remaining_entries * sizeof(u32));
-		dmac_inv_range_no_dsb((void *)desc, (void *)last_desc);
+		ath12k_core_dmac_inv_range_no_dsb((void *)desc, (void *)last_desc);
 
 		last_desc = ((void *)srng->ring_base_vaddr + hp * sizeof(u32));
-		dmac_inv_range_no_dsb((void *)srng->ring_base_vaddr, (void *)last_desc);
+		ath12k_core_dmac_inv_range_no_dsb((void *)srng->ring_base_vaddr,
+						  (void *)last_desc);
 	}
 
 	dsb(st);
 }
 #endif
+
+u16 dp_sawf_msduq_peer_id_set(u16 peer_id, u8 msduq)
+{
+	u16 peer_msduq = 0;
+
+	peer_msduq |= (peer_id & SDWF_PEER_ID_MASK) << SDWF_PEER_ID_SHIFT;
+	peer_msduq |= (msduq & SDWF_MSDUQ_MASK);
+	return peer_msduq;
+}
+
+int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
+				 struct htt_tx_wbm_completion *status_desc, u8 mac_id)
+{
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_peer_qos *qos;
+	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_skb_cb *skb_cb;
+	struct ath12k_dp *dp;
+	u8 host_tid_queue;
+	u16 data_length;
+	u16 peer_msduq;
+	u8 htt_q_idx;
+	u8 msduq_idx;
+	u16 peer_id;
+	u8 pdev_id;
+	u8 msduq;
+	int ret;
+	u8 tid;
+	struct ieee80211_tx_info *tx_info = IEEE80211_SKB_CB(skb);
+
+	peer_id = le32_get_bits(status_desc->info2, HTT_TX_WBM_REINJECT_SW_PEER_ID_M);
+	data_length = le32_get_bits(status_desc->info2, HTT_TX_WBM_REINJECT_DATA_LEN_M);
+	tid = le32_get_bits(status_desc->info3, HTT_TX_WBM_REINJECT_TID_M);
+	htt_q_idx = le32_get_bits(status_desc->info3, HTT_TX_WBM_REINJECT_MSDUQ_ID_M);
+
+	ath12k_dbg(ab, ATH12K_DBG_PPE,
+		   "peer_id %u data_length %u tid %u htt_q_idx %u",
+		   peer_id, data_length, tid, htt_q_idx);
+
+	host_tid_queue = htt_q_idx - DP_SDWF_DEFAULT_Q_PTID_MAX;
+	msduq_idx = tid + host_tid_queue * DP_SDWF_TID_MAX;
+
+	if (msduq_idx > DP_SDWF_Q_MAX - 1) {
+		ath12k_err(ab, "Invalid msduq idx: %u, tid %u htt_q_idx %u",
+			   msduq_idx, tid, htt_q_idx);
+		return -EINVAL;
+	}
+
+	dp = ath12k_ab_to_dp(ab);
+	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params, mac_id);
+
+	rcu_read_lock();
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+
+	spin_lock_bh(&dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	if (!peer) {
+		ath12k_err(ab, "Invalid peer id %u", peer_id);
+		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	if (!peer->dp_peer) {
+		ath12k_err(ab, "dp_peer is NULL for peer_id %u", peer_id);
+		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	qos = peer->dp_peer->qos;
+	if (!qos) {
+		ath12k_err(ab, "QOS ctx for peer id %u", peer_id);
+		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+
+	msduq = msduq_idx + DP_SDWF_DEFAULT_Q_MAX;
+	peer_msduq = dp_sawf_msduq_peer_id_set(peer_id, msduq);
+
+	skb->mark = ath_encode_sdwf_metadata(peer_msduq);
+	skb->len = data_length;
+
+	skb_cb = ATH12K_SKB_CB(skb);
+	skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
+	tx_info->flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
+
+	arsta = ath12k_peer_get_link_sta(ab, peer);
+	spin_unlock_bh(&dp->dp_lock);
+
+	if (!arsta) {
+		rcu_read_unlock();
+		return -EINVAL;
+	}
+	arvif = arsta->arvif;
+
+	/* This arch ops is temporary, must be removed once ppeds handler is moved to wifi7 */
+	ret = dp->arch_ops->sdwf_reinject_handler(dp_pdev, arvif, skb, arsta);
+
+	rcu_read_unlock();
+
+	return ret;
+}
+
+static inline
+void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
+				   struct ath12k_ppeds_tx_desc_info *tx_desc,
+				   struct htt_tx_wbm_completion *status_desc)
+{
+	u8 reinject_reason;
+	int status;
+
+	reinject_reason = le32_get_bits(status_desc->info1,
+					HTT_TX_WBM_COMPLETION_V3_REINJECT_REASON_M);
+
+	if (reinject_reason == HTT_TX_FW2WBM_REINJECT_REASON_SDWF_SVC_CLASS_ID_ABSENT) {
+		struct sk_buff *skb = tx_desc->skb;
+		/* sdwf reinject handler consume the skb,
+		 * so set tx_desc->skb = NULL here.
+		 */
+		status = ath12k_sdwf_reinject_handler(ab, skb, status_desc,
+						      tx_desc->mac_id);
+		if (!status)
+			tx_desc->skb = NULL;
+
+		return;
+	}
+}
 
 int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 {
@@ -176,12 +305,14 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
 	struct ath12k_ppeds_tx_desc_info *tx_desc = NULL;
 	int valid_entries, count = 0;
+	int list_no_skb_count = 0;
 	struct hal_wbm_release_ring *desc;
 	struct hal_wbm_completion_ring_tx *tx_status;
 	struct htt_tx_wbm_completion *status_desc;
 	enum hal_wbm_rel_src_module buf_rel_source;
 	int htt_status;
 	struct list_head local_list;
+	struct list_head local_list_no_skb;
 	size_t stat_size;
 
 	BUG_ON(budget > DP_PPEDS_SERVICE_BUDGET);
@@ -192,14 +323,13 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	else
 		stat_size = sizeof(struct hal_wbm_release_ring);
 	INIT_LIST_HEAD(&local_list);
-	spin_lock_bh(&status_ring->lock);
+	INIT_LIST_HEAD(&local_list_no_skb);
 
-	ath12k_hal_srng_access_begin(ab, status_ring);
+	ath12k_hal_srng_access_dst_ring_begin_nolock(ab, status_ring);
 
-	valid_entries = ath12k_hal_srng_dst_num_free(ab, status_ring, false);
+	valid_entries = __ath12k_hal_srng_dst_num_free(status_ring, false);
 	if (!valid_entries) {
-		ath12k_hal_srng_access_end(ab, status_ring);
-		spin_unlock_bh(&status_ring->lock);
+		ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 		return count;
 	}
 
@@ -210,7 +340,7 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 
 	while (likely(valid_entries--)) {
 		desc = (struct hal_wbm_release_ring *)
-			ath12k_hal_srng_dst_get_next_entry(ab, status_ring);
+			__ath12k_hal_srng_dst_get_next_cached_entry(status_ring, NULL);
 		if (!desc || !ath12k_dp_tx_completion_valid(desc))
 			continue;
 
@@ -229,10 +359,16 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		tx_ring->macid[count] = tx_desc->mac_id;
 
 		if (unlikely(buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
-			status_desc = ((void *)tx_status) + HTT_TX_WBM_COMP_STATUS_OFFSET;
-			htt_status = u32_get_bits(status_desc->info0,
-						  HTT_TX_WBM_COMP_INFO0_STATUS);
-			if (htt_status != HAL_WBM_REL_HTT_TX_COMP_STATUS_OK) {
+			status_desc = (void *)tx_status;
+			htt_status = le32_get_bits(status_desc->info0,
+						   HAL_TX_COMP_TQM_RELEASE_REASON_MASK);
+
+			if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ) {
+				ath12k_ppeds_reinject_handler(ab, tx_desc, status_desc);
+			}
+
+			if (htt_status != HAL_WBM_REL_HTT_TX_COMP_STATUS_OK &&
+			    htt_status != HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ) {
 				ab->dp->ppe.ppeds_stats.fw2wbm_pkt_drops++;
 				ath12k_dbg(ab, ATH12K_DBG_PPE,
 					   "ath12k: Frame received from unexpected source %d status %d!\n",
@@ -242,14 +378,19 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		}
 		/* add descriptor to local list to process in bulk */
 		tx_desc->in_use = false;
-		list_add_tail(&tx_desc->list, &local_list);
-		count++;
+		if (likely(tx_desc->skb)) {
+			list_add_tail(&tx_desc->list, &local_list);
+			count++;
+		} else {
+			list_add_tail(&tx_desc->list, &local_list_no_skb);
+			list_no_skb_count++;
+		}
 	}
-	ath12k_hal_srng_access_end(ab, status_ring);
-	spin_unlock_bh(&status_ring->lock);
+	ath12k_hal_srng_access_dst_ring_end_nolock(status_ring);
 
-	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp, &local_list, count);
-	return count;
+	ath12k_dp_ppeds_tx_release_desc_list_bulk(dp, &local_list, count,
+						  &local_list_no_skb, list_no_skb_count);
+	return (count + list_no_skb_count);
 }
 #endif
 
@@ -278,7 +419,9 @@ void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 {
 	spin_lock_bh(&dp->tx_desc_lock[pool_id]);
 	tx_desc->skb_ext_desc = NULL;
-	list_move_tail(&tx_desc->list, &dp->tx_desc_free_list[pool_id]);
+	tx_desc->in_use = false;
+	tx_desc->flags = 0;
+	list_add_tail(&tx_desc->list, &dp->tx_desc_free_list[pool_id]);
 	spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
 }
 EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf);
@@ -286,7 +429,7 @@ EXPORT_SYMBOL(ath12k_dp_tx_release_txbuf);
 struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 						       u8 pool_id)
 {
-	struct ath12k_tx_desc_info *desc;
+	struct ath12k_tx_desc_info *desc, *next_desc;
 
 	spin_lock_bh(&dp->tx_desc_lock[pool_id]);
 	desc = list_first_entry_or_null(&dp->tx_desc_free_list[pool_id],
@@ -294,11 +437,18 @@ struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 					list);
 	if (!desc) {
 		spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
-		ath12k_warn(dp->ab, "failed to allocate data Tx buffer\n");
 		return NULL;
 	}
 
-	list_move_tail(&desc->list, &dp->tx_desc_used_list[pool_id]);
+	list_del(&desc->list);
+	desc->in_use = true;
+
+	next_desc = list_first_entry_or_null(&dp->tx_desc_free_list[pool_id],
+					     struct ath12k_tx_desc_info,
+			list);
+	if (next_desc)
+		prefetch(next_desc);
+
 	spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
 
 	return desc;
@@ -438,6 +588,93 @@ ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask)
 
 	return 0;
 }
+
+u8 ath12k_dp_get_link_id(struct ath12k_pdev_dp *dp_pdev,
+			 struct hal_tx_status *ts,
+			 struct ath12k_dp_peer *peer)
+{
+	u8 hw_link_id = ts->hw_link_id;
+
+	if (hw_link_id >= ATH12K_DP_MAX_MLO_LINKS) {
+		/* For invalid Link_id update stats on primary link */
+		hw_link_id = dp_pdev->hw_link_id;
+	}
+
+	if (peer->hw_links[hw_link_id] > ATH12K_DP_MAX_MLO_LINKS)
+		return peer->hw_links[dp_pdev->hw_link_id];
+
+	return peer->hw_links[hw_link_id];
+}
+EXPORT_SYMBOL(ath12k_dp_get_link_id);
+
+void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
+					  u32 msdu_len, u8 tx_status,
+					  u8 link_id, int ring_id)
+{
+	DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, comp_pkt, link_id, 1, msdu_len);
+
+	if (tx_status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		DP_PEER_STATS_PKT_LEN(peer, tx, ring_id, tx_success, link_id,
+				      1, msdu_len);
+	} else {
+		DP_PEER_STATS_INC(peer, tx, ring_id, tx_failed, link_id, 1);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tx_update_peer_basic_stats);
+
+void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
+					 struct hal_tx_status *ts,
+					 int ring_id, u16 tx_desc_flags)
+{
+	u8 link_id = peer->stats_link_id;
+
+	if (peer->is_vdev_peer) {
+		if (ts->status != HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU) {
+			if (tx_desc_flags & DP_TX_DESC_FLAG_BCAST)
+				DP_PEER_STATS_INC(peer, tx, ring_id, bcast, link_id, 1);
+			if (tx_desc_flags & DP_TX_DESC_FLAG_MCAST)
+				DP_PEER_STATS_INC(peer, tx, ring_id, mcast, link_id, 1);
+		}
+	} else {
+			DP_PEER_STATS_INC(peer, tx, ring_id, ucast, link_id, 1);
+	}
+
+	if (ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM) {
+		DP_PEER_STATS_INC(peer, tx, ring_id, release_src_not_tqm,
+				  link_id, 1);
+		DP_PEER_STATS_INC(peer, tx, ring_id, wbm_rel_reason[ts->status],
+				  link_id, 1);
+		return;
+	}
+
+	if (ts->status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, retry_count, link_id,
+				       ts->transmit_cnt > 1, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, total_msdu_retries,
+				       link_id,
+				       ts->transmit_cnt > 1,
+				       ts->transmit_cnt - 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, multiple_retry_count,
+				       link_id, ts->transmit_cnt > 2, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, ofdma, link_id,
+				       ts->ofdma, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, amsdu_cnt, link_id,
+				       ts->msdu_part_of_amsdu, 1);
+
+		DP_PEER_STATS_COND_INC(peer, tx, ring_id, non_amsdu_cnt, link_id,
+				       !ts->msdu_part_of_amsdu, 1);
+	}
+
+	if (ts->status < HAL_WBM_TQM_REL_REASON_MAX) {
+		DP_PEER_STATS_INC(peer, tx, ring_id, tqm_rel_reason[ts->status],
+				  link_id, 1);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tx_comp_update_peer_stats);
 
 int ath12k_dp_tx_htt_pri_link_migr_msg(struct ath12k_base *ab, u16 vdev_id,
 				       u16 peer_id, u16 ml_peer_id, u8 pdev_id,

@@ -8,21 +8,21 @@
 #define ATH12K_HAL_H
 
 #include "hw.h"
+#include "mac.h"
+#include "core.h"
 
 struct ath12k_base;
+struct ath12k_dp;
 struct hal_rx_reo_queue;
+struct hal_rx_spd_data;
+struct rx_mpdu_desc_info;
 
 #define HAL_CE_REMAP_REG_BASE  (ab->ce_remap_base_addr)
 
 #define HAL_RING_BASE_ALIGN	8
 #define HAL_REO_QLUT_ADDR_ALIGN 256
 
-#define HAL_LINK_DESC_SIZE			(32 << 2)
 #define HAL_LINK_DESC_ALIGN			128
-#define HAL_NUM_MPDUS_PER_LINK_DESC		6
-#define HAL_NUM_TX_MSDUS_PER_LINK_DESC		7
-#define HAL_NUM_RX_MSDUS_PER_LINK_DESC		6
-#define HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC	12
 #define HAL_MAX_AVAIL_BLK_RES			3
 
 /* SRNG registers are split into two groups R0 and R2 */
@@ -32,6 +32,11 @@ struct hal_rx_reo_queue;
 
 #define HAL_ADDR_LSB_REG_MASK		0xffffffff
 #define HAL_ADDR_MSB_REG_SHIFT		32
+
+#define HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT 10
+#define HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT  18
+#define RING_HALT_TIMEOUT 10
+#define RNG_HALT_STAT_RETRY_COUNT 10
 
 #define HAL_WBM2SW_REL_ERR_RING_NUM 5
 #define HAL_WBM2SW_PPEDS_TX_CMPLN_MAP_ID 11
@@ -53,6 +58,7 @@ struct hal_rx_reo_queue;
 /* TODO: 16 entries per radio times MAX_VAPS_SUPPORTED */
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX	32
 #define HAL_DSCP_TID_TBL_SIZE			24
+#define DSCP_TID_MAP_TBL_ENTRY_SIZE		64
 
 #define RU_INVALID		0
 #define RU_26			1
@@ -90,13 +96,6 @@ struct hal_rx_reo_queue;
 #define HAL_RX_MAX_MCS_BE	15
 #define HAL_RX_MAX_NSS		8
 #define HAL_RX_MAX_NUM_LEGACY_RATES 12
-
-#define HAL_RX_MAX_MPDU		256
-#define HAL_RX_NUM_WORDS_PER_PPDU_BITMAP	(HAL_RX_MAX_MPDU >> 5)
-
-#define EHT_MAX_USER_INFO	4
-#define HAL_RX_MON_MAX_AGGR_SIZE	128
-#define HAL_MAX_UL_MU_USERS	37
 
 #define HAL_ENCRYPT_TYPE_MAX	12
 
@@ -288,6 +287,7 @@ enum hal_srng_ring_id {
 
 	HAL_SRNG_RING_ID_WMAC1_SW2RXMON_BUF0 = HAL_SRNG_RING_ID_PMAC1_ID_START,
 
+	HAL_SRNG_RING_ID_WMAC1_SW2RXDMA1_STATBUF,
 	HAL_SRNG_RING_ID_WMAC1_RXDMA2SW0,
 	HAL_SRNG_RING_ID_WMAC1_RXDMA2SW1,
 	HAL_SRNG_RING_ID_WMAC1_RXMON2SW0 = HAL_SRNG_RING_ID_WMAC1_RXDMA2SW1,
@@ -327,6 +327,30 @@ enum hal_ring_type {
 	HAL_TX_MONITOR_BUF,
 	HAL_TX_MONITOR_DST,
 	HAL_MAX_RING_TYPES,
+};
+
+#define PMM_REG_BASE_QCN9224    0xB500FC
+#define HAL_IPQ5332_PMM_REG_BASE       0xCB500FC
+#define HAL_IPQ5332_PMM_SIZE           0x100
+
+enum hal_scratch_reg_enum {
+	PMM_QTIMER_GLOBAL_OFFSET_LO_US,
+	PMM_QTIMER_GLOBAL_OFFSET_HI_US,
+	PMM_MAC0_TSF1_OFFSET_LO_US,
+	PMM_MAC0_TSF1_OFFSET_HI_US,
+	PMM_MAC0_TSF2_OFFSET_LO_US,
+	PMM_MAC0_TSF2_OFFSET_HI_US,
+	PMM_MAC1_TSF1_OFFSET_LO_US,
+	PMM_MAC1_TSF1_OFFSET_HI_US,
+	PMM_MAC1_TSF2_OFFSET_LO_US,
+	PMM_MAC1_TSF2_OFFSET_HI_US,
+	PMM_MLO_OFFSET_LO_US,
+	PMM_MLO_OFFSET_HI_US,
+	PMM_TQM_CLOCK_OFFSET_LO_US,
+	PMM_TQM_CLOCK_OFFSET_HI_US,
+	PMM_Q6_CRASH_REASON,
+	PMM_SCRATCH_TWT_OFFSET,
+	PMM_PMM_REG_MAX
 };
 
 /**
@@ -384,6 +408,9 @@ enum hal_reo_entr_rxdma_ecode {
 	HAL_REO_ENTR_RING_RXDMA_ECODE_FLUSH_REQUEST_ERR,
 	HAL_REO_ENTR_RING_RXDMA_ECODE_AMSDU_FRAG_ERR,
 	HAL_REO_ENTR_RING_RXDMA_ECODE_MULTICAST_ECHO_ERR,
+	HAL_REO_ENTR_RING_RXDMA_ECODE_AMSDU_ADDR_MISMATCH_ERR,
+	HAL_REO_ENTR_RING_RXDMA_ECODE_UNAUTH_WDS_ERR,
+	HAL_REO_ENTR_RING_RXDMA_ECODE_GROUPCAST_AMSDU_OR_WDS_ERR,
 	HAL_REO_ENTR_RING_RXDMA_ECODE_MAX,
 };
 
@@ -413,6 +440,33 @@ enum hal_wbm_htt_tx_comp_status {
 	HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX,
 };
 
+/* hal_wbm_link_desc
+ *
+ *	Producer: WBM
+ *	Consumer: WBM
+ *
+ * buf_addr_info
+ *		Details of the physical address of a buffer or MSDU
+ *		link descriptor.
+ */
+
+enum hal_wbm_rel_src_module {
+	HAL_WBM_REL_SRC_MODULE_TQM,
+	HAL_WBM_REL_SRC_MODULE_RXDMA,
+	HAL_WBM_REL_SRC_MODULE_REO,
+	HAL_WBM_REL_SRC_MODULE_FW,
+	HAL_WBM_REL_SRC_MODULE_SW,
+	HAL_WBM_REL_SRC_MODULE_MAX,
+};
+
+enum hal_tcl_encap_type {
+	HAL_TCL_ENCAP_TYPE_RAW,
+	HAL_TCL_ENCAP_TYPE_NATIVE_WIFI,
+	HAL_TCL_ENCAP_TYPE_ETHERNET,
+	HAL_TCL_ENCAP_TYPE_802_3 = 3,
+	HAL_TCL_ENCAP_TYPE_MAX,
+};
+
 /**
  * enum hal_reo_cmd_status: Enum for execution status of REO command
  * @HAL_REO_CMD_SUCCESS: Command has successfully executed
@@ -429,6 +483,99 @@ enum hal_reo_cmd_status {
 	HAL_REO_CMD_FAILED		= 2,
 	HAL_REO_CMD_RESOURCE_BLOCKED	= 3,
 	HAL_REO_CMD_DRAIN		= 0xff,
+};
+
+/**
+ * enum hal_wbm_tqm_rel_reason - TQM release reason code
+ * @HAL_WBM_TQM_REL_REASON_FRAME_ACKED: ACK or BACK received for the frame
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU: Command remove_mpdus initiated by SW
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX: Command remove transmitted_mpdus
+ *	initiated by sw.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_NOTX: Command remove untransmitted_mpdus
+ *	initiated by sw.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES: Command remove aged msdus or
+ *	mpdus.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON1: Remove command initiated by
+ *	fw with fw_reason1.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON2: Remove command initiated by
+ *	fw with fw_reason2.
+ * @HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON3: Remove command initiated by
+ *	fw with fw_reason3.
+ * @HAL_WBM_TQM_REL_REASON_CMD_DISABLE_QUEUE: Remove command initiated by
+ *	fw with disable queue.
+ * @HAL_WBM_TQM_REL_REASON_CMD_TILL_NONMATCHING: Remove command initiated by
+ *	fw to remove all mpdu until 1st non-match.
+ * @HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD: Dropped due to drop threshold
+ *	criteria
+ * @HAL_WBM_TQM_REL_REASON_DROP_LINK_DESC_UNAVAIL: Dropped due to link desc
+ *	not available
+ * @HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU: Dropped due drop bit set or
+ *	null flow
+ * @HAL_WBM_TQM_REL_REASON_MULTICAST_DROP: Dropped due mcast drop set for VDEV
+ * @HAL_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP: Dropped due to being set with
+ *	'TCL_drop_reason'
+ */
+enum hal_wbm_tqm_rel_reason {
+	HAL_WBM_TQM_REL_REASON_FRAME_ACKED,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_NOTX,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON1,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON2,
+	HAL_WBM_TQM_REL_REASON_CMD_REMOVE_RESEAON3,
+	HAL_WBM_TQM_REL_REASON_CMD_DISABLE_QUEUE,
+	HAL_WBM_TQM_REL_REASON_CMD_TILL_NONMATCHING,
+	HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD,
+	HAL_WBM_TQM_REL_REASON_DROP_LINK_DESC_UNAVAIL,
+	HAL_WBM_TQM_REL_REASON_DROP_OR_INVALID_MSDU,
+	HAL_WBM_TQM_REL_REASON_MULTICAST_DROP,
+	HAL_WBM_TQM_REL_REASON_VDEV_MISMATCH_DROP,
+
+	/* Keep Last */
+	HAL_WBM_TQM_REL_REASON_MAX,
+};
+
+enum hal_tx_rate_stats_pkt_type {
+	HAL_TX_RATE_STATS_PKT_TYPE_11A,
+	HAL_TX_RATE_STATS_PKT_TYPE_11B,
+	HAL_TX_RATE_STATS_PKT_TYPE_11N,
+	HAL_TX_RATE_STATS_PKT_TYPE_11AC,
+	HAL_TX_RATE_STATS_PKT_TYPE_11AX,
+	HAL_TX_RATE_STATS_PKT_TYPE_11BA,
+	HAL_TX_RATE_STATS_PKT_TYPE_11BE,
+};
+
+enum hal_tx_rate_stats_sgi {
+	HAL_TX_RATE_STATS_SGI_08US,
+	HAL_TX_RATE_STATS_SGI_04US,
+	HAL_TX_RATE_STATS_SGI_16US,
+	HAL_TX_RATE_STATS_SGI_32US,
+};
+
+struct hal_tx_status {
+	enum hal_wbm_rel_src_module buf_rel_source;
+	enum hal_wbm_tqm_rel_reason status;
+	s8 ack_rssi;
+	u32 flags; /* %HAL_TX_STATUS_FLAGS_ */
+	u32 ppdu_id;
+	u8 try_cnt;
+	u8 tid;
+	u16 peer_id;
+	enum hal_tx_rate_stats_pkt_type pkt_type;
+	enum hal_tx_rate_stats_sgi sgi;
+	enum ath12k_supported_bw bw;
+	u8 mcs;
+	u16 tones;
+	u8 ofdma;
+	bool acked;
+	u32 buffer_timestamp;
+	u32 tsf;
+	u8 transmit_cnt;
+	u8 first_msdu;
+	u8 last_msdu;
+	u8 msdu_part_of_amsdu;
+	u8 hw_link_id;
 };
 
 struct hal_srng_params {
@@ -505,166 +652,10 @@ enum rx_msdu_start_reception_type {
 	RX_MSDU_START_RECEPTION_TYPE_UL_MU_OFDMA_MIMO,
 };
 
-struct hal_rx_user_status {
-	u32 mcs:4,
-	nss:3,
-	ofdma_info_valid:1,
-	ul_ofdma_ru_start_index:7,
-	ul_ofdma_ru_width:7,
-	ul_ofdma_ru_size:8;
-	u32 ul_ofdma_user_v0_word0;
-	u32 ul_ofdma_user_v0_word1;
-	u32 ast_index;
-	u32 tid;
-	u16 tcp_msdu_count;
-	u16 tcp_ack_msdu_count;
-	u16 udp_msdu_count;
-	u16 other_msdu_count;
-	u16 frame_control;
-	u8 frame_control_info_valid;
-	u8 data_sequence_control_info_valid;
-	u16 first_data_seq_ctrl;
-	u32 preamble_type;
-	u16 ht_flags;
-	u16 vht_flags;
-	u16 he_flags;
-	u8 rs_flags;
-	u8 ldpc;
-	u32 mpdu_cnt_fcs_ok;
-	u32 mpdu_cnt_fcs_err;
-	u32 mpdu_fcs_ok_bitmap[HAL_RX_NUM_WORDS_PER_PPDU_BITMAP];
-	u32 mpdu_ok_byte_count;
-	u32 mpdu_err_byte_count;
-	bool ampdu_present;
-	u16 ampdu_id;
-	u32 errmap;
-};
-
-#define HAL_MAX_UL_MU_USERS	37
-
-struct hal_rx_u_sig_info {
-	bool ul_dl;
-	u8 bw;
-	u8 ppdu_type_comp_mode;
-	u8 eht_sig_mcs;
-	u8 num_eht_sig_sym;
-	struct ieee80211_radiotap_eht_usig usig;
-};
-
-#define HAL_RX_MON_MAX_AGGR_SIZE	128
-
-struct hal_rx_tlv_aggr_info {
-	bool in_progress;
-	u16 cur_len;
-	u16 tlv_tag;
-	u8 buf[HAL_RX_MON_MAX_AGGR_SIZE];
-};
-
 struct hal_rx_radiotap_eht {
 	__le32 known;
 	__le32 data[9];
 };
-
-#define EHT_MAX_USER_INFO	4
-
-struct hal_rx_eht_info {
-	u8 num_user_info;
-	struct hal_rx_radiotap_eht eht;
-	u32 user_info[EHT_MAX_USER_INFO];
-};
-
-struct hal_rx_mon_ppdu_info {
-	u32 ppdu_id;
-	u32 last_ppdu_id;
-	u64 ppdu_ts;
-	u32 num_mpdu_fcs_ok;
-	u32 num_mpdu_fcs_err;
-	u32 preamble_type;
-	u32 mpdu_len;
-	u16 chan_num;
-	u16 freq;
-	u16 tcp_msdu_count;
-	u16 tcp_ack_msdu_count;
-	u16 udp_msdu_count;
-	u16 other_msdu_count;
-	u16 peer_id;
-	u8 rate;
-	u8 mcs;
-	u8 nss;
-	u8 bw;
-	u8 vht_flag_values1;
-	u8 vht_flag_values2;
-	u8 vht_flag_values3[4];
-	u8 vht_flag_values4;
-	u8 vht_flag_values5;
-	u16 vht_flag_values6;
-	u8 is_stbc;
-	u8 gi;
-	u8 sgi;
-	u8 ldpc;
-	u8 beamformed;
-	u8 rssi_comb;
-	u16 tid;
-	u8 fc_valid;
-	u16 ht_flags;
-	u16 vht_flags;
-	u16 he_flags;
-	u16 he_mu_flags;
-	u8 dcm;
-	u8 ru_alloc;
-	u8 reception_type;
-	u64 tsft;
-	u64 rx_duration;
-	u16 frame_control;
-	u32 ast_index;
-	u8 rs_fcs_err;
-	u8 rs_flags;
-	u8 cck_flag;
-	u8 ofdm_flag;
-	u8 ulofdma_flag;
-	u8 frame_control_info_valid;
-	u16 he_per_user_1;
-	u16 he_per_user_2;
-	u8 he_per_user_position;
-	u8 he_per_user_known;
-	u16 he_flags1;
-	u16 he_flags2;
-	u8 he_RU[4];
-	u16 he_data1;
-	u16 he_data2;
-	u16 he_data3;
-	u16 he_data4;
-	u16 he_data5;
-	u16 he_data6;
-	u32 ppdu_len;
-	u32 prev_ppdu_id;
-	u32 device_id;
-	u16 first_data_seq_ctrl;
-	u8 monitor_direct_used;
-	u8 data_sequence_control_info_valid;
-	u8 ltf_size;
-	u8 rxpcu_filter_pass;
-	s8 rssi_chain[8][8];
-	u32 num_users;
-	u32 mpdu_fcs_ok_bitmap[HAL_RX_NUM_WORDS_PER_PPDU_BITMAP];
-	u8 addr1[ETH_ALEN];
-	u8 addr2[ETH_ALEN];
-	u8 addr3[ETH_ALEN];
-	u8 addr4[ETH_ALEN];
-	struct hal_rx_user_status userstats[HAL_MAX_UL_MU_USERS];
-	u8 userid;
-	bool first_msdu_in_mpdu;
-	bool is_ampdu;
-	u8 medium_prot_type;
-	bool ppdu_continuation;
-	bool eht_usig;
-	struct hal_rx_u_sig_info u_sig_info;
-	bool is_eht;
-	struct hal_rx_eht_info eht_info;
-	struct hal_rx_tlv_aggr_info tlv_aggr;
-	u32 errmap;
-};
-
 
 struct hal_rx_desc_data {
 	u32 freq;
@@ -677,7 +668,6 @@ struct hal_rx_desc_data {
 	    is_first_msdu:1,
 	    is_last_msdu:1,
 	    mesh_ctrl_present:1,
-	    mac_addr2_valid:1,
 	    fill_crypto_hdr:1,
 	    seq_ctl_valid:1,
 	    fc_valid:1,
@@ -685,7 +675,6 @@ struct hal_rx_desc_data {
 	u16 msdu_len;
 	u16 peer_id;
 	u16 seq_no;
-	u8 *mpdu_start_addr2;
 	u8 pkt_type;
 	u8 l3_pad_bytes;
 	u8 decap;
@@ -695,17 +684,88 @@ struct hal_rx_desc_data {
 	u8 sgi;
 	u8 tid;
 	bool is_mcbc;
-	bool is_4addr_sta;
-	bool is_drop_packet;
 	u8 is_to_ds:1,
 	   is_from_ds:1;
-	bool no_8023_flag;
 };
 
-struct ath12k_buffer_address {
-        __le32 info0;
-        __le32 info1;
+#define BUFFER_ADDR_INFO0_ADDR         GENMASK(31, 0)
+
+#define BUFFER_ADDR_INFO1_ADDR         GENMASK(7, 0)
+#define BUFFER_ADDR_INFO1_RET_BUF_MGR  GENMASK(11, 8)
+#define BUFFER_ADDR_INFO1_SW_COOKIE    GENMASK(31, 12)
+
+struct ath12k_buffer_addr {
+	__le32 info0;
+	__le32 info1;
 } __packed;
+
+/* ath12k_buffer_addr
+ *
+ * buffer_addr_31_0
+ *		Address (lower 32 bits) of the MSDU buffer or MSDU_EXTENSION
+ *		descriptor or Link descriptor
+ *
+ * buffer_addr_39_32
+ *		Address (upper 8 bits) of the MSDU buffer or MSDU_EXTENSION
+ *		descriptor or Link descriptor
+ *
+ * return_buffer_manager (RBM)
+ *		Consumer: WBM
+ *		Producer: SW/FW
+ *		Indicates to which buffer manager the buffer or MSDU_EXTENSION
+ *		descriptor or link descriptor that is being pointed to shall be
+ *		returned after the frame has been processed. It is used by WBM
+ *		for routing purposes.
+ *
+ *		Values are defined in enum %HAL_RX_BUF_RBM_
+ *
+ * sw_buffer_cookie
+ *		Cookie field exclusively used by SW. HW ignores the contents,
+ *		accept that it passes the programmed value on to other
+ *		descriptors together with the physical address.
+ *
+ *		Field can be used by SW to for example associate the buffers
+ *		physical address with the virtual address.
+ *
+ *		NOTE1:
+ *		The three most significant bits can have a special meaning
+ *		 in case this struct is embedded in a TX_MPDU_DETAILS STRUCT,
+ *		and field transmit_bw_restriction is set
+ *
+ *		In case of NON punctured transmission:
+ *		Sw_buffer_cookie[19:17] = 3'b000: 20 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b001: 40 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b010: 80 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b011: 160 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b101: 240 MHz TX only
+ *		Sw_buffer_cookie[19:17] = 3'b100: 320 MHz TX only
+ *		Sw_buffer_cookie[19:18] = 2'b11: reserved
+ *
+ *		In case of punctured transmission:
+ *		Sw_buffer_cookie[19:16] = 4'b0000: pattern 0 only
+ *		Sw_buffer_cookie[19:16] = 4'b0001: pattern 1 only
+ *		Sw_buffer_cookie[19:16] = 4'b0010: pattern 2 only
+ *		Sw_buffer_cookie[19:16] = 4'b0011: pattern 3 only
+ *		Sw_buffer_cookie[19:16] = 4'b0100: pattern 4 only
+ *		Sw_buffer_cookie[19:16] = 4'b0101: pattern 5 only
+ *		Sw_buffer_cookie[19:16] = 4'b0110: pattern 6 only
+ *		Sw_buffer_cookie[19:16] = 4'b0111: pattern 7 only
+ *		Sw_buffer_cookie[19:16] = 4'b1000: pattern 8 only
+ *		Sw_buffer_cookie[19:16] = 4'b1001: pattern 9 only
+ *		Sw_buffer_cookie[19:16] = 4'b1010: pattern 10 only
+ *		Sw_buffer_cookie[19:16] = 4'b1011: pattern 11 only
+ *		Sw_buffer_cookie[19:18] = 2'b11: reserved
+ *
+ *		Note: a punctured transmission is indicated by the presence
+ *		 of TLV TX_PUNCTURE_SETUP embedded in the scheduler TLV
+ *
+ *		Sw_buffer_cookie[20:17]: Tid: The TID field in the QoS control
+ *		 field
+ *
+ *		Sw_buffer_cookie[16]: Mpdu_qos_control_valid: This field
+ *		 indicates MPDUs with a QoS control field.
+ *
+ */
 
 struct hal_ce_srng_dest_desc;
 
@@ -714,7 +774,7 @@ struct hal_ce_srng_dst_status_desc;
 struct hal_ce_srng_src_desc;
 
 struct wbm_link_desc {
-        struct ath12k_buffer_address buf_addr_info;
+        struct ath12k_buffer_addr buf_addr_info;
 } __packed;
 
 struct wbm_idle_scatter_list {
@@ -815,6 +875,7 @@ struct hal_srng {
 			 * accessed through SW structure
 			 */
 			u32 *tp_addr;
+			u32 *tp_addr_direct;
 
 			/* Current SW loop cnt */
 			u32 loop_cnt;
@@ -864,8 +925,8 @@ struct hal_srng {
 
 /* Interrupt mitigation - timer threshold in us */
 #define HAL_SRNG_INT_TIMER_THRESHOLD_TX 1000
-#define HAL_SRNG_INT_TIMER_THRESHOLD_RX 500
-#define HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL 30
+#define HAL_SRNG_INT_TIMER_THRESHOLD_RX 200
+#define HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL 3
 #define HAL_SRNG_INT_TIMER_THRESHOLD_OTHER 256
 
 enum hal_srng_mac_type {
@@ -884,6 +945,7 @@ struct hal_srng_config {
 	enum hal_srng_mac_type mac_type;
 	enum hal_srng_dir ring_dir;
 	u32 max_size;
+	const char name[20];
 };
 
 /**
@@ -935,14 +997,6 @@ enum hal_ce_desc {
 	HAL_CE_DESC_DST_STATUS,
 };
 
-#define HAL_HASH_ROUTING_RING_TCL 0
-#define HAL_HASH_ROUTING_RING_SW1 1
-#define HAL_HASH_ROUTING_RING_SW2 2
-#define HAL_HASH_ROUTING_RING_SW3 3
-#define HAL_HASH_ROUTING_RING_SW4 4
-#define HAL_HASH_ROUTING_RING_REL 5
-#define HAL_HASH_ROUTING_RING_FW  6
-
 struct hal_reo_status_header {
 	u16 cmd_num;
 	enum hal_reo_cmd_status cmd_status;
@@ -952,7 +1006,12 @@ struct hal_reo_status_header {
 
 struct ath12k_hw_hal_params {
 	enum hal_rx_buf_return_buf_manager rx_buf_rbm;
-	u32	  wbm2sw_cc_enable;
+	u32 wbm2sw_cc_enable;
+	u16 link_desc_size;
+	u16 num_mpdus_per_link_desc;
+	u16 num_tx_msdus_per_link_desc;
+	u16 num_rx_msdus_per_link_desc;
+	u16 num_mpdu_links_per_queue_desc;
 };
 
 struct ath12k_hw_regs {
@@ -1065,6 +1124,7 @@ struct ath12k_hal {
 
 	struct device *dev;
 	const struct hal_ops *hal_ops;
+	const struct hal_mon_ops *hal_mon_ops;
 	const struct ath12k_hw_regs *regs;
 	const struct ath12k_hw_hal_params *hal_params;
 	/* Available REO blocking resources bitmap */
@@ -1078,7 +1138,7 @@ struct ath12k_hal {
 
 	u32 hal_desc_sz;
 
-	const struct ath12k_hal_tcl_to_wbm_rbm_map *tcl_to_wbm_rbm_map;
+	const struct ath12k_hal_tcl_to_cmp_rbm_map *tcl_to_cmp_rbm_map;
 };
 
 enum ath12k_eht_ru_size {
@@ -1128,9 +1188,9 @@ enum hal_wbm_rel_bm_act {
  *	descriptor itself shall also be released.
  */
 
-/* Maps WBM ring number and Return Buffer Manager Id per TCL ring */
-struct ath12k_hal_tcl_to_wbm_rbm_map  {
-	u8 wbm_ring_num;
+/* Maps Completion ring number and Return Buffer Manager Id per TCL ring */
+struct ath12k_hal_tcl_to_cmp_rbm_map  {
+	u8 cmp_ring_num;
 	u8 rbm_id;
 };
 
@@ -1187,13 +1247,17 @@ struct hal_ops {
 	void (*extract_rx_desc_data)(struct hal_rx_desc_data *rx_desc_data,
 				     struct hal_rx_desc *rx_desc,
 				     struct hal_rx_desc *ldesc);
+	void (*extract_rx_spd_data)(struct hal_rx_spd_data *rx_info,
+				    struct hal_rx_desc *rx_desc, int set);
 	void (*ce_dst_setup)(struct ath12k_base *ab,
 			     struct hal_srng *srng, int ring_num);
 	void (*set_umac_srng_ptr_addr)(struct ath12k_base *ab,
 				       struct hal_srng *srng,
 				       enum hal_ring_type type, int ring_num);
-	void (*srng_src_hw_init)(struct ath12k_base *ab, struct hal_srng *srng);
-	void (*srng_dst_hw_init)(struct ath12k_base *ab, struct hal_srng *srng);
+	void (*srng_src_hw_init)(struct ath12k_base *ab, struct hal_srng *srng,
+				 u32 restore_idx);
+	void (*srng_dst_hw_init)(struct ath12k_base *ab, struct hal_srng *srng,
+				 u32 restore_idx);
 	int (*srng_update_shadow_config)(struct ath12k_base *ab,
 					 enum hal_ring_type ring_type,
 					 int ring_num);
@@ -1213,7 +1277,8 @@ struct hal_ops {
 				     struct hal_wbm_idle_scatter_list *sbuf,
 				     u32 nsbufs, u32 tot_link_desc,
 				     u32 end_offset);
-	void (*tx_set_dscp_tid_map)(struct ath12k_base *ab, int id);
+	void (*tx_update_dscp_tid_map)(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
+	void (*tx_set_dscp_tid_map)(struct ath12k_base *ab, u8 *map, int id);
 	void (*tx_configure_bank_register)(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id);
 	void (*write_ml_reoq_lut_addr)(struct ath12k_base *ab,
@@ -1226,16 +1291,34 @@ struct hal_ops {
 				u32 start_seq, enum hal_pn_type type);
 	void (*reo_init_cmd_ring)(struct ath12k_base *ab,
 				  struct hal_srng *srng);
-	void (*reo_hw_setup)(struct ath12k_base *ab, u32 ring_hash_map);
-	void (*rx_buf_addr_info_set)(struct ath12k_buffer_address *binfo,
-				     dma_addr_t paddr, u32 cookie, u8 manager);
-	void (*rx_buf_addr_info_get)(struct ath12k_buffer_address *binfo,
-				     dma_addr_t *paddr, u32 *msdu_cookies,
-				     u8 *rbm);
+	void (*reo_hw_setup)(struct ath12k_base *ab);
 	void (*cc_config)(struct ath12k_base *ab);
+	void (*srng_hw_disable)(struct ath12k_base *ab, struct hal_srng *srng);
+	void (*reset_rx_reo_tid_q)(void *vaddr, u32 ba_window_size, u8 tid);
 	enum hal_rx_buf_return_buf_manager
         (*get_idle_link_rbm)(struct ath12k_hal *hal, u8 device_id);
 	void (*reo_shared_qaddr_cache_clear)(struct ath12k_base *ab);
+	u8 *(*rxdesc_get_mpdu_start_addr2)(struct hal_rx_desc *desc);
+	bool (*rx_h_is_decrypted)(struct hal_rx_desc *desc);
+	u32 (*rx_desc_get_mpdu_ppdu_id)(struct hal_rx_desc *rx_desc);
+	u32 (*rx_desc_get_mpdu_start_tag)(struct hal_rx_desc *desc);
+	void (*rx_reo_ent_buf_paddr_get)(void *rx_desc,
+					 dma_addr_t *paddr,
+					 u32 *sw_cookie,
+					 struct ath12k_buffer_addr **pp_buf_addr,
+					 u8 *rbm, u32 *msdu_cnt);
+	void (*rx_msdu_list_get)(void *link_desc,
+				 void *msdu_list,
+				 u16 *num_msdus);
+	u8 (*rx_h_l3pad_get)(struct hal_rx_desc *desc);
+	void (*hal_mon_ops_init)(struct ath12k_hal *hal, u8 hw_version);
+	void (*hal_get_tsf2_scratch_reg)(struct ath12k_base *ab, u8 mac_id,
+					 u64 *value);
+	void (*hal_get_tqm_scratch_reg)(struct ath12k_base *ab, u64 *value);
+	void (*get_hw_hptp)(struct ath12k_base *ab, enum hal_ring_type type,
+			    struct hal_srng *srng, uint32_t *hp, uint32_t *tp);
+	void (*rx_desc_get_fse_info)(struct hal_rx_desc *desc,
+				     struct rx_mpdu_desc_info *rx_mpdu_info);
 };
 
 static inline
@@ -1268,6 +1351,31 @@ enum nl80211_he_ru_alloc ath12k_he_ru_tones_to_nl80211_he_ru_alloc(u16 ru_tones)
 	return ret;
 }
 
+static inline void *ath12k_hal_dma_alloc_coherent(struct device *dev, size_t size,
+						   dma_addr_t *paddr, gfp_t flag)
+{
+	void *vaddr = NULL;
+
+#ifdef CONFIG_IO_COHERENCY
+	vaddr = kzalloc(size, flag);
+	*paddr = (dma_addr_t)virt_to_phys(vaddr);
+#else
+	vaddr = dma_alloc_coherent(dev, size, paddr, flag);
+#endif
+
+	return vaddr;
+}
+
+static inline void ath12k_hal_dma_free_coherent(struct device *dev, size_t size,
+						 void *vaddr, dma_addr_t paddr)
+{
+#ifdef CONFIG_IO_COHERENCY
+	kfree(vaddr);
+#else
+	dma_free_coherent(dev, size, vaddr, paddr);
+#endif
+}
+
 u8 ath12k_hal_rx_get_msdu_src_link(struct ath12k_base *ab,
 				   struct hal_rx_desc *desc);
 void ath12k_hal_rx_desc_end_tlv_copy(struct ath12k_base *ab,
@@ -1285,10 +1393,6 @@ void ath12k_hal_rx_desc_get_crypto_header(struct ath12k_base *ab,
 					  enum hal_encrypt_type enctype);
 u16 ath12k_hal_rxdesc_get_mpdu_frame_ctrl(struct ath12k_base *ab,
 					  struct hal_rx_desc *desc);
-void ath12k_hal_reo_qdesc_setup(struct ath12k_hal *hal,
-				struct hal_rx_reo_queue *qdesc,
-				int tid, u32 ba_window_size,
-				u32 start_seq, enum hal_pn_type type);
 void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
 				     struct wbm_idle_scatter_list *sbuf,
 				     u32 nsbufs, u32 tot_link_desc,
@@ -1311,28 +1415,42 @@ void ath12k_hal_srng_get_params(struct ath12k_base *ab, struct hal_srng *srng,
 				struct hal_srng_params *params);
 void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng);
+void *__ath12k_hal_srng_dst_get_next_cached_entry(struct hal_srng *srng,
+						  u32 *old_tp);
 void *ath12k_hal_srng_dst_get_next_cached_entry(struct ath12k_base *ab,
-						struct hal_srng *srng);
+						struct hal_srng *srng,
+						u32 *old_tp);
+void *ath12k_hal_srng_src_peek(struct ath12k_base *ab, struct hal_srng *srng);
 void *ath12k_hal_srng_dst_peek(struct ath12k_base *ab, struct hal_srng *srng);
+void *__ath12k_hal_srng_dst_peek(struct hal_srng *srng);
+int __ath12k_hal_srng_dst_num_free(struct hal_srng *srng, bool sync_hw_ptr);
 int ath12k_hal_srng_dst_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 				 bool sync_hw_ptr);
-void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_base *ab,
-					  struct hal_srng *srng, int entries);
+void ath12k_hal_srng_dst_invalidate_entry(struct ath12k_dp *dp,struct hal_srng *srng,
+					  int entries);
 void *ath12k_hal_srng_src_get_next_reaped(struct ath12k_base *ab,
 					  struct hal_srng *srng);
 void *ath12k_hal_srng_src_reap_next(struct ath12k_base *ab,
+				    struct hal_srng *srng);
+void *ath12k_hal_srng_src_next_peek(struct ath12k_base *ab,
 				    struct hal_srng *srng);
 void *ath12k_hal_srng_src_get_next_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng);
 int ath12k_hal_srng_src_num_free(struct ath12k_base *ab, struct hal_srng *srng,
 				 bool sync_hw_ptr);
-void ath12k_hal_srng_access_begin(struct ath12k_base *ab,
-				  struct hal_srng *srng);
+u32 ath12k_hal_srng_access_begin(struct ath12k_base *ab, struct hal_srng *srng);
+u32 ath12k_hal_srng_access_begin_no_lock(struct hal_srng *srng);
+u32 __ath12k_hal_srng_access_begin(struct hal_srng *srng);
+void __ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng);
+void ath12k_hal_srng_access_end_no_lock(struct ath12k_base *ab,
+					struct hal_srng *srng);
 void ath12k_hal_srng_access_end(struct ath12k_base *ab, struct hal_srng *srng);
-int ath12k_hal_srng_setup(struct ath12k_base *ab, enum hal_ring_type type,
-			  int ring_num, int mac_id,
-			  struct hal_srng_params *params);
+int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
+			      int ring_num, int mac_id,
+			      struct hal_srng_params *params,
+			      u32 restore_idx);
 void ath12k_hal_dump_srng_stats(struct ath12k_base *ab);
+ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, int size);
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
 				       u32 **cfg, u32 *len);
 int ath12k_hal_srng_update_shadow_config(struct ath12k_base *ab,
@@ -1349,7 +1467,8 @@ void ath12k_hal_set_link_desc_addr(struct ath12k_hal *hal,
 u32
 ath12k_hal_ce_dst_status_get_length(struct ath12k_hal *hal,
 				    struct hal_ce_srng_dst_status_desc *desc);
-void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, int id);
+void ath12k_hal_tx_update_dscp_tid_map(struct ath12k_base *ab, int id, u8 dscp, u8 tid);
+void ath12k_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
 void ath12k_hal_tx_configure_bank_register(struct ath12k_base *ab,
 					   u32 bank_config, u8 bank_id);
 void ath12k_hal_write_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr);
@@ -1359,12 +1478,10 @@ void ath12k_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab);
 void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab);
 void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab,
                                  struct hal_srng *srng);
-void ath12k_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);
-void ath12k_hal_rx_buf_addr_info_set(struct ath12k_hal *hal,
-				     struct ath12k_buffer_address *binfo,
+void ath12k_hal_reo_hw_setup(struct ath12k_base *ab);
+void ath12k_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *binfo,
 				     dma_addr_t paddr, u32 cookie, u8 manager);
-void ath12k_hal_rx_buf_addr_info_get(struct ath12k_hal *hal,
-				     struct ath12k_buffer_address *binfo,
+void ath12k_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,
 				     dma_addr_t *paddr, u32 *msdu_cookies,
 				     u8 *rbm);
 void ath12k_hal_cc_config(struct ath12k_base *ab);
@@ -1373,6 +1490,11 @@ ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
 void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 				    u8 mcast_ctrl_val);
 void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
+u8 *
+ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc);
+void __ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp);
+void ath12k_hal_srng_update_tp(struct hal_srng *srng, u32 new_tp);
+bool ath12k_hal_rx_h_is_decrypted(struct ath12k_hal *hal, struct hal_rx_desc *desc);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 					 struct hal_srng *srng, int entries);
@@ -1380,4 +1502,23 @@ void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
 void ath12k_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 					       u32 ppeds_idx_map_val);
 #endif
+void ath12k_hal_reset_rx_reo_tid_q(struct ath12k_hal *hal, void *qdesc,
+				   u32 ba_window_size, u8 tid);
+void ath12k_hal_srng_hw_disable(struct ath12k_base *ab,
+                                struct hal_srng *srng);
+u32 ath12k_hal_rx_desc_get_mpdu_ppdu_id(struct ath12k_hal *hal,
+					struct hal_rx_desc *rx_desc);
+u32 hal_rx_desc_get_mpdu_start_tag(struct ath12k_hal *hal,
+				   struct hal_rx_desc *rx_desc);
+void ath12k_hal_rx_reo_ent_buf_paddr_get(struct ath12k_hal *hal,
+					 void *rx_desc, dma_addr_t *paddr,
+					 u32 *sw_cookie,
+					 struct ath12k_buffer_addr **pp_buf_addr,
+					 u8 *rbm, u32 *msdu_cnt);
+void ath12k_hal_rx_msdu_list_get(struct ath12k_hal *hal,
+				 void *link_desc,
+				 void *msdu_list,
+				 u16 *num_msdus);
+u8 ath12k_hal_rx_h_l3pad_get(struct ath12k_hal *hal,
+			     struct hal_rx_desc *desc);
 #endif

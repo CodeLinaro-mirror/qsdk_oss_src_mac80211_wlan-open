@@ -28,6 +28,7 @@ struct ath11k_base;
 #define HAL_WBM_IDLE_SCATTER_BUF_SIZE (HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX - \
 				       HAL_WBM_IDLE_SCATTER_NEXT_PTR_SIZE)
 
+#define HAL_IPQ5018_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX	32
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX	48
 #define HAL_DSCP_TID_TBL_SIZE			24
 
@@ -121,6 +122,7 @@ struct ath11k_base;
 #define HAL_REO1_DEST_RING_CTRL_IX_1		0x00000008
 #define HAL_REO1_DEST_RING_CTRL_IX_2		0x0000000c
 #define HAL_REO1_DEST_RING_CTRL_IX_3		0x00000010
+#define HAL_REO1_R0_MISC_CTL                   0x000005d8
 #define HAL_REO1_MISC_CTL(ab)			ab->hw_params.regs->hal_reo1_misc_ctl
 #define HAL_REO1_RING_BASE_LSB(ab)		ab->hw_params.regs->hal_reo1_ring_base_lsb
 #define HAL_REO1_RING_BASE_MSB(ab)		ab->hw_params.regs->hal_reo1_ring_base_msb
@@ -285,6 +287,7 @@ struct ath11k_base;
 #define HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE		BIT(2)
 #define HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE		BIT(3)
 #define HAL_REO1_MISC_CTL_FRAGMENT_DST_RING		GENMASK(20, 17)
+#define HAL_IPQ5018_REO1_MISC_CTL_FRAGMENT_DEST_RING		GENMASK(19, 17)
 
 /* CE ring bit field mask and shift */
 #define HAL_CE_DST_R0_DEST_CTRL_MAX_LEN			GENMASK(15, 0)
@@ -423,6 +426,8 @@ enum hal_srng_ring_id {
 #define HAL_SRNG_NUM_LMAC_RINGS (HAL_SRNG_NUM_LMACS * HAL_SRNG_RINGS_PER_LMAC)
 #define HAL_SRNG_RING_ID_MAX    (HAL_SRNG_RING_ID_UMAC_ID_END + \
 				 HAL_SRNG_NUM_LMAC_RINGS)
+
+#define HAL_SRNG_REO_ALTERNATE_SELECT 0x7
 
 enum hal_ring_type {
 	HAL_REO_DST,
@@ -921,6 +926,7 @@ void ath11k_hal_reo_qdesc_setup(void *vaddr, int tid, u32 ba_window_size,
 				u32 start_seq, enum hal_pn_type type);
 void ath11k_hal_reo_init_cmd_ring(struct ath11k_base *ab,
 				  struct hal_srng *srng);
+void ath11k_hal_reo_hash_setup(struct ath11k_base *ab, u32 ring_hash_map);
 void ath11k_hal_setup_link_idle_list(struct ath11k_base *ab,
 				     struct hal_wbm_idle_scatter_list *sbuf,
 				     u32 nsbufs, u32 tot_link_desc,
@@ -944,8 +950,12 @@ void ath11k_hal_srng_get_params(struct ath11k_base *ab, struct hal_srng *srng,
 u32 *ath11k_hal_srng_dst_get_next_entry(struct ath11k_base *ab,
 					struct hal_srng *srng);
 u32 *ath11k_hal_srng_dst_peek(struct ath11k_base *ab, struct hal_srng *srng);
+u32 *ath11k_hal_srng_dst_get_next_cache_entry(struct ath11k_base *ab,
+					      struct hal_srng *srng);
 int ath11k_hal_srng_dst_num_free(struct ath11k_base *ab, struct hal_srng *srng,
-				 bool sync_hw_ptr);
+				  bool sync_hw_ptr);
+void ath11k_hal_srng_dst_invalidate_entry(struct ath11k_base *ab,
+					  struct hal_srng *srng, int entries);
 u32 *ath11k_hal_srng_src_peek(struct ath11k_base *ab, struct hal_srng *srng);
 u32 *ath11k_hal_srng_src_next_peek(struct ath11k_base *ab,
 				   struct hal_srng *srng);
@@ -974,4 +984,5 @@ int ath11k_hal_srng_update_shadow_config(struct ath11k_base *ab,
 void ath11k_hal_srng_shadow_config(struct ath11k_base *ab);
 void ath11k_hal_srng_shadow_update_hp_tp(struct ath11k_base *ab,
 					 struct hal_srng *srng);
+ssize_t ath11k_debugfs_hal_dump_srng_stats(struct ath11k_base *ab, char *buf, int size);
 #endif

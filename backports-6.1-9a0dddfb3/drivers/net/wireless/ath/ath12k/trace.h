@@ -21,7 +21,7 @@ static inline void trace_ ## name(proto) {}
 #undef TRACE_SYSTEM
 #define TRACE_SYSTEM ath12k
 
-TRACE_EVENT(ath12k_htt_pktlog,
+TRACE_EVENT(ath12k_htt_pktlog_tx_handler,
 	    TP_PROTO(struct ath12k *ar, const void *buf, u16 buf_len,
 		     u32 pktlog_checksum),
 

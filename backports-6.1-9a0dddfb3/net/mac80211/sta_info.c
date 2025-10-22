@@ -430,6 +430,7 @@ static void sta_remove_link(struct sta_info *sta, unsigned int link_id,
 
 	RCU_INIT_POINTER(sta->link[link_id], NULL);
 	RCU_INIT_POINTER(sta->sta.link[link_id], NULL);
+	link_sta->sta = NULL;
 	if (alloc) {
 		sta_info_free_link(&alloc->info);
 		kfree_rcu(alloc, rcu_head);
@@ -1457,10 +1458,6 @@ static int _sta_info_move_state(struct sta_info *sta,
 				synchronize_net();
 				if (local->ops->flush_sta)
 					drv_flush_sta(local, sta->sdata, sta);
-				else
-					ieee80211_flush_queues(local,
-							       sta->sdata,
-							       false);
 			}
 
 			ieee80211_clear_fast_xmit(sta);
@@ -2489,12 +2486,9 @@ void ieee80211_sta_update_pending_airtime(struct ieee80211_local *local,
 static struct ieee80211_sta_rx_stats *
 sta_get_last_rx_stats(struct sta_info *sta, bool is_rx_bitrate, int link_id)
 {
-	struct ieee80211_sta_rx_stats *stats;
+	struct ieee80211_sta_rx_stats *stats = NULL;
 	struct link_sta_info *link_sta_info;
 	int cpu;
-
-	if (ieee80211_hw_check(&sta->local->hw, SUPPORTS_NSS_OFFLOAD))
-		return stats;
 
 	if (link_id < 0)
 		link_sta_info = &sta->deflink;
@@ -2503,6 +2497,9 @@ sta_get_last_rx_stats(struct sta_info *sta, bool is_rx_bitrate, int link_id)
 						  sta->link[link_id]);
 
 	stats = &link_sta_info->rx_stats;
+
+	if (ieee80211_hw_check(&sta->local->hw, SUPPORTS_NSS_OFFLOAD))
+		return stats;
 
 	if (!link_sta_info->pcpu_rx_stats)
 		return stats;
@@ -2927,13 +2924,23 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN) {
 			struct ieee80211_sub_if_data *ap_sdata;
+			struct ieee80211_link_data *ap_link;
 
 			ap_sdata =
 				container_of(sdata->bss, struct ieee80211_sub_if_data, u.ap);
-			link_sinfo->bss_param.dtim_period =
-				ap_sdata->deflink.conf->dtim_period;
-			link_sinfo->bss_param.beacon_interval =
-				ap_sdata->deflink.conf->beacon_int;
+			ap_link = rcu_dereference(ap_sdata->link[link_id]);
+
+			if (ap_link && ap_link->conf) {
+				link_sinfo->bss_param.dtim_period =
+					ap_link->conf->dtim_period;
+				link_sinfo->bss_param.beacon_interval =
+					ap_link->conf->beacon_int;
+			} else {
+				link_sinfo->bss_param.dtim_period =
+					ap_sdata->deflink.conf->dtim_period;
+				link_sinfo->bss_param.beacon_interval =
+					ap_sdata->deflink.conf->beacon_int;
+			}
 	} else {
 		link_sinfo->bss_param.dtim_period = link->conf->dtim_period;
 		link_sinfo->bss_param.beacon_interval = link->conf->beacon_int;
@@ -3369,9 +3376,12 @@ void ieee80211_sta_free_link(struct sta_info *sta, unsigned int link_id, bool un
 int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 {
 	struct ieee80211_sub_if_data *sdata = sta->sdata;
-	struct link_sta_info *link_sta;
+	struct link_sta_info *link_sta, *rem_link_sta;
 	u16 old_links = sta->sta.valid_links;
 	u16 new_links = old_links | BIT(link_id);
+	bool exists;
+	unsigned long rem_links = sta->sta.reconf.matched_rem_links;
+	unsigned long rem_link_id;
 	int ret;
 
 	link_sta = rcu_dereference_protected(sta->link[link_id],
@@ -3381,9 +3391,30 @@ int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 		return -EINVAL;
 
 	rcu_read_lock();
-	if (link_sta_info_hash_lookup(sdata->local, link_sta->addr)) {
-		rcu_read_unlock();
-		return -EALREADY;
+	exists = link_sta_info_hash_lookup(sdata->local, link_sta->addr);
+
+	/*
+	 * If the link being added has the same MAC address as a link marked for
+	 * removal in the current ML reconfiguration request, the existing hash
+	 * entry is stale. Remove it now and proceed with the add.
+	 */
+
+	if (exists) {
+		if (!sta->sta.reconf.matched_rem_links)
+			return -EALREADY;
+
+		for_each_set_bit(rem_link_id,
+				 &rem_links,
+				 IEEE80211_MLD_MAX_NUM_LINKS) {
+			rem_link_sta = wiphy_dereference(sta->local->hw.wiphy,
+							 sta->link[rem_link_id]);
+
+			if (!ether_addr_equal(rem_link_sta->addr,
+					      link_sta->addr))
+				continue;
+
+			link_sta_info_hash_del(sdata->local, rem_link_sta);
+		}
 	}
 	/* we only modify under the mutex so this is fine */
 	rcu_read_unlock();
@@ -3421,6 +3452,7 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 	struct link_sta_info *sta_info;
 	struct ieee80211_link_sta *link_sta;
 	u16 old_links = sta->sta.valid_links, n_link_id;
+	bool unhash = true;
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
@@ -3434,7 +3466,12 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 		}
 
 	sta->sta.reconf.removed_links &= ~BIT(link_id);
-	sta_remove_link(sta, link_id, true);
+	if (sta->sta.reconf.matched_rem_links & BIT(link_id)) {
+		unhash = false;
+		sta->sta.reconf.matched_rem_links &= ~BIT(link_id);
+	}
+
+	sta_remove_link(sta, link_id, unhash);
 
 	/* If deflink is getting removed, then move the contents of the next
 	 * asosciated link to deflink and free the moved link memory
@@ -3451,6 +3488,7 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 
 			memcpy(&sta->deflink, sta_info, sizeof(*sta_info));
 			memcpy(&sta->sta.deflink, link_sta, sizeof(*link_sta));
+			sta->deflink.pub = &sta->sta.deflink;
 
 			/* Free the moved link memory */
 			sta_remove_link(sta, n_link_id, true);

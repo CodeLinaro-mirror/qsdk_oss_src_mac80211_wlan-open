@@ -28,6 +28,227 @@ EXPORT_SYMBOL(ath12k_coredump_seg_info);
 struct ath12k_coredump_info ath12k_coredump_ram_info;
 EXPORT_SYMBOL(ath12k_coredump_ram_info);
 
+static ssize_t ath12k_coredump_pci_read(char *buffer, loff_t offset,
+					size_t count, void *data,
+					size_t header_size)
+{
+	struct ath12k_pci_elf_coredump_state *st = data;
+	size_t bytes_left = count;
+	struct ath12k_dump_segment *seg = NULL;
+	size_t copied = 0;
+	int i;
+	unsigned long data_left;
+	size_t seg_copy_sz, copy_size, hdr_copy;
+	void *addr;
+	loff_t cur;
+
+	/* Copy ELF header first */
+	if (offset < header_size) {
+		hdr_copy = min_t(size_t, bytes_left, header_size - offset);
+		memcpy(buffer, (u8 *)st->elf_hdr + offset, hdr_copy);
+		return hdr_copy;
+	}
+
+	offset -= header_size;
+
+	while (bytes_left) {
+		cur = 0;
+		seg = NULL;
+
+		for (i = 0; i < st->num_chunks; i++) {
+			if (offset < cur + st->chunks[i].len) {
+				seg = &st->chunks[i];
+				break;
+			}
+			cur += st->chunks[i].len;
+		}
+		if (!seg)
+			break;
+
+		data_left = offset - cur;
+		seg_copy_sz = seg->len - data_left;
+		copy_size = min_t(size_t, bytes_left, seg_copy_sz);
+		addr = (u8 *)seg->vaddr + data_left;
+
+		if (data_left + copy_size <= seg->len) {
+			memcpy_fromio(buffer, addr, copy_size);
+		} else {
+			ath12k_warn(st->ab, "Buffer copy would exceed segment bounds\n");
+			break;
+		}
+
+		offset     += copy_size;
+		buffer     += copy_size;
+		bytes_left -= copy_size;
+		copied     += copy_size;
+	}
+
+	return copied;
+}
+
+static void ath12k_coredump_pci_free(void *data)
+{
+	struct ath12k_pci_elf_coredump_state *st = data;
+
+	complete(&st->dump_done);
+}
+
+static int ath12k_coredump_build_dump_info(struct ath12k_base *ab,
+					struct ath12k_dump_segment *segments,
+					u32 num_seg,
+					struct ath12k_dump_segment **chunks_out,
+					u32 *num_chunks)
+{
+	struct ath12k_dump_entry tmp[ATH12K_MAX_DUMP_ENTRIES] = {0};
+	int i, type, num_dump_types = 0;
+	struct ath12k_dump_segment *chunks;
+	struct ath12k_pci_dump_file_data *df;
+	struct ath12k_dump_entry *entry;
+	void *data;
+	size_t data_len;
+
+	for (i = 0; i < num_seg; i++) {
+		type = segments[i].type;
+		if (type < 0 || type >= ATH12K_MAX_DUMP_ENTRIES)
+			continue;
+
+		if (tmp[type].entry_num == 0)
+			tmp[type].entry_start = i + 1;
+		tmp[type].type = type;
+		tmp[type].entry_num++;
+	}
+
+	/* to find the number of dump types */
+	for (i = 0; i < ATH12K_MAX_DUMP_ENTRIES; i++)
+		if (tmp[i].entry_num)
+			num_dump_types++;
+
+	data_len = ALIGN(sizeof(struct ath12k_pci_dump_file_data) +
+			num_dump_types * sizeof(struct ath12k_dump_entry), 4);
+	data = kzalloc(data_len, GFP_KERNEL);
+	if (!data)
+		return -ENOMEM;
+
+	df = data;
+	df->magic = ATH12K_RAMDUMP_MAGIC;
+	df->version = ATH12K_FW_CRASH_DUMP_V2;
+	df->chipset = ((struct ath12k_pci *)ab->drv_priv)->dev_id;
+	df->total_entries = num_dump_types;
+
+	entry = df->entry;
+	for (i = 0; i < ATH12K_MAX_DUMP_ENTRIES; i++) {
+		if (tmp[i].entry_num) {
+			*entry = tmp[i];
+			entry++;
+		}
+	}
+
+	chunks = kcalloc(1 + num_seg, sizeof(*chunks), GFP_KERNEL);
+	if (!chunks) {
+		kfree(data);
+		return -ENOMEM;
+	}
+
+	chunks[0].addr  = 0;
+	chunks[0].vaddr = data;
+	chunks[0].len   = data_len;
+	chunks[0].type  = 0xFFFFFFFF;
+
+	for (i = 0; i < num_seg; i++)
+		chunks[1 + i] = segments[i];
+
+	*chunks_out     = chunks;
+	*num_chunks = 1 + num_seg;
+	return 0;
+}
+
+static int ath12k_coredump_build_elf32(struct ath12k_base *ab,
+					struct ath12k_dump_segment *segments,
+					u32 num_seg,
+					struct ath12k_pci_elf_coredump_state **out_state)
+{
+	struct ath12k_pci_elf_coredump_state *st;
+	Elf32_Ehdr *ehdr;
+	Elf32_Phdr *phdr;
+	void *elf_hdr;
+	struct ath12k_dump_segment *chunks;
+	u32 num_chunks;
+	u16 phnum;
+	u32 elf_hdr_sz, cur_off, i, paddr32;
+	int ret;
+
+	ret = ath12k_coredump_build_dump_info(ab, segments,
+						  num_seg, &chunks, &num_chunks);
+	if (ret)
+		return ret;
+
+	phnum = num_chunks;
+	elf_hdr_sz = sizeof(Elf32_Ehdr) + phnum * sizeof(Elf32_Phdr);
+
+	elf_hdr = vzalloc(elf_hdr_sz);
+	if (!elf_hdr) {
+		kfree(chunks[0].vaddr);
+		kfree(chunks);
+		return -ENOMEM;
+	}
+
+	/* ELF header */
+	ehdr = (Elf32_Ehdr *)elf_hdr;
+	memcpy(ehdr->e_ident, ELFMAG, SELFMAG);
+	ehdr->e_ident[EI_CLASS] = ELFCLASS32;
+	ehdr->e_ident[EI_DATA] = ELFDATA2LSB;
+	ehdr->e_ident[EI_VERSION] = EV_CURRENT;
+	ehdr->e_ident[EI_OSABI] = ELFOSABI_NONE;
+	ehdr->e_type = cpu_to_le16(ET_CORE);
+	ehdr->e_machine = cpu_to_le16(EM_NONE);
+	ehdr->e_version = cpu_to_le32(EV_CURRENT);
+	ehdr->e_entry = cpu_to_le32(0);
+	ehdr->e_phoff = cpu_to_le32(sizeof(Elf32_Ehdr));
+	ehdr->e_shoff = cpu_to_le32(0);
+	ehdr->e_flags = cpu_to_le32(0);
+	ehdr->e_ehsize = cpu_to_le16(sizeof(Elf32_Ehdr));
+	ehdr->e_phentsize = cpu_to_le16(sizeof(Elf32_Phdr));
+	ehdr->e_phnum = cpu_to_le16(phnum);
+	ehdr->e_shentsize = cpu_to_le16(0);
+	ehdr->e_shnum = cpu_to_le16(0);
+	ehdr->e_shstrndx = cpu_to_le16(0);
+
+	/* Program headers */
+	phdr = (Elf32_Phdr *)((u8 *)elf_hdr + sizeof(Elf32_Ehdr));
+	cur_off = elf_hdr_sz;
+
+	for (i = 0; i < phnum; i++) {
+		paddr32 = (i == 0) ? 0 : (u32)chunks[i].addr;
+		phdr[i].p_type   = cpu_to_le32(PT_LOAD);
+		phdr[i].p_offset = cpu_to_le32(cur_off);
+		phdr[i].p_vaddr  = cpu_to_le32(paddr32);
+		phdr[i].p_paddr  = cpu_to_le32(paddr32);
+		phdr[i].p_filesz = cpu_to_le32(chunks[i].len);
+		phdr[i].p_memsz  = cpu_to_le32(chunks[i].len);
+		phdr[i].p_flags  = cpu_to_le32(PF_R | PF_W | PF_X);
+		phdr[i].p_align  = cpu_to_le32(0);
+		cur_off += chunks[i].len;
+	}
+
+	st = kzalloc(sizeof(*st), GFP_KERNEL);
+	if (!st) {
+		vfree(elf_hdr);
+		kfree(chunks[0].vaddr);
+		kfree(chunks);
+		return -ENOMEM;
+	}
+
+	st->ab         = ab;
+	st->elf_hdr    = elf_hdr;
+	st->elf_hdr_sz = elf_hdr_sz;
+	st->chunks     = chunks;
+	st->num_chunks = phnum;
+
+	init_completion(&st->dump_done);
+	*out_state = st;
+	return 0;
+}
+
 static void *ath12k_coredump_find_segment(loff_t user_offset,
                                          struct ath12k_dump_segment *segment,
                                          int num_seg, size_t *data_left)
@@ -100,6 +321,42 @@ static void ath12k_coredump_free_q6dump(void *data)
        struct ath12k_coredump_state *dump_state = data;
 
        complete(&dump_state->dump_done);
+}
+
+static ssize_t ath12k_coredump_read(char *buffer, loff_t offset, size_t count,
+                       void *data, size_t datalen)
+{
+    struct ath12k_dump_segment *segments = data;
+
+    int ret = 0;
+
+    ret = memory_read_from_buffer(buffer, count, &offset,
+                      segments->vaddr, datalen);
+    if (!ret)
+        ath12k_info(NULL, "Ramdump complete, %lld  bytes read\n", offset);
+
+    return ret;
+}
+
+static void ath12k_coredump_free(void *data)
+{
+    struct ath12k_dump_segment *segments = data;
+
+    complete(&segments->dump_done);
+}
+
+void ath12k_coredump_dump_segment(struct ath12k_base *ab,
+                  struct ath12k_dump_segment *segments, size_t seg_len)
+{
+    struct device *dev;
+
+    dev = ab->dev;
+    init_completion(&segments->dump_done);
+
+    dev_coredumpm(dev, THIS_MODULE,segments, seg_len, GFP_KERNEL,
+              ath12k_coredump_read, ath12k_coredump_free);
+
+    wait_for_completion(&segments->dump_done);
 }
 
 void ath12k_coredump_build_inline(struct ath12k_base *ab,
@@ -282,6 +539,9 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	bool state = false;
 
+	if (ath12k_check_erp_power_down(ag) && ab->pm_suspend)
+		return;
+
 	if (ab->in_panic)
 		state = true;
 
@@ -306,8 +566,10 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 
        num_seg = fw_img->entries + rddm_img->entries + rem_seg_cnt;
 
+#ifdef CPTCFG_ATHDEBUG
 	if (ab->is_qdss_tracing)
 		num_seg += qdss_seg_cnt;
+#endif
 
        len = num_seg * sizeof(*segment);
 
@@ -355,8 +617,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		}
 
 		if (mem_type == FW_CRASH_DUMP_CALDB_DATA &&
-			!(ath12k_cold_boot_cal &&
-			ab->hw_params->cold_boot_calib))
+		    !(ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib))
 			continue;
 
 		if (!ab->qmi.target_mem[i].paddr) {
@@ -369,7 +630,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		seg_info->vaddr = ab->qmi.target_mem[i].v.ioaddr;
 		seg_info->type = mem_type;
 		ath12k_info(ab,
-		    "seg vaddr is %px len is 0x%x type %d\n",
+			    "seg vaddr is %px len is 0x%x type %d\n",
 			    seg_info->vaddr,
 			    seg_info->len,
 			    seg_info->type);
@@ -377,17 +638,20 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 
        }
 
-
+#ifdef CPTCFG_ATHDEBUG
 	if (ab->is_qdss_tracing) {
-		seg_info->len = ab->qmi.target_mem[0].size;
-		seg_info->addr = ab->qmi.target_mem[0].paddr;
-		seg_info->vaddr = ab->qmi.target_mem[0].v.ioaddr;
-		seg_info->type = FW_CRASH_DUMP_AFC_DATA;
+		seg_info->len = ab->dbg_qmi.qdss_mem[0].size;
+		seg_info->addr = ab->dbg_qmi.qdss_mem[0].paddr;
+		seg_info->vaddr = ab->dbg_qmi.qdss_mem[0].v.ioaddr;
+		seg_info->type = FW_CRASH_DUMP_QDSS_DATA;
 		seg_info++;
 	}
+#endif
+
 	num_seg = num_seg - skip_count;
 
-	if (!ab->fw_recovery_support || ab->in_panic) {
+	if (!ab->fw_recovery_support || ab->in_panic ||
+	    test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
 		if (ag->mlo_capable) {
 			dump_count = atomic_read(&ath12k_coredump_ram_info.num_chip);
 			if (dump_count >= ATH12K_MAX_SOCS) {
@@ -425,79 +689,27 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		ath12k_core_issue_bug_on(ab);
 
 	} else if (!ab->in_panic) {
-		ath12k_info(ab, "WLAN target is restarting");
-		ath12k_coredump_build_inline(ab, segment, num_seg);
+		struct ath12k_pci_elf_coredump_state *st = NULL;
+		int ret;
+
+		ath12k_info(ab, "WLAN target is restarting\n");
+
+		ret = ath12k_coredump_build_elf32(ab, segment, num_seg, &st);
+
+		if (ret) {
+			ath12k_err(ab, "ELF32 build failed: %d\n", ret);
+			kfree(segment);
+			return;
+		}
+		dev_coredumpm(ab->dev, THIS_MODULE, st, st->elf_hdr_sz, GFP_KERNEL,
+				ath12k_coredump_pci_read, ath12k_coredump_pci_free);
+		wait_for_completion(&st->dump_done);
+		vfree(st->elf_hdr);
+		kfree(st->chunks[0].vaddr);
+		kfree(st->chunks);
+		kfree(st);
 		kfree(segment);
 	}
-
-}
-
-void ath12k_coredump_qdss_dump(struct ath12k_base *ab,
-			       struct ath12k_qmi_event_qdss_trace_save_data *event_data)
-{
-	struct ath12k_dump_segment *segment;
-	int len, num_seg;
-	void *dump;
-
-	num_seg = event_data->mem_seg_len;
-	len = sizeof(*segment);
-	segment = vzalloc(len);
-	if (!segment) {
-		ath12k_warn(ab, "fail to alloc memory for qdss\n");
-		return;
-	}
-
-	if (event_data->total_size &&
-	    event_data->total_size <= ab->qmi.qdss_mem[0].size)
-		dump = vzalloc(event_data->total_size);
-	if (!dump) {
-		vfree(segment);
-		return;
-	}
-
-	if (num_seg == 1) {
-		segment->len = event_data->mem_seg[0].size;
-		segment->vaddr = ab->qmi.qdss_mem[0].v.ioaddr;
-	ath12k_dbg(ab, ATH12K_DBG_QMI, "seg vaddr is 0x%p len is 0x%x\n",
-			   segment->vaddr, segment->len);
-		segment->type = FW_CRASH_DUMP_QDSS_DATA;
-	} else if (num_seg == 2) {
-		/*FW sends 2 segments with segment 0 and segment 1 */
-
-	if (event_data->mem_seg[1].addr != ab->qmi.qdss_mem[0].paddr) {
-			ath12k_warn(ab, "Invalid seg 0 addr 0x%llx\n",
-			    event_data->mem_seg[1].addr);
-			goto out;
-		}
-		if (event_data->mem_seg[0].size + event_data->mem_seg[1].size !=
-		    ab->qmi.qdss_mem[0].size) {
-			ath12k_warn(ab, "Invalid total size 0x%x 0x%x\n",
-				    event_data->mem_seg[0].size,
-				    event_data->mem_seg[1].size);
-			goto out;
-		}
-
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "qdss mem seg0 addr 0x%llx size 0x%x\n",
-			   event_data->mem_seg[0].addr, event_data->mem_seg[0].size);
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "qdss mem seg1 addr 0x%llx size 0x%x\n",
-			   event_data->mem_seg[1].addr, event_data->mem_seg[1].size);
-
-		memcpy(dump,
-		       ab->qmi.qdss_mem[0].v.ioaddr + event_data->mem_seg[1].size,
-		       event_data->mem_seg[0].size);
-		memcpy(dump + event_data->mem_seg[0].size,
-		       ab->qmi.qdss_mem[0].v.ioaddr, event_data->mem_seg[1].size);
-
-		segment->len = event_data->mem_seg[0].size + event_data->mem_seg[1].size;
-		segment->vaddr = dump;
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "seg vaddr is 0x%p and len is 0x%x\n",
-			   segment->vaddr, segment->len);
-		segment->type = FW_CRASH_DUMP_QDSS_DATA;
-	}
-	ath12k_coredump_build_inline(ab, segment, 1);
-out:
-	vfree(segment);
-	vfree(dump);
 }
 
 #ifdef CPTCFG_ATH12K_COREDUMP
@@ -653,8 +865,19 @@ static int ath12k_coredump_build_seg_info(struct ath12k_base *ab, void *segment,
         for (index = 0; index < ehdr->e_phnum; index++) {
                 phdr = &phdrs[index];
 
+#ifdef PLATFORM_SDX85
+		if (phdr->p_type != PT_LOAD)
+			continue;
+
+		if ((phdr->p_flags & QCOM_MDT_TYPE_MASK) == QCOM_MDT_TYPE_HASH)
+			continue;
+
+		if (!phdr->p_memsz)
+			continue;
+#else
                 if (!mdt_phdr_valid(phdr))
                         continue;
+#endif
 
                 offset = phdr->p_paddr - ab_ahb->mem_phys;
                 if (offset < 0 || offset + phdr->p_memsz > ab_ahb->mem_size) {

@@ -35,6 +35,8 @@
 #include "sta_info.h"
 #include "debug.h"
 #include "drop.h"
+#include "qcn_extns/cmn_extn.h"
+
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
 #include <nss_api_if.h>
 #endif
@@ -126,6 +128,8 @@ struct ieee80211_bss {
 
 	bool wmm_used;
 	bool uapsd_supported;
+
+	struct ieee80211_bss_extn bss_extn;
 
 #define IEEE80211_MAX_SUPP_RATES 32
 	u8 supp_rates[IEEE80211_MAX_SUPP_RATES];
@@ -1524,6 +1528,8 @@ struct ieee80211_local {
 
 	const struct ieee80211_ops *ops;
 
+	const struct ieee80211_ops_extn *ops_extn;
+
 	/*
 	 * private workqueue to mac80211. mac80211 makes this accessible
 	 * via ieee80211_queue_work()
@@ -1889,6 +1895,8 @@ struct ieee802_11_elems {
 	const u8 *ie_start;
 	size_t total_len;
 	u32 crc;
+
+	struct ieee802_11_elems_extn elems_extn;
 
 	/* pointers to IEs */
 	const struct ieee80211_tdls_lnkie *lnk_id;
@@ -3013,8 +3021,7 @@ void ieee80211_process_neg_ttlm_res(struct ieee80211_sub_if_data *sdata,
 				    struct ieee80211_mgmt *mgmt, size_t len);
 int ieee80211_req_neg_ttlm(struct ieee80211_sub_if_data *sdata,
 			   struct cfg80211_ttlm_params *params);
-void ieee80211_set_ap_advertised_ttlm_config(struct ieee80211_sub_if_data *sdata,
-					     struct cfg80211_ttlm_params *params);
+void ieee80211_set_ap_advertised_ttlm_config(struct ieee80211_sub_if_data *sdata);
 
 void ieee80211_process_ttlm_teardown(struct ieee80211_sub_if_data *sdata);
 
@@ -3054,5 +3061,9 @@ void ieee80211_rearrange_tpe_psd(struct ieee80211_parsed_tpe_psd *psd,
 int ieee80211_qos_mgmt_cfg(struct ieee80211_sub_if_data *sdata,
 			   struct cfg80211_qm_req_data *qm_req,
 			   struct cfg80211_qm_resp_data *qm_resp);
+
+int ieee80211_set_monitor_channel(struct wiphy *wiphy,
+				  struct net_device *dev,
+				  struct cfg80211_chan_def *chandef);
 
 #endif /* IEEE80211_I_H */

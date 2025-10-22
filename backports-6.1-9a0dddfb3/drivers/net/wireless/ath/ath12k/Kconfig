@@ -1,4 +1,8 @@
 # SPDX-License-Identifier: BSD-3-Clause-Clear
+config BACKPORT_DIR
+	string
+	option env="BACKPORT_DIR"
+
 config ATH12K
 	tristate "Qualcomm Technologies Wi-Fi 7 support (ath12k)"
 	depends on m
@@ -8,6 +12,7 @@ config ATH12K
 	depends on MHI_BUS
 	depends on QRTR
 	depends on QRTR_MHI
+	select ATH_COMMON
 	select PCI_PWRCTL_PWRSEQ if HAVE_PWRCTL
 	help
 	  Enable support for Qualcomm Technologies Wi-Fi 7 (IEEE
@@ -21,6 +26,13 @@ config ATH12K_SAWF
 	depends on ATH12K
 	help
 	  Enable ath12k SAWF and telemetry support
+	  Say Y to enable. If unsure, say N.
+
+config ATH12K_POWER_OPTIMIZATION
+	bool "ath12k Power and Thermal Optimization support"
+	depends on ATH12K
+	help
+	  Enable ath12k Power Reduction support
 	  Say Y to enable. If unsure, say N.
 
 config ATH12K_AHB
@@ -99,6 +111,15 @@ config ATH12K_MEM_PROFILE_512M
 
 endchoice
 
+config ATH12K_CFR
+	bool "QCA ath12k CFR support"
+	depends on ATH12K_DEBUGFS
+	depends on RELAY
+	help
+	  Enable ath12k cfr dump support
+
+	  Say Y to enable access to collect cfr data dump via debugfs.
+
 config ATH12K_SPECTRAL
 	bool "QTI ath12k spectral scan support"
 	depends on ATH12K_DEBUGFS
@@ -116,3 +137,15 @@ config ATH12K_PPE_DS_SUPPORT
 		Enable ath12k PPE-DS support
 
 		Say Y to enable PPE DS Support. If unsure, say N.
+
+source "$BACKPORT_DIR/drivers/net/wireless/ath/ath12k/qcn_extns/Kconfig"
+
+config ATHDEBUG
+	bool "ath12k debugging module"
+	depends on ATH12K
+	help
+	  Enable athdebug module support, this module will help to
+	  enable various debugging feature such as debug mask, minidump,
+	  QDSS.
+
+	  If unsure, say Y to make it easier to debug problems.

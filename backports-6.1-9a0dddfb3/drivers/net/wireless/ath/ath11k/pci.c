@@ -5,9 +5,9 @@
  */
 
 #include <linux/module.h>
-#include <linux/msi.h>
 #include <linux/pci.h>
 #include <linux/of.h>
+#include <linux/msi.h>
 #include <linux/time.h>
 #include <linux/vmalloc.h>
 
@@ -20,7 +20,8 @@
 #include "qmi.h"
 
 #define ATH11K_PCI_BAR_NUM		0
-#define ATH11K_PCI_DMA_MASK		36
+/* Target can access upto (2^40) GB of RAM directly */
+#define ATH11K_PCI_DMA_MASK		40
 #define ATH11K_PCI_COHERENT_DMA_MASK	32
 
 #define TCSR_SOC_HW_VERSION		0x0224
@@ -32,6 +33,11 @@
 #define WCN6855_DEVICE_ID		0x1103
 
 #define TCSR_SOC_HW_SUB_VER	0x1910010
+
+unsigned int ath11k_fw_mem_seg;
+EXPORT_SYMBOL(ath11k_fw_mem_seg);
+module_param_named(fw_mem_seg, ath11k_fw_mem_seg, uint, 0644);
+MODULE_PARM_DESC(fw_mem_seg, "Enable/Disable FW segmentted memory");
 
 static const struct pci_device_id ath11k_pci_id_table[] = {
 	{ PCI_VDEVICE(QCOM, QCA6390_DEVICE_ID) },
@@ -58,18 +64,7 @@ static void ath11k_pci_bus_release(struct ath11k_base *ab)
 
 static u32 ath11k_pci_get_window_start(struct ath11k_base *ab, u32 offset)
 {
-	if (!ab->hw_params.static_window_map)
-		return ATH11K_PCI_WINDOW_START;
-
-	if ((offset ^ HAL_SEQ_WCSS_UMAC_OFFSET) < ATH11K_PCI_WINDOW_RANGE_MASK)
-		/* if offset lies within DP register range, use 3rd window */
-		return 3 * ATH11K_PCI_WINDOW_START;
-	else if ((offset ^ HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(ab)) <
-		 ATH11K_PCI_WINDOW_RANGE_MASK)
-		 /* if offset lies within CE register range, use 2nd window */
-		return 2 * ATH11K_PCI_WINDOW_START;
-	else
-		return ATH11K_PCI_WINDOW_START;
+	return ath11k_pcic_get_window_start(ab, offset, ATH11K_BUS_PCI);
 }
 
 static inline void ath11k_pci_select_window(struct ath11k_pci *ab_pci, u32 offset)
@@ -162,20 +157,6 @@ static const struct ath11k_msi_config msi_config_one_msi = {
 		{ .name = "DP", .num_vectors = 1, .base_vector = 0 },
 	},
 };
-
-static inline void ath11k_pci_select_static_window(struct ath11k_pci *ab_pci)
-{
-	u32 umac_window;
-	u32 ce_window;
-	u32 window;
-
-	umac_window = FIELD_GET(ATH11K_PCI_WINDOW_VALUE_MASK, HAL_SEQ_WCSS_UMAC_OFFSET);
-	ce_window = FIELD_GET(ATH11K_PCI_WINDOW_VALUE_MASK, HAL_CE_WFSS_CE_REG_BASE);
-	window = (umac_window << 12) | (ce_window << 6);
-
-	iowrite32(ATH11K_PCI_WINDOW_ENABLE_BIT | window,
-		  ab_pci->ab->mem + ATH11K_PCI_WINDOW_REG_ADDRESS);
-}
 
 static void ath11k_pci_soc_global_reset(struct ath11k_base *ab)
 {
@@ -376,14 +357,21 @@ static void ath11k_pci_sw_reset(struct ath11k_base *ab, bool power_on)
 static void ath11k_pci_init_qmi_ce_config(struct ath11k_base *ab)
 {
 	struct ath11k_qmi_ce_cfg *cfg = &ab->qmi.ce_cfg;
+	struct ath11k_pci *ab_pci = ath11k_pci_priv(ab);
+	struct pci_bus *bus = ab_pci->pdev->bus;
+	int ret, node_id;
 
 	cfg->tgt_ce = ab->hw_params.target_ce_config;
 	cfg->tgt_ce_len = ab->hw_params.target_ce_count;
 
 	cfg->svc_to_ce_map = ab->hw_params.svc_to_ce_map;
 	cfg->svc_to_ce_map_len = ab->hw_params.svc_to_ce_map_len;
-	ab->qmi.service_ins_id = ab->hw_params.qmi_service_ins_id;
+	ab->qmi.service_ins_id = ab->hw_params.qmi_service_ins_id +
+				 (((pci_domain_nr(bus) & 0xF) << 4) | (bus->number & 0xF));
 
+	ret = of_property_read_u32(ab->dev->of_node, "qrtr_instance_id", &node_id);
+	if (!ret)
+		ab->qmi.service_ins_id += node_id;
 	ath11k_ce_get_shadow_config(ab, &cfg->shadow_reg_v2,
 				    &cfg->shadow_reg_v2_len);
 }
@@ -425,7 +413,11 @@ static int ath11k_pci_alloc_msi(struct ath11k_pci *ab_pci)
 	num_vectors = pci_alloc_irq_vectors(pci_dev,
 					    msi_config->total_vectors,
 					    msi_config->total_vectors,
-					    PCI_IRQ_MSI);
+#if LINUX_VERSION_IS_LESS(5,4,0)
+ 					    PCI_IRQ_NOMSIX);
+#elif LINUX_VERSION_IS_GEQ(5,4,0)
+					    PCI_IRQ_LEGACY|PCI_IRQ_MSI);
+#endif
 	if (num_vectors == msi_config->total_vectors) {
 		set_bit(ATH11K_FLAG_MULTI_MSI_VECTORS, &ab->dev_flags);
 	} else {
@@ -564,6 +556,7 @@ static int ath11k_pci_claim(struct ath11k_pci *ab_pci, struct pci_dev *pdev)
 	}
 
 	ab->mem_ce = ab->mem;
+	ab->mem_pa = pci_resource_start(pdev, ATH11K_PCI_BAR_NUM);
 
 	ath11k_dbg(ab, ATH11K_DBG_BOOT, "pci_mem 0x%p\n", ab->mem);
 	return 0;
@@ -616,187 +609,6 @@ static void ath11k_pci_aspm_restore(struct ath11k_pci *ab_pci)
 						   PCI_EXP_LNKCTL_ASPMC);
 }
 
-#ifdef CONFIG_DEV_COREDUMP
-static int ath11k_pci_coredump_calculate_size(struct ath11k_base *ab, u32 *dump_seg_sz)
-{
-	struct ath11k_pci *ab_pci = ath11k_pci_priv(ab);
-	struct mhi_controller *mhi_ctrl = ab_pci->mhi_ctrl;
-	struct image_info *rddm_img, *fw_img;
-	struct ath11k_tlv_dump_data *dump_tlv;
-	enum ath11k_fw_crash_dump_type mem_type;
-	u32 len = 0, rddm_tlv_sz = 0, paging_tlv_sz = 0;
-	struct ath11k_dump_file_data *file_data;
-	int i;
-
-	rddm_img = mhi_ctrl->rddm_image;
-	if (!rddm_img) {
-		ath11k_err(ab, "No RDDM dump found\n");
-		return 0;
-	}
-
-	fw_img = mhi_ctrl->fbc_image;
-
-	for (i = 0; i < fw_img->entries ; i++) {
-		if (!fw_img->mhi_buf[i].buf)
-			continue;
-
-		paging_tlv_sz += fw_img->mhi_buf[i].len;
-	}
-	dump_seg_sz[FW_CRASH_DUMP_PAGING_DATA] = paging_tlv_sz;
-
-	for (i = 0; i < rddm_img->entries; i++) {
-		if (!rddm_img->mhi_buf[i].buf)
-			continue;
-
-		rddm_tlv_sz += rddm_img->mhi_buf[i].len;
-	}
-	dump_seg_sz[FW_CRASH_DUMP_RDDM_DATA] = rddm_tlv_sz;
-
-	for (i = 0; i < ab->qmi.mem_seg_count; i++) {
-		mem_type = ath11k_coredump_get_dump_type(ab->qmi.target_mem[i].type);
-
-		if (mem_type == FW_CRASH_DUMP_NONE)
-			continue;
-
-		if (mem_type == FW_CRASH_DUMP_TYPE_MAX) {
-			ath11k_dbg(ab, ATH11K_DBG_PCI,
-				   "target mem region type %d not supported",
-				   ab->qmi.target_mem[i].type);
-			continue;
-		}
-
-		if (!ab->qmi.target_mem[i].anyaddr)
-			continue;
-
-		dump_seg_sz[mem_type] += ab->qmi.target_mem[i].size;
-	}
-
-	for (i = 0; i < FW_CRASH_DUMP_TYPE_MAX; i++) {
-		if (!dump_seg_sz[i])
-			continue;
-
-		len += sizeof(*dump_tlv) + dump_seg_sz[i];
-	}
-
-	if (len)
-		len += sizeof(*file_data);
-
-	return len;
-}
-
-static void ath11k_pci_coredump_download(struct ath11k_base *ab)
-{
-	struct ath11k_pci *ab_pci = ath11k_pci_priv(ab);
-	struct mhi_controller *mhi_ctrl = ab_pci->mhi_ctrl;
-	struct image_info *rddm_img, *fw_img;
-	struct timespec64 timestamp;
-	int i, len, mem_idx;
-	enum ath11k_fw_crash_dump_type mem_type;
-	struct ath11k_dump_file_data *file_data;
-	struct ath11k_tlv_dump_data *dump_tlv;
-	size_t hdr_len = sizeof(*file_data);
-	void *buf;
-	u32 dump_seg_sz[FW_CRASH_DUMP_TYPE_MAX] = { 0 };
-
-	ath11k_mhi_coredump(mhi_ctrl, false);
-
-	len = ath11k_pci_coredump_calculate_size(ab, dump_seg_sz);
-	if (!len) {
-		ath11k_warn(ab, "No crash dump data found for devcoredump");
-		return;
-	}
-
-	rddm_img = mhi_ctrl->rddm_image;
-	fw_img = mhi_ctrl->fbc_image;
-
-	/* dev_coredumpv() requires vmalloc data */
-	buf = vzalloc(len);
-	if (!buf)
-		return;
-
-	ab->dump_data = buf;
-	ab->ath11k_coredump_len = len;
-	file_data = ab->dump_data;
-	strscpy(file_data->df_magic, "ATH11K-FW-DUMP", sizeof(file_data->df_magic));
-	file_data->len = cpu_to_le32(len);
-	file_data->version = cpu_to_le32(ATH11K_FW_CRASH_DUMP_V2);
-	file_data->chip_id = cpu_to_le32(ab_pci->dev_id);
-	file_data->qrtr_id = cpu_to_le32(ab_pci->ab->qmi.service_ins_id);
-	file_data->bus_id = cpu_to_le32(pci_domain_nr(ab_pci->pdev->bus));
-	guid_gen(&file_data->guid);
-	ktime_get_real_ts64(&timestamp);
-	file_data->tv_sec = cpu_to_le64(timestamp.tv_sec);
-	file_data->tv_nsec = cpu_to_le64(timestamp.tv_nsec);
-	buf += hdr_len;
-	dump_tlv = buf;
-	dump_tlv->type = cpu_to_le32(FW_CRASH_DUMP_PAGING_DATA);
-	dump_tlv->tlv_len = cpu_to_le32(dump_seg_sz[FW_CRASH_DUMP_PAGING_DATA]);
-	buf += COREDUMP_TLV_HDR_SIZE;
-
-	/* append all segments together as they are all part of a single contiguous
-	 * block of memory
-	 */
-	for (i = 0; i < fw_img->entries ; i++) {
-		if (!fw_img->mhi_buf[i].buf)
-			continue;
-
-		memcpy_fromio(buf, (void const __iomem *)fw_img->mhi_buf[i].buf,
-			      fw_img->mhi_buf[i].len);
-		buf += fw_img->mhi_buf[i].len;
-	}
-
-	dump_tlv = buf;
-	dump_tlv->type = cpu_to_le32(FW_CRASH_DUMP_RDDM_DATA);
-	dump_tlv->tlv_len = cpu_to_le32(dump_seg_sz[FW_CRASH_DUMP_RDDM_DATA]);
-	buf += COREDUMP_TLV_HDR_SIZE;
-
-	/* append all segments together as they are all part of a single contiguous
-	 * block of memory
-	 */
-	for (i = 0; i < rddm_img->entries; i++) {
-		if (!rddm_img->mhi_buf[i].buf)
-			continue;
-
-		memcpy_fromio(buf, (void const __iomem *)rddm_img->mhi_buf[i].buf,
-			      rddm_img->mhi_buf[i].len);
-		buf += rddm_img->mhi_buf[i].len;
-	}
-
-	mem_idx = FW_CRASH_DUMP_REMOTE_MEM_DATA;
-	for (; mem_idx < FW_CRASH_DUMP_TYPE_MAX; mem_idx++) {
-		if (mem_idx == FW_CRASH_DUMP_NONE)
-			continue;
-
-		for (i = 0; i < ab->qmi.mem_seg_count; i++) {
-			mem_type = ath11k_coredump_get_dump_type
-						(ab->qmi.target_mem[i].type);
-
-			if (mem_type != mem_idx)
-				continue;
-
-			if (!ab->qmi.target_mem[i].anyaddr) {
-				ath11k_dbg(ab, ATH11K_DBG_PCI,
-					   "Skipping mem region type %d",
-					   ab->qmi.target_mem[i].type);
-				continue;
-			}
-
-			dump_tlv = buf;
-			dump_tlv->type = cpu_to_le32(mem_idx);
-			dump_tlv->tlv_len = cpu_to_le32(dump_seg_sz[mem_idx]);
-			buf += COREDUMP_TLV_HDR_SIZE;
-
-			memcpy_fromio(buf, ab->qmi.target_mem[i].iaddr,
-				      ab->qmi.target_mem[i].size);
-
-			buf += ab->qmi.target_mem[i].size;
-		}
-	}
-
-	queue_work(ab->workqueue, &ab->dump_work);
-}
-#endif
-
 static int ath11k_pci_power_up(struct ath11k_base *ab)
 {
 	struct ath11k_pci *ab_pci = ath11k_pci_priv(ab);
@@ -820,7 +632,7 @@ static int ath11k_pci_power_up(struct ath11k_base *ab)
 	}
 
 	if (ab->hw_params.static_window_map)
-		ath11k_pci_select_static_window(ab_pci);
+		ath11k_pcic_config_static_window(ab);
 
 	return 0;
 }
@@ -899,10 +711,8 @@ static const struct ath11k_hif_ops ath11k_pci_hif_ops = {
 	.map_service_to_pipe = ath11k_pcic_map_service_to_pipe,
 	.ce_irq_enable = ath11k_pci_hif_ce_irq_enable,
 	.ce_irq_disable = ath11k_pci_hif_ce_irq_disable,
+	.get_window_offset = ath11k_pci_get_window_offset,
 	.get_ce_msi_idx = ath11k_pcic_get_ce_msi_idx,
-#ifdef CONFIG_DEV_COREDUMP
-	.coredump_download = ath11k_pci_coredump_download,
-#endif
 };
 
 static void ath11k_pci_read_hw_version(struct ath11k_base *ab, u32 *major, u32 *minor)
@@ -936,6 +746,7 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	u32 soc_hw_version_major, soc_hw_version_minor, addr;
 	int ret;
 	u32 sub_version;
+	unsigned long left;
 
 	ab = ath11k_core_alloc(&pdev->dev, sizeof(*ab_pci), ATH11K_BUS_PCI);
 
@@ -953,6 +764,17 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	ab->hif.ops = &ath11k_pci_hif_ops;
 	ab->fw_mode = ATH11K_FIRMWARE_MODE_NORMAL;
 	pci_set_drvdata(pdev, ab);
+	ab->fw_recovery_support = false;
+
+	mutex_lock(&dev_init_lock);
+	left = wait_event_timeout(ath11k_radio_prb_wq, dev_init_progress == false,
+				  ATH11K_AHB_PROBE_SEQ_TIMEOUT);
+	dev_init_progress = true;
+	if (!left)
+		ath11k_dbg(ab, ATH11K_DBG_PCI, "dev init is concurrently processing"
+			   " this may cause random phy#\n");
+	mutex_unlock(&dev_init_lock);
+
 	spin_lock_init(&ab_pci->window_lock);
 
 	/* Set fixed_mem_region to true for platforms support reserved memory
@@ -962,6 +784,17 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 	ret = of_property_read_u32(ab->dev->of_node, "memory-region", &addr);
 	if (!ret)
 		set_bit(ATH11K_FLAG_FIXED_MEM_RGN, &ab->dev_flags);
+
+	/* IPQ8074 reserves memory for FW, ath11k does not need to
+	 * allocate memory for FW in DDR, set fixed_mem_region to true for
+	 * these pltforms supports reserved memory.
+	 */
+	if (ath11k_host_ddr_addr || !ret)
+		ab->hw_params.fixed_mem_region = true;
+
+	/* This is HACK to bring up the QCN9074 with segemnted memory */
+	if (ath11k_fw_mem_seg)
+		ab->hw_params.fixed_mem_region = false;
 
 	ret = ath11k_pci_claim(ab_pci, pdev);
 	if (ret) {
@@ -1007,6 +840,7 @@ static int ath11k_pci_probe(struct pci_dev *pdev,
 			goto err_pci_free_region;
 		}
 		ab->hw_rev = ATH11K_HW_QCN9074_HW10;
+		ab->enable_cold_boot_cal = ath11k_cold_boot_cal;
 		break;
 	case WCN6855_DEVICE_ID:
 		ret = ath11k_pcic_register_pci_ops(ab, &ath11k_pci_ops_qca6390);
@@ -1172,6 +1006,7 @@ static void ath11k_pci_remove(struct pci_dev *pdev)
 	}
 
 	set_bit(ATH11K_FLAG_UNREGISTERING, &ab->dev_flags);
+	cancel_work_sync(&ab->wmi_ast_work);
 
 	cancel_work_sync(&ab->reset_work);
 	cancel_work_sync(&ab->dump_work);
@@ -1196,7 +1031,8 @@ static void ath11k_pci_shutdown(struct pci_dev *pdev)
 	struct ath11k_pci *ab_pci = ath11k_pci_priv(ab);
 
 	ath11k_pci_set_irq_affinity_hint(ab_pci, NULL);
-	ath11k_pci_power_down(ab);
+	if (!ab->pm_suspend)
+		ath11k_pci_power_down(ab);
 }
 
 static __maybe_unused int ath11k_pci_pm_suspend(struct device *dev)

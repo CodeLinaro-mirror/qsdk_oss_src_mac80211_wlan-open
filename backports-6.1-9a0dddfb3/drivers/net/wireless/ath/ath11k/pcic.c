@@ -7,59 +7,51 @@
 #include "core.h"
 #include "pcic.h"
 #include "debug.h"
+#include "pci.h"
+#include <linux/msi.h>
+#include <linux/platform_device.h>
+#include <linux/pci.h>
 
-static const char *irq_name[ATH11K_IRQ_NUM_MAX] = {
-	"bhi",
-	"mhi-er0",
-	"mhi-er1",
-	"ce0",
-	"ce1",
-	"ce2",
-	"ce3",
-	"ce4",
-	"ce5",
-	"ce6",
-	"ce7",
-	"ce8",
-	"ce9",
-	"ce10",
-	"ce11",
-	"host2wbm-desc-feed",
-	"host2reo-re-injection",
-	"host2reo-command",
-	"host2rxdma-monitor-ring3",
-	"host2rxdma-monitor-ring2",
-	"host2rxdma-monitor-ring1",
-	"reo2ost-exception",
-	"wbm2host-rx-release",
-	"reo2host-status",
-	"reo2host-destination-ring4",
-	"reo2host-destination-ring3",
-	"reo2host-destination-ring2",
-	"reo2host-destination-ring1",
-	"rxdma2host-monitor-destination-mac3",
-	"rxdma2host-monitor-destination-mac2",
-	"rxdma2host-monitor-destination-mac1",
-	"ppdu-end-interrupts-mac3",
-	"ppdu-end-interrupts-mac2",
-	"ppdu-end-interrupts-mac1",
-	"rxdma2host-monitor-status-ring-mac3",
-	"rxdma2host-monitor-status-ring-mac2",
-	"rxdma2host-monitor-status-ring-mac1",
-	"host2rxdma-host-buf-ring-mac3",
-	"host2rxdma-host-buf-ring-mac2",
-	"host2rxdma-host-buf-ring-mac1",
-	"rxdma2host-destination-ring-mac3",
-	"rxdma2host-destination-ring-mac2",
-	"rxdma2host-destination-ring-mac1",
-	"host2tcl-input-ring4",
-	"host2tcl-input-ring3",
-	"host2tcl-input-ring2",
-	"host2tcl-input-ring1",
-	"wbm2host-tx-completions-ring3",
-	"wbm2host-tx-completions-ring2",
-	"wbm2host-tx-completions-ring1",
-	"tcl2host-status-ring",
+const char *ce_irq_name[ATH11K_MAX_PCI_DOMAINS + 1][CE_COUNT_MAX] = {
+	{
+		ATH11K_PCI_CE_IRQS_NAME(0)
+	},
+	{
+		ATH11K_PCI_CE_IRQS_NAME(1)
+	},
+	{
+		ATH11K_PCI_CE_IRQS_NAME(2)
+	},
+	{
+		ATH11K_PCI_CE_IRQS_NAME(3)
+	},
+	{
+		ATH11K_PCI_CE_IRQS_NAME(4)
+	},
+	{
+		ATH11K_PCI_CE_IRQS_NAME()
+	},
+};
+
+const char *dp_irq_name[ATH11K_MAX_PCI_DOMAINS + 1][ATH11K_EXT_IRQ_GRP_NUM_MAX] = {
+	{
+		ATH11K_PCI_DP_IRQS_NAME(0)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME(1)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME(2)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME(3)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME(4)
+	},
+	{
+		ATH11K_PCI_DP_IRQS_NAME()
+	},
 };
 
 static const struct ath11k_msi_config ath11k_msi_config[] = {
@@ -136,6 +128,15 @@ static const struct ath11k_msi_config ath11k_msi_config[] = {
 			{ .name = "DP", .num_vectors = 18, .base_vector = 14 },
 		},
 		.hw_rev = ATH11K_HW_QCA6698AQ_HW21,
+	},
+	{
+		.total_vectors = 13,
+		.total_users = 2,
+		.users = (struct ath11k_msi_user[]) {
+			{ .name = "CE", .num_vectors = 5, .base_vector = 0 },
+			{ .name = "DP", .num_vectors = 8, .base_vector = 5 },
+		},
+		.hw_rev = ATH11K_HW_QCN6122,
 	},
 };
 
@@ -327,7 +328,9 @@ static void ath11k_pcic_free_ext_irq(struct ath11k_base *ab)
 			free_irq(ab->irq_num[irq_grp->irqs[j]], irq_grp);
 
 		netif_napi_del(&irq_grp->napi);
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);
+#endif
 	}
 }
 
@@ -345,6 +348,15 @@ void ath11k_pcic_free_irq(struct ath11k_base *ab)
 	ath11k_pcic_free_ext_irq(ab);
 }
 EXPORT_SYMBOL(ath11k_pcic_free_irq);
+
+void ath11k_pcic_ipci_free_irq(struct ath11k_base *ab)
+{
+	struct platform_device *pdev = ab->pdev;
+
+	ath11k_pcic_free_irq(ab);
+	platform_msi_domain_free_irqs(&pdev->dev);
+}
+EXPORT_SYMBOL(ath11k_pcic_ipci_free_irq);
 
 static void ath11k_pcic_ce_irq_enable(struct ath11k_base *ab, u16 ce_id)
 {
@@ -574,6 +586,12 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 	u32 user_base_data = 0, base_vector = 0;
 	struct ath11k_ext_irq_grp *irq_grp;
 	unsigned long irq_flags;
+	struct net_device *napi_ndev;
+	struct ath11k_pci *ar_pci = ath11k_pci_priv(ab);
+	u8 domain_id = pci_domain_nr(ar_pci->pdev->bus);
+
+	if (domain_id > ATH11K_MAX_PCI_DOMAINS)
+		domain_id = ATH11K_MAX_PCI_DOMAINS;
 
 	ret = ath11k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
 						  &user_base_data,
@@ -591,14 +609,30 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 
 		irq_grp->ab = ab;
 		irq_grp->grp_id = i;
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		irq_grp->napi_ndev = alloc_netdev_dummy(0);
-		if (!irq_grp->napi_ndev) {
+		napi_ndev = irq_grp->napi_ndev;
+#else
+		init_dummy_netdev(&irq_grp->napi_ndev);
+		napi_ndev = &irq_grp->napi_ndev;
+#endif
+		if (!napi_ndev) {
 			ret = -ENOMEM;
 			goto fail_allocate;
 		}
 
-		netif_napi_add(irq_grp->napi_ndev, &irq_grp->napi,
-			       ath11k_pcic_ext_grp_napi_poll);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+		netif_napi_add(&irq_grp->napi_ndev, &irq_grp->napi,
+			       ath11k_pcic_ext_grp_napi_poll,NAPI_POLL_WEIGHT);
+#else
+		netif_napi_add_weight(&irq_grp->napi_ndev, &irq_grp->napi,
+				      ath11k_pcic_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#endif
+		/* tcl, reo, rx_err, wbm release, rxdma rings are offloaded to nss. */
+		if (ab->nss.enabled &&
+		    !(ab->hw_params.ring_mask->reo_status[i] ||
+		      ab->hw_params.ring_mask->rx_mon_status[i]))
+			continue;
 
 		if (ab->hw_params.ring_mask->tx[i] ||
 		    ab->hw_params.ring_mask->rx[i] ||
@@ -631,13 +665,16 @@ static int ath11k_pcic_ext_irq_config(struct ath11k_base *ab)
 
 			irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
 			ret = request_irq(irq, ath11k_pcic_ext_interrupt_handler,
-					  irq_flags, "DP_EXT_IRQ", irq_grp);
+					  irq_flags,
+					  dp_irq_name[domain_id][i], irq_grp);
 			if (ret) {
 				ath11k_err(ab, "failed request irq %d: %d\n",
 					   vector, ret);
 				for (n = 0; n <= i; n++) {
 					irq_grp = &ab->ext_irq_grp[n];
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 					free_netdev(irq_grp->napi_ndev);
+#endif
 				}
 				return ret;
 			}
@@ -652,7 +689,9 @@ fail_irq:
 fail_allocate:
 	for (n = 0; n < i; n++) {
 		irq_grp = &ab->ext_irq_grp[n];
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);
+#endif
 	}
 	return ret;
 }
@@ -666,6 +705,11 @@ int ath11k_pcic_config_irq(struct ath11k_base *ab)
 	unsigned int msi_data;
 	int irq, i, ret, irq_idx;
 	unsigned long irq_flags;
+	struct ath11k_pci *ar_pci = ath11k_pci_priv(ab);
+	u8 domain_id = pci_domain_nr(ar_pci->pdev->bus);
+
+	if (domain_id > ATH11K_MAX_PCI_DOMAINS)
+		domain_id = ATH11K_MAX_PCI_DOMAINS;
 
 	ret = ath11k_pcic_get_user_msi_assignment(ab, "CE", &msi_data_count,
 						  &msi_data_start, &msi_irq_start);
@@ -693,7 +737,7 @@ int ath11k_pcic_config_irq(struct ath11k_base *ab)
 		tasklet_setup(&ce_pipe->intr_tq, ath11k_pcic_ce_tasklet);
 
 		ret = request_irq(irq, ath11k_pcic_ce_interrupt_handler,
-				  irq_flags, irq_name[irq_idx], ce_pipe);
+				  irq_flags, ce_irq_name[domain_id][i], ce_pipe);
 		if (ret) {
 			ath11k_err(ab, "failed to request irq %d: %d\n",
 				   irq_idx, ret);
@@ -759,7 +803,8 @@ EXPORT_SYMBOL(ath11k_pcic_stop);
 
 int ath11k_pcic_start(struct ath11k_base *ab)
 {
-	set_bit(ATH11K_FLAG_DEVICE_INIT_DONE, &ab->dev_flags);
+	if (!ab->hw_params.internal_pci)
+		set_bit(ATH11K_FLAG_DEVICE_INIT_DONE, &ab->dev_flags);
 
 	ath11k_pcic_ce_irqs_enable(ab);
 	ath11k_ce_rx_post_buf(ab);
@@ -819,7 +864,7 @@ int ath11k_pcic_register_pci_ops(struct ath11k_base *ab,
 		return 0;
 
 	/* Return error if mandatory pci_ops callbacks are missing */
-	if (!pci_ops->get_msi_irq || !pci_ops->window_write32 ||
+	if (!pci_ops->window_write32 ||
 	    !pci_ops->window_read32)
 		return -EINVAL;
 
@@ -861,3 +906,270 @@ void ath11k_pci_disable_ce_irqs_except_wake_irq(struct ath11k_base *ab)
 	}
 }
 EXPORT_SYMBOL(ath11k_pci_disable_ce_irqs_except_wake_irq);
+
+void ath11k_pcic_select_static_window(struct ath11k_base *ab)
+{
+	u32 umac_window = FIELD_GET(ATH11K_PCI_WINDOW_VALUE_MASK, HAL_SEQ_WCSS_UMAC_OFFSET);
+	u32 ce_window = FIELD_GET(ATH11K_PCI_WINDOW_VALUE_MASK, HAL_CE_WFSS_CE_REG_BASE);
+	u32 window;
+
+	window = (umac_window << 12) | (ce_window << 6);
+
+	iowrite32(ATH11K_PCI_WINDOW_ENABLE_BIT | window,
+		  ab->mem + ATH11K_PCI_WINDOW_REG_ADDRESS);
+}
+
+void ath11k_pcic_config_static_window(struct ath11k_base *ab)
+{
+	if (ab->hw_params.static_window_map)
+		ath11k_pcic_select_static_window(ab);
+}
+EXPORT_SYMBOL(ath11k_pcic_config_static_window);
+
+int ath11k_pcic_ext_config_gic_msi_irq(struct ath11k_base *ab, struct platform_device *pdev,
+				      struct msi_desc *msi_desc, int i)
+{
+	u32 user_base_data = 0, base_vector = 0, base_idx;
+	struct ath11k_ext_irq_grp *irq_grp;
+	int j, ret = 0, num_vectors = 0;
+	u32 num_irq = 0;
+
+	base_idx = ATH11K_PCI_IRQ_CE0_OFFSET + CE_COUNT_MAX;
+	ret = ath11k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
+						 &user_base_data, &base_vector);
+	if (ret < 0)
+		return ret;
+
+	irq_grp = &ab->ext_irq_grp[i];
+	irq_grp->ab = ab;
+	irq_grp->grp_id = i;
+	init_dummy_netdev(&irq_grp->napi_ndev);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+	netif_napi_add(&irq_grp->napi_ndev, &irq_grp->napi,
+		       ath11k_pcic_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#else
+	netif_napi_add_weight(&irq_grp->napi_ndev, &irq_grp->napi,
+		       ath11k_pcic_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#endif
+
+	if (ab->hw_params.ring_mask->tx[i] ||
+	    ab->hw_params.ring_mask->rx[i] ||
+	    ab->hw_params.ring_mask->rx_err[i] ||
+	    ab->hw_params.ring_mask->rx_wbm_rel[i] ||
+	    ab->hw_params.ring_mask->reo_status[i] ||
+	    ab->hw_params.ring_mask->rxdma2host[i] ||
+	    ab->hw_params.ring_mask->host2rxdma[i] ||
+	    ab->hw_params.ring_mask->rx_mon_status[i]) {
+		num_irq = 1;
+	}
+
+	irq_grp->num_irq = num_irq;
+	irq_grp->irqs[0] = base_idx + i;
+
+	for (j = 0; j < irq_grp->num_irq; j++) {
+		int irq_idx = irq_grp->irqs[j];
+		int vector = (i % num_vectors);
+
+		irq_set_status_flags(msi_desc->irq, IRQ_DISABLE_UNLAZY);
+		ret = devm_request_irq(&pdev->dev, msi_desc->irq,
+				       ath11k_pcic_ext_interrupt_handler,
+				       IRQF_SHARED, dp_irq_name[ab->userpd_id][i],
+				       irq_grp);
+		if (ret) {
+			ath11k_err(ab, "failed request irq %d: %d\n",
+				   irq_idx, ret);
+			return ret;
+		}
+		ab->irq_num[irq_idx] = msi_desc->irq;
+		ab->ipci.dp_irq_num[vector] = msi_desc->irq;
+		ab->ipci.dp_msi_data[i] = msi_desc->msg.data;
+		disable_irq_nosync(ab->irq_num[irq_idx]);
+	}
+	return ret;
+}
+
+int ath11k_pcic_config_gic_msi_irq(struct ath11k_base *ab, struct platform_device *pdev,
+				  struct msi_desc *msi_desc, int i)
+{
+	struct ath11k_ce_pipe *ce_pipe = &ab->ce.ce_pipe[i];
+	int irq_idx, ret;
+
+	tasklet_setup(&ce_pipe->intr_tq, ath11k_pcic_ce_tasklet);
+	irq_idx = ATH11K_PCI_IRQ_CE0_OFFSET + i;
+
+	ret = devm_request_irq(&pdev->dev, msi_desc->irq,
+			       ath11k_pcic_ce_interrupt_handler,
+			       IRQF_SHARED, ce_irq_name[ab->userpd_id][i],
+			       ce_pipe);
+	if (ret) {
+		ath11k_warn(ab, "failed to request irq %d: %d\n",
+			    irq_idx, ret);
+		return ret;
+	}
+	ab->irq_num[irq_idx] = msi_desc->irq;
+	ab->ipci.ce_msi_data[i] = msi_desc->msg.data;
+	ath11k_pcic_ce_irq_disable(ab, i);
+
+	return ret;
+}
+
+static void ath11k_msi_msg_handler(struct msi_desc *desc, struct msi_msg *msg)
+{
+	desc->msg.address_lo = msg->address_lo;
+	desc->msg.address_hi = msg->address_hi;
+	desc->msg.data = msg->data;
+}
+
+int ath11k_pcic_ipci_config_irq(struct ath11k_base *ab)
+{
+	int ret;
+	struct platform_device *pdev = ab->pdev;
+	struct msi_desc *msi_desc;
+	bool ce_done = false;
+	int i = 0;
+
+	if (ab->userpd_id != QCN6122_USERPD_0 &&
+	    ab->userpd_id != QCN6122_USERPD_1) {
+		ath11k_warn(ab, "ath11k userpd invalid %d\n", ab->userpd_id);
+		return -ENODEV;
+	}
+
+	ret = ath11k_pcic_init_msi_config(ab);
+	if (ret) {
+		ath11k_err(ab, "failed to fetch msi config: %d\n", ret);
+		return ret;
+	}
+
+	ret = platform_msi_domain_alloc_irqs(&pdev->dev, ab->pci.msi.config->total_vectors,
+					     ath11k_msi_msg_handler);
+	if (ret) {
+		ath11k_warn(ab, "failed to alloc irqs %d ab %pM\n", ret, ab);
+		return ret;
+	}
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+	for_each_msi_entry(msi_desc, &pdev->dev) {
+#else
+        msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ALL) {
+#endif
+		if (!ce_done && i == ab->hw_params.ce_count) {
+			i = 0;
+			ce_done = true;
+		}
+
+		if (!ce_done && i < ab->hw_params.ce_count) {
+			if (ath11k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
+				i++;
+
+			ret = ath11k_pcic_config_gic_msi_irq(ab, pdev, msi_desc, i);
+			if (ret) {
+				ath11k_warn(ab, "failed to request irq %d\n", ret);
+				return ret;
+			}
+		} else {
+			ret = ath11k_pcic_ext_config_gic_msi_irq(ab, pdev, msi_desc, i);
+			if (ret) {
+				ath11k_warn(ab, "failed to config ext msi irq %d\n", ret);
+				return ret;
+			}
+		}
+
+		i++;
+		ab->pci.msi.addr_lo = msi_desc->msg.address_lo;
+		ab->pci.msi.addr_hi = msi_desc->msg.address_hi;
+
+		if (i == 0 && !ce_done)
+			ab->pci.msi.ep_base_data = msi_desc->msg.data;
+	}
+
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+	for_each_msi_entry(msi_desc, &pdev->dev) {
+#else
+        msi_for_each_desc(msi_desc, &pdev->dev, MSI_DESC_ALL) {
+#endif
+		u32 user_base_data = 0, base_vector = 0;
+		int vector, num_vectors = 0;
+
+		ret = ath11k_pcic_get_user_msi_assignment(ab, "DP", &num_vectors,
+							 &user_base_data, &base_vector);
+		if (ret < 0)
+			return ret;
+
+		vector = (i % num_vectors);
+
+		if (i >= ATH11K_EXT_IRQ_GRP_NUM_MAX)
+			break;
+
+		if (ab->ipci.dp_irq_num[vector] != msi_desc->irq)
+			continue;
+
+		ret = ath11k_pcic_ext_config_gic_msi_irq(ab, pdev, msi_desc, i);
+		if (ret) {
+			ath11k_warn(ab, "failed to config ext msi irq %d\n", ret);
+			return ret;
+		}
+
+		i++;
+	}
+
+	ab->ipci.gic_enabled = 1;
+	wake_up(&ab->ipci.gic_msi_waitq);
+	return ret;
+}
+EXPORT_SYMBOL(ath11k_pcic_ipci_config_irq);
+
+u32 ath11k_pcic_get_window_start(struct ath11k_base *ab, u32 offset,
+				 enum ath11k_bus bus)
+{
+	u32 window_start = 0;
+
+	if (bus == ATH11K_BUS_PCI) {
+        	if (!ab->hw_params.static_window_map)
+        		return ATH11K_PCI_WINDOW_START;
+
+		/* if offset lies within DP register range, use 3rd window */
+		if ((offset ^ HAL_SEQ_WCSS_UMAC_OFFSET) <
+		    ATH11K_PCI_WINDOW_RANGE_MASK)
+			window_start = 3 * ATH11K_PCI_WINDOW_START;
+		/* if offset lies within CE register range, use 2nd window */
+		else if ((offset ^ HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(ab)) <
+			 ATH11K_PCI_WINDOW_RANGE_MASK)
+			window_start = 2 * ATH11K_PCI_WINDOW_START;
+		else
+			window_start = ATH11K_PCI_WINDOW_START;
+	} else if (bus == ATH11K_BUS_AHB) {
+		/* If offset lies within DP register range, use 1st window */
+		if ((offset ^ HAL_SEQ_WCSS_UMAC_OFFSET) <
+		    ATH11K_PCI_WINDOW_RANGE_MASK)
+			window_start =
+			      ab->hw_params.dp_window * ATH11K_PCI_WINDOW_START;
+		/* If offset lies within CE register range, use 2nd window */
+		else if ((offset ^ HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(ab)) <
+			 ATH11K_PCI_WINDOW_RANGE_MASK)
+			window_start =
+			      ab->hw_params.ce_window * ATH11K_PCI_WINDOW_START;
+		else
+			window_start = ATH11K_PCI_WINDOW_START;
+	}
+	else {
+		/* Must not come here */
+		WARN_ON(1);
+	}
+
+	return window_start;
+}
+EXPORT_SYMBOL(ath11k_pcic_get_window_start);
+
+u32 ath11k_pci_get_window_offset(struct ath11k_base *ab, u32 offset)
+{
+	u32 window_start;
+
+	if (ab->hw_params.static_window_map) {
+		window_start = ath11k_pcic_get_window_start(ab, offset,
+			       ATH11K_BUS_PCI);
+
+		if (window_start)
+			offset = window_start + (offset & ATH11K_PCI_WINDOW_RANGE_MASK);
+	}
+	return offset;
+}
+EXPORT_SYMBOL(ath11k_pci_get_window_offset);

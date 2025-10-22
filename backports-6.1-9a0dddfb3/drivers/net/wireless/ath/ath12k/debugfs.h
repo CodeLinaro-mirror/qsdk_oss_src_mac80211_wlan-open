@@ -7,13 +7,19 @@
 #ifndef _ATH12K_DEBUGFS_H_
 #define _ATH12K_DEBUGFS_H_
 
+#include "core.h"
+
 #define ATH12K_UDP_TCP_START_PORT		0
 #define ATH12K_UDP_TCP_END_PORT			65535
 #define ATH12K_RX_FSE_FLOW_MATCH_DEBUGFS	0xBBBB
 
+#define ATH12K_BUF_SIZE_32 32
+
 #define ATH12K_HTT_PEER_STATS_RESET BIT(16)
 
 #define ATH12K_HTT_STATS_BUF_SIZE (1024 * 512)
+
+#define ATH12K_QOS_MAP_LEN_MIN 16
 
 enum ath12k_dbg_aggr_mode {
 	ATH12K_DBG_AGGR_MODE_AUTO,
@@ -22,24 +28,20 @@ enum ath12k_dbg_aggr_mode {
 };
 
 void ath12k_wmi_crl_path_stats_list_free(struct ath12k *ar, struct list_head *head);
+int ath12k_wsi_bypass_precheck(struct ath12k_base *ab, unsigned int value);
+
+u32 ath12k_dbg_dump_qos_profile(struct ath12k_base *ab,
+				char *buf, u8 qos_id, u32 size);
 
 #define ATH12K_MAX_NRPS 7
 #define MAC_UNIT_LEN 3
 
-enum {
-	NRP_ACTION_ADD,
-	NRP_ACTION_DEL,
-};
-
 struct ath12k_neighbor_peer {
 	struct list_head list;
-	struct completion filter_done;
-	bool is_filter_on;
 	int vdev_id;
 	u8 addr[ETH_ALEN];
 	u8 rssi;
 	s64 timestamp;
-	bool rssi_valid;
 };
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
@@ -47,19 +49,28 @@ void ath12k_debugfs_soc_create(struct ath12k_base *ab);
 void ath12k_debugfs_soc_destroy(struct ath12k_base *ab);
 void ath12k_debugfs_register(struct ath12k *ar);
 void ath12k_debugfs_unregister(struct ath12k *ar);
-void ath12k_debugfs_fw_stats_process(struct ath12k *ar,
-				     struct ath12k_fw_stats *stats);
+void ath12k_hw_debugfs_register(struct ath12k_hw *ah);
 void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab);
 void ath12k_debugfs_fw_stats_init(struct ath12k *ar);
+void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
+			     unsigned int value);
 
-static inline bool ath12k_debugfs_is_pktlog_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *addr)
 {
-	return (!ar->debug.pktlog_peer_valid && ar->debug.pktlog_mode);
+        return (ar->debug.pktlog_peer_valid && ar->debug.pktlog_mode &&
+                ether_addr_equal(addr, ar->debug.pktlog_peer_addr));
 }
 
-static inline bool ath12k_debugfs_is_extd_rx_stats_enabled(struct ath12k *ar)
+static inline int ath12k_extd_tx_stats_enabled(struct ath12k *ar)
 {
-	return ar->debug.extd_rx_stats;
+	return ((ar->dp.dp_stats_mask &  DP_ENABLE_STATS) &&
+		(ar->dp.dp_stats_mask & DP_ENABLE_EXT_TX_STATS));
+}
+
+static inline bool ath12k_extd_rx_stats_enabled(struct ath12k *ar)
+{
+	return ((ar->dp.dp_stats_mask &  DP_ENABLE_STATS) &&
+		(ar->dp.dp_stats_mask & DP_ENABLE_EXT_RX_STATS));
 }
 
 static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
@@ -67,6 +78,32 @@ static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 	return ar->debug.rx_filter;
 }
 
+static inline bool
+ath12k_dp_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_STATS);
+}
+
+static inline bool
+ath12k_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_DEBUG_STATS);
+}
+
+static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
+{
+	return (ar->debug.qos_stats & ATH12K_QOS_STATS_CATEG_MASK);
+}
+
+static inline bool ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_TID_STATS);
+}
+
+void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
+void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
+void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
+void ath12k_tid_drop_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr);
 void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar);
 
@@ -76,6 +113,7 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab);
 
 void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif);
 void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif);
+struct dentry *ath12k_debugfs_erp_create(void);
 
 #define ATH12K_CCK_RATES			4
 #define ATH12K_OFDM_RATES			8
@@ -188,6 +226,17 @@ enum ath12k_debug_tpc_stats_support_modes {
 	ATH12K_TPC_STATS_SUPPORT_BE,
 	ATH12K_TPC_STATS_SUPPORT_BE_PUNC,
 };
+
+struct ath12k_pktlog_hdr {
+        u16 flags;
+        u16 missed_cnt;
+        u16 log_type;
+        u16 size;
+        u32 timestamp;
+        u32 type_specific_data;
+        struct mlo_timestamp m_timestamp;
+        u8 payload[];
+} __packed;
 #else
 
 static inline void ath12k_debugfs_pdev_destroy(struct ath12k_base *ab)
@@ -198,7 +247,7 @@ static inline void ath12k_debugfs_fw_stats_init(struct ath12k *ar)
 {
 }
 
-static inline bool ath12k_debugfs_is_pktlog_rx_stats_enabled(struct ath12k *ar)
+static inline bool ath12k_debugfs_is_pktlog_peer_valid(struct ath12k *ar, u8 *addr)
 {
 	return false;
 }
@@ -219,12 +268,16 @@ static inline void ath12k_debugfs_unregister(struct ath12k *ar)
 {
 }
 
-static inline void ath12k_debugfs_fw_stats_process(struct ath12k *ar,
-						   struct ath12k_fw_stats *stats)
+static inline void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 {
 }
 
-static inline bool ath12k_debugfs_is_extd_rx_stats_enabled(struct ath12k *ar)
+static inline int ath12k_extd_tx_stats_enabled(struct ath12k *ar)
+{
+	return 0;
+}
+
+static inline bool ath12k_extd_rx_stats_enabled(struct ath12k *ar)
 {
 	return false;
 }
@@ -232,6 +285,10 @@ static inline bool ath12k_debugfs_is_extd_rx_stats_enabled(struct ath12k *ar)
 static inline int ath12k_debugfs_rx_filter(struct ath12k *ar)
 {
 	return 0;
+}
+
+static inline void ath12k_debugfs_set_rx_filter(struct ath12k *ar, u32 rx_filter)
+{
 }
 
 static inline void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
@@ -252,6 +309,29 @@ static inline void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif
 {
 }
 
+static inline bool
+ath12k_dp_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline bool
+ath12k_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline bool
+ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return false;
+}
+
+static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
+{
+	return 0;
+}
+
 static inline void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
 {
 }
@@ -260,6 +340,17 @@ static inline void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 {
 }
 
+struct dentry *ath12k_debugfs_erp_create(void)
+{
+       return NULL;
+}
+
 #endif /* CPTCFG_ATH12K_DEBUGFS */
 
+void ath12k_init_pktlog(struct ath12k *ar);
+void ath12k_deinit_pktlog(struct ath12k *ar);
+void ath12k_htt_pktlog_process(struct ath12k *ar, u8 *data);
+void ath12k_htt_ppdu_pktlog_process(struct ath12k *ar, u8 *data, u32 len);
+void ath12k_dp_rx_stats_buf_pktlog_process(struct ath12k *ar, u8 *data,
+					   u16 log_type, u32 len);
 #endif /* _ATH12K_DEBUGFS_H_ */

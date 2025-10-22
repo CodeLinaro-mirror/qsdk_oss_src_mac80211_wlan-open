@@ -38,6 +38,7 @@ void ath11k_dp_peer_cleanup(struct ath11k *ar, int vdev_id, const u8 *addr)
 	ath11k_peer_rx_tid_cleanup(ar, peer);
 	peer->dp_setup_done = false;
 	crypto_free_shash(peer->tfm_mmic);
+	peer->dp_setup_done = false;
 	spin_unlock_bh(&ab->base_lock);
 }
 
@@ -47,12 +48,17 @@ int ath11k_dp_peer_setup(struct ath11k *ar, int vdev_id, const u8 *addr)
 	struct ath11k_peer *peer;
 	u32 reo_dest;
 	int ret = 0, tid;
+	bool rx_hash_enable = DP_RX_HASH_ENABLE;
+
+	/* RX Hash based steering is disabled for NSS Offload */
+	if (ar->ab->nss.enabled || !ab->rx_hash)
+		rx_hash_enable = DP_RX_HASH_DISABLE;
 
 	/* NOTE: reo_dest ring id starts from 1 unlike mac_id which starts from 0 */
 	reo_dest = ar->dp.mac_id + 1;
 	ret = ath11k_wmi_set_peer_param(ar, addr, vdev_id,
 					WMI_PEER_SET_DEFAULT_ROUTING,
-					DP_RX_HASH_ENABLE | (reo_dest << 1));
+					rx_hash_enable | (reo_dest << 1));
 
 	if (ret) {
 		ath11k_warn(ab, "failed to set default routing %d peer :%pM vdev_id :%d\n",
@@ -111,6 +117,8 @@ void ath11k_dp_srng_cleanup(struct ath11k_base *ab, struct dp_srng *ring)
 		dma_free_coherent(ab->dev, ring->size, ring->vaddr_unaligned,
 				  ring->paddr_unaligned);
 
+	ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, ring->size);
+
 	ring->vaddr_unaligned = NULL;
 }
 
@@ -132,6 +140,18 @@ static int ath11k_dp_srng_calculate_msi_group(struct ath11k_base *ab,
 					      enum hal_ring_type type, int ring_num)
 {
 	const u8 *grp_mask;
+
+	if (ab->nss.enabled) {
+		switch (type) {
+		case HAL_REO_STATUS:
+		case HAL_RXDMA_MONITOR_STATUS:
+		case HAL_RXDMA_MONITOR_DST:
+		case HAL_RXDMA_MONITOR_BUF:
+			break;
+		default:
+			return -ENOENT;
+		}
+	}
 
 	switch (type) {
 	case HAL_WBM2SW_RELEASE:
@@ -214,8 +234,12 @@ static void ath11k_dp_srng_msi_setup(struct ath11k_base *ab,
 
 	ring_params->msi_addr = addr_lo;
 	ring_params->msi_addr |= (dma_addr_t)(((uint64_t)addr_hi) << 32);
-	ring_params->msi_data = (msi_group_number % msi_data_count)
+	if (ab->hw_params.internal_pci) {
+		ring_params->msi_data = ab->ipci.dp_msi_data[msi_group_number];
+	} else {
+		ring_params->msi_data = (msi_group_number % msi_data_count)
 		+ msi_data_start;
+	}
 	ring_params->flags |= HAL_SRNG_FLAGS_MSI_INTR;
 }
 
@@ -262,6 +286,8 @@ int ath11k_dp_srng_setup(struct ath11k_base *ab, struct dp_srng *ring,
 	if (!ring->vaddr_unaligned)
 		return -ENOMEM;
 
+	ATH11K_MEMORY_STATS_INC(ab, dma_alloc, ring->size);
+
 	ring->vaddr = PTR_ALIGN(ring->vaddr_unaligned, HAL_RING_BASE_ALIGN);
 	ring->paddr = ring->paddr_unaligned + ((unsigned long)ring->vaddr -
 		      (unsigned long)ring->vaddr_unaligned);
@@ -282,8 +308,18 @@ int ath11k_dp_srng_setup(struct ath11k_base *ab, struct dp_srng *ring,
 	case HAL_RXDMA_MONITOR_STATUS:
 		params.low_threshold = num_entries >> 3;
 		params.flags |= HAL_SRNG_FLAGS_LOW_THRESH_INTR_EN;
-		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
+		/* In case of PCI chipsets, we dont have PPDU end interrupts,
+		 * so MONITOR STATUS ring is reaped by receiving MSI from srng.
+		 * Keep batch threshold as 8 so that an interrupt is received for
+		 * every 4 frames in MONITOR_STATUS ring.
+		 */
+		if ((type == HAL_RXDMA_MONITOR_STATUS) &&
+				(params.flags & HAL_SRNG_FLAGS_MSI_INTR))
+			params.intr_batch_cntr_thres_entries = 4;
+		else
+			params.intr_batch_cntr_thres_entries = 0;
+
 		break;
 	case HAL_WBM2SW_RELEASE:
 		if (ring_num < 3) {
@@ -342,10 +378,63 @@ void ath11k_dp_stop_shadow_timers(struct ath11k_base *ab)
 	if (!ab->hw_params.supports_shadow_regs)
 		return;
 
-	for (i = 0; i < ab->hw_params.max_tx_ring; i++)
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
 		ath11k_dp_shadow_stop_timer(ab, &ab->dp.tx_ring_timer[i]);
 
 	ath11k_dp_shadow_stop_timer(ab, &ab->dp.reo_cmd_timer);
+}
+
+static void ath11k_dp_handle_reo_status_timer(struct timer_list *timer)
+{
+	struct ath11k_dp *dp = from_timer(dp, timer, reo_status_timer);
+	struct ath11k_base *ab = dp->ab;
+
+	spin_lock_bh(&dp->reo_cmd_lock);
+	dp->reo_status_timer_running = false;
+	spin_unlock_bh(&dp->reo_cmd_lock);
+
+	ath11k_dp_process_reo_status(ab);
+}
+
+void ath11k_dp_start_reo_status_timer(struct ath11k_base *ab)
+{
+	struct ath11k_dp *dp = &ab->dp;
+
+	if (!ab->hw_params.reo_status_poll)
+		return;
+
+	spin_lock_bh(&dp->reo_cmd_lock);
+	if (dp->reo_status_timer_running) {
+		spin_unlock_bh(&dp->reo_cmd_lock);
+		return;
+	}
+	dp->reo_status_timer_running = true;
+	spin_unlock_bh(&dp->reo_cmd_lock);
+
+	mod_timer(&dp->reo_status_timer, jiffies +
+		  msecs_to_jiffies(ATH11K_REO_STATUS_POLL_TIMEOUT_MS));
+}
+
+static void ath11k_dp_stop_reo_status_timer(struct ath11k_base *ab)
+{
+	struct ath11k_dp *dp = &ab->dp;
+
+	if (!ab->hw_params.reo_status_poll)
+		return;
+
+	del_timer_sync(&dp->reo_status_timer);
+	dp->reo_status_timer_running = false;
+}
+
+static void ath11k_dp_init_reo_status_timer(struct ath11k_base *ab)
+{
+	struct ath11k_dp *dp = &ab->dp;
+
+	if (!ab->hw_params.reo_status_poll)
+		return;
+
+	timer_setup(&dp->reo_status_timer,
+		    ath11k_dp_handle_reo_status_timer, 0);
 }
 
 static void ath11k_dp_srng_common_cleanup(struct ath11k_base *ab)
@@ -354,12 +443,15 @@ static void ath11k_dp_srng_common_cleanup(struct ath11k_base *ab)
 	int i;
 
 	ath11k_dp_stop_shadow_timers(ab);
+	ath11k_dp_stop_reo_status_timer(ab);
 	ath11k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
 	ath11k_dp_srng_cleanup(ab, &dp->tcl_cmd_ring);
 	ath11k_dp_srng_cleanup(ab, &dp->tcl_status_ring);
-	for (i = 0; i < ab->hw_params.max_tx_ring; i++) {
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 		ath11k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_data_ring);
 		ath11k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_comp_ring);
+		kfree(dp->tx_ring[i].idr_pool);
+		dp->tx_ring[i].idr_pool = NULL;
 	}
 	ath11k_dp_srng_cleanup(ab, &dp->reo_reinject_ring);
 	ath11k_dp_srng_cleanup(ab, &dp->rx_rel_ring);
@@ -372,8 +464,9 @@ static int ath11k_dp_srng_common_setup(struct ath11k_base *ab)
 {
 	struct ath11k_dp *dp = &ab->dp;
 	struct hal_srng *srng;
-	int i, ret;
-	u8 tcl_num, wbm_num;
+	int i, ret, j;
+
+	ath11k_dp_init_reo_status_timer(ab);
 
 	ret = ath11k_dp_srng_setup(ab, &dp->wbm_desc_rel_ring,
 				   HAL_SW2WBM_RELEASE, 0, 0,
@@ -391,6 +484,11 @@ static int ath11k_dp_srng_common_setup(struct ath11k_base *ab)
 		goto err;
 	}
 
+	if (ab->hw_params.max_tx_ring > DP_TCL_NUM_RING_MAX) {
+		srng = &ab->hal.srng_list[dp->tcl_cmd_ring.ring_id];
+		ath11k_hal_tx_init_data_ring(ab, srng, HAL_TCL_CMD);
+	}
+
 	ret = ath11k_dp_srng_setup(ab, &dp->tcl_status_ring, HAL_TCL_STATUS,
 				   0, 0, DP_TCL_STATUS_RING_SIZE);
 	if (ret) {
@@ -398,34 +496,42 @@ static int ath11k_dp_srng_common_setup(struct ath11k_base *ab)
 		goto err;
 	}
 
-	for (i = 0; i < ab->hw_params.max_tx_ring; i++) {
-		tcl_num = ab->hw_params.hal_params->tcl2wbm_rbm_map[i].tcl_ring_num;
-		wbm_num = ab->hw_params.hal_params->tcl2wbm_rbm_map[i].wbm_ring_num;
-
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 		ret = ath11k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_data_ring,
-					   HAL_TCL_DATA, tcl_num, 0,
-					   ab->hw_params.tx_ring_size);
-		if (ret) {
-			ath11k_warn(ab, "failed to set up tcl_data ring (%d) :%d\n",
-				    i, ret);
-			goto err;
-		}
+					   HAL_TCL_DATA, i, 0,
+					   DP_TCL_DATA_RING_SIZE);
+                if (ret) {
+                        ath11k_warn(ab, "failed to set up tcl_data ring (%d) :%d\n",
+                                    i, ret);
+                        goto err;
+                }
 
-		ret = ath11k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
-					   HAL_WBM2SW_RELEASE, wbm_num, 0,
-					   DP_TX_COMP_RING_SIZE);
-		if (ret) {
-			ath11k_warn(ab, "failed to set up tcl_comp ring (%d) :%d\n",
-				    i, ret);
-			goto err;
-		}
+                ret = ath11k_dp_srng_setup(ab, &dp->tx_ring[i].tcl_comp_ring,
+                                           HAL_WBM2SW_RELEASE, i, 0,
+                                           DP_TX_COMP_RING_SIZE);
+                if (ret) {
+                        ath11k_warn(ab, "failed to set up tcl_comp ring (%d) :%d\n",
+                                    i, ret);
+                        goto err;
+                }
 
-		srng = &ab->hal.srng_list[dp->tx_ring[i].tcl_data_ring.ring_id];
-		ath11k_hal_tx_init_data_ring(ab, srng);
+                srng = &ab->hal.srng_list[dp->tx_ring[i].tcl_data_ring.ring_id];
+                ath11k_hal_tx_init_data_ring(ab, srng, HAL_TCL_DATA);
 
-		ath11k_dp_shadow_init_timer(ab, &dp->tx_ring_timer[i],
-					    ATH11K_SHADOW_DP_TIMER_INTERVAL,
-					    dp->tx_ring[i].tcl_data_ring.ring_id);
+                ath11k_dp_shadow_init_timer(ab, &dp->tx_ring_timer[i],
+                                            ATH11K_SHADOW_DP_TIMER_INTERVAL,
+                                            dp->tx_ring[i].tcl_data_ring.ring_id);
+
+                dp->tx_ring[i].idr_pool = kcalloc(DP_TX_IDR_SIZE,
+                                                  sizeof(struct idr_entry), GFP_KERNEL);
+                if (!dp->tx_ring[i].idr_pool) {
+                        ath11k_warn(ab, "failed to allocate memory for idr pool ring(%d)\n", i);
+                        ret = -ENOMEM;
+                        goto err;
+                }
+
+		for (j = 0; j < DP_TX_IDR_SIZE; j++)
+                        dp->tx_ring[i].idr_pool[j].id = -1;
 	}
 
 	ret = ath11k_dp_srng_setup(ab, &dp->reo_reinject_ring, HAL_REO_REINJECT,
@@ -498,6 +604,7 @@ static void ath11k_dp_scatter_idle_link_desc_cleanup(struct ath11k_base *ab)
 		dma_free_coherent(ab->dev, HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX,
 				  slist[i].vaddr, slist[i].paddr);
 		slist[i].vaddr = NULL;
+		ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX);
 	}
 }
 
@@ -535,6 +642,7 @@ static int ath11k_dp_scatter_idle_link_desc_setup(struct ath11k_base *ab,
 			ret = -ENOMEM;
 			goto err;
 		}
+		ATH11K_MEMORY_STATS_INC(ab, dma_alloc, HAL_WBM_IDLE_SCATTER_BUF_SIZE_MAX);
 	}
 
 	scatter_idx = 0;
@@ -589,6 +697,7 @@ ath11k_dp_link_desc_bank_free(struct ath11k_base *ab,
 					  link_desc_banks[i].vaddr_unaligned,
 					  link_desc_banks[i].paddr_unaligned);
 			link_desc_banks[i].vaddr_unaligned = NULL;
+			ATH11K_MEMORY_STATS_DEC(ab, dma_alloc, link_desc_banks[i].size);
 		}
 	}
 }
@@ -622,6 +731,7 @@ static int ath11k_dp_link_desc_bank_alloc(struct ath11k_base *ab,
 				     ((unsigned long)desc_bank[i].vaddr -
 				      (unsigned long)desc_bank[i].vaddr_unaligned);
 		desc_bank[i].size = desc_sz;
+		ATH11K_MEMORY_STATS_INC(ab, dma_alloc, desc_bank[i].size);
 	}
 
 	return 0;
@@ -688,7 +798,7 @@ int ath11k_dp_link_desc_setup(struct ath11k_base *ab,
 	u32 tot_mem_sz;
 	u32 n_link_desc_bank, last_bank_sz;
 	u32 entry_sz, align_bytes, n_entries;
-	u32 paddr;
+	dma_addr_t paddr;
 	u32 *desc;
 	int i, ret;
 
@@ -779,14 +889,16 @@ int ath11k_dp_service_srng(struct ath11k_base *ab,
 	int work_done = 0;
 	int i, j;
 	int tot_work_done = 0;
+	bool nss_offload;
 
-	for (i = 0; i < ab->hw_params.max_tx_ring; i++) {
-		if (BIT(ab->hw_params.hal_params->tcl2wbm_rbm_map[i].wbm_ring_num) &
-		    ab->hw_params.ring_mask->tx[grp_id])
-			ath11k_dp_tx_completion_handler(ab, i);
+	nss_offload = ab->nss.enabled;
+
+	if (!nss_offload && ab->hw_params.ring_mask->tx[grp_id]) {
+		i = __fls(ab->hw_params.ring_mask->tx[grp_id]);
+		ath11k_dp_tx_completion_handler(ab, i);
 	}
 
-	if (ab->hw_params.ring_mask->rx_err[grp_id]) {
+	if (!nss_offload && ab->hw_params.ring_mask->rx_err[grp_id]) {
 		work_done = ath11k_dp_process_rx_err(ab, napi, budget);
 		budget -= work_done;
 		tot_work_done += work_done;
@@ -794,7 +906,7 @@ int ath11k_dp_service_srng(struct ath11k_base *ab,
 			goto done;
 	}
 
-	if (ab->hw_params.ring_mask->rx_wbm_rel[grp_id]) {
+	if (!nss_offload && ab->hw_params.ring_mask->rx_wbm_rel[grp_id]) {
 		work_done = ath11k_dp_rx_process_wbm_err(ab,
 							 napi,
 							 budget);
@@ -805,7 +917,7 @@ int ath11k_dp_service_srng(struct ath11k_base *ab,
 			goto done;
 	}
 
-	if (ab->hw_params.ring_mask->rx[grp_id]) {
+	if (!nss_offload && ab->hw_params.ring_mask->rx[grp_id]) {
 		i =  fls(ab->hw_params.ring_mask->rx[grp_id]) - 1;
 		work_done = ath11k_dp_process_rx(ab, i, napi,
 						 budget);
@@ -823,9 +935,10 @@ int ath11k_dp_service_srng(struct ath11k_base *ab,
 				if (ab->hw_params.ring_mask->rx_mon_status[grp_id] &
 					BIT(id)) {
 					work_done =
-					ath11k_dp_rx_process_mon_rings(ab,
-								       id,
-								       napi, budget);
+						ath11k_dp_rx_process_mon_rings(ab,
+									       id,
+									       napi,
+									       budget);
 					budget -= work_done;
 					tot_work_done += work_done;
 
@@ -839,7 +952,7 @@ int ath11k_dp_service_srng(struct ath11k_base *ab,
 	if (ab->hw_params.ring_mask->reo_status[grp_id])
 		ath11k_dp_process_reo_status(ab);
 
-	for (i = 0; i < ab->num_radios; i++) {
+	for (i = 0; !nss_offload && i < ab->num_radios; i++) {
 		for (j = 0; j < ab->hw_params.num_rxdma_per_pdev; j++) {
 			int id = i * ab->hw_params.num_rxdma_per_pdev + j;
 
@@ -859,7 +972,7 @@ int ath11k_dp_service_srng(struct ath11k_base *ab,
 
 				hal_params = ab->hw_params.hal_params;
 				ath11k_dp_rxbufs_replenish(ab, id, rx_ring, 0,
-							   hal_params->rx_buf_rbm);
+							   hal_params->rx_buf_rbm, NULL);
 			}
 		}
 	}
@@ -870,7 +983,7 @@ done:
 }
 EXPORT_SYMBOL(ath11k_dp_service_srng);
 
-void ath11k_dp_pdev_free(struct ath11k_base *ab)
+void ath11k_dp_pdev_free(struct ath11k_base *ab, bool ureg_dbgfs)
 {
 	struct ath11k *ar;
 	int i;
@@ -880,7 +993,8 @@ void ath11k_dp_pdev_free(struct ath11k_base *ab)
 	for (i = 0; i < ab->num_radios; i++) {
 		ar = ab->pdevs[i].ar;
 		ath11k_dp_rx_pdev_free(ab, i);
-		ath11k_debugfs_unregister(ar);
+		if (ureg_dbgfs)
+			ath11k_debugfs_unregister(ar);
 		ath11k_dp_rx_pdev_mon_detach(ar);
 	}
 }
@@ -935,7 +1049,7 @@ int ath11k_dp_pdev_alloc(struct ath11k_base *ab)
 	return 0;
 
 err:
-	ath11k_dp_pdev_free(ab);
+	ath11k_dp_pdev_free(ab, true);
 
 	return ret;
 }
@@ -1008,9 +1122,8 @@ void ath11k_dp_vdev_tx_attach(struct ath11k *ar, struct ath11k_vif *arvif)
 	ath11k_dp_update_vdev_search(arvif);
 }
 
-static int ath11k_dp_tx_pending_cleanup(int buf_id, void *skb, void *ctx)
+static int ath11k_dp_tx_pending_cleanup(struct ath11k_base *ab, void *skb)
 {
-	struct ath11k_base *ab = ctx;
 	struct sk_buff *msdu = skb;
 
 	dma_unmap_single(ab->dev, ATH11K_SKB_CB(msdu)->paddr, msdu->len,
@@ -1024,21 +1137,32 @@ static int ath11k_dp_tx_pending_cleanup(int buf_id, void *skb, void *ctx)
 void ath11k_dp_free(struct ath11k_base *ab)
 {
 	struct ath11k_dp *dp = &ab->dp;
-	int i;
+	size_t size = 0;
+	int i, j;
+
+	size = sizeof(struct hal_wbm_release_ring) * DP_TX_COMP_RING_SIZE;
 
 	ath11k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		struct dp_tx_ring *tx_ring = &dp->tx_ring[i];
+		spin_lock_bh(&tx_ring->tx_idr_lock);
+		for(j = 0; j < DP_TX_IDR_SIZE; j++) {
+
+			if (test_and_clear_bit(j, tx_ring->idrs))
+				ath11k_dp_tx_pending_cleanup(ab, tx_ring->idr_pool[j].buf);
+		}
+
+		spin_unlock_bh(&tx_ring->tx_idr_lock);
+	}
 
 	ath11k_dp_srng_common_cleanup(ab);
 
 	ath11k_dp_reo_cmd_list_cleanup(ab);
 
-	for (i = 0; i < ab->hw_params.max_tx_ring; i++) {
-		spin_lock_bh(&dp->tx_ring[i].tx_idr_lock);
-		idr_for_each(&dp->tx_ring[i].txbuf_idr,
-			     ath11k_dp_tx_pending_cleanup, ab);
-		idr_destroy(&dp->tx_ring[i].txbuf_idr);
-		spin_unlock_bh(&dp->tx_ring[i].tx_idr_lock);
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		ATH11K_MEMORY_STATS_DEC(ab, malloc_size, size);
 		kfree(dp->tx_ring[i].tx_status);
 	}
 
@@ -1058,8 +1182,10 @@ int ath11k_dp_alloc(struct ath11k_base *ab)
 
 	INIT_LIST_HEAD(&dp->reo_cmd_list);
 	INIT_LIST_HEAD(&dp->reo_cmd_cache_flush_list);
+	INIT_LIST_HEAD(&dp->reo_cmd_update_rx_queue_list);
 	INIT_LIST_HEAD(&dp->dp_full_mon_mpdu_list);
 	spin_lock_init(&dp->reo_cmd_lock);
+	spin_lock_init(&dp->reo_cmd_update_queue_lock);
 
 	dp->reo_cmd_cache_flush_count = 0;
 
@@ -1084,7 +1210,7 @@ int ath11k_dp_alloc(struct ath11k_base *ab)
 
 	size = sizeof(struct hal_wbm_release_ring) * DP_TX_COMP_RING_SIZE;
 
-	for (i = 0; i < ab->hw_params.max_tx_ring; i++) {
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
 		idr_init(&dp->tx_ring[i].txbuf_idr);
 		spin_lock_init(&dp->tx_ring[i].tx_idr_lock);
 		dp->tx_ring[i].tcl_data_ring_id = i;
@@ -1096,9 +1222,10 @@ int ath11k_dp_alloc(struct ath11k_base *ab)
 			ret = -ENOMEM;
 			goto fail_cmn_srng_cleanup;
 		}
+		ATH11K_MEMORY_STATS_INC(ab, malloc_size, size);
 	}
 
-	for (i = 0; i < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; i++)
+	for (i = 0; i < ab->hw_params.num_dscp_tid_map_tbl; i++)
 		ath11k_hal_tx_set_dscp_tid_map(ab, i);
 
 	/* Init any SOC level resource for DP */

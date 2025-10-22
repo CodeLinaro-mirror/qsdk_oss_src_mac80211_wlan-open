@@ -6,6 +6,7 @@
 
 #include "../core.h"
 #include "wmi.h"
+#include "../ini.h"
 
 void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 				   struct ath12k_wmi_resource_config_arg *config)
@@ -56,12 +57,27 @@ void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 	config->twt_ap_sta_count = 1000;
 	config->ema_max_vap_cnt = ab->num_radios * TARGET_MAX_MBSSID_GROUPS;
 	config->ema_max_profile_period = TARGET_EMA_MAX_PROFILE_PERIOD;
+	if (ath12k_carrier_vow_optimization)
+		config->carrier_vow_optimization = ath12k_carrier_vow_optimization;
 	config->beacon_tx_offload_max_vdev += config->ema_max_vap_cnt;
 
 	if (test_bit(WMI_TLV_SERVICE_PEER_METADATA_V1A_V1B_SUPPORT, ab->wmi_ab.svc_map))
 		config->peer_metadata_ver = ATH12K_PEER_METADATA_V1B;
 
+	if (test_bit(WMI_TLV_SERVICE_SDWF_LEVEL0, ab->wmi_ab.svc_map))
+		config->qos = true;
+
+	if (test_bit(WMI_TLV_SERVICE_ATF, ab->wmi_ab.svc_map)) {
+		config->atf_config |= WMI_RSRC_CFG_FLAG1_ATF_OFFLOAD_ENABLE;
+		config->carrier_config = ath12k_cfg_get(ab,
+							ATH12K_CFG_CARRIER_PROFILE_CFG);
+	}
+
 	config->max_beacon_size = TARGET_MAX_BEACON_SIZE;
+
+	if (of_machine_is_compatible("qcom,ipq5424"))
+		config->def_flow_override = true;
+	config->rep_ul_resp = ath12k_cfg_get(ab, ATH12K_CFG_REP_UL_RESP);
 }
 
 void ath12k_wifi7_wmi_init_wcn7850(struct ath12k_base *ab,

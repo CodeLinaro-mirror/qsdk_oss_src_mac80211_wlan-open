@@ -909,6 +909,12 @@ static int ieee80211_assign_link_chanctx(struct ieee80211_link_data *link,
 	struct ieee80211_chanctx *curr_ctx = NULL;
 	bool new_idle;
 	int ret;
+	unsigned int cac_time_ms = sdata->wdev.links[link->link_id].cac_time_ms;
+	unsigned long cac_start_time = sdata->wdev.links[link->link_id].cac_start_time;
+	unsigned int total_cac_time = jiffies_to_msecs(jiffies -
+						       cac_start_time);
+	bool radar_detected;
+	bool radar_enabled;
 
 	if (WARN_ON(sdata->vif.type == NL80211_IFTYPE_NAN))
 		return -EOPNOTSUPP;
@@ -922,6 +928,13 @@ static int ieee80211_assign_link_chanctx(struct ieee80211_link_data *link,
 		drv_unassign_vif_chanctx(local, sdata, link->conf, curr_ctx);
 		conf = NULL;
 		list_del(&link->assigned_chanctx_list);
+
+		radar_detected = curr_ctx->radar_detected;
+		radar_enabled = ieee80211_chanctx_radar_required(local, curr_ctx);
+
+		if ((cac_time_ms > total_cac_time) && !radar_detected &&
+		    ieee80211_chanctx_num_assigned(local, curr_ctx) > 0)
+			curr_ctx->conf.radar_enabled = radar_enabled;
 	}
 
 	if (new_ctx) {
@@ -1314,10 +1327,11 @@ ieee80211_link_chanctx_reservation_complete(struct ieee80211_link_data *link)
 		wiphy_delayed_work_queue(sdata->local->hw.wiphy,
 					 &link->u.mgd.csa.switch_work, 0);
 		break;
+	case NL80211_IFTYPE_MONITOR:
+		break;
 	case NL80211_IFTYPE_UNSPECIFIED:
 	case NL80211_IFTYPE_AP_VLAN:
 	case NL80211_IFTYPE_WDS:
-	case NL80211_IFTYPE_MONITOR:
 	case NL80211_IFTYPE_P2P_CLIENT:
 	case NL80211_IFTYPE_P2P_GO:
 	case NL80211_IFTYPE_P2P_DEVICE:
@@ -1612,7 +1626,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 	struct ieee80211_chanctx *ctx, *ctx_tmp, *old_ctx;
 	int err, n_assigned, n_reserved, n_ready;
 	int n_ctx = 0, n_vifs_switch = 0, n_vifs_assign = 0, n_vifs_ctxless = 0;
-	struct ieee80211_sub_if_data *mon_sdata = NULL;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
@@ -1651,14 +1664,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 
 		list_for_each_entry(link, &ctx->replace_ctx->assigned_links,
 				    assigned_chanctx_list) {
-			/*
-			 * Skip monitor interfaces in the count since they don't have
-			 * reserved contexts and would cause n_assigned > n_reserved
-			 */
-			if (link->sdata->vif.type == NL80211_IFTYPE_MONITOR) {
-				mon_sdata = link->sdata;
-				continue;
-			}
 			n_assigned++;
 			if (link->reserved_chanctx) {
 				n_reserved++;
@@ -1757,7 +1762,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 	 */
 	list_for_each_entry(ctx, &local->chanctx_list, list) {
 		struct ieee80211_link_data *link, *link_tmp;
-		struct ieee80211_chan_req *new_chanreq = NULL;
 
 		if (ctx->replace_state != IEEE80211_CHANCTX_REPLACES_OTHER)
 			continue;
@@ -1790,7 +1794,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 			if (link_conf->chanreq.oper.width != link->reserved.oper.width)
 				changed = BSS_CHANGED_BANDWIDTH;
 
-			new_chanreq = &link->reserved;
 			ieee80211_link_update_chanreq(link, &link->reserved);
 			if (changed)
 				ieee80211_link_info_change_notify(sdata,
@@ -1798,29 +1801,6 @@ static int ieee80211_vif_use_reserved_switch(struct ieee80211_local *local)
 								  changed);
 
 			ieee80211_recalc_txpower(link, false, link->link_id);
-		}
-
-		/* If monitor link was present in the old ctx, update the link conf
-		 * and chan req with new ctx.
-		 * Add monitor link to new ctx assigned_links.
-		 */
-		if (mon_sdata && new_chanreq) {
-			struct cfg80211_chan_def *chandef;
-
-			link = &mon_sdata->deflink;
-			chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
-
-			if (chandef->chan &&
-			    chandef->chan->band == ctx->conf.def.chan->band) {
-				synchronize_rcu();
-				link->conf->chanreq = *new_chanreq;
-				rcu_assign_pointer(link->conf->chanctx_conf,
-						   &ctx->conf);
-				list_move(&link->assigned_chanctx_list,
-					  &ctx->assigned_links);
-
-				ieee80211_recalc_txpower(link, false, link->link_id);
-			}
 		}
 
 		ieee80211_recalc_chanctx_chantype(local, ctx);
@@ -1950,6 +1930,48 @@ void __ieee80211_link_release_channel(struct ieee80211_link_data *link,
 		ieee80211_vif_use_reserved_switch(local);
 }
 
+int ieee80211_update_chanctx_for_radio(struct ieee80211_local *local,
+				       struct ieee80211_chanctx *ctx,
+				       int radio_idx)
+{
+	struct ieee80211_chanctx *temp_ctx;
+	struct ieee80211_link_data *tmp_link;
+	struct ieee80211_sub_if_data *tmp_sdata;
+	int ret = 0;
+	bool found = false;
+
+	lockdep_assert_wiphy(local->hw.wiphy);
+
+	list_for_each_entry(temp_ctx, &local->chanctx_list, list) {
+		if (temp_ctx == ctx)
+			continue;
+		if (temp_ctx->conf.radio_idx == radio_idx) {
+			found = true;
+			break;
+		}
+	}
+
+	if (!found)
+		return 0;
+
+	list_for_each_entry(tmp_link, &temp_ctx->assigned_links, assigned_chanctx_list) {
+		tmp_sdata = tmp_link->sdata;
+		if (tmp_sdata->wdev.iftype != NL80211_IFTYPE_MONITOR)
+			continue;
+
+		sdata_info(tmp_sdata,
+			   "Switching channel for monitor iface to %d\n",
+			   ctx->conf.def.chan->center_freq);
+		ret = ieee80211_set_monitor_channel(tmp_sdata->wdev.wiphy,
+						    tmp_sdata->dev,
+						    &ctx->conf.def);
+		WARN_ON(ieee80211_add_chanctx(local, ctx));
+		break;
+	}
+
+	return ret;
+}
+
 int _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 				const struct ieee80211_chan_req *chanreq,
 				enum ieee80211_chanctx_mode mode,
@@ -1960,7 +1982,7 @@ int _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 	struct ieee80211_chanctx *ctx;
 	u8 radar_detect_width = 0;
 	bool reserved = false;
-	int radio_idx;
+	int radio_idx = -1;
 	int ret;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -1989,14 +2011,28 @@ int _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 
 	ctx = ieee80211_find_chanctx(local, link, chanreq, mode);
 	/* Note: context is now reserved */
-	if (ctx)
+	if (ctx) {
 		reserved = true;
-	else
+	} else {
+		radio_idx = cfg80211_get_hw_idx_by_chan(sdata->wdev.wiphy,
+							chanreq->oper.chan);
 		ctx = ieee80211_new_chanctx(local, chanreq, mode,
 					    assign_on_failure, radio_idx);
+	}
+
 	if (IS_ERR(ctx)) {
 		ret = PTR_ERR(ctx);
 		goto out;
+	}
+
+	/* Check if any Monitor vdev is there on the same radio with
+	 * different chanctx
+	 */
+	if (!reserved && ieee80211_hw_check(&local->hw,
+					    SUPPORTS_SINGLE_CHANNEL)) {
+		ret = ieee80211_update_chanctx_for_radio(local, ctx, radio_idx);
+		if (ret)
+			goto out;
 	}
 
 	ieee80211_link_update_chanreq(link, chanreq);

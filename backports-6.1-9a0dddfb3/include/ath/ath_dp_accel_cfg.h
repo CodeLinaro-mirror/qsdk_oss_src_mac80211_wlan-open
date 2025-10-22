@@ -8,10 +8,12 @@
 #include <linux/if_vlan.h>
 #include <net/mac80211.h>
 
+#define ATH_WIFI_NSS_PLUGIN_ENABLE 1
+
 #define ATH_SAWF_SVID_VALID 0x1
 #define ATH_SAWF_DSCP_VALID 0x2
 #define ATH_SAWF_PCP_VALID  0x4
-
+#define QCA_WIFI_NSS_PLUGINS_MSCS 1
 /*
  * wifi classifier metadata
  * ----------------------------------------------------------------------------
@@ -68,22 +70,56 @@ struct  sawf_param {
 struct	ath_dp_metadata_param {
 	uint8_t is_mlo_param_valid:1,
 		is_sawf_param_valid:1,
-		reserved:6;
+		is_scs_mscs:1,
+		reserved:5;
 	struct	mlo_param	mlo_param;
 	struct	sawf_param	sawf_param;
 };
 
+struct ath_ul_params {
+	struct net_device *dst_dev;
+	struct net_device *src_dev;
+	u8 *dst_mac;
+	u8 *src_mac;
+	u8 fw_service_id;
+	u8 rv_service_id;
+	u8 start_or_stop;
+	u32 fw_mark_metadata;
+	u32 rv_mark_metadata;
+};
+
+/**
+ * ath_mscs_get_priority_param
+ *
+ * @dst_dev - Destination netdev
+ * @src_dev - Source netdev
+ * @src_mac - Source mac address
+ * @dest_mac - Destination mac address
+ * @skb - Socket buffer
+ */
+struct ath_mscs_get_priority_param {
+	struct net_device *dst_dev;
+	struct net_device *src_dev;
+	uint8_t *src_mac;
+	uint8_t *dst_mac;
+	struct sk_buff *skb;
+};
 
 /**
  * struct ath_dp_accel_cfg_ops - dp accelerator configuraton ops
  * @ppeds_get_node_id: fetch ds node id from ath driver for given peer mac
+ * @get_mscs_priority: update skb priority based on MSCS context for a given
+ * MSCS session
  *
  */
 struct ath_dp_accel_cfg_ops {
 	bool (*ppeds_get_node_id)(struct ieee80211_vif *vif,
 				  struct wireless_dev *wdev,
 				  const u8 *peer_mac, u8 *node_id);
+
 	uint32_t (*get_metadata_info)(struct ath_dp_metadata_param *md_param);
+	void (*sdwf_ul_config)(struct ath_ul_params *params);
+	int (*get_mscs_priority)(struct ath_mscs_get_priority_param *params);
 };
 
 /**
@@ -123,4 +159,6 @@ void ath_dp_accel_cfg_ops_callback_unregister(void);
 bool ath_dp_accel_cfg_fetch_ds_node_id(struct ath_dp_accel_cfg *info);
 
 u32 ath_get_metadata_info(struct ath_dp_metadata_param *dp_metadata_param);
+void ath_sawf_uplink(struct ath_ul_params *params);
+int ath_mscs_peer_lookup_n_get_priority(struct ath_mscs_get_priority_param *params);
 #endif

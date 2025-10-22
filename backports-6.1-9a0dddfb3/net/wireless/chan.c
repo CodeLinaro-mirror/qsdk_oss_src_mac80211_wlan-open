@@ -72,8 +72,7 @@ static int cfg80211_chandef_get_width(const struct cfg80211_chan_def *c)
 	return nl80211_chan_width_to_mhz(c->width);
 }
 
-static u32 cfg80211_get_start_freq(const struct cfg80211_chan_def *chandef,
-				   u32 cf)
+u32 cfg80211_get_start_freq(const struct cfg80211_chan_def *chandef, u32 cf)
 {
 	u32 start_freq, center_freq, bandwidth;
 
@@ -88,6 +87,7 @@ static u32 cfg80211_get_start_freq(const struct cfg80211_chan_def *chandef,
 
 	return start_freq;
 }
+EXPORT_SYMBOL(cfg80211_get_start_freq);
 
 static u32 cfg80211_get_end_freq(const struct cfg80211_chan_def *chandef,
 				 u32 cf)

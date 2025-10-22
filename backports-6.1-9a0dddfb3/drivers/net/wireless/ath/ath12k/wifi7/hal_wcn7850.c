@@ -10,6 +10,9 @@
 #include "hw.h"
 #include "hal.h"
 
+extern void ath12k_wifi7_hal_mon_ops_init(struct ath12k_hal *hal,
+					  u8 hw_version);
+
 static const struct hal_srng_config hw_srng_config_template[] = {
 	/* TODO: max_rings can populated by querying HW capabilities */
 	[HAL_REO_DST] = {
@@ -19,6 +22,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_REO2SW1_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_dst",
 	},
 	[HAL_REO_EXCEPTION] = {
 		/* Designating REO2SW0 ring as exception ring.
@@ -30,6 +34,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_REO2SW0_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_exception",
 	},
 	[HAL_REO_REINJECT] = {
 		.start_ring_id = HAL_SRNG_RING_ID_SW2REO,
@@ -38,6 +43,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_REO_SW2REO_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_reinject",
 	},
 	[HAL_REO_CMD] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO_CMD,
@@ -47,6 +53,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_REO_CMD_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_cmd",
 	},
 	[HAL_REO_STATUS] = {
 		.start_ring_id = HAL_SRNG_RING_ID_REO_STATUS,
@@ -56,6 +63,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_REO_STATUS_RING_BASE_MSB_RING_SIZE,
+		.name = "Reo_status",
 	},
 	[HAL_TCL_DATA] = {
 		.start_ring_id = HAL_SRNG_RING_ID_SW2TCL1,
@@ -64,6 +72,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE,
+		.name = "Tcl_data",
 	},
 	[HAL_TCL_CMD] = {
 		.start_ring_id = HAL_SRNG_RING_ID_SW2TCL_CMD,
@@ -113,6 +122,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_WBM_IDLE_LINK_RING_BASE_MSB_RING_SIZE,
+		.name = "WBM_hw_idle_link",
 	},
 	[HAL_SW2WBM_RELEASE] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WBM_SW0_RELEASE,
@@ -121,6 +131,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_SW2WBM_RELEASE_RING_BASE_MSB_RING_SIZE,
+		.name = "sw2wbm_release",
 	},
 	[HAL_WBM2SW_RELEASE] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WBM2SW0_RELEASE,
@@ -129,6 +140,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_WBM2SW_RELEASE_RING_BASE_MSB_RING_SIZE,
+		.name = "wbm2sw_release",
 	},
 	[HAL_RXDMA_BUF] = {
 		.start_ring_id = HAL_SRNG_SW2RXDMA_BUF0,
@@ -137,6 +149,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_DMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.name = "Rxdma_buf",
 	},
 	[HAL_RXDMA_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_RXDMA2SW0,
@@ -145,6 +158,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.name = "Rxdma_dst",
 	},
 	[HAL_RXDMA_MONITOR_BUF] = {
 		.start_ring_id = HAL_SRNG_SW2RXMON_BUF0,
@@ -153,6 +167,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.name = "Rxdma_monitor_buf",
 	},
 	[HAL_RXDMA_MONITOR_STATUS] = { 0, },
 	[HAL_RXDMA_MONITOR_DESC] = { 0, },
@@ -195,6 +210,7 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
+		.name = "Rxdma_monitor_dst",
 	},
 	[HAL_TX_MONITOR_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_TXMON2SW0_BUF0,
@@ -411,16 +427,29 @@ void ath12k_wifi7_hal_extract_rx_desc_data_wcn7850(struct hal_rx_desc_data *rx_d
 	rx_desc_data->l4_csum_fail =
 		ath12k_wifi7_hal_rx_h_l4_cksum_fail_wcn7850(rx_desc);
 	rx_desc_data->tid = ath12k_wifi7_hal_rx_h_tid_wcn7850(rx_desc);
-	rx_desc_data->mac_addr2_valid =
-		ath12k_wifi7_hal_rxdesc_mac_addr2_valid_wcn7850(rx_desc);
-	rx_desc_data->mpdu_start_addr2 =
-		ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850(rx_desc);
 	rx_desc_data->mesh_ctrl_present =
 		ath12k_wifi7_hal_rx_h_mesh_ctl_present_wcn7850(rx_desc);
 	rx_desc_data->seq_ctl_valid =
 			ath12k_wifi7_hal_rx_h_seq_ctrl_valid_wcn7850(rx_desc);
 	rx_desc_data->fc_valid = ath12k_wifi7_hal_rx_h_fc_valid_wcn7850(rx_desc);
 	rx_desc_data->enctype = ath12k_wifi7_hal_rx_h_enctype_wcn7850(rx_desc);
+}
+
+void ath12k_wifi7_hal_extract_rx_spd_data_wcn7850(struct hal_rx_spd_data *rx_info,
+                                                 struct hal_rx_desc *rx_desc, int set)
+{
+	if (set == 0) {
+		rx_info->tlv_info.decap = ath12k_wifi7_hal_rx_h_decap_type_wcn7850(rx_desc);
+		rx_info->tlv_info.mesh_ctrl_present =
+			ath12k_wifi7_hal_rx_h_mesh_ctl_present_wcn7850(rx_desc);
+	} else if (set == 1) {
+		rx_info->tlv_info.freq = ath12k_wifi7_hal_rx_h_freq_wcn7850(rx_desc);
+		rx_info->tlv_info.pkt_type = ath12k_wifi7_hal_rx_h_pkt_type_wcn7850(rx_desc);
+		rx_info->tlv_info.bw = ath12k_wifi7_hal_rx_h_rx_bw_wcn7850(rx_desc);
+		rx_info->tlv_info.rate_mcs = ath12k_wifi7_hal_rx_h_rate_mcs_wcn7850(rx_desc);
+		rx_info->tlv_info.nss = hweight8(ath12k_wifi7_hal_rx_h_nss_wcn7850(rx_desc));
+		rx_info->tlv_info.sgi = ath12k_wifi7_hal_rx_h_sgi_wcn7850(rx_desc);
+	}
 }
 
 static int ath12k_wifi7_hal_srng_create_config_wcn7850(struct ath12k_hal *hal)
@@ -547,18 +576,18 @@ static int ath12k_wifi7_hal_srng_create_config_wcn7850(struct ath12k_hal *hal)
 	return 0;
 }
 
-static const struct ath12k_hal_tcl_to_wbm_rbm_map
-ath12k_wifi7_hal_tcl_to_wbm_rbm_map_wcn7850[DP_TCL_NUM_RING_MAX] = {
+static const struct ath12k_hal_tcl_to_cmp_rbm_map
+ath12k_wifi7_hal_tcl_to_cmp_rbm_map_wcn7850[DP_TCL_NUM_RING_MAX] = {
 	{
-		.wbm_ring_num = 0,
+		.cmp_ring_num = 0,
 		.rbm_id = HAL_RX_BUF_RBM_SW0_BM,
 	},
 	{
-		.wbm_ring_num = 2,
+		.cmp_ring_num = 2,
 		.rbm_id = HAL_RX_BUF_RBM_SW2_BM,
 	},
 	{
-		.wbm_ring_num = 4,
+		.cmp_ring_num = 4,
 		.rbm_id = HAL_RX_BUF_RBM_SW4_BM,
 	},
 };
@@ -569,13 +598,18 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_wcn7850 = {
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN |
 			    HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN,
+	.link_desc_size = HAL_LINK_DESC_SIZE,
+	.num_mpdus_per_link_desc = HAL_NUM_MPDUS_PER_LINK_DESC,
+	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
+	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
+	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
 };
 
 static
 int ath12k_wifi7_hal_init_wcn7850(struct ath12k_hal *hal, u8 hw_version)
 {
 	hal->regs = ath12k_wifi7_hw_ver_map[hw_version].hw_regs;
-	hal->tcl_to_wbm_rbm_map = ath12k_wifi7_hal_tcl_to_wbm_rbm_map_wcn7850;
+	hal->tcl_to_cmp_rbm_map = ath12k_wifi7_hal_tcl_to_cmp_rbm_map_wcn7850;
 	hal->hal_ops = &hal_wcn7850_ops;
 	hal->hal_desc_sz = ath12k_wifi7_hal_get_rx_desc_size_wcn7850();
 	hal->hal_params = ath12k_wifi7_hw_ver_map[hw_version].hal_params;
@@ -597,6 +631,8 @@ const struct hal_ops hal_wcn7850_ops = {
 			ath12k_wifi7_hal_rx_get_msdu_src_link_wcn7850,
 	.extract_rx_desc_data =
 			ath12k_wifi7_hal_extract_rx_desc_data_wcn7850,
+	.extract_rx_spd_data =
+		ath12k_wifi7_hal_extract_rx_spd_data_wcn7850,
 	.ce_dst_setup = ath12k_wifi7_hal_ce_dst_setup,
 	.srng_src_hw_init = ath12k_wifi7_hal_srng_src_hw_init,
 	.srng_dst_hw_init = ath12k_wifi7_hal_srng_dst_hw_init,
@@ -609,6 +645,7 @@ const struct hal_ops hal_wcn7850_ops = {
 	.ce_dst_status_get_length = ath12k_wifi7_hal_ce_dst_status_get_length,
 	.set_link_desc_addr = ath12k_wifi7_hal_set_link_desc_addr,
 	.tx_set_dscp_tid_map = ath12k_wifi7_hal_tx_set_dscp_tid_map,
+	.tx_update_dscp_tid_map = ath12k_wifi7_hal_tx_update_dscp_tid_map,
 	.tx_configure_bank_register =
 		ath12k_wifi7_hal_tx_configure_bank_register,
 	.write_reoq_lut_addr = ath12k_wifi7_hal_write_reoq_lut_addr,
@@ -619,9 +656,17 @@ const struct hal_ops hal_wcn7850_ops = {
 	.reo_qdesc_setup = ath12k_wifi7_hal_reo_qdesc_setup,
 	.reo_init_cmd_ring = ath12k_wifi7_hal_reo_init_cmd_ring,
 	.reo_hw_setup = ath12k_wifi7_hal_reo_hw_setup,
-	.rx_buf_addr_info_set = ath12k_wifi7_hal_rx_buf_addr_info_set,
-	.rx_buf_addr_info_get = ath12k_wifi7_hal_rx_buf_addr_info_get,
 	.cc_config = ath12k_wifi7_hal_cc_config,
 	.get_idle_link_rbm = ath12k_wifi7_hal_get_idle_link_rbm,
 	.reo_shared_qaddr_cache_clear = ath12k_wifi7_hal_reo_shared_qaddr_cache_clear,
+	.rxdesc_get_mpdu_start_addr2 =
+			ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_wcn7850,
+	.rx_h_is_decrypted = ath12k_wifi7_hal_rx_h_is_decrypted_wcn7850,
+	.rx_desc_get_mpdu_ppdu_id = ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_wcn7850,
+	.rx_desc_get_mpdu_start_tag = ath12k_wifi7_hal_rx_desc_get_mpdu_start_tag_wcn7850,
+	.rx_reo_ent_buf_paddr_get = ath12k_wifi7_hal_rx_reo_ent_buf_paddr_get,
+	.rx_msdu_list_get = ath12k_wifi7_hal_rx_msdu_list_get,
+	.rx_h_l3pad_get = ath12k_wifi7_hal_rx_h_l3pad_wcn7850,
+	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
+	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
 };

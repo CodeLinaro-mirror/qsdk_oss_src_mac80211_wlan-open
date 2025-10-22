@@ -47,7 +47,7 @@ void ath12k_fse_deinit(struct ath12k_base *ab)
 void *ath12k_sfe_get_ab_from_vif(struct ieee80211_vif *vif,
 				 const u8 *peer_mac)
 {
-	struct ath12k_base *ab = NULL;
+	struct ath12k_base *ab = NULL, *resultant_ab = NULL;
 	struct ath12k *ar;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_vif *ahvif;
@@ -70,11 +70,14 @@ void *ath12k_sfe_get_ab_from_vif(struct ieee80211_vif *vif,
 		if (!ar)
 			continue;
 		ab = ar->ab;
-		spin_lock_bh(&ab->base_lock);
+		spin_lock_bh(&ab->dp->dp_lock);
 		peer = ath12k_dp_link_peer_find_by_addr(ath12k_ab_to_dp(ab), peer_mac);
-		spin_unlock_bh(&ab->base_lock);
 		if (peer)
-			return ab;
+			resultant_ab = ab;
+		spin_unlock_bh(&ab->dp->dp_lock);
+
+		if (resultant_ab)
+			return resultant_ab;
 	}
 	return ab;
 }

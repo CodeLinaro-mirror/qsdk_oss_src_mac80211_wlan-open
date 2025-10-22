@@ -34,6 +34,12 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_SHADOW_REG(x) (HAL_SHADOW_BASE_ADDR + (4 * (x)))
 #define HAL_REO_QDESC_MAX_PEERID               8191
 
+#define HAL_LINK_DESC_SIZE			(32 << 2)
+#define HAL_NUM_MPDUS_PER_LINK_DESC		6
+#define HAL_NUM_TX_MSDUS_PER_LINK_DESC		7
+#define HAL_NUM_RX_MSDUS_PER_LINK_DESC		6
+#define HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC	12
+
 /* WCSS Relative address */
 #define HAL_SEQ_WCSS_CMEM_OFFSET		0x00100000
 #define HAL_SEQ_WCSS_UMAC_OFFSET		0x00a00000
@@ -167,8 +173,19 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_REO1_AGING_THRESH_IX_2(hal)	((hal)->regs->hal_reo1_aging_thres_ix2)
 #define HAL_REO1_AGING_THRESH_IX_3(hal)	((hal)->regs->hal_reo1_aging_thres_ix3)
 
+#define HAL_REO1_RING_MISC_OFFSET \
+                (HAL_REO1_RING_MISC(hal) - HAL_REO1_RING_BASE_LSB(hal))
+
 #define HAL_REO1_REO2PPE_DST_VAL		0x2000
 #define HAL_REO1_REO2PPE_DST_INFO		0x00000cf0
+
+#define HAL_WIFI7_HASH_ROUTING_RING_TCL 0
+#define HAL_WIFI7_HASH_ROUTING_RING_SW1 1
+#define HAL_WIFI7_HASH_ROUTING_RING_SW2 2
+#define HAL_WIFI7_HASH_ROUTING_RING_SW3 3
+#define HAL_WIFI7_HASH_ROUTING_RING_SW4 4
+#define HAL_WIFI7_HASH_ROUTING_RING_REL 5
+#define HAL_WIFI7_HASH_ROUTING_RING_FW  6
 
 /* REO2SW(x) R2 ring pointers (head/tail) address */
 /* REO2SW(x) R2 ring pointers (head/tail) address */
@@ -332,10 +349,12 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_REO1_RING_PRDR_INT_SETUP_BATCH_COUNTER_THOLD GENMASK(14, 0)
 #define HAL_REO1_RING_MSI1_BASE_MSB_MSI1_ENABLE		BIT(8)
 #define HAL_REO1_RING_MSI1_BASE_MSB_ADDR		GENMASK(7, 0)
+#define HAL_REO1_MISC_CTL_SPARE_CTRL_DST_RING		BIT(5)
 #define HAL_REO1_MISC_CTL_FRAG_DST_RING			GENMASK(20, 17)
 #define HAL_REO1_MISC_CTL_BAR_DST_RING			GENMASK(24, 21)
 #define HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE		BIT(2)
 #define HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE		BIT(3)
+#define HAL_REO1_GEN_ENABLE_INVLDT_CACHE_FOR_ZERO_VLD	BIT(28)
 #define HAL_REO1_SW_COOKIE_CFG_CMEM_BASE_ADDR_MSB	GENMASK(7, 0)
 #define HAL_REO1_SW_COOKIE_CFG_COOKIE_PPT_MSB		GENMASK(12, 8)
 #define HAL_REO1_SW_COOKIE_CFG_COOKIE_SPT_MSB		GENMASK(17, 13)
@@ -394,6 +413,8 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 
 #define HAL_RX_MAX_BA_WINDOW	256
 
+#define MIN_VI_REORDER_TIMEOUT_MS 100
+#define MAX_VI_REORDER_TIMEOUT_MS 600
 #define HAL_DEFAULT_BE_BK_VI_REO_TIMEOUT_USEC	(100 * 1000)
 #define HAL_DEFAULT_VO_REO_TIMEOUT_USEC		(40 * 1000)
 
@@ -481,6 +502,106 @@ struct hal_wbm_idle_scatter_list {
 	dma_addr_t paddr;
 	struct hal_wbm_link_desc *vaddr;
 };
+
+struct rx_mpdu_desc_info {
+	u32 msdu_count                            :  8,
+	    fragment_flag                         :  1,
+	    mpdu_retry_bit                        :  1,
+	    ampdu_flag                            :  1,
+	    bar_frame                             :  1,
+	    pn_fields_contain_valid_info          :  1,
+	    raw_mpdu                              :  1,
+	    more_fragment_flag                    :  1,
+	    vdev_id                               :  8,
+	    reserved				  :  2,
+	    flow_idx_invalid                      :  1,
+	    flow_idx_timeout                      :  1,
+	    mpdu_qos_control_valid                :  1,
+	    tid                                   :  4;
+	union {
+		u32 peer_meta_data;
+		struct {
+			u32 peer_id			  : 16,
+			    flow_metadata                 : 16;
+		} flow_info;
+	};
+};
+
+struct rx_msdu_desc_info {
+	u32 first_msdu		        :  1,
+	    last_msdu 		        :  1,
+	    msdu_continuation           :  1,
+	    msdu_length                 : 14,
+	    msdu_drop                   :  1,
+	    sa_is_valid                 :  1,
+	    da_is_valid                 :  1,
+	    da_is_mcbc                  :  1,
+	    l3_header_padding_msb       :  1,
+	    tcp_udp_chksum_fail         :  1,
+	    ip_chksum_fail              :  1,
+	    fr_ds                       :  1,
+	    to_ds                       :  1,
+	    intra_bss                   :  1,
+	    dest_chip_id                :  2,
+	    ra_is_mcbc			:  1,
+	    reserved			:  2;
+};
+
+struct rx_tlv_info_1 {
+	u32 freq;
+	u32 decap			: 2,
+	    rate_mcs			: 4,
+	    nss			   	: 7,
+	    sgi			   	: 2,
+	    is_decrypted		: 1,
+	    mesh_ctrl_present	   	: 1,
+	    pkt_type			: 4,
+	    bw			   	: 3;
+};
+
+struct hal_rx_spd_data {
+	union {
+		u64 info4;
+		u8 *vaddr;
+	};
+	union {
+		u64 info3;
+		struct sk_buff *msdu;
+	};
+
+	union {
+		u64 info1;
+		struct rx_mpdu_desc_info rx_mpdu_info;
+	};
+
+	union {
+		u32 info2;
+		struct rx_msdu_desc_info rx_msdu_info;
+	};
+
+	struct rx_tlv_info_1 tlv_info;
+
+	union {
+		u32 info0;
+		struct {
+			u32 reo_dest_buffer_type                :  1,
+			    reo_push_reason                     :  2,
+			    reo_error_code                      :  5,
+			    captured_msdu_data_size             :  4,
+			    sw_exception                        :  1,
+			    src_link_id                         :  3,
+			    reo_destination_struct_signature    :  4,
+			    ring_id                             :  8,
+			    looping_count                       :  4;
+		};
+	};
+	u64 rsvd0;
+	u64 rsvd1;
+	u64 rsvd2;
+} __packed;
+
+static_assert(sizeof(struct hal_rx_spd_data) == 64,
+	      "size of struct hal_rx_spd_data is not 64 bytes!");
 
 struct hal_reo_status_queue_stats {
 	u16 ssn;
@@ -575,9 +696,9 @@ extern const struct hal_ops hal_wcn7850_ops;
 void ath12k_wifi7_hal_ce_dst_setup(struct ath12k_base *ab,
 				   struct hal_srng *srng, int ring_num);
 void ath12k_wifi7_hal_srng_dst_hw_init(struct ath12k_base *ab,
-				       struct hal_srng *srng);
+				       struct hal_srng *srng, u32 restore_idx);
 void ath12k_wifi7_hal_srng_src_hw_init(struct ath12k_base *ab,
-				       struct hal_srng *srng);
+				       struct hal_srng *srng, u32 restore_idx);
 void ath12k_wifi7_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 					     struct hal_srng *srng,
 					     enum hal_ring_type type, int ring_num);
@@ -591,6 +712,8 @@ u32 ath12k_wifi7_hal_ce_get_desc_size(enum hal_ce_desc type);
 void ath12k_wifi7_hal_cc_config(struct ath12k_base *ab);
 enum hal_rx_buf_return_buf_manager
 ath12k_wifi7_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
+void ath12k_wifi7_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type type,
+				  struct hal_srng *srng, uint32_t *hp, uint32_t *tp);
 void ath12k_wifi7_hal_ce_src_set_desc(struct hal_ce_srng_src_desc *desc,
 				      dma_addr_t paddr,
 				      u32 len, u32 id, u8 byte_swap_data);
@@ -615,7 +738,7 @@ void ath12k_wifi7_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab,
 					     dma_addr_t paddr);
 void ath12k_wifi7_hal_reo_init_cmd_ring(struct ath12k_base *ab,
 					struct hal_srng *srng);
-void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab, u32 ring_hash_map);
+void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab);
 void
 ath12k_wifi7_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 				       u32 *num_msdus, u32 *msdu_cookies,
@@ -627,4 +750,84 @@ void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 
 void ath12k_wifi7_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 						     u32 ppeds_idx_map_val);
+void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
+				      struct hal_srng *srng);
+void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
+					 u32 ba_window_size, u8 tid);
+
+static inline
+void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
+{
+	void *desc;
+	u32 next_hp;
+
+	/* TODO: Using % is expensive, but we have to do this since size of some
+	 * SRNG rings is not power of 2 (due to descriptor sizes). Need to see
+	 * if separate function is defined for rings having power of 2 ring size
+	 * (TCL2SW, REO2SW, SW2RXDMA and CE rings) so that we can avoid the
+	 * overhead of % by using mask (with &).
+	 */
+	next_hp = (srng->u.src_ring.hp + srng->entry_size) % srng->ring_size;
+
+	if (next_hp == srng->u.src_ring.cached_tp) {
+		srng->u.src_ring.cached_tp = *(volatile u32 *)srng->u.src_ring.tp_addr;
+		if (next_hp == srng->u.src_ring.cached_tp)
+			return NULL;
+	}
+
+	desc = srng->ring_base_vaddr + srng->u.src_ring.hp;
+	srng->u.src_ring.hp = next_hp;
+
+	/* TODO: Reap functionality is not used by all rings. If particular
+	 * ring does not use reap functionality, we need not update reap_hp
+	 * with next_hp pointer. Need to make sure a separate function is used
+	 * before doing any optimization by removing below code updating
+	 * reap_hp.
+	 */
+	srng->u.src_ring.reap_hp = next_hp;
+
+	return desc;
+}
+
+/*
+ * ath12k_hal_srng_access_umac_src_ring_end_nolock_fast can be used
+ * only when the calling context tries to fill 1 entry of the ring at a time
+ */
+static inline
+void ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(struct hal_srng *srng)
+{
+	writel_relaxed(srng->u.src_ring.hp, srng->u.src_ring.hp_addr_direct);
+	srng->timestamp = jiffies;
+}
+static inline
+void ath12k_hal_srng_access_dst_ring_begin_nolock(struct ath12k_base *ab,
+						  struct hal_srng *srng)
+{
+	srng->u.dst_ring.cached_hp = *srng->u.dst_ring.hp_addr;
+}
+static inline
+void ath12k_hal_srng_access_dst_ring_end_nolock(struct hal_srng *srng)
+{
+	srng->u.dst_ring.last_hp = *srng->u.dst_ring.hp_addr;
+	writel_relaxed(srng->u.dst_ring.tp, srng->u.dst_ring.tp_addr_direct);
+	srng->timestamp = jiffies;
+}
+static inline
+void *ath12k_hal_srng_dst_peek_nolock(struct hal_srng *srng)
+{
+	if (srng->u.dst_ring.tp != srng->u.dst_ring.cached_hp)
+		return (srng->ring_base_vaddr + srng->u.dst_ring.tp);
+
+	return NULL;
+}
+
+static inline
+void *ath12k_hal_srng_dst_next_peek_nolock(struct hal_srng *srng)
+{
+	if ((srng->u.dst_ring.tp +  srng->entry_size) != srng->u.dst_ring.cached_hp)
+		return (srng->ring_base_vaddr + (srng->u.dst_ring.tp +  srng->entry_size));
+
+	return NULL;
+}
+
 #endif

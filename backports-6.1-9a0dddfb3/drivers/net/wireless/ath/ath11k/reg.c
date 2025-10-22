@@ -117,109 +117,36 @@ ath11k_reg_notifier(struct wiphy *wiphy, struct regulatory_request *request)
 
 int ath11k_reg_update_chan_list(struct ath11k *ar, bool wait)
 {
-	struct ieee80211_supported_band **bands;
-	struct scan_chan_list_params *params;
-	struct ieee80211_channel *channel;
-	struct ieee80211_hw *hw = ar->hw;
-	struct channel_param *ch;
-	enum nl80211_band band;
-	int num_channels = 0;
-	int i, ret = 0;
+	int left;
+
+	if (wait && ar->state_11d != ATH11K_11D_IDLE) {
+		left = wait_for_completion_timeout(&ar->completed_11d_scan,
+						   ATH11K_SCAN_TIMEOUT_HZ);
+		if (!left) {
+			ath11k_dbg(ar->ab, ATH11K_DBG_REG,
+				   "failed to receive 11d scan complete: timed out\n");
+			ar->state_11d = ATH11K_11D_IDLE;
+		}
+		ath11k_dbg(ar->ab, ATH11K_DBG_REG,
+			   "11d scan wait left time %d\n", left);
+	}
+
+	if (wait &&
+	    (ar->scan.state == ATH11K_SCAN_STARTING ||
+	     ar->scan.state == ATH11K_SCAN_RUNNING)) {
+		left = wait_for_completion_timeout(&ar->scan.completed,
+						   ATH11K_SCAN_TIMEOUT_HZ);
+		if (!left)
+			ath11k_dbg(ar->ab, ATH11K_DBG_REG,
+				   "failed to receive hw scan complete: timed out\n");
+
+		ath11k_dbg(ar->ab, ATH11K_DBG_REG,
+			   "hw scan wait left time %d\n", left);
+	}
 
 	if (ar->state == ATH11K_STATE_RESTARTING)
 		return 0;
-
-	bands = hw->wiphy->bands;
-	for (band = 0; band < NUM_NL80211_BANDS; band++) {
-		if (!bands[band])
-			continue;
-
-		for (i = 0; i < bands[band]->n_channels; i++) {
-			if (bands[band]->channels[i].flags &
-			    IEEE80211_CHAN_DISABLED)
-				continue;
-
-			num_channels++;
-		}
-	}
-
-	if (WARN_ON(!num_channels))
-		return -EINVAL;
-
-	params = kzalloc(struct_size(params, ch_param, num_channels),
-			 GFP_KERNEL);
-	if (!params)
-		return -ENOMEM;
-
-	params->pdev_id = ar->pdev->pdev_id;
-	params->nallchans = num_channels;
-
-	ch = params->ch_param;
-
-	for (band = 0; band < NUM_NL80211_BANDS; band++) {
-		if (!bands[band])
-			continue;
-
-		for (i = 0; i < bands[band]->n_channels; i++) {
-			channel = &bands[band]->channels[i];
-
-			if (channel->flags & IEEE80211_CHAN_DISABLED)
-				continue;
-
-			/* TODO: Set to true/false based on some condition? */
-			ch->allow_ht = true;
-			ch->allow_vht = true;
-			ch->allow_he = true;
-
-			ch->dfs_set =
-				!!(channel->flags & IEEE80211_CHAN_RADAR);
-			ch->is_chan_passive = !!(channel->flags &
-						IEEE80211_CHAN_NO_IR);
-			ch->is_chan_passive |= ch->dfs_set;
-			ch->mhz = channel->center_freq;
-			ch->cfreq1 = channel->center_freq;
-			ch->minpower = 0;
-			ch->maxpower = channel->max_power * 2;
-			ch->maxregpower = channel->max_reg_power * 2;
-			ch->antennamax = channel->max_antenna_gain * 2;
-
-			/* TODO: Use appropriate phymodes */
-			if (channel->band == NL80211_BAND_2GHZ)
-				ch->phy_mode = MODE_11G;
-			else
-				ch->phy_mode = MODE_11A;
-
-			if (channel->band == NL80211_BAND_6GHZ &&
-			    cfg80211_channel_is_psc(channel))
-				ch->psc_channel = true;
-
-			ath11k_dbg(ar->ab, ATH11K_DBG_WMI,
-				   "mac channel [%d/%d] freq %d maxpower %d regpower %d antenna %d mode %d\n",
-				   i, params->nallchans,
-				   ch->mhz, ch->maxpower, ch->maxregpower,
-				   ch->antennamax, ch->phy_mode);
-
-			ch++;
-			/* TODO: use quarrter/half rate, cfreq12, dfs_cfreq2
-			 * set_agile, reg_class_idx
-			 */
-		}
-	}
-
-	if (wait) {
-		spin_lock_bh(&ar->data_lock);
-		list_add_tail(&params->list, &ar->channel_update_queue);
-		spin_unlock_bh(&ar->data_lock);
-
-		queue_work(ar->ab->workqueue, &ar->channel_update_work);
-
-		return 0;
-	}
-
-	ret = ath11k_wmi_send_scan_chan_list_cmd(ar, params);
-	kfree(params);
-
-	return ret;
+	return ath11k_wmi_update_scan_chan_list(ar, NULL);
 }
 
 static void ath11k_copy_regd(struct ieee80211_regdomain *regd_orig,
@@ -305,10 +232,10 @@ ath11k_map_fw_dfs_region(enum ath11k_dfs_region dfs_region)
 	case ATH11K_DFS_REG_CN:
 		return NL80211_DFS_FCC;
 	case ATH11K_DFS_REG_ETSI:
-	case ATH11K_DFS_REG_KR:
 		return NL80211_DFS_ETSI;
 	case ATH11K_DFS_REG_MKK:
 	case ATH11K_DFS_REG_MKK_N:
+	case ATH11K_DFS_REG_KR:
 		return NL80211_DFS_JP;
 	default:
 		return NL80211_DFS_UNSET;
@@ -481,6 +408,10 @@ ath11k_regd_intersect(struct ieee80211_regdomain *default_regd,
 	return new_regd;
 }
 
+/* TODO: API ath11k_reg_can_intersect() to handle whether two
+ * ieee80211_reg_rules can intersect or not based on their
+ * frequency range and power mode. */
+
 static const char *
 ath11k_reg_get_regdom_str(enum nl80211_dfs_regions dfs_region)
 {
@@ -522,13 +453,15 @@ ath11k_reg_adjust_bw(u16 start_freq, u16 end_freq, u16 max_bw)
 static void
 ath11k_reg_update_rule(struct ieee80211_reg_rule *reg_rule, u32 start_freq,
 		       u32 end_freq, u32 bw, u32 ant_gain, u32 reg_pwr,
-		       s8 psd, u32 reg_flags)
+		       s8 psd, u32 reg_flags,
+		       enum nl80211_regulatory_power_modes pwr_mode)
 {
 	reg_rule->freq_range.start_freq_khz = MHZ_TO_KHZ(start_freq);
 	reg_rule->freq_range.end_freq_khz = MHZ_TO_KHZ(end_freq);
 	reg_rule->freq_range.max_bandwidth_khz = MHZ_TO_KHZ(bw);
 	reg_rule->power_rule.max_antenna_gain = DBI_TO_MBI(ant_gain);
 	reg_rule->power_rule.max_eirp = DBM_TO_MBM(reg_pwr);
+	reg_rule->mode = pwr_mode;
 	reg_rule->psd = psd;
 	reg_rule->flags = reg_flags;
 }
@@ -559,7 +492,7 @@ ath11k_reg_update_weather_radar_band(struct ath11k_base *ab,
 				       reg_rule->start_freq,
 				       ETSI_WEATHER_RADAR_BAND_LOW, bw,
 				       reg_rule->ant_gain, reg_rule->reg_power,
-				       reg_rule->psd_eirp, flags);
+				       reg_rule->psd_eirp, flags, 0);
 
 		ath11k_dbg(ab, ATH11K_DBG_REG,
 			   "\t%d. (%d - %d @ %d) (%d, %d) (%d ms) (FLAGS %d)\n",
@@ -580,7 +513,7 @@ ath11k_reg_update_weather_radar_band(struct ath11k_base *ab,
 
 		ath11k_reg_update_rule(regd->reg_rules + i, start_freq,
 				       end_freq, bw, reg_rule->ant_gain,
-				       reg_rule->reg_power, reg_rule->psd_eirp, flags);
+				       reg_rule->reg_power, reg_rule->psd_eirp, flags, 0);
 
 		regd->reg_rules[i].dfs_cac_ms = ETSI_WEATHER_RADAR_BAND_CAC_TIMEOUT;
 
@@ -601,7 +534,7 @@ ath11k_reg_update_weather_radar_band(struct ath11k_base *ab,
 				       ETSI_WEATHER_RADAR_BAND_HIGH,
 				       reg_rule->end_freq, bw,
 				       reg_rule->ant_gain, reg_rule->reg_power,
-				       reg_rule->psd_eirp, flags);
+				       reg_rule->psd_eirp, flags, 0);
 
 		ath11k_dbg(ab, ATH11K_DBG_REG,
 			   "\t%d. (%d - %d @ %d) (%d, %d) (%d ms) (FLAGS %d)\n",
@@ -629,53 +562,100 @@ ath11k_reg_ap_pwr_convert(enum ieee80211_ap_reg_power power_type)
 	}
 }
 
+static void ath11k_copy_reg_rule(struct ath11k_reg_rule *ath11k_reg_rule,
+				 struct cur_reg_rule *reg_rule)
+{
+	if (!ath11k_reg_rule->start_freq)
+		ath11k_reg_rule->start_freq = reg_rule->start_freq;
+
+	if ((!ath11k_reg_rule->end_freq) ||
+	    (ath11k_reg_rule->end_freq < reg_rule->end_freq))
+		ath11k_reg_rule->end_freq = reg_rule->end_freq;
+}
+
+enum wmi_reg_6ghz_ap_type
+ath11k_ieee80211_ap_pwr_type_convert(enum ieee80211_ap_reg_power power_type)
+{
+        switch (power_type) {
+        case IEEE80211_REG_LPI_AP:
+                return WMI_REG_INDOOR_AP;
+        case IEEE80211_REG_SP_AP:
+                return WMI_REG_STANDARD_POWER_AP;
+        case IEEE80211_REG_VLP_AP:
+                return WMI_REG_VERY_LOW_POWER_AP;
+        default:
+                return WMI_REG_MAX_AP_TYPE;
+        }
+}
+
+static struct cur_reg_rule
+*ath11k_get_active_6g_reg_rule(struct cur_regulatory_info *reg_info,
+			       u32 *max_bw_6g, u32 *max_elements,
+			       enum nl80211_regulatory_power_modes *pwr_mode)
+{
+	struct cur_reg_rule *reg_rule = NULL;
+	u8 i = 0, j = 0;
+
+	for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++) {
+		if (reg_info->num_6ghz_rules_ap[i]) {
+			*max_elements = reg_info->num_6ghz_rules_ap[i];
+			reg_rule = reg_info->reg_rules_6ghz_ap_ptr[i];
+			*max_bw_6g = reg_info->max_bw_6ghz_ap[i];
+			reg_info->num_6ghz_rules_ap[i] = 0;
+			*pwr_mode = i;
+			return reg_rule;
+		}
+	}
+
+	for (i = 0; i < WMI_REG_MAX_CLIENT_TYPE; i++) {
+		for (j = 0; j < WMI_REG_CURRENT_MAX_AP_TYPE; j++) {
+			if (reg_info->num_6ghz_rules_client[j][i]) {
+				*max_elements = reg_info->num_6ghz_rules_client[j][i];
+				reg_rule = reg_info->reg_rules_6ghz_client_ptr[j][i];
+				*max_bw_6g = reg_info->max_bw_6ghz_client[j][i];
+				reg_info->num_6ghz_rules_client[j][i] = 0;
+				*pwr_mode = WMI_REG_CURRENT_MAX_AP_TYPE * (i + 1)  + j;
+				return reg_rule;
+			}
+		}
+	}
+
+	return reg_rule;
+}
+
 struct ieee80211_regdomain *
 ath11k_reg_build_regd(struct ath11k_base *ab,
-		      struct cur_regulatory_info *reg_info, bool intersect,
-		      enum wmi_vdev_type vdev_type,
-		      enum ieee80211_ap_reg_power power_type)
+		      struct cur_regulatory_info *reg_info, bool intersect)
 {
 	struct ieee80211_regdomain *tmp_regd, *default_regd, *new_regd = NULL;
-	struct cur_reg_rule *reg_rule, *reg_rule_6ghz;
+	struct cur_reg_rule *reg_rule, *reg_rule_6g;
 	u8 i = 0, j = 0, k = 0;
+	u32 max_elements = 0;
 	u8 num_rules;
 	u16 max_bw;
-	u32 flags, reg_6ghz_number, max_bw_6ghz;
+	u32 flags, reg_6g_number = 0, max_bw_6g = 0;
 	char alpha2[3];
+	bool reg_6g_itr_set = false;
+	enum nl80211_regulatory_power_modes pwr_mode;
 
 	num_rules = reg_info->num_5ghz_reg_rules + reg_info->num_2ghz_reg_rules;
 
+	/* FIXME: Currently updating all 9 possible regulatory rules for 6G.
+	 * For space optimization, logic can be enhanced to store reg rules
+	 * dynamically from power, AP and STA mode combination.
+	 */
+
 	if (reg_info->is_ext_reg_event) {
-		if (vdev_type == WMI_VDEV_TYPE_STA) {
-			enum wmi_reg_6ghz_ap_type ap_type;
-
-			ap_type = ath11k_reg_ap_pwr_convert(power_type);
-
-			if (ap_type == WMI_REG_MAX_AP_TYPE)
-				ap_type = WMI_REG_INDOOR_AP;
-
-			reg_6ghz_number = reg_info->num_6ghz_rules_client
-					[ap_type][WMI_REG_DEFAULT_CLIENT];
-
-			if (reg_6ghz_number == 0) {
-				ap_type = WMI_REG_INDOOR_AP;
-				reg_6ghz_number = reg_info->num_6ghz_rules_client
-						[ap_type][WMI_REG_DEFAULT_CLIENT];
-			}
-
-			reg_rule_6ghz = reg_info->reg_rules_6ghz_client_ptr
-					[ap_type][WMI_REG_DEFAULT_CLIENT];
-			max_bw_6ghz = reg_info->max_bw_6ghz_client
-					[ap_type][WMI_REG_DEFAULT_CLIENT];
-		} else {
-			reg_6ghz_number = reg_info->num_6ghz_rules_ap[WMI_REG_INDOOR_AP];
-			reg_rule_6ghz =
-				reg_info->reg_rules_6ghz_ap_ptr[WMI_REG_INDOOR_AP];
-			max_bw_6ghz = reg_info->max_bw_6ghz_ap[WMI_REG_INDOOR_AP];
+		/* All 6G APs - (LP, SP, VLP) */
+		for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++)
+			reg_6g_number += reg_info->num_6ghz_rules_ap[i];
+		/* All 6G STAs - (LP_DEF, LP_SUB, SP_DEF, SP_SUB, VLP_DEF, VLP_SUB) */
+		for (i = 0; i < WMI_REG_MAX_CLIENT_TYPE; i++) {
+			for (j = 0; j < WMI_REG_CURRENT_MAX_AP_TYPE; j++)
+				reg_6g_number += reg_info->num_6ghz_rules_client[j][i];
 		}
-
-		num_rules += reg_6ghz_number;
 	}
+	num_rules += reg_6g_number;
 
 	if (!num_rules)
 		goto ret;
@@ -702,13 +682,15 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 	/* Update reg_rules[] below. Firmware is expected to
 	 * send these rules in order(2 GHz rules first and then 5 GHz)
 	 */
-	for (; i < num_rules; i++) {
+	for (i = 0, j = 0; i < num_rules; i++) {
 		if (reg_info->num_2ghz_reg_rules &&
 		    (i < reg_info->num_2ghz_reg_rules)) {
 			reg_rule = reg_info->reg_rules_2ghz_ptr + i;
 			max_bw = min_t(u16, reg_rule->max_bw,
 				       reg_info->max_bw_2ghz);
 			flags = 0;
+			pwr_mode = 0;
+			ath11k_copy_reg_rule(&ab->reg_rule_2g, reg_rule);
 		} else if (reg_info->num_5ghz_reg_rules &&
 			   (j < reg_info->num_5ghz_reg_rules)) {
 			reg_rule = reg_info->reg_rules_5ghz_ptr + j++;
@@ -722,13 +704,48 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 			 * per other BW rule flags we pass from here
 			 */
 			flags = NL80211_RRF_AUTO_BW;
-		} else if (reg_info->is_ext_reg_event && reg_6ghz_number &&
-			   k < reg_6ghz_number) {
-			reg_rule = reg_rule_6ghz + k++;
-			max_bw = min_t(u16, reg_rule->max_bw, max_bw_6ghz);
-			flags = NL80211_RRF_AUTO_BW;
-			if (reg_rule->psd_flag)
-				flags |= NL80211_RRF_PSD;
+			pwr_mode = 0;
+
+			if (reg_rule->end_freq <= ATH11K_MAX_5G_FREQ)
+				ath11k_copy_reg_rule(&ab->reg_rule_5g, reg_rule);
+			else if (reg_rule->start_freq >= ATH11K_MIN_6G_FREQ)
+				ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
+		} else if (reg_info->is_ext_reg_event && reg_6g_number) {
+			if (!reg_6g_itr_set) {
+				reg_rule_6g = ath11k_get_active_6g_reg_rule(reg_info, &max_bw_6g,
+									    &max_elements, &pwr_mode);
+
+				if (!reg_rule_6g) {
+					ath11k_warn(ab,
+						    "\nFetching a valid reg_rule_6g_ptr failed."
+						    "This shouldn't happen normally. Be carefull"
+						    "with the regulatory domain settings\n");
+					break;
+				}
+				reg_6g_itr_set = true;
+			}
+			if (reg_6g_itr_set && k < max_elements) {
+				reg_rule = reg_rule_6g + k++;
+				max_bw = min_t(u16, reg_rule->max_bw, max_bw_6g);
+				flags = NL80211_RRF_AUTO_BW;
+
+				if (reg_rule->psd_flag)
+					flags |= NL80211_RRF_PSD;
+
+				if (reg_rule->end_freq <= ATH11K_MAX_6G_FREQ)
+					ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
+				else if (reg_rule->start_freq >= ATH11K_MIN_6G_FREQ)
+					ath11k_copy_reg_rule(&ab->reg_rule_6g, reg_rule);
+			}
+
+			if (reg_6g_itr_set && k >= max_elements) {
+				reg_6g_itr_set = false;
+				reg_rule_6g = NULL;
+				max_bw_6g = 0;
+				max_elements = 0;
+				k = 0;
+			}
+			reg_6g_number--;
 		} else {
 			break;
 		}
@@ -740,7 +757,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 				       reg_rule->start_freq,
 				       reg_rule->end_freq, max_bw,
 				       reg_rule->ant_gain, reg_rule->reg_power,
-				       reg_rule->psd_eirp, flags);
+				       reg_rule->psd_eirp, flags, pwr_mode);
 
 		/* Update dfs cac timeout if the dfs domain is ETSI and the
 		 * new rule covers weather radar band.
@@ -763,7 +780,7 @@ ath11k_reg_build_regd(struct ath11k_base *ab,
 				   i + 1, reg_rule->start_freq, reg_rule->end_freq,
 				   max_bw, reg_rule->ant_gain, reg_rule->reg_power,
 				   tmp_regd->reg_rules[i].dfs_cac_ms, flags,
-				   reg_rule->psd_flag, reg_rule->psd_eirp);
+				   reg_rule->psd_eirp, new_regd->reg_rules[i].mode);
 		} else {
 			ath11k_dbg(ab, ATH11K_DBG_REG,
 				   "\t%d. (%d - %d @ %d) (%d, %d) (%d ms) (FLAGS %d)\n",
@@ -859,6 +876,9 @@ static enum wmi_vdev_type ath11k_reg_get_ar_vdev_type(struct ath11k *ar)
 {
 	struct ath11k_vif *arvif;
 
+	if (!ar)
+		return WMI_VDEV_TYPE_UNSPEC;
+
 	/* Currently each struct ath11k maps to one struct ieee80211_hw/wiphy
 	 * and one struct ieee80211_regdomain, so it could only store one group
 	 * reg rules. It means multi-interface concurrency in the same ath11k is
@@ -946,7 +966,7 @@ int ath11k_reg_handle_chan_list(struct ath11k_base *ab,
 		   "wmi handle chan list power type %d vdev type %d intersect %d\n",
 		   power_type, vdev_type, intersect);
 
-	regd = ath11k_reg_build_regd(ab, reg_info, intersect, vdev_type, power_type);
+	regd = ath11k_reg_build_regd(ab, reg_info, intersect);
 	if (!regd) {
 		ath11k_warn(ab, "failed to build regd from reg_info\n");
 		goto fallback;
@@ -1044,9 +1064,6 @@ void ath11k_reg_reset_info(struct cur_regulatory_info *reg_info)
 void ath11k_reg_free(struct ath11k_base *ab)
 {
 	int i;
-
-	for (i = 0; i < ab->num_radios; i++)
-		ath11k_reg_reset_info(&ab->reg_info_store[i]);
 
 	kfree(ab->reg_info_store);
 	ab->reg_info_store = NULL;

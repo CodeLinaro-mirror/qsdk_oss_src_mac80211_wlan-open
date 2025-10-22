@@ -21,6 +21,8 @@ struct ath12k_dbring_data {
 	void *data;
 	u32 data_sz;
 	struct ath12k_wmi_dma_buf_release_meta_data_params meta;
+	struct ath12k_dbring_element *buff;
+	u32 buf_id;
 };
 
 struct ath12k_dbring_buf_release_event {
@@ -75,6 +77,11 @@ int ath12k_dbring_set_cfg(struct ath12k *ar,
 			  u32 event_timeout_ms,
 			  int (*handler)(struct ath12k *,
 					 struct ath12k_dbring_data *));
+int ath12k_dbring_bufs_replenish(struct ath12k *ar,
+				 struct ath12k_dbring *ring,
+				 struct ath12k_dbring_element *buff,
+				 enum wmi_direct_buffer_module id,
+				 gfp_t gfp);
 int ath12k_dbring_wmi_cfg_setup(struct ath12k *ar,
 				struct ath12k_dbring *ring,
 				enum wmi_direct_buffer_module id);

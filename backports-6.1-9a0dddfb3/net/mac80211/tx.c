@@ -1004,7 +1004,7 @@ static int ieee80211_fragment(struct ieee80211_tx_data *tx,
 			      int frag_threshold)
 {
 	struct ieee80211_local *local = tx->local;
-	struct ieee80211_tx_info *info;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct sk_buff *tmp;
 	int per_fragm = frag_threshold - hdrlen - FCS_LEN;
 	int pos = hdrlen + per_fragm;
@@ -2847,7 +2847,7 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 	bool multicast;
 	u16 info_id = 0;
 	struct ieee80211_chanctx_conf *chanctx_conf = NULL;
-	enum nl80211_band band;
+	enum nl80211_band band = 0;
 	int ret;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 	u8 link_id = u32_get_bits(ctrl_flags, IEEE80211_TX_CTRL_MLO_LINK);
@@ -3076,20 +3076,6 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 		goto free;
 	}
 
-	if (!chanctx_conf) {
-		if (!ieee80211_vif_is_mld(&sdata->vif)) {
-			ret = -ENOTCONN;
-			if (!tid_stats_disable)
-				ieee80211_tx_drop_stats(sdata, info->tid,
-							TX_DROP_BAD_CHANCTX_CONF);
-			goto free;
-		}
-		/* MLD transmissions must not rely on the band */
-		band = 0;
-	} else {
-		band = chanctx_conf->def.chan->band;
-	}
-
 	multicast = is_multicast_ether_addr(hdr.addr1);
 
 	/* sta is always NULL for mesh */
@@ -3219,6 +3205,21 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 #ifdef CPTCFG_MAC80211_MESH
 nss_mesh:
 #endif
+
+	if (!chanctx_conf) {
+		if (!ieee80211_vif_is_mld(&sdata->vif)) {
+			ret = -ENOTCONN;
+			if (!tid_stats_disable)
+				ieee80211_tx_drop_stats(sdata, info->tid,
+							TX_DROP_BAD_CHANCTX_CONF);
+			goto free;
+		}
+		/* MLD transmissions must not rely on the band */
+		band = 0;
+	} else {
+		band = chanctx_conf->def.chan->band;
+	}
+
 	info->flags |= info_flags;
 	if (info_id >= 0) {
 		info->status_data = info_id;
@@ -3858,7 +3859,12 @@ ieee80211_xmit_fast_finish(struct ieee80211_sub_if_data *sdata,
 	if (pn_offs) {
 		u64 pn;
 		u8 *crypto_hdr = skb->data + pn_offs;
-
+		if (!key) {
+			if (!tid_stats_disable)
+				ieee80211_tx_drop_stats(sdata, info->tid,
+							TX_DROP_KEY_FAIL);
+			return TX_DROP;
+		}
 		switch (key->conf.cipher) {
 		case WLAN_CIPHER_SUITE_CCMP:
 		case WLAN_CIPHER_SUITE_CCMP_256:
@@ -4578,7 +4584,7 @@ void __ieee80211_subif_start_xmit(struct sk_buff *skb,
 	struct sk_buff *next;
 	int len = skb->len;
 	struct ieee80211_key *key = NULL;
-	struct ieee80211_tx_info *info;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_sub_if_data *ap_sdata;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 
@@ -4970,6 +4976,13 @@ static bool __ieee80211_tx_8023(struct ieee80211_sub_if_data *sdata,
 
 	spin_unlock_irqrestore(queue_stop_reason_lock, flags);
 
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+		!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD)) {
+		sdata = container_of(sdata->bss,
+				     struct ieee80211_sub_if_data, u.ap);
+	}
+
+	info->control.vif = &sdata->vif;
 	if (sta && sta->uploaded)
 		pubsta = &sta->sta;
 
@@ -5030,7 +5043,7 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	struct tid_ampdu_tx *tid_tx;
 	struct sk_buff *seg, *next;
 	unsigned int skbs = 0, len = 0;
-	u16 queue;
+	u16 queue = 0;
 	unsigned char *ra = ehdr->h_dest;
 	bool multicast;
 	bool tid_stats_disable = sdata->local->hw.tid_stats_disable;
@@ -5039,6 +5052,8 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	if (unlikely(!ieee80211_hw_check(&local->hw, HAS_TX_QUEUE))) {
 		queue = ieee80211_select_queue(sdata, sta, skb);
 		skb_set_queue_mapping(skb, queue);
+	} else {
+		queue = skb_get_queue_mapping(skb);
 	}
 
 	skb->priority = cfg80211_classify8021d(skb, NULL);
@@ -5097,11 +5112,6 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 	info->sawf.nw_delay = (u32) ktime_to_us(net_timedelta(skb->tstamp));
 	info->hw_queue = sdata->vif.hw_queue[queue];
 	info->tid = tid;
-
-	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
-		!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD))
-		sdata = container_of(sdata->bss,
-				     struct ieee80211_sub_if_data, u.ap);
 
 	info->flags |= IEEE80211_TX_CTL_HW_80211_ENCAP;
 	info->control.vif = &sdata->vif;
@@ -5204,6 +5214,8 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 		sta->deflink.tx_stats.packets[q_map]++;
 		atomic_inc(&sta->tx_netif_pkts);
 	}
+
+	ieee80211_tx_stats(dev, skb->len);
 
 	pending = this_cpu_ptr(local->pending[q]);
 	queue_stop_reasons = this_cpu_ptr(local->queue_stop_reasons[q]);
@@ -5717,7 +5729,7 @@ u8 ieee80211_beacon_update_cntdwn(struct ieee80211_vif *vif, unsigned int link_i
 		goto unlock;
 
 	count = __ieee80211_beacon_update_cntdwn(beacon);
-	if (wdev->valid_links && wdev->links[link_id].switch_count != count) {
+	if (wdev && wdev->valid_links && wdev->links[link_id].switch_count != count) {
 		wdev->links[link_id].switch_count = count;
 		wdev->critical_update = 1;
 	}

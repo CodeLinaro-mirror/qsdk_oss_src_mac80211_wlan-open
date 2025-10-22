@@ -65,6 +65,10 @@ rc80211_minstrel-$(CPTCFG_MAC80211_DEBUGFS) += \
 
 mac80211-$(CPTCFG_MAC80211_RC_MINSTREL) += $(rc80211_minstrel-y)
 
+mac80211-$(CPTCFG_QCN_EXTN) += \
+	qcn_extns/bw240MHz.o \
+	qcn_extns/driver-ops_extn.o
+
 obj-y += tests/
 
 mac80211-y += wbrf.o

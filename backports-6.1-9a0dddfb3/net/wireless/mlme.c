@@ -1291,6 +1291,9 @@ __cfg80211_background_cac_event(struct cfg80211_registered_device *rdev,
 
 	netdev = wdev ? wdev->netdev : NULL;
 	nl80211_radar_notify(rdev, chandef, event, netdev, GFP_KERNEL);
+	if (!wdev)
+		return;
+
 	w_chandef = wdev_chandef(wdev, 0);
 
 	if ((event == NL80211_RADAR_CAC_FINISHED || event == NL80211_RADAR_CAC_ABORTED) &&

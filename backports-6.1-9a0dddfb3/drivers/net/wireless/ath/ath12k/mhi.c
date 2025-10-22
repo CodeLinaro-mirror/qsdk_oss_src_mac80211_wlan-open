@@ -142,10 +142,11 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 				    enum mhi_callback cb)
 {
 	struct ath12k_base *ab = dev_get_drvdata(mhi_cntrl->cntrl_dev);
+	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
 
-	ath12k_dbg(ab, ATH12K_DBG_BOOT, "mhi notify status reason %s\n",
-		   ath12k_mhi_op_callback_to_str(cb));
+	ath12k_info(ab, "mhi notify status reason %s\n",
+		    ath12k_mhi_op_callback_to_str(cb));
 
 	switch (cb) {
 	case MHI_CB_SYS_ERROR:
@@ -165,12 +166,12 @@ static void ath12k_mhi_op_status_cb(struct mhi_controller *mhi_cntrl,
 			complete(&ab->rddm_reset_done);
 			return;
 		}
+		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 
-		if (!(test_bit(ATH12K_FLAG_UNREGISTERING, &ab->dev_flags))) {
+		if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
 			ath12k_info(ab, "Schedule SSR Recovery reset work queue\n");
 			set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
 			set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ab->ag->flags);
-			set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 			queue_work(ab->workqueue_aux, &ab->reset_work);
 			ath12k_hal_dump_srng_stats(ab);
 		}

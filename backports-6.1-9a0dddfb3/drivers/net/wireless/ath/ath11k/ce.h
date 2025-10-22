@@ -8,6 +8,7 @@
 #define ATH11K_CE_H
 
 #define CE_COUNT_MAX 12
+#define ATH11K_QCN6122_CE_COUNT	6
 
 /* Byte swap data words */
 #define CE_ATTR_BYTE_SWAP_DATA 2
@@ -60,6 +61,12 @@ void ath11k_ce_byte_swap(void *mem, u32 len);
 #define CE_RING_IDX_INCR(nentries_mask, idx) (((idx) + 1) & (nentries_mask))
 
 #define ATH11K_CE_RX_POST_RETRY_JIFFIES 50
+
+#define CE_TIME_DURATION_USEC	100
+
+#define CE_TIME_DURATION_USEC_500	4
+
+#define CE_TIME_DURATION_MAX	5
 
 struct ath11k_base;
 
@@ -165,6 +172,19 @@ struct ath11k_ce_ring {
 	struct sk_buff *skb[];
 };
 
+struct ce_tasklet_time {
+	u64 sched_count;
+	u64 exec_count;
+	u64 sched_last_update;
+	u64 exec_last_update;
+};
+
+struct ce_tasklet_entry_ts {
+	ktime_t sched_entry_ts;
+	ktime_t exec_entry_ts;
+	ktime_t exec_complete_ts;
+};
+
 struct ath11k_ce_pipe {
 	struct ath11k_base *ab;
 	u16 pipe_num;
@@ -179,7 +199,15 @@ struct ath11k_ce_pipe {
 	struct ath11k_ce_ring *src_ring;
 	struct ath11k_ce_ring *dest_ring;
 	struct ath11k_ce_ring *status_ring;
-	u64 timestamp;
+	unsigned long timestamp;
+	u32 ce_manual_poll_count;
+	u64 last_ce_manual_poll_ts;
+
+	struct ce_tasklet_entry_ts tasklet_ts;
+	struct ce_tasklet_time tracker[CE_TIME_DURATION_MAX];
+	u32 sched_delay_gt_500US;
+	u32 exec_delay_gt_500US;
+	u32 msi_data;
 };
 
 struct ath11k_ce {
@@ -192,6 +220,7 @@ struct ath11k_ce {
 extern const struct ce_attr ath11k_host_ce_config_ipq8074[];
 extern const struct ce_attr ath11k_host_ce_config_qca6390[];
 extern const struct ce_attr ath11k_host_ce_config_qcn9074[];
+extern const struct ce_attr ath11k_host_ce_config_ipq9574[];
 
 void ath11k_ce_cleanup_pipes(struct ath11k_base *ab);
 void ath11k_ce_rx_replenish_retry(struct timer_list *t);
@@ -207,5 +236,5 @@ void ath11k_ce_poll_send_completed(struct ath11k_base *ab, u8 pipe_id);
 void ath11k_ce_get_shadow_config(struct ath11k_base *ab,
 				 u32 **shadow_cfg, u32 *shadow_cfg_len);
 void ath11k_ce_stop_shadow_timers(struct ath11k_base *ab);
-
+void ce_update_tasklet_time_duration_stats(struct ath11k_ce_pipe *ce_pipe);
 #endif

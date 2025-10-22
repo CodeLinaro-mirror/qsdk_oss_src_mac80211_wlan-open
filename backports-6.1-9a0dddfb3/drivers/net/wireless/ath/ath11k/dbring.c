@@ -36,7 +36,7 @@ static void ath11k_dbring_fill_magic_value(struct ath11k *ar,
 	memset32(buffer, ATH11K_DB_MAGIC_VALUE, size);
 }
 
-static int ath11k_dbring_bufs_replenish(struct ath11k *ar,
+int ath11k_dbring_bufs_replenish(struct ath11k *ar,
 					struct ath11k_dbring *ring,
 					struct ath11k_dbring_element *buff,
 					enum wmi_direct_buffer_module id)
@@ -79,14 +79,18 @@ static int ath11k_dbring_bufs_replenish(struct ath11k *ar,
 		goto err_idr_remove;
 	}
 
+	if (id == WMI_DIRECT_BUF_CFR)
+		ath11k_cfr_lut_update_paddr(ar, paddr, buf_id);
+
 	buff->paddr = paddr;
+
+	dma_sync_single_for_device(ab->dev, paddr, ring->buf_sz, DMA_FROM_DEVICE);
 
 	cookie = FIELD_PREP(DP_RXDMA_BUF_COOKIE_PDEV_ID, ar->pdev_idx) |
 		 FIELD_PREP(DP_RXDMA_BUF_COOKIE_BUF_ID, buf_id);
 
 	ath11k_hal_rx_buf_addr_info_set(desc, paddr, cookie, 0);
 
-	ath11k_debugfs_add_dbring_entry(ar, id, ATH11K_DBG_DBR_EVENT_REPLENISH, srng);
 	ath11k_hal_srng_access_end(ab, srng);
 
 	return 0;
@@ -142,6 +146,7 @@ static int ath11k_dbring_fill_bufs(struct ath11k *ar,
 			break;
 		}
 		num_remain--;
+		ATH11K_MEMORY_STATS_INC(ar->ab, malloc_size, size);
 	}
 
 	spin_unlock_bh(&srng->lock);
@@ -280,6 +285,7 @@ int ath11k_dbring_buffer_release_event(struct ath11k_base *ab,
 	int size;
 	dma_addr_t paddr;
 	int ret = 0;
+	int status;
 
 	pdev_idx = ev->fixed.pdev_id;
 	module_id = ev->fixed.module_id;
@@ -308,6 +314,9 @@ int ath11k_dbring_buffer_release_event(struct ath11k_base *ab,
 	switch (ev->fixed.module_id) {
 	case WMI_DIRECT_BUF_SPECTRAL:
 		ring = ath11k_spectral_get_dbring(ar);
+		break;
+	case WMI_DIRECT_BUF_CFR:
+		ring = ath11k_cfr_get_dbring(ar);
 		break;
 	default:
 		ring = NULL;
@@ -359,8 +368,12 @@ int ath11k_dbring_buffer_release_event(struct ath11k_base *ab,
 			handler_data.data = PTR_ALIGN(vaddr_unalign,
 						      ring->buf_align);
 			handler_data.data_sz = ring->buf_sz;
+			handler_data.buff = buff;
+			handler_data.buf_id = buf_id;
 
-			ring->handler(ar, &handler_data);
+			status = ring->handler(ar, &handler_data);
+			if (status == ATH11K_CORRELATE_STATUS_HOLD)
+				continue;
 		}
 
 		buff->paddr = 0;
@@ -391,6 +404,8 @@ void ath11k_dbring_buf_cleanup(struct ath11k *ar, struct ath11k_dbring *ring)
 		idr_remove(&ring->bufs_idr, buf_id);
 		dma_unmap_single(ar->ab->dev, buff->paddr,
 				 ring->buf_sz, DMA_FROM_DEVICE);
+		ATH11K_MEMORY_STATS_DEC(ar->ab, malloc_size, sizeof(*buff) +
+					ring->buf_sz + ring->buf_align - 1);
 		kfree(buff->payload);
 		kfree(buff);
 	}

@@ -373,7 +373,10 @@ struct ieee80211_vif_chanctx_switch {
  * @BSS_CHANGED_INTF_DETECT: Interference Detect parameters changed for this Radio.
  * @BSS_CHANGED_ML_MAX_REC_LINKS: ML Max Recommended links value changed
  * @BSS_CHANGED_MLD_ADV_TTLM: Advertised TID to Link mapping changed. Used to
- *	indicate driver to start the advertisement of TTLM (AP mode)
+ *	indicate driver to start the advertisement of TTLM (AP mode) on VIF.
+ * @BSS_CHANGED_LINK_ADV_TTLM: Advertised TID to Link mapping changed on link interface.
+ *	This is used to indicate the driver to start the advertisement of TTLM on this AP
+ *	link during start ap.
  */
 enum ieee80211_bss_change {
 	BSS_CHANGED_ASSOC		= 1<<0,
@@ -416,6 +419,7 @@ enum ieee80211_bss_change {
 	BSS_CHANGED_INTF_DETECT         = BIT_ULL(38),
 	BSS_CHANGED_ML_MAX_REC_LINKS	= BIT_ULL(39),
 	BSS_CHANGED_MLD_ADV_TTLM	= BIT_ULL(40),
+	BSS_CHANGED_LINK_ADV_TTLM	= BIT_ULL(41),
 	/* when adding here, make sure to change ieee80211_reconfig */
 };
 
@@ -2762,6 +2766,7 @@ struct ieee80211_sta {
 	struct {
 		u16 removed_links;
 		u16 added_links;
+		u16 matched_rem_links;
 	} reconf;
 
 	u16 eml_cap;
@@ -3114,6 +3119,9 @@ struct ieee80211_txq {
  *	HW flag so drivers can opt in according to their own control, e.g. in
  *	testing.
  *
+ * @IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL: Hardware only supports single
+ *	channel operation.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3185,6 +3193,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_CONC_AP_MON_IN_80211_FORMAT,
 	IEEE80211_HW_SUPPORTS_EXT_REMAIN_ON_CHAN,
 	IEEE80211_HW_SUPPORTS_DSCP_TID_MAP,
+	IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
@@ -8419,8 +8428,6 @@ enum ieee80211_gstrings_stats {
 	IEEE80211_CH_TIME_TX,
 	IEEE80211_TX_DEV_DROPPED,
 	IEEE80211_RX_DEV_DROPPED,
-	IEEE80211_TX_NET_PACKETS,
-	IEEE80211_RX_NET_PACKETS,
 	IEEE80211_STATS_MAX,
 };
 
@@ -8489,4 +8496,5 @@ ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
  */
 int ieee80211_get_radio_idx_by_freq(struct wiphy *wiphy, u32 freq);
 
+int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
 #endif /* MAC80211_H */

@@ -10,12 +10,40 @@
 #include "hal.h"
 #include "wmi.h"
 
+struct ath11k_csi_cfr_header;
+struct ath11k_cfr_peer_tx_param;
+
 /* Target configuration defines */
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
 
+#define TARGET_NUM_VDEVS(ab)	8
+#define TARGET_NUM_PEERS_PDEV(ab)	(128 + TARGET_NUM_VDEVS(ab))
+/* Max num of stations (per radio) */
+#define TARGET_NUM_STATIONS(ab)	128
+#define ATH11K_QMI_TARGET_MEM_MODE	ATH11K_QMI_TARGET_MEM_MODE_512M
+#define ATH11K_DP_TX_COMP_RING_SIZE	8192
+#define ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE	512
+#define ATH11K_DP_RXDMA_MONITOR_BUF_RING_SIZE	128
+#define ATH11K_DP_RXDMA_MONITOR_DST_RING_SIZE	128
+#define ATH11K_DP_RXDMA_REFILL_RING_SIZE	2048
+/* 256b desc TLV + 4b(rounded) Pad + 30byte max nwifi header +
+ * 18byte mesh hdr + 8byte snap + 1500 eth payload
+ */
+#define ATH11K_DP_RXDMA_NSS_REFILL_RING_SIZE	1816
+#else
 /* Num VDEVS per radio */
-#define TARGET_NUM_VDEVS(ab)	(ab->hw_params.num_vdevs)
-
-#define TARGET_NUM_PEERS_PDEV(ab) (ab->hw_params.num_peers + TARGET_NUM_VDEVS(ab))
+#define TARGET_NUM_VDEVS(ab)	(ab->hw_params.num_vdevs_peers[ab->qmi.target_mem_mode].num_vdevs)
+#define TARGET_NUM_PEERS_PDEV(ab) (ab->hw_params.num_vdevs_peers[ab->qmi.target_mem_mode].num_peers + TARGET_NUM_VDEVS(ab))
+/* Max num of stations (per radio) */
+#define TARGET_NUM_STATIONS(ab) (ab->hw_params.num_vdevs_peers[ab->qmi.target_mem_mode].num_peers)
+#define ATH11K_QMI_TARGET_MEM_MODE		ATH11K_QMI_TARGET_MEM_MODE_DEFAULT
+#define ATH11K_DP_TX_COMP_RING_SIZE		32768
+#define ATH11K_DP_RXDMA_MON_STATUS_RING_SIZE	1024
+#define ATH11K_DP_RXDMA_MONITOR_BUF_RING_SIZE	4096
+#define ATH11K_DP_RXDMA_MONITOR_DST_RING_SIZE	2048
+#define ATH11K_DP_RXDMA_REFILL_RING_SIZE	2048
+#define ATH11K_DP_RXDMA_NSS_REFILL_RING_SIZE	2048
+#endif
 
 /* Num of peers for Single Radio mode */
 #define TARGET_NUM_PEERS_SINGLE(ab) (TARGET_NUM_PEERS_PDEV(ab))
@@ -25,9 +53,6 @@
 
 /* Num of peers for DBS_SBS */
 #define TARGET_NUM_PEERS_DBS_SBS(ab)	(3 * TARGET_NUM_PEERS_PDEV(ab))
-
-/* Max num of stations (per radio) */
-#define TARGET_NUM_STATIONS(ab)	(ab->hw_params.num_peers)
 
 #define TARGET_NUM_PEERS(ab, x)	TARGET_NUM_PEERS_##x(ab)
 #define TARGET_NUM_PEER_KEYS	2
@@ -77,9 +102,14 @@
 #define ATH11K_BOARD_API2_FILE		"board-2.bin"
 #define ATH11K_DEFAULT_BOARD_FILE	"board.bin"
 #define ATH11K_DEFAULT_CAL_FILE		"caldata.bin"
+#define ATH11K_QMI_DEF_CAL_FILE_PREFIX	"caldata_"
+#define ATH11K_QMI_DEF_CAL_FILE_SUFFIX	".bin"
 #define ATH11K_AMSS_FILE		"amss.bin"
 #define ATH11K_M3_FILE			"m3.bin"
 #define ATH11K_REGDB_FILE_NAME		"regdb.bin"
+#define ATH11K_REGDB_BINARY		"regdb"
+#define ATH11K_DEFAULT_ID		255
+#define NODE_ID_BASE                   	0x27
 
 #define ATH11K_CE_OFFSET(ab)	(ab->mem_ce - ab->mem)
 
@@ -110,9 +140,13 @@ enum ath11k_bus {
 };
 
 #define ATH11K_EXT_IRQ_GRP_NUM_MAX 11
+#define ATH11K_EXT_MSI_IRQ_GRP_MAX 8
 
 struct hal_rx_desc;
 struct hal_tcl_data_cmd;
+struct napi_struct;
+struct htt_rx_ring_tlv_filter;
+enum hal_encrypt_type;
 
 struct ath11k_hw_ring_mask {
 	u8 tx[ATH11K_EXT_IRQ_GRP_NUM_MAX];
@@ -171,6 +205,7 @@ struct ath11k_hw_params {
 	bool rx_mac_buf_ring;
 	bool vdev_start_delay;
 	bool htt_peer_map_v2;
+	u8 num_dscp_tid_map_tbl;
 
 	struct {
 		u8 fft_sz;
@@ -197,11 +232,14 @@ struct ath11k_hw_params {
 	u32 hal_desc_sz;
 	bool supports_regdb;
 	bool fix_l1ss;
+	bool supports_ap_ps;
 	bool credit_flow;
 	u8 max_tx_ring;
 	const struct ath11k_hw_hal_params *hal_params;
 	bool supports_dynamic_smps_6ghz;
 	bool alloc_cacheable_memory;
+	u32 m3_addr;
+	u8 reo_dest_ring_map_shift;
 	bool supports_rssi_stats;
 	bool fw_wmi_diag_event;
 	bool current_cc_support;
@@ -228,6 +266,26 @@ struct ath11k_hw_params {
 	bool support_fw_mac_sequence;
 	bool support_dual_stations;
 	bool pdev_suspend;
+	bool ce_fwlog_enable;
+	bool fwmem_mode_change;
+	bool internal_pci;
+	u8 ce_window;
+	u8 dp_window;
+	bool is_qdss_support;
+	bool cfr_support;
+	u32 cfr_dma_hdr_size;
+	u32 cfr_num_stream_bufs;
+	u32 cfr_max_header_len_words;
+	u32 cfr_max_data_len;
+	u32 cfr_stream_buf_size;
+	bool reo_status_poll;
+	const struct ath11k_num_vdevs_peers *num_vdevs_peers;
+	u32 bdf_offset;
+	u32 m3_offset;
+	u32 caldb_offset;
+	u32 qdss_offset;
+	u32 pageable_offset;
+	bool support_ce_manual_poll;
 };
 
 struct ath11k_hw_ops {
@@ -246,6 +304,7 @@ struct ath11k_hw_ops {
 	u32 (*rx_desc_get_encrypt_type)(struct hal_rx_desc *desc);
 	u8 (*rx_desc_get_decap_type)(struct hal_rx_desc *desc);
 	u8 (*rx_desc_get_mesh_ctl)(struct hal_rx_desc *desc);
+	u8 (*rx_desc_get_ip_valid)(struct hal_rx_desc *desc);
 	bool (*rx_desc_get_ldpc_support)(struct hal_rx_desc *desc);
 	bool (*rx_desc_get_mpdu_seq_ctl_vld)(struct hal_rx_desc *desc);
 	bool (*rx_desc_get_mpdu_fc_valid)(struct hal_rx_desc *desc);
@@ -271,6 +330,23 @@ struct ath11k_hw_ops {
 	bool (*rx_desc_mac_addr2_valid)(struct hal_rx_desc *desc);
 	u8* (*rx_desc_mpdu_start_addr2)(struct hal_rx_desc *desc);
 	u32 (*get_ring_selector)(struct sk_buff *skb);
+	u32 (*rx_desc_get_hal_mpdu_len) (struct hal_rx_mpdu_info *mpdu_info);
+	void (*set_rx_fragmentation_dst_ring)(struct ath11k_base *ab);
+	u32 (*get_reo_dest_remap_config)(void);
+#ifdef CPTCFG_ATH11K_MEM_PROFILE_512M
+	void (*rx_desc_get_offset)(struct htt_rx_ring_tlv_filter *tlv_filter);
+#endif
+	u16 (*rx_desc_get_mpdu_frame_ctl)(struct hal_rx_desc *desc);
+	bool (*rx_desc_dot11_hdr_fields_valid)(struct hal_rx_desc *desc);
+	void (*rx_desc_get_dot11_hdr)(struct hal_rx_desc *desc,
+				      struct ieee80211_hdr *hdr);
+	void (*rx_desc_get_crypto_header)(struct hal_rx_desc *desc,
+					  u8 *crypto_hdr,
+					  enum hal_encrypt_type enctype);
+	void (*fill_cfr_hdr_info)(struct ath11k *ar,
+				  struct ath11k_csi_cfr_header *header,
+				  struct ath11k_cfr_peer_tx_param *params);
+	u16 (*rx_desc_get_hal_ppdu_id) (struct hal_rx_mpdu_info *mpdu_info);
 };
 
 extern const struct ath11k_hw_ops ipq8074_ops;
@@ -280,11 +356,14 @@ extern const struct ath11k_hw_ops qcn9074_ops;
 extern const struct ath11k_hw_ops wcn6855_ops;
 extern const struct ath11k_hw_ops wcn6750_ops;
 extern const struct ath11k_hw_ops ipq5018_ops;
+extern const struct ath11k_hw_ops qcn6122_ops;
+extern const struct ath11k_hw_ops ipq9574_ops;
 
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_ipq8074;
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_qca6390;
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_qcn9074;
 extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_wcn6750;
+extern const struct ath11k_hw_ring_mask ath11k_hw_ring_mask_qcn6122;
 
 extern const struct ce_ie_addr ath11k_ce_ie_addr_ipq8074;
 extern const struct ce_ie_addr ath11k_ce_ie_addr_ipq5018;
@@ -421,6 +500,7 @@ extern const struct ath11k_hw_regs qcn9074_regs;
 extern const struct ath11k_hw_regs wcn6855_regs;
 extern const struct ath11k_hw_regs wcn6750_regs;
 extern const struct ath11k_hw_regs ipq5018_regs;
+extern const struct ath11k_hw_regs qcn6122_regs;
 
 static inline const char *ath11k_bd_ie_type_str(enum ath11k_bd_ie_type type)
 {

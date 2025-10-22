@@ -34,10 +34,41 @@ struct ath12k_dp;
 #define HTT_TX_WBM_COMP_INFO1_REINJECT_REASON	GENMASK(3, 0)
 #define HTT_TX_WBM_COMP_INFO1_EXCEPTION_FRAME	BIT(4)
 
+#define HTT_TX_WBM_COMP_INFO2_PPDU_ID		GENMASK(23, 0)
 #define HTT_TX_WBM_COMP_INFO2_ACK_RSSI		GENMASK(31, 24)
 
+#define HTT_TX_WBM_COMP_INFO3_SW_PEER_ID	GENMASK(15, 0)
+#define HTT_TX_WBM_COMP_INFO3_TID		GENMASK(20, 16)
+#define HTT_TX_WBM_COMP_INFO3_VALID		BIT(21)
+
 #define ATH12K_DSCP_PRIORITY 7
-#define HTT_TX_WBM_COMP_STATUS_OFFSET 8
+
+#define SDWF_PEER_ID_SHIFT 0x6
+#define SDWF_PEER_ID_MASK 0x3ff
+#define SDWF_MSDUQ_MASK 0x3f
+
+#define HTT_TX_WBM_COMPLETION_V3_REINJECT_REASON_M		0x0000000F
+
+#define HAL_TX_COMP_TQM_RELEASE_REASON_MASK             0x0001e000
+
+#define HTT_TX_WBM_REINJECT_SW_PEER_ID_M    0x0000ffff
+#define HTT_TX_WBM_REINJECT_DATA_LEN_M      0xffff0000
+#define HTT_TX_WBM_REINJECT_TID_M           0x0000001f
+#define HTT_TX_WBM_REINJECT_MSDUQ_ID_M      0x000001e0
+
+enum htt_tx_fw2wbm_reinject_reason {
+	HTT_TX_FW2WBM_REINJECT_REASON_RAW_ENCAP_EXP,
+	HTT_TX_FW2WBM_REINJECT_REASON_INJECT_VIA_EXP,
+	HTT_TX_FW2WBM_REINJECT_REASON_MCAST,
+	HTT_TX_FW2WBM_REINJECT_REASON_ARP,
+	HTT_TX_FW2WBM_REINJECT_REASON_DHCP,
+	HTT_TX_FW2WBM_REINJECT_REASON_FLOW_CONTROL,
+	HTT_TX_FW2WBM_REINJECT_REASON_MLO_MCAST,
+	HTT_TX_FW2WBM_REINJECT_REASON_SDWF_SVC_CLASS_ID_ABSENT,
+	HTT_TX_FW2WBM_REINJECT_REASON_OPT_DP_CTRL, /* tx qdata packet */
+
+	HTT_TX_FW2WBM_REINJECT_REASON_MAX,
+};
 
 struct htt_tx_wbm_completion {
 	__le32 rsvd0[2];
@@ -62,8 +93,176 @@ enum htt_h2t_msg_type {
 	HTT_H2T_MSG_TYPE_RXDMA_RXOLE_PPE_CFG		= 0x19,
 	HTT_H2T_MSG_TYPE_VDEV_TXRX_STATS_CFG		= 0x1a,
 	HTT_H2T_MSG_TYPE_TX_MONITOR_CFG			= 0x1b,
+	HTT_H2T_MSG_TYPE_STREAMING_STATS_REQ		= 0x20,
+	HTT_H2T_MSG_TYPE_UMAC_RESET_PREREQUISITE_SETUP  = 0x21,
+	HTT_H2T_MSG_TYPE_UMAC_RESET_START_PRE_RESET     = 0x22,
 	HTT_H2T_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_RESP	= 0x24,
 };
+
+#define HTT_ATH12K_UMAC_RESET_T2H_DO_PRE_RESET  BIT(0)
+#define HTT_ATH12K_UMAC_RESET_T2H_DO_POST_RESET_START   BIT(1)
+#define HTT_ATH12K_UMAC_RESET_T2H_DO_POST_RESET_COMPLETE        BIT(2)
+#define HTT_ATH12K_UMAC_RESET_T2H_INIT_UMAC_RECOVERY    BIT(3)
+#define HTT_ATH12K_UMAC_RESET_T2H_INIT_TARGET_RECOVERY_SYNC_USING_UMAC  BIT(4)
+
+#define ATH12K_HTT_UMAC_RESET_MSG_SHMEM_PRE_RESET_DONE_SET      BIT(0)
+#define ATH12K_HTT_UMAC_RESET_MSG_SHMEM_POST_RESET_START_DONE_SET BIT(1)
+#define ATH12K_HTT_UMAC_RESET_MSG_SHMEM_POST_RESET_COMPLETE_DONE BIT(2)
+
+struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t {
+        u32 magic_num;
+        union {
+                /*
+                 * BIT [0]        :- T2H msg to do pre-reset
+                 * BIT [1]        :- T2H msg to do post-reset start
+                 * BIT [2]        :- T2H msg to do post-reset complete
+                 * BIT [3]        :- T2H msg to indicate to Host that
+                 *                   a trigger request for MLO UMAC Recovery
+                 *                   is received for UMAC hang.
+                 * BIT [4]        :- T2H msg to indicate to Host that
+                 *                   a trigger request for MLO UMAC Recovery
+                 *                   is received for Mode-1 Target Recovery.
+                 * BIT [31 : 5]   :- reserved
+                 */
+                u32 t2h_msg;
+                u32 recovery_action;
+        };
+        union {
+                /*
+                 * BIT [0]        :- H2T msg to send pre-reset done
+                 * BIT [1]        :- H2T msg to send post-reset start done
+                 * BIT [2]        :- H2T msg to send post-reset complete done
+                 * BIT [3]        :- H2T msg to start pre-reset. This is deprecated.
+                 * BIT [31 : 4]   :- reserved
+                 */
+                u32 h2t_msg;
+                u32 recovery_action_done;
+        };
+};
+
+struct ath12k_htt_umac_reset_setup_cmd_params {
+        uint32_t msi_data;
+        uint32_t addr_lo;
+        uint32_t addr_hi;
+};
+
+struct htt_h2t_paddr_size {
+        u32 size;
+        u32 addr_lo;
+        u32 addr_hi;
+};
+
+#define HTT_H2T_MSG_TYPE_SET    GENMASK(7, 0)
+#define HTT_H2T_MSG_METHOD      GENMASK(11, 8)
+#define HTT_T2H_MSG_METHOD      GENMASK(15, 12)
+
+#define ATH12K_DP_UMAC_RESET_SHMEM_MAGIC_NUM    0xDEADBEEF
+#define ATH12K_DP_UMAC_RESET_SHMEM_ALIGN        8
+
+/**
+ * @brief HTT_H2T_MSG_TYPE_UMAC_RESET_PREREQUISITE_SETUP message
+ *
+ * @details
+ *  The HTT_H2T_MSG_TYPE_UMAC_HANG_RECOVERY_PREREQUISITE_SETUP message is sent
+ *  by the host to provide prerequisite info to target for the UMAC hang
+ *  recovery feature.
+ *  The info sent in this H2T message are T2H message method, H2T message
+ *  method, T2H MSI interrupt number and physical start address, size of
+ *  the shared memory (refers to the shared memory dedicated for messaging
+ *  between host and target when the DUT is in UMAC hang recovery mode).
+ *  This H2T message is expected to be only sent if the WMI service bit
+ *  WMI_SERVICE_UMAC_HANG_RECOVERY_SUPPORT was firstly indicated by the target.
+ *
+ * |31                           16|15          12|11           8|7          0|
+ * |-------------------------------+--------------+--------------+------------|
+ * |            reserved           |h2t msg method|t2h msg method|  msg_type  |
+ * |--------------------------------------------------------------------------|
+ * |                           t2h msi interrupt number                       |
+ * |--------------------------------------------------------------------------|
+ * |                           shared memory area size                        |
+ * |--------------------------------------------------------------------------|
+ * |                     shared memory area physical address low              |
+ * |--------------------------------------------------------------------------|
+ * |                     shared memory area physical address high             |
+ * |--------------------------------------------------------------------------|
+  * The message is interpreted as follows:
+ * dword0 - b'0:7   - msg_type
+ *                    (HTT_H2T_MSG_TYPE_UMAC_RESET_PREREQUISITE_SETUP)
+ *          b'8:11  - t2h_msg_method: indicates method to be used for
+ *                    T2H communication in UMAC hang recovery mode.
+ *                    Value zero indicates MSI interrupt (default method).
+ *                    Refer to htt_umac_hang_recovery_msg_method enum.
+ *          b'12:15 - h2t_msg_method: indicates method to be used for
+ *                    H2T communication in UMAC hang recovery mode.
+ *                    Value zero indicates polling by target for this h2t msg
+ *                    during UMAC hang recovery mode.
+ *                    Refer to htt_umac_hang_recovery_msg_method enum.
+ *          b'16:31 - reserved.
+ * dword1 - b'0:31  - t2h_msi_data: MSI data to be used for
+ *                    T2H communication in UMAC hang recovery mode.
+ * dword2 - b'0:31  - size: size of shared memory dedicated for messaging
+ *                    only when in UMAC hang recovery mode.
+ *                    This refers to size in bytes.
+ * dword3 - b'0:31  - physical_address_lo: lower 32 bit physical address
+ *                    of the shared memory dedicated for messaging only when
+ *                    in UMAC hang recovery mode.
+ * dword4 - b'0:31  - physical_address_hi: higher 32 bit physical address
+ *                    of the shared memory dedicated for messaging only when
+ *                    in UMAC hang recovery mode.
+ */
+
+struct htt_dp_umac_reset_setup_req_cmd {
+        u32 msg_info;
+        u32 msi_data;
+        struct htt_h2t_paddr_size msg_shared_mem;
+}__packed;
+
+/**
+ * @brief HTT_H2T_MSG_TYPE_UMAC_RESET_START_PRE_RESET message
+ *
+ * @details
+ *  The HTT_H2T_MSG_TYPE_UMAC_HANG_RECOVERY_SOC_START_PRE_RESET is a SOC level
+ *  HTT message sent by the host to indicate that the target needs to start the
+ *  UMAC hang recovery feature from the point of pre-reset routine.
+ *  The purpose of this H2T message is to have host synchronize and trigger
+ *  UMAC recovery across all targets.
+ *  The info sent in this H2T message is the flag to indicate whether the
+ *  target needs to execute UMAC-recovery in context of the Initiator or
+ *  Non-Initiator.
+ *  This H2T message is expected to be sent as response to the
+ *  initiate_umac_recovery indication from the Initiator target attached to
+ *  this same host.
+ *  This H2T message is expected to be only sent if the WMI service bit
+ *  WMI_SERVICE_UMAC_HANG_RECOVERY_SUPPORT was firstly indicated by the target
+ *  and HTT_H2T_MSG_TYPE_UMAC_HANG_RECOVERY_PREREQUISITE_SETUP was sent
+ *  beforehand.
+ *
+ * |31                                    10|9|8|7            0|
+ * |-----------------------------------------------------------|
+ * |                 reserved               |U|I|   msg_type   |
+ * |-----------------------------------------------------------|
+ * Where:
+ *     I = is_initiator
+ *     U = is_umac_hang
+ *
+ * The message is interpreted as follows:
+ * dword0 - b'0:7   - msg_type
+ *                    (HTT_H2T_MSG_TYPE_UMAC_RESET_START_PRE_RESET)
+ *          b'8     - is_initiator: indicates whether the target needs to
+ *                    execute the UMAC-recovery in context of the Initiator or
+ *                    Non-Initiator.
+ *                    The value zero indicates this target is Non-Initiator.
+ *          b'9     - is_umac_hang: indicates whether MLO UMAC recovery
+ *                    executed in context of UMAC hang or Target recovery.
+ *          b'10:31 - reserved.
+ */
+struct h2t_umac_hang_recovery_start_pre_reset {
+       u32 hdr;
+} __packed;
+
+#define HTT_H2T_UMAC_RESET_MSG_TYPE     GENMASK(7, 0)
+#define HTT_H2T_UMAC_RESET_IS_INITIATOR_SET     BIT(8)
+#define HTT_H2T_UMAC_RESET_IS_TARGET_RECOVERY_SET       BIT(9)
 
 #define HTT_H2T_RXOLE_PPE_CFG_MSG_TYPE			GENMASK(7, 0)
 #define HTT_H2T_RXOLE_PPE_CFG_OVERRIDE			BIT(8)
@@ -332,6 +531,13 @@ enum htt_ppdu_stats_tag_type {
 	HTT_PPDU_STATS_TAG_USR_COMMON_ARRAY,
 	HTT_PPDU_STATS_TAG_INFO,
 	HTT_PPDU_STATS_TAG_TX_MGMTCTRL_PAYLOAD,
+	HTT_PPDU_STATS_USERS_INFO,
+	HTT_PPDU_STATS_USR_MPDU_ENQ_BITMAP_1024_TLV,
+	HTT_PPDU_STATS_USR_COMPLTN_BA_BITMAP_1024_TLV,
+	HTT_PPDU_STATS_RX_MGMTCTRL_PAYLOAD_TLV,
+	HTT_PPDU_STATS_FOR_SMU_TLV,
+	HTT_PPDU_STATS_MLO_TX_RESP_TLV,
+	HTT_PPDU_STATS_MLO_TX_NOTIFICATION_TLV,
 
 	/* New TLV's are added above to this line */
 	HTT_PPDU_STATS_TAG_MAX,
@@ -350,12 +556,21 @@ enum htt_ppdu_stats_tag_type {
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_FLUSH) \
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMMON_ARRAY))
 
+#define HTT_PPDU_STATS_ENHANCED_TX_COMPLN (BIT(HTT_PPDU_STATS_TAG_COMMON) \
+                                   | BIT(HTT_PPDU_STATS_TAG_USR_COMMON) \
+                                   | BIT(HTT_PPDU_STATS_TAG_USR_RATE) \
+                                   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_COMMON) \
+                                   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_FLUSH))
+
 #define HTT_PPDU_STATS_TAG_PKTLOG  (BIT(HTT_PPDU_STATS_TAG_USR_MPDU_ENQ_BITMAP_64) | \
 				    BIT(HTT_PPDU_STATS_TAG_USR_MPDU_ENQ_BITMAP_256) | \
+				    BIT(HTT_PPDU_STATS_USR_MPDU_ENQ_BITMAP_1024_TLV) | \
 				    BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_BA_BITMAP_64) | \
 				    BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_BA_BITMAP_256) | \
+				    BIT(HTT_PPDU_STATS_USR_COMPLTN_BA_BITMAP_1024_TLV) | \
 				    BIT(HTT_PPDU_STATS_TAG_INFO) | \
 				    BIT(HTT_PPDU_STATS_TAG_TX_MGMTCTRL_PAYLOAD) | \
+				    BIT(HTT_PPDU_STATS_USERS_INFO) | \
 				    HTT_PPDU_STATS_TAG_DEFAULT)
 
 enum htt_stats_internal_ppdu_frametype {
@@ -473,11 +688,13 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_OFFSET_VALID	BIT(26)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_DROP_THRES_VAL	BIT(27)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_EN_RXMON		BIT(28)
+#define HTT_RX_RING_SELECTION_CFG_CMD_INFO0_PKT_TYPE_EN_DATA	BIT(29)
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_BUF_SIZE		GENMASK(15, 0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_MGMT	GENMASK(18, 16)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_CTRL	GENMASK(21, 19)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO1_CONF_LEN_DATA	GENMASK(24, 22)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO1_CONF_HDR_LEN		GENMASK(26, 25)
 
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO2_DROP_THRESHOLD	GENMASK(9, 0)
 #define HTT_RX_RING_SELECTION_CFG_CMD_INFO2_EN_LOG_MGMT_TYPE	BIT(17)
@@ -499,6 +716,20 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SELECTION_CFG_RX_MPDU_START_MASK	GENMASK(15, 0)
 #define HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_MASK	GENMASK(18, 16)
 #define HTT_RX_RING_SELECTION_CFG_RX_MSDU_END_MASK	GENMASK(16, 0)
+
+#define HTT_RX_RING_SELECTION_CFG_RX_MON_MPDU_START_MASK		GENMASK(19, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_MON_MPDU_END_MASK			GENMASK(27, 20)
+#define HTT_RX_RING_SELECTION_CFG_RX_MON_MSDU_END_MASK			GENMASK(19, 0)
+#define HTT_RX_RING_SELECTION_CFG_RX_MON_PPDU_END_USR_STATS_MASK	GENMASK(19, 0)
+
+#define HTT_RX_PKT_ENABLE_SUBTYPE_SET( \
+	 word, mode, type, flag, sub_type, val) \
+	do { \
+		if (val) { \
+			(word) |= (HTT_RX_##mode##_##type##_PKT_FILTER_TLV_ \
+					##flag##_##sub_type); \
+		} \
+	} while (0)
 
 enum htt_rx_filter_tlv_flags {
 	HTT_RX_FILTER_TLV_FLAGS_MPDU_START		= BIT(0),
@@ -637,153 +868,23 @@ enum htt_rx_data_pkt_filter_tlv_flasg3 {
 	HTT_RX_MO_DATA_PKT_FILTER_TLV_FLASG3_NULL_DATA	= BIT(26),
 };
 
-#define HTT_RX_FP_MGMT_FILTER_FLAGS0 \
-	(HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_ASSOC_REQ \
-	| HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_ASSOC_RESP \
-	| HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_REASSOC_REQ \
-	| HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_REASSOC_RESP \
-	| HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_REQ \
-	| HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_RESP \
-	| HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_TIMING_ADV \
-	| HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_BEACON \
-	| HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_ATIM)
-
-#define HTT_RX_MD_MGMT_FILTER_FLAGS0 \
-	(HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS0_ASSOC_REQ \
-	| HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS0_ASSOC_RESP \
-	| HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS0_REASSOC_REQ \
-	| HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS0_REASSOC_RESP \
-	| HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_REQ \
-	| HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_RESP \
-	| HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_TIMING_ADV \
-	| HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS0_BEACON \
-	| HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS0_ATIM)
-
-#define HTT_RX_MO_MGMT_FILTER_FLAGS0 \
-	(HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_ASSOC_REQ \
-	| HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_ASSOC_RESP \
-	| HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_REASSOC_REQ \
-	| HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_REASSOC_RESP \
-	| HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_REQ \
-	| HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_RESP \
-	| HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_PROBE_TIMING_ADV \
-	| HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_BEACON \
-	| HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_ATIM)
-
-#define HTT_RX_FP_MGMT_FILTER_FLAGS1 (HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS1_DISASSOC \
-				     | HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS1_AUTH \
-				     | HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS1_DEAUTH \
-				     | HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS1_ACTION \
-				     | HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS1_ACTION_NOACK)
-
-#define HTT_RX_MD_MGMT_FILTER_FLAGS1 (HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS1_DISASSOC \
-				     | HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS1_AUTH \
-				     | HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS1_DEAUTH \
-				     | HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS1_ACTION \
-				     | HTT_RX_MD_MGMT_PKT_FILTER_TLV_FLAGS1_ACTION_NOACK)
-
-#define HTT_RX_MO_MGMT_FILTER_FLAGS1 (HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS1_DISASSOC \
-				     | HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS1_AUTH \
-				     | HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS1_DEAUTH \
-				     | HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS1_ACTION \
-				     | HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS1_ACTION_NOACK)
-
-#define HTT_RX_FP_CTRL_FILTER_FLASG2 (HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_WRAPPER \
-				     | HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_BAR \
-				     | HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_BA)
-
-#define HTT_RX_MD_CTRL_FILTER_FLASG2 (HTT_RX_MD_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_WRAPPER \
-				     | HTT_RX_MD_CTRL_PKT_FILTER_TLV_FLAGS2_BAR \
-				     | HTT_RX_MD_CTRL_PKT_FILTER_TLV_FLAGS2_BA)
-
-#define HTT_RX_MO_CTRL_FILTER_FLASG2 (HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_WRAPPER \
-				     | HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_BAR \
-				     | HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_BA)
-
-#define HTT_RX_FP_CTRL_FILTER_FLASG3 (HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS3_PSPOLL \
-				     | HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS3_RTS \
-				     | HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS3_CTS \
-				     | HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS3_ACK \
-				     | HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS3_CFEND \
-				     | HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS3_CFEND_ACK)
-
-#define HTT_RX_MD_CTRL_FILTER_FLASG3 (HTT_RX_MD_CTRL_PKT_FILTER_TLV_FLAGS3_PSPOLL \
-				     | HTT_RX_MD_CTRL_PKT_FILTER_TLV_FLAGS3_RTS \
-				     | HTT_RX_MD_CTRL_PKT_FILTER_TLV_FLAGS3_CTS \
-				     | HTT_RX_MD_CTRL_PKT_FILTER_TLV_FLAGS3_ACK \
-				     | HTT_RX_MD_CTRL_PKT_FILTER_TLV_FLAGS3_CFEND \
-				     | HTT_RX_MD_CTRL_PKT_FILTER_TLV_FLAGS3_CFEND_ACK)
-
-#define HTT_RX_MO_CTRL_FILTER_FLASG3 (HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS3_PSPOLL \
-				     | HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS3_RTS \
-				     | HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS3_CTS \
-				     | HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS3_ACK \
-				     | HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS3_CFEND \
-				     | HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS3_CFEND_ACK)
-
-#define HTT_RX_FP_DATA_FILTER_FLASG3 (HTT_RX_FP_DATA_PKT_FILTER_TLV_FLASG3_MCAST \
-				     | HTT_RX_FP_DATA_PKT_FILTER_TLV_FLASG3_UCAST \
-				     | HTT_RX_FP_DATA_PKT_FILTER_TLV_FLASG3_NULL_DATA)
-
-#define HTT_RX_MD_DATA_FILTER_FLASG3 (HTT_RX_MD_DATA_PKT_FILTER_TLV_FLASG3_MCAST \
-				     | HTT_RX_MD_DATA_PKT_FILTER_TLV_FLASG3_UCAST \
-				     | HTT_RX_MD_DATA_PKT_FILTER_TLV_FLASG3_NULL_DATA)
-
-#define HTT_RX_MO_DATA_FILTER_FLASG3 (HTT_RX_MO_DATA_PKT_FILTER_TLV_FLASG3_MCAST \
-				     | HTT_RX_MO_DATA_PKT_FILTER_TLV_FLASG3_UCAST \
-				     | HTT_RX_MO_DATA_PKT_FILTER_TLV_FLASG3_NULL_DATA)
-
-#define HTT_RX_MON_FP_MGMT_FILTER_FLAGS0 \
-		(HTT_RX_FP_MGMT_FILTER_FLAGS0 | \
-		HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS0_RESERVED_7)
-
-#define HTT_RX_MON_MO_MGMT_FILTER_FLAGS0 \
-		(HTT_RX_MO_MGMT_FILTER_FLAGS0 | \
-		HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS0_RESERVED_7)
-
-#define HTT_RX_MON_FP_MGMT_FILTER_FLAGS1 \
-		(HTT_RX_FP_MGMT_FILTER_FLAGS1 | \
-		HTT_RX_FP_MGMT_PKT_FILTER_TLV_FLAGS1_RESERVED_15)
-
-#define HTT_RX_MON_MO_MGMT_FILTER_FLAGS1 \
-		(HTT_RX_MO_MGMT_FILTER_FLAGS1 | \
-		HTT_RX_MO_MGMT_PKT_FILTER_TLV_FLAGS1_RESERVED_15)
-
-#define HTT_RX_MON_FP_CTRL_FILTER_FLASG2 \
-		(HTT_RX_FP_CTRL_FILTER_FLASG2 | \
-		HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_RESERVED_1 | \
-		HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_RESERVED_2 | \
-		HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_TRIGGER | \
-		HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_RESERVED_4 | \
-		HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_BF_REP_POLL | \
-		HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_VHT_NDP | \
-		HTT_RX_FP_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_FRAME_EXT)
-
-#define HTT_RX_MON_MO_CTRL_FILTER_FLASG2 \
-		(HTT_RX_MO_CTRL_FILTER_FLASG2 | \
-		HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_RESERVED_1 | \
-		HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_RESERVED_2 | \
-		HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_TRIGGER | \
-		HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_RESERVED_4 | \
-		HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_BF_REP_POLL | \
-		HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_VHT_NDP | \
-		HTT_RX_MO_CTRL_PKT_FILTER_TLV_FLAGS2_CTRL_FRAME_EXT)
-
-#define HTT_RX_MON_FP_CTRL_FILTER_FLASG3 HTT_RX_FP_CTRL_FILTER_FLASG3
-
-#define HTT_RX_MON_MO_CTRL_FILTER_FLASG3 HTT_RX_MO_CTRL_FILTER_FLASG3
-
-#define HTT_RX_MON_FP_DATA_FILTER_FLASG3 HTT_RX_FP_DATA_FILTER_FLASG3
-
-#define HTT_RX_MON_MO_DATA_FILTER_FLASG3 HTT_RX_MO_DATA_FILTER_FLASG3
+enum htt_rx_hdr_len_type {
+	HTT_RX_HDR_LEN_64_BYTES = 1,
+	HTT_RX_HDR_LEN_128_BYTES,
+	HTT_RX_HDR_LEN_256_BYTES,
+};
 
 #define HTT_RX_MON_FILTER_TLV_FLAGS \
 		(HTT_RX_FILTER_TLV_FLAGS_MPDU_START | \
 		HTT_RX_FILTER_TLV_FLAGS_PPDU_START | \
 		HTT_RX_FILTER_TLV_FLAGS_PPDU_END | \
+		HTT_RX_FILTER_TLV_FLAGS_PPDU_END_STATUS_DONE)
+
+#define HTT_RX_MON_FILTER_TLV_EXTD_FLAGS \
+		(HTT_RX_MON_FILTER_TLV_FLAGS | \
 		HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS | \
 		HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS_EXT | \
-		HTT_RX_FILTER_TLV_FLAGS_PPDU_END_STATUS_DONE)
+		HTT_RX_FILTER_TLV_FLAGS_PPDU_START_USER_INFO)
 
 #define HTT_RX_MON_FILTER_TLV_FLAGS_MON_STATUS_RING \
 		(HTT_RX_FILTER_TLV_FLAGS_MPDU_START | \
@@ -827,6 +928,22 @@ enum htt_rx_data_pkt_filter_tlv_flasg3 {
 #define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_MSG_TYPE	GENMASK(7, 0)
 #define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PDEV_ID	GENMASK(15, 8)
 
+#define HTT_RX_FILTER_TLV_PKTLOG_LITE \
+        (HTT_RX_FILTER_TLV_FLAGS_MPDU_START | \
+         HTT_RX_FILTER_TLV_FLAGS_PPDU_START | \
+         HTT_RX_FILTER_TLV_FLAGS_PPDU_END | \
+         HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS | \
+         HTT_RX_FILTER_TLV_FLAGS_PPDU_END_USER_STATS_EXT | \
+         HTT_RX_FILTER_TLV_FLAGS_PPDU_END_STATUS_DONE | \
+         HTT_RX_FILTER_TLV_FLAGS_PPDU_START_USER_INFO)
+
+#define HTT_RX_FILTER_TLV_PKTLOG_FULL \
+        (HTT_RX_FILTER_TLV_PKTLOG_LITE | \
+         HTT_RX_FILTER_TLV_FLAGS_MSDU_START | \
+         HTT_RX_FILTER_TLV_FLAGS_MSDU_END | \
+         HTT_RX_FILTER_TLV_FLAGS_MPDU_END | \
+         HTT_RX_FILTER_TLV_FLAGS_PACKET_HEADER)
+
 struct htt_rx_ring_selection_cfg_cmd {
 	__le32 info0;
 	__le32 info1;
@@ -844,6 +961,14 @@ struct htt_rx_ring_selection_cfg_cmd {
 	__le32 rx_mpdu_start_end_mask;
 	__le32 rx_msdu_end_word_mask;
 	__le32 info3;
+	__le32 rx_mon_mpdu_start_end_mask;
+	__le32 rx_mon_msdu_end_word_mask;
+	__le32 rx_mon_ppdu_end_usr_stats_wmask;
+	__le32 reserved1[2];
+	__le32 pkt_type_en_data_flag0;
+	__le32 pkt_type_en_data_flag1;
+	__le32 pkt_type_en_data_flag2;
+	__le32 pkt_type_en_data_flag3;
 } __packed;
 
 #define HTT_RX_RING_TLV_DROP_THRESHOLD_VALUE	32
@@ -852,11 +977,31 @@ struct htt_rx_ring_selection_cfg_cmd {
 
 struct htt_rx_ring_tlv_filter {
 	u32 rx_filter; /* see htt_rx_filter_tlv_flags */
-	u32 pkt_filter_flags0; /* MGMT */
-	u32 pkt_filter_flags1; /* MGMT */
-	u32 pkt_filter_flags2; /* CTRL */
-	u32 pkt_filter_flags3; /* DATA */
 	bool offset_valid;
+	bool enable_fp;
+	bool enable_mo;
+	bool enable_md;
+	bool enable_fp_packet;
+	bool enable_mo_packet;
+	bool enable_md_packet;
+	u16 fp_mgmt_filter;
+	u16 fp_ctrl_filter;
+	u16 fp_data_filter;
+	u16 mo_mgmt_filter;
+	u16 mo_ctrl_filter;
+	u16 mo_data_filter;
+	u16 md_mgmt_filter;
+	u16 md_ctrl_filter;
+	u16 md_data_filter;
+	u16 fp_packet_mgmt_filter;
+	u16 fp_packet_ctrl_filter;
+	u16 fp_packet_data_filter;
+	u16 mo_packet_mgmt_filter;
+	u16 mo_packet_ctrl_filter;
+	u16 mo_packet_data_filter;
+	u16 md_packet_mgmt_filter;
+	u16 md_packet_ctrl_filter;
+	u16 md_packet_data_filter;
 	u16 rx_packet_offset;
 	u16 rx_header_offset;
 	u16 rx_mpdu_end_offset;
@@ -867,6 +1012,10 @@ struct htt_rx_ring_tlv_filter {
 	u16 rx_mpdu_start_wmask;
 	u16 rx_mpdu_end_wmask;
 	u32 rx_msdu_end_wmask;
+	u32 rx_mon_mpdu_start_wmask;
+	u16 rx_mon_mpdu_end_wmask;
+	u32 rx_mon_msdu_end_wmask;
+	u32 rx_mon_ppdu_end_usr_stats_wmask;
 	u32 conf_len_ctrl;
 	u32 conf_len_mgmt;
 	u32 conf_len_data;
@@ -878,6 +1027,7 @@ struct htt_rx_ring_tlv_filter {
 	u16 rx_tlv_offset;
 	bool drop_threshold_valid;
 	bool rxmon_disable;
+	u8 rx_hdr_len;
 };
 
 #define HTT_STATS_FRAME_CTRL_TYPE_MGMT  0x0
@@ -980,6 +1130,9 @@ enum htt_t2h_msg_type {
 	HTT_T2H_MSG_TYPE_MLO_RX_PEER_UNMAP = 0x2a,
 	HTT_T2H_MSG_TYPE_PEER_MAP3	= 0x2b,
 	HTT_T2H_MSG_TYPE_VDEV_TXRX_STATS_PERIODIC_IND = 0x2c,
+	HTT_T2H_MSG_TYPE_QOS_MSDUQ_INFO_IND = 0x2e,
+	HTT_T2H_MSG_TYPE_STREAMING_STATS_IND = 0x2f,
+	HTT_T2H_MSG_TYPE_PPDU_ID_FMT_IND = 0x30,
 	HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND = 0x37,
 };
 
@@ -1177,6 +1330,47 @@ enum htt_backpressure_lmac_ringid {
 #define HTT_T2H_PPDU_STATS_INFO_PDEV_ID GENMASK(11, 10)
 #define HTT_T2H_PPDU_STATS_INFO_PAYLOAD_SIZE GENMASK(31, 16)
 
+/* @brief target -> host packet log message
+ *
+ * @details
+ * The following field definitions describe the format of the packet log
+ * message sent from the target to the host.
+ * The message consists of a 4-octet header,followed by a variable number
+ * of 32-bit character values.
+ *
+ * |31                         16|15  12|11   10|9    8|7            0|
+ * |------------------------------------------------------------------|
+ * |        payload_size         | rsvd |pdev_id|mac_id|   msg type   |
+ * |------------------------------------------------------------------|
+ * |                              payload                             |
+ * |------------------------------------------------------------------|
+ *   - MSG_TYPE
+ *     Bits 7:0
+ *     Purpose: identifies this as a pktlog message
+ *     Value: HTT_T2H_MSG_TYPE_PKTLOG
+ *   - mac_id
+ *     Bits 9:8
+ *     Purpose: identifies which MAC/PHY instance generated this pktlog info
+ *     Value: 0-3
+ *   - pdev_id
+ *     Bits 11:10
+ *     Purpose: pdev_id
+ *     Value: 0-3
+ *     0 (for rings at SOC level),
+ *     1/2/3 PDEV -> 0/1/2
+ *   - payload_size
+ *     Bits 31:16
+ *     Purpose: explicitly specify the payload size
+ *     Value: payload size in bytes (payload size is a multiple of 4 bytes)
+ */
+#define HTT_T2H_PKTLOG_PDEV_ID		GENMASK(11, 10)
+#define HTT_T2H_PKTLOG_PAYLOAD_SIZE	GENMASK(31, 16)
+
+struct ath12k_htt_pktlog_msg {
+	__le32 header;
+	u8 payload[];
+} __packed;
+
 struct ath12k_htt_ppdu_stats_msg {
 	__le32 info;
 	__le32 ppdu_id;
@@ -1227,6 +1421,29 @@ struct htt_ppdu_stats_common {
 	 */
 	__le16 phy_mode;
 	__le16 bw_mhz;
+	__le32 cca_delta_time_us;
+	__le32 rxfrm_delta_time_us;
+	__le32 txfrm_delta_time_us;
+	/*  The phy_ppdu_tx_time_us reports the time it took to transmit
+	 * a PPDU by itself
+	 * BIT [15 :  0] - phy_ppdu_tx_time_us reports the time it took to
+	 *                 transmit by itself (not including response time)
+	 * BIT [23 : 16] - num_ul_expected_users reports the number of users
+	 *                 that are expected to respond to this transmission
+	 * BIT [24 : 24] - beam_change reports the beam forming pattern
+	 *                 between non-HE and HE portion.
+	 *                 If we apply TxBF starting from legacy preamble,
+	 *                 then beam_change = 0.
+	 *                 If we apply TxBF only starting from HE portion,
+	 *                 then beam_change = 1.
+	 * BIT [25 : 25] - doppler_indication
+	 * BIT [29 : 26] - spatial_reuse for HE_SU,HE_MU and HE_EXT_SU format PPDU
+	 *                 HTT_PPDU_STATS_SPATIAL_REUSE
+	 * BIT [31 : 30] - reserved
+	 */
+	__le16 phy_ppdu_tx_time_us;
+	u8 num_ul_expected_users;
+	u8 reserved;
 } __packed;
 
 enum htt_ppdu_stats_gi {
@@ -1235,6 +1452,8 @@ enum htt_ppdu_stats_gi {
 	HTT_PPDU_STATS_SGI_1_6_US,
 	HTT_PPDU_STATS_SGI_3_2_US,
 };
+
+#define HTT_PPDU_STATS_USER_RATE_TLV_TID_NUM_M     GENMASK(7, 0)
 
 #define HTT_PPDU_STATS_USER_RATE_INFO0_USER_POS_M	GENMASK(3, 0)
 #define HTT_PPDU_STATS_USER_RATE_INFO0_MU_GROUP_ID_M	GENMASK(11, 4)
@@ -1432,6 +1651,8 @@ struct htt_ppdu_user_stats {
 	u16 delay_ba;
 	u32 tlv_flags;
 	bool is_valid_peer_id;
+	u8 ru_tones;
+	u8 nss;
 	struct htt_ppdu_stats_user_rate rate;
 	struct htt_ppdu_stats_usr_cmpltn_cmn cmpltn_cmn;
 	struct htt_ppdu_stats_usr_cmpltn_ack_ba_status ack_ba;
@@ -1454,7 +1675,11 @@ struct htt_ppdu_stats_info {
 	u32 frame_ctrl;
 	u32 delay_ba;
 	u32 bar_num_users;
+	u32 max_users;
 	struct htt_ppdu_stats ppdu_stats;
+	u32 usr_ru_tones_sum;
+	u16 htt_frame_type;
+	u8 usr_nss_sum;
 	struct list_head list;
 };
 
@@ -1639,6 +1864,7 @@ struct htt_ext_stats_cfg_cmd {
 #define HTT_STAT_DEFAULT_CFG0_ACTIVE_PEERS 0xff
 #define HTT_STAT_DEFAULT_CFG0_CCA_CUMULATIVE 0x00
 #define HTT_STAT_DEFAULT_CFG0_ACTIVE_VDEVS 0x00
+#define HTT_STAT_DEFAULT_CFG0_MASK 0x07
 
 /* HTT_DBG_EXT_STATS_PEER_INFO
  * PARAMS:
@@ -1916,6 +2142,94 @@ struct ath12k_htt_pri_link_migr_h2t_msg {
 	__le32 info2;
 } __packed;
 
+/* MSG_TYPE => HTT_T2H_QOS_MSDUQ_INFO_IND
+ *
+ * @details
+ * When QOS is enabled and a flow is mapped to a policy during the traffic
+ * flow if the flow is seen the associated service class is conveyed to the
+ * target via TCL Data Command. Target on the other hand internally creates the
+ * MSDUQ. Once the target creates the MSDUQ the target sends the information
+ * of the newly created MSDUQ and some other identifiers to uniquely identity
+ * the newly created MSDUQ
+ *
+ * |31    27|          24|23    16|15|14          11|10|9 8|7     4|3    0|
+ * |------------------------------+------------------------+--------------|
+ * |             peer ID          |         HTT qtype      |   msg type   |
+ * |---------------------------------+--------------+--+---+-------+------|
+ * |            reserved             |AST list index|FO|WC | HLOS  | remap|
+ * |                                 |              |  |   | TID   | TID  |
+ * |---------------------+------------------------------------------------|
+ * |    reserved1        |               tgt_opaque_id                    |
+ * |---------------------+------------------------------------------------|
+ *
+ * Header fields:
+ *
+ * info0 - b'7:0       - msg_type: This will be set to
+ *                        0x2e (HTT_T2H_QOS_MSDUQ_INFO_IND)
+ *          b'15:8      - HTT qtype
+ *          b'31:16     - peer ID
+ *
+ * info1 - b'3:0       - remap TID, as assigned in firmware
+ *          b'7:4       - HLOS TID, as sent by host in TCL Data Command
+ *                        hlos_tid : Common to Lithium and Beryllium
+ *          b'9:8       - who_classify_info_sel (WC), as sent by host in
+ *                        TCL Data Command : Beryllium
+ *          b10         - flow_override (FO), as sent by host in
+ *                        TCL Data Command: Beryllium
+ *          b11:14      - ast_list_idx
+ *                        Array index into the list of extension AST entries
+ *                        (not the actual AST 16-bit index).
+ *                        The ast_list_idx is one-based, with the following
+ *                        range of values:
+ *                          - legacy targets supporting 16 user-defined
+ *                            MSDU queues: 1-2
+ *                          - legacy targets supporting 48 user-defined
+ *                            MSDU queues: 1-6
+ *                          - new targets: 0 (peer_id is used instead)
+ *                        Note that since ast_list_idx is one-based,
+ *                        the host will need to subtract 1 to use it as an
+ *                        index into a list of extension AST entries.
+ *          b15:31      - reserved
+ *
+ * info2 - b'23:0      - tgt_opaque_id Opaque Tx flow number which is a
+ *                        unique MSDUQ id in firmware
+ *          b'24:31     - reserved1
+ */
+
+#define HTT_T2H_QOS_MSDUQ_INFO_0_IND_HTT_QTYPE_ID             GENMASK(15, 8)
+#define HTT_T2H_QOS_MSDUQ_INFO_0_IND_PEER_ID                  GENMASK(31, 16)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_REMAP_TID_ID             GENMASK(3, 0)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_HLOS_TID_ID              GENMASK(7, 4)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_WHO_CLSFY_INFO_SEL_ID    GENMASK(9, 8)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_FLOW_OVERRIDE_ID         BIT(10)
+#define HTT_T2H_QOS_MSDUQ_INFO_1_IND_AST_INDEX_ID             GENMASK(14, 11)
+#define HTT_T2H_QOS_MSDUQ_INFO_2_IND_TGT_OPAQUE_ID            GENMASK(23, 0)
+
+struct htt_t2h_qos_info_ind {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+} __packed;
+
+struct ath12k_htt_ppdu_id_fmt_info {
+	__le32 info;
+	__le32 info1;
+
+	/* Bits 15:0   reserved
+	 * Bit  16     link_id valid
+	 * Bits 21:17  link_id bits
+	 * Bits 26:22  link_id offset
+	 * Bits 31:27  reserved
+	 */
+	__le32 link_id;
+	__le32 info2;
+	__le32 info3;
+} __packed;
+
+#define HTT_PPDU_ID_FMT_VALID_BITS	BIT(16)
+#define HTT_PPDU_ID_FMT_GET_BITS	GENMASK(21, 17)
+#define HTT_PPDU_ID_FMT_GET_OFFSET	GENMASK(26, 22)
+
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
@@ -1932,8 +2246,6 @@ int
 ath12k_dp_tx_htt_h2t_ext_stats_req(struct ath12k *ar, u8 type,
 				   struct htt_ext_stats_cfg_params *cfg_params,
 				   u64 cookie);
-int ath12k_dp_tx_htt_rx_monitor_mode_ring_config(struct ath12k *ar, bool reset);
-
 int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int mac_id, enum hal_ring_type ring_type,
 				     int rx_buf_size,
@@ -1942,7 +2254,6 @@ int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     int mac_id, enum hal_ring_type ring_type,
 				     int tx_buf_size,
 				     struct htt_tx_ring_tlv_filter *htt_tlv_filter);
-int ath12k_dp_tx_htt_monitor_mode_ring_config(struct ath12k *ar, bool reset);
 int ath12k_dp_htt_rx_flow_fst_setup(struct ath12k_base *ab, struct htt_rx_flow_fst_setup *setup_info);
 int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
 					enum dp_htt_flow_fst_operation op_code,

@@ -103,7 +103,8 @@ void ath12k_wifi7_hal_ce_dst_setup(struct ath12k_base *ab,
 }
 
 void ath12k_wifi7_hal_srng_dst_hw_init(struct ath12k_base *ab,
-				       struct hal_srng *srng)
+				       struct hal_srng *srng,
+				       u32 restore_idx)
 {
 	struct ath12k_hal *hal = &ab->hal;
 	u32 val;
@@ -161,10 +162,11 @@ void ath12k_wifi7_hal_srng_dst_hw_init(struct ath12k_base *ab,
 
 	/* Initialize head and tail pointers to indicate ring is empty */
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R2];
-	ath12k_hif_write32(ab, reg_base, 0);
-	ath12k_hif_write32(ab, reg_base + HAL_REO1_RING_TP_OFFSET, 0);
-	*srng->u.dst_ring.hp_addr = 0;
-	srng->u.dst_ring.tp = 0;
+	ath12k_hif_write32(ab, reg_base,  restore_idx * srng->entry_size);
+	ath12k_hif_write32(ab, reg_base + HAL_REO1_RING_TP_OFFSET,
+			   restore_idx * srng->entry_size);
+	*srng->u.dst_ring.hp_addr =  restore_idx * srng->entry_size;
+	srng->u.dst_ring.tp =  restore_idx * srng->entry_size;
 
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
 	val = 0;
@@ -180,7 +182,8 @@ void ath12k_wifi7_hal_srng_dst_hw_init(struct ath12k_base *ab,
 }
 
 void ath12k_wifi7_hal_srng_src_hw_init(struct ath12k_base *ab,
-				       struct hal_srng *srng)
+				       struct hal_srng *srng,
+				       u32 restore_idx)
 {
 	struct ath12k_hal *hal = &ab->hal;
 	u32 val;
@@ -250,10 +253,11 @@ void ath12k_wifi7_hal_srng_src_hw_init(struct ath12k_base *ab,
 
 	/* Initialize head and tail pointers to indicate ring is empty */
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R2];
-	ath12k_hif_write32(ab, reg_base, 0);
-	ath12k_hif_write32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET, 0);
-	*srng->u.src_ring.tp_addr = 0;
-	srng->u.src_ring.hp = 0;
+	ath12k_hif_write32(ab, reg_base, restore_idx * srng->entry_size);
+	ath12k_hif_write32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET,
+			   restore_idx * srng->entry_size);
+	*srng->u.src_ring.tp_addr =  restore_idx * srng->entry_size;
+	srng->u.src_ring.hp =  restore_idx * srng->entry_size;
 
 	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
 	val = 0;
@@ -282,17 +286,31 @@ void ath12k_wifi7_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 	u32 reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R2];
 
 	if (srng->ring_dir == HAL_SRNG_DIR_DST) {
-		if (!ab->hw_params->supports_shadow_regs)
+		if (!ab->hw_params->supports_shadow_regs) {
 			srng->u.dst_ring.tp_addr =
 				(u32 *)((unsigned long)ab->mem + reg_base +
 				(HAL_REO1_RING_TP - HAL_REO1_RING_HP));
-		else
+			if (type  == HAL_WBM2SW_RELEASE) {
+				if (ab->hif.bus == ATH12K_BUS_PCI ||
+						ab->hif.bus == ATH12K_BUS_HYBRID){
+					srng->u.dst_ring.tp_addr_direct =
+						(u32 *)((unsigned long)ab->mem +
+						(reg_base & WINDOW_RANGE_MASK) +
+						HAL_DP_REG_WINDOW_OFFSET +
+						(HAL_REO1_RING_TP - HAL_REO1_RING_HP));
+				} else {
+					srng->u.dst_ring.tp_addr_direct =
+						srng->u.dst_ring.tp_addr;
+				}
+			}
+		} else {
 			ath12k_dbg(ab, ATH12K_DBG_HAL,
 				   "type %d ring_num %d target_reg 0x%x shadow 0x%lx\n",
 				   type, ring_num,
 				   reg_base + HAL_REO1_RING_TP - HAL_REO1_RING_HP,
 				   (unsigned long)srng->u.dst_ring.tp_addr -
 				   (unsigned long)ab->mem);
+		}
 	} else  {
 		if (!ab->hw_params->supports_shadow_regs) {
 			srng->u.src_ring.hp_addr =
@@ -583,6 +601,15 @@ void ath12k_wifi7_hal_tx_configure_bank_register(struct ath12k_base *ab,
 			   bank_config);
 }
 
+u32 ath12k_wifi7_hal_tx_read_bank_register(struct ath12k_base *ab, u8 bank_id)
+{
+	u32 reg_val;
+
+	reg_val = ath12k_hif_read32(ab, HAL_TCL_SW_CONFIG_BANK_ADDR + 4 * bank_id);
+
+	return reg_val;
+}
+
 void ath12k_wifi7_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
@@ -688,5 +715,43 @@ ath12k_wifi7_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 			    device_id);
 		WARN_ON(1);
 		return HAL_RX_BUF_RBM_WBM_DEV0_IDLE_DESC_LIST;
+	}
+}
+
+void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
+				      struct hal_srng *srng)
+{
+	u32 reg_base, val, addr;
+	struct ath12k_hal *hal = &ab->hal;
+
+	reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R0];
+	if (srng->ring_dir == HAL_SRNG_DIR_SRC) {
+		if (srng->ring_id == HAL_SRNG_RING_ID_WBM_IDLE_LINK)
+			addr = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_IDLE_LINK_RING_MISC_ADDR(hal);
+		else
+			addr = reg_base + HAL_TCL1_RING_MISC_OFFSET(hal);
+		val = ath12k_hif_read32(ab, addr);
+		val &= ~HAL_TCL1_RING_MISC_SRNG_ENABLE;
+		ath12k_hif_write32(ab, addr, val);
+	} else {
+		val = ath12k_hif_read32(ab, reg_base + HAL_REO1_RING_MISC_OFFSET);
+		val &= ~HAL_REO1_RING_MISC_SRNG_ENABLE;
+		ath12k_hif_write32(ab , reg_base + HAL_REO1_RING_MISC_OFFSET, val);
+	}
+}
+
+void ath12k_wifi7_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type type,
+				  struct hal_srng *srng, uint32_t *hp, uint32_t *tp)
+{
+	struct ath12k_hal *hal = &ab->hal;
+	struct hal_srng_config *srng_config = &hal->srng_config[type];
+	u32 reg_base;
+
+	if (srng_config->mac_type == ATH12K_HAL_SRNG_UMAC) {
+		reg_base = srng->hwreg_base[HAL_SRNG_REG_GRP_R2];
+
+		*hp = ath12k_hif_read32(ab, reg_base);
+		*tp = ath12k_hif_read32(ab, reg_base + HAL_TCL1_RING_TP_OFFSET);
 	}
 }

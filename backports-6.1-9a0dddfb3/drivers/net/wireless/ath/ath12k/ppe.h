@@ -6,10 +6,13 @@
 #ifndef ATH12K_PPE_H
 #define ATH12K_PPE_H
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
 #include <ppe_vp_public.h>
 #include <ppe_drv_sc.h>
 #include <ppe_drv.h>
+#include <nss_plugins.h>
+#endif
 #include "wifi7/hal.h"
 #include "dp_cmn.h"
 #include "dp.h"
@@ -28,6 +31,15 @@ enum ppeds_irq_type {
 	PPEDS_IRQ_PPE_WBM2SW_REL,
 };
 
+struct dp_ppe_ds_idxs {
+	u32 ppe2tcl_start_idx;
+	u32 reo2ppe_start_idx;
+};
+
+#define ATH12K_DP_PPEDS_NAPI_DONE_BIT		1
+#define ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT	2
+
+#define PPE_DS_MAX_NODE	            4   /* Max DS node supported */
 #define DP_PPEDS_SERVICE_BUDGET     256
 
 #define ATH12K_PPE_DEFAULT_CORE_MASK		ath12k_rfs_core_mask[0]
@@ -102,7 +114,6 @@ struct ath12k_ppeds_napi {
 
 struct ath12k_ppe {
 	struct ath12k_base *ab;
-	ppe_ds_wlan_handle_t *ppeds_handle;
 	struct dp_srng reo2ppe_ring;
 	struct dp_srng ppe2tcl_ring;
 	struct dp_ppeds_tx_comp_ring ppeds_comp_ring;
@@ -130,6 +141,7 @@ struct ath12k_ppe {
 	u8 ppeds_int_mode_enabled;
 	u8 ppeds_stopped;
 	struct ath12k_ppeds_stats ppeds_stats;
+	struct nss_plugins_ops *nss_plugin_ops;
 };
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -141,13 +153,13 @@ int ath12k_change_core_mask_for_ppe_rfs(struct ath12k_base *ab,
 					struct ath12k_vif *ahvif,
 					int core_mask);
 int ath12k_vif_update_vp_config(struct ath12k_vif *ahvif, int vp_type);
-int ath12k_vif_alloc_vp(struct ath12k_vif *ahvif, int vp_type, int *core_mask,
-			struct net_device *dev);
+int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev);
 int ath12k_vif_set_mtu(struct ath12k_vif *ahvif, int mtu);
 
 void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab);
 int ath12k_dp_srng_ppeds_setup(struct ath12k_base *ab);
-int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp);
+int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp,
+				 struct dp_ppe_ds_idxs *idx);
 void ath12k_dp_ppeds_stop(struct ath12k_base *ab);
 int ath12k_dp_ppeds_start(struct ath12k_base *ab);
 int ath12k_ppeds_detach(struct ath12k_base *ab);
@@ -161,8 +173,6 @@ irqreturn_t ath12k_ds_reo2ppe_irq_handler(int irq, void *ctxt);
 irqreturn_t ath12k_dp_ppeds_handle_tx_comp(int irq, void *ctxt);
 void ath12k_dp_ppeds_update_vp_entry(struct ath12k *ar,
 				     struct ath12k_link_vif *arvif);
-void ath12k_dp_rx_ppe_fse_register(void);
-void ath12k_dp_rx_ppe_fse_unregister(void);
 void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
 						 struct ath12k_link_vif *arvif,
 						 bool peer_map);
@@ -176,7 +186,17 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 				 struct ieee80211_vif *vif);
 void ath12k_ppeds_detach_link_vif(struct ath12k_link_vif *arvif,
 				  int ppe_vp_profile_idx);
+void ath12k_ppeds_update_splitphy_bank_id(struct ath12k_base *ab,
+					  struct ath12k_link_vif *arvif);
 void ath12k_vif_free_vp(struct ath12k_vif *ahvif, struct net_device *dev);
+
+void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
+					    bool enable);
+void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab);
+void ath12k_dp_ppeds_stop(struct ath12k_base *ab);
+void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab);
+int ath12k_nss_plugin_register_ops(struct ath12k_base *ab);
+void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab);
 
 #else
 static inline void ath12k_dp_srng_ppeds_cleanup(struct ath12k_base *ab)
@@ -188,7 +208,8 @@ static inline int ath12k_dp_srng_ppeds_setup(struct ath12k_base *ab)
 	return 0;
 }
 
-static inline int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp)
+static inline int ath12k_dp_ppeds_register_soc(struct ath12k_dp *dp,
+					       struct dp_ppe_ds_idxs *idx)
 {
 	return 0;
 }
@@ -300,6 +321,11 @@ static inline void ath12k_ppeds_detach_link_apvlan_vif(struct ath12k_link_vif *a
 static inline void ath12k_ppe_ds_attach_vlan_vif_link(struct ath12k_vlan_iface *vlan_iface,
 						      int ppe_vp_num)
 {
+}
+
+static inline int ath12k_nss_plugin_register_ops(struct ath12k_base *ab)
+{
+	return 0;
 }
 
 #endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */

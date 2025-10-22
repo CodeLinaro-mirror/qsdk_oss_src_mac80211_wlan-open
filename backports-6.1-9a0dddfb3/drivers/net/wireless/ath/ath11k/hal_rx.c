@@ -30,7 +30,12 @@ static int ath11k_hal_reo_cmd_queue_stats(struct hal_tlv_hdr *tlv,
 		  FIELD_PREP(HAL_TLV_HDR_LEN, sizeof(*desc));
 
 	desc = (struct hal_reo_get_queue_stats *)tlv->value;
+#if LINUX_VERSION_IS_LESS(5,16,0)
+	memset(&desc->queue_addr_lo, 0,
+			(sizeof(*desc) - sizeof(struct hal_reo_cmd_hdr)));
+#else
 	memset_startat(desc, 0, queue_addr_lo);
+#endif
 
 	desc->cmd.info0 &= ~HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED;
 	if (cmd->flag & HAL_REO_CMD_FLG_NEED_STATUS)
@@ -62,7 +67,12 @@ static int ath11k_hal_reo_cmd_flush_cache(struct ath11k_hal *hal, struct hal_tlv
 		  FIELD_PREP(HAL_TLV_HDR_LEN, sizeof(*desc));
 
 	desc = (struct hal_reo_flush_cache *)tlv->value;
+#if LINUX_VERSION_IS_LESS(5,16,0)
+	memset(&desc->cache_addr_lo, 0,
+			(sizeof(*desc) - sizeof(struct hal_reo_cmd_hdr)));
+#else
 	memset_startat(desc, 0, cache_addr_lo);
+#endif
 
 	desc->cmd.info0 &= ~HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED;
 	if (cmd->flag & HAL_REO_CMD_FLG_NEED_STATUS)
@@ -100,7 +110,12 @@ static int ath11k_hal_reo_cmd_update_rx_queue(struct hal_tlv_hdr *tlv,
 		  FIELD_PREP(HAL_TLV_HDR_LEN, sizeof(*desc));
 
 	desc = (struct hal_reo_update_rx_queue *)tlv->value;
+#if LINUX_VERSION_IS_LESS(5,16,0)
+	memset(&desc->queue_addr_lo, 0,
+			(sizeof(*desc) - sizeof(struct hal_reo_cmd_hdr)));
+#else
 	memset_startat(desc, 0, queue_addr_lo);
+#endif
 
 	desc->cmd.info0 &= ~HAL_REO_CMD_HDR_INFO0_STATUS_REQUIRED;
 	if (cmd->flag & HAL_REO_CMD_FLG_NEED_STATUS)
@@ -806,7 +821,6 @@ void ath11k_hal_reo_init_cmd_ring(struct ath11k_base *ab,
 	}
 }
 
-#define HAL_MAX_UL_MU_USERS	37
 static inline void
 ath11k_hal_rx_handle_ofdma_info(void *rx_tlv,
 				struct hal_rx_user_status *rx_user_status)
@@ -838,6 +852,8 @@ ath11k_hal_rx_populate_mu_user_info(void *rx_tlv, struct hal_rx_mon_ppdu_info *p
 {
 	rx_user_status->ast_index = ppdu_info->ast_index;
 	rx_user_status->tid = ppdu_info->tid;
+	rx_user_status->tcp_ack_msdu_count =
+		ppdu_info->tcp_ack_msdu_count;
 	rx_user_status->tcp_msdu_count =
 		ppdu_info->tcp_msdu_count;
 	rx_user_status->udp_msdu_count =
@@ -861,6 +877,9 @@ ath11k_hal_rx_populate_mu_user_info(void *rx_tlv, struct hal_rx_mon_ppdu_info *p
 		ppdu_info->num_mpdu_fcs_ok;
 	rx_user_status->mpdu_cnt_fcs_err =
 		ppdu_info->num_mpdu_fcs_err;
+	memcpy(&rx_user_status->mpdu_fcs_ok_bitmap[0], &ppdu_info->mpdu_fcs_ok_bitmap[0],
+	       HAL_RX_NUM_WORDS_PER_PPDU_BITMAP *
+	       sizeof(ppdu_info->mpdu_fcs_ok_bitmap[0]));
 
 	ath11k_hal_rx_populate_byte_count(rx_tlv, ppdu_info, rx_user_status);
 }
@@ -869,6 +888,13 @@ static u16 ath11k_hal_rx_mpduinfo_get_peerid(struct ath11k_base *ab,
 					     struct hal_rx_mpdu_info *mpdu_info)
 {
 	return ab->hw_params.hw_ops->mpdu_info_get_peerid(mpdu_info);
+}
+
+static
+u16 ath11k_hal_rxdesc_get_hal_mpdu_ppdu_id(struct ath11k_base *ab,
+					   struct hal_rx_mpdu_info *mpdu_info)
+{
+	return ab->hw_params.hw_ops->rx_desc_get_hal_ppdu_id(mpdu_info);
 }
 
 static enum hal_rx_mon_status
@@ -890,6 +916,14 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 				  __le32_to_cpu(ppdu_start->info0));
 		ppdu_info->chan_num = __le32_to_cpu(ppdu_start->chan_num);
 		ppdu_info->ppdu_ts = __le32_to_cpu(ppdu_start->ppdu_start_ts);
+
+		if (ppdu_info->ppdu_id != ppdu_info->last_ppdu_id) {
+			ppdu_info->last_ppdu_id = ppdu_info->ppdu_id;
+			ppdu_info->num_users = 0;
+			memset(&ppdu_info->mpdu_fcs_ok_bitmap, 0,
+			       HAL_RX_NUM_WORDS_PER_PPDU_BITMAP *
+			       sizeof(ppdu_info->mpdu_fcs_ok_bitmap[0]));
+		}
 		break;
 	}
 	case HAL_RX_PPDU_END_USER_STATS: {
@@ -902,6 +936,9 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		ppdu_info->ast_index =
 			FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO2_AST_INDEX,
 				  __le32_to_cpu(eu_stats->info2));
+		ppdu_info->fc_valid =
+			FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO1_FC_VALID,
+				  __le32_to_cpu(eu_stats->info1));
 		ppdu_info->tid =
 			ffs(FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO7_TID_BITMAP,
 				      __le32_to_cpu(eu_stats->info7))) - 1;
@@ -925,6 +962,12 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		ppdu_info->num_mpdu_fcs_err =
 			FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO0_MPDU_CNT_FCS_ERR,
 				  info0);
+
+		if (ppdu_info->fc_valid)
+			ppdu_info->frame_control =
+				FIELD_GET(HAL_RX_PPDU_END_USER_STATS_INFO2_FRAME_CTRL,
+						__le32_to_cpu(eu_stats->info2));
+
 		switch (ppdu_info->preamble_type) {
 		case HAL_RX_PREAMBLE_11N:
 			ppdu_info->ht_flags = 1;
@@ -941,15 +984,16 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 
 		if (userid < HAL_MAX_UL_MU_USERS) {
 			struct hal_rx_user_status *rxuser_stats =
-				&ppdu_info->userstats;
+				&ppdu_info->userstats[userid];
+			ppdu_info->num_users += 1;
 
 			ath11k_hal_rx_handle_ofdma_info(tlv_data, rxuser_stats);
 			ath11k_hal_rx_populate_mu_user_info(tlv_data, ppdu_info,
 							    rxuser_stats);
 		}
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[0] =
+		ppdu_info->mpdu_fcs_ok_bitmap[0] =
 					__le32_to_cpu(eu_stats->rsvd1[0]);
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[1] =
+		ppdu_info->mpdu_fcs_ok_bitmap[1] =
 					__le32_to_cpu(eu_stats->rsvd1[1]);
 
 		break;
@@ -957,12 +1001,12 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 	case HAL_RX_PPDU_END_USER_STATS_EXT: {
 		struct hal_rx_ppdu_end_user_stats_ext *eu_stats =
 			(struct hal_rx_ppdu_end_user_stats_ext *)tlv_data;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[2] = eu_stats->info1;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[3] = eu_stats->info2;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[4] = eu_stats->info3;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[5] = eu_stats->info4;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[6] = eu_stats->info5;
-		ppdu_info->userstats.mpdu_fcs_ok_bitmap[7] = eu_stats->info6;
+		ppdu_info->mpdu_fcs_ok_bitmap[2] = eu_stats->info1;
+		ppdu_info->mpdu_fcs_ok_bitmap[3] = eu_stats->info2;
+		ppdu_info->mpdu_fcs_ok_bitmap[4] = eu_stats->info3;
+		ppdu_info->mpdu_fcs_ok_bitmap[5] = eu_stats->info4;
+		ppdu_info->mpdu_fcs_ok_bitmap[6] = eu_stats->info5;
+		ppdu_info->mpdu_fcs_ok_bitmap[7] = eu_stats->info6;
 		break;
 	}
 	case HAL_PHYRX_HT_SIG: {
@@ -977,44 +1021,78 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		ppdu_info->is_stbc = FIELD_GET(HAL_RX_HT_SIG_INFO_INFO1_STBC,
 					       info1);
 		ppdu_info->ldpc = FIELD_GET(HAL_RX_HT_SIG_INFO_INFO1_FEC_CODING, info1);
-		ppdu_info->gi = info1 & HAL_RX_HT_SIG_INFO_INFO1_GI;
-
-		switch (ppdu_info->mcs) {
-		case 0 ... 7:
-			ppdu_info->nss = 1;
-			break;
-		case 8 ... 15:
-			ppdu_info->nss = 2;
-			break;
-		case 16 ... 23:
-			ppdu_info->nss = 3;
-			break;
-		case 24 ... 31:
-			ppdu_info->nss = 4;
-			break;
-		}
-
-		if (ppdu_info->nss > 1)
-			ppdu_info->mcs = ppdu_info->mcs % 8;
-
+		ppdu_info->gi = FIELD_GET(HAL_RX_HT_SIG_INFO_INFO1_GI, info1);
+		ppdu_info->nss = (ppdu_info->mcs >> 3) + 1;
 		ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_SU;
 		break;
 	}
 	case HAL_PHYRX_L_SIG_B: {
 		struct hal_rx_lsig_b_info *lsigb =
 			(struct hal_rx_lsig_b_info *)tlv_data;
+		u8 rate;
 
-		ppdu_info->rate = FIELD_GET(HAL_RX_LSIG_B_INFO_INFO0_RATE,
-					    __le32_to_cpu(lsigb->info0));
+		rate = FIELD_GET(HAL_RX_LSIG_B_INFO_INFO0_RATE,
+				 __le32_to_cpu(lsigb->info0));
+
+		switch (rate) {
+		case 1:
+			rate = HAL_RX_LEGACY_RATE_1_MBPS;
+			break;
+		case 2:
+		case 5:
+			rate = HAL_RX_LEGACY_RATE_2_MBPS;
+			break;
+		case 3:
+		case 6:
+			rate = HAL_RX_LEGACY_RATE_5_5_MBPS;
+			break;
+		case 4:
+		case 7:
+			rate = HAL_RX_LEGACY_RATE_11_MBPS;
+			break;
+		default:
+			rate = HAL_RX_LEGACY_RATE_INVALID;
+		}
+		ppdu_info->rate = rate;
 		ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_SU;
 		break;
 	}
 	case HAL_PHYRX_L_SIG_A: {
 		struct hal_rx_lsig_a_info *lsiga =
 			(struct hal_rx_lsig_a_info *)tlv_data;
+		u8 rate;
 
-		ppdu_info->rate = FIELD_GET(HAL_RX_LSIG_A_INFO_INFO0_RATE,
-					    __le32_to_cpu(lsiga->info0));
+		rate = FIELD_GET(HAL_RX_LSIG_A_INFO_INFO0_RATE,
+				 __le32_to_cpu(lsiga->info0));
+		switch (rate) {
+		case 8:
+			rate = HAL_RX_LEGACY_RATE_48_MBPS;
+			break;
+		case 9:
+			rate = HAL_RX_LEGACY_RATE_24_MBPS;
+			break;
+		case 10:
+			rate = HAL_RX_LEGACY_RATE_12_MBPS;
+			break;
+		case 11:
+			rate = HAL_RX_LEGACY_RATE_6_MBPS;
+			break;
+		case 12:
+			rate = HAL_RX_LEGACY_RATE_54_MBPS;
+			break;
+		case 13:
+			rate = HAL_RX_LEGACY_RATE_36_MBPS;
+			break;
+		case 14:
+			rate = HAL_RX_LEGACY_RATE_18_MBPS;
+			break;
+		case 15:
+			rate = HAL_RX_LEGACY_RATE_9_MBPS;
+			break;
+		default:
+			rate = HAL_RX_LEGACY_RATE_INVALID;
+		}
+		ppdu_info->rate = rate;
 		ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_SU;
 		break;
 	}
@@ -1446,6 +1524,7 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 				       ab->wmi_ab.svc_map);
 		struct hal_rx_phyrx_rssi_legacy_info *rssi =
 			(struct hal_rx_phyrx_rssi_legacy_info *)tlv_data;
+		u32 reception_type = 0;
 
 		/* TODO: Please note that the combined rssi will not be accurate
 		 * in MU case. Rssi in MU needs to be retrieved from
@@ -1454,6 +1533,22 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		ppdu_info->rssi_comb =
 			FIELD_GET(HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RSSI_COMB,
 				  __le32_to_cpu(rssi->info0));
+
+		reception_type =
+			FIELD_GET(HAL_RX_PHYRX_RSSI_LEGACY_INFO_RSVD1_RECEPTION,
+				  __le32_to_cpu(rssi->rsvd[0]));
+
+		switch (reception_type) {
+		case HAL_RECEPTION_TYPE_ULOFMDA:
+			ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_MU_OFDMA;
+			break;
+		case HAL_RECEPTION_TYPE_ULMIMO:
+			ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_MU_MIMO;
+			break;
+		default:
+			ppdu_info->reception_type = HAL_RX_RECEPTION_TYPE_SU;
+			break;
+		}
 
 		if (db2dbm) {
 			for (i = 0; i < ARRAY_SIZE(rssi->preamble); i++) {
@@ -1472,14 +1567,26 @@ ath11k_hal_rx_parse_mon_status_tlv(struct ath11k_base *ab,
 		peer_id = ath11k_hal_rx_mpduinfo_get_peerid(ab, mpdu_info);
 		if (peer_id)
 			ppdu_info->peer_id = peer_id;
+
+		ppdu_info->mpdu_len += ab->hw_params.hw_ops->rx_desc_get_hal_mpdu_len(mpdu_info);
+
+		if (userid < HAL_MAX_UL_MU_USERS) {
+			ppdu_info->userid = userid;
+			ppdu_info->ampdu_id[userid] =
+				ath11k_hal_rxdesc_get_hal_mpdu_ppdu_id(ab, mpdu_info);
+		}
+
 		break;
 	}
 	case HAL_RXPCU_PPDU_END_INFO: {
 		struct hal_rx_ppdu_end_duration *ppdu_rx_duration =
 			(struct hal_rx_ppdu_end_duration *)tlv_data;
+		ppdu_info->rx_antenna =
+			FIELD_GET(HAL_RX_PPDU_END_DURATION_INFO0_RX_ANTENNA,
+				  __le32_to_cpu(ppdu_rx_duration->info0));
 		ppdu_info->rx_duration =
 			FIELD_GET(HAL_RX_PPDU_END_DURATION,
-				  __le32_to_cpu(ppdu_rx_duration->info0));
+				  __le32_to_cpu(ppdu_rx_duration->info1));
 		ppdu_info->tsft = __le32_to_cpu(ppdu_rx_duration->rsvd0[1]);
 		ppdu_info->tsft = (ppdu_info->tsft << 32) |
 					__le32_to_cpu(ppdu_rx_duration->rsvd0[0]);

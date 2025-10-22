@@ -10,6 +10,7 @@
 #include "trace.h"
 #include "debugfs.h"
 
+extern struct dentry *debugfs_ath11k;
 enum ath11k_debug_mask {
 	ATH11K_DBG_AHB		= 0x00000001,
 	ATH11K_DBG_WMI		= 0x00000002,
@@ -27,6 +28,11 @@ enum ath11k_debug_mask {
 	ATH11K_DBG_DP_TX	= 0x00002000,
 	ATH11K_DBG_DP_RX	= 0x00004000,
 	ATH11K_DBG_CE		= 0x00008000,
+	ATH11K_DBG_CFR          = 0x00010000,
+	ATH11K_DBG_CFR_DUMP     = 0x00020000,
+	ATH11K_DBG_PEER         = 0x00040000,
+	ATH11K_DBG_TEST         = 0x00080000,
+	ATH11K_DBG_SMART_ANT    = 0x00100000,
 };
 
 static inline const char *ath11k_dbg_str(enum ath11k_debug_mask mask)
@@ -64,6 +70,16 @@ static inline const char *ath11k_dbg_str(enum ath11k_debug_mask mask)
 		return "dp_rx";
 	case ATH11K_DBG_CE:
 		return "ce";
+	case ATH11K_DBG_CFR:
+		return "cfr";
+	case ATH11K_DBG_CFR_DUMP:
+		return "cfr_dump";
+	case ATH11K_DBG_PEER:
+		return "peer";
+	case ATH11K_DBG_TEST:
+		return "test";
+	case ATH11K_DBG_SMART_ANT:
+		return "antenna";
 
 	/* no default handler to allow compiler to check that the
 	 * enum is fully handled

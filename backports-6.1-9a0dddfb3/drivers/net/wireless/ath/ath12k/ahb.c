@@ -20,8 +20,9 @@
 #include "pcic.h"
 #include "wifi7/hal.h"
 #include "ppe.h"
+#include "erp.h"
 
-#define ATH12K_IRQ_PPE_OFFSET 53
+#define ATH12K_IRQ_PPE_OFFSET 54
 #define ATH12K_IRQ_CE0_OFFSET 4
 #define ATH12K_MAX_UPDS 1
 #define ATH12K_UPD_IRQ_WRD_LEN  18
@@ -87,6 +88,7 @@ static const char *irq_name[ATH12K_IRQ_NUM_MAX] = {
 	"wbm2host-tx-completions-ring2",
 	"wbm2host-tx-completions-ring1",
 	"tcl2host-status-ring",
+	"umac_reset",
 	"reo2ppe",
 	"ppe_wbm_rel",
 	"ppe2tcl"
@@ -130,6 +132,7 @@ enum ext_irq_num {
 	wbm2host_tx_completions_ring2,
 	wbm2host_tx_completions_ring1,
 	tcl2host_status_ring,
+	umac_reset,
 	reo2ppe,
 	ppe_wbm_rel,
 	ppe2tcl
@@ -137,7 +140,7 @@ enum ext_irq_num {
 
 static u32 ath12k_ahb_read32(struct ath12k_base *ab, u32 offset)
 {
-	if (ab->ce_remap && offset < HAL_SEQ_WCSS_CMEM_OFFSET)
+	if (ab->ce_remap && offset < ab->cmem_offset)
 		return ioread32(ab->mem_ce + offset);
 	return ioread32(ab->mem + offset);
 }
@@ -145,10 +148,15 @@ static u32 ath12k_ahb_read32(struct ath12k_base *ab, u32 offset)
 static void ath12k_ahb_write32(struct ath12k_base *ab, u32 offset,
 			       u32 value)
 {
-	if (ab->ce_remap && offset < HAL_SEQ_WCSS_CMEM_OFFSET)
+	if (ab->ce_remap && offset < ab->cmem_offset)
 		iowrite32(value, ab->mem_ce + offset);
 	else
 		iowrite32(value, ab->mem + offset);
+}
+
+static inline u32 ath12k_ahb_pmm_read32(struct ath12k_base *ab, u32 offset)
+{
+	return ioread32(ab->mem_pmm + offset);
 }
 
 #if LINUX_VERSION_IS_GEQ(6,13,0)
@@ -183,6 +191,10 @@ static void __ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		ath12k_ahb_ext_grp_disable(irq_grp);
+
+		if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+			continue;
+
 		if (irq_grp->napi_enabled) {
 			napi_synchronize(&irq_grp->napi);
 			napi_disable(&irq_grp->napi);
@@ -301,6 +313,9 @@ static void ath12k_ahb_ce_irqs_disable(struct ath12k_base *ab)
 {
 	int i;
 
+	if (ab->pm_suspend)
+		return;
+
 	for (i = 0; i < ab->hw_params->ce_count; i++) {
 		if (ath12k_ce_get_attr_flags(ab, i) & CE_ATTR_DIS_INTR)
 			continue;
@@ -333,8 +348,13 @@ static void ath12k_ahb_ext_irq_enable(struct ath12k_base *ab)
 
 static void ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 {
+	if (ab->pm_suspend)
+		return;
+
 	__ath12k_ahb_ext_irq_disable(ab);
-	ath12k_ahb_sync_ext_irqs(ab);
+
+	if (!test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+		ath12k_ahb_sync_ext_irqs(ab);
 }
 
 static void ath12k_ahb_kill_tasklets(struct ath12k_base *ab)
@@ -362,7 +382,6 @@ static void ath12k_ahb_stop(struct ath12k_base *ab)
 	ath12k_ahb_kill_tasklets(ab);
 #endif
 	del_timer_sync(&ab->rx_replenish_retry);
-	ath12k_ce_cleanup_pipes(ab);
 }
 
 static int ath12k_ahb_power_up(struct ath12k_base *ab)
@@ -376,6 +395,16 @@ static int ath12k_ahb_power_up(struct ath12k_base *ab)
 	unsigned long time_left;
 	u32 pasid;
 	int ret;
+
+	if (ath12k_check_erp_power_down(ab->ag)) {
+		if (ab_ahb->tgt_rproc->state != RPROC_RUNNING) {
+			ret = ath12k_ahb_boot_root_pd(ab);
+			if (ret < 0) {
+				ath12k_err(ab, "failed to boot the remote processor Q6\n");
+				return ret;
+			}
+		}
+	}
 
 	rmem = ath12k_core_get_reserved_mem_by_name(ab, "q6-region");
 	if (!rmem)
@@ -542,8 +571,9 @@ static void ath12k_ahb_power_down(struct ath12k_base *ab, bool is_suspend)
 	 */
 
 	if (!ab->ag->num_userpd_started &&
-	    test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)) {
-		rproc_put(ab_ahb->tgt_rproc);
+	    (test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags) ||
+	     ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE)) {
+		rproc_shutdown(ab_ahb->tgt_rproc);
 	}
 
 	set_bit(ATH12K_FLAG_Q6_POWER_DOWN, &ab->dev_flags);
@@ -589,6 +619,10 @@ static irqreturn_t ath12k_ahb_ce_interrupt_handler(int irq, void *arg)
 #else
 	tasklet_schedule(&ce_pipe->intr_tq);
 #endif
+
+	if (ce_pipe->ab->ce.enable_ce_stats)
+		ath12k_record_sched_entry_ts(ce_pipe->ab, ce_pipe->pipe_num);
+
 	return IRQ_HANDLED;
 }
 
@@ -660,15 +694,16 @@ ath12k_ahb_config_ext_irq(struct ath12k_base *ab,
 		if (!napi_ndev)
 			return -ENOMEM;
 
-		netif_napi_add(napi_ndev, &irq_grp->napi,
-			       ath12k_ahb_ext_grp_napi_poll);
+		netif_napi_add_weight(napi_ndev, &irq_grp->napi,
+				      ath12k_ahb_ext_grp_napi_poll,
+				      TX_NAPI_BUDGET);
 
 		for (j = 0; j < ATH12K_EXT_IRQ_NUM_MAX; j++) {
 			/* For TX ring, ensure that the ring mask and the
-			 * tcl_to_wbm_rbm_map point to the same ring number.
+			 * tcl_to_cmp_rbm_map point to the same ring number.
 			 */
 			if ((j < DP_TCL_NUM_RING_MAX) && (ring_mask->tx[i] &
-			    BIT(ab->hal.tcl_to_wbm_rbm_map[j].wbm_ring_num))) {
+			    BIT(ab->hal.tcl_to_cmp_rbm_map[j].cmp_ring_num))) {
 				irq_grp->irqs[num_irq++] =
 					wbm2host_tx_completions_ring1 - j;
 			}
@@ -717,15 +752,21 @@ static void ath12k_ahb_ce_tasklet(struct tasklet_struct *t)
 {
 	struct ath12k_ce_pipe *ce_pipe = from_tasklet(ce_pipe, t, intr_tq);
 
+	if (ce_pipe->ab->ce.enable_ce_stats)
+		ath12k_record_exec_entry_ts(ce_pipe->ab, ce_pipe->pipe_num);
+
 	ath12k_ce_per_engine_service(ce_pipe->ab, ce_pipe->pipe_num);
+
+	if (ce_pipe->ab->ce.enable_ce_stats)
+		ath12k_update_ce_stats_bucket(ce_pipe->ab, ce_pipe->pipe_num);
 
 	ath12k_ahb_ce_irq_enable(ce_pipe->ab, ce_pipe->pipe_num);
 }
 
-static int ath12k_ahb_config_irq(struct ath12k_base *ab)
+int ath12k_ahb_config_irq(struct ath12k_base *ab)
 {
 	int irq, irq_idx, i;
-	int ret;
+	int ret = -1;
 
 	if (ab->hif.bus == ATH12K_BUS_HYBRID) {
 		init_waitqueue_head(&ab->ipci.gic_msi_waitq);
@@ -797,14 +838,11 @@ static void ath12k_ahb_free_ext_irq(struct ath12k_base *ab)
 {
 	int i, j;
 
-	if (test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags))
-		return;
-
 	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
 		for (j = 0; j < irq_grp->num_irq; j++)
-			free_irq(ab->irq_num[irq_grp->irqs[j]], irq_grp);
+			devm_free_irq(ab->dev, ab->irq_num[irq_grp->irqs[j]], irq_grp);
 
 		netif_napi_del(&irq_grp->napi);
 	}
@@ -868,7 +906,7 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ret = devm_request_irq(&pdev->dev, irq,  ath12k_ds_ppe2tcl_irq_handler,
 				       IRQF_NO_AUTOEN | IRQF_NO_SUSPEND,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
-				       (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+				       (void *)ab);
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;
@@ -894,7 +932,7 @@ int ath12k_ahb_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		ret = devm_request_irq(&pdev->dev, irq,  ath12k_ds_reo2ppe_irq_handler,
 				       IRQF_SHARED | IRQF_NO_SUSPEND,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
-				       (void *)ath12k_dp_get_ppe_ds_ctxt(ab));
+				       (void *)ab);
 		if (ret) {
 			ath12k_err(ab, "ppeds RegIRQ: req_irq fail:%d\n", ret);
 			goto irq_fail;
@@ -922,16 +960,99 @@ void ath12k_ahb_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type typ
 void ath12k_ahb_ppeds_free_interrupts(struct ath12k_base *ab)
 {
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL]);
+	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE2TCL], ab);
+
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE]);
+	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_REO2PPE], ab);
+
 	disable_irq_nosync(ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL]);
+	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
 }
 #endif
+
+static int ath12k_ahb_dp_umac_config_irq(struct ath12k_base *ab)
+{
+        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+        struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+        struct device *dev = ab->dev;
+        int irq, ret;
+        u32 interrupt_reset_addr;
+
+        irq = platform_get_irq_byname(ab->pdev, "umac_reset");
+
+        if (irq < 0) {
+                ath12k_err(ab, "umac reset interrupt not found in dts\n");
+                return -ENXIO;
+        }
+
+        umac_reset->irq_num = irq;
+
+        if (ab->hw_params->umac_irq_line_reset) {
+                if (of_property_read_u32(dev->of_node, "qcom,umac-irq-reset-addr", &interrupt_reset_addr)) {
+                        ath12k_err(ab, "qcom,umac-irq-reset-addr is not found in dts\n");
+                        return -ENXIO;
+                }
+
+                ab_ahb->interrupt_reset_base_addr = ioremap(interrupt_reset_addr, PCIE_MEM_SIZE);
+                if (!ab_ahb->interrupt_reset_base_addr) {
+                        ath12k_err(ab, "Not requesting irq %d for umac dp reset Due to I/O remap failure\n", irq);
+                        return -ENOMEM;
+                }
+        }
+
+        tasklet_setup(&umac_reset->intr_tq, ath12k_umac_reset_tasklet_handler);
+
+        ret = request_irq(irq, ath12k_umac_reset_interrupt_handler,
+                          IRQF_NO_SUSPEND, "umac_dp_reset_ahb", ab);
+
+        if (ret) {
+                ath12k_err(ab, "failed to request irq %d for umac dp reset\n", irq);
+                return ret;
+        }
+
+        disable_irq_nosync(umac_reset->irq_num);
+
+        return 0;
+}
+
+static void ath12k_ahb_dp_umac_reset_enable_irq(struct ath12k_base *ab)
+{
+        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+
+        enable_irq(umac_reset->irq_num);
+}
+
+static void ath12k_ahb_dp_umac_reset_free_irq(struct ath12k_base *ab)
+{
+        struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+        struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+
+        if (ab->hw_params->umac_irq_line_reset) {
+                iounmap(ab_ahb->interrupt_reset_base_addr);
+                ab_ahb->interrupt_reset_base_addr = NULL;
+        }
+
+        disable_irq_nosync(umac_reset->irq_num);
+        free_irq(umac_reset->irq_num, ab);
+}
+
+void ath12k_ahb_umac_intr_line_reset(struct ath12k_base *ab)
+{
+        struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+
+        if (!ab_ahb->interrupt_reset_base_addr) {
+                ath12k_err(ab, "Base address is NULL\n");
+                return;
+        }
+        writel_relaxed(ATH12K_UMAC_INTR_LINE_RESET_VAL, ab_ahb->interrupt_reset_base_addr);
+}
 
 static struct ath12k_hif_ops ath12k_ahb_hif_ops = {
 	.start = ath12k_ahb_start,
 	.stop = ath12k_ahb_stop,
 	.read32 = ath12k_ahb_read32,
 	.write32 = ath12k_ahb_write32,
+	.pmm_read32 = ath12k_ahb_pmm_read32,
 	.irq_enable = ath12k_ahb_ext_irq_enable,
 	.irq_disable = ath12k_ahb_ext_irq_disable,
 	.map_service_to_pipe = ath12k_ahb_map_service_to_pipe,
@@ -947,24 +1068,27 @@ static struct ath12k_hif_ops ath12k_ahb_hif_ops = {
 	.ppeds_irq_enable = ath12k_ahb_ppeds_irq_enable,
 	.ppeds_irq_disable = ath12k_ahb_ppeds_irq_disable,
 #endif
+	.dp_umac_reset_irq_config = ath12k_ahb_dp_umac_config_irq,
+	.dp_umac_reset_enable_irq = ath12k_ahb_dp_umac_reset_enable_irq,
+	.dp_umac_reset_free_irq = ath12k_ahb_dp_umac_reset_free_irq,
 };
 
 static const struct ath12k_hif_ops ath12k_ahb_hif_ops_qcn6432 = {
 	.start = ath12k_pcic_start,
-        .stop = ath12k_pcic_stop,
+	.stop = ath12k_pcic_stop,
 	.cmem_read32 = ath12k_pcic_cmem_read32,
 	.cmem_write32 = ath12k_pcic_cmem_write32,
-        .power_down = ath12k_ahb_power_down,
-        .power_up = ath12k_ahb_power_up,
-        .read32 = ath12k_pcic_ipci_read32,
-        .write32 = ath12k_pcic_ipci_write32,
-        .irq_enable = ath12k_pcic_ext_irq_enable,
-        .irq_disable = ath12k_pcic_ext_irq_disable,
-        .get_msi_address =  ath12k_pcic_get_msi_address,
-        .get_user_msi_vector = ath12k_pcic_get_user_msi_assignment,
-        .config_static_window = ath12k_pcic_config_static_window,
-        .get_msi_irq = ath12k_pcic_get_msi_irq,
-        .map_service_to_pipe = ath12k_pcic_map_service_to_pipe,
+	.power_down = ath12k_ahb_power_down,
+	.power_up = ath12k_ahb_power_up,
+	.read32 = ath12k_pcic_ipci_read32,
+	.write32 = ath12k_pcic_ipci_write32,
+	.irq_enable = ath12k_pcic_ext_irq_enable,
+	.irq_disable = ath12k_pcic_ext_irq_disable,
+	.get_msi_address =  ath12k_pcic_get_msi_address,
+	.get_user_msi_vector = ath12k_pcic_get_user_msi_assignment,
+	.config_static_window = ath12k_pcic_config_static_window,
+	.get_msi_irq = ath12k_pcic_get_msi_irq,
+	.map_service_to_pipe = ath12k_pcic_map_service_to_pipe,
 	.ce_irq_enable = ath12k_pcic_ce_irqs_enable,
 	.ce_irq_disable = ath12k_pcic_ce_irq_disable_sync,
 	.ext_irq_setup = ath12k_pcic_cfg_hybrid_ext_irq,
@@ -975,6 +1099,10 @@ static const struct ath12k_hif_ops ath12k_ahb_hif_ops_qcn6432 = {
 	.ppeds_irq_enable = ath12k_pcic_ppeds_irq_enable,
 	.ppeds_irq_disable = ath12k_pcic_ppeds_irq_disable,
 #endif
+	.dp_umac_intr_line_reset = ath12k_ahb_umac_intr_line_reset,
+	.dp_umac_reset_irq_config = ath12k_ahb_dp_umac_config_irq,
+	.dp_umac_reset_enable_irq = ath12k_ahb_dp_umac_reset_enable_irq,
+	.dp_umac_reset_free_irq = ath12k_ahb_dp_umac_reset_free_irq,
 };
 
 static void ath12k_core_dump_crash_reason(struct ath12k_base *ab)
@@ -992,6 +1120,7 @@ static void ath12k_core_dump_crash_reason(struct ath12k_base *ab)
 static void ath12k_ahb_handle_userpd_crash(struct ath12k_base *ab)
 {
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+	struct ath12k_hw_group *ag = ab->ag;
 
 	if (!test_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags))
 		return;
@@ -1002,14 +1131,15 @@ static void ath12k_ahb_handle_userpd_crash(struct ath12k_base *ab)
 	complete(&ab_ahb->userpd_ready);
 	complete(&ab_ahb->userpd_stopped);
 	ath12k_core_dump_crash_reason(ab);
-	if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags))) {
+	set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+
+	if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags)) {
 		set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
-		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+		set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
 		ab_ahb->crash_type = ATH12K_RPROC_USERPD_CRASH;
 		queue_work(ab->workqueue_aux, &ab->reset_work);
 	} else {
-		/* In case of userpd crash during rmmod case */
-		WARN_ON(1);
+		ath12k_core_trigger_bug_on(ab);
 	}
 }
 
@@ -1102,17 +1232,12 @@ int ath12k_ahb_root_pd_fatal_notifier(struct notifier_block *nb,
 	if (ab->fw_recovery_support == ATH12K_FW_RECOVERY_DISABLE)
 		ab_ahb->tgt_rproc->recovery_disabled = true;
 
-	if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags))) {
-		set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
-		set_bit(ATH12K_GROUP_FLAG_CRASH_FLUSH, &ag->flags);
-		set_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
-		set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
-		ab_ahb->crash_type = ATH12K_RPROC_ROOTPD_CRASH;
-		queue_work(ab->workqueue_aux, &ag->reset_group_work);
-	} else {
-		/* In case of rootpd crash during rmmod case */
-		WARN_ON(1);
-	}
+	set_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
+	set_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
+
+	ab_ahb->crash_type = ATH12K_RPROC_ROOTPD_CRASH;
+	ath12k_core_trigger_partner_device_crash(ab);
+	queue_work(ab->workqueue_aux, &ag->reset_group_work);
 
 	return NOTIFY_OK;
 }
@@ -1126,11 +1251,14 @@ static void ath12k_ahb_queue_all_userpd_reset(struct ath12k_base *ab)
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
 
-		if (partner_ab->hif.bus == ATH12K_BUS_PCI)
+		if (partner_ab->is_bypassed ||
+		    partner_ab->hif.bus == ATH12K_BUS_PCI)
 			continue;
 
-		if (!(test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ab->ag->flags)))
+		if (!test_bit(ATH12K_GROUP_FLAG_UNREGISTER, &ag->flags))
 			queue_work(partner_ab->workqueue_aux, &partner_ab->reset_work);
+		else
+			ath12k_core_trigger_bug_on(ab);
 	}
 }
 
@@ -1145,7 +1273,8 @@ static int ath12k_ahb_release_all_userpd(struct ath12k_base *ab)
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
 
-		if (!(partner_ab->hif.bus == ATH12K_BUS_AHB ||
+		if (partner_ab->is_bypassed ||
+		    !(partner_ab->hif.bus == ATH12K_BUS_AHB ||
 		      partner_ab->hif.bus == ATH12K_BUS_HYBRID))
 			continue;
 
@@ -1268,7 +1397,7 @@ static int ath12k_ahb_get_rproc(struct ath12k_base *ab)
 	return 0;
 }
 
-static int ath12k_ahb_boot_root_pd(struct ath12k_base *ab)
+int ath12k_ahb_boot_root_pd(struct ath12k_base *ab)
 {
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 	unsigned long time_left;
@@ -1366,11 +1495,27 @@ static int ath12k_ahb_resource_init(struct ath12k_base *ab)
 			goto err_mem_unmap;
 		}
 		ab->ce_remap = true;
-		ab->ce_remap_base_addr = HAL_IPQ5332_CE_WFSS_REG_BASE;
+		ab->cmem_offset = ce_remap->cmem_offset;
+		ab->ce_remap_base_addr = ce_remap->base;
+	}
+
+	if (ab->hw_params->pmm_remap) {
+		const struct pmm_remap *pmm = ab->hw_params->pmm_remap;
+
+		ab->mem_pmm = ioremap(pmm->base, pmm->size);
+		if (IS_ERR(ab->mem_pmm)) {
+			dev_err(&pdev->dev, "pmm ioremap error\n");
+			ret = -ENOMEM;
+			goto err_ce_mem_unmap;
+		}
+		ab->pmm_remap = true;
+		ab->pmm_remap_base_addr = pmm->base;
 	}
 
 	return 0;
 
+err_ce_mem_unmap:
+	ab->mem_pmm = NULL;
 err_mem_unmap:
 	ab->mem_ce = NULL;
 	devm_iounmap(ab->dev, ab->mem);
@@ -1558,6 +1703,9 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 	return 0;
 
 err_free_dp:
+	if (test_bit(ATH12K_FLAG_SOC_CREATE_FAIL, &ab->dev_flags))
+		return ret;
+
 	if (ab_ahb->device_ops->dp_deinit)
 		ab_ahb->device_ops->dp_deinit(ab->dp);
 
@@ -1602,8 +1750,11 @@ static void ath12k_ahb_free_resources(struct ath12k_base *ab)
 	struct platform_device *pdev = ab->pdev;
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 
-	if (ab->hif.bus == ATH12K_BUS_HYBRID)
-		return ath12k_pcic_free_hybrid_irq(ab);
+	if (ab->hif.bus == ATH12K_BUS_HYBRID) {
+		ath12k_pcic_free_hybrid_irq(ab);
+		ath12k_ahb_deconfigure_rproc(ab);
+		return;
+	}
 
 	ath12k_hal_srng_deinit(ab);
 	ath12k_ce_free_pipes(ab);

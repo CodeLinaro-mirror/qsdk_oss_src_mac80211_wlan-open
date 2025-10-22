@@ -29,6 +29,7 @@
 #include "driver-ops.h"
 #include "rate.h"
 #include "led.h"
+#include "qcn_extns/cmn_extn.h"
 #include "fils_aead.h"
 
 #include <kunit/static_stub.h>
@@ -378,6 +379,9 @@ ieee80211_determine_ap_chan(struct ieee80211_sub_if_data *sdata,
 
 		*chandef = eht_chandef;
 	}
+
+	if (ieee802_11_determine_ap_chan_extn(elems, chandef, sdata))
+		return IEEE80211_CONN_MODE_HE;
 
 	return IEEE80211_CONN_MODE_EHT;
 }
@@ -740,6 +744,28 @@ static int ieee80211_chandef_num_widths(const struct cfg80211_chan_def *c)
 	}
 }
 
+/* ieee80211_chandef_subchan_index -  This function returns the position
+ * (0 based) of the first subchannel of the used chandef within the ap's
+ * chandef. Both AP and used chandef must be valid and the used chandef must
+ * be a subset of the ap's chandef (same primary channel, same band), possibly
+ * a different width.
+ *
+ * Return: index of the first subchannel of 'used' within 'ap', or -1 on error
+ */
+static int ieee80211_chandef_subchan_index(const struct cfg80211_chan_def *ap,
+					   const struct cfg80211_chan_def *used)
+{
+	int n = ieee80211_chandef_num_subchans(ap);
+	u32 ap_start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(ap, 1));
+	u32 tmp_start_freq = KHZ_TO_MHZ(cfg80211_get_start_freq(used, 1));
+	int offset = (tmp_start_freq - ap_start_freq) / 20;
+
+	if (offset < 0 || offset >= n)
+		return -1;
+
+	return offset;
+}
+
 VISIBLE_IF_MAC80211_KUNIT int
 ieee80211_calc_chandef_subchan_offset(const struct cfg80211_chan_def *ap,
 				      u8 n_partial_subchans)
@@ -747,6 +773,7 @@ ieee80211_calc_chandef_subchan_offset(const struct cfg80211_chan_def *ap,
 	int n = ieee80211_chandef_num_subchans(ap);
 	struct cfg80211_chan_def tmp = *ap;
 	int offset = 0;
+	bool chandef_downgraded = false;
 
 	/*
 	 * Given a chandef (in this context, it's the AP's) and a number
@@ -764,16 +791,21 @@ ieee80211_calc_chandef_subchan_offset(const struct cfg80211_chan_def *ap,
 		return 0;
 
 	while (ieee80211_chandef_num_subchans(&tmp) > n_partial_subchans) {
-		u32 prev = tmp.center_freq1;
 
 		ieee80211_chandef_downgrade(&tmp, NULL);
+		chandef_downgraded = true;
+	}
 
+	if (chandef_downgraded) {
 		/*
-		 * if center_freq moved up, half the original channels
-		 * are gone now but were below, so increase offset
+		 * Each subchannel is 20 MHz wide.
+		 * Calculate how far downgraded he chandef is from the
+		 * ap's chandef
 		 */
-		if (prev < tmp.center_freq1)
-			offset += ieee80211_chandef_num_subchans(&tmp);
+		int subchan_idx = ieee80211_chandef_subchan_index(ap, &tmp);
+
+		if (subchan_idx >= 0)
+			offset = subchan_idx;
 	}
 
 	/*
@@ -795,7 +827,7 @@ ieee80211_rearrange_tpe_psd(struct ieee80211_parsed_tpe_psd *psd,
 {
 	u8 needed = ieee80211_chandef_num_subchans(used);
 	u8 have = ieee80211_chandef_num_subchans(ap);
-	u8 tmp[IEEE80211_TPE_PSD_ENTRIES_320MHZ];
+	s8 tmp[IEEE80211_TPE_PSD_ENTRIES_320MHZ];
 	u8 offset;
 
 	if (!psd->valid)
@@ -1774,6 +1806,11 @@ ieee80211_add_link_elems(struct ieee80211_sub_if_data *sdata,
 		ieee80211_add_aid_request_ie(sdata, skb);
 		ieee80211_add_s1g_capab_ie(sdata, &sband->s1g_cap, skb);
 	}
+
+	struct ieee80211_bss *bss = (void *)cbss->priv;
+
+	ieee80211_add_qcn_vendor_ie_extn(skb, &bss->bss_extn,
+					 assoc_data->link[link_id].conn.mode);
 
 	if (iftd && iftd->vendor_elems.data && iftd->vendor_elems.len)
 		skb_put_data(skb, iftd->vendor_elems.data, iftd->vendor_elems.len);
@@ -3293,7 +3330,7 @@ void ieee80211_dynamic_ps_enable_work(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata = local->ps_sdata;
 	struct ieee80211_if_managed *ifmgd;
 	unsigned long flags;
-	int q;
+	int q = 0;
 	spinlock_t *pcpu_queue_stop_reason_lock;
 	unsigned long *queue_stop_reasons;
 
@@ -5356,6 +5393,10 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 							    elems->eht_cap_len,
 							    link_sta);
 
+			ieee80211_bss_240mhz_to_sta_eht_cap_extn(sdata, link_sta,
+								 sband,
+								 cbss);
+
 			bss_conf->eht_support = link_sta->pub->eht_cap.has_eht;
 			bss_conf->epcs_support = bss_conf->eht_support &&
 				!!(elems->eht_cap->fixed.mac_cap_info[0] &
@@ -5824,6 +5865,8 @@ ieee80211_determine_our_sta_mode(struct ieee80211_sub_if_data *sdata,
 	/* we have EHT */
 
 	conn->mode = IEEE80211_CONN_MODE_EHT;
+
+	ieee80211_modify_bw_limit_for_240mhz(is_5ghz, conn);
 
 	/* check bandwidth */
 	if (is_6ghz &&
@@ -6848,6 +6891,12 @@ out:
 	return ret;
 }
 
+static bool ieee80211_is_ttlm_offload_supported(struct wiphy *wiphy)
+{
+	return wiphy_ext_feature_isset(wiphy,
+		NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD);
+}
+
 static void ieee80211_tid_to_link_map_work(struct wiphy *wiphy,
 					   struct wiphy_work *work)
 {
@@ -6855,17 +6904,22 @@ static void ieee80211_tid_to_link_map_work(struct wiphy *wiphy,
 	struct ieee80211_sub_if_data *sdata =
 		container_of(work, struct ieee80211_sub_if_data,
 			     u.mgd.ttlm_work.work);
+	bool offload_mode = ieee80211_is_ttlm_offload_supported(wiphy);
 
-	new_active_links = sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
-		sdata->vif.valid_links;
-	new_dormant_links = ~sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
-		sdata->vif.valid_links;
+	if (!offload_mode) {
+		new_active_links = sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
+			sdata->vif.valid_links;
+		new_dormant_links = ~sdata->vif.adv_ttlm.u.mgd.ttlm_info.map &
+			sdata->vif.valid_links;
 
-	ieee80211_vif_set_links(sdata, sdata->vif.valid_links, 0);
-	if (ieee80211_ttlm_set_links(sdata, new_active_links, new_dormant_links,
-				     0))
-		return;
-
+		ieee80211_vif_set_links(sdata, sdata->vif.valid_links, 0);
+		if (ieee80211_ttlm_set_links(sdata, new_active_links,
+					     new_dormant_links,
+					     0))
+			return;
+	} else {
+		ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_MLD_ADV_TTLM);
+	}
 	sdata->vif.adv_ttlm.u.mgd.ttlm_info.active = true;
 	sdata->vif.adv_ttlm.u.mgd.ttlm_info.switch_time = 0;
 }
@@ -6959,12 +7013,34 @@ ieee80211_parse_adv_t2l(struct ieee80211_sub_if_data *sdata,
 	return 0;
 }
 
+static void ieee80211_set_default_mapping(struct ieee80211_sub_if_data *sdata)
+{
+	int ret;
+	bool offload_mode = ieee80211_is_ttlm_offload_supported(sdata->local->hw.wiphy);
+
+	if (!offload_mode) {
+		ret = ieee80211_vif_set_links(sdata,
+					      sdata->vif.valid_links,
+					      0);
+		if (ret) {
+			sdata_info(sdata, "Failed setting valid/dormant links\n");
+			return;
+		}
+		ieee80211_vif_cfg_change_notify(sdata,
+						BSS_CHANGED_MLD_VALID_LINKS);
+	} else {
+		sdata->vif.adv_ttlm.u.mgd.ttlm_info.map =
+			sdata->vif.valid_links;
+		ieee80211_vif_cfg_change_notify(sdata,
+						BSS_CHANGED_MLD_ADV_TTLM);
+	}
+}
+
 static void ieee80211_process_adv_ttlm(struct ieee80211_sub_if_data *sdata,
-					  struct ieee802_11_elems *elems,
-					  u64 beacon_ts)
+				       struct ieee802_11_elems *elems,
+				       u64 beacon_ts)
 {
 	u8 i;
-	int ret;
 
 	if (!ieee80211_vif_is_mld(&sdata->vif))
 		return;
@@ -6980,15 +7056,7 @@ static void ieee80211_process_adv_ttlm(struct ieee80211_sub_if_data *sdata,
 			/* if no TID-to-link element, set to default mapping in
 			 * which all TIDs are mapped to all setup links
 			 */
-			ret = ieee80211_vif_set_links(sdata,
-						      sdata->vif.valid_links,
-						      0);
-			if (ret) {
-				sdata_info(sdata, "Failed setting valid/dormant links\n");
-				return;
-			}
-			ieee80211_vif_cfg_change_notify(sdata,
-							BSS_CHANGED_MLD_VALID_LINKS);
+			ieee80211_set_default_mapping(sdata);
 		}
 		memset(&sdata->vif.adv_ttlm.u.mgd.ttlm_info, 0,
 		       sizeof(sdata->vif.adv_ttlm.u.mgd.ttlm_info));
@@ -7961,28 +8029,8 @@ void ieee80211_send_teardown_neg_ttlm(struct ieee80211_vif *vif)
 }
 EXPORT_SYMBOL(ieee80211_send_teardown_neg_ttlm);
 
-void ieee80211_set_ap_advertised_ttlm_config(struct ieee80211_sub_if_data *sdata,
-					     struct cfg80211_ttlm_params *params)
+void ieee80211_set_ap_advertised_ttlm_config(struct ieee80211_sub_if_data *sdata)
 {
-	struct ieee80211_advertised_ttlm_config *ttlm_config =
-		&sdata->vif.adv_ttlm.u.ap.ttlm_config;
-	int i;
-
-	memset(ttlm_config, 0, sizeof(*ttlm_config));
-
-	ttlm_config->num_ttlm_ie =
-		params->u.adv.num_ttlm_info;
-	for (i = 0; i < ttlm_config->num_ttlm_ie; i++) {
-		ttlm_config->adv_ttlm_conf[i].link_mapping_size =
-			params->u.adv.link_mapping_size[i];
-		ttlm_config->adv_ttlm_conf[i].ieee_link_bmap =
-			params->u.adv.ieee_link_bmap[i];
-		ttlm_config->adv_ttlm_conf[i].switch_time =
-			params->u.adv.switch_time[i];
-		ttlm_config->adv_ttlm_conf[i].duration =
-			params->u.adv.duration[i];
-	}
-
 	ieee80211_vif_cfg_change_notify(sdata, BSS_CHANGED_MLD_ADV_TTLM);
 }
 EXPORT_SYMBOL(ieee80211_set_ap_advertised_ttlm_config);
@@ -10472,7 +10520,7 @@ int ieee80211_mgd_assoc_ml_reconf(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_mgd_assoc_data *data = NULL;
 	struct sta_info *sta;
 	struct sk_buff *skb;
-	u16 added_links, new_valid_links;
+	u16 added_links, new_valid_links = 0;
 	int link_id, err;
 
 	if (!ieee80211_vif_is_mld(&sdata->vif) ||
@@ -10789,7 +10837,7 @@ static void ieee80211_ml_epcs(struct ieee80211_sub_if_data *sdata,
 	for_each_mle_subelement(sub, (const u8 *)elems->ml_epcs,
 				elems->ml_epcs_len) {
 		struct ieee80211_link_data *link;
-		struct ieee802_11_elems *link_elems __free(kfree);
+		struct ieee802_11_elems *link_elems __free(kfree) = NULL;
 		u8 *pos = (void *)sub->data;
 		u16 control;
 		ssize_t len;

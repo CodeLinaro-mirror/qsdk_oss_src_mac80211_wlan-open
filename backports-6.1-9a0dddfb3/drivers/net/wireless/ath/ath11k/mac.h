@@ -122,26 +122,37 @@ struct ath11k_generic_iter {
 #define ATH11K_PEER_RX_NSS_80_80MHZ		GENMASK(5, 3)
 
 #define ATH11K_OBSS_PD_MAX_THRESHOLD			-82
-#define ATH11K_OBSS_PD_NON_SRG_MAX_THRESHOLD		-62
+#define ATH11K_OBSS_PD_THRESHOLD_DISABLED		128
 #define ATH11K_OBSS_PD_THRESHOLD_IN_DBM			BIT(29)
 #define ATH11K_OBSS_PD_SRG_EN				BIT(30)
 #define ATH11K_OBSS_PD_NON_SRG_EN			BIT(31)
+
+#define ATH11K_PM_TIMEOUT	(3 * HZ)
+#define ATH11K_PM_RESTART_TIMEOUT	(10 * HZ)
 
 extern const struct htt_rx_ring_tlv_filter ath11k_mac_mon_status_filter_default;
 
 #define ATH11K_SCAN_11D_INTERVAL		600000
 #define ATH11K_11D_INVALID_VDEV_ID		0xFFFF
 
+enum ath11k_background_dfs_events {
+	ATH11K_BGDFS_SUCCESS,
+	ATH11K_BGDFS_ABORT,
+	ATH11K_BGDFS_RADAR,
+};
+
 void ath11k_mac_11d_scan_start(struct ath11k *ar, u32 vdev_id);
 void ath11k_mac_11d_scan_stop(struct ath11k *ar);
 void ath11k_mac_11d_scan_stop_all(struct ath11k_base *ab);
 
+int ath11k_mac_ap_ps_recalc(struct ath11k *ar);
 void ath11k_mac_destroy(struct ath11k_base *ab);
 void ath11k_mac_unregister(struct ath11k_base *ab);
 int ath11k_mac_register(struct ath11k_base *ab);
 int ath11k_mac_allocate(struct ath11k_base *ab);
 int ath11k_mac_hw_ratecode_to_legacy_rate(u8 hw_rc, u8 preamble, u8 *rateidx,
 					  u16 *rate);
+int get_num_chains(u32 mask);
 u8 ath11k_mac_bitrate_to_idx(const struct ieee80211_supported_band *sband,
 			     u32 bitrate);
 u8 ath11k_mac_hw_rate_to_idx(const struct ieee80211_supported_band *sband,
@@ -151,15 +162,16 @@ void __ath11k_mac_scan_finish(struct ath11k *ar);
 void ath11k_mac_scan_finish(struct ath11k *ar);
 
 struct ath11k_vif *ath11k_mac_get_arvif(struct ath11k *ar, u32 vdev_id);
-struct ath11k_vif *ath11k_mac_get_arvif_by_vdev_id(struct ath11k_base *ab,
-						   u32 vdev_id);
+struct ath11k_vif *ath11k_mac_get_arvif_by_vdev_id(struct ath11k_base *ab, u32 vdev_id);
+int ath11k_mac_coex_config(struct ath11k *ar, struct ath11k_vif *arvif,
+			   int coex, u32 wlan_prio_mask, u8 wlan_weight);
 u8 ath11k_mac_get_target_pdev_id(struct ath11k *ar);
 u8 ath11k_mac_get_target_pdev_id_from_vif(struct ath11k_vif *arvif);
 struct ath11k_vif *ath11k_mac_get_vif_up(struct ath11k_base *ab);
 
 struct ath11k *ath11k_mac_get_ar_by_vdev_id(struct ath11k_base *ab, u32 vdev_id);
 struct ath11k *ath11k_mac_get_ar_by_pdev_id(struct ath11k_base *ab, u32 pdev_id);
-
+enum wmi_vdev_type ath11k_mac_get_ar_vdev_type(struct ath11k *ar);
 void ath11k_mac_drain_tx(struct ath11k *ar);
 void ath11k_mac_peer_cleanup_all(struct ath11k *ar);
 int ath11k_mac_tx_mgmt_pending_free(int buf_id, void *skb, void *ctx);
@@ -171,12 +183,21 @@ enum ath11k_supported_bw ath11k_mac_mac80211_bw_to_ath11k_bw(enum rate_info_bw b
 enum hal_encrypt_type ath11k_dp_tx_get_encrypt_type(u32 cipher);
 void ath11k_mac_handle_beacon(struct ath11k *ar, struct sk_buff *skb);
 void ath11k_mac_handle_beacon_miss(struct ath11k *ar, u32 vdev_id);
+void ath11k_mac_fill_reg_tpc_info(struct ath11k *ar,
+				  struct ieee80211_vif *vif,
+				  struct ieee80211_chanctx_conf *ctx);
 void ath11k_mac_bcn_tx_event(struct ath11k_vif *arvif);
 int ath11k_mac_wait_tx_complete(struct ath11k *ar);
 int ath11k_mac_vif_set_keepalive(struct ath11k_vif *arvif,
 				 enum wmi_sta_keepalive_method method,
 				 u32 interval);
+bool ath11k_mac_sta_level_info(struct ath11k_vif *arvif, struct ieee80211_sta *sta);
 void ath11k_mac_fill_reg_tpc_info(struct ath11k *ar,
 				  struct ieee80211_vif *vif,
 				  struct ieee80211_chanctx_conf *ctx);
+void ath11k_mac_get_any_chandef_iter(struct ieee80211_hw *hw,
+				     struct ieee80211_chanctx_conf *conf,
+				     void *data);
+void ath11k_mac_debugfs_remove_stats_file(struct ath11k_vif *arvif);
+void ath11k_mac_background_dfs_event(struct ath11k *ar, enum ath11k_background_dfs_events ev);
 #endif

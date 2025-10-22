@@ -8,6 +8,10 @@
 static inline void *backport_idr_remove(struct idr *idr, int id)
 {
 	void *item = idr_find(idr, id);
+
+	if (!item)
+		return NULL;
+
 	idr_remove(idr, id);
 	return item;
 }

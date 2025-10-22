@@ -14,6 +14,7 @@
 #include "ce.h"
 #include "../hw.h"
 #include "hw.h"
+#include "../qcn_extns/ath12k_cmn_extn.h"
 #include "../mhi.h"
 #include "mhi.h"
 #include "dp_rx.h"
@@ -23,9 +24,12 @@
 #include "../debugfs.h"
 #include "../testmode.h"
 #include "../dp_peer.h"
+#include "../dp_tx.h"
 #include "dp_tx.h"
 #include "hal_qcn9274.h"
 #include "hal_wcn7850.h"
+#include "../cfr.h"
+#include "../dp_stats.h"
 
 static const guid_t wcn7850_uuid = GUID_INIT(0xf634f534, 0x6147, 0x11ec,
 					     0x90, 0xd6, 0x02, 0x42,
@@ -90,6 +94,101 @@ static bool ath12k_wifi7_dp_srng_is_comp_ring_wcn7850(int ring_num)
 	return false;
 }
 
+void ath12k_hw_qcn9274_fill_cfr_hdr_info(struct ath12k *ar,
+					 struct ath12k_csi_cfr_header *header,
+					 struct ath12k_cfr_peer_tx_param *params)
+{
+	header->start_magic_num = ATH12K_CFR_START_MAGIC;
+	header->vendorid = VENDOR_QCA;
+	header->pltform_type = PLATFORM_TYPE_ARM;
+	header->cfr_metadata_len = sizeof(struct cfr_enh_metadata);
+	header->cfr_data_version = ATH12K_CFR_DATA_VERSION_1;
+	header->host_real_ts = ktime_to_ns(ktime_get_real());
+
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_9;
+	if(ar->ab->hw_rev == ATH12K_HW_QCN6432_HW10)
+		header->chip_type = ATH12K_CFR_RADIO_QCN6432;
+	else if (ar->ab->hw_rev == ATH12K_HW_IPQ5424_HW10)
+		header->chip_type = ATH12K_CFR_RADIO_IPQ5424;
+	else if (ar->ab->hw_rev == ATH12K_HW_IPQ5332_HW10)
+		header->chip_type = ATH12K_CFR_RADIO_IPQ5332;
+	else
+		header->chip_type = ATH12K_CFR_RADIO_QCN9274;
+
+	header->u.meta_enh.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
+					      params->status);
+	header->u.meta_enh.capture_bw = params->bandwidth;
+	header->u.meta_enh.phy_mode = params->phy_mode;
+	header->u.meta_enh.prim20_chan = params->primary_20mhz_chan;
+	header->u.meta_enh.center_freq1 = params->band_center_freq1;
+	header->u.meta_enh.center_freq2 = params->band_center_freq2;
+	header->u.meta_enh.capture_mode = params->bandwidth ?
+		ATH12K_CFR_CAPTURE_DUP_LEGACY_ACK : ATH12K_CFR_CAPTURE_LEGACY_ACK;
+	header->u.meta_enh.capture_type = params->capture_method;
+	header->u.meta_enh.num_rx_chain = ar->cfg_rx_chainmask;
+	header->u.meta_enh.sts_count = params->spatial_streams;
+	header->u.meta_enh.timestamp = params->timestamp_us;
+	header->u.meta_enh.rx_start_ts = params->rx_start_ts;
+	header->u.meta_enh.cfo_measurement = params->cfo_measurement;
+	header->u.meta_enh.mcs_rate = params->mcs_rate;
+	header->u.meta_enh.gi_type = params->gi_type;
+
+	memcpy(header->u.meta_enh.peer_addr.su_peer_addr,
+	       params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->u.meta_enh.chain_rssi, params->chain_rssi,
+	       sizeof(params->chain_rssi));
+	memcpy(header->u.meta_enh.chain_phase, params->chain_phase,
+	       sizeof(params->chain_phase));
+	memcpy(header->u.meta_enh.agc_gain, params->agc_gain,
+	       sizeof(params->agc_gain));
+	memcpy(header->u.meta_enh.agc_gain_tbl_index, params->agc_gain_tbl_index,
+	       sizeof(params->agc_gain_tbl_index));
+}
+
+void ath12k_hw_wcn7850_fill_cfr_hdr_info(struct ath12k *ar,
+					 struct ath12k_csi_cfr_header *header,
+					 struct ath12k_cfr_peer_tx_param *params)
+{
+	header->start_magic_num = ATH12K_CFR_START_MAGIC;
+	header->vendorid = VENDOR_QCA;
+	header->pltform_type = PLATFORM_TYPE_ARM;
+	header->cfr_metadata_len = sizeof(struct cfr_enh_metadata);
+	header->cfr_data_version = ATH12K_CFR_DATA_VERSION_1;
+	header->host_real_ts = ktime_to_ns(ktime_get_real());
+
+	header->cfr_metadata_version = ATH12K_CFR_META_VERSION_9;
+	header->chip_type = ATH12K_CFR_RADIO_WCN7850;
+
+	header->u.meta_enh.status = FIELD_GET(WMI_CFR_PEER_CAPTURE_STATUS,
+					      params->status);
+	header->u.meta_enh.capture_bw = params->bandwidth;
+	header->u.meta_enh.phy_mode = params->phy_mode;
+	header->u.meta_enh.prim20_chan = params->primary_20mhz_chan;
+	header->u.meta_enh.center_freq1 = params->band_center_freq1;
+	header->u.meta_enh.center_freq2 = params->band_center_freq2;
+	header->u.meta_enh.capture_mode = params->bandwidth ?
+		ATH12K_CFR_CAPTURE_DUP_LEGACY_ACK : ATH12K_CFR_CAPTURE_LEGACY_ACK;
+	header->u.meta_enh.capture_type = params->capture_method;
+	header->u.meta_enh.num_rx_chain = ar->cfg_rx_chainmask;
+	header->u.meta_enh.sts_count = params->spatial_streams;
+	header->u.meta_enh.timestamp = params->timestamp_us;
+	header->u.meta_enh.rx_start_ts = params->rx_start_ts;
+	header->u.meta_enh.cfo_measurement = params->cfo_measurement;
+	header->u.meta_enh.mcs_rate = params->mcs_rate;
+	header->u.meta_enh.gi_type = params->gi_type;
+
+	memcpy(header->u.meta_enh.peer_addr.su_peer_addr,
+	       params->peer_mac_addr, ETH_ALEN);
+	memcpy(header->u.meta_enh.chain_rssi, params->chain_rssi,
+	       sizeof(params->chain_rssi));
+	memcpy(header->u.meta_enh.chain_phase, params->chain_phase,
+	       sizeof(params->chain_phase));
+	memcpy(header->u.meta_enh.agc_gain, params->agc_gain,
+	       sizeof(params->agc_gain));
+	memcpy(header->u.meta_enh.agc_gain_tbl_index, params->agc_gain_tbl_index,
+	       sizeof(params->agc_gain_tbl_index));
+}
+
 static const struct ath12k_hw_ops qcn9274_ops = {
 	.get_hw_mac_from_pdev_id = ath12k_wifi7_hw_qcn9274_mac_from_pdev_id,
 	.mac_id_to_pdev_id = ath12k_wifi7_hw_mac_id_to_pdev_id_qcn9274,
@@ -97,6 +196,7 @@ static const struct ath12k_hw_ops qcn9274_ops = {
 	.rxdma_ring_sel_config = ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274,
 	.get_ring_selector = ath12k_wifi7_hw_get_ring_selector_qcn9274,
 	.dp_srng_is_tx_comp_ring = ath12k_wifi7_dp_srng_is_comp_ring_qcn9274,
+	.fill_cfr_hdr_info = ath12k_hw_qcn9274_fill_cfr_hdr_info,
 };
 
 static const struct ath12k_hw_ops wcn7850_ops = {
@@ -129,12 +229,19 @@ static const struct ath12k_hw_ops wcn7850_ops = {
 #define ATH12K_HOST2RXDMA_RING_MASK_1 0x2
 #define ATH12K_HOST2RXDMA_RING_MASK_2 0x4
 
+#define	ATH12K_HOST2RXMON_RING_MASK_0	0x1
+
 #define ATH12K_RX_MON_RING_MASK_0 0x1
 #define ATH12K_RX_MON_RING_MASK_1 0x2
 #define ATH12K_RX_MON_RING_MASK_2 0x4
 
 #define ATH12K_TX_MON_RING_MASK_0 0x1
 #define ATH12K_TX_MON_RING_MASK_1 0x2
+#define ATH12K_UMAC_RESET_INTR_MASK_0   0x1
+
+#define ATH12K_PPE2TCL_RING_MASK_0 0x1
+#define ATH12K_REO2PPE_RING_MASK_0 0x1
+#define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
 
 /* To support 8 MSI DP grouping */
 static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
@@ -144,6 +251,10 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
                 ATH12K_TX_RING_MASK_2 | ATH12K_TX_RING_MASK_3,
                 0, 0, 0, 0, 0
         },
+	.host2rxmon = {
+		0, 0, 0,
+		ATH12K_HOST2RXMON_RING_MASK_0,
+	},
         .rx_mon_dest = {
                 0, 0,
 		ATH12K_RX_MON_RING_MASK_0,
@@ -183,9 +294,7 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
                 ATH12K_TX_MON_RING_MASK_1,
                 0, 0, 0, 0, 0, 0
         },
-/*This will be rebased only when ppeds patches are rebased
- */
-#if 0
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
         .ppe2tcl = {
                 0, 0, 0, 0, 0, 0,
                 ATH12K_PPE2TCL_RING_MASK_0,
@@ -196,7 +305,6 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
                 ATH12K_REO2PPE_RING_MASK_0,
 		0, 0
         },
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
         .wbm2sw6_ppeds_tx_cmpln = {
 		ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0,
 		0, 0, 0, 0, 0, 0, 0
@@ -206,14 +314,13 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274_msi8 = {
                 0, 0, 0, 0, 0, 0, 0,
 		ATH12K_UMAC_RESET_INTR_MASK_0
         },
-#endif
 };
 
-#define ATH12K_PPE2TCL_RING_MASK_0 0x1
-#define ATH12K_REO2PPE_RING_MASK_0 0x1
-#define ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0 0x1
+#define ATH12K_RX_MON_STATUS_RING_MASK_0 0x1
+#define ATH12K_RX_MON_STATUS_RING_MASK_1 0x2
+#define ATH12K_RX_MON_STATUS_RING_MASK_2 0x4
 
-static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
+static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
@@ -221,6 +328,10 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		ATH12K_TX_RING_MASK_3,
 		0, 0, 0, 0,
 		0, 0, 0, 0, 0,
+	},
+	.host2rxmon = {
+		0, 0, 0,
+		ATH12K_HOST2RXMON_RING_MASK_0,
 	},
 	.rx_mon_dest = {
 		0, 0, 0, 0,
@@ -253,11 +364,6 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		ATH12K_REO_STATUS_RING_MASK_0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0,
 	},
-	.host2rxdma = {
-		0, 0, 0,
-		ATH12K_HOST2RXDMA_RING_MASK_0,
-		0, 0, 0, 0, 0, 0, 0, 0, 0,
-	},
 	.tx_mon_dest = {
 		0, 0, 0,
 		0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
@@ -282,14 +388,22 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn9274 = {
 		0, 0, ATH12K_PPE_WBM2SW_RELEASE_RING_MASK_0
 	},
 #endif
+	.umac_dp_reset = {
+		0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
+		ATH12K_UMAC_RESET_INTR_MASK_0
+	},
 };
 
-static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
+static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
 		ATH12K_TX_RING_MASK_2,
 		ATH12K_TX_RING_MASK_3,
+	},
+	.host2rxmon = {
+		0, 0, 0,
+		ATH12K_HOST2RXMON_RING_MASK_0,
 	},
 	.rx_mon_dest = {
 		0, 0, 0, 0, 0, 0, 0, 0,
@@ -314,10 +428,6 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
 		0, 0, 0,
 		ATH12K_REO_STATUS_RING_MASK_0,
 	},
-	.host2rxdma = {
-		0, 0, 0,
-		ATH12K_HOST2RXDMA_RING_MASK_0,
-	},
 	.tx_mon_dest = {
 		ATH12K_TX_MON_RING_MASK_0,
 		ATH12K_TX_MON_RING_MASK_1,
@@ -338,13 +448,21 @@ static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_ipq5332 = {
 #endif
 };
 
-static const struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_wcn7850 = {
+static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_wcn7850 = {
 	.tx  = {
 		ATH12K_TX_RING_MASK_0,
 		ATH12K_TX_RING_MASK_1,
 		ATH12K_TX_RING_MASK_2,
 	},
+	.host2rxmon = {
+	},
 	.rx_mon_dest = {
+	},
+	.rx_mon_status = {
+		0, 0, 0, 0,
+		ATH12K_RX_MON_STATUS_RING_MASK_0,
+		ATH12K_RX_MON_STATUS_RING_MASK_1,
+		ATH12K_RX_MON_STATUS_RING_MASK_2,
 	},
 	.rx = {
 		0, 0, 0,
@@ -376,6 +494,10 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn6432 = {
 		0, 0, 0, 0, 0, 0, 0, 0,
 		ATH12K_TX_RING_MASK_3,
 		0, 0, 0
+	},
+	.host2rxmon = {
+		0, 0, 0,
+		ATH12K_HOST2RXMON_RING_MASK_0,
 	},
 	.rx_mon_dest = {
 		0, 0, 0, 0, 0, 0, 0, 0,
@@ -412,13 +534,6 @@ static struct ath12k_hw_ring_mask ath12k_wifi7_hw_ring_mask_qcn6432 = {
 		0, 0, 0, 0, 0, 0, 0, 0,
 		0, 0, 0
 	},
-	.host2rxdma = {
-		0, 0,
-		ATH12K_HOST2RXDMA_RING_MASK_0,
-		ATH12K_HOST2RXDMA_RING_MASK_1,
-		ATH12K_HOST2RXDMA_RING_MASK_2,
-		0, 0, 0, 0, 0, 0,
-	},
 	.tx_mon_dest = {
 		ATH12K_TX_MON_RING_MASK_0,
 		ATH12K_TX_MON_RING_MASK_1,
@@ -450,6 +565,12 @@ static const struct ce_ie_addr ath12k_wifi7_ce_ie_addr_ipq5332 = {
 static const struct ce_remap ath12k_wifi7_ce_remap_ipq5332 = {
 	.base = HAL_IPQ5332_CE_WFSS_REG_BASE,
 	.size = HAL_IPQ5332_CE_SIZE,
+	.cmem_offset = HAL_SEQ_WCSS_CMEM_OFFSET,
+};
+
+const struct pmm_remap ath12k_wifi7_pmm_ipq5332 = {
+	.base = HAL_IPQ5332_PMM_REG_BASE,
+	.size = HAL_IPQ5332_PMM_SIZE,
 };
 
 static const struct ce_ie_addr ath12k_wifi7_ce_ie_addr_ipq5424 = {
@@ -461,9 +582,10 @@ static const struct ce_ie_addr ath12k_wifi7_ce_ie_addr_ipq5424 = {
 static const struct ce_remap ath12k_wifi7_ce_remap_ipq5424 = {
 	.base = HAL_IPQ5424_CE_WFSS_REG_BASE,
 	.size = HAL_IPQ5424_CE_SIZE,
+	.cmem_offset = HAL_SEQ_WCSS_CMEM_OFFSET,
 };
 
-static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
+static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 	{
 		.name = "qcn9274 hw1.0",
 		.hw_rev = ATH12K_HW_QCN9274_HW10,
@@ -505,7 +627,6 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
 		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
@@ -560,7 +681,20 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = true,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = false,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = 0,
 		.ds_support = false,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 127,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+				(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
+				CFR_DATA_MAX_LEN_QCN9274,
+		.mlo_3_link_tx_support = false,
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -600,14 +734,13 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 				   BIT(NL80211_IFTYPE_P2P_DEVICE) |
 				   BIT(NL80211_IFTYPE_P2P_CLIENT) |
 				   BIT(NL80211_IFTYPE_P2P_GO),
-		.supports_monitor = false,
+		.supports_monitor = true,
 
 		.idle_ps = true,
 		.cold_boot_calib = true,
 		.download_calib = false,
 		.supports_suspend = true,
-		.tcl_ring_retry = false,
-		.reoq_lut_support = false,
+		.reoq_lut_support = true,
 		.supports_shadow_regs = true,
 
 		.num_tcl_banks = 7,
@@ -654,7 +787,20 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = false,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = false,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = 0,
 		.ds_support = false,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 255,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_WCN7850 *4) +
+					CFR_DATA_MAX_LEN_WCN7850,
+		.mlo_3_link_tx_support = false,
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -693,14 +839,14 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_AP_VLAN),
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
+		.max_clients_supported = 512,
 #endif
 
 		.idle_ps = false,
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
-		.reoq_lut_support = false,
+		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
 		.num_tcl_banks = 48,
@@ -755,7 +901,20 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = true,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = true,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = 0,
 		.ds_support = true,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 127,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
+					CFR_DATA_MAX_LEN_QCN9274,
+		.mlo_3_link_tx_support = true,
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -793,14 +952,14 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 				   BIT(NL80211_IFTYPE_MESH_POINT),
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
+		.max_clients_supported = 256,
 #endif
 
 		.idle_ps = false,
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
-		.reoq_lut_support = false,
+		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
 		.num_tcl_banks = 48,
@@ -831,6 +990,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 
 		.ce_ie_addr = &ath12k_wifi7_ce_ie_addr_ipq5332,
 		.ce_remap = &ath12k_wifi7_ce_remap_ipq5332,
+		.pmm_remap = &ath12k_wifi7_pmm_ipq5332,
 		.en_qdsslog = true,
 		.support_fse = true,
 		.alloc_cacheable_memory = true,
@@ -847,7 +1007,20 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = false,
 		.credit_flow = false,
 		.is_plink_preferable = false,
+		.support_umac_reset = true,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = ATH12K_UMAC_RESET_IPC_IPQ5332,
 		.ds_support = false,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 255,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_IPQ5332 *4) +
+					CFR_DATA_MAX_LEN_IPQ5332,
+		.mlo_3_link_tx_support = false,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -885,14 +1058,14 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_MESH_POINT),
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
+		.max_clients_supported = 256,
 #endif
 
 		.idle_ps = false,
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
-		.reoq_lut_support = false,
+		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
 		.num_tcl_banks = 48,
@@ -919,7 +1092,20 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = true,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = true,
+		.umac_irq_line_reset = true,
+		.umac_reset_ipc = ATH12K_UMAC_RESET_IPC_QCN6432,
 		.ds_support = true,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 128,
+		/* sizeof (ath12k_csi_cfr_header) + max cfr header(200 bytes) +
+		 * max cfr payload(16384 bytes)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_QCN6432 *4) +
+					CFR_DATA_MAX_LEN_QCN6432,
+		.mlo_3_link_tx_support = false,
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -956,14 +1142,14 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_MESH_POINT),
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
+		.max_clients_supported = 256,
 #endif
 
 		.idle_ps = false,
 		.cold_boot_calib = true,
 		.download_calib = true,
 		.supports_suspend = false,
-		.tcl_ring_retry = true,
-		.reoq_lut_support = false,
+		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
 		.num_tcl_banks = 48,
@@ -995,6 +1181,7 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 
 		.ce_ie_addr = &ath12k_wifi7_ce_ie_addr_ipq5424,
 		.ce_remap = &ath12k_wifi7_ce_remap_ipq5424,
+		.pmm_remap = &ath12k_wifi7_pmm_ipq5332,
 		.en_qdsslog = true,
 		.support_fse = true,
 		.alloc_cacheable_memory = true,
@@ -1011,26 +1198,33 @@ static const struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.ftm_responder = false,
 		.credit_flow = false,
 		.is_plink_preferable = true,
+		.support_umac_reset = true,
+		.umac_irq_line_reset = false,
+		.umac_reset_ipc = ATH12K_UMAC_RESET_IPC_IPQ5332,
 		.ds_support = true,
+		.cfr_support = true,
+		.cfr_dma_hdr_size = sizeof(struct ath12k_cfir_enh_dma_hdr),
+		.cfr_num_stream_bufs = 128,
+		/* Max size :
+		 * sizeof(ath12k_csi_cfr_header) + 96 bytes(cfr header) +
+		 *                              15744 bytes(cfr payload)
+		 * where cfr_header = rtt upload header len +
+		 *                    freeze_tlv len + uplink user setup info
+		 *                  = 32bytes + 32bytes + (8bytes * 4users)
+		 */
+		.cfr_stream_buf_size = sizeof(struct ath12k_csi_cfr_header) +
+					(CFR_HDR_MAX_LEN_WORDS_IPQ5424 * 4) +
+					CFR_DATA_MAX_LEN_IPQ5424,
+		.mlo_3_link_tx_support = false,
 	},
 };
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
 						    struct ieee80211_vif *vif,
 						    struct net_device *dev)
 {
-	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	int ppe_vp_num;
-
-	/* Allocate a PASSIVE VP at VAP init.
-	 * Later update the VP type at the time of add interface
-	 */
-	ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
-	if (ppe_vp_num <= 0) {
-		ahvif->dp_vif.ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
-		WARN_ON(ath12k_vif_alloc_vp(ahvif, PPE_VP_USER_TYPE_PASSIVE, NULL, dev));
-	}
-
+	/* To Do: Check if this op is still needed */
 	return 0;
 }
 
@@ -1038,21 +1232,7 @@ static int ath12k_mac_op_destroy_datapath_offload_if(struct ieee80211_hw *hw,
 						     struct ieee80211_vif *vif,
 						     struct net_device *dev)
 {
-	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	int ppe_vp_num;
-
-	/* No init method is registered for monitor VAP
-	 * and hence no VP will be created for the same.
-	 */
-	if (vif->type == NL80211_IFTYPE_MONITOR)
-		return 0;
-
-	/* Free the VP is not yet done in deinit
-	 */
-	ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
-	if (ppe_vp_num != ATH12K_INVALID_PPE_VP_NUM)
-		ath12k_vif_free_vp(ahvif, dev);
-
+	/* To Do: Check if this op is still needed */
 	return 0;
 }
 
@@ -1082,6 +1262,33 @@ static int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw,
 
 	return ret;
 }
+#endif
+
+void ath12k_wifi7_ieee80211_free_txskb(struct ieee80211_hw *hw,
+				       struct sk_buff *skb,
+				       struct ath12k_dp_vif *dp_vif, u8 ring_id,
+				       enum ath12k_dp_tx_enq_error drop_reason,
+				       bool dev_free)
+{
+	if (unlikely(drop_reason >= DP_TX_ENQ_ERR_MAX))
+		DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_MISC], 1, ring_id);
+	else
+		DP_STATS_INC(dp_vif, tx_i.drop[drop_reason], 1, ring_id);
+
+	if (dev_free)
+		dev_kfree_skb_any(skb);
+	else
+		ieee80211_free_txskb(hw, skb);
+}
+
+static inline bool ath12k_wifi7_check_err_code_debug_logging(enum ath12k_dp_tx_enq_error err)
+{
+	if ((err == DP_TX_ENQ_DROP_SW_DESC_NA) || (err == DP_TX_ENQ_DROP_EXT_DESC_NA) ||
+	    (err == DP_TX_ENQ_DROP_TCL_DESC_NA))
+		return true;
+
+	return false;
+}
 
 /* Note: called under rcu_read_lock() */
 static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
@@ -1106,36 +1313,136 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath12k *ar, *tmp_ar;
 	struct ath12k_pdev_dp *dp_pdev, *tmp_dp_pdev;
 	struct ath12k_dp_link_peer *peer = NULL;
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k_dp *dp = NULL;
 	unsigned long links_map;
 	bool is_mcast = false, is_eth = false;
 	bool is_dvlan = false;
 	struct ethhdr *eth;
 	bool is_prb_rsp;
+	u32 qos_nw_delay = info->sawf.nw_delay;
 	u16 frm_type = 0;
 	u16 mcbc_gsn;
 	u8 link_id;
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
+	u8 tid;
+#endif
 	int ret;
+	u8 qos_tag;
+	enum ath12k_dp_tx_enq_error err;
+	u8 ring_id = 0, ring_selector = 0;
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
-		ieee80211_free_txskb(hw, skb);
+		ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+						  DP_TX_ENQ_DROP_VIF_TYPE_MON,
+						  ring_id, false);
 		return;
 	}
 
 	link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
-	memset(skb_cb, 0, sizeof(*skb_cb));
-	skb_cb->vif = vif;
+	if (unlikely(!(skb->fast_xmit &&
+		     ((skb->mark & ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK) ==
+		      ATH12K_MLO_METADATA_MLO_ASSIST_TAG)) || !hw->perf_mode)) {
+		memset(skb_cb, 0, sizeof(*skb_cb));
+		skb_cb->vif = vif;
 
-	if (key) {
-		skb_cb->cipher = key->cipher;
-		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
+		if (key) {
+			skb_cb->cipher = key->cipher;
+			skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
+		}
 	}
 
 	/* handle only for MLO case, use deflink for non MLO case */
+#ifdef CPTCFG_MAC80211_SFE_SUPPORT
+	if (likely(skb->fast_xmit &&
+		   ((skb->mark & ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK) ==
+		    ATH12K_MLO_METADATA_MLO_ASSIST_TAG))) {
+		link_id =  u32_get_bits(skb->mark, ATH12K_MLO_METADATA_LINKID_MASK);
+		skb_cb->link_id = link_id;
+
+		arvif = rcu_dereference(ahvif->link[link_id]);
+
+		if (unlikely(!arvif || !arvif->ar)) {
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_INV_ARVIF_FAST,
+							  ring_id, false);
+
+			return;
+		}
+
+		ar = arvif->ar;
+		skb_cb->u.ar = ar;
+
+		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
+		if (unlikely(!dp_pdev)) {
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_INV_PDEV_FAST,
+							  ring_id, false);
+
+			return;
+		}
+
+		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
+		if (unlikely(ret)) {
+			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+				   "failed due to limit check pdev idx %d\n",
+				   ar->pdev_idx);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_MAX_TX_LIMIT_FAST,
+							  ring_id, false);
+
+			return;
+		}
+
+		switch (ahvif->dp_vif.tx_encap_type) {
+			case ATH12K_HW_TXRX_ETHERNET:
+				skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
+				err = ath12k_wifi7_dp_tx_fast(dp_pdev, arvif,
+							      skb,
+							      qos_nw_delay);
+				break;
+			case ATH12K_HW_TXRX_NATIVE_WIFI:
+				ath12k_dp_tx_encap_nwifi(skb);
+				err = ath12k_wifi7_dp_tx_fast(dp_pdev, arvif,
+							      skb,
+							      qos_nw_delay);
+				break;
+			case ATH12K_HW_TXRX_RAW:
+			default:
+				err = DP_TX_ENQ_DROP_INV_ENCAP_FAST;
+		}
+		if (unlikely(err)) {
+			ring_id = smp_processor_id();
+
+			if (ath12k_wifi7_check_err_code_debug_logging(err))
+				ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "failed to transmit frame %d\n", err);
+			else
+				ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
+
+			ath12k_wifi7_ieee80211_free_txskb(ar->ah->hw, skb, dp_vif,
+							  err, ring_id, false);
+
+			return;
+		}
+		if (unlikely(ath12k_dp_stats_enabled(dp_pdev) &&
+			     ath12k_tid_stats_enabled(dp_pdev))) {
+			tid = skb->priority &
+			      IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_stats(ahvif, tid, skb->len,
+					    ATH_TX_SFE_PKTS);
+		}
+
+		return;
+	} else if (ieee80211_vif_is_mld(vif)) {
+#else
 	if (ieee80211_vif_is_mld(vif)) {
+#endif
 		link_id = ath12k_mac_get_tx_link(sta, vif, link_id, skb, info_flags);
 		if (link_id >= ATH12K_NUM_MAX_LINKS ||
 		    (ATH12K_SCAN_LINKS_MASK & BIT(link_id))) {
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_INV_LINK,
+							  ring_id, false);
 			return;
 		}
 	} else {
@@ -1144,21 +1451,26 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	arvif = rcu_dereference(ahvif->link[link_id]);
 	if (!arvif || !arvif->ar) {
-		ath12k_warn(ahvif->ah, "failed to find arvif link id %u for frame transmission",
-			    link_id);
-		ieee80211_free_txskb(hw, skb);
+		ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+						  DP_TX_ENQ_DROP_INV_ARVIF,
+						  ring_id, false);
 		return;
 	}
 
 	ar = arvif->ar;
 	skb_cb->link_id = link_id;
 
-	if (sta) {
-		ahsta = ath12k_sta_to_ahsta(sta);
-		if (ahsta->use_4addr_set)
-			arsta = rcu_dereference(ahsta->link[link_id]);
+	if (unlikely(test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))) {
+		ieee80211_free_txskb(hw, skb);
+		return;
 	}
 
+	if (sta) {
+		ahsta = ath12k_sta_to_ahsta(sta);
+		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
+		if (ahsta->use_4addr_set || qos_tag)
+			arsta = rcu_dereference(ahsta->link[link_id]);
+	}
 
 	/* as skb_cb is common currently for dp and mgmt tx processing
 	 * set this in the common mac op tx function.
@@ -1182,7 +1494,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		}
 
 		if (ath12k_mac_is_bridge_vdev(arvif)) {
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_BRIDGE_VDEV,
+							  ring_id, false);
 			return;
 		}
 
@@ -1191,13 +1505,17 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 		if (ret) {
 			if (ret != -EBUSY)
 				ath12k_warn(ar->ab, "failed to queue mgmt stype 0x%x frame %d\n", frm_type, ret);
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_MGMT_FRAME,
+							  ring_id, false);
 			spin_lock_bh(&ar->data_lock);
 			mgmt_stats->tx_fail_cnt[frm_type]++;
+			mgmt_stats->aggr_tx_mgmt_fail_cnt++;
 			spin_unlock_bh(&ar->data_lock);
 		} else {
 			spin_lock_bh(&ar->data_lock);
 			mgmt_stats->tx_succ_cnt[frm_type]++;
+			mgmt_stats->aggr_tx_mgmt_success_cnt++;
 			spin_unlock_bh(&ar->data_lock);
 		}
 		return;
@@ -1212,9 +1530,15 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
 	if (!dp_pdev) {
-		ieee80211_free_txskb(hw, skb);
+		ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+						  DP_TX_ENQ_DROP_INV_PDEV,
+						  ring_id, false);
 		return;
 	}
+
+	dp = dp_pdev->dp;
+	ring_selector = dp->hw_params->hw_ops->get_ring_selector(skb);
+	ring_id = ring_selector % dp->hw_params->max_tx_ring;
 
 	/* Checking if it is a DVLAN frame */
 	if (!test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags) &&
@@ -1223,21 +1547,30 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	    ieee80211_has_protected(hdr->frame_control))
 		is_dvlan = true;
 
-	if (!vif->valid_links || !is_mcast || is_dvlan || is_eth ||
+	if (!vif->valid_links || !is_mcast || is_dvlan ||
+	    (is_eth && (!is_mcast || sta)) ||
 	    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags)) {
 		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
 		if (ret) {
 			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 				   "failed due to limit check pdev idx %d\n",
 				   ar->pdev_idx);
-			ieee80211_free_txskb(hw, skb);
+			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
+							  DP_TX_ENQ_DROP_MAX_TX_LIMIT,
+							  ring_id, false);
 			return;
 		}
 
-		ret = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast, arsta);
-		if (unlikely(ret)) {
-			ath12k_warn(ar->ab, "failed to transmit frame %d\n", ret);
-			ieee80211_free_txskb(ar->ah->hw, skb);
+		err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
+					 arsta, ring_id, qos_nw_delay);
+		if (unlikely(err)) {
+			if (ath12k_wifi7_check_err_code_debug_logging(err))
+				ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "failed to transmit frame %d\n", err);
+			else
+				ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
+
+			ath12k_wifi7_ieee80211_free_txskb(ar->ah->hw, skb, dp_vif,
+							  err, ring_id, false);
 			return;
 		}
 	} else {
@@ -1251,6 +1584,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				continue;
 
 			tmp_ar = tmp_arvif->ar;
+			if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &tmp_ar->ab->dev_flags)))
+				continue;
+
 			tmp_dp_pdev = ath12k_dp_to_dp_pdev(tmp_ar->ab->dp, tmp_ar->pdev_idx);
 			if (!tmp_dp_pdev)
 				continue;
@@ -1263,6 +1599,17 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				continue;
 			}
 
+			if (is_eth) {
+				msdu_copied = skb_clone(skb, GFP_ATOMIC);
+				if (!msdu_copied) {
+					ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+						   "skb clone failure link_id 0x%X vdevid 0x%X\n",
+						   link_id, tmp_arvif->vdev_id);
+					continue;
+				}
+				skb_cb = ATH12K_SKB_CB(msdu_copied);
+				goto skip_nwifi;
+			}
 			msdu_copied = skb_copy(skb, GFP_ATOMIC);
 			if (!msdu_copied) {
 				ath12k_err(ar->ab,
@@ -1276,6 +1623,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 								info_flags);
 
 			skb_cb = ATH12K_SKB_CB(msdu_copied);
+skip_nwifi:
 			skb_cb->link_id = link_id;
 			skb_cb->vif = vif;
 			skb_cb->u.ar = tmp_ar;
@@ -1296,7 +1644,10 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 					    "failed to find peer for vdev_id 0x%X addr %pM link_map 0x%X\n",
 					    tmp_arvif->vdev_id, tmp_arvif->bssid,
 					    ahvif->links_map);
-				dev_kfree_skb_any(msdu_copied);
+				ath12k_wifi7_ieee80211_free_txskb(hw, msdu_copied,
+								  dp_vif,
+								  DP_TX_ENQ_DROP_INV_PEER,
+								  ring_id, true);
 				continue;
 			}
 
@@ -1305,32 +1656,30 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				skb_cb->cipher = key->cipher;
 				skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
 
-				hdr = (struct ieee80211_hdr *)msdu_copied->data;
-				if (!ieee80211_has_protected(hdr->frame_control))
-					hdr->frame_control |=
+				if (!is_eth) {
+					hdr = (struct ieee80211_hdr *)msdu_copied->data;
+					if (!ieee80211_has_protected(hdr->frame_control))
+						hdr->frame_control |=
 						cpu_to_le16(IEEE80211_FCTL_PROTECTED);
+				}
 			}
 			spin_unlock_bh(&tmp_ar->ab->dp->dp_lock);
 
 skip_peer_find:
-			ret = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
-						 msdu_copied, true, mcbc_gsn, is_mcast, arsta);
-			if (unlikely(ret)) {
-				if (ret == -ENOMEM) {
-					/* Drops are expected during heavy multicast
-					 * frame flood. Print with debug log
-					 * level to avoid lot of console prints
-					 */
+			err = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
+						 msdu_copied, true, mcbc_gsn,
+						 is_mcast, arsta, ring_id,
+						 qos_nw_delay);
+			if (unlikely(err)) {
+				if (ath12k_wifi7_check_err_code_debug_logging(err))
 					ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-						   "failed to transmit frame %d\n",
-						   ret);
-				} else {
-					ath12k_warn(ar->ab,
-						    "failed to transmit frame %d\n",
-						    ret);
-				}
+						   "failed to transmit frame %d\n", err);
+				else
+					ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
 
-				dev_kfree_skb_any(msdu_copied);
+				ath12k_wifi7_ieee80211_free_txskb(hw, msdu_copied,
+								  dp_vif, err,
+								  ring_id, true);
 			}
 		}
 		ieee80211_free_txskb(ar->ah->hw, skb);
@@ -1381,6 +1730,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.cancel_remain_on_channel       = ath12k_mac_op_cancel_remain_on_channel,
 	.change_sta_links               = ath12k_mac_op_change_sta_links,
 	.can_activate_links             = ath12k_mac_op_can_activate_links,
+	.set_dscp_tid                   = ath12k_mac_op_set_dscp_tid,
 #ifdef CONFIG_PM
 	.suspend			= ath12k_wow_op_suspend,
 	.resume				= ath12k_wow_op_resume,
@@ -1391,6 +1741,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 #endif
 	CFG80211_TESTMODE_CMD(ath12k_tm_cmd)
 #ifdef CPTCFG_ATH12K_DEBUGFS
+	.sta_add_debugfs                = ath12k_debugfs_sta_op_add,
 	.link_sta_add_debugfs           = ath12k_debugfs_link_sta_op_add,
 #endif
 	.link_reconfig_remove           = ath12k_mac_op_link_reconfig_remove,
@@ -1400,11 +1751,18 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.init_interface			= ath12k_mac_op_create_datapath_offload_if,
 	.deinit_interface		= ath12k_mac_op_destroy_datapath_offload_if,
 #endif
+	.can_neg_ttlm			= ath12k_mac_op_can_neg_ttlm,
+	.apply_neg_ttlm_per_client	= ath12k_mac_op_apply_neg_ttlm_per_client,
+	.set_radar_background           = ath12k_mac_op_set_radar_background,
+	.erp                            = ath12k_mac_op_erp,
+	.qos_mgmt_cfg                   = ath12k_mac_op_qos_mgmt_cfg,
+	.get_afc_eirp_pwr               = ath12k_mac_op_get_afc_eirp_pwr,
+	.get_6ghz_dev_deployment_type	= ath12k_mac_op_get_6ghz_dev_deployment_type,
 };
 
 int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 {
-	const struct ath12k_hw_params *hw_params = NULL;
+	struct ath12k_hw_params *hw_params = NULL;
 	struct ath12k_hw_params *hw_params_msi8 = NULL;
 	int i;
 
@@ -1436,6 +1794,8 @@ int ath12k_wifi7_hw_init(struct ath12k_base *ab)
 		ab->hw_params = hw_params;
 	}
 	ab->ath12k_ops = &ath12k_ops_wifi7;
+
+	ath12k_wifi7_hw_init_extn(ab);
 
 	ath12k_info(ab, "WiFi7 Hardware name: %s\n", ab->hw_params->name);
 

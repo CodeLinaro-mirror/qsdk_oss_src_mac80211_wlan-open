@@ -37,6 +37,12 @@ static const struct of_device_id ath11k_ahb_of_match[] = {
 	{ .compatible = "qcom,ipq5018-wifi",
 	  .data = (void *)ATH11K_HW_IPQ5018_HW10,
 	},
+	{ .compatible = "qcom,qcn6122-wifi",
+	  .data = (void *)ATH11K_HW_QCN6122,
+	},
+	{ .compatible = "qcom,ipq9574-wifi",
+	  .data = (void *)ATH11K_HW_IPQ9574,
+	},
 	{ }
 };
 
@@ -142,46 +148,35 @@ enum ext_irq_num {
 };
 
 static int
-ath11k_ahb_get_msi_irq_wcn6750(struct ath11k_base *ab, unsigned int vector)
+ath11k_ahb_get_msi_irq(struct ath11k_base *ab, unsigned int vector)
 {
 	return ab->pci.msi.irqs[vector];
 }
 
-static inline u32
-ath11k_ahb_get_window_start_wcn6750(struct ath11k_base *ab, u32 offset)
+static u32 ath11k_ahb_get_window_start(struct ath11k_base *ab, u32 offset)
 {
-	u32 window_start = 0;
-
-	/* If offset lies within DP register range, use 1st window */
-	if ((offset ^ HAL_SEQ_WCSS_UMAC_OFFSET) < ATH11K_PCI_WINDOW_RANGE_MASK)
-		window_start = ATH11K_PCI_WINDOW_START;
-	/* If offset lies within CE register range, use 2nd window */
-	else if ((offset ^ HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(ab)) <
-		 ATH11K_PCI_WINDOW_RANGE_MASK)
-		window_start = 2 * ATH11K_PCI_WINDOW_START;
-
-	return window_start;
+	return ath11k_pcic_get_window_start(ab, offset, ATH11K_BUS_AHB);
 }
 
 static void
-ath11k_ahb_window_write32_wcn6750(struct ath11k_base *ab, u32 offset, u32 value)
+ath11k_ahb_window_write32(struct ath11k_base *ab, u32 offset, u32 value)
 {
 	u32 window_start;
 
 	/* WCN6750 uses static window based register access*/
-	window_start = ath11k_ahb_get_window_start_wcn6750(ab, offset);
+	window_start = ath11k_ahb_get_window_start(ab, offset);
 
 	iowrite32(value, ab->mem + window_start +
 		  (offset & ATH11K_PCI_WINDOW_RANGE_MASK));
 }
 
-static u32 ath11k_ahb_window_read32_wcn6750(struct ath11k_base *ab, u32 offset)
+static u32 ath11k_ahb_window_read32(struct ath11k_base *ab, u32 offset)
 {
 	u32 window_start;
 	u32 val;
 
 	/* WCN6750 uses static window based register access */
-	window_start = ath11k_ahb_get_window_start_wcn6750(ab, offset);
+	window_start = ath11k_ahb_get_window_start(ab, offset);
 
 	val = ioread32(ab->mem + window_start +
 		       (offset & ATH11K_PCI_WINDOW_RANGE_MASK));
@@ -191,10 +186,19 @@ static u32 ath11k_ahb_window_read32_wcn6750(struct ath11k_base *ab, u32 offset)
 static const struct ath11k_pci_ops ath11k_ahb_pci_ops_wcn6750 = {
 	.wakeup = NULL,
 	.release = NULL,
-	.get_msi_irq = ath11k_ahb_get_msi_irq_wcn6750,
-	.window_write32 = ath11k_ahb_window_write32_wcn6750,
-	.window_read32 = ath11k_ahb_window_read32_wcn6750,
+	.get_msi_irq = ath11k_ahb_get_msi_irq,
+	.window_write32 = ath11k_ahb_window_write32,
+	.window_read32 = ath11k_ahb_window_read32,
 };
+
+static const struct ath11k_pci_ops ath11k_ahb_pci_ops_qcn6122 = {
+	.wakeup = NULL,
+	.release = NULL,
+	.get_msi_irq = ath11k_ahb_get_msi_irq,
+	.window_write32 = ath11k_ahb_window_write32,
+	.window_read32 = ath11k_ahb_window_read32,
+};
+
 
 static inline u32 ath11k_ahb_read32(struct ath11k_base *ab, u32 offset)
 {
@@ -406,6 +410,7 @@ static int ath11k_ahb_power_up(struct ath11k_base *ab)
 	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
 	int ret;
 
+	ath11k_core_wait_dump_collect(ab);
 	ret = rproc_boot(ab_ahb->tgt_rproc);
 	if (ret)
 		ath11k_err(ab, "failed to boot the remote processor Q6\n");
@@ -417,6 +422,7 @@ static void ath11k_ahb_power_down(struct ath11k_base *ab)
 {
 	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
 
+	ath11k_core_wait_dump_collect(ab);
 	rproc_shutdown(ab_ahb->tgt_rproc);
 }
 
@@ -429,6 +435,7 @@ static void ath11k_ahb_init_qmi_ce_config(struct ath11k_base *ab)
 	cfg->svc_to_ce_map_len = ab->hw_params.svc_to_ce_map_len;
 	cfg->svc_to_ce_map = ab->hw_params.svc_to_ce_map;
 	ab->qmi.service_ins_id = ab->hw_params.qmi_service_ins_id;
+	ab->qmi.service_ins_id += ab->userpd_id;
 }
 
 static void ath11k_ahb_free_ext_irq(struct ath11k_base *ab)
@@ -442,7 +449,9 @@ static void ath11k_ahb_free_ext_irq(struct ath11k_base *ab)
 			free_irq(ab->irq_num[irq_grp->irqs[j]], irq_grp);
 
 		netif_napi_del(&irq_grp->napi);
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		free_netdev(irq_grp->napi_ndev);
+#endif
 	}
 }
 
@@ -450,6 +459,9 @@ static void ath11k_ahb_free_irq(struct ath11k_base *ab)
 {
 	int irq_idx;
 	int i;
+
+	if (ab->hw_params.internal_pci)
+		return ath11k_pcic_ipci_free_irq(ab);
 
 	if (ab->hw_params.hybrid_bus_type)
 		return ath11k_pcic_free_irq(ab);
@@ -468,7 +480,15 @@ static void ath11k_ahb_ce_tasklet(struct tasklet_struct *t)
 {
 	struct ath11k_ce_pipe *ce_pipe = from_tasklet(ce_pipe, t, intr_tq);
 
+	if (ce_pipe->ab->ce_latency_stats_enable)
+		ce_pipe->tasklet_ts.exec_entry_ts = ktime_get_boottime();
+
 	ath11k_ce_per_engine_service(ce_pipe->ab, ce_pipe->pipe_num);
+
+	if (ce_pipe->ab->ce_latency_stats_enable) {
+		ce_pipe->tasklet_ts.exec_complete_ts = ktime_get_boottime();
+		ce_update_tasklet_time_duration_stats(ce_pipe);
+	}
 
 	ath11k_ahb_ce_irq_enable(ce_pipe->ab, ce_pipe->pipe_num);
 }
@@ -483,6 +503,9 @@ static irqreturn_t ath11k_ahb_ce_interrupt_handler(int irq, void *arg)
 	ath11k_ahb_ce_irq_disable(ce_pipe->ab, ce_pipe->pipe_num);
 
 	tasklet_schedule(&ce_pipe->intr_tq);
+
+	if (ce_pipe->ab->ce_latency_stats_enable)
+		ce_pipe->tasklet_ts.sched_entry_ts = ktime_get_boottime();
 
 	return IRQ_HANDLED;
 }
@@ -524,9 +547,16 @@ static irqreturn_t ath11k_ahb_ext_interrupt_handler(int irq, void *arg)
 static int ath11k_ahb_config_ext_irq(struct ath11k_base *ab)
 {
 	struct ath11k_hw_params *hw = &ab->hw_params;
+	struct net_device *napi_ndev;
 	int i, j;
 	int irq;
 	int ret;
+	bool nss_offload;
+
+	/* TCL Completion, REO Dest, ERR, Exception and h2rxdma rings are offloaded
+	 * to nss when its enabled, hence don't enable these interrupts
+	 */
+	nss_offload = ab->nss.enabled;
 
 	for (i = 0; i < ATH11K_EXT_IRQ_GRP_NUM_MAX; i++) {
 		struct ath11k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
@@ -535,28 +565,39 @@ static int ath11k_ahb_config_ext_irq(struct ath11k_base *ab)
 		irq_grp->ab = ab;
 		irq_grp->grp_id = i;
 
+#if LINUX_VERSION_IS_GEQ(6,10,0)
 		irq_grp->napi_ndev = alloc_netdev_dummy(0);
-		if (!irq_grp->napi_ndev)
+		napi_ndev = irq_grp->napi_ndev;
+#else
+		init_dummy_netdev(&irq_grp->napi_ndev);
+		napi_ndev = &irq_grp->napi_ndev;
+#endif
+		if (!napi_ndev)
 			return -ENOMEM;
 
-		netif_napi_add(irq_grp->napi_ndev, &irq_grp->napi,
-			       ath11k_ahb_ext_grp_napi_poll);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+		netif_napi_add(&irq_grp->napi_ndev, &irq_grp->napi,
+			       ath11k_ahb_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#else
+		netif_napi_add_weight(&irq_grp->napi_ndev, &irq_grp->napi,
+				ath11k_ahb_ext_grp_napi_poll, NAPI_POLL_WEIGHT);
+#endif
 
 		for (j = 0; j < ATH11K_EXT_IRQ_NUM_MAX; j++) {
-			if (ab->hw_params.ring_mask->tx[i] & BIT(j)) {
+			if (!nss_offload && ab->hw_params.ring_mask->tx[i] & BIT(j)) {
 				irq_grp->irqs[num_irq++] =
 					wbm2host_tx_completions_ring1 - j;
 			}
 
-			if (ab->hw_params.ring_mask->rx[i] & BIT(j)) {
+			if (!nss_offload && ab->hw_params.ring_mask->rx[i] & BIT(j)) {
 				irq_grp->irqs[num_irq++] =
 					reo2host_destination_ring1 - j;
 			}
 
-			if (ab->hw_params.ring_mask->rx_err[i] & BIT(j))
+			if (!nss_offload && ab->hw_params.ring_mask->rx_err[i] & BIT(j))
 				irq_grp->irqs[num_irq++] = reo2host_exception;
 
-			if (ab->hw_params.ring_mask->rx_wbm_rel[i] & BIT(j))
+			if (!nss_offload && ab->hw_params.ring_mask->rx_wbm_rel[i] & BIT(j))
 				irq_grp->irqs[num_irq++] = wbm2host_rx_release;
 
 			if (ab->hw_params.ring_mask->reo_status[i] & BIT(j))
@@ -569,7 +610,7 @@ static int ath11k_ahb_config_ext_irq(struct ath11k_base *ab)
 						ath11k_hw_get_mac_from_pdev_id(hw, j);
 				}
 
-				if (ab->hw_params.ring_mask->host2rxdma[i] & BIT(j)) {
+				if (!nss_offload && ab->hw_params.ring_mask->host2rxdma[i] & BIT(j)) {
 					irq_grp->irqs[num_irq++] =
 						host2rxdma_host_buf_ring_mac1 -
 						ath11k_hw_get_mac_from_pdev_id(hw, j);
@@ -611,6 +652,9 @@ static int ath11k_ahb_config_irq(struct ath11k_base *ab)
 {
 	int irq, irq_idx, i;
 	int ret;
+
+	if (ab->hw_params.internal_pci)
+		return ath11k_pcic_ipci_config_irq(ab);
 
 	if (ab->hw_params.hybrid_bus_type)
 		return ath11k_pcic_config_irq(ab);
@@ -762,6 +806,49 @@ static int ath11k_ahb_hif_resume(struct ath11k_base *ab)
 	return 0;
 }
 
+#ifdef CONFIG_QCOM_QMI_HELPERS
+static void ath11k_ahb_ssr_notifier_reg(struct ath11k_base *ab)
+{
+#if LINUX_VERSION_IS_LESS(5, 4, 0)
+	qcom_register_ssr_notifier(&ab->qmi.ssr_nb);
+#else
+	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+	rproc_register_subsys_notifier(ab_ahb->tgt_rproc->name,
+				       &ab->qmi.ssr_nb, &ab->qmi.ssr_nb);
+#else
+	ab->qmi.atomic_ssr_handle = qcom_register_ssr_atomic_notifier(ab_ahb->tgt_rproc->name,
+								      &ab->qmi.atomic_ssr_nb);
+	if (!ab->qmi.atomic_ssr_handle)
+		ath11k_err(ab, "failed to register atomic ssr notifier\n");
+
+	ab->qmi.ssr_handle = qcom_register_ssr_notifier(ab_ahb->tgt_rproc->name, &ab->qmi.ssr_nb);
+#endif
+#endif
+}
+
+static void ath11k_ahb_ssr_notifier_unreg(struct ath11k_base *ab)
+{
+#if LINUX_VERSION_IS_LESS(5, 4, 0)
+	qcom_unregister_ssr_notifier(&ab->qmi.ssr_nb);
+#else
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
+	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
+	rproc_unregister_subsys_notifier(ab_ahb->tgt_rproc->name,
+					 &ab->qmi.ssr_nb,
+					 &ab->qmi.ssr_nb);
+#else
+	if (ab->qmi.atomic_ssr_handle)
+		qcom_unregister_ssr_atomic_notifier(ab->qmi.atomic_ssr_handle,
+						    &ab->qmi.atomic_ssr_nb);
+
+	if (ab->qmi.ssr_handle)
+		qcom_unregister_ssr_notifier(ab->qmi.ssr_handle, &ab->qmi.ssr_nb);
+#endif
+#endif
+}
+#endif
+
 static const struct ath11k_hif_ops ath11k_ahb_hif_ops_ipq8074 = {
 	.start = ath11k_ahb_start,
 	.stop = ath11k_ahb_stop,
@@ -773,6 +860,10 @@ static const struct ath11k_hif_ops ath11k_ahb_hif_ops_ipq8074 = {
 	.map_service_to_pipe = ath11k_ahb_map_service_to_pipe,
 	.power_down = ath11k_ahb_power_down,
 	.power_up = ath11k_ahb_power_up,
+#ifdef CONFIG_QCOM_QMI_HELPERS
+	.ssr_notifier_reg = ath11k_ahb_ssr_notifier_reg,
+	.ssr_notifier_unreg = ath11k_ahb_ssr_notifier_unreg,
+#endif
 };
 
 static const struct ath11k_hif_ops ath11k_ahb_hif_ops_wcn6750 = {
@@ -794,23 +885,63 @@ static const struct ath11k_hif_ops ath11k_ahb_hif_ops_wcn6750 = {
 	.ce_irq_disable = ath11k_pci_disable_ce_irqs_except_wake_irq,
 };
 
+static const struct ath11k_hif_ops ath11k_ahb_hif_ops_qcn6122 = {
+	.start = ath11k_pcic_start,
+	.stop = ath11k_pcic_stop,
+	.read32 = ath11k_pcic_read32,
+	.write32 = ath11k_pcic_write32,
+	.power_down = ath11k_ahb_power_down,
+	.power_up = ath11k_ahb_power_up,
+	.irq_enable = ath11k_pcic_ext_irq_enable,
+	.irq_disable = ath11k_pcic_ext_irq_disable,
+	.get_msi_address =  ath11k_pcic_get_msi_address,
+	.get_user_msi_vector = ath11k_pcic_get_user_msi_assignment,
+	.map_service_to_pipe = ath11k_pcic_map_service_to_pipe,
+	.get_ce_msi_idx = ath11k_pcic_get_ce_msi_idx,
+	.config_static_window = ath11k_pcic_config_static_window,
+	.get_window_offset = ath11k_pci_get_window_offset,
+#ifdef CONFIG_QCOM_QMI_HELPERS
+	.ssr_notifier_reg = ath11k_ahb_ssr_notifier_reg,
+	.ssr_notifier_unreg = ath11k_ahb_ssr_notifier_unreg,
+#endif
+};
+
 static int ath11k_core_get_rproc(struct ath11k_base *ab)
 {
 	struct ath11k_ahb *ab_ahb = ath11k_ahb_priv(ab);
 	struct device *dev = ab->dev;
 	struct rproc *prproc;
 	phandle rproc_phandle;
+#if LINUX_VERSION_IS_LESS(5,4,0)
+	bool multi_pd_arch;
+	const char *name;
+#endif
 
-	if (of_property_read_u32(dev->of_node, "qcom,rproc", &rproc_phandle)) {
-		ath11k_err(ab, "failed to get q6_rproc handle\n");
-		return -ENOENT;
+#if LINUX_VERSION_IS_LESS(5,4,0)
+	multi_pd_arch = of_property_read_bool(dev->of_node, "qcom,multipd_arch");
+	if (multi_pd_arch) {
+		if (of_property_read_string(dev->of_node, "qcom,userpd-subsys-name",
+					&name))
+			return -EINVAL;
+		prproc = rproc_get_by_name(name);
+		if (!prproc) {
+			ath11k_err(ab, "failed to get rproc\n");
+			return -EINVAL;
+		}
+	} else {
+#endif
+		if (of_property_read_u32(dev->of_node, "qcom,rproc", &rproc_phandle)) {
+			ath11k_err(ab, "failed to get q6_rproc handle\n");
+			return -ENOENT;
+		}
+		prproc = rproc_get_by_phandle(rproc_phandle);
+		if (!prproc) {
+			ath11k_dbg(ab, ATH11K_DBG_AHB, "failed to get rproc, deferring\n");
+			return -EPROBE_DEFER;
+		}
+#if LINUX_VERSION_IS_LESS(5,4,0)
 	}
-
-	prproc = rproc_get_by_phandle(rproc_phandle);
-	if (!prproc) {
-		ath11k_dbg(ab, ATH11K_DBG_AHB, "failed to get rproc, deferring\n");
-		return -EPROBE_DEFER;
-	}
+#endif
 	ab_ahb->tgt_rproc = prproc;
 
 	return 0;
@@ -900,6 +1031,11 @@ static int ath11k_ahb_setup_resources(struct ath11k_base *ab)
 	struct resource *mem_res;
 	void __iomem *mem;
 
+	if (ab->hw_params.internal_pci) {
+		set_bit(ATH11K_FLAG_MULTI_MSI_VECTORS, &ab->dev_flags);
+		return 0;
+	}
+
 	if (ab->hw_params.hybrid_bus_type)
 		return ath11k_ahb_setup_msi_resources(ab);
 
@@ -910,6 +1046,7 @@ static int ath11k_ahb_setup_resources(struct ath11k_base *ab)
 	}
 
 	ab->mem = mem;
+	ab->mem_pa = mem_res->start;
 	ab->mem_len = resource_size(mem_res);
 
 	return 0;
@@ -1031,7 +1168,11 @@ static int ath11k_ahb_fw_resources_init(struct ath11k_base *ab)
 
 	ab_ahb->fw.dev = &pdev->dev;
 
+#if LINUX_VERSION_IS_GEQ(6,11,0)
 	iommu_dom = iommu_paging_domain_alloc(ab_ahb->fw.dev);
+#else
+	iommu_dom = iommu_domain_alloc(&platform_bus_type);
+#endif
 	if (IS_ERR(iommu_dom)) {
 		ath11k_err(ab, "failed to allocate iommu domain\n");
 		ret = PTR_ERR(iommu_dom);
@@ -1117,13 +1258,62 @@ static int ath11k_ahb_fw_resource_deinit(struct ath11k_base *ab)
 	return 0;
 }
 
+static int ath11k_get_userpd_id(struct device *dev)
+{
+	int ret;
+	int userpd_id = 0;
+	const char *subsys_name;
+
+	ret = of_property_read_string(dev->of_node,
+				      "qcom,userpd-subsys-name",
+				      &subsys_name);
+	if (ret) {
+		dev_err(dev, "Not multipd architecture");
+		return 0;
+	}
+
+	if (strcmp(subsys_name, "q6v5_wcss_userpd2") == 0)
+		userpd_id = QCN6122_USERPD_0;
+	else if (strcmp(subsys_name, "q6v5_wcss_userpd3") == 0)
+		userpd_id = QCN6122_USERPD_1;
+
+	return userpd_id;
+}
+
+static bool ath11k_skip_target_probe(int userpd_id, const struct of_device_id *of_id)
+{
+	int hw_rev = (enum ath11k_hw_rev)of_id->data;
+
+	if (ath11k_skip_radio & SKIP_QCN6122_0) {
+		if (hw_rev == ATH11K_HW_QCN6122 &&
+		    userpd_id == QCN6122_USERPD_0)
+			return true;
+	} else if (ath11k_skip_radio & SKIP_QCN6122_1) {
+		if (hw_rev == ATH11K_HW_QCN6122 &&
+		    userpd_id == QCN6122_USERPD_1)
+			return true;
+	}
+
+	return false;
+}
+
 static int ath11k_ahb_probe(struct platform_device *pdev)
 {
 	struct ath11k_base *ab;
+	struct device *dev = &pdev->dev;
+	const struct of_device_id *of_id;
 	const struct ath11k_hif_ops *hif_ops;
 	const struct ath11k_pci_ops *pci_ops;
 	enum ath11k_hw_rev hw_rev;
-	int ret;
+	int ret = 0, userpd_id;
+	u32 hw_mode_id;
+	unsigned long left;
+
+	of_id = of_match_device(ath11k_ahb_of_match, &pdev->dev);
+	if (!of_id) {
+		dev_err(&pdev->dev, "failed to find matching device tree id\n");
+		return -EINVAL;
+	}
 
 	hw_rev = (uintptr_t)device_get_match_data(&pdev->dev);
 
@@ -1131,6 +1321,7 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 	case ATH11K_HW_IPQ8074:
 	case ATH11K_HW_IPQ6018_HW10:
 	case ATH11K_HW_IPQ5018_HW10:
+	case ATH11K_HW_IPQ9574:
 		hif_ops = &ath11k_ahb_hif_ops_ipq8074;
 		pci_ops = NULL;
 		break;
@@ -1138,10 +1329,18 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 		hif_ops = &ath11k_ahb_hif_ops_wcn6750;
 		pci_ops = &ath11k_ahb_pci_ops_wcn6750;
 		break;
+	case ATH11K_HW_QCN6122:
+		hif_ops = &ath11k_ahb_hif_ops_qcn6122;
+		pci_ops = &ath11k_ahb_pci_ops_qcn6122;
+		break;
 	default:
 		dev_err(&pdev->dev, "unsupported device type %d\n", hw_rev);
 		return -EOPNOTSUPP;
 	}
+
+	userpd_id = ath11k_get_userpd_id(dev);
+	if (ath11k_skip_target_probe(userpd_id, of_id))
+		goto end;
 
 	ret = dma_set_mask_and_coherent(&pdev->dev, DMA_BIT_MASK(32));
 	if (ret) {
@@ -1159,7 +1358,18 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 	ab->hif.ops = hif_ops;
 	ab->pdev = pdev;
 	ab->hw_rev = hw_rev;
+	ab->userpd_id = userpd_id;
 	ab->fw_mode = ATH11K_FIRMWARE_MODE_NORMAL;
+	ab->enable_cold_boot_cal = ath11k_cold_boot_cal;
+	mutex_lock(&dev_init_lock);
+	left = wait_event_timeout(ath11k_radio_prb_wq, dev_init_progress == false,
+				  ATH11K_AHB_PROBE_SEQ_TIMEOUT);
+	dev_init_progress = true;
+	if (!left)
+		ath11k_dbg(ab, ATH11K_DBG_AHB, "dev init is concurrently processing"
+			   " this may cause random phy#\n");
+	mutex_unlock(&dev_init_lock);
+
 	platform_set_drvdata(pdev, ab);
 
 	ret = ath11k_pcic_register_pci_ops(ab, pci_ops);
@@ -1218,8 +1428,12 @@ static int ath11k_ahb_probe(struct platform_device *pdev)
 		goto err_ce_free;
 	}
 
+	/* TODO
+	 * below 4 lines can be removed once fw changes available
+	 */
+	of_property_read_u32(dev->of_node, "wlan-hw-mode",
+			&hw_mode_id);
 	ath11k_qmi_fwreset_from_cold_boot(ab);
-
 	return 0;
 
 err_ce_free:
@@ -1239,8 +1453,8 @@ err_ce_unmap:
 
 err_core_free:
 	ath11k_core_free(ab);
+end:
 	platform_set_drvdata(pdev, NULL);
-
 	return ret;
 }
 
@@ -1258,6 +1472,7 @@ static void ath11k_ahb_remove_prepare(struct ath11k_base *ab)
 	set_bit(ATH11K_FLAG_UNREGISTERING, &ab->dev_flags);
 	cancel_work_sync(&ab->restart_work);
 	cancel_work_sync(&ab->qmi.event_work);
+	cancel_work_sync(&ab->wmi_ast_work);
 }
 
 static void ath11k_ahb_free_resources(struct ath11k_base *ab)
@@ -1275,9 +1490,16 @@ static void ath11k_ahb_free_resources(struct ath11k_base *ab)
 	platform_set_drvdata(pdev, NULL);
 }
 
+#if LINUX_VERSION_IS_GEQ(6,8,0)
 static void ath11k_ahb_remove(struct platform_device *pdev)
+#else
+static int ath11k_ahb_remove(struct platform_device *pdev)
+#endif
 {
 	struct ath11k_base *ab = platform_get_drvdata(pdev);
+
+	if (!ab)
+		return 0;
 
 	if (test_bit(ATH11K_FLAG_QMI_FAIL, &ab->dev_flags)) {
 		ath11k_ahb_power_down(ab);
@@ -1292,6 +1514,10 @@ static void ath11k_ahb_remove(struct platform_device *pdev)
 qmi_fail:
 	ath11k_fw_destroy(ab);
 	ath11k_ahb_free_resources(ab);
+
+#if LINUX_VERSION_IS_LESS(6,8,0)
+	return 0;
+#endif
 }
 
 static void ath11k_ahb_shutdown(struct platform_device *pdev)

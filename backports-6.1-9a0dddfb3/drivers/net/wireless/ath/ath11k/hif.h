@@ -32,6 +32,12 @@ struct ath11k_hif_ops {
 	void (*ce_irq_disable)(struct ath11k_base *ab);
 	void (*get_ce_msi_idx)(struct ath11k_base *ab, u32 ce_id, u32 *msi_idx);
 	void (*coredump_download)(struct ath11k_base *ab);
+#ifdef CONFIG_QCOM_QMI_HELPERS
+	void (*ssr_notifier_reg)(struct ath11k_base *ab);
+	void (*ssr_notifier_unreg)(struct ath11k_base *ab);
+#endif
+	u32 (*get_window_offset)(struct ath11k_base *ab, u32 offset);
+	void (*config_static_window)(struct ath11k_base *ab);
 };
 
 static inline void ath11k_hif_ce_irq_enable(struct ath11k_base *ab)
@@ -138,6 +144,14 @@ static inline void ath11k_get_msi_address(struct ath11k_base *ab, u32 *msi_addr_
 	ab->hif.ops->get_msi_address(ab, msi_addr_lo, msi_addr_hi);
 }
 
+static inline u32 ath11k_hif_get_window_offset(struct ath11k_base *ab, u32 offset)
+{
+	if (ab->hif.ops->get_window_offset)
+		return ab->hif.ops->get_window_offset(ab, offset);
+
+	return offset;
+}
+
 static inline void ath11k_get_ce_msi_idx(struct ath11k_base *ab, u32 ce_id,
 					 u32 *msi_data_idx)
 {
@@ -153,4 +167,29 @@ static inline void ath11k_hif_coredump_download(struct ath11k_base *ab)
 		ab->hif.ops->coredump_download(ab);
 }
 
+#ifdef CONFIG_QCOM_QMI_HELPERS
+static inline void ath11k_hif_ssr_notifier_reg(struct ath11k_base *ab)
+{
+	if (!ab->hif.ops->ssr_notifier_reg)
+		return;
+
+	ab->hif.ops->ssr_notifier_reg(ab);
+}
+
+static inline void ath11k_hif_ssr_notifier_unreg(struct ath11k_base *ab)
+{
+	if (!ab->hif.ops->ssr_notifier_unreg)
+		return;
+
+	ab->hif.ops->ssr_notifier_unreg(ab);
+}
+#endif
+
+static inline void ath11k_hif_config_static_window(struct ath11k_base *ab)
+{
+	if (!ab->hif.ops->config_static_window)
+		return;
+
+	ab->hif.ops->config_static_window(ab);
+}
 #endif /* _HIF_H_ */

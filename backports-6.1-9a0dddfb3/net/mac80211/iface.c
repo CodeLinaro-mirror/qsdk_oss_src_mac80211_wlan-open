@@ -1483,10 +1483,16 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 				goto err_stop;
 
 			ieee80211_set_vif_encap_ops(sdata);
+#ifndef PLATFORM_SDX85
+			/* ieee80211_check_queues was disabled for SDX
+			 *  due to Warn on for invalid hw queue for SDX
+			 *  during VAP up
+			 */
 			res = ieee80211_check_queues(sdata,
 				ieee80211_vif_type_p2p(&sdata->vif));
 			if (res)
 				goto err_del_interface;
+#endif
 		}
 
 		if (sdata->vif.type == NL80211_IFTYPE_AP) {
@@ -1931,8 +1937,10 @@ static void ieee80211_setup_sdata(struct ieee80211_sub_if_data *sdata,
 			ieee80211_mesh_init_sdata(sdata);
 		break;
 	case NL80211_IFTYPE_MONITOR:
-		sdata->dev->type = ARPHRD_IEEE80211_RADIOTAP;
-		sdata->dev->netdev_ops = &ieee80211_monitorif_ops;
+		if (sdata->dev) {
+			sdata->dev->type = ARPHRD_IEEE80211_RADIOTAP;
+			sdata->dev->netdev_ops = &ieee80211_monitorif_ops;
+		}
 		sdata->u.mntr.flags = MONITOR_FLAG_CONTROL |
 				      MONITOR_FLAG_OTHER_BSS;
 		break;
@@ -2354,10 +2362,6 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 
 		ndev->features |= local->hw.netdev_features;
 		ndev->priv_flags |= IFF_LIVE_ADDR_CHANGE;
-		if ((type == NL80211_IFTYPE_AP || type == NL80211_IFTYPE_STATION ||
-		    type == NL80211_IFTYPE_AP_VLAN) &&
-		    ieee80211_hw_check(&local->hw, SUPPORTS_TX_ENCAP_OFFLOAD))
-			ndev->features |= NETIF_F_HW_CSUM;
 
 		ndev->hw_features |= ndev->features &
 					MAC80211_SUPPORTED_FEATURES_TX;

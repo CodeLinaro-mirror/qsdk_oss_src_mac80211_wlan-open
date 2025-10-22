@@ -67,6 +67,9 @@
 #define PCI_MHI_REGION_END	0x1E0EFFC
 #define QRTR_PCI_DOMAIN_NR_MASK		GENMASK(7, 4)
 #define QRTR_PCI_BUS_NUMBER_MASK	GENMASK(3, 0)
+#define PCI_EXP_LNKSTA_CLS     0x000f  /* Current Link Speed */
+#define PCI_EXP_LNKSTA_NLW     0x03f0  /* Negotiated Link Width */
+#define PCI_EXP_LNKSTA_NLW_SHIFT 4     /* start of NLW mask in link status */
 
 struct ath12k_msi_user {
 	const char *name;
@@ -98,6 +101,11 @@ struct ath12k_pci_device_family_ops {
 	void (*dp_deinit)(struct ath12k_dp *dp);
 };
 
+struct ath12k_reg_base {
+	u32 umac_base;
+	u32 ce_reg_base;
+};
+
 struct ath12k_pci {
 	struct pci_dev *pdev;
 	struct ath12k_base *ab;
@@ -120,12 +128,16 @@ struct ath12k_pci {
 	const struct ath12k_pci_ops *pci_ops;
 	u32 qmi_instance;
 	const struct ath12k_pci_device_family_ops *device_ops;
+	const struct ath12k_reg_base *reg_base;
+	u16 def_link_speed;
+	u16 def_link_width;
 };
 
 struct ath12k_pci_driver {
 	const char *name;
 	const struct pci_device_id *id_table;
 	struct ath12k_pci_device_family_ops ops;
+	const struct ath12k_reg_base *reg_base;
 };
 
 static inline struct ath12k_pci *ath12k_pci_priv(struct ath12k_base *ab)
@@ -161,4 +173,6 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type,
 					 int vector, int ring_num);
 void ath12k_pci_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type);
 void ath12k_pci_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type);
+struct pci_dev *ath12k_pci_get_dev_by_ab(struct ath12k_base *ab);
+int ath12k_pci_get_link_status(struct pci_dev *pdev, u16 *speed, u16 *width);
 #endif /* ATH12K_PCI_H */

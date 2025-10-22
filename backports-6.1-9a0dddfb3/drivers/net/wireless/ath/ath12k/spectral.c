@@ -301,7 +301,7 @@ static ssize_t ath12k_write_file_spec_scan_ctl(struct file *file,
 					       size_t count, loff_t *ppos)
 {
 	struct ath12k *ar = file->private_data;
-	char buf[32];
+	char buf[32]  = {0};
 	ssize_t len;
 	int ret;
 
@@ -382,7 +382,7 @@ static ssize_t ath12k_write_file_spectral_count(struct file *file,
 {
 	struct ath12k *ar = file->private_data;
 	unsigned long val;
-	char buf[32];
+	char buf[32] = {0};
 	ssize_t len;
 
 	len = min(count, sizeof(buf) - 1);
@@ -437,7 +437,7 @@ static ssize_t ath12k_write_file_spectral_bins(struct file *file,
 {
 	struct ath12k *ar = file->private_data;
 	unsigned long val;
-	char buf[32];
+	char buf[32] = {0};
 	ssize_t len;
 
 	len = min(count, sizeof(buf) - 1);
@@ -786,7 +786,7 @@ static int ath12k_spectral_process_data(struct ath12k *ar,
 	struct ath12k_base *ab = ar->ab;
 	struct spectral_tlv *tlv;
 	struct spectral_summary_fft_report *summary = NULL;
-	struct ath12k_spectral_summary_report summ_rpt;
+	struct ath12k_spectral_summary_report summ_rpt = {0};
 	struct fft_sample_ath12k *fft_sample = NULL;
 	u8 *data;
 	u32 data_len, i;
@@ -997,23 +997,23 @@ void ath12k_spectral_deinit(struct ath12k_base *ab)
 		ar = ab->pdevs[i].ar;
 		sp = &ar->spectral;
 
-		wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 		if (sp->spectral_cap.fft_size_caps) {
 			kfree(sp->spectral_cap.fft_size_caps);
 			sp->spectral_cap.fft_size_caps = NULL;
 		}
 
-		if (!sp->enabled) {
-			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		if (!sp->enabled)
 			continue;
-		}
-
-		ath12k_spectral_scan_config(ar, ATH12K_SPECTRAL_DISABLED);
-		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 
 		spin_lock_bh(&sp->lock);
 		sp->enabled = false;
 		spin_unlock_bh(&sp->lock);
+
+		if (ar->spectral.mode != ATH12K_SPECTRAL_DISABLED) {
+			wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+			ath12k_spectral_scan_config(ar, ATH12K_SPECTRAL_DISABLED);
+			wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+		}
 
 		ath12k_spectral_debug_unregister(ar);
 		ath12k_spectral_ring_free(ar);

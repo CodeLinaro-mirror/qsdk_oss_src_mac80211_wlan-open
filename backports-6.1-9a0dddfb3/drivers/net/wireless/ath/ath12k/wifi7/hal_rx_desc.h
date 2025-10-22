@@ -166,8 +166,6 @@ struct rx_mpdu_start_qcn9274 {
 
 #define QCN9274_MPDU_START_WMASK (QCN9274_MPDU_START_SELECT_INFO1_PN_31_0 |	\
 		QCN9274_MPDU_START_SELECT_PN_95_32 |				\
-		QCN9274_MPDU_START_SELECT_PN_127_96_INFO2 |			\
-		QCN9274_MPDU_START_SELECT_PEER_MDATA_INFO3_PHY_PPDU_ID |	\
 		QCN9274_MPDU_START_SELECT_AST_IDX_SW_PEER_ID_INFO4 |		\
 		QCN9274_MPDU_START_SELECT_INFO5_INFO6 |				\
 		QCN9274_MPDU_START_SELECT_FRAME_CTRL_DURATION_ADDR1_31_0 |	\
@@ -182,11 +180,7 @@ struct rx_mpdu_start_qcn9274 {
 
 struct rx_mpdu_start_qcn9274_compact {
 	__le32 info1;
-	__le32 pn[4];
-	__le32 info2;
-	__le32 peer_meta_data;
-	__le16 info3;
-	__le16 phy_ppdu_id;
+	__le32 pn[3];
 	__le16 ast_index;
 	__le16 sw_peer_id;
 	__le32 info4;
@@ -836,7 +830,10 @@ struct rx_msdu_end_qcn9274 {
 		QCN9274_MSDU_END_SELECT_INFO10_INFO11 |			\
 		QCN9274_MSDU_END_SELECT_INFO12_AND_FLOW_ID_TOEPLITZ |	\
 		QCN9274_MSDU_END_SELECT_PPDU_START_TS_63_32_PHY_MDATA |	\
-		QCN9274_MSDU_END_SELECT_INFO13_INFO14)
+		QCN9274_MSDU_END_SELECT_INFO13_INFO14 | \
+		QCN9274_MSDU_END_SELECT_CCE_MDATA_TCP_UDP_CSUM_INFO7_IP_LEN | \
+		QCN9274_MSDU_END_SELECT_INFO6_FSE_METADATA)
+
 
 /* The below rx_msdu_end_qcn9274_compact structure is tied with the mask value
  * QCN9274_MSDU_END_WMASK. If the mask value changes the structure will also
@@ -849,6 +846,11 @@ struct rx_msdu_end_qcn9274_compact {
 	__le16 info5;
 	__le16 sa_idx;
 	__le16 da_idx_or_sw_peer_id;
+	__le32 info6;
+	__le32 fse_metadata;
+	__le32 rsvd_0;
+	__le16 info7;
+	__le16 rsvd_1;
 	__le32 info10;
 	__le32 info11;
 	__le32 info12;
@@ -1504,9 +1506,5 @@ struct hal_rx_desc {
 		struct hal_rx_desc_wcn7850 wcn7850;
 	} u;
 } __packed;
-
-#define MAX_USER_POS 8
-#define MAX_MU_GROUP_SHOW 16
-#define MAX_MU_GROUP_LENGTH (6 * MAX_MU_GROUP_SHOW)
 
 #endif /* ATH12K_RX_DESC_H */

@@ -22,7 +22,47 @@ static const struct nla_policy ath11k_tm_policy[ATH_TM_ATTR_MAX + 1] = {
 	[ATH_TM_ATTR_WMI_CMDID]		= { .type = NLA_U32 },
 	[ATH_TM_ATTR_VERSION_MAJOR]	= { .type = NLA_U32 },
 	[ATH_TM_ATTR_VERSION_MINOR]	= { .type = NLA_U32 },
+	[ATH_TM_ATTR_FWLOG] 		= { .type = NLA_BINARY,
+					    .len = ATH_TM_FWLOG_MAX_LEN },
 };
+
+void ath11k_fwlog_write(struct ath11k_base *ab,  u8 *data, int len)
+{
+	struct sk_buff *nl_skb;
+	int ret, i;
+	struct ath11k *ar = NULL;
+	struct ath11k_pdev *pdev;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+		if (pdev && pdev->ar) {
+			ar = pdev->ar;
+			break;
+		}
+	}
+
+	if (!ar)
+		return;
+
+	nl_skb = cfg80211_testmode_alloc_event_skb(ar->hw->wiphy,
+						   len, GFP_ATOMIC);
+	if (!nl_skb) {
+		ath11k_warn(ab,
+			    "failed to allocate skb for fwlog event\n");
+		return;
+	}
+
+	ret = nla_put(nl_skb, ATH_TM_ATTR_FWLOG, len, data);
+	if (ret) {
+		ath11k_warn(ab,
+			    "failed to to put fwlog wmi event to nl: %d\n",
+			    ret);
+		kfree_skb(nl_skb);
+		return;
+	}
+
+	cfg80211_testmode_event(nl_skb, GFP_ATOMIC);
+}
 
 static struct ath11k *ath11k_tm_get_ar(struct ath11k_base *ab)
 {
@@ -198,7 +238,7 @@ static void ath11k_tm_wmi_event_segmented(struct ath11k_base *ab, u32 cmd_id,
 	u16 length;
 	int ret;
 
-	tb = ath11k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	tb = ath11k_wmi_tlv_parse_alloc(ab, skb->data, skb->len, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
 		ret = PTR_ERR(tb);
 		ath11k_warn(ab, "failed to parse ftm event tlv: %d\n", ret);
@@ -473,7 +513,7 @@ out:
 }
 
 int ath11k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
-		  void *data, int len)
+		  u8 link_id, void *data, int len)
 {
 	struct ath11k *ar = hw->priv;
 	struct nlattr *tb[ATH_TM_ATTR_MAX + 1];
@@ -481,6 +521,7 @@ int ath11k_tm_cmd(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 
 	ret = nla_parse(tb, ATH_TM_ATTR_MAX, data, len, ath11k_tm_policy,
 			NULL);
+
 	if (ret)
 		return ret;
 

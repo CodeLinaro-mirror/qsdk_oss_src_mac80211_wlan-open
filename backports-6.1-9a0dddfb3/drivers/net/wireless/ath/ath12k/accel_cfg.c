@@ -7,32 +7,10 @@
 #include "accel_cfg.h"
 #include "core.h"
 #include "peer.h"
+#include "sdwf.h"
+#include "wifi7/hal_rx.h"
 #include <linux/module.h>
 #include <linux/if_vlan.h>
-
-/* Wifi classifier metadata
- * ----------------------------------------------------------------------------
- * | TAG    | mlo_key_valid| sawf_valid| reserved| MLO key | peer_id | MSDUQ   |
- * |(8 bits)|   (1 bit)    |  (1 bit)  | (1 bit) | (5 bits)| (10 bit)| (6 bits)|
- * ----------------------------------------------------------------------------
- */
-
-/**
- ** MLO metadata related information.
- **/
-#define ATH12K_SAWF_VALID 1
-#define ATH12K_MLO_METADATA_VALID 1
-#define ATH12K_MLO_METADATA_VALID_MASK BIT(23)
-#define ATH12K_MLO_METADATA_TAG 0xAA
-#define ATH12K_MLO_METADATA_MLO_ASSIST_TAG 0xAA800000
-#define ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK 0xFF800000
-#define ATH12K_MLO_METADATA_TAG_MASK GENMASK(31, 24)
-#define ATH12K_MLO_METADATA_LINKID_MASK GENMASK(20, 16)
-#define ATH12k_MLO_LINK_ID_INVALID 0xFF
-#define ATH12k_DS_NODE_ID_INVALID 0xFF
-#define ATH12K_SAWF_PCP_VALID  0x4
-#define SAWF_PEER_MSDUQ_INVALID 0xFFFF
-#define SAWF_MSDUQ_ID_INVALID   0x3F
 
 static inline
 u32 ath_encode_mlo_metadata(u8 link_id)
@@ -62,19 +40,11 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 				     u8 *node_id, u8 *link_id)
 {
 	struct  ath12k_vif *ahvif;
-	struct  ieee80211_sta *sta;
+	struct  ieee80211_sta *sta = NULL;
 	struct  ath12k_sta *ahsta;
-	struct  ath12k_link_vif *arvif;
+	struct  ath12k_link_vif *arvif = NULL;
 	struct  ath12k_base *ab;
-	struct  ieee80211_hw *hw;
 	struct  ieee80211_vif *vif;
-
-	if (!wdev)
-		return;
-
-	hw = wiphy_to_ieee80211_hw(wdev->wiphy);
-	if (!ieee80211_hw_check(hw, SUPPORT_ECM_REGISTRATION))
-		return;
 
 	vif = wdev_to_ieee80211_vif_vlan(wdev, false);
 
@@ -113,12 +83,13 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 
 	rcu_read_lock();
 	arvif  = (!sta->mlo) ? rcu_dereference(ahvif->link[ahsta->deflink.link_id]) :
-			       rcu_dereference(ahvif->link[ahsta->assoc_link_id]);
+			       rcu_dereference(ahvif->link[ahsta->primary_link_id]);
 
-	*link_id = (!sta->mlo) ? ahsta->deflink.link_id : ahsta->assoc_link_id;
+	*link_id = (!sta->mlo) ? ahsta->deflink.link_id : ahsta->primary_link_id;
 
 	ab = arvif->ar->ab;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* Update DS node_id only if the chipset support DS */
 	if (ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS ||
 	    !test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
@@ -127,7 +98,7 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 	*node_id = ab->dp->ppe.ds_node_id;
 unlock:
 	rcu_read_unlock();
-
+#endif
 	ath12k_dbg(ab, ATH12K_DBG_MAC,
 			"Wifi-classifer mark peer %pM link_id %x node_id %x\n",
 			peer_mac, *link_id, *node_id);
@@ -159,11 +130,13 @@ struct wireless_dev *ath12k_get_wdev_from_netdev(struct net_device *dev)
 	return wdev;
 }
 
-u32 ath_get_metadata_info(struct ath_dp_metadata_param *md_param)
+u32 ath12k_get_metadata_info(struct ath_dp_metadata_param *md_param)
 {
 	struct net_device *dest_dev = NULL;
 	struct  wireless_dev *wdev = NULL;
+	struct  ieee80211_hw *hw;
 	u32 metadata = 0;
+	u16 msduq_peer;
 	u8 *dest_mac = NULL;
 	u8 link_id = ATH12k_MLO_LINK_ID_INVALID;
 	u8 node_id = ATH12k_DS_NODE_ID_INVALID;
@@ -185,6 +158,16 @@ u32 ath_get_metadata_info(struct ath_dp_metadata_param *md_param)
 	}
 
 	wdev = ath12k_get_wdev_from_netdev(dest_dev);
+
+	if (!wdev)
+		return metadata;
+
+	hw = wiphy_to_ieee80211_hw(wdev->wiphy);
+	if (!ieee80211_hw_check(hw, SUPPORT_ECM_REGISTRATION)) {
+		ath12k_err(NULL, "ECM cb not supported");
+		return metadata;
+	}
+
 	ath12k_get_ingress_mlo_dev_info(dest_dev, wdev, dest_mac,
 					&node_id, &link_id);
 
@@ -196,10 +179,230 @@ u32 ath_get_metadata_info(struct ath_dp_metadata_param *md_param)
 	if (link_id != ATH12k_MLO_LINK_ID_INVALID)
 		metadata |= ath_encode_mlo_metadata(link_id);
 
+	if (md_param->is_sawf_param_valid) {
+		msduq_peer = ath12k_sdwf_get_msduq_peer(wdev, dest_mac,
+							&md_param->sawf_param,
+							md_param->is_scs_mscs);
+		 /* Encode SDWF metadata only if msduq_id updated */
+		if (msduq_peer != SDWF_PEER_MSDUQ_INVALID)
+			metadata |= ath_encode_sdwf_metadata(msduq_peer);
+	}
+
 	return metadata;
+}
+
+static
+void ath12_sdwf_ul_config_peer(struct ieee80211_vif *vif,
+			       struct wireless_dev *wdev,
+			       u8 *mac, u8 start_or_stop,
+			       u16 svc_id)
+{
+
+	struct ath12k *ar = NULL;
+	u16 qos_id, peer_id;
+	struct ath12k_qos_ctx *qos_ctx;
+
+	ar = ath12k_sdwf_get_ar_from_vif(wdev, vif,
+					 mac, &peer_id);
+
+	if (!ar) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "sdwf_ul_config, ar is null\n");
+		return;
+	}
+
+	if (!ath12k_sdwf_service_configured(ar->ab, svc_id))
+		return;
+
+	qos_id = ath12k_sdwf_get_ul_qos_id(ar->ab, svc_id);
+	if (qos_id == QOS_ID_INVALID)
+		return;
+
+	qos_ctx = ath12k_get_qos(ar->ab);
+	if (!qos_ctx)
+		return;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_QOS,
+		   "UL SDWF Configure: svc id:%d", svc_id);
+
+	ath12k_core_config_ul_qos(ar, &qos_ctx->profiles[qos_id].params,
+				  qos_id, mac, start_or_stop);
+}
+
+int ath12k_get_mscs_priority(struct ath_mscs_get_priority_param *params)
+{
+	struct ath12k_dp_peer *src_peer, *dst_peer;
+	u8 priority, user_bitmap, user_limit;
+	struct sk_buff *skb = params->skb;
+	struct ieee80211_vif *src_vif;
+	struct wireless_dev *src_wdev;
+	struct ath12k *ar = NULL;
+	struct ieee80211_hw *hw;
+	struct ath12k_base *ab;
+	u16 peer_id;
+	int status;
+
+	src_wdev = ath12k_get_wdev_from_netdev(params->src_dev);
+
+	if (!src_wdev) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "src wdev is null");
+		return -1;
+	}
+
+	hw = wiphy_to_ieee80211_hw(src_wdev->wiphy);
+	if (!ieee80211_hw_check(hw, SUPPORT_ECM_REGISTRATION)) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "hw1 is null");
+		return -1;
+	}
+
+	src_vif = wdev_to_ieee80211_vif_vlan(src_wdev, false);
+
+	if (!src_vif) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "src vif is null");
+		return -1;
+	}
+
+	ar = ath12k_sdwf_get_ar_from_vif(src_wdev, src_vif,
+					 params->src_mac, &peer_id);
+	if (!ar) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "get_mscs, ar is null\n");
+		return -1;
+	}
+
+	ab = ar->ab;
+
+	spin_lock_bh(&ab->dp->dp_lock);
+	src_peer = ath12k_dp_peer_find(&ar->ah->dp_hw, params->src_mac);
+	if (!src_peer) {
+		dst_peer = ath12k_dp_peer_find(&ar->ah->dp_hw,
+							     params->dst_mac);
+		if (dst_peer) {
+			if (dst_peer->mscs_session_exists &&
+			    !skb->priority) {
+				/**
+				 * This is a downlink flow with priority 0 for MSCS
+				 * client, this should not be accelerated as uplink
+				 * flow is the one which needs to be accelerated first
+				 */
+				status = ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_DENY_QOS_TAG_UPDATE;
+				goto skip_priority_update;
+			} else {
+			    status = ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_ALLOW_INVALID_QOS_TAG_UPDATE;
+			    goto skip_priority_update;
+			}
+		}
+		ath12k_dbg(ab, ATH12K_DBG_QOS,
+			   "Peer: %pM not present\n", params->dst_mac);
+		status = ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_PEER_NOT_FOUND;
+		goto skip_priority_update;
+	}
+
+	if (!src_peer || !src_peer->mscs_session_exists) {
+		ath12k_dbg(ab, ATH12K_DBG_QOS,
+			   "Peer: %pM does not have an MSCS session\n",
+			   params->src_mac);
+		status = ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_ALLOW_INVALID_QOS_TAG_UPDATE;
+		goto skip_priority_update;
+	}
+
+	user_bitmap = src_peer->mscs_ctxt.user_priority_bitmap;
+	user_limit = src_peer->mscs_ctxt.user_priority_limit;
+	priority = skb->priority & ATH12K_DP_MSCS_VALID_TID_MASK;
+
+	if (!(BIT(priority) & user_bitmap)) {
+		ath12k_dbg(ab, ATH12K_DBG_QOS,
+			   "MSCS: tid %u does match with bitmap 0x%x\n",
+			   priority, user_bitmap);
+		status = ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_DENY_QOS_TAG_UPDATE;
+		goto skip_priority_update;
+	}
+
+	priority = min(priority, user_limit);
+	ath12k_dbg(ab, ATH12K_DBG_QOS, "MSCS: tid for this MSCS session is %u\n",
+		   priority);
+
+	skb->priority = priority;
+	spin_unlock_bh(&ab->dp->dp_lock);
+	return ATH12K_DP_MSCS_PEER_LOOKUP_STATUS_ALLOW_MSCS_QOS_TAG_UPDATE;
+
+skip_priority_update:
+	spin_unlock_bh(&ab->dp->dp_lock);
+	return status;
+}
+
+void ath12k_sdwf_ul_config(struct ath_ul_params *params)
+{
+	struct ieee80211_hw *hw;
+	struct ieee80211_vif *dest_vif, *src_vif;
+	struct wireless_dev *dest_wdev, *src_wdev;
+
+	src_wdev = ath12k_get_wdev_from_netdev(params->src_dev);
+	dest_wdev = ath12k_get_wdev_from_netdev(params->dst_dev);
+
+	if (!src_wdev && !dest_wdev) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "wdev src_and_dest are null");
+		return;
+	}
+
+	if (src_wdev) {
+		hw = wiphy_to_ieee80211_hw(src_wdev->wiphy);
+		if (!ieee80211_hw_check(hw, SUPPORT_ECM_REGISTRATION)) {
+			ath12k_dbg(NULL, ATH12K_DBG_QOS, "hw1 is null");
+			return;
+		}
+	}
+
+	if (dest_wdev) {
+		hw = wiphy_to_ieee80211_hw(dest_wdev->wiphy);
+		if (!ieee80211_hw_check(hw, SUPPORT_ECM_REGISTRATION)) {
+			ath12k_dbg(NULL, ATH12K_DBG_QOS, "hw2 is null");
+			return;
+		}
+	}
+
+	if (dest_wdev)
+		dest_vif = wdev_to_ieee80211_vif_vlan(dest_wdev, false);
+	else
+		dest_vif = NULL;
+	if (src_wdev)
+		src_vif = wdev_to_ieee80211_vif_vlan(src_wdev, false);
+	else
+		src_vif = NULL;
+
+	if (!dest_vif && !src_vif) {
+		ath12k_dbg(NULL, ATH12K_DBG_QOS, "src_and_dest vif is null");
+		return;
+	}
+
+	if (src_vif) {
+		ath12_sdwf_ul_config_peer(src_vif, src_wdev,
+					  params->src_mac,
+					  params->start_or_stop,
+					  params->fw_service_id);
+	}
+	if (dest_vif) {
+		ath12_sdwf_ul_config_peer(dest_vif, dest_wdev,
+					  params->src_mac,
+					  params->start_or_stop,
+					  params->rv_service_id);
+	}
+
+	if (params->fw_mark_metadata != SDWF_METADATA_INVALID &&
+	    (params->start_or_stop == FLOW_STOP)) {
+		ath12k_sdwf_3_link_peer_dl_flow_count(dest_wdev, dest_vif,
+						      params->dst_mac,
+						      params->fw_mark_metadata,
+						      params->fw_service_id);
+	}
+
+	if (params->rv_mark_metadata != SDWF_METADATA_INVALID &&
+	    (params->start_or_stop == FLOW_STOP)) {
+		ath12k_sdwf_3_link_peer_dl_flow_count(src_wdev, src_vif,
+						      params->src_mac,
+						      params->rv_mark_metadata,
+						      params->rv_service_id);
+	}
 
 }
-EXPORT_SYMBOL(ath_get_metadata_info);
 
 /**
  * ath12k_ds_get_node_id() - Retrieve ds node id
@@ -214,7 +417,7 @@ static bool ath12k_ds_get_node_id(struct ieee80211_vif *vif,
 				  const u8 *peer_mac, u8 *node_id)
 {
 	struct ath12k_vif *ahvif;
-	struct ieee80211_sta *sta;
+	struct ieee80211_sta *sta = NULL;
 	struct ath12k_sta *ahsta;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_base *ab;
@@ -226,9 +429,10 @@ static bool ath12k_ds_get_node_id(struct ieee80211_vif *vif,
 	if (!ahvif)
 		return false;
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
 		return false;
-
+#endif
 	if (ahvif->vdev_type != WMI_VDEV_TYPE_STA &&
 	    ahvif->vdev_type != WMI_VDEV_TYPE_AP)
 		return false;
@@ -277,7 +481,9 @@ unlock_n_fail:
 
 static const struct ath_dp_accel_cfg_ops ath_dp_accel_cfg_ops_obj = {
 	.ppeds_get_node_id = ath12k_ds_get_node_id,
-	.get_metadata_info = ath_get_metadata_info,
+	.get_metadata_info = ath12k_get_metadata_info,
+	.sdwf_ul_config = ath12k_sdwf_ul_config,
+	.get_mscs_priority = ath12k_get_mscs_priority,
 };
 
 /**

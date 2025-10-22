@@ -23,6 +23,8 @@ ath12k_wifi7_hal_rx_desc_get_dot11_hdr_qcn9274(struct hal_rx_desc *desc,
 void ath12k_wifi7_hal_extract_rx_desc_data_qcn9274(struct hal_rx_desc_data *rx_desc_data,
 						   struct hal_rx_desc *rx_desc,
 						   struct hal_rx_desc *ldesc);
+void ath12k_wifi7_hal_extract_rx_spd_data_qcn9274(struct hal_rx_spd_data *rx_info,
+						  struct hal_rx_desc *rx_desc, int set);
 static inline
 bool ath12k_wifi7_hal_rx_h_first_msdu_qcn9274(struct hal_rx_desc *desc)
 {
@@ -49,16 +51,6 @@ bool ath12k_wifi7_hal_encrypt_valid_qcn9274(struct hal_rx_desc *desc)
 {
 	return !!le32_get_bits(desc->u.qcn9274_compact.mpdu_start.info4,
 			       RX_MPDU_START_INFO4_ENCRYPT_INFO_VALID);
-}
-
-static inline
-u32 ath12k_wifi7_hal_rx_h_enctype_qcn9274(struct hal_rx_desc *desc)
-{
-	if (!ath12k_wifi7_hal_encrypt_valid_qcn9274(desc))
-		return HAL_ENCRYPT_TYPE_OPEN;
-
-	return le32_get_bits(desc->u.qcn9274_compact.mpdu_start.info2,
-			     RX_MPDU_START_INFO2_ENC_TYPE);
 }
 
 static inline
@@ -187,12 +179,6 @@ void ath12k_wifi7_hal_rx_desc_end_tlv_copy_qcn9274(struct hal_rx_desc *fdesc,
 	fdesc->u.qcn9274_compact.msdu_end = ldesc->u.qcn9274_compact.msdu_end;
 }
 
-static inline
-u32 ath12k_wifi7_hal_rx_desc_get_mpdu_ppdu_id_qcn9274(struct hal_rx_desc *desc)
-{
-	return __le16_to_cpu(desc->u.qcn9274_compact.mpdu_start.phy_ppdu_id);
-}
-
 static inline void
 ath12k_wifi7_hal_rxdesc_set_msdu_len_qcn9274(struct hal_rx_desc *desc, u16 len)
 {
@@ -230,7 +216,8 @@ bool ath12k_wifi7_hal_rxdesc_mac_addr2_valid_qcn9274(struct hal_rx_desc *desc)
 static inline u8 *
 ath12k_wifi7_hal_rxdesc_get_mpdu_start_addr2_qcn9274(struct hal_rx_desc *desc)
 {
-	return desc->u.qcn9274_compact.mpdu_start.addr2;
+	return ath12k_wifi7_hal_rxdesc_mac_addr2_valid_qcn9274(desc) ?
+			desc->u.qcn9274_compact.mpdu_start.addr2 : NULL;
 }
 
 static inline
@@ -297,3 +284,22 @@ static inline u32 ath12k_wifi7_hal_rx_msdu_end_wmask_get_qcn9274(void)
 {
 	return QCN9274_MSDU_END_WMASK;
 }
+
+static inline
+void ath12k_wifi7_hal_rx_desc_get_fse_info_qcn9274(struct hal_rx_desc *desc,
+						   struct rx_mpdu_desc_info
+						   *rx_mpdu_info)
+{
+	__le32 flow_idx_info = desc->u.qcn9274_compact.msdu_end.info7;
+
+	rx_mpdu_info->flow_idx_timeout =
+		le32_get_bits(flow_idx_info,
+			      RX_MSDU_END_INFO7_FLOW_IDX_TIMEOUT);
+	rx_mpdu_info->flow_idx_invalid =
+		le32_get_bits(flow_idx_info,
+			      RX_MSDU_END_INFO7_FLOW_IDX_INVALID);
+	rx_mpdu_info->flow_info.flow_metadata =
+		le16_get_bits(desc->u.qcn9274_compact.msdu_end.fse_metadata,
+			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);
+}
+

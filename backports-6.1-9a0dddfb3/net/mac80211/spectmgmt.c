@@ -233,7 +233,7 @@ int ieee80211_parse_ch_switch_ie(struct ieee80211_sub_if_data *sdata,
 				 struct ieee80211_csa_ie *csa_ie)
 {
 	enum nl80211_band new_band = current_band;
-	int new_freq;
+	int new_freq = 0;
 	u8 new_chan_no = 0, new_op_class = 0;
 	struct ieee80211_channel *new_chan;
 	struct cfg80211_chan_def new_chandef = {};

@@ -32,11 +32,39 @@ enum ath12k_fw_crash_dump_type {
 };
 
 #define COREDUMP_TLV_HDR_SIZE 8
+#define ATH12K_RAMDUMP_MAGIC    0x574C414E  /* 'WLAN' */
+#define ATH12K_MAX_DUMP_ENTRIES FW_CRASH_DUMP_TYPE_MAX
 
-enum ath12k_qdss_dump_type {
-	ATH12K_QDSS_DUMP,
-	ATH12K_PHYA0_DUMP = 64,
-	ATH12K_PHYA1_DUMP = 128,
+struct ath12k_dump_entry {
+	u32 type;
+	u32 entry_start;
+	u32 entry_num;
+} __packed;
+
+struct ath12k_pci_dump_file_data {
+	u32 magic;
+	u32 version;
+	u32 chipset;
+	u32 total_entries;
+	struct ath12k_dump_entry entry[];
+} __packed;
+
+struct ath12k_pci_elf_coredump_state {
+	struct ath12k_base *ab;
+	void *elf_hdr;
+	u32   elf_hdr_sz;
+	struct ath12k_dump_segment *chunks;
+	u32   num_chunks;
+	struct completion dump_done;
+};
+
+
+struct ath12k_dump_segment {
+       unsigned long addr;
+       void *vaddr;
+       unsigned int len;
+       unsigned int type;
+	   struct completion dump_done;
 };
 
 struct ath12k_elf_coredump_state {
@@ -45,13 +73,6 @@ struct ath12k_elf_coredump_state {
 	struct ath12k_ahb_dump_segment *segments;
 	struct completion dump_done;
 	u32 num_seg;
-};
-
-struct ath12k_dump_segment {
-       unsigned long addr;
-       void *vaddr;
-       unsigned int len;
-       unsigned int type;
 };
 
 struct ath12k_ahb_dump_segment {
@@ -115,11 +136,11 @@ struct ath12k_coredump_info {
 void ath12k_coredump_download_rddm(struct ath12k_base *ab);
 void ath12k_coredump_build_inline(struct ath12k_base *ab,
                                  struct ath12k_dump_segment *segments, int num_seg);
+void ath12k_coredump_dump_segment(struct ath12k_base *ab,
+						    struct ath12k_dump_segment *segments, size_t seg_len);
 void ath12k_coredump_ahb_collect(struct ath12k_base *ab);
 void ath12k_coredump_m3_dump(struct ath12k_base *ab,
                             struct ath12k_qmi_m3_dump_upload_req_data *event_data);
-void ath12k_coredump_qdss_dump(struct ath12k_base *ab,
-			      struct ath12k_qmi_event_qdss_trace_save_data *event_data);
 #else
 static inline void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 {
@@ -137,12 +158,6 @@ static inline void ath12k_coredump_ahb_collect(struct ath12k_base *ab)
 static inline void
 ath12k_coredump_m3_dump(struct ath12k_base *ab,
                         struct ath12k_qmi_m3_dump_upload_req_data *event_data)
-{
-}
-
-static inline void
-ath12k_coredump_qdss_dump(struct ath12k_base *ab,
-			  struct ath12k_qmi_event_qdss_trace_save_data *event_data)
 {
 }
 #endif

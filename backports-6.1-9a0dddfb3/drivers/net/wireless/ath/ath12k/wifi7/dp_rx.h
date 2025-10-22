@@ -10,6 +10,7 @@
 #include "../core.h"
 #include "../dp_rx.h"
 #include "hal_desc.h"
+#include "hal.h"
 
 struct dp_rx_fse {
 	struct hal_rx_fse *hal_fse;
@@ -33,9 +34,10 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int mac_id,
 			       int budget);
 void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 					struct ath12k_dp_link_peer *peer, u8 tid);
-void ath12k_wifi7_dp_rx_h_ppdu(struct ath12k_pdev_dp *dp_pdev,
+bool ath12k_wifi7_dp_rx_h_ppdu(struct ath12k_pdev_dp *dp_pdev,
 			       struct ieee80211_rx_status *rx_status,
-			       struct hal_rx_desc_data *rx_desc_data);
+			       struct rx_tlv_info_1 *tlv_info,
+			       u8 err_rel_src);
 int ath12k_wifi7_dp_reo_cache_flush(struct ath12k_base *ab,
 				    struct ath12k_dp_rx_tid *rx_tid);
 int ath12k_wifi7_peer_rx_tid_reo_update(struct ath12k *ar,
@@ -46,7 +48,7 @@ int ath12k_wifi7_peer_rx_tid_reo_update(struct ath12k *ar,
 void ath12k_wifi7_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id,
 					 u16 tid, dma_addr_t paddr);
 int ath12k_wifi7_dp_rx_link_desc_return(struct ath12k_dp *dp,
-					struct hal_reo_dest_ring *ring,
+					struct ath12k_buffer_addr *buf_addr_info,
 					enum hal_wbm_rel_bm_act action);
 void ath12k_wifi7_dp_rx_process_reo_status(struct ath12k_dp *dp);
 
@@ -64,6 +66,14 @@ int ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab);
 int ath12k_wifi7_dp_rxdma_ring_sel_config_wcn7850(struct ath12k_base *ab);
 int ath12k_wifi7_dp_rx_fst_attach(struct ath12k_dp *dp, struct dp_rx_fst *fst);
 void ath12k_wifi7_dp_rx_fst_detach(struct ath12k_dp *dp, struct dp_rx_fst *fst);
+
+static inline
+void ath12k_wifi7_dp_extract_rx_spd_data(struct ath12k_hal *hal,
+					 struct hal_rx_spd_data *rx_info,
+					 struct hal_rx_desc *rx_desc, int set)
+{
+	hal->hal_ops->extract_rx_spd_data(rx_info, rx_desc, set);
+}
 
 static inline
 void ath12k_wifi7_dp_extract_rx_desc_data(struct ath12k_dp *dp,
@@ -87,4 +97,6 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 					 u16 peer_id, u8 chip_id);
 void ath12k_dp_rx_tid_del_func(struct ath12k_dp *dp, void *ctx,
 			       enum hal_reo_cmd_status status);
+void ath12k_wifi7_dp_rx_ring_free(struct ath12k_base *ab);
+int ath12k_wifi7_dp_rx_ring_setup(struct ath12k_base *ab);
 #endif
