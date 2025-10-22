@@ -6158,7 +6158,9 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 									    sts_freq) ||
 					    sdata->vif.is_roc)
 						flag = true;
-				}
+				} else if (sdata->vif.type == NL80211_IFTYPE_STATION &&
+					   sdata->vif.is_roc)
+					flag = true;
 			} else if (sdata->vif.type == NL80211_IFTYPE_STATION &&
 				   sdata->vif.is_roc)
 				flag = true;
@@ -6241,6 +6243,9 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 									    sts_freq) ||
 					    prev->vif.is_roc)
 						flag = true;
+				} else if (prev->vif.type == NL80211_IFTYPE_STATION &&
+					   prev->vif.is_roc) {
+					flag = true;
 				}
 			} else if (prev->vif.type == NL80211_IFTYPE_STATION &&
 				   prev->vif.is_roc)
