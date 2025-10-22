@@ -1471,7 +1471,7 @@ static int ath11k_mac_config_ps(struct ath11k *ar)
 	return ret;
 }
 
-static int ath11k_mac_op_config(struct ieee80211_hw *hw, u32 changed)
+static int ath11k_mac_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 {
 	struct ath11k *ar = hw->priv;
 	struct ieee80211_conf *conf = &hw->conf;
@@ -9946,9 +9946,8 @@ ath11k_set_vdev_param_to_all_vifs(struct ath11k *ar, int param, u32 value)
 /* mac80211 stores device specific RTS/Fragmentation threshold value,
  * this is set interface specific to firmware from ath11k driver
  */
-static int ath11k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, u8 radio_id,
-					   u32 value, struct ieee80211_vif *vif,
-					   u32 link_id)
+static int ath11k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, int radio_idx,
+					   u32 value)
 {
 	struct ath11k *ar = hw->priv;
 	int param_id = WMI_VDEV_PARAM_RTS_THRESHOLD;
@@ -9956,7 +9955,8 @@ static int ath11k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, u8 radio_id,
 	return ath11k_set_vdev_param_to_all_vifs(ar, param_id, value);
 }
 
-static int ath11k_mac_op_set_frag_threshold(struct ieee80211_hw *hw, u32 value)
+static int ath11k_mac_op_set_frag_threshold(struct ieee80211_hw *hw, int radio_idx,
+					    u32 value)
 {
 	/* Even though there's a WMI vdev param for fragmentation threshold no
 	 * known firmware actually implements it. Moreover it is not possible to
