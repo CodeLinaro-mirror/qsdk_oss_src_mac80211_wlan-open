@@ -255,6 +255,8 @@ ath12k_phymodes[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 #define ATH12K_MAX_NUM_BRIDGE_PER_MLD 2
 #define BRIDGE_IN_RANGE(ar) (ar->num_created_bridge_vdevs < TARGET_NUM_BRIDGE_VDEVS)
 #define ATH12K_MAX_AR_LINK_IDX	5
+#define ATH12K_SCAN_ROC_CLEANUP_TIMEOUT_MS 3000  /* Timeout for ROC cleanup after scan */
+						 /*  vdev clean */
 
 static const u32 ath12k_smps_map[] = {
 	[WLAN_HT_CAP_SM_PS_STATIC] = WMI_PEER_SMPS_STATIC,
@@ -5676,7 +5678,7 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 		/* mac80211 wants to add link but driver already has the
 		 * link. This should not happen ideally.
 		 */
-		if (arvif && arvif->ar &&
+		if (arvif && arvif->ar && arvif->is_scan_vif == false &&
 		    !test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags)) {
 			WARN_ON(1);
 			return -EINVAL;
@@ -5691,6 +5693,16 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
 		if (WARN_ON(!arvif))
 			return -EINVAL;
+
+		if (arvif->is_scan_vif && arvif->is_started) {
+			if (ath12k_mac_vdev_stop(arvif)) {
+				ath12k_generic_dbg(ATH12K_DBG_MAC, "failed to stop vdev %d\n",
+						   arvif->vdev_id);
+				return -EINVAL;
+			}
+			arvif->is_started = false;
+			arvif->is_scan_vif = false;
+		}
 
 		if (!arvif->is_created) {
 			ath12k_mac_unassign_link_vif(arvif);
@@ -7919,6 +7931,15 @@ static void ath12k_scan_abort(struct ath12k *ar)
 	}
 }
 
+static void ath12k_scan_roc_done(struct work_struct *work)
+{
+	struct ath12k *ar = container_of(work, struct ath12k,
+					 scan.roc_done.work);
+	spin_lock_bh(&ar->data_lock);
+	ar->scan.is_roc = false;
+	spin_unlock_bh(&ar->data_lock);
+}
+
 static void ath12k_scan_timeout_work(struct work_struct *work)
 {
 	struct ath12k *ar = container_of(work, struct ath12k,
@@ -7940,7 +7961,8 @@ static void ath12k_mac_scan_send_complete(struct ath12k *ar,
 
 	for_each_ar(ah, partner_ar, i)
 		if (partner_ar != ar &&
-		    partner_ar->scan.state == ATH12K_SCAN_RUNNING)
+		    partner_ar->scan.state == ATH12K_SCAN_RUNNING &&
+		    !partner_ar->scan.is_roc)
 			return;
 
 	ieee80211_scan_completed(ah->hw, info);
@@ -7956,7 +7978,6 @@ static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *
 	lockdep_assert_wiphy(wiphy);
 
 	arvif = ar->scan.arvif;
-
 	/* The scan vdev has already been deleted. This can occur when a
 	 * new scan request is made on the same vif with a different
 	 * frequency, causing the scan arvif to move from one radio to
@@ -8629,6 +8650,13 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		return -EINVAL;
 	}
 
+	/* Check ROC state before starting scan */
+	spin_lock_bh(&prev_ar->data_lock);
+	if (prev_ar->scan.is_roc) {
+		spin_unlock_bh(&prev_ar->data_lock);
+		return -EBUSY;
+	}
+	spin_unlock_bh(&prev_ar->data_lock);
 	/* NOTE: There could be 5G low/high channels as mac80211 sees
 	 * it as an single band. In that case split the hw request and
 	 * perform multiple scans
@@ -8643,6 +8671,14 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		}
 		if (prev_ar == ar)
 			continue;
+
+		/* Check if the new radio has ROC active */
+		spin_lock_bh(&ar->data_lock);
+		if (ar->scan.is_roc) {
+			spin_unlock_bh(&ar->data_lock);
+			return -EBUSY;
+		}
+		spin_unlock_bh(&ar->data_lock);
 
 		to_index = i;
 		ath12k_mac_initiate_hw_scan(hw, vif, hw_req, prev_ar,
@@ -21387,7 +21423,6 @@ int ath12k_mac_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
 	ath12k_scan_abort(ar);
 
 	cancel_delayed_work_sync(&ar->scan.timeout);
-	wiphy_work_cancel(hw->wiphy, &ar->scan.vdev_clean_wk);
 
 	return 0;
 }
@@ -21458,9 +21493,17 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		if (WARN_ON(!arvif->ar))
 			return -EINVAL;
 
-		if (ar != arvif->ar && arvif->is_started)
+		if (ar != arvif->ar && arvif->is_started && !arvif->is_scan_vif)
 			return -EBUSY;
 
+		if (ar != arvif->ar && arvif->is_started && arvif->is_scan_vif) {
+			ret = ath12k_mac_vdev_stop(arvif);
+			if (ret) {
+				ath12k_err(ab, "Failed to stop vdev in ROC:%d\n", ret);
+				return ret;
+			}
+			arvif->is_started = false;
+		}
 		if (ar != arvif->ar) {
 			ath12k_mac_remove_link_interface(hw, arvif);
 			ath12k_mac_unassign_link_vif(arvif);
@@ -21510,6 +21553,10 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 		reinit_completion(&ar->scan.completed);
 		reinit_completion(&ar->scan.on_channel);
 		ar->scan.state = ATH12K_SCAN_STARTING;
+		cancel_delayed_work(&ar->scan.roc_done);
+		ieee80211_queue_delayed_work(hw, &ar->scan.roc_done,
+					     msecs_to_jiffies(duration +
+					     ATH12K_SCAN_ROC_CLEANUP_TIMEOUT_MS));
 		ar->scan.is_roc = true;
 		ar->scan.arvif = arvif;
 		ar->scan.roc_freq = chan->center_freq;
@@ -23076,6 +23123,7 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	init_completion(&ar->pdev_resume);
 
 	INIT_DELAYED_WORK(&ar->scan.timeout, ath12k_scan_timeout_work);
+	INIT_DELAYED_WORK(&ar->scan.roc_done, ath12k_scan_roc_done);
 	wiphy_work_init(&ar->scan.vdev_clean_wk, ath12k_scan_vdev_clean_work);
 	INIT_WORK(&ar->regd_update_work, ath12k_regd_update_work);
 	INIT_WORK(&ar->reg_set_previous_country,
