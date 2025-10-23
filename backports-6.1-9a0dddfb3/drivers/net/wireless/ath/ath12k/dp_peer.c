@@ -807,7 +807,7 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
 
 	if (!dp_peer->is_vdev_peer)
-		dp_peer->peer_links_map &= ~(peer->link_id);
+		dp_peer->peer_links_map &= ~BIT(peer->link_id);
 
 	is_vdev_peer = dp_peer->is_vdev_peer;
 
