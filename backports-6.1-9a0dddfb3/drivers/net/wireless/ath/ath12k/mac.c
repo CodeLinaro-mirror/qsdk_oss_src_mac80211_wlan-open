@@ -9907,8 +9907,7 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 			ath12k_ieee80211_ap_pwr_type_convert(reg_6g_power_mode);
 }
 
-static int
-ath12k_mac_get_chan_width(enum nl80211_chan_width ch_width)
+int ath12k_mac_get_chan_width(enum nl80211_chan_width ch_width)
 {
 	switch (ch_width) {
 	case NL80211_CHAN_WIDTH_320:
