@@ -37,6 +37,41 @@ bool ath12k_sdwf_service_configured(struct ath12k_base *ab, u16 svc_id)
 	spin_unlock_bh(&qos_ctx->profile_lock);
 	return status;
 }
+static u32
+ath12k_get_enabled_sdwf_params_mask(struct ath12k_qos_params *qos_params)
+{
+	u32 enabled_sdwf_params = 0;
+
+	if (qos_params->min_data_rate != QOS_PARAM_DEFAULT_MIN_THROUGHPUT)
+		enabled_sdwf_params |= (1 << SDWF_PARAM_MIN_THROUGHPUT);
+	if (qos_params->mean_data_rate != QOS_PARAM_DEFAULT_MAX_THROUGHPUT)
+		enabled_sdwf_params |= (1 << SDWF_PARAM_MAX_THROUGHPUT);
+	if (qos_params->burst_size != QOS_PARAM_DEFAULT_BURST_SIZE)
+		enabled_sdwf_params |= (1 << SDWF_PARAM_BURST_SIZE);
+	if (qos_params->min_service_interval != QOS_PARAM_DEFAULT_SVC_INTERVAL)
+		enabled_sdwf_params |= (1 << SDWF_PARAM_SERVICE_INTERVAL);
+	if (qos_params->delay_bound != QOS_PARAM_DEFAULT_DELAY_BOUND)
+		enabled_sdwf_params |= (1 << SDWF_PARAM_DELAY_BOUND);
+	if (qos_params->msdu_life_time != QOS_PARAM_DEFAULT_TIME_TO_LIVE)
+		enabled_sdwf_params |= (1 << SDWF_PARAM_MSDU_TTL);
+	if (qos_params->msdu_delivery_info != QOS_PARAM_DEFAULT_MSDU_LOSS_RATE)
+		enabled_sdwf_params |= (1 << SDWF_PARAM_MSDU_LOSS);
+
+	return enabled_sdwf_params;
+
+}
+
+static u32 ath12k_get_enabled_param_mask(struct ath12k_base *ab, u8 qos_id)
+{
+	struct ath12k_qos_ctx *qos_ctx;
+
+	qos_ctx = ath12k_get_qos(ab);
+	if (!qos_ctx)
+		return 0;
+
+	return ath12k_get_enabled_sdwf_params_mask(&qos_ctx->profiles[qos_id].params);
+}
+
 
 int ath12k_sdwf_map_service_class(struct ath12k_base *ab, u16 svc_id,
 				  u16 dl_qos_id,
@@ -171,6 +206,33 @@ ath12k_sdwf_get_qos_ctx(struct ath12k_base *ab,
 		peer_qos = ath12k_dp_peer_qos_alloc(ab->dp, peer);
 
 	return peer_qos;
+}
+
+void ath12k_get_peer_sla_config(struct ath12k_base *ab,
+				struct ath12k_dp_link_peer *peer, u16 *sla_mask)
+{
+	struct ath12k_dp_peer_qos *peer_ctx = NULL;
+	struct ath12k_qos_ctx *sawf_ctx;
+	int tid, q_id;
+	struct ath12k_msduq *msduq_map;
+
+	lockdep_assert_held(&ab->dp->dp_lock);
+
+	sawf_ctx = ath12k_get_qos(ab);
+	if (!sawf_ctx)
+		return;
+
+	peer_ctx = ath12k_sdwf_get_qos_ctx(ab, peer->dp_peer);
+	for (tid = 0; tid < QOS_TID_MAX; tid++) {
+		for (q_id = 0; q_id < QOS_TID_MDSUQ_MAX; q_id++) {
+			msduq_map  =  &peer_ctx->msduq_map[tid][q_id];
+			if (msduq_map->reserved) {
+				*sla_mask |= ath12k_get_enabled_param_mask(ab,
+								msduq_map->qos_id);
+			}
+
+		}
+	}
 }
 
 static u8 ath12k_sdwf_alloc_msduq(struct ath12k *ar, u32 svc_id,
