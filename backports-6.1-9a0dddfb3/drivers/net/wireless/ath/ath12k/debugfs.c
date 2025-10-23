@@ -5661,8 +5661,8 @@ static ssize_t ath12k_write_qos_stats(struct file *file,
 				      const char __user *ubuf,
 				      size_t count, loff_t *ppos)
 {
-	struct ath12k *ar = file->private_data;
-	struct ath12k_hw *ah;
+	struct ath12k_hw *ah = file->private_data;
+	struct ath12k *ar = NULL;
 	struct ieee80211_hw *hw = NULL;
 	u8 qos_stats, stats_categ, stats_lvl, cur_stats_lvl;
 	int ret, i;
@@ -5675,18 +5675,17 @@ static ssize_t ath12k_write_qos_stats(struct file *file,
 		return -EINVAL;
 	}
 
-	if (!ar || !ar->ah) {
+	if (!ah) {
 		ath12k_err(NULL, "Radio references not available");
 		return -ENOENT;
 	}
 
-	hw = ath12k_ar_to_hw(ar);
+	hw = ah->hw;
 	if (!hw)
 		return -ENOENT;
 
 	wiphy_lock(hw->wiphy);
 
-	ah = ar->ah;
 	ret = count;
 
 	stats_lvl = qos_stats & ATH12K_QOS_STATS_COLLECTION_MASK;
@@ -5695,7 +5694,7 @@ static ssize_t ath12k_write_qos_stats(struct file *file,
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
 		if (ar) {
-			cur_stats_lvl = ar->debug.qos_stats &
+			cur_stats_lvl = ar->dp.qos_stats &
 					ATH12K_QOS_STATS_COLLECTION_MASK;
 			if (ar->allocated_vdev_map &&
 			    stats_lvl != cur_stats_lvl) {
@@ -5709,7 +5708,7 @@ static ssize_t ath12k_write_qos_stats(struct file *file,
 	for (i = 0; i < ah->num_radio; i++) {
 		ar = &ah->radio[i];
 		if (ar)
-			ar->debug.qos_stats = qos_stats;
+			ar->dp.qos_stats = qos_stats;
 	}
 
 	wiphy_unlock(hw->wiphy);
@@ -5720,25 +5719,32 @@ static ssize_t ath12k_read_qos_stats(struct file *file,
 				     char __user *ubuf,
 				     size_t count, loff_t *ppos)
 {
-	struct ath12k *ar = file->private_data;
+	struct ath12k_hw *ah = file->private_data;
+	struct ath12k *ar = NULL;
 	struct ieee80211_hw *hw = NULL;
 	int len = 0;
 	char buf[32] = {0};
 
-	if (!ar || !ar->ah) {
-		ath12k_err(NULL, "Radio references not available");
+	if (!ah) {
+		ath12k_err(NULL, "ah references not available");
 		return -ENOENT;
 	}
 
-	hw = ath12k_ar_to_hw(ar);
+	hw = ah->hw;
 	if (!hw)
 		return -ENOENT;
 
 	wiphy_lock(hw->wiphy);
+	ar = &ah->radio[0];
+	if (!ar) {
+		ath12k_err(NULL, "Radio references not available");
+		wiphy_unlock(hw->wiphy);
+		return -ENOENT;
+	}
 	len = scnprintf(buf, sizeof(buf) - len, "%08x\n",
-			ar->debug.qos_stats);
-	wiphy_unlock(hw->wiphy);
+				ar->dp.qos_stats);
 
+	wiphy_unlock(hw->wiphy);
 	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
 }
 
@@ -6034,6 +6040,9 @@ void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 
 	debugfs_create_file("reset_dp_stats", 0644, hw->wiphy->debugfsdir, ah,
 			    &fops_reset_dp_stats);
+
+	debugfs_create_file("qos_stats", 0644, hw->wiphy->debugfsdir, ah,
+			    &fops_qos_stats);
 }
 
 void ath12k_debugfs_register(struct ath12k *ar)
@@ -6141,10 +6150,6 @@ void ath12k_debugfs_register(struct ath12k *ar)
 
 	debugfs_create_file("qos_map_set", 0600, ar->debug.debugfs_pdev, ar,
 			    &fops_qos_map_set);
-
-	debugfs_create_file("qos_stats", 0644,
-			    ar->debug.debugfs_pdev, ar,
-			    &fops_qos_stats);
 
 	debugfs_create_file("pktlog_filter", 0644,
 			    ar->debug.debugfs_pdev, ar,

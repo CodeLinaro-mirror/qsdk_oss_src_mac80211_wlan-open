@@ -1217,7 +1217,7 @@ int ath12k_telemetry_get_qos_stats(struct ath12k_vif *ahvif,
 			goto out;
 		}
 
-		qos_stats_lvl = (arsta->arvif->ar->debug.qos_stats &
+		qos_stats_lvl = (arsta->arvif->ar->dp.qos_stats &
 					  ATH12K_QOS_STATS_COLLECTION_MASK) >> 2;
 		if (qos_stats_lvl == ATH12K_QOS_SINGLE_LINK_STATS) {
 			if (link_id != ahsta->primary_link_id) {

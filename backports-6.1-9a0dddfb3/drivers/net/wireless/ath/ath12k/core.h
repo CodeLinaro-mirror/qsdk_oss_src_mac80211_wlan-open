@@ -1147,7 +1147,6 @@ struct ath12k_debug {
 	u32 pktlog_filter;
 	u32 pktlog_peer_valid;
 	u8 pktlog_peer_addr[ETH_ALEN];
-	u8 qos_stats;
 	struct dentry *debugfs_nrp;
 };
 

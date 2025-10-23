@@ -92,7 +92,11 @@ ath12k_dp_debug_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 
 static inline u8 ath12k_debugfs_is_qos_stats_enabled(struct ath12k *ar)
 {
-	return (ar->debug.qos_stats & ATH12K_QOS_STATS_CATEG_MASK);
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if ((dp_pdev->dp_stats_mask & (DP_ENABLE_QOS_STATS)))
+		return (dp_pdev->qos_stats & ATH12K_QOS_STATS_CATEG_MASK);
+	return 0;
 }
 
 static inline bool ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
