@@ -256,24 +256,59 @@ static void ieee80211_free_links(struct ieee80211_sub_if_data *sdata,
 
 static int ieee80211_check_dup_link_addrs(struct ieee80211_sub_if_data *sdata)
 {
-	unsigned int i, j;
+	struct ieee80211_link_data *link, *other_link;
+	struct ieee80211_local *local = sdata->local;
+	struct ieee80211_sub_if_data *other_sdata;
+	const u8 *addr1, *addr2;
+	int link_id, o_link_id;
 
-	for (i = 0; i < IEEE80211_MLD_MAX_NUM_LINKS; i++) {
-		struct ieee80211_link_data *link1;
+	list_for_each_entry(other_sdata, &local->interfaces, list) {
+		bool is_same_sdata = (other_sdata == sdata);
 
-		link1 = sdata_dereference(sdata->link[i], sdata);
-		if (!link1)
-			continue;
-		for (j = i + 1; j < IEEE80211_MLD_MAX_NUM_LINKS; j++) {
-			struct ieee80211_link_data *link2;
-
-			link2 = sdata_dereference(sdata->link[j], sdata);
-			if (!link2)
+		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+			link = sdata_dereference(sdata->link[link_id], sdata);
+			if (!link)
 				continue;
 
-			if (ether_addr_equal(link1->conf->addr,
-					     link2->conf->addr))
-				return -EALREADY;
+			addr1 = link->conf->addr;
+			/* skip unset address */
+			if (is_zero_ether_addr(addr1))
+				continue;
+
+			/* Compare link address against other_sdata's MLD address */
+			addr2 = other_sdata->vif.addr;
+			if (!is_same_sdata && !is_zero_ether_addr(addr2) &&
+			    ether_addr_equal(addr1, addr2) &&
+			    !identical_mac_addr_allowed(sdata->vif.type,
+							other_sdata->vif.type))
+				return -ENOTUNIQ;
+
+			for (o_link_id = 0;
+			     o_link_id < IEEE80211_MLD_MAX_NUM_LINKS;
+			     o_link_id++) {
+				/* Skip self and previously compared links
+				 * within same MLD
+				 */
+				if (is_same_sdata && o_link_id <= link_id)
+					continue;
+
+				other_link =
+					sdata_dereference(other_sdata->link[o_link_id],
+							  other_sdata);
+				if (!other_link)
+					continue;
+
+				addr2 = other_link->conf->addr;
+				/* skip unset address */
+				if (is_zero_ether_addr(addr2))
+					continue;
+
+				if (ether_addr_equal(addr1, addr2) &&
+				    (is_same_sdata ||
+				    !identical_mac_addr_allowed(sdata->vif.type,
+								other_sdata->vif.type)))
+					return -ENOTUNIQ;
+			}
 		}
 	}
 
