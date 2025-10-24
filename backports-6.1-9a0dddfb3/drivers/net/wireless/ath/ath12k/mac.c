@@ -7782,14 +7782,12 @@ static int ath12k_scan_stop(struct ath12k *ar)
 {
 	struct ath12k_wmi_scan_cancel_arg arg = {
 		.req_type = WLAN_SCAN_CANCEL_SINGLE,
-		.scan_id = ATH12K_SCAN_ID,
+		.scan_id = ar->scan.is_roc ? ATH12K_ROC_SCAN_ID : ATH12K_SCAN_ID,
+		.pdev_id = ar->pdev->pdev_id,
 	};
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
-
-	/* TODO: Fill other STOP Params */
-	arg.pdev_id = ar->pdev->pdev_id;
 
 	ret = ath12k_wmi_send_scan_stop_cmd(ar, &arg);
 	if (ret) {
@@ -7814,10 +7812,11 @@ out:
 	 * pipe being overflown with data and/or it can recover on its own
 	 * before next scan request is submitted.
 	 */
-	spin_lock_bh(&ar->data_lock);
-	if (ret)
+	if (ret && ar) {
+		spin_lock_bh(&ar->data_lock);
 		__ath12k_mac_scan_finish(ar);
-	spin_unlock_bh(&ar->data_lock);
+		spin_unlock_bh(&ar->data_lock);
+	}
 
 	return ret;
 }
@@ -7825,6 +7824,7 @@ out:
 static void ath12k_scan_abort(struct ath12k *ar)
 {
 	int ret;
+	bool need_stop = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -7843,17 +7843,17 @@ static void ath12k_scan_abort(struct ath12k *ar)
 		break;
 	case ATH12K_SCAN_RUNNING:
 		ar->scan.state = ATH12K_SCAN_ABORTING;
-		spin_unlock_bh(&ar->data_lock);
-
-		ret = ath12k_scan_stop(ar);
-		if (ret)
-			ath12k_warn(ar->ab, "failed to abort scan: %d\n", ret);
-
-		spin_lock_bh(&ar->data_lock);
+		need_stop = true;
 		break;
 	}
 
 	spin_unlock_bh(&ar->data_lock);
+
+	if (need_stop) {
+		ret = ath12k_scan_stop(ar);
+		if (ret)
+			ath12k_warn(ar->ab, "failed to abort scan: %d\n", ret);
+	}
 }
 
 static void ath12k_scan_timeout_work(struct work_struct *work)
@@ -7867,37 +7867,20 @@ static void ath12k_scan_timeout_work(struct work_struct *work)
 }
 
 static void ath12k_mac_scan_send_complete(struct ath12k *ar,
-					  struct cfg80211_scan_info info)
+					  struct cfg80211_scan_info *info)
 {
-	struct ath12k *partner_ar;
-	struct ath12k_pdev *pdev;
-	struct ath12k_base *ab;
-	struct ath12k_hw_group *ag = ar->ab->ag;
-	bool send_completion = true;
 	struct ath12k_hw *ah = ar->ah;
-	int i, j;
+	struct ath12k *partner_ar;
+	int i;
 
-	for (i = 0; i < ag->num_devices; i++) {
-		ab = ag->ab[i];
-		if (ab->is_bypassed)
-			continue;
+	lockdep_assert_wiphy(ah->hw->wiphy);
 
-		for (j = 0; j < ab->num_radios; j++) {
-			pdev = &ab->pdevs[j];
-			partner_ar = pdev->ar;
+	for_each_ar(ah, partner_ar, i)
+		if (partner_ar != ar &&
+		    partner_ar->scan.state == ATH12K_SCAN_RUNNING)
+			return;
 
-			if (!partner_ar || partner_ar == ar)
-				continue;
-			if (partner_ar->scan.state == ATH12K_SCAN_RUNNING) {
-				send_completion = false;
-				break;
-			}
-		}
-		if (!send_completion)
-			break;
-	}
-	if (send_completion)
-		ieee80211_scan_completed(ah->hw, &info);
+	ieee80211_scan_completed(ah->hw, info);
 }
 
 static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *work)
@@ -7938,7 +7921,7 @@ work_complete:
 				    ATH12K_SCAN_STARTING)),
 		};
 
-		ath12k_mac_scan_send_complete(ar, info);
+		ath12k_mac_scan_send_complete(ar, &info);
 	}
 
 	ar->scan.state = ATH12K_SCAN_IDLE;
@@ -17018,7 +17001,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 					.aborted = true,
 				};
 
-				ieee80211_scan_completed(ar->ah->hw, &info);
+				ath12k_mac_scan_send_complete(ar, &info);
 			}
 
 			ar->scan.state = ATH12K_SCAN_IDLE;
