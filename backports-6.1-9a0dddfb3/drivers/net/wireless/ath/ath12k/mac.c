@@ -10537,6 +10537,7 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 	struct cfg80211_chan_def def = {0};
 	u16 ru_punct_bitmap;
 	bool is_bridge_vdev;
+	int num_sta_count;
 
 	if (!ar->ab->chwidth_num_peer_caps)
 		return -EOPNOTSUPP;
@@ -10546,11 +10547,16 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 	     WARN_ON(ath12k_mac_vif_link_chan(vif, arvif->link_id, &def)))
 		return -EINVAL;
 
+	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		num_sta_count = 1;
+	else
+		num_sta_count = arvif->num_stations;
+
 	peer_data = arvif->peer_ch_width_switch_data;
 
 	if (!peer_data) {
 		peer_data = kzalloc(struct_size(peer_data, peer_arg,
-						arvif->num_stations),
+						num_sta_count),
 				    GFP_KERNEL);
 		if (!peer_data)
 			return -ENOMEM;
@@ -10596,7 +10602,7 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 		wiphy_work_queue(ar->ah->hw->wiphy, &arvif->peer_ch_width_switch_work);
 	}
 
-	if (peer_data->count == arvif->num_stations)
+	if (peer_data->count == num_sta_count)
 		complete(&arvif->peer_ch_width_switch_send);
 
 	return 0;
