@@ -714,7 +714,7 @@ struct ath12k_dp {
 	/*Neighbors Peer list for NAC RSSI*/
 	struct list_head neighbor_peers;
 	int num_nrps;
-	unsigned long ppeds_service_running;
+	unsigned long service_rings_running;
 	bool stats_disable;
 
 	/* HW link ID position in PPDU_ID */
@@ -1083,6 +1083,7 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);
 ssize_t ath12k_dp_dump_device_ring_stats(struct ath12k_base *ab,
 					 char *buf, int size);
+void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
 				  struct ath12k_dp *dp, bool vdev_id_check_en);
@@ -1102,7 +1103,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 			     u8 link_id);
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
-
 void ath12k_dp_increment_bank_num_users(struct ath12k_dp *dp,
 					int bank_id);
 #endif

@@ -34,8 +34,8 @@ struct dp_ppe_ds_idxs {
 	u32 reo2ppe_start_idx;
 };
 
-#define ATH12K_DP_PPEDS_NAPI_DONE_BIT		1
-#define ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT	2
+#define ATH12K_DP_PPEDS_NAPI_DONE_BIT		16
+#define ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT	17
 
 #define PPE_DS_MAX_NODE	            4   /* Max DS node supported */
 #define DP_PPEDS_SERVICE_BUDGET     256
