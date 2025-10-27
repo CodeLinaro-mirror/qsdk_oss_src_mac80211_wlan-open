@@ -437,7 +437,7 @@ void ath12k_ppeds_notify_napi_done_v2(int ds_node_id)
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 	struct ath12k_dp *dp = ab->dp;
 
-	clear_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->ppeds_service_running);
+	clear_bit(ATH12K_DP_PPEDS_NAPI_DONE_BIT, &dp->service_rings_running);
 
 	if (ab->dp_umac_reset.umac_pre_reset_in_prog)
 		ath12k_umac_reset_notify_pre_reset_done(ab);

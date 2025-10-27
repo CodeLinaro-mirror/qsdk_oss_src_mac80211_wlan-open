@@ -354,7 +354,7 @@ void ath12k_umac_reset_notify_pre_reset_done(struct ath12k_base *ab)
 
 	dp = ath12k_ab_to_dp(ab);
 
-	if (dp->ppeds_service_running)
+	if (dp->service_rings_running)
 		return;
 
 	ath12k_umac_reset_notify_target_sync_and_send(ab,
@@ -366,33 +366,40 @@ EXPORT_SYMBOL(ath12k_umac_reset_notify_pre_reset_done);
 void ath12k_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 
 	set_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
 	ath12k_hif_irq_disable(ab);
 	atomic_inc(&mlo_umac_reset->response_chip);
+	ab->dp_umac_reset.umac_pre_reset_in_prog = true;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
 		ath12k_dp_ppeds_service_enable_disable(ab, true);
-		ab->dp_umac_reset.umac_pre_reset_in_prog = true;
 		ath12k_dp_ppeds_interrupt_stop(ab);
 		ath12k_dp_ppeds_stop(ab);
 		ath12k_dp_ppeds_service_enable_disable(ab, false);
 	}
 #endif
-	if (!test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		ath12k_umac_reset_notify_target_sync_and_send(ab,
-				ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE);
+	ath12k_umac_reset_notify_pre_reset_done(ab);
+
+ /*
+  * Memset the wbm link desc pool to 0 at this point, so that by the time
+  * FW responds with post_reset_start, we would have finished the memset.
+  * This will save a few milliseconds.
+  */
+
+	ath12k_dp_clear_link_desc_pool(dp);
 	return;
 }
 
 void ath12k_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 
-	clear_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
-
+	dp->service_rings_running = 0;
 	atomic_inc(&mlo_umac_reset->response_chip);
 	ath12k_hif_irq_enable(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -401,8 +408,8 @@ void ath12k_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 		ath12k_dp_ppeds_interrupt_start(ab);
 	}
 #endif
+	clear_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
 	ath12k_umac_reset_notify_target_sync_and_send(ab, ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE);
-	ath12k_dp_peer_tid_setup(ab);
 	return;
 }
 

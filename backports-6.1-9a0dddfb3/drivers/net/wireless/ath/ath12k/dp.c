@@ -2831,3 +2831,17 @@ void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 	       &dp->device_stats.rx.rx_err,
 	       sizeof(telemetry_device->reo_sw_drop_reason));
 }
+
+void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp)
+{
+	struct dp_link_desc_bank *link_desc_banks = dp->link_desc_banks;
+	int i;
+
+	for (i = 0; i < DP_LINK_DESC_BANKS_MAX; i++) {
+		if (link_desc_banks[i].vaddr_unaligned) {
+			memset(link_desc_banks[i].vaddr_unaligned, 0x0,
+			       link_desc_banks[i].size);
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_clear_link_desc_pool);
