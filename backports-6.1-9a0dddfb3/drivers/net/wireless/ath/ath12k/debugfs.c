@@ -4140,7 +4140,7 @@ static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 
 	/* loop all active VDEVs for bcn stats */
 	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (!arvif->is_up)
+		if (!arvif->is_up || ath12k_mac_is_bridge_vdev(arvif))
 			continue;
 
 		param.vdev_id = arvif->vdev_id;
