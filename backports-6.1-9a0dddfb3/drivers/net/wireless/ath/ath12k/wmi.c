@@ -14438,8 +14438,7 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 		(struct wmi_rssi_dbm_conv_offsets *) data;
 	struct wmi_rssi_dbm_conv_param_info *param_info;
 	struct wmi_rssi_dbm_conv_temp_offset *temp_offset_info;
-	int i, ret = 0;
-	s8 min_nf = 0;
+	int i, ret = 0, num_rx_ant, avg_nf = 0;
 
 	switch (tag) {
 	case WMI_TAG_RSSI_DBM_CONVERSION_PARAMS_INFO:
@@ -14450,13 +14449,22 @@ ath12k_wmi_rssi_dbm_conv_subtlv_parser(struct ath12k_base *ab,
 		}
 		param_info = (struct wmi_rssi_dbm_conv_param_info *)ptr;
 
+		num_rx_ant = hweight32(param_info->curr_rx_chainmask);
+		if (num_rx_ant < 1 || num_rx_ant > MAX_NUM_ANTENNA) {
+			ath12k_warn(ab,
+				    "wmi rssi dbm conv subtlv 0x%x recv invalid rx_chain_mask: %d",
+				    tag, param_info->curr_rx_chainmask);
+			return -EINVAL;
+		}
 		/* Using minimum pri20 Noise Floor across active chains instead
 		 * of all sub-bands*/
-		for (i = 0; i < MAX_NUM_ANTENNA; i++) {
+		for (i = 0; i < num_rx_ant; i++) {
 			if (param_info->curr_rx_chainmask & (0x01 << i))
-				min_nf = min(param_info->nf_hw_dbm[i][0], min_nf);
+				avg_nf += param_info->nf_hw_dbm[i][0];
 		}
-		rssi_offsets->min_nf_dbm = min_nf;
+		if (avg_nf)
+			avg_nf = avg_nf / num_rx_ant;
+		rssi_offsets->avg_nf_dbm = (s8)avg_nf;
 		rssi_offsets->xlna_bypass_offset = param_info->xlna_bypass_offset;
 		rssi_offsets->xlna_bypass_threshold = param_info->xlna_bypass_threshold;
 		break;
@@ -14577,7 +14585,7 @@ static void ath12k_wmi_rssi_dbm_conversion_param_info(struct ath12k_base *ab,
 		return;
 	}
 
-	rssi_offsets->rssi_offset = rssi_offsets->min_nf_dbm +
+	rssi_offsets->rssi_offset = rssi_offsets->avg_nf_dbm +
 				    rssi_offsets->rssi_temp_offset;
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI,

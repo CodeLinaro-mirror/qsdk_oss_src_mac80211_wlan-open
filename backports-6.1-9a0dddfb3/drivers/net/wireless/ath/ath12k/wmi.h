@@ -7301,8 +7301,8 @@ struct wmi_rssi_dbm_conv_temp_offset {
 
 struct wmi_rssi_dbm_conv_offsets {
 	s32 rssi_temp_offset;
-	s8 min_nf_dbm;
-	/* rssi_offset is the sum of min_nf_dbm & rssi_temp_offset*/
+	s8 avg_nf_dbm;
+	/* rssi_offset is the sum of avg_nf_dbm & rssi_temp_offset*/
 	s32 rssi_offset;
 	u32 xlna_bypass_offset;
 	u32 xlna_bypass_threshold;
