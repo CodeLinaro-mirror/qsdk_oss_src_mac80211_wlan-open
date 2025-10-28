@@ -295,6 +295,33 @@ static enum nl80211_chan_width ieee80211_get_sta_bw(struct sta_info *sta,
 	}
 }
 
+const char *nl80211_chan_width_to_string(enum nl80211_chan_width width)
+{
+	switch (width) {
+	case NL80211_CHAN_WIDTH_20_NOHT:
+		return "20 MHz (No HT)";
+	case NL80211_CHAN_WIDTH_20:
+		return "20 MHz";
+	case NL80211_CHAN_WIDTH_40:
+		return "40 MHz";
+	case NL80211_CHAN_WIDTH_80:
+		return "80 MHz";
+	case NL80211_CHAN_WIDTH_80P80:
+		return "80+80 MHz";
+	case NL80211_CHAN_WIDTH_160:
+		return "160 MHz";
+	case NL80211_CHAN_WIDTH_5:
+		return "5 MHz";
+	case NL80211_CHAN_WIDTH_10:
+		return "10 MHz";
+	case NL80211_CHAN_WIDTH_320:
+		return "320 MHz";
+	default:
+		WARN_ON(1);
+		return "Unknown channel width";
+	}
+}
+
 static enum nl80211_chan_width
 ieee80211_get_max_required_bw(struct ieee80211_link_data *link)
 {
@@ -1930,13 +1957,15 @@ void __ieee80211_link_release_channel(struct ieee80211_link_data *link,
 		ieee80211_vif_use_reserved_switch(local);
 }
 
-int ieee80211_update_chanctx_for_radio(struct ieee80211_local *local,
+int ieee80211_update_chanctx_for_radio(struct ieee80211_sub_if_data *sdata,
 				       struct ieee80211_chanctx *ctx,
 				       int radio_idx)
 {
+	struct ieee80211_local *local = sdata->local;
 	struct ieee80211_chanctx *temp_ctx;
 	struct ieee80211_link_data *tmp_link;
 	struct ieee80211_sub_if_data *tmp_sdata;
+	struct ieee80211_channel *chan = ctx->conf.def.chan;
 	int ret = 0;
 	bool found = false;
 
@@ -1954,18 +1983,29 @@ int ieee80211_update_chanctx_for_radio(struct ieee80211_local *local,
 	if (!found)
 		return 0;
 
+	if (sdata->wdev.iftype == NL80211_IFTYPE_MONITOR) {
+		sdata_info(sdata,
+			   "Cannot set monitor channel to %d: radio already configured with channel %d\n",
+			   chan->center_freq,
+			   temp_ctx->conf.def.chan->center_freq);
+		return -EOPNOTSUPP;
+	}
+
 	list_for_each_entry(tmp_link, &temp_ctx->assigned_links, assigned_chanctx_list) {
 		tmp_sdata = tmp_link->sdata;
 		if (tmp_sdata->wdev.iftype != NL80211_IFTYPE_MONITOR)
 			continue;
 
 		sdata_info(tmp_sdata,
-			   "Switching channel for monitor iface to %d\n",
-			   ctx->conf.def.chan->center_freq);
+			   "Switching channel for monitor iface to %d - %s\n",
+			   chan->center_freq,
+			   nl80211_chan_width_to_string(ctx->conf.def.width));
 		ret = ieee80211_set_monitor_channel(tmp_sdata->wdev.wiphy,
 						    tmp_sdata->dev,
 						    &ctx->conf.def);
-		WARN_ON(ieee80211_add_chanctx(local, ctx));
+		if (ret)
+			return -EINVAL;
+		ret = ieee80211_add_chanctx(local, ctx);
 		break;
 	}
 
@@ -2030,9 +2070,12 @@ int _ieee80211_link_use_channel(struct ieee80211_link_data *link,
 	 */
 	if (!reserved && ieee80211_hw_check(&local->hw,
 					    SUPPORTS_SINGLE_CHANNEL)) {
-		ret = ieee80211_update_chanctx_for_radio(local, ctx, radio_idx);
-		if (ret)
+		ret = ieee80211_update_chanctx_for_radio(sdata, ctx, radio_idx);
+		if (ret) {
+			if (ieee80211_chanctx_refcount(local, ctx) == 0)
+				ieee80211_free_chanctx(local, ctx, false);
 			goto out;
+		}
 	}
 
 	ieee80211_link_update_chanreq(link, chanreq);
