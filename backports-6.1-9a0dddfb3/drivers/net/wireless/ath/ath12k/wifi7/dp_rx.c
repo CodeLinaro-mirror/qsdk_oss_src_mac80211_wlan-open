@@ -1556,7 +1556,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	struct list_head rx_desc_sg_list;
 	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
 	int num_buffs_reaped[ATH12K_MAX_SOCS] = {};
-	struct ath12k_rx_desc_info *desc_info;
+	struct ath12k_rx_desc_info *desc_info, *rx_desc, *temp_rx_desc;
 	struct dp_rxdma_ring *rx_ring = &dp->rx_refill_buf_ring;
 	int cpu_id = smp_processor_id();
 	struct hal_rx_spd_data *rx_status_desc =
@@ -1673,7 +1673,6 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 
 		spd_desc_l->vaddr = desc_info->vaddr;
 		msdu = desc_info->skb;
-		desc_info->skb = NULL;
 
 		hw_link_id = le32_get_bits(desc->info0,
 					   HAL_REO_DEST_RING_INFO0_SRC_LINK_ID);
@@ -1714,11 +1713,17 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 
 		if (likely(!spd_desc_l->rx_msdu_info.msdu_continuation)) {
 			if (unlikely(!done)) {
+				list_for_each_entry_safe(rx_desc, temp_rx_desc,
+							 &rx_desc_sg_list, list) {
+					rx_desc->skb = NULL;
+				}
+
 				list_splice_tail_init(&rx_desc_sg_list,
 						      &rx_desc_used_list[device_id]);
 				incomplete_msdu_chain = 0;
 			}
 
+			desc_info->skb = NULL;
 			list_add_tail(&desc_info->list, &rx_desc_used_list[device_id]);
 			spd_desc_l->msdu = msdu;
 			first_msdu_tp = last_tp;
