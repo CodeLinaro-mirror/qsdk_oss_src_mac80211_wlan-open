@@ -10864,6 +10864,9 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 				peer->dp_peer->vdev_type_4addr |= BIT(peer->vif->type);
 				peer->dp_peer->is_reset_mcbc = true;
 				peer->dp_peer->use_4addr = true;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+				peer->dp_peer->ppe_vp_num = ahsta->ppe_vp_num;
+#endif
 				if (peer->vif->type == NL80211_IFTYPE_AP)
 					peer->dp_peer->dev = peer->dp_peer->sta->dev;
 			}
@@ -11662,10 +11665,9 @@ static void ath12k_sta_migration_wk(struct work_struct *wk)
 err_unlock:
 	spin_unlock_bh(&dp->dp_lock);
 send_dp_tx_event:
-	/* TODO: Need to update src_info once DS support is added */
 	ath12k_dp_tx_htt_pri_link_migr_msg(data->ab, data->vdev_id, data->peer_id,
 					   data->ml_peer_id, data->pdev_id, data->chip_id,
-					   0/*TODO*/, ret);
+					   data->ppe_vp_num, ret);
 
 }
 
