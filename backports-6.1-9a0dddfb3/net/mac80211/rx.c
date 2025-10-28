@@ -6224,7 +6224,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 									    ctr_freq) ==
 					    ieee80211_get_radio_idx_by_freq(hw->wiphy,
 									    sts_freq) ||
-					    sdata->vif.is_roc) {
+					    prev->vif.is_roc) {
 						flag = true;
 						break;
 					}
@@ -6247,7 +6247,7 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 									    ctr_freq) ==
 					    ieee80211_get_radio_idx_by_freq(hw->wiphy,
 									    sts_freq) ||
-					    sdata->vif.is_roc)
+					    prev->vif.is_roc)
 						flag = true;
 				}
 			} else if (prev->vif.type == NL80211_IFTYPE_STATION &&
