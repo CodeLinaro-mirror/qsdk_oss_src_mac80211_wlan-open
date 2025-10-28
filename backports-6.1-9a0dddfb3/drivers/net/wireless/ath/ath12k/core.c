@@ -3834,11 +3834,14 @@ static void ath12k_core_reset(struct work_struct *work)
 	if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
 		ath12k_partner_chip_power_state_info(ag, FW_ASSERTED_CHIP_PWR_DOWN);
 
-	if (ab->hif.bus == ATH12K_BUS_PCI) {
-		ath12k_hif_power_down(ab, false);
-	} else {
-		if (!ab->pm_suspend)
-			ath12k_core_upd_power_down(ab);
+	if (ab->fw_recovery_support) {
+
+		if (ab->hif.bus == ATH12K_BUS_PCI) {
+			ath12k_hif_power_down(ab, false);
+		} else {
+			if (!ab->pm_suspend)
+				ath12k_core_upd_power_down(ab);
+		}
 	}
 
 	/* prepare for power up */
