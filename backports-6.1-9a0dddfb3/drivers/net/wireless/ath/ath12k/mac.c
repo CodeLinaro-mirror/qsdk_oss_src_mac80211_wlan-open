@@ -16873,7 +16873,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		if (!ahvif->vlan_iface) {
 			pr_err("vlan_iface is null\n");
-			return;
+			goto free_tstats;
 		}
 		vlan_master_vif = ahvif->vlan_iface->parent_vif;
 		vlan_master_ahvif = ath12k_vif_to_ahvif(vlan_master_vif);
@@ -16936,7 +16936,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 			if (ret) {
 				ath12k_warn(ar->ab, "failed to stop vdev %d: %d\n",
 					    arvif->vdev_id, ret);
-				return;
+				goto free_vlan_iface;
 			}
 			arvif->is_started = false;
 			arvif->is_scan_vif = false;
@@ -16946,8 +16946,13 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ath12k_mac_unassign_link_vif(arvif);
 	}
 
+free_vlan_iface:
 	kfree(ahvif->vlan_iface);
 	ahvif->vlan_iface = NULL;
+free_tstats:
+	free_percpu(ahvif->tstats);
+	ahvif->tstats = NULL;
+
 }
 EXPORT_SYMBOL(ath12k_mac_op_remove_interface);
 
