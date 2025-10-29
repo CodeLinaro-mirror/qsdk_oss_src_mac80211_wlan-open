@@ -2026,7 +2026,7 @@ err:
 	return ret;
 }
 
-int ath12k_mac_op_config(struct ieee80211_hw *hw, u32 changed)
+int ath12k_mac_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed)
 {
 	return 0;
 }
@@ -7782,14 +7782,12 @@ static int ath12k_scan_stop(struct ath12k *ar)
 {
 	struct ath12k_wmi_scan_cancel_arg arg = {
 		.req_type = WLAN_SCAN_CANCEL_SINGLE,
-		.scan_id = ATH12K_SCAN_ID,
+		.scan_id = ar->scan.is_roc ? ATH12K_ROC_SCAN_ID : ATH12K_SCAN_ID,
+		.pdev_id = ar->pdev->pdev_id,
 	};
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
-
-	/* TODO: Fill other STOP Params */
-	arg.pdev_id = ar->pdev->pdev_id;
 
 	ret = ath12k_wmi_send_scan_stop_cmd(ar, &arg);
 	if (ret) {
@@ -7814,10 +7812,11 @@ out:
 	 * pipe being overflown with data and/or it can recover on its own
 	 * before next scan request is submitted.
 	 */
-	spin_lock_bh(&ar->data_lock);
-	if (ret)
+	if (ret && ar) {
+		spin_lock_bh(&ar->data_lock);
 		__ath12k_mac_scan_finish(ar);
-	spin_unlock_bh(&ar->data_lock);
+		spin_unlock_bh(&ar->data_lock);
+	}
 
 	return ret;
 }
@@ -7825,6 +7824,7 @@ out:
 static void ath12k_scan_abort(struct ath12k *ar)
 {
 	int ret;
+	bool need_stop = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -7843,17 +7843,17 @@ static void ath12k_scan_abort(struct ath12k *ar)
 		break;
 	case ATH12K_SCAN_RUNNING:
 		ar->scan.state = ATH12K_SCAN_ABORTING;
-		spin_unlock_bh(&ar->data_lock);
-
-		ret = ath12k_scan_stop(ar);
-		if (ret)
-			ath12k_warn(ar->ab, "failed to abort scan: %d\n", ret);
-
-		spin_lock_bh(&ar->data_lock);
+		need_stop = true;
 		break;
 	}
 
 	spin_unlock_bh(&ar->data_lock);
+
+	if (need_stop) {
+		ret = ath12k_scan_stop(ar);
+		if (ret)
+			ath12k_warn(ar->ab, "failed to abort scan: %d\n", ret);
+	}
 }
 
 static void ath12k_scan_timeout_work(struct work_struct *work)
@@ -7867,37 +7867,20 @@ static void ath12k_scan_timeout_work(struct work_struct *work)
 }
 
 static void ath12k_mac_scan_send_complete(struct ath12k *ar,
-					  struct cfg80211_scan_info info)
+					  struct cfg80211_scan_info *info)
 {
-	struct ath12k *partner_ar;
-	struct ath12k_pdev *pdev;
-	struct ath12k_base *ab;
-	struct ath12k_hw_group *ag = ar->ab->ag;
-	bool send_completion = true;
 	struct ath12k_hw *ah = ar->ah;
-	int i, j;
+	struct ath12k *partner_ar;
+	int i;
 
-	for (i = 0; i < ag->num_devices; i++) {
-		ab = ag->ab[i];
-		if (ab->is_bypassed)
-			continue;
+	lockdep_assert_wiphy(ah->hw->wiphy);
 
-		for (j = 0; j < ab->num_radios; j++) {
-			pdev = &ab->pdevs[j];
-			partner_ar = pdev->ar;
+	for_each_ar(ah, partner_ar, i)
+		if (partner_ar != ar &&
+		    partner_ar->scan.state == ATH12K_SCAN_RUNNING)
+			return;
 
-			if (!partner_ar || partner_ar == ar)
-				continue;
-			if (partner_ar->scan.state == ATH12K_SCAN_RUNNING) {
-				send_completion = false;
-				break;
-			}
-		}
-		if (!send_completion)
-			break;
-	}
-	if (send_completion)
-		ieee80211_scan_completed(ah->hw, &info);
+	ieee80211_scan_completed(ah->hw, info);
 }
 
 static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *work)
@@ -7938,7 +7921,7 @@ work_complete:
 				    ATH12K_SCAN_STARTING)),
 		};
 
-		ath12k_mac_scan_send_complete(ar, info);
+		ath12k_mac_scan_send_complete(ar, &info);
 	}
 
 	ar->scan.state = ATH12K_SCAN_IDLE;
@@ -10537,6 +10520,7 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 	struct cfg80211_chan_def def = {0};
 	u16 ru_punct_bitmap;
 	bool is_bridge_vdev;
+	int num_sta_count;
 
 	if (!ar->ab->chwidth_num_peer_caps)
 		return -EOPNOTSUPP;
@@ -10546,11 +10530,16 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 	     WARN_ON(ath12k_mac_vif_link_chan(vif, arvif->link_id, &def)))
 		return -EINVAL;
 
+	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+		num_sta_count = 1;
+	else
+		num_sta_count = arvif->num_stations;
+
 	peer_data = arvif->peer_ch_width_switch_data;
 
 	if (!peer_data) {
 		peer_data = kzalloc(struct_size(peer_data, peer_arg,
-						arvif->num_stations),
+						num_sta_count),
 				    GFP_KERNEL);
 		if (!peer_data)
 			return -ENOMEM;
@@ -10596,7 +10585,7 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 		wiphy_work_queue(ar->ah->hw->wiphy, &arvif->peer_ch_width_switch_work);
 	}
 
-	if (peer_data->count == arvif->num_stations)
+	if (peer_data->count == num_sta_count)
 		complete(&arvif->peer_ch_width_switch_send);
 
 	return 0;
@@ -10875,6 +10864,9 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 				peer->dp_peer->vdev_type_4addr |= BIT(peer->vif->type);
 				peer->dp_peer->is_reset_mcbc = true;
 				peer->dp_peer->use_4addr = true;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+				peer->dp_peer->ppe_vp_num = ahsta->ppe_vp_num;
+#endif
 				if (peer->vif->type == NL80211_IFTYPE_AP)
 					peer->dp_peer->dev = peer->dp_peer->sta->dev;
 			}
@@ -11673,10 +11665,9 @@ static void ath12k_sta_migration_wk(struct work_struct *wk)
 err_unlock:
 	spin_unlock_bh(&dp->dp_lock);
 send_dp_tx_event:
-	/* TODO: Need to update src_info once DS support is added */
 	ath12k_dp_tx_htt_pri_link_migr_msg(data->ab, data->vdev_id, data->peer_id,
 					   data->ml_peer_id, data->pdev_id, data->chip_id,
-					   0/*TODO*/, ret);
+					   data->ppe_vp_num, ret);
 
 }
 
@@ -16334,6 +16325,9 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to set rts threshold for vdev %d: %d\n",
 			    arvif->vdev_id, ret);
+		ar->rts_threshold = -1;
+	} else {
+		ar->rts_threshold = param_value;
 	}
 
 	ath12k_mac_ap_ps_recalc(ar);
@@ -16966,7 +16960,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		if (!ahvif->vlan_iface) {
 			pr_err("vlan_iface is null\n");
-			return;
+			goto free_tstats;
 		}
 		vlan_master_vif = ahvif->vlan_iface->parent_vif;
 		vlan_master_ahvif = ath12k_vif_to_ahvif(vlan_master_vif);
@@ -17015,7 +17009,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 					.aborted = true,
 				};
 
-				ieee80211_scan_completed(ar->ah->hw, &info);
+				ath12k_mac_scan_send_complete(ar, &info);
 			}
 
 			ar->scan.state = ATH12K_SCAN_IDLE;
@@ -17029,7 +17023,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 			if (ret) {
 				ath12k_warn(ar->ab, "failed to stop vdev %d: %d\n",
 					    arvif->vdev_id, ret);
-				return;
+				goto free_vlan_iface;
 			}
 			arvif->is_started = false;
 			arvif->is_scan_vif = false;
@@ -17039,8 +17033,13 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ath12k_mac_unassign_link_vif(arvif);
 	}
 
+free_vlan_iface:
 	kfree(ahvif->vlan_iface);
 	ahvif->vlan_iface = NULL;
+free_tstats:
+	free_percpu(ahvif->tstats);
+	ahvif->tstats = NULL;
+
 }
 EXPORT_SYMBOL(ath12k_mac_op_remove_interface);
 
@@ -19710,21 +19709,36 @@ ath12k_set_vdev_param_to_all_vifs(struct ath12k *ar, int param, u32 value)
 /* mac80211 stores device specific RTS/Fragmentation threshold value,
  * this is set interface specific to firmware from ath12k driver
  */
-int ath12k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, u8 radio_id,
-				    u32 value, struct ieee80211_vif *vif,
-				    u32 link_id)
+int ath12k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, int radio_idx,
+				    u32 value)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct wiphy *wiphy = hw->wiphy;
 	struct ath12k *ar;
 	int param_id = WMI_VDEV_PARAM_RTS_THRESHOLD, ret = 0, i;
+	int ret_err;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
-	/* Currently we set the rts threshold value to all the vifs across
-	 * all radios of the single wiphy.
-	 * TODO Once support for vif specific RTS threshold in mac80211 is
-	 * available, ath12k can make use of it.
-	 */
+	if (radio_idx >= wiphy->n_radio || radio_idx < -1)
+		return -EINVAL;
+
+	if (radio_idx != -1) {
+		/* Update RTS threshold in specified radio */
+		ar = ath12k_ah_to_ar(ah, radio_idx);
+		ret = ath12k_set_vdev_param_to_all_vifs(ar, param_id, value);
+		if (ret) {
+			ath12k_warn(ar->ab,
+				    "failed to set RTS config for all vdevs of pdev %d",
+				    ar->pdev->pdev_id);
+			return ret;
+		}
+
+		ar->rts_threshold = value;
+		return 0;
+	}
+
+	/* Radio_index passed is -1, so set RTS threshold for all radios. */
 	for_each_ar(ah, ar, i) {
 		ret = ath12k_set_vdev_param_to_all_vifs(ar, param_id, value);
 		if (ret) {
@@ -19733,12 +19747,31 @@ int ath12k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, u8 radio_id,
 			break;
 		}
 	}
+	if (!ret) {
+		/* Setting new RTS threshold for vdevs of all radios passed, so update
+		 * the RTS threshold value for all radios
+		 */
+		for_each_ar(ah, ar, i)
+			ar->rts_threshold = value;
+		return 0;
+	}
+
+	/* RTS threshold config failed, revert to the previous RTS threshold */
+	for (i = i - 1; i >= 0; i--) {
+		ar = ath12k_ah_to_ar(ah, i);
+		ret_err = ath12k_set_vdev_param_to_all_vifs(ar, param_id,
+							    ar->rts_threshold);
+		if (ret_err)
+			ath12k_warn(ar->ab,
+				    "failed to restore RTS threshold for all vdevs of pdev %d",
+				    ar->pdev->pdev_id);
+	}
 
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_mac_op_set_rts_threshold);
 
-int ath12k_mac_op_set_frag_threshold(struct ieee80211_hw *hw, u32 value)
+int ath12k_mac_op_set_frag_threshold(struct ieee80211_hw *hw, int radio_idx, u32 value)
 {
 	/* Even though there's a WMI vdev param for fragmentation threshold no
 	 * known firmware actually implements it. Moreover it is not possible to

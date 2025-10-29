@@ -577,14 +577,14 @@ static inline int rdev_leave_ibss(struct cfg80211_registered_device *rdev,
 }
 
 static inline int
-rdev_set_wiphy_params(struct cfg80211_registered_device *rdev, u8 radio_id, u32 changed,
-		      struct wireless_dev *wdev, unsigned int link_id)
+rdev_set_wiphy_params(struct cfg80211_registered_device *rdev, int radio_idx,
+		      u32 changed)
 {
 	int ret = -EOPNOTSUPP;
 
-	trace_rdev_set_wiphy_params(&rdev->wiphy, radio_id, changed, wdev, link_id);
+	trace_rdev_set_wiphy_params(&rdev->wiphy, radio_idx, changed);
 	if (rdev->ops->set_wiphy_params)
-		ret = rdev->ops->set_wiphy_params(&rdev->wiphy, radio_id, changed, wdev, link_id);
+		ret = rdev->ops->set_wiphy_params(&rdev->wiphy, radio_idx, changed);
 	trace_rdev_return_int(&rdev->wiphy, ret);
 	return ret;
 }
@@ -602,12 +602,12 @@ static inline int rdev_set_tx_power(struct cfg80211_registered_device *rdev,
 }
 
 static inline int rdev_get_tx_power(struct cfg80211_registered_device *rdev,
-				    struct wireless_dev *wdev, unsigned int link_id,
-				    int *dbm)
+				    struct wireless_dev *wdev, int radio_idx,
+				    unsigned int link_id, int *dbm)
 {
 	int ret;
-	trace_rdev_get_tx_power(&rdev->wiphy, wdev, link_id);
-	ret = rdev->ops->get_tx_power(&rdev->wiphy, wdev, link_id, dbm);
+	trace_rdev_get_tx_power(&rdev->wiphy, wdev, radio_idx, link_id);
+	ret = rdev->ops->get_tx_power(&rdev->wiphy, wdev, radio_idx, link_id, dbm);
 	trace_rdev_return_int_int(&rdev->wiphy, ret, *dbm);
 	return ret;
 }

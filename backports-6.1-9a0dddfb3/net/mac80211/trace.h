@@ -384,12 +384,13 @@ DEFINE_EVENT(local_sdata_addr_evt, drv_remove_interface,
 
 TRACE_EVENT(drv_config,
 	TP_PROTO(struct ieee80211_local *local,
-		 u32 changed),
+		 int radio_idx, u32 changed),
 
-	TP_ARGS(local, changed),
+	TP_ARGS(local, radio_idx, changed),
 
 	TP_STRUCT__entry(
 		LOCAL_ENTRY
+		__field(int, radio_idx)
 		__field(u32, changed)
 		__field(u32, flags)
 		__field(int, power_level)
@@ -403,6 +404,7 @@ TRACE_EVENT(drv_config,
 
 	TP_fast_assign(
 		LOCAL_ASSIGN;
+		__entry->radio_idx = radio_idx;
 		__entry->changed = changed;
 		__entry->flags = local->hw.conf.flags;
 		__entry->power_level = local->hw.conf.power_level;
@@ -417,8 +419,8 @@ TRACE_EVENT(drv_config,
 	),
 
 	TP_printk(
-		LOCAL_PR_FMT " ch:%#x" CHANDEF_PR_FMT,
-		LOCAL_PR_ARG, __entry->changed, CHANDEF_PR_ARG
+		LOCAL_PR_FMT " radio_idx:%d ch:%#x" CHANDEF_PR_FMT,
+		LOCAL_PR_ARG, __entry->radio_idx, __entry->changed, CHANDEF_PR_ARG
 	)
 );
 TRACE_EVENT(drv_nss_bss_info_changed,
@@ -850,55 +852,69 @@ TRACE_EVENT(drv_get_key_seq,
 	)
 );
 
-DEFINE_EVENT(local_u32_evt, drv_set_frag_threshold,
-	TP_PROTO(struct ieee80211_local *local, u32 value),
-	TP_ARGS(local, value)
+TRACE_EVENT(drv_set_frag_threshold,
+	    TP_PROTO(struct ieee80211_local *local, int radio_idx, u32 value),
+
+	    TP_ARGS(local, radio_idx, value),
+
+	    TP_STRUCT__entry(LOCAL_ENTRY
+			     __field(int, radio_idx)
+			     __field(u32, value)
+			     ),
+
+	    TP_fast_assign(LOCAL_ASSIGN;
+			   __entry->radio_idx = radio_idx;
+			   __entry->value = value;
+			   ),
+
+	    TP_printk(LOCAL_PR_FMT " radio_id:%d value:%u",
+		      LOCAL_PR_ARG, __entry->radio_idx, __entry->value
+		      )
 );
 
 TRACE_EVENT(drv_set_rts_threshold,
-	TP_PROTO(struct ieee80211_local *local, u8 radio_id, u32 value,
-		struct ieee80211_sub_if_data *sdata, u32 link_id),
+	TP_PROTO(struct ieee80211_local *local, int radio_idx, u32 value),
 
-	TP_ARGS(local, radio_id, value, sdata, link_id),
+	TP_ARGS(local, radio_idx, value),
 
 	TP_STRUCT__entry(
 		LOCAL_ENTRY
-		__field(u8, radio_id)
+		__field(int, radio_idx)
 		__field(u32, value)
-		__field(int, link_id)
 	),
 
 	TP_fast_assign(
 		LOCAL_ASSIGN;
-		__entry->radio_id = radio_id;
+		__entry->radio_idx = radio_idx;
 		__entry->value = value;
-		__entry->link_id = link_id;
 	),
 
 	TP_printk(
-		LOCAL_PR_FMT " value:%d link_id:%d",
-		LOCAL_PR_ARG, __entry->value, __entry->link_id
+		LOCAL_PR_FMT " radio_id:%d value:%u",
+		LOCAL_PR_ARG, __entry->radio_idx, __entry->value
 	)
 );
 
 TRACE_EVENT(drv_set_coverage_class,
-	TP_PROTO(struct ieee80211_local *local, s16 value),
+	TP_PROTO(struct ieee80211_local *local, int radio_idx, s16 value),
 
-	TP_ARGS(local, value),
+	TP_ARGS(local, radio_idx, value),
 
 	TP_STRUCT__entry(
 		LOCAL_ENTRY
+		__field(int, radio_idx)
 		__field(s16, value)
 	),
 
 	TP_fast_assign(
 		LOCAL_ASSIGN;
+		__entry->radio_idx = radio_idx;
 		__entry->value = value;
 	),
 
 	TP_printk(
-		LOCAL_PR_FMT " value:%d",
-		LOCAL_PR_ARG, __entry->value
+		LOCAL_PR_FMT " radio_id:%d value:%d",
+		LOCAL_PR_ARG, __entry->radio_idx, __entry->value
 	)
 );
 

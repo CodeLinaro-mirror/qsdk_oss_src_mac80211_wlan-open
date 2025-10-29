@@ -308,7 +308,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif);
 void ath12k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 				      struct ieee80211_vif *vif);
-int ath12k_mac_op_config(struct ieee80211_hw *hw, u32 changed);
+int ath12k_mac_op_config(struct ieee80211_hw *hw, int radio_idx, u32 changed);
 void ath12k_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 				 struct ieee80211_vif *vif,
 				 struct ieee80211_sta *sta, bool enabled);
@@ -384,10 +384,10 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 				 struct ieee80211_vif_chanctx_switch *vifs,
 				 int n_vifs,
 				 enum ieee80211_chanctx_switch_mode mode);
-int ath12k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, u8 radio_id,
-				    u32 value, struct ieee80211_vif *vif,
-				    u32 link_id);
-int ath12k_mac_op_set_frag_threshold(struct ieee80211_hw *hw, u32 value);
+int ath12k_mac_op_set_rts_threshold(struct ieee80211_hw *hw, int radio_idx,
+				    u32 value);
+int ath12k_mac_op_set_frag_threshold(struct ieee80211_hw *hw, int radio_idx,
+				     u32 value);
 int
 ath12k_mac_op_set_bitrate_mask(struct ieee80211_hw *hw,
 			       struct ieee80211_vif *vif, unsigned int link_id,

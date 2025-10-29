@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_CORE_H
@@ -1009,6 +1009,7 @@ struct ath12k_sta_migration_data {
 	u16 ml_peer_id;
 	u8 pdev_id;
 	u8 chip_id;
+	int ppe_vp_num;
 };
 
 struct ath12k_sta {
@@ -1290,6 +1291,7 @@ struct ath12k {
 	u32 txpower_scale;
 	u32 power_scale;
 	u32 chan_tx_pwr;
+	u32 rts_threshold;
 	u32 num_stations;
 	u32 max_num_stations;
 
@@ -1704,6 +1706,7 @@ struct ath12k_wsi_info {
 
 enum ath12k_device_family {
 	ATH12K_DEVICE_FAMILY_WIFI7,
+	ATH12K_DEVICE_FAMILY_WIFI8,
 	ATH12K_DEVICE_FAMILY_MAX,
 };
 

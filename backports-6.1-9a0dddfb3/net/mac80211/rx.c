@@ -60,8 +60,12 @@ static inline void ieee80211_rx_stats(struct net_device *dev, u32 len)
 static inline void ieee80211_rx_stats_reason(struct ieee80211_sub_if_data *sdata,
 					     u32 len, u8 tid, u32 reason)
 {
-	struct pcpu_txrx_stats *txrx_stats = this_cpu_ptr(sdata->txrx_stats);
+	struct pcpu_txrx_stats *txrx_stats;
 
+	if (!sdata->txrx_stats)
+		return;
+
+	txrx_stats = this_cpu_ptr(sdata->txrx_stats);
 	u64_stats_update_begin(&txrx_stats->syncp);
 	switch (reason) {
 	case RX_NETIF_PKTS:
@@ -96,8 +100,12 @@ static inline void ieee80211_rx_stats_reason(struct ieee80211_sub_if_data *sdata
 static inline void ieee80211_rx_drop_stats_reason(struct ieee80211_sub_if_data *sdata,
 						  u32 len, u8 tid, u32 reason)
 {
-	struct pcpu_txrx_stats *txrx_stats = this_cpu_ptr(sdata->txrx_stats);
+	struct pcpu_txrx_stats *txrx_stats;
 
+	if (!sdata->txrx_stats)
+		return;
+
+	txrx_stats = this_cpu_ptr(sdata->txrx_stats);
 	u64_stats_update_begin(&txrx_stats->syncp);
 	txrx_stats->tid_stats[tid].rx_drop_stats[reason]++;
 	u64_stats_update_end(&txrx_stats->syncp);
@@ -3482,7 +3490,7 @@ __ieee80211_rx_h_amsdu(struct ieee80211_rx_data *rx, u8 data_offset)
 		return RX_DROP_U_BAD_AMSDU;
 	}
 
-	if (rx->sta && rx->sta->amsdu_mesh_control < 0) {
+	if (rx->sta->amsdu_mesh_control < 0) {
 		s8 valid = -1;
 		int i;
 

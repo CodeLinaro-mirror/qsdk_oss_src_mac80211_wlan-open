@@ -429,7 +429,7 @@ static void __ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 	struct ieee80211_local *local = hw_to_local(hw);
 	bool hw_scan = test_bit(SCAN_HW_SCANNING, &local->scanning);
 	bool was_scanning = local->scanning;
-	struct cfg80211_scan_request *scan_req;
+	struct cfg80211_scan_request *scan_req, *temp_req;
 	struct ieee80211_sub_if_data *scan_sdata;
 	struct ieee80211_sub_if_data *sdata;
 
@@ -470,9 +470,6 @@ static void __ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 		aborted = true;
 	}
 
-	kfree(local->hw_scan_req);
-	local->hw_scan_req = NULL;
-
 	scan_req = rcu_dereference_protected(local->scan_req,
 					     lockdep_is_held(&local->hw.wiphy->mtx));
 
@@ -484,16 +481,24 @@ static void __ieee80211_scan_completed(struct ieee80211_hw *hw, bool aborted)
 
 	synchronize_rcu();
 
-	atomic_sub(sizeof(*local->hw_scan_req) +
-		   scan_req->n_channels *
-		   sizeof(scan_req->channels[0]) +
-		   local->hw_scan_ies_bufsize,
-		   &local->memory_stats.malloc_size);
+	if (local->hw_scan_req) {
+		temp_req = &local->hw_scan_req->req;
+		atomic_sub(sizeof(*local->hw_scan_req) +
+			   temp_req->n_channels *
+			   sizeof(temp_req->channels[0]) +
+			   local->hw_scan_ies_bufsize,
+			   &local->memory_stats.malloc_size);
+	}
 
-	if (scan_req != local->int_scan_req) {
+	if (scan_req != local->int_scan_req && scan_req &&
+		(scan_req->wdev == &scan_sdata->wdev) &&
+		(scan_req->wiphy == local->hw.wiphy)) {
 		local->scan_info.aborted = aborted;
 		cfg80211_scan_done(scan_req, &local->scan_info);
 	}
+
+	kfree(local->hw_scan_req);
+	local->hw_scan_req = NULL;
 
 	/* Set power back to normal operating levels. */
 	ieee80211_hw_conf_chan(local);
@@ -630,7 +635,8 @@ void ieee80211_run_deferred_scan(struct ieee80211_local *local)
 	if (!local->scan_req || local->scanning)
 		return;
 
-	req = local->scan_req;
+	req = wiphy_dereference(local->hw.wiphy, local->scan_req);
+
 	if (!ieee80211_can_scan(local,
 				rcu_dereference_protected(
 					local->scan_sdata,
@@ -948,7 +954,7 @@ static int __ieee80211_start_scan(struct ieee80211_sub_if_data *sdata,
 
 		ieee80211_recalc_idle(local);
 
-		local->scan_req = NULL;
+		RCU_INIT_POINTER(local->scan_req, NULL);
 		RCU_INIT_POINTER(local->scan_sdata, NULL);
 	}
 
