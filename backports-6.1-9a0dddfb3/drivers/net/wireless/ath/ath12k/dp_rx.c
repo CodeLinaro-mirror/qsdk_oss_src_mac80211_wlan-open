@@ -1024,7 +1024,6 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_rx_status *rx_status;
 	struct ieee80211_sta *pubsta = NULL;
 	struct ath12k_dp_peer *peer = NULL;
-	struct ath12k_skb_rxcb *rxcb = ATH12K_SKB_RXCB(msdu);
 	struct ath12k_dp_link_peer *link_peer = NULL;
 	struct ath12k_vif *ahvif;
 	u8 addr[ETH_ALEN] = {0};
@@ -1060,10 +1059,10 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 								     peer_id);
 		if (link_peer) {
 			ahvif = ath12k_vif_to_ahvif(link_peer->vif);
-			ath12k_tid_rx_stats(ahvif, rxcb->tid, msdu->len,
+			ath12k_tid_rx_stats(ahvif, tid, msdu->len,
 					    ATH_RX_TOTAL_OUT_PKTS);
 		}
-		msdu->priority = rxcb->tid;
+		msdu->priority = tid;
 	}
 
 	rcu_read_unlock();
