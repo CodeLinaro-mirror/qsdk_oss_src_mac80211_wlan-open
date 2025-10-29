@@ -1990,9 +1990,12 @@ static int ieee80211_stop_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	/* With dynamic link removal support, any non-tx bss can be removed
 	 * individually. Hence, call ieee80211_stop_mbssid when the wdev is
-	 * removed through any other user application(s).
+	 * removed through any other user application(s). However, the MBSSID
+	 * group should be stopped if the TX BSS is being stopped,
+	 * regardless of the netdev state.
 	 */
-	if (wdev->is_netdev_going_down)
+	if ((rcu_access_pointer(link->conf->tx_bss_conf) == link->conf) ||
+	    wdev->is_netdev_going_down)
 		ieee80211_stop_mbssid(sdata, link_id);
 	RCU_INIT_POINTER(link_conf->tx_bss_conf, NULL);
 
