@@ -707,7 +707,6 @@ int ath12k_dp_tx_htt_pri_link_migr_msg(struct ath12k_base *ab, u16 vdev_id,
 	cmd->info1 = le32_encode_bits(peer_id, ATH12K_HTT_PRI_LINK_MIGR_PEER_ID) |
 		     le32_encode_bits(ml_peer_id, ATH12K_HTT_PRI_LINK_MIGR_ML_PEER_ID);
 
-	/* TODO: Need to update src_info once DS support is added */
 	if (src_info != 0)
 		src_info_valid = true;
 
@@ -717,8 +716,8 @@ int ath12k_dp_tx_htt_pri_link_migr_msg(struct ath12k_base *ab, u16 vdev_id,
 		     		      ATH12K_HTT_PRI_LINK_MIGR_SRC_INFO_VALID);
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_HTT,
-		   "htt MLO send pri link migr resp for peer_id 0x%x ml_peer_id 0x%x vdev_id 0x%x pdev_id 0x%x chip_id 0x%x status %u\n",
-		   peer_id, ml_peer_id, vdev_id, pdev_id, chip_id, status);
+		   "htt MLO send pri link migr resp for peer_id 0x%x ml_peer_id 0x%x vdev_id 0x%x pdev_id 0x%x chip_id 0x%x src_info 0x%x status %u\n",
+		   peer_id, ml_peer_id, vdev_id, pdev_id, chip_id, src_info, status);
 
 	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
 	if (ret)

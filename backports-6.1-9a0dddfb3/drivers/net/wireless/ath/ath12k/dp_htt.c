@@ -1245,6 +1245,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	ahsta->migration_data.ml_peer_id = ml_peer_id;
 	ahsta->migration_data.pdev_id = pdev_id;
 	ahsta->migration_data.chip_id = chip_id;
+	ahsta->migration_data.ppe_vp_num = peer->dp_peer->ppe_vp_num;
 
 	reinit_completion(&ahsta->dp_migration_event);
 
