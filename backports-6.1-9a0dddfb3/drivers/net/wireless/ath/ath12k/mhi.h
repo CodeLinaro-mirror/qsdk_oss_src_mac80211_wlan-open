@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2020-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2024 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef _ATH12K_MHI_H
 #define _ATH12K_MHI_H
@@ -17,6 +17,7 @@
 #define MHICTRL					0x38
 #define MHICTRL_RESET_MASK			0x2
 #define ATH12K_PCI_FW_RDDM_SZ			0x600000
+#define PCI_INVALID_READ(val)			((val) == U32_MAX)
 
 enum ath12k_mhi_state {
 	ATH12K_MHI_INIT,
