@@ -610,6 +610,7 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 
 static int
 ath12k_wifi7_dp_mon_pad_amsdu(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mpdu,
+			      struct sk_buff *parent_mpdu,
 			      struct ath12k_dp_mon_pad_params *params)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
@@ -625,6 +626,12 @@ ath12k_wifi7_dp_mon_pad_amsdu(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mp
 		skb_coalesce_rx_frag(mpdu, params->frag_idx, amsdu_pad, 0);
 		pad_start_ptr = (u8 *)ath12k_dp_mon_skb_get_frag_addr(mpdu,
 								      params->frag_idx);
+
+		if (!params->is_head_msdu) {
+			parent_mpdu->len += amsdu_pad;
+			parent_mpdu->data_len += amsdu_pad;
+		}
+
 		if (!pad_start_ptr)
 			return -EINVAL;
 
@@ -740,7 +747,13 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 					frag_llc_len = hdr_frag_size - msdu_llc_len;
 					skb_coalesce_rx_frag(msdu_cur, frag_iter,
 							     -frag_llc_len, 0);
+
+					if (!is_head_msdu) {
+						mpdu->len -= frag_llc_len;
+						mpdu->data_len -= frag_llc_len;
+					}
 				}
+
 				prev_msdu_end_received = false;
 				continue;
 			}
@@ -796,7 +809,11 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 					llc_amsdu_len = msdu_llc_len + amsdu_pad;
 					size = hdr_frag_size - llc_amsdu_len;
 					skb_coalesce_rx_frag(msdu_cur, frag_iter - 1,
-							     -size, 0);
+							-size, 0);
+					if (!is_head_msdu) {
+						mpdu->len -= size;
+						mpdu->data_len -= size;
+					}
 				}
 
 				/* Adjust page frag offset to point to the AMSDU subframe
@@ -816,6 +833,10 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 					}
 
 					frag_size -= frag_offset;
+					if (!is_head_msdu) {
+						mpdu->len -= frag_offset;
+						mpdu->data_len -= frag_offset;
+					}
 				}
 
 				/* calculate new page offset and create hole if amsdu_pad
@@ -856,10 +877,13 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 					.msdu_llc_len =  msdu_llc_len,
 					.pad_byte_holder = pad_byte_holder,
 					.frag_idx = frag_iter,
+					.is_head_msdu = is_head_msdu,
 				};
 
 				ret = ath12k_wifi7_dp_mon_pad_amsdu(dp_pdev,
-								    msdu_cur, &params);
+								    msdu_cur,
+								    mpdu,
+								    &params);
 				if (unlikely(ret)) {
 					ath12k_warn(dp,
 						    "proc_msdu_frag: AMSDU padding failed %d\n",
@@ -999,9 +1023,10 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 					ATH12K_DP_MON_RX_BUF_SIZE -
 						(frag_size + ATH12K_MON_RX_PKT_OFFSET),
 				.frag_idx = 1,
+				.is_head_msdu = true,
 			};
 
-			ret = ath12k_wifi7_dp_mon_pad_amsdu(dp_pdev, mpdu, &params);
+			ret = ath12k_wifi7_dp_mon_pad_amsdu(dp_pdev, mpdu, mpdu, &params);
 			if (unlikely(ret)) {
 				ath12k_warn(dp,
 					    "mon_rx_restitch: AMSDU padding failed %d\n",
