@@ -18,6 +18,28 @@
 #include "dp_stats.h"
 #include "dp_htt.h"
 
+void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
+{
+	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
+
+	u64_stats_update_begin(&tstats->syncp);
+	tstats->tid_stats[tid].tx_pkt_stats[reason]++;
+	tstats->tid_stats[tid].tx_pkt_bytes[reason] += len;
+	u64_stats_update_end(&tstats->syncp);
+}
+EXPORT_SYMBOL(ath12k_tid_tx_stats);
+
+void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
+{
+	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
+
+	u64_stats_update_begin(&tstats->syncp);
+	tstats->tid_stats[tid].tx_drop_stats[reason]++;
+	tstats->tid_stats[tid].tx_drop_bytes[reason] += len;
+	u64_stats_update_end(&tstats->syncp);
+}
+EXPORT_SYMBOL(ath12k_tid_tx_drop_stats);
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static void
 ath12k_dp_ppeds_tx_release_desc_list_bulk(struct ath12k_dp *dp,
@@ -166,6 +188,103 @@ void ath12k_hal_srng_ppeds_dst_inv_entry(struct ath12k_base *ab,
 }
 #endif
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
+					 struct hal_wbm_completion_ring_tx *tx_status)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_vif *ahvif;
+	struct ath12k_link_sta *arsta;
+	struct hal_tx_status ts = { 0 };
+	bool tx_drop = false;
+	bool tx_status_default = false;
+	struct ieee80211_tx_info info;
+	u8 reason;
+
+	memset(&info, 0, sizeof(info));
+	info.status.rates[0].idx = -1;
+
+	dp = ath12k_ab_to_dp(ab);
+	dp->arch_ops->dp_tx_status_parse(ab, tx_status, &ts);
+	info.status.ack_signal = ATH12K_DEFAULT_NOISE_FLOOR + ts.ack_rssi;
+	info.status.flags = IEEE80211_TX_STATUS_ACK_SIGNAL_VALID;
+	dp->ppe.ppeds_stats.tqm_rel_reason[ts.status]++;
+
+	if (ts.status == HAL_WBM_TQM_REL_REASON_FRAME_ACKED)
+		info.flags |= IEEE80211_TX_STAT_ACK;
+	else if (ts.status == HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX)
+		info.flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
+
+	if (ts.status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED) {
+		switch (ts.status) {
+		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU:
+			reason = ATH_TX_DS_TQM_REMOVE_MPDU;
+			break;
+		case HAL_WBM_TQM_REL_REASON_DROP_THRESHOLD:
+			reason = ATH_TX_DS_TQM_DROP_THRESHOLD;
+			break;
+		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_TX:
+			reason = ATH_TX_DS_TQM_REMOVE_TX;
+			break;
+		case HAL_WBM_TQM_REL_REASON_CMD_REMOVE_AGED_FRAMES:
+			reason = ATH_TX_DS_TQM_REMOVE_AGED;
+			break;
+		default:
+			reason = ATH_TX_DS_TQM_REMOVE_DEF;
+			//TODO: Remove this print and add as a stats
+			ath12k_dbg(ab, ATH12K_DBG_DP_TX,
+				   "tx frame is not acked status %d\n",
+				   ts.status);
+			tx_status_default = true;
+		}
+		tx_drop = true;
+	}
+
+	rcu_read_lock();
+
+	peer = ath12k_dp_link_peer_find_by_id(dp, ts.peer_id);
+	if (unlikely(!peer || !peer->sta || !peer->vif)) {
+		rcu_read_unlock();
+		return;
+	}
+
+	arsta = ath12k_peer_get_link_sta(ab, peer);
+	if (!arsta) {
+		rcu_read_unlock();
+		return;
+	}
+
+	if (ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_tid_stats_enabled(dp_pdev)) {
+		ahvif = ath12k_vif_to_ahvif(peer->vif);
+		if (tx_drop) {
+			ath12k_tid_tx_drop_stats(ahvif, ts.tid, skb_len,
+						 reason);
+		} else {
+			ath12k_tid_tx_stats(ahvif, ts.tid, skb_len,
+					    ATH_TX_PPEDS_PKTS);
+			ath12k_tid_tx_stats(ahvif, ts.tid, skb_len,
+					    ATH_TX_COMPLETED_PKTS);
+		}
+	}
+
+	if (ts.status != HAL_WBM_TQM_REL_REASON_FRAME_ACKED &&
+	    !tx_status_default) {
+		rcu_read_unlock();
+		return;
+	}
+
+#ifdef CPTCFG_MAC80211_DS_SUPPORT
+	ieee80211_ppeds_tx_update_stats(ar->ah->hw, peer->sta, &info,
+					peer->txrate, peer->link_id, skb_len);
+#endif
+	rcu_read_unlock();
+}
+#endif
+
 u16 dp_sawf_msduq_peer_id_set(u16 peer_id, u8 msduq)
 {
 	u16 peer_msduq = 0;
@@ -300,6 +419,8 @@ void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 {
 	struct ath12k_dp *dp = ab->dp;
+	struct ath12k *ar;
+	struct ath12k_pdev_dp *dp_pdev;
 	struct dp_ppeds_tx_comp_ring *tx_ring = &dp->ppe.ppeds_comp_ring;
 	int hal_ring_id = tx_ring->ppe_wbm2sw_ring.ring_id;
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
@@ -307,7 +428,7 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	int valid_entries, count = 0;
 	int list_no_skb_count = 0;
 	struct hal_wbm_release_ring *desc;
-	struct hal_wbm_completion_ring_tx *tx_status;
+	struct hal_wbm_completion_ring_tx *tx_status, *status;
 	struct htt_tx_wbm_completion *status_desc;
 	enum hal_wbm_rel_src_module buf_rel_source;
 	int htt_status;
@@ -380,6 +501,16 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		tx_desc->in_use = false;
 		if (likely(tx_desc->skb)) {
 			list_add_tail(&tx_desc->list, &local_list);
+			if (tx_ring->macid[count] != 0xF) {
+				ar = ab->pdevs[tx_ring->macid[count]].ar;
+				dp_pdev = &ar->dp;
+				if (ath12k_dp_stats_enabled(dp_pdev)) {
+					status = &tx_ring->tx_status[count];
+					ath12k_ppeds_tx_update_stats(ar,
+								     tx_desc->skb->len,
+								     status);
+				}
+			}
 			count++;
 		} else {
 			list_add_tail(&tx_desc->list, &local_list_no_skb);

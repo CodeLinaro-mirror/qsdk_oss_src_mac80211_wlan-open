@@ -5825,6 +5825,7 @@ static void __ieee80211_rx_handle_8023(struct ieee80211_hw *hw,
 	rx.list = list;
 	rx.link_id = -1;
 
+	status->tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
 	I802_DEBUG_INC(local->dot11ReceivedFragmentCount);
 
 	/* drop frame if too short for header */
@@ -5944,12 +5945,18 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	bool tid_stats_disable = local->hw.tid_stats_disable;
 	bool prev_flag, is_mgmt = false;
 
+	hdr = (struct ieee80211_hdr *)skb->data;
 	fc = ((struct ieee80211_hdr *)skb->data)->frame_control;
 	memset(&rx, 0, sizeof(rx));
 	rx.skb = skb;
 	rx.local = local;
 	rx.list = list;
 	rx.link_id = -1;
+
+	if (ieee80211_is_data_qos(fc))
+		status->tid = ieee80211_get_tid(hdr);
+	else
+		status->tid = skb->priority & IEEE80211_QOS_CTL_TAG1D_MASK;
 
 	if (ieee80211_is_data(fc) || ieee80211_is_mgmt(fc))
 		I802_DEBUG_INC(local->dot11ReceivedFragmentCount);
