@@ -103,6 +103,7 @@ struct ath12k_generic_iter {
 #define ATH12K_MIN_TX_POWER		-127
 #define ATH12K_PDEV_SUSPEND_TIMEOUT	(2 * HZ)
 #define ATH12K_PDEV_RESUME_TIMEOUT	(2 * HZ)
+#define ATH12K_ERP_BRIDGE_VDEV_REMOVAL_THRESHOLD	2
 
 enum ath12k_supported_bw {
 	ATH12K_BW_20    = 0,
