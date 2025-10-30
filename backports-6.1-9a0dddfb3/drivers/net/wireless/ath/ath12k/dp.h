@@ -718,6 +718,9 @@ struct ath12k_dp {
 	u8 link_id_offset;
 	u8 link_id_bits;
 	u8 rx_pktlog_mode;
+
+	/* Keep Last */
+	u8 arch_data[] __aligned(sizeof(void *));
 };
 /* @brief target -> host extended statistics upload
  *

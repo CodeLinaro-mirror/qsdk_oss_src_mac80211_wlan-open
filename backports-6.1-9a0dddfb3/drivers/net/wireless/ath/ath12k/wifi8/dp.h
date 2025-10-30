@@ -13,6 +13,38 @@
 struct ath12k_base;
 struct ath12k_dp;
 
+struct ath12k_dp_wifi8 {
+	struct ath12k_dp *dp;
+	bool cumac;
+};
+
+struct ath12k_dp_hw_group_wifi8 {
+	struct ath12k_dp_hw_group *dp_hw_grp;
+	struct ath12k_dp *cumac_dp;
+};
+
+static inline struct ath12k_dp_wifi8 *ath12k_get_dp_wifi8(struct ath12k_dp *dp)
+{
+	return (struct ath12k_dp_wifi8 *)dp->arch_data;
+}
+
+static inline struct ath12k_dp *ath12k_get_dp(struct ath12k_dp_wifi8 *dp_wifi8)
+{
+	return dp_wifi8->dp;
+}
+
+static inline struct ath12k_dp_hw_group_wifi8 *
+		ath12k_get_dp_hw_group_wifi8(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	return (struct ath12k_dp_hw_group_wifi8 *)dp_hw_grp->arch_data;
+}
+
+static inline struct ath12k_dp_hw_group *
+		ath12k_get_dp_hw_group(struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8)
+{
+	return dp_hw_group_wifi8->dp_hw_grp;
+}
+
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab);
 void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp);
 int ath12k_wifi8_dp_pdev_alloc(struct ath12k_base *ab);
