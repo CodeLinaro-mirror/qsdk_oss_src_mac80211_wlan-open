@@ -4388,7 +4388,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 		struct wireless_dev *txp_wdev = wdev;
 		enum nl80211_tx_power_setting type;
 		int idx, mbm = 0;
-		unsigned int link_id;
+		unsigned int link_id = 0;
 
 		if (!(rdev->wiphy.features & NL80211_FEATURE_VIF_TXPOWER))
 			txp_wdev = NULL;
