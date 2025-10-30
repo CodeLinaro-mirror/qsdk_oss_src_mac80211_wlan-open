@@ -42,6 +42,7 @@ struct ath12k_neighbor_peer {
 	u8 addr[ETH_ALEN];
 	u8 rssi;
 	s64 timestamp;
+	int pdev_id;
 };
 
 #ifdef CPTCFG_ATH12K_DEBUGFS
