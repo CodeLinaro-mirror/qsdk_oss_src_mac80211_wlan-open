@@ -3400,8 +3400,10 @@ int ieee80211_sta_activate_link(struct sta_info *sta, unsigned int link_id)
 	 */
 
 	if (exists) {
-		if (!sta->sta.reconf.matched_rem_links)
+		if (!sta->sta.reconf.matched_rem_links) {
+			rcu_read_unlock();
 			return -EALREADY;
+		}
 
 		for_each_set_bit(rem_link_id,
 				 &rem_links,
