@@ -30,11 +30,11 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_SHADOW_REG(x) (HAL_SHADOW_BASE_ADDR + (4 * (x)))
 #define HAL_REO_QDESC_MAX_PEERID               8191
 
-#define HAL_LINK_DESC_SIZE			(32 << 2)
-#define HAL_NUM_MPDUS_PER_LINK_DESC		6
-#define HAL_NUM_TX_MSDUS_PER_LINK_DESC		7
-#define HAL_NUM_RX_MSDUS_PER_LINK_DESC		6
-#define HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC	12
+#define HAL_LINK_DESC_SIZE			(32 << 3)
+#define HAL_NUM_MPDUS_PER_LINK_DESC		12
+#define HAL_NUM_TX_MSDUS_PER_LINK_DESC		11
+#define HAL_NUM_RX_MSDUS_PER_LINK_DESC		11
+#define HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC	30
 
 /* WCSS Relative address */
 #define HAL_SEQ_WCSS_CMEM_OFFSET		0x00100000
