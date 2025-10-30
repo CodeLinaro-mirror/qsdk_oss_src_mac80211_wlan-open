@@ -6129,13 +6129,9 @@ static int eht_build_mcs_mask(struct genl_info *info,
 		case NL80211_CHAN_WIDTH_160:
 			mcs = &eht_cap->eht_mcs_nss_supp.bw._160;
 			break;
-		case NL80211_CHAN_WIDTH_80:
-		case NL80211_CHAN_WIDTH_40:
-		case NL80211_CHAN_WIDTH_20:
+		default:
 			mcs = &eht_cap->eht_mcs_nss_supp.bw._80;
 			break;
-		default:
-			return -EINVAL;
 		}
 
 		mcs_7 = mcs->rx_tx_mcs9_max_nss;
