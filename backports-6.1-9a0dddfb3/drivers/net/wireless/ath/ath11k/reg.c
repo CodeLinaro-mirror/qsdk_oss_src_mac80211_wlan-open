@@ -938,7 +938,8 @@ int ath11k_reg_handle_chan_list(struct ath11k_base *ab,
 		if (ab->hw_params.single_pdev_only &&
 		    pdev_idx < ab->hw_params.num_rxdma_per_pdev)
 			return 0;
-		goto fallback;
+		WARN_ON(1);
+		return -EAGAIN;
 	}
 
 	/* Avoid multiple overwrites to default regd, during core
