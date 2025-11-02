@@ -21348,7 +21348,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
 	}
 
-	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.rssi_offset;
+	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
 	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
 		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
 		      rssi_offset;
@@ -21450,7 +21450,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	}
 
 	spin_unlock_bh(&ab->base_lock);
-	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.rssi_offset;
+	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
 	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
 		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
 		      rssi_offset;
