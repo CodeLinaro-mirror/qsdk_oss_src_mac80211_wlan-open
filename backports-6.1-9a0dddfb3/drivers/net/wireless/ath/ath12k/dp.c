@@ -473,8 +473,10 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 		switch (type) {
 		case HAL_REO_DST:
 		case HAL_WBM2SW_RELEASE:
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 			cached = true;
 			break;
+#endif
 		default:
 			cached = false;
 		}
