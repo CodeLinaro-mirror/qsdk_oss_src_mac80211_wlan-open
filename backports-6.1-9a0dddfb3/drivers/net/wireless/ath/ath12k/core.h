@@ -992,6 +992,7 @@ struct ath12k_link_sta {
 
 	u16 tcl_metadata;
 	u16 ast_hash;
+	u16 ast_idx;
 
 	bool is_bridge_peer;
 	/* For check disable fixed rate check for peer */
