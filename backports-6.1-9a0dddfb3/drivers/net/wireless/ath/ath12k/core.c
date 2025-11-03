@@ -1203,10 +1203,10 @@ static void ath12k_core_soc_destroy(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 
-	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) && !ab->is_bypassed)
 		ath12k_qmi_firmware_stop(ab);
 
-	if (ab->ce_pipe_init_done)
+	if (ab->ce_pipe_init_done && !ab->is_bypassed)
 		ath12k_ce_cleanup_pipes(ab);
 
 	if (!ab->pm_suspend)
@@ -4590,7 +4590,7 @@ static void ath12k_core_hw_group_destroy(struct ath12k_hw_group *ag)
 	mutex_lock(&ag->mutex);
 	for (i = 0; i < ag->num_devices; i++) {
 		ab = ag->ab[i];
-		if (!ab || ab->is_bypassed)
+		if (!ab)
 			continue;
 
 		mutex_lock(&ab->core_lock);
