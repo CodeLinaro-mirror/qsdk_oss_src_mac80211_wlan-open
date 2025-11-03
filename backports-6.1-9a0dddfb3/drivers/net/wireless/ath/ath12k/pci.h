@@ -99,6 +99,9 @@ struct ath12k_pci_device_family_ops {
 	int (*probe)(struct pci_dev *pdev, const struct pci_device_id *pci_dev);
 	struct ath12k_dp *(*dp_init)(struct ath12k_base *ab);
 	void (*dp_deinit)(struct ath12k_dp *dp);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	void (*ipa_init)(struct ath12k_base *ab);
+#endif
 };
 
 struct ath12k_reg_base {
@@ -118,6 +121,7 @@ struct ath12k_pci {
 	enum mhi_callback mhi_pre_cb;
 	u32 register_window;
 
+	struct ath12k_pci_extn ath12k_pci_extn;
 	/* protects register_window above */
 	spinlock_t window_lock;
 
@@ -165,6 +169,13 @@ void ath12k_pci_stop(struct ath12k_base *ab);
 int ath12k_pci_start(struct ath12k_base *ab);
 int ath12k_pci_power_up(struct ath12k_base *ab);
 void ath12k_pci_power_down(struct ath12k_base *ab, bool is_suspend);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+/* Below API's will be accessed by IPA component of ath12k, need to be extern */
+struct iommu_domain *ath12k_smmu_get_domain(struct ath12k_base *ab);
+int ath12k_smmu_map(struct ath12k_base *ab, phys_addr_t paddr, u32 *iova_addr,
+		    size_t size);
+int ath12k_smmu_unmap(struct ath12k_base *ab, u32 iova_addr, size_t size);
+#endif
 int ath12k_pci_register_driver(const enum ath12k_device_family device_id,
 			       struct ath12k_pci_driver *driver);
 void ath12k_pci_unregister_driver(const enum ath12k_device_family device_id);
