@@ -577,6 +577,15 @@ enum ath12k_reg_phy_bitmap {
 void ath12k_reg_init(struct ieee80211_hw *hw);
 void ath12k_reg_free(struct ath12k_base *ab);
 void ath12k_regd_update_work(struct work_struct *work);
+
+/**
+ * ath12k_set_previous_country_work - Reset to previous country code
+ * @work: Pointer to work_struct
+ *
+ * This function is queued when the firmware returns zero regulatory rules.
+ * It resets the regulatory domain to the previous country code.
+ */
+void ath12k_set_previous_country_work(struct work_struct *work);
 struct ieee80211_regdomain *ath12k_reg_build_regd(struct ath12k_base *ab,
 						  struct ath12k_reg_info *reg_info);
 enum wmi_reg_6g_ap_type

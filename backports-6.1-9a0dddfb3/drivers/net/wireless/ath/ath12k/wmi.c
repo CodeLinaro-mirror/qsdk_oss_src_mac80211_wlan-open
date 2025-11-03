@@ -8269,12 +8269,30 @@ static int ath12k_pull_reg_chan_list_ext_update_ev(struct ath12k_base *ab,
 			    ath12k_cc_status_to_str(reg_info->status_code));
 
 	if (!total_reg_rules) {
+		u32 phy_id = le32_to_cpu(ev->phy_id);
+		struct ath12k *ar;
+
 		ath12k_warn(ab, "No reg rules available, dfs %d, ctry %d domain %d\n",
 			    ev->dfs_region, ev->country_id, ev->domain_code);
-		/* reset dfs_region to UNSET for invalid country setting */
-		spin_lock_bh(&ab->base_lock);
-		ab->dfs_region = ATH12K_DFS_REG_UNSET;
-		spin_unlock_bh(&ab->base_lock);
+		if (phy_id >= ab->num_radios) {
+			ath12k_warn(ab, "Invalid phy_id %d\n", phy_id);
+			kfree(tb);
+			return -EINVAL;
+		}
+
+		ar = ab->pdevs[phy_id].ar;
+		if (!ar) {
+			ath12k_warn(ab, "ar is NULL for phy_id %d\n", phy_id);
+			kfree(tb);
+			return -EINVAL;
+		}
+		/* Reset to the previous country */
+		if (ab->workqueue &&
+		    test_bit(ATH12K_FLAG_REGISTERED, &ab->dev_flags))
+			queue_work(ab->workqueue, &ar->reg_set_previous_country);
+		else
+			ath12k_warn(ab, "Cannot queue work, workqueue unavailable or device not registered\n");
+
 		kfree(tb);
 		return -EINVAL;
 	}

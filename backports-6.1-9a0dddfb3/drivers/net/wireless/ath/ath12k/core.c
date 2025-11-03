@@ -2290,6 +2290,7 @@ void ath12k_core_halt(struct ath12k *ar)
 	ath12k_mac_peer_cleanup_all(ar);
 	ath12k_dcs_wlan_intf_cleanup(ar);
 	cancel_work_sync(&ar->regd_update_work);
+	cancel_work_sync(&ar->reg_set_previous_country);
 	cancel_work_sync(&ar->wlan_intf_work);
 	cancel_work_sync(&ab->rfkill_work);
 	cancel_work_sync(&ab->update_11d_work);
