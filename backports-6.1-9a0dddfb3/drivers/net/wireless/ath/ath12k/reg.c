@@ -3804,6 +3804,43 @@ void ath12k_reg_get_regulatory_pwrs(struct ath12k *ar,
 	}
 }
 
+void ath12k_set_previous_country_work(struct work_struct *work)
+{
+	struct ath12k *ar = container_of(work, struct ath12k,
+					 reg_set_previous_country);
+	struct wmi_set_current_country_arg current_arg = {};
+	struct ath12k_wmi_init_country_arg arg;
+	struct ieee80211_regdomain *regd;
+	struct ath12k_base *ab = ar->ab;
+	int ret;
+
+	regd = ath12k_get_current_regd(ar);
+	if (!regd) {
+		ath12k_warn(ab, "Regulatory domain data not present\n");
+		return;
+	}
+
+	ar->ah->regd_updated = false;
+	ath12k_warn(ab, "Resetting to previous country %s\n", regd->alpha2);
+	if (ar->ab->hw_params->current_cc_support) {
+		memcpy(&current_arg.alpha2, regd->alpha2, 2);
+		memcpy(&ar->alpha2, &current_arg.alpha2, 2);
+		ret = ath12k_wmi_send_set_current_country_cmd(ar, &current_arg);
+		if (ret)
+			ath12k_warn(ab, "failed set current country code: %d\n",
+				    ret);
+	} else {
+		arg.flags = ALPHA_IS_SET;
+		memcpy(&arg.cc_info.alpha2, regd->alpha2, 2);
+		arg.cc_info.alpha2[2] = 0;
+
+		ret = ath12k_wmi_send_init_country_cmd(ar, &arg);
+		if (ret)
+			ath12k_warn(ab, "failed set INIT Country code: %d\n",
+				    ret);
+	}
+}
+
 void ath12k_regd_update_work(struct work_struct *work)
 {
 	struct ath12k *ar = container_of(work, struct ath12k,

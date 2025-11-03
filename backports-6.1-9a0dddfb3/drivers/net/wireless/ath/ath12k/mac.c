@@ -15654,6 +15654,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 	cancel_delayed_work_sync(&ar->scan.timeout);
 	wiphy_work_cancel(ath12k_ar_to_hw(ar)->wiphy, &ar->scan.vdev_clean_wk);
 	cancel_work_sync(&ar->regd_update_work);
+	cancel_work_sync(&ar->reg_set_previous_country);
 	cancel_work_sync(&ar->ab->rfkill_work);
 	cancel_work_sync(&ar->ab->update_11d_work);
 	cancel_work_sync(&ar->wlan_intf_work);
@@ -22602,6 +22603,7 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 
 	for_each_ar(ah, ar, i) {
 		cancel_work_sync(&ar->regd_update_work);
+		cancel_work_sync(&ar->reg_set_previous_country);
 		ath12k_debugfs_unregister(ar);
 	}
 
@@ -23207,6 +23209,8 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	INIT_DELAYED_WORK(&ar->scan.timeout, ath12k_scan_timeout_work);
 	wiphy_work_init(&ar->scan.vdev_clean_wk, ath12k_scan_vdev_clean_work);
 	INIT_WORK(&ar->regd_update_work, ath12k_regd_update_work);
+	INIT_WORK(&ar->reg_set_previous_country,
+		  ath12k_set_previous_country_work);
 	wiphy_work_init(&ar->agile_cac_abort_wq, ath12k_agile_cac_abort_work);
 
 	wiphy_work_init(&ar->wmi_mgmt_tx_work, ath12k_mgmt_over_wmi_tx_work);
