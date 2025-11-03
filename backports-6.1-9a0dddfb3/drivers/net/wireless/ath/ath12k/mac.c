@@ -15174,6 +15174,16 @@ int ath12k_mac_start(struct ath12k *ar)
 	lockdep_assert_held(&ah->hw_mutex);
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (ath12k_check_erp_power_down(ab->ag) &&
+	    !ath12k_hw_group_recovery_in_progress(ab->ag) &&
+	    ar->pdev_suspend && !ab->powerup_triggered) {
+		ret = ath12k_mac_pdev_resume(ar);
+		if (ret) {
+			ath12k_err(ab, "pdev resume command is failed: %d\n", ret);
+			goto err;
+		}
+	}
+
 	ath12k_info(ab, "Enabling FW Thermal throttling\n");
 	ret = ath12k_thermal_set_throttling(ar, ATH12K_THERMAL_LVL0_DUTY_CYCLE);
 	if (ret) {
@@ -15339,16 +15349,6 @@ int ath12k_mac_start(struct ath12k *ar)
 
 	rcu_assign_pointer(ab->pdevs_active[ar->pdev_idx],
 			   &ab->pdevs[ar->pdev_idx]);
-
-	if (ath12k_check_erp_power_down(ab->ag) &&
-	    !ath12k_hw_group_recovery_in_progress(ab->ag) &&
-	    ar->pdev_suspend && !ab->powerup_triggered) {
-		ret = ath12k_mac_pdev_resume(ar);
-		if (ret) {
-			ath12k_err(ab, "pdev resume command is failed: %d\n", ret);
-			goto err;
-		}
-	}
 
 	return 0;
 err:

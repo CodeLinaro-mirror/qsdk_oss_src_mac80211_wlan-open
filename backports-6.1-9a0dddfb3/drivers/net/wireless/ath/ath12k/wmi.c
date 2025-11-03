@@ -14297,10 +14297,11 @@ exit:
 
 static void ath12k_wmi_suspend_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
 	const struct wmi_suspend_resp_event *ev;
+	struct ath12k_pdev *pdev;
 	const void **tb;
-	u32 pdev_id;
+	u32 pdev_id, i;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
@@ -14311,7 +14312,7 @@ static void ath12k_wmi_suspend_event(struct ath12k_base *ab, struct sk_buff *skb
 	ev = tb[WMI_PDEV_SUSPEND_EVENT_FIXED_PARAM];
 
 	if (!ev) {
-		ath12k_warn(ab, "failed to fetch peer delete all resp ev");
+		ath12k_warn(ab, "failed to fetch pdev suspend resp ev");
 		kfree(tb);
 		return;
 	}
@@ -14320,25 +14321,34 @@ static void ath12k_wmi_suspend_event(struct ath12k_base *ab, struct sk_buff *skb
 	kfree(tb);
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "WMI suspend event received for pdev_id %d\n", pdev_id);
 
-	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (ev->pdev_id > ab->num_radios)
+		return;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+
+		if (pdev && pdev->pdev_id == ev->pdev_id) {
+			ar = pdev->ar;
+			break;
+		}
+	}
+
 	if (!ar) {
 		ath12k_warn(ab, "invalid pdev_id received for WMI pdev suspend event\n");
-		rcu_read_unlock();
 		return;
 	}
 
 	ar->pdev_suspend = true;
 	complete(&ar->suspend);
-	rcu_read_unlock();
 }
 
 static void ath12k_wmi_pdev_resume_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	const struct wmi_pdev_resume_resp_event *ev;
-	struct ath12k *ar;
+	struct ath12k *ar = NULL;
+	struct ath12k_pdev *pdev;
 	const void **tb;
-	u32 pdev_id;
+	u32 pdev_id, i;
 
 	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
 	if (IS_ERR(tb)) {
@@ -14349,7 +14359,7 @@ static void ath12k_wmi_pdev_resume_event(struct ath12k_base *ab, struct sk_buff 
 	ev = tb[WMI_TAG_PDEV_RESUME_EVENT];
 
 	if (!ev) {
-		ath12k_warn(ab, "failed to fetch peer delete all resp ev");
+		ath12k_warn(ab, "failed to fetch pdev resume resp ev");
 		kfree(tb);
 		return;
 	}
@@ -14358,17 +14368,25 @@ static void ath12k_wmi_pdev_resume_event(struct ath12k_base *ab, struct sk_buff 
 	kfree(tb);
 	ath12k_dbg(ab, ATH12K_DBG_WMI, "WMI resume event received for pdev_id %d\n", pdev_id);
 
-	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
+	if (ev->pdev_id > ab->num_radios)
+		return;
+
+	for (i = 0; i < ab->num_radios; i++) {
+		pdev = &ab->pdevs[i];
+
+		if (pdev && pdev->pdev_id == ev->pdev_id) {
+			ar = pdev->ar;
+			break;
+		}
+	}
+
 	if (!ar) {
 		ath12k_warn(ab, "invalid pdev_id received for WMI pdev resume event\n");
-		rcu_read_unlock();
 		return;
 	}
 
 	ar->pdev_suspend = false;
 	complete(&ar->pdev_resume);
-	rcu_read_unlock();
 }
 
 static void
