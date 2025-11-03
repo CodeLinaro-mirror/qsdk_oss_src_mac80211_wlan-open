@@ -695,5 +695,6 @@ void athdbg_qmi_deinit(struct ath12k_base *ab)
 		kfree(athdbg_base->wdbg_handlers[i]);
 		athdbg_base->wdbg_handlers[i] = NULL;
 	}
+	athdbg_base->wdbg_handlers_cnt = 0;
 }
 EXPORT_SYMBOL(athdbg_qmi_deinit);
