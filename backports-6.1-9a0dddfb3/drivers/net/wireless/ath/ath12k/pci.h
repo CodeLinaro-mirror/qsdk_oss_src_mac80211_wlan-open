@@ -129,6 +129,9 @@ struct ath12k_pci {
 	enum mhi_callback mhi_pre_cb;
 	u32 register_window;
 	struct timer_list mhi_q6_boot_debug_timer;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_pci_extn ath12k_pci_extn;
+#endif
 	/* protects register_window above */
 	spinlock_t window_lock;
 
