@@ -2314,13 +2314,14 @@ void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 	spin_unlock_bh(&dp->dp_lock);
 
 	debugfs_remove_recursive(ar->debug.debugfs_nrp);
+	ar->debug.debugfs_nrp = NULL;
 }
 
 void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	int i, j;
+	int i, j, num_nrp;
 	char fname[MAC_UNIT_LEN * ETH_ALEN] = {0};
 
 	for (i = 0, j = 0; i < (MAC_UNIT_LEN * ETH_ALEN); i += MAC_UNIT_LEN, j++) {
@@ -2333,11 +2334,13 @@ void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
 
 	spin_lock_bh(&dp->dp_lock);
 	dp->num_nrps--;
+	num_nrp = dp->num_nrps;
 	spin_unlock_bh(&dp->dp_lock);
 
 	debugfs_lookup_and_remove(fname, ar->debug.debugfs_nrp);
-	if (!dp->num_nrps) {
+	if (!num_nrp) {
 		debugfs_remove_recursive(ar->debug.debugfs_nrp);
+		ar->debug.debugfs_nrp = NULL;
 		ath12k_reset_nrp_filter(ar, true);
 	}
 }
@@ -2408,6 +2411,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_neighbor_peer *nrp = NULL, *tmp = NULL;
+	struct ath12k_dp_link_peer *peer = NULL;
 	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_set_neighbor_rx_params *param = NULL;
 	u8 mac[ETH_ALEN] = {0};
@@ -2416,20 +2420,24 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	int i = 0;
 	int j = 0;
 	int ret = count, ret1 = -1;
-	int action = 0;
+	int action = 0, num_nrp;
 	ssize_t rc = 0;
 	bool del_nrp = false;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
 	buf = vmalloc(count);
-	if (!buf)
+	if (!buf) {
+		wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 		return -ENOMEM;
+	}
 
 	ptr = buf;
 	rc = simple_write_to_buffer(buf, count, ppos, ubuf, count);
-	if (rc <= 0)
+	if (rc <= 0) {
+		ret = rc;
 		goto exit;
+	}
 
 	/* To remove '\n' at end of buffer */
 	buf[count - 1] = '\0';
@@ -2451,6 +2459,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		action = WMI_FILTER_NRP_ACTION_REMOVE;
 	else {
 		ath12k_err(ab, "error: invalid argument\n");
+		ret = -EINVAL;
 		goto exit;
 	}
 
@@ -2458,18 +2467,21 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	while ((str = strsep(&buf, ":")) != NULL) {
 		if (i >= ETH_ALEN || kstrtou8(str, 16, mac + i)) {
 			ath12k_warn(ab, "error: invalid mac address\n");
+			ret = -EINVAL;
 			goto exit;
 		}
 		i++;
 	}
 
 	if (i != ETH_ALEN) {
-		ath12k_warn(ab, "error: invalid mac address\n");
+		ath12k_warn(ab, "error: invalid mac addr length\n");
+		ret = -EINVAL;
 		goto exit;
 	}
 
 	if (!is_valid_ether_addr(mac)) {
 		ath12k_err(ab, "error: invalid mac address\n");
+		ret = -EINVAL;
 		goto exit;
 	}
 
@@ -2482,57 +2494,111 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	}
 
 	param = kzalloc(sizeof(*param), GFP_KERNEL);
-	if (!param)
+	if (!param) {
+		ret = -ENOMEM;
 		goto exit;
+	}
 
 	param->action = action;
 
 	switch (action) {
 	case WMI_FILTER_NRP_ACTION_ADD:
+		spin_lock_bh(&dp->dp_lock);
 		if (dp->num_nrps == (ATH12K_MAX_NRPS - 1)) {
+			spin_unlock_bh(&dp->dp_lock);
 			ath12k_warn(ab, "max nrp reached, cannot create more\n");
-			goto exit;
+			ret = -ENOMEM;
+			goto err_free;
+		}
+
+		list_for_each_entry(peer, &dp->peers, list) {
+			if (ether_addr_equal(peer->addr, mac)) {
+				spin_unlock_bh(&dp->dp_lock);
+				ath12k_warn(ab,
+					    "cannot add associated peer as neighbor peer %pM\n",
+					    mac);
+				ret = -EINVAL;
+				goto err_free;
+			}
 		}
 
 		list_for_each_entry(nrp, &dp->neighbor_peers, list) {
 			if (ether_addr_equal(nrp->addr, mac)) {
-				ath12k_warn(ab, "cannot add existing neighbor peer\n");
-				goto exit;
+				spin_unlock_bh(&dp->dp_lock);
+				ath12k_warn(ab, "cannot add existing neighbor peer %pM\n",
+					    mac);
+				ret = -EINVAL;
+				goto err_free;
+			}
+		}
+		spin_unlock_bh(&dp->dp_lock);
+
+		nrp = kzalloc(sizeof(*nrp), GFP_KERNEL);
+		if (!nrp) {
+			ret = -ENOMEM;
+			goto err_free;
+		}
+
+		nrp->vdev_id = -1;
+
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			if (ether_addr_equal(arvif->bssid, mac)) {
+				ath12k_warn(ab,
+					    "cannot add bssid as neighbor peer %pM\n",
+					    mac);
+				kfree(nrp);
+				ret = -EINVAL;
+				goto err_free;
 			}
 		}
 
-		nrp = kzalloc(sizeof(*nrp), GFP_KERNEL);
-		if (!nrp)
-			goto exit;
-
-		ether_addr_copy(nrp->addr, mac);
-
-		spin_lock_bh(&dp->dp_lock);
-		list_add_tail(&nrp->list, &dp->neighbor_peers);
-		spin_unlock_bh(&dp->dp_lock);
-
-		nrp->vdev_id = -1;
 		list_for_each_entry(arvif, &ar->arvifs, list) {
-			if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+			if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+			    arvif->is_started) {
 				nrp->vdev_id = arvif->vdev_id;
 				break;
 			}
 		}
 
 		if (nrp->vdev_id < 0) {
-			ath12k_warn(ab, "unable to get vdev for AP interface\n");
-			goto exit;
+			ath12k_warn(ab,
+				    "AP vap is not up, can't add this NRP mac: %pM\n",
+				    mac);
+			kfree(nrp);
+			ret = -EINVAL;
+			goto err_free;
 		}
+
+		nrp->pdev_id = ar->pdev->pdev_id;
+		ether_addr_copy(nrp->addr, mac);
+
 		param->vdev_id = nrp->vdev_id;
 		ether_addr_copy(param->nrp_addr, nrp->addr);
 
-		if (!dp->num_nrps) {
+		spin_lock_bh(&dp->dp_lock);
+		num_nrp = dp->num_nrps;
+		spin_unlock_bh(&dp->dp_lock);
+		if (!num_nrp) {
 			ar->debug.debugfs_nrp = debugfs_create_dir("nrp_rssi",
 								   ar->debug.debugfs_pdev);
+			if (IS_ERR(ar->debug.debugfs_nrp)) {
+				ath12k_err(ab, "failed to create nrp directory: %ld\n",
+					   PTR_ERR(ar->debug.debugfs_nrp));
+				kfree(nrp);
+				ret = -ENOENT;
+				goto err_free;
+			} else if (!ar->debug.debugfs_nrp) {
+				ath12k_err(ab, "failed to create nrp directory\n");
+				kfree(nrp);
+				ret = -ENOENT;
+				goto err_free;
+			}
 			ath12k_reset_nrp_filter(ar, false);
 		}
 		spin_lock_bh(&dp->dp_lock);
+		list_add_tail(&nrp->list, &dp->neighbor_peers);
 		dp->num_nrps++;
+		num_nrp = dp->num_nrps;
 		spin_unlock_bh(&dp->dp_lock);
 
 		debugfs_create_file(fname, 0644,
@@ -2540,14 +2606,19 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 				    &fops_read_nrp_rssi);
 		break;
 	case WMI_FILTER_NRP_ACTION_REMOVE:
+		spin_lock_bh(&dp->dp_lock);
 		if (!dp->num_nrps) {
-			ath12k_err(ab, "error: no nac added\n");
-			goto exit;
+			spin_unlock_bh(&dp->dp_lock);
+			ath12k_warn(ab,
+				    "nrp list is empty, can't delete this mac: %pM for the pdev_id: %d\n",
+				    mac, ar->pdev->pdev_id);
+			ret = -EINVAL;
+			goto err_free;
 		}
 
-		spin_lock_bh(&dp->dp_lock);
 		list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
-			if (ether_addr_equal(nrp->addr, mac)) {
+			if (ether_addr_equal(nrp->addr, mac) &&
+			    nrp->pdev_id == ar->pdev->pdev_id) {
 				list_del(&nrp->list);
 				del_nrp = true;
 				break;
@@ -2556,12 +2627,17 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		spin_unlock_bh(&dp->dp_lock);
 
 		if (!del_nrp) {
-			ath12k_warn(ab, "cannot delete %pM not added to list\n", mac);
-			goto exit;
+			ath12k_warn(ab, "cannot delete %pM not added to this pdev: %d\n",
+				    mac, ar->pdev->pdev_id);
+			ret = -EINVAL;
+			goto err_free;
 		} else {
 			ath12k_debugfs_nrp_clean(ar, mac);
 			param->vdev_id = nrp->vdev_id;
 			ether_addr_copy(param->nrp_addr, nrp->addr);
+			spin_lock_bh(&dp->dp_lock);
+			num_nrp = dp->num_nrps;
+			spin_unlock_bh(&dp->dp_lock);
 			kfree(nrp);
 		}
 		break;
@@ -2569,14 +2645,19 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 		break;
 	}
 
+	ath12k_dbg(ab, ATH12K_DBG_MAC,
+		   "debugfs nrp neighbor params mac: %pM pdev_id: %d vdev_id: %d type: %d\n",
+		   param->nrp_addr, ar->pdev->pdev_id, param->vdev_id, param->action);
+
 	ret1 = ath12k_wmi_vdev_set_neighbor_rx_cmd(ar, param);
 	if (ret1) {
-		ath12k_err(ar->ab, "ath12k_wmi_vdev_set_neighbor_rx_cmd failed, "
-			   "params vdev id %d action %d, nrp %pM",
+		ath12k_err(ar->ab,
+			   "debugfs nrp neighbor rx cmd failed, params vdev id %d action %d, nrp %pM",
 			   param->vdev_id, param->action, param->nrp_addr);
 		ret = ret1;
 	}
-
+err_free:
+	kfree(param);
 exit:
 	 wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 

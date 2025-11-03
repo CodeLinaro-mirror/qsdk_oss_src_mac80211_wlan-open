@@ -1929,13 +1929,86 @@ static int ath12k_mac_monitor_stop(struct ath12k *ar)
 	return ret;
 }
 
+static void ath12k_mac_nrp_delete(struct ath12k *ar)
+{
+	struct ath12k_set_neighbor_rx_params *param = NULL;
+	struct ath12k_neighbor_peer *nrp = NULL, *tmp = NULL;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
+	int ret, nrp_pdev_count = 0, i, overall_status = 0;
+	struct list_head nrp_local_list;
+
+	INIT_LIST_HEAD(&nrp_local_list);
+
+	/* First pass: identify and move matching entries to a local list */
+	spin_lock_bh(&dp->dp_lock);
+	list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
+		if (nrp->pdev_id == ar->pdev->pdev_id) {
+			dp->num_nrps--;
+			list_del(&nrp->list);
+			list_add_tail(&nrp->list, &nrp_local_list);
+			nrp_pdev_count++;
+		}
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
+	if (nrp_pdev_count == 0) {
+		ath12k_err(ar->ab, "NRP pdev_count is 0\n");
+		return;
+	}
+
+	param = kzalloc(sizeof(*param) * nrp_pdev_count, GFP_KERNEL);
+	if (!param) {
+		/* Return entries to the original list */
+		spin_lock_bh(&dp->dp_lock);
+		list_for_each_entry_safe(nrp, tmp, &nrp_local_list, list) {
+			list_del(&nrp->list);
+			list_add_tail(&nrp->list, &dp->neighbor_peers);
+			dp->num_nrps++;
+		}
+		spin_unlock_bh(&dp->dp_lock);
+		ath12k_err(ar->ab,
+			   "failed to allocate memory for nrp delete during vdev stop sequence\n");
+		return;
+	}
+
+	/* Process the local list without holding the lock */
+	i = 0;
+	list_for_each_entry_safe(nrp, tmp, &nrp_local_list, list) {
+		param[i].vdev_id = nrp->vdev_id;
+		ether_addr_copy(param[i].nrp_addr, nrp->addr);
+		i++;
+		list_del(&nrp->list);
+		kfree(nrp);
+	}
+
+	for (i = 0; i < nrp_pdev_count; i++) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "mac nrp neighbor vdev delete params[%d] vdev id %d  pdev_id: %d nrp %pM\n",
+			   i, param[i].vdev_id, ar->pdev->pdev_id, param[i].nrp_addr);
+		ath12k_debugfs_nrp_clean(ar, param[i].nrp_addr);
+		param[i].action = WMI_FILTER_NRP_ACTION_REMOVE;
+		ret = ath12k_wmi_vdev_set_neighbor_rx_cmd(ar, &param[i]);
+		if (ret) {
+			ath12k_err(ar->ab,
+				   "nrp neighbor vdev delete failed params vdev id %d action %d, nrp %pM\n",
+				   param[i].vdev_id, param[i].action, param[i].nrp_addr);
+			overall_status = ret;
+		}
+	}
+
+	if (overall_status)
+		ath12k_err(ar->ab, "Some neighbor peer deletions failed during vdev stop\n");
+
+	kfree(param);
+}
+
 int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k *ar = arvif->ar;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
 	struct ath12k_pdev_dp *dp_pdev = NULL;
-	int ret = -1;
+	int ret = -1, num_nrps;
 
 	if (!dp) {
 		ath12k_err(ar->ab, "ath12k_dp not present%s",__func__);
@@ -1962,6 +2035,14 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
 		return 0;
+
+	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
+		spin_lock_bh(&dp->dp_lock);
+		num_nrps = dp->num_nrps;
+		spin_unlock_bh(&dp->dp_lock);
+		if (num_nrps > 0)
+			ath12k_mac_nrp_delete(ar);
+	}
 
 	ret = ath12k_wmi_vdev_stop(ar, arvif->vdev_id);
 	if (ret) {
