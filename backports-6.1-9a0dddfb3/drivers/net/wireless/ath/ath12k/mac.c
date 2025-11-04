@@ -5319,8 +5319,6 @@ static void ath12k_recalculate_mgmt_rate(struct ath12k *ar,
 	struct ieee80211_hw *hw = ath12k_ar_to_hw(ar);
 	const struct ieee80211_supported_band *sband;
 	struct ieee80211_bss_conf *bss_conf;
-	enum nl80211_band band;
-	u8 beacon_rate_idx;
 	u8 basic_rate_idx;
 	int hw_rate_code;
 	u32 vdev_param;
@@ -5337,7 +5335,6 @@ static void ath12k_recalculate_mgmt_rate(struct ath12k *ar,
 	}
 
 	sband = hw->wiphy->bands[def->chan->band];
-	band = def->chan->band;
 	basic_rate_idx = ffs(bss_conf->basic_rates);
 	if (basic_rate_idx)
 		basic_rate_idx -= 1;
@@ -5354,24 +5351,17 @@ static void ath12k_recalculate_mgmt_rate(struct ath12k *ar,
 					    hw_rate_code);
 	if (ret)
 		ath12k_warn(ar->ab, "failed to set mgmt tx rate %d\n", ret);
-	if (bss_conf->beacon_tx_rate.control[band].legacy) {
-		beacon_rate_idx = ffs(bss_conf->beacon_tx_rate.control[band].legacy);
-		beacon_rate_idx -=1;
 
-		if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
-			beacon_rate_idx += ATH12K_MAC_FIRST_OFDM_RATE_IDX;
-		if (beacon_rate_idx < ARRAY_SIZE(ath12k_legacy_rates)) {
-			bitrate = ath12k_legacy_rates[beacon_rate_idx].bitrate;
-			hw_rate_code = ath12k_mac_get_rate_hw_value(bitrate);
-
-		}
+	if (!arvif->beacon_tx_rate) {
+		 /* The fixed tx rate is not configured for the beacon,
+		  * apply the first valid basic rate as the beacon tx rate.
+		  */
+		vdev_param = WMI_VDEV_PARAM_BEACON_RATE;
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, vdev_param,
+						    hw_rate_code);
+		if (ret)
+			ath12k_warn(ar->ab, "failed to set beacon tx rate %d\n", ret);
 	}
-
-	vdev_param = WMI_VDEV_PARAM_BEACON_RATE;
-	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id, vdev_param,
-					    hw_rate_code);
-	if (ret)
-		ath12k_warn(ar->ab, "failed to set beacon tx rate %d\n", ret);
 }
 
 static void ath12k_update_obss_color_notify_work(struct wiphy *wiphy,
@@ -17775,6 +17765,54 @@ static struct ieee80211_channel *ath12k_mac_get_a_valid_channel(struct ath12k *a
 	return NULL;
 }
 
+#define _bitrate_mask_to_rate_code(_mcs, _mode)					\
+({										\
+	u8 i = 0, nss;								\
+	for (nss = 0; i < ARRAY_SIZE(mask->control[band]._mcs); i++) {		\
+		if (!mask->control[band]._mcs[i])				\
+			continue;						\
+		if (hweight16(mask->control[band]._mcs[i]) == 1) {		\
+			rate_idx = ffs(mask->control[band]._mcs[i]) - 1;	\
+			return ATH12K_HW_RATE_CODE(rate_idx, nss,		\
+						   WMI_RATE_PREAMBLE_##_mode);	\
+		}								\
+	}									\
+})
+
+static u32 ath12k_mac_beacon_tx_rate(struct cfg80211_bitrate_mask *mask,
+				     enum nl80211_band band)
+{
+	u8 preamble, hw_rate, rate_idx;
+	u16 bitrate;
+
+	_bitrate_mask_to_rate_code(eht_mcs, EHT);
+	_bitrate_mask_to_rate_code(he_mcs, HE);
+	_bitrate_mask_to_rate_code(vht_mcs, VHT);
+	_bitrate_mask_to_rate_code(ht_mcs, HT);
+
+	if (hweight32(mask->control[band].legacy) == 1) {
+		rate_idx = ffs(mask->control[band].legacy) - 1;
+
+		if (band == NL80211_BAND_5GHZ || band == NL80211_BAND_6GHZ)
+			rate_idx += ATH12K_MAC_FIRST_OFDM_RATE_IDX;
+
+		if (rate_idx >= ARRAY_SIZE(ath12k_legacy_rates))
+			return 0;
+
+		hw_rate = ath12k_legacy_rates[rate_idx].hw_value;
+		bitrate = ath12k_legacy_rates[rate_idx].bitrate;
+
+		if (ath12k_mac_bitrate_is_cck(bitrate))
+			preamble = WMI_RATE_PREAMBLE_CCK;
+		else
+			preamble = WMI_RATE_PREAMBLE_OFDM;
+
+		return ATH12K_HW_RATE_CODE(hw_rate, 0, preamble);
+	}
+
+	return 0;
+}
+
 static int
 ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 			      struct ieee80211_chanctx_conf *ctx,
@@ -17895,6 +17933,12 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		arg.regdomain = ar->ab->dfs_region;
 		spin_unlock_bh(&ab->base_lock);
 
+		if (chandef && !restart) {
+			arg.bcn_tx_rate =
+				ath12k_mac_beacon_tx_rate(&link_conf->beacon_tx_rate,
+							  chandef->chan->band);
+			arvif->beacon_tx_rate = arg.bcn_tx_rate;
+		}
 		/* TODO: Notify if secondary 80Mhz also needs radar detection */
 	}
 
@@ -22987,6 +23031,11 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_PROTECTION);
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD);
+	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_RATE_LEGACY);
+	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_RATE_HT);
+	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_RATE_VHT);
+	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_RATE_HE);
+	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_RATE_EHT);
 
 	if (test_bit(WMI_TLV_SERVICE_BSS_COLOR_OFFLOAD, ar->ab->wmi_ab.svc_map))
 		 wiphy_ext_feature_set(ar->ah->hw->wiphy,
