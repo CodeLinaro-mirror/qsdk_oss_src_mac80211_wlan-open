@@ -1390,9 +1390,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
 		if (unlikely(ret)) {
-			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-				   "failed due to limit check pdev idx %d\n",
-				   ar->pdev_idx);
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+					 "failed due to limit check pdev idx %d\n",
+					 ar->pdev_idx);
 			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
 							  DP_TX_ENQ_DROP_MAX_TX_LIMIT_FAST,
 							  ring_id, false);
@@ -1421,7 +1421,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			ring_id = smp_processor_id();
 
 			if (ath12k_wifi7_check_err_code_debug_logging(err))
-				ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "failed to transmit frame %d\n", err);
+				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+						 "failed to transmit frame %d\n", err);
 			else
 				ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
 
@@ -1558,9 +1559,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags)) {
 		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
 		if (ret) {
-			ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-				   "failed due to limit check pdev idx %d\n",
-				   ar->pdev_idx);
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
+					 "failed due to limit check pdev idx %d\n",
+					 ar->pdev_idx);
 			ath12k_wifi7_ieee80211_free_txskb(hw, skb, dp_vif,
 							  DP_TX_ENQ_DROP_MAX_TX_LIMIT,
 							  ring_id, false);
@@ -1571,7 +1572,8 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 					 arsta, ring_id, qos_nw_delay);
 		if (unlikely(err)) {
 			if (ath12k_wifi7_check_err_code_debug_logging(err))
-				ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "failed to transmit frame %d\n", err);
+				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
+						 "failed to transmit frame %d\n", err);
 			else
 				ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
 
@@ -1599,18 +1601,20 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 
 			ret = ath12k_mac_tx_check_max_limit(tmp_dp_pdev, skb);
 			if (ret) {
-				ath12k_dbg(tmp_ar->ab, ATH12K_DBG_MAC,
-					   "failed mcast tx due to limit check pdev idx %d\n",
-					    tmp_ar->pdev_idx);
+				ath12k_dbg_level(tmp_ar->ab, ATH12K_DBG_MAC,
+						 ATH12K_DBG_L2,
+						 "failed mcast tx due to limit check pdev idx %d\n",
+						 tmp_ar->pdev_idx);
 				continue;
 			}
 
 			if (is_eth) {
 				msdu_copied = skb_clone(skb, GFP_ATOMIC);
 				if (!msdu_copied) {
-					ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-						   "skb clone failure link_id 0x%X vdevid 0x%X\n",
-						   link_id, tmp_arvif->vdev_id);
+					ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
+							 ATH12K_DBG_L2,
+							 "skb clone failure link_id 0x%X vdevid 0x%X\n",
+							 link_id, tmp_arvif->vdev_id);
 					continue;
 				}
 				skb_cb = ATH12K_SKB_CB(msdu_copied);
@@ -1678,8 +1682,10 @@ skip_peer_find:
 						 qos_nw_delay);
 			if (unlikely(err)) {
 				if (ath12k_wifi7_check_err_code_debug_logging(err))
-					ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-						   "failed to transmit frame %d\n", err);
+					ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
+							 ATH12K_DBG_L2,
+							 "failed to transmit frame %d\n",
+							 err);
 				else
 					ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
 
