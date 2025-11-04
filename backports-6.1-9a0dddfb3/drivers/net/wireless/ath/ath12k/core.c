@@ -3719,6 +3719,15 @@ static void ath12k_core_reset(struct work_struct *work)
 		 */
 		ath12k_warn(ab, "already resetting count %d\n", reset_count);
 
+		/* Need to collect the UserPD dumps during the subsequent FW crash since
+		 * crashed UserPD will get cleared during BUG_ON
+		 */
+		if (ab->hif.bus != ATH12K_BUS_PCI) {
+			ath12k_info(ab, "Collecting the userpd dumps before full crash\n");
+			if (!ab->pm_suspend)
+				ath12k_core_upd_power_down(ab);
+		}
+
 		if (ath12k_ssr_failsafe_mode && ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0)
 			BUG_ON(1);
 
