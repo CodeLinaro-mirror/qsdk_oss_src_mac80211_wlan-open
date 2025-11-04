@@ -6694,9 +6694,6 @@ ath12k_wmi_pdev_update_muedca_params_status_event(struct ath12k_base *ab,
 		goto mem_free;
 	}
 
-	ath12k_dbg(ab, ATH12K_DBG_WMI,
-		   "Update MU-EDCA parameters for pdev:%d\n", ev->pdev_id);
-
 	rcu_read_lock();
 	ar = ath12k_mac_get_ar_by_pdev_id(ab, ev->pdev_id);
 	if (!ar) {
@@ -6704,6 +6701,10 @@ ath12k_wmi_pdev_update_muedca_params_status_event(struct ath12k_base *ab,
 			    ev->pdev_id);
 		goto unlock;
 	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "update MU-EDCA parameters for radio index %u\n",
+		   ar->radio_idx);
 
 	params = kzalloc(sizeof(*params), GFP_ATOMIC);
 	if (!params) {
@@ -6732,7 +6733,8 @@ ath12k_wmi_pdev_update_muedca_params_status_event(struct ath12k_base *ab,
 						 ev->ecwmin[WMI_AC_VO]);
 	params->ac_vo.mu_edca_timer = ev->muedca_expiration_time[WMI_AC_VO];
 
-	cfg80211_update_muedca_params_event(ar->ah->hw->wiphy, params, GFP_ATOMIC);
+	cfg80211_update_muedca_params_event(ar->ah->hw->wiphy, ar->radio_idx,
+					    params, GFP_ATOMIC);
 
 	kfree(params);
 unlock:
