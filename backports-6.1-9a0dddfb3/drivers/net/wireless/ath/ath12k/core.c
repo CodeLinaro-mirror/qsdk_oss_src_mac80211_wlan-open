@@ -2348,8 +2348,7 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 	complete(&ar->scan.on_channel);
 	complete(&ar->peer_assoc_done);
 	complete(&ar->peer_delete_done);
-	if (!list_empty(&ar->ab->dp->neighbor_peers))
-		ath12k_debugfs_nrp_cleanup_all(ar);
+	ath12k_debugfs_nrp_cleanup_all(ar);
 	complete(&ar->install_key_done);
 	complete(&ar->vdev_setup_done);
 	complete(&ar->vdev_delete_done);
