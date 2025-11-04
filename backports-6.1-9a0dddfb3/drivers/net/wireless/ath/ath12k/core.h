@@ -1176,7 +1176,7 @@ enum ath12k_wsi_bypass_action {
 	ATH12K_WSI_BYPASS_ADD_DEVICE,
 };
 
-#define ATH12K_FLUSH_TIMEOUT (5 * HZ)
+#define ATH12K_FLUSH_TIMEOUT (6 * HZ)
 #define ATH12K_VDEV_DELETE_TIMEOUT_HZ (5 * HZ)
 
 struct ath12k_btcoex_info {
