@@ -1042,6 +1042,7 @@ struct ath12k_sta {
 	struct work_struct migration_wk;
 	struct ath12k_sta_migration_data migration_data;
 	struct completion dp_migration_event;
+	u16 free_logical_idx_map;
 };
 
 #define ATH12K_INVALID_RSSI_FULL -1
