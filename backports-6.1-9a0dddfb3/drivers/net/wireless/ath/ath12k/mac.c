@@ -2483,11 +2483,12 @@ static void ath12k_update_bcn_template_work(struct wiphy *wiphy,
         if (!ar)
                 return;
 
-        if (arvif->is_created)
-                ret = ath12k_mac_setup_bcn_tmpl(arvif);
-        if (ret)
-                ath12k_warn(ar->ab, "failed to update bcn tmpl for vdev_id: %d ret: %d\n",
-                                arvif->vdev_id, ret);
+	if (arvif->is_created && arvif->is_started)
+		ret = ath12k_mac_setup_bcn_tmpl(arvif);
+	if (ret)
+		ath12k_warn(ar->ab,
+			    "failed to update bcn tmpl for vdev_id: %d ret: %d\n",
+			    arvif->vdev_id, ret);
 }
 
 void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif)
