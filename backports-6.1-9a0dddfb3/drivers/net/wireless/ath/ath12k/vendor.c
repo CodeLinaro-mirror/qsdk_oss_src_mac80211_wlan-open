@@ -836,8 +836,8 @@ ath12k_afc_power_event_update_or_get_len(struct ath12k *ar,
 
 	nla_nest_end_checked(vendor_event, nla_attr);
 
-	hw_idx = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy,
-					      ar->freq_range.start_freq);
+	hw_idx = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
+					     ar->freq_range.start_freq);
 	if (vendor_event &&
 	    nla_put_u8(vendor_event,
 		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX, hw_idx)) {
@@ -1049,8 +1049,8 @@ ath12k_afc_expiry_event_update_or_get_len(struct ath12k *ar,
 	}
 	nla_nest_end_checked(vendor_event, nla_attr);
 
-	hw_idx = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy,
-					      ar->freq_range.start_freq);
+	hw_idx = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
+					     ar->freq_range.start_freq);
 	if (vendor_event &&
 	    nla_put_u8(vendor_event,
 		       QCA_WLAN_VENDOR_ATTR_AFC_EVENT_HW_IDX, hw_idx)) {
@@ -1114,7 +1114,8 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar)
 		goto out;
 	}
 
-	hw_index = ieee80211_get_radio_idx_by_freq(ar->ah->hw->wiphy, ar->freq_range.start_freq);
+	hw_index = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
+					       ar->freq_range.start_freq);
 	if (hw_index == -1) {
 		ath12k_err(ab, "Failed to get hw index for freq %d\n",
 			   ar->freq_range.start_freq);
