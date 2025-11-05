@@ -579,7 +579,6 @@ struct ath12k_qos_map {
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
-	u32 beacon_tx_rate;
 	u32 dtim_period;
 
 	struct ath12k *ar;
