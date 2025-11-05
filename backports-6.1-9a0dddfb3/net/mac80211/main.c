@@ -1242,45 +1242,6 @@ ieee80211_ifcomb_check(const struct ieee80211_iface_combination *c, int n_comb)
 	return true;
 }
 
-static int
-ieee80211_check_per_hw_iface_comb(struct ieee80211_local *local,
-				  const struct ieee80211_iface_combination *c)
-{
-	int h, l;
-	u32 hw_idx_bm = 0;
-
-	if (!local->emulate_chanctx)
-		return -EINVAL;
-
-	for (h = 0; h < c->n_hw_list; h++) {
-		const struct ieee80211_iface_per_hw *hl;
-		const struct ieee80211_chans_per_hw *chans;
-
-		hl = &c->iface_hw_list[h];
-
-		if (hl->hw_chans_idx >= local->hw.wiphy->num_hw)
-			return -EINVAL;
-
-		chans = local->hw.wiphy->hw_chans[hl->hw_chans_idx];
-		if (c->radar_detect_widths &&
-		    cfg80211_hw_chans_includes_dfs(chans) &&
-		    hl->num_different_channels > 1)
-			return -EINVAL;
-
-		for (l = 0; l < hl->n_limits; l++)
-			if ((hl->limits[l].types & BIT(NL80211_IFTYPE_ADHOC)) &&
-			    hl->limits[l].max > 1)
-				return -EINVAL;
-
-		if (hw_idx_bm & BIT(h))
-			return -EINVAL;
-
-		hw_idx_bm |= BIT(h);
-	}
-
-	return 0;
-}
-
 int ieee80211_register_hw(struct ieee80211_hw *hw)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
@@ -1396,25 +1357,6 @@ int ieee80211_register_hw(struct ieee80211_hw *hw)
 	} else {
 		if (!ieee80211_ifcomb_check(hw->wiphy->iface_combinations,
 					    hw->wiphy->n_iface_combinations))
-			return -EINVAL;
-	}
-
-	for (i = 0; i < local->hw.wiphy->n_iface_combinations; i++) {
-		const struct ieee80211_iface_combination *comb;
-
-		comb = &local->hw.wiphy->iface_combinations[i];
-
-		if (comb->n_hw_list && !local->hw.wiphy->num_hw)
-			return -EINVAL;
-
-		if (!comb->n_hw_list)
-			continue;
-
-		/*
-		 * Run through similar validations on the per-hardware
-		 * interface combinations, if advertised.
-		 */
-		if (ieee80211_check_per_hw_iface_comb(local, comb))
 			return -EINVAL;
 	}
 

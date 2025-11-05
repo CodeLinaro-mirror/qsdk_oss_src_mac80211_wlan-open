@@ -2659,54 +2659,6 @@ fail:
 	return -ENOBUFS;
 }
 
-static int nl80211_put_multi_hw_support(struct wiphy *wiphy,
-                                       struct sk_buff *msg)
-{
-       struct nlattr *hw_macs, *hw_mac;
-       struct nlattr *chans, *chan;
-       int i, c;
-
-       if (!wiphy->num_hw)
-               return 0;
-
-       hw_macs = nla_nest_start(msg, NL80211_ATTR_MULTI_HW_MACS);
-       if (!hw_macs)
-               return -ENOBUFS;
-
-       for (i = 0; i < wiphy->num_hw; i++) {
-               hw_mac = nla_nest_start(msg, i + 1);
-               if (!hw_mac)
-                       return -ENOBUFS;
-
-               if (nla_put_u8(msg, NL80211_MULTI_HW_MAC_ATTR_IDX, i))
-                       return -ENOBUFS;
-
-               chans = nla_nest_start(msg,
-                                      NL80211_MULTI_HW_MAC_ATTR_CHAN_LIST);
-               if (!chans)
-                       return -ENOBUFS;
-
-               for (c = 0; c < wiphy->hw_chans[i]->n_chans; c++) {
-                       chan = nla_nest_start(msg, c + 1);
-                       if (!chan)
-                               return -ENOBUFS;
-
-                       if (nla_put_u32(msg,
-                                       NL80211_MULTI_HW_MAC_CHAN_LIST_ATTR_FREQ,
-                                       wiphy->hw_chans[i]->chans[c].center_freq))
-                               return -ENOBUFS;
-
-                       nla_nest_end(msg, chan);
-               }
-               nla_nest_end(msg, chans);
-
-               nla_nest_end(msg, hw_mac);
-       }
-
-       nla_nest_end(msg, hw_macs);
-       return 0;
-}
-
 static int
 nl80211_put_sar_specs(struct cfg80211_registered_device *rdev,
 		      struct sk_buff *msg)
@@ -3672,13 +3624,7 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 		state->split_start++;
 		break;
 	case 17:
-		if (rdev->wiphy.flags & WIPHY_FLAG_SUPPORTS_MLO)
-			nla_put_flag(msg, NL80211_ATTR_MLO_SUPPORT);
-
 		if (nl80211_put_radios(&rdev->wiphy, msg))
-			goto nla_put_failure;
-
-		if (nl80211_put_multi_hw_support(&rdev->wiphy, msg))
 			goto nla_put_failure;
 
 		state->split_start++;
@@ -4466,7 +4412,7 @@ static int nl80211_set_wiphy(struct sk_buff *skb, struct genl_info *info)
 						goto out;
 					}
 				} else {
-					if (!rdev->wiphy.num_hw) {
+					if (!rdev->wiphy.n_radio) {
 						result = rdev_set_tx_power(rdev, NULL,
 									   radio_idx,
 									   type, mbm,

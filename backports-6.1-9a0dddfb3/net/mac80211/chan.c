@@ -47,42 +47,32 @@ int ieee80211_chanctx_refcount(struct ieee80211_local *local,
 	       ieee80211_chanctx_num_reserved(local, ctx);
 }
 
-static int ieee80211_num_chanctx(struct ieee80211_local *local,
-				 const struct cfg80211_chan_def *chandef)
+static int ieee80211_num_chanctx(struct ieee80211_local *local, int radio_idx)
 {
 	struct ieee80211_chanctx *ctx;
 	int num = 0;
-	int hw_idx = -1, ctx_idx;
 
-	if (cfg80211_chandef_valid(chandef))
-		hw_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy, chandef->chan);
+	lockdep_assert_wiphy(local->hw.wiphy);
 
-       	list_for_each_entry(ctx, &local->chanctx_list, list) {
-		if (hw_idx < 0)
-			num++;
-		else {
-			if (cfg80211_chandef_valid(&ctx->conf.def)) {
-				ctx_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy,
-								      ctx->conf.def.chan);
-				if (ctx_idx == hw_idx)
-					num++;
-			}
-		}
+	list_for_each_entry(ctx, &local->chanctx_list, list) {
+		if (radio_idx >= 0 && ctx->conf.radio_idx != radio_idx)
+			continue;
+		num++;
 	}
 
 	return num;
 }
 
 static bool ieee80211_can_create_new_chanctx(struct ieee80211_local *local,
-					     const struct cfg80211_chan_def *chandef)
+					     int radio_idx)
 {
 	lockdep_assert_wiphy(local->hw.wiphy);
 
-	return ieee80211_num_chanctx(local, chandef) <
-	       ieee80211_max_num_channels(local, chandef);
+	return ieee80211_num_chanctx(local, radio_idx) <
+	       ieee80211_max_num_channels(local, radio_idx);
 }
 
-struct ieee80211_chanctx *
+static struct ieee80211_chanctx *
 ieee80211_link_get_chanctx(struct ieee80211_link_data *link)
 {
 	struct ieee80211_local *local __maybe_unused = link->sdata->local;
@@ -1287,7 +1277,7 @@ ieee80211_find_available_radio(struct ieee80211_local *local,
 		if (!cfg80211_radio_chandef_valid(radio, &chanreq->oper))
 			continue;
 
-		if (!ieee80211_can_create_new_chanctx(local, &chanreq->oper))
+		if (!ieee80211_can_create_new_chanctx(local, i))
 			continue;
 
 		*radio_idx = i;
@@ -1315,7 +1305,7 @@ int ieee80211_link_reserve_chanctx(struct ieee80211_link_data *link,
 
 	new_ctx = ieee80211_find_reservation_chanctx(local, chanreq, mode);
 	if (!new_ctx) {
-		if (ieee80211_can_create_new_chanctx(local, &chanreq->oper) &&
+		if (ieee80211_can_create_new_chanctx(local, -1) &&
 		    ieee80211_find_available_radio(local, chanreq,
 						   sdata->wdev.radio_mask,
 						   &radio_idx))
