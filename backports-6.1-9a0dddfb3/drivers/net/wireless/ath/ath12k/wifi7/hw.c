@@ -1418,7 +1418,9 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				err = DP_TX_ENQ_DROP_INV_ENCAP_FAST;
 		}
 		if (unlikely(err)) {
-			ring_id = smp_processor_id();
+			ring_selector =
+				dp_pdev->dp->hw_params->hw_ops->get_ring_selector(skb);
+			ring_id = ring_selector % dp_pdev->dp->hw_params->max_tx_ring;
 
 			if (ath12k_wifi7_check_err_code_debug_logging(err))
 				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
