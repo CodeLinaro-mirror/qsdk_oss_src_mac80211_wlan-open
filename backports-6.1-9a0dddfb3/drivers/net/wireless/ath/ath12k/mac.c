@@ -1595,8 +1595,7 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	list_for_each_entry_safe(peer, tmp, &peers, list)
 		ath12k_link_peer_free(peer);
 
-	if (!list_empty(&dp->neighbor_peers))
-		ath12k_debugfs_nrp_cleanup_all(ar);
+	ath12k_debugfs_nrp_cleanup_all(ar);
 
 	ar->num_peers = 0;
 	ar->num_stations = 0;
@@ -15632,7 +15631,6 @@ int ath12k_mac_rfkill_enable_radio(struct ath12k *ar, bool enable)
 void ath12k_mac_stop(struct ath12k *ar)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
-	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hw *ah = ar->ah;
 	struct htt_ppdu_stats_info *ppdu_stats, *tmp;
 	int ret;
@@ -15670,8 +15668,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 	}
 	spin_unlock_bh(&dp_pdev->ppdu_list_lock);
 
-	if (!list_empty(&dp->neighbor_peers))
-		ath12k_debugfs_nrp_cleanup_all(ar);
+	ath12k_debugfs_nrp_cleanup_all(ar);
 
 	if ((ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) &&
 	    !ar->allocated_vdev_map && !ar->pdev_suspend) {

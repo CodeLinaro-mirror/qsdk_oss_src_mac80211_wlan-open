@@ -2305,6 +2305,12 @@ void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 	struct ath12k_neighbor_peer *nrp, *tmp;
 
 	spin_lock_bh(&dp->dp_lock);
+
+	if (list_empty(&ar->ab->dp->neighbor_peers)) {
+		spin_unlock_bh(&dp->dp_lock);
+		return;
+	}
+
 	list_for_each_entry_safe(nrp, tmp, &dp->neighbor_peers, list) {
 		list_del(&nrp->list);
 		kfree(nrp);
@@ -6997,6 +7003,7 @@ void ath12k_debugfs_unregister(struct ath12k *ar)
 		return;
 
 	ath12k_deinit_pktlog(ar);
+	ath12k_debugfs_nrp_cleanup_all(ar);
 	/* Remove symlink under ieee80211/phy* */
 	debugfs_remove(ar->debug.debugfs_pdev_symlink);
 	debugfs_remove_recursive(ar->debug.debugfs_pdev);
