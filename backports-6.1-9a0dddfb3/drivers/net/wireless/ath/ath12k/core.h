@@ -1358,6 +1358,8 @@ struct ath12k {
 	struct completion bss_survey_done;
 
 	struct work_struct regd_update_work;
+	/* Work struct for resetting to previous country code */
+	struct work_struct reg_set_previous_country;
 
 	struct wiphy_work wmi_mgmt_tx_work;
 	struct sk_buff_head wmi_mgmt_tx_queue;
