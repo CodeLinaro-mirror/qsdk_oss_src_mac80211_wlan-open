@@ -731,7 +731,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 						    GFP_ATOMIC);
 	}
 
-	dp_peer->qos_stats_lvl = (ar->debug.qos_stats &
+	dp_peer->qos_stats_lvl = (ar->dp.qos_stats &
 				  ATH12K_QOS_STATS_COLLECTION_MASK) >> 2;
 
 	dp_peer->hw_links[peer->hw_link_id] = link_id;

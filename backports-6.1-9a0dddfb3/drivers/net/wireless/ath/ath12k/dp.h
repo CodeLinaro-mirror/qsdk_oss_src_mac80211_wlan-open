@@ -164,6 +164,7 @@ struct ath12k_pdev_dp {
 	 * determine when this stats is calculated based on peers
 	 */
 	struct ath12k_pdev_dp_stats stats;
+	u8 qos_stats;
 };
 
 #define EAPOL_WPA_KEY_INFO_KEY_TYPE		BIT(3)
