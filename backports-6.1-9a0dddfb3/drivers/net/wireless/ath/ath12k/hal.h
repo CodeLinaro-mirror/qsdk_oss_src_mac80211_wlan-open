@@ -46,6 +46,7 @@ struct hal_tlv_64_hdr {
 } __packed;
 
 #define HAL_CE_REMAP_REG_BASE  (ab->ce_remap_base_addr)
+#define HAL_PMM_REG_BASE(hal)	((hal)->regs->hal_pmm_reg_base)
 
 #define HAL_RING_BASE_ALIGN	8
 #define HAL_REO_QLUT_ADDR_ALIGN 256
@@ -370,7 +371,6 @@ enum hal_ring_type {
 	HAL_MAX_RING_TYPES,
 };
 
-#define PMM_REG_BASE_QCN9224    0xB500FC
 #define HAL_IPQ5332_PMM_REG_BASE       0xCB500FC
 #define HAL_IPQ5332_PMM_SIZE           0x100
 
@@ -1137,6 +1137,8 @@ struct ath12k_hw_regs {
 	u32 hal_reo_cmd_ring_base;
 
 	u32 hal_reo_status_ring_base;
+
+	u32 hal_pmm_reg_base;
 };
 
 struct ath12k_hw_version_map {

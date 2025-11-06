@@ -324,6 +324,9 @@ const struct ath12k_hw_regs qcn9274_v1_regs = {
 	.hal_ppe_rel_ring_base = 0x0000043c,
 	.hal_reo2ppe_ring_base = 0x00000938,
 	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c48,
+
+	/* PMM register base address */
+	.hal_pmm_reg_base = 0x00B500FC,
 };
 
 const struct ath12k_hw_regs qcn9274_v2_regs = {
@@ -422,6 +425,9 @@ const struct ath12k_hw_regs qcn9274_v2_regs = {
 	.hal_ppe_rel_ring_base = 0x0000043c,
 	.hal_reo2ppe_ring_base = 0x00000938,
 	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c48,
+
+	/* PMM register base address */
+	.hal_pmm_reg_base = 0x00B500FC,
 };
 
 const struct ath12k_hw_regs ipq5332_regs = {
@@ -700,7 +706,10 @@ const struct ath12k_hw_regs qcn6432_regs = {
 	.hal_umac_ce1_dest_reg_base =  0x01B83000,
 
 	.hal_ppe_rel_ring_base = 0x0000046c,
-	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c58
+	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c58,
+
+	/* PMM register base address */
+	.hal_pmm_reg_base = 0x00B500FC,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_ipq5332 = {

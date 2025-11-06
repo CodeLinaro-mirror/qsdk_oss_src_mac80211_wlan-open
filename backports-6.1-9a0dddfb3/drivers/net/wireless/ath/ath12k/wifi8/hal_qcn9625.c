@@ -322,6 +322,9 @@ const struct ath12k_hw_regs qcn9625_regs = {
 	.hal_ppe_rel_ring_base = 0x0000043c,
 	.hal_reo2ppe_ring_base = 0x00000938,
 	.hal_tcl_ppe2tcl_ring_base_lsb = 0x00000c48,
+
+	/* PMM register base address */
+	.hal_pmm_reg_base = 0x010D40FC,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
