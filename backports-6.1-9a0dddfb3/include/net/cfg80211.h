@@ -1917,53 +1917,22 @@ struct cfg80211_color_change_settings {
 };
 
 /**
- * struct iface_comb_per_hw_params - HW specific interface combinations input
- *
- * Used to pass per-hw interface combination parameters
- *
- * @num_different_channels: the number of different channels we want to use
- *	with in the per-hw supported channels.
- * @iftype_num: array with the number of interfaces of each interface
- *	type. The index is the interface type as specified in &enum
- *	nl80211_iftype.
- */
-
-struct iface_comb_per_hw_params {
-	int num_different_channels;
-	int iftype_num[NUM_NL80211_IFTYPES];
-};
-
-/**
  * struct iface_combination_params - input parameters for interface combinations
  *
  * Used to pass interface combination parameters
  *
  * @radio_idx: wiphy radio index or -1 for global
  * @num_different_channels: the number of different channels we want
- *	to use for verification, not applicable when hw specific interface
- *	combination parameters are passed in @per_hw_params
+ *	to use for verification
  * @radar_detect: a bitmap where each bit corresponds to a channel
  *	width where radar detection is needed, as in the definition of
  *	&struct ieee80211_iface_combination.@radar_detect_widths
  * @iftype_num: array with the number of interfaces of each interface
  *	type.  The index is the interface type as specified in &enum
- *	nl80211_iftype. his will hold the interfaces which are not
- *	yet assigned a channel when hw specific interface combination
- *	is passed in @per_hw_params.
+ *	nl80211_iftype.
  * @new_beacon_int: set this to the beacon interval of a new interface
  *	that's not operating yet, if such is to be checked as part of
  *	the verification
- * @per_hw: underlying hw specific interface combinations. Per-hw channel
- * 	list index as advertised in wiphy @hw_chans is used as index
- * 	in @per_hw to maintain the interface combination of the corresponding
- * 	hw.
- *
- * @chandef: Channel definition for which the interface combination is to be
- * 	checked, when checking during interface preparation on a new channel,
- * 	for example. This will be used when the driver advertises underlying
- * 	hw specific interface combination in a multi-mac device. This will be
- * 	NULL when the interface combination check is not due to channel or the
- * 	interface combination does not include per-hw advertisement.
  */
 struct iface_combination_params {
 	int radio_idx;
@@ -1971,8 +1940,6 @@ struct iface_combination_params {
 	u8 radar_detect;
 	int iftype_num[NUM_NL80211_IFTYPES];
 	u32 new_beacon_int;
-	struct iface_comb_per_hw_params *per_hw;
-	const struct cfg80211_chan_def *chandef;
 };
 
 /**
@@ -5927,32 +5894,6 @@ struct ieee80211_iface_limit {
 };
 
 /**
- * strucieee80211_iface_per_hw - hardware specific interface combination
- *
- * Drivers registering multiple radios under a single wiphy can advertise
- * radio specific interface combinations through this structure. Please note
- * that to maintain the compatibility with the user space which is not aware
- * of this extension of per-hardware interface combination signaling,
- * the driver should still advertise it's interface combination (mostly
- * common minimum capability) using the existing interface combination signaling
- * method.
- *
- * @hw_chans_idx: index of hardware specific channel list as per wiphy @hw_chans
- * @limits: limits for the given interface type
- * @num_different_channels: number of different channels which can be active
- *	concurrently in this hw
- * @max_interfaces: maximum number of total interfaces allowed in this group
- * @n_limits: number of limitations
- */
-struct ieee80211_iface_per_hw {
-	u8 hw_chans_idx;
-	const struct ieee80211_iface_limit *limits;
-	u32 num_different_channels;
-	u16 max_interfaces;
-	u8 n_limits;
-};
-
-/**
  * struct ieee80211_iface_combination - possible interface combination
  *
  * With this structure the driver can describe which interface
@@ -6012,62 +5953,6 @@ struct ieee80211_iface_per_hw {
  *		.num_different_channels = 2,
  *	};
  *
- *
- * 4. Hardware specific interface combination with driver supporting two hw
- *    (MAC), one underlying MAC supporting 2 GHz band and the other supporting
- *    5 GHz band.
- *
- *    Allow #STA <= 1, #AP <= 1, channels = 1, total 2 in 2 GHz radio and
- *
- *    Allow #STA <= 1, #AP <= 2, channels = 1, total 3 in 5 GHz radio
- *
- *    Drivers advertising per-hardware interface combination should also
- *    advertise a sub-set of capabilities using existing interface mainly for
- *    maintaining compatibility with the user space which is not aware of the
- *    new per-hardware advertisement.
- *
- *    Sub-set interface combination advertised in the existing infrastructure:
- *    Allow #STA <= 1, #AP <= 1, channel = 1, total 2
- *
- *    .. code-block:: c
- *
- *	struct ieee80211_iface_limit limits4[] = {
- *		{ .max = 1, .types = BIT(NL80211_IFTYPE_STATION), },
- *		{ .max = 1, .types = BIT(NL80211_IFTYPE_AP), },
- *	};
- *	struct ieee80211_iface_limit limits5_2ghz[] = {
- *		{ .max = 1, .types = BIT(NL80211_IFTYPE_STATION), },
- *		{ .max = 1, .types = BIT(NL80211_IFTYPE_AP), },
- *	};
- *	struct ieee80211_iface_limit limits5_5ghz[] = {
- *		{ .max = 1, .types = BIT(NL80211_IFTYPE_STATION), },
- *		{ .max = 2, .types = BIT(NL80211_IFTYPE_AP), },
- *	};
- *	struct ieee80211_iface_per_hw hw_combinations[] = {
- *		{
- *			.hw_chans_idx = 0,
- *			.limits = limits5_2ghz,
- *			.num_different_channels = 1,
- *			.max_interfaces = 2,
- *			.n_limits = ARRAY_SIZE(limits5_2ghz),
- *		 },
- *		{
- *			.hw_chans_idx = 1,
- *			.limits = limits5_5ghz,
- *			.num_different_channels = 1,
- *			.max_interfaces = 3,
- *			.n_limits = ARRAY_SIZE(limits5_5ghz),
- *		 },
- *	};
- *	struct ieee80211_iface_combination combination4 = {
- *		.limits = limits4,
- *		.n_limits = ARRAY_SIZE(limits4),
- *		.max_interfaces = 2,
- *		.num_different_channels = 1,
- *		.iface_hw_list = hw_combinations,
- *		.n_hw_list = ARRAY_SIZE(hw_combinations),
- *	};
- *
  */
 struct ieee80211_iface_combination {
 	/**
@@ -6125,20 +6010,6 @@ struct ieee80211_iface_combination {
 	 *   combination must be greater or equal to this value.
 	 */
 	u32 beacon_int_min_gcd;
-
-	/**
-	 * @iface_hw_list:
-	 * This wiphy has multiple underlying radios, describe interface
-	 * combination for each of them, valid only when the driver advertises
-	 * multi-radio presence in wiphy @hw_chans.
-	 */
-	const struct ieee80211_iface_per_hw *iface_hw_list;
-
-	/**
-	 * @n_hw_list:
-	 * number of hardware in @iface_hw_List
-	 */
-	u32 n_hw_list;
 };
 
 struct ieee80211_txrx_stypes {
@@ -6447,18 +6318,6 @@ struct wiphy_radio {
 #define CFG80211_HW_TIMESTAMP_ALL_PEERS	0xffff
 
 /**
- * struct ieee80211_supported_chans_per_hw - supported channels as per the
- * underlying constituent hw configuration
- *
- * @n_chans: number of channels in @chans
- * @chans: list of channels supported by the constituent hw
- */
-struct ieee80211_chans_per_hw {
-	int n_chans;
-	struct ieee80211_channel chans[];
-};
-
-/**
  * struct wiphy - wireless hardware description
  * @mtx: mutex for the data (structures) of this device
  * @reg_notifier: the driver's regulatory notification callback,
@@ -6675,15 +6534,6 @@ struct ieee80211_chans_per_hw {
  *	supports enabling HW timestamping for all peers (i.e. no need to
  *	specify a mac address).
  *
- * @hw_chans: list of the channels supported by every constituent underlying hw.
- * 	The drivers registering multiple radios under the a wiphy can advertise
- * 	the list of channels supported by each hw in this list. Undelying hw
- * 	specific channel list can be used while describing interface combination
- * 	for each of the underlying hw.
- *
- * @num_hw: number of underlying hw for which the channels list are advertised
- * 	in @hw_chans.
- *
  * @radio: radios belonging to this wiphy
  * @n_radio: number of radios
  *
@@ -6855,9 +6705,6 @@ struct wiphy {
 
 	int n_radio;
 	const struct wiphy_radio *radio;
-
-	struct ieee80211_chans_per_hw **hw_chans;
-	int num_hw;
 
 	u8 mbssid_max_ngroups;
 	u16 max_beacon_size;
@@ -10516,30 +10363,30 @@ int cfg80211_check_combinations(struct wiphy *wiphy,
 int cfg80211_iter_combinations(struct wiphy *wiphy,
 			       struct iface_combination_params *params,
 			       void (*iter)(const struct ieee80211_iface_combination *c,
-					    void *data, int hw_chan_idx),
+					    void *data),
 			       void *data);
-
-/**
- * cfg80211_per_hw_iface_comb_advertised - if per-hw iface combination supported
- *
- * @wiphy: the wiphy
- *
- * This function is used to check underlying per-hw interface combination is
- * advertised by the driver.
- */
-bool cfg80211_per_hw_iface_comb_advertised(struct wiphy *wiphy);
-
-/**
+/*
  * cfg80211_get_hw_idx_by_chan - get the hw index by the channel
  *
  * @wiphy: the wiphy
  * @chan: channel for which the supported hw index is required
  *
  * returns -1 in case the channel is not supported by any of the constituent
- *     hw
+ * hw
  */
 int cfg80211_get_hw_idx_by_chan(struct wiphy *wiphy,
 				const struct ieee80211_channel *chan);
+
+/*
+ * cfg80211_get_hw_idx_by_freq - get the hw index by the frequency
+ *
+ * @wiphy: the wiphy
+ * @freq: Frequency for which the matching hw idx is required
+ *
+ * returns -1 in case the freq is not supported by any of the constituent
+ *	hw
+ */
+int cfg80211_get_hw_idx_by_freq(struct wiphy *wiphy, int freq);
 
 /**
  * cfg80211_stop_iface - trigger interface disconnection
@@ -10752,16 +10599,6 @@ bool cfg80211_iftype_allowed(struct wiphy *wiphy, enum nl80211_iftype iftype,
  */
 void cfg80211_assoc_comeback(struct net_device *netdev,
 			     const u8 *ap_addr, u32 timeout);
-
-/**
- * cfg80211_hw_chans_includes_dfs - check if per-hardware channel includes DFS
- * @chans: hardware channel list
- *
- * Check if the given per-hardware list includes channels in DFS range.
- * Please note the channel is checked against the entire range of DFS
- * freq in 5 GHz irrespective of regulatory configurations.
- */
-bool cfg80211_hw_chans_includes_dfs(const struct ieee80211_chans_per_hw *chans);
 
 /* Logging, debugging and troubleshooting/diagnostic helpers. */
 

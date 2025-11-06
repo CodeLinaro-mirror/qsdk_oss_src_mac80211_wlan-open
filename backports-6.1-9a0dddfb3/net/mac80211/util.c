@@ -34,11 +34,6 @@
 #include "led.h"
 #include "wep.h"
 
-static int
-ieee80211_max_num_channels_hw_list(struct ieee80211_local *local,
-                                   const struct cfg80211_chan_def *chandef,
-				   struct ieee80211_sub_if_data *sdata);
-
 /* privid for wiphys to determine whether they belong to us or not */
 const void *const mac80211_wiphy_privid = &mac80211_wiphy_privid;
 
@@ -4566,43 +4561,6 @@ static u8 ieee80211_chanctx_radar_detect(struct ieee80211_local *local,
 	return radar_detect;
 }
 
-static void
-ieee80211_get_per_hw_sdata_active_iface(struct ieee80211_sub_if_data *sdata,
-					struct iface_combination_params *params,
-					int *total)
-{
- 	struct ieee80211_local *local = sdata->local;
-  	unsigned int link_id;
-   	int idx;
-
-    	for (link_id = 0; link_id < ARRAY_SIZE(sdata->link); link_id++) {
-     		struct ieee80211_link_data *link;
-      		struct ieee80211_chanctx *ctx;
-
-       		link = sdata_dereference(sdata->link[link_id], sdata);
-		if (!link)
-	 		continue;
-
-	  	ctx = ieee80211_link_get_chanctx(link);
-	   	if (ctx &&
-		    ctx->replace_state == IEEE80211_CHANCTX_WILL_BE_REPLACED)
-			ctx = ctx->replace_ctx;
-
- 		idx = -1;
-  		if (ctx && cfg80211_chandef_valid(&ctx->conf.def))
-   			idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy,
-							  ctx->conf.def.chan);
-
- 		if (idx >= 0)
-  			params->per_hw[idx].iftype_num[sdata->wdev.iftype]++;
-   		else
-    			params->iftype_num[sdata->wdev.iftype]++;
-
-     		if (total)
-      			(*total)++;
-       	}
-}
-
 static u32
 __ieee80211_get_radio_mask(struct ieee80211_sub_if_data *sdata)
 {
@@ -4647,9 +4605,6 @@ ieee80211_fill_ifcomb_params(struct ieee80211_local *local,
 	struct ieee80211_sub_if_data *sdata_iter;
 	struct ieee80211_chanctx *ctx;
 	int total = !!sdata;
-
-	if (cfg80211_per_hw_iface_comb_advertised(local->hw.wiphy))
-		return ieee80211_max_num_channels_hw_list(local, chandef, sdata);
 
 	list_for_each_entry(ctx, &local->chanctx_list, list) {
 		if (ctx->replace_state == IEEE80211_CHANCTX_WILL_BE_REPLACED)
@@ -4767,7 +4722,7 @@ int ieee80211_check_combinations(struct ieee80211_sub_if_data *sdata,
 
 static void
 ieee80211_iter_max_chans(const struct ieee80211_iface_combination *c,
-			 void *data, int hw_chan_idx)
+			 void *data)
 {
 	u32 *max_num_different_channels = data;
 
@@ -4775,129 +4730,17 @@ ieee80211_iter_max_chans(const struct ieee80211_iface_combination *c,
 					  c->num_different_channels);
 }
 
-static void
-ieee80211_iter_per_hw_max_chans(const struct ieee80211_iface_combination *c,
-		void *data, int hw_chan_idx)
+int ieee80211_max_num_channels(struct ieee80211_local *local, int radio_idx)
 {
- 	u32 *max_num_different_channels = data;
-  	u32 max_supported_different_channels = 0;
-   	int i;
-
-    	for (i = 0; i < c->n_hw_list; i++) {
-     		const struct ieee80211_iface_per_hw *h;
-
-      		h = &c->iface_hw_list[i];
-       		if (hw_chan_idx != -1) {
-			if (h->hw_chans_idx == hw_chan_idx) {
-	 			max_supported_different_channels =
-  					h->num_different_channels;
-   				break;
-    			}
-     			continue;
-      		}
-       		max_supported_different_channels += h->num_different_channels;
-	}
-
-	*max_num_different_channels = max(*max_num_different_channels,
-					   max_supported_different_channels);
-}
-
-static int
-ieee80211_max_num_channels_hw_list(struct ieee80211_local *local,
-				   const struct cfg80211_chan_def *chandef,
-				   struct ieee80211_sub_if_data *link_sdata)
-{
- 	struct ieee80211_sub_if_data *sdata;
-  	struct ieee80211_chanctx *ctx;
-   	u32 max_num_different_channels = 1;
-    	size_t size;
-     	int err, hchan_idx;
-      	struct iface_combination_params params = {0};
-	bool sdata_included = false;
-
-	size = sizeof(*params.per_hw) * local->hw.wiphy->num_hw;
-	/* caller should free this memory */
-      	params.per_hw = kzalloc(size, GFP_KERNEL);
-       	if (!params.per_hw)
-		return -ENOMEM;
-
-	if (link_sdata && cfg80211_chandef_valid(chandef)) {
-		enum nl80211_iftype iftype = link_sdata->wdev.iftype;
-		hchan_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy, chandef->chan);
-		if (hchan_idx >= 0) {
-			params.per_hw[hchan_idx].num_different_channels = 1;
-			if (iftype != NL80211_IFTYPE_UNSPECIFIED) {
-				params.per_hw[hchan_idx].iftype_num[iftype] = 1;
-				sdata_included = true;
-			}
-		}
-	}
-
-	params.chandef = chandef;
-       	list_for_each_entry(ctx, &local->chanctx_list, list) {
-       		if (ctx->replace_state == IEEE80211_CHANCTX_WILL_BE_REPLACED)
-       			continue;
-       		if (WARN_ON(!cfg80211_chandef_valid(&ctx->conf.def)))
-       			continue;
-       		hchan_idx = cfg80211_get_hw_idx_by_chan(local->hw.wiphy,
-							ctx->conf.def.chan);
-		if (WARN_ON(hchan_idx < 0))
-			continue;
-
-		params.radar_detect |=
-			ieee80211_chanctx_radar_detect(local, ctx);
-
-		if ((ctx->mode != IEEE80211_CHANCTX_EXCLUSIVE) &&
-		    (chandef && cfg80211_chandef_compatible(chandef,
-						&ctx->conf.def)))
-			continue;
-
-		params.per_hw[hchan_idx].num_different_channels++;
-	}
-
-	list_for_each_entry_rcu(sdata, &local->interfaces, list) {
-		struct wireless_dev *wdev = &sdata->wdev;
-
-		if((sdata_included && sdata == link_sdata) ||
-		   !ieee80211_sdata_running(sdata) ||
-	    	   cfg80211_iftype_allowed(local->hw.wiphy,
-					   wdev->iftype, 0, 1))
-			continue;
-		ieee80211_get_per_hw_sdata_active_iface(sdata, &params, NULL);
-	}
-
-	err = cfg80211_iter_combinations(local->hw.wiphy, &params,
-					 ieee80211_iter_per_hw_max_chans,
-					 &max_num_different_channels);
-	kfree(params.per_hw);
-
-	return err < 0 ? err : max_num_different_channels;
-}
-
-int ieee80211_max_num_channels(struct ieee80211_local *local,
-			       const struct cfg80211_chan_def *chandef)
-{
-	struct ieee80211_sub_if_data *sdata;
-	struct ieee80211_chanctx *ctx;
 	u32 max_num_different_channels = 1;
 	int err;
-	struct iface_combination_params params = {0};
+	struct iface_combination_params params = {
+		.radio_idx = radio_idx,
+	};
 
-	if (cfg80211_per_hw_iface_comb_advertised(local->hw.wiphy))
-		return ieee80211_max_num_channels_hw_list(local, chandef, NULL);
+	lockdep_assert_wiphy(local->hw.wiphy);
 
-	list_for_each_entry(ctx, &local->chanctx_list, list) {
-		if (ctx->replace_state == IEEE80211_CHANCTX_WILL_BE_REPLACED)
-			continue;
-
-		params.num_different_channels++;
-
-		params.radar_detect |=
-			ieee80211_chanctx_radar_detect(local, ctx);
-	}
-
-	list_for_each_entry_rcu(sdata, &local->interfaces, list)
-		params.iftype_num[sdata->wdev.iftype]++;
+	ieee80211_fill_ifcomb_params(local, &params, NULL, NULL);
 
 	err = cfg80211_iter_combinations(local->hw.wiphy, &params,
 					 ieee80211_iter_max_chans,
@@ -5164,6 +5007,26 @@ const char *ieee80211_conn_mode_str(enum ieee80211_conn_mode mode)
 	return modes[mode] ?: "<missing string>";
 }
 
+int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id)
+{
+	struct ieee80211_sub_if_data *sdata = NULL;
+	struct ieee80211_mgd_assoc_data *assoc_data = NULL;
+
+	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
+		return -1;
+
+	sdata = vif_to_sdata(vif);
+	if (!sdata)
+		return -1;
+
+	assoc_data = sdata->u.mgd.assoc_data;
+	if (!assoc_data)
+		return -1;
+
+	return (int)assoc_data->link[link_id].status;
+}
+EXPORT_SYMBOL(ieee80211_get_link_assoc_status);
+
 enum ieee80211_conn_bw_limit
 ieee80211_min_bw_limit_from_chandef(struct cfg80211_chan_def *chandef)
 {
@@ -5221,41 +5084,3 @@ void ieee80211_clear_tpe(struct ieee80211_parsed_tpe *tpe)
 
 	}
 }
-
-int ieee80211_get_radio_idx_by_freq(struct wiphy *wiphy, u32 freq)
-{
-	const struct wiphy_radio *radio;
-	u8 i, j;
-
-	for (i = 0; i < wiphy->n_radio; i++) {
-		radio = &wiphy->radio[i];
-		for (j = 0; j < radio->n_freq_range; j++) {
-			if (freq >= radio->freq_range[j].start_freq &&
-			    freq <= radio->freq_range[j].end_freq)
-				return i;
-		}
-	}
-
-	return -1;
-}
-EXPORT_SYMBOL(ieee80211_get_radio_idx_by_freq);
-
-int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id)
-{
-	struct ieee80211_sub_if_data *sdata = NULL;
-	struct ieee80211_mgd_assoc_data *assoc_data = NULL;
-
-	if (link_id >= IEEE80211_MLD_MAX_NUM_LINKS)
-		return -1;
-
-	sdata = vif_to_sdata(vif);
-	if (!sdata)
-		return -1;
-
-	assoc_data = sdata->u.mgd.assoc_data;
-	if (!assoc_data)
-		return -1;
-
-	return (int)assoc_data->link[link_id].status;
-}
-EXPORT_SYMBOL(ieee80211_get_link_assoc_status);

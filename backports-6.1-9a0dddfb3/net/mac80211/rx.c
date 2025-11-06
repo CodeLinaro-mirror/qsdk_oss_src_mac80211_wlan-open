@@ -6136,10 +6136,10 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 						MHZ_TO_KHZ(conf->def.chan->center_freq);
 					u32 sts_freq = MHZ_TO_KHZ(status->freq);
 
-					if (ieee80211_get_radio_idx_by_freq(hw->wiphy,
-									    ctr_freq) ==
-					    ieee80211_get_radio_idx_by_freq(hw->wiphy,
-									    sts_freq) ||
+					if (cfg80211_get_hw_idx_by_freq(hw->wiphy,
+									ctr_freq) ==
+					    cfg80211_get_hw_idx_by_freq(hw->wiphy,
+									sts_freq) ||
 					    sdata->vif.is_roc) {
 						flag = true;
 						break;
@@ -6160,10 +6160,10 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 						MHZ_TO_KHZ(conf->def.chan->center_freq);
 					u32 sts_freq = MHZ_TO_KHZ(status->freq);
 
-					if (ieee80211_get_radio_idx_by_freq(hw->wiphy,
-									    ctr_freq) ==
-					    ieee80211_get_radio_idx_by_freq(hw->wiphy,
-									    sts_freq) ||
+					if (cfg80211_get_hw_idx_by_freq(hw->wiphy,
+									ctr_freq) ==
+					    cfg80211_get_hw_idx_by_freq(hw->wiphy,
+									sts_freq) ||
 					    sdata->vif.is_roc)
 						flag = true;
 				}
@@ -6220,10 +6220,10 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 						MHZ_TO_KHZ(conf->def.chan->center_freq);
 					u32 sts_freq = MHZ_TO_KHZ(status->freq);
 
-					if (ieee80211_get_radio_idx_by_freq(hw->wiphy,
-									    ctr_freq) ==
-					    ieee80211_get_radio_idx_by_freq(hw->wiphy,
-									    sts_freq) ||
+					if (cfg80211_get_hw_idx_by_freq(hw->wiphy,
+									ctr_freq) ==
+					    cfg80211_get_hw_idx_by_freq(hw->wiphy,
+									sts_freq) ||
 					    prev->vif.is_roc) {
 						flag = true;
 						break;
@@ -6243,10 +6243,10 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 						MHZ_TO_KHZ(conf->def.chan->center_freq);
 					u32 sts_freq = MHZ_TO_KHZ(status->freq);
 
-					if (ieee80211_get_radio_idx_by_freq(hw->wiphy,
-									    ctr_freq) ==
-					    ieee80211_get_radio_idx_by_freq(hw->wiphy,
-									    sts_freq) ||
+					if (cfg80211_get_hw_idx_by_freq(hw->wiphy,
+									ctr_freq) ==
+					    cfg80211_get_hw_idx_by_freq(hw->wiphy,
+									sts_freq) ||
 					    prev->vif.is_roc)
 						flag = true;
 				}
