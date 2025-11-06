@@ -10,12 +10,17 @@
 #include "../dp_cmn.h"
 #include "hw.h"
 
+#define DP_TX_EXCEPTION_RING_SIZE      512
+
 struct ath12k_base;
 struct ath12k_dp;
 
 struct ath12k_dp_wifi8 {
 	struct ath12k_dp *dp;
 	bool cumac;
+	struct dp_srng tx_exception;
+	struct dp_srng tcl_cmd_ring;
+	struct dp_srng tcl_status_ring;
 };
 
 struct ath12k_dp_hw_group_wifi8 {

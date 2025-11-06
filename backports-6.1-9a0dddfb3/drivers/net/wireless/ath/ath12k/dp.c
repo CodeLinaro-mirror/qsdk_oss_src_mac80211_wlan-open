@@ -327,9 +327,26 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		grp_mask = &ring_mask->reo2ppe[0];
 		break;
 #endif
+	case HAL_TX_EXCEPTION:
+		grp_mask = &ab->hw_params->ring_mask->tx_exception[0];
+		break;
+	case HAL_TCL_STATUS:
+		grp_mask = &ab->hw_params->ring_mask->tcl_status[0];
+		break;
 	case HAL_RXDMA_MONITOR_BUF:
 		grp_mask = &ab->hw_params->ring_mask->host2rxmon[0];
 		size = ATH12K_EXT_IRQ_GRP_NUM_MAX;
+		break;
+
+	case HAL_TX_COMPLETION:
+		map = ab->hal.tcl_to_cmp_rbm_map;
+		for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
+			if (ring_num == map[i].cmp_ring_num) {
+				ring_num = i;
+				break;
+			}
+		}
+		grp_mask = &ab->hw_params->ring_mask->tx[0];
 		break;
 
 	case HAL_TCL_DATA:
@@ -337,7 +354,6 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 	case HAL_REO_CMD:
 	case HAL_SW2WBM_RELEASE:
 	case HAL_WBM_IDLE_LINK:
-	case HAL_TCL_STATUS:
 	case HAL_REO_REINJECT:
 	case HAL_CE_SRC:
 	case HAL_CE_DST:
@@ -509,6 +525,11 @@ skip_dma_alloc:
 		params.intr_batch_cntr_thres_entries = 0;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
+	case HAL_TX_EXCEPTION:
+		params.intr_batch_cntr_thres_entries =
+					HAL_SRNG_INT_BATCH_THRESHOLD_TX_EXCEPTION;
+		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX_EXCEPTION;
+		break;
 	case HAL_WBM2SW_RELEASE:
 		if (ab->hw_params->hw_ops->dp_srng_is_tx_comp_ring(ring_num)) {
 			params.intr_batch_cntr_thres_entries =
@@ -547,6 +568,11 @@ skip_dma_alloc:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_PPE2TCL;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_PPE2TCL;
+		break;
+	case HAL_TX_COMPLETION:
+		params.intr_batch_cntr_thres_entries =
+			HAL_SRNG_INT_BATCH_THRESHOLD_TX;
+		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_TX;
 		break;
 	default:
 		ath12k_warn(ab, "Not a valid ring type in dp :%d\n", type);
