@@ -114,6 +114,18 @@ enum ieee80211_status_data {
 	IEEE80211_STATUS_SUBDATA_MASK	= 0x1ff0,
 };
 
+static inline int identical_mac_addr_allowed(int type1, int type2)
+{
+	return type1 == NL80211_IFTYPE_MONITOR ||
+	       type2 == NL80211_IFTYPE_MONITOR ||
+	       type1 == NL80211_IFTYPE_P2P_DEVICE ||
+	       type2 == NL80211_IFTYPE_P2P_DEVICE ||
+	       (type1 == NL80211_IFTYPE_AP && type2 == NL80211_IFTYPE_AP_VLAN) ||
+	       (type1 == NL80211_IFTYPE_AP_VLAN &&
+	       (type2 == NL80211_IFTYPE_AP ||
+	       type2 == NL80211_IFTYPE_AP_VLAN));
+}
+
 static inline bool
 ieee80211_sta_keep_active(struct sta_info *sta, u8 ac)
 {

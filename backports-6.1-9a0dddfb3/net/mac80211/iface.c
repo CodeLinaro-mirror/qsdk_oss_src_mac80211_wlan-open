@@ -324,18 +324,6 @@ static int ieee80211_change_mac(struct net_device *dev, void *addr)
 	return _ieee80211_change_mac(sdata, addr);
 }
 
-static inline int identical_mac_addr_allowed(int type1, int type2)
-{
-	return type1 == NL80211_IFTYPE_MONITOR ||
-		type2 == NL80211_IFTYPE_MONITOR ||
-		type1 == NL80211_IFTYPE_P2P_DEVICE ||
-		type2 == NL80211_IFTYPE_P2P_DEVICE ||
-		(type1 == NL80211_IFTYPE_AP && type2 == NL80211_IFTYPE_AP_VLAN) ||
-		(type1 == NL80211_IFTYPE_AP_VLAN &&
-			(type2 == NL80211_IFTYPE_AP ||
-			 type2 == NL80211_IFTYPE_AP_VLAN));
-}
-
 static int ieee80211_check_concurrent_iface(struct ieee80211_sub_if_data *sdata,
 					    enum nl80211_iftype iftype)
 {
