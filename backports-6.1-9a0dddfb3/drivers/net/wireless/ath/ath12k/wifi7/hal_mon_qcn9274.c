@@ -5,6 +5,7 @@
 
 #include "hal_desc.h"
 #include "../hal_mon_cmn.h"
+#include "../dp_mon.h"
 #include "hal_mon.h"
 #include "hal_mon_qcn9274.h"
 
@@ -252,6 +253,56 @@ ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse_qcn9274(const void *tlv_data, u
 								       userid,
 								       ppdu_info);
 }
+
+struct dp_mon_tx_ppdu_info *
+ath12k_wifi7_hal_tx_ppdu_info(struct ath12k_mon_data *pmon,
+			      u16 tlv_tag)
+{
+	switch (tlv_tag) {
+	case HAL_TX_FES_SETUP:
+	case HAL_TX_FLUSH:
+	case HAL_PCU_PPDU_SETUP_INIT:
+	case HAL_TX_PEER_ENTRY:
+	case HAL_TX_QUEUE_EXTENSION:
+	case HAL_TX_MPDU_START:
+	case HAL_TX_MSDU_START:
+	case HAL_TX_DATA:
+	case HAL_MON_BUF_ADDR:
+	case HAL_TX_MPDU_END:
+	case HAL_TX_LAST_MPDU_FETCHED:
+	case HAL_TX_LAST_MPDU_END:
+	case HAL_COEX_TX_REQ:
+	case HAL_TX_RAW_OR_NATIVE_FRAME_SETUP:
+	case HAL_SCH_CRITICAL_TLV_REFERENCE:
+	case HAL_TX_FES_SETUP_COMPLETE:
+	case HAL_TQM_MPDU_GLOBAL_START:
+	case HAL_SCHEDULER_END:
+	case HAL_TX_FES_STATUS_USER_PPDU:
+		break;
+	case HAL_TX_FES_STATUS_PROT: {
+		if (!pmon->tx_prot_ppdu_info->is_used)
+			pmon->tx_prot_ppdu_info->is_used = true;
+
+		return pmon->tx_prot_ppdu_info;
+	}
+	}
+
+	if (!pmon->tx_data_ppdu_info->is_used)
+		pmon->tx_data_ppdu_info->is_used = true;
+
+	return pmon->tx_data_ppdu_info;
+}
+
+void ath12k_wifi7_hal_mon_set_mon_buf_desc(void *desc, u32 addr_lo,
+					   u32 addr_hi, u64 cookie)
+{
+	struct hal_mon_buf_ring *mon_buf_desc = (struct hal_mon_buf_ring *)desc;
+
+	mon_buf_desc->paddr_lo = addr_lo;
+	mon_buf_desc->paddr_hi = addr_hi;
+	mon_buf_desc->cookie = cookie;
+}
+
 const struct hal_mon_ops hal_qcn9274_mon_ops = {
 	.tx_parse_status_tlv = ath12k_wifi7_hal_mon_tx_parse_status_tlv,
 	.tx_status_get_num_user= ath12k_wifi7_hal_mon_tx_status_get_num_user,
@@ -271,6 +322,8 @@ const struct hal_mon_ops hal_qcn9274_mon_ops = {
 		ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse_qcn9274,
 	.rx_desc_get_msdu_payload =
 		ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload,
+	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
+	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
 };
 
 const struct hal_mon_ops hal_ipq5332_mon_ops = {
@@ -292,6 +345,8 @@ const struct hal_mon_ops hal_ipq5332_mon_ops = {
 		ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse,
 	.rx_desc_get_msdu_payload =
 		ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload,
+	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
+	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
 };
 
 const struct hal_mon_ops hal_ipq5424_mon_ops = {
@@ -313,6 +368,8 @@ const struct hal_mon_ops hal_ipq5424_mon_ops = {
 		ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse,
 	.rx_desc_get_msdu_payload =
 		ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload,
+	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
+	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
 };
 
 const struct hal_mon_ops hal_qcn6432_mon_ops = {
@@ -334,4 +391,6 @@ const struct hal_mon_ops hal_qcn6432_mon_ops = {
 		ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse,
 	.rx_desc_get_msdu_payload =
 		ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload,
+	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
+	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
 };

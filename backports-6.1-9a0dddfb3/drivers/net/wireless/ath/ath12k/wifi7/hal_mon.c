@@ -6,6 +6,7 @@
 #include "hal_rx.h"
 #include "hal_rx_desc.h"
 #include "../hal_mon_cmn.h"
+#include "../dp_mon.h"
 #include "hal_mon.h"
 #include "hal_qcn9274.h"
 #include "dp_rx.h"

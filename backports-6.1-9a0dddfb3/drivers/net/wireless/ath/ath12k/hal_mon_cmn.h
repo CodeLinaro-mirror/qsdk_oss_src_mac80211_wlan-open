@@ -39,6 +39,7 @@
 
 #define ATH12K_LE64_DEC_ENC(value, dec_bits, enc_bits) \
 		u32_encode_bits(le64_get_bits(value, dec_bits), enc_bits)
+struct ath12k_mon_data;
 
 struct hal_rx_u_sig_info {
 	bool ul_dl;
@@ -298,6 +299,11 @@ struct hal_mon_ops {
 					  struct hal_rx_mon_ppdu_info *info,
 					  u32 tlv_len);
 	u8* (*rx_desc_get_msdu_payload)(void *desc);
+	struct dp_mon_tx_ppdu_info *
+	(*hal_mon_tx_ppdu_info)(struct ath12k_mon_data *pmon,
+				u16 tlv_tag);
+	void (*hal_mon_set_mon_buf_desc)(void *desc, u32 addr_lo,
+					 u32 addr_hi, u64 cookie);
 };
 
 static inline enum hal_tx_mon_status
@@ -404,5 +410,21 @@ ath12k_hal_mon_rx_desc_get_msdu_payload(struct ath12k_hal *hal,
 		return hal->hal_mon_ops->rx_desc_get_msdu_payload(rx_desc);
 
 	return NULL;
+}
+
+static inline struct dp_mon_tx_ppdu_info *
+ath12k_hal_mon_tx_ppdu_info(struct ath12k_hal *hal,
+			    struct ath12k_mon_data *pmon,
+			    u16 tlv_tag)
+{
+	return hal->hal_mon_ops->hal_mon_tx_ppdu_info(pmon, tlv_tag);
+}
+
+static inline void ath12k_hal_mon_set_mon_buf_desc(struct ath12k_hal *hal,
+						   void *desc, u32 addr_lo,
+						   u32 addr_hi, u64 cookie)
+{
+	return hal->hal_mon_ops->hal_mon_set_mon_buf_desc(desc, addr_lo,
+							  addr_hi, cookie);
 }
 #endif

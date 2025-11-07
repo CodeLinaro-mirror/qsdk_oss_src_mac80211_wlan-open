@@ -6,7 +6,6 @@
 
 #include "dp_mon.h"
 #include "debug.h"
-#include "wifi7/hal.h"
 #include "dp_rx.h"
 #include "dp_tx.h"
 #include "peer.h"
@@ -357,12 +356,13 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 				int req_entries)
 {
 	struct ath12k_base *ab = dp->ab;
-	struct hal_mon_buf_ring *mon_buf_desc;
+	void *mon_buf_desc;
 	struct hal_srng *srng;
 	struct ath12k_dp_mon *dp_mon = dp->dp_mon;
 	struct ath12k_dp_mon_desc *mon_desc, *tmp_mon_desc;
 	struct page *page;
-	u64 offset;
+	u64 offset, cookie;
+	u32 addr_lo, addr_hi;
 	dma_addr_t paddr;
 	int ret = 0;
 	u8 *mon_buf;
@@ -425,10 +425,11 @@ int ath12k_dp_mon_buf_replenish(struct ath12k_dp *dp,
 		}
 
 		list_del(&mon_desc->list);
-		mon_buf_desc->paddr_lo = cpu_to_le32(lower_32_bits(mon_desc->paddr));
-		mon_buf_desc->paddr_hi = cpu_to_le32(upper_32_bits(mon_desc->paddr));
-		mon_buf_desc->cookie = cpu_to_le64((uintptr_t)mon_desc);
-
+		addr_lo = cpu_to_le32(lower_32_bits(mon_desc->paddr));
+		addr_hi = cpu_to_le32(upper_32_bits(mon_desc->paddr));
+		cookie = cpu_to_le64((uintptr_t)mon_desc);
+		ath12k_hal_mon_set_mon_buf_desc(&ab->hal, mon_buf_desc, addr_lo,
+						addr_hi, cookie);
 		req_entries--;
 	}
 
@@ -560,44 +561,6 @@ ath12k_dp_mon_tx_get_ppdu_info(struct ath12k_mon_data *pmon,
 	return tx_ppdu_info;
 }
 
-static struct dp_mon_tx_ppdu_info *
-ath12k_dp_mon_hal_tx_ppdu_info(struct ath12k_mon_data *pmon,
-			       u16 tlv_tag)
-{
-	switch (tlv_tag) {
-	case HAL_TX_FES_SETUP:
-	case HAL_TX_FLUSH:
-	case HAL_PCU_PPDU_SETUP_INIT:
-	case HAL_TX_PEER_ENTRY:
-	case HAL_TX_QUEUE_EXTENSION:
-	case HAL_TX_MPDU_START:
-	case HAL_TX_MSDU_START:
-	case HAL_TX_DATA:
-	case HAL_MON_BUF_ADDR:
-	case HAL_TX_MPDU_END:
-	case HAL_TX_LAST_MPDU_FETCHED:
-	case HAL_TX_LAST_MPDU_END:
-	case HAL_COEX_TX_REQ:
-	case HAL_TX_RAW_OR_NATIVE_FRAME_SETUP:
-	case HAL_SCH_CRITICAL_TLV_REFERENCE:
-	case HAL_TX_FES_SETUP_COMPLETE:
-	case HAL_TQM_MPDU_GLOBAL_START:
-	case HAL_SCHEDULER_END:
-	case HAL_TX_FES_STATUS_USER_PPDU:
-		break;
-	case HAL_TX_FES_STATUS_PROT: {
-		if (!pmon->tx_prot_ppdu_info->is_used)
-			pmon->tx_prot_ppdu_info->is_used = true;
-
-		return pmon->tx_prot_ppdu_info;
-	}
-	}
-
-	if (!pmon->tx_data_ppdu_info->is_used)
-		pmon->tx_data_ppdu_info->is_used = true;
-
-	return pmon->tx_data_ppdu_info;
-}
 
 #define MAX_MONITOR_HEADER 512
 #define MAX_DUMMY_FRM_BODY 128
@@ -871,8 +834,9 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 		tlv_len = le32_get_bits(tlv->tl, HAL_TLV_HDR_LEN);
 		tlv_userid = le32_get_bits(tlv->tl, HAL_TLV_USR_ID);
 
-		tx_ppdu_info = ath12k_dp_mon_hal_tx_ppdu_info(pmon,
-							      tlv_tag);
+		tx_ppdu_info = ath12k_hal_mon_tx_ppdu_info(dp_pdev->dp->hal,
+							   pmon,
+							   tlv_tag);
 
 		hal_status = ath12k_hal_mon_tx_parse_status(dp_pdev->dp->hal,
 							    &tx_ppdu_info->tx_info,
