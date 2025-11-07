@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2023 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/module.h>
@@ -703,7 +703,7 @@ int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int 
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
 			 "pcic%d_ppe2tcl_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
 		ret = devm_request_irq(&pdev->dev, irq,
-				       ath12k_ds_ppe2tcl_irq_handler,
+				       ab->dp->ppe.ppe_ops->ppe2tcl_irq_handler,
 				       IRQF_NO_SUSPEND,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
 				       (void *)ab);
@@ -719,7 +719,7 @@ int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int 
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
 			 "pcic%d_reo2ppe_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
 		ret = devm_request_irq(&pdev->dev, irq,
-				       ath12k_ds_reo2ppe_irq_handler,
+				       ab->dp->ppe.ppe_ops->reo2ppe_irq_handler,
 				       IRQF_SHARED,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
 				       (void *)ab);
@@ -735,7 +735,7 @@ int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int 
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL]),
 			 "pcic%d_ppe_wbm_rel_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
 		ret = devm_request_irq(&pdev->dev, irq,
-				       ath12k_dp_ppeds_handle_tx_comp,
+				       ab->dp->ppe.ppe_ops->ppe2tcl_tx_compln,
 				       IRQF_SHARED,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
 				       (void *)ab);
@@ -1276,10 +1276,11 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL]),
 			 "pci%d_ppe2tcl_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
-		ret = devm_request_irq(ab->dev, irq,  ath12k_ds_ppe2tcl_irq_handler,
+		ret = devm_request_irq(ab->dev, irq,
+				       ab->dp->ppe.ppe_ops->ppe2tcl_irq_handler,
 				       IRQF_SHARED,
-					   ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
-					   (void *)ab);
+				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE2TCL],
+				       (void *)ab);
 		if (ret)
 			goto irq_fail;
 
@@ -1289,10 +1290,11 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE]),
 			 "pci%d_reo2ppe%d_irq%d", bus_id, ab->dp->ppe.ppeds_soc_idx,
 			 irq);
-		ret = devm_request_irq(ab->dev, irq, ath12k_ds_reo2ppe_irq_handler,
+		ret = devm_request_irq(ab->dev, irq,
+				       ab->dp->ppe.ppe_ops->reo2ppe_irq_handler,
 				       IRQF_SHARED,
-					   ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
-					   (void *)ab);
+				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_REO2PPE],
+				       (void *)ab);
 		if (ret)
 			goto irq_fail;
 
@@ -1302,7 +1304,8 @@ int ath12k_pci_ppeds_register_interrupts(struct ath12k_base *ab, int type, int v
 		snprintf(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
 			 sizeof(ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL]),
 			 "pci%d_ppe_wbm_rel_%d", bus_id, ab->dp->ppe.ppeds_soc_idx);
-		ret = devm_request_irq(ab->dev, irq,  ath12k_dp_ppeds_handle_tx_comp,
+		ret = devm_request_irq(ab->dev, irq,
+				       ab->dp->ppe.ppe_ops->ppe2tcl_tx_compln,
 				       IRQF_SHARED,
 				       ab->dp->ppe.ppeds_irq_name[PPEDS_IRQ_PPE_WBM2SW_REL],
 				       (void *)ab);

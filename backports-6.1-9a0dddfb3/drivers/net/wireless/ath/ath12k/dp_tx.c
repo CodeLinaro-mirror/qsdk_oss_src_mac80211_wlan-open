@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include "core.h"
+#include "hal.h"
 #include "dp.h"
 #include "dp_tx.h"
 #include "debug.h"
@@ -114,23 +115,14 @@ skip_reuse_list:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static inline
 void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
-				      struct hal_wbm_completion_ring_tx *tx_status,
+				      struct ath12k_dp_tx_comp_status *tx_comp_status,
 				      struct ath12k_ppeds_tx_desc_info **tx_desc)
 {
-	u64 desc_va = 0;
-	u32 desc_id;
-
-	if (likely(HAL_WBM_COMPL_TX_INFO0_CC_DONE & tx_status->info0)) {
-		/* HW done cookie conversion */
-		desc_va = ((u64)tx_status->buf_va_hi << 32 |
-			   tx_status->buf_va_lo);
-		*tx_desc = (struct ath12k_ppeds_tx_desc_info *)((unsigned long)desc_va);
+	if (tx_comp_status->tx_desc) {
+		*tx_desc = (struct ath12k_ppeds_tx_desc_info *)
+				((unsigned long)tx_comp_status->tx_desc);
 	} else {
-		/* SW does cookie conversion to VA */
-		desc_id = u32_get_bits(tx_status->buf_va_hi,
-				       BUFFER_ADDR_INFO1_SW_COOKIE);
-
-		*tx_desc = ath12k_dp_get_ppeds_tx_desc(ab, desc_id);
+		*tx_desc = ath12k_dp_get_ppeds_tx_desc(ab, tx_comp_status->desc_id);
 	}
 }
 
@@ -304,16 +296,15 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	int hal_ring_id = tx_ring->ppe_wbm2sw_ring.ring_id;
 	struct hal_srng *status_ring = &ab->hal.srng_list[hal_ring_id];
 	struct ath12k_ppeds_tx_desc_info *tx_desc = NULL;
+	struct ath12k_dp_tx_comp_status tx_status;
 	int valid_entries, count = 0;
 	int list_no_skb_count = 0;
-	struct hal_wbm_release_ring *desc;
-	struct hal_wbm_completion_ring_tx *tx_status;
 	struct htt_tx_wbm_completion *status_desc;
-	enum hal_wbm_rel_src_module buf_rel_source;
-	int htt_status;
+	struct hal_wbm_completion_ring_tx *desc;
 	struct list_head local_list;
 	struct list_head local_list_no_skb;
 	size_t stat_size;
+	int htt_status;
 
 	BUG_ON(budget > DP_PPEDS_SERVICE_BUDGET);
 
@@ -321,7 +312,7 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 		/* only need buf_addr_info and info0 */
 		stat_size = 3 * sizeof(u32);
 	else
-		stat_size = sizeof(struct hal_wbm_release_ring);
+		stat_size = status_ring->entry_size;
 	INIT_LIST_HEAD(&local_list);
 	INIT_LIST_HEAD(&local_list_no_skb);
 
@@ -339,40 +330,38 @@ int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	ath12k_hal_srng_ppeds_dst_inv_entry(ab, status_ring, valid_entries);
 
 	while (likely(valid_entries--)) {
-		desc = (struct hal_wbm_release_ring *)
-			__ath12k_hal_srng_dst_get_next_cached_entry(status_ring, NULL);
-		if (!desc || !ath12k_dp_tx_completion_valid(desc))
+		desc = ath12k_hal_srng_dst_get_next_cached_entry(ab, status_ring, NULL);
+		if (!desc || !ath12k_dp_tx_completion_process(ab, desc, &tx_status))
 			continue;
 
-		tx_status = (struct hal_wbm_completion_ring_tx *)desc;
 		if (likely(!ab->stats_disable))
-			memcpy(&tx_ring->tx_status[count], desc, stat_size);
+			memcpy(((void *)tx_ring->tx_status) +
+			       (count * status_ring->entry_size),
+			       desc, stat_size);
 
-		buf_rel_source = FIELD_GET(HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE,
-					   tx_status->info0);
+		ath12k_dp_ppeds_tx_comp_get_desc(ab, &tx_status, &tx_desc);
 
-		ath12k_dp_ppeds_tx_comp_get_desc(ab, tx_status, &tx_desc);
 		if (unlikely(!tx_desc)) {
 			ath12k_warn(ab, "unable to retrieve ppe ds tx_desc!");
 			continue;
 		}
 		tx_ring->macid[count] = tx_desc->mac_id;
 
-		if (unlikely(buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
-			status_desc = (void *)tx_status;
-			htt_status = le32_get_bits(status_desc->info0,
-						   HAL_TX_COMP_TQM_RELEASE_REASON_MASK);
+		if (unlikely(tx_status.buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW)) {
+			status_desc = (void *)desc;
 
-			if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ) {
+			htt_status = tx_status.htt_status;
+
+			if (htt_status == HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ)
 				ath12k_ppeds_reinject_handler(ab, tx_desc, status_desc);
-			}
 
 			if (htt_status != HAL_WBM_REL_HTT_TX_COMP_STATUS_OK &&
 			    htt_status != HAL_WBM_REL_HTT_TX_COMP_STATUS_REINJ) {
 				ab->dp->ppe.ppeds_stats.fw2wbm_pkt_drops++;
 				ath12k_dbg(ab, ATH12K_DBG_PPE,
 					   "ath12k: Frame received from unexpected source %d status %d!\n",
-					   buf_rel_source, htt_status);
+					   tx_status.buf_rel_source,
+					   htt_status);
 			}
 			tx_ring->macid[count] = 0xF;
 		}

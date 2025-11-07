@@ -13,7 +13,6 @@
 #include <ppe_drv.h>
 #include <nss_plugins.h>
 #endif
-#include "wifi7/hal.h"
 #include "dp_cmn.h"
 #include "dp.h"
 #include "core.h"
@@ -23,7 +22,6 @@ struct ath12k_base;
 struct ath12k_vif;
 struct ath12k_vlan_iface;
 struct ath12k_link_sta;
-struct dp_srng;
 
 enum ppeds_irq_type {
 	PPEDS_IRQ_PPE2TCL,
@@ -35,6 +33,10 @@ struct dp_ppe_ds_idxs {
 	u32 ppe2tcl_start_idx;
 	u32 reo2ppe_start_idx;
 };
+
+#ifndef PPE_DS_TXCMPL_DEF_BUDGET
+#define PPE_DS_TXCMPL_DEF_BUDGET 256
+#endif
 
 #define ATH12K_DP_PPEDS_NAPI_DONE_BIT		1
 #define ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT	2
@@ -58,15 +60,6 @@ struct dp_ppe_ds_idxs {
 #define MAX_PPEDS_IRQ_NAME_LEN 20
 #define MAX_PPEDS_IRQS 3
 
-#define HAL_TX_PPE_VP_CFG_WILDCARD_LMAC_ID 3
-#define HAL_TX_PPE_VP_CFG_VP_NUM                GENMASK(7, 0)
-#define HAL_TX_PPE_VP_CFG_PMAC_ID               GENMASK(9, 8)
-#define HAL_TX_PPE_VP_CFG_BANK_ID               GENMASK(15, 10)
-#define HAL_TX_PPE_VP_CFG_VDEV_ID               GENMASK(23, 16)
-#define HAL_TX_PPE_VP_CFG_SRCH_IDX_REG_NUM      GENMASK(26, 24)
-#define HAL_TX_PPE_VP_CFG_USE_PPE_INT_PRI       BIT(27)
-#define HAL_TX_PPE_VP_CFG_TO_FW                 BIT(28)
-#define HAL_TX_PPE_VP_CFG_DROP_PREC_EN          BIT(29)
 
 struct ath12k_dp_ppe_vp_profile {
 	bool is_configured;
@@ -107,6 +100,12 @@ struct ath12k_ppeds_stats {
 	u32 tqm_rel_reason[HAL_WBM_TQM_REL_REASON_MAX];
 };
 
+struct ath12k_ppeds_arch_ops {
+	irqreturn_t (*ppe2tcl_irq_handler)(int irq, void *ctxt);
+	irqreturn_t (*reo2ppe_irq_handler)(int irq, void *ctxt);
+	irqreturn_t (*ppe2tcl_tx_compln)(int irq, void *ctxt);
+};
+
 struct ath12k_ppeds_napi {
 	struct napi_struct napi;
 	struct net_device ndev;
@@ -142,11 +141,15 @@ struct ath12k_ppe {
 	u8 ppeds_stopped;
 	struct ath12k_ppeds_stats ppeds_stats;
 	struct nss_plugins_ops *nss_plugin_ops;
+	struct ppe_ds_wlan_ops_v2 *ppeds_wlanops;
+	struct ath12k_ppeds_arch_ops *ppe_ops;
 };
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 
 extern bool ath12k_ppe_rfs_support;
+extern atomic_t num_ppeds_nodes;
+extern struct ath12k_base *ds_node_map[PPE_DS_MAX_NODE];
 
 int ath12k_ppe_rfs_get_core_mask(void);
 int ath12k_change_core_mask_for_ppe_rfs(struct ath12k_base *ab,
@@ -168,9 +171,6 @@ void ath12k_dp_peer_ppeds_route_setup(struct ath12k *ar, struct ath12k_link_vif 
 				      struct ath12k_link_sta *arsta);
 int ath12k_ppeds_get_handle(struct ath12k_base *ab);
 void *ath12k_dp_get_ppe_ds_ctxt(struct ath12k_base *ab);
-irqreturn_t ath12k_ds_ppe2tcl_irq_handler(int irq, void *ctxt);
-irqreturn_t ath12k_ds_reo2ppe_irq_handler(int irq, void *ctxt);
-irqreturn_t ath12k_dp_ppeds_handle_tx_comp(int irq, void *ctxt);
 void ath12k_dp_ppeds_update_vp_entry(struct ath12k *ar,
 				     struct ath12k_link_vif *arvif);
 void ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(struct ath12k_base *ab,
@@ -260,21 +260,6 @@ static inline int ath12k_ppeds_get_handle(struct ath12k_base *ab)
 static inline void *ath12k_dp_get_ppe_ds_ctxt(struct ath12k_base *ab)
 {
 	return NULL;
-}
-
-static inline irqreturn_t ath12k_ds_ppe2tcl_irq_handler(int irq, void *ctxt)
-{
-	return IRQ_HANDLED;
-}
-
-static inline irqreturn_t ath12k_ds_reo2ppe_irq_handler(int irq, void *ctxt)
-{
-	return IRQ_HANDLED;
-}
-
-static inline irqreturn_t ath12k_dp_ppeds_handle_tx_comp(int irq, void *ctxt)
-{
-	return IRQ_HANDLED;
 }
 
 static inline void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,

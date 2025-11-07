@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include "../core.h"
@@ -2186,9 +2186,8 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	struct ath12k_tx_desc_info *tx_desc = NULL;
 	struct hal_tx_status ts = { 0 };
 	struct dp_tx_ring *tx_ring = &dp->tx_ring[ring_id];
-	struct hal_wbm_release_ring *desc;
+	struct ath12k_dp_tx_comp_status sw_status;
 	u8 pdev_id;
-	u64 desc_va;
 	int i;
 #ifndef CONFIG_IO_COHERENCY
 	int valid_entries;
@@ -2233,17 +2232,16 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 	INIT_LIST_HEAD(&desc_free_list);
 	skb_queue_head_init(&free_list_head);
 
-	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)dp_hw_grp->tx_status_buf[tx_status_idx];
-	while (budget-- && (desc = __ath12k_hal_srng_dst_get_next_cached_entry(status_ring, NULL))) {
-		if (!ath12k_dp_tx_completion_valid(desc))
+	tx_status_entry = (struct ath12k_wifi7_tx_status_entry *)
+				dp_hw_grp->tx_status_buf[tx_status_idx];
+	while (budget-- &&
+	       (tx_status = __ath12k_hal_srng_dst_get_next_cached_entry(status_ring,
+									NULL))) {
+		if (!ath12k_dp_tx_completion_process(ab, tx_status, &sw_status))
 			continue;
 
-		tx_status = (struct hal_wbm_completion_ring_tx *)desc;
-
-		/* HW done cookie conversion */
-		desc_va = ((u64)le32_to_cpu(tx_status->buf_va_hi) << 32 |
-			   le32_to_cpu(tx_status->buf_va_lo));
-		tx_desc = (struct ath12k_tx_desc_info *)((unsigned long)desc_va);
+		tx_desc =
+			(struct ath12k_tx_desc_info *)((unsigned long)sw_status.tx_desc);
 		if (unlikely(!tx_desc)) {
 			DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_DESC][ring_id], 1);
 			ath12k_warn(ab, "unable to retrieve tx_desc!");

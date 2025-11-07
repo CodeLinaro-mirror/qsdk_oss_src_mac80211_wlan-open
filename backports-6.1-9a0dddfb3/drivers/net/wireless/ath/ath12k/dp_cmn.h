@@ -7,6 +7,7 @@
 #define ATH12K_DP_CMN_H
 
 #include "cmn_defs.h"
+#include "hw.h"
 
 /* Max number of links for MLO connection */
 #define ATH12K_DP_MAX_MLO_LINKS 4

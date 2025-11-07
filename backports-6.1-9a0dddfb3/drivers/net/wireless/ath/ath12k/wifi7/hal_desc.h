@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include "../core.h"
 
@@ -2076,7 +2076,6 @@ enum hal_desc_buf_type {
 #define HAL_DESC_REO_OWNED		4
 #define HAL_DESC_REO_QUEUE_DESC		8
 #define HAL_DESC_REO_QUEUE_EXT_DESC	9
-#define HAL_DESC_REO_NON_QOS_TID	16
 
 #define HAL_DESC_HDR_INFO0_OWNER	GENMASK(3, 0)
 #define HAL_DESC_HDR_INFO0_BUF_TYPE	GENMASK(7, 4)

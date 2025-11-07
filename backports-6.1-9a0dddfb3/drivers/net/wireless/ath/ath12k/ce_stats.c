@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /* Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries. */
 
-#include "dp_rx.h"
 #include "debug.h"
 #include "hif.h"
 #include "hal.h"

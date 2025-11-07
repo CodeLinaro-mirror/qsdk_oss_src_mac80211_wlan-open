@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include <linux/dma-mapping.h>
 #include "debug.h"
@@ -755,56 +755,22 @@ void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static bool hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab)
 {
-	u32 cmn_reg_addr;
-	u32 regval;
-
-	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
-	regval = ath12k_hif_read32(ab, cmn_reg_addr);
-
-	return (regval &
-			1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+	return ab->hal.hal_ops->hal_tx_ppe2tcl_ring_halt_get(ab);
 }
 
 static void hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab)
 {
-	u32 cmn_reg_addr;
-	u32 regval;
-
-	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
-	regval = ath12k_hif_read32(ab, cmn_reg_addr);
-
-	regval |= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
-
-	/* Enable ring halt for the ppe2tcl ring */
-	ath12k_hif_write32(ab, cmn_reg_addr, regval);
+	ab->hal.hal_ops->hal_tx_ppe2tcl_ring_halt_set(ab);
 }
 
 static void hal_tx_ppe2tcl_ring_halt_reset(struct ath12k_base *ab)
 {
-	u32 cmn_reg_addr;
-	u32 regval;
-
-	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
-	regval = ath12k_hif_read32(ab, cmn_reg_addr);
-
-	regval &= ~(1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
-
-	/* Disable ring halt for the ppe2tcl ring */
-	ath12k_hif_write32(ab, cmn_reg_addr, regval);
+	ab->hal.hal_ops->hal_tx_ppe2tcl_ring_halt_reset(ab);
 }
 
 static bool hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
 {
-	u32 cmn_reg_addr;
-	u32 regval;
-
-	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
-
-	regval = ath12k_hif_read32(ab, cmn_reg_addr);
-
-	regval &= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT);
-
-	return !!regval;
+	return ab->hal.hal_ops->hal_tx_ppe2tcl_ring_halt_done(ab);
 }
 #endif
 
@@ -986,11 +952,7 @@ void ath12k_hal_srng_shadow_config(struct ath12k_base *ab)
 
 void ath12k_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 {
-	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
-	u32 val = HAL_REO1_REO2PPE_DST_VAL;
-
-	ath12k_hif_write32(ab, reo_base + HAL_REO1_REO2PPE_DST_INFO,
-			   val);
+	ab->hal.hal_ops->hal_reo_config_reo2ppe_dest_info(ab);
 }
 
 void ath12k_hal_srng_get_shadow_config(struct ath12k_base *ab,
@@ -1178,11 +1140,7 @@ void ath12k_hal_reset_rx_reo_tid_q(struct ath12k_hal *hal,
 void ath12k_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 					       u32 ppeds_idx_map_val)
 {
-	u32 reg_addr;
-
-	reg_addr = HAL_TCL_PPE_INDEX_MAPPING_TABLE_n_ADDR(HAL_SEQ_WCSS_UMAC_TCL_REG, idx);
-
-	ath12k_hif_write32(ab, reg_addr, ppeds_idx_map_val);
+	ab->hal.hal_ops->hal_ppeds_cfg_ast_override_map_reg(ab, idx, ppeds_idx_map_val);
 }
 
 static
@@ -1384,3 +1342,4 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 
 	return len;
 }
+

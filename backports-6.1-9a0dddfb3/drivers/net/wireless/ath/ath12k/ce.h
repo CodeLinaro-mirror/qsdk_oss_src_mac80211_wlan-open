@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_CE_H
@@ -183,6 +183,17 @@ struct ath12k_ce_pipe {
 	u32 ce_manual_poll_count;
 	u64 last_ce_manual_poll_ts;
 	struct ath12k_ce_stats *ce_stats;
+};
+
+struct ath12k_hp_update_timer {
+	struct timer_list timer;
+	bool started;
+	bool init;
+	u32 tx_num;
+	u32 timer_tx_num;
+	u32 ring_id;
+	u32 interval;
+	struct ath12k_base *ab;
 };
 
 struct ath12k_ce {

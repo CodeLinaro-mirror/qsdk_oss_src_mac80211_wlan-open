@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef _ATH12K_DEBUGFS_H_
@@ -9,6 +9,7 @@
 
 #include "core.h"
 
+struct ath12k;
 #define ATH12K_UDP_TCP_START_PORT		0
 #define ATH12K_UDP_TCP_END_PORT			65535
 #define ATH12K_RX_FSE_FLOW_MATCH_DEBUGFS	0xBBBB
