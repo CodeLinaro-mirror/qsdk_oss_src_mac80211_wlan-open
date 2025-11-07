@@ -4001,7 +4001,7 @@ __ieee80211_is_scan_ongoing(struct wiphy *wiphy,
 		 * but if it does, let's not take risk and assume we can't use
 		 * the hw hence return true
 		 */
-		if (WARN_ON(!scan_req)) {
+		if (WARN_ON(!scan_req) || (scan_req->wiphy != local->hw.wiphy)) {
 			rcu_read_unlock();
 			return true;
 		}
