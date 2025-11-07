@@ -1330,7 +1330,8 @@ ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 		skb_pull(msdu, hal_rx_desc_sz);
 	} else if (likely(!rx_msdu_info->msdu_continuation)) {
 		if (unlikely((msdu_len + hal_rx_desc_sz) > DP_RX_BUFFER_SIZE)) {
-			ath12k_warn(dp, "invalid msdu len %u\n", msdu_len);
+			ath12k_dbg(dp->ab, ATH12K_DBG_DATA, "invalid msdu len %u\n",
+				   msdu_len);
 			ath12k_dbg_dump(dp->ab, ATH12K_DBG_DATA, NULL, "", rx_desc,
 					sizeof(*rx_desc));
 			drop_reason = DP_RX_ERR_DROP_INV_MSDU_LEN;
