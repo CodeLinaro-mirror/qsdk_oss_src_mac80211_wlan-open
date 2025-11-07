@@ -1167,13 +1167,15 @@ static void ath12k_wifi7_dp_mon_rx_h_empty_desc(struct ath12k_pdev_dp *pdev_dp)
 	int desc_cnt;
 
 	last_ppdu_desc = list_last_entry(&dp_mon_pdev->ppdu_desc_used_list,
-					 typeof(*last_ppdu_desc), list);
-	if (unlikely(!last_ppdu_desc || !last_ppdu_desc->status_desc_cnt)) {
+					 struct ath12k_dp_mon_ppdu_desc,
+					 list);
+
+	list_del_init(&last_ppdu_desc->list);
+
+	if (unlikely(!last_ppdu_desc->status_desc_cnt)) {
 		ath12k_warn(pdev_dp->dp,
-			    "empty desc: invalid last_ppdu_desc=%p or status_desc_cnt=%u\n",
-			    last_ppdu_desc,
-			    last_ppdu_desc ? last_ppdu_desc->status_desc_cnt : 0);
-		return;
+			    "empty desc: invalid status_desc_cnt\n");
+		goto free_desc;
 	}
 
 	for (desc_cnt = 0; desc_cnt < last_ppdu_desc->status_desc_cnt; desc_cnt++) {
@@ -1187,7 +1189,9 @@ static void ath12k_wifi7_dp_mon_rx_h_empty_desc(struct ath12k_pdev_dp *pdev_dp)
 		ath12k_wifi7_dp_mon_h_flush_tlv(pdev_dp, status_desc);
 	}
 
+free_desc:
 	ath12k_wifi7_dp_mon_rx_reset_ppdu_desc(last_ppdu_desc);
+	list_add_tail(&last_ppdu_desc->list, &dp_mon_pdev->ppdu_desc_free_list);
 }
 
 static void
@@ -1526,11 +1530,10 @@ int ath12k_dp_mon_rx_dual_ring_process(struct ath12k_pdev_dp *pdev_dp, int mac_i
 			 * flush the last received ppdu along with the msdus in status
 			 * buffer
 			 */
-			if (!list_empty(mon_desc_used_list)) {
-				spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+			spin_lock_bh(&dp_mon_pdev->ppdu_desc_lock);
+			if (!list_empty(mon_desc_used_list))
 				ath12k_wifi7_dp_mon_rx_h_empty_desc(pdev_dp);
-				spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
-			}
+			spin_unlock_bh(&dp_mon_pdev->ppdu_desc_lock);
 
 			mon_stats->ring_desc_empty++;
 			goto move_next;
