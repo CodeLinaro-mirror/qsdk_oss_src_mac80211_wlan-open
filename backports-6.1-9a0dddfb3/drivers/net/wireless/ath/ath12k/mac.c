@@ -14669,6 +14669,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	struct ath12k_base *ab = ar->ab;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	bool is_mlme = ATH12K_MGMT_MLME_FRAME(hdr->frame_control);
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ath12k_mgmt_frame_stats *stats;
 	enum hal_encrypt_type enctype;
@@ -14746,7 +14747,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 		goto err_unmap_buf;
 	}
 
-	if (ATH12K_MGMT_MLME_FRAME(hdr->frame_control))
+	if (is_mlme)
 		ath12k_dbg(ab, ATH12K_DBG_MLME, "Transmit %s to STA %pM over WMI\n",
 			   mgmt_frame_name[frm_stype], sta_addr);
 	return 0;
