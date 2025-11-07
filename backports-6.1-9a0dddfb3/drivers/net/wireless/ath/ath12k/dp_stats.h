@@ -481,10 +481,12 @@ struct ath12k_dp_tx_vif_stats {
 struct ath12k_dp_aggr_vif_stats {
 	struct ath12k_dp_tx_vif_stats stats[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_stats peer_stats;
+	struct ath12k_dp_link_peer_stats link_peer_stats;
 };
 
 struct ath12k_dp_aggr_pdev_stats {
 	struct ath12k_dp_peer_stats peer_stats;
+	struct ath12k_dp_link_peer_stats link_peer_stats;
 };
 
 struct ath12k_stats_feat {
@@ -513,10 +515,19 @@ enum ath12k_wlan_telemetry_feat {
 	TELEMETRY_FEAT_MAX,
 };
 
+enum ath12k_peer_type {
+	ATH12K_PEER_INVAL,
+	ATH12K_LEGACY_PEER = 1,
+	ATH12K_MLD_PEER,
+	ATH12K_LINK_PEER,
+};
+
 /* Telemetry Peer Stats */
 struct ath12k_telemetry_dp_peer {
 	bool is_extended;
+	int peer_type;
 	struct ath12k_dp_peer_stats peer_stats;
+	struct ath12k_dp_link_peer_stats link_peer_stats;
 };
 
 /* Telemetry Vif Stats */
