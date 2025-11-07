@@ -5,4 +5,11 @@ ath12k_wifi8-y += core.o \
 		  hw.o \
 		  mhi.o \
 		  ce.o \
-		  wmi.o
+		  wmi.o \
+		  dp.o \
+		  dp_tx.o \
+		  dp_rx.o \
+		  hal.o \
+		  hal_tx.o \
+		  hal_rx.o \
+		  hal_qcn9625.o

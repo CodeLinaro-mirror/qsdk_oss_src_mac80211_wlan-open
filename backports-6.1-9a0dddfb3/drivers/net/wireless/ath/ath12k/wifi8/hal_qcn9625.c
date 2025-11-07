@@ -268,12 +268,6 @@ const struct ath12k_hw_regs qcn9625_regs = {
 	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
 	.pcie_pcs_osc_dtct_config_base = 0x01e0d45c,
 
-	/*PCIe qrtr node id reg*/
-	.pcie_pcie_local_qrtr_ins_reg = 0x1E03164,
-
-	/*PCIe hot reset reg*/
-	.pcie_gcc_gcc_pcie_hot_rst = 0x1e38338,
-
 	/* PPE release ring address */
 	.hal_ppe_rel_ring_base = 0x0000043c,
 
