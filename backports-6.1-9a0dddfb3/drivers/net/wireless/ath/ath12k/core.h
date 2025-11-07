@@ -989,6 +989,7 @@ struct ath12k_link_sta {
 	bool rhash_done;
 
 	u16 tcl_metadata;
+	u16 ast_idx;
 	u16 ast_hash;
 
 	bool is_bridge_peer;

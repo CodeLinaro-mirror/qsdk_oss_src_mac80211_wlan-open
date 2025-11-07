@@ -10885,6 +10885,7 @@ static void ath12k_sta_set_4addr_wk(struct wiphy *wiphy, struct wiphy_work *wk)
 		if (peer) {
 			arsta->tcl_metadata = peer->tcl_metadata;
 			arsta->ast_hash = peer->ast_hash;
+			arsta->ast_idx = peer->hw_peer_id;
 			if (peer->dp_peer) {
 				peer->dp_peer->vdev_type_4addr |= BIT(peer->vif->type);
 				peer->dp_peer->is_reset_mcbc = true;

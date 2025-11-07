@@ -1079,7 +1079,6 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u8 hal_ring_id;
 	int ret;
 	u8 reason, tid;
-	u16 peer_id;
 	u8 ring_selector, subtype;
 	bool msdu_ext_desc = false;
 	size_t hdrlen;
@@ -1105,9 +1104,8 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 
 	if (eth && is_multicast_ether_addr(eth->h_dest) && arsta) {
 		ti.meta_data_flags = arsta->tcl_metadata;
-		peer_id = u16_get_bits(ti.meta_data_flags, HTT_TCL_META_DATA_PEER_ID_MISSION);
 		ti.bss_ast_hash = arsta->ast_hash;
-		ti.bss_ast_idx = peer_id;
+		ti.bss_ast_idx = arsta->ast_idx;
 		ti.lookup_override = true;
 	} else if (hdr && ieee80211_has_a4(hdr->frame_control) &&
 	    is_multicast_ether_addr(hdr->addr3) && arsta) {
