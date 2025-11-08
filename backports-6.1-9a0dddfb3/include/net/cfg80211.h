@@ -10868,10 +10868,11 @@ ssize_t wiphy_locked_debugfs_write(struct wiphy *wiphy, struct file *file,
  * cfg80211_update_muedca_params_event - Notify the updated MU-EDCA parameters
  *	to user space.
  * @wiphy: the wiphy
+ * @radio_idx: radio index in multi radio wiphy scenario
  * @params: Updated MU-EDCA parameters
  * @gfp: allocation flags
  */
-void cfg80211_update_muedca_params_event(struct wiphy *wiphy,
+void cfg80211_update_muedca_params_event(struct wiphy *wiphy, u8 radio_idx,
 					 struct ieee80211_mu_edca_param_set
 					 *params, gfp_t gfp);
 

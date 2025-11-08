@@ -23897,13 +23897,23 @@ void cfg80211_epcs_changed(struct net_device *netdev, bool enabled)
 }
 EXPORT_SYMBOL(cfg80211_epcs_changed);
 
-void cfg80211_update_muedca_params_event(struct wiphy *wiphy,
+void cfg80211_update_muedca_params_event(struct wiphy *wiphy, u8 radio_idx,
 					 struct ieee80211_mu_edca_param_set
 					 *params, gfp_t gfp)
 {
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
 	struct sk_buff *msg;
 	void *hdr;
+
+	if (!params)
+		return;
+
+	/* Validate radio_idx is within bounds */
+	if (rdev->wiphy.n_radio) {
+		if (radio_idx >= rdev->wiphy.n_radio)
+			return;
+	} else
+		radio_idx = 0;
 
 	msg = nlmsg_new(NLMSG_DEFAULT_SIZE, gfp);
 	if (!msg)
@@ -23914,6 +23924,9 @@ void cfg80211_update_muedca_params_event(struct wiphy *wiphy,
 		goto nla_put_failure;
 
 	if (nla_put_u32(msg, NL80211_ATTR_WIPHY, rdev->wiphy_idx))
+		goto nla_put_failure;
+
+	if (nla_put_u8(msg, NL80211_ATTR_WIPHY_RADIO_INDEX, radio_idx))
 		goto nla_put_failure;
 
 	if (nla_put(msg, NL80211_ATTR_HE_MUEDCA_PARAMS,
