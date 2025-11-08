@@ -8050,20 +8050,6 @@ u32 ieee80211_calc_rx_airtime(struct ieee80211_hw *hw,
 			      int len);
 
 /**
- * ieee80211_update_muedca_params - update MU-EDCA parameters.
- *
- * This function is used to pass dynamically updated MU-EDCA parameters from
- * driver to user space in order for parameters to be updated in beacon.
- *
- * @hw: pointer as obtained from ieee80211_alloc_hw()
- * @params: updated MU-EDCA paramters
- * @gfp: allocation flags
- */
-void ieee80211_update_muedca_params(struct ieee80211_hw *hw,
-				    struct ieee80211_mu_edca_param_set
-				    *params, gfp_t gfp);
-
-/**
  * ieee80211_calc_tx_airtime - calculate estimated transmission airtime for TX.
  *
  * This function calculates the estimated airtime usage of a frame based on the
