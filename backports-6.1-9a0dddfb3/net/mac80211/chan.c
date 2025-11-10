@@ -26,8 +26,8 @@ static int ieee80211_chanctx_num_assigned(struct ieee80211_local *local,
 	return num;
 }
 
-static int ieee80211_chanctx_num_reserved(struct ieee80211_local *local,
-					  struct ieee80211_chanctx *ctx)
+int ieee80211_chanctx_num_reserved(struct ieee80211_local *local,
+				   struct ieee80211_chanctx *ctx)
 {
 	struct ieee80211_link_data *link;
 	int num = 0;
@@ -1327,7 +1327,7 @@ int ieee80211_link_reserve_chanctx(struct ieee80211_link_data *link,
 	return 0;
 }
 
-static void
+void
 ieee80211_link_chanctx_reservation_complete(struct ieee80211_link_data *link)
 {
 	struct ieee80211_sub_if_data *sdata = link->sdata;
