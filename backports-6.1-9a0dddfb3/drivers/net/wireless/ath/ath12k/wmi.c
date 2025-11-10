@@ -1560,10 +1560,7 @@ int ath12k_wmi_vdev_start(struct ath12k *ar, struct wmi_vdev_start_req_arg *arg,
 						 sizeof(*cmd));
 	cmd->vdev_id = cpu_to_le32(arg->vdev_id);
 	cmd->beacon_interval = cpu_to_le32(arg->bcn_intval);
-	if (arg->bcn_tx_rate) {
-		cmd->bcn_tx_rate = cpu_to_le32(arg->bcn_tx_rate);
-		cmd->flags |= cpu_to_le32(WMI_VDEV_START_BCN_TX_RATE_PRESENT);
-	}
+	cmd->bcn_tx_rate = cpu_to_le32(arg->bcn_tx_rate);
 	cmd->dtim_period = cpu_to_le32(arg->dtim_period);
 	cmd->num_noa_descriptors = cpu_to_le32(arg->num_noa_descriptors);
 	cmd->preferred_rx_streams = cpu_to_le32(arg->pref_rx_streams);
