@@ -43,13 +43,14 @@ static ssize_t ath12k_coredump_pci_read(char *buffer, loff_t offset,
 	loff_t cur;
 
 	/* Copy ELF header first */
-	if (offset < header_size) {
-		hdr_copy = min_t(size_t, bytes_left, header_size - offset);
+	if (offset < st->elf_hdr_sz) {
+		hdr_copy = min_t(size_t, bytes_left, st->elf_hdr_sz - offset);
 		memcpy(buffer, (u8 *)st->elf_hdr + offset, hdr_copy);
+		st->bytes_read += hdr_copy;
 		return hdr_copy;
 	}
 
-	offset -= header_size;
+	offset -= st->elf_hdr_sz;
 
 	while (bytes_left) {
 		cur = 0;
@@ -81,6 +82,7 @@ static ssize_t ath12k_coredump_pci_read(char *buffer, loff_t offset,
 		buffer     += copy_size;
 		bytes_left -= copy_size;
 		copied     += copy_size;
+		st->bytes_read += copy_size;
 	}
 
 	return copied;
@@ -90,6 +92,8 @@ static void ath12k_coredump_pci_free(void *data)
 {
 	struct ath12k_pci_elf_coredump_state *st = data;
 
+	ath12k_info(st->ab, "coredump: %u bytes transferred (expected %u)\n",
+		    st->bytes_read, st->total_sz);
 	complete(&st->dump_done);
 }
 
@@ -241,6 +245,8 @@ static int ath12k_coredump_build_elf32(struct ath12k_base *ab,
 	st->ab         = ab;
 	st->elf_hdr    = elf_hdr;
 	st->elf_hdr_sz = elf_hdr_sz;
+	st->total_sz   = cur_off;
+	st->bytes_read = 0;
 	st->chunks     = chunks;
 	st->num_chunks = phnum;
 
@@ -701,7 +707,7 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 			kfree(segment);
 			return;
 		}
-		dev_coredumpm(ab->dev, THIS_MODULE, st, st->elf_hdr_sz, GFP_KERNEL,
+		dev_coredumpm(ab->dev, THIS_MODULE, st, st->total_sz, GFP_KERNEL,
 				ath12k_coredump_pci_read, ath12k_coredump_pci_free);
 		wait_for_completion(&st->dump_done);
 		vfree(st->elf_hdr);
