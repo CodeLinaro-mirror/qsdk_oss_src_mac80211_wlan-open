@@ -27546,3 +27546,41 @@ ath12k_mac_op_get_6ghz_dev_deployment_type(struct ieee80211_hw *hw)
 	return dep_type;
 }
 EXPORT_SYMBOL(ath12k_mac_op_get_6ghz_dev_deployment_type);
+
+int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
+				    struct ieee80211_vif *vif, u32 flags)
+{
+	struct ath12k_vif *ahvif;
+	struct ath12k *ar;
+	int ret = -EINVAL;
+	u32 *current_flags;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif) {
+		ath12k_err(NULL, "Invalid ath12k vif\n");
+		return ret;
+	}
+
+	ar = ahvif->deflink.ar;
+	current_flags = &ahvif->dp_vif.monitor_flags;
+	if (!ar) {
+		/* Channel assignment assigns the ar to the vif. Likely, this flag set
+		 * is done at add interface command. Hence, ar isn't yet allocated.
+		 * Store the @flags, ath12k_mac_monitor_start/stop should utilize this
+		 * accordingly.
+		 */
+		*current_flags = flags;
+		ath12k_err(NULL,
+			   "Radio interface not found, flags stored & are dormant\n");
+		return 0;
+	}
+
+	if (!ar->monitor_started)
+		return ret;
+
+	ret = ath12k_dp_mon_tx_set_monitor_flags(ar, flags, current_flags);
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_mac_op_set_monitor_flags);
