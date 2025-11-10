@@ -125,7 +125,108 @@ static void ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
 	rcu_read_unlock();
 }
 
+static void ath12k_copy_to_delay_stats(struct ath12k_dp_link_peer *peer,
+				       struct htt_ppdu_user_stats *usr_stats)
+{
+	peer->ppdu_stats_delayba.sw_peer_id = le16_to_cpu(usr_stats->rate.sw_peer_id);
+	peer->ppdu_stats_delayba.info0 = le32_to_cpu(usr_stats->rate.info0);
+	peer->ppdu_stats_delayba.ru_end = le16_to_cpu(usr_stats->rate.ru_end);
+	peer->ppdu_stats_delayba.ru_start = le16_to_cpu(usr_stats->rate.ru_start);
+	peer->ppdu_stats_delayba.info1 = le32_to_cpu(usr_stats->rate.info1);
+	peer->ppdu_stats_delayba.rate_flags = le32_to_cpu(usr_stats->rate.rate_flags);
+	peer->ppdu_stats_delayba.resp_rate_flags =
+		le32_to_cpu(usr_stats->rate.resp_rate_flags);
+
+	peer->delayba_flag = true;
+}
+
+static void ath12k_copy_to_bar(struct ath12k_dp_link_peer *peer,
+			       struct htt_ppdu_user_stats *usr_stats)
+{
+	usr_stats->rate.sw_peer_id = cpu_to_le16(peer->ppdu_stats_delayba.sw_peer_id);
+	usr_stats->rate.info0 = cpu_to_le32(peer->ppdu_stats_delayba.info0);
+	usr_stats->rate.ru_end = cpu_to_le16(peer->ppdu_stats_delayba.ru_end);
+	usr_stats->rate.ru_start = cpu_to_le16(peer->ppdu_stats_delayba.ru_start);
+	usr_stats->rate.info1 = cpu_to_le32(peer->ppdu_stats_delayba.info1);
+	usr_stats->rate.rate_flags = cpu_to_le32(peer->ppdu_stats_delayba.rate_flags);
+	usr_stats->rate.resp_rate_flags =
+		cpu_to_le32(peer->ppdu_stats_delayba.resp_rate_flags);
+
+	peer->delayba_flag = false;
+}
+
+static int
+ath12k_dp_htt_process_stats_sch_cmd_status_tlv(struct ath12k_pdev_dp *dp_pdev,
+					       const u32 *tlv_desc,
+					       struct htt_ppdu_stats_info *ppdu_info)
+{
+	struct htt_ppdu_user_stats *usr_stats;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp_link_peer *peer;
+	u8 num_users;
+	u16 peer_id;
+	int i;
+
+	num_users = ppdu_info->ppdu_stats.common.num_users;
+
+	if (num_users >= HTT_PPDU_STATS_MAX_USERS) {
+		ath12k_warn(dp->ab,
+			    "HTT PPDU STATS event has unexpected num_users %u, should be smaller than %u\n",
+			    ppdu_info->ppdu_stats.common.num_users,
+			    HTT_PPDU_STATS_MAX_USERS);
+		return -EINVAL;
+	}
+
+	/* back up data rate tlv for all peers */
+	if (ppdu_info->frame_type == HTT_STATS_PPDU_FTYPE_DATA &&
+	    (ppdu_info->tlv_bitmap & (1 << HTT_PPDU_STATS_TAG_USR_COMMON)) &&
+	    ppdu_info->delay_ba) {
+		for (i = 0; i < num_users; i++) {
+			peer_id = ppdu_info->ppdu_stats.user_stats[i].peer_id;
+			spin_lock_bh(&dp->dp_lock);
+			peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+			if (!peer) {
+				spin_unlock_bh(&dp->dp_lock);
+				continue;
+			}
+
+			usr_stats = &ppdu_info->ppdu_stats.user_stats[i];
+			if (usr_stats->delay_ba)
+				ath12k_copy_to_delay_stats(peer, usr_stats);
+			spin_unlock_bh(&dp->dp_lock);
+		}
+	}
+
+	/* restore all peers' data rate tlv to mu-bar tlv */
+	if (ppdu_info->frame_type == HTT_STATS_PPDU_FTYPE_BAR &&
+	    (ppdu_info->tlv_bitmap & (1 << HTT_PPDU_STATS_TAG_USR_COMMON))) {
+		for (i = 0; i < ppdu_info->bar_num_users; i++) {
+			peer_id = ppdu_info->ppdu_stats.user_stats[i].peer_id;
+			spin_lock_bh(&dp->dp_lock);
+			peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+			if (!peer) {
+				spin_unlock_bh(&dp->dp_lock);
+				continue;
+			}
+
+			usr_stats = &ppdu_info->ppdu_stats.user_stats[i];
+			if (usr_stats->cmpltn_cmn.status !=
+					HTT_PPDU_STATS_USER_STATUS_OK) {
+				spin_unlock_bh(&dp->dp_lock);
+				continue;
+			}
+
+			if (peer->delayba_flag)
+				ath12k_copy_to_bar(peer, usr_stats);
+			spin_unlock_bh(&dp->dp_lock);
+		}
+	}
+
+	return 0;
+}
+
 static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
+					   struct ath12k_pdev_dp *dp_pdev,
 					   u16 tag, u16 len, const void *ptr,
 					   void *data)
 {
@@ -138,6 +239,7 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 	u16 peer_id;
 	u32 ppdu_id;
 	u32 frame_type;
+	int ret = 0;
 
 	ppdu_info = data;
 
@@ -206,6 +308,7 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 		memcpy(&user_stats->cmpltn_cmn, ptr,
 		       sizeof(struct htt_ppdu_stats_usr_cmpltn_cmn));
 		ppdu_info->tlv_bitmap |= BIT(tag);
+		ppdu_info->bar_num_users++;
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS:
 		if (len <
@@ -233,6 +336,9 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 		break;
 	case HTT_PPDU_STATS_TAG_SCH_CMD_STATUS:
 		ppdu_info->tlv_bitmap |= BIT(tag);
+		ret = ath12k_dp_htt_process_stats_sch_cmd_status_tlv(dp_pdev,
+								     ptr,
+								     ppdu_info);
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMMON:
 		if (len < sizeof(struct htt_ppdu_stats_user_common)) {
@@ -269,12 +375,14 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 			(struct htt_ppdu_stats_cmpltn_flush *)ptr, ppdu_info);
 		break;
 	}
-	return 0;
+	return ret;
 }
 
-int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
-			   int (*iter)(struct ath12k_base *ar, u16 tag, u16 len,
-				       const void *ptr, void *data),
+int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
+			   const void *ptr, size_t len,
+			   int (*iter)(struct ath12k_base *ar,
+				       struct ath12k_pdev_dp *dp_pdev, u16 tag,
+				       u16 len, const void *ptr, void *data),
 			   void *data)
 {
 	struct htt_ppdu_stats_info *ppdu_info = NULL;
@@ -305,8 +413,8 @@ int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
 				   tlv_tag, ptr - begin, len, tlv_len);
 			return -EINVAL;
 		}
-		ret = iter(ab, tlv_tag, tlv_len, ptr, ppdu_info);
-		if (ret == -ENOMEM)
+		ret = iter(ab, dp_pdev, tlv_tag, tlv_len, ptr, ppdu_info);
+		if (ret != 0)
 			return ret;
 
 		ptr += tlv_len;
@@ -752,36 +860,6 @@ struct htt_ppdu_stats_info *ath12k_dp_htt_get_ppdu_desc(struct ath12k_pdev_dp *d
 	return ppdu_info;
 }
 
-static void ath12k_copy_to_delay_stats(struct ath12k_dp_link_peer *peer,
-				       struct htt_ppdu_user_stats *usr_stats)
-{
-	peer->ppdu_stats_delayba.sw_peer_id = le16_to_cpu(usr_stats->rate.sw_peer_id);
-	peer->ppdu_stats_delayba.info0 = le32_to_cpu(usr_stats->rate.info0);
-	peer->ppdu_stats_delayba.ru_end = le16_to_cpu(usr_stats->rate.ru_end);
-	peer->ppdu_stats_delayba.ru_start = le16_to_cpu(usr_stats->rate.ru_start);
-	peer->ppdu_stats_delayba.info1 = le32_to_cpu(usr_stats->rate.info1);
-	peer->ppdu_stats_delayba.rate_flags = le32_to_cpu(usr_stats->rate.rate_flags);
-	peer->ppdu_stats_delayba.resp_rate_flags =
-		le32_to_cpu(usr_stats->rate.resp_rate_flags);
-
-	peer->delayba_flag = true;
-}
-
-static void ath12k_copy_to_bar(struct ath12k_dp_link_peer *peer,
-			       struct htt_ppdu_user_stats *usr_stats)
-{
-	usr_stats->rate.sw_peer_id = cpu_to_le16(peer->ppdu_stats_delayba.sw_peer_id);
-	usr_stats->rate.info0 = cpu_to_le32(peer->ppdu_stats_delayba.info0);
-	usr_stats->rate.ru_end = cpu_to_le16(peer->ppdu_stats_delayba.ru_end);
-	usr_stats->rate.ru_start = cpu_to_le16(peer->ppdu_stats_delayba.ru_start);
-	usr_stats->rate.info1 = cpu_to_le32(peer->ppdu_stats_delayba.info1);
-	usr_stats->rate.rate_flags = cpu_to_le32(peer->ppdu_stats_delayba.rate_flags);
-	usr_stats->rate.resp_rate_flags =
-		cpu_to_le32(peer->ppdu_stats_delayba.resp_rate_flags);
-
-	peer->delayba_flag = false;
-}
-
 static void
 ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 		                struct htt_ppdu_stats_info *ppdu_info)
@@ -853,12 +931,9 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_htt_ppdu_stats_msg *msg;
 	struct htt_ppdu_stats_info *ppdu_info;
-	struct ath12k_dp_link_peer *peer = NULL;
-	struct htt_ppdu_user_stats *usr_stats = NULL;
-	u32 peer_id = 0;
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k *ar;
-	int ret = 0, i;
+	int ret = 0;
 	u8 pdev_id;
 	u32 ppdu_id, len;
 
@@ -916,62 +991,13 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 
 	ppdu_info->pdev_id = pdev_id;
 	ppdu_info->ppdu_id = ppdu_id;
-	ret = ath12k_dp_htt_tlv_iter(ab, msg->data, len,
+	ret = ath12k_dp_htt_tlv_iter(ab, dp_pdev, msg->data, len,
 				     ath12k_htt_tlv_ppdu_stats_parse,
 				     (void *)ppdu_info);
 	if (ret) {
 		spin_unlock_bh(&dp_pdev->ppdu_list_lock);
 		ath12k_warn(ab, "Failed to parse tlv %d\n", ret);
 		goto exit;
-	}
-
-	if (ppdu_info->ppdu_stats.common.num_users >= HTT_PPDU_STATS_MAX_USERS) {
-		spin_unlock_bh(&dp_pdev->ppdu_list_lock);
-		ath12k_warn(ab,
-			    "HTT PPDU STATS event has unexpected num_users %u, should be smaller than %u\n",
-			    ppdu_info->ppdu_stats.common.num_users,
-			    HTT_PPDU_STATS_MAX_USERS);
-		ret = -EINVAL;
-		goto exit;
-	}
-
-	/* back up data rate tlv for all peers */
-	if (ppdu_info->frame_type == HTT_STATS_PPDU_FTYPE_DATA &&
-	    (ppdu_info->tlv_bitmap & (1 << HTT_PPDU_STATS_TAG_USR_COMMON)) &&
-	    ppdu_info->delay_ba) {
-		for (i = 0; i < ppdu_info->ppdu_stats.common.num_users; i++) {
-			peer_id = ppdu_info->ppdu_stats.user_stats[i].peer_id;
-			spin_lock_bh(&dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
-			if (!peer) {
-				spin_unlock_bh(&dp->dp_lock);
-				continue;
-			}
-
-			usr_stats = &ppdu_info->ppdu_stats.user_stats[i];
-			if (usr_stats->delay_ba)
-				ath12k_copy_to_delay_stats(peer, usr_stats);
-			spin_unlock_bh(&dp->dp_lock);
-		}
-	}
-
-	/* restore all peers' data rate tlv to mu-bar tlv */
-	if (ppdu_info->frame_type == HTT_STATS_PPDU_FTYPE_BAR &&
-	    (ppdu_info->tlv_bitmap & (1 << HTT_PPDU_STATS_TAG_USR_COMMON))) {
-		for (i = 0; i < ppdu_info->bar_num_users; i++) {
-			peer_id = ppdu_info->ppdu_stats.user_stats[i].peer_id;
-			spin_lock_bh(&dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
-			if (!peer) {
-				spin_unlock_bh(&dp->dp_lock);
-				continue;
-			}
-
-			usr_stats = &ppdu_info->ppdu_stats.user_stats[i];
-			if (peer->delayba_flag)
-				ath12k_copy_to_bar(peer, usr_stats);
-			spin_unlock_bh(&dp->dp_lock);
-		}
 	}
 
 	/* Update tx completion stats */

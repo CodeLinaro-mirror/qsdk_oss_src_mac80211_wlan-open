@@ -11156,6 +11156,7 @@ debug_htt_stats_req *stats_req)
 }
 
 static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
+					  struct ath12k_pdev_dp *dp_pdev,
 					  u16 tag, u16 len, const void *tag_buf,
 					  void *user_data)
 {
@@ -11817,7 +11818,7 @@ void ath12k_debugfs_htt_ext_stats_handler(struct ath12k_base *ab,
 		goto exit;
 	}
 
-	ret = ath12k_dp_htt_tlv_iter(ab, msg->data, len,
+	ret = ath12k_dp_htt_tlv_iter(ab, NULL, msg->data, len,
 				     ath12k_dbg_htt_ext_stats_parse,
 				     stats_req);
 	if (ret)
