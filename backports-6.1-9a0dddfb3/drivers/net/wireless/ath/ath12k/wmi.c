@@ -9074,7 +9074,10 @@ skip_mgmt_stats:
 	if ((info->flags & IEEE80211_TX_CTL_NO_ACK) && !status)
 		info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
 
-	ieee80211_tx_status_irqsafe(ath12k_ar_to_hw(ar), msdu);
+	if (!ATH12K_IS_CUSTOM_PKT(skb_cb))
+		ieee80211_tx_status_irqsafe(ath12k_ar_to_hw(ar), msdu);
+	else
+		ath12k_custom_tx_free_extn(msdu, status);
 
 	num_mgmt = atomic_dec_if_positive(&ar->num_pending_mgmt_tx);
 
@@ -9151,7 +9154,10 @@ static void wmi_process_offchan_tx_comp(struct ath12k *ar, u32 desc_id,
 	if (!(info->flags & IEEE80211_TX_CTL_NO_ACK) && !status)
 		info->flags |= IEEE80211_TX_STAT_ACK;
 
-	ieee80211_tx_status_irqsafe(ar->ah->hw, msdu);
+	if (!ATH12K_IS_CUSTOM_PKT(skb_cb))
+		ieee80211_tx_status_irqsafe(ar->ah->hw, msdu);
+	else
+		ath12k_custom_tx_free_extn(msdu, status);
 }
 
 static int ath12k_pull_offchan_tx_compl_param_tlv(struct ath12k_base *ab,

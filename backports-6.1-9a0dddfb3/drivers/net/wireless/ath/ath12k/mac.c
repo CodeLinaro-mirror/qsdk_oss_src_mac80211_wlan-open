@@ -14981,7 +14981,10 @@ static void ath12k_mgmt_over_wmi_tx_drop(struct ath12k *ar, struct sk_buff *skb)
 	if (!(info->flags & IEEE80211_TX_CTL_TX_OFFCHAN))
 		num_mgmt = atomic_dec_if_positive(&ar->num_pending_mgmt_tx);
 
-	ieee80211_free_txskb(ar->ah->hw, skb);
+	if (!ATH12K_IS_CUSTOM_PKT(ATH12K_SKB_CB(skb)))
+		ieee80211_free_txskb(ar->ah->hw, skb);
+	else
+		ath12k_custom_tx_free_extn(skb, 1);
 
 	if (num_mgmt < 0)
 		WARN_ON_ONCE(1);
@@ -15347,7 +15350,13 @@ static int ath12k_mac_mgmt_frame_fill_elem(struct ath12k_link_vif *arvif,
 	return ath12k_mac_mgmt_action_frame_fill_elem(arvif, skb);
 }
 
-static void ath12k_mgmt_over_wmi_tx_work(struct wiphy *wiphy, struct wiphy_work *work)
+#ifdef CPTCFG_QCN_EXTN
+void ath12k_mgmt_over_wmi_tx_work(struct wiphy *wiphy,
+				  struct wiphy_work *work)
+#else
+static void ath12k_mgmt_over_wmi_tx_work(struct wiphy *wiphy,
+					 struct wiphy_work *work)
+#endif
 {
 	struct ath12k *ar = container_of(work, struct ath12k, wmi_mgmt_tx_work);
 	struct ath12k_hw *ah = ar->ah;
