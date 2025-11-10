@@ -1712,6 +1712,7 @@ static const struct ieee80211_ops ath12k_ops_wifi7 = {
 	.config                         = ath12k_mac_op_config,
 	.sta_set_4addr			= ath12k_mac_op_sta_set_4addr,
 	.link_info_changed              = ath12k_mac_op_link_info_changed,
+	.start_ap                       = ath12k_mac_op_start_ap,
 	.vif_cfg_changed		= ath12k_mac_op_vif_cfg_changed,
 	.change_vif_links               = ath12k_mac_op_change_vif_links,
 	.configure_filter		= ath12k_mac_op_configure_filter,
