@@ -2568,6 +2568,7 @@ enum wmi_tlv_service {
 
 	WMI_TLV_SERVICE_SDWF_LEVEL0 = 311,
 	WMI_TLV_SERVICE_PKTLOG_DECODE_INFO_SUPPORT = 320,
+	WMI_TLV_SERVICE_BANG_RADAR_320_SUPPORT = 346,
 	WMI_TLV_SERVICE_EIRP_PREFERRED_SUPPORT = 352,
 	WMI_TLV_SERVICE_WMSK_COMPACTION_RX_TLVS = 361,
 
@@ -2838,6 +2839,7 @@ struct ath12k_wmi_resource_config_arg {
 	bool is_reg_cc_ext_event_supported;
 	bool is_wds_null_frame_supported;
 	bool is_full_bw_nol_feature_supported;
+	bool is_simulate_radar_320_supported;
 	u32 max_beacon_size;
 	bool qos;
 	bool def_flow_override;
@@ -2948,13 +2950,14 @@ struct wmi_ctrl_path_pmlo_telemetry_stats {
 #define WMI_RSRC_CFG_FLAG1_THREE_WAY_COEX_CONFIG_OVERRIDE_SUPPORT BIT(25)
 #define WMI_PDEV_MEC_AGING_TIMER_THRESHOLD_VALUE 5000
 #define WMI_RSRC_CFG_EMA_INIT_CONFIG_BEACON_SIZE               GENMASK(15, 0)
-#define WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT               7
-#define WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT              8
-#define WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT             9
-#define WMI_RSRC_CFG_HOST_AFC_INDOOR_SUPPORT                  10
-#define WMI_RSRC_CFG_HOST_AFC_OUTDOOR_SUPPORT                 11
-#define WMI_RSRC_CFG_HOST_SVC_FLAG_DEF_FLOW_OVERRIDE_SET_BIT  19
-#define WMI_RSRC_CFG_HOST_AFC_TRIGGER_ON_DEFAULT_CC_EVENT_BIT 22
+#define WMI_RSRC_CFG_HOST_SUPPORT_LP_SP_MODE_BIT                 7
+#define WMI_RSRC_CFG_HOST_AFC_DIS_TIMER_CHECK_BIT                8
+#define WMI_RSRC_CFG_HOST_AFC_DIS_REQ_ID_CHECK_BIT               9
+#define WMI_RSRC_CFG_HOST_AFC_INDOOR_SUPPORT                    10
+#define WMI_RSRC_CFG_HOST_AFC_OUTDOOR_SUPPORT                   11
+#define WMI_RSRC_CFG_HOST_SIMULATE_RADAR_320_SUPPORTED          13
+#define WMI_RSRC_CFG_HOST_SVC_FLAG_DEF_FLOW_OVERRIDE_SET_BIT    19
+#define WMI_RSRC_CFG_HOST_AFC_TRIGGER_ON_DEFAULT_CC_EVENT_BIT   22
 
 struct ath12k_wmi_resource_config_params {
 	__le32 tlv_header;

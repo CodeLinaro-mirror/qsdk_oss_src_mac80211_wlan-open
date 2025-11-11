@@ -6132,6 +6132,11 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 	if (tg_cfg->def_flow_override)
 		wmi_cfg->host_service_flags |=
 			cpu_to_le32(1 << WMI_RSRC_CFG_HOST_SVC_FLAG_DEF_FLOW_OVERRIDE_SET_BIT);
+	if (tg_cfg->is_simulate_radar_320_supported)
+		wmi_cfg->host_service_flags |=
+			cpu_to_le32(1 <<
+				    WMI_RSRC_CFG_HOST_SIMULATE_RADAR_320_SUPPORTED);
+
 	wmi_cfg->ema_max_vap_cnt = cpu_to_le32(tg_cfg->ema_max_vap_cnt);
 	wmi_cfg->ema_max_profile_period = cpu_to_le32(tg_cfg->ema_max_profile_period);
 	wmi_cfg->flags2 |= cpu_to_le32(WMI_RSRC_CFG_FLAGS2_CALC_NEXT_DTIM_COUNT_SET);
@@ -6402,6 +6407,10 @@ int ath12k_wmi_cmd_init(struct ath12k_base *ab)
 
 	if (test_bit(WMI_TLV_SERVICE_AFC_SUPPORT, ab->wmi_ab.svc_map))
 		ath12k_set_afc_config(&arg.res_cfg, ab);
+
+	if (test_bit(WMI_TLV_SERVICE_BANG_RADAR_320_SUPPORT,
+		     ab->wmi_ab.svc_map))
+		arg.res_cfg.is_simulate_radar_320_supported = true;
 
 	ab->hw_params->wmi_init(ab, &arg.res_cfg);
 	ab->wow.wmi_conf_rx_decap_mode = arg.res_cfg.rx_decap_mode;
