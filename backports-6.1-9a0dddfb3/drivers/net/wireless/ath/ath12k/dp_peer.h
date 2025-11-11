@@ -135,6 +135,8 @@ struct ath12k_dp_link_peer {
 	u8 atf_ul_airtime;
 	u32 atf_actual_duration;
 	u32 atf_actual_ul_duration;
+
+	bool is_assigned;
 };
 
 struct ath12k_dp_peer {

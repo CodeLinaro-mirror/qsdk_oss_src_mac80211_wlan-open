@@ -680,15 +680,8 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	u8 *dp_peer_mac = !sta ? addr : sta->addr;
 	bool is_vdev_peer = false;
 
-	if (!sta) {
-		struct ath12k_dp_peer_create_params params = {0};
-
-		params.is_vdev_peer = true;
+	if (!sta)
 		is_vdev_peer = true;
-		params.hw_link_id = hw_link_id;
-
-		ath12k_dp_peer_create(dp_hw, addr, &params, vif);
-	}
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -768,6 +761,8 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	ath12k_dp_link_peer_rhash_add(dp, peer);
 
+	peer->is_assigned = true;
+
 	spin_unlock_bh(&dp->dp_lock);
 
 	return 0;
@@ -789,12 +784,11 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_link_peer *peer, *temp_peer;
 	u16 peerid_index;
-	bool is_vdev_peer = false;
 
 	spin_lock_bh(&dp->dp_lock);
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
-	if (!peer) {
+	if (!peer || !peer->is_assigned) {
 		spin_unlock_bh(&dp->dp_lock);
 		return;
 	}
@@ -809,8 +803,6 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	if (!dp_peer->is_vdev_peer)
 		dp_peer->peer_links_map &= ~BIT(peer->link_id);
 
-	is_vdev_peer = dp_peer->is_vdev_peer;
-
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
 
 	rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
@@ -822,12 +814,11 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	if (temp_peer && temp_peer->hw_link_id == ar->hw_link_id)
 		ath12k_dp_link_peer_rhash_delete(dp, peer);
 
+	peer->is_assigned = false;
+
 	spin_unlock_bh(&dp->dp_lock);
 
 	synchronize_rcu();
-
-	if (is_vdev_peer)
-		ath12k_dp_peer_delete(dp_hw, addr, NULL, ar->hw_link_id);
 }
 
 void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp *dp, const u8 *addr,

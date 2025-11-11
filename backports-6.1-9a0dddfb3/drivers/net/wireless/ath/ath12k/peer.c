@@ -294,13 +294,16 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
-	ath12k_dp_link_peer_assign(ar, arvif->vdev_id,
-				   sta, arg->peer_addr,
-				   link_id, ar->hw_link_id, vif,
-				   arvif->ahvif->dp_vif.ppe_vp_type,
-				   arvif->ahvif->dp_vif.ppe_vp_num);
+	ret = ath12k_dp_link_peer_assign(ar, arvif->vdev_id,
+					 sta, arg->peer_addr,
+					 link_id, ar->hw_link_id, vif,
+					 arvif->ahvif->dp_vif.ppe_vp_type,
+					 arvif->ahvif->dp_vif.ppe_vp_num);
 
-	return 0;
+	if (ret)
+		ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr, false);
+
+	return ret;
 }
 
 u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah)

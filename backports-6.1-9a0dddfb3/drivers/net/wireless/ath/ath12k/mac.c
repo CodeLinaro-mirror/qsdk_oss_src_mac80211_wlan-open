@@ -5569,6 +5569,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 			ath12k_warn(ar->ab, "failed to submit AP self-peer removal on vdev %d link id %d: %d"
 				    "num_peers: %d",
 				    arvif->vdev_id, arvif->link_id, ret, ar->num_peers);
+
+		ath12k_dp_peer_delete(&ah->dp_hw, arvif->bssid, NULL, ar->hw_link_id);
 	}
 
 	ath12k_debugfs_remove_interface(arvif);
@@ -16266,6 +16268,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	int txpower = NL80211_TX_POWER_AUTOMATIC;
 	u8 map_id;
 	u32 rep_ul_resp;
+	struct ath12k_dp_peer_create_params params = {};
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -16487,6 +16490,16 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	switch (ahvif->vdev_type) {
 	case WMI_VDEV_TYPE_AP:
+		params.is_vdev_peer = true;
+		params.hw_link_id = ar->hw_link_id;
+
+		ret = ath12k_dp_peer_create(&ah->dp_hw, arvif->bssid, &params, vif);
+		if (ret) {
+			ath12k_warn(ab, "failed to vdev %d create dp_peer for AP: %d\n",
+				    arvif->vdev_id, ret);
+			goto err_vdev_del;
+		}
+
 		peer_param.vdev_id = arvif->vdev_id;
 		peer_param.peer_addr = arvif->bssid;
 		peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
@@ -16494,7 +16507,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		if (ret) {
 			ath12k_warn(ab, "failed to vdev %d create peer for AP: %d\n",
 				    arvif->vdev_id, ret);
-			goto err_vdev_del;
+			goto err_dp_peer_del;
 		}
 
 		ret = ath12k_mac_set_kickout(arvif);
@@ -16648,9 +16661,12 @@ err_peer_del:
 		if (fbret) {
 			ath12k_warn(ar->ab, "failed to delete peer %pM vdev_id %d ret %d\n",
 				    link_addr, arvif->vdev_id, fbret);
-			goto err;
 		}
 	}
+
+err_dp_peer_del:
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+		ath12k_dp_peer_delete(&ah->dp_hw, arvif->bssid, NULL, ar->hw_link_id);
 
 err_vdev_del:
 	ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
