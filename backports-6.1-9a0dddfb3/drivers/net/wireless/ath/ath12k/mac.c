@@ -16059,8 +16059,15 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		    !is_zero_ether_addr(arvif->bssid)) {
 			memcpy(link_addr, arvif->bssid, ETH_ALEN);
 		} else if (link_conf) {
+			/* In split-phy scenario with MLO, use RANDOM MAC for scan vdev
+			 * only when creating a scan link (ATH12K_DEFAULT_SCAN_LINK)
+			 * to avoid MAC address conflicts across radios.
+			 */
 			memcpy(link_addr, link_conf->addr, ETH_ALEN);
-			memcpy(arvif->bssid, link_conf->addr, ETH_ALEN);
+			if (arvif->link_id == ATH12K_DEFAULT_SCAN_LINK &&
+			    vif->valid_links && vif->type == NL80211_IFTYPE_STATION)
+				eth_random_addr(link_addr);
+			memcpy(arvif->bssid, link_addr, ETH_ALEN);
 		} else {
 			eth_random_addr(link_addr);
 			memcpy(arvif->bssid, link_addr, ETH_ALEN);
