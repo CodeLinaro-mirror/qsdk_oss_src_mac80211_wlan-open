@@ -11977,7 +11977,10 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			if (old_state > new_state) {
 				if (!arvif->ar)
 					continue;
-				if (test_bit(ATH12K_FLAG_RECOVERY, &arvif->ar->ab->dev_flags))
+				if (test_bit(ATH12K_FLAG_RECOVERY,
+					     &arvif->ar->ab->dev_flags) ||
+				    test_bit(ATH12K_FLAG_CRASH_FLUSH,
+					     &arvif->ar->ab->dev_flags))
 					is_recovery = true;
 			}
 
