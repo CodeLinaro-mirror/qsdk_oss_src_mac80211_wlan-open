@@ -3069,6 +3069,9 @@ enum nl80211_commands {
  * @NL80211_ATTR_CFP: Indicate whether the particular vdev supports control
  *	frame protection
  *
+ * @NL80211_ATTR_EXT_MLD_CAPA_AND_OPS: Extended MLD Capabilities and Operations
+ *	(u16)
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3676,6 +3679,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_CFP,
 
 	NL80211_ATTR_CIGTK,
+
+	NL80211_ATTR_EXT_MLD_CAPA_AND_OPS,
 
 	/* add attributes here, update the policy in nl80211.c */
 
