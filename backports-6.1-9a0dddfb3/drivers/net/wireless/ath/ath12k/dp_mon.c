@@ -1248,6 +1248,140 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
                   stats->dp_mon_stats.mon_stats.rx_airtime_consumption[ac].consumption);
 }
 
+static u8 ath12k_dp_get_bw_offset(u8 bw)
+{
+	switch (bw) {
+	case HAL_RX_BW_20MHZ:
+		return PKT_BW_GAIN_20MHZ;
+	case HAL_RX_BW_40MHZ:
+		return PKT_BW_GAIN_40MHZ;
+	case HAL_RX_BW_80MHZ:
+		return PKT_BW_GAIN_80MHZ;
+	case HAL_RX_BW_160MHZ:
+		return PKT_BW_GAIN_160MHZ;
+	case HAL_RX_BW_320MHZ:
+		return PKT_BW_GAIN_320MHZ;
+	default:
+		return 0;
+	}
+}
+
+/**
+ * ath12k_dp_get_rssi_value - Calculate RSSI based on given SNR
+ * @snr:      Input SNR (either snr or snr_dp)
+ * @stats:    Peer signal stats (for region offset etc.)
+ * @rssi_offsets: Conversion offsets
+ * @link_peer: Peer info (for bw_info)
+ *
+ * Returns: Calculated RSSI value (s8)
+ */
+static
+s8 ath12k_dp_get_rssi_value(s8 snr,
+			    struct ath12k_dp_link_peer_rx_signal_stats *stats,
+			    struct wmi_rssi_dbm_conv_offsets *rssi_offsets,
+			    struct ath12k_dp_link_peer *link_peer)
+{
+	s8 rssi_comb;
+	s8 rssi_val;
+
+	if (!link_peer || !link_peer->peer_stats.rx_stats)
+		return 0;
+
+	/* Common offset calculation */
+	rssi_comb = stats->rssi_region_offset +
+		rssi_offsets->avg_nf_dbm +
+		rssi_offsets->rssi_temp_offset +
+		ath12k_dp_get_bw_offset(link_peer->peer_stats.rx_stats->bw_info);
+
+	/* RSSI calculation */
+	rssi_val = snr + rssi_comb;
+	if (snr > rssi_offsets->xlna_bypass_threshold)
+		rssi_val += rssi_offsets->xlna_bypass_offset;
+
+	return rssi_val;
+}
+
+#define RSSI_OFFSET 100
+static void
+ath12k_dp_calc_rx_peer_rssi(struct ath12k_pdev_dp *dp_pdev,
+			    struct ath12k_dp_link_peer *link_peer)
+{
+	struct ath12k *ar = dp_pdev->ar;
+	struct ath12k_dp_link_peer_rx_signal_stats *stats;
+	s8 rssi, rssi_dp;
+
+	if (!ar || !link_peer)
+		return;
+
+	stats = &link_peer->signal_stats;
+	rssi = ath12k_dp_get_rssi_value(stats->snr, stats, &ar->rssi_offsets, link_peer);
+	stats->rssi = rssi;
+	rssi_dp = ath12k_dp_get_rssi_value(stats->snr_dp, stats,
+					   &ar->rssi_offsets, link_peer);
+	stats->rssi_dp = rssi_dp;
+	ewma_avg_rssi_add(&stats->avg_rssi, (stats->rssi + RSSI_OFFSET) << 8);
+	stats->rssi_avg =
+		(ewma_avg_rssi_read(&stats->avg_rssi) >> 8) - RSSI_OFFSET;
+	ewma_avg_rssi_dp_add(&stats->avg_rssi_dp, (stats->rssi_dp + RSSI_OFFSET) << 8);
+	stats->rssi_dp_avg =
+		(ewma_avg_rssi_dp_read(&stats->avg_rssi_dp) >> 8) - RSSI_OFFSET;
+}
+
+static void
+ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
+				     struct hal_rx_mon_ppdu_info *ppdu_info,
+				     u32 uid)
+{
+	struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_link_peer_rx_signal_stats *stats = NULL;
+
+	if (!dp_pdev)
+		return;
+
+	lockdep_assert_held(&dp_pdev->dp->dp_lock);
+	rcu_read_lock();
+	peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, user_stats->sw_peer_id);
+	if (!peer) {
+		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
+			   "peer stats not found on ppdu peer id %d\n",
+			   user_stats->sw_peer_id);
+		rcu_read_unlock();
+		return;
+	}
+
+	stats = &peer->signal_stats;
+	stats->snr = ppdu_info->rssi_comb;
+	stats->rssi_region_offset = ppdu_info->rssi_region_offset;
+	ewma_avg_snr_add(&stats->avg_snr, stats->snr);
+	stats->snr_avg = ewma_avg_snr_read(&stats->avg_snr);
+
+	if (likely(ppdu_info->fc_valid)) {
+		switch (ppdu_info->frame_control & 0x00F0) {
+		case IEEE80211_STYPE_DATA:
+		case IEEE80211_STYPE_DATA_CFACK:
+		case IEEE80211_STYPE_DATA_CFPOLL:
+		case IEEE80211_STYPE_DATA_CFACKPOLL:
+		case IEEE80211_STYPE_QOS_DATA:
+		case IEEE80211_STYPE_QOS_DATA_CFACK:
+		case IEEE80211_STYPE_QOS_DATA_CFPOLL:
+		case IEEE80211_STYPE_QOS_DATA_CFACKPOLL:
+			if ((ppdu_info->preamble_type != HAL_RX_PREAMBLE_11A &&
+			     ppdu_info->preamble_type != HAL_RX_PREAMBLE_11B)) {
+				stats->snr_dp = ppdu_info->rssi_comb;
+				ewma_avg_snr_dp_add(&stats->avg_snr_dp, stats->snr_dp);
+				stats->snr_dp_avg =
+					ewma_avg_snr_dp_read(&stats->avg_snr_dp);
+			}
+			break;
+		default:
+			break;
+		}
+	}
+	ath12k_dp_calc_rx_peer_rssi(dp_pdev, peer);
+	rcu_read_unlock();
+}
+
 static void
 ath12k_dp_mon_per_user_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 					struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -1307,8 +1441,10 @@ void ath12k_dp_mon_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 	if (num_users > HAL_MAX_UL_MU_USERS)
 		num_users = HAL_MAX_UL_MU_USERS;
 
-	for (uid = 0; uid < num_users; uid++)
+	for (uid = 0; uid < num_users; uid++) {
 		ath12k_dp_mon_per_user_ppdu_rssi_update(dp_pdev, ppdu_info, uid);
+		ath12k_dp_mon_link_peer_signal_stats(dp_pdev, ppdu_info, uid);
+	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_ppdu_rssi_update);
 

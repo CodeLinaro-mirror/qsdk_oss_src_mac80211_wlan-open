@@ -238,6 +238,10 @@ void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 		list_add(&peer->list, &dp->peers);
 		wake_up(&ab->peer_mapping_wq);
 		ewma_avg_rssi_init(&peer->avg_rssi);
+		ewma_avg_snr_init(&peer->signal_stats.avg_snr);
+		ewma_avg_snr_dp_init(&peer->signal_stats.avg_snr_dp);
+		ewma_avg_rssi_init(&peer->signal_stats.avg_rssi);
+		ewma_avg_rssi_dp_init(&peer->signal_stats.avg_rssi_dp);
 	}
 	ath12k_dbg(ab, ATH12K_DBG_PEER, "htt peer map vdev %d peer %pM id %d\n",
 		   vdev_id, mac_addr, peer_id);

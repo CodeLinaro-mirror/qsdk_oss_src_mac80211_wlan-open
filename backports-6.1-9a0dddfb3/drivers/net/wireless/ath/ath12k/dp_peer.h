@@ -31,8 +31,6 @@ struct ath12k_atf_peer_airtime {
 	u64 last_update_time;
 };
 
-DECLARE_EWMA(avg_rssi, 10, 8)
-
 struct ath12k_mscs_ctxt {
 	u8 user_priority_bitmap;
 	u8 user_priority_limit;
@@ -103,6 +101,8 @@ struct ath12k_dp_link_peer {
 	u32 atf_actual_ul_duration;
 
 	bool is_assigned;
+
+	struct ath12k_dp_link_peer_rx_signal_stats signal_stats;
 };
 
 struct ath12k_dp_peer {

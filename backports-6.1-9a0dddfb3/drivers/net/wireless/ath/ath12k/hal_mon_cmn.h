@@ -247,6 +247,7 @@ struct hal_rx_mon_ppdu_info {
 	struct hal_rx_mon_msdu_info msdu_info[HAL_MAX_UL_MU_USERS];
 	u8 user_id;
 	u16 retried_msdu_count;
+	u8 rssi_region_offset;
 };
 
 struct hal_rx_mon_status_tlv_hdr {
