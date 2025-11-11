@@ -5652,8 +5652,16 @@ ath12k_mac_remove_and_unassign_bridge_vdevs(struct ieee80211_hw *hw,
 
 	ahvif = (void *)vif->drv_priv;
 
-	if (hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) > 0)
-		return;
+	if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE &&
+	    vif->type == NL80211_IFTYPE_AP) {
+		/* During ERP, allow bridge vdev removal when only 1 vdev is active */
+		if (hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) > 1)
+			return;
+	} else {
+		/* Keep bridge vdevs until all vdevs are removed */
+		if (hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS)) > 0)
+			return;
+	}
 
 	links = ahvif->links_map;
 	for_each_set_bit_from(link_id, &links, ATH12K_NUM_MAX_LINKS) {
@@ -6409,6 +6417,7 @@ static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
 	unsigned long links, scan_links;
 	int ret;
 	u8 link_id;
+	unsigned int num_vdev;
 
 	/* Proceed only for MLO */
 	if (!ahvif->vif->valid_links)
@@ -6416,6 +6425,7 @@ static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
 
 	links = ahvif->links_map;
 	scan_links = ATH12K_SCAN_LINKS_MASK;
+	num_vdev = hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS));
 
 	for_each_andnot_bit(link_id, &links, &scan_links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
@@ -6425,11 +6435,17 @@ static void ath12k_mac_bridge_vdevs_down(struct ieee80211_hw *hw,
 				   link_id);
 			continue;
 		}
-
 		/* Proceed bridge vdev down only after all the normal vdevs are down */
 		if (link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
-			if (arvif->is_up)
-				return;
+			if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE &&
+			    ahvif->vif->type == NL80211_IFTYPE_AP) {
+				if (num_vdev > ATH12K_ERP_BRIDGE_VDEV_REMOVAL_THRESHOLD)
+					return;
+			} else {
+				if (arvif->is_up)
+					return;
+			}
+
 			continue;
 		}
 
@@ -19319,6 +19335,7 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 	unsigned long links, scan_links;
 	int ret;
 	u8 link_id;
+	unsigned int num_vdev;
 
 	if (!hw || !vif) {
 		ath12k_err(NULL, "Data NA for AP bridge vdevs stop\n");
@@ -19336,6 +19353,7 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 
 	links = ahvif->links_map;
 	scan_links = ATH12K_SCAN_LINKS_MASK;
+	num_vdev = hweight16(ahvif->links_map & ~BIT(IEEE80211_MLD_MAX_NUM_LINKS));
 
 	for_each_andnot_bit(link_id, &links, &scan_links, ATH12K_NUM_MAX_LINKS) {
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
@@ -19348,8 +19366,14 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 
 		/* Proceed bridge vdev stop only after all the normal vdevs are stopped */
 		if (link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
-			if (arvif->is_started)
-				return;
+			if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) {
+				if (num_vdev > ATH12K_ERP_BRIDGE_VDEV_REMOVAL_THRESHOLD)
+					return;
+			} else {
+				if (arvif->is_started)
+					return;
+			}
+
 			continue;
 		}
 
