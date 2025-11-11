@@ -23709,6 +23709,7 @@ static struct wiphy_iftype_ext_capab ath12k_iftypes_ext_capa[] = {
 				sizeof(ath12k_if_types_ext_capa_ap),
 		.eml_capabilities = 0,
 		.mld_capa_and_ops = 0,
+		.ext_mld_capa_and_ops = 0,
 	},
 };
 
@@ -24088,6 +24089,8 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	if (ab->ag->mlo_capable) {
 		ath12k_iftypes_ext_capa[2].eml_capabilities = cap->eml_cap;
 		ath12k_iftypes_ext_capa[2].mld_capa_and_ops = cap->mld_cap;
+		ath12k_iftypes_ext_capa[2].ext_mld_capa_and_ops = cap->ext_mld_cap;
+
 		wiphy->flags |= WIPHY_FLAG_SUPPORTS_MLO;
 
 		if(!is_raw_mode)

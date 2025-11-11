@@ -7603,6 +7603,7 @@ ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 
 	pdev->cap.eml_cap = le32_to_cpu(caps->eml_capability);
 	pdev->cap.mld_cap = le32_to_cpu(caps->mld_capability);
+	pdev->cap.ext_mld_cap = le32_to_cpu(caps->ext_mld_capability);
 
 	return 0;
 }

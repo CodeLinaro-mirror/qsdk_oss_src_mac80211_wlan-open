@@ -3292,6 +3292,7 @@ struct ath12k_wmi_caps_ext_params {
 	__le32 eht_supp_mcs_ext_5ghz[WMI_MAX_EHT_SUPP_MCS_5GHZ_SIZE];
 	__le32 eml_capability;
 	__le32 mld_capability;
+	__le32 ext_mld_capability;
 } __packed;
 
 #define WMI_HOST_WLAN_FLEXI_TWT_CAP	BIT(1)
