@@ -902,8 +902,8 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 		return 0;
 	}
 
-	ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar, peer, peer->dp_peer->rx_tid,
-						    1, 0, false);
+	ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar, peer,
+				&peer->dp_peer->rx_tid[params->tid], 1, 0, false);
 	spin_unlock_bh(&dp->dp_lock);
 	if (ret) {
 		ath12k_warn(ab, "failed to update reo for rx tid %d: %d\n",
