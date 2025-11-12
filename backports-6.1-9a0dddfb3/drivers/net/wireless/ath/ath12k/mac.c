@@ -37,6 +37,7 @@
 #include "erp.h"
 #include "vendor_services.h"
 #include "ini.h"
+#include "hal.h"
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -13505,17 +13506,20 @@ static void ath12k_mac_update_qos_map(struct ath12k *ar, struct ath12k_link_vif 
 	struct ath12k_qos_map *qos_map;
 	struct ath12k_dp_link_vif *dp_link_vif;
 	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_base *ab = ar->ab;
 	u8 dscp_low, dscp_high;
 	u8 dscp;
 	u8 tid, map_id, bank_id;
 	u8 i;
+	int max_entries;
 
 	qos_map = arvif->qos_map;
 	map_id = arvif->map_id;
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
 	bank_id = dp_link_vif->bank_id;
+	max_entries = ab->hal.hal_params->dscp_tid_map_tbl_max_entries;
 
-	if (map_id >= HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX) {
+	if (map_id >= max_entries) {
 		ath12k_err(ar->ab, "failed to find free map_id\n");
 		goto free_qos_map;
 	}

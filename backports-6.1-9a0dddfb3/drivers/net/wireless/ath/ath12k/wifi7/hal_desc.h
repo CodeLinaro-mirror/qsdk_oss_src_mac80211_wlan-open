@@ -8,6 +8,14 @@
 #ifndef ATH12K_HAL_DESC_H
 #define ATH12K_HAL_DESC_H
 
+#define HAL_TLV_HDR_TAG		GENMASK(9, 1)
+#define HAL_TLV_HDR_LEN		GENMASK(25, 10)
+#define HAL_TLV_USR_ID		GENMASK(31, 26)
+
+#define HAL_TLV_64_HDR_TAG		GENMASK(9, 1)
+#define HAL_TLV_64_HDR_LEN		GENMASK(21, 10)
+#define HAL_TLV_64_USR_ID		GENMASK(31, 26)
+
 enum hal_tlv_tag {
 	HAL_MACTX_CBF_START					= 0 /* 0x0 */,
 	HAL_PHYRX_DATA						= 1 /* 0x1 */,
@@ -500,31 +508,6 @@ enum hal_tlv_tag {
 #define RX_MPDU_DESC_INFO0_MPDU_QOS_CTRL_VALID	BIT(27)
 #define RX_MPDU_DESC_INFO0_TID			GENMASK(31, 28)
 
-/* Peer Metadata classification */
-
-/* Version 0 */
-#define RX_MPDU_DESC_META_DATA_V0_PEER_ID	GENMASK(15, 0)
-#define RX_MPDU_DESC_META_DATA_V0_VDEV_ID	GENMASK(23, 16)
-
-/* Version 1 */
-#define RX_MPDU_DESC_META_DATA_V1_PEER_ID		GENMASK(13, 0)
-#define RX_MPDU_DESC_META_DATA_V1_LOGICAL_LINK_ID	GENMASK(15, 14)
-#define RX_MPDU_DESC_META_DATA_V1_VDEV_ID		GENMASK(23, 16)
-#define RX_MPDU_DESC_META_DATA_V1_LMAC_ID		GENMASK(25, 24)
-#define RX_MPDU_DESC_META_DATA_V1_DEVICE_ID		GENMASK(28, 26)
-
-/* Version 1A */
-#define RX_MPDU_DESC_META_DATA_V1A_PEER_ID		GENMASK(13, 0)
-#define RX_MPDU_DESC_META_DATA_V1A_VDEV_ID		GENMASK(21, 14)
-#define RX_MPDU_DESC_META_DATA_V1A_LOGICAL_LINK_ID	GENMASK(25, 22)
-#define RX_MPDU_DESC_META_DATA_V1A_DEVICE_ID		GENMASK(28, 26)
-
-/* Version 1B */
-#define RX_MPDU_DESC_META_DATA_V1B_PEER_ID	GENMASK(13, 0)
-#define RX_MPDU_DESC_META_DATA_V1B_VDEV_ID	GENMASK(21, 14)
-#define RX_MPDU_DESC_META_DATA_V1B_HW_LINK_ID	GENMASK(25, 22)
-#define RX_MPDU_DESC_META_DATA_V1B_DEVICE_ID	GENMASK(28, 26)
-
 struct rx_mpdu_desc {
 	__le32 info0; /* %RX_MPDU_DESC_INFO */
 	__le32 peer_meta_data;
@@ -720,16 +703,6 @@ struct rx_msdu_ext_desc {
  * src_link_id
  *		Set to the link ID of the PMAC that received the frame
  */
-
-enum hal_reo_dest_ring_buffer_type {
-	HAL_REO_DEST_RING_BUFFER_TYPE_MSDU,
-	HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC,
-};
-
-enum hal_reo_dest_ring_push_reason {
-	HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED,
-	HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION,
-};
 
 #define HAL_REO_DEST_RING_INFO0_BUFFER_TYPE		BIT(0)
 #define HAL_REO_DEST_RING_INFO0_PUSH_REASON		GENMASK(2, 1)
@@ -1133,12 +1106,6 @@ struct hal_reo_flush_cache {
 
 #define HAL_TCL_DATA_CMD_INFO5_RING_ID			GENMASK(27, 20)
 #define HAL_TCL_DATA_CMD_INFO5_LOOPING_COUNT		GENMASK(31, 28)
-
-enum hal_tcl_desc_type {
-	HAL_TCL_DESC_TYPE_BUFFER,
-	HAL_TCL_DESC_TYPE_EXT_DESC,
-	HAL_TCL_DESC_TYPE_MAX,
-};
 
 struct hal_tcl_data_cmd {
 	struct ath12k_buffer_addr buf_addr_info;

@@ -60,7 +60,8 @@ static int ath12k_dp_ppeds_tx_comp_poll(struct napi_struct *napi, int budget)
 	int work_done;
 
 	set_bit(ATH12K_DP_PPEDS_TX_COMP_NAPI_BIT, &dp->service_rings_running);
-	work_done = ath12k_ppeds_tx_completion_handler(ab, total_budget);
+	work_done = dp->arch_ops->dp_ppeds_tx_completion_handler(ab, total_budget);
+
 	if (!ab->stats_disable)
 		ab->dp->ppe.ppeds_stats.tx_desc_freed += work_done;
 

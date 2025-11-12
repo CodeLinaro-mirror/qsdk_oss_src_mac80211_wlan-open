@@ -70,9 +70,6 @@ struct dp_tx_ring {
 	u8 tcl_data_ring_id;
 	struct dp_srng tcl_data_ring;
 	struct dp_srng tcl_comp_ring;
-	struct hal_wbm_completion_ring_tx *tx_status;
-	int tx_status_head;
-	int tx_status_tail;
 };
 
 struct dp_link_desc_bank {
@@ -514,9 +511,6 @@ struct ath12k_dp_arch_ops {
 				     struct ath12k_link_vif *arvif,
 				     struct sk_buff *skb, struct ath12k_link_sta *arsta);
 	int (*dp_tx_ring_setup)(struct ath12k_base *ab);
-	void (*dp_tx_status_parse)(struct ath12k_base *ab,
-				   struct hal_wbm_completion_ring_tx *desc,
-				   struct hal_tx_status *ts);
 	int (*dp_msdu_htt_connect)(struct ath12k_dp *dp);
 	int (*dp_peer_create)(struct ath12k_hw *ah, u8 *addr,
 			      struct ath12k_dp_peer_create_params *params,
@@ -527,6 +521,7 @@ struct ath12k_dp_arch_ops {
 	int (*dp_link_peer_create)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*dp_link_peer_delete)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
+	int (*dp_ppeds_tx_completion_handler)(struct ath12k_base *ab, int budget);
 };
 
 struct ath12k_bp_stats {
@@ -654,7 +649,7 @@ struct ath12k_dp {
 	u8 htt_tgt_ver_major;
 	u8 htt_tgt_ver_minor;
 	struct dp_link_desc_bank link_desc_banks[DP_LINK_DESC_BANKS_MAX];
-	enum hal_rx_buf_return_buf_manager idle_link_rbm;
+	u8 idle_link_rbm;
 	struct dp_srng wbm_idle_ring;
 	struct dp_srng wbm_desc_rel_ring;
 	struct dp_srng reo_reinject_ring;
@@ -1187,6 +1182,12 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
 void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
+				   struct ath12k_ppeds_tx_desc_info *tx_desc,
+				   struct htt_tx_wbm_completion *status_desc);
+void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
+				      struct ath12k_dp_tx_comp_status *tx_comp_status,
+				      struct ath12k_ppeds_tx_desc_info **tx_desc);
 int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
 				  struct ath12k_dp *dp, bool vdev_id_check_en);
 struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,

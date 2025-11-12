@@ -25,7 +25,7 @@ int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab, struct ath12k_dp_rx_tid
 				 struct ath12k_hal_reo_cmd *cmd,
 				 void (*cb)(struct ath12k_dp *dp, void *ctx,
 					    enum hal_reo_cmd_status status));
-int ath12k_wifi8_dp_rx_process_wbm_err(struct ath12k_dp *dp,
+int ath12k_wifi8_dp_rx_process_reo_err(struct ath12k_dp *dp, int ring_id,
 				       struct napi_struct *napi, int budget);
 int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *napi,
 				   int budget);

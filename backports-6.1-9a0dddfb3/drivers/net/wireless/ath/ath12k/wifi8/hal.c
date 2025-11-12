@@ -260,6 +260,8 @@ void ath12k_wifi8_hal_srng_src_hw_init(struct ath12k_base *ab,
 	if (srng->ring_id == HAL_SRNG_RING_ID_WBM_IDLE_LINK)
 		val |= HAL_TCL1_RING_MISC_MSI_RING_ID_DISABLE;
 
+	/* descriptor/head_ptr is from/to host DDR */
+	val |= HAL_TCL1_RING_MISC_TRANSACTION_TYPE;
 	ath12k_hif_write32(ab, reg_base + HAL_TCL1_RING_MISC_OFFSET(hal), val);
 }
 
@@ -448,7 +450,7 @@ void ath12k_wifi8_hal_ce_dst_set_desc(struct hal_ce_srng_dest_desc *desc,
 
 void ath12k_wifi8_hal_set_link_desc_addr(struct hal_wbm_link_desc *desc,
 					 u32 cookie, dma_addr_t paddr,
-					 enum hal_rx_buf_return_buf_manager rbm)
+					 u8 rbm)
 {
 	desc->buf_addr_info.info0 = le32_encode_bits((paddr & HAL_ADDR_LSB_REG_MASK),
 						     BUFFER_ADDR_INFO0_ADDR);
@@ -585,6 +587,12 @@ void ath12k_wifi8_hal_tx_configure_bank_register(struct ath12k_base *ab,
 			   bank_config);
 }
 
+void ath12k_wifi8_hal_tx_configure_bank_register_default(struct ath12k_base *ab)
+{
+	ath12k_hif_write32(ab, HAL_TCL_SW_CONFIG_BANK_DEFAULT,
+			   HAL_TCL_SW_CONFIG_BANK_DEFAULT_VAL);
+}
+
 u32 ath12k_wifi8_hal_tx_read_bank_register(struct ath12k_base *ab, u8 bank_id)
 {
 	u32 reg_val;
@@ -631,7 +639,7 @@ void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab)
 {
 	u32 cmem_base = ab->qmi.dev_mem[ATH12K_QMI_DEVMEM_CMEM_INDEX].start;
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
-	u32 wbm_base = HAL_SEQ_WCSS_UMAC_WBM_REG;
+	u32 tqm_base = HAL_SEQ_WCSS_UMAC_TQM_REG;
 	u32 val = 0;
 	struct ath12k_hal *hal = &ab->hal;
 
@@ -652,37 +660,40 @@ void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab)
 
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_SW_COOKIE_CFG1(hal), val);
 
-	/* Enable HW CC for WBM */
-	ath12k_hif_write32(ab, wbm_base + HAL_WBM_SW_COOKIE_CFG0, cmem_base);
+	/* Enable HW CC for TQM */
+	ath12k_hif_write32(ab, tqm_base + HAL_TQM_SW_COOKIE_CFG0, cmem_base);
 
 	val = u32_encode_bits(ATH12K_CMEM_ADDR_MSB,
-			      HAL_WBM_SW_COOKIE_CFG_CMEM_BASE_ADDR_MSB) |
+			      HAL_TQM_SW_COOKIE_CFG1_CMEM_BASE_ADDR_MSB) |
 		u32_encode_bits(ATH12K_CC_PPT_MSB,
-				HAL_WBM_SW_COOKIE_CFG_COOKIE_PPT_MSB) |
+				HAL_TQM_SW_COOKIE_CFG1_COOKIE_PPT_MSB) |
 		u32_encode_bits(ATH12K_CC_SPT_MSB,
-				HAL_WBM_SW_COOKIE_CFG_COOKIE_SPT_MSB) |
-		u32_encode_bits(1, HAL_WBM_SW_COOKIE_CFG_ALIGN);
+				HAL_TQM_SW_COOKIE_CFG1_COOKIE_SPT_MSB) |
+		u32_encode_bits(1, HAL_TQM_SW_COOKIE_CFG1_ALIGN);
 
-	ath12k_hif_write32(ab, wbm_base + HAL_WBM_SW_COOKIE_CFG1, val);
+	ath12k_hif_write32(ab, tqm_base + HAL_TQM_SW_COOKIE_CFG1, val);
 
 	/* Enable conversion complete indication */
-	val = ath12k_hif_read32(ab, wbm_base + HAL_WBM_SW_COOKIE_CFG2);
-	val |= u32_encode_bits(1, HAL_WBM_SW_COOKIE_CFG_RELEASE_PATH_EN) |
-		u32_encode_bits(1, HAL_WBM_SW_COOKIE_CFG_ERR_PATH_EN) |
-		u32_encode_bits(1, HAL_WBM_SW_COOKIE_CFG_CONV_IND_EN);
+	val = ath12k_hif_read32(ab, tqm_base + HAL_TQM_TX_COMPLETION_MISC_CFG);
+	val |= u32_encode_bits(1, HAL_TQM_TX_COMPLETION_MISC_CFG_RELEASE_PATH_EN) |
+		u32_encode_bits(1, HAL_TQM_TX_COMPLETION_MISC_CFG_ERR_PATH_EN) |
+		u32_encode_bits(1, HAL_TQM_TX_COMPLETION_MISC_CFG_CONV_IND_EN);
 
-	ath12k_hif_write32(ab, wbm_base + HAL_WBM_SW_COOKIE_CFG2, val);
+	ath12k_hif_write32(ab, tqm_base + HAL_TQM_TX_COMPLETION_MISC_CFG, val);
 
-	/* Enable Cookie conversion for WBM2SW Rings */
-	val = ath12k_hif_read32(ab, wbm_base + HAL_WBM_SW_COOKIE_CONVERT_CFG);
-	val |= u32_encode_bits(1, HAL_WBM_SW_COOKIE_CONV_CFG_GLOBAL_EN) |
-	       ab->hal.hal_params->wbm2sw_cc_enable;
+	val = ath12k_hif_read32(ab, tqm_base + HAL_TQM_SW_COOKIE_CONVERT_CFG);
+	val |= u32_encode_bits(1, HAL_TQM_SW_COOKIE_CONV_CFG_GLOBAL_EN) |
+	       ab->hal.hal_params->tqm2sw_cc_enable1;
 
-	ath12k_hif_write32(ab, wbm_base + HAL_WBM_SW_COOKIE_CONVERT_CFG, val);
+	ath12k_hif_write32(ab, tqm_base + HAL_TQM_SW_COOKIE_CONVERT_CFG, val);
+
+	val = ath12k_hif_read32(ab, tqm_base + HAL_TQM_SW_COOKIE_CONVERT_CFG2);
+	val |= ab->hal.hal_params->tqm2sw_cc_enable2;
+
+	ath12k_hif_write32(ab, tqm_base + HAL_TQM_SW_COOKIE_CONVERT_CFG2, val);
 }
 
-enum hal_rx_buf_return_buf_manager
-ath12k_wifi8_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
+u8 ath12k_wifi8_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 {
 	return HAL_RX_BUF_RBM_WBM_DEV0_IDLE_DESC_LIST;
 }
@@ -710,6 +721,14 @@ void ath12k_wifi8_hal_srng_hw_disable(struct ath12k_base *ab,
 	}
 }
 
+void ath12k_wifi8_get_tlv_tag_params(__le32 tl, uint16_t *tag, uint32_t *id,
+				     uint16_t *length)
+{
+	*tag = le32_get_bits(tl, HAL_TLV_HDR_TAG);
+	*length = le32_get_bits(tl, HAL_TLV_HDR_LEN);
+	*id = le32_get_bits(tl, HAL_TLV_USR_ID);
+}
+
 void ath12k_wifi8_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type type,
 				  struct hal_srng *srng, uint32_t *hp, uint32_t *tp)
 {
@@ -733,8 +752,8 @@ bool ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab)
 	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
 	regval = ath12k_hif_read32(ab, cmn_reg_addr);
 
-	return (regval &
-			1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+	return (regval & 1 <<
+		HAL_TCL_CONS_RING_CMN_CTRL_PPE2TCL1_RNG_HALT_SHFT);
 }
 
 void ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab)
@@ -745,7 +764,7 @@ void ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab)
 	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
 	regval = ath12k_hif_read32(ab, cmn_reg_addr);
 
-	regval |= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+	regval |= (1 << HAL_TCL_CONS_RING_CMN_CTRL_PPE2TCL1_RNG_HALT_SHFT);
 
 	/* Enable ring halt for the ppe2tcl ring */
 	ath12k_hif_write32(ab, cmn_reg_addr, regval);
@@ -759,7 +778,7 @@ void ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_reset(struct ath12k_base *ab)
 	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
 	regval = ath12k_hif_read32(ab, cmn_reg_addr);
 
-	regval &= ~(1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+	regval &= ~(1 << HAL_TCL_CONS_RING_CMN_CTRL_PPE2TCL1_RNG_HALT_SHFT);
 
 	/* Disable ring halt for the ppe2tcl ring */
 	ath12k_hif_write32(ab, cmn_reg_addr, regval);
@@ -774,12 +793,13 @@ bool ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
 
 	regval = ath12k_hif_read32(ab, cmn_reg_addr);
 
-	regval &= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT);
+	regval &=
+	   (1 << HAL_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT);
 
 	return !!regval;
 }
 
-#define HAL_TCL_RBM_MAPPING0_ADDR_OFFSET        0x00000088
+#define HAL_TCL_RBM_MAPPING0_ADDR_OFFSET HWIO_TCL_R0_RBM_MAPPING0_OFFS
 #define HAL_TCL_RBM_MAPPING_SHFT 4
 #define HAL_TCL_RBM_MAPPING_BMSK 0xF
 #define HAL_TCL_RBM_MAPPING_PPE2TCL_OFFSET  7
@@ -865,27 +885,31 @@ void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab)
 			   val);
 }
 
-bool ath12k_wifi8_hal_tx_completion_process(struct hal_wbm_completion_ring_tx *desc,
+bool ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
 					    struct ath12k_dp_tx_comp_status *tx_comp_status)
 {
 	u64 desc_va = 0;
 
-	tx_comp_status->buf_rel_source = FIELD_GET(HAL_WBM_COMPL_TX_INFO0_REL_SRC_MODULE,
-						   desc->info0);
+	tx_comp_status->buf_rel_source =
+		FIELD_GET(HAL_TQM2SW_COMPLETION_RING_INFO0_RELEASE_SOURCE_MODULE,
+			  desc->info0);
 	tx_comp_status->tx_desc = NULL;
 
-	if (likely(HAL_WBM_COMPL_TX_INFO0_CC_DONE & desc->info0)) {
-		desc_va = ((u64)desc->buf_va_hi << 32 | desc->buf_va_lo);
+	if (likely(HAL_TQM2SW_COMPLETION_RING_INFO3_COOKIE_CONVERSION_STATUS &
+		   desc->info3)) {
+		desc_va = ((u64)le32_to_cpu(desc->buf_addr_info.info1) << 32 |
+			   le32_to_cpu(desc->buf_addr_info.info0));
 		tx_comp_status->tx_desc = (struct ath12k_ppeds_tx_desc_info *)
 						((unsigned long)desc_va);
 	} else {
-		tx_comp_status->desc_id = u32_get_bits(desc->buf_va_hi,
+		tx_comp_status->desc_id = u32_get_bits(desc->buf_addr_info.info1,
 						       BUFFER_ADDR_INFO1_SW_COOKIE);
 	}
 
 	if (tx_comp_status->buf_rel_source == HAL_WBM_REL_SRC_MODULE_FW) {
-		tx_comp_status->htt_status = le32_get_bits(desc->info0,
-							   HAL_TX_COMP_TQM_RELEASE_REASON_MASK);
+		tx_comp_status->htt_status =
+		       le32_get_bits(desc->info0,
+				     HAL_TQM2SW_COMPLETION_RING_INFO0_TQM_RELEASE_REASON);
 
 		/* Dont consider HTT_TX_COMP_STATUS_MEC_NOTIFY */
 		if (tx_comp_status->htt_status ==

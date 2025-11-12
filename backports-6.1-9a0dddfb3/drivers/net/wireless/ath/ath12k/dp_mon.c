@@ -772,7 +772,8 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 		return -ENOMEM;
 
 	tlv = (struct hal_tlv_hdr *)ptr;
-	tlv_tag = le32_get_bits(tlv->tl, HAL_TLV_HDR_TAG);
+	dp_pdev->dp->hal->hal_ops->hal_get_tlv_tag_params(tlv->tl, &tlv_tag, &tlv_userid,
+							  &tlv_len);
 
 	hal_status = ath12k_hal_mon_tx_status_get_num_user(dp_pdev->dp->hal,
 							   tlv_tag, tlv, &num_user);
@@ -786,9 +787,9 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 
 	do {
 		tlv = (struct hal_tlv_hdr *)ptr;
-		tlv_tag = le32_get_bits(tlv->tl, HAL_TLV_HDR_TAG);
-		tlv_len = le32_get_bits(tlv->tl, HAL_TLV_HDR_LEN);
-		tlv_userid = le32_get_bits(tlv->tl, HAL_TLV_USR_ID);
+		dp_pdev->dp->hal->hal_ops->hal_get_tlv_tag_params(tlv->tl, &tlv_tag,
+								  &tlv_userid,
+								  &tlv_len);
 
 		tx_ppdu_info = ath12k_hal_mon_tx_ppdu_info(dp_pdev->dp->hal,
 							   pmon,

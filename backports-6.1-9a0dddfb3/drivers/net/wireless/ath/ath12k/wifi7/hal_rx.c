@@ -920,7 +920,7 @@ void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 	 * size changes and also send WMI message to FW to change the REO
 	 * queue descriptor in Rx peer entry as part of dp_rx_tid_update.
 	 */
-	memset(ext_desc, 0, 3 * sizeof(*ext_desc));
+	memset(ext_desc, 0, REO_QUEUE_EXT_DESC_MAX * sizeof(*ext_desc));
 	ath12k_wifi7_hal_reo_set_desc_hdr(&ext_desc->desc_hdr,
 					  HAL_DESC_REO_OWNED,
 					  HAL_DESC_REO_QUEUE_EXT_DESC,
@@ -1575,7 +1575,7 @@ void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
 		return;
 
 	ext_desc = qdesc->ext_desc;
-	memset(ext_desc, 0, 3 * sizeof(*ext_desc));
+	memset(ext_desc, 0, REO_QUEUE_EXT_DESC_MAX * sizeof(*ext_desc));
 
 	ath12k_wifi7_hal_reo_set_desc_hdr(&ext_desc->desc_hdr, HAL_DESC_REO_OWNED,
 					  HAL_DESC_REO_QUEUE_EXT_DESC,

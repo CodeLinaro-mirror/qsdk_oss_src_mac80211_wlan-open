@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include "hal_desc.h"
@@ -609,6 +609,7 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_wcn7850 = {
 	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
+	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
 };
 
 static
@@ -675,4 +676,5 @@ const struct hal_ops hal_wcn7850_ops = {
 	.rx_h_l3pad_get = ath12k_wifi7_hal_rx_h_l3pad_wcn7850,
 	.hal_mon_ops_init = ath12k_wifi7_hal_mon_ops_init,
 	.get_hw_hptp = ath12k_wifi7_hal_get_hw_hptp,
+	.hal_get_tlv_tag_params = ath12k_wifi7_get_tlv_tag_params,
 };

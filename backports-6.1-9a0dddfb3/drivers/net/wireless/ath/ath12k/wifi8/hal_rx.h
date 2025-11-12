@@ -14,9 +14,9 @@ struct ath12k_dp;
 
 struct hal_reo_status;
 
-struct hal_rx_wbm_rel_info {
+struct hal_rx_reo_dest_rel_info {
 	u32 cookie;
-	enum hal_wbm_rel_src_module err_rel_src;
+	enum hal_reo_dest_rel_src_module err_rel_src;
 	enum hal_reo_dest_ring_push_reason push_reason;
 	u32 err_code;
 	bool first_msdu;
@@ -73,23 +73,26 @@ struct hal_rx_rxpcu_classification_overview {
 	u32 rsvd0;
 } __packed;
 
-struct hal_rx_msdu_desc_info {
+struct rx_msdu_info {
 	u32 msdu_flags;
 	u16 msdu_len; /* 14 bits for length */
 };
 
 #define HAL_RX_NUM_MSDU_DESC 6
 struct hal_rx_msdu_list {
-	struct hal_rx_msdu_desc_info msdu_info[HAL_RX_NUM_MSDU_DESC];
+	struct rx_msdu_info msdu_info[HAL_RX_NUM_MSDU_DESC];
 	u64 paddr[HAL_RX_NUM_MSDU_DESC];
 	u32 sw_cookie[HAL_RX_NUM_MSDU_DESC];
 	u8 rbm[HAL_RX_NUM_MSDU_DESC];
 };
 
+#define REO_QUEUE_EXT_DESC_MAX 5
 #define REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_0 0xDDBEEF
 #define REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_1 0xADBEEF
 #define REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_2 0xBDBEEF
 #define REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_3 0xCDBEEF
+#define REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_4 0xEDBEEF
+#define REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_5 0xFDBEEF
 
 /* HE Radiotap data1 Mask */
 #define HE_SU_FORMAT_TYPE 0x0000
@@ -431,10 +434,6 @@ ath12k_wifi8_hal_reo_update_rx_reo_queue_status(struct ath12k_base *ab,
 						struct hal_tlv_64_hdr *tlv,
 						struct hal_reo_status *status);
 void
-ath12k_wifi8_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
-				       u32 *num_msdus, u32 *msdu_cookies,
-				       enum hal_rx_buf_return_buf_manager *rbm);
-void
 ath12k_wifi8_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
 				       struct hal_wbm_release_ring *desc,
 				       struct ath12k_buffer_addr *buf_addr_info,
@@ -442,8 +441,8 @@ ath12k_wifi8_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
 int ath12k_wifi8_hal_desc_reo_parse_err(struct ath12k_dp *dp,
 					struct hal_reo_dest_ring *desc,
 					dma_addr_t *paddr, u32 *desc_bank);
-int ath12k_wifi8_hal_wbm_desc_parse_err(struct ath12k_dp *dp, void *desc,
-					struct hal_rx_wbm_rel_info *rel_info);
+int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
+				       struct hal_rx_reo_dest_rel_info *rel_info);
 void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_base *ab,
 					   struct ath12k_buffer_addr *buff_addr,
 					   dma_addr_t *paddr, u32 *cookie);

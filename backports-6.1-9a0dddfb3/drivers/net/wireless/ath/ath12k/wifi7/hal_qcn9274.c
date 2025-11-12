@@ -726,6 +726,7 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_ipq5332 = {
 	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
+	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_5332,
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
@@ -742,6 +743,7 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_qcn9274 = {
 	.num_tx_msdus_per_link_desc = HAL_NUM_TX_MSDUS_PER_LINK_DESC,
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
+	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_9274,
 };
 
 u32 ath12k_wifi7_hal_rx_h_mpdu_err_qcn9274(struct hal_rx_desc *desc)
@@ -1100,5 +1102,5 @@ const struct hal_ops hal_qcn9274_ops = {
 			ath12k_wifi7_hal_ppeds_cfg_ast_override_map_reg,
 	.hal_reo_config_reo2ppe_dest_info = ath12k_wifi7_hal_reo_config_reo2ppe_dest_info,
 	.hal_tx_set_ppe_vp_entry = ath12k_wifi7_hal_tx_set_ppe_vp_entry,
-	.hal_tx_completion_process = ath12k_wifi7_hal_tx_completion_process,
+	.hal_get_tlv_tag_params = ath12k_wifi7_get_tlv_tag_params,
 };

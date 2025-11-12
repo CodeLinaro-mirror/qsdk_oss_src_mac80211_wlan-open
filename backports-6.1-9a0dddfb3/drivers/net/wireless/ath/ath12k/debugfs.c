@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/inet.h>
@@ -4122,12 +4122,14 @@ static ssize_t ath12k_write_pdev_qos_map_set(struct file *file,
 					     size_t count, loff_t *ppos)
 {
 	struct ath12k *ar = file->private_data;
+	struct ath12k_base *ab = ar->ab;
 	char buf[256] = {0};
 	char *token, *buf_ptr;
 	u8 values[64];
 	int value_count = 0;
 	u8 id;
 	int ret;
+	int max_entries;
 
 	if (count > sizeof(buf))
 		return -EINVAL;
@@ -4151,7 +4153,8 @@ static ssize_t ath12k_write_pdev_qos_map_set(struct file *file,
 	if (ret)
 		return ret;
 
-	for (id = 0; id < HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX; id++)
+	max_entries = ab->hal.hal_params->dscp_tid_map_tbl_max_entries;
+	for (id = 0; id < max_entries; id++)
 		ath12k_update_dscp_tid_pdev(ar, id);
 
 	return count;

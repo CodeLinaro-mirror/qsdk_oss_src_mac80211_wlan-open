@@ -29,14 +29,6 @@ struct ath12k_dp_htt_wbm_tx_status {
 	s8 ack_rssi;
 };
 
-static inline
-bool ath12k_dp_tx_completion_process(struct ath12k_base *ab,
-				     struct hal_wbm_completion_ring_tx *desc,
-				     struct ath12k_dp_tx_comp_status *tx_comp_status)
-{
-	return ab->hal.hal_ops->hal_tx_completion_process(desc, tx_comp_status);
-}
-
 void ath12k_dp_tx_put_bank_profile(struct ath12k_dp *dp, u8 bank_id);
 
 void ath12k_dp_tx_encap_nwifi(struct sk_buff *skb);
@@ -59,7 +51,6 @@ void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
 int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 				 struct htt_tx_wbm_completion *status_desc, u8 mac_id);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-int ath12k_ppeds_tx_completion_handler(struct ath12k_base *ab, int ring_id);
 struct ath12k_ppeds_tx_desc_info *
 ath12k_dp_ppeds_tx_assign_desc_nolock(struct ath12k_dp *dp);
 #endif

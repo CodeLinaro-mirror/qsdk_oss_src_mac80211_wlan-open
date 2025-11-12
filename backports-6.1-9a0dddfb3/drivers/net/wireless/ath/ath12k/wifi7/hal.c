@@ -469,7 +469,7 @@ void ath12k_wifi7_hal_ce_dst_set_desc(struct hal_ce_srng_dest_desc *desc,
 
 void ath12k_wifi7_hal_set_link_desc_addr(struct hal_wbm_link_desc *desc,
 					 u32 cookie, dma_addr_t paddr,
-					 enum hal_rx_buf_return_buf_manager rbm)
+					 u8 rbm)
 {
 	desc->buf_addr_info.info0 = le32_encode_bits((paddr & HAL_ADDR_LSB_REG_MASK),
 						     BUFFER_ADDR_INFO0_ADDR);
@@ -702,8 +702,7 @@ void ath12k_wifi7_hal_cc_config(struct ath12k_base *ab)
 	ath12k_hif_write32(ab, wbm_base + HAL_WBM_SW_COOKIE_CONVERT_CFG, val);
 }
 
-enum hal_rx_buf_return_buf_manager
-ath12k_wifi7_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
+u8 ath12k_wifi7_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 {
 	switch (device_id) {
 	case 0:
@@ -746,6 +745,14 @@ void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
 	}
 }
 
+void ath12k_wifi7_get_tlv_tag_params(__le32 tl, uint16_t *tag, uint32_t *id,
+				     uint16_t *length)
+{
+	*tag = le32_get_bits(tl, HAL_TLV_HDR_TAG);
+	*length = le32_get_bits(tl, HAL_TLV_HDR_LEN);
+	*id = le32_get_bits(tl, HAL_TLV_USR_ID);
+}
+
 void ath12k_wifi7_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type type,
 				  struct hal_srng *srng, uint32_t *hp, uint32_t *tp)
 {
@@ -770,7 +777,7 @@ bool ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab)
 	regval = ath12k_hif_read32(ab, cmn_reg_addr);
 
 	return (regval &
-			1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+			1 << HAL_TCL_CONS_RING_CMN_CTRL_PPE2TCL1_RNG_HALT_SHFT);
 }
 
 void ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab)
@@ -781,7 +788,7 @@ void ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab)
 	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
 	regval = ath12k_hif_read32(ab, cmn_reg_addr);
 
-	regval |= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+	regval |= (1 << HAL_TCL_CONS_RING_CMN_CTRL_PPE2TCL1_RNG_HALT_SHFT);
 
 	/* Enable ring halt for the ppe2tcl ring */
 	ath12k_hif_write32(ab, cmn_reg_addr, regval);
@@ -795,7 +802,7 @@ void ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_reset(struct ath12k_base *ab)
 	cmn_reg_addr = HAL_SEQ_WCSS_UMAC_TCL_REG + HAL_TCL1_RING_CMN_CTRL_REG;
 	regval = ath12k_hif_read32(ab, cmn_reg_addr);
 
-	regval &= ~(1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_SHFT);
+	regval &= ~(1 << HAL_TCL_CONS_RING_CMN_CTRL_PPE2TCL1_RNG_HALT_SHFT);
 
 	/* Disable ring halt for the ppe2tcl ring */
 	ath12k_hif_write32(ab, cmn_reg_addr, regval);
@@ -810,7 +817,8 @@ bool ath12k_wifi7_hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
 
 	regval = ath12k_hif_read32(ab, cmn_reg_addr);
 
-	regval &= (1 << HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT);
+	regval &=
+	   (1 << HAL_TCL_R0_CONS_RING_CMN_CTRL_REG_PPE2TCL1_RNG_HALT_STAT_SHFT);
 
 	return !!regval;
 }

@@ -12,6 +12,7 @@
 #include "hal_tx.h"
 #include "hal_rx.h"
 #include "hal_rx_desc.h"
+#include "hwhdrs.h"
 
 extern const struct ath12k_hw_regs qcn9625_regs;
 
@@ -25,6 +26,9 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define WINDOW_DYNAMIC_MASK			GENMASK(6, 0)
 #define CE_WINDOW_SHIFT				7
 #define UMAC_WINDOW_SHIFT			14
+
+#define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX    128
+#define HAL_DSCP_TID_TBL_SIZE                   24
 
 /* calculate the register address from bar0 of shadow register x */
 #define HAL_SHADOW_BASE_ADDR			0x000008fc
@@ -42,28 +46,35 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC	30
 
 /* WCSS Relative address */
-#define HAL_SEQ_WCSS_CMEM_OFFSET		0x00100000
-#define HAL_SEQ_WCSS_UMAC_OFFSET		0x00a00000
-#define HAL_SEQ_WCSS_UMAC_REO_REG		0x00a38000
-#define HAL_SEQ_WCSS_UMAC_TCL_REG		0x00a44000
-#define HAL_SEQ_WCSS_UMAC_CE0_SRC_REG(hal) \
-	((hal)->regs->hal_umac_ce0_src_reg_base)
-#define HAL_SEQ_WCSS_UMAC_CE0_DST_REG(hal) \
-	((hal)->regs->hal_umac_ce0_dest_reg_base)
-#define HAL_SEQ_WCSS_UMAC_CE1_SRC_REG(hal) \
-	((hal)->regs->hal_umac_ce1_src_reg_base)
-#define HAL_SEQ_WCSS_UMAC_CE1_DST_REG(hal) \
-	((hal)->regs->hal_umac_ce1_dest_reg_base)
-#define HAL_SEQ_WCSS_UMAC_WBM_REG		0x00a34000
+#define HAL_SEQ_WCSS_UMAC_OFFSET		UMAC_BASE
+#define HAL_SEQ_WCSS_UMAC_REO_REG		UMAC_REO_BASE
+#define HAL_SEQ_WCSS_UMAC_TCL_REG		UMAC_TCL_BASE
+#define HAL_SEQ_WCSS_UMAC_TQM_REG		UMAC_TQM_BASE
+#define HAL_SEQ_WCSS_UMAC_WBM_REG		UMAC_WBM_BASE
 
-#define HAL_CE_WFSS_CE_REG_BASE			0x01b80000
-#define HAL_DP_REG_WINDOW_OFFSET                0x180000
+#define HAL_SEQ_WCSS_UMAC_CE0_SRC_REG	\
+	SEQ_WCSS_UMAC_WFSS_CE_0_REG_WFSS_CE_0_CHANNEL_SRC_REG_OFFSET
+#define HAL_SEQ_WCSS_UMAC_CE0_DST_REG	\
+	SEQ_WCSS_UMAC_WFSS_CE_0_REG_WFSS_CE_0_CHANNEL_DST_REG_OFFSET
+#define HAL_SEQ_WCSS_UMAC_CE1_SRC_REG	\
+	SEQ_WCSS_UMAC_WFSS_CE_0_REG_WFSS_CE_1_CHANNEL_SRC_REG_OFFSET
+#define HAL_SEQ_WCSS_UMAC_CE1_DST_REG	\
+	SEQ_WCSS_UMAC_WFSS_CE_0_REG_WFSS_CE_1_CHANNEL_DST_REG_OFFSET
 
-#define HAL_TCL_SW_CONFIG_BANK_ADDR		0x00a4408c
+#define HAL_CE_WFSS_CE_REG_BASE                 CE_WFSS_CE_REG_BASE
+#define HAL_DP_REG_WINDOW_OFFSET                0x00180000
+
+#define HAL_TCL_SW_CONFIG_BANK_ADDR		UMAC_TCL_R0_SW_CONFIG_BANK_n(0)
+
+/*TODO: Revisit Default value */
+#define HAL_TCL_SW_CONFIG_BANK_DEFAULT_VAL	0x3c43a
+#define HAL_TCL_SW_CONFIG_BANK_DEFAULT		UMAC_TCL_R0_SW_CONFIG_BANK_DEFAULT
+
+#define HAL_TCL_LINK_ID_TO_CHIP_ID_MAP		HWIO_TCL_R0_LINK_ID_TO_CHIP_ID_MAP_OFFS
 
 /* SW2TCL(x) R0 ring configuration address */
-#define HAL_TCL1_RING_CMN_CTRL_REG		0x00000020
-#define HAL_TCL1_RING_DSCP_TID_MAP		0x00000240
+#define HAL_TCL1_RING_CMN_CTRL_REG		HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_OFFS
+#define HAL_TCL1_RING_DSCP_TID_MAP		HWIO_TCL_R0_DSCP_TID_MAP_n_OFFS(0)
 #define HAL_TCL1_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_tcl1_ring_base_lsb)
 #define HAL_TCL1_RING_BASE_MSB(hal) \
@@ -112,10 +123,9 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 	(HAL_TCL1_RING_MISC(_hal) - HAL_TCL1_RING_BASE_LSB(_hal)); })
 
 /* SW2TCL(x) R2 ring pointers (head/tail) address */
-#define HAL_TCL1_RING_HP			0x00002000
-#define HAL_TCL1_RING_TP			0x00002004
-#define HAL_TCL2_RING_HP			0x00002008
-#define HAL_TCL_RING_HP				0x00002028
+#define HAL_TCL1_RING_HP			HWIO_TCL_R2_SW2TCL1_RING_HP_OFFS
+#define HAL_TCL1_RING_TP			HWIO_TCL_R2_SW2TCL1_RING_TP_OFFS
+#define HAL_TCL2_RING_HP			HWIO_TCL_R2_SW2TCL2_RING_HP_OFFS
 
 #define HAL_TCL1_RING_TP_OFFSET \
 		(HAL_TCL1_RING_TP - HAL_TCL1_RING_HP)
@@ -123,12 +133,29 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 /* TCL STATUS ring address */
 #define HAL_TCL_STATUS_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_tcl_status_ring_base_lsb)
-#define HAL_TCL_STATUS_RING_HP			0x00002048
+#define HAL_TCL_STATUS_RING_HP			HWIO_TCL_R2_TCL2SW_STATUS1_RING_HP_OFFS
+
+/* TCL2SW1_EXCEPTION_RING */
+#define HAL_TX_EXCEPTION_RING_BASE_LSB	\
+	HWIO_TCL_R0_TCL2SW_EXCEPTION1_RING_BASE_LSB_OFFS
+#define HAL_TX_EXCEPTION_RING_HP		HWIO_TCL_R2_TCL2SW_EXCEPTION1_RING_HP_OFFS
 
 /* PPE2TCL1 Ring address */
 #define HAL_TCL_PPE2TCL1_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_tcl_ppe2tcl_ring_base_lsb)
-#define HAL_TCL_PPE2TCL1_RING_HP		0x00002038
+#define HAL_TCL_PPE2TCL1_RING_HP		HWIO_TCL_R2_PPE2TCL1_RING_HP_OFFS
+
+/* PPE2TCL2 Ring address */
+#define HAL_TCL_PPE2TCL2_RING_BASE_LSB		HWIO_TCL_R0_PPE2TCL2_RING_BASE_LSB_OFFS
+#define HAL_TCL_PPE2TCL2_RING_HP		HWIO_TCL_R2_PPE2TCL2_RING_HP_OFFS
+
+/* PPE2TCL3 Ring address */
+#define HAL_TCL_PPE2TCL3_RING_BASE_LSB		HWIO_TCL_R0_PPE2TCL3_RING_BASE_LSB_OFFS
+#define HAL_TCL_PPE2TCL3_RING_HP		HWIO_TCL_R2_PPE2TCL3_RING_HP_OFFS
+
+/*TQM2SW Ring address */
+#define HAL_TQM2SW0_RELEASE_RING_HP		HWIO_TQM_R2_TQM2SW0_RELEASE_RING_HP_OFFS
+#define HAL_TQM2SW1_RELEASE_RING_HP		HWIO_TQM_R2_TQM2SW1_RELEASE_RING_HP_OFFS
 
 #define HAL_TCL_PPE_INDEX_MAPPING_OFFSET 0x214
 #define HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE 0x4
@@ -155,14 +182,116 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_TCL_ASE_SEARCH_CTRL_CACHE_DISABLE			BIT(9)
 #define HAL_TCL_ASE_SEARCH_CTRL_CACHE_FAILURES_ENABLE		BIT(10)
 
+/* WBM PPE Release Ring address */
+#define HAL_TQM_PPE_RELEASE_RING_BASE_LSB(hal) \
+	((hal)->regs->hal_ppe_rel_ring_base)
+#define HAL_TQM_PPE_RELEASE_RING_HP	\
+	HWIO_TQM_R0_TQM2PPE_RELEASE_RING_HP_ADDR_LSB_OFFS
+
+#define HAL_TCL_ENTRANCE_FROM_PPE_RING_SIZE (8 * sizeof(u32))
+
+/* TODO: CORE DP: cahnge REO error ring assignment as required */
+#define HAL_REO_DEST_REL_ERR_RING_NUM 0
+
 /* REO2SW(x) R0 ring configuration address */
 #define HAL_REO1_GEN_ENABLE			0x00000000
 #define HAL_REO1_MISC_CTRL_ADDR(hal) \
 	((hal)->regs->hal_reo1_misc_ctrl_addr)
-#define HAL_REO1_DEST_RING_CTRL_IX_0		0x00000004
-#define HAL_REO1_DEST_RING_CTRL_IX_1		0x00000008
-#define HAL_REO1_DEST_RING_CTRL_IX_2		0x0000000c
-#define HAL_REO1_DEST_RING_CTRL_IX_3		0x00000010
+#define HAL_REO1_DEST_RING_CTRL_AP_IX_0	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_IX_0_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_IX_1	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_IX_1_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_IX_2	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_IX_2_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_IX_3	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_IX_3_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_IX_4	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_IX_4_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_IX_5	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_IX_5_OFFS
+
+#define HAL_REO_ERROR_DEST_MAPPING_AP_IX_0	\
+	HWIO_REO_R0_ERROR_DESTINATION_MAPPING_AP_IX_0_OFFS
+#define HAL_REO_ERROR_DEST_MAPPING_AP_IX_1	\
+	HWIO_REO_R0_ERROR_DESTINATION_MAPPING_AP_IX_1_OFFS
+#define HAL_REO_ERROR_DEST_MAPPING_AP_IX_2	\
+	HWIO_REO_R0_ERROR_DESTINATION_MAPPING_AP_IX_2_OFFS
+
+#define HAL_REO_RDI_CTRL_SEL_WITH_TID				0x00000048
+
+#define HAL_REO1_DEST_RING_CTRL_AP_TID_BASED_IX_0	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_TID_BASED_IX_0_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_TID_BASED_IX_1	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_TID_BASED_IX_1_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_TID_BASED_IX_2	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_TID_BASED_IX_2_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_TID_BASED_IX_3	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_TID_BASED_IX_3_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_TID_BASED_IX_4	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_TID_BASED_IX_4_OFFS
+#define HAL_REO1_DEST_RING_CTRL_AP_TID_BASED_IX_5	\
+	HWIO_REO_R0_DESTINATION_RING_CTRL_AP_TID_BASED_IX_5_OFFS
+
+#define HAL_REO_ERROR_DEST_MAPPING_AP_TID_BASED_IX_0	\
+	HWIO_REO_R0_ERROR_DESTINATION_MAPPING_AP_TID_BASED_IX_0_OFFS
+#define HAL_REO_ERROR_DEST_MAPPING_AP_TID_BASED_IX_1	\
+	HWIO_REO_R0_ERROR_DESTINATION_MAPPING_AP_TID_BASED_IX_1_OFFS
+#define HAL_REO_ERROR_DEST_MAPPING_AP_TID_BASED_IX_2	\
+	HWIO_REO_R0_ERROR_DESTINATION_MAPPING_AP_TID_BASED_IX_2_OFFS
+
+#define HAL_REO_RBM_DEST_RING_CTRL_AP_IX_0	\
+	HWIO_REO_R0_RBM_DESTINATION_RING_CTRL_AP_IX_0_OFFS
+#define HAL_REO_RBM_DEST_RING_CTRL_AP_IX_1	\
+	HWIO_REO_R0_RBM_DESTINATION_RING_CTRL_AP_IX_1_OFFS
+#define HAL_REO_RBM_DEST_RING_CTRL_AP_IX_2	\
+	HWIO_REO_R0_RBM_DESTINATION_RING_CTRL_AP_IX_2_OFFS
+#define HAL_REO_MISC_CTL_AP		HWIO_REO_R0_MISC_CTL_AP_OFFS
+#define HAL_REO_RXDMA_ERROR_CODE_REORDER	\
+	HWIO_REO_R0_RXDMA_ERROR_CODE_REORDER_OFFS
+#define HAL_REO_RXDMA_ERROR_CODE_REO_DELINK	\
+	HWIO_REO_R0_RXDMA_ERROR_CODE_REO_DELINK_OFFS
+#define HAL_REO_ERROR_CODE_REO_DELINK		HWIO_REO_R0_ERROR_CODE_REO_DELINK_OFFS
+
+#define HAL_REO_RXDMA_ERROR_CODE_RBM_OVERRIDE	\
+	HWIO_REO_R0_RXDMA_ERROR_CODE_RBM_OVERRIDE_OFFS
+#define HAL_REO_RXDMA_ERROR_DEST_MAPPING_AP_IX_0	\
+	HWIO_REO_R0_RXDMA_ERROR_DESTINATION_MAPPING_AP_IX_0_OFFS
+#define HAL_REO_RXDMA_ERROR_DEST_MAPPING_AP_IX_1	\
+	HWIO_REO_R0_RXDMA_ERROR_DESTINATION_MAPPING_AP_IX_1_OFFS
+#define HAL_REO_RXDMA_ERROR_DEST_MAPPING_AP_IX_2	\
+	HWIO_REO_R0_RXDMA_ERROR_DESTINATION_MAPPING_AP_IX_2_OFFS
+#define HAL_REO_RXDMA_ERROR_DEST_MAPPING_AP_IX_3	\
+	HWIO_REO_R0_RXDMA_ERROR_DESTINATION_MAPPING_AP_IX_3_OFFS
+#define HAL_REO_RXDMA_ERROR_DEST_MAPPING_AP_TID_BASED_IX_0	\
+	HWIO_REO_R0_RXDMA_ERROR_DESTINATION_MAPPING_AP_TID_BASED_IX_0_OFFS
+#define HAL_REO_RXDMA_ERROR_DEST_MAPPING_AP_TID_BASED_IX_1	\
+	HWIO_REO_R0_RXDMA_ERROR_DESTINATION_MAPPING_AP_TID_BASED_IX_1_OFFS
+#define HAL_REO_RXDMA_ERROR_DEST_MAPPING_AP_TID_BASED_IX_2	\
+	HWIO_REO_R0_RXDMA_ERROR_DESTINATION_MAPPING_AP_TID_BASED_IX_2_OFFS
+#define HAL_REO_RXDMA_ERROR_DEST_MAPPING_AP_TID_BASED_IX_3	\
+	HWIO_REO_R0_RXDMA_ERROR_DESTINATION_MAPPING_AP_TID_BASED_IX_3_OFFS
+#define HAL_REO_MISC_CFG_BN_2			HWIO_REO_R0_MISC_CFG_BN_2_OFFS
+#define HAL_REO_PPE_DEST_OVERRIDE		HWIO_REO_R0_PPE_DEST_OVERRIDE_OFFS
+#define HAL_REO_ERROR_RING_CFG_FOR_DEST_IX_0	\
+	HWIO_REO_R0_ERROR_RING_CFG_FOR_DEST_IX_0_OFFS
+#define HAL_REO_ERROR_RING_CFG_FOR_DEST_IX_1	\
+	HWIO_REO_R0_ERROR_RING_CFG_FOR_DEST_IX_1_OFFS
+#define HAL_REO_ERROR_RING_CFG_FOR_DEST_IX_2	\
+	HWIO_REO_R0_ERROR_RING_CFG_FOR_DEST_IX_2_OFFS
+#define HAL_REO_FW_MGMT_ROUTING_CFG		HWIO_REO_R0_FW_MGMT_ROUTING_CFG_OFFS
+#define HAL_REO_RX_SDWF_CFG			HWIO_REO_R0_RX_SDWF_CFG_OFFS
+#define HAL_REO_BACKPRESSURE_DROP_EN		HWIO_REO_R0_BACKPRESSURE_DROP_EN_OFFS
+#define HAL_REO_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_0	\
+	HWIO_REO_R0_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_0_OFFS
+#define HAL_REO_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_1	\
+	HWIO_REO_R0_BACKPRESSURE_BUFFER_RELEASE_RING_SELECT_IX_1_OFFS
+#define HAL_REO_AGING_FLUSH_LOW_LATENCY_OPTION	\
+	HWIO_REO_R0_AGING_FLUSH_LOW_LATENCY_OPTION_OFFS
+
+#define HAL_REO1_QDESC_ADDR(hal)        ((hal)->regs->hal_reo1_qdesc_addr)
+#define HAL_REO1_QDESC_MAX_PEERID(hal)  ((hal)->regs->hal_reo1_qdesc_max_peerid)
+#define HAL_REO1_SW_COOKIE_CFG0(hal)	((hal)->regs->hal_reo1_sw_cookie_cfg0)
+#define HAL_REO1_SW_COOKIE_CFG1(hal)	((hal)->regs->hal_reo1_sw_cookie_cfg1)
 
 #define REO2PPE_DST_RING_MAP 11
 #define REO_DEST_CTRL_IX_0_RING6_MAP_MASK 0xF
@@ -199,19 +328,25 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_REO1_REO2PPE_DST_VAL		0x2000
 #define HAL_REO1_REO2PPE_DST_INFO		0x00000cf0
 
-#define HAL_WIFI8_HASH_ROUTING_RING_TCL 0
+#define HAL_WIFI8_HASH_ROUTING_RING_SW0 0
 #define HAL_WIFI8_HASH_ROUTING_RING_SW1 1
 #define HAL_WIFI8_HASH_ROUTING_RING_SW2 2
 #define HAL_WIFI8_HASH_ROUTING_RING_SW3 3
 #define HAL_WIFI8_HASH_ROUTING_RING_SW4 4
 #define HAL_WIFI8_HASH_ROUTING_RING_REL 5
 #define HAL_WIFI8_HASH_ROUTING_RING_FW  6
+#define HAL_WIFI8_HASH_ROUTING_RING_SW5 7
+#define HAL_WIFI8_HASH_ROUTING_RING_SW6 8
+#define HAL_WIFI8_HASH_ROUTING_RING_SW7 9
+#define HAL_WIFI8_HASH_ROUTING_RING_SW8 10
+#define HAL_WIFI8_HASH_ROUTING_RING_SW9 11
+#define HAL_WIFI8_HASH_ROUTING_RING_SW10 16
 
 /* REO2SW(x) R2 ring pointers (head/tail) address */
 /* REO2SW(x) R2 ring pointers (head/tail) address */
-#define HAL_REO1_RING_HP			0x00003048
-#define HAL_REO1_RING_TP			0x0000304c
-#define HAL_REO2_RING_HP			0x00003050
+#define HAL_REO1_RING_HP                       HWIO_REO_R2_REO2SW1_RING_HP_OFFS
+#define HAL_REO1_RING_TP                       HWIO_REO_R2_REO2SW1_RING_TP_OFFS
+#define HAL_REO2_RING_HP                       HWIO_REO_R2_REO2SW2_RING_HP_OFFS
 
 #define HAL_REO1_RING_TP_OFFSET			(HAL_REO1_RING_TP - HAL_REO1_RING_HP)
 
@@ -220,14 +355,14 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 	((hal)->regs->hal_reo2_sw0_ring_base)
 
 /* REO2SW0 R2 ring pointer (head/tail) address */
-#define HAL_REO_SW0_RING_HP			0x00003088
+#define HAL_REO_SW0_RING_HP			HWIO_REO_R2_REO2SW0_RING_HP_OFFS
 
 /* REO CMD R0 address */
 #define HAL_REO_CMD_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_reo_cmd_ring_base)
 
 /* REO CMD R2 address */
-#define HAL_REO_CMD_HP				0x00003020
+#define HAL_REO_CMD_HP				HWIO_REO_R2_REO_CMD_RING_HP_OFFS
 
 /* SW2REO R0 address */
 #define	HAL_SW2REO_RING_BASE_LSB(hal) \
@@ -236,28 +371,30 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 	((hal)->regs->hal_sw2reo1_ring_base)
 
 /* SW2REO R2 address */
-#define HAL_SW2REO_RING_HP			0x00003028
-#define HAL_SW2REO1_RING_HP			0x00003030
+#define HAL_SW2REO_RING_HP			HWIO_REO_R2_SW2REO_RING_HP_OFFS
+#define HAL_SW2REO1_RING_HP			HWIO_REO_R2_SW2REO1_RING_HP_OFFS
 
 /* CE ring R0 address */
-#define HAL_CE_SRC_RING_BASE_LSB                0x00000000
-#define HAL_CE_DST_RING_BASE_LSB		0x00000000
-#define HAL_CE_DST_STATUS_RING_BASE_LSB		0x00000058
-#define HAL_CE_DST_RING_CTRL			0x000000b0
+#define HAL_CE_SRC_RING_BASE_LSB	HWIO_WFSS_CE_CHANNEL_SRC_R0_SRC_RING_BASE_LSB_OFFS
+#define HAL_CE_DST_RING_BASE_LSB	\
+	HWIO_WFSS_CE_CHANNEL_DST_R0_DEST_RING_BASE_LSB_OFFS
+#define HAL_CE_DST_STATUS_RING_BASE_LSB	\
+	HWIO_WFSS_CE_CHANNEL_DST_R0_STATUS_RING_BASE_LSB_OFFS
+#define HAL_CE_DST_RING_CTRL			HWIO_WFSS_CE_CHANNEL_DST_R0_DEST_CTRL_OFFS
 
 /* CE ring R2 address */
-#define HAL_CE_DST_RING_HP			0x00000400
-#define HAL_CE_DST_STATUS_RING_HP		0x00000408
+#define HAL_CE_DST_RING_HP		HWIO_WFSS_CE_CHANNEL_DST_R2_DEST_RING_HP_OFFS
+#define HAL_CE_DST_STATUS_RING_HP	HWIO_WFSS_CE_CHANNEL_DST_R2_STATUS_RING_HP_OFFS
 
 /* REO status address */
 #define HAL_REO_STATUS_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_reo_status_ring_base)
-#define HAL_REO_STATUS_HP			0x000030a8
+#define HAL_REO_STATUS_HP			HWIO_REO_R2_REO_STATUS_RING_TP_OFFS
 
 /* REO2PPE address */
 #define HAL_REO2PPE_RING_BASE_LSB(hal) \
 		((hal)->regs->hal_reo2ppe_ring_base)
-#define HAL_REO2PPE_HP				0x00003090
+#define HAL_REO2PPE_HP				HWIO_REO_R2_REO2PPE_RING_HP_OFFS
 
 /* WBM Idle R0 address */
 #define HAL_WBM_IDLE_LINK_RING_BASE_LSB(hal) \
@@ -284,105 +421,177 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 	((hal)->regs->hal_wbm_scattered_desc_ptr_hp_addr)
 
 /* WBM Idle R2 address */
-#define HAL_WBM_IDLE_LINK_RING_HP		0x000030b8
+#define HAL_WBM_IDLE_LINK_RING_HP		HWIO_WBM_R2_WBM_IDLE_LINK_RING_HP_OFFS
 
 /* SW2WBM R0 release address */
-#define HAL_WBM_SW_RELEASE_RING_BASE_LSB(hal) \
-	((hal)->regs->hal_wbm_sw_release_ring_base_lsb)
-#define HAL_WBM_SW1_RELEASE_RING_BASE_LSB(hal) \
-	((hal)->regs->hal_wbm_sw1_release_ring_base_lsb)
+#define HAL_WBM_SW_RELEASE_RING_BASE_LSB	HWIO_WBM_R0_SW_RELEASE_RING_BASE_LSB_OFFS
+#define HAL_WBM_FW_RELEASE_RING_BASE_LSB	HWIO_WBM_R0_FW_RELEASE_RING_BASE_LSB_OFFS
 
 /* SW2WBM R2 release address */
-#define HAL_WBM_SW_RELEASE_RING_HP		0x00003010
-#define HAL_WBM_SW1_RELEASE_RING_HP		0x00003018
+#define HAL_WBM_SW_RELEASE_RING_HP		HWIO_WBM_R2_SW_RELEASE_RING_HP_OFFS
+#define HAL_WBM_FW_RELEASE_RING_HP		HWIO_WBM_R2_FW_RELEASE_RING_HP_OFFS
 
 /* WBM2SW R0 release address */
-#define HAL_WBM0_RELEASE_RING_BASE_LSB(hal) \
-	((hal)->regs->hal_wbm0_release_ring_base_lsb)
+#define HAL_TQM2SW0_RELEASE_RING_BASE_LSB	\
+	HWIO_TQM_R0_TQM2SW0_RELEASE_RING_BASE_LSB_OFFS
+#define HAL_TQM2SW1_RELEASE_RING_BASE_LSB	\
+	HWIO_TQM_R0_TQM2SW1_RELEASE_RING_BASE_LSB_OFFS
 
-#define HAL_WBM1_RELEASE_RING_BASE_LSB(hal) \
-	((hal)->regs->hal_wbm1_release_ring_base_lsb)
+/* TQM cookie config address and mask */
+#define HAL_TQM_TX_COMPLETION_MISC_CFG	HWIO_TQM_R0_TX_COMPLETION_MISC_CFG_OFFS
+#define HAL_TQM_TX_COMPLETION_MISC_CFG_RELEASE_PATH_EN	\
+	HWIO_TQM_R0_TX_COMPLETION_MISC_CFG_RELEASE_PATH_COOKIE_CONV_EN_BMSK
+#define HAL_TQM_TX_COMPLETION_MISC_CFG_ERR_PATH_EN	\
+	HWIO_TQM_R0_TX_COMPLETION_MISC_CFG_ERROR_PATH_COOKIE_CONV_EN_BMSK
+#define HAL_TQM_TX_COMPLETION_MISC_CFG_CONV_IND_EN	\
+	HWIO_TQM_R0_TX_COMPLETION_MISC_CFG_COOKIE_CONV_INDICATION_EN_BMSK
 
-/* WBM2SW R2 release address */
-#define HAL_WBM0_RELEASE_RING_HP		0x000030c8
-#define HAL_WBM1_RELEASE_RING_HP		0x000030d0
+#define HAL_TQM_SW_COOKIE_CFG0		HWIO_TQM_R0_SW_COOKIE_CFG0_OFFS
+#define HAL_TQM_SW_COOKIE_CFG0_CMEM_LUT_BASE_ADDR_31_0	\
+	HWIO_TQM_R0_SW_COOKIE_CFG0_CMEM_LUT_BASE_ADDR_31_0_BMSK
 
-/* WBM cookie config address and mask */
-#define HAL_WBM_SW_COOKIE_CFG0			0x00000040
-#define HAL_WBM_SW_COOKIE_CFG1			0x00000044
-#define HAL_WBM_SW_COOKIE_CFG2			0x00000090
-#define HAL_WBM_SW_COOKIE_CONVERT_CFG		0x00000094
+#define HAL_TQM_SW_COOKIE_CFG1		HWIO_TQM_R0_SW_COOKIE_CFG1_OFFS
+#define HAL_TQM_SW_COOKIE_CFG1_CMEM_BASE_ADDR_MSB	\
+	HWIO_TQM_R0_SW_COOKIE_CFG1_CMEM_LUT_BASE_ADDR_39_32_BMSK
+#define HAL_TQM_SW_COOKIE_CFG1_COOKIE_PPT_MSB	\
+	HWIO_TQM_R0_SW_COOKIE_CFG1_COOKIE_PAGE_MSB_BMSK
+#define HAL_TQM_SW_COOKIE_CFG1_COOKIE_SPT_MSB	\
+	HWIO_TQM_R0_SW_COOKIE_CFG1_COOKIE_OFFSET_MSB_BMSK
+#define HAL_TQM_SW_COOKIE_CFG1_ALIGN	HWIO_TQM_R0_SW_COOKIE_CFG1_PAGE_ALIGNMENT_BMSK
 
-#define HAL_WBM_SW_COOKIE_CFG_CMEM_BASE_ADDR_MSB	GENMASK(7, 0)
-#define HAL_WBM_SW_COOKIE_CFG_COOKIE_PPT_MSB		GENMASK(12, 8)
-#define HAL_WBM_SW_COOKIE_CFG_COOKIE_SPT_MSB		GENMASK(17, 13)
-#define HAL_WBM_SW_COOKIE_CFG_ALIGN			BIT(18)
-#define HAL_WBM_SW_COOKIE_CFG_RELEASE_PATH_EN		BIT(0)
-#define HAL_WBM_SW_COOKIE_CFG_ERR_PATH_EN		BIT(1)
-#define HAL_WBM_SW_COOKIE_CFG_CONV_IND_EN		BIT(3)
+#define HAL_TQM_SW_COOKIE_CONVERT_CFG	HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_OFFS
+#define HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW0_EN	\
+	HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_TQM2SW0_COOKIE_CONVERSION_EN_BMSK
+#define HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW1_EN	\
+	HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_TQM2SW1_COOKIE_CONVERSION_EN_BMSK
+#define HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW2_EN	\
+	HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_TQM2SW2_COOKIE_CONVERSION_EN_BMSK
+#define HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW3_EN	\
+	HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_TQM2SW3_COOKIE_CONVERSION_EN_BMSK
+#define HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW4_EN	\
+	HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_TQM2SW4_COOKIE_CONVERSION_EN_BMSK
+#define HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW5_EN	\
+	HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_TQM2SW5_COOKIE_CONVERSION_EN_BMSK
+#define HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW6_EN	\
+	HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_TQM2SW6_COOKIE_CONVERSION_EN_BMSK
+#define HAL_TQM_SW_COOKIE_CONV_CFG_GLOBAL_EN	\
+	HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_TQM_COOKIE_CONV_GLOBAL_ENABLE_BMSK
 
-#define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW0_EN		BIT(1)
-#define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW1_EN		BIT(2)
-#define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW2_EN		BIT(3)
-#define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW3_EN		BIT(4)
-#define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW4_EN		BIT(5)
-#define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW5_EN		BIT(6)
-#define HAL_WBM_SW_COOKIE_CONV_CFG_WBM2SW6_EN		BIT(7)
-#define HAL_WBM_SW_COOKIE_CONV_CFG_GLOBAL_EN		BIT(8)
-
+#define HAL_TQM_SW_COOKIE_CONVERT_CFG2  HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_2_OFFS
+#define HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW7_EN	\
+	BIT(HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_2_TQM2SW7_COOKIE_CONVERSION_EN_SHFT)
+#define HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW8_EN	\
+	BIT(HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_2_TQM2SW8_COOKIE_CONVERSION_EN_SHFT)
+#define HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2PPE_EN	\
+	BIT(HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_2_TQM2PPE_COOKIE_CONVERSION_EN_SHFT)
+#define HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW_ROAMING0_EN	\
+	BIT(HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_2_TQM2SW_ROAMING0_COOKIE_CONVERSION_EN_SHFT)
+#define HAL_TQM_SW_COOKIE_CONV_CFG2_TQM2SW_ROAMING1_EN	\
+	BIT(HWIO_TQM_R0_SW_COOKIE_CONVERT_CFG_2_TQM2SW_ROAMING1_COOKIE_CONVERSION_EN_SHFT)
 /* TCL ring field mask and offset */
-#define HAL_TCL1_RING_BASE_MSB_RING_SIZE		GENMASK(27, 8)
-#define HAL_TCL1_RING_BASE_MSB_RING_BASE_ADDR_MSB	GENMASK(7, 0)
-#define HAL_TCL1_RING_ID_ENTRY_SIZE			GENMASK(7, 0)
-#define HAL_TCL1_RING_MISC_MSI_RING_ID_DISABLE		BIT(0)
-#define HAL_TCL1_RING_MISC_MSI_LOOPCNT_DISABLE		BIT(1)
-#define HAL_TCL1_RING_MISC_MSI_SWAP			BIT(3)
-#define HAL_TCL1_RING_MISC_HOST_FW_SWAP			BIT(4)
-#define HAL_TCL1_RING_MISC_DATA_TLV_SWAP		BIT(5)
-#define HAL_TCL1_RING_MISC_SRNG_ENABLE			BIT(6)
-#define HAL_TCL1_RING_CONSR_INT_SETUP_IX0_INTR_TMR_THOLD   GENMASK(31, 16)
-#define HAL_TCL1_RING_CONSR_INT_SETUP_IX0_BATCH_COUNTER_THOLD GENMASK(14, 0)
-#define HAL_TCL1_RING_CONSR_INT_SETUP_IX1_LOW_THOLD	GENMASK(15, 0)
-#define HAL_TCL1_RING_MSI1_BASE_MSB_MSI1_ENABLE		BIT(8)
-#define HAL_TCL1_RING_MSI1_BASE_MSB_ADDR		GENMASK(7, 0)
-#define HAL_TCL1_RING_CMN_CTRL_DSCP_TID_MAP_PROG_EN	BIT(23)
+#define HAL_TCL1_RING_BASE_MSB_RING_SIZE	\
+	HWIO_TCL_R0_SW2TCL1_RING_BASE_MSB_RING_SIZE_BMSK
+#define HAL_TCL1_RING_BASE_MSB_RING_BASE_ADDR_MSB	\
+	HWIO_TCL_R0_SW2TCL1_RING_BASE_MSB_RING_BASE_ADDR_MSB_BMSK
+#define HAL_TCL1_RING_ID_ENTRY_SIZE	HWIO_TCL_R0_SW2TCL1_RING_ID_ENTRY_SIZE_BMSK
+#define HAL_TCL1_RING_MISC_MSI_RING_ID_DISABLE	\
+	HWIO_TCL_R0_SW2TCL1_RING_MISC_RING_ID_DISABLE_BMSK
+#define HAL_TCL1_RING_MISC_MSI_LOOPCNT_DISABLE	\
+	HWIO_TCL_R0_SW2TCL1_RING_MISC_LOOPCNT_DISABLE_BMSK
+#define HAL_TCL1_RING_MISC_MSI_SWAP	HWIO_TCL_R0_SW2TCL1_RING_MISC_MSI_SWAP_BIT_BMSK
+#define HAL_TCL1_RING_MISC_HOST_FW_SWAP	\
+	HWIO_TCL_R0_SW2TCL1_RING_MISC_HOST_FW_SWAP_BIT_BMSK
+#define HAL_TCL1_RING_MISC_DATA_TLV_SWAP	\
+	HWIO_TCL_R0_SW2TCL1_RING_MISC_DATA_TLV_SWAP_BIT_BMSK
+#define HAL_TCL1_RING_MISC_SRNG_ENABLE	HWIO_TCL_R0_SW2TCL1_RING_MISC_SRNG_ENABLE_BMSK
+#define HAL_TCL1_RING_MISC_TRANSACTION_TYPE	\
+	HWIO_TCL_R0_SW2TCL1_RING_MISC_TRANSACTION_TYPE_BMSK
+#define HAL_TCL1_RING_CONSR_INT_SETUP_IX0_INTR_TMR_THOLD	\
+	HWIO_TCL_R0_SW2TCL1_RING_CONSUMER_INT_SETUP_IX0_INTERRUPT_TIMER_THRESHOLD_BMSK
+#define HAL_TCL1_RING_CONSR_INT_SETUP_IX0_BATCH_COUNTER_THOLD	\
+	HWIO_TCL_R0_SW2TCL1_RING_CONSUMER_INT_SETUP_IX0_BATCH_COUNTER_THRESHOLD_BMSK
+#define HAL_TCL1_RING_CONSR_INT_SETUP_IX1_LOW_THOLD	\
+	HWIO_TCL_R0_SW2TCL1_RING_CONSUMER_INT_SETUP_IX1_LOW_THRESHOLD_BMSK
+#define HAL_TCL1_RING_MSI1_BASE_MSB_MSI1_ENABLE	\
+	HWIO_TCL_R0_SW2TCL1_RING_MSI1_BASE_MSB_MSI1_ENABLE_BMSK
+#define HAL_TCL1_RING_MSI1_BASE_MSB_ADDR	\
+	HWIO_TCL_R0_SW2TCL1_RING_MSI1_BASE_MSB_ADDR_BMSK
+#define HAL_TCL1_RING_CMN_CTRL_DSCP_TID_MAP_PROG_EN	\
+	HWIO_TCL_R0_CONS_RING_CMN_CTRL_REG_DSCP_TID_MAP_PROGRAM_EN_BMSK
 #define HAL_TCL1_RING_FIELD_DSCP_TID_MAP		GENMASK(31, 0)
-#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP0		GENMASK(2, 0)
-#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP1		GENMASK(5, 3)
-#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP2		GENMASK(8, 6)
-#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP3		GENMASK(11, 9)
-#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP4		GENMASK(14, 12)
-#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP5		GENMASK(17, 15)
-#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP6		GENMASK(20, 18)
-#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP7		GENMASK(23, 21)
+#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP0		HWIO_TCL_R0_PCP_TID_MAP_PCP_0_BMSK
+#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP1		HWIO_TCL_R0_PCP_TID_MAP_PCP_1_BMSK
+#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP2		HWIO_TCL_R0_PCP_TID_MAP_PCP_2_BMSK
+#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP3		HWIO_TCL_R0_PCP_TID_MAP_PCP_3_BMSK
+#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP4		HWIO_TCL_R0_PCP_TID_MAP_PCP_4_BMSK
+#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP5		HWIO_TCL_R0_PCP_TID_MAP_PCP_5_BMSK
+#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP6		HWIO_TCL_R0_PCP_TID_MAP_PCP_6_BMSK
+#define HAL_TCL1_RING_FIELD_DSCP_TID_MAP7		HWIO_TCL_R0_PCP_TID_MAP_PCP_7_BMSK
+
+/* TODO: CORE DP TX needs any update from Host */
+#define HAL_TCL1_CMN_CONFIG	((HAL_SEQ_WCSS_UMAC_TCL_REG) + \
+				 (HWIO_TCL_R0_CMN_CONFIG_OFFS))
+#define HAL_TCL1_CMN_CONFIG_PPE	((HAL_SEQ_WCSS_UMAC_TCL_REG) + \
+				 (HWIO_TCL_R0_CMN_CONFIG_PPE_OFFS))
+#define HAL_TCL1_RBM_MAPPING0	((HAL_SEQ_WCSS_UMAC_TCL_REG) + \
+				 (HWIO_TCL_R0_RBM_MAPPING0_OFFS))
+#define HAL_TCL1_RBM_MAPPING1	((HAL_SEQ_WCSS_UMAC_TCL_REG) + \
+				 (HWIO_TCL_R0_RBM_MAPPING1_OFFS))
+#define HAL_TCL1_LINK_ID_TO_CHIP_ID_MAP	((HAL_SEQ_WCSS_UMAC_TCL_REG) + \
+					 (HWIO_TCL_R0_LINK_ID_TO_CHIP_ID_MAP_OFFS))
 
 /* REO ring field mask and offset */
-#define HAL_REO1_RING_BASE_MSB_RING_SIZE		GENMASK(27, 8)
-#define HAL_REO1_RING_BASE_MSB_RING_BASE_ADDR_MSB	GENMASK(7, 0)
-#define HAL_REO1_RING_ID_RING_ID			GENMASK(15, 8)
-#define HAL_REO1_RING_ID_ENTRY_SIZE			GENMASK(7, 0)
-#define HAL_REO1_RING_MISC_MSI_SWAP			BIT(3)
-#define HAL_REO1_RING_MISC_HOST_FW_SWAP			BIT(4)
-#define HAL_REO1_RING_MISC_DATA_TLV_SWAP		BIT(5)
-#define HAL_REO1_RING_MISC_SRNG_ENABLE			BIT(6)
-#define HAL_REO1_RING_PRDR_INT_SETUP_INTR_TMR_THOLD	GENMASK(31, 16)
-#define HAL_REO1_RING_PRDR_INT_SETUP_BATCH_COUNTER_THOLD GENMASK(14, 0)
-#define HAL_REO1_RING_MSI1_BASE_MSB_MSI1_ENABLE		BIT(8)
-#define HAL_REO1_RING_MSI1_BASE_MSB_ADDR		GENMASK(7, 0)
+#define HAL_REO1_RING_BASE_MSB_RING_SIZE	\
+	HWIO_REO_R0_REO2SW1_RING_BASE_MSB_RING_SIZE_BMSK
+#define HAL_REO1_RING_BASE_MSB_RING_BASE_ADDR_MSB	\
+	HWIO_REO_R0_REO2SW1_RING_BASE_MSB_RING_BASE_ADDR_MSB_BMSK
+#define HAL_REO1_RING_ID_RING_ID	HWIO_REO_R0_REO2SW1_RING_ID_RING_ID_BMSK
+#define HAL_REO1_RING_ID_ENTRY_SIZE	HWIO_REO_R0_REO2SW1_RING_ID_ENTRY_SIZE_BMSK
+#define HAL_REO1_RING_MISC_MSI_SWAP	HWIO_REO_R0_REO2SW1_RING_MISC_MSI_SWAP_BIT_BMSK
+#define HAL_REO1_RING_MISC_HOST_FW_SWAP	\
+	HWIO_REO_R0_REO2SW1_RING_MISC_HOST_FW_SWAP_BIT_BMSK
+#define HAL_REO1_RING_MISC_DATA_TLV_SWAP	\
+	HWIO_REO_R0_REO2SW1_RING_MISC_DATA_TLV_SWAP_BIT_BMSK
+#define HAL_REO1_RING_MISC_SRNG_ENABLE	\
+	HWIO_REO_R0_REO2SW1_RING_MISC_SRNG_ENABLE_BMSK
+#define HAL_REO1_RING_PRDR_INT_SETUP_INTR_TMR_THOLD	\
+	HWIO_REO_R0_REO2SW1_RING_PRODUCER_INT_SETUP_INTERRUPT_TIMER_THRESHOLD_BMSK
+#define HAL_REO1_RING_PRDR_INT_SETUP_BATCH_COUNTER_THOLD	\
+	HWIO_REO_R0_REO2SW1_RING_PRODUCER_INT_SETUP_BATCH_COUNTER_THRESHOLD_BMSK
+#define HAL_REO1_RING_MSI1_BASE_MSB_MSI1_ENABLE	\
+	HWIO_REO_R0_REO2SW1_RING_MSI1_BASE_MSB_MSI1_ENABLE_BMSK
+#define HAL_REO1_RING_MSI1_BASE_MSB_ADDR	\
+	HWIO_REO_R0_REO2SW1_RING_MSI1_BASE_MSB_ADDR_BMSK
 #define HAL_REO1_MISC_CTL_SPARE_CTRL_DST_RING		BIT(5)
-#define HAL_REO1_MISC_CTL_FRAG_DST_RING			GENMASK(20, 17)
-#define HAL_REO1_MISC_CTL_BAR_DST_RING			GENMASK(24, 21)
-#define HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE		BIT(2)
-#define HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE		BIT(3)
-#define HAL_REO1_GEN_ENABLE_INVLDT_CACHE_FOR_ZERO_VLD	BIT(28)
-#define HAL_REO1_SW_COOKIE_CFG_CMEM_BASE_ADDR_MSB	GENMASK(7, 0)
-#define HAL_REO1_SW_COOKIE_CFG_COOKIE_PPT_MSB		GENMASK(12, 8)
-#define HAL_REO1_SW_COOKIE_CFG_COOKIE_SPT_MSB		GENMASK(17, 13)
-#define HAL_REO1_SW_COOKIE_CFG_ALIGN			BIT(18)
-#define HAL_REO1_SW_COOKIE_CFG_ENABLE			BIT(19)
-#define HAL_REO1_SW_COOKIE_CFG_GLOBAL_ENABLE		BIT(20)
-#define HAL_REO_QDESC_ADDR_READ_LUT_ENABLE		BIT(7)
-#define HAL_REO_QDESC_ADDR_READ_CLEAR_QDESC_ARRAY	BIT(6)
+
+#define HAL_REO1_MISC_CTL_NULL_BUFFER_ERROR_DST_RING	\
+	HWIO_REO_R0_MISC_CTL_AP_NULL_BUFFER_ERROR_DEST_RING_AP_BMSK
+#define HAL_REO1_MISC_CTL_SOFT_REORDER_DST_RING	\
+	HWIO_REO_R0_MISC_CTL_AP_SOFT_REORDER_DEST_RING_AP_BMSK
+#define HAL_REO1_MISC_CTL_BAR_DST_RING	\
+	HWIO_REO_R0_MISC_CTL_AP_BAR_DEST_RING_AP_BMSK
+#define HAL_REO1_MISC_CTL_FRAG_DST_RING	\
+	HWIO_REO_R0_MISC_CTL_AP_FRAGMENT_DEST_RING_AP_BMSK
+
+#define HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE	\
+	HWIO_REO_R0_GENERAL_ENABLE_AGING_LIST_ENABLE_BMSK
+#define HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE	\
+	HWIO_REO_R0_GENERAL_ENABLE_AGING_FLUSH_ENABLE_BMSK
+#define HAL_REO1_SW_COOKIE_CFG_CMEM_BASE_ADDR_MSB	\
+	HWIO_REO_R0_SW_COOKIE_CFG1_CMEM_LUT_BASE_ADDR_39_32_BMSK
+#define HAL_REO1_SW_COOKIE_CFG_COOKIE_PPT_MSB	\
+	HWIO_REO_R0_SW_COOKIE_CFG1_COOKIE_PAGE_MSB_BMSK
+#define HAL_REO1_SW_COOKIE_CFG_COOKIE_SPT_MSB	\
+	HWIO_REO_R0_SW_COOKIE_CFG1_COOKIE_OFFSET_MSB_BMSK
+#define HAL_REO1_SW_COOKIE_CFG_ALIGN	HWIO_REO_R0_SW_COOKIE_CFG1_PAGE_ALIGNMENT_BMSK
+#define HAL_REO1_SW_COOKIE_CFG_ENABLE	\
+	HWIO_REO_R0_SW_COOKIE_CFG1_SW_COOKIE_CONVERT_ENABLE_BMSK
+#define HAL_REO1_SW_COOKIE_CFG_GLOBAL_ENABLE	\
+	HWIO_REO_R0_SW_COOKIE_CFG1_SW_COOKIE_CONVERT_GLOBAL_ENABLE_BMSK
+#define HAL_REO_QDESC_ADDR_READ_LUT_ENABLE	\
+	HWIO_REO_R0_QDESC_ADDR_READ_LUT_FEATURE_ENABLE_BMSK
+#define HAL_REO_QDESC_ADDR_READ_CLEAR_QDESC_ARRAY	\
+	HWIO_REO_R0_QDESC_ADDR_READ_CLEAR_QDESC_ARRAY_BMSK
 #define HAL_REO_QLUT_REG_BASE_ADDR			GENMASK(39, 8)
 
 /* CE ring bit field mask and shift */
@@ -393,14 +602,21 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_ADDR_MSB_REG_SHIFT				32
 
 /* WBM ring bit field mask and shift */
-#define HAL_WBM_LINK_DESC_IDLE_LIST_MODE		BIT(1)
-#define HAL_WBM_SCATTER_BUFFER_SIZE			GENMASK(10, 2)
-#define HAL_WBM_SCATTER_RING_SIZE_OF_IDLE_LINK_DESC_LIST GENMASK(31, 16)
-#define HAL_WBM_SCATTERED_DESC_MSB_BASE_ADDR_39_32	GENMASK(7, 0)
-#define HAL_WBM_SCATTERED_DESC_MSB_BASE_ADDR_MATCH_TAG	GENMASK(31, 8)
+#define HAL_WBM_LINK_DESC_IDLE_LIST_MODE	\
+	HWIO_WBM_R0_IDLE_LIST_CONTROL_BUFFER_IDLE_LIST_MODE_BMSK
+#define HAL_WBM_SCATTER_BUFFER_SIZE	\
+	HWIO_WBM_R0_IDLE_LIST_CONTROL_SCATTER_BUFFER_SIZE_BMSK
+#define HAL_WBM_SCATTER_RING_SIZE_OF_IDLE_LINK_DESC_LIST	\
+	HWIO_WBM_R0_IDLE_LIST_SIZE_SCATTER_RING_SIZE_OF_IDLE_LINK_DESC_LIST_BMSK
+#define HAL_WBM_SCATTERED_DESC_MSB_BASE_ADDR_39_32	\
+	HWIO_WBM_R0_SCATTERED_LINK_DESC_LIST_BASE_MSB_BASE_ADDRESS_39_32_BMSK
+#define HAL_WBM_SCATTERED_DESC_MSB_BASE_ADDR_MATCH_TAG	\
+	HWIO_WBM_R0_SCATTERED_LINK_DESC_LIST_BASE_MSB_ADDRESS_MATCH_TAG_BMSK
 
-#define HAL_WBM_SCATTERED_DESC_HEAD_P_OFFSET_IX1	GENMASK(20, 8)
-#define HAL_WBM_SCATTERED_DESC_TAIL_P_OFFSET_IX1	GENMASK(20, 8)
+#define HAL_WBM_SCATTERED_DESC_HEAD_P_OFFSET_IX1	\
+	HWIO_WBM_R0_SCATTERED_LINK_DESC_PTR_TAIL_INFO_IX1_TAIL_POINTER_OFFSET_BMSK
+#define HAL_WBM_SCATTERED_DESC_TAIL_P_OFFSET_IX1	\
+HWIO_WBM_R0_SCATTERED_SW0_IDLE_BUFF_POOL_PTR_HEAD_INFO_IX1_HEAD_POINTER_OFFSET_BMSK
 
 #define HAL_WBM_IDLE_LINK_RING_MISC_SRNG_ENABLE		BIT(6)
 #define HAL_WBM_IDLE_LINK_RING_MISC_RIND_ID_DISABLE	BIT(0)
@@ -417,13 +633,14 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_SW2TCL1_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_SW2TCL1_CMD_RING_BASE_MSB_RING_SIZE		0x000fffff
 #define HAL_TCL_STATUS_RING_BASE_MSB_RING_SIZE		0x0000ffff
+#define HAL_TX_EXCEPTION_RING_BASE_MSB_RING_SIZE	0x0000ffff
 #define HAL_CE_SRC_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_CE_DST_RING_BASE_MSB_RING_SIZE		0x0000ffff
 #define HAL_CE_DST_STATUS_RING_BASE_MSB_RING_SIZE	0x0000ffff
 #define HAL_WBM_IDLE_LINK_RING_BASE_MSB_RING_SIZE	0x000fffff
 #define HAL_SW2WBM_RELEASE_RING_BASE_MSB_RING_SIZE	0x0000ffff
-#define HAL_WBM2SW_RELEASE_RING_BASE_MSB_RING_SIZE	0x000fffff
-#define HAL_RXDMA_RING_MAX_SIZE				0x0000ffff
+#define HAL_TQM2SW_RELEASE_RING_BASE_MSB_RING_SIZE	0x000fffff
+#define HAL_RXDMA_RING_MAX_SIZE				0x000fffff
 #define HAL_RXDMA_RING_MAX_SIZE_BE			0x000fffff
 #define HAL_WBM2PPE_RELEASE_RING_BASE_MSB_RING_SIZE	0x0000ffff
 
@@ -501,53 +718,114 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_REO_CMD_UPD2_SEQ_2K_ERR		BIT(23)
 #define HAL_REO_CMD_UPD2_PN_ERR			BIT(24)
 
+/**
+ * enum hal_wifi8_rx_buf_return_buf_manager - manager for returned rx buffers
+ *
+ * @HAL_RX_BUF_RBM_WBM_IDLE_BUF_LIST: Buffer returned to WBM idle buffer list
+ * @HAL_RX_BUF_RBM_WBM_DEV0_IDLE_DESC_LIST: Descriptor returned to WBM idle
+ *	descriptor list, where the device 0 WBM is chosen in case of a multi-device config
+ * @HAL_RX_BUF_RBM_FW_CHIP1_BM: Buffer returned to chip 1 FW
+ * @HAL_RX_BUF_RBM_FW_CHIP2_BM: Buffer returned to chip 2 FW
+ * @HAL_RX_BUF_RBM_FW_CHIP0_BM: Buffer returned to chip 0 FW
+ * @HAL_RX_BUF_RBM_SW0_BM: Buffer returned to SW ring 0
+ * @HAL_RX_BUF_RBM_SW1_BM: Buffer returned to SW ring 1
+ * @HAL_RX_BUF_RBM_SW2_BM: Buffer returned to SW ring 2
+ * @HAL_RX_BUF_RBM_SW3_BM: Buffer returned to SW ring 3
+ * @HAL_RX_BUF_RBM_SW4_BM: Buffer returned to SW ring 4
+ * @HAL_RX_BUF_RBM_SW5_BM: Buffer returned to SW ring 5
+ * @HAL_RX_BUF_RBM_SW6_BM: Buffer returned to SW ring 6
+ * @HAL_RX_BUF_RBM_FW_CHIP3_BM: Buffer returned to chip 3 FW
+ * @HAL_RX_BUF_RBM_SW7_BM: Buffer returned to SW ring 7
+ * @HAL_RX_BUF_RBM_FW_CHIP4_BM: Buffer returned to chip 4 FW
+ *
+ * Description:
+ *	Consumer: WBM
+ *	Producer: SW/FW
+ *
+ *	In case of 'NULL' pointer, this field is set to 0.
+ *
+ *	Indicates to which buffer manager the buffer, MSDU_EXTENSION descriptor,
+ *	or link descriptor being pointed to shall be returned after the frame
+ *	has been processed. It is used by WBM for routing purposes.
+ *
+ *	<legal 0-14>
+ */
+
+enum hal_wifi8_rx_buf_return_buf_manager {
+	HAL_RX_BUF_RBM_WBM_IDLE_BUF_LIST,
+	HAL_RX_BUF_RBM_WBM_DEV0_IDLE_DESC_LIST,
+	HAL_RX_BUF_RBM_FW_CHIP1_BM,
+	HAL_RX_BUF_RBM_FW_CHIP2_BM,
+	HAL_RX_BUF_RBM_FW_CHIP0_BM,
+	HAL_RX_BUF_RBM_SW0_BM,
+	HAL_RX_BUF_RBM_SW1_BM,
+	HAL_RX_BUF_RBM_SW2_BM,
+	HAL_RX_BUF_RBM_SW3_BM,
+	HAL_RX_BUF_RBM_SW4_BM,
+	HAL_RX_BUF_RBM_SW5_BM,
+	HAL_RX_BUF_RBM_SW6_BM,
+	HAL_RX_BUF_RBM_FW_CHIP3_BM,
+	HAL_RX_BUF_RBM_SW7_BM,
+	HAL_RX_BUF_RBM_FW_CHIP4_BM,
+};
+
 /* Add any other errors here and return them in
  * ath12k_hal_rx_desc_get_err().
  */
-
-#define HAL_IPQ5332_CE_WFSS_REG_BASE   0x740000
-#define HAL_IPQ5332_CE_SIZE            0x100000
-
-#define HAL_IPQ5424_CE_WFSS_REG_BASE	0x200000
-#define HAL_IPQ5424_CE_SIZE		0x100000
-
-#define HAL_QCN6432_CE_WFSS_REG_BASE	0x1B80000
-#define HAL_QCN6432_CE_SIZE		0x200000
-
-#define HAL_QCN6432_CMEM_REG_BASE	0x00100000
-#define HAL_QCN6432_CMEM_SIZE		0x40000
-#define HAL_QCN6432_CMEM_BASE		0x100000
 
 struct hal_wbm_idle_scatter_list {
 	dma_addr_t paddr;
 	struct hal_wbm_link_desc *vaddr;
 };
 
+/* TODO: confirm src_info relacement from HW DESC */
 struct rx_mpdu_desc_info {
-	u32 msdu_count                            :  8,
-	    fragment_flag                         :  1,
-	    mpdu_retry_bit                        :  1,
-	    ampdu_flag                            :  1,
-	    bar_frame                             :  1,
-	    pn_fields_contain_valid_info          :  1,
-	    raw_mpdu                              :  1,
-	    more_fragment_flag                    :  1,
-	    vdev_id                               :  8,
-	    reserved				  :  2,
-	    flow_idx_invalid                      :  1,
-	    flow_idx_timeout                      :  1,
-	    mpdu_qos_control_valid                :  1,
-	    tid                                   :  4;
+	union {
+		struct {
+			u32 msdu_count				:  8,
+			    fragment_flag			:  1,
+			    mpdu_retry_bit			:  1,
+			    ampdu_flag				:  1,
+			    bar_frame				:  1,
+			    pn_fields_contain_valid_info	:  1,
+			    raw_mpdu				:  1,
+			    more_fragment_flag			:  1,
+			    vdev_id                             :  8,
+			    reserved				:  2,
+			    flow_idx_invalid                    :  1,
+			    flow_idx_timeout                    :  1,
+			    mpdu_qos_control_valid		:  1,
+			    tid					:  4;
+		};
+		u32 info0;
+	};
 	union {
 		u32 peer_meta_data;
 		struct {
-			u32 peer_id			  : 16,
-			    flow_metadata                 : 16;
+			u32 peer_id		: 16,
+			flow_metadata		: 16;
 		} flow_info;
+	};
+	union {
+		struct {
+			u32 mgmt_pkt				:  1,
+			    rxdma_push_reason			:  2,
+			    rxdma_error_code			:  5,
+			    reo_dest_buffer_type		:  1,
+			    release_source_module		:  3,
+			    msdu_link_desc_index		:  4,
+			    ll_pkt				:  1,
+			    high_priority_pkt			:  1,
+			    src_link_id				:  3,
+			    reo_push_reason			:  2,
+			    reo_error_code			:  5,
+			    groupcast_mpdu			:  1;
+		};
+		u32 info1;
 	};
 };
 
-struct rx_msdu_desc_info {
+struct hal_rx_msdu_desc_info {
 	u32 first_msdu		        :  1,
 	    last_msdu			:  1,
 	    msdu_continuation           :  1,
@@ -589,14 +867,11 @@ struct hal_rx_spd_data {
 		struct sk_buff *msdu;
 	};
 
-	union {
-		u64 info1;
-		struct rx_mpdu_desc_info rx_mpdu_info;
-	};
+	struct rx_mpdu_desc_info rx_mpdu_info;
 
 	union {
 		u32 info2;
-		struct rx_msdu_desc_info rx_msdu_info;
+		struct hal_rx_msdu_desc_info rx_msdu_info;
 	};
 
 	struct rx_tlv_info_1 tlv_info;
@@ -604,18 +879,26 @@ struct hal_rx_spd_data {
 	union {
 		u32 info0;
 		struct {
-			u32 reo_dest_buffer_type                :  1,
-			    reo_push_reason                     :  2,
-			    reo_error_code                      :  5,
-			    captured_msdu_data_size             :  4,
-			    sw_exception                        :  1,
-			    src_link_id                         :  3,
-			    reo_destination_struct_signature    :  4,
-			    ring_id                             :  8,
-			    looping_count                       :  4;
+			u32 cookie_conversion_status	:  1,
+			    reo_delink_error		:  1,
+			    sw_buffer_cookie		:  20,
+			    reserved_6a			:  4,
+			    c_tdma_lut_ptr		:  6;
 		};
 	};
-	u64 rsvd0;
+	union {
+		u32 info1;
+		struct {
+			u32 phy_lmac_latency		:  8,
+			    umac_latency		:  8,
+			    sw_exception		:  1,
+			    backpressure_drop		:  1,
+			    flow_idx_valid		:  1,
+			    rx_sawf_msdu_dropped	:  1,
+			    ring_id			:  8,
+			    looping_count		:  4;
+		};
+	};
 	u64 rsvd1;
 	u64 rsvd2;
 } __packed;
@@ -764,8 +1047,10 @@ int ath12k_wifi8_hal_srng_get_ring_id(struct ath12k_hal *hal,
 				      int ring_num, int mac_id);
 u32 ath12k_wifi8_hal_ce_get_desc_size(enum hal_ce_desc type);
 void ath12k_wifi8_hal_cc_config(struct ath12k_base *ab);
-enum hal_rx_buf_return_buf_manager
+u8
 ath12k_wifi8_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
+void ath12k_wifi8_get_tlv_tag_params(__le32 tl, uint16_t *tag, uint32_t *id,
+				     uint16_t *length);
 void ath12k_wifi8_hal_get_hw_hptp(struct ath12k_base *ab, enum hal_ring_type type,
 				  struct hal_srng *srng, uint32_t *hp, uint32_t *tp);
 void ath12k_wifi8_hal_ce_src_set_desc(struct hal_ce_srng_src_desc *desc,
@@ -776,7 +1061,7 @@ void ath12k_wifi8_hal_ce_dst_set_desc(struct hal_ce_srng_dest_desc *desc,
 void
 ath12k_wifi8_hal_set_link_desc_addr(struct hal_wbm_link_desc *desc,
 				    u32 cookie, dma_addr_t paddr,
-				    enum hal_rx_buf_return_buf_manager rbm);
+				    u8 rbm);
 u32
 ath12k_wifi8_hal_ce_dst_status_get_length(struct hal_ce_srng_dst_status_desc *desc);
 void
@@ -796,7 +1081,7 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab);
 void
 ath12k_wifi8_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 				       u32 *num_msdus, u32 *msdu_cookies,
-				       enum hal_rx_buf_return_buf_manager *rbm);
+				       enum hal_wifi8_rx_buf_return_buf_manager *rbm);
 u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid);
 void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
@@ -808,6 +1093,7 @@ void ath12k_wifi8_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);
 void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
 					 u32 ba_window_size, u8 tid);
+void ath12k_wifi8_hal_tx_configure_bank_register_default(struct ath12k_base *ab);
 bool ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_set(struct ath12k_base *ab);
 void ath12k_wifi8_hal_tx_ppe2tcl_ring_halt_reset(struct ath12k_base *ab);
@@ -821,7 +1107,7 @@ void ath12k_wifi8_hal_tx_set_ppe_vp_entry(struct ath12k_base *ab,
 void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
 						     u32 ppeds_idx_map_val);
 void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
-bool ath12k_wifi8_hal_tx_completion_process(struct hal_wbm_completion_ring_tx *desc,
+bool ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *desc,
 					    struct ath12k_dp_tx_comp_status *tx_comp_status);
 void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
 				  struct ath12k_hal_ast_param *ast_param);

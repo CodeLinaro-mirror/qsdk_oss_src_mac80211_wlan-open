@@ -271,6 +271,18 @@ ath12k_wifi8_target_service_to_ce_map_wlan_qcn9625[] = {
 		__cpu_to_le32(0),
 		__cpu_to_le32(0),
 	},
+
+	/* CE15: Reserved */
+
+	/* TODO: CP: update CE maps and definitions later when available */
+	/* CE16: Reserved */
+	/* CE17: Reserved */
+	/* CE18: Reserved */
+	/* CE19: Reserved */
+	/* CE20: Reserved */
+	/* CE21: Reserved */
+	/* CE22: Reserved */
+	/* CE23: Reserved */
 };
 
 const struct ce_attr ath12k_wifi8_host_ce_config_qcn9625[] = {

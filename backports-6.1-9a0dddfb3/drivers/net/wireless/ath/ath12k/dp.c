@@ -367,7 +367,10 @@ static int ath12k_dp_srng_calculate_msi_group(struct ath12k_base *ab,
 		}
 		grp_mask = &ab->hw_params->ring_mask->tx[0];
 		break;
-
+	case HAL_REO_DST_MGMT:
+	case HAL_REO_DST_CTDMA:
+	case HAL_REO_EXCEPTION_DS:
+	case HAL_REO_EXCEPTION_MGMT:
 	case HAL_TCL_DATA:
 	case HAL_TCL_CMD:
 	case HAL_REO_CMD:
@@ -858,7 +861,7 @@ static int ath12k_dp_scatter_idle_link_desc_setup(struct ath12k_base *ab,
 	int i;
 	int ret = 0;
 	u32 end_offset, cookie;
-	enum hal_rx_buf_return_buf_manager rbm = dp->idle_link_rbm;
+	u8 rbm = dp->idle_link_rbm;
 	u16 link_desc_size = ab->hal.hal_params->link_desc_size;
 
 	n_entries_per_buf = HAL_WBM_IDLE_SCATTER_BUF_SIZE /
@@ -1040,7 +1043,7 @@ int ath12k_dp_link_desc_setup(struct ath12k_base *ab,
 	u32 paddr;
 	int i, ret;
 	u32 cookie;
-	enum hal_rx_buf_return_buf_manager rbm = dp->idle_link_rbm;
+	u8 rbm = dp->idle_link_rbm;
 	u16 link_desc_size = ab->hal.hal_params->link_desc_size;
 
 	tot_mem_sz = n_link_desc * link_desc_size;

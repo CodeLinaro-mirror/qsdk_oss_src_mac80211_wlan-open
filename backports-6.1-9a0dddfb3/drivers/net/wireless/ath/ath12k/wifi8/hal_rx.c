@@ -6,7 +6,7 @@
 
 #include "../debug.h"
 #include "../hif.h"
-#include "hal.h"
+#include "hal_rx.h"
 
 static
 void ath12k_wifi8_hal_reo_set_desc_hdr(struct hal_desc_header *hdr,
@@ -315,28 +315,39 @@ out:
 void
 ath12k_wifi8_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 				       u32 *num_msdus, u32 *msdu_cookies,
-				       enum hal_rx_buf_return_buf_manager *rbm)
+				       enum hal_wifi8_rx_buf_return_buf_manager *rbm)
 {
-	struct hal_rx_msdu_details *msdu;
-	u32 val;
+	struct hal_rx_msdu_details *msdu_ptrs[] = {
+		&link->msdu_0,
+		&link->msdu_1,
+		&link->msdu_2,
+		&link->msdu_3,
+		&link->msdu_4,
+		&link->msdu_5,
+		&link->msdu_6,
+		&link->msdu_7,
+		&link->msdu_8,
+		&link->msdu_9,
+		&link->msdu_10,
+	};
+
+	int max_msdus = sizeof(msdu_ptrs) / sizeof(*msdu_ptrs);
 	int i;
+	u32 val;
 
-	*num_msdus = HAL_NUM_RX_MSDUS_PER_LINK_DESC;
+	*num_msdus = max_msdus;
 
-	msdu = &link->msdu_link[0];
-	*rbm = le32_get_bits(msdu->buf_addr_info.info1,
+	*rbm = le32_get_bits(msdu_ptrs[0]->buf_addr_info.info1,
 			     BUFFER_ADDR_INFO1_RET_BUF_MGR);
 
-	for (i = 0; i < *num_msdus; i++) {
-		msdu = &link->msdu_link[i];
-
-		val = le32_get_bits(msdu->buf_addr_info.info0,
+	for (i = 0; i < max_msdus; i++) {
+		val = le32_get_bits(msdu_ptrs[i]->buf_addr_info.info0,
 				    BUFFER_ADDR_INFO0_ADDR);
 		if (val == 0) {
 			*num_msdus = i;
 			break;
 		}
-		*msdu_cookies = le32_get_bits(msdu->buf_addr_info.info1,
+		*msdu_cookies = le32_get_bits(msdu_ptrs[i]->buf_addr_info.info1,
 					      BUFFER_ADDR_INFO1_SW_COOKIE);
 		msdu_cookies++;
 	}
@@ -349,12 +360,15 @@ int ath12k_wifi8_hal_desc_reo_parse_err(struct ath12k_dp *dp,
 	struct ath12k_base *ab = dp->ab;
 	enum hal_reo_dest_ring_push_reason push_reason;
 	enum hal_reo_dest_ring_error_code err_code;
+	struct hal_rx_mpdu_ext_desc_info *rx_mpdu_ext_info =
+						&desc->rx_mpdu_ext_info;
 	u32 cookie, val;
 
-	push_reason = le32_get_bits(desc->info0,
-				    HAL_REO_DEST_RING_INFO0_PUSH_REASON);
-	err_code = le32_get_bits(desc->info0,
-				 HAL_REO_DEST_RING_INFO0_ERROR_CODE);
+	push_reason = le32_get_bits(rx_mpdu_ext_info->info0,
+				    HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_PUSH_REASON);
+	err_code = le32_get_bits(rx_mpdu_ext_info->info0,
+				 HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_ERROR_CODE);
+
 	dp->device_stats.wbm_err.reo_error[err_code]++;
 
 	if (push_reason != HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED &&
@@ -364,7 +378,8 @@ int ath12k_wifi8_hal_desc_reo_parse_err(struct ath12k_dp *dp,
 		return -EINVAL;
 	}
 
-	val = le32_get_bits(desc->info0, HAL_REO_DEST_RING_INFO0_BUFFER_TYPE);
+	val = le32_get_bits(rx_mpdu_ext_info->info0,
+			    HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_DEST_BUFFER_TYPE);
 	if (val == HAL_REO_DEST_RING_BUFFER_TYPE_MSDU) {
 		return -EOPNOTSUPP;
 	} else if (val != HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
@@ -379,78 +394,84 @@ int ath12k_wifi8_hal_desc_reo_parse_err(struct ath12k_dp *dp,
 	return 0;
 }
 
-int ath12k_wifi8_hal_wbm_desc_parse_err(struct ath12k_dp *dp, void *desc,
-					struct hal_rx_wbm_rel_info *rel_info)
+int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
+				       struct hal_rx_reo_dest_rel_info *rel_info)
 {
-	struct hal_wbm_release_ring *wbm_desc = desc;
-	struct hal_wbm_release_ring_cc_rx *wbm_cc_desc = desc;
 	struct ath12k_base *ab = dp->ab;
-	enum hal_wbm_rel_desc_type type;
-	enum hal_wbm_rel_src_module rel_src;
+	struct hal_reo_dest_ring *reo_desc = desc;
+	struct hal_rx_mpdu_ext_desc_info *mpdu_desc_ext_info =
+		(struct hal_rx_mpdu_ext_desc_info *)&reo_desc->rx_mpdu_ext_info;
+	enum hal_reo_dest_rel_desc_type type;
+	enum hal_reo_dest_rel_src_module rel_src;
 	bool hw_cc_done;
 	u64 desc_va;
 	u32 val;
 	int rxdma_push_reason, rxdma_error_code, reo_push_reason, reo_error_code;
-	int wbm_err;
 
-	type = le32_get_bits(wbm_desc->info0, HAL_WBM_RELEASE_INFO0_DESC_TYPE);
-	/* We expect only WBM_REL buffer type */
-	if (type != HAL_WBM_REL_DESC_TYPE_REL_MSDU) {
+	type = le32_get_bits(mpdu_desc_ext_info->info0,
+			     HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_DEST_BUFFER_TYPE);
+	/* TODO: We expect only WBM_REL buffer type */
+	if (type != REO_DEST_BUFFER_TYPE_MSDU) {
 		WARN_ON(1);
 		return -EINVAL;
 	}
 
-	rel_src = le32_get_bits(wbm_desc->info0,
-				HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE);
-	if (rel_src != HAL_WBM_REL_SRC_MODULE_RXDMA &&
-	    rel_src != HAL_WBM_REL_SRC_MODULE_REO) {
-		rxdma_push_reason = le32_get_bits(wbm_desc->info0,
-						  HAL_WBM_RELEASE_RX_INFO0_RXDMA_PUSH_REASON);
-		rxdma_error_code = le32_get_bits(wbm_desc->info0,
-						 HAL_WBM_RELEASE_RX_INFO0_RXDMA_ERROR_CODE);
-		reo_push_reason = le32_get_bits(wbm_desc->info0,
-						HAL_WBM_RELEASE_RX_INFO0_REO_PUSH_REASON);
-		reo_error_code = le32_get_bits(wbm_desc->info0,
-					       HAL_WBM_RELEASE_RX_INFO0_REO_ERROR_CODE);
-		wbm_err =  le32_get_bits(wbm_desc->info0,
-					 HAL_WBM_RELEASE_RX_INFO0_WBM_INTERNAL_ERROR);
-		ath12k_warn(ab, "Invalid src rxmda(%d %d) reo(%d %d) wbm err %d",
+	rel_src = le32_get_bits(mpdu_desc_ext_info->info0,
+				HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RELEASE_SOURCE_MODULE);
+	if (rel_src != HAL_REO_REL_SRC_MODULE_RXDMA &&
+	    rel_src != HAL_REO_REL_SRC_MODULE_REO) {
+		rxdma_push_reason =
+			le32_get_bits(mpdu_desc_ext_info->info0,
+				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_PUSH_REASON);
+		rxdma_error_code =
+			le32_get_bits(mpdu_desc_ext_info->info0,
+				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_ERROR_CODE);
+		reo_push_reason =
+			le32_get_bits(mpdu_desc_ext_info->info0,
+				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_PUSH_REASON);
+		reo_error_code =
+			le32_get_bits(mpdu_desc_ext_info->info0,
+				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_ERROR_CODE);
+
+		ath12k_warn(ab, "Invalid src rxmda(%d %d) reo(%d %d)",
 			    rxdma_push_reason, rxdma_error_code,
-			    rxdma_error_code, reo_push_reason, wbm_err);
+			    rxdma_error_code, reo_push_reason);
 		return -EINVAL;
 	}
 
-	/* The format of wbm rel ring desc changes based on the
+	/* The format of REO DEST ring desc changes based on the
 	 * hw cookie conversion status
 	 */
-	hw_cc_done = le32_get_bits(wbm_desc->info0,
-				   HAL_WBM_RELEASE_RX_INFO0_CC_STATUS);
+	hw_cc_done =
+		le32_get_bits(reo_desc->info0,
+			      HAL_REO_DESTINATION_RING_INFO0_COOKIE_CONVERSION_STATUS);
 
 	if (!hw_cc_done) {
-		val = le32_get_bits(wbm_desc->buf_addr_info.info1,
+		val = le32_get_bits(reo_desc->buf_addr_info.info1,
 				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
-		if (val != HAL_RX_BUF_RBM_SW5_BM) {
+		if (val != HAL_RX_BUF_RBM_SW0_BM) {
 			dp->device_stats.invalid_rbm++;
 			return -EINVAL;
 		}
 
-		rel_info->cookie = le32_get_bits(wbm_desc->buf_addr_info.info1,
+		rel_info->cookie = le32_get_bits(reo_desc->buf_addr_info.info1,
 						 BUFFER_ADDR_INFO1_SW_COOKIE);
 
 		rel_info->rx_desc = NULL;
 	} else {
-		val = le32_get_bits(wbm_cc_desc->info0,
-				    HAL_WBM_RELEASE_RX_CC_INFO0_RBM);
-		if (val != HAL_RX_BUF_RBM_SW5_BM) {
+		val = le32_get_bits(reo_desc->info0,
+				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
+		if (val != HAL_RX_BUF_RBM_SW0_BM) {
 			dp->device_stats.invalid_rbm++;
 			return -EINVAL;
 		}
 
-		rel_info->cookie = le32_get_bits(wbm_cc_desc->info1,
-						 HAL_WBM_RELEASE_RX_CC_INFO1_COOKIE);
+		rel_info->cookie =
+			le32_get_bits(reo_desc->info0,
+				      HAL_REO_DESTINATION_RING_INFO0_SW_BUFFER_COOKIE);
 
-		desc_va = ((u64)le32_to_cpu(wbm_cc_desc->buf_va_hi) << 32 |
-			   le32_to_cpu(wbm_cc_desc->buf_va_lo));
+		desc_va = ((u64)le32_to_cpu(reo_desc->buf_addr_info.info0) << 32 |
+			   le32_to_cpu(reo_desc->buf_addr_info.info1));
 		rel_info->rx_desc =
 			(struct ath12k_rx_desc_info *)((unsigned long)desc_va);
 	}
@@ -458,31 +479,31 @@ int ath12k_wifi8_hal_wbm_desc_parse_err(struct ath12k_dp *dp, void *desc,
 	rel_info->err_rel_src = rel_src;
 	rel_info->hw_cc_done = hw_cc_done;
 
-	rel_info->first_msdu = le32_get_bits(wbm_desc->info3,
-					     HAL_WBM_RELEASE_INFO3_FIRST_MSDU);
-	rel_info->last_msdu = le32_get_bits(wbm_desc->info3,
-					    HAL_WBM_RELEASE_INFO3_LAST_MSDU);
-	rel_info->continuation = le32_get_bits(wbm_desc->info3,
-					       HAL_WBM_RELEASE_INFO3_CONTINUATION);
+	rel_info->first_msdu =
+		le32_get_bits(reo_desc->info0,
+			      HAL_RX_MSDU_DESC_INFO_INFO0_FIRST_MSDU_IN_MPDU_FLAG);
+	rel_info->last_msdu =
+		le32_get_bits(reo_desc->info0,
+			      HAL_RX_MSDU_DESC_INFO_INFO0_LAST_MSDU_IN_MPDU_FLAG);
+	rel_info->continuation =
+		le32_get_bits(reo_desc->info0,
+			      HAL_RX_MSDU_DESC_INFO_INFO0_MSDU_CONTINUATION);
 
-	if (rel_info->err_rel_src == HAL_WBM_REL_SRC_MODULE_REO) {
+	if (rel_info->err_rel_src == HAL_REO_REL_SRC_MODULE_REO) {
 		rel_info->push_reason =
-			le32_get_bits(wbm_desc->info0,
-				      HAL_WBM_RELEASE_INFO0_REO_PUSH_REASON);
+			le32_get_bits(mpdu_desc_ext_info->info0,
+				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_PUSH_REASON);
 		rel_info->err_code =
-			le32_get_bits(wbm_desc->info0,
-				      HAL_WBM_RELEASE_INFO0_REO_ERROR_CODE);
+			le32_get_bits(mpdu_desc_ext_info->info0,
+				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_ERROR_CODE);
 	} else {
 		rel_info->push_reason =
-			le32_get_bits(wbm_desc->info0,
-				      HAL_WBM_RELEASE_INFO0_RXDMA_PUSH_REASON);
+			le32_get_bits(mpdu_desc_ext_info->info0,
+				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_PUSH_REASON);
 		rel_info->err_code =
-			le32_get_bits(wbm_desc->info0,
-				      HAL_WBM_RELEASE_INFO0_RXDMA_ERROR_CODE);
+			le32_get_bits(mpdu_desc_ext_info->info0,
+				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_ERROR_CODE);
 	}
-
-	rel_info->peer_metadata = wbm_desc->info2;
-
 	return 0;
 }
 
@@ -505,13 +526,13 @@ void ath12k_wifi8_hal_rx_reo_ent_buf_paddr_get(void *rx_desc, dma_addr_t *paddr,
 	struct hal_reo_entrance_ring *reo_ent_ring =
 		(struct hal_reo_entrance_ring *)rx_desc;
 	struct ath12k_buffer_addr *buf_addr_info;
-	struct rx_mpdu_desc *rx_mpdu_desc_info_details;
+	struct hal_rx_reo_mpdu_desc_info *rx_mpdu_desc_info_details;
 
 	rx_mpdu_desc_info_details =
-			(struct rx_mpdu_desc *)&reo_ent_ring->rx_mpdu_info;
+		(struct hal_rx_reo_mpdu_desc_info *)&reo_ent_ring->rx_reo_mpdu_info;
 
 	*msdu_cnt = le32_get_bits(rx_mpdu_desc_info_details->info0,
-				  RX_MPDU_DESC_INFO0_MSDU_COUNT);
+				  HAL_RX_REO_MPDU_DESC_INFO_INFO0_MSDU_COUNT);
 
 	buf_addr_info = (struct ath12k_buffer_addr *)&reo_ent_ring->buf_addr_info;
 
@@ -534,27 +555,39 @@ void ath12k_wifi8_hal_rx_msdu_list_get(void *desc,
 {
 	struct hal_rx_msdu_link *link_desc = (struct hal_rx_msdu_link *)desc;
 	struct hal_rx_msdu_list *msdu_list = (struct hal_rx_msdu_list *)list;
-	struct hal_rx_msdu_details *msdu_details = NULL;
-	struct rx_msdu_desc *msdu_desc_info = NULL;
+	struct hal_rx_msdu_desc *msdu_desc_info = NULL;
+	    struct hal_rx_msdu_details *msdu_ptrs[] = {
+		&link_desc->msdu_0,
+		&link_desc->msdu_1,
+		&link_desc->msdu_2,
+		&link_desc->msdu_3,
+		&link_desc->msdu_4,
+		&link_desc->msdu_5,
+		&link_desc->msdu_6,
+		&link_desc->msdu_7,
+		&link_desc->msdu_8,
+		&link_desc->msdu_9,
+		&link_desc->msdu_10,
+	};
 	u32 last = 0, first = 0;
 	u8 tmp = 0;
 	int i;
 
-	last = u32_encode_bits(last, RX_MSDU_DESC_INFO0_LAST_MSDU_IN_MPDU);
-	first = u32_encode_bits(first, RX_MSDU_DESC_INFO0_FIRST_MSDU_IN_MPDU);
-	msdu_details = &link_desc->msdu_link[0];
+	last = u32_encode_bits(last, HAL_RX_MSDU_DESC_INFO_INFO0_LAST_MSDU_IN_MPDU_FLAG);
+	first = u32_encode_bits(first,
+				HAL_RX_MSDU_DESC_INFO_INFO0_FIRST_MSDU_IN_MPDU_FLAG);
 
 	for (i = 0; i < HAL_RX_NUM_MSDU_DESC; i++) {
-		if (!i && le32_get_bits(msdu_details[i].buf_addr_info.info0,
+		if (!i && le32_get_bits(msdu_ptrs[i]->buf_addr_info.info0,
 					BUFFER_ADDR_INFO0_ADDR) == 0)
 			break;
-		if (le32_get_bits(msdu_details[i].buf_addr_info.info0,
+		if (le32_get_bits(msdu_ptrs[i]->buf_addr_info.info0,
 				  BUFFER_ADDR_INFO0_ADDR) == 0) {
-			msdu_desc_info = &msdu_details[i - 1].rx_msdu_info;
+			msdu_desc_info = &msdu_ptrs[i - 1]->rx_msdu_info;
 			msdu_desc_info->info0 |= cpu_to_le32(last);
 			break;
 		}
-		msdu_desc_info = &msdu_details[i].rx_msdu_info;
+		msdu_desc_info = &msdu_ptrs[i]->rx_msdu_info;
 
 		if (!i)
 			msdu_desc_info->info0 |= cpu_to_le32(first);
@@ -564,14 +597,14 @@ void ath12k_wifi8_hal_rx_msdu_list_get(void *desc,
 		msdu_list->msdu_info[i].msdu_len =
 			 HAL_RX_MSDU_PKT_LENGTH_GET(msdu_desc_info->info0);
 		msdu_list->sw_cookie[i] =
-			le32_get_bits(msdu_details[i].buf_addr_info.info1,
+			le32_get_bits(msdu_ptrs[i]->buf_addr_info.info1,
 				      BUFFER_ADDR_INFO1_SW_COOKIE);
-		tmp = le32_get_bits(msdu_details[i].buf_addr_info.info1,
+		tmp = le32_get_bits(msdu_ptrs[i]->buf_addr_info.info1,
 				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
 		msdu_list->paddr[i] =
-			((u64)(le32_get_bits(msdu_details[i].buf_addr_info.info1,
+			((u64)(le32_get_bits(msdu_ptrs[i]->buf_addr_info.info1,
 					     BUFFER_ADDR_INFO1_ADDR)) << 32) |
-			le32_get_bits(msdu_details[i].buf_addr_info.info0,
+			le32_get_bits(msdu_ptrs[i]->buf_addr_info.info0,
 				      BUFFER_ADDR_INFO0_ADDR);
 		msdu_list->rbm[i] = tmp;
 	}
@@ -587,7 +620,7 @@ ath12k_wifi8_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
 	desc->buf_addr_info = *buf_addr_info;
 	desc->info0 |= le32_encode_bits(HAL_WBM_REL_SRC_MODULE_SW,
 					HAL_WBM_RELEASE_INFO0_REL_SRC_MODULE) |
-		    le32_encode_bits(action, HAL_WBM_RELEASE_INFO0_BM_ACTION) |
+		    //le32_encode_bits(action, HAL_WBM_RELEASE_INFO0_BM_ACTION) |
 		    le32_encode_bits(HAL_WBM_REL_DESC_TYPE_MSDU_LINK,
 				     HAL_WBM_RELEASE_INFO0_DESC_TYPE);
 }
@@ -612,48 +645,48 @@ void ath12k_wifi8_hal_reo_status_queue_stats(struct ath12k_base *ab,
 		   status->uniform_hdr.cmd_status);
 	ath12k_dbg(ab, ATH12K_DBG_HAL, "ssn %u cur_idx %u\n",
 		   le32_get_bits(desc->info0,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO0_SSN),
+				 HAL_REO_GET_Q_STATS_STATUS_INFO0_SSN),
 		   le32_get_bits(desc->info0,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO0_CUR_IDX));
-	ath12k_dbg(ab, ATH12K_DBG_HAL, "pn = [%08x, %08x, %08x, %08x]\n",
-		   desc->pn[0], desc->pn[1], desc->pn[2], desc->pn[3]);
+				 HAL_REO_GET_Q_STATS_STATUS_INFO0_CURRENT_INDEX));
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "pn = [%08x, %08x]\n",
+		   desc->pn_31_0, desc->pn_47_32);
 	ath12k_dbg(ab, ATH12K_DBG_HAL, "last_rx: enqueue_tstamp %08x dequeue_tstamp %08x\n",
 		   desc->last_rx_enqueue_timestamp,
 		   desc->last_rx_dequeue_timestamp);
-	ath12k_dbg(ab, ATH12K_DBG_HAL, "rx_bitmap [%08x %08x %08x %08x %08x %08x %08x %08x]\n",
-		   desc->rx_bitmap[0], desc->rx_bitmap[1], desc->rx_bitmap[2],
-		   desc->rx_bitmap[3], desc->rx_bitmap[4], desc->rx_bitmap[5],
-		   desc->rx_bitmap[6], desc->rx_bitmap[7]);
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "rx_bitmap [%08x %08x %08x %08x %08x %08x %08x %08x %08x]\n",
+		   desc->rx_bitmap_31_0, desc->rx_bitmap_63_32, desc->rx_bitmap_95_64,
+		   desc->rx_bitmap_127_96, desc->rx_bitmap_159_128,
+		   desc->rx_bitmap_191_160, desc->rx_bitmap_223_192,
+		   desc->rx_bitmap_255_224, desc->rx_bitmap_287_256);
 	ath12k_dbg(ab, ATH12K_DBG_HAL, "count: cur_mpdu %u cur_msdu %u\n",
-		   le32_get_bits(desc->info1,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO1_MPDU_COUNT),
-		   le32_get_bits(desc->info1,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO1_MSDU_COUNT));
+		   le32_get_bits(desc->info3,
+				 HAL_REO_GET_Q_STATS_STATUS_INFO3_CURRENT_MPDU_COUNT),
+		   le32_get_bits(desc->info3,
+				 HAL_REO_GET_Q_STATS_STATUS_INFO3_CURRENT_MSDU_COUNT));
 	ath12k_dbg(ab, ATH12K_DBG_HAL, "fwd_timeout %u fwd_bar %u dup_count %u\n",
-		   le32_get_bits(desc->info2,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO2_TIMEOUT_COUNT),
-		   le32_get_bits(desc->info2,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO2_FDTB_COUNT),
-		   le32_get_bits(desc->info2,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO2_DUPLICATE_COUNT));
+		   le32_get_bits(desc->info4,
+				 HAL_REO_GET_Q_STATS_STATUS_INFO4_TIMEOUT_COUNT),
+		   le32_get_bits(desc->info4,
+				 HAL_REO_GET_Q_STATS_STATUS_INFO4_FWD_DUE_TO_BAR_COUNT),
+		   cpu_to_le32(desc->duplicate_count));
 	ath12k_dbg(ab, ATH12K_DBG_HAL, "frames_in_order %u bar_rcvd %u\n",
-		   le32_get_bits(desc->info3,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO3_FIO_COUNT),
-		   le32_get_bits(desc->info3,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO3_BAR_RCVD_CNT));
-	ath12k_dbg(ab, ATH12K_DBG_HAL, "num_mpdus %d num_msdus %d total_bytes %d\n",
-		   desc->num_mpdu_frames, desc->num_msdu_frames,
-		   desc->total_bytes);
-	ath12k_dbg(ab, ATH12K_DBG_HAL, "late_rcvd %u win_jump_2k %u hole_cnt %u\n",
-		   le32_get_bits(desc->info4,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO4_LATE_RX_MPDU),
-		   le32_get_bits(desc->info2,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO2_WINDOW_JMP2K),
-		   le32_get_bits(desc->info4,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO4_HOLE_COUNT));
-	ath12k_dbg(ab, ATH12K_DBG_HAL, "looping count %u\n",
 		   le32_get_bits(desc->info5,
-				 HAL_REO_GET_QUEUE_STATS_STATUS_INFO5_LOOPING_CNT));
+				 HAL_REO_GET_Q_STATS_STATUS_INFO5_FRAMES_IN_ORDER_COUNT),
+		   le32_get_bits(desc->info5,
+				 HAL_REO_GET_Q_STATS_STATUS_INFO5_BAR_RECEIVED_COUNT));
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "num_mpdus %d num_msdus %d total_bytes %d\n",
+		   desc->mpdu_frames_processed_count, desc->msdu_frames_processed_count,
+		   desc->total_processed_byte_count);
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "late_rcvd %u win_jump_2k %u hole_cnt %u\n",
+		   le32_get_bits(desc->info6,
+				 HAL_REO_GET_Q_STATS_STATUS_INFO6_LATE_RCV_MPDU_COUNT),
+		   le32_get_bits(desc->info4,
+				 HAL_REO_GET_Q_STATS_STATUS_INFO4_WINDOW_JUMP_2K),
+		   le32_get_bits(desc->info6,
+				 HAL_REO_GET_Q_STATS_STATUS_INFO6_GET_Q_1K_SSTAT_FOLLOW));
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "looping count %u\n",
+		   le32_get_bits(desc->info7,
+				 HAL_REO_GET_Q_STATS_STATUS_INFO7_LOOPING_COUNT));
 }
 
 void ath12k_wifi8_hal_reo_flush_queue_status(struct ath12k_base *ab,
@@ -828,7 +861,7 @@ void ath12k_wifi8_hal_reo_update_rx_reo_queue_status(struct ath12k_base *ab,
 
 u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid)
 {
-	u32 num_ext_desc, num_1k_desc = 0;
+	u32 num_ext_desc;
 
 	if (ba_window_size <= 1) {
 		if (tid != HAL_NON_QOS_TID)
@@ -836,20 +869,16 @@ u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid)
 		else
 			num_ext_desc = 0;
 
-	} else if (ba_window_size <= 105) {
+	} else if (ba_window_size <= 217) {
 		num_ext_desc = 1;
-	} else if (ba_window_size <= 210) {
+	} else if (ba_window_size <= 434) {
 		num_ext_desc = 2;
-	} else if (ba_window_size <= 256) {
-		num_ext_desc = 3;
 	} else {
-		num_ext_desc = 10;
-		num_1k_desc = 1;
+		num_ext_desc = 5;
 	}
 
 	return sizeof(struct hal_rx_reo_queue) +
-		(num_ext_desc * sizeof(struct hal_rx_reo_queue_ext)) +
-		(num_1k_desc * sizeof(struct hal_rx_reo_queue_1k));
+		(num_ext_desc * sizeof(struct hal_rx_reo_queue_ext));
 }
 
 void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
@@ -862,12 +891,15 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 					  HAL_DESC_REO_QUEUE_DESC,
 					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_0);
 
-	qdesc->rx_queue_num = le32_encode_bits(tid, HAL_RX_REO_QUEUE_RX_QUEUE_NUMBER);
+	qdesc->receive_queue_number =
+		le32_encode_bits(tid, HAL_RX_REO_QUEUE_RECEIVE_QUEUE_NUMBER);
 
-	qdesc->info0 =
-		le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO0_VLD) |
-		le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO0_ASSOC_LNK_DESC_COUNTER) |
-		le32_encode_bits(ath12k_tid_to_ac(tid), HAL_RX_REO_QUEUE_INFO0_AC);
+	qdesc->info1 =
+	     le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO1_VLD) |
+	     le32_encode_bits(1,
+			      HAL_RX_REO_QUEUE_INFO1_ASSOCIATED_LINK_DESCRIPTOR_COUNTER) |
+	     le32_encode_bits(ath12k_tid_to_ac(tid),
+			      HAL_RX_REO_QUEUE_INFO1_LINK_LIST_TIMER_IDX);
 
 	if (ba_window_size < 1)
 		ba_window_size = 1;
@@ -876,33 +908,33 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 		ba_window_size++;
 
 	if (ba_window_size == 1)
-		qdesc->info0 |= le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO0_RETRY);
+		qdesc->info1 |= le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO1_RTY);
 
-	qdesc->info0 |= le32_encode_bits(ba_window_size - 1,
-					 HAL_RX_REO_QUEUE_INFO0_BA_WINDOW_SIZE);
+	qdesc->info1 |= le32_encode_bits(ba_window_size - 1,
+					 HAL_RX_REO_QUEUE_INFO1_BA_WINDOW_SIZE);
 	switch (type) {
 	case HAL_PN_TYPE_NONE:
 	case HAL_PN_TYPE_WAPI_EVEN:
 	case HAL_PN_TYPE_WAPI_UNEVEN:
 		break;
 	case HAL_PN_TYPE_WPA:
-		qdesc->info0 |=
-			le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO0_PN_CHECK) |
+		qdesc->info1 |=
+			le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO1_PN_CHECK_NEEDED) |
 			le32_encode_bits(HAL_RX_REO_QUEUE_PN_SIZE_48,
-					 HAL_RX_REO_QUEUE_INFO0_PN_SIZE);
+					 HAL_RX_REO_QUEUE_INFO1_PN_SIZE);
 		break;
 	}
 
 	/* TODO: Set Ignore ampdu flags based on BA window size and/or
 	 * AMPDU capabilities
 	 */
-	qdesc->info0 |= le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO0_IGNORE_AMPDU_FLG);
+	qdesc->info1 |= le32_encode_bits(1, HAL_RX_REO_QUEUE_INFO1_IGNORE_AMPDU_FLAG);
 
-	qdesc->info1 |= le32_encode_bits(0, HAL_RX_REO_QUEUE_INFO1_SVLD);
+	qdesc->info2 |= le32_encode_bits(0, HAL_RX_REO_QUEUE_INFO2_SVLD);
 
 	if (start_seq <= 0xfff)
-		qdesc->info1 = le32_encode_bits(start_seq,
-						HAL_RX_REO_QUEUE_INFO1_SSN);
+		qdesc->info2 = le32_encode_bits(start_seq,
+						HAL_RX_REO_QUEUE_INFO2_SSN);
 
 	if (tid == HAL_NON_QOS_TID)
 		return;
@@ -917,7 +949,7 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 	 * size changes and also send WMI message to FW to change the REO
 	 * queue descriptor in Rx peer entry as part of dp_rx_tid_update.
 	 */
-	memset(ext_desc, 0, 3 * sizeof(*ext_desc));
+	memset(ext_desc, 0, REO_QUEUE_EXT_DESC_MAX * sizeof(*ext_desc));
 	ath12k_wifi8_hal_reo_set_desc_hdr(&ext_desc->desc_hdr,
 					  HAL_DESC_REO_OWNED,
 					  HAL_DESC_REO_QUEUE_EXT_DESC,
@@ -932,6 +964,16 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 					  HAL_DESC_REO_OWNED,
 					  HAL_DESC_REO_QUEUE_EXT_DESC,
 					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_3);
+	ext_desc++;
+	ath12k_wifi8_hal_reo_set_desc_hdr(&ext_desc->desc_hdr,
+					  HAL_DESC_REO_OWNED,
+					  HAL_DESC_REO_QUEUE_EXT_DESC,
+					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_4);
+	ext_desc++;
+	ath12k_wifi8_hal_reo_set_desc_hdr(&ext_desc->desc_hdr,
+					  HAL_DESC_REO_OWNED,
+					  HAL_DESC_REO_QUEUE_EXT_DESC,
+					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_5);
 }
 
 void ath12k_wifi8_hal_reo_init_cmd_ring(struct ath12k_base *ab,
@@ -964,28 +1006,26 @@ void ath12k_hal_reo_ring_ctrl_hash_ix0_setup(struct ath12k_base *ab)
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
 	u32 curr, val;
 
-	curr = ath12k_hif_read32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0);
+	curr = ath12k_hif_read32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_0);
 	val = curr & ~(REO_DEST_CTRL_IX_0_RING6_MAP_MASK <<
 		       REO_DEST_CTRL_IX_0_RING6_MAP_SHFT);
 	val |= (REO2PPE_DST_RING_MAP << REO_DEST_CTRL_IX_0_RING6_MAP_SHFT);
 
-	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_0,
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_0,
 			   val);
 }
 
 void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
-	u32 ring_hash_map;
-
+	u32 ring_hash_map1 = 0, ring_hash_map2 = 0, ring_hash_map3 = 0;
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
 	u32 val, VI_reorder_timeout;
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_GEN_ENABLE);
 
 	val |= u32_encode_bits(1, HAL_REO1_GEN_ENABLE_AGING_LIST_ENABLE) |
-	       u32_encode_bits(1, HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE) |
-	       u32_encode_bits(1, HAL_REO1_GEN_ENABLE_INVLDT_CACHE_FOR_ZERO_VLD);
+	       u32_encode_bits(1, HAL_REO1_GEN_ENABLE_AGING_FLUSH_ENABLE);
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_GEN_ENABLE, val);
 
 	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_MISC_CTRL_ADDR(hal));
@@ -1027,19 +1067,72 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	 * 0:TCL, 1:SW1, 2:SW2, 3:SW3, 4:SW4, 5:Release, 6:FW and 7:SW5
 	 * 8:SW6, 9:SW7, 10:SW8, 11:Not used.
 	 */
-	ring_hash_map = HAL_WIFI8_HASH_ROUTING_RING_SW1 |
-			HAL_WIFI8_HASH_ROUTING_RING_SW2 << 4 |
-			HAL_WIFI8_HASH_ROUTING_RING_SW3 << 8 |
-			HAL_WIFI8_HASH_ROUTING_RING_SW4 << 12 |
-			HAL_WIFI8_HASH_ROUTING_RING_SW1 << 16 |
-			HAL_WIFI8_HASH_ROUTING_RING_SW2 << 20 |
-			HAL_WIFI8_HASH_ROUTING_RING_SW3 << 24 |
-			HAL_WIFI8_HASH_ROUTING_RING_SW4 << 28;
+	/*
+	 * Below is the re-mapping register (6 of them) to re-map the 5-bit
+	 * reo_destination_indication field in MSDU Detail to a 5-bit REO destination
+	 * ring.
+	 *
+	 * The 5-bit REO destination ring values are defined as:
+	 *  0: SW0      1: SW1      2: SW2     3: SW3     4: SW4
+	 *  5: Release  6: FW(WIFI) 7: SW5     8: SW6     9: SW7
+	 * 10: SW8     11: SW9     12: PPE    13: PPE1   14: PPE2
+	 * 15: FW_MGMT 16: SW10    17: SW11
+	 *
+	 * For example, software can program the register to force the field value = 3
+	 * to dest_ring_mapping_3 so all MSDUs with reo_destination_indication = 3
+	 * will be sent to SW Ring 1.
+	 *
+	 * There are a total of 32 mapping fields (one for each value of the 5-bit
+	 * reo_destination_indication), each occupying 5 bits, spread across 6 registers.
+	 */
+	ring_hash_map1 = HAL_WIFI8_HASH_ROUTING_RING_SW1 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW2 << 5 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW3 << 10 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW4 << 15 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW1 << 20 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW2 << 25;
 
-	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_2,
-			   ring_hash_map);
-	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_IX_3,
-			   ring_hash_map);
+	ring_hash_map2 = HAL_WIFI8_HASH_ROUTING_RING_SW3 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW4 << 5 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW5 << 10 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW6 << 15 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW7 << 20 |
+		HAL_WIFI8_HASH_ROUTING_RING_SW8 << 25;
+
+	ring_hash_map3 = HAL_WIFI8_HASH_ROUTING_RING_SW9;
+
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_2,
+			   ring_hash_map1);
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_3,
+			   ring_hash_map2);
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_4,
+			   ring_hash_map3);
+	/*
+	 * Each field in this register set contains the destination ring for the
+	 * corresponding error-detected packet. The error number is shown in
+	 * @enum htt_rx_reo_error_code_enum.
+	 *
+	 * The 5-bit error destination ring values are defined as:
+	 *  0: SW0      1: SW1      2: SW2     3: SW3     4: SW4
+	 *  5: Release  6: FW(WIFI) 7: SW5     8: SW6     9: SW7
+	 * 10: SW8     11: SW9     12: PPE    13: PPE1   14: PPE2
+	 * 15: FW_MGMT 16: SW10    17: SW11
+	 */
+	/* TODO: All errors are routed to SW0 currently. update this accordingly */
+	ath12k_hif_write32(ab, reo_base + HAL_REO_ERROR_DEST_MAPPING_AP_IX_0, 0);
+
+	/* Bypass REO reordering for the MPDU and sends the MPDU to delinker
+	 * and decide on delinking based on RXDMA_ERROR_CODE_REO_DELINK.rxdma_error_code
+	 */
+	/* Enable REO Reordering of MPDU and delinking for xdma_unecrypted_err only
+	 * TODO: CORE DP RX - Revisit this - Does this cause security exception if enabled
+	 * on all VAPs
+	 */
+	ath12k_hif_write32(ab, reo_base + HAL_REO_RXDMA_ERROR_CODE_REORDER, 0x12);
+
+	/* TODO: CORE DP RX - Revisit this */
+	ath12k_hif_write32(ab, reo_base + HAL_REO_RXDMA_ERROR_CODE_REO_DELINK, 0x3FFFFF);
+	ath12k_hif_write32(ab, reo_base + HAL_REO_ERROR_CODE_REO_DELINK, 0xFFFF);
 }
 
 void ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
@@ -1548,7 +1641,7 @@ void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
 
 	size = ath12k_wifi8_hal_reo_qdesc_size(ba_window_size, tid);
 
-	rx_queue_num = qdesc->rx_queue_num;
+	rx_queue_num = qdesc->receive_queue_number;
 	info0 = qdesc->info0;
 	info1 = qdesc->info1;
 
@@ -1558,18 +1651,18 @@ void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
 					  HAL_DESC_REO_QUEUE_DESC,
 					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_0);
 
-	qdesc->rx_queue_num = rx_queue_num;
+	qdesc->receive_queue_number = rx_queue_num;
 	qdesc->info0 = info0;
 	qdesc->info1 = info1;
 
-	qdesc->info1 |= u32_encode_bits(0, HAL_RX_REO_QUEUE_INFO1_SVLD);
-	qdesc->info1 |= u32_encode_bits(0, HAL_RX_REO_QUEUE_INFO1_SSN);
+	qdesc->info2 |= u32_encode_bits(0, HAL_RX_REO_QUEUE_INFO2_SVLD) |
+			u32_encode_bits(0, HAL_RX_REO_QUEUE_INFO2_SSN);
 
 	if (tid == HAL_NON_QOS_TID)
 		return;
 
 	ext_desc = qdesc->ext_desc;
-	memset(ext_desc, 0, 3 * sizeof(*ext_desc));
+	memset(ext_desc, 0, REO_QUEUE_EXT_DESC_MAX * sizeof(*ext_desc));
 
 	ath12k_wifi8_hal_reo_set_desc_hdr(&ext_desc->desc_hdr, HAL_DESC_REO_OWNED,
 					  HAL_DESC_REO_QUEUE_EXT_DESC,
@@ -1584,4 +1677,14 @@ void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
 	ath12k_wifi8_hal_reo_set_desc_hdr(&ext_desc->desc_hdr, HAL_DESC_REO_OWNED,
 					  HAL_DESC_REO_QUEUE_EXT_DESC,
 					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_3);
+	ext_desc++;
+
+	ath12k_wifi8_hal_reo_set_desc_hdr(&ext_desc->desc_hdr, HAL_DESC_REO_OWNED,
+					  HAL_DESC_REO_QUEUE_EXT_DESC,
+					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_4);
+	ext_desc++;
+
+	ath12k_wifi8_hal_reo_set_desc_hdr(&ext_desc->desc_hdr, HAL_DESC_REO_OWNED,
+					  HAL_DESC_REO_QUEUE_EXT_DESC,
+					  REO_QUEUE_DESC_MAGIC_DEBUG_PATTERN_5);
 }
