@@ -6296,6 +6296,7 @@ static int ieee80211_sta_assoc_ml_reconf(struct wiphy *wiphy,
 				   sta->sta.valid_links,
 				   new_active_links);
 	sta->sta.reconf.added_links = 0;
+	sta->sta.reconf.removed_links = 0;
 
 	return ret;
 }
