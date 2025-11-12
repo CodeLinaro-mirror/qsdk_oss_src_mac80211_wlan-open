@@ -1264,8 +1264,9 @@ static int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw,
 
 void ath12k_wifi7_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				       struct sk_buff *skb,
-				       struct ath12k_dp_vif *dp_vif, u8 ring_id,
+				       struct ath12k_dp_vif *dp_vif,
 				       enum ath12k_dp_tx_enq_error drop_reason,
+				       u8 ring_id,
 				       bool dev_free)
 {
 	if (unlikely(drop_reason >= DP_TX_ENQ_ERR_MAX))
