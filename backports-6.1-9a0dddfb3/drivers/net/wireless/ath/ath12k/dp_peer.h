@@ -25,40 +25,6 @@ struct ppdu_user_delayba {
 
 #define ATH12K_PEER_ML_ID_VALID         BIT(13)
 
-struct ath12k_rx_peer_rate_stats {
-	u64 ht_mcs_count[HAL_RX_MAX_MCS_HT + 1];
-	u64 vht_mcs_count[HAL_RX_MAX_MCS_VHT + 1];
-	u64 he_mcs_count[HAL_RX_MAX_MCS_HE + 1];
-	u64 be_mcs_count[HAL_RX_MAX_MCS_BE + 1];
-	u64 nss_count[HAL_RX_MAX_NSS];
-	u64 bw_count[HAL_RX_BW_MAX];
-	u64 gi_count[HAL_RX_GI_MAX];
-	u64 legacy_count[HAL_RX_MAX_NUM_LEGACY_RATES];
-	u64 rx_rate[HAL_RX_BW_MAX][HAL_RX_GI_MAX][HAL_RX_MAX_NSS][HAL_RX_MAX_MCS_HT + 1];
-};
-
-struct ath12k_rx_peer_stats {
-	u64 num_msdu;
-	u64 num_mpdu_fcs_ok;
-	u64 num_mpdu_fcs_err;
-	u64 tcp_msdu_count;
-	u64 udp_msdu_count;
-	u64 other_msdu_count;
-	u64 ampdu_msdu_count;
-	u64 non_ampdu_msdu_count;
-	u64 stbc_count;
-	u64 beamformed_count;
-	u64 coding_count[HAL_RX_SU_MU_CODING_MAX];
-	u64 tid_count[IEEE80211_NUM_TIDS + 1];
-	u64 pream_cnt[HAL_RX_PREAMBLE_MAX];
-	u64 reception_type[HAL_RX_RECEPTION_TYPE_MAX];
-	u64 rx_duration;
-	u64 dcm_count;
-	u64 ru_alloc_cnt[HAL_RX_RU_ALLOC_TYPE_MAX];
-	struct ath12k_rx_peer_rate_stats pkt_stats;
-	struct ath12k_rx_peer_rate_stats byte_stats;
-};
-
 struct ath12k_atf_peer_airtime {
 	struct peer_airtime_consumption tx_airtime_consumption[WME_NUM_AC];
 	struct peer_airtime_consumption rx_airtime_consumption[WME_NUM_AC];
