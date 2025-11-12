@@ -1374,7 +1374,6 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_neighbor_peer *nrp, *tmp;
-	struct ath12k_link_sta *arsta;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
 	enum hal_rx_mon_status hal_status;
 	int desc_cnt;
@@ -1449,14 +1448,6 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 			}
 
 			if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
-				arsta = ath12k_peer_get_link_sta(dp->ab, peer);
-				if (!arsta) {
-					ath12k_warn(dp->ab,
-						    "link sta not found on peer %pM id %d\n",
-						    peer->addr, peer->peer_id);
-					goto unlock;
-				}
-
 				ath12k_dp_mon_rx_update_peer_su_stats(pdev_dp, peer,
 								      ppdu_info);
 				ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);

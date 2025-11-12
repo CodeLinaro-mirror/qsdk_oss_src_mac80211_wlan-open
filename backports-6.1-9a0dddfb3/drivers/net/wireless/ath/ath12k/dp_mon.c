@@ -1061,7 +1061,6 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 				   struct hal_rx_mon_ppdu_info *ppdu_info,
 				   u32 uid)
 {
-	struct ath12k_link_sta *arsta;
 	struct ath12k_rx_peer_stats *rx_stats = NULL;
 	struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
 	struct ath12k_pdev_dp_stats *pdev_stats = &pdev_dp->stats;
@@ -1077,13 +1076,6 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	if (!peer) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_RX, "peer with peer id %d can't be found\n",
 			   ppdu_info->peer_id);
-		return;
-	}
-
-	arsta = ath12k_peer_get_link_sta(ab, peer);
-	if (!arsta) {
-		ath12k_warn(ab, "link sta not found on peer %pM id %d\n",
-			    peer->addr, peer->peer_id);
 		return;
 	}
 
@@ -1201,7 +1193,6 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 {
        struct hal_rx_user_status *user_stats = &ppdu_info->userstats[uid];
        struct ath12k_dp_link_peer_stats *stats = NULL;
-       struct ath12k_link_sta *arsta;
        struct ath12k_dp_link_peer *peer;
        u32 nss_ru_width_sum = 0;
        u64 temp_result = 0;
@@ -1219,13 +1210,6 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
                ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
                           "peer stats not found on ppdu peer id %d\n",
                           user_stats->sw_peer_id);
-               return;
-       }
-
-       arsta = ath12k_peer_get_link_sta(dp_pdev->ar->ab, peer);
-       if (!arsta) {
-               ath12k_warn(dp_pdev->ar->ab, "link sta not found on peer %pM id %d\n",
-                           peer->addr, peer->peer_id);
                return;
        }
 
