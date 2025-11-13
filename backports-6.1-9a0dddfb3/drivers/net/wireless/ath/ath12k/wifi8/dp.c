@@ -16,6 +16,7 @@
 #include "dp_rx.h"
 #include "hal.h"
 #include "dp_peer.h"
+#include "dp_ast.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
@@ -117,6 +118,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 #endif
 
 	ath12k_wifi8_dp_rx_ring_free(ab);
+	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
 }
 
 static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
@@ -214,6 +216,12 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	/* Initialize cumac pointer in hw_group */
 	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	dp_hw_group_wifi8->cumac_dp = dp;
+
+	ret = ath12k_dp_ast_table_init(dp->dp_hw_grp);
+	if (ret) {
+		ath12k_warn(ab, "dp ast table init failed %d\n", ret);
+		goto fail_dp_rx_free;
+	}
 
 	ath12k_info(ab, "CUMAC init successful");
 	return 0;

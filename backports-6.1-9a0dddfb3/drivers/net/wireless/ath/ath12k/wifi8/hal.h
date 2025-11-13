@@ -131,6 +131,25 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 			HAL_TCL_PPE_INDEX_MAPPING_OFFSET + \
 			(HAL_TCL_PPE_INDEX_MAPPING_SLOT_SIZE * (n)))
 
+/* ASE configuration details */
+#define HAL_HW_AST_ENTRY_ALIGN          8
+#define HAL_HW_AST_ENTRY_SIZE           32
+
+#define HAL_TCL_ASE_GST_BASE_ADDR_LOW	0xF150B4
+#define HAL_TCL_ASE_GST_BASE_ADDR_HIGH	0xF150B8
+#define HAL_TCL_ASE_GST_SIZE		0xF150BC
+#define HAL_TCL_ASE_SEARCH_CTRL		0xF150C0
+#define HAL_TCL_ASE_HASH_KEY_31_0	0xF143A8
+#define HAL_TCL_ASE_HASH_KEY_63_32	0xF143AC
+#define HAL_TCL_ASE_HASH_KEY_64		0xF143B0
+
+#define HAL_TCL_ASE_GST_BASE_ADDR_LOW_MASK			GENMASK(31, 0)
+#define HAL_TCL_ASE_GST_BASE_ADDR_HIGH_MASK			GENMASK(7, 0)
+#define HAL_TCL_ASE_GST_SIZE_MASK				GENMASK(19, 0)
+#define HAL_TCL_ASE_SEARCH_CTRL_MAX_SEARCH			GENMASK(7, 0)
+#define HAL_TCL_ASE_SEARCH_CTRL_CACHE_DISABLE			BIT(9)
+#define HAL_TCL_ASE_SEARCH_CTRL_CACHE_FAILURES_ENABLE		BIT(10)
+
 /* REO2SW(x) R0 ring configuration address */
 #define HAL_REO1_GEN_ENABLE			0x00000000
 #define HAL_REO1_MISC_CTRL_ADDR(hal) \
@@ -686,6 +705,18 @@ struct hal_reo_status {
 	} u;
 };
 
+struct ath12k_hal_ast_param {
+	u32 skid_len:8,
+	    ast_cache_en:1,
+	    ast_cache_failure_en:1,
+	    reserved:22;
+	u32 ase_hash_key1;
+	u32 ase_hash_key2;
+	u32 ase_hash_key3;
+	dma_addr_t paddr;
+	u16 num_ast_entries;
+};
+
 extern const struct hal_ops hal_qcn9625_ops;
 
 void ath12k_wifi8_hal_ce_dst_setup(struct ath12k_base *ab,
@@ -764,6 +795,8 @@ void ath12k_wifi8_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 
 void ath12k_wifi8_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
 bool ath12k_wifi8_hal_tx_completion_process(struct hal_wbm_completion_ring_tx *desc,
 					    struct ath12k_dp_tx_comp_status *tx_comp_status);
+void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
+				  struct ath12k_hal_ast_param *ast_param);
 
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
