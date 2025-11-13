@@ -12,7 +12,7 @@
 struct workqueue_struct;
 
 #define	ATH12K_DP_MON_NUM_PPDU_DESC	128
-#define ATH12K_DP_MON_STATUS_BUF	512
+#define ATH12K_DP_MON_STATUS_BUF	320
 
 struct ath12k_dp_mon_status_desc {
 	dma_addr_t paddr;
