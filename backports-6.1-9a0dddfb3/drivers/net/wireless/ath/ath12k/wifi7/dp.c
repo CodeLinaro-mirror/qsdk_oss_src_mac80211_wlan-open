@@ -353,6 +353,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.peer_migrate_reo_cmd = ath12k_wifi7_dp_peer_migrate_reo_cmd,
 	.sdwf_reinject_handler = ath12k_wifi7_sdwf_reinject_handler,
 	.dp_tx_ring_setup = ath12k_wifi7_dp_tx_ring_setup,
+	.dp_tx_status_parse = ath12k_wifi7_dp_tx_status_parse,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */
