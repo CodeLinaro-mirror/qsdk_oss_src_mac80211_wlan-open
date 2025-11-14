@@ -14801,6 +14801,16 @@ ath12k_create_ht_cap(struct ath12k *ar, u32 ar_ht_cap, u32 rate_cap_rx_chainmask
 	}
 
 	ht_cap.mcs.tx_params |= IEEE80211_HT_MCS_TX_DEFINED;
+	if (ar->num_tx_chains != ar->num_rx_chains) {
+		u8 tx_streams = ar->num_tx_chains;
+
+		if (tx_streams > IEEE80211_HT_MCS_TX_MAX_STREAMS)
+			tx_streams = IEEE80211_HT_MCS_TX_MAX_STREAMS;
+		ht_cap.mcs.tx_params |= IEEE80211_HT_MCS_TX_RX_DIFF;
+		ht_cap.mcs.tx_params &= ~IEEE80211_HT_MCS_TX_MAX_STREAMS_MASK;
+		ht_cap.mcs.tx_params |=
+			(tx_streams - 1) << IEEE80211_HT_MCS_TX_MAX_STREAMS_SHIFT;
+	}
 
 	return ht_cap;
 }
