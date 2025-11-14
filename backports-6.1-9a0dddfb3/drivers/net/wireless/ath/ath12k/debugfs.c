@@ -4155,7 +4155,7 @@ static int ath12k_open_vdev_stats(struct inode *inode, struct file *file)
 	if (ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
 
-	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_ATOMIC);
+	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
@@ -4216,7 +4216,7 @@ static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 	if (ah && ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
 
-	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_ATOMIC);
+	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
@@ -4289,7 +4289,7 @@ static int ath12k_open_pdev_stats(struct inode *inode, struct file *file)
 	if (ah && ah->state != ATH12K_HW_STATE_ON)
 		return -ENETDOWN;
 
-	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_ATOMIC);
+	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_KERNEL);
 	if (!buf)
 		return -ENOMEM;
 
