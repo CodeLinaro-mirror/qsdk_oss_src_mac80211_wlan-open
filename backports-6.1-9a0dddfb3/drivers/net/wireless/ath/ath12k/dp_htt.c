@@ -410,12 +410,6 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 			succ_pkts = usr_stats->cmpltn_cmn.mpdu_success;
 		        tid = usr_stats->cmpltn_cmn.tid_num;
 		}
-		tx_retry_failed =
-			__le16_to_cpu(usr_stats->cmpltn_cmn.mpdu_tried) -
-			__le16_to_cpu(usr_stats->cmpltn_cmn.mpdu_success);
-		tx_retry_count =
-			HTT_USR_CMPLTN_LONG_RETRY(usr_stats->cmpltn_cmn.flags) +
-			HTT_USR_CMPLTN_SHORT_RETRY(usr_stats->cmpltn_cmn.flags);
 	}
 
 	if (tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS)) {
@@ -426,10 +420,17 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 				    HTT_PPDU_STATS_ACK_BA_INFO_TID_NUM);
 		dp_pdev->wmm_stats.tx_type = ath12k_tid_to_ac(tid > ATH12K_DSCP_PRIORITY ? 0: tid);
 		dp_pdev->wmm_stats.total_wmm_tx_pkts[dp_pdev->wmm_stats.tx_type]++;
+		if (tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_COMMON)) {
+			tx_retry_failed =
+				__le16_to_cpu(usr_stats->cmpltn_cmn.mpdu_tried) -
+				__le16_to_cpu(usr_stats->cmpltn_cmn.mpdu_success);
+			tx_retry_count =
+				HTT_USR_CMPLTN_LONG_RETRY(usr_stats->cmpltn_cmn.flags) +
+				HTT_USR_CMPLTN_SHORT_RETRY(usr_stats->cmpltn_cmn.flags);
+		}
+		if (common->fes_duration_us)
+			tx_duration = le32_to_cpu(common->fes_duration_us);
 	}
-
-	if (common->fes_duration_us)
-		tx_duration = le32_to_cpu(common->fes_duration_us);
 
 	user_rate = &usr_stats->rate;
 	ppdu_type = HTT_USR_RATE_PPDU_TYPE(user_rate->info1);
