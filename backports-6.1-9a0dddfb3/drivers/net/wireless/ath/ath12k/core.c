@@ -2478,6 +2478,7 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 				mutex_unlock(&ah->hw_mutex);
 				wiphy_unlock(ah->hw->wiphy);
 				cancel_delayed_work_sync(&ar->scan.timeout);
+				cancel_delayed_work_sync(&ar->scan.roc_done);
 				wiphy_lock(ah->hw->wiphy);
 				mutex_lock(&ah->hw_mutex);
 				ath12k_core_halt(ar);

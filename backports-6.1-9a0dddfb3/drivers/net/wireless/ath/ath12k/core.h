@@ -1268,6 +1268,7 @@ struct ath12k {
 		struct completion completed;
 		struct completion on_channel;
 		struct delayed_work timeout;
+		struct delayed_work roc_done;
 		enum ath12k_scan_state state;
 		bool is_roc:1;
 		bool roc_notify:1;
