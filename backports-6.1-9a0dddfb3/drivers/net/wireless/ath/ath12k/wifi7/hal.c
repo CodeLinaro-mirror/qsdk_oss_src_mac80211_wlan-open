@@ -295,7 +295,11 @@ void ath12k_wifi7_hal_set_umac_srng_ptr_addr(struct ath12k_base *ab,
 			srng->u.dst_ring.tp_addr =
 				(u32 *)((unsigned long)ab->mem + reg_base +
 				(HAL_REO1_RING_TP - HAL_REO1_RING_HP));
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			if (type  == HAL_WBM2SW_RELEASE || type == HAL_REO_DST) {
+#else
 			if (type  == HAL_WBM2SW_RELEASE) {
+#endif
 				if (ab->hif.bus == ATH12K_BUS_PCI ||
 						ab->hif.bus == ATH12K_BUS_HYBRID){
 					srng->u.dst_ring.tp_addr_direct =

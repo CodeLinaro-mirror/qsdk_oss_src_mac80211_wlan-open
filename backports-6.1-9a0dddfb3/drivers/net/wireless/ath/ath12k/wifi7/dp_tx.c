@@ -1184,6 +1184,10 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	ring_selector = dp->hw_params->hw_ops->get_ring_selector(skb);
 
 	ti.ring_id = ring_selector % dp->hw_params->max_tx_ring;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (ti.ring_id == IPA_TCL_RING)
+		ti.ring_id = IPA_TCL_SW_RING;
+#endif
 
 	ti.rbm_id = hal->tcl_to_cmp_rbm_map[ti.ring_id].rbm_id;
 
@@ -2603,6 +2607,11 @@ void ath12k_wifi7_dp_tx_ring_cleanup(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ab->dp;
 	int i;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
+	    IPA_CTX(ab)->ipa_ops->ipa_tx_buffer_free)
+		IPA_CTX(ab)->ipa_ops->ipa_tx_buffer_free(ab);
+#endif
 	for (i = 0; i < ab->hw_params->max_tx_ring; i++) {
 		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_comp_ring);
 		ath12k_dp_srng_cleanup(ab, &dp->tx_ring[i].tcl_data_ring);
@@ -2644,6 +2653,11 @@ int ath12k_wifi7_dp_tx_ring_setup(struct ath12k_base *ab)
 			goto err;
 		}
 	}
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
+	    IPA_CTX(ab)->ipa_ops->ipa_tx_buffer_alloc)
+		IPA_CTX(ab)->ipa_ops->ipa_tx_buffer_alloc(ab);
+#endif
 
 	return 0;
 

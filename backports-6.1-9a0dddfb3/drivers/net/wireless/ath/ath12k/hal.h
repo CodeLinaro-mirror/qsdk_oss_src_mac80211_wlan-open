@@ -1405,6 +1405,9 @@ struct hal_ops {
 	void (*reo_init_cmd_ring)(struct ath12k_base *ab,
 				  struct hal_srng *srng);
 	void (*reo_hw_setup)(struct ath12k_base *ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	void (*reo_hw_setup_ipa)(struct ath12k_base *ab);
+#endif
 	void (*cc_config)(struct ath12k_base *ab);
 	void (*srng_hw_disable)(struct ath12k_base *ab, struct hal_srng *srng);
 	void (*reset_rx_reo_tid_q)(void *vaddr, u32 ba_window_size, u8 tid);
@@ -1651,6 +1654,11 @@ void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab);
 void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab,
                                  struct hal_srng *srng);
 void ath12k_hal_reo_hw_setup(struct ath12k_base *ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+void *ath12k_hal_srng_dst_get_next_hp_entry(struct ath12k_base *ab,
+					    struct hal_srng *srng);
+void ath12k_hal_reo_hw_setup_ipa(struct ath12k_base *ab);
+#endif
 void ath12k_hal_rx_buf_addr_info_set(struct ath12k_buffer_addr *binfo,
 				     dma_addr_t paddr, u32 cookie, u8 manager);
 void ath12k_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,

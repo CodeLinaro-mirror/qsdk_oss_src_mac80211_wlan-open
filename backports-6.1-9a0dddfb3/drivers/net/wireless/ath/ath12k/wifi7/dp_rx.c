@@ -3607,7 +3607,11 @@ int ath12k_wifi7_dp_rxdma_ring_sel_config_qcn9274(struct ath12k_base *ab)
 	int ret;
 	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ring_id = dp->rx_mac_buf_ring[0].ring_id;
+#else
 	ring_id = dp->rx_refill_buf_ring.refill_buf_ring.ring_id;
+#endif
 
 	tlv_filter.rx_filter = HTT_RX_TLV_FLAGS_RXDMA_RING;
 	tlv_filter.rxmon_disable = true;

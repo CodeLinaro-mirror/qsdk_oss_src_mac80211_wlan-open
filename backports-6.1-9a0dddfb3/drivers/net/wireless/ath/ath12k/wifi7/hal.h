@@ -75,6 +75,16 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 	((hal)->regs->hal_umac_ce1_dest_reg_base)
 #define HAL_SEQ_WCSS_UMAC_WBM_REG		0x00a34000
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define HAL_WBM2SW3_RING_HP_LSB_ADDR		0x00000F84
+#define HAL_WBM2SW3_RING_HP_MSB_ADDR		0x00000F88
+#define HAL_WBM2SW3_RING_HP_VAL			0x000030E0
+#define HAL_REO2SW3_RING_HP_LSB_ADDR		0x00000604
+#define HAL_REO2SW3_RING_HP_MSB_ADDR		0x00000608
+#define HAL_REO2SW4_RING_HP_LSB_ADDR		0x0000067C
+#define HAL_REO2SW4_RING_HP_MSB_ADDR		0x00000680
+#endif
+
 #define HAL_CE_WFSS_CE_REG_BASE			0x01b80000
 #define HAL_DP_REG_WINDOW_OFFSET                0x180000
 
@@ -810,6 +820,9 @@ void ath12k_wifi7_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab,
 void ath12k_wifi7_hal_reo_init_cmd_ring(struct ath12k_base *ab,
 					struct hal_srng *srng);
 void ath12k_wifi7_hal_reo_hw_setup(struct ath12k_base *ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+void ath12k_hal_reo_ring_ipa_ctrl_hash_ix0_setup(struct ath12k_base *ab);
+#endif
 void
 ath12k_wifi7_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 				       u32 *num_msdus, u32 *msdu_cookies,
