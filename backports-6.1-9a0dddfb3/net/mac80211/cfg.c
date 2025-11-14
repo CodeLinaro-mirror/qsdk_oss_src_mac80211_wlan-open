@@ -4691,7 +4691,7 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	struct ieee80211_link_data *link_data;
 	struct ieee80211_sub_if_data *mon_sdata;
 	struct ieee80211_chanctx_conf *mon_conf;
-	struct ieee80211_chanctx *mon_chanctx;
+	struct ieee80211_chanctx *mon_chanctx = NULL;
 	u64 changed = 0;
 	u8 link_id = params->link_id;
 	int err;
@@ -4789,7 +4789,43 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 	/* if reservation is invalid then this will fail */
 	err = ieee80211_check_combinations(sdata, NULL, chanctx->mode, 0, -1);
 	if (err) {
-		ieee80211_link_unreserve_chanctx(link_data);
+		if (ieee80211_hw_check(&local->hw, SUPPORTS_SINGLE_CHANNEL)) {
+			struct ieee80211_chanctx *new_ctx = link_data->reserved_chanctx;
+			struct ieee80211_link_data *link, *link_tmp;
+			int refcount = ieee80211_chanctx_num_reserved(local, new_ctx);
+
+			list_for_each_entry_safe(link, link_tmp, &new_ctx->reserved_links,
+						 reserved_chanctx_list) {
+				ieee80211_link_unreserve_chanctx(link);
+				ieee80211_link_chanctx_reservation_complete(link);
+				if (--refcount == 0)
+					break;
+			}
+		} else {
+			if (mon_chanctx) {
+				list_for_each_entry_rcu(mon_sdata,
+							&local->mon_list,
+							u.mntr.list) {
+					struct cfg80211_chan_def *chandef;
+					struct ieee80211_link_data *mon_link;
+					struct ieee80211_bss_conf *bss_conf;
+
+					mon_link = &mon_sdata->deflink;
+					bss_conf = &mon_sdata->vif.bss_conf;
+					chandef = &bss_conf->chanreq.oper;
+					if (chandef->chan &&
+					    chandef->chan->band !=
+						chanreq.oper.chan->band)
+						continue;
+
+					if (!mon_link || !mon_link->reserved_chanctx)
+						continue;
+
+					ieee80211_link_unreserve_chanctx(mon_link);
+				}
+			}
+			ieee80211_link_unreserve_chanctx(link_data);
+		}
 		goto out;
 	}
 
@@ -4799,7 +4835,43 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 
 	err = ieee80211_set_csa_beacon(link_data, params, &changed);
 	if (err) {
-		ieee80211_link_unreserve_chanctx(link_data);
+		if (ieee80211_hw_check(&local->hw, SUPPORTS_SINGLE_CHANNEL)) {
+			struct ieee80211_chanctx *new_ctx = link_data->reserved_chanctx;
+			struct ieee80211_link_data *link, *link_tmp;
+			int refcount = ieee80211_chanctx_num_reserved(local, new_ctx);
+
+			list_for_each_entry_safe(link, link_tmp, &new_ctx->reserved_links,
+						 reserved_chanctx_list) {
+				ieee80211_link_unreserve_chanctx(link);
+				ieee80211_link_chanctx_reservation_complete(link);
+				if (--refcount == 0)
+					break;
+			}
+		} else {
+			if (mon_chanctx) {
+				list_for_each_entry_rcu(mon_sdata,
+							&local->mon_list,
+							u.mntr.list) {
+					struct cfg80211_chan_def *chandef;
+					struct ieee80211_link_data *mon_link;
+					struct ieee80211_bss_conf *bss_conf;
+
+					mon_link = &mon_sdata->deflink;
+					bss_conf = &mon_sdata->vif.bss_conf;
+					chandef = &bss_conf->chanreq.oper;
+					if (chandef->chan &&
+					    chandef->chan->band !=
+						chanreq.oper.chan->band)
+						continue;
+
+					if (!mon_link || !mon_link->reserved_chanctx)
+						continue;
+
+					ieee80211_link_unreserve_chanctx(mon_link);
+				}
+			}
+			ieee80211_link_unreserve_chanctx(link_data);
+		}
 		goto out;
 	}
 
