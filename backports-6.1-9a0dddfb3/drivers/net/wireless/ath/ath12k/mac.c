@@ -16114,7 +16114,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		if (link_conf)
 			txpower = link_conf->txpower;
 	} else if (is_bridge_vdev) {
-		if (test_bit(ATH12K_FLAG_RECOVERY, &ab->ag->flags)) {
+		if (ath12k_hw_group_recovery_in_progress(ab->ag)) {
 			memcpy(link_addr, arvif->bssid, ETH_ALEN);
 		} else {
 			/* Generate mac address for bridge vap */
@@ -19490,7 +19490,7 @@ static int ath12k_mac_create_and_start_bridge(struct ieee80211_hw *hw,
 		goto exit;
 	}
 
-	if (test_bit(ATH12K_FLAG_RECOVERY, &ag->flags)) {
+	if (ath12k_hw_group_recovery_in_progress(ag)) {
 		if (ahvif->mode0_recover_bridge_vdevs) {
 			link_id = ATH12K_BRIDGE_LINK_MIN;
 			links_map = ahvif->links_map;
