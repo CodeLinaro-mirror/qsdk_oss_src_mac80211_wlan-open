@@ -634,6 +634,7 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	u16 tones;
 	u16 rate = 0, succ_pkts = 0, ru_start, ru_end;
 	u32 tx_duration = 0, ru_tones, ru_format, tlv_bitmap, rate_flags;
+	u8 mu_grpid, mu_pos;
 	bool is_ampdu = false, resp_type_valid, is_ofdma;
 	u8 tid = HTT_PPDU_STATS_NON_QOS_TID;
 	u16 tx_retry_failed = 0, tx_retry_count = 0;
@@ -703,6 +704,9 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	dcm = HTT_USR_RATE_DCM(rate_flags);
 	ru_format = FIELD_GET(HTT_PPDU_STATS_USER_RATE_INFO0_RU_SIZE,
 		              user_rate->info0);
+	mu_pos = HTT_USR_RATE_USR_POS(user_rate->info0);
+	mu_grpid = HTT_USR_RATE_MU_GRPID(user_rate->info0);
+
 	if (ru_format == 1)
 		ru_tones = ath12k_dp_rx_ru_alloc_from_ru_size(ru_start);
 	else if (!ru_format)
@@ -839,6 +843,9 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	peer_stats->ppdu_type = ppdu_type;
+	peer_stats->mu_grpid = mu_grpid;
+	peer_stats->mu_pos   = mu_pos;
+	peer_stats->ru_start = ru_start;
 	usr_stats->ru_tones = ru_tones;
 
 	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar))
@@ -1062,6 +1069,11 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 	}
 }
 
+static uint32_t ath12k_dp_htt_mask_ppdu_id(uint32_t ppdu_id)
+{
+	return (ppdu_id & DP_HTT_PPDU_ID_MASK);
+}
+
 static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 				      struct sk_buff *skb)
 {
@@ -1087,6 +1099,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 
 	pdev_id = le32_get_bits(msg->info, HTT_T2H_PPDU_STATS_INFO_PDEV_ID);
 	ppdu_id = le32_to_cpu(msg->ppdu_id);
+	ppdu_id = ath12k_dp_htt_mask_ppdu_id(ppdu_id);
 
 	if (pdev_id < 1) {
 		ath12k_warn(ab, "HTT PPDU STATS invalid pdev id");

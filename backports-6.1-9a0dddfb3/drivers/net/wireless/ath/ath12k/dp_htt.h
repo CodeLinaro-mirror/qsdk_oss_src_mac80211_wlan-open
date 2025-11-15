@@ -1332,6 +1332,7 @@ enum htt_backpressure_lmac_ringid {
 #define HTT_T2H_PPDU_STATS_INFO_PDEV_ID GENMASK(11, 10)
 #define HTT_T2H_PPDU_STATS_INFO_PAYLOAD_SIZE GENMASK(31, 16)
 
+#define DP_HTT_PPDU_ID_MASK 0x00FFFFFF
 /* @brief target -> host packet log message
  *
  * @details
@@ -1524,6 +1525,10 @@ enum HTT_PPDU_STATS_RESP_PPDU_TYPE {
 		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_FLAGS_GI_M)
 #define HTT_USR_RATE_DCM(_val) \
 		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_FLAGS_DCM_M)
+#define HTT_USR_RATE_USR_POS(_val) \
+		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_INFO0_USER_POS_M)
+#define HTT_USR_RATE_MU_GRPID(_val) \
+		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_INFO0_MU_GROUP_ID_M)
 
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_LTF_SIZE_M		GENMASK(1, 0)
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_STBC_M		BIT(2)

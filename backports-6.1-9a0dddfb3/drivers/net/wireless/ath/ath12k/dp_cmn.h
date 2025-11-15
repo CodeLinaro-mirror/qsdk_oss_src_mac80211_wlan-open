@@ -67,8 +67,8 @@ struct ath12k_per_peer_tx_stats {
 	u16 ru_tones;
 	u8 ba_fails;
 	u8 ppdu_type;
-	u32 mu_grpid;
-	u32 mu_pos;
+	u8 mu_grpid;
+	u8 mu_pos;
 	bool is_ampdu;
 };
 
