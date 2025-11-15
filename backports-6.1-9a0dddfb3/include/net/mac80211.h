@@ -1422,6 +1422,83 @@ struct ieee80211_rate_status {
 };
 
 /**
+ * enum mac80211_tx_mon_flags - tx monitor info flags
+ *
+ * These are used with @flag member of &struct ieee80211_tx_mon_info
+ * @TX_MON_FLAG_FLAGS_INFO: info for IEEE80211_RADIOTAP_FLAGS
+ * @TX_MON_FLAG_CHAN_INFO: info for IEEE80211_RADIOTAP_CHANNEL
+ * @TX_MON_FLAG_AMPDU_STATUS_INFO: info for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @TX_MON_FLAG_LSIG_INFO: info for IEEE80211_RADIOTAP_LSIG (L-SIG field)
+ * @TX_MON_FLAG_HE_MU_INFO: info for IEEE80211_RADIOTAP_HE_MU (HE MU fields)
+ * @TX_MON_FLAG_EHT_USIG_INFO: info for IEEE80211_RADIOTAP_EHT_USIG (EHT U-SIG)
+ * @TX_MON_FLAG_EHT_INFO: info for IEEE80211_RADIOTAP_EHT (EHT header)
+ * @TX_MON_FLAG_END: Last member
+ */
+
+enum mac80211_tx_mon_flags {
+	TX_MON_FLAG_FLAGS_INFO,
+	TX_MON_FLAG_CHAN_INFO,
+	TX_MON_FLAG_AMPDU_STATUS_INFO,
+	TX_MON_FLAG_LSIG_INFO,
+	TX_MON_FLAG_HE_MU_INFO,
+	TX_MON_FLAG_EHT_USIG_INFO,
+	TX_MON_FLAG_EHT_INFO,
+	TX_MON_FLAG_VENDOR_TLV,
+	TX_MON_FLAG_END,
+};
+
+/**
+ * struct ieee80211_tx_mon_info - tx monitor related information
+ *
+ * @flags: flags pointing to enum mac80211_tx_mon_flags
+ * @tsft: tsft value for IEEE80211_RADIOTAP_TSFT
+ * @rtap_flags: flags for IEEE80211_RADIOTAP_FLAGS
+ * @chan_freq: channel frequency bitmask for IEEE80211_RADIOTAP_CHANNEL
+ * @chan_flags: channel frequency flags for IEEE80211_RADIOTAP_CHANNEL
+ * @ampdu_ref_num:  A-MPDU reference num for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @ampdu_flags:  ampdu_flags for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @ampdu_reserved_flags: ampdu_reserved_flags for IEEE80211_RADIOTAP_AMPDU_STATUS
+ * @lsig: L-SIG fields for IEEE80211_RADIOTAP_LSIG
+ * @he_mu: HE-MU fields for IEEE80211_RADIOTAP_HE_MU
+ * @eht_usig: EHT USIG fields for IEEE80211_RADIOTAP_EHT_USIG
+ * @eht_num_users: Number of user info entries in EHT radiotap header
+ * @eht: EHT fields for IEEE80211_RADIOTAP_EHT
+ * @v_tlv: Pointer Vendor TLV fields - contains variable length array, alway do deep copy
+ */
+struct ieee80211_tx_mon_info {
+	unsigned long flags[BITS_TO_LONGS(TX_MON_FLAG_END)];
+	u64 tsft;
+	u8 rtap_flags;
+	u16 chan_freq;
+	u16 chan_flags;
+	u32 ampdu_ref_num;
+	u16 ampdu_flags;
+	u16 ampdu_reserved_flags;
+	struct ieee80211_radiotap_lsig lsig;
+	struct ieee80211_radiotap_he_mu he_mu;
+	struct ieee80211_radiotap_eht_usig eht_usig;
+	u32 eht_num_users;
+	struct ieee80211_radiotap_eht eht;
+	struct ieee80211_radiotap_vendor_ns *v_tlv;
+};
+
+static inline bool _tx_mon_hw_check(struct ieee80211_tx_mon_info *info,
+				    enum mac80211_tx_mon_flags flg)
+{
+	return test_bit(flg, info->flags);
+}
+
+#define tx_mon_hw_check(info, flg)	_tx_mon_hw_check(info, TX_MON_FLAG_##flg)
+
+static inline void _tx_mon_hw_set(struct ieee80211_tx_mon_info *info,
+				  enum mac80211_tx_mon_flags flg)
+{
+	__set_bit(flg, info->flags);
+}
+
+#define tx_mon_hw_set(info, flg)	_tx_mon_hw_set(info, TX_MON_FLAG_##flg)
+
+/**
  * struct ieee80211_tx_status - extended tx status info for rate control
  *
  * @sta: Station that the packet was transmitted for
@@ -1435,6 +1512,7 @@ struct ieee80211_rate_status {
  *	frames. Only reported by devices that have timestamping enabled.
  * @mpdu_succ: Number of mpdus successfully transmitted
  * @mpdu_fail: Number of mpdus failed
+ * @mon_info: information for 'tx monitor' processing in case of hardware offload support
  */
 struct ieee80211_tx_status {
 	struct ieee80211_sta *sta;
@@ -1454,6 +1532,7 @@ struct ieee80211_tx_status {
 	u32 mpdu_succ;
 	u32 mpdu_fail;
 	bool skip_per_packet_metric_update;
+	struct ieee80211_tx_mon_info mon_info;
 };
 
 /**
@@ -3155,6 +3234,9 @@ struct ieee80211_txq {
  * @IEEE80211_HW_TXRX_STATS_OFFLOAD: HW/driver handles per-packet TX/RX
  *	statistics accounting so mac80211 should not track them in SW.
  *
+ * @IEEE80211_HW_SUPPORTS_TX_MONITOR_OFFLOAD: Hardware/driver supports Tx Monitor
+ *	frame generation
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3229,6 +3311,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL,
 	IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD,
 	IEEE80211_HW_TXRX_STATS_OFFLOAD,
+	IEEE80211_HW_SUPPORTS_TX_MONITOR_OFFLOAD,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
@@ -8549,4 +8632,16 @@ ieee80211_rx_send_mscs_tuple(struct ieee80211_sta *pubsta,
 			     u8 tid);
 
 int ieee80211_get_link_assoc_status(struct ieee80211_vif *vif, u8 link_id);
+
+/**
+ * ieee80211_tx_monitor_offload - h/w offloaded tx monitor callback
+ *
+ * This function can be used by driver to deliver packet to upper layer
+ * when they support hardware offload support for tx monitor.
+ *
+ * @hw: the hardware the frame was transmitted by
+ * @status: tx status information
+ */
+void ieee80211_tx_monitor_offload(struct ieee80211_hw *hw,
+				  struct ieee80211_tx_status *status);
 #endif /* MAC80211_H */
