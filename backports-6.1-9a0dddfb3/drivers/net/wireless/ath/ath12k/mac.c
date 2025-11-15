@@ -24860,6 +24860,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	int ret, i, j;
 	u32 ht_cap = U32_MAX, antennas_rx = 0, antennas_tx = 0;
 	bool is_6ghz = false, is_raw_mode = false, is_monitor_disable = false;
+	bool hw_tx_mon_disabled = false;
 	u8 *mac_addr = NULL;
 	u8 mbssid_max_interfaces = 0;
 
@@ -24903,6 +24904,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 		if (!ar->ab->hw_params->supports_monitor)
 			is_monitor_disable = true;
+
+		if (!ar->ab->hw_params->supports_tx_monitor)
+			hw_tx_mon_disabled = true;
 
 		/* In non-MLO/SLO case ah->num_radio is 1, and ar->mac_addr is
 		 * assigned to ieee80211_hw. In MLO with ah->num_radio > 1,
@@ -25172,6 +25176,9 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ieee80211_hw_set(hw, SUPPORT_ECM_REGISTRATION);
 #endif
+
+	if (!hw_tx_mon_disabled)
+		ieee80211_hw_set(hw, SUPPORTS_TX_MONITOR_OFFLOAD);
 
 	ret = ieee80211_register_hw(hw);
 	if (ret) {
