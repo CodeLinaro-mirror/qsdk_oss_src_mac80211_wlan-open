@@ -8297,7 +8297,7 @@ static int ath11k_reg_chan_list_event(struct ath11k_base *ab, struct sk_buff *sk
 				      enum wmi_reg_chan_list_cmd_type id)
 {
 	struct cur_regulatory_info *reg_info;
-	int ret, i, j;
+	int ret;
 
 	reg_info = kzalloc(sizeof(*reg_info), GFP_ATOMIC);
 	if (!reg_info)
@@ -8319,20 +8319,11 @@ static int ath11k_reg_chan_list_event(struct ath11k_base *ab, struct sk_buff *sk
 		goto mem_free;
 	}
 
-mem_free:
-	if (reg_info) {
-		kfree(reg_info->reg_rules_2ghz_ptr);
-		kfree(reg_info->reg_rules_5ghz_ptr);
-		if (reg_info->is_ext_reg_event) {
-			for (i = 0; i < WMI_REG_CURRENT_MAX_AP_TYPE; i++) {
-				kfree(reg_info->reg_rules_6ghz_ap_ptr[i]);
+	return 0;
 
-				for (j = 0; j < WMI_REG_MAX_CLIENT_TYPE; j++)
-					kfree(reg_info->reg_rules_6ghz_client_ptr[i][j]);
-			}
-		}
-		kfree(reg_info);
-	}
+mem_free:
+	if (ret != -EAGAIN)
+		ath11k_reg_reset_info(reg_info);
 	return ret;
 }
 

@@ -927,10 +927,19 @@ int ath11k_reg_handle_chan_list(struct ath11k_base *ab,
 	spin_unlock_bh(&ab->base_lock);
 
 	if (pdev_idx >= ab->num_radios) {
+		/* Process the event for phy0 only if single_pdev_only
+		 * is true. If pdev_idx is valid but not 0, discard the
+		 * event. Otherwise, it goes to fallback. In either case
+		 * ath11k_reg_reset_info() needs to be called to avoid
+		 * memory leak issue.
+		 */
+		ath11k_reg_reset_info(reg_info);
+
 		if (ab->hw_params.single_pdev_only &&
 		    pdev_idx < ab->hw_params.num_rxdma_per_pdev)
 			return 0;
-		goto fallback;
+		WARN_ON(1);
+		return -EAGAIN;
 	}
 
 	/* Avoid multiple overwrites to default regd, during core
