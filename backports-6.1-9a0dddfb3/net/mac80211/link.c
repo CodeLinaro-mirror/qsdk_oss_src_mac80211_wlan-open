@@ -265,6 +265,9 @@ static int ieee80211_check_dup_link_addrs(struct ieee80211_sub_if_data *sdata)
 	list_for_each_entry(other_sdata, &local->interfaces, list) {
 		bool is_same_sdata = (other_sdata == sdata);
 
+		if (!is_same_sdata && !ieee80211_sdata_running(other_sdata))
+			continue;
+
 		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
 			link = sdata_dereference(sdata->link[link_id], sdata);
 			if (!link)
