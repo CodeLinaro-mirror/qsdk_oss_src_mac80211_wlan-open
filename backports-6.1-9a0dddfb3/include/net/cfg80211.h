@@ -7445,6 +7445,7 @@ struct wireless_dev {
 	u8 ppe_vp_type;
 	bool link_removal_flag;
 	bool ttlm_expec_dur_update_flag;
+	u8 vap_submode;
 };
 
 static inline const u8 *wdev_address(struct wireless_dev *wdev)

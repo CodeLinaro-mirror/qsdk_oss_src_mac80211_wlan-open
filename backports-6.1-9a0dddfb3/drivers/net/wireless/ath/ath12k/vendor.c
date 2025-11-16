@@ -35,6 +35,7 @@ ath12k_wifi_config_policy[QCA_WLAN_VENDOR_ATTR_CONFIG_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_MLO_LINK_ID] = {.type = NLA_U8 },
 	[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX] = {.type = NLA_U8 },
+	[QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE] = {.type = NLA_U8 },
 };
 
 static const struct nla_policy
@@ -4139,6 +4140,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	struct ieee80211_vif *vif = NULL;
 	struct ath12k_vif *ahvif = NULL;
 	int ppe_vp_type = 0;
+	u8 vap_submode;
 	char *type = NULL;
 	int ret = 0;
 
@@ -4244,6 +4246,27 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	pr_info("[%s] vendor cmd type [%s] %d (%s) state %d\n",
 		current->comm,  wdev->netdev->name, wdev->ppe_vp_type,
 		type, netif_running(wdev->netdev));
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE]) {
+		vap_submode = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE]);
+		if (vap_submode > QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX) {
+			ath12k_err(NULL,
+				   "%s-Invalid vap_submode: %d for(%s)\n", __func__,
+				   wdev->vap_submode, wdev->netdev->name);
+			return -EINVAL;
+		}
+
+		if (wdev->vap_submode == vap_submode) {
+			ath12k_dbg(NULL, ATH12K_DBG_CFG,
+				   "%s-vap_submode: %d for(%s) already configured\n",
+				   __func__, wdev->vap_submode, wdev->netdev->name);
+			return 0;
+		}
+		wdev->vap_submode = vap_submode;
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "%s-configured vap_submode: %d for(%s)\n", __func__,
+			   wdev->vap_submode, wdev->netdev->name);
 	}
 
 	return 0;
@@ -4375,6 +4398,19 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 			ret = -EINVAL;
 			goto err;
 		}
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE]) {
+		if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE,
+			       wdev->vap_submode)) {
+			ath12k_err(NULL,
+				   "nla_put failed for ATTR_CONFIG_VAP_SUBMODE\n");
+			ret = -EINVAL;
+			goto err;
+		}
+		ath12k_dbg(NULL, ATH12K_DBG_CFG,
+			   "%s-vap_submode: %d for(%s)\n", __func__,
+			   wdev->vap_submode, wdev->netdev->name);
 	}
 
 	ret = cfg80211_vendor_cmd_reply(skb);
