@@ -961,20 +961,58 @@ static void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
 	ath12k_htt_update_peer_telemetry_stats(dp_pdev, ppdu_info);
 }
 
+
+static bool ath12k_dp_htt_check_wrap_tsf(struct ath12k_pdev_dp *dp_pdev,
+					 struct htt_ppdu_stats_info *ppdu_info,
+					 u32 tsf_l32, u32 ppdu_id)
+{
+	uint32_t time_delta;
+
+	if (ppdu_info->tsf_l32 > tsf_l32)
+		time_delta = (MAX_TSF_L32 - ppdu_info->tsf_l32) + tsf_l32;
+	else
+		time_delta = tsf_l32 - ppdu_info->tsf_l32;
+
+	if (time_delta > WRAP_DROP_TSF_DELTA) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DP_HTT, "PPDU Wrap Drop for s_ppdu_id %d |s_tsf_l32 %d | s_tlv_bitmap 0x%x | s_completion status %d |r_ppdu_id %d | r_tsf_l32 %d",
+			   ppdu_info->ppdu_id, ppdu_info->tsf_l32,
+			   ppdu_info->tlv_bitmap,
+			   ppdu_info->ppdu_stats.user_stats[0].cmpltn_cmn.status,
+			   ppdu_id, tsf_l32);
+
+		return true;
+	}
+
+	return false;
+}
+
 static
 struct htt_ppdu_stats_info *ath12k_dp_htt_get_ppdu_desc(struct ath12k_pdev_dp *dp_pdev,
-							u32 ppdu_id)
+							u32 ppdu_id,
+							u32 tsf_l32)
 {
-	struct htt_ppdu_stats_info *ppdu_info;
+	struct htt_ppdu_stats_info *ppdu_info, *ppdu_info_n;
 	struct ath12k_htt_ppdu_stats *ppdu_list_stats;
 
 	ppdu_list_stats = &dp_pdev->stats.ppdu_list_stats;
 
 	lockdep_assert_held(&dp_pdev->ppdu_list_lock);
 	if (!list_empty(&dp_pdev->ppdu_stats_info)) {
-		list_for_each_entry(ppdu_info, &dp_pdev->ppdu_stats_info, list) {
-			if (ppdu_info->ppdu_id == ppdu_id)
+		list_for_each_entry_safe(ppdu_info, ppdu_info_n,
+					 &dp_pdev->ppdu_stats_info, list) {
+			if (ppdu_info->ppdu_id == ppdu_id) {
+				if (ath12k_dp_htt_check_wrap_tsf(dp_pdev, ppdu_info,
+								 tsf_l32,
+								 ppdu_id)) {
+					ppdu_list_stats->ppdu_stat_list_depth--;
+					ppdu_list_stats->ppdu_wrap_drop++;
+					list_del(&ppdu_info->list);
+					kfree(ppdu_info);
+					break;
+				}
 				return ppdu_info;
+
+			}
 		}
 
 		if (ppdu_list_stats->ppdu_stat_list_depth > HTT_PPDU_DESC_MAX_DEPTH) {
@@ -1000,6 +1038,7 @@ struct htt_ppdu_stats_info *ath12k_dp_htt_get_ppdu_desc(struct ath12k_pdev_dp *d
 	ppdu_list_stats->ppdu_stat_list_depth++;
 
 	ppdu_info->max_users = HTT_PPDU_STATS_MAX_USERS;
+	ppdu_info->tsf_l32 = tsf_l32;
 
 	return ppdu_info;
 }
@@ -1085,7 +1124,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	struct ath12k *ar;
 	int ret = 0;
 	u8 pdev_id;
-	u32 ppdu_id, len;
+	u32 ppdu_id, len, tsf_l32;
 
 	ret = -EINVAL;
 	msg = (struct ath12k_htt_ppdu_stats_msg *)skb->data;
@@ -1148,7 +1187,9 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 		}
 	}
 
-	ppdu_info = ath12k_dp_htt_get_ppdu_desc(dp_pdev, ppdu_id);
+	tsf_l32 = __le32_to_cpu(msg->timestamp);
+
+	ppdu_info = ath12k_dp_htt_get_ppdu_desc(dp_pdev, ppdu_id, tsf_l32);
 	if (!ppdu_info) {
 		spin_unlock_bh(&dp_pdev->ppdu_list_lock);
 		ret = -EINVAL;

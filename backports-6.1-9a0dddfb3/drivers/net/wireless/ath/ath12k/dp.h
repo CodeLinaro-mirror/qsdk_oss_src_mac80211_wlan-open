@@ -137,6 +137,7 @@ struct ath12k_htt_ppdu_stats {
 	/* ppdu_id of last received Tx HTT PPDU */
 	u32 last_ppdu_id;
 	bool last_ppdu_buf_drop;
+	u64 ppdu_wrap_drop;
 };
 
 struct ath12k_pdev_dp_stats {
