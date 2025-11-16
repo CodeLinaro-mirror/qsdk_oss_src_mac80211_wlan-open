@@ -7612,7 +7612,6 @@ static int nl80211_update_ap(struct sk_buff *skb, struct genl_info *info)
 		wdev->u.ap.ssid_len = params->ssid_len;
 		memcpy(wdev->u.ap.ssid, params->ssid,
 		       params->ssid_len);
-		wdev->u.ap.ssid[params->ssid_len] = '\0';
 	}
 
 
