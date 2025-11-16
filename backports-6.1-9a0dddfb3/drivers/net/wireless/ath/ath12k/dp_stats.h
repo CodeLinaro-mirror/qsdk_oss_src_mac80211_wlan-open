@@ -140,6 +140,7 @@ enum ath12k_dp_debug_stats_mask {
 	DP_ENABLE_EXT_TX_STATS   = 0x00000004,
 	DP_ENABLE_EXT_RX_STATS   = 0x00000008,
 	DP_ENABLE_TID_STATS      = 0x00000010,
+	DP_ENABLE_ADVANCE_STATS  = 0x00000020,
 	DP_ENABLE_QOS_STATS      = 0x80000000,
 };
 
@@ -375,6 +376,17 @@ struct ath12k_htt_tx_stats {
 
 };
 
+#define MAX_PUNCTURED_MODE 5
+
+#define DP_AVG_RATE_FILTER_MIN 0
+#define DP_AVG_RATE_FILTER_MAX 11000
+#define DP_AVG_RATE_FILTER_DEFAULT 0
+
+#define DP_ATH_RATE_EP_MULTIPLIER     BIT(7)
+#define DP_ATH_EP_MUL(a, b)	      ((a) * (b))
+#define DP_ATH_RATE_IN(c)  (DP_ATH_EP_MUL((c), DP_ATH_RATE_EP_MULTIPLIER))
+#define DUMMY_MARKER	  0
+
 /* Different Packet Types */
 enum packet_std {
 	DOT11_A = 0,
@@ -382,7 +394,8 @@ enum packet_std {
 	DOT11_N = 2,
 	DOT11_AC = 3,
 	DOT11_AX = 4,
-	DOT11_BE = 5,
+	DOT11_BA = 5,
+	DOT11_BE = 6,
 	DOT11_MAX,
 };
 
@@ -707,6 +720,38 @@ struct ath12k_rx_peer_rate_stats {
 	u64 rx_rate[HAL_RX_BW_MAX][HAL_RX_GI_MAX][HAL_RX_MAX_NSS][HAL_RX_MAX_MCS_HT + 1];
 };
 
+struct ath12k_rx_peer_user_stats {
+	u64 ppdu_nss[HAL_RX_MAX_NSS];
+	u32 mpdu_cnt_fcs_ok;
+	u32 mpdu_cnt_fcs_err;
+	struct pkt_type ppdu;
+};
+
+#define MCS_VALID 1
+#define MCS_INVALID 0
+#define ATH12K_MAX_MCS_STRING_LEN 34
+
+#define IEEE80211_FC0_TYPE_MASK		0x000c
+#define IEEE80211_FC0_TYPE_DATA		0x0008
+#define IEEE80211_FC0_SUBTYPE_MASK	0x00f0
+#define IEEE80211_FC0_SUBTYPE_DATA	0x0000
+#define IEEE80211_FC0_SUBTYPE_VHT_NDP_AN	0x0050
+#define IEEE80211_FC0_SUBTYPE_BAR	0x0080
+
+static const u8 max_mcs_by_preamble[HAL_RX_PREAMBLE_MAX] = {
+	[HAL_RX_PREAMBLE_11A] = MAX_MCS_11A,
+	[HAL_RX_PREAMBLE_11B] = MAX_MCS_11B,
+	[HAL_RX_PREAMBLE_11N] = MAX_MCS_11N,
+	[HAL_RX_PREAMBLE_11AC] = MAX_MCS_11AC,
+	[HAL_RX_PREAMBLE_11AX] = MAX_MCS_11AX,
+	[HAL_RX_PREAMBLE_11BE] = MAX_MCS_11BE,
+};
+
+struct ath12k_rx_peer_total_stats {
+	u64 total_pkts;
+	u64 total_bytes;
+};
+
 enum ath12k_cmn_bw_types {
 	CMN_BW_20MHZ,
 	CMN_BW_40MHZ,
@@ -758,6 +803,30 @@ enum ath12k_cmn_bw_types {
  * @bw_info: Bandwidth information (channel width).
  * @gi_info: Guard interval information.
  * @preamble_info: Preamble type information.
+ *
+ * Advance Stats:
+ * @bar_count: Number of BlockAck Request (BAR) frames received.
+ * @ndpa_count: Number of NDP Announcement (NDPA) frames received for MU-MIMO sounding.
+ * @num_mpdu_count: Array of MPDU counts per MCS index (indexed by MAX_MCS).
+ * @ppdu_reception: Number of PPDUs received per reception type
+ *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
+ * @ppdu_nss: Number of PPDUs received per spatial stream (indexed by HAL_RX_MAX_NSS).
+ * @proto_type: MSDU packet counts per 802.11 protocol type (indexed by DOT11_MAX).
+ * @wme_ac_type: MSDU packets and bytes per WME Access Category
+ *               (Voice, Video, Best Effort, Background).
+ * @su_ppdu_count: PPDU SU packet counts per MCS per 802.11 protocol type
+ * @punc_bw: Number of MSDUs received per punctured bandwidth mode
+ *           (indexed by MAX_PUNCTURED_MODE).
+ *
+ * MU statistics:
+ * @rx_mu: MU reception statistics per 802.11 protocol type and user type
+ *         (indexed by DOT11_MAX and TXRX_TYPE_MU_MAX).
+ *
+ * Rate Stats :
+ * @last_rx_rate: Last received data rate in kbps.
+ * @rnd_avg_rx_rate: Rounded average RX data rate in kbps.
+ * @avg_rx_rate: Filtered average RX data rate in kbps.
+ * @rx_ratecode: Encoded RX ratecode.
  */
 struct ath12k_rx_peer_stats {
 	u64 num_msdu;
@@ -792,6 +861,24 @@ struct ath12k_rx_peer_stats {
 	    bw_info:4,
 	    gi_info:4,
 	    preamble_info:4;
+
+	/* Advance Stats */
+	u32 num_bar;
+	u32 num_ndpa;
+	u64 num_mpdu_count[MAX_MCS];
+	u64 ppdu_reception[HAL_RX_RECEPTION_TYPE_MAX];
+	u64 ppdu_nss[HAL_RX_MAX_NSS];
+	struct pkt_type proto_type[DOT11_MAX];
+	struct ath12k_rx_peer_total_stats wme_ac_type[WME_NUM_AC];
+	struct pkt_type su_ppdu_count[DOT11_MAX];
+	u32 punc_bw[MAX_PUNCTURED_MODE];
+	/* MU stats */
+	struct ath12k_rx_peer_user_stats rx_mu[DOT11_MAX][TXRX_TYPE_MU_MAX];
+	/* Rate stats */
+	u32 last_rx_rate;
+	u32 rnd_avg_rx_rate;
+	u32 avg_rx_rate;
+	u32 rx_ratecode;
 };
 
 #define PKT_BW_GAIN_20MHZ   0
