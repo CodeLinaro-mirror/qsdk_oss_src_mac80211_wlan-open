@@ -271,7 +271,7 @@ static void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 
 #ifdef CPTCFG_MAC80211_DS_SUPPORT
 	ieee80211_ppeds_tx_update_stats(ar->ah->hw, peer->sta, &info,
-					arsta->txrate, peer->link_id, 0);
+					peer->txrate, peer->link_id, 0);
 #endif
 	rcu_read_unlock();
 }
