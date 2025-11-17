@@ -1361,6 +1361,106 @@ ath12k_wifi7_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
 	}
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+static void ath12k_dp_mon_rx_update_peer_stats_ds(struct ath12k *ar,
+						  struct ath12k_link_sta *arsta,
+						  struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ieee80211_rx_status status;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_pdev_dp *pdev_dp = &ar->dp;
+	struct ath12k_dp *dp = pdev_dp->dp;
+	struct ieee80211_sta *sta;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	u32 uid;
+
+	if (ar->ab->stats_disable ||
+	    !test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
+		return;
+
+	memset(&status, 0, sizeof(status));
+
+	if (arsta) { // SU stats
+		arvif = arsta->arvif;
+		if (!arvif)
+			return;
+
+		ahvif = arvif->ahvif;
+		if (!ahvif)
+			return;
+
+		if (ahvif->dp_vif.ppe_vp_num == ATH12K_INVALID_PPE_VP_NUM ||
+		    ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
+			return;
+
+		ath12k_dp_mon_fill_rx_stats_info(ppdu_info, &status);
+		if (status.band < NUM_NL80211_BANDS)
+			status.freq = ieee80211_channel_to_frequency(ppdu_info->chan_num,
+								     status.band);
+		ath12k_dp_mon_fill_rx_rate(pdev_dp, ppdu_info, &status);
+
+		if (status.band == NUM_NL80211_BANDS)
+			return;
+
+		sta = container_of((void *)arsta->ahsta, struct ieee80211_sta, drv_priv);
+#ifdef CPTCFG_MAC80211_DS_SUPPORT
+		ieee80211_rx_update_stats(ar->ah->hw, sta, arsta->link_id,
+					  ppdu_info->mpdu_len, &status);
+#endif
+		return;
+	}
+	for (uid = 0; uid < ppdu_info->num_users; uid++) { // MU stats
+		struct ath12k_dp_link_peer *peer;
+
+		if (uid == HAL_MAX_UL_MU_USERS)
+			break;
+
+		if (ppdu_info->peer_id == HAL_INVALID_PEERID)
+			return;
+		peer = ath12k_dp_link_peer_find_by_id(dp, ppdu_info->peer_id);
+
+		if (!peer)
+			continue;
+
+		arsta = ath12k_peer_get_link_sta(ar->ab, peer);
+		if (!arsta) {
+			ath12k_warn(ar->ab, "link sta not found on peer %pM id %d\n",
+				    peer->addr, peer->peer_id);
+			continue;
+		}
+
+		arvif = arsta->arvif;
+		if (!arvif)
+			continue;
+
+		ahvif = arvif->ahvif;
+		if (!ahvif)
+			continue;
+
+		if (ahvif->dp_vif.ppe_vp_num == ATH12K_INVALID_PPE_VP_NUM ||
+		    ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS)
+			continue;
+
+		ath12k_dp_mon_fill_rx_stats_info(ppdu_info, &status);
+		if (status.band < NUM_NL80211_BANDS)
+			status.freq = ieee80211_channel_to_frequency(
+					ppdu_info->chan_num,
+					status.band);
+		ath12k_dp_mon_fill_rx_rate(pdev_dp, ppdu_info, &status);
+
+		if (status.band == NUM_NL80211_BANDS)
+			continue;
+
+		sta = container_of((void *)arsta->ahsta, struct ieee80211_sta, drv_priv);
+#ifdef CPTCFG_MAC80211_DS_SUPPORT
+		ieee80211_rx_update_stats(ar->ah->hw, sta, arsta->link_id,
+					  ppdu_info->mpdu_len, &status);
+#endif
+	}
+}
+#endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */
+
 static void
 ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 {
@@ -1372,7 +1472,9 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 	struct ath12k_mon_data *pmon = (struct ath12k_mon_data *)&dp_mon_pdev->mon_data;
 	struct hal_rx_mon_ppdu_info *ppdu_info = &pmon->mon_ppdu_info;
 	struct ath12k_dp_link_peer *peer;
+	struct ath12k_link_sta *arsta = NULL;
 	struct ath12k_dp *dp = pdev_dp->dp;
+	struct ath12k_base *ab = dp->ab;
 	struct ath12k_neighbor_peer *nrp, *tmp;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_mon_pdev->mon_stats;
 	enum hal_rx_mon_status hal_status;
@@ -1448,16 +1550,26 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 			}
 
 			if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
+				arsta = ath12k_peer_get_link_sta(ab, peer);
+				if (!arsta) {
+					ath12k_warn(ab, "link sta not found on peer %pM id %d\n",
+						    peer->addr, peer->peer_id);
+					goto unlock;
+				}
 				ath12k_dp_mon_rx_update_peer_su_stats(pdev_dp, peer,
 								      ppdu_info);
 				ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);
 				ath12k_dp_mon_ppdu_rssi_update(pdev_dp, ppdu_info);
+				ath12k_dp_mon_rx_update_peer_stats_ds(pdev_dp->ar,
+								      arsta, ppdu_info);
 			} else if ((ppdu_info->fc_valid) &&
 				   (ppdu_info->ast_index != HAL_AST_IDX_INVALID)) {
 				ath12k_dp_mon_rx_process_ulofdma_stats(ppdu_info);
 				ath12k_dp_mon_rx_update_peer_mu_stats(pdev_dp, ppdu_info);
 				ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);
 				ath12k_dp_mon_ppdu_rssi_update(pdev_dp, ppdu_info);
+				ath12k_dp_mon_rx_update_peer_stats_ds(pdev_dp->ar,
+								      NULL, ppdu_info);
 			}
 
 unlock:
