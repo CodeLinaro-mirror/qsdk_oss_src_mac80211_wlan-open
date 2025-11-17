@@ -23,6 +23,9 @@
 #include "debugfs_htt_stats.h"
 #include "erp.h"
 #include "fse.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 #include "vendor.h"
 
 void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
@@ -433,6 +436,9 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 	struct ath12k_base *ab;
 	struct sk_buff *skb;
 	const void *end;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_base *ab = dp->ab;
+#endif
 
 	/* Reset the use flag */
 	list_for_each_entry_safe(rx_desc, tmp_rx_desc, used_list, list) {
@@ -444,6 +450,18 @@ static void ath12k_dp_rx_enqueue_free(struct ath12k_dp *dp,
 
 			end = rx_desc->vaddr + DP_RX_BUFFER_SIZE;
 			ath12k_core_dmac_inv_range(rx_desc->vaddr, end);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
+	    IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
+		IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
+			(ab, skb, DP_RX_BUFFER_SIZE, 0,
+			 IPA_CTX(ab)->hdl);
+
+	ath12k_core_dma_unmap_single(dp->dev,
+				     ATH12K_SKB_CB(skb)->paddr,
+				     DP_RX_BUFFER_SIZE,
+				     DMA_FROM_DEVICE);
+#endif
 
 			/* Save SKB to queue instead of freeing */
 			if (reuse) {
@@ -504,20 +522,33 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 				is_dma_inv_done = true;
 			}
 #endif
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			paddr = dma_map_single(dp->dev, skb->data, DP_RX_BUFFER_SIZE,
+					       DMA_FROM_DEVICE);
+			ATH12K_SKB_CB(skb)->paddr = paddr;
+#else
 			paddr = virt_to_phys(skb->data);
+#endif
 			if (unlikely(!paddr)) {
 				ath12k_dp_rx_skb_free(skb, dp, 0,
 						      DP_RX_ERR_DROP_REPLENISH);
 				break;
 			}
-
 			allocated_entries++;
 			rx_desc->skb = skb;
 			rx_desc->paddr = paddr;
 			rx_desc->vaddr = skb->data;
 			rx_desc->is_frag = 0;
-		}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			if (IPA_CTX(ab) &&
+				IPA_CTX(ab)->ipa_ops &&
+				IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
+				IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
+					(ab, skb, DP_RX_BUFFER_SIZE, 1,
+					IPA_CTX(ab)->hdl);
+#endif
+		}
 		if (unlikely(is_dma_inv_done))
 			dsb(st);
 	}
@@ -1776,6 +1807,9 @@ int ath12k_dp_rx_pkt_type_filter(struct ath12k *ar,
 void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 			   enum ath12k_dp_rx_error drop_reason)
 {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_base *ab = dp->ab;
+#endif
 	if (ring >= DP_REO_DST_RING_MAX) {
 		ath12k_dbg(dp->ab, ATH12K_DBG_TELEMETRY, "Invalid Rx Ring %u\n",
 			   ring);
@@ -1787,6 +1821,17 @@ void ath12k_dp_rx_skb_free(struct sk_buff *skb, struct ath12k_dp *dp, int ring,
 	else
 		DP_DEVICE_STATS_INC(dp, rx.rx_err[drop_reason][ring], 1);
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (IPA_CTX(ab) && IPA_CTX(ab)->ipa_ops &&
+	    IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap)
+		IPA_CTX(ab)->ipa_ops->ipa_set_rx_buf_smmu_map_unmap
+			(ab, skb, DP_RX_BUFFER_SIZE, 0,
+			 IPA_CTX(ab)->hdl);
+	ath12k_core_dma_unmap_single(dp->dev,
+				     ATH12K_SKB_CB(skb)->paddr,
+				     DP_RX_BUFFER_SIZE,
+				     DMA_FROM_DEVICE);
+#endif
 	dev_kfree_skb_any(skb);
 }
 EXPORT_SYMBOL(ath12k_dp_rx_skb_free);
