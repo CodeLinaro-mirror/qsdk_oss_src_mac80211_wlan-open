@@ -671,6 +671,9 @@ EXPORT_SYMBOL(ath12k_hal_srng_access_begin);
 
 u32 ath12k_hal_srng_access_begin_no_lock(struct hal_srng *srng)
 {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	lockdep_assert_held(&srng->lock);
+#endif
 	return __ath12k_hal_srng_access_begin(srng);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_access_begin_no_lock);
@@ -739,6 +742,9 @@ EXPORT_SYMBOL(ath12k_hal_srng_access_end);
 void ath12k_hal_srng_access_end_no_lock(struct ath12k_base *ab,
 					struct hal_srng *srng)
 {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	lockdep_assert_held(&srng->lock);
+#endif
 	 __ath12k_hal_srng_access_end(ab, srng);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_access_end_no_lock);

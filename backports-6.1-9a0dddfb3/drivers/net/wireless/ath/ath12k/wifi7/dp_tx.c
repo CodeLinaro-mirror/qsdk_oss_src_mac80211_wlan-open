@@ -16,6 +16,9 @@
 #include "../dp_stats.h"
 #include "../dp_peer.h"
 #include "../telemetry.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "../qcn_extns/ipa/dp_ipa.h"
+#endif
 #include "../telemetry_agent_if.h"
 
 struct ath12k_tx_sw_metadata {
@@ -1236,6 +1239,9 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 map:
 #ifndef CONFIG_IO_COHERENCY
 	ti.paddr = dma_map_single(dp->dev, skb->data, skb->len, DMA_TO_DEVICE);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ATH12K_SKB_CB(skb)->paddr = ti.paddr;
+#endif
 	if (dma_mapping_error(dp->dev, ti.paddr)) {
 		atomic_inc(&dp->device_stats.tx_err.misc_fail);
 		ath12k_warn(ab, "failed to DMA map data Tx buffer\n");
@@ -1716,9 +1722,21 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		/* This event is to be handled only when the driver decides to
 		 * use WDS offload functionality.
 		 */
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ath12k_core_dma_unmap_single(dp->dev,
+					     ATH12K_SKB_CB(msdu)->paddr,
+					     msdu->len, DMA_TO_DEVICE);
+		dev_kfree_skb_any(msdu);
+#endif
 		break;
 	default:
 		ath12k_warn(dp->ab, "Unknown htt tx status %d\n", htt_status);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		ath12k_core_dma_unmap_single(dp->dev,
+					     ATH12K_SKB_CB(msdu)->paddr,
+					     msdu->len, DMA_TO_DEVICE);
+		dev_kfree_skb_any(msdu);
+#endif
 		break;
 	}
 
@@ -2223,11 +2241,27 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		/* HW done cookie conversion */
 		desc_va = ((u64)le32_to_cpu(tx_status->buf_va_hi) << 32 |
 			   le32_to_cpu(tx_status->buf_va_lo));
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 		tx_desc = (struct ath12k_tx_desc_info *)((unsigned long)desc_va);
+#endif
 		if (unlikely(!tx_desc)) {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+			u32 cookie = le32_get_bits(desc->buf_addr_info.info1,
+						   BUFFER_ADDR_INFO1_SW_COOKIE);
+
+			tx_desc = ath12k_dp_get_tx_desc(dp, cookie);
+			if (unlikely(!tx_desc)) {
+				DP_DEVICE_STATS_INC(dp,
+						    tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_DESC][ring_id],
+						    1);
+				ath12k_warn(ab, "unable to retrieve tx_desc!");
+				continue;
+			}
+#else
 			DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_DESC][ring_id], 1);
 			ath12k_warn(ab, "unable to retrieve tx_desc!");
 			continue;
+#endif
 		}
 
 		tx_status_entry->tx_desc = tx_desc;
