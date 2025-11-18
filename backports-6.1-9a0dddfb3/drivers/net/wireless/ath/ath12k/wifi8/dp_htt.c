@@ -318,3 +318,17 @@ int ath12k_dp_rx_htt_ast_info_setup(struct ath12k_base *ab,
 
 	return 0;
 }
+
+void ath12k_dp_htt_peer_cleanup_indication(struct ath12k_dp *dp,
+					   struct sk_buff *skb)
+{
+	struct htt_t2h_global_peer_id_unmap *msg =
+				(struct htt_t2h_global_peer_id_unmap *)skb->data;
+	u16 peer_id;
+	u8 hw_link_id;
+
+	peer_id = le32_get_bits(msg->info, HTT_T2H_GLOBAL_PEER_ID_UNMAP_PEER_ID);
+	hw_link_id = le32_get_bits(msg->info, HTT_T2H_GLOBAL_PEER_ID_UNMAP_HW_LINK_ID);
+
+	ath12k_dp_peer_cleanup_indication(dp, peer_id, hw_link_id);
+}

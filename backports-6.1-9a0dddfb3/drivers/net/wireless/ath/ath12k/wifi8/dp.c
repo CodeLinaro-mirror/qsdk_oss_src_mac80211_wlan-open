@@ -17,6 +17,7 @@
 #include "hal.h"
 #include "dp_peer.h"
 #include "dp_ast.h"
+#include "dp_htt.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
@@ -359,6 +360,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_peer_get_peerid_index = ath12k_wifi8_dp_peer_get_peerid_index,
 	.dp_link_peer_create = ath12k_wifi8_dp_link_peer_create,
 	.dp_link_peer_delete = ath12k_wifi8_dp_link_peer_delete,
+	.peer_cleanup_indication = ath12k_dp_htt_peer_cleanup_indication,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
