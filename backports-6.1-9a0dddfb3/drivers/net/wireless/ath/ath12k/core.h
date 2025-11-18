@@ -2437,6 +2437,49 @@ static inline bool ath12k_hw_group_recovery_in_progress(const struct ath12k_hw_g
 	return test_bit(ATH12K_GROUP_FLAG_RECOVERY, &ag->flags);
 }
 
+static inline void
+ath12k_core_dma_sync_single_for_cpu(struct device *dev,
+				    dma_addr_t dma_handle,
+				    size_t size,
+				    enum dma_data_direction direction)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dma_sync_single_for_cpu(dev, dma_handle, size, direction);
+#endif
+}
+
+static inline void
+ath12k_core_dma_sync_single_for_device(struct device *dev,
+				       dma_addr_t dma_handle,
+				       size_t size,
+				       enum dma_data_direction direction)
+{
+#ifndef CONFIG_IO_COHERENCY
+	dma_sync_single_for_device(dev, dma_handle, size, direction);
+#endif
+}
+
+static inline dma_addr_t
+ath12k_core_dma_map_single(struct device *dev, void *vaddr,
+			   size_t size, enum dma_data_direction direction)
+{
+	dma_addr_t paddr;
+#ifndef CONFIG_IO_COHERENCY
+	int ret;
+
+	paddr = dma_map_single(dev, vaddr, size, direction);
+	ret = dma_mapping_error(dev, paddr);
+	if (ret)
+		return 0;
+#else
+	paddr = virt_to_phys(vaddr);
+	if (!paddr)
+		return 0;
+#endif
+
+	return paddr;
+}
+
 static inline void ath12k_core_dma_unmap_single(struct device *dev, dma_addr_t dma_handle,
 						size_t size, enum dma_data_direction direction)
 {
