@@ -2521,6 +2521,7 @@ static void ath12k_core_radio_start(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k *ar;
+	struct ath12k_hw *ah = ath12k_ag_to_ah(ag, 0);
 	int i, j;
 
 	mutex_lock(&ag->mutex);
@@ -2549,6 +2550,7 @@ static void ath12k_core_radio_start(struct ath12k_base *ab)
 		complete(&ab->power_up);
 	}
 
+	ah->state = ATH12K_HW_STATE_ON;
 	mutex_unlock(&ag->mutex);
 
 	if (test_bit(ATH12K_GROUP_FLAG_HIF_POWER_DOWN, &ag->flags))
