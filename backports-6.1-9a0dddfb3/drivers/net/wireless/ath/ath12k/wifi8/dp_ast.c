@@ -7,6 +7,7 @@
 #include "dp.h"
 #include "hal.h"
 #include "../debug.h"
+#include "dp_htt.h"
 
 /* Whenever we configure HW keys, we need to update the below cache.
  * This is prevent mismatches between HW and SW indexing.
@@ -149,6 +150,27 @@ ath12k_dp_ast_param_init(struct ath12k_dp_global_ast_table *ast_base,
 	ast_info->ase_hash_key2 = ast_base->hash_keys.ase_hash_key2;
 	ast_info->ase_hash_key3 = ast_base->hash_keys.ase_hash_key3;
 	ast_info->paddr = ast_base->ast_paddr;
+}
+
+int ath12k_dp_rx_ast_info_setup(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ath12k_hal_ast_param ast_info = {0};
+	struct ath12k_dp_global_ast_table *ast_base;
+
+	if (!dp_hw_grp) {
+		ath12k_err(NULL, "ast info setup dp_hw_grp is NULL\n");
+		return -EINVAL;
+	}
+
+	ast_base = ath12k_dp_get_global_ast_table(dp_hw_grp);
+	if (!ast_base) {
+		ath12k_err(NULL, "ast info setup unable to fetch ast_base\n");
+		return -EINVAL;
+	}
+
+	ath12k_dp_ast_param_init(ast_base, &ast_info);
+	return ath12k_dp_rx_htt_ast_info_setup(dp->ab, &ast_info);
 }
 
 int ath12k_ast_entry_rhash_add(struct ath12k_dp_hw_group *dp_hw_grp,

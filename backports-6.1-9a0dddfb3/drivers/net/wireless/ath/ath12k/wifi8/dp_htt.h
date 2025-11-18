@@ -6,6 +6,8 @@
 #ifndef ATH12K_DP_HTT_WIFI8_H
 #define ATH12K_DP_HTT_WIFI8_H
 
+#include "hal.h"
+
 /**
  * @brief host -> target message to provide msduq and mpduq for given new tid in a peer
  *
@@ -188,6 +190,57 @@ struct htt_mpduq_or_msduq_info {
 	};
 } __packed;
 
+/*
+ * @brief  host -> target HTT_AST_INFO message
+ *
+ * MSG_TYPE => HTT_H2T_MSG_TYPE_AST_INFO
+ *
+ *    The message would appear as follows:
+ *    |31           24|23             16|15|14           8|7                  0|
+ *    |---------------+-----------------+-----------------+--------------------|
+ *    |ast_max_search |          ast_table_size           |     msg_type       |
+ *    |------------------------------------------------------------------------|
+ *    |                          ast_base_addr_31_0                            |
+ *    |------------------------------------------------------------------------|
+ *    |                          ase_hash_key1                                 |
+ *    |------------------------------------------------------------------------|
+ *    |                          ase_hash_key2                                 |
+ *    |------------------------------------------------------------------------|
+ *    |                          ase_hash_key3                                 |
+ *    |------------------------------------------------------------------------|
+ *    |                          reserved                 | ast_base_addr_39_32|
+ *    |------------------------------------------------------------------------|
+ *
+ * The message is interpreted as follows:
+ * dword0    b'7:0   - msg_type
+ *           b'23:8  -  ast table size
+ *           b'31:24 - ast max search
+ * dword1  - b'31:0  - ast table base address low
+ * dword2  - b'31:0  - ase hash key 1
+ * dword3  - b'31:0  - ase hash key 2
+ * dword4  - b'31:0  - ase hash key 3
+ * dword5    b'7:0   - ast table base address high
+ *           b'31:8 -  reserved for future use cases
+ */
+
+#define HTT_AST_INFO0_MSG_TYPE		GENMASK(7, 0)
+#define HTT_AST_INFO0_TABLE_SIZE	GENMASK(23, 8)
+#define HTT_AST_INFO0_MAX_SEARCH	GENMASK(31, 24)
+#define HTT_AST_INFO1_BASE_ADDR_31_0	GENMASK(31, 0)
+#define HTT_AST_INFO2_HASH_KEY_1	GENMASK(31, 0)
+#define HTT_AST_INFO3_HASH_KEY_2	GENMASK(31, 0)
+#define HTT_AST_INFO4_HASH_KEY_3	GENMASK(31, 0)
+#define HTT_AST_INFO5_BASE_ADDR_39_32	GENMASK(7, 0)
+
+struct htt_ast_info_t {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+} __packed;
+
 #define ATH12K_MAX_DP_HTT_MSG_LEN 512
 
 int ath12k_dp_tx_htt_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
@@ -196,4 +249,6 @@ int ath12k_dp_tx_htt_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp
 					    struct list_head *msduq_pending_list_head,
 					    u8 link_id,
 					    bool is_mcast_queues);
+int ath12k_dp_rx_htt_ast_info_setup(struct ath12k_base *ab,
+				    struct ath12k_hal_ast_param *ast_param);
 #endif

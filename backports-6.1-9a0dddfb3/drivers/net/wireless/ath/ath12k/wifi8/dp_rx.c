@@ -26,6 +26,7 @@
 #include <ppe_vp_tx.h>
 #endif
 #include "../fse.h"
+#include "dp_ast.h"
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
@@ -4062,6 +4063,12 @@ int ath12k_wifi8_dp_rx_htt_setup(struct ath12k_base *ab)
 	ret = ab->hw_params->hw_ops->rxdma_ring_sel_config(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup rxdma ring selection config\n");
+		return ret;
+	}
+
+	ret = ath12k_dp_rx_ast_info_setup(dp);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup rx ast info %d\n", ret);
 		return ret;
 	}
 
