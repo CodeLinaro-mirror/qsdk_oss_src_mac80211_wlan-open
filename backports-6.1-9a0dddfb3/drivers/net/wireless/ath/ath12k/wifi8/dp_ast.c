@@ -151,6 +151,120 @@ ath12k_dp_ast_param_init(struct ath12k_dp_global_ast_table *ast_base,
 	ast_info->paddr = ast_base->ast_paddr;
 }
 
+int ath12k_ast_entry_rhash_add(struct ath12k_dp_hw_group *dp_hw_grp,
+			       struct ath12k_ast_entry *sw_ast_entry)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+	int ret;
+
+	if (!ast_base->rhead_ast_entry)
+		return -EPERM;
+
+	if (sw_ast_entry->rhash_done)
+		return 0;
+
+	ret = rhashtable_lookup_insert_fast(ast_base->rhead_ast_entry,
+					    &sw_ast_entry->rhash_addr,
+					    ast_base->rhash_ast_entry_param);
+	if (ret)
+		sw_ast_entry->rhash_done = false;
+	else
+		sw_ast_entry->rhash_done = true;
+
+	return ret;
+}
+
+int ath12k_ast_entry_rhash_delete(struct ath12k_dp_hw_group *dp_hw_grp,
+				  struct ath12k_ast_entry *sw_ast_entry)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+	int ret;
+
+	if (!ast_base->rhead_ast_entry)
+		return -EPERM;
+
+	if (!sw_ast_entry->rhash_done)
+		return 0;
+
+	ret = rhashtable_remove_fast(ast_base->rhead_ast_entry,
+				     &sw_ast_entry->rhash_addr,
+				     ast_base->rhash_ast_entry_param);
+
+	if (ret && ret != -ENOENT)
+		return ret;
+
+	sw_ast_entry->rhash_done = false;
+
+	return ret;
+}
+
+struct ath12k_ast_entry *
+ath12k_ast_entry_find_by_addr(struct ath12k_dp_hw_group *dp_hw_grp, const u8 *addr)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+
+	if (!ast_base->rhead_ast_entry)
+		return NULL;
+
+	return rhashtable_lookup_fast(ast_base->rhead_ast_entry, addr,
+			ast_base->rhash_ast_entry_param);
+}
+
+int ath12k_dp_ast_entry_rhash_tbl_init(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+	struct rhashtable_params *param;
+	struct rhashtable *rhash_ast_tbl;
+	int ret;
+	size_t size;
+
+	if (ast_base->rhead_ast_entry)
+		return 0;
+
+	size = sizeof(*ast_base->rhead_ast_entry);
+	rhash_ast_tbl = kzalloc(size, GFP_KERNEL);
+	if (!rhash_ast_tbl)
+		return -ENOMEM;
+
+	param = &ast_base->rhash_ast_entry_param;
+
+	param->key_offset = offsetof(struct ath12k_ast_entry, mac_addr);
+	param->head_offset = offsetof(struct ath12k_ast_entry, rhash_addr);
+	param->key_len = sizeof_field(struct ath12k_ast_entry, mac_addr);
+	param->automatic_shrinking = true;
+	param->nelem_hint = ast_base->num_ast_entries;
+
+	ret = rhashtable_init(rhash_ast_tbl, param);
+	if (ret)
+		goto err_free;
+
+	ast_base->rhead_ast_entry = rhash_ast_tbl;
+
+	return 0;
+
+err_free:
+	kfree(rhash_ast_tbl);
+
+	return ret;
+}
+
+void ath12k_dp_ast_entry_tbl_destroy(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+
+	if (!ast_base->rhead_ast_entry)
+		return;
+
+	rhashtable_destroy(ast_base->rhead_ast_entry);
+	kfree(ast_base->rhead_ast_entry);
+	ast_base->rhead_ast_entry = NULL;
+}
+
 int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 {
 	struct device *dev = NULL;
@@ -183,7 +297,7 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 	ast_base->hw_ast_table_size = ast_base->num_ast_entries * HAL_HW_AST_ENTRY_SIZE;
 	ast_base->ast_vaddr_unaligned =
 			kzalloc(ast_base->hw_ast_table_size + HAL_HW_AST_ENTRY_ALIGN - 1,
-				GFP_ATOMIC);
+				GFP_KERNEL);
 	if (!ast_base->ast_vaddr_unaligned) {
 		ath12k_err(ab, "failed to allocate memory for global AST table");
 		return -ENOMEM;
@@ -200,6 +314,22 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 		goto free_hw_ast_table;
 	}
 
+	/* index based mapping for SW AST entries */
+	ast_base->ast_entries = kzalloc((ast_base->num_ast_entries *
+					 sizeof(struct ath12k_ast_entry *)),
+					GFP_KERNEL);
+	if (!ast_base->ast_entries) {
+		ath12k_err(ab, "failed to allocate memory for AST index table\n");
+		ret = -ENOMEM;
+		goto unmap_hw_ast_table;
+	}
+	/* Hash table for SW AST entries */
+	ret = ath12k_dp_ast_entry_rhash_tbl_init(dp_hw_grp);
+	if (ret) {
+		ath12k_err(ab, "failed to init the hash table for SW ast entries\n");
+		goto free_sw_ast_table;
+	}
+
 	ast_base->hash_keys.ase_hash_key1 = ATH12K_AST_HASH_KEY_1;
 	ast_base->hash_keys.ase_hash_key2 = ATH12K_AST_HASH_KEY_2;
 	ast_base->hash_keys.ase_hash_key3 = ATH12K_AST_HASH_KEY_3;
@@ -214,6 +344,13 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 
 	return 0;
 
+free_sw_ast_table:
+	kfree(ast_base->ast_entries);
+
+unmap_hw_ast_table:
+	dma_unmap_single(dev, ast_base->ast_paddr,
+			 ast_base->hw_ast_table_size,
+			 DMA_BIDIRECTIONAL);
 free_hw_ast_table:
 	kfree(ast_base->ast_vaddr_unaligned);
 	ast_base->ast_vaddr_unaligned = NULL;
@@ -249,7 +386,252 @@ void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp)
 				 DMA_BIDIRECTIONAL);
 	}
 
+	ath12k_dp_ast_entry_tbl_destroy(dp_hw_grp);
+	kfree(ast_base->ast_entries);
+
 	kfree(ast_base->ast_vaddr_unaligned);
 	ast_base->ast_vaddr_unaligned = NULL;
 	ast_base->ast_vaddr_aligned = NULL;
+}
+
+static inline bool ath12k_dp_hw_ast_entry_is_valid(struct hal_ast_entry *hw_ast_entry)
+{
+	return !!le32_get_bits(hw_ast_entry->info1, HAL_AST_ENTRY_INFO1_ENTRY_VALID);
+}
+
+static struct hal_ast_entry *
+ath12k_dp_get_hw_ast_entry(struct ath12k_dp_hw_group *dp_hw_grp, u16 index)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
+	struct hal_ast_entry *ast_table = NULL;
+	struct hal_ast_entry *ast_entry = NULL;
+	dma_addr_t paddr;
+
+	if (!dev)
+		return NULL;
+
+	/* Validate index bounds */
+	if (index >= ast_base->num_ast_entries)
+		return NULL;
+
+	ast_table = (struct hal_ast_entry *)ast_base->ast_vaddr_aligned;
+	ast_entry = ast_table + index;
+
+	/* invalidate the entry */
+	paddr = (dma_addr_t)(((u8 *)ast_base->ast_paddr) + index * HAL_HW_AST_ENTRY_SIZE);
+	dma_sync_single_for_cpu(dev, paddr, HAL_HW_AST_ENTRY_SIZE, DMA_BIDIRECTIONAL);
+	return ast_entry;
+}
+
+struct ath12k_ast_entry *
+ath12k_dp_get_sw_ast_entry_by_index(struct ath12k_dp_hw_group *dp_hw_grp, u16 ast_index)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+
+	if (ast_index >= ast_base->num_ast_entries)
+		return NULL;
+
+	return ast_base->ast_entries[ast_index];
+}
+
+void ath12k_dp_hw_ast_entry_sync(struct ath12k_dp_hw_group *dp_hw_grp,
+				 struct ath12k_ast_entry *sw_ast_entry,
+				 struct hal_ast_entry *hw_ast_entry)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
+	u32 mac_addr_31_0 = 0;
+	u16 mac_addr_47_32 = 0;
+	bool is_valid = !!(sw_ast_entry->ast_entry_flags & ATH12K_AST_ENTRY_IS_VALID);
+	dma_addr_t paddr;
+
+	if (is_valid) {
+		/* HW AST entry setup */
+		memset(hw_ast_entry, 0, sizeof(struct hal_ast_entry));
+		ath12k_dp_copy_mac_addr(&mac_addr_31_0,
+					&mac_addr_47_32,
+					sw_ast_entry->mac_addr);
+
+		hw_ast_entry->info0 = le32_encode_bits(mac_addr_31_0,
+						       HAL_AST_ENTRY_INFO0_MAC_ADDR_31_0);
+		hw_ast_entry->info1 =
+			le32_encode_bits(mac_addr_47_32,
+					 HAL_AST_ENTRY_INFO1_MAC_ADDR_47_32) |
+			le32_encode_bits(!!(sw_ast_entry->ast_entry_flags &
+					    ATH12K_AST_ENTRY_IS_MEC),
+					 HAL_AST_ENTRY_INFO1_MEC) |
+			le32_encode_bits(ATH12K_AST_ENTRY_WILDCARD_LINK_ID,
+					 HAL_AST_ENTRY_INFO1_LINK_ID) |
+			le32_encode_bits(!!(sw_ast_entry->ast_entry_flags &
+					    ATH12K_AST_ENTRY_IS_USE_ADDRX),
+					 HAL_AST_ENTRY_INFO1_USE_ADDRX_SEARCH) |
+			le32_encode_bits(2,
+					 HAL_AST_ENTRY_INFO1_NUM_WHO_CLASSIFY_INFO);
+		hw_ast_entry->info2 =
+			le32_encode_bits(sw_ast_entry->tx_classify_info_paddr,
+					 HAL_AST_ENTRY_INFO2_WHO_CLASSIFY_INFO_31_0);
+		hw_ast_entry->info3 =
+		le32_encode_bits(((u64)sw_ast_entry->tx_classify_info_paddr) >> 32,
+				 HAL_AST_ENTRY_INFO3_WHO_CLASSIFY_INFO_39_32);
+		hw_ast_entry->info5 = le32_encode_bits(sw_ast_entry->peer_id,
+						       HAL_AST_ENTRY_INFO5_SW_PEER_ID);
+		hw_ast_entry->info6 = le32_encode_bits(sw_ast_entry->mld_id,
+						       HAL_AST_ENTRY_INFO6_VDEV_ID);
+		/* TODO: check for other variable init */
+
+		/* Set Valid only after updating everything else */
+		hw_ast_entry->info1 |= le32_encode_bits(is_valid,
+							HAL_AST_ENTRY_INFO1_ENTRY_VALID);
+	} else {
+		hw_ast_entry->info1 &= ~HAL_AST_ENTRY_INFO1_ENTRY_VALID;
+	}
+
+	if (!dev) {
+		ath12k_err(NULL, "dev is NULL during AST entry sync for index %u\n",
+			   sw_ast_entry->ast_index);
+		return;
+	}
+
+	/* flush the entry */
+	paddr =	(dma_addr_t)(((u8 *)ast_base->ast_paddr) +
+			     (sw_ast_entry->ast_index * HAL_HW_AST_ENTRY_SIZE));
+	dma_sync_single_for_device(dev, paddr, HAL_HW_AST_ENTRY_SIZE, DMA_BIDIRECTIONAL);
+
+	/* TODO send the TCL command to invalidate the cache */
+}
+
+int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
+			       struct ath12k_ast_entry_config_params *param)
+{
+	bool is_mcast = !!(param->ast_entry_flags & ATH12K_AST_ENTRY_IS_MCAST);
+	bool is_mec = !!(param->ast_entry_flags & ATH12K_AST_ENTRY_IS_MEC);
+	struct hal_ast_entry *hw_ast_entry;
+	struct ath12k_ast_entry *sw_ast_entry = NULL;
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+	int ret = -ENOSPC;
+	u16 i;
+	u16 ast_index;
+	u16 ast_hash;
+	bool free_slot_found = false;
+
+	param->ast_index = ATH12K_INVALID_AST_INDEX;
+	param->ast_hash = ATH12K_INVALID_AST_INDEX;
+	ast_hash = ath12k_dp_compute_ast_hash(param->mac_addr,
+					      ast_base->ast_hash_mask,
+					      is_mcast, is_mec);
+	ast_index = ast_hash;
+	spin_lock_bh(&ast_base->ast_lock);
+	for (i = 0; i < ast_base->skid_len; ++i) {
+		/* wrap around case */
+		if (ast_index == ast_base->num_ast_entries)
+			ast_index = 0;
+
+		hw_ast_entry = ath12k_dp_get_hw_ast_entry(dp_hw_grp, ast_index);
+		if (!hw_ast_entry) {
+			ath12k_err(NULL,
+				   "invalid hw ast entry while finding free slot %u\n",
+				   ast_index);
+			ret = -EINVAL;
+			goto error_handle;
+		}
+		if (ath12k_dp_hw_ast_entry_is_valid(hw_ast_entry)) {
+			ast_index++;
+			continue;
+		}
+
+		free_slot_found = true;
+		break;
+	}
+
+	if (!free_slot_found) {
+		ath12k_err(NULL,
+			   "Failed to allocate AST entry: no free slot available %u\n",
+			   ast_index);
+		ret = -EINVAL;
+		goto error_handle;
+	}
+
+	/* SW AST entry setup */
+	sw_ast_entry = kzalloc(sizeof(*sw_ast_entry), GFP_ATOMIC);
+	if (!sw_ast_entry) {
+		ret = -ENOMEM;
+		goto error_handle;
+	}
+
+	memcpy(sw_ast_entry->mac_addr, param->mac_addr, ETH_ALEN);
+	sw_ast_entry->tx_classify_info_paddr = param->tx_classify_info_paddr;
+	sw_ast_entry->peer_id = param->peer_id;
+	sw_ast_entry->mld_id = param->mld_id;
+	sw_ast_entry->ast_entry_flags = param->ast_entry_flags;
+	sw_ast_entry->ast_index = ast_index;
+	sw_ast_entry->ast_hash = ast_hash;
+	sw_ast_entry->ast_entry_flags |= ATH12K_AST_ENTRY_IS_VALID;
+
+	/* Add the SW AST entry in index based and hash tables */
+	ast_base->ast_entries[ast_index] = sw_ast_entry;
+	ret = ath12k_ast_entry_rhash_add(dp_hw_grp, sw_ast_entry);
+	if (ret) {
+		ath12k_err(NULL, "Failed to add SW AST entry to hash table index = %u\n",
+			   ast_index);
+		ast_base->ast_entries[ast_index] = NULL;
+		/* Clear the entry flags before freeing */
+		sw_ast_entry->ast_entry_flags = ATH12K_AST_ENTRY_EMPTY_FLAGS;
+		goto free_sw_entry;
+	}
+	ath12k_dp_hw_ast_entry_sync(dp_hw_grp, sw_ast_entry, hw_ast_entry);
+
+	param->ast_index = ast_index;
+	param->ast_hash = ast_hash;
+	spin_unlock_bh(&ast_base->ast_lock);
+	return 0;
+
+free_sw_entry:
+	kfree(sw_ast_entry);
+error_handle:
+	spin_unlock_bh(&ast_base->ast_lock);
+
+	return ret;
+}
+
+void ath12k_dp_ast_entry_delete(struct ath12k_dp_hw_group *dp_hw_grp,
+				u16 ast_index)
+{
+	struct ath12k_dp_global_ast_table *ast_base =
+				ath12k_dp_get_global_ast_table(dp_hw_grp);
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	struct ath12k_ast_entry *sw_ast_entry = NULL;
+	struct hal_ast_entry *hw_ast_entry;
+
+	spin_lock_bh(&ast_base->ast_lock);
+
+	hw_ast_entry = ath12k_dp_get_hw_ast_entry(dp_hw_grp, ast_index);
+	if (!hw_ast_entry) {
+		ath12k_err(ab, "unable to find the hw ast entry %d\n", ast_index);
+		spin_unlock_bh(&ast_base->ast_lock);
+		return;
+	}
+
+	sw_ast_entry = ath12k_dp_get_sw_ast_entry_by_index(dp_hw_grp, ast_index);
+	if (!sw_ast_entry) {
+		ath12k_err(ab, "unable to find the sw ast entry %d\n", ast_index);
+		spin_unlock_bh(&ast_base->ast_lock);
+		return;
+	}
+
+	/* reset the valid flag */
+	sw_ast_entry->ast_entry_flags &= ~ATH12K_AST_ENTRY_IS_VALID;
+
+	ath12k_dp_hw_ast_entry_sync(dp_hw_grp, sw_ast_entry, hw_ast_entry);
+
+	/* remove SW AST entry from index based and hash tables */
+	ast_base->ast_entries[ast_index] = NULL;
+	(void)ath12k_ast_entry_rhash_delete(dp_hw_grp, sw_ast_entry);
+
+	kfree(sw_ast_entry);
+	spin_unlock_bh(&ast_base->ast_lock);
 }
