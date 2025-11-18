@@ -25,6 +25,7 @@ struct sk_buff *ath12k_htc_alloc_skb(struct ath12k_base *ab, int size)
 
 	return skb;
 }
+EXPORT_SYMBOL(ath12k_htc_alloc_skb);
 
 static void ath12k_htc_control_tx_complete(struct ath12k_base *ab,
 					   struct sk_buff *skb)
@@ -151,6 +152,7 @@ err_pull:
 	skb_pull(skb, sizeof(struct ath12k_htc_hdr));
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_htc_send);
 
 static void
 ath12k_htc_process_credit_report(struct ath12k_htc *htc,

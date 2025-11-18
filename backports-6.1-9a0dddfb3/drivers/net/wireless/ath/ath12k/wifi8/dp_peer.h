@@ -9,6 +9,20 @@
 
 #include "../dp_cmn.h"
 #include "hw.h"
+#include "dp_tx_flow_info.h"
+
+struct ath12k_dp_peer_ext_ctx {
+	struct ath12k_dp_tx_flow_info tx_flow_info;
+};
+
+static inline struct ath12k_dp_tx_flow_info *
+ath12k_dp_get_tx_flow_info_from_peer(struct ath12k_dp_peer *dp_peer)
+{
+	if (!dp_peer->peer_ext_ctx)
+		return NULL;
+
+	return &dp_peer->peer_ext_ctx->tx_flow_info;
+}
 
 int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 				struct ath12k_dp_peer_create_params *params,

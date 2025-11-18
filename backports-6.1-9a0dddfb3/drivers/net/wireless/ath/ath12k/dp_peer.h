@@ -13,6 +13,8 @@
 #define ATH12K_3LINK_MLO_MAX_STA_LINKS         3
 #define ATH12K_DATA_TID_MAX 8
 
+struct ath12k_dp_peer_ext_ctx;
+
 struct ppdu_user_delayba {
 	u16 sw_peer_id;
 	u32 info0;
@@ -155,6 +157,7 @@ struct ath12k_dp_peer {
 	struct ath12k_mscs_ctxt mscs_ctxt;
 	bool mscs_session_exists;
 	struct ath12k_dp_preserved_stats *link_peer_delete_stats;
+	struct ath12k_dp_peer_ext_ctx *peer_ext_ctx;
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)

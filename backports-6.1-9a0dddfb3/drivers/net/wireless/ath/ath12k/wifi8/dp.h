@@ -29,6 +29,8 @@ struct ath12k_dp_hw_group_wifi8 {
 	struct ath12k_dp_hw_group *dp_hw_grp;
 	struct ath12k_dp *cumac_dp;
 	struct ath12k_dp_global_ast_table dp_ast_base;
+	struct ath12k_pn_page_info *pn_page_info;
+	u8 num_pn_pages;
 };
 
 static inline struct ath12k_dp_wifi8 *ath12k_get_dp_wifi8(struct ath12k_dp *dp)

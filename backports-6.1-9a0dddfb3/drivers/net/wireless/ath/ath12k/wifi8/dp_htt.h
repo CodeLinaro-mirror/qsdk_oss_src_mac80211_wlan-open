@@ -1,0 +1,199 @@
+/* SPDX-License-Identifier: BSD-3-Clause-Clear */
+/*
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ */
+
+#ifndef ATH12K_DP_HTT_WIFI8_H
+#define ATH12K_DP_HTT_WIFI8_H
+
+/**
+ * @brief host -> target message to provide msduq and mpduq for given new tid in a peer
+ *
+ * MSG_TYPE => HTT_H2T_MSG_TYPE_MPDUQ_AND_MSDUQ_INFO_HDR
+ *
+ * @details
+ * struct htt_h2t_mpduq_and_msduq_info_hdr:
+ *    HTT_H2T_MSG_TYPE_MPDUQ_AND_MSDUQ_INFO_HDR message is sent by the host to
+ *    target to tell the amount of valid mpduq and msduq info tlv in term of bytes
+ *    are present in the htt payload
+ *
+ *-------------------------------------------------------------------
+ *|           htt_h2t_mpduq_and_msduq_info_hdr                      |
+ *-------------------------------------------------------------------
+ *|           mpduq_info_tlv  -> tid 0 , peer_id 1                  |
+ *-------------------------------------------------------------------
+ *|           mpduq_info_tlv  -> tid 6,  peer_id 1                  |
+ *-------------------------------------------------------------------
+ *|           msduq_info_tlv  -> tid 0,  peer_id 1                  |
+ *-------------------------------------------------------------------
+ *|           msduq_info_tlv  -> tid 0,  peer_id 1                  |
+ *-------------------------------------------------------------------
+ *|           msduq_info_tlv  -> tid 6,  peer_id 1                  |
+ *-------------------------------------------------------------------
+ *
+ * As shown in the sample a single htt buffer can hold multiple mpduq
+ * and msduq info tlvs, the info within the tlvs will indicate the peer and tid
+ * for which they belong
+ *
+ */
+
+#define HTT_MPDUQ_AND_MSDUQ_INFO_HDR_INFO0_MSG_TYPE	GENMASK(7, 0)
+#define HTT_MPDUQ_AND_MSDUQ_INFO_HDR_INFO0_PAYLOAD_SIZE	GENMASK(19, 8)
+
+struct htt_mpduq_and_msduq_info_hdr {
+	__le32 info0;
+} __packed;
+
+enum htt_tx_tid_msduq_mpdu_type {
+	HTT_TID_MSDUQ_NONUDP,
+	HTT_TID_MSDUQ_UDP,
+	HTT_TID_MSDUQ_CUSTOM_0,
+	HTT_TID_MSDUQ_CUSTOM_1,
+	HTT_TID_MSDUQ_CUSTOM_2,
+	HTT_TID_MSDUQ_CUSTOM_3,
+	HTT_TID_MSDUQ_CUSTOM_4,
+	HTT_TID_MSDUQ_CUSTOM_5,
+	HTT_TID_MISC_MSDUQ_TYPE_START,
+	HTT_TID_MSDUQ_HOL = HTT_TID_MISC_MSDUQ_TYPE_START,
+	HTT_TID_MSDUQ_MCAST,
+	HTT_TID_MSDUQ_FAST_ROAMING,
+	HTT_TID_MSDUQ_DATA_TYPE_END = 29,
+	HTT_TID_MPDUQ_TYPE,
+	HTT_TID_MSDUQ_MPDUQ_TYPE_END,
+};
+
+/*
+ * Enum to denote tid nums that can be used
+ * first 8 {0 - 7} numbers correspond to data access category
+ * {8 - 15} are for user defined usecases
+ * 16 is used to denote the non-qos tid
+ */
+enum htt_tx_tid {
+	HTT_DEFAULT_TID_NUM		= 0,
+	HTT_MAX_VALID_DATA_TID_NUM	= 7,
+	HTT_NON_QOS_TID_NUM		= 16,
+	HTT_MAX_TID_NUM		= 31,
+};
+
+/**
+ * @brief host -> target message to provide mpduq for a tid in a peer
+ *
+ * MSG_TYPE => HTT_H2T_MSG_TYPE_MPDUQ_or_MSDUQ_INFO
+ *
+ * @details
+ * struct htt_h2t_mpduq_or_msduq_info:
+ *    HTT_H2T_MSG_TYPE_MPDUQ_OR_MSDUQ_INFO message is sent by the host to
+ *    update the configuration of new MPDUQ/MSDUQ for a tid in a peer.
+ *    This message supports the following configuration
+ *    1.  Info provided per MPDUQ
+ *        mpduq 32 bit address
+ *        pn address space
+ *    2. Info provided per MSDUQ
+ *        msduq 32 bit address
+ *        flow_number
+ *        service class id
+ *
+ *
+ *
+ * The message is interpreted as follows for mpduq type:
+ * dword0 - b'7:0   - msg_type: Identifies msduq and mpduq info to fw
+ *                    This will be set to 0x2A
+ *                    (HTT_H2T_MSG_TYPE_MPDUQ_AND_MSDUQ_INFO)
+ *          b'12:8  - msduq_mpduq_type : indicate how to interpret the message for
+ *                    mpduq type it will be fixed value of 30 based on enum
+ *                    HTT_TID_MSDUQ_MPDUQ_TYPE
+ *          b'16:13 - hw_link_id: Indicates which HW link the message is intended for.
+ *                    This HW link ID is mainly relevant for split PHY
+ *                    usecases to identify the correct link in same SOC.
+ * dword1 - b'31:0  - mpduq_address_39_8: 256 byte aligned mpduq address,
+ *                    since lower two octets are zero for 256 byte aligned addresses
+ *                    just passing upper 32 bits of 40 bit address
+ * dword2 - b'23:0  - mpduq_number: Queue number for mpduq
+ *                    Note that the mpduq_number is formed from the combination of
+ *                    peer_id (in bits 11:0)
+ *                    tid_num (in bits 16:12)
+ *                    msduq_mpduq_type (in bits 21:17)
+ *          b'31:24 - pn_addr_32_39: Upper 40 bits for pn address
+ * dword3 - b'31:0  - pn_addr_0_31: First 32 bits for pn address
+ * Additional reserved dwords for future use cases
+ *
+ *
+ *
+ *
+ * The message is interpreted as follows for any msduq type:
+ * dword0 - b'7:0   - msg_type: Identifies msduq info to fw
+ *                    This will be set to 0x2A
+ *                    (HTT_H2T_MSG_TYPE_MPDUQ_AND_MSDUQ_INFO)
+ *          b'12:8  - msduq_mpduq_type : type of the msduq based on enum
+ *                    HTT_TID_MSDUQ_MPDUQ_TYPE
+ *          b'16:13 - hw_link_id: Indicates which HW link the message is intended for.
+ *                    This HW link ID is mainly relevant for split PHY
+ *                    usecases to identify the correct link in same SOC.
+ * dword1 - b'23:0  - tx_msduq_number : Queue number for the  msduq
+ *                    Note that the tx_msduq_number is formed from the combination of
+ *                    peer_id (in bits 11:0)
+ *                    tid_num (in bits 16:12)
+ *                    msduq_mpduq_type (in bits 21:17)
+ *          b'31:24 - svc_class_id : service class id of the msduq
+ * dword2 - b'31:0  - msduq_address_39_8: 256 byte aligned msduq address, since lower
+ *                    two octets are zero for 256 byte aligned addresses just passing
+ *                    upper 32 bits of 40 bit address
+ * Additional reserved dwords for future use cases
+ *
+ *
+ */
+
+#define HTT_MPDUQ_INFO_CMD_INFO1_MPDUQ_ADDR	GENMASK(31, 0)
+#define HTT_MPDUQ_INFO_CMD_INFO2_MPDUQ_NUM	GENMASK(23, 0)
+#define HTT_MPDUQ_INFO_CMD_INFO2_PN_ADDR_39_32	GENMASK(31, 24)
+#define HTT_MPDUQ_INFO_CMD_INFO3_PN_ADDR_31_0	GENMASK(31, 0)
+
+struct htt_mpduq_info {
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+	__le32 info8;
+	__le32 info9;
+} __packed;
+
+#define HTT_MSDUQ_INFO_CMD_INFO1_MSDUQ_NUM	GENMASK(23, 0)
+#define HTT_MSDUQ_INFO_CMD_INFO1_SVC_CLASS_ID	GENMASK(31, 24)
+#define HTT_MSDUQ_INFO_CMD_INFO2_MSDUQ_ADDR	GENMASK(31, 0)
+
+struct htt_msduq_info {
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+	__le32 info8;
+	__le32 info9;
+} __packed;
+
+#define HTT_MPDUQ_AND_MSDUQ_INFO_CMD_INFO0_MSG_TYPE	GENMASK(7, 0)
+#define HTT_MPDUQ_AND_MSDUQ_INFO_CMD_INFO0_Q_TYPE	GENMASK(12, 8)
+#define HTT_MPDUQ_AND_MSDUQ_INFO_CMD_INFO0_HW_LINK_ID	GENMASK(16, 13)
+
+struct htt_mpduq_or_msduq_info {
+	__le32 info0;
+	union {
+		struct htt_mpduq_info mpduq;
+		struct htt_msduq_info msduq;
+	};
+} __packed;
+
+#define ATH12K_MAX_DP_HTT_MSG_LEN 512
+
+int ath12k_dp_tx_htt_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
+					    struct ath12k_dp_peer *dp_peer,
+					    struct list_head *mpduq_pending_list_head,
+					    struct list_head *msduq_pending_list_head,
+					    u8 link_id,
+					    bool is_mcast_queues);
+#endif

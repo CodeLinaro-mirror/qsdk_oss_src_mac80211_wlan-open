@@ -14,4 +14,6 @@ ath12k_wifi8-y += core.o \
 		  hal_rx.o \
 		  hal_qcn9625.o\
 		  dp_peer.o\
-		  dp_ast.o
+		  dp_ast.o \
+		  dp_tx_flow_info.o \
+		  dp_htt.o
