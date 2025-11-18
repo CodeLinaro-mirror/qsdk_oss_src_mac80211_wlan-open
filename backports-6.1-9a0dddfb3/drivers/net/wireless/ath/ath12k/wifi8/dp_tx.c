@@ -794,7 +794,7 @@ out:
 	spin_unlock_bh(&dp->dp_lock);
 
 	if (update_pri_peer) {
-		i_peer = rcu_dereference(mld_peer->link_peers[pri_link_id]);
+		pri_peer = rcu_dereference(mld_peer->link_peers[pri_link_id]);
 		if (pri_peer) {
 			spin_lock_bh(&dp_pdev->dp->dp_lock);
 			if (pri_peer->peer_stats.qos_stats)
