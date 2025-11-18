@@ -8669,7 +8669,7 @@ static int ath12k_mac_initiate_hw_scan(struct ieee80211_hw *hw,
 		goto exit;
 	}
 
-	ath12k_wmi_start_scan_init(ar, arg);
+	ath12k_wmi_start_scan_init(ar, arg, vif->type);
 	arg->vdev_id = arvif->vdev_id;
 	arg->scan_id = ATH12K_SCAN_ID;
 
@@ -21860,7 +21860,7 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 	if (!arg)
 		return -ENOMEM;
 
-	ath12k_wmi_start_scan_init(ar, arg);
+	ath12k_wmi_start_scan_init(ar, arg, vif->type);
 
 	arg->chan_list.num_chan = 1;
 	struct chan_info *chaninfo __free(kfree) = kcalloc(arg->chan_list.num_chan,

@@ -9063,7 +9063,8 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 				    const u8 *peer_addr, u8 vdev_id);
 int ath12k_wmi_vdev_delete(struct ath12k *ar, u8 vdev_id);
 void ath12k_wmi_start_scan_init(struct ath12k *ar,
-				struct ath12k_wmi_scan_req_arg *arg);
+				struct ath12k_wmi_scan_req_arg *arg,
+				enum nl80211_iftype vif_type);
 int ath12k_wmi_send_scan_start_cmd(struct ath12k *ar,
 				   struct ath12k_wmi_scan_req_arg *arg);
 int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,

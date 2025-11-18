@@ -3613,7 +3613,8 @@ int ath12k_wmi_update_scan_chan_list(struct ath12k *ar,
 }
 
 void ath12k_wmi_start_scan_init(struct ath12k *ar,
-				struct ath12k_wmi_scan_req_arg *arg)
+				struct ath12k_wmi_scan_req_arg *arg,
+				enum nl80211_iftype vif_type)
 {
 	/* setup commonly used values */
 	arg->scan_req_id = 1;
@@ -3625,6 +3626,14 @@ void ath12k_wmi_start_scan_init(struct ath12k *ar,
 	arg->dwell_time_passive_6g = 70;
 	arg->min_rest_time = 50;
 	arg->max_rest_time = 500;
+
+	if (vif_type == NL80211_IFTYPE_STATION) {
+		arg->scan_priority = WMI_SCAN_PRIORITY_HIGH;
+		arg->dwell_time_active = 70;
+		arg->dwell_time_active_2g = 70;
+		arg->dwell_time_active_6g = 80;
+		arg->dwell_time_passive_6g = 80;
+	}
 
 	if (ar->scan_min_rest_time)
 		arg->min_rest_time = ar->scan_min_rest_time;
