@@ -2380,14 +2380,21 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					src_peer_stats->tx[i].non_amsdu_cnt;
 				dst_peer_stats->tx[i].inval_link_id_pkt_cnt +=
 					src_peer_stats->tx[i].inval_link_id_pkt_cnt;
-				dst_peer_stats->tx[i].ucast +=
-					src_peer_stats->tx[i].ucast;
+				dst_peer_stats->tx[i].ucast.packets +=
+					src_peer_stats->tx[i].ucast.packets;
+				dst_peer_stats->tx[i].ucast.bytes +=
+					src_peer_stats->tx[i].ucast.bytes;
 
 				if (is_vdev_peer) {
-					dst_peer_stats->tx[i].mcast +=
-						src_peer_stats->tx[i].mcast;
-					dst_peer_stats->tx[i].bcast +=
-						src_peer_stats->tx[i].bcast;
+					dst_peer_stats->tx[i].mcast.packets +=
+						src_peer_stats->tx[i].mcast.packets;
+					dst_peer_stats->tx[i].mcast.bytes +=
+						src_peer_stats->tx[i].mcast.bytes;
+
+					dst_peer_stats->tx[i].bcast.packets +=
+						src_peer_stats->tx[i].bcast.packets;
+					dst_peer_stats->tx[i].bcast.bytes +=
+						src_peer_stats->tx[i].bcast.bytes;
 				}
 			}
 		}
@@ -2412,10 +2419,16 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 
 		if (ath12k_dp_stats_enabled(dp_pdev)) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
-				dst_peer_stats->rx[i].mcast +=
-					src_peer_stats->rx[i].mcast;
-				dst_peer_stats->rx[i].ucast +=
-					src_peer_stats->rx[i].ucast;
+				dst_peer_stats->rx[i].mcast.packets +=
+					src_peer_stats->rx[i].mcast.packets;
+				dst_peer_stats->rx[i].mcast.bytes +=
+					src_peer_stats->rx[i].mcast.bytes;
+
+				dst_peer_stats->rx[i].ucast.packets +=
+					src_peer_stats->rx[i].ucast.packets;
+				dst_peer_stats->rx[i].ucast.bytes +=
+					src_peer_stats->rx[i].ucast.bytes;
+
 				dst_peer_stats->rx[i].non_amsdu +=
 					src_peer_stats->rx[i].non_amsdu;
 				dst_peer_stats->rx[i].msdu_part_of_amsdu +=
@@ -2560,14 +2573,21 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					src_peer_stats->tx[i].non_amsdu_cnt;
 				dst_peer_stats->tx[i].inval_link_id_pkt_cnt =
 					src_peer_stats->tx[i].inval_link_id_pkt_cnt;
-				dst_peer_stats->tx[i].ucast =
-					src_peer_stats->tx[i].ucast;
+				dst_peer_stats->tx[i].ucast.packets =
+					src_peer_stats->tx[i].ucast.packets;
+				dst_peer_stats->tx[i].ucast.bytes =
+					src_peer_stats->tx[i].ucast.bytes;
 
 				if (is_vdev_peer) {
-					dst_peer_stats->tx[i].mcast =
-						src_peer_stats->tx[i].mcast;
-					dst_peer_stats->tx[i].bcast =
-						src_peer_stats->tx[i].bcast;
+					dst_peer_stats->tx[i].mcast.packets =
+						src_peer_stats->tx[i].mcast.packets;
+					dst_peer_stats->tx[i].mcast.bytes =
+						src_peer_stats->tx[i].mcast.bytes;
+
+					dst_peer_stats->tx[i].bcast.packets =
+						src_peer_stats->tx[i].bcast.packets;
+					dst_peer_stats->tx[i].bcast.bytes =
+						src_peer_stats->tx[i].bcast.bytes;
 				}
 			}
 		}
@@ -2591,10 +2611,16 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 
 		if (ath12k_dp_stats_enabled(dp_pdev)) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
-				dst_peer_stats->rx[i].mcast =
-					src_peer_stats->rx[i].mcast;
-				dst_peer_stats->rx[i].ucast =
-					src_peer_stats->rx[i].ucast;
+				dst_peer_stats->rx[i].mcast.packets =
+					src_peer_stats->rx[i].mcast.packets;
+				dst_peer_stats->rx[i].mcast.bytes =
+					src_peer_stats->rx[i].mcast.bytes;
+
+				dst_peer_stats->rx[i].ucast.packets =
+					src_peer_stats->rx[i].ucast.packets;
+				dst_peer_stats->rx[i].ucast.bytes =
+					src_peer_stats->rx[i].ucast.bytes;
+
 				dst_peer_stats->rx[i].non_amsdu =
 					src_peer_stats->rx[i].non_amsdu;
 				dst_peer_stats->rx[i].msdu_part_of_amsdu =
@@ -2803,8 +2829,10 @@ static void ath12k_dp_aggr_vif_ingress_stats(struct ath12k_pdev_dp *dp_pdev,
 
 		if (ath12k_dp_stats_enabled(dp_pdev)) {
 			if (ath12k_dp_debug_stats_enabled(dp_pdev)) {
-				aggr_vif_stats->stats[i].tx_i.mcast +=
-					vif->stats[i].tx_i.mcast;
+				aggr_vif_stats->stats[i].tx_i.mcast.packets +=
+					vif->stats[i].tx_i.mcast.packets;
+				aggr_vif_stats->stats[i].tx_i.mcast.bytes +=
+					vif->stats[i].tx_i.mcast.bytes;
 
 				for (j = 0; j < HAL_TCL_ENCAP_TYPE_MAX; j++)
 					aggr_vif_stats->stats[i].tx_i.encap_type[j] +=

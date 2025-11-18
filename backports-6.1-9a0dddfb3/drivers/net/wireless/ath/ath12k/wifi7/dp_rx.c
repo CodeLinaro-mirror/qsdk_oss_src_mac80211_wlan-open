@@ -1317,9 +1317,11 @@ static void ath12k_dp_rx_update_peer_msdu_stats(struct ath12k_dp_peer *peer,
 		DP_PEER_STATS_INC(peer, rx, ring_id, msdu_part_of_amsdu, link_id, 1);
 
 	if (rx_msdu_info->da_is_mcbc)
-		DP_PEER_STATS_INC(peer, rx, ring_id, mcast, link_id, 1);
+		DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, mcast, link_id, 1,
+				      rx_msdu_info->msdu_length);
 	else
-		DP_PEER_STATS_INC(peer, rx, ring_id, ucast, link_id, 1);
+		DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, ucast, link_id, 1,
+				      rx_msdu_info->msdu_length);
 
 	DP_PEER_STATS_COND_INC(peer, rx, ring_id, mpdu_retry, link_id,
 			       rx_mpdu_info->mpdu_retry_bit, 1);

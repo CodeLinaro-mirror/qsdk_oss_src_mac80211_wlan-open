@@ -39,9 +39,12 @@ void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst_tx_stat
 	dst_tx_stats->amsdu_cnt += src_tx_stats->amsdu_cnt;
 	dst_tx_stats->non_amsdu_cnt += src_tx_stats->non_amsdu_cnt;
 	dst_tx_stats->inval_link_id_pkt_cnt += src_tx_stats->inval_link_id_pkt_cnt;
-	dst_tx_stats->mcast += src_tx_stats->mcast;
-	dst_tx_stats->ucast += src_tx_stats->ucast;
-	dst_tx_stats->bcast += src_tx_stats->bcast;
+	dst_tx_stats->ucast.packets += src_tx_stats->ucast.packets;
+	dst_tx_stats->ucast.bytes += src_tx_stats->ucast.bytes;
+	dst_tx_stats->mcast.packets += src_tx_stats->mcast.packets;
+	dst_tx_stats->mcast.bytes += src_tx_stats->mcast.bytes;
+	dst_tx_stats->bcast.packets += src_tx_stats->bcast.packets;
+	dst_tx_stats->bcast.bytes += src_tx_stats->bcast.bytes;
 }
 
 /**
@@ -63,8 +66,10 @@ void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stat
 	dst_rx_stats->sent_to_stack_fast.packets +=
 						src_rx_stats->sent_to_stack_fast.packets;
 	dst_rx_stats->sent_to_stack_fast.bytes += src_rx_stats->sent_to_stack_fast.bytes;
-	dst_rx_stats->mcast += src_rx_stats->mcast;
-	dst_rx_stats->ucast += src_rx_stats->ucast;
+	dst_rx_stats->mcast.packets += src_rx_stats->mcast.packets;
+	dst_rx_stats->mcast.bytes += src_rx_stats->mcast.bytes;
+	dst_rx_stats->ucast.packets += src_rx_stats->ucast.packets;
+	dst_rx_stats->ucast.bytes += src_rx_stats->ucast.bytes;
 	dst_rx_stats->non_amsdu += src_rx_stats->non_amsdu;
 	dst_rx_stats->msdu_part_of_amsdu += src_rx_stats->msdu_part_of_amsdu;
 	dst_rx_stats->mpdu_retry += src_rx_stats->mpdu_retry;
