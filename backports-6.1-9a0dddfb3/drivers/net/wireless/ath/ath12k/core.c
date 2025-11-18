@@ -970,7 +970,9 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 {
 	struct ath12k_base *ab;
 	unsigned long time_left;
-	int i;
+	struct ath12k *ar;
+	bool radio_suspended = false;
+	int i, j;
 
 	for (i = 0; i < ag->num_probed; i++) {
 		ab =  ag->ab[i];
@@ -985,7 +987,18 @@ int ath12k_core_power_up(struct ath12k_hw_group *ag)
 
 	for (i = 0; i < ag->num_probed; i++) {
 		ab =  ag->ab[i];
-		if (ab->powerup_triggered) {
+
+		if (!ab->powerup_triggered && ab->num_radios > 1) {
+			for (j = 0; j < ab->num_radios; j++) {
+				ar = ab->pdevs[j].ar;
+				if (ar && ar->pdev_suspend) {
+					radio_suspended = true;
+					break;
+				}
+			}
+		}
+
+		if (ab->powerup_triggered || radio_suspended) {
 			time_left = wait_for_completion_timeout(&ab->power_up,
 								ATH12K_Q6_POWER_UP_TIMEOUT);
 			if (!time_left) {
