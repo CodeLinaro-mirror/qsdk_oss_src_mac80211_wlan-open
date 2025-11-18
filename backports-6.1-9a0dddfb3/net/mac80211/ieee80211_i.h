@@ -2937,6 +2937,9 @@ ieee80211_link_change_chanreq(struct ieee80211_link_data *link,
 			      u64 *changed);
 void __ieee80211_link_release_channel(struct ieee80211_link_data *link,
 				      bool skip_idle_recalc);
+void ieee80211_link_chanctx_reservation_complete(struct ieee80211_link_data *link);
+int ieee80211_chanctx_num_reserved(struct ieee80211_local *local,
+				   struct ieee80211_chanctx *ctx);
 void ieee80211_link_release_channel(struct ieee80211_link_data *link);
 void ieee80211_link_vlan_copy_chanctx(struct ieee80211_link_data *link);
 void ieee80211_link_copy_chanctx_to_vlans(struct ieee80211_link_data *link,
