@@ -4145,8 +4145,7 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	struct ath12k_pdev_dp *dp_pdev;
 	struct ath12k *ar;
-	int ret;
-	int i;
+	int ret, i, j;
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_dp_ppe_rxole_rxdma_cfg(ab);
@@ -4188,16 +4187,23 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 			ret = ath12k_dp_mon_pdev_init(dp_pdev);
 			if (ret) {
 				ath12k_warn(ab, "failed to initialize mon pdev %d\n", i);
-				goto err;
+				goto err_cleanup_pdevs;
 			}
 
 			ret = ath12k_dp_mon_pdev_rx_alloc(dp_pdev, i);
-			if (ret)
-				goto err;
+			if (ret) {
+				ath12k_warn(ab,
+					    "failed to alloc rx filter for pdev %d\n",
+					    i);
+				goto err_mon_pdev_deinit;
+			}
 
 			ret = ath12k_dp_mon_pdev_rx_htt_setup(dp_pdev, i);
-			if (ret)
-				goto err;
+			if (ret) {
+				ath12k_warn(ab,
+					    "failed to setup rx htt for pdev %d\n", i);
+				goto err_mon_pdev_rx_free;
+			}
 
 			dp_pdev->dp_mon_pdev_configured = true;
 		}
@@ -4206,7 +4212,7 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 	ret = ath12k_dp_ppeds_start(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to start DP PPEDS\n");
-		goto err;
+		goto err_cleanup_pdevs;
 	}
 
 	spin_lock_bh(&dp->dp_lock);
@@ -4219,8 +4225,23 @@ int ath12k_wifi7_dp_pdev_alloc(struct ath12k_base *ab)
 	dp->num_radios = ab->num_radios;
 
 	return ret;
-err:
-	ath12k_wifi7_dp_pdev_free(ab);
+err_mon_pdev_rx_free:
+	/* Clean up the current pdev's RX allocation */
+	ath12k_dp_mon_pdev_rx_free(dp_pdev);
+err_mon_pdev_deinit:
+	/* Clean up the current pdev's monitor initialization */
+	ath12k_dp_mon_pdev_deinit(dp_pdev);
+err_cleanup_pdevs:
+	/* Clean up all previously configured pdevs */
+	for (j = 0; j < i; j++) {
+		ar = ab->pdevs[j].ar;
+		if (ar->dp.dp_mon_pdev_configured) {
+			ath12k_dp_mon_pdev_rx_free(&ar->dp);
+			ath12k_dp_mon_pdev_deinit(&ar->dp);
+			ar->dp.dp_mon_pdev_configured = false;
+		}
+	}
+
 	ath12k_dp_ppeds_stop(ab);
 out:
 	return ret;
