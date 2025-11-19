@@ -4648,10 +4648,12 @@ static void ath12k_core_hw_group_cleanup(struct ath12k_hw_group *ag)
 		if (!ab)
 			continue;
 
-		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
+		if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags) &&
+		     test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
 			if (ab->hif.bus == ATH12K_BUS_PCI)
 				ath12k_coredump_download_rddm(ab);
 		}
+
 	}
 
 	for (i = 0; i < ag->num_devices; i++) {
