@@ -192,22 +192,29 @@ ath12k_wifi7_hal_mon_parse_l_sig_b(const struct hal_rx_lsig_b_info *lsigb,
 
 	switch (rate) {
 	case 1:
-		rate = HAL_RX_LEGACY_RATE_1_MBPS;
+		rate = HAL_RX_LEGACY_RATE_LP_1_MBPS;
 		break;
 	case 2:
-	case 5:
-		rate = HAL_RX_LEGACY_RATE_2_MBPS;
+		rate = HAL_RX_LEGACY_RATE_LP_2_MBPS;
 		break;
 	case 3:
-	case 6:
-		rate = HAL_RX_LEGACY_RATE_5_5_MBPS;
+		rate = HAL_RX_LEGACY_RATE_LP_5_5_MBPS;
 		break;
 	case 4:
+		rate = HAL_RX_LEGACY_RATE_LP_11_MBPS;
+		break;
+	case 5:
+		rate = HAL_RX_LEGACY_RATE_SP_2_MBPS;
+		break;
+	case 6:
+		rate = HAL_RX_LEGACY_RATE_SP_5_5_MBPS;
+		break;
 	case 7:
-		rate = HAL_RX_LEGACY_RATE_11_MBPS;
+		rate = HAL_RX_LEGACY_RATE_SP_11_MBPS;
 		break;
 	default:
 		rate = HAL_RX_LEGACY_RATE_INVALID;
+		break;
 	}
 
 	ppdu_info->rate = rate;
@@ -225,31 +232,32 @@ ath12k_wifi7_hal_mon_parse_l_sig_a(const struct hal_rx_lsig_a_info *lsiga,
 
 	switch (rate) {
 	case 8:
-		rate = HAL_RX_LEGACY_RATE_48_MBPS;
+		rate = HAL_RX_LEGACY_RATE_OFDM_48_MBPS;
 		break;
 	case 9:
-		rate = HAL_RX_LEGACY_RATE_24_MBPS;
+		rate = HAL_RX_LEGACY_RATE_OFDM_24_MBPS;
 		break;
 	case 10:
-		rate = HAL_RX_LEGACY_RATE_12_MBPS;
+		rate = HAL_RX_LEGACY_RATE_OFDM_12_MBPS;
 		break;
 	case 11:
-		rate = HAL_RX_LEGACY_RATE_6_MBPS;
+		rate = HAL_RX_LEGACY_RATE_OFDM_6_MBPS;
 		break;
 	case 12:
-		rate = HAL_RX_LEGACY_RATE_54_MBPS;
+		rate = HAL_RX_LEGACY_RATE_OFDM_54_MBPS;
 		break;
 	case 13:
-		rate = HAL_RX_LEGACY_RATE_36_MBPS;
+		rate = HAL_RX_LEGACY_RATE_OFDM_36_MBPS;
 		break;
 	case 14:
-		rate = HAL_RX_LEGACY_RATE_18_MBPS;
+		rate = HAL_RX_LEGACY_RATE_OFDM_18_MBPS;
 		break;
 	case 15:
-		rate = HAL_RX_LEGACY_RATE_9_MBPS;
+		rate = HAL_RX_LEGACY_RATE_OFDM_9_MBPS;
 		break;
 	default:
 		rate = HAL_RX_LEGACY_RATE_INVALID;
+		break;
 	}
 
 	ppdu_info->rate = rate;
