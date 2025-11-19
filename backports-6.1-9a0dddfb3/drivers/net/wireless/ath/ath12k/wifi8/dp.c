@@ -93,7 +93,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	struct ath12k_dp_wifi8 *dp_wifi8 = ath12k_get_dp_wifi8(dp);
 
 	if (!dp_wifi8->cumac) {
-		ath12k_warn(ab, "Skipping ring init for non-cumac target");
+		ath12k_warn(ab, "Skipping ring deinit for non-cumac target");
 		return;
 	}
 
@@ -211,6 +211,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 	dp_hw_group_wifi8 = ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
 	dp_hw_group_wifi8->cumac_dp = dp;
 
+	ath12k_info(ab, "CUMAC init successful");
 	return 0;
 
 fail_dp_rx_free:
@@ -257,17 +258,7 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 		return ret;
 	}
 
-	ret = ath12k_wifi8_dp_umac_init(dp);
-	if (ret) {
-		ath12k_warn(dp, "dp umac init failed %d\n", ret);
-		goto fail_irq_cleanup;
-	}
-
 	return 0;
-
-fail_irq_cleanup:
-	ath12k_hif_ext_irq_cleanup(dp->ab);
-	return ret;
 }
 
 static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
@@ -277,8 +268,25 @@ static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
 	if (!ab)
 		return;
 
-	ath12k_wifi8_dp_umac_deinit(dp);
 	ath12k_hif_ext_irq_cleanup(ab);
+}
+
+static int ath12k_wifi8_dp_op_mlo_init(struct ath12k_dp *dp)
+{
+	int ret;
+
+	ret = ath12k_wifi8_dp_umac_init(dp);
+	if (ret) {
+		ath12k_warn(dp, "dp umac init failed %d\n", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static void ath12k_wifi8_dp_op_mlo_deinit(struct ath12k_dp *dp)
+{
+	ath12k_wifi8_dp_umac_deinit(dp);
 }
 
 static struct ath12k_dp_hw_group *ath12k_wifi8_dp_hw_group_alloc(void)
@@ -299,6 +307,8 @@ static struct ath12k_dp_hw_group *ath12k_wifi8_dp_hw_group_alloc(void)
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi8_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi8_dp_op_device_deinit,
+	.dp_op_mlo_init = ath12k_wifi8_dp_op_mlo_init,
+	.dp_op_mlo_deinit = ath12k_wifi8_dp_op_mlo_deinit,
 	.dp_tx_get_vdev_bank_config = ath12k_wifi8_dp_tx_get_vdev_bank_config,
 	.dp_reo_cmd_send = ath12k_wifi8_dp_reo_cmd_send,
 	.setup_pn_check_reo_cmd = ath12k_wifi8_dp_setup_pn_check_reo_cmd,
@@ -323,7 +333,6 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_tx_ring_setup = ath12k_wifi8_dp_tx_ring_setup,
 };
 
-/* TODO: remove export once this file is built with wifi8 ko */
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp;

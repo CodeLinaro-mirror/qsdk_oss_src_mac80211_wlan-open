@@ -1918,7 +1918,7 @@ static void ath12k_core_wsi_remap_mlo_reconfig(struct ath12k_hw_group *ag)
 int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
-	int ret, i;
+	int ret, i, j;
 	struct ath12k *ar = NULL;
 	struct ath12k_bridge_iter bridge_iter = {};
 	u8 active_num_devices;
@@ -2028,6 +2028,23 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 			ab->wsi_remap_state = 0;
 			ath12k_info(ab, "WSI remap: Device re-addition completed\n");
 		}
+
+		/* DP MLO init has to be done post MLO ready event is received */
+		for (i = 0; i < ag->num_devices; i++) {
+			/* Assigning the current initialized soc which will be used
+			 * on error cleanup.
+			 */
+			j = i;
+			partner_ab = ag->ab[i];
+
+			if (partner_ab && partner_ab->dp && !partner_ab->is_bypassed) {
+				ret = ath12k_dp_arch_op_mlo_init(partner_ab->dp);
+				if (ret) {
+					ath12k_err(partner_ab, "DP MLO init failed");
+					goto err_dp_mlo_init;
+				}
+			}
+		}
 	}
 
 	if (ath12k_core_hw_group_start_ready(ag)) {
@@ -2051,6 +2068,16 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 
 out:
 	return 0;
+
+err_dp_mlo_init:
+	/* Do deinits only for the SOCs for which init was successful.
+	 * The failed soc's cleanup is taken care inside mlo_init itself.
+	 */
+	for (i = j - 1; i >= 0; i--) {
+		partner_ab = ag->ab[i];
+		if (partner_ab && partner_ab->dp && !partner_ab->is_bypassed)
+			ath12k_dp_arch_op_mlo_deinit(partner_ab->dp);
+	}
 
 err_core_stop:
 	for (i = ag->num_devices - 1; i >= 0; i--) {

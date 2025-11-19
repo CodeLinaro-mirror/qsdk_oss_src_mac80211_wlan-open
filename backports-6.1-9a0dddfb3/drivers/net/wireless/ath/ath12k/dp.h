@@ -454,6 +454,8 @@ struct rx_flow_info {
 struct ath12k_dp_arch_ops {
 	int (*dp_op_device_init)(struct ath12k_dp *dp);
 	void (*dp_op_device_deinit)(struct ath12k_dp *dp);
+	int (*dp_op_mlo_init)(struct ath12k_dp *dp);
+	void (*dp_op_mlo_deinit)(struct ath12k_dp *dp);
 	u32 (*dp_tx_get_vdev_bank_config)(struct ath12k_base *ab,
 					  struct ath12k_link_vif *arvif, bool vdev_id_check_en);
 	int (*dp_reo_cmd_send)(struct ath12k_base *ab,
@@ -858,6 +860,20 @@ static inline int ath12k_dp_arch_op_device_init(struct ath12k_dp *dp)
 static inline void ath12k_dp_arch_op_device_deinit(struct ath12k_dp *dp)
 {
 	dp->arch_ops->dp_op_device_deinit(dp);
+}
+
+static inline int ath12k_dp_arch_op_mlo_init(struct ath12k_dp *dp)
+{
+	if (dp->arch_ops->dp_op_mlo_init)
+		return dp->arch_ops->dp_op_mlo_init(dp);
+
+	return 0;
+}
+
+static inline void ath12k_dp_arch_op_mlo_deinit(struct ath12k_dp *dp)
+{
+	if (dp->arch_ops->dp_op_mlo_deinit)
+		dp->arch_ops->dp_op_mlo_deinit(dp);
 }
 
 static inline u32 ath12k_dp_arch_tx_get_vdev_bank_config(struct ath12k_dp *dp,
