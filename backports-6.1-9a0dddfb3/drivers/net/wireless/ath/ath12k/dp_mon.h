@@ -465,6 +465,9 @@ void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx);
 int ath12k_dp_mon_adj_frag_offset(struct sk_buff *skb, u8 idx, int offset);
 u32 ath12k_dp_mon_get_num_frags_in_fraglist(struct sk_buff *skb);
 u64 ath12k_get_timestamp_in_us(void);
+void ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
+				struct hal_rx_mon_ppdu_info *ppdu_info,
+				struct ieee80211_rx_status *rx_status);
 static inline
 int ath12k_dp_mon_rx_alloc(struct ath12k_dp *dp)
 {
