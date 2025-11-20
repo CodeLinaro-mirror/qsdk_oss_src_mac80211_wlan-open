@@ -18,6 +18,7 @@
 #include "dp_peer.h"
 #include "dp_ast.h"
 #include "dp_htt.h"
+#include "dp_tx_flow_info.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
@@ -124,6 +125,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 	ath12k_wifi8_dp_rx_ring_free(ab);
 	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
 	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
+	ath12k_wifi8_dp_tx_pool_destroy(dp->dp_hw_grp);
 }
 
 static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
@@ -235,9 +237,16 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_ast_table_cleanup;
 	}
 
-	ath12k_info(ab, "CUMAC init successful");
+	ret = ath12k_wifi8_dp_tx_pool_create(dp->dp_hw_grp);
+	if (ret) {
+		ath12k_warn(dp, "dp pool create for queues failed %d\n", ret);
+		goto fail_pn_counter_page_free;
+	}
 
+	ath12k_info(ab, "CUMAC init successful");
 	return 0;
+fail_pn_counter_page_free:
+	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
 
 fail_ast_table_cleanup:
 	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
