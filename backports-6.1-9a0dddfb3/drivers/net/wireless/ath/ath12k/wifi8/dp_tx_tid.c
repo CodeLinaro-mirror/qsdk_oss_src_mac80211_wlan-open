@@ -163,3 +163,30 @@ error:
 	*ptid = NULL;
 	return NULL;
 }
+
+//In the caller API, make sure tid.num_of_active_msdu_queues is zero if tid exists
+void ath12k_peer_free_tid(struct ath12k_dp_hw_group *dp_hw_grp,
+			  struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr,
+			  struct ath12k_dp_tx_tid_info *ptid)
+{
+	struct hal_tx_mpdu_queue_head *mpduq;
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+		ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+
+	if (!sw_mpduq_ptr)
+		goto tid_free;
+
+	spin_lock_bh(&dp_hw_grp_wifi8->tx_pool_lock);
+	mpduq = pool_node_from_id(dp_hw_grp_wifi8->mpduq_ctxt, sw_mpduq_ptr->mpduq_id);
+	ath12k_wifi8_hal_mpduq_set_invalid(dp_hw_grp, mpduq, sw_mpduq_ptr->mpdu_q_paddr);
+	sw_mpduq_ptr->mpduq_state = ATH12K_TX_Q_DELETED;
+	free_memory_pool(dp_hw_grp_wifi8->sw_mpduq_ctxt, sw_mpduq_ptr);
+	spin_unlock_bh(&dp_hw_grp_wifi8->tx_pool_lock);
+
+tid_free:
+	if (!ptid)
+		return;
+
+	ptid->tid_num = ATH12K_INVALID_TID;
+	ptid->peer_id = ATH12K_PEER_ID_INVALID;
+}

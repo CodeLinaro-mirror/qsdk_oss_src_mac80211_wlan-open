@@ -35,6 +35,7 @@ u8 ath12k_tx_get_bank_id(struct ath12k_dp_peer *peer,
 struct hal_txpt_classify_info *ath12k_get_txpt_info_ptr(struct ath12k_dp_peer *peer,
 							u8 bank_id, u8 tidpos);
 dma_addr_t ath12k_get_txpt_paddr(struct ath12k_dp_peer *peer, u8 bank_id, u8 tidpos);
+
 int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 				  struct ath12k_dp_peer *peer, u8 tid_num,
 				  enum ath12k_txpt_classify_flag flag, u8 flow_mask);
@@ -57,4 +58,9 @@ int ath12k_peer_alloc_hol_queues(struct ath12k_dp_hw_group *dp_hw_grp,
 struct hal_txpt_classify_info
 *ath12k_tx_alloc_mcast_flow_ptr(struct ath12k_dp_hw_group *dp_hw_grp,
 				struct ath12k_dp_peer *peer);
+void ath12k_tx_classify_info_free(struct ath12k_dp_hw_group *dp_hw_grp,
+				  struct hal_txpt_classify_info **tx_tid_ptr,
+				  dma_addr_t txpt_paddr);
+void ath12k_peer_free_static_queues(struct ath12k_dp_hw_group *dp_hw_grp,
+				    struct ath12k_dp_peer *peer);
 #endif
