@@ -566,11 +566,26 @@ out:
 void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 {
 	int i;
+
 #ifdef CONFIG_UPSTREAM_BUILD
 	struct target_mem_chunk *mem_chunk;
 #endif
 
 #ifndef CONFIG_UPSTREAM_BUILD
+
+#ifdef PLATFORM_SDX85
+	if (ab->dbg_qmi.qdss_mem_seg_len && ab->dbg_qmi.qdss_mem[0].v.ioaddr) {
+		dma_free_attrs(ab->dev,
+			       ab->dbg_qmi.qdss_mem[0].size,
+			       ab->dbg_qmi.qdss_mem[0].v.ioaddr,
+			       ab->dbg_qmi.qdss_mem[0].paddr,
+			       DMA_ATTR_FORCE_CONTIGUOUS);
+
+		ab->dbg_qmi.qdss_mem[0].v.ioaddr = NULL;
+		ab->dbg_qmi.qdss_mem[0].size = 0;
+		ab->dbg_qmi.qdss_mem[0].paddr = 0;
+	}
+#else
 	for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
 		if (ab->dbg_qmi.qdss_mem[i].v.ioaddr) {
 			iounmap(ab->dbg_qmi.qdss_mem[i].v.ioaddr);
@@ -579,6 +594,8 @@ void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 			ab->dbg_qmi.qdss_mem[i].paddr = 0;
 		}
 	}
+#endif
+
 #else
 	for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
 		mem_chunk = &ab->dbg_qmi.qdss_mem[i];
