@@ -89,7 +89,6 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 	u64 msdu_flow_dma_ptr = 0;
 	struct ath12k_dp_msdu_q_info *msdu_flow_ptr = NULL;
 	struct hal_txpt_classify_info *tx_tid_ptr = NULL;
-	struct device *dev;
 	struct hal_txpt_classify_data ti = {0};
 	u8 bank_id;
 	u8 tidno = (tid_num < NON_QOS_TID) ? tid_num : 0;
@@ -97,6 +96,7 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 	int requested = hweight8(flow_mask);
 	int success_count = 0;
 	enum ath12k_classify_bank_subid bank_sub_id;
+	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 
 	if (!peer)
 		return -EINVAL;
@@ -104,8 +104,6 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 	tx_flow_info = ath12k_dp_get_tx_flow_info_from_peer(peer);
 	if (!tx_flow_info)
 		return -ENOENT;
-
-	dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 
 	if (flow_mask == 0)
 		flow_mask |= (1 << HTT_TID_MSDUQ_UDP);
@@ -128,9 +126,10 @@ int ath12k_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 		if (!tx_tid_ptr || txpt_paddr == 0)
 			continue;
 
-		dma_sync_single_for_cpu(dev, txpt_paddr, ATH12K_SIZE_OF_TID_INFO,
-					DMA_BIDIRECTIONAL);
-
+		ath12k_core_dma_sync_single_for_cpu(dev,
+						    txpt_paddr,
+						    ATH12K_SIZE_OF_TID_INFO,
+						    DMA_BIDIRECTIONAL);
 		if (bank_sub_id == CLASSIFY_BANK_SUBID_UDP) {
 			/* Allocate and Initialize MSDU flow (UDP) */
 			if (ath12k_wifi8_hal_get_txpt_flow_ptr(tx_tid_ptr,
@@ -430,9 +429,10 @@ void ath12k_tx_classify_info_free(struct ath12k_dp_hw_group *dp_hw_grp,
 	if (!tx_tid_ptr || !(*tx_tid_ptr))
 		return;
 
-	dma_sync_single_for_cpu(dev, txpt_paddr,
-				ATH12K_SIZE_OF_TID_INFO,
-				DMA_BIDIRECTIONAL);
+	ath12k_core_dma_sync_single_for_cpu(dev,
+					    txpt_paddr,
+					    ATH12K_SIZE_OF_TID_INFO,
+					    DMA_BIDIRECTIONAL);
 	if (ath12k_wifi8_hal_get_txpt_flow_ptr(*tx_tid_ptr,
 					       HAL_CLASSIFY_BANK_SUBTYPE_UDP)) {
 		ti.msdu_paddr = 0;

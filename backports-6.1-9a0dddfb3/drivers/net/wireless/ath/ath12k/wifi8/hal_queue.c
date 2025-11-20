@@ -38,7 +38,8 @@ int ath12k_wifi8_hal_tx_msdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 		return -ENOMEM;
 	}
 
-	dma_sync_single_for_cpu(dev, ti->paddr, MSDU_STRUCT_SZ, DMA_BIDIRECTIONAL);
+	ath12k_core_dma_sync_single_for_cpu(dev, ti->paddr,
+					    MSDU_STRUCT_SZ, DMA_BIDIRECTIONAL);
 	if (ath12k_wifi8_hal_msduq_is_valid(msduq)) {
 		ath12k_err(ab, "MSDUQ flow %pK already valid\n", msduq);
 		ath12k_wifi8_hal_msduq_set_invalid(dp_hw_grp, msduq, ti->paddr);
@@ -85,8 +86,9 @@ int ath12k_wifi8_hal_tx_msdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 			le32_encode_bits(ATH12K_WIFI_DESC_HARD_DROP_THRESHOLD,
 					 HAL_TX_MSDU_FLOW_HARD_DROP_THRESHOLD);
 
-	dma_sync_single_for_device(dev, ti->paddr, MSDU_STRUCT_SZ,
-				   DMA_BIDIRECTIONAL);
+	ath12k_core_dma_sync_single_for_device(dev, ti->paddr,
+					       MSDU_STRUCT_SZ,
+					       DMA_BIDIRECTIONAL);
 
 	ath12k_dbg_dump(ab, ATH12K_DBG_HAL, NULL, "Hal MSDUQ setup:",
 			msduq, sizeof(*msduq));
@@ -111,7 +113,8 @@ int ath12k_wifi8_hal_tx_mpdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 		return -ENOMEM;
 	}
 
-	dma_sync_single_for_cpu(dev, ti->paddr, MPDU_STRUCT_SZ, DMA_BIDIRECTIONAL);
+	ath12k_core_dma_sync_single_for_cpu(dev, ti->paddr,
+					    MPDU_STRUCT_SZ, DMA_BIDIRECTIONAL);
 	if (ath12k_wifi8_hal_mpduq_is_valid(mpduq)) {
 		ath12k_err(ab, "MPDUQ flow %pK already valid\n", mpduq);
 		ath12k_wifi8_hal_mpduq_set_invalid(dp_hw_grp, mpduq, ti->paddr);
@@ -162,8 +165,9 @@ int ath12k_wifi8_hal_tx_mpdu_queue_setup(struct ath12k_dp_hw_group *dp_hw_grp,
 		       le32_encode_bits(ti->link_id1, HAL_TX_MPDU_QUEUE_HEAD_LINK1_ID) |
 		       le32_encode_bits(ti->link_id2, HAL_TX_MPDU_QUEUE_HEAD_LINK2_ID);
 
-	dma_sync_single_for_device(dev, ti->paddr, MPDU_STRUCT_SZ,
-				   DMA_BIDIRECTIONAL);
+	ath12k_core_dma_sync_single_for_device(dev, ti->paddr,
+					       MPDU_STRUCT_SZ,
+					       DMA_BIDIRECTIONAL);
 
 	ath12k_dbg_dump(ab, ATH12K_DBG_HAL, NULL, "Hal MPDUQ setup:",
 			mpduq, sizeof(*mpduq));
@@ -214,8 +218,9 @@ void ath12k_wifi8_hal_txpt_classify_info_setup(struct ath12k_dp_hw_group *dp_hw_
 			    le32_encode_bits(ti->metadata,
 					     HAL_TXPT_CLASSIFY_METADATA);
 
-	dma_sync_single_for_device(dev, ti->paddr, ATH12K_SIZE_OF_TID_INFO,
-				   DMA_BIDIRECTIONAL);
+	ath12k_core_dma_sync_single_for_device(dev, ti->paddr,
+					       ATH12K_SIZE_OF_TID_INFO,
+					       DMA_BIDIRECTIONAL);
 
 	ath12k_dbg_dump(ab, ATH12K_DBG_HAL, NULL, "Hal CLASSIFY INFO setup:",
 			tx_tid_ptr, sizeof(*tx_tid_ptr));
@@ -251,13 +256,16 @@ u32 ath12k_wifi8_hal_get_txpt_flow_ptr(struct hal_txpt_classify_info *tx_tid_ptr
 }
 
 void ath12k_wifi8_hal_msduq_set_invalid(struct ath12k_dp_hw_group *dp_hw_grp,
-					struct hal_tx_msdu_flow *msduq, dma_addr_t paddr)
+					struct hal_tx_msdu_flow *msduq,
+					dma_addr_t paddr)
 {
 	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 
 	msduq->info0 = le32_encode_bits(0, HAL_TX_MSDU_FLOW_FLOW_VALID);
-	dma_sync_single_for_device(dev, paddr, MSDU_STRUCT_SZ,
-				   DMA_BIDIRECTIONAL);
+
+	ath12k_core_dma_sync_single_for_device(dev, paddr,
+					       MSDU_STRUCT_SZ,
+					       DMA_BIDIRECTIONAL);
 }
 
 void ath12k_wifi8_hal_mpduq_set_invalid(struct ath12k_dp_hw_group *dp_hw_grp,
@@ -267,6 +275,7 @@ void ath12k_wifi8_hal_mpduq_set_invalid(struct ath12k_dp_hw_group *dp_hw_grp,
 	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 
 	mpduq->info2 = le32_encode_bits(0, HAL_TX_MPDU_QUEUE_HEAD_QUEUE_VALID);
-	dma_sync_single_for_device(dev, paddr, MPDU_STRUCT_SZ,
-				   DMA_BIDIRECTIONAL);
+	ath12k_core_dma_sync_single_for_device(dev, paddr,
+					       MPDU_STRUCT_SZ,
+					       DMA_BIDIRECTIONAL);
 }
