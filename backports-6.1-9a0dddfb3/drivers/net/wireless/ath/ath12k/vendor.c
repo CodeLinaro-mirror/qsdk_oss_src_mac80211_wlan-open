@@ -53,15 +53,14 @@ ath12k_cfg80211_afc_response_policy[QCA_WLAN_VENDOR_ATTR_AFC_RESP_MAX + 1] = {
 
 static const struct nla_policy
 ath12k_atf_offload_config_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1] = {
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_OPERATION] = {.type = NLA_U8},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_ID] = {.type = NLA_U8},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_CONFIG] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLED] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG] = {.type = NLA_NESTED },
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_CONFIG] = {.type = NLA_BINARY,
 							    .len = ATF_OFFLOAD_MAX_PAYLOAD},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG] = {.type = NLA_NESTED},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STATS_CONFIG] = {.type = NLA_U8},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STRICT_SCH_CONFIG] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_ENABLED] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STRICT_SCHEDULING_ENABLED] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VO_DEDICATED_TIME_CONFIG] = {.type = NLA_U16},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VI_DEDICATED_TIME_CONFIG] = {.type = NLA_U16},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_CONFIG] = {.type = NLA_NESTED},
@@ -72,42 +71,40 @@ ath12k_atf_offload_config_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1] = {
 
 static const struct nla_policy
 ath12k_vendor_atf_grouping_param_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_MAX + 1] = {
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX] = {.type = NLA_U32},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_AIRTIME_CONFIGURED] = {.type = NLA_U32},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_POLICY] = {.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_AIRTIME_CONFIGURED] = {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_POLICY] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS] = {.type = NLA_U16},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIGURED_PEERS] = {.type = NLA_U16},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS_AIRTIME]  = {
-		.type = NLA_U32},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS_AIRTIME]  = {.type = NLA_U16},
 };
 
 static const struct nla_policy
 ath12k_vendor_atf_offload_peer_config_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MAX + 1] = {
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUMBER_OF_PEERS] = {.type = NLA_U32},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_FULL_UPDATE] = {.type = NLA_FLAG},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MORE] = {.type = NLA_FLAG},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_PAYLOAD] = {.type = NLA_NESTED},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_FULL_UPDATE] = {.type = NLA_FLAG},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MORE] = {.type = NLA_FLAG},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_PAYLOAD] = {.type = NLA_NESTED},
 };
 
 static const struct nla_policy
-ath12k_vendor_atf_peer_param_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_MAX + 1] = {
+ath12k_vendor_atf_peer_param_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAX + 1] = {
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC] = {.type = NLA_BINARY,
-						      .len = ETH_ALEN},
+						       .len = ETH_ALEN},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME] = {.type = NLA_U16},
-	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX] = {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX] = {.type = NLA_U8},
 	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIGURED] = {.type = NLA_FLAG},
 };
 
 static const struct nla_policy
-ath12k_vendor_atf_offload_sched_duration_policy[QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION_MAX + 1] = {
-	[QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_AC] =  {.type = NLA_U16},
-	[QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION] = {.type = NLA_U16},
+ath12k_vendor_atf_offload_sched_duration_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_AC] =  {.type = NLA_U16},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION] = {.type = NLA_U16},
 };
 
 static const struct nla_policy
-ath12k_vendor_atf_offload_ssid_sched_policy[QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED_MAX + 1] = {
-	[QCA_WLAN_VENDOR_ATF_OFFLOAD_LINK_ID] = {.type = NLA_U8},
-	[QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED] = {.type = NLA_U8},
+ath12k_vendor_atf_offload_ssid_sched_policy[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_MAX + 1] = {
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_LINK_ID] = {.type = NLA_U8},
+	[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHEDULING] = {.type = NLA_U8},
 };
 
 static const struct nla_policy
@@ -5764,17 +5761,17 @@ static int ath12k_vendor_atf_offload_ssid_group_config(struct ath12k *ar,
 		}
 
 		group_info->group_id =
-			nla_get_u32(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX]);
+			(u32)nla_get_u8(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX]);
 		group_info->group_airtime =
-			nla_get_u32(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_AIRTIME_CONFIGURED]);
+			(u32)nla_get_u16(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_AIRTIME_CONFIGURED]);
 		group_info->group_policy =
-			nla_get_u32(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_POLICY]);
+			(u32)nla_get_u8(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_POLICY]);
 		group_info->unconfigured_peers =
-			nla_get_u16(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS]);
+			(u16)nla_get_u16(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS]);
 		group_info->configured_peers =
-			nla_get_u16(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIGURED_PEERS]);
+			(u16)nla_get_u16(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIGURED_PEERS]);
 		group_info->unconfigured_peers_airtime =
-			nla_get_u32(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS_AIRTIME]);
+			(u32)nla_get_u16(group[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS_AIRTIME]);
 	}
 	ar->atf_table.total_groups = i;
 
@@ -5864,10 +5861,11 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 {
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MAX + 1];
 	struct nlattr *peer_attr;
-	struct nlattr *peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_MAX + 1];
+	struct nlattr *peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAX + 1];
 	struct ath12k_atf_peer_params atf_peer_param = {0};
 	struct ath12k_atf_peer_info *peer_info;
-	int ret, rem, num_peers = 0;
+	int ret, rem;
+	u32 num_peers = 0;
 
 	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MAX,
 			       peer_config,
@@ -5877,22 +5875,23 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 		return ret;
 	}
 
-	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUMBER_OF_PEERS]) {
-		ath12k_err(ar->ab, "ATF: Number of peers is missing");
-		return -EINVAL;
-	}
-	atf_peer_param.num_peers =
-		nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUMBER_OF_PEERS]);
-
-	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_PAYLOAD]) {
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_PAYLOAD]) {
 		ath12k_err(ar->ab, "ATF: Peer payload is missing");
 		return -EINVAL;
 	}
 
-	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_FULL_UPDATE])
+	nla_for_each_nested(peer_attr,
+			    tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_PAYLOAD],
+			    rem) {
+		num_peers++;
+	}
+
+	atf_peer_param.num_peers = num_peers;
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_FULL_UPDATE])
 		atf_peer_param.atf_flags = FIELD_PREP(WMI_ATF_FULL_UPDATE, 1);
 
-	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MORE])
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MORE])
 		atf_peer_param.atf_flags = atf_peer_param.atf_flags |
 					   FIELD_PREP(WMI_ATF_PEER_PENDING, 1);
 
@@ -5908,10 +5907,11 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 		return -ENOMEM;
 	}
 
+	num_peers = 0;
 	nla_for_each_nested(peer_attr,
-			    tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_PAYLOAD],
+			    tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_PAYLOAD],
 			    rem) {
-		ret = nla_parse_nested(peer, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_MAX,
+		ret = nla_parse_nested(peer, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAX,
 				       peer_attr, ath12k_vendor_atf_peer_param_policy, NULL);
 		if (ret) {
 			ath12k_warn(ar->ab, "ATF: Peer payload is invalid");
@@ -5930,11 +5930,12 @@ static int ath12k_vendor_atf_offload_peer_config(struct ath12k *ar,
 
 
 		memcpy(peer_info[num_peers].peer_macaddr,
-		       nla_data(peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC]), ETH_ALEN);
+				nla_data(peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC]),
+					 ETH_ALEN);
 		peer_info[num_peers].percentage_peer =
 			nla_get_u16(peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME]);
 		peer_info[num_peers].group_index =
-			nla_get_u16(peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX]);
+			(u16)nla_get_u8(peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX]);
 		if (peer[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIGURED])
 			peer_info[num_peers].explicit_peer_flag = 1;
 		else
@@ -6173,11 +6174,11 @@ static void ath12k_atf_offload_print_stats(struct timer_list *t)
 static int ath12k_vendor_offload_sched_duration_config(struct ath12k *ar,
 						       struct nlattr *sched_duration_param)
 {
-	struct nlattr *tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION_MAX + 1];
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_MAX + 1];
 	int ret;
 	u32 ac, duration, pdev_id = ar->pdev->pdev_id, value;
 
-	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION_MAX,
+	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_MAX,
 			       sched_duration_param,
 			       ath12k_vendor_atf_offload_sched_duration_policy, NULL);
 	if (ret) {
@@ -6185,8 +6186,8 @@ static int ath12k_vendor_offload_sched_duration_config(struct ath12k *ar,
 		return ret;
 	}
 
-	ac = nla_get_u16(tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_AC]);
-	duration = nla_get_u16(tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION]);
+	ac = nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_AC]);
+	duration = nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION]);
 
 	value = ((ac << 30) & GENMASK(31, 30)) | (duration & GENMASK(29, 0));
 	ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ATF_SCHED_DURATION,
@@ -6204,14 +6205,14 @@ static int ath12k_vendor_offload_ssid_scheduling_config(struct ieee80211_hw *hw,
 							struct wireless_dev *wdev,
 							struct nlattr *ssid_sched_param)
 {
-	struct nlattr *tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED_MAX + 1];
+	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_MAX + 1];
 	int ret;
 	u8 ssid_cheduling, link_id = 0;
 	struct ath12k_vif *ahvif;
 	struct ath12k_link_vif *arvif;
 	struct ieee80211_vif *vif;
 
-	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED_MAX,
+	ret = nla_parse_nested(tb, QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_MAX,
 			       ssid_sched_param,
 			       ath12k_vendor_atf_offload_ssid_sched_policy, NULL);
 	if (ret) {
@@ -6219,10 +6220,10 @@ static int ath12k_vendor_offload_ssid_scheduling_config(struct ieee80211_hw *hw,
 		return ret;
 	}
 
-	if (tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_LINK_ID])
-		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_LINK_ID]);
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_LINK_ID])
+		link_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_LINK_ID]);
 
-	ssid_cheduling = nla_get_u8(tb[QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED]);
+	ssid_cheduling = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHEDULING]);
 
 	vif = wdev_to_ieee80211_vif(wdev);
 	if (!vif)
@@ -6273,12 +6274,12 @@ static int ath12k_vendor_atf_stats_dumpit(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
-	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_ID]) {
-		ath12k_err(NULL, "ATF: Missing radio ID in ATF stats view\n");
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX]) {
+		ath12k_err(NULL, "ATF: Missing radio index in ATF stats view\n");
 		return -EINVAL;
 	}
 
-	radio_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_ID]);
+	radio_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX]);
 	ar = ath12k_ah_to_ar(ah, radio_id);
 	if (!ar)
 		return -ENODEV;
@@ -6389,7 +6390,7 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 	struct ath12k_hw *ah = hw->priv;
 	struct ath12k *ar;
 	struct nlattr *tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX + 1];
-	u8 config_type, radio_id, atf_enable, atf_strict_scheduling;
+	u8 radio_id, atf_enable, atf_strict_scheduling;
 	u16 vo_dedicated_time, vi_dedicated_time;
 	int ret;
 
@@ -6400,28 +6401,16 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 		return -EINVAL;
 	}
 
-	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_OPERATION]) {
-		ath12k_err(NULL, "ATF config command missing\n");
+	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX]) {
+		ath12k_err(NULL, "ATF: Missing radio index in ATF config\n");
 		return -EINVAL;
 	}
-	config_type = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_OPERATION]);
-
-	if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_ID]) {
-		ath12k_err(NULL, "ATF config command missing\n");
-		return -EINVAL;
-	}
-	radio_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_ID]);
+	radio_id = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX]);
 
 	ar = ath12k_ah_to_ar(ah, radio_id);
 
-	switch (config_type) {
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_ENABLE_DISABLE:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_CONFIG]) {
-			ath12k_err(NULL, "ATF enable config missing\n");
-			return -EINVAL;
-		}
-		atf_enable = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_CONFIG]);
-
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLED]) {
+		atf_enable = nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLED]);
 		ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ATF_DYNAMIC_ENABLE,
 						atf_enable, ar->pdev->pdev_id);
 		if (ret) {
@@ -6431,52 +6420,44 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 			return ret;
 		}
 		ar->commitatf = atf_enable;
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_GROUP:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG]) {
-			ath12k_err(NULL, "ATF SSID grouping config missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG]) {
 		ret = ath12k_vendor_atf_offload_ssid_group_config(ar, tb);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to set SSID config\n");
 			return ret;
 		}
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_WMM_AC:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_CONFIG]) {
-			ath12k_err(NULL, "ATF WMM AC config missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_CONFIG]) {
 		ret = ath12k_vendor_atf_offload_wmm_ac_config(ar, tb);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to set WMM AC config\n");
 			return ret;
 		}
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG]) {
-			ath12k_err(NULL, "ATF peer request config missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG]) {
 		ret = ath12k_vendor_atf_offload_peer_config(ar,
 							    tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG]);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to set peer config\n");
 			return ret;
 		}
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_STATS_ENABLE_DISABLE:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STATS_CONFIG]) {
-			ath12k_err(NULL, "ATF stats config missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_ENABLED]) {
 		ar->atf_stats_enable =
-			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STATS_CONFIG]);
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_ENABLED]);
 
 		if (timer_pending(&ar->atf_stats_timer)) {
 			del_timer_sync(&ar->atf_stats_timer);
-			break;
+			return 0;
 		}
 
 		if (ar->atf_stats_enable) {
@@ -6487,14 +6468,12 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 			mod_timer(&ar->atf_stats_timer, jiffies +
 				  (ar->atf_stats_timeout * HZ));
 		}
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_STRICT_SCH:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STRICT_SCH_CONFIG]) {
-			ath12k_err(NULL, "ATF strict scheduling config missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STRICT_SCHEDULING_ENABLED]) {
 		atf_strict_scheduling =
-			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STRICT_SCH_CONFIG]);
+			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STRICT_SCHEDULING_ENABLED]);
 
 		ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ATF_STRICT_SCH,
 						atf_strict_scheduling, ar->pdev->pdev_id);
@@ -6505,12 +6484,10 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 			return ret;
 		}
 		ar->atf_strict_scheduling = atf_strict_scheduling;
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_VO_TIME:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VO_DEDICATED_TIME_CONFIG]) {
-			ath12k_err(NULL, "ATF vo dedicated time config missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VO_DEDICATED_TIME_CONFIG]) {
 		vo_dedicated_time = nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VO_DEDICATED_TIME_CONFIG]);
 
 		ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_ATF_VO_DEDICATED_TIME,
@@ -6519,12 +6496,10 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 			ath12k_warn(ar->ab, "failed to set vo_dedicated_time  %d\n", ret);
 			return ret;
 		}
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_VI_TIME:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VI_DEDICATED_TIME_CONFIG]) {
-			ath12k_err(NULL, "ATF vi dedicated time config missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VI_DEDICATED_TIME_CONFIG]) {
 		vi_dedicated_time =
 			nla_get_u16(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VI_DEDICATED_TIME_CONFIG]);
 
@@ -6534,46 +6509,39 @@ ath12k_vendor_atf_offload_config_handler(struct wiphy *wiphy,
 			ath12k_warn(ar->ab, "failed to set vi_dedicated_time  %d\n", ret);
 			return ret;
 		}
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_CONFIG]) {
-			ath12k_err(NULL, "ATF schedule duration config missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_CONFIG]) {
 		ret = ath12k_vendor_offload_sched_duration_config(ar,
 								  tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_CONFIG]);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to set ATF schedule duration\n");
 			return ret;
 		}
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHEDULING:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY]) {
-			ath12k_err(NULL, "ATF ssid scheduling config missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY]) {
 		ret = ath12k_vendor_offload_ssid_scheduling_config(hw, ar, wdev,
 								   tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY]);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to set ATF ssid scheduling\n");
 			return ret;
 		}
-		break;
-	case QCA_WLAN_VENDOR_ATF_OFFLOAD_STATS_TIME_OUT:
-		if (!tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT]) {
-			ath12k_err(NULL, "ATF: ATF stats timeout parameter is missing\n");
-			return -EINVAL;
-		}
+		return 0;
+	}
+
+	if (tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT]) {
 		ar->atf_stats_timeout =
 			nla_get_u8(tb[QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT]);
 		ath12k_atf_offload_set_atf_stats_timeout(ar);
-		break;
-	default:
-		ath12k_err(NULL, "Invalid operation with ATF offload commands\n");
-		ret = -EINVAL;
+		return 0;
 	}
 
-	return ret;
+	ath12k_err(NULL, "Invalid or missing ATF offload attributes\n");
+	return -EINVAL;
+
 }
 
 static int ath12k_vendor_parse_rm(struct wiphy *wiphy, struct wireless_dev *wdev,
