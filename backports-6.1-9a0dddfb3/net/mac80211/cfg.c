@@ -129,6 +129,8 @@ static int ieee80211_set_mon_options(struct ieee80211_sub_if_data *sdata,
 			ieee80211_adjust_monitor_flags(sdata, 1);
 
 			ieee80211_configure_filter(local);
+			drv_set_monitor(sdata->local, &sdata->vif,
+					sdata->u.mntr.flags);
 		} else {
 			/*
 			 * Because the interface is down, ieee80211_do_stop

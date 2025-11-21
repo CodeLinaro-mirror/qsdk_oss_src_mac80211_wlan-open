@@ -596,6 +596,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 		}
 
 		ieee80211_adjust_monitor_flags(sdata, -1);
+		drv_set_monitor(local, &sdata->vif, 0);
 		break;
 	case NL80211_IFTYPE_NAN:
 		/* clean all the functions */
@@ -1137,7 +1138,6 @@ void ieee80211_adjust_monitor_flags(struct ieee80211_sub_if_data *sdata,
 	ADJUST(OTHER_BSS, other_bss);
 	if (!(flags & MONITOR_FLAG_SKIP_TX))
 		local->tx_mntrs += offset;
-
 #undef ADJUST
 }
 
@@ -1457,6 +1457,7 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 
 		ieee80211_adjust_monitor_flags(sdata, 1);
 		ieee80211_configure_filter(local);
+		drv_set_monitor(local, &sdata->vif, sdata->u.mntr.flags);
 		ieee80211_recalc_offload(local);
 		ieee80211_recalc_idle(local);
 

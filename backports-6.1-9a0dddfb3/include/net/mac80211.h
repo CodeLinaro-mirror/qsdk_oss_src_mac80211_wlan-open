@@ -3749,6 +3749,28 @@ void ieee80211_purge_tx_queue(struct ieee80211_hw *hw,
  */
 
 /**
+ * DOC: Monitor mode control
+ * mac80211 provides fine-grained control over monitor mode
+ * behavior through the set_monitor_flags() callback.
+ *
+ * The flags parameter contains monitor flags from enum nl80211_mntr_flags,
+ * which control various aspects of frame capture. Two key flags are:
+ *
+ * - NL80211_MNTR_FLAG_SKIP_TX: When set, local TX packets are not
+ *   passed to the monitor interface. This allows selective monitoring
+ *   of received frames only.
+ *
+ * - NL80211_MNTR_FLAG_SKIP_RX: When set, local RX packets are not
+ *   passed to the monitor interface. This allows selective monitoring
+ *   of transmitted frames only.
+ *
+ * The driver configures its hardware/firmware to honor these
+ * flags when operating in monitor mode. This callback is invoked when
+ * userspace modifies monitor flags via nl80211, allowing the driver
+ * to enable or disable full monitor mode for TX and RX independently.
+ */
+
+/**
  * DOC: Frame filtering
  *
  * mac80211 requires to see many management frames for proper
@@ -4658,6 +4680,8 @@ struct ieee80211_ppe_vp_ds_params {
  *	just "paused" for scanning/ROC, which is indicated by the beacon being
  *	disabled/enabled via @bss_info_changed.
  * @stop_ap: Stop operation on the AP interface.
+ * @set_monitor_flags: Enables or disables TX and RX monitor mode in userspace
+ *      via NL commands.
  *
  * @reconfig_complete: Called after a call to ieee80211_restart_hw() and
  *	during resume, when the reconfiguration has completed.
@@ -4866,7 +4890,9 @@ struct ieee80211_ops {
 			struct ieee80211_bss_conf *link_conf);
 	void (*stop_ap)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			struct ieee80211_bss_conf *link_conf);
-
+	int (*set_monitor_flags)(struct ieee80211_hw *hw,
+				 struct ieee80211_vif *vif,
+				 u32 flags);
 	u64 (*prepare_multicast)(struct ieee80211_hw *hw,
 				 struct netdev_hw_addr_list *mc_list);
 	void (*configure_filter)(struct ieee80211_hw *hw,
