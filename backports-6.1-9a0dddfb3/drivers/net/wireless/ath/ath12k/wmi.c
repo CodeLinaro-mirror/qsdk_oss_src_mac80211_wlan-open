@@ -8767,6 +8767,9 @@ static void ath12k_update_cu_params(struct ath12k_base *ab,
 		for_each_ar(ah, ar, j) {
 			ar = &ah->radio[j];
 
+			if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))
+				continue;
+
 			pos = 0;
 			for (i = 0; i < ar->num_created_vdevs; i++) {
 				if (!ath12k_get_ar_next_vdev_pos(ar, &pos)) {
@@ -8775,7 +8778,7 @@ static void ath12k_update_cu_params(struct ath12k_base *ab,
 				}
 				vdev_id = pos;
 				pos++;
-				spin_lock_bh(&ar->ab->base_lock);
+				spin_lock_bh(&ar->data_lock);
 				list_for_each_entry_safe(arvif, tmp, &ar->arvifs, list) {
 					if (arvif->vdev_id != vdev_id ||
 					    ath12k_mac_is_bridge_vdev(arvif))
@@ -8794,7 +8797,7 @@ static void ath12k_update_cu_params(struct ath12k_base *ab,
 						break;
 					}
 				}
-				spin_unlock_bh(&ar->ab->base_lock);
+				spin_unlock_bh(&ar->data_lock);
 			}
 		}
 	}
