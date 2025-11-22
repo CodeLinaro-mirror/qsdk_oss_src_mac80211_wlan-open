@@ -272,12 +272,9 @@ static ssize_t athdbg_qdss_collect_write(struct file *file,
 {
 	struct ath12k_base *ab = file->private_data;
 	struct athdbg_request *dbg_req;
-	struct ath12k_pdev *pdev;
-	struct ath12k *ar;
 	char buf[128] = {0};
-	bool radioup = false;
 	u32 val;
-	int ret = 0, i;
+	int ret = 0;
 
 	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
 	if (ret <= 0) {
@@ -307,22 +304,16 @@ static ssize_t athdbg_qdss_collect_write(struct file *file,
 		return -EINVAL;
 	}
 
-	for (i = 0; i < ab->num_radios; i++) {
-		pdev = &ab->pdevs[i];
-		ar = pdev->ar;
-		if (ar && ar->ah->state == ATH12K_HW_STATE_ON) {
-			radioup = true;
-			break;
-		}
-	}
-
-	if (!radioup && !(ab->fw_mode == ATH12K_FIRMWARE_MODE_FTM)) {
-		pr_err("radio is not up\n");
-		return -ENETDOWN;
-	}
-
-	if (!ab->is_qdss_tracing)
+	if (!ab->is_qdss_tracing) {
+		pr_err("QDSS tracing is not enabled\n");
 		return count;
+	}
+
+	/* Verify firmware is ready to accept QDSS commands */
+	if (!test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags)) {
+		pr_err("Firmware not ready for QDSS collection\n");
+		return -EAGAIN;
+	}
 
 	if (!val)
 		return ret;

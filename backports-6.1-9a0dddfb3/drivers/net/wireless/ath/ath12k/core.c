@@ -1777,12 +1777,6 @@ core_pdev_create:
 		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 #endif
 
-#ifdef CPTCFG_ATHDEBUG
-		if (ab->hw_params->en_qdsslog) {
-			ath12k_info(ab, "QDSS trace enabled\n");
-			athdbg_if_get_service(ab, ATHDBG_SRV_CONFIG_QDSS);
-		}
-#endif
 		ret = ath12k_core_rfkill_config(ab);
 		if (ret && ret != -EOPNOTSUPP) {
 			mutex_unlock(&ab->core_lock);
@@ -1829,6 +1823,7 @@ err_mac_destroy:
 static int ath12k_core_start_firmware(struct ath12k_base *ab,
 				      enum ath12k_firmware_mode mode)
 {
+	int qdss_ret;
 	int ret;
 
 	ath12k_ce_get_shadow_config(ab, &ab->qmi.ce_cfg.shadow_reg_v3,
@@ -1844,6 +1839,24 @@ static int ath12k_core_start_firmware(struct ath12k_base *ab,
 	if (ret)
 		ath12k_err(ab, "failed to configure IOCoherency: %d\n", ret);
 #endif
+
+	/*
+	 * Configure QDSS tracing immediately after QMI-driven firmware start.
+	 * At this point the FW is responsive to QMI and can accept QDSS
+	 * configuration in both Mission and FTM modes.
+	 */
+#ifdef CPTCFG_ATHDEBUG
+	if (ab->hw_params->en_qdsslog) {
+		ath12k_info(ab, "QDSS trace enabled\n");
+		qdss_ret = athdbg_if_get_service(ab, ATHDBG_SRV_CONFIG_QDSS);
+		if (qdss_ret < 0) {
+			ath12k_err(ab, "failed to configure QDSS tracing: %d\n",
+				   qdss_ret);
+			ab->is_qdss_tracing = false;
+		}
+	}
+#endif
+
 	return ret;
 }
 
