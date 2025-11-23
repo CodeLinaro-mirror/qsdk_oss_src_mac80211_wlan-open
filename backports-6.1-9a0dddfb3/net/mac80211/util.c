@@ -3887,6 +3887,58 @@ u64 ieee80211_calculate_rx_timestamp(struct ieee80211_local *local,
 	return ts;
 }
 
+/**
+ * ieee80211_release_monitor_chandef() - Release monitor VAP on a given channel
+ * @wiphy:    wiphy associated with the hardware.
+ * @ctx:      channel context whose assigned links are scanned for a monitor
+ *            interface operating on @chandef.
+ * @chandef:  operating channel definition.
+ *
+ * Iterate over links assigned to @ctx and release the first monitor interface
+ * whose operating channel matches @chandef. Releasing the monitor link before
+ * the AP link.
+ *
+ * The helper performs only local inspection and link release; it does not
+ * persist references beyond the call. Callers must ensure the wiphy mutex is
+ * held across the entire operation to keep @ctx and its lists stable.
+ *
+ * Context: Process context. Expects wiphy mutex (&wiphy->mtx) to be held by
+ *          the caller. Does not sleep beyond what link release paths may
+ *          internally do under the same locking rules.
+ * Return: None.
+ */
+static void
+ieee80211_release_monitor_chandef(struct wiphy *wiphy,
+				   struct ieee80211_chanctx *ctx,
+				   const struct cfg80211_chan_def *chandef)
+{
+	struct ieee80211_link_data *tmp_link;
+
+	lockdep_assert_wiphy(wiphy);
+
+	list_for_each_entry(tmp_link, &ctx->assigned_links,
+			    assigned_chanctx_list) {
+		struct ieee80211_sub_if_data *tmp_sdata;
+		struct ieee80211_chan_req *tmp_chan;
+		struct ieee80211_bss_conf *tmp_conf;
+
+		tmp_sdata = tmp_link->sdata;
+		if (!tmp_sdata)
+			continue;
+
+		if (tmp_sdata->wdev.iftype != NL80211_IFTYPE_MONITOR)
+			continue;
+
+		tmp_chan = &tmp_sdata->vif.bss_conf.chanreq;
+		tmp_conf = tmp_sdata->deflink.conf;
+		if (rcu_access_pointer(tmp_conf->chanctx_conf) &&
+		    cfg80211_chandef_identical(&tmp_chan->oper, chandef)) {
+			ieee80211_link_release_channel(&tmp_sdata->deflink);
+			break;
+		}
+	}
+}
+
 /* Cancel CAC for the interfaces under the specified @local. If @ctx is
  * also provided, only the interfaces using that ctx will be canceled.
  */
@@ -3896,25 +3948,45 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local)
 	struct cfg80211_chan_def chandef;
 	struct ieee80211_link_data *link;
 	unsigned int link_id;
+	struct wiphy *wiphy = local->hw.wiphy;
 
-	lockdep_assert_wiphy(local->hw.wiphy);
+	lockdep_assert_wiphy(wiphy);
 
 	list_for_each_entry(sdata, &local->interfaces, list) {
 		for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS;
 		     link_id++) {
+			struct ieee80211_chanctx *curr_ctx;
+			struct ieee80211_chanctx_conf *conf;
+
 			link = sdata_dereference(sdata->link[link_id],
 						 sdata);
 			if (!link)
 				continue;
 
 			hrtimer_cancel(&link->dfs_cac_timer);
-			wiphy_work_cancel(local->hw.wiphy,
-						  &link->dfs_cac_timer_work);
+			wiphy_work_cancel(wiphy, &link->dfs_cac_timer_work);
 
 			if (!sdata->wdev.links[link_id].cac_started)
 				continue;
 
 			chandef = link->conf->chanreq.oper;
+			conf = rcu_dereference_protected(link->conf->chanctx_conf,
+							 lockdep_is_held(&wiphy->mtx));
+			if (conf) {
+				curr_ctx = container_of(conf,
+							struct ieee80211_chanctx, conf);
+			} else {
+				sdata_info(sdata,
+					   "Unable to get current channel context for chan: %d\n",
+					   chandef.chan->center_freq);
+				return;
+			}
+
+			/*
+			 * Release monitor VAP first to avoid
+			 * channel change in radar channel
+			 */
+			ieee80211_release_monitor_chandef(wiphy, curr_ctx, &chandef);
 			ieee80211_link_release_channel(link);
 			cfg80211_cac_event(sdata->dev, &chandef,
 					   NL80211_RADAR_CAC_ABORTED,
