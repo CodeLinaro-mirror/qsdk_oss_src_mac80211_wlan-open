@@ -1093,6 +1093,15 @@ static void ath12k_htt_mlo_offset_event_handler(struct ath12k_base *ab,
 	for (i = 0; i < ag->num_devices; i++) {
 		struct ath12k_base *tmp_ab = ag->ab[i];
 
+		/* Skip MLO offset processing during recovery to avoid NOC errors.
+		 * PMM registers are not accessible during chip recovery, and accessing
+		 * them causes NOC bus errors. MLO timestamp synchronization will resume
+		 * after recovery completes.
+		 */
+		if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &tmp_ab->dev_flags) ||
+		    test_bit(ATH12K_FLAG_RECOVERY, &tmp_ab->dev_flags))
+			continue;
+
 		for (j = 0; j < tmp_ab->num_radios; j++) {
 			struct ath12k *tmp_ar;
 
