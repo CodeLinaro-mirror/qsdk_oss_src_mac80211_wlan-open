@@ -67,8 +67,9 @@ void ath11k_debugfs_sta_add_tx_stats(struct ath11k_sta *arsta,
 	    gi < 0 || gi >= ATH11K_GI_NUM ||
 	    bw < 0 || bw >= ATH11K_BW_NUM ||
 	    idx < 0 || idx >= ATH11K_TX_RATE_TABLE_11AX_NUM) {
-	    ath11k_err(ab, "tx_stats: invalid mcs %d nss %d gi %d bw %d idx %d (out of bounds)",
-			    mcs, nss, gi, bw, idx);
+	    ath11k_dbg(ab, ATH11K_DBG_PEER,
+		       "tx_stats: invalid mcs %d nss %d gi %d bw %d idx %d (out of bounds)",
+			mcs, nss, gi, bw, idx);
 	    return;
 	}
 #define STATS_OP_FMT(name) tx_stats->stats[ATH11K_STATS_TYPE_##name]
