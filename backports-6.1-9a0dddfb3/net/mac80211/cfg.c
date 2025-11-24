@@ -3223,6 +3223,8 @@ static int ieee80211_set_txq_params(struct wiphy *wiphy,
 	p.cw_max = params->cwmax;
 	p.cw_min = params->cwmin;
 	p.txop = params->txop;
+	p.acm = params->acm;
+	p.noack = params->noack;
 
 	/*
 	 * Setting tx queue params disables u-apsd because it's only

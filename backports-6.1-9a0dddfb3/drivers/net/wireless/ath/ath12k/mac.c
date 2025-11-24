@@ -14248,6 +14248,8 @@ int ath12k_mac_conf_tx(struct ath12k_link_vif *arvif, u16 ac,
 	p->cwmax = params->cw_max;
 	p->aifs = params->aifs;
 	p->txop = params->txop;
+	p->acm = params->acm;
+	p->no_ack = params->noack;
 
 	ret = ath12k_wmi_send_wmm_update_cmd(ar, arvif->vdev_id,
 					     &arvif->wmm_params);
