@@ -2366,6 +2366,20 @@ static int ath12k_reset_nrp_filter(struct ath12k *ar,
 	return ret;
 }
 
+static int ath12k_reset_smart_mon_filter(struct ath12k *ar,
+					 bool reset)
+{
+	int ret = 0;
+
+	ath12k_dp_mon_rx_smart_mon_config(ar, reset);
+	ret = ath12k_dp_mon_rx_update_filter(ar);
+	if (ret) {
+		ath12k_err(ar->ab,
+			   "failed to setup filter for monitor buf %d\n", ret);
+	}
+	return ret;
+}
+
 void ath12k_debugfs_nrp_cleanup_all(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
@@ -2415,7 +2429,10 @@ void ath12k_debugfs_nrp_clean(struct ath12k *ar, const u8 *addr)
 	if (!num_nrp) {
 		debugfs_remove_recursive(ar->debug.debugfs_nrp);
 		ar->debug.debugfs_nrp = NULL;
-		ath12k_reset_nrp_filter(ar, true);
+		if (!ath12k_dp_smart_mon_enabled(ar))
+			ath12k_reset_nrp_filter(ar, true);
+		else
+			ath12k_reset_smart_mon_filter(ar, true);
 	}
 }
 
@@ -2497,6 +2514,7 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 	int action = 0, num_nrp;
 	ssize_t rc = 0;
 	bool del_nrp = false;
+	bool smart_mon_enabled = false;
 
 	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -2626,17 +2644,30 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 			}
 		}
 
-		list_for_each_entry(arvif, &ar->arvifs, list) {
-			if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
-			    arvif->is_started) {
-				nrp->vdev_id = arvif->vdev_id;
-				break;
+		if (ar->monitor_started)
+			smart_mon_enabled = ath12k_dp_smart_mon_enabled(ar);
+
+		if (!smart_mon_enabled) {
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+				    arvif->is_started) {
+					nrp->vdev_id = arvif->vdev_id;
+					break;
+				}
+			}
+		} else {
+			list_for_each_entry(arvif, &ar->arvifs, list) {
+				if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR &&
+				    arvif->is_started) {
+					nrp->vdev_id = arvif->vdev_id;
+					break;
+				}
 			}
 		}
 
 		if (nrp->vdev_id < 0) {
 			ath12k_warn(ab,
-				    "AP vap is not up, can't add this NRP mac: %pM\n",
+				    "AP vap is not up, can't add this neighbor peer: %pM\n",
 				    mac);
 			kfree(nrp);
 			ret = -EINVAL;
@@ -2667,7 +2698,10 @@ static ssize_t ath12k_write_nrp_mac(struct file *file,
 				ret = -ENOENT;
 				goto err_free;
 			}
-			ath12k_reset_nrp_filter(ar, false);
+			if (!smart_mon_enabled)
+				ath12k_reset_nrp_filter(ar, false);
+			else
+				ath12k_reset_smart_mon_filter(ar, false);
 		}
 		spin_lock_bh(&dp->dp_lock);
 		list_add_tail(&nrp->list, &dp->neighbor_peers);
