@@ -2745,6 +2745,83 @@ static const struct file_operations fops_write_nrp_mac = {
 	.open = simple_open,
 };
 
+static ssize_t ath12k_write_smart_mon_filter(struct file *file,
+					     const char __user *ubuf,
+					     size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	u8 filter_value;
+	int ret;
+
+	if (kstrtou8_from_user(ubuf, count, 0, &filter_value))
+		return -EINVAL;
+
+	/* Validate filter value (4-bit field: 0x0 to 0xF) */
+	if (filter_value > 0xF) {
+		ath12k_err(ar->ab, "Invalid smart_mon_filter value: 0x%x (valid range: 0x0-0xF)\n",
+			   filter_value);
+		return -EINVAL;
+	}
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	ath12k_dp_smart_mon_filter_type_set(ar, filter_value);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		   "smart_mon_filter set to 0x%x (V:%d D:%d M:%d C:%d)\n",
+		   filter_value,
+		   u32_get_bits(filter_value, SMART_MON_FILTER_V),
+		   u32_get_bits(filter_value, SMART_MON_FILTER_D),
+		   u32_get_bits(filter_value, SMART_MON_FILTER_M),
+		   u32_get_bits(filter_value, SMART_MON_FILTER_C));
+
+	ret = count;
+
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+	return ret;
+}
+
+static ssize_t ath12k_read_smart_mon_filter(struct file *file,
+					    char __user *ubuf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k *ar = file->private_data;
+	char buf[128] = {0};
+	int len = 0;
+	u8 filter_value;
+
+	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
+
+	ath12k_dp_smart_mon_filter_type_get(ar, &filter_value);
+
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "smart_mon_filter: 0x%x\n", filter_value);
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "  Valid bit (V): %d\n", u32_get_bits(filter_value,
+							       SMART_MON_FILTER_V));
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "  Data filter (D): %d\n", u32_get_bits(filter_value,
+								 SMART_MON_FILTER_D));
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "  Mgmt filter (M): %d\n", u32_get_bits(filter_value,
+								 SMART_MON_FILTER_M));
+	len += scnprintf(buf + len, sizeof(buf) - len,
+			 "  Ctrl filter (C): %d\n", u32_get_bits(filter_value,
+								 SMART_MON_FILTER_C));
+
+	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
+
+	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_smart_mon_filter = {
+	.read = ath12k_read_smart_mon_filter,
+	.write = ath12k_write_smart_mon_filter,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static int ath12k_open_link_stats(struct inode *inode, struct file *file)
 {
 	struct ath12k_vif *ahvif = inode->i_private;
@@ -6354,6 +6431,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("neighbor_peer", 0644,
 			    ar->debug.debugfs_pdev, ar,
 			    &fops_write_nrp_mac);
+
+	debugfs_create_file("smart_mon_filter", 0644,
+			    ar->debug.debugfs_pdev, ar,
+			    &fops_smart_mon_filter);
 
 	debugfs_create_file("qos_map_set", 0600, ar->debug.debugfs_pdev, ar,
 			    &fops_qos_map_set);

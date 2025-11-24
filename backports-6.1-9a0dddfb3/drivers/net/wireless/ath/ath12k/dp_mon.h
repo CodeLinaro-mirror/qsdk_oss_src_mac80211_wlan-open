@@ -62,6 +62,8 @@
 #define DP_MON_RXDMA_BUF_COOKIE_PDEV_ID 	GENMASK(19, 18)
 #define DP_MON_RX_HDR_LEN			128
 
+#define DP_SMART_MON_VALID       BIT(0)
+
 struct ath12k_mon_data;
 struct dp_mon_rx_filter;
 
@@ -333,6 +335,31 @@ struct ath12k_pdev_mon_dp {
 
 	struct work_struct rxmon_work;
 	struct workqueue_struct *rxmon_wq;
+	/* Monitor RX filter type: 4-bit field (C M D V) for Smart Monitor
+	 *
+	 * Bit Layout (filter out mechanism: 0=filter in, 1=filter out):
+	 *   Bit 0 (V): Valid bit - must be 1 for filter to be active
+	 *   Bit 1 (D): Data frame filter
+	 *   Bit 2 (M): Management frame filter
+	 *   Bit 3 (C): Control frame filter
+	 *
+	 * Behavior:
+	 *   0x0: Regular monitor mode - captures ALL packets
+	 *   Non-zero: Smart monitor mode
+	 *     - Monitor VAP comes up but NO packets captured initially
+	 *     - Filters applied only after NAC MAC addresses are added
+	 *     - Captures packets from NAC list based on frame type filter
+	 *
+	 * Examples:
+	 *   0x0 (0000): Regular monitor - all packets
+	 *   0x1 (0001): Smart monitor - all frame types (when NAC added)
+	 *   0x3 (0011): Smart monitor - only Control + Management
+	 *   0xD (1101): Smart monitor - only Data frames
+	 *   0xF (1111): Smart monitor - no frames (all filtered out)
+	 *
+	 * Default: 0x00 (regular monitor mode)
+	 */
+	u8 smart_mon_filter;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -767,8 +794,10 @@ void ath12k_dp_mon_rx_config_monitor_mode(struct ath12k *ar, bool reset)
 	mon_ops = ath12k_dp_mon_ops_get(dp);
 
 	if (!reset) {
-		if(mon_ops && mon_ops->rx_monitor_mode_set)
-			mon_ops->rx_monitor_mode_set(dp_pdev);
+		if (!(dp_pdev->dp_mon_pdev->smart_mon_filter & DP_SMART_MON_VALID)) {
+			if (mon_ops && mon_ops->rx_monitor_mode_set)
+				mon_ops->rx_monitor_mode_set(dp_pdev);
+		}
 	} else {
 		if(mon_ops && mon_ops->rx_monitor_mode_reset)
 			mon_ops->rx_monitor_mode_reset(dp_pdev);
@@ -851,5 +880,29 @@ static inline void
 ath12k_dp_mon_desc_reset(struct ath12k_dp_mon_desc *desc)
 {
 	memset((u8 *)desc + sizeof(desc->list), 0, sizeof(*desc) - sizeof(desc->list));
+}
+
+static inline void
+ath12k_dp_smart_mon_filter_type_set(struct ath12k *ar,
+				    u8 filter)
+{
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	dp_pdev->dp_mon_pdev->smart_mon_filter = filter;
+}
+
+static inline void
+ath12k_dp_smart_mon_filter_type_get(struct ath12k *ar,
+				    u8 *filter)
+{
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	*filter = dp_pdev->dp_mon_pdev->smart_mon_filter;
 }
 #endif
