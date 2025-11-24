@@ -1148,7 +1148,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_MESH_POINT),
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
-		.max_clients_supported = 256,
+		.max_clients_supported = 512,
 #endif
 
 		.idle_ps = false,
