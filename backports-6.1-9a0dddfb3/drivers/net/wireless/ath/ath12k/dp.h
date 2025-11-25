@@ -503,6 +503,9 @@ struct ath12k_dp_arch_ops {
 				     struct ath12k_link_vif *arvif,
 				     struct sk_buff *skb, struct ath12k_link_sta *arsta);
 	int (*dp_tx_ring_setup)(struct ath12k_base *ab);
+	void (*dp_tx_status_parse)(struct ath12k_base *ab,
+				   struct hal_wbm_completion_ring_tx *desc,
+				   struct hal_tx_status *ts);
 };
 
 struct ath12k_bp_stats {

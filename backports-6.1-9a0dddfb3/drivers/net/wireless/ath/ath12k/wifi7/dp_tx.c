@@ -42,26 +42,6 @@ struct ath12k_wifi7_tx_status_entry {
 
 static_assert(sizeof(struct ath12k_wifi7_tx_status_entry) == 64, "size of struct ath12k_wifi7_tx_status_entry is not 64 bytes!");
 
-void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
-{
-	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
-
-	u64_stats_update_begin(&tstats->syncp);
-	tstats->tid_stats[tid].tx_pkt_stats[reason]++;
-	tstats->tid_stats[tid].tx_pkt_bytes[reason] += len;
-	u64_stats_update_end(&tstats->syncp);
-}
-
-void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason)
-{
-	struct pcpu_netdev_tid_stats *tstats = this_cpu_ptr(ahvif->tstats);
-
-	u64_stats_update_begin(&tstats->syncp);
-	tstats->tid_stats[tid].tx_drop_stats[reason]++;
-	tstats->tid_stats[tid].tx_drop_bytes[reason] += len;
-	u64_stats_update_end(&tstats->syncp);
-}
-
 static enum hal_tcl_encap_type
 ath12k_dp_tx_get_encap_type(struct ath12k_base *ab, struct sk_buff *skb)
 {
@@ -2061,9 +2041,6 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 			//TODO: Remove this print and add as a stats
 			ath12k_dbg(ab, ATH12K_DBG_DP_TX, "tx frame is not acked status %d\n", ts->status);
  		}
-		if (ath12k_dp_stats_enabled(dp_pdev) &&
-		    ath12k_tid_stats_enabled(dp_pdev))
-			ath12k_tid_tx_drop_stats(ahvif, ts->tid, msdu->len, reason);
 	}
 
 	/* NOTE: Tx rate status reporting. Tx completion status does not have
@@ -2126,10 +2103,13 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 exit:
 	DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[drop_reason][ring], 1);
+	if (ahvif && ath12k_dp_stats_enabled(dp_pdev) &&
+	    ath12k_tid_stats_enabled(dp_pdev))
+		ath12k_tid_tx_drop_stats(ahvif, tid, msdu_len, reason);
 	rcu_read_unlock();
 }
 
-static void
+void
 ath12k_wifi7_dp_tx_status_parse(struct ath12k_base *ab,
 				struct hal_wbm_completion_ring_tx *desc,
 				struct hal_tx_status *ts)
