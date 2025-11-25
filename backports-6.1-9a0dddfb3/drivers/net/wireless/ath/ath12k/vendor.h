@@ -22,6 +22,9 @@
 
 #define INVALID_RADIO_INDEX 0xFF
 
+#define ATH12K_MGMT_TX_RETRY_LIMIT_MIN 1
+#define ATH12K_MGMT_TX_RETRY_LIMIT_MAX 14
+
 extern unsigned int ath12k_ppe_ds_enabled;
 struct ath12k;
 struct ath12k_hw;
@@ -1720,6 +1723,7 @@ enum qca_vendor_vdev_param {
 enum qca_vendor_radio_param {
 	QCA_WLAN_VENDOR_RADIO_PARAM_TEST = 0,
 	QCA_WLAN_VENDOR_RADIO_PARAM_TEST_RELOAD = QCA_WLAN_VENDOR_RADIO_PARAM_TEST,
+	QCA_WLAN_VENDOR_RADIO_PARAM_MGMT_RETRY_LIMIT,
 
 	/* Add new params above */
 	QCA_WLAN_VENDOR_RADIO_PARAM_LAST,
