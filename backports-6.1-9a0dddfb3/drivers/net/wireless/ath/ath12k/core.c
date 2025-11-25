@@ -2500,7 +2500,7 @@ static void ath12k_core_post_reconfigure_recovery(struct ath12k_base *ab)
 			 * for all the radios through
 			 * ath12k_mac_peer_cleannup_all()
 			 */
-			if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE1)
+			if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE2)
 				ath12k_mac_dp_peer_cleanup(ah, ag->recovery_mode);
 
 			break;
