@@ -3860,6 +3860,29 @@ static int ath12k_vendor_set_radio_params(struct ath12k *ar,
 		*reload = true;
 		ret = 0;
 		break;
+	case QCA_WLAN_VENDOR_RADIO_PARAM_MGMT_RETRY_LIMIT:
+		if (value < ATH12K_MGMT_TX_RETRY_LIMIT_MIN ||
+		    value > ATH12K_MGMT_TX_RETRY_LIMIT_MAX) {
+			ath12k_err(NULL, "Invalid tx retry limit %u (range %d to %d)\n",
+				   value, ATH12K_MGMT_TX_RETRY_LIMIT_MIN,
+				   ATH12K_MGMT_TX_RETRY_LIMIT_MAX);
+			return -EINVAL;
+		}
+
+		/*
+		 * Firmware accounts the very first frame (without retry bit set) also
+		 * in the retry count. Increase the user provided tx retry count by 1
+		 * to match the number of tx frames with retry bit set in the air.
+		 */
+		ret = ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_MGMT_RETRY_LIMIT,
+						value + 1, ar->pdev->pdev_id);
+		if (ret) {
+			ath12k_err(ar->ab, "Failed to set tx retry limit for mgmt frame: %d\n",
+				   ret);
+			return -EINVAL;
+		}
+		ar->mgmt_tx_retry_limit = value;
+		break;
 	default:
 		ath12k_dbg(NULL, ATH12K_DBG_CFG,
 			   "Un-supported param: %d\n", param);
@@ -3999,6 +4022,10 @@ static int ath12k_vendor_get_radio_params(struct ath12k *ar,
 	switch (param) {
 	case QCA_WLAN_VENDOR_RADIO_PARAM_TEST:
 		*value = 0;
+		ret = 0;
+		break;
+	case QCA_WLAN_VENDOR_RADIO_PARAM_MGMT_RETRY_LIMIT:
+		*value = ar->mgmt_tx_retry_limit;
 		ret = 0;
 		break;
 	default:

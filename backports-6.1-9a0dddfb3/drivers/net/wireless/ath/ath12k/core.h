@@ -1482,6 +1482,7 @@ struct ath12k {
 	struct list_head wlan_intf_list;
 	struct work_struct wlan_intf_work;
 	struct completion delete_all_peer_done;
+	u8 mgmt_tx_retry_limit;
 };
 
 struct ath12k_6ghz_sp_reg_rule {

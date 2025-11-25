@@ -21135,6 +21135,11 @@ ath12k_mac_reconfig_complete(struct ieee80211_hw *hw,
 			ath12k_wmi_send_set_current_country_cmd(ar, &arg);
 		}
 
+		if (ar->mgmt_tx_retry_limit)
+			ath12k_wmi_pdev_set_param(ar, WMI_PDEV_PARAM_MGMT_RETRY_LIMIT,
+						  ar->mgmt_tx_retry_limit,
+						  ar->pdev->pdev_id);
+
 
 		recovery_count = atomic_inc_return(&ab->recovery_count);
 
@@ -23399,6 +23404,7 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	ar->monitor_started = false;
 	ar->monitor_vdev_created = false;
 	ar->vdev_id_11d_scan = ATH12K_11D_INVALID_VDEV_ID;
+	ar->mgmt_tx_retry_limit = ATH12K_MGMT_TX_RETRY_LIMIT_DEFAULT;
 
 	spin_lock_init(&ar->data_lock);
 	INIT_LIST_HEAD(&ar->arvifs);
