@@ -1816,6 +1816,8 @@ struct cfg80211_ttlm_params {
  * @he_cap: HE capabilities (or %NULL if HE isn't enabled)
  * @eht_cap: EHT capabilities (or %NULL if EHT isn't enabled)
  * @eht_oper: EHT operation IE (or %NULL if EHT isn't enabled)
+ * @uhr_cap: UHR capabilities (or %NULL if UHR isn't enabled)
+ * @uhr_oper: UHR operation IE (or %NULL if UHR isn't enabled)
  * @ht_required: stations must support HT
  * @vht_required: stations must support VHT
  * @twt_responder: Enable Target Wait Time
@@ -1859,6 +1861,8 @@ struct cfg80211_ap_settings {
 	const struct ieee80211_he_operation *he_oper;
 	const struct ieee80211_eht_cap_elem *eht_cap;
 	const struct ieee80211_eht_operation *eht_oper;
+	const struct ieee80211_uhr_cap_elem *uhr_cap;
+	const struct ieee80211_uhr_operation *uhr_oper;
 	bool ht_required, vht_required, he_required, sae_h2e_required;
 	bool twt_responder;
 	u32 flags;
