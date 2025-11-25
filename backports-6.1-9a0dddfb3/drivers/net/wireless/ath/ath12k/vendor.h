@@ -501,6 +501,33 @@ enum qca_wlan_vendor_attr_afc_event {
 	QCA_WLAN_VENDOR_ATTR_AFC_EVENT_AFTER_LAST - 1,
 };
 
+/**
+ * enum qca_wlan_vendor_vap_submode_type - VAP submode types for QCA WLAN vendor
+ *
+ * This enumeration defines different submodes that a Virtual Access Point (VAP)
+ * can operate in. These submodes are used to configure specific behaviors or
+ * roles for the VAP.
+ *
+ * @QCA_WLAN_VENDOR_VAP_SUBMODE_NONE: Default mode, no special submode applied.
+ * @QCA_WLAN_VENDOR_VAP_SUBMODE_MESH: VAP operates in mesh mode for mesh networking.
+ * @QCA_WLAN_VENDOR_VAP_SUBMODE_SCAN: VAP operates in scan mode, typically for
+ *     off-channel scanning / scan radio specific operations.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_AFTER_LAST: Internal marker for the end of
+ *     valid submode attributes. Not to be used directly.
+ * @QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX: Maximum valid attribute value for VAP
+ *     submode. Used for bounds checking.
+ */
+enum qca_wlan_vendor_vap_submode_type {
+	QCA_WLAN_VENDOR_VAP_SUBMODE_NONE = 0,
+	QCA_WLAN_VENDOR_VAP_SUBMODE_MESH = 1,
+	QCA_WLAN_VENDOR_VAP_SUBMODE_SCAN = 2,
+
+	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_MAX =
+	QCA_WLAN_VENDOR_ATTR_VAP_SUBMODE_AFTER_LAST - 1,
+};
+
 enum qca_wlan_vendor_attr_config {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_INVALID = 0,
 	/* Unsigned 32-bit attribute for generic commands */
@@ -546,6 +573,11 @@ enum qca_wlan_vendor_attr_config {
          * specify a particular Radio of the wiphy device.
          */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX = 135,
+	/* 8-bit unsigned value to configure VAP submodes, This enables to
+	 * have QCA Proprietary VAP modes.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE = 141,
+
 	/* Keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =
