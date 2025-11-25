@@ -188,6 +188,17 @@ ieee80211_parse_extension_element(u32 *crc,
 			elems->ttlm_num++;
 		}
 		break;
+	case WLAN_EID_EXT_UHR_CAPABILITY:
+		if (ieee80211_uhr_capa_size_ok(data, len)) {
+			elems->uhr_cap = data;
+			elems->uhr_cap_len = len;
+		}
+		break;
+	case WLAN_EID_EXT_UHR_OPERATION:
+		if (ieee80211_uhr_oper_size_ok(data, len, params->is_beacon))
+			elems->uhr_operation = data;
+		calc_crc = true;
+		break;
 	}
 
 	if (crc && calc_crc)
@@ -900,6 +911,7 @@ static void ieee80211_mle_parse_link(struct ieee80211_elems_parse *elems_parse,
 	struct ieee80211_elems_parse_params sub = {
 		.mode = params->mode,
 		.action = params->action,
+		.is_beacon = params->is_beacon,
 		.from_ap = params->from_ap,
 		.link_id = -1,
 	};
@@ -1049,6 +1061,7 @@ ieee802_11_parse_elems_full(struct ieee80211_elems_parse_params *params)
 			.start = nontransmitted_profile,
 			.len = nontransmitted_profile_len,
 			.action = params->action,
+			.is_beacon = params->is_beacon,
 			.link_id = params->link_id,
 		};
 
