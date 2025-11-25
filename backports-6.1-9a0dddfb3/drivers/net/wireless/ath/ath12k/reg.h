@@ -572,6 +572,7 @@ struct ath12k_reg_info {
 enum ath12k_reg_phy_bitmap {
 	ATH12K_REG_PHY_BITMAP_NO11AX	= BIT(5),
 	ATH12K_REG_PHY_BITMAP_NO11BE	= BIT(6),
+	ATH12K_REG_PHY_BITMAP_NO11BN	= BIT(7),
 };
 
 void ath12k_reg_init(struct ieee80211_hw *hw);
