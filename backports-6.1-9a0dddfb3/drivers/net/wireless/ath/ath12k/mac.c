@@ -2538,22 +2538,17 @@ void ath12k_mac_bcn_tx_event(struct ath12k_link_vif *arvif)
 		return;
 	}
 
-	if (!link_conf->color_change_active && !arvif->bcca_zero_sent)
-		return;
+	if (link_conf->color_change_active) {
+		if (ieee80211_beacon_cntdwn_is_complete(vif, arvif->link_id)) {
+			ieee80211_color_change_finish(vif, arvif->link_id);
+			return;
+		}
 
-	if (link_conf->color_change_active &&
-	    ieee80211_beacon_cntdwn_is_complete(vif, arvif->link_id)) {
-		arvif->bcca_zero_sent = true;
-		ieee80211_color_change_finish(vif, arvif->link_id);
-		return;
+		if (!link_conf->ema_ap)
+			ieee80211_beacon_update_cntdwn(vif, arvif->link_id);
+		wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy,
+				 &arvif->update_bcn_template_work);
 	}
-
-	arvif->bcca_zero_sent = false;
-
-	if (link_conf->color_change_active && !link_conf->ema_ap)
-		ieee80211_beacon_update_cntdwn(vif, arvif->link_id);
-	wiphy_work_queue(ath12k_ar_to_hw(ar)->wiphy,
-			 &arvif->update_bcn_template_work);
 }
 
 static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
@@ -7380,73 +7375,69 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 					 "Set burst beacon mode for VDEV: %d\n",
 					 arvif->vdev_id);
-		if (!arvif->do_not_send_tmpl || !arvif->bcca_zero_sent) {
-			/* need to install Transmitting vif's template first */
-			ret = ath12k_mac_setup_bcn_tmpl(arvif);
-			if (ret)
-				ath12k_warn(ar->ab, "failed to update bcn template: %d\n",
-					    ret);
-			if (!arvif->pending_csa_up)
-				goto skip_pending_cs_up;
 
-			memset(&params, 0, sizeof(params));
-			params.vdev_id = arvif->vdev_id;
-			params.aid = ahvif->aid;
-			params.bssid = arvif->bssid;
+		/* need to install Transmitting vif's template first */
+		ret = ath12k_mac_setup_bcn_tmpl(arvif);
+		if (ret)
+			ath12k_warn(ar->ab, "failed to update bcn template: %d\n",
+				    ret);
+		if (!arvif->pending_csa_up)
+			goto skip_pending_cs_up;
 
-			if (info->mbssid_tx_vif) {
-				tx_ahvif = (void *)info->mbssid_tx_vif->drv_priv;
-				tx_arvif = tx_ahvif->link[info->mbssid_tx_vif_linkid];
+		memset(&params, 0, sizeof(params));
+		params.vdev_id = arvif->vdev_id;
+		params.aid = ahvif->aid;
+		params.bssid = arvif->bssid;
+
+		if (info->mbssid_tx_vif) {
+			tx_ahvif = (void *)info->mbssid_tx_vif->drv_priv;
+			tx_arvif = tx_ahvif->link[info->mbssid_tx_vif_linkid];
+			params.tx_bssid = tx_arvif->bssid;
+			params.nontx_profile_idx = ahvif->vif->bss_conf.bssid_index;
+			params.nontx_profile_cnt = BIT(info->bssid_indicator);
+		}
+
+		if (info->mbssid_tx_vif && arvif != tx_arvif &&
+		    tx_arvif->pending_csa_up) {
+			/* skip non tx vif's */
+			goto skip_pending_cs_up;
+		}
+
+		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
+		if (ret)
+			ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
+				    arvif->vdev_id, ret);
+
+		arvif->pending_csa_up = false;
+
+		if (info->mbssid_tx_vif && arvif == tx_arvif) {
+			struct ath12k_link_vif *arvif_itr;
+
+			list_for_each_entry(arvif_itr, &ar->arvifs, list) {
+				if (!arvif_itr->pending_csa_up)
+					continue;
+
+				if (arvif_itr->tx_vdev_id != tx_arvif->vdev_id)
+					continue;
+
+				memset(&params, 0, sizeof(params));
+				params.vdev_id = arvif_itr->vdev_id;
+				params.aid = ahvif->aid;
+				params.bssid = arvif_itr->bssid;
 				params.tx_bssid = tx_arvif->bssid;
-				params.nontx_profile_idx = ahvif->vif->bss_conf.bssid_index;
-				params.nontx_profile_cnt = BIT(info->bssid_indicator);
-			}
+				params.nontx_profile_idx =
+					ahvif->vif->bss_conf.bssid_index;
+				params.nontx_profile_cnt =
+					BIT(info->bssid_indicator);
 
-			if (info->mbssid_tx_vif && arvif != tx_arvif &&
-			    tx_arvif->pending_csa_up) {
-				/* skip non tx vif's */
-				goto skip_pending_cs_up;
-			}
-
-			ret = ath12k_wmi_vdev_up(arvif->ar, &params);
-			if (ret)
-				ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
-					    arvif->vdev_id, ret);
-
-			arvif->pending_csa_up = false;
-
-			if (info->mbssid_tx_vif && arvif == tx_arvif) {
-				struct ath12k_link_vif *arvif_itr;
-				list_for_each_entry(arvif_itr, &ar->arvifs, list) {
-					if (!arvif_itr->pending_csa_up)
-						continue;
-
-					if (arvif_itr->tx_vdev_id != tx_arvif->vdev_id)
-						continue;
-
-					memset(&params, 0, sizeof(params));
-					params.vdev_id = arvif_itr->vdev_id;
-					params.aid = ahvif->aid;
-					params.bssid = arvif_itr->bssid;
-					params.tx_bssid = tx_arvif->bssid;
-					params.nontx_profile_idx =
-						ahvif->vif->bss_conf.bssid_index;
-					params.nontx_profile_cnt =
-						BIT(info->bssid_indicator);
-
-					ret = ath12k_wmi_vdev_up(arvif_itr->ar, &params);
-					if (ret)
-						ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
-							    arvif_itr->vdev_id, ret);
-					arvif_itr->pending_csa_up = false;
-				}
+				ret = ath12k_wmi_vdev_up(arvif_itr->ar, &params);
+				if (ret)
+					ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
+						    arvif_itr->vdev_id, ret);
+				arvif_itr->pending_csa_up = false;
 			}
 		}
 skip_pending_cs_up:
-		if (arvif->bcca_zero_sent)
-			arvif->do_not_send_tmpl = true;
-		else
-			arvif->do_not_send_tmpl = false;
 
 		if (arvif->is_up && info->he_support) {
 			param_id = WMI_VDEV_PARAM_BA_MODE;
