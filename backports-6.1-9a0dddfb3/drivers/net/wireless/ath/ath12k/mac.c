@@ -5740,13 +5740,22 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 			arvif->is_scan_vif = false;
 		}
 
-		if (!arvif->is_created) {
-			ath12k_mac_unassign_link_vif(arvif);
-			continue;
-		}
+		/* In case of SSR in progress arvif->is_created is explicitly
+		 * marked as false to indicate vdev creation is not done on FW side,
+		 * so any genuine interface down during this shouldn't leave stale
+		 * entries hence check on both arvif->ar, arvif->is_created before
+		 * calling ath12k_mac_unassign_link_vif as in case of SSR arvif->ar
+		 * will be valid.
+		 */
 
-		if (WARN_ON(!arvif->ar))
+		if (!arvif->ar) {
+			if (!arvif->is_created) {
+				ath12k_mac_unassign_link_vif(arvif);
+				continue;
+			}
+			WARN_ON(1);
 			return -EINVAL;
+		}
 
 		ath12k_mac_remove_link_interface(hw, arvif);
 		ath12k_mac_unassign_link_vif(arvif);
