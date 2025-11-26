@@ -6473,7 +6473,7 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 	cancel_work_sync(&ab->qmi.event_work);
 	destroy_workqueue(ab->qmi.event_wq);
 	ath12k_qmi_m3_free(ab);
-	ath12k_qmi_free_target_mem_chunk(ab);
+	ath12k_qmi_free_resource(ab);
 #ifdef CPTCFG_ATHDEBUG
 	athdbg_if_get_service(ab, ATHDBG_SRV_QMI_DEINIT);
 #endif
@@ -6483,5 +6483,7 @@ void ath12k_qmi_deinit_service(struct ath12k_base *ab)
 void ath12k_qmi_free_resource(struct ath12k_base *ab)
 {
 	ath12k_qmi_free_target_mem_chunk(ab);
-	ath12k_qmi_m3_free(ab);
+#ifdef CPTCFG_ATHDEBUG
+	athdbg_if_get_service(ab, ATHDBG_SRV_QDSS_MEM_FREE);
+#endif
 }
