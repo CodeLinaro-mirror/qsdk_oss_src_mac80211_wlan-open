@@ -1300,8 +1300,11 @@ int ath12k_ppeds_attach(struct ath12k_base *ab)
 	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
 		ab->dp->ppe.ppe_vp_tbl_registered[i] = 0;
 		ab->dp->ppe.ppe_vp_search_idx_tbl_set[i] = 0;
-		ab->dp->ppe.ppe_vp_profile[i].is_configured = false;
+		memset(&ab->dp->ppe.ppe_vp_profile[i], 0, sizeof(struct ath12k_dp_ppe_vp_profile));
 	}
+
+	ab->dp->ppe.num_ppe_vp_profiles = 0;
+	ab->dp->ppe.num_ppe_vp_entries = 0;
 
 	ds_node_id = ab->dp->ppe.nss_plugin_ops->ds_inst_alloc(&ppeds_ops_v2,
 							       sizeof(struct ath12k_base *));
@@ -1380,8 +1383,11 @@ int ath12k_ppeds_detach(struct ath12k_base *ab)
 	for (i = 0; i < PPE_VP_ENTRIES_MAX; i++) {
 		ab->dp->ppe.ppe_vp_tbl_registered[i] = 0;
 		ab->dp->ppe.ppe_vp_search_idx_tbl_set[i] = 0;
-		ab->dp->ppe.ppe_vp_profile[i].is_configured = false;
+		memset(&ab->dp->ppe.ppe_vp_profile[i], 0, sizeof(struct ath12k_dp_ppe_vp_profile));
 	}
+
+	ab->dp->ppe.num_ppe_vp_profiles = 0;
+	ab->dp->ppe.num_ppe_vp_entries = 0;
 
 	ath12k_dbg(ab, ATH12K_DBG_PPE, "PPEDS detach success\n");
 
