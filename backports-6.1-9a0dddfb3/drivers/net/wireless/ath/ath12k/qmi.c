@@ -38,6 +38,34 @@ module_param_named(cold_boot_cal, ath12k_cold_boot_cal, bool, 0644);
 MODULE_PARM_DESC(cold_boot_cal,
 		 "Decrease the channel switch time but increase the driver load time (Default: true)");
 
+static struct qmi_elem_info wlfw_host_ddr_range_s_v01_ei[] = {
+	{
+		.data_type      = QMI_UNSIGNED_8_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u64),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x00,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_host_ddr_range,
+					   start),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_8_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u64),
+		.array_type     = NO_ARRAY,
+		.tlv_type       = 0x00,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_host_ddr_range,
+					   size),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type     = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
 static const struct qmi_elem_info wlfw_host_mlo_chip_info_s_v01_ei[] = {
 	{
 		.data_type      = QMI_UNSIGNED_1_BYTE,
@@ -423,6 +451,7 @@ static const struct qmi_elem_info qmi_wlanfw_host_cap_req_msg_v01_ei[] = {
 		.tlv_type	= 0x1F,
 		.offset		= offsetof(struct qmi_wlanfw_host_cap_req_msg_v01,
 					   ddr_range),
+		.ei_array      = wlfw_host_ddr_range_s_v01_ei,
 	},
 	{
 		.data_type	= QMI_OPT_FLAG,
@@ -3300,6 +3329,7 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
 	int ret = 0;
 	struct device_node *root;
 	const char *model = NULL;
+	u64 iova_start = 0, iova_size = 0;
 
 	req.num_clients_valid = 1;
 	req.num_clients = 1;
@@ -3331,6 +3361,14 @@ int ath12k_qmi_host_cap_send(struct ath12k_base *ab)
                         of_node_put(root);
                 }
         }
+
+	if (!ath12k_hif_get_iova(ab, &iova_start, &iova_size)) {
+		req.ddr_range_valid = 1;
+		req.ddr_range[0].start = iova_start;
+		req.ddr_range[0].size = iova_size;
+		ath12k_info(ab, "Sending iova starting 0x%llx with size 0x%llx\n",
+			    req.ddr_range[0].start, req.ddr_range[0].size);
+	}
 
 	if (ab->hw_params->qmi_cnss_feature_bitmap) {
 		req.feature_list_valid = 1;

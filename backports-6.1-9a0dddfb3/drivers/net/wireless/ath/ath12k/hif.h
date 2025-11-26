@@ -58,6 +58,7 @@ struct ath12k_hif_ops {
 	int (*dp_umac_reset_irq_config)(struct ath12k_base *ab);
 	void (*dp_umac_reset_enable_irq)(struct ath12k_base *ab);
 	void (*dp_umac_reset_free_irq)(struct ath12k_base *ab);
+	int (*get_iova)(struct ath12k_base *ab, u64 *addr, u64 *size);
 };
 
 static inline int ath12k_hif_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,
@@ -227,6 +228,14 @@ static inline int ath12k_hif_get_msi_irq(struct ath12k_base *ab, unsigned int ve
 		return -EOPNOTSUPP;
 
 	return ab->hif.ops->get_msi_irq(ab, vector);
+}
+
+static inline int ath12k_hif_get_iova(struct ath12k_base *ab, u64 *addr, u64 *size)
+{
+	if (!ab->hif.ops->get_iova)
+		return -EOPNOTSUPP;
+
+	return ab->hif.ops->get_iova(ab, addr, size);
 }
 
 static inline
