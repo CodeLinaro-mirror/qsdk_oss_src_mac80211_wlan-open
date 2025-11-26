@@ -1331,6 +1331,7 @@ ieee80211_tx_prepare(struct ieee80211_sub_if_data *sdata,
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	bool aggr_check = false;
 	int tid;
+	u32 link_id;
 
 	memset(tx, 0, sizeof(*tx));
 	tx->skb = skb;
@@ -1366,6 +1367,18 @@ ieee80211_tx_prepare(struct ieee80211_sub_if_data *sdata,
 			tx->sta = sta_info_get_bss(sdata, hdr->addr1);
 			aggr_check = true;
 		}
+		/*
+		 * Sometimes when a STA associates to one of the links and
+		 * steers to other link, link_id on which we are doing mgmt tx
+		 * will not be matching with valid links so assign sta as NULL,
+		 * hence driver will do tx using the given link id
+		 */
+		link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
+		if (link_id != IEEE80211_LINK_UNSPECIFIED &&
+		    tx->sta && tx->sta->sta.valid_links &&
+		    !(tx->sta->sta.valid_links & BIT(link_id)) &&
+		    ieee80211_is_mgmt(hdr->frame_control))
+			tx->sta = NULL;
 	}
 
 	if (tx->sta && ieee80211_is_data_qos(hdr->frame_control) &&
