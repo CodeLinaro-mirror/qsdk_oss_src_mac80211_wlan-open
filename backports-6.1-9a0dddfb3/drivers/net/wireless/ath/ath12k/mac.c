@@ -12963,11 +12963,6 @@ skip_pri_link_selection:
 			}
 			ath12k_wsi_load_info_stats_update(ahvif, ahsta, false);
 
-			ret = ath12k_mac_station_unauthorize(ar, arvif, arsta);
-			if (ret)
-				ath12k_warn(ar->ab, "Failed to unauth station: %pM for VDEV: %d\n",
-					    arsta->addr, arvif->vdev_id);
-
 			ret = ath12k_mac_station_disassoc(ar, arvif, arsta);
 			if (ret)
 				ath12k_warn(ar->ab, "Failed to disassoc station: %pM for VDEV: %d\n",

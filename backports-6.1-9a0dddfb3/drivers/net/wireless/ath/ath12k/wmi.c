@@ -3025,7 +3025,7 @@ static void ath12k_wmi_copy_peer_flags(struct wmi_peer_assoc_complete_cmd *cmd,
 	 * (during re-association).
 	 * Authorization will be done for these modes on key installation.
 	 */
-	if (arg->auth_flag)
+	if (arg->auth_flag  && !arg->ml.ml_reconfig)
 		cmd->peer_flags |= cpu_to_le32(WMI_PEER_AUTH);
 	if (arg->need_ptk_4_way) {
 		cmd->peer_flags |= cpu_to_le32(WMI_PEER_NEED_PTK_4_WAY);
