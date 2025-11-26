@@ -5531,7 +5531,7 @@ int ath12k_qmi_firmware_start(struct ath12k_base *ab,
 			ab->qmi.cal_timeout = 1;
 			return -ETIMEDOUT;
 		}
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "Coldboot calibration completed , calibration took %d ms\n",
+		ath12k_info(ab, "Coldboot calibration completed , calibration took %d ms\n",
 			   jiffies_to_msecs(jiffies - calibration_time));
 		ab->in_coldboot_fwreset = false;
 	}
@@ -5634,7 +5634,7 @@ int ath12k_qmi_process_coldboot_calibration(struct ath12k_base *ab)
 	if (timeout <= 0) {
 		ath12k_warn(ab, "Coldboot Calibration failed - wait ended\n");
 	} else {
-		ath12k_dbg(ab, ATH12K_DBG_QMI, "Coldboot calibration completed, calibration took %d ms\n",
+		ath12k_info(ab, "Coldboot calibration completed, calibration took %d ms\n",
               jiffies_to_msecs(jiffies - calibration_time));
 	}
 

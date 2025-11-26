@@ -2014,6 +2014,10 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 			goto err_core_stop;
 		}
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "group %d started\n", ag->id);
+
+		if (ath12k_ftm_mode)
+			ath12k_info(ab, "FTM mode interface is up\n");
+
 		if (ag->wsi_remap_in_progress) {
 			/* During bypass, device will restart from start.
 			 * But the ath12k reference will be already present.
