@@ -1293,7 +1293,7 @@ static int ath12k_pci_probe(struct pci_dev *pdev,
 		ab->dp = ab_pci->device_ops->dp_init(ab);
 		if (!ab->dp) {
 			ath12k_err(ab, "dp_init failed");
-			goto err_pci_msi_free;
+			goto err_free_irq;
 		}
 	}
 
