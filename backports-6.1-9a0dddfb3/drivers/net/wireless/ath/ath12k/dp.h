@@ -16,6 +16,7 @@
 #include <linux/rhashtable.h>
 #include "dp_stats.h"
 #include "dp_htt_logger.h"
+#include "dp_ext_desc.h"
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
 
@@ -61,6 +62,7 @@ struct ath12k_hp_update_timer;
 struct peer_assoc_flowq_params;
 struct peer_assoc_holq_params;
 struct ath12k_dp_vif;
+struct ath12k_dp_link_vif;
 
 #define DP_MON_PURGE_TIMEOUT_MS     100
 #define DP_MON_SERVICE_BUDGET       128
@@ -404,16 +406,19 @@ struct ath12k_tx_desc_info {
 	struct list_head list;
 	struct sk_buff *skb;
 	struct sk_buff *skb_ext_desc;
+	struct ath12k_dp_ext_desc *ext_desc;
 	dma_addr_t paddr;
 	dma_addr_t paddr_ext_desc;
 	u32 desc_id; /* Cookie */
 	u16 len;
 	u16 ext_desc_len;
+	u16 tcl_metadata;
 	u8 mac_id	: 5,
 	   in_use	: 1,
 	   reserved	: 2;
 	u8 flags	: 3,
-	   reserved1	: 5;
+	   reserved1	: 4,
+	   to_fw	: 1;
 	u8 pool_id;
 };
 
@@ -570,7 +575,10 @@ struct ath12k_dp_arch_ops {
 	int (*get_peer_init_status)(struct ath12k_dp *dp,
 				    struct ath12k_dp_hw *dp_hw,
 				    u8 *addr);
-
+	enum ath12k_dp_tx_enq_error (*dp_ext_tx)(struct ath12k_pdev_dp *dp_pdev,
+						 struct ath12k_dp_vif *dp_vif,
+						 struct ath12k_dp_link_vif *dp_link_vif,
+						 struct ath12k_tx_desc_info *tx_desc);
 };
 
 struct ath12k_bp_stats {
@@ -649,6 +657,7 @@ struct ath12k_device_dp_stats {
 	struct ath12k_device_dp_rx_wbm_err_stats wbm_err;
 	u32 tx_mcast[MAX_TCL_RING];
 	u32 tx_unicast[MAX_TCL_RING];
+	u32 tx_mcuc[MAX_TCL_RING];
 	u32 tx_eapol[MAX_TCL_RING];
 	u32 tx_eapol_type[DP_EAPOL_KEY_TYPE_MAX][MAX_TCL_RING];
 	u32 tx_null_frame[MAX_TCL_RING];
@@ -788,6 +797,9 @@ struct ath12k_dp {
 	int num_nrps;
 	unsigned long service_rings_running;
 	bool stats_disable;
+
+	/* Extension descriptor cache for kmem_cache allocation */
+	struct kmem_cache *ext_cache;
 
 	/* HW link ID position in PPDU_ID */
 	u8 link_id_offset;
@@ -1276,6 +1288,14 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 						  chip_id);
 }
 
+static inline enum ath12k_dp_tx_enq_error
+ath12k_dp_ext_tx(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
+		 struct ath12k_dp_vif *vif, struct ath12k_dp_link_vif *link_vif,
+		 struct ath12k_tx_desc_info *tx_desc)
+{
+	return dp->arch_ops->dp_ext_tx(dp_pdev, vif, link_vif, tx_desc);
+}
+
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 void ath12k_dp_partner_cc_init(struct ath12k_base *ab);
 int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
@@ -1316,6 +1336,8 @@ void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct hal_srng *srng,
 					       struct list_head *list);
+void ath12k_dp_tx_ext_desc_free(struct ath12k_dp *dp,
+				struct ath12k_tx_desc_info *tx_desc);
 int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);
 int ath12k_dp_cc_init(struct ath12k_base *ab);

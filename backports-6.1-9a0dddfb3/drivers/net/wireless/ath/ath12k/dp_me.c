@@ -15,6 +15,7 @@
 #include <linux/errno.h>
 
 #include "dp_peer.h"
+#include "dp_ext_desc.h"
 #include "me.h"
 #include "debug.h"
 

@@ -343,6 +343,9 @@ void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 	tx_desc->skb_ext_desc = NULL;
 	tx_desc->in_use = false;
 	tx_desc->flags = 0;
+	tx_desc->to_fw = 0;
+	tx_desc->ext_desc = NULL;
+	tx_desc->tcl_metadata = 0;
 	list_add_tail(&tx_desc->list, &dp->tx_desc_free_list[pool_id]);
 	spin_unlock_bh(&dp->tx_desc_lock[pool_id]);
 }

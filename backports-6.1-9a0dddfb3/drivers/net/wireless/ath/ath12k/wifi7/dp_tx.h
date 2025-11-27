@@ -23,6 +23,11 @@ ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 			struct ath12k_link_vif *arvif,
 			struct sk_buff *skb,
 			u32 qos_nw_delay);
+enum ath12k_dp_tx_enq_error
+ath12k_wifi7_dp_ext_tx(struct ath12k_pdev_dp *dp_pdev,
+		       struct ath12k_dp_vif *dp_vif,
+		       struct ath12k_dp_link_vif *dp_link_vif,
+		       struct ath12k_tx_desc_info *tx_desc);
 u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 					    struct ath12k_vif *ahvif,
 					    u8 link_id,
