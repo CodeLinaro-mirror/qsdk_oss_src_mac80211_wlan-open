@@ -1066,7 +1066,7 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag)
 			ath12k_qmi_firmware_stop(ab);
 			ath12k_hif_power_down(ab, false);
 			ath12k_core_to_group_ref_put(ab);
-			ath12k_qmi_free_target_mem_chunk(ab);
+			ath12k_qmi_free_resource(ab);
 			ab->pm_suspend = true;
 			ath12k_info(ab, "Q6 power down\n");
 		}
