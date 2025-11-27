@@ -12,6 +12,7 @@ enum athdbg_service {
 	ATHDBG_SRV_DO_MINIDUMP,
 	ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES,
 	ATHDBG_SRV_QMI_DEINIT,
+	ATHDBG_SRV_QDSS_MEM_FREE,
 };
 
 struct athdbg_to_ath12k_ops {

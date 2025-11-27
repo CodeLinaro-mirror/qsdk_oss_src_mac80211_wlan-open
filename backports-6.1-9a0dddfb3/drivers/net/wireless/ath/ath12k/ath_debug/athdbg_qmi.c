@@ -553,9 +553,15 @@ void athdbg_qmi_qdss_mem_free(struct athdbg_qmi *dbg_qmi)
 		if (ab->dbg_qmi.qdss_mem[i].v.ioaddr) {
 			iounmap(ab->dbg_qmi.qdss_mem[i].v.ioaddr);
 			ab->dbg_qmi.qdss_mem[i].v.ioaddr = NULL;
+			ab->dbg_qmi.qdss_mem[i].size = 0;
+			ab->dbg_qmi.qdss_mem[i].paddr = 0;
 		}
 	}
+
+	if (ab->is_qdss_tracing)
+		ab->is_qdss_tracing = false;
 }
+EXPORT_SYMBOL(athdbg_qmi_qdss_mem_free);
 
 int athdbg_qmi_send_qdss_trace_config_download_req(void *qmi_ab,
 								const u8 *buffer,
