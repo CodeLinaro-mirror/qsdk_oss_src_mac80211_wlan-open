@@ -1113,6 +1113,8 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	}
 
 	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
+	peer->rssi_comb = ppdu_info->rssi_comb;
+	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
 	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar))
 		return;
@@ -1123,9 +1125,6 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 
 	ppdu_info->usr_nss_sum += user_stats->nss;
 	ppdu_info->usr_ru_tones_sum += user_stats->ul_ofdma_ru_width;
-
-	peer->rssi_comb = ppdu_info->rssi_comb;
-	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
 	num_msdu = user_stats->tcp_msdu_count + user_stats->tcp_ack_msdu_count +
 		   user_stats->udp_msdu_count + user_stats->other_msdu_count;
