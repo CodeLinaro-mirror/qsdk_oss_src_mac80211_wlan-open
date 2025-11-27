@@ -610,6 +610,17 @@ struct ath12k_rx_peer_rate_stats {
 	u64 rx_rate[HAL_RX_BW_MAX][HAL_RX_GI_MAX][HAL_RX_MAX_NSS][HAL_RX_MAX_MCS_HT + 1];
 };
 
+enum ath12k_cmn_bw_types {
+	CMN_BW_20MHZ,
+	CMN_BW_40MHZ,
+	CMN_BW_80MHZ,
+	CMN_BW_160MHZ,
+	CMN_BW_240MHZ,
+	CMN_BW_320MHZ,
+	CMN_BW_CNT,
+	CMN_BW_IDLE = 0xFF, /*default BW state */
+};
+
 /**
  * struct ath12k_rx_peer_stats - Per-peer RX statistics
  *
