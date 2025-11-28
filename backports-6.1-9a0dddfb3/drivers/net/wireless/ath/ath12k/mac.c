@@ -21243,6 +21243,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	link_sinfo->rx_duration = rate_info.rx_duration;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DURATION);
 
+	spin_lock_bh(&dp->dp_lock);
 	link_sinfo->tx_duration = rate_info.tx_duration;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_DURATION);
 
@@ -21271,6 +21272,8 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 		      rssi_offset;
 
 	signal = rate_info.rssi_comb;
+	spin_unlock_bh(&dp->dp_lock);
+
 	if (ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		/* Limit the requests to Firmware for fetching the signal strength */
 		if (time_after(jiffies, msecs_to_jiffies
@@ -21287,7 +21290,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 			signal = arsta->rssi_beacon;
 	}
 
-
+	spin_lock_bh(&dp->dp_lock);
 	if (signal) {
 		link_sinfo->signal =
 			db2dbm ? rate_info.rssi_comb : rssi_signal;
@@ -21303,6 +21306,7 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	link_sinfo->tx_failed = rate_info.tx_retry_failed;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_RETRIES);
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_FAILED);
+	spin_unlock_bh(&dp->dp_lock);
 }
 EXPORT_SYMBOL(ath12k_mac_op_link_sta_statistics);
 
