@@ -268,7 +268,7 @@ static void athdbg_qmi_driver_event_work(struct work_struct *work)
 	struct athdbg_qmi *dbg_qmi = container_of(work, struct athdbg_qmi,
 					      event_work);
 	struct athdbg_qmi_driver_event *event;
-	struct ath12k_base *ab = (struct ath12k_base *)dbg_qmi->ab;
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 	int ret;
 
 	spin_lock(&dbg_qmi->event_lock);
@@ -313,7 +313,7 @@ void athdbg_qmi_event_qdss_trace_save_hdlr(struct athdbg_qmi *dbg_qmi,
 						  void *data)
 {
 	struct athdbg_qmi_event_qdss_trace_save_data *event_data = data;
-	struct ath12k_base *ab = (struct ath12k_base *)dbg_qmi->ab;
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 
 	if (!ab->dbg_qmi.qdss_mem_seg_len) {
 		pr_err("Memory for QDSS trace is not available\n");
@@ -321,9 +321,7 @@ void athdbg_qmi_event_qdss_trace_save_hdlr(struct athdbg_qmi *dbg_qmi,
 	}
 
 	athdbg_coredump_qdss_dump(ab, event_data);
-	athdbg_qmi_qdss_mem_free(dbg_qmi);
-	ab->dbg_qmi.qdss_mem_seg_len = 0;
-	ab->is_qdss_tracing = false;
+	athdbg_qmi_qdss_mem_free(ab);
 }
 
 int athdbg_qmi_event_qdss_trace_misc_hdlr(struct athdbg_qmi *dbg_qmi, void *data)
@@ -332,7 +330,7 @@ int athdbg_qmi_event_qdss_trace_misc_hdlr(struct athdbg_qmi *dbg_qmi, void *data
 	struct qmi_wlfw_qdss_trace_data_resp_msg_v01 *resp;
 	struct qmi_txn txn;
 	struct ath12k_qmi_event_qdss_trace_save_data *event_data = data;
-	struct ath12k_base *ab = (struct ath12k_base *)dbg_qmi->ab;
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 	u32 total_size = event_data->total_size;
 	int ret = 0;
 	u32 remaining;
@@ -544,9 +542,8 @@ out:
 	return ret;
 }
 
-void athdbg_qmi_qdss_mem_free(struct athdbg_qmi *dbg_qmi)
+void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 {
-	struct ath12k_base *ab = dbg_qmi->ab;
 	int i;
 
 	for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
@@ -558,8 +555,8 @@ void athdbg_qmi_qdss_mem_free(struct athdbg_qmi *dbg_qmi)
 		}
 	}
 
-	if (ab->is_qdss_tracing)
-		ab->is_qdss_tracing = false;
+	ab->dbg_qmi.qdss_mem_seg_len = 0;
+	ab->is_qdss_tracing = false;
 }
 EXPORT_SYMBOL(athdbg_qmi_qdss_mem_free);
 
@@ -645,8 +642,6 @@ int athdbg_qmi_driver_event_post(struct ath12k_qmi *qmi, enum athdbg_qmi_event_t
 	struct athdbg_qmi_driver_event *event;
 	struct ath12k_base *ab = (struct ath12k_base *)qmi->ab;
 	struct athdbg_qmi *dbg_qmi = &ab->dbg_qmi;
-
-	dbg_qmi->ab = ab;
 
 	event = kzalloc(sizeof(*event), GFP_ATOMIC);
 	if (!event)
