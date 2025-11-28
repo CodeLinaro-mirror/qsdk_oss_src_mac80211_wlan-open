@@ -1826,25 +1826,19 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 
 	if (link_conf->intf_detect_bitmap != params->intf_detect_bitmap) {
 		link_conf->intf_detect_bitmap = params->intf_detect_bitmap;
-		if (err < 0)
-			err = BSS_CHANGED_INTF_DETECT;
-		else
-			err |= BSS_CHANGED_INTF_DETECT;
+		changed |= BSS_CHANGED_INTF_DETECT;
 	}
 
 	if (ieee80211_hw_check(&sdata->local->hw, SUPPORTS_AP_PS) &&
 	    params->ap_ps_valid) {
 		link_conf->ap_ps_enable = params->ap_ps_enable;
-		if (err < 0)
-			err = BSS_CHANGED_AP_PS;
-		else
-			err |= BSS_CHANGED_AP_PS;
+		changed |= BSS_CHANGED_AP_PS;
 	}
 
 	if (beacon->he_bss_color_valid &&
 	    beacon->he_bss_color.enabled != link_conf->he_bss_color.enabled) {
 		link_conf->he_bss_color.enabled = beacon->he_bss_color.enabled;
-		err |= BSS_CHANGED_HE_BSS_COLOR;
+		changed |= BSS_CHANGED_HE_BSS_COLOR;
 	}
 
 	if (params->ml_max_rec_links_valid &&
@@ -1854,11 +1848,8 @@ static int ieee80211_update_ap(struct wiphy *wiphy, struct net_device *dev,
 
 		link_conf->ml_max_rec_links = params->ml_max_rec_links;
 		/* update beacon template */
-		err |= (changed | BSS_CHANGED_ML_MAX_REC_LINKS);
+		changed |= BSS_CHANGED_ML_MAX_REC_LINKS;
 	}
-
-	if (err > 0)
-		changed = err;
 
 	err = ieee80211_set_fils_discovery(sdata, &params->fils_discovery,
 					   link, link_conf, &changed);
