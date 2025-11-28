@@ -4297,7 +4297,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			idx++;
 			break;
 		case CALDB_MEM_REGION_TYPE:
-			if (ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib) {
+			if (ab->hw_params->cold_boot_calib) {
 				if (ab->hif.bus == ATH12K_BUS_AHB ||
 				    ab->hif.bus == ATH12K_BUS_HYBRID) {
 					if (of_property_read_u32_array(ab->dev->of_node,
@@ -4598,7 +4598,7 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 			idx++;
 			break;
 		case CALDB_MEM_REGION_TYPE:
-			if (ath12k_cold_boot_cal && ab->hw_params->cold_boot_calib) {
+			if (ab->hw_params->cold_boot_calib) {
                                 if (ab->hif.bus == ATH12K_BUS_AHB ||
                                     ab->hif.bus == ATH12K_BUS_HYBRID) {
                                         if (of_property_read_u32_array(ab->dev->of_node,
