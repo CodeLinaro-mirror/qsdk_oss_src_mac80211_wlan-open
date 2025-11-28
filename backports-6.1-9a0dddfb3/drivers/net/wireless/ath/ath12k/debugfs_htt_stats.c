@@ -7647,6 +7647,7 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
 	u32 ru_size_cnt = 0;
 	u32 rc_mode, ru_type;
+	u32 wifi_version_word = 0;
 	u8 *buf = stats_req->buf, i;
 	const char *mode_prefix;
 
@@ -7655,6 +7656,7 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 
 	rc_mode = le32_to_cpu(stats_buf->rc_mode);
 	ru_type = le32_to_cpu(stats_buf->ru_type);
+	wifi_version_word = le32_to_cpu(stats_buf->wifi_version_word);
 
 	switch (rc_mode) {
 	case ATH12K_HTT_STATS_RC_MODE_DLSU:
@@ -7733,17 +7735,128 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(stats_buf->per_bw320.mpdus_failed));
 
 	if (rc_mode == ATH12K_HTT_STATS_RC_MODE_DLSU) {
-		len += scnprintf(buf + len, buf_len - len, "\nPER per punctured_mode:\n");
+		if (u32_get_bits(wifi_version_word, HTT_PER_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN){
+			len += scnprintf(buf + len,
+					buf_len - len, "\nPER per NPCA BW:\n");
+
+			len += scnprintf(buf + len,
+					buf_len - len, "ppdus_tried_%s =",
+					mode_prefix);
+
+			for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS; i++)
+				len += scnprintf(buf + len,
+						buf_len - len, " %u:%u ", i,
+						le32_to_cpu(
+						stats_buf->npca_per_bw[i].ppdus_tried));
+
+			len += scnprintf(buf + len, buf_len - len,
+					"\nppdus_ack_failed_%s =",
+					mode_prefix);
+
+			for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS; i++)
+				len += scnprintf(buf + len,
+					buf_len - len, " %u:%u ", i,
+					le32_to_cpu(
+					stats_buf->npca_per_bw[i].ppdus_ack_failed));
+
+			len += scnprintf(buf + len, buf_len - len,
+					"\nmpdus_tried_%s =",
+					mode_prefix);
+
+			for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS; i++)
+				len += scnprintf(buf + len,
+					buf_len - len, " %u:%u ", i,
+					le32_to_cpu(
+					stats_buf->npca_per_bw[i].mpdus_tried));
+
+			len += scnprintf(buf + len,
+					buf_len - len, "\nmpdus_failed_%s =",
+					mode_prefix);
+
+			for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS; i++)
+				len += scnprintf(buf + len,
+					buf_len - len, " %u:%u ", i,
+					le32_to_cpu(
+					stats_buf->npca_per_bw[i].mpdus_failed));
+
+			len += scnprintf(buf + len,
+					buf_len - len,
+					"\n\nPER per NPCA punctured_mode:\n");
+
+			len += scnprintf(buf + len,
+					buf_len - len, "ppdus_tried_%s =",
+					mode_prefix);
+
+			for (i = 0;
+			     i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS;
+			     i++) {
+				const struct ath12k_htt_tx_rate_stats *tmp =
+					&stats_buf->npca_per_tx_su_punctured_mode[i];
+
+				len += scnprintf(buf + len,
+						 buf_len - len, " %u:%u ", i,
+						 le32_to_cpu(tmp->ppdus_tried));
+			}
+
+			len += scnprintf(buf + len,
+					 buf_len - len, "\nppdus_ack_failed_%s =",
+					 mode_prefix);
+
+			for (i = 0;
+			     i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS;
+			     i++) {
+				const struct ath12k_htt_tx_rate_stats *tmp =
+					&stats_buf->npca_per_tx_su_punctured_mode[i];
+
+				len += scnprintf(buf + len,
+						 buf_len - len, " %u:%u ", i,
+						 le32_to_cpu(tmp->ppdus_ack_failed));
+			}
+
+			len += scnprintf(buf + len,
+					buf_len - len, "\nmpdus_tried_%s =",
+					mode_prefix);
+
+			for (i = 0;
+			     i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS;
+			     i++) {
+				const struct ath12k_htt_tx_rate_stats *tmp =
+					&stats_buf->npca_per_tx_su_punctured_mode[i];
+
+				len += scnprintf(buf + len,
+					buf_len - len, " %u:%u ", i,
+					le32_to_cpu(tmp->mpdus_tried));
+			}
+
+			len += scnprintf(buf + len,
+					buf_len - len, "\nmpdus_failed_%s =",
+					mode_prefix);
+
+			for (i = 0;
+			     i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS;
+			     i++) {
+				const struct ath12k_htt_tx_rate_stats *tmp =
+					&stats_buf->npca_per_tx_su_punctured_mode[i];
+
+				len += scnprintf(buf + len,
+					buf_len - len, " %u:%u ", i,
+					le32_to_cpu(tmp->mpdus_failed));
+			}
+		}
+
+		len += scnprintf(buf + len,
+				buf_len - len, "\n\nPER per punctured_mode:\n");
 
 		len += scnprintf(buf + len, buf_len - len, "ppdus_tried_%s =",
-				 mode_prefix);
+				mode_prefix);
 		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++)
 			len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
 				le32_to_cpu
 				(stats_buf->per_tx_su_punctured_mode[i].ppdus_tried));
 
 		len += scnprintf(buf + len, buf_len - len, "\nppdus_ack_failed_%s =",
-				 mode_prefix);
+				mode_prefix);
 		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS; i++)
 			len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
 				le32_to_cpu
@@ -8409,6 +8522,11 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 			 u32_get_bits(mac_id_word, ATH12K_HTT_STATS_MAC_ID));
 	len += scnprintf(buf + len, buf_len - len, "tx_ldpc = %u\n",
 			 le32_to_cpu(htt_stats_buf->tx_ldpc));
+	if (u32_get_bits(mac_id_word, HTT_TX_PDEV_RATE_STATS_WIFI_VERSION)
+			>= HTT_WIFI_VER_11BN) {
+		len += scnprintf(buf + len, buf_len - len, "tx_2xldpc = %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_2xldpc));
+	}
 	len += scnprintf(buf + len, buf_len - len, "ac_mu_mimo_tx_ldpc = %u\n",
 			 le32_to_cpu(htt_stats_buf->ac_mu_mimo_tx_ldpc));
 	len += scnprintf(buf + len, buf_len - len, "ax_mu_mimo_tx_ldpc = %u\n",
@@ -8669,6 +8787,19 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 		len += scnprintf(buf + len, buf_len - len, " %s:%u ",
 				 ath12k_htt_ax_tx_rx_ru_size_to_str(i),
 				 le32_to_cpu(htt_stats_buf->ofdma_ba_ru_size[i]));
+	if (u32_get_bits(mac_id_word, HTT_TX_PDEV_RATE_STATS_WIFI_VERSION)
+			>= HTT_WIFI_VER_11BN) {
+
+		len += scnprintf(buf + len, buf_len - len, "\n");
+		len += print_array_to_buf(buf, len, "npca_tx_bw = ",
+			htt_stats_buf->npca_tx_bw,
+			  ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS, "\n");
+
+		len += print_array_to_buf(buf, len,
+				"npca_tx_su_punctured_mode = ",
+				htt_stats_buf->npca_tx_su_punctured_mode,
+			  ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS, "\n");
+	}
 	len += scnprintf(buf + len, buf_len - len, "\n\n");
 
 	stats_req->buf_len = len;
@@ -9107,9 +9238,12 @@ ath12k_htt_print_rx_pdev_rate_ext_stats_tlv(const void *tag_buf, u16 tag_len,
 	u32 len = stats_req->buf_len;
 	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
 	u8 j;
+	u32 wifi_version_word;
 
 	if (tag_len < sizeof(*htt_stats_buf))
 		return;
+
+	wifi_version_word = le32_to_cpu(htt_stats_buf->wifi_version_word);
 
 	len += scnprintf(buf + len, buf_len - len, "HTT_RX_PDEV_RATE_EXT_STATS_TLV:\n");
 	len += scnprintf(buf + len, buf_len - len, "rssi_mgmt_in_dbm = %d\n",
@@ -9194,6 +9328,22 @@ ath12k_htt_print_rx_pdev_rate_ext_stats_tlv(const void *tag_buf, u16 tag_len,
 		len += scnprintf(buf + len, buf_len - len, "\n");
 	}
 
+	if (u32_get_bits(wifi_version_word,
+			 HTT_RX_PDEV_RATE_EXT_STATS_WIFI_VERSION) >= HTT_WIFI_VER_11BN) {
+
+		len += scnprintf(buf + len, buf_len - len, "rx_2xldpc = %d\n",
+				 le32_to_cpu(htt_stats_buf->rx_2xldpc));
+
+		len += print_array_to_buf(buf, len, "npca_rx_bw_ext",
+				  htt_stats_buf->npca_rx_bw_ext,
+				  ATH12K_HTT_RX_PDEV_STATS_NUM_BN_BW_COUNTERS,
+				  "\n");
+
+		len += print_array_to_buf(buf, len, "npca_rx_su_punctured_mode",
+				  htt_stats_buf->npca_rx_su_punctured_mode,
+				  ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS,
+				  "\n");
+	}
 	stats_req->buf_len = len;
 }
 
