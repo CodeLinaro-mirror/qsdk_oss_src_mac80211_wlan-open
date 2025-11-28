@@ -20,7 +20,7 @@ struct athdbg_qmi_event_qdss_trace_save_data {
 
 int athdbg_qmi_pci_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 {
-	struct ath12k_base *ab = dbg_qmi->ab;
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 	struct reserved_mem *ddr_rmem = NULL;
 
 	if (athdbg_base->dbg_to_ath_ops) {
@@ -70,7 +70,7 @@ int athdbg_qmi_pci_alloc_qdss_mem(struct athdbg_qmi *dbg_qmi)
 int athdbg_qmi_qdss_mem_alloc(struct athdbg_qmi *dbg_qmi)
 {
 	int i, ret = 0;
-	struct ath12k_base *ab = dbg_qmi->ab;
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 	struct reserved_mem *rmem = NULL;
 
 	switch (ab->hif.bus) {
@@ -115,7 +115,7 @@ int athdbg_qmi_qdss_mem_alloc(struct athdbg_qmi *dbg_qmi)
 void athdbg_qmi_event_qdss_trace_req_mem_hdlr(struct athdbg_qmi *dbg_qmi)
 {
 	int ret;
-	struct ath12k_base *ab = dbg_qmi->ab;
+	struct ath12k_base *ab = container_of(dbg_qmi, struct ath12k_base, dbg_qmi);
 
 	ret = athdbg_qmi_qdss_mem_alloc(dbg_qmi);
 	if (ret < 0) {
@@ -123,10 +123,10 @@ void athdbg_qmi_event_qdss_trace_req_mem_hdlr(struct athdbg_qmi *dbg_qmi)
 		return;
 	}
 
-	ret = athdbg_qmi_qdss_trace_mem_info_send_sync(dbg_qmi->ab);
+	ret = athdbg_qmi_qdss_trace_mem_info_send_sync(ab);
 	if (ret < 0) {
 		pr_err("qdss trace mem info send sync failed:%d\n", ret);
-		athdbg_qmi_qdss_mem_free(dbg_qmi);
+		athdbg_qmi_qdss_mem_free(ab);
 		return;
 	}
 	/* After qdss_trace_mem_info(QMI_WLFW_QDSS_TRACE_MEM_INFO_REQ_V01),
@@ -135,11 +135,10 @@ void athdbg_qmi_event_qdss_trace_req_mem_hdlr(struct athdbg_qmi *dbg_qmi)
 	 * before that.
 	 */
 	msleep(1000);
-	ret = athdbg_send_qdss_trace_mode_req(dbg_qmi->ab,
-			QMI_WLANFW_QDSS_TRACE_ON_V01, 0);
+	ret = athdbg_send_qdss_trace_mode_req(ab, QMI_WLANFW_QDSS_TRACE_ON_V01, 0);
 	if (ret < 0) {
 		pr_err("Failed to enable QDSS trace: %d\n", ret);
-		athdbg_qmi_qdss_mem_free(dbg_qmi);
+		athdbg_qmi_qdss_mem_free(ab);
 		return;
 	}
 	ab->is_qdss_tracing = true;
