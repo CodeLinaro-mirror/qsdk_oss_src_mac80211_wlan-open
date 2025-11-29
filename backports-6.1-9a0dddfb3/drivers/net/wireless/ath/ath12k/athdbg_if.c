@@ -106,7 +106,7 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv)
 		athdbg_qmi_deinit(ab);
 		break;
 	case ATHDBG_SRV_QDSS_MEM_FREE:
-		athdbg_qmi_qdss_mem_free(&ab->dbg_qmi);
+		athdbg_qmi_qdss_mem_free(ab);
 		break;
 	}
 

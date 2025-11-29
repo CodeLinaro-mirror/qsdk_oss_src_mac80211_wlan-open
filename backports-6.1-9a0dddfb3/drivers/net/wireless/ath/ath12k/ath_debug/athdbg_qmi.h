@@ -123,7 +123,6 @@ struct athdbg_qmi_driver_event {
 
 
 struct athdbg_qmi {
-	void *ab;
 	struct work_struct event_work;
 	struct workqueue_struct *event_wq;
 	struct list_head event_list;
@@ -148,7 +147,7 @@ int athdbg_qmi_driver_event_post(struct ath12k_qmi *qmi,
 			void *data);
 
 int athdbg_qmi_qdss_trace_mem_info_send_sync(void *qmi_ab);
-void athdbg_qmi_qdss_mem_free(struct athdbg_qmi *dbg_qmi);
+void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab);
 int athdbg_send_qdss_trace_mode_req(void *qmi_ab,
 		enum qmi_wlanfw_qdss_trace_mode_enum_v01 mode, u64 value);
 int athdbg_qmi_send_qdss_trace_config_download_req(void *qmi_ab,
