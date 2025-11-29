@@ -104,7 +104,7 @@ MODULE_PARM_DESC(io_coherency, "Enable io_coherency (0 - disable, 1 - enable)");
 #endif
 
 #ifndef CONFIG_ATH12K_MEM_PROFILE_512M
-unsigned int ath12k_max_clients = 256;
+unsigned int ath12k_max_clients = 512;
 module_param_named(max_clients, ath12k_max_clients, uint, 0644);
 MODULE_PARM_DESC(max_clients, "Max clients support");
 #endif
