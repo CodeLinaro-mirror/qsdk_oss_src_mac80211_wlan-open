@@ -3097,6 +3097,9 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_DPS_ASSIST: Enable/disable DPS assisting role.
  *
+ * @NL80211_ATTR_HE_MUEDCA_MODE: Attribute that denotes the mode of seeting MU
+ *	EDCA parameters(See enum nl80211_muedca_mode).
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3716,6 +3719,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_PCIE,
 	NL80211_ATTR_DCVS,
 	NL80211_ATTR_DPS_ASSIST,
+
+	NL80211_ATTR_HE_MUEDCA_MODE,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -9132,6 +9137,24 @@ enum nl80211_dcvs_attrs {
 	/* keep last */
 	__NL80211_DCVS_ATTR_LAST,
 	NL80211_DCVS_ATTR_MAX = __NL80211_DCVS_ATTR_LAST - 1
+};
+
+/**enum nl80211_muedca_mode - MUEDCA mode
+ *
+ * @NL80211_MUEDCA_USER_MODE: User mode
+ * @NL80211_MUEDCA_HOST_MODE: Host mode
+ * @NL80211_MUEDCA_FIRMWARE_MODE: Firmware mode (default mode)
+ * NL80211_MUEDCA_MAX: Maximum MUEDCA mode number defined
+ *
+ */
+enum nl80211_muedca_mode {
+	NL80211_MUEDCA_USER_MODE,
+	NL80211_MUEDCA_HOST_MODE,
+	NL80211_MUEDCA_FIRMWARE_MODE,
+
+	/* keep last */
+	__NL80211_MUEDCA_AFTER_LAST,
+	NL80211_MUEDCA_MAX = __NL80211_MUEDCA_AFTER_LAST - 1
 };
 
 #endif /* __LINUX_NL80211_H */
