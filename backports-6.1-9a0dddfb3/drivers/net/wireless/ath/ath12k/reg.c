@@ -394,8 +394,8 @@ int ath12k_regd_update(struct ath12k *ar, bool init)
 	}
 
 	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP && ar->supports_6ghz) {
-		freq_low = max(reg_cap->low_5ghz_chan, ab->reg_freq_6g.start_freq);
-		freq_high = min(reg_cap->high_5ghz_chan, ab->reg_freq_6g.end_freq);
+		freq_low = reg_cap->low_5ghz_chan;
+		freq_high = reg_cap->high_5ghz_chan;
 		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
 	}
 
