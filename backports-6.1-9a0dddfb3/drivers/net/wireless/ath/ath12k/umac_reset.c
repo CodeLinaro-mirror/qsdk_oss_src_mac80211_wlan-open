@@ -402,7 +402,6 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 		ret = ath12k_htt_umac_reset_send_start_pre_reset_cmd(ab,
 								     is_initiator,
 								     is_target_recovery);
-		ab->dp_umac_reset.ts.trigger_done = jiffies_to_msecs(jiffies);
 		if (ret)
 			ath12k_warn(ab, "Unable to send umac trigger\n");
 		/* Transition to PRE_RESET_DONE state */
@@ -412,7 +411,6 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 	case ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE:
 		shmem_vaddr_aligned->h2t_msg = u32_encode_bits(1,
 						ATH12K_HTT_UMAC_RESET_MSG_SHMEM_PRE_RESET_DONE_SET);
-		ab->dp_umac_reset.ts.pre_reset_done = jiffies_to_msecs(jiffies);
 		/* Transition to PRE_RESET_DONE state */
 		next_state = ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE;
 		ath12k_umac_reset_state_transition(ab, next_state);
@@ -420,7 +418,6 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 	case ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE:
 		shmem_vaddr_aligned->h2t_msg = u32_encode_bits(1,
 						ATH12K_HTT_UMAC_RESET_MSG_SHMEM_POST_RESET_START_DONE_SET);
-		ab->dp_umac_reset.ts.post_reset_done = jiffies_to_msecs(jiffies);
 		/* Transition to POST_RESET_DONE state */
 		next_state = ATH12K_UMAC_RESET_STATE_POST_RESET_DONE;
 		ath12k_umac_reset_state_transition(ab, next_state);
@@ -428,7 +425,6 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 	case ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE:
 		shmem_vaddr_aligned->h2t_msg = u32_encode_bits(1,
 				ATH12K_HTT_UMAC_RESET_MSG_SHMEM_POST_RESET_COMPLETE_DONE);
-		ab->dp_umac_reset.ts.post_reset_complete_done = jiffies_to_msecs(jiffies);
 		/* Transition back to IDLE state */
 		next_state = ATH12K_UMAC_RESET_STATE_IDLE;
 		ath12k_umac_reset_state_transition(ab, next_state);
@@ -438,14 +434,6 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 	if (tx_event == ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE) {
 		ath12k_umac_reset_completion(ab);
 		ath12k_info(ab, "MLO UMAC Recovery completed\n");
-		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "Time taken for trigger_start:%llums "
-			   "trigger_done: %llums pre_reset:%llums post_reset:%llums "
-			   "post_reset_complete:%llums",
-			   ab->dp_umac_reset.ts.trigger_start, ab->dp_umac_reset.ts.trigger_done,
-			   ab->dp_umac_reset.ts.pre_reset_done - ab->dp_umac_reset.ts.pre_reset_start,
-			   ab->dp_umac_reset.ts.post_reset_done - ab->dp_umac_reset.ts.post_reset_start,
-			   ab->dp_umac_reset.ts.post_reset_complete_done - ab->dp_umac_reset.ts.post_reset_complete_start);
-		memset(&umac_reset->ts, 0, sizeof(struct ath12k_umac_reset_ts));
 	}
 
 	return;
@@ -624,11 +612,9 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 			return;
 
 		ret = ath12k_umac_reset_initiate_recovery(ab, target_recovery);
-		if (ret) {
-			ab->dp_umac_reset.ts.trigger_start = jiffies_to_msecs(jiffies);
+		if (ret)
 			ath12k_umac_reset_notify_target(ab, ATH12K_UMAC_RESET_TX_CMD_TRIGGER_DONE);
-			ab->dp_umac_reset.ts.trigger_done = jiffies_to_msecs(jiffies);
-		}
+
 		break;
 	case ATH12K_UMAC_RESET_DO_PRE_RESET:
 		/* Transition to PRE_RESET_START state */
@@ -638,7 +624,6 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 			ath12k_warn(ab, "Failed to transition to PRE_RESET_START state\n");
 			break;
 		}
-		ab->dp_umac_reset.ts.pre_reset_start = jiffies_to_msecs(jiffies);
 		ath12k_umac_reset_handle_pre_reset(ab);
 		break;
 	case ATH12K_UMAC_RESET_DO_POST_RESET_START:
@@ -649,7 +634,6 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 			ath12k_warn(ab, "Failed to transition to POST_RESET_START state\n");
 			break;
 		}
-		ab->dp_umac_reset.ts.post_reset_start = jiffies_to_msecs(jiffies);
 		ath12k_umac_reset_handle_post_reset_start(ab);
 		break;
 	case ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE:
@@ -660,8 +644,6 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 			ath12k_warn(ab, "Failed to transition to POST_RESET_COMPLETE state\n");
 			break;
 		}
-		ab->dp_umac_reset.ts.post_reset_complete_start =
-							jiffies_to_msecs(jiffies);
 		ath12k_umac_reset_handle_post_reset_complete(ab);
 		break;
 	default:
@@ -674,9 +656,63 @@ irqreturn_t ath12k_umac_reset_interrupt_handler(int irq, void *arg)
 {
 	struct ath12k_base *ab = arg;
 	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t *shmem_vaddr;
+	u32 t2h_msg;
+	u64 timestamp;
+	bool has_valid_event = false;
+	int htt_msg;
 
-	disable_irq_nosync(umac_reset->irq_num);
-	tasklet_schedule(&umac_reset->intr_tq);
+	shmem_vaddr = umac_reset->shmem_vaddr_aligned;
+
+	/* Validate shared memory */
+	if (!shmem_vaddr || shmem_vaddr->magic_num != umac_reset->magic_num) {
+		/* Spurious interrupt - no valid shared memory */
+		return IRQ_HANDLED;
+	}
+
+	/* Read event message */
+	t2h_msg = shmem_vaddr->t2h_msg;
+
+	/* Check if any valid events are present */
+	if (!t2h_msg) {
+		/* No events - spurious interrupt */
+		return IRQ_HANDLED;
+	}
+
+	/* Capture timestamp immediately for all events */
+	timestamp = jiffies_to_msecs(jiffies);
+
+	/* Check for valid events and record per-event timestamps */
+	if (u32_get_bits(t2h_msg, HTT_ATH12K_UMAC_RESET_T2H_INIT_UMAC_RECOVERY)) {
+		umac_reset->ts.event_irq_init_umac_recovery = timestamp;
+		has_valid_event = true;
+	}
+
+	htt_msg = HTT_ATH12K_UMAC_RESET_T2H_INIT_TARGET_RECOVERY_SYNC_USING_UMAC;
+	if (u32_get_bits(t2h_msg, htt_msg)) {
+		umac_reset->ts.event_irq_init_target_recovery = timestamp;
+		has_valid_event = true;
+	}
+
+	if (u32_get_bits(t2h_msg, HTT_ATH12K_UMAC_RESET_T2H_DO_PRE_RESET)) {
+		umac_reset->ts.event_irq_pre_reset = timestamp;
+		has_valid_event = true;
+	}
+
+	if (u32_get_bits(t2h_msg, HTT_ATH12K_UMAC_RESET_T2H_DO_POST_RESET_START)) {
+		umac_reset->ts.event_irq_post_reset_start = timestamp;
+		has_valid_event = true;
+	}
+
+	if (u32_get_bits(t2h_msg, HTT_ATH12K_UMAC_RESET_T2H_DO_POST_RESET_COMPLETE)) {
+		umac_reset->ts.event_irq_post_reset_complete = timestamp;
+		has_valid_event = true;
+	}
+
+	/* Only schedule tasklet if we have valid events */
+	if (has_valid_event)
+		tasklet_schedule(&umac_reset->intr_tq);
+
 	return IRQ_HANDLED;
 }
 
@@ -755,7 +791,6 @@ void ath12k_umac_reset_tasklet_handler(struct tasklet_struct *umac_cntxt)
 
 	ath12k_hif_dp_umac_intr_line_reset(ab);
 	ath12k_dp_umac_reset_handle(ab);
-	enable_irq(umac_reset->irq_num);
 }
 
 void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab)

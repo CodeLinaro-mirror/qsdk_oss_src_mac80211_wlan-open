@@ -914,14 +914,12 @@ enum ath12k_umac_reset_state {
 };
 
 struct ath12k_umac_reset_ts {
-	u64 trigger_start;
-	u64 trigger_done;
-	u64 pre_reset_start;
-	u64 pre_reset_done;
-	u64 post_reset_start;
-	u64 post_reset_done;
-	u64 post_reset_complete_start;
-	u64 post_reset_complete_done;
+	/* Interrupt arrival timestamps for each event */
+	u64 event_irq_init_umac_recovery;
+	u64 event_irq_init_target_recovery;
+	u64 event_irq_pre_reset;
+	u64 event_irq_post_reset_start;
+	u64 event_irq_post_reset_complete;
 };
 
 struct ath12k_dp_umac_reset {
