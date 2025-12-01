@@ -20,6 +20,150 @@
 #include "ppe.h"
 #endif
 
+/* State machine transition validation table */
+static const bool umac_reset_state_transition_valid
+	[ATH12K_UMAC_RESET_STATE_MAX][ATH12K_UMAC_RESET_STATE_MAX] = {
+	/* From IDLE */
+	[ATH12K_UMAC_RESET_STATE_IDLE] = {
+		[ATH12K_UMAC_RESET_STATE_INIT] = true,
+	},
+	/* From INIT */
+	[ATH12K_UMAC_RESET_STATE_INIT] = {
+		[ATH12K_UMAC_RESET_STATE_TRIGGER_SENT] = true,
+		[ATH12K_UMAC_RESET_STATE_IDLE] = true,
+		[ATH12K_UMAC_RESET_STATE_ERROR] = true,
+	},
+	/* From TRIGGER_SENT */
+	[ATH12K_UMAC_RESET_STATE_TRIGGER_SENT] = {
+		[ATH12K_UMAC_RESET_STATE_PRE_RESET_START] = true,
+		[ATH12K_UMAC_RESET_STATE_ERROR] = true,
+	},
+	/* From PRE_RESET_START */
+	[ATH12K_UMAC_RESET_STATE_PRE_RESET_START] = {
+		[ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE] = true,
+		[ATH12K_UMAC_RESET_STATE_ERROR] = true,
+	},
+	/* From PRE_RESET_DONE */
+	[ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE] = {
+		[ATH12K_UMAC_RESET_STATE_POST_RESET_START] = true,
+		[ATH12K_UMAC_RESET_STATE_ERROR] = true,
+	},
+	/* From POST_RESET_START */
+	[ATH12K_UMAC_RESET_STATE_POST_RESET_START] = {
+		[ATH12K_UMAC_RESET_STATE_POST_RESET_DONE] = true,
+		[ATH12K_UMAC_RESET_STATE_ERROR] = true,
+	},
+	/* From POST_RESET_DONE */
+	[ATH12K_UMAC_RESET_STATE_POST_RESET_DONE] = {
+		[ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE] = true,
+		[ATH12K_UMAC_RESET_STATE_ERROR] = true,
+	},
+	/* From POST_RESET_COMPLETE */
+	[ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE] = {
+		[ATH12K_UMAC_RESET_STATE_IDLE] = true,
+		[ATH12K_UMAC_RESET_STATE_ERROR] = true,
+	},
+	/* From ERROR */
+	[ATH12K_UMAC_RESET_STATE_ERROR] = {
+		[ATH12K_UMAC_RESET_STATE_IDLE] = true,
+	},
+};
+
+static const char *ath12k_umac_reset_state_to_str(enum ath12k_umac_reset_state state)
+{
+	switch (state) {
+	case ATH12K_UMAC_RESET_STATE_IDLE:
+		return "IDLE";
+	case ATH12K_UMAC_RESET_STATE_INIT:
+		return "INIT";
+	case ATH12K_UMAC_RESET_STATE_TRIGGER_SENT:
+		return "TRIGGER_SENT";
+	case ATH12K_UMAC_RESET_STATE_PRE_RESET_START:
+		return "PRE_RESET_START";
+	case ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE:
+		return "PRE_RESET_DONE";
+	case ATH12K_UMAC_RESET_STATE_POST_RESET_START:
+		return "POST_RESET_START";
+	case ATH12K_UMAC_RESET_STATE_POST_RESET_DONE:
+		return "POST_RESET_DONE";
+	case ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE:
+		return "POST_RESET_COMPLETE";
+	case ATH12K_UMAC_RESET_STATE_ERROR:
+		return "ERROR";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+static bool ath12k_umac_reset_validate_transition(struct ath12k_base *ab,
+						  enum ath12k_umac_reset_state from,
+						  enum ath12k_umac_reset_state to)
+{
+	if (from >= ATH12K_UMAC_RESET_STATE_MAX || to >= ATH12K_UMAC_RESET_STATE_MAX)
+		return false;
+
+	return umac_reset_state_transition_valid[from][to];
+}
+
+static int ath12k_umac_reset_state_transition(struct ath12k_base *ab,
+					      enum ath12k_umac_reset_state new_state)
+{
+	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	enum ath12k_umac_reset_state old_state;
+	unsigned long flags;
+
+	spin_lock_irqsave(&umac_reset->state_lock, flags);
+
+	old_state = umac_reset->current_state;
+
+	/* Validate transition */
+	if (!ath12k_umac_reset_validate_transition(ab, old_state, new_state)) {
+		/* Track error and transition to ERROR state */
+		umac_reset->state_error_count++;
+		umac_reset->error_from_state = old_state;
+		umac_reset->prev_state = old_state;
+		umac_reset->current_state = ATH12K_UMAC_RESET_STATE_ERROR;
+		umac_reset->state_transition_count[ATH12K_UMAC_RESET_STATE_ERROR]++;
+		umac_reset->state_entry_time[ATH12K_UMAC_RESET_STATE_ERROR] =
+							jiffies_to_msecs(jiffies);
+		spin_unlock_irqrestore(&umac_reset->state_lock, flags);
+
+		ath12k_warn(ab, "[UMAC_RESET] Invalid state transition: %s -> %s\n",
+			    ath12k_umac_reset_state_to_str(old_state),
+			    ath12k_umac_reset_state_to_str(new_state));
+		return -EINVAL;
+	}
+
+	/* Perform transition */
+	umac_reset->prev_state = old_state;
+	umac_reset->current_state = new_state;
+	umac_reset->state_transition_count[new_state]++;
+	umac_reset->state_entry_time[new_state] = jiffies_to_msecs(jiffies);
+
+	spin_unlock_irqrestore(&umac_reset->state_lock, flags);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+		   "[UMAC_RESET] State transition: %s -> %s (count: %u)\n",
+		   ath12k_umac_reset_state_to_str(old_state),
+		   ath12k_umac_reset_state_to_str(new_state),
+		   umac_reset->state_transition_count[new_state]);
+
+	return 0;
+}
+
+static enum ath12k_umac_reset_state ath12k_umac_reset_get_state(struct ath12k_base *ab)
+{
+	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	enum ath12k_umac_reset_state state;
+	unsigned long flags;
+
+	spin_lock_irqsave(&umac_reset->state_lock, flags);
+	state = umac_reset->current_state;
+	spin_unlock_irqrestore(&umac_reset->state_lock, flags);
+
+	return state;
+}
+
 int ath12k_htt_umac_reset_msg_send(struct ath12k_base *ab,
 				   struct ath12k_htt_umac_reset_setup_cmd_params *params)
 {
@@ -168,6 +312,16 @@ int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 	umac_reset->intr_offset = ath12k_get_umac_reset_intr_offset(ab);
 	memset(&umac_reset->ts, 0, sizeof(struct ath12k_umac_reset_ts));
 
+	/* Initialize state machine */
+	spin_lock_init(&umac_reset->state_lock);
+	umac_reset->current_state = ATH12K_UMAC_RESET_STATE_IDLE;
+	umac_reset->prev_state = ATH12K_UMAC_RESET_STATE_IDLE;
+	memset(umac_reset->state_transition_count, 0,
+	       sizeof(umac_reset->state_transition_count));
+	memset(umac_reset->state_entry_time, 0, sizeof(umac_reset->state_entry_time));
+	umac_reset->state_error_count = 0;
+	umac_reset->error_from_state = ATH12K_UMAC_RESET_STATE_IDLE;
+
 	ret = ath12k_hif_dp_umac_reset_irq_config(ab);
 	if (ret) {
 		ath12k_warn(ab, "Failed to register interrupt for UMAC RECOVERY\n");
@@ -235,6 +389,7 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 {
 	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
 	struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t *shmem_vaddr_aligned;
+	enum ath12k_umac_reset_state next_state;
 	bool is_initiator, is_target_recovery;
 	int ret;
 
@@ -250,21 +405,33 @@ void ath12k_umac_reset_send_htt(struct ath12k_base *ab, int tx_event)
 		ab->dp_umac_reset.ts.trigger_done = jiffies_to_msecs(jiffies);
 		if (ret)
 			ath12k_warn(ab, "Unable to send umac trigger\n");
+		/* Transition to PRE_RESET_DONE state */
+		next_state = ATH12K_UMAC_RESET_STATE_TRIGGER_SENT;
+		ath12k_umac_reset_state_transition(ab, next_state);
 		break;
 	case ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE:
 		shmem_vaddr_aligned->h2t_msg = u32_encode_bits(1,
 						ATH12K_HTT_UMAC_RESET_MSG_SHMEM_PRE_RESET_DONE_SET);
 		ab->dp_umac_reset.ts.pre_reset_done = jiffies_to_msecs(jiffies);
+		/* Transition to PRE_RESET_DONE state */
+		next_state = ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE;
+		ath12k_umac_reset_state_transition(ab, next_state);
 		break;
 	case ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE:
 		shmem_vaddr_aligned->h2t_msg = u32_encode_bits(1,
 						ATH12K_HTT_UMAC_RESET_MSG_SHMEM_POST_RESET_START_DONE_SET);
 		ab->dp_umac_reset.ts.post_reset_done = jiffies_to_msecs(jiffies);
+		/* Transition to POST_RESET_DONE state */
+		next_state = ATH12K_UMAC_RESET_STATE_POST_RESET_DONE;
+		ath12k_umac_reset_state_transition(ab, next_state);
 		break;
 	case ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE:
 		shmem_vaddr_aligned->h2t_msg = u32_encode_bits(1,
 				ATH12K_HTT_UMAC_RESET_MSG_SHMEM_POST_RESET_COMPLETE_DONE);
 		ab->dp_umac_reset.ts.post_reset_complete_done = jiffies_to_msecs(jiffies);
+		/* Transition back to IDLE state */
+		next_state = ATH12K_UMAC_RESET_STATE_IDLE;
+		ath12k_umac_reset_state_transition(ab, next_state);
 		break;
         }
 
@@ -308,9 +475,16 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 {
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	enum ath12k_umac_reset_state current_state;
+	int ret, i;
 
-	if (!mlo_umac_reset)
-		return -EOPNOTSUPP;
+	/* Check current state before initiating recovery */
+	current_state = ath12k_umac_reset_get_state(ab);
+	if (current_state != ATH12K_UMAC_RESET_STATE_IDLE) {
+		ath12k_warn(ab, "Cannot initiate recovery from state %s, expected INIT\n",
+			    ath12k_umac_reset_state_to_str(current_state));
+		return -EINVAL;
+	}
 
 	spin_lock_bh(&mlo_umac_reset->lock);
 
@@ -326,7 +500,26 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 		mlo_umac_reset->umac_reset_info |= BIT(1); /* Target recovery */
 	atomic_set(&mlo_umac_reset->response_chip, 0);
 	mlo_umac_reset->initiator_chip = ab->device_id;
+
+	for (i = 0; i < ag->num_devices; i++) {
+		struct ath12k_base *partner_ab = ag->ab[i];
+
+		if (partner_ab->is_bypassed ||
+		    test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
+			continue;
+
+		/* Transition to INIT state */
+		ret = ath12k_umac_reset_state_transition(partner_ab,
+							 ATH12K_UMAC_RESET_STATE_INIT);
+		if (ret) {
+			ath12k_warn(ab, "Failed to transition to INIT state\n");
+			spin_unlock_bh(&mlo_umac_reset->lock);
+			return -EINVAL;
+		}
+	}
+
 	spin_unlock_bh(&mlo_umac_reset->lock);
+
 	return 0;
 }
 
@@ -420,6 +613,7 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 {
 	int ret;
 	bool target_recovery = false;
+	enum ath12k_umac_reset_state next_state;
 
 	switch(rx_event) {
 	case ATH12K_UMAC_RESET_INIT_TARGET_RECOVERY_SYNC_USING_UMAC:
@@ -430,28 +624,50 @@ void ath12k_dp_umac_reset_action(struct ath12k_base *ab,
 			return;
 
 		ret = ath12k_umac_reset_initiate_recovery(ab, target_recovery);
-		if (!ret) {
+		if (ret) {
 			ab->dp_umac_reset.ts.trigger_start = jiffies_to_msecs(jiffies);
 			ath12k_umac_reset_notify_target(ab, ATH12K_UMAC_RESET_TX_CMD_TRIGGER_DONE);
+			ab->dp_umac_reset.ts.trigger_done = jiffies_to_msecs(jiffies);
 		}
 		break;
-	case ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE:
-		ab->dp_umac_reset.ts.post_reset_complete_start = jiffies_to_msecs(jiffies);
-		ath12k_umac_reset_handle_post_reset_complete(ab);
+	case ATH12K_UMAC_RESET_DO_PRE_RESET:
+		/* Transition to PRE_RESET_START state */
+		next_state = ATH12K_UMAC_RESET_STATE_PRE_RESET_START;
+		ret = ath12k_umac_reset_state_transition(ab, next_state);
+		if (ret) {
+			ath12k_warn(ab, "Failed to transition to PRE_RESET_START state\n");
+			break;
+		}
+		ab->dp_umac_reset.ts.pre_reset_start = jiffies_to_msecs(jiffies);
+		ath12k_umac_reset_handle_pre_reset(ab);
 		break;
 	case ATH12K_UMAC_RESET_DO_POST_RESET_START:
+		/* Transition to POST_RESET_START state */
+		next_state = ATH12K_UMAC_RESET_STATE_POST_RESET_START;
+		ret = ath12k_umac_reset_state_transition(ab, next_state);
+		if (ret) {
+			ath12k_warn(ab, "Failed to transition to POST_RESET_START state\n");
+			break;
+		}
 		ab->dp_umac_reset.ts.post_reset_start = jiffies_to_msecs(jiffies);
 		ath12k_umac_reset_handle_post_reset_start(ab);
 		break;
-	case ATH12K_UMAC_RESET_DO_PRE_RESET:
-		ab->dp_umac_reset.ts.pre_reset_start = jiffies_to_msecs(jiffies);
-		ath12k_umac_reset_handle_pre_reset(ab);
+	case ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE:
+		/* Transition to POST_RESET_COMPLETE state */
+		next_state = ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE;
+		ret = ath12k_umac_reset_state_transition(ab, next_state);
+		if (ret) {
+			ath12k_warn(ab, "Failed to transition to POST_RESET_COMPLETE state\n");
+			break;
+		}
+		ab->dp_umac_reset.ts.post_reset_complete_start =
+							jiffies_to_msecs(jiffies);
+		ath12k_umac_reset_handle_post_reset_complete(ab);
 		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "Unknown UMAC RESET event received\n");
 		break;
 	}
-	return;
 }
 
 irqreturn_t ath12k_umac_reset_interrupt_handler(int irq, void *arg)
@@ -468,6 +684,7 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 {
 	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
 	struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t *shmem_vaddr;
+	enum ath12k_umac_reset_state current_state;
 	int rx_event, num_event = 0;
 	u32 t2h_msg;
 
@@ -482,6 +699,11 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 			   shmem_vaddr->magic_num, umac_reset->magic_num);
 		return;
 	}
+
+	/* Log current state for debugging */
+	current_state = ath12k_umac_reset_get_state(ab);
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "Processing UMAC reset event in state: %s\n",
+		   ath12k_umac_reset_state_to_str(current_state));
 
 	t2h_msg = shmem_vaddr->t2h_msg;
 	shmem_vaddr->t2h_msg = 0;
@@ -516,7 +738,8 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "Deduced rx event:%d num:%d\n", rx_event, num_event);
 
 	if (num_event > 1) {
-		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "Multiple event notified in single msg\n");
+		ath12k_warn(ab, "Multiple events notified in single msg while in state %s\n",
+			    ath12k_umac_reset_state_to_str(current_state));
 		WARN_ON_ONCE(1);
 		return;
 	}
