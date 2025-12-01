@@ -1065,8 +1065,6 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 		msdu->priority = tid;
 	}
 
-	rcu_read_unlock();
-
 	ath12k_dbg(ab, ATH12K_DBG_DATA,
 		   "rx skb %p len %u peer %pM %d %s %s%s%s%s%s%s%s%s%s%s rate_idx %u vht_nss %u freq %u band %u flag 0x%x fcs-err %i mic-err %i amsdu-more %i\n",
 		   msdu,
@@ -1101,6 +1099,7 @@ void ath12k_dp_rx_deliver_msdu(struct ath12k_pdev_dp *dp_pdev,
 	/* TODO: trace rx packet */
 
 	ieee80211_rx_napi(ath12k_dp_pdev_to_hw(dp_pdev), pubsta, msdu, napi);
+	rcu_read_unlock();
 }
 EXPORT_SYMBOL(ath12k_dp_rx_deliver_msdu);
 
