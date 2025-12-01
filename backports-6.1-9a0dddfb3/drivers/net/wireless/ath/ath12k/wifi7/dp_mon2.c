@@ -922,7 +922,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 	struct hal_rx_mon_msdu_info *msdu_meta;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_pdev_mon_dp_stats *mon_stats = &dp_pdev->dp_mon_pdev->mon_stats;
-	u32 hdr_frag_size, frag_size, frag_page_offset, msdu_llc_len;
+	u32 hdr_frag_size, frag_size, frag_page_offset, msdu_llc_len, pad_byte_holder;
 	u32 tot_msdu_len = 0;
 	u8 mpdu_buf_len;
 	u8 num_frags = ath12k_dp_mon_get_num_frags_in_fraglist(mpdu);
@@ -977,6 +977,8 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 		ret = -EINVAL;
 		goto free_mpdu;
 	}
+	pad_byte_holder = ATH12K_DP_MON_RX_BUF_SIZE -
+				(frag_size + ATH12K_MON_RX_PKT_OFFSET);
 
 	/* Adjust frag[1] offset to skip decap header and L3 padding.
 	 * This ensures the fragment points to the start of the L3 payload.
@@ -1019,9 +1021,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 			struct ath12k_dp_mon_pad_params params = {
 				.frag_size = frag_size,
 				.msdu_llc_len = msdu_llc_len,
-				.pad_byte_holder =
-					ATH12K_DP_MON_RX_BUF_SIZE -
-						(frag_size + ATH12K_MON_RX_PKT_OFFSET),
+				.pad_byte_holder = pad_byte_holder,
 				.frag_idx = 1,
 				.is_head_msdu = true,
 			};
