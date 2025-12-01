@@ -1837,6 +1837,7 @@ struct cfg80211_ap_settings {
 	u8 ml_max_rec_links;
 	enum nl80211_regulatory_power_modes he_6ghz_power_type;
 	struct cfg80211_ttlm_params ttlm_params;
+	bool is_cfp_enabled;
 };
 
 

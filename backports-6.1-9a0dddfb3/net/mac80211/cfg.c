@@ -1513,10 +1513,14 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	lockdep_assert_wiphy(local->hw.wiphy);
 
 	link = sdata_dereference(sdata->link[link_id], sdata);
+
 	if (!link)
 		return -ENOLINK;
 
 	link_conf = link->conf;
+
+	if (params->is_cfp_enabled)
+		link_conf->is_cfp_enabled = true;
 
 	old = sdata_dereference(link->u.ap.beacon, sdata);
 	if (old)
