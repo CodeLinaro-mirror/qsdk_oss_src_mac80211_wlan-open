@@ -21350,7 +21350,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	sinfo->rx_duration = rate_info.rx_duration;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DURATION);
 
-	spin_lock_bh(&ab->base_lock);
+	spin_lock_bh(&dp->dp_lock);
 	sinfo->tx_duration = rate_info.tx_duration;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_DURATION);
 
@@ -21371,13 +21371,13 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
 	}
 
-	spin_unlock_bh(&ab->base_lock);
 	rssi_offset = rate_info.rssi_comb + ar->rssi_offsets.avg_nf_dbm;
 	rssi_signal = rate_info.rssi_comb > ar->rssi_offsets.xlna_bypass_threshold ?
 		      rssi_offset + ar->rssi_offsets.xlna_bypass_offset :
 		      rssi_offset;
 
 	signal = rate_info.rssi_comb;
+	spin_unlock_bh(&dp->dp_lock);
 
 	if (ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
 		/* Limit the requests to Firmware for fetching the signal strength */
@@ -21399,6 +21399,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	    ahsta->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		ath12k_mac_put_chain_rssi(sinfo, arsta);
 
+	spin_lock_bh(&dp->dp_lock);
 	if (signal) {
 		sinfo->signal = db2dbm ? rate_info.rssi_comb : rssi_signal;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_SIGNAL);
@@ -21418,6 +21419,7 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	sinfo->tx_failed = rate_info.tx_retry_failed;
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_RETRIES);
 	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_FAILED);
+	spin_unlock_bh(&dp->dp_lock);
 }
 EXPORT_SYMBOL(ath12k_mac_op_sta_statistics);
 

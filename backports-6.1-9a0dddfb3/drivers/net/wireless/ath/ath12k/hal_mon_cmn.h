@@ -155,7 +155,7 @@ struct hal_rx_mon_ppdu_info {
 	u8 sgi;
 	u8 ldpc;
 	u8 beamformed;
-	u8 rssi_comb;
+	s8 rssi_comb;
 	u16 tid;
 	u8 fc_valid;
 	u16 ht_flags;
