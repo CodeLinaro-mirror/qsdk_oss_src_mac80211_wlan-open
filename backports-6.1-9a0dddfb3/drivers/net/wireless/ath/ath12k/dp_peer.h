@@ -56,6 +56,7 @@ struct ath12k_dp_link_peer {
 	bool delayba_flag;
 	bool is_authorized;
 	bool mlo;
+	u32 last_delayed_ba_ppduid;
 	/* protected by ab->data_lock */
 
 	u16 ml_id;
