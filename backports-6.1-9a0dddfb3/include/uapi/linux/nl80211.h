@@ -3064,6 +3064,8 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_CONTROL_MIC_PAD: Mic padding for control frame protection.
  *
+ * @NL80211_ATTR_USE_CFP: Indicate the use of control frame protection by station.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3665,6 +3667,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE,
 
 	NL80211_ATTR_CONTROL_MIC_PAD,
+
+	NL80211_ATTR_USE_CFP,
 
 	/* add attributes here, update the policy in nl80211.c */
 
@@ -5686,6 +5690,18 @@ enum nl80211_mfp {
 	NL80211_MFP_REQUIRED,
 	NL80211_MFP_OPTIONAL,
 };
+
+/**
+ * enum nl80211_cfp - Control frame protection state
+ * @NL80211_CFP_NO: Control frame protection not used
+ * @NL80211_CFP_REQUIRED: Control frame protection required
+ *
+ */
+enum nl80211_cfp {
+	NL80211_CFP_NO,
+	NL80211_CFP_REQUIRED,
+};
+
 
 enum nl80211_wpa_versions {
 	NL80211_WPA_VERSION_1 = 1 << 0,

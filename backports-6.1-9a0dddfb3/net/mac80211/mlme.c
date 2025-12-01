@@ -6181,6 +6181,13 @@ static bool ieee80211_assoc_success(struct ieee80211_sub_if_data *sdata,
 		sta->sta.mfp = false;
 	}
 
+	if (ifmgd->flags & IEEE80211_STA_CFP_ENABLED) {
+		set_sta_flag(sta, WLAN_STA_CFP);
+		sta->sta.cfp = true;
+	} else {
+		sta->sta.cfp = false;
+	}
+
 	ieee80211_sta_set_max_amsdu_subframes(sta, elems->ext_capab,
 					      elems->ext_capab_len);
 
@@ -9732,6 +9739,14 @@ int ieee80211_mgd_assoc(struct ieee80211_sub_if_data *sdata,
 	} else {
 		ifmgd->mfp = IEEE80211_MFP_DISABLED;
 		ifmgd->flags &= ~IEEE80211_STA_MFP_ENABLED;
+	}
+
+	if (req->use_cfp) {
+		ifmgd->cfp = IEEE80211_CFP_REQUIRED;
+		ifmgd->flags |= IEEE80211_STA_CFP_ENABLED;
+	} else {
+		ifmgd->cfp = IEEE80211_CFP_DISABLED;
+		ifmgd->flags &= ~IEEE80211_STA_CFP_ENABLED;
 	}
 
 	if (req->flags & ASSOC_REQ_USE_RRM)
