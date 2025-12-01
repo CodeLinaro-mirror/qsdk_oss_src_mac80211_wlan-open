@@ -435,6 +435,30 @@ void ieee80211_set_default_beacon_key(struct ieee80211_link_data *link,
 	__ieee80211_set_default_beacon_key(link, idx);
 }
 
+static void
+__ieee80211_set_default_control_key(struct ieee80211_link_data *link, int idx)
+{
+	struct ieee80211_sub_if_data *sdata = link->sdata;
+	struct ieee80211_key *key = NULL;
+
+	lockdep_assert_wiphy(sdata->local->hw.wiphy);
+
+	idx += CIGTK_INDEX_OFFSET;
+	key = wiphy_dereference(sdata->local->hw.wiphy,
+				link->gtk[idx]);
+
+	rcu_assign_pointer(link->default_control_key, key);
+
+	ieee80211_debugfs_key_update_default(sdata);
+}
+
+void ieee80211_set_default_control_key(struct ieee80211_link_data *link,
+				       int idx)
+{
+	lockdep_assert_wiphy(link->sdata->local->hw.wiphy);
+	__ieee80211_set_default_control_key(link, idx);
+}
+
 static int ieee80211_key_replace(struct ieee80211_sub_if_data *sdata,
 				 struct ieee80211_link_data *link,
 				 struct sta_info *sta,
@@ -446,14 +470,23 @@ static int ieee80211_key_replace(struct ieee80211_sub_if_data *sdata,
 	int link_id;
 	int idx;
 	int ret = 0;
-	bool defunikey, defmultikey, defmgmtkey, defbeaconkey;
+	bool defunikey, defmultikey, defmgmtkey, defbeaconkey, defcontrolkey;
 	bool is_wep;
+	bool is_cigtk;
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
 	/* caller must provide at least one old/new */
 	if (WARN_ON(!new && !old))
 		return 0;
+
+	if ((new && (new->conf.keyidx == 0 || new->conf.keyidx == 1) &&
+	     (new->conf.cipher == WLAN_CIPHER_SUITE_BIP_GMAC_256)) ||
+	    (old && (old->conf.keyidx == 0 || old->conf.keyidx == 1) &&
+	     (old->conf.cipher == WLAN_CIPHER_SUITE_BIP_GMAC_256)))
+		is_cigtk = true;
+	else
+		is_cigtk = false;
 
 	if (new) {
 		idx = new->conf.keyidx;
@@ -521,6 +554,9 @@ static int ieee80211_key_replace(struct ieee80211_sub_if_data *sdata,
 	if (new)
 		list_add_tail_rcu(&new->list, &sdata->key_list);
 
+	if (is_cigtk)
+		idx += CIGTK_INDEX_OFFSET;
+
 	if (sta) {
 		if (pairwise) {
 			rcu_assign_pointer(sta->ptk[idx], new);
@@ -552,6 +588,9 @@ static int ieee80211_key_replace(struct ieee80211_sub_if_data *sdata,
 		defbeaconkey = old &&
 			old == wiphy_dereference(sdata->local->hw.wiphy,
 						 link->default_beacon_key);
+		defcontrolkey = old &&
+			old == wiphy_dereference(sdata->local->hw.wiphy,
+						 link->default_control_key);
 
 		if (defunikey && !new)
 			__ieee80211_set_default_key(link, -1, true, false);
@@ -561,6 +600,8 @@ static int ieee80211_key_replace(struct ieee80211_sub_if_data *sdata,
 			__ieee80211_set_default_mgmt_key(link, -1);
 		if (defbeaconkey && !new)
 			__ieee80211_set_default_beacon_key(link, -1);
+		if (defcontrolkey && !new)
+			__ieee80211_set_default_control_key(link, -1);
 
 		if (is_wep || pairwise)
 			rcu_assign_pointer(sdata->keys[idx], new);
@@ -579,6 +620,9 @@ static int ieee80211_key_replace(struct ieee80211_sub_if_data *sdata,
 		if (defbeaconkey && new)
 			__ieee80211_set_default_beacon_key(link,
 							   new->conf.keyidx);
+		if (defcontrolkey && new)
+			__ieee80211_set_default_control_key(link,
+							    new->conf.keyidx);
 	}
 
 	if (old)
@@ -597,7 +641,7 @@ ieee80211_key_alloc(u32 cipher, int idx, size_t key_len,
 
 	if (WARN_ON(idx < 0 ||
 		    idx >= NUM_DEFAULT_KEYS + NUM_DEFAULT_MGMT_KEYS +
-		    NUM_DEFAULT_BEACON_KEYS))
+		    NUM_DEFAULT_BEACON_KEYS + NUM_DEFAULT_CONTROL_KEYS))
 		return ERR_PTR(-EINVAL);
 
 	key = kzalloc(sizeof(struct ieee80211_key) + key_len, GFP_KERNEL);
@@ -854,6 +898,11 @@ int ieee80211_key_link(struct ieee80211_key *key,
 	struct ieee80211_key *old_key = NULL;
 	int idx = key->conf.keyidx;
 	bool pairwise = key->conf.flags & IEEE80211_KEY_FLAG_PAIRWISE;
+
+	if ((key->conf.cipher == WLAN_CIPHER_SUITE_BIP_GMAC_256) &&
+	    (idx == 0 || idx == 1))
+		idx += CIGTK_INDEX_OFFSET;
+
 	/*
 	 * We want to delay tailroom updates only for station - in that
 	 * case it helps roaming speed, but in other cases it hurts and
@@ -1098,6 +1147,7 @@ static void ieee80211_free_keys_iface(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_debugfs_key_remove_mgmt_default(sdata);
 	ieee80211_debugfs_key_remove_beacon_default(sdata);
+	ieee80211_debugfs_key_remove_control_default(sdata);
 
 	list_for_each_entry_safe(key, tmp, &sdata->key_list, list) {
 		ieee80211_key_replace(key->sdata, NULL, key->sta,

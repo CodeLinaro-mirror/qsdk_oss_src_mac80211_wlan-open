@@ -4204,6 +4204,9 @@ enum ieee80211_tdls_actioncode {
 /* Enable Beacon Protection */
 #define WLAN_EXT_CAPA11_BCN_PROTECT	BIT(4)
 
+/* Enable Control Protection */
+#define WLAN_RSNXE_CAPA11_CONTROL_PROTECT (1 << 6)
+
 /* TDLS specific payload type in the LLC/SNAP header */
 #define WLAN_TDLS_SNAP_RFTYPE	0x2
 

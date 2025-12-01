@@ -551,7 +551,8 @@ struct link_sta_info {
 	struct sta_info *sta;
 	struct ieee80211_key __rcu *gtk[NUM_DEFAULT_KEYS +
 					NUM_DEFAULT_MGMT_KEYS +
-					NUM_DEFAULT_BEACON_KEYS];
+					NUM_DEFAULT_BEACON_KEYS +
+					NUM_DEFAULT_CONTROL_KEYS];
 	struct ieee80211_sta_rx_stats __percpu *pcpu_rx_stats;
 
 	/* Updated from RX path only, no locking requirements */
