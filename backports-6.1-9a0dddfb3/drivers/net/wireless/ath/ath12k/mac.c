@@ -10774,6 +10774,8 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 	     WARN_ON(ath12k_mac_vif_link_chan(vif, arvif->link_id, &def)))
 		return -EINVAL;
 
+	spin_lock_bh(&ar->data_lock);
+
 	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		num_sta_count = 1;
 	else
@@ -10784,16 +10786,27 @@ static int ath12k_mac_set_peer_ch_switch_data(struct ath12k_link_vif *arvif,
 	if (!peer_data) {
 		peer_data = kzalloc(struct_size(peer_data, peer_arg,
 						num_sta_count),
-				    GFP_KERNEL);
-		if (!peer_data)
+				    GFP_ATOMIC);
+		if (!peer_data) {
+			spin_unlock_bh(&ar->data_lock);
 			return -ENOMEM;
+		}
 
 		peer_data->count = 0;
+
 		arvif->peer_ch_width_switch_data = peer_data;
 	}
 
+	if (peer_data->count >= num_sta_count) {
+		ath12k_warn(ar->ab,
+			    "peer_data count %d exceeds allocated size %d for vdev %u\n",
+			    peer_data->count, num_sta_count, arvif->vdev_id);
+		spin_unlock_bh(&ar->data_lock);
+		return -ENOSPC;
+	}
 	peer_arg = &peer_data->peer_arg[peer_data->count++];
 
+	spin_unlock_bh(&ar->data_lock);
 	ru_punct_bitmap = 0;
 
 	rcu_read_lock();
