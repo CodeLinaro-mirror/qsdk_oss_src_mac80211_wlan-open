@@ -124,6 +124,7 @@ struct ath12k_cfr_peer_tx_param;
 #define ATH12K_FW_DIR			"ath12k"
 
 #define ATH12K_BOARD_MAGIC		"QCA-ATH12K-BOARD"
+#define ATH12K_SCAN_RADIO		"QCA-ATH11K-BOARD"
 #define ATH12K_BOARD_API2_FILE		"board-2.bin"
 #define ATH12K_DEFAULT_BOARD_FILE	"board.bin"
 #define ATH12K_DEFAULT_CAL_FILE		"caldata.bin"
@@ -324,6 +325,7 @@ struct ath12k_hw_params {
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;
 	bool mlo_3_link_tx_support;
+	const char *board_magic;
 };
 
 struct ath12k_hw_ops {

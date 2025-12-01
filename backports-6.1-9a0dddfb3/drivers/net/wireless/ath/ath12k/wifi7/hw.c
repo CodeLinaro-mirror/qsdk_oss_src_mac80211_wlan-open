@@ -699,6 +699,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 				(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
 				CFR_DATA_MAX_LEN_QCN9274,
 		.mlo_3_link_tx_support = false,
+		.board_magic = "QCA-ATH12K-BOARD",
 	},
 	{
 		.name = "wcn7850 hw2.0",
@@ -806,6 +807,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					(CFR_HDR_MAX_LEN_WORDS_WCN7850 *4) +
 					CFR_DATA_MAX_LEN_WCN7850,
 		.mlo_3_link_tx_support = false,
+		.board_magic = "QCA-ATH12K-BOARD",
 	},
 	{
 		.name = "qcn9274 hw2.0",
@@ -921,6 +923,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					(CFR_HDR_MAX_LEN_WORDS_QCN9274 *4) +
 					CFR_DATA_MAX_LEN_QCN9274,
 		.mlo_3_link_tx_support = true,
+		.board_magic = "QCA-ATH12K-BOARD",
 	},
 	{
 		.name = "ipq5332 hw1.0",
@@ -1029,6 +1032,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					CFR_DATA_MAX_LEN_IPQ5332,
 		.mlo_3_link_tx_support = false,
 		.send_platform_model = true,
+		.board_magic = "QCA-ATH12K-BOARD",
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -1115,6 +1119,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					(CFR_HDR_MAX_LEN_WORDS_QCN6432 *4) +
 					CFR_DATA_MAX_LEN_QCN6432,
 		.mlo_3_link_tx_support = false,
+		.board_magic = "QCA-ATH12K-BOARD",
 	},
 	{
 		.name = "ipq5424 hw1.0",
@@ -1227,6 +1232,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					CFR_DATA_MAX_LEN_IPQ5424,
 		.mlo_3_link_tx_support = false,
 		.send_platform_model = true,
+		.board_magic = "QCA-ATH12K-BOARD",
 	},
 };
 
