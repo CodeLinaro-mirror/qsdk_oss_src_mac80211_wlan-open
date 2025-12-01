@@ -575,23 +575,27 @@ enum qca_wlan_vendor_attr_config {
 	 * Uses enum qca_wlan_intf_offload_type for values.
 	 */
 	QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE = 120,
-        /* 8-bit unsigned value. Used to specify the HW Radio Index of a wiphy
-         * device that is being configured. This attribute may be included in
-         * %QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION or
-         * %QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION subcmds to
-         * specify a particular Radio of the wiphy device.
-         */
-	QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX = 135,
+
 	/* 8-bit unsigned value to configure VAP submodes, This enables to
 	 * have QCA Proprietary VAP modes.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE = 141,
+
 	/* Nested attribute to configure Estimated Service Parameters (ESP) to
 	 * the firmware. This attribute contains nested attributes defined in
 	 * enum qca_wlan_vendor_attr_config_esp_param. This attribute is also
 	 * used to retrieve the parameters from firmware.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS = 142,
+
+	/* 8-bit unsigned value. Used to specify the HW Radio Index of a wiphy
+	 * device that is being configured. This attribute may be included in
+	 * %QCA_NL80211_VENDOR_SUBCMD_SET_WIPHY_CONFIGURATION or
+	 * %QCA_NL80211_VENDOR_SUBCMD_GET_WIPHY_CONFIGURATION subcmds to
+	 * specify a particular Radio of the wiphy device.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_RADIO_INDEX = 150,
+
 	/* Keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =
