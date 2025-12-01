@@ -1025,27 +1025,26 @@ enum qca_wlan_vendor_attr_sdwf_svc {
 	QCA_WLAN_VENDOR_ATTR_SDWF_SVC_AFTER_LAST - 1,
 };
 
-enum qca_wlan_vendor_attr_atf_offload_oper {
+enum qca_wlan_vendor_attr_atf_offload_ops {
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_INVALID = 0,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_OPERATION = 1,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_ID = 2,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_CONFIG = 3,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG = 4,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_CONFIG = 5,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG = 6,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STATS_CONFIG = 7,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLE_DISABLE_STRICT_SCH_CONFIG = 8,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VO_DEDICATED_TIME_CONFIG = 9,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VI_DEDICATED_TIME_CONFIG = 10,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_RADIO_INDEX = 1,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_ENABLED = 2,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG = 3,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_CONFIG = 4,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG = 5,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_ENABLED = 6,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STRICT_SCHEDULING_ENABLED = 7,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VO_DEDICATED_TIME_CONFIG = 8,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_VI_DEDICATED_TIME_CONFIG = 9,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY = 10,
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_CONFIG = 11,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY = 12,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT = 13,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS = 14,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS_TIMEOUT = 12,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_STATS = 13,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_MAX =
-		QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_AFTER_LAST - 1
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_AFTER_LAST - 1
 };
 
 enum qca_wlan_vendor_attr_atf_stats {
@@ -1082,6 +1081,52 @@ enum qca_wlan_vendor_attr_atf_peer_stats {
 		QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_STATS_LAST - 1,
 };
 
+/**
+ * enum qca_wlan_vendor_attr_atf_offload_ssid_group_config -
+ * Defines attributes to be used with vendor attribute
+ * QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIG.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX: Mandatory
+ * u8 attribute. Indicates the unique index of the SSID group.
+ * These indexes are assigned based on the order in which the SSID
+ * groups are configured.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_AIRTIME_CONFIGURED:
+ * Mandatory u16 attribute. Indicates the percentage of airtime
+configured by
+ * the user for the SSID group. The value is represented as a
+fixed-point
+ * integer with one digit after the decimal point.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_POLICY: Mandatory
+ * u8 attribute. Indicates the scheduling policy of the SSID group.
+ * Attribute value range is 0 to 2.
+ * 0 - Fair scheduling, the SSID group can contribute its
+ * unused airtime with other SSID groups and can also borrow from them.
+ * 1 - Strict scheduling, the SSID group can contribute
+ * its unused airtime with other SSID groups but cannot be borrowed.
+ * 2 - Fair with upper bound, the SSID group can only contribute
+ * its unused airtime, but cannot borrow airtime from other SSID groups.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS:
+ * Mandatory u16 attribute. Indicates the number of peers that are
+associated
+ * but do not have airtime configured by user.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_CONFIGURED_PEERS:
+ * Mandatory u16 attribute. Indicates the number of peers that are
+ * associated and have airtime configured by user.
+ * Note: The total number of associated peers to the SSID group is
+ * the sum of configured and unconfigured peers.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_UNCONFIGURED_PEERS_AIRTIME:
+ * Mandatory u16 attribute. Indicates the percentage of total airtime
+allocated
+ * for unconfigured peers within the SSID group. The value is
+represented as
+ * a fixed-point integer with one digit after the decimal point.
+ *
+ */
 enum qca_wlan_vendor_attr_atf_offload_ssid_group_config {
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_INDEX = 1,
@@ -1097,12 +1142,79 @@ enum qca_wlan_vendor_attr_atf_offload_ssid_group_config {
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_GROUP_LAST - 1,
 };
 
+
+/**
+ * enum qca_wlan_vendor_attr_atf_offload_wmm_ac_config -
+ * Defines attributes to be used with vendor attribute
+ * QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_CONFIG.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_GROUP_INDEX: Mandatory
+ * u8 attribute. Indicates the unique index of the SSID group.
+ * These indexes are assigned based on the order in which the SSID
+ * groups are configured.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_BE_AIRTIME: Mandatory u16
+ * attribute. Indicates the airtime percentage configured for the Best
+ * Effort (BE) WMM Access Category of SSID group. The value is represented
+ * as a fixed-point integer with one digit after the decimal point.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_BK_AIRTIME: Mandatory u16
+ * attribute. Indicates the airtime percentage configured for the
+ * Background (BK) WMM Access Category of SSID group. The value is represented
+ * as a fixed-point integer with one digit after the decimal point.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_VI_AIRTIME: Mandatory u16
+ * attribute. Indicates the airtime percentage configured for
+ * the Video (VI) WMM Access Category of SSID group. The value is represented
+ * as a fixed-point integer with one digit after the decimal point.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_VO_AIRTIME: Mandatory u16
+ * attribute. Indicates the airtime percentage configured for the
+ * Voice (VO) WMM Access Category of SSID group. The value is represented
+ * as a fixed-point integer with one digit after the decimal point.
+ *
+ */
+enum qca_wlan_vendor_attr_atf_offload_wmm_ac_config {
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUM_WMM_AC_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_GROUP_INDEX = 1,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_BE_AIRTIME = 2,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_BK_AIRTIME = 3,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_VI_AIRTIME = 4,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_WMM_AC_VO_AIRTIME = 5,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUM_WMM_AC_LAST,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUM_WMM_AC_MAX =
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUM_WMM_AC_LAST - 1, };
+
+/**
+ * enum qca_wlan_vendor_attr_atf_offload_peer_config - Defines
+ * attributes to be used with vendor attribute
+ * QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_FULL_UPDATE: Mandatory
+ * NLA_FLAG attribute. When included, the configuration update applies to
+ * all currently connected peers. If not include, the update applies only
+ * to newly connected peers.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MORE: Mandatory
+ * NLA_FLAG attribute. Indicates that the current
+ * QCA_NL80211_VENDOR_SUBCMD_ATF_OFFLOAD_OPS command does not include
+ * configuration data for all connected peers. When this flag is included,
+ * it signals that additional command(s) will follow, each carrying the
+ * remaining peer configurations using the
+ * QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG attribute.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_PAYLOAD: Mandatory nested
+ * attribute. Indicates each peer's configuration associated with the radio.
+ * The attributes defined in enum qca_wlan_vendor_attr_atf_offload_peer are
+ * nested in this attribute.
+ */
 enum qca_wlan_vendor_attr_atf_offload_peer_config {
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_INVALID = 0,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_NUMBER_OF_PEERS = 1,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_FULL_UPDATE = 2,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MORE = 3,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_PAYLOAD = 4,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_FULL_UPDATE = 1,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_MORE = 2,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_PAYLOAD = 3,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_LAST,
@@ -1110,52 +1222,78 @@ enum qca_wlan_vendor_attr_atf_offload_peer_config {
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIG_LAST - 1,
 };
 
+/**
+ * enum qca_wlan_vendor_attr_atf_offload_peer - Defines
+ * attributes to be used with vendor attribute
+ * QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_PAYLOAD.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC: MAC address mandatory
+ * attribute. Indicates the MAC address of the peer or link peer
+ * in case of MLO.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME: Mandatory u16 attribute.
+ * Indicates the percentage of airtime configured for the peer. The airtime
+ * assigned to a peer is relative to the SSID group's total airtime allocation.
+ * The value is represented as a fixed-point integer with one digit after the
+ * decimal point.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX: Mandatory u8 attribute.
+ * Indicates the index of the SSID group to which the peer belongs.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIGURED: Mandatory NLA_FLAG
+ * attribute. This flag is included if the peer has explicitly configured
+ * airtime by user.
+ */
 enum qca_wlan_vendor_attr_atf_offload_peer {
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_INVALID = 0,
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAC = 1,
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME = 2,
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_GROUP_INDEX = 3,
 	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_CONFIGURED = 4,
 
 	/* keep last */
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_MAX,
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_LAST =
-	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_AIRTIME_MAX - 1,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAX,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_LAST =
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_PEER_MAX - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_atf_offload_ssid_scheduling_policy -
+ * Defines attributes to be used with vendor attribute
+ * QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_POLICY.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_LINK_ID: u8 attribute.
+ * Mandatory attribute when interface is configured in
+ * Multi Link Operation (MLO). This attribute must not be included
+ * in non-MLO scenarios. This is the link ID of the interface in
+ * the MLO case. Possible values are 0 to 14.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHEDULING: Mandatory u8 attribute.
+ * An attribute used to define the scheduling policy.
+ * The accepted values for the attribute are
+ * 0 - fair, 1 - strict, 2 - fair with upper bound.
+ *
+ */
+enum qca_wlan_vendor_attr_atf_offload_ssid_scheduling_policy {
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_LINK_ID = 1,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHEDULING = 2,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_LAST,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_MAX =
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SSID_SCHED_LAST - 1,
 };
 
 enum qca_wlan_vendor_atf_offload_sched_duration {
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION_INVALID = 0,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_AC = 1,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION = 2,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_AC = 1,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION = 2,
 
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION_LAST,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION_MAX =
-		QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED_DURATION_LAST - 1,
-};
-
-enum qca_wlan_vendor_atf_offload_ssid_scheduling {
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED_INVALID = 0,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_LINK_ID = 1,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED = 2,
-
-	/*keep last */
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED_LAST,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED_MAX =
-		QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHED_LAST - 1,
-};
-
-enum qca_wlan_vendor_atf_offload_operations {
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_ENABLE_DISABLE = 0,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_GROUP = 1,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_WMM_AC = 2,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_PEER = 3,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_STATS_ENABLE_DISABLE = 4,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_STRICT_SCH = 5,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_VO_TIME = 6,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_VI_TIME = 7,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SCHED = 8,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_SSID_SCHEDULING = 9,
-	QCA_WLAN_VENDOR_ATF_OFFLOAD_STATS_TIME_OUT = 10,
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_LAST,
+	QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_MAX =
+		QCA_WLAN_VENDOR_ATTR_ATF_OFFLOAD_SCHED_DURATION_LAST - 1,
 };
 
 enum qca_wlan_vendor_attr_sdwf_sla_samples {
