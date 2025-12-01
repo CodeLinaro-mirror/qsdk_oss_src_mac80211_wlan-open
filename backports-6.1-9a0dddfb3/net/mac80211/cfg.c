@@ -2356,6 +2356,14 @@ static int sta_apply_parameters(struct ieee80211_local *local,
 			clear_sta_flag(sta, WLAN_STA_MFP);
 	}
 
+	if (mask & BIT(NL80211_STA_FLAG_CFP)) {
+		sta->sta.cfp = !!(set & BIT(NL80211_STA_FLAG_CFP));
+		if (set & BIT(NL80211_STA_FLAG_CFP))
+			set_sta_flag(sta, WLAN_STA_CFP);
+		else
+			clear_sta_flag(sta, WLAN_STA_CFP);
+	}
+
 	if (mask & BIT(NL80211_STA_FLAG_TDLS_PEER)) {
 		if (set & BIT(NL80211_STA_FLAG_TDLS_PEER))
 			set_sta_flag(sta, WLAN_STA_TDLS_PEER);
