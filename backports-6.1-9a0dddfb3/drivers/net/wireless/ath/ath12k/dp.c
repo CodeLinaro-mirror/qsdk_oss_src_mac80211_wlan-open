@@ -444,25 +444,6 @@ void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 #endif
 }
 
-bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab)
-{
-        struct ath12k_hw_group *ag = ab->ag;
-        struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
-        bool umac_in_progress = false;
-
-        if (!ab->hw_params->support_umac_reset)
-                return umac_in_progress;
-
-        spin_lock_bh(&mlo_umac_reset->lock);
-        if (mlo_umac_reset->umac_reset_info &
-            ATH12K_IS_UMAC_RESET_IN_PROGRESS)
-                umac_in_progress = true;
-        spin_unlock_bh(&mlo_umac_reset->lock);
-
-        return umac_in_progress;
-}
-EXPORT_SYMBOL(ath12k_dp_umac_reset_in_progress);
-
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			 enum hal_ring_type type, int ring_num,
 			 int mac_id, int num_entries)
@@ -1524,7 +1505,7 @@ void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp)
 	}
 }
 
-static void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
+void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_ppeds_tx_desc_info *ppeds_tx_descs;
 	struct ath12k_dp *dp = ab->dp;
@@ -1564,6 +1545,7 @@ static void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 
 	spin_unlock_bh(&dp->ppe.ppeds_tx_desc_lock);
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_tx_desc_cleanup);
 
 int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab)
 {
@@ -2062,6 +2044,7 @@ void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab)
         ath12k_dp_srng_hw_disable(ab, &dp->reo_status_ring);
         ath12k_dp_srng_hw_disable(ab, &dp->wbm_idle_ring);
 }
+EXPORT_SYMBOL(ath12k_dp_srng_hw_ring_disable);
 
 void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 {
@@ -2144,6 +2127,7 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 		spin_unlock_bh(&dp->tx_desc_lock[i]);
 	}
 }
+EXPORT_SYMBOL(ath12k_dp_umac_txrx_desc_cleanup);
 
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct hal_srng *srng,
@@ -2202,72 +2186,7 @@ int ath12k_dp_rxdma_ring_setup(struct ath12k_base *ab)
 
 	return 0;
 }
-
-void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
-{
-        struct ath12k_dp *dp;
-        struct ath12k_hw_group *ag = ab->ag;
-        struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
-        int i, n_link_desc, ret;
-        struct hal_srng *srng = NULL;
-        unsigned long end;
-
-        ath12k_dp_srng_hw_ring_disable(ab);
-
-        /* Busy wait for 2 ms to make sure the rings are
-         * in idle state before enabling it
-         */
-        end = jiffies + msecs_to_jiffies(2);
-        while (time_before(jiffies, end))
-                ;
-
-        ret = ath12k_wbm_idle_ring_setup(ab, &n_link_desc);
-
-        if (ret)
-                ath12k_warn(ab, "failed to setup wbm_idle_ring: %d\n", ret);
-
-	dp = ath12k_ab_to_dp(ab);
-        srng = &ab->hal.srng_list[dp->wbm_idle_ring.ring_id];
-
-        ret = ath12k_dp_link_desc_setup(ab, dp->link_desc_banks,
-                                        HAL_WBM_IDLE_LINK, srng, n_link_desc);
-        if (ret)
-                ath12k_warn(ab, "failed to setup link desc: %d\n", ret);
-
-	ath12k_dp_srng_common_setup(ab);
-	dp->arch_ops->dp_tx_ring_setup(ab);
-        ath12k_dp_umac_txrx_desc_cleanup(ab);
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
-		ath12k_dp_ppeds_tx_desc_cleanup(ab);
-#endif
-
-	ret = ath12k_dp_srng_setup(ab, &dp->rx_rel_ring, HAL_WBM2SW_RELEASE,
-				   HAL_WBM2SW_REL_ERR_RING_NUM, 0,
-				   DP_RX_RELEASE_RING_SIZE);
-	if (ret)
-		ath12k_warn(ab, "failed to set up rx_rel ring :%d\n", ret);
-
-        ath12k_dp_rxdma_ring_setup(ab);
-
-        for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
-                ret = ath12k_dp_srng_setup(ab, &dp->reo_dst_ring[i],
-                                           HAL_REO_DST, i, 0,
-                                           DP_REO_DST_RING_SIZE);
-                if (ret)
-                        ath12k_warn(ab, "failed to setup reo_dst_ring\n");
-        }
-
-        ath12k_dp_rx_reo_cmd_list_cleanup(ab);
-
-        ath12k_dp_tid_cleanup(ab);
-
-        atomic_inc(&mlo_umac_reset->response_chip);
-        ath12k_umac_reset_notify_target_sync_and_send(ab, ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE);
-
-        return;
-}
+EXPORT_SYMBOL(ath12k_dp_rxdma_ring_setup);
 
 void ath12k_dp_cmn_update_hw_links(struct ath12k_dp *dp,
 				   struct ath12k_hw_group *ag,

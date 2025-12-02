@@ -1662,6 +1662,7 @@ void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
 	if (ab->dp->ppe.nss_plugin_ops)
 		ab->dp->ppe.nss_plugin_ops->service_status_update(ab->dp->ppe.ds_node_id, enable);
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_service_enable_disable);
 
 void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
 {
@@ -1671,12 +1672,14 @@ void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
 	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);
 	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_interrupt_stop);
 
 void ath12k_dp_ppeds_interrupt_start(struct ath12k_base *ab)
 {
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
 	ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 }
+EXPORT_SYMBOL(ath12k_dp_ppeds_interrupt_start);
 
 int ath12k_vif_get_vp_num(struct ath12k_vif *ahvif, struct net_device *dev)
 {
