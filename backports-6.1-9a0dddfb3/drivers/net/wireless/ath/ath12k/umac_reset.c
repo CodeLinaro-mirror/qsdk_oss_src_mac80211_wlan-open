@@ -16,6 +16,7 @@
 #include "debug.h"
 #include "hif.h"
 #include "dp.h"
+#include "umac_reset.h"
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
@@ -279,10 +280,26 @@ int ath12k_htt_umac_reset_setup_cmd(struct ath12k_base *ab)
 	return ath12k_htt_umac_reset_msg_send(ab, &params);
 }
 
+/**
+ * ath12k_umac_reset_schedule_tasklet - SMP callback to schedule tasklet
+ * @info: Pointer to mlo_umac_reset structure
+ *
+ * Called on target CPU via smp_call_function_single
+ */
+static void ath12k_umac_reset_schedule_tasklet(void *info)
+{
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = info;
+	int cpu = smp_processor_id();
+
+	tasklet_hi_schedule(&mlo_umac_reset->tasklet[cpu]);
+}
+
 int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 {
 	struct ath12k_dp_umac_reset *umac_reset;
-	int alloc_size, ret;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
+	int alloc_size, ret, cpu;
 
 	if (!ab->hw_params->support_umac_reset)
 		return 0;
@@ -321,6 +338,16 @@ int ath12k_dp_umac_reset_init(struct ath12k_base *ab)
 	memset(umac_reset->state_entry_time, 0, sizeof(umac_reset->state_entry_time));
 	umac_reset->state_error_count = 0;
 	umac_reset->error_from_state = ATH12K_UMAC_RESET_STATE_IDLE;
+
+	/* Initialize per-CPU call_single_data structures for async SMP calls */
+	if (ag) {
+		mlo_umac_reset = &ag->mlo_umac_reset;
+		for_each_possible_cpu(cpu) {
+			mlo_umac_reset->csd[cpu].func =
+						ath12k_umac_reset_schedule_tasklet;
+			mlo_umac_reset->csd[cpu].info = mlo_umac_reset;
+		}
+	}
 
 	ret = ath12k_hif_dp_umac_reset_irq_config(ab);
 	if (ret) {
@@ -599,9 +626,102 @@ static void ath12k_umac_reset_handle_init_recovery(struct ath12k_base *ab)
 		ath12k_umac_reset_notify_target(ab, tx_event);
 }
 
-/* Static table mapping rx_event to handler functions */
-typedef void (*umac_reset_handler_fn)(struct ath12k_base *ab);
+/* Task queue management functions */
 
+/**
+ * ath12k_umac_reset_enqueue_task - Enqueue a task for multi-core processing
+ * @ag: Hardware group
+ * @callback: Function to execute
+ * @ab: Device context
+ * @event: Event type for debugging
+ *
+ * Returns: 0 on success, negative error code on failure
+ */
+int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
+				   umac_reset_handler_fn callback,
+				   struct ath12k_base *ab,
+				   enum dp_umac_reset_recover_action event)
+{
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	struct ath12k_umac_reset_task *task;
+	unsigned long flags;
+
+	if (!callback || !ab)
+		return -EINVAL;
+
+	task = kzalloc(sizeof(*task), GFP_ATOMIC);
+	if (!task)
+		return -ENOMEM;
+
+	INIT_LIST_HEAD(&task->list);
+	task->callback = callback;
+	task->ab = ab;
+	task->event = event;
+	task->task_id = atomic_inc_return(&mlo_umac_reset->task_id);
+
+	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
+	list_add_tail(&task->list, &mlo_umac_reset->task_queue);
+	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
+
+	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
+		   "Enqueued task %u for event %d\n", task->task_id, event);
+
+	return 0;
+}
+
+/**
+ * ath12k_umac_reset_dequeue_task - Dequeue a task for processing
+ * @ag: Hardware group
+ *
+ * Returns: Task structure or NULL if queue is empty
+ */
+struct ath12k_umac_reset_task *ath12k_umac_reset_dequeue_task(struct ath12k_hw_group *ag)
+{
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
+	struct ath12k_umac_reset_task *task = NULL;
+	unsigned long flags;
+
+	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
+	if (!list_empty(&mlo_umac_reset->task_queue)) {
+		task = list_first_entry(&mlo_umac_reset->task_queue,
+					struct ath12k_umac_reset_task, list);
+		list_del(&task->list);
+	}
+	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
+
+	return task;
+}
+
+/**
+ * ath12k_umac_reset_tasklet_handler_percpu - Per-CPU tasklet handler
+ * @t: Tasklet structure
+ *
+ * Processes tasks from the queue until empty
+ */
+void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t)
+{
+	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset;
+	struct ath12k_umac_reset_task *task;
+	struct ath12k_hw_group *ag;
+	int cpu = smp_processor_id();
+
+	/* Get the mlo_umac_reset structure from tasklet */
+	mlo_umac_reset = container_of(t, struct ath12k_mlo_dp_umac_reset, tasklet[cpu]);
+	ag = container_of(mlo_umac_reset, struct ath12k_hw_group, mlo_umac_reset);
+
+	/* Process tasks until queue is empty */
+	while ((task = ath12k_umac_reset_dequeue_task(ag)) != NULL) {
+		if (task->callback) {
+			ath12k_dbg(task->ab, ATH12K_DBG_DP_UMAC_RESET,
+				   "CPU %d processing task %u for event %d\n",
+				   cpu, task->task_id, task->event);
+			task->callback(task->ab);
+		}
+		kfree(task);
+	}
+}
+
+/* Static table mapping rx_event to handler functions */
 static const umac_reset_handler_fn umac_reset_handlers[] = {
 	[ATH12K_UMAC_RESET_RX_EVENT_NONE] = NULL,
 	[ATH12K_UMAC_RESET_INIT_UMAC_RECOVERY] =
@@ -852,6 +972,15 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 
 		if (umac_reset_handlers[rx_event])
 			umac_reset_handlers[rx_event](partner_ab);
+	}
+
+	/* After handlers, schedule tasklets if tasks were enqueued */
+	if (!list_empty(&mlo_umac_reset->task_queue)) {
+		int cpu;
+
+		for_each_cpu(cpu, cpu_online_mask) {
+			smp_call_function_single_async(cpu, &mlo_umac_reset->csd[cpu]);
+		}
 	}
 
 	return;

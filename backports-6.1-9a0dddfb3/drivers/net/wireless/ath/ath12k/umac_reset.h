@@ -13,4 +13,58 @@
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
 void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
 						   enum dp_umac_reset_tx_cmd tx_event);
+/**
+ * typedef umac_reset_handler_fn - Function pointer type for UMAC reset handlers
+ * @ab: Pointer to ath12k_base structure
+ *
+ * This function pointer type is used for UMAC reset callback functions
+ * that are enqueued for processing during reset operations.
+ */
+typedef void (*umac_reset_handler_fn)(struct ath12k_base *ab);
+
+/**
+ * struct ath12k_umac_reset_task - Task structure for UMAC reset operations
+ * @list: List head for task queue
+ * @callback: Function to execute for this task
+ * @ab: Pointer to ath12k_base structure
+ * @event: RX event type for debugging
+ * @tx_cmd: TX command to send to target after callback completion
+ * @task_id: Unique task identifier used for task_map bitmap tracking
+ *
+ * This structure is used to queue UMAC reset tasks for multi-core processing.
+ * Each task represents a unit of work that needs to be executed during UMAC
+ * reset operations, and can be processed on any available CPU core.
+ */
+struct ath12k_umac_reset_task {
+	struct list_head list;
+	umac_reset_handler_fn callback;
+	struct ath12k_base *ab;
+	enum dp_umac_reset_recover_action event;
+	enum dp_umac_reset_tx_cmd tx_cmd;
+	int task_id;
+};
+
+/**
+ * ath12k_umac_reset_tasklet_handler_percpu - Per-CPU tasklet handler
+ * @t: Pointer to tasklet structure
+ *
+ * Handles UMAC reset tasks on a per-CPU basis for better performance.
+ */
+void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t);
+
+/**
+ * ath12k_umac_reset_enqueue_task - Enqueue a task for multi-core processing
+ * @ag: Pointer to hardware group
+ * @callback: Callback function to execute
+ * @ab: Pointer to ath12k_base structure
+ * @rx_event: RX event type
+ *
+ * Enqueues a UMAC reset task for processing on available CPU cores.
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
+				   umac_reset_handler_fn callback,
+				   struct ath12k_base *ab,
+				   enum dp_umac_reset_recover_action rx_event);
 #endif /*ATH12K_UMAC_RESET_H*/

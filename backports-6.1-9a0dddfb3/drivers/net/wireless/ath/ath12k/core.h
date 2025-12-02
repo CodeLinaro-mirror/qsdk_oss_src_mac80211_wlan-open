@@ -19,6 +19,7 @@
 #include <linux/average.h>
 #include <linux/rhashtable.h>
 #include <linux/rcupdate.h>
+#include <linux/smp.h>
 #include "qmi.h"
 #include "htc.h"
 #include "wmi.h"
@@ -1824,20 +1825,35 @@ struct ath12k_stats_work_context {
 #define ATH12K_REPORT_LOW_ACK_NUM_PKT   ATH12K_REPORT_LOW_ACK_ALL
 #define ATH12K_IS_UMAC_RESET_IN_PROGRESS        BIT(0)
 
- /**
-  * struct ath12k_mlo_dp_umac_reset:  mlo umac_reset context
-  * @response_chip : Number of chips the event is handled for
-  * @request_chip : Number of chips send the event
-  * @lock : locl for prtecting the umac_reset context
-  * @umac_reset_info: place holder for umac reset related falgs
-  * @initiator_chip: device_id of the initiator chip
-  */
+/* Forward declaration for task structure */
+struct ath12k_umac_reset_task;
+
+/**
+ * struct ath12k_mlo_dp_umac_reset:  mlo umac_reset context
+ * @response_chip : Number of chips the event is handled for
+ * @request_chip : Number of chips send the event
+ * @lock : locl for prtecting the umac_reset context
+ * @umac_reset_info: place holder for umac reset related falgs
+ * @initiator_chip: device_id of the initiator chip
+ * @task_queue: Queue of pending tasks
+ * @task_queue_lock: Protects task_queue
+ * @task_id: Monotonically increasing task ID
+ * @tasklet: Hi-priority tasklet per CPU
+ * @csd: Per-CPU call_single_data for async SMP calls
+ */
 struct ath12k_mlo_dp_umac_reset {
 	atomic_t response_chip;
 	atomic_t request_chip;
 	spinlock_t lock;
 	u8 umac_reset_info;
 	u8 initiator_chip;
+
+	/* Multi-core task queue infrastructure */
+	struct list_head task_queue;
+	spinlock_t task_queue_lock;
+	atomic_t task_id;
+	struct tasklet_struct tasklet[NR_CPUS];
+	call_single_data_t csd[NR_CPUS];
 };
 
 #define WSI_INVALID_ORDER	0xFF
