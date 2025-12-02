@@ -658,6 +658,7 @@ struct ath12k_link_vif {
 	struct wiphy_work update_obss_color_notify_work;
 	struct wiphy_work update_bcn_template_work;
 	bool beacon_prot;
+	bool control_frame_prot;
 	u64 tbtt_offset;
 	int num_stations;
 
