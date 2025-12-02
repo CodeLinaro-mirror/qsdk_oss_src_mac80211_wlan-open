@@ -4194,7 +4194,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_alloc(struct ath12k_base *ab
 
 	/* Initialize UMAC reset synchronization counters */
 	atomic_set(&ag->mlo_umac_reset.request_chip, 0);
-	atomic_set(&ag->mlo_umac_reset.response_chip, 0);
+	ag->mlo_umac_reset.task_map = 0;
 
 	/* Initialize multi-core task queue infrastructure */
 	INIT_LIST_HEAD(&ag->mlo_umac_reset.task_queue);

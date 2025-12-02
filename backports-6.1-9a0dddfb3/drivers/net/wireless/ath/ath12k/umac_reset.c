@@ -8,6 +8,7 @@
 #include <linux/firmware.h>
 #include <linux/of.h>
 #include <linux/of_platform.h>
+#include <linux/bitmap.h>
 
 #include "core.h"
 #include "coredump.h"
@@ -533,7 +534,9 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 	if (target_recovery)
 		mlo_umac_reset->umac_reset_info |= BIT(1); /* Target recovery */
 
-	atomic_set(&mlo_umac_reset->response_chip, 0);
+	/* Reset task_map and task_id at start of a new recovery sequence */
+	mlo_umac_reset->task_map = 0;
+	atomic_set(&mlo_umac_reset->task_id, 0);
 	mlo_umac_reset->initiator_chip = ab->device_id;
 
 	for (i = 0; i < ag->num_devices; i++) {
@@ -567,16 +570,13 @@ void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
 	if (tx_cmd == ATH12K_UMAC_RESET_TX_CMD_NONE)
 		return;
 
-	if (atomic_read(&mlo_umac_reset->response_chip) >= ab->ag->num_started) {
-		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "response chip:%d num_started:%d sending notify\n",
-			   atomic_read(&mlo_umac_reset->response_chip), ab->ag->num_started);
+	/* Send only when all task bits are cleared */
+	if (bitmap_empty(&mlo_umac_reset->task_map, BITS_PER_LONG)) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "All tasks complete, sending notify\n");
 		ath12k_umac_reset_notify_target(ab, tx_cmd);
-		atomic_set(&mlo_umac_reset->response_chip, 0);
 	} else {
-		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "response_chip:%d num_started:%d not matching.. hold on notify\n",
-			   atomic_read(&mlo_umac_reset->response_chip), ab->ag->num_started);
+		ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET, "Tasks pending in task_map, holding notify\n");
 	}
-	return;
 }
 EXPORT_SYMBOL(ath12k_umac_reset_notify_target_sync_and_send);
 
@@ -650,6 +650,7 @@ int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	struct ath12k_umac_reset_task *task;
 	unsigned long flags;
+	int next_id;
 
 	if (!callback || !ab)
 		return -EINVAL;
@@ -658,20 +659,34 @@ int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
 	if (!task)
 		return -ENOMEM;
 
+	/* Get next task_id and check bounds */
+	next_id = atomic_inc_return(&mlo_umac_reset->task_id);
+
+	/* Limit task_id to BITS_PER_LONG - 1 (reserve 0, max is 63 for 64-bit) */
+	if (next_id >= BITS_PER_LONG) {
+		ath12k_warn(ab, "Task queue full: task_id %d exceeds limit %d\n",
+			    next_id, BITS_PER_LONG - 1);
+		kfree(task);
+		return -ENOSPC;
+	}
+
 	INIT_LIST_HEAD(&task->list);
 	task->callback = callback;
 	task->ab = ab;
 	task->event = event;
 	task->tx_cmd = tx_cmd;
-	task->task_id = atomic_inc_return(&mlo_umac_reset->task_id);
+	task->task_id = next_id;
+
+	/* Use direct bit mapping (no modulo) - task_id is the bit position */
+	set_bit(task->task_id, &mlo_umac_reset->task_map);
 
 	spin_lock_irqsave(&mlo_umac_reset->task_queue_lock, flags);
 	list_add_tail(&task->list, &mlo_umac_reset->task_queue);
 	spin_unlock_irqrestore(&mlo_umac_reset->task_queue_lock, flags);
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_UMAC_RESET,
-		   "Enqueued task %u for event %d with tx_cmd %d\n",
-		   task->task_id, event, tx_cmd);
+		   "Enqueued task %u for event %d with tx_cmd %d (bit %u set)\n",
+		   task->task_id, event, tx_cmd, task->task_id);
 
 	return 0;
 }
@@ -725,7 +740,12 @@ void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t)
 				   cpu, task->task_id, task->event);
 			task->callback(task->ab);
 
-			/* Send notification to target after callback completes */
+			/* Use direct bit mapping (no modulo)
+			 * task_id is the bit position
+			 */
+			clear_bit(task->task_id, &mlo_umac_reset->task_map);
+
+			/* Always call notify; it will decide based on task_map */
 			ath12k_umac_reset_notify_target_sync_and_send(task->ab,
 								      task->tx_cmd);
 		}

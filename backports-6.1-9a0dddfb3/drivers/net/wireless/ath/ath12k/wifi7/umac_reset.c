@@ -14,14 +14,11 @@
 
 static void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {
-	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 
 	set_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
 	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_hif_irq_disable(ab);
-	atomic_inc(&mlo_umac_reset->response_chip);
 	ab->dp_umac_reset.umac_pre_reset_in_prog = true;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
@@ -56,8 +53,6 @@ void ath12k_wifi7_umac_reset_handle_pre_reset_wrapper(struct ath12k_base *ab)
 static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp;
-	struct ath12k_hw_group *ag = ab->ag;
-	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 	int i, n_link_desc, ret;
 	struct hal_srng *srng = NULL;
 	unsigned long end;
@@ -112,8 +107,6 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
 	ath12k_dp_tid_cleanup(ab);
-
-	atomic_inc(&mlo_umac_reset->response_chip);
 }
 
 void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base *ab)
@@ -129,12 +122,9 @@ void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base 
 
 static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 {
-	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 
 	dp->service_rings_running = 0;
-	atomic_inc(&mlo_umac_reset->response_chip);
 	ath12k_hif_irq_enable(ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags)) {
