@@ -624,14 +624,7 @@ void ath12k_dp_rx_reo_cmd_list_cleanup(struct ath12k_base *ab)
 	spin_lock_bh(&dp->reo_cmd_lock);
 	list_for_each_entry_safe(cmd, tmp, &dp->reo_cmd_list, list) {
 		list_del(&cmd->list);
-		rx_tid = &cmd->data;
-		if (rx_tid->vaddr) {
-			rx_tid->active = false;
-			ath12k_core_dma_unmap_single(ab->dev, rx_tid->paddr,
-						     rx_tid->size, DMA_BIDIRECTIONAL);
-			kfree(rx_tid->vaddr);
-			rx_tid->vaddr = NULL;
-		}
+		cmd->handler(dp, &cmd->data, HAL_REO_CMD_DRAIN);
 		kfree(cmd);
 	}
 
@@ -658,9 +651,13 @@ void ath12k_dp_reo_cmd_free(struct ath12k_dp *dp, void *ctx,
 {
 	struct ath12k_dp_rx_tid *rx_tid = ctx;
 
-	if (status != HAL_REO_CMD_SUCCESS)
+	if (status == HAL_REO_CMD_DRAIN)
+		goto free_desc;
+	else if (status != HAL_REO_CMD_SUCCESS)
 		ath12k_warn(dp->ab, "failed to flush rx tid hw desc, tid %d status %d\n",
 			    rx_tid->tid, status);
+
+free_desc:
 	ath12k_hal_reo_shared_qaddr_cache_clear(dp->ab);
 
 	if (rx_tid->vaddr) {
