@@ -668,6 +668,7 @@ int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
 
 	return 0;
 }
+EXPORT_SYMBOL(ath12k_umac_reset_enqueue_task);
 
 /**
  * ath12k_umac_reset_dequeue_task - Dequeue a task for processing
