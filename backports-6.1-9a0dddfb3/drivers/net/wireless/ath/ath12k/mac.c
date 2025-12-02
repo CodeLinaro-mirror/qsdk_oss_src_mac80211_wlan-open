@@ -15425,7 +15425,7 @@ int ath12k_mac_mgmt_tx(struct ath12k *ar, struct sk_buff *skb,
 	 */
 	if (is_prb_rsp &&
 	    atomic_read(&ar->num_pending_mgmt_tx) > ATH12K_PRB_RSP_DROP_THRESHOLD) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 			    "dropping probe response as pending queue is almost full\n");
 		return -EBUSY;
 	}
