@@ -88,6 +88,37 @@ enum dp_mon_stats_mode {
 	ATH12k_DP_MON_EXTD_STATS
 };
 
+enum dp_punctured_modes {
+	NO_PUNCTURE,
+	PUNCTURED_20MHZ,
+	PUNCTURED_40MHZ,
+	PUNCTURED_80MHZ,
+	PUNCTURED_120MHZ,
+	PUNCTURED_MODE_CNT,
+};
+
+#define PUNCTURE_80MHZ_MASK 0xF
+#define PUNCTURE_160MHZ_MASK 0xFF
+#define PUNCTURE_320MHZ_MASK 0xFFFF
+#define PUNCTURE_40MHZ_MASK 0x3
+
+/*
+ * punc_type:
+ * Type of puncturing denoting the number of bits that are punctured.
+ * Each bit represents a 20MHz channel and therefore, each enum represents
+ * the number of 20MHz channels that are punctured.
+ */
+enum punc_type {
+	PUNC_NONE        = 0,
+	PUNC_MINUS20MHZ  = 1,
+	PUNC_MINUS40MHZ  = 2,
+	PUNC_MINUS60MHZ  = 3,
+	PUNC_MINUS80MHZ  = 4,
+	PUNC_MINUS100MHZ = 5,
+	PUNC_MINUS120MHZ = 6,
+	PUNC_INVALID,
+};
+
 struct ath12k_dp_arch_mon_ops {
 	int (*rx_srng_setup)(struct ath12k_dp *dp);
 	void (*rx_srng_cleanup)(struct ath12k_dp *dp);
@@ -234,15 +265,15 @@ struct dp_mon_tx_ppdu_info {
 
 #define SNR_INVALID 255
 
-#define SNR_MULTIPLIER BIT(8)
-#define SNR_MUL(x, mul) ((x) * (mul))
-#define SNR_RND(x, mul) ((((x) % (mul)) >= ((mul) / 2)) ? \
-			 ((x) + ((mul) - 1)) / (mul) : (x) / (mul))
+#define AVG_MULTIPLIER BIT(8)
+#define AVG_MUL(x, mul) ((x) * (mul))
+#define AVG_RND(x, mul) ((((x) % (mul)) >= ((mul) / 2)) ? \
+		((x) + ((mul) - 1)) / (mul) : (x) / (mul))
 
-#define SNR_OUT(x) (SNR_RND((x), SNR_MULTIPLIER))
-#define SNR_IN(x)  (SNR_MUL((x), SNR_MULTIPLIER))
-#define SNR_AVG(x, y) ((((x) << 2) + (y) - (x)) >> 2)
-#define SNR_UPDATE_AVG(x, y) ((x) = SNR_AVG((x), SNR_IN(y)))
+#define WEIGHTED_AVG_OUT(x) (AVG_RND((x), AVG_MULTIPLIER))
+#define WEIGHTED_AVG_IN(x)  (AVG_MUL((x), AVG_MULTIPLIER))
+#define AVG(x, y) ((((x) << 2) + (y) - (x)) >> 2)
+#define WEIGHTED_AVG_UPDATE(x, y) ((x) = AVG((x), WEIGHTED_AVG_IN(y)))
 
 struct ath12k_pdev_mon_stats {
 	u32 status_ppdu_state;
@@ -490,6 +521,7 @@ void ath12k_dp_mon_skb_remove_frag(struct ath12k_dp *dp, struct sk_buff *skb,
 				   u16 idx, u16 truesize);
 void ath12k_dp_mon_add_rx_frag(struct sk_buff *skb, const void *mon_buf,
 			       int offset, int frag_len, bool take_frag_ref);
+int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw);
 void ath12k_dp_mon_rx_process_low_thres(struct ath12k_dp *dp);
 void
 ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_count);

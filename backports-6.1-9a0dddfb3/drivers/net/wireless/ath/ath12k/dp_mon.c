@@ -1288,9 +1288,9 @@ ath12k_dp_mon_per_user_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 	stats = &peer->peer_stats.dp_mon_stats;
 	stats->snr = rssi_comb;
 	if (unlikely(stats->avg_snr == SNR_INVALID))
-		stats->avg_snr = SNR_IN(stats->snr);
+		stats->avg_snr = WEIGHTED_AVG_IN(stats->snr);
 	else
-		SNR_UPDATE_AVG(stats->avg_snr, stats->snr);
+		WEIGHTED_AVG_UPDATE(stats->avg_snr, stats->snr);
 }
 
 void ath12k_dp_mon_ppdu_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
@@ -2073,6 +2073,67 @@ u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp,
 	return size;
 }
 EXPORT_SYMBOL(ath12k_wifi7_dp_mon_get_frag_size_by_idx);
+
+int ath12k_dp_mon_get_puncture_type(u16 puncture_pattern, u8 bw)
+{
+	u16 mask;
+	u8 punctured_bits;
+
+	if (!puncture_pattern)
+		return NO_PUNCTURE;
+
+	switch (bw) {
+	case HAL_RX_BW_80MHZ:
+		mask = PUNCTURE_80MHZ_MASK;
+		break;
+	case HAL_RX_BW_160MHZ:
+		mask = PUNCTURE_160MHZ_MASK;
+		break;
+	case HAL_RX_BW_320MHZ:
+		mask = PUNCTURE_320MHZ_MASK;
+		break;
+	default:
+		return NO_PUNCTURE;
+	}
+
+	/* 0s in puncture pattern received in TLV indicates punctured 20Mhz,
+	 * after complement, 1s will indicate punctured 20Mhz
+	 */
+	puncture_pattern = ~puncture_pattern;
+	puncture_pattern &= mask;
+
+	if (puncture_pattern) {
+		punctured_bits = 0;
+		while (puncture_pattern != 0) {
+			punctured_bits++;
+			puncture_pattern &= (puncture_pattern - 1);
+		}
+
+		if (bw == HAL_RX_BW_80MHZ) {
+			if (punctured_bits == PUNC_MINUS20MHZ)
+				return PUNCTURED_20MHZ;
+			else
+				return NO_PUNCTURE;
+		} else if (bw == HAL_RX_BW_160MHZ) {
+			if (punctured_bits == PUNC_MINUS20MHZ)
+				return PUNCTURED_20MHZ;
+			else if (punctured_bits == PUNC_MINUS40MHZ)
+				return PUNCTURED_40MHZ;
+			else
+				return NO_PUNCTURE;
+		} else if (bw == HAL_RX_BW_320MHZ) {
+			if (punctured_bits == PUNC_MINUS40MHZ)
+				return PUNCTURED_40MHZ;
+			else if (punctured_bits == PUNC_MINUS80MHZ)
+				return PUNCTURED_80MHZ;
+			else if (punctured_bits == PUNC_MINUS120MHZ)
+				return PUNCTURED_120MHZ;
+			else
+				return NO_PUNCTURE;
+		}
+	}
+	return NO_PUNCTURE;
+}
 
 void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx)
 {

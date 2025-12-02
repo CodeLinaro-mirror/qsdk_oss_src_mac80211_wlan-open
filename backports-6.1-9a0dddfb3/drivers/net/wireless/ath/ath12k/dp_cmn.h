@@ -84,6 +84,8 @@ struct ath12k_per_peer_tx_stats {
 	u8 tid;
 	u8 nss;
 	bool is_ampdu;
+	bool stbc;
+	bool ldpc;
 };
 
 struct ath12k_dp_peer_create_params {

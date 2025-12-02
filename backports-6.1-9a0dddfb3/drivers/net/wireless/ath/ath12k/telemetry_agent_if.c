@@ -494,7 +494,7 @@ static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
 	 * path loss approximation. Not needed for energy service
 	 */
 
-	avg_snr = SNR_OUT(peer->peer_stats.dp_mon_stats.avg_snr) + bw_offset;
+	avg_snr = WEIGHTED_AVG_OUT(peer->peer_stats.dp_mon_stats.avg_snr) + bw_offset;
 
 	return avg_snr;
 }
