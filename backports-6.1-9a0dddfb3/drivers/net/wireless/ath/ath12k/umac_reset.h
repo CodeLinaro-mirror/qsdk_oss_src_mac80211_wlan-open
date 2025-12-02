@@ -58,6 +58,7 @@ void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t);
  * @callback: Callback function to execute
  * @ab: Pointer to ath12k_base structure
  * @rx_event: RX event type
+ * @tx_cmd: TX command type
  *
  * Enqueues a UMAC reset task for processing on available CPU cores.
  *
@@ -66,5 +67,6 @@ void ath12k_umac_reset_tasklet_handler_percpu(struct tasklet_struct *t);
 int ath12k_umac_reset_enqueue_task(struct ath12k_hw_group *ag,
 				   umac_reset_handler_fn callback,
 				   struct ath12k_base *ab,
-				   enum dp_umac_reset_recover_action rx_event);
+				   enum dp_umac_reset_recover_action rx_event,
+				   enum dp_umac_reset_tx_cmd tx_cmd);
 #endif /*ATH12K_UMAC_RESET_H*/
