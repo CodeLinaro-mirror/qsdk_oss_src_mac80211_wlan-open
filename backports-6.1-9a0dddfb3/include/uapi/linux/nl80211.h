@@ -3675,6 +3675,8 @@ enum nl80211_attrs {
 
 	NL80211_ATTR_CFP,
 
+	NL80211_ATTR_CIGTK,
+
 	/* add attributes here, update the policy in nl80211.c */
 
 	__NL80211_ATTR_AFTER_LAST,
