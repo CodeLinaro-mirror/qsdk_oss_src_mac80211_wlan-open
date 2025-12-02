@@ -9205,8 +9205,10 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 							 arsta, key);
 				if (ret)
 					break;
-
-				arsta->keys[key->keyidx] = key;
+				if (cmd == SET_KEY)
+					arsta->keys[key->keyidx] = key;
+				else
+					arsta->keys[key->keyidx] = NULL;
 			}
 
 			return 0;
@@ -9220,8 +9222,10 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		ret = ath12k_mac_set_key(arvif->ar, cmd, arvif, arsta, key);
 		if (ret)
 			return ret;
-
-		arsta->keys[key->keyidx] = key;
+		if (cmd == SET_KEY)
+			arsta->keys[key->keyidx] = key;
+		else
+			arsta->keys[key->keyidx] = NULL;
 		return 0;
 	}
 
@@ -9250,7 +9254,10 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		return ret;
 
 	/* if sta is null, consider it has self peer */
-	arvif->keys[key->keyidx] = key;
+	if (cmd == SET_KEY)
+		arvif->keys[key->keyidx] = key;
+	else
+		arvif->keys[key->keyidx] = NULL;
 
 	return 0;
 }
