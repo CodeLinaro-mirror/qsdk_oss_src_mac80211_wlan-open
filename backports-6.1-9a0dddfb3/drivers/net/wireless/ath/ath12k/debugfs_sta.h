@@ -20,18 +20,16 @@ void ath12k_debugfs_link_sta_op_add(struct ieee80211_hw *hw,
 				    struct ieee80211_vif *vif,
 				    struct ieee80211_link_sta *link_sta,
 				    struct dentry *dir);
-void ath12k_debugfs_sta_add_tx_stats( struct ath12k_dp_link_peer *peer,
-				     struct ath12k_per_peer_tx_stats *peer_stats,
-				     u8 legacy_rate_idx);
+void ath12k_debugfs_sta_add_tx_stats(struct ath12k_dp_link_peer *peer,
+				     struct ath12k_per_peer_tx_stats *peer_stats);
 
 #else /* CPTCFG_ATH12K_DEBUGFS */
 
 #define ath12k_debugfs_sta_op_add NULL
 
 static inline void
-ath12k_debugfs_sta_add_tx_stats( struct ath12k_dp_link_peer *peer,
-				struct ath12k_per_peer_tx_stats *peer_stats,
-				u8 legacy_rate_idx)
+ath12k_debugfs_sta_add_tx_stats(struct ath12k_dp_link_peer *peer,
+				struct ath12k_per_peer_tx_stats *peer_stats)
 {
 }
 

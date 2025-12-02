@@ -71,10 +71,20 @@ struct ath12k_per_peer_tx_stats {
 	u16 failed_pkts;
 	u16 ru_start;
 	u16 ru_tones;
+	u16 succ_mpdu_pkts;
+	u16 retried_mpdu_pkts;
+	u16 mpdu_tried;
 	u8 ba_fails;
 	u8 ppdu_type;
 	u8 mu_grpid;
 	u8 mu_pos;
+	u8 rate;
+	u8 bw;
+	u8 flags;
+	u8 mcs;
+	u8 tid;
+	u8 nss;
+	u8 rate_idx;
 	bool is_ampdu;
 };
 
