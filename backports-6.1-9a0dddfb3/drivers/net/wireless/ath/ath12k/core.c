@@ -3712,6 +3712,10 @@ static void ath12k_core_reset(struct work_struct *work)
 		ath12k_info(ab, "Recovery is initiated with Mode%d\n",
 				ag->recovery_mode - 1);
 
+	/* Send vendor event to notify userspace about assert has occurred */
+	ath12k_vendor_send_event(ab,
+				 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_FW_ASSERT);
+
 	/* Sometimes the recovery will fail and then the next all recovery fail,
 	 * this is to avoid infinite recovery since it can not recovery success
 	 */

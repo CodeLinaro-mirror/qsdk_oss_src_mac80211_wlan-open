@@ -88,6 +88,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_240MHZ_INFO = 508,
 	QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE = 509,
 	QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT = 510,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_FW_RECOVERY_EVENT = 511,
 };
 
 enum qca_nl80211_vendor_events {
@@ -102,6 +103,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE_INDEX = 8,
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG_INDEX = 9,
 	QCA_NL80211_VENDOR_SUBCMD_ESP_ESTIMATE_INDEX = 10,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_FW_RECOVERY_INDEX = 11,
 };
 
 /**
@@ -971,6 +973,61 @@ enum qca_wlan_vendor_attr_240mhz_info {
 	QCA_WLAN_VENDOR_ATTR_240MHZ_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_240MHZ_MAX =
 	QCA_WLAN_VENDOR_ATTR_240MHZ_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_nl80211_vendor_fw_recovery_event_type - Vendor event types for
+ * firmware recovery notifications.
+ *
+ * @QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_INVALID:
+ *     Invalid event type (placeholder).
+ *
+ * @QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_DONE:
+ *     Indicates that firmware recovery has completed successfully and the
+ *     device is operational again.
+ *
+ * @QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED:
+ *     Indicates that the firmware crash dump or diagnostic data collection
+ *     has finished.
+ *
+ * @QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_FW_ASSERT:
+ *     Indicates that the firmware has asserted (crashed). This is typically
+ *     the first event in the recovery sequence.
+ */
+enum qca_nl80211_vendor_fw_recovery_event_type {
+	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_INVALID = 0,
+	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_RECOVERY_DONE = 1,
+	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED = 2,
+	QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_FW_ASSERT = 3,
+};
+
+/**
+ * enum qca_nl80211_vendor_fw_recovery_attr - Vendor attributes for firmware
+ * recovery event.
+ *
+ * @QCA_VENDOR_ATTR_FW_RECOVERY_INVALID:
+ *     Invalid attribute (placeholder).
+ *
+ * @QCA_VENDOR_ATTR_FW_RECOVERY_EVENT_TYPE:
+ *     Mandatory attribute (u8) specifying the event type. Valid values are
+ *     defined in enum qca_nl80211_vendor_fw_recovery_event_type.
+ *
+ * @QCA_WLAN_VENDOR_FW_RECOVERY_HW_LINK_ID:
+ *     Mandatory attribute (u8) representing the hardware link ID (HW_LINK_ID)
+ *     or SoC identifier where the crash or recovery event occurred.
+ *
+ * @QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST:
+ *     Internal marker for the end of attributes.
+ *
+ * @QCA_VENDOR_ATTR_FW_RECOVERY_MAX:
+ *     Maximum attribute index (for bounds checking).
+ */
+enum qca_nl80211_vendor_fw_recovery_attr {
+	QCA_VENDOR_ATTR_FW_RECOVERY_INVALID = 0,
+	QCA_VENDOR_ATTR_FW_RECOVERY_EVENT_TYPE = 1,
+	QCA_WLAN_VENDOR_FW_RECOVERY_HW_LINK_ID = 2,
+	QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST,
+	QCA_VENDOR_ATTR_FW_RECOVERY_MAX = QCA_VENDOR_ATTR_FW_RECOVERY_AFTER_LAST - 1,
 };
 
 /**

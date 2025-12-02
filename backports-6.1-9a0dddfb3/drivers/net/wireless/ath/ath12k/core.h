@@ -37,6 +37,7 @@
 #include "spectral.h"
 #include "qos.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
+#include "qcn_extns/vendor_extn.h"
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
