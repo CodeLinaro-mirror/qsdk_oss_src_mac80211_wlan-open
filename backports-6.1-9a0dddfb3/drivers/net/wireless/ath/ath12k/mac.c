@@ -7112,6 +7112,11 @@ ath12_mac_reg_get_6g_min_psd(struct ath12k *ar, u16 freq, u16 cfreq,
 
 	*min_psd = ATH12K_CHAN_MAX_PSD_POWER;
 
+	if (!ar->afc.is_6ghz_afc_power_event_received || !ar->afc.afc_reg_info) {
+		ath12k_warn(ar->ab, "AFC power Event Not received\n");
+		return;
+	}
+
 	if (!(cfreq >= ATH12K_MIN_6GHZ_FREQ && cfreq <= ATH12K_MAX_6GHZ_FREQ)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_REG, "Not a 6GHz freq %u", cfreq);
 		return;
@@ -7231,16 +7236,12 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 	reg_6g_power_mode = bss_conf->power_type;
 	if (reg_6g_power_mode == IEEE80211_REG_UNSET_AP)
 		reg_6g_power_mode = IEEE80211_REG_LPI_AP;
-	else if (reg_6g_power_mode == IEEE80211_REG_SP_AP &&
-		 !ar->afc.is_6ghz_afc_power_event_received)
-		reg_6g_power_mode = REG_SP_CLIENT_TYPE;
 
 	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, " reg_6g_power_mode %d\n", reg_6g_power_mode);
 
 	if (test_bit(WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT,
 		     ar->ab->wmi_ab.svc_map) &&
-	    (reg_6g_power_mode == IEEE80211_REG_SP_AP ||
-	     reg_6g_power_mode == REG_SP_CLIENT_TYPE)) {
+		     (reg_6g_power_mode == IEEE80211_REG_SP_AP)) {
 		if (ahvif->vdev_type == WMI_VDEV_TYPE_AP)
 			ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp(ar, arvif, chanctx);
 		else if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
@@ -9750,10 +9751,16 @@ static s8 ath12k_mac_get_afc_eirp_power(struct ath12k *ar,
 					u16 center_freq,
 					u16 bw)
 {
-	struct ath12k_afc_sp_reg_info *power_info = ar->afc.afc_reg_info;
+	struct ath12k_afc_sp_reg_info *power_info;
 	s8 afc_eirp_pwr = ATH12K_MAX_TX_POWER;
 	u8 i, op_class = 0;
 
+	if (!ar->afc.is_6ghz_afc_power_event_received || !ar->afc.afc_reg_info) {
+		ath12k_warn(ar->ab, "AFC power info not found\n");
+		return afc_eirp_pwr;
+	}
+
+	power_info = ar->afc.afc_reg_info;
 	op_class = ath12k_reg_get_opclass_from_bw(bw);
 	if (!op_class)
 		return afc_eirp_pwr;
