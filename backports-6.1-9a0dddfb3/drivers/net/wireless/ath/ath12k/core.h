@@ -1255,6 +1255,76 @@ struct ath12k_atf {
 	struct ath12k_atf_group_info group_info[ATH12K_ATF_MAX_GROUPS];
 };
 
+struct ath12k_radio_cfg {
+	u32 rts_cts_rate;
+	u8 ps_report;
+	u32 nonagg_swretry_th;
+	u32 agg_swretry_th;
+	u32 sta_kickout_th;
+	u8 arp_override;
+	bool is_ani_enable;
+	u32 ani_poll_period;
+	u32 ani_listen_period;
+	u32 ani_ofdm_level;
+	u32 ani_cck_level;
+	u32 cca_threshold;
+	u32 dtcs;
+	u32 ltr_enable;
+	u32 ac_be;
+	u32 ac_bk;
+	u32 ac_vi;
+	u32 ac_vo;
+	u32 ac_timeout;
+	u32 tx_timeout;
+	u32 sleep_override;
+	u32 rx_override;
+	u32 l1ss_enable;
+	u32 dsleep_enable;
+	u32 rxsop_sens_lvl;
+	u8 dyngroup;
+	u8 dpdenable;
+	u16 burst_dur;
+	u8 burst_enable;
+	u32 disable_lpi_ant;
+	bool en_probe_all_bw;
+	u32 ul_ofdma_rtd;
+	bool enable_small_mru;
+	bool enable_large_mru;
+	u32 pdev_reset;
+	u8 current_mode;
+	u32 txpowlimit2G;
+	u32 txpowlimit5G;
+	u32 antenna_gain_2g;
+	u32 antenna_gain_5g;
+	u32 ofdem_level;
+	u32 txpower_scale;
+	u32 rx_filter;
+	u32 block_interbss;
+	u32 fw_disable_reset;
+	u32 ppdu_dur;
+	u32 txbf_sound_period;
+	u32 promisc_mode;
+	u32 burst_mode;
+	u8 mcast_bcast_echo;
+	u32 ant_plzn;
+	u16 amsdu_mask;
+	u16 ampdu_mask;
+	u32 mbssid_en_ctrl_frame;
+	u32 resp_retry_limit;
+	u32 cts_timeout;
+	u32 slot_time;
+	u32 ack_timeout;
+	u32 cck_enable;
+	u32 ru_alloc_en;
+	u32 antenna_gain_half_db;
+	u32 mgmt_ttl;
+	u32 prb_rsp_ttl;
+	u32 mu_ppdu_dur;
+	u32 tbtt_ctrl;
+	u32 punct_bw;
+	u32 low_lat_mode;
+};
+
 struct ath12k {
 	struct ath12k_base *ab;
 	u8 pdev_idx;
@@ -1484,6 +1554,7 @@ struct ath12k {
 	struct work_struct wlan_intf_work;
 	struct completion delete_all_peer_done;
 	u8 mgmt_tx_retry_limit;
+	struct ath12k_radio_cfg radio_cfg;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
