@@ -5668,10 +5668,42 @@ ath12k_mac_op_change_vif_links(struct ieee80211_hw *hw,
 	unsigned long to_remove = old_links & ~new_links;
 	unsigned long to_add = ~old_links & new_links;
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif, *scan_arvif;
+	struct ath12k *arvif_ar;
+	int ret;
 	u8 link_id;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	scan_arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[0]);
+	if (scan_arvif) {
+		/* During ROC sta vif created and started to do tx/rx. this block
+		 * does the cleanup and brings up vif for the given channel ctx if
+		 * the selected arvif already started for ROC scan
+		 */
+
+		if (scan_arvif->is_scan_vif) {
+			arvif_ar = scan_arvif->ar;
+			if (WARN_ON(!arvif_ar))
+				return -EINVAL;
+
+			if (scan_arvif->is_started) {
+				ret = ath12k_mac_vdev_stop(scan_arvif);
+				if (ret) {
+					ath12k_warn(arvif_ar->ab, "failed to stop scan vdev %d: %d\n",
+						    scan_arvif->vdev_id, ret);
+					return -EINVAL;
+				}
+				scan_arvif->is_started = false;
+			}
+
+			if (scan_arvif->is_created) {
+				ath12k_mac_remove_link_interface(hw, scan_arvif);
+				ath12k_mac_unassign_link_vif(scan_arvif);
+			}
+			scan_arvif->is_scan_vif = false;
+		}
+	}
 
 	ath12k_generic_dbg(ATH12K_DBG_MAC,
 			   "mac vif link changed for MLD %pM old_links 0x%x new_links 0x%x\n",
@@ -7845,6 +7877,8 @@ void __ath12k_mac_scan_finish(struct ath12k *ar)
 	case ATH12K_SCAN_STARTING:
 		cancel_delayed_work(&ar->scan.timeout);
 		complete_all(&ar->scan.completed);
+		if (ar->scan.is_roc)
+			ar->scan.scan_id = ATH12K_ROC_SCAN_ID;
 		wiphy_work_queue(ar->ah->hw->wiphy, &ar->scan.vdev_clean_wk);
 		break;
 	}
@@ -8001,7 +8035,7 @@ static void ath12k_scan_vdev_clean_work(struct wiphy *wiphy, struct wiphy_work *
 work_complete:
 	spin_lock_bh(&ar->data_lock);
 	ar->scan.arvif = NULL;
-	if (!ar->scan.is_roc) {
+	if (!ar->scan.is_roc && ar->scan.scan_id != ATH12K_ROC_SCAN_ID) {
 		struct cfg80211_scan_info info = {
 			.aborted = ((ar->scan.state ==
 				    ATH12K_SCAN_ABORTING) ||
@@ -8012,6 +8046,7 @@ work_complete:
 		ath12k_mac_scan_send_complete(ar, &info);
 	}
 
+	ar->scan.scan_id = 0;
 	ar->scan.state = ATH12K_SCAN_IDLE;
 	ar->scan_channel = NULL;
 	ar->scan.roc_freq = 0;
@@ -18958,21 +18993,6 @@ ath12k_mac_assign_vif_chanctx_handle(struct ieee80211_hw *hw,
 		goto out;
 	}
 
-	if (!arvif->is_scan_vif && WARN_ON(arvif->is_started)) {
-		ret = -EBUSY;
-		goto out;
-	} else if (arvif->is_scan_vif && arvif->is_started) {
-		ret = ath12k_mac_vdev_stop(arvif);
-		if (ret) {
-			ath12k_warn(ar->ab, "failed to stop vdev %d: %d\n",
-				    arvif->vdev_id, ret);
-			return -EINVAL;
-		}
-		arvif->is_started = false;
-		ar->scan.arvif = NULL;
-		arvif->is_scan_vif = false;
-	}
-
 	if (!ab->hw_params->vdev_start_delay &&
 	    ahvif->vdev_type == WMI_VDEV_TYPE_STA && ahvif->chanctx_peer_del_done) {
 		rcu_read_lock();
@@ -21447,10 +21467,22 @@ EXPORT_SYMBOL(ath12k_mac_op_sta_statistics);
 int ath12k_mac_op_cancel_remain_on_channel(struct ieee80211_hw *hw,
 					   struct ieee80211_vif *vif)
 {
-	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *arvif;
 	struct ath12k *ar;
+	u8 link_id =  ahvif->roc_link_id;
 
-	ar = ath12k_ah_to_ar(ah, 0);
+	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+	if (!arvif || !arvif->is_created) {
+		ath12k_err(NULL, "unable to cancel scan. arvif interface is not created\n");
+		return -EINVAL;
+	}
+
+	ar = arvif->ar;
+	if (!ar) {
+		ath12k_err(NULL, "unable to select device to cancel scan\n");
+		return -EINVAL;
+	}
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -21679,6 +21711,7 @@ int ath12k_mac_op_remain_on_channel(struct ieee80211_hw *hw,
 			ath12k_warn(ar->ab, "failed to stop scan: %d\n", ret);
 		return -ETIMEDOUT;
 	}
+	ahvif->roc_link_id = link_id;
 
 	ieee80211_queue_delayed_work(hw, &ar->scan.timeout,
 				     msecs_to_jiffies(scan_time_msec));
