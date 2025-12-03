@@ -782,7 +782,6 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k *ar = dp_pdev->ar;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_link_sta *arsta;
 	struct ath12k_dp_link_peer *peer = NULL;
 	struct htt_ppdu_user_stats* usr_stats = NULL;
 	struct rate_info rate;
@@ -821,14 +820,6 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 		}
 
 		if (ether_addr_equal(peer->addr, peer->vif->addr)) {
-			rcu_read_unlock();
-			continue;
-		}
-
-		arsta = ath12k_peer_get_link_sta(ab, peer);
-		if (!arsta) {
-			ath12k_warn(ab, "link sta not found on peer %pM id %d\n",
-				    peer->addr, peer->peer_id);
 			rcu_read_unlock();
 			continue;
 		}
