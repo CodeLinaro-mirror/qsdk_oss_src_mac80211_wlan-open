@@ -17062,6 +17062,11 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	lockdep_assert_wiphy(hw->wiphy);
 
+	link_conf = ath12k_mac_get_link_bss_conf(arvif);
+
+	if (link_conf && link_conf->is_cfp_enabled)
+		vdev_arg.is_cfp_enabled = true;
+
 	/* In NO_VIRTUAL_MONITOR, its necessary to restrict only one monitor
 	 * interface in each radio
 	 */

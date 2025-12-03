@@ -1245,6 +1245,9 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 	cmd->mbssid_flags = cpu_to_le32(args->mbssid_flags);
 	cmd->mbssid_tx_vdev_id = cpu_to_le32(args->mbssid_tx_vdev_id);
 	cmd->vdev_stats_id = cpu_to_le32(args->if_stats_id);
+
+	cmd->is_cfp_enabled = cpu_to_le32(args->is_cfp_enabled);
+
 	cmd->flags = cpu_to_le32(args->create_flags);
 
 	ether_addr_copy(cmd->vdev_macaddr.addr, macaddr);
