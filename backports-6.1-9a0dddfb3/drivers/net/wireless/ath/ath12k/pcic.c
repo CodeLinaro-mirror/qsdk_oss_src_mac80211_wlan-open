@@ -464,14 +464,18 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 		int vector = (i % num_vectors);
 
 		if (ab->hw_params->ring_mask->ppe2tcl[i] ||
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
+#endif
 		    ab->hw_params->ring_mask->reo2ppe[i]) {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			ret = ath12k_pcic_get_msi_data(ab, msi_desc, i, &ring_type, &ring_num);
 			if (ret) {
 				ath12k_err(ab, "failed to get msi data for irq %d: %d",
 					   msi_desc->irq, ret);
 				return ret;
 			}
+#endif
 			ath12k_hif_ppeds_register_interrupts(ab, ring_type, 0, ring_num);
 		} else {
 			netif_napi_add_weight(napi_ndev, &irq_grp->napi,
