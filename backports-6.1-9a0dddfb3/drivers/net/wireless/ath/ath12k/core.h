@@ -577,6 +577,22 @@ struct ath12k_qos_map {
 	struct ath12k_dscp_range up[ATH12K_MAX_TID_VALUE];
 };
 
+struct ath12k_vap_cfg {
+	u8 rc_num_retries;
+	u16 max_mtu_size;
+	u32 dyn_bw_rts;
+	u32 cwm_enable;
+	u32 rate_dropdown;
+	u32 cts_dtim_bcn;
+	u32 cabq_maxdur;
+	u32 mcast_rc_stale_period;
+	u32 mcast_rc;
+	u32 disable_cabq;
+	u32 he_snd_mode;
+	u32 gtx_enable;
+	u32 hwcts2self_ofdma;
+};
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -656,6 +672,7 @@ struct ath12k_link_vif {
 	bool set_wds_vdev_param;
 	int num_peers;
 	struct wiphy_work update_bcn_tx_status_work;
+	struct ath12k_vap_cfg vap_cfg;
 };
 
 struct ath12k_dp_link_vif {
