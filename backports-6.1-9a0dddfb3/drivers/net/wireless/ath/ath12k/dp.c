@@ -20,6 +20,9 @@
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
+#ifdef PLATFORM_SDX85
+#include "dp.h"
+#endif
 
 /* DSCP TID mapping as per RFC 8325
  * ===============================
@@ -648,7 +651,9 @@ void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif)
 	if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID) {
 		ath12k_dp_tx_put_bank_profile(dp, arvif->splitphy_ds_bank_id);
 		arvif->splitphy_ds_bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, dp, false);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_ppeds_update_splitphy_bank_id(ab, arvif);
+#endif
 	}
 
 	ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);

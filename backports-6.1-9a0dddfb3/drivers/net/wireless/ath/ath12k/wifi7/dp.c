@@ -198,11 +198,13 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 		goto fail_hw_cc_cleanup;
 	}
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_nss_plugin_register_ops(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to register nss plugin %d\n", ret);
 		goto fail_dp_bank_profiles_cleanup;
 	}
+#endif
 
 	ret = ath12k_ppeds_attach(ab);
 	if (ret) {
@@ -261,9 +263,13 @@ fail_ppeds_detach:
 	ath12k_ppeds_detach(ab);
 
 fail_nss_plugin_unregister:
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
+#endif
 
+#ifndef PLATFORM_SDX85
 fail_dp_bank_profiles_cleanup:
+#endif
 	ath12k_dp_deinit_bank_profiles(ab);
 
 fail_hw_cc_cleanup:
@@ -300,7 +306,9 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_rx_reo_cmd_list_cleanup(ab);
 
 	ath12k_dp_mon_rx_free(dp);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
+#endif
 	ath12k_wifi7_dp_rx_ring_free(ab);
 
 	ath12k_hif_ext_irq_cleanup(dp->ab);
