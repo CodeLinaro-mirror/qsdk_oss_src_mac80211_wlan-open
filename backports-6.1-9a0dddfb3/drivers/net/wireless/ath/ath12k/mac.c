@@ -1582,6 +1582,7 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 			if (!dp_peer->is_vdev_peer)
 				dp_peer->peer_links_map &= ~BIT(peer->link_id);
 			rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
+			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
 		}
 		spin_unlock_bh(&dp_hw->peer_lock);
 
