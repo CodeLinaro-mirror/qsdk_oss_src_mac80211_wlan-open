@@ -63,46 +63,42 @@ static int ath12k_get_ppdu_user_index(struct htt_ppdu_stats *ppdu_stats,
 }
 
 static void ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
-	   	struct htt_ppdu_stats_cmpltn_flush *msg)
+		struct htt_ppdu_stats_cmpltn_flush *msg,
+		struct htt_ppdu_stats_info *ppdu_info)
 {
-	struct ath12k *ar;
-	struct ath12k_link_sta *arsta;
 	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_pdev_dp *dp_pdev = NULL;
 	struct ath12k_dp_link_peer *peer = NULL;
 	struct rate_info rate;
 	struct ieee80211_tx_status status;
 	struct ieee80211_rate_status status_rate = { 0 };
+	u8 pdev_id;
+
+	pdev_id = ppdu_info->pdev_id;
 
 	rcu_read_lock();
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(ab->dp, msg->sw_peer_id);
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id - 1);
+	if (!dp_pdev) {
+		rcu_read_unlock();
+		return;
+	}
+
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, msg->sw_peer_id);
 	if (unlikely(!peer || !peer->sta)) {
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 				"dp_tx: failed to find the peer with peer_id %d\n",
 				msg->sw_peer_id);
-		spin_unlock_bh(&dp->dp_lock);
 		rcu_read_unlock();
 		return;
 	}
 
 	if (peer->vif->type != NL80211_IFTYPE_MESH_POINT) {
-		spin_unlock_bh(&dp->dp_lock);
 		rcu_read_unlock();
 		return;
 	}
 
 	if (ether_addr_equal(peer->addr, peer->vif->addr)) {
-		spin_unlock_bh(&dp->dp_lock);
-		rcu_read_unlock();
-		return;
-	}
-
-	arsta = ath12k_peer_get_link_sta(ab, peer);
-	if (!arsta) {
-		ath12k_warn(ab, "link sta not found on peer %pM id %d\n",
-				peer->addr, peer->peer_id);
-		spin_unlock_bh(&dp->dp_lock);
 		rcu_read_unlock();
 		return;
 	}
@@ -110,7 +106,6 @@ static void ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
 	memset(&status, 0, sizeof(status));
 	status.sta = peer->sta;
 	rate = peer->last_txrate;
-	spin_unlock_bh(&dp->dp_lock);
 
 	status_rate.rate_idx = rate;
 	status_rate.try_count = 1;
@@ -119,9 +114,9 @@ static void ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
 	status.n_rates = 1;
 	status.mpdu_fail = FIELD_GET(HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_NUM_MPDU,
 			msg->info);
-	ar = arsta->arvif->ar;
+	ieee80211s_update_metric_ppdu(ath12k_dp_pdev_to_hw(dp_pdev), &status);
+
 	rcu_read_unlock();
-	ieee80211s_update_metric_ppdu(ar->ah->hw, &status);
 }
 
 static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
@@ -265,7 +260,7 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 		if (!ab->stats_disable)
 			break;
 		ath12k_dp_ppdu_stats_flush_tlv_parse(ab,
-			   	(struct htt_ppdu_stats_cmpltn_flush *)ptr);
+			(struct htt_ppdu_stats_cmpltn_flush *)ptr, ppdu_info);
 		break;
 	}
 	return 0;
@@ -787,7 +782,6 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k *ar = dp_pdev->ar;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp *dp = ab->dp;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_dp_link_peer *peer = NULL;
 	struct htt_ppdu_user_stats* usr_stats = NULL;
@@ -810,25 +804,23 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 		usr_stats = &ppdu_info->ppdu_stats.user_stats[i];
 		peer_id = usr_stats->peer_id;
 		rcu_read_lock();
-		spin_lock_bh(&dp->dp_lock);
-		peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
+		peer = ath12k_dp_link_peer_find_by_peerid_index(ab->dp,
+								dp_pdev,
+								peer_id);
 		if (unlikely(!peer || !peer->sta)) {
 			ath12k_dbg(ab, ATH12K_DBG_DATA,
 				   "dp_tx: failed to find the peer with peer_id %d\n",
 				peer_id);
-			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock();
 			continue;
 		}
 
 		if (peer->vif->type != NL80211_IFTYPE_MESH_POINT) {
-			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock();
 			return;
 		}
 
 		if (ether_addr_equal(peer->addr, peer->vif->addr)) {
-			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock();
 			continue;
 		}
@@ -837,7 +829,6 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 		if (!arsta) {
 			ath12k_warn(ab, "link sta not found on peer %pM id %d\n",
 				    peer->addr, peer->peer_id);
-			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock();
 			continue;
 		}
@@ -846,8 +837,6 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 
 		status.sta = peer->sta;
 		rate = peer->last_txrate;
-		spin_unlock_bh(&dp->dp_lock);
-		rcu_read_unlock();
 
 		status_rate.rate_idx = rate;
 		status_rate.try_count = 1;
@@ -857,6 +846,7 @@ ath12k_dp_htt_ppdu_stats_update_tx_comp_stats(struct ath12k_pdev_dp *dp_pdev,
 		status.mpdu_succ = usr_stats->cmpltn_cmn.mpdu_success;
 
 		ieee80211s_update_metric_ppdu(ar->ah->hw, &status);
+		rcu_read_unlock();
 	}
 }
 
@@ -926,6 +916,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 		goto exit;
 	}
 
+	ppdu_info->pdev_id = pdev_id;
 	ppdu_info->ppdu_id = ppdu_id;
 	ret = ath12k_dp_htt_tlv_iter(ab, msg->data, len,
 				     ath12k_htt_tlv_ppdu_stats_parse,
