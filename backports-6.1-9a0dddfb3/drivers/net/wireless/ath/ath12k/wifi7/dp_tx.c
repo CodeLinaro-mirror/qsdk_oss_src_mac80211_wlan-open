@@ -965,6 +965,11 @@ ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
 
+	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+		kfree_skb(skb);
+		return DP_TX_ENQ_SUCCESS;
+	}
+
 	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
 
 	tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
@@ -1074,6 +1079,11 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
+
+	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+		kfree_skb(skb);
+		return err;
+	}
 
 	if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)
 		eth = (struct ethhdr *)skb->data;
