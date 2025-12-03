@@ -62,7 +62,7 @@ void ath12k_fwlog_write(struct ath12k_base *ab, u8 *data, int len)
 	}
 
 	if (ab->ag->mlo_capable) {
-		ret = nla_put_u8(nl_skb, ATH_TM_ATTR_LINK_IDX, ar->hw_link_id);
+		ret = nla_put_u8(nl_skb, ATH_TM_ATTR_LINK_IDX, ar->radio_idx);
 		if (ret) {
 			ath12k_warn(ab, "failed to put link idx wmi event to nl: %d\n", ret);
 			kfree_skb(nl_skb);
