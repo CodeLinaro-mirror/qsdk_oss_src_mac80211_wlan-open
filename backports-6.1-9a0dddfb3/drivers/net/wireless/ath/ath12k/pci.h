@@ -159,6 +159,7 @@ int ath12k_pci_get_user_msi_assignment(struct ath12k_base *ab, char *user_name,
 				       int *num_vectors, u32 *user_base_data,
 				       u32 *base_vector);
 int ath12k_pci_get_msi_irq(struct ath12k_base *ab, unsigned int vector);
+int ath12k_pci_get_iova(struct ath12k_base *ab, u64 *addr, u64 *size);
 void ath12k_pci_write32(struct ath12k_base *ab, u32 offset, u32 value);
 u32 ath12k_pci_read32(struct ath12k_base *ab, u32 offset);
 int ath12k_pci_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,

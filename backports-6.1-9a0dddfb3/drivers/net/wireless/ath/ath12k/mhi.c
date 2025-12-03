@@ -8,6 +8,7 @@
 #include <linux/pci.h>
 #include <linux/firmware.h>
 #include <linux/of.h>
+#include <linux/of_address.h>
 
 #include "core.h"
 #include "debug.h"
@@ -268,8 +269,10 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	const struct ath12k_hw_params *hw_params = ab->hw_params;
 	struct mhi_controller *mhi_ctrl;
 	unsigned int board_id;
-	int ret;
+	int ret, idx = 0;
 	bool dualmac = false;
+	struct device_node *dev_node;
+	struct resource memory;
 
 	mhi_ctrl = mhi_alloc_controller();
 	if (!mhi_ctrl)
@@ -342,8 +345,36 @@ int ath12k_mhi_register(struct ath12k_pci *ab_pci)
 	if (!test_bit(ATH12K_PCI_FLAG_MULTI_MSI_VECTORS, &ab_pci->flags))
 		mhi_ctrl->irq_flags = IRQF_SHARED | IRQF_NOBALANCING;
 
-	mhi_ctrl->iova_start = 0;
-	mhi_ctrl->iova_stop = 0xffffffff;
+	dev_node = of_find_node_by_type(NULL, "memory");
+	if (dev_node) {
+		while (of_address_to_resource(dev_node, idx, &memory) == 0) {
+			if (!idx)
+				mhi_ctrl->iova_start = memory.start;
+			/* The end address and size are auto-filled by the
+			 * bootloader and only the start address can be seen
+			 * specified in the dts file.
+			 */
+			mhi_ctrl->iova_stop = memory.end;
+			idx++;
+		}
+
+		if (!mhi_ctrl->iova_start || !mhi_ctrl->iova_stop) {
+			ath12k_err(ab, "Unable to get resource from the dts node memory. iova start:%pa iova stop:%pa\n",
+				   &mhi_ctrl->iova_start, &mhi_ctrl->iova_stop);
+			of_node_put(dev_node);
+			ret = -ENOMEM;
+			goto free_controller;
+		}
+		of_node_put(dev_node);
+	} else {
+		/* No Memory DT node, assign full 32-bit region as iova */
+		mhi_ctrl->iova_start = 0;
+		mhi_ctrl->iova_stop = 0xFFFFFFFF;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_PCI, "iova start:%pa iova stop: %pa\n",
+		   &mhi_ctrl->iova_start, &mhi_ctrl->iova_stop);
+
 	mhi_ctrl->sbl_size = SZ_512K;
 	mhi_ctrl->seg_len = SZ_512K;
 	mhi_ctrl->fbc_download = true;

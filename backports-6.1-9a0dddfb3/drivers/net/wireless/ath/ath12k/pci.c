@@ -518,6 +518,23 @@ int ath12k_pci_get_msi_irq(struct ath12k_base *ab, unsigned int vector)
         return pci_irq_vector(pci_dev, vector);
 }
 
+int ath12k_pci_get_iova(struct ath12k_base *ab, u64 *addr, u64 *size)
+{
+	struct mhi_controller *mhi_ctrl;
+	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+
+	mhi_ctrl = ab_pci->mhi_ctrl;
+	if (!mhi_ctrl) {
+		ath12k_err(ab, "Invalid MHI controller context!\n");
+		return -EINVAL;
+	}
+
+	*addr = mhi_ctrl->iova_start;
+	*size = mhi_ctrl->iova_stop - mhi_ctrl->iova_start + 1;
+
+	return 0;
+}
+
 int ath12k_pci_get_user_msi_assignment(struct ath12k_base *ab, char *user_name,
 				       int *num_vectors, u32 *user_base_data,
 				       u32 *base_vector)
@@ -1114,6 +1131,7 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.dp_umac_reset_irq_config = ath12k_dp_umac_pci_config_irq,
 	.dp_umac_reset_enable_irq = ath12k_pci_dp_umac_reset_enable_irq,
 	.dp_umac_reset_free_irq = ath12k_pci_dp_umac_reset_free_irq,
+	.get_iova = ath12k_pci_get_iova,
 };
 
 static enum ath12k_device_family
