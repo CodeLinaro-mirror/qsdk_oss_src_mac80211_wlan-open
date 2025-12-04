@@ -34,6 +34,25 @@
 #define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_RU_START	GENMASK(15, 9)
 #define HAL_RX_UL_OFDMA_USER_INFO_V0_W1_RU_SIZE		GENMASK(18, 16)
 
+#define HE_GI_0_8 0
+#define HE_GI_0_4 1
+#define HE_GI_1_6 2
+#define HE_GI_3_2 3
+
+#define HE_LTF_1_X 0
+#define HE_LTF_2_X 1
+#define HE_LTF_4_X 2
+
+#define HE_GI_RADIOTAP_0_8 0
+#define HE_GI_RADIOTAP_1_6 1
+#define HE_GI_RADIOTAP_3_2 2
+#define HE_GI_RADIOTAP_RESERVED 3
+
+#define HE_LTF_RADIOTAP_UNKNOWN 0
+#define HE_LTF_RADIOTAP_1_X 1
+#define HE_LTF_RADIOTAP_2_X 2
+#define HE_LTF_RADIOTAP_4_X 3
+
 #define ATH12K_LE32_DEC_ENC(value, dec_bits, enc_bits)	\
 		u32_encode_bits(le32_get_bits(value, dec_bits), enc_bits)
 
@@ -427,4 +446,37 @@ static inline void ath12k_hal_mon_set_mon_buf_desc(struct ath12k_hal *hal,
 	return hal->hal_mon_ops->hal_mon_set_mon_buf_desc(desc, addr_lo,
 							  addr_hi, cookie);
 }
+
+static __always_inline void
+hal_get_radiotap_he_gi_ltf(u16 *he_gi, u16 *he_ltf)
+{
+	switch (*he_gi) {
+	case HE_GI_0_8:
+		*he_gi = HE_GI_RADIOTAP_0_8;
+		break;
+	case HE_GI_1_6:
+		*he_gi = HE_GI_RADIOTAP_1_6;
+		break;
+	case HE_GI_3_2:
+		*he_gi = HE_GI_RADIOTAP_3_2;
+		break;
+	default:
+		*he_gi = HE_GI_RADIOTAP_RESERVED;
+	}
+
+	switch (*he_ltf) {
+	case HE_LTF_1_X:
+		*he_ltf = HE_LTF_RADIOTAP_1_X;
+		break;
+	case HE_LTF_2_X:
+		*he_ltf = HE_LTF_RADIOTAP_2_X;
+		break;
+	case HE_LTF_4_X:
+		*he_ltf = HE_LTF_RADIOTAP_4_X;
+		break;
+	default:
+		*he_ltf = HE_LTF_RADIOTAP_UNKNOWN;
+	}
+}
+
 #endif

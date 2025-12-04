@@ -414,6 +414,7 @@ ath12k_wifi7_hal_mon_parse_he_sig_mu(const struct hal_rx_he_sig_a_mu_dl_info *he
 	}
 
 	ppdu_info->gi = he_gi;
+	hal_get_radiotap_he_gi_ltf(&he_gi, &he_ltf);
 	value = he_gi << HE_GI_SHIFT;
 	ppdu_info->he_data5 |= value;
 
@@ -578,10 +579,11 @@ ath12k_wifi7_hal_mon_parse_he_sig_su(const struct hal_rx_he_sig_a_su_info *he_si
 		break;
 	}
 	ppdu_info->gi = he_gi;
+	ppdu_info->ltf_size = he_ltf;
+	hal_get_radiotap_he_gi_ltf(&he_gi, &he_ltf);
 	value = he_gi << HE_GI_SHIFT;
 	ppdu_info->he_data5 |= value;
 	value = he_ltf << HE_LTF_SIZE_SHIFT;
-	ppdu_info->ltf_size = he_ltf;
 	ppdu_info->he_data5 |= value;
 
 	value = u32_get_bits(info0, HAL_RX_HE_SIG_A_SU_INFO_INFO0_NSTS);
