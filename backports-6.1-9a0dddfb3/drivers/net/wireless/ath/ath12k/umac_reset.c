@@ -391,7 +391,7 @@ void ath12k_umac_reset_pre_reset_validation(struct ath12k_base *ab, bool *is_ini
 	spin_lock_bh(&mlo_umac_reset->lock);
 	if (mlo_umac_reset->initiator_chip == ab->device_id)
 		*is_initiator = true;
-	if (mlo_umac_reset->umac_reset_info & BIT(1))
+	if (mlo_umac_reset->umac_reset_info & ATH12K_IS_UMAC_RESET_TYPE_RECOVERY)
 		*is_target_recovery = true;
 	spin_unlock_bh(&mlo_umac_reset->lock);
 }
@@ -404,7 +404,7 @@ void ath12k_umac_reset_completion(struct ath12k_base *ab)
 	if (!mlo_umac_reset || ab->powered_off)
 		return;
 
-	if (!(mlo_umac_reset->umac_reset_info & BIT(0)))
+	if (!ath12k_dp_umac_reset_in_progress(ab))
 		return;
 
 	spin_lock_bh(&mlo_umac_reset->lock);
@@ -530,9 +530,12 @@ int ath12k_umac_reset_initiate_recovery(struct ath12k_base *ab,
 		return -ECANCELED;
 	}
 
-	mlo_umac_reset->umac_reset_info = BIT(0); /* UMAC recovery is in progress */
+	/* Set flag to indicate UMAC recovery is in progress */
+	mlo_umac_reset->umac_reset_info = ATH12K_IS_UMAC_RESET_IN_PROGRESS;
+
+	 /* Set flag to indicate Target recovery if that is the case */
 	if (target_recovery)
-		mlo_umac_reset->umac_reset_info |= BIT(1); /* Target recovery */
+		mlo_umac_reset->umac_reset_info |= ATH12K_IS_UMAC_RESET_TYPE_RECOVERY;
 
 	/* Reset task_map and task_id at start of a new recovery sequence */
 	mlo_umac_reset->task_map = 0;
