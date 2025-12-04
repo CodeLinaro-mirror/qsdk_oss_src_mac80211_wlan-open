@@ -2504,6 +2504,7 @@ sta_get_last_rx_stats(struct sta_info *sta, bool is_rx_bitrate, int link_id)
 	if (!link_sta_info->pcpu_rx_stats)
 		return stats;
 
+
 	for_each_possible_cpu(cpu) {
 		struct ieee80211_sta_rx_stats *cpustats;
 		u16 rate;
@@ -3485,12 +3486,36 @@ void ieee80211_sta_remove_link(struct sta_info *sta, unsigned int link_id,
 		link_sta = rcu_access_pointer(sta->sta.link[n_link_id]);
 
 		if (sta_info && link_sta) {
+			struct ieee80211_sta_rx_stats __percpu *old_pcpu =
+				sta->deflink.pcpu_rx_stats;
+			struct ieee80211_sta_rx_stats __percpu *src_pcpu =
+				sta_info->pcpu_rx_stats;
+
 			sta->deflink.link_id = n_link_id;
 			sta->sta.deflink.link_id = n_link_id;
 
 			memcpy(&sta->deflink, sta_info, sizeof(*sta_info));
 			memcpy(&sta->sta.deflink, link_sta, sizeof(*link_sta));
 			sta->deflink.pub = &sta->sta.deflink;
+			/* Be explicit about the per-CPU stats pointer we adopt. */
+			sta->deflink.pcpu_rx_stats = src_pcpu;
+			ht_dbg_ratelimited(sta->sdata,
+					   "deflink move: from link_id=%d to deflink, src_pcpu=%p old_def_pcpu=%p",
+					   n_link_id, src_pcpu, old_pcpu);
+
+			/*
+			 * Transfer ownership of per-CPU RX stats to the new deflink.
+			 * After memcpy() above, deflink->pcpu_rx_stats now points to
+			 * the per-CPU area that belonged to the link we are about to free.
+			 * Avoid freeing that memory via sta_remove_link() by clearing the
+			 * pointer in the soon-to-be-freed link structure.
+			 */
+			sta_info->pcpu_rx_stats = NULL;
+			/* Free the old deflink per-CPU stats to avoid leaks. */
+			if (old_pcpu && old_pcpu != src_pcpu)
+				free_percpu(old_pcpu);
+			ht_dbg_ratelimited(sta->sdata,
+					   "deflink move: cleared old link pcpu pointer to avoid free");
 
 			/* Free the moved link memory */
 			sta_remove_link(sta, n_link_id, true);
