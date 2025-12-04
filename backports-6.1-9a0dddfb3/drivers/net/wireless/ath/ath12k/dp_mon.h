@@ -146,6 +146,7 @@ struct ath12k_dp_arch_mon_ops {
 	int (*mon_pdev_rx_htt_srng_setup)(struct ath12k_pdev_dp *dp_pdev,
 					  u32 mac_id);
 	void (*mon_pdev_rx_attach)(struct ath12k_pdev_dp *dp_pdev);
+	int (*setup_mon_link_desc)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_pdev_rx_mpdu_list_init)(struct ath12k_mon_data *pmon);
 	int (*mon_rx_srng_process)(struct ath12k_pdev_dp *dp_pdev, int mac_id,
 				      struct napi_struct *napi, int *budget);
@@ -191,6 +192,7 @@ struct ath12k_dp_mon {
 	struct dp_rxdma_mon_ring rxdma_mon_buf_ring;
 	struct dp_rxdma_mon_ring tx_mon_buf_ring;
 	struct dp_rxdma_mon_ring rx_mon_status_refill_ring[MAX_RXDMA_PER_PDEV];
+	struct dp_srng rxdma_mon_desc_ring;
 	const struct ath12k_dp_arch_mon_ops *mon_ops;
 	u32 mon_dest_ring_stuck_cnt;
 	struct ath12k_dp_mon_desc *mon_desc_pool;
@@ -470,6 +472,11 @@ const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
 		return dp->dp_mon->mon_ops;
 
 	return NULL;
+}
+
+static inline bool ath12k_dp_mon_rxdma1_enable(struct ath12k_dp *dp)
+{
+	return dp->hw_params->rxdma1_enable;
 }
 
 /* Wrapper functions for RX and TX buffer replenishment */
