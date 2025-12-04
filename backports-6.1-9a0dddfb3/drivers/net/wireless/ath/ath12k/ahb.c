@@ -199,7 +199,7 @@ static void __ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 
 		ath12k_ahb_ext_grp_disable(irq_grp);
 
-		if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+		if (test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 			continue;
 
 		if (irq_grp->napi_enabled) {
@@ -360,7 +360,7 @@ static void ath12k_ahb_ext_irq_disable(struct ath12k_base *ab)
 
 	__ath12k_ahb_ext_irq_disable(ab);
 
-	if (!test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+	if (!test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		ath12k_ahb_sync_ext_irqs(ab);
 }
 

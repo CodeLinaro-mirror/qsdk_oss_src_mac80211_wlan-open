@@ -119,7 +119,7 @@ int ath12k_wifi7_dp_reo_cmd_send(struct ath12k_base *ab,
 	int cmd_num;
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) ||
-	    test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
+	    test_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags))
 		return -ESHUTDOWN;
 
 	cmd_ring = &ab->hal.srng_list[dp->reo_cmd_ring.ring_id];

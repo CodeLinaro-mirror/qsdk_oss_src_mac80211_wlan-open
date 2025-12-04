@@ -16,8 +16,9 @@ static void ath12k_wifi7_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
-	set_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
+	set_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
 	ath12k_hif_mgmt_irq_disable(ab);
+
 	ath12k_hif_irq_disable(ab);
 	ab->dp_umac_reset.umac_pre_reset_in_prog = true;
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -133,7 +134,7 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_bas
 	}
 #endif
 	ath12k_hif_mgmt_irq_enable(ab);
-	clear_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
+	clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
 }
 
 void ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper(struct ath12k_base *ab)
