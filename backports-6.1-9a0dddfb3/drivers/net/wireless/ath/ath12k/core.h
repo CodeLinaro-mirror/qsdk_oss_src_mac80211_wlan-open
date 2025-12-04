@@ -671,6 +671,7 @@ struct ath12k_dp_link_vif {
 	u8 lmac_id;
 	int bank_id;
 	u8 map_id;
+	struct ath12k_dp_preserved_stats *link_peer_delete_stats;
 };
 
 struct ath12k_vlan_iface {
@@ -686,12 +687,12 @@ struct ath12k_dp_vif {
 	atomic_t mcbc_gsn;
 	struct ath12k_dp_link_vif dp_link_vif[ATH12K_NUM_MAX_LINKS];
 	struct ath12k_dp_tx_vif_stats stats[DP_TCL_NUM_RING_MAX];
-
 	/* PPE mode independent variables */
 	int ppe_vp_num;
 	int ppe_core_mask;
 	u8 ppe_vp_type;
 	bool mscs_hlos_tid_override;
+	struct ath12k_dp_preserved_stats *link_vif_delete_stats;
 };
 
 enum ath12k_tx_pkt_reasons {
@@ -881,15 +882,6 @@ struct ath12k_vif_chanctx_iter {
 
 #define ATH12K_SCAN_TIMEOUT_HZ (20 * HZ)
 
-#define ATH12K_EHT_MCS_NUM	16
-#define ATH12K_HE_MCS_NUM       12
-#define ATH12K_VHT_MCS_NUM      10
-#define ATH12K_BW_NUM           5
-#define ATH12K_NSS_NUM          4
-#define ATH12K_LEGACY_NUM       12
-#define ATH12K_GI_NUM           4
-#define ATH12K_HT_MCS_NUM       32
-
 enum ath12k_pkt_rx_err {
 	ATH12K_PKT_RX_ERR_FCS,
 	ATH12K_PKT_RX_ERR_TKIP,
@@ -916,43 +908,6 @@ enum ath12k_amsdu_subfrm_num {
 	ATH12K_AMSDU_SUBFRM_NUM_4,
 	ATH12K_AMSDU_SUBFRM_NUM_MORE,
 	ATH12K_AMSDU_SUBFRM_NUM_MAX,
-};
-
-enum ath12k_counter_type {
-	ATH12K_COUNTER_TYPE_BYTES,
-	ATH12K_COUNTER_TYPE_PKTS,
-	ATH12K_COUNTER_TYPE_MAX,
-};
-
-enum ath12k_stats_type {
-	ATH12K_STATS_TYPE_SUCC,
-	ATH12K_STATS_TYPE_FAIL,
-	ATH12K_STATS_TYPE_RETRY,
-	ATH12K_STATS_TYPE_AMPDU,
-	ATH12K_STATS_TYPE_MAX,
-};
-
-struct ath12k_htt_data_stats {
-	u64 legacy[ATH12K_COUNTER_TYPE_MAX][ATH12K_LEGACY_NUM];
-	u64 ht[ATH12K_COUNTER_TYPE_MAX][ATH12K_HT_MCS_NUM];
-	u64 vht[ATH12K_COUNTER_TYPE_MAX][ATH12K_VHT_MCS_NUM];
-	u64 he[ATH12K_COUNTER_TYPE_MAX][ATH12K_HE_MCS_NUM];
-	u64 eht[ATH12K_COUNTER_TYPE_MAX][ATH12K_EHT_MCS_NUM];
-	u64 bw[ATH12K_COUNTER_TYPE_MAX][ATH12K_BW_NUM];
-	u64 nss[ATH12K_COUNTER_TYPE_MAX][ATH12K_NSS_NUM];
-	u64 gi[ATH12K_COUNTER_TYPE_MAX][ATH12K_GI_NUM];
-	u64 transmit_type[ATH12K_COUNTER_TYPE_MAX][HTT_PPDU_STATS_PPDU_TYPE_MAX];
-	u64 ru_loc[ATH12K_COUNTER_TYPE_MAX][HAL_RX_RU_ALLOC_TYPE_MAX];
-};
-
-struct ath12k_htt_tx_stats {
-	struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
-	u64 tx_duration;
-	u64 ba_fails;
-	u64 ack_fails;
-	u16 ru_start;
-	u16 ru_tones;
-	u32 mu_group[MAX_MU_GROUP_ID];
 };
 
 struct ath12k_per_peer_cfr_capture {

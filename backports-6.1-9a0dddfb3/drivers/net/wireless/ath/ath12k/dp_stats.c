@@ -1,0 +1,260 @@
+// SPDX-License-Identifier: BSD-3-Clause-Clear
+/*
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ */
+
+#include "core.h"
+#include "dp_peer.h"
+#include "dp_stats.h"
+#include "debug.h"
+
+/**
+ * ath12k_dp_aggr_per_pkt_tx_stats - Aggregate per-packet TX statistics
+ * @dst_tx_stats: Destination TX stats structure
+ * @src_tx_stats: Source TX stats structure to aggregate from
+ *
+ * Aggregates per-packet TX statistics from source to destination across all
+ * WBM release reasons and TQM release reasons. Used during peer/VIF deletion
+ * to preserve statistics.
+ */
+void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst_tx_stats,
+				     struct ath12k_dp_peer_tx_stats *src_tx_stats)
+{
+	int j;
+
+	dst_tx_stats->comp_pkt.packets += src_tx_stats->comp_pkt.packets;
+	dst_tx_stats->comp_pkt.bytes += src_tx_stats->comp_pkt.bytes;
+	dst_tx_stats->tx_success.packets += src_tx_stats->tx_success.packets;
+	dst_tx_stats->tx_success.bytes += src_tx_stats->tx_success.bytes;
+	dst_tx_stats->tx_failed += src_tx_stats->tx_failed;
+	for (j = 0; j < HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX; j++)
+		dst_tx_stats->wbm_rel_reason[j] += src_tx_stats->wbm_rel_reason[j];
+	for (j = 0; j < HAL_WBM_TQM_REL_REASON_MAX; j++)
+		dst_tx_stats->tqm_rel_reason[j] += src_tx_stats->tqm_rel_reason[j];
+	dst_tx_stats->release_src_not_tqm += src_tx_stats->release_src_not_tqm;
+	dst_tx_stats->retry_count += src_tx_stats->retry_count;
+	dst_tx_stats->total_msdu_retries += src_tx_stats->total_msdu_retries;
+	dst_tx_stats->multiple_retry_count += src_tx_stats->multiple_retry_count;
+	dst_tx_stats->ofdma += src_tx_stats->ofdma;
+	dst_tx_stats->amsdu_cnt += src_tx_stats->amsdu_cnt;
+	dst_tx_stats->non_amsdu_cnt += src_tx_stats->non_amsdu_cnt;
+	dst_tx_stats->inval_link_id_pkt_cnt += src_tx_stats->inval_link_id_pkt_cnt;
+	dst_tx_stats->mcast += src_tx_stats->mcast;
+	dst_tx_stats->ucast += src_tx_stats->ucast;
+	dst_tx_stats->bcast += src_tx_stats->bcast;
+}
+
+/**
+ * ath12k_dp_aggr_per_pkt_rx_stats - Aggregate per-packet RX statistics
+ * @dst_rx_stats: Destination RX stats structure
+ * @src_rx_stats: Source RX stats structure to aggregate from
+ *
+ * Aggregates per-packet RX statistics from source to destination including
+ * packets received from REO, sent to stack, multicast/unicast counts, and
+ * AMSDU/retry information.
+ */
+void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stats,
+				     struct ath12k_dp_peer_rx_stats *src_rx_stats)
+{
+	dst_rx_stats->recv_from_reo.packets += src_rx_stats->recv_from_reo.packets;
+	dst_rx_stats->recv_from_reo.bytes += src_rx_stats->recv_from_reo.bytes;
+	dst_rx_stats->sent_to_stack.packets += src_rx_stats->sent_to_stack.packets;
+	dst_rx_stats->sent_to_stack.bytes += src_rx_stats->sent_to_stack.bytes;
+	dst_rx_stats->sent_to_stack_fast.packets +=
+						src_rx_stats->sent_to_stack_fast.packets;
+	dst_rx_stats->sent_to_stack_fast.bytes += src_rx_stats->sent_to_stack_fast.bytes;
+	dst_rx_stats->mcast += src_rx_stats->mcast;
+	dst_rx_stats->ucast += src_rx_stats->ucast;
+	dst_rx_stats->non_amsdu += src_rx_stats->non_amsdu;
+	dst_rx_stats->msdu_part_of_amsdu += src_rx_stats->msdu_part_of_amsdu;
+	dst_rx_stats->mpdu_retry += src_rx_stats->mpdu_retry;
+}
+
+/**
+ * ath12k_dp_aggr_htt_tx_stats - Aggregate HTT TX statistics
+ * @dst: Destination HTT TX stats structure
+ * @src: Source HTT TX stats structure to aggregate from
+ *
+ * Aggregates HTT TX statistics including rate information (legacy, HT, VHT,
+ * HE, EHT), bandwidth, NSS, GI, transmit type, RU location, TX duration,
+ * BA fails, ACK fails, and MU group information.
+ */
+void ath12k_dp_aggr_htt_tx_stats(struct ath12k_htt_tx_stats *dst,
+				 const struct ath12k_htt_tx_stats *src)
+{
+	int i, j;
+
+	for (i = 0; i < ATH12K_STATS_TYPE_MAX; i++) {
+		for (j = 0; j < ATH12K_COUNTER_TYPE_MAX; j++) {
+			for (int k = 0; k < ATH12K_LEGACY_NUM; k++)
+				dst->stats[i].legacy[j][k] += src->stats[i].legacy[j][k];
+			for (int k = 0; k < ATH12K_HT_MCS_NUM; k++)
+				dst->stats[i].ht[j][k] += src->stats[i].ht[j][k];
+			for (int k = 0; k < ATH12K_VHT_MCS_NUM; k++)
+				dst->stats[i].vht[j][k] += src->stats[i].vht[j][k];
+			for (int k = 0; k < ATH12K_HE_MCS_NUM; k++)
+				dst->stats[i].he[j][k] += src->stats[i].he[j][k];
+			for (int k = 0; k < ATH12K_EHT_MCS_NUM; k++)
+				dst->stats[i].eht[j][k] += src->stats[i].eht[j][k];
+			for (int k = 0; k < ATH12K_BW_NUM; k++)
+				dst->stats[i].bw[j][k] += src->stats[i].bw[j][k];
+			for (int k = 0; k < ATH12K_NSS_NUM; k++)
+				dst->stats[i].nss[j][k] += src->stats[i].nss[j][k];
+			for (int k = 0; k < ATH12K_GI_NUM; k++)
+				dst->stats[i].gi[j][k] += src->stats[i].gi[j][k];
+			for (int k = 0; k < HTT_PPDU_STATS_PPDU_TYPE_MAX; k++)
+				dst->stats[i].transmit_type[j][k] +=
+						src->stats[i].transmit_type[j][k];
+			for (int k = 0; k < HAL_RX_RU_ALLOC_TYPE_MAX; k++)
+				dst->stats[i].ru_loc[j][k] += src->stats[i].ru_loc[j][k];
+		}
+	}
+	dst->tx_duration += src->tx_duration;
+	dst->ba_fails += src->ba_fails;
+	dst->ack_fails += src->ack_fails;
+	for (i = 0; i < MAX_MU_GROUP_ID; i++)
+		dst->mu_group[i] += src->mu_group[i];
+}
+
+/**
+ * ath12k_dp_aggr_rx_peer_stats - Aggregate RX peer statistics
+ * @dst: Destination RX peer stats structure
+ * @src: Source RX peer stats structure to aggregate from
+ *
+ * Aggregates comprehensive RX peer statistics including MSDU/MPDU counts,
+ * protocol-specific counts (TCP/UDP), AMPDU information, STBC, beamforming,
+ * coding types, TID counts, preamble types, reception types, RX duration,
+ * DCM, RU allocation, and detailed rate statistics (MCS, NSS, BW, GI, legacy).
+ */
+void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
+				  const struct ath12k_rx_peer_stats *src)
+{
+	int i, j, k, l;
+
+	dst->num_msdu += src->num_msdu;
+	dst->num_mpdu_fcs_ok += src->num_mpdu_fcs_ok;
+	dst->num_mpdu_fcs_err += src->num_mpdu_fcs_err;
+	dst->tcp_msdu_count += src->tcp_msdu_count;
+	dst->udp_msdu_count += src->udp_msdu_count;
+	dst->other_msdu_count += src->other_msdu_count;
+	dst->ampdu_msdu_count += src->ampdu_msdu_count;
+	dst->non_ampdu_msdu_count += src->non_ampdu_msdu_count;
+	dst->stbc_count += src->stbc_count;
+	dst->beamformed_count += src->beamformed_count;
+	for (i = 0; i < HAL_RX_SU_MU_CODING_MAX; i++)
+		dst->coding_count[i] += src->coding_count[i];
+	for (i = 0; i <= IEEE80211_NUM_TIDS; i++)
+		dst->tid_count[i] += src->tid_count[i];
+	for (i = 0; i < HAL_RX_PREAMBLE_MAX; i++)
+		dst->pream_cnt[i] += src->pream_cnt[i];
+	for (i = 0; i < HAL_RX_RECEPTION_TYPE_MAX; i++)
+		dst->reception_type[i] += src->reception_type[i];
+	dst->rx_duration += src->rx_duration;
+	dst->dcm_count += src->dcm_count;
+	for (i = 0; i < HAL_RX_RU_ALLOC_TYPE_MAX; i++)
+		dst->ru_alloc_cnt[i] += src->ru_alloc_cnt[i];
+	for (i = 0; i <= HAL_RX_MAX_MCS_HT; i++)
+		dst->pkt_stats.ht_mcs_count[i] += src->pkt_stats.ht_mcs_count[i];
+	for (i = 0; i <= HAL_RX_MAX_MCS_VHT; i++)
+		dst->pkt_stats.vht_mcs_count[i] += src->pkt_stats.vht_mcs_count[i];
+	for (i = 0; i <= HAL_RX_MAX_MCS_HE; i++)
+		dst->pkt_stats.he_mcs_count[i] += src->pkt_stats.he_mcs_count[i];
+	for (i = 0; i <= HAL_RX_MAX_MCS_BE; i++)
+		dst->pkt_stats.be_mcs_count[i] += src->pkt_stats.be_mcs_count[i];
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		dst->pkt_stats.nss_count[i] += src->pkt_stats.nss_count[i];
+	for (i = 0; i < HAL_RX_BW_MAX; i++)
+		dst->pkt_stats.bw_count[i] += src->pkt_stats.bw_count[i];
+	for (i = 0; i < HAL_RX_GI_MAX; i++)
+		dst->pkt_stats.gi_count[i] += src->pkt_stats.gi_count[i];
+	for (i = 0; i < HAL_RX_MAX_NUM_LEGACY_RATES; i++)
+		dst->pkt_stats.legacy_count[i] += src->pkt_stats.legacy_count[i];
+	for (i = 0; i < HAL_RX_BW_MAX; i++)
+		for (j = 0; j < HAL_RX_GI_MAX; j++)
+			for (k = 0; k < HAL_RX_MAX_NSS; k++)
+				for (l = 0; l <= HAL_RX_MAX_MCS_HT; l++)
+					dst->pkt_stats.rx_rate[i][j][k][l] +=
+						src->pkt_stats.rx_rate[i][j][k][l];
+
+	for (i = 0; i <= HAL_RX_MAX_MCS_HT; i++)
+		dst->byte_stats.ht_mcs_count[i] += src->byte_stats.ht_mcs_count[i];
+	for (i = 0; i <= HAL_RX_MAX_MCS_VHT; i++)
+		dst->byte_stats.vht_mcs_count[i] += src->byte_stats.vht_mcs_count[i];
+	for (i = 0; i <= HAL_RX_MAX_MCS_HE; i++)
+		dst->byte_stats.he_mcs_count[i] += src->byte_stats.he_mcs_count[i];
+	for (i = 0; i <= HAL_RX_MAX_MCS_BE; i++)
+		dst->byte_stats.be_mcs_count[i] += src->byte_stats.be_mcs_count[i];
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		dst->byte_stats.nss_count[i] += src->byte_stats.nss_count[i];
+	for (i = 0; i < HAL_RX_BW_MAX; i++)
+		dst->byte_stats.bw_count[i] += src->byte_stats.bw_count[i];
+	for (i = 0; i < HAL_RX_GI_MAX; i++)
+		dst->byte_stats.gi_count[i] += src->byte_stats.gi_count[i];
+	for (i = 0; i < HAL_RX_MAX_NUM_LEGACY_RATES; i++)
+		dst->byte_stats.legacy_count[i] += src->byte_stats.legacy_count[i];
+	for (i = 0; i < HAL_RX_BW_MAX; i++)
+		for (j = 0; j < HAL_RX_GI_MAX; j++)
+			for (k = 0; k < HAL_RX_MAX_NSS; k++)
+				for (l = 0; l <= HAL_RX_MAX_MCS_HT; l++)
+					dst->byte_stats.rx_rate[i][j][k][l] +=
+						src->byte_stats.rx_rate[i][j][k][l];
+}
+
+/**
+ * ath12k_dp_aggr_wbm_rx_stats - Aggregate WBM RX error statistics
+ * @dst: Destination WBM RX stats structure
+ * @src: Source WBM RX stats structure to aggregate from
+ *
+ * Aggregates WBM (Wireless Buffer Manager) RX error statistics including
+ * RXDMA errors and REO errors.
+ */
+void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
+				 struct ath12k_wbm_rx_stats *src)
+{
+	int i;
+
+	for (i = 0; i < HAL_REO_ENTR_RING_RXDMA_ECODE_MAX; i++)
+		dst->rxdma_error[i] += src->rxdma_error[i];
+
+	for (i = 0; i < HAL_REO_DEST_RING_ERROR_CODE_MAX; i++)
+		dst->reo_error[i] += src->reo_error[i];
+}
+
+/**
+ * ath12k_dp_clear_wbm_rx_stats - Clear WBM RX error statistics
+ * @wbm_stats: WBM RX stats structure to clear
+ *
+ * Clears all WBM RX error statistics by zeroing the structure.
+ */
+void ath12k_dp_clear_wbm_rx_stats(struct ath12k_wbm_rx_stats *wbm_stats)
+{
+	memset(wbm_stats, 0, sizeof(struct ath12k_wbm_rx_stats));
+}
+
+/**
+ * ath12k_dp_clear_per_pkt_tx_stats - Clear per-packet TX statistics
+ * @tx_peer_stats: Peer stats structure containing TX stats to clear
+ *
+ * Clears per-packet TX statistics across all TCL rings.
+ */
+void ath12k_dp_clear_per_pkt_tx_stats(struct ath12k_dp_peer_stats *tx_peer_stats)
+{
+	int i;
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+		memset(&tx_peer_stats->tx[i], 0, sizeof(struct ath12k_dp_peer_tx_stats));
+}
+
+/**
+ * ath12k_dp_clear_per_pkt_rx_stats - Clear per-packet RX statistics
+ * @rx_peer_stats: Peer stats structure containing RX stats to clear
+ *
+ * Clears per-packet RX statistics across all REO destination rings.
+ */
+void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats)
+{
+	int i;
+
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		memset(&rx_peer_stats->rx[i], 0, sizeof(struct ath12k_dp_peer_rx_stats));
+}

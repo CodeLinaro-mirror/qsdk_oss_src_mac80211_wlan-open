@@ -15,6 +15,15 @@
 #define INVALID_SVC_ID			0xFF
 #define DP_REO_RING_MAX			4
 
+#define ATH12K_EHT_MCS_NUM	16
+#define ATH12K_HE_MCS_NUM       12
+#define ATH12K_VHT_MCS_NUM      10
+#define ATH12K_BW_NUM           5
+#define ATH12K_NSS_NUM          4
+#define ATH12K_LEGACY_NUM       12
+#define ATH12K_GI_NUM           4
+#define ATH12K_HT_MCS_NUM       32
+
 #define nla_total_size_nested(x) nla_total_size(x)
 /**
  * enum ath12k_stats_object:	Defines the Stats specific to object
@@ -119,6 +128,20 @@ enum ath12k_dp_debug_stats_mask {
 	DP_ENABLE_QOS_STATS      = 0x80000000,
 };
 
+enum ath12k_counter_type {
+	ATH12K_COUNTER_TYPE_BYTES,
+	ATH12K_COUNTER_TYPE_PKTS,
+	ATH12K_COUNTER_TYPE_MAX,
+};
+
+enum ath12k_stats_type {
+	ATH12K_STATS_TYPE_SUCC,
+	ATH12K_STATS_TYPE_FAIL,
+	ATH12K_STATS_TYPE_RETRY,
+	ATH12K_STATS_TYPE_AMPDU,
+	ATH12K_STATS_TYPE_MAX,
+};
+
 /* VIF STATS MACROS */
 #define DP_STATS_INC(_handle, _field, _delta, _ring) \
 	do { \
@@ -209,6 +232,29 @@ struct ath12k_dp_mon_peer_stats {
 	u32 avg_snr;
 	u8 rssi;
 	u8 snr;
+};
+
+struct ath12k_htt_data_stats {
+	u64 legacy[ATH12K_COUNTER_TYPE_MAX][ATH12K_LEGACY_NUM];
+	u64 ht[ATH12K_COUNTER_TYPE_MAX][ATH12K_HT_MCS_NUM];
+	u64 vht[ATH12K_COUNTER_TYPE_MAX][ATH12K_VHT_MCS_NUM];
+	u64 he[ATH12K_COUNTER_TYPE_MAX][ATH12K_HE_MCS_NUM];
+	u64 eht[ATH12K_COUNTER_TYPE_MAX][ATH12K_EHT_MCS_NUM];
+	u64 bw[ATH12K_COUNTER_TYPE_MAX][ATH12K_BW_NUM];
+	u64 nss[ATH12K_COUNTER_TYPE_MAX][ATH12K_NSS_NUM];
+	u64 gi[ATH12K_COUNTER_TYPE_MAX][ATH12K_GI_NUM];
+	u64 transmit_type[ATH12K_COUNTER_TYPE_MAX][HTT_PPDU_STATS_PPDU_TYPE_MAX];
+	u64 ru_loc[ATH12K_COUNTER_TYPE_MAX][HAL_RX_RU_ALLOC_TYPE_MAX];
+};
+
+struct ath12k_htt_tx_stats {
+	struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
+	u64 tx_duration;
+	u64 ba_fails;
+	u64 ack_fails;
+	u16 ru_start;
+	u16 ru_tones;
+	u32 mu_group[MAX_MU_GROUP_ID];
 };
 
 #define QOS_TID_MAX 8
@@ -586,4 +632,47 @@ struct ath12k_rx_peer_stats {
 	struct ath12k_rx_peer_rate_stats byte_stats;
 };
 
+/* struct ath12k_dp_preserved_stats - Snapshot statistics for MLO datapath
+ *
+ * This structure is used to accumulate and preserve extended tx and rx and per-packet
+ * statistics for peers that are deleted or unmapped in multi-link operation (MLO).
+ * It is used for:
+ *   - link_peer_delete_stats: holds stats for a link peer at the time of deletion,
+ *     to be rolled up into the MLD peer.
+ *   - link_peer_delete_stats: rolls up stats for link peers that have been
+ *     unmapped or deleted, at the link VIF level.
+ *   - link_vif_delete_stats: rolls up stats at the MLD VDEV level, including
+ *     stats from deleted link VDEVs.
+ *
+ * This structure ensures that no statistics are lost during peer or VDEV teardown,
+ * and that user-facing stats queries always reflect the latest and complete
+ * aggregation, including contributions from deleted/unmapped peers.
+ */
+struct ath12k_dp_preserved_stats {
+	struct ath12k_htt_tx_stats tx_stats;
+	struct ath12k_rx_peer_stats rx_stats;
+	struct ath12k_dp_peer_tx_stats per_pkt_tx[DP_TCL_NUM_RING_MAX];
+	struct ath12k_dp_peer_rx_stats per_pkt_rx[DP_REO_DST_RING_MAX];
+	struct ath12k_wbm_rx_stats wbm_err;
+};
+
+/* Stats aggregation functions */
+void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst,
+				     struct ath12k_dp_peer_tx_stats *src);
+void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst,
+				     struct ath12k_dp_peer_rx_stats *src);
+void ath12k_dp_aggr_htt_tx_stats(struct ath12k_htt_tx_stats *dst,
+				 const struct ath12k_htt_tx_stats *src);
+void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
+				  const struct ath12k_rx_peer_stats *src);
+void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
+				 struct ath12k_wbm_rx_stats *src);
+
+/* Stats clear functions */
+void ath12k_dp_clear_per_pkt_tx_stats(struct ath12k_dp_peer_stats *tx_peer_stats);
+void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats);
+void ath12k_dp_clear_wbm_rx_stats(struct ath12k_wbm_rx_stats *wbm_stats);
+
+struct ath12k_dp_preserved_stats *ath12k_dp_alloc_preserved_stats(void);
+void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats);
 #endif

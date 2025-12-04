@@ -5620,16 +5620,70 @@ ath12k_mac_assign_link_vif(struct ath12k_hw *ah, struct ieee80211_vif *vif,
 	return arvif;
 }
 
+/**
+ * ath12k_mac_aggr_link_vif_to_mld_vif - Aggregate link VIF stats to MLD VIF
+ * @dp_vif: MLD VIF to aggregate stats into
+ * @dp_link_vif: Link VIF whose stats need to be aggregated
+ *
+ * Aggregates statistics from a link VIF to its corresponding MLD VIF before
+ * the link VIF is deleted. This includes HTT TX stats, per-packet TX stats
+ * (all TCL rings), RX peer stats, and per-packet RX stats (all REO rings).
+ * Free the preserved stats in link VIF.
+ */
+
+static void ath12k_mac_aggr_link_vif_to_mld_vif(struct ath12k_dp_vif *dp_vif,
+						struct ath12k_dp_link_vif *dp_link_vif)
+{
+	int i;
+	struct ath12k_dp_preserved_stats *mld_vif_stats, *link_vif_stats;
+
+	if (!dp_link_vif->link_peer_delete_stats)
+		return;
+
+	mld_vif_stats = dp_vif->link_vif_delete_stats;
+	link_vif_stats = dp_link_vif->link_peer_delete_stats;
+
+	ath12k_dp_aggr_htt_tx_stats(&mld_vif_stats->tx_stats,
+				    &link_vif_stats->tx_stats);
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+		ath12k_dp_aggr_per_pkt_tx_stats(&mld_vif_stats->per_pkt_tx[i],
+						&link_vif_stats->per_pkt_tx[i]);
+
+	ath12k_dp_aggr_rx_peer_stats(&mld_vif_stats->rx_stats,
+				     &link_vif_stats->rx_stats);
+
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		ath12k_dp_aggr_per_pkt_rx_stats(&mld_vif_stats->per_pkt_rx[i],
+						&link_vif_stats->per_pkt_rx[i]);
+
+	ath12k_dp_free_preserved_stats(link_vif_stats);
+	link_vif_stats = NULL;
+}
+
 static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_hw *ah = ahvif->ah;
+	u8 link_id = arvif->link_id;
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k_dp_link_vif *dp_link_vif = NULL;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	ahvif->links_map &= ~BIT(arvif->link_id);
 	rcu_assign_pointer(ahvif->link[arvif->link_id], NULL);
 	synchronize_rcu();
+
+	if (dp_vif)
+		dp_link_vif = &dp_vif->dp_link_vif[link_id];
+
+	/* Preserve the link stats to MLD vif in case of deletion of link vif */
+	if (dp_vif && dp_link_vif) {
+		ath12k_info(NULL, "%s:%d Link %d deleted. Aggregate to MLD vif",
+			    __func__, __LINE__, link_id);
+		ath12k_mac_aggr_link_vif_to_mld_vif(dp_vif, dp_link_vif);
+	}
 
 	if (arvif != &ahvif->deflink)
 		kfree(arvif);
@@ -16439,6 +16493,15 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	dp_link_vif->pdev_idx = ar->pdev_idx;
 	dp_link_vif->map_id = arvif->map_id;
 
+	/* Allocate link_peer_delete_stats */
+	dp_link_vif->link_peer_delete_stats = ath12k_dp_alloc_preserved_stats();
+	if (!dp_link_vif->link_peer_delete_stats) {
+		ath12k_info(ar->ab, "Failed to allocate link_peer_delete_stats for vdev %d\n",
+			    arvif->vdev_id);
+		ret = -EINVAL;
+		goto err;
+	}
+
 	switch (vif->type) {
 	case NL80211_IFTYPE_UNSPECIFIED:
 	case NL80211_IFTYPE_STATION:
@@ -17021,6 +17084,13 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		return -ENOMEM;
 	ath12k_mac_init_arvif(ahvif, arvif, -1, false);
 
+	/* Pre-allocate the aggregate stats structure */
+	ahvif->dp_vif.link_vif_delete_stats = ath12k_dp_alloc_preserved_stats();
+	if (!ahvif->dp_vif.link_vif_delete_stats) {
+		ath12k_info(NULL, "Failed to allocate link_vif_delete_stats\n");
+		return -ENOMEM;
+	}
+
 	/* Check the PPE VP type and update it accordingly.
 	 */
 
@@ -17314,6 +17384,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	struct ieee80211_vif *vlan_master_vif = NULL;
 	struct ath12k_link_vif *arvif;
 	struct ath12k *ar;
+	struct ath12k_dp_vif *dp_vif;
 	u8 link_id;
 	int ret;
 
@@ -17395,6 +17466,8 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ath12k_mac_unassign_link_vif(arvif);
 	}
 
+	dp_vif = &ahvif->dp_vif;
+	ath12k_dp_free_preserved_stats(dp_vif->link_vif_delete_stats);
 free_vlan_iface:
 	kfree(ahvif->vlan_iface);
 	ahvif->vlan_iface = NULL;
