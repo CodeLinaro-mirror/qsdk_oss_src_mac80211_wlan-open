@@ -1441,9 +1441,6 @@ skip_htt_metadata:
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.enque_to_hw, 1, ti.data_len, ti.ring_id);
 
-	ath12k_dbg_dump(ab, ATH12K_DBG_DP_TX, NULL, "dp tx msdu: ",
-			skb->data, skb->len);
-
 	atomic_inc(&dp_pdev->num_tx_pending);
 
 	return DP_TX_ENQ_SUCCESS;
