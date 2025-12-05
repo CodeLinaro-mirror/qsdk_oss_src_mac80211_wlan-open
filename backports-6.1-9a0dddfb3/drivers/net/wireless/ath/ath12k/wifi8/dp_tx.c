@@ -510,7 +510,8 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 		/* primary link only */
 		link_id = mld_peer->hw_links[dp_pdev->hw_link_id];
 	} else {
-		link_id = ath12k_dp_get_link_id(dp_pdev, ts, mld_peer);
+		link_id = ath12k_dp_get_link_id(dp_pdev, ts->hw_link_id,
+						mld_peer);
 	}
 
 	if (link_id < ATH12K_NUM_MAX_LINKS) {
@@ -1758,8 +1759,7 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer) {
-		link_id = ath12k_dp_get_link_id(dp_pdev, ts, peer);
-		peer->stats_link_id = link_id;
+		link_id = ath12k_dp_get_link_id(dp_pdev, ts->hw_link_id, peer);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len,
 						     htt_status,
 						     link_id, ring_id);
@@ -1767,7 +1767,8 @@ ath12k_wifi8_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 			if (ath12k_dp_debug_stats_enabled(dp_pdev))
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
 								    ring_id,
-								    tx_desc_flags);
+								    tx_desc_flags,
+								    link_id);
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring_id], 1);
@@ -1808,6 +1809,7 @@ ath12k_wifi8_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	u16 rate, ru_tones;
 	u8 rate_idx = 0;
 	int ret;
+	u8 link_id = 0;
 
 	dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (!dp_peer) {
@@ -1816,8 +1818,10 @@ ath12k_wifi8_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 		return;
 	}
 
+	link_id = ath12k_dp_get_link_id(dp_pdev, ts->hw_link_id, dp_peer);
+
 	spin_lock_bh(&dp->dp_lock);
-	peer = rcu_dereference(dp_peer->link_peers[dp_peer->stats_link_id]);
+	peer = rcu_dereference(dp_peer->link_peers[link_id]);
 	if (!peer || !peer->sta) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_TX,
 			   "failed to find the peer by id %u\n", ts->peer_id);
@@ -1921,7 +1925,7 @@ ath12k_wifi8_dp_tx_update_txcompl(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	spin_lock_bh(&dp->dp_lock);
-	peer = rcu_dereference(dp_peer->link_peers[dp_peer->stats_link_id]);
+	peer = rcu_dereference(dp_peer->link_peers[link_id]);
 	if (peer)
 		peer->txrate = txrate;
 	else
@@ -2024,8 +2028,7 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
 	if (peer) {
-		link_id = ath12k_dp_get_link_id(dp_pdev, ts, peer);
-		peer->stats_link_id = link_id;
+		link_id = ath12k_dp_get_link_id(dp_pdev, ts->hw_link_id, peer);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,
 						     link_id, ring);
 
@@ -2033,7 +2036,8 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 			if (ath12k_dp_debug_stats_enabled(dp_pdev))
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
 								    ring,
-								    tx_desc_flags);
+								    tx_desc_flags,
+								    link_id);
 			if (unlikely(ath12k_debugfs_is_qos_stats_enabled(ar)))
 				ath12k_qos_stats_update(ar, msdu, ts,
 							dp_pdev,

@@ -708,11 +708,9 @@ ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask)
 }
 
 u8 ath12k_dp_get_link_id(struct ath12k_pdev_dp *dp_pdev,
-			 struct hal_tx_status *ts,
+			 u8 hw_link_id,
 			 struct ath12k_dp_peer *peer)
 {
-	u8 hw_link_id = ts->hw_link_id;
-
 	if (hw_link_id >= ATH12K_DP_MAX_MLO_LINKS) {
 		/* For invalid Link_id update stats on primary link */
 		hw_link_id = dp_pdev->hw_link_id;
@@ -742,10 +740,9 @@ EXPORT_SYMBOL(ath12k_dp_tx_update_peer_basic_stats);
 
 void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
 					 struct hal_tx_status *ts,
-					 int ring_id, u16 tx_desc_flags)
+					 int ring_id, u16 tx_desc_flags,
+					 u8 link_id)
 {
-	u8 link_id = peer->stats_link_id;
-
 	if (peer->is_vdev_peer) {
 		if (ts->status != HAL_WBM_TQM_REL_REASON_CMD_REMOVE_MPDU) {
 			if (tx_desc_flags & DP_TX_DESC_FLAG_BCAST)
