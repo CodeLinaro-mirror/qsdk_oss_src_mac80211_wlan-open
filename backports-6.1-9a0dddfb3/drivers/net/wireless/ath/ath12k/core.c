@@ -3056,6 +3056,7 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	int ret = -1;
 	u8 link_id;
 	bool is_bridge_vdev;
+	struct ath12k_dp_peer_create_params dp_params = {};
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
@@ -3120,6 +3121,16 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	if (ab->hw_params->vdev_start_delay &&
 	    (ahvif->vdev_type == WMI_VDEV_TYPE_AP ||
 	    ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR)) {
+		dp_params.is_vdev_peer = true;
+		dp_params.hw_link_id = ar->hw_link_id;
+
+		ret = ath12k_dp_peer_create(&ah->dp_hw, arvif->bssid, &dp_params, vif);
+		if (ret) {
+			ath12k_warn(ab, "failed to create dp_peer for vdev AP %d: %d\n",
+				    arvif->vdev_id, ret);
+			goto exit;
+		}
+
 		param.vdev_id = arvif->vdev_id;
 		param.peer_type = WMI_PEER_TYPE_DEFAULT;
 		param.peer_addr = ar->mac_addr;
