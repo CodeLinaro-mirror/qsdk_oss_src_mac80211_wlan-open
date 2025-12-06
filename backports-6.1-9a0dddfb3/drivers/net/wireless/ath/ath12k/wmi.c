@@ -1837,7 +1837,7 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 
 	mlo_params->mlo_hw_link_id_bitmap = cpu_to_le32(mlo_hw_link_id_bitmap);
 
-	ath12k_info(ar->ab,
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
 		   "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d hw_link_id_bitmap 0x%x\n",
 		   vdev_id,  peer_addr, ar->num_peers, mlo_hw_link_id_bitmap);
 
