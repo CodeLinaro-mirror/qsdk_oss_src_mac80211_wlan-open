@@ -555,7 +555,8 @@ enum htt_ppdu_stats_tag_type {
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_COMMON) \
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS) \
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_FLUSH) \
-				   | BIT(HTT_PPDU_STATS_TAG_USR_COMMON_ARRAY))
+				   | BIT(HTT_PPDU_STATS_TAG_USR_COMMON_ARRAY) \
+				   | BIT(HTT_PPDU_STATS_USERS_INFO))
 
 #define HTT_PPDU_STATS_ENHANCED_TX_COMPLN (BIT(HTT_PPDU_STATS_TAG_COMMON) \
                                    | BIT(HTT_PPDU_STATS_TAG_USR_COMMON) \
@@ -1406,6 +1407,9 @@ enum HTT_PPDU_STATS_BW {
 /* bw - HTT_PPDU_STATS_BW */
 #define HTT_PPDU_STATS_CMN_FLAGS_BW_M		GENMASK(19, 16)
 
+#define HTT_PPDU_STATS_CMN_GET_FTYPE(_val) \
+	le32_get_bits(_val, HTT_PPDU_STATS_CMN_FLAGS_FRAME_TYPE_M)
+
 struct htt_ppdu_stats_common {
 	__le32 ppdu_id;
 	__le16 sched_cmdid;
@@ -1446,6 +1450,19 @@ struct htt_ppdu_stats_common {
 	u8 num_ul_expected_users;
 	u8 reserved;
 } __packed;
+
+#define HTT_PPDU_STATS_MAX_USERS_M              GENMASK(7, 0)
+#define HTT_PPDU_STATS_GET_MAX_USERS(_val) \
+	le32_get_bits(_val, HTT_PPDU_STATS_MAX_USERS_M)
+
+struct htt_ppdu_stats_users_info {
+	/*
+	 * BIT [  7 :   0]   :- max_users
+	 * BIT [ 15 :   8]   :- frame_type (HTT_STATS_FTYPE)
+	 * BIT [ 31 :  16]   :- reserved1
+	 */
+	__le32 info0;
+};
 
 enum htt_ppdu_stats_gi {
 	HTT_PPDU_STATS_SGI_0_8_US,
@@ -1572,6 +1589,10 @@ enum  htt_ppdu_stats_usr_compln_status {
 #define HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32 4
 #define HTT_PPDU_STATS_USER_CMN_TX_PWR_ARR_SIZE HTT_STATS_MAX_CHAINS / \
 						HTT_PPDU_STATS_USER_CMN_TLV_TX_PWR_CHAINS_PER_U32
+#define HTT_PPDU_STATS_GET_FRAME_CTRL(_val) \
+	le32_get_bits(_val, HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL)
+#define HTT_PPDU_STATS_GET_DELAY_BA(_val) \
+	le32_get_bits(_val, HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA)
 
 /* Common stats for both control and data packets */
 struct  htt_ppdu_stats_user_common {
@@ -1628,6 +1649,12 @@ struct htt_ppdu_stats_usr_cmpltn_cmn {
 #define HTT_PPDU_STATS_PPDU_ID         GENMASK(24, 0)
 #define HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_NUM_MPDU GENMASK(16, 8)
 
+#define HTT_PPDU_STATS_NUM_MPDU(_val) \
+	le32_get_bits(_val, HTT_PPDU_STATS_CMPLTN_FLUSH_INFO_NUM_MPDU)
+
+#define HTT_PPDU_STATS_GET_PPDU_ID(_val) \
+	u32_get_bits(_val, HTT_PPDU_STATS_PPDU_ID)
+
 struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	__le32 ppdu_id;
 	__le16 sw_peer_id;
@@ -1676,7 +1703,7 @@ struct htt_ppdu_stats_info {
 	u32 frame_ctrl;
 	u32 delay_ba;
 	u32 bar_num_users;
-	u32 max_users;
+	u8 max_users;
 	struct htt_ppdu_stats ppdu_stats;
 	u32 usr_ru_tones_sum;
 	u16 htt_frame_type;
