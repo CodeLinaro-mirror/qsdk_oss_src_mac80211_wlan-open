@@ -12,13 +12,15 @@ extern struct ath_debug_base *athdbg_base;
 #define MAX_SOC_DIR_NAME_SIZE 64
 
 const struct athdbg_to_ath12k_ops dbg_to_ath_ops = {
+#ifndef CONFIG_UPSTREAM_BUILD
 	.get_reserved_mem_by_name = ath12k_core_get_reserved_mem_by_name,
 	.coredump_dump_segment = ath12k_coredump_dump_segment,
+	.pci_get_priv = ath12k_pci_get_priv,
+#endif
 	.dev_running_status = athdbg_if_check_dev_running,
 	.set_dbg_mask = athdbg_if_setmask,
 	.get_link_vif_from_vdev_id = ath12k_mac_get_arvif_by_vdev_id,
 	.pci_read32 = ath12k_pci_read32,
-	.pci_get_priv = ath12k_pci_get_priv,
 };
 
 static int athdbg_if_create_debugfs(struct ath12k_base *ab)

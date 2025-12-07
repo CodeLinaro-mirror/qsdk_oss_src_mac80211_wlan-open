@@ -10,12 +10,25 @@
 #define BUS_NAME_LEN 4
 #define QMI_HANDLER 5
 
+/*Need to be enabled for upstream Build for QDSS*/
+//#define CONFIG_UPSTREAM_BUILD
+
 struct pci_bus_info{
 	int domain;
 	int bus;
 	int slot;
 	int func;
 };
+
+#ifdef CONFIG_UPSTREAM_BUILD
+struct ath12k_dump_segment {
+	unsigned long addr;
+	void *vaddr;
+	unsigned int len;
+	unsigned int type;
+	struct completion dump_done;
+};
+#endif
 
 enum athdbg_request_type{
 	ATH_DBG_REQ_UNKNOWN = 0x00,
