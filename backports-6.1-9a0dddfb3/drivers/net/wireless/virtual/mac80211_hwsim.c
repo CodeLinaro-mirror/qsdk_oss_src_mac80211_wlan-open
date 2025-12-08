@@ -5399,6 +5399,11 @@ static int mac80211_hwsim_new_radio(struct genl_info *info,
 	hw->sta_data_size = sizeof(struct hwsim_sta_priv);
 	hw->chanctx_data_size = sizeof(struct hwsim_chanctx_priv);
 
+#ifdef CPTCFG_QCN_EXTN
+	hw->wiphy->features |= NL80211_FEATURE_AP_SCAN;
+	wiphy_ext_feature_set(hw->wiphy, NL80211_EXT_FEATURE_SET_SCAN_DWELL);
+#endif
+
 	memcpy(data->channels_2ghz, hwsim_channels_2ghz,
 		sizeof(hwsim_channels_2ghz));
 	memcpy(data->channels_5ghz, hwsim_channels_5ghz,
