@@ -1631,7 +1631,7 @@ int ath12k_wifi7_dp_rx_process(struct ath12k_dp *dp, int ring_id,
 	valid_entries = __ath12k_hal_srng_dst_num_free(srng, false);
 	if (unlikely(!valid_entries)) {
 		ath12k_hal_srng_access_end(ab, srng);
-		return -EINVAL;
+		goto exit;
 	}
 	ath12k_hal_srng_dst_invalidate_entry(dp, srng, valid_entries);
 #endif
