@@ -4426,6 +4426,24 @@ static int ath12k_vendor_wiphy_config_handler(struct wiphy *wiphy,
 				return -EINVAL;
 			}
 			break;
+
+#ifdef CPTCFG_QCN_EXTN
+		case QCA_NL80211_VENDOR_RADIO_CONFIG_HWADDR:
+			if (!wifi_params.data) {
+				ath12k_err(NULL,
+					   "Invalid hwaddr received\n");
+				return -EINVAL;
+			}
+			ret = ath12k_vendor_set_wiphy_hwaddr_extn(wiphy,
+								  &wifi_params);
+			if (ret) {
+				ath12k_err(NULL,
+					   "Failed to set wiphy hwaddr\n");
+				return -EINVAL;
+			}
+			break;
+#endif /* CPTCFG_QCN_EXTN */
+
 		default:
 			ath12k_dbg(NULL, ATH12K_DBG_CFG,
 				   "Un-supported generic command\n");
@@ -7620,6 +7638,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_rule_config_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR,
+		.doit = ath12k_vendor_derive_link_bss_addr_extn,
+		.policy = ath12k_wifi_mac_config_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_MAC_CONFIG_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_WDEV,
 	},
 #endif
 

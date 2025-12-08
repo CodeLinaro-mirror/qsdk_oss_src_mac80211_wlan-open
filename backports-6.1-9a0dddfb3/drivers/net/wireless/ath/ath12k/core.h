@@ -1555,6 +1555,9 @@ struct ath12k {
 	struct completion delete_all_peer_done;
 	u8 mgmt_tx_retry_limit;
 	struct ath12k_radio_cfg radio_cfg;
+#ifdef CPTCFG_QCN_EXTN
+	u32 vendor_mac_used_bitmap;
+#endif
 };
 
 struct ath12k_6ghz_sp_reg_rule {
