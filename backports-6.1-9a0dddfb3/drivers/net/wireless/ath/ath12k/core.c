@@ -1928,7 +1928,7 @@ static void ath12k_core_wsi_remap_mlo_reconfig(struct ath12k_hw_group *ag)
 	}
 }
 
-int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
+int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 {
 	struct ath12k_hw_group *ag = ath12k_ab_to_ag(ab);
 	int ret, i;
@@ -1936,6 +1936,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 	struct ath12k_bridge_iter bridge_iter = {};
 	u8 active_num_devices;
 	struct ath12k_base *partner_ab;
+	bool hw_grp_ready = false;
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* TODO: DS: revisit this for new DS design in WDS mode */
@@ -1989,7 +1990,11 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 
 	mutex_unlock(&ab->core_lock);
 
-	if (ath12k_core_hw_group_start_ready(ag)) {
+	hw_grp_ready = ath12k_core_hw_group_start_ready(ag);
+	if (is_ready)
+		*is_ready = hw_grp_ready;
+
+	if (hw_grp_ready) {
 		if (!ag->wsi_remap_in_progress) {
 			ret = ath12k_qmi_mlo_global_snapshot_mem_init(ab);
 			if (ret) {
@@ -2047,7 +2052,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 		}
 	}
 
-	if (ath12k_core_hw_group_start_ready(ag)) {
+	if (hw_grp_ready) {
 		mutex_unlock(&ag->mutex);
 		for (i = 0; i < ag->num_devices; i++) {
 			partner_ab = ag->ab[i];
@@ -2155,7 +2160,7 @@ exit:
 	return ret;
 }
 
-static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
+static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab, bool *is_ready)
 {
 	int ret;
 	u8 total_vdevs;
@@ -2182,7 +2187,7 @@ static int ath12k_core_reconfigure_on_crash(struct ath12k_base *ab)
 
 	clear_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 
-	ret = ath12k_core_qmi_firmware_ready(ab);
+	ret = ath12k_core_qmi_firmware_ready(ab, is_ready);
 	if (ret)
 		goto err_hal_srng_deinit;
 
@@ -2579,10 +2584,11 @@ static void ath12k_core_restart(struct work_struct *work)
 {
 	struct ath12k_base *ab = container_of(work, struct ath12k_base, restart_work);
 	struct ath12k_hw_group *ag = ab->ag;
+	bool is_ready = false;
 	struct ath12k_hw *ah;
 	int ret, i;
 
-	ret = ath12k_core_reconfigure_on_crash(ab);
+	ret = ath12k_core_reconfigure_on_crash(ab, &is_ready);
 	if (ret) {
 		ath12k_err(ab, "failed to reconfigure driver on crash recovery\n");
 		/*
@@ -2594,8 +2600,7 @@ static void ath12k_core_restart(struct work_struct *work)
 		return;
 	}
 
-	if (ath12k_core_hw_group_start_ready(ag) &&
-	    ath12k_check_erp_power_down(ag) &&
+	if (is_ready && ath12k_check_erp_power_down(ag) &&
 	    !ath12k_hw_group_recovery_in_progress(ag))
 		ath12k_core_radio_start(ab);
 
@@ -2610,16 +2615,11 @@ static void ath12k_core_restart(struct work_struct *work)
 			ath12k_dbg(ab, ATH12K_DBG_BOOT, "reset success\n");
 		}
 
-		mutex_lock(&ag->mutex);
-
-		if (!ath12k_core_hw_group_start_ready(ag)) {
-			mutex_unlock(&ag->mutex);
+		if (!is_ready)
 			goto exit_restart;
-		}
 
 		if (ag->recovery_mode != ATH12K_MLO_RECOVERY_MODE0) {
 			queue_work(ab->workqueue_aux, &ab->recovery_work);
-			mutex_unlock(&ag->mutex);
 			goto exit_restart;
 		}
 
@@ -2627,8 +2627,6 @@ static void ath12k_core_restart(struct work_struct *work)
 			ah = ath12k_ag_to_ah(ag, i);
 			ieee80211_restart_hw(ah->hw);
 		}
-
-		mutex_unlock(&ag->mutex);
 	}
 
 exit_restart:
