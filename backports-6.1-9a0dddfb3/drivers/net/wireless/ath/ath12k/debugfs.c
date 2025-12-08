@@ -6136,6 +6136,23 @@ static void ath12k_dp_peer_clear_qos_stats(struct ath12k_dp_peer *dp_peer)
 	rcu_read_unlock();
 }
 
+static void ath12k_dp_vif_reset_del_stats(struct ath12k_dp_vif *dp_vif,
+					  unsigned long links_map)
+{
+	int link_id;
+	struct ath12k_dp_link_vif *dp_link_vif;
+
+	if (dp_vif->link_vif_delete_stats) {
+		memset(dp_vif->link_vif_delete_stats, 0,
+		       sizeof(*dp_vif->link_vif_delete_stats));
+	}
+	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+		dp_link_vif = &dp_vif->dp_link_vif[link_id];
+		if (dp_link_vif && dp_link_vif->link_peer_delete_stats)
+			memset(dp_link_vif->link_peer_delete_stats, 0,
+			       sizeof(*dp_link_vif->link_peer_delete_stats));
+	}
+}
 static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 					   const char __user *ubuf,
 					   size_t count, loff_t *ppos)
@@ -6158,6 +6175,9 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 	spin_lock_bh(&ah->dp_hw.peer_lock);
 	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
 		memset(&dp_peer->stats, 0, sizeof(dp_peer->stats));
+		if (dp_peer->link_peer_delete_stats)
+			memset(dp_peer->link_peer_delete_stats, 0,
+			       sizeof(*dp_peer->link_peer_delete_stats));
 		ath12k_dp_peer_clear_qos_stats(dp_peer);
 
 		struct ath12k_dp_link_peer *tmp_peer = NULL;
@@ -6192,6 +6212,7 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			dp_vif = &arvif->ahvif->dp_vif;
 			memset(&dp_vif->stats, 0, sizeof(dp_vif->stats));
+			ath12k_dp_vif_reset_del_stats(dp_vif, arvif->ahvif->links_map);
 		}
 	}
 
