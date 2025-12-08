@@ -1080,6 +1080,10 @@ static ssize_t ath12k_debugfs_dump_device_dp_stats(struct file *file,
 			 i, device_stats->tx_err.txbuf_na[i]);
 
 	len += scnprintf(buf + len, size - len,
+			"\nTransmit Threshold limit: %d\n",
+			device_stats->tx_err.threshold_limit);
+
+	len += scnprintf(buf + len, size - len,
 			 "\nMisc Transmit Failures: %d\n",
 			 atomic_read(&device_stats->tx_err.misc_fail));
 
