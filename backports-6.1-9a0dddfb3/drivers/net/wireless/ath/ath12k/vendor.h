@@ -101,6 +101,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_PRI_LINK_MIGRATE_INDEX = 7,
 	QCA_NL80211_VENDOR_SUBCMD_DCS_WLAN_INTERFERENCE_COMPUTE_INDEX = 8,
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG_INDEX = 9,
+	QCA_NL80211_VENDOR_SUBCMD_ESP_ESTIMATE_INDEX = 10,
 };
 
 /**
@@ -585,7 +586,12 @@ enum qca_wlan_vendor_attr_config {
 	 * have QCA Proprietary VAP modes.
 	 */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_VAP_SUBMODE = 141,
-
+	/* Nested attribute to configure Estimated Service Parameters (ESP) to
+	 * the firmware. This attribute contains nested attributes defined in
+	 * enum qca_wlan_vendor_attr_config_esp_param. This attribute is also
+	 * used to retrieve the parameters from firmware.
+	 */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PARAMS = 142,
 	/* Keep last */
 	QCA_WLAN_VENDOR_ATTR_CONFIG_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_MAX =
@@ -2698,6 +2704,48 @@ enum qca_wlan_vendor_attr_scs_rule_config {
 		QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_AFTER_LAST,
 		QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_MAX =
 		QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_AFTER_LAST -1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_config_esp_param - Parameters for ESP configuration
+ *
+ * This enum defines the attributes used to configure and retrieve
+ * Estimated Service Parameters (ESP) settings.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_ENABLE: u8 attribute. Enable or disable ESP
+ * functionality. Set to 1 to enable ESP, 0 to disable. When enabled,
+ * the ESP parameters (airtime, PPDU duration, BA window) are advertised in
+ * management frames.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME: u32 attribute. Represents the
+ * predicted percentage of airtime that a new STA joining the BSS can expect
+ * to be available for the transmission. The lower 8 bits represent the airtime
+ * of BE AC, linearly scaled with 255 representing 100% and 0 representing 0%.
+ * Bits 8-15 represent BK AC, bits 16-23 represent VI AC, and bits 24-31
+ * represent VO AC (if applicable). When used to report airtime of all ACs,
+ * each byte represents one AC.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR: u8 attribute. Indicates the
+ * expected target duration of PPDUs transmitted to the STA, in microseconds.
+ * Valid range: 0-255 microseconds.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW: u8 attribute. Specifies the
+ * Block Ack (BA) window size. Valid range: 0-7, where 0 represents Block
+ * Ack not expected to be used, and rest of the values representing how many
+ * MPDUs can be acknowledged in one Block Ack frame. Value 1 for 2 MPDUs,
+ * value 2 for 4 MPDUs and so on up to the value 7 for 64 MPDUs.
+ */
+enum qca_wlan_vendor_attr_config_esp_param {
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_ENABLE = 1,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AIRTIME = 2,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_PPDU_DUR = 3,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_BA_WINDOW = 4,
+
+	/* keep last */
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_MAX =
+		QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST - 1,
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \
