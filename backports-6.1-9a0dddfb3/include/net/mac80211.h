@@ -1776,12 +1776,12 @@ struct ieee80211_rx_status {
 	u8 rate_idx;
 	u8 nss;
 	u8 rx_flags;
-	u8 band;
 	u8 antenna;
 	s8 signal;
+	s8 noise;
 	u8 chains;
 	s8 chain_signal[IEEE80211_MAX_CHAINS];
-	u8 zero_length_psdu_type;
+	u8 zero_length_psdu_type: 4, band: 4;
 	u8 link_valid:1, link_id:4;
 	u8 eht_num_user;
 	u8 tid;
