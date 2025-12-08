@@ -139,6 +139,8 @@ void ath12k_dp_mon_update_radiotap(struct ath12k_pdev_dp *dp_pdev,
 
 	rxs->flag |= RX_FLAG_MACTIME_START;
 	rxs->signal = (s8)(ppduinfo->rssi_comb + dp_pdev->ar->rssi_offsets.rssi_offset);
+	rxs->flag &= ~RX_FLAG_NO_SIGNAL_VAL;
+	rxs->noise = dp_pdev->ar->rssi_offsets.avg_nf_dbm;
 	rxs->nss = ppduinfo->nss + 1;
 
 	if (ppduinfo->userstats[ppduinfo->userid].ampdu_present) {
