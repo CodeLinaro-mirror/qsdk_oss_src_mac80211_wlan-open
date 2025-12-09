@@ -12956,7 +12956,8 @@ static int nl80211_process_sta_links(struct cfg80211_registered_device *rdev,
 	nla_for_each_nested(link, info->attrs[NL80211_ATTR_MLO_LINKS], rem) {
 		memset(attrs, 0, attrsize);
 
-		nla_parse_nested(attrs, NL80211_ATTR_MAX, link, NULL, NULL);
+		nla_parse_nested(attrs, NL80211_ATTR_MAX, link,
+				 nl80211_policy, NULL);
 
 		link_id = nl80211_link_id_or_invalid(attrs);
 		if (link_id < 0 || link_id >= IEEE80211_MLD_MAX_NUM_LINKS) {
@@ -13015,14 +13016,14 @@ static int nl80211_process_sta_links(struct cfg80211_registered_device *rdev,
 			}
 		}
 
-		if (info->attrs[NL80211_ATTR_HE_6GHZ_CAPABILITY])
+		if (attrs[NL80211_ATTR_HE_6GHZ_CAPABILITY])
 			links[link_id].he_6ghz_capa =
-				nla_data(info->attrs[NL80211_ATTR_HE_6GHZ_CAPABILITY]);
+				nla_data(attrs[NL80211_ATTR_HE_6GHZ_CAPABILITY]);
 
-		if (info->attrs[NL80211_ATTR_OPMODE_NOTIF]) {
+		if (attrs[NL80211_ATTR_OPMODE_NOTIF]) {
 			links[link_id].opmode_notif_used = true;
 			links[link_id].opmode_notif =
-				nla_get_u8(info->attrs[NL80211_ATTR_OPMODE_NOTIF]);
+				nla_get_u8(attrs[NL80211_ATTR_OPMODE_NOTIF]);
 		}
 	}
 	return 0;
