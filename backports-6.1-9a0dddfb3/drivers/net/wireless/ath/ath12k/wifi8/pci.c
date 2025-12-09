@@ -14,6 +14,7 @@
 #include "../mhi.h"
 #include "hw.h"
 #include "mhi.h"
+#include "dp.h"
 #include "hal.h"
 
 #define QCN9625_DEVICE_ID		0x1113
@@ -82,6 +83,8 @@ static struct ath12k_pci_driver ath12k_wifi8_pci_driver = {
 	.id_table = ath12k_wifi8_pci_id_table,
 	.ops.probe = ath12k_wifi8_pci_probe,
 	.reg_base = &ath12k_wifi8_pci_reg_base,
+	.ops.dp_init = ath12k_wifi8_dp_init,
+	.ops.dp_deinit = ath12k_wifi8_dp_deinit,
 };
 
 int ath12k_wifi8_pci_init(void)

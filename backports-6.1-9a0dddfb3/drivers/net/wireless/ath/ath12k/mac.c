@@ -516,6 +516,76 @@ u8 ath12k_mac_get_bw_offset(enum ieee80211_sta_rx_bandwidth bandwidth)
 	return bw_offset;
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
+					     struct ieee80211_vif *vif,
+					     struct net_device *dev)
+{
+	/* To Do: Check if this op is still needed */
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_mac_op_create_datapath_offload_if);
+
+int ath12k_mac_op_destroy_datapath_offload_if(struct ieee80211_hw *hw,
+					      struct ieee80211_vif *vif,
+					      struct net_device *dev)
+{
+	/* To Do: Check if this op is still needed */
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_mac_op_destroy_datapath_offload_if);
+
+int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int mtu)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct wireless_dev *wdev = ieee80211_vif_to_wdev(vif);
+	int ret = 0;
+
+	if (!wdev)
+		return -ENODEV;
+
+	guard(wiphy)(ahvif->ah->hw->wiphy);
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR || !wdev->netdev)
+		return 0;
+
+	if (ahvif->dp_vif.ppe_vp_type != ATH12K_INVALID_PPE_VP_TYPE &&
+	    ahvif->dp_vif.ppe_vp_num != ATH12K_INVALID_PPE_VP_NUM) {
+		ret = ath12k_vif_set_mtu(ahvif, mtu);
+	}
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_mac_op_set_mtu);
+#endif
+
+void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
+				     struct sk_buff *skb,
+				     struct ath12k_dp_vif *dp_vif, u8 ring_id,
+				     enum ath12k_dp_tx_enq_error drop_reason,
+				     bool dev_free)
+{
+	if (unlikely(drop_reason >= DP_TX_ENQ_ERR_MAX))
+		DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_MISC], 1, ring_id);
+	else
+		DP_STATS_INC(dp_vif, tx_i.drop[drop_reason], 1, ring_id);
+
+	if (dev_free)
+		dev_kfree_skb_any(skb);
+	else
+		ieee80211_free_txskb(hw, skb);
+}
+EXPORT_SYMBOL(ath12k_mac_ieee80211_free_txskb);
+
+bool ath12k_mac_check_err_code_debug_logging(enum ath12k_dp_tx_enq_error err)
+{
+	if (err == DP_TX_ENQ_DROP_SW_DESC_NA || err == DP_TX_ENQ_DROP_EXT_DESC_NA ||
+	    err == DP_TX_ENQ_DROP_TCL_DESC_NA)
+		return true;
+
+	return false;
+}
+EXPORT_SYMBOL(ath12k_mac_check_err_code_debug_logging);
+
 int ath12k_mac_hw_ratecode_to_legacy_rate(u8 hw_rc, u8 preamble, u8 *rateidx,
 					  u16 *rate)
 {
