@@ -86,17 +86,25 @@ char ce_irq_name[ATH12K_MAX_PCI_DOMAINS + 1][ATH12K_IRQ_NUM_MAX][DP_IRQ_NAME_LEN
 void ath12k_pcic_config_static_window(struct ath12k_base *ab)
 {
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+	const struct ath12k_reg_base *reg_base = ab_ahb->reg_base;
 	u32 umac_window, ce_window, window;
 
-	if (!ab_ahb || !ab_ahb->reg_base) {
-		ath12k_warn(ab, "Invalid register base in config_static_window\n");
+	if (!reg_base) {
+		ath12k_warn(ab, "Register base not initialized\n");
 		return;
 	}
 
-	umac_window = u32_get_bits(ab_ahb->reg_base->umac_base, WINDOW_VALUE_MASK);
-	ce_window = u32_get_bits(ab_ahb->reg_base->ce_reg_base, WINDOW_VALUE_MASK);
-
-	window = (umac_window << 12) | (ce_window << 6);
+	if (ab->pci_remap_bar_addr_width_7bit) {
+		umac_window = u32_get_bits(reg_base->umac_base, WINDOW_VALUE_MASK_7BIT);
+		ce_window = u32_get_bits(reg_base->ce_reg_base, WINDOW_VALUE_MASK_7BIT);
+		window = (umac_window << UMAC_WINDOW_SHIFT_7BIT) |
+				(ce_window << CE_WINDOW_SHIFT_7BIT);
+	} else {
+		umac_window = u32_get_bits(reg_base->umac_base, WINDOW_VALUE_MASK_6BIT);
+		ce_window = u32_get_bits(reg_base->ce_reg_base, WINDOW_VALUE_MASK_6BIT);
+		window = (umac_window << UMAC_WINDOW_SHIFT_6BIT) |
+				(ce_window << CE_WINDOW_SHIFT_6BIT);
+	}
 
 	iowrite32(WINDOW_ENABLE_BIT | window,
 		  ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
@@ -104,24 +112,30 @@ void ath12k_pcic_config_static_window(struct ath12k_base *ab)
 
 static void ath12k_pcic_select_static_window(struct ath12k_base *ab, u32 addr)
 {
-	u32 window = u32_get_bits(addr, WINDOW_VALUE_MASK);
 	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 	u32 curr_window, cur_val, prev_window = 0;
 	volatile u32 read_val = 0;
 	int retry = 0;
+	u32 window;
 
 	if (!ab_ahb || !ab_ahb->reg_base) {
 		ath12k_warn(ab, "Invalid register base in select_static_window\n");
 		return;
 	}
 
+	if (ab->pci_remap_bar_addr_width_7bit)
+		window = u32_get_bits(addr, WINDOW_VALUE_MASK_7BIT);
+	else
+		window = u32_get_bits(addr, WINDOW_VALUE_MASK_6BIT);
+
 	prev_window = readl_relaxed(ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
 
-	/* Clear out last 6 bits of window register */
-	prev_window = prev_window & ~(0x3f);
+	/* Clear out dynamic window bits (6-bit or 7-bit) */
+	prev_window &= ~(ab->pci_remap_bar_addr_width_7bit ?
+			WINDOW_DYNAMIC_MASK_7BIT : WINDOW_DYNAMIC_MASK_6BIT);
 
-	/* Write the new last 6 bits of window register. Only window 1 values
-	 * are changed. Window 2 and 3 are unaffected.
+	/* Write the new dynamic window bits (6-bit or 7-bit) to window register.
+	 *Only window 1 values are changed. Window 2 and 3 are unaffected.
 	 */
 	curr_window = prev_window | window;
 

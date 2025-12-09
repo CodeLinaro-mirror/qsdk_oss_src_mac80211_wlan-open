@@ -22,8 +22,6 @@
 #define ATH12K_PCI_BAR_NUM		0
 #define ATH12K_PCI_DMA_MASK		32
 
-#define WINDOW_STATIC_MASK		GENMASK(31, 6)
-
 /* BAR0 + 4k is always accessible, and no
  * need to force wakeup.
  * 4K - 32 = 0xFE0
@@ -39,9 +37,13 @@ static struct pci_driver ath12k_pci_drivers[ATH12K_DEVICE_FAMILY_MAX];
 static void ath12k_pci_select_window(struct ath12k_pci *ab_pci, u32 offset)
 {
 	struct ath12k_base *ab = ab_pci->ab;
-
-	u32 window = u32_get_bits(offset, WINDOW_VALUE_MASK);
 	u32 static_window;
+	u32 window;
+
+	if (ab->pci_remap_bar_addr_width_7bit)
+		window = u32_get_bits(offset, WINDOW_VALUE_MASK_7BIT);
+	else
+		window = u32_get_bits(offset, WINDOW_VALUE_MASK_6BIT);
 
 	lockdep_assert_held(&ab_pci->window_lock);
 
@@ -51,7 +53,11 @@ static void ath12k_pci_select_window(struct ath12k_pci *ab_pci, u32 offset)
 	}
 
 	/* Preserve the static window configuration and reset only dynamic window */
-	static_window = ab_pci->register_window & WINDOW_STATIC_MASK;
+	if (ab->pci_remap_bar_addr_width_7bit)
+		static_window = ab_pci->register_window & WINDOW_STATIC_MASK_7BIT;
+	else
+		static_window = ab_pci->register_window & WINDOW_STATIC_MASK_6BIT;
+
 	window |= static_window;
 
 	if (window != ab_pci->register_window) {
@@ -65,20 +71,34 @@ static void ath12k_pci_select_window(struct ath12k_pci *ab_pci, u32 offset)
 static void ath12k_pci_select_static_window(struct ath12k_base *ab)
 {
 	struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+	const struct ath12k_reg_base *reg_base = ab_pci->reg_base;
 	u32 umac_window;
 	u32 ce_window;
 	u32 window;
 
-	umac_window = u32_get_bits(ab_pci->reg_base->umac_base, WINDOW_VALUE_MASK);
-	ce_window = u32_get_bits(ab_pci->reg_base->ce_reg_base, WINDOW_VALUE_MASK);
-	window = (umac_window << 12) | (ce_window << 6);
+	if (!reg_base) {
+		ath12k_warn(ab, "Register base not initialized\n");
+		return;
+	}
+
+	if (ab->pci_remap_bar_addr_width_7bit) {
+		umac_window = u32_get_bits(reg_base->umac_base, WINDOW_VALUE_MASK_7BIT);
+		ce_window = u32_get_bits(reg_base->ce_reg_base, WINDOW_VALUE_MASK_7BIT);
+		window = (umac_window << UMAC_WINDOW_SHIFT_7BIT) |
+				(ce_window << CE_WINDOW_SHIFT_7BIT);
+	} else {
+		umac_window = u32_get_bits(reg_base->umac_base, WINDOW_VALUE_MASK_6BIT);
+		ce_window = u32_get_bits(reg_base->ce_reg_base, WINDOW_VALUE_MASK_6BIT);
+		window = (umac_window << UMAC_WINDOW_SHIFT_6BIT) |
+				(ce_window << CE_WINDOW_SHIFT_6BIT);
+	}
 
 	spin_lock_bh(&ab_pci->window_lock);
 	ab_pci->register_window = window;
 	spin_unlock_bh(&ab_pci->window_lock);
 
 	iowrite32(WINDOW_ENABLE_BIT | window,
-		  ab->mem + ab_pci->reg_base->pcie_window_reg_address);
+		  ab->mem + reg_base->pcie_window_reg_address);
 }
 
 static inline bool ath12k_pci_is_offset_within_mhi_region(u32 offset)
