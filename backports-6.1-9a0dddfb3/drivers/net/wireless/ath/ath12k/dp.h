@@ -15,6 +15,7 @@
 #include "ppe.h"
 #include <linux/rhashtable.h>
 #include "dp_stats.h"
+#include "dp_htt_logger.h"
 
 #define HTT_TCL_META_DATA_PEER_ID_MISSION       GENMASK(15, 3)
 
@@ -683,6 +684,9 @@ struct ath12k_dp {
 	struct list_head reo_cmd_list;
 	struct list_head reo_cmd_cache_flush_list;
 	u32 reo_cmd_cache_flush_count;
+
+	/* htt_logger_handle */
+	struct htt_logger *htt_logger_handle;
 
 	/* protects access to below fields,
 	 * - reo_cmd_list

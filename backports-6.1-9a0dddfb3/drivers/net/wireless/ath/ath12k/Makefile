@@ -11,6 +11,7 @@ ath12k-y += core.o \
 	    dp_tx.o \
 	    dp_rx.o \
 	    dp_htt.o \
+	    dp_htt_logger.o \
 	    dp_peer.o \
 	    dp_stats.o \
 	    debug.o \

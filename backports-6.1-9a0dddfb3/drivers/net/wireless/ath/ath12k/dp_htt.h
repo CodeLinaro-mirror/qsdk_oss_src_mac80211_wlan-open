@@ -2398,6 +2398,11 @@ struct ath12k_htt_ppdu_id_fmt_info {
 #define HTT_PPDU_ID_FMT_GET_BITS	GENMASK(21, 17)
 #define HTT_PPDU_ID_FMT_GET_OFFSET	GENMASK(26, 22)
 
+enum dp_htt_logger_type {
+	HTT_LOGGER_COMMAND,
+	HTT_LOGGER_EVENT
+};
+
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,

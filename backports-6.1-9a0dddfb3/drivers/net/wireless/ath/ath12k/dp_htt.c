@@ -11,8 +11,35 @@
 #include "debugfs_htt_stats.h"
 #include "debugfs_sta.h"
 #include "debugfs.h"
+#include "debug.h"
 #include "dp_mon.h"
 #include "dp_mon_filter.h"
+#include "ini.h"
+
+/**
+ * ath12k_htt_send() - Send htt packet from host
+ * @ab : ath12k base handle
+ * @dp : HTT DP handle
+ * @skb: skb to be sent
+ * @msg_type : command to be recorded in dp htt logger
+ * @msg_data : Pointer to buffer needs to be recorded for above cmd
+ *
+ * Return: status code
+ */
+static inline int ath12k_htt_send(struct ath12k_base *ab,
+				  struct ath12k_dp *dp,
+				  struct sk_buff *skb,
+				  u8 msg_type,
+				  u8 *msg_data)
+{
+	int ret;
+
+	ath12k_dp_htt_message_record(dp->htt_logger_handle, msg_type,
+				     msg_data, HTT_LOGGER_COMMAND);
+	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+
+	return ret;
+}
 
 static void ath12k_dp_htt_htc_tx_complete(struct ath12k_base *ab,
 					  struct sk_buff *skb)
@@ -26,6 +53,7 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp)
 	struct ath12k_htc_svc_conn_resp conn_resp = {0};
 	int status;
 	struct ath12k_base *ab = dp->ab;
+	bool htt_logging_enable;
 
 	conn_req.ep_ops.ep_tx_complete = ath12k_dp_htt_htc_tx_complete;
 	conn_req.ep_ops.ep_rx_complete = ath12k_dp_htt_htc_t2h_msg_handler;
@@ -46,6 +74,18 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp)
 		status = dp->arch_ops->dp_msdu_htt_connect(dp);
 		if (status)
 			return status;
+	}
+
+	htt_logging_enable = ath12k_cfg_get(ab, ATH12K_CFG_HTT_LOGGING_ENABLE);
+
+	if (htt_logging_enable) {
+		ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "HTT logging enabled via INI\n");
+		ath12k_dp_htt_logging_init(&dp->htt_logger_handle, ab);
+		if (!dp->htt_logger_handle)
+			ath12k_warn(ab, "HTT logging initialization failed\n");
+	} else {
+		ath12k_info(ab, "HTT logging disabled via INI configuration\n");
+		dp->htt_logger_handle = NULL;
 	}
 
 	return 0;
@@ -2046,6 +2086,9 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 	type = le32_get_bits(resp->version_msg.version, HTT_T2H_MSG_TYPE);
 
 	ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "dp_htt rx msg type :0x%0x\n", type);
+	/* Log the HTT event */
+	ath12k_dp_htt_message_record(dp->htt_logger_handle, type,
+				     (u8 *)skb->data, HTT_LOGGER_EVENT);
 
 	switch (type) {
 	case HTT_T2H_MSG_TYPE_VERSION_CONF:
@@ -2187,7 +2230,8 @@ int ath12k_dp_tx_htt_h2t_ver_req_msg(struct ath12k_base *ab)
 							     HTT_OPTION_VALUE);
 	}
 
-	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_VERSION_REQ,
+			      (u8 *)cmd);
 	if (ret) {
 		dev_kfree_skb_any(skb);
 		return ret;
@@ -2234,7 +2278,8 @@ int ath12k_dp_tx_htt_h2t_ppdu_stats_req(struct ath12k *ar, u32 mask)
 		cmd->msg |= le32_encode_bits(pdev_mask, HTT_PPDU_STATS_CFG_PDEV_ID);
 		cmd->msg |= le32_encode_bits(mask, HTT_PPDU_STATS_CFG_TLV_TYPE_BITMASK);
 
-		ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+		ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_PPDU_STATS_CFG,
+				      (u8 *)cmd);
 		if (ret) {
 			dev_kfree_skb_any(skb);
 			return ret;
@@ -2407,7 +2452,8 @@ int ath12k_dp_tx_htt_srng_setup(struct ath12k_base *ab, u32 ring_id,
 		   "ring_id:%d, ring_type:%d, intr_info:0x%x, flags:0x%x\n",
 		   ring_id, ring_type, cmd->intr_info, cmd->info2);
 
-	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_SRING_SETUP,
+			      (u8 *)cmd);
 	if (ret)
 		goto err_free;
 
@@ -2985,7 +3031,8 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->info5 |= le32_encode_bits(tlv_filter->fp_mcast_data_ppdu_hdr_en,
 			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_MCAST_DATA_HDR_EN);
 
-	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_RX_RING_SELECTION_CFG,
+			      (u8 *)cmd);
 	if (ret)
 		goto err_free;
 
@@ -3032,7 +3079,8 @@ ath12k_dp_tx_htt_h2t_ext_stats_req(struct ath12k *ar, u8 type,
 	cmd->cookie_lsb = cpu_to_le32(lower_32_bits(cookie));
 	cmd->cookie_msb = cpu_to_le32(upper_32_bits(cookie));
 
-	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_EXT_STATS_CFG,
+			      (u8 *)cmd);
 	if (ret) {
 		ath12k_warn(ab, "failed to send htt type stats request: %d",
 			    ret);
@@ -3141,7 +3189,8 @@ int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->tlv_filter_mask_in3 =
 		cpu_to_le32(htt_tlv_filter->tx_mon_upstream_tlv_flags2);
 
-	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	ret = ath12k_htt_send(ab, dp, skb, HTT_H2T_MSG_TYPE_TX_MONITOR_CFG,
+			      (u8 *)cmd);
 	if (ret)
 		goto err_free;
 
@@ -3199,7 +3248,8 @@ ath12k_dp_htt_rx_flow_fst_setup(struct ath12k_base *ab,
 	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "FST setup HTT message:",
 			(void *)cmd, len);
 
-	ret = ath12k_htc_send(&ab->htc, ath12k_ab_to_dp(ab)->eid, skb);
+	ret = ath12k_htt_send(ab, ath12k_ab_to_dp(ab), skb,
+			      HTT_H2T_MSG_TYPE_RX_FSE_SETUP_CFG, (u8 *)cmd);
 	if (ret) {
 		ath12k_err(ab, "DP FSE setup msg send failed ret:%d\n", ret);
 		goto err_free;
@@ -3267,7 +3317,9 @@ int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
 	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "FSE HTT message:",
 			(void *)cmd, len);
 
-	ret = ath12k_htc_send(&ab->htc, ath12k_ab_to_dp(ab)->eid, skb);
+	ret = ath12k_htt_send(ab, ath12k_ab_to_dp(ab), skb,
+			      HTT_H2T_MSG_TYPE_RX_FSE_OPERATION_CFG,
+			      (u8 *)cmd);
 	if (ret) {
 		ath12k_warn(ab, "DP FSE operation msg send failed ret:%d\n", ret);
 		goto err_free;
@@ -3306,7 +3358,9 @@ int ath12k_dp_htt_rx_fse_3_tuple_config_send(struct ath12k_base *ab,
 	ath12k_dbg_dump(ab, ATH12K_DBG_DP_FST, NULL, "FSE 3 TUPLE ENABLE HTT message:",
 			(void *)cmd, len);
 
-	ret = ath12k_htc_send(&ab->htc, ath12k_ab_to_dp(ab)->eid, skb);
+	ret = ath12k_htt_send(ab, ath12k_ab_to_dp(ab), skb,
+			      HTT_H2T_MSG_TYPE_RX_FSE_3_TUPLE_HASH_CFG,
+			      (u8 *)cmd);
 	if (ret) {
 		ath12k_err(ab, "DP FSE 3 TUPLE enable msg send failed ret:%d\n", ret);
 		goto err_free;
