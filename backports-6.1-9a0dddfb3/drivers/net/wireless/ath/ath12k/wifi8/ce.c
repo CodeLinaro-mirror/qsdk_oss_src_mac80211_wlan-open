@@ -138,7 +138,15 @@ const struct ce_pipe_config ath12k_wifi8_target_ce_config_wlan_qcn9625[] = {
 		.reserved = __cpu_to_le32(0),
 	},
 
-	/* CE15: Reserved */
+	/* CE15: host->target MSDU/MPDUQ */
+	{
+		.pipenum = __cpu_to_le32(15),
+		.pipedir = __cpu_to_le32(PIPEDIR_OUT),
+		.nentries = __cpu_to_le32(256),
+		.nbytes_max = __cpu_to_le32(2048),
+		.flags = __cpu_to_le32(CE_ATTR_FLAGS | CE_ATTR_DIS_INTR),
+		.reserved = __cpu_to_le32(0),
+	},
 };
 
 /* Map from service/endpoint to Copy Engine.
@@ -249,6 +257,11 @@ ath12k_wifi8_target_service_to_ce_map_wlan_qcn9625[] = {
 		__cpu_to_le32(ATH12K_HTC_SVC_ID_WMI_CONTROL_DIAG),
 		__cpu_to_le32(PIPEDIR_IN),
 		__cpu_to_le32(14),
+	},
+	{
+		__cpu_to_le32(ATH12K_HTC_SVC_ID_HTT_DATA4_MSG),
+		__cpu_to_le32(PIPEDIR_OUT),
+		__cpu_to_le32(15),
 	},
 
 	/* (Additions here) */
@@ -387,11 +400,11 @@ const struct ce_attr ath12k_wifi8_host_ce_config_qcn9625[] = {
 		.recv_cb = ath12k_htc_rx_completion_handler,
 	},
 
-	/* CE15: reserved for future use */
+	/* CE15: host->target MSDU/MPDUQ */
 	{
-		.flags = (CE_ATTR_FLAGS | CE_ATTR_DIS_INTR),
-		.src_nentries = 0,
-		.src_sz_max = 0,
+		.flags = CE_ATTR_FLAGS | CE_ATTR_DIS_INTR,
+		.src_nentries = 2048,
+		.src_sz_max = 2048,
 		.dest_nentries = 0,
 	},
 };

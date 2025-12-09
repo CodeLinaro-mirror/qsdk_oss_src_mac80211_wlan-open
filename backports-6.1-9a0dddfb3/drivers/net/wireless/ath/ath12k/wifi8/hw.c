@@ -230,11 +230,10 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.host_ce_config = ath12k_wifi8_host_ce_config_qcn9625,
 		.ce_count = 16,
 		.target_ce_config = ath12k_wifi8_target_ce_config_wlan_qcn9625,
-		.target_ce_count = 12,
+		.target_ce_count = 13,
 		.svc_to_ce_map =
 			ath12k_wifi8_target_service_to_ce_map_wlan_qcn9625,
-		.svc_to_ce_map_len = 18,
-
+		.svc_to_ce_map_len = 21,
 		.rxdma1_enable = true,
 		.num_rxdma_per_pdev = 1,
 		.num_rxdma_dst_ring = 0,
