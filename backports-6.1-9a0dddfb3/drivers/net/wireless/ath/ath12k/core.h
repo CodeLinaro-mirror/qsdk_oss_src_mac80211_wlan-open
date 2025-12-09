@@ -835,6 +835,7 @@ struct ath12k_vif {
 	/* indicates bitmap of link vif created in FW */
 	u32 links_map;
 	u8 last_scan_link;
+	u8 roc_link_id;
 	struct ath12k_vlan_iface *vlan_iface;
 	bool mode0_recover_bridge_vdevs;
 	u8 device_bitmap;
@@ -1354,6 +1355,7 @@ struct ath12k {
 		bool is_roc:1;
 		bool roc_notify:1;
 		int roc_freq;
+		int scan_id;
 		struct wiphy_work vdev_clean_wk;
 		struct ath12k_link_vif *arvif;
 	} scan;
