@@ -263,7 +263,8 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 
 		.wmi_init = ath12k_wifi8_wmi_init_qcn9625,
 
-		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01),
+		.qmi_cnss_feature_bitmap = BIT(CNSS_QDSS_CFG_MISS_V01) |
+					   BIT(CNSS_AUX_UC_SUPPORT_V01),
 
 		.rfkill_pin = 0,
 		.rfkill_cfg = 0,

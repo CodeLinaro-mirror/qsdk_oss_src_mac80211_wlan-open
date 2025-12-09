@@ -915,6 +915,42 @@ static const struct qmi_elem_info qmi_wlanfw_phy_cap_resp_msg_v01_ei[] = {
 					mm_coldboot_cal),
 	},
 	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x15,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   aux_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x15,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   aux_support),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x16,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   mcss_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x16,
+		.offset         = offsetof(struct qmi_wlanfw_phy_cap_resp_msg_v01,
+					   mcss_support),
+	},
+	{
 		.data_type	= QMI_EOTI,
 		.array_type	= NO_ARRAY,
 		.tlv_type	= QMI_COMMON_TLV_TYPE,
@@ -1827,6 +1863,42 @@ static const struct qmi_elem_info qmi_wlanfw_cap_resp_msg_v01_ei[] = {
 		.tlv_type       = 0x25,
 		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
 					   rxgainlut_support),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x2B,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   ext_fw_bin_download_support_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_1_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x2B,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   ext_fw_bin_download_support),
+	},
+	{
+		.data_type      = QMI_OPT_FLAG,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x2C,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   ext_fw_bin_download_bitmap_valid),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x2C,
+		.offset         = offsetof(struct qmi_wlanfw_cap_resp_msg_v01,
+					   ext_fw_bin_download_bitmap),
 	},
 	{
 		.data_type	= QMI_EOTI,
@@ -2774,6 +2846,112 @@ struct qmi_elem_info qmi_wlanfw_mem_write_resp_msg_v01_ei[] = {
 	},
 };
 
+static struct qmi_elem_info qmi_wlanfw_ext_fw_bin_mem_info_s_v01_ei[] = {
+	{
+		.data_type      = QMI_SIGNED_4_BYTE_ENUM,
+		.elem_len       = 1,
+		.elem_size      = sizeof(enum qmi_wlanfw_ext_fw_bin_type_enum_v01),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   type),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_8_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u64),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   addr),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   size),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   reserved1),
+	},
+	{
+		.data_type      = QMI_UNSIGNED_4_BYTE,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u32),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_mem_info_s_v01,
+					   reserved2),
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlanfw_ext_fw_bin_download_req_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_DATA_LEN,
+		.elem_len       = 1,
+		.elem_size      = sizeof(u8),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_download_req_msg_v01,
+					   ext_bin_mem_info_len),
+	},
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = QMI_WLANFW_MAX_NUM_EXT_FW_BIN_DOWNLOAD_V01,
+		.elem_size      = sizeof(struct qmi_wlanfw_ext_fw_bin_mem_info_s_v01),
+		.array_type       = VAR_LEN_ARRAY,
+		.tlv_type       = 0x01,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_download_req_msg_v01,
+					   ext_bin_mem_info),
+		.ei_array      = qmi_wlanfw_ext_fw_bin_mem_info_s_v01_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
+struct qmi_elem_info qmi_wlanfw_ext_fw_bin_download_resp_msg_v01_ei[] = {
+	{
+		.data_type      = QMI_STRUCT,
+		.elem_len       = 1,
+		.elem_size      = sizeof(struct qmi_response_type_v01),
+		.array_type       = NO_ARRAY,
+		.tlv_type       = 0x02,
+		.offset         = offsetof(struct
+					   qmi_wlanfw_ext_fw_bin_download_resp_msg_v01,
+					   resp),
+		.ei_array      = qmi_response_type_v01_ei,
+	},
+	{
+		.data_type      = QMI_EOTI,
+		.array_type       = NO_ARRAY,
+		.tlv_type       = QMI_COMMON_TLV_TYPE,
+	},
+};
+
 struct qmi_elem_info qmi_wlanfw_chip_state_info_req_msg_v01_ei[] = {
 	{
 		.data_type      = QMI_OPT_FLAG,
@@ -3671,11 +3849,16 @@ static void ath12k_qmi_phy_cap_send(struct ath12k_base *ab)
 	}
 
 	ab->qmi.num_radios = resp.num_phy;
+	if (resp.aux_support_valid)
+		ab->qmi.aux_support = !!resp.aux_support;
+	if (resp.mcss_support_valid)
+		ab->qmi.mcss_support = !!resp.mcss_support;
 
 	ath12k_dbg(ab, ATH12K_DBG_QMI,
-		   "phy capability resp valid %d num_phy %d valid %d board_id %d\n",
+		   "phy capability resp valid %d num_phy %d valid %d board_id %d, valid %u aux support %u valid %u mcss support %u\n",
 		   resp.num_phy_valid, resp.num_phy,
-		   resp.board_id_valid, resp.board_id);
+		   resp.board_id_valid, resp.board_id, resp.aux_support_valid,
+		   resp.aux_support, resp.mcss_support_valid, resp.mcss_support);
 
 	return;
 
@@ -5012,8 +5195,14 @@ int ath12k_qmi_request_target_cap(struct ath12k_base *ab)
 
 	if (resp.rxgainlut_support_valid)
 		ab->rxgainlut_support = !!resp.rxgainlut_support;
+	if (resp.ext_fw_bin_download_support_valid)
+		ab->qmi.ext_fw_bin_download_support = !!resp.ext_fw_bin_download_support;
+	if (resp.ext_fw_bin_download_bitmap_valid)
+		ab->qmi.ext_fw_bin_download_bitmap = resp.ext_fw_bin_download_bitmap;
 
-	ath12k_info(ab, "rxgainlut_support %u\n", ab->rxgainlut_support);
+	ath12k_info(ab, "RxGain support %u Extended ucode download support %u Extended ucode download bitmap 0x%x\n",
+		    ab->rxgainlut_support, ab->qmi.ext_fw_bin_download_support,
+		    ab->qmi.ext_fw_bin_download_bitmap);
 
 	if (resp.eeprom_caldata_read_timeout_valid) {
 		ab->qmi.target.eeprom_caldata = resp.eeprom_caldata_read_timeout;
@@ -5335,6 +5524,226 @@ skip_m3_alloc:
 
 out:
 	release_firmware(fw);
+
+	return ret;
+}
+
+static void ath12k_qmi_ext_fw_bin_free(struct ath12k_base *ab,
+				       enum qmi_wlanfw_ext_fw_bin_type_enum_v01 type)
+{
+	struct ext_fw_bin_mem_region *ext_fw_bin_mem = &ab->qmi.ext_fw_bin_mem[type];
+
+	if (!ext_fw_bin_mem->vaddr)
+		return;
+
+	dma_free_coherent(ab->dev, ext_fw_bin_mem->size,
+			  ext_fw_bin_mem->vaddr, ext_fw_bin_mem->paddr);
+	ext_fw_bin_mem->vaddr = NULL;
+	ext_fw_bin_mem->size = 0;
+}
+
+static int ath12k_qmi_ext_fw_bin_load(struct ath12k_base *ab,
+				      enum qmi_wlanfw_ext_fw_bin_type_enum_v01 type)
+{
+	struct ext_fw_bin_mem_region *ext_fw_bin_mem = NULL;
+	const struct firmware *fw = NULL;
+	const void *data = NULL;
+	size_t len = 0;
+	char path[100];
+	int ret = 0;
+
+	switch (type) {
+	case QMI_WLANFW_EXT_FW_BIN_TYPE_M3_V01:
+		/* firmware-N.bin had a m3 firmware file so use that */
+		if (ab->fw.m3_data && ab->fw.m3_len > 0) {
+			data = ab->fw.m3_data;
+			len = ab->fw.m3_len;
+		} else {
+			fw = ath12k_core_firmware_request(ab, "m3.bin");
+			if (IS_ERR(fw)) {
+				ret = PTR_ERR(fw);
+				ath12k_core_create_firmware_path(ab, "m3.bin",
+								 path, sizeof(path));
+				ath12k_err(ab, "failed to load %s/m3.bin: %d\n",
+					   path, ret);
+				return ret;
+			}
+		}
+		break;
+	case QMI_WLANFW_EXT_FW_BIN_TYPE_AUX_V01:
+		/* firmware-N.bin had a aux firmware file so use that */
+		if (ab->fw.aux_data && ab->fw.aux_len > 0) {
+			data = ab->fw.aux_data;
+			len = ab->fw.aux_len;
+		} else {
+			fw = ath12k_core_firmware_request(ab, "aux.bin");
+			if (IS_ERR(fw)) {
+				ret = PTR_ERR(fw);
+				ath12k_core_create_firmware_path(ab, "aux.bin",
+								 path, sizeof(path));
+				ath12k_err(ab, "failed to load %s/aux.bin: %d\n",
+					   path, ret);
+				return ret;
+			}
+		}
+		break;
+	case QMI_WLANFW_EXT_FW_BIN_TYPE_MCSS_V01:
+		/* firmware-N.bin had a mcss firmware file so use that */
+		if (ab->fw.mcss_data && ab->fw.mcss_len > 0) {
+			data = ab->fw.mcss_data;
+			len = ab->fw.mcss_len;
+		} else {
+			fw = ath12k_core_firmware_request(ab, "mcss.bin");
+			if (IS_ERR(fw)) {
+				ret = PTR_ERR(fw);
+				ath12k_core_create_firmware_path(ab, "mcss.bin",
+								 path, sizeof(path));
+				ath12k_err(ab, "failed to load %s/mcss.bin: %d\n",
+					   path, ret);
+				return ret;
+			}
+		}
+		break;
+	default:
+		ath12k_err(ab, "FW bin type %d not supported\n", type);
+		return -EINVAL;
+	}
+
+	/*
+	 * Fallback to the firmware blob returned by
+	 * ath12k_core_firmware_request() when no in-memory data was
+	 * provided via firmware-N.bin (i.e. data/len are unset). This
+	 * ensures we still have a valid buffer to load into the DMA
+	 * region for the requested ext FW bin type.
+	 */
+	if ((!data || !len) && fw) {
+		data = fw->data;
+		len = fw->size;
+	}
+
+	/* In recovery/resume cases, file buffer is not freed, try to reuse that */
+	ext_fw_bin_mem = &ab->qmi.ext_fw_bin_mem[type];
+	if (ext_fw_bin_mem->vaddr && ext_fw_bin_mem->size >= len)
+		goto skip_alloc;
+
+	/* Old buffer is too small, free and reallocate */
+	if (ext_fw_bin_mem->vaddr)
+		ath12k_qmi_ext_fw_bin_free(ab, type);
+
+	ext_fw_bin_mem->vaddr = dma_alloc_coherent(ab->dev, len, &ext_fw_bin_mem->paddr,
+						   GFP_KERNEL);
+	if (!ext_fw_bin_mem->vaddr) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+skip_alloc:
+	memcpy(ext_fw_bin_mem->vaddr, data, len);
+	ext_fw_bin_mem->size = len;
+out:
+	if (fw)
+		release_firmware(fw);
+
+	return ret;
+}
+
+/* clang stack usage explodes if this is inlined */
+static noinline_for_stack
+int ath12k_qmi_wlanfw_ext_fw_bin_mem_info_send(struct ath12k_base *ab)
+{
+	struct qmi_wlanfw_ext_fw_bin_download_resp_msg_v01 *resp = NULL;
+	struct qmi_wlanfw_ext_fw_bin_download_req_msg_v01 *req = NULL;
+	struct ext_fw_bin_mem_region *ext_fw_bin_mem = NULL;
+	int num_ext_fw_bin = 0;
+	struct qmi_txn txn;
+	int type = 0;
+	int ret = 0;
+
+	if (ab->qmi.ext_fw_bin_download_bitmap &
+			~((1 << QMI_WLANFW_EXT_FW_MAX_BIN_TYPE) - 1)) {
+		ath12k_warn(ab, "Invalid ext_fw_bin_download_bitmap 0x%x, unsupported bits set\n",
+			    ab->qmi.ext_fw_bin_download_bitmap);
+		return -EINVAL;
+	}
+
+	req = kzalloc(sizeof(*req), GFP_KERNEL);
+	if (!req)
+		return -ENOMEM;
+
+	for (type = 0; type < QMI_WLANFW_EXT_FW_MAX_BIN_TYPE; type++) {
+		if (!(ab->qmi.ext_fw_bin_download_bitmap & (1 << type)))
+			continue;
+
+		/* Check if we've reached the maximum number of firmware binaries */
+		if (num_ext_fw_bin >= QMI_WLANFW_MAX_NUM_EXT_FW_BIN_DOWNLOAD_V01) {
+			ath12k_warn(ab, "Too many firmware binaries to download, skipping type %d\n",
+				    type);
+			continue;
+		}
+
+		ret = ath12k_qmi_ext_fw_bin_load(ab, type);
+		if (ret) {
+			ath12k_err(ab, "failed to load EXT FW bin type %d ret %d\n",
+				   type, ret);
+			continue;
+		}
+
+		ext_fw_bin_mem = &ab->qmi.ext_fw_bin_mem[type];
+		req->ext_bin_mem_info[num_ext_fw_bin].addr = ext_fw_bin_mem->paddr;
+		req->ext_bin_mem_info[num_ext_fw_bin].size = ext_fw_bin_mem->size;
+		req->ext_bin_mem_info[num_ext_fw_bin].type = type;
+		num_ext_fw_bin++;
+	}
+
+	req->ext_bin_mem_info_len = num_ext_fw_bin;
+	if (!req->ext_bin_mem_info_len) {
+		ath12k_err(ab, "No EXT FW bins are found %x\n",
+			   ab->qmi.ext_fw_bin_download_bitmap);
+		ret = -EINVAL;
+		goto out;
+	}
+
+	resp = kzalloc(sizeof(*resp), GFP_KERNEL);
+	if (!resp) {
+		ret = -ENOMEM;
+		goto out;
+	}
+
+	ret = qmi_txn_init(&ab->qmi.handle, &txn,
+			   qmi_wlanfw_ext_fw_bin_download_resp_msg_v01_ei, resp);
+	if (ret < 0)
+		goto out;
+
+	ret = qmi_send_request(&ab->qmi.handle, NULL, &txn,
+			       QMI_WLANFW_EXT_FW_BIN_DOWNLOAD_REQ_V01,
+			       QMI_WLANFW_EXT_FW_BIN_DOWNLOAD_REQ_MSG_V01_MAX_MSG_LEN,
+			       qmi_wlanfw_ext_fw_bin_download_req_msg_v01_ei, req);
+	if (ret < 0) {
+		qmi_txn_cancel(&txn);
+		ath12k_warn(ab, "qmi failed to download EXT FW bin request, err = %d\n",
+			    ret);
+		goto out;
+	}
+
+	ret = qmi_txn_wait(&txn, msecs_to_jiffies(ATH12K_QMI_WLANFW_TIMEOUT_MS));
+	if (ret < 0) {
+		ath12k_warn(ab, "qmi wait failed to download EXT FW bin %d\n", ret);
+		goto out;
+	}
+
+	if (resp->resp.result != QMI_RESULT_SUCCESS_V01) {
+		ath12k_warn(ab, "qmi EXT FW bin info request failed, result: %d, err: %d\n",
+			    resp->resp.result, resp->resp.error);
+		ret = -EINVAL;
+		goto out;
+	}
+out:
+	for (type = 0; type < QMI_WLANFW_EXT_FW_MAX_BIN_TYPE; type++) {
+		if (ab->qmi.ext_fw_bin_mem[type].vaddr)
+			ath12k_qmi_ext_fw_bin_free(ab, type);
+	}
+	kfree(req);
+	kfree(resp);
 
 	return ret;
 }
@@ -6150,12 +6559,19 @@ int ath12k_qmi_event_load_bdf(struct ath12k_qmi *qmi)
 			ath12k_warn(ab, "qmi failed to load calibrated data :%d\n", ret);
 	}
 
-	ret = ath12k_qmi_wlanfw_m3_info_send(ab);
-	if (ret < 0) {
-		ath12k_warn(ab, "qmi failed to send m3 info req:%d\n", ret);
-		return ret;
+	if (ab->qmi.ext_fw_bin_download_support) {
+		ret = ath12k_qmi_wlanfw_ext_fw_bin_mem_info_send(ab);
+		if (ret < 0) {
+			ath12k_warn(ab, "qmi failed to send FW bin info req:%d\n", ret);
+			return ret;
+		}
+	} else {
+		ret = ath12k_qmi_wlanfw_m3_info_send(ab);
+		if (ret < 0) {
+			ath12k_warn(ab, "qmi failed to send m3 info req:%d\n", ret);
+			return ret;
+		}
 	}
-
 	return ret;
 }
 
