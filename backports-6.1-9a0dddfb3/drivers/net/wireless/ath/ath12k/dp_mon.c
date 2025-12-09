@@ -2093,9 +2093,9 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->encoding = RX_ENC_HT;
 		rx_status->bw = ath12k_mac_bw_to_mac80211_bw(bw);
 		if (rate_mcs > ATH12K_HT_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in HT mode %d\n",
-				     rate_mcs);
+			ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
+				   "Received with invalid mcs in HT mode %d\n",
+				   rate_mcs);
 			break;
 		}
 		rx_status->rate_idx = rate_mcs + (8 * (nss - 1));
@@ -2108,9 +2108,9 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->nss = nss;
 		rx_status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_VHT_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in VHT mode %d\n",
-				     rate_mcs);
+			ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
+				   "Received with invalid mcs in VHT mode %d\n",
+				   rate_mcs);
 			break;
 		}
 		if (sgi)
@@ -2119,9 +2119,9 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 	case RX_MSDU_START_PKT_TYPE_11AX:
 		rx_status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_HE_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in HE mode %d\n",
-				    rate_mcs);
+			ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
+				   "Received with invalid mcs in HE mode %d\n",
+				   rate_mcs);
 			break;
 		}
 		rx_status->encoding = RX_ENC_HE;
@@ -2132,9 +2132,9 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 	case RX_MSDU_START_PKT_TYPE_11BE:
 		rx_status->rate_idx = rate_mcs;
 		if (rate_mcs > ATH12K_EHT_MCS_MAX) {
-			ath12k_warn(ar->ab,
-				    "Received with invalid mcs in EHT mode %d\n",
-				    rate_mcs);
+			ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
+				   "Received with invalid mcs in EHT mode %d\n",
+				   rate_mcs);
 			break;
 		}
 		rx_status->encoding = RX_ENC_EHT;
@@ -2143,7 +2143,7 @@ ath12k_dp_mon_fill_rx_rate(struct ath12k_pdev_dp *dp_pdev,
 		rx_status->he_gi = ath12k_he_gi_to_nl80211_he_gi(sgi);
 		break;
 	default:
-		ath12k_dbg(ar->ab, ATH12K_DBG_DATA,
+		ath12k_dbg(ar->ab, ATH12K_DBG_DP_MON_RX,
 			   "monitor receives invalid preamble type %d",
 			    pkt_type);
 		break;
