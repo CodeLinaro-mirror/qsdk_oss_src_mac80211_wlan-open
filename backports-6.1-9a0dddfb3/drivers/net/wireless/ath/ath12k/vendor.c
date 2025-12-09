@@ -4386,6 +4386,9 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			   wdev->vap_submode, wdev->netdev->name);
 	}
 
+	if (ath12k_vendor_set_wifi_config_extn(wiphy, tb, wdev))
+		return -EINVAL;
+
 	return 0;
 }
 

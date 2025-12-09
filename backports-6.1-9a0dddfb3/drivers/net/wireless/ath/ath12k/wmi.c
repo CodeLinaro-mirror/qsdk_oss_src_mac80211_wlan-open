@@ -456,7 +456,10 @@ static int ath12k_wmi_tlv_parse(struct ath12k_base *ar, const void **tb,
 				   (void *)tb);
 }
 
-static const void **
+#ifndef CPTCFG_QCN_EXTN
+static
+#endif
+const void **
 ath12k_wmi_tlv_parse_alloc(struct ath12k_base *ab,
 			   struct sk_buff *skb, gfp_t gfp)
 {
@@ -15839,6 +15842,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		ath12k_wmi_delete_all_peer_resp_event(ab, skb);
 		break;
 	default:
+		if (!ath12k_wmi_op_rx_extn(id, ab, skb))
+			break;
+
 		ath12k_dbg_level(ab, ATH12K_DBG_WMI, ATH12K_DBG_L1,
 				 "Unknown eventid: 0x%x\n", id);
 		break;

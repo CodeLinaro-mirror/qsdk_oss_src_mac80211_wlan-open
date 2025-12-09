@@ -22765,6 +22765,8 @@ static void ath12k_mac_cleanup_unregister(struct ath12k *ar)
 		ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i] = NULL;
 	}
 	ar->mac.sbands[NL80211_BAND_6GHZ].channels = NULL;
+
+	ath12k_mac_cleanup_unregister_extn(ar);
 }
 
 static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
@@ -23402,6 +23404,8 @@ static void ath12k_mac_setup(struct ath12k *ar)
 
 	INIT_WORK(&ar->erp_handle_trigger_work, ath12k_erp_handle_trigger);
 	INIT_WORK(&ar->ssr_erp_exit, ath12k_erp_ssr_exit);
+
+	ath12k_mac_setup_extn(ar);
 }
 
 int __ath12k_mac_mlo_setup(struct ath12k *ar)

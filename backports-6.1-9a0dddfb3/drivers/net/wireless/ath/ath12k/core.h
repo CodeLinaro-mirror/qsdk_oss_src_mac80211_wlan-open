@@ -1550,6 +1550,8 @@ struct ath12k {
 	bool atf_strict_scheduling;
 	u64 atf_stats_accum_start_time;
 	u8 dcs_enable_bitmap;
+	/* ath12k extension structure */
+	struct ath12k_extn ar_extn;
 	struct list_head wlan_intf_list;
 	struct work_struct wlan_intf_work;
 	struct completion delete_all_peer_done;
