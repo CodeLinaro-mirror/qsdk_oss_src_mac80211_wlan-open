@@ -30,7 +30,6 @@
  */
 #define ACCESS_ALWAYS_OFF 0xFE0
 
-#define PCIE_LOCAL_REG_QRTR_NODE_ID	0x1E03164
 #define DOMAIN_NUMBER_MASK		GENMASK(7, 4)
 #define BUS_NUMBER_MASK			GENMASK(3, 0)
 
@@ -46,14 +45,19 @@ static void ath12k_pci_select_window(struct ath12k_pci *ab_pci, u32 offset)
 
 	lockdep_assert_held(&ab_pci->window_lock);
 
+	if (!ab_pci->reg_base) {
+		ath12k_err(ab, "Register base not initialized\n");
+		return;
+	}
+
 	/* Preserve the static window configuration and reset only dynamic window */
 	static_window = ab_pci->register_window & WINDOW_STATIC_MASK;
 	window |= static_window;
 
 	if (window != ab_pci->register_window) {
 		iowrite32(WINDOW_ENABLE_BIT | window,
-			  ab->mem + WINDOW_REG_ADDRESS);
-		ioread32(ab->mem + WINDOW_REG_ADDRESS);
+			  ab->mem + ab_pci->reg_base->pcie_window_reg_address);
+		ioread32(ab->mem + ab_pci->reg_base->pcie_window_reg_address);
 		ab_pci->register_window = window;
 	}
 }
@@ -73,7 +77,8 @@ static void ath12k_pci_select_static_window(struct ath12k_base *ab)
 	ab_pci->register_window = window;
 	spin_unlock_bh(&ab_pci->window_lock);
 
-	iowrite32(WINDOW_ENABLE_BIT | window, ab->mem + WINDOW_REG_ADDRESS);
+	iowrite32(WINDOW_ENABLE_BIT | window,
+		  ab->mem + ab_pci->reg_base->pcie_window_reg_address);
 }
 
 static inline bool ath12k_pci_is_offset_within_mhi_region(u32 offset)
@@ -155,10 +160,10 @@ static void ath12k_pci_enable_ltssm(struct ath12k_base *ab)
 
 	ath12k_dbg(ab, ATH12K_DBG_PCI, "pci ltssm 0x%x\n", val);
 
-	val = ath12k_pci_read32(ab, GCC_GCC_PCIE_HOT_RST);
+	val = ath12k_pci_read32(ab, PCIE_GCC_GCC_PCIE_HOT_RST(&ab->hal));
 	val |= GCC_GCC_PCIE_HOT_RST_VAL;
-	ath12k_pci_write32(ab, GCC_GCC_PCIE_HOT_RST, val);
-	val = ath12k_pci_read32(ab, GCC_GCC_PCIE_HOT_RST);
+	ath12k_pci_write32(ab, PCIE_GCC_GCC_PCIE_HOT_RST(&ab->hal), val);
+	val = ath12k_pci_read32(ab, PCIE_GCC_GCC_PCIE_HOT_RST(&ab->hal));
 
 	ath12k_dbg(ab, ATH12K_DBG_PCI, "pci pcie_hot_rst 0x%x\n", val);
 
@@ -450,7 +455,7 @@ static void ath12k_pci_update_qrtr_node_id(struct ath12k_base *ab)
 	 * writes to the given register, it is available for firmware when the QMI service
 	 * is spawned.
 	 */
-	reg = PCIE_LOCAL_REG_QRTR_NODE_ID & WINDOW_RANGE_MASK;
+	reg = PCIE_PCIE_LOCAL_REG_PCIE_LOCAL_RSV0(&ab->hal) & WINDOW_RANGE_MASK;
 	ath12k_pci_write32(ab, reg, ab_pci->qmi_instance);
 
 	ath12k_dbg(ab, ATH12K_DBG_PCI, "pci reg 0x%x instance 0x%x read val 0x%x\n",

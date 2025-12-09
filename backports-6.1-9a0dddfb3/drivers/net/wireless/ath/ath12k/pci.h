@@ -45,6 +45,10 @@
 #define PCIE_SMLH_REQ_RST_LINK_DOWN		0x2
 #define PCIE_INT_CLEAR_ALL			0xffffffff
 
+#define PCIE_GCC_GCC_PCIE_HOT_RST(hal) \
+	((hal)->regs->pcie_gcc_gcc_pcie_hot_rst)
+#define PCIE_PCIE_LOCAL_REG_PCIE_LOCAL_RSV0(hal) \
+	((hal)->regs->pcie_pcie_local_qrtr_ins_reg)
 #define PCIE_QSERDES_COM_SYSCLK_EN_SEL_REG(ab) \
 	((hal)->regs->pcie_qserdes_sysclk_en_sel)
 #define PCIE_QSERDES_COM_SYSCLK_EN_SEL_VAL	0x10
@@ -109,11 +113,6 @@ struct ath12k_pci_device_family_ops {
 	int (*probe)(struct pci_dev *pdev, const struct pci_device_id *pci_dev);
 	struct ath12k_dp *(*dp_init)(struct ath12k_base *ab);
 	void (*dp_deinit)(struct ath12k_dp *dp);
-};
-
-struct ath12k_reg_base {
-	u32 umac_base;
-	u32 ce_reg_base;
 };
 
 struct ath12k_pci {

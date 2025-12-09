@@ -11,7 +11,6 @@
 #include "hif.h"
 #include "hw.h"
 #include "ahb.h"
-#include "wifi7/hal.h"
 
 unsigned int tx_comp_budget = 0x7F;
 module_param_named(tx_comp_budget, tx_comp_budget, uint, 0644);
@@ -86,23 +85,37 @@ char ce_irq_name[ATH12K_MAX_PCI_DOMAINS + 1][ATH12K_IRQ_NUM_MAX][DP_IRQ_NAME_LEN
 
 void ath12k_pcic_config_static_window(struct ath12k_base *ab)
 {
-	u32 umac_window = u32_get_bits(HAL_SEQ_WCSS_UMAC_OFFSET, WINDOW_VALUE_MASK);
-	u32 ce_window = u32_get_bits(HAL_CE_WFSS_CE_REG_BASE, WINDOW_VALUE_MASK);
-	u32 window;
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
+	u32 umac_window, ce_window, window;
+
+	if (!ab_ahb || !ab_ahb->reg_base) {
+		ath12k_warn(ab, "Invalid register base in config_static_window\n");
+		return;
+	}
+
+	umac_window = u32_get_bits(ab_ahb->reg_base->umac_base, WINDOW_VALUE_MASK);
+	ce_window = u32_get_bits(ab_ahb->reg_base->ce_reg_base, WINDOW_VALUE_MASK);
 
 	window = (umac_window << 12) | (ce_window << 6);
 
-	iowrite32(WINDOW_ENABLE_BIT | window, ab->mem + WINDOW_REG_ADDRESS);
+	iowrite32(WINDOW_ENABLE_BIT | window,
+		  ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
 }
 
 static void ath12k_pcic_select_static_window(struct ath12k_base *ab, u32 addr)
 {
+	u32 window = u32_get_bits(addr, WINDOW_VALUE_MASK);
+	struct ath12k_ahb *ab_ahb = ath12k_ab_to_ahb(ab);
 	u32 curr_window, cur_val, prev_window = 0;
 	volatile u32 read_val = 0;
 	int retry = 0;
-	u32 window = u32_get_bits(addr, WINDOW_VALUE_MASK);
 
-	prev_window = readl_relaxed(ab->mem + WINDOW_REG_ADDRESS);
+	if (!ab_ahb || !ab_ahb->reg_base) {
+		ath12k_warn(ab, "Invalid register base in select_static_window\n");
+		return;
+	}
+
+	prev_window = readl_relaxed(ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
 
 	/* Clear out last 6 bits of window register */
 	prev_window = prev_window & ~(0x3f);
@@ -119,14 +132,15 @@ static void ath12k_pcic_select_static_window(struct ath12k_base *ab, u32 addr)
 		return;
 
 	cur_val = WINDOW_ENABLE_BIT | curr_window;
-	writel_relaxed(cur_val, ab->mem + WINDOW_REG_ADDRESS);
+	writel_relaxed(cur_val, ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
 
-	read_val = readl_relaxed(ab->mem + WINDOW_REG_ADDRESS);
+	read_val = readl_relaxed(ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
 
 	/* If value written is not yet reflected, wait till it is reflected */
 	while ((read_val != cur_val) && (retry < 10)) {
 		mdelay(1);
-		read_val = readl_relaxed(ab->mem + WINDOW_REG_ADDRESS);
+		read_val = readl_relaxed(ab->mem +
+				ab_ahb->reg_base->pcie_window_reg_address);
 		retry++;
 	}
 	if (retry == 10)
@@ -161,13 +175,24 @@ void ath12k_pcic_cmem_write32(struct ath12k_base *ab, u32 addr, u32 value)
 
 u32 ath12k_pcic_get_window_start(struct ath12k_base *ab, u32 offset)
 {
+	const struct ath12k_reg_base *reg_base;
 	u32 window_start;
 
+	if (ab->hif.bus == ATH12K_BUS_PCI)
+		reg_base = ath12k_pci_priv(ab)->reg_base;
+	else
+		reg_base = ath12k_ab_to_ahb(ab)->reg_base;
+
+	if (!reg_base) {
+		ath12k_warn(ab, "Register base not initialized in get_window_start\n");
+		return WINDOW_START;
+	}
+
 	/* If offset lies within DP register range, use 3rd window */
-	if ((offset ^ HAL_SEQ_WCSS_UMAC_OFFSET) < WINDOW_RANGE_MASK)
+	if ((offset ^ reg_base->umac_base) < WINDOW_RANGE_MASK)
 		window_start = 3 * WINDOW_START;
 	/* If offset lies within CE register range, use 2nd window */
-	else if ((offset ^ HAL_CE_WFSS_CE_REG_BASE) < WINDOW_RANGE_MASK)
+	else if ((offset ^ reg_base->ce_reg_base) < WINDOW_RANGE_MASK)
 		window_start = 2 * WINDOW_START;
 	else
 		window_start = WINDOW_START;

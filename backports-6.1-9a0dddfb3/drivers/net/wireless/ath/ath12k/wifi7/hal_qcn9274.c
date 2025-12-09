@@ -270,6 +270,12 @@ const struct ath12k_hw_regs qcn9274_v1_regs = {
 	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
 	.pcie_pcs_osc_dtct_config_base = 0x01e0d45c,
 
+	/*PCIe qrtr node id reg*/
+	.pcie_pcie_local_qrtr_ins_reg = 0x1E03164,
+
+	/*PCIe hot reset reg*/
+	.pcie_gcc_gcc_pcie_hot_rst = 0x1e38338,
+
 	/* PPE release ring address */
 	.hal_ppe_rel_ring_base = 0x0000043c,
 
@@ -363,6 +369,12 @@ const struct ath12k_hw_regs qcn9274_v2_regs = {
 	/* PCIe base address */
 	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
 	.pcie_pcs_osc_dtct_config_base = 0x01e0d45c,
+
+	/*PCIe qrtr node id reg*/
+	.pcie_pcie_local_qrtr_ins_reg = 0x1E03164,
+
+	/*PCIe hot reset reg*/
+	.pcie_gcc_gcc_pcie_hot_rst = 0x1e38338,
 
 	/* REO DEST ring address */
 	.hal_reo2_ring_base = 0x00000578,
@@ -674,6 +686,12 @@ const struct ath12k_hw_regs qcn6432_regs = {
 	/* PCIe base address */
 	.pcie_qserdes_sysclk_en_sel = 0x01e0c0a8,
 	.pcie_pcs_osc_dtct_config_base = 0x01e0d45c,
+
+	/*PCIe qrtr node id reg*/
+	.pcie_pcie_local_qrtr_ins_reg = 0x1E03164,
+
+	/*PCIe hot reset reg*/
+	.pcie_gcc_gcc_pcie_hot_rst = 0x1e38338,
 
 	/* CE base address */
 	.hal_umac_ce0_src_reg_base = 0x01B80000,

@@ -1096,6 +1096,8 @@ struct ath12k_hw_regs {
 
 	u32 pcie_qserdes_sysclk_en_sel;
 	u32 pcie_pcs_osc_dtct_config_base;
+	u32 pcie_pcie_local_qrtr_ins_reg;
+	u32 pcie_gcc_gcc_pcie_hot_rst;
 
 	u32 hal_umac_ce0_src_reg_base;
 	u32 hal_umac_ce0_dest_reg_base;
@@ -1140,6 +1142,12 @@ struct ath12k_hw_regs {
 struct ath12k_hw_version_map {
 	const struct ath12k_hw_hal_params *hal_params;
 	const struct ath12k_hw_regs *hw_regs;
+};
+
+struct ath12k_reg_base {
+	u32 umac_base;
+	u32 ce_reg_base;
+	u32 pcie_window_reg_address;
 };
 
 /* HAL context to be used to access SRNG APIs (currently used by data path

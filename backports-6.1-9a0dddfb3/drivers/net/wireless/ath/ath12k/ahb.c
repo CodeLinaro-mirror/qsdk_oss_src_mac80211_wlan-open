@@ -18,7 +18,6 @@
 #include "hif.h"
 #include "fw.h"
 #include "pcic.h"
-#include "wifi7/hal.h"
 #include "ppe.h"
 #include "erp.h"
 
@@ -1646,6 +1645,7 @@ static int ath12k_ahb_probe(struct platform_device *pdev)
 	ath12k_dbg(ab, ATH12K_DBG_AHB, "AHB device family id: %d\n", device_id);
 
 	ab_ahb->device_ops = &ath12k_ahb_family_drivers[device_id]->ops;
+	ab_ahb->reg_base = ath12k_ahb_family_drivers[device_id]->reg_base;
 
 	/* Call device specific probe. This is the callback that can
 	 * be used to override any ops in future

@@ -13,6 +13,7 @@
 #include "../hif.h"
 #include "hw.h"
 #include "dp.h"
+#include "hal.h"
 
 static const struct of_device_id ath12k_wifi7_ahb_of_match[] = {
 	{ .compatible = "qcom,ipq5332-wifi",
@@ -72,12 +73,19 @@ static int ath12k_wifi7_ahb_probe(struct platform_device *pdev)
 	return 0;
 }
 
+static const struct ath12k_reg_base ath12k_wifi7_pcic_reg_base = {
+	.umac_base = HAL_SEQ_WCSS_UMAC_OFFSET,
+	.ce_reg_base = HAL_CE_WFSS_CE_REG_BASE,
+	.pcie_window_reg_address = PCIE_WINDOW_REG_ADDRESS,
+};
+
 static struct ath12k_ahb_driver ath12k_wifi7_ahb_driver = {
 	.name = "ath12k_wifi7_ahb",
 	.id_table = ath12k_wifi7_ahb_of_match,
 	.ops.probe = ath12k_wifi7_ahb_probe,
 	.ops.dp_init = ath12k_wifi7_dp_init,
 	.ops.dp_deinit = ath12k_wifi7_dp_deinit,
+	.reg_base = &ath12k_wifi7_pcic_reg_base,
 };
 
 int ath12k_wifi7_ahb_init(void)
