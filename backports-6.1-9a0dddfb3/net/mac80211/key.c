@@ -975,6 +975,11 @@ void ieee80211_reenable_keys(struct ieee80211_sub_if_data *sdata)
 
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
+	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
+	    list_empty(&sdata->key_list)) {
+		return;
+	}
+
 	sdata->crypto_tx_tailroom_needed_cnt = 0;
 	sdata->crypto_tx_tailroom_pending_dec = 0;
 
