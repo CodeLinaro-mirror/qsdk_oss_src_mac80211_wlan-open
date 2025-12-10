@@ -651,6 +651,7 @@ struct ath12k_link_vif {
 	int num_stations;
 
 	u16 last_vht_tx_mcs_map;
+	u32 last_ht_tx_mcs_map;
 	struct completion peer_ch_width_switch_send;
 	struct wiphy_work peer_ch_width_switch_work;
 	struct ath12k_peer_ch_width_switch_data *peer_ch_width_switch_data;
