@@ -650,6 +650,7 @@ struct ath12k_link_vif {
 	u64 tbtt_offset;
 	int num_stations;
 
+	u16 last_vht_tx_mcs_map;
 	struct completion peer_ch_width_switch_send;
 	struct wiphy_work peer_ch_width_switch_work;
 	struct ath12k_peer_ch_width_switch_data *peer_ch_width_switch_data;

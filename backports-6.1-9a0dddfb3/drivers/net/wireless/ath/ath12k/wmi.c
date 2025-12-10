@@ -18700,3 +18700,44 @@ ath12k_wmi_delete_all_peer_resp_event(struct ath12k_base *ab, struct sk_buff *sk
 		   arg.status, arg.vdev_id);
 }
 
+int ath12k_wmi_vdev_rate_mask(struct ath12k *ar, struct wmi_vdev_ratemask_arg *arg)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_vdev_ratemask_cmd *cmd;
+	struct sk_buff *skb;
+	size_t len;
+	int ret;
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_vdev_ratemask_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_CONFIG_RATEMASK, len);
+	cmd->vdev_id = cpu_to_le32(arg->vdev_id);
+	cmd->type = cpu_to_le32(arg->type);
+	/* lower64 */
+	cmd->mask_lower32 = cpu_to_le32(arg->mask_lower32);
+	cmd->mask_higher32 = cpu_to_le32(arg->mask_higher32);
+	/* higher64 */
+	cmd->mask_lower32_2 = cpu_to_le32(arg->mask_lower32_2);
+	cmd->mask_higher32_2 = cpu_to_le32(arg->mask_higher32_2);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "wmi vdev rate mask vdev_id %d type %d lower32 0x%x lower32_2 0x%x higher32 0x%x higher32_2 0x%x\n",
+		   arg->vdev_id, arg->type, arg->mask_lower32,
+		   arg->mask_lower32_2, arg->mask_higher32,
+		   arg->mask_higher32_2);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_VDEV_RATEMASK_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send vdev %d rate mask cmd: %d\n",
+			    arg->vdev_id, ret);
+		dev_kfree_skb(skb);
+		return ret;
+	}
+
+	return 0;
+}
