@@ -118,6 +118,8 @@ enum wme_ac {
 	WME_NUM_AC
 };
 
+struct ath12k_dp_link_peer;
+struct ath12k_dp_link_peer_rate_info;
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp);
 int ath12k_dp_cmn_device_init(struct ath12k_dp *dp);
 void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
@@ -132,7 +134,8 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       u32 hw_link_id, struct ieee80211_vif *vif,
 			       u8 vp_type, int vp_num);
 void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr);
-void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp *dp, const u8 *addr,
+unsigned long ath12k_link_peer_last_active(struct ath12k_dp_link_peer *link_peer);
+void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp_link_peer *link_peer,
 					      struct ath12k_dp_link_peer_rate_info *rate_info);
 bool ath12k_dp_link_peer_reset_rx_stats(struct ath12k_dp *dp, const u8 *addr);
 bool ath12k_dp_link_peer_reset_tx_stats(struct ath12k_dp *dp, const u8 *addr);
