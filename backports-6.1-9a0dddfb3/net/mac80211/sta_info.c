@@ -2743,8 +2743,7 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 				link_sinfo);
 
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_INACTIVE_TIME) |
-			 BIT_ULL(NL80211_STA_INFO_BSS_PARAM) |
-			 BIT_ULL(NL80211_STA_INFO_RX_DROP_MISC);
+			 BIT_ULL(NL80211_STA_INFO_BSS_PARAM);
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		link_sinfo->beacon_loss_count =
@@ -2835,7 +2834,7 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_AIRTIME_WEIGHT);
 	}
 
-	link_sinfo->rx_dropped_misc = link_sta_info->rx_stats.dropped;
+	link_sinfo->rx_dropped_misc += link_sta_info->rx_stats.dropped;
 	if (link_sta_info->pcpu_rx_stats) {
 		for_each_possible_cpu(cpu) {
 			struct ieee80211_sta_rx_stats *cpurxs;
@@ -2845,6 +2844,7 @@ static void sta_set_link_sinfo(struct sta_info *sta,
 			link_sinfo->rx_dropped_misc += cpurxs->dropped;
 		}
 	}
+	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DROP_MISC);
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION &&
 	    !(sdata->vif.driver_flags & IEEE80211_VIF_BEACON_FILTER)) {
@@ -3002,8 +3002,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 			 BIT_ULL(NL80211_STA_INFO_STA_FLAGS) |
 			 BIT_ULL(NL80211_STA_INFO_BSS_PARAM) |
 			 BIT_ULL(NL80211_STA_INFO_CONNECTED_TIME) |
-			 BIT_ULL(NL80211_STA_INFO_ASSOC_AT_BOOTTIME) |
-			 BIT_ULL(NL80211_STA_INFO_RX_DROP_MISC);
+			 BIT_ULL(NL80211_STA_INFO_ASSOC_AT_BOOTTIME);
 
 	if (sdata->vif.type == NL80211_IFTYPE_STATION) {
 		sinfo->beacon_loss_count =
@@ -3072,7 +3071,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_FAILED);
 	}
 
-	sinfo->rx_dropped_misc = sta->deflink.rx_stats.dropped;
+	sinfo->rx_dropped_misc += sta->deflink.rx_stats.dropped;
 	if (sta->deflink.pcpu_rx_stats) {
 		for_each_possible_cpu(cpu) {
 			struct ieee80211_sta_rx_stats *cpurxs;
@@ -3081,6 +3080,7 @@ void sta_set_sinfo(struct sta_info *sta, struct station_info *sinfo,
 			sinfo->rx_dropped_misc += cpurxs->dropped;
 		}
 	}
+	sinfo->filled |= BIT_ULL(NL80211_STA_INFO_RX_DROP_MISC);
 
 	if (!(sinfo->filled & BIT_ULL(NL80211_STA_INFO_RX_DURATION))) {
 		for (ac = 0; ac < IEEE80211_NUM_ACS; ac++)
