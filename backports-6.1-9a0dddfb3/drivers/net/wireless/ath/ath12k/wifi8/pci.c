@@ -14,6 +14,7 @@
 #include "../mhi.h"
 #include "hw.h"
 #include "mhi.h"
+#include "hal.h"
 
 #define QCN9625_DEVICE_ID		0x1113
 
@@ -51,6 +52,7 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 			ab->msi.config = &ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_PCI];
 		}
 		ab->static_window_map = true;
+		ab->pci_remap_bar_addr_width_7bit = true;
 		ab->hw_rev = ATH12K_HW_QCN9625_HW10;
 		break;
 
@@ -69,11 +71,17 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 	return 0;
 }
 
+static const struct ath12k_reg_base ath12k_wifi8_pci_reg_base = {
+	.umac_base = HAL_SEQ_WCSS_UMAC_OFFSET,
+	.ce_reg_base = HAL_CE_WFSS_CE_REG_BASE,
+	.pcie_window_reg_address = PCIE_WINDOW_REG_ADDRESS,
+};
 
 static struct ath12k_pci_driver ath12k_wifi8_pci_driver = {
 	.name = "ath12k_wifi8_pci",
 	.id_table = ath12k_wifi8_pci_id_table,
 	.ops.probe = ath12k_wifi8_pci_probe,
+	.reg_base = &ath12k_wifi8_pci_reg_base,
 };
 
 int ath12k_wifi8_pci_init(void)
