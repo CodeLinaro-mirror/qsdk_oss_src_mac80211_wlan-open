@@ -602,6 +602,12 @@ int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
 	if (!dp_peer)
 		return -ENOMEM;
 
+	dp_peer->link_peer_delete_stats = ath12k_dp_alloc_preserved_stats();
+	if (!dp_peer->link_peer_delete_stats) {
+		ath12k_err(NULL, "Failed to allocate link peer delete stats");
+		kfree(dp_peer);
+		return -ENOMEM;
+	}
 	ether_addr_copy(dp_peer->addr, addr);
 	dp_peer->sta = params->sta;
 	dp_peer->is_mlo = params->is_mlo;
@@ -662,6 +668,7 @@ void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr,
 
 	synchronize_rcu();
 	kfree(dp_peer->qos);
+	ath12k_dp_free_preserved_stats(dp_peer->link_peer_delete_stats);
 	kfree(dp_peer);
 }
 
@@ -776,6 +783,112 @@ err_peer:
 	return ret;
 }
 
+/**
+ * ath12k_dp_capture_link_peer_stats - Capture all stats from link peer
+ * @aggr_stats: Aggregation structure to capture stats into
+ * @peer: Link peer whose stats need to be captured
+ * @dp_peer: MLD peer associated with the link peer
+ * @stats_link_id: Link ID for stats array indexing
+ *
+ * Captures HTT TX stats, per-packet TX stats (all TCL rings), RX peer stats,
+ * and per-packet RX stats (all REO rings) from a link peer into the provided
+ * aggregation structure. This is used to preserve statistics before link peer
+ * deletion.
+ *
+ */
+
+static void
+ath12k_dp_capture_link_peer_stats(struct ath12k_dp_preserved_stats *aggr_stats,
+				  struct ath12k_dp_link_peer *peer,
+				  struct ath12k_dp_peer *dp_peer,
+				  u8 stats_link_id)
+{
+	int i;
+
+	if (peer->peer_stats.tx_stats)
+		ath12k_dp_aggr_htt_tx_stats(&aggr_stats->tx_stats,
+					    peer->peer_stats.tx_stats);
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+		ath12k_dp_aggr_per_pkt_tx_stats(&aggr_stats->per_pkt_tx[i],
+						&dp_peer->stats[stats_link_id].tx[i]);
+
+	if (peer->peer_stats.rx_stats)
+		ath12k_dp_aggr_rx_peer_stats(&aggr_stats->rx_stats,
+					     peer->peer_stats.rx_stats);
+
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		ath12k_dp_aggr_per_pkt_rx_stats(&aggr_stats->per_pkt_rx[i],
+						&dp_peer->stats[stats_link_id].rx[i]);
+	/* Capture WBM RX error stats */
+	ath12k_dp_aggr_wbm_rx_stats(&aggr_stats->wbm_err,
+				    &dp_peer->stats[stats_link_id].wbm_err);
+}
+
+/**
+ * ath12k_dp_aggr_link_peer_to_mld_peer - Aggregate link peer stats to MLD peer
+ * @peer: Link peer whose stats need to be aggregated
+ * @dp_peer: MLD peer to aggregate stats into
+ * @stats_link_id: Link ID for stats indexing
+ *
+ * This function aggregates statistics from a link peer to its corresponding
+ * MLD peer before the link peer is deleted. Caller must hold the locks before
+ * calling this.
+ */
+static void ath12k_dp_aggr_link_peer_to_mld_peer(struct ath12k_dp_link_peer *peer,
+						 struct ath12k_dp_peer *dp_peer,
+						 u8 stats_link_id)
+{
+	if (!peer || !dp_peer)
+		return;
+
+	ath12k_dp_capture_link_peer_stats(dp_peer->link_peer_delete_stats,
+					  peer, dp_peer, stats_link_id);
+}
+
+/**
+ * ath12k_dp_aggr_link_peer_to_link_vif - Aggregate link peer stats to link VIF
+ * @dp_link_vif: Link VIF to aggregate stats into
+ * @peer: Link peer whose stats need to be aggregated
+ * @dp_peer: MLD peer associated with the link peer
+ * @stats_link_id: Link ID for stats array indexing
+ *
+ * Aggregates statistics from a link peer to its associated link VIF before
+ * the link peer is deleted. This preserves per-VIF statistics across peer
+ * lifecycle events. Returns early if any pointer is NULL.
+ */
+
+void ath12k_dp_aggr_link_peer_to_link_vif(struct ath12k_dp_link_vif *dp_link_vif,
+					  struct ath12k_dp_link_peer *peer,
+					  struct ath12k_dp_peer *dp_peer,
+					  u8 stats_link_id)
+{
+	if (!peer || !dp_peer || !dp_link_vif)
+		return;
+
+	ath12k_dp_capture_link_peer_stats(dp_link_vif->link_peer_delete_stats,
+					  peer, dp_peer, stats_link_id);
+}
+
+/**
+ * ath12k_dp_aggr_clear_per_pkt_stats - Clear per-packet stats after aggregation
+ * @peer: MLD peer whose per-packet stats need to be cleared
+ * @stats_link_id: Link ID for stats array indexing
+ *
+ * Clears per-packet TX stats (all TCL rings) and per-packet RX stats (all REO
+ * rings) for the specified link ID to prevent double-counting when stats are
+ * reused or aggregated multiple times. Should be called after stats have been
+ * aggregated to MLD peer or link VIF.
+ */
+
+static void ath12k_dp_aggr_clear_per_pkt_stats(struct ath12k_dp_peer *peer,
+					       u8 stats_link_id)
+{
+	ath12k_dp_clear_per_pkt_tx_stats(&peer->stats[stats_link_id]);
+	ath12k_dp_clear_per_pkt_rx_stats(&peer->stats[stats_link_id]);
+	ath12k_dp_clear_wbm_rx_stats(&peer->stats[stats_link_id].wbm_err);
+}
+
 void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
@@ -784,6 +897,17 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_link_peer *peer, *temp_peer;
 	u16 peerid_index;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	struct ath12k_dp_link_vif *link_vif = NULL;
+	int stats_link_id;
+
+	arvif = ath12k_mac_get_arvif(ar, vdev_id);
+	if (arvif) {
+		ahvif = arvif->ahvif;
+		if (ahvif)
+			link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
+	}
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -800,8 +924,18 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 
 	peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
 
-	if (!dp_peer->is_vdev_peer)
+	stats_link_id = peer->link_id;
+	if (!dp_peer->is_vdev_peer) {
 		dp_peer->peer_links_map &= ~BIT(peer->link_id);
+		/* Preserve link peer stats to MLD peer before deletion */
+		ath12k_dp_aggr_link_peer_to_mld_peer(peer, dp_peer, stats_link_id);
+		/* Preserve link peer stats to link VIF before deletion */
+		if (link_vif)
+			ath12k_dp_aggr_link_peer_to_link_vif(link_vif, peer, dp_peer,
+							     stats_link_id);
+		/* Clear per-packet stats to prevent double-counting on reuse */
+		ath12k_dp_aggr_clear_per_pkt_stats(dp_peer, stats_link_id);
+	}
 
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
 

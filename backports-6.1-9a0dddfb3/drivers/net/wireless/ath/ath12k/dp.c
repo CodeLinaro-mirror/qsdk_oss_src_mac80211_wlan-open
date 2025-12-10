@@ -56,6 +56,23 @@ u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE] = {
 };
 EXPORT_SYMBOL(ath12k_default_dscp_tid_map);
 
+struct ath12k_dp_preserved_stats *ath12k_dp_alloc_preserved_stats(void)
+{
+	struct ath12k_dp_preserved_stats *stats;
+
+	stats = kzalloc(sizeof(*stats), GFP_ATOMIC);
+	if (!stats)
+		return NULL;
+	return stats;
+}
+
+void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats)
+{
+	if (!stats)
+		return;
+	kfree(stats);
+}
+
 /*
  * TODO: fix this
  */

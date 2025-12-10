@@ -8,7 +8,7 @@
 #define ATH12K_DP_PEER_H
 
 #include "dp_rx.h"
-
+#include "dp_stats.h"
 #define ATH12K_DP_PEER_ID_INVALID              0xFFFF
 #define ATH12K_3LINK_MLO_MAX_STA_LINKS         3
 #define ATH12K_DATA_TID_MAX 8
@@ -154,6 +154,7 @@ struct ath12k_dp_peer {
 #endif
 	struct ath12k_mscs_ctxt mscs_ctxt;
 	bool mscs_session_exists;
+	struct ath12k_dp_preserved_stats *link_peer_delete_stats;
 };
 
 #define QOS_MSDUQ_MAX ((QOS_TID_MDSUQ_MAX * QOS_TID_MAX) + MSDUQ_MAX_DEF)
@@ -204,6 +205,16 @@ struct ath12k_dp_peer_qos {
 	void *telemetry_peer_ctx;
 };
 
+void ath12k_dp_aggr_per_pkt_tx_stats(struct ath12k_dp_peer_tx_stats *dst_tx_stats,
+				     struct ath12k_dp_peer_tx_stats *src_tx_stats);
+void ath12k_dp_aggr_per_pkt_rx_stats(struct ath12k_dp_peer_rx_stats *dst_rx_stats,
+				     struct ath12k_dp_peer_rx_stats *src_rx_stats);
+void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
+				 struct ath12k_wbm_rx_stats *src);
+void ath12k_dp_aggr_htt_tx_stats(struct ath12k_htt_tx_stats *dst,
+				 const struct ath12k_htt_tx_stats *src);
+void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
+				  const struct ath12k_rx_peer_stats *src);
 void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id);
 void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
 			   u8 *mac_addr, u16 ast_hash, u16 hw_peer_id);
