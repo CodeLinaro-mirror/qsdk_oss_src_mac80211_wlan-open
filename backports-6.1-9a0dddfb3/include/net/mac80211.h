@@ -2089,6 +2089,7 @@ enum ieee80211_vif_flags {
  *	mac80211.
  * @IEEE80211_OFFLOAD_ENCAP_MCAST: support multicast packet encapsulation
  *	offload.
+ * @IEEE80211_OFFLOAD_TXRX_STATS: support for tx and rx stats offload to driver
  */
 
 enum ieee80211_offload_flags {
@@ -2096,6 +2097,7 @@ enum ieee80211_offload_flags {
 	IEEE80211_OFFLOAD_ENCAP_4ADDR		= BIT(1),
 	IEEE80211_OFFLOAD_DECAP_ENABLED		= BIT(2),
 	IEEE80211_OFFLOAD_ENCAP_MCAST		= BIT(3),
+	IEEE80211_OFFLOAD_TXRX_STATS            = BIT(4),
 };
 
 /**
@@ -5939,6 +5941,13 @@ void ieee80211_tx_rate_update(struct ieee80211_hw *hw,
  */
 void ieee80211_tx_status_skb(struct ieee80211_hw *hw,
 			     struct sk_buff *skb);
+
+/**
+ * ieee80211_tx_status_offload - transmit status callback
+ * when offload enabled
+ */
+void ieee80211_tx_status_offload(struct ieee80211_hw *hw,
+				 struct ieee80211_tx_status *status);
 
 /**
  * ieee80211_tx_status_ext - extended transmit status callback

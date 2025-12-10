@@ -66,6 +66,10 @@ static void ieee80211_update_tx_stats(struct sta_info *sta,
 {
 	struct link_sta_info *deflink = &sta->deflink;
 
+	/* When driver TXRX stats offload enabled, stop accounting it in here*/
+	if (sta->sdata->vif.offload_flags & IEEE80211_OFFLOAD_TXRX_STATS)
+		return;
+
 	if (skb_shinfo(skb)->gso_size)
 		deflink->tx_stats.msdu[tid] +=
 			DIV_ROUND_UP(skb->len, skb_shinfo(skb)->gso_size);
