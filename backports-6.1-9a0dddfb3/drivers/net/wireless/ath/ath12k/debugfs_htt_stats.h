@@ -959,12 +959,19 @@ enum ATH12K_HTT_TX_RX_PDEV_STATS_AX_RU_SIZE {
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_BE_MCS_COUNTERS		16
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_BE_BW_COUNTERS		5
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_PER_COUNTERS		101
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS		5
 
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS		4
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT		14
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS	2
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT2_COUNTERS		5
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS	5
+/* 11bn MCS counters: all BE MCS indices and 4 UHR iMCS */
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_BN_MCS_COUNTERS		20
+/* 20,40,80,160,320 MHz */
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_BN_BW_COUNTERS		5
+/* 1.1, 3.1, 4.1, 7.1 */
+#define ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS	 4
 
 #define ATH12K_HTT_TX_PDEV_STATS_TOTAL_MCS_COUNTERS		\
 	(ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS +		\
@@ -973,6 +980,9 @@ enum ATH12K_HTT_TX_RX_PDEV_STATS_AX_RU_SIZE {
 	(ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS +		\
 	 ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS +	\
 	 ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS)
+
+#define	HTT_TX_PDEV_RATE_STATS_MAC_ID	GENMASK(7, 0)
+#define	HTT_TX_PDEV_RATE_STATS_WIFI_VERSION	GENMASK(11, 8)
 
 struct ath12k_htt_tx_pdev_rate_stats_tlv {
 	__le32 mac_id_word;
@@ -1048,6 +1058,11 @@ struct ath12k_htt_tx_pdev_rate_stats_tlv {
 	__le32 extra_eht_ltf;
 	__le32 extra_eht_ltf_ofdma;
 	__le32 ofdma_ba_ru_size[ATH12K_HTT_TX_RX_PDEV_STATS_NUM_AX_RU_SIZE_CNTRS];
+	__le32 tx_2xldpc;
+	__le32 npca_tx_bw[ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS];
+
+	__le32 npca_tx_su_punctured_mode
+		[ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
 };
 
 struct ath12k_htt_tx_pdev_rate_stats_be_tlv {
@@ -1151,6 +1166,8 @@ struct ath12k_htt_rx_pdev_rate_stats_tlv {
 
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES		2
 
+#define HTT_RX_PDEV_RATE_EXT_STATS_WIFI_VERSION		GENMASK(3, 0)
+
 struct ath12k_htt_rx_pdev_rate_ext_stats_tlv {
 	u8 rssi_chain_ext[ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS]
 			 [ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS];
@@ -1178,6 +1195,14 @@ struct ath12k_htt_rx_pdev_rate_ext_stats_tlv {
 			   [ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_2_COUNTERS];
 	s8 rx_per_chain_rssi_ext_2_in_dbm[ATH12K_HTT_RX_PDEV_STATS_NUM_SPATIAL_STREAMS]
 					 [ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_2_COUNTERS];
+	/*Holds a HTT_RX_TX_PDEV_STATS_WIFI_VERSION value*/
+	__le32 wifi_version_word;
+	/* Number of rx 2xldpc packets */
+	__le32 rx_2xldpc;
+	__le32 npca_rx_bw_ext[ATH12K_HTT_RX_PDEV_STATS_NUM_BN_BW_COUNTERS];
+
+	__le32 npca_rx_su_punctured_mode
+		[ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
 };
 
 #define ATH12K_HTT_TX_PDEV_STATS_SCHED_PER_TXQ_MAC_ID	GENMASK(7, 0)
@@ -4266,6 +4291,10 @@ struct ath12k_htt_tx_rate_stats {
 	__le32 mpdus_failed;
 } __packed;
 
+#define ATH12K_HTT_TX_PER_RATE_STATS_NUM_QUEUE_DEPTH_COUNTERS 2
+#define ATH12K_HTT_TX_PER_RATE_STATS_NUM_MLO_RA_DD_MCS_DROP_COUNTERS 2
+#define HTT_PER_RATE_STATS_WIFI_VERSION		GENMASK(3, 0)
+
 struct ath12k_htt_tx_per_rate_stats_tlv {
 	__le32 rc_mode;
 	__le32 last_probed_mcs;
@@ -4279,6 +4308,15 @@ struct ath12k_htt_tx_per_rate_stats_tlv {
 	__le32 ru_type;
 	struct ath12k_htt_tx_rate_stats ru[ATH12K_HTT_TX_RX_PDEV_NUM_BE_RU_SIZE_CNTRS];
 	struct ath12k_htt_tx_rate_stats per_tx_su_punctured_mode
+			[ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
+	__le32 mlo_ra_queue_depth_status
+		[ATH12K_HTT_TX_PER_RATE_STATS_NUM_QUEUE_DEPTH_COUNTERS];
+	__le32 mlo_rate_drop_down
+		[ATH12K_HTT_TX_PER_RATE_STATS_NUM_MLO_RA_DD_MCS_DROP_COUNTERS];
+	__le32 wifi_version_word;
+	struct ath12k_htt_tx_rate_stats npca_per_bw
+			[ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS];
+	struct ath12k_htt_tx_rate_stats npca_per_tx_su_punctured_mode
 			[ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
 } __packed;
 
