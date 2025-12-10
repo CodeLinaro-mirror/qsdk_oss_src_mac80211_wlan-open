@@ -2923,6 +2923,42 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 }
 
 /**
+ * ath12k_update_peer_rx_signal_stats() - Get RX signal stats from link peer
+ * @link_peer: pointer to link peer structure
+ * @signal_stats: output buffer for signal statistics (caller-allocated)
+ *
+ * Retrieves RX signal statistics from the specified link peer.
+ * Caller must allocate signal_stats buffer.
+ *
+ *
+ * Return: 0 on success, negative error code on failure
+ *         -EINVAL if parameters are NULL or if RX stats not available in link peer
+ */
+int
+ath12k_update_peer_rx_signal_stats(struct ath12k_dp_link_peer *link_peer,
+				   struct ath12k_dp_link_peer_rx_signal_stats *sgnl_stats)
+{
+	const struct ath12k_dp_link_peer_rx_signal_stats *stats;
+
+	if (!link_peer || !sgnl_stats)
+		return -EINVAL;
+
+	stats = &link_peer->signal_stats;
+
+	/* copying values to dst structure */
+	sgnl_stats->snr = stats->snr;
+	sgnl_stats->snr_dp = stats->snr_dp;
+	sgnl_stats->snr_avg = stats->snr_avg;
+	sgnl_stats->snr_dp_avg = stats->snr_dp_avg;
+	sgnl_stats->rssi = stats->rssi;
+	sgnl_stats->rssi_dp = stats->rssi_dp;
+	sgnl_stats->rssi_avg = stats->rssi_avg;
+	sgnl_stats->rssi_dp_avg = stats->rssi_dp_avg;
+
+	return 0;
+}
+
+/**
  * ath12k_update_peer_rx_mon_stats() - Get RX monitor stats from link peer
  * @link_peer: pointer to link peer structure
  * @rx_mon_stats: output buffer for RX statistics (caller-allocated)
@@ -2952,6 +2988,7 @@ int ath12k_update_peer_rx_mon_stats(struct ath12k_dp_link_peer *link_peer,
 
 	memcpy(rx_mon_stats, src, sizeof(*rx_mon_stats));
 
+	ath12k_update_peer_rx_signal_stats(link_peer, &rx_mon_stats->signal_stats);
 	return 0;
 }
 
