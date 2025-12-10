@@ -2018,6 +2018,10 @@ struct ath12k_base {
 		size_t amss_dualmac_len;
 		const u8 *m3_data;
 		size_t m3_len;
+		const u8 *aux_data;
+		size_t aux_len;
+		const u8 *mcss_data;
+		size_t mcss_len;
 
 		DECLARE_BITMAP(fw_features, ATH12K_FW_FEATURE_COUNT);
 	} fw;
