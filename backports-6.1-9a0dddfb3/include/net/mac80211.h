@@ -2006,6 +2006,7 @@ enum ieee80211_vif_flags {
  *	mac80211.
  * @IEEE80211_OFFLOAD_ENCAP_MCAST: support multicast packet encapsulation
  *	offload.
+ * @IEEE80211_OFFLOAD_TXRX_STATS: support for tx and rx stats offload to driver
  */
 
 enum ieee80211_offload_flags {
@@ -2013,6 +2014,7 @@ enum ieee80211_offload_flags {
 	IEEE80211_OFFLOAD_ENCAP_4ADDR		= BIT(1),
 	IEEE80211_OFFLOAD_DECAP_ENABLED		= BIT(2),
 	IEEE80211_OFFLOAD_ENCAP_MCAST		= BIT(3),
+	IEEE80211_OFFLOAD_TXRX_STATS            = BIT(4),
 };
 
 /**
@@ -3143,6 +3145,9 @@ struct ieee80211_txq {
  *	in the driver and will also pass the originating AP_VLAN vif to the driver
  *	in @ieee80211_tx_control.
  *
+ * @IEEE80211_HW_TXRX_STATS_OFFLOAD: HW/driver handles per-packet TX/RX
+ *	statistics accounting so mac80211 should not track them in SW.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3216,6 +3221,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_DSCP_TID_MAP,
 	IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL,
 	IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD,
+	IEEE80211_HW_TXRX_STATS_OFFLOAD,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
@@ -5824,6 +5830,13 @@ void ieee80211_tx_rate_update(struct ieee80211_hw *hw,
  */
 void ieee80211_tx_status_skb(struct ieee80211_hw *hw,
 			     struct sk_buff *skb);
+
+/**
+ * ieee80211_tx_status_offload - transmit status callback
+ * when offload enabled
+ */
+void ieee80211_tx_status_offload(struct ieee80211_hw *hw,
+				 struct ieee80211_tx_status *status);
 
 /**
  * ieee80211_tx_status_ext - extended transmit status callback
