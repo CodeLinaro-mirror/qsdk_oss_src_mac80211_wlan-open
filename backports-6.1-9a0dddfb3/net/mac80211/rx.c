@@ -5923,6 +5923,12 @@ static void __ieee80211_rx_handle_8023(struct ieee80211_hw *hw,
 	return;
 
 drop:
+	if (rx.link_sta) {
+		struct ieee80211_sta_rx_stats *stats;
+
+		stats = &rx.link_sta->rx_stats;
+		stats->dropped++;
+	}
 	dev_kfree_skb(skb);
 }
 
@@ -6333,6 +6339,12 @@ static void __ieee80211_rx_handle_packet(struct ieee80211_hw *hw,
 	}
 
  out:
+	if (rx.link_sta) {
+		struct ieee80211_sta_rx_stats *stats;
+
+		stats = &rx.link_sta->rx_stats;
+		stats->dropped++;
+	}
 	dev_kfree_skb(skb);
 }
 
