@@ -21,7 +21,9 @@ struct ath12k_hw_group;
 struct ath12k_pdev_map;
 struct ath12k_vif;
 struct ath12k_link_sta;
+struct ath12k_dp_vif;
 enum ath12k_mlo_recovery_mode;
+enum ath12k_dp_tx_enq_error;
 
 struct ath12k_generic_iter {
 	struct ath12k *ar;
@@ -729,4 +731,19 @@ int ath12k_mac_vendor_send_disassoc_event(struct ath12k_link_sta *arsta,
 					  struct ieee80211_link_sta *link_sta);
 void ath12k_mac_update_freq_range(struct ath12k *ar,
 				  u32 freq_low, u32 freq_high);
+void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
+				     struct sk_buff *skb,
+				     struct ath12k_dp_vif *dp_vif, u8 ring_id,
+				     enum ath12k_dp_tx_enq_error drop_reason,
+				     bool dev_free);
+bool ath12k_mac_check_err_code_debug_logging(enum ath12k_dp_tx_enq_error err);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
+					     struct ieee80211_vif *vif,
+					     struct net_device *dev);
+int ath12k_mac_op_destroy_datapath_offload_if(struct ieee80211_hw *hw,
+					      struct ieee80211_vif *vif,
+					      struct net_device *dev);
+int ath12k_mac_op_set_mtu(struct ieee80211_hw *hw, struct ieee80211_vif *vif, int mtu);
+#endif
 #endif
