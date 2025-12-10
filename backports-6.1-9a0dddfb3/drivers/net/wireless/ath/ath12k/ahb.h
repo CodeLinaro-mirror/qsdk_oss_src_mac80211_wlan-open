@@ -91,12 +91,14 @@ struct ath12k_ahb {
 	void *mem_region;
 	void *rpd_notifier;
 	void *interrupt_reset_base_addr;
+	const struct ath12k_reg_base *reg_base;
 };
 
 struct ath12k_ahb_driver {
 	const char *name;
 	const struct of_device_id *id_table;
 	struct ath12k_ahb_device_family_ops ops;
+	const struct ath12k_reg_base *reg_base;
 };
 
 static inline struct ath12k_ahb *ath12k_ab_to_ahb(struct ath12k_base *ab)
