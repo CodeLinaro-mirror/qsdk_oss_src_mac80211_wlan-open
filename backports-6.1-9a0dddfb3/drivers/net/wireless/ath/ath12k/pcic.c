@@ -656,7 +656,7 @@ int ath12k_pcic_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,
 		}
 	}
 
-	if (WARN_ON(!ul_set || !dl_set))
+	if (WARN_ON(!(ul_set || dl_set)))
 		return -ENOENT;
 
 	return 0;

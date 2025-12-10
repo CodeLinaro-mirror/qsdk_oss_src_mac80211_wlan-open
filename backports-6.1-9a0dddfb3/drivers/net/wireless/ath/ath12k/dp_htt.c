@@ -42,6 +42,12 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp)
 
 	dp->eid = conn_resp.eid;
 
+	if (dp->arch_ops->dp_msdu_htt_connect) {
+		status = dp->arch_ops->dp_msdu_htt_connect(dp);
+		if (status)
+			return status;
+	}
+
 	return 0;
 }
 

@@ -5452,10 +5452,10 @@ static int ath12k_qmi_wlanfw_wlan_cfg_send(struct ath12k_base *ab)
 {
 	struct qmi_wlanfw_wlan_cfg_req_msg_v01 *req;
 	struct qmi_wlanfw_wlan_cfg_resp_msg_v01 resp = {};
+	int ret = 0, pipe_num, ext_pipe_num;
 	struct ce_pipe_config *ce_cfg;
 	struct service_to_pipe *svc_cfg;
 	struct qmi_txn txn;
-	int ret = 0, pipe_num;
 
 	ce_cfg	= (struct ce_pipe_config *)ab->qmi.ce_cfg.tgt_ce;
 	svc_cfg	= (struct service_to_pipe *)ab->qmi.ce_cfg.svc_to_ce_map;
@@ -5471,7 +5471,14 @@ static int ath12k_qmi_wlanfw_wlan_cfg_send(struct ath12k_base *ab)
 	req->tgt_cfg_valid = 1;
 	/* This is number of CE configs */
 	req->tgt_cfg_len = ab->qmi.ce_cfg.tgt_ce_len;
-	for (pipe_num = 0; pipe_num < req->tgt_cfg_len ; pipe_num++) {
+	if (ab->qmi.ce_cfg.tgt_ce_len > QMI_WLANFW_MAX_NUM_CE_V01) {
+		req->tgt_cfg_len = QMI_WLANFW_MAX_NUM_CE_V01;
+		req->ext_tgt_cfg_valid = 1;
+		req->ext_tgt_cfg_len = ab->qmi.ce_cfg.tgt_ce_len -
+						QMI_WLANFW_MAX_NUM_CE_V01;
+	}
+
+	for (pipe_num = 0; pipe_num < req->tgt_cfg_len; pipe_num++) {
 		req->tgt_cfg[pipe_num].pipe_num = ce_cfg[pipe_num].pipenum;
 		req->tgt_cfg[pipe_num].pipe_dir = ce_cfg[pipe_num].pipedir;
 		req->tgt_cfg[pipe_num].nentries = ce_cfg[pipe_num].nentries;
@@ -5479,13 +5486,38 @@ static int ath12k_qmi_wlanfw_wlan_cfg_send(struct ath12k_base *ab)
 		req->tgt_cfg[pipe_num].flags = ce_cfg[pipe_num].flags;
 	}
 
+	pipe_num = QMI_WLANFW_MAX_NUM_CE_V01;
+	for (ext_pipe_num = 0; ext_pipe_num < req->ext_tgt_cfg_len; ext_pipe_num++) {
+		req->ext_tgt_cfg[ext_pipe_num].pipe_num = ce_cfg[pipe_num].pipenum;
+		req->ext_tgt_cfg[ext_pipe_num].pipe_dir = ce_cfg[pipe_num].pipedir;
+		req->ext_tgt_cfg[ext_pipe_num].nentries = ce_cfg[pipe_num].nentries;
+		req->ext_tgt_cfg[ext_pipe_num].nbytes_max = ce_cfg[pipe_num].nbytes_max;
+		req->ext_tgt_cfg[ext_pipe_num].flags = ce_cfg[pipe_num].flags;
+		pipe_num++;
+	}
+
 	req->svc_cfg_valid = 1;
 	/* This is number of Service/CE configs */
 	req->svc_cfg_len = ab->qmi.ce_cfg.svc_to_ce_map_len;
+	if (ab->qmi.ce_cfg.svc_to_ce_map_len > QMI_WLANFW_MAX_NUM_SVC_V01) {
+		req->svc_cfg_len = QMI_WLANFW_MAX_NUM_SVC_V01;
+		req->ext_svc_cfg_valid = 1;
+		req->ext_svc_cfg_len = ab->qmi.ce_cfg.svc_to_ce_map_len -
+						QMI_WLANFW_MAX_NUM_SVC_V01;
+	}
+
 	for (pipe_num = 0; pipe_num < req->svc_cfg_len; pipe_num++) {
 		req->svc_cfg[pipe_num].service_id = svc_cfg[pipe_num].service_id;
 		req->svc_cfg[pipe_num].pipe_dir = svc_cfg[pipe_num].pipedir;
 		req->svc_cfg[pipe_num].pipe_num = svc_cfg[pipe_num].pipenum;
+	}
+
+	pipe_num = QMI_WLANFW_MAX_NUM_SVC_V01;
+	for (ext_pipe_num = 0; ext_pipe_num < req->ext_svc_cfg_len; ext_pipe_num++) {
+		req->ext_svc_cfg[ext_pipe_num].service_id = svc_cfg[pipe_num].service_id;
+		req->ext_svc_cfg[ext_pipe_num].pipe_dir = svc_cfg[pipe_num].pipedir;
+		req->ext_svc_cfg[ext_pipe_num].pipe_num = svc_cfg[pipe_num].pipenum;
+		pipe_num++;
 	}
 
 	/* set shadow v3 configuration */

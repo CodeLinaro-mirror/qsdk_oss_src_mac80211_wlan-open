@@ -505,6 +505,7 @@ struct ath12k_dp_arch_ops {
 	void (*dp_tx_status_parse)(struct ath12k_base *ab,
 				   struct hal_wbm_completion_ring_tx *desc,
 				   struct hal_tx_status *ts);
+	int (*dp_msdu_htt_connect)(struct ath12k_dp *dp);
 };
 
 struct ath12k_bp_stats {
@@ -627,6 +628,7 @@ struct ath12k_dp {
 	spinlock_t tx_bank_lock;
 	struct ath12k_dp_tx_bank_profile *bank_profiles;
 	enum ath12k_htc_ep_id eid;
+	enum ath12k_htc_ep_id msdu_eid;
 	struct completion htt_tgt_version_received;
 	u8 htt_tgt_ver_major;
 	u8 htt_tgt_ver_minor;
@@ -1032,6 +1034,7 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 }
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
+int ath12k_dp_msdu_htt_connect(struct ath12k_dp *dp);
 void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif);
 void ath12k_dp_partner_cc_init(struct ath12k_base *ab);
 int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
