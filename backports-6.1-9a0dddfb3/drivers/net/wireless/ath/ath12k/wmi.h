@@ -6798,7 +6798,6 @@ struct wmi_ctrl_path_mem_stats_params {
 } __packed;
 
 struct wmi_ctrl_path_afc_stats {
-	__le32 tlv_header;
 	__le32 pdev_id;
 	__le32 request_id_count;
 	__le32 response_count;
