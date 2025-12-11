@@ -1068,6 +1068,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 		NLA_POLICY_NESTED(nl80211_advertised_ttlm_policy),
 	[NL80211_ATTR_QOS_MGMT] = NLA_POLICY_NESTED(nl80211_qm_policy),
 	[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS] = { .type = NLA_U16 },
+	[NL80211_ATTR_CONTROL_MIC_PAD] = { .type = NLA_U8 },
 };
 
 /* policy for the key attributes */
@@ -9064,6 +9065,10 @@ static int nl80211_set_station(struct sk_buff *skb, struct genl_info *info)
 			nla_len(info->attrs[NL80211_ATTR_STA_EXT_CAPABILITY]);
 	}
 
+	if (info->attrs[NL80211_ATTR_CONTROL_MIC_PAD])
+		params.control_mic_pad =
+			nla_get_u8(info->attrs[NL80211_ATTR_CONTROL_MIC_PAD]);
+
 	if (parse_station_flags(info, dev->ieee80211_ptr->iftype, &params))
 		return -EINVAL;
 
@@ -9453,6 +9458,11 @@ static int nl80211_new_station(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 		}
 	}
+
+	if (info->attrs[NL80211_ATTR_CONTROL_MIC_PAD])
+		params.control_mic_pad =
+			nla_get_u8(info->attrs[NL80211_ATTR_CONTROL_MIC_PAD]);
+
 	err = rdev_add_station(rdev, dev, mac_addr, &params);
 out:
 	dev_put(params.vlan);
