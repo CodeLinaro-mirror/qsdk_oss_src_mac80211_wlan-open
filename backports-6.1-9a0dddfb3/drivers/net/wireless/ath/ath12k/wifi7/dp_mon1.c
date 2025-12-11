@@ -1119,7 +1119,7 @@ void ath12k_wifi7_dp_mon_rx_dest_process(struct ath12k_pdev_dp *dp_pdev, int mac
 	if (rx_bufs_used) {
 		rx_mon_stats->dest_ppdu_done++;
 		srng = &ab->hal.srng_list[dp->rx_refill_buf_ring.refill_buf_ring.ring_id];
-		ath12k_dp_rx_bufs_replenish(dp, srng, &rx_desc_used_list);
+		ath12k_dp_rx_bufs_replenish(dp, srng, &rx_desc_used_list, false);
 	}
 }
 

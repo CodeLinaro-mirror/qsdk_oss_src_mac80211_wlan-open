@@ -1535,7 +1535,7 @@ void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab)
 							   skb->len, DMA_TO_DEVICE,
 							   DMA_ATTR_SKIP_CPU_SYNC);
 
-			dev_kfree_skb_any(skb);
+			skb_queue_tail(&ab->dp_umac_reset.tx_skb_queue, skb);
 
 			list_add_tail(&ppeds_tx_descs[j].list, &dp->ppe.ppeds_tx_desc_free_list);
 		}
@@ -2051,15 +2051,17 @@ void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab)
 	struct ath12k_rx_desc_info *desc_info;
 	struct ath12k_dp *dp;
 	struct sk_buff *skb;
+	struct dp_rxdma_ring *rx_ring;
+	LIST_HEAD(used_list);
 	int i, j;
 
 	dp = ath12k_ab_to_dp(ab);
+	rx_ring = &dp->rx_refill_buf_ring;
+
 	/* RX Descriptor cleanup */
 	spin_lock_bh(&dp->rx_desc_lock);
 
 	for (i = 0; i < ATH12K_NUM_RX_SPT_PAGES; i++) {
-		const void *end;
-
 		desc_info = dp->rxbaddr[i];
 
 		for (j = 0; j < ATH12K_MAX_SPT_ENTRIES; j++) {
@@ -2070,21 +2072,20 @@ void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab)
 			if (!skb)
 				continue;
 
-			end = desc_info[j].vaddr + DP_RX_BUFFER_SIZE;
-			ath12k_core_dmac_inv_range(desc_info[j].vaddr, end);
-
-			/* Save SKB to queue instead of freeing */
-			skb_queue_tail(&ab->dp_umac_reset.rx_skb_queue, skb);
-
-			desc_info[j].skb = NULL;
-			desc_info[j].vaddr = NULL;
-			desc_info[j].paddr = 0;
-			desc_info[j].in_use = false;
-			list_add_tail(&desc_info[j].list, &dp->rx_desc_free_list);
+			/* Add to replenish list - keep everything intact */
+			list_add_tail(&desc_info[j].list, &used_list);
 		}
 	}
 
 	spin_unlock_bh(&dp->rx_desc_lock);
+
+	/* Feed descriptors to replenish */
+	if (!list_empty(&used_list)) {
+		struct hal_srng *refill_srng;
+
+		refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
+		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &used_list, true);
+	}
 }
 EXPORT_SYMBOL(ath12k_dp_umac_rx_desc_cleanup);
 
@@ -2185,35 +2186,6 @@ size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
         return req_entries;
 }
 EXPORT_SYMBOL(ath12k_dp_get_req_entries_from_buf_ring);
-
-int ath12k_dp_rxdma_ring_setup(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp;
-	struct dp_rxdma_ring *rx_ring;
-	struct hal_srng *refill_srng;
-	LIST_HEAD(list);
-	size_t req_entries;
-	int ret;
-
-	dp = ath12k_ab_to_dp(ab);
-	rx_ring = &dp->rx_refill_buf_ring;
-	ret = ath12k_dp_srng_setup(ab, &dp->rx_refill_buf_ring.refill_buf_ring,
-				   HAL_RXDMA_BUF, 0, 0,
-				   DP_RXDMA_BUF_RING_SIZE);
-
-	if (ret) {
-		ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
-		return ret;
-	}
-
-	refill_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
-	req_entries = ath12k_dp_get_req_entries_from_buf_ring(ab, refill_srng, &list);
-	if (req_entries)
-		ath12k_dp_rx_bufs_replenish(dp, refill_srng, &list);
-
-	return 0;
-}
-EXPORT_SYMBOL(ath12k_dp_rxdma_ring_setup);
 
 void ath12k_dp_cmn_update_hw_links(struct ath12k_dp *dp,
 				   struct ath12k_hw_group *ag,

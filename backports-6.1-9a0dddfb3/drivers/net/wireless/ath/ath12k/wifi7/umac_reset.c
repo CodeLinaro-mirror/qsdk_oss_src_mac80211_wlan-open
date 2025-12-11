@@ -6,6 +6,7 @@
 
 #include "../core.h"
 #include "../dp.h"
+#include "../dp_rx.h"
 #include "umac_reset.h"
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
@@ -149,6 +150,15 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 
 	ath12k_dp_srng_common_setup(ab);
 	dp->arch_ops->dp_tx_ring_setup(ab);
+
+	ret = ath12k_dp_srng_setup(ab,
+				   &dp->rx_refill_buf_ring.refill_buf_ring,
+				   HAL_RXDMA_BUF, 0, 0,
+				   DP_RXDMA_BUF_RING_SIZE);
+
+	if (ret)
+		ath12k_warn(ab, "failed to setup rx_refill_buf_ring\n");
+
 	ath12k_dp_umac_tx_desc_cleanup(ab);
 	ath12k_dp_umac_rx_desc_cleanup(ab);
 
@@ -162,8 +172,6 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 				   DP_RX_RELEASE_RING_SIZE);
 	if (ret)
 		ath12k_warn(ab, "failed to set up rx_rel ring :%d\n", ret);
-
-	ath12k_dp_rxdma_ring_setup(ab);
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
 		ret = ath12k_dp_srng_setup(ab, &dp->reo_dst_ring[i],
@@ -190,13 +198,14 @@ void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base 
 }
 
 /**
- * ath12k_wifi7_free_skbs_task - Task to free saved SKBs
+ * ath12k_wifi7_post_reset_task - Free saved SKBs, replenish rx refill ring
  * @ab: Pointer to ath12k_base structure
  *
  * This task frees all saved TX and RX SKBs for a specific AB.
  * Multiple instances of this task run in parallel (one per AB in the group).
+ * And also replenishes rx refill ring
  */
-static void ath12k_wifi7_free_skbs_task(struct ath12k_base *ab)
+static void ath12k_wifi7_post_reset_task(struct ath12k_base *ab)
 {
 	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
 	struct sk_buff *skb;
@@ -208,6 +217,12 @@ static void ath12k_wifi7_free_skbs_task(struct ath12k_base *ab)
 	/* Free all saved RX SKBs */
 	while ((skb = skb_dequeue(&umac_reset->rx_skb_queue)) != NULL)
 		dev_kfree_skb_any(skb);
+
+	/* If ring was not replenished completely due to insufficient
+	 * rx descs in use during umac reset, we take care of replenishing
+	 * the rest of the ring here
+	 */
+	ath12k_dp_rxdma_buf_setup(ab);
 }
 
 static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
@@ -226,7 +241,7 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_bas
 	 * This ensures the SKB freeing happens after successful message send and
 	 * is distributed across all CPUs for parallel processing.
 	 */
-	ath12k_umac_reset_set_post_send_cb(ab, ath12k_wifi7_free_skbs_task);
+	ath12k_umac_reset_set_post_send_cb(ab, ath12k_wifi7_post_reset_task);
 }
 
 void ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper(struct ath12k_base *ab)
