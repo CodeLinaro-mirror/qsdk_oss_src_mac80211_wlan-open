@@ -41,6 +41,9 @@ int ath12k_dp_tx_align_payload(struct ath12k_dp *dp, struct sk_buff **pskb);
 void ath12k_dp_tx_release_txbuf(struct ath12k_dp *dp,
 				struct ath12k_tx_desc_info *tx_desc,
 				u8 pool_id);
+void ath12k_dp_tx_release_txbuf_nolock(struct ath12k_dp *dp,
+				       struct ath12k_tx_desc_info *tx_desc,
+				       u8 pool_id);
 struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 						       u8 pool_id);
 int ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask);

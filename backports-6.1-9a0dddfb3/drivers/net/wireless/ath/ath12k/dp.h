@@ -956,8 +956,9 @@ struct ath12k_dp_umac_reset {
 	/* Post-send callback - executed after FW message send completes */
 	void (*post_send_cb)(struct ath12k_base *ab);
 
-	/* CPU affinity tracking for reset operations */
-	int pre_reset_cpu_id;  /* CPU that processed pre_reset clear task */
+	/* SKB queues for deferred cleanup during UMAC reset */
+	struct sk_buff_head tx_skb_queue;
+	struct sk_buff_head rx_skb_queue;
 };
 
 #define HTT_T2H_EXT_STATS_INFO1_DONE	BIT(11)
@@ -1421,7 +1422,8 @@ int ath12k_dp_tx_get_bank_profile(struct ath12k_dp *dp, u32 bank_config);
 void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
 void ath12k_dp_ppeds_tx_desc_cleanup(struct ath12k_base *ab);
 void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab);
-void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab);
 int ath12k_dp_rxdma_ring_setup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,

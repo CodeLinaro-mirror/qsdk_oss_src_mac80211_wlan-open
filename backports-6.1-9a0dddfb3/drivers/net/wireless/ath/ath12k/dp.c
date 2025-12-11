@@ -2046,14 +2046,12 @@ void ath12k_dp_srng_hw_ring_disable(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_dp_srng_hw_ring_disable);
 
-void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
+void ath12k_dp_umac_rx_desc_cleanup(struct ath12k_base *ab)
 {
 	struct ath12k_rx_desc_info *desc_info;
-	struct ath12k_tx_desc_info *tx_desc_info;
 	struct ath12k_dp *dp;
 	struct sk_buff *skb;
-	int i, j, k;
-	u32 tx_spt_page;
+	int i, j;
 
 	dp = ath12k_ab_to_dp(ab);
 	/* RX Descriptor cleanup */
@@ -2075,7 +2073,8 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 			end = desc_info[j].vaddr + DP_RX_BUFFER_SIZE;
 			ath12k_core_dmac_inv_range(desc_info[j].vaddr, end);
 
-			dev_kfree_skb_any(skb);
+			/* Save SKB to queue instead of freeing */
+			skb_queue_tail(&ab->dp_umac_reset.rx_skb_queue, skb);
 
 			desc_info[j].skb = NULL;
 			desc_info[j].vaddr = NULL;
@@ -2086,11 +2085,24 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 	}
 
 	spin_unlock_bh(&dp->rx_desc_lock);
+}
+EXPORT_SYMBOL(ath12k_dp_umac_rx_desc_cleanup);
 
+void ath12k_dp_umac_tx_desc_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_tx_desc_info *tx_desc_info;
+	struct ath12k_dp *dp;
+	struct sk_buff *skb;
+	int i, j, k;
+	u32 tx_spt_page;
+
+	dp = ath12k_ab_to_dp(ab);
 	/* TX Descriptor cleanup */
 	for (i = 0; i < ATH12K_HW_MAX_QUEUES; i++) {
 		spin_lock_bh(&dp->tx_desc_lock[i]);
 		for (j = 0; j < ATH12K_TX_SPT_PAGES_PER_POOL; j++) {
+			int pool_id;
+
 			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
 			tx_desc_info = dp->txbaddr[tx_spt_page];
 
@@ -2102,8 +2114,6 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 				if (!skb)
 					continue;
 
-				tx_desc_info[k].skb = NULL;
-
 				/* Cleanup extension descriptor based on type */
 				if (tx_desc_info[k].ext_kmem) {
 					ath12k_dp_tx_ext_desc_free(dp, &tx_desc_info[k]);
@@ -2112,22 +2122,39 @@ void ath12k_dp_umac_txrx_desc_cleanup(struct ath12k_base *ab)
 								     tx_desc_info[k].paddr_ext_desc,
 								     tx_desc_info[k].skb_ext_desc->len,
 								     DMA_TO_DEVICE);
-					dev_kfree_skb_any(tx_desc_info[k].skb_ext_desc);
 					tx_desc_info[k].skb_ext_desc = NULL;
+					skb_queue_tail(&ab->dp_umac_reset.tx_skb_queue,
+						       tx_desc_info[k].skb_ext_desc);
 				}
 
 
-				ath12k_core_dma_unmap_single(ab->dev, tx_desc_info[k].paddr,
-							     tx_desc_info[k].len, DMA_TO_DEVICE);
-				dev_kfree_skb_any(skb);
+				ath12k_core_dma_unmap_single(ab->dev,
+							     tx_desc_info[k].paddr,
+							     tx_desc_info[k].len,
+							     DMA_TO_DEVICE);
 
-				tx_desc_info[k].in_use = false;
+				pool_id = tx_desc_info[k].pool_id;
+				/* Save SKB to queue instead of freeing */
+				skb_queue_tail(&ab->dp_umac_reset.tx_skb_queue, skb);
+				ath12k_dp_tx_release_txbuf_nolock(dp, &tx_desc_info[k],
+								  pool_id);
 			}
 		}
 		spin_unlock_bh(&dp->tx_desc_lock[i]);
 	}
+
+	rcu_read_lock();
+
+	for (i = 0; i < ab->num_radios; i++) {
+		struct ath12k_pdev_dp *dp_pdev = ath12k_dp_to_dp_pdev(dp, i);
+
+		if (dp_pdev)
+			atomic_set(&dp_pdev->num_tx_pending, 0);
+	}
+
+	rcu_read_unlock();
 }
-EXPORT_SYMBOL(ath12k_dp_umac_txrx_desc_cleanup);
+EXPORT_SYMBOL(ath12k_dp_umac_tx_desc_cleanup);
 
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct hal_srng *srng,

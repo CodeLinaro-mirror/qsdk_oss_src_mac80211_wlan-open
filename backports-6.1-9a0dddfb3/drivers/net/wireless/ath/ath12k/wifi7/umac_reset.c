@@ -149,7 +149,8 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_start(struct ath12k_base *
 
 	ath12k_dp_srng_common_setup(ab);
 	dp->arch_ops->dp_tx_ring_setup(ab);
-	ath12k_dp_umac_txrx_desc_cleanup(ab);
+	ath12k_dp_umac_tx_desc_cleanup(ab);
+	ath12k_dp_umac_rx_desc_cleanup(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
@@ -188,6 +189,27 @@ void ath12k_wifi7_umac_reset_handle_post_reset_start_wrapper(struct ath12k_base 
 				       ATH12K_UMAC_RESET_CPU_UNBOUND);
 }
 
+/**
+ * ath12k_wifi7_free_skbs_task - Task to free saved SKBs
+ * @ab: Pointer to ath12k_base structure
+ *
+ * This task frees all saved TX and RX SKBs for a specific AB.
+ * Multiple instances of this task run in parallel (one per AB in the group).
+ */
+static void ath12k_wifi7_free_skbs_task(struct ath12k_base *ab)
+{
+	struct ath12k_dp_umac_reset *umac_reset = &ab->dp_umac_reset;
+	struct sk_buff *skb;
+
+	/* Free all saved TX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->tx_skb_queue)) != NULL)
+		dev_kfree_skb_any(skb);
+
+	/* Free all saved RX SKBs */
+	while ((skb = skb_dequeue(&umac_reset->rx_skb_queue)) != NULL)
+		dev_kfree_skb_any(skb);
+}
+
 static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 {
 	ath12k_hif_irq_enable(ab);
@@ -199,6 +221,12 @@ static void ath12k_wifi7_umac_reset_handle_post_reset_complete(struct ath12k_bas
 #endif
 	ath12k_hif_mgmt_irq_enable(ab);
 	clear_bit(ATH12K_FLAG_UMAC_RECOVERY_IN_PROGRESS, &ab->dev_flags);
+
+	/* Set callback to free saved SKBs after post_reset_complete message is sent.
+	 * This ensures the SKB freeing happens after successful message send and
+	 * is distributed across all CPUs for parallel processing.
+	 */
+	ath12k_umac_reset_set_post_send_cb(ab, ath12k_wifi7_free_skbs_task);
 }
 
 void ath12k_wifi7_umac_reset_handle_post_reset_complete_wrapper(struct ath12k_base *ab)
