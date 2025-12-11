@@ -549,30 +549,31 @@ ath12k_wifi7_dp_mon_rx_parse_dest(struct ath12k_pdev_dp *dp_pdev,
 }
 
 int ath12k_wifi7_dp_mon_update_band_and_get_freq(struct ath12k_base *ab, int pdev_id,
-						 u16 channel_num, u8 *band)
+						 u16 channel_num,
+						 struct ieee80211_rx_status *rxs)
 {
 	struct ath12k *ar = ab->pdevs[pdev_id].ar;
 	struct ieee80211_channel *channel;
 	int freq = -1;
 
-	if (unlikely(*band == NUM_NL80211_BANDS ||
-		     !ath12k_ar_to_hw(ar)->wiphy->bands[*band])) {
+	if (unlikely(rxs->band == NUM_NL80211_BANDS ||
+		     !ath12k_ar_to_hw(ar)->wiphy->bands[rxs->band])) {
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "sband is NULL for status band %d channel_num %d pdev_id %d\n",
-			   *band, channel_num, ar->pdev_idx);
+			   rxs->band, channel_num, ar->pdev_idx);
 
 		spin_lock_bh(&ar->data_lock);
 		channel = ar->rx_channel;
 		if (channel) {
-			*band = channel->band;
+			rxs->band = channel->band;
 			channel_num =
 				ieee80211_frequency_to_channel(channel->center_freq);
 		}
 		spin_unlock_bh(&ar->data_lock);
 	}
 
-	if (*band < NUM_NL80211_BANDS)
-		freq = ieee80211_channel_to_frequency(channel_num, *band);
+	if (rxs->band < NUM_NL80211_BANDS)
+		freq = ieee80211_channel_to_frequency(channel_num, rxs->band);
 	return freq;
 }
 
@@ -589,7 +590,7 @@ ath12k_wifi7_dp_mon_rx_deliver_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	freq_update = ath12k_wifi7_dp_mon_update_band_and_get_freq(dp_pdev->dp->ab,
 								   dp_pdev->ar->pdev_idx,
 								   ppdu_info->chan_num,
-								   &rxs.band);
+								   &rxs);
 	if (freq_update != -1)
 		rxs.freq = freq_update;
 
