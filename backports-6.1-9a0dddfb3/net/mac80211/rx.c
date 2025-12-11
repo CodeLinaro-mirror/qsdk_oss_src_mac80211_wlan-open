@@ -216,7 +216,7 @@ ieee80211_rx_radiotap_hdrlen(struct ieee80211_local *local,
 		len += 8;
 	}
 	if (ieee80211_hw_check(&local->hw, SIGNAL_DBM))
-		len += 1;
+		len += 2;
 
 	/* antenna field, if we don't have per-chain info */
 	if (!status->chains)
@@ -603,6 +603,13 @@ ieee80211_add_rx_radiotap_header(struct ieee80211_local *local,
 		*pos = status->signal;
 		rthdr->it_present |=
 			cpu_to_le32(BIT(IEEE80211_RADIOTAP_DBM_ANTSIGNAL));
+		pos++;
+	}
+
+	if (ieee80211_hw_check(&local->hw, SIGNAL_DBM)) {
+		*pos = status->noise;
+		rthdr->it_present |=
+			cpu_to_le32(BIT(IEEE80211_RADIOTAP_DBM_ANTNOISE));
 		pos++;
 	}
 
