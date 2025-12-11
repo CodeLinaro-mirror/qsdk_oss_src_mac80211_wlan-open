@@ -704,6 +704,10 @@ void ath12k_coredump_download_rddm(struct ath12k_base *ab)
 		dev_coredumpm(ab->dev, THIS_MODULE, st, st->elf_hdr_sz, GFP_KERNEL,
 				ath12k_coredump_pci_read, ath12k_coredump_pci_free);
 		wait_for_completion(&st->dump_done);
+		/* Send vendor event to notify userspace about coredump has completed */
+		ath12k_vendor_send_event(ab,
+					 QCA_NL80211_VENDOR_FW_RECOVERY_EVENT_DUMP_COMPLETED);
+
 		vfree(st->elf_hdr);
 		kfree(st->chunks[0].vaddr);
 		kfree(st->chunks);
