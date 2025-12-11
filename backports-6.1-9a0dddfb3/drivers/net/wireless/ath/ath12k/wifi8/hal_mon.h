@@ -491,147 +491,6 @@ struct hal_rx_ppdu_end_duration {
 	__le32 rsvd1[18];
 } __packed;
 
-#define HAL_TX_FES_STATUS_END_INFO0_START_TIMESTAMP_15_0	GENMASK(15, 0)
-#define HAL_TX_FES_STATUS_END_INFO0_START_TIMESTAMP_31_16	GENMASK(31, 16)
-
-struct hal_tx_fes_status_end {
-	__le32 rsvd0[2];
-	__le32 info0;
-	__le32 reserved1[19];
-} __packed;
-
-#define HAL_TX_FES_SETUP_INFO0_NUM_OF_USERS	GENMASK(28, 23)
-
-struct hal_tx_fes_setup {
-	__le32 schedule_id;
-	__le32 info0;
-	__le64 rsvd0;
-} __packed;
-
-#define HAL_RX_RESP_REQ_INFO0_PPDU_ID		GENMASK(15, 0)
-#define HAL_RX_RESP_REQ_INFO0_RECEPTION_TYPE	BIT(16)
-#define HAL_RX_RESP_REQ_INFO1_DURATION		GENMASK(15, 0)
-#define HAL_RX_RESP_REQ_INFO1_RATE_MCS		GENMASK(24, 21)
-#define HAL_RX_RESP_REQ_INFO1_SGI		GENMASK(26, 25)
-#define HAL_RX_RESP_REQ_INFO1_STBC		BIT(27)
-#define HAL_RX_RESP_REQ_INFO1_LDPC		BIT(28)
-#define HAL_RX_RESP_REQ_INFO1_IS_AMPDU		BIT(29)
-#define HAL_RX_RESP_REQ_INFO2_NUM_USER		GENMASK(6, 0)
-#define HAL_RX_RESP_REQ_INFO3_ADDR1_31_0	GENMASK(31, 0)
-#define HAL_RX_RESP_REQ_INFO4_ADDR1_47_32	GENMASK(15, 0)
-#define HAL_RX_RESP_REQ_INFO4_ADDR1_15_0	GENMASK(31, 16)
-#define HAL_RX_RESP_REQ_INFO5_ADDR1_47_16	GENMASK(31, 0)
-
-struct hal_rx_resp_req_info {
-	__le32 info0;
-	__le32 rsvd0[1];
-	__le32 info1;
-	__le32 info2;
-	__le32 rsvd1[2];
-	__le32 info3;
-	__le32 info4;
-	__le32 info5;
-	__le32 rsvd2[5];
-} __packed;
-
-#define HAL_TX_PPDU_SETUP_INFO0_MEDIUM_PROT_TYPE	GENMASK(2, 0)
-#define HAL_TX_PPDU_SETUP_INFO1_PROT_FRAME_ADDR1_31_0	GENMASK(31, 0)
-#define HAL_TX_PPDU_SETUP_INFO2_PROT_FRAME_ADDR1_47_32	GENMASK(15, 0)
-#define HAL_TX_PPDU_SETUP_INFO2_PROT_FRAME_ADDR2_15_0	GENMASK(31, 16)
-#define HAL_TX_PPDU_SETUP_INFO3_PROT_FRAME_ADDR2_47_16	GENMASK(31, 0)
-#define HAL_TX_PPDU_SETUP_INFO4_PROT_FRAME_ADDR3_31_0	GENMASK(31, 0)
-#define HAL_TX_PPDU_SETUP_INFO5_PROT_FRAME_ADDR3_47_32	GENMASK(15, 0)
-#define HAL_TX_PPDU_SETUP_INFO5_PROT_FRAME_ADDR4_15_0	GENMASK(31, 16)
-#define HAL_TX_PPDU_SETUP_INFO6_PROT_FRAME_ADDR4_47_16	GENMASK(31, 0)
-
-struct hal_tx_pcu_ppdu_setup_init {
-	__le32 info0;
-	__le32 info1;
-	__le32 info2;
-	__le32 info3;
-	__le32 rsvd0;
-	__le32 info4;
-	__le32 info5;
-	__le32 info6;
-} __packed;
-
-#define HAL_TX_FES_STAT_PROT_INFO0_STRT_FRM_TS_15_0	GENMASK(15, 0)
-#define HAL_TX_FES_STAT_PROT_INFO0_STRT_FRM_TS_31_16	GENMASK(31, 16)
-#define HAL_TX_FES_STAT_PROT_INFO1_END_FRM_TS_15_0	GENMASK(15, 0)
-#define HAL_TX_FES_STAT_PROT_INFO1_END_FRM_TS_31_16	GENMASK(31, 16)
-
-struct hal_tx_fes_status_prot {
-	__le64 rsvd0;
-	__le32 info0;
-	__le32 info1;
-	__le32 rsvd1[11];
-} __packed;
-
-#define HAL_TX_FES_STAT_USR_PPDU_INFO0_DURATION		GENMASK(15, 0)
-
-struct hal_tx_fes_status_user_ppdu {
-	__le64 rsvd0;
-	__le32 info0;
-	__le32 rsvd1[3];
-} __packed;
-
-#define HAL_TX_FES_STAT_STRT_INFO0_PROT_TS_LOWER_32	GENMASK(31, 0)
-#define HAL_TX_FES_STAT_STRT_INFO1_PROT_TS_UPPER_32	GENMASK(31, 0)
-
-struct hal_tx_fes_status_start_prot {
-	__le32 info0;
-	__le32 info1;
-	__le64 rsvd0;
-} __packed;
-
-#define HAL_TX_FES_STATUS_START_INFO0_MEDIUM_PROT_TYPE	GENMASK(29, 27)
-
-struct hal_tx_fes_status_start {
-	__le32 rsvd0;
-	__le32 info0;
-	__le64 rsvd1;
-} __packed;
-
-#define HAL_TX_Q_EXT_INFO0_FRAME_CTRL		GENMASK(15, 0)
-#define HAL_TX_Q_EXT_INFO0_QOS_CTRL		GENMASK(31, 16)
-#define HAL_TX_Q_EXT_INFO1_AMPDU_FLAG		BIT(0)
-
-struct hal_tx_queue_exten {
-	__le32 info0;
-	__le32 info1;
-} __packed;
-
-#define HAL_RX_FBM_ACK_INFO0_ADDR1_31_0		GENMASK(31, 0)
-#define HAL_RX_FBM_ACK_INFO1_ADDR1_47_32	GENMASK(15, 0)
-#define HAL_RX_FBM_ACK_INFO1_ADDR2_15_0		GENMASK(31, 16)
-#define HAL_RX_FBM_ACK_INFO2_ADDR2_47_16	GENMASK(31, 0)
-
-struct hal_rx_frame_bitmap_ack {
-	__le32 rsvd0;
-	__le32 info0;
-	__le32 info1;
-	__le32 info2;
-	__le32 rsvd1[10];
-} __packed;
-
-#define HAL_TX_PHY_DESC_INFO0_BF_TYPE		GENMASK(17, 16)
-#define HAL_TX_PHY_DESC_INFO0_PREAMBLE_11B	BIT(20)
-#define HAL_TX_PHY_DESC_INFO0_PKT_TYPE		GENMASK(24, 21)
-#define HAL_TX_PHY_DESC_INFO0_BANDWIDTH		GENMASK(30, 28)
-#define HAL_TX_PHY_DESC_INFO1_MCS		GENMASK(3, 0)
-#define HAL_TX_PHY_DESC_INFO1_STBC		BIT(6)
-#define HAL_TX_PHY_DESC_INFO2_NSS		GENMASK(23, 21)
-#define HAL_TX_PHY_DESC_INFO3_AP_PKT_BW		GENMASK(6, 4)
-#define HAL_TX_PHY_DESC_INFO3_LTF_SIZE		GENMASK(20, 19)
-#define HAL_TX_PHY_DESC_INFO3_ACTIVE_CHANNEL	GENMASK(17, 15)
-
-struct hal_tx_phy_desc {
-	__le32 info0;
-	__le32 info1;
-	__le32 info2;
-	__le32 info3;
-} __packed;
-
 struct hal_tlv_parsed_hdr {
 	u16 tag;
 	u16 len;
@@ -817,56 +676,49 @@ struct hal_rx_mon_ppdu_end_user_stats_compact {
 } __packed;
 
 static __always_inline void
-ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
+ath12k_wifi8_hal_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
 {
-	if (info & RX_MSDU_END_INFO13_FCS_ERR)
+	if (info & RX_MSDU_END_INFO14_FCS_ERR)
 		*errmap |= HAL_RX_MON_MPDU_ERR_FCS;
 
-	if (info & RX_MSDU_END_INFO13_DECRYPT_ERR)
+	if (info & RX_MSDU_END_INFO14_DECRYPT_ERR)
 		*errmap |= HAL_RX_MON_MPDU_ERR_DECRYPT;
 
-	if (info & RX_MSDU_END_INFO13_TKIP_MIC_ERR)
+	if (info & RX_MSDU_END_INFO14_TKIP_MIC_ERR)
 		*errmap |= HAL_RX_MON_MPDU_ERR_TKIP_MIC;
 
-	if (info & RX_MSDU_END_INFO13_A_MSDU_ERROR)
+	if (info & RX_MSDU_END_INFO14_A_MSDU_ERROR)
 		*errmap |= HAL_RX_MON_MPDU_ERR_AMSDU_ERR;
 
-	if (info & RX_MSDU_END_INFO13_OVERFLOW_ERR)
+	if (info & RX_MSDU_END_INFO14_OVERFLOW_ERR)
 		*errmap |= HAL_RX_MON_MPDU_ERR_OVERFLOW;
 
-	if (info & RX_MSDU_END_INFO13_MSDU_LEN_ERR)
+	if (info & RX_MSDU_END_INFO14_MSDU_LENGTH_ERR)
 		*errmap |= HAL_RX_MON_MPDU_ERR_MSDU_LEN;
 
-	if (info & RX_MSDU_END_INFO13_MPDU_LEN_ERR)
+	if (info & RX_MSDU_END_INFO14_MPDU_LENGTH_ERR)
 		*errmap |= HAL_RX_MON_MPDU_ERR_MPDU_LEN;
 }
 
 enum hal_rx_mon_status
-ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
+ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
 					 struct hal_tlv_parsed_hdr *tlv_parsed_hdr);
-enum hal_tx_mon_status
-ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct hal_tx_mon_ppdu_info *tx_ppdu_info,
-					 u16 tlv_tag, const void *tlv_data, u32 userid);
-enum hal_tx_mon_status
-ath12k_wifi7_hal_mon_tx_status_get_num_user(u16 tlv_tag,
-					    const void *tx_tlv,
-					    u8 *num_users);
-u32 ath12k_wifi7_hal_mon_rx_mpdu_start_wmask_get(void);
-u32 ath12k_wifi7_hal_mon_rx_mpdu_end_wmask_get(void);
-u32 ath12k_wifi7_hal_mon_rx_msdu_end_wmask_get(void);
-u32 ath12k_wifi7_hal_mon_rx_ppdu_end_usr_stats_wmask_get(void);
+u32 ath12k_wifi8_hal_mon_rx_mpdu_start_wmask_get(void);
+u32 ath12k_wifi8_hal_mon_rx_mpdu_end_wmask_get(void);
+u32 ath12k_wifi8_hal_mon_rx_msdu_end_wmask_get(void);
+u32 ath12k_wifi8_hal_mon_rx_ppdu_end_usr_stats_wmask_get(void);
 void
-ath12k_wifi7_hal_mon_rx_mpdu_start_info_parse(const void *tlv_data, u32 userid,
+ath12k_wifi8_hal_mon_rx_mpdu_start_info_parse(const void *tlv_data, u32 userid,
 					      struct hal_rx_mon_ppdu_info *ppdu_info,
 					      u32 tlv_len);
 void
-ath12k_wifi7_hal_mon_rx_msdu_end_info_parse(const void *tlv_data, u32 userid,
+ath12k_wifi8_hal_mon_rx_msdu_end_info_parse(const void *tlv_data, u32 userid,
 					    struct hal_rx_mon_ppdu_info *ppdu_info,
 					    u32 tlv_len);
 void
-ath12k_wifi7_hal_mon_rx_ppdu_eu_stats_info_parse(const void *tlv_data, u32 userid,
+ath12k_wifi8_hal_mon_rx_ppdu_eu_stats_info_parse(const void *tlv_data, u32 userid,
 						 struct hal_rx_mon_ppdu_info *ppdu_info,
 						 u32 tlv_len);
-u8 *ath12k_wifi7_hal_mon_rx_desc_get_msdu_payload(void *rx_desc);
+u8 *ath12k_wifi8_hal_mon_rx_desc_get_msdu_payload(void *rx_desc);
 #endif

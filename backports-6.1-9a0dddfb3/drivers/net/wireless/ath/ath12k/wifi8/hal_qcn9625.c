@@ -11,6 +11,8 @@
 #include "hal.h"
 #include <linux/cacheflush.h>
 
+extern void ath12k_wifi8_hal_mon_ops_init(struct ath12k_hal *hal, u8 hw_version);
+
 static const struct hal_srng_config hw_srng_config_template[] = {
 	/* TODO: max_rings can populated by querying HW capabilities */
 	/* REO2SW Rings */
@@ -797,4 +799,5 @@ const struct hal_ops hal_qcn9625_ops = {
 	.hal_reo_config_reo2ppe_dest_info = ath12k_wifi8_hal_reo_config_reo2ppe_dest_info,
 	.hal_tx_set_ppe_vp_entry = ath12k_wifi8_hal_tx_set_ppe_vp_entry,
 	.hal_get_tlv_tag_params = ath12k_wifi8_get_tlv_tag_params,
+	.hal_mon_ops_init = ath12k_wifi8_hal_mon_ops_init,
 };
