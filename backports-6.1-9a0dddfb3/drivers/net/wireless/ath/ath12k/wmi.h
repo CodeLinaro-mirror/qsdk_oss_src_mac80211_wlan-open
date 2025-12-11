@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_WMI_H
@@ -3659,6 +3659,8 @@ struct ath12k_wmi_peer_create_arg {
 	u32 vdev_id;
 	bool ml_enabled;
 	bool mlo_bridge_peer;
+	u32 peer_id;
+	u32 sta_id;
 };
 
 struct wmi_peer_create_mlo_params {
@@ -3791,11 +3793,15 @@ enum wmi_peer_type {
 	WMI_PEER_TYPE_MLO_BRIDGE = 7,
 };
 
+#define ATH12K_WMI_FLAG_STA_ID_VALID	BIT(0)
 struct wmi_peer_create_cmd {
 	__le32 tlv_header;
 	__le32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
 	__le32 peer_type;
+	__le32 flags;
+	__le32 peer_id;
+	__le32 sta_id;
 } __packed;
 
 struct wmi_peer_delete_cmd {

@@ -17,6 +17,7 @@
 #include "../dp_peer.h"
 #include "../telemetry.h"
 #include "../telemetry_agent_if.h"
+#include "dp_peer.h"
 
 struct ath12k_tx_sw_metadata {
 	struct sk_buff *skb;
@@ -142,15 +143,15 @@ ath12k_dp_qos_update(struct ath12k_dp *dp, struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp_peer *dp_peer;
 	u8 scs_id;
-	u16 msduq, peer_id;
+	u16 msduq, peer_id, peer_id_index;
 	u16 qos_id = QOS_ID_MAX;
 	int ret;
 
 	if (mark & SDWF_VALID_MASK) {
 		rcu_read_lock();
 		peer_id = u32_get_bits(mark, SDWF_PEER_ID);
-		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev,
-							      peer_id);
+		peer_id_index = ath12k_wifi7_dp_peer_get_peerid_index(dp, peer_id);
+		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id_index);
 		if (!dp_peer) {
 			rcu_read_unlock();
 			return;
@@ -448,7 +449,7 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	u64 enqueue_timestamp, total_delay_pkts, tmp_div;
 	u32 len, q_id, tid, hw_delay, nw_delay, sw_delay, delay_bound;
 	u32 pkt_win, num_pkts, dropped_age_out = 0;
-	u16 msduq_id;
+	u16 msduq_id, peer_id_index;
 	u8 link_id, pri_link_id, qos_id;
 	bool update_pri_peer = false;
 
@@ -472,9 +473,9 @@ void ath12k_qos_stats_update(struct ath12k *ar, struct sk_buff *skb,
 	if (!(ath12k_debugfs_is_qos_stats_enabled(ar) & ATH12K_QOS_STATS_BASIC))
 		return;
 
+	peer_id_index = ath12k_wifi7_dp_peer_get_peerid_index(dp, ts->peer_id);
 	mld_peer = ath12k_dp_peer_find_by_peerid_index(dp_pdev->dp,
-						       dp_pdev,
-						       ts->peer_id);
+						       dp_pdev, peer_id_index);
 	if (!mld_peer) {
 		ath12k_err(ar->ab, "MLD peer NA with peer_id: %u\n",
 			   ts->peer_id);
@@ -1660,6 +1661,7 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 	u8 link_id = 0;
 	u32 msdu_len = msdu->len;
 	u8 tx_desc_flags = sw_metadata->flags;
+	u16 peer_id_index;
 
 	status_desc = desc;
 
@@ -1728,7 +1730,8 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 		break;
 	}
 
-	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
+	peer_id_index = ath12k_wifi7_dp_peer_get_peerid_index(dp, ts->peer_id);
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id_index);
 	if (peer) {
 		link_id = ath12k_dp_get_link_id(dp_pdev, ts->hw_link_id, peer);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len,
@@ -1931,6 +1934,7 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 	enum ath12k_dp_tx_comp_error drop_reason = DP_TX_COMP_ERR_MISC;
 	u32 msdu_len = msdu->len;
 	u8 tx_desc_flags = sw_metadata->flags;
+	u16 peer_id_index;
 
 	if (WARN_ON_ONCE(ts->buf_rel_source != HAL_WBM_REL_SRC_MODULE_TQM)) {
 		/* Must not happen */
@@ -1995,7 +1999,9 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	ar = dp_pdev->ar;
 
-	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, ts->peer_id);
+	peer_id_index = ath12k_wifi7_dp_peer_get_peerid_index(dp, ts->peer_id);
+	peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id_index);
+
 	if (peer) {
 		link_id = ath12k_dp_get_link_id(dp_pdev, ts->hw_link_id, peer);
 		ath12k_dp_tx_update_peer_basic_stats(peer, msdu_len, ts->status,

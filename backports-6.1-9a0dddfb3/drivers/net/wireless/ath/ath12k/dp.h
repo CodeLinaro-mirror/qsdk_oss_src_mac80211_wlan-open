@@ -514,6 +514,9 @@ struct ath12k_dp_arch_ops {
 			      struct ieee80211_vif *vif);
 	void (*dp_peer_delete)(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 			       struct ieee80211_sta *sta, u8 hw_link_id);
+	u16 (*dp_peer_get_peerid_index)(struct ath12k_dp *dp, u16 peer_id);
+	int (*dp_link_peer_create)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
+	void (*dp_link_peer_delete)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 };
 
 struct ath12k_bp_stats {
@@ -1041,10 +1044,33 @@ ath12k_dp_arch_peer_delete(struct ath12k_dp *dp,
 		dp->arch_ops->dp_peer_delete(dp, ah, addr, sta, hw_link_id);
 }
 
+static inline int ath12k_dp_arch_link_peer_create(struct ath12k_dp *dp,
+						  struct ath12k_base *ab,
+						  u32 vdev_id, u8 *addr)
+{
+	if (dp->arch_ops->dp_link_peer_create)
+		return dp->arch_ops->dp_link_peer_create(ab, vdev_id, addr);
+	return -EOPNOTSUPP;
+}
+
+static inline void ath12k_dp_arch_link_peer_delete(struct ath12k_dp *dp,
+						   struct ath12k_base *ab,
+						   u32 vdev_id, u8 *addr)
+{
+	if (dp->arch_ops->dp_link_peer_delete)
+		dp->arch_ops->dp_link_peer_delete(ab, vdev_id, addr);
+}
+
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 {
 	memcpy(addr, &addr_l32, 4);
 	memcpy(addr + 4, &addr_h16, ETH_ALEN - 4);
+}
+
+static inline
+u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
+{
+	return dp->arch_ops->dp_peer_get_peerid_index(dp, peer_id);
 }
 
 static inline struct ath12k_dp *

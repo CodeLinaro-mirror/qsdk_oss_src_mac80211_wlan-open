@@ -12,4 +12,5 @@ ath12k_wifi8-y += core.o \
 		  hal.o \
 		  hal_tx.o \
 		  hal_rx.o \
-		  hal_qcn9625.o
+		  hal_qcn9625.o\
+		  dp_peer.o

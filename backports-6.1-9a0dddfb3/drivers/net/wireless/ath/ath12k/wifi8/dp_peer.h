@@ -1,0 +1,21 @@
+/* SPDX-License-Identifier: BSD-3-Clause-Clear */
+/*
+ * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
+ */
+
+#ifndef ATH12K_PEER_WIFI8_H
+#define ATH12K_PEER_WIFI8_H
+
+#include "../dp_cmn.h"
+#include "hw.h"
+
+int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
+				struct ath12k_dp_peer_create_params *params,
+				struct ieee80211_vif *vif);
+void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
+				 struct ieee80211_sta *sta, u8 hw_link_id);
+u16 ath12k_wifi8_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id);
+int ath12k_wifi8_dp_link_peer_create(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
+void ath12k_wifi8_dp_link_peer_delete(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
+#endif

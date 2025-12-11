@@ -1770,6 +1770,14 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 	cmd->peer_type = cpu_to_le32(arg->peer_type);
 	cmd->vdev_id = cpu_to_le32(arg->vdev_id);
 
+	if (arg->peer_id != ATH12K_MLO_PEER_ID_INVALID)
+		cmd->peer_id = cpu_to_le32(arg->peer_id);
+
+	if (arg->sta_id != ATH12K_STA_ID_INVALID) {
+		cmd->flags = cpu_to_le32(ATH12K_WMI_FLAG_STA_ID_VALID);
+		cmd->sta_id = cpu_to_le32(arg->sta_id);
+	}
+
 	ptr = skb->data + sizeof(*cmd);
 	tlv = ptr;
 	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT,
@@ -1789,6 +1797,10 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
 		   "WMI peer create vdev_id %d peer_addr %pM ml_flags 0x%x num_peer:%d bridge peer %d\n",
 		   arg->vdev_id, arg->peer_addr, ml_param->flags, ar->num_peers, arg->mlo_bridge_peer);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
+		   "WMI peer create peer_addr:%pM flags:%d peer_id:%d sta_id:%d\n",
+		   arg->peer_addr, cmd->flags, arg->peer_id, arg->sta_id);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_CREATE_CMDID);
 	if (ret) {

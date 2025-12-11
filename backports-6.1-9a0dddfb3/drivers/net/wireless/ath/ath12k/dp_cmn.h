@@ -31,12 +31,18 @@ struct ath12k_dp_hw_link {
 };
 
 #define MAX_DP_PEER_LIST_SIZE  16384
+#define ATH12K_MAX_PEER_ID	2048
+#define ATH12K_MAX_STA_ID	1536
 #define DP_TCL_NUM_RING_MAX  4
 #define DP_REO_DST_RING_MAX  4
 #define DP_TCL_DESC_TYPE_MAX 2
 
 struct ath12k_dp_hw {
 	struct ath12k_dp_peer __rcu *dp_peer_list[MAX_DP_PEER_LIST_SIZE];
+	DECLARE_BITMAP(free_peer_id_map, ATH12K_MAX_PEER_ID);
+	DECLARE_BITMAP(free_sta_id_map, ATH12K_MAX_STA_ID);
+	u16 last_peer_id;
+	u16 last_sta_id;
 
 	/* Lock for protection of dp_peer_list and peers */
 	spinlock_t peer_lock;
@@ -78,6 +84,7 @@ struct ath12k_dp_peer_create_params {
 	bool is_vdev_peer;
 	u8 hw_link_id;
 	u16 peer_id;
+	u16 sta_id;
 };
 
 struct ath12k_dp_link_peer_rate_info {
@@ -117,8 +124,9 @@ void ath12k_link_peer_get_sta_rate_info_stats(struct ath12k_dp *dp, const u8 *ad
 					      struct ath12k_dp_link_peer_rate_info *rate_info);
 bool ath12k_dp_link_peer_reset_rx_stats(struct ath12k_dp *dp, const u8 *addr);
 bool ath12k_dp_link_peer_reset_tx_stats(struct ath12k_dp *dp, const u8 *addr);
-u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id);
 int ath12k_dp_mon_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
 struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw, u8 *addr);
+u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
+u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr);
 #endif

@@ -121,6 +121,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	dp_peer->sta = params->sta;
 	dp_peer->is_mlo = params->is_mlo;
 	dp_peer->peer_id = params->is_mlo ? params->peer_id : ATH12K_DP_PEER_ID_INVALID;
+	dp_peer->sta_id = ATH12K_DP_PEER_ID_INVALID;
 	dp_peer->is_vdev_peer = params->is_vdev_peer;
 	/* Update hw_link_id for self bss peer */
 	if (dp_peer->is_vdev_peer)
@@ -141,6 +142,9 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 		rcu_assign_pointer(dp_hw->dp_peer_list[dp_peer->peer_id], dp_peer);
 
 	spin_unlock_bh(&dp_hw->peer_lock);
+
+	params->peer_id = ATH12K_DP_PEER_ID_INVALID;
+	params->sta_id = ATH12K_DP_PEER_ID_INVALID;
 
 	return 0;
 }
@@ -184,4 +188,16 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	kfree(dp_peer->qos);
 	ath12k_dp_free_preserved_stats(dp_peer->link_peer_delete_stats);
 	kfree(dp_peer);
+}
+
+#define PEER_TABLE_SOC_ID_SHIFT		10
+u16 ath12k_wifi7_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
+{
+	return (peer_id & ATH12K_PEER_ML_ID_VALID) ? peer_id :
+		((dp->device_id << PEER_TABLE_SOC_ID_SHIFT) | peer_id);
+}
+
+int ath12k_wifi7_dp_link_peer_create(struct ath12k_base *ab, u32 vdev_id, u8 *addr)
+{
+	return 0;
 }

@@ -1736,10 +1736,11 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 		if(recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !dp_peer->is_mlo)
 			continue;
 
-		if (dp_peer->is_mlo) {
+		if (dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
 			ahsta = ath12k_sta_to_ahsta(dp_peer->sta);
 			peerid_index = dp_peer->peer_id;
 			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+			clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
 			clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
 			ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
 			ah->num_ml_peers--;
@@ -1757,6 +1758,8 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 
 		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
 			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
+		if (dp_peer->sta_id != ATH12K_STA_ID_INVALID)
+			clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
 
 		if (!dp_peer->peer_links_map) {
 			kfree(dp_peer->qos);
@@ -4685,7 +4688,15 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 		ml->primary_umac = true;
 	else
 		ml->primary_umac = false;
-	ml->peer_id_valid = true;
+
+	/* ml_peer_id will be 0xFFFF for wifi8.
+	 * In that case Global peer id will be sent in peer create
+	 */
+	if (ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID)
+		ml->peer_id_valid = false;
+	else
+		ml->peer_id_valid = true;
+
 	ml->logical_link_idx_valid = true;
 
 	ether_addr_copy(ml->mld_addr, sta->addr);
@@ -11581,6 +11592,8 @@ static int ath12k_mac_station_add(struct ath12k *ar,
 		peer_param.mlo_bridge_peer = false;
 	}
 	peer_param.ml_enabled = sta->mlo;
+	peer_param.peer_id = ath12k_dp_peer_get_peer_id(&ar->ah->dp_hw, sta->addr);
+	peer_param.sta_id = ath12k_dp_peer_get_sta_id(&ar->ah->dp_hw, sta->addr);
 
 	ret = ath12k_peer_create(ar, arvif, sta, &peer_param);
 	if (ret) {
@@ -16723,6 +16736,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		peer_param.vdev_id = arvif->vdev_id;
 		peer_param.peer_addr = arvif->bssid;
 		peer_param.peer_type = WMI_PEER_TYPE_DEFAULT;
+		peer_param.peer_id = params.peer_id;
+		peer_param.sta_id = params.sta_id;
 		ret = ath12k_peer_create(ar, arvif, NULL, &peer_param);
 		if (ret) {
 			ath12k_warn(ab, "failed to vdev %d create peer for AP: %d\n",
@@ -23926,6 +23941,8 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 	spin_lock_init(&ah->afc_lock);
 	spin_lock_init(&ah->dp_hw.peer_lock);
 	INIT_LIST_HEAD(&ah->dp_hw.peers);
+	ah->dp_hw.last_peer_id = 0;
+	ah->dp_hw.last_sta_id = 0;
 
 	for (i = 0; i < num_pdev_map; i++) {
 		ab = pdev_map[i].ab;
@@ -25126,6 +25143,7 @@ static int ath12k_process_scs_add(struct ath12k *ar, struct ath12k_sta *ahsta,
 	struct ath12k *temp_ar;
 	unsigned long links;
 	int ret = -EINVAL;
+	u16 peer_id_index;
 	u16 qos_id;
 	u8 link_id;
 	u8 qm_id;
@@ -25178,8 +25196,9 @@ static int ath12k_process_scs_add(struct ath12k *ar, struct ath12k_sta *ahsta,
 	}
 
 	rcu_read_lock();
+	peer_id_index = ath12k_dp_peer_get_peerid_index(ar->ab->dp, peer_id);
 	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,
-							peer_id);
+							peer_id_index);
 	if (!peer) {
 		ath12k_err(ar->ab, "SCS peer is NULL");
 		ret = -EINVAL;
@@ -25218,12 +25237,13 @@ static int ath12k_process_scs_del(struct ath12k *ar, struct ath12k_sta *ahsta,
 	struct ath12k *temp_ar;
 	unsigned long links;
 	int ret = -EINVAL;
-	u16 qos_id = 0;
+	u16 qos_id = 0, peer_id_index;
 	u8 link_id;
 
 	rcu_read_lock();
+	peer_id_index = ath12k_dp_peer_get_peerid_index(ar->ab->dp, peer_id);
 	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,
-							peer_id);
+							peer_id_index);
 	if (!peer) {
 		ath12k_err(ar->ab, "SCS peer is NULL");
 		rcu_read_unlock();
@@ -25403,7 +25423,7 @@ ath12k_mac_set_scs(struct ieee80211_hw *hw, struct ath12k_link_sta *arsta,
 		return -ENOENT;
 	}
 
-	peer_id = link_peer->peer_id;
+	peer_id = link_peer->dp_peer->peer_id;
 	memcpy(addr, link_peer->addr, ETH_ALEN);
 	spin_unlock_bh(&dp->dp_lock);
 
