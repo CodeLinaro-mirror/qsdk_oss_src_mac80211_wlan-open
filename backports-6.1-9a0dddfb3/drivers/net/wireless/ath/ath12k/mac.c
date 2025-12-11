@@ -37,6 +37,9 @@
 #include "erp.h"
 #include "vendor_services.h"
 #include "ini.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 
 #define CHAN2G(_channel, _freq, _flags) { \
 	.band                   = NL80211_BAND_2GHZ, \
@@ -1565,6 +1568,29 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 
 	spin_lock_bh(&dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &dp->peers, list) {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		if (ath12k_ipa_config_is_enabled()) {
+			if (peer->primary_link) {
+				rcu_read_lock();
+				arvif = ath12k_mac_get_arvif(ar, peer->vdev_id);
+				if (!arvif) {
+					ath12k_warn(ab,
+						    "failed to get arvif id %d, skip IPA evt\n",
+						    peer->vdev_id);
+				} else {
+					const u8 *peer_addr = peer->addr;
+
+					if (ath12k_mac_is_ml_arvif(arvif) &&
+					    peer->ml_addr)
+						peer_addr = peer->ml_addr;
+					ath12k_ipa_enqueue_evt(WLAN_CLIENT_DISCONNECT,
+							       arvif, peer_addr,
+							       peer->mlo);
+				}
+				rcu_read_unlock();
+			}
+		}
+#endif
 		/* Skip Rx TID cleanup for self peer */
 		if (peer->sta && peer->dp_peer)
 			ath12k_dp_rx_peer_tid_cleanup(ar, peer);
@@ -2072,6 +2098,20 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 				"CAC Stopped for vdev %d\n",
 				arvif->vdev_id);
 	}
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	bool is_mlo = ath12k_mac_is_ml_arvif(arvif);
+
+	if (ath12k_ipa_config_is_enabled()) {
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			ath12k_ipa_enqueue_evt(WLAN_STA_DISCONNECT,
+					       arvif, arvif->bssid,
+					       is_mlo);
+		else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+			ath12k_ipa_enqueue_evt(WLAN_AP_DISCONNECT,
+					       arvif, arvif->bssid,
+					       is_mlo);
+	}
+#endif
 
 	return 0;
 err:
@@ -17893,6 +17933,18 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
 		ar->dp.stats.telemetry_stats.sta_vap_exist = 1;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	bool is_mlo = ath12k_mac_is_ml_arvif(arvif);
+
+	if (!restart && ath12k_ipa_config_is_enabled()) {
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA)
+			ath12k_ipa_enqueue_evt(WLAN_STA_CONNECT, arvif,
+					       arvif->bssid, is_mlo);
+		else if (ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+			ath12k_ipa_enqueue_evt(WLAN_AP_CONNECT, arvif,
+					       arvif->bssid, is_mlo);
+	}
+#endif
 	return 0;
 }
 

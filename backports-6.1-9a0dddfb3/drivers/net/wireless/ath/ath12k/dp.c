@@ -100,6 +100,9 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_link_vif *arvif = NULL;
+#endif
 	/* TODO: Any other peer specific DP cleanup */
 
 	spin_lock_bh(&dp->dp_lock);
@@ -116,6 +119,28 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 		return;
 	}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (ath12k_ipa_config_is_enabled()) {
+		if (peer->primary_link) {
+			rcu_read_lock();
+			arvif = ath12k_mac_get_arvif(ar, vdev_id);
+			if (!arvif) {
+				ath12k_warn(ab,
+					    "failed to get arvif id %d, skip IPA event\n",
+					    vdev_id);
+			} else {
+				const u8 *peer_addr = peer->addr;
+
+				if (ath12k_mac_is_ml_arvif(arvif) && peer->ml_addr)
+					peer_addr = peer->ml_addr;
+				ath12k_ipa_enqueue_evt(WLAN_CLIENT_DISCONNECT,
+						       arvif, peer_addr,
+						       peer->mlo);
+			}
+			rcu_read_unlock();
+		}
+	}
+#endif
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 	crypto_free_shash(peer->dp_peer->tfm_mmic);
 	if (peer->primary_link)
@@ -212,6 +237,19 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 		goto tid_clean;
 	}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (ath12k_ipa_config_is_enabled()) {
+		if (peer->primary_link) {
+			const u8 *peer_addr = peer->addr;
+
+			if (ath12k_mac_is_ml_arvif(arvif) && peer->ml_addr)
+				peer_addr = peer->ml_addr;
+			ath12k_ipa_enqueue_evt(WLAN_CLIENT_CONNECT_EX,
+					       arvif, peer_addr,
+					       peer->mlo);
+		}
+	}
+#endif
 	spin_unlock_bh(&dp->dp_lock);
 
 	/* TODO: Setup other peer specific resource used in data path */
@@ -1984,6 +2022,12 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 		dp_hw_grp->fst = NULL;
 	}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (dp_hw_grp->ipa_global_ctx) {
+		ath12k_ipa_global_ctx_free(dp_hw_grp->ipa_global_ctx);
+		dp_hw_grp->ipa_global_ctx = NULL;
+	}
+#endif
 	dp_hw_grp->dp[dp->device_id] = NULL;
 
 	dp->dp_hw_grp = NULL;
@@ -2027,6 +2071,12 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 			BUG_ON(1);
 		}
 	}
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (!dp_hw_grp->ipa_global_ctx) {
+		if (ath12k_ipa_global_ctx_alloc(dp_hw_grp) != 0)
+			ath12k_err(ab, "Failed to allocate IPA global context\n");
+	}
+#endif
 }
 
 static void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring)
