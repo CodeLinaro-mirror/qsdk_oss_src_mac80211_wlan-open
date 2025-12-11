@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2024-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include "core.h"
@@ -188,6 +188,31 @@ static int ath12k_wait_for_peer_created(struct ath12k *ar, int vdev_id, const u8
 	return ath12k_wait_for_peer_common(ar->ab, vdev_id, addr, true);
 }
 
+static int ath12k_wait_for_peer_create_done(struct ath12k *ar, u32 vdev_id,
+					    const u8 *addr)
+{
+	int ret;
+	unsigned long time_left;
+
+	ret = ath12k_wait_for_peer_created(ar, vdev_id, addr);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed wait for peer create peer_addr : %pM\n",
+			    addr);
+		WARN_ON(1);
+		return ret;
+	}
+
+	time_left = wait_for_completion_timeout(&ar->peer_create_done,
+						3 * HZ);
+	if (time_left == 0) {
+		ath12k_warn(ar->ab, "Timeout in receiving peer create conf peer_addr : %pM\n",
+			    addr);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
+
 int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		       struct ieee80211_sta *sta,
 		       struct ath12k_wmi_peer_create_arg *arg)
@@ -222,6 +247,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	}
 	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
+	reinit_completion(&ar->peer_create_done);
+
 	ret = ath12k_wmi_send_peer_create_cmd(ar, arg);
 	if (ret) {
 		ath12k_warn(ar->ab,
@@ -230,8 +257,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		return ret;
 	}
 
-	ret = ath12k_wait_for_peer_created(ar, arg->vdev_id,
-					   arg->peer_addr);
+	ret = ath12k_wait_for_peer_create_done(ar, arg->vdev_id,
+					       arg->peer_addr);
 	if (ret)
 		return ret;
 
@@ -310,55 +337,6 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr, false, 0);
 
 	return ret;
-}
-
-u16 ath12k_peer_ml_alloc(struct ath12k_hw *ah)
-{
-	u16 ml_peer_id;
-	int i;
-
-	lockdep_assert_wiphy(ah->hw->wiphy);
-
-	if (ah->num_ml_peers >= ah->max_ml_peers_supported) {
-		ath12k_err(NULL, "Failed to create ML peer limit %d[%d]\n",
-			   ah->max_ml_peers_supported, ah->num_ml_peers);
-		return ATH12K_MLO_PEER_ID_INVALID;
-	}
-
-	ml_peer_id = ah->last_ml_peer_id;
-	for (i = 0; i <= ah->max_ml_peer_ids; i++) {
-		ml_peer_id = (ml_peer_id + 1) % ah->max_ml_peer_ids;
-
-		if (!ml_peer_id)
-			continue;
-
-		if (test_bit(ml_peer_id, ah->free_ml_peer_id_map))
-			continue;
-
-		set_bit(ml_peer_id, ah->free_ml_peer_id_map);
-		break;
-	}
-
-	ah->last_ml_peer_id = ml_peer_id;
-	if (i == ah->max_ml_peer_ids)
-		ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
-
-	ath12k_dbg(NULL, ATH12K_DBG_PEER, "Allocated ml_peer_id:%d", ml_peer_id);
-
-	return ml_peer_id;
-}
-
-void ath12k_peer_ml_free(struct ath12k_hw *ah, struct ath12k_sta *ahsta)
-{
-	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(ahsta);
-
-	lockdep_assert_wiphy(ah->hw->wiphy);
-
-	if (sta->mlo && test_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map)) {
-		clear_bit(ahsta->ml_peer_id, ah->free_ml_peer_id_map);
-		ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
-		ah->num_ml_peers--;
-	}
 }
 
 int ath12k_peer_mlo_link_peer_delete(struct ath12k_link_vif *arvif,

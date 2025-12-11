@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #include "wmi.h"
 #include <linux/skbuff.h>
@@ -14043,6 +14043,7 @@ static void ath12k_wmi_peer_create_conf_event(struct ath12k_base *ab,
 					      struct sk_buff *skb)
 {
 	struct ath12k_wmi_peer_create_conf_arg arg = {};
+	struct ath12k *ar;
 
 	if (ath12k_pull_peer_create_conf_ev(ab, skb, &arg)) {
 		ath12k_warn(ab, "failed to extract peer create conf event");
@@ -14054,6 +14055,18 @@ static void ath12k_wmi_peer_create_conf_event(struct ath12k_base *ab,
 			    arg.mac_addr, arg.status);
 		return;
 	}
+
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, le32_to_cpu(arg.vdev_id));
+	if (!ar) {
+		ath12k_warn(ab, "invalid vdev id in peer delete resp ev %d",
+			    arg.vdev_id);
+		rcu_read_unlock();
+		return;
+	}
+
+	complete(&ar->peer_create_done);
+	rcu_read_unlock();
 
 	ath12k_dbg(ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,
 		   "Peer create conf event for %pM status %d",

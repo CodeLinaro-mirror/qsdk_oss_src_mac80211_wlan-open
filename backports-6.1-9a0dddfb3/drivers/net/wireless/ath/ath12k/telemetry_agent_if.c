@@ -881,6 +881,7 @@ void ath12k_telemetry_peer_ctx_free(void *telemetry_peer_ctx)
 	if (g_agent_ops)
 		g_agent_ops->sawf_free_peer(telemetry_peer_ctx);
 }
+EXPORT_SYMBOL(ath12k_telemetry_peer_ctx_free);
 
 int ath12k_telemetry_update_tid_msduq(void *telemetry_peer_ctx,
 				      u8 hostq_id, u8 tid, u8 msduq_idx)

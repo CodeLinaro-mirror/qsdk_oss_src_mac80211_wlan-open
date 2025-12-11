@@ -1007,6 +1007,7 @@ struct ath12k_sta {
 	u32 links_map;
 	u8 assoc_link_id;
 	u16 ml_peer_id;
+	bool is_mlo;
 	u8 num_peer;
 	u8 primary_link_id;
 	/* indicates bitmap of devices where peers are created */
@@ -1379,6 +1380,7 @@ struct ath12k {
 	u8 hw_link_id;
 	u8 radio_idx;
 
+	struct completion peer_create_done;
 	struct completion peer_assoc_done;
 	struct completion peer_delete_done;
 

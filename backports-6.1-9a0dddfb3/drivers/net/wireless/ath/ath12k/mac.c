@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <net/mac80211.h>
@@ -1698,7 +1698,8 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 	 */
 	list_for_each_entry_safe_reverse(arvif, tmp_vif, &ar->arvifs, list) {
 		if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP) {
-			ath12k_dp_peer_delete(dp_hw, arvif->bssid, NULL, ar->hw_link_id);
+			ath12k_dp_arch_peer_delete(dp, ar->ah, arvif->bssid,
+						   NULL, ar->hw_link_id);
 			arvif->num_stations = 0;
 			arvif->num_peers = 0;
 		}
@@ -4674,7 +4675,7 @@ static void ath12k_peer_assoc_h_mlo(struct ath12k_link_sta *arsta,
 	u8 link_id;
 	int i;
 
-	if (!sta->mlo || ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID)
+	if (!sta->mlo || !ahsta->is_mlo)
 		return;
 
 	ml->enabled = true;
@@ -4751,7 +4752,7 @@ static void ath12k_peer_assoc_h_ttlm(struct ath12k_link_sta *arsta,
 	u8 is_default_mapping[IEEE80211_MAX_TTLM_DIRECTION] = {0};
 	unsigned long dmap = 0, umap = 0;
 
-	if (!sta->mlo || ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID)
+	if (!sta->mlo || !ahsta->is_mlo)
 		return;
 
 	memset(ttlm_params, 0, sizeof(struct ath12k_wmi_ttlm_peer_params));
@@ -5642,7 +5643,8 @@ static void ath12k_mac_remove_link_interface(struct ieee80211_hw *hw,
 				    "num_peers: %d",
 				    arvif->vdev_id, arvif->link_id, ret, ar->num_peers);
 
-		ath12k_dp_peer_delete(&ah->dp_hw, arvif->bssid, NULL, ar->hw_link_id);
+		ath12k_dp_arch_peer_delete(ar->ab->dp, ah, arvif->bssid,
+					   NULL, ar->hw_link_id);
 	}
 
 	ath12k_debugfs_remove_interface(arvif);
@@ -12065,8 +12067,6 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 		ath12k_peer_mlo_link_sta_teardown(ah, ahvif, ahsta, link_id,
 						  peer_del_all, link_going_down);
 	}
-
-	ath12k_peer_ml_free(ah, ahsta);
 }
 
 static void ath12k_sta_migration_wk(struct work_struct *wk)
@@ -12321,25 +12321,23 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 					goto exit;
 				}
 			}
-			ahsta->ml_peer_id = ath12k_peer_ml_alloc(ah);
-			if (ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID) {
-				ath12k_hw_warn(ah, "unable to allocate ML peer id for sta %pM",
-					       sta->addr);
-				goto exit;
-			}
-
+			ahsta->ml_peer_id = ATH12K_MLO_PEER_ID_INVALID;
+			ahsta->is_mlo = true;
 			dp_params.is_mlo = true;
-			dp_params.peer_id = ahsta->ml_peer_id | ATH12K_PEER_ML_ID_VALID;
-			ah->num_ml_peers++;
 		}
 
 		dp_params.sta = sta;
-		ret = ath12k_dp_peer_create(&ah->dp_hw, sta->addr, &dp_params, vif);
+		arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
+		if (!arvif)
+			goto exit;
+		ret = ath12k_dp_arch_peer_create(arvif->ar->ab->dp,
+						 ah, sta->addr,
+						 &dp_params, vif);
 		if (ret) {
 			ath12k_hw_warn(ah, "unable to create ath12k_dp_peer for sta %pM",
 				       sta->addr);
 
-			goto ml_peer_id_free;
+			goto exit;
 		}
 		links_map = ahsta->links_map;
 		if (!test_bit(link_id, &links_map)) {
@@ -12469,7 +12467,16 @@ ml_station_remove:
 			if (!WARN_ON(!arvif || !arsta))
 				ath12k_mac_station_remove(arvif->ar, arvif, arsta);
 		}
-		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta, ar->hw_link_id);
+		links_map = ahsta->links_map;
+		for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+			arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+			if (arvif)
+				break;
+		}
+		if (arvif)
+			ath12k_dp_arch_peer_delete(arvif->ar->ab->dp, ah, sta->addr,
+						   sta, arvif->ar->hw_link_id);
+
 		wiphy_work_cancel(hw->wiphy, &ahsta->set_4addr_wk);
 	}
 
@@ -12482,10 +12489,8 @@ ml_station_remove:
 
 peer_delete:
 	if (ret)
-		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta, ar->hw_link_id);
-ml_peer_id_free:
-	if (ret)
-		ath12k_peer_ml_free(ah, ahsta);
+		ath12k_dp_arch_peer_delete(arvif->ar->ab->dp, ah, sta->addr, sta,
+					   arvif->ar->hw_link_id);
 exit:
 
 	if (ret && is_recovery)
@@ -13018,7 +13023,7 @@ int ath12k_mac_op_change_sta_links(struct ieee80211_hw *hw,
 	}
 
 	if (new_links > old_links) {
-		if (ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID) {
+		if (!ahsta->is_mlo) {
 			ath12k_hw_warn(ah, "unable to add link for ml sta %pM", sta->addr);
 			return -EINVAL;
 		}
@@ -16697,7 +16702,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		params.is_vdev_peer = true;
 		params.hw_link_id = ar->hw_link_id;
 
-		ret = ath12k_dp_peer_create(&ah->dp_hw, arvif->bssid, &params, vif);
+		ret = ath12k_dp_arch_peer_create(ab->dp, ah, arvif->bssid, &params, vif);
 		if (ret) {
 			ath12k_warn(ab, "failed to vdev %d create dp_peer for AP: %d\n",
 				    arvif->vdev_id, ret);
@@ -16870,7 +16875,8 @@ err_peer_del:
 
 err_dp_peer_del:
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP)
-		ath12k_dp_peer_delete(&ah->dp_hw, arvif->bssid, NULL, ar->hw_link_id);
+		ath12k_dp_arch_peer_delete(ab->dp, ah, arvif->bssid,
+					   NULL, ar->hw_link_id);
 
 err_vdev_del:
 	ath12k_wmi_vdev_delete(ar, arvif->vdev_id);
@@ -23572,6 +23578,7 @@ static void ath12k_mac_setup(struct ath12k *ar)
 
 	init_completion(&ar->vdev_setup_done);
 	init_completion(&ar->vdev_delete_done);
+	init_completion(&ar->peer_create_done);
 	init_completion(&ar->peer_assoc_done);
 	init_completion(&ar->peer_delete_done);
 	init_completion(&ar->install_key_done);
