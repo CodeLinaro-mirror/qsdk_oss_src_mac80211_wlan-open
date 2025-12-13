@@ -2097,7 +2097,6 @@ struct ath12k_base {
 #ifdef CPTCFG_ATHDEBUG
 	struct athdbg_qmi dbg_qmi;
 #endif
-	bool pci_remap_bar_addr_width_7bit;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));

@@ -17,21 +17,8 @@
 #define ATH12K_PCI_IRQ_CE0_OFFSET		3
 
 #define WINDOW_ENABLE_BIT		0x40000000
-#define WINDOW_VALUE_MASK_6BIT		GENMASK(24, 19)
-#define WINDOW_VALUE_MASK_7BIT		GENMASK(25, 19)
-/* Static window bits preserved in the register for 6-bit or 7-bit mode */
-#define WINDOW_STATIC_MASK_6BIT		GENMASK(31, 6)
-#define WINDOW_STATIC_MASK_7BIT		GENMASK(31, 7)
-/* Dynamic window bits within the window register when using 6-bit or 7-bit mode */
-#define WINDOW_DYNAMIC_MASK_6BIT	GENMASK(5, 0)
-#define WINDOW_DYNAMIC_MASK_7BIT	GENMASK(6, 0)
 #define WINDOW_START			0x80000
 #define WINDOW_RANGE_MASK		GENMASK(18, 0)
-
-#define CE_WINDOW_SHIFT_6BIT		6
-#define UMAC_WINDOW_SHIFT_6BIT		12
-#define CE_WINDOW_SHIFT_7BIT		7
-#define UMAC_WINDOW_SHIFT_7BIT		14
 
 #define ATH12K_MAX_PCI_DOMAINS          0x5
 #define DP_IRQ_NAME_LEN 20
@@ -70,6 +57,16 @@ static const struct ath12k_msi_config ath12k_wifi7_msi_config[] = {
 		},
 	},
 };
+
+static inline u32 ath12k_get_mask_bits(u32 val, u32 mask)
+{
+	int lsb = ffs(mask);
+
+	if (!lsb)
+		return 0;
+
+	return (val & mask) >> (lsb - 1);
+}
 
 int ath12k_pcic_start(struct ath12k_base *ab);
 void ath12k_pcic_stop(struct ath12k_base *ab);
