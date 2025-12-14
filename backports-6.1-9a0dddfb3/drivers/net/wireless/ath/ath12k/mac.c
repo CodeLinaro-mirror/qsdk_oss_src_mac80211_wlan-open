@@ -664,10 +664,18 @@ EXPORT_SYMBOL(ath12k_mac_op_set_mtu);
 
 void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     struct sk_buff *skb,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     struct ieee80211_sta *sta,
 				     struct ath12k_dp_vif *dp_vif, u8 ring_id,
 				     enum ath12k_dp_tx_enq_error drop_reason,
 				     bool dev_free)
 {
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_pkt_info *tx_dropped;
+	struct ath12k_sta *ahsta;
+	struct ath12k_link_sta *arsta;
+	u8 *addr = NULL;
+
 	if (unlikely(ring_id >= DP_TCL_NUM_RING_MAX))
 		ring_id = 0;
 
@@ -675,6 +683,24 @@ void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 		DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_MISC], 1, ring_id);
 	else
 		DP_STATS_INC(dp_vif, tx_i.drop[drop_reason], 1, ring_id);
+
+	if (sta) {
+		ahsta = ath12k_sta_to_ahsta(sta);
+		arsta = &ahsta->deflink;
+		if (arsta)
+			addr = arsta->addr;
+	}
+
+	if (dp_pdev && addr) {
+		spin_lock_bh(&dp_pdev->dp->dp_lock);
+		peer = ath12k_dp_link_peer_find_by_addr(dp_pdev->dp, addr);
+		if (peer) {
+			tx_dropped = &peer->peer_stats.tx_dropped;
+			DP_STATS_INCR(tx_dropped, packets, 1);
+			DP_STATS_INCR(tx_dropped, bytes, skb->len);
+		}
+		spin_unlock_bh(&dp_pdev->dp->dp_lock);
+	}
 
 	if (dev_free)
 		dev_kfree_skb_any(skb);
