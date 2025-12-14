@@ -26499,6 +26499,66 @@ int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_qos_mgmt_cfg);
 
+void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct rtnl_link_stats64 *stats)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k *ar;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_dp *dp;
+	struct ath12k_dp_peer *peer;
+	struct ath12k_dp_link_peer *link_peer;
+	struct ath12k_dp_peer_stats *peer_stats;
+	unsigned long links_map = ahvif->links_map;
+	int link_id, i, stats_link_id;
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++) {
+		stats->tx_packets += dp_vif->stats[i].tx_i.recv_from_stack.packets;
+		stats->tx_bytes += dp_vif->stats[i].tx_i.recv_from_stack.bytes;
+	}
+
+	rcu_read_lock();
+	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
+		arvif = rcu_dereference(ahvif->link[link_id]);
+		if (!arvif || !arvif->is_created)
+			continue;
+		ar = arvif->ar;
+		if (!ar->ab || !ar->ab->dp)
+			continue;
+
+		dp = ath12k_ab_to_dp(ar->ab);
+
+		spin_lock_bh(&dp->dp_lock);
+		list_for_each_entry(link_peer, &dp->peers, list)  {
+			if (link_peer->vdev_id != arvif->vdev_id)
+				continue;
+
+			peer = link_peer->dp_peer;
+			if (!peer)
+				continue;
+
+			stats_link_id = peer->hw_links[ar->hw_link_id];
+			if (stats_link_id >= ATH12K_DP_MAX_MLO_LINKS)
+				continue;
+			peer_stats = &peer->stats[stats_link_id];
+
+			for (i = 0; i < DP_REO_DST_RING_MAX; i++) {
+				stats->rx_packets +=
+					(peer_stats->rx[i].sent_to_stack.packets +
+					 peer_stats->rx[i].sent_to_stack_fast.packets);
+				stats->rx_bytes +=
+					(peer_stats->rx[i].sent_to_stack.bytes +
+					 peer_stats->rx[i].sent_to_stack_fast.bytes);
+			}
+		}
+		spin_unlock_bh(&dp->dp_lock);
+	}
+	rcu_read_unlock();
+}
+EXPORT_SYMBOL(ath12k_mac_op_get_netstats);
+
 /**
  * ath12k_get_nl_ap_pwr_mode - Map WMI AP/client power mode to NL80211 regulatory mode
  * @ap_mode: AP power mode (WMI_REG_INDOOR_AP, WMI_REG_STD_POWER_AP, etc.)

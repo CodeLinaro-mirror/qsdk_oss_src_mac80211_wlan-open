@@ -669,6 +669,9 @@ int ath12k_mac_op_qos_mgmt_cfg(struct ieee80211_hw *hw,
 			       struct cfg80211_qm_req_data *qm_req,
 			       struct cfg80211_qm_resp_data *qm_resp);
 
+void ath12k_mac_op_get_netstats(struct ieee80211_hw *hw,
+				struct ieee80211_vif *vif,
+				struct rtnl_link_stats64 *stats);
 /**
  * struct channel_power - Regulatory power information for a 6 GHz channel
  * @center_freq: Center frequency (in MHz) of the channel
