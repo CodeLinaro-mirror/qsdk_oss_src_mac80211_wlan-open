@@ -60,6 +60,12 @@ struct atf_peer_stat {
 	u32 atf_actual_ul_duration;
 };
 
+/**
+ * @QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE: This vendor subcommand is used to
+ *     configure the CTL (Conformance Test Limit) table for a specific band.
+ *     The attributes used with this subcommand
+ *     are defined in enum qca_wlan_vendor_attr_ctl_table.
+ */
 enum qca_nl80211_vendor_subcmds {
 	/* Wi-Fi configuration subcommand */
 	QCA_NL80211_VENDOR_SUBCMD_SET_WIFI_CONFIGURATION = 74,
@@ -91,6 +97,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_FW_RECOVERY_EVENT = 511,
 	QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR = 512,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX = 513,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_CTL_TABLE = 514,
 };
 
 enum qca_nl80211_vendor_events {
@@ -3163,6 +3170,30 @@ enum qca_wlan_vendor_attr_config_esp_param {
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST,
 	QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_MAX =
 		QCA_WLAN_VENDOR_ATTR_CONFIG_ESP_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_ctl_table - Attributes for CTL table vendor command
+ * @QCA_WLAN_VENDOR_ATTR_CTL_TABLE_INVALID: Invalid attribute
+ * @QCA_WLAN_VENDOR_ATTR_CTL_TABLE_BAND: Band for CTL table (u32)
+ *      0 = 5GHz, 1 = 2.4GHz, 2 = 6GHz
+ * @QCA_WLAN_VENDOR_ATTR_CTL_RADIO_INDEX: Radio index
+ * @QCA_WLAN_VENDOR_ATTR_CTL_TABLE_LENGTH: Length of CTL table data (u32)
+ * @QCA_WLAN_VENDOR_ATTR_CTL_TABLE_DATA: CTL table data buffer (binary)
+ * @QCA_WLAN_VENDOR_ATTR_CTL_TABLE_AFTER_LAST: Last attribute
+ * @QCA_WLAN_VENDOR_ATTR_CTL_TABLE_MAX: Maximum attribute value
+ */
+enum qca_wlan_vendor_attr_ctl_table {
+	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_BAND = 1,
+	QCA_WLAN_VENDOR_ATTR_CTL_RADIO_INDEX = 2,
+	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_LENGTH = 3,
+	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_DATA = 4,
+
+	/* Keep last */
+	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_MAX =
+	QCA_WLAN_VENDOR_ATTR_CTL_TABLE_AFTER_LAST - 1,
 };
 
 #define ATH12K_VENDOR_PUT(vendor_event, type, attr, param)             \

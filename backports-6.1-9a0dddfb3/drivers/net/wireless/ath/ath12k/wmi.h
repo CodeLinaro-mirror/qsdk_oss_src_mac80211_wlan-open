@@ -9093,6 +9093,32 @@ struct wmi_vdev_ratemask_cmd {
 	__le32 mask_higher32_2;
 } __packed;
 
+
+/**
+ * struct wmi_pdev_set_ctl_table_cmd_fixed_param - WMI command to configure
+ * the CTL (Conformance Test Limit) table for a PDEV.
+ * @tlv_header:TLV header for this fixed-param structure. Encodes the WMI
+ * tag (WMI_TAG_PDEV_SET_CTL_TABLE_CMD) and the length of this
+ * structure.
+ *
+ * @mac_id:Legacy field used by older firmware for MAC identifier.
+ * @pdev_id:PDEV identifier.
+ * @ctl_len:Length in bytes of the CTL table payload.
+ *
+ * This structure is the fixed‑param section for the WMI_PDEV_SET_CTL_TABLE_CMDID
+ * command. It precedes an ARRAY_UINT32 TLV containing the actual CTL table,
+ * where the first u32 element encodes the band and the remaining elements
+ * contain the CTL blob.
+ */
+struct wmi_pdev_set_ctl_table_cmd_fixed_param {
+	__le32 tlv_header;
+	union {
+		__le32 mac_id;
+		__le32 pdev_id;
+	};
+	__le32 ctl_len;
+} __packed;
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
