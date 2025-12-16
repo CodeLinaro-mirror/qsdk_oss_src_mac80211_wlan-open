@@ -19263,7 +19263,9 @@ ath12k_mac_stop_bridge_vdevs(struct ieee80211_hw *hw,
 			}
 			arvif->is_up = false;
 		}
-		ath12k_mac_unassign_vif_chanctx_handle(hw, vif, NULL, NULL, link_id);
+		if (arvif->is_started)
+			ath12k_mac_unassign_vif_chanctx_handle(hw, vif, NULL, NULL,
+							       link_id);
 	}
 }
 
