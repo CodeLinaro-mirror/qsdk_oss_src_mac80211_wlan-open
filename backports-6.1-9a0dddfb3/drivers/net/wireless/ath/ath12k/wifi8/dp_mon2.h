@@ -27,4 +27,8 @@ struct ath12k_dp_mon_ppdu_desc {
 	u16 status_desc_cnt;
 };
 
+int ath12k_wifi8_dp_mon_rx_dual_ring_setup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_wifi8_dp_mon_rx_dual_ring_cleanup_ppdu_desc(struct ath12k_pdev_dp *dp_pdev);
+int ath12k_wifi8_dp_mon_rx_wq_init(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_wifi8_dp_mon_rx_wq_deinit(struct ath12k_pdev_dp *dp_pdev);
 #endif
