@@ -667,6 +667,9 @@ void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
 				  const struct ath12k_rx_peer_stats *src);
 void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
 				 struct ath12k_wbm_rx_stats *src);
+void ath12k_dp_aggr_deleted_stats(struct ath12k_dp_peer_stats *dst,
+				  struct ath12k_dp_preserved_stats *src,
+				  const char *stats_type);
 
 /* Stats clear functions */
 void ath12k_dp_clear_per_pkt_tx_stats(struct ath12k_dp_peer_stats *tx_peer_stats);

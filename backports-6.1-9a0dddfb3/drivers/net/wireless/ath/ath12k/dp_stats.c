@@ -258,3 +258,54 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
 		memset(&rx_peer_stats->rx[i], 0, sizeof(struct ath12k_dp_peer_rx_stats));
 }
+
+/**
+ * ath12k_dp_aggr_deleted_stats() - Aggregate stats from a deleted entity
+ * @dst: The destination stats structure to merge into.
+ * @src: The source structure containing stats from the deleted entity.
+ * @stats_type: A string for logging that identifies the aggregation context.
+ *
+ * This function preserves historical statistics by merging data from a
+ * deleted or disassociated network entity into a parent or aggregate
+ * structure. This is essential for accurate, long-term telemetry and
+ * debugging.
+ *
+ * If @src is NULL, the function returns without performing any aggregation.
+ *
+ * The function iterates over all TCL and REO rings, invoking per-ring
+ * helpers to merge the counters.
+ *
+ * It is used in several hierarchical scenarios:
+ * 1. MLD Peer Aggregation:
+ *    When a link peer in MLD is deleted, this function is used to store the stats of
+ *    deleted link peer to 'link_peer_delete_stats' of respective MLD peer.
+ *
+ * 2. Link VIF Aggregation:
+ *    When a link peer is deleted, this function is used to preserve the
+ *    stats of link peer into 'link_peer_delete_stats' of link VIF.
+ *
+ * 3. MLD VIF Aggregation:
+ *    When a link VIF is deleted, this function is used to preserve the deleted
+ *    link VIF into 'link_vif_delete_stats' of MLD VIF.
+ */
+
+void ath12k_dp_aggr_deleted_stats(struct ath12k_dp_peer_stats *dst,
+				  struct ath12k_dp_preserved_stats *src,
+				  const char *stats_type)
+{
+	u8 i;
+
+	if (!src || !dst) {
+		ath12k_err(NULL, "%s not found\n", stats_type);
+		return;
+	}
+
+	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
+		ath12k_dp_aggr_per_pkt_tx_stats(&dst->tx[i], &src->per_pkt_tx[i]);
+
+	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
+		ath12k_dp_aggr_per_pkt_rx_stats(&dst->rx[i], &src->per_pkt_rx[i]);
+
+	ath12k_dp_aggr_wbm_rx_stats(&dst->wbm_err, &src->wbm_err);
+}
+

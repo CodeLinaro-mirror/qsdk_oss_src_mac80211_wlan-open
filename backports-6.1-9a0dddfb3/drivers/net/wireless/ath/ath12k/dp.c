@@ -2638,6 +2638,30 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	}
 }
 
+/**
+ * ath12k_dp_aggr_link_vif_del_stats - aggregate deleted link peer stats into VIF
+ * @arvif: link VIF to aggregate stats for
+ * @aggr_vif_stats: destination VIF stats structure
+ *
+ * Aggregates preserved statistics from deleted link peers into the current
+ * VIF stats aggregation. When link peers disconnect, their stats are preserved
+ * in the link VIF's link_peer_delete_stats. This function retrieves and merges
+ * those preserved stats into the VIF's aggregated statistics.
+ */
+static void
+ath12k_dp_aggr_link_vif_del_stats(struct ath12k_link_vif *arvif,
+				  struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
+{
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	u8 link_id = arvif->link_id;
+	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
+
+	/* Aggregate preserved stats from deleted link peers of this VIF */
+	ath12k_dp_aggr_deleted_stats(&aggr_vif_stats->peer_stats,
+				     dp_link_vif->link_peer_delete_stats,
+				     "link_peer_delete_stats");
+}
+
 static void ath12k_vif_iterate_peer(struct ath12k_link_vif *arvif,
 				    struct ath12k_dp_aggr_vif_stats *aggr_vif_stats)
 {
@@ -2732,6 +2756,8 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 		}
 		list_for_each_entry(arvif, &ar->arvifs, list) {
 			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+			/* Include deleted link peer stats stored at link VIF */
+			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 			ath12k_dp_aggr_per_pkt_peer_stats(pdev, &aggr_pdev_stats->peer_stats,
 							  &aggr_vif_stats->peer_stats, 1);
 			ath12k_dp_update_tx_ext_htt_aggr_stats(link_peer_stats->tx_stats,
@@ -2762,8 +2788,11 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	if (links_map & BIT(link_id)) {
 		rcu_read_lock();
 		arvif = rcu_dereference(ahvif->link[link_id]);
-		if (arvif)
+		if (arvif) {
 			ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+			/* Include deleted link peer stats for specific link VIF */
+			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
+		}
 		rcu_read_unlock();
 	} else {
 		/*MLD vif stats*/
@@ -2772,8 +2801,11 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 		/*legacy vif stats handling*/
 		if (hweight16(links_map) == 0) {
 			arvif =  &ahvif->deflink;
-			if (arvif)
+			if (arvif) {
 				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+				/* Include deleted link peer stats for legacy VIF */
+				ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
+			}
 		} else {
 			/*Aggregate vif stats of all link in MLD vif*/
 			for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
@@ -2784,8 +2816,16 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 					continue;
 				}
 				ath12k_vif_iterate_peer(arvif, aggr_vif_stats);
+				/* Include deleted link peer stats of each link VIF
+				 * in MLD VIF
+				 */
+				ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 				rcu_read_unlock();
 			}
+			/* Aggregate stats from deleted link VIFs into MLD VIF */
+			ath12k_dp_aggr_deleted_stats(&aggr_vif_stats->peer_stats,
+						     dp_vif->link_vif_delete_stats,
+						     "link_vif_delete_stats");
 		}
 	}
 }
@@ -2968,8 +3008,13 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 									  peer_stats,
 									  &peer->stats[i],
 									  peer->is_vdev_peer);
+				/* Include preserved stats of deleted link peers
+				 * when reporting MLD peer stats
+				 */
+				ath12k_dp_aggr_deleted_stats(peer_stats,
+							     peer->link_peer_delete_stats,
+							     "link_peer_delete_stats");
 				ath12k_dp_aggr_htt_stats(ar, peer, link_stats);
-
 			}
 			spin_unlock_bh(&dp_hw->peer_lock);
 			return ret;
