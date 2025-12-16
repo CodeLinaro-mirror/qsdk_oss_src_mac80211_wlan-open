@@ -90,6 +90,7 @@ enum qca_nl80211_vendor_subcmds {
 	QCA_NL80211_VENDOR_SUBCMD_AFC_FETCH_POWER_EVENT = 510,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_FW_RECOVERY_EVENT = 511,
 	QCA_NL80211_VENDOR_SUBCMD_DERIVE_LINK_BSS_ADDR = 512,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX = 513,
 };
 
 enum qca_nl80211_vendor_events {
@@ -105,6 +106,7 @@ enum qca_nl80211_vendor_events {
 	QCA_NL80211_VENDOR_SUBCMD_SCS_RULE_CONFIG_INDEX = 9,
 	QCA_NL80211_VENDOR_SUBCMD_ESP_ESTIMATE_INDEX = 10,
 	QCA_NL80211_VENDOR_SUBCMD_WLAN_FW_RECOVERY_INDEX = 11,
+	QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX_INDEX = 12,
 };
 
 /**
@@ -2797,6 +2799,328 @@ enum qca_wlan_vendor_attr_scs_rule_config {
 		QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_AFTER_LAST,
 		QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_MAX =
 		QCA_WLAN_VENDOR_ATTR_SCS_RULE_CONFIG_AFTER_LAST -1,
+};
+
+/**
+ * enum qca_vendor_wlan_home_offchan_tx_rx_func_type - function types
+ *
+ * This enum defines the function/command types used with attribute
+ * %QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FUNC.
+ *
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_TX_MGMT: Transmit management frame
+ *	on home or off-channel
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_TX_DATA: Transmit data frame
+ *	on home or off-channel
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_CANCEL: Cancel ongoing off-channel
+ *	operation
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_RX: Start receive operation
+ */
+enum qca_vendor_wlan_home_offchan_tx_rx_func_type {
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_INVALID = 0,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_TX_MGMT = 1,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_TX_DATA = 2,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_CANCEL = 3,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_FUNC_RX = 4,
+};
+
+/**
+ * enum qca_vendor_wlan_home_offchan_tx_rx_bw_mode - Bandwidth modes
+ *
+ * This enum defines the bandwidth modes used with attribute
+ * %QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_BW_MODE.
+ *
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_20MHZ: 20 MHz bandwidth
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_40MHZ: 40 MHz bandwidth
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_80MHZ: 80 MHz bandwidth
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_160MHZ: 160 MHz bandwidth
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_320MHZ: 320 MHz bandwidth
+ */
+enum qca_vendor_wlan_home_offchan_tx_rx_bw_mode {
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_20MHZ = 0,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_40MHZ = 1,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_80MHZ = 2,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_160MHZ = 3,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_BW_320MHZ = 4,
+};
+
+/**
+ * enum qca_vendor_wlan_home_offchan_tx_rx_pkt_status - Per-packet TX status
+ *
+ * This enum defines the per-packet transmission status used with attribute
+ * %QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_RESULT.
+ *
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_SUCCESS: Packet transmitted
+ *	successfully
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_ERROR: Packet transmission
+ *	failed with error
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_XRETRY: Packet transmission
+ *	failed due to excessive retries
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_UNKNOWN: Unknown status
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_TIMEOUT: Packet transmission
+ *	timed out
+ * @QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_BAD: Bad/invalid packet or
+ *	parameters
+ */
+enum qca_vendor_wlan_home_offchan_tx_rx_pkt_status {
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_SUCCESS = 0,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_ERROR = 1,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_XRETRY = 2,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_UNKNOWN = 3,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_TIMEOUT = 4,
+	QCA_VENDOR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_BAD = 5,
+};
+
+/**
+ * enum qca_vendor_wlan_home_offchan_tx_rx_event_tx_pkt_status_attr -
+ * Per-packet TX status
+ *
+ * This enum defines attributes for per-packet transmission status, used
+ * with nested attribute
+ * %QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_PKT_STATUS.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_ID: u8 attribute.
+ *	Packet identifier/number for this transmission status (0-255).
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_RESULT:
+ * u8 attribute.
+ *	Transmission status result for this packet.
+ *	Uses enum qca_vendor_wlan_home_offchan_tx_rx_pkt_status.
+ */
+enum qca_vendor_wlan_home_offchan_tx_rx_event_tx_pkt_status_attr {
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_INVALID = 0,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_ID,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_RESULT,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_AFTER_LAST,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_MAX =
+		QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_PKT_STATUS_AFTER_LAST - 1,
+};
+
+
+/**
+ * enum qca_vendor_wlan_home_offchan_tx_rx_attr - Attributes for
+ * home/off-channel operations
+ *
+ * This enum defines attributes used with vendor subcommand
+ * %QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX for configuring
+ * home and off-channel transmission and reception operations, and for reporting
+ * statistics and events.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FUNC: u8 attribute.
+ *	Specifies the off-channel function/command to perform.
+ *	Uses enum qca_vendor_wlan_home_offchan_tx_rx_func_type.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_CHAN: u16 attribute.
+ *	Specifies the channel frequency in MHz for the home/off-channel
+ *	operation. Valid range depends on regulatory domain and band
+ *	capabilities.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_CHAN_BAND: u8 attribute.
+ *	Specifies the channel band. Valid values:
+ *	0 - 2.4 GHz band
+ *	1 - 5 GHz band
+ *	2 - 6 GHz band
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_SCAN_DUR: u32 attribute.
+ *	Specifies the scan duration in milliseconds for operations.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME: Nested attribute.
+ *	Contains frame transmission parameters. Uses attributes defined
+ *	in enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr. This
+ *	attribute is mandatory when transmitting frames.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_TRANSACTION_ID: u32 attribute.
+ *	Unique transaction identifier for correlating commands with
+ *	events. The driver includes this ID in corresponding event
+ *	notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_BW_MODE: u8 attribute.
+ *	Specifies the bandwidth mode for the off-channel operation.
+ *	Uses enum qca_vendor_wlan_home_offchan_tx_rx_bw_mode.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_SEC_CHAN_OFFSET:
+ *	u8 attribute. Specifies the secondary channel offset for 40 MHz
+ *	operation.
+ *	Valid values:
+ *	0 - No secondary channel
+ *	1 - Secondary channel above primary
+ *	3 - Secondary channel below primary
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_NUM_FRAMES: u8 attribute.
+ *	Specifies the number of frames to transmit in the operation.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_IS_MLD: u8 attribute
+ *	(flag). Indicates if this is a Multi-Link Device (MLD)
+ *	operation.
+ *	Valid values:
+ *	0 - Not an MLD operation
+ *	1 - MLD operation
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_LINK_ID: u8 attribute.
+ *	Specifies the link ID for Multi-Link Device operations.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_STATUS:
+ *	u8 attribute. Reports the overall operation status. Used in
+ *	event notifications.
+ *	Valid values:
+ *	0 - Success: Operation completed successfully
+ *	1 - Failure: Operation failed
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_NOISE_FLOOR:
+ *	s16 attribute. Reports the noise floor in dBm measured during
+ *	the operation. Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_VALID:
+ *	u8 attribute. Indicates whether blanking statistics are valid.
+ *	Used in event notifications. Valid values:
+ *	0 - Blanking statistics not valid
+ *	1 - Blanking statistics valid
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_FRAME_COUNT:
+ *	u32 attribute. Reports the number of frames transmitted during
+ *	the operation. Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_RX_FRAME_COUNT:
+ *	u32 attribute. Reports the number of frames received during
+ *	off-channel operation. Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_RX_CLEAR_COUNT:
+ *	u32 attribute. Reports the RX clear count in microseconds. This
+ *	represents the time the medium was sensed idle during
+ *	off-channel operation. Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_CYCLE_COUNT:
+ *	u32 attribute. Reports the cycle count in microseconds. This
+ *	represents the total time spent in off-channel operation.
+ *	Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_DWELL_TIME:
+ *	u32 attribute. Reports the actual dwell time in milliseconds
+ *	spent on the off-channel. Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_CHANSWITCH_HTOF:
+ *	u32 attribute. Reports the number of channel switches from home
+ *	channel to off-channel. Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_CHANSWITCH_FTOH:
+ *	u32 attribute. Reports the number of channel switches from
+ *	off-channel to home channel. Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_COUNT:
+ *	u32 attribute. Reports the number of times the off-channel
+ *	operation was blanked (interrupted) due to home channel
+ *	activity. Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_DURATION:
+ *	u32 attribute. Reports the total duration in microseconds that
+ *	off-channel operation was blanked due to home channel activity.
+ *	Used in event notifications.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_PKT_STATUS:
+ *	Array of nested attributes. Contains per-packet transmission
+ *	status information. Each array element is a nested attribute
+ *	containing packet ID and status, using attributes from enum
+ *	qca_vendor_wlan_home_offchan_tx_rx_event_tx_pkt_status_attr.
+ *	The array can contain up to the number of frames specified in
+ *	%QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_NUM_FRAMES.
+ */
+enum qca_vendor_wlan_home_offchan_tx_rx_attr {
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_INVALID = 0,
+
+	/* Command attributes */
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FUNC,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_CHAN,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_CHAN_BAND,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_SCAN_DUR,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_TRANSACTION_ID,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_BW_MODE,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_SEC_CHAN_OFFSET,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_NUM_FRAMES,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_IS_MLD,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_LINK_ID,
+
+	/* Event/Statistics attributes */
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_STATUS,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_NOISE_FLOOR,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_VALID,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_FRAME_COUNT,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_RX_FRAME_COUNT,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_RX_CLEAR_COUNT,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_CYCLE_COUNT,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_DWELL_TIME,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_CHANSWITCH_HTOF,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_CHANSWITCH_FTOH,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_COUNT,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_BLANKING_DURATION,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_EVENT_TX_PKT_STATUS,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_AFTER_LAST,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_MAX =
+		QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_AFTER_LAST - 1,
+};
+
+/**
+ * enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr - Frame
+ * parameters for home and off-channel TX
+ *
+ * This enum defines attributes used with nested attribute
+ * %QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME to specify frame
+ * transmission parameters for off-channel operations.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_NSS: u8 attribute.
+ *	Specifies the number of spatial streams for frame transmission.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_PREAMBLE:
+ *	u8 attribute. Specifies the preamble type for frame
+ *	transmission. Valid values:
+ *	0 - Legacy preamble (OFDM/CCK)
+ *	1 - HT preamble (802.11n)
+ *	2 - VHT preamble (802.11ac)
+ *	3 - HE preamble (802.11ax)
+ *	4 - EHT preamble (802.11be)
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_MCS: u8 attribute.
+ *	Specifies the Modulation and Coding Scheme (MCS) index for frame
+ *	transmission. Valid range depends on the preamble type:
+ *	- Legacy: 0-7 (OFDM rates)
+ *	- HT/VHT: 0-9
+ *	- HE: 0-11
+ *	- EHT: 0-13
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_RETRY:
+ *	u8 attribute. Specifies the number of retries for frame
+ *	transmission.
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_POWER:
+ *	u8 attribute. Specifies the transmit power in dBm for frame
+ *	transmission.
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_TX_BEAMFORMING:
+ *	u8 attribute. Specifies whether transmit beamforming is enabled
+ *	for frame transmission.
+ *	Valid values:
+ *	0 - Beamforming disabled
+ *	1 - Beamforming enabled
+ *
+ * @QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_DATA:
+ *	Binary attribute. Contains the frame data to be transmitted.
+ */
+enum qca_vendor_wlan_home_offchan_tx_rx_frame_attr {
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_INVALID = 0,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_NSS,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_PREAMBLE,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_MCS,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_RETRY,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_POWER,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_TX_BEAMFORMING,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_DATA,
+
+	/* keep last */
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_AFTER_LAST,
+	QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_MAX =
+		QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_FRAME_AFTER_LAST - 1,
 };
 
 /**
