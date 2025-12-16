@@ -21,7 +21,7 @@ static bool athdbg_drv_ready(struct ath12k_base *ab)
 		return FALSE;
 
 	if ((athdbg_base->dbg_to_ath_ops != NULL &&
-		(athdbg_base->dbg_to_ath_ops->dev_running_status(ab) != TRUE))) {
+			(athdbg_base->dbg_to_ath_ops->dev_running_status(ab) != TRUE))) {
 		pr_err("athdbg_core: dev[%s] not running", dev_name(ab->dev));
 		return FALSE;
 	}
@@ -59,10 +59,12 @@ unsigned int athdbg_conv_str_to_dbgmask(char *dbgmask)
 		return ATH12K_DBG_DP_RX;
 	else if (!strcmp(dbgmask, "wow"))
 		return ATH12K_DBG_WOW;
+#ifndef CONFIG_UPSTREAM_BUILD
 	else if (!strcmp(dbgmask, "fst"))
 		return ATH12K_DBG_DP_FST;
 	else if (!strcmp(dbgmask, "peer"))
 		return ATH12K_DBG_PEER;
+#endif
 	else
 		return 0;
 }

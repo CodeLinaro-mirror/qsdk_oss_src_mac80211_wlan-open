@@ -10,6 +10,8 @@
 #include "../mhi.h"
 #include "../pci.h"
 
+#ifndef CONFIG_UPSTREAM_BUILD
+
 extern struct ath_debug_base *athdbg_base;
 
 
@@ -502,3 +504,5 @@ void athdbg_mhi_q6_boot_debug_timeout_hdlr_internal(struct ath12k_base *ab)
 	athdbg_mhi_q6_dump_bl_sram_mem(ab);
 }
 EXPORT_SYMBOL(athdbg_mhi_q6_boot_debug_timeout_hdlr_internal);
+#endif
+

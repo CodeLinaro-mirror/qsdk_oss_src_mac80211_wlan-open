@@ -4,6 +4,15 @@
 #include "athdbg_qdss.h"
 #include "athdbg_core.h"
 #include "../core.h"
+#ifdef CONFIG_UPSTREAM_BUILD
+#include <linux/devcoredump.h>
+#endif
+
+#ifdef CONFIG_UPSTREAM_BUILD
+#define NUM_GENERIC_QMI_HANDLER	3
+#else
+#define NUM_GENERIC_QMI_HANDLER	5
+#endif
 
 extern struct ath_debug_base *athdbg_base;
 
@@ -214,22 +223,30 @@ static const struct qmi_elem_info qmi_wlanfw_respond_mem_resp_msg_v01_ei[] = {
 	},
 };
 
+#ifdef CONFIG_UPSTREAM_BUILD
+#define NUM_HANDLER 5
+#else
 #define NUM_HANDLER 8
+#endif
 
 struct qmi_msg_handler *athdbg_append_dbg_handler(const struct qmi_msg_handler *handlers)
 {
 	struct qmi_msg_handler *wdbg_handlers;
+	int ath12k_qmi_handler_index;
 
 	wdbg_handlers = kzalloc(sizeof(struct qmi_msg_handler) * NUM_HANDLER, GFP_KERNEL);
 
 	if (wdbg_handlers == NULL)
 		return NULL;
 
-	memcpy(wdbg_handlers, handlers, 5 * sizeof(struct qmi_msg_handler));
+	ath12k_qmi_handler_index = NUM_GENERIC_QMI_HANDLER;
+
+	memcpy(wdbg_handlers, handlers,
+	       ath12k_qmi_handler_index * sizeof(struct qmi_msg_handler));
 
 	//append debug handler
-	memcpy(&wdbg_handlers[5], athdbg_qmi_msg_handlers,
-			sizeof(struct qmi_msg_handler) * 2);
+	memcpy(&wdbg_handlers[ath12k_qmi_handler_index], athdbg_qmi_msg_handlers,
+	       sizeof(struct qmi_msg_handler) * 2);
 
 	return wdbg_handlers;
 }
@@ -417,9 +434,13 @@ int athdbg_qmi_event_qdss_trace_misc_hdlr(struct athdbg_qmi *dbg_qmi, void *data
 		}
 		segment->len = total_size;
 		segment->vaddr = qdss_trace_data;
+#ifdef CONFIG_UPSTREAM_BUILD
+		dev_coredumpv(ab->dev, segment->vaddr, segment->len, GFP_KERNEL);
+#else
 		segment->type = FW_CRASH_DUMP_QDSS_DATA;
 		athdbg_base->dbg_to_ath_ops->coredump_dump_segment(ab,
 							segment, segment->len);
+#endif
 		vfree(segment);
 	} else {
 		pr_err("dump collection failed: remaining-%u response end-%u\n",
@@ -545,7 +566,11 @@ out:
 void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 {
 	int i;
+#ifdef CONFIG_UPSTREAM_BUILD
+	struct target_mem_chunk *mem_chunk;
+#endif
 
+#ifndef CONFIG_UPSTREAM_BUILD
 	for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
 		if (ab->dbg_qmi.qdss_mem[i].v.ioaddr) {
 			iounmap(ab->dbg_qmi.qdss_mem[i].v.ioaddr);
@@ -554,6 +579,17 @@ void athdbg_qmi_qdss_mem_free(struct ath12k_base *ab)
 			ab->dbg_qmi.qdss_mem[i].paddr = 0;
 		}
 	}
+#else
+	for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
+		mem_chunk = &ab->dbg_qmi.qdss_mem[i];
+		if (mem_chunk->v.ioaddr) {
+			dma_free_coherent(ab->dev, mem_chunk->size,
+					  mem_chunk->v.ioaddr,
+					  mem_chunk->paddr);
+			mem_chunk->v.ioaddr = NULL;
+		}
+	}
+#endif
 
 	ab->dbg_qmi.qdss_mem_seg_len = 0;
 	ab->is_qdss_tracing = false;
