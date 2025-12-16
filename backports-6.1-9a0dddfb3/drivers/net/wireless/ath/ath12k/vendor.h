@@ -33,7 +33,9 @@
 #define ATH12K_MGMT_TX_RETRY_LIMIT_MIN 1
 #define ATH12K_MGMT_TX_RETRY_LIMIT_MAX 14
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern unsigned int ath12k_ppe_ds_enabled;
+#endif
 struct ath12k;
 struct ath12k_hw;
 struct ath12k_afc_info;

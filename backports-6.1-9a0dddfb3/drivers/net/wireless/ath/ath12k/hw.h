@@ -207,9 +207,9 @@ struct ath12k_hw_ring_mask {
 	u8 host2rxdma[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 	u8 tx_mon_dest[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 	u8 host2rxmon[ATH12K_EXT_IRQ_GRP_NUM_MAX];
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u8 ppe2tcl[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 	u8 reo2ppe[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	u8 wbm2sw6_ppeds_tx_cmpln[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
 #endif
 	u8 umac_dp_reset[ATH12K_EXT_IRQ_DP_NUM_VECTORS];
