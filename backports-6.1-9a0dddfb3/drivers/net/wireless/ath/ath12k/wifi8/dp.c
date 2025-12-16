@@ -318,13 +318,12 @@ fail_ppeds_detach:
 fail_nss_plugin_unregister:
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
-#endif
 
 #ifndef PLATFORM_SDX85
 fail_dp_bank_profiles_cleanup:
 #endif
+#endif
 	ath12k_dp_deinit_bank_profiles(ab);
-
 fail_hw_cc_cleanup:
 	ath12k_dp_cc_cleanup(ab);
 

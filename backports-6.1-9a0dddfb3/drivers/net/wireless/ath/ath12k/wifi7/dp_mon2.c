@@ -1560,16 +1560,20 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 								      ppdu_info);
 				ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);
 				ath12k_dp_mon_ppdu_rssi_update(pdev_dp, ppdu_info);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 				ath12k_dp_mon_rx_update_peer_stats_ds(pdev_dp,
 								      ppdu_info);
+#endif
 			} else if ((ppdu_info->fc_valid) &&
 				   (ppdu_info->peer_id != HAL_INVALID_PEERID)) {
 				ath12k_dp_mon_rx_process_ulofdma_stats(ppdu_info);
 				ath12k_dp_mon_rx_update_peer_mu_stats(pdev_dp, ppdu_info);
 				ath12k_dp_mon_ppdu_rx_time_update(pdev_dp, ppdu_info, 0);
 				ath12k_dp_mon_ppdu_rssi_update(pdev_dp, ppdu_info);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 				ath12k_dp_mon_rx_update_peer_stats_ds(pdev_dp,
 								      ppdu_info);
+#endif
 			}
 unlock:
 			spin_unlock_bh(&dp->dp_lock);

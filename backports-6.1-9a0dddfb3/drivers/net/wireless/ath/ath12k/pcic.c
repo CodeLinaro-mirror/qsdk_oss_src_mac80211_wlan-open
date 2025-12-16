@@ -437,7 +437,9 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 	struct platform_device *pdev = ab->pdev;
 	int j, budget, ret = 0, num_vectors = 0;
 	struct net_device *napi_ndev;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	int ring_num = 0, ring_type = 0;
+#endif
 	u8 userpd_idx;
 	u32 num_irq = 0;
 
@@ -500,6 +502,7 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 		int irq_idx = irq_grp->irqs[j];
 		int vector = (i % num_vectors);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		if (ab->hw_params->ring_mask->ppe2tcl[i] ||
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		    ab->hw_params->ring_mask->wbm2sw6_ppeds_tx_cmpln[i] ||
@@ -515,6 +518,7 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 #endif
 			ath12k_hif_ppeds_register_interrupts(ab, ring_type, 0, ring_num);
 		} else {
+#endif
 			netif_napi_add_weight(napi_ndev, &irq_grp->napi,
 					      ath12k_pcic_ext_grp_napi_poll, budget);
 			scnprintf(dp_pcic_irq_name[userpd_idx][i], DP_IRQ_NAME_LEN,
@@ -532,7 +536,9 @@ int ath12k_pcic_ext_cfg_gic_msi_irq(struct ath12k_base *ab,
 			ab->ipci.dp_irq_num[vector] = msi_desc->irq;
 			ab->ipci.dp_msi_data[i] = msi_desc->msg.data;
 			disable_irq_nosync(ab->irq_num[irq_idx]);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		}
+#endif
 	}
 	return ret;
 }

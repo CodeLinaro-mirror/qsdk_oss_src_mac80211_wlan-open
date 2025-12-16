@@ -19,10 +19,12 @@
 #define DP_GET_HW_LINK_ID_FRM_PPDU_ID(PPDU_ID, LINK_ID_OFFSET, LINK_ID_BITS) \
 	(((PPDU_ID) >> (LINK_ID_OFFSET)) & ((1 << (LINK_ID_BITS)) - 1))
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_desc_params {
 	unsigned int num_ppeds_desc;
 	unsigned int ppeds_hotlist_len;
 };
+#endif
 
 struct ath12k_dp_htt_wbm_tx_status {
 	bool acked;

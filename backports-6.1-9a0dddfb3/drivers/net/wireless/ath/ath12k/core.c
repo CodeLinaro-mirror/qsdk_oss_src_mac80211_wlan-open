@@ -47,6 +47,7 @@
 #include "athdbg_if.h"
 #endif
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #define ATH12K_NUM_POOL_PPEDS_TX_DESC_DEFAULT 0x8000
 #define ATH12K_PPEDS_HOTLIST_LEN_MAX_DEFAULT 1024
 
@@ -64,6 +65,7 @@ MODULE_PARM_DESC(ppeds_hotlist_len, "PPEDS hotlist length");
 unsigned int ath12k_ppe_ds_enabled = true;
 module_param_named(ppe_ds_enable, ath12k_ppe_ds_enabled, uint, 0644);
 MODULE_PARM_DESC(ppe_ds_enable, "ppe_ds_enable: 0-disable, 1-enable");
+#endif
 
 #ifdef CPTCFG_ATH12K_POWER_OPTIMIZATION
 extern struct ath12k_ps_context ath12k_global_ps_ctx;
@@ -1076,7 +1078,9 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 			ath12k_hif_mgmt_irq_disable(ab);
 			ath12k_hif_irq_disable(ab);
 			ath12k_hif_ce_irq_disable(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 			ath12k_dp_ppeds_interrupt_stop(ab);
+#endif
 			ath12k_qmi_firmware_stop(ab);
 			ath12k_hif_power_down(ab, false);
 			ath12k_core_cleanup(ab);
@@ -4693,7 +4697,9 @@ int ath12k_core_dynamic_wsi_remap(struct ath12k_base *ab)
 
 		ath12k_hif_irq_disable(ab);
 		ath12k_hif_ce_irq_disable(ab);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_dp_ppeds_interrupt_stop(ab);
+#endif
 
 		ath12k_hif_power_down(ab, false);
 		/* Reset the PCIe link speed */

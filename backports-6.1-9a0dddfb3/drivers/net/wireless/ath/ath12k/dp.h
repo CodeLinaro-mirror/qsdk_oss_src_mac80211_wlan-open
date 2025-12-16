@@ -37,7 +37,9 @@
 
 #define TX_NAPI_BUDGET             127
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 extern struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params;
+#endif
 
 struct ath12k_base;
 struct ath12k_hw;
@@ -307,8 +309,12 @@ enum ath12k_dp_eapol_key_type {
 #define ATH12K_TX_SPT_PAGE_OFFSET ATH12K_NUM_PPEDS_TX_SPT_PAGES
 #define ATH12K_RX_SPT_PAGE_OFFSET (ATH12K_NUM_PPEDS_TX_SPT_PAGES + ATH12K_NUM_TX_SPT_PAGES)
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #define ATH12K_NUM_PPEDS_TX_SPT_PAGES (ath12k_ppeds_desc_params.num_ppeds_desc / \
 					    ATH12K_MAX_SPT_ENTRIES)
+#else
+#define ATH12K_NUM_PPEDS_TX_SPT_PAGES 0
+#endif
 
 #define ATH12K_NUM_SPT_PAGES	(ATH12K_NUM_TX_SPT_PAGES + ATH12K_NUM_RX_SPT_PAGES + \
 				 ATH12K_NUM_PPEDS_TX_SPT_PAGES)
@@ -395,7 +401,7 @@ struct ath12k_tx_desc_info {
 	u8 pool_id;
 };
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+//#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 struct ath12k_ppeds_tx_desc_info {
 	union {
 		u8 align[64];
@@ -418,7 +424,7 @@ struct ath12k_dp_tx_comp_status {
 	u32 desc_id;
 	int htt_status;
 };
-#endif
+//#endif
 
 struct ath12k_spt_info {
 	dma_addr_t paddr;
@@ -1288,6 +1294,14 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab);
 enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data);
 ssize_t ath12k_dp_dump_device_ring_stats(struct ath12k_base *ab,
 					 char *buf, int size);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
+							      u32 desc_id);
+int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);
+int ath12k_dp_cc_ppeds_desc_cleanup(struct ath12k_base *ab);
+void ath12k_dp_ppeds_tx_cmem_init(struct ath12k_base *ab, struct ath12k_dp *dp);
+int ath12k_dp_ppe_rxole_rxdma_cfg(struct ath12k_base *ab);
+#endif
 void ath12k_dp_get_device_stats(struct ath12k_dp *dp,
 				struct ath12k_telemetry_dp_device *telemetry_device);
 int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,

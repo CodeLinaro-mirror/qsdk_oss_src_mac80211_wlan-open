@@ -1917,8 +1917,11 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	ahsta->migration_data.ml_peer_id = ml_peer_id;
 	ahsta->migration_data.pdev_id = pdev_id;
 	ahsta->migration_data.chip_id = chip_id;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ahsta->migration_data.ppe_vp_num = peer->dp_peer->ppe_vp_num;
-
+#else
+	ahsta->migration_data.ppe_vp_num = ATH12K_INVALID_PPE_VP_NUM;
+#endif
 	reinit_completion(&ahsta->dp_migration_event);
 
 	ret = ath12k_dp_peer_migrate(ahsta, peer_id, chip_id);

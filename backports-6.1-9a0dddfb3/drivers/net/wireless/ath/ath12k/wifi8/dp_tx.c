@@ -2714,7 +2714,6 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 #endif
 	rcu_read_unlock();
 }
-#endif
 
 int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 {
@@ -3010,3 +3009,4 @@ tx_buf_release:
 
 	return quota - budget;
 }
+#endif

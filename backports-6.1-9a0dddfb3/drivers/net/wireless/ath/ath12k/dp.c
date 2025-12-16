@@ -197,8 +197,10 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 
 	spin_unlock_bh(&dp->dp_lock);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (vif->type == NL80211_IFTYPE_STATION)
 		ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(ar->ab, arvif, true);
+#endif
 
 	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 		ret = ath12k_dp_rx_peer_tid_setup(ar, addr, vdev_id, tid, 1, 0,
@@ -430,9 +432,10 @@ void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 	ring_params->flags |= HAL_SRNG_FLAGS_MSI_INTR;
 
 	vector = msi_irq_start  + (msi_group_number % msi_data_count);
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ab->hw_params->ds_support && !ath12k_dp_umac_reset_in_progress(ab))
 		ath12k_hif_ppeds_register_interrupts(ab, type, vector, ring_num);
+#endif
 }
 
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab)
@@ -461,7 +464,9 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 	struct hal_srng_params params = { 0 };
 	int entry_sz = ath12k_hal_srng_get_entrysize(ab, type);
 	int max_entries = ath12k_hal_srng_get_max_entries(ab, type);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	int vector = 0;
+#endif
 	int ret;
 	bool cached = false;
 
@@ -511,10 +516,11 @@ skip_dma_alloc:
 	params.ring_base_paddr = ring->paddr;
 	params.num_entries = num_entries;
 	ath12k_dp_srng_msi_setup(ab, &params, type, ring_num + mac_id);
-
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ab->hw_params->ds_support && ab->hif.bus == ATH12K_BUS_AHB &&
 	    !ath12k_dp_umac_reset_in_progress(ab))
 		ath12k_hif_ppeds_register_interrupts(ab, type, vector, ring_num);
+#endif
 
 	switch (type) {
 	case HAL_REO_DST:
@@ -746,7 +752,9 @@ void ath12k_dp_srng_common_cleanup(struct ath12k_base *ab)
 	ath12k_dp_srng_cleanup(ab, &dp->reo_reinject_ring);
 	ath12k_dp_srng_cleanup(ab, &dp->wbm_desc_rel_ring);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_dp_srng_ppeds_cleanup(ab);
+#endif
 }
 EXPORT_SYMBOL(ath12k_dp_srng_common_cleanup);
 
@@ -804,11 +812,13 @@ int ath12k_dp_srng_common_setup(struct ath12k_base *ab)
 	ath12k_hal_reo_hw_setup(ab);
 
 skip_reo_setup:
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_dp_srng_ppeds_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up ppe-ds srngs :%d\n", ret);
 		goto err;
 	}
+#endif
 
 	return 0;
 err:

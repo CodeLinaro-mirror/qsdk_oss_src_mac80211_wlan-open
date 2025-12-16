@@ -557,7 +557,9 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 			    "skip ppeds ast override\n",
 			    vdev_id);
 	} else if (arvif->ahvif->vif->type == NL80211_IFTYPE_STATION) {
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 		ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(ab, arvif, false);
+#endif
 	}
 
 	rcu_read_unlock();

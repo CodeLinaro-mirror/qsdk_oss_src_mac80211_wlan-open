@@ -287,11 +287,13 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	}
 #endif
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_ppeds_attach(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to attach PPE DS %d\n", ret);
 		goto fail_nss_plugin_unregister;
 	}
+#endif
 
 	ret = ath12k_dp_srng_common_setup(ab);
 	if (ret)
@@ -350,18 +352,17 @@ fail_cmn_srng_cleanup:
 	ath12k_dp_srng_common_cleanup(ab);
 
 fail_ppeds_detach:
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_ppeds_detach(ab);
 
 fail_nss_plugin_unregister:
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_nss_plugin_unregister_ops(ab);
-#endif
 
 #ifndef PLATFORM_SDX85
 fail_dp_bank_profiles_cleanup:
 #endif
+#endif
 	ath12k_dp_deinit_bank_profiles(ab);
-
 fail_hw_cc_cleanup:
 	ath12k_dp_cc_cleanup(ab);
 
@@ -386,7 +387,9 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 	ath12k_dp_link_desc_cleanup(ab, dp->link_desc_banks,
 				    HAL_WBM_IDLE_LINK, &dp->wbm_idle_ring);
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ath12k_ppeds_detach(ab);
+#endif
 	ath12k_dp_cc_cleanup(ab);
 	ath12k_wifi7_dp_reoq_lut_cleanup(ab);
 	ath12k_dp_deinit_bank_profiles(ab);
@@ -548,9 +551,10 @@ struct ath12k_dp *ath12k_wifi7_dp_init(struct ath12k_base *ab)
 		return NULL;
 
 	dp->arch_ops = &ath12k_wifi7_dp_arch_ops;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	dp->ppe.ppeds_wlanops = &ppeds_wlanops_v2;
 	dp->ppe.ppe_ops = &ath12k_wifi7_arch_ppeds_ops;
-
+#endif
 	dp->ab = ab;
 	dp->dev = ab->dev;
 	dp->hw_params = ab->hw_params;
