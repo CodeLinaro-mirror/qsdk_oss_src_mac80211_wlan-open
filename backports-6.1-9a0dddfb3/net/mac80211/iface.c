@@ -2240,9 +2240,9 @@ int ieee80211_if_add(struct ieee80211_local *local, const char *name,
 			txq_size += sizeof(struct txq_info) +
 				    local->hw.txq_data_size;
 
-		ndev = alloc_netdev_mqs(size + txq_size,
-					name, name_assign_type,
-					ieee80211_if_setup, 4, 4);
+		ndev = alloc_netdev_mqs(size + txq_size, name,
+					name_assign_type, ieee80211_if_setup,
+					local->hw.queues, local->hw.queues);
 		if (!ndev)
 			return -ENOMEM;
 
