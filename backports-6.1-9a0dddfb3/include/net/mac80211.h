@@ -1711,9 +1711,6 @@ ieee80211_tx_info_clear_status(struct ieee80211_tx_info *info)
  *	known the frame shouldn't be reported.
  * @RX_FLAG_8023: the frame has an 802.3 header (decap offload performed by
  *	hardware or driver)
- *	@RX_FLAG_USIG_HEADER: Universal field carries information necessary to
- *	interpret EHT PPDUs
- *	RX_FLAG_EHT_HEADER: EHT radiotap data is present
  */
 enum mac80211_rx_flags {
 	RX_FLAG_MMIC_ERROR		= BIT(0),
@@ -1732,7 +1729,6 @@ enum mac80211_rx_flags {
 	RX_FLAG_AMPDU_IS_LAST		= BIT(13),
 	RX_FLAG_AMPDU_DELIM_CRC_ERROR	= BIT(14),
 	/* one free bit at 15 */
-	RX_FLAG_USIG_HEADER		= BIT(15),
 	RX_FLAG_MACTIME			= BIT(16) | BIT(17),
 	RX_FLAG_MACTIME_PLCP_START	= 1 << 16,
 	RX_FLAG_MACTIME_START		= 2 << 16,
@@ -1750,7 +1746,6 @@ enum mac80211_rx_flags {
 	RX_FLAG_RADIOTAP_LSIG		= BIT(28),
 	RX_FLAG_NO_PSDU			= BIT(29),
 	RX_FLAG_8023			= BIT(30),
-	RX_FLAG_EHT_HEADER      = BIT(31),
 };
 
 /**
@@ -1819,7 +1814,6 @@ enum mac80211_rx_encoding {
  *	HT or VHT is used (%RX_FLAG_HT/%RX_FLAG_VHT)
  * @nss: number of streams (VHT, HE and EHT only)
  * @flag: %RX_FLAG_\*
- * @ext_flag: %RX_FLAG_\*
  * @encoding: &enum mac80211_rx_encoding
  * @bw: &enum rate_info_bw
  * @enc_flags: uses bits from &enum mac80211_rx_encoding_flags
@@ -1871,7 +1865,6 @@ struct ieee80211_rx_status {
 	s8 chain_signal[IEEE80211_MAX_CHAINS];
 	u8 zero_length_psdu_type: 4, band: 4;
 	u8 link_valid:1, link_id:4;
-	u8 eht_num_user;
 	u8 tid;
 };
 
