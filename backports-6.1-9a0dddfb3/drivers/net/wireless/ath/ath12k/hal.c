@@ -752,6 +752,7 @@ void ath12k_hal_setup_link_idle_list(struct ath12k_base *ab,
 					      tot_link_desc, end_offset);
 }
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static bool hal_tx_ppe2tcl_ring_halt_get(struct ath12k_base *ab)
 {
 	u32 cmn_reg_addr;
@@ -805,6 +806,7 @@ static bool hal_tx_ppe2tcl_ring_halt_done(struct ath12k_base *ab)
 
 	return !!regval;
 }
+#endif
 
 int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
 			      int ring_num, int mac_id,
@@ -815,7 +817,10 @@ int ath12k_hal_srng_setup_idx(struct ath12k_base *ab, enum hal_ring_type type,
 	struct hal_srng *srng;
 	int ring_id;
 	u32 idx;
-	int i, retry_count = 0;
+	int i;
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	int retry_count = 0;
+#endif
 
 	ring_id = ath12k_hal_srng_get_ring_id(hal, type, ring_num, mac_id);
 	if (ring_id < 0)

@@ -4388,6 +4388,7 @@ static const struct file_operations fops_vdev_stats_offload = {
 	.open = simple_open
 };
 
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static ssize_t ath12k_write_ppe_rfs_core_mask(struct file *file,
 					      const char __user *user_buf,
 					      size_t count, loff_t *ppos)
@@ -4445,7 +4446,6 @@ static const struct file_operations ath12k_fops_rfs_core_mask = {
 	.llseek = default_llseek,
 };
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 static inline char *get_ppe_str(int ppe_vp_type)
 {
 	char *type = NULL;

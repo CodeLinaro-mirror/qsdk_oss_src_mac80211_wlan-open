@@ -43,6 +43,10 @@ ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o
 ath12k-$(CPTCFG_ATH12K_PPE_DS_SUPPORT) += ppe.o
 
+ifneq ($(CPTCFG_ATH12K_PPE_DS_SUPPORT),y)
+ath12k-y += ppe_stub.o
+endif
+
 obj-$(CPTCFG_ATH12K) += wifi7/
 obj-$(CPTCFG_ATHDEBUG) += ath_debug/
 

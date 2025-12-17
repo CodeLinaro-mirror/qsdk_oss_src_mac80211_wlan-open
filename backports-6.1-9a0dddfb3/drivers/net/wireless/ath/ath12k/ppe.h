@@ -326,7 +326,7 @@ static inline int ath12k_nss_plugin_register_ops(struct ath12k_base *ab)
 	return 0;
 }
 
-void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab)
+static inline void ath12k_nss_plugin_unregister_ops(struct ath12k_base *ab)
 {
 }
 #endif /* CPTCFG_ATH12K_PPE_DS_SUPPORT */
