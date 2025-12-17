@@ -10,6 +10,7 @@
 #include "dp_cmn.h"
 #include "cmn_defs.h"
 #include "dp.h"
+#include <linux/ip.h>
 
 #define INVALID_LINK_ID			0xFF
 #define INVALID_SVC_ID			0xFF
@@ -1055,4 +1056,349 @@ void ath12k_dp_clear_wbm_rx_stats(struct ath12k_wbm_rx_stats *wbm_stats);
 
 struct ath12k_dp_preserved_stats *ath12k_dp_alloc_preserved_stats(void);
 void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats);
+
+#define SKB_TRAC_ETH_TYPE_OFFSET			12
+#define DP_ETH_TYPE_8021Q				0x8100
+#define DP_ETH_TYPE_8021AD				0x88a8
+#define SKB_TRAC_VLAN_ETH_TYPE_OFFSET			16
+#define SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET		20
+#define SKB_TRAC_IPV4_ETH_TYPE				0x0800
+#define SKB_TRAC_IPV6_ETH_TYPE				0x86dd
+#define SKB_TRAC_ARP_ETH_TYPE				0x0806
+#define SKB_TRAC_EAPOL_ETH_TYPE				0x888E
+#define SKB_TRAC_VLAN_IP_OFFSET				18
+#define SKB_TRAC_DOUBLE_VLAN_IP_OFFSET			22
+#define SKB_TRAC_IP_OFFSET				14
+#define SKB_IPV4_PROTOCOL_FIELD_OFFSET			9
+#define SKB_TRAC_TCP_TYPE				6
+#define SKB_TRAC_UDP_TYPE				17
+#define SKB_TRAC_ICMP_TYPE				1
+#define SKB_TRAC_IGMP_TYPE				2
+#define SKB_IPV4_HDR_SIZE_UNIT				4
+#define SKB_TRAC_DHCP_SRV_PORT				67
+#define SKB_TRAC_DHCP_CLI_PORT				68
+#define SKB_PKT_DNS_DST_PORT_OFFSET			36
+#define SKB_PKT_DNS_STANDARD_PORT			53
+#define SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET		44
+#define SKB_PKT_DNSOP_BITMAP				0xF800
+#define SKB_PKT_DNSOP_STANDARD_QUERY			0x0000
+#define SKB_PKT_DNSOP_STANDARD_RESPONSE			0x8000
+#define SKB_PKT_DNS_SRC_PORT_OFFSET			34
+#define SKB_PKT_ICMPV4OP_REQ				0x08
+#define SKB_PKT_ICMPV4OP_REPLY				0x00
+#define DHCP_OPTION53					0x35
+#define DHCP_OPTION53_LENGTH				1
+#define DHCP_OPTION53_OFFSET				0x11A
+#define DHCP_OPTION53_LENGTH_OFFSET			0x11B
+#define DHCP_OPTION53_STATUS_OFFSET			0x11C
+
+#define DHCP_DISCOVER			(1)
+#define DHCP_OFFER			(2)
+#define DHCP_REQUEST			(3)
+#define DHCP_ACK			(4)
+
+static inline u16
+ath12k_dp_get_ether_type(struct sk_buff *skb)
+{
+	u16 ether_type;
+
+	if (skb->len < SKB_TRAC_ETH_TYPE_OFFSET + sizeof(u16))
+		return 0;
+
+	ether_type = get_unaligned((u16 *)(skb->data + SKB_TRAC_ETH_TYPE_OFFSET));
+
+	if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021Q))
+		ether_type = get_unaligned((u16 *)(skb->data +
+						   SKB_TRAC_VLAN_ETH_TYPE_OFFSET));
+	else if (unlikely(be16_to_cpu(ether_type) == DP_ETH_TYPE_8021AD))
+		ether_type = get_unaligned((u16 *)(skb->data +
+					    SKB_TRAC_DOUBLE_VLAN_ETH_TYPE_OFFSET));
+
+	return be16_to_cpu(ether_type);
+}
+
+static inline u8
+ath12k_dp_get_l3_protocol_type(struct sk_buff *skb)
+{
+	u32 l3_type = 0;
+
+	l3_type = ath12k_dp_get_ether_type(skb);
+
+	switch (l3_type) {
+	case SKB_TRAC_IPV4_ETH_TYPE:
+		return DP_PKT_TYPE_IPV4;
+
+	case SKB_TRAC_IPV6_ETH_TYPE:
+		return DP_PKT_TYPE_IPV6;
+
+	case SKB_TRAC_ARP_ETH_TYPE:
+		return DP_PKT_TYPE_ARP;
+
+	case SKB_TRAC_EAPOL_ETH_TYPE:
+		return DP_PKT_TYPE_EAPOL;
+
+	default:
+		return DP_PKT_TYPE_L3_NS;
+	}
+}
+
+static inline u8
+ath12k_dp_get_ip_offset(struct sk_buff *skb)
+{
+	u16 ether_type;
+
+	if (skb->len < SKB_TRAC_ETH_TYPE_OFFSET + sizeof(u16))
+		return 0;
+
+	ether_type = get_unaligned((u16 *)(skb->data + SKB_TRAC_ETH_TYPE_OFFSET));
+
+	if (unlikely(ether_type == cpu_to_be16(DP_ETH_TYPE_8021Q)))
+		return SKB_TRAC_VLAN_IP_OFFSET;
+	else if (unlikely(ether_type == cpu_to_be16(DP_ETH_TYPE_8021AD)))
+		return SKB_TRAC_DOUBLE_VLAN_IP_OFFSET;
+
+	return SKB_TRAC_IP_OFFSET;
+}
+
+static inline u8
+ath12k_dp_get_ipv4_proto(struct sk_buff *skb)
+{
+	u8 proto_type;
+	u8 ipv4_offset;
+
+	ipv4_offset = ath12k_dp_get_ip_offset(skb);
+
+	if (skb->len < ipv4_offset + SKB_IPV4_PROTOCOL_FIELD_OFFSET + sizeof(u8))
+		return 0;
+
+	proto_type = get_unaligned((u8 *)(skb->data + ipv4_offset +
+					  SKB_IPV4_PROTOCOL_FIELD_OFFSET));
+	return proto_type;
+}
+
+static inline u8
+ath12k_dp_get_l4_protocol_type(struct sk_buff *skb)
+{
+	u8 l4_type = 0;
+
+	l4_type = ath12k_dp_get_ipv4_proto(skb);
+
+	switch (l4_type) {
+	case SKB_TRAC_TCP_TYPE:
+		return DP_PKT_TYPE_TCP;
+
+	case SKB_TRAC_UDP_TYPE:
+		return DP_PKT_TYPE_UDP;
+
+	case SKB_TRAC_ICMP_TYPE:
+		return DP_PKT_TYPE_ICMP;
+
+	case SKB_TRAC_IGMP_TYPE:
+		return DP_PKT_TYPE_IGMP;
+
+	default:
+		return DP_PKT_TYPE_L4_NS;
+	}
+}
+
+static inline bool
+ath12k_dp_is_ipv4_dhcp_pkt(struct sk_buff *skb)
+{
+	u16 sport;
+	u16 dport;
+	u8 ipv4_offset;
+	u8 ipv4_hdr_len;
+	struct iphdr *iphdr;
+
+	if (ath12k_dp_get_ether_type(skb) != SKB_TRAC_IPV4_ETH_TYPE)
+		return false;
+
+	ipv4_offset = ath12k_dp_get_ip_offset(skb);
+
+	if (skb->len < ipv4_offset + sizeof(struct iphdr))
+		return false;
+
+	iphdr = (struct iphdr *)(skb->data + ipv4_offset);
+	ipv4_hdr_len = iphdr->ihl * SKB_IPV4_HDR_SIZE_UNIT;
+
+	if (skb->len < ipv4_offset + ipv4_hdr_len + 2 * sizeof(u16))
+		return false;
+
+	sport = get_unaligned((u16 *)(skb->data + ipv4_offset + ipv4_hdr_len));
+	dport = get_unaligned((u16 *)(skb->data + ipv4_offset +
+				      ipv4_hdr_len + sizeof(u16)));
+
+	if ((sport == cpu_to_be16(SKB_TRAC_DHCP_SRV_PORT) &&
+	     dport == cpu_to_be16(SKB_TRAC_DHCP_CLI_PORT)) ||
+	    (sport == cpu_to_be16(SKB_TRAC_DHCP_CLI_PORT) &&
+	     dport == cpu_to_be16(SKB_TRAC_DHCP_SRV_PORT)))
+		return true;
+	else
+		return false;
+}
+
+static inline bool
+ath12k_dp_is_dns_query(struct sk_buff *skb)
+{
+	u16 op_code;
+	u16 tgt_port;
+
+	if (skb->len < SKB_PKT_DNS_DST_PORT_OFFSET + sizeof(u16))
+		return false;
+
+	tgt_port = get_unaligned((u16 *)(skb->data + SKB_PKT_DNS_DST_PORT_OFFSET));
+    /* Standard DNS query always happen on Dest Port 53. */
+	if (tgt_port == cpu_to_be16(SKB_PKT_DNS_STANDARD_PORT)) {
+		if (skb->len < SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET + sizeof(u16))
+			return false;
+
+		op_code = get_unaligned((u16 *)(skb->data +
+					SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET));
+
+	if ((be16_to_cpu(op_code) & SKB_PKT_DNSOP_BITMAP) ==
+	    SKB_PKT_DNSOP_STANDARD_QUERY)
+		return true;
+	}
+	return false;
+}
+
+static inline bool
+ath12k_dp_is_dns_response(struct sk_buff *skb)
+{
+	u16 op_code;
+	u16 src_port;
+
+	if (skb->len < SKB_PKT_DNS_SRC_PORT_OFFSET + sizeof(u16))
+		return false;
+
+	src_port = get_unaligned((u16 *)(skb->data + SKB_PKT_DNS_SRC_PORT_OFFSET));
+	/* Standard DNS response always comes on Src Port 53. */
+	if (src_port == cpu_to_be16(SKB_PKT_DNS_STANDARD_PORT)) {
+		if (skb->len < SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET + sizeof(u16))
+			return false;
+
+		op_code = get_unaligned((u16 *)(skb->data +
+					SKB_PKT_DNS_OVER_UDP_OPCODE_OFFSET));
+
+	if ((be16_to_cpu(op_code) & SKB_PKT_DNSOP_BITMAP) ==
+	    SKB_PKT_DNSOP_STANDARD_RESPONSE)
+		return true;
+	}
+	return false;
+}
+
+static inline u8
+ath12k_dp_get_l5_protocol_type(struct sk_buff *skb)
+{
+	if (ath12k_dp_is_ipv4_dhcp_pkt(skb))
+		return DP_PKT_TYPE_DHCP;
+	else if (ath12k_dp_is_dns_query(skb))
+		return DP_PKT_TYPE_DNS_QUERY;
+	else if (ath12k_dp_is_dns_response(skb))
+		return DP_PKT_TYPE_DNS_RSP;
+	else
+		return DP_PKT_TYPE_L5_NS;
+}
+
+static inline bool
+ath12k_dp_is_icmpv4_req(struct sk_buff *skb)
+{
+	u8 op_code;
+	u8 ipv4_offset;
+	u8 ipv4_hdr_len;
+	struct iphdr *iphdr;
+
+	ipv4_offset = ath12k_dp_get_ip_offset(skb);
+
+	if (skb->len < ipv4_offset + sizeof(struct iphdr))
+		return false;
+
+	iphdr = (struct iphdr *)(skb->data + ipv4_offset);
+	ipv4_hdr_len = iphdr->ihl * SKB_IPV4_HDR_SIZE_UNIT;
+
+	if (ipv4_hdr_len < sizeof(struct iphdr) ||
+	    skb->len < ipv4_offset + ipv4_hdr_len + 1)
+		return false;
+
+	op_code = get_unaligned((u8 *)(skb->data + ipv4_offset + ipv4_hdr_len));
+
+	if (op_code == SKB_PKT_ICMPV4OP_REQ)
+		return true;
+
+	return false;
+}
+
+static inline bool
+ath12k_dp_is_icmpv4_rsp(struct sk_buff *skb)
+{
+	u8 op_code;
+	u8 ipv4_offset;
+	u8 ipv4_hdr_len;
+	struct iphdr *iphdr;
+
+	ipv4_offset = ath12k_dp_get_ip_offset(skb);
+
+	if (skb->len < ipv4_offset + sizeof(struct iphdr))
+		return false;
+
+	iphdr = (struct iphdr *)(skb->data + ipv4_offset);
+	ipv4_hdr_len = iphdr->ihl * SKB_IPV4_HDR_SIZE_UNIT;
+
+	if (ipv4_hdr_len < sizeof(struct iphdr) ||
+	    skb->len < ipv4_offset + ipv4_hdr_len + 1)
+		return false;
+
+	op_code = get_unaligned((u8 *)(skb->data + ipv4_offset + ipv4_hdr_len));
+
+	if (op_code == SKB_PKT_ICMPV4OP_REPLY)
+		return true;
+
+	return false;
+}
+
+static inline u8
+ath12k_dp_get_l4_protocol_subtype(struct sk_buff *skb)
+{
+	if (ath12k_dp_is_icmpv4_req(skb))
+		return DP_PKT_TYPE_ICMP_REQ;
+	else if (ath12k_dp_is_icmpv4_rsp(skb))
+		return DP_PKT_TYPE_ICMP_RSP;
+	else
+		return DP_PKT_TYPE_L4_NS;
+}
+
+static inline enum ath12k_dp_pkt_l5_proto_type
+ath12k_dp_get_dhcp_subtype(u8 *data)
+{
+	enum ath12k_dp_pkt_l5_proto_type subtype = DP_PKT_TYPE_DHCP_NS;
+
+	if (data[DHCP_OPTION53_OFFSET] == DHCP_OPTION53 &&
+	    data[DHCP_OPTION53_LENGTH_OFFSET] == DHCP_OPTION53_LENGTH) {
+		switch (data[DHCP_OPTION53_STATUS_OFFSET]) {
+		case DHCP_DISCOVER:
+			subtype = DP_PKT_TYPE_DHCP_DIS;
+			break;
+		case DHCP_REQUEST:
+			subtype = DP_PKT_TYPE_DHCP_REQ;
+			break;
+		case DHCP_OFFER:
+			subtype = DP_PKT_TYPE_DHCP_OFR;
+			break;
+		case DHCP_ACK:
+			subtype = DP_PKT_TYPE_DHCP_ACK;
+			break;
+		default:
+			subtype = DP_PKT_TYPE_DHCP_NS;
+			break;
+		}
+	}
+	return subtype;
+}
+
+static inline enum ath12k_dp_pkt_l5_proto_type
+ath12k_dp_get_l5_protocol_subtype(struct sk_buff *skb)
+{
+	return ath12k_dp_get_dhcp_subtype(skb->data);
+}
+
 #endif
