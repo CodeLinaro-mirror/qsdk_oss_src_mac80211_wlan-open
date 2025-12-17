@@ -2696,6 +2696,9 @@ void ath12k_core_pci_link_speed(struct ath12k_base *ab, u16 link_speed, u16 link
 void ath12k_core_radio_cleanup(struct ath12k *ar);
 void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 				    bool set_clear, u8 tid);
+void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
+					  u32 threshold_value, u32 detected_value,
+					  bool set_clear);
 void ath12k_vendor_wlan_intf_stats(struct work_struct *work);
 void ath12k_debug_print_dcs_wlan_intf_stats(struct ath12k_base *ab,
 					    struct wmi_dcs_wlan_interference_stats *info);

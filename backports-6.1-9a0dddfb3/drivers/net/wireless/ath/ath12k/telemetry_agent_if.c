@@ -754,6 +754,8 @@ int register_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops)
 	g_agent_ops->sawf_get_msduq_tx_stats = ath12k_sawf_get_msduq_tx_stats;
 	g_agent_ops->sawf_notify_breach = ath12k_sawf_notify_breach;
 
+	g_agent_ops->agent_notify_rssi_rate_breach = ath12k_rssi_rate_notify_breach;
+
 	g_agent_ops->agent_notify_host_event = ath12k_telemetry_notify_rm;
 
 	ath12k_info(NULL, "registered telemetry agent ops: %p", g_agent_ops);
@@ -855,6 +857,30 @@ int ath12k_telemetry_set_sla_detect_cfg(struct ath12k_sla_detect_cfg param)
 								param.mcs_min_thres,
 								param.mcs_max_thres,
 								param.retries_thres));
+
+	return -ENOENT;
+}
+
+int ath12k_telemetry_set_threshold(u8 type, u32 value)
+{
+	if (g_agent_ops && g_agent_ops->agent_set_rssi_rate_threshold)
+		return g_agent_ops->agent_set_rssi_rate_threshold(type, value);
+
+	return -ENOENT;
+}
+
+int ath12k_telemetry_print_thresholds(void)
+{
+	if (g_agent_ops && g_agent_ops->agent_print_rssi_rate_thresholds)
+		return g_agent_ops->agent_print_rssi_rate_thresholds();
+
+	return -ENOENT;
+}
+
+int ath12k_telemetry_set_breach_mask(u8 mask)
+{
+	if (g_agent_ops && g_agent_ops->agent_set_rssi_rate_breach_mask)
+		return g_agent_ops->agent_set_rssi_rate_breach_mask(mask);
 
 	return -ENOENT;
 }
@@ -1003,6 +1029,27 @@ void ath12k_sawf_notify_breach(u8 *mac_addr,
 			       u8 tid, u8 queue)
 {
 	ath12k_telemetry_breach_indication(mac_addr, svc_id, param, set_clear, tid);
+}
+
+int ath12k_telemetry_update_rssi_rate_breach(u8 *peer_mac, u8 path_type,
+					     s32 rssi_value, u32 rate_value)
+{
+	if (g_agent_ops && g_agent_ops->agent_update_rssi_rate_breach)
+		return g_agent_ops->agent_update_rssi_rate_breach(peer_mac,
+								  path_type,
+								  rssi_value,
+								  rate_value);
+
+	return -ENOENT;
+}
+EXPORT_SYMBOL(ath12k_telemetry_update_rssi_rate_breach);
+
+void ath12k_rssi_rate_notify_breach(u8 *peer_mac, u8 breach_type,
+				    u32 threshold_value, u32 detected_value,
+				    bool set_clear)
+{
+	ath12k_rssi_rate_breach_indication(peer_mac, breach_type, threshold_value,
+					   detected_value, set_clear);
 }
 
 int ath12k_telemetry_get_rate(void *telemetry_ctx, u8 tid,

@@ -255,6 +255,24 @@ struct agent_peer_tx_ext_stats {
 	struct telemetry_pkt_type packet_type[TELEMETRY_DOT11_MAX];
 };
 
+enum telemetry_threshold_type {
+	THRESHOLD_RSSI_MIN = 0,
+	THRESHOLD_RSSI_MAX = 1,
+	THRESHOLD_ACKRSSI_MIN = 2,
+	THRESHOLD_ACKRSSI_MAX = 3,
+	THRESHOLD_TXRATE_MIN = 4,
+	THRESHOLD_TXRATE_MAX = 5,
+	THRESHOLD_RXRATE_MIN = 6,
+	THRESHOLD_RXRATE_MAX = 7,
+	THRESHOLD_MAX,
+};
+
+/* Path type for datapath source */
+enum telemetry_path_type {
+	PATH_TYPE_RX = 0,     /* RX path: RSSI + RX Rate */
+	PATH_TYPE_TX = 1,     /* TX path: ACK RSSI + TX Rate */
+};
+
 struct telemetry_agent_ops {
 	int  (*agent_psoc_create_handler)(void *arg, struct agent_psoc_obj *psoc_obj);
 	int  (*agent_psoc_destroy_handler)(void *arg, struct agent_psoc_obj *psoc_obj);
@@ -409,6 +427,20 @@ struct telemetry_agent_ops {
 	int (*sawf_get_msduq_tx_stats)(void *soc, void *arg,
 				       void *msduq_tx_stats,
 				       u8 msduq);
+
+	/* RSSI/Rate breach detection & notification ops */
+	int (*agent_set_rssi_rate_threshold)(u8 threshold_type, u32 value);
+	int (*agent_print_rssi_rate_thresholds)(void);
+	int (*agent_set_rssi_rate_breach_mask)(u8 mask);
+	int (*agent_update_rssi_rate_breach)(u8 *peer_mac,
+					     u8 path_type,
+					     s32 rssi_value,
+					     u32 rate_value);
+	void (*agent_notify_rssi_rate_breach)(u8 *peer_mac,
+					      u8 breach_type,
+					      u32 threshold_value,
+					      u32 detected_value,
+					      bool set_clear);
 };
 
 void wlan_cfg80211_t2lm_app_reply_generic_response(void *gen_data,

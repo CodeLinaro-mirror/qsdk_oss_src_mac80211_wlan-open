@@ -5386,5 +5386,69 @@ void ath12k_telemetry_notify_breach(u8 *mac_addr, u8 svc_id, u8 param,
 		   mac_addr);
 }
 
+void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
+					  u32 threshold_value, u32 detected_value,
+					  bool set_clear)
+{
+	struct ath12k_hw_group *ag = NULL;
+	struct ieee80211_vif *vif = NULL;
+	struct ath12k_base *ab = NULL;
+	struct ath12k_dp_link_peer *peer = NULL;
+	struct ath12k_dp *dp;
+	int soc;
+	u8 mld_addr_buf[ETH_ALEN] = {0};
+	u8 *mld_addr = NULL;
+
+	if (!mac_addr)
+		return;
+
+	mutex_lock(&ath12k_hw_group_mutex);
+	list_for_each_entry(ag, &ath12k_hw_group_list, list) {
+		if (!ag) {
+			ath12k_err(NULL, "unable to fetch hw group\n");
+			continue;
+		}
+
+		for (soc = ag->num_probed; soc > 0; soc--) {
+			ab = ag->ab[soc - 1];
+			if (!ab) {
+				/* Control should not reach here */
+				ath12k_info(NULL, "SOC not initialized\n");
+				continue;
+			}
+
+			dp = ath12k_ab_to_dp(ab);
+			spin_lock_bh(&dp->dp_lock);
+			peer = ath12k_dp_link_peer_find_by_addr(dp, mac_addr);
+			if (peer) {
+				vif = peer->vif;
+				if (peer->mlo) {
+					ether_addr_copy(mld_addr_buf, peer->ml_addr);
+					mld_addr = mld_addr_buf;
+				}
+				ath12k_dbg(ab, ATH12K_DBG_TELEMETRY,
+					   "RSSI/Rate Breach detected: Peer %pM type %u\n",
+					   mac_addr, breach_type);
+				spin_unlock_bh(&dp->dp_lock);
+				mutex_unlock(&ath12k_hw_group_mutex);
+				ath12k_vendor_rssi_rate_notify_breach(vif,
+								      mac_addr,
+								      breach_type,
+								      threshold_value,
+								      detected_value,
+								      set_clear,
+								      mld_addr);
+				return;
+			}
+			spin_unlock_bh(&dp->dp_lock);
+		}
+	}
+	mutex_unlock(&ath12k_hw_group_mutex);
+
+	ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+		   "Peer(%pM) not found for RSSI/Rate breach notification",
+		   mac_addr);
+}
+
 MODULE_DESCRIPTION("Driver support for Qualcomm Technologies WLAN devices");
 MODULE_LICENSE("Dual BSD/GPL");

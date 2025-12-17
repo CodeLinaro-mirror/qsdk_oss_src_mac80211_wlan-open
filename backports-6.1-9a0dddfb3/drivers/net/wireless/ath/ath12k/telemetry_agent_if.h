@@ -86,6 +86,9 @@ int ath12k_telemetry_set_mov_avg_params(u32 num_pkt, u32 num_win);
 int ath12k_telemetry_set_sla_params(u32 num_pkt, u32 time_sec);
 int ath12k_telemetry_set_sla_cfg(struct ath12k_sla_thershold_cfg param);
 int ath12k_telemetry_set_sla_detect_cfg(struct ath12k_sla_detect_cfg param);
+int ath12k_telemetry_set_threshold(u8 type, u32 value);
+int ath12k_telemetry_print_thresholds(void);
+int ath12k_telemetry_set_breach_mask(u8 mask);
 int ath12k_telemetry_get_rate(void *telemetry_ctx, u8 tid,
 			      u8 queue, u32 *egress_rate,
 			      u32 *ingress_rate);
@@ -97,4 +100,9 @@ int ath12k_telemetry_get_mov_avg(void *telemetry_ctx, u8 tid,
 				 u8 queue, u32 *nwdelay_avg,
 				 u32 *swdelay_avg,
 				 u32 *hwdelay_avg);
+int ath12k_telemetry_update_rssi_rate_breach(u8 *peer_mac, u8 path_type,
+					     s32 rssi_value, u32 rate_value);
+void ath12k_rssi_rate_notify_breach(u8 *peer_mac, u8 breach_type,
+				    u32 threshold_value, u32 detected_value,
+				    bool set_clear);
 #endif /* ATH12K_TELEMETRY_AGENT_IF_H */
