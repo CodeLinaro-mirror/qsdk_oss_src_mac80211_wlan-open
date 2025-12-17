@@ -602,7 +602,10 @@ static int ath12k_wifi7_dp_rx_msdu_coalesce(struct ath12k_dp *dp,
 	space_extra = msdu_len - (buf_first_len + skb_tailroom(first));
 	if (space_extra > 0 &&
 	    (pskb_expand_head(first, 0, space_extra, GFP_ATOMIC) < 0)) {
-		/* Free up all buffers of the MSDU */
+		/* Free up all continuation buffers of the MSDU.
+		 * Do NOT free the first buffer as the caller will free it.
+		 */
+		msdu_idx++;
 		for (; msdu_idx < num_msdus; msdu_idx++) {
 			spd_desc_l = &rx_status_desc[msdu_idx];
 			if (!spd_desc_l->msdu)
@@ -616,6 +619,8 @@ static int ath12k_wifi7_dp_rx_msdu_coalesce(struct ath12k_dp *dp,
 			dev_kfree_skb_any(spd_desc_l->msdu);
 			spd_desc_l->msdu = NULL;
 		}
+
+		*idx = (msdu_idx == num_msdus) ? (msdu_idx - 1) : msdu_idx;
 		return -ENOMEM;
 	}
 
@@ -638,7 +643,7 @@ static int ath12k_wifi7_dp_rx_msdu_coalesce(struct ath12k_dp *dp,
 			WARN_ON_ONCE(1);
 			dev_kfree_skb_any(skb);
 			spd_desc_l->msdu = NULL;
-			return -EINVAL;
+			break;
 		}
 
 		skb_put(skb, buf_len + hal_rx_desc_sz);
@@ -1375,6 +1380,7 @@ ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 						       msdu, l3_pad_bytes, msdu_len,
 						       rx_desc, &msdu_idx, num_msdus);
 
+		*idx = msdu_idx;
 		if (ret) {
 			ath12k_warn(dp,
 				    "failed to coalesce msdu rx buffer%d\n", ret);
@@ -1384,7 +1390,6 @@ ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 		spd_desc_l = &rx_status_desc[msdu_idx];
 		tlv_info = &spd_desc_l->tlv_info;
-		*idx = msdu_idx;
 	}
 
 	if (unlikely(!ath12k_dp_rx_check_nwifi_hdr_len_valid(dp, tlv_info->decap,
