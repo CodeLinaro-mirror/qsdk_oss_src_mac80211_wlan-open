@@ -3173,7 +3173,9 @@ out:
 
 static inline bool ath12k_cold_boot_cal_needed(struct ath12k_base *ab)
 {
-	return (!ab->early_cal_support && ab->hw_params->cold_boot_calib && ath12k_cold_boot_cal && ab->qmi.cal_done == 0);
+	return (!ath12k_waltest_mode && !ab->early_cal_support &&
+		ab->hw_params->cold_boot_calib && ath12k_cold_boot_cal &&
+		ab->qmi.cal_done == 0);
 }
 
 struct qmi_elem_info qmi_wlanfw_mlo_reconfig_info_req_msg_v01_ei[] = {
@@ -6921,7 +6923,6 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 				queue_work(ab->workqueue, &ab->restart_work);
 				break;
 			}
-
 			ret = ath12k_wait_for_gic_msi(ab);
 			if (ret) {
 				ath12k_warn(ab, "failed to get qgic handler for dev %d ret: %d\n",

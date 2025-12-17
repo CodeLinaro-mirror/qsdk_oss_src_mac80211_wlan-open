@@ -88,6 +88,11 @@ module_param_named(ftm_mode, ath12k_ftm_mode, bool, 0444);
 MODULE_PARM_DESC(ftm_mode, "Boots up in factory test mode");
 EXPORT_SYMBOL(ath12k_ftm_mode);
 
+bool ath12k_waltest_mode;
+module_param_named(waltest_mode, ath12k_waltest_mode, bool, 0444);
+MODULE_PARM_DESC(waltest_mode, "Boots up in Wal test mode");
+EXPORT_SYMBOL(ath12k_waltest_mode);
+
 unsigned int ath12k_frame_mode = ATH12K_HW_TXRX_ETHERNET;
 module_param_named(frame_mode, ath12k_frame_mode, uint, 0644);
 MODULE_PARM_DESC(frame_mode,
@@ -1187,6 +1192,9 @@ static int ath12k_core_soc_create(struct ath12k_base *ab)
 	if (ath12k_ftm_mode) {
 		ab->fw_mode = ATH12K_FIRMWARE_MODE_FTM;
 		ath12k_info(ab, "Booting in ftm mode\n");
+	} else if (ath12k_waltest_mode) {
+		ab->fw_mode = ATH12K_FIRMWARE_MODE_WALTEST;
+		ath12k_info(ab, "Booting in waltest mode\n");
 	}
 
 	ret = ath12k_qmi_init_service(ab);
@@ -1846,7 +1854,7 @@ static int ath12k_core_start_firmware(struct ath12k_base *ab,
 	 * configuration in both Mission and FTM modes.
 	 */
 #ifdef CPTCFG_ATHDEBUG
-	if (ab->hw_params->en_qdsslog) {
+	if (ab->hw_params->en_qdsslog && !ath12k_waltest_mode) {
 		ath12k_info(ab, "QDSS trace enabled\n");
 		qdss_ret = athdbg_if_get_service(ab, ATHDBG_SRV_CONFIG_QDSS);
 		if (qdss_ret < 0) {
@@ -1969,8 +1977,14 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 #endif
 	ret = ath12k_core_start_firmware(ab, ab->fw_mode);
 	if (ret) {
-		ath12k_err(ab, "failed to start firmware: %d\n", ret);
+		ath12k_err(ab, "failed to start firmware in mode: %d ret: %d\n",
+			   ab->fw_mode, ret);
 		return ret;
+	}
+
+	if (ath12k_waltest_mode) {
+		ath12k_info(ab, "Booted in Waltest mode\n");
+		return 0;
 	}
 
 	ret = ath12k_ce_init_pipes(ab);
@@ -3718,7 +3732,8 @@ static void ath12k_core_reset(struct work_struct *work)
 	int reset_count, fail_cont_count, i;
 	long time_left;
 
-	if (!(test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags))) {
+	if (!(test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags)) &&
+	    !ath12k_waltest_mode) {
 		ath12k_warn(ab, "ignore reset dev flags 0x%lx\n", ab->dev_flags);
 		return;
 	}
@@ -4323,7 +4338,7 @@ static struct ath12k_hw_group *ath12k_core_hw_group_assign(struct ath12k_base *a
 
 	lockdep_assert_held(&ath12k_hw_group_mutex);
 
-	if (ath12k_ftm_mode || !ath12k_mlo_capable)
+	if (ath12k_ftm_mode || !ath12k_mlo_capable || ath12k_waltest_mode)
 		goto invalid_group;
 
 	/* The grouping of multiple devices will be done based on device tree file.
@@ -4773,7 +4788,7 @@ void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag)
 	struct ath12k_base *ab;
 	int i;
 
-	if (ath12k_ftm_mode || !ath12k_mlo_capable)
+	if (ath12k_ftm_mode || !ath12k_mlo_capable || ath12k_waltest_mode)
 		return;
 
 	lockdep_assert_held(&ag->mutex);

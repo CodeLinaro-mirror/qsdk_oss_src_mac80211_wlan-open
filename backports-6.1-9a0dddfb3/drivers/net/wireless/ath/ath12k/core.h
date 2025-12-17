@@ -137,6 +137,7 @@ extern unsigned int ath12k_reorder_VI_timeout;
 extern unsigned int ath12k_max_clients;
 #endif
 extern bool ath12k_mlo_3_link_tx;
+extern bool ath12k_waltest_mode;
 struct ath12k_dp;
 struct ath12k_hp_update_timer;
 
@@ -284,6 +285,9 @@ enum ath12k_firmware_mode {
 
 	/* factory tests etc */
 	ATH12K_FIRMWARE_MODE_FTM,
+
+	/* waltest tests etc */
+	ATH12K_FIRMWARE_MODE_WALTEST = 3,
 
 	/* Cold boot calibration */
 	ATH12K_FIRMWARE_MODE_COLD_BOOT = 7,
