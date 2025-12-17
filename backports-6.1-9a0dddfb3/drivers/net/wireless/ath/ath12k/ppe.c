@@ -1524,7 +1524,12 @@ ath12k_dp_rx_ppeds_fse_update_flow_info(struct ath12k_base *ab,
 	tuple_info->src_port = ppe_tuple->src_port;
 	tuple_info->dest_port = ppe_tuple->dest_port;
 	tuple_info->l4_protocol = ppe_tuple->protocol;
-	flow_info->fse_metadata = ppe_flow_info->vp_num;
+	flow_info->fse_metadata =
+		u32_replace_bits(flow_info->fse_metadata, ppe_flow_info->vp_num,
+				 ATH12K_DP_RX_FSE_FL_VP_NUM_MASK);
+	flow_info->fse_metadata =
+		u32_replace_bits(flow_info->fse_metadata, ppe_flow_info->macid,
+				 ATH12K_DP_RX_FSE_FL_EGRESS_MACID_MASK);
 
 	if (ppe_flow_info->flags & PPE_DRV_FSE_IPV4) {
 		flow_info->is_addr_ipv4 = 1;
