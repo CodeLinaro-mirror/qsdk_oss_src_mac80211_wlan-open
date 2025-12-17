@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <crypto/hash.h>
@@ -65,6 +65,7 @@ struct ath12k_dp_preserved_stats *ath12k_dp_alloc_preserved_stats(void)
 		return NULL;
 	return stats;
 }
+EXPORT_SYMBOL(ath12k_dp_alloc_preserved_stats);
 
 void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats)
 {
@@ -72,6 +73,7 @@ void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats)
 		return;
 	kfree(stats);
 }
+EXPORT_SYMBOL(ath12k_dp_free_preserved_stats);
 
 /*
  * TODO: fix this

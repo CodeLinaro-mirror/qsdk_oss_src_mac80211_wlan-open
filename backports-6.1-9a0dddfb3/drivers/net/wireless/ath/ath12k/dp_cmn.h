@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
- * Copyright (c) 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #ifndef ATH12K_DP_CMN_H
@@ -120,4 +120,5 @@ bool ath12k_dp_link_peer_reset_tx_stats(struct ath12k_dp *dp, const u8 *addr);
 u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id);
 int ath12k_dp_mon_init(struct ath12k_dp *dp);
 void ath12k_dp_mon_deinit(struct ath12k_dp *dp);
+struct ath12k_dp_peer *ath12k_dp_peer_find(struct ath12k_dp_hw *dp_hw, u8 *addr);
 #endif

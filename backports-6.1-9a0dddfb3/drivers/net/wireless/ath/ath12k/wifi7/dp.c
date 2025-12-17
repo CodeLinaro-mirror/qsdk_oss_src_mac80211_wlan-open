@@ -16,6 +16,7 @@
 #include "hal.h"
 #include "ppeds.h"
 #include "dp_mon.h"
+#include "dp_peer.h"
 
 static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 					struct ath12k_ext_irq_grp *irq_grp,
@@ -364,6 +365,8 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.sdwf_reinject_handler = ath12k_wifi7_sdwf_reinject_handler,
 	.dp_tx_ring_setup = ath12k_wifi7_dp_tx_ring_setup,
 	.dp_tx_status_parse = ath12k_wifi7_dp_tx_status_parse,
+	.dp_peer_create = ath12k_wifi7_dp_peer_create,
+	.dp_peer_delete = ath12k_wifi7_dp_peer_delete,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */

@@ -39,6 +39,7 @@
 extern struct ath12k_ppeds_desc_params ath12k_ppeds_desc_params;
 
 struct ath12k_base;
+struct ath12k_hw;
 struct ath12k_dp_link_peer;
 struct ath12k_dp;
 struct ath12k_vif;
@@ -508,6 +509,11 @@ struct ath12k_dp_arch_ops {
 				   struct hal_wbm_completion_ring_tx *desc,
 				   struct hal_tx_status *ts);
 	int (*dp_msdu_htt_connect)(struct ath12k_dp *dp);
+	int (*dp_peer_create)(struct ath12k_hw *ah, u8 *addr,
+			      struct ath12k_dp_peer_create_params *params,
+			      struct ieee80211_vif *vif);
+	void (*dp_peer_delete)(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
+			       struct ieee80211_sta *sta, u8 hw_link_id);
 };
 
 struct ath12k_bp_stats {
@@ -1011,6 +1017,28 @@ static inline int ath12k_dp_arch_pdev_alloc(struct ath12k_dp *dp)
 static inline void ath12k_dp_arch_pdev_free(struct ath12k_dp *dp)
 {
 	dp->arch_ops->dp_pdev_free(dp->ab);
+}
+
+static inline int
+ath12k_dp_arch_peer_create(struct ath12k_dp *dp,
+			   struct ath12k_hw *ah,
+			   u8 *addr,
+			   struct ath12k_dp_peer_create_params *params,
+			   struct ieee80211_vif *vif)
+{
+	if (dp->arch_ops->dp_peer_create)
+		return dp->arch_ops->dp_peer_create(ah, addr, params, vif);
+	return -EOPNOTSUPP;
+}
+
+static inline void
+ath12k_dp_arch_peer_delete(struct ath12k_dp *dp,
+			   struct ath12k_hw *ah,
+			   u8 *addr,
+			   struct ieee80211_sta *sta, u8 hw_link_id)
+{
+	if (dp->arch_ops->dp_peer_delete)
+		dp->arch_ops->dp_peer_delete(dp, ah, addr, sta, hw_link_id);
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)

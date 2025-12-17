@@ -241,11 +241,6 @@ int ath12k_dp_link_peer_rhash_add(struct ath12k_dp *dp,
 				  struct ath12k_dp_link_peer *peer);
 int ath12k_dp_link_peer_rhash_delete(struct ath12k_dp *dp,
 				     struct ath12k_dp_link_peer *peer);
-int ath12k_dp_peer_create(struct ath12k_dp_hw *dp_hw, u8 *addr,
-			  struct ath12k_dp_peer_create_params *params,
-			  struct ieee80211_vif *vif);
-void ath12k_dp_peer_delete(struct ath12k_dp_hw *dp_hw, u8 *addr,
-			   struct ieee80211_sta *sta, u8 hw_link_id);
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,
 							   u16 peer_id);
@@ -302,4 +297,6 @@ u16 dp_peer_msduq_qos_id(struct ath12k_base *ab,
 void ath12k_peer_qos_queue_ind_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
 void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer);
+struct ath12k_dp_peer *ath12k_dp_vdev_peer_find(struct ath12k_dp_hw *dp_hw,
+						u8 *addr, u8 hw_link_id);
 #endif

@@ -2418,6 +2418,7 @@ void ath12k_core_radio_cleanup(struct ath12k *ar)
 	complete(&ar->scan.started);
 	complete_all(&ar->scan.completed);
 	complete(&ar->scan.on_channel);
+	complete(&ar->peer_create_done);
 	complete(&ar->peer_assoc_done);
 	complete(&ar->peer_delete_done);
 	ath12k_debugfs_nrp_cleanup_all(ar);
@@ -3109,7 +3110,7 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 	int ret = -1;
 	u8 link_id;
-	bool is_bridge_vdev;
+	bool is_bridge_vdev, dp_peer_created = false;
 	struct ath12k_dp_peer_create_params dp_params = {};
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
@@ -3184,13 +3185,15 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 		dp_params.is_vdev_peer = true;
 		dp_params.hw_link_id = ar->hw_link_id;
 
-		ret = ath12k_dp_peer_create(&ah->dp_hw, arvif->bssid, &dp_params, vif);
+		ret = ath12k_dp_arch_peer_create(ab->dp, ah, arvif->bssid,
+						 &dp_params, vif);
 		if (ret) {
 			ath12k_warn(ab, "failed to create dp_peer for vdev AP %d: %d\n",
 				    arvif->vdev_id, ret);
 			goto exit;
 		}
 
+		dp_peer_created = true;
 		param.vdev_id = arvif->vdev_id;
 		param.peer_type = WMI_PEER_TYPE_DEFAULT;
 		param.peer_addr = ar->mac_addr;
@@ -3224,6 +3227,10 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	arvif->is_started = true;
 	ret = 0;
 exit:
+	if (ret && dp_peer_created)
+		ath12k_dp_arch_peer_delete(ab->dp, ah, arvif->bssid,
+					   NULL, ar->hw_link_id);
+
 	ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
 		   "ret:%d No. of vdev created:%d, links_map:0x%x, flag:%d\n",
 		   ret,
