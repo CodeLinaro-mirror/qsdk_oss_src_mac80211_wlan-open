@@ -49,13 +49,13 @@ struct ath12k_tx_desc_info *ath12k_dp_tx_assign_buffer(struct ath12k_dp *dp,
 						       u8 pool_id);
 int ath12k_dp_tx_htt_h2t_vdev_stats_ol_req(struct ath12k *ar, u64 reset_bitmask);
 u8 ath12k_dp_get_link_id(struct ath12k_pdev_dp *dp_pdev,
-			 struct hal_tx_status *ts, struct ath12k_dp_peer *peer);
+			 u8 hw_link_id, struct ath12k_dp_peer *peer);
 void ath12k_dp_tx_update_peer_basic_stats(struct ath12k_dp_peer *peer,
 					  u32 msdu_len, u8 tx_status,
 					  u8 link_id, int ring_id);
 void ath12k_dp_tx_comp_update_peer_stats(struct ath12k_dp_peer *peer,
 					 struct hal_tx_status *ts, int ring_id,
-					 u16 tx_desc_flags);
+					 u16 tx_desc_flags, u8 link_id);
 int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 				 struct htt_tx_wbm_completion *status_desc, u8 mac_id);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT

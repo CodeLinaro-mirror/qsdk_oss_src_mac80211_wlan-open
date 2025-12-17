@@ -147,7 +147,6 @@ struct ath12k_dp_peer {
 	bool qos_stats_lvl;
 
 	u8 hw_links[ATH12K_GROUP_MAX_RADIO];
-	u16 stats_link_id;
 	struct ath12k_dp_peer_stats stats[ATH12K_DP_MAX_MLO_LINKS];
 #if defined(CPTCFG_MAC80211_PPE_SUPPORT) || defined(CPTCFG_ATH12K_PPE_DS_SUPPORT)
 	int ppe_vp_num;
