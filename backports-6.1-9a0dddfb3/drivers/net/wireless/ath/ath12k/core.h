@@ -2204,7 +2204,7 @@ struct ar_sta_cookie {
 };
 
 void ath12k_core_panic_notifier_unregister(struct ath12k_base *ab);
-int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab);
+int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready);
 int ath12k_core_init(struct ath12k_base *ath12k);
 void ath12k_core_deinit(struct ath12k_base *ath12k);
 struct ath12k_base *ath12k_core_alloc(struct device *dev, size_t priv_size,

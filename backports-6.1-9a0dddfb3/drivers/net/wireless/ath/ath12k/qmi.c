@@ -6934,7 +6934,7 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 			} else {
 				clear_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 				clear_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
-				ret = ath12k_core_qmi_firmware_ready(ab);
+				ret = ath12k_core_qmi_firmware_ready(ab, NULL);
 				if (!ret)
 					set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,
 						&ab->dev_flags);
