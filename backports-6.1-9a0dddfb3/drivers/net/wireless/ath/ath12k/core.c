@@ -3452,8 +3452,8 @@ skip_link_info:
 	/* Send disassoc to MLD STA */
 	ath12k_core_peer_disassoc(ag, ab);
 	ab->recovery_start = false;
+	ath12k_info(ab, "Mode %d recovery completed\n", ag->recovery_mode - 1);
 	ag->recovery_mode = ATH12K_MLO_RECOVERY_MODE0;
-	ath12k_info(ab, "Mode1 recovery completed\n");
 	wiphy_unlock(ah->hw->wiphy);
 	return ret;
 }
