@@ -17,6 +17,7 @@ struct hal_rx_reo_queue;
 struct hal_rx_spd_data;
 struct rx_mpdu_desc_info;
 
+#define HAL_INVALID_PEERID	0x3fff
 #define HAL_CE_REMAP_REG_BASE  (ab->ce_remap_base_addr)
 
 #define HAL_RING_BASE_ALIGN	8

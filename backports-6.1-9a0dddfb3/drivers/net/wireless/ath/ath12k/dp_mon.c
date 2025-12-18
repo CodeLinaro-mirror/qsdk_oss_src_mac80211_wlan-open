@@ -878,12 +878,22 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 }
 
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
-					   struct ath12k_dp_link_peer *peer,
 					   struct hal_rx_mon_ppdu_info *ppdu_info)
 {
-	struct ath12k_rx_peer_stats *rx_stats = peer->peer_stats.rx_stats;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_rx_peer_stats *rx_stats;
 	u32 num_msdu;
 
+	peer = ath12k_dp_link_peer_find_by_peerid_index(pdev_dp->dp, pdev_dp,
+							ppdu_info->peer_id);
+	if (!peer) {
+		ath12k_dbg(pdev_dp->ar->ab, ATH12K_DBG_DATA,
+			   "failed to find the peer with monitor peer_id %d\n",
+			   ppdu_info->peer_id);
+		return;
+	}
+
+	rx_stats = peer->peer_stats.rx_stats;
 	peer->rssi_comb = ppdu_info->rssi_comb;
 	ewma_avg_rssi_add(&peer->avg_rssi, ppdu_info->rssi_comb);
 
@@ -1056,10 +1066,11 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	struct ath12k_dp *dp = pdev_dp->dp;
 	struct ath12k_base *ab = dp->ab;
 
-	if (ppdu_info->peer_id == HAL_MON_INVALID_PEERID)
+	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
 		return;
 
-	peer = ath12k_dp_link_peer_find_by_ast(dp, user_stats->ast_index);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, pdev_dp,
+							user_stats->sw_peer_id);
 	if (!peer) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_RX, "peer with peer id %d can't be found\n",
 			   ppdu_info->peer_id);
@@ -1191,7 +1202,8 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(), "PPDU per user rx time update called without rcu lock\n");
 	lockdep_assert_held(&dp_pdev->dp->dp_lock);
 
-       peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, user_stats->sw_peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+							user_stats->sw_peer_id);
        if (!peer || !peer->sta) {
                ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
                           "peer stats not found on ppdu peer id %d\n",
@@ -1237,7 +1249,8 @@ ath12k_dp_mon_per_user_ppdu_rssi_update(struct ath12k_pdev_dp *dp_pdev,
 
 	lockdep_assert_held(&dp_pdev->dp->dp_lock);
 
-	peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, user_stats->sw_peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+							user_stats->sw_peer_id);
 	if (!peer || !peer->sta) {
 		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
 			   "peer stats not found on ppdu peer id %d\n",
@@ -1586,6 +1599,8 @@ void ath12k_dp_mon_pdev_rx_attach(struct ath12k_pdev_dp *dp_pdev)
 
 	for (i = 0; i < HAL_MAX_UL_MU_USERS; i++)
 		skb_queue_head_init(&ppdu_info->mpdu_q[i]);
+
+	ppdu_info->peer_id = HAL_INVALID_PEERID;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_rx_attach);
 
