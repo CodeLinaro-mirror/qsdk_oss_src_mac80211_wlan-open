@@ -12045,7 +12045,7 @@ static void ath12k_mac_ml_station_remove(struct ath12k_vif *ahvif,
 	u8 link_id;
 	struct ieee80211_vif *vif = ahvif->vif;
 	struct wireless_dev *wdev =  ieee80211_vif_to_wdev(vif);
-	int link_going_down;
+	int link_going_down = -1;
 	bool peer_del_all, is_link_down;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);

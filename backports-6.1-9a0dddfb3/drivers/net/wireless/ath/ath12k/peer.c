@@ -364,8 +364,12 @@ int ath12k_peer_mlo_link_peer_delete(struct ath12k_link_vif *arvif,
 	ath12k_dp_link_peer_unassign(ar, arvif->vdev_id, arsta->addr);
 
 	if (peer_del_all && link_going_down == arvif->link_id &&
-	    arsta->ahsta->primary_link_id == link_going_down)
+	    arsta->ahsta->primary_link_id == link_going_down) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+			   "Skipping peer delete for %pM due to peer_del_all:%d link_going_down:%d\n",
+			   arsta->addr, peer_del_all, link_going_down);
 		return 0;
+	}
 
 	if (test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags)) {
 		ath12k_warn(ar->ab,
