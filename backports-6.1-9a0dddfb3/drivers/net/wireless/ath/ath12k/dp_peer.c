@@ -186,10 +186,13 @@ void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
 	kfree(peer);
 }
 
-void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id)
+void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id, bool is_wds)
 {
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (is_wds)
+		return;
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -211,10 +214,13 @@ exit:
 }
 
 void ath12k_peer_map_event(struct ath12k_base *ab, u8 vdev_id, u16 peer_id,
-			   u8 *mac_addr, u16 ast_hash, u16 hw_peer_id)
+			   u8 *mac_addr, u16 ast_hash, u16 hw_peer_id, bool is_wds)
 {
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (is_wds)
+		return;
 
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, mac_addr);
