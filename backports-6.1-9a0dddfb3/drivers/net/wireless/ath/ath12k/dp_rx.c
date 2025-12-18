@@ -357,7 +357,7 @@ static void ath12k_dp_rx_mld_addr_conv(struct ath12k_pdev_dp *dp_pdev,
 	struct ieee80211_hdr *hdr = (void *)msdu->data;
 
 	spin_lock_bh(&dp_pdev->dp->dp_lock);
-	peer = ath12k_dp_rx_h_find_peer(dp_pdev->dp, rx_desc, peer_id);
+	peer = ath12k_dp_rx_h_find_peer(dp_pdev, rx_desc, peer_id);
 	if (!peer || !peer->mlo) {
 		spin_unlock_bh(&dp_pdev->dp->dp_lock);
 		return;
@@ -993,13 +993,16 @@ struct sk_buff *ath12k_dp_rx_get_msdu_last_buf(struct sk_buff_head *msdu_list,
 }
 
 struct ath12k_dp_link_peer *
-ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct hal_rx_desc *rx_desc, u16 peer_id)
+ath12k_dp_rx_h_find_peer(struct ath12k_pdev_dp *dp_pdev,
+			 struct hal_rx_desc *rx_desc,
+			 u16 peer_id)
 {
 	struct ath12k_dp_link_peer *peer = NULL;
+	struct ath12k_dp *dp = dp_pdev->dp;
 	void *peer_mac;
 
 
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (peer)
 		return peer;
 

@@ -29,6 +29,7 @@ ath12k_dp_link_peer_find_by_vdev_id_and_addr(struct ath12k_dp *dp,
 
 	return NULL;
 }
+EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_vdev_id_and_addr);
 
 struct ath12k_dp_link_peer *
 ath12k_dp_link_peer_find_by_pdev_idx(struct ath12k_dp *dp, u8 pdev_idx,
@@ -532,27 +533,15 @@ struct ath12k_dp_peer *ath12k_dp_peer_create_find(struct ath12k_dp_hw *dp_hw, u8
 }
 EXPORT_SYMBOL(ath12k_dp_peer_create_find);
 
-#define PEER_TABLE_SOC_ID_SHIFT        10
-
-u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
-{
-	return (peer_id & ATH12K_PEER_ML_ID_VALID) ? peer_id :
-		((dp->device_id << PEER_TABLE_SOC_ID_SHIFT) | peer_id);
-}
-
 struct ath12k_dp_peer *ath12k_dp_peer_find_by_peerid_index(struct ath12k_dp *dp,
 							   struct ath12k_pdev_dp *dp_pdev,
-							   u16 peer_id)
+							   u16 index)
 {
-	u16 index;
-
 	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
 			 "ath12k dp peer find by peerid index called without rcu lock");
 
-	if (peer_id >= ATH12K_PEER_ID_INVALID)
+	if (index >= ATH12K_PEER_ID_INVALID)
 		return NULL;
-
-	index = ath12k_dp_peer_get_peerid_index(dp, peer_id);
 
 	return rcu_dereference(dp_pdev->dp_hw->dp_peer_list[index]);
 }
@@ -580,6 +569,42 @@ ath12k_dp_link_peer_find_by_peerid_index(struct ath12k_dp *dp,
 	return rcu_dereference(dp_peer->link_peers[link_id]);
 }
 EXPORT_SYMBOL(ath12k_dp_link_peer_find_by_peerid_index);
+
+u16 ath12k_dp_peer_get_peer_id(struct ath12k_dp_hw *dp_hw, u8 *addr)
+{
+	struct ath12k_dp_peer *dp_peer;
+	int peer_id = ATH12K_MLO_PEER_ID_INVALID;
+
+	spin_lock_bh(&dp_hw->peer_lock);
+
+	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return ATH12K_MLO_PEER_ID_INVALID;
+	}
+
+	peer_id = dp_peer->peer_id;
+	spin_unlock_bh(&dp_hw->peer_lock);
+	return peer_id;
+}
+
+u16 ath12k_dp_peer_get_sta_id(struct ath12k_dp_hw *dp_hw, u8 *addr)
+{
+	struct ath12k_dp_peer *dp_peer;
+	int sta_id = ATH12K_STA_ID_INVALID;
+
+	spin_lock_bh(&dp_hw->peer_lock);
+
+	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return ATH12K_STA_ID_INVALID;
+	}
+
+	sta_id = dp_peer->sta_id;
+	spin_unlock_bh(&dp_hw->peer_lock);
+	return sta_id;
+}
 
 int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 			       struct ieee80211_sta *sta, u8 *addr, u8 link_id,
@@ -619,10 +644,6 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 		goto err_dp_peer;
 	}
 
-	/* Set peer_id in dp_peer for non-mlo client, peer_id for mlo client is
-	   set during dp_peer create */
-	if (!dp_peer->is_mlo)
-		dp_peer->peer_id = peer->peer_id;
 	peer->dp_peer = dp_peer;
 	peer->hw_link_id = hw_link_id;
 	peer->tcl_metadata |= u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
@@ -656,13 +677,20 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 		dp_peer->ppe_vp_num = vp_num;
 #endif
 
-	peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
+	if (peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+		peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
+		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], dp_peer);
+		/* Set peer_id in dp_peer for non-mlo client, peer_id for mlo client is
+		 * set during dp_peer create
+		 */
+		if (!dp_peer->is_mlo)
+			dp_peer->peer_id = peer->peer_id;
+	}
 
-	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], peer);
 	if (!dp_peer->is_vdev_peer)
 		dp_peer->peer_links_map |= BIT(link_id);
 
-	rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], dp_peer);
+	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], peer);
 
 	spin_unlock_bh(&dp_hw->peer_lock);
 
@@ -831,8 +859,6 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	dp_peer = peer->dp_peer;
 	dp_peer->hw_links[peer->hw_link_id] = 0;
 
-	peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
-
 	stats_link_id = peer->link_id;
 	if (!dp_peer->is_vdev_peer) {
 		dp_peer->peer_links_map &= ~BIT(peer->link_id);
@@ -847,8 +873,10 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	}
 
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
-
-	rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+	if (peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+		peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
+		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+	}
 
 	spin_unlock_bh(&dp_hw->peer_lock);
 

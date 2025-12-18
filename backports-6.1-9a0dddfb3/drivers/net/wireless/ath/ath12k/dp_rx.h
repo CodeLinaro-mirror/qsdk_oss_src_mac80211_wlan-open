@@ -240,7 +240,8 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 				 struct crypto_shash *tfm);
 
 struct ath12k_dp_link_peer *
-ath12k_dp_rx_h_find_peer(struct ath12k_dp *dp, struct hal_rx_desc *rx_desc, u16 peer_id);
+ath12k_dp_rx_h_find_peer(struct ath12k_pdev_dp *dp_pdev,
+			 struct hal_rx_desc *rx_desc, u16 peer_id);
 u8 ath12k_dp_rx_h_decap_type(struct ath12k_base *ab,
 			     struct hal_rx_desc *desc);
 u32 ath12k_dp_rx_h_mpdu_err(struct ath12k_base *ab,

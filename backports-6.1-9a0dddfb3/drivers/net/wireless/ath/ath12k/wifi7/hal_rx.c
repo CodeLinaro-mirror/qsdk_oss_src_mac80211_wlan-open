@@ -456,6 +456,8 @@ int ath12k_wifi7_hal_wbm_desc_parse_err(struct ath12k_dp *dp, void *desc,
 			(struct ath12k_rx_desc_info *)((unsigned long)desc_va);
 	}
 
+	rel_info->peer_metadata = wbm_desc->info2;
+
 	rel_info->err_rel_src = rel_src;
 	rel_info->hw_cc_done = hw_cc_done;
 
