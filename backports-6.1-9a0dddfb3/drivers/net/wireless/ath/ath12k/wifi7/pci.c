@@ -15,6 +15,9 @@
 #include "hw.h"
 #include "dp.h"
 #include "hal.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 
 #define QCN9274_DEVICE_ID		0x1109
 #define WCN7850_DEVICE_ID		0x1107
@@ -161,6 +164,9 @@ static struct ath12k_pci_driver ath12k_wifi7_pci_driver = {
 	.ops.dp_init = ath12k_wifi7_dp_init,
 	.ops.dp_deinit = ath12k_wifi7_dp_deinit,
 	.reg_base = &ath12k_wifi7_reg_base,
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	.ops.ipa_init = ath12k_wifi7_dp_ipa_init,
+#endif
 };
 
 int ath12k_wifi7_pci_init(void)
