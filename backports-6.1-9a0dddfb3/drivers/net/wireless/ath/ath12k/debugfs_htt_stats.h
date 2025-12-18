@@ -952,6 +952,7 @@ enum ATH12K_HTT_TX_RX_PDEV_STATS_AX_RU_SIZE {
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_LTF			4
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS		2
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS	2
+#define ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS	4
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_11AX_TRIGGER_TYPES		6
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_11BE_TRIGGER_TYPES		6
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_REDUCED_CHAN_TYPES		2
@@ -3036,6 +3037,31 @@ struct htt_print_sta_ul_ofdma_stats_tlv {
 #define ATH12K_HTT_TX_NUM_MUMIMO_GRP_INVALID_WORDS \
 	(ATH12K_HTT_STATS_NUM_MAX_MUMIMO_SZ * ATH12K_HTT_STATS_MAX_INVALID_REASON_CODE)
 
+enum ath12k_htt_tx_pdev_stats_bn_dru_size {
+	ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_26,
+	ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_52,
+	ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_106,
+	ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_242,
+	ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_484,
+	ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT = 5,
+};
+
+enum ath12k_htt_bn_ul_ofdma_ru_alloc_mode {
+	ATH12K_HTT_BN_UL_OFDMA_RRU_ONLY_ALLOC_MODE,
+	ATH12K_HTT_BN_UL_OFDMA_DRU_ONLY_ALLOC_MODE,
+	ATH12K_HTT_BN_UL_OFDMA_HYBRID_RU_ALLOC_MODE,
+	ATH12K_HTT_BN_UL_OFDMA_RU_ALLOC_MODE_RESERVED_1,
+	ATH12K_HTT_BN_UL_OFDMA_RU_ALLOC_MODE_RESERVED_2,
+	ATH12K_HTT_BN_UL_OFDMA_NUM_RU_ALLOC_MODES = 5,
+};
+
+enum ath12k_htt_bn_ul_ofdma_dru_sbw_size {
+	ATH12K_HTT_BN_UL_OFDMA_DRU_SBW_20MHZ,
+	ATH12K_HTT_BN_UL_OFDMA_DRU_SBW_40MHZ,
+	ATH12K_HTT_BN_UL_OFDMA_DRU_SBW_80MHZ,
+	ATH12K_HTT_BN_UL_OFDMA_NUM_DRU_SBW_COUNT = 3,
+};
+
 struct ath12k_htt_tx_selfgen_cmn_stats_tlv {
 	__le32 mac_id__word;
 	__le32 su_bar;
@@ -3156,6 +3182,7 @@ struct ath12k_htt_tx_selfgen_bn_stats_tlv {
 	__le32 manual_bn_su_ulofdma_basic_trigger_err[ATH12K_HTT_NUM_AC_WMM];
 	__le32 manual_bn_mu_ulofdma_basic_trigger[ATH12K_HTT_NUM_AC_WMM];
 	__le32 manual_bn_mu_ulofdma_basic_trigger_err[ATH12K_HTT_NUM_AC_WMM];
+	__le32 bn_basic_trig_ru_alloc_mode[ATH12K_HTT_BN_UL_OFDMA_NUM_RU_ALLOC_MODES];
 } __packed;
 
 struct ath12k_htt_tx_selfgen_ac_err_stats_tlv {
@@ -4318,6 +4345,10 @@ struct ath12k_htt_tx_per_rate_stats_tlv {
 			[ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS];
 	struct ath12k_htt_tx_rate_stats npca_per_tx_su_punctured_mode
 			[ATH12K_HTT_TX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
+	struct ath12k_htt_tx_rate_stats per_mcs_ext_3
+			[ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
+	struct ath12k_htt_tx_rate_stats per_dru
+			[ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT];
 } __packed;
 
 #define ATH12K_HTT_TX_PDEV_NUM_BE_MCS_CNTRS		16
@@ -4487,6 +4518,8 @@ struct ath12k_htt_rx_pdev_be_ul_trig_stats_tlv {
 	s32 bn_uplink_sta_fd_rssi[ATH12K_HTT_RX_UL_MAX_UPLINK_RSSI_TRACK];
 	__le32 bn_uplink_sta_power_headroom[ATH12K_HTT_RX_UL_MAX_UPLINK_RSSI_TRACK];
 	__le32 bn_ul_ofdma_basic_trig_rx_qos_null_only;
+	__le32 bn_ul_ofdma_rx_dru_sbw[ATH12K_HTT_BN_UL_OFDMA_NUM_DRU_SBW_COUNT];
+	__le32 bn_rx_data_dru_size_ppdu[ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT];
 } __packed;
 
 struct htt_umac_ssr_stats_tlv {
