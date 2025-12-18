@@ -26,7 +26,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 {
 	struct napi_struct *napi = &irq_grp->napi;
 	struct ath12k_base *ab = dp->ab;
-	int cpu_id = smp_processor_id();
 	int grp_id = irq_grp->grp_id;
 	int work_done = 0;
 	int i = 0, j;
@@ -38,7 +37,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	if (ath12k_dp_umac_reset_in_progress(ab))
 		return 0;
 
-	set_bit(cpu_id, &dp->service_rings_running);
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
 
@@ -161,10 +159,6 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	/* TODO: Implement handler for other interrupts */
 
 done:
-	clear_bit(cpu_id, &dp->service_rings_running);
-	if (ab->dp_umac_reset.umac_pre_reset_in_prog)
-		ath12k_umac_reset_notify_pre_reset_done(ab);
-
 	return tot_work_done;
 }
 

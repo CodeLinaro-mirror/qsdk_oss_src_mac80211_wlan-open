@@ -801,7 +801,6 @@ struct ath12k_dp {
 	/*Neighbors Peer list for NAC RSSI*/
 	struct list_head neighbor_peers;
 	int num_nrps;
-	unsigned long service_rings_running;
 	bool stats_disable;
 
 	/* Extension descriptor cache for kmem_cache allocation */
@@ -940,7 +939,6 @@ struct ath12k_dp_umac_reset {
 	struct tasklet_struct intr_tq;
 	int irq_num;
 	struct ath12k_umac_reset_ts ts;
-	bool umac_pre_reset_in_prog;
 
 	/* State machine fields */
 	enum ath12k_umac_reset_state current_state;
