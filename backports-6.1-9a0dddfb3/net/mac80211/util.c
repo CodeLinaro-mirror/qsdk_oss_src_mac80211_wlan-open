@@ -4806,9 +4806,7 @@ int ieee80211_max_num_channels(struct ieee80211_local *local, int radio_idx)
 {
 	u32 max_num_different_channels = 1;
 	int err;
-	struct iface_combination_params params = {
-		.radio_idx = radio_idx,
-	};
+	struct iface_combination_params params = {0};
 
 	lockdep_assert_wiphy(local->hw.wiphy);
 
