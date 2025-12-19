@@ -9058,6 +9058,41 @@ struct mlo_tlt_selection_evt_params {
         u32 link_bmap[WMI_TLT_NUM_TID_PER_AC];
 };
 
+enum wmi_vdev_ratemask_type {
+	VDEV_RATEMASK_TYPE_CCK_OFDM,
+	VDEV_RATEMASK_TYPE_HT,
+	VDEV_RATEMASK_TYPE_VHT,
+	VDEV_RATEMASK_TYPE_HE,
+	VDEV_RATEMASK_TYPE_EHT,
+};
+
+struct wmi_vdev_ratemask_arg {
+	u32 vdev_id;
+	enum wmi_vdev_ratemask_type type;
+	u32 mask_lower32;
+	u32 mask_higher32;
+	u32 mask_lower32_2;
+	u32 mask_higher32_2;
+};
+
+struct wmi_vdev_ratemask_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+
+	/* 0 - CCK/OFDM
+	 * 1 - HT
+	 * 2 - VHT
+	 * 3 - HE
+	 * 4 - EHT
+	 */
+	__le32 type;
+
+	__le32 mask_lower32;
+	__le32 mask_higher32;
+	__le32 mask_lower32_2;
+	__le32 mask_higher32_2;
+} __packed;
+
 int ath12k_wmi_cmd_send(struct ath12k_wmi_pdev *wmi, struct sk_buff *skb,
 			u32 cmd_id);
 struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_sc, u32 len);
@@ -9342,6 +9377,7 @@ bool ath12k_wmi_is_umac_migration_supported(struct ath12k_base *ab);
 int ath12k_wmi_mlo_send_ptqm_migrate_cmd(struct ath12k_link_vif *arvif,
 				         struct list_head *peer_migr_list,
 				         u16 num_peers);
+int ath12k_wmi_vdev_rate_mask(struct ath12k *ar, struct wmi_vdev_ratemask_arg *arg);
 /**
  * ath12k_wmi_send_afc_cmd_tlv - Utility API to send AFC commands to firmware
  * @ar: pointer to ath12k radio

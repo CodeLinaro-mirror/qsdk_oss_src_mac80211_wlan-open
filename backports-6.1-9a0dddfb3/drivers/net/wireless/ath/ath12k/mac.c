@@ -2421,6 +2421,87 @@ static void ath12k_wmi_migration_cmd_work(struct work_struct *work)
 	spin_unlock_bh(&ah->dp_hw.peer_lock);
 }
 
+static int ath12k_mac_get_max_vht_mcs_map(u16 mcs_map, int nss)
+{
+	switch ((mcs_map >> (2 * nss)) & 0x3) {
+	case IEEE80211_VHT_MCS_SUPPORT_0_7: return BIT(8) - 1;
+	case IEEE80211_VHT_MCS_SUPPORT_0_8: return BIT(9) - 1;
+	case IEEE80211_VHT_MCS_SUPPORT_0_9: return BIT(10) - 1;
+	}
+	return 0;
+}
+
+static int ath12k_mac_config_vdev_vht_ratemask(struct ath12k_link_vif *arvif,
+					       struct sk_buff *bcn)
+{
+	const struct ieee80211_vht_cap *vht_cap;
+	struct wmi_vdev_ratemask_arg arg = {};
+	u16 bcn_vht_tx_mcs_map, mcs_map;
+	u64 lower64 = 0, higher64 = 0;
+	const u8 *cap;
+	u8 *ies, nss;
+	int ies_len, ret;
+
+	ies = ((struct ieee80211_mgmt *)bcn->data)->u.beacon.variable;
+	ies_len = bcn->len - (ies - bcn->data);
+	/* Get VHT capability element from the beacon template */
+	cap = cfg80211_find_ie(WLAN_EID_VHT_CAPABILITY, ies, ies_len);
+	if (!cap || cap[1] < sizeof(*vht_cap))
+		return 0;
+
+	/* Extract VHT tx mcs map from VHT capability element */
+	vht_cap = (const struct ieee80211_vht_cap *)(cap + 2);
+	bcn_vht_tx_mcs_map = __le16_to_cpu(vht_cap->supp_mcs.tx_mcs_map);
+
+	if (arvif->last_vht_tx_mcs_map == bcn_vht_tx_mcs_map)
+		return 0;
+
+	/* Convert extracted VHT tx mcs map to the firmware expected format.
+	 * 12 bits are mapped for each NSS.
+	 */
+	for (nss = 0; nss < NL80211_VHT_NSS_MAX; nss++) {
+		mcs_map = ath12k_mac_get_max_vht_mcs_map(bcn_vht_tx_mcs_map, nss);
+		if (!mcs_map)
+			break;
+
+		if (nss < 5) {
+			/* nss 0 to 4 */
+			lower64 |= (u64)mcs_map << (nss * 12);
+		} else if (nss == 5) {
+			/* nss 5 tx mcs mask spreads across lower64 (low 4 bits)
+			 * and higher64 (high 8 bits).
+			 */
+			lower64 |= ((u64)(mcs_map & 0xf)) << 60;
+			higher64 |= (u64)(mcs_map >> 4);
+		} else {
+			/* nss 6 to 7 */
+			higher64 |= (u64)mcs_map << (((nss - 6) * 12) + 8);
+		}
+	}
+
+	arg.vdev_id = arvif->vdev_id;
+	arg.type = VDEV_RATEMASK_TYPE_VHT;
+	arg.mask_lower32 = lower_32_bits(lower64);
+	arg.mask_higher32 = upper_32_bits(lower64);
+	/* higher 32 bits in higher64 is not valid for VHT */
+	arg.mask_lower32_2 = lower_32_bits(higher64);
+
+	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
+	if (ret)
+		ath12k_warn(arvif->ar->ab, "failed to submit vdev rate mask command: %d\n",
+			    ret);
+	else
+		arvif->last_vht_tx_mcs_map = bcn_vht_tx_mcs_map;
+
+	return ret;
+}
+
+static int ath12k_mac_vdev_ratemask(struct ath12k_link_vif *arvif,
+				    struct sk_buff *bcn)
+{
+	return ath12k_mac_config_vdev_vht_ratemask(arvif, bcn);
+}
+
 static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
 					 struct ath12k_link_vif *tx_arvif,
 					 u8 bssid_index)
@@ -2440,8 +2521,18 @@ static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
 		return -EPERM;
 	}
 
-	if (tx_arvif == arvif)
+	if (tx_arvif == arvif) {
 		ath12k_mac_set_arvif_ies(arvif, beacons->bcn[0].skb, 0, NULL);
+
+		ret = ath12k_mac_vdev_ratemask(tx_arvif,
+					       beacons->bcn[0].skb);
+		if (ret) {
+			ath12k_warn(tx_arvif->ar->ab,
+				    "failed to update vdev ratemask for vdev_id %u error %d\n",
+				    arvif->vdev_id, ret);
+			return ret;
+		}
+	}
 
 	for (i = 0; i < beacons->cnt; i++) {
 		if (tx_arvif != arvif && !nontx_profile_found) {
@@ -2562,6 +2653,14 @@ static int ath12k_mac_setup_bcn_tmpl(struct ath12k_link_vif *arvif)
 				    ret);
 			goto free_bcn_skb;
 		}
+	}
+
+	ret = ath12k_mac_vdev_ratemask(arvif, bcn);
+	if (ret) {
+		ath12k_warn(arvif->ar->ab,
+			    "failed to update vdev ratemask for vdev_id %u error %d\n",
+			    arvif->vdev_id, ret);
+		goto free_bcn_skb;
 	}
 
 	ret = ath12k_wmi_bcn_tmpl(tx_arvif, &offs, bcn, NULL);
@@ -3296,16 +3395,6 @@ static void ath12k_peer_assoc_h_ht(struct ath12k *ar,
 			 arg->peer_mac,
 			 arg->peer_ht_rates.num_rates,
 			 arg->peer_nss);
-}
-
-static int ath12k_mac_get_max_vht_mcs_map(u16 mcs_map, int nss)
-{
-	switch ((mcs_map >> (2 * nss)) & 0x3) {
-	case IEEE80211_VHT_MCS_SUPPORT_0_7: return BIT(8) - 1;
-	case IEEE80211_VHT_MCS_SUPPORT_0_8: return BIT(9) - 1;
-	case IEEE80211_VHT_MCS_SUPPORT_0_9: return BIT(10) - 1;
-	}
-	return 0;
 }
 
 static u16
@@ -18285,6 +18374,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		return ret;
 	}
 
+	arvif->last_vht_tx_mcs_map = 0;
 	ar->num_started_vdevs++;
 	ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM started, vdev_id %d\n",
 		   arvif->bssid, arvif->vdev_id);
