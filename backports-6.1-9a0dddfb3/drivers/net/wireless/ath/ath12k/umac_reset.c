@@ -792,6 +792,19 @@ static const umac_reset_handler_fn umac_reset_handlers[] = {
 					ath12k_umac_reset_handle_post_reset_complete,
 };
 
+/* Static table mapping rx_event to corresponding tx_cmd */
+static const enum dp_umac_reset_tx_cmd umac_reset_rx_to_tx_map[] = {
+	[ATH12K_UMAC_RESET_RX_EVENT_NONE] = ATH12K_UMAC_RESET_TX_CMD_NONE,
+	[ATH12K_UMAC_RESET_INIT_UMAC_RECOVERY] = ATH12K_UMAC_RESET_TX_CMD_NONE,
+	[ATH12K_UMAC_RESET_INIT_TARGET_RECOVERY_SYNC_USING_UMAC] =
+					ATH12K_UMAC_RESET_TX_CMD_NONE,
+	[ATH12K_UMAC_RESET_DO_PRE_RESET] = ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE,
+	[ATH12K_UMAC_RESET_DO_POST_RESET_START] =
+					ATH12K_UMAC_RESET_TX_CMD_POST_RESET_START_DONE,
+	[ATH12K_UMAC_RESET_DO_POST_RESET_COMPLETE] =
+					ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE,
+};
+
 static int
 ath12k_dp_umac_reset_check_n_change_state(struct ath12k_base *ab,
 					  enum dp_umac_reset_recover_action rx_event)
@@ -936,6 +949,7 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 	struct ath12k_dp_htt_umac_reset_recovery_msg_shmem_t *shmem_vaddr;
 	struct ath12k_base *partner_ab;
 	enum ath12k_umac_reset_state current_state;
+	enum dp_umac_reset_tx_cmd tx_cmd;
 	int rx_event, num_event = 0;
 	u32 t2h_msg;
 	int i;
@@ -1019,6 +1033,12 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 		   "All chips ready: request_chip=%d, processing event for entire group\n",
 		   atomic_read(&mlo_umac_reset->request_chip));
 
+	/* set the reserved bit 0 to hold the premature execution of enqueued tasks.
+	 * Without this there is a possibility of task_map becoming 0 before other tasks
+	 * are even enqueued and we end up sending response to firmware
+	 */
+	set_bit(0, &mlo_umac_reset->task_map);
+
 	/* Process event for all partner devices in the group */
 	for (i = 0; i < ag->num_devices; i++) {
 		partner_ab = ag->ab[i];
@@ -1040,7 +1060,16 @@ void ath12k_dp_umac_reset_handle(struct ath12k_base *ab)
 			smp_call_function_single_async(cpu, csd);
 	}
 
-	return;
+	/* At this poing we are assured that all tasks are enququed
+	 * and there is no premature response to firmware
+	 */
+	clear_bit(0, &mlo_umac_reset->task_map);
+
+	/* Look up the corresponding TX command for this RX event */
+	tx_cmd = umac_reset_rx_to_tx_map[rx_event];
+
+	/* Call notify; as we finished task 0 */
+	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_cmd);
 }
 
 void ath12k_umac_reset_tasklet_handler(struct tasklet_struct *umac_cntxt)
