@@ -22675,7 +22675,8 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 						  reg_cap->low_5ghz_chan,
 						  reg_cap->high_5ghz_chan);
 
-			ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+			ath12k_mac_update_freq_range(ar, reg_cap->low_5ghz_chan,
+						     reg_cap->high_5ghz_chan);
 			band->n_channels = band->chan_6g[NL80211_REG_AP_LPI]->n_channels;
 			band->channels = band->chan_6g[NL80211_REG_AP_LPI]->channels;
 			ah->use_6ghz_regd = true;
