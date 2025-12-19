@@ -436,11 +436,10 @@ EXPORT_SYMBOL(ath12k_ppeds_get_batched_tx_desc_v2);
 void ath12k_ppeds_notify_napi_done_v2(int ds_node_id)
 {
 	enum dp_umac_reset_tx_cmd tx_cmd = ATH12K_UMAC_RESET_TX_CMD_PRE_RESET_DONE;
-	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ab->ag->mlo_umac_reset;
 	struct ath12k_base *ab = ds_node_map[ds_node_id];
 
-	clear_bit(ab->dp->ppe.task_id, &mlo_umac_reset->task_map);
-	ath12k_umac_reset_notify_target_sync_and_send(ab, tx_cmd);
+	ath12k_umac_reset_notify_target_sync_and_send(ab, ab->dp->ppe.task_id,
+						      tx_cmd);
 }
 EXPORT_SYMBOL(ath12k_ppeds_notify_napi_done_v2);
 
