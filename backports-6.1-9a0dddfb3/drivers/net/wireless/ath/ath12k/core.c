@@ -3080,6 +3080,12 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 	}
 
 	if (!is_bridge_vdev) {
+		if (!ctx->def.chan) {
+			ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
+				   "Skipping vdev start for MLD %pM as chanctx is not assigned\n",
+				   arvif->bssid);
+			goto exit;
+		}
 		ath12k_mac_vif_cache_flush(ar, arvif);
 
 		if (ar->supports_6ghz && ctx->def.chan->band == NL80211_BAND_6GHZ &&
@@ -3137,13 +3143,6 @@ static int ath12k_mlo_core_recovery_reconfig_link_bss(struct ath12k *ar,
 			goto exit;
                 }
         }
-
-	if (!is_bridge_vdev && !ctx->def.chan) {
-		ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
-			   "Skipping vdev start for MLD %pM as chanctx is not assigned\n",
-			   arvif->bssid);
-		goto exit;
-	}
 
 	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
 		ret = ath12k_mac_monitor_start(ar);
