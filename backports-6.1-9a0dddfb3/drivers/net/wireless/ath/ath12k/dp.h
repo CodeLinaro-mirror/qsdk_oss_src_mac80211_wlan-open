@@ -197,7 +197,11 @@ enum ath12k_dp_eapol_key_type {
 #define DP_AVG_MPDUS_PER_TID_MAX 128
 #define DP_AVG_MSDUS_PER_MPDU 4
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_RX_HASH_ENABLE	0 /* Disable hash based Rx steering for IPA*/
+#else
 #define DP_RX_HASH_ENABLE	1 /* Enable hash based Rx steering */
+#endif
 
 #define DP_BA_WIN_SZ_MAX	1024
 
@@ -239,7 +243,11 @@ enum ath12k_dp_eapol_key_type {
 #define DP_REO_EXCEPTION_RING_SIZE	128
 #define DP_REO_CMD_RING_SIZE		256
 #define DP_REO_STATUS_RING_SIZE		2048
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#define DP_RX_MAC_BUF_RING_SIZE		8192
+#else
 #define DP_RX_MAC_BUF_RING_SIZE		2048
+#endif
 #define DP_RXDMA_REFILL_RING_SIZE	2048
 #define DP_RXDMA_ERR_DST_RING_SIZE	1024
 
@@ -678,6 +686,9 @@ struct ath12k_dp {
 	spinlock_t tx_desc_lock[ATH12K_HW_MAX_QUEUES];
 
 	struct dp_rxdma_ring rx_refill_buf_ring;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct dp_rxdma_ring rx_refill_buf_ring2;
+#endif
 	struct dp_srng rx_mac_buf_ring[MAX_RXDMA_PER_PDEV];
 	struct dp_srng rxdma_err_dst_ring[MAX_RXDMA_PER_PDEV];
 	struct ath12k_reo_q_addr_lut reoq_lut;
