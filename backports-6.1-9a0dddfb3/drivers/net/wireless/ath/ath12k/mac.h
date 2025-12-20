@@ -218,6 +218,8 @@ u8 ath12k_mac_bitrate_to_idx(const struct ieee80211_supported_band *sband,
 u8 ath12k_mac_hw_rate_to_idx(const struct ieee80211_supported_band *sband,
 			     u8 hw_rate, bool cck);
 
+u32 ath12k_mac_get_rate_hw_value(int bitrate);
+
 void __ath12k_mac_scan_finish(struct ath12k *ar);
 void ath12k_mac_scan_finish(struct ath12k *ar);
 
