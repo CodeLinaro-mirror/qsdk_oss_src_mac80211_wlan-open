@@ -1579,13 +1579,13 @@ void ath12k_mac_peer_cleanup_all(struct ath12k *ar)
 						    peer->vdev_id);
 				} else {
 					const u8 *peer_addr = peer->addr;
+					bool is_mlo = ath12k_mac_is_ml_arvif(arvif);
 
-					if (ath12k_mac_is_ml_arvif(arvif) &&
-					    peer->ml_addr)
+					if (is_mlo && peer->ml_addr)
 						peer_addr = peer->ml_addr;
 					ath12k_ipa_enqueue_evt(WLAN_CLIENT_DISCONNECT,
 							       arvif, peer_addr,
-							       peer->mlo);
+							       is_mlo);
 				}
 				rcu_read_unlock();
 			}

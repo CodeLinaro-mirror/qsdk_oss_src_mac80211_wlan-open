@@ -133,12 +133,13 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 					    vdev_id);
 			} else {
 				const u8 *peer_addr = peer->addr;
+				bool is_mlo = ath12k_mac_is_ml_arvif(arvif);
 
-				if (ath12k_mac_is_ml_arvif(arvif) && peer->ml_addr)
+				if (is_mlo && peer->ml_addr)
 					peer_addr = peer->ml_addr;
 				ath12k_ipa_enqueue_evt(WLAN_CLIENT_DISCONNECT,
 						       arvif, peer_addr,
-						       peer->mlo);
+						       is_mlo);
 			}
 			rcu_read_unlock();
 		}
@@ -252,12 +253,13 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 	if (ath12k_ipa_config_is_enabled()) {
 		if (peer->primary_link) {
 			const u8 *peer_addr = peer->addr;
+			bool is_mlo = ath12k_mac_is_ml_arvif(arvif);
 
-			if (ath12k_mac_is_ml_arvif(arvif) && peer->ml_addr)
+			if (is_mlo && peer->ml_addr)
 				peer_addr = peer->ml_addr;
 			ath12k_ipa_enqueue_evt(WLAN_CLIENT_CONNECT_EX,
 					       arvif, peer_addr,
-					       peer->mlo);
+					       is_mlo);
 		}
 	}
 #endif
