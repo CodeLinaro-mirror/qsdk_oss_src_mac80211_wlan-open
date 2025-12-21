@@ -1240,7 +1240,7 @@ void ath12k_dp_rx_fst_detach(struct ath12k_base *ab, struct dp_rx_fst *fst)
 }
 
 int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
-					 enum dp_htt_flow_fst_operation operation,
+					 enum dp_flow_fst_operation operation,
 					 struct hal_flow_tuple_info *tuple_info)
 {
 	int i;
@@ -1248,6 +1248,7 @@ int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
 
 	for (i = 0; i < ag->num_devices; i++) {
 		struct ath12k_base *partner_ab = ag->ab[i];
+		struct ath12k_dp *dp;
 
 		if (!partner_ab || partner_ab->is_bypassed)
 			continue;
@@ -1256,9 +1257,10 @@ int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
 		if (test_bit(ATH12K_FLAG_RECOVERY, &partner_ab->dev_flags))
 			continue;
 
+		dp = ath12k_ab_to_dp(partner_ab);
 		/* Flush entries in the HW cache */
-		ret = ath12k_dp_htt_rx_flow_fse_operation(partner_ab, operation,
-							  tuple_info);
+		ret = ath12k_dp_arch_rx_flow_fse_cache_operation(dp, operation,
+								 tuple_info);
 		if (ret) {
 			ath12k_err(partner_ab, "Unable to invalidate cache entry ret %d",
 				   ret);
@@ -1297,7 +1299,7 @@ int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 		goto out;
 	}
 
-	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
+	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_FST_CACHE_INVALIDATE_ENTRY,
 						   &flow_info->flow_tuple_info);
 	if (ret) {
 		ath12k_err(ab, "Unable to invalidate cache entry ret %d", ret);
@@ -1342,7 +1344,7 @@ int ath12k_dp_rx_flow_delete_entry(struct ath12k_base *ab,
 		goto out;
 	}
 
-	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
+	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag, DP_FST_CACHE_INVALIDATE_ENTRY,
 						   &flow_info->flow_tuple_info);
 	if (ret) {
 		ath12k_err(ab, "Rx flow delete fail due to invalidate ret %d", ret);
@@ -1379,7 +1381,7 @@ int ath12k_dp_rx_flow_delete_all_entries(struct ath12k_base *ab)
 	}
 
 	ret = ath12k_hw_grp_dp_rx_invalidate_entry(ab->ag,
-						   DP_HTT_FST_CACHE_INVALIDATE_FULL,
+						   DP_FST_CACHE_INVALIDATE_FULL,
 						   NULL);
 	if (ret) {
 		ath12k_err(ab, "Rx flow delete all fail due to invalidate ret %d", ret);
@@ -1450,9 +1452,9 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab)
 	 * by sending INVALIDATE FULL command. This is needed to avoid DDR
 	 * and HW cache going out of sync when one soc goes for a recovery.
 	 */
-	ath12k_dp_htt_rx_flow_fse_operation(ab,
-					    DP_HTT_FST_CACHE_INVALIDATE_FULL,
-					    NULL);
+	ath12k_dp_arch_rx_flow_fse_cache_operation(dp,
+						   DP_FST_CACHE_INVALIDATE_FULL,
+						   NULL);
 
 	if (!ath12k_fse_3_tuple_enabled)
 		return;

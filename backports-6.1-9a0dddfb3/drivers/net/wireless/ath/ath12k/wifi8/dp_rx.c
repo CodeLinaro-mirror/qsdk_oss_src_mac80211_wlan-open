@@ -3824,6 +3824,15 @@ int ath12k_wifi8_dp_rx_flow_delete_all_entries(struct ath12k_dp *dp)
 	return 0;
 }
 
+int ath12k_wifi8_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
+						enum dp_flow_fst_operation op_code,
+						struct hal_flow_tuple_info *tuple_info)
+{
+	ath12k_dbg(ab, ATH12K_DBG_DP_FST,
+		   "FSE cache operation %d not supported in wifi8\n", op_code);
+	return 0;
+}
+
 int ath12k_wifi8_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 					 struct ath12k_dp_link_peer *peer,
 					 u16 peer_id, u8 chip_id)

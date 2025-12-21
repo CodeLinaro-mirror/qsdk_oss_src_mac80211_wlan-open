@@ -508,6 +508,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_ppeds_tx_completion_handler = ath12k_wifi7_ppeds_tx_completion_handler,
 	.dp_vif_configure = ath12k_wifi7_dp_vif_configure,
 	.dp_link_vif_configure = ath12k_wifi7_dp_link_vif_configure,
+	.rx_flow_fse_cache_operation = ath12k_wifi7_dp_rx_flow_fse_cache_operation,
 };
 
 /* TODO: remove export once this file is built with wifi7 ko */

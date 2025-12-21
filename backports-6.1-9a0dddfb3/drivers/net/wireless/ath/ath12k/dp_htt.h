@@ -2151,12 +2151,12 @@ struct htt_rx_flow_fst_setup {
 	u8 *hash_key;
 };
 
-enum dp_htt_flow_fst_operation {
-	DP_HTT_FST_CACHE_OP_NONE,
-	DP_HTT_FST_CACHE_INVALIDATE_ENTRY,
-	DP_HTT_FST_CACHE_INVALIDATE_FULL,
-	DP_HTT_FST_ENABLE,
-	DP_HTT_FST_DISABLE
+enum dp_flow_fst_operation {
+	DP_FST_CACHE_OP_NONE,
+	DP_FST_CACHE_INVALIDATE_ENTRY,
+	DP_FST_CACHE_INVALIDATE_FULL,
+	DP_FST_ENABLE,
+	DP_FST_DISABLE
 };
 
 enum htt_rx_fse_operation {
@@ -2426,7 +2426,7 @@ int ath12k_dp_tx_htt_tx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 				     struct htt_tx_ring_tlv_filter *htt_tlv_filter);
 int ath12k_dp_htt_rx_flow_fst_setup(struct ath12k_base *ab, struct htt_rx_flow_fst_setup *setup_info);
 int ath12k_dp_htt_rx_flow_fse_operation(struct ath12k_base *ab,
-					enum dp_htt_flow_fst_operation op_code,
+					enum dp_flow_fst_operation op_code,
 					struct hal_flow_tuple_info *tuple_info);
 int ath12k_dp_htt_rx_fse_3_tuple_config_send(struct ath12k_base *ab,
 					     u32 tuple_mask, u8 pdev_id);

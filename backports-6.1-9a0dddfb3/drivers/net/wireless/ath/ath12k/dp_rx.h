@@ -274,7 +274,7 @@ void ath12k_dp_rx_h_undecap_raw(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *
 				struct ieee80211_rx_status *status, bool decrypted,
 				u16 peer_id, bool is_first_msdu, bool is_last_msdu);
 int ath12k_hw_grp_dp_rx_invalidate_entry(struct ath12k_hw_group *ag,
-					 enum dp_htt_flow_fst_operation operation,
+					 enum dp_flow_fst_operation operation,
 					 struct hal_flow_tuple_info *tuple_info);
 int ath12k_dp_rx_flow_add_entry(struct ath12k_base *ab,
 				struct rx_flow_info *flow_info);

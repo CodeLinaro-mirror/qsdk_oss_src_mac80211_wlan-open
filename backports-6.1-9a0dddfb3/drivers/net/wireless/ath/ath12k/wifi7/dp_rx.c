@@ -4158,6 +4158,13 @@ int ath12k_wifi7_dp_rx_htt_setup(struct ath12k_base *ab)
 	return 0;
 }
 
+int ath12k_wifi7_dp_rx_flow_fse_cache_operation(struct ath12k_base *ab,
+						enum dp_flow_fst_operation op_code,
+						struct hal_flow_tuple_info *tuple_info)
+{
+	return ath12k_dp_htt_rx_flow_fse_operation(ab, op_code, tuple_info);
+}
+
 void ath12k_wifi7_dp_pdev_free(struct ath12k_base *ab)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
