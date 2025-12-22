@@ -1096,6 +1096,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					(CFR_HDR_MAX_LEN_WORDS_IPQ5332 *4) +
 					CFR_DATA_MAX_LEN_IPQ5332,
 		.mlo_3_link_tx_support = false,
+		.send_platform_model = true,
 	},
 	{
 		.name = "qcn6432 hw1.0",
@@ -1293,6 +1294,7 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					(CFR_HDR_MAX_LEN_WORDS_IPQ5424 * 4) +
 					CFR_DATA_MAX_LEN_IPQ5424,
 		.mlo_3_link_tx_support = false,
+		.send_platform_model = true,
 	},
 };
 

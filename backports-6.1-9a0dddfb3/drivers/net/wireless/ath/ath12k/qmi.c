@@ -4504,17 +4504,13 @@ int ath12k_qmi_mlo_global_snapshot_mem_init(struct ath12k_base *ab)
 	return 0;
 }
 
-#define MAX_TGT_MEM_MODES 5
 #ifndef PLATFORM_SDX85
 static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
-	unsigned int bdf_location[MAX_TGT_MEM_MODES], caldb_location[MAX_TGT_MEM_MODES];
-	int caldb_size[1];
 	struct ath12k_hw_group *ag = ab->ag;
 	int sz = 0, avail_sz;
 	int i, idx, ret;
-	int tgt_mem_mode = ATH12K_QMI_TARGET_MEM_MODE;
 
 	mutex_lock(&ag->mutex);
 	if (!ag->mlo_mem.init_done) {
@@ -4533,7 +4529,21 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 		struct target_mem_chunk *mlo_chunk;
 
 		switch (ab->qmi.target_mem[i].type) {
+		case CALDB_MEM_REGION_TYPE:
+			if (!ab->hw_params->cold_boot_calib) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
+
+			fallthrough;
 		case HOST_DDR_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
+		case M3_DUMP_REGION_TYPE:
+		case PAGEABLE_MEM_REGION_TYPE:
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
 				goto print_err;
@@ -4549,113 +4559,6 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				goto out;
 			}
 			sz += ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case BDF_MEM_REGION_TYPE:
-			if (of_property_read_u32_array(ab->dev->of_node,
-						       "qcom,bdf-addr", bdf_location,
-						       ARRAY_SIZE(bdf_location))) {
-				ath12k_err(ab, "BDF_MEM_REGION Not defined in device_tree\n");
-				ret = -EINVAL;
-				goto out;
-			}
-
-			ab->qmi.target_mem[idx].paddr =
-				bdf_location[ATH12K_QMI_TARGET_MEM_MODE];
-			ab->qmi.target_mem[idx].v.ioaddr =
-				ioremap(ab->qmi.target_mem[idx].paddr,
-					ab->qmi.target_mem[i].size);
-			if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ret = -EIO;
-				goto out;
-			}
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case CALDB_MEM_REGION_TYPE:
-			if (ab->hw_params->cold_boot_calib) {
-				if (ab->hif.bus == ATH12K_BUS_AHB ||
-				    ab->hif.bus == ATH12K_BUS_HYBRID) {
-					if (of_property_read_u32_array(ab->dev->of_node,
-								       "qcom,caldb-addr",
-								       caldb_location,
-							ARRAY_SIZE(caldb_location))) {
-						ath12k_err(ab, "CALDB_MEM_REGION Not defined in device_tree\n");
-						ret = -EINVAL;
-						goto out;
-					}
-
-					if (of_property_read_u32_array(ab->dev->of_node,
-								       "qcom,caldb-size",
-								       caldb_size,
-							ARRAY_SIZE(caldb_size))) {
-						ath12k_err(ab, "CALDB_SIZE Not defined in device_tree\n");
-						ret = -EINVAL;
-						goto out;
-					}
-
-					ab->qmi.target_mem[idx].paddr =
-						caldb_location[tgt_mem_mode];
-					ab->qmi.target_mem[i].size = caldb_size[0];
-					ab->qmi.target_mem[idx].v.ioaddr =
-						ioremap(ab->qmi.target_mem[idx].paddr,
-							ab->qmi.target_mem[i].size);
-
-				} else {
-					if (ddr_rmem->size - sz <
-							ab->qmi.target_mem[i].size) {
-						avail_sz = ddr_rmem->size - sz;
-						goto print_err;
-					}
-
-					ab->qmi.target_mem[idx].paddr =
-						ddr_rmem->base + sz;
-					ab->qmi.target_mem[idx].v.ioaddr =
-						ioremap(ab->qmi.target_mem[idx].paddr,
-							ab->qmi.target_mem[i].size);
-					sz += ab->qmi.target_mem[i].size;
-				}
-			} else {
-				ab->qmi.target_mem[idx].paddr = 0;
-				ab->qmi.target_mem[idx].v.ioaddr = NULL;
-			}
-
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case M3_DUMP_REGION_TYPE:
-			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
-					avail_sz = ddr_rmem->size - sz;
-					goto print_err;
-				}
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-				sz += ab->qmi.target_mem[i].size;
-			} else {
-				rmem = ath12k_core_get_reserved_mem_by_name(ab,
-									    "m3-dump");
-				if (!rmem) {
-					ret = -EINVAL;
-					goto out;
-				}
-
-				if (rmem->size < ab->qmi.target_mem[i].size) {
-					avail_sz = rmem->size;
-					goto print_err;
-				}
-				ab->qmi.target_mem[idx].paddr = rmem->base;
-			}
-			ab->qmi.target_mem[idx].v.ioaddr =
-				ioremap(ab->qmi.target_mem[idx].paddr,
-					ab->qmi.target_mem[i].size);
-			if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ret = -EIO;
-				goto out;
-			}
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			idx++;
@@ -4706,70 +4609,21 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 					    ab->qmi.target_mem[i].size);
 				return -EINVAL;
 			}
-
-			/* For multi-pd platforms, AFC_REGION_TYPE needs
-			 * to be allocated from within the M3_DUMP_REGION.
-			 * This is because multi-pd platforms cannot access memory
-			 * regions allocated outside FW reserved memory.
-			 * AFC_REGION_TYPE is supported for 6 GHz.
-			 */
-			if (ab->hif.bus == ATH12K_BUS_HYBRID) {
-				rmem = ath12k_core_get_reserved_mem_by_name(ab,
-									    "m3-dump");
-				if (!rmem) {
-					ret = -EINVAL;
-					goto out;
-				}
-
-				if (ab->qmi.target_mem[i].size >
-						(rmem->size -
-						 ATH12K_HOST_AFC_QCN6432_MEM_OFFSET)) {
-					ath12k_err(ab, "AFC mem request size %d is larger than M3_MEM_REGION size %u\n",
-						   ab->qmi.target_mem[i].size,
-						   (u32)rmem->size);
-					ret = -EINVAL;
-					goto out;
-				}
-
-				ab->qmi.target_mem[idx].paddr =
-					rmem->base + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
-				ab->qmi.target_mem[idx].v.ioaddr =
-					ioremap(ab->qmi.target_mem[idx].paddr,
-						ab->qmi.target_mem[idx].size);
-			} else {
-				ab->qmi.target_mem[idx].v.addr =
+			ab->qmi.target_mem[idx].v.addr =
 				dma_alloc_coherent(ab->dev, ab->qmi.target_mem[i].size,
-						   &ab->qmi.target_mem[idx].paddr,
-						   GFP_KERNEL);
+						&ab->qmi.target_mem[idx].paddr,
+						GFP_KERNEL);
 
-				if (!ab->qmi.target_mem[idx].v.addr) {
-					ath12k_err(ab, "AFC mem allocation failed\n");
-					ab->qmi.target_mem[idx].paddr = 0;
-					return -ENOMEM;
-				}
+			if (!ab->qmi.target_mem[idx].v.addr) {
+				ath12k_err(ab, "AFC mem allocation failed\n");
+				ab->qmi.target_mem[idx].paddr = 0;
+				return -ENOMEM;
 			}
 
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			idx++;
 			break;
-		case PAGEABLE_MEM_REGION_TYPE:
-			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-				sz += ab->qmi.target_mem[i].size;
-				ab->qmi.target_mem[idx].v.ioaddr =
-					ioremap(ab->qmi.target_mem[idx].paddr,
-						ab->qmi.target_mem[i].size);
-				if (!ab->qmi.target_mem[idx].v.ioaddr) {
-					ret = -EIO;
-					goto out;
-				}
-				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-				idx++;
-				break;
-			}
-			fallthrough;
 		default:
 			ath12k_warn(ab, "qmi ignore invalid mem req type %d\n",
 				    ab->qmi.target_mem[i].type);
@@ -4805,8 +4659,6 @@ out:
 static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 {
 	struct reserved_mem *ddr_rmem = NULL, *rmem = NULL;
-	unsigned int bdf_location[MAX_TGT_MEM_MODES], caldb_location[MAX_TGT_MEM_MODES];
-	unsigned int caldb_size[1];
 	struct ath12k_hw_group *ag = ab->ag;
 	int sz = 0, avail_sz;
 	int i, idx, ret;
@@ -4828,7 +4680,21 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 		struct target_mem_chunk *mlo_chunk;
 
 		switch (ab->qmi.target_mem[i].type) {
+		case CALDB_MEM_REGION_TYPE:
+			if (!ab->hw_params->cold_boot_calib) {
+				ab->qmi.target_mem[idx].paddr = 0;
+				ab->qmi.target_mem[idx].v.ioaddr = NULL;
+				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
+				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
+				idx++;
+				break;
+			}
+
+			fallthrough;
 		case HOST_DDR_REGION_TYPE:
+		case BDF_MEM_REGION_TYPE:
+		case M3_DUMP_REGION_TYPE:
+		case PAGEABLE_MEM_REGION_TYPE:
 			if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
 				avail_sz = ddr_rmem->size - sz;
 				goto print_err;
@@ -4847,118 +4713,6 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				goto out;
 			}
 			sz += ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case BDF_MEM_REGION_TYPE:
-			if (of_property_read_u32_array(ab->dev->of_node,
-						       "qcom,bdf-addr", bdf_location,
-						       ARRAY_SIZE(bdf_location))) {
-				ath12k_err(ab, "BDF_MEM_REGION Not defined in device_tree\n");
-				ret = -EINVAL;
-				goto out;
-			}
-
-			ab->qmi.target_mem[idx].paddr =
-				bdf_location[ATH12K_QMI_TARGET_MEM_MODE];
-			ab->qmi.target_mem[idx].v.ioaddr =
-					dma_alloc_attrs(ab->dev,
-							ab->qmi.target_mem[i].size,
-						&ab->qmi.target_mem[idx].paddr,
-						GFP_KERNEL,
-						DMA_ATTR_FORCE_CONTIGUOUS);
-			if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ret = -EIO;
-				goto out;
-			}
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case CALDB_MEM_REGION_TYPE:
-			if (ab->hw_params->cold_boot_calib) {
-                                if (ab->hif.bus == ATH12K_BUS_AHB ||
-                                    ab->hif.bus == ATH12K_BUS_HYBRID) {
-                                        if (of_property_read_u32_array(ab->dev->of_node,
-                                                                       "qcom,caldb-addr", caldb_location,
-                                                                       ARRAY_SIZE(caldb_location))) {
-                                                ath12k_err(ab, "CALDB_MEM_REGION Not defined in device_tree\n");
-                                                ret = -EINVAL;
-                                                goto out;
-                                        }
-
-                                        if (of_property_read_u32_array(ab->dev->of_node,
-                                                                       "qcom,caldb-size", caldb_size,
-                                                                       ARRAY_SIZE(caldb_size))) {
-                                                ath12k_err(ab, "CALDB_SIZE Not defined in device_tree\n");
-                                                ret = -EINVAL;
-                                                goto out;
-                                        }
-
-                                        ab->qmi.target_mem[idx].paddr = caldb_location[ATH12K_QMI_TARGET_MEM_MODE];
-                                        ab->qmi.target_mem[i].size = caldb_size[0];
-                                        ab->qmi.target_mem[idx].v.ioaddr =
-					dma_alloc_attrs(ab->dev,
-							ab->qmi.target_mem[i].size,
-							&ab->qmi.target_mem[idx].paddr,
-							GFP_KERNEL,
-							DMA_ATTR_FORCE_CONTIGUOUS);
-                                } else {
-					if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
-						avail_sz = ddr_rmem->size - sz;
-						goto print_err;
-					}
-
-					ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-                                        ab->qmi.target_mem[idx].v.ioaddr =
-					dma_alloc_attrs(ab->dev,
-							ab->qmi.target_mem[i].size,
-							&ab->qmi.target_mem[idx].paddr,
-							GFP_KERNEL,
-							DMA_ATTR_FORCE_CONTIGUOUS);
-                                        sz += ab->qmi.target_mem[i].size;
-				}
-                        } else {
-                                ab->qmi.target_mem[idx].paddr = 0;
-                                ab->qmi.target_mem[idx].v.ioaddr = NULL;
-                        }
-
-			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-			idx++;
-			break;
-		case M3_DUMP_REGION_TYPE:
-			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				if (ddr_rmem->size - sz < ab->qmi.target_mem[i].size) {
-					avail_sz = ddr_rmem->size - sz;
-					goto print_err;
-				}
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-				sz += ab->qmi.target_mem[i].size;
-			} else {
-				rmem = ath12k_core_get_reserved_mem_by_name(ab, "m3-dump");
-				if (!rmem) {
-					ret = -EINVAL;
-					goto out;
-				}
-
-				if (rmem->size < ab->qmi.target_mem[i].size) {
-					avail_sz = rmem->size;
-					goto print_err;
-				}
-				ab->qmi.target_mem[idx].paddr = rmem->base;
-			}
-			ab->qmi.target_mem[idx].v.ioaddr =
-			dma_alloc_attrs(ab->dev,
-					ab->qmi.target_mem[i].size,
-					&ab->qmi.target_mem[idx].paddr,
-					GFP_KERNEL,
-					DMA_ATTR_FORCE_CONTIGUOUS);
-			if (!ab->qmi.target_mem[idx].v.ioaddr) {
-				ret = -EIO;
-				goto out;
-			}
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			idx++;
@@ -5014,72 +4768,21 @@ static int ath12k_qmi_assign_target_mem_chunk(struct ath12k_base *ab)
 				return -EINVAL;
 			}
 
-			/* For multi-pd platforms, AFC_REGION_TYPE needs
-			 * to be allocated from within the M3_DUMP_REGION.
-			 * This is because multi-pd platforms cannot access memory
-			 * regions allocated outside FW reserved memory.
-			 * AFC_REGION_TYPE is supported for 6 GHz.
-			 */
-			if (ab->hif.bus == ATH12K_BUS_HYBRID) {
-				rmem = ath12k_core_get_reserved_mem_by_name(ab, "m3-dump");
-				if (!rmem) {
-					ret = -EINVAL;
-					goto out;
-				}
-
-				if (ab->qmi.target_mem[i].size > (rmem->size - ATH12K_HOST_AFC_QCN6432_MEM_OFFSET)) {
-					ath12k_err(ab, "AFC mem request size %d is larger than M3_MEM_REGION size %u\n",
-					   ab->qmi.target_mem[i].size,
-						  (u32)rmem->size);
-					ret = -EINVAL;
-					goto out;
-				}
-
-				ab->qmi.target_mem[idx].paddr = rmem->base + ATH12K_HOST_AFC_QCN6432_MEM_OFFSET;
-				ab->qmi.target_mem[idx].v.ioaddr =
-				dma_alloc_attrs(ab->dev,
-						ab->qmi.target_mem[i].size,
-						&ab->qmi.target_mem[idx].paddr,
-						GFP_KERNEL,
-						DMA_ATTR_FORCE_CONTIGUOUS);
-			} else {
-				ab->qmi.target_mem[idx].v.addr =
+			ab->qmi.target_mem[idx].v.addr =
 				dma_alloc_coherent(ab->dev, ab->qmi.target_mem[i].size,
-						   &ab->qmi.target_mem[idx].paddr,
-						   GFP_KERNEL);
+						&ab->qmi.target_mem[idx].paddr,
+						GFP_KERNEL);
 
-				if (!ab->qmi.target_mem[idx].v.addr) {
-					ath12k_err(ab, "AFC mem allocation failed\n");
-					ab->qmi.target_mem[idx].paddr = 0;
-					return -ENOMEM;
-				}
+			if (!ab->qmi.target_mem[idx].v.addr) {
+				ath12k_err(ab, "AFC mem allocation failed\n");
+				ab->qmi.target_mem[idx].paddr = 0;
+				return -ENOMEM;
 			}
 
 			ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
 			ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
 			idx++;
 			break;
-	case PAGEABLE_MEM_REGION_TYPE:
-			if (ab->hif.bus == ATH12K_BUS_PCI) {
-				ab->qmi.target_mem[idx].paddr = ddr_rmem->base + sz;
-				sz += ab->qmi.target_mem[i].size;
-				ab->qmi.target_mem[idx].v.ioaddr =
-				dma_alloc_attrs(ab->dev,
-						ab->qmi.target_mem[i].size,
-						&ab->qmi.target_mem[idx].paddr,
-						GFP_KERNEL,
-						DMA_ATTR_FORCE_CONTIGUOUS);
-				if (!ab->qmi.target_mem[idx].v.ioaddr) {
-					ret = -EIO;
-					goto out;
-				}
-				ab->qmi.target_mem[idx].size = ab->qmi.target_mem[i].size;
-				ab->qmi.target_mem[idx].type = ab->qmi.target_mem[i].type;
-				idx++;
-				break;
-			}
-			else
-				fallthrough;
 		default:
 			ath12k_warn(ab, "qmi ignore invalid mem req type %d\n",
 				    ab->qmi.target_mem[i].type);
