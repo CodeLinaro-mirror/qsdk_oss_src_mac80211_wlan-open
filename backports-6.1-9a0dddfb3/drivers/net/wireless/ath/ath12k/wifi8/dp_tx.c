@@ -1187,7 +1187,8 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 			u32_encode_bits(mcbc_gsn, HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
 
 		if (arvif->nawds_support)
-			ti.meta_data_flags |= u32_encode_bits(1, HTT_TCL_META_DATA_GLOBAL_SEQ_HOST_INSPECTED);
+			ti.meta_data_flags |=
+				u32_encode_bits(1, HTT_TCL_META_DATA_GSN_INSPECTED);
 	}
 
 	ti.encap_type = ath12k_dp_tx_get_encap_type(ab, skb);

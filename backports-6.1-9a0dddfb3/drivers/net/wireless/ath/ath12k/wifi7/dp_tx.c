@@ -1038,13 +1038,36 @@ ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 	return DP_TX_ENQ_SUCCESS;
 }
 
+static int ath12k_prepare_group_key_metadata(struct sk_buff *skb,
+					     int group_slot)
+{
+	struct hal_tx_msdu_metadata *meta;
+	u8 htt_desc_size;
+	u8 htt_desc_size_aligned;
+
+	htt_desc_size = sizeof(struct hal_tx_msdu_metadata);
+	htt_desc_size_aligned = ALIGN(htt_desc_size, HTT_META_DATA_ALIGNMENT);
+
+	meta = ath12k_dp_metadata_align_skb(skb, htt_desc_size_aligned);
+	if (!meta)
+		return -1;
+
+	meta->info0 |= le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG);
+	meta->info0 |= le32_encode_bits(0, HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE);
+	meta->info0 |= le32_encode_bits(1, HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS);
+	meta->info2 |= le32_encode_bits(group_slot,
+					HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS);
+
+	return htt_desc_size_aligned;
+}
+
 /* TODO: Remove the export once this file is built with wifi7 ko */
 enum ath12k_dp_tx_enq_error
 ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		   struct ath12k_link_vif *arvif,
 		   struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
 		   bool is_mcast, struct ath12k_link_sta *arsta, u8 ring_id,
-		   u32 qos_nw_delay)
+		   u32 qos_nw_delay, int group_slot)
 {
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_hal *hal = dp->hal;
@@ -1073,6 +1096,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u32 iova_mask = dp->hw_params->iova_mask;
 	bool is_diff_encap = false, is_null = false;
 	u8 qos_tag;
+	int htt_hdr_size;
 	enum ath12k_dp_tx_enq_error err = DP_TX_ENQ_SUCCESS;
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
@@ -1147,7 +1171,9 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 			u32_encode_bits(mcbc_gsn, HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
 
 		if (arvif->nawds_support)
-			ti.meta_data_flags |= u32_encode_bits(1, HTT_TCL_META_DATA_GLOBAL_SEQ_HOST_INSPECTED);
+			ti.meta_data_flags |=
+				u32_encode_bits(1,
+						HTT_TCL_META_DATA_GSN_INSPECTED);
 	}
 
 	ti.encap_type = ath12k_dp_tx_get_encap_type(ab, skb);
@@ -1332,6 +1358,35 @@ skip_htt_metadata:
 		tx_desc->paddr_ext_desc = ti.paddr;
 		tx_desc->ext_desc_len = ti.data_len;
 		tx_desc->skb_ext_desc = skb_ext_desc;
+	}
+
+	if (group_slot > 0)  {
+		htt_hdr_size = ath12k_prepare_group_key_metadata(skb, group_slot);
+		if (htt_hdr_size < 0) {
+			ath12k_info(ab, "failed to set group key metadata");
+			err = DP_TX_ENQ_DROP_HTT_MDATA_ERR;
+			goto fail_unmap_dma_ext;
+		}
+
+		if (gsn_valid) {
+			/* Reset and Initialize meta_data_flags with Global Sequence
+			 * Number (GSN) info.
+			 */
+			ti.meta_data_flags =
+				u32_encode_bits(HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM,
+						HTT_TCL_META_DATA_TYPE) |
+				u32_encode_bits(mcbc_gsn,
+						HTT_TCL_META_DATA_GLOBAL_SEQ_NUM);
+
+			ti.meta_data_flags |= HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT;
+			if (arvif->nawds_support)
+				ti.meta_data_flags |=
+					u32_encode_bits(1,
+							HTT_TCL_META_DATA_GSN_INSPECTED);
+		}
+		ti.meta_data_flags |= HTT_TCL_META_DATA_VALID_HTT;
+		ti.flags0 |= u32_encode_bits(1, HAL_TCL_DATA_CMD_INFO2_TO_FW);
+		ti.pkt_offset = htt_hdr_size;
 	}
 
 	hal_ring_id = tx_ring->tcl_data_ring.ring_id;
@@ -2486,7 +2541,8 @@ int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 	ring_selector = smp_processor_id();
 	ring_id = ring_selector % dp_pdev->dp->hw_params->max_tx_ring;
 
-	return ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, false, arsta, ring_id, 0);
+	return ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, false,
+				  arsta, ring_id, 0, -1);
 }
 
 void ath12k_wifi7_dp_tx_ring_cleanup(struct ath12k_base *ab)
