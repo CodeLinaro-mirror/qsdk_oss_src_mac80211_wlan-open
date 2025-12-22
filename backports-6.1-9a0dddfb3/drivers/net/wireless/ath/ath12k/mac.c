@@ -5830,7 +5830,7 @@ static void ath12k_mac_aggr_link_vif_to_mld_vif(struct ath12k_dp_vif *dp_vif,
 						&link_vif_stats->per_pkt_rx[i]);
 
 	ath12k_dp_free_preserved_stats(link_vif_stats);
-	link_vif_stats = NULL;
+	dp_link_vif->link_peer_delete_stats = NULL;
 }
 
 static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
@@ -17681,6 +17681,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 
 	dp_vif = &ahvif->dp_vif;
 	ath12k_dp_free_preserved_stats(dp_vif->link_vif_delete_stats);
+	dp_vif->link_vif_delete_stats = NULL;
 free_vlan_iface:
 	kfree(ahvif->vlan_iface);
 	ahvif->vlan_iface = NULL;
