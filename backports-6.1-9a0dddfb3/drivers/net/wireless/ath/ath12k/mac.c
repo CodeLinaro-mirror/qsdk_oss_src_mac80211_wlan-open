@@ -5764,9 +5764,9 @@ ath12k_mac_assign_link_vif(struct ath12k_hw *ah, struct ieee80211_vif *vif,
 	arvif = wiphy_dereference(ah->hw->wiphy, ahvif->link[link_id]);
 	if (arvif) {
 		arvif->link_id = link_id;
-		ath12k_dbg(NULL, ATH12K_DBG_MAC | ATH12K_DBG_BOOT,
-			   "mac assign link vif: arvif found, link_id:%d\n",
-			   link_id);
+		ath12k_dbg_level(NULL, ATH12K_DBG_MAC | ATH12K_DBG_BOOT, ATH12K_DBG_L2,
+				 "mac assign link vif: arvif found, link_id:%d\n",
+				 link_id);
 		return arvif;
 	}
 
