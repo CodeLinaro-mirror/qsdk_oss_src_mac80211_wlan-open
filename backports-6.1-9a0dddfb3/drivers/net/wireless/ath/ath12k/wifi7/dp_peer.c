@@ -90,8 +90,7 @@ int ath12k_wifi7_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	spin_unlock_bh(&dp_hw->peer_lock);
 
 	if (sta && sta->mlo) {
-		if (!ahsta->links_map && (hweight16(sta->valid_links) == 1))
-			ahsta->ml_peer_id = ath12k_wifi7_peer_ml_id_alloc(ah);
+		ahsta->ml_peer_id = ath12k_wifi7_peer_ml_id_alloc(ah);
 
 		if (ahsta->ml_peer_id == ATH12K_MLO_PEER_ID_INVALID) {
 			ath12k_hw_warn(ah, "unable to allocate ML peer id for sta %pM",
