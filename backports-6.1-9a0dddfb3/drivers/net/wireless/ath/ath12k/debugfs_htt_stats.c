@@ -8566,20 +8566,20 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += scnprintf(buf + len, buf_len - len, "tx_mcs =");
 
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS; j++)
-		len += scnprintf(buf + len, buf_len - len, ", %d:%u",
+		len += scnprintf(buf + len, buf_len - len, " %d:%u,",
 				 j - ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS,
 				 le32_to_cpu(htt_stats_buf->tx_mcs_ext_2[j]));
 
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; j++)
-		len += scnprintf(buf + len, buf_len - len, ", %u:%u",
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
 				 j, le32_to_cpu(htt_stats_buf->tx_mcs[j]));
 
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS; j++)
-		len += scnprintf(buf + len, buf_len - len, ", %u:%u",
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
 				 j + ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS,
 				 le32_to_cpu(htt_stats_buf->tx_mcs_ext[j]));
 
-	len += scnprintf(buf + len, buf_len - len, "\n");
+	len += scnprintf(buf + len - 1, buf_len - (len - 1), "\n");
 
 	len += print_array_to_buf(buf, len, "ax_mu_mimo_tx_mcs",
 				  htt_stats_buf->ax_mu_mimo_tx_mcs,
@@ -12126,4 +12126,3 @@ void ath12k_debugfs_htt_stats_register(struct ath12k *ar)
 	debugfs_create_file("htt_stats_reset", 0200, ar->debug.debugfs_pdev,
 			    ar, &fops_htt_stats_reset);
 }
-
