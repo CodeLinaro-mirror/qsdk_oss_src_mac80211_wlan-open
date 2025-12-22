@@ -668,6 +668,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_OPTIONAL_CONFIGS_STATS_TAG		= 232,
 	HTT_STATS_FTM_TAG				= 234,
 	HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG		= 235,
+	HTT_STATS_TX_PDEV_BN_RATE_TAG                   = 236,
 	HTT_STATS_MAX_TAG,
 };
 
@@ -966,6 +967,12 @@ enum ATH12K_HTT_TX_RX_PDEV_STATS_AX_RU_SIZE {
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_BE_BW_COUNTERS		5
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_PER_COUNTERS		101
 #define ATH12K_HTT_TX_PDEV_STATS_NUM_BN_BW_COUNTERS		5
+/*Macros to use when appending iMCS values to MCS statistics*/
+#define ATH12K_HTT_TX_RX_MCS_RATE_1                             1
+#define ATH12K_HTT_TX_RX_MCS_RATE_3                             3
+#define ATH12K_HTT_TX_RX_MCS_RATE_4                             4
+#define ATH12K_HTT_TX_RX_MCS_RATE_7                             7
+
 
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_BW_EXT_COUNTERS		4
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT		14
@@ -1089,6 +1096,22 @@ struct ath12k_htt_tx_pdev_rate_stats_sawf_tlv {
 	__le32 su_burst_rate_drop_fail_cnt;
 } __packed;
 
+#define HTT_TX_PDEV_BN_RATE_STATS_MAC_ID   GENMASK(7, 0)
+#define HTT_TX_PDEV_BN_RATE_STATS_WIFI_VERSION     GENMASK(11, 8)
+
+struct ath12k_htt_tx_pdev_bn_rate_stats_tlv {
+	__le32 mac_id__word;
+
+	__le32 tx_mcs_ext_3[ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
+
+	__le32 tx_gi_ext_3[ATH12K_HTT_TX_PDEV_STATS_NUM_GI_COUNTERS]
+			[ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
+
+	__le32 tx_stbc_ext_3[ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
+} __packed;
+
+
+
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_LEGACY_CCK_STATS		4
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_LEGACY_OFDM_STATS		8
 #define ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS		12
@@ -1209,6 +1232,9 @@ struct ath12k_htt_rx_pdev_rate_ext_stats_tlv {
 
 	__le32 npca_rx_su_punctured_mode
 		[ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS];
+
+	__le32 rx_mcs_ext_3
+		[ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA3_MCS_COUNTERS];
 };
 
 #define ATH12K_HTT_TX_PDEV_STATS_SCHED_PER_TXQ_MAC_ID	GENMASK(7, 0)

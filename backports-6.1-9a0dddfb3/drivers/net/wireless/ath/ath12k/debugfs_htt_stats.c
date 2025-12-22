@@ -8011,9 +8011,47 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	else
 		len += scnprintf(buf + len, buf_len - len, "ppdus_tried_%s = ",
 				 mode_prefix);
-	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++)
+	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
 				 le32_to_cpu(stats_buf->per_mcs[i].ppdus_tried));
+
+		if (u32_get_bits(wifi_version_word, HTT_PER_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].ppdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].ppdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].ppdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].ppdus_tried));
+			break;
+
+			}
+		}
+	}
+
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	if (rc_mode == ATH12K_HTT_STATS_RC_MODE_ULOFDMA ||
@@ -8023,21 +8061,135 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	else
 		len += scnprintf(buf + len, buf_len - len, "ppdus_ack_failed_%s = ",
 				 mode_prefix);
-	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++)
+	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
-				 le32_to_cpu(stats_buf->per_mcs[i].ppdus_ack_failed));
+				le32_to_cpu(stats_buf->per_mcs[i].ppdus_ack_failed));
+		if (u32_get_bits(wifi_version_word,
+				HTT_PER_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u ",
+				le32_to_cpu
+				(stats_buf->per_mcs_ext_3[k].ppdus_ack_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u ",
+				le32_to_cpu
+				(stats_buf->per_mcs_ext_3[k].ppdus_ack_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u ",
+				le32_to_cpu
+				(stats_buf->per_mcs_ext_3[k].ppdus_ack_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u ",
+				le32_to_cpu
+				(stats_buf->per_mcs_ext_3[k].ppdus_ack_failed));
+			break;
+
+			}
+		}
+	}
+
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	len += scnprintf(buf + len, buf_len - len, "mpdus_tried_%s = ", mode_prefix);
-	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++)
+	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
 				 le32_to_cpu(stats_buf->per_mcs[i].mpdus_tried));
+		if (u32_get_bits(wifi_version_word,
+				HTT_PER_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_tried));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_tried));
+			break;
+
+			}
+		}
+	}
+
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	len += scnprintf(buf + len, buf_len - len, "mpdus_failed_%s = ", mode_prefix);
-	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++)
+	for (i = 0; i < ATH12K_HTT_TXBF_RATE_STAT_NUM_MCS_CNTRS; i++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u ", i,
 				 le32_to_cpu(stats_buf->per_mcs[i].mpdus_failed));
+		if (u32_get_bits(wifi_version_word,
+				HTT_PER_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (i) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_failed));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u ",
+					le32_to_cpu
+					(stats_buf->per_mcs_ext_3[k].mpdus_failed));
+			break;
+
+			}
+		}
+	}
+
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	if ((rc_mode == ATH12K_HTT_STATS_RC_MODE_DLOFDMA ||
@@ -8612,6 +8764,41 @@ ath12k_htt_print_pdev_mbssid_ctrl_frame_stats_tlv(const void *tag_buf, u16 tag_l
 	stats_req->buf_len = len;
 }
 
+
+/* .bss zero-initialized cache of bn (intermediate) MCS values */
+static struct ath12k_htt_tx_pdev_bn_rate_stats_tlv htt_stats_bn_rate_stats_buf_global;
+
+/*
+ * ath12k_htt_cache_tx_pdev_bn_rate_stats_tlv - Cache bn TLV for coherent print
+ *
+ * If the bn TLV and the main rate TLV arrive in the same message with bn first,
+ * interleaved printing will be coherent. If they arrive separately, there is a
+ * theoretical race across multiple targets uploading at the same time, but the
+ * probability is negligible and typical firmware sends them together.
+ */
+
+static void
+ath12k_htt_cache_tx_pdev_bn_rate_stats_tlv(const void *tag_buf, u16 tag_len)
+{
+	const struct ath12k_htt_tx_pdev_bn_rate_stats_tlv *htt_stats_buf = tag_buf;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	memcpy(&htt_stats_bn_rate_stats_buf_global, htt_stats_buf,
+		sizeof(htt_stats_bn_rate_stats_buf_global));
+}
+
+/*
+ * ath12k_htt_clear_tx_pdev_bn_rate_stats_cache - Clear bn TLV cache
+ */
+static void ath12k_htt_clear_tx_pdev_bn_rate_stats_cache(void)
+{
+	memset(&htt_stats_bn_rate_stats_buf_global, 0,
+		sizeof(htt_stats_bn_rate_stats_buf_global));
+}
+
+
 static inline void
 ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 					struct debug_htt_stats_req *stats_req)
@@ -8682,9 +8869,41 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 				 j - ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS,
 				 le32_to_cpu(htt_stats_buf->tx_mcs_ext_2[j]));
 
-	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; j++)
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; j++) {
 		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
-				 j, le32_to_cpu(htt_stats_buf->tx_mcs[j]));
+				j, le32_to_cpu(htt_stats_buf->tx_mcs[j]));
+		if (u32_get_bits(htt_stats_bn_rate_stats_buf_global.mac_id__word,
+				HTT_TX_PDEV_BN_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (j) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u,",
+			le32_to_cpu(htt_stats_bn_rate_stats_buf_global.tx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u,",
+			le32_to_cpu(htt_stats_bn_rate_stats_buf_global.tx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u,",
+			le32_to_cpu(htt_stats_bn_rate_stats_buf_global.tx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u,",
+			le32_to_cpu(htt_stats_bn_rate_stats_buf_global.tx_mcs_ext_3[k]));
+			break;
+			}
+		}
+	}
 
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS; j++)
 		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
@@ -8745,11 +8964,50 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 			 ATH12K_HTT_TX_PDEV_STATS_NUM_BW_COUNTERS,
 			 le32_to_cpu(htt_stats_buf->tx_bw_320mhz));
 
-	len += print_array_to_buf(buf, len, "tx_stbc",
-				  htt_stats_buf->tx_stbc,
-				  ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS, NULL);
+	len += scnprintf(buf + len, buf_len - len, "tx_stbc =");
+
+	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; j++) {
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
+				j, le32_to_cpu(htt_stats_buf->tx_stbc[j]));
+		if (u32_get_bits(htt_stats_bn_rate_stats_buf_global.mac_id__word,
+				HTT_TX_PDEV_BN_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (j) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_stbc_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_stbc_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_stbc_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_stbc_ext_3[k]));
+			break;
+			}
+		}
+	}
+
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS; j++)
-		len += scnprintf(buf + len, buf_len - len, ", %u:%u",
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
 				 j + ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS,
 				 le32_to_cpu(htt_stats_buf->tx_stbc_ext[j]));
 	len += scnprintf(buf + len, buf_len - len, "\n");
@@ -8757,14 +9015,51 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	for (j = 0; j < ATH12K_HTT_TX_PDEV_STATS_NUM_GI_COUNTERS; j++) {
 		len += scnprintf(buf + len, (buf_len - len),
 				 "tx_gi[%u] =", j);
-		len += scnprintf(buf + len, buf_len - len, " -2:%u,-1:%u,",
+		len += scnprintf(buf + len, buf_len - len, " -2:%u,-1:%u ",
 				 htt_stats_buf->tx_gi_ext_2[j][0],
 				 htt_stats_buf->tx_gi_ext_2[j][1]);
-		len += print_array_to_buf(buf, len, NULL, htt_stats_buf->tx_gi[j],
-					  ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS,
-					  NULL);
+		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS; i++) {
+			len += scnprintf(buf + len, buf_len - len, " %u:%u,",
+				j, le32_to_cpu(htt_stats_buf->tx_gi[j][i]));
+			if (u32_get_bits(htt_stats_bn_rate_stats_buf_global.mac_id__word,
+				HTT_TX_PDEV_BN_RATE_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+				u8 k;
+
+				switch (i) {
+				case ATH12K_HTT_TX_RX_MCS_RATE_1:
+				k = 0;
+				len += scnprintf(buf + len, buf_len - len, " 1.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
+				break;
+
+				case ATH12K_HTT_TX_RX_MCS_RATE_3:
+				k = 1;
+				len += scnprintf(buf + len, buf_len - len, " 3.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
+				break;
+
+				case ATH12K_HTT_TX_RX_MCS_RATE_4:
+				k = 2;
+				len += scnprintf(buf + len, buf_len - len, " 4.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
+				break;
+
+				case ATH12K_HTT_TX_RX_MCS_RATE_7:
+				k = 3;
+				len += scnprintf(buf + len, buf_len - len, " 7.1:%u,",
+				le32_to_cpu
+				(htt_stats_bn_rate_stats_buf_global.tx_gi_ext_3[j][k]));
+				break;
+				}
+			}
+		}
+
 		for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_NUM_EXTRA_MCS_COUNTERS; i++)
-			len += scnprintf(buf + len, buf_len - len, ", %u:%u",
+			len += scnprintf(buf + len, buf_len - len, " %u:%u,",
 					 i + ATH12K_HTT_TX_PDEV_STATS_NUM_MCS_COUNTERS,
 					 le32_to_cpu(htt_stats_buf->tx_gi_ext[j][i]));
 		len += scnprintf(buf + len, buf_len - len, "\n");
@@ -8915,6 +9210,8 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += scnprintf(buf + len, buf_len - len, "\n\n");
 
 	stats_req->buf_len = len;
+
+	ath12k_htt_clear_tx_pdev_bn_rate_stats_cache();
 }
 
 static inline void
@@ -9404,12 +9701,50 @@ ath12k_htt_print_rx_pdev_rate_ext_stats_tlv(const void *tag_buf, u16 tag_len,
 				  ATH12K_HTT_RX_PDEV_STATS_NUM_PUNCTURED_MODE_COUNTERS,
 				  "\n");
 
-	len += print_array_to_buf(buf, len, "rx_mcs_ext",
-				  htt_stats_buf->rx_mcs_ext,
-				  ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT,
-				  NULL);
+	len += scnprintf(buf + len, buf_len - len, "rx_mcs_ext =");
+
+	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT; j++) {
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
+				j, le32_to_cpu(htt_stats_buf->rx_mcs_ext[j]));
+		if (u32_get_bits(wifi_version_word,
+				HTT_RX_PDEV_RATE_EXT_STATS_WIFI_VERSION)
+				>= HTT_WIFI_VER_11BN) {
+			u8 k;
+
+			switch (j) {
+			case ATH12K_HTT_TX_RX_MCS_RATE_1:
+			k = 0;
+			len += scnprintf(buf + len, buf_len - len, " 1.1:%u,",
+						le32_to_cpu
+						(htt_stats_buf->rx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_3:
+			k = 1;
+			len += scnprintf(buf + len, buf_len - len, " 3.1:%u,",
+						le32_to_cpu
+						(htt_stats_buf->rx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_4:
+			k = 2;
+			len += scnprintf(buf + len, buf_len - len, " 4.1:%u,",
+						le32_to_cpu
+						(htt_stats_buf->rx_mcs_ext_3[k]));
+			break;
+
+			case ATH12K_HTT_TX_RX_MCS_RATE_7:
+			k = 3;
+			len += scnprintf(buf + len, buf_len - len, " 7.1:%u,",
+						le32_to_cpu
+						(htt_stats_buf->rx_mcs_ext_3[k]));
+			break;
+			}
+		}
+	}
+
 	for (j = 0; j < ATH12K_HTT_RX_PDEV_STATS_NUM_EXTRA2_MCS_COUNTERS; j++)
-		len += scnprintf(buf + len, buf_len - len, ", %u:%u",
+		len += scnprintf(buf + len, buf_len - len, " %u:%u,",
 				 j + ATH12K_HTT_RX_PDEV_STATS_NUM_MCS_COUNTERS_EXT,
 				 le32_to_cpu(htt_stats_buf->rx_mcs_ext_2[j]));
 	len += scnprintf(buf + len, buf_len - len, "\n");
@@ -12246,6 +12581,11 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 	case HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG:
 		ath12k_htt_print_ftm_tpccal_stats_ext_tlv(tag_buf, len, stats_req);
 		break;
+
+	case HTT_STATS_TX_PDEV_BN_RATE_TAG:
+		ath12k_htt_cache_tx_pdev_bn_rate_stats_tlv(tag_buf, len);
+		break;
+
 	default:
 		break;
 	}
