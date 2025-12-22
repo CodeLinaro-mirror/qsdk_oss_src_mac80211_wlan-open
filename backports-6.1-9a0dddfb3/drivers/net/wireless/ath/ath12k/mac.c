@@ -23581,7 +23581,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	 * explicitly, hence advertising the same to mac80211 using
 	 * max_beacon_size.
 	 */
-	wiphy->max_beacon_size = TARGET_MAX_BEACON_SIZE;
+	wiphy->max_beacon_size = ath12k_cfg_get(ab, ATH12K_CFG_AP_MAX_MGMT_FRM_SZ);
 
 	if (is_6ghz) {
 		wiphy_ext_feature_set(wiphy,
