@@ -7,8 +7,10 @@
 #ifndef ATH12K_DP_WIFI8_H
 #define ATH12K_DP_WIFI8_H
 
+#include "../core.h"
 #include "../dp_cmn.h"
 #include "hw.h"
+#include "dp_ast.h"
 
 #define DP_TX_EXCEPTION_RING_SIZE      512
 
@@ -26,6 +28,7 @@ struct ath12k_dp_wifi8 {
 struct ath12k_dp_hw_group_wifi8 {
 	struct ath12k_dp_hw_group *dp_hw_grp;
 	struct ath12k_dp *cumac_dp;
+	struct ath12k_dp_global_ast_table dp_ast_base;
 };
 
 static inline struct ath12k_dp_wifi8 *ath12k_get_dp_wifi8(struct ath12k_dp *dp)
@@ -48,6 +51,36 @@ static inline struct ath12k_dp_hw_group *
 		ath12k_get_dp_hw_group(struct ath12k_dp_hw_group_wifi8 *dp_hw_group_wifi8)
 {
 	return dp_hw_group_wifi8->dp_hw_grp;
+}
+
+static inline struct ath12k_base *
+		ath12k_dp_get_ab_from_dp_hw_group(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+					ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+
+	if (!dp_hw_grp_wifi8)
+		return NULL;
+
+	if (!dp_hw_grp_wifi8->cumac_dp)
+		return NULL;
+
+	return dp_hw_grp_wifi8->cumac_dp->ab;
+}
+
+static inline struct device *
+		ath12k_dp_get_dev_from_dp_hw_group(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+					ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+
+	if (!dp_hw_grp_wifi8)
+		return NULL;
+
+	if (!dp_hw_grp_wifi8->cumac_dp)
+		return NULL;
+
+	return dp_hw_grp_wifi8->cumac_dp->dev;
 }
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab);

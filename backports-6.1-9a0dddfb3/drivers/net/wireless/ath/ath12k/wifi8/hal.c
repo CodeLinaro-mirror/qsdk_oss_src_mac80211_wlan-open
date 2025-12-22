@@ -895,3 +895,37 @@ bool ath12k_wifi8_hal_tx_completion_process(struct hal_wbm_completion_ring_tx *d
 	return true;
 }
 
+void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
+				  struct ath12k_hal_ast_param *ast_param)
+{
+	u32 val;
+
+	val = le32_encode_bits(ast_param->paddr,
+			       HAL_TCL_ASE_GST_BASE_ADDR_LOW_MASK);
+	ath12k_hif_write32(ab, HAL_TCL_ASE_GST_BASE_ADDR_LOW, val);
+
+	val = le32_encode_bits(((u64)ast_param->paddr >> HAL_ADDR_MSB_REG_SHIFT),
+			       HAL_TCL_ASE_GST_BASE_ADDR_HIGH_MASK);
+	ath12k_hif_write32(ab, HAL_TCL_ASE_GST_BASE_ADDR_HIGH, val);
+
+	val = le32_encode_bits(ast_param->num_ast_entries,
+			       HAL_TCL_ASE_GST_SIZE_MASK);
+	ath12k_hif_write32(ab, HAL_TCL_ASE_GST_SIZE, val);
+
+	val = ath12k_hif_read32(ab, HAL_TCL_ASE_SEARCH_CTRL);
+	val &= ~(HAL_TCL_ASE_SEARCH_CTRL_MAX_SEARCH |
+		 HAL_TCL_ASE_SEARCH_CTRL_CACHE_DISABLE |
+		 HAL_TCL_ASE_SEARCH_CTRL_CACHE_FAILURES_ENABLE);
+	val |= le32_encode_bits(ast_param->skid_len,
+				HAL_TCL_ASE_SEARCH_CTRL_MAX_SEARCH) |
+	       le32_encode_bits(!ast_param->ast_cache_en,
+				HAL_TCL_ASE_SEARCH_CTRL_CACHE_DISABLE) |
+	       le32_encode_bits(ast_param->ast_cache_failure_en,
+				HAL_TCL_ASE_SEARCH_CTRL_CACHE_FAILURES_ENABLE);
+	ath12k_dbg(ab, ATH12K_DBG_HAL, "ASE search ctrl: 0x%x\n", val);
+	ath12k_hif_write32(ab, HAL_TCL_ASE_SEARCH_CTRL, val);
+
+	ath12k_hif_write32(ab, HAL_TCL_ASE_HASH_KEY_31_0, ast_param->ase_hash_key1);
+	ath12k_hif_write32(ab, HAL_TCL_ASE_HASH_KEY_63_32, ast_param->ase_hash_key2);
+	ath12k_hif_write32(ab, HAL_TCL_ASE_HASH_KEY_64, ast_param->ase_hash_key3);
+}
