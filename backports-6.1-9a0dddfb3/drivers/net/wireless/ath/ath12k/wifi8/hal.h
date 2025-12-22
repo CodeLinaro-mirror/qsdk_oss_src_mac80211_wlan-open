@@ -705,6 +705,29 @@ struct hal_reo_status {
 	} u;
 };
 
+#define HAL_AST_ENTRY_INFO0_MAC_ADDR_31_0		GENMASK(31, 0)
+#define HAL_AST_ENTRY_INFO1_MAC_ADDR_47_32		GENMASK(15, 0)
+#define HAL_AST_ENTRY_INFO1_MEC				BIT(17)
+#define HAL_AST_ENTRY_INFO1_LINK_ID			GENMASK(21, 19)
+#define HAL_AST_ENTRY_INFO1_ENTRY_VALID			BIT(22)
+#define HAL_AST_ENTRY_INFO1_USE_ADDRX_SEARCH		BIT(27)
+#define HAL_AST_ENTRY_INFO1_NUM_WHO_CLASSIFY_INFO	GENMASK(31, 30)
+#define HAL_AST_ENTRY_INFO2_WHO_CLASSIFY_INFO_31_0	GENMASK(31, 0)
+#define HAL_AST_ENTRY_INFO3_WHO_CLASSIFY_INFO_39_32	GENMASK(7, 0)
+#define HAL_AST_ENTRY_INFO5_SW_PEER_ID			GENMASK(31, 16)
+#define HAL_AST_ENTRY_INFO6_VDEV_ID			GENMASK(7, 0)
+
+struct hal_ast_entry {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 info5;
+	__le32 info6;
+	__le32 info7;
+} __packed;
+
 struct ath12k_hal_ast_param {
 	u32 skid_len:8,
 	    ast_cache_en:1,
