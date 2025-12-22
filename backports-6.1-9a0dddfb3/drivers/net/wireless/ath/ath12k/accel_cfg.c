@@ -88,16 +88,16 @@ void ath12k_get_ingress_mlo_dev_info(struct net_device *ndev,
 
 	ab = arvif->ar->ab;
 
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* Update DS node_id only if the chipset support DS */
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ahvif->dp_vif.ppe_vp_type != PPE_VP_USER_TYPE_DS ||
 	    !test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
 		goto unlock;
 
 	*node_id = ab->dp->ppe.ds_node_id;
 unlock:
-	rcu_read_unlock();
 #endif
+	rcu_read_unlock();
 	ath12k_dbg_level(ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 			 "Wifi-classifer mark peer %pM link_id %x node_id %x\n",
 			 peer_mac, *link_id, *node_id);
