@@ -2797,8 +2797,14 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 
-	debugfs_create_file("link_stats", 0400, vif->debugfs_dir, ahvif,
-			    &ath12k_fops_link_stats);
+	if (!ahvif->debugfs_linkstats) {
+		ahvif->debugfs_linkstats = debugfs_create_file("link_stats", 0400,
+							       vif->debugfs_dir,
+							       ahvif,
+							       &ath12k_fops_link_stats);
+		if (IS_ERR(ahvif->debugfs_linkstats))
+			ahvif->debugfs_linkstats = NULL;
+	}
 }
 EXPORT_SYMBOL(ath12k_debugfs_op_vif_add);
 
@@ -7573,11 +7579,27 @@ void ath12k_debugfs_add_interface(struct ath12k_link_vif *arvif)
 	debugfs_create_file("btwt_remove_sta", 0200, arvif->debugfs_twt,
 			    arvif, &ath12k_fops_btwt_remove_sta);
 
-	debugfs_create_file("mld_stats", 0600, vif->debugfs_dir, ahvif,
-			    &ath12k_fops_mld_stats);
+	if (!ahvif->mld_stats) {
+		ahvif->mld_stats = debugfs_create_file("mld_stats", 0600,
+						       vif->debugfs_dir,
+						       ahvif,
+						       &ath12k_fops_mld_stats);
+		if (IS_ERR(ahvif->mld_stats))
+			ahvif->mld_stats = NULL;
+	}
 
-	debugfs_create_file("rfs_core_mask", 0644, vif->debugfs_dir,
-			    ahvif, &ath12k_fops_rfs_core_mask);
+#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
+	if (!ahvif->debugfs_rfs_core_mask) {
+		ahvif->debugfs_rfs_core_mask =
+					debugfs_create_file("rfs_core_mask",
+							    0644,
+							    vif->debugfs_dir,
+							    ahvif,
+							    &ath12k_fops_rfs_core_mask);
+		if (IS_ERR(ahvif->debugfs_rfs_core_mask))
+			ahvif->debugfs_rfs_core_mask = NULL;
+	}
+#endif
 
 	arvif->debugfs_power_save_gtx = debugfs_create_file("power_save_gtx", 0644,
 							    vif->link_debugfs[link_id],
@@ -7646,17 +7668,36 @@ ap_and_sta_debugfs_file:
 
 void ath12k_debugfs_remove_interface(struct ath12k_link_vif *arvif)
 {
-	if (arvif->ahvif->vif->type == NL80211_IFTYPE_AP)
+	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ieee80211_vif *vif;
+	u8 link_id;
+
+	if (!ahvif)
+		return;
+
+	if (ath12k_mac_is_bridge_vdev(arvif))
+		return;
+
+	vif = ahvif->vif;
+	link_id = arvif->link_id;
+
+	if (!vif || link_id >= ATH12K_NUM_MAX_LINKS)
+		return;
+
+	if (vif->type == NL80211_IFTYPE_AP)
 		arvif->debugfs_twt = NULL;
 	arvif->debugfs_power_save_gtx = NULL;
-	/**
-	 * Remove ahvif debugfs only when all the link is going to be removed.
-	 */
-	if (hweight16(arvif->ahvif->links_map) <= 1) {
-		if (arvif->ahvif->vif->type != NL80211_IFTYPE_MESH_POINT)
-			arvif->ahvif->debugfs_primary_link = NULL;
-		/* TODO: debugfs_rfs_core_mask and debugfs_linkstats
-		 */
+
+	/* Per-vif debugfs entries - cleanup only when removing last link */
+	if (hweight16(ahvif->links_map) <= 1) {
+		if (ahvif->vif->type != NL80211_IFTYPE_MESH_POINT)
+			ahvif->debugfs_primary_link = NULL;
+
+		ahvif->debugfs_vdev_tid_stats = NULL;
+		ahvif->debugfs_reset_dp_tid_stats = NULL;
+		ahvif->debugfs_rfs_core_mask = NULL;
+		ahvif->debugfs_linkstats = NULL;
+		ahvif->mld_stats = NULL;
 	}
 }
 
