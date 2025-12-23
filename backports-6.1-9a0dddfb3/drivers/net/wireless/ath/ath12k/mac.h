@@ -223,6 +223,10 @@ void ath12k_mac_fill_reg_tpc_info(struct ath12k *ar,
 void ath12k_mac_fill_reg_tpc_info_with_eirp_power(struct ath12k *ar,
 						  struct ath12k_link_vif *arvif,
 						  struct ieee80211_chanctx_conf *ctx);
+#ifdef CPTCFG_QCN_EXTN
+void ath12k_mgmt_over_wmi_tx_work(struct wiphy *wiphy,
+				  struct wiphy_work *work);
+#endif
 
 /**
  * ath12k_mac_fill_reg_tpc_info_with_psd_eirp_pwr_for_sp - Populate both PSD and
