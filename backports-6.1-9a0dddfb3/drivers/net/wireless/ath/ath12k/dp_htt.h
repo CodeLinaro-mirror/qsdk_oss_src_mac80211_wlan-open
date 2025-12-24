@@ -8,6 +8,7 @@
 #define ATH12K_DP_HTT_H
 
 struct ath12k_dp;
+struct ath12k_pdev_dp;
 
 /* HTT definitions */
 #define HTT_TAG_TCL_METADATA_VERSION		5
@@ -2243,9 +2244,11 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
 
-int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, const void *ptr, size_t len,
-			   int (*iter)(struct ath12k_base *ar, u16 tag, u16 len,
-				       const void *ptr, void *data),
+int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
+			   const void *ptr, size_t len,
+			   int (*iter)(struct ath12k_base *ar,
+				       struct ath12k_pdev_dp *dp_pdev, u16 tag,
+				       u16 len, const void *ptr, void *data),
 			   void *data);
 
 int ath12k_dp_tx_htt_h2t_ver_req_msg(struct ath12k_base *ab);
