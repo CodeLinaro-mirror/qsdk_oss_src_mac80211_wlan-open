@@ -11838,12 +11838,16 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 								 &chandef, link_id);
 
 	if (cfg80211_beaconing_iface_active(wdev)) {
-		/* During MLO other link(s) can beacon, only the current link
-		 * can not already beacon
-		 */
-		if (wdev->valid_links &&
-		    !wdev->links[link_id].ap.beacon_interval) {
-			/* nothing */
+		if (cfg80211_chandef_identical(&wdev->links[link_id].csa_target_chandef,
+					       &chandef)) {
+			/* During CSA on DFS channel, becacon interval is set, but
+			 * interface is not beaconing
+			 */
+		} else if (wdev->valid_links &&
+			   !wdev->links[link_id].ap.beacon_interval) {
+			/* During MLO other link(s) can beacon, only the current link
+			 * can not already beacon
+			 */
 		} else {
 			return -EBUSY;
 		}
@@ -11865,6 +11869,10 @@ static int nl80211_start_radar_detection(struct sk_buff *skb,
 
 	err = rdev_start_radar_detection(rdev, dev, &chandef, cac_time_ms,
 					 link_id);
+
+	memset(&wdev->links[link_id].csa_target_chandef, 0,
+	       sizeof(struct cfg80211_chan_def));
+
 	if (err)
 		return err;
 
@@ -12005,6 +12013,15 @@ static int nl80211_parse_counter_offsets(struct cfg80211_registered_device *rdev
 	return 0;
 }
 
+static bool nl80211_support_csa_on_dfs(struct cfg80211_registered_device *rdev)
+{
+	/* ToDo: Add the NL80211 CSA on DFS support check,
+	 * NL80211_EXT_FEATURE_DFS_CHANNEL_SWITCH,
+	 * if supported return true else false
+	 */
+	return true;
+}
+
 static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 {
 	struct cfg80211_registered_device *rdev = info->user_ptr[0];
@@ -12134,12 +12151,6 @@ skip_beacons:
 		}
 	}
 
-	if (!cfg80211_reg_can_beacon_relax(&rdev->wiphy, &params.chandef,
-					   wdev->iftype)) {
-		err = -EINVAL;
-		goto free;
-	}
-
 	err = cfg80211_chandef_dfs_required(wdev->wiphy,
 					    &params.chandef,
 					    wdev->iftype);
@@ -12150,6 +12161,22 @@ skip_beacons:
 		params.radar_required = true;
 		if (need_handle_dfs_flag &&
 		    !nla_get_flag(info->attrs[NL80211_ATTR_HANDLE_DFS])) {
+			err = -EINVAL;
+			goto free;
+		}
+
+		if (nl80211_support_csa_on_dfs(rdev))
+			wdev->links[link_id].csa_target_chandef = params.chandef;
+	}
+
+	if (nl80211_support_csa_on_dfs(rdev) && params.radar_required) {
+		/* Skip cfg80211_reg_can_beacon_relax check for DFS channel to allow
+		 * CSA when target channel is DFS, and do the below check if not
+		 * DFS channel or if feature is disabled.
+		 */
+	} else {
+		if (!cfg80211_reg_can_beacon_relax(&rdev->wiphy, &params.chandef,
+						   wdev->iftype)) {
 			err = -EINVAL;
 			goto free;
 		}
@@ -12168,6 +12195,9 @@ skip_beacons:
 
 	params.link_id = link_id;
 	err = rdev_channel_switch(rdev, dev, &params);
+	if (err)
+		memset(&wdev->links[link_id].csa_target_chandef, 0,
+		       sizeof(struct cfg80211_chan_def));
 
 free:
 	kfree(params.beacon_after.mbssid_ies);
@@ -22930,6 +22960,7 @@ void cfg80211_ch_switch_notify(struct net_device *dev,
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 	struct wiphy *wiphy = wdev->wiphy;
 	struct cfg80211_registered_device *rdev = wiphy_to_rdev(wiphy);
+	int dfs_required;
 
 	lockdep_assert_wiphy(wdev->wiphy);
 	WARN_INVALID_LINK_ID(wdev, link_id);
@@ -22961,8 +22992,13 @@ void cfg80211_ch_switch_notify(struct net_device *dev,
 		break;
 	}
 
-	cfg80211_schedule_channels_check(wdev);
-	cfg80211_sched_dfs_chan_update(rdev);
+	dfs_required = cfg80211_chandef_dfs_required(wiphy, chandef, wdev->iftype);
+	if (nl80211_support_csa_on_dfs(rdev) && dfs_required > 0) {
+		cancel_delayed_work(&rdev->dfs_update_channels_wk);
+	} else {
+		cfg80211_schedule_channels_check(wdev);
+		cfg80211_sched_dfs_chan_update(rdev);
+	}
 
 	nl80211_ch_switch_notify(rdev, dev, link_id, chandef, GFP_KERNEL,
 				 NL80211_CMD_CH_SWITCH_NOTIFY, 0, false);
