@@ -24,6 +24,8 @@ struct ath12k_dp_hw_group;
 #define ATH12K_AST_ENTRY_WILDCARD_LINK_ID	0x7
 #define ATH12K_NUM_TX_CLASSIFY_BANKS		4
 
+struct ath12k_dp;
+
 enum ATH12K_AST_ENTRY_FLAGS {
 	ATH12K_AST_ENTRY_EMPTY_FLAGS	= 0x0,
 	ATH12K_AST_ENTRY_IS_VALID	= 0x1,
@@ -83,4 +85,5 @@ struct ath12k_dp_global_ast_table {
 
 int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp);
 void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp);
+int ath12k_dp_rx_ast_info_setup(struct ath12k_dp *dp);
 #endif

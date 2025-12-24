@@ -273,3 +273,48 @@ err_release:
 
 	return ret;
 }
+
+int ath12k_dp_rx_htt_ast_info_setup(struct ath12k_base *ab,
+				    struct ath12k_hal_ast_param *ast_param)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct sk_buff *skb;
+	struct htt_ast_info_t *cmd;
+	int len = sizeof(*cmd);
+	int ret;
+
+	skb = ath12k_htc_alloc_skb(ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	skb_put(skb, len);
+
+	cmd = (struct htt_ast_info_t *)skb->data;
+	memset(cmd, 0, sizeof(*cmd));
+
+	cmd->info0 = le32_encode_bits(HTT_H2T_MSG_TYPE_AST_INFO,
+				      HTT_AST_INFO0_MSG_TYPE) |
+		     le32_encode_bits(ast_param->num_ast_entries,
+				      HTT_AST_INFO0_TABLE_SIZE) |
+		     le32_encode_bits(ast_param->skid_len,
+				      HTT_AST_INFO0_MAX_SEARCH);
+	cmd->info1 = le32_encode_bits(ast_param->paddr,
+				      HTT_AST_INFO1_BASE_ADDR_31_0);
+	cmd->info2 = le32_encode_bits(ast_param->ase_hash_key1,
+				      HTT_AST_INFO2_HASH_KEY_1);
+	cmd->info3 = le32_encode_bits(ast_param->ase_hash_key2,
+				      HTT_AST_INFO3_HASH_KEY_2);
+	cmd->info4 = le32_encode_bits(ast_param->ase_hash_key3,
+				      HTT_AST_INFO4_HASH_KEY_3);
+	cmd->info5 = le32_encode_bits(((u64)ast_param->paddr >> HAL_ADDR_MSB_REG_SHIFT),
+				      HTT_AST_INFO5_BASE_ADDR_39_32);
+
+	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
+	if (ret) {
+		ath12k_err(ab, "failed to send ast info htt: %d", ret);
+		dev_kfree_skb_any(skb);
+		return ret;
+	}
+
+	return 0;
+}
