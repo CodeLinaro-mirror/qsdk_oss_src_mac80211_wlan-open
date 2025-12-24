@@ -2426,6 +2426,55 @@ static int ath12k_mac_get_max_vht_mcs_map(u16 mcs_map, int nss)
 	return 0;
 }
 
+static int ath12k_mac_config_vdev_ht_ratemask(struct ath12k_link_vif *arvif,
+					      struct sk_buff *bcn)
+{
+	struct wmi_vdev_ratemask_arg arg = {};
+	const struct ieee80211_ht_cap *ht_cap;
+	u32 ht_tx_mcs_map;
+	int ies_len, ret;
+	const u8 *cap;
+	u8 *ies;
+
+	ies = ((struct ieee80211_mgmt *)bcn->data)->u.beacon.variable;
+	ies_len = bcn->len - (ies - bcn->data);
+	/* Get HT capability element from the beacon template */
+	cap = cfg80211_find_ie(WLAN_EID_HT_CAPABILITY, ies, ies_len);
+	if (!cap || cap[1] < sizeof(*ht_cap))
+		return 0;
+
+	ht_cap = (const struct ieee80211_ht_cap *)(cap + 2);
+
+	/* Is HT TX MCS set specified in the HT capability element? */
+	if (!(ht_cap->mcs.tx_params & IEEE80211_HT_MCS_TX_DEFINED))
+		return 0;
+
+	memcpy(&ht_tx_mcs_map, &ht_cap->mcs.rx_mask[0],
+	       sizeof(ht_tx_mcs_map));
+
+	/* Skip update if unchanged for this vdev */
+	if (arvif->last_ht_tx_mcs_map == ht_tx_mcs_map)
+		return 0;
+
+	arg.vdev_id = arvif->vdev_id;
+	arg.type = VDEV_RATEMASK_TYPE_HT;
+
+	/* Copy tx mcs map corresponds to 4 nss, the rest of the mask
+	 * fields in 'arg' are not relevant for HT.
+	 */
+	memcpy(&arg.mask_lower32, &ht_cap->mcs.rx_mask[0],
+	       sizeof(arg.mask_lower32));
+
+	ret = ath12k_wmi_vdev_rate_mask(arvif->ar, &arg);
+	if (ret)
+		ath12k_warn(arvif->ar->ab, "failed to submit vdev rate mask command: %d\n",
+			    ret);
+	else
+		arvif->last_ht_tx_mcs_map = ht_tx_mcs_map;
+
+	return ret;
+}
+
 static int ath12k_mac_config_vdev_vht_ratemask(struct ath12k_link_vif *arvif,
 					       struct sk_buff *bcn)
 {
@@ -2494,7 +2543,17 @@ static int ath12k_mac_config_vdev_vht_ratemask(struct ath12k_link_vif *arvif,
 static int ath12k_mac_vdev_ratemask(struct ath12k_link_vif *arvif,
 				    struct sk_buff *bcn)
 {
-	return ath12k_mac_config_vdev_vht_ratemask(arvif, bcn);
+	int ret;
+
+	ret = ath12k_mac_config_vdev_ht_ratemask(arvif, bcn);
+	if (ret)
+		return ret;
+
+	ret = ath12k_mac_config_vdev_vht_ratemask(arvif, bcn);
+	if (ret)
+		return ret;
+
+	return 0;
 }
 
 static int ath12k_mac_setup_bcn_tmpl_ema(struct ath12k_link_vif *arvif,
@@ -18380,6 +18439,7 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 	}
 
 	arvif->last_vht_tx_mcs_map = 0;
+	arvif->last_ht_tx_mcs_map = 0;
 	ar->num_started_vdevs++;
 	ath12k_dbg(ab, ATH12K_DBG_MAC, "vdev %pM started, vdev_id %d\n",
 		   arvif->bssid, arvif->vdev_id);
