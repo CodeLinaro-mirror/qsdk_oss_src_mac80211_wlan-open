@@ -4065,11 +4065,17 @@ static int ieee80211_start_radar_detection(struct wiphy *wiphy,
 	link_data->smps_mode = IEEE80211_SMPS_OFF;
 	link_data->needed_rx_chains = local->rx_chains;
 
-	err = ieee80211_link_use_channel(link_data, &chanreq,
-					 IEEE80211_CHANCTX_SHARED);
-	if (err)
-		return err;
-
+	if (!link_data->conf->deferred_up) {
+		err = ieee80211_link_use_channel(link_data, &chanreq,
+						 IEEE80211_CHANCTX_SHARED);
+		if (err)
+			return err;
+	} else {
+		if (!link_data->conf->chanreq.oper.chan) {
+			sdata_info(sdata, "No channel context for CSA-DFS CAC\n");
+			return -EINVAL;
+		}
+	}
 	hrtimer_start(&link_data->dfs_cac_timer, ktime, HRTIMER_MODE_REL);
 	return 0;
 }
@@ -4376,6 +4382,7 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	struct ieee80211_bss_conf *link_conf = link_data->conf;
 	struct ieee80211_sub_if_data *mon_sdata = NULL;
 	u64 changed = 0;
+	int dfs_required;
 	int err;
 
 	lockdep_assert_wiphy(local->hw.wiphy);
@@ -4435,9 +4442,15 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 	if (err)
 		return err;
 
-	ieee80211_link_info_change_notify(sdata, link_data, changed);
-
-	ieee80211_vif_unblock_queues_csa(sdata);
+	dfs_required = cfg80211_chandef_dfs_required(local->hw.wiphy,
+						     &link_conf->chanreq.oper,
+						     sdata->vif.type);
+	if (dfs_required <= 0) {
+		ieee80211_link_info_change_notify(sdata, link_data, changed);
+		ieee80211_vif_unblock_queues_csa(sdata);
+	} else {
+		link_conf->deferred_up = true;
+	}
 
 	err = drv_post_channel_switch(link_data);
 	if (err)

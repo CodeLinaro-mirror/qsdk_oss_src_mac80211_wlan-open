@@ -3986,8 +3986,12 @@ void ieee80211_dfs_cac_cancel(struct ieee80211_local *local)
 			 * Release monitor VAP first to avoid
 			 * channel change in radar channel
 			 */
-			ieee80211_release_monitor_chandef(wiphy, curr_ctx, &chandef);
-			ieee80211_link_release_channel(link);
+			if (!link->conf->deferred_up) {
+				ieee80211_release_monitor_chandef(wiphy, curr_ctx,
+								  &chandef);
+				ieee80211_link_release_channel(link);
+			}
+
 			cfg80211_cac_event(sdata->dev, &chandef,
 					   NL80211_RADAR_CAC_ABORTED,
 					   GFP_KERNEL, link_id);

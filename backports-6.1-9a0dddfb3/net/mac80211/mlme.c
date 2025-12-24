@@ -3429,10 +3429,21 @@ void ieee80211_dfs_cac_timer_work(struct wiphy *wiphy, struct wiphy_work *work)
 	lockdep_assert_wiphy(sdata->local->hw.wiphy);
 
 	if (sdata->wdev.links[link->link_id].cac_started) {
-		ieee80211_link_release_channel(link);
-		cfg80211_cac_event(sdata->dev, &chandef,
-				   NL80211_RADAR_CAC_FINISHED,
-				   GFP_KERNEL, link->link_id);
+		if (!link->conf->deferred_up) {
+			ieee80211_link_release_channel(link);
+			cfg80211_cac_event(sdata->dev, &chandef,
+					   NL80211_RADAR_CAC_FINISHED,
+					   GFP_KERNEL, link->link_id);
+		} else {
+			cfg80211_cac_event(sdata->dev, &chandef,
+					   NL80211_RADAR_CAC_FINISHED,
+					   GFP_KERNEL, link->link_id);
+			ieee80211_link_info_change_notify(sdata, link,
+							  BSS_CHANGED_BEACON);
+			ieee80211_vif_unblock_queues_csa(sdata);
+			cfg80211_schedule_channels_check(&sdata->wdev);
+			link->conf->deferred_up = false;
+		}
 	}
 }
 

@@ -753,6 +753,8 @@ struct ieee80211_parsed_tpe {
  * @eht_support: does this BSS support EHT
  * @epcs_support: does this BSS support EPCS
  * @csa_active: marks whether a channel switch is going on.
+ * @deferred_up: On CSA to target DFS channel, mark the flag for deferred
+ *	vap up post CAC, and skip vap down
  * @mu_mimo_owner: indicates interface owns MU-MIMO capability
  * @chanctx_conf: The channel context this interface is assigned to, or %NULL
  *	when it is not assigned. This pointer is RCU-protected due to the TX
@@ -881,6 +883,7 @@ struct ieee80211_bss_conf {
 	bool eht_support;
 	bool epcs_support;
 	bool csa_active;
+	bool deferred_up;
 	bool enable_mcs15;
 
 	bool mu_mimo_owner;
