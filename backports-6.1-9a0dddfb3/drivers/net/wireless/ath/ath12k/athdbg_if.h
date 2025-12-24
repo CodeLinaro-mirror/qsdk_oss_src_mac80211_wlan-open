@@ -27,15 +27,17 @@ struct athdbg_to_ath12k_ops {
 	void (*coredump_dump_segment)(struct ath12k_base *ab,
 			struct ath12k_dump_segment *segments, size_t seg_len);
 	bool (*dev_running_status)(struct ath12k_base *drv_ab);
-	void (*set_dbg_mask)(unsigned int debug_mask);
+	void (*set_dbg_mask)(u64 debug_mask);
 	struct ath12k_link_vif *(*get_link_vif_from_vdev_id)(
 			struct ath12k_base *ab, u32 vdev_id);
 	u32 (*pci_read32)(struct ath12k_base *ab, u32 offset);
 	void *(*pci_get_priv)(struct ath12k_base *ab);
+	u64 (*get_dbg_mask)(void);
 };
 
 bool athdbg_if_check_dev_running(struct ath12k_base *drv_ab);
-void athdbg_if_setmask(unsigned int debug_mask);
+void athdbg_if_setmask(u64 debug_mask);
+u64 athdbg_if_getmask(void);
 void athdbg_ops_register(struct ath12k_base *drv_ab);
 void athdbg_if_register(struct ath12k_base *drv_ab);
 void athdbg_if_unregister(struct ath12k_base *ab);
@@ -46,7 +48,6 @@ int athdbg_qmi_worker_init(void *qmi_ab);
 void athdbg_create_wmi_debugfs(struct dentry *dbg_dir,
 					 struct ath12k_base *drv_ab);
 
-extern unsigned int ath12k_debug_mask;
 extern const struct file_operations debugfs_mask_fops;
 extern const struct file_operations debugfs_qdss_enable_fops;
 extern const struct file_operations debugfs_qdss_collect_fops;

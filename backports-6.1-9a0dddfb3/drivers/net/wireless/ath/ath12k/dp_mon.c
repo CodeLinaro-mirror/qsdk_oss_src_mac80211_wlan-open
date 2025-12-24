@@ -1535,12 +1535,12 @@ ath12k_dp_mon_ppdu_per_user_rx_time_update(struct ath12k_pdev_dp *dp_pdev,
 
 	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
 							user_stats->sw_peer_id);
-       if (!peer || !peer->sta) {
-               ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
-                          "peer stats not found on ppdu peer id %d\n",
-                          user_stats->sw_peer_id);
-               return;
-       }
+	if (!peer || !peer->sta) {
+		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
+			   "peer stats not found on ppdu peer id %d\n",
+			   user_stats->sw_peer_id);
+		return;
+	}
 
        nss_ru_width_sum = ppdu_info->usr_nss_sum * ppdu_info->usr_ru_tones_sum;
        if (!nss_ru_width_sum)

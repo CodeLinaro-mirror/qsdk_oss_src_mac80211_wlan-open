@@ -113,40 +113,62 @@ EXPORT_SYMBOL(athdbg_create_minidump_debugfs);
 #endif
 
 static ssize_t athdbg_mask_read(struct file *file, char __user *user_buf,
-									size_t count, loff_t *ppos)
+		size_t count, loff_t *ppos)
 {
-	static const char debugfs_data[] =
-	"echo <mask>:<mask>:<mask> > dbgmask \t\n"
-	"echo <mask> > dbgmask";
+	u64 mask = 0;
+	char buf[512];
+	int len = 0, ret;
 
-	return simple_read_from_buffer(user_buf, count, ppos, debugfs_data, sizeof(debugfs_data));
+	len += scnprintf(buf + len, sizeof(buf) - len,
+		       "echo <mask>:<mask>:<mask> > dbgmask \t\n"
+		       "echo <mask> > dbgmask\n");
+
+	if (athdbg_base && athdbg_base->dbg_to_ath_ops &&
+		athdbg_base->dbg_to_ath_ops->get_dbg_mask)
+		mask = athdbg_base->dbg_to_ath_ops->get_dbg_mask();
+
+	len += scnprintf(buf + len, sizeof(buf) - len, "Current: ");
+	ret = athdbg_dbgmask_to_str(mask, buf + len, sizeof(buf) - len);
+	if (ret < 0)
+		return ret;
+	len += ret;
+
+	len += scnprintf(buf + len, sizeof(buf) - len, "\n");
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
 }
 
 static ssize_t athdbg_mask_write(struct file *file,
-									const char __user *user_buf,
-									size_t count, loff_t *ppos)
+		const char __user *user_buf,
+		size_t count, loff_t *ppos)
 {
 	struct ath12k_base *ab = file->private_data;
 	struct athdbg_request *dbg_req;
-	unsigned int dbg_mask = 0;
+	u64 dbg_mask = 0;
 	char buf[256] = {0};
-	char ip_mask[256] = {0},
-		*token,
-		*tmp_mask;
+	char ip_mask[256] = {0};
+	char *token, *tmp_mask;
 	int ret = 0;
 
 	ret = simple_write_to_buffer(buf, sizeof(buf) - 1, ppos, user_buf, count);
-	if (ret <= 0 || count < 4) {
+	if (ret <= 0) {
 		pr_err("athdbg_core: Invalid Input %d %zu", ret, count);
 		goto exit;
 	}
 
 	buf[ret] = '\0';
+	strim(buf);
 
-	ret = sscanf(buf, "%s", ip_mask);
+	if (!buf[0])
+		goto exit;
+
+	ret = sscanf(buf, "%255s", ip_mask);
+	if (ret <= 0)
+		goto exit;
 
 	tmp_mask = ip_mask;
 	while ((token = strsep(&tmp_mask, ":")) != NULL) {
+		if (!*token)
+			continue;
 		dbg_mask |= athdbg_conv_str_to_dbgmask(token);
 	}
 
