@@ -225,23 +225,173 @@ ath12k_dp_htt_process_stats_sch_cmd_status_tlv(struct ath12k_pdev_dp *dp_pdev,
 	return 0;
 }
 
-static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
-					   struct ath12k_pdev_dp *dp_pdev,
-					   u16 tag, u16 len, const void *ptr,
-					   void *data)
+int
+ath12k_dp_htt_process_stats_common_tlv(const u32 *tlv_desc,
+				       struct htt_ppdu_stats_info *ppdu_info)
+{
+	u32 frame_type;
+
+	memcpy(&ppdu_info->ppdu_stats.common, tlv_desc,
+	       sizeof(struct htt_ppdu_stats_common));
+
+	frame_type = FIELD_GET(HTT_PPDU_STATS_CMN_FLAGS_FRAME_TYPE_M,
+			       ppdu_info->ppdu_stats.common.flags);
+
+	switch (frame_type) {
+	case HTT_STATS_FTYPE_TIDQ_DATA_SU:
+	case HTT_STATS_FTYPE_TIDQ_DATA_MU:
+		if (u32_get_bits(ppdu_info->frame_ctrl,
+				 HTT_STATS_FRAMECTRL_TYPE_MASK) <=
+				HTT_STATS_FRAME_CTRL_TYPE_CTRL)
+			ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_CTRL;
+		else
+			ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_DATA;
+		break;
+	default:
+		ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_CTRL;
+		break;
+	}
+	ppdu_info->htt_frame_type = frame_type;
+
+	return 0;
+}
+
+int
+ath12k_dp_htt_process_usr_rate_stats(const u32 *tlv_desc,
+				     struct htt_ppdu_stats_info *ppdu_info)
+{
+	const struct htt_ppdu_stats_user_rate *user_rate;
+	struct htt_ppdu_user_stats *user_stats;
+	int cur_user;
+	u16 peer_id;
+
+	user_rate = (struct htt_ppdu_stats_user_rate *)tlv_desc;
+	peer_id = le16_to_cpu(user_rate->sw_peer_id);
+	cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats, peer_id);
+
+	if (cur_user < 0)
+		return -EINVAL;
+
+	user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
+	user_stats->peer_id = peer_id;
+	user_stats->is_valid_peer_id = true;
+	memcpy(&user_stats->rate, tlv_desc,
+	       sizeof(struct htt_ppdu_stats_user_rate));
+
+	return 0;
+}
+
+int
+dp_process_ppdu_stats_usr_cmpltn_common_tlv(const u32 *tlv_desc,
+					    struct htt_ppdu_stats_info *ppdu_info)
+{
+	const struct htt_ppdu_stats_usr_cmpltn_cmn *cmplt_cmn;
+	struct htt_ppdu_user_stats *user_stats;
+	int cur_user;
+	u16 peer_id;
+
+	cmplt_cmn = (struct htt_ppdu_stats_usr_cmpltn_cmn *)tlv_desc;
+	peer_id = le16_to_cpu(cmplt_cmn->sw_peer_id);
+	cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
+					      peer_id);
+	if (cur_user < 0)
+		return -EINVAL;
+
+	user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
+	user_stats->peer_id = peer_id;
+	user_stats->is_valid_peer_id = true;
+	memcpy(&user_stats->cmpltn_cmn, tlv_desc,
+	       sizeof(struct htt_ppdu_stats_usr_cmpltn_cmn));
+	ppdu_info->bar_num_users++;
+
+	return 0;
+}
+
+int
+ath12k_dp_htt_process_usr_compltn_ack_ba_stats(const u32 *tlv_desc,
+					       struct htt_ppdu_stats_info *ppdu_info)
 {
 	const struct htt_ppdu_stats_usr_cmpltn_ack_ba_status *ba_status;
-	const struct htt_ppdu_stats_usr_cmpltn_cmn *cmplt_cmn;
-	const struct htt_ppdu_stats_user_rate *user_rate;
-	struct htt_ppdu_stats_info *ppdu_info;
 	struct htt_ppdu_user_stats *user_stats;
 	int cur_user;
 	u16 peer_id;
 	u32 ppdu_id;
-	u32 frame_type;
+
+	ba_status = (struct htt_ppdu_stats_usr_cmpltn_ack_ba_status *)tlv_desc;
+	ppdu_id =
+		((struct htt_ppdu_stats_usr_cmpltn_ack_ba_status *)tlv_desc)->ppdu_id;
+	peer_id = le16_to_cpu(ba_status->sw_peer_id);
+	cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
+					      peer_id);
+	if (cur_user < 0)
+		return -EINVAL;
+
+	user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
+	user_stats->peer_id = peer_id;
+	user_stats->is_valid_peer_id = true;
+	ppdu_info->ppdu_id = FIELD_GET(HTT_PPDU_STATS_PPDU_ID, ppdu_id);
+	memcpy(&user_stats->ack_ba, tlv_desc,
+	       sizeof(struct htt_ppdu_stats_usr_cmpltn_ack_ba_status));
+
+	return 0;
+}
+
+int
+ath12k_dp_htt_process_usr_cmn_stats(const u32 *tlv_desc,
+				    struct htt_ppdu_stats_info *ppdu_info)
+{
+	struct htt_ppdu_user_stats *user_stats;
+	int cur_user;
+	u16 peer_id;
+
+	peer_id = ((struct htt_ppdu_stats_user_common *)tlv_desc)->sw_peer_id;
+	cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats, peer_id);
+
+	if (cur_user < 0)
+		return -EINVAL;
+
+	user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
+	memcpy(&user_stats->common, tlv_desc,
+	       sizeof(struct htt_ppdu_stats_user_common));
+	ppdu_info->frame_ctrl = FIELD_GET(HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL,
+					  user_stats->common.ctrl);
+	user_stats->delay_ba = FIELD_GET(HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA,
+					 user_stats->common.info);
+	ppdu_info->delay_ba = user_stats->delay_ba;
+
+	return 0;
+}
+
+int
+ath12k_dp_htt_process_usr_compltn_flush(struct ath12k_pdev_dp *dp_pdev,
+					const u32 *tlv_desc,
+					struct htt_ppdu_stats_info *ppdu_info)
+{
+	struct ath12k_base *ab = dp_pdev->dp->ab;
+	struct htt_ppdu_stats_cmpltn_flush *msg =
+		(struct htt_ppdu_stats_cmpltn_flush *)tlv_desc;
+
+	/* No need to use these stats when SW is already
+	 * doing it on a per packet basis
+	 */
+	if (!ab->stats_disable)
+		return 0;
+
+	ath12k_dp_ppdu_stats_flush_tlv_parse(ab, msg, ppdu_info);
+
+	return 0;
+}
+
+int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
+				    struct ath12k_pdev_dp *dp_pdev,
+				    u16 tag, u16 len, const void *ptr,
+				    void *data)
+{
+	struct htt_ppdu_stats_info *ppdu_info;
 	int ret = 0;
 
 	ppdu_info = data;
+	ppdu_info->tlv_bitmap |= BIT(tag);
 
 	switch (tag) {
 	case HTT_PPDU_STATS_TAG_COMMON:
@@ -250,25 +400,8 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 				    len, tag);
 			return -EINVAL;
 		}
-		memcpy(&ppdu_info->ppdu_stats.common, ptr,
-		       sizeof(struct htt_ppdu_stats_common));
 
-		frame_type =
-			FIELD_GET(HTT_PPDU_STATS_CMN_FLAGS_FRAME_TYPE_M,
-				  ppdu_info->ppdu_stats.common.flags);
-		switch (frame_type) {
-			case HTT_STATS_FTYPE_TIDQ_DATA_SU:
-			case HTT_STATS_FTYPE_TIDQ_DATA_MU:
-				if (u32_get_bits(ppdu_info->frame_ctrl, HTT_STATS_FRAMECTRL_TYPE_MASK) <= HTT_STATS_FRAME_CTRL_TYPE_CTRL)
-					ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_CTRL;
-				else
-					ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_DATA;
-				break;
-			default:
-				ppdu_info->frame_type = HTT_STATS_PPDU_FTYPE_CTRL;
-			break;
-		}
-		ppdu_info->htt_frame_type = frame_type;
+		ret = ath12k_dp_htt_process_stats_common_tlv(ptr, ppdu_info);
 		break;
 	case HTT_PPDU_STATS_TAG_USR_RATE:
 		if (len < sizeof(struct htt_ppdu_stats_user_rate)) {
@@ -276,18 +409,8 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 				    len, tag);
 			return -EINVAL;
 		}
-		user_rate = ptr;
-		peer_id = le16_to_cpu(user_rate->sw_peer_id);
-		cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
-						      peer_id);
-		if (cur_user < 0)
-			return -EINVAL;
-		user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
-		user_stats->peer_id = peer_id;
-		user_stats->is_valid_peer_id = true;
-		memcpy(&user_stats->rate, ptr,
-		       sizeof(struct htt_ppdu_stats_user_rate));
-		ppdu_info->tlv_bitmap |= BIT(tag);
+
+		ret = ath12k_dp_htt_process_usr_rate_stats(ptr, ppdu_info);
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMPLTN_COMMON:
 		if (len < sizeof(struct htt_ppdu_stats_usr_cmpltn_cmn)) {
@@ -296,19 +419,8 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 			return -EINVAL;
 		}
 
-		cmplt_cmn = ptr;
-		peer_id = le16_to_cpu(cmplt_cmn->sw_peer_id);
-		cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
-						      peer_id);
-		if (cur_user < 0)
-			return -EINVAL;
-		user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
-		user_stats->peer_id = peer_id;
-		user_stats->is_valid_peer_id = true;
-		memcpy(&user_stats->cmpltn_cmn, ptr,
-		       sizeof(struct htt_ppdu_stats_usr_cmpltn_cmn));
-		ppdu_info->tlv_bitmap |= BIT(tag);
-		ppdu_info->bar_num_users++;
+		ret = dp_process_ppdu_stats_usr_cmpltn_common_tlv(ptr, ppdu_info);
+
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS:
 		if (len <
@@ -318,24 +430,10 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 			return -EINVAL;
 		}
 
-		ba_status = ptr;
-		ppdu_id =
-		((struct htt_ppdu_stats_usr_cmpltn_ack_ba_status *)ptr)->ppdu_id;
-		peer_id = le16_to_cpu(ba_status->sw_peer_id);
-		cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
-						      peer_id);
-		if (cur_user < 0)
-			return -EINVAL;
-		user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
-		user_stats->peer_id = peer_id;
-		user_stats->is_valid_peer_id = true;
-		ppdu_info->ppdu_id = FIELD_GET(HTT_PPDU_STATS_PPDU_ID, ppdu_id);
-		memcpy(&user_stats->ack_ba, ptr,
-		       sizeof(struct htt_ppdu_stats_usr_cmpltn_ack_ba_status));
-		ppdu_info->tlv_bitmap |= BIT(tag);
+		ret = ath12k_dp_htt_process_usr_compltn_ack_ba_stats(ptr,
+								     ppdu_info);
 		break;
 	case HTT_PPDU_STATS_TAG_SCH_CMD_STATUS:
-		ppdu_info->tlv_bitmap |= BIT(tag);
 		ret = ath12k_dp_htt_process_stats_sch_cmd_status_tlv(dp_pdev,
 								     ptr,
 								     ppdu_info);
@@ -346,19 +444,8 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 				    len, tag);
 			return -EINVAL;
 		}
-		peer_id = ((struct htt_ppdu_stats_user_common *)ptr)->sw_peer_id;
-		cur_user = ath12k_get_ppdu_user_index(&ppdu_info->ppdu_stats,
-						      peer_id);
-		if (cur_user < 0)
-			return -EINVAL;
-		user_stats = &ppdu_info->ppdu_stats.user_stats[cur_user];
-		memcpy(&user_stats->common, ptr,
-		       sizeof(struct htt_ppdu_stats_user_common));
-		ppdu_info->frame_ctrl = FIELD_GET(HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL,
-						  user_stats->common.ctrl);
-		user_stats->delay_ba = FIELD_GET(HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA,
-						  user_stats->common.info);
-		ppdu_info->delay_ba = user_stats->delay_ba;
+
+		ret = ath12k_dp_htt_process_usr_cmn_stats(ptr, ppdu_info);
 		break;
 	case HTT_PPDU_STATS_TAG_USR_COMPLTN_FLUSH:
 		if (len < sizeof(struct htt_ppdu_stats_cmpltn_flush)) {
@@ -366,13 +453,9 @@ static int ath12k_htt_tlv_ppdu_stats_parse(struct ath12k_base *ab,
 					len, tag);
 			return -EINVAL;
 		}
-		/* No need to use these stats when SW is already
-		 * doing it on a per packet basis
-		 */
-		if (!ab->stats_disable)
-			break;
-		ath12k_dp_ppdu_stats_flush_tlv_parse(ab,
-			(struct htt_ppdu_stats_cmpltn_flush *)ptr, ppdu_info);
+
+		ret = ath12k_dp_htt_process_usr_compltn_flush(dp_pdev, ptr,
+							      ppdu_info);
 		break;
 	}
 	return ret;
