@@ -1675,7 +1675,8 @@ fail_free_ext_skb:
 		kfree_skb(skb_ext_desc);
 
 fail_unmap_dma:
-	ath12k_core_dma_unmap_single(dp->dev, ti.paddr, ti.data_len, DMA_TO_DEVICE);
+	ath12k_core_dma_unmap_single(dp->dev, tx_desc->paddr, tx_desc->len,
+				     DMA_TO_DEVICE);
 
 fail_remove_tx_buf:
 	if (tx_desc)
