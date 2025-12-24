@@ -119,6 +119,7 @@ static void ath12k_wifi8_dp_umac_deinit(struct ath12k_dp *dp)
 
 	ath12k_wifi8_dp_rx_ring_free(ab);
 	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
+	ath12k_dp_pn_counter_page_free(dp->dp_hw_grp);
 }
 
 static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
@@ -223,8 +224,18 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		goto fail_dp_rx_free;
 	}
 
+	ret = ath12k_dp_pn_counter_page_init(dp->dp_hw_grp);
+	if (ret) {
+		ath12k_warn(ab, "dp pn counter page init failed %d\n", ret);
+		goto fail_ast_table_cleanup;
+	}
+
 	ath12k_info(ab, "CUMAC init successful");
+
 	return 0;
+
+fail_ast_table_cleanup:
+	ath12k_dp_ast_table_deinit(dp->dp_hw_grp);
 
 fail_dp_rx_free:
 	ath12k_wifi8_dp_rx_ring_free(ab);
