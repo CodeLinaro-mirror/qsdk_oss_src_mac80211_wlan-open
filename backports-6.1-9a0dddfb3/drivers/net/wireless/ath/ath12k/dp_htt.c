@@ -1553,6 +1553,9 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 	case HTT_T2H_MSG_TYPE_PRIMARY_LINK_PEER_MIGRATE_IND:
 		ath12k_htt_pri_link_peer_migrate_indication(ab, skb);
 		break;
+	case HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP:
+		ath12k_dp_arch_peer_cleanup_indication(dp, skb);
+		break;
 	default:
 		ath12k_dbg(ab, ATH12K_DBG_DP_HTT, "dp_htt event %d not handled\n",
 			   type);

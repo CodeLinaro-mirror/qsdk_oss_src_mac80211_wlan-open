@@ -212,3 +212,72 @@ void ath12k_wifi8_dp_link_peer_delete(struct ath12k_base *ab, u32 vdev_id, u8 *a
 exit:
 	spin_unlock_bh(&dp->dp_lock);
 }
+
+void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
+				       u16 peer_id,
+				       u8 hw_link_id)
+{
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ath12k_dp_tx_flow_info *tx_info;
+	struct ath12k_pdev_dp *dp_pdev;
+	struct ath12k_dp_hw *dp_hw;
+	struct ath12k_dp_peer *dp_peer;
+	u8 pdev_id;
+
+	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
+					      dp_hw_grp->hw_links[hw_link_id].pdev_idx);
+	rcu_read_lock();
+	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
+	if (!dp_pdev) {
+		rcu_read_unlock();
+		return;
+	}
+
+	dp_hw = dp_pdev->dp_hw;
+	if (!dp_hw) {
+		rcu_read_unlock();
+		return;
+	}
+
+	spin_lock_bh(&dp_hw->peer_lock);
+	dp_peer = rcu_dereference(dp_pdev->dp_hw->dp_peer_list[peer_id]);
+	if (!dp_peer) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		rcu_read_unlock();
+		return;
+	}
+
+	tx_info = ath12k_dp_get_tx_flow_info_from_peer(dp_peer);
+	if (!tx_info) {
+		rcu_read_unlock();
+		spin_unlock_bh(&dp_hw->peer_lock);
+		return;
+	}
+
+	clear_bit(hw_link_id, &tx_info->txq_hw_links_bitmap);
+	/* Check whether event is for last link or not */
+	if (tx_info->txq_hw_links_bitmap) {
+		spin_unlock_bh(&dp_hw->peer_lock);
+		rcu_read_unlock();
+		return;
+	}
+
+	/*
+	 * 1. Free the MSDUQ Queues
+	 * 2. Free the MPDU Queues
+	 * 3. Free the PN Address
+	 * 4. Free who classify info
+	 */
+
+	clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
+	rcu_assign_pointer(dp_hw->dp_peer_list[peer_id], NULL);
+	kfree(dp_peer->peer_ext_ctx);
+	dp_peer->peer_ext_ctx = NULL;
+
+	spin_unlock_bh(&dp_hw->peer_lock);
+	rcu_read_unlock();
+
+	/* ensure peer is freed only after all RCU readers complete */
+	synchronize_rcu();
+	kfree(dp_peer);
+}

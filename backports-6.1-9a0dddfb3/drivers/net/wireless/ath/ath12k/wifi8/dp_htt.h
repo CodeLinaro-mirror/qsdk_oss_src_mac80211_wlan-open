@@ -7,6 +7,7 @@
 #define ATH12K_DP_HTT_WIFI8_H
 
 #include "hal.h"
+#include "dp_peer.h"
 
 /**
  * @brief host -> target message to provide msduq and mpduq for given new tid in a peer
@@ -241,6 +242,35 @@ struct htt_ast_info_t {
 	__le32 info5;
 } __packed;
 
+/* MSG_TYPE => HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP
+ *
+ * The following diagram shows the format of the global peer unmap message sent
+ * from the target to the host. This message is used to send unmap event to host
+ * after tid and msduq/mpduq cleanup in FW, host cleans up msduq/mpduq based on
+ * message.
+ *
+ * |31             24|23             20|19              8|7               0|
+ * |-----------------------------------------------------------------------|
+ * |   reserved      |   hw_link_id    | global_peer_id  |     msg type    |
+ * |-----------------------------------------------------------------------|
+ * @details
+ * struct htt_t2h_global_peer_id_unmap:
+ *
+ * The message is interpreted as follows:
+ * dword0 - b'7:0   - msg_type: This will be set to 0x3e
+ *                    (HTT_T2H_MSG_TYPE_GLOBAL_PEER_ID_UNMAP)
+ *          b'19:8  - global_peer_id : global peer id assigned by host
+ *          b'23:20 - hw_link_id : hw link id for which unmap is being sent
+ *
+ */
+
+#define HTT_T2H_GLOBAL_PEER_ID_UNMAP_PEER_ID	GENMASK(19, 8)
+#define HTT_T2H_GLOBAL_PEER_ID_UNMAP_HW_LINK_ID	GENMASK(23, 20)
+
+struct htt_t2h_global_peer_id_unmap {
+	__le32 info;
+} __packed;
+
 #define ATH12K_MAX_DP_HTT_MSG_LEN 512
 
 int ath12k_dp_tx_htt_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
@@ -251,4 +281,6 @@ int ath12k_dp_tx_htt_peer_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp
 					    bool is_mcast_queues);
 int ath12k_dp_rx_htt_ast_info_setup(struct ath12k_base *ab,
 				    struct ath12k_hal_ast_param *ast_param);
+void ath12k_dp_htt_peer_cleanup_indication(struct ath12k_dp *dp,
+					   struct sk_buff *skb);
 #endif

@@ -517,6 +517,7 @@ struct ath12k_dp_arch_ops {
 	u16 (*dp_peer_get_peerid_index)(struct ath12k_dp *dp, u16 peer_id);
 	int (*dp_link_peer_create)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*dp_link_peer_delete)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
+	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
 };
 
 struct ath12k_bp_stats {
@@ -1059,6 +1060,13 @@ static inline void ath12k_dp_arch_link_peer_delete(struct ath12k_dp *dp,
 {
 	if (dp->arch_ops->dp_link_peer_delete)
 		dp->arch_ops->dp_link_peer_delete(ab, vdev_id, addr);
+}
+
+static inline void ath12k_dp_arch_peer_cleanup_indication(struct ath12k_dp *dp,
+							  struct sk_buff *skb)
+{
+	if (dp->arch_ops->peer_cleanup_indication)
+		dp->arch_ops->peer_cleanup_indication(dp, skb);
 }
 
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
