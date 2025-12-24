@@ -7678,6 +7678,8 @@ void ath12k_mac_bss_info_changed(struct ath12k *ar,
 			goto skip_pending_cs_up;
 		}
 
+		clear_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
+
 		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
 		if (ret)
 			ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
