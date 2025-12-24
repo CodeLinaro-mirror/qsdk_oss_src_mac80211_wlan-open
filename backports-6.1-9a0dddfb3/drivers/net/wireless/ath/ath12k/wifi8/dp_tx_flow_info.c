@@ -14,7 +14,6 @@ int ath12k_dp_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 				     void **tx_classify_info_vaddr)
 {
 	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
-	int ret;
 	size_t alloc_size = (ATH12K_NUM_TX_CLASSIFY_BANKS *
 			    ATH12K_TX_CLASSIFY_INFO_SIZE_SINGLE);
 	void *vaddr;
@@ -24,12 +23,10 @@ int ath12k_dp_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 	if (!vaddr)
 		return -ENOMEM;
 
-	paddr = dma_map_single(dev, vaddr, alloc_size, DMA_BIDIRECTIONAL);
-	ret = dma_mapping_error(dev, paddr);
-	if (ret) {
+	paddr = ath12k_core_dma_map_single(dev, vaddr, alloc_size, DMA_BIDIRECTIONAL);
+	if (!paddr) {
 		kfree(vaddr);
-		vaddr = NULL;
-		return ret;
+		return -ENOMEM;
 	}
 
 	*tx_classify_info_vaddr = vaddr;
@@ -43,10 +40,10 @@ void ath12k_dp_tx_classify_info_free(struct ath12k_dp_hw_group *dp_hw_grp,
 {
 	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
 
-	dma_unmap_single(dev, tx_classify_info_paddr,
-			 ATH12K_NUM_TX_CLASSIFY_BANKS *
-			 ATH12K_TX_CLASSIFY_INFO_SIZE_SINGLE,
-			 DMA_BIDIRECTIONAL);
+	ath12k_core_dma_unmap_single(dev, tx_classify_info_paddr,
+				     ATH12K_NUM_TX_CLASSIFY_BANKS *
+				     ATH12K_TX_CLASSIFY_INFO_SIZE_SINGLE,
+				     DMA_BIDIRECTIONAL);
 	kfree(tx_classify_info_vaddr);
 }
 
@@ -64,8 +61,8 @@ void ath12k_dp_pn_counter_page_free(struct ath12k_dp_hw_group *dp_hw_grp)
 		if (!pn_info[i].vaddr)
 			continue;
 
-		dma_unmap_single(dev, pn_info[i].paddr,
-				 PAGE_SIZE, DMA_BIDIRECTIONAL);
+		ath12k_core_dma_unmap_single(dev, pn_info[i].paddr,
+					     PAGE_SIZE, DMA_BIDIRECTIONAL);
 		kfree(pn_info[i].vaddr);
 		pn_info[i].vaddr = NULL;
 	}
@@ -103,11 +100,12 @@ int ath12k_dp_pn_counter_page_init(struct ath12k_dp_hw_group *dp_hw_grp)
 			goto free;
 		}
 
-		pn_info[i].paddr = dma_map_single(dev, pn_info[i].vaddr,
-						  PAGE_SIZE, DMA_BIDIRECTIONAL);
-		ret = dma_mapping_error(ab->dev, pn_info[i].paddr);
-		if (ret) {
-			ath12k_warn(ab, "PN page DMA error %d", ret);
+		pn_info[i].paddr = ath12k_core_dma_map_single(dev,
+							      pn_info[i].vaddr,
+							      PAGE_SIZE,
+							      DMA_BIDIRECTIONAL);
+		if (!pn_info[i].paddr) {
+			ath12k_warn(ab, "PN page DMA error");
 			ret = -ENOMEM;
 			goto free;
 		}

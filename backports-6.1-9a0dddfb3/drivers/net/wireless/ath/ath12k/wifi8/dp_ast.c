@@ -327,12 +327,13 @@ int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp)
 
 	ast_base->ast_vaddr_aligned = PTR_ALIGN(ast_base->ast_vaddr_unaligned,
 						HAL_HW_AST_ENTRY_ALIGN);
-	ast_base->ast_paddr = dma_map_single(dev, ast_base->ast_vaddr_aligned,
-					     ast_base->hw_ast_table_size,
-					     DMA_BIDIRECTIONAL);
-	ret = dma_mapping_error(dev, ast_base->ast_paddr);
-	if (ret) {
-		ath12k_err(ab, "failed to map AST table ret: %d\n", ret);
+	ast_base->ast_paddr = ath12k_core_dma_map_single(dev,
+							 ast_base->ast_vaddr_aligned,
+							 ast_base->hw_ast_table_size,
+							 DMA_BIDIRECTIONAL);
+	if (!ast_base->ast_paddr) {
+		ath12k_err(ab, "failed to map AST table\n");
+		ret = -ENOMEM;
 		goto free_hw_ast_table;
 	}
 
@@ -370,9 +371,9 @@ free_sw_ast_table:
 	kfree(ast_base->ast_entries);
 
 unmap_hw_ast_table:
-	dma_unmap_single(dev, ast_base->ast_paddr,
-			 ast_base->hw_ast_table_size,
-			 DMA_BIDIRECTIONAL);
+	ath12k_core_dma_unmap_single(dev, ast_base->ast_paddr,
+				     ast_base->hw_ast_table_size,
+				     DMA_BIDIRECTIONAL);
 free_hw_ast_table:
 	kfree(ast_base->ast_vaddr_unaligned);
 	ast_base->ast_vaddr_unaligned = NULL;
@@ -403,9 +404,9 @@ void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp)
 	}
 
 	if (dev) {
-		dma_unmap_single(dev, ast_base->ast_paddr,
-				 ast_base->hw_ast_table_size,
-				 DMA_BIDIRECTIONAL);
+		ath12k_core_dma_unmap_single(dev, ast_base->ast_paddr,
+					     ast_base->hw_ast_table_size,
+					     DMA_BIDIRECTIONAL);
 	}
 
 	ath12k_dp_ast_entry_tbl_destroy(dp_hw_grp);
@@ -443,7 +444,10 @@ ath12k_dp_get_hw_ast_entry(struct ath12k_dp_hw_group *dp_hw_grp, u16 index)
 
 	/* invalidate the entry */
 	paddr = (dma_addr_t)(((u8 *)ast_base->ast_paddr) + index * HAL_HW_AST_ENTRY_SIZE);
-	dma_sync_single_for_cpu(dev, paddr, HAL_HW_AST_ENTRY_SIZE, DMA_BIDIRECTIONAL);
+	ath12k_core_dma_sync_single_for_cpu(dev,
+					    paddr,
+					    HAL_HW_AST_ENTRY_SIZE,
+					    DMA_BIDIRECTIONAL);
 	return ast_entry;
 }
 
@@ -521,7 +525,10 @@ void ath12k_dp_hw_ast_entry_sync(struct ath12k_dp_hw_group *dp_hw_grp,
 	/* flush the entry */
 	paddr =	(dma_addr_t)(((u8 *)ast_base->ast_paddr) +
 			     (sw_ast_entry->ast_index * HAL_HW_AST_ENTRY_SIZE));
-	dma_sync_single_for_device(dev, paddr, HAL_HW_AST_ENTRY_SIZE, DMA_BIDIRECTIONAL);
+	ath12k_core_dma_sync_single_for_device(dev,
+					       paddr,
+					       HAL_HW_AST_ENTRY_SIZE,
+					       DMA_BIDIRECTIONAL);
 
 	/* TODO send the TCL command to invalidate the cache */
 }
