@@ -47,7 +47,9 @@ obj-$(CPTCFG_ATHDEBUG) += ath_debug/
 
 ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/core_extn.o \
-	qcn_extns/vendor_extn.o \
+	qcn_extns/vendor_extn.o
+
+ath12k-$(CPTCFG_EXT_IPA_OFFLOAD) += \
 	qcn_extns/ipa/dp_ipa.o \
 	qcn_extns/ipa/dp_ipa_perf.o
 
