@@ -14,6 +14,7 @@
 #include "hw.h"
 #include "dp.h"
 #include "hal.h"
+#include "../pcic.h"
 
 static const struct of_device_id ath12k_wifi7_ahb_of_match[] = {
 	{ .compatible = "qcom,ipq5332-wifi",
@@ -77,6 +78,11 @@ static const struct ath12k_reg_base ath12k_wifi7_pcic_reg_base = {
 	.umac_base = HAL_SEQ_WCSS_UMAC_OFFSET,
 	.ce_reg_base = HAL_CE_WFSS_CE_REG_BASE,
 	.pcie_window_reg_address = PCIE_WINDOW_REG_ADDRESS,
+	.window_value_mask = WINDOW_VALUE_MASK,
+	.window_static_mask = WINDOW_STATIC_MASK,
+	.window_dynamic_mask = WINDOW_DYNAMIC_MASK,
+	.ce_window_shift = CE_WINDOW_SHIFT,
+	.umac_window_shift = UMAC_WINDOW_SHIFT,
 };
 
 static struct ath12k_ahb_driver ath12k_wifi7_ahb_driver = {

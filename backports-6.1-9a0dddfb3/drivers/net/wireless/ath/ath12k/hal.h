@@ -1143,6 +1143,11 @@ struct ath12k_reg_base {
 	u32 umac_base;
 	u32 ce_reg_base;
 	u32 pcie_window_reg_address;
+	u32 window_value_mask;
+	u32 window_static_mask;
+	u32 window_dynamic_mask;
+	u32 ce_window_shift;
+	u32 umac_window_shift;
 };
 
 /* HAL context to be used to access SRNG APIs (currently used by data path

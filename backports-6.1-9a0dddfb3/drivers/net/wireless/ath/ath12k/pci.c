@@ -40,11 +40,7 @@ static void ath12k_pci_select_window(struct ath12k_pci *ab_pci, u32 offset)
 	u32 static_window;
 	u32 window;
 
-	if (ab->pci_remap_bar_addr_width_7bit)
-		window = u32_get_bits(offset, WINDOW_VALUE_MASK_7BIT);
-	else
-		window = u32_get_bits(offset, WINDOW_VALUE_MASK_6BIT);
-
+	window = ath12k_get_mask_bits(offset, ab_pci->reg_base->window_value_mask);
 	lockdep_assert_held(&ab_pci->window_lock);
 
 	if (!ab_pci->reg_base) {
@@ -53,11 +49,7 @@ static void ath12k_pci_select_window(struct ath12k_pci *ab_pci, u32 offset)
 	}
 
 	/* Preserve the static window configuration and reset only dynamic window */
-	if (ab->pci_remap_bar_addr_width_7bit)
-		static_window = ab_pci->register_window & WINDOW_STATIC_MASK_7BIT;
-	else
-		static_window = ab_pci->register_window & WINDOW_STATIC_MASK_6BIT;
-
+	static_window = ab_pci->register_window & ab_pci->reg_base->window_static_mask;
 	window |= static_window;
 
 	if (window != ab_pci->register_window) {
@@ -81,17 +73,12 @@ static void ath12k_pci_select_static_window(struct ath12k_base *ab)
 		return;
 	}
 
-	if (ab->pci_remap_bar_addr_width_7bit) {
-		umac_window = u32_get_bits(reg_base->umac_base, WINDOW_VALUE_MASK_7BIT);
-		ce_window = u32_get_bits(reg_base->ce_reg_base, WINDOW_VALUE_MASK_7BIT);
-		window = (umac_window << UMAC_WINDOW_SHIFT_7BIT) |
-				(ce_window << CE_WINDOW_SHIFT_7BIT);
-	} else {
-		umac_window = u32_get_bits(reg_base->umac_base, WINDOW_VALUE_MASK_6BIT);
-		ce_window = u32_get_bits(reg_base->ce_reg_base, WINDOW_VALUE_MASK_6BIT);
-		window = (umac_window << UMAC_WINDOW_SHIFT_6BIT) |
-				(ce_window << CE_WINDOW_SHIFT_6BIT);
-	}
+	umac_window = ath12k_get_mask_bits(reg_base->umac_base,
+					   reg_base->window_value_mask);
+	ce_window = ath12k_get_mask_bits(reg_base->ce_reg_base,
+					 reg_base->window_value_mask);
+	window = (umac_window << reg_base->umac_window_shift) |
+		  (ce_window << reg_base->ce_window_shift);
 
 	spin_lock_bh(&ab_pci->window_lock);
 	ab_pci->register_window = window;

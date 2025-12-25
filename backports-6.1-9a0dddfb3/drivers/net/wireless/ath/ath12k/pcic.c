@@ -94,17 +94,12 @@ void ath12k_pcic_config_static_window(struct ath12k_base *ab)
 		return;
 	}
 
-	if (ab->pci_remap_bar_addr_width_7bit) {
-		umac_window = u32_get_bits(reg_base->umac_base, WINDOW_VALUE_MASK_7BIT);
-		ce_window = u32_get_bits(reg_base->ce_reg_base, WINDOW_VALUE_MASK_7BIT);
-		window = (umac_window << UMAC_WINDOW_SHIFT_7BIT) |
-				(ce_window << CE_WINDOW_SHIFT_7BIT);
-	} else {
-		umac_window = u32_get_bits(reg_base->umac_base, WINDOW_VALUE_MASK_6BIT);
-		ce_window = u32_get_bits(reg_base->ce_reg_base, WINDOW_VALUE_MASK_6BIT);
-		window = (umac_window << UMAC_WINDOW_SHIFT_6BIT) |
-				(ce_window << CE_WINDOW_SHIFT_6BIT);
-	}
+	umac_window = ath12k_get_mask_bits(reg_base->umac_base,
+					   ab_ahb->reg_base->window_value_mask);
+	ce_window = ath12k_get_mask_bits(reg_base->ce_reg_base,
+					 ab_ahb->reg_base->window_value_mask);
+	window = (umac_window << ab_ahb->reg_base->umac_window_shift) |
+			(ce_window << ab_ahb->reg_base->ce_window_shift);
 
 	iowrite32(WINDOW_ENABLE_BIT | window,
 		  ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
@@ -123,16 +118,12 @@ static void ath12k_pcic_select_static_window(struct ath12k_base *ab, u32 addr)
 		return;
 	}
 
-	if (ab->pci_remap_bar_addr_width_7bit)
-		window = u32_get_bits(addr, WINDOW_VALUE_MASK_7BIT);
-	else
-		window = u32_get_bits(addr, WINDOW_VALUE_MASK_6BIT);
+	window = ath12k_get_mask_bits(addr, ab_ahb->reg_base->window_value_mask);
 
 	prev_window = readl_relaxed(ab->mem + ab_ahb->reg_base->pcie_window_reg_address);
 
 	/* Clear out dynamic window bits (6-bit or 7-bit) */
-	prev_window &= ~(ab->pci_remap_bar_addr_width_7bit ?
-			WINDOW_DYNAMIC_MASK_7BIT : WINDOW_DYNAMIC_MASK_6BIT);
+	prev_window &= ~(ab_ahb->reg_base->window_dynamic_mask);
 
 	/* Write the new dynamic window bits (6-bit or 7-bit) to window register.
 	 *Only window 1 values are changed. Window 2 and 3 are unaffected.
