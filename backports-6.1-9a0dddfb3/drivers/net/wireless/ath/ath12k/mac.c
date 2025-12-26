@@ -1731,7 +1731,7 @@ void ath12k_mac_dp_peer_cleanup(struct ath12k_hw *ah,
 		if(recovery_mode == ATH12K_MLO_RECOVERY_MODE1 && !dp_peer->is_mlo)
 			continue;
 
-		if (dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+		if (dp_peer->is_mlo && dp_peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
 			ahsta = ath12k_sta_to_ahsta(dp_peer->sta);
 			peerid_index = dp_peer->peer_id;
 			rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
