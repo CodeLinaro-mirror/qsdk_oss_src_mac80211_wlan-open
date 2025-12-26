@@ -1033,13 +1033,15 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 
 	list_for_each_entry_rcu(sdata, &local->mon_list, u.mntr.list) {
 		struct cfg80211_chan_def *chandef;
+		struct wireless_dev *wdev = &sdata->wdev;
 
 		chandef = &sdata->vif.bss_conf.chanreq.oper;
 		if (chandef->chan &&
 		    chandef->chan->center_freq != status->freq)
 			continue;
 
-		if (sdata->u.mntr.flags & MONITOR_FLAG_SKIP_RX)
+		if (!(wdev_is_scan_radio(wdev)) &&
+		    sdata->u.mntr.flags & MONITOR_FLAG_SKIP_RX)
 			continue;
 
 		if (!prev_sdata) {
