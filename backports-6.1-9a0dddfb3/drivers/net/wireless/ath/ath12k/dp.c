@@ -3038,6 +3038,9 @@ void ath12k_update_ext_stats(struct ath12k *ar,
 {
 	struct ath12k_dp_link_peer *tmp_peer = NULL;
 	int ret = 0;
+	if (!ath12k_extd_tx_stats_enabled(ar) &&
+	    !ath12k_extd_rx_stats_enabled(ar))
+		return;
 
 	rcu_read_lock();
 	tmp_peer = rcu_dereference(peer->link_peers[link_id]);
