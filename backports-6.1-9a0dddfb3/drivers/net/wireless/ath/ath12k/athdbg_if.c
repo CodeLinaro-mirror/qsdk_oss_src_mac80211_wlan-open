@@ -4,6 +4,7 @@
 #include "ath_debug/athdbg_core.h"
 #include "ath_debug/athdbg_minidump.h"
 #include "ath_debug/athdbg_mhi.h"
+#include "ath_debug/athdbg_wmi_recording.h"
 #include "mhi.h"
 #include "pci.h"
 
@@ -66,6 +67,8 @@ static int athdbg_if_create_debugfs(struct ath12k_base *ab)
 							&debugfs_qdss_enable_fops);
 		debugfs_create_file("collect", 0644, qdss_dir, partner_ab,
 							&debugfs_qdss_collect_fops);
+
+		athdbg_create_wmi_debugfs(athdbg_dir, partner_ab);
 	}
 
 	return 0;

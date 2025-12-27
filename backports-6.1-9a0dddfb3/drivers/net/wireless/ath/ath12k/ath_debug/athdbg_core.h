@@ -36,6 +36,9 @@ enum athdbg_request_type{
 	ATH_DBG_REQ_COLLECT_MINI_DUMP = 0x02,
 	ATH_DBG_REQ_ENABLE_QDSS = 0x04,
 	ATH_DBG_REQ_DUMP_QDSS = 0x08,
+	ATH_DBG_REQ_WMI_ENABLE = 0x10,
+	ATH_DBG_REQ_WMI_DUMP   = 0x20,
+	ATH_DBG_REQ_WMI_VERBOSITY = 0x40,
 };
 
 enum athdbg_qdss_dump_type {

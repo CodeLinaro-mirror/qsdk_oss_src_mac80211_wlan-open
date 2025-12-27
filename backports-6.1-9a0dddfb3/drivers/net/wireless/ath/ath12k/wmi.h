@@ -7355,38 +7355,62 @@ struct wmi_dbglog_config_cmd_fixed_param {
 #define WMI_SEND_TIMEOUT_HZ (3 * HZ)
 #define WMI_CTRL_STATS_READY_TIMEOUT_HZ (1 * HZ)
 
-#define WMI_CMD_EVT_DEBUG_MAX_ENTRY 1024
 #define WMI_DEBUG_ENTRY_MAX_LENGTH (16)
 
-#define WMI_COMMAND_RECORD(wmi, skb, id) {                              \
-	if (wmi->dbg_cmd_tail_idx >= WMI_CMD_EVT_DEBUG_MAX_ENTRY)        \
-		wmi->dbg_cmd_tail_idx = 0;                               \
-	wmi->wmi_cmd_log[wmi->dbg_cmd_tail_idx].cmdid = id;              \
-	memcpy(wmi->wmi_cmd_log[wmi->dbg_cmd_tail_idx].data, skb->data + \
-		sizeof(struct wmi_cmd_hdr), WMI_DEBUG_ENTRY_MAX_LENGTH); \
-	wmi->wmi_cmd_log[wmi->dbg_cmd_tail_idx].time =                   \
-		ktime_to_us(ktime_get());                                \
-	wmi->dbg_cmd_tail_idx++;                                         \
+#define WMI_COMMAND_RECORD(wmi, skb, id) {					     \
+	rcu_read_lock();                                                             \
+	if (wmi->wmi_recording_enabled) {					     \
+		struct wmi_cmd_debug *cmd_log;                                       \
+		u32 cap = wmi->wmi_cmd_log_size;				     \
+		cmd_log = rcu_dereference((wmi)->wmi_cmd_log);                       \
+		if (cmd_log && cap) {                                                \
+			u32 tail = wmi->dbg_cmd_tail_idx;			     \
+			tail %= cap;                                                 \
+			cmd_log[tail].cmdid = (id);                                  \
+			memcpy(cmd_log[tail].data,                                   \
+			       (skb)->data + sizeof(struct wmi_cmd_hdr),             \
+			       WMI_DEBUG_ENTRY_MAX_LENGTH);                          \
+			cmd_log[tail].time = ktime_to_us(ktime_get());               \
+			(wmi->dbg_cmd_tail_idx)++;				     \
+		}                                                                    \
+	}                                                                            \
+	rcu_read_unlock();                                                           \
 }
 
-#define WMI_COMMAND_TX_CMP_RECORD(wmi, id) {                               \
-	if (wmi->dbg_cmd_tx_cmp_tail_idx >= WMI_CMD_EVT_DEBUG_MAX_ENTRY)    \
-		wmi->dbg_cmd_tx_cmp_tail_idx = 0;                           \
-	wmi->wmi_cmd_tx_cmp_log[wmi->dbg_cmd_tx_cmp_tail_idx].cmdid = id;   \
-	wmi->wmi_cmd_tx_cmp_log[wmi->dbg_cmd_tx_cmp_tail_idx].time =        \
-		ktime_to_us(ktime_get());                                   \
-	wmi->dbg_cmd_tx_cmp_tail_idx++;                                     \
+#define WMI_COMMAND_TX_CMP_RECORD(wmi, id) {					     \
+	rcu_read_lock();                                                             \
+	if (wmi->wmi_recording_enabled) {					     \
+		struct wmi_cmd_comp_debug *tx_log;                                   \
+		u32 cap = wmi->wmi_cmd_tx_cmp_log_size;				     \
+		tx_log = rcu_dereference((wmi)->wmi_cmd_tx_cmp_log);                 \
+		if (tx_log && cap) {                                                 \
+			u32 tail = wmi->dbg_cmd_tx_cmp_tail_idx;		     \
+			tail %= cap;						     \
+			tx_log[tail].cmdid = (id);                                   \
+			tx_log[tail].time  = ktime_to_us(ktime_get());               \
+			(wmi->dbg_cmd_tx_cmp_tail_idx)++;			     \
+		}                                                                    \
+	}                                                                            \
+	rcu_read_unlock();                                                           \
 }
 
-#define WMI_EVENT_RX_RECORD(wmi, skb, id) {                            \
-	if (wmi->dbg_evt_tail_idx >= WMI_CMD_EVT_DEBUG_MAX_ENTRY)       \
-		wmi->dbg_evt_tail_idx = 0;                              \
-	wmi->wmi_evt_log[wmi->dbg_evt_tail_idx].eventid = id;           \
-	memcpy(wmi->wmi_evt_log[wmi->dbg_evt_tail_idx].data, skb->data, \
-		WMI_DEBUG_ENTRY_MAX_LENGTH);                            \
-	wmi->wmi_evt_log[wmi->dbg_evt_tail_idx].time =                  \
-		ktime_to_us(ktime_get());                               \
-	wmi->dbg_evt_tail_idx++;                                        \
+#define WMI_EVENT_RX_RECORD(wmi, skb, id) {					     \
+	rcu_read_lock();                                                             \
+	if (wmi->wmi_recording_enabled) {					     \
+		struct wmi_event_debug *evt_log;                                     \
+		u32 cap = wmi->wmi_evt_log_size;				     \
+		evt_log = rcu_dereference((wmi)->wmi_evt_log);                       \
+		if (evt_log && cap) {                                                \
+			u32 tail = wmi->dbg_evt_tail_idx;			     \
+			tail %= cap;                                                 \
+			evt_log[tail].eventid = (id);                                \
+			memcpy(evt_log[tail].data, (skb)->data,                      \
+			       WMI_DEBUG_ENTRY_MAX_LENGTH);                          \
+			evt_log[tail].time = ktime_to_us(ktime_get());               \
+			(wmi->dbg_evt_tail_idx)++;				     \
+		}                                                                    \
+	}                                                                            \
+	rcu_read_unlock();                                                           \
 }
 
 struct wmi_cmd_debug {
@@ -7413,13 +7437,17 @@ struct ath12k_wmi_pdev {
 	enum ath12k_htc_ep_id eid;
 	u32 rx_decap_mode;
 	wait_queue_head_t tx_ce_desc_wq;
-
-	struct wmi_cmd_debug wmi_cmd_log[WMI_CMD_EVT_DEBUG_MAX_ENTRY];
-	struct wmi_cmd_comp_debug wmi_cmd_tx_cmp_log[WMI_CMD_EVT_DEBUG_MAX_ENTRY];
-	struct wmi_event_debug wmi_evt_log[WMI_CMD_EVT_DEBUG_MAX_ENTRY];
-	u16 dbg_cmd_tail_idx;
-	u16 dbg_cmd_tx_cmp_tail_idx;
-	u16 dbg_evt_tail_idx;
+	struct wmi_cmd_debug __rcu *wmi_cmd_log;
+	struct wmi_cmd_comp_debug __rcu *wmi_cmd_tx_cmp_log;
+	struct wmi_event_debug __rcu *wmi_evt_log;
+	u32 wmi_cmd_log_size;
+	u32 wmi_cmd_tx_cmp_log_size;
+	u32 wmi_evt_log_size;
+	u32 dbg_cmd_tail_idx;
+	u32 dbg_cmd_tx_cmp_tail_idx;
+	u32 dbg_evt_tail_idx;
+	u32 verbosity;
+	bool wmi_recording_enabled;
 };
 
 struct ath12k_wmi_base {

@@ -43,6 +43,8 @@ int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv);
 int athdbg_config_qdss(struct ath12k_base *ab);
 void athdbg_qmi_deinit(struct ath12k_base *ab);
 int athdbg_qmi_worker_init(void *qmi_ab);
+void athdbg_create_wmi_debugfs(struct dentry *dbg_dir,
+					 struct ath12k_base *drv_ab);
 
 extern unsigned int ath12k_debug_mask;
 extern const struct file_operations debugfs_mask_fops;
