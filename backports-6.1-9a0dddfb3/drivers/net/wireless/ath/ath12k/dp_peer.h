@@ -33,7 +33,6 @@ struct ath12k_atf_peer_airtime {
 	u64 last_update_time;
 };
 
-
 DECLARE_EWMA(avg_rssi, 10, 8)
 
 struct ath12k_mscs_ctxt {
