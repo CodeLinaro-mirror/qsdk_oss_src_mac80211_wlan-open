@@ -126,9 +126,21 @@ static void ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
 	rcu_read_unlock();
 }
 
-static void ath12k_copy_to_delay_stats(struct ath12k_dp_link_peer *peer,
-				       struct htt_ppdu_user_stats *usr_stats)
+static void ath12k_copy_to_delay_stats(struct ath12k_pdev_dp *dp_pdev,
+				       struct ath12k_dp_link_peer *peer,
+				       struct htt_ppdu_user_stats *usr_stats,
+				       struct htt_ppdu_stats_info *ppdu_info)
 {
+	struct ath12k_htt_ppdu_stats *ppdu_list_stats;
+
+	lockdep_assert_held(&dp_pdev->dp->dp_lock);
+	ppdu_list_stats = &dp_pdev->stats.ppdu_list_stats;
+	if (peer->delayba_flag) {
+		ath12k_warn(dp_pdev->dp->ab, "BA not yet recv for prev delayed ppdu[%d] - cur ppdu[%d]",
+			    peer->last_delayed_ba_ppduid, ppdu_info->ppdu_id);
+		ppdu_list_stats->delayed_ba_not_recvd++;
+	}
+
 	peer->ppdu_stats_delayba.sw_peer_id = le16_to_cpu(usr_stats->rate.sw_peer_id);
 	peer->ppdu_stats_delayba.info0 = le32_to_cpu(usr_stats->rate.info0);
 	peer->ppdu_stats_delayba.ru_end = le16_to_cpu(usr_stats->rate.ru_end);
@@ -192,8 +204,12 @@ ath12k_dp_htt_process_stats_sch_cmd_status_tlv(struct ath12k_pdev_dp *dp_pdev,
 			}
 
 			usr_stats = &ppdu_info->ppdu_stats.user_stats[i];
-			if (usr_stats->delay_ba)
-				ath12k_copy_to_delay_stats(peer, usr_stats);
+			if (usr_stats->delay_ba) {
+				ath12k_copy_to_delay_stats(dp_pdev, peer,
+							   usr_stats,
+							   ppdu_info);
+				peer->last_delayed_ba_ppduid = ppdu_info->ppdu_id;
+			}
 			spin_unlock_bh(&dp->dp_lock);
 		}
 	}
@@ -943,6 +959,9 @@ struct htt_ppdu_stats_info *ath12k_dp_htt_get_ppdu_desc(struct ath12k_pdev_dp *d
 							u32 ppdu_id)
 {
 	struct htt_ppdu_stats_info *ppdu_info;
+	struct ath12k_htt_ppdu_stats *ppdu_list_stats;
+
+	ppdu_list_stats = &dp_pdev->stats.ppdu_list_stats;
 
 	lockdep_assert_held(&dp_pdev->ppdu_list_lock);
 	if (!list_empty(&dp_pdev->ppdu_stats_info)) {
@@ -951,11 +970,11 @@ struct htt_ppdu_stats_info *ath12k_dp_htt_get_ppdu_desc(struct ath12k_pdev_dp *d
 				return ppdu_info;
 		}
 
-		if (dp_pdev->ppdu_stat_list_depth > HTT_PPDU_DESC_MAX_DEPTH) {
+		if (ppdu_list_stats->ppdu_stat_list_depth > HTT_PPDU_DESC_MAX_DEPTH) {
 			ppdu_info = list_first_entry(&dp_pdev->ppdu_stats_info,
 						     typeof(*ppdu_info), list);
 			list_del(&ppdu_info->list);
-			dp_pdev->ppdu_stat_list_depth--;
+			ppdu_list_stats->ppdu_stat_list_depth--;
 			/* Update the stats once per ppdu info as this function can be
 			 * called multiple times per ppdu info with data frame,
 			 * avoid updating the same user stats again for data frame
@@ -971,7 +990,7 @@ struct htt_ppdu_stats_info *ath12k_dp_htt_get_ppdu_desc(struct ath12k_pdev_dp *d
 		return NULL;
 
 	list_add_tail(&ppdu_info->list, &dp_pdev->ppdu_stats_info);
-	dp_pdev->ppdu_stat_list_depth++;
+	ppdu_list_stats->ppdu_stat_list_depth++;
 
 	ppdu_info->max_users = HTT_PPDU_STATS_MAX_USERS;
 
@@ -1047,6 +1066,7 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 				      struct sk_buff *skb)
 {
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	struct ath12k_htt_ppdu_stats *list_stats;
 	struct ath12k_htt_ppdu_stats_msg *msg;
 	struct htt_ppdu_stats_info *ppdu_info;
 	struct ath12k_pdev_dp *dp_pdev;
@@ -1099,7 +1119,22 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 	}
 	rcu_read_unlock();
 
+	list_stats = &dp_pdev->stats.ppdu_list_stats;
 	spin_lock_bh(&dp_pdev->ppdu_list_lock);
+	/*
+	 * Skip processing the buffer if previous ppdu buffer of
+	 * same ppdu_id was dropped.
+	 */
+	if (unlikely(list_stats->last_ppdu_buf_drop)) {
+		if (list_stats->last_ppdu_id == ppdu_id) {
+			spin_unlock_bh(&dp_pdev->ppdu_list_lock);
+			ret = -EINVAL;
+			goto exit;
+		} else {
+			list_stats->last_ppdu_buf_drop = 0;
+		}
+	}
+
 	ppdu_info = ath12k_dp_htt_get_ppdu_desc(dp_pdev, ppdu_id);
 	if (!ppdu_info) {
 		spin_unlock_bh(&dp_pdev->ppdu_list_lock);
@@ -1113,6 +1148,14 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 				     ath12k_htt_tlv_ppdu_stats_parse,
 				     (void *)ppdu_info);
 	if (ret) {
+		/* Error processing ppdu tags */
+		list_stats->last_ppdu_id = ppdu_id;
+		list_stats->last_ppdu_buf_drop = 1;
+
+		dp_pdev->stats.ppdu_list_stats.ppdu_stat_list_depth--;
+		list_del(&ppdu_info->list);
+		kfree(ppdu_info);
+
 		spin_unlock_bh(&dp_pdev->ppdu_list_lock);
 		ath12k_warn(ab, "Failed to parse tlv %d\n", ret);
 		goto exit;

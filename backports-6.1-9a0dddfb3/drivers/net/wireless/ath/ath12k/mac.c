@@ -16216,6 +16216,8 @@ void ath12k_mac_stop(struct ath12k *ar)
 		list_del(&ppdu_stats->list);
 		kfree(ppdu_stats);
 	}
+	memset(&dp_pdev->stats.ppdu_list_stats, 0,
+	       sizeof(struct ath12k_htt_ppdu_stats));
 	spin_unlock_bh(&dp_pdev->ppdu_list_lock);
 
 	ath12k_debugfs_nrp_cleanup_all(ar);

@@ -132,9 +132,18 @@ struct ath12k_atf_pdev_airtime {
 	u32 rx_airtime_consumption[WME_NUM_AC];
 };
 
+struct ath12k_htt_ppdu_stats {
+	u64 ppdu_stat_list_depth;
+	u64 delayed_ba_not_recvd;
+	/* ppdu_id of last received Tx HTT PPDU */
+	u32 last_ppdu_id;
+	bool last_ppdu_buf_drop;
+};
+
 struct ath12k_pdev_dp_stats {
 	struct ath12k_pdev_telemetry_stats telemetry_stats;
 	struct ath12k_atf_pdev_airtime atf_airtime;
+	struct ath12k_htt_ppdu_stats ppdu_list_stats;
 	/* Add other new stats if required */
 };
 
@@ -157,7 +166,6 @@ struct ath12k_pdev_dp {
 	spinlock_t ppdu_list_lock;
 	struct ath12k_per_peer_tx_stats peer_tx_stats;
 	struct list_head ppdu_stats_info;
-	u32 ppdu_stat_list_depth;
 
 	bool dp_mon_pdev_configured;
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
