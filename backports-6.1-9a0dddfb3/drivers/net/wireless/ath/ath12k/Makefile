@@ -55,7 +55,8 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/core_extn.o \
 	qcn_extns/vendor_extn.o \
 	qcn_extns/esp_extn.o \
-	qcn_extns/txrx_extn.o
+	qcn_extns/txrx_extn.o \
+	qcn_extns/dcs_extn.o
 
 ath12k-$(CPTCFG_ATH12K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o
 ath12k-$(CONFIG_ACPI) += acpi.o
