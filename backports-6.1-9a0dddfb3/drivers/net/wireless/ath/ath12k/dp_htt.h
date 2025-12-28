@@ -1703,6 +1703,9 @@ struct htt_ppdu_user_stats {
 #define HTT_PPDU_STATS_MAX_USERS	37
 #define HTT_PPDU_DESC_MAX_DEPTH	16
 
+#define MAX_TSF_L32		GENMASK(31, 0)
+#define WRAP_DROP_TSF_DELTA	10000
+
 struct htt_ppdu_stats {
 	struct htt_ppdu_stats_common common;
 	struct htt_ppdu_user_stats user_stats[HTT_PPDU_STATS_MAX_USERS];
@@ -1722,6 +1725,7 @@ struct htt_ppdu_stats_info {
 	u8 usr_nss_sum;
 	struct list_head list;
 	u8 pdev_id;
+	u32 tsf_l32;
 };
 
 /* @brief target -> host MLO offset indiciation message
