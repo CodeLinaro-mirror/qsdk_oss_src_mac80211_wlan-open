@@ -11881,6 +11881,63 @@ exit:
 	return ret;
 }
 
+static int ath12k_mac_reconfig_ahsta_links_mode0(struct ath12k_hw *ah,
+						 struct ath12k_sta *ahsta,
+						 struct ath12k_vif *ahvif,
+						 struct ieee80211_sta *sta)
+{
+	u32 link_to_assign, links_to_unmap;
+	struct ath12k_link_sta *arsta;
+	struct ieee80211_hw *hw = ah->hw;
+	struct ath12k *ar;
+	int ret;
+
+	links_to_unmap = ahsta->links_map;
+	/*
+	 * Link only 1 link at a time as addtional links are mapped
+	 * from drv_change_sta_links
+	 */
+
+	if (hweight16(ahvif->vif->active_links) > 1) {
+		ath12k_err(NULL, "More than one link is not expected for STA reconfig\n");
+		return -EINVAL;
+	}
+
+	link_to_assign = ffs(ahvif->vif->active_links) - 1;
+
+	ahsta->links_map = 0;
+	ahsta->mlo_hw_link_id_bitmap = 0;
+	ahsta->device_bitmap = 0;
+	ahsta->num_peer = 0;
+
+	ath12k_dbg(NULL, ATH12K_DBG_MAC | ATH12K_DBG_BOOT,
+		   "mac reconfig unmap links :0x%x sta link_map:0x%x vif link_map:0x%x sta valid links:%ld\n",
+		   links_to_unmap, ahsta->links_map,
+		   ahvif->links_map, sta->valid_links);
+
+	arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_to_assign]);
+	ar = arsta->arvif->ar;
+
+	if (WARN_ON(!ar))
+		return -EINVAL;
+
+	ret = ath12k_mac_assign_link_sta(ah, ahsta, arsta, ahvif, link_to_assign);
+	if (ret) {
+		ath12k_err(NULL, "failed to map link_id %d\n", link_to_assign);
+		return ret;
+	}
+
+	ahsta->assoc_link_id = link_to_assign;
+	ahsta->primary_link_id = link_to_assign;
+	arsta->is_assoc_link = true;
+	ath12k_dbg(NULL, ATH12K_DBG_MAC | ATH12K_DBG_BOOT,
+		   "mac reconfig assign link sta: link_id:%d sta link_map:0x%x vif link_map:0x%x sta valid links:%ld\n",
+		   link_to_assign, ahsta->links_map,
+		   ahvif->links_map, sta->valid_links);
+
+	return ret;
+}
+
 int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			    struct ieee80211_vif *vif,
 			    struct ieee80211_sta *sta,
@@ -11892,6 +11949,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k_link_vif *arvif;
 	struct ath12k_link_sta *arsta;
+	struct wiphy *wiphy = hw->wiphy;
 	struct wireless_dev *wdev;
 	struct ath12k *ar = ah->radio;
 	struct ath12k_hw_group *ag = ar->ab->ag;
@@ -11903,7 +11961,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 	int ret = -EINVAL;
 	struct ath12k_dp_peer_create_params dp_params = {0};
 
-	lockdep_assert_wiphy(hw->wiphy);
+	lockdep_assert_wiphy(wiphy);
 
 	if ((old_state == IEEE80211_STA_NOTEXIST &&
 	     new_state == IEEE80211_STA_NONE) && ag->wsi_remap_in_progress) {
@@ -11964,7 +12022,7 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			links_map = ahvif->links_map;
 		    	/*Add case to prevent MLO assoc from happening when UMAC recovery happens */
 			for_each_set_bit(t_link_id, &links_map, IEEE80211_MLD_MAX_NUM_LINKS){
-				arvif = wiphy_dereference(hw->wiphy, ahvif->link[t_link_id]);
+				arvif = wiphy_dereference(wiphy, ahvif->link[t_link_id]);
 				if (!arvif->ar ||
 				    (test_bit(ATH12K_FLAG_UMAC_RECOVERY_START,
 					      &arvif->ar->ab->dev_flags))){
@@ -12041,12 +12099,42 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 		if (ret)
 			goto exit;
 	}
+	/* Reconfig links of arsta during recovery */
+
+	/* Mode-0 mapping of ahsta links is done below for first
+	 * deflink and for additional link, it will be done in
+	 * drv_change_sta_links.
+	 */
+	if (ahsta->state != IEEE80211_STA_NOTEXIST &&
+	    old_state == IEEE80211_STA_NOTEXIST &&
+	    new_state == IEEE80211_STA_NONE) {
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+			if (ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE0) {
+				ret = ath12k_mac_reconfig_ahsta_links_mode0(ah, ahsta,
+									    ahvif, sta);
+
+				if (ret) {
+					ath12k_err(NULL,
+						   "Failure in Mode-0 reconfig: %d\n",
+						   ret);
+					return ret;
+				}
+
+				ath12k_dbg(NULL, ATH12K_DBG_MAC,
+					   "mac ML STA %pM primary link (reconfig) set to %u\n",
+					   sta->addr, ahsta->primary_link_id);
+			}
+		} else {
+			if (ahsta->use_4addr_set)
+				wiphy_work_queue(wiphy, &ahsta->set_4addr_wk);
+		}
+	}
 
 	/* Handle all the other state transitions in generic way */
 	links_map = ahsta->links_map;
 	for_each_set_bit(link_id, &links_map, ATH12K_NUM_MAX_LINKS) {
-		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
-		arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
+		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+		arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
 		/* some assumptions went wrong! */
 		if (WARN_ON(!arvif || !arsta))
 			continue;
@@ -12114,14 +12202,14 @@ ml_station_remove:
 		} else if (is_recovery) {
 			link_id = ffs(ahsta->links_map) - 1;
 
-			arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
-			arsta = wiphy_dereference(hw->wiphy, ahsta->link[link_id]);
+			arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
+			arsta = wiphy_dereference(wiphy, ahsta->link[link_id]);
 
 			if (!WARN_ON(!arvif || !arsta))
 				ath12k_mac_station_remove(arvif->ar, arvif, arsta);
 		}
 		ath12k_dp_peer_delete(&ah->dp_hw, sta->addr, sta, ar->hw_link_id);
-		wiphy_work_cancel(hw->wiphy, &ahsta->set_4addr_wk);
+		wiphy_work_cancel(wiphy, &ahsta->set_4addr_wk);
 	}
 
 	if (ag->wsi_remap_in_progress && !ah->num_ml_peers) {
