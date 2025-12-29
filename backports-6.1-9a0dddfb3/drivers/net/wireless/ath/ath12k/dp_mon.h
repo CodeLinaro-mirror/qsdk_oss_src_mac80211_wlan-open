@@ -175,6 +175,8 @@ struct ath12k_dp_arch_mon_ops {
 	void (*pktlog_config)(struct ath12k_pdev_dp *dp_pdev,
 			      enum ath12k_pktlog_mode mode,
 			      u32 filter, bool enable);
+	void (*htt_rx_filter_rxmon_cfg)(void *ptr,
+					struct htt_rx_ring_tlv_filter *tlv_filter);
 
 	/* Below are TxMonitor ops */
 	int (*mon_tx_srng_alloc_setup)(struct ath12k_dp *dp);
@@ -477,6 +479,12 @@ const struct ath12k_dp_arch_mon_ops *ath12k_dp_mon_ops_get(struct ath12k_dp *dp)
 static inline bool ath12k_dp_mon_rxdma1_enable(struct ath12k_dp *dp)
 {
 	return dp->hw_params->rxdma1_enable;
+}
+
+static inline bool
+ath12k_dp_mon_rx_get_quad_ring_support(struct ath12k_dp *dp)
+{
+	return dp->hw_params->quad_ring_monitor_support;
 }
 
 /* Wrapper functions for RX and TX buffer replenishment */
@@ -984,6 +992,21 @@ void ath12k_dp_mon_rx_smart_mon_config(struct ath12k *ar, bool reset)
 			mon_ops->rx_smart_mon_reset(dp_pdev);
 		dp_pdev->dp_mon_pdev->smart_mon_state = ATH12K_DP_SMART_MON_IDLE;
 	}
+}
+
+static inline
+void ath12k_dp_mon_rx_enable(struct ath12k_dp *dp, void *cmd,
+			     struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (mon_ops && mon_ops->htt_rx_filter_rxmon_cfg)
+		mon_ops->htt_rx_filter_rxmon_cfg(cmd, tlv_filter);
 }
 
 static inline

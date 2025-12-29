@@ -335,6 +335,7 @@ struct ath12k_hw_params {
 	u32 cfr_num_stream_bufs;
 	u32 cfr_stream_buf_size;
 	bool mlo_3_link_tx_support;
+	bool quad_ring_monitor_support;
 	const char *board_magic;
 };
 
