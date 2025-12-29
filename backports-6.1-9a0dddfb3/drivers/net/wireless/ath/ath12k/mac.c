@@ -18985,7 +18985,7 @@ ath12k_mac_update_vif_chan(struct ath12k *ar,
 	u8 link_id;
 	struct ieee80211_vif *tx_vif;
 	int ret;
-	int i, trans_vdev_index;
+	int i, trans_vdev_index = 0;
 	bool monitor_vif = false;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
@@ -19121,7 +19121,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 	struct ath12k_vif *ahvif, *tx_ahvif;
 	struct cfg80211_chan_def *chandef;
 	struct ieee80211_vif *tx_vif;
-	int ret, i, time_left, trans_vdev_index, vdev_idx, n_vdevs = 0;
+	int ret, i, time_left, trans_vdev_index = 0, vdev_idx, n_vdevs = 0;
 	u32 *vdev_ids;
 	u8 size, link_id = 0;
 	bool is_bridge_vdev;
