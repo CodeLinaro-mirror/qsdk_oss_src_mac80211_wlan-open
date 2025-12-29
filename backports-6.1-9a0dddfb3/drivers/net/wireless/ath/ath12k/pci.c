@@ -663,7 +663,8 @@ u32 ath12k_pci_read32(struct ath12k_base *ab, u32 offset)
 	 * need to wakeup MHI to access.
 	 */
 	if (test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags) &&
-	    offset >= ACCESS_ALWAYS_OFF && ab_pci->pci_ops->wakeup)
+	    offset >= ACCESS_ALWAYS_OFF && ab_pci->pci_ops &&
+	    ab_pci->pci_ops->wakeup)
 		ret = ab_pci->pci_ops->wakeup(ab);
 
 	if (offset < WINDOW_START) {
@@ -694,8 +695,8 @@ u32 ath12k_pci_read32(struct ath12k_base *ab, u32 offset)
 	}
 
 	if (test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags) &&
-	    offset >= ACCESS_ALWAYS_OFF && ab_pci->pci_ops->release &&
-	    !ret)
+	    offset >= ACCESS_ALWAYS_OFF && ab_pci->pci_ops &&
+	    ab_pci->pci_ops->release && !ret)
 		ab_pci->pci_ops->release(ab);
 	return val;
 }
@@ -711,7 +712,8 @@ void ath12k_pci_write32(struct ath12k_base *ab, u32 offset, u32 value)
 	 * need to wakeup MHI to access.
 	 */
 	if (test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags) &&
-	    offset >= ACCESS_ALWAYS_OFF && ab_pci->pci_ops->wakeup)
+	    offset >= ACCESS_ALWAYS_OFF && ab_pci->pci_ops &&
+	    ab_pci->pci_ops->wakeup)
 		ret = ab_pci->pci_ops->wakeup(ab);
 
 	if (offset < WINDOW_START) {
@@ -742,8 +744,8 @@ void ath12k_pci_write32(struct ath12k_base *ab, u32 offset, u32 value)
 	}
 
 	if (test_bit(ATH12K_PCI_FLAG_INIT_DONE, &ab_pci->flags) &&
-	    offset >= ACCESS_ALWAYS_OFF && ab_pci->pci_ops->release &&
-	    !ret)
+	    offset >= ACCESS_ALWAYS_OFF && ab_pci->pci_ops &&
+	    ab_pci->pci_ops->release && !ret)
 		ab_pci->pci_ops->release(ab);
 }
 
