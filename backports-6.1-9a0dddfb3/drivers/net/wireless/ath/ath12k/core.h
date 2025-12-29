@@ -2127,6 +2127,7 @@ struct ath12k_base {
 	struct athdbg_qmi dbg_qmi;
 #endif
 
+	u32 twt_cap_bitmap;
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
 };
