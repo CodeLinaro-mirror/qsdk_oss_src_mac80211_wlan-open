@@ -97,6 +97,21 @@ struct wmi_vdev_ch_power_info {
         u32 tx_power;
 } __packed;
 
+struct wmi_gpio_config_cmd {
+	__le32 tlv_header;
+	__le32 gpio_num;
+	__le32 input;
+	__le32 pull_type;
+	__le32 intr_mode;
+	__le32 mux_config_val;
+} __packed;
+
+struct wmi_gpio_output_cmd {
+	__le32 tlv_header;
+	__le32 gpio_num;
+	__le32 set;
+} __packed;
+
 /**
  * struct wmi_vdev_ch_power_psd_info - Channel power spectral density info
  * @tlv_header: TLV (Type-Length-Value) header used for parsing the structure.
@@ -154,6 +169,11 @@ struct wmi_peer_delete_all_cmd {
 	__le32 vdev_id;
 	__le32 peer_type_bitmap;
 } __packed;
+
+struct wmi_gpio_input_event {
+	__le32 gpio_num;
+	__le32 value;
+};
 
 #define WMI_TLV_LEN	GENMASK(15, 0)
 #define WMI_TLV_TAG	GENMASK(31, 16)

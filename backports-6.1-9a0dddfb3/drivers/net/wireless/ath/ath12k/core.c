@@ -1326,14 +1326,44 @@ static void ath12k_core_pdev_deinit(struct ath12k_base *ab)
 		ath12k_cfr_deinit(ab);
 }
 
+static int ath12k_core_gpio_init(struct ath12k *ar)
+{
+	int i;
+
+	for (i = 0; i < 32; i++) {
+		ar->radio_cfg.gpio_cfg[i].configured     = false;
+		ar->radio_cfg.gpio_cfg[i].gpio_pin       = i;
+		ar->radio_cfg.gpio_cfg[i].gpio_function  = 0;
+		ar->radio_cfg.gpio_cfg[i].gpio_pull_type = QCA_WLAN_GPIO_PULL_NONE;
+		ar->radio_cfg.gpio_cfg[i].gpio_dir       = QCA_WLAN_GPIO_INPUT;
+		ar->radio_cfg.gpio_cfg[i].gpio_intr_mode = QCA_WLAN_GPIO_INTMODE_DISABLE;
+		ar->radio_cfg.gpio_cfg[i].gpio_value     = 0;
+	}
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_BOOT,
+		   "GPIO configuration cache initialized\n");
+
+	return 0;
+}
+
 static int ath12k_core_pdev_create(struct ath12k_base *ab)
 {
-	int ret;
+	int ret, i;
 
 	ret = ath12k_dp_arch_pdev_alloc(ab->dp);
 	if (ret) {
 		ath12k_err(ab, "failed to attach DP pdev: %d\n", ret);
 		goto err_pdev_debug;
+	}
+
+	/* Initialize GPIO configuration cache for each radio */
+	for (i = 0; i < ab->num_radios; i++) {
+		ret = ath12k_core_gpio_init(ab->pdevs[i].ar);
+		if (ret) {
+			ath12k_err(ab, "failed to initialize GPIO for radio %d: %d\n",
+				   i, ret);
+			goto err_pdev_debug;
+		}
 	}
 
 	return 0;
