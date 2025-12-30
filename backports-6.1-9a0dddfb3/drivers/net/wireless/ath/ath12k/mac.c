@@ -28076,3 +28076,128 @@ int ath12k_mac_op_set_monitor_flags(struct ieee80211_hw *hw,
 	return ret;
 }
 EXPORT_SYMBOL(ath12k_mac_op_set_monitor_flags);
+
+#define ATH12K_PCIE_MIN_GEN	1
+#define ATH12K_PCIE_MAX_GEN	3
+#define ATH12K_PCIE_MIN_LANE	1
+#define ATH12K_PCIE_MAX_LANE	2
+
+static int ath12k_mac_op_pcie(struct ath12k *ar,
+			      struct cfg80211_pcie_params *params)
+{
+	u32 wmi_config_type;
+
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	switch (params->cmd) {
+	case CFG80211_PCIE_CMD_GEN_LANE:
+		if (params->config_type == CFG80211_PCIE_GEN_LANE_STATIC) {
+			if (params->pcie_gen < ATH12K_PCIE_MIN_GEN ||
+			    params->pcie_gen > ATH12K_PCIE_MAX_GEN) {
+				ath12k_err(ar->ab, "Invalid PCIe gen value\n");
+				return -EINVAL;
+			}
+
+			if (params->pcie_lane < ATH12K_PCIE_MIN_LANE ||
+			    params->pcie_lane > ATH12K_PCIE_MAX_LANE) {
+				ath12k_err(ar->ab, "Invalid PCIe lane value\n");
+				return -EINVAL;
+			}
+		} else if (params->config_type > CFG80211_PCIE_GEN_LANE_STATIC) {
+			ath12k_err(ar->ab, "Invalid PCIe config type\n");
+			return -EINVAL;
+		}
+
+		return ath12k_wmi_send_pcie_gen_lane(ar, params->enable,
+						     params->config_type ?
+						     WMI_PCIE_FORCED_STATIC :
+						     WMI_PCIE_CHANNEL_BANDWIDTH,
+						     params->pcie_gen,
+						     params->pcie_lane);
+	case CFG80211_PCIE_CMD_LOW_POWER:
+		if (params->config_type == CFG80211_PCIE_LOW_POWER_L0S)
+			wmi_config_type = WMI_PCIE_LPM_L0S;
+		else if (params->config_type == CFG80211_PCIE_LOW_POWER_L1)
+			wmi_config_type = WMI_PCIE_LPM_L1;
+		else if (params->config_type == CFG80211_PCIE_LOW_POWER_BOTH)
+			wmi_config_type = WMI_PCIE_LPM_L0S_L1;
+		else {
+			ath12k_err(ar->ab, "Invalid PCIe low power mode\n");
+			return -EINVAL;
+		}
+
+		return ath12k_wmi_send_pcie_low_power(ar, params->enable,
+						      wmi_config_type);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int ath12k_mac_op_dcvs(struct ath12k *ar, u32 dcvs_mode)
+{
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	switch (dcvs_mode) {
+	case CFG80211_DCVS_CMD_ON:
+		return ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_ENABLE);
+	case CFG80211_DCVS_CMD_OFF:
+		return ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_DISABLE);
+	case CFG80211_DCVS_CMD_NO_LIMIT:
+		return ath12k_wmi_send_dcvs_cmd(ar, WMI_DCVS_NO_LIMITATION);
+	default:
+		return -EINVAL;
+	}
+}
+
+static int ath12k_mac_op_dps_assist(struct ath12k *ar, u32 vdev_id,
+				    bool dps_assist_enable)
+{
+	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (dps_assist_enable)
+		return ath12k_wmi_send_dps_assist_cmd(ar, vdev_id,
+						      WMI_DPS_ASSIST_ENABLE);
+	else
+		return ath12k_wmi_send_dps_assist_cmd(ar, vdev_id,
+						      WMI_DPS_ASSIST_DISABLE);
+}
+
+int ath12k_mac_op_ap_power_save(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
+				int link_id,
+				struct cfg80211_ap_power_save_params *params)
+{
+	struct ath12k_link_vif *arvif;
+	struct ath12k_vif *ahvif;
+	int ret = 0;
+
+	lockdep_assert_wiphy(hw->wiphy);
+
+	ahvif = ath12k_vif_to_ahvif(vif);
+	arvif = ath12k_get_arvif_from_link_id(ahvif, link_id);
+	if (!arvif || !arvif->ar) {
+		ath12k_err(NULL, "cannot set PCIe for the specified link\n");
+		return -ENOLINK;
+	}
+
+	if (params->types & CFG80211_TYPE_PCIE) {
+		ret = ath12k_mac_op_pcie(arvif->ar, &params->pcie);
+		if (ret)
+			return ret;
+	}
+
+	if (params->types & CFG80211_TYPE_DCVS) {
+		ret = ath12k_mac_op_dcvs(arvif->ar, params->dcvs_mode);
+		if (ret)
+			return ret;
+	}
+
+	if (params->types & CFG80211_TYPE_DPS_ASSIST) {
+		ret = ath12k_mac_op_dps_assist(arvif->ar, arvif->vdev_id,
+					       params->dps_assist_enable);
+		if (ret)
+			return ret;
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_mac_op_ap_power_save);

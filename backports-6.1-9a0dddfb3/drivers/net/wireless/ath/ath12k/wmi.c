@@ -16398,6 +16398,127 @@ static void ath12k_vdev_tsf_report_event(struct ath12k_base *ab,
 		   tsf_event.qtimer_high, tsf_event.qtimer_low);
 }
 
+int ath12k_wmi_send_pcie_gen_lane(struct ath12k *ar, u32 enable, u32 config_type,
+				  u32 pcie_gen, u32 pcie_lane)
+{
+	struct wmi_energy_mgmt_pcie_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI Set PCIe GenXLane config type to %u\n", config_type);
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_energy_mgmt_pcie_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ENERGY_MGMT_PCIE_CMD_FIXED_PARAM,
+						 len);
+
+	cmd->enable = cpu_to_le32(enable);
+	cmd->config = cpu_to_le32(config_type);
+	cmd->pcie_gen = cpu_to_le32(pcie_gen);
+	cmd->pcie_lane = cpu_to_le32(pcie_lane);
+
+	ret = ath12k_wmi_cmd_send(ar->wmi, skb, WMI_ENERGY_MGMT_PCIE_CONFIG_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "WMI failed to send PCIe config command\n");
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
+int ath12k_wmi_send_pcie_low_power(struct ath12k *ar, u32 enable, u32 config_type)
+{
+	struct wmi_energy_mgmt_pcie_lpm_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI Set PCIe Low Power state %u\n", config_type);
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_energy_mgmt_pcie_lpm_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(
+					    WMI_TAG_ENERGY_MGMT_PCIE_LPM__CMD_FIXED_PARAM,
+						 len);
+
+	cmd->enable = cpu_to_le32(enable);
+	cmd->config = cpu_to_le32(config_type);
+
+	ret = ath12k_wmi_cmd_send(ar->wmi, skb, WMI_ENERGY_MGMT_PCIE_LPM_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "WMI pdev %i failed to send PCIe Low Power enable/disable command\n",
+			    ar->pdev->pdev_id);
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
+int ath12k_wmi_send_dcvs_cmd(struct ath12k *ar, u32 config)
+{
+	struct wmi_energy_mgmt_dcvs_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI Set DCVS mode to %u\n", config);
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_energy_mgmt_dcvs_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_ENERGY_MGMT_DCVS_CMD_FIXED_PARAM,
+						 len);
+	cmd->config = cpu_to_le32(config);
+
+	ret = ath12k_wmi_cmd_send(ar->wmi, skb, WMI_ENERGY_MGMT_DCVS_CONFIG_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "WMI failed to send DCVS config command\n");
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
+int ath12k_wmi_send_dps_assist_cmd(struct ath12k *ar, u32 vdev_id, u32 config)
+{
+	struct wmi_energy_mgmt_dps_assist_cmd *cmd;
+	struct sk_buff *skb;
+	int ret, len;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI, "WMI Set DPS assisting mode to %s\n",
+		   config ? "enable" : "disable");
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(ar->wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_energy_mgmt_dps_assist_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(
+				   WMI_TAG_ENERGY_MGMT_DPS_ASSISTING_ROLE_CMD_FIXED_PARAM,
+						 len);
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->config = cpu_to_le32(config);
+
+	ret = ath12k_wmi_cmd_send(ar->wmi, skb,
+				  WMI_VDEV_ENERGY_MGMT_DPS_ASSISTING_ROLE_CONFIG_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "WMI failed to send DPS assisting role config command\n");
+		dev_kfree_skb(skb);
+	}
+	return ret;
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);

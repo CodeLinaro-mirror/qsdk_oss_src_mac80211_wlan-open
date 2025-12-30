@@ -1156,6 +1156,7 @@ static const struct ieee80211_ops ath12k_ops_wifi8 = {
 	.qos_mgmt_cfg                   = ath12k_mac_op_qos_mgmt_cfg,
 	.get_afc_eirp_pwr               = ath12k_mac_op_get_afc_eirp_pwr,
 	.get_6ghz_dev_deployment_type	= ath12k_mac_op_get_6ghz_dev_deployment_type,
+	.ap_power_save                  = ath12k_mac_op_ap_power_save,
 };
 
 int ath12k_wifi8_hw_init(struct ath12k_base *ab)
