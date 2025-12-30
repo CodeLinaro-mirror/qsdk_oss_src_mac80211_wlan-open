@@ -9941,7 +9941,15 @@ static void ath12k_peer_delete_resp_event(struct ath12k_base *ab, struct sk_buff
 		return;
 	}
 
+	/* Remove peer from deletion tracker */
+	if (ar->pdev->peer_del_tracker) {
+		ath12k_peer_del_tracker_remove(ar->pdev,
+					       le32_to_cpu(peer_del_resp.vdev_id),
+					       peer_del_resp.peer_macaddr.addr);
+	}
+
 	rcu_read_unlock();
+
 	ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
 		   "peer delete resp for vdev id %d addr %pM\n",
 		   peer_del_resp.vdev_id, peer_del_resp.peer_macaddr.addr);

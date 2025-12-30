@@ -38,6 +38,7 @@
 #include "qos.h"
 #include "qcn_extns/ath12k_cmn_extn.h"
 #include "qcn_extns/vendor_extn.h"
+#include <linux/atomic.h>
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include <ppe_ds_wlan.h>
@@ -1650,6 +1651,8 @@ struct ath12k_pdev {
 	u8 mac_addr[ETH_ALEN];
 	struct mlo_timestamp timestamp;
 	const char *phy_name;
+	struct ath12k_peer_del_tracker *peer_del_tracker;
+	atomic_t peer_del_tracker_entries;
 };
 
 struct ath12k_fw_pdev {

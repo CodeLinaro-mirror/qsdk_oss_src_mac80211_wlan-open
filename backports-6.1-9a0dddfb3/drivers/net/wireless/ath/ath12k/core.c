@@ -2343,11 +2343,23 @@ void ath12k_core_halt(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_hw_group *ag = ab->ag;
+	int ret;
 
 	if (ab->is_bypassed)
 		return;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	/* The host sends a peer delete command to the firmware and records the peer in
+	 * the corresponding pdev’s peer_del tracker. When the firmware’s peer delete
+	 * response is received, the matching peer entry is removed from this tracker.
+	 * If an assert occurs before the firmware responds, the host is left with a stale
+	 * peer entry. To avoid this, flush the peer_del tracker for the asserted chip.
+	 */
+	ret = ath12k_peer_del_tracker_clear_pdev(ar->pdev);
+	if (ret)
+		ath12k_err(ab, "failed to clean up peer_del tracker for pdev:%d\n",
+			   ar->pdev_idx);
 
 	/* Send low ack disassoc to hostapd to free the peers from host
 	 * to associate fresh after recovery. It is expected that, this

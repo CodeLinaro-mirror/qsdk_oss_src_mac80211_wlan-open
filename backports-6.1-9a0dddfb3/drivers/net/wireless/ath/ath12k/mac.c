@@ -2119,6 +2119,11 @@ int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
 	reinit_completion(&ar->vdev_setup_done);
 	reinit_completion(&ar->delete_all_peer_done);
 
+	ret = ath12k_peer_del_tracker_clear_vdev(ar->pdev, arvif->vdev_id);
+	if (ret)
+		ath12k_err(ar->ab, "failed to clean up peer_del tracker for vdev_id:%d\n",
+			   arvif->vdev_id);
+
 	if (arvif->num_peers &&
 	    arvif->ahvif->vdev_type != WMI_VDEV_TYPE_STA) {
 		ret = ath12k_wmi_peer_delete_all(arvif);
@@ -23761,11 +23766,12 @@ err_cleanup_unregister:
 	return ret;
 }
 
-static void ath12k_mac_setup(struct ath12k *ar)
+static int ath12k_mac_setup(struct ath12k *ar)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_pdev *pdev = ar->pdev;
 	u8 pdev_idx = ar->pdev_idx;
+	int ret;
 
 	ar->lmac_id = ath12k_hw_get_mac_from_pdev_id(ab->hw_params, pdev_idx);
 
@@ -23830,7 +23836,18 @@ static void ath12k_mac_setup(struct ath12k *ar)
 	INIT_WORK(&ar->erp_handle_trigger_work, ath12k_erp_handle_trigger);
 	INIT_WORK(&ar->ssr_erp_exit, ath12k_erp_ssr_exit);
 
+	/* Initialize peer deletion tracker for this pdev */
+	ret = ath12k_peer_del_tracker_init(pdev);
+	if (ret) {
+		ath12k_err(ab, "failed to init peer deletion tracker for pdev %d: %d\n",
+			   pdev->pdev_id, ret);
+
+		return ret;
+	}
+
 	ath12k_mac_setup_extn(ar);
+
+	return 0;
 }
 
 int __ath12k_mac_mlo_setup(struct ath12k *ar)
@@ -24149,7 +24166,13 @@ static struct ath12k_hw *ath12k_mac_hw_allocate(struct ath12k_hw_group *ag,
 
 		ath12k_dp_cmn_update_hw_links(ab->dp, ag, ar);
 
-		ath12k_mac_setup(ar);
+		ret = ath12k_mac_setup(ar);
+		if (ret) {
+			ath12k_mac_hw_destroy(ah);
+			ah = NULL;
+			break;
+		}
+
 		ret = ath12k_dp_pdev_pre_alloc(ar);
 		if (ret) {
 			ath12k_mac_hw_destroy(ah);
@@ -24177,6 +24200,11 @@ void ath12k_mac_destroy(struct ath12k_hw_group *ag)
 			pdev = &ab->pdevs[j];
 			if (!pdev->ar)
 				continue;
+
+			/* Destroy peer deletion tracker */
+			if (pdev->peer_del_tracker)
+				ath12k_peer_del_tracker_destroy(pdev);
+
 			pdev->ar = NULL;
 		}
 
