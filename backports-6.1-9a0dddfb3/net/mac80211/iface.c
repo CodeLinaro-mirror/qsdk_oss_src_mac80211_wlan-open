@@ -566,7 +566,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 			if (skb->dev == sdata->dev) {
 				__skb_unlink(skb, &ps->bc_buf);
 				local->total_ps_buffered--;
-				ieee80211_free_txskb(&local->hw, skb);
+				__ieee80211_free_txskb(&local->hw, skb);
 			}
 		}
 		spin_unlock_irqrestore(&ps->bc_buf.lock, flags);
@@ -632,7 +632,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	}
 
 	/*
-	 * Since ieee80211_free_txskb() may issue __dev_queue_xmit()
+	 * Since __ieee80211_free_txskb() may issue __dev_queue_xmit()
 	 * which should be called with interrupts enabled, reclamation
 	 * is done in two phases:
 	 */
@@ -641,7 +641,7 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	/* ... and perform actual reclamation with interrupts enabled. */
 	skb_queue_walk_safe(&freeq, skb, tmp) {
 		__skb_unlink(skb, &freeq);
-		ieee80211_free_txskb(&local->hw, skb);
+		__ieee80211_free_txskb(&local->hw, skb);
 	}
 
 	/* Since there are percpu SW queues, unlink all

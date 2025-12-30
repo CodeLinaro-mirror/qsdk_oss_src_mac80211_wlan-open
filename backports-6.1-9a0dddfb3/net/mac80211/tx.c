@@ -441,7 +441,7 @@ static void purge_old_ps_buffers(struct ieee80211_local *local)
 				ieee80211_tx_drop_stats(sdata, 0,
 							TX_DROP_QUEUE_PURGE);
 			purged++;
-			ieee80211_free_txskb(&local->hw, skb);
+			__ieee80211_free_txskb(&local->hw, skb);
 		}
 		total += skb_queue_len(&ps->bc_buf);
 	}
@@ -461,7 +461,7 @@ static void purge_old_ps_buffers(struct ieee80211_local *local)
 					ieee80211_tx_drop_stats(sdata, 0,
 								TX_DROP_QUEUE_PURGE);
 				purged++;
-				ieee80211_free_txskb(&local->hw, skb);
+				__ieee80211_free_txskb(&local->hw, skb);
 				break;
 			}
 		}
@@ -532,7 +532,7 @@ ieee80211_tx_h_multicast_ps_buf(struct ieee80211_tx_data *tx)
 		if (!tid_stats_disable)
 			ieee80211_tx_drop_stats(tx->sdata, info->tid,
 						TX_DROP_STA_MAX_BUFFER);
-		ieee80211_free_txskb(&tx->local->hw, skb_dequeue(&ps->bc_buf));
+		__ieee80211_free_txskb(&tx->local->hw, skb_dequeue(&ps->bc_buf));
 	} else
 		tx->local->total_ps_buffered++;
 
@@ -607,7 +607,7 @@ ieee80211_tx_h_unicast_ps_buf(struct ieee80211_tx_data *tx)
 			if (!tid_stats_disable)
 				ieee80211_tx_drop_stats(tx->sdata, info->tid,
 							TX_DROP_STA_MAX_BUFFER);
-			ieee80211_free_txskb(&local->hw, old);
+			__ieee80211_free_txskb(&local->hw, old);
 		} else
 			tx->local->total_ps_buffered++;
 
@@ -969,9 +969,8 @@ ieee80211_tx_h_sequence(struct ieee80211_tx_data *tx)
 		/* for pure STA mode without beacons, we can do it */
 		hdr->seq_ctrl = cpu_to_le16(tx->sdata->sequence_number);
 		tx->sdata->sequence_number += 0x10;
-		if (tx->sta)
-			tx->sta->deflink.tx_stats.msdu[IEEE80211_NUM_TIDS]++;
-		return TX_CONTINUE;
+		tid = IEEE80211_NUM_TIDS;
+		goto tx_stats;
 	}
 
 	/*
@@ -984,10 +983,12 @@ ieee80211_tx_h_sequence(struct ieee80211_tx_data *tx)
 
 	/* include per-STA, per-TID sequence counter */
 	tid = ieee80211_get_tid(hdr);
-	tx->sta->deflink.tx_stats.msdu[tid]++;
 
 	hdr->seq_ctrl = ieee80211_tx_next_seq(tx->sta, tid);
 
+tx_stats:
+	if (tx->sta && !tx->sta->sta.valid_links)
+		tx->sta->deflink.tx_stats.msdu[tid]++;
 	return TX_CONTINUE;
 }
 
@@ -1153,11 +1154,14 @@ ieee80211_tx_h_stats(struct ieee80211_tx_data *tx)
 			if (ieee80211_is_data(hdr->frame_control))
 				continue;
 		}
-		ac = skb_get_queue_mapping(skb);
-		tx->sta->deflink.tx_stats.bytes[ac] += skb->len;
+		if (!tx->sta->sta.valid_links) {
+			ac = skb_get_queue_mapping(skb);
+			if (ac >= 0) {
+				tx->sta->deflink.tx_stats.bytes[ac] += skb->len;
+				tx->sta->deflink.tx_stats.packets[ac]++;
+			}
+		}
 	}
-	if (ac >= 0)
-		tx->sta->deflink.tx_stats.packets[ac]++;
 
 	return TX_CONTINUE;
 }
@@ -1284,7 +1288,7 @@ static bool ieee80211_tx_prep_agg(struct ieee80211_tx_data *tx,
 		spin_unlock(&tx->sta->lock);
 
 		if (purge_skb)
-			ieee80211_free_txskb(&tx->local->hw, purge_skb);
+			__ieee80211_free_txskb(&tx->local->hw, purge_skb);
 	}
 
 	/* reset session timer */
@@ -1525,7 +1529,7 @@ static void codel_drop_func(struct sk_buff *skb,
 	local = vif_to_sdata(txqi->txq.vif)->local;
 	hw = &local->hw;
 
-	ieee80211_free_txskb(hw, skb);
+	__ieee80211_free_txskb(hw, skb);
 }
 
 static struct sk_buff *fq_tin_dequeue_func(struct fq *fq,
@@ -1574,7 +1578,7 @@ static void fq_skb_free_func(struct fq *fq,
 	struct ieee80211_local *local;
 
 	local = container_of(fq, struct ieee80211_local, fq);
-	ieee80211_free_txskb(&local->hw, skb);
+	__ieee80211_free_txskb(&local->hw, skb);
 }
 
 static void ieee80211_txq_enqueue(struct ieee80211_local *local,
@@ -2010,7 +2014,7 @@ static int invoke_tx_handlers_early(struct ieee80211_tx_data *tx)
 		tx->sdata->tx_dropped++;
 		I802_DEBUG_INC(tx->local->tx_handlers_drop);
 		if (tx->skb)
-			ieee80211_free_txskb(&tx->local->hw, tx->skb);
+			__ieee80211_free_txskb(&tx->local->hw, tx->skb);
 		else
 			ieee80211_purge_tx_queue(&tx->local->hw, &tx->skbs);
 		return -1;
@@ -2055,7 +2059,7 @@ static int invoke_tx_handlers_late(struct ieee80211_tx_data *tx)
 		tx->sdata->tx_dropped++;
 		I802_DEBUG_INC(tx->local->tx_handlers_drop);
 		if (tx->skb)
-			ieee80211_free_txskb(&tx->local->hw, tx->skb);
+			__ieee80211_free_txskb(&tx->local->hw, tx->skb);
 		else
 			ieee80211_purge_tx_queue(&tx->local->hw, &tx->skbs);
 		return -1;
@@ -2140,7 +2144,7 @@ static bool ieee80211_tx(struct ieee80211_sub_if_data *sdata,
 	res_prepare = ieee80211_tx_prepare(sdata, &tx, sta, skb);
 
 	if (unlikely(res_prepare == TX_DROP)) {
-		ieee80211_free_txskb(&local->hw, skb);
+		__ieee80211_free_txskb(&local->hw, skb);
 		return true;
 	} else if (unlikely(res_prepare == TX_QUEUED)) {
 		return true;
@@ -2236,7 +2240,7 @@ void ieee80211_xmit(struct ieee80211_sub_if_data *sdata,
 		if (!tid_stats_disable)
 			ieee80211_tx_drop_stats(sdata, info->tid,
 						TX_DROP_SKB_RESIZE_FAIL);
-		ieee80211_free_txskb(&local->hw, skb);
+		__ieee80211_free_txskb(&local->hw, skb);
 		return;
 	}
 
@@ -3178,7 +3182,7 @@ static struct sk_buff *ieee80211_build_hdr(struct ieee80211_sub_if_data *sdata,
 			if (!tid_stats_disable)
 				ieee80211_tx_drop_stats(sdata, info->tid,
 							TX_DROP_SKB_RESIZE_FAIL);
-			ieee80211_free_txskb(&local->hw, skb);
+			__ieee80211_free_txskb(&local->hw, skb);
 			skb = NULL;
 			return ERR_PTR(-ENOMEM);
 		}
@@ -3847,19 +3851,23 @@ ieee80211_xmit_fast_finish(struct ieee80211_sub_if_data *sdata,
 		sdata->sequence_number += 0x10;
 	}
 
-	if (skb_shinfo(skb)->gso_size)
-		sta->deflink.tx_stats.msdu[tid] +=
-			DIV_ROUND_UP(skb->len, skb_shinfo(skb)->gso_size);
-	else
-		sta->deflink.tx_stats.msdu[tid]++;
+	if (!sta->sta.valid_links) {
+		if (skb_shinfo(skb)->gso_size)
+			sta->deflink.tx_stats.msdu[tid] +=
+				DIV_ROUND_UP(skb->len, skb_shinfo(skb)->gso_size);
+		else
+			sta->deflink.tx_stats.msdu[tid]++;
+	}
 
 	info->hw_queue = sdata->vif.hw_queue[skb_get_queue_mapping(skb)];
 
 	/* statistics normally done by ieee80211_tx_h_stats (but that
 	 * has to consider fragmentation, so is more complex)
 	 */
-	sta->deflink.tx_stats.bytes[skb_get_queue_mapping(skb)] += skb->len;
-	sta->deflink.tx_stats.packets[skb_get_queue_mapping(skb)]++;
+	if (!sta->sta.valid_links) {
+		sta->deflink.tx_stats.bytes[skb_get_queue_mapping(skb)] += skb->len;
+		sta->deflink.tx_stats.packets[skb_get_queue_mapping(skb)]++;
+	}
 
 	if (pn_offs) {
 		u64 pn;
@@ -4195,7 +4203,7 @@ begin:
 			if (!tid_stats_disable)
 				ieee80211_tx_drop_stats(tx.sdata, info->tid,
 							TX_DROP_UNAUTH_PORT);
-			ieee80211_free_txskb(&local->hw, skb);
+			 __ieee80211_free_txskb(&local->hw, skb);
 			goto begin;
 		}
 	}
@@ -4206,7 +4214,7 @@ begin:
 	 */
 	r = ieee80211_tx_h_select_key(&tx);
 	if (r != TX_CONTINUE) {
-		ieee80211_free_txskb(&local->hw, skb);
+		__ieee80211_free_txskb(&local->hw, skb);
 		goto begin;
 	}
 
@@ -4218,7 +4226,7 @@ begin:
 		if (!ieee80211_hw_check(&local->hw, HAS_RATE_CONTROL)) {
 			r = ieee80211_tx_h_rate_ctrl(&tx);
 			if (r != TX_CONTINUE) {
-				ieee80211_free_txskb(&local->hw, skb);
+				__ieee80211_free_txskb(&local->hw, skb);
 				goto begin;
 			}
 		}
@@ -4276,7 +4284,7 @@ begin:
 			info->hw_queue =
 				vif->hw_queue[skb_get_queue_mapping(skb)];
 		} else if (ieee80211_hw_check(&local->hw, QUEUE_CONTROL)) {
-			ieee80211_free_txskb(&local->hw, skb);
+			__ieee80211_free_txskb(&local->hw, skb);
 			goto begin;
 		} else {
 			info->control.vif = NULL;
@@ -5145,8 +5153,10 @@ static void ieee80211_8023_xmit(struct ieee80211_sub_if_data *sdata,
 
 	ieee80211_tx_stats(dev, len);
 	if (!ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) && sta) {
-		sta->deflink.tx_stats.packets[queue] += skbs;
-		sta->deflink.tx_stats.bytes[queue] += len;
+		if (!sta->sta.valid_links) {
+			sta->deflink.tx_stats.packets[queue] += skbs;
+			sta->deflink.tx_stats.bytes[queue] += len;
+		}
 	}
 
 	ieee80211_tpt_led_trig_tx(local, len);
@@ -5215,8 +5225,10 @@ void ieee80211_8023_xmit_ap(struct ieee80211_sub_if_data *sdata,
 	q = sdata->vif.hw_queue[q_map];
 
 	if (sta) {
-		sta->deflink.tx_stats.bytes[q_map] += skb->len;
-		sta->deflink.tx_stats.packets[q_map]++;
+		if (!sta->sta.valid_links) {
+			sta->deflink.tx_stats.packets[q_map]++;
+			sta->deflink.tx_stats.bytes[q_map] += skb->len;
+		}
 		atomic_inc(&sta->tx_netif_pkts);
 	}
 
@@ -5427,7 +5439,7 @@ void ieee80211_clear_tx_pending(struct ieee80211_local *local)
 	for (i = 0; i < local->hw.queues; i++) {
 		pcpu_pending = this_cpu_ptr(local->pending[i]);
 		while ((skb = skb_dequeue(pcpu_pending)) != NULL)
-			ieee80211_free_txskb(&local->hw, skb);
+			__ieee80211_free_txskb(&local->hw, skb);
 	}
 }
 
@@ -5530,7 +5542,7 @@ void ieee80211_tx_pending(struct tasklet_struct *t)
 			struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 
 			if (WARN_ON(!info->control.vif)) {
-				ieee80211_free_txskb(&local->hw, skb);
+				__ieee80211_free_txskb(&local->hw, skb);
 				continue;
 			}
 
@@ -6719,7 +6731,7 @@ ieee80211_get_buffered_bc(struct ieee80211_hw *hw,
 			sdata = IEEE80211_DEV_TO_SUB_IF(skb->dev);
 		if (!ieee80211_tx_prepare(sdata, &tx, NULL, skb))
 			break;
-		ieee80211_free_txskb(hw, skb);
+		__ieee80211_free_txskb(hw, skb);
 	}
 
 	info = IEEE80211_SKB_CB(skb);

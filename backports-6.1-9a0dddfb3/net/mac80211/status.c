@@ -33,7 +33,7 @@ void ieee80211_tx_status_irqsafe(struct ieee80211_hw *hw,
 		skb_queue_len(&local->skb_queue_unreliable);
 	while (tmp > IEEE80211_IRQSAFE_QUEUE_LIMIT &&
 	       (skb = skb_dequeue(&local->skb_queue_unreliable))) {
-		ieee80211_free_txskb(hw, skb);
+		__ieee80211_free_txskb(hw, skb);
 		tmp--;
 		I802_DEBUG_INC(local->tx_status_drop);
 	}
@@ -52,7 +52,7 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 	if (info->flags & (IEEE80211_TX_CTL_NO_PS_BUFFER |
 			   IEEE80211_TX_CTL_AMPDU |
 			   IEEE80211_TX_CTL_HW_80211_ENCAP)) {
-		ieee80211_free_txskb(&local->hw, skb);
+		__ieee80211_free_txskb(&local->hw, skb);
 		return;
 	}
 
@@ -166,7 +166,7 @@ static void ieee80211_handle_filtered_frame(struct ieee80211_local *local,
 			   "dropped TX filtered frame, queue_len=%d PS=%d @%lu\n",
 			   skb_queue_len(&sta->tx_filtered[ac]),
 			   !!test_sta_flag(sta, WLAN_STA_PS_STA), jiffies);
-	ieee80211_free_txskb(&local->hw, skb);
+	__ieee80211_free_txskb(&local->hw, skb);
 }
 
 static void ieee80211_check_pending_bar(struct sta_info *sta, u8 *addr, u8 tid)
@@ -966,6 +966,8 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 	struct ieee80211_local *local = hw_to_local(hw);
 	struct ieee80211_tx_info *info = status->info;
 	struct sta_info *sta;
+	struct link_sta_info *link_sta = NULL;
+	int link_id = -1;
 	__le16 fc;
 	bool send_to_cooked;
 	bool acked;
@@ -973,10 +975,22 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 	struct ieee80211_bar *bar;
 	int tid = IEEE80211_NUM_TIDS;
 
+	lockdep_assert(rcu_read_lock_held());
+
 	fc = hdr->frame_control;
+	if (status->link_valid)
+		link_id = status->link_id;
 
 	if (status->sta) {
 		sta = container_of(status->sta, struct sta_info, sta);
+
+		if (link_id < 0)
+			link_sta = &sta->deflink;
+		else
+			link_sta = rcu_dereference(sta->link[link_id]);
+
+		if (WARN_ON_ONCE(!link_sta))
+			link_sta = &sta->deflink;
 
 		if (info->flags & IEEE80211_TX_STATUS_EOSP)
 			clear_sta_flag(sta, WLAN_STA_SP);
@@ -1039,10 +1053,13 @@ static void __ieee80211_tx_status(struct ieee80211_hw *hw,
 			ieee80211_handle_filtered_frame(local, sta, skb);
 			return;
 		} else if (ieee80211_is_data_present(fc)) {
-			if (!acked && !noack_success)
-				sta->deflink.status_stats.msdu_failed[tid]++;
+			if (sta->sta.valid_links)
+				link_sta->tx_stats.msdu[tid]++;
 
-			sta->deflink.status_stats.msdu_retries[tid] +=
+			if (!acked && !noack_success)
+				link_sta->status_stats.msdu_failed[tid]++;
+
+			link_sta->status_stats.msdu_retries[tid] +=
 				retry_count;
 		}
 
@@ -1147,12 +1164,34 @@ void ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 	struct ieee80211_sta *pubsta = status->sta;
 	struct sk_buff *skb = status->skb;
 	struct sta_info *sta = NULL;
+	struct link_sta_info *link_sta = NULL;
 	int rates_idx, retry_count;
+	int ac;
+	int link_id = -1;
 	bool acked, noack_success, ack_signal_valid;
 	u16 tx_time_est;
 
+	lockdep_assert(rcu_read_lock_held());
+
+	if (status->link_valid)
+		link_id = status->link_id;
+
 	if (pubsta) {
 		sta = container_of(pubsta, struct sta_info, sta);
+
+		if (link_id < 0)
+			link_sta = &sta->deflink;
+		else
+			link_sta = rcu_dereference(sta->link[link_id]);
+
+		if (WARN_ON_ONCE(!link_sta))
+			link_sta = &sta->deflink;
+
+		if (sta->sta.valid_links) {
+			ac = skb_get_queue_mapping(skb);
+			link_sta->tx_stats.bytes[ac] += skb->len;
+			link_sta->tx_stats.packets[ac]++;
+		}
 
 		if (status->n_rates)
 			sta->deflink.tx_stats.last_rate_info =
@@ -1185,8 +1224,8 @@ void ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 		struct ieee80211_sub_if_data *sdata = sta->sdata;
 
 		if (!acked && !noack_success)
-			sta->deflink.status_stats.retry_failed++;
-		sta->deflink.status_stats.retry_count += retry_count;
+			link_sta->status_stats.retry_failed++;
+		link_sta->status_stats.retry_count += retry_count;
 
 		if (ieee80211_hw_check(&local->hw, REPORTS_TX_ACK_STATUS)) {
 			if (sdata->vif.type == NL80211_IFTYPE_STATION &&
@@ -1195,13 +1234,13 @@ void ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 							acked, info->status.tx_time);
 
 			if (acked) {
-				sta->deflink.status_stats.last_ack = jiffies;
+				link_sta->status_stats.last_ack = jiffies;
 
-				if (sta->deflink.status_stats.lost_packets)
-					sta->deflink.status_stats.lost_packets = 0;
+				if (link_sta->status_stats.lost_packets)
+					link_sta->status_stats.lost_packets = 0;
 
 				/* Track when last packet was ACKed */
-				sta->deflink.status_stats.last_pkt_time = jiffies;
+				link_sta->status_stats.last_pkt_time = jiffies;
 
 				/* Reset connection monitor */
 				if (sdata->vif.type == NL80211_IFTYPE_STATION &&
@@ -1209,11 +1248,12 @@ void ieee80211_tx_status_ext(struct ieee80211_hw *hw,
 					sdata->u.mgd.probe_send_count = 0;
 
 				if (ack_signal_valid) {
-					sta->deflink.status_stats.last_ack_signal =
+					link_sta->status_stats.last_ack_signal =
 							 (s8)info->status.ack_signal;
-					sta->deflink.status_stats.ack_signal_filled = true;
-					ewma_avg_signal_add(&sta->deflink.status_stats.avg_ack_signal,
-							    -info->status.ack_signal);
+					link_sta->status_stats.ack_signal_filled = true;
+					ewma_avg_signal_add(
+						&link_sta->status_stats.avg_ack_signal,
+							-info->status.ack_signal);
 				}
 			} else if (test_sta_flag(sta, WLAN_STA_PS_STA)) {
 				/*
@@ -1364,13 +1404,33 @@ void ieee80211_report_low_ack(struct ieee80211_sta *pubsta, u32 num_packets)
 }
 EXPORT_SYMBOL(ieee80211_report_low_ack);
 
-void ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb)
+void __ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb)
 {
 	struct ieee80211_local *local = hw_to_local(hw);
 	ktime_t kt = ktime_set(0, 0);
 
 	ieee80211_report_used_skb(local, skb, true, kt);
 	dev_kfree_skb_any(skb);
+}
+EXPORT_SYMBOL(__ieee80211_free_txskb);
+
+void ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb)
+{
+	struct ieee80211_local *local = hw_to_local(hw);
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	struct sta_info *sta;
+	int ac;
+
+	rcu_read_lock();
+	sta = sta_info_get_by_addrs(local, hdr->addr1, hdr->addr2);
+	if (sta && sta->sta.valid_links) {
+		ac = skb_get_queue_mapping(skb);
+		sta->deflink.tx_stats.packets[ac]++;
+		sta->deflink.tx_stats.bytes[ac] += skb->len;
+	}
+	rcu_read_unlock();
+
+	__ieee80211_free_txskb(hw, skb);
 }
 EXPORT_SYMBOL(ieee80211_free_txskb);
 
@@ -1380,6 +1440,6 @@ void ieee80211_purge_tx_queue(struct ieee80211_hw *hw,
 	struct sk_buff *skb;
 
 	while ((skb = __skb_dequeue(skbs)))
-		ieee80211_free_txskb(hw, skb);
+		__ieee80211_free_txskb(hw, skb);
 }
 EXPORT_SYMBOL(ieee80211_purge_tx_queue);

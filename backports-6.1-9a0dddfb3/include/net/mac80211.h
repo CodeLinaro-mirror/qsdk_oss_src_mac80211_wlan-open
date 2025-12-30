@@ -1437,6 +1437,8 @@ struct ieee80211_tx_status {
 	struct sk_buff *skb;
 	struct ieee80211_rate_status *rates;
 	ktime_t ack_hwtstamp;
+	u8 link_valid;
+	int link_id;
 	u8 n_rates;
 
 #if LINUX_VERSION_IS_GEQ(4,19,0)
@@ -3511,12 +3513,26 @@ ieee80211_get_alt_retry_rate(const struct ieee80211_hw *hw,
 }
 
 /**
+ * __ieee80211_free_txskb - free TX skb
+ * @hw: the hardware
+ * @skbs: the skbs
+ *
+ * Free a transmit skb. Use this function when some failure
+ * to transmit happened and thus status cannot be reported.
+ */
+void __ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb);
+
+/**
  * ieee80211_free_txskb - free TX skb
  * @hw: the hardware
  * @skb: the skb
  *
  * Free a transmit skb. Use this function when some failure
  * to transmit happened and thus status cannot be reported.
+ *
+ * This function also looks up the station associated with the
+ * frame and updates the per-station transmit statistics (packets
+ * and bytes)
  */
 void ieee80211_free_txskb(struct ieee80211_hw *hw, struct sk_buff *skb);
 
