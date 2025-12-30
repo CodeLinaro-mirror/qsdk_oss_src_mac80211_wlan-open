@@ -1677,6 +1677,9 @@ struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	__le32 success_bytes;
 } __packed;
 
+#define HTT_PPDU_STATS_FLUSH_NUM_MSDU_M         GENMASK(30, 17)
+#define HTT_PPDU_STATS_FLUSH_GET_NUM_MSDU(_val) \
+	le32_get_bits(_val, HTT_PPDU_STATS_FLUSH_NUM_MSDU_M)
 /* Flush stats for failed tx completions */
 struct htt_ppdu_stats_cmpltn_flush {
 	__le32 drop_reason;

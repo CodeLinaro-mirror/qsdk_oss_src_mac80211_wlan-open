@@ -249,12 +249,14 @@ struct ath12k_htt_data_stats {
 
 struct ath12k_htt_tx_stats {
 	struct ath12k_htt_data_stats stats[ATH12K_STATS_TYPE_MAX];
+	u8 rate_idx;
 	u64 tx_duration;
 	u64 ba_fails;
 	u64 ack_fails;
 	u16 ru_start;
 	u16 ru_tones;
 	u32 mu_group[MAX_MU_GROUP_ID];
+	u8 ppdu_type;
 };
 
 #define QOS_TID_MAX 8
