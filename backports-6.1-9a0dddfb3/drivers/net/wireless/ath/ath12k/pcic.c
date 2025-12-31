@@ -1379,3 +1379,142 @@ void ath12k_pci_ppeds_free_interrupts(struct ath12k_base *ab)
 	devm_free_irq(ab->dev, ab->dp->ppe.ppeds_irq[PPEDS_IRQ_PPE_WBM2SW_REL], ab);
 }
 #endif
+
+static void ath12k_pcic_sync_mgmt_irqs(struct ath12k_base *ab)
+{
+	int i, j;
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+
+	for (i = 0; i < mgmt->num_irq_grp; i++) {
+		struct ath12k_mgmt_irq_grp *irq_grp = &mgmt->irq_grp[i];
+
+		for (j = 0; j < irq_grp->num_irq; j++)
+			synchronize_irq(irq_grp->irqs[j]);
+	}
+}
+
+void ath12k_pcic_mgmt_irqs_enable(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	int i;
+
+	if (!mgmt)
+		return;
+
+	for (i = 0; i < mgmt->num_irq_grp; i++)
+		ath12k_mgmt_irq_grp_enable(&mgmt->irq_grp[i]);
+
+	set_bit(ATH12K_FLAG_MGMT_IRQ_ENABLED, &ab->dev_flags);
+}
+
+void ath12k_pcic_mgmt_irqs_disable(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	int i;
+
+	if (!mgmt || !test_bit(ATH12K_FLAG_MGMT_IRQ_ENABLED, &ab->dev_flags))
+		return;
+
+	for (i = 0; i < mgmt->num_irq_grp; i++)
+		ath12k_mgmt_irq_grp_disable(&mgmt->irq_grp[i]);
+
+	ath12k_pcic_sync_mgmt_irqs(ab);
+
+	clear_bit(ATH12K_FLAG_MGMT_IRQ_ENABLED, &ab->dev_flags);
+}
+
+#if LINUX_VERSION_IS_GEQ(6, 13, 0)
+static irqreturn_t ath12k_pcic_mgmt_interrupt_handler(int irq, void *arg)
+{
+	struct ath12k_mgmt_irq_grp *irq_grp = arg;
+
+	ath12k_mgmt_irq_grp_disable(irq_grp);
+
+	queue_work(system_bh_wq, &irq_grp->intr_wq);
+
+	return IRQ_HANDLED;
+}
+#else /* LINUX_VERSION_IS_GEQ(6, 13, 0) */
+static irqreturn_t ath12k_pcic_mgmt_interrupt_handler(int irq, void *arg)
+{
+	struct ath12k_mgmt_irq_grp *irq_grp = arg;
+
+	ath12k_mgmt_irq_grp_disable(irq_grp);
+
+	tasklet_schedule(&irq_grp->intr_tq);
+
+	return IRQ_HANDLED;
+}
+#endif /* LINUX_VERSION_IS_GEQ(6,13,0) */
+
+int ath12k_pcic_mgmt_irq_config(struct ath12k_base *ab, struct ath12k_mgmt *mgmt)
+{
+	struct ath12k_pci *ar_pci = (struct ath12k_pci *)ab->drv_priv;
+	u32 user_base_data = 0, base_vector = 0;
+	struct ath12k_mgmt_irq_grp *irq_grp;
+	int i, j, ret, num_vectors = 0;
+	char irq_name[MGMT_IRQ_NAME_LEN];
+
+	ret = ath12k_pcic_get_user_msi_assignment(ab, "MGMT", &num_vectors,
+						  &user_base_data, &base_vector);
+	if (ret < 0)
+		return ret;
+
+	for (i = 0; i < mgmt->num_irq_grp; i++) {
+		irq_grp = &mgmt->irq_grp[i];
+		irq_grp->ab = ab;
+
+		for (j = 0; j < irq_grp->num_irq && j < ATH12K_MGMT_IRQ_PER_GRP_NUM_MAX;
+		     j++) {
+			int vector = base_vector + (irq_grp->grp_id % num_vectors);
+			int irq = ath12k_hif_get_msi_irq(ab, vector);
+			u8 bus_id = pci_domain_nr(ar_pci->pdev->bus);
+
+			if (bus_id > ATH12K_MAX_PCI_DOMAINS) {
+				ath12k_dbg(ab, ATH12K_DBG_PCI, "bus_id:%d",
+					   bus_id);
+				bus_id = ATH12K_MAX_PCI_DOMAINS;
+			}
+
+			ath12k_dbg(ab, ATH12K_DBG_PCI, "mgmt irq:%d group:%d", irq,
+				   irq_grp->grp_id);
+
+			scnprintf(irq_name, MGMT_IRQ_NAME_LEN,
+				  "pci%u_wlan_mgmt%u", bus_id, i);
+			ath12k_dbg(ab, ATH12K_DBG_PCI, "PCI bus id: pci:%d IRQ Name:%s",
+				   bus_id, irq_name);
+			strscpy(irq_grp->irq_name, irq_name,
+				sizeof(irq_grp->irq_name));
+
+			irq_set_status_flags(irq, IRQ_DISABLE_UNLAZY);
+
+			ret = request_irq(irq,
+					  ath12k_pcic_mgmt_interrupt_handler,
+					  IRQF_SHARED, irq_grp->irq_name,
+					  irq_grp);
+			if (ret) {
+				ath12k_err(ab, "Failed to request irq %d: %d",
+					   vector, ret);
+				return ret;
+			}
+
+			irq_grp->irqs[j] = irq;
+			disable_irq_nosync(irq_grp->irqs[j]);
+		}
+	}
+
+	return 0;
+}
+
+void ath12k_pcic_mgmt_irq_free(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	int i, j;
+
+	for (i = 0; i < ATH12K_MGMT_IRQ_GRP_NUM_MAX; i++) {
+		struct ath12k_mgmt_irq_grp *irq_grp = &mgmt->irq_grp[i];
+
+		for (j = 0; j < irq_grp->num_irq; j++)
+			free_irq(irq_grp->irqs[j], irq_grp);
+	}
+}

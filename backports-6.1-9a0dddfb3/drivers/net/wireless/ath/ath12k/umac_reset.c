@@ -370,6 +370,7 @@ void ath12k_umac_reset_handle_pre_reset(struct ath12k_base *ab)
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 
 	set_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
+	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_hif_irq_disable(ab);
 	atomic_inc(&mlo_umac_reset->response_chip);
 	ab->dp_umac_reset.umac_pre_reset_in_prog = true;
@@ -408,6 +409,7 @@ void ath12k_umac_reset_handle_post_reset_complete(struct ath12k_base *ab)
 		ath12k_dp_ppeds_interrupt_start(ab);
 	}
 #endif
+	ath12k_hif_mgmt_irq_enable(ab);
 	clear_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags);
 	ath12k_umac_reset_notify_target_sync_and_send(ab, ATH12K_UMAC_RESET_TX_CMD_POST_RESET_COMPLETE_DONE);
 	return;

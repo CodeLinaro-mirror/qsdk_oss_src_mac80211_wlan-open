@@ -1152,6 +1152,10 @@ static const struct ath12k_hif_ops ath12k_pci_hif_ops = {
 	.dp_umac_reset_enable_irq = ath12k_pci_dp_umac_reset_enable_irq,
 	.dp_umac_reset_free_irq = ath12k_pci_dp_umac_reset_free_irq,
 	.get_iova = ath12k_pci_get_iova,
+	.mgmt_irq_setup = ath12k_pcic_mgmt_irq_config,
+	.mgmt_irq_cleanup = ath12k_pcic_mgmt_irq_free,
+	.mgmt_irq_enable = ath12k_pcic_mgmt_irqs_enable,
+	.mgmt_irq_disable = ath12k_pcic_mgmt_irqs_disable,
 };
 
 static enum ath12k_device_family

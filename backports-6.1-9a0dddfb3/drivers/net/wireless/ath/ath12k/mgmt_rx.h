@@ -61,6 +61,11 @@ struct ath12k_mgmt {
 int ath12k_mgmt_device_init(struct ath12k_mgmt *mgmt);
 void ath12k_mgmt_device_deinit(struct ath12k_mgmt *mgmt);
 
+void ath12k_mgmt_irq_grp_setup(struct ath12k_mgmt *mgmt);
+void ath12k_mgmt_irq_grp_cleanup(struct ath12k_mgmt *mgmt);
+void ath12k_mgmt_irq_grp_enable(struct ath12k_mgmt_irq_grp *irq_grp);
+void ath12k_mgmt_irq_grp_disable(struct ath12k_mgmt_irq_grp *irq_grp);
+
 static inline int ath12k_mgmt_arch_op_device_init(struct ath12k_mgmt *mgmt)
 {
 	if (!mgmt->arch_ops->mgmt_op_device_init)
