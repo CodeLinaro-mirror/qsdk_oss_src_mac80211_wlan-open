@@ -1976,7 +1976,7 @@ void ath12k_dp_mon_skb_remove_frag(struct ath12k_dp *dp, struct sk_buff *skb,
 	if (unlikely(!page))
 		return;
 
-	frag_len = ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, skb, idx);
+	frag_len = ath12k_dp_mon_get_frag_size_by_idx(dp, skb, idx);
 	put_page(page);
 	skb->len -= frag_len;
 	skb->data_len -= frag_len;
@@ -2062,8 +2062,8 @@ ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_c
 }
 EXPORT_SYMBOL(ath12k_dp_mon_cnt_skb_and_frags);
 
-u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp,
-					     struct sk_buff *skb, u8 idx)
+u32 ath12k_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp,
+				       struct sk_buff *skb, u8 idx)
 {
 	u32 size = 0;
 
@@ -2072,7 +2072,7 @@ u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp,
 
 	return size;
 }
-EXPORT_SYMBOL(ath12k_wifi7_dp_mon_get_frag_size_by_idx);
+EXPORT_SYMBOL(ath12k_dp_mon_get_frag_size_by_idx);
 
 void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx)
 {
