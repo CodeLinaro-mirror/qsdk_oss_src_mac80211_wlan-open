@@ -4148,6 +4148,9 @@ void ath12k_wifi7_dp_pdev_free(struct ath12k_base *ab)
 	struct ath12k *ar;
 	int i;
 
+	if (ab->powered_off)
+		return;
+
 	spin_lock_bh(&dp->dp_lock);
 	for (i = 0; i < ab->num_radios; i++) {
 		ar = ab->pdevs[i].ar;

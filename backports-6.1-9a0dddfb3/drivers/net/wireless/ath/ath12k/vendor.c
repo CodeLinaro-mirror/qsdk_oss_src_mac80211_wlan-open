@@ -5888,6 +5888,14 @@ static int ath12k_vendor_set_sdwf_config(struct ath12k_base *ab,
 		ul_params = true;
 	}
 
+	if (ath12k_check_erp_power_down(ab->ag)) {
+		ret = ath12k_core_power_up(ab->ag);
+		if (ret) {
+			ath12k_err(ab, "power up is failed\n");
+			return ret;
+		}
+	}
+
 	/* Get the required params */
 
 	if (dl_params) {

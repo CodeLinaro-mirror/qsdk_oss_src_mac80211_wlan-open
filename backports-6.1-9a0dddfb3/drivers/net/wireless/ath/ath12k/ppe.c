@@ -1678,7 +1678,7 @@ void ath12k_dp_ppeds_service_enable_disable(struct ath12k_base *ab,
 
 void ath12k_dp_ppeds_interrupt_stop(struct ath12k_base *ab)
 {
-	if (ab->pm_suspend)
+	if (ab->powered_off)
 		return;
 
 	ath12k_hif_ppeds_irq_disable(ab, PPEDS_IRQ_REO2PPE);

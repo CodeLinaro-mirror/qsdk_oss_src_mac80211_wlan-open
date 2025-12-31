@@ -1985,6 +1985,9 @@ static int ath12k_dp_setup(struct ath12k_base *ab)
 
 void ath12k_dp_cmn_device_deinit(struct ath12k_dp *dp)
 {
+	if (dp->ab->powered_off)
+		return;
+
 	ath12k_dp_arch_op_mlo_deinit(dp);
 	ath12k_dp_arch_op_device_deinit(dp);
 

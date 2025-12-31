@@ -9115,6 +9115,9 @@ int ath12k_mac_op_hw_scan(struct ieee80211_hw *hw,
 		ret = ath12k_core_power_up(ag);
 		if (ret)
 			return ret;
+
+		if (ath12k_core_radio_start(ah))
+			return ret;
 	}
 
 	if (!hw_req) {
@@ -16058,7 +16061,8 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 	if (ath12k_check_erp_power_down(ag) &&
 	    !ath12k_hw_group_recovery_in_progress(ag)) {
 		ret = ath12k_core_power_up(ag);
-		return ret;
+		if (ret)
+			return ret;
 	}
 
 	ath12k_drain_tx(ah);
@@ -16101,12 +16105,9 @@ int ath12k_mac_op_start(struct ieee80211_hw *hw)
 				goto fail_start;
 			}
 
-			if (ath12k_check_erp_power_down(ag)) {
-				ar->ab->powerup_triggered = false;
-				ar->pdev_suspend = false;
-			}
+			ar->ab->powerup_triggered = false;
+			ar->pdev_suspend = false;
 		}
-		ar->pdev_suspend = false;
 	}
 
 	if (ath12k_check_erp_power_down(ag))
@@ -16190,7 +16191,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 	int ret;
 	enum dp_mon_stats_mode mode = ATH12k_DP_MON_BASIC_STATS;
 
-	if (ar->ab->pm_suspend)
+	if (ar->ab->powered_off)
 		return;
 
 	lockdep_assert_held(&ah->hw_mutex);
@@ -16226,8 +16227,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 
 	ath12k_debugfs_nrp_cleanup_all(ar);
 
-	if ((ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) &&
-	    !ar->allocated_vdev_map && !ar->pdev_suspend) {
+	if (!ar->allocated_vdev_map && !ar->pdev_suspend) {
 		ret = ath12k_mac_pdev_suspend(ar);
 		if (ret)
 			ath12k_warn(ar->ab, "pdev suspend command is failed %d\n", ret);
@@ -16247,6 +16247,7 @@ void ath12k_mac_stop(struct ath12k *ar)
 void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
+	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	struct ath12k *ar;
 	int i;
 
@@ -16265,6 +16266,9 @@ void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 	}
 
 	mutex_unlock(&ah->hw_mutex);
+
+	if (ath12k_erp_get_sm_state() != ATH12K_ERP_ENTER_COMPLETE)
+		ath12k_core_cleanup_power_down_q6(ag, false);
 }
 EXPORT_SYMBOL(ath12k_mac_op_stop);
 
@@ -17657,7 +17661,7 @@ err_vdev_del:
 	if (!ar->allocated_vdev_map && !arvif->is_scan_vif) {
 		if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE) {
 			if (ath12k_mac_validate_active_radio_count(ar->ah))
-				ath12k_core_cleanup_power_down_q6(ab->ag);
+				ath12k_core_cleanup_power_down_q6(ab->ag, true);
 		}
 	}
 
@@ -17924,7 +17928,7 @@ int ath12k_mac_op_ampdu_action(struct ieee80211_hw *hw,
 }
 EXPORT_SYMBOL(ath12k_mac_op_ampdu_action);
 
-int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah)
+int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah, bool standby_teardown)
 {
 	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	struct ath12k *ar;
@@ -17933,7 +17937,15 @@ int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah)
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
 	for_each_ar(ah, ar, i) {
-		if (!ar->teardown_complete_event) {
+		if (ar->teardown_complete_event)
+			continue;
+
+		if (ar->ab->is_bypassed) {
+			ar->teardown_complete_event = true;
+			continue;
+		}
+
+		if (standby_teardown) {
 			if (ar->allocated_vdev_map)
 				erp_standby_mode = true;
 			else
@@ -17942,13 +17954,18 @@ int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah)
 			ret = ath12k_wmi_mlo_teardown(ar, !ag->trigger_umac_reset,
 						      WMI_MLO_TEARDOWN_REASON_STANDBY_DOWN,
 						      erp_standby_mode);
-			if (ret) {
-				ath12k_err(ar->ab, "failed to teardown MLO for pdev_idx  %d: %d\n",
-					   ar->pdev_idx, ret);
-				return ret;
-			}
-
 			ag->trigger_umac_reset = true;
+		} else {
+			ag->mlo_teardown = true;
+			ret = ath12k_wmi_mlo_teardown(ar, false,
+						WMI_MLO_TEARDOWN_REASON_HOST_INITIATED,
+						false);
+		}
+
+		if (ret) {
+			ath12k_err(ar->ab, "failed to teardown MLO for pdev_idx  %d: %d\n",
+				   ar->pdev_idx, ret);
+			return ret;
 		}
 	}
 
@@ -17969,6 +17986,9 @@ int ath12k_mac_op_add_chanctx(struct ieee80211_hw *hw,
 	if (ath12k_check_erp_power_down(ag)) {
 		ret = ath12k_core_power_up(ag);
 		if (ret)
+			return ret;
+
+		if (ath12k_core_radio_start(ah))
 			return ret;
 	}
 

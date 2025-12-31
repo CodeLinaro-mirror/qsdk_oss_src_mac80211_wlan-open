@@ -495,7 +495,7 @@ void ath12k_mac_op_set_dscp_tid(struct ieee80211_hw *hw,
 				struct ieee80211_vif *vif,
 				struct cfg80211_qos_map *qos_map,
 				unsigned int link_id);
-int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah);
+int ath12k_mac_mlo_standby_teardown(struct ath12k_hw *ah, bool standby_teardown);
 void ath12k_mac_stop(struct ath12k *ar);
 bool ath12k_mac_validate_active_radio_count(struct ath12k_hw *ah);
 int ath12k_mac_pdev_suspend(struct ath12k *ar);

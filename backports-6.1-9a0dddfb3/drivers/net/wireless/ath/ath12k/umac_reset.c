@@ -219,7 +219,7 @@ void ath12k_umac_reset_completion(struct ath12k_base *ab)
 	struct ath12k_hw_group *ag = ab->ag;
 	struct ath12k_mlo_dp_umac_reset *mlo_umac_reset = &ag->mlo_umac_reset;
 
-	if (!mlo_umac_reset)
+	if (!mlo_umac_reset || ab->powered_off)
 		return;
 
 	if (!(mlo_umac_reset->umac_reset_info & BIT(0)))
@@ -537,7 +537,7 @@ void ath12k_dp_umac_reset_deinit(struct ath12k_base *ab)
 {
 	struct ath12k_dp_umac_reset *umac_reset;
 
-	if (!ab->hw_params->support_umac_reset)
+	if (!ab->hw_params->support_umac_reset || ab->powered_off)
 		return;
 
 	umac_reset = &ab->dp_umac_reset;

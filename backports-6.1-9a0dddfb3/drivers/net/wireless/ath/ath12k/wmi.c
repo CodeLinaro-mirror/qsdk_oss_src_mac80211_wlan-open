@@ -13092,9 +13092,10 @@ static void ath12k_wmi_event_teardown_complete(struct ath12k_base *ab,
 				complete_flag = false;
 		}
 	}
-	if (complete_flag && ag->trigger_umac_reset) {
+	if (complete_flag && (ag->trigger_umac_reset || ag->mlo_teardown)) {
                 complete(&ag->umac_reset_complete);
 		ag->trigger_umac_reset = false;
+		ag->mlo_teardown = false;
 	}
 }
 
@@ -16572,6 +16573,9 @@ int ath12k_wmi_attach(struct ath12k_base *ab)
 void ath12k_wmi_detach(struct ath12k_base *ab)
 {
 	int i;
+
+	if (!test_bit(ATH12K_FLAG_WMI_INIT_DONE, &ab->dev_flags))
+		return;
 
 	/* TODO: Deinit wmi resource specific to SOC as required */
 
