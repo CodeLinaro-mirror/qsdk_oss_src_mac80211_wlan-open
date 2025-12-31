@@ -37,7 +37,8 @@ ath12k-y += core.o \
 	    erp.o \
 	    vendor_services.o \
 	    pktlog.o \
-	    ce_stats.o
+	    ce_stats.o \
+	    mgmt_rx.o
 
 ath12k-$(CPTCFG_ATHDEBUG) += athdbg_if.o
 ath12k-$(CPTCFG_ATH12K_AHB) += ahb.o

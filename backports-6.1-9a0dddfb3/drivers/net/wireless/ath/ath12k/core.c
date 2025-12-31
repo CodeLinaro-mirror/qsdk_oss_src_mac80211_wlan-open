@@ -1008,6 +1008,7 @@ static void ath12k_core_cleanup(struct ath12k_base *ab)
 	ath12k_wmi_detach(ab);
 	mutex_unlock(&ab->core_lock);
 
+	ath12k_mgmt_device_deinit(ab->mgmt);
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_hal_srng_deinit(ab);
 	ath12k_dp_umac_reset_deinit(ab);
@@ -1096,6 +1097,7 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 	ath12k_acpi_stop(ab);
 	ath12k_hif_stop(ab);
 	ath12k_wmi_detach(ab);
+	ath12k_mgmt_device_deinit(ab->mgmt);
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_cfg_deinit(ab);
 
@@ -2012,6 +2014,11 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 		goto err_firmware_stop;
 	}
 
+	ret = ath12k_mgmt_device_init(ab->mgmt);
+	if (ret) {
+		ath12k_err(ab, "Failed to init MGMT: %d", ret);
+		goto err_dp_free;
+	}
 
 	mutex_lock(&ag->mutex);
 	mutex_lock(&ab->core_lock);
@@ -2024,7 +2031,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready)
 	ret = ath12k_core_start(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to start core: %d\n", ret);
-		goto err_dp_free;
+		goto err_mgmt_free;
 	}
 
 	mutex_unlock(&ab->core_lock);
@@ -2158,6 +2165,9 @@ err_core_stop:
 	}
 	mutex_unlock(&ag->mutex);
 	goto exit;
+
+err_mgmt_free:
+	ath12k_mgmt_device_deinit(ab->mgmt);
 
 err_dp_free:
 	ath12k_dp_cmn_device_deinit(ab->dp);
