@@ -619,6 +619,13 @@ struct ath12k_vap_cfg {
 	u32 bcn_tx_power;
 };
 
+struct ath12k_rssi_deauth_config {
+	bool enabled;
+	s8 rssi_threshold;
+	u32 grace_samples;
+	s8 noise_floor_offset;
+} __packed;
+
 struct ath12k_link_vif {
 	u32 vdev_id;
 	u32 beacon_interval;
@@ -648,6 +655,8 @@ struct ath12k_link_vif {
 	u8 link_id;
 	struct ath12k_vif *ahvif;
 	struct ath12k_rekey_data rekey_data;
+
+	struct ath12k_rssi_deauth_config rssi_deauth_cfg;
 
 	u8 current_cntdown_counter;
 	struct ath12k_link_stats link_stats;
@@ -922,6 +931,10 @@ struct ath12k_vif {
 	 */
 	struct ieee80211_chanctx_conf chanctx;
 	struct ath12k_reg_tpc_power_info reg_tpc_info;
+
+	/* Generic VIF event worker */
+	struct wiphy_work event_work;
+	struct llist_head event_list;
 };
 
 struct ath12k_vif_iter {
