@@ -5691,7 +5691,8 @@ struct cfg80211_ops {
 
 	int	(*set_cqm_rssi_config)(struct wiphy *wiphy,
 				       struct net_device *dev,
-				       s32 rssi_thold, u32 rssi_hyst);
+				       s32 rssi_thold, u32 rssi_hyst,
+				       int link_id);
 
 	int	(*set_cqm_rssi_range_config)(struct wiphy *wiphy,
 					     struct net_device *dev,

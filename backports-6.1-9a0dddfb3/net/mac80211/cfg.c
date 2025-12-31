@@ -3886,28 +3886,42 @@ static void ieee80211_set_cqm_rssi_link(struct ieee80211_sub_if_data *sdata,
 	conf->cqm_rssi_high = rssi_high;
 	link->u.mgd.last_cqm_event_signal = 0;
 
-	if (!ieee80211_vif_link_active(&sdata->vif, link->link_id))
-		return;
+	if (sdata->vif.type == NL80211_IFTYPE_STATION ||
+	    sdata->vif.type == NL80211_IFTYPE_P2P_CLIENT) {
+		if (!ieee80211_vif_link_active(&sdata->vif, link->link_id))
+			return;
 
-	if (sdata->u.mgd.associated &&
-	    (sdata->vif.driver_flags & IEEE80211_VIF_SUPPORTS_CQM_RSSI))
-		ieee80211_link_info_change_notify(sdata, link, BSS_CHANGED_CQM);
+		if (sdata->u.mgd.associated &&
+		    (sdata->vif.driver_flags & IEEE80211_VIF_SUPPORTS_CQM_RSSI))
+			ieee80211_link_info_change_notify(sdata, link, BSS_CHANGED_CQM);
+	} else if (sdata->vif.type == NL80211_IFTYPE_AP) {
+		if (sdata->vif.driver_flags & IEEE80211_VIF_SUPPORTS_CQM_RSSI)
+			ieee80211_link_info_change_notify(sdata, link, BSS_CHANGED_CQM);
+	}
 }
 
 static int ieee80211_set_cqm_rssi_config(struct wiphy *wiphy,
 					 struct net_device *dev,
-					 s32 rssi_thold, u32 rssi_hyst)
+					 s32 rssi_thold, u32 rssi_hyst,
+					 int link_id)
 {
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
 	struct ieee80211_vif *vif = &sdata->vif;
-	int link_id;
+	int idx;
 
 	if (vif->driver_flags & IEEE80211_VIF_BEACON_FILTER &&
 	    !(vif->driver_flags & IEEE80211_VIF_SUPPORTS_CQM_RSSI))
 		return -EOPNOTSUPP;
 
-	/* For MLD, handle CQM change on all the active links */
-	for (link_id = 0; link_id < IEEE80211_MLD_MAX_NUM_LINKS; link_id++) {
+	if (link_id < 0) {
+		for (idx = 0; idx < IEEE80211_MLD_MAX_NUM_LINKS; idx++) {
+			struct ieee80211_link_data *link =
+				sdata_dereference(sdata->link[idx], sdata);
+
+			ieee80211_set_cqm_rssi_link(sdata, link, rssi_thold, rssi_hyst,
+						    0, 0);
+		}
+	} else {
 		struct ieee80211_link_data *link =
 			sdata_dereference(sdata->link[link_id], sdata);
 

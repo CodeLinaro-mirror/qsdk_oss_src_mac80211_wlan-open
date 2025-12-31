@@ -1598,24 +1598,27 @@ TRACE_EVENT(rdev_update_connect_params,
 TRACE_EVENT(rdev_set_cqm_rssi_config,
 	TP_PROTO(struct wiphy *wiphy,
 		 struct net_device *netdev, s32 rssi_thold,
-		 u32 rssi_hyst),
-	TP_ARGS(wiphy, netdev, rssi_thold, rssi_hyst),
+		 u32 rssi_hyst, int link_id),
+	TP_ARGS(wiphy, netdev, rssi_thold, rssi_hyst, link_id),
 	TP_STRUCT__entry(
 		WIPHY_ENTRY
 		NETDEV_ENTRY
 		__field(s32, rssi_thold)
 		__field(u32, rssi_hyst)
+		__field(int, link_id)
 	),
 	TP_fast_assign(
 		WIPHY_ASSIGN;
 		NETDEV_ASSIGN;
 		__entry->rssi_thold = rssi_thold;
 		__entry->rssi_hyst = rssi_hyst;
+		__entry->link_id = link_id;
 	),
 	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT
-		  ", rssi_thold: %d, rssi_hyst: %u ",
+		  ", rssi_thold: %d, rssi_hyst: %u link_id: %u",
 		  WIPHY_PR_ARG, NETDEV_PR_ARG,
-		 __entry->rssi_thold, __entry->rssi_hyst)
+		 __entry->rssi_thold, __entry->rssi_hyst,
+		 __entry->link_id)
 );
 
 TRACE_EVENT(rdev_set_cqm_rssi_range_config,
