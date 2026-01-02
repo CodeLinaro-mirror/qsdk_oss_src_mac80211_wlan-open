@@ -17495,6 +17495,9 @@ static void ath12k_mac_vif_unref(struct ath12k_dp *dp, struct ieee80211_vif *vif
 			tx_spt_page = j + i * ATH12K_TX_SPT_PAGES_PER_POOL;
 			tx_desc_info = dp->txbaddr[tx_spt_page];
 
+			if (!tx_desc_info)
+				continue;
+
 			for (k = 0; k < ATH12K_MAX_SPT_ENTRIES; k++) {
 				if (!tx_desc_info[k].in_use)
 					continue;
@@ -17563,6 +17566,7 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
 	struct ath12k_dp_link_vif *dp_link_vif;
 	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp;
 	unsigned long time_left;
 	int ret = -1;
 
@@ -17628,13 +17632,16 @@ err_vdev_del:
 		     ath12k_mac_vif_txmgmt_idr_remove, vif);
 	spin_unlock_bh(&ar->data_lock);
 
-	ath12k_mac_vif_unref(ath12k_ab_to_dp(ab), vif);
-	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
-	ath12k_dp_tx_put_bank_profile(ath12k_ab_to_dp(ab), dp_link_vif->bank_id);
+	dp = ath12k_ab_to_dp(ab);
+	ath12k_mac_vif_unref(dp, vif);
+	if (dp->bank_profiles) {
+		dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
+		ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
 
-	if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)
-		ath12k_dp_tx_put_bank_profile(ath12k_ab_to_dp(ab),
-					      arvif->splitphy_ds_bank_id);
+		if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)
+			ath12k_dp_tx_put_bank_profile(dp,
+						      arvif->splitphy_ds_bank_id);
+	}
 
 	arvif->key_cipher = INVALID_CIPHER;
 
