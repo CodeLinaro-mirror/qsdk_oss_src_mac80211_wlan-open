@@ -183,6 +183,10 @@ void athdbg_collect_reference_segments(struct ath12k_base *ab)
 
 			vdev_bitmap = ar->allocated_vdev_map;
 
+			ab = ar->ab;
+			if (!ab)
+				continue;
+
 			for (bit_pos = 0; bit_pos < 32; bit_pos++) {
 				if (!(vdev_bitmap & BIT(bit_pos)))
 					continue;
@@ -261,6 +265,10 @@ void athdbg_free_reference_segments(struct ath12k_base *ab)
 
 			vdev_bitmap = ar->allocated_vdev_map;
 
+			ab = ar->ab;
+			if (!ab)
+				continue;
+
 			for (bit_pos = 0; bit_pos < 32; bit_pos++) {
 				if (!(vdev_bitmap & BIT(bit_pos)))
 					continue;
@@ -300,6 +308,7 @@ EXPORT_SYMBOL(athdbg_free_reference_segments);
 
 void athdbg_do_dump_minidump(struct ath12k_base *ab)
 {
+
 	if (!ab || minidump_state != ENABLE_MINIDUMP)
 		return;
 
