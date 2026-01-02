@@ -1211,7 +1211,8 @@ bool ath12k_mac_is_ml_arvif(struct ath12k_link_vif *arvif)
 	if (ath12k_mac_is_bridge_vdev(arvif))
 		return true;
 
-	if (ahvif->vif->valid_links & BIT(arvif->link_id))
+	if ((ahvif->vif->valid_links & BIT(arvif->link_id)) &&
+	    !(ahvif->repurposed_links & BIT(arvif->link_id)))
 		return true;
 
 	return false;
@@ -6297,6 +6298,8 @@ static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
 	lockdep_assert_wiphy(ah->hw->wiphy);
 
 	ahvif->links_map &= ~BIT(arvif->link_id);
+	ahvif->repurposed_links &= ~BIT(arvif->link_id);
+
 	rcu_assign_pointer(ahvif->link[arvif->link_id], NULL);
 	synchronize_rcu();
 
@@ -19136,6 +19139,9 @@ ath12k_mac_mlo_get_vdev_args(struct ath12k_link_vif *arvif,
 	if (hweight16(ahvif->vif->valid_links) > ATH12K_WMI_MLO_MAX_LINKS)
 		return;
 
+	if (ahvif->repurposed_links & BIT(arvif->link_id))
+		return;
+
 	ml_arg->enabled = true;
 
 	/* Driver always add a new link via VDEV START, FW takes
@@ -19158,6 +19164,12 @@ ath12k_mac_mlo_get_vdev_args(struct ath12k_link_vif *arvif,
 			continue;
 
 		if (arvif == arvif_p)
+			continue;
+
+		/* if arvif_p is repurposed one, do not add its info in partner
+		 * info, just continue.
+		 */
+		if (ahvif->repurposed_links & BIT(arvif_p->link_id))
 			continue;
 
 		if (!arvif_p->is_started)

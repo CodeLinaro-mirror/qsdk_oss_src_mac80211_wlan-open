@@ -939,6 +939,7 @@ struct ath12k_vif {
 #endif /* CPTCFG_ATH12K_DEBUGFS */
 
 	struct ath12k_mgmt_frame_stats mgmt_stats;
+	u16 repurposed_links;
 
 	/* Must be last - ends in a flexible-array member.
 	 *
