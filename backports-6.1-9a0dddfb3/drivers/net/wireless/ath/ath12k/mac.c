@@ -20225,14 +20225,16 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 	 * to the new vdev in ar. So instead of returning error, handle it?
 	 */
 	for (i = 0; i < n_vifs; i++) {
+		curr_ar = ath12k_get_ar_by_ctx(hw, vifs[i].old_ctx);
 		if (vifs[i].old_ctx->def.chan->band !=
 		    vifs[i].new_ctx->def.chan->band) {
-			WARN_ON(1);
-			ret = -EINVAL;
-			break;
+			if (!ath12k_is_scan_radio(curr_ar)) {
+				WARN_ON(1);
+				ret = -EINVAL;
+				break;
+			}
 		}
 
-		curr_ar = ath12k_get_ar_by_ctx(hw, vifs[i].old_ctx);
 		new_ar = ath12k_get_ar_by_ctx(hw, vifs[i].new_ctx);
 		if (!curr_ar || !new_ar) {
 			ath12k_err(NULL,
