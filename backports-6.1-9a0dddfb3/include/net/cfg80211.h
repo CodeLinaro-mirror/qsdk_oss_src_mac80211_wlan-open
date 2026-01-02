@@ -7261,6 +7261,8 @@ enum ieee80211_ap_reg_power {
  * @link_removal_flag: ML link reconfigure removal params updated on anyone
  * 	wdev link
  * @radio_mask: Bitmask of radios that this interface is allowed to operate on.
+ * @repurposed_links: Bitmap of links of MLD, which are repurposed to non-11be
+ *	 mode.
  */
 struct wireless_dev {
 	struct wiphy *wiphy;
@@ -7390,6 +7392,7 @@ struct wireless_dev {
 	bool link_removal_flag;
 	bool ttlm_expec_dur_update_flag;
 	u8 vap_submode;
+	u16 repurposed_links;
 };
 
 #define WDEV_VAP_SUBMODE_NONE  0
@@ -11058,4 +11061,22 @@ int cfg80211_adv_ttlm_evt_notify(struct net_device *dev, gfp_t gfp,
 int cfg80211_rx_send_mscs_tuple(struct net_device *dev, const u8 *addr,
 				struct cfg80211_qm_tclas4_params flow_params,
 				u8 tid);
+
+/**
+ * cfg80211_set_repurpose_link - Mark a link for repurposing
+ * @wdev: wireless device
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int cfg80211_set_repurpose_link(struct wireless_dev *wdev, u8 link_id);
+
+/**
+ * cfg80211_clear_repurpose_link - Clear repurpose mark for a link
+ * @wdev: wireless device
+ * @link_id: link identifier
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int cfg80211_clear_repurpose_link(struct wireless_dev *wdev, u8 link_id);
 #endif /* __NET_CFG80211_H */

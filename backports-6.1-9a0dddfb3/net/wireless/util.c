@@ -3041,7 +3041,7 @@ void cfg80211_remove_link(struct wireless_dev *wdev, unsigned int link_id)
 	}
 
 	rdev_del_intf_link(rdev, wdev, link_id);
-
+	cfg80211_clear_repurpose_link(wdev, link_id);
 	wdev->valid_links &= ~BIT(link_id);
 	eth_zero_addr(wdev->links[link_id].addr);
 }
