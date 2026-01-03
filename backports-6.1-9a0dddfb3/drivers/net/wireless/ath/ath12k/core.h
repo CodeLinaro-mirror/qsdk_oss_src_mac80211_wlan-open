@@ -1543,6 +1543,8 @@ struct ath12k {
 	struct list_head wlan_intf_list;
 	struct work_struct wlan_intf_work;
 	struct completion delete_all_peer_done;
+	struct wmi_vdev_host_tsf_arg tsf_report;
+	struct completion tsf_report_done;
 	u8 mgmt_tx_retry_limit;
 	struct ath12k_radio_cfg radio_cfg;
 #ifdef CPTCFG_QCN_EXTN

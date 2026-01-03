@@ -5397,6 +5397,41 @@ struct wmi_vdev_install_key_complete_arg {
 	u32 status;
 };
 
+struct wmi_vdev_tsf_report_event {
+	__le32 vdev_id;
+	__le32 tsf_low;
+	__le32 tsf_high;
+	__le32 qtimer_low;
+	__le32 qtimer_high;
+	__le32 tsf_id;
+	__le32 tsf_id_valid;
+	__le32 mac_id;
+	__le32 mac_id_valid;
+	__le32 wlan_global_tsf_low;
+	__le32 wlan_global_tsf_high;
+	__le32 tqm_timer_low;
+	__le32 tqm_timer_high;
+	__le32 use_tqm_timer;
+} __packed;
+
+struct wmi_vdev_host_tsf_arg {
+	u32 vdev_id;
+	u64 tsf;
+	u32 tsf_low;
+	u32 tsf_high;
+	u32 qtimer_low;
+	u32 qtimer_high;
+	u32 tsf_id;
+	u32 tsf_id_valid;
+	u32 mac_id;
+	u32 mac_id_valid;
+	u32 wlan_global_tsf_low;
+	u32 wlan_global_tsf_high;
+	u32 tqm_timer_low;
+	u32 tqm_timer_high;
+	u32 use_tqm_timer;
+};
+
 struct wmi_peer_assoc_conf_event {
 	__le32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
@@ -8896,6 +8931,24 @@ enum ath12k_wmi_frame_tx_status {
 	WMI_FRAME_TX_STATUS_FILTERED,
 };
 
+enum wmi_tsf_tstamp_action {
+	TSF_TSTAMP_CAPTURE_REQ = 1,
+	TSF_TSTAMP_CAPTURE_RESET = 2,
+	TSF_TSTAMP_READ_VALUE = 3,
+	TSF_TSTAMP_QTIMER_CAPTURE_REQ = 4,
+	TSF_TSTAMP_AUTO_REPORT_ENABLE = 5,
+	TSF_TSTAMP_AUTO_REPORT_DISABLE = 6,
+	TSF_TSTAMP_PERIODIC_REPORT_REQ = 7,
+};
+
+struct wmi_vdev_tsf_tstamp_action_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	__le32 tsf_action;
+	__le32 period;
+	__le32 flags;
+} __packed;
+
 struct wmi_peer_cfr_capture_conf_arg {
 	u32 request;
 	u32 periodicity;
@@ -9371,6 +9424,7 @@ int ath12k_wmi_send_wsi_stats_info(struct ath12k *ar,
 				   struct ath12k_wmi_wsi_stats_info_param *param);
 int ath12k_wmi_vdev_set_neighbor_rx_cmd(struct ath12k *ar,
 					struct ath12k_set_neighbor_rx_params *param);
+int ath12k_wmi_vdev_tsf_tstamp_action_cmd(struct ath12k *ar, u8 vdev_id);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_wmi_config_peer_ppeds_routing(struct ath12k *ar,
 					 const u8 *peer_addr, u8 vdev_id,

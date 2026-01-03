@@ -15622,6 +15622,76 @@ ath12k_wmi_pktlog_decode_info(struct ath12k_base *ab,
 	kfree(tb);
 }
 
+static int ath12k_pull_vdev_tsf_report_ev(struct ath12k_base *ab,
+					  struct sk_buff *skb,
+					  struct wmi_vdev_host_tsf_arg *arg)
+{
+	const struct wmi_vdev_tsf_report_event *ev;
+	const void **tb;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tsf report tlv: %d\n", ret);
+		return ret;
+	}
+	ev = tb[WMI_TAG_VDEV_TSF_REPORT_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch vdev tsf report event\n");
+		kfree(tb);
+		return -EPROTO;
+	}
+
+	arg->vdev_id = le32_to_cpu(ev->vdev_id);
+	arg->tsf = ((u64)le32_to_cpu(ev->tsf_high) << 32) |
+		le32_to_cpu(ev->tsf_low);
+	arg->tsf_low = le32_to_cpu(ev->tsf_low);
+	arg->tsf_high = le32_to_cpu(ev->tsf_high);
+	arg->qtimer_low = le32_to_cpu(ev->qtimer_low);
+	arg->qtimer_high = le32_to_cpu(ev->qtimer_high);
+	arg->tsf_id = le32_to_cpu(ev->tsf_id);
+	arg->tsf_id_valid = le32_to_cpu(ev->tsf_id_valid);
+	arg->mac_id = le32_to_cpu(ev->mac_id);
+	arg->mac_id_valid = le32_to_cpu(ev->mac_id_valid);
+	arg->wlan_global_tsf_low = le32_to_cpu(ev->wlan_global_tsf_low);
+	arg->wlan_global_tsf_high = le32_to_cpu(ev->wlan_global_tsf_high);
+	arg->tqm_timer_low = le32_to_cpu(ev->tqm_timer_low);
+	arg->tqm_timer_high = le32_to_cpu(ev->tqm_timer_high);
+	arg->use_tqm_timer = le32_to_cpu(ev->use_tqm_timer);
+
+	kfree(tb);
+	return 0;
+}
+
+static void ath12k_vdev_tsf_report_event(struct ath12k_base *ab,
+					 struct sk_buff *skb)
+{
+	struct wmi_vdev_host_tsf_arg tsf_event = {};
+	struct ath12k *ar;
+
+	if (ath12k_pull_vdev_tsf_report_ev(ab, skb, &tsf_event) != 0) {
+		ath12k_warn(ab, "failed to extract vdev tsf report event\n");
+		return;
+	}
+	rcu_read_lock();
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, tsf_event.vdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid vdev id %d in tsf report event\n",
+			    tsf_event.vdev_id);
+		rcu_read_unlock();
+		return;
+	}
+	ar->tsf_report = tsf_event;
+	complete(&ar->tsf_report_done);
+	rcu_read_unlock();
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "vdev tsf report: vdev_id %d tsf %llu qtimer %u:%u\n",
+		   tsf_event.vdev_id, tsf_event.tsf,
+		   tsf_event.qtimer_high, tsf_event.qtimer_low);
+}
+
 static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
@@ -15871,6 +15941,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_VDEV_DELETE_ALL_PEER_RESP_EVENTID:
 		ath12k_wmi_delete_all_peer_resp_event(ab, skb);
+		break;
+	case WMI_VDEV_TSF_REPORT_EVENTID:
+		ath12k_vdev_tsf_report_event(ab, skb);
 		break;
 	default:
 		if (!ath12k_wmi_op_rx_extn(id, ab, skb))
@@ -18771,4 +18844,36 @@ int ath12k_wmi_vdev_rate_mask(struct ath12k *ar, struct wmi_vdev_ratemask_arg *a
 	}
 
 	return 0;
+}
+
+int ath12k_wmi_vdev_tsf_tstamp_action_cmd(struct ath12k *ar, u8 vdev_id)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_vdev_tsf_tstamp_action_cmd *cmd;
+	struct sk_buff *skb;
+	int len, ret;
+
+	len = sizeof(*cmd);
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_vdev_tsf_tstamp_action_cmd *)skb->data;
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_VDEV_TSF_TSTAMP_ACTION_CMD,
+						 sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->tsf_action = cpu_to_le32(TSF_TSTAMP_QTIMER_CAPTURE_REQ);
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI VDEV_TSF_TSTAMP_ACTION_CMD vdev_id %u action %u\n",
+		   vdev_id, TSF_TSTAMP_QTIMER_CAPTURE_REQ);
+	ret = ath12k_wmi_cmd_send(wmi, skb,
+				  WMI_VDEV_TSF_TSTAMP_ACTION_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab,
+			    "failed to send WMI_VDEV_TSF_TSTAMP_ACTION_CMDID: %d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
 }
