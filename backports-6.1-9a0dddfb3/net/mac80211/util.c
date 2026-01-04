@@ -2085,6 +2085,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 			continue;
 		if ((sdata->vif.type != NL80211_IFTYPE_AP_VLAN ||
 		     ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+		     ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD) ||
 		     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) &&
 		    sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 		    ieee80211_sdata_running(sdata)) {
@@ -2105,6 +2106,7 @@ int ieee80211_reconfig(struct ieee80211_local *local)
 				continue;
 			if ((sdata->vif.type != NL80211_IFTYPE_AP_VLAN ||
 			     ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
+			     ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD) ||
 			     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) &&
 			    sdata->vif.type != NL80211_IFTYPE_MONITOR &&
 			    ieee80211_sdata_running(sdata))

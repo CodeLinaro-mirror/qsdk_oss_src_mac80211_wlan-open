@@ -161,10 +161,13 @@ static int ieee80211_key_enable_hw_accel(struct ieee80211_key *key)
 		goto out_unsupported;
 
 	if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN &&
-	    !ieee80211_hw_check(&key->local->hw, SUPPORTS_NSS_OFFLOAD)) {
+	    !(ieee80211_hw_check(&key->local->hw, SUPPORTS_NSS_OFFLOAD) ||
+	      ieee80211_hw_check(&key->local->hw, VLAN_GROUP_KEY_HW_OFFLOAD))) {
 		/*
 		 * The driver doesn't know anything about VLAN interfaces.
-		 * Hence, don't send GTKs for VLAN interfaces to the driver.
+		 * Hence, don't send GTKs for VLAN interfaces to the driver
+		 * unless it explicitly advertises VLAN group key offload
+		 * support.
 		 */
 		if (!(key->conf.flags & IEEE80211_KEY_FLAG_PAIRWISE)) {
 			ret = 1;

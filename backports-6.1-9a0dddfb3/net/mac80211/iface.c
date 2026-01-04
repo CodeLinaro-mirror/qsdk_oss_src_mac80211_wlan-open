@@ -677,7 +677,8 @@ static void ieee80211_do_stop(struct ieee80211_sub_if_data *sdata, bool going_do
 	switch (sdata->vif.type) {
 	case NL80211_IFTYPE_AP_VLAN:
 		if ((ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
-		     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) &&
+		     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD) ||
+		     ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD)) &&
 		    going_down)
 			drv_remove_interface(local, sdata);
 		break;
@@ -1416,7 +1417,8 @@ int ieee80211_do_open(struct wireless_dev *wdev, bool coming_up)
 				netif_carrier_on(dev);
 
 			if (ieee80211_hw_check(&local->hw, SUPPORTS_NSS_OFFLOAD) ||
-			     ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD)) {
+			    ieee80211_hw_check(&local->hw, SUPPORTS_VLAN_DATA_OFFLOAD) ||
+			    ieee80211_hw_check(&local->hw, VLAN_GROUP_KEY_HW_OFFLOAD)) {
 				ieee80211_set_sdata_offload_flags(sdata);
 				res = drv_add_interface(local, sdata);
 				if (res)
