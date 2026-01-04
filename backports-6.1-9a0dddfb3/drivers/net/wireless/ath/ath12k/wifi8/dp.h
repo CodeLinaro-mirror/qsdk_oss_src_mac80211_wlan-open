@@ -23,6 +23,7 @@ struct ath12k_dp_wifi8 {
 	struct dp_srng tx_exception;
 	struct dp_srng tcl_cmd_ring;
 	struct dp_srng tcl_status_ring;
+	struct dp_srng reo_dst_high_prio_ring;
 };
 
 struct ath12k_dp_hw_group_wifi8 {

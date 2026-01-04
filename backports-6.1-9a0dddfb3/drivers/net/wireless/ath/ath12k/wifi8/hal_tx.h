@@ -30,7 +30,7 @@ struct hal_tx_info {
 	u16 bss_ast_idx;
 	u8 tid;
 	u8 search_type; /* %HAL_TX_ADDR_SEARCH_ */
-	u8 lmac_id;
+	u8 link_id;
 	u8 vdev_id;
 	u8 dscp_tid_tbl_idx;
 	bool enable_mesh;
@@ -40,11 +40,11 @@ struct hal_tx_info {
 
 extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];
 
-#define TX_IP_CHECKSUM (HAL_TCL_DATA_CMD_INFO2_IP4_CKSUM_EN  | \
-			HAL_TCL_DATA_CMD_INFO2_UDP4_CKSUM_EN | \
-			HAL_TCL_DATA_CMD_INFO2_UDP6_CKSUM_EN | \
-			HAL_TCL_DATA_CMD_INFO2_TCP4_CKSUM_EN | \
-			HAL_TCL_DATA_CMD_INFO2_TCP6_CKSUM_EN)
+#define TX_IP_CHECKSUM (HAL_TCL_DATA_CMD_INFO2_IPV4_CHECKSUM_EN | \
+			HAL_TCL_DATA_CMD_INFO2_UDP4_CHECKSUM_EN | \
+			HAL_TCL_DATA_CMD_INFO2_UDP6_CHECKSUM_EN | \
+			HAL_TCL_DATA_CMD_INFO2_TCP4_CHECKSUM_EN | \
+			HAL_TCL_DATA_CMD_INFO2_TCP6_CHECKSUM_EN)
 
 /* TODO: Check if the actual desc macros can be used instead */
 #define HAL_TX_STATUS_FLAGS_FIRST_MSDU		BIT(0)
@@ -67,9 +67,8 @@ extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];
 #define HAL_TX_BANK_CONFIG_ADDRY_EN		BIT(11)
 #define HAL_TX_BANK_CONFIG_MESH_EN		GENMASK(13, 12)
 #define HAL_TX_BANK_CONFIG_VDEV_ID_CHECK_EN	BIT(14)
-#define HAL_TX_BANK_CONFIG_PMAC_ID		GENMASK(16, 15)
-/* STA mode will have MCAST_PKT_CTRL instead of DSCP_TID_MAP bitfield */
-#define HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID	GENMASK(22, 17)
+#define HAL_TX_BANK_CONFIG_LINK_ID		GENMASK(17, 15)
+#define HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID	GENMASK(25, 18)
 
 void ath12k_wifi8_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
 void ath12k_wifi8_hal_tx_update_dscp_tid_map(struct ath12k_base *ab,

@@ -55,7 +55,10 @@ static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
 	}
 
 	if (dp->hw_params->ring_mask->rx_wbm_rel[grp_id]) {
-		work_done = ath12k_wifi8_dp_rx_process_wbm_err(dp, napi, budget);
+		work_done =
+			ath12k_wifi8_dp_rx_process_reo_err(dp,
+							   HAL_REO_DEST_REL_ERR_RING_NUM,
+							   napi, budget);
 		budget -= work_done;
 		tot_work_done += work_done;
 
@@ -174,6 +177,7 @@ static int ath12k_wifi8_dp_umac_init(struct ath12k_dp *dp)
 		ath12k_warn(ab, "failed to setup bank profiles %d\n", ret);
 		goto fail_hw_cc_cleanup;
 	}
+	ath12k_wifi8_hal_tx_configure_bank_register_default(ab);
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	ret = ath12k_nss_plugin_register_ops(ab);
@@ -361,6 +365,7 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_link_peer_create = ath12k_wifi8_dp_link_peer_create,
 	.dp_link_peer_delete = ath12k_wifi8_dp_link_peer_delete,
 	.peer_cleanup_indication = ath12k_dp_htt_peer_cleanup_indication,
+	.dp_ppeds_tx_completion_handler = ath12k_wifi8_ppeds_tx_completion_handler,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)

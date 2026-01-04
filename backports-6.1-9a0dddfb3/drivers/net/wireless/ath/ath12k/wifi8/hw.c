@@ -235,6 +235,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.ce_count = 16,
 		.target_ce_config = ath12k_wifi8_target_ce_config_wlan_qcn9625,
 		.target_ce_count = 13,
+		/* TODO: CP: update CE maps and definitions later when available */
 		.svc_to_ce_map =
 			ath12k_wifi8_target_service_to_ce_map_wlan_qcn9625,
 		.svc_to_ce_map_len = 21,
@@ -260,7 +261,7 @@ static struct ath12k_hw_params ath12k_wifi8_hw_params[] = {
 		.reoq_lut_support = true,
 		.supports_shadow_regs = false,
 
-		.num_tcl_banks = 48,
+		.num_tcl_banks = 128,
 		.max_tx_ring = 4,
 
 		.mhi_config = &ath12k_wifi8_mhi_config_qcn9625,

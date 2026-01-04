@@ -9,7 +9,6 @@
 #include "hal.h"
 #include "../hif.h"
 
-#define DSCP_TID_MAP_TBL_ENTRY_SIZE 64
 #define HAL_TX_BITS_PER_TID 3
 #define HAL_TX_NUM_DSCP_REG_SIZE 32
 
@@ -27,29 +26,50 @@ void ath12k_wifi8_hal_tx_cmd_desc_setup(struct ath12k_base *ab,
 		le32_encode_bits(ti->desc_id, BUFFER_ADDR_INFO1_SW_COOKIE);
 
 	tcl_cmd->info0 =
-		le32_encode_bits(ti->type, HAL_TCL_DATA_CMD_INFO0_DESC_TYPE) |
-		le32_encode_bits(ti->bank_id, HAL_TCL_DATA_CMD_INFO0_BANK_ID);
+		le32_encode_bits(ti->type, HAL_TCL_DATA_CMD_INFO0_BUF_OR_EXT_DESC_TYPE) |
+		le32_encode_bits(ti->bank_id, HAL_TCL_DATA_CMD_INFO0_BANK_ID) |
+		le32_encode_bits(ti->vdev_id, HAL_TCL_DATA_CMD_INFO0_VDEV_ID) |
+		le32_encode_bits(ti->data_len, HAL_TCL_DATA_CMD_INFO0_DATA_LENGTH);
 
+	tcl_cmd->search_index = cpu_to_le32(ti->bss_ast_idx);
 	tcl_cmd->info1 =
-		le32_encode_bits(ti->meta_data_flags,
-				 HAL_TCL_DATA_CMD_INFO1_CMD_NUM);
+		le32_encode_bits(ti->bss_ast_hash, HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM) |
+		le32_encode_bits(ti->lookup_override,
+				 HAL_TCL_DATA_CMD_INFO1_INDEX_LOOKUP_OVERRIDE) |
+		le32_encode_bits(ti->tid, HAL_TCL_DATA_CMD_INFO1_HLOS_TID) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO1_HLOS_TID_OVERWRITE) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO1_HEADER_LENGTH_READ_SEL);
 
 	tcl_cmd->info2 = cpu_to_le32(ti->flags0) |
-		le32_encode_bits(ti->data_len, HAL_TCL_DATA_CMD_INFO2_DATA_LEN) |
-		le32_encode_bits(ti->pkt_offset, HAL_TCL_DATA_CMD_INFO2_PKT_OFFSET);
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_MSDU_COLOR) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_FLOW_OVERRIDE_ENABLE) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_WHO_CLASSIFY_INFO_SEL) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_RX_TIMESTAMP_FORMAT) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_RX_TIMESTAMP) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO2_RX_TIMESTAMP_VALID);
 
 	tcl_cmd->info3 = cpu_to_le32(ti->flags1) |
-		le32_encode_bits(ti->tid, HAL_TCL_DATA_CMD_INFO3_TID) |
-		le32_encode_bits(ti->lmac_id, HAL_TCL_DATA_CMD_INFO3_PMAC_ID) |
-		le32_encode_bits(ti->vdev_id, HAL_TCL_DATA_CMD_INFO3_VDEV_ID);
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO3_TX_NOTIFY_FRAME) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO3_FLOW_SELECT) |
+		le32_encode_bits(ti->pkt_offset, HAL_TCL_DATA_CMD_INFO3_METADATA_LENGTH) |
+		/* TODO: Chaitanya : confirm if this link is on which pkt is getting
+		 * enqueued
+		 */
+		le32_encode_bits(ti->link_id, HAL_TCL_DATA_CMD_INFO3_LINK_ID);
 
-	tcl_cmd->info4 = le32_encode_bits(ti->lookup_override,
-					  HAL_TCL_DATA_CMD_INFO4_IDX_LOOKUP_OVERRIDE) |
-			 le32_encode_bits(ti->bss_ast_idx,
-					  HAL_TCL_DATA_CMD_INFO4_SEARCH_INDEX) |
-			 le32_encode_bits(ti->bss_ast_hash,
-					  HAL_TCL_DATA_CMD_INFO4_CACHE_SET_NUM);
-	tcl_cmd->info5 = 0;
+	tcl_cmd->tcl_cmd_number = cpu_to_le32(ti->meta_data_flags);
+
+	tcl_cmd->info4 =
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO4_TX_ENQUEUE_TIMESTAMP) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO4_TX_ENQUEUE_TIMESTAMP_VALID) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO4_TELEMETRY_STREAM_ID_VALID) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO4_TELEMETRY_STREAM_ID);
+
+	tcl_cmd->insert_vlan_tci_override_val = 0;
+	tcl_cmd->info5 =
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO5_INSERT_VLAN_TCI_OVERRIDE_EN) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO5_RING_ID) |
+		le32_encode_bits(0, HAL_TCL_DATA_CMD_INFO5_LOOPING_COUNT);
 }
 
 void ath12k_update_dscp_register(struct ath12k_base *ab, u32 addr, u32 mask, u32 value)

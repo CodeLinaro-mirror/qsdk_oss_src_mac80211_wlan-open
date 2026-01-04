@@ -187,7 +187,7 @@ int ath12k_wifi7_dp_rx_bufs_replenish_ppeds(struct ath12k_base *ab,
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc;
 	int count = 0, num_remain, i;
-	enum hal_rx_buf_return_buf_manager mgr =  ab->hal.hal_params->rx_buf_rbm;
+	u8 mgr = ab->hal.hal_params->rx_buf_rbm;
 
 	rxdma_srng = &ab->hal.srng_list[rx_ring->refill_buf_ring.ring_id];
 

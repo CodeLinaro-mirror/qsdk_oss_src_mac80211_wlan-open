@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2022, 2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include "hal_desc.h"
@@ -10,7 +10,6 @@
 #include "../hif.h"
 #include "hal_rx.h"
 
-#define DSCP_TID_MAP_TBL_ENTRY_SIZE 64
 #define HAL_TX_BITS_PER_TID 3
 #define HAL_TX_NUM_DSCP_REG_SIZE 32
 

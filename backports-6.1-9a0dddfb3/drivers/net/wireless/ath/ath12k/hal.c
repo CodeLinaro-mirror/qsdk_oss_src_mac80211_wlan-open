@@ -146,7 +146,7 @@ void ath12k_hal_cc_config(struct ath12k_base *ab)
         ab->hal.hal_ops->cc_config(ab);
 }
 
-enum hal_rx_buf_return_buf_manager
+u8
 ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id)
 {
 	return hal->hal_ops->get_idle_link_rbm(hal, device_id);
@@ -1342,4 +1342,3 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 
 	return len;
 }
-

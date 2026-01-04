@@ -43,86 +43,86 @@ static inline
 u8 ath12k_wifi8_hal_rx_h_l3pad_qcn9625(struct hal_rx_desc *desc)
 {
 	return le16_get_bits(desc->u.qcn9625_compact.msdu_end.info5,
-			     RX_MSDU_END_INFO5_L3_HDR_PADDING);
+			     RX_MSDU_END_INFO5_L3_HEADER_PADDING);
 }
 
 static inline
 bool ath12k_wifi8_hal_encrypt_valid_qcn9625(struct hal_rx_desc *desc)
 {
-	return !!le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info4,
-			       RX_MPDU_START_INFO4_ENCRYPT_INFO_VALID);
+	return !!le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info2,
+			       RX_MPDU_INFO_INFO2_FRAME_ENCRYPTION_INFO_VALID);
 }
 
 static inline
 u8 ath12k_wifi8_hal_rx_h_decap_type_qcn9625(struct hal_rx_desc *desc)
 {
-	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info11,
-			     RX_MSDU_END_INFO11_DECAP_FORMAT);
+	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info12,
+			     RX_MSDU_END_INFO12_DECAP_FORMAT);
 }
 
 static inline
 u8 ath12k_wifi8_hal_rx_h_mesh_ctl_present_qcn9625(struct hal_rx_desc *desc)
 {
-	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info11,
-			     RX_MSDU_END_INFO11_MESH_CTRL_PRESENT);
+	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info12,
+			     RX_MSDU_END_INFO12_MESH_CONTROL_PRESENT);
 }
 
 static inline
 bool ath12k_wifi8_hal_rx_h_seq_ctrl_valid_qcn9625(struct hal_rx_desc *desc)
 {
-	return !!le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info4,
-			       RX_MPDU_START_INFO4_MPDU_SEQ_CTRL_VALID);
+	return !!le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info2,
+			       RX_MPDU_INFO_INFO2_MPDU_SEQUENCE_CONTROL_VALID);
 }
 
 static inline
 bool ath12k_wifi8_hal_rx_h_fc_valid_qcn9625(struct hal_rx_desc *desc)
 {
-	return !!le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info4,
-			       RX_MPDU_START_INFO4_MPDU_FCTRL_VALID);
+	return !!le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info2,
+			       RX_MPDU_INFO_INFO2_MPDU_FRAME_CONTROL_VALID);
 }
 
 static inline
 bool ath12k_wifi8_hal_rx_h_is_ip_valid_qcn9625(struct hal_rx_desc *desc)
 {
-	return !!(le32_get_bits(desc->u.qcn9625_compact.msdu_end.info11,
-				RX_MSDU_END_INFO11_IPV4) ||
-		  le32_get_bits(desc->u.qcn9625_compact.msdu_end.info11,
-				RX_MSDU_END_INFO11_IPV6));
+	return !!(le32_get_bits(desc->u.qcn9625_compact.msdu_end.info12,
+				RX_MSDU_END_INFO12_IPV4_PROTO) ||
+		  le32_get_bits(desc->u.qcn9625_compact.msdu_end.info12,
+				RX_MSDU_END_INFO12_IPV6_PROTO));
 }
 
 static inline
 u16 ath12k_wifi8_hal_rx_h_seq_no_qcn9625(struct hal_rx_desc *desc)
 {
-	return le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info4,
-			     RX_MPDU_START_INFO4_MPDU_SEQ_NUM);
+	return le32_get_bits(desc->u.qcn9625_compact.mpdu_start.info2,
+			     RX_MPDU_INFO_INFO2_MPDU_SEQUENCE_NUMBER);
 }
 
 static inline
 u16 ath12k_wifi8_hal_rx_h_msdu_len_qcn9625(struct hal_rx_desc *desc)
 {
-	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info10,
-			     RX_MSDU_END_INFO10_MSDU_LENGTH);
+	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info11,
+			     RX_MSDU_END_INFO11_MSDU_LENGTH);
 }
 
 static inline
 u8 ath12k_wifi8_hal_rx_h_sgi_qcn9625(struct hal_rx_desc *desc)
 {
-	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info12,
-			     RX_MSDU_END_INFO12_SGI);
+	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info13,
+			     RX_MSDU_END_INFO13_SGI);
 }
 
 static inline
 u8 ath12k_wifi8_hal_rx_h_rate_mcs_qcn9625(struct hal_rx_desc *desc)
 {
-	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info12,
-			     RX_MSDU_END_INFO12_RATE_MCS);
+	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info13,
+			     RX_MSDU_END_INFO13_RATE_MCS);
 }
 
 static inline
 u8 ath12k_wifi8_hal_rx_h_rx_bw_qcn9625(struct hal_rx_desc *desc)
 {
-	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info12,
-			     RX_MSDU_END_INFO12_RECV_BW);
+	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info13,
+			     RX_MSDU_END_INFO13_RECEIVE_BANDWIDTH);
 }
 
 static inline
@@ -134,15 +134,15 @@ u32 ath12k_wifi8_hal_rx_h_freq_qcn9625(struct hal_rx_desc *desc)
 static inline
 u8 ath12k_wifi8_hal_rx_h_pkt_type_qcn9625(struct hal_rx_desc *desc)
 {
-	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info12,
-			     RX_MSDU_END_INFO12_PKT_TYPE);
+	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info13,
+			     RX_MSDU_END_INFO13_PKT_TYPE);
 }
 
 static inline
 u8 ath12k_wifi8_hal_rx_h_nss_qcn9625(struct hal_rx_desc *desc)
 {
-	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info12,
-			     RX_MSDU_END_INFO12_MIMO_SS_BITMAP);
+	return le32_get_bits(desc->u.qcn9625_compact.msdu_end.info13,
+			     RX_MSDU_END_INFO13_MIMO_SS_BITMAP);
 }
 
 static inline
@@ -156,7 +156,7 @@ static inline
 u8 ath12k_wifi8_hal_rx_h_from_ds_qcn9625(struct hal_rx_desc *desc)
 {
 	return le16_get_bits(desc->u.qcn9625_compact.msdu_end.info5,
-			     RX_MSDU_END_INFO5_FROM_DS);
+			     RX_MSDU_END_INFO5_FR_DS);
 }
 
 static inline
@@ -182,10 +182,10 @@ void ath12k_wifi8_hal_rx_desc_end_tlv_copy_qcn9625(struct hal_rx_desc *fdesc,
 static inline void
 ath12k_wifi8_hal_rxdesc_set_msdu_len_qcn9625(struct hal_rx_desc *desc, u16 len)
 {
-	u32 info = __le32_to_cpu(desc->u.qcn9625_compact.msdu_end.info10);
+	u32 info = __le32_to_cpu(desc->u.qcn9625_compact.msdu_end.info11);
 
-	info = u32_replace_bits(info, len, RX_MSDU_END_INFO10_MSDU_LENGTH);
-	desc->u.qcn9625_compact.msdu_end.info10 = __cpu_to_le32(info);
+	info = u32_replace_bits(info, len, RX_MSDU_END_INFO11_MSDU_LENGTH);
+	desc->u.qcn9625_compact.msdu_end.info11 = __cpu_to_le32(info);
 }
 
 static inline
@@ -209,8 +209,8 @@ u32 ath12k_wifi8_hal_rx_desc_get_msdu_end_offset_qcn9625(void)
 static inline
 bool ath12k_wifi8_hal_rxdesc_mac_addr2_valid_qcn9625(struct hal_rx_desc *desc)
 {
-	return __le32_to_cpu(desc->u.qcn9625_compact.mpdu_start.info4) &
-			     RX_MPDU_START_INFO4_MAC_ADDR2_VALID;
+	return __le32_to_cpu(desc->u.qcn9625_compact.mpdu_start.info2) &
+			     RX_MPDU_INFO_INFO2_MAC_ADDR_AD2_VALID;
 }
 
 static inline u8 *
@@ -237,29 +237,29 @@ ath12k_wifi8_hal_rxdesc_get_mpdu_frame_ctrl_qcn9625(struct hal_rx_desc *desc)
 static inline
 bool ath12k_wifi8_hal_rx_h_msdu_done_qcn9625(struct hal_rx_desc *desc)
 {
-	return !!le32_get_bits(desc->u.qcn9625_compact.msdu_end.info14,
-			       RX_MSDU_END_INFO14_MSDU_DONE);
+	return !!le32_get_bits(desc->u.qcn9625_compact.msdu_end.info15,
+			       RX_MSDU_END_INFO15_MSDU_DONE);
 }
 
 static inline
 bool ath12k_wifi8_hal_rx_h_l4_cksum_fail_qcn9625(struct hal_rx_desc *desc)
 {
-	return !!le32_get_bits(desc->u.qcn9625_compact.msdu_end.info13,
-			       RX_MSDU_END_INFO13_TCP_UDP_CKSUM_FAIL);
+	return !!le32_get_bits(desc->u.qcn9625_compact.msdu_end.info14,
+			       RX_MSDU_END_INFO14_TCP_UDP_CHKSUM_FAIL);
 }
 
 static inline
 bool ath12k_wifi8_hal_rx_h_ip_cksum_fail_qcn9625(struct hal_rx_desc *desc)
 {
-	return !!le32_get_bits(desc->u.qcn9625_compact.msdu_end.info13,
-			       RX_MSDU_END_INFO13_IP_CKSUM_FAIL);
+	return !!le32_get_bits(desc->u.qcn9625_compact.msdu_end.info14,
+			       RX_MSDU_END_INFO14_IP_CHKSUM_FAIL);
 }
 
 static inline
 bool ath12k_wifi8_hal_rx_h_is_decrypted_qcn9625(struct hal_rx_desc *desc)
 {
-	return (le32_get_bits(desc->u.qcn9625_compact.msdu_end.info14,
-			      RX_MSDU_END_INFO14_DECRYPT_STATUS_CODE) ==
+	return (le32_get_bits(desc->u.qcn9625_compact.msdu_end.info15,
+			      RX_MSDU_END_INFO15_DECRYPT_STATUS_CODE) ==
 			RX_DESC_DECRYPT_STATUS_CODE_OK);
 }
 
@@ -294,10 +294,11 @@ void ath12k_wifi8_hal_rx_desc_get_fse_info_qcn9625(struct hal_rx_desc *desc,
 
 	rx_mpdu_info->flow_idx_timeout =
 		le32_get_bits(flow_idx_info,
-			      RX_MSDU_END_INFO7_FLOW_IDX_TIMEOUT);
+			      RX_MSDU_END_INFO8_FLOW_IDX_TIMEOUT);
 	rx_mpdu_info->flow_idx_invalid =
 		le32_get_bits(flow_idx_info,
-			      RX_MSDU_END_INFO7_FLOW_IDX_INVALID);
+			      RX_MSDU_END_INFO8_FLOW_IDX_INVALID);
+
 	rx_mpdu_info->flow_info.flow_metadata =
 		le16_get_bits(desc->u.qcn9625_compact.msdu_end.fse_metadata,
 			      ATH12K_DP_RX_FSE_FLOW_METADATA_MASK);

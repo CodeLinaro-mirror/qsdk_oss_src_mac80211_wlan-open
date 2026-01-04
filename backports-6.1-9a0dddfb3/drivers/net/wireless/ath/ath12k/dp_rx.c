@@ -465,7 +465,7 @@ void ath12k_dp_rx_bufs_replenish(struct ath12k_dp *dp,
 	struct sk_buff *skb;
 	dma_addr_t paddr;
 	struct ath12k_rx_desc_info *rx_desc, *tmp_rx_desc;
-	enum hal_rx_buf_return_buf_manager mgr = dp->hal->hal_params->rx_buf_rbm;
+	u8 mgr = dp->hal->hal_params->rx_buf_rbm;
 	int allocated_entries = 0;
 	bool is_dma_inv_done = false;
 
