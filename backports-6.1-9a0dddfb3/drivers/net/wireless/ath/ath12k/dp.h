@@ -106,6 +106,13 @@ enum ath12k_dp_ppdu_state {
 	DP_PPDU_STATUS_DONE,
 };
 
+enum ath12k_dp_op_type {
+	ATH12K_DP_OP_INIT,
+	ATH12K_DP_OP_DEINIT,
+	ATH12K_DP_OP_UPDATE,
+	ATH12K_DP_OP_INVALID
+};
+
 struct ath12k_wmm_stats {
        int tx_type;
        int rx_type;
@@ -460,7 +467,9 @@ struct ath12k_dp_arch_ops {
 	int (*dp_op_mlo_init)(struct ath12k_dp *dp);
 	void (*dp_op_mlo_deinit)(struct ath12k_dp *dp);
 	u32 (*dp_tx_get_vdev_bank_config)(struct ath12k_base *ab,
-					  struct ath12k_link_vif *arvif, bool vdev_id_check_en);
+					  struct ath12k_vif *ahvif,
+					  u8 link_id,
+					  bool vdev_id_check_en);
 	int (*dp_reo_cmd_send)(struct ath12k_base *ab,
 			       struct ath12k_dp_rx_tid *rx_tid,
 			       enum hal_reo_cmd_type type,
@@ -527,6 +536,10 @@ struct ath12k_dp_arch_ops {
 	int (*dp_get_peer_holq)(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 				u8 *addr,
 				struct peer_assoc_holq_params *holq_params);
+	void (*dp_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
+				 enum ath12k_dp_op_type optype);
+	void (*dp_link_vif_configure)(struct ath12k_dp *dp, struct ath12k_vif *ahvif,
+				      u8 link_id, enum ath12k_dp_op_type optype);
 };
 
 struct ath12k_bp_stats {
@@ -899,10 +912,13 @@ static inline void ath12k_dp_arch_op_mlo_deinit(struct ath12k_dp *dp)
 }
 
 static inline u32 ath12k_dp_arch_tx_get_vdev_bank_config(struct ath12k_dp *dp,
-							 struct ath12k_link_vif *arvif,
-							 bool vdev_id_check_en)
+							 struct ath12k_vif *ahvif,
+							 u8 link_id,
+							 bool force_vdev_id_check_disable)
 {
-	return dp->arch_ops->dp_tx_get_vdev_bank_config(dp->ab, arvif, vdev_id_check_en);
+	return dp->arch_ops->dp_tx_get_vdev_bank_config(dp->ab, ahvif,
+							link_id,
+							force_vdev_id_check_disable);
 }
 
 static inline int ath12k_dp_arch_reo_cmd_send(struct ath12k_dp *dp,
@@ -1122,6 +1138,25 @@ ath12k_arch_dp_get_peer_holq(struct ath12k_dp *dp,
 	return -EINVAL;
 }
 
+static inline void ath12k_dp_arch_dp_vif_configure(struct ath12k_dp_hw_group *dp_hw_grp,
+						   struct ath12k_vif *ahvif,
+						   enum ath12k_dp_op_type optype)
+{
+	struct ath12k_dp *dp = dp_hw_grp->dp[0];
+
+	if (dp->arch_ops->dp_vif_configure)
+		dp->arch_ops->dp_vif_configure(dp, ahvif, optype);
+}
+
+static inline void ath12k_dp_arch_dp_link_vif_configure(struct ath12k_dp *dp,
+							struct ath12k_vif *ahvif,
+							u8 link_id,
+							enum ath12k_dp_op_type optype)
+{
+	if (dp->arch_ops->dp_link_vif_configure)
+		dp->arch_ops->dp_link_vif_configure(dp, ahvif, link_id, optype);
+}
+
 static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 {
 	memcpy(addr, &addr_l32, 4);
@@ -1171,7 +1206,6 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 int ath12k_dp_msdu_htt_connect(struct ath12k_dp *dp);
-void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif);
 void ath12k_dp_partner_cc_init(struct ath12k_base *ab);
 int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
                                       int pdev_id,
@@ -1202,7 +1236,6 @@ void ath12k_umac_reset_notify_target_sync_and_send(struct ath12k_base *ab,
                                        enum dp_umac_reset_tx_cmd tx_event);
 void ath12k_umac_reset_handle_post_reset_start(struct ath12k_base *ab);
 bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab);
-void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif);
 void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp);
 void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 			      struct hal_srng_params *ring_params,
@@ -1235,6 +1268,8 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
 int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 			     struct ath12k_reo_q_addr_lut *lut);
+void ath12k_dp_update_vdev_search(struct ath12k_vif *ahvif);
+int ath12k_dp_tx_get_bank_profile(struct ath12k_dp *dp, u32 bank_config);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,
@@ -1242,8 +1277,6 @@ void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 void ath12k_dp_ppeds_tx_comp_get_desc(struct ath12k_base *ab,
 				      struct ath12k_dp_tx_comp_status *tx_comp_status,
 				      struct ath12k_ppeds_tx_desc_info **tx_desc);
-int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab, struct ath12k_link_vif *arvif,
-				  struct ath12k_dp *dp, bool vdev_id_check_en);
 struct ath12k_ppeds_tx_desc_info *ath12k_dp_get_ppeds_tx_desc(struct ath12k_base *ab,
 							      u32 desc_id);
 int ath12k_dp_cc_ppeds_desc_init(struct ath12k_base *ab);

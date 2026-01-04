@@ -123,20 +123,6 @@ struct hal_tlv_64_hdr {
 
 #define HAL_ENCRYPT_TYPE_MAX	12
 
-/* To set mcast pkt ctrl vlaues */
-#define HAL_TCL_R0_VDEV_MCAST_PACKET_CTRL_MAP_n_ADDR(vdev_id) (0x00A4414C + (0x4 * (vdev_id)))
-#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_REG_ID(vdev_id) ((vdev_id) >> 0x4)
-#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_INDEX_IN_REG(vdev_id) ((vdev_id) & 0xF)
-#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK 0x3
-#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT 0x2
-
-enum ath12k_hal_tx_pkt_ctrl_config {
-       HAL_TX_PACKET_CONTROL_CONFIG_TO_FW_EXCEPTION,
-       HAL_TX_PACKET_CONTROL_CONFIG_DROP_PKT,
-       HAL_TX_PACKET_CONTROL_CONFIG_MEC_NOTIFY,
-       HAL_TX_PACKET_CONTROL_CONFIG_PKT_TO_TQM,
-};
-
 enum hal_rx_su_mu_coding {
 	HAL_RX_SU_MU_CODING_BCC,
 	HAL_RX_SU_MU_CODING_LDPC,
@@ -1658,8 +1644,6 @@ void ath12k_hal_rx_buf_addr_info_get(struct ath12k_buffer_addr *binfo,
 void ath12k_hal_cc_config(struct ath12k_base *ab);
 u8
 ath12k_hal_get_idle_link_rbm(struct ath12k_hal *hal, u8 device_id);
-void ath12k_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
-				    u8 mcast_ctrl_val);
 void ath12k_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab);
 u8 *
 ath12k_hal_rxdesc_get_mpdu_start_addr2(struct ath12k_hal *hal, struct hal_rx_desc *desc);

@@ -1151,8 +1151,8 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	ti.encap_type = ath12k_dp_tx_get_encap_type(ab, skb);
-	ti.addr_search_flags = dp_link_vif->hal_addr_search_flags;
-	ti.search_type = dp_link_vif->search_type;
+	ti.addr_search_flags = dp_vif->hal_addr_search_flags;
+	ti.search_type = dp_vif->search_type;
 	ti.type = HAL_TCL_DESC_TYPE_BUFFER;
 	ti.pkt_offset = 0;
 	ti.lmac_id = dp_link_vif->lmac_id;
@@ -2416,24 +2416,30 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 }
 
 u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
-					    struct ath12k_link_vif *arvif,
-					    bool vdev_id_check_en)
+					    struct ath12k_vif *ahvif,
+					    u8 link_id,
+					    bool force_vdev_id_check_disable)
 {
 	u32 bank_config = 0;
-	u8 link_id = arvif->link_id;
 	enum hal_encrypt_type encrypt_type = 0;
-	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	u32 key_cipher = ahvif->deflink.key_cipher;
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
+	bool vdev_id_check_en;
+
+	if (force_vdev_id_check_disable)
+		vdev_id_check_en = false;
+	else
+		vdev_id_check_en = dp_vif->vdev_id_check_en;
 
 	/* Only valid for raw frames with HW crypto enabled.
 	 * With SW crypto, mac80211 sets key per packet
 	 */
 	if (dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_RAW &&
 	    test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
-	    arvif->key_cipher != INVALID_CIPHER)
+	    key_cipher != INVALID_CIPHER)
 		bank_config |=
-			u32_encode_bits(ath12k_dp_tx_get_encrypt_type(arvif->key_cipher),
+			u32_encode_bits(ath12k_dp_tx_get_encrypt_type(key_cipher),
 					HAL_TX_BANK_CONFIG_ENCRYPT_TYPE);
 	else
 		encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
@@ -2452,9 +2458,9 @@ u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 	else
 		bank_config |= u32_encode_bits(0, HAL_TX_BANK_CONFIG_INDEX_LOOKUP_EN);
 
-	bank_config |= u32_encode_bits(dp_link_vif->hal_addr_search_flags & HAL_TX_ADDRX_EN,
+	bank_config |= u32_encode_bits(dp_vif->hal_addr_search_flags & HAL_TX_ADDRX_EN,
 					HAL_TX_BANK_CONFIG_ADDRX_EN) |
-			u32_encode_bits(!!(dp_link_vif->hal_addr_search_flags &
+			u32_encode_bits(!!(dp_vif->hal_addr_search_flags &
 					HAL_TX_ADDRY_EN),
 					HAL_TX_BANK_CONFIG_ADDRY_EN);
 

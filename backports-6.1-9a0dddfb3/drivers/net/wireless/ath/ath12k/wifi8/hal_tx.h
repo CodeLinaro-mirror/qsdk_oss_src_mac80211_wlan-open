@@ -70,6 +70,8 @@ extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];
 #define HAL_TX_BANK_CONFIG_LINK_ID		GENMASK(17, 15)
 #define HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID	GENMASK(25, 18)
 
+#define HAL_TX_WILD_CARD_LINK_ID       7
+
 void ath12k_wifi8_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
 void ath12k_wifi8_hal_tx_update_dscp_tid_map(struct ath12k_base *ab,
 					     int id, u8 dscp, u8 tid);

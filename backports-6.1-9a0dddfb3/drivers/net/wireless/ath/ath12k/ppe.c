@@ -436,6 +436,7 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 	int vdev_id = arvif->vdev_id;
 	int ret;
 	enum nl80211_iftype vif_type;
+	u32 bank_config;
 
 	if (!wdev)
 		return -EOPNOTSUPP;
@@ -485,12 +486,14 @@ static int ath12k_ppeds_attach_link_apvlan_vif(struct ath12k_link_vif *arvif, in
 
 		vlan_iface->ppe_vp_profile_idx[link_id] = ppe_vp_profile_idx;
 	} else {
-		bool vdev_id_check_en = false;
-
 		vlan_iface->ppe_vp_profile_idx[link_id] = ppe_vp_profile_idx;
 
+		bank_config = ath12k_dp_arch_tx_get_vdev_bank_config(ath12k_ab_to_dp(ab),
+								     ahvif,
+								     arvif->link_id,
+								     true);
 		arvif->splitphy_ds_bank_id =
-			ath12k_dp_tx_get_bank_profile(ab, arvif, ab->dp, vdev_id_check_en);
+			ath12k_dp_tx_get_bank_profile(ath12k_ab_to_dp(ab), bank_config);
 
 		ath12k_ppeds_update_splitphy_bank_id(ab, arvif);
 	}
@@ -562,6 +565,7 @@ void ath12k_ppeds_update_splitphy_bank_id(struct ath12k_base *ab,
 		iter_arvif = ahvif->link[link_idx];
 		int splitphy_ds_bank_id = DP_INVALID_BANK_ID;
 
+		/* if parnter vif is not from same soc continue */
 		if (!iter_arvif || iter_arvif == arvif ||
 		    !iter_arvif->is_created || ab != iter_arvif->ar->ab)
 			continue;
@@ -603,6 +607,7 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 	int vdev_id = arvif->vdev_id;
 	int ret;
 	enum nl80211_iftype vif_type;
+	u32 bank_config;
 
 	if (!wdev)
 		return -EOPNOTSUPP;
@@ -658,7 +663,6 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 
 		*link_ppe_vp_profile_idx = ppe_vp_profile_idx;
 	} else {
-		bool vdev_id_check_en = false;
 		u8 link_id;
 
 		if (arvif->ahvif->links_map &&
@@ -702,8 +706,12 @@ int ath12k_ppeds_attach_link_vif(struct ath12k_link_vif *arvif, int vp_num,
 		}
 
 		*link_ppe_vp_profile_idx = ppe_vp_profile_idx;
-		arvif->splitphy_ds_bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, ab->dp, vdev_id_check_en);
-
+		bank_config = ath12k_dp_arch_tx_get_vdev_bank_config(ath12k_ab_to_dp(ab),
+								     ahvif,
+								     arvif->link_id,
+								     true);
+		arvif->splitphy_ds_bank_id =
+			ath12k_dp_tx_get_bank_profile(ath12k_ab_to_dp(ab), bank_config);
 		ath12k_ppeds_update_splitphy_bank_id(ab, arvif);
 
 	}

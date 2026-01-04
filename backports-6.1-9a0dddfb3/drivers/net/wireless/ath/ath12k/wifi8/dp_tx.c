@@ -867,14 +867,14 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 				(((u64)virt_to_phys(skb->data) >> 32) |
 				(tx_desc->desc_id << 12));
 	hal_tcl_desc->info0 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID,
-					 dp_link_vif->bank_id) |
+					 dp_vif->bank_id) |
 			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_VDEV_ID,
-					 dp_link_vif->vdev_id);
+					 dp_vif->dp_vif_id);
 	hal_tcl_desc->info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
 					 dp_link_vif->ast_hash);
 	hal_tcl_desc->info2 =  skb->len;
 	hal_tcl_desc->info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
-					 dp_link_vif->link_id);
+					 HAL_TX_WILD_CARD_LINK_ID);
 	hal_tcl_desc->search_index = dp_link_vif->ast_idx;
 	hal_tcl_desc->info5 = 0;
 
@@ -918,16 +918,16 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 	tcl_desc.buf_addr_info.info1 = (((u64)virt_to_phys(skb->data) >> 32) |
 				       (tx_desc->desc_id << 12));
 	tcl_desc.info0 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_BANK_ID,
-				    dp_link_vif->bank_id) |
+				    dp_vif->bank_id) |
 			 FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_VDEV_ID,
-				    dp_link_vif->vdev_id);
+				    dp_vif->dp_vif_id);
 
 	tcl_desc.info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
 				    dp_link_vif->ast_hash);
 	tcl_desc.tcl_cmd_number =  dp_link_vif->tcl_metadata;
 	tcl_desc.info2 =  skb->len;
 	tcl_desc.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
-				    dp_link_vif->lmac_id);
+				    HAL_TX_WILD_CARD_LINK_ID);
 	tcl_desc.search_index = dp_link_vif->ast_idx;
 	tcl_desc.info5 = 0;
 
@@ -1146,7 +1146,7 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		return DP_TX_ENQ_DROP_SW_DESC_NA;
 	}
 
-	ti.bank_id = dp_link_vif->bank_id;
+	ti.bank_id = dp_vif->bank_id;
 
 	if (gsn_valid && !(ti.lookup_override)) {
 		/* Reset and Initialize meta_data_flags with Global Sequence
@@ -1162,13 +1162,13 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	ti.encap_type = ath12k_dp_tx_get_encap_type(ab, skb);
-	ti.addr_search_flags = dp_link_vif->hal_addr_search_flags;
-	ti.search_type = dp_link_vif->search_type;
+	ti.addr_search_flags = dp_vif->hal_addr_search_flags;
+	ti.search_type = dp_vif->search_type;
 	ti.type = HAL_TCL_DESC_TYPE_BUFFER;
 	ti.pkt_offset = 0;
-	ti.link_id = dp_link_vif->link_id;
+	ti.link_id = HAL_TX_WILD_CARD_LINK_ID;
 
-	ti.vdev_id = dp_link_vif->vdev_id;
+	ti.vdev_id = dp_vif->dp_vif_id;
 	if (gsn_valid)
 		ti.vdev_id += HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID;
 	else if (arvif->nawds_support && is_mcast && !ti.lookup_override)
@@ -2448,24 +2448,30 @@ int ath12k_wifi8_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 }
 
 u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
-					    struct ath12k_link_vif *arvif,
-					    bool vdev_id_check_en)
+					    struct ath12k_vif *ahvif,
+					    u8 link_id,
+					    bool force_vdev_id_check_disable)
 {
 	u32 bank_config = 0;
-	u8 link_id = arvif->link_id;
 	enum hal_encrypt_type encrypt_type = 0;
-	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
 	struct ath12k_dp_link_vif *dp_link_vif = &dp_vif->dp_link_vif[link_id];
+	u32 key_cipher = ahvif->deflink.key_cipher;
+	bool vdev_id_check_en;
+
+	if (force_vdev_id_check_disable)
+		vdev_id_check_en = false;
+	else
+		vdev_id_check_en = dp_vif->vdev_id_check_en;
 
 	/* Only valid for raw frames with HW crypto enabled.
 	 * With SW crypto, mac80211 sets key per packet
 	 */
 	if (dp_vif->tx_encap_type == HAL_TCL_ENCAP_TYPE_RAW &&
 	    test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ab->ag->flags) &&
-	    arvif->key_cipher != INVALID_CIPHER)
+	    key_cipher != INVALID_CIPHER)
 		bank_config |=
-			u32_encode_bits(ath12k_dp_tx_get_encrypt_type(arvif->key_cipher),
+			u32_encode_bits(ath12k_dp_tx_get_encrypt_type(key_cipher),
 					HAL_TX_BANK_CONFIG_ENCRYPT_TYPE);
 	else
 		encrypt_type = HAL_ENCRYPT_TYPE_OPEN;
@@ -2484,9 +2490,9 @@ u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 	else
 		bank_config |= u32_encode_bits(0, HAL_TX_BANK_CONFIG_INDEX_LOOKUP_EN);
 
-	bank_config |= u32_encode_bits(dp_link_vif->hal_addr_search_flags &
+	bank_config |= u32_encode_bits(dp_vif->hal_addr_search_flags &
 				       HAL_TX_ADDRX_EN,	HAL_TX_BANK_CONFIG_ADDRX_EN) |
-			u32_encode_bits(!!(dp_link_vif->hal_addr_search_flags &
+			u32_encode_bits(!!(dp_vif->hal_addr_search_flags &
 					HAL_TX_ADDRY_EN),
 					HAL_TX_BANK_CONFIG_ADDRY_EN);
 
@@ -2495,6 +2501,7 @@ u32 ath12k_wifi8_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 			u32_encode_bits(vdev_id_check_en,
 					HAL_TX_BANK_CONFIG_VDEV_ID_CHECK_EN);
 
+	/*TODO need to revist with qos implementation */
 	bank_config |= u32_encode_bits(dp_link_vif->map_id,
 				       HAL_TX_BANK_CONFIG_DSCP_TIP_MAP_ID);
 

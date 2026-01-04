@@ -30,6 +30,7 @@ struct ath12k_dp_htt_wbm_tx_status {
 };
 
 void ath12k_dp_tx_put_bank_profile(struct ath12k_dp *dp, u8 bank_id);
+u32 ath12k_dp_tx_get_bank_config_from_id(struct ath12k_dp *dp, u8 bank_id);
 
 void ath12k_dp_tx_encap_nwifi(struct sk_buff *skb);
 void *ath12k_dp_metadata_align_skb(struct sk_buff *skb, u8 tail_len);

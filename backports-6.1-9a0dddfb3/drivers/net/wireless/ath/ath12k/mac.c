@@ -9430,7 +9430,11 @@ install:
 
 	if (ether_addr_equal(macaddr, arvif->bssid)) {
 		arvif->key_cipher = key->cipher;
-		ath12k_dp_tx_update_bank_profile(arvif);
+		/* Key is needed in bank for only RAW mode */
+		if (arvif->ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_RAW)
+			ath12k_dp_arch_dp_link_vif_configure(ar->ab->dp, arvif->ahvif,
+							     arvif->link_id,
+							     ATH12K_DP_OP_UPDATE);
 	}
 
 	return ar->install_key_status ? -EINVAL : 0;
@@ -16819,32 +16823,12 @@ static void ath12k_mac_update_vif_offload(struct ath12k_link_vif *arvif)
 	int ret;
 
 	param_id = WMI_VDEV_PARAM_TX_ENCAP_TYPE;
-	if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET ||
-	    (vif->type != NL80211_IFTYPE_STATION &&
-	     vif->type != NL80211_IFTYPE_AP))
-		vif->offload_flags &= ~(IEEE80211_OFFLOAD_ENCAP_ENABLED |
-					IEEE80211_OFFLOAD_DECAP_ENABLED);
-
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-	/* TODO: DS: revisit this for DS support in WDS mode */
-	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags) &&
-	    (vif->type == NL80211_IFTYPE_AP || vif->type == NL80211_IFTYPE_STATION))
-		vif->offload_flags |= (IEEE80211_OFFLOAD_ENCAP_ENABLED |
-				IEEE80211_OFFLOAD_DECAP_ENABLED);
-#endif
-
-	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
-		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
-	else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ab->ag->flags))
-		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_RAW;
-	else
-		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
-
 	ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
 					    param_id, ahvif->dp_vif.tx_encap_type);
 	if (ret) {
 		ath12k_warn(ab, "failed to set vdev %d tx encap mode: %d\n",
 			    arvif->vdev_id, ret);
+		/* TODO handle failure for partner VIFs */
 		vif->offload_flags &= ~IEEE80211_OFFLOAD_ENCAP_ENABLED;
 	}
 
@@ -16861,6 +16845,7 @@ static void ath12k_mac_update_vif_offload(struct ath12k_link_vif *arvif)
 	if (ret) {
 		ath12k_warn(ab, "failed to set vdev %d rx decap mode: %d\n",
 			    arvif->vdev_id, ret);
+		/* TODO handle failure for partner VIFs */
 		vif->offload_flags &= ~IEEE80211_OFFLOAD_DECAP_ENABLED;
 	}
 }
@@ -16872,8 +16857,33 @@ void ath12k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 	struct ath12k_link_vif *arvif;
 	unsigned long links;
 	int link_id;
+	struct ath12k_hw *ah = hw->priv;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	/* TODO check if this updated of offload flags is needed?
+	 * as based on ath12k_frame_mode we are already setting
+	 * SUPPORTS_TX_ENCAP_OFFLOAD.
+	 *
+	 * Ideally mac80211 should take care of setting offload
+	 * flags accordingly. Replacing with just if check should
+	 * be good.
+	 */
+	if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET ||
+	    (vif->type != NL80211_IFTYPE_STATION &&
+	     vif->type != NL80211_IFTYPE_AP))
+		vif->offload_flags &= ~(IEEE80211_OFFLOAD_ENCAP_ENABLED |
+					IEEE80211_OFFLOAD_DECAP_ENABLED);
+
+	/* TODO do we need this code here ?
+	 * Can it be done only at init
+	 */
+	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
+		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
+	else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags))
+		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_RAW;
+	else
+		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
 
 	if (vif->valid_links) {
 		links = vif->valid_links;
@@ -16889,6 +16899,8 @@ void ath12k_mac_op_update_vif_offload(struct ieee80211_hw *hw,
 	}
 
 	ath12k_mac_update_vif_offload(&ahvif->deflink);
+	ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
+					ATH12K_DP_OP_UPDATE);
 }
 EXPORT_SYMBOL(ath12k_mac_op_update_vif_offload);
 
@@ -17167,12 +17179,6 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	arvif->map_id = map_id;
 
 	dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
-
-	dp_link_vif->vdev_id = arvif->vdev_id;
-	dp_link_vif->lmac_id = ar->lmac_id;
-	dp_link_vif->pdev_idx = ar->pdev_idx;
-	dp_link_vif->map_id = arvif->map_id;
-
 	/* Allocate link_peer_delete_stats */
 	dp_link_vif->link_peer_delete_stats = ath12k_dp_alloc_preserved_stats();
 	if (!dp_link_vif->link_peer_delete_stats) {
@@ -17447,9 +17453,13 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	ath12k_mac_ap_ps_recalc(ar);
 
-	/* for scan radio tx attach is not required as there is no tx from datapath */
+	/* for scan radio DP attach is not required as there
+	 * is no tx or rx from datapath
+	 */
 	if (!ath12k_is_scan_radio(ar))
-		ath12k_dp_vdev_tx_attach(ar, arvif);
+		ath12k_dp_arch_dp_link_vif_configure(ab->dp, ahvif,
+						     arvif->link_id,
+						     ATH12K_DP_OP_INIT);
 
 	if (vif->type == NL80211_IFTYPE_STATION &&
 	    (wdev && wdev->use_4addr)) {
@@ -17777,6 +17787,39 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 	 */
 	ahvif->dp_vif.ppe_vp_num = ppe_vp_num;
 	ahvif->dp_vif.ppe_vp_type = ppe_vp_type;
+	switch (vif->type) {
+	case NL80211_IFTYPE_UNSPECIFIED:
+	case NL80211_IFTYPE_STATION:
+	case NL80211_IFTYPE_P2P_DEVICE:
+		ahvif->vdev_type = WMI_VDEV_TYPE_STA;
+		break;
+	case NL80211_IFTYPE_MESH_POINT:
+	case NL80211_IFTYPE_AP:
+		ahvif->vdev_type = WMI_VDEV_TYPE_AP;
+		break;
+	case NL80211_IFTYPE_MONITOR:
+		ahvif->vdev_type = WMI_VDEV_TYPE_MONITOR;
+		break;
+	default:
+		ahvif->vdev_type = WMI_VDEV_TYPE_UNSPEC;
+		ath12k_info(NULL, "VDEV type not assigned for vif_type %u",
+			    vif->type);
+		break;
+	}
+
+	if (ath12k_frame_mode != ATH12K_HW_TXRX_ETHERNET ||
+	    (vif->type != NL80211_IFTYPE_STATION &&
+	     vif->type != NL80211_IFTYPE_AP))
+		vif->offload_flags &= ~(IEEE80211_OFFLOAD_ENCAP_ENABLED |
+					IEEE80211_OFFLOAD_DECAP_ENABLED);
+
+	if (vif->offload_flags & IEEE80211_OFFLOAD_ENCAP_ENABLED)
+		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_ETHERNET;
+	else if (test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags))
+		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_RAW;
+	else
+		ahvif->dp_vif.tx_encap_type = ATH12K_HW_TXRX_NATIVE_WIFI;
+
 	ahvif->tstats = alloc_percpu_gfp(struct pcpu_netdev_tid_stats, GFP_KERNEL);
 	if (!ahvif->tstats)
 		return -ENOMEM;
@@ -17788,6 +17831,11 @@ int ath12k_mac_op_add_interface(struct ieee80211_hw *hw,
 		ath12k_info(NULL, "Failed to allocate link_vif_delete_stats\n");
 		return -ENOMEM;
 	}
+
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA ||
+	    ahvif->vdev_type == WMI_VDEV_TYPE_AP)
+		ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
+						ATH12K_DP_OP_INIT);
 
 	/* Check the PPE VP type and update it accordingly.
 	 */
@@ -17979,7 +18027,6 @@ static int ath12k_mac_vdev_delete(struct ath12k *ar, struct ath12k_link_vif *arv
 {
 	struct ath12k_vif *ahvif = arvif->ahvif;
 	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(ahvif);
-	struct ath12k_dp_link_vif *dp_link_vif;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp *dp;
 	unsigned long time_left;
@@ -18050,14 +18097,11 @@ err_vdev_del:
 	if (!ath12k_is_scan_radio(ar)) {
 		dp = ath12k_ab_to_dp(ab);
 		ath12k_mac_vif_unref(dp, vif);
-		if (dp->bank_profiles) {
-			dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
-			ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
-
-			if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)
-				ath12k_dp_tx_put_bank_profile(dp,
-							      arvif->splitphy_ds_bank_id);
-		}
+		ath12k_dp_arch_dp_link_vif_configure(ab->dp, ahvif, arvif->link_id,
+						     ATH12K_DP_OP_DEINIT);
+		if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)
+			ath12k_dp_tx_put_bank_profile(dp,
+						      arvif->splitphy_ds_bank_id);
 	}
 
 	arvif->key_cipher = INVALID_CIPHER;
@@ -18095,6 +18139,7 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	struct ath12k_dp_vif *dp_vif;
 	u8 link_id;
 	int ret;
+	struct ath12k_hw *ah = hw->priv;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -18174,6 +18219,8 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 		ath12k_mac_unassign_link_vif(arvif);
 	}
 
+	ath12k_dp_arch_dp_vif_configure(ah->ag->dp_hw_grp, ahvif,
+					ATH12K_DP_OP_DEINIT);
 	dp_vif = &ahvif->dp_vif;
 	ath12k_dp_free_preserved_stats(dp_vif->link_vif_delete_stats);
 	dp_vif->link_vif_delete_stats = NULL;
@@ -24624,6 +24671,7 @@ void ath12k_mac_unregister(struct ath12k_hw_group *ag)
 
 static void ath12k_mac_hw_destroy(struct ath12k_hw *ah)
 {
+	ah->ag = NULL;
 	ieee80211_free_hw(ah->hw);
 }
 
@@ -24827,7 +24875,8 @@ int ath12k_mac_allocate(struct ath12k_hw_group *ag)
 
 		ah->dev = ab->dev;
 
-		ag->ah[i] = ah;
+		ath12k_ag_set_ah(ag, i, ah);
+		ah->ag = ag;
 		ag->num_hw++;
 	}
 

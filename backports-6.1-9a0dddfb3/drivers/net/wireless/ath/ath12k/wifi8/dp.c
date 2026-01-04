@@ -383,6 +383,113 @@ static struct ath12k_dp_hw_group *ath12k_wifi8_dp_hw_group_alloc(void)
 	return dp_hw_grp;
 }
 
+static void ath12k_wifi8_dp_vif_configure(struct ath12k_dp *dp,
+					  struct ath12k_vif *ahvif,
+					  enum ath12k_dp_op_type optype)
+{
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	u32 old_bank_config, new_bank_config;
+	struct ath12k_base *ab = dp->ab;
+	struct ath12k_dp *central_dp;
+	struct ath12k_base *central_ab =
+		ath12k_dp_get_ab_from_dp_hw_group(dp->dp_hw_grp);
+	int bank_id;
+	bool mec_support;
+
+	if (!central_ab) {
+		ath12k_err(dp->ab, "Central umac not configured unable to dp_vif");
+		return;
+	}
+
+	central_dp = central_ab->dp;
+	if (optype == ATH12K_DP_OP_DEINIT) {
+		if (dp_vif->bank_id != DP_INVALID_BANK_ID)
+			ath12k_dp_tx_put_bank_profile(central_dp, dp_vif->bank_id);
+		return;
+	} else if (optype == ATH12K_DP_OP_INIT) {
+		/*TODO keep vdev_id check disabled for initial emulation */
+		dp_vif->vdev_id_check_en = false;
+		ath12k_dp_update_vdev_search(ahvif);
+
+		/* convert vdev params into hal_tx_bank_config */
+		new_bank_config = ath12k_wifi8_dp_tx_get_vdev_bank_config(ab, ahvif, 0,
+									  false);
+		bank_id = ath12k_dp_tx_get_bank_profile(central_dp, new_bank_config);
+		dp_vif->bank_id = bank_id;
+
+		mec_support = test_bit(WMI_SERVICE_MEC_AGING_TIMER_SUPPORT,
+				       ab->wmi_ab.svc_map);
+		if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
+		    ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET && mec_support)
+			ath12k_wifi8_hal_vdev_mcast_ctrl_set
+				(central_ab, dp_vif->dp_vif_id,
+				 HAL_TX_PACKET_CONTROL_CONFIG_MEC_NOTIFY_TX);
+		else
+			/*TODO change this to tqm once mcast tqm path is enabled in FW*/
+			ath12k_wifi8_hal_vdev_mcast_ctrl_set
+				(central_ab, dp_vif->dp_vif_id,
+				 HAL_TX_PACKET_CONTROL_CONFIG_TO_FW_EXCEPTION);
+
+		/* TODO: error path for bank id failure */
+		if (bank_id == DP_INVALID_BANK_ID) {
+			ath12k_err(central_ab, "Failed to initialize DP TX Banks");
+			return;
+		}
+	} else if (optype == ATH12K_DP_OP_UPDATE) {
+		old_bank_config = ath12k_dp_tx_get_bank_config_from_id(central_dp,
+								   dp_vif->bank_id);
+		new_bank_config = ath12k_wifi8_dp_tx_get_vdev_bank_config(ab, ahvif,
+									  0, false);
+		if (old_bank_config != new_bank_config) {
+			ath12k_dp_tx_put_bank_profile(central_dp, dp_vif->bank_id);
+			bank_id = ath12k_dp_tx_get_bank_profile(central_dp,
+								new_bank_config);
+			dp_vif->bank_id = bank_id;
+		}
+		return;
+	}
+}
+
+static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
+					       struct ath12k_vif *ahvif,
+					       u8 link_id,
+					       enum ath12k_dp_op_type optype)
+{
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
+	struct ath12k_link_vif *arvif = ahvif->link[link_id];
+	struct ath12k *ar = arvif->ar;
+
+	if (optype == ATH12K_DP_OP_DEINIT)
+		return;
+
+	if (optype == ATH12K_DP_OP_INIT) {
+		dp_link_vif->vdev_id = arvif->vdev_id;
+		dp_link_vif->lmac_id = ar->lmac_id;
+		dp_link_vif->pdev_idx = ar->pdev_idx;
+
+		/* TODO change to dp_vif_id allocation later for
+		 * now assign to link vdev_id
+		 */
+		dp_vif->dp_vif_id = dp_link_vif->vdev_id;
+
+		dp_link_vif->tcl_metadata = u32_encode_bits(1, HTT_TCL_META_DATA_TYPE) |
+			u32_encode_bits(arvif->vdev_id,
+					HTT_TCL_META_DATA_VDEV_ID) |
+			u32_encode_bits(dp_link_vif->pdev_idx,
+					HTT_TCL_META_DATA_PDEV_ID);
+
+		/* set HTT extension valid bit to 0 by default */
+		dp_link_vif->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
+	}
+
+	/* TODO for now update dp_vif when link params updated */
+	if (dp_vif->bank_id == DP_INVALID_BANK_ID)
+		ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_INIT);
+	else
+		ath12k_wifi8_dp_vif_configure(dp, ahvif, ATH12K_DP_OP_UPDATE);
+}
+
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi8_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi8_dp_op_device_deinit,
@@ -420,6 +527,8 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_link_peer_assoc = ath12k_wifi8_dp_link_peer_assoc,
 	.dp_get_peer_mgmt_flowq = ath12k_wifi8_get_mgmt_flowq,
 	.dp_get_peer_holq = ath12k_wifi8_get_holq,
+	.dp_vif_configure = ath12k_wifi8_dp_vif_configure,
+	.dp_link_vif_configure = ath12k_wifi8_dp_link_vif_configure,
 };
 
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
