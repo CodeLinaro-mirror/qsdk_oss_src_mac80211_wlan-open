@@ -185,6 +185,61 @@ static void htt_print_hds_prof_stats_tlv(const void *tag_buf, u16 tag_len,
 	stats_req->buf_len = len;
 }
 
+static void
+ath12k_htt_print_optional_configs_stats_tlv(const void *tag_buf, u16 tag_len,
+					    struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_stats_optional_configs_stats_tlv *htt_stats_buf;
+	u32 flags, len, buf_len;
+	u8 *buf;
+
+	htt_stats_buf = tag_buf;
+	buf = stats_req->buf;
+	len = stats_req->buf_len;
+	buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	flags = le32_to_cpu(htt_stats_buf->flags);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "\nOptional configurations:\n");
+	len += scnprintf(buf + len, buf_len - len,
+			 "Dynamic ED-CCA status = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_DYN_CCA));
+	len += scnprintf(buf + len, buf_len - len,
+			 "LPI status = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_LPI));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Green Tx status = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_GTX));
+	len += scnprintf(buf + len, buf_len - len,
+			 "ANI status = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_ANI));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Static ANI status = %u\n",
+			 u32_get_bits(flags,
+				      HTT_STATS_OPT_CONF_STATIC_ANI));
+	len += scnprintf(buf + len, buf_len - len,
+			 "ANN PowerBoost status = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_ANN_PBT));
+	len += scnprintf(buf + len, buf_len - len,
+			 "EANI status = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_EANI));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Spur Mitigation status = %u\n",
+			 u32_get_bits(flags, HTT_STATS_OPT_CONF_SPUR_MIT));
+	len += scnprintf(buf + len, buf_len - len,
+			 "Multigain RSSI status = %u\n",
+			 u32_get_bits(flags,
+				      HTT_STATS_OPT_CONF_MULTIGAIN_RSSI));
+	len += scnprintf(buf + len, buf_len - len,
+			 "|========================|\n");
+
+	stats_req->buf_len = len;
+}
+
 static void ath12k_htt_print_htt_stats_gtx_stats_tlv_v(const void *tag_buf, u16 tag_len,
 						       struct debug_htt_stats_req *stats_req)
 {
@@ -11662,6 +11717,9 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 		break;
 	case HTT_STATS_HDS_PROF_STATS_TAG:
 		htt_print_hds_prof_stats_tlv(tag_buf, len, stats_req);
+		break;
+	case HTT_STATS_OPTIONAL_CONFIGS_STATS_TAG:
+		ath12k_htt_print_optional_configs_stats_tlv(tag_buf, len, stats_req);
 		break;
 	case HTT_STATS_TX_PDEV_WIFI_RADAR_TAG:
 		ath12k_htt_print_wifi_radar_stats_tlv(tag_buf, len, stats_req);

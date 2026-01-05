@@ -458,6 +458,7 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_STATS_GTX_STATS				= 68,
 	ATH12K_DBG_HTT_EXT_STATS_PDEV_UL_MUMIMO_ELIGIBLE        = 74,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_HDS_PROF 			= 76,
+	ATH12K_DBG_HTT_DBG_EXT_STATS_OPTIONAL_CONFIGS		= 77,
 
 	/* keep this last */
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
@@ -662,6 +663,7 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TX_SELFGEN_BN_SCHED_STATUS_TAG	= 222,
 	HTT_STATS_TX_PDEV_BN_DL_MU_OFDMA_STATS_TAG	= 223,
 	HTT_STATS_TX_PDEV_BN_UL_MU_OFDMA_STATS_TAG	= 224,
+	HTT_STATS_OPTIONAL_CONFIGS_STATS_TAG		= 232,
 
 	HTT_STATS_MAX_TAG,
 };
@@ -4985,6 +4987,45 @@ struct htt_stats_hds_prof_stats_tlv {
 	} channelChange_stats[HTT_STATS_HDS_PROF_STATS_CIRCULAR_BUF_LEN];
 	__le32 idx; /* shows how many channel changes have occurred */
 };
+
+struct htt_stats_optional_configs_stats_tlv {
+	union {
+		u32 flags;
+		struct {
+			/*
+			 * bit 0: Dynamic ED CCA status flag
+			 * bit 1: LPI status flag
+			 * bit 2: Green Tx status flag
+			 * bit 3: ANI status flag
+			 * bit 4: Static ANI status flag
+			 * bit 5: ANN Powerboost status flag
+			 * bit 6: EANI status flag
+			 * bit 7: Spur Mitigation status flag
+			 * bit 8: Multigain RSSI status flag
+			 */
+			u32 is_dyn_cca_enabled:1;        /* bit 0 */
+			u32 is_lpi_enabled:1;            /* bit 1 */
+			u32 is_gtx_enabled:1;            /* bit 2 */
+			u32 is_ani_enabled:1;            /* bit 3 */
+			u32 is_static_ani_enabled:1;     /* bit 4 */
+			u32 is_ann_pbt_enabled:1;        /* bit 5 */
+			u32 is_e_ani_enabled:1;          /* bit 6 */
+			u32 is_spur_mit_enabled:1;       /* bit 7 */
+			u32 is_multigain_rssi_enabled:1; /* bit 8 */
+			u32 reserved:23;                 /* bits 31:9 */
+		};
+	};
+} __packed;
+
+#define HTT_STATS_OPT_CONF_DYN_CCA        BIT(0)	/*Dynamic ED CCA Mask*/
+#define HTT_STATS_OPT_CONF_LPI            BIT(1)	/*LPI Mask*/
+#define HTT_STATS_OPT_CONF_GTX            BIT(2)	/*Green Tx Mask*/
+#define HTT_STATS_OPT_CONF_ANI            BIT(3)	/*ANI Mask*/
+#define HTT_STATS_OPT_CONF_STATIC_ANI     BIT(4)	/*Static ANI Mask*/
+#define HTT_STATS_OPT_CONF_ANN_PBT        BIT(5)	/*ANN Powerboost Mask*/
+#define HTT_STATS_OPT_CONF_EANI           BIT(6)	/*EANI Mask*/
+#define HTT_STATS_OPT_CONF_SPUR_MIT       BIT(7)	/*Spur Mitigation Mask*/
+#define HTT_STATS_OPT_CONF_MULTIGAIN_RSSI BIT(8)	/*Multigain RSSI Mask*/
 
 struct ath12k_htt_stats_txbf_ofdma_be_parbw_tlv {
 	__le32 be_ofdma_parbw_user_snd;
