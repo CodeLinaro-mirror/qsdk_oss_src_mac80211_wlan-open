@@ -19197,13 +19197,20 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 		goto out;
 	}
 
-	time_left = wait_for_completion_timeout(&ar->mvr_complete,
-						WMI_MVR_CMD_TIMEOUT_HZ);
-	if (!time_left) {
-		kfree(vdev_ids);
-		ath12k_err(ar->ab, "mac mvr cmd response timed out\n");
-		/* fallback to restarting one-by-one */
-		return ath12k_mac_update_vif_chan(ar, vifs, vifs_bridge_link_id, n_vifs);
+	/* Do not wait for MVR completion for scan radio channel change */
+	if (!ath12k_is_scan_radio(ar)) {
+		time_left = wait_for_completion_timeout(&ar->mvr_complete,
+							WMI_MVR_CMD_TIMEOUT_HZ);
+		if (!time_left) {
+			kfree(vdev_ids);
+			ath12k_err(ar->ab, "mac mvr cmd response timed out\n");
+			/* fallback to restarting one-by-one */
+			return ath12k_mac_update_vif_chan(ar, vifs,
+							  vifs_bridge_link_id,
+							  n_vifs);
+		}
+	} else {
+		arvif->mvr_processing = false;
 	}
 
 	if (tx_arvif) {
