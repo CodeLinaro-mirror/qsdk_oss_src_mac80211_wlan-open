@@ -12157,7 +12157,9 @@ skip_beacons:
 	if (info->attrs[NL80211_ATTR_CH_SWITCH_BLOCK_TX])
 		params.block_tx = true;
 
-	if (info->attrs[NL80211_ATTR_UNSOL_BCAST_PROBE_RESP]) {
+	if ((wdev->iftype == NL80211_IFTYPE_AP ||
+	     wdev->iftype == NL80211_IFTYPE_P2P_GO) &&
+	     info->attrs[NL80211_ATTR_UNSOL_BCAST_PROBE_RESP]) {
 		err = nl80211_parse_unsol_bcast_probe_resp(rdev,
 							   info->attrs[NL80211_ATTR_UNSOL_BCAST_PROBE_RESP],
 							   &params.unsol_bcast_probe_resp);
@@ -18093,6 +18095,14 @@ static int nl80211_color_change(struct sk_buff *skb, struct genl_info *info)
 		}
 
 		params.counter_offset_presp = offset;
+	}
+
+	if (info->attrs[NL80211_ATTR_UNSOL_BCAST_PROBE_RESP]) {
+		err = nl80211_parse_unsol_bcast_probe_resp(
+			rdev, info->attrs[NL80211_ATTR_UNSOL_BCAST_PROBE_RESP],
+			&params.unsol_bcast_probe_resp);
+		if (err)
+			goto out;
 	}
 
 	params.link_id = nl80211_link_id(info->attrs);
