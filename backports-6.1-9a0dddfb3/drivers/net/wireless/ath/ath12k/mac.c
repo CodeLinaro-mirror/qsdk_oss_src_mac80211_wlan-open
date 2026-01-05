@@ -23190,6 +23190,7 @@ static void ath12k_mac_hw_unregister(struct ath12k_hw *ah)
 		cancel_work_sync(&ar->regd_update_work);
 		cancel_work_sync(&ar->reg_set_previous_country);
 		ath12k_debugfs_unregister(ar);
+		ath12k_sysfs_cleanup_extn(ar);
 	}
 
 	ieee80211_unregister_hw(hw);
@@ -23715,6 +23716,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 
 		ath12k_fw_stats_init(ar);
 		ath12k_debugfs_register(ar);
+		ath12k_sysfs_init_extn(ar);
 		ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
 				 "mac pdev %u freq limits %u->%u MHz, no. of channels %u\n",
 				 ar->pdev->pdev_id, ar->freq_range.start_freq,
