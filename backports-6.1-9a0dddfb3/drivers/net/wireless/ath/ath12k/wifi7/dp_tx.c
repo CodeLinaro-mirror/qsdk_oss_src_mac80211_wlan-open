@@ -2270,7 +2270,7 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		sw_metadata->len = tx_desc->len;
 		sw_metadata->flags = tx_desc->flags;
 
-		if (unlikely(!sw_metadata->flags & DP_TX_DESC_FLAG_FAST)) {
+		if (unlikely(!(sw_metadata->flags & DP_TX_DESC_FLAG_FAST))) {
 			sw_metadata->skb_ext_desc = tx_desc->skb_ext_desc;
 			sw_metadata->paddr_ext_desc = tx_desc->paddr_ext_desc;
 			tx_desc->skb_ext_desc = NULL;
