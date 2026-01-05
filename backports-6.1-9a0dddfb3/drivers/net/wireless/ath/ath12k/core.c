@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ *  Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/module.h>
@@ -5009,6 +5009,9 @@ int ath12k_core_init(struct ath12k_base *ab)
 	if (ret)
 		ath12k_warn(ab, "failed to register panic handler: %d\n", ret);
 
+#ifdef CPTCFG_ATHDEBUG
+	athdbg_ops_register(ab);
+#endif
 	mutex_lock(&ath12k_hw_group_mutex);
 
 	ag = ath12k_core_hw_group_assign(ab);

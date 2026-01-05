@@ -13,22 +13,28 @@ enum athdbg_service {
 	ATHDBG_SRV_COLLECT_MINIDUMP_REFERENCES,
 	ATHDBG_SRV_QMI_DEINIT,
 	ATHDBG_SRV_QDSS_MEM_FREE,
+	ATHDBG_SRV_MHI_Q6_DUMP_BL_SRAM,
+	ATHDBG_SRV_MHI_Q6_BOOT_DEBUG_TIMEOUT,
 };
 
 struct athdbg_to_ath12k_ops {
-	struct reserved_mem *(*get_reserved_mem_by_name)(struct ath12k_base *ab, const char *name);
+	struct reserved_mem *(*get_reserved_mem_by_name)(
+			struct ath12k_base *ab, const char *name);
 	void (*coredump_qdss_dump)(struct ath12k_base *ab,
 			struct ath12k_qmi_event_qdss_trace_save_data *event_data);
 	void (*coredump_dump_segment)(struct ath12k_base *ab,
 			struct ath12k_dump_segment *segments, size_t seg_len);
 	bool (*dev_running_status)(struct ath12k_base *drv_ab);
 	void (*set_dbg_mask)(unsigned int debug_mask);
-	struct ath12k_link_vif *(*get_link_vif_from_vdev_id)(struct ath12k_base *ab,
-							     u32 vdev_id);
+	struct ath12k_link_vif *(*get_link_vif_from_vdev_id)(
+			struct ath12k_base *ab, u32 vdev_id);
+	u32 (*pci_read32)(struct ath12k_base *ab, u32 offset);
+	void *(*pci_get_priv)(struct ath12k_base *ab);
 };
 
 bool athdbg_if_check_dev_running(struct ath12k_base *drv_ab);
 void athdbg_if_setmask(unsigned int debug_mask);
+void athdbg_ops_register(struct ath12k_base *drv_ab);
 void athdbg_if_register(struct ath12k_base *drv_ab);
 void athdbg_if_unregister(struct ath12k_base *ab);
 int athdbg_if_get_service(struct ath12k_base *ab, enum athdbg_service srv);

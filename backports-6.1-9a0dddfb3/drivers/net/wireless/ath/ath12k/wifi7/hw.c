@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: BSD-3-Clause-Clear
 /*
  * Copyright (c) 2018-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 
 #include <linux/types.h>
@@ -17,6 +17,8 @@
 #include "../qcn_extns/ath12k_cmn_extn.h"
 #include "../mhi.h"
 #include "mhi.h"
+#include "../pci.h"
+#include "pci.h"
 #include "dp_rx.h"
 #include "wmi.h"
 #include "../wow.h"
@@ -65,6 +67,73 @@ static bool ath12k_wifi7_dp_srng_is_comp_ring_qcn9274(int ring_num)
 		return true;
 
 	return false;
+}
+
+static const struct mhi_q6_noc_err_reg qcn9274_noc_err_regs[] = {
+	{"SNOC_ERL_ErrVld_Low", QCN9224_SNOC_ERL_ErrVld_Low},
+	{"SNOC_ERL_ErrLog0_Low", QCN9224_SNOC_ERL_ErrLog0_Low},
+	{"SNOC_ERL_ErrLog0_High", QCN9224_SNOC_ERL_ErrLog0_High},
+	{"SNOC_ERL_ErrLog1_Low", QCN9224_SNOC_ERL_ErrLog1_Low},
+	{"SNOC_ERL_ErrLog1_High", QCN9224_SNOC_ERL_ErrLog1_High},
+	{"SNOC_ERL_ErrLog2_Low", QCN9224_SNOC_ERL_ErrLog2_Low},
+	{"SNOC_ERL_ErrLog2_High", QCN9224_SNOC_ERL_ErrLog2_High},
+	{"SNOC_ERL_ErrLog3_Low", QCN9224_SNOC_ERL_ErrLog3_Low},
+	{"SNOC_ERL_ErrLog3_High", QCN9224_SNOC_ERL_ErrLog3_High},
+	{"PCNOC_ERL_ErrVld_Low", QCN9224_PCNOC_ERL_ErrVld_Low},
+	{"PCNOC_ERL_ErrLog0_Low", QCN9224_PCNOC_ERL_ErrLog0_Low},
+	{"PCNOC_ERL_ErrLog0_High", QCN9224_PCNOC_ERL_ErrLog0_High},
+	{"PCNOC_ERL_ErrLog1_Low", QCN9224_PCNOC_ERL_ErrLog1_Low},
+	{"PCNOC_ERL_ErrLog1_High", QCN9224_PCNOC_ERL_ErrLog1_High},
+	{"PCNOC_ERL_ErrLog2_Low", QCN9224_PCNOC_ERL_ErrLog2_Low},
+	{"PCNOC_ERL_ErrLog2_High", QCN9224_PCNOC_ERL_ErrLog2_High},
+	{"PCNOC_ERL_ErrLog3_Low", QCN9224_PCNOC_ERL_ErrLog3_Low},
+	{"PCNOC_ERL_ErrLog3_High", QCN9224_PCNOC_ERL_ErrLog3_High},
+};
+
+static void ath12k_wifi7_fill_mhi_q6_debug_reg_info_qcn9274(
+					struct ath12k_base *ab,
+					struct ath12k_mhi_q6_dbg_reg_arg *arg)
+{
+	switch (arg->req) {
+	case ATH12K_MHI_Q6_DBG_FILL_BL_REGS:
+		struct ath12k_pci *ab_pci = ath12k_pci_priv(ab);
+		struct mhi_controller *mhi_ctrl = ab_pci->mhi_ctrl;
+		struct mhi_q6_sbl_reg_addr *sbl = arg->regs.bl.sbl;
+		struct mhi_q6_pbl_reg_addr *pbl = arg->regs.bl.pbl;
+
+		sbl->sbl_sram_start = QCN9224_SRAM_START;
+		sbl->sbl_sram_end = QCN9224_SRAM_END;
+		sbl->sbl_log_size_reg = QCN9224_PCIE_BHI_ERRDBG3_REG;
+		sbl->sbl_log_start_reg = QCN9224_PCIE_BHI_ERRDBG2_REG;
+		sbl->sbl_log_size_shift = 0;
+
+		if (mhi_ctrl && mhi_ctrl->major_version == 2)
+			pbl->pbl_log_sram_start = QCN9224_v2_PBL_LOG_SRAM_START;
+		else
+			pbl->pbl_log_sram_start = QCN9224_PBL_LOG_SRAM_START;
+
+		pbl->pbl_log_sram_max_size = QCN9224_PBL_LOG_SRAM_MAX_SIZE;
+		pbl->tcsr_pbl_logging_reg = QCN9224_TCSR_PBL_LOGGING_REG;
+		pbl->pbl_wlan_boot_cfg = QCN9224_PBL_WLAN_BOOT_CFG;
+		pbl->pbl_bootstrap_status = QCN9224_PBL_BOOTSTRAP_STATUS;
+		break;
+	case ATH12K_MHI_Q6_DBG_FILL_MISC_REGS:
+		struct mhi_q6_dump_pbl_sbl_data *out = arg->regs.misc.out;
+
+		out->remap_bar_ctrl =
+				ath12k_pci_read32(ab,
+					  QCN9224_PCIE_PCIE_LOCAL_REG_REMAP_BAR_CTRL);
+		out->soc_rc_shadow_reg =
+				ath12k_pci_read32(ab,
+					   QCN9224_WLAON_SOC_RESET_CAUSE_SHADOW_REG);
+		out->parf_ltssm = ath12k_pci_read32(ab, QCN9224_PCIE_PCIE_PARF_LTSSM);
+		out->gcc_ramss_cbcr = ath12k_pci_read32(ab, QCN9224_GCC_RAMSS_CBCR);
+		break;
+	case ATH12K_MHI_Q6_DBG_GET_NOC_TBL:
+		*arg->regs.noc.tbl = qcn9274_noc_err_regs;
+		*arg->regs.noc.len = ARRAY_SIZE(qcn9274_noc_err_regs);
+		break;
+	}
 }
 
 static int
@@ -197,6 +266,8 @@ static const struct ath12k_hw_ops qcn9274_ops = {
 	.get_ring_selector = ath12k_wifi7_hw_get_ring_selector_qcn9274,
 	.dp_srng_is_tx_comp_ring = ath12k_wifi7_dp_srng_is_comp_ring_qcn9274,
 	.fill_cfr_hdr_info = ath12k_hw_qcn9274_fill_cfr_hdr_info,
+	/* Unified WiFi7 debug ops */
+	.fill_mhi_q6_debug_reg_info = ath12k_wifi7_fill_mhi_q6_debug_reg_info_qcn9274,
 };
 
 static const struct ath12k_hw_ops wcn7850_ops = {

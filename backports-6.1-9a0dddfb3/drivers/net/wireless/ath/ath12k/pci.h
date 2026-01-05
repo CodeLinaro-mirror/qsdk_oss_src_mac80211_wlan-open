@@ -1,15 +1,18 @@
 /* SPDX-License-Identifier: BSD-3-Clause-Clear */
 /*
  * Copyright (c) 2019-2021 The Linux Foundation. All rights reserved.
- * Copyright (c) 2021-2025 Qualcomm Innovation Center, Inc. All rights reserved.
+ * Copyright (c) Qualcomm Technologies, Inc. and/or its subsidiaries.
  */
 #ifndef ATH12K_PCI_H
 #define ATH12K_PCI_H
 
 #include <linux/mhi.h>
+#include <linux/timer.h>
 
 #include "core.h"
 
+#define QCN9274_DEVICE_ID       0x1109
+#define MHI_POWER_ON_DEBUG_TIMEOUT_MS 7000
 #define PCIE_SOC_GLOBAL_RESET			0x3008
 #define PCIE_SOC_GLOBAL_RESET_V			1
 
@@ -27,6 +30,13 @@
 
 #define PCIE_PCIE_PARF_LTSSM			0x1e081b0
 #define PARM_LTSSM_VALUE			0x111
+
+#define PCIE_PCIE_PARF_PM_STTS              0x1E08024
+
+#define PCIE_PCI_MSI_CAP_ID_NEXT_CTRL_REG   0x50
+#define PCIE_MSI_CAP_OFF_04H_REG        0x54
+#define PCIE_MSI_CAP_OFF_08H_REG        0x58
+#define PCIE_MSI_CAP_OFF_0CH_REG        0x5C
 
 #define GCC_GCC_PCIE_HOT_RST			0x1e38338
 #define GCC_GCC_PCIE_HOT_RST_VAL		0x10
@@ -117,7 +127,7 @@ struct ath12k_pci {
 	unsigned long mhi_state;
 	enum mhi_callback mhi_pre_cb;
 	u32 register_window;
-
+	struct timer_list mhi_q6_boot_debug_timer;
 	/* protects register_window above */
 	spinlock_t window_lock;
 
