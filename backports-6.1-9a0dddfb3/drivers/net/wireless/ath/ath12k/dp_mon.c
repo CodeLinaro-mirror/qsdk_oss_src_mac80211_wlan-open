@@ -1266,14 +1266,11 @@ static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
 
 	/* Check if we've hit the grace period */
 	if (peer->rssi_mon.low_rssi_count >= cfg->grace_samples) {
-		/* Set atomic event flag */
-		atomic_or(ATH12K_PEER_EVENT_RSSI_LOW, &peer->event_flags);
-
-		/* Set event type and peer info for safe lookup */
-		peer->event.type = ATH12K_VIF_EVENT_TYPE_PEER;
+		/* Set atomic event flag in event structure */
+		atomic_or(ATH12K_PEER_EVENT_RSSI_LOW, &peer->event.common.flags);
 		peer->event.peer_id = peer->peer_id;
-		peer->event.link_id = peer->link_id;
-		peer->event.hw_link_id = peer->hw_link_id;
+		peer->event.common.link_id = peer->link_id;
+		peer->event.common.hw_link_id = peer->hw_link_id;
 
 		ath12k_generic_dbg(ATH12K_DBG_PEER,
 				   "Enqueue peer for deauth: (%pM vif type: %d low rssi count: %d), cfg (en: %d thres %d grace: %d) last rssi: %d\n",
@@ -1281,10 +1278,8 @@ static void ath12k_dp_mon_check_rssi_deauth(struct ath12k_dp_link_peer *peer,
 				   peer->rssi_mon.low_rssi_count,
 				   cfg->enabled, cfg->rssi_threshold,
 				   cfg->grace_samples, signal_dbm);
-		/* Add to event queue and schedule work if needed */
-		/* Note: llist_add returns true if list was empty */
-		if (llist_add(&peer->event.node, &ahvif->event_list))
-			wiphy_work_queue(ahvif->ah->hw->wiphy, &ahvif->event_work);
+		/* Enqueue event - hw_link_id already set during peer assignment */
+		ath12k_event_enqueue(&ahvif->event_queue, &peer->event.common);
 	}
 }
 
