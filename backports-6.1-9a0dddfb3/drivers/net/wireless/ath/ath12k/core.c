@@ -2817,7 +2817,8 @@ key_add:
 					 */
 					rcu_read_unlock();
 					ret = ath12k_mac_set_key(p_arvif->ar, SET_KEY,
-								 p_arvif,  p_arsta, key);
+								 p_arvif, p_arsta,
+								 key, NULL);
 					rcu_read_lock();
 					if (ret)
 						break;
@@ -2834,7 +2835,7 @@ key_add:
 				 */
 				rcu_read_unlock();
 				ret = ath12k_mac_set_key(p_arvif->ar, SET_KEY, p_arvif,
-							 p_arsta, key);
+							 p_arsta, key, NULL);
 				rcu_read_lock();
 			}
 		}
@@ -3297,6 +3298,25 @@ static void ath12k_core_peer_disassoc(struct ath12k_hw_group *ag,
 	}
 }
 
+static void ath12k_reset_group_key_slots(struct ath12k_link_vif *arvif,
+					 struct ath12k_vif *ahvif)
+{
+	struct ath12k_vlan_iface *vlan_iface;
+
+	bitmap_fill(arvif->free_groupidx_map, ATH12K_GROUP_KEYS_NUM_MAX);
+	/* HW group idx 0 reserved, mark unavailable */
+	clear_bit(0, arvif->free_groupidx_map);
+
+	if (ahvif->vif &&
+	    ahvif->vif->type == NL80211_IFTYPE_AP_VLAN) {
+		vlan_iface = ahvif->vlan_iface;
+		if (vlan_iface && !vlan_iface->is_wds_4addr)
+			memset(vlan_iface->grp_key_slot_map[arvif->link_id],
+			       ATH12K_GROUP_KEY_SLOT_INVALID,
+			       sizeof(vlan_iface->grp_key_slot_map[arvif->link_id]));
+	}
+}
+
 /* Wrapper function for recovery after crash
  * This recovery function will be called for
  * both Mode 1 and Mode 2. Because both Mode
@@ -3515,13 +3535,16 @@ skip_link_info:
 				}
 				spin_unlock_bh(&dp->dp_lock);
 
+				ath12k_reset_group_key_slots(arvif, ahvif);
 				for (key_idx = 0; key_idx < WMI_MAX_KEY_INDEX; key_idx++) {
 					key = arvif->keys[key_idx];
 					if (key) {
 						ath12k_dbg(ab, ATH12K_DBG_MODE1_RECOVERY,
 								"key:%p cipher:%d idx:%d flags:%d\n",
 								key, key->cipher, key->keyidx, key->flags);
-						ret = ath12k_mac_set_key(arvif->ar, SET_KEY, arvif, NULL, key);
+						ret = ath12k_mac_set_key(arvif->ar,
+									 SET_KEY, arvif,
+									 NULL, key, NULL);
 					}
 				}
 			}

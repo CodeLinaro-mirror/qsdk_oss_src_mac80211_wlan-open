@@ -2255,16 +2255,18 @@ void ath12k_mac_op_sta_set_4addr(struct ieee80211_hw *hw,
 					struct ieee80211_sta *sta, bool enabled)
 {
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_vlan_iface *vlan_iface = ahvif->vlan_iface;
 
 	if (enabled && !ahsta->use_4addr_set) {
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-
 		ahsta->ppe_vp_num = ahvif->dp_vif.ppe_vp_num;
 		ahsta->vlan_iface = ahvif->vlan_iface;
 #endif
 		wiphy_work_queue(hw->wiphy, &ahsta->set_4addr_wk);
 		ahsta->use_4addr_set = true;
+		if (vif->type == NL80211_IFTYPE_AP_VLAN && vlan_iface)
+			vlan_iface->is_wds_4addr = true;
 	}
 }
 EXPORT_SYMBOL(ath12k_mac_op_sta_set_4addr);
@@ -5808,6 +5810,11 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 			   "mac init link arvif (link_id %d%s) for vif %pM. links_map 0x%x",
 			   _link_id, (link_id < 0) ? " deflink" : "", ahvif->vif->addr,
 			   ahvif->links_map);
+
+	/* DVLAN+MPSK: initialize per vdev group key maps for AP_VLAN */
+	bitmap_fill(arvif->free_groupidx_map, ATH12K_GROUP_KEYS_NUM_MAX);
+	/* HW group idx 0 reserved, mark unavailable */
+	clear_bit(0, arvif->free_groupidx_map);
 }
 
 void ath12k_mac_set_vendor_intf_detect(struct ath12k *ar, u8 intf_detect_bitmap)
@@ -9377,7 +9384,8 @@ EXPORT_SYMBOL(ath12k_mac_op_cancel_hw_scan);
 static int ath12k_install_key(struct ath12k_link_vif *arvif,
 			      struct ieee80211_key_conf *key,
 			      enum set_key_cmd cmd,
-			      const u8 *macaddr, u32 flags)
+			      const u8 *macaddr, u32 flags,
+			      struct ath12k_vif *vlan_ahvif)
 {
 	int ret;
 	struct ath12k *ar = arvif->ar;
@@ -9389,6 +9397,7 @@ static int ath12k_install_key(struct ath12k_link_vif *arvif,
 		.key_flags = flags,
 		.macaddr = macaddr,
 	};
+	u8 slot;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -9442,6 +9451,22 @@ static int ath12k_install_key(struct ath12k_link_vif *arvif,
 			      IEEE80211_KEY_FLAG_RESERVE_TAILROOM;
 
 install:
+	/* For AP_VLAN group keys, pass extended group_key_id when available */
+	if (!(key->flags & IEEE80211_KEY_FLAG_PAIRWISE) && vlan_ahvif &&
+	    vlan_ahvif->vif->type == NL80211_IFTYPE_AP_VLAN &&
+	    !vlan_ahvif->vlan_iface->is_wds_4addr) {
+		if (cmd == DISABLE_KEY) {
+			arg.is_group_key_id_valid = 0;
+			arg.group_key_id = 0;
+		} else {
+			slot = key->hw_key_idx;
+
+			if (slot < ATH12K_GROUP_KEYS_NUM_MAX) {
+				arg.is_group_key_id_valid = 1;
+				arg.group_key_id = slot;
+			}
+		}
+	}
 	ret = ath12k_wmi_vdev_install_key(arvif->ar, &arg);
 
 	if (ret)
@@ -9497,7 +9522,7 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 
 		/* key flags are not required to delete the key */
 		ret = ath12k_install_key(arvif, keys[i],
-					 DISABLE_KEY, addr, flags);
+					 DISABLE_KEY, addr, flags, NULL);
 		if (ret < 0 && first_errno == 0)
 			first_errno = ret;
 
@@ -9509,10 +9534,74 @@ static int ath12k_clear_peer_keys(struct ath12k_link_vif *arvif,
 	return first_errno;
 }
 
+static int ath12k_group_slot_alloc(struct ath12k *ar,
+				   struct ath12k_link_vif *arvif,
+				   struct ieee80211_key_conf *key,
+				   struct ath12k_vif *vlan_ahvif)
+{
+	int link_id = arvif->link_id;
+	unsigned long bit;
+	u8 *map_entry, *vmap;
+	u8 slot;
+	bool is_vlan = false;
+
+	if (vlan_ahvif->vlan_iface) {
+		/* Retrieve the group key slot map specific to this link */
+		vmap = vlan_ahvif->vlan_iface->grp_key_slot_map[link_id];
+		/* Point to the entry corresponding to the key index */
+		map_entry = &vmap[key->keyidx];
+		is_vlan = true;
+	}
+
+	if (!is_vlan)
+		return -ENOSPC;
+
+	slot = *map_entry;
+	if (slot < ATH12K_GROUP_KEYS_NUM_MAX && slot != 0 &&
+	    slot != ATH12K_GROUP_KEY_SLOT_INVALID)
+		return slot;
+
+	bit = find_first_bit(arvif->free_groupidx_map,
+			     ATH12K_GROUP_KEYS_NUM_MAX);
+	if (bit >= ATH12K_GROUP_KEYS_NUM_MAX) {
+		ath12k_warn(ar->ab,
+			    "no free group key slots (max %d)\n",
+			    ATH12K_GROUP_KEYS_NUM_MAX);
+		return -ENOSPC;
+	}
+
+	slot = bit;
+	clear_bit(slot, arvif->free_groupidx_map);
+	/* Update the VLAN map entry to new slot */
+	*map_entry = slot;
+	return slot;
+}
+
+static void ath12k_group_slot_free(struct ath12k_link_vif *arvif,
+				   struct ieee80211_key_conf *key,
+				    struct ath12k_vif *vlan_ahvif)
+{
+	int link_id = arvif->link_id;
+	u8 *map_entry, *vmap;
+	u8 slot;
+
+	if (vlan_ahvif && vlan_ahvif->vif->type == NL80211_IFTYPE_AP_VLAN &&
+	    vlan_ahvif->vlan_iface) {
+		vmap = vlan_ahvif->vlan_iface->grp_key_slot_map[link_id];
+		map_entry = &vmap[key->keyidx];
+		slot = *map_entry;
+		if (slot < ATH12K_GROUP_KEYS_NUM_MAX && slot != 0) {
+			set_bit(slot, arvif->free_groupidx_map);
+			*map_entry = ATH12K_GROUP_KEY_SLOT_INVALID;
+		}
+	}
+}
+
 int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 			      struct ath12k_link_vif *arvif,
 			      struct ath12k_link_sta *arsta,
-			      struct ieee80211_key_conf *key)
+			      struct ieee80211_key_conf *key,
+			      struct ath12k_vif *vlan_ahvif)
 {
 	struct ieee80211_sta *sta = NULL;
 	struct ath12k_base *ab = ar->ab;
@@ -9521,6 +9610,7 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	const u8 *peer_addr;
 	int ret;
 	u32 flags = 0;
+	int idx;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
@@ -9569,7 +9659,25 @@ int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
 	else
 		flags |= WMI_KEY_GROUP;
 
-	ret = ath12k_install_key(arvif, key, cmd, peer_addr, flags);
+	if (!(key->flags & IEEE80211_KEY_FLAG_PAIRWISE) &&
+	    (vlan_ahvif && vlan_ahvif->vif->type == NL80211_IFTYPE_AP_VLAN)) {
+		switch (cmd) {
+		case SET_KEY:
+			idx = ath12k_group_slot_alloc(ar, arvif, key, vlan_ahvif);
+			/* Fallback to SW encryption */
+			if (idx < 0)
+				return 1;
+			key->hw_key_idx = idx;
+			break;
+		case DISABLE_KEY:
+			ath12k_group_slot_free(arvif, key, vlan_ahvif);
+			break;
+		default:
+			break;
+		}
+	}
+
+	ret = ath12k_install_key(arvif, key, cmd, peer_addr, flags, vlan_ahvif);
 	if (ret) {
 		ath12k_warn(ab, "ath12k_install_key failed (%d)\n", ret);
 		return ret;
@@ -9688,9 +9796,11 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			  struct ieee80211_key_conf *key)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	struct ath12k_link_vif *arvif;
+	struct ath12k_link_vif *arvif, *master_arvif = NULL;
 	struct ath12k_link_sta *arsta = NULL;
 	struct ath12k_vif_cache *cache;
+	struct ath12k_vif *vlan_ahvif = NULL, *master_ahvif;
+	struct ath12k_vlan_iface *vlan_iface = NULL;
 	struct ath12k_sta *ahsta;
 	unsigned long links;
 	u8 link_id;
@@ -9700,6 +9810,10 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 
 	/* IGTK needs to be done in host software */
 	if (key->keyidx == 4 || key->keyidx == 5)
+		return 1;
+
+	/* BIGTK is per BSS */
+	if (vif->type == NL80211_IFTYPE_AP_VLAN && key->keyidx == 6)
 		return 1;
 
 	if (key->keyidx > WMI_MAX_KEY_INDEX)
@@ -9726,7 +9840,7 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 					continue;
 
 				ret = ath12k_mac_set_key(arvif->ar, cmd, arvif,
-							 arsta, key);
+							 arsta, key, NULL);
 				if (ret)
 					break;
 				if (cmd == SET_KEY)
@@ -9743,7 +9857,7 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		if (WARN_ON(!arvif))
 			return -EINVAL;
 
-		ret = ath12k_mac_set_key(arvif->ar, cmd, arvif, arsta, key);
+		ret = ath12k_mac_set_key(arvif->ar, cmd, arvif, arsta, key, NULL);
 		if (ret)
 			return ret;
 		if (cmd == SET_KEY)
@@ -9753,12 +9867,41 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		return 0;
 	}
 
-	if (key->link_id >= 0 && key->link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
+	if (vif->type == NL80211_IFTYPE_AP_VLAN &&
+	    !(key->flags & IEEE80211_KEY_FLAG_PAIRWISE)) {
+		vlan_ahvif = ath12k_vif_to_ahvif(vif);
+		vlan_iface = ahvif->vlan_iface;
+
+		if (vlan_ahvif && vlan_ahvif->vlan_iface &&
+		    vlan_ahvif->vlan_iface->is_wds_4addr)
+			vlan_ahvif = NULL;
+		if (vlan_iface && vlan_iface->parent_vif)
+			master_ahvif = ath12k_vif_to_ahvif(vlan_iface->parent_vif);
+		else
+			master_ahvif = NULL;
+		if (master_ahvif) {
+			if (key->link_id >= 0 &&
+			    key->link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
+				link_id = key->link_id;
+				master_arvif =
+					wiphy_dereference(hw->wiphy,
+							  master_ahvif->link[link_id]);
+			}
+			if (!master_arvif)
+				master_arvif = &master_ahvif->deflink;
+		}
+	}
+
+	if (key->link_id >= 0 && key->link_id < IEEE80211_MLD_MAX_NUM_LINKS &&
+	    !master_arvif) {
 		link_id = key->link_id;
 		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
-	} else {
+	} else if (!master_arvif) {
 		link_id = 0;
 		arvif = &ahvif->deflink;
+	} else {
+		arvif = master_arvif;
+		link_id = arvif->link_id;
 	}
 
 	if (!arvif || !arvif->is_created) {
@@ -9773,7 +9916,7 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 		return 0;
 	}
 
-	ret = ath12k_mac_set_key(arvif->ar, cmd, arvif, NULL, key);
+	ret = ath12k_mac_set_key(arvif->ar, cmd, arvif, NULL, key, vlan_ahvif);
 	if (ret)
 		return ret;
 
@@ -13537,7 +13680,7 @@ static int ath12k_sta_ml_reconfig_handler(struct ieee80211_hw *hw,
 				ret = ath12k_install_key(arvif,
 							 keys[i],
 							 SET_KEY, arsta->addr,
-							 flags);
+							 flags, NULL);
 				if (ret) {
 					ath12k_warn(ar->ab, "failed to add peer key %d: %d\n",
 						    i, ret);
@@ -17541,7 +17684,7 @@ static void ath12k_mac_vif_flush_key_cache(struct ath12k_link_vif *arvif)
 
 		ret = ath12k_mac_set_key(arvif->ar, key_conf->cmd,
 					 arvif, arsta,
-					 key_conf->key);
+					 key_conf->key, NULL);
 		if (ret)
 			ath12k_warn(arvif->ar->ab, "unable to apply set key param to vdev %d ret %d\n",
 				    arvif->vdev_id, ret);
@@ -17874,6 +18017,10 @@ ppe_vp_config:
 			ahvif->vlan_iface = vlan_iface;
 			ath12k_ppe_ds_attach_vlan_vif_link(ahvif->vlan_iface,
 							   ahvif->dp_vif.ppe_vp_num);
+
+			memset(ahvif->vlan_iface->grp_key_slot_map,
+			       ATH12K_GROUP_KEY_SLOT_INVALID,
+			       sizeof(ahvif->vlan_iface->grp_key_slot_map));
 			goto exit;
 		}
 	}
@@ -18720,6 +18867,24 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 		}
 	}
 
+	/* Enable multi group keys for AP/AP_VLAN when service is advertised */
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_AP &&
+	    test_bit(WMI_TLV_SERVICE_VDEV_MULTI_GROUP_KEY_SUPPORT,
+		     ar->ab->wmi_ab.svc_map)) {
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+						    WMI_VDEV_PARAM_ENABLE_MULTI_GROUP_KEY,
+						    1);
+		if (ret)
+			ath12k_warn(ab, "failed to enable vdev multi group key on vdev %d: %d\n",
+				    arvif->vdev_id, ret);
+
+		ret = ath12k_wmi_vdev_set_param_cmd(ar, arvif->vdev_id,
+						    WMI_VDEV_PARAM_NUM_GROUP_KEYS,
+						    ATH12K_GROUP_KEYS_NUM_MAX);
+		if (ret)
+			ath12k_warn(ab, "failed to set vdev multi group key count on vdev %d: %d\n",
+				    arvif->vdev_id, ret);
+	}
 	return ret;
 }
 
@@ -24025,6 +24190,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	}
 
 	ieee80211_hw_set(hw, SUPPORTS_VLAN_DATA_OFFLOAD);
+	ieee80211_hw_set(hw, VLAN_GROUP_KEY_HW_OFFLOAD);
 
 	if (cap->nss_ratio_enabled)
 		ieee80211_hw_set(hw, SUPPORTS_VHT_EXT_NSS_BW);

@@ -3023,6 +3023,10 @@ int ath12k_wmi_vdev_install_key(struct ath12k *ar,
 	cmd->key_len = cpu_to_le32(arg->key_len);
 	cmd->key_txmic_len = cpu_to_le32(arg->key_txmic_len);
 	cmd->key_rxmic_len = cpu_to_le32(arg->key_rxmic_len);
+	if (arg->is_group_key_id_valid) {
+		cmd->is_group_key_id_valid = cpu_to_le32(arg->is_group_key_id_valid);
+		cmd->group_key_id = cpu_to_le32(arg->group_key_id);
+	}
 
 	if (arg->key_rsc_counter)
 		cmd->key_rsc_counter = cpu_to_le64(arg->key_rsc_counter);
@@ -6337,6 +6341,7 @@ ath12k_wmi_copy_resource_config(struct ath12k_base *ab,
 					    WMI_RSRC_CFG_EMA_INIT_CONFIG_BEACON_SIZE));
 	wmi_cfg->flags2 |= (tg_cfg->qos) ?
 			   (WMI_RSRC_CFG_FLAGS2_SAWF_CONFIG_ENABLE_SET) : (0);
+	wmi_cfg->max_num_group_keys = cpu_to_le32(tg_cfg->max_num_group_keys);
 
 }
 
