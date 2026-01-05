@@ -2402,6 +2402,14 @@ struct cfg80211_tid_stats {
  * @fcs_err_count: number of packets (MPDUs) received from this station with
  *	an FCS error. This counter should be incremented only when TA of the
  *	received packet with an FCS error matches the peer MAC address.
+ * @pn_errors: number of received frames dropped due to invalid
+ *	packet numbers (PN).
+ * @mic_errors: number of received frames dropped due to MIC failures
+ *	(e.g., TKIP MIC validation errors).
+ * @decrypt_errors: number of received frames that failed decryption due to
+ *	key/cipher issues.
+ * @mgmt_signal: signal strength (in dBm) of the last received management
+ *	frame for this link.
  * @addr: For MLO STA connection, filled with address of the link of station.
  */
 struct link_station_info {
@@ -2444,6 +2452,11 @@ struct link_station_info {
 
 	u32 rx_mpdu_count;
 	u32 fcs_err_count;
+
+	u32 pn_errors;
+	u32 mic_errors;
+	u32 decrypt_errors;
+	s8 mgmt_signal;
 
 	u8 addr[ETH_ALEN] __aligned(2);
 };
@@ -2513,6 +2526,14 @@ struct link_station_info {
  * @fcs_err_count: number of packets (MPDUs) received from this station with
  *	an FCS error. This counter should be incremented only when TA of the
  *	received packet with an FCS error matches the peer MAC address.
+ * @pn_errors: number of received frames dropped due to invalid
+ *	packet numbers (PN).
+ * @mic_errors: number of received frames dropped due to MIC failures
+ *	(e.g., TKIP MIC validation errors).
+ * @decrypt_errors: number of received frames that failed decryption due to
+ *	key/cipher issues.
+ * @mgmt_signal: signal strength (in dBm) of the last received management
+ *	frame.
  * @airtime_link_metric: mesh airtime link metric.
  * @connected_to_as: true if mesh STA has a path to authentication server
  * @mlo_params_valid: Indicates @assoc_link_id and @mld_addr fields are filled
@@ -2606,6 +2627,11 @@ struct station_info {
 	size_t assoc_resp_ies_len;
 	u16 valid_links;
 	struct link_station_info *links[IEEE80211_MLD_MAX_NUM_LINKS];
+
+	u32 pn_errors;
+	u32 mic_errors;
+	u32 decrypt_errors;
+	s8 mgmt_signal;
 };
 
 /**

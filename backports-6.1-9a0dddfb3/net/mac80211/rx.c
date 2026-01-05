@@ -4443,8 +4443,11 @@ ieee80211_rx_h_userspace_mgmt(struct ieee80211_rx_data *rx)
 	 */
 
 	if (ieee80211_hw_check(&rx->local->hw, SIGNAL_DBM) &&
-	    !(status->flag & RX_FLAG_NO_SIGNAL_VAL))
+	    !(status->flag & RX_FLAG_NO_SIGNAL_VAL)) {
 		info.sig_dbm = status->signal;
+		if (rx->sta && rx->link_sta)
+			rx->link_sta->mgmt_signal = status->signal;
+	}
 
 	if (ieee80211_is_timing_measurement(rx->skb) ||
 	    ieee80211_is_ftm(rx->skb)) {
@@ -4645,6 +4648,10 @@ ieee80211_rx_h_mgmt(struct ieee80211_rx_data *rx)
 	if (!tid_stats_disable)
 		ieee80211_rx_stats_reason(sdata, rx->skb->len,
 					  status->tid, RX_QUEUED_PKTS);
+	if (ieee80211_hw_check(&rx->local->hw, SIGNAL_DBM) &&
+	    !(status->flag & RX_FLAG_NO_SIGNAL_VAL) && rx->sta && rx->link_sta)
+		rx->link_sta->mgmt_signal = status->signal;
+
 	ieee80211_queue_skb_to_iface(sdata, rx->link_id, rx->sta, rx->skb);
 
 	return RX_QUEUED;
