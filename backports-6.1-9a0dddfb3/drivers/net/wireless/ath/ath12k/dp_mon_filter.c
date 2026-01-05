@@ -391,6 +391,35 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 		dst_tlv_filter->rx_mon_enable_hdr_per_ppdu |=
 					src_tlv_filter->rx_mon_enable_hdr_per_ppdu;
 
+		dst_tlv_filter->mo_ppdu_hdr_en |=
+					src_tlv_filter->mo_ppdu_hdr_en;
+		dst_tlv_filter->md_ppdu_hdr_en |=
+					src_tlv_filter->md_ppdu_hdr_en;
+		dst_tlv_filter->fp_ppdu_hdr_en |=
+					src_tlv_filter->fp_ppdu_hdr_en;
+		dst_tlv_filter->fpmo_ppdu_hdr_en |=
+					src_tlv_filter->fpmo_ppdu_hdr_en;
+		dst_tlv_filter->fpmo_qos_null_data_ppdu_hdr_en |=
+					src_tlv_filter->fpmo_qos_null_data_ppdu_hdr_en;
+		dst_tlv_filter->fpmo_qos_null_tb_data_ppdu_hdr_en |=
+					src_tlv_filter->fpmo_qos_null_tb_data_ppdu_hdr_en;
+		dst_tlv_filter->fpmo_null_data_ppdu_hdr_en |=
+					src_tlv_filter->fpmo_null_data_ppdu_hdr_en;
+		dst_tlv_filter->fpmo_ucast_data_ppdu_hdr_en |=
+					src_tlv_filter->fpmo_ucast_data_ppdu_hdr_en;
+		dst_tlv_filter->fpmo_mcast_data_ppdu_hdr_en |=
+					src_tlv_filter->fpmo_mcast_data_ppdu_hdr_en;
+		dst_tlv_filter->fp_qos_null_data_ppdu_hdr_en |=
+					src_tlv_filter->fp_qos_null_data_ppdu_hdr_en;
+		dst_tlv_filter->fp_qos_null_tb_data_ppdu_hdr_en |=
+					src_tlv_filter->fp_qos_null_tb_data_ppdu_hdr_en;
+		dst_tlv_filter->fp_null_data_ppdu_hdr_en |=
+					src_tlv_filter->fp_null_data_ppdu_hdr_en;
+		dst_tlv_filter->fp_ucast_data_ppdu_hdr_en |=
+					src_tlv_filter->fp_ucast_data_ppdu_hdr_en;
+		dst_tlv_filter->fp_mcast_data_ppdu_hdr_en |=
+					src_tlv_filter->fp_mcast_data_ppdu_hdr_en;
+
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "Updated Rx filters for mode: %d", mode);
 		ath12k_dp_mon_rx_display_filters(dp, mode, rx_mon_filter);
 	}

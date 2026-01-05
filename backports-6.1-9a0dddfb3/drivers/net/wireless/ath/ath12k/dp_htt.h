@@ -723,6 +723,21 @@ enum htt_stats_frametype {
 #define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MD_MGMT_HDRLEN	GENMASK(23, 22)
 #define HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_ENABLE_HDR_PER_PPDU	BIT(24)
 
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_MO_HDR_EN				BIT(0)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_MD_HDR_EN				BIT(1)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_HDR_EN				BIT(2)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_HDR_EN			BIT(3)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_QOS_NULL_DATA_HDR_EN		BIT(4)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_QOS_NULL_TB_DATA_HDR_EN	BIT(5)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_NULL_DATA_HDR_EN		BIT(6)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_UCAST_DATA_HDR_EN		BIT(7)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_MCAST_DATA_HDR_EN		BIT(8)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_QOS_NULL_DATA_HDR_EN		BIT(9)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_QOS_NULL_TB_DATA_HDR_EN	BIT(10)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_NULL_DATA_HDR_EN		BIT(11)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_UCAST_DATA_HDR_EN		BIT(12)
+#define HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_MCAST_DATA_HDR_EN		BIT(13)
+
 #define HTT_RX_RING_SELECTION_CFG_RX_PACKET_OFFSET      GENMASK(15, 0)
 #define HTT_RX_RING_SELECTION_CFG_RX_HEADER_OFFSET      GENMASK(31, 16)
 #define HTT_RX_RING_SELECTION_CFG_RX_MPDU_END_OFFSET    GENMASK(15, 0)
@@ -990,6 +1005,7 @@ struct htt_rx_ring_selection_cfg_cmd {
 	__le32 pkt_type_en_data_flag3;
 	__le32 reserved2[3];
 	__le32 info4;
+	__le32 info5;
 } __packed;
 
 #define HTT_RX_RING_TLV_DROP_THRESHOLD_VALUE	32
@@ -1062,6 +1078,20 @@ struct htt_rx_ring_tlv_filter {
 	u8 rx_mon_md_ctrl_hdrlen;
 	u8 rx_mon_md_mgmt_hdrlen;
 	u8 rx_mon_enable_hdr_per_ppdu;
+	u8 mo_ppdu_hdr_en;
+	u8 md_ppdu_hdr_en;
+	u8 fp_ppdu_hdr_en;
+	u8 fpmo_ppdu_hdr_en;
+	u8 fpmo_qos_null_data_ppdu_hdr_en;
+	u8 fpmo_qos_null_tb_data_ppdu_hdr_en;
+	u8 fpmo_null_data_ppdu_hdr_en;
+	u8 fpmo_ucast_data_ppdu_hdr_en;
+	u8 fpmo_mcast_data_ppdu_hdr_en;
+	u8 fp_qos_null_data_ppdu_hdr_en;
+	u8 fp_qos_null_tb_data_ppdu_hdr_en;
+	u8 fp_null_data_ppdu_hdr_en;
+	u8 fp_ucast_data_ppdu_hdr_en;
+	u8 fp_mcast_data_ppdu_hdr_en;
 };
 
 #define HTT_STATS_FRAME_CTRL_TYPE_MGMT  0x0
