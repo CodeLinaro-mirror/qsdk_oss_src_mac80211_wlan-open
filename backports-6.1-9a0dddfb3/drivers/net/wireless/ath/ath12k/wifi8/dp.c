@@ -361,7 +361,6 @@ static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_tx_ring_setup = ath12k_wifi8_dp_tx_ring_setup,
 	.dp_peer_create = ath12k_wifi8_dp_peer_create,
 	.dp_peer_delete = ath12k_wifi8_dp_peer_delete,
-	.dp_peer_get_peerid_index = ath12k_wifi8_dp_peer_get_peerid_index,
 	.dp_link_peer_create = ath12k_wifi8_dp_link_peer_create,
 	.dp_link_peer_delete = ath12k_wifi8_dp_link_peer_delete,
 	.peer_cleanup_indication = ath12k_dp_htt_peer_cleanup_indication,
@@ -387,6 +386,7 @@ struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
 	dp->dev = ab->dev;
 	dp->hw_params = ab->hw_params;
 	dp->hal = &ab->hal;
+	dp->global_peer_id_supported = true;
 
 	ret = ath12k_dp_mon_init(dp);
 	if (ret) {

@@ -1551,7 +1551,7 @@ static int ath12k_fw_mpdu_stats_update(struct ath12k_base *ab,
 	struct ath12k_pdev_dp *dp_pdev;
 	int ret = 0, vdev_id;
 	u16 svc_int_success, svc_int_failure, burst_sz_success;
-	u16 info, burst_sz_failure, peer_id, peer_id_index;
+	u16 info, burst_sz_failure, peer_id;
 	u8 tid, q_type;
 
 	if (tlv_tag == HTT_STATS_STRM_GEN_MPDUS_TAG) {
@@ -1603,8 +1603,7 @@ static int ath12k_fw_mpdu_stats_update(struct ath12k_base *ab,
 	}
 
 	if (tlv_tag == HTT_STATS_STRM_GEN_MPDUS_TAG) {
-		peer_id_index = ath12k_dp_peer_get_peerid_index(dp, peer_id);
-		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id_index);
+		dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 		if (!dp_peer) {
 			rcu_read_unlock();
 			return -ENOENT;

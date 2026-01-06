@@ -29,7 +29,6 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 				struct ieee80211_vif *vif);
 void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 				 struct ieee80211_sta *sta, u8 hw_link_id);
-u16 ath12k_wifi8_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id);
 int ath12k_wifi8_dp_link_peer_create(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 void ath12k_wifi8_dp_link_peer_delete(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,

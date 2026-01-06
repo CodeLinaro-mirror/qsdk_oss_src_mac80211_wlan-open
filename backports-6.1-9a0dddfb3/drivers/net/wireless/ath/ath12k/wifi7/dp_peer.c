@@ -190,13 +190,6 @@ void ath12k_wifi7_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 	kfree(dp_peer);
 }
 
-#define PEER_TABLE_SOC_ID_SHIFT		10
-u16 ath12k_wifi7_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
-{
-	return (peer_id & ATH12K_PEER_ML_ID_VALID) ? peer_id :
-		((dp->device_id << PEER_TABLE_SOC_ID_SHIFT) | peer_id);
-}
-
 int ath12k_wifi7_dp_link_peer_create(struct ath12k_base *ab, u32 vdev_id, u8 *addr)
 {
 	return 0;
