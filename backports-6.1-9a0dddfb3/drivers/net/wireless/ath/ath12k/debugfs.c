@@ -6687,6 +6687,185 @@ static const struct file_operations fops_dump_hal_stats = {
        .llseek = default_llseek,
 };
 
+static ssize_t ath12k_read_umac_reset_stats(struct file *file,
+					    char __user *user_buf,
+					    size_t count, loff_t *ppos)
+{
+	struct ath12k_base *ab = file->private_data;
+	struct ath12k_hw_group *ag = ab->ag;
+	struct ath12k_base *partner_ab;
+	struct ath12k_dp_umac_reset *umac_reset;
+	struct ath12k_umac_reset_ts *ts;
+	char *buf;
+	int len = 0, i, j, state;
+	const int size = 8192;
+	u64 state_times[ATH12K_UMAC_RESET_STATE_MAX];
+	u32 state_counts[ATH12K_UMAC_RESET_STATE_MAX];
+	u64 irq_ts[5];
+	u64 overall_duration, step_duration;
+
+	static const char * const state_names[] = {
+		[ATH12K_UMAC_RESET_STATE_IDLE] = "IDLE",
+		[ATH12K_UMAC_RESET_STATE_INIT] = "INIT",
+		[ATH12K_UMAC_RESET_STATE_TRIGGER_SENT] = "TRIGGER_SENT",
+		[ATH12K_UMAC_RESET_STATE_PRE_RESET_START] = "PRE_RESET_START",
+		[ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE] = "PRE_RESET_DONE",
+		[ATH12K_UMAC_RESET_STATE_POST_RESET_START] = "POST_RESET_START",
+		[ATH12K_UMAC_RESET_STATE_POST_RESET_DONE] = "POST_RESET_DONE",
+		[ATH12K_UMAC_RESET_STATE_POST_RESET_COMPLETE] = "POST_RESET_COMPLETE",
+		[ATH12K_UMAC_RESET_STATE_ERROR] = "ERROR",
+	};
+
+	buf = kzalloc(size, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	len += scnprintf(buf + len, size - len,
+			 "UMAC Reset Statistics for HW Group\n");
+	len += scnprintf(buf + len, size - len,
+			 "===================================\n\n");
+
+	if (!ag) {
+		len += scnprintf(buf + len, size - len,
+				 "No HW group available\n");
+		goto out;
+	}
+
+	for (i = 0; i < ag->num_devices; i++) {
+		partner_ab = ag->ab[i];
+		if (!partner_ab || partner_ab->is_bypassed)
+			continue;
+
+		umac_reset = &partner_ab->dp_umac_reset;
+		ts = &umac_reset->ts;
+
+		len += scnprintf(buf + len, size - len,
+				 "Device %d (chip_id: %d):\n", i, partner_ab->device_id);
+		len += scnprintf(buf + len, size - len,
+				 "----------------------------------------\n");
+
+		/* Copy IRQ timestamps */
+		irq_ts[0] = ts->event_irq_init_umac_recovery;
+		irq_ts[1] = ts->event_irq_init_target_recovery;
+		irq_ts[2] = ts->event_irq_pre_reset;
+		irq_ts[3] = ts->event_irq_post_reset_start;
+		irq_ts[4] = ts->event_irq_post_reset_complete;
+
+		/* Copy state transition times and counts */
+		for (j = 0; j < ATH12K_UMAC_RESET_STATE_MAX; j++) {
+			state_times[j] = umac_reset->state_entry_time[j];
+			state_counts[j] = umac_reset->state_transition_count[j];
+		}
+
+		/* Display IRQ Event Timestamps */
+		len += scnprintf(buf + len, size - len,
+				 "  IRQ Event Timestamps:\n");
+		len += scnprintf(buf + len, size - len,
+				 "    Init UMAC Recovery      : %llu %s\n",
+				 irq_ts[0], irq_ts[0] ? "" : " (not triggered)");
+		len += scnprintf(buf + len, size - len,
+				 "    Init Target Recovery    : %llu %s\n",
+				 irq_ts[1], irq_ts[1] ? "" : " (not triggered)");
+		len += scnprintf(buf + len, size - len,
+				 "    Pre Reset               : %llu %s\n",
+				 irq_ts[2], irq_ts[2] ? "" : " (not triggered)");
+		len += scnprintf(buf + len, size - len,
+				 "    Post Reset Start        : %llu %s\n",
+				 irq_ts[3], irq_ts[3] ? "" : " (not triggered)");
+		len += scnprintf(buf + len, size - len,
+				 "    Post Reset Complete     : %llu %s\n\n",
+				 irq_ts[4], irq_ts[4] ? "" : " (not triggered)");
+
+		/* Display State Transition Timestamps */
+		len += scnprintf(buf + len, size - len,
+				 "  State Transition Timestamps:\n");
+		for (j = 0; j < ATH12K_UMAC_RESET_STATE_MAX; j++) {
+			if (state_times[j])
+				len += scnprintf(buf + len, size - len,
+						 "    %-24s: %llu\n",
+						 state_names[j], state_times[j]);
+		}
+		len += scnprintf(buf + len, size - len, "\n");
+
+		/* Calculate and display step durations */
+		len += scnprintf(buf + len, size - len,
+				 "  Step Durations:\n");
+
+		/* IRQ to TRIGGER_SENT */
+		state = ATH12K_UMAC_RESET_STATE_TRIGGER_SENT;
+		if (irq_ts[0] && state_times[state]) {
+			step_duration = state_times[state] - irq_ts[0];
+			len += scnprintf(buf + len, size - len,
+					 "    IRQ to TRIGGER_SENT     : %llu ms\n",
+					 step_duration);
+		}
+
+		/* PRE_RESET processing (IRQ arrival to DONE sent) */
+		state = ATH12K_UMAC_RESET_STATE_PRE_RESET_DONE;
+		if (irq_ts[2] && state_times[state]) {
+			step_duration = state_times[state] - irq_ts[2];
+			len += scnprintf(buf + len, size - len,
+					 "    PRE_RESET processing    : %llu ms\n",
+					 step_duration);
+		}
+
+		/* POST_RESET_START processing (IRQ arrival to DONE sent) */
+		state = ATH12K_UMAC_RESET_STATE_POST_RESET_DONE;
+		if (irq_ts[3] && state_times[state]) {
+			step_duration = state_times[state] - irq_ts[3];
+			len += scnprintf(buf + len, size - len,
+					 "    POST_RESET_START process: %llu ms\n",
+					 step_duration);
+		}
+
+		/* POST_RESET_COMPLETE processing (IRQ arrival to DONE sent) */
+		state = ATH12K_UMAC_RESET_STATE_IDLE;
+		if (irq_ts[4] && state_times[state]) {
+			step_duration = state_times[state] - irq_ts[4];
+			len += scnprintf(buf + len, size - len,
+					 "    POST_RESET_COMPLETE proc: %llu ms\n",
+					 step_duration);
+		}
+
+		/* Overall duration (INIT to IDLE) */
+		if (state_times[ATH12K_UMAC_RESET_STATE_INIT] &&
+		    state_times[ATH12K_UMAC_RESET_STATE_IDLE]) {
+			overall_duration = state_times[ATH12K_UMAC_RESET_STATE_IDLE] -
+					   state_times[ATH12K_UMAC_RESET_STATE_INIT];
+			len += scnprintf(buf + len, size - len,
+					 "\n  Overall Duration          : %llu ms (INIT to IDLE)\n",
+					 overall_duration);
+		}
+
+		/* Display state transition counts */
+		len += scnprintf(buf + len, size - len,
+				 "\n  State Transition Counts:\n");
+		for (j = 0; j < ATH12K_UMAC_RESET_STATE_MAX; j++) {
+			if (state_counts[j])
+				len += scnprintf(buf + len, size - len,
+						 "    %-24s: %u\n",
+						 state_names[j], state_counts[j]);
+		}
+
+		len += scnprintf(buf + len, size - len, "\n");
+	}
+
+out:
+	if (len > size)
+		len = size;
+
+	i = simple_read_from_buffer(user_buf, count, ppos, buf, len);
+	kfree(buf);
+	return i;
+}
+
+static const struct file_operations fops_umac_reset_stats = {
+	.read = ath12k_read_umac_reset_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static ssize_t ath12k_read_simulate_host_crash(struct file *file,
 					       char __user *user_buf,
 					       size_t count, loff_t *ppos)
@@ -7534,6 +7713,8 @@ void ath12k_debugfs_pdev_create(struct ath12k_base *ab) {
 			    &fops_fw_dbglog);
 	debugfs_create_file("fw_reset_stats", 0400, ab->debugfs_soc, ab,
 			    &fops_fw_reset_stats);
+	debugfs_create_file("umac_reset_stats", 0400, ab->debugfs_soc, ab,
+			    &fops_umac_reset_stats);
 	debugfs_create_file("device_dp_stats", 0600, ab->debugfs_soc, ab,
 			    &fops_device_dp_stats);
 	debugfs_create_file("stats_disable", 0600, ab->debugfs_soc, ab,
