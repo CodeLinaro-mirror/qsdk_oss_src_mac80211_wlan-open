@@ -230,6 +230,12 @@ enum hal_srng_ring_id {
 	HAL_SRNG_RING_ID_TCL_STATUS,
 	HAL_SRNG_RING_ID_TX_EXCEPTION,
 
+	HAL_SRNG_RING_ID_WBM_BUF1 = 41,
+	HAL_SRNG_RING_ID_WBM_BUF2,
+	HAL_SRNG_RING_ID_WBM_BUF3,
+	HAL_SRNG_RING_ID_WBM_BUF4,
+	HAL_SRNG_RING_ID_WBM_IDLE_BUF0,
+
 	HAL_SRNG_RING_ID_CE0_SRC = 64,
 	HAL_SRNG_RING_ID_CE1_SRC,
 	HAL_SRNG_RING_ID_CE2_SRC,
@@ -389,6 +395,8 @@ enum hal_ring_type {
 	HAL_REO_DST_CTDMA,
 	HAL_REO_EXCEPTION_DS,
 	HAL_REO_EXCEPTION_MGMT,
+	HAL_WBM_BUF,
+	HAL_WBM_IDLE_BUF,
 	HAL_MAX_RING_TYPES,
 };
 
@@ -1246,6 +1254,7 @@ struct ath12k_hal_tcl_to_cmp_rbm_map  {
 	u8 rbm_id;
 };
 
+#define HAL_RDI_MAPPING_MAX 32
 struct ath12k_hal_rdi_mapping {
 	u8 rd;
 	u8 source;

@@ -1265,7 +1265,7 @@ void ath12k_dp_srng_msi_setup(struct ath12k_base *ab,
 void ath12k_hal_tx_config_rbm_mapping(struct ath12k_base *ab, u8 ring_num,
 				      u8 rbm_id, int ring_type);
 size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
-					       struct dp_rxdma_ring *rx_ring,
+					       struct hal_srng *srng,
 					       struct list_head *list);
 int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);

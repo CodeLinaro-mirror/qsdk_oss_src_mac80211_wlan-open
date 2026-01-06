@@ -197,14 +197,23 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.max_size = HAL_TQM2SW_RELEASE_RING_BASE_MSB_RING_SIZE,
 		.name = "tx_completion",
 	},
-	[HAL_RXDMA_BUF] = {
-		.start_ring_id = HAL_SRNG_SW2RXDMA_BUF0,
+	[HAL_WBM_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_BUF1,
+		.max_rings = 4,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_BUF_RING_MAX_SIZE,
+		.name = "WBM_buf",
+	},
+	[HAL_WBM_IDLE_BUF] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_IDLE_BUF0,
 		.max_rings = 1,
 		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
-		.mac_type = ATH12K_HAL_SRNG_DMAC,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
 		.ring_dir = HAL_SRNG_DIR_SRC,
-		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
-		.name = "Rxdma_buf",
+		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
+		.name = "WBM_idle_buf",
 	},
 	[HAL_RXDMA_DST] = {
 		.start_ring_id = HAL_SRNG_RING_ID_WMAC1_RXDMA2SW0,
@@ -669,6 +678,20 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_TQM_REG +
 				HAL_TQM_PPE_RELEASE_RING_BASE_LSB(hal);
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_TQM_REG + HAL_TQM_PPE_RELEASE_RING_HP;
+
+	s = &hal->srng_config[HAL_WBM_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_HP;
+	s->reg_size[0] = HAL_WBM_SW2WBM_BUFF_RELEASE2_RING_BASE_LSB -
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_size[1] = HAL_WBM_SW2WBM_BUFF_RELEASE2_RING_HP -
+				HAL_WBM_SW2WBM_BUFF_RELEASE1_RING_HP;
+
+	s = &hal->srng_config[HAL_WBM_IDLE_BUF];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_BUF_RING_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_BUF_RING_HP;
 
 	return 0;
 }

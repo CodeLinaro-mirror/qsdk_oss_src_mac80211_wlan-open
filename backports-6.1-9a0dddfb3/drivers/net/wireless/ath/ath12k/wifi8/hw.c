@@ -106,11 +106,6 @@ static struct ath12k_hw_ring_mask ath12k_wifi8_hw_ring_mask_qcn9625_msi8 = {
 		ATH12K_REO_STATUS_RING_MASK_0,
 		0, 0, 0, 0
 	},
-	.host2rxdma = {
-		0, 0,
-		ATH12K_HOST2RXDMA_RING_MASK_0,
-		0, 0, 0, 0
-	},
 	.tx_mon_dest = {
 		ATH12K_TX_MON_RING_MASK_0,
 		ATH12K_TX_MON_RING_MASK_1,
