@@ -2715,6 +2715,24 @@ static const char *ath12k_htt_be_tx_rx_ru_size_to_str(u8 ru_size)
 	}
 }
 
+static const char *ath12k_htt_bn_rx_dru_size_to_str(u8 dru_size)
+{
+	switch (dru_size) {
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_26:
+		return "DRU_26";
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_52:
+		return "DRU_52";
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_106:
+		return "DRU_106";
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_242:
+		return "DRU_242";
+	case ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_484:
+		return "DRU_484";
+	default:
+		return "unknown";
+	}
+}
+
 static const char*
 ath12k_tx_ru_size_to_str(enum ath12k_htt_stats_ru_type ru_type, u8 ru_size)
 {
@@ -4882,6 +4900,9 @@ ath12k_htt_print_tx_selfgen_bn_stats_tlv(const void *tag_buf, u16 tag_len,
 			le32_to_cpu(htt_stats_buf->bn_mu_bar_trigger));
 	len += scnprintf(buf + len, buf_len - len, "bn_mu_rts_trigger = %u\n",
 			le32_to_cpu(htt_stats_buf->bn_mu_rts_trigger));
+	len += print_array_to_buf(buf, len, "bn_basic_trig_ru_alloc_mode",
+			htt_stats_buf->bn_basic_trig_ru_alloc_mode,
+				ATH12K_HTT_BN_UL_OFDMA_NUM_RU_ALLOC_MODES, "\n");
 	len += print_array_to_buf(buf, len, "combined_bn_bsr_trigger_tried",
 			htt_stats_buf->combined_bn_bsr_trigger_tried,
 				ATH12K_HTT_NUM_AC_WMM, "\n");
@@ -8050,7 +8071,31 @@ ath12k_htt_print_tx_per_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 			len += scnprintf(buf + len, buf_len - len, " %s:%u ",
 					 ath12k_tx_ru_size_to_str(ru_type, i),
 					 le32_to_cpu(stats_buf->ru[i].mpdus_failed));
-		len += scnprintf(buf + len, buf_len - len, "\n\n");
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+		if (rc_mode == ATH12K_HTT_STATS_RC_MODE_ULOFDMA) {
+			len += scnprintf(buf + len, buf_len - len,
+				"mpdus_tried_dru_%s = ",
+				mode_prefix);
+			for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT; i++)
+				len += scnprintf(buf + len, buf_len - len, " %s:%u ",
+					ath12k_htt_bn_rx_dru_size_to_str(i),
+					le32_to_cpu(stats_buf->per_dru[i].mpdus_tried));
+
+			len += scnprintf(buf + len, buf_len - len, "\n");
+			len += scnprintf(buf + len, buf_len - len,
+				"mpdus_failed_dru_%s = ",
+				mode_prefix);
+
+			for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT; i++)
+				len += scnprintf(buf + len, buf_len - len, " %s:%u ",
+					ath12k_htt_bn_rx_dru_size_to_str(i),
+					le32_to_cpu(stats_buf->per_dru[i].mpdus_failed));
+
+			len += scnprintf(buf + len, buf_len - len, "\n");
+		}
+
+		len += scnprintf(buf + len, buf_len - len, "\n");
 	}
 
 	if (rc_mode == ATH12K_HTT_STATS_RC_MODE_DLMUMIMO) {
@@ -8960,6 +9005,9 @@ ath12k_htt_print_be_bn_ul_trigger_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "bn_ul_ofdma_rx_bw",
 				  stats_buf->bn_ul_ofdma_rx_bw,
 				  ATH12K_HTT_RX_NUM_BN_BW_COUNTERS, "\n");
+	len += print_array_to_buf(buf, len, "bn_ul_ofdma_rx_dru_sbw",
+				  stats_buf->bn_ul_ofdma_rx_dru_sbw,
+				  ATH12K_HTT_BN_UL_OFDMA_NUM_DRU_SBW_COUNT, "\n");
 	len += scnprintf(buf + len, buf_len - len, "bn_ul_ofdma_rx_stbc = %u\n",
 			 le32_to_cpu(stats_buf->bn_ul_ofdma_rx_stbc));
 	len += scnprintf(buf + len, buf_len - len, "bn_ul_ofdma_rx_ldpc = %u\n",
@@ -8970,6 +9018,13 @@ ath12k_htt_print_be_bn_ul_trigger_stats_tlv(const void *tag_buf, u16 tag_len,
 		len += scnprintf(buf + len, buf_len - len, " %s:%u ",
 				 ath12k_htt_be_tx_rx_ru_size_to_str(i),
 				 le32_to_cpu(stats_buf->bn_rx_data_ru_size_ppdu[i]));
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	len += scnprintf(buf + len, buf_len - len, "bn_rx_data_dru_size_ppdu = ");
+	for (i = 0; i < ATH12K_HTT_TX_PDEV_STATS_BN_DRU_SIZE_CNT; i++)
+		len += scnprintf(buf + len, buf_len - len, " %s:%u ",
+				ath12k_htt_bn_rx_dru_size_to_str(i),
+				le32_to_cpu(stats_buf->bn_rx_data_dru_size_ppdu[i]));
 	len += scnprintf(buf + len, buf_len - len, "\n");
 
 	len += scnprintf(buf + len, buf_len - len, "bn_rx_non_data_ru_size_ppdu = ");
