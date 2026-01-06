@@ -23959,7 +23959,7 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 		if (i == 0)
 			mac_addr = ar->mac_addr;
 
-		mbssid_max_interfaces += TARGET_NUM_VDEVS;
+		mbssid_max_interfaces += ATH12K_MBSSID_MAX_INTERFACES;
 	}
 
 	wiphy->available_antennas_rx = antennas_rx;
