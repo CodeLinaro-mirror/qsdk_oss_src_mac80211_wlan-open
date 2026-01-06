@@ -599,6 +599,7 @@ struct ath12k_vap_cfg {
 	u32 he_snd_mode;
 	u32 gtx_enable;
 	u32 hwcts2self_ofdma;
+	u32 bcn_tx_power;
 };
 
 struct ath12k_link_vif {
