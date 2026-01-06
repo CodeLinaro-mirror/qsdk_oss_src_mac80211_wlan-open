@@ -10923,8 +10923,10 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 
 	ath12k_peer_assoc_prepare(ar, arvif, arsta, peer_arg, reassoc, link_sta);
 
-	if (arsta->is_bridge_peer)
+	if (arsta->is_bridge_peer) {
 		kfree(link_sta);
+		link_sta = NULL;
+	}
 
 	if (peer_arg->peer_nss < 1) {
 		ath12k_warn(ar->ab,
@@ -10969,7 +10971,8 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 	arsta->bw = bandwidth;
 	spin_unlock_bh(&ar->data_lock);
 
-	ath12k_mac_vendor_send_assoc_event(arsta, link_sta, reassoc);
+	if (!arsta->is_bridge_peer)
+		ath12k_mac_vendor_send_assoc_event(arsta, link_sta, reassoc);
 
 	if (vht_supp && num_vht_rates == 1) {
 		ret = ath12k_mac_set_peer_vht_fixed_rate(arvif, arsta, mask, band);
@@ -11048,9 +11051,7 @@ static int ath12k_mac_station_disassoc(struct ath12k *ar,
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
 	rcu_read_lock();
-
-	link_sta = arsta->is_bridge_peer ? ath12k_mac_inherit_radio_cap(ar, arsta) :
-		   ath12k_mac_get_link_sta(arsta);
+	link_sta = arsta->is_bridge_peer ? NULL : ath12k_mac_get_link_sta(arsta);
 	rcu_read_unlock();
 
 	spin_lock_bh(&arvif->ar->data_lock);
