@@ -517,7 +517,6 @@ struct ath12k_dp_arch_ops {
 			      struct ieee80211_vif *vif);
 	void (*dp_peer_delete)(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 *addr,
 			       struct ieee80211_sta *sta, u8 hw_link_id);
-	u16 (*dp_peer_get_peerid_index)(struct ath12k_dp *dp, u16 peer_id);
 	int (*dp_link_peer_create)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*dp_link_peer_delete)(struct ath12k_base *ab, u32 vdev_id, u8 *addr);
 	void (*peer_cleanup_indication)(struct ath12k_dp *dp, struct sk_buff *skb);
@@ -710,6 +709,7 @@ struct ath12k_dp {
 
 	struct ath12k_dp_hw_group *dp_hw_grp;
 	u8 device_id;
+	bool global_peer_id_supported;
 
 	struct ath12k_dp_arch_ops *arch_ops;
 
@@ -1079,10 +1079,15 @@ static inline void ath12k_dp_get_mac_addr(u32 addr_l32, u16 addr_h16, u8 *addr)
 	memcpy(addr + 4, &addr_h16, ETH_ALEN - 4);
 }
 
+#define PEER_TABLE_SOC_ID_SHIFT        10
+#define ATH12K_PEER_ML_ID_VALID        BIT(13)
 static inline
 u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
 {
-	return dp->arch_ops->dp_peer_get_peerid_index(dp, peer_id);
+	return dp->global_peer_id_supported ? peer_id
+		: ((peer_id & ATH12K_PEER_ML_ID_VALID)
+			? peer_id
+			: ((dp->device_id << PEER_TABLE_SOC_ID_SHIFT) | peer_id));
 }
 
 static inline struct ath12k_dp *

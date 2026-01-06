@@ -25322,7 +25322,6 @@ static int ath12k_process_scs_add(struct ath12k *ar, struct ath12k_sta *ahsta,
 	struct ath12k *temp_ar;
 	unsigned long links;
 	int ret = -EINVAL;
-	u16 peer_id_index;
 	u16 qos_id;
 	u8 link_id;
 	u8 qm_id;
@@ -25375,9 +25374,8 @@ static int ath12k_process_scs_add(struct ath12k *ar, struct ath12k_sta *ahsta,
 	}
 
 	rcu_read_lock();
-	peer_id_index = ath12k_dp_peer_get_peerid_index(ar->ab->dp, peer_id);
 	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,
-							peer_id_index);
+							peer_id);
 	if (!peer) {
 		ath12k_err(ar->ab, "SCS peer is NULL");
 		ret = -EINVAL;
@@ -25416,13 +25414,12 @@ static int ath12k_process_scs_del(struct ath12k *ar, struct ath12k_sta *ahsta,
 	struct ath12k *temp_ar;
 	unsigned long links;
 	int ret = -EINVAL;
-	u16 qos_id = 0, peer_id_index;
+	u16 qos_id = 0;
 	u8 link_id;
 
 	rcu_read_lock();
-	peer_id_index = ath12k_dp_peer_get_peerid_index(ar->ab->dp, peer_id);
 	peer = ath12k_dp_link_peer_find_by_peerid_index(ar->ab->dp, &ar->dp,
-							peer_id_index);
+							peer_id);
 	if (!peer) {
 		ath12k_err(ar->ab, "SCS peer is NULL");
 		rcu_read_unlock();
