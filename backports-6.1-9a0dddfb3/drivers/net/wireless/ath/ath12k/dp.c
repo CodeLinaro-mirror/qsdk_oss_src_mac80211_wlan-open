@@ -2340,7 +2340,8 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 }
 
 static void
-ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k_htt_tx_stats *dst_peer_stats,
+ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
+				       struct ath12k_htt_tx_stats *dst_peer_stats,
 				       struct ath12k_htt_tx_stats *src_peer_stats)
 {
 	int i, j, k;
@@ -2405,6 +2406,93 @@ ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k_htt_tx_stats *dst_peer_stat
 
 	dst_peer_stats->ba_fails += src_peer_stats->ba_fails;
 	dst_peer_stats->ack_fails += src_peer_stats->ack_fails;
+
+	/* TX Unicast Success */
+	dst_peer_stats->tx_ucast_success.num += src_peer_stats->tx_ucast_success.num;
+	dst_peer_stats->tx_ucast_success.bytes += src_peer_stats->tx_ucast_success.bytes;
+
+	dst_peer_stats->tx_mcast_success.num += src_peer_stats->tx_mcast_success.num;
+	dst_peer_stats->tx_mcast_success.bytes += src_peer_stats->tx_mcast_success.bytes;
+
+	/* TX PPDUs */
+	dst_peer_stats->tx_ppdus += src_peer_stats->tx_ppdus;
+
+	/* MPDU BASIC */
+	dst_peer_stats->tx_mpdus_success += src_peer_stats->tx_mpdus_success;
+	dst_peer_stats->tx_mpdus_tried += src_peer_stats->tx_mpdus_tried;
+	dst_peer_stats->retries_mpdu += src_peer_stats->retries_mpdu;
+
+	if (!ath12k_dp_debug_stats_enabled(&ar->dp))
+		return;
+
+	/* DEBUG/ADV */
+	dst_peer_stats->stbc += src_peer_stats->stbc;
+	dst_peer_stats->ldpc += src_peer_stats->ldpc;
+
+	/* WME AC Type Array */
+	for (i = 0; i < WME_AC_MAX; i++)
+		dst_peer_stats->wme_ac_type[i] += src_peer_stats->wme_ac_type[i];
+
+	/* WME AC Type Bytes Array */
+	for (i = 0; i < WME_AC_MAX; i++)
+		dst_peer_stats->wme_ac_type_bytes[i] +=
+			src_peer_stats->wme_ac_type_bytes[i];
+
+	/* Excess Retries Per AC Array */
+	for (i = 0; i < WME_AC_MAX; i++)
+		dst_peer_stats->excess_retries_per_ac[i] +=
+			src_peer_stats->excess_retries_per_ac[i];
+
+	/* AMPDU/Non-AMPDU Counts */
+	dst_peer_stats->ampdu_cnt += src_peer_stats->ampdu_cnt;
+	dst_peer_stats->non_ampdu_cnt += src_peer_stats->non_ampdu_cnt;
+	dst_peer_stats->num_ppdu_cookie_valid += src_peer_stats->num_ppdu_cookie_valid;
+
+	dst_peer_stats->pream_punct_cnt += src_peer_stats->pream_punct_cnt;
+
+	/* RU Location Array */
+	for (i = 0; i < MAX_RU_LOCATIONS; i++) {
+		dst_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu +=
+			src_peer_stats->ru_loc_mpdu_succ_tried[i].num_mpdu;
+		dst_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried +=
+			src_peer_stats->ru_loc_mpdu_succ_tried[i].mpdu_tried;
+	}
+
+	/* Transmit Type Array */
+	for (i = 0; i < MAX_TRANSMIT_TYPES; i++) {
+		dst_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu +=
+			src_peer_stats->transmit_type_mpdu_succ_tried[i].num_mpdu;
+		dst_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried +=
+			src_peer_stats->transmit_type_mpdu_succ_tried[i].mpdu_tried;
+	}
+
+	/* SU BE PPDU Count */
+	for (i = 0; i < MAX_MCS; i++)
+		dst_peer_stats->su_be_ppdu_cnt.mcs_count[i] +=
+			src_peer_stats->su_be_ppdu_cnt.mcs_count[i];
+
+	/* MU BE PPDU Count Array */
+	for (i = 0; i < TXRX_TYPE_MU_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++)
+			dst_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j] +=
+				src_peer_stats->mu_be_ppdu_cnt[i].mcs_count[j];
+	}
+
+	/* Punctured BW Array */
+	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
+		dst_peer_stats->punc_bw[i] += src_peer_stats->punc_bw[i];
+
+	/* RTS/BAR/NDPA Counts */
+	dst_peer_stats->rts_success += src_peer_stats->rts_success;
+	dst_peer_stats->rts_failure += src_peer_stats->rts_failure;
+	dst_peer_stats->bar_cnt += src_peer_stats->bar_cnt;
+	dst_peer_stats->ndpa_cnt += src_peer_stats->ndpa_cnt;
+
+	/* TX MSDU Flush Reason Array */
+	for (i = 0; i < HTT_FLUSH_MAX; i++)
+		dst_peer_stats->tx_msdu_flush_rsn[i] +=
+			src_peer_stats->tx_msdu_flush_rsn[i];
+
 }
 
 static void ath12k_dp_update_tx_ext_htt_stats(struct ath12k_htt_tx_stats *dst_peer_stats,
@@ -2682,6 +2770,7 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 	struct ath12k_dp_link_peer_stats *link_peer_stats;
 	int stats_link_id;
 	struct ath12k_htt_tx_stats *src_htt_stats = NULL;
+	struct ath12k_htt_tx_stats *dst_htt_stats = NULL;
 	struct ath12k_rx_peer_stats *rx_peer_stats = NULL;
 
 	if (!link_peer->dp_peer)
@@ -2695,10 +2784,11 @@ static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
 						  &peer->stats[stats_link_id],
 						  peer->is_vdev_peer);
 
+		dst_htt_stats = link_peer_stats->tx_stats;
 		src_htt_stats = link_peer->peer_stats.tx_stats;
 		rx_peer_stats =  link_peer->peer_stats.rx_stats;
 		if (ath12k_extd_tx_stats_enabled(ar))
-			ath12k_dp_update_tx_ext_htt_aggr_stats(link_peer_stats->tx_stats,
+			ath12k_dp_update_tx_ext_htt_aggr_stats(ar, dst_htt_stats,
 							       src_htt_stats);
 		if (ath12k_extd_rx_stats_enabled(ar))
 			ath12k_dp_aggregate_link_rx_mon_stats(link_peer_stats->rx_stats,
@@ -2845,7 +2935,8 @@ void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			ath12k_dp_aggr_link_vif_del_stats(arvif, aggr_vif_stats);
 			ath12k_dp_aggr_per_pkt_peer_stats(pdev, &aggr_pdev_stats->peer_stats,
 							  &aggr_vif_stats->peer_stats, 1);
-			ath12k_dp_update_tx_ext_htt_aggr_stats(link_peer_stats->tx_stats,
+			ath12k_dp_update_tx_ext_htt_aggr_stats(ar,
+							       link_peer_stats->tx_stats,
 							       htt_stats);
 			ath12k_dp_aggregate_link_rx_mon_stats(link_peer_stats->rx_stats,
 							      rx_mon_stats);
@@ -3031,7 +3122,7 @@ ath12k_dp_get_link_peer_stats(struct ath12k_link_vif *arvif,
 								    peer->is_vdev_peer);
 				if (ath12k_extd_tx_stats_enabled(ar))
 					ath12k_dp_update_tx_ext_htt_stats(dst_htt_stats,
-									  src_htt_stats);
+									 src_htt_stats);
 				if (ath12k_extd_rx_stats_enabled(ar))
 					ret = ath12k_update_peer_rx_mon_stats(link_peer,
 									      dst_stats);
@@ -3098,8 +3189,7 @@ static void ath12k_dp_aggr_htt_stats(struct ath12k *ar,
 		tmp_peer = rcu_dereference(peer->link_peers[tmp_link_id]);
 		if (!tmp_peer)
 			continue;
-
-		ath12k_dp_update_tx_ext_htt_aggr_stats(link_peer_stats->tx_stats,
+		ath12k_dp_update_tx_ext_htt_aggr_stats(ar, link_peer_stats->tx_stats,
 						       tmp_peer->peer_stats.tx_stats);
 	}
 	rcu_read_unlock();
@@ -3192,7 +3282,7 @@ int ath12k_dp_get_peer_stats(struct ath12k_vif *ahvif,
 			goto unlock;
 		} else {
 			/*legacy peer stats handling*/
-			if (!peer->is_mlo) {
+			if (peer && !peer->is_mlo) {
 				arvif =  &ahvif->deflink;
 				if (arvif) {
 					telemetry_peer->peer_type = ATH12K_LEGACY_PEER;
