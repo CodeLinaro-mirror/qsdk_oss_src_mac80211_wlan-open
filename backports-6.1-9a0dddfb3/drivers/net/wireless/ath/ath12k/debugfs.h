@@ -117,6 +117,11 @@ static inline bool ath12k_tid_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
 	return (dp_pdev->dp_stats_mask & DP_ENABLE_TID_STATS);
 }
 
+static inline bool ath12k_proto_stats_enabled(struct ath12k_pdev_dp *dp_pdev)
+{
+	return (dp_pdev->dp_stats_mask & DP_ENABLE_PROTO_STATS);
+}
+
 void ath12k_tid_tx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_tid_tx_drop_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);
 void ath12k_tid_rx_stats(struct ath12k_vif *ahvif, u8 tid, u32 len, u32 reason);

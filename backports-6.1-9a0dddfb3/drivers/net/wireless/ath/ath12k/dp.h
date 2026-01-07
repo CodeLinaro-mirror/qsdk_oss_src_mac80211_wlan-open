@@ -44,6 +44,7 @@ struct ath12k_dp_link_peer;
 struct ath12k_dp;
 struct ath12k_vif;
 struct ath12k_link_vif;
+struct ath12k_dp_vif;
 struct hal_tcl_status_ring;
 struct ath12k_ext_irq_grp;
 struct ath12k_dp_rx_tid;
@@ -1283,6 +1284,24 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
 void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
+
+int ath12k_dp_alloc_proto_stats_vif(struct ath12k_dp_vif *dp_vif);
+void ath12k_dp_free_proto_stats_vif(struct ath12k_dp_tx_vif_stats *vif_stats);
+int ath12k_dp_alloc_proto_stats(struct ath12k *ar);
+int ath12k_dp_alloc_proto_stats_peer(struct ath12k *ar,
+				     struct ath12k_dp_peer *dp_peer);
+void ath12k_dp_free_proto_stats(struct ath12k *ar);
+void ath12k_dp_free_proto_stats_peer(struct ath12k_dp_peer *dp_peer);
+
+void ath12k_dp_update_proto_stats_vif(struct ath12k_dp_vif *dp_vif,
+				      u8 link_id, struct sk_buff *skb,
+				      u8 level, int ring_id);
+void ath12k_dp_tx_peer_update_proto_stats(struct ath12k_dp_peer *dp_peer,
+					  u8 link_id, struct sk_buff *skb,
+					  u8 level, int ring_id);
+void ath12k_dp_rx_update_protocol_stats(struct ath12k_dp_peer *dp_peer,
+					u8 link_id, struct sk_buff *skb, u8 level,
+					int ring_id);
 int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 			     struct ath12k_reo_q_addr_lut *lut);
 void ath12k_dp_update_vdev_search(struct ath12k_vif *ahvif);

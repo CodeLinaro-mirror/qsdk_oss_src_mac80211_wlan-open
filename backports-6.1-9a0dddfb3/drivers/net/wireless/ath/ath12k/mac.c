@@ -18396,6 +18396,9 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	dp_vif = &ahvif->dp_vif;
 	ath12k_dp_free_preserved_stats(dp_vif->link_vif_delete_stats);
 	dp_vif->link_vif_delete_stats = NULL;
+
+	ath12k_dp_free_proto_stats_vif(dp_vif->stats);
+
 free_vlan_iface:
 	kfree(ahvif->vlan_iface);
 	ahvif->vlan_iface = NULL;
