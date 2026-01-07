@@ -7682,11 +7682,11 @@ ath12k_htt_print_phy_tpc_stats_tlv(const void *tag_buf, u16 tag_len,
 				  htt_stats_buf->tx_num_chains,
 				  ATH12K_HTT_STATS_MAX_CHAINS, "\n");
 	len += print_array_to_buf(buf, len, "tpc_stats : tx_power_neg",
-				  htt_stats_buf->tx_power_neg, ATH12K_HTT_MAX_POWER_LEVEL,
-				  "\n");
-	len += print_array_to_buf(buf, len, "tpc_stats : tx_power",
 				  htt_stats_buf->tx_power_neg,
-				  ATH12K_HTT_MAX_NEGATIVE_POWER_LEVEL, "\n\n");
+				  ATH12K_HTT_MAX_NEGATIVE_POWER_LEVEL, "\n");
+	len += print_array_to_buf(buf, len, "tpc_stats : tx_power",
+				  htt_stats_buf->tx_power,
+				  ATH12K_HTT_MAX_POWER_LEVEL, "\n\n");
 
 	stats_req->buf_len = len;
 }
