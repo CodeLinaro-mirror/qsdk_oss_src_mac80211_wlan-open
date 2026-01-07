@@ -32,6 +32,10 @@ static int ath12k_wifi7_dp_service_srng(struct ath12k_dp *dp,
 	int tot_work_done = 0;
 	u8 ring_mask, rx_mask, tx_mask;
 
+	/* Return early if UMAC reset is in progress */
+	if (ath12k_dp_umac_reset_in_progress(ab))
+		return 0;
+
 	set_bit(cpu_id, &dp->service_rings_running);
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
