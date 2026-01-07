@@ -76,6 +76,7 @@ validate_chandef_by_ht_vht_oper(struct ieee80211_sub_if_data *sdata,
 				struct cfg80211_chan_def *chandef)
 {
 	u32 control_freq, center_freq1, center_freq2;
+	u16 puncture_pattern = chandef->punctured;
 	enum nl80211_chan_width chan_width;
 	struct ieee80211_ht_operation ht_oper;
 	struct ieee80211_vht_operation vht_oper;
@@ -133,6 +134,9 @@ validate_chandef_by_ht_vht_oper(struct ieee80211_sub_if_data *sdata,
 	ht_oper.operation_mode =
 		le16_encode_bits(vht_oper.center_freq_seg1_idx,
 				 IEEE80211_HT_OP_MODE_CCFS2_MASK);
+
+	if (conn->mode >= IEEE80211_CONN_MODE_EHT)
+		chandef->punctured = puncture_pattern;
 
 	if (!ieee80211_chandef_vht_oper(&sdata->local->hw, vht_cap_info,
 					&vht_oper, &ht_oper, chandef))
