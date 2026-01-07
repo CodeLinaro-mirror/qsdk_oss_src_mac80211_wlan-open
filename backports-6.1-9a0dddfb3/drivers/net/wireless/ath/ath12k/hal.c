@@ -1237,7 +1237,7 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 	struct ath12k_pdev_mon_dp *dp_mon_pdev;
 	struct ath12k_ext_irq_grp *irq_grp;
 	struct ath12k_ce_pipe *ce_pipe;
-	int len =0 ;
+	int len = 0, ring_id;
 	u32 i, pdev;
 
 	len += scnprintf(buf + len, size - len, "Last interrupt received for each CE:\n");
@@ -1319,7 +1319,13 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 			dp->rx_refill_buf_ring.refill_buf_ring.ring_id,
                         buf + len, size - len);
 
-	for (pdev = 0; pdev < MAX_RADIOS; pdev++) {
+	if (likely(dp->dp_mon)) {
+		ring_id = dp->dp_mon->rxdma_mon_buf_ring.refill_buf_ring.ring_id;
+		len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_MONITOR_BUF, ring_id,
+						  buf + len, size - len);
+	}
+
+	for (pdev = 0; pdev < ab->hw_params->max_radios; pdev++) {
 		rcu_read_lock();
 		dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev);
 		if (!dp_pdev) {
@@ -1327,7 +1333,7 @@ ssize_t ath12k_debugfs_hal_dump_srng_stats(struct ath12k_base *ab, char *buf, in
 			continue;
 		}
 		dp_mon_pdev = dp_pdev->dp_mon_pdev;
-		for (i = 0; i < MAX_RXDMA_PER_PDEV; i++) {
+		for (i = 0; i < ab->hw_params->num_rxdma_per_pdev; i++) {
 			len += ath12k_hal_dump_ring_stats(ab, HAL_RXDMA_MONITOR_DST,
 				dp_mon_pdev->rxdma_mon_dst_ring[i].ring_id,
 				buf + len, size - len);
