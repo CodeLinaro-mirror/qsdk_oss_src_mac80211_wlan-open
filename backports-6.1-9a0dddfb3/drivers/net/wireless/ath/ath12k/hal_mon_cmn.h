@@ -246,6 +246,7 @@ struct hal_rx_mon_ppdu_info {
 	bool is_drop_tlv;
 	struct hal_rx_mon_msdu_info msdu_info[HAL_MAX_UL_MU_USERS];
 	u8 user_id;
+	u16 retried_msdu_count;
 };
 
 struct hal_rx_mon_status_tlv_hdr {

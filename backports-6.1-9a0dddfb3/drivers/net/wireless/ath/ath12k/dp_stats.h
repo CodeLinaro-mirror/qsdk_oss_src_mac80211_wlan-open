@@ -610,6 +610,47 @@ struct ath12k_rx_peer_rate_stats {
 	u64 rx_rate[HAL_RX_BW_MAX][HAL_RX_GI_MAX][HAL_RX_MAX_NSS][HAL_RX_MAX_MCS_HT + 1];
 };
 
+/**
+ * struct ath12k_rx_peer_stats - Per-peer RX statistics
+ *
+ * @num_msdu: Total number of MSDUs received.
+ * @num_mpdu_fcs_ok: Number of MPDUs received with FCS check passed.
+ * @num_mpdu_fcs_err: Number of MPDUs received with FCS check failed.
+ * @tcp_msdu_count: Number of MSDUs carrying TCP payload.
+ * @udp_msdu_count: Number of MSDUs carrying UDP payload.
+ * @other_msdu_count: Number of MSDUs carrying non-TCP/UDP payload.
+ * @ampdu_msdu_count: Number of MSDUs received within A-MPDU aggregates.
+ * @non_ampdu_msdu_count: Number of MSDUs received outside A-MPDU aggregates.
+ * @stbc_count: Number of frames received using STBC (Space-Time Block Coding).
+ * @beamformed_count: Number of frames received with beamforming enabled.
+ * @coding_count: Array of counts per coding type (indexed by HAL_RX_SU_MU_CODING_MAX).
+ * @tid_count: Array of MSDU counts per TID (Traffic Identifier),
+ *             indexed by IEEE80211_NUM_TIDS + 1 (includes non-QoS).
+ * @pream_cnt: Array of counts per preamble type (indexed by HAL_RX_PREAMBLE_MAX).
+ * @reception_type: Array of counts per PPDU reception type
+ *                  (indexed by HAL_RX_RECEPTION_TYPE_MAX).
+ * @rx_duration: Total RX duration in microseconds.
+ * @dcm_count: Number of frames received using Dual Carrier Modulation (DCM).
+ * @ru_alloc_cnt: Array of counts per RU allocation type
+ *                (indexed by HAL_RX_RU_ALLOC_TYPE_MAX).
+ * @pkt_stats: Per-rate statistics based on packet counts.
+ * @byte_stats: Per-rate statistics based on byte counts.
+ *
+ * SU + MU Basic Stats:
+ * @num_msdu_bytes: Total MSDU bytes received.
+ * @num_msdu_retry_count: Number of MSDU retries.
+ * @num_mpdus: Total number of MPDUs received.
+ * @num_mpdu_retry_count: Number of MPDU retries.
+ * @num_ppdus: Total number of PPDUs received.
+ * @num_ppdu_duration: Aggregate PPDU duration.
+ *
+ * Bitfield info:
+ * @nss_info: Number of spatial streams (NSS).
+ * @mcs_info: Modulation and Coding Scheme (MCS) index.
+ * @bw_info: Bandwidth information (channel width).
+ * @gi_info: Guard interval information.
+ * @preamble_info: Preamble type information.
+ */
 struct ath12k_rx_peer_stats {
 	u64 num_msdu;
 	u64 num_mpdu_fcs_ok;
@@ -630,6 +671,19 @@ struct ath12k_rx_peer_stats {
 	u64 ru_alloc_cnt[HAL_RX_RU_ALLOC_TYPE_MAX];
 	struct ath12k_rx_peer_rate_stats pkt_stats;
 	struct ath12k_rx_peer_rate_stats byte_stats;
+	/* SU + MU Basic Stats */
+	u64 num_msdu_bytes;
+	u32 num_msdu_retry_count;
+	u64 num_mpdus;
+	u32 num_mpdu_retry_count;
+	u64 num_ppdus;
+	u32 num_ppdu_duration;
+
+	u32 nss_info:4,
+	    mcs_info:4,
+	    bw_info:4,
+	    gi_info:4,
+	    preamble_info:4;
 };
 
 /* struct ath12k_dp_preserved_stats - Snapshot statistics for MLO datapath
