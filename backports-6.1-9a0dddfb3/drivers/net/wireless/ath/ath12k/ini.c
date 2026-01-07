@@ -962,12 +962,15 @@ int ath12k_cfg_get_ini_file_name(u32 target_type, struct ath12k_ini_file *ini)
 		ini->external = "QCN6432.ini";
 		ini->internal = "QCN6432_i.ini";
 		break;
+	case ATH12K_HW_QCN9625_HW10:
+		ini->external = "QCN9625.ini";
+		ini->internal = "QCN9625_i.ini";
+		break;
 	default:
 		ini->external = NULL;
 		ini->internal = NULL;
 		ret = -EINVAL;
-		ath12k_err(NULL,
-			   "Target specific INI not found tgt_type %d",
+		ath12k_err(NULL, "Target specific INI not found tgt_type %d",
 			   target_type);
 		break;
 	}
