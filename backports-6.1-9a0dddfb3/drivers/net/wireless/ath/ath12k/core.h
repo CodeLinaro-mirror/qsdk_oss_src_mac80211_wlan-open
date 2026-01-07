@@ -116,6 +116,11 @@
 #define ATH12K_PHY_5GHZ_LOW "phy01"
 #define ATH12K_PHY_5GHZ_HIGH "phy02"
 #define ATH12K_PHY_6GHZ "phy03"
+
+#ifdef CPTCFG_QCN_EXTN
+/* Scan radio uses a single PHY name for all bands */
+#define ATH12K_PHY_SCAN_RADIO "phy-scan-00"
+#endif
 #define ATH12K_Q6_POWER_UP_TIMEOUT	(20 * HZ)
 #define ATH12K_UMAC_RESET_TIMEOUT_IN_MS         1000
 
