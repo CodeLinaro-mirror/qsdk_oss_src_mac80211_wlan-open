@@ -136,8 +136,9 @@ static void ath12k_copy_to_delay_stats(struct ath12k_pdev_dp *dp_pdev,
 	lockdep_assert_held(&dp_pdev->dp->dp_lock);
 	ppdu_list_stats = &dp_pdev->stats.ppdu_list_stats;
 	if (peer->delayba_flag) {
-		ath12k_warn(dp_pdev->dp->ab, "BA not yet recv for prev delayed ppdu[%d] - cur ppdu[%d]",
-			    peer->last_delayed_ba_ppduid, ppdu_info->ppdu_id);
+		ath12k_dbg_level(dp_pdev->dp->ab, ATH12K_DBG_TELEMETRY, ATH12K_DBG_L3,
+				 "BA not yet recv for prev delayed ppdu[%d] - cur ppdu[%d]",
+				 peer->last_delayed_ba_ppduid, ppdu_info->ppdu_id);
 		ppdu_list_stats->delayed_ba_not_recvd++;
 	}
 
