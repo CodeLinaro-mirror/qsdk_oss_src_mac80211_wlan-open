@@ -459,6 +459,8 @@ enum ath12k_dbg_htt_ext_stats_type {
 	ATH12K_DBG_HTT_EXT_STATS_PDEV_UL_MUMIMO_ELIGIBLE        = 74,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_HDS_PROF 			= 76,
 	ATH12K_DBG_HTT_DBG_EXT_STATS_OPTIONAL_CONFIGS		= 77,
+	ATH12K_DBG_HTT_DBG_EXT_STATS_FTM			= 79,
+	ATH12K_DBG_HTT_DBG_EXT_STATS_FTM_TPCCAL_EXT		= 80,
 
 	/* keep this last */
 	ATH12K_DBG_HTT_NUM_EXT_STATS,
@@ -664,7 +666,8 @@ enum ath12k_dbg_htt_tlv_tag {
 	HTT_STATS_TX_PDEV_BN_DL_MU_OFDMA_STATS_TAG	= 223,
 	HTT_STATS_TX_PDEV_BN_UL_MU_OFDMA_STATS_TAG	= 224,
 	HTT_STATS_OPTIONAL_CONFIGS_STATS_TAG		= 232,
-
+	HTT_STATS_FTM_TAG				= 234,
+	HTT_STATS_PDEV_FTM_TPCCAL_EXT_TAG		= 235,
 	HTT_STATS_MAX_TAG,
 };
 
@@ -3883,6 +3886,7 @@ struct ath12k_htt_dl_pager_stats_tlv {
 #define ATH12K_HTT_MAX_POWER_LEVEL 32 /* 0 to 32 dBm */
 
 #define HTT_STATS_ANI_MODE_M	GENMASK(7, 0)
+#define HTT_STATS_CURR_EANI_MODE_M  GENMASK(7, 0)
 
 struct ath12k_htt_phy_stats_tlv {
 	a_sle32 nf_chain[ATH12K_HTT_STATS_MAX_CHAINS];
@@ -3904,7 +3908,28 @@ struct ath12k_htt_phy_stats_tlv {
 		u32 dword__ani_mode;
 		struct {
 			u32 ani_mode: 8,
-reserved: 24;
+			reserved:24;
+		};
+	};
+	/*Maximum allowed ANI value */
+	__le32 dl_max_ANI;
+	/*Minimum RSSI of connected clients*/
+	__le32 ani_dl_max_for_rssi;
+	/*BIT [ 7 :  0]   :- curr_eani_mode
+	 * BIT [31 :  8]   :- rsvd
+	 *
+	 * curr_eani_mode:
+	 * EANI_MODE_MIN_DESENSE = 0,
+	 * EANI_MODE_MAX_DESENSE = 1,
+	 * EANI_MODE_DEFAULT_DESENSE = 2,
+	 * EANI_MODE_MAX,
+	 * EANI_MODE_TYPE_INVALID = 0xFF
+	 */
+	union {
+		__le32 dword_curr_eani_mode;
+		struct {
+			__le32 curr_eani_mode: 8,
+			    rsvd:24;
 		};
 	};
 } __packed;
@@ -5219,6 +5244,9 @@ struct ath12k_htt_stats_latency_prof_cal_data_tlv {
 
 #define ATH12K_HTT_MAX_TPCCAL_STATS 25
 #define ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS 64
+#define ATH12K_HTT_STATS_NUM_CAL_GAINS_SELECTED_4_GLUT 16
+#define ATH12K_HTT_STATS_NUM_CAL_GAINS_SELECTED_4_PLUT 10
+
 
 struct ath12k_htt_stats_pdev_ftm_tpccal_tlv {
 	union {
@@ -5231,7 +5259,7 @@ struct ath12k_htt_stats_pdev_ftm_tpccal_tlv {
 
 	struct {
 		union {
-			u32 dword__measPwr;
+			s32 dword__measPwr;
 			struct {
 				u32 measPwr:16, /* dBm units */
 					rsvd2:16;
@@ -5258,7 +5286,7 @@ struct ath12k_htt_stats_pdev_ftm_tpccal_tlv {
 
 	struct {
 		u32 calStatus;
-		u32  measPwr[ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS]; /* dBm units */
+		s32  measPwr[ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS]; /* dBm units */
 		u32 pdadc[ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS];
 		u32 gainIndex[ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS];
 		union {
@@ -5279,7 +5307,319 @@ struct ath12k_htt_stats_pdev_ftm_tpccal_tlv {
 			};
 		};
 	} tpccal_stats_postproc;
+	/*cal DB timeout in ms*/
+	__le32 cal_db_timeout_ms;
+	struct {
+		s32 tgt_meas_pwr[ATH12K_HTT_STATS_NUM_CAL_GAINS_SELECTED_4_GLUT];
+		__le32 tgt_pdadc[ATH12K_HTT_STATS_NUM_CAL_GAINS_SELECTED_4_PLUT];
+	} tpc_targets;
 } __packed;
+
+#define ATH12K_HTT_STATS_TPCCAL_PDADC_LAST_IDX		GENMASK(7, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_PDADC_NUMGAIN		GENMASK(7, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_PDADC_BAND		GENMASK(7, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_PDADC_CHANNEL		GENMASK(23, 8)
+
+#define ATH12K_HTT_STATS_TPCCAL_PDADC_CHAIN		GENMASK(31, 24)
+
+#define ATH12K_HTT_STATS_TPCCAL_RES_PDADC_GAINIDX	GENMASK(7, 0)
+
+#define ATH12K_HTT_STATS_TPCCAL_RES_PDADC_VAL		GENMASK(15, 8)
+
+#define ATH12K_HTT_STATS_TPCCAL_RES_PDADC_MEASPWR	GENMASK(15, 0)
+
+#define ATH12K_HTT_STATS_TPC_CAL_PDADC_BUF_LEN 3
+
+#define ATH12K_HTT_STATS_TPCCALRSP_MISCFLAGS_CALERROR_PLUT_NON_LINEAR     BIT(17)
+#define ATH12K_HTT_STATS_TPCCALRSP_MISCFLAGS_CALERROR_PLUT_NOT_FILLED     BIT(19)
+
+struct ath12k_htt_stats_pdev_ftm_tpccal_ext_tlv {
+	/*
+	 * cal_status can be intrepreted with the below values:
+	 *   TPCCAL_CALDATA                                 (1 << 0)
+	 *   TPCCAL_CALINFO                                 (1 << 1)
+	 *   TPCCAL_CALERROR                                (1 << 2)
+	 *   bits 6:4 - reserved
+	 *   TPCCAL_DONE_MASK                               (1 << 7)
+	 *   bits 15:8 - reserved
+	 *   TPCCALRSP_MISCFLAGS_CALERROR_GLUTS_NOT_FILLED  (1 << 16)
+	 *   TPCCALRSP_MISCFLAGS_CALERROR_PLUT_NON_LINEAR   (1 << 17)
+	 *   TPCCALRSP_MISCFLAGS_CALERROR_ATTEMPTS_EXCEEDED (1 << 18)
+	 *   TPCCALRSP_MISCFLAGS_CALERROR_PLUT_NOT_FILLED   (1 << 19)
+	 *   bits 31:20 - reserved
+	 */
+	__le32 cal_status;
+	/* dword__tpccal_pdadc_last_idx:
+	 * Hold the last updated index for pdadc buffer which holds
+	 * band,chain,chan_idx,gain_idx for pdadc non-linearity
+	 * BIT [7 : 0]   :- tpcccal_pdadc_last_idx
+	 * BIT [31 : 8]  :- rsvd
+	 */
+	union {
+		__le32 dword__tpccal_pdadc_last_idx;
+		struct {
+			__le32 tpccal_pdadc_last_idx:8,
+			    rsvd:24;
+		};
+	};
+	struct {
+		/* dword__tpccal_pdadc_numgain:
+		 * Hold the number of gain_idx for band for which
+		 * PDADC non-linearity is observed
+		 * BIT [7 : 0]   :- tpccal_pdadc_numgain
+		 * BIT [31 : 8]  :- rsvd1
+		 */
+		union {
+			__le32 dword__tpccal_pdadc_numgain;
+			struct {
+				__le32 tpccal_pdadc_numgain:8,
+				    rsvd1:24;
+			};
+		};
+		/*
+		 * dword__band_channel_chain:
+		 * band, channel, chain for which pdadc is non-linear
+		 * BIT [7 : 0]   :- band
+		 * BIT [23 : 8]  :- channel
+		 * BIT [31 : 24] :- chain
+		 */
+		union {
+			__le32 dword__band_channel_chain;
+			struct {
+				__le32 band:8,
+				    channel:16,
+				    chain:8;
+			};
+		};
+	} tpccal_stats_pdadc[ATH12K_HTT_STATS_TPC_CAL_PDADC_BUF_LEN];
+	/*
+	 * tpccal_tpc_cal_res
+	 * holds meas_pwr, pdadc, gain_index from tpcCalResult for band, channel,
+	 * chain, gain_idx for which pdadc is non-linear
+	 * BIT [7 : 0]   :- gain_idx
+	 * BIT [15 : 8]  :- pdadc
+	 * BIT [31 : 16] :- rsvd
+	 */
+	struct {
+		union {
+			__le32 dword_calres;
+			struct {
+				__le32 gain_idx:8,
+				    pdadc:8,
+				    rsvd:16;
+			};
+		};
+		/*
+		 * dword__meas_pwr:
+		 * BIT [15 : 0]  :- meas_pwr
+		 * BIT [31 : 16] :- rsvd3
+		 */
+		union {
+			s32 dword_meas_pwr;
+			struct {
+				s32 meas_pwr:16, /* dBm units */
+				    rsvd3:16;
+			};
+		};
+	} tpccal_tpc_cal_res[ATH12K_HTT_STATS_TPC_CAL_PDADC_BUF_LEN]
+				   [ATH12K_HTT_STATS_TPC_CAL_MAX_NUM_POINTS];
+} __packed;
+
+/* ================= dword_txparams ================= */
+#define ATH12K_HTT_STATS_CWTONE_GAIN_IDX               GENMASK(7, 0)
+#define ATH12K_HTT_STATS_INFINITE_BURSTING_MODE        GENMASK(15, 8)
+#define ATH12K_HTT_STATS_FTM_MODE                      GENMASK(23, 16)
+#define ATH12K_HTT_STATS_SIFS_US                       GENMASK(31, 24)
+
+/* ================= dword_txparams_ext_1 ================= */
+#define ATH12K_HTT_STATS_AGG_STATUS                    GENMASK(0, 0)
+#define ATH12K_HTT_STATS_DPD_FLAG                      GENMASK(1, 1)
+#define ATH12K_HTT_STATS_PPDU_DUR_BUF_LAST_IDX         GENMASK(9, 2)
+
+/* ================= dword_txparams_ext_2 ================= */
+#define ATH12K_HTT_STATS_TX_DUTY                       GENMASK(7, 0)
+#define ATH12K_HTT_STATS_PPDU_TYPE                     GENMASK(15, 8)
+#define ATH12K_HTT_STATS_NUM_USERS_OFDMA_TONE_PLAN     GENMASK(23, 16)
+#define ATH12K_HTT_STATS_NUM_USERS_OFDMA_TONE_PLAN_EHT GENMASK(31, 24)
+
+/* ================= dword_TimingStats ================= */
+#define ATH12K_HTT_STATS_TIMESTAMP_CNT                 GENMASK(7, 0)
+
+/* ================= dword_TlvcmdInfo ================= */
+#define ATH12K_HTT_STATS_CMD_ENTRY                     GENMASK(15, 0)
+#define ATH12K_HTT_STATS_CAL_TYPE                      GENMASK(23, 16)
+
+/* ================= dword_TlvCmdParsing ================= */
+#define ATH12K_HTT_STATS_FLAG_CMD_PARSING              GENMASK(0, 0)
+#define ATH12K_HTT_STATS_NUM_TLV_CMD_DROPPED           GENMASK(8, 1)
+
+/* ================= dword_rxGaincalMaxNumchan ================= */
+#define ATH12K_HTT_STATS_RXGAINCAL_MAX_NUMCHAN         GENMASK(7, 0)
+
+/* ================= dword_rxgainCalRefISS ================= */
+#define ATH12K_HTT_STATS_RXGAINCAL_REF_ISS             GENMASK(7, 0)
+
+#define ATH12K_HTT_STATS_FTM_TIMESTAMP_TOTAL_CNT 50
+#define ATH12K_HTT_STATS_FTM_PPDU_DUR_CIRCULAR_BUF_CNT 10
+#define ATH12K_HTT_STATS_FTM_RXGAINCAL_MAX_NUM_CHAN_TLV2 16
+#define ATH12K_HTT_STATS_FTM_FPC_TIMING_SHIFT 32
+
+struct ath12k_htt_stats_ftm_tlv {
+	/* TX PARAMS
+	 *
+	 * BIT [7 : 0]   :- gain idx used for CW tone
+	 * BIT [15 : 8]  :- infinite_bursting_mode
+	 * BIT [23 : 16] :- ftm_mode
+	 * BIT [31 : 24] :- sifs_us
+	 */
+	struct {
+		union {
+			__le32 dword_txparams;
+			struct {
+				__le32 cwtone_gain_idx:8,
+				    infinite_bursting_mode:8,
+				    ftm_mode:8,
+				    sifs_us:8;
+			};
+		};
+		/* dword_txparams_ext_1
+		 * BIT [0]       :- agg_status
+		 * BIT [1]       :- dpd_flag
+		 * BIT [9 : 2]   :- ppdu_dur_buf_last_idx (last idx of ppdu
+		 *                  duration circular buffer - 'actual_ppdu_dur_us')
+		 * BIT [31 : 10] :- rsvd
+		 */
+		union {
+			__le32 dword_txparams_ext_1;
+			struct {
+				__le32 agg_status:1,
+				    dpd_flag:1,
+				    ppdu_dur_buf_last_idx:8,
+				    rsvd:22;
+			};
+		};
+		__le32 actual_ppdu_dur_us[ATH12K_HTT_STATS_FTM_PPDU_DUR_CIRCULAR_BUF_CNT];
+		__le32 target_fes_duration_us;
+		__le32 target_txoff_duration_us;
+		__le32 phy_mode;
+		__le32 pkt_len_post_truncation;
+		/* dword_txparams_ext_2
+		 * BIT [7 : 0]   :- target_tx_duty (TX ON ratio)
+		 * BIT [15 : 8]  :- ppdu_type
+		 * BIT [23 : 16] :- num_users_ofdma_tone_plan
+		 * BIT [31 : 24] :- num_users_ofdma_tone_plan_eht
+		 */
+		union {
+			__le32 dword_txparams_ext_2;
+			struct {
+				__le32 target_tx_duty:8,
+				    ppdu_type:8,
+				    num_users_ofdma_tone_plan:8,
+				    num_users_ofdma_tone_plan_eht:8;
+			};
+		};
+	} tx_params;
+	/*CALIBRATION VERIFICATION FW ONLY TIMING STATS:*/
+	struct {
+		__le32 ts_fpc_high;
+		__le32 ts_fpc_low;
+		__le32 ts_cal_db_regen_time;
+		__le32 ts_opc;
+		__le32 ts_xtalcal;
+		__le32 ts_rxgaincal;
+		__le32 ts_nfcal;
+		__le32 ts_tx_ver;
+		__le32 ts_rx_ver;
+		/*Overall channel change time for tx/rx verification*/
+		__le32 tx_ver_overall_chan_change_timing_ts;
+		__le32 rx_ver_overall_chan_change_timing_ts;
+		/*dword_timing_stats
+		 * Number of TLVs for which tlv_cmd_info to be dumped
+		 * BIT [7:0]      :- tlv_timestamp_cnt_filled
+		 * BIT [31 :8]   :- rsvd1
+		 */
+		union {
+			__le32 dword_timing_stats;
+			struct {
+				__le32 tlv_timestamp_cnt_filled:8,
+				    rsvd1:24;
+			};
+		};
+		/*TLV cmd and timing info */
+		struct {
+			__le32 tlv_tim_del;
+			/*dword_tlv_cmd_info
+			 * TLV CMD ID and cal_type corresponding to TLV
+			 * BIT [15:0]       :- tlv_cmd_entry - TLV cmd ID
+			 * BIT [23 : 16]    :- tlv_cal_type - cal_type
+			 * BIT [31 : 24]    :- rsvd2
+			 */
+			union {
+				__le32 dword_tlv_cmd_info;
+				struct {
+					__le32 tlv_cmd_entry:16,
+					    tlv_cal_type:8,
+					    rsvd2:8;
+				};
+			};
+		} tlv_cmd_tim_info[ATH12K_HTT_STATS_FTM_TIMESTAMP_TOTAL_CNT];
+	} timing_stats;
+	/*TLV params*/
+	struct {
+		__le32 last_tlv_num_params;
+		__le32 last_tlv_num_params_parsed;
+		__le32 last_tlv_cmd;
+		__le32 last_tlv_rsp_cmd;
+		/*dword_tlv_cmd_parsing
+		 * BIT [0]         :- flag_tlv_cmd_parsing
+		 * BIT [8 : 1]     :- num_tlv_cmd_dropped
+		 * BIT [31 : 9]    :- rsvd3
+		 */
+		union {
+			__le32 dword_tlv_cmd_parsing;
+			struct {
+				__le32 flag_tlv_cmd_parsing:1,
+				    num_tlv_cmd_dropped:8,
+				    rsvd3:23;
+			};
+		};
+		__le32 last_tlv_cmd_dropped;
+	} tlv_params;
+	/*RX gain cal params*/
+	/*dword_rx_gain_cal_max_num_chan
+	 * Num channels for which good_pkt_cnt for RX gain cal to be dumped
+	 * BIT [7 : 0]     :- rx_gain_cal_max_num_chan
+	 * BIT [31 : 8]    :- rsvd4
+	 */
+	struct {
+		union {
+			__le32 dword_rx_gain_cal_max_num_chan;
+			struct {
+				__le32 rx_gain_cal_max_num_chan:8,
+				    rsvd4:24;
+			};
+		};
+		__le32 good_pkt_cnt[ATH12K_HTT_STATS_FTM_RXGAINCAL_MAX_NUM_CHAN_TLV2];
+		/*dword_rx_gain_cal_ref_iss
+		 * Reference Input Signal Strength for Rx gain cal in dBm
+		 * BIT [7 : 0]     :- rx_gain_cal_ref_iss
+		 * BIT [31 : 8]    :- rsvd
+		 */
+		union {
+			s32 dword_rx_gain_cal_ref_iss;
+			struct {
+				s32 rx_gain_cal_ref_iss:8,
+				    pad:24;
+			};
+		};
+	} rx_gain_cal_params;
+	/*Miscallenous params*/
+	__le32 bd_read_rsp;
+} __packed;
+
 
 struct ath12k_htt_stats_phy_paprd_pb_tlv {
 	__le32 pdev_id;
@@ -5514,4 +5854,3 @@ enum HTT_RX_TX_PDEV_STATS_WIFI_VERSION {
 	HTT_WIFI_VER_11BN = 8,
 };
 #endif
-
