@@ -8,3 +8,4 @@
 
 #define CREATE_TRACE_POINTS
 #include "trace.h"
+EXPORT_TRACEPOINT_SYMBOL_GPL(ath12k_htt_rxdesc);

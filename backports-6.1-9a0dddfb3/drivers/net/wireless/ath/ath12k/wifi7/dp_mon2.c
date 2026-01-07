@@ -14,6 +14,7 @@
 #include "../peer.h"
 #include "../dp_mon_filter.h"
 #include "dp_mon2.h"
+#include "../trace.h"
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
