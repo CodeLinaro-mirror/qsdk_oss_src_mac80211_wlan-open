@@ -41,6 +41,9 @@
 #include "ini.h"
 #include "erp.h"
 #include "sdwf.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 #include "telemetry_agent_if.h"
 
 #ifdef CPTCFG_ATHDEBUG
@@ -1083,6 +1086,9 @@ static void ath12k_core_stop(struct ath12k_base *ab)
 	ath12k_wmi_detach(ab);
 	ath12k_dp_cmn_device_deinit(ab->dp);
 	ath12k_cfg_deinit(ab);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_ipa_plugin_deregister_ops(ab);
+#endif
 
 	/* De-Init of components as needed */
 }
@@ -1393,7 +1399,9 @@ static int ath12k_core_start(struct ath12k_base *ab)
 		goto err_hif_stop;
 	}
 
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 	ath12k_hal_cc_config(ab);
+#endif
 
 	ret = ath12k_wmi_cmd_init(ab);
 	if (ret) {
@@ -1935,6 +1943,9 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 	struct ath12k_bridge_iter bridge_iter = {};
 	u8 active_num_devices;
 	struct ath12k_base *partner_ab;
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_pci *ab_pci;
+#endif
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	/* TODO: DS: revisit this for new DS design in WDS mode */
@@ -1959,6 +1970,12 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 		return ret;
 	}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ret = ath12k_ipa_plugin_register_ops(ab);
+	if (ret)
+		goto err_firmware_stop;
+	ath12k_info(ab, "IPA: ipa plugin are registered");
+#endif
 	ret = ath12k_ce_init_pipes(ab);
 	if (ret) {
 		ath12k_err(ab, "failed to initialize CE: %d\n", ret);
@@ -2013,6 +2030,7 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 			goto err_core_stop;
 		}
 		ath12k_dbg(ab, ATH12K_DBG_BOOT, "group %d started\n", ag->id);
+
 		if (ag->wsi_remap_in_progress) {
 			/* During bypass, device will restart from start.
 			 * But the ath12k reference will be already present.
@@ -2041,6 +2059,22 @@ int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab)
 			ath12k_info(ab, "WSI remap: Device re-addition completed\n");
 		}
 	}
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
+	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_register_is_ipa_ready)
+		ret = ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_register_is_ipa_ready
+			(ab);
+
+	ret = ath12k_dp_rxdma_buf_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "failed to setup rxdma ring\n");
+		goto err_dp_free;
+	}
+	ab_pci = ath12k_pci_priv(ab);
+	if (ab_pci->device_ops->ipa_init)
+		ab_pci->device_ops->ipa_init(ab);
+#endif
 
 	if (ath12k_core_hw_group_start_ready(ag)) {
 		mutex_unlock(&ag->mutex);
@@ -2071,6 +2105,11 @@ err_core_stop:
 			continue;
 
 		mutex_lock(&ab->core_lock);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+		if (ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
+		    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_uc_ol_deinit)
+			ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_uc_ol_deinit(ab);
+#endif
 		ath12k_core_stop(ab);
 		mutex_unlock(&ab->core_lock);
 	}

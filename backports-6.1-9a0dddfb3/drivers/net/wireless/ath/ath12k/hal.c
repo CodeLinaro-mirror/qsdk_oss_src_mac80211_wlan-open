@@ -106,6 +106,13 @@ void ath12k_hal_reo_hw_setup(struct ath12k_base *ab)
 	ab->hal.hal_ops->reo_hw_setup(ab);
 }
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+void ath12k_hal_reo_hw_setup_ipa(struct ath12k_base *ab)
+{
+	ab->hal.hal_ops->reo_hw_setup_ipa(ab);
+}
+#endif
+
 void ath12k_hal_reo_init_cmd_ring(struct ath12k_base *ab, struct hal_srng *srng)
 {
 	ab->hal.hal_ops->reo_init_cmd_ring(ab, srng);
@@ -427,6 +434,28 @@ void *ath12k_hal_srng_dst_get_next_entry(struct ath12k_base *ab,
 }
 EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_entry);
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+void *ath12k_hal_srng_dst_get_next_hp_entry(struct ath12k_base *ab,
+					    struct hal_srng *srng)
+{
+	void *desc;
+	u32 next_hp;
+
+	lockdep_assert_held(&srng->lock);
+
+	next_hp = (srng->u.dst_ring.cached_hp + srng->entry_size) % srng->ring_size;
+
+	if (next_hp != srng->u.dst_ring.tp) {
+		desc = srng->ring_base_vaddr + srng->u.dst_ring.cached_hp;
+		srng->u.dst_ring.cached_hp = next_hp;
+		return desc;
+	}
+	/* ring is full */
+	return NULL;
+}
+EXPORT_SYMBOL(ath12k_hal_srng_dst_get_next_hp_entry);
+#endif
+
 void *__ath12k_hal_srng_dst_get_next_cached_entry(struct hal_srng *srng,
 						  u32 *old_tp)
 {
@@ -671,6 +700,9 @@ EXPORT_SYMBOL(ath12k_hal_srng_access_begin);
 
 u32 ath12k_hal_srng_access_begin_no_lock(struct hal_srng *srng)
 {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	lockdep_assert_held(&srng->lock);
+#endif
 	return __ath12k_hal_srng_access_begin(srng);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_access_begin_no_lock);
@@ -739,6 +771,9 @@ EXPORT_SYMBOL(ath12k_hal_srng_access_end);
 void ath12k_hal_srng_access_end_no_lock(struct ath12k_base *ab,
 					struct hal_srng *srng)
 {
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	lockdep_assert_held(&srng->lock);
+#endif
 	 __ath12k_hal_srng_access_end(ab, srng);
 }
 EXPORT_SYMBOL(ath12k_hal_srng_access_end_no_lock);

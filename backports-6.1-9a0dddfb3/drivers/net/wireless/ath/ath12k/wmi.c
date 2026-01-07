@@ -2426,6 +2426,41 @@ int ath12k_wmi_vdev_set_param_cmd(struct ath12k *ar, u32 vdev_id,
 	return ret;
 }
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+int ath12k_wmi_ipa_offload_enable_disable_param_cmd(struct ath12k *ar, u32 vdev_id,
+						    u32 offload_type, u32 enable)
+{
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct wmi_ipa_offload_enable_disable_cmd *cmd;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_ipa_offload_enable_disable_cmd *)skb->data;
+	cmd->tlv_header =
+		ath12k_wmi_tlv_cmd_hdr(WMI_TAG_IPA_OFFLOAD_ENABLE_DISABLE_CMD,
+				       sizeof(*cmd));
+
+	cmd->vdev_id = cpu_to_le32(vdev_id);
+	cmd->offload_type = cpu_to_le32(offload_type);
+	cmd->enable = cpu_to_le32(enable);
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_WMI,
+		   "WMI vdev id 0x%x IPA offload type %d enable %d\n",
+		   vdev_id, offload_type, enable);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_IPA_OFFLOAD_ENABLE_DISABLE_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to send WMI_IPA_OFFLOAD_ENABLE_DISABLE_CMDID\n");
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+#endif
 static void ath12k_wmi_copy_coex_config(struct ath12k *ar, struct wmi_coex_config_cmd *cmd,
                                        struct coex_config_arg *coex_config)
 {

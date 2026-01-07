@@ -4274,6 +4274,14 @@ struct wmi_vdev_set_param_cmd {
 	__le32 param_value;
 } __packed;
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+struct wmi_ipa_offload_enable_disable_cmd {
+	__le32 tlv_header;
+	__le32 offload_type;
+	__le32 vdev_id;
+	__le32 enable;
+} __packed;
+#endif
 struct wmi_get_pdev_temperature_cmd {
 	__le32 tlv_header;
 	__le32 param;
@@ -9033,6 +9041,10 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 				    struct ath12k_wmi_peer_create_arg *arg);
 int ath12k_wmi_vdev_set_param_cmd(struct ath12k *ar, u32 vdev_id,
 				  u32 param_id, u32 param_value);
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+int ath12k_wmi_ipa_offload_enable_disable_param_cmd(struct ath12k *ar, u32 vdev_id,
+						    u32 offload_type, u32 enable);
+#endif
 
 int ath12k_wmi_set_sta_ps_param(struct ath12k *ar, u32 vdev_id,
 				u32 param, u32 param_value);

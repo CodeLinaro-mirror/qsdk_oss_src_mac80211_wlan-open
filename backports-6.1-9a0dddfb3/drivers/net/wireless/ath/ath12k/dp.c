@@ -17,6 +17,9 @@
 #include "debugfs.h"
 #include "dp_stats.h"
 #include "dp_peer.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
@@ -100,6 +103,9 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	struct ath12k_link_vif *arvif = NULL;
+#endif
 	/* TODO: Any other peer specific DP cleanup */
 
 	spin_lock_bh(&dp->dp_lock);
@@ -116,6 +122,29 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 		return;
 	}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (ath12k_ipa_config_is_enabled()) {
+		if (peer->primary_link) {
+			rcu_read_lock();
+			arvif = ath12k_mac_get_arvif(ar, vdev_id);
+			if (!arvif) {
+				ath12k_warn(ab,
+					    "failed to get arvif id %d, skip IPA event\n",
+					    vdev_id);
+			} else {
+				const u8 *peer_addr = peer->addr;
+				bool is_mlo = ath12k_mac_is_ml_arvif(arvif);
+
+				if (is_mlo && !is_zero_ether_addr(peer->ml_addr))
+					peer_addr = peer->ml_addr;
+				ath12k_ipa_enqueue_evt(WLAN_CLIENT_DISCONNECT,
+						       arvif, peer_addr,
+						       is_mlo);
+			}
+			rcu_read_unlock();
+		}
+	}
+#endif
 	ath12k_dp_rx_peer_tid_cleanup(ar, peer);
 	crypto_free_shash(peer->dp_peer->tfm_mmic);
 	if (peer->primary_link)
@@ -137,6 +166,14 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 
 	/* NOTE: reo_dest ring id starts from 1 unlike mac_id which starts from 0 */
 	reo_dest = ar->dp.mac_id + 1;
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (ab->ath12k_base_extn.ipa_ctx && ab->ath12k_base_extn.ipa_ctx->ipa_ops &&
+	    ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_default_routing)
+		reo_dest = ab->ath12k_base_extn.ipa_ctx->ipa_ops->ipa_set_default_routing
+			(reo_dest);
+#endif
+
 	ret = ath12k_wmi_set_peer_param(ar, addr, vdev_id,
 					WMI_PEER_SET_DEFAULT_ROUTING,
 					DP_RX_HASH_ENABLE | (reo_dest << 1));
@@ -212,6 +249,20 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 		goto tid_clean;
 	}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (ath12k_ipa_config_is_enabled()) {
+		if (peer->primary_link) {
+			const u8 *peer_addr = peer->addr;
+			bool is_mlo = ath12k_mac_is_ml_arvif(arvif);
+
+			if (is_mlo && !is_zero_ether_addr(peer->ml_addr))
+				peer_addr = peer->ml_addr;
+			ath12k_ipa_enqueue_evt(WLAN_CLIENT_CONNECT_EX,
+					       arvif, peer_addr,
+					       is_mlo);
+		}
+	}
+#endif
 	spin_unlock_bh(&dp->dp_lock);
 
 	/* TODO: Setup other peer specific resource used in data path */
@@ -440,8 +491,10 @@ int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 		switch (type) {
 		case HAL_REO_DST:
 		case HAL_WBM2SW_RELEASE:
+#ifndef CPTCFG_EXT_IPA_OFFLOAD
 			cached = true;
 			break;
+#endif
 		default:
 			cached = false;
 		}
@@ -1984,6 +2037,12 @@ void ath12k_dp_cmn_hw_group_unassign(struct ath12k_dp *dp,
 		dp_hw_grp->fst = NULL;
 	}
 
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (dp_hw_grp->ipa_global_ctx) {
+		ath12k_ipa_global_ctx_free(dp_hw_grp->ipa_global_ctx);
+		dp_hw_grp->ipa_global_ctx = NULL;
+	}
+#endif
 	dp_hw_grp->dp[dp->device_id] = NULL;
 
 	dp->dp_hw_grp = NULL;
@@ -2027,6 +2086,12 @@ void ath12k_dp_cmn_hw_group_assign(struct ath12k_dp *dp,
 			BUG_ON(1);
 		}
 	}
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	if (!dp_hw_grp->ipa_global_ctx) {
+		if (ath12k_ipa_global_ctx_alloc(dp_hw_grp) != 0)
+			ath12k_err(ab, "Failed to allocate IPA global context\n");
+	}
+#endif
 }
 
 static void ath12k_dp_srng_hw_disable(struct ath12k_base *ab, struct dp_srng *ring)
