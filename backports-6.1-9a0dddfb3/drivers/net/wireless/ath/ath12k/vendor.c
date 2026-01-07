@@ -5028,7 +5028,7 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 	struct ieee80211_vif *vif;
 	struct ath12k_vif *ahvif;
 	int ret;
-	u32 value = 0;
+	u64 value = 0;
 
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
 			ath12k_wifi_config_policy, NULL);
@@ -5065,11 +5065,26 @@ static int ath12k_vendor_get_wifi_config_handler(struct wiphy *wiphy,
 		return -ENOMEM;
 
 	if (tb[QCA_WLAN_VENDOR_ATTR_CONFIG_GENERIC_COMMAND]) {
-		if ((nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_DATA, value)) ||
-		    (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_LENGTH, sizeof(u32)))
-		    || (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_FLAGS, 0))){
-			ret = -EINVAL;
-			goto err;
+		switch (wifi_params.value) {
+		case QCA_WLAN_VENDOR_VDEV_PARAM_VDEV_TSF:
+			if ((nla_put_u64_64bit(skb, QCA_WLAN_VENDOR_ATTR_PARAM_DATA,
+			    value, NL80211_ATTR_PAD)) ||
+			    (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_LENGTH,
+			    sizeof(u64))) ||
+			    (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_FLAGS, 0))) {
+				ret = -EINVAL;
+				goto err;
+			}
+			break;
+		default:
+			if ((nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_DATA, value)) ||
+			    (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_LENGTH,
+			    sizeof(u32))) ||
+			    (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_PARAM_FLAGS, 0))) {
+				ret = -EINVAL;
+				goto err;
+			}
+			break;
 		}
 	}
 	if (tb[QCA_WLAN_VENDOR_ATTR_IF_OFFLOAD_TYPE]) {
