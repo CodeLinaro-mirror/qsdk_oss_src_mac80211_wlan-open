@@ -92,6 +92,18 @@ static inline struct device *
 	return dp_hw_grp_wifi8->cumac_dp->dev;
 }
 
+static inline struct ath12k_dp *ath12k_get_central_dp(struct ath12k_dp *dp)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+		ath12k_get_dp_hw_group_wifi8(dp->dp_hw_grp);
+
+	if (!dp_hw_grp_wifi8)
+		return NULL;
+
+	return dp_hw_grp_wifi8->cumac_dp;
+}
+
+
 struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab);
 void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp);
 #endif

@@ -288,6 +288,9 @@ void ath12k_dp_rx_fst_init(struct ath12k_base *ab);
 ssize_t ath12k_dp_dump_fst_table(struct ath12k_base *ab, char *buf, int size);
 size_t ath12k_dp_list_cut_nodes(struct list_head *list,
 				struct list_head *head, size_t count);
+int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+				u8 tid, u32 ba_win_sz, u16 ssn,
+				enum hal_pn_type pn_type);
 void ath12k_dp_tid_cleanup(struct ath12k_base *ab);
 void ath12k_dp_peer_tid_setup(struct ath12k_base *ab);
 void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,

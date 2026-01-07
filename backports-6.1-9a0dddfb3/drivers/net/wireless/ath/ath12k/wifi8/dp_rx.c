@@ -27,6 +27,7 @@
 #endif
 #include "../fse.h"
 #include "dp_ast.h"
+#include "dp.h"
 
 #define ATH12K_DP_RX_FRAGMENT_TIMEOUT_MS (2 * HZ)
 
@@ -117,12 +118,13 @@ int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 	struct ath12k_dp_rx_reo_cmd *dp_cmd;
 	struct hal_srng *cmd_ring;
 	int cmd_num;
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags) ||
 	    test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags))
 		return -ESHUTDOWN;
 
-	cmd_ring = &ab->hal.srng_list[dp->reo_cmd_ring.ring_id];
+	cmd_ring = &ab->hal.srng_list[central_dp->reo_cmd_ring.ring_id];
 	cmd_num = ath12k_wifi8_hal_reo_cmd_send(ab, cmd_ring, type, cmd);
 
 	/* cmd_num should start from 1, during failure return the error code */
@@ -149,9 +151,9 @@ int ath12k_wifi8_dp_reo_cmd_send(struct ath12k_base *ab,
 	dp_cmd->cmd_num = cmd_num;
 	dp_cmd->handler = cb;
 
-	spin_lock_bh(&dp->reo_cmd_lock);
-	list_add_tail(&dp_cmd->list, &dp->reo_cmd_list);
-	spin_unlock_bh(&dp->reo_cmd_lock);
+	spin_lock_bh(&central_dp->reo_cmd_lock);
+	list_add_tail(&dp_cmd->list, &central_dp->reo_cmd_list);
+	spin_unlock_bh(&central_dp->reo_cmd_lock);
 
 	return 0;
 }
@@ -189,22 +191,23 @@ void ath12k_wifi8_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id, u1
 {
 	struct ath12k_reo_queue_ref *qref;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	bool ml_peer = false;
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
 
 	if (!ab->hw_params->reoq_lut_support)
 		return;
 
-	if (peer_id & ATH12K_PEER_ML_ID_VALID) {
-		peer_id &= ~ATH12K_PEER_ML_ID_VALID;
-		ml_peer = true;
+	if (!central_dp->reoq_lut.vaddr) {
+		ath12k_warn(ab, "reo qref table is not setup\n");
+		return;
 	}
 
-	if (ml_peer)
-		qref = (struct ath12k_reo_queue_ref *)dp->ml_reoq_lut.vaddr +
-				(peer_id * (IEEE80211_NUM_TIDS + 1) + tid);
-	else
-		qref = (struct ath12k_reo_queue_ref *)dp->reoq_lut.vaddr +
-				(peer_id * (IEEE80211_NUM_TIDS + 1) + tid);
+	if (peer_id > DP_MAX_PEER_ID) {
+		ath12k_warn(ab, "peer id %d is more than Max peer id\n", peer_id);
+		return;
+	}
+
+	qref = (struct ath12k_reo_queue_ref *)central_dp->reoq_lut.vaddr +
+			(peer_id * ab->hal.hal_params->num_tids + tid);
 
 	qref->info0 = u32_encode_bits(lower_32_bits(paddr),
 				      BUFFER_ADDR_INFO0_ADDR);
@@ -336,22 +339,23 @@ void ath12k_wifi8_peer_rx_tid_qref_reset(struct ath12k_base *ab, u16 peer_id, u1
 {
 	struct ath12k_reo_queue_ref *qref;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	bool ml_peer = false;
+	struct ath12k_dp *central_dp = ath12k_get_central_dp(dp);
 
 	if (!ab->hw_params->reoq_lut_support)
 		return;
 
-	if (peer_id & ATH12K_PEER_ML_ID_VALID) {
-		peer_id &= ~ATH12K_PEER_ML_ID_VALID;
-		ml_peer = true;
+	if (!central_dp->reoq_lut.vaddr) {
+		ath12k_warn(ab, "reo qref table is not setup\n");
+		return;
 	}
 
-	if (ml_peer)
-		qref = (struct ath12k_reo_queue_ref *)dp->ml_reoq_lut.vaddr +
-				(peer_id * (IEEE80211_NUM_TIDS + 1) + tid);
-	else
-		qref = (struct ath12k_reo_queue_ref *)dp->reoq_lut.vaddr +
-				(peer_id * (IEEE80211_NUM_TIDS + 1) + tid);
+	if (peer_id > DP_MAX_PEER_ID) {
+		ath12k_warn(ab, "peer id %d is more than Max peer id\n", peer_id);
+		return;
+	}
+
+	qref = (struct ath12k_reo_queue_ref *)central_dp->reoq_lut.vaddr +
+			(peer_id * ab->hal.hal_params->num_tids + tid);
 
 	qref->info0 = u32_encode_bits(0, BUFFER_ADDR_INFO0_ADDR);
 	qref->info1 = u32_encode_bits(0, BUFFER_ADDR_INFO1_ADDR);
@@ -405,9 +409,7 @@ void ath12k_wifi8_dp_rx_peer_tid_delete(struct ath12k *ar,
 	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
 
 	rx_tid->active = false;
-	ath12k_wifi8_peer_rx_tid_qref_reset(ab,
-					    peer->mlo ? peer->ml_id : peer->peer_id,
-					    tid);
+	ath12k_wifi8_peer_rx_tid_qref_reset(ab, peer->dp_peer->peer_id, tid);
 	ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(ab);
 	rx_tid->vaddr = NULL;
 	rx_tid->paddr = 0;
@@ -2240,7 +2242,7 @@ static int ath12k_wifi8_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	seqno = rx_desc_data->seq_no;
 
 	if (!rx_desc_data->seq_ctl_valid || !rx_desc_data->fc_valid ||
-	    tid > IEEE80211_NUM_TIDS)
+	    tid >= ab->hal.hal_params->num_tids)
 		return -EINVAL;
 
 	/* received unfragmented packet in reo
@@ -4004,12 +4006,10 @@ int ath12k_wifi8_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	struct ath12k_base *ab = dp->ab;
 	int ret, tid;
 
-	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 		rx_tid = &peer->dp_peer->rx_tid[tid];
 
-		ath12k_wifi8_peer_rx_tid_qref_reset(ab,
-						    peer->mlo ? peer->ml_id :
-					    peer->peer_id, tid);
+		ath12k_wifi8_peer_rx_tid_qref_reset(ab, peer->dp_peer->peer_id, tid);
 		ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(ab);
 
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);

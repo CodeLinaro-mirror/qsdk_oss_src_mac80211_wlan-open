@@ -335,12 +335,6 @@ enum ath12k_dp_eapol_key_type {
 
 #define DP_TCL_ENCAP_TYPE_MAX	4
 
-/* Total size of the LUT is based on 2K peers, each having reference
- * for 17tids, note each entry is of type ath12k_reo_queue_ref
- * hence total size is 2048 * 17 * 8 = 278528
- */
-#define DP_REOQ_LUT_SIZE	278528
-
 /* Invalid TX Bank ID value */
 #define DP_INVALID_BANK_ID -1
 
@@ -1220,8 +1214,6 @@ size_t ath12k_dp_get_req_entries_from_buf_ring(struct ath12k_base *ab,
 					       struct list_head *list);
 int ath12k_dp_init_bank_profiles(struct ath12k_base *ab);
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab);
-int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab);
-void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab);
 int ath12k_dp_cc_init(struct ath12k_base *ab);
 void ath12k_dp_cc_cleanup(struct ath12k_base *ab);
 int ath12k_wbm_idle_ring_setup(struct ath12k_base *ab, u32 *n_link_desc);
@@ -1241,6 +1233,8 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 void ath12k_dp_get_pdev_stats(struct ath12k_pdev_dp *pdev,
 			      struct ath12k_telemetry_dp_radio *telemetry_radio);
 void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp);
+int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
+			     struct ath12k_reo_q_addr_lut *lut);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 void ath12k_ppeds_reinject_handler(struct ath12k_base *ab,
 				   struct ath12k_ppeds_tx_desc_info *tx_desc,

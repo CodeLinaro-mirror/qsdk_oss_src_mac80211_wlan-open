@@ -32,6 +32,13 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define CE_WINDOW_SHIFT				6
 #define UMAC_WINDOW_SHIFT			12
 
+/* Total size of the LUT is based on 2K peers, each having reference
+ * for 17tids, note each entry is of type ath12k_reo_queue_ref
+ * hence total size is 2048 * 17 * 8 = 278528
+ */
+#define HAL_WIFI7_REOQ_LUT_SIZE       278528
+#define HAL_WIFI7_NUM_TIDS     17
+
 /* TODO: 16 entries per radio times MAX_VAPS_SUPPORTED */
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_9274	48
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX_5332	24

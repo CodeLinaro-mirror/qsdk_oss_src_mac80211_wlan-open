@@ -75,13 +75,6 @@ void ath12k_dp_free_preserved_stats(struct ath12k_dp_preserved_stats *stats)
 }
 EXPORT_SYMBOL(ath12k_dp_free_preserved_stats);
 
-/*
- * TODO: fix this
- */
-int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
-				      u8 tid, u32 ba_win_sz, u16 ssn,
-				      enum hal_pn_type pn_type);
-
 enum ath12k_dp_desc_type {
 	ATH12K_DP_TX_DESC,
 	ATH12K_DP_RX_DESC,
@@ -206,9 +199,9 @@ int ath12k_dp_peer_setup(struct ath12k *ar, struct ath12k_link_vif *arvif, const
 	if (vif->type == NL80211_IFTYPE_STATION)
 		ath12k_dp_tx_ppeds_cfg_astidx_cache_mapping(ar->ab, arvif, true);
 
-	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
-		ret = ath12k_wifi7_dp_rx_peer_tid_setup(ar, addr, vdev_id, tid, 1, 0,
-							HAL_PN_TYPE_NONE);
+	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
+		ret = ath12k_dp_rx_peer_tid_setup(ar, addr, vdev_id, tid, 1, 0,
+						  HAL_PN_TYPE_NONE);
 		if (ret) {
 			ath12k_warn(ab, "failed to setup rxd tid queue for tid %d: %d\n",
 				    tid, ret);
@@ -1417,29 +1410,6 @@ void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 }
 EXPORT_SYMBOL(ath12k_dp_cc_cleanup);
 
-void ath12k_dp_reoq_lut_cleanup(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-
-	if (!ab->hw_params->reoq_lut_support)
-		return;
-
-	if (dp->reoq_lut.vaddr_unaligned) {
-		ath12k_hal_dma_free_coherent(ab->dev, dp->reoq_lut.size,
-					      dp->reoq_lut.vaddr_unaligned,
-					      dp->reoq_lut.paddr_unaligned);
-		dp->reoq_lut.vaddr_unaligned = NULL;
-	}
-
-	if (dp->ml_reoq_lut.vaddr_unaligned) {
-		ath12k_hal_dma_free_coherent(ab->dev, dp->ml_reoq_lut.size,
-					      dp->ml_reoq_lut.vaddr_unaligned,
-					      dp->ml_reoq_lut.paddr_unaligned);
-		dp->ml_reoq_lut.vaddr_unaligned = NULL;
-	}
-}
-EXPORT_SYMBOL(ath12k_dp_reoq_lut_cleanup);
-
 static u32 ath12k_dp_cc_cookie_gen(u16 ppt_idx, u16 spt_idx)
 {
 	return (u32)ppt_idx << ATH12K_CC_PPT_SHIFT | spt_idx;
@@ -1920,10 +1890,10 @@ enum ath12k_dp_eapol_key_type ath12k_dp_get_eapol_subtype(u8 *data)
 }
 EXPORT_SYMBOL(ath12k_dp_get_eapol_subtype);
 
-static int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
-				    struct ath12k_reo_q_addr_lut *lut)
+int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
+			     struct ath12k_reo_q_addr_lut *lut)
 {
-	lut->size =  DP_REOQ_LUT_SIZE + HAL_REO_QLUT_ADDR_ALIGN - 1;
+	lut->size =  ab->hal.hal_params->reoq_lut_size + HAL_REO_QLUT_ADDR_ALIGN - 1;
 	lut->vaddr_unaligned = ath12k_hal_dma_alloc_coherent(ab->dev, lut->size,
 							      &lut->paddr_unaligned,
 							      GFP_KERNEL | __GFP_ZERO);
@@ -1935,45 +1905,7 @@ static int ath12k_dp_alloc_reoq_lut(struct ath12k_base *ab,
 		     ((unsigned long)lut->vaddr - (unsigned long)lut->vaddr_unaligned);
 	return 0;
 }
-
-int ath12k_dp_reoq_lut_setup(struct ath12k_base *ab)
-{
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	int ret;
-
-	if (!ab->hw_params->reoq_lut_support)
-		return 0;
-
-	ret = ath12k_dp_alloc_reoq_lut(ab, &dp->reoq_lut);
-	if (ret) {
-		ath12k_warn(ab, "failed to allocate memory for reoq table");
-		return ret;
-	}
-
-	ret = ath12k_dp_alloc_reoq_lut(ab, &dp->ml_reoq_lut);
-	if (ret) {
-		ath12k_warn(ab, "failed to allocate memory for ML reoq table");
-		ath12k_hal_dma_free_coherent(ab->dev, dp->reoq_lut.size,
-					      dp->reoq_lut.vaddr_unaligned,
-					      dp->reoq_lut.paddr_unaligned);
-		dp->reoq_lut.vaddr_unaligned = NULL;
-		return ret;
-	}
-
-	/* Bits in the register have address [39:8] LUT base address to be
-	 * allocated such that LSBs are assumed to be zero. Also, current
-	 * design supports paddr upto 4 GB max hence it fits in 32 bit register only
-	 */
-
-	ath12k_hal_write_reoq_lut_addr(ab, dp->reoq_lut.paddr >> 8);
-	ath12k_hal_write_ml_reoq_lut_addr(ab, dp->ml_reoq_lut.paddr >> 8);
-
-	ath12k_hal_reoq_lut_addr_read_enable(ab);
-	ath12k_hal_reoq_lut_set_max_peerid(ab);
-
-	return 0;
-}
-EXPORT_SYMBOL(ath12k_dp_reoq_lut_setup);
+EXPORT_SYMBOL(ath12k_dp_alloc_reoq_lut);
 
 static int ath12k_dp_setup(struct ath12k_base *ab)
 {

@@ -1060,6 +1060,8 @@ struct ath12k_hw_hal_params {
 	u16 num_rx_msdus_per_link_desc;
 	u16 num_mpdu_links_per_queue_desc;
 	u16 dscp_tid_map_tbl_max_entries;
+	u8 num_tids;
+	u32 reoq_lut_size;
 };
 
 struct ath12k_hw_regs {

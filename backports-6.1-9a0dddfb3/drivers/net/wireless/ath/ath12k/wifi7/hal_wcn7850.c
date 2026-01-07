@@ -610,6 +610,8 @@ const struct ath12k_hw_hal_params ath12k_wifi7_hw_hal_params_wcn7850 = {
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
 	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
+	.num_tids = HAL_WIFI7_NUM_TIDS,
+	.reoq_lut_size = HAL_WIFI7_REOQ_LUT_SIZE,
 };
 
 static
