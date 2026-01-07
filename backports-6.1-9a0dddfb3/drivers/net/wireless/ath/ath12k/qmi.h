@@ -738,11 +738,11 @@ struct qmi_wlanfw_wlan_cfg_req_msg_v01 {
 	struct qmi_wlanfw_shadow_reg_v3_cfg_s_v01
 		shadow_reg_v3[QMI_WLANFW_MAX_NUM_SHADOW_REG_V3_V01];
 	u8 ext_tgt_cfg_valid;
-	u8 ext_tgt_cfg_len;
+	u32 ext_tgt_cfg_len;
 	struct qmi_wlanfw_ce_tgt_pipe_cfg_s_v01
 			ext_tgt_cfg[QMI_WLANFW_MAX_EXT_NUM_CE_V01];
 	u8 ext_svc_cfg_valid;
-	u8 ext_svc_cfg_len;
+	u32 ext_svc_cfg_len;
 	struct qmi_wlanfw_ce_svc_pipe_cfg_s_v01
 			ext_svc_cfg[QMI_WLANFW_MAX_EXT_NUM_SVC_V01];
 };
