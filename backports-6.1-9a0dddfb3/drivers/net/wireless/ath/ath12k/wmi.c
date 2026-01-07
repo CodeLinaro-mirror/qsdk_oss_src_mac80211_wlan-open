@@ -7621,6 +7621,18 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			}
 
 			parse->mac_phy_caps_ext_done = true;
+		} else if (!parse->scan_radio_caps_done) {
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						  ath12k_wmi_tlv_scan_radio_caps_ext2,
+						  parse);
+			if (ret) {
+				ath12k_warn(ab,
+					    "failed to parse SCAN RADIO capabilities WMI TLV: %d\n",
+					    ret);
+				return ret;
+			}
+
+			parse->scan_radio_caps_done = true;
 		}
 		break;
 	default:
