@@ -1160,7 +1160,7 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	buf_len_padded = roundup(buf_len, sizeof(u32));
 
 	len = sizeof(*cmd) + sizeof(*frame_tlv) + buf_len_padded +
-	      sizeof(struct wmi_mgmt_send_params);
+	      sizeof(*tlv) + sizeof(struct wmi_mgmt_send_params);
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -1192,6 +1192,8 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	/* Tx params not used currently */
 	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TX_SEND_PARAMS,
 					     sizeof(struct wmi_mgmt_send_params));
+	ptr += sizeof(*tlv);
+	ath12k_wmi_prepare_tx_params_extn(ATH12K_SKB_CB(frame)->u.ar, ptr);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_OFFCHAN_DATA_TX_SEND_CMDID);
 
