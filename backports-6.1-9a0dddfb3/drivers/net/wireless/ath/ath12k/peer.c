@@ -449,14 +449,14 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (peer->vdev_id != vdev_id || peer->dp_peer->is_vdev_peer)
-			continue;
+		if (peer->vdev_id == vdev_id && peer->sta) {
+			ath12k_warn(ab,
+				    "removing stale remote peer %pM from vdev_id %d\n",
+				    peer->addr, vdev_id);
 
-		ath12k_warn(ab, "removing stale peer %pM from vdev_id %d is_vdev_peer %d\n",
-			    peer->addr, vdev_id, peer->dp_peer->is_vdev_peer);
-
-		ath12k_link_peer_free(peer);
-		ar->num_peers--;
+			ath12k_link_peer_free(peer);
+			ar->num_peers--;
+		}
 	}
 
 	spin_unlock_bh(&ab->dp->dp_lock);
