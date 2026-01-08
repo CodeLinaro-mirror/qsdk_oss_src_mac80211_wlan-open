@@ -566,6 +566,9 @@ void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     enum ath12k_dp_tx_enq_error drop_reason,
 				     bool dev_free)
 {
+	if (unlikely(ring_id >= DP_TCL_NUM_RING_MAX))
+		ring_id = 0;
+
 	if (unlikely(drop_reason >= DP_TX_ENQ_ERR_MAX))
 		DP_STATS_INC(dp_vif, tx_i.drop[DP_TX_ENQ_DROP_MISC], 1, ring_id);
 	else
