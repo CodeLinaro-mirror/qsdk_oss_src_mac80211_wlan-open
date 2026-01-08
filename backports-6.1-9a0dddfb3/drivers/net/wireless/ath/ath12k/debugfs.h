@@ -22,6 +22,11 @@ struct ath12k;
 
 #define ATH12K_QOS_MAP_LEN_MIN 16
 
+#define SMART_MON_FILTER_V	BIT(0)
+#define SMART_MON_FILTER_D	BIT(1)
+#define SMART_MON_FILTER_M	BIT(2)
+#define SMART_MON_FILTER_C	BIT(3)
+
 enum ath12k_dbg_aggr_mode {
 	ATH12K_DBG_AGGR_MODE_AUTO,
 	ATH12K_DBG_AGGR_MODE_MANUAL,
