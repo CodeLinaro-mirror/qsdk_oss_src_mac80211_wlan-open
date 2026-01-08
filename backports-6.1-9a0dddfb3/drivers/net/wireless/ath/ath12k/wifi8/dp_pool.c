@@ -189,6 +189,10 @@ struct pool_ctxt_t *init_memory_pool(struct ath12k_base *ab, u16 elem_size,
 	struct node_t *node = NULL;
 	struct node_t *tmp_node = NULL;
 
+#ifdef CONFIG_IO_COHERENCY
+	cacheable = true;
+#endif
+
 	unaligned_ctxt = kzalloc(size, GFP_ATOMIC);
 
 	if (unaligned_ctxt) {
@@ -328,13 +332,15 @@ int dma_map_pages(struct ath12k_base *ab, struct pool_ctxt_t *ctxt)
 	if (ctxt->is_cacheable_memory) {
 		mem_pages = &ctxt->pages.mem_pages[0];
 		for (i = 0; i < ctxt->pages.num_pages; i++) {
-			paddr = dma_map_single(ab->dev, mem_pages->page_v_addr_start,
-					       ctxt->pages.page_size, DMA_BIDIRECTIONAL);
-			if (unlikely(dma_mapping_error(ab->dev, paddr))) {
+			paddr = ath12k_core_dma_map_single(ab->dev,
+							   mem_pages->page_v_addr_start,
+							   ctxt->pages.page_size,
+							   DMA_BIDIRECTIONAL);
+			if (!paddr) {
 				ath12k_err(ab, "failed to dma map page %d\n", i);
 				/* Unmap previously mapped pages */
 				for (j = 0; j < i; j++) {
-					dma_unmap_single(
+					ath12k_core_dma_unmap_single(
 						ab->dev,
 						ctxt->pages.mem_pages[j].page_p_addr,
 						ctxt->pages.page_size,
@@ -357,8 +363,10 @@ void dma_unmap_pages(struct ath12k_base *ab, struct pool_ctxt_t *ctxt)
 	if (ctxt->is_cacheable_memory) {
 		mem_pages = &ctxt->pages.mem_pages[0];
 		for (i = 0; i < ctxt->pages.num_pages; i++) {
-			dma_unmap_single(ab->dev, mem_pages->page_p_addr,
-					 ctxt->pages.page_size, DMA_BIDIRECTIONAL);
+			ath12k_core_dma_unmap_single(ab->dev,
+						     mem_pages->page_p_addr,
+						     ctxt->pages.page_size,
+						     DMA_BIDIRECTIONAL);
 			mem_pages++;
 		}
 	}
