@@ -8232,6 +8232,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.policy = ath12k_ctl_table_policy,
 		.maxattr = QCA_WLAN_VENDOR_ATTR_CONFIG_MAX,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_WLAN_HOME_OFFCHAN_TX_RX,
+		.doit = ath12k_vendor_home_offchan_tx_rx_handler,
+		.policy = ath12k_vendor_home_offchan_tx_rx_policy,
+		.maxattr = QCA_VENDOR_ATTR_WLAN_HOME_OFFCHAN_TX_RX_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 #endif
 
 };
