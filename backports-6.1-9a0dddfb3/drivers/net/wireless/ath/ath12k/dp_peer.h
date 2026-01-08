@@ -113,11 +113,13 @@ struct ath12k_dp_peer {
 	struct list_head list;
 	struct ieee80211_sta *sta;
 	struct net_device *dev;
+	u16 tcl_metadata;
 	u16 peer_id;
 	u16 sta_id;
 	u8 addr[ETH_ALEN];
 	bool is_mlo;
 	bool is_vdev_peer;
+	bool is_sta_bss_peer;
 	/* hw_link_id of the radio, valid only for self bss peer */
 	u8 hw_link_id;
 

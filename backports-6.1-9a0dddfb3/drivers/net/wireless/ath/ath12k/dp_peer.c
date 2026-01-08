@@ -618,6 +618,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	int ret;
 	u8 *dp_peer_mac = !sta ? addr : sta->addr;
 	bool is_vdev_peer = false;
+	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -683,8 +684,11 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 		/* Set peer_id in dp_peer for non-mlo client, peer_id for mlo client is
 		 * set during dp_peer create
 		 */
-		if (!dp_peer->is_mlo)
+		if (!dp_peer->is_mlo) {
 			dp_peer->peer_id = peer->peer_id;
+			if (!is_vdev_peer)
+				ahsta->dp_peer_id = peer->peer_id;
+		}
 	}
 
 	if (!dp_peer->is_vdev_peer)

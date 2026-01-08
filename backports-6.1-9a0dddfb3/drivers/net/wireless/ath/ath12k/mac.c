@@ -12864,6 +12864,9 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 			dp_params.is_mlo = true;
 		}
 
+		if (vif->type == NL80211_IFTYPE_STATION)
+			dp_params.is_sta_bss_peer = true;
+
 		dp_params.sta = sta;
 		arvif = wiphy_dereference(wiphy, ahvif->link[link_id]);
 		if (!arvif)

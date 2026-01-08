@@ -725,6 +725,8 @@ struct ath12k_dp_vif {
 	u8 vdev_id_check_en;
 	u16 dp_vif_id;
 	int bank_id;
+	u16 ast_idx;
+	u16 ast_hash;
 	u32 key_cipher;
 	atomic_t mcbc_gsn;
 	struct ath12k_dp_link_vif dp_link_vif[ATH12K_NUM_MAX_LINKS];
@@ -1034,6 +1036,7 @@ struct ath12k_sta {
 	u32 links_map;
 	u8 assoc_link_id;
 	u16 ml_peer_id;
+	u16 dp_peer_id;
 	bool is_mlo;
 	u8 num_peer;
 	u8 primary_link_id;

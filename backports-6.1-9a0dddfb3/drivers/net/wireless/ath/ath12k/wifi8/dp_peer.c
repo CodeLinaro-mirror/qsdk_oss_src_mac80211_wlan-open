@@ -76,6 +76,9 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	struct ath12k_dp_peer *dp_peer;
 	struct ath12k_dp_hw *dp_hw = &ah->dp_hw;
 	struct wireless_dev *wdev;
+	struct ath12k_sta *ahsta = NULL;
+
+	ahsta = ath12k_sta_to_ahsta(params->sta);
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	if (!params->is_vdev_peer)
@@ -116,9 +119,16 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 	}
 
 	dp_peer->is_vdev_peer = params->is_vdev_peer;
+	dp_peer->is_sta_bss_peer = params->is_sta_bss_peer;
 
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
+
+	/* Update hw_link_id for self bss peer */
+	if (dp_peer->is_vdev_peer)
+		dp_peer->hw_link_id = params->hw_link_id;
+	else
+		ahsta->dp_peer_id = dp_peer->peer_id;
 
 	/* cache net dev here and reuse it during process rx */
 	wdev = ieee80211_vif_to_wdev(vif);
@@ -188,6 +198,8 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	void *tx_classify_vaddr;
 	bool is_qos = true;
 	int ret, i;
+	int vdev_peer_link_id;
+	struct ath12k_dp_link_vif *dp_link_vif;
 
 	spin_lock_bh(&dp_hw->peer_lock);
 	dp_peer = ath12k_dp_peer_find(dp_hw, addr);
@@ -213,6 +225,11 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 
 		set_bit(link_peer->hw_link_id,
 			&peer_ext_ctx->tx_flow_info.assoc_hw_links_bitmap);
+
+		if (dp_peer->is_vdev_peer) {
+			vdev_peer_link_id = i;
+			break;
+		}
 	}
 	rcu_read_unlock();
 	ret = ath12k_dp_tx_classify_info_alloc(dp->dp_hw_grp,
@@ -263,6 +280,15 @@ int ath12k_wifi8_dp_peer_assoc(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 
 	peer_ext_ctx->ast_index = ast_param.ast_index;
 	peer_ext_ctx->ast_hash = ast_param.ast_hash;
+
+	if (dp_peer->is_sta_bss_peer) {
+		dp_vif->ast_idx = ast_param.ast_index;
+		dp_vif->ast_hash = ast_param.ast_hash;
+	} else if (dp_peer->is_vdev_peer) {
+		dp_link_vif = &dp_vif->dp_link_vif[vdev_peer_link_id];
+		dp_link_vif->ast_idx = ast_param.ast_index;
+		dp_link_vif->ast_hash =	ast_param.ast_hash;
+	}
 
 	spin_unlock_bh(&dp_hw->peer_lock);
 	return 0;
