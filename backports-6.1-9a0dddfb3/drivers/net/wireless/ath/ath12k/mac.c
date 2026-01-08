@@ -8787,9 +8787,14 @@ int ath12k_mac_op_set_radar_background(struct ieee80211_hw *hw,
 	if (ar->ab->dfs_region == ATH12K_DFS_REG_UNSET)
 		return -EINVAL;
 
-	if (!test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask) &&
-	    !test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT, ar->ab->wmi_ab.svc_map))
-		return -EINVAL;
+	if (!test_bit(ar->cfg_rx_chainmask, &ar->pdev->cap.adfs_chain_mask)) {
+		if (!test_bit(WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT,
+			      ar->ab->wmi_ab.svc_map))
+			return -EINVAL;
+
+		if (def && !cfg80211_chandef_device_present(def))
+			return -EINVAL;
+	}
 
 	list_for_each_entry(arvif, &ar->arvifs, list) {
 		ahvif = arvif->ahvif;
