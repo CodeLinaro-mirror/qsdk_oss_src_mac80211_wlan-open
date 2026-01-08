@@ -3169,6 +3169,9 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 	struct wmi_peer_assoc_mlo_params *ml_params;
 	struct wmi_peer_assoc_mlo_partner_info_params *partner_info;
 	struct wmi_peer_assoc_tid_to_link_map *ttlm;
+	struct wmi_peer_assoc_msduq_params *msduq_params;
+	struct wmi_peer_assoc_mpduq_params *mpduq_params;
+	struct wmi_peer_assoc_hol_q_params *holq_params;
 	struct sk_buff *skb;
 	struct wmi_tlv *tlv;
 	void *ptr;
@@ -3198,6 +3201,18 @@ int ath12k_wmi_send_peer_assoc_cmd(struct ath12k *ar,
 
 	len += TLV_HDR_SIZE + (arg->ttlm_params.num_dir * TTLM_MAX_NUM_TIDS *
 			       sizeof(struct wmi_peer_assoc_tid_to_link_map));
+	len += TLV_HDR_SIZE; // Operating mode
+
+	if (arg->flowq_params.enabled)
+		len += TLV_HDR_SIZE + sizeof(*mpduq_params) + TLV_HDR_SIZE +
+		       (arg->flowq_params.num_links * sizeof(*msduq_params));
+	else
+		len += (2 * TLV_HDR_SIZE);
+
+	if (arg->holq_params.enabled)
+		len += TLV_HDR_SIZE + sizeof(*holq_params);
+	else
+		len += TLV_HDR_SIZE;
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -3467,7 +3482,7 @@ ttlm:
 	ptr += TLV_HDR_SIZE;
 
 	if (!len)
-		goto send;
+		goto send_mpduq;
 
 	for (dir = 0; dir < ttlm_params->num_dir; dir++) {
 		struct ath12k_wmi_host_ttlm_of_tids *ttlm_of_tids = &ttlm_params->ttlm_info[dir];
@@ -3494,6 +3509,86 @@ ttlm:
 			ptr += sizeof(*ttlm);
 		}
 	}
+
+send_mpduq:
+	/* Operating mode dummy TLV */
+	len = 0;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+
+	len = arg->flowq_params.enabled ? sizeof(*mpduq_params) : 0;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+	if (!len)
+		goto send_msduq;
+	mpduq_params = ptr;
+
+	mpduq_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS,
+							  len);
+	mpduq_params->mgmt_mpduq_address =
+		cpu_to_le32(arg->flowq_params.mpduq_params.mgmt_mpduq_address);
+	mpduq_params->pn_addr_39_32 =
+		cpu_to_le32(arg->flowq_params.mpduq_params.pn_addr_39_32);
+	mpduq_params->pn_addr_31_0 =
+		cpu_to_le32(arg->flowq_params.mpduq_params.pn_addr_31_0);
+	ptr += sizeof(*mpduq_params);
+
+send_msduq:
+	len = arg->flowq_params.enabled ?
+			(arg->flowq_params.num_links * sizeof(*msduq_params)) : 0;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+	if (!len)
+		goto send_holq;
+	for (i = 0; i < arg->flowq_params.num_links; i++) {
+		struct peer_assoc_msduq_params *msduq;
+		u32 cmd = WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS;
+
+		msduq = &arg->flowq_params.msduq_params[i];
+
+		msduq_params = ptr;
+		msduq_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(cmd,
+								  sizeof(*msduq_params));
+		msduq_params->mgmt_msduq_address =
+			cpu_to_le32(msduq->mgmt_msduq_address);
+		msduq_params->msdu_type =
+			le32_encode_bits(msduq->link_id, WMI_MGMTQ_LINK_ID);
+		msduq_params->msdu_type |=
+			le32_encode_bits(msduq->flow_type, WMI_MGMTQ_MSDU_TYPE);
+		ptr += sizeof(*msduq_params);
+	}
+
+send_holq:
+	len = arg->holq_params.enabled ? sizeof(*holq_params) : 0;
+	tlv = ptr;
+	tlv->header = ath12k_wmi_tlv_hdr(WMI_TAG_ARRAY_STRUCT, len);
+	ptr += TLV_HDR_SIZE;
+	if (!len)
+		goto send;
+	holq_params = ptr;
+
+	holq_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_HOL_MSDU_FLOWQ_PARAMS,
+							 len);
+	holq_params->mpduq_msduq_number =
+		le32_encode_bits(arg->holq_params.peer_id, WMI_HOLQ_PEER_ID);
+	holq_params->mpduq_msduq_number |=
+		le32_encode_bits(arg->holq_params.tid, WMI_HOLQ_TID);
+	holq_params->mpduq_msduq_number |=
+		le32_encode_bits(arg->holq_params.mpdu_type, WMI_HOLQ_MPDU_TYPE);
+	holq_params->mpduq_msduq_number |=
+		le32_encode_bits(arg->holq_params.msdu_type, WMI_HOLQ_MSDU_TYPE);
+	holq_params->mpduq_address =
+		cpu_to_le32(arg->holq_params.mpduq_address);
+	holq_params->msduq_address =
+		cpu_to_le32(arg->holq_params.msduq_address);
+	holq_params->pn_addr_39_32 =
+		cpu_to_le32(arg->holq_params.pn_addr_39_32);
+	holq_params->pn_addr_31_0 =
+		cpu_to_le32(arg->holq_params.pn_addr_31_0);
+	ptr += sizeof(*holq_params);
 
 send:
 	ath12k_dbg(ar->ab, ATH12K_DBG_WMI | ATH12K_DBG_MLME,

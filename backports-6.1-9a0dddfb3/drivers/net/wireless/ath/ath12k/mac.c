@@ -4937,6 +4937,44 @@ static void ath12k_peer_assoc_h_ttlm(struct ath12k_link_sta *arsta,
 					     &sta->neg_ttlm);
 }
 
+static void ath12k_peer_assoc_h_flowq(struct ath12k_link_sta *arsta,
+				      struct ath12k_link_vif *arvif,
+				      struct ath12k_wmi_peer_assoc_arg *arg)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	struct ath12k *ar;
+	int ret;
+
+	ar = arvif->ar;
+	ret = ath12k_arch_dp_get_peer_mgmt_flowq(ar->ab->dp, &ar->ah->dp_hw,
+						 sta->addr,
+						 &arg->flowq_params);
+	if (ret)
+		arg->flowq_params.enabled = false;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "flowq enabled:%d\n",
+		   arg->flowq_params.enabled);
+}
+
+static void ath12k_peer_assoc_h_holq(struct ath12k_link_sta *arsta,
+				     struct ath12k_link_vif *arvif,
+				     struct ath12k_wmi_peer_assoc_arg *arg)
+{
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+	struct ath12k *ar;
+	int ret;
+
+	ar = arvif->ar;
+	ret = ath12k_arch_dp_get_peer_holq(ar->ab->dp, &ar->ah->dp_hw,
+					   sta->addr,
+					   &arg->holq_params);
+	if (ret)
+		arg->holq_params.enabled = false;
+
+	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "holq enabled:%d\n",
+		   arg->holq_params.enabled);
+}
+
 static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 				      struct ath12k_link_vif *arvif,
 				      struct ath12k_link_sta *arsta,
@@ -4964,6 +5002,8 @@ static void ath12k_peer_assoc_prepare(struct ath12k *ar,
 	ath12k_peer_assoc_h_smps(arsta, arg, link_sta);
 	ath12k_peer_assoc_h_mlo(arsta, arg);
 	ath12k_peer_assoc_h_ttlm(arsta, arg);
+	ath12k_peer_assoc_h_flowq(arsta, arvif, arg);
+	ath12k_peer_assoc_h_holq(arsta, arvif, arg);
 
 	arsta->peer_nss = arg->peer_nss;
 
@@ -6653,11 +6693,14 @@ void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				   u64 changed)
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	unsigned long links = ahvif->links_map;
 	struct ieee80211_bss_conf *info;
 	struct ath12k_link_vif *arvif;
+	bool dp_assoc_done = false;
 	struct ath12k *ar;
 	u8 link_id;
+	int ret;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -6683,10 +6726,20 @@ void ath12k_mac_op_vif_cfg_changed(struct ieee80211_hw *hw,
 				info = ath12k_mac_get_link_bss_conf(arvif);
 			}
 
-			if (vif->cfg.assoc)
+			if (vif->cfg.assoc) {
+				if (!dp_assoc_done) {
+					ret = ath12k_dp_arch_peer_assoc(ar->ab->dp,
+									&ah->dp_hw,
+									&ahvif->dp_vif,
+									vif->cfg.ap_addr);
+					if (ret)
+						return;
+					dp_assoc_done = true;
+				}
 				ath12k_bss_assoc(ar, arvif, info);
-			else
+			} else {
 				ath12k_bss_disassoc(ar, arvif);
+			}
 		}
 	}
 
@@ -7922,10 +7975,14 @@ skip_pending_cs_up:
 	}
 
 	if (changed & BSS_CHANGED_ASSOC) {
-		if (vif->cfg.assoc)
+		if (vif->cfg.assoc) {
+			ath12k_dp_arch_peer_assoc(ar->ab->dp, &ar->ah->dp_hw,
+						  &ahvif->dp_vif,
+						  vif->cfg.ap_addr);
 			ath12k_bss_assoc(ar, arvif, info);
-		else
+		} else {
 			ath12k_bss_disassoc(ar, arvif);
+		}
 	}
 
 	if (changed & BSS_CHANGED_TXPOWER) {
@@ -10967,6 +11024,8 @@ static int ath12k_mac_station_assoc(struct ath12k *ar,
 	}
 	spin_unlock_bh(&dp->dp_lock);
 
+	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,
+				       sta->addr, ar->hw_link_id);
 	num_vht_rates = ath12k_mac_bitrate_mask_num_vht_rates(ar, band, mask);
 	num_he_rates = ath12k_mac_bitrate_mask_num_he_rates(ar, band, mask);
 	num_ht_rates = ath12k_mac_bitrate_mask_num_ht_rates(ar, band, mask);
@@ -12597,6 +12656,23 @@ int ath12k_mac_op_sta_state(struct ieee80211_hw *hw,
 						 "mac ML STA %pM primary link (reconfig) set to %u\n",
 						 sta->addr, ahsta->primary_link_id);
 			}
+		}
+	}
+
+	if (old_state == IEEE80211_STA_AUTH &&
+	    new_state == IEEE80211_STA_ASSOC &&
+	    (vif->type == NL80211_IFTYPE_AP ||
+	    vif->type == NL80211_IFTYPE_MESH_POINT ||
+	    vif->type == NL80211_IFTYPE_ADHOC)) {
+		arvif = wiphy_dereference(hw->wiphy, ahvif->link[link_id]);
+		ret = ath12k_dp_arch_peer_assoc(arvif->ar->ab->dp,
+						&ah->dp_hw,
+						&ahvif->dp_vif,
+						sta->addr);
+		if (ret) {
+			ath12k_hw_warn(ah, "unable to do dp assoc for sta %pM",
+				       sta->addr);
+			goto exit;
 		}
 	}
 
@@ -17014,6 +17090,16 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 				    arvif->vdev_id, ret);
 			goto err_peer_del;
 		}
+		ret = ath12k_dp_arch_peer_assoc(ab->dp,
+						&ah->dp_hw,
+						&ahvif->dp_vif,
+						arvif->bssid);
+		if (ret) {
+			ath12k_hw_warn(ah, "unable to do dp assoc for sta %pM",
+				       arvif->bssid);
+			goto err_peer_del;
+		}
+
 		ath12k_mac_11d_scan_stop_all(ar->ab);
 		break;
 	case WMI_VDEV_TYPE_STA:

@@ -2359,6 +2359,9 @@ enum wmi_tlv_tag {
 	WMI_TAG_TWT_VDEV_CONFIG_CMD = 0x4DE,
 	WMI_TAG_MLO_TLT_SELECTION_FOR_TID_SPRAY_EVENT_FIXED_PARAM = 0x4e0,
 	WMI_PDEV_SUSPEND_EVENT_FIXED_PARAM = 0x509,
+	WMI_TAG_MGMT_MPDU_FLOWQ_PARAMS = 0x514,
+	WMI_TAG_MGMT_MSDU_FLOWQ_PARAMS = 0x515,
+	WMI_TAG_HOL_MSDU_FLOWQ_PARAMS = 0x516,
 	WMI_TAG_MLO_PEER_TID_TO_LINK_MAP_EVENT_FIXED_PARAM = 0x544,
 	WMI_TAG_MAX
 };
@@ -4658,6 +4661,37 @@ struct wmi_peer_assoc_tid_to_link_map {
 	__le32 tid_to_link_map_info;
 };
 
+struct peer_assoc_msduq_params {
+	u32 link_id;
+	u32 flow_type;
+	u32 mgmt_msduq_address;
+};
+
+struct peer_assoc_mpduq_params {
+	u32 mgmt_mpduq_address;
+	u32 pn_addr_31_0;
+	u32 pn_addr_39_32;
+};
+
+struct peer_assoc_flowq_params {
+	bool enabled;
+	u8 num_links;
+	struct peer_assoc_msduq_params msduq_params[ATH12K_WMI_MLO_MAX_LINKS + 1];
+	struct peer_assoc_mpduq_params mpduq_params;
+};
+
+struct peer_assoc_holq_params {
+	bool enabled;
+	u32 peer_id;
+	u32 tid;
+	u32 mpdu_type;
+	u32 msdu_type;
+	u32 mpduq_address;
+	u32 msduq_address;
+	u32 pn_addr_31_0;
+	u32 pn_addr_39_32;
+};
+
 struct ath12k_wmi_peer_assoc_arg {
 	u32 vdev_id;
 	u32 peer_new_assoc;
@@ -4731,6 +4765,8 @@ struct ath12k_wmi_peer_assoc_arg {
 	struct peer_assoc_mlo_params ml;
 	bool enable_mcs15;
 	struct ath12k_wmi_ttlm_peer_params ttlm_params;
+	struct peer_assoc_flowq_params flowq_params;
+	struct peer_assoc_holq_params holq_params;
 };
 
 #define ATH12K_WMI_FLAG_MLO_ENABLED			BIT(0)
@@ -4767,6 +4803,42 @@ struct wmi_peer_assoc_mlo_params {
 		__le32 ml_reconfig: 1,
 		       unused: 31;
 	};
+} __packed;
+
+enum {
+	WMI_MGMT_TID_MSDUQ_LINK_SPECIFIC,
+	WMI_MGMT_TID_MSDUQ_LINK_AGNOSTIC,
+	WMI_MGMT_TID_MSDUQ_TYPE_MAX,
+};
+
+#define WMI_MGMTQ_LINK_ID	GENMASK(2, 0)
+#define WMI_MGMTQ_MSDU_TYPE	GENMASK(7, 3)
+
+struct wmi_peer_assoc_msduq_params {
+	__le32 tlv_header;
+	__le32 msdu_type;
+	__le32 mgmt_msduq_address;
+} __packed;
+
+struct wmi_peer_assoc_mpduq_params {
+	__le32 tlv_header;
+	__le32 mgmt_mpduq_address;
+	__le32 pn_addr_31_0;
+	__le32 pn_addr_39_32;
+} __packed;
+
+#define WMI_HOLQ_PEER_ID	GENMASK(11, 0)
+#define WMI_HOLQ_TID		GENMASK(16, 12)
+#define WMI_HOLQ_MPDU_TYPE	GENMASK(21, 17)
+#define WMI_HOLQ_MSDU_TYPE	GENMASK(26, 22)
+
+struct wmi_peer_assoc_hol_q_params {
+	__le32 tlv_header;
+	__le32 mpduq_msduq_number;
+	__le32 mpduq_address;
+	__le32 msduq_address;
+	__le32 pn_addr_31_0;
+	__le32 pn_addr_39_32;
 } __packed;
 
 struct wmi_peer_assoc_complete_cmd {
