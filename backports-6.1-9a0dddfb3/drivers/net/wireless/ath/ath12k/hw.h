@@ -16,35 +16,6 @@
 struct ath12k_csi_cfr_header;
 struct ath12k_cfr_peer_tx_param;
 
-struct mhi_q6_sbl_reg_addr;
-struct mhi_q6_pbl_reg_addr;
-struct mhi_q6_dump_pbl_sbl_data;
-struct mhi_q6_noc_err_reg;
-
-enum ath12k_hw_dbg_reg_req_type {
-	ATH12K_MHI_Q6_DBG_FILL_BL_REGS,
-	ATH12K_MHI_Q6_DBG_FILL_MISC_REGS,
-	ATH12K_MHI_Q6_DBG_GET_NOC_TBL,
-};
-
-struct ath12k_mhi_q6_dbg_reg_arg {
-	enum ath12k_hw_dbg_reg_req_type req;
-	union {
-		struct {
-			struct mhi_q6_sbl_reg_addr *sbl;
-			struct mhi_q6_pbl_reg_addr *pbl;
-		} bl;
-		struct {
-			struct mhi_q6_dump_pbl_sbl_data *out;
-		} misc;
-		struct {
-			const struct mhi_q6_noc_err_reg **tbl;
-			size_t *len;
-		} noc;
-	} regs;
-};
-
-
 /* Target configuration defines */
 
 
@@ -365,11 +336,6 @@ struct ath12k_hw_ops {
 	void (*fill_cfr_hdr_info)(struct ath12k *ar,
 				  struct ath12k_csi_cfr_header *header,
 				  struct ath12k_cfr_peer_tx_param *params);
-
-    /* fill the register info for the Q6 PBL/SBL logging */
-	void (*fill_mhi_q6_debug_reg_info)(
-					struct ath12k_base *ab,
-					struct ath12k_mhi_q6_dbg_reg_arg *arg);
 };
 
 static inline

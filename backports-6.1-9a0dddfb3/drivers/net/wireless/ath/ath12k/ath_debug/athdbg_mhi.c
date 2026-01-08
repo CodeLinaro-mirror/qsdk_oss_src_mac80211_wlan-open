@@ -9,10 +9,32 @@
 #include "../athdbg_if.h"
 #include "../mhi.h"
 #include "../pci.h"
+#include "athdbg_hw.h"
 
 #ifndef CONFIG_UPSTREAM_BUILD
 
 extern struct ath_debug_base *athdbg_base;
+
+static const struct athdbg_mhi_q6_noc_err_reg qcn9274_noc_err_regs[] = {
+	{"SNOC_ERL_ErrVld_Low", QCN9224_SNOC_ERL_ErrVld_Low},
+	{"SNOC_ERL_ErrLog0_Low", QCN9224_SNOC_ERL_ErrLog0_Low},
+	{"SNOC_ERL_ErrLog0_High", QCN9224_SNOC_ERL_ErrLog0_High},
+	{"SNOC_ERL_ErrLog1_Low", QCN9224_SNOC_ERL_ErrLog1_Low},
+	{"SNOC_ERL_ErrLog1_High", QCN9224_SNOC_ERL_ErrLog1_High},
+	{"SNOC_ERL_ErrLog2_Low", QCN9224_SNOC_ERL_ErrLog2_Low},
+	{"SNOC_ERL_ErrLog2_High", QCN9224_SNOC_ERL_ErrLog2_High},
+	{"SNOC_ERL_ErrLog3_Low", QCN9224_SNOC_ERL_ErrLog3_Low},
+	{"SNOC_ERL_ErrLog3_High", QCN9224_SNOC_ERL_ErrLog3_High},
+	{"PCNOC_ERL_ErrVld_Low", QCN9224_PCNOC_ERL_ErrVld_Low},
+	{"PCNOC_ERL_ErrLog0_Low", QCN9224_PCNOC_ERL_ErrLog0_Low},
+	{"PCNOC_ERL_ErrLog0_High", QCN9224_PCNOC_ERL_ErrLog0_High},
+	{"PCNOC_ERL_ErrLog1_Low", QCN9224_PCNOC_ERL_ErrLog1_Low},
+	{"PCNOC_ERL_ErrLog1_High", QCN9224_PCNOC_ERL_ErrLog1_High},
+	{"PCNOC_ERL_ErrLog2_Low", QCN9224_PCNOC_ERL_ErrLog2_Low},
+	{"PCNOC_ERL_ErrLog2_High", QCN9224_PCNOC_ERL_ErrLog2_High},
+	{"PCNOC_ERL_ErrLog3_Low", QCN9224_PCNOC_ERL_ErrLog3_Low},
+	{"PCNOC_ERL_ErrLog3_High", QCN9224_PCNOC_ERL_ErrLog3_High},
+};
 
 
 static inline struct ath12k_pci *athdbg_mhi_get_pci_priv(
@@ -95,8 +117,8 @@ static void athdbg_mhi_q6_debug_reg_dump(struct ath12k_base *ab)
 }
 
 static int athdbg_mhi_q6_debug_read_pbl_data(struct ath12k_base *ab,
-					     struct mhi_q6_pbl_reg_addr *pbl_data,
-					     struct mhi_q6_pbl_err_data *pbl_err_data)
+					struct athdbg_mhi_q6_pbl_reg_addr *pbl_data,
+					struct athdbg_mhi_q6_pbl_err_data *pbl_err_data)
 {
 	unsigned long *mhi_state;
 	u32 log_size_v1 = pbl_data->pbl_log_sram_max_size_v1;
@@ -148,9 +170,8 @@ static int athdbg_mhi_q6_debug_read_pbl_data(struct ath12k_base *ab,
 }
 
 static int athdbg_mhi_q6_debug_read_sbl_data(struct ath12k_base *ab,
-					     u32 log_size,
-					     u32 sram_start_reg,
-					     struct mhi_q6_dump_pbl_sbl_data *pbl_sbl_err)
+					u32 log_size, u32 sram_start_reg,
+					struct athdbg_mhi_q6_pbl_sbl_data  *pbl_sbl_err)
 {
 	int i = 0;
 	int j = 0;
@@ -178,8 +199,7 @@ static int athdbg_mhi_q6_debug_read_sbl_data(struct ath12k_base *ab,
 }
 
 static int athdbg_mhi_q6_debug_read_noc_errors(struct ath12k_base *ab,
-					       struct mhi_q6_dump_pbl_sbl_data
-					       *pbl_sbl_err)
+					struct athdbg_mhi_q6_pbl_sbl_data *pbl_sbl_err)
 {
 	unsigned long *mhi_state;
 	int i;
@@ -212,12 +232,11 @@ static int athdbg_mhi_q6_debug_read_noc_errors(struct ath12k_base *ab,
 }
 
 static int athdbg_mhi_q6_debug_read_misc_data(struct ath12k_base *ab,
-					    struct mhi_q6_pbl_reg_addr *pbl_data,
-					    struct mhi_q6_sbl_reg_addr *sbl_data,
-					    struct mhi_q6_dump_pbl_sbl_data *pbl_sbl_err)
+					struct athdbg_mhi_q6_pbl_reg_addr *pbl_data,
+					struct athdbg_mhi_q6_sbl_reg_addr *sbl_data,
+					struct athdbg_mhi_q6_pbl_sbl_data  *pbl_sbl_err)
 {
 	struct pci_dev *pci_dev;
-	struct ath12k_mhi_q6_dbg_reg_arg arg = {0};
 
 	pci_dev = athdbg_mhi_get_pci_dev(ab);
 	if (!pci_dev)
@@ -237,11 +256,19 @@ static int athdbg_mhi_q6_debug_read_misc_data(struct ath12k_base *ab,
 	pci_read_config_word(pci_dev, PCIE_MSI_CAP_OFF_0CH_REG,
 			     &pbl_sbl_err->pci_msi_cap_off_0ch_reg);
 
-	if (ab->hw_params && ab->hw_params->hw_ops &&
-	    ab->hw_params->hw_ops->fill_mhi_q6_debug_reg_info) {
-		arg.req = ATH12K_MHI_Q6_DBG_FILL_MISC_REGS;
-		arg.regs.misc.out = pbl_sbl_err;
-		ab->hw_params->hw_ops->fill_mhi_q6_debug_reg_info(ab, &arg);
+	switch (pci_dev->device) {
+	case QCN9274_DEVICE_ID:
+		pbl_sbl_err->remap_bar_ctrl = athdbg_mhi_pci_read32(ab,
+				QCN9224_PCIE_PCIE_LOCAL_REG_REMAP_BAR_CTRL);
+		pbl_sbl_err->soc_rc_shadow_reg = athdbg_mhi_pci_read32(ab,
+				QCN9224_WLAON_SOC_RESET_CAUSE_SHADOW_REG);
+		pbl_sbl_err->parf_ltssm = athdbg_mhi_pci_read32(ab,
+				QCN9224_PCIE_PCIE_PARF_LTSSM);
+		pbl_sbl_err->gcc_ramss_cbcr = athdbg_mhi_pci_read32(ab,
+				QCN9224_GCC_RAMSS_CBCR);
+		break;
+	default:
+		break;
 	}
 
 	pbl_sbl_err->sbl_log_start = athdbg_mhi_pci_read32(ab,
@@ -257,16 +284,13 @@ static int athdbg_mhi_q6_debug_read_misc_data(struct ath12k_base *ab,
 }
 
 static void athdbg_mhi_q6_debug_collect_bl_data(struct ath12k_base *ab,
-					struct mhi_q6_pbl_reg_addr *pbl_data,
-					struct mhi_q6_sbl_reg_addr *sbl_data,
-					struct mhi_q6_dump_pbl_sbl_data *pbl_sbl_err)
+					struct athdbg_mhi_q6_pbl_reg_addr *pbl_data,
+					struct athdbg_mhi_q6_sbl_reg_addr *sbl_data,
+					struct athdbg_mhi_q6_pbl_sbl_data  *pbl_sbl_err)
 {
 	unsigned long *mhi_state;
 	u32 sbl_log_size = 0;
 	u32 sbl_log_start;
-	struct ath12k_mhi_q6_dbg_reg_arg arg = {0};
-	const struct mhi_q6_noc_err_reg *tbl = NULL;
-	size_t len = 0;
 
 	mhi_state = athdbg_mhi_get_mhi_state(ab);
 	if (!mhi_state)
@@ -283,43 +307,45 @@ static void athdbg_mhi_q6_debug_collect_bl_data(struct ath12k_base *ab,
 
 	if (athdbg_mhi_q6_debug_read_pbl_data(ab, pbl_data,
 					      &pbl_sbl_err->pbl_data[0])) {
-		pr_err("Failed to read PBL log data\n");
+		pr_err("Failed to read Q6 PBL log data\n");
 		return;
 	}
 
 	if (athdbg_mhi_q6_debug_read_misc_data(ab, pbl_data, sbl_data,
 					       pbl_sbl_err)) {
-		pr_err("Failed to read Misc log data\n");
+		pr_err("Failed to read Q6 Misc log data\n");
 		return;
 	}
 
 	/* Read NOC errors */
-	if (ab->hw_params && ab->hw_params->hw_ops &&
-	    ab->hw_params->hw_ops->fill_mhi_q6_debug_reg_info) {
-		arg.req = ATH12K_MHI_Q6_DBG_GET_NOC_TBL;
-		arg.regs.noc.tbl = &tbl;
-		arg.regs.noc.len = &len;
-		ab->hw_params->hw_ops->fill_mhi_q6_debug_reg_info(ab, &arg);
+	{
+		struct pci_dev *pci_dev = athdbg_mhi_get_pci_dev(ab);
 
-		if (tbl && len) {
-			pbl_sbl_err->noc_tbl = tbl;
-			pbl_sbl_err->noc_len = len;
+		if (pci_dev) {
+			switch (pci_dev->device) {
+			case QCN9274_DEVICE_ID:
+				pbl_sbl_err->noc_tbl = qcn9274_noc_err_regs;
+				pbl_sbl_err->noc_len = ARRAY_SIZE(qcn9274_noc_err_regs);
 
-			if (athdbg_mhi_q6_debug_read_noc_errors(ab, pbl_sbl_err))
-				pr_err("Failed to read NOC error data\n");
+				if (athdbg_mhi_q6_debug_read_noc_errors(ab, pbl_sbl_err))
+					pr_err("Failed to read Q6 NOC error data\n");
+				break;
+			default:
+				break;
+			}
 		}
 	}
 
 	if (athdbg_mhi_q6_debug_read_pbl_data(ab, pbl_data,
 					      &pbl_sbl_err->pbl_data[1])) {
-		pr_err("Failed to read PBL log data\n");
+		pr_err("Failed to read Q6 PBL log data\n");
 		return;
 	}
 
 	sbl_log_size = athdbg_mhi_pci_read32(ab, sbl_data->sbl_log_size_reg);
 
 	if (!sbl_log_size) {
-		pr_err("Invalid SBL log size\n");
+		pr_err("Invalid Q6 SBL log size\n");
 		return;
 	}
 
@@ -330,21 +356,21 @@ static void athdbg_mhi_q6_debug_collect_bl_data(struct ath12k_base *ab,
 	if (sbl_log_start < sbl_data->sbl_sram_start ||
 	    sbl_log_start > sbl_data->sbl_sram_end ||
 	    (sbl_log_start + sbl_log_size) > sbl_data->sbl_sram_end) {
-		pr_err("Invalid SBL log data\n");
+		pr_err("Invalid Q6 SBL log data\n");
 		return;
 	}
 
 	if (athdbg_mhi_q6_debug_read_sbl_data(ab, sbl_log_size, sbl_log_start,
 					      pbl_sbl_err))
-		pr_err("Failed to read SBL log data\n");
+		pr_err("Failed to read Q6 SBL log data\n");
 }
 
 static void athdbg_mhi_q6_debug_print_pbl_data(struct ath12k_base *ab,
-					       struct mhi_q6_pbl_err_data *pbl_data)
+					    struct athdbg_mhi_q6_pbl_err_data *pbl_data)
 {
 	int i;
 
-	pr_info("Dumping PBL log data\n");
+	pr_info("Dumping Q6 PBL log data\n");
 	for (i = 0; i < pbl_data->pbl_tbl_len; i++)
 		pr_info("PBL: SRAM[0x%x] = 0x%x\n",
 			   pbl_data->pbl_reg_tbl[i],
@@ -352,29 +378,29 @@ static void athdbg_mhi_q6_debug_print_pbl_data(struct ath12k_base *ab,
 }
 
 static void athdbg_mhi_q6_debug_print_sbl_data(struct ath12k_base *ab,
-					    struct mhi_q6_dump_pbl_sbl_data *pbl_sbl_err)
+					struct athdbg_mhi_q6_pbl_sbl_data  *pbl_sbl_err)
 {
-	pr_info("Dumping SBL log data\n");
+	pr_info("Dumping Q6 SBL log data\n");
 	print_hex_dump(KERN_WARNING, "", DUMP_PREFIX_OFFSET, 32, 4,
 		       pbl_sbl_err->sbl_vals, pbl_sbl_err->sbl_len, 1);
 }
 
 static void athdbg_mhi_q6_debug_print_noc_data(struct ath12k_base *ab,
-					    struct mhi_q6_dump_pbl_sbl_data *pbl_sbl_err)
+					struct athdbg_mhi_q6_pbl_sbl_data  *pbl_sbl_err)
 {
 	int i;
 
 	if (!pbl_sbl_err->noc_vals || !pbl_sbl_err->noc_len)
 		return;
 
-	pr_info("Dumping NOC error log data\n");
+	pr_info("Dumping Q6 NOC error log data\n");
 	for (i = 0; i < pbl_sbl_err->noc_len; i++)
 		pr_info("%s: 0x%08x\n", pbl_sbl_err->noc_tbl[i].reg_name,
 			   pbl_sbl_err->noc_vals[i]);
 }
 
 static void athdbg_mhi_q6_debug_print_bl_data(struct ath12k_base *ab,
-					    struct mhi_q6_dump_pbl_sbl_data *pbl_sbl_err)
+					struct athdbg_mhi_q6_pbl_sbl_data  *pbl_sbl_err)
 {
 	pr_info("PARF_PM_STTS: 0x%08x, PCIE_TYPE0_STATUS_COMMAND_REG: 0x%08x\n",
 		   pbl_sbl_err->parf_pm_stts,
@@ -412,7 +438,7 @@ static void athdbg_mhi_q6_debug_print_bl_data(struct ath12k_base *ab,
 }
 
 static void athdbg_mhi_q6_debug_cleanup_bl_data(
-					struct mhi_q6_dump_pbl_sbl_data *pbl_sbl_err)
+					struct athdbg_mhi_q6_pbl_sbl_data  *pbl_sbl_err)
 {
 	int i;
 
@@ -439,12 +465,27 @@ static void athdbg_mhi_q6_debug_cleanup_bl_data(
  */
 void athdbg_mhi_q6_dump_bl_sram_mem(struct ath12k_base *ab)
 {
+	struct ath12k_pci *ab_pci;
+	struct mhi_controller *mhi_ctrl;
+	struct pci_dev *pci_dev;
 	unsigned long *mhi_state;
-	struct mhi_q6_sbl_reg_addr sbl_data = {0};
-	struct mhi_q6_pbl_reg_addr pbl_data = {0};
-	struct mhi_q6_dump_pbl_sbl_data *pbl_sbl_err = NULL;
+	struct athdbg_mhi_q6_sbl_reg_addr sbl_data = {0};
+	struct athdbg_mhi_q6_pbl_reg_addr pbl_data = {0};
+	struct athdbg_mhi_q6_pbl_sbl_data  *pbl_sbl_err = NULL;
 	int gfp = GFP_KERNEL;
-	struct ath12k_mhi_q6_dbg_reg_arg arg = {0};
+
+	ab_pci = athdbg_mhi_get_pci_priv(ab);
+	if (!ab_pci) {
+		pr_err("Q6 PBL/SBL logging failed as PCI private data is not present\n");
+		return;
+	}
+
+	mhi_ctrl = ab_pci->mhi_ctrl;
+	pci_dev = ab_pci->pdev;
+	if (!pci_dev) {
+		pr_err("Q6 PBL/SBL logging failed as pci_dev is NULL\n");
+		return;
+	}
 
 	mhi_state = athdbg_mhi_get_mhi_state(ab);
 	if (!mhi_state)
@@ -455,14 +496,27 @@ void athdbg_mhi_q6_dump_bl_sram_mem(struct ath12k_base *ab)
 		return;
 	}
 
-	if (ab->hw_params && ab->hw_params->hw_ops &&
-	    ab->hw_params->hw_ops->fill_mhi_q6_debug_reg_info) {
-		arg.req = ATH12K_MHI_Q6_DBG_FILL_BL_REGS;
-		arg.regs.bl.sbl = &sbl_data;
-		arg.regs.bl.pbl = &pbl_data;
-		ab->hw_params->hw_ops->fill_mhi_q6_debug_reg_info(ab, &arg);
-	} else {
-		pr_warn("Missing hw_ops for BL SRAM layout\n");
+	/* Set up register addresses based on device type */
+	switch (pci_dev->device) {
+	case QCN9274_DEVICE_ID:
+		sbl_data.sbl_sram_start = QCN9224_SRAM_START;
+		sbl_data.sbl_sram_end = QCN9224_SRAM_END;
+		sbl_data.sbl_log_size_reg = QCN9224_PCIE_BHI_ERRDBG3_REG;
+		sbl_data.sbl_log_start_reg = QCN9224_PCIE_BHI_ERRDBG2_REG;
+		sbl_data.sbl_log_size_shift = 0;
+
+		if (mhi_ctrl && mhi_ctrl->major_version == 2)
+			pbl_data.pbl_log_sram_start = QCN9224_v2_PBL_LOG_SRAM_START;
+		else
+			pbl_data.pbl_log_sram_start = QCN9224_PBL_LOG_SRAM_START;
+
+		pbl_data.pbl_log_sram_max_size = QCN9224_PBL_LOG_SRAM_MAX_SIZE;
+		pbl_data.tcsr_pbl_logging_reg = QCN9224_TCSR_PBL_LOGGING_REG;
+		pbl_data.pbl_wlan_boot_cfg = QCN9224_PBL_WLAN_BOOT_CFG;
+		pbl_data.pbl_bootstrap_status = QCN9224_PBL_BOOTSTRAP_STATUS;
+		break;
+	default:
+		pr_warn("Unsupported device ID: 0x%x\n", pci_dev->device);
 		return;
 	}
 
