@@ -20,4 +20,5 @@ ath12k_wifi8-y += core.o \
 		  hal_queue.o \
 		  dp_pool.o \
 		  dp_msdu_queue.o \
-		  dp_tx_tid.o
+		  dp_tx_tid.o \
+		  dp_tx_queue.o
