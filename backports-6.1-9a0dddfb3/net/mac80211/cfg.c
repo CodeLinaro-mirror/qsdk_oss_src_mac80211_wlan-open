@@ -1706,10 +1706,13 @@ static int ieee80211_start_ap(struct wiphy *wiphy, struct net_device *dev,
 	if (ieee80211_hw_check(&local->hw, HAS_RATE_CONTROL))
 		link_conf->beacon_tx_rate = params->beacon_rate;
 
-	err = ieee80211_assign_beacon(sdata, link, &params->beacon, NULL, NULL,
-				      &changed);
-	if (err < 0)
-		goto error;
+	/* Skip Beacon Assignment for Scan Radio */
+	if (!wdev_is_scan_radio(&sdata->wdev)) {
+		err = ieee80211_assign_beacon(sdata, link, &params->beacon, NULL, NULL,
+					      &changed);
+		if (err < 0)
+			goto error;
+	}
 
 	err = ieee80211_set_fils_discovery(sdata, &params->fils_discovery,
 					   link, link_conf, &changed);
