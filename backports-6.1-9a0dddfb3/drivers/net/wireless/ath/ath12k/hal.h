@@ -24,6 +24,7 @@ struct ath12k_dp_tx_comp_status;
 struct hal_rx_desc;
 enum ath12k_supported_bw;
 
+#define HAL_INVALID_PEERID	0x3fff
 #define HAL_TLV_ALIGN	4
 
 struct hal_tlv_hdr {
