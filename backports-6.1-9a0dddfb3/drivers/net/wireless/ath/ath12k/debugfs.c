@@ -2482,9 +2482,10 @@ static ssize_t ath12k_read_nrp_rssi(struct file *file,
 	}
 
 	len = scnprintf(buf, sizeof(buf),
-			"Neighbor Peer MAC\t\tRSSI\t\tTime\n");
-	len += scnprintf(buf + len, sizeof(buf) - len, "%pM\t\t%u\t\t%lld\n",
-			 nrp->addr, nrp->rssi, nrp->timestamp);
+			"%-20s %-10s %-10s %s\n",
+			"Neighbor Peer MAC", "RSSI", "Avg RSSI", "Time");
+	len += scnprintf(buf + len, sizeof(buf) - len, "%-20pM %-10u %-10u %lld\n",
+			 nrp->addr, nrp->rssi, nrp->avg_rssi, nrp->timestamp);
 
 	return simple_read_from_buffer(ubuf, count, ppos, buf, len);
 }
