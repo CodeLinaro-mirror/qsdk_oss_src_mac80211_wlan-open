@@ -148,3 +148,22 @@ struct ath12k_dp_msdu_q_info
 
 	return sw_msduq_ptr;
 }
+
+void ath12k_free_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
+			       struct ath12k_dp_msdu_q_info *sw_msduq_ptr)
+{
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+				ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	struct hal_tx_msdu_flow *msduq;
+
+	if (!sw_msduq_ptr)
+		return;
+
+	spin_lock_bh(&dp_hw_grp_wifi8->tx_pool_lock);
+	sw_msduq_ptr->allocated = 0;
+	msduq = pool_node_from_id(dp_hw_grp_wifi8->msduq_ctxt, sw_msduq_ptr->msduq_idx);
+	ath12k_wifi8_hal_msduq_set_invalid(dp_hw_grp, msduq, sw_msduq_ptr->msdu_q_paddr);
+	sw_msduq_ptr->msduq_state = ATH12K_TX_Q_DELETED;
+	free_memory_pool(dp_hw_grp_wifi8->sw_msduq_ctxt, sw_msduq_ptr);
+	spin_unlock_bh(&dp_hw_grp_wifi8->tx_pool_lock);
+}

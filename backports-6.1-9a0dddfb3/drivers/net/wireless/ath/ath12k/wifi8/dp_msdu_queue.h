@@ -23,4 +23,6 @@ struct ath12k_dp_msdu_q_info
 *ath12k_init_alloc_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
 				 struct ath12k_dp_peer *peer,
 				 u8 tid_num, u8 msduq_type, u8 mgmt_msduq_type);
+void ath12k_free_tx_msdu_flowq(struct ath12k_dp_hw_group *dp_hw_grp,
+			       struct ath12k_dp_msdu_q_info *sw_msduq_ptr);
 #endif

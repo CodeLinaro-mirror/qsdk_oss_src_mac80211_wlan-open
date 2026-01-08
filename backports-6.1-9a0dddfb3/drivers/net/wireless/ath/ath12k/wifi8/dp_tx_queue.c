@@ -419,3 +419,212 @@ error:
 	spin_unlock_bh(&tx_flow_info->tx_q_lock);
 	return ret;
 }
+
+void ath12k_tx_classify_info_free(struct ath12k_dp_hw_group *dp_hw_grp,
+				  struct hal_txpt_classify_info **tx_tid_ptr,
+				  dma_addr_t txpt_paddr)
+{
+	struct hal_txpt_classify_data ti = {0};
+	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
+
+	if (!tx_tid_ptr || !(*tx_tid_ptr))
+		return;
+
+	dma_sync_single_for_cpu(dev, txpt_paddr,
+				ATH12K_SIZE_OF_TID_INFO,
+				DMA_BIDIRECTIONAL);
+	if (ath12k_wifi8_hal_get_txpt_flow_ptr(*tx_tid_ptr,
+					       HAL_CLASSIFY_BANK_SUBTYPE_UDP)) {
+		ti.msdu_paddr = 0;
+		ti.subtype = HAL_CLASSIFY_BANK_SUBTYPE_UDP;
+		ti.paddr = txpt_paddr;
+		ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp, *tx_tid_ptr, &ti);
+	}
+	if (ath12k_wifi8_hal_get_txpt_flow_ptr(*tx_tid_ptr,
+					       HAL_CLASSIFY_BANK_SUBTYPE_NON_UDP)) {
+		ti.msdu_paddr = 0;
+		ti.subtype = HAL_CLASSIFY_BANK_SUBTYPE_NON_UDP;
+		ti.paddr = txpt_paddr;
+		ath12k_wifi8_hal_txpt_classify_info_setup(dp_hw_grp, *tx_tid_ptr, &ti);
+	}
+}
+
+static inline void ath12k_peer_free_hol_queues(struct ath12k_dp_hw_group *dp_hw_grp,
+					       struct ath12k_dp_peer *peer)
+{
+	struct hal_txpt_classify_info *tx_tid_ptr = NULL;
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
+	struct ath12k_dp_tx_tid_info *ptid = NULL;
+	dma_addr_t txpt_paddr;
+	struct ath12k_dp_tx_flow_info *tx_flow_info =
+			ath12k_dp_get_tx_flow_info_from_peer(peer);
+
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+	tx_tid_ptr = ath12k_get_txpt_info_ptr(peer, 0, 0);
+	txpt_paddr = ath12k_get_txpt_paddr(peer, 0, 0);
+	ath12k_tx_classify_info_free(dp_hw_grp, &tx_tid_ptr, txpt_paddr);
+
+	sw_msduq_ptr = tx_flow_info->hol_msduq;
+	if (sw_msduq_ptr) {
+		ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
+		tx_flow_info->tid_info[ATH12K_HOL_TID].num_of_active_msdu_queues--;
+		tx_flow_info->hol_msduq = NULL;
+	}
+	if (tx_flow_info->tid_info[ATH12K_HOL_TID].num_of_active_msdu_queues)
+		goto end;
+
+	ptid = &tx_flow_info->tid_info[ATH12K_HOL_TID];
+	sw_mpduq_ptr = tx_flow_info->tid_info[ATH12K_HOL_TID].mpduq;
+	ath12k_peer_free_tid(dp_hw_grp, sw_mpduq_ptr, ptid);
+	tx_flow_info->tid_info[ATH12K_HOL_TID].mpduq = NULL;
+end:
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+}
+
+static inline void ath12k_peer_free_mgmt_queues(struct ath12k_dp_hw_group *dp_hw_grp,
+						struct ath12k_dp_peer *peer)
+{
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
+	enum ath12k_mgmt_msduq_type mgmt_msduq_type;
+	struct ath12k_dp_tx_flow_info *tx_flow_info =
+			ath12k_dp_get_tx_flow_info_from_peer(peer);
+	u8 link;
+
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+	if (peer->is_mlo) {
+		sw_msduq_ptr = tx_flow_info->mgmt_msduq[MGMT_MSDUQ_LINK_CMN];
+		ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
+		tx_flow_info->mgmt_msduq[MGMT_MSDUQ_LINK_CMN] = NULL;
+		for (link = 0; link < ATH12K_WMI_MLO_MAX_LINKS; link++) {
+			mgmt_msduq_type = ATH12K_LINK_TO_MGMT_TYPE(link);
+			sw_msduq_ptr = tx_flow_info->mgmt_msduq[mgmt_msduq_type];
+			ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
+			tx_flow_info->mgmt_msduq[mgmt_msduq_type] = NULL;
+		}
+	} else {
+		sw_msduq_ptr = tx_flow_info->mgmt_msduq[MGMT_MSDUQ_NON_ML];
+		ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
+		tx_flow_info->mgmt_msduq[MGMT_MSDUQ_NON_ML] = NULL;
+	}
+	sw_mpduq_ptr = tx_flow_info->mgmt_mpduq;
+	ath12k_peer_free_tid(dp_hw_grp, sw_mpduq_ptr, NULL);
+	tx_flow_info->mgmt_mpduq = NULL;
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+}
+
+static inline void ath12k_peer_free_mcast_queues(struct ath12k_dp_hw_group *dp_hw_grp,
+						 struct ath12k_dp_peer *peer)
+{
+	struct hal_txpt_classify_info *tx_tid_ptr = NULL;
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
+	dma_addr_t txpt_paddr;
+	struct ath12k_dp_tx_flow_info *tx_flow_info =
+			ath12k_dp_get_tx_flow_info_from_peer(peer);
+
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+	tx_tid_ptr = ath12k_get_txpt_info_ptr(peer, 0, 1);
+	txpt_paddr = ath12k_get_txpt_paddr(peer, 0, 1);
+	ath12k_tx_classify_info_free(dp_hw_grp, &tx_tid_ptr, txpt_paddr);
+	ath12k_dp_txpt_update_to_all(peer, tx_tid_ptr);
+
+	sw_msduq_ptr = tx_flow_info->mcast_msduq;
+	ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
+	tx_flow_info->mcast_msduq = NULL;
+
+	sw_mpduq_ptr = tx_flow_info->mcast_mpduq;
+	ath12k_peer_free_tid(dp_hw_grp, sw_mpduq_ptr, NULL);
+	tx_flow_info->mcast_mpduq = NULL;
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+}
+
+static inline void ath12k_peer_free_default_queues(struct ath12k_dp_hw_group *dp_hw_grp,
+						   struct ath12k_dp_peer *peer,
+						   bool is_qos)
+{
+	struct hal_txpt_classify_info *tx_tid_ptr = NULL;
+	struct ath12k_dp_msdu_q_info *sw_msduq_ptr = NULL;
+	struct ath12k_dp_mpdu_q_info *sw_mpduq_ptr = NULL;
+	struct ath12k_dp_tx_flow_info *tx_flow_info =
+				ath12k_dp_get_tx_flow_info_from_peer(peer);
+	dma_addr_t txpt_paddr;
+	u8 tid_num;
+	struct ath12k_dp_tx_tid_info *tid_info = NULL;
+
+	spin_lock_bh(&tx_flow_info->tx_q_lock);
+	if (is_qos) {
+		for (tid_num = 0; tid_num < ATH12K_MAX_NUM_DATA_TIDS; tid_num++) {
+			tx_tid_ptr = ath12k_get_txpt_info_ptr(peer, 0, (tid_num + 1));
+			txpt_paddr = ath12k_get_txpt_paddr(peer, 0, (tid_num + 1));
+			ath12k_tx_classify_info_free(dp_hw_grp, &tx_tid_ptr, txpt_paddr);
+			tid_info = &tx_flow_info->tid_info[tid_num];
+
+			sw_msduq_ptr =
+				tid_info->msduq[HTT_TID_MSDUQ_UDP];
+			if (sw_msduq_ptr) {
+				ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
+				tid_info->num_of_active_msdu_queues--;
+				tid_info->msduq[HTT_TID_MSDUQ_UDP] = NULL;
+			}
+			sw_msduq_ptr = tid_info->msduq[HTT_TID_MSDUQ_NONUDP];
+			if (sw_msduq_ptr) {
+				ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
+				tid_info->num_of_active_msdu_queues--;
+				tid_info->msduq[HTT_TID_MSDUQ_NONUDP] = NULL;
+			}
+			if (tid_info->num_of_active_msdu_queues)
+				continue;
+			sw_mpduq_ptr = tid_info->mpduq;
+			ath12k_peer_free_tid(dp_hw_grp, sw_mpduq_ptr, tid_info);
+			tid_info->mpduq = NULL;
+		}
+	} else {
+		tx_tid_ptr = ath12k_get_txpt_info_ptr(peer, 0, 1);
+		txpt_paddr = ath12k_get_txpt_paddr(peer, 0, 1);
+		ath12k_tx_classify_info_free(dp_hw_grp, &tx_tid_ptr, txpt_paddr);
+		ath12k_dp_txpt_update_to_all(peer, tx_tid_ptr);
+		tid_info = &tx_flow_info->tid_info[DEFAULT_TID];
+
+		sw_msduq_ptr = tid_info->msduq[HTT_TID_MSDUQ_UDP];
+		if (sw_msduq_ptr) {
+			ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
+			tid_info->num_of_active_msdu_queues--;
+			tid_info->msduq[HTT_TID_MSDUQ_UDP] = NULL;
+		}
+		sw_msduq_ptr = tid_info->msduq[HTT_TID_MSDUQ_NONUDP];
+		if (sw_msduq_ptr) {
+			ath12k_free_tx_msdu_flowq(dp_hw_grp, sw_msduq_ptr);
+			tid_info->num_of_active_msdu_queues--;
+			tid_info->msduq[HTT_TID_MSDUQ_NONUDP] = NULL;
+		}
+		if (tid_info->num_of_active_msdu_queues)
+			goto end;
+
+		sw_mpduq_ptr = tid_info->mpduq;
+		ath12k_peer_free_tid(dp_hw_grp, sw_mpduq_ptr, tid_info);
+		tid_info->mpduq = NULL;
+	}
+end:
+	spin_unlock_bh(&tx_flow_info->tx_q_lock);
+}
+
+void ath12k_peer_free_static_queues(struct ath12k_dp_hw_group *dp_hw_grp,
+				    struct ath12k_dp_peer *peer)
+{
+	bool is_qos = true;
+
+	if (peer->is_vdev_peer) {
+		ath12k_peer_free_mcast_queues(dp_hw_grp, peer);
+	} else {
+		if (peer->sta->wme)
+			is_qos = true;
+		else
+			is_qos = false;
+
+		ath12k_peer_free_default_queues(dp_hw_grp, peer, is_qos);
+		ath12k_peer_free_hol_queues(dp_hw_grp, peer);
+		ath12k_peer_free_mgmt_queues(dp_hw_grp, peer);
+	}
+}
