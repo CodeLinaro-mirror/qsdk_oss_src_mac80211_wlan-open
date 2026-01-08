@@ -282,6 +282,7 @@ static void ath12k_set_dscp_tid_work(struct wiphy *wiphy, struct wiphy_work *wor
 static bool ath12k_mac_is_bridge_required(u8 device_bitmap, u8 num_devices,
 					  u16 *bridge_bitmap);
 static bool ath12k_get_link_down(struct ath12k_sta *ahsta, int *link_going_down);
+static void ath12k_mac_nrp_delete(struct ath12k *ar);
 static const char *ath12k_mac_phymode_str(enum wmi_phy_mode mode)
 {
 	switch (mode) {
@@ -2005,6 +2006,9 @@ static int ath12k_mac_monitor_stop(struct ath12k *ar)
 		ath12k_warn(ar->ab, "failed to stop monitor vdev: %d\n", ret);
 		return ret;
 	}
+
+	if (ath12k_dp_smart_mon_enabled(ar))
+		ath12k_mac_nrp_delete(ar);
 
 	ar->monitor_started = false;
 	ar->num_started_vdevs--;

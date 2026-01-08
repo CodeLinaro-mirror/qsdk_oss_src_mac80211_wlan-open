@@ -122,6 +122,8 @@ struct ath12k_dp_arch_mon_ops {
 	void (*mon_rx_wq_deinit)(struct ath12k_pdev_dp *pdev_dp);
 	void (*rx_nrp_set)(struct ath12k_pdev_dp *dp_pdev);
 	void (*rx_nrp_reset)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_smart_mon_set)(struct ath12k_pdev_dp *dp_pdev);
+	void (*rx_smart_mon_reset)(struct ath12k_pdev_dp *dp_pdev);
 	void (*mon_rx_wmask)(void *ptr, struct htt_rx_ring_tlv_filter *tlv_filter);
 	void (*rx_enable_packet_filters)(void *ptr,
 						struct htt_rx_ring_tlv_filter *filter);
@@ -151,6 +153,12 @@ struct ath12k_dp_mon {
 enum dp_monitor_type {
 	ATH12K_DP_MON_TYPE_QUAD_RING,
 	ATH12K_DP_MON_TYPE_DUAL_RING
+};
+
+enum ath12k_dp_smart_mon_state {
+	ATH12K_DP_SMART_MON_DISABLED,
+	ATH12K_DP_SMART_MON_IDLE,
+	ATH12K_DP_SMART_MON_ACTIVE,
 };
 
 struct ath12k_dp_mon_mpdu_meta {
@@ -360,6 +368,7 @@ struct ath12k_pdev_mon_dp {
 	 * Default: 0x00 (regular monitor mode)
 	 */
 	u8 smart_mon_filter;
+	enum ath12k_dp_smart_mon_state smart_mon_state;
 };
 
 enum ath12k_dp_mon_desc_in_use {
@@ -455,6 +464,8 @@ void ath12k_dp_mon_rx_monitor_mode_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_monitor_mode_reset(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_set(struct ath12k_pdev_dp *dp_pdev);
 void ath12k_dp_mon_rx_nrp_reset(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_rx_smart_mon_set(struct ath12k_pdev_dp *dp_pdev);
+void ath12k_dp_mon_rx_smart_mon_reset(struct ath12k_pdev_dp *dp_pdev);
 size_t ath12k_dp_mon_list_cut_nodes(struct list_head *list, struct list_head *head,
 				    size_t count);
 size_t ath12k_dp_mon_get_req_entries_from_buf_ring(struct ath12k_dp *dp,
@@ -795,8 +806,12 @@ void ath12k_dp_mon_rx_config_monitor_mode(struct ath12k *ar, bool reset)
 
 	if (!reset) {
 		if (!(dp_pdev->dp_mon_pdev->smart_mon_filter & DP_SMART_MON_VALID)) {
+			dp_pdev->dp_mon_pdev->smart_mon_state =
+					ATH12K_DP_SMART_MON_DISABLED;
 			if (mon_ops && mon_ops->rx_monitor_mode_set)
 				mon_ops->rx_monitor_mode_set(dp_pdev);
+		} else {
+			dp_pdev->dp_mon_pdev->smart_mon_state = ATH12K_DP_SMART_MON_IDLE;
 		}
 	} else {
 		if(mon_ops && mon_ops->rx_monitor_mode_reset)
@@ -826,6 +841,30 @@ void ath12k_dp_mon_rx_nrp_config(struct ath12k *ar, bool reset)
 			mon_ops->rx_nrp_reset(dp_pdev);
 	}
 
+}
+
+static inline
+void ath12k_dp_mon_rx_smart_mon_config(struct ath12k *ar, bool reset)
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+	if (!reset) {
+		if (mon_ops && mon_ops->rx_smart_mon_set)
+			mon_ops->rx_smart_mon_set(dp_pdev);
+		dp_pdev->dp_mon_pdev->smart_mon_state = ATH12K_DP_SMART_MON_ACTIVE;
+	} else {
+		if (mon_ops && mon_ops->rx_smart_mon_reset)
+			mon_ops->rx_smart_mon_reset(dp_pdev);
+		dp_pdev->dp_mon_pdev->smart_mon_state = ATH12K_DP_SMART_MON_IDLE;
+	}
 }
 
 static inline
@@ -891,7 +930,14 @@ ath12k_dp_smart_mon_filter_type_set(struct ath12k *ar,
 	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
 		return;
 
-	dp_pdev->dp_mon_pdev->smart_mon_filter = filter;
+	if (dp_pdev->dp_mon_pdev->smart_mon_filter != filter) {
+		dp_pdev->dp_mon_pdev->smart_mon_filter = filter;
+		if (dp_pdev->dp_mon_pdev->smart_mon_state ==
+		    ATH12K_DP_SMART_MON_ACTIVE) {
+			if (filter & DP_SMART_MON_VALID)
+				ath12k_dp_mon_rx_smart_mon_config(ar, false);
+		}
+	}
 }
 
 static inline void
@@ -904,5 +950,20 @@ ath12k_dp_smart_mon_filter_type_get(struct ath12k *ar,
 		return;
 
 	*filter = dp_pdev->dp_mon_pdev->smart_mon_filter;
+}
+
+static inline bool
+ath12k_dp_smart_mon_enabled(struct ath12k *ar)
+{
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+
+	if (unlikely(!dp_pdev || !dp_pdev->dp_mon_pdev))
+		return false;
+
+	if (dp_pdev->dp_mon_pdev->smart_mon_state !=
+	    ATH12K_DP_SMART_MON_DISABLED)
+		return true;
+
+	return false;
 }
 #endif

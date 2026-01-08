@@ -8,6 +8,11 @@
 
 #include "debug.h"
 #include "pktlog.h"
+
+#define DP_SMART_MON_DATA_FILTER        BIT(1)
+#define DP_SMART_MON_MGMT_FILTER        BIT(2)
+#define DP_SMART_MON_CTRL_FILTER        BIT(3)
+
 /**
  * struct dp_mon_rx_filter - Monitor RX TLV filter
  * @tlv_filter: Rx ring TLV filter
@@ -67,6 +72,8 @@ void ath12k_dp_mon_rx_display_filters(struct ath12k_dp *dp,
 				      struct dp_mon_rx_filter *rx_filter);
 void ath12k_dp_mon_rx_nrp_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					bool enable);
+void ath12k_dp_mon_rx_smart_mon_config_filter(struct ath12k_pdev_dp *dp_pdev,
+					      bool enable);
 void ath12k_dp_mon_rx_wmask_subscribe(void *ptr,
 				      struct htt_rx_ring_tlv_filter *tlv_filter);
 void ath12k_dp_tx_htt_rx_mgmt_flag0_fp_filter_set(u32 *ptr, u16 filter);
