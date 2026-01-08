@@ -5667,6 +5667,9 @@ static void ath12k_mac_init_arvif(struct ath12k_vif *ahvif,
 	wiphy_work_init(&arvif->update_bcn_tx_status_work,
 			ath12k_update_bcn_tx_status_work);
 
+	/* Initialize vap_cfg parameters to default values */
+	arvif->vap_cfg.bcn_tx_power = 255;
+
 	init_completion(&arvif->wmi_migration_event_resp);
 	INIT_WORK(&arvif->wmi_migration_cmd_work,
 		  ath12k_wmi_migration_cmd_work);
