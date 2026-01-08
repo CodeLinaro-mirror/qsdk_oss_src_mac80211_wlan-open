@@ -957,6 +957,7 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 	bool only_monitor = false;
 	unsigned int min_head_len;
 	bool tid_stats_disable = local->hw.tid_stats_disable;
+	int hw_idx = -1;
 
 	if (WARN_ON_ONCE(status->flag & RX_FLAG_RADIOTAP_TLV_AT_END &&
 			 !skb_mac_header_was_set(origskb))) {
@@ -1035,13 +1036,26 @@ ieee80211_rx_monitor(struct ieee80211_local *local, struct sk_buff *origskb,
 		struct cfg80211_chan_def *chandef;
 
 		chandef = &sdata->vif.bss_conf.chanreq.oper;
-		if (chandef->chan &&
-		    chandef->chan->center_freq != status->freq)
-			continue;
 
 		if (sdata->u.mntr.flags & MONITOR_FLAG_SKIP_RX)
 			continue;
 
+		if (chandef->chan &&
+		    chandef->chan->center_freq != status->freq) {
+			if (!(sdata->flags & IEEE80211_SDATA_OFFCHAN_PACKETS))
+				continue;
+
+			if (hw_idx == -1) {
+				u32 rx_freq = MHZ_TO_KHZ(status->freq);
+
+				hw_idx =
+				cfg80211_get_hw_idx_by_freq(local->hw.wiphy,
+							    rx_freq);
+			}
+			if (sdata->chan_hw_idx < 0 || hw_idx < 0 ||
+			    sdata->chan_hw_idx != hw_idx)
+				continue;
+		}
 		if (!prev_sdata) {
 			prev_sdata = sdata;
 			continue;
