@@ -8,14 +8,15 @@
 #include "../debug.h"
 #include "dp_htt.h"
 #include "dp_peer.h"
+#include "dp_pool.h"
 
 int ath12k_dp_tx_classify_info_alloc(struct ath12k_dp_hw_group *dp_hw_grp,
 				     dma_addr_t *tx_classify_info_paddr,
 				     void **tx_classify_info_vaddr)
 {
 	struct device *dev = ath12k_dp_get_dev_from_dp_hw_group(dp_hw_grp);
-	size_t alloc_size = (ATH12K_NUM_TX_CLASSIFY_BANKS *
-			    ATH12K_TX_CLASSIFY_INFO_SIZE_SINGLE);
+	size_t alloc_size = ATH12K_NUM_TX_CLASSIFY_BANKS *
+			    ATH12K_TX_CLASSIFY_INFO_SIZE_SINGLE;
 	void *vaddr;
 	dma_addr_t paddr;
 
@@ -58,9 +59,10 @@ void ath12k_dp_pn_counter_page_free(struct ath12k_dp_hw_group *dp_hw_grp)
 	if (!pn_info || !dev)
 		return;
 	for (i = 0; i < dp_hw_grp_wifi8->num_pn_pages; i++) {
-		if (!pn_info[i].vaddr)
+		if (!pn_info[i].vaddr) {
+			ath12k_err(NULL, "pn_page %d is NULL\n", i);
 			continue;
-
+		}
 		ath12k_core_dma_unmap_single(dev, pn_info[i].paddr,
 					     PAGE_SIZE, DMA_BIDIRECTIONAL);
 		kfree(pn_info[i].vaddr);
@@ -141,6 +143,92 @@ dma_addr_t ath12k_dp_get_page_paddr(struct ath12k_dp_hw_group *dp_hw_grp,
 	page_paddr = pn_info[page_index].paddr;
 	page_offset = page_offset * ATH12K_DP_PN_COUNTER_SIZE;
 	return (dma_addr_t)(((u8 *)page_paddr) + page_offset);
+}
+
+int ath12k_wifi8_dp_tx_pool_create(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+		ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+	u32 aligned_size;
+
+	spin_lock_init(&dp_hw_grp_wifi8->tx_pool_lock);
+	dp_hw_grp_wifi8->msduq_ctxt = init_memory_pool(ab, MSDU_STRUCT_SZ,
+						       NUM_TOTAL_MSDU_QUEUES,
+						       true);
+	if (!dp_hw_grp_wifi8->msduq_ctxt)
+		goto error;
+
+	if (dma_map_pages(ab, dp_hw_grp_wifi8->msduq_ctxt)) {
+		ath12k_err(ab, "DMA MAP failed for MSDUQ\n");
+		goto error1;
+	}
+
+	aligned_size = sizeof(struct ath12k_dp_msdu_q_info);
+	aligned_size = roundup_pow_of_two(aligned_size);
+	dp_hw_grp_wifi8->sw_msduq_ctxt = init_memory_pool(ab, aligned_size,
+							  NUM_TOTAL_MSDU_QUEUES,
+							  true);
+	if (!dp_hw_grp_wifi8->sw_msduq_ctxt)
+		goto error1;
+
+	dp_hw_grp_wifi8->mpduq_ctxt = init_memory_pool(ab, MPDU_STRUCT_SZ,
+						       NUM_TOTAL_MPDU_QUEUES,
+						       true);
+	if (!dp_hw_grp_wifi8->mpduq_ctxt)
+		goto error2;
+
+	if (dma_map_pages(ab, dp_hw_grp_wifi8->mpduq_ctxt)) {
+		ath12k_err(ab, "DMA MAP failed for MPDUQ\n");
+		goto error3;
+	}
+
+	aligned_size = sizeof(struct ath12k_dp_mpdu_q_info);
+	aligned_size = roundup_pow_of_two(aligned_size);
+	dp_hw_grp_wifi8->sw_mpduq_ctxt = init_memory_pool(ab, aligned_size,
+							  NUM_TOTAL_MPDU_QUEUES,
+							  true);
+	if (!dp_hw_grp_wifi8->sw_mpduq_ctxt)
+		goto error3;
+
+	return 0;
+error3:
+	pool_destroy(ab, dp_hw_grp_wifi8->mpduq_ctxt);
+	dp_hw_grp_wifi8->mpduq_ctxt = NULL;
+error2:
+	pool_destroy(ab, dp_hw_grp_wifi8->sw_msduq_ctxt);
+	dp_hw_grp_wifi8->sw_msduq_ctxt = NULL;
+error1:
+	pool_destroy(ab, dp_hw_grp_wifi8->msduq_ctxt);
+	dp_hw_grp_wifi8->msduq_ctxt = NULL;
+error:
+	return -ENOMEM;
+}
+
+void ath12k_wifi8_dp_tx_pool_destroy(struct ath12k_dp_hw_group *dp_hw_grp)
+{
+	struct ath12k_base *ab = ath12k_dp_get_ab_from_dp_hw_group(dp_hw_grp);
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+		ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+
+	if (dp_hw_grp_wifi8->msduq_ctxt) {
+		dma_unmap_pages(ab, dp_hw_grp_wifi8->msduq_ctxt);
+		pool_destroy(ab, dp_hw_grp_wifi8->msduq_ctxt);
+		dp_hw_grp_wifi8->msduq_ctxt = NULL;
+	}
+	if (dp_hw_grp_wifi8->sw_msduq_ctxt) {
+		pool_destroy(ab, dp_hw_grp_wifi8->sw_msduq_ctxt);
+		dp_hw_grp_wifi8->sw_msduq_ctxt = NULL;
+	}
+	if (dp_hw_grp_wifi8->mpduq_ctxt) {
+		dma_unmap_pages(ab, dp_hw_grp_wifi8->mpduq_ctxt);
+		pool_destroy(ab, dp_hw_grp_wifi8->mpduq_ctxt);
+		dp_hw_grp_wifi8->mpduq_ctxt = NULL;
+	}
+	if (dp_hw_grp_wifi8->sw_mpduq_ctxt) {
+		pool_destroy(ab, dp_hw_grp_wifi8->sw_mpduq_ctxt);
+		dp_hw_grp_wifi8->sw_mpduq_ctxt = NULL;
+	}
 }
 
 int ath12k_dp_tx_mcast_msduq_mpduq_setup(struct ath12k_dp_hw_group *dp_hw_grp,
