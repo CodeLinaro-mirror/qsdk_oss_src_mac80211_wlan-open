@@ -1188,8 +1188,6 @@ void ath12k_htt_update_peer_telemetry_stats(struct ath12k_pdev_dp *dp_pdev,
 {
 	struct ath12k_base *ab = dp_pdev->ar->ab;
 	struct ath12k_dp_link_peer *peer;
-	struct ieee80211_sta *sta;
-	struct ath12k_link_sta *arsta;
 	struct htt_ppdu_stats *ppdu_stats = &ppdu_info->ppdu_stats;
 	struct htt_ppdu_user_stats *user_stats = NULL;
 	u32 tlv_bitmap;
@@ -1208,30 +1206,22 @@ void ath12k_htt_update_peer_telemetry_stats(struct ath12k_pdev_dp *dp_pdev,
 		if (!(tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_RATE)))
 			continue;
 
-		spin_lock_bh(&dp_pdev->dp->dp_lock);
-
-		peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp,
-						      user_stats->peer_id);
-		if (!peer || !peer->sta) {
-			spin_unlock_bh(&dp_pdev->dp->dp_lock);
-			continue;
-		}
-
-		sta = peer->sta;
-
 		rcu_read_lock();
-		arsta = ath12k_peer_get_link_sta(ab, peer);
-		if (!arsta) {
+
+		peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+								user_stats->peer_id);
+		if (!peer || (peer->dp_peer && peer->dp_peer->is_vdev_peer)) {
 			rcu_read_unlock();
-			spin_unlock_bh(&dp_pdev->dp->dp_lock);
 			continue;
 		}
-		rcu_read_unlock();
 
+		spin_lock_bh(&dp_pdev->dp->dp_lock);
 		ath12k_ppdu_per_user_stats_phy_tx_time_update(ab, peer,
 							      ppdu_info,
 							      user_stats);
 		spin_unlock_bh(&dp_pdev->dp->dp_lock);
+
+		rcu_read_unlock();
 	}
 }
 
