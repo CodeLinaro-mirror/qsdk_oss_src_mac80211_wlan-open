@@ -10190,6 +10190,14 @@ static struct wiphy_vendor_command ath12k_vendor_commands[] = {
 		.maxattr = QCA_WLAN_VENDOR_ATTR_DCS_SIM_MAX,
 		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
 	},
+	{
+		.info.vendor_id = QCA_NL80211_VENDOR_ID,
+		.info.subcmd = QCA_NL80211_VENDOR_SUBCMD_REG_PARAMS,
+		.doit = ath12k_vendor_reg_params_handler,
+		.policy = ath12k_reg_params_policy,
+		.maxattr = QCA_WLAN_VENDOR_ATTR_REG_PARAMS_MAX,
+		.flags = WIPHY_VENDOR_CMD_NEED_NETDEV,
+	},
 #endif
 	{
 		.info.vendor_id = QCA_NL80211_VENDOR_ID,
