@@ -11,6 +11,9 @@
 
 struct ath12k_mgmt;
 
+#define MGMT_REO_DST_RING_SIZE             1024
+#define MGMT_REO_EXCEPTION_RING_SIZE       1024
+
 struct mgmt_srng {
 	u32 *vaddr_unaligned;
 	u32 *vaddr;
@@ -23,6 +26,7 @@ struct mgmt_srng {
 
 #define ATH12K_MGMT_IRQ_GRP_NUM_MAX 2
 #define ATH12K_MGMT_IRQ_PER_GRP_NUM_MAX 2
+#define ATH12K_MGMT_IRQ_GRP_ID_INVALID -1
 #define MGMT_IRQ_NAME_LEN 20
 
 struct ath12k_mgmt_arch_ops {
@@ -65,6 +69,11 @@ void ath12k_mgmt_irq_grp_setup(struct ath12k_mgmt *mgmt);
 void ath12k_mgmt_irq_grp_cleanup(struct ath12k_mgmt *mgmt);
 void ath12k_mgmt_irq_grp_enable(struct ath12k_mgmt_irq_grp *irq_grp);
 void ath12k_mgmt_irq_grp_disable(struct ath12k_mgmt_irq_grp *irq_grp);
+
+int ath12k_mgmt_srng_setup(struct ath12k_base *ab, struct mgmt_srng *ring,
+			   enum hal_ring_type type, int ring_num,
+			   int mac_id, int grp_id, int num_entries);
+void ath12k_mgmt_srng_cleanup(struct ath12k_base *ab, struct mgmt_srng *ring);
 
 static inline int ath12k_mgmt_arch_op_device_init(struct ath12k_mgmt *mgmt)
 {

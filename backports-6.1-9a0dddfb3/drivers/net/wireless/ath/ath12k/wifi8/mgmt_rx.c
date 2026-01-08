@@ -34,19 +34,66 @@ void ath12k_wifi8_mgmt_tasklet(struct tasklet_struct *t)
 }
 #endif
 
+static int ath12k_wifi8_mgmt_rx_ring_setup(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
+	int ring_num = 0, err_ring_num = 0, ret;
+
+	/* Mgmt Rx ring */
+	ret = ath12k_mgmt_srng_setup(ab, &mgmt_wifi8->reo_dst_rx_ring,
+				     HAL_REO_DST_MGMT, ring_num++, 0, 0,
+				     MGMT_REO_DST_RING_SIZE);
+	if (ret) {
+		ath12k_err(ab, "Failed to initialize mgmt reo_dst_ring: %d", ret);
+		return ret;
+	}
+
+	/* Mgmt Rx Error/Exception ring */
+	ret = ath12k_mgmt_srng_setup(ab, &mgmt_wifi8->reo_dst_rx_err_ring,
+				     HAL_REO_EXCEPTION_MGMT, err_ring_num++, 0,
+				     0, MGMT_REO_EXCEPTION_RING_SIZE);
+	if (ret) {
+		ath12k_err(ab, "Failed to initialize mgmt reo_dst_err_ring: %d", ret);
+		return ret;
+	}
+
+	return 0;
+}
+
+static void ath12k_wifi8_mgmt_rx_ring_free(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	struct ath12k_mgmt_wifi8 *mgmt_wifi8 = ath12k_get_mgmt_wifi8(mgmt);
+
+	ath12k_mgmt_srng_cleanup(ab, &mgmt_wifi8->reo_dst_rx_err_ring);
+	ath12k_mgmt_srng_cleanup(ab, &mgmt_wifi8->reo_dst_rx_ring);
+}
+
 int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 {
 	struct ath12k_base *ab = mgmt->ab;
 	int ret;
 
+	ret = ath12k_wifi8_mgmt_rx_ring_setup(ab);
+	if (ret) {
+		ath12k_warn(ab, "Failed to setup mgmt rx REO rings: %d", ret);
+		return ret;
+	}
+
 	ath12k_mgmt_irq_grp_setup(mgmt);
 	ret = ath12k_hif_mgmt_irq_setup(ab, mgmt);
 	if (ret) {
 		ath12k_warn(ab, "Failed to configure mgmt IRQs: %d", ret);
-		return ret;
+		goto fail_srng_free;
 	}
 
 	return 0;
+
+fail_srng_free:
+	ath12k_wifi8_mgmt_rx_ring_free(ab);
+
+	return ret;
 }
 
 void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
@@ -55,6 +102,7 @@ void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
 
 	ath12k_mgmt_irq_grp_cleanup(mgmt);
 	ath12k_hif_mgmt_irq_cleanup(ab);
+	ath12k_wifi8_mgmt_rx_ring_free(ab);
 }
 
 static struct ath12k_mgmt_arch_ops ath12k_wifi8_mgmt_arch_ops = {
