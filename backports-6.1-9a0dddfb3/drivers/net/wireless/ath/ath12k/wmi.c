@@ -9941,7 +9941,6 @@ static void ath12k_peer_delete_resp_event(struct ath12k_base *ab, struct sk_buff
 		return;
 	}
 
-	complete(&ar->peer_delete_done);
 	rcu_read_unlock();
 	ath12k_dbg(ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
 		   "peer delete resp for vdev id %d addr %pM\n",
