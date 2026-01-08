@@ -1001,24 +1001,25 @@ void ath12k_wifi8_hal_reo_init_cmd_ring(struct ath12k_base *ab,
 	}
 }
 
-void ath12k_hal_reo_ring_ctrl_hash_ix0_setup(struct ath12k_base *ab)
+static void ath12k_wifi8_reo_dest_ring_ctrl_setup(struct ath12k_base *ab,
+						  u32 start, u32 end, u32 reg_add)
 {
+	struct ath12k_hal *hal = &ab->hal;
+	const struct ath12k_hal_rdi_mapping *rdi_mapping = hal->rdi_mapping;
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
-	u32 curr, val;
+	u32 hash_map = 0;
+	u8 shift = 0;
+	u8 i;
 
-	curr = ath12k_hif_read32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_0);
-	val = curr & ~(REO_DEST_CTRL_IX_0_RING6_MAP_MASK <<
-		       REO_DEST_CTRL_IX_0_RING6_MAP_SHFT);
-	val |= (REO2PPE_DST_RING_MAP << REO_DEST_CTRL_IX_0_RING6_MAP_SHFT);
+	for (i = start; i <= end; i++, shift += HAL_REO_IX_FIELD_WIDTH)
+		hash_map |= rdi_mapping[i].rd << shift;
 
-	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_0,
-			   val);
+	ath12k_hif_write32(ab, reo_base + reg_add, hash_map);
 }
 
 void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 {
 	struct ath12k_hal *hal = &ab->hal;
-	u32 ring_hash_map1 = 0, ring_hash_map2 = 0, ring_hash_map3 = 0;
 	u32 reo_base = HAL_SEQ_WCSS_UMAC_REO_REG;
 	u32 val, VI_reorder_timeout;
 
@@ -1059,80 +1060,46 @@ void ath12k_wifi8_hal_reo_hw_setup(struct ath12k_base *ab)
 	ath12k_hif_write32(ab, reo_base + HAL_REO1_AGING_THRESH_IX_3(hal),
 			   HAL_DEFAULT_VO_REO_TIMEOUT_USEC);
 
-	ath12k_hal_reo_ring_ctrl_hash_ix0_setup(ab);
+	/* RDI values 0-6 are programmed in IX_0 register */
+	ath12k_wifi8_reo_dest_ring_ctrl_setup(ab, 0, 6,
+					      HAL_REO1_DEST_RING_CTRL_AP_IX_0);
+	/* RDI values 6-12 are programmed in IX_1 register */
+	ath12k_wifi8_reo_dest_ring_ctrl_setup(ab, 6, 12,
+					      HAL_REO1_DEST_RING_CTRL_AP_IX_1);
+	/* RDI values 12-18 are programmed in IX_2 register */
+	ath12k_wifi8_reo_dest_ring_ctrl_setup(ab, 12, 18,
+					      HAL_REO1_DEST_RING_CTRL_AP_IX_2);
+	/* RDI values 18-24 are programmed in IX_3 register */
+	ath12k_wifi8_reo_dest_ring_ctrl_setup(ab, 18, 24,
+					      HAL_REO1_DEST_RING_CTRL_AP_IX_3);
+	/* RDI values 24-30 are programmed in IX_4 register */
+	ath12k_wifi8_reo_dest_ring_ctrl_setup(ab, 24, 30,
+					      HAL_REO1_DEST_RING_CTRL_AP_IX_4);
+	/* RDI values 31 and 32 are programmed in IX_5 register */
+	ath12k_wifi8_reo_dest_ring_ctrl_setup(ab, 30, 31,
+					      HAL_REO1_DEST_RING_CTRL_AP_IX_5);
 
-	/* When hash based routing of rx packet is enabled, 32 entries to map
-	 * the hash values to the ring will be configured. Each hash entry uses
-	 * four bits to map to a particular ring. The ring mapping will be
-	 * 0:TCL, 1:SW1, 2:SW2, 3:SW3, 4:SW4, 5:Release, 6:FW and 7:SW5
-	 * 8:SW6, 9:SW7, 10:SW8, 11:Not used.
-	 */
-	/*
-	 * Below is the re-mapping register (6 of them) to re-map the 5-bit
-	 * reo_destination_indication field in MSDU Detail to a 5-bit REO destination
-	 * ring.
-	 *
-	 * The 5-bit REO destination ring values are defined as:
-	 *  0: SW0      1: SW1      2: SW2     3: SW3     4: SW4
-	 *  5: Release  6: FW(WIFI) 7: SW5     8: SW6     9: SW7
-	 * 10: SW8     11: SW9     12: PPE    13: PPE1   14: PPE2
-	 * 15: FW_MGMT 16: SW10    17: SW11
-	 *
-	 * For example, software can program the register to force the field value = 3
-	 * to dest_ring_mapping_3 so all MSDUs with reo_destination_indication = 3
-	 * will be sent to SW Ring 1.
-	 *
-	 * There are a total of 32 mapping fields (one for each value of the 5-bit
-	 * reo_destination_indication), each occupying 5 bits, spread across 6 registers.
-	 */
-	ring_hash_map1 = HAL_WIFI8_HASH_ROUTING_RING_SW1 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW2 << 5 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW3 << 10 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW4 << 15 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW1 << 20 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW2 << 25;
+	/* Override ring selection for error packets instead of using RDI */
+	ath12k_hif_write32(ab, reo_base + HAL_REO_RXDMA_ERROR_CODE_RBM_OVERRIDE,
+			   0x3FFFFF);
+	ath12k_hif_write32(ab, reo_base + HAL_REO_ERROR_CODE_RBM_OVERRIDE, 0xFFFF);
 
-	ring_hash_map2 = HAL_WIFI8_HASH_ROUTING_RING_SW3 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW4 << 5 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW5 << 10 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW6 << 15 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW7 << 20 |
-		HAL_WIFI8_HASH_ROUTING_RING_SW8 << 25;
-
-	ring_hash_map3 = HAL_WIFI8_HASH_ROUTING_RING_SW9;
-
-	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_2,
-			   ring_hash_map1);
-	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_3,
-			   ring_hash_map2);
-	ath12k_hif_write32(ab, reo_base + HAL_REO1_DEST_RING_CTRL_AP_IX_4,
-			   ring_hash_map3);
-	/*
-	 * Each field in this register set contains the destination ring for the
-	 * corresponding error-detected packet. The error number is shown in
-	 * @enum htt_rx_reo_error_code_enum.
-	 *
-	 * The 5-bit error destination ring values are defined as:
-	 *  0: SW0      1: SW1      2: SW2     3: SW3     4: SW4
-	 *  5: Release  6: FW(WIFI) 7: SW5     8: SW6     9: SW7
-	 * 10: SW8     11: SW9     12: PPE    13: PPE1   14: PPE2
-	 * 15: FW_MGMT 16: SW10    17: SW11
-	 */
-	/* TODO: All errors are routed to SW0 currently. update this accordingly */
-	ath12k_hif_write32(ab, reo_base + HAL_REO_ERROR_DEST_MAPPING_AP_IX_0, 0);
-
-	/* Bypass REO reordering for the MPDU and sends the MPDU to delinker
-	 * and decide on delinking based on RXDMA_ERROR_CODE_REO_DELINK.rxdma_error_code
-	 */
-	/* Enable REO Reordering of MPDU and delinking for xdma_unecrypted_err only
-	 * TODO: CORE DP RX - Revisit this - Does this cause security exception if enabled
-	 * on all VAPs
-	 */
-	ath12k_hif_write32(ab, reo_base + HAL_REO_RXDMA_ERROR_CODE_REORDER, 0x12);
-
-	/* TODO: CORE DP RX - Revisit this */
+	/* Enable delinking for error packets */
 	ath12k_hif_write32(ab, reo_base + HAL_REO_RXDMA_ERROR_CODE_REO_DELINK, 0x3FFFFF);
 	ath12k_hif_write32(ab, reo_base + HAL_REO_ERROR_CODE_REO_DELINK, 0xFFFF);
+	ath12k_hif_write32(ab, reo_base + HAL_BAR_REO_ERROR_CODE_DELINK, 0xFFFF);
+
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_MISC_CFG_1);
+	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_REO_ERR_DELINK_ENABLE);
+	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_RXDMA_ERR_DELINK_ENABLE);
+	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_REO_MSDU_FETCH_OPTIMIZE);
+	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_1_REO_MSDU_LINK_SHARING_EN);
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_MISC_CFG_1, val);
+
+	val = ath12k_hif_read32(ab, reo_base + HAL_REO1_MISC_CFG_2);
+	val |= u32_encode_bits(1, HAL_REO1_MISC_CFG_2_BAR_REO_ERR_DELINK_ENABLE);
+	ath12k_hif_write32(ab, reo_base + HAL_REO1_MISC_CFG_2, val);
+
 }
 
 void ath12k_wifi8_hal_reo_shared_qaddr_cache_clear(struct ath12k_base *ab)
