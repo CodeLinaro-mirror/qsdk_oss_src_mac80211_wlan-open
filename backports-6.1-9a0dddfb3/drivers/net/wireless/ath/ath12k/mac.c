@@ -21880,8 +21880,11 @@ ath12k_mac_update_bss_chan_survey(struct ath12k *ar,
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
+	if (!ar->rx_channel || !channel)
+		return;
+
 	if (!test_bit(WMI_TLV_SERVICE_BSS_CHANNEL_INFO_64, ar->ab->wmi_ab.svc_map) ||
-	    ar->rx_channel != channel)
+	    ar->rx_channel->center_freq != channel->center_freq)
 		return;
 
 	if (ar->scan.state != ATH12K_SCAN_IDLE) {
@@ -21953,7 +21956,8 @@ int ath12k_mac_op_get_survey(struct ieee80211_hw *hw, int idx,
 
 	survey->channel = &sband->channels[idx];
 
-	if (ar->rx_channel == survey->channel)
+	if (ar->rx_channel &&
+	    ar->rx_channel->center_freq == survey->channel->center_freq)
 		survey->filled |= SURVEY_INFO_IN_USE;
 
 	return 0;
@@ -22957,6 +22961,26 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 			ar->supports_6ghz = true;
 			band->n_bitrates = ath12k_a_rates_size;
 			band->bitrates = ath12k_a_rates;
+
+			channels = kmemdup(ath12k_6ghz_channels,
+					   sizeof(ath12k_6ghz_channels),
+					   GFP_KERNEL);
+			if (!channels) {
+				struct ieee80211_supported_band *sbands = ar->mac.sbands;
+
+				kfree(sbands[NL80211_BAND_2GHZ].channels);
+				sbands[NL80211_BAND_2GHZ].channels = NULL;
+				sbands[NL80211_BAND_2GHZ].n_channels = 0;
+				kfree(sbands[NL80211_BAND_5GHZ].channels);
+				sbands[NL80211_BAND_5GHZ].channels = NULL;
+				sbands[NL80211_BAND_5GHZ].n_channels = 0;
+				for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+					kfree(sbands[NL80211_BAND_6GHZ].chan_6g[i]);
+					sbands[NL80211_BAND_6GHZ].chan_6g[i] = NULL;
+				}
+				return -ENOMEM;
+			}
+
 			band->channels = channels;
 			band->n_channels = ARRAY_SIZE(ath12k_6ghz_channels);
 
@@ -22971,8 +22995,6 @@ static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 
 			ath12k_mac_update_freq_range(ar, reg_cap->low_5ghz_chan,
 						     reg_cap->high_5ghz_chan);
-			band->n_channels = band->chan_6g[NL80211_REG_AP_LPI]->n_channels;
-			band->channels = band->chan_6g[NL80211_REG_AP_LPI]->channels;
 			ah->use_6ghz_regd = true;
 			ar->num_channels = ath12k_reg_get_num_chans_in_band(ar, band);
 			if (!bands[NL80211_BAND_6GHZ]) {
@@ -23373,9 +23395,11 @@ static void ath12k_mac_cleanup_unregister(struct ath12k *ar)
 
 	kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
 	kfree(ar->mac.sbands[NL80211_BAND_5GHZ].channels);
+	kfree(ar->mac.sbands[NL80211_BAND_6GHZ].channels);
 
 	ar->mac.sbands[NL80211_BAND_2GHZ].channels = NULL;
 	ar->mac.sbands[NL80211_BAND_5GHZ].channels = NULL;
+	ar->mac.sbands[NL80211_BAND_6GHZ].channels = NULL;
 
 	for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
 		if (!ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i])
@@ -23384,7 +23408,6 @@ static void ath12k_mac_cleanup_unregister(struct ath12k *ar)
 		kfree(ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i]);
 		ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i] = NULL;
 	}
-	ar->mac.sbands[NL80211_BAND_6GHZ].channels = NULL;
 
 	ath12k_mac_cleanup_unregister_extn(ar);
 }
