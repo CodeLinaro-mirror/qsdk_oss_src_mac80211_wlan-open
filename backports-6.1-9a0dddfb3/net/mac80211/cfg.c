@@ -777,7 +777,7 @@ static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 
 		if (key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE &&
 		    !(key->conf.flags & IEEE80211_KEY_FLAG_GENERATE_IV)) {
-			drv_get_key_seq(sdata->local, key, &kseq);
+			drv_get_key_seq(sdata, key, &kseq);
 			iv32 = kseq.tkip.iv32;
 			iv16 = kseq.tkip.iv16;
 		}
@@ -810,7 +810,7 @@ static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 
 		if (key->flags & KEY_FLAG_UPLOADED_TO_HARDWARE &&
 		    !(key->conf.flags & IEEE80211_KEY_FLAG_GENERATE_IV)) {
-			drv_get_key_seq(sdata->local, key, &kseq);
+			drv_get_key_seq(sdata, key, &kseq);
 			memcpy(seq, kseq.ccmp.pn, 6);
 		} else {
 			pn64 = atomic64_read(&key->conf.tx_pn);
@@ -829,7 +829,7 @@ static int ieee80211_get_key(struct wiphy *wiphy, struct net_device *dev,
 			break;
 		if (WARN_ON(key->conf.flags & IEEE80211_KEY_FLAG_GENERATE_IV))
 			break;
-		drv_get_key_seq(sdata->local, key, &kseq);
+		drv_get_key_seq(sdata, key, &kseq);
 		params.seq = kseq.hw.seq;
 		params.seq_len = kseq.hw.seq_len;
 		break;

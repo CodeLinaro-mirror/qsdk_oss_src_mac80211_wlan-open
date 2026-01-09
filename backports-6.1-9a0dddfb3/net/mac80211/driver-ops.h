@@ -395,12 +395,14 @@ static inline int drv_get_stats(struct ieee80211_local *local,
 	return ret;
 }
 
-static inline void drv_get_key_seq(struct ieee80211_local *local,
+static inline void drv_get_key_seq(struct ieee80211_sub_if_data *sdata,
 				   struct ieee80211_key *key,
 				   struct ieee80211_key_seq *seq)
 {
+	struct ieee80211_local *local = sdata->local;
+
 	if (local->ops->get_key_seq)
-		local->ops->get_key_seq(&local->hw, &key->conf, seq);
+		local->ops->get_key_seq(&local->hw, &sdata->vif, &key->conf, seq);
 	trace_drv_get_key_seq(local, &key->conf);
 }
 
