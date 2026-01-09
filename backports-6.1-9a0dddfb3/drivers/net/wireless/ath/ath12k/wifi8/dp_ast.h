@@ -86,4 +86,8 @@ struct ath12k_dp_global_ast_table {
 int ath12k_dp_ast_table_init(struct ath12k_dp_hw_group *dp_hw_grp);
 void ath12k_dp_ast_table_deinit(struct ath12k_dp_hw_group *dp_hw_grp);
 int ath12k_dp_rx_ast_info_setup(struct ath12k_dp *dp);
+int ath12k_dp_ast_entry_create(struct ath12k_dp_hw_group *dp_hw_grp,
+			       struct ath12k_ast_entry_config_params *param);
+void ath12k_dp_ast_entry_delete(struct ath12k_dp_hw_group *dp_hw_grp,
+				u16 ast_index);
 #endif
