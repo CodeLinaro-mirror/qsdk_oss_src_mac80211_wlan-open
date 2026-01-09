@@ -9511,6 +9511,22 @@ static int ath12k_mac_update_key_cache(struct ath12k_vif_cache *cache,
 	return 0;
 }
 
+/* Note: called under rcu_read_lock() */
+void ath12k_mac_op_get_key_seq(struct ieee80211_hw *hw,
+			     struct ieee80211_vif *vif,
+			     struct ieee80211_key_conf *key,
+			     struct ieee80211_key_seq *seq)
+{
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *arvif = rcu_dereference(ahvif->link[key->link_id]);
+
+	if (key->keyidx == 1 || key->keyidx == 2)
+		memcpy(seq->ccmp.pn, arvif->gtk_pn, 6);
+	if (key->keyidx == 6 || key->keyidx == 7)
+		memcpy(seq->ccmp.pn, arvif->bigtk_pn, 6);
+}
+EXPORT_SYMBOL(ath12k_mac_op_get_key_seq);
+
 int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 			  struct ieee80211_vif *vif, struct ieee80211_sta *sta,
 			  struct ieee80211_key_conf *key)
@@ -9611,6 +9627,12 @@ int ath12k_mac_op_set_key(struct ieee80211_hw *hw, enum set_key_cmd cmd,
 	else
 		arvif->keys[key->keyidx] = NULL;
 
+	if (cmd == SET_KEY) {
+		if (key->keyidx == 1 || key->keyidx == 2)
+			arvif->last_installed_gtk_keyix = key->keyidx;
+		if (key->keyidx == 6 || key->keyidx == 7)
+			arvif->last_installed_bigtk_keyix = key->keyidx;
+	}
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_set_key);
@@ -12292,6 +12314,104 @@ send_dp_tx_event:
 
 }
 
+static void ath12k_mac_group_tx_pn_request(struct ath12k *ar,
+					   struct ath12k_link_vif *arvif,
+					   struct ieee80211_key_conf *key)
+{
+	struct ath12k_wmi_peer_pn_arg pn_param = {};
+	struct ieee80211_bss_conf *link_conf = ath12k_mac_get_link_bss_conf(arvif);
+	int ret;
+
+	if (!link_conf) {
+		ath12k_warn(ar->ab, "unable to access link conf for vdev %d link %u\n",
+			    arvif->vdev_id, arvif->link_id);
+		return;
+	}
+
+	pn_param.vdev_id = arvif->vdev_id;
+	pn_param.peer_addr = link_conf->addr;
+	pn_param.key_idx = key->keyidx;
+
+	switch (key->cipher) {
+	case WLAN_CIPHER_SUITE_CCMP:
+	case WLAN_CIPHER_SUITE_CCMP_256:
+		pn_param.key_cipher = WMI_CIPHER_AES_CCM;
+		break;
+	case WLAN_CIPHER_SUITE_GCMP:
+	case WLAN_CIPHER_SUITE_GCMP_256:
+		pn_param.key_cipher = WMI_CIPHER_AES_GCM;
+		break;
+	case WLAN_CIPHER_SUITE_AES_CMAC:
+	case WLAN_CIPHER_SUITE_BIP_CMAC_256:
+		pn_param.key_cipher = WMI_CIPHER_AES_CMAC;
+		break;
+	case WLAN_CIPHER_SUITE_BIP_GMAC_128:
+	case WLAN_CIPHER_SUITE_BIP_GMAC_256:
+		pn_param.key_cipher = WMI_CIPHER_AES_GMAC;
+		break;
+	default:
+		ath12k_warn(ar->ab, "PN fetch for cipher %d not supported\n",
+			    key->cipher);
+		return;
+	}
+
+	ret = ath12k_wmi_send_peer_tx_pn_request_cmd(ar, &pn_param);
+	if (ret)
+		ath12k_warn(ar->ab, "Failed to submit group key PN Request for VDEV %d: %d\n",
+			    arvif->vdev_id, ret);
+}
+
+
+static void ath12k_tx_pn_request(struct ath12k *ar,
+				 struct ath12k_link_vif *arvif,
+				 struct ath12k_link_sta *arsta,
+				 u8 keyix)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
+	struct ath12k_dp_link_peer *peer;
+	struct ieee80211_key_conf *key;
+
+	spin_lock_bh(&dp->dp_lock);
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp,
+							    arvif->vdev_id,
+							    arvif->bssid);
+	if (!peer || !peer->dp_peer) {
+		ath12k_warn(ar->ab, "failed to lookup peer %pM on vdev %d\n",
+			    arvif->bssid, arvif->vdev_id);
+		spin_unlock_bh(&dp->dp_lock);
+		return;
+	}
+
+	key = peer->dp_peer->keys[keyix];
+	if (!key) {
+		ath12k_warn(ar->ab, "failed to find key for index %d on link %d\n",
+			    keyix, arvif->link_id);
+		spin_unlock_bh(&dp->dp_lock);
+		return;
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
+	ath12k_mac_group_tx_pn_request(ar, arvif, key);
+}
+
+static void ath12k_mac_prefetch_group_key_pn(struct ath12k *ar,
+					     struct ath12k_link_vif *arvif,
+					     struct ath12k_link_sta *arsta)
+{
+	struct ieee80211_vif *vif = ath12k_ahvif_to_vif(arvif->ahvif);
+	struct ieee80211_sta *sta = ath12k_ahsta_to_sta(arsta->ahsta);
+
+	if (vif->type != NL80211_IFTYPE_AP)
+		return;
+
+	/* GTK PN fetch */
+	ath12k_tx_pn_request(ar, arvif, arsta, arvif->last_installed_gtk_keyix);
+
+	/* BIGTK PN fetch */
+	if (sta->mfp && arvif->beacon_prot)
+		ath12k_tx_pn_request(ar, arvif, arsta, arvif->last_installed_bigtk_keyix);
+}
+
 static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 					    struct ath12k_link_vif *arvif,
 					    struct ath12k_link_sta *arsta,
@@ -12350,10 +12470,20 @@ static int ath12k_mac_handle_link_sta_state(struct ieee80211_hw *hw,
 		    vif->type == NL80211_IFTYPE_MESH_POINT ||
 		    vif->type == NL80211_IFTYPE_ADHOC) {
 			ret = ath12k_mac_station_assoc(ar, arvif, arsta, false);
-			if (ret)
+			if (ret) {
 				ath12k_warn(ar->ab, "Failed to associate station: %pM\n",
 					    arsta->addr);
+				goto exit;
+			}
 		}
+
+		/* Do an early prefetch of PN for group keys(GTK/BIGTK)
+		 * from FW and store in the link vif
+		 * Do not fail the Association even if for some
+		 * reason PN fetch fails
+		 */
+		ath12k_mac_prefetch_group_key_pn(ar, arvif, arsta);
+
 	/* IEEE80211_STA_ASSOC -> IEEE80211_STA_AUTHORIZED: set peer status as
 	 * authorized
 	 */

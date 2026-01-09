@@ -2241,6 +2241,8 @@ enum wmi_tlv_tag {
 	/* TODO add all the missing cmds */
 	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_CMD = 0x301,
 	WMI_TAG_PDEV_PEER_PKTLOG_FILTER_INFO,
+	WMI_TAG_PEER_TX_PN_REQUEST_CMD = 0x306,
+	WMI_TAG_PEER_TX_PN_RESPONSE_EVENT,
 	WMI_TAG_PEER_CFR_CAPTURE_EVENT = 0x317,
 	WMI_TAG_MUEDCA_PARAMS_CONFIG_EVENT = 0x32a,
 	WMI_TAG_TWT_BTWT_INVITE_STA_CMD,
@@ -3653,6 +3655,13 @@ struct wmi_vdev_start_req_arg {
 	u32 center_freq_device;
 };
 
+struct ath12k_wmi_peer_pn_arg {
+	u32 vdev_id;
+	u8 key_idx;
+	const u8 *peer_addr;
+	u32 key_cipher;
+};
+
 struct ath12k_wmi_peer_create_arg {
 	u8 *peer_addr;
 	u32 peer_type;
@@ -3833,6 +3842,14 @@ struct wmi_peer_reorder_queue_remove_cmd {
 	__le32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
 	__le32 tid_mask;
+} __packed;
+
+struct wmi_peer_tx_pn_request_cmd {
+	__le32 tlv_header;
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 key_cipher;
+	__le32 key_idx;
 } __packed;
 
 enum wmi_bss_chan_info_req_type {
@@ -5435,6 +5452,14 @@ struct wmi_vdev_host_tsf_arg {
 	u32 use_tqm_timer;
 };
 
+struct wmi_peer_tx_pn_event {
+	__le32 vdev_id;
+	struct ath12k_wmi_mac_addr_params peer_macaddr;
+	__le32 key_cipher;
+	u8 pn[16];
+	__le32 key_ix;
+} __packed;
+
 struct wmi_peer_assoc_conf_event {
 	__le32 vdev_id;
 	struct ath12k_wmi_mac_addr_params peer_macaddr;
@@ -5871,6 +5896,14 @@ struct wmi_roam_event {
 	__le32 reason;
 	__le32 rssi;
 } __packed;
+
+struct wmi_peer_tx_pn_arg {
+	u32 vdev_id;
+	u8 mac_addr[ETH_ALEN];
+	u8 key_idx;
+	u32 key_cipher;
+	u8 pn[16];
+};
 
 #define WMI_CHAN_INFO_START_RESP 0
 #define WMI_CHAN_INFO_END_RESP 1
@@ -9189,6 +9222,8 @@ int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
 			struct ieee80211_mutable_offsets *offs,
 			struct sk_buff *bcn,
 			struct ath12k_wmi_bcn_tmpl_ema_arg *ema_args);
+int ath12k_wmi_send_peer_tx_pn_request_cmd(struct ath12k *ar,
+					   struct ath12k_wmi_peer_pn_arg *arg);
 int ath12k_wmi_vdev_down(struct ath12k *ar, u8 vdev_id);
 int ath12k_wmi_vdev_up(struct ath12k *ar, struct ath12k_wmi_vdev_up_params *params);
 int ath12k_wmi_vdev_stop(struct ath12k *ar, u8 vdev_id);

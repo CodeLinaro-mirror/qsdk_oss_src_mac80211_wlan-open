@@ -147,6 +147,10 @@ enum ath12k_supported_bw {
 
 #define ATH12K_NUM_20_MHZ_CHAN_IN_320_MHZ_CHAN	16
 
+void ath12k_mac_op_get_key_seq(struct ieee80211_hw *hw,
+			       struct ieee80211_vif *vif,
+			       struct ieee80211_key_conf *key,
+			       struct ieee80211_key_seq *seq);
 /**
  * struct ath12k_mac_num_chanctxs_arg - Structure to hold channel context
  * @ar: Pointer to ath12k device context

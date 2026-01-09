@@ -684,6 +684,11 @@ struct ath12k_link_vif {
 	int num_peers;
 	struct wiphy_work update_bcn_tx_status_work;
 	struct ath12k_vap_cfg vap_cfg;
+
+	u8 gtk_pn[IEEE80211_MAX_PN_LEN];
+	u8 bigtk_pn[IEEE80211_MAX_PN_LEN];
+	u8 last_installed_gtk_keyix;
+	u8 last_installed_bigtk_keyix;
 };
 
 struct ath12k_dp_link_vif {

@@ -1747,6 +1747,37 @@ int ath12k_wmi_vdev_up(struct ath12k *ar, struct ath12k_wmi_vdev_up_params *para
 	return ret;
 }
 
+int ath12k_wmi_send_peer_tx_pn_request_cmd(struct ath12k *ar,
+					   struct ath12k_wmi_peer_pn_arg *arg)
+{
+	struct wmi_peer_tx_pn_request_cmd *cmd;
+	struct ath12k_wmi_pdev *wmi = ar->wmi;
+	struct sk_buff *skb;
+	int ret;
+
+	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, sizeof(*cmd));
+	if (!skb)
+		return -ENOMEM;
+
+	cmd = (struct wmi_peer_tx_pn_request_cmd *)skb->data;
+
+	cmd->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_PEER_TX_PN_REQUEST_CMD,
+						 sizeof(*cmd));
+	cmd->vdev_id = cpu_to_le32(arg->vdev_id);
+	cmd->key_idx = cpu_to_le32(arg->key_idx);
+	cmd->key_cipher = cpu_to_le32(arg->key_cipher);
+	ether_addr_copy(cmd->peer_macaddr.addr, arg->peer_addr);
+
+	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_TX_PN_REQUEST_CMDID);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to submit WMI_PEER_TX_PN_REQUEST cmd: %d\n",
+			    ret);
+		dev_kfree_skb(skb);
+	}
+
+	return ret;
+}
+
 int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 				    struct ath12k_wmi_peer_create_arg *arg)
 {
@@ -7374,6 +7405,38 @@ static void ath12k_wmi_eht_caps_parse(struct ath12k_pdev *pdev, u32 band,
 	cap_band->eht_cap_info_internal = le32_to_cpu(cap_info_internal);
 }
 
+static int ath12k_pull_peer_tx_pn_ev(struct ath12k_base *ab, struct sk_buff *skb,
+				     struct wmi_peer_tx_pn_arg *peer_tx_pn)
+{
+	const struct wmi_peer_tx_pn_event *ev;
+	const void **tb;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse tlv: %d\n", ret);
+		return ret;
+	}
+
+	ev = tb[WMI_TAG_PEER_TX_PN_RESPONSE_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch peer tx pn ev\n");
+		kfree(tb);
+		return -EPROTO;
+	}
+
+	peer_tx_pn->vdev_id = le32_to_cpu(ev->vdev_id);
+	ether_addr_copy(peer_tx_pn->mac_addr,
+			ev->peer_macaddr.addr);
+	peer_tx_pn->key_idx = le32_to_cpu(ev->key_ix);
+	peer_tx_pn->key_cipher = le32_to_cpu(ev->key_cipher);
+	memcpy(peer_tx_pn->pn, ev->pn, sizeof(ev->pn));
+
+	kfree(tb);
+	return 0;
+}
+
 static int
 ath12k_wmi_tlv_mac_phy_caps_ext_parse(struct ath12k_base *ab,
 				      const struct ath12k_wmi_caps_ext_params *caps,
@@ -10909,6 +10972,44 @@ static void ath12k_peer_assoc_conf_event(struct ath12k_base *ab, struct sk_buff 
 
 	complete(&ar->peer_assoc_done);
 	rcu_read_unlock();
+}
+
+static void ath12k_peer_tx_pn_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	struct wmi_peer_tx_pn_arg peer_tx_pn_arg = {};
+	struct ath12k_link_vif *arvif;
+	struct ath12k *ar;
+
+	if (ath12k_pull_peer_tx_pn_ev(ab, skb, &peer_tx_pn_arg) != 0) {
+		ath12k_warn(ab, "failed to extract peer tx pn event");
+		return;
+	}
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI,
+		   "peer tx pn ev vdev id %d macaddr %pM\n",
+		   peer_tx_pn_arg.vdev_id, peer_tx_pn_arg.mac_addr);
+
+	guard(rcu)();
+	ar = ath12k_mac_get_ar_by_vdev_id(ab, peer_tx_pn_arg.vdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid vdev id in peer tx pn ev %d",
+			    peer_tx_pn_arg.vdev_id);
+		return;
+	}
+
+	arvif = ath12k_mac_get_arvif(ar, peer_tx_pn_arg.vdev_id);
+	if (!arvif) {
+		ath12k_warn(ab, "vif not found for vdev id %d\n",
+			    peer_tx_pn_arg.vdev_id);
+		return;
+	}
+
+	if (peer_tx_pn_arg.key_idx == 1 || peer_tx_pn_arg.key_idx == 2)
+		memcpy(arvif->gtk_pn, peer_tx_pn_arg.pn,
+		       sizeof(peer_tx_pn_arg.pn));
+	if (peer_tx_pn_arg.key_idx == 6 || peer_tx_pn_arg.key_idx == 7)
+		memcpy(arvif->bigtk_pn, peer_tx_pn_arg.pn,
+		       sizeof(peer_tx_pn_arg.pn));
 }
 
 static void
@@ -15785,6 +15886,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	case WMI_PEER_ASSOC_CONF_EVENTID:
 		ath12k_peer_assoc_conf_event(ab, skb);
+		break;
+	case WMI_PEER_TX_PN_RESPONSE_EVENTID:
+		ath12k_peer_tx_pn_event(ab, skb);
 		break;
 	case WMI_UPDATE_STATS_EVENTID:
 		ath12k_update_stats_event(ab, skb);
