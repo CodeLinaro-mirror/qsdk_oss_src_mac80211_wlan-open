@@ -7194,10 +7194,16 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 	if (!params)
 		return -ENOMEM;
 
-	err = nl80211_parse_beacon(rdev, info->attrs, &params->beacon,
-				   info->extack);
-	if (err)
-		goto out;
+	/* Skip beacon parsing for scan radio */
+	if (wdev_is_scan_radio(wdev)) {
+		/* Initialize beacon to empty for scan radio */
+		memset(&params->beacon, 0, sizeof(params->beacon));
+	} else {
+		err = nl80211_parse_beacon(rdev, info->attrs, &params->beacon,
+					   info->extack);
+		if (err)
+			goto out;
+	}
 
 	params->beacon_interval =
 		nla_get_u32(info->attrs[NL80211_ATTR_BEACON_INTERVAL]);
@@ -7308,7 +7314,9 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 			goto out;
 
 		/* 6 GHz Frequency requires 6 GHz power mode */
-		if (params->chandef.chan->band == NL80211_BAND_6GHZ) {
+		/* Skip for scan radio as it does not require power mode */
+		if (params->chandef.chan->band == NL80211_BAND_6GHZ &&
+		    !wdev_is_scan_radio(wdev)) {
 			if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
 				params->he_6ghz_power_type =
 				    nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
