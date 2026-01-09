@@ -12,6 +12,8 @@
 #include "core.h"
 
 #define QCN9274_DEVICE_ID       0x1109
+#define QCN9625_DEVICE_ID       0x1113
+
 #define MHI_POWER_ON_DEBUG_TIMEOUT_MS 7000
 #define PCIE_SOC_GLOBAL_RESET			0x3008
 #define PCIE_SOC_GLOBAL_RESET_V			1
