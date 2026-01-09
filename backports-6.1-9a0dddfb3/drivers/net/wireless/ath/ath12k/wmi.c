@@ -10592,6 +10592,8 @@ static void ath12k_scan_event(struct ath12k_base *ab, struct sk_buff *skb)
 		break;
 	}
 
+	ath12k_update_offchan_ts_extn(ar, scan_ev.event_type);
+
 	spin_unlock_bh(&ar->data_lock);
 
 	rcu_read_unlock();
@@ -10783,6 +10785,8 @@ static void ath12k_chan_info_event(struct ath12k_base *ab, struct sk_buff *skb)
 		survey->time_busy = div_u64(le32_to_cpu(ch_info_ev.rx_clear_count),
 					    cc_freq_hz);
 	}
+	ath12k_update_offchan_stats_extn(ar, le32_to_cpu(ch_info_ev.freq),
+					 &ch_info_ev);
 exit:
 	spin_unlock_bh(&ar->data_lock);
 	rcu_read_unlock();
