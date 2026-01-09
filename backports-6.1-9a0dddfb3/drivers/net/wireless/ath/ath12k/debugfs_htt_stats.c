@@ -496,7 +496,15 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 	len += scnprintf(buf + len, buf_len - len,
 			 "HTT_TXBF_OFDMA_BE_NDPA_STATS_TLV:\n");
 
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndpa_queued =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_queued) {
 			null_output = 0;
@@ -505,13 +513,13 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_queued);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndpa_queued = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
-
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndpa_tried =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_tried) {
 			null_output = 0;
@@ -520,13 +528,13 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_tried);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndpa_tried = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
-
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndpa_flushed =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_flushed) {
 			null_output = 0;
@@ -535,13 +543,13 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_flushed);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndpa_flushed = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
-
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndpa_err =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_err) {
 			null_output = 0;
@@ -550,10 +558,10 @@ ath12k_htt_print_txbf_ofdma_be_ndpa_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndpa[i].be_ofdma_ndpa_err);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndpa_err = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	stats_req->buf_len = len;
 }
@@ -571,7 +579,16 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 	u32 num_elements = htt_stats_buf->num_elems_be_ndp_arr;
 
 	len += scnprintf(buf + len, buf_len - len, "HTT_TXBF_OFDMA_BE_NDP_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndp_queued =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndp[i].be_ofdma_ndp_queued) {
 			null_output = 0;
@@ -580,12 +597,13 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndp[i].be_ofdma_ndp_queued);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndp_queued = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndp_flushed =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndp[i].be_ofdma_ndp_flushed) {
 			null_output = 0;
@@ -594,12 +612,13 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndp[i].be_ofdma_ndp_flushed);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndp_flushed = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndp_err =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndp[i].be_ofdma_ndp_err) {
 			null_output = 0;
@@ -608,12 +627,13 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndp[i].be_ofdma_ndp_err);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndp_err = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_ndp_tried =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_ndp[i].be_ofdma_ndp_tried) {
 			null_output = 0;
@@ -622,11 +642,10 @@ ath12k_htt_print_txbf_ofdma_be_ndp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_ndp[i].be_ofdma_ndp_tried);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_ndp_tried = %s\n", "NONE");
-	}
-	len += scnprintf(buf + len, buf_len - len, "\n");
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	stats_req->buf_len = len;
 }
@@ -644,7 +663,16 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 	u32 num_elements = htt_stats_buf->num_elems_be_brp_arr;
 
 	len += scnprintf(buf + len, buf_len - len, "HTT_TXBF_OFDMA_BE_BRP_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brpoll_queued =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brpoll_queued) {
 			null_output = 0;
@@ -653,12 +681,13 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brpoll_queued);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brpoll_queued = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brpoll_tried =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brpoll_tried) {
 			null_output = 0;
@@ -667,12 +696,13 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brpoll_tried);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brpoll_tried = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brpoll_flushed =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brpoll_flushed) {
 			null_output = 0;
@@ -681,12 +711,13 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brpoll_flushed);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brpoll_flushed = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brp_err =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brp_err) {
 			null_output = 0;
@@ -695,11 +726,13 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brp_err);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brp_err = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_brp_err_num_cbf_rcvd =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_brp[i].be_ofdma_brp_err_num_cbf_rcvd) {
 			null_output = 0;
@@ -708,10 +741,11 @@ ath12k_htt_print_txbf_ofdma_be_brp_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_brp[i].be_ofdma_brp_err_num_cbf_rcvd);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_brp_err_num_cbf_rcvd = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
 	stats_req->buf_len = len;
 }
 
@@ -730,7 +764,15 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 	len += scnprintf(buf + len, buf_len - len,
 			 "HTT_TXBF_OFDMA_BE_STEER_STATS_TLV:\n");
 
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_ppdu_steer =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_ppdu_steer) {
 			null_output = 0;
@@ -739,12 +781,13 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_ppdu_steer);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_ppdu_steer = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_ppdu_ol =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_ppdu_ol) {
 			null_output = 0;
@@ -753,12 +796,13 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_ppdu_ol);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_ppdu_ol = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_usrs_prefetch =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_usrs_prefetch) {
 			null_output = 0;
@@ -767,12 +811,13 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_usrs_prefetch);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_usrs_prefetch = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_usrs_sound =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_usrs_sound) {
 			null_output = 0;
@@ -781,12 +826,13 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_usrs_sound);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_usrs_sound = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "be_ofdma_num_usrs_force_sound =");
 	for (i = 0; i < num_elements; i++) {
 		if (htt_stats_buf->be_steer[i].be_ofdma_num_usrs_force_sound) {
 			null_output = 0;
@@ -795,10 +841,10 @@ ath12k_htt_print_txbf_ofdma_be_steer_stats_tlv(const void *tag_buf,
 				htt_stats_buf->be_steer[i].be_ofdma_num_usrs_force_sound);
 		}
 	}
-	if (null_output) {
-		len += scnprintf(buf + len, buf_len - len,
-				 "be_ofdma_num_usrs_force_sound = %s\n", "NONE");
-	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
 
 	stats_req->buf_len = len;
 }
@@ -825,6 +871,419 @@ ath12k_htt_print_txbf_ofdma_be_steer_mpdu_stats_tlv(const void *tag_buf, u16 tag
 			 le32_to_cpu(stats_buf->be_ofdma_sifs_steer_mpdus_tried));
 	len += scnprintf(buf + len, buf_len - len, "sifs_steer_mpdus_failed = %u\n",
 			 le32_to_cpu(stats_buf->be_ofdma_sifs_steer_mpdus_failed));
+
+	stat_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_ndpa_stats_tlv(const void *tag_buf,
+					      struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_txbf_ofdma_bn_ndpa_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int i, null_output;
+	u32 num_elements = le32_to_cpu(htt_stats_buf->num_elems_bn_ndpa_arr);
+
+	len += scnprintf(buf + len, buf_len - len,
+			 "HTT_TXBF_OFDMA_BN_NDPA_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndpa_queued =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_queued) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_queued));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndpa_tried =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_tried) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_tried));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndpa_flushed =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_flushed) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_flushed));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndpa_err =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_err) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndpa[i].bn_ofdma_ndpa_err));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_ndp_stats_tlv(const void *tag_buf,
+					     struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_txbf_ofdma_bn_ndp_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int i, null_output;
+
+	u32 num_elements = le32_to_cpu(htt_stats_buf->num_elems_bn_ndp_arr);
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_TXBF_OFDMA_BN_NDP_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndp_queued =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_queued) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_queued));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndp_flushed =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_flushed) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_flushed));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndp_err =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_err) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_err));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_ndp_tried =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_tried) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_ndp[i].bn_ofdma_ndp_tried));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_brp_stats_tlv(const void *tag_buf,
+					     struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_txbf_ofdma_bn_brp_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int i, null_output;
+
+	u32 num_elements = le32_to_cpu(htt_stats_buf->num_elems_bn_brp_arr);
+
+	len += scnprintf(buf + len, buf_len - len, "HTT_TXBF_OFDMA_BN_BRP_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brpoll_queued =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_queued) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_queued));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brpoll_tried =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_tried) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_tried));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brpoll_flushed =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_flushed) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brpoll_flushed));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brp_err =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brp_err) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brp_err));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_brp_err_num_cbf_rcvd =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_brp[i].bn_ofdma_brp_err_num_cbf_rcvd) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_brp[i].bn_ofdma_brp_err_num_cbf_rcvd));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_steer_stats_tlv(const void *tag_buf,
+					       struct debug_htt_stats_req *stats_req)
+{
+	const struct htt_txbf_ofdma_bn_steer_stats_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+	int i, null_output;
+
+	u32 num_elements = le32_to_cpu(htt_stats_buf->num_elems_bn_steer_arr);
+
+	len += scnprintf(buf + len, buf_len - len,
+			"HTT_TXBF_OFDMA_BN_STEER_STATS_TLV:\n");
+
+	if (num_elements > ATH12K_HTT_TX_PDEV_MAX_TXBF_OFDMA_USERS) {
+		len += scnprintf(buf + len, buf_len - len,
+				 "Invalid num_elements: %u\n", num_elements);
+		stats_req->buf_len = len;
+		return;
+	}
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_ppdu_steer =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_ppdu_steer) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_ppdu_steer));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_ppdu_ol =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_ppdu_ol) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_ppdu_ol));
+		}
+	}
+
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_usrs_prefetch =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_prefetch) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_prefetch));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_usrs_sound =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_sound) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_sound));
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	null_output = 1;
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_num_usrs_force_sound =");
+	for (i = 0; i < num_elements; i++) {
+		if (htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_force_sound) {
+			null_output = 0;
+			len += scnprintf(buf + len, buf_len - len,
+				" %u:%u,", i + 1,
+				le32_to_cpu
+				(htt_stats_buf->bn_steer[i].bn_ofdma_num_usrs_force_sound)
+				);
+		}
+	}
+	if (null_output)
+		len += scnprintf(buf + len, buf_len - len, " %s\n", "NONE");
+	else
+		len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static inline void
+ath12k_htt_print_txbf_ofdma_bn_steer_mpdu_stats_tlv(const void *tag_buf, u16 tag_len,
+						    struct debug_htt_stats_req *stat_req)
+{
+	const struct ath12k_htt_txbf_ofdma_bn_steer_mpdu_stats_tlv *stats_buf = tag_buf;
+	u8 *buf = stat_req->buf;
+	u32 len = stat_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	if (tag_len < sizeof(*stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+			"HTT_TXBF_OFDMA_BN_STEER_MPDU_STATS_TLV:\n");
+	len += scnprintf(buf + len, buf_len - len, "rbo_steer_mpdus_tried = %u\n",
+			le32_to_cpu(stats_buf->bn_ofdma_rbo_steer_mpdus_tried));
+	len += scnprintf(buf + len, buf_len - len, "rbo_steer_mpdus_failed = %u\n",
+			le32_to_cpu(stats_buf->bn_ofdma_rbo_steer_mpdus_failed));
+	len += scnprintf(buf + len, buf_len - len, "sifs_steer_mpdus_tried = %u\n",
+			le32_to_cpu(stats_buf->bn_ofdma_sifs_steer_mpdus_tried));
+	len += scnprintf(buf + len, buf_len - len, "sifs_steer_mpdus_failed = %u\n",
+			le32_to_cpu(stats_buf->bn_ofdma_sifs_steer_mpdus_failed));
 
 	stat_req->buf_len = len;
 }
@@ -4621,6 +5080,9 @@ ath12k_htt_print_tx_selfgen_cmn_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "smart_basic_trig_sch_histogram",
 			 htt_stats_buf->smart_basic_trig_sch_histogram,
 			ATH12K_HTT_MAX_NUM_SBT_INTR, "\n\n");
+	len += print_array_to_buf(buf, len, "ru_alloc_mode_cnt = ",
+			 htt_stats_buf->ru_alloc_mode_cnt,
+			ATH12K_HTT_RU_ALLOC_NUM_MODES, "\n\n");
 
 	stats_req->buf_len = len;
 }
@@ -9826,6 +10288,31 @@ ath12k_htt_print_txbf_ofdma_be_parbw_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->be_ofdma_parbw_cv));
 	len += scnprintf(buf + len, buf_len - len, "be_ofdma_total_cv = %u\n",
 			 le32_to_cpu(htt_stats_buf->be_ofdma_total_cv));
+	len += scnprintf(buf + len, buf_len - len, "\n");
+
+	stats_req->buf_len = len;
+}
+
+static void
+ath12k_htt_print_txbf_ofdma_bn_parbw_tlv(const void *tag_buf, u16 tag_len,
+					 struct debug_htt_stats_req *stats_req)
+{
+	const struct ath12k_htt_stats_txbf_ofdma_bn_parbw_tlv *htt_stats_buf = tag_buf;
+	u8 *buf = stats_req->buf;
+	u32 len = stats_req->buf_len;
+	u32 buf_len = ATH12K_HTT_STATS_BUF_SIZE;
+
+	if (tag_len < sizeof(*htt_stats_buf))
+		return;
+
+	len += scnprintf(buf + len, buf_len - len,
+						"HTT_STATS_TXBF_OFDMA_BN_PARBW_TAG:\n");
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_parbw_user_snd = %u\n",
+			 le32_to_cpu(htt_stats_buf->bn_ofdma_parbw_user_snd));
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_parbw_cv = %u\n",
+			 le32_to_cpu(htt_stats_buf->bn_ofdma_parbw_cv));
+	len += scnprintf(buf + len, buf_len - len, "bn_ofdma_total_cv = %u\n",
+			 le32_to_cpu(htt_stats_buf->bn_ofdma_total_cv));
 
 	stats_req->buf_len = len;
 }
@@ -12237,6 +12724,31 @@ static int ath12k_dbg_htt_ext_stats_parse(struct ath12k_base *ab,
 	case HTT_STATS_TX_PDEV_BN_UL_MU_OFDMA_STATS_TAG:
 		ath12k_htt_print_tx_pdev_bn_ul_mu_ofdma_sch_stats_tlv(tag_buf, len,
 								      stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_NDPA_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_ndpa_stats_tlv(tag_buf, stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_NDP_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_ndp_stats_tlv(tag_buf, stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_BRP_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_brp_stats_tlv(tag_buf, stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_STEER_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_steer_stats_tlv(tag_buf, stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_STEER_MPDU_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_steer_mpdu_stats_tlv(tag_buf, len,
+								    stats_req);
+		break;
+
+	case HTT_STATS_TXBF_OFDMA_BN_PARBW_TAG:
+		ath12k_htt_print_txbf_ofdma_bn_parbw_tlv(tag_buf, len, stats_req);
 		break;
 
 	case HTT_STATS_FTM_TAG:
