@@ -7649,6 +7649,37 @@ static void ath12k_mac_fill_reg_tpc(struct ath12k *ar, struct wireless_dev *wdev
 	}
 }
 
+static void
+ath12k_mac_sta_bss_color_collision_config(struct ath12k *ar,
+					  struct ath12k_link_vif *arvif)
+{
+	bool collision_detect;
+	int ret;
+
+	collision_detect = ath12k_cfg_get(ar->ab,
+					  ATH12K_CFG_STA_BSS_COLOR_COLLISION_DETECTION);
+	ret = ath12k_wmi_send_bss_color_change_enable_cmd(ar,
+							  arvif->vdev_id,
+							  collision_detect);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to enable bss color change on vdev %i: %d\n",
+			    arvif->vdev_id,  ret);
+		return;
+	}
+
+	if (!collision_detect)
+		return;
+
+	ret = ath12k_wmi_obss_color_cfg_cmd(ar,
+					    arvif->vdev_id,
+					    0,
+					    ATH12K_BSS_COLOR_STA_PERIODS,
+					    1);
+	if (ret)
+		ath12k_warn(ar->ab, "failed to set bss color collision on vdev %i: %d\n",
+			    arvif->vdev_id,  ret);
+}
+
 void ath12k_mac_bss_info_changed(struct ath12k *ar,
 				struct ath12k_link_vif *arvif,
 				struct ieee80211_bss_conf *info,
@@ -8098,20 +8129,8 @@ skip_pending_cs_up:
 					 param_value, arvif->vdev_id);
 
 		} else if (vif->type == NL80211_IFTYPE_STATION) {
-			ret = ath12k_wmi_send_bss_color_change_enable_cmd(ar,
-									  arvif->vdev_id,
-									  1);
-			if (ret)
-				ath12k_warn(ar->ab, "failed to enable bss color change on vdev %i: %d\n",
-					    arvif->vdev_id,  ret);
-			ret = ath12k_wmi_obss_color_cfg_cmd(ar,
-							    arvif->vdev_id,
-							    0,
-							    ATH12K_BSS_COLOR_STA_PERIODS,
-							    1);
-			if (ret)
-				ath12k_warn(ar->ab, "failed to set bss color collision on vdev %i: %d\n",
-					    arvif->vdev_id,  ret);
+			ath12k_mac_sta_bss_color_collision_config(ar,
+								  arvif);
 		}
 	}
 
