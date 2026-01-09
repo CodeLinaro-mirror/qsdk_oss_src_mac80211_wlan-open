@@ -209,6 +209,9 @@ void ath12k_pcic_free_ext_irq(struct ath12k_base *ab)
 {
 	int i, j;
 
+	if (ab->powered_off)
+		return;
+
 	for (i = 0; i < ATH12K_EXT_IRQ_GRP_NUM_MAX; i++) {
 		struct ath12k_ext_irq_grp *irq_grp = &ab->ext_irq_grp[i];
 
@@ -611,7 +614,7 @@ static void ath12k_pcic_sync_ce_irqs(struct ath12k_base *ab)
 
 void ath12k_pcic_ce_irq_disable_sync(struct ath12k_base *ab)
 {
-	if (ab->pm_suspend)
+	if (ab->powered_off)
 		return;
 
 	ath12k_pcic_ce_irqs_disable(ab);
@@ -874,7 +877,7 @@ void ath12k_pcic_ext_irq_disable(struct ath12k_base *ab)
 {
 
 	if (!test_bit(ATH12K_FLAG_EXT_IRQ_ENABLED, &ab->dev_flags) ||
-	    ab->pm_suspend)
+	    ab->powered_off)
 		return;
 
 	__ath12k_pcic_ext_irq_disable(ab);

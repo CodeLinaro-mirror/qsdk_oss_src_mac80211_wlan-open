@@ -4130,7 +4130,7 @@ void ath12k_qmi_free_target_mem_chunk(struct ath12k_base *ab)
 	int i, mlo_idx;
 
 	if (ath12k_check_erp_power_down(ag) &&
-	    ab->pm_suspend)
+	    ab->powered_off)
 		return;
 
 	for (i = 0, mlo_idx = 0; i < ab->qmi.mem_seg_count; i++) {
@@ -5727,7 +5727,7 @@ void ath12k_qmi_firmware_stop(struct ath12k_base *ab)
 {
 	int ret;
 
-	if (ath12k_check_erp_power_down(ab->ag) && ab->pm_suspend)
+	if (!test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags))
 		return;
 
 	clear_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags);
@@ -5881,7 +5881,7 @@ int ath12k_qmi_process_coldboot_calibration(struct ath12k_base *ab)
 	ath12k_info(ab, "power down to restart firmware in mission mode\n");
 	ath12k_qmi_firmware_stop(ab);
 
-	if (!ab->pm_suspend)
+	if (!ab->powered_off)
 		ath12k_hif_power_down(ab, false);
 
 	ath12k_qmi_free_target_mem_chunk(ab);
@@ -6619,7 +6619,8 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 		case ATH12K_QMI_EVENT_FW_READY:
 			clear_bit(ATH12K_FLAG_QMI_FAIL, &ab->dev_flags);
 			if (test_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE, &ab->dev_flags) ||
-			    ath12k_check_erp_power_down(ab->ag)) {
+			    (ath12k_check_erp_power_down(ab->ag) &&
+			    ath12k_hw_group_recovery_in_progress(ab->ag))) {
 				if (ab->is_reset)
 					ath12k_hal_dump_srng_stats(ab);
 
@@ -6637,6 +6638,12 @@ static void ath12k_qmi_driver_event_work(struct work_struct *work)
 			} else {
 				clear_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags);
 				clear_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags);
+				if (ath12k_check_erp_power_down(ab->ag)) {
+					ret = ath12k_hal_srng_init(ab);
+					if (ret)
+						break;
+				}
+
 				ret = ath12k_core_qmi_firmware_ready(ab, NULL);
 				if (!ret)
 					set_bit(ATH12K_FLAG_QMI_FW_READY_COMPLETE,

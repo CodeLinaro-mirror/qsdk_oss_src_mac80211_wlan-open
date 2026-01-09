@@ -1776,6 +1776,8 @@ struct ath12k_hw_group {
 	bool wsi_remap_in_progress;
 	struct completion peer_cleanup_complete;
 	u64 wsi_peer_clean_timeout;
+	struct completion power_up;
+	bool mlo_teardown;
 };
 
 /* Holds WSI info specific to each device, excluding WSI group info */
@@ -2094,9 +2096,8 @@ struct ath12k_base {
 	struct work_struct recovery_work;
 	struct ath12k_dp_umac_reset dp_umac_reset;
 	bool early_cal_support;
-	bool pm_suspend;
+	bool powered_off;
 	bool powerup_triggered;
-	struct completion power_up;
 	struct ath12k_wsi_info bypass_wsi_info;
 	bool is_bypassed;
 	enum ath12k_wsi_bypass_action wsi_remap_state;
@@ -2263,7 +2264,7 @@ struct reserved_mem *ath12k_core_get_reserved_mem_by_name(struct ath12k_base *ab
 						  const char* name);
 u8 ath12k_core_get_total_num_vdevs(struct ath12k_base *ab);
 bool ath12k_core_is_vdev_limit_reached(struct ath12k *ar, bool is_bridge_vdev);
-void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag);
+void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_mode);
 int ath12k_core_power_up(struct ath12k_hw_group *ag);
 
 int ath12k_core_add_dl_qos(struct ath12k_base *ab,
@@ -2633,4 +2634,6 @@ void ath12k_debug_print_dcs_wlan_intf_stats(struct ath12k_base *ab,
 					    struct wmi_dcs_wlan_interference_stats *info);
 struct ath12k_hw_group *ath12k_core_get_ag(void);
 void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab);
+void ath12k_core_pdev_deinit(struct ath12k_base *ab);
+int ath12k_core_radio_start(struct ath12k_hw *ah);
 #endif /* _CORE_H_ */

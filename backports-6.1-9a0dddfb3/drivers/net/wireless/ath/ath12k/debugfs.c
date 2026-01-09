@@ -6741,7 +6741,7 @@ void ath12k_send_fw_hang_cmd(struct ath12k_base *ab,
 			if (ab->recovery_mode_address) {
 
 				if (ath12k_check_erp_power_down(ag) &&
-				    ab->pm_suspend)
+				    ab->powered_off)
 					continue;
 
 				ath12k_debug_multipd_wmi_pdev_set_param(ab, value);
