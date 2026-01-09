@@ -14,9 +14,8 @@
 #include "dp_cmn.h"
 
 
-void ath12k_debugfs_sta_add_tx_stats( struct ath12k_dp_link_peer *peer,
-				     struct ath12k_per_peer_tx_stats *peer_stats,
-				     u8 legacy_rate_idx)
+void ath12k_debugfs_sta_add_tx_stats(struct ath12k_dp_link_peer *peer,
+				     struct ath12k_per_peer_tx_stats *peer_stats)
 {
 	struct rate_info *txrate = &peer->txrate;
 	struct ath12k_htt_tx_stats *tx_stats = peer->peer_stats.tx_stats;
@@ -61,7 +60,7 @@ void ath12k_debugfs_sta_add_tx_stats( struct ath12k_dp_link_peer *peer,
 		STATS_OP_FMT(RETRY).ht[0][mcs] += peer_stats->retry_bytes;
 		STATS_OP_FMT(RETRY).ht[1][mcs] += peer_stats->retry_pkts;
 	} else {
-		mcs = legacy_rate_idx;
+		mcs = peer_stats->rate_idx;
 
 		STATS_OP_FMT(SUCC).legacy[0][mcs] += peer_stats->succ_bytes;
 		STATS_OP_FMT(SUCC).legacy[1][mcs] += peer_stats->succ_pkts;

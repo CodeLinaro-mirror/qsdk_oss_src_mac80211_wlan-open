@@ -165,7 +165,6 @@ struct ath12k_pdev_dp {
 
 	/* Protects ppdu stats */
 	spinlock_t ppdu_list_lock;
-	struct ath12k_per_peer_tx_stats peer_tx_stats;
 	struct list_head ppdu_stats_info;
 
 	bool dp_mon_pdev_configured;

@@ -1691,8 +1691,10 @@ struct htt_ppdu_user_stats {
 	u16 delay_ba;
 	u32 tlv_flags;
 	bool is_valid_peer_id;
+	u8 processed_tlv_bitmap;
 	u8 ru_tones;
 	u8 nss;
+	u32 tlv_bitmap;
 	struct htt_ppdu_stats_user_rate rate;
 	struct htt_ppdu_stats_usr_cmpltn_cmn cmpltn_cmn;
 	struct htt_ppdu_stats_usr_cmpltn_ack_ba_status ack_ba;
@@ -1719,6 +1721,7 @@ struct htt_ppdu_stats_info {
 	u32 delay_ba;
 	u32 bar_num_users;
 	u8 max_users;
+	u8 ack_ba_done;
 	struct htt_ppdu_stats ppdu_stats;
 	u32 usr_ru_tones_sum;
 	u16 htt_frame_type;
