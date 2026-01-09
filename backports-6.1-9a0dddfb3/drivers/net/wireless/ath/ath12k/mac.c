@@ -11229,9 +11229,9 @@ static int ath12k_mac_station_disassoc(struct ath12k *ar,
 	spin_lock_bh(&arvif->ar->data_lock);
 
 	if (!arvif->num_stations) {
-		ath12k_warn(ar->ab,
-			    "mac station disassoc for vdev %u which does not have any station connected\n",
-			    arvif->vdev_id);
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+			   "mac station disassoc for vdev %u which does not have any station connected\n",
+			   arvif->vdev_id);
 	} else {
 		arvif->num_stations--;
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
@@ -11738,8 +11738,9 @@ static int ath12k_mac_station_unauthorize(struct ath12k *ar,
 	 */
 	ret = ath12k_clear_peer_keys(arvif, arsta->addr);
 	if (ret) {
-		ath12k_warn(ar->ab, "failed to clear all peer keys for vdev %i: %d\n",
-			    arvif->vdev_id, ret);
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+			   "failed to clear all peer keys for vdev %i: %d\n",
+			   arvif->vdev_id, ret);
 		return ret;
 	}
 
@@ -18306,8 +18307,9 @@ static int ath12k_mac_ampdu_action(struct ieee80211_hw *hw,
 	}
 
 	if (ret)
-		ath12k_warn(ar->ab, "unable to perform ampdu action %d for vif %pM link %u ret %d\n",
-			    params->action, vif->addr, link_id, ret);
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+			   "unable to perform ampdu action %d for vif %pM link %u ret %d\n",
+			   params->action, vif->addr, link_id, ret);
 
 	return ret;
 }

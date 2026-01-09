@@ -124,8 +124,9 @@ void ath12k_dp_peer_cleanup(struct ath12k *ar, int vdev_id, const u8 *addr)
 	spin_lock_bh(&dp->dp_lock);
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
 	if (!peer || !peer->dp_peer) {
-		ath12k_warn(ab, "failed to lookup peer %pM on vdev %d\n",
-			    addr, vdev_id);
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "failed to lookup peer %pM on vdev %d\n",
+			   addr, vdev_id);
 		spin_unlock_bh(&dp->dp_lock);
 		return;
 	}
