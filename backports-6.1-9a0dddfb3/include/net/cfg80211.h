@@ -2995,6 +2995,8 @@ struct ieee80211_txq_params {
 	u16 cwmin;
 	u16 cwmax;
 	u8 aifs;
+	u8 acm;
+	u8 noack;
 	int link_id;
 };
 

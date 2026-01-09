@@ -197,6 +197,7 @@ struct ieee80211_tx_queue_params {
 	u16 cw_max;
 	u8 aifs;
 	bool acm;
+	u8 noack;
 	bool uapsd;
 	bool mu_edca;
 	struct ieee80211_he_mu_edca_param_ac_rec mu_edca_param_rec;
