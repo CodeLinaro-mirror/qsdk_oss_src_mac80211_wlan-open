@@ -7295,6 +7295,23 @@ struct wireless_dev {
 	u8 vap_submode;
 };
 
+#define WDEV_VAP_SUBMODE_NONE  0
+#define WDEV_VAP_SUBMODE_MESH  1
+#define WDEV_VAP_SUBMODE_SCAN  2
+
+/**
+ * wdev_is_scan_radio - Check if wireless_dev is a scan radio interface
+ * @wdev: wireless device pointer
+ *
+ * Checks for AP mode with submode SCAN (value = 2)
+ */
+static inline bool wdev_is_scan_radio(const struct wireless_dev *wdev)
+{
+	return wdev &&
+	       wdev->iftype == NL80211_IFTYPE_AP &&
+	       wdev->vap_submode == WDEV_VAP_SUBMODE_SCAN;
+}
+
 static inline const u8 *wdev_address(struct wireless_dev *wdev)
 {
 	if (wdev->netdev)
