@@ -17308,7 +17308,10 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	}
 
 	ath12k_mac_ap_ps_recalc(ar);
-	ath12k_dp_vdev_tx_attach(ar, arvif);
+
+	/* for scan radio tx attach is not required as there is no tx from datapath */
+	if (!ath12k_is_scan_radio(ar))
+		ath12k_dp_vdev_tx_attach(ar, arvif);
 
 	if (vif->type == NL80211_IFTYPE_STATION &&
 	    (wdev && wdev->use_4addr)) {
@@ -17906,15 +17909,17 @@ err_vdev_del:
 		     ath12k_mac_vif_txmgmt_idr_remove, vif);
 	spin_unlock_bh(&ar->data_lock);
 
-	dp = ath12k_ab_to_dp(ab);
-	ath12k_mac_vif_unref(dp, vif);
-	if (dp->bank_profiles) {
-		dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
-		ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
+	if (!ath12k_is_scan_radio(ar)) {
+		dp = ath12k_ab_to_dp(ab);
+		ath12k_mac_vif_unref(dp, vif);
+		if (dp->bank_profiles) {
+			dp_link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
+			ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
 
-		if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)
-			ath12k_dp_tx_put_bank_profile(dp,
-						      arvif->splitphy_ds_bank_id);
+			if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID)
+				ath12k_dp_tx_put_bank_profile(dp,
+							      arvif->splitphy_ds_bank_id);
+		}
 	}
 
 	arvif->key_cipher = INVALID_CIPHER;
