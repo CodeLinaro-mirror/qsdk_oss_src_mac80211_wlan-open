@@ -4847,7 +4847,12 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		link_data->csa.power_mode = IEEE80211_REG_UNSET_AP;
 
 	link_data->csa.chanreq = chanreq;
-	link_conf->csa_active = true;
+	if (wdev_is_scan_radio((const struct wireless_dev *)&sdata->wdev)) {
+		/* scan radio channel change does not require csa */
+		link_conf->csa_active = false;
+	} else {
+		link_conf->csa_active = true;
+	}
 
 	if (params->block_tx)
 		ieee80211_vif_block_queues_csa(sdata);

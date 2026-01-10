@@ -12025,7 +12025,7 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 	unsigned int link_id = nl80211_link_id(info->attrs);
 	struct net_device *dev = info->user_ptr[1];
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
-	struct cfg80211_csa_settings params;
+	struct cfg80211_csa_settings params = {};
 	struct nlattr **csa_attrs = NULL;
 	int err;
 	bool need_new_beacon = false;
@@ -12046,7 +12046,10 @@ static int nl80211_channel_switch(struct sk_buff *skb, struct genl_info *info)
 		 * requiring DFS will be rejected.
 		 */
 		need_handle_dfs_flag = false;
-
+		if (wdev_is_scan_radio(wdev)) {
+			/* Beacon parsing is not required for scan radio */
+			goto skip_beacons;
+		}
 		/* useless if AP is not running */
 		if (!wdev->links[link_id].ap.beacon_interval)
 			return -ENOTCONN;
@@ -12137,14 +12140,16 @@ skip_beacons:
 	if (err)
 		goto free;
 
-	/* 6 GHz Frequency requires 6 GHz power mode */
-	if (params.chandef.chan->band == NL80211_BAND_6GHZ) {
-		if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
-			params.he_6ghz_power_type =
-			    nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
-		} else {
-			err = -EINVAL;
-			goto free;
+	if (!wdev_is_scan_radio(wdev)) {
+		/* 6 GHz Frequency requires 6 GHz power mode */
+		if (params.chandef.chan->band == NL80211_BAND_6GHZ) {
+			if (info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]) {
+				params.he_6ghz_power_type =
+					nla_get_u8(info->attrs[NL80211_ATTR_6G_REG_POWER_MODE]);
+			} else {
+				err = -EINVAL;
+				goto free;
+			}
 		}
 	}
 
