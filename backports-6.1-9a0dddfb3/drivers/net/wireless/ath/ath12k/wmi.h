@@ -2314,6 +2314,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_MEC_AGEING_TIMER_PARAMS = 0x3E9,
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
 	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
+	WMI_TAG_SCAN_RADIO_CAPABILITIES_EXT2 = 0x401,
 	WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM = 0x40A,
 	WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM = 0x40B,
 	WMI_TAG_PDEV_PKTLOG_DECODE_INFO = 0x414,
@@ -3341,6 +3342,7 @@ struct ath12k_wmi_vdev_create_arg {
 	u32 mbssid_flags;
 	u32 mbssid_tx_vdev_id;
 	u8 mld_addr[ETH_ALEN];
+	u32 create_flags;
 };
 
 #define ATH12K_MAX_VDEV_STATS_ID	0x30
@@ -3358,7 +3360,10 @@ struct wmi_vdev_create_cmd {
 	__le32 mbssid_tx_vdev_id;
 	__le32 vdev_stats_id_valid;
 	__le32 vdev_stats_id;
+	__le32 flags;
 } __packed;
+
+#define VDEV_FLAGS_SCAN_MODE_VAP BIT(4)
 
 struct ath12k_wmi_vdev_txrx_streams_params {
 	__le32 tlv_header;
@@ -4660,6 +4665,16 @@ struct wmi_peer_assoc_tid_to_link_map {
 	__le32 tlv_header;
 	__le32 tid_to_link_map_info;
 };
+
+struct wmi_scan_radio_capabilities_ext2 {
+	__le32 tlv_header; /* WMI_TAG_SCAN_RADIO_CAPABILITIES_EXT2 */
+	__le32 phy_id;
+	__le32 flags;
+} __packed;
+
+#define WMI_SCAN_RADIO_CAP_SCAN_RADIO         BIT(0)
+#define WMI_SCAN_RADIO_CAP_DFS_ENABLED        BIT(1)
+#define WMI_SCAN_RADIO_CAP_BLANKING_SUPPORTED BIT(2)
 
 struct peer_assoc_msduq_params {
 	u32 link_id;

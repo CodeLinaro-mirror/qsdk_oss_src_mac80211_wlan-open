@@ -28,7 +28,6 @@
 #include "cfr.h"
 #include "ini.h"
 #include "erp.h"
-
 struct ath12k_wmi_svc_ready_parse {
 	bool wmi_svc_bitmap_done;
 };
@@ -109,6 +108,7 @@ struct ath12k_wmi_svc_rdy_ext2_parse {
 	bool dma_ring_cap_done;
 	bool spectral_bin_scaling_done;
 	bool mac_phy_caps_ext_done;
+	bool scan_radio_caps_done;
 };
 
 struct ath12k_wmi_rdy_parse {
@@ -1243,6 +1243,8 @@ int ath12k_wmi_vdev_create(struct ath12k *ar, u8 *macaddr,
 	cmd->mbssid_flags = cpu_to_le32(args->mbssid_flags);
 	cmd->mbssid_tx_vdev_id = cpu_to_le32(args->mbssid_tx_vdev_id);
 	cmd->vdev_stats_id = cpu_to_le32(args->if_stats_id);
+	cmd->flags = cpu_to_le32(args->create_flags);
+
 	ether_addr_copy(cmd->vdev_macaddr.addr, macaddr);
 
 	if (args->if_stats_id != ATH12K_INVAL_VDEV_STATS_ID)

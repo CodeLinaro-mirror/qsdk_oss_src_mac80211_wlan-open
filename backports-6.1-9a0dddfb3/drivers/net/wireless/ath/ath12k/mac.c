@@ -2645,6 +2645,14 @@ static int ath12k_mac_setup_bcn_tmpl(struct ath12k_link_vif *arvif)
 	    ath12k_mac_is_bridge_vdev(arvif))
 		return 0;
 
+	/* Skip beacon template setup for scan radio */
+	if (ath12k_is_scan_radio(ar)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "vdev %d (pdev %d): scan radio skipping beacon template (scan-only operation)\n",
+			   arvif->vdev_id, ar->pdev->pdev_id);
+		return 0;
+	}
+
 	link_conf = ath12k_mac_get_link_bss_conf(arvif);
 	if (!link_conf) {
 		ath12k_warn(ar->ab, "unable to access bss link conf to set bcn tmpl for vif %pM link %u\n",
@@ -2851,17 +2859,24 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 		params.nontx_profile_idx = info->bssid_index;
 		params.nontx_profile_cnt = 1 << info->bssid_indicator;
 	}
-	ret = ath12k_wmi_vdev_up(arvif->ar, &params);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to bring up vdev %d: %i\n",
-			    arvif->vdev_id, ret);
-		return;
+
+	/* Skip VDEV UP command in case of Scan Radio */
+	if (!ath12k_is_scan_radio(ar)) {
+		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to bring up vdev %d: %i\n",
+				    arvif->vdev_id, ret);
+			return;
+		}
+		arvif->is_up = true;
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac vdev %d up\n", arvif->vdev_id);
+		ath12k_mac_bridge_vdevs_up(arvif);
+	} else {
+		arvif->is_up = false;
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "vdev %d (pdev %d): scan radio does not require VDEV UP (no beaconing)\n",
+			   arvif->vdev_id, ar->pdev->pdev_id);
 	}
-
-	arvif->is_up = true;
-
-	ath12k_dbg(ar->ab, ATH12K_DBG_MAC, "mac vdev %d up\n", arvif->vdev_id);
-	ath12k_mac_bridge_vdevs_up(arvif);
 }
 
 static void ath12k_mac_handle_beacon_iter(void *data, u8 *mac,
@@ -8336,7 +8351,6 @@ int ath12k_mac_op_start_ap(struct ieee80211_hw *hw,
 		ath12k_warn(arvif->ar->ab,
 			    "failed to configure beacon tx rate for vdev %d: %d\n",
 			    arvif->vdev_id, ret);
-
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_mac_op_start_ap);
@@ -16186,11 +16200,13 @@ int ath12k_mac_start(struct ath12k *ar)
 	 * such as rssi, rx_duration.
 	 */
 	ath12k_dp_mon_rx_stats_config(ar, true, mode);
-	ret = ath12k_dp_mon_rx_update_filter(ar);
-	if (ret && (ret != -EOPNOTSUPP)) {
-		ath12k_err(ab, "failed to configure monitor status ring with default rx_filter: (%d)\n",
-			   ret);
-		goto err;
+	if (!ath12k_is_scan_radio(ar)) {
+		ret = ath12k_dp_mon_rx_update_filter(ar);
+		if (ret && (ret != -EOPNOTSUPP)) {
+			ath12k_err(ab, "failed to configure monitor status ring with default rx_filter: (%d)\n",
+				   ret);
+			goto err;
+		}
 	}
 
 	if (ret == -EOPNOTSUPP)
@@ -17004,6 +17020,8 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		fallthrough;
 	case NL80211_IFTYPE_AP:
 		ahvif->vdev_type = WMI_VDEV_TYPE_AP;
+		if (wdev && wdev->vap_submode)
+			ahvif->vap_submode = wdev->vap_submode;
 
 		if (vif->p2p)
 			arvif->vdev_subtype = WMI_VDEV_SUBTYPE_P2P_GO;
@@ -18464,8 +18482,15 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 	 * during CAC.
 	 */
 	/* TODO: Set the flag for other interface types as required */
+
+	/* Scan radios are exempt from CAC because they:
+	 * - Operate in management-only mode (no beaconing, no data transmission)
+	 * - Do not interfere with radar systems
+	 * - Need to quickly scan across DFS channels without CAC delays
+	 */
 	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP && arvif->chanctx.radar_enabled &&
-	    cfg80211_chandef_dfs_usable(ar->ah->hw->wiphy, chandef)) {
+	    cfg80211_chandef_dfs_usable(ar->ah->hw->wiphy, chandef) &&
+	    !ath12k_is_scan_radio(ar)) {
 		set_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
 		dfs_cac_time = cfg80211_chandef_dfs_cac_time(ar->ah->hw->wiphy, chandef,
 							     false, false);
@@ -18646,9 +18671,15 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 		 * bridge vdev.
 		 */
 		if (chandef && !is_bridge_vdev) {
-			arg.chan_radar =
+			/* For Scan Radio, disable radar detection and CAC
+			 * by forcing chan_radar and freq2_radar to false.
+			 * This prevents host from starting CAC timers on DFS
+			 * channels for Scan Radio
+			 */
+			arg.chan_radar = !ath12k_is_scan_radio(ar) &&
 				!!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
-			arg.freq2_radar = ctx->radar_enabled;
+			arg.freq2_radar = !ath12k_is_scan_radio(ar) &&
+				ctx->radar_enabled;
 		}
 
 		arg.passive = arg.chan_radar;
@@ -19025,11 +19056,13 @@ beacon_tmpl_setup:
 		rcu_read_unlock();
 	}
 
-	ret = ath12k_wmi_vdev_up(arvif->ar, &params);
-	if (ret) {
-		ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
-			    arvif->vdev_id, ret);
-		return ret;
+	if (!ath12k_is_scan_radio(ar)) {
+		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
+				    arvif->vdev_id, ret);
+			return ret;
+		}
 	}
 
 	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
