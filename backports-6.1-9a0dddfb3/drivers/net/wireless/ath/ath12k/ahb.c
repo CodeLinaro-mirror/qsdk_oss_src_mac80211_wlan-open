@@ -1565,7 +1565,7 @@ ath12k_ahb_get_device_family(const struct platform_device *pdev)
 			of_id = of_match_device(driver->id_table, &pdev->dev);
 			if (of_id) {
 				/* Found the driver */
-				return 0;
+				return device_id;
 			}
 		}
 	}
