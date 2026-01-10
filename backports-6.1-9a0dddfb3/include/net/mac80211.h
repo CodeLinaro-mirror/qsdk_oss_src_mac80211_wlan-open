@@ -4890,7 +4890,7 @@ struct ieee80211_ops {
 				 struct ieee80211_vif *vif);
 	int (*get_stats)(struct ieee80211_hw *hw,
 			 struct ieee80211_low_level_stats *stats);
-	void (*get_key_seq)(struct ieee80211_hw *hw,
+	void (*get_key_seq)(struct ieee80211_hw *hw, struct ieee80211_vif *vif,
 			    struct ieee80211_key_conf *key,
 			    struct ieee80211_key_seq *seq);
 	int (*set_frag_threshold)(struct ieee80211_hw *hw, int radio_idx,
