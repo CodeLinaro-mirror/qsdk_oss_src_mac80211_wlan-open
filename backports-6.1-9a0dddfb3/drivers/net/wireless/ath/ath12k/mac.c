@@ -243,6 +243,44 @@ ath12k_phymodes[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
 
 };
 
+static const int
+ath12k_ax_phymodes[NUM_NL80211_BANDS][ATH12K_CHAN_WIDTH_NUM] = {
+	[NL80211_BAND_2GHZ] = {
+			[NL80211_CHAN_WIDTH_5] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_10] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_20_NOHT] = MODE_11AX_HE20_2G,
+			[NL80211_CHAN_WIDTH_20] = MODE_11AX_HE20_2G,
+			[NL80211_CHAN_WIDTH_40] = MODE_11AX_HE40_2G,
+			[NL80211_CHAN_WIDTH_80] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_80P80] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_160] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_320] = MODE_UNKNOWN,
+	},
+	[NL80211_BAND_5GHZ] = {
+			[NL80211_CHAN_WIDTH_5] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_10] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_20_NOHT] = MODE_11AX_HE20,
+			[NL80211_CHAN_WIDTH_20] = MODE_11AX_HE20,
+			[NL80211_CHAN_WIDTH_40] = MODE_11AX_HE40,
+			[NL80211_CHAN_WIDTH_80] = MODE_11AX_HE80,
+			[NL80211_CHAN_WIDTH_160] = MODE_11AX_HE160,
+			[NL80211_CHAN_WIDTH_80P80] = MODE_11AX_HE80_80,
+			[NL80211_CHAN_WIDTH_320] = MODE_UNKNOWN,
+	},
+	[NL80211_BAND_6GHZ] = {
+			[NL80211_CHAN_WIDTH_5] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_10] = MODE_UNKNOWN,
+			[NL80211_CHAN_WIDTH_20_NOHT] = MODE_11AX_HE20,
+			[NL80211_CHAN_WIDTH_20] = MODE_11AX_HE20,
+			[NL80211_CHAN_WIDTH_40] = MODE_11AX_HE40,
+			[NL80211_CHAN_WIDTH_80] = MODE_11AX_HE80,
+			[NL80211_CHAN_WIDTH_160] = MODE_11AX_HE160,
+			[NL80211_CHAN_WIDTH_80P80] = MODE_11AX_HE80_80,
+			[NL80211_CHAN_WIDTH_320] = MODE_UNKNOWN,
+	},
+
+};
+
 #define ATH12K_MAC_FIRST_OFDM_RATE_IDX 4
 #define ath12k_g_rates ath12k_legacy_rates
 #define ath12k_g_rates_size (ARRAY_SIZE(ath12k_legacy_rates))
@@ -19178,8 +19216,13 @@ ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 	arg.vdev_start_arg.freq = chandef->chan->center_freq;
 	arg.vdev_start_arg.band_center_freq1 = chandef->center_freq1;
 	arg.vdev_start_arg.band_center_freq2 = chandef->center_freq2;
-	arg.vdev_start_arg.mode =
-		ath12k_phymodes[chandef->chan->band][chandef->width];
+	if (ath12k_is_scan_radio(ar)) {
+		arg.vdev_start_arg.mode =
+			ath12k_ax_phymodes[chandef->chan->band][chandef->width];
+	} else {
+		arg.vdev_start_arg.mode =
+			ath12k_phymodes[chandef->chan->band][chandef->width];
+	}
 
 	arg.vdev_start_arg.min_power = 0;
 	arg.vdev_start_arg.max_power = chandef->chan->max_power;
