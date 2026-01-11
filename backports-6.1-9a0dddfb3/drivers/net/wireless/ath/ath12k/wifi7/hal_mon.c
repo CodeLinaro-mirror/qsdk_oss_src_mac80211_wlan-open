@@ -2077,6 +2077,86 @@ ath12k_hal_wifi7_hal_mon_populate_ppdu_info(struct hal_rx_mon_ppdu_info *ppdu_in
 	ppdu_info->punc_bw = punc_mode;
 }
 
+static __always_inline void
+ath12k_hal_mon_tx_parse_mon_buf_addr(const void *tlv_data, void *packet_info)
+{
+	struct hal_tx_mon_buf_addr *mon_buf_addr =
+		(struct hal_tx_mon_buf_addr *)tlv_data;
+	struct hal_tx_mon_packet_info *pkt_info =
+		(struct hal_tx_mon_packet_info *)packet_info;
+	u32 info[3];
+
+	info[0] = __le32_to_cpu(mon_buf_addr->info0);
+	info[1] = __le32_to_cpu(mon_buf_addr->info1);
+	info[2] = __le32_to_cpu(mon_buf_addr->info2);
+
+	pkt_info->sw_cookie = (u64)info[0] | ((u64)info[1] << 32);
+	pkt_info->dma_length =
+			u32_get_bits(info[2],
+				     HAL_TX_MON_BUF_ADDR_INFO2_DMA_LENGTH) + 1;
+	pkt_info->msdu_continuation =
+			u32_get_bits(info[2],
+				     HAL_TX_MON_BUF_ADDR_INFO2_MSDU_CONTINUATION);
+	pkt_info->truncated =
+			u32_get_bits(info[2],
+				     HAL_TX_MON_BUF_ADDR_INFO2_TRUNCATED);
+}
+
+static __always_inline void
+ath12k_wifi7_hal_mon_tx_parse_fw2sw(const void *tlv_data, u32 userid,
+				    struct hal_tx_mon_status_info *status_info)
+{
+	switch (userid) {
+	case HAL_MON_TX_FW2SW_TYPE_FES_SETUP:
+	{
+		struct hal_tx_mon_fw2sw *fw2sw =
+			(struct hal_tx_mon_fw2sw *)tlv_data;
+		u32 info[4];
+		u8  pkt_id = 0, is_valid = 0;
+
+		info[0] = __le32_to_cpu(fw2sw->info0);
+		info[1] = __le32_to_cpu(fw2sw->info1);
+		info[2] = __le32_to_cpu(fw2sw->info2);
+		info[3] = __le32_to_cpu(fw2sw->info3);
+
+		pkt_id = u32_get_bits(info[3],
+				      HAL_TX_MON_FW2SW_INFO3_PACKET_ID);
+		is_valid = u32_get_bits(info[3],
+					HAL_TX_MON_FW2SW_INFO3_COOKIE_VALID);
+
+		status_info->band_center_freq1 =
+			u32_get_bits(info[0],
+				     HAL_TX_MON_FW2SW_INFO0_BAND_CENTER_FREQ1);
+		status_info->band_center_freq2 =
+			u32_get_bits(info[0],
+				     HAL_TX_MON_FW2SW_INFO0_BAND_CENTER_FREQ2);
+		status_info->freq =
+			u32_get_bits(info[1],
+				     HAL_TX_MON_FW2SW_INFO1_FREQUENCY);
+		status_info->phy_mode =
+			u32_get_bits(info[1],
+				     HAL_TX_MON_FW2SW_INFO1_PHY_MODE);
+		status_info->schedule_id =
+			u32_get_bits(info[2],
+				     HAL_TX_MON_FW2SW_INFO2_SCHEDULE_ID);
+
+		if (is_valid) {
+			if (pkt_id < 7)
+				status_info->dp_tx_pkt_cap_cookie[pkt_id]++;
+			else
+				status_info->dp_tx_pkt_cap_cookie[0]++;
+		}
+		break;
+	}
+
+	case HAL_MON_TX_FW2SW_TYPE_FES_SETUP_USER:
+	break;
+
+	case HAL_MON_TX_FW2SW_TYPE_FES_SETUP_EXT:
+	break;
+	};
+}
+
 enum hal_rx_mon_status
 ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -2329,10 +2409,15 @@ ath12k_wifi7_hal_mon_tx_status_get_num_user(u16 tlv_tag,
 }
 
 enum hal_tx_mon_status
-ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct hal_tx_mon_ppdu_info *tx_ppdu_info,
-					 u16 tlv_tag, const void *tlv_data, u32 userid)
+ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
+					 struct hal_tx_mon_ppdu_info *tx_ppdu_info,
+					 u16 tlv_tag, const void *tlv_data,
+					 u32 userid, u16 tlv_len,
+					 struct hal_tx_mon_status_info *status_info,
+					 u8 *status_frag)
 {
 	enum hal_tx_mon_status status = HAL_TX_MON_STATUS_PPDU_NOT_DONE;
+	struct hal_tx_mon_packet_info *packet_info = NULL;
 	u32 info[7] = {0};
 
 	switch (tlv_tag) {
@@ -2508,20 +2593,36 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct hal_tx_mon_ppdu_info *tx_ppdu_in
 		break;
 	}
 
-	case HAL_TX_FES_STATUS_START_PPDU:
+	case HAL_TX_FES_STATUS_START_PPDU: {
+		const struct hal_tx_mon_fes_status_start_ppdu *fes_start_ppdu = tlv_data;
+
+		info[0] = __le32_to_cpu(fes_start_ppdu->info0);
+		info[1] = __le32_to_cpu(fes_start_ppdu->info1);
+		info[2] = __le32_to_cpu(fes_start_ppdu->info2);
+
+		tx_ppdu_info->rx_status.tsft = (u64)info[0] | ((u64)info[1] << 32);
+
+		status_info->ndp_frame =
+			u32_get_bits(info[2],
+				     HAL_TX_MON_FES_STAT_START_PPDU_INFO2_NDP_FRAME);
+		status = HAL_TX_MON_FES_STATUS_START_PPDU;
+		break;
+	}
+
 	case HAL_TX_FES_STATUS_START_PROT: {
-		const struct hal_tx_fes_status_start_prot *tx_fes_stat_start = tlv_data;
-		u64 ppdu_ts;
+		const struct hal_tx_mon_fes_status_start_prot *fes_start_prot = tlv_data;
 
-		info[0] = __le32_to_cpu(tx_fes_stat_start->info0);
-		info[1] = __le32_to_cpu(tx_fes_stat_start->info1);
+		info[0] = __le32_to_cpu(fes_start_prot->info0);
+		info[1] = __le32_to_cpu(fes_start_prot->info1);
+		info[2] = __le32_to_cpu(fes_start_prot->info2);
 
-		tx_ppdu_info->rx_status.ppdu_ts =
-			u32_get_bits(info[0],
-				     HAL_TX_FES_STAT_STRT_INFO0_PROT_TS_LOWER_32);
-		ppdu_ts = (u32_get_bits(info[1],
-					HAL_TX_FES_STAT_STRT_INFO1_PROT_TS_UPPER_32));
-		tx_ppdu_info->rx_status.ppdu_ts |= ppdu_ts << 32;
+		tx_ppdu_info->rx_status.tsft = (u64)info[0] | ((u64)info[1] << 32);
+		tx_ppdu_info->prot_tlv_status = tlv_tag;
+
+		status_info->response_type =
+			u32_get_bits(info[2],
+				     HAL_TX_MON_FES_STAT_START_PROT_INFO2_RESPONSE_TYPE);
+		status = HAL_TX_MON_FES_STATUS_START_PROT;
 		break;
 	}
 
@@ -2630,6 +2731,30 @@ ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct hal_tx_mon_ppdu_info *tx_ppdu_in
 	case HAL_TX_MPDU_END:
 		status = HAL_TX_MON_MPDU_END;
 		break;
+
+	case HAL_MON_BUF_ADDR: {
+		packet_info = &tx_ppdu_info->packet_info;
+		tx_ppdu_info->cur_usr_idx = userid;
+		ath12k_hal_mon_tx_parse_mon_buf_addr(tlv_data, packet_info);
+		status = HAL_TX_MON_BUFFER_ADDR;
+		break;
+	}
+
+	case HAL_TX_DATA: {
+		tx_ppdu_info->cur_usr_idx = userid;
+		status_info->buffer = status_frag;
+		status_info->offset = (const u8 *)tlv_data - status_frag;
+		status_info->length = tlv_len;
+		status = HAL_TX_MON_DATA;
+		break;
+	}
+
+	case HAL_FW2SW_MON: {
+		ath12k_wifi7_hal_mon_tx_parse_fw2sw(tlv_data, userid, status_info);
+		status = HAL_TX_MON_FW2SW;
+		break;
+	}
+
 	}
 
 	return status;

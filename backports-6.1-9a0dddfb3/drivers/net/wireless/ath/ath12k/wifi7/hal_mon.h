@@ -594,6 +594,28 @@ struct hal_tx_fes_status_start {
 	__le64 rsvd1;
 } __packed;
 
+#define HAL_TX_MON_FES_STAT_START_PROT_INFO0_TS_LOWER_32	GENMASK(31, 0)
+#define HAL_TX_MON_FES_STAT_START_PROT_INFO1_TS_UPPER_32	GENMASK(31, 0)
+#define HAL_TX_MON_FES_STAT_START_PROT_INFO2_RESPONSE_TYPE	GENMASK(30, 26)
+
+struct hal_tx_mon_fes_status_start_prot {
+	__le32 info0;
+	__le32 info1;
+	__le32 rsvd0;
+	__le32 info2;
+} __packed;
+
+#define HAL_TX_MON_FES_STAT_START_PPDU_INFO0_TS_LOWER_32	GENMASK(31, 0)
+#define HAL_TX_MON_FES_STAT_START_PPDU_INFO1_TS_UPPER_32	GENMASK(31, 0)
+#define HAL_TX_MON_FES_STAT_START_PPDU_INFO2_NDP_FRAME		GENMASK(17, 16)
+
+struct hal_tx_mon_fes_status_start_ppdu {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 rsvd0;
+} __packed;
+
 #define HAL_TX_Q_EXT_INFO0_FRAME_CTRL		GENMASK(15, 0)
 #define HAL_TX_Q_EXT_INFO0_QOS_CTRL		GENMASK(31, 16)
 #define HAL_TX_Q_EXT_INFO1_AMPDU_FLAG		BIT(0)
@@ -628,6 +650,36 @@ struct hal_rx_frame_bitmap_ack {
 #define HAL_TX_PHY_DESC_INFO3_ACTIVE_CHANNEL	GENMASK(17, 15)
 
 struct hal_tx_phy_desc {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+} __packed;
+
+#define HAL_TX_MON_BUF_ADDR_INFO0_VIRT_ADDR_31_0	GENMASK(31, 0)
+#define HAL_TX_MON_BUF_ADDR_INFO1_VIRT_ADDR_63_32	GENMASK(31, 0)
+#define HAL_TX_MON_BUF_ADDR_INFO2_DMA_LENGTH		GENMASK(11, 0)
+#define HAL_TX_MON_BUF_ADDR_INFO2_MSDU_CONTINUATION	BIT(16)
+#define HAL_TX_MON_BUF_ADDR_INFO2_TRUNCATED		BIT(17)
+
+struct hal_tx_mon_buf_addr {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 rsvd;
+} __packed;
+
+#define HAL_TX_MON_FW2SW_INFO0_BAND_CENTER_FREQ1	GENMASK(15, 0)
+#define HAL_TX_MON_FW2SW_INFO0_BAND_CENTER_FREQ2	GENMASK(31, 16)
+#define HAL_TX_MON_FW2SW_INFO1_PHY_MODE			GENMASK(7, 0)
+#define HAL_TX_MON_FW2SW_INFO1_FREQUENCY		GENMASK(23, 8)
+#define HAL_TX_MON_FW2SW_INFO2_SCHEDULE_ID		GENMASK(31, 0)
+#define HAL_TX_MON_FW2SW_INFO3_COOKIE_SEQ_NO		GENMASK(10, 0)
+#define HAL_TX_MON_FW2SW_INFO3_HW_LINK_ID		GENMASK(13, 11)
+#define HAL_TX_MON_FW2SW_INFO3_PACKET_ID		GENMASK(18, 14)
+#define HAL_TX_MON_FW2SW_INFO3_COOKIE_VALID		BIT(19)
+
+struct hal_tx_mon_fw2sw {
 	__le32 info0;
 	__le32 info1;
 	__le32 info2;
@@ -853,8 +905,12 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
 					 struct hal_tlv_parsed_hdr *tlv_parsed_hdr);
 enum hal_tx_mon_status
-ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct hal_tx_mon_ppdu_info *tx_ppdu_info,
-					 u16 tlv_tag, const void *tlv_data, u32 userid);
+ath12k_wifi7_hal_mon_tx_parse_status_tlv(struct ath12k_hal *hal,
+					 struct hal_tx_mon_ppdu_info *ppdu_info,
+					 u16 tlv_tag, const void *tlv_data,
+					 u32 userid, u16 tlv_len,
+					 struct hal_tx_mon_status_info *status_info,
+					 u8 *status_frag);
 enum hal_tx_mon_status
 ath12k_wifi7_hal_mon_tx_status_get_num_user(u16 tlv_tag,
 					    const void *tx_tlv,

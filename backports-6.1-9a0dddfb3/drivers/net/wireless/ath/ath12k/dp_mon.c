@@ -853,10 +853,11 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 							   pmon,
 							   tlv_tag);
 
-		hal_status = ath12k_hal_mon_tx_parse_status(dp_pdev->dp->hal,
-							    &tx_ppdu_info->tx_info,
-							    tlv_tag, ptr,
-							    tlv_userid);
+		/*TODO: Invoke HAL TLV Parsing logic post workqueue implementation*/
+		/*hal_status = ath12k_hal_mon_tx_parse_status(dp_pdev->dp->hal,*/
+							      /*&tx_ppdu_info->tx_info,*/
+							      /*tlv_tag, ptr,*/
+							      /*tlv_userid);*/
 		ath12k_dp_mon_tx_process_status_tlv(hal_status,
 						    tx_ppdu_info);
 
