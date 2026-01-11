@@ -7899,6 +7899,7 @@ static int nl80211_fill_link_station(struct sk_buff *msg,
 	case CFG80211_SIGNAL_TYPE_MBM:
 		PUT_LINK_SINFO(SIGNAL, signal, u8);
 		PUT_LINK_SINFO(SIGNAL_AVG, signal_avg, u8);
+		PUT_LINK_SINFO(MGMT_SIGNAL, mgmt_signal, u8);
 		break;
 	default:
 		break;
@@ -7964,6 +7965,9 @@ static int nl80211_fill_link_station(struct sk_buff *msg,
 	PUT_LINK_SINFO(BEACON_SIGNAL_AVG, rx_beacon_signal_avg, u8);
 	PUT_LINK_SINFO(RX_MPDUS, rx_mpdu_count, u32);
 	PUT_LINK_SINFO(FCS_ERROR_COUNT, fcs_err_count, u32);
+	PUT_LINK_SINFO(PN_ERRORS, pn_errors, u32);
+	PUT_LINK_SINFO(MIC_ERRORS, mic_errors, u32);
+	PUT_LINK_SINFO(DECRYPT_ERRORS, decrypt_errors, u32);
 	if (wiphy_ext_feature_isset(&rdev->wiphy,
 				    NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT)) {
 		PUT_LINK_SINFO(ACK_SIGNAL, ack_signal, u8);
@@ -8099,6 +8103,7 @@ static int nl80211_send_station(struct sk_buff *msg, u32 cmd, u32 portid,
 	case CFG80211_SIGNAL_TYPE_MBM:
 		PUT_SINFO(SIGNAL, signal, u8);
 		PUT_SINFO(SIGNAL_AVG, signal_avg, u8);
+		PUT_SINFO(MGMT_SIGNAL, mgmt_signal, u8);
 		break;
 	default:
 		break;
@@ -8176,6 +8181,9 @@ static int nl80211_send_station(struct sk_buff *msg, u32 cmd, u32 portid,
 	PUT_SINFO(BEACON_SIGNAL_AVG, rx_beacon_signal_avg, u8);
 	PUT_SINFO(RX_MPDUS, rx_mpdu_count, u32);
 	PUT_SINFO(FCS_ERROR_COUNT, fcs_err_count, u32);
+	PUT_SINFO(PN_ERRORS, pn_errors, u32);
+	PUT_SINFO(MIC_ERRORS, mic_errors, u32);
+	PUT_SINFO(DECRYPT_ERRORS, decrypt_errors, u32);
 	if (wiphy_ext_feature_isset(&rdev->wiphy,
 				    NL80211_EXT_FEATURE_ACK_SIGNAL_SUPPORT)) {
 		PUT_SINFO(ACK_SIGNAL, ack_signal, u8);
