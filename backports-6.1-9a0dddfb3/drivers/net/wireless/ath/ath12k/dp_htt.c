@@ -68,13 +68,14 @@ static int ath12k_get_ppdu_user_index(struct htt_ppdu_stats *ppdu_stats,
 	return -EINVAL;
 }
 
-static void ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
-		struct htt_ppdu_stats_cmpltn_flush *msg,
-		struct htt_ppdu_stats_info *ppdu_info)
+void
+ath12k_dp_ppdu_stats_flush_tlv_parse(struct ath12k_base *ab,
+				     struct ath12k_pdev_dp *dp_pdev,
+				     struct htt_ppdu_stats_cmpltn_flush *msg,
+				     struct htt_ppdu_stats_info *ppdu_info)
 {
 	struct ieee80211_rate_status status_rate = { 0 };
 	struct ath12k_dp_link_peer *peer = NULL;
-	struct ath12k_pdev_dp *dp_pdev = NULL;
 	struct ieee80211_tx_status status;
 	struct ath12k_dp *dp = ab->dp;
 	struct rate_info rate;
@@ -400,6 +401,33 @@ ath12k_dp_htt_process_usr_cmn_stats(const u32 *tlv_desc,
 	return 0;
 }
 
+void
+ath12k_dp_ppdu_stats_flush_tlv_parse_update(struct ath12k_pdev_dp *dp_pdev,
+					    struct htt_ppdu_stats_cmpltn_flush *msg,
+					    struct htt_ppdu_stats_info *ppdu_info)
+{
+	struct ath12k_dp_link_peer *peer;
+	u16 sw_peer_id, num_msdu;
+
+	rcu_read_lock();
+	sw_peer_id = le16_to_cpu(msg->sw_peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+							sw_peer_id);
+	if (unlikely(!peer)) {
+		ath12k_dbg(dp_pdev->dp->ab, ATH12K_DBG_DATA,
+			   "dp_tx: failed to find the peer with peer_id %d\n",
+			   sw_peer_id);
+		rcu_read_unlock();
+		return;
+	}
+
+	num_msdu = HTT_PPDU_STATS_FLUSH_GET_NUM_MSDU(msg->info);
+	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar))
+		ath12k_debugfs_sta_update_failure(peer, num_msdu);
+
+	rcu_read_unlock();
+}
+
 int
 ath12k_dp_htt_process_usr_compltn_flush(struct ath12k_pdev_dp *dp_pdev,
 					const u32 *tlv_desc,
@@ -409,13 +437,14 @@ ath12k_dp_htt_process_usr_compltn_flush(struct ath12k_pdev_dp *dp_pdev,
 	struct htt_ppdu_stats_cmpltn_flush *msg =
 		(struct htt_ppdu_stats_cmpltn_flush *)tlv_desc;
 
+	ath12k_dp_ppdu_stats_flush_tlv_parse_update(dp_pdev, msg, ppdu_info);
 	/* No need to use these stats when SW is already
 	 * doing it on a per packet basis
 	 */
 	if (!ab->stats_disable)
 		return -EINTR;
 
-	ath12k_dp_ppdu_stats_flush_tlv_parse(ab, msg, ppdu_info);
+	ath12k_dp_ppdu_stats_flush_tlv_parse(ab, dp_pdev, msg, ppdu_info);
 
 	/*
 	 * In case of FLUSH update only the failure stats and stop further
@@ -644,7 +673,6 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_vif *ahvif;
 	u32 tlv_bitmap;
 	u8 tid = HTT_PPDU_STATS_NON_QOS_TID;
-	struct htt_ppdu_stats_user_rate *user_rate;
 
 	if (usr_stats->processed_tlv_bitmap &
 			BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS))
@@ -684,10 +712,11 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	ahvif->wmm_stats.tx_type = dp_pdev->wmm_stats.tx_type;
 	ahvif->wmm_stats.total_wmm_tx_pkts[ahvif->wmm_stats.tx_type]++;
 
-	user_rate = &usr_stats->rate;
 	peer_stats->tid = tid;
-	peer_stats->mu_pos = HTT_USR_RATE_USR_POS(user_rate->info0);
-	peer_stats->mu_grpid = HTT_USR_RATE_MU_GRPID(user_rate->info0);
+
+	/* Update debugfs stats */
+	ath12k_debugfs_sta_update_success(peer, peer_stats);
+	ath12k_debugfs_sta_update_retry(peer, peer_stats);
 }
 
 void
@@ -703,6 +732,7 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	struct htt_ppdu_stats_user_rate *user_rate;
 	struct htt_ppdu_user_stats *usr_stats;
 	u16 rate = 0, ru_start, ru_end, tones;
+	struct ath12k_htt_tx_stats *tx_stats;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	u32 v, ppdu_type;
 	struct ath12k_base *ab = dp->ab;
@@ -864,22 +894,31 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar)) {
+		tx_stats = peer->peer_stats.tx_stats;
 		/* PPDU stats reported for mgmt packet doesn't have valid tx bytes.
 		 * So skip peer stats update for mgmt packets.
 		 */
+		if (!tx_stats)
+			return;
+
+		tx_stats->ppdu_type = ppdu_type;
+		tx_stats->ru_tones = ru_tones;
+		tx_stats->rate_idx = rate_idx;
 		peer_stats->duration = tx_duration;
 		peer_stats->ru_tones = ru_tones;
 		peer_stats->ba_fails =
 			HTT_USR_CMPLTN_LONG_RETRY(usr_stats->cmpltn_cmn.flags) +
 			HTT_USR_CMPLTN_SHORT_RETRY(usr_stats->cmpltn_cmn.flags);
-		peer_stats->ppdu_type = ppdu_type;
 		peer_stats->ru_start = ru_start;
 		peer_stats->rate = rate;
 		peer_stats->bw = bw;
 		peer_stats->mcs = mcs;
 		peer_stats->nss = nss;
 		peer_stats->flags = flags;
-		peer_stats->rate_idx = rate_idx;
+		peer_stats->mu_pos = HTT_USR_RATE_USR_POS(user_rate->info0);
+		peer_stats->mu_grpid = HTT_USR_RATE_MU_GRPID(user_rate->info0);
+
+		ath12k_debugfs_sta_update_misc(peer, peer_stats);
 	}
 }
 
@@ -897,13 +936,10 @@ ath12k_update_per_peer_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 				       &peer_stats);
 
 	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar) &&
-	    peer_stats.tid <= HTT_PPDU_STATS_NON_QOS_TID) {
+	    peer_stats.tid <= HTT_PPDU_STATS_NON_QOS_TID)
 		ath12k_update_extd_tx_stats(dp_pdev, ppdu_info, peer, &peer_stats,
 					    &ppdu_info->ppdu_stats.user_stats[user]);
 
-		/* Update debugfs stats */
-		ath12k_debugfs_sta_add_tx_stats(peer, &peer_stats);
-	}
 }
 
 static void
@@ -1258,6 +1294,7 @@ ath12k_dp_htt_process_ppdu(struct ath12k_pdev_dp *dp_pdev,
 	if (!ppdu_info)
 		return NULL;
 
+	ppdu_info->pdev_id = pdev_id;
 	ppdu_info->ppdu_id = ppdu_id;
 	ret = ath12k_dp_htt_tlv_iter(ab, dp_pdev, msg->data, len,
 				     ath12k_htt_tlv_ppdu_stats_parse,
@@ -1341,7 +1378,6 @@ static int ath12k_htt_pull_ppdu_stats(struct ath12k_base *ab,
 
 	ppdu_info = ath12k_dp_htt_process_ppdu(dp_pdev, msg, len, pdev_id);
 
-	ppdu_info->pdev_id = pdev_id;
 	if (ppdu_info && ath12k_dp_htt_is_ppdu_completed(ppdu_info)) {
 		ath12k_dp_htt_deliver_ppdu(dp_pdev, ppdu_info);
 		ath12k_htt_free_ppdu_info(dp_pdev, ppdu_info);
