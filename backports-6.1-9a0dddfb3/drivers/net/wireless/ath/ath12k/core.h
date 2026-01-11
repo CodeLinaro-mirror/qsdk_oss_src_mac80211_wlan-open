@@ -1599,6 +1599,11 @@ struct ath12k {
 	u32 vendor_mac_used_bitmap;
 #endif
 	u8 smart_mon_filter;
+
+	struct rhashtable *rhash_tx_skb_tbl;
+	struct rhashtable_params rhash_tx_skb_param;
+	/* To synchronize rhash tbl write operation */
+	spinlock_t rhash_tx_lock;
 };
 
 struct ath12k_6ghz_sp_reg_rule {
@@ -2291,6 +2296,13 @@ struct ar_sta_cookie {
 	int vdev_id;
 };
 
+struct ath12k_skb_tx_info {
+	struct rhash_head rhash_skb;
+	struct rcu_head rcu_head;
+	struct sk_buff *skb;
+	struct ieee80211_tx_rate rate;
+};
+
 void ath12k_core_panic_notifier_unregister(struct ath12k_base *ab);
 int ath12k_core_qmi_firmware_ready(struct ath12k_base *ab, bool *is_ready);
 int ath12k_core_init(struct ath12k_base *ath12k);
@@ -2318,6 +2330,14 @@ int ath12k_core_suspend(struct ath12k_base *ab);
 int ath12k_core_suspend_late(struct ath12k_base *ab);
 void ath12k_core_hw_group_unassign(struct ath12k_base *ab);
 u8 ath12k_get_num_partner_link(struct ath12k *ar);
+
+int ath12k_skb_rhash_tbl_init(struct ath12k *ar);
+void ath12k_skb_rhash_tbl_destroy(struct ath12k *ar);
+int ath12k_skb_rhash_insert(struct ath12k *ar, struct sk_buff *skb,
+			    struct ieee80211_tx_rate rate);
+void ath12k_skb_rhash_remove(struct ath12k *ar, struct sk_buff *skb);
+struct ath12k_skb_tx_info *
+ath12k_get_skb_tx_info(struct ath12k *ar, struct sk_buff *skb);
 
 const struct firmware *ath12k_core_firmware_request(struct ath12k_base *ab,
 						    const char *filename);

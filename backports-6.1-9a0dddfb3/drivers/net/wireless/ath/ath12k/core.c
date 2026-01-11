@@ -5488,5 +5488,154 @@ void ath12k_rssi_rate_notify_breach_event(u8 *mac_addr, u8 breach_type,
 		   mac_addr);
 }
 
+int ath12k_skb_rhash_tbl_init(struct ath12k *ar)
+{
+	struct rhashtable_params *param;
+	struct rhashtable *rhash_tbl;
+	int ret;
+
+	if (ar->rhash_tx_skb_tbl)
+		return 0;
+
+	rhash_tbl = kzalloc(sizeof(*rhash_tbl), GFP_ATOMIC);
+	if (!rhash_tbl)
+		return -ENOMEM;
+
+	param = &ar->rhash_tx_skb_param;
+
+	param->key_offset = offsetof(struct ath12k_skb_tx_info, skb);
+	param->head_offset = offsetof(struct ath12k_skb_tx_info, rhash_skb);
+	param->key_len = sizeof_field(struct ath12k_skb_tx_info, skb);
+	param->automatic_shrinking = true;
+
+	ret = rhashtable_init(rhash_tbl, param);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to init tx skb rhashtable %d\n",
+			    ret);
+		goto err_free;
+	}
+
+	spin_lock_init(&ar->rhash_tx_lock);
+	ar->rhash_tx_skb_tbl = rhash_tbl;
+
+	return 0;
+
+err_free:
+	kfree(rhash_tbl);
+
+	return ret;
+}
+EXPORT_SYMBOL(ath12k_skb_rhash_tbl_init);
+
+void ath12k_skb_rhash_tbl_destroy(struct ath12k *ar)
+{
+	struct ath12k_skb_tx_info *skb_tx_info;
+	struct rhashtable_iter iter;
+	struct rhashtable *rtbl;
+
+	rtbl = ar->rhash_tx_skb_tbl;
+	if (!rtbl)
+		return;
+
+	spin_lock_bh(&ar->rhash_tx_lock);
+	ar->rhash_tx_skb_tbl = NULL;
+	spin_unlock_bh(&ar->rhash_tx_lock);
+
+	rhashtable_walk_enter(rtbl, &iter);
+	rhashtable_walk_start(&iter);
+	while ((skb_tx_info = rhashtable_walk_next(&iter)) != NULL) {
+		if (IS_ERR(skb_tx_info))
+			continue;
+
+		rhashtable_remove_fast(rtbl,
+				       &skb_tx_info->rhash_skb,
+				       ar->rhash_tx_skb_param);
+		kfree_rcu(skb_tx_info, rcu_head);
+	}
+	rhashtable_walk_stop(&iter);
+	rhashtable_walk_exit(&iter);
+
+	rhashtable_destroy(rtbl);
+	kfree(rtbl);
+}
+EXPORT_SYMBOL(ath12k_skb_rhash_tbl_destroy);
+
+int ath12k_skb_rhash_insert(struct ath12k *ar, struct sk_buff *skb,
+			    struct ieee80211_tx_rate rate)
+{
+	struct rhashtable_params *params = &ar->rhash_tx_skb_param;
+	struct ath12k_skb_tx_info *skb_tx_info;
+	struct rhashtable *rtbl;
+	void *ret;
+
+	spin_lock_bh(&ar->rhash_tx_lock);
+	rtbl = ar->rhash_tx_skb_tbl;
+	if (!rtbl) {
+		spin_unlock_bh(&ar->rhash_tx_lock);
+		return 0;
+	}
+
+	skb_tx_info = kzalloc(sizeof(*skb_tx_info), GFP_ATOMIC);
+	if (!skb_tx_info) {
+		spin_unlock_bh(&ar->rhash_tx_lock);
+		return -ENOMEM;
+	}
+
+	skb_tx_info->rate = rate;
+	skb_tx_info->skb = skb;
+	ret = rhashtable_lookup_get_insert_fast(rtbl,
+						&skb_tx_info->rhash_skb,
+						*params);
+	spin_unlock_bh(&ar->rhash_tx_lock);
+
+	if (ret) {
+		kfree_rcu(skb_tx_info, rcu_head);
+		if (IS_ERR(ret))
+			return PTR_ERR(ret);
+	}
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_skb_rhash_insert);
+
+void ath12k_skb_rhash_remove(struct ath12k *ar, struct sk_buff *skb)
+{
+	struct rhashtable_params *params = &ar->rhash_tx_skb_param;
+	struct ath12k_skb_tx_info *skb_tx_info;
+	struct rhash_head *rhead;
+	struct rhashtable *rtbl;
+
+	spin_lock_bh(&ar->rhash_tx_lock);
+	rtbl = ar->rhash_tx_skb_tbl;
+	if (!rtbl) {
+		spin_unlock_bh(&ar->rhash_tx_lock);
+		return;
+	}
+
+	skb_tx_info = ath12k_get_skb_tx_info(ar, skb);
+	if (skb_tx_info) {
+		rhead = &skb_tx_info->rhash_skb;
+		rhashtable_remove_fast(rtbl, rhead, *params);
+		kfree_rcu(skb_tx_info, rcu_head);
+	}
+	spin_unlock_bh(&ar->rhash_tx_lock);
+}
+EXPORT_SYMBOL(ath12k_skb_rhash_remove);
+
+struct ath12k_skb_tx_info *
+ath12k_get_skb_tx_info(struct ath12k *ar, struct sk_buff *skb)
+{
+	struct rhashtable *rtbl;
+	struct ath12k_skb_tx_info *info;
+
+	rtbl = ar->rhash_tx_skb_tbl;
+	if (!rtbl)
+		return NULL;
+
+	info = rhashtable_lookup_fast(rtbl, &skb,
+				      ar->rhash_tx_skb_param);
+	return info;
+}
+EXPORT_SYMBOL(ath12k_get_skb_tx_info);
 MODULE_DESCRIPTION("Driver support for Qualcomm Technologies WLAN devices");
 MODULE_LICENSE("Dual BSD/GPL");

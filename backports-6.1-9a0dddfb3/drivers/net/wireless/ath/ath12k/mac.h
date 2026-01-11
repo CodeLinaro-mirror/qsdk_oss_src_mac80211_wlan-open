@@ -205,6 +205,9 @@ void ath12k_mac_destroy(struct ath12k_hw_group *ag);
 void ath12k_mac_unregister(struct ath12k_hw_group *ag);
 int ath12k_mac_register(struct ath12k_hw_group *ag);
 int ath12k_mac_allocate(struct ath12k_hw_group *ag);
+int ath12k_tx_rate_info(struct ath12k_link_vif *arvif,
+			struct ieee80211_tx_rate *rate,
+			u16 *mcs, u8 *preamble);
 int ath12k_mac_hw_ratecode_to_legacy_rate(u8 hw_rc, u8 preamble, u8 *rateidx,
 					  u16 *rate);
 u8 ath12k_mac_bitrate_to_idx(const struct ieee80211_supported_band *sband,

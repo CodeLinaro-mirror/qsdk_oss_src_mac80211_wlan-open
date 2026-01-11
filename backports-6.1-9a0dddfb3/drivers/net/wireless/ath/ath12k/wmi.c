@@ -1003,10 +1003,37 @@ struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_ab, u32 len)
 	return skb;
 }
 
+static bool ath12k_get_skb_rate(struct ath12k_link_vif *arvif,
+				struct sk_buff *frame,
+				u16 *mcs, u8 *preamble)
+{
+	struct ath12k_skb_tx_info *skb_tx_info;
+	bool rate_valid = false;
+	int err;
+
+	rcu_read_lock();
+	skb_tx_info = ath12k_get_skb_tx_info(arvif->ar, frame);
+	if (!skb_tx_info) {
+		rcu_read_unlock();
+		return false;
+	}
+
+	err = ath12k_tx_rate_info(arvif, &skb_tx_info->rate,
+				  mcs, preamble);
+	rcu_read_unlock();
+	if (!err)
+		rate_valid = true;
+
+	ath12k_skb_rhash_remove(arvif->ar, frame);
+
+	return rate_valid;
+}
+
 int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 			 struct sk_buff *frame, bool link_agnostic,
 			 bool is_cfr)
 {
+	struct ath12k_link_vif *arvif = ath12k_mac_get_arvif(ar, vdev_id);
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_mgmt_send_cmd *cmd;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(frame);
@@ -1015,16 +1042,20 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	bool tx_params_valid = false;
 	struct wmi_tlv *frame_tlv;
 	struct sk_buff *skb;
+	bool rate_present;
 	u32 buf_len;
 	int ret, len;
+	u8 preamble;
 	void *ptr;
 	struct wmi_tlv *tlv;
+	u16 mcs;
 
 	buf_len = min_t(int, frame->len, WMI_MGMT_SEND_DOWNLD_LEN);
 
 	len = sizeof(*cmd) + sizeof(*frame_tlv) + roundup(buf_len, sizeof(u32));
 
-	if (is_cfr)
+	rate_present = ath12k_get_skb_rate(arvif, frame, &mcs, &preamble);
+	if (is_cfr || rate_present)
 		tx_params_valid = true;
 
 	if (tx_params_valid || link_agnostic) {
@@ -1066,6 +1097,18 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 
 	if (tx_params_valid) {
 		params = ptr;
+
+		if (rate_present) {
+			params->tx_param_dword0 =
+				le32_encode_bits(BIT(mcs),
+						 WMI_TX_PARAMS_DWORD0_MCS_MASK) |
+				/* always 1 nss */
+				le32_encode_bits(BIT(0),
+						 WMI_TX_PARAMS_DWORD0_NSS_MASK);
+			params->tx_param_dword1 =
+				le32_encode_bits(BIT(preamble),
+						 WMI_TX_PARAMS_DWORD1_PREAMBLE_TYPE);
+		}
 
 		/* WMI_TX_PARAMS_DWORD1_CFR_CAPTURE should be set
 		 * only when CFR is enabled.
