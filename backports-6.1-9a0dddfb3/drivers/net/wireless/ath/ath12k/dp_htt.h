@@ -551,6 +551,9 @@ enum htt_ppdu_stats_tag_type {
 #define HTT_STATS_GET_FRAME_CTRL_TYPE(_val)	\
 		u32_get_bits(_val, HTT_STATS_FRAMECTRL_TYPE_MASK)
 
+#define HTT_GET_FRAME_CTRL_TYPE(_val)   \
+		(((_val) & HTT_STATS_FRAMECTRL_TYPE_MASK) >> 2)
+
 #define HTT_PPDU_STATS_TAG_DEFAULT (BIT(HTT_PPDU_STATS_TAG_COMMON) \
 				   | BIT(HTT_PPDU_STATS_TAG_USR_COMMON) \
 				   | BIT(HTT_PPDU_STATS_TAG_USR_RATE) \
@@ -1040,6 +1043,10 @@ struct htt_rx_ring_tlv_filter {
 #define HTT_STATS_FRAME_CTRL_TYPE_DATA  0x2
 #define HTT_STATS_FRAME_CTRL_TYPE_RESV  0x3
 
+#define HTT_STATS_FC0_SUBTYPE_MASK		0xf0
+#define HTT_STATS_FC0_SUBTYPE_VHT_NDP_AN	0x50
+#define HTT_STATS_FC0_SUBTYPE_BAR		0x80
+
 #define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_MSG_TYPE	GENMASK(7, 0)
 #define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_PDEV_ID	GENMASK(15, 8)
 #define HTT_TX_RING_SELECTION_CFG_CMD_INFO0_RING_ID	GENMASK(23, 16)
@@ -1522,6 +1529,8 @@ enum HTT_PPDU_STATS_RESP_PPDU_TYPE {
 		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_INFO1_PPDU_TYPE_M)
 #define HTT_USR_RATE_PREAMBLE(_val) \
 		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_FLAGS_PREAMBLE_M)
+#define HTT_USR_RATE_STBC(_val) \
+		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_FLAGS_STBC_M)
 #define HTT_USR_RATE_BW(_val) \
 		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_FLAGS_BW_M)
 #define HTT_USR_RATE_NSS(_val) \
@@ -1532,6 +1541,8 @@ enum HTT_PPDU_STATS_RESP_PPDU_TYPE {
 		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_FLAGS_GI_M)
 #define HTT_USR_RATE_DCM(_val) \
 		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_FLAGS_DCM_M)
+#define HTT_USR_RATE_LDPC(_val) \
+		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_FLAGS_LDPC_M)
 #define HTT_USR_RATE_USR_POS(_val) \
 		le32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_INFO0_USER_POS_M)
 #define HTT_USR_RATE_MU_GRPID(_val) \
@@ -1548,10 +1559,13 @@ enum HTT_PPDU_STATS_RESP_PPDU_TYPE {
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_GI_M		GENMASK(27, 24)
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_DCM_M		BIT(28)
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_LDPC_M		BIT(29)
+#define HTT_PPDU_STATS_USER_RATE_IS_FIXED_RATE_M		BIT(1)
 #define HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_PPDU_TYPE          GENMASK(31, 30)
 
 #define HTT_USR_RESP_RATE_PPDU_TYPE(_val) \
        u32_get_bits(_val, HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_PPDU_TYPE)
+#define HTT_USR_RATE_IS_FIXED_RATE(_val) \
+	le16_get_bits(_val, HTT_PPDU_STATS_USER_RATE_IS_FIXED_RATE_M)
 
 struct htt_ppdu_stats_user_rate {
 	u8 tid_num;
@@ -1567,7 +1581,7 @@ struct htt_ppdu_stats_user_rate {
 	/* Note: resp_rate_info is only valid for if resp_type is UL */
 	__le32 resp_rate_flags; /* %HTT_PPDU_STATS_USER_RATE_RESP_FLAGS_ */
 	__le16 punctured;
-	__le16 reserved1;
+	__le16 info2;
 } __packed;
 
 #define HTT_PPDU_STATS_TX_INFO_FLAGS_RATECODE_M		GENMASK(7, 0)
@@ -1606,6 +1620,22 @@ enum  htt_ppdu_stats_usr_compln_status {
 #define HTT_PPDU_STATS_GET_DELAY_BA(_val) \
 	le32_get_bits(_val, HTT_PPDU_STATS_USR_CMN_FLAG_DELAYBA)
 
+#define HTT_PPDU_STATS_USR_CMN_IS_MCAST_M		BIT(0)
+#define HTT_PPDU_STATS_USR_CMN_MPDU_TRIED_M		GENMASK(9, 1)
+#define HTT_PPDU_STATS_USR_CMN_COOKIE_VALID_M		BIT(16)
+
+#define HTT_PPDU_STATS_USR_CMN_COOKIE_VALID(_val)	\
+		le32_get_bits(_val, HTT_PPDU_STATS_USR_CMN_COOKIE_VALID_M)
+#define HTT_PPDU_STATS_USR_CMN_IS_MCAST(_val) \
+		le32_get_bits(_val, HTT_PPDU_STATS_USR_CMN_IS_MCAST_M)
+#define HTT_PPDU_STATS_USR_CMN_MPDU_TRIED(_val)	\
+		le32_get_bits(_val, HTT_PPDU_STATS_USR_CMN_MPDU_TRIED_M)
+#define HTT_PPDU_STATS_USR_CMN_FRAME_CTRL(_val)	\
+		le32_get_bits(_val, HTT_PPDU_STATS_USR_CMN_CTL_FRM_CTRL)
+
+#define HTT_PPDU_GET_PER_CHAIN_TX_PWR(arr, chain_idx) \
+			((arr[(chain_idx / 4)] >> (chain_idx % 4) * 8) & 0xFF)
+
 /* Common stats for both control and data packets */
 struct  htt_ppdu_stats_user_common {
 	u8 tid_num;
@@ -1634,13 +1664,31 @@ struct  htt_ppdu_stats_user_common {
 #define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_SHORT_RETRY_M	GENMASK(7, 4)
 #define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_IS_AMPDU_M		BIT(8)
 #define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_RESP_TYPE_M		GENMASK(12, 9)
+#define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_IS_PREAM_PUNCT_M	BIT(18)
+#define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_MPROT_TYPE_M	GENMASK(15, 13)
+#define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_RTS_SUCC_M		BIT(16)
+#define HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_RTS_FAIL_M		BIT(17)
 
+#define HTT_FC0_TYPE_MASK     0x0c
+#define HTT_FC0_SUBTYPE_MASK  0xf0
+
+#define HTT_STATS_MAX_CHAINS	8
 #define HTT_USR_CMPLTN_IS_AMPDU(_val) \
 	    le32_get_bits(_val, HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_IS_AMPDU_M)
 #define HTT_USR_CMPLTN_LONG_RETRY(_val) \
 	    le32_get_bits(_val, HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_LONG_RETRY_M)
 #define HTT_USR_CMPLTN_SHORT_RETRY(_val) \
 	    le32_get_bits(_val, HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_SHORT_RETRY_M)
+#define HTT_USR_CMPLTN_IS_PREAM_PUNCT(_val) \
+	    le32_get_bits(_val, HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_IS_PREAM_PUNCT_M)
+#define HTT_USR_CMPLTN_PREAM_PUNCT(_val) \
+	    le32_get_bits(_val, HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_IS_PREAM_PUNCT_M)
+#define HTT_USR_CMPLTN_MPROT_TYPE(_val)	\
+	    le32_get_bits(_val, HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_MPROT_TYPE_M)
+#define HTT_USR_CMPLTN_RTS_SUCCESS(_val) \
+	    le32_get_bits(_val, HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_RTS_SUCC_M)
+#define HTT_USR_CMPLTN_RTS_FAILURE(_val) \
+	    le32_get_bits(_val, HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_RTS_FAIL_M)
 
 struct htt_ppdu_stats_usr_cmpltn_cmn {
 	u8 status;
@@ -1651,6 +1699,7 @@ struct htt_ppdu_stats_usr_cmpltn_cmn {
 	__le16 mpdu_tried;
 	__le16 mpdu_success;
 	__le32 flags; /* %HTT_PPDU_STATS_USR_CMPLTN_CMN_FLAGS_LONG_RETRIES*/
+	__le32 rssi_chain[HTT_STATS_MAX_CHAINS];
 } __packed;
 
 #define HTT_PPDU_STATS_ACK_BA_INFO_NUM_MPDU_M	GENMASK(8, 0)
@@ -1677,6 +1726,15 @@ struct htt_ppdu_stats_usr_cmpltn_ack_ba_status {
 	__le32 success_bytes;
 } __packed;
 
+enum HTT_FLUSH_STATUS_DROP_REASON {
+	HTT_FLUSH_PEER_DELETE,
+	HTT_FLUSH_TID_DELETE,
+	HTT_FLUSH_TTL_EXCEEDED,
+	HTT_FLUSH_EXCESS_RETRIES,
+	HTT_FLUSH_REINJECT,
+
+	HTT_FLUSH_MAX,
+};
 #define HTT_PPDU_STATS_FLUSH_NUM_MSDU_M         GENMASK(30, 17)
 #define HTT_PPDU_STATS_FLUSH_GET_NUM_MSDU(_val) \
 	le32_get_bits(_val, HTT_PPDU_STATS_FLUSH_NUM_MSDU_M)

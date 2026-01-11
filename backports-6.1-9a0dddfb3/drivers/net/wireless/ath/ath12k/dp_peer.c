@@ -654,6 +654,8 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	    !peer->peer_stats.tx_stats) {
 		peer->peer_stats.tx_stats = kzalloc(sizeof(*peer->peer_stats.tx_stats),
 						    GFP_ATOMIC);
+		peer->peer_stats.tx_stats->avg_ack_rssi = INVALID_RSSI;
+		peer->peer_stats.tx_stats->avg_tx_rate = INVALID_RATE;
 	}
 
 	dp_peer->qos_stats_lvl = (ar->dp.qos_stats &
