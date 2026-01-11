@@ -661,6 +661,26 @@ TRACE_EVENT(rdev_set_default_beacon_key,
 		__entry->link_id = link_id;
 		__entry->key_index = key_index;
 	),
+	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT ", link_id: %d, key index: %u",
+		  WIPHY_PR_ARG, NETDEV_PR_ARG, __entry->link_id, __entry->key_index)
+);
+
+TRACE_EVENT(rdev_set_default_control_key,
+	    TP_PROTO(struct wiphy *wiphy, struct net_device *netdev, int link_id,
+		     u8 key_index),
+	TP_ARGS(wiphy, netdev, link_id, key_index),
+	TP_STRUCT__entry(
+		    WIPHY_ENTRY
+		    NETDEV_ENTRY
+			__field(int, link_id)
+			__field(u8, key_index)
+	),
+	TP_fast_assign(
+			WIPHY_ASSIGN;
+			NETDEV_ASSIGN;
+			__entry->link_id = link_id;
+			__entry->key_index = key_index;
+	),
 	TP_printk(WIPHY_PR_FMT ", " NETDEV_PR_FMT ", link_id: %d, "
 		  "key index: %u", WIPHY_PR_ARG, NETDEV_PR_ARG,
 		  __entry->link_id, __entry->key_index)

@@ -1626,7 +1626,7 @@ struct key_parse {
 	struct key_params p;
 	int idx;
 	int type;
-	bool def, defmgmt, defbeacon;
+	bool def, defmgmt, defbeacon, defcontrol;
 	bool def_uni, def_multi;
 };
 
@@ -1643,6 +1643,7 @@ static int nl80211_parse_key_new(struct genl_info *info, struct nlattr *key,
 	k->def = !!tb[NL80211_KEY_DEFAULT];
 	k->defmgmt = !!tb[NL80211_KEY_DEFAULT_MGMT];
 	k->defbeacon = !!tb[NL80211_KEY_DEFAULT_BEACON];
+	k->defcontrol = !!tb[NL80211_KEY_DEFAULT_CONTROL];
 
 	if (k->def) {
 		k->def_uni = true;
@@ -1683,6 +1684,8 @@ static int nl80211_parse_key_new(struct genl_info *info, struct nlattr *key,
 
 		k->def_uni = kdt[NL80211_KEY_DEFAULT_TYPE_UNICAST];
 		k->def_multi = kdt[NL80211_KEY_DEFAULT_TYPE_MULTICAST];
+		if (k->defcontrol)
+			k->def_multi = false;
 	}
 
 	if (tb[NL80211_KEY_MODE])
@@ -1756,7 +1759,7 @@ static int nl80211_parse_key(struct genl_info *info, struct key_parse *k)
 		return err;
 
 	if ((k->def ? 1 : 0) + (k->defmgmt ? 1 : 0) +
-	    (k->defbeacon ? 1 : 0) > 1) {
+	    (k->defbeacon ? 1 : 0) + (k->defcontrol ? 1 : 0)  > 1) {
 		GENL_SET_ERR_MSG(info,
 				 "key with multiple default flags is invalid");
 		return -EINVAL;
@@ -1781,6 +1784,12 @@ static int nl80211_parse_key(struct genl_info *info, struct key_parse *k)
 			if (k->idx < 6 || k->idx > 7) {
 				GENL_SET_ERR_MSG(info,
 						 "defbeacon key idx not 6 or 7");
+				return -EINVAL;
+			}
+		} else if (k->defcontrol) {
+			if (k->idx < 0 || k->idx > 1) {
+				GENL_SET_ERR_MSG(info,
+						 "defcontrol key idx not 0 or 1");
 				return -EINVAL;
 			}
 		} else if (k->def) {
@@ -5508,7 +5517,7 @@ static int nl80211_set_key(struct sk_buff *skb, struct genl_info *info)
 	/* Only support setting default key and
 	 * Extended Key ID action NL80211_KEY_SET_TX.
 	 */
-	if (!key.def && !key.defmgmt && !key.defbeacon &&
+	if (!key.def && !key.defmgmt && !key.defbeacon && !key.defcontrol &&
 	    !(key.p.mode == NL80211_KEY_SET_TX))
 		return -EINVAL;
 
@@ -5573,6 +5582,24 @@ static int nl80211_set_key(struct sk_buff *skb, struct genl_info *info)
 			return err;
 
 		return rdev_set_default_beacon_key(rdev, dev, link_id, key.idx);
+	} else if (key.defcontrol) {
+		if (key.def_multi)
+			return -EINVAL;
+
+		if (!rdev->ops || !rdev->ops->set_default_control_key)
+			return -EOPNOTSUPP;
+
+		err = nl80211_key_allowed(wdev);
+
+		if (err)
+			return err;
+
+		err = nl80211_validate_key_link_id(info, wdev, link_id, false);
+
+		if (err)
+			return err;
+
+		return rdev_set_default_control_key(rdev, dev, link_id, key.idx);
 	} else if (key.p.mode == NL80211_KEY_SET_TX &&
 		   wiphy_ext_feature_isset(&rdev->wiphy,
 					   NL80211_EXT_FEATURE_EXT_KEY_ID)) {
