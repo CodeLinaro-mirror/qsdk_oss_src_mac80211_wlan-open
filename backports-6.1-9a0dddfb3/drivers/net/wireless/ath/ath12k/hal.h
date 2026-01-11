@@ -1296,6 +1296,7 @@ enum hal_reo_dest_ring_buffer_type {
 enum hal_reo_dest_ring_push_reason {
 	HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED,
 	HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION,
+	HAL_REO_DEST_RING_PUSH_REASON_RXDMA_FLUSH,
 };
 
 /* Peer Metadata classification */
