@@ -595,7 +595,7 @@ static int ath12k_core_fetch_board_data_api_n(struct ath12k_base *ab,
 					 filepath, sizeof(filepath));
 
 	/* magic has extra null byte padded */
-	magic_len = strlen(ATH12K_BOARD_MAGIC) + 1;
+	magic_len = strlen(ab->hw_params->board_magic) + 1;
 	if (len < magic_len) {
 		ath12k_err(ab, "failed to find magic value in %s, file too short: %zu\n",
 			   filepath, len);
@@ -603,7 +603,7 @@ static int ath12k_core_fetch_board_data_api_n(struct ath12k_base *ab,
 		goto err;
 	}
 
-	if (memcmp(data, ATH12K_BOARD_MAGIC, magic_len)) {
+	if (memcmp(data, ab->hw_params->board_magic, magic_len)) {
 		ath12k_err(ab, "found invalid board magic\n");
 		ret = -EINVAL;
 		goto err;
@@ -4338,10 +4338,16 @@ static struct ath12k_hw_group *ath12k_core_hw_group_assign(struct ath12k_base *a
 {
 	struct ath12k_wsi_info *wsi = &ab->wsi_info;
 	struct ath12k_hw_group *ag;
+	bool mlo_capable;
 
 	lockdep_assert_held(&ath12k_hw_group_mutex);
 
-	if (ath12k_ftm_mode || !ath12k_mlo_capable || ath12k_waltest_mode)
+	mlo_capable = !strncmp(ab->hw_params->board_magic,
+				   ATH12K_SCAN_RADIO,
+				   strlen(ATH12K_SCAN_RADIO));
+
+	if (ath12k_ftm_mode || !ath12k_mlo_capable ||
+	    ath12k_waltest_mode || mlo_capable)
 		goto invalid_group;
 
 	/* The grouping of multiple devices will be done based on device tree file.
@@ -4787,7 +4793,16 @@ void ath12k_core_hw_group_set_mlo_capable(struct ath12k_hw_group *ag)
 	 * till the required driver implementation is in place.
 	 */
 	if (ag->num_devices == 1) {
+		bool mlo_capable;
+
 		ab = ag->ab[0];
+
+		mlo_capable = !strncmp(ab->hw_params->board_magic,
+					   ATH12K_SCAN_RADIO,
+					   strlen(ATH12K_SCAN_RADIO));
+
+		if (mlo_capable)
+			return;
 
 		/* WCN chipsets does not advertise in firmware features
 		 * hence skip checking

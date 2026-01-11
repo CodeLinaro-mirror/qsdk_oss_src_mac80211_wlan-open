@@ -6675,12 +6675,16 @@ skip:
 int ath12k_qmi_init_service(struct ath12k_base *ab)
 {
 	int ret;
+	int tgt_mem_mode;
 
 	memset(&ab->qmi.target, 0, sizeof(struct target_info));
 	memset(&ab->qmi.target_mem, 0, sizeof(struct target_mem_chunk));
 	ab->qmi.ab = ab;
 
-	ab->qmi.target_mem_mode = ATH12K_QMI_TARGET_MEM_MODE;
+	if (!of_property_read_u32(ab->dev->of_node, "qcom,tgt_mem_mode", &tgt_mem_mode))
+		ab->qmi.target_mem_mode = tgt_mem_mode;
+	else
+		ab->qmi.target_mem_mode = ATH12K_QMI_TARGET_MEM_MODE;
 
 	ret = ath12k_hif_set_qrtr_endpoint_id(ab);
 	if (ret) {
