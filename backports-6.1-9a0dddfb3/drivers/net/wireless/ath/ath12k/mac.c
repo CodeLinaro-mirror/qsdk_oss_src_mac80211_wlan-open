@@ -22311,7 +22311,9 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k_base *ab;
 	struct ath12k_dp *dp;
 	struct ath12k *ar;
-	bool db2dbm;
+	bool db2dbm, stats_valid = false;
+	struct ath12k_dp_link_peer *link_peer;
+	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
 
 	if (!link_sta->sta) {
 		ath12k_err(NULL, "Failed to proceed: link_sta->sta is NULL");
@@ -22406,6 +22408,32 @@ void ath12k_mac_op_link_sta_statistics(struct ieee80211_hw *hw,
 	link_sinfo->tx_failed = rate_info.tx_retry_failed;
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_RETRIES);
 	link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_FAILED);
+
+	link_sinfo->pn_errors = 0;
+	link_sinfo->mic_errors = 0;
+	link_sinfo->decrypt_errors = 0;
+	spin_lock_bh(&dp->dp_lock);
+	link_peer = ath12k_dp_link_peer_find_by_addr(dp, link_sta->sta->addr);
+	if (link_peer && link_peer->dp_peer &&
+	    link_sta->link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
+		pn_errors =
+			link_peer->dp_peer->stats[link_sta->link_id].wbm_err.reo_error[HAL_REO_DEST_RING_ERROR_CODE_PN_ERR_FLAG_SET];
+		mic_errors =
+			link_peer->dp_peer->stats[link_sta->link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR];
+		decrypt_errors =
+			link_peer->dp_peer->stats[link_sta->link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR];
+		stats_valid = true;
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
+	if (stats_valid) {
+		link_sinfo->pn_errors = pn_errors;
+		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_PN_ERRORS);
+		link_sinfo->mic_errors = mic_errors;
+		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_MIC_ERRORS);
+		link_sinfo->decrypt_errors = decrypt_errors;
+		link_sinfo->filled |= BIT_ULL(NL80211_STA_INFO_DECRYPT_ERRORS);
+	}
 }
 EXPORT_SYMBOL(ath12k_mac_op_link_sta_statistics);
 
@@ -22420,9 +22448,11 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 	struct ath12k *ar;
 	struct ath12k_base *ab;
 	s8 signal, rssi_signal, rssi_offset;
-	bool db2dbm;
+	bool db2dbm, stats_valid = false;
 	struct ath12k_dp *dp;
 	struct ath12k_dp_link_peer_rate_info rate_info = {0};
+	struct ath12k_dp_link_peer *link_peer;
+	u32 pn_errors = 0, mic_errors = 0, decrypt_errors = 0;
 
 	lockdep_assert_wiphy(hw->wiphy);
 
@@ -22467,6 +22497,32 @@ void ath12k_mac_op_sta_statistics(struct ieee80211_hw *hw,
 		}
 		sinfo->txrate.flags = rate_info.txrate.flags;
 		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_TX_BITRATE);
+	}
+
+	sinfo->pn_errors = 0;
+	sinfo->mic_errors = 0;
+	sinfo->decrypt_errors = 0;
+	spin_lock_bh(&dp->dp_lock);
+	link_peer = ath12k_dp_link_peer_find_by_addr(dp, sta->addr);
+	if (link_peer && link_peer->dp_peer &&
+	    arsta->link_id < IEEE80211_MLD_MAX_NUM_LINKS) {
+		pn_errors =
+			link_peer->dp_peer->stats[arsta->link_id].wbm_err.reo_error[HAL_REO_DEST_RING_ERROR_CODE_PN_ERR_FLAG_SET];
+		mic_errors =
+			link_peer->dp_peer->stats[arsta->link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_TKIP_MIC_ERR];
+		decrypt_errors =
+			link_peer->dp_peer->stats[arsta->link_id].wbm_err.rxdma_error[HAL_REO_ENTR_RING_RXDMA_ECODE_DECRYPT_ERR];
+		stats_valid = true;
+	}
+	spin_unlock_bh(&dp->dp_lock);
+
+	if (stats_valid) {
+		sinfo->pn_errors = pn_errors;
+		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_PN_ERRORS);
+		sinfo->mic_errors = mic_errors;
+		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_MIC_ERRORS);
+		sinfo->decrypt_errors = decrypt_errors;
+		sinfo->filled |= BIT_ULL(NL80211_STA_INFO_DECRYPT_ERRORS);
 	}
 
 	spin_unlock_bh(&ab->base_lock);
