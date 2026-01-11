@@ -1388,7 +1388,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	rcu_read_lock();
 	peer = ath12k_dp_link_peer_find_by_id(dp, user_stats->sw_peer_id);
 	if (!peer) {
-		ath12k_dbg(ab, ATH12K_DBG_DP_MON_RX, "peer with peer id %d can't be found\n",
+		ath12k_dbg(ab, ATH12K_DBG_DP_MON, "peer with peer id %d can't be found\n",
 			   ppdu_info->peer_id);
 		rcu_read_unlock();
 		return;
@@ -2382,7 +2382,7 @@ ath12k_dp_mon_get_skb_valid_frag(struct ath12k_dp *dp, struct sk_buff *skb)
 	if (likely(num_frags < MAX_SKB_FRAGS))
 		return last_skb;
 
-	ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON_RX,
+	ath12k_dbg(dp->ab, ATH12K_DBG_DP_MON,
 		   "no skb with available frag slots found in skb or frag_list\n");
 	return NULL;
 }
