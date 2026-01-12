@@ -2976,14 +2976,15 @@ void ath12k_debugfs_op_vif_add(struct ieee80211_hw *hw,
 {
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 
-	if (!ahvif->debugfs_linkstats) {
-		ahvif->debugfs_linkstats = debugfs_create_file("link_stats", 0400,
-							       vif->debugfs_dir,
-							       ahvif,
-							       &ath12k_fops_link_stats);
-		if (IS_ERR(ahvif->debugfs_linkstats))
-			ahvif->debugfs_linkstats = NULL;
-	}
+	if (!vif || !vif->debugfs_dir)
+		return;
+
+	ahvif->debugfs_linkstats = debugfs_create_file("link_stats", 0400,
+						       vif->debugfs_dir,
+						       ahvif,
+						       &ath12k_fops_link_stats);
+	if (IS_ERR(ahvif->debugfs_linkstats))
+		ahvif->debugfs_linkstats = NULL;
 }
 EXPORT_SYMBOL(ath12k_debugfs_op_vif_add);
 
