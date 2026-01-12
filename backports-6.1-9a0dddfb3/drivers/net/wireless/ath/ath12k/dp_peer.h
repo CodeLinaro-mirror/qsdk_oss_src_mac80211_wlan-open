@@ -80,6 +80,7 @@ struct ath12k_dp_link_peer {
 
 	/* link stats */
 	struct rate_info txrate;
+	struct rate_info rxrate;
 	struct rate_info last_txrate;
 	u64 rx_duration;
 	u64 tx_duration;

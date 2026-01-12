@@ -847,7 +847,136 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	stats->rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += len;
 }
 
-void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_rx_peer_stats *rx_stats,
+static u8 ath12k_dp_rx_rate_convert_bw(u8 bw)
+{
+	u8 ret = 0;
+
+	switch (bw) {
+	case CMN_BW_20MHZ:
+		ret = RATE_INFO_BW_20;
+		break;
+	case CMN_BW_40MHZ:
+		ret = RATE_INFO_BW_40;
+		break;
+	case CMN_BW_80MHZ:
+		ret = RATE_INFO_BW_80;
+		break;
+	case CMN_BW_160MHZ:
+		ret = RATE_INFO_BW_160;
+		break;
+	case CMN_BW_320MHZ:
+		ret = RATE_INFO_BW_320;
+		break;
+	default:
+		ret = RATE_INFO_BW_20;
+		break;
+	}
+
+	return ret;
+}
+
+static void ath12k_dp_rx_fill_rate_info(struct rate_info *rate,
+					struct hal_rx_mon_ppdu_info *ppdu_info,
+					struct hal_rx_user_status *user_stats,
+					bool is_su)
+{
+	u8 mcs, nss, preamble_type;
+	u8 rix = 0, ret;
+	u16 ratecode = 0;
+
+	if (!rate || !ppdu_info)
+		return;
+
+	mcs = (user_stats) ? user_stats->mcs : ppdu_info->mcs;
+	nss = (user_stats) ? user_stats->nss : ppdu_info->nss;
+	preamble_type = ppdu_info->preamble_type;
+
+	rate->nss = nss;
+	rate->bw = ath12k_mac_bw_to_mac80211_bw(ppdu_info->bw);
+
+	switch (preamble_type) {
+	case HAL_RX_PREAMBLE_11A:
+	case HAL_RX_PREAMBLE_11B:
+		ret = ath12k_mac_hw_ratecode_to_legacy_rate(mcs, preamble_type,
+							    &rix, &ratecode);
+		if (ret < 0)
+			return;
+		rate->legacy = ratecode;
+		break;
+
+	case HAL_RX_PREAMBLE_11N:
+		if (mcs > HAL_RX_MAX_MCS_HT || nss < 1 || nss > HAL_RX_MAX_NSS)
+			return;
+		rate->mcs = mcs + 8 * (nss - 1);
+		rate->flags = RATE_INFO_FLAGS_MCS;
+		if (ppdu_info->sgi)
+			rate->flags |= RATE_INFO_FLAGS_SHORT_GI;
+		break;
+
+	case HAL_RX_PREAMBLE_11AC:
+		if (mcs > HAL_RX_MAX_MCS_VHT)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_VHT_MCS;
+		if (ppdu_info->sgi)
+			rate->flags |= RATE_INFO_FLAGS_SHORT_GI;
+		break;
+
+	case HAL_RX_PREAMBLE_11AX:
+		if (mcs > HAL_RX_MAX_MCS_HE)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_HE_MCS;
+		rate->he_gi = ath12k_he_gi_to_nl80211_he_gi(ppdu_info->sgi);
+		if (is_su) {
+			rate->bw = ath12k_dp_rx_rate_convert_bw(ppdu_info->bw);
+		} else {
+			rate->bw = RATE_INFO_BW_HE_RU;
+			rate->he_ru_alloc = ppdu_info->ru_alloc;
+		}
+		break;
+
+	case HAL_RX_PREAMBLE_11BE:
+		if (mcs > HAL_RX_MAX_MCS_BE)
+			return;
+		rate->mcs = mcs;
+		rate->flags = RATE_INFO_FLAGS_EHT_MCS;
+		rate->eht_gi = ath12k_eht_gi_to_nl80211_eht_gi(ppdu_info->sgi);
+		if (is_su) {
+			rate->bw = ath12k_dp_rx_rate_convert_bw(ppdu_info->bw);
+		} else {
+			rate->bw = RATE_INFO_BW_EHT_RU;
+			rate->eht_ru_alloc = ppdu_info->ru_alloc;
+		}
+		break;
+
+	default:
+		return;
+	}
+}
+
+static void ath12k_dp_rx_rate_stats_update(struct ath12k_rx_peer_stats *rx_stats,
+					   struct hal_rx_mon_ppdu_info *ppdu_info,
+					   struct ath12k_dp_link_peer *peer, u32 uid)
+{
+	struct hal_rx_user_status *user_stats = NULL;
+	bool is_su = true;
+
+	if (!peer || !rx_stats || !ppdu_info)
+		return;
+
+	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU) {
+		user_stats = &ppdu_info->userstats[uid];
+		is_su = false;
+		if (!user_stats)
+			return;
+	}
+
+	ath12k_dp_rx_fill_rate_info(&peer->rxrate, ppdu_info, user_stats, is_su);
+}
+
+void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
+					 struct ath12k_rx_peer_stats *rx_stats,
 					 struct hal_rx_mon_ppdu_info *ppdu_info,
 					 u32 num_msdu, u32 uid)
 {
@@ -896,6 +1025,8 @@ void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_rx_peer_stats *rx_stats,
 				       user_stats->mpdu_cnt_fcs_err;
 	}
 	rx_stats->num_ppdu_duration += rx_time_us;
+
+	ath12k_dp_rx_rate_stats_update(rx_stats, ppdu_info, peer, uid);
 }
 
 void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
@@ -1019,7 +1150,7 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 	ath12k_dp_mon_rx_update_peer_rate_table_stats(rx_stats, ppdu_info,
 						      NULL, num_msdu);
 
-	ath12k_dp_mon_rx_update_basic_stats(rx_stats, ppdu_info, num_msdu, 0);
+	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, 0);
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_update_peer_su_stats);
 
@@ -1188,7 +1319,7 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	pdev_stats->telemetry_stats.rx_data_msdu_cnt = rx_stats->num_msdu;
 	pdev_stats->telemetry_stats.total_rx_data_bytes = user_stats->mpdu_ok_byte_count;
 
-	ath12k_dp_mon_rx_update_basic_stats(rx_stats, ppdu_info, num_msdu, uid);
+	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, uid);
 }
 
 void
