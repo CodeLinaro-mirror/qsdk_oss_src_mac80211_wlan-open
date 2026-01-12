@@ -40,6 +40,9 @@
 #define INVALID_RSSI	GENMASK(7, 0)
 #define INVALID_RATE	GENMASK(7, 0)
 
+#define IS_VALID_RSSI(rssi) ((rssi) <= 0)
+#define IS_VALID_RATE(rate) ((rate) >= 0)
+
 #define nla_total_size_nested(x) nla_total_size(x)
 /**
  * enum ath12k_stats_object:	Defines the Stats specific to object

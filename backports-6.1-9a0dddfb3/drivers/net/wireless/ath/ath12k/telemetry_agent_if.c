@@ -1031,11 +1031,14 @@ void ath12k_sawf_notify_breach(u8 *mac_addr,
 	ath12k_telemetry_breach_indication(mac_addr, svc_id, param, set_clear, tid);
 }
 
-int ath12k_telemetry_update_rssi_rate_breach(u8 *peer_mac, u8 path_type,
+int ath12k_telemetry_update_rssi_rate_breach(u8 soc_id, u16 peer_id, u8 *peer_mac,
+					     u8 path_type,
 					     s32 rssi_value, u32 rate_value)
 {
 	if (g_agent_ops && g_agent_ops->agent_update_rssi_rate_breach)
-		return g_agent_ops->agent_update_rssi_rate_breach(peer_mac,
+		return g_agent_ops->agent_update_rssi_rate_breach(soc_id,
+								  peer_id,
+								  peer_mac,
 								  path_type,
 								  rssi_value,
 								  rate_value);
