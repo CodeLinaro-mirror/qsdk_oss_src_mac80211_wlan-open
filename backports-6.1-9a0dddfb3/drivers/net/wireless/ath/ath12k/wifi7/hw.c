@@ -845,8 +845,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 					BIT(NL80211_IFTYPE_AP) |
 					BIT(NL80211_IFTYPE_MESH_POINT) |
 					BIT(NL80211_IFTYPE_AP_VLAN),
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
+#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 512,
 #endif
 
@@ -960,8 +960,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.interface_modes = BIT(NL80211_IFTYPE_STATION) |
 				   BIT(NL80211_IFTYPE_AP) |
 				   BIT(NL80211_IFTYPE_MESH_POINT),
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
+#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 256,
 #endif
 
@@ -1069,8 +1069,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.interface_modes = BIT(NL80211_IFTYPE_STATION) |
 					BIT(NL80211_IFTYPE_AP) |
 					BIT(NL80211_IFTYPE_MESH_POINT),
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
+#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 256,
 #endif
 
@@ -1155,8 +1155,8 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 		.interface_modes = BIT(NL80211_IFTYPE_STATION) |
 					BIT(NL80211_IFTYPE_AP) |
 					BIT(NL80211_IFTYPE_MESH_POINT),
-#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.supports_monitor = true,
+#ifndef CONFIG_ATH12K_MEM_PROFILE_512M
 		.max_clients_supported = 512,
 #endif
 
