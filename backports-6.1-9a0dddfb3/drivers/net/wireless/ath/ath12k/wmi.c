@@ -109,6 +109,8 @@ struct ath12k_wmi_svc_rdy_ext2_parse {
 	bool spectral_bin_scaling_done;
 	bool mac_phy_caps_ext_done;
 	bool scan_radio_caps_done;
+	bool hal_reg_caps_ext2_done;
+	bool twt_caps_param_done;
 };
 
 struct ath12k_wmi_rdy_parse {
@@ -7635,6 +7637,20 @@ static int ath12k_wmi_tlv_mac_phy_caps_ext(struct ath12k_base *ab, u16 tag,
 	return 0;
 }
 
+static int ath12k_wmi_tlv_twt_caps_params(struct ath12k_base *ab, u16 tag,
+					  u16 len, const void *ptr,
+					  void *data)
+{
+	const struct ath12k_wmi_twt_caps_params *caps = ptr;
+
+	if (tag != WMI_TAG_TWT_CAPS_PARAMS)
+		return -EPROTO;
+
+	ab->twt_cap_bitmap = le32_to_cpu(caps->twt_capability_bitmap);
+
+	return 0;
+}
+
 static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 					 u16 tag, u16 len,
 					 const void *ptr, void *data)
@@ -7684,6 +7700,8 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			}
 
 			parse->mac_phy_caps_ext_done = true;
+		} else if (!parse->hal_reg_caps_ext2_done) {
+			parse->hal_reg_caps_ext2_done = true;
 		} else if (!parse->scan_radio_caps_done) {
 			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
 						  ath12k_wmi_tlv_scan_radio_caps_ext2,
@@ -7696,6 +7714,17 @@ static int ath12k_wmi_svc_rdy_ext2_parse(struct ath12k_base *ab,
 			}
 
 			parse->scan_radio_caps_done = true;
+		} else if (!parse->twt_caps_param_done) {
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						  ath12k_wmi_tlv_twt_caps_params,
+						  parse);
+			if (ret) {
+				ath12k_warn(ab, "failed to parse twt capabilities WMI TLV: %d\n",
+					    ret);
+				return ret;
+			}
+
+			parse->twt_caps_param_done = true;
 		}
 		break;
 	default:

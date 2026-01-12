@@ -15021,6 +15021,7 @@ static void ath12k_mac_copy_he_cap(struct ath12k *ar,
 				   struct ieee80211_sta_he_cap *he_cap)
 {
 	struct ieee80211_he_cap_elem *he_cap_elem = &he_cap->he_cap_elem;
+	struct ath12k_base *ab = ar->ab;
 
 	he_cap->has_he = true;
 	memcpy(he_cap_elem->mac_cap_info, band_cap->he_cap_info,
@@ -15047,6 +15048,9 @@ static void ath12k_mac_copy_he_cap(struct ath12k *ar,
 			~IEEE80211_HE_PHY_CAP3_DCM_MAX_CONST_TX_MASK;
 		he_cap_elem->phy_cap_info[9] |=
 			IEEE80211_HE_PHY_CAP9_RX_1024_QAM_LESS_THAN_242_TONE_RU;
+		if (ab->twt_cap_bitmap & WMI_HOST_WLAN_FLEXI_TWT_CAP)
+			he_cap_elem->mac_cap_info[3] |=
+				IEEE80211_HE_MAC_CAP3_FLEX_TWT_SCHED;
 		break;
 	case NL80211_IFTYPE_STATION:
 		he_cap_elem->mac_cap_info[0] &= ~IEEE80211_HE_MAC_CAP0_TWT_RES;

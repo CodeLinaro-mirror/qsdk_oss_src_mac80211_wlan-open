@@ -2317,6 +2317,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_PDEV_SET_BIOS_INTERFACE_CMD = 0x3FB,
 	WMI_TAG_PEER_CONFIG_PPEDS_ROUTING = 0x3EA,
 	WMI_TAG_SCAN_RADIO_CAPABILITIES_EXT2 = 0x401,
+	WMI_TAG_TWT_CAPS_PARAMS = 0x3ED,
 	WMI_TAG_SAWF_SERVICE_CLASS_CFG_CMD_FIXED_PARAM = 0x40A,
 	WMI_TAG_SAWF_SERVICE_CLASS_DISABLE_CMD_FIXED_PARAM = 0x40B,
 	WMI_TAG_PDEV_PKTLOG_DECODE_INFO = 0x414,
@@ -3289,6 +3290,14 @@ struct ath12k_wmi_caps_ext_params {
 	__le32 eht_supp_mcs_ext_5ghz[WMI_MAX_EHT_SUPP_MCS_5GHZ_SIZE];
 	__le32 eml_capability;
 	__le32 mld_capability;
+} __packed;
+
+#define WMI_HOST_WLAN_FLEXI_TWT_CAP	BIT(1)
+
+struct ath12k_wmi_twt_caps_params {
+	__le32 twt_capability_bitmap;
+	__le32 min_max_wake_dur_us;
+	__le32 min_max_wake_intvl_us;
 } __packed;
 
 /* 2 word representation of MAC addr */
