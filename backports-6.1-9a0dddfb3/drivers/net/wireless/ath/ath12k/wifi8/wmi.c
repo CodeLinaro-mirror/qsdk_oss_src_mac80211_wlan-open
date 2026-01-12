@@ -6,6 +6,7 @@
 
 #include "../core.h"
 #include "wmi.h"
+#include "../ini.h"
 
 void ath12k_wifi8_wmi_init_qcn9625(struct ath12k_base *ab,
 				   struct ath12k_wmi_resource_config_arg *config)
@@ -66,5 +67,5 @@ void ath12k_wifi8_wmi_init_qcn9625(struct ath12k_base *ab,
 	if (test_bit(WMI_TLV_SERVICE_SDWF_LEVEL0, ab->wmi_ab.svc_map))
 		config->qos = true;
 
-	config->max_beacon_size = TARGET_MAX_BEACON_SIZE;
+	config->max_beacon_size = ath12k_cfg_get(ab, ATH12K_CFG_AP_MAX_MGMT_FRM_SZ);
 }
