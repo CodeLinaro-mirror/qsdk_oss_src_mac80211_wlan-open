@@ -827,18 +827,123 @@ static void ath12k_dp_aggr_clear_per_pkt_stats(struct ath12k_dp_peer *peer,
 	ath12k_dp_clear_wbm_rx_stats(&peer->stats[stats_link_id].wbm_err);
 }
 
+static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
+					   struct ath12k_dp *dp,
+					   struct ath12k_dp_hw *dp_hw,
+					   struct ath12k_dp_link_peer *peer,
+					   struct ath12k_dp_link_vif *link_vif,
+					   u8 *addr)
+{
+	struct ath12k_dp_link_peer *temp_peer;
+	struct ath12k_dp_peer *dp_peer;
+	int stats_link_id;
+	u16 peerid_index;
+
+	spin_lock_bh(&dp_hw->peer_lock);
+
+	dp_peer = peer->dp_peer;
+	stats_link_id = peer->link_id;
+	dp_peer->hw_links[peer->hw_link_id] = 0;
+
+	if (!dp_peer->is_vdev_peer) {
+		dp_peer->peer_links_map &= ~BIT(peer->link_id);
+		/* Preserve link peer stats to MLD peer before deletion */
+		ath12k_dp_aggr_link_peer_to_mld_peer(peer, dp_peer, stats_link_id);
+		/* Preserve link peer stats to link VIF before deletion */
+		if (link_vif)
+			ath12k_dp_aggr_link_peer_to_link_vif(link_vif, peer, dp_peer,
+							     stats_link_id);
+		/* Clear per-packet stats to prevent double-counting on reuse */
+		ath12k_dp_aggr_clear_per_pkt_stats(dp_peer, stats_link_id);
+	}
+
+	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
+
+	if (peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
+		peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
+		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+	}
+
+	/* To handle roaming and split phy scenario */
+	temp_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
+	if (temp_peer && temp_peer->hw_link_id == ar->hw_link_id)
+		ath12k_dp_link_peer_rhash_delete(dp, peer);
+
+	peer->is_assigned = false;
+	spin_unlock_bh(&dp_hw->peer_lock);
+}
+
+void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
+				     struct ath12k_link_vif *arvif,
+				     struct ath12k_sta *ahsta, u8 link_id,
+				     u8 *addr)
+{
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
+	struct ath12k_dp *dp = dp_pdev->dp;
+	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
+	struct ath12k_vif *ahvif;
+	struct ath12k_dp_link_peer *peer;
+	struct ath12k_dp_link_vif *link_vif = NULL;
+	struct ath12k_base *ab = ar->ab;
+	struct ath12k_link_sta *arsta;
+	struct ath12k_hw *ah = ar->ah;
+	u8 vdev_id = arvif->vdev_id;
+
+	lockdep_assert_wiphy(ah->hw->wiphy);
+
+	ahvif = arvif->ahvif;
+	if (ahvif)
+		link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
+
+	spin_lock_bh(&dp->dp_lock);
+
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
+	if (!peer || !peer->is_assigned) {
+		spin_unlock_bh(&dp->dp_lock);
+		return;
+	}
+
+	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, link_vif, addr);
+
+	spin_unlock_bh(&dp->dp_lock);
+
+	if (WARN_ON(link_id >= ATH12K_NUM_MAX_LINKS))
+		return;
+
+	arsta = wiphy_dereference(ah->hw->wiphy, ahsta->link[link_id]);
+	if (WARN_ON(!arsta))
+		return;
+
+	ahsta->links_map &= ~BIT(link_id);
+	ahsta->device_bitmap &= ~BIT(ab->wsi_info.index);
+	ahsta->mlo_hw_link_id_bitmap &= ~BIT(arvif->ar->pdev->hw_link_id);
+	ahsta->num_peer--;
+	rcu_assign_pointer(ahsta->link[link_id], NULL);
+
+	ath12k_cfr_decrement_peer_count(ar, arsta);
+	spin_lock_bh(&ar->ab->base_lock);
+	ath12k_link_sta_rhash_delete(ar->ab, arsta);
+	spin_unlock_bh(&ar->ab->base_lock);
+	synchronize_rcu();
+
+	if (arsta == &ahsta->deflink) {
+		arsta->link_id = ATH12K_INVALID_LINK_ID;
+		arsta->ahsta = NULL;
+		arsta->arvif = NULL;
+	} else {
+		kfree(arsta);
+	}
+}
+
 void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 {
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
-	struct ath12k_dp_peer *dp_peer;
-	struct ath12k_dp_link_peer *peer, *temp_peer;
-	u16 peerid_index;
+	struct ath12k_dp_link_peer *peer;
 	struct ath12k_link_vif *arvif;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_vif *link_vif = NULL;
-	int stats_link_id;
 
 	arvif = ath12k_mac_get_arvif(ar, vdev_id);
 	if (arvif) {
@@ -855,38 +960,7 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 		return;
 	}
 
-	spin_lock_bh(&dp_hw->peer_lock);
-
-	dp_peer = peer->dp_peer;
-	dp_peer->hw_links[peer->hw_link_id] = 0;
-
-	stats_link_id = peer->link_id;
-	if (!dp_peer->is_vdev_peer) {
-		dp_peer->peer_links_map &= ~BIT(peer->link_id);
-		/* Preserve link peer stats to MLD peer before deletion */
-		ath12k_dp_aggr_link_peer_to_mld_peer(peer, dp_peer, stats_link_id);
-		/* Preserve link peer stats to link VIF before deletion */
-		if (link_vif)
-			ath12k_dp_aggr_link_peer_to_link_vif(link_vif, peer, dp_peer,
-							     stats_link_id);
-		/* Clear per-packet stats to prevent double-counting on reuse */
-		ath12k_dp_aggr_clear_per_pkt_stats(dp_peer, stats_link_id);
-	}
-
-	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
-	if (peer->peer_id != ATH12K_MLO_PEER_ID_INVALID) {
-		peerid_index = ath12k_dp_peer_get_peerid_index(dp, peer->peer_id);
-		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
-	}
-
-	spin_unlock_bh(&dp_hw->peer_lock);
-
-	/* To handle roaming and split phy scenario */
-	temp_peer = ath12k_dp_link_peer_find_by_addr(dp, addr);
-	if (temp_peer && temp_peer->hw_link_id == ar->hw_link_id)
-		ath12k_dp_link_peer_rhash_delete(dp, peer);
-
-	peer->is_assigned = false;
+	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, link_vif, addr);
 
 	spin_unlock_bh(&dp->dp_lock);
 
