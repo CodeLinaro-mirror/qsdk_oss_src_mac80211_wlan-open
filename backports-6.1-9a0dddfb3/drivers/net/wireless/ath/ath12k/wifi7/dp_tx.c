@@ -2543,7 +2543,6 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 	struct ath12k_dp_link_peer *peer;
 	struct ath12k_vif *ahvif;
-	struct ath12k_link_sta *arsta;
 	struct hal_tx_status ts = { 0 };
 	bool tx_drop = false;
 	bool tx_status_default = false;
@@ -2591,14 +2590,8 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 
 	rcu_read_lock();
 
-	peer = ath12k_dp_link_peer_find_by_id(dp, ts.peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, ts.peer_id);
 	if (unlikely(!peer || !peer->sta || !peer->vif)) {
-		rcu_read_unlock();
-		return;
-	}
-
-	arsta = ath12k_peer_get_link_sta(ab, peer);
-	if (!arsta) {
 		rcu_read_unlock();
 		return;
 	}
