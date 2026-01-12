@@ -12,6 +12,9 @@
 #include <linux/of.h>
 #include <linux/of_graph.h>
 #include <linux/pci.h>
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+#include <linux/netfilter_bridge.h>
+#endif
 #ifdef CONFIG_IO_COHERENCY
 #include <linux/tmelcom_ipc.h>
 #endif
@@ -43,6 +46,8 @@
 #include "sdwf.h"
 #include "telemetry_agent_if.h"
 #include "mgmt_rx.h"
+#include "me.h"
+#include "qcn_extns/me_snoop_extn.h"
 
 #ifdef CPTCFG_ATHDEBUG
 #include "athdbg_if.h"
@@ -5175,6 +5180,10 @@ int ath12k_core_init(struct ath12k_base *ab)
 	if (ret)
 		ath12k_warn(ab, "failed to register panic handler: %d\n", ret);
 
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+	ath12k_core_me_notifier_register_extn(ab);
+#endif
+
 #ifdef CPTCFG_ATHDEBUG
 	athdbg_ops_register(ab);
 #endif
@@ -5254,6 +5263,11 @@ void ath12k_core_deinit(struct ath12k_base *ab)
 	if (!ag->num_started)
 		athdbg_if_unregister(ab);
 #endif
+
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+	ath12k_core_me_notifier_unregister_extn(ab);
+#endif
+
 	ath12k_core_hw_group_unassign(ab);
 }
 

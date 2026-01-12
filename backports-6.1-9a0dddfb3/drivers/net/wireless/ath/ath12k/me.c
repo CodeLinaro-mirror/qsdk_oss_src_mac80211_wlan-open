@@ -7,6 +7,8 @@
 #include <linux/rcupdate.h>
 #include "core.h"
 #include "me.h"
+#include "debug.h"
+#include "qcn_extns/me_snoop_extn.h"
 
 /**
  * ath12k_me_db_reset(): Multicast Enhancement database reset
@@ -27,6 +29,53 @@ void ath12k_me_db_reset(struct ath12k_me_db *db)
 	spin_unlock_bh(&db->lock);
 }
 
+static void ath12k_me_db_free_rcu(struct rcu_head *rcu)
+{
+	struct ath12k_me_db *db = container_of(rcu, struct ath12k_me_db, rcu_head);
+
+	spin_lock_bh(&db->lock);
+	ath12k_me_hmmc_list_flush(db);
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+	ath12k_me_snoop_list_flush_extn(&db->snoop);
+#endif
+	spin_unlock_bh(&db->lock);
+
+	ath12k_me_db_reset(db);
+	kfree(db);
+}
+
+/**
+ * ath12k_me_db_free(): Free the database
+ * @ref - Reference pointer of ME database
+ */
+void ath12k_me_db_free(struct kref *ref)
+{
+	struct ath12k_me_db *db = container_of(ref, struct ath12k_me_db, ref);
+
+	/* Schedule cleanup and free via RCU callback to ensure all readers are done */
+	call_rcu(&db->rcu_head, ath12k_me_db_free_rcu);
+}
+
+struct ath12k_me_db *ath12k_me_db_get(struct ath12k_dp_vif *dp_vif)
+{
+	struct ath12k_me_db *db;
+
+	rcu_read_lock();
+	db = rcu_dereference(dp_vif->me_db);
+	if (db)
+		kref_get(&db->ref);
+
+	rcu_read_unlock();
+
+	return db;
+}
+
+void ath12k_me_db_put(struct ath12k_me_db *db)
+{
+	if (db)
+		kref_put(&db->ref, ath12k_me_db_free);
+}
+
 /**
  * ath12k_me_db_deinit(): Multicast Enhancement database deinit
  * @ahvif - Pointer to virtual interface structure
@@ -45,16 +94,8 @@ int ath12k_me_db_deinit(struct ath12k_dp_vif *dp_vif)
 	if (!db)
 		return 0;
 
-	/* Flush the List entries here */
-	spin_lock_bh(&db->lock);
-	ath12k_me_hmmc_list_flush(db);
-	spin_unlock_bh(&db->lock);
-
-	/* Reset the database */
-	ath12k_me_db_reset(db);
-
-	synchronize_rcu();
-	kfree(db);
+	/* Drop our reference; final free happens in free callback */
+	ath12k_me_db_put(db);
 
 	return 0;
 }
@@ -76,6 +117,8 @@ int ath12k_me_db_init(struct ath12k_dp_vif *dp_vif)
 	if (!db)
 		return -ENOMEM;
 
+	kref_init(&db->ref);
+
 	/*
 	 * Initialize the spin lock for ME DB protection
 	 */
@@ -87,6 +130,12 @@ int ath12k_me_db_init(struct ath12k_dp_vif *dp_vif)
 	 * Initialize the HMMC list here.
 	 */
 	ath12k_me_hmmc_list_init(db);
+
+#if defined(CONFIG_BRIDGE_MCAST_OFFLOAD)
+	/* Allocate snoop cache (single block) and map buckets */
+	ath12k_me_snoop_list_init_extn(&db->snoop);
+#endif
+
 	rcu_assign_pointer(dp_vif->me_db, db);
 
 	return 0;

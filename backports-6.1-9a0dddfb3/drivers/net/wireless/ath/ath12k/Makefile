@@ -59,6 +59,8 @@ obj-$(CPTCFG_ATH12K) += wifi7/
 obj-$(CPTCFG_ATH12K) += wifi8/
 obj-$(CPTCFG_ATHDEBUG) += ath_debug/
 
+ccflags-y += -I$(src)
+
 ath12k-$(CPTCFG_QCN_EXTN) += \
 	qcn_extns/core_extn.o \
 	qcn_extns/vendor_extn.o \
@@ -70,6 +72,10 @@ ath12k-$(CPTCFG_QCN_EXTN) += \
 ath12k-$(CPTCFG_EXT_IPA_OFFLOAD) += \
 	qcn_extns/ipa/dp_ipa.o \
 	qcn_extns/ipa/dp_ipa_perf.o
+
+ifneq ($(CONFIG_BRIDGE_MCAST_OFFLOAD),)
+ath12k-$(CPTCFG_QCN_EXTN) += qcn_extns/me_snoop_extn.o
+endif
 
 ath12k-$(CPTCFG_ATH12K_DEBUGFS) += debugfs.o debugfs_htt_stats.o debugfs_sta.o
 ath12k-$(CONFIG_ACPI) += acpi.o
