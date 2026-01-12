@@ -794,6 +794,64 @@ struct ath12k_rx_peer_stats {
 	    preamble_info:4;
 };
 
+#define PKT_BW_GAIN_20MHZ   0
+#define PKT_BW_GAIN_40MHZ   3
+#define PKT_BW_GAIN_80MHZ   6
+#define PKT_BW_GAIN_160MHZ  9
+#define PKT_BW_GAIN_320MHZ  12
+
+struct ath12k_dp_mon_rssi_dbm_conv_offsets {
+	s32 rssi_temp_offset;
+	s8 avg_nf_dbm;
+	/* rssi_offset is the sum of avg_nf_dbm & rssi_temp_offset */
+	s32 rssi_offset;
+	u32 xlna_bypass_offset;
+	u32 xlna_bypass_threshold;
+};
+
+DECLARE_EWMA(avg_snr, 0, 8)
+DECLARE_EWMA(avg_snr_dp, 0, 8)
+DECLARE_EWMA(avg_rssi, 10, 8)
+DECLARE_EWMA(avg_rssi_dp, 10, 8)
+
+/**
+ * struct ath12k_dp_link_peer_rx_signal_stats - Per-peer signal statistics
+ * @snr:              Current signal-to-noise ratio (SNR) in dB
+ * @snr_avg:          Averaged SNR value (scaled/filtered)
+ * @avg_snr:          EWMA (Exponentially Weighted Moving Average) tracker for SNR
+ * @rssi_region_offset: Region-specific RSSI offset applied during conversion
+ * @snr_dp:           Data path specific SNR value
+ * @snr_dp_avg:       Averaged DP-specific SNR value
+ * @avg_snr_dp:       EWMA tracker for DP-specific SNR
+ *
+ * @rssi:             Current received signal strength indicator (RSSI) in dBm
+ * @rssi_avg:         Averaged RSSI value (scaled/filtered)
+ * @avg_rssi:         EWMA tracker for RSSI
+ * @rssi_dp:          Data path specific RSSI value
+ * @rssi_dp_avg:      Averaged DP-specific RSSI value
+ * @avg_rssi_dp:      EWMA tracker for DP-specific RSSI
+ *
+ * This structure holds both instantaneous and averaged signal quality
+ * metrics (SNR and RSSI) for a given peer, including data path specific
+ * values and EWMA smoothing helpers.
+ */
+struct ath12k_dp_link_peer_rx_signal_stats {
+	u8 snr;
+	u16 snr_avg;
+	struct ewma_avg_snr avg_snr;
+	u8 rssi_region_offset;
+	u8 snr_dp;
+	u16 snr_dp_avg;
+	struct ewma_avg_snr_dp avg_snr_dp;
+
+	s8 rssi;
+	s16 rssi_avg;
+	struct ewma_avg_rssi avg_rssi;
+	s8 rssi_dp;
+	s16 rssi_dp_avg;
+	struct ewma_avg_rssi_dp avg_rssi_dp;
+};
+
 /* struct ath12k_dp_preserved_stats - Snapshot statistics for MLO datapath
  *
  * This structure is used to accumulate and preserve extended tx and rx and per-packet

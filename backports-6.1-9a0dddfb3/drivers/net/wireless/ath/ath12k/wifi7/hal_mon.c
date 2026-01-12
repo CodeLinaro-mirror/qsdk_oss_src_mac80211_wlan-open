@@ -2092,6 +2092,10 @@ ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 
 		ppdu_info->bw = u32_get_bits(info[0],
 					     HAL_RX_PHYRX_RSSI_LEGACY_INFO_INFO0_RX_BW);
+
+		ppdu_info->rssi_region_offset =
+			u32_get_bits(__le32_to_cpu(rssi->rsvd0[5]),
+				     HAL_RX_PHYRX_RSSI_LEGACY_INFO_RSVD5_REGION_OFFSET);
 		break;
 	}
 	case HAL_PHYRX_OTHER_RECEIVE_INFO: {
