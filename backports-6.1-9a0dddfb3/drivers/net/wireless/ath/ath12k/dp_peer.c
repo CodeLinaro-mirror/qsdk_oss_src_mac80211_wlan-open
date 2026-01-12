@@ -184,8 +184,8 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id, bool is_wds)
 
 	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
 	if (!peer) {
-		ath12k_warn(ab, "peer-unmap-event: unknown peer id %d\n",
-			    peer_id);
+		ath12k_dbg(ab, ATH12K_DBG_PEER, "peer-unmap-event: unknown peer id %d\n",
+			   peer_id);
 		goto exit;
 	}
 
@@ -193,7 +193,6 @@ void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id, bool is_wds)
 		   peer->vdev_id, peer->addr, peer_id);
 
 	ath12k_link_peer_free(peer);
-	wake_up(&ab->peer_mapping_wq);
 
 exit:
 	spin_unlock_bh(&dp->dp_lock);

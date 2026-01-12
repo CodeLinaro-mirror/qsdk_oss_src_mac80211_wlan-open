@@ -1034,6 +1034,8 @@ struct ath12k_sta {
 	/* indicates bitmap of devices where peers are created */
 	u8 device_bitmap;
 	u32 mlo_hw_link_id_bitmap;
+	/* indicates bitmap of links where peer delete cmd is sent to FW */
+	u32 peer_delete_cmd_sent_bitmap;
 
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	/* protected by conf_mutex */
@@ -1403,7 +1405,6 @@ struct ath12k {
 
 	struct completion peer_create_done;
 	struct completion peer_assoc_done;
-	struct completion peer_delete_done;
 
 	int install_key_status;
 	struct completion install_key_done;
