@@ -7,7 +7,7 @@
 #define ATH12K_TELEMETRY_AGENT_IF_H
 
 #include "telemetry.h"
-#include "telemetry_agent_wifi_driver_if.h"
+#include "../telemetry_agent_wifi_driver_if.h"
 #include "core.h"
 
 int ath12k_telemetry_ab_agent_create_handler(struct ath12k_base *ab);
@@ -19,7 +19,8 @@ int unregister_telemetry_agent_ops(struct telemetry_agent_ops *agent_ops);
 int ath12k_get_pdev_stats(void *obj, struct agent_link_iface_stats_obj *stats);
 int ath12k_get_peer_info(void *obj, struct agent_peer_iface_init_obj *stats);
 int ath12k_get_pdev_info(void *obj, struct agent_pdev_iface_init_obj *stats);
-int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats);
+int ath12k_get_peer_stats(int obj_id, void *parent,
+			  struct agent_peer_iface_stats_obj *stats);
 int ath12k_get_psoc_info(void *obj, struct agent_psoc_iface_init_obj *statis);
 
 int ath12k_sawf_get_tput_stats(void *soc, void *arg, u64 *in_bytes,

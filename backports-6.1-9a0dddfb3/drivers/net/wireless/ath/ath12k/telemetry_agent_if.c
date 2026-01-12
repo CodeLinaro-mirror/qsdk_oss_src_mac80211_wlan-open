@@ -7,7 +7,6 @@
 #include "core.h"
 #include "telemetry.h"
 #include "telemetry_agent_if.h"
-#include "telemetry_agent.h"
 #include "debug.h"
 #include "dp_peer.h"
 #include "dp_mon.h"
@@ -499,27 +498,24 @@ static int ath12k_calculate_link_rssi(struct ath12k_dp_link_peer *peer)
 	return avg_snr;
 }
 
-int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
+int ath12k_get_peer_stats(int obj_id, void *parent,
+			  struct agent_peer_iface_stats_obj *stats)
 {
-	struct agent_peer_db *peer_db = (struct agent_peer_db *)obj;
-	struct ath12k_dp_link_peer *peer = peer_db->peer_obj_ptr;
-	struct ath12k_pdev *pdev = peer_db->pdev_obj_ptr;
-	struct ath12k_base *ab = peer_db->psoc_obj_ptr;
+	int peer_id = obj_id;
+	struct ath12k_base *ab = (struct ath12k_base *)parent;
 	struct ath12k_peer_telemetry_stats dp_stats;
+	struct ath12k_dp_link_peer *peer;
 	u8 ac;
 
 	/* Telemetry agent is expected to hold lock while fetching this stats
 	 */
-	if (!pdev || !ab) {
+	if (!ab) {
 		ath12k_err(NULL, "Invalid peer object received from telemetry agent object\n");
 		return -EINVAL;
 	}
 
-	if (!pdev->ar)
-		return -EINVAL;
-
 	spin_lock_bh(&ab->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_db->peer_id);
+	peer = ath12k_dp_link_peer_find_by_id(ab->dp, peer_id);
 	if (!peer || peer->is_bridge_peer || !peer->assoc_success ||
 	    !peer->sta) {
 		spin_unlock_bh(&ab->dp->dp_lock);
@@ -547,8 +543,8 @@ int ath12k_get_peer_stats(void *obj, struct agent_peer_iface_stats_obj *stats)
 			dp_stats.tx_airtime_consumption[ac];
 
 		ath12k_dbg(NULL, ATH12K_DBG_RM,
-			   "peer stats peer: %pM soc: %d pdev: %d link: %d ac: %d airtime_consumption: %d tx: %d rx: %d\n",
-			   peer->addr, ab->device_id, pdev->pdev_id, peer->link_id,
+			   "peer stats peer: %pM soc: %d link: %d ac: %d airtime_consumption: %d tx: %d rx: %d\n",
+			   peer->addr, ab->device_id, peer->link_id,
 			   ac, stats->airtime_consumption[ac],
 			   dp_stats.tx_airtime_consumption[ac],
 			   dp_stats.rx_airtime_consumption[ac]);
@@ -731,8 +727,7 @@ int ath12k_telemetry_dynamic_app_init_deinit_notify(u8 init, u8 id, u64 service_
 }
 
 void ath12k_telemetry_notify_rm(enum agent_notification_event event,
-				enum rm_services id,
-				uint8_t category)
+				int id, uint8_t category)
 {
 	ath12k_err(NULL,
 		   "Handshake received from telemetry for Event:%d id:%d category:%d\n",

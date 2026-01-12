@@ -9,7 +9,7 @@
 #include "telemetry.h"
 #include <linux/module.h>
 #include "telemetry_agent_if.h"
-#include "telemetry_agent_wifi_driver_if.h"
+#include "../telemetry_agent_wifi_driver_if.h"
 
 #define MIN_THERSHOLD_PERCENTAGE 0
 #define MAX_THERSHOLD_PERCENTAGE 100
