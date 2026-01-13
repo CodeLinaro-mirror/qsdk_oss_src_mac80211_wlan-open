@@ -2402,6 +2402,7 @@ int ath12k_dp_htt_connect(struct ath12k_dp *dp);
 
 void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 				       struct sk_buff *skb);
+void ath12k_dp_htt_htc_tx_complete(struct ath12k_base *ab, struct sk_buff *skb);
 
 int ath12k_dp_htt_tlv_iter(struct ath12k_base *ab, struct ath12k_pdev_dp *dp_pdev,
 			   const void *ptr, size_t len,

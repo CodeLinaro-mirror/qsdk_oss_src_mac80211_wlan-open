@@ -1223,7 +1223,6 @@ ath12k_dp_arch_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 }
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp);
-int ath12k_dp_msdu_htt_connect(struct ath12k_dp *dp);
 void ath12k_dp_partner_cc_init(struct ath12k_base *ab);
 int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
                                       int pdev_id,
