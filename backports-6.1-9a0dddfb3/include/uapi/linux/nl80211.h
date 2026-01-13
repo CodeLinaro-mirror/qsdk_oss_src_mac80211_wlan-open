@@ -3066,6 +3066,9 @@ enum nl80211_commands {
  *
  * @NL80211_ATTR_USE_CFP: Indicate the use of control frame protection by station.
  *
+ * @NL80211_ATTR_CFP: Indicate whether the particular vdev supports control
+ *	frame protection
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3669,6 +3672,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_CONTROL_MIC_PAD,
 
 	NL80211_ATTR_USE_CFP,
+
+	NL80211_ATTR_CFP,
 
 	/* add attributes here, update the policy in nl80211.c */
 

@@ -1070,6 +1070,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS] = { .type = NLA_U16 },
 	[NL80211_ATTR_CONTROL_MIC_PAD] = { .type = NLA_U8 },
 	[NL80211_ATTR_USE_CFP] = { .type = NLA_U32 },
+	[NL80211_ATTR_CFP] = { .type = NLA_FLAG },
 };
 
 /* policy for the key attributes */
@@ -7292,6 +7293,8 @@ static int nl80211_start_ap(struct sk_buff *skb, struct genl_info *info)
 			info->attrs[NL80211_ATTR_HIDDEN_SSID]);
 
 	params->privacy = !!info->attrs[NL80211_ATTR_PRIVACY];
+
+	params->is_cfp_enabled = !!info->attrs[NL80211_ATTR_CFP];
 
 	if (info->attrs[NL80211_ATTR_AUTH_TYPE]) {
 		params->auth_type = nla_get_u32(
