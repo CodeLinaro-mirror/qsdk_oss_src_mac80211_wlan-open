@@ -3062,6 +3062,8 @@ enum nl80211_commands {
  * @NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE: Attribute denoting the 6 GHz
  *	device deployment type.
  *
+ * @NL80211_ATTR_CONTROL_MIC_PAD: Mic padding for control frame protection.
+ *
  * @NUM_NL80211_ATTR: total number of nl80211_attrs available
  * @NL80211_ATTR_MAX: highest attribute number currently defined
  * @__NL80211_ATTR_AFTER_LAST: internal use
@@ -3661,6 +3663,8 @@ enum nl80211_attrs {
 	NL80211_ATTR_QOS_MGMT,
 
 	NL80211_ATTR_6GHZ_DEVICE_DEPLOYMENT_TYPE,
+
+	NL80211_ATTR_CONTROL_MIC_PAD,
 
 	/* add attributes here, update the policy in nl80211.c */
 

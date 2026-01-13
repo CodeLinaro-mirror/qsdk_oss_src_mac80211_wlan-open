@@ -2736,6 +2736,7 @@ struct ieee80211_link_sta {
  * @neg_ttlm: TTLM negotiation parameters of the station
  * @reconf: bitmap of links added and removed during multi-link
  *	reconfiguration.
+ * @control_mic_pad: Padding info for control frames
  */
 struct ieee80211_sta {
 	u8 addr[ETH_ALEN] __aligned(2);
@@ -2774,6 +2775,7 @@ struct ieee80211_sta {
 	u16 mld_cap_op;
 	struct net_device *dev;
 	struct ieee80211_neg_ttlm neg_ttlm;
+	u8 control_mic_pad;
 
 	/* must be last */
 	u8 drv_priv[] __aligned(sizeof(void *));
