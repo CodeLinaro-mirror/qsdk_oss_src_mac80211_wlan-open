@@ -1069,6 +1069,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_QOS_MGMT] = NLA_POLICY_NESTED(nl80211_qm_policy),
 	[NL80211_ATTR_ASSOC_MLD_EXT_CAPA_OPS] = { .type = NLA_U16 },
 	[NL80211_ATTR_CONTROL_MIC_PAD] = { .type = NLA_U8 },
+	[NL80211_ATTR_USE_CFP] = { .type = NLA_U32 },
 };
 
 /* policy for the key attributes */
@@ -13159,6 +13160,15 @@ static int nl80211_associate(struct sk_buff *skb, struct genl_info *info)
 			return -EINVAL;
 	}
 
+	if (info->attrs[NL80211_ATTR_USE_CFP]) {
+		enum nl80211_cfp cfp = nla_get_u32(info->attrs[NL80211_ATTR_USE_CFP]);
+
+		if (cfp == NL80211_CFP_REQUIRED)
+			req.use_cfp = true;
+		else
+			req.use_cfp = false;
+	}
+
 	if (info->attrs[NL80211_ATTR_PREV_BSSID])
 		req.prev_bssid = nla_data(info->attrs[NL80211_ATTR_PREV_BSSID]);
 
@@ -14019,6 +14029,11 @@ static int nl80211_connect(struct sk_buff *skb, struct genl_info *info)
 	} else {
 		connect.mfp = NL80211_MFP_NO;
 	}
+
+	if (info->attrs[NL80211_ATTR_USE_CFP])
+		connect.cfp = nla_get_u32(info->attrs[NL80211_ATTR_USE_CFP]);
+	else
+		connect.cfp = NL80211_CFP_NO;
 
 	if (info->attrs[NL80211_ATTR_PREV_BSSID])
 		connect.prev_bssid =

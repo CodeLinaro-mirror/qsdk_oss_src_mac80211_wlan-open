@@ -410,6 +410,7 @@ enum ieee80211_sta_flags {
 	IEEE80211_STA_UAPSD_ENABLED	= BIT(7),
 	IEEE80211_STA_NULLFUNC_ACKED	= BIT(8),
 	IEEE80211_STA_ENABLE_RRM	= BIT(15),
+	IEEE80211_STA_CFP_ENABLED       = BIT(16),
 };
 
 enum ieee80211_conn_mode {
@@ -571,6 +572,11 @@ struct ieee80211_if_managed {
 		IEEE80211_MFP_OPTIONAL,
 		IEEE80211_MFP_REQUIRED
 	} mfp; /* management frame protection */
+
+	enum {
+		IEEE80211_CFP_DISABLED,
+		IEEE80211_CFP_REQUIRED
+	} cfp; /* control frame protection */
 
 	/*
 	 * Bitmask of enabled u-apsd queues,
