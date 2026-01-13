@@ -114,6 +114,8 @@ static inline u32 ath12k_mgmt_gen_rx_desc_cookie(u16 block, u16 slot)
 	return (u32)block << MGMT_RX_DESC_COOKIE_SHIFT | slot;
 }
 
+struct ath12k_rx_desc_info *ath12k_mgmt_get_rx_desc_from_cookie(struct ath12k_mgmt *mgmt,
+								u32 cookie);
 int ath12k_mgmt_rx_desc_init(struct ath12k_base *ab);
 void ath12k_mgmt_rx_desc_cleanup(struct ath12k_base *ab);
 size_t ath12k_mgmt_rx_desc_list_cut_nodes(struct list_head *used_list,
@@ -122,6 +124,8 @@ size_t ath12k_mgmt_rx_desc_list_cut_nodes(struct list_head *used_list,
 size_t ath12k_mgmt_get_req_entries_from_refill_ring(struct ath12k_base *ab,
 						    struct mgmt_srng *rx_refill_ring,
 						    struct list_head *list);
+struct sk_buff *ath12k_mgmt_rx_get_mmpdu_last_buf(struct sk_buff_head *mmpdu_list,
+						  struct sk_buff *first);
 
 static inline int ath12k_mgmt_arch_op_device_init(struct ath12k_mgmt *mgmt)
 {
