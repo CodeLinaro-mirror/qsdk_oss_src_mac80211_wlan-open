@@ -7073,6 +7073,9 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports cip padding
  *	capabalities.
  *
+ * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports inclusion of CIP padding
+ * delay support.
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */

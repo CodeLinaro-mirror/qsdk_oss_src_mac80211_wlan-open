@@ -2962,6 +2962,9 @@ int ath12k_wmi_bcn_tmpl(struct ath12k_link_vif *arvif,
 	}
 	cmd->feature_enable_bitmap = cpu_to_le32(u32_encode_bits(arvif->beacon_prot,
 						 WMI_BEACON_PROTECTION_EN_BIT));
+	cmd->feature_enable_bitmap |=
+		cpu_to_le32(u32_encode_bits(arvif->control_frame_prot,
+					    WMI_CONTROL_PROTECTION_EN_BIT));
 
 	ptr = skb->data + sizeof(*cmd);
 

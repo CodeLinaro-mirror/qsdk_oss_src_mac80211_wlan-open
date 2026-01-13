@@ -2330,7 +2330,7 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 				     u8 bssid_index, bool *nontx_profile_found)
 {
 	struct ieee80211_mgmt *mgmt = (struct ieee80211_mgmt *)bcn->data;
-	const struct element *elem, *nontx, *index, *nie;
+	const struct element *elem, *nontx, *index, *nie, *rsnxe;
 	struct ieee80211_vht_cap *vht_cap;
 	const u8 *start, *tail;
 	const u8 *vht_cap_ie;
@@ -2344,6 +2344,7 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 	arvif->rsnie_present = false;
 	arvif->wpaie_present = false;
 	arvif->beacon_prot = false;
+	arvif->control_frame_prot = false;
 
 	/* Make the TSF offset negative so beacons in the same
 	 * staggered batch have the same TSF.
@@ -2358,6 +2359,11 @@ static void ath12k_mac_set_arvif_ies(struct ath12k_link_vif *arvif, struct sk_bu
 	if (elem && elem->datalen >= 11 &&
 			(elem->data[10] & WLAN_EXT_CAPA11_BCN_PROTECT))
 		arvif->beacon_prot = true;
+
+	rsnxe = cfg80211_find_elem(WLAN_EID_RSNX, start, rem_len);
+	if ((rsnxe && rsnxe->datalen >= 1) &&
+	    (rsnxe->data[2] & WLAN_RSNXE_CAPA11_CONTROL_PROTECT))
+		arvif->control_frame_prot = true;
 
 	if (cfg80211_find_ie(WLAN_EID_RSN, start, rem_len))
 		arvif->rsnie_present = true;
@@ -24104,8 +24110,18 @@ static int ath12k_mac_hw_register(struct ath12k_hw *ah)
 	wiphy_ext_feature_set(wiphy, NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD);
 
 	if (test_bit(WMI_TLV_SERVICE_BSS_COLOR_OFFLOAD, ar->ab->wmi_ab.svc_map))
-		 wiphy_ext_feature_set(ar->ah->hw->wiphy,
-				       NL80211_EXT_FEATURE_BSS_COLOR);
+		wiphy_ext_feature_set(ar->ah->hw->wiphy,
+				      NL80211_EXT_FEATURE_BSS_COLOR);
+
+	if (test_bit(WMI_SERVICE_CFP_SUPPORT,
+		     ar->ab->wmi_ab.svc_map))
+		wiphy_ext_feature_set(wiphy,
+				      NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION);
+
+	if (test_bit(WMI_SERVICE_CFP_PADDING_SUPPORT,
+		     ar->ab->wmi_ab.svc_map))
+		wiphy_ext_feature_set(wiphy,
+				      NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT);
 
 	wiphy->cipher_suites = cipher_suites;
 	wiphy->n_cipher_suites = ARRAY_SIZE(cipher_suites);
