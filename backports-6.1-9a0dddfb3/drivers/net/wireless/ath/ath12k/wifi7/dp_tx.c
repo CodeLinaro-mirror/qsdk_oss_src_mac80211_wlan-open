@@ -226,6 +226,7 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 	struct ath12k_dp *dp;
 	struct ath12k_dp_link_peer *pri_peer;
 	u16 msduq, peer_id, qos_id;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
 	if (!ar)
 		return;
@@ -245,11 +246,14 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 
 		dp = ar->dp.dp;
 
+		rcu_read_lock();
 		spin_lock_bh(&dp->dp_lock);
 
-		pri_peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+		pri_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+								    peer_id);
 		if (!pri_peer || !pri_peer->dp_peer || !pri_peer->dp_peer->qos) {
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock();
 			return;
 		}
 
@@ -259,12 +263,14 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 			ath12k_err(ar->ab, "msduq_id: %u not yet reserved\n",
 				   msduq);
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock();
 			return;
 		}
 
 		ath12k_qos_tx_enqueue_peer_stats(&pri_peer->peer_stats,
 						 msduq, skb_len);
 		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 	}
 
 	/* Store the NWDELAY to skb->mark which can be fetched

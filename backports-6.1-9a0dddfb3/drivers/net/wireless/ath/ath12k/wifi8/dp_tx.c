@@ -245,6 +245,7 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 	struct ath12k_dp *dp;
 	struct ath12k_dp_link_peer *pri_peer;
 	u16 msduq, peer_id, qos_id;
+	struct ath12k_pdev_dp *dp_pdev = &ar->dp;
 
 	if (!ar)
 		return;
@@ -264,11 +265,14 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 
 		dp = ar->dp.dp;
 
+		rcu_read_lock();
 		spin_lock_bh(&dp->dp_lock);
 
-		pri_peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+		pri_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+								    peer_id);
 		if (!pri_peer || !pri_peer->dp_peer || !pri_peer->dp_peer->qos) {
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock();
 			return;
 		}
 
@@ -278,12 +282,14 @@ ath12k_dp_sdwftx_ingress_stats_update(struct ath12k_link_vif *arvif,
 			ath12k_err(ar->ab, "msduq_id: %u not yet reserved\n",
 				   msduq);
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock();
 			return;
 		}
 
 		ath12k_qos_tx_enqueue_peer_stats(&pri_peer->peer_stats,
 						 msduq, skb_len);
 		spin_unlock_bh(&dp->dp_lock);
+		rcu_read_unlock();
 	}
 
 	/* Store the NWDELAY to skb->mark which can be fetched
@@ -1645,14 +1651,12 @@ ath12k_wifi8_dp_tx_htt_tx_complete_buf(struct ath12k_dp *dp,
 		}
 	}
 
-	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (!peer || !peer->sta)
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n", peer_id);
 	else
 		status.sta = peer->sta;
-	spin_unlock_bh(&dp->dp_lock);
 
 	if ((unlikely(ath12k_dp_stats_enabled(dp_pdev))) &&
 	    (unlikely(ath12k_debugfs_is_qos_stats_enabled(dp_pdev->ar)))) {
@@ -2114,13 +2118,12 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	ath12k_wifi8_dp_tx_update_txcompl(dp_pdev, ts);
 
-	spin_lock_bh(&dp->dp_lock);
-	link_peer = ath12k_dp_link_peer_find_by_id(dp, ts->peer_id);
+	link_peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+							     ts->peer_id);
 	if (!link_peer || !link_peer->sta) {
 		ath12k_dbg(ab, ATH12K_DBG_DATA,
 			   "dp_tx: failed to find the peer with peer_id %d\n",
 			   ts->peer_id);
-		spin_unlock_bh(&dp->dp_lock);
 		ieee80211_free_txskb(ath12k_dp_pdev_to_hw(dp_pdev), msdu);
 		drop_reason = DP_TX_COMP_ERR_INVALID_LINK_PEER;
 		goto exit;
@@ -2136,7 +2139,6 @@ static void ath12k_wifi8_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	status.rates = &status_rate;
 	status.n_rates = 1;
-	spin_unlock_bh(&dp->dp_lock);
 
 	ieee80211_tx_status_ext(ath12k_dp_pdev_to_hw(dp_pdev), &status);
 	rcu_read_unlock();

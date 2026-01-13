@@ -1484,7 +1484,8 @@ ath12k_dp_mon_link_peer_signal_stats(struct ath12k_pdev_dp *dp_pdev,
 
 	lockdep_assert_held(&dp_pdev->dp->dp_lock);
 	rcu_read_lock();
-	peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, user_stats->sw_peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+							user_stats->sw_peer_id);
 	if (!peer) {
 		ath12k_dbg(dp_pdev->ar->ab, ATH12K_DBG_PEER,
 			   "peer stats not found on ppdu peer id %d\n",

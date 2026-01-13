@@ -238,7 +238,7 @@ int ath12k_sdwf_reinject_handler(struct ath12k_base *ab, struct sk_buff *skb,
 	dp_pdev = ath12k_dp_to_dp_pdev(dp, pdev_id);
 
 	spin_lock_bh(&dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (!peer) {
 		ath12k_err(ab, "Invalid peer id %u", peer_id);
 		spin_unlock_bh(&dp->dp_lock);

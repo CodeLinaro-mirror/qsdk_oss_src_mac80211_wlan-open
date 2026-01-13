@@ -3025,8 +3025,9 @@ static bool ath12k_dp_rx_h_mec_drop(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_link_sta *arsta = NULL;
 	struct ath12k_dp_link_peer *peer;
 
-	spin_lock_bh(&dp_pdev->dp->dp_lock);
-	peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, rx_desc_data->peer_id);
+	rcu_read_lock();
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+							rx_desc_data->peer_id);
 	if (!peer)
 		goto drop;
 
@@ -3037,19 +3038,15 @@ static bool ath12k_dp_rx_h_mec_drop(struct ath12k_pdev_dp *dp_pdev,
 	}
 
 	if (peer && peer->sta) {
-		rcu_read_lock();
-
 		arsta = ath12k_peer_get_link_sta(ab, peer);
 		if (arsta) {
 			spin_lock_bh(&arsta->arvif->link_stats_lock);
 			arsta->arvif->link_stats.rx_dropped++;
 			spin_unlock_bh(&arsta->arvif->link_stats_lock);
 		}
-
-		rcu_read_unlock();
 	}
 drop:
-	spin_unlock_bh(&dp_pdev->dp->dp_lock);
+	rcu_read_unlock();
 	return true;
 }
 
