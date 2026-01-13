@@ -2706,6 +2706,7 @@ struct ieee80211_link_sta {
  * @tdls_initiator: indicates the STA is an initiator of the TDLS link. Only
  *	valid if the STA is a TDLS peer in the first place.
  * @mfp: indicates whether the STA uses management frame protection or not.
+ * @cfp: indicated whether the STA used control frame protection or not.
  * @mlo: indicates whether the STA is MLO station.
  * @ft_auth: indicates whether the STA uses FT Authentication.
  * @max_amsdu_subframes: indicates the maximal number of MSDUs in a single
@@ -2749,6 +2750,7 @@ struct ieee80211_sta {
 	bool tdls;
 	bool tdls_initiator;
 	bool mfp;
+	bool cfp;
 	bool mlo;
 	bool spp_amsdu;
 	bool ft_auth;
