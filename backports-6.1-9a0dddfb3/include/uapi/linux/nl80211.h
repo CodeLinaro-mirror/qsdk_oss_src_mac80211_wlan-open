@@ -4176,7 +4176,7 @@ enum nl80211_sta_bss_param {
  * @NL80211_STA_INFO_DECRYPT_ERRORS: number of decryption errors
  *	detected (u32)
  * @NL80211_STA_INFO_MGMT_SIGNAL: signal strength of the last received
- *	management frame (u8, dBm)
+ *	management frame (u8, dBm
  * @__NL80211_STA_INFO_AFTER_LAST: internal
  * @NL80211_STA_INFO_MAX: highest possible station info attribute
  */
@@ -5732,6 +5732,7 @@ enum nl80211_key_default_types {
  * @NL80211_KEY_MODE: the mode from enum nl80211_key_mode.
  *	Defaults to @NL80211_KEY_RX_TX.
  * @NL80211_KEY_DEFAULT_BEACON: flag indicating default Beacon frame key
+ * @NL80211_KEY_DEFAULT_CONTROL: flag indicating whether default Control frame key
  *
  * @__NL80211_KEY_AFTER_LAST: internal
  * @NL80211_KEY_MAX: highest key attribute
@@ -5748,6 +5749,7 @@ enum nl80211_key_attributes {
 	NL80211_KEY_DEFAULT_TYPES,
 	NL80211_KEY_MODE,
 	NL80211_KEY_DEFAULT_BEACON,
+	NL80211_KEY_DEFAULT_CONTROL,
 
 	/* keep last */
 	__NL80211_KEY_AFTER_LAST,
@@ -7035,6 +7037,13 @@ enum nl80211_feature_flags {
  * @NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD: Driver supports offload
  *	of advertisement of TTLM in beacon
  *
+ * @NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION: The driver supports control
+ *	protection and can receive key configuration for CIGTK using
+ *	key indexes 0 and 1.
+ *
+ * @NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT: The driver supports cip padding
+ *	capabalities.
+ *
  * @NUM_NL80211_EXT_FEATURES: number of extended features.
  * @MAX_NL80211_EXT_FEATURES: highest extended feature index.
  */
@@ -7119,6 +7128,8 @@ enum nl80211_ext_feature_index {
 	NL80211_EXT_FEATURE_TARGET_AND_HOST_AFC_SUPPORT,
 	NL80211_EXT_FEATURE_RETAIL_AFC_SUPPORT,
 	NL80211_EXT_FEATURE_BEACON_ADVERTISED_TTLM_OFFLOAD,
+	NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION,
+	NL80211_EXT_FEATURE_CIP_PADDING_SUPPORT,
 
 	/* add new features before the definition below */
 	NUM_NL80211_EXT_FEATURES,

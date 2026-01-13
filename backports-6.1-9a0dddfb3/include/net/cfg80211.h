@@ -5087,6 +5087,8 @@ struct cfg80211_qm_resp_data {
  * @set_default_beacon_key: set the default Beacon frame key on an interface.
  *	@link_id will be >= 0 for MLO connection and -1 for non-MLO connection.
  *
+ * @set_default_control_key: set the default control frame key (CIGTK) on an interface.
+ *
  * @set_rekey_data: give the data necessary for GTK rekeying to the driver
  *
  * @start_ap: Start acting in AP mode defined by the parameters.
@@ -5491,6 +5493,11 @@ struct cfg80211_ops {
 					  struct net_device *netdev,
 					  int link_id,
 					  u8 key_index);
+
+	int	(*set_default_control_key)(struct wiphy *wiphy,
+					   struct net_device *netdev,
+					   int link_id,
+					   u8 key_index);
 
 	int	(*start_ap)(struct wiphy *wiphy, struct net_device *dev,
 			    struct cfg80211_ap_settings *settings);

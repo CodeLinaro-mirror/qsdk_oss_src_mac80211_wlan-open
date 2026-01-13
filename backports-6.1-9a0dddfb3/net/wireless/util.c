@@ -415,6 +415,8 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 				   struct key_params *params, int key_idx,
 				   bool pairwise, const u8 *mac_addr)
 {
+	bool cigtk_install = false;
+
 	if (!cfg80211_valid_key_idx(rdev, key_idx, pairwise))
 		return -EINVAL;
 
@@ -423,6 +425,10 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 
 	if (pairwise && !mac_addr)
 		return -EINVAL;
+
+	if (params->cipher == WLAN_CIPHER_SUITE_BIP_GMAC_256 &&
+	    (key_idx == 0 || key_idx == 1))
+		cigtk_install = true;
 
 	switch (params->cipher) {
 	case WLAN_CIPHER_SUITE_TKIP:
@@ -460,7 +466,7 @@ int cfg80211_validate_key_settings(struct cfg80211_registered_device *rdev,
 		/* Disallow BIP (group-only) cipher as pairwise cipher */
 		if (pairwise)
 			return -EINVAL;
-		if (key_idx < 4)
+		if (key_idx < 4 && !cigtk_install)
 			return -EINVAL;
 		break;
 	case WLAN_CIPHER_SUITE_WEP40:
