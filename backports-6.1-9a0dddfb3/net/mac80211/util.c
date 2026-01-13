@@ -1068,23 +1068,6 @@ void ieee80211_awgn_detected(struct ieee80211_hw *hw, u32 chan_bw_interference_b
 }
 EXPORT_SYMBOL(ieee80211_awgn_detected);
 
-void ieee80211_cw_detected(struct ieee80211_hw *hw, struct ieee80211_channel *cw_channel)
-{
-	struct ieee80211_local *local = hw_to_local(hw);
-	struct channel_cw_info *cw_info;
-
-	cw_info = kzalloc(sizeof(*cw_info), GFP_ATOMIC);
-	if (!cw_info)
-		return;
-
-	INIT_LIST_HEAD(&cw_info->list);
-	cw_info->cw_channel = cw_channel;
-
-	list_add_tail(&cw_info->list, &local->cw_info_list);
-	schedule_work(&local->cw_detected_work);
-}
-EXPORT_SYMBOL(ieee80211_cw_detected);
-
 /*
  * Nothing should have been stuffed into the workqueue during
  * the suspend->resume cycle. Since we can't check each caller
@@ -4052,40 +4035,6 @@ static void ieee80211_awgn_detected_processing(struct ieee80211_local *local,
 				    interference_bitmap);
 }
 
-static void ieee80211_cw_detected_processing(struct ieee80211_local *local,
-					     struct ieee80211_channel *cw_channel)
-{
-	struct cfg80211_chan_def chandef = local->hw.conf.chandef;
-	struct cfg80211_chan_def *cw_chandef = NULL;
-	struct ieee80211_chanctx *ctx;
-	int num_chanctx = 0;
-
-	list_for_each_entry(ctx, &local->chanctx_list, list) {
-		if (ctx->replace_state == IEEE80211_CHANCTX_REPLACES_OTHER)
-			continue;
-
-		num_chanctx++;
-		chandef = ctx->conf.def;
-
-		if (cw_channel &&
-		    (chandef.chan == cw_channel))
-			cw_chandef = &ctx->conf.def;
-	}
-
-	if (num_chanctx > 1) {
-		if (local->hw.wiphy->flags & WIPHY_FLAG_SUPPORTS_MLO) {
-			if (WARN_ON(!cw_chandef))
-				return;
-			cfg80211_cw_event(local->hw.wiphy, cw_chandef, GFP_KERNEL);
-		} else {
-			/* multi-channel is not supported */
-			WARN_ON_ONCE(1);
-		}
-	} else {
-		cfg80211_cw_event(local->hw.wiphy, &chandef, GFP_KERNEL);
-	}
-}
-
 void ieee80211_awgn_detected_work(struct work_struct *work)
 {
 	struct ieee80211_local *local =
@@ -4106,26 +4055,6 @@ void ieee80211_awgn_detected_work(struct work_struct *work)
 
 		list_del(&awgn_info->list);
 		kfree(awgn_info);
-	}
-}
-
-void ieee80211_cw_detected_work(struct work_struct *work)
-{
-	struct ieee80211_local *local =
-		container_of(work, struct ieee80211_local, cw_detected_work);
-	struct channel_cw_info *cw_info, *temp;
-	struct ieee80211_channel *cw_channel;
-
-	if (WARN_ON(list_empty(&local->cw_info_list)))
-		return;
-
-	list_for_each_entry_safe(cw_info, temp, &local->cw_info_list, list) {
-		cw_channel = cw_info->cw_channel;
-
-		ieee80211_cw_detected_processing(local, cw_channel);
-
-		list_del(&cw_info->list);
-		kfree(cw_info);
 	}
 }
 
