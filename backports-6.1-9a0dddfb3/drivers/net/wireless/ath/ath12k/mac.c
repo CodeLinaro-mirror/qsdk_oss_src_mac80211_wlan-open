@@ -16111,7 +16111,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 				ath12k_warn(ab, "WMI protected management tx frame without ATH12K_SKB_CIPHER_SET");
 
 			enctype = ath12k_dp_tx_get_encrypt_type(skb_cb->cipher);
-			mic_len = ath12k_dp_rx_crypto_mic_len(&ar->dp, enctype);
+			mic_len = ath12k_dp_rx_crypto_mic_len(ar->dp.dp, enctype);
 			skb_put(skb, mic_len);
 		}
 	}

@@ -5623,5 +5623,38 @@ ath12k_get_skb_tx_info(struct ath12k *ar, struct sk_buff *skb)
 	return info;
 }
 EXPORT_SYMBOL(ath12k_get_skb_tx_info);
+
+/* Note: called under rcu_read_lock() */
+struct ath12k *ath12k_core_ar_from_hw_link_id(struct ath12k_base *ab, u8 hw_link_id)
+{
+	struct ath12k_dp *dp = ab->dp;
+	struct ath12k_pdev_dp *dp_pdev;
+
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp->dp_hw_grp, hw_link_id);
+	if (unlikely(!dp_pdev))
+		return NULL;
+
+	return dp_pdev->ar;
+}
+EXPORT_SYMBOL(ath12k_core_ar_from_hw_link_id);
+
+int ath12k_core_crypto_param_len(struct ath12k_base *ab, enum hal_encrypt_type enctype)
+{
+	return ath12k_dp_rx_crypto_param_len(ab->dp, enctype);
+}
+EXPORT_SYMBOL(ath12k_core_crypto_param_len);
+
+int ath12k_core_crypto_icv_len(struct ath12k_base *ab, enum hal_encrypt_type enctype)
+{
+	return ath12k_dp_rx_crypto_icv_len(ab->dp, enctype);
+}
+EXPORT_SYMBOL(ath12k_core_crypto_icv_len);
+
+int ath12k_core_crypto_mic_len(struct ath12k_base *ab, enum hal_encrypt_type enctype)
+{
+	return ath12k_dp_rx_crypto_mic_len(ab->dp, enctype);
+}
+EXPORT_SYMBOL(ath12k_core_crypto_mic_len);
+
 MODULE_DESCRIPTION("Driver support for Qualcomm Technologies WLAN devices");
 MODULE_LICENSE("Dual BSD/GPL");

@@ -731,7 +731,7 @@ static void ath12k_wifi7_dp_rx_h_undecap_nwifi(struct ath12k_pdev_dp *dp_pdev,
 
 	/* Rebuild crypto header for mac80211 use */
 	if (!(status->flag & RX_FLAG_IV_STRIPPED)) {
-		len = ath12k_dp_rx_crypto_param_len(dp_pdev, enctype);
+		len = ath12k_dp_rx_crypto_param_len(dp, enctype);
 		crypto_hdr = skb_push(msdu, len);
 
 		ath12k_wifi7_dp_rx_desc_get_crypto_header(ab, desc,
@@ -762,7 +762,7 @@ static void ath12k_get_dot11_hdr_from_rx_desc(struct ath12k_pdev_dp *dp_pdev,
 	hdr_len = ieee80211_hdrlen(hdr.frame_control);
 
 	if (!(status->flag & RX_FLAG_IV_STRIPPED)) {
-		crypto_len = ath12k_dp_rx_crypto_param_len(dp_pdev, enctype);
+		crypto_len = ath12k_dp_rx_crypto_param_len(dp, enctype);
 		crypto_hdr = skb_push(msdu, crypto_len);
 		ath12k_wifi7_dp_rx_desc_get_crypto_header(ab, rx_desc,
 							  crypto_hdr, enctype);

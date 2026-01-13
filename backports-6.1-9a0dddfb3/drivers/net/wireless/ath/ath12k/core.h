@@ -2771,4 +2771,12 @@ struct ath12k_hw_group *ath12k_core_get_ag(void);
 void ath12k_core_trigger_partner_device_crash(struct ath12k_base *ab);
 void ath12k_core_pdev_deinit(struct ath12k_base *ab);
 int ath12k_core_radio_start(struct ath12k_hw *ah);
+
+struct ath12k *ath12k_core_ar_from_hw_link_id(struct ath12k_base *ab, u8 hw_link_id);
+
+/* Below APIs will be cleaned up to be common utils */
+int ath12k_core_crypto_param_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
+int ath12k_core_crypto_icv_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
+int ath12k_core_crypto_mic_len(struct ath12k_base *ab, enum hal_encrypt_type enctype);
+
 #endif /* _CORE_H_ */
