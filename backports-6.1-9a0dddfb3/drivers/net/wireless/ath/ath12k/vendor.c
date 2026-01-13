@@ -1088,30 +1088,6 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar)
 	int ret = -EINVAL;
 	int vendor_buffer_len, hw_index;
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_link_vif *tmp_arvif = NULL, *arvif;
-	struct wireless_dev *wdev;
-
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (arvif->is_started) {
-			tmp_arvif = arvif;
-			break;
-		}
-	}
-
-	if (!tmp_arvif || !tmp_arvif->ahvif) {
-		ath12k_warn(ar->ab, "Unable to send AFC payload reset event, no vif started\n");
-		goto out;
-	}
-
-	wdev = ieee80211_vif_to_wdev(tmp_arvif->ahvif->vif);
-	/* Hostapd application is a consumer of this afc payload reset event, without
-	 * the presence of the vif, it cannot take any action on the received payload
-	 * reset event. Hence, send this event only when a vif is present.
-	 */
-	if (!wdev) {
-		ath12k_warn(ar->ab, "Unable to send AFC payload reset event, no wdev\n");
-		goto out;
-	}
 
 	hw_index = cfg80211_get_hw_idx_by_freq(ar->ah->hw->wiphy,
 					       ar->freq_range.start_freq);
@@ -1123,7 +1099,7 @@ int ath12k_send_afc_payload_reset(struct ath12k *ar)
 
 	vendor_buffer_len = afc_payload_reset_evt_get_data_len();
 	vendor_event = cfg80211_vendor_event_alloc(ar->ah->hw->wiphy,
-						   wdev,
+						   NULL,
 						   vendor_buffer_len,
 						   QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX,
 						   GFP_ATOMIC);
@@ -4731,31 +4707,15 @@ ath12k_vendor_send_power_update_complete(struct ath12k *ar,
 					 struct ath12k_afc_info *afc)
 {
 	struct ath12k_afc_sp_reg_info *afc_reg_info = afc->afc_reg_info;
-	struct ath12k_link_vif *tmp_arvif = NULL, *arvif;
 	struct sk_buff *vendor_event;
-	struct wireless_dev *wdev;
 	int vendor_buffer_len;
-
-	list_for_each_entry(arvif, &ar->arvifs, list) {
-		if (!tmp_arvif && arvif->is_started) {
-			tmp_arvif = arvif;
-			break;
-		}
-	}
-
-	if (!tmp_arvif || !tmp_arvif->ahvif)
-		return -EINVAL;
-
-	wdev = ieee80211_vif_to_wdev(tmp_arvif->ahvif->vif);
-	if (!wdev)
-		return -EINVAL;
 
 	vendor_buffer_len =
 		ath12k_afc_power_event_update_or_get_len(ar, NULL,
 							 afc_reg_info);
 
 	vendor_event =
-	cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, wdev, vendor_buffer_len,
+	cfg80211_vendor_event_alloc(ar->ah->hw->wiphy, NULL, vendor_buffer_len,
 				    QCA_NL80211_VENDOR_SUBCMD_AFC_EVENT_INDEX,
 				    GFP_ATOMIC);
 	if (!vendor_event) {
