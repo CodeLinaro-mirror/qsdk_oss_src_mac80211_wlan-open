@@ -1032,6 +1032,16 @@ static bool ath12k_get_skb_rate(struct ath12k_link_vif *arvif,
 	return rate_valid;
 }
 
+static bool ath12k_wmi_hw_link_id_in_mgmt_send(struct ath12k *ar)
+{
+	const struct ath12k_hw_ops *hw_ops = ar->ab->hw_params->hw_ops;
+
+	if (hw_ops->hw_link_id_required_in_mgmt_send)
+		return hw_ops->hw_link_id_required_in_mgmt_send(ar->ab);
+
+	return false;
+}
+
 int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 			 struct sk_buff *frame, bool link_agnostic,
 			 bool is_cfr)
@@ -1044,6 +1054,7 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	struct wmi_mgmt_send_params *params;
 	bool tx_params_valid = false;
 	struct wmi_tlv *frame_tlv;
+	bool hw_link_id_needed;
 	struct sk_buff *skb;
 	bool rate_present;
 	u32 buf_len;
@@ -1069,6 +1080,7 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 			len += TLV_HDR_SIZE + sizeof(*ml_params);
 	}
 
+	hw_link_id_needed = ath12k_wmi_hw_link_id_in_mgmt_send(ar);
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
 		return -ENOMEM;
@@ -1090,7 +1102,7 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 
 	memcpy(frame_tlv->value, frame->data, buf_len);
 
-	if (!tx_params_valid && !link_agnostic)
+	if (!tx_params_valid && !link_agnostic && !hw_link_id_needed)
 		goto send;
 
 	ptr = skb->data + sizeof(*cmd) + sizeof(*frame_tlv) + roundup(buf_len, sizeof(u32));
@@ -1128,7 +1140,7 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 
 	tlv = ptr;
 
-	if (link_agnostic) {
+	if (link_agnostic || hw_link_id_needed) {
 		tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
 			      FIELD_PREP(WMI_TLV_LEN, sizeof(*ml_params));
 		ptr += TLV_HDR_SIZE;
@@ -1139,9 +1151,15 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 					FIELD_PREP(WMI_TLV_LEN,
 						   sizeof(*ml_params) - TLV_HDR_SIZE);
 
+		/* Link-specific frames should be sent with hw_link_id while link-agnostic
+		 * frames should be sent with invalid value.
+		 */
 		if (ath12k_hw_group_recovery_in_progress(ar->ab->ag) &&
 		    ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
 			ml_params->hw_link_id = ar->pdev->hw_link_id;
+		} else if (hw_link_id_needed) {
+			ml_params->hw_link_id = link_agnostic ? WMI_MLO_MGMT_TID :
+						ar->pdev->hw_link_id;
 		} else {
 			ml_params->hw_link_id = WMI_MLO_MGMT_TID;
 		}
