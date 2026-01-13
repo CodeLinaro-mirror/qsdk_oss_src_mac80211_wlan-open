@@ -424,7 +424,6 @@ ath12k_wifi7_hal_mon_parse_he_sig_mu(const struct hal_rx_he_sig_a_mu_dl_info *he
 	/* data4 */
 	ppdu_info->he_data4 = u32_get_bits(info0,
 					   HAL_RX_HE_SIG_A_MU_DL_INFO0_SPATIAL_REUSE);
-	ppdu_info->he_data4 = value;
 
 	/* data5 */
 	value = u32_get_bits(info0, HAL_RX_HE_SIG_A_MU_DL_INFO0_TRANSMIT_BW);
