@@ -701,7 +701,8 @@ ieee80211_lookup_key(struct ieee80211_sub_if_data *sdata, int link_id,
 		if (!pairwise &&
 		    key_idx < NUM_DEFAULT_KEYS +
 			      NUM_DEFAULT_MGMT_KEYS +
-			      NUM_DEFAULT_BEACON_KEYS)
+			      NUM_DEFAULT_BEACON_KEYS +
+			      NUM_DEFAULT_CONTROL_KEYS)
 			return wiphy_dereference(local->hw.wiphy,
 						 link_sta->gtk[key_idx]);
 
@@ -888,6 +889,22 @@ static int ieee80211_config_default_beacon_key(struct wiphy *wiphy,
 		return PTR_ERR(link);
 
 	ieee80211_set_default_beacon_key(link, key_idx);
+
+	return 0;
+}
+
+static int ieee80211_config_default_control_key(struct wiphy *wiphy,
+						struct net_device *dev,
+						int link_id, u8 key_idx)
+{
+	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev);
+	struct ieee80211_link_data *link =
+		ieee80211_link_or_deflink(sdata, link_id, true);
+
+	if (IS_ERR(link))
+		return PTR_ERR(link);
+
+	ieee80211_set_default_control_key(link, key_idx);
 
 	return 0;
 }
@@ -6380,6 +6397,7 @@ const struct cfg80211_ops mac80211_config_ops = {
 	.set_default_key = ieee80211_config_default_key,
 	.set_default_mgmt_key = ieee80211_config_default_mgmt_key,
 	.set_default_beacon_key = ieee80211_config_default_beacon_key,
+	.set_default_control_key = ieee80211_config_default_control_key,
 	.start_ap = ieee80211_start_ap,
 	.update_ap = ieee80211_update_ap,
 	.stop_ap = ieee80211_stop_ap,

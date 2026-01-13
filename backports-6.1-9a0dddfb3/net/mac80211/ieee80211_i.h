@@ -1088,10 +1088,12 @@ struct ieee80211_link_data {
 	/* multicast keys only */
 	struct ieee80211_key __rcu *gtk[NUM_DEFAULT_KEYS +
 					NUM_DEFAULT_MGMT_KEYS +
-					NUM_DEFAULT_BEACON_KEYS];
+					NUM_DEFAULT_BEACON_KEYS +
+					NUM_DEFAULT_CONTROL_KEYS];
 	struct ieee80211_key __rcu *default_multicast_key;
 	struct ieee80211_key __rcu *default_mgmt_key;
 	struct ieee80211_key __rcu *default_beacon_key;
+	struct ieee80211_key __rcu *default_control_key;
 
 
 	bool operating_11g_mode;
@@ -1274,6 +1276,7 @@ struct ieee80211_sub_if_data {
 		struct dentry *default_multicast_key;
 		struct dentry *default_mgmt_key;
 		struct dentry *default_beacon_key;
+		struct dentry *default_control_key;
 	} debugfs;
 #endif
 #ifdef CPTCFG_MAC80211_NSS_SUPPORT
