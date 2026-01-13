@@ -301,6 +301,7 @@ void ath12k_mac_get_any_chanctx_conf_iter(struct ieee80211_hw *hw,
 int ath12k_mac_mlo_teardown_with_umac_reset(struct ath12k_base *ab,
 					    enum wmi_mlo_tear_down_reason_code_type reason_code);
 int ath12k_mac_partner_peer_cleanup(struct ath12k_base *ab);
+enum nl80211_he_gi ath12k_mac_he_gi_to_nl80211_he_gi(u8 sgi);
 u16 ath12k_mac_he_convert_tones_to_ru_tones(u16 tones);
 enum nl80211_eht_ru_alloc ath12k_mac_eht_ru_tones_to_nl80211_eht_ru_alloc(u16 ru_tones);
 enum nl80211_eht_gi ath12k_mac_eht_gi_to_nl80211_eht_gi(u8 sgi);

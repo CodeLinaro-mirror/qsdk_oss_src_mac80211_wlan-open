@@ -25,4 +25,13 @@ static inline struct ath12k_mgmt_wifi8 *ath12k_get_mgmt_wifi8(struct ath12k_mgmt
 	return (struct ath12k_mgmt_wifi8 *)mgmt->arch_priv;
 }
 
+static inline
+void ath12k_wifi8_mgmt_extract_rx_desc_data(struct ath12k_mgmt *mgmt,
+					    struct hal_rx_desc_data *rx_desc_data,
+					    struct hal_rx_desc *rx_desc,
+					    struct hal_rx_desc *ldesc)
+{
+	mgmt->hw_params->hal_ops->extract_rx_desc_data(rx_desc_data, rx_desc, ldesc);
+}
+
 #endif

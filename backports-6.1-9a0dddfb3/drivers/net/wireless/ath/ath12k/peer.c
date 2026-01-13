@@ -1066,6 +1066,7 @@ struct ath12k_link_sta *ath12k_link_sta_find_by_addr(struct ath12k_base *ab,
 	return rhashtable_lookup_fast(ab->rhead_sta_addr, addr,
 				      ab->rhash_sta_addr_param);
 }
+EXPORT_SYMBOL(ath12k_link_sta_find_by_addr);
 
 int ath12k_peer_send_assoc_vendor_response(const struct ath12k_dp_link_peer *peer,
 					   bool is_assoc)
