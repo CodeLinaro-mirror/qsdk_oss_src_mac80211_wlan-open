@@ -59,6 +59,10 @@ struct ath12k_hif_ops {
 	void (*dp_umac_reset_enable_irq)(struct ath12k_base *ab);
 	void (*dp_umac_reset_free_irq)(struct ath12k_base *ab);
 	int (*get_iova)(struct ath12k_base *ab, u64 *addr, u64 *size);
+	int (*mgmt_irq_setup)(struct ath12k_base *ab, struct ath12k_mgmt *mgmt);
+	void (*mgmt_irq_cleanup)(struct ath12k_base *ab);
+	void (*mgmt_irq_enable)(struct ath12k_base *ab);
+	void (*mgmt_irq_disable)(struct ath12k_base *ab);
 };
 
 static inline int ath12k_hif_map_service_to_pipe(struct ath12k_base *ab, u16 service_id,
@@ -347,4 +351,38 @@ static inline void ath12k_hif_ppeds_irq_disable(struct ath12k_base *ab, enum ppe
 {
 }
 #endif
+
+static inline
+int ath12k_hif_mgmt_irq_setup(struct ath12k_base *ab, struct ath12k_mgmt *mgmt)
+{
+	if (!ab->hif.ops->mgmt_irq_setup)
+		return -EOPNOTSUPP;
+
+	return ab->hif.ops->mgmt_irq_setup(ab, mgmt);
+}
+
+static inline void ath12k_hif_mgmt_irq_cleanup(struct ath12k_base *ab)
+{
+	if (!ab->hif.ops->mgmt_irq_cleanup)
+		return;
+
+	ab->hif.ops->mgmt_irq_cleanup(ab);
+}
+
+static inline void ath12k_hif_mgmt_irq_enable(struct ath12k_base *ab)
+{
+	if (!ab->hif.ops->mgmt_irq_enable)
+		return;
+
+	ab->hif.ops->mgmt_irq_enable(ab);
+}
+
+static inline void ath12k_hif_mgmt_irq_disable(struct ath12k_base *ab)
+{
+	if (!ab->hif.ops->mgmt_irq_disable)
+		return;
+
+	ab->hif.ops->mgmt_irq_disable(ab);
+}
+
 #endif /* ATH12K_HIF_H */

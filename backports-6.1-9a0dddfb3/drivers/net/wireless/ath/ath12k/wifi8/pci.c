@@ -51,7 +51,7 @@ static int ath12k_wifi8_pci_probe(struct pci_dev *pdev,
 			ab->msi.config =
 				&ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_PCI_16];
 		} else {
-			ab->msi.config = &ath12k_wifi7_msi_config[ATH12K_MSI_CONFIG_PCI];
+			ab->msi.config = &ath12k_wifi8_msi_config[0];
 		}
 		ab->static_window_map = true;
 		ab->hw_rev = ATH12K_HW_QCN9625_HW10;

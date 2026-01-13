@@ -111,4 +111,8 @@ int ath12k_pcic_ppeds_register_interrupts(struct ath12k_base *ab, int type, int 
 void ath12k_pcic_ppeds_irq_disable(struct ath12k_base *ab, enum ppeds_irq_type type);
 void ath12k_pcic_ppeds_irq_enable(struct ath12k_base *ab, enum ppeds_irq_type type);
 void ath12k_pcic_ppeds_free_interrupts(struct ath12k_base *ab);
+int ath12k_pcic_mgmt_irq_config(struct ath12k_base *ab, struct ath12k_mgmt *mgmt);
+void ath12k_pcic_mgmt_irq_free(struct ath12k_base *ab);
+void ath12k_pcic_mgmt_irqs_enable(struct ath12k_base *ab);
+void ath12k_pcic_mgmt_irqs_disable(struct ath12k_base *ab);
 #endif

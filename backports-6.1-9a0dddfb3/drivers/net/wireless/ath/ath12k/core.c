@@ -339,6 +339,7 @@ int ath12k_core_suspend_late(struct ath12k_base *ab)
 
 	ath12k_acpi_stop(ab);
 
+	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_hif_irq_disable(ab);
 	ath12k_hif_ce_irq_disable(ab);
 
@@ -1071,6 +1072,7 @@ void ath12k_core_cleanup_power_down_q6(struct ath12k_hw_group *ag, bool standby_
 
 		if (!skip_power_down && !ab->powered_off) {
 			ab->qmi.num_radios = U8_MAX;
+			ath12k_hif_mgmt_irq_disable(ab);
 			ath12k_hif_irq_disable(ab);
 			ath12k_hif_ce_irq_disable(ab);
 			ath12k_dp_ppeds_interrupt_stop(ab);
@@ -1471,6 +1473,7 @@ static void ath12k_core_device_cleanup(struct ath12k_base *ab)
 {
 	mutex_lock(&ab->core_lock);
 
+	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_hif_irq_disable(ab);
 	ath12k_core_pdev_destroy(ab);
 	ath12k_dp_umac_reset_deinit(ab);
@@ -1798,6 +1801,8 @@ core_pdev_create:
 		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_REO2PPE);
 		ath12k_hif_ppeds_irq_enable(ab, PPEDS_IRQ_PPE_WBM2SW_REL);
 #endif
+
+		ath12k_hif_mgmt_irq_enable(ab);
 
 		ret = ath12k_core_rfkill_config(ab);
 		if (ret && ret != -EOPNOTSUPP) {
@@ -3850,6 +3855,7 @@ static void ath12k_core_reset(struct work_struct *work)
 
 	mutex_lock(&ag->mutex);
 
+	ath12k_hif_mgmt_irq_disable(ab);
 	ath12k_core_disable_ext_irq_during_recovery(ab);
 	ath12k_hif_ce_irq_disable(ab);
 	ab->is_reset = true;

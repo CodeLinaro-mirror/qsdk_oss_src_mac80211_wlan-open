@@ -4,7 +4,9 @@
  */
 
 #include "../core.h"
+#include "../debug.h"
 #include "../mgmt_rx.h"
+#include "../hif.h"
 #include "mgmt_rx.h"
 #include "hal.h"
 
@@ -18,6 +20,8 @@ void ath12k_wifi8_mgmt_workqueue(struct work_struct *w)
 	struct ath12k_mgmt_irq_grp *irq_grp = from_work(irq_grp, work, intr_wq);
 
 	ath12k_wifi8_mgmt_service_srng(irq_grp->ab, irq_grp);
+
+	ath12k_mgmt_irq_grp_enable(irq_grp);
 }
 #else
 void ath12k_wifi8_mgmt_tasklet(struct tasklet_struct *t)
@@ -25,16 +29,33 @@ void ath12k_wifi8_mgmt_tasklet(struct tasklet_struct *t)
 	struct ath12k_mgmt_irq_grp *irq_grp = from_tasklet(irq_grp, t, intr_tq);
 
 	ath12k_wifi8_mgmt_service_srng(irq_grp->ab, irq_grp);
+
+	ath12k_mgmt_irq_grp_enable(irq_grp);
 }
 #endif
 
 int ath12k_wifi8_mgmt_op_device_init(struct ath12k_mgmt *mgmt)
 {
+	struct ath12k_base *ab = mgmt->ab;
+	int ret;
+
+	ath12k_mgmt_irq_grp_setup(mgmt);
+	ret = ath12k_hif_mgmt_irq_setup(ab, mgmt);
+	if (ret) {
+		ath12k_warn(ab, "Failed to configure mgmt IRQs: %d", ret);
+		return ret;
+	}
+
 	return 0;
 }
 
 void ath12k_wifi8_mgmt_op_device_deinit(struct ath12k_mgmt *mgmt)
-{}
+{
+	struct ath12k_base *ab = mgmt->ab;
+
+	ath12k_mgmt_irq_grp_cleanup(mgmt);
+	ath12k_hif_mgmt_irq_cleanup(ab);
+}
 
 static struct ath12k_mgmt_arch_ops ath12k_wifi8_mgmt_arch_ops = {
 	.mgmt_op_device_init = ath12k_wifi8_mgmt_op_device_init,
