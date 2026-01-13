@@ -887,7 +887,9 @@ void ath12k_dp_aggr_rx_peer_stats(struct ath12k_rx_peer_stats *dst,
 				  const struct ath12k_rx_peer_stats *src);
 void ath12k_dp_aggr_wbm_rx_stats(struct ath12k_wbm_rx_stats *dst,
 				 struct ath12k_wbm_rx_stats *src);
-void ath12k_dp_aggr_deleted_stats(struct ath12k_dp_peer_stats *dst,
+void ath12k_dp_aggr_deleted_stats(struct ath12k *ar,
+				  struct ath12k_dp_peer_stats *dst_peer_stats,
+				  struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
 				  struct ath12k_dp_preserved_stats *src,
 				  const char *stats_type);
 

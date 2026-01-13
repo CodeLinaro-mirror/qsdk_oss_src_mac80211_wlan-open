@@ -261,7 +261,8 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
 
 /**
  * ath12k_dp_aggr_deleted_stats() - Aggregate stats from a deleted entity
- * @dst: The destination stats structure to merge into.
+ * @dst_peer_stats: The destination peer stats structure.
+ * @dst_link_peer_stats: Destination link peer stats structure
  * @src: The source structure containing stats from the deleted entity.
  * @stats_type: A string for logging that identifies the aggregation context.
  *
@@ -273,7 +274,8 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
  * If @src is NULL, the function returns without performing any aggregation.
  *
  * The function iterates over all TCL and REO rings, invoking per-ring
- * helpers to merge the counters.
+ * helpers to merge the counters. Also the extended HTT and Rx peer stats
+ * would be aggregated.
  *
  * It is used in several hierarchical scenarios:
  * 1. MLD Peer Aggregation:
@@ -289,23 +291,39 @@ void ath12k_dp_clear_per_pkt_rx_stats(struct ath12k_dp_peer_stats *rx_peer_stats
  *    link VIF into 'link_vif_delete_stats' of MLD VIF.
  */
 
-void ath12k_dp_aggr_deleted_stats(struct ath12k_dp_peer_stats *dst,
+void ath12k_dp_aggr_deleted_stats(struct ath12k *ar,
+				  struct ath12k_dp_peer_stats *dst_peer_stats,
+				  struct ath12k_dp_link_peer_stats *dst_link_peer_stats,
 				  struct ath12k_dp_preserved_stats *src,
 				  const char *stats_type)
 {
 	u8 i;
 
-	if (!src || !dst) {
+	if (!src || !dst_peer_stats) {
 		ath12k_err(NULL, "%s not found\n", stats_type);
 		return;
 	}
 
 	for (i = 0; i < DP_TCL_NUM_RING_MAX; i++)
-		ath12k_dp_aggr_per_pkt_tx_stats(&dst->tx[i], &src->per_pkt_tx[i]);
+		ath12k_dp_aggr_per_pkt_tx_stats(&dst_peer_stats->tx[i],
+						&src->per_pkt_tx[i]);
 
 	for (i = 0; i < DP_REO_DST_RING_MAX; i++)
-		ath12k_dp_aggr_per_pkt_rx_stats(&dst->rx[i], &src->per_pkt_rx[i]);
+		ath12k_dp_aggr_per_pkt_rx_stats(&dst_peer_stats->rx[i],
+						&src->per_pkt_rx[i]);
 
-	ath12k_dp_aggr_wbm_rx_stats(&dst->wbm_err, &src->wbm_err);
+	ath12k_dp_aggr_wbm_rx_stats(&dst_peer_stats->wbm_err,
+				    &src->wbm_err);
+
+	if (!ar || !dst_link_peer_stats) {
+		ath12k_info(NULL, "Extended stats not present\n");
+		return;
+	}
+
+	if (ath12k_extd_tx_stats_enabled(ar))
+		ath12k_dp_aggr_htt_tx_stats(dst_link_peer_stats->tx_stats,
+					    &src->tx_stats);
+	if (ath12k_extd_rx_stats_enabled(ar))
+		ath12k_dp_aggr_rx_peer_stats(dst_link_peer_stats->rx_stats,
+					     &src->rx_stats);
 }
-
