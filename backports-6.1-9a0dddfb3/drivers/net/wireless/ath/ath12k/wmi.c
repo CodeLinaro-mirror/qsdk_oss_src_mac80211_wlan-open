@@ -12291,36 +12291,6 @@ static void ath12k_pdev_ctl_failsafe_check_event(struct ath12k_base *ab,
 	kfree(tb);
 }
 
-void ath12k_debug_print_dcs_wlan_intf_stats(struct ath12k_base *ab,
-					    struct wmi_dcs_wlan_interference_stats *info)
-{
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_tsf32=%u", info->reg_tsf32);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: last_ack_rssi=%u",
-		   info->last_ack_rssi);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: tx_waste_time=%u",
-		   info->tx_waste_time);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: rx_time=%u", info->rx_time);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: phyerr_cnt=%u", info->phyerr_cnt);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: listen_time=%u", info->listen_time);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_tx_frame_cnt=%u",
-		   info->reg_tx_frame_cnt);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_rx_frame_cnt=%u",
-		   info->reg_rx_frame_cnt);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_rxclr_cnt=%u",
-		   info->reg_rxclr_cnt);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_cycle_cnt=%u",
-		   info->reg_cycle_cnt);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_rxclr_ext_cnt=%u",
-		   info->reg_rxclr_ext_cnt);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_ofdm_phyerr_cnt=%u",
-		   info->reg_ofdm_phyerr_cnt);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: reg_cck_phyerr_cnt=%u",
-		   info->reg_cck_phyerr_cnt);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: chan_nf=%d", info->chan_nf);
-	ath12k_dbg(ab, ATH12K_DBG_WMI, "wlan_intf: my_bss_rx_cycle_count=%u",
-		   info->my_bss_rx_cycle_count);
-}
-
 static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 					     u16 tag, u16 len,
 					     const void *ptr, void *data)
@@ -12538,48 +12508,6 @@ ath12k_wmi_dcs_cw_interference_event(struct ath12k_base *ab,
 		goto exit;
 	}
 	ieee80211_cw_detected(ah->hw, chanctx_conf->def.chan);
-exit:
-	rcu_read_unlock();
-}
-
-static void
-ath12k_wmi_dcs_wlan_interference_event(struct ath12k_base *ab,
-				       struct sk_buff *skb,
-				       u32 pdev_id)
-{
-	struct wmi_dcs_wlan_interference_stats wlan_info = {};
-	struct ath12k *ar;
-	int ret;
-	struct ath12k_dcs_wlan_interference *dcs_wlan_intf;
-
-	ret = ath12k_wmi_tlv_iter(ab, skb->data, skb->len,
-				  ath12k_wmi_dcs_event_parser,
-				  &wlan_info);
-	if (ret)
-		return;
-
-	rcu_read_lock();
-	ar = ath12k_mac_get_ar_by_pdev_id(ab, pdev_id);
-	if (!ar)
-		goto exit;
-
-	spin_lock_bh(&ar->data_lock);
-	if (!(ar->dcs_enable_bitmap & WMI_DCS_WLAN_INTF)) {
-		spin_unlock_bh(&ar->data_lock);
-		goto exit;
-	}
-	spin_unlock_bh(&ar->data_lock);
-
-	dcs_wlan_intf = kzalloc(sizeof(*dcs_wlan_intf), GFP_ATOMIC);
-	if (!dcs_wlan_intf)
-		goto exit;
-
-	INIT_LIST_HEAD(&dcs_wlan_intf->list);
-	memcpy(&dcs_wlan_intf->info, &wlan_info, sizeof(wlan_info));
-	spin_lock_bh(&ar->data_lock);
-	list_add_tail(&dcs_wlan_intf->list, &ar->wlan_intf_list);
-	spin_unlock_bh(&ar->data_lock);
-	schedule_work(&ar->wlan_intf_work);
 exit:
 	rcu_read_unlock();
 }
@@ -12990,7 +12918,6 @@ ath12k_wmi_dcs_interference_event(struct ath12k_base *ab,
 		ath12k_wmi_dcs_cw_interference_event(ab, skb, pdev_id);
 		break;
 	case WMI_DCS_WLAN_INTF:
-		ath12k_wmi_dcs_wlan_interference_event(ab, skb, pdev_id);
 		break;
 	case WMI_DCS_AWGN_INTF:
 		ath12k_wmi_dcs_awgn_interference_event(ab, skb, pdev_id);
