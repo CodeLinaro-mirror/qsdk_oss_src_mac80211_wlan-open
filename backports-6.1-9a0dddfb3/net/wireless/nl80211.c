@@ -32,6 +32,7 @@
 #include "rdev-ops.h"
 
 #define VLAN_N_VID	4096
+#define CIGTK_KEY_INDEX_OFFSET 8
 
 static int nl80211_parse_chandef_device(struct cfg80211_registered_device *rdev,
 					struct genl_info *info,
@@ -1071,6 +1072,7 @@ static const struct nla_policy nl80211_policy[NUM_NL80211_ATTR] = {
 	[NL80211_ATTR_CONTROL_MIC_PAD] = { .type = NLA_U8 },
 	[NL80211_ATTR_USE_CFP] = { .type = NLA_U32 },
 	[NL80211_ATTR_CFP] = { .type = NLA_FLAG },
+	[NL80211_ATTR_CIGTK] = { .type = NLA_FLAG },
 };
 
 /* policy for the key attributes */
@@ -5429,12 +5431,17 @@ static int nl80211_get_key(struct sk_buff *skb, struct genl_info *info)
 	void *hdr;
 	struct sk_buff *msg;
 	bool bigtk_support = false;
+	bool cigtk_support = false;
 	int link_id = nl80211_link_id_or_invalid(info->attrs);
 	struct wireless_dev *wdev = dev->ieee80211_ptr;
 
 	if (wiphy_ext_feature_isset(&rdev->wiphy,
 				    NL80211_EXT_FEATURE_BEACON_PROTECTION))
 		bigtk_support = true;
+
+	if (wiphy_ext_feature_isset(&rdev->wiphy,
+				    NL80211_EXT_FEATURE_CONTROL_FRAME_PROTECTION))
+		cigtk_support = true;
 
 	if ((wdev->iftype == NL80211_IFTYPE_STATION ||
 	     wdev->iftype == NL80211_IFTYPE_P2P_CLIENT) &&
@@ -5492,6 +5499,20 @@ static int nl80211_get_key(struct sk_buff *skb, struct genl_info *info)
 	err = nl80211_validate_key_link_id(info, wdev, link_id, pairwise);
 	if (err)
 		goto free_msg;
+
+	if (info->attrs[NL80211_ATTR_CIGTK]) {
+		if (!cigtk_support) {
+			GENL_SET_ERR_MSG(info, "CIGTK not supported");
+			err = -EINVAL;
+			goto free_msg;
+	}
+		if (key_idx > 1) {
+			GENL_SET_ERR_MSG(info, "Invalid CIGTK key index");
+			err = -EINVAL;
+			goto free_msg;
+		}
+		key_idx += CIGTK_KEY_INDEX_OFFSET;
+	}
 
 	err = rdev_get_key(rdev, dev, link_id, key_idx, pairwise, mac_addr,
 			   &cookie, get_key_callback);
