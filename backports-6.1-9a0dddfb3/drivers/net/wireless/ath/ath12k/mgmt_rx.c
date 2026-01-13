@@ -170,6 +170,8 @@ int ath12k_mgmt_srng_setup(struct ath12k_base *ab, struct mgmt_srng *ring,
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_RX;
 		break;
 	case HAL_REO_EXCEPTION_MGMT:
+	case HAL_WBM_BUF_MGMT:
+	case HAL_WBM_IDLE_BUF_MGMT:
 		params.intr_batch_cntr_thres_entries =
 					HAL_SRNG_INT_BATCH_THRESHOLD_OTHER;
 		params.intr_timer_thres_us = HAL_SRNG_INT_TIMER_THRESHOLD_OTHER;
@@ -212,3 +214,145 @@ void ath12k_mgmt_srng_cleanup(struct ath12k_base *ab, struct mgmt_srng *ring)
 	ring->vaddr_unaligned = NULL;
 }
 EXPORT_SYMBOL(ath12k_mgmt_srng_cleanup);
+
+int ath12k_mgmt_rx_desc_init(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	struct ath12k_rx_desc_info *rx_descs;
+	u16 i, j;
+
+	spin_lock_init(&mgmt->rx_desc_lock);
+	INIT_LIST_HEAD(&mgmt->rx_desc_free_list);
+
+	spin_lock_bh(&mgmt->rx_desc_lock);
+
+	for (i = 0; i < NUM_MGMT_RX_DESC_BLOCKS; i++) {
+		rx_descs = kcalloc(MGMT_RX_DESC_BLOCK_SIZE, sizeof(*rx_descs),
+				   GFP_ATOMIC);
+		if (!rx_descs) {
+			spin_unlock_bh(&mgmt->rx_desc_lock);
+			/* Clean up previously allocated descriptors */
+			while (i > 0) {
+				i--;
+				kfree(mgmt->rx_desc_baddr[i]);
+				mgmt->rx_desc_baddr[i] = NULL;
+			}
+			return -ENOMEM;
+		}
+
+		mgmt->rx_desc_baddr[i] = &rx_descs[0];
+
+		for (j = 0; j < MGMT_RX_DESC_BLOCK_SIZE; j++) {
+			rx_descs[j].cookie = ath12k_mgmt_gen_rx_desc_cookie(i, j);
+			rx_descs[j].magic = ATH12K_MGMT_RX_DESC_MAGIC;
+			rx_descs[j].device_id = ab->device_id;
+			list_add_tail(&rx_descs[j].list, &mgmt->rx_desc_free_list);
+		}
+	}
+
+	spin_unlock_bh(&mgmt->rx_desc_lock);
+
+	return 0;
+}
+EXPORT_SYMBOL(ath12k_mgmt_rx_desc_init);
+
+void ath12k_mgmt_rx_desc_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	struct ath12k_rx_desc_info *desc_info;
+	struct sk_buff *skb;
+	int i, j;
+
+	spin_lock_bh(&mgmt->rx_desc_lock);
+
+	for (i = 0; i < NUM_MGMT_RX_DESC_BLOCKS; i++) {
+		desc_info = mgmt->rx_desc_baddr[i];
+		if (!desc_info)
+			continue;
+
+		for (j = 0; j < MGMT_RX_DESC_BLOCK_SIZE; j++) {
+			if (!desc_info[j].in_use) {
+				list_del(&desc_info[j].list);
+				continue;
+			}
+
+			skb = desc_info[j].skb;
+			if (!skb)
+				continue;
+
+			ath12k_core_dma_unmap_single(ab->dev, ATH12K_SKB_RXCB(skb)->paddr,
+						     skb->len + skb_tailroom(skb),
+						     DMA_FROM_DEVICE);
+			dev_kfree_skb_any(skb);
+		}
+
+		kfree(desc_info);
+		mgmt->rx_desc_baddr[i] = NULL;
+	}
+
+	spin_unlock_bh(&mgmt->rx_desc_lock);
+}
+EXPORT_SYMBOL(ath12k_mgmt_rx_desc_cleanup);
+
+size_t ath12k_mgmt_rx_desc_list_cut_nodes(struct list_head *used_list,
+					  struct list_head *rx_desc_list,
+					  size_t count)
+{
+	struct list_head *curr;
+	struct ath12k_rx_desc_info *rx_desc;
+	size_t nodes = 0;
+
+	if (!count) {
+		INIT_LIST_HEAD(used_list);
+		goto out;
+	}
+
+	list_for_each(curr, rx_desc_list) {
+		if (!count)
+			break;
+
+		rx_desc = list_entry(curr, struct ath12k_rx_desc_info, list);
+		rx_desc->in_use = true;
+
+		count--;
+		nodes++;
+	}
+
+	list_cut_before(used_list, rx_desc_list, curr);
+
+out:
+	return nodes;
+}
+EXPORT_SYMBOL(ath12k_mgmt_rx_desc_list_cut_nodes);
+
+size_t ath12k_mgmt_get_req_entries_from_refill_ring(struct ath12k_base *ab,
+						    struct mgmt_srng *rx_refill_ring,
+						    struct list_head *list)
+{
+	struct ath12k_mgmt *mgmt = ab->mgmt;
+	size_t num_free, req_entries;
+	struct hal_srng *srng;
+
+	srng = &ab->hal.srng_list[rx_refill_ring->ring_id];
+
+	spin_lock_bh(&srng->lock);
+	ath12k_hal_srng_access_begin(ab, srng);
+
+	num_free = ath12k_hal_srng_src_num_free(ab, srng, true);
+	if (!num_free) {
+		ath12k_hal_srng_access_end(ab, srng);
+		spin_unlock_bh(&srng->lock);
+		return 0;
+	}
+
+	spin_lock_bh(&mgmt->rx_desc_lock);
+	req_entries = ath12k_mgmt_rx_desc_list_cut_nodes(list, &mgmt->rx_desc_free_list,
+							 num_free);
+	spin_unlock_bh(&mgmt->rx_desc_lock);
+
+	ath12k_hal_srng_access_end(ab, srng);
+	spin_unlock_bh(&srng->lock);
+
+	return req_entries;
+}
+EXPORT_SYMBOL(ath12k_mgmt_get_req_entries_from_refill_ring);
