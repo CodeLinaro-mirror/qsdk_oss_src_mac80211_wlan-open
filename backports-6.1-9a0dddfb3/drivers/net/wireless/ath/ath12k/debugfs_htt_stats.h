@@ -326,6 +326,9 @@ struct htt_tx_peer_rate_stats_tlv {
 			 [HTT_TX_PEER_STATS_NUM_BW_COUNTERS];
 	u32 tx_bw_320mhz;
 	u32 tx_mcs_ext_2[HTT_TX_PEER_STATS_NUM_EXTRA2_MCS_COUNTERS];
+	__le32 tx_ppdu_cnt;
+	__le32 tx_mpdu_try_cnt;
+	__le32 tx_mpdu_success_cnt;
 };
 
 #define HTT_RX_PEER_STATS_NUM_MCS_COUNTERS        12
@@ -391,6 +394,8 @@ struct htt_rx_peer_rate_stats_tlv {
 				       [HTT_RX_PEER_STATS_NUM_BW_EXT_COUNTERS];
 	u32 rx_bw_320mhz;
 	u32 rx_mcs_ext_2[HTT_RX_PEER_STATS_NUM_EXTRA2_MCS_COUNTERS];
+	__le32 tot_rx_ppdu_bytes;
+	__le32 rx_mpdu_try_cnt;
 };
 
 enum htt_peer_stats_req_mode {
