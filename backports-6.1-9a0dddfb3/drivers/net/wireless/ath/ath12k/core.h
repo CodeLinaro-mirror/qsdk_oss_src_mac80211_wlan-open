@@ -1677,7 +1677,6 @@ struct ath12k_pdev_cap {
 	bool nss_ratio_enabled;
 	u8 nss_ratio_info;
 	u32 scan_radio_caps;
-	bool is_scan_radio;
 };
 
 #define ATH12K_SCAN_RADIO_CAP_SUPPORTED   BIT(0)
@@ -2505,8 +2504,7 @@ static inline bool ath12k_scan_radio_supported(struct ath12k_pdev *pdev)
 
 static inline bool ath12k_scan_radio_dfs_enabled(struct ath12k_pdev *pdev)
 {
-	return pdev && pdev->cap.is_scan_radio &&
-	       (pdev->cap.scan_radio_caps & ATH12K_SCAN_RADIO_CAP_DFS_ENABLED);
+	return !!(pdev->cap.scan_radio_caps & ATH12K_SCAN_RADIO_CAP_DFS_ENABLED);
 }
 
 static inline bool ath12k_scan_radio_blanking_supported(struct ath12k_pdev *pdev)
@@ -2687,11 +2685,6 @@ static inline int ath12k_get_peer_count(struct ath12k_base *ab, bool get_max)
        }
 
        return peer_count;
-}
-
-static inline bool ath12k_is_scan_radio(struct ath12k *ar)
-{
-	return ar && ar->pdev && ar->pdev->cap.is_scan_radio;
 }
 
 extern unsigned int ath12k_mlo_capable;
