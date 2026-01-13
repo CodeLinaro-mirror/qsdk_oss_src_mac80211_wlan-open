@@ -54,6 +54,7 @@
 #endif
 #endif
 #endif
+#include "mgmt_rx.h"
 
 #ifdef CPTCFG_ATHDEBUG
 #include "ath_debug/athdbg_qmi.h"
@@ -1863,6 +1864,7 @@ struct ath12k_base {
 	struct ath12k_htc htc;
 
 	struct ath12k_dp *dp;
+	struct ath12k_mgmt *mgmt;
 
 	void __iomem *mem;
 	unsigned long mem_len;

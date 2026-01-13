@@ -113,6 +113,8 @@ struct ath12k_pci_device_family_ops {
 	int (*probe)(struct pci_dev *pdev, const struct pci_device_id *pci_dev);
 	struct ath12k_dp *(*dp_init)(struct ath12k_base *ab);
 	void (*dp_deinit)(struct ath12k_dp *dp);
+	struct ath12k_mgmt *(*mgmt_init)(struct ath12k_base *ab);
+	void (*mgmt_deinit)(struct ath12k_mgmt *mgmt);
 };
 
 struct ath12k_pci {
