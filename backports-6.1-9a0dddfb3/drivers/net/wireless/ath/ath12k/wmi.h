@@ -3355,6 +3355,7 @@ struct ath12k_wmi_vdev_create_arg {
 	u32 mbssid_flags;
 	u32 mbssid_tx_vdev_id;
 	u8 mld_addr[ETH_ALEN];
+	bool is_cfp_enabled;
 	u32 create_flags;
 };
 
@@ -3373,6 +3374,7 @@ struct wmi_vdev_create_cmd {
 	__le32 mbssid_tx_vdev_id;
 	__le32 vdev_stats_id_valid;
 	__le32 vdev_stats_id;
+	__le32 is_cfp_enabled;
 	__le32 flags;
 } __packed;
 
