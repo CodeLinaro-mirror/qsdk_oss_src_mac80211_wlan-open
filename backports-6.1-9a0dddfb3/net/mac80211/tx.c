@@ -4924,7 +4924,6 @@ netdev_tx_t ieee80211_subif_start_xmit(struct sk_buff *skb,
 
 	if (likely(!is_multicast_ether_addr(eth->h_dest)))
 		goto normal;
-
 	if (unlikely(!ieee80211_sdata_running(sdata))) {
 		if (!tid_stats_disable)
 			ieee80211_tx_drop_stats(sdata, info->tid,
@@ -5292,7 +5291,6 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	struct ieee80211_sub_if_data *sdata = IEEE80211_DEV_TO_SUB_IF(dev), *orig_sdata;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_tx_control control = {};
-	bool perf_mode = sdata->local->hw.perf_mode;
 	bool tid_stats_disable = sdata->local->hw.tid_stats_disable;
 
 #ifdef CPTCFG_MAC80211_ATHMEMDEBUG
@@ -5303,13 +5301,16 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 	if (!tid_stats_disable)
 		skb->priority = cfg80211_classify8021d(skb, NULL);
 
-	if (likely(skb->fast_xmit && perf_mode)) {
+	if (likely(skb->fast_xmit &&
+		   (skb->pkt_type != PACKET_MULTICAST &&
+		    skb->pkt_type != PACKET_BROADCAST))) {
 		if (sdata->vif.type == NL80211_IFTYPE_AP_VLAN)
 			sdata = container_of(sdata->bss,
 					     struct ieee80211_sub_if_data, u.ap);
 		if (!tid_stats_disable)
 			ieee80211_tid_classifier(skb, sdata, true, TX_ETH_PKT);
 
+		prefetch(sdata->local->hw.priv);
 		info->control.vif = &sdata->vif;
 		info->control.flags = u32_encode_bits(IEEE80211_LINK_UNSPECIFIED,
 						      IEEE80211_TX_CTRL_MLO_LINK);
@@ -5320,7 +5321,7 @@ netdev_tx_t ieee80211_subif_start_xmit_8023(struct sk_buff *skb,
 
 		return NETDEV_TX_OK;
 	}
-
+	skb->fast_xmit = false;
 	info->control.vif = &sdata->vif;
 #else
 #ifdef CPTCFG_MAC80211_ATHMEMDEBUG

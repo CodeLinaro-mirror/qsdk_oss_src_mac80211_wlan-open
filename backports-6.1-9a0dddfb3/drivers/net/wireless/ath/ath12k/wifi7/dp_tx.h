@@ -10,38 +10,29 @@
 #include "../dp.h"
 #include "../qcn_extns/mesh_util.h"
 
-#define DP_TX_SFE_BUFFER_SIZE           256
+#define DP_TX_SFE_BUFFER_SIZE		256
 
-int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int budget);
-enum ath12k_dp_tx_enq_error
-ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
-		   struct ath12k_link_vif *arvif,
-		   struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
-		   bool is_mcast, struct ath12k_link_sta *arsta,
-		   u8 ring_id, u32 qos_nw_delay, int group_slot, bool htt_mesh);
-enum ath12k_dp_tx_enq_error
-ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
-			struct ath12k_link_vif *arvif,
-			struct sk_buff *skb,
-			u32 qos_nw_delay);
-enum ath12k_dp_tx_enq_error
-ath12k_wifi7_dp_ext_tx(struct ath12k_pdev_dp *dp_pdev,
-		       struct ath12k_dp_vif *dp_vif,
-		       struct ath12k_dp_link_vif *dp_link_vif,
-		       struct ath12k_tx_desc_info *tx_desc,
-		       struct ath12k_dp_ext_info *info);
+struct ath12k_dp_skb_ctrl;
+struct ath12k_dp_tx_msdu_info;
+struct ath12k_dp_link_vif;
+
+int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id,
+					  int budget);
 u32 ath12k_wifi7_dp_tx_get_vdev_bank_config(struct ath12k_base *ab,
 					    struct ath12k_vif *ahvif,
 					    u8 link_id,
 					    bool force_vdev_id_check_disable);
-bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *skb);
+bool ath12k_mac_tx_check_max_limit(struct ath12k_pdev_dp *dp_pdev,
+				   struct sk_buff *skb);
 int ath12k_wifi7_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 				       struct ath12k_link_vif *arvif,
-				       struct sk_buff *skb, struct ath12k_link_sta *arsta);
+				       struct sk_buff *skb,
+				       struct ath12k_link_sta *arsta);
 int ath12k_wifi7_dp_tx_ring_setup(struct ath12k_base *ab);
 void ath12k_wifi7_dp_tx_ring_cleanup(struct ath12k_base *ab);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-int ath12k_wifi7_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget);
+int ath12k_wifi7_ppeds_tx_completion_handler(struct ath12k_base *ab,
+					     int budget);
 #else
 static inline int
 ath12k_wifi7_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
@@ -49,4 +40,43 @@ ath12k_wifi7_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget)
 	return 0;
 }
 #endif
+void ath12k_wifi7_mcbc_handler(struct ath12k_dp_vif *dp_vif,
+			       u8 link_id,
+			       struct ath12k_link_sta *arsta,
+			       struct sk_buff *skb,
+			       bool is_eth,
+			       bool gsn_valid,
+			       bool is_sta,
+			       struct ieee80211_vif *vlan_vif,
+			       struct ath12k_dp_skb_ctrl *skb_ctrl,
+			       u32 qos_nw_delay, bool htt_mesh);
+
+void ath12k_wifi7_ucast_handler(struct ath12k_dp_vif *dp_vif,
+				u8 link_id,
+				struct ath12k_link_sta *arsta,
+				struct sk_buff *skb,
+				struct ath12k_dp_skb_ctrl *skb_ctrl,
+				u32 qos_nw_delay, bool htt_mesh);
+
+enum ath12k_dp_tx_enq_error
+ath12k_wifi7_dp_tx_mcast_send(struct ath12k_pdev_dp *dp_pdev,
+			      struct ath12k_vif *ahvif,
+			      struct ath12k_dp_link_vif *dp_link_vif,
+			      u8 ring_id, struct ath12k_dp_tx_msdu_info *msdu_info,
+			      bool gsn_valid, u16 gsn, int group_slot,
+			      struct sk_buff *skb, struct ath12k_link_sta *arsta,
+			      struct ath12k_dp_skb_ctrl *skb_ctrl, bool htt_mesh);
+
+/* Statistics reasons */
+enum ath12k_dp_stats_reason {
+	RECV_STACK = 0,
+	TX_DESC_FAIL,
+	HAL_DESC_FAIL,
+	TX_ENQUEUE_SUCCESS,
+	TX_ENQUEUE_FAIL,
+	DMA_MAP_FAIL,
+	ENCAP_FAIL,
+	FEATURE_DROP,
+};
+
 #endif

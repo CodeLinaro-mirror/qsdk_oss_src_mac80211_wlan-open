@@ -389,11 +389,13 @@ u8 ath12k_dp_peer_get_stats_link_id(struct ath12k_base *ab,
  */
 int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 			       struct ath12k_dp_link_vif *dp_link_vif,
-			       int (*)(struct ath12k_dp *dp,
+			       int (*action)(struct ath12k_dp *dp,
 				       struct ath12k_dp_vif *,
 				       struct ath12k_dp_link_vif *,
-				       struct ath12k_dp_peer *, void *),
-			       void *app_data);
+				       struct ath12k_dp_peer *, void *,
+				       struct ath12k_dp_tx_msdu_info *),
+			       void *app_data,
+			       struct ath12k_dp_tx_msdu_info *msdu_info);
 void ath12k_dp_iterate_vdev_link_peer(struct ath12k_dp *dp, int vdev_id,
 				      void (*callback)(struct ath12k_dp *,
 						       struct ath12k_dp_link_peer *));

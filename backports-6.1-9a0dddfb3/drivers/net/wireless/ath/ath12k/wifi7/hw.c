@@ -36,6 +36,7 @@
 #include "hal_wcn7850.h"
 #include "../cfr.h"
 #include "../dp_stats.h"
+#include "qcn_extns/wifi7_dp_extn.h"
 
 static const guid_t wcn7850_uuid = GUID_INIT(0xf634f534, 0x6147, 0x11ec,
 					     0x90, 0xd6, 0x02, 0x42,
@@ -1311,80 +1312,224 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 	},
 };
 
-static int ath12k_get_mcast_group_slot(struct ieee80211_vif *vif,
-				       struct ieee80211_vif *vlan_vif,
-				       struct ath12k_link_vif *arvif,
-				       struct ieee80211_key_conf *hw_key,
-				       u8 link_id)
+static void ath12k_wifi7_mgmt_handler(struct ieee80211_hw *hw,
+				      struct ieee80211_tx_control *control,
+				      struct sk_buff *skb)
 {
-	struct ath12k_vif *vlan_ahvif;
-	struct ath12k_vlan_iface *vif_vlan;
-	int group_slot = -1;
-	u8 keyidx;
+	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	struct ath12k_pdev_dp *dp_pdev = NULL;
+	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
+	struct ieee80211_vif *vif = info->control.vif;
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
+	struct ath12k_link_vif *arvif = &ahvif->deflink;
+	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
+	struct ieee80211_key_conf *key = info->control.hw_key;
+	struct ath12k_mgmt_frame_stats *mgmt_stats = &ahvif->mgmt_stats;
+	struct ieee80211_sta *sta = control->sta;
+	u32 control_flags = info->control.flags;
+	u32 info_flags = info->flags;
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+	struct ath12k *ar;
+	struct ieee80211_mgmt *mgmt = NULL;
+	struct ieee80211_tx_rate rate;
+	u8 link_id = 0, ring_id = 0;
+	u16 frm_type = 0;
+	int ret;
+	bool is_prb_rsp;
 
-	if (vlan_vif && vlan_vif->type == NL80211_IFTYPE_AP_VLAN) {
-		vlan_ahvif = ath12k_vif_to_ahvif(vlan_vif);
-		if (!vlan_ahvif)
-			return -1;
+	if ((control_flags & IEEE80211_TX_CTRL_MGMT_RATE_EXIST) &&
+	     info->control.rates[0].idx >= 0)
+		rate = info->control.rates[0];
 
-		if (!hw_key ||
-		    (hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
-			return -1;
+	is_prb_rsp = ieee80211_is_probe_resp(hdr->frame_control);
 
-		keyidx = hw_key->keyidx;
-		vif_vlan = vlan_ahvif->vlan_iface;
-		if (vif_vlan && !vif_vlan->is_wds_4addr)
-			group_slot = vif_vlan->grp_key_slot_map[link_id][keyidx];
+	skb_cb->vif = vif;
+	link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
+	if (ieee80211_vif_is_mld(vif)) {
+		link_id = ath12k_mac_get_tx_link(sta, vif, link_id, skb, info_flags);
+		if (link_id >= ATH12K_NUM_MAX_LINKS ||
+		    (ATH12K_SCAN_LINKS_MASK & BIT(link_id))) {
+			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev, sta,
+							dp_vif, DP_TX_ENQ_DROP_INV_LINK,
+							ring_id, false);
+		}
+	} else {
+		link_id = 0;
 	}
 
-	return group_slot;
+	arvif = rcu_dereference(ahvif->link[link_id]);
+	if (!arvif || !arvif->ar) {
+		ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev, sta, dp_vif,
+						DP_TX_ENQ_DROP_INV_ARVIF,
+						ring_id, false);
+		return;
+	}
+
+	if (key) {
+		skb_cb->cipher = key->cipher;
+		skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
+	}
+
+	ar = arvif->ar;
+	skb_cb->link_id = link_id;
+
+	if (unlikely(test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))) {
+		ieee80211_free_txskb(hw, skb);
+		return;
+	}
+
+	skb_cb->u.ar = ar;
+
+	/* Get DP pdev */
+	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
+	if (!dp_pdev) {
+		ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev, sta, dp_vif,
+						DP_TX_ENQ_DROP_INV_PDEV,
+						ring_id, false);
+		return;
+	}
+
+	if (is_prb_rsp && arvif->tbtt_offset) {
+		u64 adjusted_tsf;
+
+		mgmt = (struct ieee80211_mgmt *)skb->data;
+		adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
+		memcpy(&mgmt->u.probe_resp.timestamp, &adjusted_tsf,
+		       sizeof(adjusted_tsf));
+	}
+	if (ath12k_mac_is_bridge_vdev(arvif)) {
+		ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev, sta, dp_vif,
+						DP_TX_ENQ_DROP_BRIDGE_VDEV,
+						ring_id, false);
+		return;
+	}
+
+	if ((control_flags & IEEE80211_TX_CTRL_MGMT_RATE_EXIST) &&
+	    rate.idx >= 0) {
+		if (ath12k_skb_rhash_insert(ar, skb, rate))
+			ath12k_warn(ar->ab,
+				    "tx skb rhash entry creation failed\n");
+	}
+
+	frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
+	ret = ath12k_mac_mgmt_tx(ar, skb, is_prb_rsp);
+
+	if (ret) {
+		if (ret != -EBUSY)
+			ath12k_warn(ar->ab,
+				    "failed to queue mgmt stype 0x%x frame %d\n",
+				    frm_type, ret);
+		ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev, sta, dp_vif,
+						DP_TX_ENQ_DROP_MGMT_FRAME,
+						ring_id, false);
+		spin_lock_bh(&ar->data_lock);
+		mgmt_stats->tx_fail_cnt[frm_type]++;
+		mgmt_stats->aggr_tx_mgmt_fail_cnt++;
+		spin_unlock_bh(&ar->data_lock);
+	} else {
+		spin_lock_bh(&ar->data_lock);
+		mgmt_stats->tx_succ_cnt[frm_type]++;
+		mgmt_stats->aggr_tx_mgmt_success_cnt++;
+		spin_unlock_bh(&ar->data_lock);
+	}
+}
+
+/**
+ * ath12k_wifi7_tx_setup_link() - Setup link for transmission
+ * @vif: Virtual interface
+ * @sta: Station pointer
+ * @info: TX info
+ * @skb: Socket buffer
+ * @link_id: Output link ID
+ *
+ * Returns: 0 on success, negative on error
+ */
+static int ath12k_wifi7_tx_setup_link(struct ieee80211_vif *vif,
+				      struct ieee80211_sta *sta,
+				      struct ieee80211_tx_info *info,
+				      struct sk_buff *skb,
+				      u8 *link_id)
+{
+	u32 info_flags = info->flags;
+
+	*link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
+
+	if (ieee80211_vif_is_mld(vif)) {
+		*link_id = ath12k_mac_get_tx_link(sta, vif, *link_id, skb, info_flags);
+		if (*link_id >= ATH12K_NUM_MAX_LINKS ||
+		    (ATH12K_SCAN_LINKS_MASK & BIT(*link_id))) {
+			return -EINVAL;
+		}
+	} else {
+		*link_id = 0;
+	}
+
+	return 0;
 }
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-enum ath12k_dp_tx_enq_error
-ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
-		   struct ath12k_link_vif *arvif, struct ath12k_pdev_dp *dp_pdev,
-		   struct sk_buff *skb, struct ath12k_link_sta *arsta,
-		   u8 ring_id, bool is_mcast, bool *htt_mesh,
-		   u32 qos_nw_delay, int group_slot)
+int ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
+		       struct ath12k_link_vif *arvif, struct ieee80211_vif *vlan_vif,
+		       struct sk_buff *skb, struct ath12k_sta *ahsta,
+		       struct ath12k_dp_skb_ctrl *skb_ctrl, bool is_eth,
+		       u8 link_id, bool is_mcast, bool *htt_mesh, u32 qos_nw_delay)
 {
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ath12k_vif *ahvif = arvif->ahvif;
+	struct ath12k_dp_vif *dp_vif = NULL;
+	struct ath12k *ar = arvif->ar;
 	struct sk_buff *skb_cloned = NULL;
 	struct ath12k_skb_cb *skb_clone_cb  = NULL;
 	enum ath12k_dp_tx_enq_error err;
 	struct meta_hdr_s *mhdr = NULL;
+	struct ath12k_link_sta *arsta = NULL;
+	u8 qos_tag;
 	u8 no_enc_frame = 0;
+	bool is_sta = false;
+	struct ath12k_pdev_dp *dp_pdev = NULL;
+	u8 ring_id = smp_processor_id();
 	bool checkhdr = false;
 	u8 flags;
 	u16 len;
 	int ret;
 
+
+	/* Get station info if needed */
+	if (ahsta) {
+		is_sta = true;
+		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
+		if (ahsta->use_4addr_set || qos_tag)
+			arsta = rcu_dereference(ahsta->link[link_id]);
+	}
+
 	if (ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_NATIVE_WIFI ||
-	    ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_RAW) {
+			ahvif->dp_vif.tx_encap_type == ATH12K_HW_TXRX_RAW) {
 		pr_err("Native Wifi & Raw mode not supported\n");
-		return DP_TX_ENQ_DROP_MISC;
+		err = DP_TX_ENQ_DROP_MISC;
+		goto fail;
 	}
 
 	len = skb->len;
+	dp_vif = &ahvif->dp_vif;
 
 	if (mmeshsim) {
 		/* Add meta header */
 		if (ahvif->dp_vif.dp_extn.mdbg & MESH_DBG_TX)
 			print_hex_dump(KERN_INFO, "PREBUF: ", DUMP_PREFIX_OFFSET, 16, 1,
-				       skb->data, 64, false);
+					skb->data, 64, false);
 
 		ret = ath12k_dp_add_mesh_meta_hdr(skb, ahvif,
-						  !!ahvif->dp_vif.dp_extn.mdbg,
-						  &checkhdr);
+				!!ahvif->dp_vif.dp_extn.mdbg,
+				&checkhdr);
 		if (ret) {
 			pr_err("Drop frames. Failure in adding mesh header in simulation\n");
-			return DP_TX_ENQ_DROP_MHDR_ERR;
+			err = DP_TX_ENQ_DROP_MHDR_ERR;
+			goto fail;
 		}
 
 		if (ahvif->dp_vif.dp_extn.mdbg & MESH_DBG_TX)
 			print_hex_dump(KERN_INFO, "POSTBUF: ", DUMP_PREFIX_OFFSET, 16, 1,
-				       skb->data, 64, false);
+					skb->data, 64, false);
 	}
 
 	/* Move the skb data ahead and point to the meta header */
@@ -1400,17 +1545,19 @@ ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 		skb_pull(skb, ahvif->dp_vif.dp_extn.mhdr_len);
 
 		if (arvif->key_cipher != INVALID_CIPHER &&
-		    (mhdr->flags & METAHDR_FLAG_NOENCRYPT))
+				(mhdr->flags & METAHDR_FLAG_NOENCRYPT))
 			no_enc_frame = 1;
 
 		if (mhdr->flags & METAHDR_FLAG_NOQOS)
 			skb->priority =  HTT_TX_EXT_TID_NON_QOS_MCAST_BCAST;
 
 		if ((mhdr->flags & METAHDR_FLAG_INFO_UPDATED) &&
-		    !no_enc_frame) {
+				!no_enc_frame) {
 			skb_cloned = skb_clone(skb, GFP_ATOMIC);
-			if (!skb_cloned)
-				return DP_TX_ENQ_DROP_CLONE;
+			if (!skb_cloned) {
+				err = DP_TX_ENQ_DROP_CLONE;
+				goto fail;
+			}
 
 			skb_clone_cb = ATH12K_SKB_CB(skb_cloned);
 			skb_clone_cb->flags |= ATH12K_SKB_MESH_TX_INFO;
@@ -1424,12 +1571,25 @@ ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 			 * Firmware uses this to update
 			 * the peer cached rate info.
 			 */
-			err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb_cloned, false, 0,
-						 is_mcast, arsta, ring_id, qos_nw_delay,
-						 group_slot, true);
-			/* skb is freed in the caller on err */
-			if (err)
-				return err;
+
+			local_bh_disable();
+			/* Route based on multicast/unicast */
+			if (!is_mcast) {
+				/* Unicast path */
+				ath12k_wifi7_ucast_handler(dp_vif, link_id, arsta,
+							   skb_cloned, skb_ctrl,
+							   qos_nw_delay,
+							   true);
+			} else {
+				ath12k_wifi7_mcbc_handler(dp_vif, link_id, arsta,
+							  skb_cloned, is_eth,
+							  false, is_sta, vlan_vif,
+							  skb_ctrl,
+							  qos_nw_delay, false);
+				ieee80211_free_txskb(hw, skb_cloned);
+			}
+			local_bh_enable();
+
 		}
 
 		if (no_enc_frame) {
@@ -1442,497 +1602,183 @@ ath12k_dp_mmesh_tx(struct ieee80211_hw *hw, struct ath12k_base *ab,
 	}
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
-			 "skb %p clone %p no_enc_frm %d skb->pri %d tx_info_flag %d",
-			 skb, skb_cloned,  no_enc_frame, skb->priority,
-			 !!(skb_cb->flags & ATH12K_SKB_MESH_TX_INFO));
+			"skb %p clone %p no_enc_frm %d skb->pri %d tx_info_flag %d",
+			skb, skb_cloned,  no_enc_frame, skb->priority,
+			!!(skb_cb->flags & ATH12K_SKB_MESH_TX_INFO));
 
 	ath12k_dbg_level(ab, ATH12K_DBG_MMESH, ATH12K_DBG_L1,
-			 " hdr len %d skb->len %d mhdr flags 0x%x mhdr %p htt_mesh %d\n",
-			 skb->len - len,	skb->len, flags, mhdr, *htt_mesh);
-	return DP_TX_ENQ_SUCCESS;
+			" hdr len %d skb->len %d mhdr flags 0x%x mhdr %p htt_mesh %d\n",
+			skb->len - len,        skb->len, flags, mhdr, *htt_mesh);
+	return 0;
+fail:
+	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
+	ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
+					ahsta ? ath12k_ahsta_to_sta(ahsta) : NULL,
+					&ahvif->dp_vif, ring_id, err, true);
+	return -EINVAL;
 }
 #endif
 
-/* Note: called under rcu_read_lock() */
-static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
-				   struct ieee80211_tx_control *control,
-				   struct sk_buff *skb)
+/**
+ * ath12k_wifi7_mac_op_tx() - Main MAC operation TX function
+ * @hw: ieee80211_hw pointer
+ * @control: TX control
+ * @skb: Socket buffer
+ *
+ * Main entry point for packet transmission with bitmap-based routing
+ */
+void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
+			    struct ieee80211_tx_control *control,
+			    struct sk_buff *skb)
 {
-	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
+	struct ath12k_skb_cb *skb_cb = NULL;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(skb);
 	struct ieee80211_vif *vif = info->control.vif;
+	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
-	struct ath12k_link_vif *arvif = &ahvif->deflink;
-	struct ieee80211_vif *vlan_vif = control ? control->vlan_vif : NULL;
-	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
-	struct ieee80211_key_conf *key = info->control.hw_key;
-	struct ath12k_mgmt_frame_stats *mgmt_stats = &ahvif->mgmt_stats;
-	struct ieee80211_sta *sta = control->sta;
-	u32 control_flags = info->control.flags;
-	struct ath12k_link_sta *arsta = NULL;
-	struct ath12k_link_vif *tmp_arvif;
-	struct ath12k_sta *ahsta = NULL;
-	struct ieee80211_tx_rate rate;
-	u32 info_flags = info->flags;
-	struct ieee80211_mgmt *mgmt;
-	struct sk_buff *msdu_copied;
-	struct ath12k *ar, *tmp_ar;
-	struct ath12k_pdev_dp *dp_pdev = NULL, *tmp_dp_pdev = NULL;
-	struct ath12k_dp_link_peer *peer = NULL;
 	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
-	struct ath12k_dp *dp = NULL;
-	unsigned long links_map;
-	bool is_mcast = false, is_eth = false;
-	int group_slot = -1;
-	bool is_dvlan = false;
-	struct ethhdr *eth;
-	bool is_prb_rsp;
+	struct ieee80211_key_conf *key = info->control.hw_key;
+	struct ath12k_link_vif *arvif = NULL;
+	struct ath12k *ar = NULL;
+	struct ieee80211_vif *vlan_vif = control ? control->vlan_vif : NULL;
+	struct ieee80211_hdr *hdr = NULL;
+	struct ieee80211_sta *sta = control->sta;
 	u32 qos_nw_delay = info->sawf.nw_delay;
-	u16 mcbc_gsn, frm_type = 0;
-	bool htt_mesh = false;
-	u8 link_id;
-#ifdef CPTCFG_MAC80211_SFE_SUPPORT
-	u8 tid;
-#endif
+	u32 info_flags = info->flags;
+	struct ath12k_dp_skb_ctrl skb_ctrl = {0};
+	struct ath12k_sta *ahsta = NULL;
+	struct ath12k_link_sta *arsta = NULL;
+	u8 link_id = 0, qos_tag;
+	bool is_mcast = false, is_pkt_classified = false;
+	bool is_data = false;
 	int ret;
-	u8 qos_tag;
-	enum ath12k_dp_tx_enq_error err;
-	u8 ring_id = 0, ring_selector = 0;
+	bool is_eth = false, gsn_valid = true;
+	bool is_dvlan = false, is_sta = false;
+	bool htt_mesh = false;
 
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
-		ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-						sta, dp_vif,
-						DP_TX_ENQ_DROP_VIF_TYPE_MON,
-						ring_id, false);
+	/* Check queue stop */
+	if (unlikely(ah->queue_stop)) {
+		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
+						DP_TX_ENQ_DROP_QUEUE_STOP,
+						0, true);
 		return;
 	}
 
-	if ((control_flags & IEEE80211_TX_CTRL_MGMT_RATE_EXIST) &&
-	    info->control.rates[0].idx >= 0)
-		rate = info->control.rates[0];
-
-	link_id = u32_get_bits(info->control.flags, IEEE80211_TX_CTRL_MLO_LINK);
-	if (unlikely(!(skb->fast_xmit &&
-		     ((skb->mark & ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK) ==
-		      ATH12K_MLO_METADATA_MLO_ASSIST_TAG)) || !hw->perf_mode)) {
-		memset(skb_cb, 0, sizeof(*skb_cb));
-		skb_cb->vif = vif;
-
-		if (key) {
-			skb_cb->cipher = key->cipher;
-			skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
-		}
-	}
-
-	/* handle only for MLO case, use deflink for non MLO case */
-#ifdef CPTCFG_MAC80211_SFE_SUPPORT
-	if (likely(skb->fast_xmit &&
-		   ((skb->mark & ATH12K_MLO_METADATA_MLO_ASSIST_TAG_MASK) ==
-		    ATH12K_MLO_METADATA_MLO_ASSIST_TAG))) {
-		link_id =  u32_get_bits(skb->mark, ATH12K_MLO_METADATA_LINKID_MASK);
-		skb_cb->link_id = link_id;
-
-		arvif = rcu_dereference(ahvif->link[link_id]);
-
-		if (unlikely(!arvif || !arvif->ar)) {
-			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-							sta, dp_vif,
-							DP_TX_ENQ_DROP_INV_ARVIF_FAST,
-							ring_id, false);
-			return;
-		}
-
-		ar = arvif->ar;
-		skb_cb->u.ar = ar;
-
-		dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
-		if (unlikely(!dp_pdev)) {
-			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-							sta, dp_vif,
-							DP_TX_ENQ_DROP_INV_PDEV_FAST,
-							ring_id, false);
-			return;
-		}
-
-		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
-		if (unlikely(ret)) {
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-					 "failed due to limit check pdev idx %d\n",
-					 ar->pdev_idx);
-			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-							sta, dp_vif,
-							DP_TX_ENQ_DROP_MAX_TX_LIMIT_FAST,
-							ring_id, false);
-			return;
-		}
-
-		switch (ahvif->dp_vif.tx_encap_type) {
-			case ATH12K_HW_TXRX_ETHERNET:
-				skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
-				err = ath12k_wifi7_dp_tx_fast(dp_pdev, arvif,
-							      skb,
-							      qos_nw_delay);
-				break;
-			case ATH12K_HW_TXRX_NATIVE_WIFI:
-				ath12k_dp_tx_encap_nwifi(skb);
-				err = ath12k_wifi7_dp_tx_fast(dp_pdev, arvif,
-							      skb,
-							      qos_nw_delay);
-				break;
-			case ATH12K_HW_TXRX_RAW:
-			default:
-				err = DP_TX_ENQ_DROP_INV_ENCAP_FAST;
-		}
-		if (unlikely(err)) {
-			ring_selector =
-				dp_pdev->dp->hw_params->hw_ops->get_ring_selector(skb);
-			ring_id = ring_selector % dp_pdev->dp->hw_params->max_tx_ring;
-
-			if (ath12k_mac_check_err_code_debug_logging(err))
-				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-						 "failed to transmit frame %d\n", err);
-			else
-				ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
-
-			ath12k_mac_ieee80211_free_txskb(ar->ah->hw, skb, dp_pdev,
-							sta, dp_vif,
-							err, ring_id, false);
-		}
-		if (unlikely(ath12k_dp_stats_enabled(dp_pdev) &&
-			     ath12k_tid_stats_enabled(dp_pdev))) {
-			tid = skb->priority &
-			      IEEE80211_QOS_CTL_TID_MASK;
-			ath12k_tid_tx_stats(ahvif, tid, skb->len,
-					    ATH_TX_SFE_PKTS);
-		}
-
+#ifdef CPTCFG_QCN_EXTN
+	/* fast path */
+	if (likely(ath12k_dp_tx_check_fast_path(skb, info_flags, dp_vif, &skb_ctrl,
+						qos_nw_delay)))
 		return;
-	} else if (ieee80211_vif_is_mld(vif)) {
-#else
-	if (ieee80211_vif_is_mld(vif)) {
 #endif
-		link_id = ath12k_mac_get_tx_link(sta, vif, link_id, skb, info_flags);
-		if (link_id >= ATH12K_NUM_MAX_LINKS ||
-		    (ATH12K_SCAN_LINKS_MASK & BIT(link_id))) {
-			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-							sta, dp_vif,
-							DP_TX_ENQ_DROP_INV_LINK,
-							ring_id, false);
-			return;
-		}
-	} else {
-		link_id = 0;
+	hdr = (struct ieee80211_hdr *)skb->data;
+	skb_cb = ATH12K_SKB_CB(skb);
+
+	/* Check monitor mode */
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_MONITOR) {
+		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
+						DP_TX_ENQ_DROP_VIF_TYPE_MON,
+						0, false);
+		return;
 	}
 
+	/* Classify packet */
+	is_pkt_classified = ath12k_dp_tx_classify_packet(hw, dp_vif, info, skb,
+							 &is_mcast, &is_eth,
+							 &is_data, key, &skb_ctrl);
+	if (unlikely(!is_pkt_classified))
+		return;
+
+	/* Route to management handler */
+	if (!is_data) {
+		ath12k_wifi7_mgmt_handler(hw, control, skb);
+		return;
+	}
+
+	/* TODO once peer clean up changes are done we will optimize below code
+	 * and will avoid using the arvif
+	 */
+
+	/* Setup link for data frame */
+	ret = ath12k_wifi7_tx_setup_link(vif, sta, info, skb, &link_id);
+	if (ret) {
+		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
+						DP_TX_ENQ_DROP_INV_LINK,
+						0, false);
+		return;
+	}
+
+	/* Get link virtual interface */
 	arvif = rcu_dereference(ahvif->link[link_id]);
 	if (!arvif || !arvif->ar) {
-		ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-						sta, dp_vif,
+		ath12k_mac_ieee80211_free_txskb(hw, skb, NULL, sta, dp_vif,
 						DP_TX_ENQ_DROP_INV_ARVIF,
-						ring_id, false);
+						0, false);
 		return;
 	}
 
 	ar = arvif->ar;
+	/* Setup SKB control block */
+	skb_cb->u.ar = ar;
 	skb_cb->link_id = link_id;
+	skb_cb->vif = vif;
 
-	if (unlikely(test_bit(ATH12K_FLAG_RECOVERY, &ar->ab->dev_flags))) {
-		ieee80211_free_txskb(hw, skb);
-		return;
-	}
-
+	/* Get station info if needed */
 	if (sta) {
+		is_sta = true;
 		ahsta = ath12k_sta_to_ahsta(sta);
 		qos_tag = u32_get_bits(skb->mark, QOS_TAG_MASK);
 		if (ahsta->use_4addr_set || qos_tag)
 			arsta = rcu_dereference(ahsta->link[link_id]);
 	}
 
-	/* as skb_cb is common currently for dp and mgmt tx processing
-	 * set this in the common mac op tx function.
+	/* to check for if MAC has added the encrption in case of
+	 * nwifi AP-VLAN frame
 	 */
-	skb_cb->u.ar = ar;
-	is_prb_rsp = ieee80211_is_probe_resp(hdr->frame_control);
 
-	if (info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP) {
-		eth = (struct ethhdr *)skb->data;
-		is_mcast = is_multicast_ether_addr(eth->h_dest);
-		is_eth = true;
-		skb_cb->flags |= ATH12K_SKB_HW_80211_ENCAP;
-	} else if (ieee80211_is_mgmt(hdr->frame_control)) {
-		if (is_prb_rsp && arvif->tbtt_offset) {
-			u64 adjusted_tsf;
-
-			mgmt = (struct ieee80211_mgmt *)skb->data;
-			adjusted_tsf = cpu_to_le64(0ULL - arvif->tbtt_offset);
-			memcpy(&mgmt->u.probe_resp.timestamp, &adjusted_tsf,
-			       sizeof(adjusted_tsf));
-		}
-
-		if (ath12k_mac_is_bridge_vdev(arvif)) {
-			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-							sta, dp_vif,
-							DP_TX_ENQ_DROP_BRIDGE_VDEV,
-							ring_id, false);
-			return;
-		}
-
-		if ((control_flags & IEEE80211_TX_CTRL_MGMT_RATE_EXIST) &&
-		    rate.idx >= 0) {
-			if (ath12k_skb_rhash_insert(ar, skb, rate))
-				ath12k_warn(ar->ab,
-					    "tx skb rhash entry creation failed\n");
-		}
-
-		frm_type = FIELD_GET(IEEE80211_FCTL_STYPE, hdr->frame_control);
-		ret = ath12k_mac_mgmt_tx(ar, skb, is_prb_rsp);
-		if (ret) {
-			if (ret != -EBUSY)
-				ath12k_warn(ar->ab, "failed to queue mgmt stype 0x%x frame %d\n", frm_type, ret);
-
-			ath12k_skb_rhash_remove(ar, skb);
-
-			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-							sta, dp_vif,
-							DP_TX_ENQ_DROP_MGMT_FRAME,
-							ring_id, false);
-			spin_lock_bh(&ar->data_lock);
-			mgmt_stats->tx_fail_cnt[frm_type]++;
-			mgmt_stats->aggr_tx_mgmt_fail_cnt++;
-			spin_unlock_bh(&ar->data_lock);
-		} else {
-			spin_lock_bh(&ar->data_lock);
-			mgmt_stats->tx_succ_cnt[frm_type]++;
-			mgmt_stats->aggr_tx_mgmt_success_cnt++;
-			spin_unlock_bh(&ar->data_lock);
-		}
-		return;
-	}
-
-	if (!(info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP))
-		is_mcast = is_multicast_ether_addr(hdr->addr1);
-
-	/* This is case only for P2P_GO */
-	if (vif->type == NL80211_IFTYPE_AP && vif->p2p)
-		ath12k_mac_add_p2p_noa_ie(ar, vif, skb, is_prb_rsp);
-
-	dp_pdev = ath12k_dp_to_dp_pdev(ar->ab->dp, ar->pdev_idx);
-	if (!dp_pdev) {
-		ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-						sta, dp_vif,
-						DP_TX_ENQ_DROP_INV_PDEV,
-						ring_id, false);
-		return;
-	}
-
-	dp = dp_pdev->dp;
-	ring_selector = dp->hw_params->hw_ops->get_ring_selector(skb);
-	ring_id = ring_selector % dp->hw_params->max_tx_ring;
-
-	/* Checking if it is a DVLAN frame */
-	if (!test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED, &ar->ab->ag->flags) &&
-	    !(skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP) &&
+	if (!test_bit(ATH12K_GROUP_FLAG_HW_CRYPTO_DISABLED,
+		      &ah->ag->flags) &&
+	    !(info_flags & IEEE80211_TX_CTL_HW_80211_ENCAP) &&
 	    !(skb_cb->flags & ATH12K_SKB_CIPHER_SET) &&
-	    ieee80211_has_protected(hdr->frame_control))
+	    ieee80211_has_protected(hdr->frame_control)) {
 		is_dvlan = true;
-
-	if (!vif->valid_links || !is_mcast || is_dvlan ||
-	    (is_eth && (!is_mcast || sta)) ||
-	    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ar->ab->ag->flags)) {
-		ret = ath12k_mac_tx_check_max_limit(dp_pdev, skb);
-		if (ret) {
-			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L1,
-					 "failed due to limit check pdev idx %d\n",
-					 ar->pdev_idx);
-			ath12k_mac_ieee80211_free_txskb(hw, skb, dp_pdev,
-							sta, dp_vif,
-							DP_TX_ENQ_DROP_MAX_TX_LIMIT,
-							ring_id, false);
-			return;
-		}
-
-		if (is_mcast && !sta) {
-			if (ahvif->vif->type == NL80211_IFTYPE_AP) {
-				/*
-				 * If the ME TX is successful the SKB will be consumed
-				 */
-				if (!ath12k_dp_me_tx(&ahvif->dp_vif, skb))
-					return;
-			}
-
-			group_slot = ath12k_get_mcast_group_slot(vif, vlan_vif, arvif,
-								 key, arvif->link_id);
-		}
+		skb_ctrl.features |= DP_FEATURE_SW_ENCRPT;
+	}
 
 #ifdef CPTCFG_QCN_EXTN_MESH_SUPPORT
-		if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH) {
-			err = ath12k_dp_mmesh_tx(hw, ar->ab,  arvif, dp_pdev, skb,
-						 arsta, ring_id, is_mcast, &htt_mesh,
-						 qos_nw_delay, group_slot);
-			if (err) {
-				if (ath12k_mac_check_err_code_debug_logging(err))
-					ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
-							 ATH12K_DBG_L2,
-							 "failed to transmit frame %d\n",
-							 err);
-				else
-					ath12k_warn(ar->ab, "failed to transmit frm %d\n",
-						    err);
+	if (ahvif->vap_submode == QCA_WLAN_VENDOR_VAP_SUBMODE_MESH) {
+		ret = ath12k_dp_mmesh_tx(hw, ar->ab,  arvif, vlan_vif, skb, ahsta,
+					 &skb_ctrl, is_eth, link_id, is_mcast,
+					 &htt_mesh, qos_nw_delay);
 
-				ath12k_mac_ieee80211_free_txskb(ar->ah->hw, skb,
-								dp_pdev, sta, dp_vif,
-								err, ring_id, true);
-				return;
-			}
-		}
+		if (ret)
+			return;
+	}
 #endif
 
-		err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
-					 arsta, ring_id, qos_nw_delay, group_slot,
-					 htt_mesh);
-		if (unlikely(err)) {
-			if (ath12k_mac_check_err_code_debug_logging(err))
-				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
-						 "failed to transmit frame %d\n", err);
-			else
-				ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
-
-			ath12k_mac_ieee80211_free_txskb(ar->ah->hw, skb, dp_pdev,
-							sta, dp_vif,
-							err, ring_id, false);
-			return;
-		}
+	/*
+	 * TCL ring is lockless (no per-core protection).
+	 * Disable bottom halves to prevent concurrent TX enqueue on
+	 * the same CPU and ensure serialized access to the TCL ring.
+	 */
+	local_bh_disable();
+	/* Route based on multicast/unicast */
+	if (!is_mcast) {
+		/* Unicast path */
+		ath12k_wifi7_ucast_handler(dp_vif, link_id, arsta, skb,
+					   &skb_ctrl, qos_nw_delay, htt_mesh);
 	} else {
-		mcbc_gsn = atomic_inc_return(&ahvif->dp_vif.mcbc_gsn) & 0xfff;
 
-		if (ahvif->vif->type == NL80211_IFTYPE_AP) {
-			/*
-			 * If the ME TX is successful the SKB will be consumed
-			 */
-			if (!ath12k_dp_me_tx(&ahvif->dp_vif, skb))
-				return;
-		}
+		if (!vif->valid_links || is_dvlan || (is_eth && sta) ||
+		    (!is_eth && (hdr && !is_multicast_ether_addr(hdr->addr1))) ||
+		    test_bit(ATH12K_GROUP_FLAG_RAW_MODE, &ah->ag->flags))
+			gsn_valid = false;
 
-		links_map = ahvif->links_map;
-		for_each_set_bit(link_id, &links_map,
-				 IEEE80211_MLD_MAX_NUM_LINKS) {
-			tmp_arvif = rcu_dereference(ahvif->link[link_id]);
-			if (!tmp_arvif || !tmp_arvif->is_up)
-				continue;
-
-			tmp_ar = tmp_arvif->ar;
-			if (unlikely(test_bit(ATH12K_FLAG_CRASH_FLUSH, &tmp_ar->ab->dev_flags)))
-				continue;
-
-			tmp_dp_pdev = ath12k_dp_to_dp_pdev(tmp_ar->ab->dp, tmp_ar->pdev_idx);
-			if (!tmp_dp_pdev)
-				continue;
-
-			ret = ath12k_mac_tx_check_max_limit(tmp_dp_pdev, skb);
-			if (ret) {
-				ath12k_dbg_level(tmp_ar->ab, ATH12K_DBG_MAC,
-						 ATH12K_DBG_L2,
-						 "failed mcast tx due to limit check pdev idx %d\n",
-						 tmp_ar->pdev_idx);
-				continue;
-			}
-
-			if (is_eth) {
-				msdu_copied = skb_clone(skb, GFP_ATOMIC);
-				if (!msdu_copied) {
-					ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
-							 ATH12K_DBG_L2,
-							 "skb clone failure link_id 0x%X vdevid 0x%X\n",
-							 link_id, tmp_arvif->vdev_id);
-					continue;
-				}
-				skb_cb = ATH12K_SKB_CB(msdu_copied);
-				goto skip_nwifi;
-			}
-			msdu_copied = skb_copy(skb, GFP_ATOMIC);
-			if (!msdu_copied) {
-				ath12k_err(ar->ab,
-					   "skb copy failure link_id 0x%X vdevid 0x%X\n",
-					   link_id, tmp_arvif->vdev_id);
-				continue;
-			}
-
-			ath12k_mlo_mcast_update_tx_link_address(vif, link_id,
-								msdu_copied,
-								info_flags);
-
-			skb_cb = ATH12K_SKB_CB(msdu_copied);
-skip_nwifi:
-			skb_cb->link_id = link_id;
-			skb_cb->vif = vif;
-			skb_cb->u.ar = tmp_ar;
-
-			if (ahsta && ahsta->use_4addr_set)
-				arsta = rcu_dereference(ahsta->link[link_id]);
-
-			/* For open mode, skip peer find logic */
-			if (unlikely(arvif->key_cipher == WMI_CIPHER_NONE))
-				goto skip_peer_find;
-
-			spin_lock_bh(&tmp_ar->ab->dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_addr(tmp_ar->ab->dp,
-								tmp_arvif->bssid);
-			if (!peer) {
-				spin_unlock_bh(&tmp_ar->ab->dp->dp_lock);
-				ath12k_warn(tmp_ar->ab,
-					    "failed to find peer for vdev_id 0x%X addr %pM link_map 0x%X\n",
-					    tmp_arvif->vdev_id, tmp_arvif->bssid,
-					    ahvif->links_map);
-				ath12k_mac_ieee80211_free_txskb(hw, msdu_copied,
-								tmp_dp_pdev,
-								sta, dp_vif,
-								DP_TX_ENQ_DROP_INV_PEER,
-								ring_id, true);
-				continue;
-			}
-
-			if (is_mcast && !sta)
-				group_slot = ath12k_get_mcast_group_slot(vif, vlan_vif,
-									 tmp_arvif,
-									 key,
-									 link_id);
-
-			key = peer->dp_peer->keys[peer->dp_peer->mcast_keyidx];
-			if (key) {
-				skb_cb->cipher = key->cipher;
-				skb_cb->flags |= ATH12K_SKB_CIPHER_SET;
-
-				if (!is_eth) {
-					hdr = (struct ieee80211_hdr *)msdu_copied->data;
-					if (!ieee80211_has_protected(hdr->frame_control))
-						hdr->frame_control |=
-						cpu_to_le16(IEEE80211_FCTL_PROTECTED);
-				}
-			}
-			spin_unlock_bh(&tmp_ar->ab->dp->dp_lock);
-
-skip_peer_find:
-			err = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
-						 msdu_copied, true, mcbc_gsn,
-						 is_mcast, arsta, ring_id,
-						 qos_nw_delay, group_slot, false);
-			if (unlikely(err)) {
-				if (ath12k_mac_check_err_code_debug_logging(err))
-					ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,
-							 ATH12K_DBG_L2,
-							 "failed to transmit frame %d\n",
-							 err);
-				else
-					ath12k_warn(ar->ab, "failed to transmit frame %d\n", err);
-
-				ath12k_mac_ieee80211_free_txskb(hw, msdu_copied,
-								tmp_dp_pdev,
-								sta, dp_vif, err,
-								ring_id, true);
-			}
-		}
-		ieee80211_free_txskb(ar->ah->hw, skb);
+		ath12k_wifi7_mcbc_handler(dp_vif, link_id, arsta, skb, is_eth,
+					  gsn_valid, is_sta, vlan_vif, &skb_ctrl,
+					  qos_nw_delay, htt_mesh);
+		ieee80211_free_txskb(hw, skb);
 	}
+	local_bh_enable();
 }
 
 static void ath12k_wifi7_mac_op_sta_set_4addr(struct ieee80211_hw *hw,

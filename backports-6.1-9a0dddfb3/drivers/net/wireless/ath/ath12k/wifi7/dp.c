@@ -586,9 +586,8 @@ static struct ath12k_dp_arch_ops ath12k_wifi7_dp_arch_ops = {
 	.dp_vif_configure = ath12k_wifi7_dp_vif_configure,
 	.dp_link_vif_configure = ath12k_wifi7_dp_link_vif_configure,
 	.rx_flow_fse_cache_operation = ath12k_wifi7_dp_rx_flow_fse_cache_operation,
-	.dp_ext_tx = ath12k_wifi7_dp_ext_tx,
 	.fetch_rx_desc_replenish_ring_id = ath12k_wifi7_dp_fetch_replenish_ring_id,
-
+	.dp_tx_mcast_send = ath12k_wifi7_dp_tx_mcast_send,
 	/* UMAC reset operations */
 	.umac_reset_handle_pre_reset = ath12k_wifi7_umac_reset_handle_pre_reset_wrapper,
 	.umac_reset_handle_post_reset_start =

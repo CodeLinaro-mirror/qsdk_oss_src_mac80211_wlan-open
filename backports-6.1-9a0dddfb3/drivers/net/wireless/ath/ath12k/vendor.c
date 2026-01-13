@@ -6780,6 +6780,17 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	char *type = NULL;
 	int ret = 0;
 
+	vif = wdev_to_ieee80211_vif(wdev);
+	if (!vif) {
+		ath12k_err(NULL, "vif is NULL\n");
+		return -EINVAL;
+	}
+	ahvif = ath12k_vif_to_ahvif(vif);
+	if (!ahvif) {
+		ath12k_err(NULL, "ahvif is NULL\n");
+		return -EINVAL;
+	}
+
 	ret = nla_parse(tb, QCA_WLAN_VENDOR_ATTR_CONFIG_MAX, data, data_len,
 			ath12k_wifi_config_policy, NULL);
 
@@ -6864,20 +6875,11 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 	else
 		return ret;
 
-	vif = wdev_to_ieee80211_vif(wdev);
-	if (!vif) {
-		ath12k_dbg(NULL, ATH12K_DBG_PPE, "vif is NULL\n");
-		return ret;
-	}
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		ath12k_dbg(NULL, ATH12K_DBG_PPE, "vif is AP_VLAN\n");
 		return ret;
 	}
-	ahvif = ath12k_vif_to_ahvif(vif);
-	if (!ahvif) {
-		ath12k_dbg(NULL, ATH12K_DBG_PPE, "ahvif is NULL\n");
-		return ret;
-	}
+
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (ppe_vp_type != ATH12K_INVALID_PPE_VP_TYPE &&
 	    ahvif->dp_vif.ppe_vp_num != ATH12K_INVALID_PPE_VP_NUM) {
@@ -6911,6 +6913,7 @@ static int ath12k_vendor_wifi_config_handler(struct wiphy *wiphy,
 			return 0;
 		}
 		wdev->vap_submode = vap_submode;
+		ahvif->dp_vif.dp_features |= DP_FEATURE_MESH;
 		ath12k_dbg(NULL, ATH12K_DBG_CFG,
 			   "%s-configured vap_submode: %d for(%s)\n", __func__,
 			   wdev->vap_submode, wdev->netdev->name);
@@ -10309,13 +10312,16 @@ static int ath12k_vendor_set_wifi_params_me(struct wiphy *wiphy,
 
 	switch (params->value) {
 	case QCA_WLAN_VENDOR_VDEV_PARAM_ME:
-		if (val == 5)
+		if (val == 5) {
 			me_flags = ATH12K_ME_FLAGS_BIT_ME5;
-		else if (val == 6)
+			dp_vif->dp_features |= DP_FEATURE_ME;
+		} else if (val == 6) {
 			me_flags = ATH12K_ME_FLAGS_BIT_ME6;
-		else if (val == 0)
+			dp_vif->dp_features |= DP_FEATURE_ME;
+		} else if (val == 0) {
 			me_flags = 0;
-		else {
+			dp_vif->dp_features &= ~(DP_FEATURE_ME);
+		} else {
 			ath12k_dbg(NULL, ATH12K_DBG_CFG,
 				   "Unsupported value for param: %d value: %d\n",
 				   params->value, val);

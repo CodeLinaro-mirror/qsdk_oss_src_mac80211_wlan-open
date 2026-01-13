@@ -1615,8 +1615,10 @@ int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vi
 						struct ath12k_dp_vif *,
 						struct ath12k_dp_link_vif *,
 						struct ath12k_dp_peer *,
-						void *),
-			       void *app_data)
+						void *,
+						struct ath12k_dp_tx_msdu_info *msdu_info),
+			       void *app_data,
+			       struct ath12k_dp_tx_msdu_info *msdu_info)
 {
 	struct ath12k_dp_link_peer *peer = NULL;
 	int vdev_id = dp_link_vif->vdev_id;
@@ -1653,7 +1655,8 @@ int ath12k_dp_peer_walk_action(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vi
 		/*
 		 * Desired Control/Data path functionality will be invoked here.
 		 */
-		ret = action_fn(dp, dp_vif, dp_link_vif, dp_peer, app_data);
+		ret = action_fn(dp, dp_vif, dp_link_vif, dp_peer, app_data,
+				msdu_info);
 
 		/* TODO:
 		 * Debug the reason for failure. Increment stats basing on ret.

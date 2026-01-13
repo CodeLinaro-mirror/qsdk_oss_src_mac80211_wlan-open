@@ -169,9 +169,11 @@ static inline bool __skb_get_inet_daddr(struct sk_buff *skb, union nf_inet_addr 
 int ath12k_dp_me_tx_ucast_peer(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vif,
 			       struct ath12k_dp_link_vif *dp_link_vif,
 			       struct ath12k_dp_peer *peer,
-			       void *app_data);
+			       void *app_data,
+			       struct ath12k_dp_tx_msdu_info *msdu_info);
 
-int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb);
+int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb,
+		    struct ath12k_dp_tx_msdu_info *msdu_info);
 
 struct ath12k_me_db *ath12k_me_db_get(struct ath12k_dp_vif *dp_vif);
 void ath12k_me_db_put(struct ath12k_me_db *db);
