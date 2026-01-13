@@ -887,7 +887,8 @@ int ath12k_dp_rx_ampdu_stop(struct ath12k *ar,
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, arsta->addr);
 	if (!peer || !peer->dp_peer) {
 		spin_unlock_bh(&dp->dp_lock);
-		ath12k_warn(ab, "failed to find the peer to stop rx aggregation\n");
+		ath12k_dbg(ab, ATH12K_DBG_PEER,
+			   "failed to find the peer to stop rx aggregation\n");
 		return -ENOENT;
 	}
 

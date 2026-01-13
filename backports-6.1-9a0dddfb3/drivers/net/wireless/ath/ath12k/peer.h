@@ -49,8 +49,10 @@ struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,
 	ahsta = ath12k_sta_to_ahsta(peer->sta);
 	if (peer->ml_id & ATH12K_PEER_ML_ID_VALID) {
 		if (!(ahsta->links_map & BIT(peer->link_id))) {
-			ath12k_warn(ab, "peer %pM id %d link_id %d can't found in STA link_map 0x%x\n",
-				    peer->addr, peer->peer_id, peer->link_id, ahsta->links_map);
+			ath12k_dbg(ab, ATH12K_DBG_PEER,
+				   "peer %pM id %d link_id %d can't found in STA link_map 0x%x\n",
+				   peer->addr, peer->peer_id, peer->link_id,
+				   ahsta->links_map);
 			return NULL;
 		}
 		arsta = rcu_dereference(ahsta->link[peer->link_id]);
