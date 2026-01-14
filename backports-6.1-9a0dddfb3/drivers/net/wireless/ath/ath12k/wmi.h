@@ -2667,6 +2667,8 @@ enum wmi_tlv_service {
 	WMI_SERVICE_CFP_SUPPORT = 469,
 	WMI_SERVICE_CFP_PADDING_SUPPORT = 470,
 
+	WMI_TLV_SERVICE_11BN = 458,
+
 	WMI_SERVICE_EXT_TLV_SUPPORT = 465,
 
 	WMI_MAX_EXT2_SERVICE,
@@ -3270,6 +3272,9 @@ struct ath12k_wmi_soc_hal_reg_caps_params {
 #define WMI_MAX_EHTCAP_PHY_SIZE  3
 #define WMI_MAX_EHTCAP_RATE_SET  3
 
+#define WMI_MAX_UHRCAP_MAC_SIZE  2
+#define WMI_MAX_UHRCAP_PHY_SIZE  1
+
 /* Used for EHT MCS-NSS array. Data at each array index follows the format given
  * in IEEE P802.11be/D2.0, May 20229.4.2.313.4.
  *
@@ -3329,6 +3334,10 @@ struct ath12k_wmi_caps_ext_params {
 	__le32 eml_capability;
 	__le32 mld_capability;
 	__le32 ext_mld_capability;
+	__le32 uhr_cap_mac_info_2ghz[WMI_MAX_UHRCAP_MAC_SIZE];
+	__le32 uhr_cap_mac_info_5ghz[WMI_MAX_UHRCAP_MAC_SIZE];
+	__le32 uhr_cap_phy_info_2ghz[WMI_MAX_UHRCAP_PHY_SIZE];
+	__le32 uhr_cap_phy_info_5ghz[WMI_MAX_UHRCAP_PHY_SIZE];
 } __packed;
 
 #define WMI_HOST_WLAN_FLEXI_TWT_CAP	BIT(1)
