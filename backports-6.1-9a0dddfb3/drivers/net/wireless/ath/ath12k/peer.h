@@ -10,6 +10,42 @@
 #include "debug.h"
 #include "dp_peer.h"
 
+#define ATH12K_PEER_DELETE_TIMEOUT_MS 10000
+/* Timeout for waiting on peer deletion tracker during peer create (in ms) */
+#define ATH12K_PEER_DEL_TRACKER_TIMEOUT_MS 3000
+/*
+ * Max entries processed per vdev clear in deletion tracker.
+ * Use the maximum supported clients per pdev to ensure we can
+ * collect all pending deletions in one pass. Keep this aligned
+ * with the highest supported client count in hw params/module
+ * param (e.g., ath12k_max_clients default: 512).
+ */
+#define ATH12K_PEER_DEL_TRACKER_MAX_ENTRIES 512
+
+/* Hash key structure for peer deletion tracking */
+struct ath12k_peer_del_key {
+	u8 addr[ETH_ALEN];
+};
+
+/* Structure to track peers pending deletion */
+struct ath12k_peer_del_entry {
+	u32 vdev_id;
+	u8 addr[ETH_ALEN];
+	struct rhash_head rhash_node;
+	struct rcu_head rcu_head;
+	struct timer_list timer;
+	struct ath12k_pdev *pdev;
+};
+
+/* Structure to manage peer deletion tracking at pdev level */
+struct ath12k_peer_del_tracker {
+	struct rhashtable peer_del_hash;
+	/* Protects rhashtable ops on peer_del_hash and entry lifecycle */
+	spinlock_t lock;
+	struct rhashtable_params hash_params;
+	wait_queue_head_t hash_delete_queue;
+};
+
 void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id);
 int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 		       bool skip_peer_del, u32 mlo_hw_link_id_bitmap);
@@ -35,6 +71,18 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 				       struct ath12k_sta *ahsta, u8 link_id,
 				       bool peer_del_all, int link_going_down,
 				       u8 *addr);
+
+/* Peer deletion tracking functions */
+int ath12k_peer_del_tracker_init(struct ath12k_pdev *pdev);
+void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev);
+int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id, const u8 *addr);
+void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id,
+				    const u8 *addr);
+bool ath12k_peer_del_tracker_check(struct ath12k_pdev *pdev, const u8 *addr);
+int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id);
+int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev);
+int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
+				 unsigned long timeout_ms);
 
 static inline
 struct ath12k_link_sta *ath12k_peer_get_link_sta(struct ath12k_base *ab,

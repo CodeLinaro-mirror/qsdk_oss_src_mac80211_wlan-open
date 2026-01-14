@@ -13,6 +13,411 @@
 #endif
 #include "telemetry_agent_if.h"
 
+/* Timer callback for peer deletion timeout */
+static void ath12k_peer_del_timeout(struct timer_list *t)
+{
+	struct ath12k_peer_del_entry *entry = from_timer(entry, t, timer);
+	struct ath12k_pdev *pdev = entry->pdev;
+	struct ath12k_peer_del_tracker *tracker;
+	struct ath12k_base *ab;
+	bool removed = false;
+	u8 addr[ETH_ALEN];
+	u32 vdev_id;
+
+	if (!pdev)
+		return;
+
+	tracker = pdev->peer_del_tracker;
+	if (!tracker)
+		return;
+
+	ab = ath12k_pdev_to_ab(pdev);
+
+	ether_addr_copy(addr, entry->addr);
+	vdev_id = entry->vdev_id;
+
+	/* Remove the peer from hash table */
+	spin_lock_bh(&tracker->lock);
+	/* Verify entry is still in the hash before removing */
+	if (rhashtable_lookup_fast(&tracker->peer_del_hash, entry->addr,
+				   tracker->hash_params) == entry) {
+		rhashtable_remove_fast(&tracker->peer_del_hash,
+				       &entry->rhash_node,
+				       tracker->hash_params);
+		removed = true;
+	}
+	spin_unlock_bh(&tracker->lock);
+
+	if (removed) {
+		ath12k_warn(ab, "peer delete timeout for %pM vdev %d, removing from tracker\n",
+			    addr, vdev_id);
+
+		/* Wake up any waiters on hash_delete_queue */
+		wake_up_all(&tracker->hash_delete_queue);
+
+		/* The WARN_ON check is skipped because the firmware does not send a peer
+		 * delete response to the host while a recovery is in progress.
+		 */
+		if (!test_bit(ATH12K_FLAG_RECOVERY, &ab->dev_flags))
+			WARN_ON(1);
+
+		kfree_rcu(entry, rcu_head);
+		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
+	}
+}
+
+/* Initialize peer deletion tracker for a pdev */
+int ath12k_peer_del_tracker_init(struct ath12k_pdev *pdev)
+{
+	struct ath12k_peer_del_tracker *tracker;
+	int ret;
+
+	tracker = kzalloc(sizeof(*tracker), GFP_KERNEL);
+	if (!tracker)
+		return -ENOMEM;
+
+	spin_lock_init(&tracker->lock);
+	init_waitqueue_head(&tracker->hash_delete_queue);
+
+	/* Initialize hash table parameters */
+	tracker->hash_params.key_offset = offsetof(struct ath12k_peer_del_entry, addr);
+	tracker->hash_params.head_offset = offsetof(struct ath12k_peer_del_entry,
+						    rhash_node);
+	tracker->hash_params.key_len = ETH_ALEN;
+	tracker->hash_params.automatic_shrinking = true;
+
+	ret = rhashtable_init(&tracker->peer_del_hash, &tracker->hash_params);
+	if (ret) {
+		ath12k_warn(ath12k_pdev_to_ab(pdev),
+			    "failed to init peer_del hash table for pdev %d: %d\n",
+			    pdev->pdev_id, ret);
+		kfree(tracker);
+		return ret;
+	}
+
+	pdev->peer_del_tracker = tracker;
+	atomic_set(&pdev->peer_del_tracker_entries, 0);
+	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+		   "peer deletion tracker initialized for pdev %d\n", pdev->pdev_id);
+
+	return 0;
+}
+
+/* Destroy peer deletion tracker */
+void ath12k_peer_del_tracker_destroy(struct ath12k_pdev *pdev)
+{
+	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+	struct ath12k_peer_del_entry *entry;
+	struct rhashtable_iter iter;
+
+	if (!tracker)
+		return;
+
+	/* Prevent new entries from being added */
+	spin_lock_bh(&tracker->lock);
+	pdev->peer_del_tracker = NULL;
+	spin_unlock_bh(&tracker->lock);
+
+	/* Clean up all remaining entries */
+	rhashtable_walk_enter(&tracker->peer_del_hash, &iter);
+	rhashtable_walk_start(&iter);
+
+	while ((entry = rhashtable_walk_next(&iter)) != NULL) {
+		if (IS_ERR(entry))
+			continue;
+
+		/* Cancel the timer before removing entry */
+		del_timer_sync(&entry->timer);
+
+		rhashtable_remove_fast(&tracker->peer_del_hash,
+				       &entry->rhash_node,
+				       tracker->hash_params);
+		kfree_rcu(entry, rcu_head);
+		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
+	}
+
+	rhashtable_walk_stop(&iter);
+	rhashtable_walk_exit(&iter);
+
+	rhashtable_destroy(&tracker->peer_del_hash);
+	kfree(tracker);
+	atomic_set(&pdev->peer_del_tracker_entries, 0);
+
+	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+		   "peer deletion tracker destroyed for pdev %d\n", pdev->pdev_id);
+}
+
+/* Add a peer to the deletion tracking hash */
+int ath12k_peer_del_tracker_add(struct ath12k_pdev *pdev, u32 vdev_id, const u8 *addr)
+{
+	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+	struct ath12k_peer_del_entry *entry;
+	int ret;
+
+	if (!tracker)
+		return -EINVAL;
+
+	entry = kzalloc(sizeof(*entry), GFP_ATOMIC);
+	if (!entry)
+		return -ENOMEM;
+
+	entry->vdev_id = vdev_id;
+	ether_addr_copy(entry->addr, addr);
+	entry->pdev = pdev;
+
+	timer_setup(&entry->timer, ath12k_peer_del_timeout, 0);
+
+	spin_lock_bh(&tracker->lock);
+	ret = rhashtable_insert_fast(&tracker->peer_del_hash,
+				     &entry->rhash_node,
+				     tracker->hash_params);
+	spin_unlock_bh(&tracker->lock);
+
+	if (ret) {
+		ath12k_warn(ath12k_pdev_to_ab(pdev),
+			    "failed to add peer %pM vdev %d to del tracker: %d\n",
+			    addr, vdev_id, ret);
+		kfree(entry);
+		return ret;
+	}
+
+	/* Start the 10 second timer */
+	mod_timer(&entry->timer,
+		  jiffies + msecs_to_jiffies(ATH12K_PEER_DELETE_TIMEOUT_MS));
+
+	atomic_inc(&pdev->peer_del_tracker_entries);
+
+	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+		   "added peer %pM vdev %d to deletion tracker with timer\n",
+		   addr, vdev_id);
+
+	return 0;
+}
+
+/* Remove a peer from the deletion tracking hash */
+void ath12k_peer_del_tracker_remove(struct ath12k_pdev *pdev, u32 vdev_id, const u8 *addr)
+{
+	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+	struct ath12k_peer_del_entry *entry;
+
+	if (!tracker)
+		return;
+
+	spin_lock_bh(&tracker->lock);
+	entry = rhashtable_lookup_fast(&tracker->peer_del_hash, addr,
+				       tracker->hash_params);
+	if (entry && entry->vdev_id == vdev_id) {
+		rhashtable_remove_fast(&tracker->peer_del_hash,
+				       &entry->rhash_node,
+				       tracker->hash_params);
+		spin_unlock_bh(&tracker->lock);
+
+		del_timer_sync(&entry->timer);
+
+		ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+			   "removed peer %pM vdev %d from deletion tracker and cancelled timer\n",
+			   addr, vdev_id);
+
+		/* Wake up any waiters on hash_delete_queue */
+		wake_up_all(&tracker->hash_delete_queue);
+
+		kfree_rcu(entry, rcu_head);
+		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
+	} else {
+		spin_unlock_bh(&tracker->lock);
+		if (!entry) {
+			ath12k_err(ath12k_pdev_to_ab(pdev),
+				   "peer %pM not found in deletion tracker\n", addr);
+		} else {
+			ath12k_err(ath12k_pdev_to_ab(pdev),
+				   "peer %pM vdev mismatch (expected %d, found %d)\n",
+				   addr, vdev_id, entry->vdev_id);
+		}
+	}
+}
+
+/* Check if a peer is in the deletion tracking hash */
+bool ath12k_peer_del_tracker_check(struct ath12k_pdev *pdev, const u8 *addr)
+{
+	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+
+	if (!tracker)
+		return false;
+
+	spin_lock_bh(&tracker->lock);
+	if (rhashtable_lookup_fast(&tracker->peer_del_hash, addr,
+				   tracker->hash_params)) {
+		spin_unlock_bh(&tracker->lock);
+		return true;
+	}
+
+	spin_unlock_bh(&tracker->lock);
+	return false;
+}
+
+/* Wait for a peer to be removed from deletion tracker */
+int ath12k_peer_del_tracker_wait(struct ath12k_pdev *pdev, const u8 *addr,
+				 unsigned long timeout_ms)
+{
+	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+	long ret;
+
+	if (!tracker)
+		return -EINVAL;
+
+	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+		   "waiting for peer %pM to be removed from deletion tracker (timeout %lu ms)\n",
+		   addr, timeout_ms);
+
+	ret = wait_event_timeout(tracker->hash_delete_queue,
+				 !ath12k_peer_del_tracker_check(pdev, addr),
+				 msecs_to_jiffies(timeout_ms));
+
+	if (!ret) {
+		ath12k_warn(ath12k_pdev_to_ab(pdev),
+			    "timeout waiting for peer %pM deletion\n", addr);
+		return -ETIMEDOUT;
+	}
+
+	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+		   "peer %pM removed from deletion tracker\n", addr);
+
+	return 0;
+}
+
+/* Clear all peers for a specific vdev from deletion tracker */
+int ath12k_peer_del_tracker_clear_vdev(struct ath12k_pdev *pdev, u32 vdev_id)
+{
+	struct ath12k *ar = pdev->ar;
+	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+	struct ath12k_peer_del_entry *entry, **entries_to_remove;
+	struct rhashtable_iter iter;
+	int count = 0, i, num_entries = 0;
+	int max_entries;
+
+	if (!tracker)
+		return -EINVAL;
+
+	if (!atomic_read(&pdev->peer_del_tracker_entries))
+		return 0;
+
+	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+		   "clearing deletion tracker for vdev %d\n", vdev_id);
+
+	max_entries = ar->max_num_stations;
+
+	entries_to_remove = kcalloc(max_entries, sizeof(*entries_to_remove),
+				    GFP_KERNEL);
+	if (!entries_to_remove)
+		return -ENOMEM;
+
+	rhashtable_walk_enter(&tracker->peer_del_hash, &iter);
+	rhashtable_walk_start(&iter);
+
+	while ((entry = rhashtable_walk_next(&iter)) != NULL) {
+		if (IS_ERR(entry))
+			continue;
+
+		if (entry->vdev_id == vdev_id && num_entries < max_entries)
+			entries_to_remove[num_entries++] = entry;
+	}
+
+	rhashtable_walk_stop(&iter);
+	rhashtable_walk_exit(&iter);
+
+	for (i = 0; i < num_entries; i++) {
+		entry = entries_to_remove[i];
+		del_timer_sync(&entry->timer);
+
+		spin_lock_bh(&tracker->lock);
+		rhashtable_remove_fast(&tracker->peer_del_hash,
+				       &entry->rhash_node,
+				       tracker->hash_params);
+		spin_unlock_bh(&tracker->lock);
+
+		ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+			   "removed peer %pM from deletion tracker (vdev %d)\n",
+			   entry->addr, vdev_id);
+
+		kfree_rcu(entry, rcu_head);
+		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
+		count++;
+	}
+
+	if (count > 0)
+		wake_up_all(&tracker->hash_delete_queue);
+
+	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+		   "cleared %d peers from deletion tracker for vdev %d\n",
+		   count, vdev_id);
+
+	kfree(entries_to_remove);
+
+	return 0;
+}
+
+int ath12k_peer_del_tracker_clear_pdev(struct ath12k_pdev *pdev)
+{
+	struct ath12k_peer_del_tracker *tracker = pdev->peer_del_tracker;
+	struct ath12k_peer_del_entry *entry, **entries_to_remove;
+	struct rhashtable_iter iter;
+	int count = 0, i, num_entries = 0;
+	int max_entries = ATH12K_PEER_DEL_TRACKER_MAX_ENTRIES;
+
+	if (!tracker)
+		return -EINVAL;
+
+	if (!atomic_read(&pdev->peer_del_tracker_entries))
+		return 0;
+
+	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+		   "clearing deletion tracker for pdev %d\n", pdev->pdev_id);
+
+	entries_to_remove = kcalloc(max_entries, sizeof(*entries_to_remove),
+				    GFP_KERNEL);
+	if (!entries_to_remove)
+		return -ENOMEM;
+
+	rhashtable_walk_enter(&tracker->peer_del_hash, &iter);
+	rhashtable_walk_start(&iter);
+
+	while ((entry = rhashtable_walk_next(&iter)) != NULL) {
+		if (IS_ERR(entry))
+			continue;
+
+		if (num_entries < max_entries)
+			entries_to_remove[num_entries++] = entry;
+	}
+
+	rhashtable_walk_stop(&iter);
+	rhashtable_walk_exit(&iter);
+
+	for (i = 0; i < num_entries; i++) {
+		entry = entries_to_remove[i];
+		del_timer_sync(&entry->timer);
+
+		spin_lock_bh(&tracker->lock);
+		rhashtable_remove_fast(&tracker->peer_del_hash, &entry->rhash_node,
+				       tracker->hash_params);
+		spin_unlock_bh(&tracker->lock);
+
+		kfree_rcu(entry, rcu_head);
+		atomic_dec_if_positive(&pdev->peer_del_tracker_entries);
+		count++;
+	}
+
+	if (count > 0)
+		wake_up_all(&tracker->hash_delete_queue);
+
+	ath12k_dbg(ath12k_pdev_to_ab(pdev), ATH12K_DBG_PEER,
+		   "cleared %d peers from deletion tracker for pdev %d\n",
+		   count, pdev->pdev_id);
+
+	kfree(entries_to_remove);
+
+	return 0;
+}
+
 static int ath12k_wait_for_peer_common(struct ath12k_base *ab, int vdev_id,
 				       const u8 *addr, bool expect_mapped)
 {
@@ -91,6 +496,13 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 		}
 	}
 
+	if (ar->pdev->peer_del_tracker) {
+		ret = ath12k_peer_del_tracker_add(ar->pdev, vdev_id, addr);
+		if (ret)
+			ath12k_warn(ab, "failed to add peer %pM to deletion tracker: %d\n",
+				    addr, ret);
+	}
+
 	ret = ath12k_wmi_send_peer_delete_cmd(ar, addr, vdev_id, mlo_hw_link_id_bitmap);
 	if (ret) {
 		ath12k_warn(ab,
@@ -99,6 +511,11 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 
 		if (link_id_mask)
 			ahsta->peer_delete_cmd_sent_bitmap &= ~link_id_mask;
+
+		/* Remove the peer entry from the peer_del tracker when sending the WMI
+		 * peer delete command fails.
+		 */
+		ath12k_peer_del_tracker_remove(ar->pdev, vdev_id, addr);
 
 		return ret;
 	}
@@ -217,6 +634,23 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 
 	if (sta)
 		ahsta = ath12k_sta_to_ahsta(sta);
+
+	/* Check if peer is in deletion tracker and wait if necessary */
+	if (ar->pdev->peer_del_tracker &&
+	    ath12k_peer_del_tracker_check(ar->pdev, arg->peer_addr)) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+			   "peer %pM is pending deletion, waiting up to 3 seconds\n",
+			   arg->peer_addr);
+
+		ret = ath12k_peer_del_tracker_wait(ar->pdev, arg->peer_addr,
+						   ATH12K_PEER_DEL_TRACKER_TIMEOUT_MS);
+		if (ret) {
+			ath12k_err(ar->ab,
+				   "peer %pM still in deletion tracker after timeout, cannot create\n",
+				   arg->peer_addr);
+			return -EBUSY;
+		}
+	}
 
 	if (ar->num_peers >= (ar->max_num_peers - 1)) {
 		ath12k_warn(ar->ab,
