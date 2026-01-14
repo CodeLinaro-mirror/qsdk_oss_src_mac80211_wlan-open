@@ -1396,7 +1396,7 @@ ath12k_dp_mon_rx_update_peer_stats_ds(struct ath12k_pdev_dp *pdev_dp,
 
 		peer = ath12k_dp_link_peer_find_by_peerid_index(dp, pdev_dp,
 								user_stats->sw_peer_id);
-		if (!peer)
+		if (!peer || !peer->sta)
 			continue;
 
 		ahvif = ath12k_vif_to_ahvif(peer->vif);
