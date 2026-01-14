@@ -1418,7 +1418,8 @@ skip_htt_metadata:
 					tx_desc->flags |= DP_TX_DESC_FLAG_BCAST;
 				else
 					tx_desc->flags |= DP_TX_DESC_FLAG_MCAST;
-				DP_STATS_INC(dp_vif, tx_i.mcast, 1, ti.ring_id);
+				DP_STATS_INC_PKT(dp_vif, tx_i.mcast, 1, skb->len,
+						 ti.ring_id);
 			}
 			DP_STATS_INC(dp_vif, tx_i.encap_type[ti.encap_type], 1,
 				     ti.ring_id);
@@ -1738,7 +1739,8 @@ ath12k_wifi7_dp_tx_process_htt_tx_complete(struct ath12k_dp *dp,
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
 								    ring_id,
 								    tx_desc_flags,
-								    link_id);
+								    link_id,
+								    msdu_len);
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring_id], 1);
@@ -2006,7 +2008,8 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_dp_tx_comp_update_peer_stats(peer, ts,
 								    ring,
 								    tx_desc_flags,
-								    link_id);
+								    link_id,
+								    msdu_len);
 			if (unlikely(ath12k_debugfs_is_qos_stats_enabled(ar)))
 				ath12k_qos_stats_update(ar, msdu, ts,
 							dp_pdev,
