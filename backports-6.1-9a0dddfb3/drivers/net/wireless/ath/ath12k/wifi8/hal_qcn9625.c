@@ -383,7 +383,7 @@ const struct ath12k_hw_regs qcn9625_regs = {
 };
 
 const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
-	.rx_buf_rbm = HAL_RX_BUF_RBM_SW0_BM,
+	.rx_buf_rbm = HAL_RX_BUF_RBM_SW5_BM,
 	.tqm2sw_cc_enable1 = HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW0_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW1_EN |
 			     HAL_TQM_SW_COOKIE_CONV_CFG_TQM2SW2_EN |

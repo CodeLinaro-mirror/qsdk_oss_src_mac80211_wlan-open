@@ -1139,6 +1139,24 @@ u16 ath12k_dp_peer_get_peerid_index(struct ath12k_dp *dp, u16 peer_id)
 			: ((dp->device_id << PEER_TABLE_SOC_ID_SHIFT) | peer_id));
 }
 
+static inline struct ath12k_pdev_dp *
+ath12k_dp_hw_grp_to_dp_pdev(struct ath12k_dp_hw_group *dp_hw_grp, u8 hw_link_id)
+{
+	struct ath12k_dp_hw_link *hw_links = dp_hw_grp->hw_links;
+	u8 device_id = hw_links[hw_link_id].device_id;
+	struct ath12k_dp *dp = dp_hw_grp->dp[device_id];
+	u8 pdev_id;
+
+	RCU_LOCKDEP_WARN(!rcu_read_lock_held(),
+			 "ath12k dp to dp pdev called without rcu lock");
+	if (!dp)
+		return NULL;
+
+	pdev_id = ath12k_hw_mac_id_to_pdev_id(dp->hw_params,
+					      hw_links[hw_link_id].pdev_idx);
+	return rcu_dereference(dp->dp_pdevs[pdev_id]);
+}
+
 static inline struct ath12k_dp *
 ath12k_dp_hw_grp_to_dp(struct ath12k_dp_hw_group *dp_hw_grp, u8 device_id)
 {
