@@ -2547,7 +2547,7 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 	bool tx_drop = false;
 	bool tx_status_default = false;
 	struct ieee80211_tx_info info;
-	u8 reason;
+	u8 reason, link_id;
 
 	memset(&info, 0, sizeof(info));
 	info.status.rates[0].idx = -1;
@@ -2616,9 +2616,11 @@ void ath12k_ppeds_tx_update_stats(struct ath12k *ar, int skb_len,
 		return;
 	}
 
+	link_id = ath12k_dp_get_link_id(dp_pdev, ts.hw_link_id, peer->dp_peer);
+
 #ifdef CPTCFG_MAC80211_DS_SUPPORT
 	ieee80211_ppeds_tx_update_stats(ar->ah->hw, peer->sta, &info,
-					peer->txrate, peer->link_id, 0);
+					peer->txrate, link_id, 0);
 #endif
 	rcu_read_unlock();
 }
