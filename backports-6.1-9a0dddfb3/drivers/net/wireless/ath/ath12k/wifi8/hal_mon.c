@@ -1561,23 +1561,23 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 	info[7] = __le32_to_cpu(mpdu_start->info7);
 	info[8] = __le32_to_cpu(mpdu_start->info8);
 
-	ppdu_info->grp_id = u32_get_bits(info[1],
-					 HAL_RX_MPDU_START_INFO1_SW_GRP_ID);
+	ppdu_info->grp_id = u32_get_bits(info[3],
+					 HAL_RX_MPDU_START_INFO3_SW_GRP_ID);
 
 	peer_id = u32_get_bits(info[2], HAL_RX_MPDU_START_INFO2_PEERID);
 	if (peer_id)
 		ppdu_info->peer_id = peer_id;
 
-	ppdu_info->mpdu_retry += u32_get_bits(info[3],
-					      HAL_RX_MPDU_START_INFO3_MPDU_RETRY);
+	ppdu_info->mpdu_retry += u32_get_bits(info[1],
+					      HAL_RX_MPDU_START_INFO1_MPDU_RETRY);
 	ppdu_info->nrp_info.mac_addr2_valid =
-		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_ADDR2_VALID);
+		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_ADDR2_VALID);
 	ppdu_info->nrp_info.to_ds_flag =
-		u32_get_bits(info[3],
-			     HAL_RX_MPDU_START_INFO3_TO_DS);
+		u32_get_bits(info[1],
+			     HAL_RX_MPDU_START_INFO1_TO_DS);
 	ppdu_info->nrp_info.fc_valid =
-		u32_get_bits(info[3],
-			     HAL_RX_MPDU_START_INFO3_FC_VALID);
+		u32_get_bits(info[1],
+			     HAL_RX_MPDU_START_INFO1_FC_VALID);
 
 	if (userid < HAL_MAX_UL_MU_USERS) {
 		ppdu_info->mpdu_info[user_id].raw_mpdu =
@@ -1610,12 +1610,12 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get(const void *tlv_data, u32 userid,
 		ppdu_info->userid = userid;
 		ppdu_info->userstats[userid].sw_peer_id = peer_id;
 		ppdu_info->userstats[userid].ampdu_id =
-			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_PPDU_ID);
+			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_PPDU_ID);
 		ppdu_info->userstats[userid].filter_category =
-			u32_get_bits(info[1],
-				     HAL_RX_MPDU_START_INFO1_FILTER_CAT);
+			u32_get_bits(info[3],
+				     HAL_RX_MPDU_START_INFO3_FILTER_CAT);
 		ppdu_info->userstats[userid].mpdu_retry +=
-			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_MPDU_RETRY);
+			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY);
 		ppdu_info->userstats[userid].frame_control_info_valid =
 				ppdu_info->nrp_info.fc_valid;
 		ppdu_info->userstats[userid].frame_control =
@@ -1646,23 +1646,23 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 	info[7] = __le32_to_cpu(mpdu_start->info7);
 	info[8] = __le32_to_cpu(mpdu_start->info8);
 
-	ppdu_info->grp_id = u32_get_bits(info[1],
-					 HAL_RX_MPDU_START_INFO1_SW_GRP_ID_CMPCT);
+	ppdu_info->grp_id = u32_get_bits(info[3],
+					 HAL_RX_MPDU_START_INFO3_SW_GRP_ID_CMPCT);
 
 	peer_id = u32_get_bits(info[2], HAL_RX_MPDU_START_INFO2_PEERID_CMPCT);
 	if (peer_id)
 		ppdu_info->peer_id = peer_id;
 
-	ppdu_info->mpdu_retry += u32_get_bits(info[3],
-					      HAL_RX_MPDU_START_INFO3_MPDU_RETRY_CMPCT);
+	ppdu_info->mpdu_retry += u32_get_bits(info[1],
+					      HAL_RX_MPDU_START_INFO1_MPDU_RETRY_CMPCT);
 	ppdu_info->nrp_info.mac_addr2_valid =
-		u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_ADDR2_VALID_CMPCT);
+		u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_ADDR2_VALID_CMPCT);
 	ppdu_info->nrp_info.to_ds_flag =
-		u32_get_bits(info[3],
-			     HAL_RX_MPDU_START_INFO3_TO_DS_CMPCT);
+		u32_get_bits(info[1],
+			     HAL_RX_MPDU_START_INFO1_TO_DS_CMPCT);
 	ppdu_info->nrp_info.fc_valid =
-		u32_get_bits(info[3],
-			     HAL_RX_MPDU_START_INFO3_FC_VALID_CMPCT);
+		u32_get_bits(info[1],
+			     HAL_RX_MPDU_START_INFO1_FC_VALID_CMPCT);
 	ppdu_info->mpdu_info[user_id].raw_mpdu =
 		u32_get_bits(info[4], HAL_RX_MPDU_START_INFO4_RAW_MPDU_CMPCT);
 	if (ppdu_info->mpdu_info[user_id].raw_mpdu)
@@ -1693,12 +1693,12 @@ ath12k_wifi8_hal_mon_rx_mpdu_start_info_get_compact(
 		ppdu_info->userid = userid;
 		ppdu_info->userstats[userid].sw_peer_id = peer_id;
 		ppdu_info->userstats[userid].ampdu_id =
-			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_PPDU_ID_CMPCT);
+			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_PPDU_ID_CMPCT);
 		ppdu_info->userstats[userid].filter_category =
-			u32_get_bits(info[1],
-				     HAL_RX_MPDU_START_INFO1_FILTER_CAT_CMPCT);
+			u32_get_bits(info[3],
+				     HAL_RX_MPDU_START_INFO3_FILTER_CAT_CMPCT);
 		ppdu_info->userstats[userid].mpdu_retry +=
-			u32_get_bits(info[3], HAL_RX_MPDU_START_INFO3_MPDU_RETRY_CMPCT);
+			u32_get_bits(info[1], HAL_RX_MPDU_START_INFO1_MPDU_RETRY_CMPCT);
 		ppdu_info->userstats[userid].frame_control_info_valid =
 				ppdu_info->nrp_info.fc_valid;
 		ppdu_info->userstats[userid].frame_control =
@@ -2112,12 +2112,12 @@ ath12k_wifi8_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,
 		const struct hal_rx_ppdu_end_duration *ppdu_rx_duration = tlv_data;
 		u32 info[1];
 
-		info[0] = __le32_to_cpu(ppdu_rx_duration->info0);
+		info[0] = __le32_to_cpu(ppdu_rx_duration->info2);
 		ppdu_info->rx_duration =
 			u32_get_bits(info[0], HAL_RX_PPDU_END_DURATION);
-		ppdu_info->tsft = __le32_to_cpu(ppdu_rx_duration->rsvd0[1]);
+		ppdu_info->tsft = __le32_to_cpu(ppdu_rx_duration->info1);
 		ppdu_info->tsft = (ppdu_info->tsft << 32) |
-				   __le32_to_cpu(ppdu_rx_duration->rsvd0[0]);
+				   __le32_to_cpu(ppdu_rx_duration->info0);
 		break;
 	}
 	case HAL_RX_MPDU_START: {
