@@ -2956,6 +2956,35 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_enable_hdr_per_ppdu,
 			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_ENABLE_HDR_PER_PPDU);
 
+	cmd->info5 = le32_encode_bits(tlv_filter->mo_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_MO_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->md_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_MD_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fp_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_qos_null_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_QOS_NULL_DATA_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_qos_null_tb_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_QOS_NULL_TB_DATA_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_null_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_NULL_DATA_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_ucast_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_UCAST_DATA_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fpmo_mcast_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FPMO_MCAST_DATA_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fp_qos_null_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_QOS_NULL_DATA_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fp_qos_null_tb_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_QOS_NULL_TB_DATA_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fp_null_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_NULL_DATA_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fp_ucast_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_UCAST_DATA_HDR_EN);
+	cmd->info5 |= le32_encode_bits(tlv_filter->fp_mcast_data_ppdu_hdr_en,
+			HTT_RX_RING_SEL_CFG_CMD_INFO5_FP_MCAST_DATA_HDR_EN);
+
 	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
 	if (ret)
 		goto err_free;
