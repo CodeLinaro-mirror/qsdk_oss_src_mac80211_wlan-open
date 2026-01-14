@@ -104,8 +104,16 @@ enum rdi_based_source_ring_selection {
 
 #define HAL_TCL_SW_CONFIG_BANK_ADDR		UMAC_TCL_R0_SW_CONFIG_BANK_n(0)
 
+/* To set mcast pkt ctrl vlaues */
+#define HAL_TCL_R0_VDEV_MCAST_PACKET_CTRL_MAP_n_ADDR(reg_idx) \
+	(0x00F132D0 + (0x4 * (reg_idx)))
+#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_REG_ID(vdev_id) ((vdev_id) >> 0x3)
+#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_INDEX_IN_REG(vdev_id) ((vdev_id) & 0x7)
+#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK 0x7
+#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT 0x3
+
 /*TODO: Revisit Default value */
-#define HAL_TCL_SW_CONFIG_BANK_DEFAULT_VAL	0x3c43a
+#define HAL_TCL_SW_CONFIG_BANK_DEFAULT_VAL	0x3843c
 #define HAL_TCL_SW_CONFIG_BANK_DEFAULT		UMAC_TCL_R0_SW_CONFIG_BANK_DEFAULT
 
 #define HAL_TCL_LINK_ID_TO_CHIP_ID_MAP		HWIO_TCL_R0_LINK_ID_TO_CHIP_ID_MAP_OFFS
@@ -821,6 +829,15 @@ enum hal_wifi8_rx_buf_return_buf_manager {
 	HAL_RX_BUF_RBM_FW_CHIP4_BM,
 };
 
+enum ath12k_hal_tx_pkt_ctrl_config {
+	HAL_TX_PACKET_CONTROL_CONFIG_DISABLE,
+	HAL_TX_PACKET_CONTROL_CONFIG_TO_FW_EXCEPTION,
+	HAL_TX_PACKET_CONTROL_CONFIG_DROP_PKT,
+	HAL_TX_PACKET_CONTROL_CONFIG_PKT_TO_TQM,
+	HAL_TX_PACKET_CONTROL_CONFIG_MEC_NOTIFY_TX,
+	HAL_TX_PACKET_CONTROL_CONFIG_MEC_NOTIFY_TX_EXCEPTION,
+};
+
 /* Add any other errors here and return them in
  * ath12k_hal_rx_desc_get_err().
  */
@@ -1164,6 +1181,8 @@ bool ath12k_wifi8_hal_tx_completion_process(struct hal_tqm2sw_completion_ring *d
 void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
 				  struct ath12k_hal_ast_param *ast_param);
 
+void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
+					  u8 mcast_ctrl_val);
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
 {

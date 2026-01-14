@@ -79,6 +79,13 @@ extern const struct ath12k_hw_version_map ath12k_wifi7_hw_ver_map[];
 #define HAL_DP_REG_WINDOW_OFFSET                0x180000
 
 #define HAL_TCL_SW_CONFIG_BANK_ADDR		0x00a4408c
+/* To set mcast pkt ctrl vlaues */
+#define HAL_TCL_R0_VDEV_MCAST_PACKET_CTRL_MAP_n_ADDR(reg_idx) \
+	(0x00A4414C + (0x4 * (reg_idx)))
+#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_REG_ID(vdev_id) ((vdev_id) >> 0x4)
+#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_INDEX_IN_REG(vdev_id) ((vdev_id) & 0xF)
+#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_MASK 0x3
+#define HAL_TCL_VDEV_MCAST_PACKET_CTRL_SHIFT 0x2
 
 /* SW2TCL(x) R0 ring configuration address */
 #define HAL_TCL1_RING_CMN_CTRL_REG		0x00000020
@@ -554,6 +561,13 @@ enum hal_rx_buf_return_buf_manager {
 	HAL_RX_BUF_RBM_WBM_DEV3_IDLE_DESC_LIST,
 };
 
+enum ath12k_hal_tx_pkt_ctrl_config {
+	HAL_TX_PACKET_CONTROL_CONFIG_TO_FW_EXCEPTION,
+	HAL_TX_PACKET_CONTROL_CONFIG_DROP_PKT,
+	HAL_TX_PACKET_CONTROL_CONFIG_MEC_NOTIFY,
+	HAL_TX_PACKET_CONTROL_CONFIG_PKT_TO_TQM,
+};
+
 struct hal_wbm_idle_scatter_list {
 	dma_addr_t paddr;
 	struct hal_wbm_link_desc *vaddr;
@@ -805,8 +819,6 @@ void ath12k_wifi7_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 				      int tid, u32 ba_window_size,
 				      u32 start_seq, enum hal_pn_type type);
 
-void ath12k_wifi7_hal_ppeds_cfg_ast_override_map_reg(struct ath12k_base *ab, u8 idx,
-						     u32 ppeds_idx_map_val);
 void ath12k_wifi7_hal_srng_hw_disable(struct ath12k_base *ab,
 				      struct hal_srng *srng);
 void ath12k_wifi7_hal_reset_rx_reo_tid_q(void *vaddr,
@@ -827,6 +839,8 @@ void ath12k_wifi7_hal_reo_config_reo2ppe_dest_info(struct ath12k_base *ab);
 bool ath12k_wifi7_hal_tx_completion_process(struct hal_wbm_completion_ring_tx *desc,
 					    struct ath12k_dp_tx_comp_status *tx_status);
 
+void ath12k_wifi7_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
+					  u8 mcast_ctrl_val);
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
 {

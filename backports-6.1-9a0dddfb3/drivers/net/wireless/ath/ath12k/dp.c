@@ -617,30 +617,40 @@ void ath12k_dp_increment_bank_num_users(struct ath12k_dp *dp,
 					int bank_id)
 {
 	spin_lock_bh(&dp->tx_bank_lock);
-	dp->bank_profiles[bank_id].num_users++;
+	if (dp->bank_profiles)
+		dp->bank_profiles[bank_id].num_users++;
 	spin_unlock_bh(&dp->tx_bank_lock);
 }
 
 void ath12k_dp_tx_put_bank_profile(struct ath12k_dp *dp, u8 bank_id)
 {
 	spin_lock_bh(&dp->tx_bank_lock);
-	if (dp->bank_profiles[bank_id].num_users)
+	if (dp->bank_profiles && dp->bank_profiles[bank_id].num_users)
 		dp->bank_profiles[bank_id].num_users--;
 	spin_unlock_bh(&dp->tx_bank_lock);
 }
+EXPORT_SYMBOL(ath12k_dp_tx_put_bank_profile);
 
-int ath12k_dp_tx_get_bank_profile(struct ath12k_base *ab,
-				  struct ath12k_link_vif *arvif,
-				  struct ath12k_dp *dp, bool vdev_id_check_en)
+u32 ath12k_dp_tx_get_bank_config_from_id(struct ath12k_dp *dp, u8 bank_id)
+{
+	u32 bank_config;
+
+	spin_lock_bh(&dp->tx_bank_lock);
+	if (dp->bank_profiles)
+		bank_config = dp->bank_profiles[bank_id].bank_config;
+	spin_unlock_bh(&dp->tx_bank_lock);
+
+	return bank_config;
+}
+EXPORT_SYMBOL(ath12k_dp_tx_get_bank_config_from_id);
+
+int ath12k_dp_tx_get_bank_profile(struct ath12k_dp *dp,
+				  u32 bank_config)
 {
 	int bank_id = DP_INVALID_BANK_ID;
 	int i;
-	u32 bank_config;
+	struct ath12k_base *ab = dp->ab;
 	bool configure_register = false;
-
-
-	/* convert vdev params into hal_tx_bank_config */
-	bank_config = ath12k_dp_arch_tx_get_vdev_bank_config(dp, arvif, vdev_id_check_en);
 
 	spin_lock_bh(&dp->tx_bank_lock);
 	/* TODO: implement using idr kernel framework*/
@@ -681,28 +691,7 @@ inc_ref_and_return:
 
 	return bank_id;
 }
-
-void ath12k_dp_tx_update_bank_profile(struct ath12k_link_vif *arvif)
-{
-	struct ath12k_base *ab = arvif->ar->ab;
-	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
-	struct ath12k_vif *ahvif = arvif->ahvif;
-	u8 link_id = arvif->link_id;
-	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
-
-	if (arvif->splitphy_ds_bank_id != DP_INVALID_BANK_ID) {
-		ath12k_dp_tx_put_bank_profile(dp, arvif->splitphy_ds_bank_id);
-		arvif->splitphy_ds_bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, dp, false);
-#ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
-		ath12k_ppeds_update_splitphy_bank_id(ab, arvif);
-#endif
-	}
-
-	ath12k_dp_tx_put_bank_profile(dp, dp_link_vif->bank_id);
-	dp_link_vif->bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, dp, dp_link_vif->vdev_id_check_en);
-
-	ath12k_dp_ppeds_update_vp_entry(arvif->ar, arvif);
-}
+EXPORT_SYMBOL(ath12k_dp_tx_get_bank_profile);
 
 void ath12k_dp_deinit_bank_profiles(struct ath12k_base *ab)
 {
@@ -1223,68 +1212,27 @@ int ath12k_dp_get_pdev_telemetry_stats(struct ath12k_base *ab,
 
        return 0;
 }
-static void ath12k_dp_update_vdev_search(struct ath12k_link_vif *arvif)
-{
-	u8 link_id = arvif->link_id;
-	struct ath12k_vif *ahvif = arvif->ahvif;
-	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
 
-	switch (arvif->ahvif->vdev_type) {
+void ath12k_dp_update_vdev_search(struct ath12k_vif *ahvif)
+{
+	struct ath12k_dp_vif *dp_vif = &ahvif->dp_vif;
+
+	switch (ahvif->vdev_type) {
 	case WMI_VDEV_TYPE_STA:
-		dp_link_vif->hal_addr_search_flags = HAL_TX_ADDRX_EN;
-		dp_link_vif->search_type = HAL_TX_ADDR_SEARCH_INDEX;
+		dp_vif->hal_addr_search_flags = HAL_TX_ADDRX_EN;
+		dp_vif->search_type = HAL_TX_ADDR_SEARCH_INDEX;
 		break;
 	case WMI_VDEV_TYPE_AP:
 	case WMI_VDEV_TYPE_IBSS:
-		dp_link_vif->hal_addr_search_flags = HAL_TX_ADDRX_EN;
-		dp_link_vif->search_type = HAL_TX_ADDR_SEARCH_DEFAULT;
+		dp_vif->hal_addr_search_flags = HAL_TX_ADDRX_EN;
+		dp_vif->search_type = HAL_TX_ADDR_SEARCH_DEFAULT;
 		break;
 	case WMI_VDEV_TYPE_MONITOR:
 	default:
 		return;
 	}
 }
-
-void ath12k_dp_vdev_tx_attach(struct ath12k *ar, struct ath12k_link_vif *arvif)
-{
-	struct ath12k_base *ab = ar->ab;
-	struct ath12k_vif *ahvif = arvif->ahvif;
-	u8 link_id = arvif->link_id;
-	int bank_id;
-	bool mec_support;
-	struct ath12k_dp_link_vif *dp_link_vif = &ahvif->dp_vif.dp_link_vif[link_id];
-
-	dp_link_vif->tcl_metadata = u32_encode_bits(1, HTT_TCL_META_DATA_TYPE) |
-				     u32_encode_bits(arvif->vdev_id,
-						     HTT_TCL_META_DATA_VDEV_ID) |
-				     u32_encode_bits(ar->pdev->pdev_id,
-						     HTT_TCL_META_DATA_PDEV_ID);
-
-	/* set HTT extension valid bit to 0 by default */
-	dp_link_vif->tcl_metadata &= ~HTT_TCL_META_DATA_VALID_HTT;
-
-	ath12k_dp_update_vdev_search(arvif);
-	dp_link_vif->vdev_id_check_en = true;
-	bank_id = ath12k_dp_tx_get_bank_profile(ab, arvif, ath12k_ab_to_dp(ab), dp_link_vif->vdev_id_check_en);
-	dp_link_vif->bank_id = bank_id;
-	arvif->splitphy_ds_bank_id = DP_INVALID_BANK_ID;
-
-
-	mec_support = test_bit(WMI_SERVICE_MEC_AGING_TIMER_SUPPORT, ab->wmi_ab.svc_map);
-	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA &&
-	    ath12k_frame_mode == ATH12K_HW_TXRX_ETHERNET && mec_support) {
-		ath12k_wmi_pdev_set_timer_for_mec(ar, arvif->vdev_id,
-						  WMI_PDEV_MEC_AGING_TIMER_THRESHOLD_VALUE);
-		ath12k_hal_vdev_mcast_ctrl_set(ab, arvif->vdev_id,
-					       HAL_TX_PACKET_CONTROL_CONFIG_MEC_NOTIFY);
-	}
-
-	/* TODO: error path for bank id failure */
-	if (bank_id == DP_INVALID_BANK_ID) {
-		ath12k_err(ar->ab, "Failed to initialize DP TX Banks");
-		return;
-	}
-}
+EXPORT_SYMBOL(ath12k_dp_update_vdev_search);
 
 void ath12k_dp_cc_cleanup(struct ath12k_base *ab)
 {

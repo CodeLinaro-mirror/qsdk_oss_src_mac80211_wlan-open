@@ -700,14 +700,11 @@ struct ath12k_link_vif {
 
 struct ath12k_dp_link_vif {
 	u32 vdev_id;
-	u8 search_type;
-	u8 hal_addr_search_flags;
 	u8 link_id;
 	u8 pdev_idx;
 	u16 ast_idx;
 	u16 ast_hash;
 	u16 tcl_metadata;
-	u8 vdev_id_check_en;
 	u8 lmac_id;
 	int bank_id;
 	u8 map_id;
@@ -723,6 +720,11 @@ struct ath12k_vlan_iface {
 
 struct ath12k_dp_vif {
 	u8 tx_encap_type;
+	u8 search_type;
+	u8 hal_addr_search_flags;
+	u8 vdev_id_check_en;
+	u16 dp_vif_id;
+	int bank_id;
 	u32 key_cipher;
 	atomic_t mcbc_gsn;
 	struct ath12k_dp_link_vif dp_link_vif[ATH12K_NUM_MAX_LINKS];
@@ -1575,6 +1577,7 @@ struct ath12k_6ghz_sp_reg_rule {
 struct ath12k_hw {
 	struct ieee80211_hw *hw;
 	struct device *dev;
+	struct ath12k_hw_group *ag;
 
 	/* Protect the write operation of the hardware state ath12k_hw::state
 	 * between hardware start<=>reconfigure<=>stop transitions.

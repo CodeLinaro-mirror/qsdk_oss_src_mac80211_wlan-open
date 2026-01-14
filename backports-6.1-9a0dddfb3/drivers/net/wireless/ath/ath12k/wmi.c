@@ -2277,6 +2277,7 @@ int ath12k_wmi_pdev_set_timer_for_mec(struct ath12k *ar, int vdev_id, u32 mec_ti
 	}
 	return ret;
 }
+EXPORT_SYMBOL(ath12k_wmi_pdev_set_timer_for_mec);
 
 int ath12k_wmi_pdev_suspend(struct ath12k *ar, u32 suspend_opt,
 			    u32 pdev_id)
