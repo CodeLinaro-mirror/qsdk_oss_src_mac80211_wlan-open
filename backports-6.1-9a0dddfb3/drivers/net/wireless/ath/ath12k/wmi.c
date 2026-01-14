@@ -170,6 +170,9 @@ struct wmi_tlv_mgmt_rx_parse {
 static void
 ath12k_wmi_delete_all_peer_resp_event(struct ath12k_base *ab, struct sk_buff *skb);
 
+static void
+ath12k_wmi_gpio_input_event(struct ath12k_base *ab, struct sk_buff *skb);
+
 static const struct ath12k_wmi_tlv_policy ath12k_wmi_tlv_policies[] = {
 	[WMI_TAG_ARRAY_BYTE] = { .min_len = 0 },
 	[WMI_TAG_ARRAY_UINT32] = { .min_len = 0 },
@@ -16209,6 +16212,9 @@ static void ath12k_wmi_op_rx(struct ath12k_base *ab, struct sk_buff *skb)
 	case WMI_VDEV_TSF_REPORT_EVENTID:
 		ath12k_vdev_tsf_report_event(ab, skb);
 		break;
+	case WMI_GPIO_INPUT_EVENTID:
+		ath12k_wmi_gpio_input_event(ab, skb);
+		break;
 	default:
 		if (!ath12k_wmi_op_rx_extn(id, ab, skb))
 			break;
@@ -19040,6 +19046,53 @@ ath12k_wmi_delete_all_peer_resp_pull(struct ath12k_base *ab,
 
 	kfree(tb);
 	return 0;
+}
+
+static void
+ath12k_wmi_gpio_input_event(struct ath12k_base *ab, struct sk_buff *skb)
+{
+	const struct wmi_gpio_input_event *ev;
+	const void **tb;
+	u32 gpio_num, gpio_value;
+	int ret;
+
+	tb = ath12k_wmi_tlv_parse_alloc(ab, skb, GFP_ATOMIC);
+	if (IS_ERR(tb)) {
+		ret = PTR_ERR(tb);
+		ath12k_warn(ab, "failed to parse GPIO input event tlv: %d\n", ret);
+		return;
+	}
+
+	ev = tb[WMI_TAG_GPIO_INPUT_EVENT];
+	if (!ev) {
+		ath12k_warn(ab, "failed to fetch GPIO input event\n");
+		kfree(tb);
+		return;
+	}
+
+	gpio_num   = le32_to_cpu(ev->gpio_num);
+	gpio_value = le32_to_cpu(ev->value);
+
+	ath12k_dbg(ab, ATH12K_DBG_WMI, "WMI GPIO input event pin %u value %u\n",
+		   gpio_num, gpio_value);
+
+	if (gpio_num < 32) {
+		int i;
+		struct ath12k *ar;
+
+		for (i = 0; i < ab->num_radios; i++) {
+			ar = &ab->pdevs[i].ar[0];
+			ar = ab->pdevs[i].ar;
+			if (!ar)
+				continue;
+			if (ar->radio_cfg.gpio_cfg[gpio_num].configured) {
+				ar->radio_cfg.gpio_cfg[gpio_num].gpio_value = gpio_value;
+				break;
+			}
+		}
+	}
+
+	kfree(tb);
 }
 
 static void

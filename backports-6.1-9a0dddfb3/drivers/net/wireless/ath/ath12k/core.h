@@ -1327,6 +1327,19 @@ struct ath12k_radio_cfg {
 	u32 tbtt_ctrl;
 	u32 punct_bw;
 	u32 low_lat_mode;
+	struct {
+		u32 gpio_pin;
+		u32 gpio_function;
+		u32 gpio_pull_type;
+		u32 gpio_dir;
+		u32 gpio_intr_mode;
+		u32 gpio_value;
+		bool configured;
+	} gpio_cfg[32];
+
+	/* Temperature monitoring */
+	s32 temperature;                    /* Last temperature reading in °C */
+	u8 temperature_query_pending;       /* Query sent, waiting for response */
 };
 
 struct ath12k {
