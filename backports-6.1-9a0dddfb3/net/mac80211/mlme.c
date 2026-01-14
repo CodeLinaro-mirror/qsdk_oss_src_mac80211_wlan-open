@@ -5434,8 +5434,18 @@ static bool ieee80211_assoc_config_link(struct ieee80211_link_data *link,
 			if (sdata->u.mgd.epcs.enabled &&
 			    !bss_conf->epcs_support)
 				ieee80211_epcs_teardown(sdata);
+
+			if (elems->uhr_cap &&
+			    link->u.mgd.conn.mode >= IEEE80211_CONN_MODE_UHR) {
+				ieee80211_uhr_cap_ie_to_sta_uhr_cap(sdata, sband,
+								    elems->uhr_cap,
+								    elems->uhr_cap_len,
+								    link_sta);
+				bss_conf->uhr_support = link_sta->pub->uhr_cap.has_uhr;
+			}
 		} else {
 			bss_conf->eht_support = false;
+			bss_conf->uhr_support = false;
 			bss_conf->epcs_support = false;
 		}
 	} else {

@@ -799,6 +799,7 @@ struct ieee80211_parsed_tpe {
  * 	see &enum ieee80211_critical_updates
  * @beacon_tx_mode: Beacon Tx Mode setting.
  * @ml_max_rec_links: ML Max recommended links
+ * @uhr_support: does this BSS support UHR
  */
 struct ieee80211_bss_conf {
 	struct ieee80211_vif *vif;
@@ -918,6 +919,7 @@ struct ieee80211_bss_conf {
 	enum nl80211_beacon_tx_mode beacon_tx_mode;
 	u8 ml_max_rec_links;
 	bool is_cfp_enabled;
+	bool uhr_support;
 };
 
 /**
@@ -2655,6 +2657,7 @@ struct ieee80211_sta_aggregates {
  *	notifications and capabilities. The value is only valid after
  *	the station moves to associated state.
  * @txpwr: the station tx power configuration
+ * @uhr_cap: UHR capabilities of this STA
  *
  */
 struct ieee80211_link_sta {
@@ -2678,6 +2681,7 @@ struct ieee80211_link_sta {
 	enum ieee80211_sta_rx_bandwidth bandwidth;
 	enum ieee80211_sta_rx_bandwidth sta_max_bandwidth;
 	struct ieee80211_sta_txpwr txpwr;
+	struct ieee80211_sta_uhr_cap uhr_cap;
 };
 
 /**
