@@ -878,6 +878,8 @@ struct rx_mpdu_start_qcn9625_compact {
 #define RX_MSDU_END_INFO15_IFCS_PRESENT					BIT(24)
 #define RX_MSDU_END_INFO15_MSDU_DONE					BIT(31)
 
+#define RX_MSDU_END_INFO0_SW_FRAMEGROUP_MCAST_DATA 1
+#define RX_MSDU_END_INFO0_SW_FRAMEGROUP_UCAST_DATA 2
 
 struct rx_msdu_end_qcn9625 {
 	__le16 info0;

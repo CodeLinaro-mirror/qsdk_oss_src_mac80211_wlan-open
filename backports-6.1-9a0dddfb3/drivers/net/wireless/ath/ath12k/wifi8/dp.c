@@ -19,6 +19,7 @@
 #include "dp_ast.h"
 #include "dp_htt.h"
 #include "dp_tx_flow_info.h"
+#include "dp_mon.h"
 
 extern struct ppe_ds_wlan_ops_v2 ppeds_wlanops_v2;
 struct ath12k_ppeds_arch_ops ath12k_wifi8_arch_ppeds_ops;
@@ -345,7 +346,19 @@ static int ath12k_wifi8_dp_op_device_init(struct ath12k_dp *dp)
 		return ret;
 	}
 
+	ret = ath12k_dp_mon_rx_alloc(dp);
+	if (ret) {
+		ath12k_warn(dp->ab, "failed to setup rxdma rings ret = %d\n", ret);
+		goto fail_dp_mon_rx_free;
+	}
+
 	return 0;
+
+fail_dp_mon_rx_free:
+	ath12k_dp_mon_rx_free(dp);
+	ath12k_hif_ext_irq_cleanup(dp->ab);
+
+	return ret;
 }
 
 static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
@@ -355,6 +368,7 @@ static void ath12k_wifi8_dp_op_device_deinit(struct ath12k_dp *dp)
 	if (!ab)
 		return;
 
+	ath12k_dp_mon_rx_free(dp);
 	ath12k_hif_ext_irq_cleanup(ab);
 }
 
@@ -457,6 +471,8 @@ struct ath12k_dp *ath12k_wifi8_dp_init(struct ath12k_base *ab)
 		goto dp_err;
 	}
 
+	ath12k_wifi8_dp_mon_ops_register(dp);
+
 	/* Temperorily set cumac to true here. This has to be changed later and
 	 * will come from CP
 	 */
@@ -471,5 +487,6 @@ dp_err:
 
 void ath12k_wifi8_dp_deinit(struct ath12k_dp *dp)
 {
+	ath12k_dp_mon_deinit(dp);
 	kfree(dp);
 }

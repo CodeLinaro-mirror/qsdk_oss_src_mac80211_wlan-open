@@ -2245,8 +2245,7 @@ struct hal_mon_buf_ring {
 #define HAL_MON_DEST_INFO0_LOOPING_COUNT		GENMASK(31, 28)
 
 struct hal_mon_dest_desc {
-	__le32 stat_buf_virt_addr_31_0;
-	__le32 stat_buf_virt_addr_63_32;
+	__le64 stat_buf_va;
 	__le32 ppdu_id;
 	__le32 info0;
 };
