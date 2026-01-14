@@ -639,8 +639,8 @@ ath12k_wifi7_dp_mon_pad_amsdu(struct ath12k_pdev_dp *dp_pdev, struct sk_buff *mp
 		if (!pad_start_ptr)
 			return -EINVAL;
 
-		pad_start_ptr += ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp,
-									  mpdu, frag_idx);
+		pad_start_ptr += ath12k_dp_mon_get_frag_size_by_idx(dp,
+								    mpdu, frag_idx);
 		/* pad_start_ptr points at end of frag, to add amsdu padding
 		 * subtract the amsdu pad len in pad_start_ptr.
 		 */
@@ -744,8 +744,8 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 			 */
 			if (prev_msdu_end_received) {
 				hdr_frag_size =
-				ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
-									 frag_iter);
+				ath12k_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
+								   frag_iter);
 				/* Adjust page frag offset to point to LLC/SNAP header*/
 				if (hdr_frag_size > msdu_llc_len) {
 					frag_llc_len = hdr_frag_size - msdu_llc_len;
@@ -769,8 +769,8 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 			msdu_meta = (struct hal_rx_mon_msdu_info *)
 					((u8 *)frag_addr - ATH12K_MON_RX_PKT_OFFSET);
 			frag_size =
-				ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
-									 frag_iter);
+				ath12k_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
+								   frag_iter);
 
 			/*For middle buffers, no need to add headers
 			 */
@@ -806,8 +806,8 @@ ath12k_wifi7_dp_mon_process_msdu_frag(struct ath12k_pdev_dp *dp_pdev,
 				 * with the subframe header.
 				 */
 				hdr_frag_size =
-				ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
-									 frag_iter - 1);
+				ath12k_dp_mon_get_frag_size_by_idx(dp, msdu_cur,
+								   frag_iter - 1);
 				llc_amsdu_len = msdu_llc_len + amsdu_pad;
 				if (hdr_frag_size > llc_amsdu_len) {
 					llc_amsdu_len = msdu_llc_len + amsdu_pad;
@@ -954,7 +954,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 		goto free_mpdu;
 	}
 
-	hdr_frag_size = ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, mpdu, 0);
+	hdr_frag_size = ath12k_dp_mon_get_frag_size_by_idx(dp, mpdu, 0);
 	if (unlikely(!hdr_frag_size)) {
 		ath12k_warn(dp, "mon_rx_restitch: rx header size is 0\n");
 		ret = -EINVAL;
@@ -975,7 +975,7 @@ ath12k_wifi7_dp_mon_restitch_frags(struct sk_buff *mpdu,
 		goto free_mpdu;
 	}
 
-	frag_size = ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp, mpdu, 1);
+	frag_size = ath12k_dp_mon_get_frag_size_by_idx(dp, mpdu, 1);
 	if (unlikely(!frag_size)) {
 		ath12k_warn(dp, "mon_rx_restitch: pkt size is 0\n");
 		ret = -EINVAL;
@@ -1084,9 +1084,9 @@ void ath12k_wifi7_dp_mon_rx_process_mpdu_queue(struct ath12k_pdev_dp *dp_pdev,
 			last_frag_idx = skb_shinfo(mpdu)->nr_frags - 1;
 			if (skb_shinfo(mpdu)->nr_frags >= 2) {
 				last_frag_size =
-				ath12k_wifi7_dp_mon_get_frag_size_by_idx(dp_pdev->dp,
-									 mpdu,
-									 last_frag_idx);
+				ath12k_dp_mon_get_frag_size_by_idx(dp_pdev->dp,
+								   mpdu,
+								   last_frag_idx);
 				if (last_frag_size > 0 && last_frag_size <= FCS_LEN) {
 					ath12k_dp_mon_skb_remove_frag(dp_pdev->dp, mpdu,
 								      last_frag_idx,

@@ -528,8 +528,8 @@ ath12k_dp_mon_cnt_skb_and_frags(struct sk_buff *skb, u32 *skb_count, u32 *frag_c
 void ath12k_dp_mon_pktlog_config_filter(struct ath12k_pdev_dp *dp_pdev,
 					enum ath12k_pktlog_mode mode,
 					u32 filter, bool enable);
-u32 ath12k_wifi7_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp, struct sk_buff *skb,
-					     u8 idx);
+u32 ath12k_dp_mon_get_frag_size_by_idx(struct ath12k_dp *dp, struct sk_buff *skb,
+				       u8 idx);
 void *ath12k_dp_mon_skb_get_frag_addr(struct sk_buff *skb, u8 idx);
 int ath12k_dp_mon_adj_frag_offset(struct sk_buff *skb, u8 idx, int offset);
 u32 ath12k_dp_mon_get_num_frags_in_fraglist(struct sk_buff *skb);
