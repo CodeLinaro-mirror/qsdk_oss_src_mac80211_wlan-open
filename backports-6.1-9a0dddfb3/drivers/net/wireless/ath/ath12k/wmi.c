@@ -12313,6 +12313,7 @@ static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 	int ret = 0;
 	struct wmi_dcs_awgn_info *awgn_info;
 	struct wmi_dcs_cw_info *cw_info;
+	struct wmi_dcs_obss_info *obss_info;
 	struct wmi_dcs_wlan_interference_stats_ev *wlan_info;
 	struct wmi_dcs_wlan_interference_stats *tmp;
 
@@ -12330,6 +12331,15 @@ static int ath12k_wmi_dcs_intf_subtlv_parser(struct ath12k_base *ab,
 		cw_info = (struct wmi_dcs_cw_info *)ptr;
 		ath12k_dbg(ab, ATH12K_DBG_WMI, "CW Info: channel=%d", cw_info->channel);
 		memcpy(data, cw_info, sizeof(*cw_info));
+		break;
+	case WMI_TAG_DCS_OBSS_INT_TYPE:
+		obss_info = (struct wmi_dcs_obss_info *)ptr;
+		ath12k_dbg(ab, ATH12K_DBG_WMI,
+			   "OBSS Info: width: %d, cf: %d, cf0: %d, cf1: %d, bmap: %d\n",
+			   obss_info->channel_width, obss_info->chan_freq,
+			   obss_info->center_freq0, obss_info->center_freq1,
+			   obss_info->chan_bw_interference_bitmap);
+		memcpy(data, obss_info, sizeof(*obss_info));
 		break;
 	case WMI_TAG_ATH_DCS_WLAN_INT_STAT:
 		wlan_info = (struct wmi_dcs_wlan_interference_stats_ev *)ptr;
@@ -12883,6 +12893,9 @@ ath12k_wmi_dcs_interference_event(struct ath12k_base *ab,
 		break;
 	case WMI_DCS_AWGN_INTF:
 		ath12k_wmi_dcs_awgn_interference_event(ab, skb, pdev_id);
+		break;
+	case WMI_DCS_OBSS_INTF:
+		ath12k_wmi_dcs_obss_interference_event_extn(ab, skb, pdev_id);
 		break;
 	default:
 		ath12k_warn(ab,

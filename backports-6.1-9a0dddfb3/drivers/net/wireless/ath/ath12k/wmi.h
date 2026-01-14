@@ -2433,6 +2433,7 @@ enum wmi_tlv_tag {
 	WMI_TAG_ATF_PEER_REQUEST_EVENT_V2 = 0x4A8,
 	WMI_TAG_PDEV_WSI_STATS_INFO_CMD = 0x4b1,
 	WMI_TAG_PDEV_DFS_RADAR_FLAGS = 0x4b4,
+	WMI_TAG_DCS_OBSS_INT_TYPE = 0x4CF,
 	WMI_TAG_VDEV_CH_PSD_POWER_INFO = 0x4bc,
 	WMI_TAG_VDEV_CH_EIRP_POWER_INFO = 0x4bd,
 	WMI_TAG_PDEV_UTF_CMD_FIXED_PARAM = 0x4be,
@@ -2705,6 +2706,7 @@ enum wmi_tlv_service {
 	WMI_TLV_SERVICE_BOTH_PSD_EIRP_FOR_AP_SP_CLIENT_SP_SUPPORT = 393,
 	WMI_TLV_SERVICE_PDEV_PARAM_IN_UTF_WMI = 394,
 	WMI_TLV_SERVICE_SW_PROG_DFS_SUPPORT = 395,
+	WMI_TLV_SERVICE_DCS_OBSS_INT_SUPPORT = 402,
 	WMI_TLV_SERVICE_DYNAMIC_WSI_REMAP_SUPPORT = 403,
 	WMI_SERVICE_MLO_MODE2_RECOVERY_SUPPORTED = 406,
 	WMI_TLV_SERVICE_THERM_THROT_POUT_REDUCTION = 410,
@@ -5738,6 +5740,7 @@ struct wmi_pdev_radar_flags_param {
 #define WMI_DCS_CW_INTF         0x01
 #define WMI_DCS_WLAN_INTF       0x02
 #define WMI_DCS_AWGN_INTF       0x04
+#define WMI_DCS_OBSS_INTF	0x10
 
 struct wmi_dcs_awgn_info {
         u32 channel_width;
@@ -5745,6 +5748,14 @@ struct wmi_dcs_awgn_info {
         u32 center_freq0;
         u32 center_freq1;
         u32 chan_bw_interference_bitmap;
+} __packed;
+
+struct wmi_dcs_obss_info {
+	u32 channel_width;
+	u32 chan_freq;
+	u32 center_freq0;
+	u32 center_freq1;
+	u32 chan_bw_interference_bitmap;
 } __packed;
 
 struct wmi_dcs_cw_info {
