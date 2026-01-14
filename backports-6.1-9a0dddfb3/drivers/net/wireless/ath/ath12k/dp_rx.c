@@ -714,7 +714,7 @@ void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer
 	if (!peer->primary_link)
 		return;
 
-	for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
+	for (i = 0; i < ab->hal.hal_params->num_tids; i++) {
 		rx_tid = &peer->dp_peer->rx_tid[i];
 
 		ath12k_dp_arch_rx_peer_tid_delete(dp, ar, peer, i);
@@ -726,9 +726,9 @@ void ath12k_dp_rx_peer_tid_cleanup(struct ath12k *ar, struct ath12k_dp_link_peer
 	}
 }
 
-int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
-				      u8 tid, u32 ba_win_sz, u16 ssn,
-				      enum hal_pn_type pn_type)
+int ath12k_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int vdev_id,
+				u8 tid, u32 ba_win_sz, u16 ssn,
+				enum hal_pn_type pn_type)
 {
 	struct hal_rx_reo_queue *addr_aligned;
 	struct ath12k_base *ab = ar->ab;
@@ -752,16 +752,8 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 		return 0;
 	}
 
-	if (ab->hw_params->reoq_lut_support &&
-	    (!dp->reoq_lut.vaddr || !dp->ml_reoq_lut.vaddr)) {
-		spin_unlock_bh(&dp->dp_lock);
-		ath12k_warn(ab, "reo qref table is not setup\n");
-		return -EINVAL;
-	}
-
-	if (peer->peer_id > DP_MAX_PEER_ID || tid > IEEE80211_NUM_TIDS) {
-		ath12k_warn(ab, "peer id of peer %d or tid %d doesn't allow reoq setup\n",
-			    peer->peer_id, tid);
+	if (tid >= ab->hal.hal_params->num_tids) {
+		ath12k_warn(ab, "tid %d doesn't allow reoq setup\n", tid);
 		spin_unlock_bh(&dp->dp_lock);
 		return -EINVAL;
 	}
@@ -810,14 +802,9 @@ int ath12k_wifi7_dp_rx_peer_tid_setup(struct ath12k *ar, const u8 *peer_mac, int
 		/* Update the REO queue LUT at the corresponding peer id
 		 * and tid with qaddr.
 		 */
-		if (peer->mlo)
-			ath12k_dp_arch_peer_rx_tid_qref_setup(dp, peer->ml_id,
-							      rx_tid->tid,
-							      rx_tid->paddr);
-		else
-			ath12k_dp_arch_peer_rx_tid_qref_setup(dp, peer->peer_id,
-							      rx_tid->tid,
-							      rx_tid->paddr);
+		ath12k_dp_arch_peer_rx_tid_qref_setup(dp, peer->dp_peer->peer_id,
+						      rx_tid->tid,
+						      rx_tid->paddr);
 
 		spin_unlock_bh(&dp->dp_lock);
 	} else {
@@ -851,9 +838,9 @@ int ath12k_dp_rx_ampdu_start(struct ath12k *ar,
 
 	vdev_id = arsta->arvif->vdev_id;
 
-	ret = ath12k_wifi7_dp_rx_peer_tid_setup(ar, arsta->addr, vdev_id,
-						params->tid, params->buf_size,
-						params->ssn, arsta->ahsta->pn_type);
+	ret = ath12k_dp_rx_peer_tid_setup(ar, arsta->addr, vdev_id,
+					  params->tid, params->buf_size,
+					  params->ssn, arsta->ahsta->pn_type);
 	if (ret)
 		ath12k_warn(ab, "failed to setup rx tid %d\n", ret);
 
@@ -953,7 +940,7 @@ int ath12k_dp_rx_peer_pn_replay_config(struct ath12k_link_vif *arvif,
 		return 0;
 	}
 
-	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 		rx_tid = &peer->dp_peer->rx_tid[tid];
 		if (!rx_tid->active)
 			continue;
@@ -1129,7 +1116,7 @@ int ath12k_dp_rx_peer_frag_setup(struct ath12k *ar,
 
 	lockdep_assert(&dp->dp_lock);
 
-	for (i = 0; i <= IEEE80211_NUM_TIDS; i++) {
+	for (i = 0; i < ab->hal.hal_params->num_tids; i++) {
 		rx_tid = &peer->dp_peer->rx_tid[i];
 		rx_tid->dp = dp;
 		timer_setup(&rx_tid->frag_timer, ath12k_dp_rx_frag_timer, 0);
@@ -1499,7 +1486,7 @@ void ath12k_dp_tid_cleanup(struct ath12k_base *ab)
         spin_lock_bh(&ab->dp->dp_lock);
         list_for_each_entry(peer, &ab->dp->peers, list) {
 		if (peer->dp_peer) {
-			for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+			for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 				rx_tid = &peer->dp_peer->rx_tid[tid];
 				if (rx_tid->active) {
 					vaddr = rx_tid->vaddr;
@@ -1534,21 +1521,20 @@ void ath12k_dp_peer_reo_tid_setup(struct ath12k *ar, int vdev_id,
 		return;
 	}
 
-       for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
-               rx_tid = &peer->dp_peer->rx_tid[tid];
-               if (!rx_tid->active)
-                       continue;
+	for (tid = 0; tid < ar->ab->hal.hal_params->num_tids; tid++) {
+		rx_tid = &peer->dp_peer->rx_tid[tid];
+		if (!rx_tid->active)
+			continue;
 
-               ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar,
-                                                           peer, rx_tid,
-                                                           rx_tid->ba_win_sz,
-                                                           0, false);
-               if (ret) {
-                       ath12k_warn(ar->ab, "failed to update reo for peer %pM rx tid %d\n",
-                                   peer_mac, tid);
-               }
-       }
-       spin_unlock_bh(&dp->dp_lock);
+		ret = ath12k_dp_arch_peer_rx_tid_reo_update(dp, ar, peer, rx_tid,
+							    rx_tid->ba_win_sz,
+							    0, false);
+		if (ret) {
+			ath12k_warn(ar->ab, "failed to update reo for peer %pM rx tid %d\n",
+				    peer_mac, tid);
+		}
+	}
+	spin_unlock_bh(&dp->dp_lock);
 }
 
 void ath12k_dp_tid_setup(void *data, struct ieee80211_sta *sta)
@@ -1643,9 +1629,9 @@ ath12k_dp_primary_peer_migrate_setup(struct ath12k_dp *dp, void *ctx,
 		/* Update the REO queue LUT at the corresponding peer id
 		 * and tid with qaddr.
 		 */
-		for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+		for (tid = 0; tid < mig_ab->hal.hal_params->num_tids; tid++) {
 			ath12k_dp_arch_peer_rx_tid_qref_setup(mig_dp,
-							      peer->mlo ? peer->ml_id : peer->peer_id,
+							      peer->dp_peer->peer_id,
 							      rx_tid->tid,
 							      rx_tid->paddr);
 		}

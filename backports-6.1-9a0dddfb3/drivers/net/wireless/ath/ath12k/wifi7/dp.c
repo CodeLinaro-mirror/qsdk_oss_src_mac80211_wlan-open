@@ -157,6 +157,65 @@ done:
 	return tot_work_done;
 }
 
+static int ath12k_wifi7_dp_reoq_lut_setup(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+	int ret;
+
+	if (!ab->hw_params->reoq_lut_support)
+		return 0;
+
+	ret = ath12k_dp_alloc_reoq_lut(ab, &dp->reoq_lut);
+	if (ret) {
+		ath12k_warn(ab, "failed to allocate memory for reoq table");
+		return ret;
+	}
+
+	ret = ath12k_dp_alloc_reoq_lut(ab, &dp->ml_reoq_lut);
+	if (ret) {
+		ath12k_warn(ab, "failed to allocate memory for ML reoq table");
+		ath12k_hal_dma_free_coherent(ab->dev, dp->reoq_lut.size,
+					     dp->reoq_lut.vaddr_unaligned,
+					     dp->reoq_lut.paddr_unaligned);
+		dp->reoq_lut.vaddr_unaligned = NULL;
+		return ret;
+	}
+
+	/* Bits in the register have address [39:8] LUT base address to be
+	 * allocated such that LSBs are assumed to be zero. Also, current
+	 * design supports paddr up to 4 GB max hence it fits in 32 bit register only
+	 */
+	ath12k_hal_write_reoq_lut_addr(ab, dp->reoq_lut.paddr >> 8);
+	ath12k_hal_write_ml_reoq_lut_addr(ab, dp->ml_reoq_lut.paddr >> 8);
+
+	ath12k_hal_reoq_lut_addr_read_enable(ab);
+	ath12k_hal_reoq_lut_set_max_peerid(ab);
+
+	return 0;
+}
+
+static void ath12k_wifi7_dp_reoq_lut_cleanup(struct ath12k_base *ab)
+{
+	struct ath12k_dp *dp = ath12k_ab_to_dp(ab);
+
+	if (!ab->hw_params->reoq_lut_support)
+		return;
+
+	if (dp->reoq_lut.vaddr_unaligned) {
+		ath12k_hal_dma_free_coherent(ab->dev, dp->reoq_lut.size,
+					     dp->reoq_lut.vaddr_unaligned,
+					     dp->reoq_lut.paddr_unaligned);
+		dp->reoq_lut.vaddr_unaligned = NULL;
+	}
+
+	if (dp->ml_reoq_lut.vaddr_unaligned) {
+		ath12k_hal_dma_free_coherent(ab->dev, dp->ml_reoq_lut.size,
+					     dp->ml_reoq_lut.vaddr_unaligned,
+					     dp->ml_reoq_lut.paddr_unaligned);
+		dp->ml_reoq_lut.vaddr_unaligned = NULL;
+	}
+}
+
 static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 {
 	int ret;
@@ -232,7 +291,7 @@ static int ath12k_wifi7_dp_op_device_init(struct ath12k_dp *dp)
 	if (ret)
 		goto fail_cmn_srng_cleanup;
 
-	ret = ath12k_dp_reoq_lut_setup(ab);
+	ret = ath12k_wifi7_dp_reoq_lut_setup(ab);
 	if (ret) {
 		ath12k_warn(ab, "failed to setup reoq table %d\n", ret);
 		goto fail_tx_ring_cleanup;
@@ -263,7 +322,7 @@ fail_dp_mon_rx_free:
 
 fail_dp_rx_free:
 	ath12k_wifi7_dp_rx_ring_free(ab);
-	ath12k_dp_reoq_lut_cleanup(ab);
+	ath12k_wifi7_dp_reoq_lut_cleanup(ab);
 
 fail_tx_ring_cleanup:
 	ath12k_wifi7_dp_tx_ring_cleanup(ab);
@@ -310,7 +369,7 @@ static void ath12k_wifi7_dp_op_device_deinit(struct ath12k_dp *dp)
 
 	ath12k_ppeds_detach(ab);
 	ath12k_dp_cc_cleanup(ab);
-	ath12k_dp_reoq_lut_cleanup(ab);
+	ath12k_wifi7_dp_reoq_lut_cleanup(ab);
 	ath12k_dp_deinit_bank_profiles(ab);
 	ath12k_wifi7_dp_tx_ring_cleanup(ab);
 	ath12k_dp_srng_common_cleanup(ab);

@@ -85,21 +85,25 @@ void ath12k_hal_reoq_lut_addr_read_enable(struct ath12k_base *ab)
 {
 	ab->hal.hal_ops->reoq_lut_addr_read_enable(ab);
 }
+EXPORT_SYMBOL(ath12k_hal_reoq_lut_addr_read_enable);
 
 void ath12k_hal_reoq_lut_set_max_peerid(struct ath12k_base *ab)
 {
 	ab->hal.hal_ops->reoq_lut_set_max_peerid(ab);
 }
+EXPORT_SYMBOL(ath12k_hal_reoq_lut_set_max_peerid);
 
 void ath12k_hal_write_ml_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr)
 {
 	ab->hal.hal_ops->write_ml_reoq_lut_addr(ab, paddr);
 }
+EXPORT_SYMBOL(ath12k_hal_write_ml_reoq_lut_addr);
 
 void ath12k_hal_write_reoq_lut_addr(struct ath12k_base *ab, dma_addr_t paddr)
 {
 	ab->hal.hal_ops->write_reoq_lut_addr(ab, paddr);
 }
+EXPORT_SYMBOL(ath12k_hal_write_reoq_lut_addr);
 
 void ath12k_hal_reo_hw_setup(struct ath12k_base *ab)
 {

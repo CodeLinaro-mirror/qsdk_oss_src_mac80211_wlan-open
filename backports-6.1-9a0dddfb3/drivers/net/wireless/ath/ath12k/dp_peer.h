@@ -13,6 +13,9 @@
 #define ATH12K_3LINK_MLO_MAX_STA_LINKS         3
 #define ATH12K_DATA_TID_MAX 8
 
+/* 17 tids for DP, 2 for mgmt, and 1 shared between DP and mgmt */
+#define ATH12K_MAX_TIDS 20
+
 struct ath12k_dp_peer_ext_ctx;
 
 struct ppdu_user_delayba {
@@ -132,7 +135,7 @@ struct ath12k_dp_peer {
 	enum hal_pn_type pn_type;
 
 	struct ieee80211_key_conf *keys[WMI_MAX_KEY_INDEX + 1];
-	struct ath12k_dp_rx_tid rx_tid[IEEE80211_NUM_TIDS + 1];
+	struct ath12k_dp_rx_tid rx_tid[ATH12K_MAX_TIDS];
 
 	bool use_4addr;
 

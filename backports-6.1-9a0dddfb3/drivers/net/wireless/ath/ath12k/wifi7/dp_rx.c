@@ -194,17 +194,27 @@ void ath12k_wifi7_peer_rx_tid_qref_setup(struct ath12k_base *ab, u16 peer_id, u1
 	if (!ab->hw_params->reoq_lut_support)
 		return;
 
+	if (!dp->reoq_lut.vaddr || !dp->ml_reoq_lut.vaddr) {
+		ath12k_warn(ab, "reo qref table is not setup\n");
+		return;
+	}
+
 	if (peer_id & ATH12K_PEER_ML_ID_VALID) {
 		peer_id &= ~ATH12K_PEER_ML_ID_VALID;
 		ml_peer = true;
 	}
 
+	if (peer_id > DP_MAX_PEER_ID) {
+		ath12k_warn(ab, "peer id %d is more than Max peer id\n", peer_id);
+		return;
+	}
+
 	if (ml_peer)
 		qref = (struct ath12k_reo_queue_ref *)dp->ml_reoq_lut.vaddr +
-				(peer_id * (IEEE80211_NUM_TIDS + 1) + tid);
+				(peer_id * ab->hal.hal_params->num_tids + tid);
 	else
 		qref = (struct ath12k_reo_queue_ref *)dp->reoq_lut.vaddr +
-				(peer_id * (IEEE80211_NUM_TIDS + 1) + tid);
+				(peer_id * ab->hal.hal_params->num_tids + tid);
 
 	qref->info0 = u32_encode_bits(lower_32_bits(paddr),
 				      BUFFER_ADDR_INFO0_ADDR);
@@ -345,12 +355,17 @@ void ath12k_wifi7_peer_rx_tid_qref_reset(struct ath12k_base *ab, u16 peer_id, u1
 		ml_peer = true;
 	}
 
+	if (peer_id > DP_MAX_PEER_ID) {
+		ath12k_warn(ab, "peer id %d is more than Max peer id\n", peer_id);
+		return;
+	}
+
 	if (ml_peer)
 		qref = (struct ath12k_reo_queue_ref *)dp->ml_reoq_lut.vaddr +
-				(peer_id * (IEEE80211_NUM_TIDS + 1) + tid);
+				(peer_id * ab->hal.hal_params->num_tids + tid);
 	else
 		qref = (struct ath12k_reo_queue_ref *)dp->reoq_lut.vaddr +
-				(peer_id * (IEEE80211_NUM_TIDS + 1) + tid);
+				(peer_id * ab->hal.hal_params->num_tids + tid);
 
 	qref->info0 = u32_encode_bits(0, BUFFER_ADDR_INFO0_ADDR);
 	qref->info1 = u32_encode_bits(0, BUFFER_ADDR_INFO1_ADDR);
@@ -404,7 +419,7 @@ void ath12k_wifi7_dp_rx_peer_tid_delete(struct ath12k *ar,
 	spin_unlock_bh(&dp->reo_cmd_update_rx_queue_lock);
 
 	rx_tid->active = false;
-	ath12k_wifi7_peer_rx_tid_qref_reset(ab,	peer->mlo ? peer->ml_id : peer->peer_id, tid);
+	ath12k_wifi7_peer_rx_tid_qref_reset(ab,	peer->dp_peer->peer_id, tid);
 	ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
 	rx_tid->vaddr = NULL;
 	rx_tid->paddr = 0;
@@ -2241,7 +2256,8 @@ static int ath12k_wifi7_dp_rx_frag_h_mpdu(struct ath12k_pdev_dp *dp_pdev,
 	more_frags = ath12k_wifi7_dp_rx_h_more_frags(ab, msdu);
 	seqno = rx_desc_data->seq_no;
 
-	if (!rx_desc_data->seq_ctl_valid || !rx_desc_data->fc_valid || tid > IEEE80211_NUM_TIDS)
+	if (!rx_desc_data->seq_ctl_valid || !rx_desc_data->fc_valid ||
+	    tid >= ab->hal.hal_params->num_tids)
 		return -EINVAL;
 
 	/* received unfragmented packet in reo
@@ -4036,12 +4052,10 @@ int ath12k_wifi7_dp_peer_migrate_reo_cmd(struct ath12k_dp *dp,
 	struct ath12k_base *ab = dp->ab;
 	int ret, tid;
 
-	for (tid = 0; tid <= IEEE80211_NUM_TIDS; tid++) {
+	for (tid = 0; tid < ab->hal.hal_params->num_tids; tid++) {
 		rx_tid = &peer->dp_peer->rx_tid[tid];
 
-		ath12k_wifi7_peer_rx_tid_qref_reset(ab,
-						    peer->mlo ? peer->ml_id :
-					    peer->peer_id, tid);
+		ath12k_wifi7_peer_rx_tid_qref_reset(ab, peer->dp_peer->peer_id, tid);
 		ath12k_wifi7_hal_reo_shared_qaddr_cache_clear(ab);
 
 		cmd.addr_lo = lower_32_bits(rx_tid->paddr);

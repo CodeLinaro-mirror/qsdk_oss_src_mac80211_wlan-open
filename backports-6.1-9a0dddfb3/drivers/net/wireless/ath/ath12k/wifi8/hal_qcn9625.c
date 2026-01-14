@@ -400,6 +400,8 @@ const struct ath12k_hw_hal_params ath12k_wifi8_hw_hal_params_qcn9625 = {
 	.num_rx_msdus_per_link_desc = HAL_NUM_RX_MSDUS_PER_LINK_DESC,
 	.num_mpdu_links_per_queue_desc = HAL_NUM_MPDU_LINKS_PER_QUEUE_DESC,
 	.dscp_tid_map_tbl_max_entries = HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX,
+	.num_tids = HAL_WIFI8_NUM_TIDS,
+	.reoq_lut_size = HAL_WIFI8_REOQ_LUT_SIZE,
 };
 
 u32 ath12k_wifi8_hal_rx_h_mpdu_err_qcn9625(struct hal_rx_desc *desc)
