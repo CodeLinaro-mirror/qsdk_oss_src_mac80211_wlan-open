@@ -197,6 +197,7 @@ struct hal_mon_usig_hdr {
 } __packed;
 
 #define HAL_RX_PHY_CMN_USER_INFO0_GI		GENMASK(17, 16)
+#define HAL_RX_PHY_CMN_USER_INFO0_PUNC_PAT	GENMASK(15, 0)
 
 struct hal_phyrx_common_user_info {
 	__le32 rsvd0[2];
@@ -841,6 +842,11 @@ ath12k_wifi7_hal_mon_parse_rx_msdu_end_err(u32 info, u32 *errmap)
 	if (info & RX_MSDU_END_INFO13_MPDU_LEN_ERR)
 		*errmap |= HAL_RX_MON_MPDU_ERR_MPDU_LEN;
 }
+
+#define HAL_RX_FRAMECTRL_TYPE_MASK	0x0C
+#define HAL_RX_GET_FRAME_CTRL_TYPE(fc)\
+	(((fc) & HAL_RX_FRAMECTRL_TYPE_MASK) >> 2)
+#define HAL_RX_FRAME_CTRL_TYPE_CTRL 0x001
 
 enum hal_rx_mon_status
 ath12k_wifi7_hal_mon_rx_parse_status_tlv(struct ath12k_hal *hal,

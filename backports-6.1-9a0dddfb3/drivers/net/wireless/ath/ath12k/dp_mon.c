@@ -847,6 +847,90 @@ ath12k_dp_mon_rx_update_peer_rate_table_stats(struct ath12k_rx_peer_stats *rx_st
 	stats->rx_rate[bw_idx][gi_idx][nss_idx][mcs_idx] += len;
 }
 
+/**
+ * ath12k_dp_mon_rx_calculate_avg_rate() - Calculate the average rate using a
+ * low-pass filter.
+ * @avg_rate: The current average rate.
+ * @new_rate_sample: The new rate sample to include in the average.
+ *
+ * This function applies a low-pass filter to average the data rate. It gives
+ * more weight to the previous average, creating a smoothing effect.
+ *
+ * Return: The new calculated average rate.
+ */
+static inline u64 ath12k_dp_mon_rx_calculate_avg_rate(u64 avg_rate, int new_rate_sample)
+{
+	new_rate_sample = DP_ATH_RATE_IN(new_rate_sample);
+	if (avg_rate == DUMMY_MARKER)
+		return new_rate_sample;
+
+	return ((avg_rate << 3) + new_rate_sample - avg_rate) >> 3;
+}
+
+/**
+ * ath12k_dp_mon_rx_get_output_rate() - Convert an internal rate representation to an
+ * output rate.
+ * @internal_rate: The internal rate value to be converted.
+ *
+ * This function converts an internal rate representation to a final
+ * output rate, including rounding logic.
+ *
+ * Return: The converted output rate or DUMMY_MARKER if the input is a dummy.
+ */
+static inline u64 ath12k_dp_mon_rx_get_output_rate(u64 internal_rate)
+{
+	const int multiplier = DP_ATH_RATE_EP_MULTIPLIER;
+
+	if (internal_rate == DUMMY_MARKER)
+		return DUMMY_MARKER;
+
+	if ((internal_rate % multiplier) >= (multiplier / 2))
+		return (internal_rate + (multiplier - 1)) / multiplier;
+	else
+		return internal_rate / multiplier;
+}
+
+static inline u16 ath12k_dp_get_avg_rate_stats_filter_val(void)
+{
+	/* Note: Returning default as ini config is absent */
+	return DP_AVG_RATE_FILTER_DEFAULT;
+}
+
+static inline bool ath12k_dp_mon_eval_avg_rate_filter(u32 ratekbps, u32 avg_rx_rate)
+{
+	u16 filter_val = 0;
+
+	filter_val = ath12k_dp_get_avg_rate_stats_filter_val();
+
+	if (!filter_val || avg_rx_rate < filter_val || ratekbps > filter_val)
+		return true;
+
+	return false;
+}
+
+static void ath12k_dp_rx_update_rate_stats(struct ath12k_rx_peer_stats *rx_stats,
+					   struct rate_info *rate)
+{
+	u32 ratekbps, ppdu_rx_rate;
+
+	if (!rx_stats || !rate)
+		return;
+
+	/* Converting cfg80211_calculate_bitrate(100Kbps) to Kbps */
+	ratekbps = cfg80211_calculate_bitrate(rate) * 100;
+	rx_stats->last_rx_rate = ratekbps;
+
+	if (likely(ath12k_dp_mon_eval_avg_rate_filter(ratekbps, rx_stats->avg_rx_rate))) {
+		rx_stats->avg_rx_rate =
+			ath12k_dp_mon_rx_calculate_avg_rate(rx_stats->avg_rx_rate,
+							    ratekbps);
+	}
+
+	ppdu_rx_rate = ath12k_dp_mon_rx_get_output_rate(rx_stats->avg_rx_rate);
+	rx_stats->rnd_avg_rx_rate = ppdu_rx_rate;
+	/* TODO : Add ratecode */
+}
+
 static u8 ath12k_dp_rx_rate_convert_bw(u8 bw)
 {
 	u8 ret = 0;
@@ -973,6 +1057,78 @@ static void ath12k_dp_rx_rate_stats_update(struct ath12k_rx_peer_stats *rx_stats
 	}
 
 	ath12k_dp_rx_fill_rate_info(&peer->rxrate, ppdu_info, user_stats, is_su);
+}
+
+void ath12k_dp_mon_rx_update_advance_stats(struct ath12k_rx_peer_stats *rx_stats,
+					   struct hal_rx_mon_ppdu_info *ppdu_info,
+					   u32 num_msdu, u32 uid)
+{
+	struct hal_rx_user_status *user_stats = NULL;
+	u8 preamble_type, mcs, nss, ac, punc_mode, max_mcs, res_mcs, mu_type;
+	u32 byte_count, tid;
+
+	if (!rx_stats || !ppdu_info || uid >= HAL_MAX_UL_MU_USERS)
+		return;
+
+	if (ppdu_info->reception_type != HAL_RX_RECEPTION_TYPE_SU)
+		user_stats = &ppdu_info->userstats[uid];
+
+	preamble_type = user_stats ? user_stats->preamble_type : ppdu_info->preamble_type;
+	mcs = user_stats ? user_stats->mcs : ppdu_info->mcs;
+	nss = user_stats ? user_stats->nss : ppdu_info->nss;
+	byte_count = user_stats ? user_stats->mpdu_ok_byte_count : ppdu_info->mpdu_len;
+	tid = user_stats ? user_stats->tid : ppdu_info->tid;
+	ac = ath12k_tid_to_ac(tid);
+	punc_mode = ppdu_info->punc_bw;
+
+	if (preamble_type >= HAL_RX_PREAMBLE_MAX)
+		return;
+
+	if (tid <= IEEE80211_NUM_TIDS && ac < WME_NUM_AC) {
+		rx_stats->wme_ac_type[ac].total_pkts += num_msdu;
+		rx_stats->wme_ac_type[ac].total_bytes += byte_count;
+	}
+
+	if (punc_mode < MAX_PUNCTURED_MODE)
+		rx_stats->punc_bw[punc_mode] += num_msdu;
+
+	rx_stats->num_bar += ppdu_info->ctrl_frm_info[uid].bar;
+	rx_stats->num_ndpa += ppdu_info->ctrl_frm_info[uid].ndpa;
+
+	max_mcs = max_mcs_by_preamble[preamble_type];
+	res_mcs = (mcs < max_mcs) ? mcs : (MAX_MCS - 1);
+
+	rx_stats->proto_type[preamble_type].mcs_count[res_mcs] += num_msdu;
+
+	if (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_SU) {
+		rx_stats->su_ppdu_count[preamble_type].mcs_count[res_mcs] += 1;
+		if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
+			rx_stats->ppdu_nss[nss - 1] += 1;
+	} else {
+		if (!user_stats)
+			return;
+
+		/* Assumes any non-SU and non-MU-MIMO reception is MU-OFDMA.
+		 * Update if new reception types are introduced.
+		 */
+		mu_type = (ppdu_info->reception_type == HAL_RX_RECEPTION_TYPE_MU_MIMO) ?
+			TXRX_TYPE_MU_MIMO : TXRX_TYPE_MU_OFDMA;
+
+		rx_stats->rx_mu[preamble_type][mu_type].mpdu_cnt_fcs_ok +=
+							user_stats->mpdu_cnt_fcs_ok;
+		rx_stats->rx_mu[preamble_type][mu_type].ppdu.mcs_count[res_mcs] += 1;
+		rx_stats->rx_mu[preamble_type][mu_type].mpdu_cnt_fcs_err +=
+							user_stats->mpdu_cnt_fcs_err;
+		if (likely(nss) && (nss - 1) < HAL_RX_MAX_NSS)
+			rx_stats->rx_mu[preamble_type][mu_type].ppdu_nss[nss - 1] += 1;
+	}
+	rx_stats->ppdu_reception[ppdu_info->reception_type] += 1;
+
+	if (mcs < MAX_MCS) {
+		rx_stats->num_mpdu_count[mcs] += 1;
+	} else {
+		rx_stats->num_mpdu_count[MAX_MCS - 1] += 1;
+	}
 }
 
 void ath12k_dp_mon_rx_update_basic_stats(struct ath12k_dp_link_peer *peer,
@@ -1151,6 +1307,12 @@ void ath12k_dp_mon_rx_update_peer_su_stats(struct ath12k_pdev_dp *pdev_dp,
 						      NULL, num_msdu);
 
 	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, 0);
+	/* Update Advance stats */
+	if (ath12k_dp_stats_enabled(pdev_dp) &&
+	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
+		ath12k_dp_mon_rx_update_advance_stats(rx_stats, ppdu_info, num_msdu, 0);
+		ath12k_dp_rx_update_rate_stats(rx_stats, &peer->rxrate);
+	}
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_update_peer_su_stats);
 
@@ -1223,22 +1385,27 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
 		return;
 
-	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, pdev_dp,
-							user_stats->sw_peer_id);
+	rcu_read_lock();
+	peer = ath12k_dp_link_peer_find_by_id(dp, user_stats->sw_peer_id);
 	if (!peer) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_RX, "peer with peer id %d can't be found\n",
 			   ppdu_info->peer_id);
+		rcu_read_unlock();
 		return;
 	}
 
 	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
 
-	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar))
+	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar)) {
+		rcu_read_unlock();
 		return;
+	}
 
 	rx_stats = peer->peer_stats.rx_stats;
-	if (!rx_stats)
+	if (!rx_stats) {
+		rcu_read_unlock();
 		return;
+	}
 
 	ppdu_info->usr_nss_sum += user_stats->nss;
 	ppdu_info->usr_ru_tones_sum += user_stats->ul_ofdma_ru_width;
@@ -1320,6 +1487,14 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	pdev_stats->telemetry_stats.total_rx_data_bytes = user_stats->mpdu_ok_byte_count;
 
 	ath12k_dp_mon_rx_update_basic_stats(peer, rx_stats, ppdu_info, num_msdu, uid);
+	/* Update Advance stats */
+	if (ath12k_dp_stats_enabled(pdev_dp) &&
+	    ath12k_dp_advance_stats_enabled(pdev_dp)) {
+		ath12k_dp_mon_rx_update_advance_stats(rx_stats, ppdu_info, num_msdu, uid);
+		ath12k_dp_rx_update_rate_stats(rx_stats, &peer->rxrate);
+	}
+
+	rcu_read_unlock();
 }
 
 void
