@@ -2841,7 +2841,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 	    ath12k_dp_debug_stats_enabled(&ar->dp))
 		telemetry_vif->is_extended = true;
 
-	wiphy_lock(ath12k_ar_to_hw(ar)->wiphy);
 	/*Vif stats for requested link*/
 	if (links_map & BIT(link_id)) {
 		rcu_read_lock();
@@ -2890,7 +2889,6 @@ void ath12k_dp_get_vif_stats(struct ath12k_vif *ahvif,
 						     "link_vif_delete_stats");
 		}
 	}
-	wiphy_unlock(ath12k_ar_to_hw(ar)->wiphy);
 }
 
 /**
