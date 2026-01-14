@@ -4518,6 +4518,11 @@ int ath12k_wmi_send_scan_chan_list_cmd(struct ath12k *ar,
 		max_chan_limit = (wmi->wmi_ab->max_msg_len[ar->pdev_idx] - len) /
 			sizeof(*chan_info);
 
+		/* TODO: max_msg_len should be set corectly and remove below check */
+		if (ath12k_scan_radio_supported(ar->pdev)) {
+			/* 71 channels comes within 2K hence hardcoding it */
+			max_chan_limit = 71;
+		}
 		num_send_chans = min(arg->nallchans, max_chan_limit);
 
 		arg->nallchans -= num_send_chans;

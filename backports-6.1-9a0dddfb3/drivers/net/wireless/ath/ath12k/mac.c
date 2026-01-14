@@ -14978,7 +14978,7 @@ static void ath12k_mac_setup_ht_vht_cap(struct ath12k *ar,
 
 	if (cap->supported_bands & WMI_HOST_WLAN_5GHZ_CAP &&
 	    (ar->ab->hw_params->single_pdev_only ||
-	     !ar->supports_6ghz)) {
+	     !ar->supports_6ghz || ath12k_scan_radio_supported(ar->pdev))) {
 		band = &ar->mac.sbands[NL80211_BAND_5GHZ];
 		ht_cap = cap->band[NL80211_BAND_5GHZ].ht_cap_info;
 		if (ht_cap_info)
@@ -23325,6 +23325,298 @@ static int ath12k_mac_update_band(struct ath12k *ar,
 	return 0;
 }
 
+static int ath12k_mac_setup_channels_rates_multiband(struct ath12k *ar,
+						     u32 supported_bands,
+						     struct ieee80211_supported_band *bands[])
+{
+	struct ath12k_base *ab = ar->ab;
+	struct ieee80211_supported_band *band;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg *reg_cap;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg reg_cap_2g_local;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg reg_cap_5g_local;
+	struct ath12k_wmi_hal_reg_capabilities_ext_arg reg_cap_6g_local;
+	struct ieee80211_6ghz_channel *chan_6g;
+	struct ath12k_hw *ah = ar->ah;
+	bool setup_5ghz = false, setup_6ghz = false;
+	bool has_5ghz_freq, has_6ghz_freq;
+	u32 phy_id, freq_low, freq_high;
+	u32 reg_5g_low, reg_5g_high;
+	u32 reg_6g_low, reg_6g_high;
+	void *channels;
+	int ret, i = 0;
+
+	BUILD_BUG_ON((ARRAY_SIZE(ath12k_2ghz_channels) +
+		      ARRAY_SIZE(ath12k_5ghz_channels) +
+		      ARRAY_SIZE(ath12k_6ghz_channels)) !=
+		     ATH12K_NUM_CHANS);
+
+	reg_cap = &ab->hal_reg_cap[ar->pdev_idx];
+
+	/* Setup 2GHz band */
+	if (supported_bands & WMI_HOST_WLAN_2GHZ_CAP) {
+		channels = kmemdup(ath12k_2ghz_channels,
+				   sizeof(ath12k_2ghz_channels),
+				   GFP_KERNEL);
+		if (!channels)
+			return -ENOMEM;
+
+		band = &ar->mac.sbands[NL80211_BAND_2GHZ];
+		band->band = NL80211_BAND_2GHZ;
+		band->n_channels = ARRAY_SIZE(ath12k_2ghz_channels);
+		band->channels = channels;
+		band->n_bitrates = ath12k_g_rates_size;
+		band->bitrates = ath12k_g_rates;
+
+		if (ab->hw_params->single_pdev_only) {
+			phy_id = ath12k_get_phy_id(ar,
+						   WMI_HOST_WLAN_2GHZ_CAP);
+			reg_cap_2g_local = ab->hal_reg_cap[phy_id];
+		} else {
+			reg_cap_2g_local = *reg_cap;
+		}
+
+		freq_low = max(reg_cap_2g_local.low_2ghz_chan,
+			       ab->reg_freq_2g.start_freq);
+		freq_high = min(reg_cap_2g_local.high_2ghz_chan,
+				ab->reg_freq_2g.end_freq);
+
+		ath12k_mac_update_ch_list(ar, band,
+					  reg_cap_2g_local.low_2ghz_chan,
+					  reg_cap_2g_local.high_2ghz_chan);
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+
+		ar->num_channels = ath12k_reg_get_num_chans_in_band(ar, band);
+
+		if (!bands[NL80211_BAND_2GHZ]) {
+			bands[NL80211_BAND_2GHZ] = band;
+		} else {
+			/* Split mac in same band under same wiphy during MLO */
+			ret = ath12k_mac_update_band(ar,
+						     bands[NL80211_BAND_2GHZ],
+						     band);
+			if (ret)
+				return ret;
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+					 "mac pdev %u identified as 2 GHz split mac during MLO\n",
+					 ar->pdev->pdev_id);
+		}
+	}
+
+	/* Setup 5GHz and 6GHz bands with proper logic for overlapping ranges */
+	if (supported_bands & WMI_HOST_WLAN_5GHZ_CAP) {
+		has_5ghz_freq = (reg_cap->low_5ghz_chan <
+				 ATH12K_MIN_6GHZ_FREQ);
+		has_6ghz_freq = (reg_cap->high_5ghz_chan >
+				 ATH12K_MIN_6GHZ_FREQ);
+
+		if (has_5ghz_freq && has_6ghz_freq) {
+			setup_5ghz = true;
+			setup_6ghz = true;
+		} else if (has_6ghz_freq) {
+			setup_6ghz = true;
+		} else if (has_5ghz_freq) {
+			setup_5ghz = true;
+		}
+
+		/* Wide band radio can operate in either 5GHz or 6GHz,
+		 * configuring the band in which the radio has to operate,
+		 * default band is set to 5GHz.
+		 */
+		if (ab->wide_band &&
+		    (reg_cap->low_5ghz_chan < ATH12K_MIN_6GHZ_FREQ &&
+		     reg_cap->high_5ghz_chan > ATH12K_MAX_5GHZ_FREQ)) {
+			if (ab->wide_band == ATH12K_WIDE_BAND_6GHZ) {
+				reg_cap->low_5ghz_chan = ATH12K_MIN_6GHZ_FREQ;
+				setup_5ghz = false;
+				setup_6ghz = true;
+				ath12k_info(ab, "Wide band radio coming up in 6GHz band");
+			} else {
+				reg_cap->high_5ghz_chan = ATH12K_MAX_5GHZ_FREQ;
+				setup_5ghz = true;
+				setup_6ghz = false;
+				ath12k_info(ab, "Wide band radio coming up in 5GHz band");
+			}
+		}
+
+		/* Setup 5GHz band if needed */
+		if (setup_5ghz) {
+			channels = kmemdup(ath12k_5ghz_channels,
+					   sizeof(ath12k_5ghz_channels),
+					   GFP_KERNEL);
+			if (!channels) {
+				kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
+				ar->mac.sbands[NL80211_BAND_2GHZ].channels = NULL;
+				ar->mac.sbands[NL80211_BAND_2GHZ].n_channels = 0;
+				kfree(ar->mac.sbands[NL80211_BAND_6GHZ].channels);
+				ar->mac.sbands[NL80211_BAND_6GHZ].channels = NULL;
+				ar->mac.sbands[NL80211_BAND_6GHZ].n_channels = 0;
+
+				for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+					kfree(ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i]);
+					ar->mac.sbands[NL80211_BAND_6GHZ].chan_6g[i] = NULL;
+				}
+				return -ENOMEM;
+			}
+		}
+
+		band = &ar->mac.sbands[NL80211_BAND_5GHZ];
+		band->band = NL80211_BAND_5GHZ;
+		band->n_channels = ARRAY_SIZE(ath12k_5ghz_channels);
+		band->channels = channels;
+		band->n_bitrates = ath12k_a_rates_size;
+		band->bitrates = ath12k_a_rates;
+
+		if (ab->hw_params->single_pdev_only) {
+			phy_id = ath12k_get_phy_id(ar,
+						   WMI_HOST_WLAN_5GHZ_CAP);
+			reg_cap_5g_local = ab->hal_reg_cap[phy_id];
+		} else {
+			reg_cap_5g_local = *reg_cap;
+		}
+
+		reg_5g_low = reg_cap_5g_local.low_5ghz_chan;
+		if (setup_6ghz) {
+			reg_5g_high = min(reg_cap_5g_local.high_5ghz_chan,
+					  ATH12K_MAX_5GHZ_FREQ);
+		} else {
+			reg_5g_high = min(reg_cap_5g_local.high_5ghz_chan,
+					  ATH12K_MIN_6GHZ_FREQ - 1);
+		}
+
+		freq_low = max(reg_5g_low, ab->reg_freq_5g.start_freq);
+		freq_high = min(reg_5g_high, ab->reg_freq_5g.end_freq);
+
+		ath12k_mac_update_ch_list(ar, band, reg_5g_low,
+					  reg_5g_high);
+		ath12k_mac_update_5_9_ch_list(ar, band);
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+
+		ar->num_channels +=
+			ath12k_reg_get_num_chans_in_band(ar, band);
+
+		if (!bands[NL80211_BAND_5GHZ]) {
+			bands[NL80211_BAND_5GHZ] = band;
+		} else {
+			/* Split mac in same band under same wiphy during MLO */
+			ret = ath12k_mac_update_band(ar,
+						     bands[NL80211_BAND_5GHZ],
+						     band);
+			if (ret)
+				return ret;
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+					 "mac pdev %u identified as 6 GHz split mac during MLO\n",
+					 ar->pdev->pdev_id);
+		}
+	}
+
+	/* Setup 6GHz band if needed */
+	if (setup_6ghz) {
+		band = &ar->mac.sbands[NL80211_BAND_6GHZ];
+		band->band = NL80211_BAND_6GHZ;
+
+		for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+			channels = kmemdup(ath12k_6ghz_channels,
+					   sizeof(ath12k_6ghz_channels),
+					   GFP_KERNEL);
+			chan_6g = kzalloc(sizeof(*chan_6g),
+					  GFP_ATOMIC);
+			if (!channels || !chan_6g) {
+				kfree(ar->mac.sbands[NL80211_BAND_2GHZ].channels);
+				ar->mac.sbands[NL80211_BAND_2GHZ].channels = NULL;
+				ar->mac.sbands[NL80211_BAND_2GHZ].n_channels = 0;
+				kfree(ar->mac.sbands[NL80211_BAND_5GHZ].channels);
+				ar->mac.sbands[NL80211_BAND_5GHZ].channels = NULL;
+				ar->mac.sbands[NL80211_BAND_5GHZ].n_channels = 0;
+				break;
+			}
+
+			chan_6g->channels = channels;
+			chan_6g->n_channels =
+				ARRAY_SIZE(ath12k_6ghz_channels);
+			band->chan_6g[i] = chan_6g;
+		}
+
+		if (i < NL80211_REG_NUM_POWER_MODES) {
+			for (i = i - 1; i >= 0; i--) {
+				chan_6g = band->chan_6g[i];
+				kfree(chan_6g->channels);
+				kfree(chan_6g);
+				band->chan_6g[i] = NULL;
+			}
+			return -ENOMEM;
+		}
+		ar->supports_6ghz = true;
+		band->n_bitrates = ath12k_a_rates_size;
+		band->bitrates = ath12k_a_rates;
+
+		channels = kmemdup(ath12k_6ghz_channels,
+				   sizeof(ath12k_6ghz_channels),
+				   GFP_KERNEL);
+		if (!channels) {
+			struct ieee80211_supported_band *sbands = ar->mac.sbands;
+
+			kfree(sbands[NL80211_BAND_2GHZ].channels);
+			sbands[NL80211_BAND_2GHZ].channels = NULL;
+			sbands[NL80211_BAND_2GHZ].n_channels = 0;
+			kfree(sbands[NL80211_BAND_5GHZ].channels);
+			sbands[NL80211_BAND_5GHZ].channels = NULL;
+			sbands[NL80211_BAND_5GHZ].n_channels = 0;
+			for (i = 0; i < NL80211_REG_NUM_POWER_MODES; i++) {
+				kfree(sbands[NL80211_BAND_6GHZ].chan_6g[i]);
+				sbands[NL80211_BAND_6GHZ].chan_6g[i] = NULL;
+			}
+			return -ENOMEM;
+		}
+
+		band->channels = channels;
+		band->n_channels = ARRAY_SIZE(ath12k_6ghz_channels);
+
+		if (ab->hw_params->single_pdev_only) {
+			phy_id = ath12k_get_phy_id(ar,
+						   WMI_HOST_WLAN_5GHZ_CAP);
+			reg_cap_6g_local = ab->hal_reg_cap[phy_id];
+		} else {
+			reg_cap_6g_local = *reg_cap;
+		}
+
+		if (setup_5ghz) {
+			reg_6g_low = max(reg_cap_6g_local.low_5ghz_chan,
+					 ATH12K_MIN_6GHZ_FREQ);
+		} else {
+			reg_6g_low = max(reg_cap_6g_local.low_5ghz_chan,
+					 ATH12K_MIN_6GHZ_FREQ);
+		}
+		reg_6g_high = reg_cap_6g_local.high_5ghz_chan;
+
+		freq_low = max(reg_6g_low, ab->reg_freq_6g.start_freq);
+		freq_high = min(reg_6g_high, ab->reg_freq_6g.end_freq);
+
+		ath12k_mac_update_ch_list(ar, band, reg_6g_low,
+					  reg_6g_high);
+		ath12k_mac_update_freq_range(ar, freq_low, freq_high);
+
+		ah->use_6ghz_regd = true;
+		ar->num_channels +=
+			ath12k_reg_get_num_chans_in_band(ar, band);
+
+		if (!bands[NL80211_BAND_6GHZ]) {
+			bands[NL80211_BAND_6GHZ] = band;
+		} else {
+			/* Split mac in same band under same wiphy during MLO */
+			ret = ath12k_mac_update_band(ar,
+						     bands[NL80211_BAND_6GHZ],
+						     band);
+			if (ret)
+				return ret;
+			ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L0,
+					 "mac pdev %u identified as 5 GHz split mac during MLO\n",
+					  ar->pdev->pdev_id);
+		}
+	}
+
+	return 0;
+}
+
 static int ath12k_mac_setup_channels_rates(struct ath12k *ar,
 					   u32 supported_bands,
 					   struct ieee80211_supported_band *bands[])
@@ -23995,9 +24287,15 @@ static int ath12k_mac_setup_register(struct ath12k *ar,
 
 	ath12k_pdev_caps_update(ar);
 
-	ret = ath12k_mac_setup_channels_rates(ar,
-					      cap->supported_bands,
-					      bands);
+	if (ath12k_scan_radio_supported(ar->pdev)) {
+		ret = ath12k_mac_setup_channels_rates_multiband(ar,
+								cap->supported_bands,
+								bands);
+	} else {
+		ret = ath12k_mac_setup_channels_rates(ar,
+						      cap->supported_bands,
+						      bands);
+	}
 	if (ret)
 		return ret;
 
