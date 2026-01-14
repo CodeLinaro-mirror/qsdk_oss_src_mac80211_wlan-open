@@ -3565,7 +3565,11 @@ static int nl80211_send_wiphy(struct cfg80211_registered_device *rdev,
 						 capab->eml_capabilities) ||
 				     nla_put_u16(msg,
 						 NL80211_ATTR_MLD_CAPA_AND_OPS,
-						 capab->mld_capa_and_ops)))
+						 capab->mld_capa_and_ops) ||
+				     (capab->ext_mld_capa_and_ops &&
+				      nla_put_u16(msg,
+						  NL80211_ATTR_EXT_MLD_CAPA_AND_OPS,
+						  capab->ext_mld_capa_and_ops))))
 					goto nla_put_failure;
 
 				nla_nest_end(msg, nested_ext_capab);
