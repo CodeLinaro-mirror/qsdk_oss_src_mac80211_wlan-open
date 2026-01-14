@@ -2071,10 +2071,10 @@ static int ath12k_mac_monitor_stop(struct ath12k *ar)
 
 static void ath12k_mac_nrp_delete(struct ath12k *ar)
 {
-	struct ath12k_set_neighbor_rx_params *param = NULL;
+	struct ath12k_set_neighbor_rx_params param = {0};
 	struct ath12k_neighbor_peer *nrp = NULL, *tmp = NULL;
 	struct ath12k_dp *dp = ath12k_ab_to_dp(ar->ab);
-	int ret, nrp_pdev_count = 0, i, overall_status = 0;
+	int ret, nrp_pdev_count = 0, overall_status = 0;
 	struct list_head nrp_local_list;
 
 	INIT_LIST_HEAD(&nrp_local_list);
@@ -2096,50 +2096,30 @@ static void ath12k_mac_nrp_delete(struct ath12k *ar)
 		return;
 	}
 
-	param = kzalloc(sizeof(*param) * nrp_pdev_count, GFP_KERNEL);
-	if (!param) {
-		/* Return entries to the original list */
-		spin_lock_bh(&dp->dp_lock);
-		list_for_each_entry_safe(nrp, tmp, &nrp_local_list, list) {
-			list_del(&nrp->list);
-			list_add_tail(&nrp->list, &dp->neighbor_peers);
-			dp->num_nrps++;
-		}
-		spin_unlock_bh(&dp->dp_lock);
-		ath12k_err(ar->ab,
-			   "failed to allocate memory for nrp delete during vdev stop sequence\n");
-		return;
-	}
-
 	/* Process the local list without holding the lock */
-	i = 0;
 	list_for_each_entry_safe(nrp, tmp, &nrp_local_list, list) {
-		param[i].vdev_id = nrp->vdev_id;
-		ether_addr_copy(param[i].nrp_addr, nrp->addr);
-		i++;
+		memset(&param, 0, sizeof(param));
+		param.vdev_id = nrp->vdev_id;
+		ether_addr_copy(param.nrp_addr, nrp->addr);
+		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
+			   "mac nrp neighbor vdev delete vdev id %d  pdev_id: %d nrp %pM\n",
+			   param.vdev_id, ar->pdev->pdev_id, param.nrp_addr);
+		nrp_pdev_count--;
+		ath12k_debugfs_nrp_clean(ar, param.nrp_addr, nrp_pdev_count);
+		param.action = WMI_FILTER_NRP_ACTION_REMOVE;
+		ret = ath12k_wmi_vdev_set_neighbor_rx_cmd(ar, &param);
+		if (ret) {
+			ath12k_err(ar->ab,
+				   "nrp neighbor vdev delete failed vdev id %d action %d, nrp %pM\n",
+				   param.vdev_id, param.action, param.nrp_addr);
+			overall_status = ret;
+		}
 		list_del(&nrp->list);
 		kfree(nrp);
 	}
 
-	for (i = 0; i < nrp_pdev_count; i++) {
-		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
-			   "mac nrp neighbor vdev delete params[%d] vdev id %d  pdev_id: %d nrp %pM\n",
-			   i, param[i].vdev_id, ar->pdev->pdev_id, param[i].nrp_addr);
-		ath12k_debugfs_nrp_clean(ar, param[i].nrp_addr);
-		param[i].action = WMI_FILTER_NRP_ACTION_REMOVE;
-		ret = ath12k_wmi_vdev_set_neighbor_rx_cmd(ar, &param[i]);
-		if (ret) {
-			ath12k_err(ar->ab,
-				   "nrp neighbor vdev delete failed params vdev id %d action %d, nrp %pM\n",
-				   param[i].vdev_id, param[i].action, param[i].nrp_addr);
-			overall_status = ret;
-		}
-	}
-
 	if (overall_status)
 		ath12k_err(ar->ab, "Some neighbor peer deletions failed during vdev stop\n");
-
-	kfree(param);
 }
 
 int ath12k_mac_vdev_stop(struct ath12k_link_vif *arvif)
