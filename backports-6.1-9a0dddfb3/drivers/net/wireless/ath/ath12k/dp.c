@@ -2583,7 +2583,7 @@ static void
 ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
 				      const struct ath12k_rx_peer_stats *src)
 {
-	int i;
+	int i, j, k;
 
 	if (!dst || !src)
 		return;
@@ -2614,6 +2614,61 @@ ath12k_dp_aggregate_link_rx_mon_stats(struct ath12k_rx_peer_stats *dst,
 	ath12k_dp_aggr_link_rx_rate_stats(&dst->pkt_stats, &src->pkt_stats);
 	/* Aggregate byte rate statistics */
 	ath12k_dp_aggr_link_rx_rate_stats(&dst->byte_stats, &src->byte_stats);
+
+	dst->num_msdu_bytes += src->num_msdu_bytes;
+	dst->num_mpdus += src->num_mpdus;
+	dst->num_ppdus += src->num_ppdus;
+	dst->num_bar += src->num_bar;
+	dst->num_ndpa += src->num_ndpa;
+	dst->num_mpdu_retry_count += src->num_mpdu_retry_count;
+	dst->num_msdu_retry_count += src->num_msdu_retry_count;
+
+	for (i = 0; i < HAL_RX_RECEPTION_TYPE_MAX; i++)
+		dst->ppdu_reception[i] += src->ppdu_reception[i];
+
+	for (i = 0; i < HAL_RX_MAX_NSS; i++)
+		dst->ppdu_nss[i] += src->ppdu_nss[i];
+
+	for (i = 0; i < MAX_MCS; i++)
+		dst->num_mpdu_count[i] += src->num_mpdu_count[i];
+
+	for (i = 0; i < MAX_PUNCTURED_MODE; i++)
+		dst->punc_bw[i] += src->punc_bw[i];
+
+
+	for (i = 0; i < WME_NUM_AC; i++) {
+		dst->wme_ac_type[i].total_pkts += src->wme_ac_type[i].total_pkts;
+		dst->wme_ac_type[i].total_bytes += src->wme_ac_type[i].total_bytes;
+	}
+
+	for (i = 0; i < DOT11_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++)
+			dst->su_ppdu_count[i].mcs_count[j] +=
+				src->su_ppdu_count[i].mcs_count[j];
+	}
+
+	for (i = 0; i < DOT11_MAX; i++) {
+		for (j = 0; j < MAX_MCS; j++)
+			dst->proto_type[i].mcs_count[j] +=
+				src->proto_type[i].mcs_count[j];
+	}
+
+	for (k = 0; k < DOT11_MAX; k++) {
+		for (j = 0; j < TXRX_TYPE_MU_MAX; j++) {
+			for (i = 0; i < HAL_RX_MAX_NSS; i++)
+				dst->rx_mu[k][j].ppdu_nss[i] +=
+					src->rx_mu[k][j].ppdu_nss[i];
+
+			dst->rx_mu[k][j].mpdu_cnt_fcs_ok +=
+				src->rx_mu[k][j].mpdu_cnt_fcs_ok;
+			dst->rx_mu[k][j].mpdu_cnt_fcs_err +=
+				src->rx_mu[k][j].mpdu_cnt_fcs_err;
+
+			for (i = 0; i < MAX_MCS; i++)
+				dst->rx_mu[k][j].ppdu.mcs_count[i] +=
+					src->rx_mu[k][j].ppdu.mcs_count[i];
+		}
+	}
 }
 
 static void ath12k_dp_aggr_peer_stats(struct ath12k_link_vif *arvif,
