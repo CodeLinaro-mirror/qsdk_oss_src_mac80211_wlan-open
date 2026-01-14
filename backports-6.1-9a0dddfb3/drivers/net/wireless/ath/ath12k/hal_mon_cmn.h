@@ -53,6 +53,8 @@
 #define HE_LTF_RADIOTAP_2_X 2
 #define HE_LTF_RADIOTAP_4_X 3
 
+#define MAX_RU_INDEX 0x7
+
 #define ATH12K_LE32_DEC_ENC(value, dec_bits, enc_bits)	\
 		u32_encode_bits(le32_get_bits(value, dec_bits), enc_bits)
 
@@ -113,6 +115,8 @@ struct hal_rx_user_status {
 	u16 he_data4;
 	u16 he_data5;
 	u16 he_data6;
+	u32 eht_user_info;
+	u8  he_RU[8];
 	u8 rs_flags;
 	u8 ldpc;
 	u16 mpdu_cnt_fcs_ok;
@@ -169,7 +173,6 @@ struct hal_rx_mon_ppdu_info {
 	u64 ppdu_ts;
 	u16 num_mpdu_fcs_ok;
 	u16 num_mpdu_fcs_err;
-	u8 preamble_type;
 	u32 mpdu_len;
 	u16 chan_num;
 	u16 freq;
@@ -179,34 +182,40 @@ struct hal_rx_mon_ppdu_info {
 	u16 other_msdu_count;
 	u16 peer_id;
 	u8 rate;
-	u8 mcs;
-	u8 nss;
-	u8 bw;
 	u8 vht_flag_values1;
 	u8 vht_flag_values2;
 	u8 vht_flag_values3[4];
 	u8 vht_flag_values4;
 	u8 vht_flag_values5;
 	u16 vht_flag_values6;
-	u8 is_stbc;
 	u8 gi;
-	u8 sgi;
-	u8 ldpc;
-	u8 beamformed;
 	u8 rssi_comb;
 	u16 tid;
 	u8 fc_valid;
-	u16 ht_flags;
-	u16 vht_flags;
-	u16 he_flags;
-	u16 he_mu_flags;
-	u8 dcm;
+	u32 ht_flags : 1,
+	    vht_flags : 1,
+	    he_flags : 1,
+	    he_mu_flags : 1,
+	    usig_flags : 1,
+	    eht_flags : 1,
+	    mcs : 4,
+	    nss : 3,
+	    bw : 4,
+	    is_stbc : 1,
+	    sgi : 2,
+	    he_re : 1,
+	    ldpc : 1,
+	    beamformed : 1,
+	    dcm : 1,
+	    preamble_type : 4,
+	    reserved : 4;
 	u8 ru_alloc;
 	u8 reception_type;
 	u64 tsft;
 	u64 rx_duration;
 	u8 frame_control;
 	u16 ast_index;
+	u8  rtap_flags;
 	u8 rs_fcs_err;
 	u8 rs_flags;
 	u8 cck_flag;
@@ -228,6 +237,13 @@ struct hal_rx_mon_ppdu_info {
 	u16 he_data6;
 	u32 l_sig_a_info;
 	u32 l_sig_b_info;
+	u32 usig_common;
+	u32 usig_value;
+	u32 usig_mask;
+	u8  ht_mcs;
+	u32 eht_known;
+	u32 eht_data[9];
+	u8  num_eht_user_info_valid;
 	u32 ppdu_len;
 	u16 prev_ppdu_id;
 	u32 device_id;
@@ -337,6 +353,8 @@ enum hal_tx_mon_status {
 	HAL_TX_MON_MACTX_VHT_SIG,
 	HAL_TX_MON_MACTX_L_SIG_A,
 	HAL_TX_MON_MACTX_L_SIG_B,
+	HAL_TX_MON_MACTX_HT_SIG,
+	HAL_TX_MON_MACTX_PHY_DESC,
 	HAL_TX_MON_BUFFER_ADDR,
 	HAL_TX_MON_DATA,
 	HAL_TX_MON_FW2SW,
@@ -362,6 +380,8 @@ struct hal_tx_mon_packet_info {
  * @ppdu_id:  Id of the PLCP protocol data unit
  * @num_users: number of users
  * @cur_usr_idx: Current user index of the PPDU
+ * @su_or_mu: type of transmission used like su, mu, mu_su transmission
+ * @mu_type: mu transmission information
  * @reserved: for future purpose
  * @prot_tlv_status: protection tlv status
  * @packet_info: packet information
@@ -372,7 +392,9 @@ struct hal_tx_mon_ppdu_info {
 	u32 ppdu_id;
 	u8  num_users;
 	u32 cur_usr_idx : 8,
-	    reserved : 24;
+	    su_or_mu :2,
+	    mu_type :1,
+	    reserved : 21;
 	u32 prot_tlv_status;
 	struct hal_tx_mon_packet_info packet_info;
 	struct hal_rx_mon_ppdu_info rx_status;
@@ -439,6 +461,155 @@ struct hal_tx_mon_status_info {
 	u8  dp_tx_pkt_cap_cookie[8];
 };
 
+struct hal_mon_tx_usig_cmn {
+	u32 phy_version : 3,
+	    bw : 3,
+	    ul_dl : 1,
+	    bss_color : 6,
+	    txop : 7,
+	    disregard : 5,
+	    validate_0 : 1,
+	    reserved : 6;
+};
+
+struct hal_mon_tx_usig_tb {
+	u32 ppdu_type_comp_mode : 2,
+	    validate_1 : 1,
+	    spatial_reuse_1 : 4,
+	    spatial_reuse_2 : 4,
+	    disregard_1 : 5,
+	    crc : 4,
+	    tail : 6,
+	    rx_integrity_check_passed : 1;
+};
+
+struct hal_mon_tx_usig_mu {
+	u32 ppdu_type_comp_mode : 2,
+	    validate_1 : 1,
+	    punc_ch_info : 5,
+	    validate_2 : 1,
+	    eht_sig_mcs : 2,
+	    num_eht_sig_sym : 5,
+	    crc : 4,
+	    tail : 6,
+	    rx_integrity_check_passed : 1;
+};
+
+/**
+ * struct hal_mon_tx_usig_hdr: U-SIG header for EHT (and subsequent) frames
+ * @usig_1: USIG common header fields
+ * @usig_2: USIG version dependent fields
+ * @tb: trigger based frame USIG header
+ * @mu: MU frame USIG header
+ */
+struct hal_mon_tx_usig_hdr {
+	struct hal_mon_tx_usig_cmn usig_1;
+	union {
+		struct hal_mon_tx_usig_tb tb;
+		struct hal_mon_tx_usig_mu mu;
+	} usig_2;
+};
+
+struct hal_mon_tx_eht_sig_mu_mimo_user_info {
+	u32 sta_id : 11,
+	    mcs : 4,
+	    coding : 1,
+	    spatial_coding : 6,
+	    crc : 4;
+};
+
+struct hal_mon_tx_eht_sig_non_mu_mimo_user_info {
+	u32 sta_id : 11,
+	    mcs : 4,
+	    validate : 1,
+	    nss : 4,
+	    beamformed : 1,
+	    coding : 1,
+	    crc : 4;
+};
+
+/**
+ * union hal_mon_tx_eht_sig_user_field - User field in EHTSIG
+ * @mu_mimo_usr: MU-MIMO user field information in EHTSIG
+ * @non_mu_mimo_usr: Non MU-MIMO user field information in EHTSIG
+ */
+union hal_mon_tx_eht_sig_user_field {
+	struct hal_mon_tx_eht_sig_mu_mimo_user_info mu_mimo_user;
+	struct hal_mon_tx_eht_sig_non_mu_mimo_user_info non_mu_mimo_user;
+};
+
+/**
+ * struct hal_mon_tx_user_desc_per_user - user desc per user information
+ * @psdu_length: PSDU length of the user in octet
+ * @ru_start_index: RU number to which user is assigned
+ * @ru_size: Size of the RU for that user
+ * @ofdma_mu_mimo_enabled: mu mimo transmission within the RU
+ * @nss: Number of spatial stream occupied by the user
+ * @stream_offset: Stream Offset from which the User occupies the Streams
+ * @mcs: Modulation Coding Scheme for the User
+ * @dcm: Indicates whether dual sub-carrier modulation is applied
+ * @fec_type: Indicates whether it is BCC or LDPC
+ * @user_bf_type: user beamforming type
+ * @drop_user_cbf: frame dropped because of CBF FCS failure
+ * @ldpc_extra_symbol: LDPC encoding process
+ * @force_extra_symbol: force an extra OFDM symbol
+ * @reserved: reserved
+ * @sw_peer_id: user sw peer id
+ * @per_user_subband_mask: Per user sub band mask
+ */
+
+struct hal_mon_tx_user_desc_per_user {
+	u32 psdu_length;
+	u32 ru_start_index         :8,
+	    ru_size                :4,
+	    ofdma_mu_mimo_enabled  :1,
+	    nss                    :3,
+	    stream_offset          :3,
+	    mcs                    :4,
+	    dcm                    :1,
+	    fec_type               :1,
+	    user_bf_type           :2,
+	    drop_user_cbf          :1,
+	    ldpc_extra_symbol      :1,
+	    force_extra_symbol     :1,
+	    reserved               :2;
+	u32 sw_peer_id             :16,
+	    per_user_subband_mask  :16;
+};
+
+/**
+ * struct hal_mon_tx_usr_desc_common - user desc common information
+ * @num_users: Number of users
+ * @ltf_size: LTF size
+ * @pkt_extn_pe: packet extension duration of the trigger-based PPDU
+ * @a_factor: packet extension duration of the trigger-based PPDU
+ * @center_ru_0: Center RU is occupied in the lower 80 MHz band
+ * @center_ru_1: Center RU is occupied in the upper 80 MHz band
+ * @num_ltf_symbols: number of LTF symbols
+ * @doppler_indication: doppler indication
+ * @reserved: reserved
+ * @spatial_reuse: spatial reuse
+ * @gi: guard interval
+ * @ru_channel_0: RU arrangement for band 0
+ * @ru_channel_1: RU arrangement for band 1
+ */
+
+struct hal_mon_tx_usr_desc_common {
+	u32 num_users              :6,
+	    ltf_size               :2,
+	    pkt_extn_pe            :1,
+	    a_factor               :2,
+	    center_ru_0            :1,
+	    center_ru_1            :1,
+	    num_ltf_symbols        :16,
+	    doppler_indication     :1,
+	    reserved               :2;
+	u16 spatial_reuse;
+	u8  gi;
+	u16 ru_channel_0[8];
+	u16 ru_channel_1[8];
+};
+
 enum mon_tx_fw2sw_user_id {
 	HAL_MON_TX_FW2SW_TYPE_FES_SETUP      = 0,
 	HAL_MON_TX_FW2SW_TYPE_FES_SETUP_USER = 1,
@@ -453,6 +624,47 @@ static inline u64 ath12k_hal_le32hilo_to_u64(__le32 hi, __le32 lo)
 
 	return (hi64 << 32) | lo64;
 }
+
+static const u8
+ru_alloc_offset[HAL_MAX_UL_MU_USERS][MAX_RU_INDEX] = {
+	{0, 0, 0, 0, 0, 0, 0},
+	{1, 0, 0, 0, 0, 0, 0},
+	{2, 1, 0, 0, 0, 0, 0},
+	{3, 1, 0, 0, 0, 0, 0},
+	{4, 0, 0, 0, 0, 0, 0},
+	{5, 2, 1, 0, 0, 0, 0},
+	{6, 2, 1, 0, 0, 0, 0},
+	{7, 3, 1, 0, 0, 0, 0},
+	{8, 3, 1, 0, 0, 0, 0},
+	{9, 4, 2, 1, 0, 0, 0},
+	{10, 4, 2, 1, 0, 0, 0},
+	{11, 5, 2, 1, 0, 0, 0},
+	{12, 5, 2, 1, 0, 0, 0},
+	{13, 0, 0, 1, 0, 0, 0},
+	{14, 6, 3, 1, 0, 0, 0},
+	{15, 6, 3, 1, 0, 0, 0},
+	{16, 7, 3, 1, 0, 0, 0},
+	{17, 7, 3, 1, 0, 0, 0},
+	{18, 0, 0, 0, 0, 0, 0},
+	{19, 8, 4, 2, 1, 0, 0},
+	{20, 8, 4, 2, 1, 0, 0},
+	{21, 9, 4, 2, 1, 0, 0},
+	{22, 9, 4, 2, 1, 0, 0},
+	{23, 0, 0, 2, 1, 0, 0},
+	{24, 10, 5, 2, 1, 0, 0},
+	{25, 10, 5, 2, 1, 0, 0},
+	{26, 11, 5, 2, 1, 0, 0},
+	{27, 11, 5, 2, 1, 0, 0},
+	{28, 12, 6, 3, 1, 0, 0},
+	{29, 12, 6, 3, 1, 0, 0},
+	{30, 13, 6, 3, 1, 0, 0},
+	{31, 13, 6, 3, 1, 0, 0},
+	{32, 0, 0, 3, 1, 0, 0},
+	{33, 14, 7, 3, 1, 0, 0},
+	{34, 14, 7, 3, 1, 0, 0},
+	{35, 15, 7, 3, 1, 0, 0},
+	{36, 15, 7, 3, 1, 0, 0},
+};
 
 struct hal_mon_ops {
 	enum hal_tx_mon_status
