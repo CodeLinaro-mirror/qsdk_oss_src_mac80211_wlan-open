@@ -34,4 +34,5 @@ int ath12k_wifi8_sdwf_reinject_handler(struct ath12k_pdev_dp *dp_pdev,
 int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab);
 void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab);
 int ath12k_wifi8_ppeds_tx_completion_handler(struct ath12k_base *ab, int budget);
+int ath12k_wifi8_dp_tx_exception_handler(struct ath12k_dp *dp, int budget);
 #endif

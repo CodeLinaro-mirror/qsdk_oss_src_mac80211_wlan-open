@@ -37,6 +37,14 @@ static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
 	rx_mask = dp->hw_params->ring_mask->rx[grp_id];
 	tx_mask = dp->hw_params->ring_mask->tx[grp_id];
 
+	if (dp->hw_params->ring_mask->tx_exception[grp_id]) {
+		work_done = ath12k_wifi8_dp_tx_exception_handler(dp, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
 	while (tx_mask) {
 		i = fls(tx_mask) - 1;
 		tx_mask ^= 1 << i;
