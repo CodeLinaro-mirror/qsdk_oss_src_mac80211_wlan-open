@@ -2929,6 +2929,33 @@ int ath12k_dp_tx_htt_rx_filter_setup(struct ath12k_base *ab, u32 ring_id,
 
 	ath12k_dp_mon_rx_config_packet_type_subtype(dp, cmd, tlv_filter);
 
+	cmd->info4 = le32_encode_bits(tlv_filter->rx_mon_fpmo_data_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FPMO_DATA_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_fpmo_ctrl_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FPMO_CTRL_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_fpmo_mgmt_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FPMO_MGMT_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_fp_data_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FP_DATA_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_fp_ctrl_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FP_CTRL_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_fp_mgmt_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_FP_MGMT_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_mo_data_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MO_DATA_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_mo_ctrl_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MO_CTRL_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_mo_mgmt_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MO_MGMT_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_md_data_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MD_DATA_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_md_ctrl_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MD_CTRL_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_md_mgmt_hdrlen,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_MD_MGMT_HDRLEN);
+	cmd->info4 |= le32_encode_bits(tlv_filter->rx_mon_enable_hdr_per_ppdu,
+			HTT_RX_RING_SEL_CFG_CMD_INFO4_RXMON_ENABLE_HDR_PER_PPDU);
+
 	ret = ath12k_htc_send(&ab->htc, dp->eid, skb);
 	if (ret)
 		goto err_free;

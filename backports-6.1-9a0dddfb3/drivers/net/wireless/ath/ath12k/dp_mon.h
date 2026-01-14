@@ -928,6 +928,19 @@ ath12k_dp_mon_rx_config_packet_type_subtype(struct ath12k_dp *dp, void *ptr,
 }
 
 static inline void
+ath12k_dp_mon_rx_config_packet_type_hdr_len(struct ath12k_dp *dp, void *ptr,
+					    struct htt_rx_ring_tlv_filter *tlv_filter)
+{
+	const struct ath12k_dp_arch_mon_ops *mon_ops;
+
+	if (unlikely(!dp || !dp->dp_mon))
+		return;
+
+	mon_ops = ath12k_dp_mon_ops_get(dp);
+
+}
+
+static inline void
 ath12k_dp_mon_pktlog_config(struct ath12k *ar, bool enable,
 			    enum ath12k_pktlog_mode mode,
 			    u32 filter)

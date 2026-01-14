@@ -364,6 +364,33 @@ void ath12k_dp_mon_rx_prepare_filter(struct ath12k_dp *dp,
 		dst_tlv_filter->md_packet_data_filter |=
 					src_tlv_filter->md_packet_data_filter;
 
+		dst_tlv_filter->rx_mon_fpmo_data_hdrlen |=
+					src_tlv_filter->rx_mon_fpmo_data_hdrlen;
+		dst_tlv_filter->rx_mon_fpmo_ctrl_hdrlen |=
+					src_tlv_filter->rx_mon_fpmo_ctrl_hdrlen;
+		dst_tlv_filter->rx_mon_fpmo_mgmt_hdrlen |=
+					src_tlv_filter->rx_mon_fpmo_mgmt_hdrlen;
+		dst_tlv_filter->rx_mon_fp_data_hdrlen |=
+					src_tlv_filter->rx_mon_fp_data_hdrlen;
+		dst_tlv_filter->rx_mon_fp_ctrl_hdrlen |=
+					src_tlv_filter->rx_mon_fp_ctrl_hdrlen;
+		dst_tlv_filter->rx_mon_fp_mgmt_hdrlen |=
+					src_tlv_filter->rx_mon_fp_mgmt_hdrlen;
+		dst_tlv_filter->rx_mon_mo_data_hdrlen |=
+					src_tlv_filter->rx_mon_mo_data_hdrlen;
+		dst_tlv_filter->rx_mon_mo_ctrl_hdrlen |=
+					src_tlv_filter->rx_mon_mo_ctrl_hdrlen;
+		dst_tlv_filter->rx_mon_mo_mgmt_hdrlen |=
+					src_tlv_filter->rx_mon_mo_mgmt_hdrlen;
+		dst_tlv_filter->rx_mon_md_data_hdrlen |=
+					src_tlv_filter->rx_mon_md_data_hdrlen;
+		dst_tlv_filter->rx_mon_md_ctrl_hdrlen |=
+					src_tlv_filter->rx_mon_md_ctrl_hdrlen;
+		dst_tlv_filter->rx_mon_md_mgmt_hdrlen |=
+					src_tlv_filter->rx_mon_md_mgmt_hdrlen;
+		dst_tlv_filter->rx_mon_enable_hdr_per_ppdu |=
+					src_tlv_filter->rx_mon_enable_hdr_per_ppdu;
+
 		ath12k_dbg(ab, ATH12K_DBG_DATA, "Updated Rx filters for mode: %d", mode);
 		ath12k_dp_mon_rx_display_filters(dp, mode, rx_mon_filter);
 	}
@@ -490,6 +517,13 @@ ath12k_dp_mon_rx_setup_mon_mode_filter(struct ath12k_dp *dp,
 		ath12k_hal_mon_rx_msdu_end_wmask(dp->hal);
 	tlv_filter->rx_mon_ppdu_end_usr_stats_wmask =
 		ath12k_hal_mon_rx_ppdu_end_usr_stats_wmask(dp->hal);
+
+	tlv_filter->rx_mon_fp_data_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fp_ctrl_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_fp_mgmt_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_mo_data_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_mo_ctrl_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
+	tlv_filter->rx_mon_mo_mgmt_hdrlen = HTT_RX_HDR_LEN_64_BYTES;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_rx_setup_mon_mode_filter);
 
