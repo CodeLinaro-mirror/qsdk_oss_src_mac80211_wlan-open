@@ -28,6 +28,8 @@ struct hal_rx_wbm_rel_info {
 };
 
 #define VHT_SIG_SU_NSS_MASK 0x7
+#define VHT_SIG_SU_PARTIAL_AID_MASK 0x1FF
+#define HE_MU_NUM_USER_MASK 0xFFFE
 
 #define HAL_RX_MPDU_INFO_PN_GET_BYTE1(__val) \
 	le32_get_bits((__val), GENMASK(7, 0))
@@ -118,6 +120,7 @@ struct hal_rx_msdu_list {
 
 /* HE radiotap data4 shift values */
 #define HE_STA_ID_SHIFT 4
+#define HE_SIG_A_PUNC_BW_SHIFT 8
 
 /* HE radiotap data5 */
 #define HE_GI_SHIFT 4
@@ -199,6 +202,33 @@ enum hal_mon_reception_type {
 	HAL_RECEPTION_TYPE_UL_MU_OFDMA,
 	HAL_RECEPTION_TYPE_UL_MU_OFDMA_MIMO,
 };
+
+/* Rate Table */
+#define HAL_11B_RATE_0MCS (11 * 2)
+#define HAL_11B_RATE_1MCS (5.5 * 2)
+#define HAL_11B_RATE_2MCS (2 * 2)
+#define HAL_11B_RATE_3MCS (1 * 2)
+#define HAL_11B_RATE_4MCS HAL_11B_RATE_0MCS
+#define HAL_11B_RATE_5MCS HAL_11B_RATE_1MCS
+#define HAL_11B_RATE_6MCS HAL_11B_RATE_2MCS
+
+#define HAL_11A_RATE_0MCS (48 * 2)
+#define HAL_11A_RATE_1MCS (24 * 2)
+#define HAL_11A_RATE_2MCS (12 * 2)
+#define HAL_11A_RATE_3MCS (6 * 2)
+#define HAL_11A_RATE_4MCS (54 * 2)
+#define HAL_11A_RATE_5MCS (36 * 2)
+#define HAL_11A_RATE_6MCS (18 * 2)
+#define HAL_11A_RATE_7MCS (9 * 2)
+
+#define HAL_LEGACY_MCS0 0
+#define HAL_LEGACY_MCS1 1
+#define HAL_LEGACY_MCS2 2
+#define HAL_LEGACY_MCS3 3
+#define HAL_LEGACY_MCS4 4
+#define HAL_LEGACY_MCS5 5
+#define HAL_LEGACY_MCS6 6
+#define HAL_LEGACY_MCS7 7
 
 /* Different allowed RU in 11BE */
 #define HAL_EHT_RU_26		0ULL
