@@ -289,8 +289,15 @@ int ath12k_dp_me_tx_ucast_peer(struct ath12k_dp *dp, struct ath12k_dp_vif *dp_vi
  */
 int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 {
+	int (*action_fn)(struct ath12k_dp *dp,
+			 struct ath12k_dp_vif *dp_vif,
+			 struct ath12k_dp_link_vif *dp_link_vif,
+			 struct ath12k_dp_peer *dp_peer, void *app_data);
 	struct ath12k_me_ctx ctx = {0};
+	union nf_inet_addr addr = {0};
 	int ret = 0;
+	int action;
+	bool is_v6;
 
 	if (!dp_vif->me_db)
 		return -ENOENT;
@@ -301,8 +308,23 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 	if (ath12k_dp_me_check(dp_vif, &ctx) < 0)
 		return -EINVAL;
 
+	is_v6 = __skb_get_inet_daddr(skb, &addr);
+
+	action = ath12k_me_hmmc_lookup(dp_vif->me_db, (__be32 *)&addr, is_v6);
+	switch (action) {
+	case ATH12K_ME_HMMC_ACTION:
+		action_fn = ath12k_dp_me_tx_ucast_peer;
+		break;
+
+	case ATH12K_ME_DENYLIST_ACTION:
+		return -EINVAL;
+
+	default:
+		break;
+	}
+
 	/*
-	 * Perform MCUC across all the peers here.
+	 * Iterate across all the dp link vifs.
 	 */
 	rcu_read_lock_bh();
 	for (u8 link_id = 0; link_id < ATH12K_NUM_MAX_LINKS; link_id++) {
@@ -332,7 +354,7 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 		 * Perform MCUC across all the relevant peers.
 		 */
 		ret = ath12k_dp_peer_walk_action(dp, dp_vif, dp_link_vif,
-						 ath12k_dp_me_tx_ucast_peer, &ctx);
+						 action_fn, &ctx);
 		if (ret) {
 			/* TODO:
 			 * Can Increment the peer specific stats here.
@@ -344,7 +366,7 @@ int ath12k_dp_me_tx(struct ath12k_dp_vif *dp_vif, struct sk_buff *skb)
 	/*
 	 * Unconditionally, free the original SKB since the UCAST FN have already
 	 * taken the references. This will ensure that intermediate send failures
-	 * doesn't leak the SKB
+	 * doesn't leak the SKB.
 	 */
 	dev_kfree_skb_any(skb);
 

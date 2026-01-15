@@ -11,6 +11,7 @@
 #include <linux/bitfield.h>
 #include "core.h"
 #include "dp_peer.h"
+#include "me_hmmc.h"
 
 #define ATH12K_ME_FLAGS_BIT_UNUSED1 BIT(0) /* Available for future use */
 #define ATH12K_ME_FLAGS_BIT_UNUSED2 BIT(1) /* Available for future use */
@@ -21,6 +22,10 @@
 #define ATH12K_ME_FLAGS_BIT_ME6 BIT(6) /* ME6 offload enable */
 
 #define ATH12K_ME_OFFLOAD_MASK (ATH12K_ME_FLAGS_BIT_ME5 | ATH12K_ME_FLAGS_BIT_ME6)
+
+/* Return values for lookup operations */
+#define ATH12K_ME_HMMC_ACTION (ATH12K_ME_FLAGS_BIT_ME6 | ATH12K_ME_FLAGS_BIT_ME5)
+#define ATH12K_ME_DENYLIST_ACTION ATH12K_ME_FLAGS_BIT_BYPASS
 
 struct ath12k_dp_vif;
 struct ath12k_dp_link_vif;
@@ -37,8 +42,10 @@ struct ath12k_me_ctx {
  * ATH12K Multicast database
  */
 struct ath12k_me_db {
-	u32 me_flags;		/* ME Flags  */
-	u16 grp_limit;		/* Soft limit for number of groups */
+	struct ath12k_me_hmmc_list hmmc_db;	/* HMMC DB */
+	u32 me_flags;				/* ME Flags  */
+	u16 grp_limit;				/* Soft limit for number of groups */
+	spinlock_t lock;			/* Spin lock for ME DB protection */
 };
 
 /**
