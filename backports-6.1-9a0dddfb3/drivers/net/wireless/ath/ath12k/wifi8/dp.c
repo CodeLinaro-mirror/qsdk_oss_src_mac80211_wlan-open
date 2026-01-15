@@ -56,30 +56,18 @@ static int ath12k_wifi8_dp_service_srng(struct ath12k_dp *dp,
 			goto done;
 	}
 
-	if (dp->hw_params->ring_mask->rx_err[grp_id]) {
-		work_done = ath12k_wifi8_dp_rx_process_err(dp, napi, budget);
-		budget -= work_done;
-		tot_work_done += work_done;
-		if (budget <= 0)
-			goto done;
-	}
-
-	if (dp->hw_params->ring_mask->rx_wbm_rel[grp_id]) {
-		work_done =
-			ath12k_wifi8_dp_rx_process_reo_err(dp,
-							   HAL_REO_DEST_REL_ERR_RING_NUM,
-							   napi, budget);
-		budget -= work_done;
-		tot_work_done += work_done;
-
-		if (budget <= 0)
-			goto done;
-	}
-
 	while (rx_mask) {
 		i = fls(rx_mask) - 1;
 		rx_mask ^= 1 << i;
 		work_done = ath12k_wifi8_dp_rx_process(dp, i, napi, budget);
+		budget -= work_done;
+		tot_work_done += work_done;
+		if (budget <= 0)
+			goto done;
+	}
+
+	if (dp->hw_params->ring_mask->rx_err[grp_id]) {
+		work_done = ath12k_wifi8_dp_rx_process_err(dp, napi, budget);
 		budget -= work_done;
 		tot_work_done += work_done;
 		if (budget <= 0)

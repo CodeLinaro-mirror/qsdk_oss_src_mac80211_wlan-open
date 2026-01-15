@@ -2339,21 +2339,13 @@ ath12k_wifi8_dp_process_rx_err_buf(struct ath12k_pdev_dp *dp_pdev,
 	u16 msdu_len;
 	u32 hal_rx_desc_sz = ab->hal.hal_desc_sz;
 	struct ath12k_rx_desc_info *desc_info;
-	u64 desc_va;
 
-	desc_va = ((u64)le32_get_bits(desc->buf_addr_info.info1,
-				      BUFFER_ADDR_INFO1_ADDR) << 32 |
-		   le32_to_cpu(desc->buf_addr_info.info0));
-	desc_info = (struct ath12k_rx_desc_info *)((unsigned long)desc_va);
-
-	/* retry manual desc retrieval */
+	/* Always use cookie to get rx desc reo desc contains link desc cookie */
+	desc_info = ath12k_dp_get_rx_desc(dp, cookie);
 	if (!desc_info) {
-		desc_info = ath12k_dp_get_rx_desc(dp, cookie);
-		if (!desc_info) {
-			ath12k_warn(ab, "Invalid cookie in DP rx error descriptor retrieval: 0x%x\n",
-				    cookie);
-			return -EINVAL;
-		}
+		ath12k_warn(ab, "Invalid cookie in DP rx error descriptor retrieval: 0x%x\n",
+			    cookie);
+		return -EINVAL;
 	}
 
 	if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC)
@@ -2434,183 +2426,96 @@ exit:
 	return 0;
 }
 
-static int ath12k_wifi8_handle_msdu_buftype(struct ath12k_dp *dp,
-					    struct hal_reo_dest_ring *reo_desc,
-					    struct list_head *rx_desc_used_list)
-{
-	struct ath12k_rx_desc_info *desc_info;
-	struct sk_buff *msdu;
-	const void *end;
-	u64 desc_va;
-
-	desc_va = ((u64)le32_get_bits(reo_desc->buf_addr_info.info1,
-				      BUFFER_ADDR_INFO1_ADDR) << 32 |
-		   le32_to_cpu(reo_desc->buf_addr_info.info0));
-	desc_info = (struct ath12k_rx_desc_info *)((unsigned long)desc_va);
-
-	if (!desc_info) {
-		ath12k_warn(dp, " rx exception, hw cookie conversion failed");
-		u32 cookie = le32_get_bits(reo_desc->buf_addr_info.info1,
-					   BUFFER_ADDR_INFO1_SW_COOKIE);
-		desc_info = ath12k_dp_get_rx_desc(dp, cookie);
-		if (!desc_info) {
-			ath12k_warn(dp->ab, "Unable to retrieve rx_desc for va 0x%lx",
-				    (unsigned long)desc_va);
-			return -EINVAL;
-		}
-	}
-
-	if (desc_info->magic != ATH12K_DP_RX_DESC_MAGIC) {
-		ath12k_warn(dp, " rx exception, magic check failed");
-		return -EINVAL;
-	}
-
-	msdu = desc_info->skb;
-	desc_info->skb = NULL;
-
-	list_add_tail(&desc_info->list, rx_desc_used_list);
-
-	end = desc_info->vaddr + DP_RX_BUFFER_SIZE;
-	ath12k_core_dmac_inv_range(desc_info->vaddr, end);
-	dev_kfree_skb_any(msdu);
-
-	return 0;
-}
-
-int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp, struct napi_struct *napi,
-				   int budget)
+static int ath12k_wifi8_dp_h_link_desc(struct ath12k_dp *dp,
+				       struct hal_reo_dest_ring *reo_desc,
+				       struct list_head *rx_desc_used_list)
 {
 	struct ath12k_base *ab = dp->ab;
 	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
-	struct list_head rx_desc_used_list;
 	u32 msdu_cookies[HAL_NUM_RX_MSDUS_PER_LINK_DESC];
 	int num_buffs_reaped = 0;
 	struct dp_link_desc_bank *link_desc_banks;
 	enum hal_wifi8_rx_buf_return_buf_manager rbm;
 	struct hal_rx_msdu_link *link_desc_va;
-	int  quota, ret, i;
-	struct hal_reo_dest_ring *reo_desc;
-	struct dp_rxdma_ring *rx_ring;
-	struct dp_srng *reo_except;
+	int i;
 	u8 hw_link_id;
 	u32 desc_bank, num_msdus;
-	struct hal_srng *srng;
 	struct ath12k_pdev_dp *dp_pdev;
 	dma_addr_t paddr;
 	bool is_frag, drop = false;
 	struct list_head *used_list;
 	enum hal_wbm_rel_bm_act act;
+	u32 cookie;
 
-	quota = budget;
+	//TODO add stats for link descriptors
+	dp->device_stats.err_ring_pkts++;
 
-	INIT_LIST_HEAD(&rx_desc_used_list);
+	hw_link_id = le32_get_bits(reo_desc->rx_mpdu_ext_info.info0,
+				   HAL_RX_MPDU_EXT_DESC_INFO_INFO0_SRC_LINK_ID);
 
-	reo_except = &dp->reo_except_ring;
+	ath12k_wifi8_hal_rx_reo_ent_paddr_get(ab, &reo_desc->buf_addr_info,
+					      &paddr, &cookie);
+	desc_bank = u32_get_bits(cookie, DP_LINK_DESC_BANK_MASK);
 
-	srng = &ab->hal.srng_list[reo_except->ring_id];
-
-	spin_lock_bh(&srng->lock);
-
-	ath12k_hal_srng_access_begin(ab, srng);
-
-	while (budget &&
-	       (reo_desc = ath12k_hal_srng_dst_get_next_entry(ab, srng))) {
-		drop = false;
-		dp->device_stats.err_ring_pkts++;
-
-		hw_link_id = le32_get_bits(reo_desc->rx_mpdu_ext_info.info0,
-					   HAL_RX_MPDU_EXT_DESC_INFO_INFO0_SRC_LINK_ID);
-		ret = ath12k_wifi8_hal_desc_reo_parse_err(dp, reo_desc, &paddr,
-							  &desc_bank);
-		if (ret) {
-			ath12k_warn(ab, "failed to parse error reo desc %d\n",
-				    ret);
-			if (ret == -EOPNOTSUPP) {
-				used_list = &rx_desc_used_list;
-				if (!ath12k_wifi8_handle_msdu_buftype(dp,
-								      reo_desc,
-								      used_list))
-					num_buffs_reaped++;
-			}
-			continue;
-		}
-		link_desc_banks = dp->link_desc_banks;
-		link_desc_va = link_desc_banks[desc_bank].vaddr +
-			       (paddr - link_desc_banks[desc_bank].paddr);
-		ath12k_wifi8_hal_rx_msdu_link_info_get(link_desc_va, &num_msdus,
-						       msdu_cookies, &rbm);
-		if (rbm != dp->idle_link_rbm &&
-		    rbm != dp->hal->hal_params->rx_buf_rbm) {
-			act = HAL_WBM_REL_BM_ACT_REL_MSDU;
-			dp->device_stats.invalid_rbm++;
-			ath12k_warn(ab, "invalid return buffer manager %d\n", rbm);
-			ath12k_wifi8_dp_rx_link_desc_return(dp,
-							    &reo_desc->buf_addr_info,
-							    act);
-			continue;
-		}
-
-		is_frag = !!(le32_to_cpu(reo_desc->rx_mpdu_info.info0) &
-			     HAL_RX_MPDU_DESC_INFO_INFO0_FRAGMENT_FLAG);
-
-		/* Process only rx fragments with one msdu per link desc below, and drop
-		 * msdu's indicated due to error reasons.
-		 * Dynamic fragmentation not supported in Multi-link client, so drop the
-		 * partner device buffers.
-		 */
-		if (!is_frag || num_msdus > 1) {
-			drop = true;
-			act = HAL_WBM_REL_BM_ACT_PUT_IN_IDLE;
-
-			/* Return the link desc back to wbm idle list */
-			ath12k_wifi8_dp_rx_link_desc_return(dp,
-							    &reo_desc->buf_addr_info,
-							    act);
-		}
-
-		rcu_read_lock();
-
-		dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp_hw_grp, hw_link_id);
-		if (unlikely(!dp_pdev)) {
-			rcu_read_unlock();
-			continue;
-		}
-
-		if (drop)
-			dp_pdev->wmm_stats.total_wmm_rx_drop[dp_pdev->wmm_stats.rx_type]++;
-
-		for (i = 0; i < num_msdus; i++) {
-			used_list = &rx_desc_used_list;
-
-			if (!ath12k_wifi8_dp_process_rx_err_buf(dp_pdev, reo_desc,
-								used_list,
-								drop,
-								msdu_cookies[i])) {
-				num_buffs_reaped++;
-			}
-		}
-
-		rcu_read_unlock();
-
-		if (num_buffs_reaped >= quota) {
-			num_buffs_reaped = quota;
-			goto exit;
-		}
-
-		budget = quota - num_buffs_reaped;
+	link_desc_banks = dp->link_desc_banks;
+	link_desc_va = link_desc_banks[desc_bank].vaddr +
+		       (paddr - link_desc_banks[desc_bank].paddr);
+	ath12k_wifi8_hal_rx_msdu_link_info_get(link_desc_va, &num_msdus,
+					       msdu_cookies, &rbm);
+	if (rbm != dp->idle_link_rbm &&
+	    rbm != dp->hal->hal_params->rx_buf_rbm) {
+		act = HAL_WBM_REL_BM_ACT_REL_MSDU;
+		dp->device_stats.invalid_rbm++;
+		ath12k_warn(ab, "invalid return buffer manager %d\n", rbm);
+		ath12k_wifi8_dp_rx_link_desc_return(dp,
+						    &reo_desc->buf_addr_info,
+						    act);
+		goto exit;
 	}
+
+	is_frag = !!(le32_to_cpu(reo_desc->rx_mpdu_info.info0) &
+		     HAL_RX_MPDU_DESC_INFO_INFO0_FRAGMENT_FLAG);
+
+	/* Process only rx fragments with one msdu per link desc below, and drop
+	 * msdu's indicated due to error reasons.
+	 * Dynamic fragmentation not supported in Multi-link client, so drop the
+	 * partner device buffers.
+	 */
+	if (!is_frag || num_msdus > 1) {
+		drop = true;
+		act = HAL_WBM_REL_BM_ACT_PUT_IN_IDLE;
+
+		/* Return the link desc back to wbm idle list */
+		ath12k_wifi8_dp_rx_link_desc_return(dp,
+						    &reo_desc->buf_addr_info,
+						    act);
+	}
+
+	rcu_read_lock();
+
+	dp_pdev = ath12k_dp_hw_grp_to_dp_pdev(dp_hw_grp, hw_link_id);
+	if (unlikely(!dp_pdev)) {
+		rcu_read_unlock();
+		goto exit;
+	}
+
+	if (drop)
+		dp_pdev->wmm_stats.total_wmm_rx_drop[dp_pdev->wmm_stats.rx_type]++;
+
+	for (i = 0; i < num_msdus; i++) {
+		used_list = rx_desc_used_list;
+
+		if (!ath12k_wifi8_dp_process_rx_err_buf(dp_pdev, reo_desc,
+							used_list,
+							drop,
+							msdu_cookies[i])) {
+			num_buffs_reaped++;
+		}
+	}
+
+	rcu_read_unlock();
 
 exit:
-	ath12k_hal_srng_access_end(ab, srng);
-
-	spin_unlock_bh(&srng->lock);
-
-	if (num_buffs_reaped) {
-		rx_ring = &dp->rx_refill_buf_ring;
-		ath12k_dp_rx_bufs_replenish(dp, rx_ring,
-					    &rx_desc_used_list);
-	}
-
 	return num_buffs_reaped;
 }
 
@@ -3237,8 +3142,8 @@ static void ath12k_wifi8_dp_rx_reo_dest_err(struct ath12k_pdev_dp *dp_pdev,
 				  rx_desc_data.tid);
 }
 
-int ath12k_wifi8_dp_rx_process_reo_err(struct ath12k_dp *dp, int ring_id,
-				       struct napi_struct *napi, int budget)
+int ath12k_wifi8_dp_rx_process_err(struct ath12k_dp *dp,
+				   struct napi_struct *napi, int budget)
 {
 	struct list_head rx_desc_used_list;
 	struct ath12k *ar;
@@ -3260,13 +3165,14 @@ int ath12k_wifi8_dp_rx_process_reo_err(struct ath12k_dp *dp, int ring_id,
 	struct hal_rx_desc *msdu_data;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_peer *link_peer;
+	u32 count;
 
 	__skb_queue_head_init(&msdu_list);
 	__skb_queue_head_init(&scatter_msdu_list);
 
 	INIT_LIST_HEAD(&rx_desc_used_list);
 
-	srng = &ab->hal.srng_list[dp->reo_dst_ring[ring_id].ring_id];
+	srng = &ab->hal.srng_list[dp->reo_except_ring.ring_id];
 	spin_lock_bh(&srng->lock);
 
 	ath12k_hal_srng_access_begin(ab, srng);
@@ -3283,6 +3189,13 @@ int ath12k_wifi8_dp_rx_process_reo_err(struct ath12k_dp *dp, int ring_id,
 			ath12k_warn(ab,
 				    "failed to parse rx error in wbm_rel ring desc %d\n",
 				    ret);
+			continue;
+		}
+
+		if (err_info.buffer_type == HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
+			count = ath12k_wifi8_dp_h_link_desc(dp, rx_desc,
+							    &rx_desc_used_list);
+			num_buffs_reaped += count;
 			continue;
 		}
 

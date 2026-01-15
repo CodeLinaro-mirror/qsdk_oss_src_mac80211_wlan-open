@@ -353,47 +353,6 @@ ath12k_wifi8_hal_rx_msdu_link_info_get(struct hal_rx_msdu_link *link,
 	}
 }
 
-int ath12k_wifi8_hal_desc_reo_parse_err(struct ath12k_dp *dp,
-					struct hal_reo_dest_ring *desc,
-					dma_addr_t *paddr, u32 *desc_bank)
-{
-	struct ath12k_base *ab = dp->ab;
-	enum hal_reo_dest_ring_push_reason push_reason;
-	enum hal_reo_dest_ring_error_code err_code;
-	struct hal_rx_mpdu_ext_desc_info *rx_mpdu_ext_info =
-						&desc->rx_mpdu_ext_info;
-	u32 cookie, val;
-
-	push_reason = le32_get_bits(rx_mpdu_ext_info->info0,
-				    HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_PUSH_REASON);
-	err_code = le32_get_bits(rx_mpdu_ext_info->info0,
-				 HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_ERROR_CODE);
-
-	dp->device_stats.wbm_err.reo_error[err_code]++;
-
-	if (push_reason != HAL_REO_DEST_RING_PUSH_REASON_ERR_DETECTED &&
-	    push_reason != HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION) {
-		ath12k_warn(ab, "expected error push reason code, received %d\n",
-			    push_reason);
-		return -EINVAL;
-	}
-
-	val = le32_get_bits(rx_mpdu_ext_info->info0,
-			    HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_DEST_BUFFER_TYPE);
-	if (val == HAL_REO_DEST_RING_BUFFER_TYPE_MSDU) {
-		return -EOPNOTSUPP;
-	} else if (val != HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
-		ath12k_warn(ab, "expected buffer type link_desc, val %d", val);
-		return -EINVAL;
-	}
-
-	ath12k_wifi8_hal_rx_reo_ent_paddr_get(ab, &desc->buf_addr_info, paddr,
-					      &cookie);
-	*desc_bank = u32_get_bits(cookie, DP_LINK_DESC_BANK_MASK);
-
-	return 0;
-}
-
 int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 				       struct hal_rx_reo_dest_rel_info *rel_info)
 {
@@ -401,83 +360,51 @@ int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 	struct hal_reo_dest_ring *reo_desc = desc;
 	struct hal_rx_mpdu_ext_desc_info *mpdu_desc_ext_info =
 		(struct hal_rx_mpdu_ext_desc_info *)&reo_desc->rx_mpdu_ext_info;
-	enum hal_reo_dest_rel_desc_type type;
 	enum hal_reo_dest_rel_src_module rel_src;
 	bool hw_cc_done;
 	u64 desc_va;
 	u32 val;
-	int rxdma_push_reason, rxdma_error_code, reo_push_reason, reo_error_code;
-
-	type = le32_get_bits(mpdu_desc_ext_info->info0,
-			     HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_DEST_BUFFER_TYPE);
-	/* TODO: We expect only WBM_REL buffer type */
-	if (type != REO_DEST_BUFFER_TYPE_MSDU) {
-		WARN_ON(1);
-		return -EINVAL;
-	}
+	bool is_frag = false;
+	u8 rxdma_push_reason, rxdma_error_code, reo_push_reason, reo_error_code;
 
 	rel_src = le32_get_bits(mpdu_desc_ext_info->info0,
 				HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RELEASE_SOURCE_MODULE);
-	if (rel_src != HAL_REO_REL_SRC_MODULE_RXDMA &&
-	    rel_src != HAL_REO_REL_SRC_MODULE_REO) {
-		rxdma_push_reason =
-			le32_get_bits(mpdu_desc_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_PUSH_REASON);
-		rxdma_error_code =
-			le32_get_bits(mpdu_desc_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_ERROR_CODE);
-		reo_push_reason =
-			le32_get_bits(mpdu_desc_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_PUSH_REASON);
-		reo_error_code =
-			le32_get_bits(mpdu_desc_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_ERROR_CODE);
 
+	reo_push_reason =
+		le32_get_bits(mpdu_desc_ext_info->info0,
+			      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_PUSH_REASON);
+	reo_error_code =
+		le32_get_bits(mpdu_desc_ext_info->info0,
+			      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_ERROR_CODE);
+	rxdma_push_reason =
+		le32_get_bits(mpdu_desc_ext_info->info0,
+			      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_PUSH_REASON);
+	rxdma_error_code =
+		le32_get_bits(mpdu_desc_ext_info->info0,
+			      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_ERROR_CODE);
+
+	if (rel_src != HAL_REO_REL_SRC_MODULE_REO) {
 		ath12k_warn(ab, "Invalid src rxmda(%d %d) reo(%d %d)",
 			    rxdma_push_reason, rxdma_error_code,
-			    rxdma_error_code, reo_push_reason);
+			    reo_push_reason, reo_error_code);
 		return -EINVAL;
 	}
 
-	/* The format of REO DEST ring desc changes based on the
-	 * hw cookie conversion status
-	 */
-	hw_cc_done =
-		le32_get_bits(reo_desc->info0,
-			      HAL_REO_DESTINATION_RING_INFO0_COOKIE_CONVERSION_STATUS);
+	rel_info->buffer_type = le32_get_bits(mpdu_desc_ext_info->info0,
+			     HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_DEST_BUFFER_TYPE);
 
-	if (!hw_cc_done) {
-		val = le32_get_bits(reo_desc->buf_addr_info.info1,
-				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
-		if (val != HAL_RX_BUF_RBM_SW0_BM) {
-			dp->device_stats.invalid_rbm++;
-			return -EINVAL;
-		}
-
-		rel_info->cookie = le32_get_bits(reo_desc->buf_addr_info.info1,
-						 BUFFER_ADDR_INFO1_SW_COOKIE);
-
-		rel_info->rx_desc = NULL;
-	} else {
-		val = le32_get_bits(reo_desc->info0,
-				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
-		if (val != HAL_RX_BUF_RBM_SW0_BM) {
-			dp->device_stats.invalid_rbm++;
-			return -EINVAL;
-		}
-
-		rel_info->cookie =
-			le32_get_bits(reo_desc->info0,
-				      HAL_REO_DESTINATION_RING_INFO0_SW_BUFFER_COOKIE);
-
-		desc_va = ((u64)le32_to_cpu(reo_desc->buf_addr_info.info0) << 32 |
-			   le32_to_cpu(reo_desc->buf_addr_info.info1));
-		rel_info->rx_desc =
-			(struct ath12k_rx_desc_info *)((unsigned long)desc_va);
+	if (rel_info->buffer_type == HAL_REO_DEST_RING_BUFFER_TYPE_LINK_DESC) {
+		is_frag = !!(le32_to_cpu(reo_desc->rx_mpdu_info.info0) &
+			     HAL_RX_MPDU_DESC_INFO_INFO0_FRAGMENT_FLAG);
+		if (!is_frag)
+			ath12k_warn(ab, "Invalid link desc release for non fragment rxmda(%d %d) reo(%d %d)",
+				    rxdma_push_reason,
+				    rxdma_error_code,
+				    reo_push_reason,
+				    reo_error_code);
+		WARN_ON(1);
+		return 0;
 	}
-
-	rel_info->err_rel_src = rel_src;
-	rel_info->hw_cc_done = hw_cc_done;
 
 	rel_info->first_msdu =
 		le32_get_bits(reo_desc->info0,
@@ -489,21 +416,50 @@ int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 		le32_get_bits(reo_desc->info0,
 			      HAL_RX_MSDU_DESC_INFO_INFO0_MSDU_CONTINUATION);
 
-	if (rel_info->err_rel_src == HAL_REO_REL_SRC_MODULE_REO) {
-		rel_info->push_reason =
-			le32_get_bits(mpdu_desc_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_PUSH_REASON);
-		rel_info->err_code =
-			le32_get_bits(mpdu_desc_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_REO_ERROR_CODE);
+	if (rxdma_push_reason != HAL_REO_DEST_RING_PUSH_REASON_ROUTING_INSTRUCTION) {
+		rel_info->err_code = rxdma_error_code;
+		rel_info->push_reason = rxdma_push_reason;
+		rel_src = HAL_REO_REL_SRC_MODULE_RXDMA;
 	} else {
-		rel_info->push_reason =
-			le32_get_bits(mpdu_desc_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_PUSH_REASON);
-		rel_info->err_code =
-			le32_get_bits(mpdu_desc_ext_info->info0,
-				      HAL_RX_MPDU_EXT_DESC_INFO_INFO0_RXDMA_ERROR_CODE);
+		rel_info->err_code = reo_error_code;
+		rel_info->push_reason = reo_push_reason;
 	}
+
+	/* The format of REO DEST ring desc changes based on the
+	 * hw cookie conversion status
+	 */
+	hw_cc_done =
+		le32_get_bits(reo_desc->info0,
+			      HAL_REO_DESTINATION_RING_INFO0_COOKIE_CONVERSION_STATUS);
+
+	if (hw_cc_done) {
+		val = le32_get_bits(reo_desc->info0,
+				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
+		rel_info->cookie =
+			le32_get_bits(reo_desc->info0,
+				      HAL_REO_DESTINATION_RING_INFO0_SW_BUFFER_COOKIE);
+
+		desc_va = ((u64)le32_to_cpu(reo_desc->buf_addr_info.info1) << 32 |
+			   le32_to_cpu(reo_desc->buf_addr_info.info0));
+		rel_info->rx_desc =
+			(struct ath12k_rx_desc_info *)((unsigned long)desc_va);
+	} else {
+		val = le32_get_bits(reo_desc->buf_addr_info.info1,
+				    BUFFER_ADDR_INFO1_RET_BUF_MGR);
+		if (val != HAL_RX_BUF_RBM_SW5_BM) {
+			dp->device_stats.invalid_rbm++;
+			return -EINVAL;
+		}
+
+		rel_info->cookie = le32_get_bits(reo_desc->buf_addr_info.info1,
+						 BUFFER_ADDR_INFO1_SW_COOKIE);
+
+		rel_info->rx_desc = NULL;
+	}
+
+	rel_info->err_rel_src = rel_src;
+	rel_info->hw_cc_done = hw_cc_done;
+
 	return 0;
 }
 

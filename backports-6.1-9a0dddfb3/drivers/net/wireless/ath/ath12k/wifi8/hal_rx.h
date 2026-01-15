@@ -18,6 +18,7 @@ struct hal_rx_reo_dest_rel_info {
 	u32 cookie;
 	enum hal_reo_dest_rel_src_module err_rel_src;
 	enum hal_reo_dest_ring_push_reason push_reason;
+	enum hal_reo_dest_ring_buffer_type buffer_type;
 	u32 err_code;
 	bool first_msdu;
 	bool last_msdu;
@@ -437,9 +438,6 @@ ath12k_wifi8_hal_rx_msdu_link_desc_set(struct ath12k_base *ab,
 				       struct hal_wbm_release_ring *desc,
 				       struct ath12k_buffer_addr *buf_addr_info,
 				       enum hal_wbm_rel_bm_act action);
-int ath12k_wifi8_hal_desc_reo_parse_err(struct ath12k_dp *dp,
-					struct hal_reo_dest_ring *desc,
-					dma_addr_t *paddr, u32 *desc_bank);
 int ath12k_wifi8_hal_reo_rel_parse_err(struct ath12k_dp *dp, void *desc,
 				       struct hal_rx_reo_dest_rel_info *rel_info);
 void ath12k_wifi8_hal_rx_reo_ent_paddr_get(struct ath12k_base *ab,

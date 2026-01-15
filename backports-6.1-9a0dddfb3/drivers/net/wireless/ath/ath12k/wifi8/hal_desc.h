@@ -583,11 +583,6 @@ enum hal_tlv_tag {
 	HAL_TLV_BASE                                           = 1024 /* 0x3ff */
 };
 
-enum hal_reo_dest_rel_desc_type {
-	REO_DEST_BUFFER_TYPE_MSDU,
-	REO_DEST_BUFFER_TYPE_MSDU_LINK_DESC,
-};
-
 #define HAL_RX_MPDU_DESC_INFO_INFO0_MSDU_COUNT				GENMASK(7, 0)
 #define HAL_RX_MPDU_DESC_INFO_INFO0_FRAGMENT_FLAG			BIT(8)
 #define HAL_RX_MPDU_DESC_INFO_INFO0_MPDU_RETRY_BIT			BIT(9)
