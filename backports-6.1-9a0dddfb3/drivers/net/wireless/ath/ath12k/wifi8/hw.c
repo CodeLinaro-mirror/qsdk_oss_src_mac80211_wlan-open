@@ -26,6 +26,7 @@
 #include "../dp_tx.h"
 #include "dp_tx.h"
 #include "hal_qcn9625.h"
+#include "mgmt_rx.h"
 
 static u8 ath12k_wifi8_hw_qcn9625_mac_from_pdev_id(int pdev_idx)
 {
@@ -70,6 +71,7 @@ static const struct ath12k_hw_ops qcn9625_ops = {
 	.dp_srng_is_tx_comp_ring = ath12k_wifi8_dp_srng_is_comp_ring_qcn9625,
 	.hw_link_id_required_in_mgmt_send =
 		ath12k_wifi8_hw_link_id_required_in_mgmt_send_qcn9625,
+	.mgmt_rxdma_ring_sel_config = ath12k_wifi8_mgmt_wbm_ring_sel_config_qcn9625,
 };
 
 /* To support 8 MSI DP grouping */
