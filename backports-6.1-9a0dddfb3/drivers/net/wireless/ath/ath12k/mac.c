@@ -16710,6 +16710,16 @@ int ath12k_mac_rfkill_enable_radio(struct ath12k *ar, bool enable)
 
 	return 0;
 }
+void ath12k_mac_cache_smart_mon_filter(struct ath12k_pdev_dp *pdev,
+				       u8 smart_mon_filter)
+{
+	pdev->ar->smart_mon_filter = smart_mon_filter;
+}
+
+u8 ath12k_mac_get_cached_smart_mon_filter(struct ath12k_pdev_dp *pdev)
+{
+	return pdev->ar->smart_mon_filter;
+}
 
 void ath12k_mac_stop(struct ath12k *ar)
 {

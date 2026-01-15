@@ -2022,12 +2022,17 @@ int ath12k_dp_mon_pdev_alloc(struct ath12k_pdev_dp *dp_pdev)
 	dp_mon_pdev->dp_mon = dp_pdev->dp->dp_mon;
 	dp_pdev->dp_mon_pdev = dp_mon_pdev;
 
+	dp_mon_pdev->smart_mon_filter =
+		ath12k_mac_get_cached_smart_mon_filter(dp_pdev);
+
 	return 0;
 }
 EXPORT_SYMBOL(ath12k_dp_mon_pdev_alloc);
 
 void ath12k_dp_mon_pdev_free(struct ath12k_pdev_dp *dp_pdev)
 {
+	ath12k_mac_cache_smart_mon_filter(dp_pdev,
+					  dp_pdev->dp_mon_pdev->smart_mon_filter);
 	kfree(dp_pdev->dp_mon_pdev);
 	dp_pdev->dp_mon_pdev = NULL;
 }
