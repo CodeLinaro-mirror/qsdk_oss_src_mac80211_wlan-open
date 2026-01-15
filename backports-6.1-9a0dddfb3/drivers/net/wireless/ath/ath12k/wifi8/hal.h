@@ -47,6 +47,10 @@ extern const struct ath12k_hw_version_map ath12k_wifi8_hw_ver_map[];
 #define HAL_DSCP_TID_MAP_TBL_NUM_ENTRIES_MAX    128
 #define HAL_DSCP_TID_TBL_SIZE                   24
 
+#define HAL_MGMT_UCAST_TID HAL_NON_QOS_TID
+#define HAL_MGMT_BCAST_TID 18
+#define HAL_MGMT_SENSING_TID 19
+
 enum rdi_based_destination_ring_selection {
 	DESTINATION_RING_CTRL_SW0,
 	DESTINATION_RING_CTRL_SW1,
@@ -1155,6 +1159,13 @@ void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng
 	srng->u.src_ring.reap_hp = next_hp;
 
 	return desc;
+}
+
+static inline bool ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(u8 tid)
+{
+	return (tid == HAL_NON_QOS_TID ||
+		tid == HAL_MGMT_BCAST_TID ||
+		tid == HAL_MGMT_SENSING_TID);
 }
 
 #endif
