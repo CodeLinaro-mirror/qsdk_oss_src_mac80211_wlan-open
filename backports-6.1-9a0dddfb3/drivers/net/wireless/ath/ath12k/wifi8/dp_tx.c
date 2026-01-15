@@ -19,6 +19,7 @@
 #include "../dp_peer.h"
 #include "../telemetry.h"
 #include "../telemetry_agent_if.h"
+#include "dp_peer.h"
 
 struct ath12k_tx_sw_metadata {
 	struct sk_buff *skb;
@@ -871,11 +872,11 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 			      FIELD_PREP(HAL_TCL_DATA_CMD_INFO0_VDEV_ID,
 					 dp_vif->dp_vif_id);
 	hal_tcl_desc->info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
-					 dp_link_vif->ast_hash);
+					 dp_vif->ast_hash);
 	hal_tcl_desc->info2 =  skb->len;
 	hal_tcl_desc->info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
 					 HAL_TX_WILD_CARD_LINK_ID);
-	hal_tcl_desc->search_index = dp_link_vif->ast_idx;
+	hal_tcl_desc->search_index = dp_vif->ast_idx;
 	hal_tcl_desc->info5 = 0;
 
 	/**
@@ -923,12 +924,12 @@ ath12k_wifi8_dp_tx_populate_tcl_desc(struct ath12k_pdev_dp *dp_pdev,
 				    dp_vif->dp_vif_id);
 
 	tcl_desc.info1 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO1_CACHE_SET_NUM,
-				    dp_link_vif->ast_hash);
+				    dp_vif->ast_hash);
 	tcl_desc.tcl_cmd_number =  dp_link_vif->tcl_metadata;
 	tcl_desc.info2 =  skb->len;
 	tcl_desc.info3 = FIELD_PREP(HAL_TCL_DATA_CMD_INFO3_LINK_ID,
 				    HAL_TX_WILD_CARD_LINK_ID);
-	tcl_desc.search_index = dp_link_vif->ast_idx;
+	tcl_desc.search_index = dp_vif->ast_idx;
 	tcl_desc.info5 = 0;
 
 	/**
@@ -982,6 +983,11 @@ ath12k_wifi8_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
+
+	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+		kfree_skb(skb);
+		return DP_TX_ENQ_SUCCESS;
+	}
 
 	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
 
@@ -1079,7 +1085,6 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u8 hal_ring_id;
 	int ret;
 	u8 reason, tid;
-	u16 peer_id;
 	u8 ring_selector, subtype;
 	bool msdu_ext_desc = false;
 	size_t hdrlen;
@@ -1087,12 +1092,19 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	u32 iova_mask = dp->hw_params->iova_mask;
 	bool is_diff_encap = false, is_null = false;
 	u8 qos_tag;
+	struct ath12k_sta *ahsta = NULL;
+	struct ath12k_dp_peer *dp_peer = NULL;
 	enum ath12k_dp_tx_enq_error err = DP_TX_ENQ_SUCCESS;
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
+
+	if (test_bit(ATH12K_FLAG_UMAC_PRERESET_START, &ab->dev_flags)) {
+		kfree_skb(skb);
+		return err;
+	}
 
 	if (skb_cb->flags & ATH12K_SKB_HW_80211_ENCAP)
 		eth = (struct ethhdr *)skb->data;
@@ -1103,19 +1115,36 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	    !ieee80211_is_data(hdr->frame_control))
 		return DP_TX_ENQ_DROP_NON_DATA_FRAME;
 
-	if (eth && is_multicast_ether_addr(eth->h_dest) && arsta) {
-		ti.meta_data_flags = arsta->tcl_metadata;
-		peer_id = u16_get_bits(ti.meta_data_flags,
-				       HTT_TCL_META_DATA_PEER_ID_MISSION);
-		ti.bss_ast_hash = arsta->ast_hash;
-		ti.bss_ast_idx = peer_id;
+	ti.meta_data_flags = dp_link_vif->tcl_metadata;
+	if (ahvif->vdev_type == WMI_VDEV_TYPE_STA) {
+		ti.bss_ast_hash = dp_vif->ast_hash;
+		ti.bss_ast_idx = dp_vif->ast_idx;
+	} else if (arsta) {
+		ahsta = arsta->ahsta;
+		if (ahsta->use_4addr_set) {
+			rcu_read_lock();
+			dp_peer = ath12k_dp_peer_find_by_peerid_index(dp, dp_pdev,
+								      ahsta->dp_peer_id);
+			if (!dp_peer) {
+				rcu_read_unlock();
+				return DP_TX_ENQ_DROP_INV_PEER;
+			}
+
+			ti.bss_ast_hash = dp_peer->peer_ext_ctx->ast_hash;
+			ti.bss_ast_idx = dp_peer->peer_ext_ctx->ast_index;
+			ti.lookup_override = true;
+			ti.meta_data_flags =
+			u32_encode_bits(0, HTT_TCL_META_DATA_TYPE) |
+					u32_encode_bits(dp_peer->peer_id,
+							HTT_TCL_META_DATA_PEER_ID);
+			rcu_read_unlock();
+		}
+	} else if (is_mcast) {
+		ti.bss_ast_hash = dp_link_vif->ast_hash;
+		ti.bss_ast_idx = dp_link_vif->ast_idx;
 		ti.lookup_override = true;
-	} else if (hdr && ieee80211_has_a4(hdr->frame_control) &&
-	    is_multicast_ether_addr(hdr->addr3) && arsta) {
-		ti.meta_data_flags = arsta->tcl_metadata;
+		/* set this until FW enables TQM path for MCAST by default */
 		ti.flags0 |= FIELD_PREP(HAL_TCL_DATA_CMD_INFO2_TO_FW_SW, 1);
-	} else {
-		ti.meta_data_flags = dp_link_vif->tcl_metadata;
 	}
 	pool_id = skb_get_queue_mapping(skb) & (ATH12K_HW_MAX_QUEUES - 1);
 
@@ -1175,10 +1204,6 @@ ath12k_wifi8_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		ti.meta_data_flags |=
 			u32_encode_bits(1, HTT_TCL_META_DATA_HOST_INSPECTED_MISSION);
 
-	if (!(ti.lookup_override)) {
-		ti.bss_ast_hash = dp_link_vif->ast_hash;
-		ti.bss_ast_idx = dp_link_vif->ast_idx;
-	}
 	ti.dscp_tid_tbl_idx = 0;
 
 	switch (ti.encap_type) {

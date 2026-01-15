@@ -94,6 +94,7 @@ struct ath12k_dp_peer_create_params {
 	bool is_mlo;
 	bool is_vdev_peer;
 	u8 hw_link_id;
+	bool is_sta_bss_peer;
 	u16 peer_id;
 	u16 sta_id;
 };
