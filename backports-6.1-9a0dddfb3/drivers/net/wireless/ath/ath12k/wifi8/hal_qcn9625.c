@@ -283,7 +283,25 @@ static const struct hal_srng_config hw_srng_config_template[] = {
 		.mac_type = ATH12K_HAL_SRNG_PMAC,
 		.ring_dir = HAL_SRNG_DIR_DST,
 		.max_size = HAL_RXDMA_RING_MAX_SIZE_BE,
-	}
+	},
+	[HAL_WBM_BUF_MGMT] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_BUF_MGMT,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_BUF_RING_MAX_SIZE,
+		.name = "WBM_buf_mgmt",
+	},
+	[HAL_WBM_IDLE_BUF_MGMT] = {
+		.start_ring_id = HAL_SRNG_RING_ID_WBM_IDLE_BUF_MGMT,
+		.max_rings = 1,
+		.entry_size = sizeof(struct hal_wbm_buffer_ring) >> 2,
+		.mac_type = ATH12K_HAL_SRNG_UMAC,
+		.ring_dir = HAL_SRNG_DIR_SRC,
+		.max_size = HAL_WBM_IDLE_BUF_RING_MAX_SIZE,
+		.name = "WBM_idle_buf_mgmt",
+	},
 };
 
 const struct ath12k_hw_regs qcn9625_regs = {
@@ -680,6 +698,33 @@ static int ath12k_wifi8_hal_srng_create_config_qcn9625(struct ath12k_hal *hal)
 	s = &hal->srng_config[HAL_WBM_IDLE_BUF];
 	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_BUF_RING_LSB;
 	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_BUF_RING_HP;
+
+	/* REO2SW8 MGMT Exception ring */
+	s = &hal->srng_config[HAL_REO_EXCEPTION_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW8_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW8_RING_HP;
+
+	/* REO2SW9 MGMT Destination ring */
+	s = &hal->srng_config[HAL_REO_DST_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW9_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW9_RING_HP;
+
+	/* REO2SW11 MGMT High-priority ring */
+	s = &hal->srng_config[HAL_REO_DST_HIGH_PRIO];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW11_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_REO_REG + HAL_REO2SW11_RING_HP;
+
+	/* MGMT WBM Buf ring */
+	s = &hal->srng_config[HAL_WBM_BUF_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_MGMT_BUFF_RELEASE1_RING_BASE_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG +
+				HAL_WBM_SW2WBM_MGMT_BUFF_RELEASE1_RING_HP;
+
+	/* MGMT WBM IDle Buf ring */
+	s = &hal->srng_config[HAL_WBM_IDLE_BUF_MGMT];
+	s->reg_start[0] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_MGMT_BUF_RING_LSB;
+	s->reg_start[1] = HAL_SEQ_WCSS_UMAC_WBM_REG + HAL_WBM_SW_IDLE_MGMT_BUF_RING_HP;
 
 	return 0;
 }
