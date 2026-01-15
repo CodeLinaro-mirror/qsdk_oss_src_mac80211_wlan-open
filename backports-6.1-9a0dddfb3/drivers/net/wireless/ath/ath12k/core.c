@@ -1383,6 +1383,12 @@ static int ath12k_core_pdev_create(struct ath12k_base *ab)
 		}
 	}
 
+	ret = ath12k_mgmt_arch_htt_setup(ab->mgmt);
+	if (ret) {
+		ath12k_err(ab, "Failed to setup MGMT HTT: %d", ret);
+		goto err_pdev_debug;
+	}
+
 	return 0;
 
 err_pdev_debug:

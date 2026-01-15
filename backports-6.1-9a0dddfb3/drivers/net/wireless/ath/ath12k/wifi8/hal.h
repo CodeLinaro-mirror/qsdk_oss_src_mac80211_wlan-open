@@ -1121,6 +1121,8 @@ void ath12k_wifi8_hal_hw_ase_init(struct ath12k_base *ab,
 
 void ath12k_wifi8_hal_vdev_mcast_ctrl_set(struct ath12k_base *ab, u32 vdev_id,
 					  u8 mcast_ctrl_val);
+int ath12k_wifi8_hal_get_rdi_source_cfg(struct ath12k_base *ab, int source);
+
 static inline
 void *ath12k_hal_srng_src_begin_get_next_entry_nolock_fast(struct hal_srng *srng)
 {
