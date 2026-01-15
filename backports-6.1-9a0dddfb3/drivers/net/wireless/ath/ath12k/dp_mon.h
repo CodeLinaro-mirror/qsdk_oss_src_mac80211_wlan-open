@@ -978,8 +978,12 @@ ath12k_dp_smart_mon_filter_type_set(struct ath12k *ar,
 		dp_pdev->dp_mon_pdev->smart_mon_filter = filter;
 		if (dp_pdev->dp_mon_pdev->smart_mon_state ==
 		    ATH12K_DP_SMART_MON_ACTIVE) {
-			if (filter & DP_SMART_MON_VALID)
+			if (filter & DP_SMART_MON_VALID) {
+				ath12k_dp_mon_rx_smart_mon_config(ar, true);
+				ath12k_dp_mon_rx_update_filter(ar);
 				ath12k_dp_mon_rx_smart_mon_config(ar, false);
+				ath12k_dp_mon_rx_update_filter(ar);
+			}
 		}
 	}
 }
