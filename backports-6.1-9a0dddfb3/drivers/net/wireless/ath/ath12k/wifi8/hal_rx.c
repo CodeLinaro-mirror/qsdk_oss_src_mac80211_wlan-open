@@ -821,11 +821,7 @@ u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid)
 	u32 num_ext_desc;
 
 	if (ba_window_size <= 1) {
-		if (tid != HAL_NON_QOS_TID)
-			num_ext_desc = 1;
-		else
-			num_ext_desc = 0;
-
+		num_ext_desc = 1;
 	} else if (ba_window_size <= 217) {
 		num_ext_desc = 1;
 	} else if (ba_window_size <= 434) {
@@ -833,6 +829,10 @@ u32 ath12k_wifi8_hal_reo_qdesc_size(u32 ba_window_size, u8 tid)
 	} else {
 		num_ext_desc = 5;
 	}
+
+	/* TODO: Remove ext_desc from wifi8 */
+	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid))
+		num_ext_desc = 0;
 
 	return sizeof(struct hal_rx_reo_queue) +
 		(num_ext_desc * sizeof(struct hal_rx_reo_queue_ext));
@@ -861,7 +861,7 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 	if (ba_window_size < 1)
 		ba_window_size = 1;
 
-	if (ba_window_size == 1 && tid != HAL_NON_QOS_TID)
+	if (ba_window_size == 1 && !ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid))
 		ba_window_size++;
 
 	if (ba_window_size == 1)
@@ -893,7 +893,7 @@ void ath12k_wifi8_hal_reo_qdesc_setup(struct hal_rx_reo_queue *qdesc,
 		qdesc->info2 = le32_encode_bits(start_seq,
 						HAL_RX_REO_QUEUE_INFO2_SSN);
 
-	if (tid == HAL_NON_QOS_TID)
+	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid))
 		return;
 
 	ext_desc = qdesc->ext_desc;
@@ -1582,7 +1582,7 @@ void ath12k_wifi8_hal_reset_rx_reo_tid_q(void *vaddr,
 	qdesc->info2 |= u32_encode_bits(0, HAL_RX_REO_QUEUE_INFO2_SVLD) |
 			u32_encode_bits(0, HAL_RX_REO_QUEUE_INFO2_SSN);
 
-	if (tid == HAL_NON_QOS_TID)
+	if (ath12k_wifi8_hal_is_reo_nonqos_mgmt_tid(tid))
 		return;
 
 	ext_desc = qdesc->ext_desc;
