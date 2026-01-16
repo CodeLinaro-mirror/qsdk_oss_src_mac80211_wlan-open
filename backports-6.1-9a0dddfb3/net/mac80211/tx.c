@@ -5893,12 +5893,32 @@ ieee80211_beacon_get_finish(struct ieee80211_hw *hw,
 	/* CSA offsets */
 	if (offs && beacon) {
 		u16 i;
+		u16 mbssid_ins_len = 0;
+		u16 ins_tail_off = 0;
+		bool mbssid_in_tail = false;
+
+		/*
+		 * If MBSSID is reordered, any countdown offset at or after the insertion
+		 * point within tail must be adjusted by MBSSID length.
+		 */
+		if (offs->mbssid_off && offs->mbssid_off >= csa_off_base) {
+			mbssid_in_tail = true;
+			ins_tail_off = offs->mbssid_off - csa_off_base;
+
+			if (skb->len >= csa_off_base + beacon->tail_len) {
+				mbssid_ins_len = skb->len - csa_off_base -
+					beacon->tail_len;
+			}
+		}
 
 		for (i = 0; i < IEEE80211_MAX_CNTDWN_COUNTERS_NUM; i++) {
 			u16 csa_off = beacon->cntdwn_counter_offsets[i];
 
 			if (!csa_off)
 				continue;
+
+			if (mbssid_in_tail && csa_off >= ins_tail_off)
+				csa_off += mbssid_ins_len;
 
 			offs->cntdwn_counter_offs[i] = csa_off_base + csa_off;
 		}
@@ -5959,6 +5979,68 @@ ieee80211_beacon_add_mbssid(struct sk_buff *skb, struct beacon_data *beacon,
 		skb_put_data(skb, beacon->mbssid_ies->elem[i].data,
 			     beacon->mbssid_ies->elem[i].len);
 }
+static int ieee80211_beacon_reposition_mbssid(struct sk_buff *skb,
+					      struct beacon_data *beacon,
+					      struct ieee80211_mutable_offsets *offs,
+					      int mbssid_len, u8 ema_index)
+{
+	const u8 *ref_ie = NULL, *tail_end;
+	size_t ref_len = 0, ref_off;
+	int i;
+	static const u8 ref_eids[] = {
+		WLAN_EID_MEASUREMENT_PILOT_TX_INFO,
+		WLAN_EID_BSS_AC_ACCESS_DELAY,
+		WLAN_EID_BSS_AVAILABLE_CAPACITY,
+		WLAN_EID_ANTENNA_INFO,
+		WLAN_EID_BSS_AVG_ACCESS_DELAY,
+		WLAN_EID_AP_CHAN_REPORT,
+		WLAN_EID_QOS_CAPA,
+		WLAN_EID_EDCA_PARAM_SET,
+		WLAN_EID_QBSS_LOAD,
+		WLAN_EID_RSN,
+		WLAN_EID_EXT_SUPP_RATES,
+		WLAN_EID_ERP_INFO,
+		WLAN_EID_TPC_REPORT,
+		WLAN_EID_IBSS_DFS,
+		WLAN_EID_QUIET_CHANNEL,
+		WLAN_EID_EXT_CHANSWITCH_ANN,
+		WLAN_EID_PWR_CONSTRAINT,
+		WLAN_EID_COUNTRY
+	};
+
+	tail_end = beacon->tail + beacon->tail_len;
+
+	for (i = 0; i < ARRAY_SIZE(ref_eids); i++) {
+		ref_ie = cfg80211_find_ie(ref_eids[i], beacon->tail,
+					  beacon->tail_len);
+		if (!ref_ie)
+			continue;
+
+		if (ref_ie + 2 > tail_end)
+			return -1;
+
+		ref_len = ref_ie[1] + 2;
+		if (ref_ie + ref_len > tail_end)
+			return -1;
+		break;
+	}
+
+	if (!ref_ie)
+		return -1;
+
+	/* offset of ref_ie within tail */
+	ref_off = (size_t)(ref_ie - beacon->tail);
+
+	skb_put_data(skb, beacon->tail, ref_off + ref_len);
+	ieee80211_beacon_add_mbssid(skb, beacon, ema_index);
+
+	if (offs)
+		offs->mbssid_off = skb->len - mbssid_len;
+
+	skb_put_data(skb, beacon->tail + ref_off + ref_len,
+		     beacon->tail_len - (ref_off + ref_len));
+	return 0;
+}
 
 static struct sk_buff *
 ieee80211_beacon_get_ap(struct ieee80211_hw *hw,
@@ -5975,7 +6057,7 @@ ieee80211_beacon_get_ap(struct ieee80211_hw *hw,
 	struct ieee80211_if_ap *ap = &sdata->u.ap;
 	struct sk_buff *skb = NULL;
 	u16 csa_off_base = 0;
-	int mbssid_len;
+	int mbssid_len, ret;
 
 	if (beacon->cntdwn_counter_offsets[0]) {
 		if (!is_template)
@@ -6006,18 +6088,28 @@ ieee80211_beacon_get_ap(struct ieee80211_hw *hw,
 		offs->tim_offset = beacon->head_len;
 		offs->tim_length = skb->len - beacon->head_len;
 		offs->cntdwn_counter_offs[0] = beacon->cntdwn_counter_offsets[0];
-
-		if (mbssid_len) {
-			ieee80211_beacon_add_mbssid(skb, beacon, ema_index);
-			offs->mbssid_off = skb->len - mbssid_len;
-		}
-
-		/* for AP the csa offsets are from tail */
-		csa_off_base = skb->len;
 	}
 
-	if (beacon->tail)
-		skb_put_data(skb, beacon->tail, beacon->tail_len);
+	if (beacon->tail) {
+		/* for AP the csa offsets are from tail */
+		csa_off_base = skb->len;
+
+		if (mbssid_len) {
+			ret = ieee80211_beacon_reposition_mbssid(skb, beacon, offs,
+								 mbssid_len, ema_index);
+			if (ret) {
+				ieee80211_beacon_add_mbssid(skb, beacon, ema_index);
+				if (offs) {
+					offs->mbssid_off = skb->len - mbssid_len;
+					/* for AP the csa offsets are from tail */
+					csa_off_base = skb->len;
+				}
+				skb_put_data(skb, beacon->tail, beacon->tail_len);
+			}
+		} else {
+			skb_put_data(skb, beacon->tail, beacon->tail_len);
+		}
+	}
 
 	if (ieee80211_beacon_protect(skb, local, sdata, link) < 0) {
 		dev_kfree_skb(skb);
