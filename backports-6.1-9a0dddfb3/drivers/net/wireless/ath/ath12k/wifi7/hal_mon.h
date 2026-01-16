@@ -510,29 +510,22 @@ struct hal_tx_fes_setup {
 	__le64 rsvd0;
 } __packed;
 
-#define HAL_RX_RESP_REQ_INFO0_PPDU_ID		GENMASK(15, 0)
-#define HAL_RX_RESP_REQ_INFO0_RECEPTION_TYPE	BIT(16)
-#define HAL_RX_RESP_REQ_INFO1_DURATION		GENMASK(15, 0)
-#define HAL_RX_RESP_REQ_INFO1_RATE_MCS		GENMASK(24, 21)
-#define HAL_RX_RESP_REQ_INFO1_SGI		GENMASK(26, 25)
-#define HAL_RX_RESP_REQ_INFO1_STBC		BIT(27)
-#define HAL_RX_RESP_REQ_INFO1_LDPC		BIT(28)
-#define HAL_RX_RESP_REQ_INFO1_IS_AMPDU		BIT(29)
-#define HAL_RX_RESP_REQ_INFO2_NUM_USER		GENMASK(6, 0)
-#define HAL_RX_RESP_REQ_INFO3_ADDR1_31_0	GENMASK(31, 0)
-#define HAL_RX_RESP_REQ_INFO4_ADDR1_47_32	GENMASK(15, 0)
-#define HAL_RX_RESP_REQ_INFO4_ADDR1_15_0	GENMASK(31, 16)
-#define HAL_RX_RESP_REQ_INFO5_ADDR1_47_16	GENMASK(31, 0)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO0_PHY_PPDU_ID		GENMASK(15, 0)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO0_RECEPTION_TYPE		BIT(16)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO1_RESPONSE_STA_COUNT	GENMASK(6, 0)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO2_ADDR1_31_0		GENMASK(31, 0)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO3_ADDR1_47_32		GENMASK(15, 0)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO3_ADDR2_15_0		GENMASK(31, 16)
+#define HAL_TX_MON_RX_RESPONSE_REQUIRED_INFO4_ADDR2_47_16		GENMASK(31, 0)
 
-struct hal_rx_resp_req_info {
+struct hal_tx_mon_rx_resp_req_info {
 	__le32 info0;
-	__le32 rsvd0[1];
+	__le32 rsvd0[4];
 	__le32 info1;
-	__le32 info2;
 	__le32 rsvd1[2];
+	__le32 info2;
 	__le32 info3;
 	__le32 info4;
-	__le32 info5;
 	__le32 rsvd2[5];
 } __packed;
 
@@ -569,26 +562,9 @@ struct hal_tx_fes_status_prot {
 	__le32 rsvd1[11];
 } __packed;
 
-#define HAL_TX_FES_STAT_USR_PPDU_INFO0_DURATION		GENMASK(15, 0)
+#define HAL_TX_MON_FES_START_INFO0_MEDIUM_PROT_TYPE	GENMASK(29, 27)
 
-struct hal_tx_fes_status_user_ppdu {
-	__le64 rsvd0;
-	__le32 info0;
-	__le32 rsvd1[3];
-} __packed;
-
-#define HAL_TX_FES_STAT_STRT_INFO0_PROT_TS_LOWER_32	GENMASK(31, 0)
-#define HAL_TX_FES_STAT_STRT_INFO1_PROT_TS_UPPER_32	GENMASK(31, 0)
-
-struct hal_tx_fes_status_start_prot {
-	__le32 info0;
-	__le32 info1;
-	__le64 rsvd0;
-} __packed;
-
-#define HAL_TX_FES_STATUS_START_INFO0_MEDIUM_PROT_TYPE	GENMASK(29, 27)
-
-struct hal_tx_fes_status_start {
+struct hal_tx_mon_fes_status_start {
 	__le32 rsvd0;
 	__le32 info0;
 	__le64 rsvd1;
@@ -614,6 +590,73 @@ struct hal_tx_mon_fes_status_start_ppdu {
 	__le32 info1;
 	__le32 info2;
 	__le32 rsvd0;
+} __packed;
+
+#define HAL_TX_MON_FES_STAT_USER_INFO0_PPDU_TID		GENMASK(29, 26)
+#define HAL_TX_MON_FES_STAT_USER_INFO1_PPDU_DURATION	GENMASK(15, 0)
+
+struct hal_tx_mon_fes_status_user_ppdu {
+	__le32 rsvd0;
+	__le32 info0;
+	__le32 info1;
+	__le32 rsvd1[3];
+} __packed;
+
+#define HAL_TX_MON_FES_STATUS_ACK_OR_BA_INFO0_STAT_TYPE		BIT(0)
+#define HAL_TX_MON_FES_STATUS_ACK_OR_BA_INFO0_ACK_FRM_RSSI	GENMASK(16, 8)
+
+struct hal_tx_mon_fes_status_ack_or_ba {
+	__le32 info0;
+	__le32 rsvd0[9];
+} __packed;
+
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_NO_BMP_AVAILABLE	BIT(0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_EXPLICIT_ACK	BIT(1)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_EXPLICIT_ACK_TYPE	GENMASK(4, 2)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_BA_BMP_SIZE		GENMASK(6, 5)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_BA_TID		GENMASK(13, 10)
+#define HAL_TX_MON_RX_FBM_ACK_INFO0_STA_FULL_AID	GENMASK(26, 14)
+#define HAL_TX_MON_RX_FBM_ACK_INFO1_ADDR1_31_0		GENMASK(31, 0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO2_ADDR1_47_32		GENMASK(15, 0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO2_ADDR2_15_0		GENMASK(31, 16)
+#define HAL_TX_MON_RX_FBM_ACK_INFO3_ADDR2_47_16		GENMASK(31, 0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO4_BA_TS_CTRL		GENMASK(15, 0)
+#define HAL_TX_MON_RX_FBM_ACK_INFO4_BA_TS_SEQ		GENMASK(31, 16)
+
+struct hal_tx_mon_rx_frame_bitmap_ack {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 rsvd0[9];
+} __packed;
+
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO0_BA_BMP_SIZE	GENMASK(6, 5)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO0_BA_TID		GENMASK(13, 10)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO0_STA_FULL_AID	GENMASK(26, 14)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO1_ADDR1_31_0	GENMASK(31, 0)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO2_ADDR1_47_32	GENMASK(15, 0)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO2_ADDR2_15_0	GENMASK(31, 16)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO3_ADDR2_47_16	GENMASK(31, 0)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO4_BA_TS_CTRL	GENMASK(15, 0)
+#define HAL_TX_MON_RX_1K_FBM_ACK_INFO4_BA_TS_SEQ	GENMASK(31, 16)
+
+struct hal_tx_mon_rx_frame_1k_bitmap_ack {
+	__le32 info0;
+	__le32 info1;
+	__le32 info2;
+	__le32 info3;
+	__le32 info4;
+	__le32 rsvd0[33];
+} __packed;
+
+#define HAL_TX_MON_COEX_TX_STATUS_INFO0_TX_STATUS_REASON	GENMASK(12, 10)
+#define HAL_TX_MON_COEX_TX_STATUS_INFO0_CURRENT_TX_DURATION	GENMASK(31, 16)
+
+struct hal_tx_mon_coex_tx_status {
+	__le32 info0;
+	__le32 rsvd[3];
 } __packed;
 
 #define HAL_TX_Q_EXT_INFO0_FRAME_CTRL		GENMASK(15, 0)
@@ -806,19 +849,6 @@ struct hal_tx_mon_phy_desc {
 	__le32 info1;
 	__le32 info2;
 	__le32 info3;
-} __packed;
-
-#define HAL_RX_FBM_ACK_INFO0_ADDR1_31_0		GENMASK(31, 0)
-#define HAL_RX_FBM_ACK_INFO1_ADDR1_47_32	GENMASK(15, 0)
-#define HAL_RX_FBM_ACK_INFO1_ADDR2_15_0		GENMASK(31, 16)
-#define HAL_RX_FBM_ACK_INFO2_ADDR2_47_16	GENMASK(31, 0)
-
-struct hal_rx_frame_bitmap_ack {
-	__le32 rsvd0;
-	__le32 info0;
-	__le32 info1;
-	__le32 info2;
-	__le32 rsvd1[10];
 } __packed;
 
 #define HAL_TX_MON_BUF_ADDR_INFO0_VIRT_ADDR_31_0	GENMASK(31, 0)

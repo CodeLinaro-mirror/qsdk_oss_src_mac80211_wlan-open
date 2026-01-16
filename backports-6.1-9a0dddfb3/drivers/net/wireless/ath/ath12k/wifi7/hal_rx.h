@@ -27,6 +27,10 @@ struct hal_rx_wbm_rel_info {
 	__le32 peer_metadata;
 };
 
+#define BA_TS_BITMAP 0x10
+#define BA_TS_OFFSET 0x3
+#define BA_TS_LSB 0x20
+#define BA_TS_BITMAP_SZ 0x4
 #define HT_SGI_PRESENT 0x80
 #define VHT_SIG_SU_NSS_MASK 0x7
 #define VHT_SIG_SU_PARTIAL_AID_MASK 0x1FF
@@ -73,6 +77,15 @@ enum hal_he_ppdu_subtype {
 	HE_SUBTYPE_TRIG = 1,
 	HE_SUBTYPE_MU = 2,
 	HE_SUBTYPE_EXT_SU = 3,
+};
+
+enum hal_tx_coex_status_reason {
+	COEX_FES_TX_START,
+	COEX_FES_TX_END,
+	COEX_FES_END,
+	COEX_RESPONSE_TX_START,
+	COEX_RESPONSE_TX_END,
+	COEX_NO_TX_ONGOING
 };
 
 struct hal_rx_rxpcu_classification_overview {

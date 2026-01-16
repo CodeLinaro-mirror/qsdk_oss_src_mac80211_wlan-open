@@ -99,6 +99,7 @@ struct hal_rx_user_status {
 	data_sequence_control_info_valid:1;
 	u16 first_data_seq_ctrl;
 	u8 preamble_type;
+	u16 duration;
 	u16 ht_flags;
 	u16 vht_flags;
 	u16 he_flags;
@@ -130,6 +131,11 @@ struct hal_rx_user_status {
 	u8 filter_category;
 	u8 enc_type;
 	u16 retried_msdu_count;
+	u16 start_seq;
+	u16 ba_control;
+	u32 ba_bitmap[32];
+	u16 ba_bitmap_sz;
+	u16 aid;
 };
 
 struct hal_rx_eht_info {
@@ -339,11 +345,17 @@ enum hal_tx_mon_status {
 	HAL_TX_MON_FES_SETUP,
 	HAL_TX_MON_FES_STATUS_END,
 	HAL_RX_MON_RESPONSE_REQUIRED_INFO,
+	HAL_TX_MON_FES_STATUS_START,
 	HAL_TX_MON_FES_STATUS_PROT,
 	HAL_TX_MON_FES_STATUS_START_PPDU,
 	HAL_TX_MON_FES_STATUS_START_PROT,
+	HAL_TX_MON_FES_STATUS_USER_PPDU,
+	HAL_TX_MON_FES_STATUS_ACK_OR_BA,
 	HAL_TX_MON_FRAME_BITMAP_ACK,
+	HAL_TX_MON_FRAME_BITMAP_BLOCK_ACK_1K,
+	HAL_TX_MON_COEX_TX_STATUS,
 	HAL_TX_MON_MSDU_START,
+	HAL_TX_MON_MSDU_END,
 	HAL_TX_MON_RESPONSE_END_STATUS_INFO,
 	HAL_TX_MON_MACTX_HE_SIG_A_SU,
 	HAL_TX_MON_MACTX_HE_SIG_A_MU_DL,
@@ -380,22 +392,27 @@ struct hal_tx_mon_packet_info {
  * @ppdu_id:  Id of the PLCP protocol data unit
  * @num_users: number of users
  * @cur_usr_idx: Current user index of the PPDU
+ * @ack_recvd: boolean flag to indicate if ack is received
  * @su_or_mu: type of transmission used like su, mu, mu_su transmission
  * @mu_type: mu transmission information
  * @reserved: for future purpose
  * @prot_tlv_status: protection tlv status
+ * @ack_rssi: rssi of received ack. Valid only if ack_recvd is set
+ * @ba_user_id: block ack user id. keeps track for ba payload build
  * @packet_info: packet information
  * @rx_status: monitor mode rx status information
- * @rx_user_status: monitor mode rx user status information
  */
 struct hal_tx_mon_ppdu_info {
 	u32 ppdu_id;
 	u8  num_users;
 	u32 cur_usr_idx : 8,
+	    ack_recvd : 1,
 	    su_or_mu :2,
 	    mu_type :1,
-	    reserved : 21;
+	    reserved : 20;
 	u32 prot_tlv_status;
+	u8  ack_rssi;
+	u8  ba_user_id;
 	struct hal_tx_mon_packet_info packet_info;
 	struct hal_rx_mon_ppdu_info rx_status;
 };
@@ -431,11 +448,16 @@ struct hal_tx_mon_wmask_config {
 
 /**
  * struct hal_tx_mon_status_info - status info that wasn't populated in rx_status
+ * @transmission_type: su or mu transmission type
+ * @medium_prot_type: medium protection type
  * @band_center_freq1:
  * @band_center_freq2:
  * @freq:
  * @phy_mode:
  * @schedule_id:
+ * @no_bitmap_avail: Bitmap available flag
+ * @explicit_ack: Explicit Acknowledge flag
+ * @explicit_ack_type: Explicit Acknowledge type
  * @response_type: Response type in response window
  * @ndp_frame: NDP frame
  * @reserved: reserved bits
@@ -443,21 +465,31 @@ struct hal_tx_mon_wmask_config {
  * @buffer: Packet buffer pointer address
  * @offset: Packet buffer offset
  * @length: Packet buffer length
+ * @addr1: MAC address 1
+ * @addr2: MAC address 2
  * @dp_tx_pkt_cap_cookie: cookie counter
  */
 struct hal_tx_mon_status_info {
+	u8  transmission_type;
+	u8  medium_prot_type;
 	u16 band_center_freq1;
 	u16 band_center_freq2;
 	u16 freq;
 	u16 phy_mode;
 	u32 schedule_id;
+	u32 no_bitmap_avail :1,
+	    explicit_ack : 1,
+	    explicit_ack_type : 4,
+	    reserved : 26;
 	u32 response_type : 5,
 	    ndp_frame : 2,
-	    reserved : 25;
+	    rsvd : 25;
 	u8  sw_frame_group_id;
 	void *buffer;
 	u32 offset;
 	u32 length;
+	u8  addr1[ETH_ALEN];
+	u8  addr2[ETH_ALEN];
 	u8  dp_tx_pkt_cap_cookie[8];
 };
 
