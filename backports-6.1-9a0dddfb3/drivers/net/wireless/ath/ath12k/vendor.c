@@ -8205,6 +8205,113 @@ err:
 	kfree(skb);
 }
 
+static const char *get_breach_type_str(u8 breach_type)
+{
+	switch (breach_type) {
+	case 0:
+		return "RSSI_MIN";
+	case 1:
+		return "RSSI_MAX";
+	case 2:
+		return "ACK_RSSI_MIN";
+	case 3:
+		return "ACK_RSSI_MAX";
+	case 4:
+		return "TX_RATE_MIN";
+	case 5:
+		return "TX_RATE_MAX";
+	case 6:
+		return "RX_RATE_MIN";
+	case 7:
+		return "RX_RATE_MAX";
+	default:
+		return "UNKNOWN";
+	}
+}
+
+/**
+ * ath12k_vendor_rssi_rate_notify_breach - Send RSSI/Rate breach NL event
+ * This function creates and sends a netlink vendor event to userspace
+ * notifying about RSSI/Rate threshold breach.
+ */
+void ath12k_vendor_rssi_rate_notify_breach(struct ieee80211_vif *vif, u8 *mac_addr,
+					   u8 breach_type, u32 threshold_value,
+					   u32 detected_value, bool set_clear,
+					   u8 *mld_addr)
+{
+	struct nlattr *notify_params;
+	struct wireless_dev *wdev;
+	struct sk_buff *skb;
+
+	wdev = ieee80211_vif_to_wdev(vif);
+
+	if (!wdev)
+		return;
+
+	if (!wdev->wiphy)
+		return;
+
+	skb = cfg80211_vendor_event_alloc(wdev->wiphy, wdev, NLMSG_DEFAULT_SIZE,
+					  QCA_NL80211_VENDOR_SUBCMD_SDWF_DEV_OPS_INDEX,
+					  GFP_ATOMIC);
+	if (!skb) {
+		ath12k_err(NULL, "No memory for RSSI/Rate breach event\n");
+		return;
+	}
+
+	notify_params =
+		nla_nest_start(skb,
+			       QCA_WLAN_VENDOR_ATTR_SDWF_DEV_RSSI_RATE_BREACH_PARAMS);
+	if (!notify_params)
+		goto err;
+
+	if (nla_put(skb, QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_PEER_MAC,
+		    ETH_ALEN, mac_addr) ||
+	    (mld_addr && nla_put(skb, QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_PEER_MLD_MAC,
+				 ETH_ALEN, mld_addr)) ||
+	    nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_TYPE, breach_type))
+		goto nla_put_failure;
+
+	if (breach_type <= THRESHOLD_ACKRSSI_MAX) {
+		if (nla_put_s32(skb, QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_THRESHOLD,
+				(s32)threshold_value) ||
+		    nla_put_s32(skb, QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_VALUE,
+				(s32)detected_value))
+			goto nla_put_failure;
+	} else {
+		if (nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_THRESHOLD,
+				threshold_value) ||
+		    nla_put_u32(skb, QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_VALUE,
+				detected_value))
+			goto nla_put_failure;
+	}
+
+	if (nla_put_u8(skb, QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_SET_CLEAR,
+		       set_clear))
+		goto nla_put_failure;
+
+	nla_nest_end(skb, notify_params);
+	cfg80211_vendor_event(skb, GFP_ATOMIC);
+
+	if (set_clear) {
+		if (breach_type <= THRESHOLD_ACKRSSI_MAX) {
+			pr_err("RSSI/Rate Telemetry: %s Breach Detected, peer: %pM, Threshold: %d, Detected Value: %d\n",
+			       get_breach_type_str(breach_type), mac_addr,
+			       (s32)threshold_value, (s32)detected_value);
+		} else {
+			pr_err("RSSI/Rate Telemetry: %s Breach Detected, peer: %pM, Threshold: %u, Detected Value: %u\n",
+			       get_breach_type_str(breach_type), mac_addr,
+			       threshold_value, detected_value);
+		}
+	}
+	return;
+
+nla_put_failure:
+	ath12k_err(NULL, "No memory for RSSI/Rate breach NL attributes\n");
+err:
+	kfree_skb(skb);
+}
+
 static struct ath12k_link_vif *
 ath12k_vendor_get_non_scan_arvif(struct ath12k *ar)
 {

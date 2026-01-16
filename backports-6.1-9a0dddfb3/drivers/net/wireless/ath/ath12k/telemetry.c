@@ -32,6 +32,12 @@ void ath12k_telemetry_init(struct ath12k_base *ab)
 	INIT_WORK(&telemetry_ctx->indicate_breach, ath12k_send_breach_indication);
 	INIT_LIST_HEAD(&telemetry_ctx->list);
 
+	/* RSSI/Rate breach initialization */
+	spin_lock_init(&telemetry_ctx->rssi_rate_breach_lock);
+	INIT_WORK(&telemetry_ctx->indicate_rssi_rate_breach,
+		  ath12k_send_rssi_rate_breach_indication);
+	INIT_LIST_HEAD(&telemetry_ctx->rssi_rate_breach_list);
+
 	ath12k_info(NULL, "telemetry context initialized\n");
 }
 
@@ -42,10 +48,12 @@ void ath12k_telemetry_deinit(struct ath12k_base *ab)
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags)) {
 		cancel_work_sync(&telemetry_ctx->indicate_breach);
+		cancel_work_sync(&telemetry_ctx->indicate_rssi_rate_breach);
 		return;
 	}
 
 	cancel_work_sync(&telemetry_ctx->indicate_breach);
+	cancel_work_sync(&telemetry_ctx->indicate_rssi_rate_breach);
 	destroy_workqueue(telemetry_ctx->workqueue);
 
 	kfree(telemetry_ctx);
@@ -266,6 +274,89 @@ void ath12k_telemetry_breach_indication(u8 *mac_addr, u8 svc_id, u8 param, bool 
 	spin_unlock_bh(&telemetry_ctx->breach_ind_lock);
 
 	queue_work(telemetry_ctx->workqueue, &telemetry_ctx->indicate_breach);
+}
+
+/**
+ * ath12k_send_rssi_rate_breach_indication - Workqueue handler for RSSI/Rate breaches
+ * @work: Work struct
+ *
+ * Processes all queued RSSI/Rate breach indications from the list.
+ * Called in work context.
+ */
+void ath12k_send_rssi_rate_breach_indication(struct work_struct *work)
+{
+	struct ath12k_telemetry_ctx *telemetry_ctx =
+		container_of(work, struct ath12k_telemetry_ctx,
+			     indicate_rssi_rate_breach);
+	struct ath12k_rssi_rate_breach_params *breach_params;
+
+	if (!telemetry_ctx) {
+		ath12k_err(NULL, "Telemetry ctx is unavailable\n");
+		return;
+	}
+
+	while (1) {
+		spin_lock_bh(&telemetry_ctx->rssi_rate_breach_lock);
+
+		if (list_empty(&telemetry_ctx->rssi_rate_breach_list)) {
+			spin_unlock_bh(&telemetry_ctx->rssi_rate_breach_lock);
+			break;
+		}
+
+		breach_params = list_first_entry(&telemetry_ctx->rssi_rate_breach_list,
+						 typeof(*breach_params), list);
+		list_del(&breach_params->list);
+		spin_unlock_bh(&telemetry_ctx->rssi_rate_breach_lock);
+
+		ath12k_rssi_rate_notify_breach_event(breach_params->mac_addr,
+						     breach_params->breach_type,
+						     breach_params->threshold_value,
+						     breach_params->detected_value,
+						     breach_params->set_clear);
+		kfree(breach_params);
+	}
+}
+
+/**
+ * ath12k_rssi_rate_breach_indication - Queue RSSI/Rate breach for processing
+ * @mac_addr: Peer MAC address
+ * @breach_type: Type of breach (BREACH_TYPE_RSSI_MIN, etc.)
+ * @threshold_value: Configured threshold value
+ * @detected_value: Actual detected value that caused breach
+ * @set_clear: true = breach detected, false = breach cleared
+ *
+ * This function queues the rssi/rate breach indication for asynchronous processing
+ * via workqueue. It allocates breach parameters and adds to list.
+ */
+void ath12k_rssi_rate_breach_indication(u8 *mac_addr, u8 breach_type,
+					u32 threshold_value, u32 detected_value,
+					bool set_clear)
+{
+	struct ath12k_rssi_rate_breach_params *breach_params;
+
+	if (!mac_addr)
+		return;
+
+	if (!telemetry_ctx) {
+		ath12k_err(NULL, "RSSI/Rate breach received when telemetry ctx unavailable\n");
+		return;
+	}
+
+	breach_params = kzalloc(sizeof(*breach_params), GFP_ATOMIC);
+	if (!breach_params)
+		return;
+
+	ether_addr_copy(breach_params->mac_addr, mac_addr);
+	breach_params->breach_type = breach_type;
+	breach_params->threshold_value = threshold_value;
+	breach_params->detected_value = detected_value;
+	breach_params->set_clear = set_clear;
+
+	spin_lock_bh(&telemetry_ctx->rssi_rate_breach_lock);
+	list_add_tail(&breach_params->list, &telemetry_ctx->rssi_rate_breach_list);
+	spin_unlock_bh(&telemetry_ctx->rssi_rate_breach_lock);
+
+	queue_work(telemetry_ctx->workqueue, &telemetry_ctx->indicate_rssi_rate_breach);
 }
 
 bool ath12k_telemetry_get_sla_mov_avg_num_pkt(u32 *mov_avg)

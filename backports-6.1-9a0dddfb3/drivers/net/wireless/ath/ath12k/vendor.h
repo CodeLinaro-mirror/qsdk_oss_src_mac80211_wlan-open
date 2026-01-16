@@ -2539,6 +2539,31 @@ enum qca_vendor_vdev_param {
 	QCA_WLAN_VENDOR_VDEV_PARAM_MAX = QCA_WLAN_VENDOR_VDEV_PARAM_LAST - 1,
 };
 
+/**
+ * enum qca_vendor_global_param - Global vendor parameters
+ *
+ * This enum defines global parameters that are handled
+ * by ath12k_vendor_set_arvif_params_extn() but stored globally in the
+ * telemetry agent.
+ */
+enum qca_vendor_global_param {
+	/* Global RSSI/Rate threshold crossing parameters */
+	QCA_WLAN_VENDOR_GLOBAL_RSSI_MIN_THRESH = 16,
+	QCA_WLAN_VENDOR_GLOBAL_RSSI_MAX_THRESH = 17,
+	QCA_WLAN_VENDOR_GLOBAL_ACKRSSI_MIN_THRESH = 18,
+	QCA_WLAN_VENDOR_GLOBAL_ACKRSSI_MAX_THRESH = 19,
+	QCA_WLAN_VENDOR_GLOBAL_TXRATE_MIN_THRESH = 20,
+	QCA_WLAN_VENDOR_GLOBAL_TXRATE_MAX_THRESH = 21,
+	QCA_WLAN_VENDOR_GLOBAL_RXRATE_MIN_THRESH = 22,
+	QCA_WLAN_VENDOR_GLOBAL_RXRATE_MAX_THRESH = 23,
+	QCA_WLAN_VENDOR_GLOBAL_GET_RSSI_RATE_THRESHOLDS = 24,
+	QCA_WLAN_VENDOR_GLOBAL_RSSI_RATE_BREACH_MASK = 25,
+
+	/* Add new global params above */
+	QCA_WLAN_VENDOR_GLOBAL_PARAM_LAST,
+	QCA_WLAN_VENDOR_GLOBAL_PARAM_MAX = QCA_WLAN_VENDOR_GLOBAL_PARAM_LAST - 1,
+};
+
 enum qca_vendor_radio_param {
 	QCA_WLAN_VENDOR_RADIO_PARAM_TEST = 0,
 	QCA_WLAN_VENDOR_RADIO_PARAM_TEST_RELOAD = QCA_WLAN_VENDOR_RADIO_PARAM_TEST,
@@ -2631,6 +2656,7 @@ enum qca_wlan_vendor_attr_sdwf_dev {
 	QCA_WLAN_VENDOR_ATTR_SDWF_DEV_STREAMING_STATS_PARAMS = 3,
 	QCA_WLAN_VENDOR_ATTR_SDWF_DEV_RESET_STATS = 4,
 	QCA_WLAN_VENDOR_ATTR_SDWF_DEV_SLA_BREACHED_PARAMS = 5,
+	QCA_WLAN_VENDOR_ATTR_SDWF_DEV_RSSI_RATE_BREACH_PARAMS = 6,
 
 	/* keep last */
 	QCA_WLAN_VENDOR_ATTR_SDWF_DEV_AFTER_LAST,
@@ -2684,6 +2710,36 @@ enum qca_wlan_vendor_sdwf_sla_breach_type {
 	QCA_WLAN_VENDOR_SDWF_SLA_BREACH_PARAM_TYPE_MSDU_TTL,
 	QCA_WLAN_VENDOR_SDWF_SLA_BREACH_PARAM_TYPE_MSDU_LOSS,
 	QCA_WLAN_VENDOR_SDWF_SLA_BREACH_PARAM_TYPE_MAX,
+};
+
+/**
+ * enum qca_wlan_vendor_attr_rssi_rate_breach - RSSI/Rate breach attributes
+ *
+ * Attributes for RSSI and rate threshold breach notifications.
+ * These are nested inside QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_PARAMS.
+ *
+ * @QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_PEER_MAC: Peer MAC address (6 bytes)
+ * @QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_TYPE: Breach type (u8)
+ *     Values from enum breach_type (RSSI_MIN=0, RSSI_MAX=1, etc.)
+ * @QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_THRESHOLD: Config thresh (u32/s32)
+ * @QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_VALUE: Detected value (u32/s32)
+ * @QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_SET_CLEAR: Breach state (u8)
+ *     1 = breach detected, 0 = breach cleared
+ * @QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_PEER_MLD_MAC: MLD MAC
+ *     address (6 bytes, optional)
+ */
+enum qca_wlan_vendor_attr_rssi_rate_breach {
+	QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_INVALID = 0,
+	QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_PEER_MAC = 1,
+	QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_TYPE = 2,
+	QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_THRESHOLD = 3,
+	QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_VALUE = 4,
+	QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_SET_CLEAR = 5,
+	QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_PEER_MLD_MAC = 6,
+
+	QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_AFTER_LAST,
+	QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_MAX =
+		QCA_WLAN_VENDOR_ATTR_RSSI_RATE_BREACH_AFTER_LAST - 1,
 };
 
 /**
@@ -3555,6 +3611,10 @@ int ath12k_vendor_put_ag_num_socs(struct sk_buff *vendor_event,
 void ath12k_vendor_telemetry_notify_breach(struct ieee80211_vif *vif, u8 *mac_addr,
 					   u8 svc_id, u8 param, bool set_clear,
 					   u8 tid, u8 *mld_addr);
+void ath12k_vendor_rssi_rate_notify_breach(struct ieee80211_vif *vif, u8 *mac_addr,
+					   u8 breach_type, u32 threshold_value,
+					   u32 detected_value, bool set_clear,
+					   u8 *mld_addr);
 int ath12k_vendor_register(struct ath12k_hw *ah);
 int ath12k_vendor_put_umac_migration_notif(struct ieee80211_vif *vif,
 					   u8 *mld_addr, u8 link_id);
