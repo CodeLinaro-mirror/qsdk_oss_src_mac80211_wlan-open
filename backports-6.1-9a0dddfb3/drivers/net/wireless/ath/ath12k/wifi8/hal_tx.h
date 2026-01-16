@@ -59,6 +59,17 @@ extern u8 ath12k_default_dscp_tid_map[DSCP_TID_MAP_TBL_ENTRY_SIZE];
 
 #define HAL_TX_WILD_CARD_LINK_ID       7
 
+struct ath12k_hal_tx_cmd_ring_param {
+	dma_addr_t ctrl_buf_addr;
+	u32 meta_data_0;
+	u8 cmd_num:4,
+	   reserved:4;
+};
+
+int
+ath12k_wifi8_hal_invalidate_tx_cache_cmd_send(struct ath12k_base *ab,
+					      struct hal_srng *srng,
+					      struct ath12k_hal_tx_cmd_ring_param *param);
 void ath12k_wifi8_hal_tx_set_dscp_tid_map(struct ath12k_base *ab, u8 *map, int id);
 void ath12k_wifi8_hal_tx_update_dscp_tid_map(struct ath12k_base *ab,
 					     int id, u8 dscp, u8 tid);

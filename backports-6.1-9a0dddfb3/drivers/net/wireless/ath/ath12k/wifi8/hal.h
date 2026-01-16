@@ -171,6 +171,10 @@ enum rdi_based_source_ring_selection {
 #define HAL_TCL1_RING_TP_OFFSET \
 		(HAL_TCL1_RING_TP - HAL_TCL1_RING_HP)
 
+/*TCL CMD ring address */
+#define HAL_TCL_CMD_RING_BASE_LSB		0x00001944
+#define HAL_TCL_CMD_RING_HP			0x00004038
+
 /* TCL STATUS ring address */
 #define HAL_TCL_STATUS_RING_BASE_LSB(hal) \
 	((hal)->regs->hal_tcl_status_ring_base_lsb)

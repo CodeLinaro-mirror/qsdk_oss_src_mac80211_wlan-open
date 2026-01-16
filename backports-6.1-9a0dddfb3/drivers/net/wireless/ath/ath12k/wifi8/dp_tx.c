@@ -2565,6 +2565,7 @@ void ath12k_wifi8_dp_tx_ring_cleanup(struct ath12k_base *ab)
 	}
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tx_exception);
 	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tcl_status_ring);
+	ath12k_dp_srng_cleanup(ab, &dp_wifi8->tcl_cmd_ring);
 }
 
 int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
@@ -2616,6 +2617,13 @@ int ath12k_wifi8_dp_tx_ring_setup(struct ath12k_base *ab)
 				   DP_TCL_STATUS_RING_SIZE);
 	if (ret) {
 		ath12k_warn(ab, "failed to set up tcl_status ring :%d\n", ret);
+		goto err;
+	}
+
+	ret = ath12k_dp_srng_setup(ab, &dp_wifi8->tcl_cmd_ring, HAL_TCL_CMD, 0, 0,
+				   DP_TCL_CMD_RING_SIZE);
+	if (ret) {
+		ath12k_warn(ab, "failed to set up tcl_cmd ring :%d\n", ret);
 		goto err;
 	}
 
