@@ -549,6 +549,16 @@ void athdbg_qmi_qdss_mem_free(struct athdbg_qmi *dbg_qmi)
 	struct ath12k_base *ab = dbg_qmi->ab;
 	int i;
 
+#ifdef PLATFORM_SDX85
+	if (ab->dbg_qmi.qdss_mem_seg_len && ab->dbg_qmi.qdss_mem[0].v.ioaddr) {
+		dma_free_attrs(ab->dev,
+			       ab->dbg_qmi.qdss_mem[0].size,
+			       ab->dbg_qmi.qdss_mem[0].v.ioaddr,
+			       ab->dbg_qmi.qdss_mem[0].paddr,
+			       DMA_ATTR_FORCE_CONTIGUOUS);
+		ab->dbg_qmi.qdss_mem[0].v.ioaddr = NULL;
+}
+#endif
 	for (i = 0; i < ab->dbg_qmi.qdss_mem_seg_len; i++) {
 		if (ab->dbg_qmi.qdss_mem[i].v.ioaddr) {
 			iounmap(ab->dbg_qmi.qdss_mem[i].v.ioaddr);
