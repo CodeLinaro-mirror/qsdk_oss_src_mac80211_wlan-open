@@ -228,7 +228,7 @@ enum hal_tlv_tag {
 	HAL_MACTX_COEX_PHY_CTRL					= 224 /* 0xe0 */,
 	HAL_COEX_STATUS_BROADCAST				= 225 /* 0xe1 */,
 	HAL_RESPONSE_START_STATUS				= 226 /* 0xe2 */,
-	HAL_RESPONSEND_STATUS					= 227 /* 0xe3 */,
+	HAL_RESPONSEND_END_STATUS				= 227 /* 0xe3 */,
 	HAL_CRYPTO_STATUS					= 228 /* 0xe4 */,
 	HAL_RECEIVED_TRIGGER_INFO				= 229 /* 0xe5 */,
 	HAL_COEX_TX_STOP_CTRL					= 230 /* 0xe6 */,

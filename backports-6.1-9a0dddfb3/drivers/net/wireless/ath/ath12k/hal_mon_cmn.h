@@ -359,6 +359,7 @@ enum hal_tx_mon_status {
 	HAL_TX_MON_MSDU_START,
 	HAL_TX_MON_MSDU_END,
 	HAL_TX_MON_RESPONSE_END_STATUS_INFO,
+	HAL_TX_MON_PCU_PPDU_SETUP_INIT,
 	HAL_TX_MON_MACTX_HE_SIG_A_SU,
 	HAL_TX_MON_MACTX_HE_SIG_A_MU_DL,
 	HAL_TX_MON_MACTX_HE_SIG_B1_MU,
@@ -395,6 +396,7 @@ struct hal_tx_mon_packet_info {
  * @num_users: number of users
  * @cur_usr_idx: Current user index of the PPDU
  * @ack_recvd: boolean flag to indicate if ack is received
+ * @cts_recvd: boolean flag to indicate if cts is received
  * @su_or_mu: type of transmission used like su, mu, mu_su transmission
  * @mu_type: mu transmission information
  * @reserved: for future purpose
@@ -409,9 +411,10 @@ struct hal_tx_mon_ppdu_info {
 	u8  num_users;
 	u32 cur_usr_idx : 8,
 	    ack_recvd : 1,
+	    cts_recvd : 1,
 	    su_or_mu :2,
 	    mu_type :1,
-	    reserved : 20;
+	    reserved : 19;
 	u32 prot_tlv_status;
 	u8  ack_rssi;
 	u8  ba_user_id;
@@ -452,6 +455,7 @@ struct hal_tx_mon_wmask_config {
  * struct hal_tx_mon_status_info - status info that wasn't populated in rx_status
  * @transmission_type: su or mu transmission type
  * @medium_prot_type: medium protection type
+ * @generated_response: Generated frame in response window
  * @band_center_freq1:
  * @band_center_freq2:
  * @freq:
@@ -463,17 +467,26 @@ struct hal_tx_mon_wmask_config {
  * @response_type: Response type in response window
  * @ndp_frame: NDP frame
  * @reserved: reserved bits
+ * @mba_count: MBA count
+ * @mba_fake_bitmap_count: MBA fake bitmap count
  * @sw_frame_group_id: software frame group ID
+ * @r2r_to_follow: Response to Response follow flag
+ * @phy_abort_reason: Reason for PHY abort
+ * @phy_abort_user_number: User number for PHY abort
+ * @protection_addr: Protection Address flag
  * @buffer: Packet buffer pointer address
  * @offset: Packet buffer offset
  * @length: Packet buffer length
  * @addr1: MAC address 1
  * @addr2: MAC address 2
+ * @addr3: MAC address 3
+ * @addr4: MAC address 4
  * @dp_tx_pkt_cap_cookie: cookie counter
  */
 struct hal_tx_mon_status_info {
 	u8  transmission_type;
 	u8  medium_prot_type;
+	u8  generated_response;
 	u16 band_center_freq1;
 	u16 band_center_freq2;
 	u16 freq;
@@ -482,16 +495,23 @@ struct hal_tx_mon_status_info {
 	u32 no_bitmap_avail :1,
 	    explicit_ack : 1,
 	    explicit_ack_type : 4,
-	    reserved : 26;
-	u32 response_type : 5,
+	    response_type : 5,
 	    ndp_frame : 2,
-	    rsvd : 25;
+	    reserved : 19;
+	u8  mba_count;
+	u8  mba_fake_bitmap_count;
 	u8  sw_frame_group_id;
+	u32 r2r_to_follow;
+	u16 phy_abort_reason;
+	u8  phy_abort_user_number;
+	u8  protection_addr;
 	void *buffer;
 	u32 offset;
 	u32 length;
 	u8  addr1[ETH_ALEN];
 	u8  addr2[ETH_ALEN];
+	u8  addr3[ETH_ALEN];
+	u8  addr4[ETH_ALEN];
 	u8  dp_tx_pkt_cap_cookie[8];
 };
 
@@ -749,6 +769,20 @@ struct hal_mon_ops {
 	void (*tx_mpdu_start_info_get)(const void *tlv_data, u32 userid,
 				       struct hal_tx_mon_ppdu_info *info,
 				       u16 tlv_len);
+	void (*tx_fes_status_info_get)(const void *tlv_data, u32 userid,
+				       struct hal_tx_mon_ppdu_info *info,
+				       struct hal_tx_mon_status_info *tx_status_info,
+				       u16 tlv_len);
+	void (*tx_response_end_status_info_get)(const void *tlv_data, u32 userid,
+						struct hal_tx_mon_ppdu_info *info,
+						struct hal_tx_mon_status_info *status,
+						u16 tlv_len);
+	void (*tx_fes_status_prot_info_get)(const void *tlv_data, u32 userid,
+					    struct hal_tx_mon_ppdu_info *info,
+					    u16 tlv_len);
+	void (*tx_pcu_ppdu_setup_init_info_get)(const void *tlv_data,
+						struct hal_tx_mon_status_info *status,
+						u16 tlv_len);
 };
 
 static inline enum hal_tx_mon_status
@@ -927,6 +961,58 @@ ath12k_hal_mon_tx_mpdu_start_info_get(struct ath12k_hal *hal,
 	if (hal->hal_mon_ops->tx_mpdu_start_info_get)
 		hal->hal_mon_ops->tx_mpdu_start_info_get(tlv, userid,
 							 info, tlv_len);
+}
+
+static inline void
+ath12k_hal_mon_tx_fes_status_end_info_get(struct ath12k_hal *hal,
+					  const void *tlv,
+					  u32 userid,
+					  struct hal_tx_mon_ppdu_info *info,
+					  struct hal_tx_mon_status_info *tx_status_info,
+					  u16 tlv_len)
+{
+	if (hal->hal_mon_ops->tx_fes_status_info_get)
+		hal->hal_mon_ops->tx_fes_status_info_get(tlv, userid,
+							 info, tx_status_info,
+							 tlv_len);
+}
+
+static inline void
+ath12k_hal_mon_tx_response_end_status_info_get(struct ath12k_hal *hal,
+					       const void *tlv,
+					       u32 userid,
+					       struct hal_tx_mon_ppdu_info *info,
+					       struct hal_tx_mon_status_info *status_info,
+					       u16 tlv_len)
+{
+	if (hal->hal_mon_ops->tx_response_end_status_info_get)
+		hal->hal_mon_ops->tx_response_end_status_info_get(tlv, userid,
+								  info, status_info,
+								  tlv_len);
+}
+
+static inline void
+ath12k_hal_mon_tx_fes_status_prot_info_get(struct ath12k_hal *hal,
+					   const void *tlv,
+					   u32 userid,
+					   struct hal_tx_mon_ppdu_info *info,
+					   u16 tlv_len)
+{
+	if (hal->hal_mon_ops->tx_fes_status_prot_info_get)
+		hal->hal_mon_ops->tx_fes_status_prot_info_get(tlv, userid,
+							      info, tlv_len);
+}
+
+static inline void
+ath12k_hal_mon_tx_pcu_ppdu_setup_init_info_get(struct ath12k_hal *hal,
+					       const void *tlv,
+					       struct hal_tx_mon_status_info *status_info,
+					       u16 tlv_len)
+{
+	if (hal->hal_mon_ops->tx_pcu_ppdu_setup_init_info_get)
+		hal->hal_mon_ops->tx_pcu_ppdu_setup_init_info_get(tlv,
+								  status_info,
+								  tlv_len);
 }
 
 static __always_inline void
