@@ -344,6 +344,8 @@ enum hal_tx_mon_status {
 	HAL_TX_MON_MPDU_END,
 	HAL_TX_MON_FES_SETUP,
 	HAL_TX_MON_FES_STATUS_END,
+	HAL_TX_MON_PEER_ENTRY,
+	HAL_TX_MON_QUEUE_EXTENSION,
 	HAL_RX_MON_RESPONSE_REQUIRED_INFO,
 	HAL_TX_MON_FES_STATUS_START,
 	HAL_TX_MON_FES_STATUS_PROT,
@@ -709,9 +711,11 @@ struct hal_mon_ops {
 			       struct hal_tx_mon_status_info *status_info,
 			       u8 *status_frag);
 	enum hal_tx_mon_status
-	(*tx_status_get_num_user)(u16 tlv_tag,
+	(*tx_status_get_num_user)(struct ath12k_hal *hal,
+				  u16 tlv_tag,
 				  const void *tlv,
-				  u8 *num_users);
+				  u8 *num_users,
+				  u16 tlv_len);
 	u32 (*get_mon_mpdu_start_wmask)(void);
 	u32 (*get_mon_mpdu_end_wmask)(void);
 	u32 (*get_mon_msdu_end_wmask)(void);
@@ -732,6 +736,19 @@ struct hal_mon_ops {
 	void (*hal_mon_set_mon_buf_desc)(void *desc, u32 addr_lo,
 					 u32 addr_hi, u64 cookie);
 	void (*get_tx_mon_wmask_config)(struct hal_tx_mon_wmask_config *wmsk);
+	void (*tx_fes_setup_info_get)(const void *tlv_data, u32 userid,
+				      struct hal_tx_mon_ppdu_info *info,
+				      u16 tlv_len);
+	void (*tx_peer_entry_info_get)(const void *tlv_data, u32 userid,
+				       struct hal_tx_mon_ppdu_info *info,
+				       struct hal_tx_mon_status_info *tx_status_info,
+				       u16 tlv_len);
+	void (*tx_queue_ext_info_get)(const void *tlv_data, u32 userid,
+				      struct hal_tx_mon_ppdu_info *info,
+				      u16 tlv_len);
+	void (*tx_mpdu_start_info_get)(const void *tlv_data, u32 userid,
+				       struct hal_tx_mon_ppdu_info *info,
+				       u16 tlv_len);
 };
 
 static inline enum hal_tx_mon_status
@@ -752,11 +769,14 @@ static inline enum hal_tx_mon_status
 ath12k_hal_mon_tx_status_get_num_user(struct ath12k_hal *hal,
 				      u16 tlv_tag,
 				      const void *tlv,
-				      u8 *num_users)
+				      u8 *num_users,
+				      u16 tlv_len)
 {
-	return hal->hal_mon_ops->tx_status_get_num_user(tlv_tag,
+	return hal->hal_mon_ops->tx_status_get_num_user(hal,
+							tlv_tag,
 							tlv,
-							num_users);
+							num_users,
+							tlv_len);
 }
 
 static inline u32 ath12k_hal_mon_rx_mpdu_start_wmask(struct ath12k_hal *hal)
@@ -857,6 +877,56 @@ static inline void ath12k_hal_mon_set_mon_buf_desc(struct ath12k_hal *hal,
 {
 	return hal->hal_mon_ops->hal_mon_set_mon_buf_desc(desc, addr_lo,
 							  addr_hi, cookie);
+}
+
+static inline void
+ath12k_hal_mon_tx_fes_setup_info_get(struct ath12k_hal *hal,
+				     const void *tlv,
+				     u32 userid,
+				     struct hal_tx_mon_ppdu_info *info,
+				     u16 tlv_len)
+{
+	if (hal->hal_mon_ops->tx_fes_setup_info_get)
+		hal->hal_mon_ops->tx_fes_setup_info_get(tlv, userid,
+							info, tlv_len);
+}
+
+static inline void
+ath12k_hal_mon_tx_peer_entry_info_get(struct ath12k_hal *hal,
+				      const void *tlv,
+				      u32 userid,
+				      struct hal_tx_mon_ppdu_info *info,
+				      struct hal_tx_mon_status_info *tx_status_info,
+				      u16 tlv_len)
+{
+	if (hal->hal_mon_ops->tx_peer_entry_info_get)
+		hal->hal_mon_ops->tx_peer_entry_info_get(tlv, userid,
+							 info, tx_status_info,
+							 tlv_len);
+}
+
+static inline void
+ath12k_hal_mon_tx_queue_ext_info_get(struct ath12k_hal *hal,
+				     const void *tlv,
+				     u32 userid,
+				     struct hal_tx_mon_ppdu_info *info,
+				     u16 tlv_len)
+{
+	if (hal->hal_mon_ops->tx_queue_ext_info_get)
+		hal->hal_mon_ops->tx_queue_ext_info_get(tlv, userid,
+							info, tlv_len);
+}
+
+static inline void
+ath12k_hal_mon_tx_mpdu_start_info_get(struct ath12k_hal *hal,
+				      const void *tlv,
+				      u32 userid,
+				      struct hal_tx_mon_ppdu_info *info,
+				      u16 tlv_len)
+{
+	if (hal->hal_mon_ops->tx_mpdu_start_info_get)
+		hal->hal_mon_ops->tx_mpdu_start_info_get(tlv, userid,
+							 info, tlv_len);
 }
 
 static __always_inline void

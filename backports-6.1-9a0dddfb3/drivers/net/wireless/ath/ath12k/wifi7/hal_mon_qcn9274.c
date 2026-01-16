@@ -327,6 +327,14 @@ const struct hal_mon_ops hal_qcn9274_mon_ops = {
 	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
 	.get_tx_mon_wmask_config = ath12k_wifi7_hal_tx_mon_get_wmask_config,
+	.tx_fes_setup_info_get =
+		ath12k_wifi7_hal_mon_tx_fes_setup_info_parse,
+	.tx_peer_entry_info_get =
+		ath12k_wifi7_hal_mon_tx_peer_entry_info_parse,
+	.tx_queue_ext_info_get =
+		ath12k_wifi7_hal_mon_tx_queue_ext_info_parse,
+	.tx_mpdu_start_info_get =
+		ath12k_wifi7_hal_mon_tx_mpdu_start_info_parse,
 };
 
 const struct hal_mon_ops hal_ipq5332_mon_ops = {
@@ -351,6 +359,14 @@ const struct hal_mon_ops hal_ipq5332_mon_ops = {
 	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
 	.get_tx_mon_wmask_config = ath12k_wifi7_hal_tx_mon_get_wmask_config,
+	.tx_fes_setup_info_get =
+		ath12k_wifi7_hal_mon_tx_fes_setup_info_parse,
+	.tx_peer_entry_info_get =
+		ath12k_wifi7_hal_mon_tx_peer_entry_info_parse,
+	.tx_queue_ext_info_get =
+		ath12k_wifi7_hal_mon_tx_queue_ext_info_parse,
+	.tx_mpdu_start_info_get =
+		ath12k_wifi7_hal_mon_tx_mpdu_start_info_parse,
 };
 
 const struct hal_mon_ops hal_ipq5424_mon_ops = {
@@ -375,6 +391,14 @@ const struct hal_mon_ops hal_ipq5424_mon_ops = {
 	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
 	.get_tx_mon_wmask_config = ath12k_wifi7_hal_tx_mon_get_wmask_config,
+	.tx_fes_setup_info_get =
+		ath12k_wifi7_hal_mon_tx_fes_setup_info_parse,
+	.tx_peer_entry_info_get =
+		ath12k_wifi7_hal_mon_tx_peer_entry_info_parse,
+	.tx_queue_ext_info_get =
+		ath12k_wifi7_hal_mon_tx_queue_ext_info_parse,
+	.tx_mpdu_start_info_get =
+		ath12k_wifi7_hal_mon_tx_mpdu_start_info_parse,
 };
 
 const struct hal_mon_ops hal_qcn6432_mon_ops = {
@@ -399,4 +423,12 @@ const struct hal_mon_ops hal_qcn6432_mon_ops = {
 	.hal_mon_tx_ppdu_info = ath12k_wifi7_hal_tx_ppdu_info,
 	.hal_mon_set_mon_buf_desc = ath12k_wifi7_hal_mon_set_mon_buf_desc,
 	.get_tx_mon_wmask_config = ath12k_wifi7_hal_tx_mon_get_wmask_config,
+	.tx_fes_setup_info_get =
+		ath12k_wifi7_hal_mon_tx_fes_setup_info_parse,
+	.tx_peer_entry_info_get =
+		ath12k_wifi7_hal_mon_tx_peer_entry_info_parse,
+	.tx_queue_ext_info_get =
+		ath12k_wifi7_hal_mon_tx_queue_ext_info_parse,
+	.tx_mpdu_start_info_get =
+		ath12k_wifi7_hal_mon_tx_mpdu_start_info_parse,
 };

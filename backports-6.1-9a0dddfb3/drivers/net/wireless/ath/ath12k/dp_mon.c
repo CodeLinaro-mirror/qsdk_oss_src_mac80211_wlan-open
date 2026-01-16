@@ -834,7 +834,8 @@ ath12k_dp_mon_tx_parse_mon_status(struct ath12k_pdev_dp *dp_pdev,
 							  &tlv_len);
 
 	hal_status = ath12k_hal_mon_tx_status_get_num_user(dp_pdev->dp->hal,
-							   tlv_tag, tlv, &num_user);
+							   tlv_tag, tlv,
+							   &num_user, tlv_len);
 	if (hal_status == HAL_TX_MON_STATUS_PPDU_NOT_DONE || !num_user)
 		return -EINVAL;
 
