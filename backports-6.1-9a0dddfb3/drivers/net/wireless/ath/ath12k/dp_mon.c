@@ -1385,27 +1385,22 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
 		return;
 
-	rcu_read_lock();
-	peer = ath12k_dp_link_peer_find_by_id(dp, user_stats->sw_peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, pdev_dp,
+							user_stats->sw_peer_id);
 	if (!peer) {
 		ath12k_dbg(ab, ATH12K_DBG_DP_MON_RX, "peer with peer id %d can't be found\n",
 			   ppdu_info->peer_id);
-		rcu_read_unlock();
 		return;
 	}
 
 	peer->peer_stats.rx_retries = user_stats->mpdu_retry;
 
-	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar)) {
-		rcu_read_unlock();
+	if (!ath12k_extd_rx_stats_enabled(pdev_dp->ar))
 		return;
-	}
 
 	rx_stats = peer->peer_stats.rx_stats;
-	if (!rx_stats) {
-		rcu_read_unlock();
+	if (!rx_stats)
 		return;
-	}
 
 	ppdu_info->usr_nss_sum += user_stats->nss;
 	ppdu_info->usr_ru_tones_sum += user_stats->ul_ofdma_ru_width;
@@ -1493,8 +1488,6 @@ ath12k_dp_mon_rx_update_user_stats(struct ath12k_pdev_dp *pdev_dp,
 		ath12k_dp_mon_rx_update_advance_stats(rx_stats, ppdu_info, num_msdu, uid);
 		ath12k_dp_rx_update_rate_stats(rx_stats, &peer->rxrate);
 	}
-
-	rcu_read_unlock();
 }
 
 void
