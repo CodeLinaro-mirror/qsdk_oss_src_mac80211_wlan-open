@@ -6047,11 +6047,8 @@ static void ath12k_mac_unassign_link_vif(struct ath12k_link_vif *arvif)
 		dp_link_vif = &dp_vif->dp_link_vif[link_id];
 
 	/* Preserve the link stats to MLD vif in case of deletion of link vif */
-	if (dp_vif && dp_link_vif) {
-		ath12k_info(NULL, "%s:%d Link %d deleted. Aggregate to MLD vif",
-			    __func__, __LINE__, link_id);
+	if (dp_vif && dp_link_vif && link_id < ATH12K_DEFAULT_SCAN_LINK)
 		ath12k_mac_aggr_link_vif_to_mld_vif(dp_vif, dp_link_vif);
-	}
 
 	if (arvif != &ahvif->deflink)
 		kfree(arvif);
