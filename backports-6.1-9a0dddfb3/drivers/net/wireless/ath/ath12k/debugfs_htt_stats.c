@@ -1978,6 +1978,15 @@ static inline void ath12k_htt_print_tx_peer_rate_stats_tlv(const void *tag_buf,
 	len += print_array_to_buf(buf, len, "tx_dcm", htt_stats_buf->tx_dcm,
 			   ATH12K_HTT_TX_PDEV_STATS_NUM_DCM_COUNTERS, "\n\n");
 
+	len += scnprintf(buf + len, buf_len - len, "tx_ppdu_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_ppdu_cnt));
+
+	len += scnprintf(buf + len, buf_len - len, "tx_mpdu_try_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_mpdu_try_cnt));
+
+	len += scnprintf(buf + len, buf_len - len, "tx_mpdu_success_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->tx_mpdu_success_cnt));
+
 	stats_req->buf_len = len;
 
 fail:
@@ -2127,6 +2136,12 @@ static inline void ath12k_htt_print_rx_peer_rate_stats_tlv(const void *tag_buf,
 					 htt_stats_buf->rx_per_chain_rssi_in_dbm_ext[j][i]);
 		len += scnprintf(buf + len, buf_len - len, "\n");
 	}
+
+	len += scnprintf(buf + len, buf_len - len, "rx_ppdu_bytes = %u\n",
+			 le32_to_cpu(htt_stats_buf->tot_rx_ppdu_bytes));
+
+	len += scnprintf(buf + len, buf_len - len, "rx_mpdu_try_cnt = %u\n",
+			 le32_to_cpu(htt_stats_buf->rx_mpdu_try_cnt));
 
 	stats_req->buf_len = len;
 
@@ -3307,7 +3322,7 @@ ath12k_htt_print_tx_pdev_stats_cmn_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->mpdu_removed_tqm));
 	len += scnprintf(buf + len, buf_len - len, "msdu_removed_tqm = %u\n",
 			 le32_to_cpu(htt_stats_buf->msdu_removed_tqm));
-	len += scnprintf(buf + len, buf_len - len, "remove_mpdus_max_retries = %u\n",
+	len += scnprintf(buf + len, buf_len - len, "tx_removed_mpdu_cnt = %u\n",
 			 le32_to_cpu(htt_stats_buf->remove_mpdus_max_retries));
 	len += scnprintf(buf + len, buf_len - len, "mpdus_sw_flush = %u\n",
 			 le32_to_cpu(htt_stats_buf->mpdus_sw_flush));
