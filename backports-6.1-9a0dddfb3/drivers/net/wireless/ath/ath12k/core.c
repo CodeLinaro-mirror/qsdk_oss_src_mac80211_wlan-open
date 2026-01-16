@@ -1909,11 +1909,22 @@ static void ath12k_fw_stats_vdevs_free(struct list_head *head)
 	}
 }
 
+static void ath12k_fw_stats_vdev_extds_free(struct list_head *head)
+{
+	struct ath12k_fw_stats_vdev_extd *i, *tmp;
+
+	list_for_each_entry_safe(i, tmp, head, list) {
+		list_del(&i->list);
+		kfree(i);
+	}
+}
+
 void ath12k_fw_stats_init(struct ath12k *ar)
 {
 	INIT_LIST_HEAD(&ar->fw_stats.vdevs);
 	INIT_LIST_HEAD(&ar->fw_stats.pdevs);
 	INIT_LIST_HEAD(&ar->fw_stats.bcn);
+	INIT_LIST_HEAD(&ar->fw_stats.vdev_extds);
 	init_completion(&ar->fw_stats_complete);
 	init_completion(&ar->fw_stats_done);
 }
@@ -1923,6 +1934,7 @@ void ath12k_fw_stats_free(struct ath12k_fw_stats *stats)
 	ath12k_fw_stats_pdevs_free(&stats->pdevs);
 	ath12k_fw_stats_vdevs_free(&stats->vdevs);
 	ath12k_fw_stats_bcn_free(&stats->bcn);
+	ath12k_fw_stats_vdev_extds_free(&stats->vdev_extds);
 }
 EXPORT_SYMBOL(ath12k_fw_stats_free);
 
@@ -1932,6 +1944,7 @@ void ath12k_fw_stats_reset(struct ath12k *ar)
 	ath12k_fw_stats_free(&ar->fw_stats);
 	ar->fw_stats.num_vdev_recvd = 0;
 	ar->fw_stats.num_bcn_recvd = 0;
+	ar->fw_stats.num_vdev_extd_recvd = 0;
 	spin_unlock_bh(&ar->data_lock);
 }
 

@@ -4272,6 +4272,69 @@ static const struct file_operations fops_vdev_stats = {
 	.llseek = default_llseek,
 };
 
+static int ath12k_open_vdev_extd_stats(struct inode *inode, struct file *file)
+{
+	struct ath12k *ar = inode->i_private;
+	struct ath12k_fw_stats_req_params param;
+	struct ath12k_hw *ah = ath12k_ar_to_ah(ar);
+	int ret;
+
+	guard(wiphy)(ath12k_ar_to_hw(ar)->wiphy);
+
+	if (!ah)
+		return -ENETDOWN;
+
+	if (ah->state != ATH12K_HW_STATE_ON)
+		return -ENETDOWN;
+
+	void *buf __free(kfree) = kzalloc(ATH12K_FW_STATS_BUF_SIZE, GFP_KERNEL);
+	if (!buf)
+		return -ENOMEM;
+
+	param.pdev_id = ath12k_mac_get_target_pdev_id(ar);
+	/* VDEV extd stats is always sent for all active VDEVs from FW */
+	param.vdev_id = 0;
+	param.stats_id = WMI_REQUEST_VDEV_EXTD_STAT;
+
+	ret = ath12k_mac_get_fw_stats(ar, &param);
+	if (ret) {
+		ath12k_warn(ar->ab, "failed to request fw vdev extd stats: %d\n", ret);
+		return ret;
+	}
+
+	ath12k_wmi_fw_stats_dump(ar, &ar->fw_stats, param.stats_id,
+				 buf);
+
+	file->private_data = no_free_ptr(buf);
+
+	return 0;
+}
+
+static int ath12k_release_vdev_extd_stats(struct inode *inode, struct file *file)
+{
+	kfree(file->private_data);
+
+	return 0;
+}
+
+static ssize_t ath12k_read_vdev_extd_stats(struct file *file,
+					   char __user *user_buf,
+					   size_t count, loff_t *ppos)
+{
+	const char *buf = file->private_data;
+	size_t len = strlen(buf);
+
+	return simple_read_from_buffer(user_buf, count, ppos, buf, len);
+}
+
+static const struct file_operations fops_vdev_extd_stats = {
+	.open = ath12k_open_vdev_extd_stats,
+	.release = ath12k_release_vdev_extd_stats,
+	.read = ath12k_read_vdev_extd_stats,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 static int ath12k_open_bcn_stats(struct inode *inode, struct file *file)
 {
 	struct ath12k *ar = inode->i_private;
@@ -4775,6 +4838,8 @@ void ath12k_debugfs_fw_stats_register(struct ath12k *ar)
 			    &fops_pdev_stats);
 	debugfs_create_file("en_vdev_stats_ol", 0600, fwstats_dir, ar,
 			    &fops_vdev_stats_offload);
+	debugfs_create_file("vdev_extd_stats", 0600, fwstats_dir, ar,
+			    &fops_vdev_extd_stats);
 
 	ath12k_fw_stats_init(ar);
 }

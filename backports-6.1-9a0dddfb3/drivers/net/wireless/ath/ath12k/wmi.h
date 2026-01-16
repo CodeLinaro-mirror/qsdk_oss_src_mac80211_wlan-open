@@ -8326,6 +8326,7 @@ enum wmi_stats_id {
 	WMI_REQUEST_VDEV_STAT		= BIT(3),
 	WMI_REQUEST_RSSI_PER_CHAIN_STAT	= BIT(8),
 	WMI_REQUEST_BCN_STAT		= BIT(11),
+	WMI_REQUEST_VDEV_EXTD_STAT	= BIT(16),
 };
 
 struct wmi_request_stats_cmd {
@@ -8345,6 +8346,16 @@ struct wmi_rssi_stat_params {
 
 struct wmi_per_chain_rssi_stat_params {
 	__le32 num_per_chain_rssi;
+} __packed;
+
+struct wmi_vdev_extd_stats_params {
+	__le32 vdev_id;
+	__le32 fd_succ_cnt;
+	__le32 fd_fail_cnt;
+	__le32 unsolicited_prb_succ_cnt;
+	__le32 unsolicited_prb_fail_cnt;
+	__le32 flags;
+	a_sle32 vdev_tx_power;
 } __packed;
 
 #define MAX_TX_RATE_VALUES 10

@@ -38,6 +38,11 @@ struct wmi_tlv_fw_stats_parse {
 	const struct wmi_per_chain_rssi_stat_params *rssi;
 	int rssi_num;
 	bool chain_rssi_done;
+	bool rssi_stats_done;
+	bool congestion_stats_done;
+	bool peer_extd2_stats_done;
+	bool pmf_bcn_protect_stats_done;
+	bool vdev_extd_stats_done;
 	struct ath12k_fw_stats *stats;
 };
 
@@ -10989,6 +10994,51 @@ ath12k_wmi_fw_vdev_stats_dump(struct ath12k *ar,
 }
 
 static void
+ath12k_wmi_fw_vdev_extd_stats_dump(struct ath12k *ar,
+				   struct ath12k_fw_stats *fw_stats,
+				   char *buf, u32 *length)
+{
+	const struct ath12k_fw_stats_vdev_extd *vdev_extd;
+	u32 buf_len = ATH12K_FW_STATS_BUF_SIZE;
+	struct ath12k_link_vif *arvif;
+	u32 len = *length;
+
+	len += scnprintf(buf + len, buf_len - len, "\n");
+	len += scnprintf(buf + len, buf_len - len, "%30s\n",
+			 "ath12k VDEV EXTENDED stats");
+	len += scnprintf(buf + len, buf_len - len, "%30s\n\n",
+			 "==========================");
+
+	list_for_each_entry(vdev_extd, &fw_stats->vdev_extds, list) {
+		arvif = ath12k_mac_get_arvif(ar, vdev_extd->vdev_id);
+		if (!arvif)
+			continue;
+
+		len += scnprintf(buf + len, buf_len - len, "%30s %u\n",
+				 "VDEV ID", vdev_extd->vdev_id);
+		len += scnprintf(buf + len, buf_len - len, "%30s %u\n",
+				 "num fils frames sent",
+				 vdev_extd->fd_succ_cnt);
+		len += scnprintf(buf + len, buf_len - len, "%30s %u\n",
+				 "num fils frames sent fail",
+				 vdev_extd->fd_fail_cnt);
+		len += scnprintf(buf + len, buf_len - len, "%30s %u\n",
+				 "num unsolicited prb rsp succ",
+				 vdev_extd->unsolicited_prb_succ_cnt);
+		len += scnprintf(buf + len, buf_len - len, "%30s %u\n",
+				 "num unsolicited prb rsp failed",
+				 vdev_extd->unsolicited_prb_fail_cnt);
+		len += scnprintf(buf + len, buf_len - len, "%30s 0x%x\n",
+				 "VDEV info flags", vdev_extd->flags);
+		len += scnprintf(buf + len, buf_len - len, "%30s %d dbm\n",
+				 "VDEV tx power", vdev_extd->vdev_tx_power);
+
+		len += scnprintf(buf + len, buf_len - len, "\n");
+		*length = len;
+	}
+}
+
+static void
 ath12k_wmi_fw_bcn_stats_dump(struct ath12k *ar,
 			     struct ath12k_fw_stats *fw_stats,
 			     char *buf, u32 *length)
@@ -11210,6 +11260,9 @@ void ath12k_wmi_fw_stats_dump(struct ath12k *ar,
 	case WMI_REQUEST_PDEV_STAT:
 		ath12k_wmi_fw_pdev_stats_dump(ar, fw_stats, buf, &len);
 		break;
+	case WMI_REQUEST_VDEV_EXTD_STAT:
+		ath12k_wmi_fw_vdev_extd_stats_dump(ar, fw_stats, buf, &len);
+		break;
 	default:
 		break;
 	}
@@ -11259,6 +11312,21 @@ ath12k_wmi_pull_vdev_stats(const struct wmi_vdev_stats_params *src,
 	for (i = 0; i < MAX_TX_RATE_VALUES; i++)
 		dst->beacon_rssi_history[i] =
 			le32_to_cpu(src->beacon_rssi_history[i]);
+}
+
+static void
+ath12k_wmi_pull_vdev_extd_stats(const struct wmi_vdev_extd_stats_params *src,
+				struct ath12k_fw_stats_vdev_extd *dst)
+{
+	dst->vdev_id = le32_to_cpu(src->vdev_id);
+	dst->fd_succ_cnt = le32_to_cpu(src->fd_succ_cnt);
+	dst->fd_fail_cnt = le32_to_cpu(src->fd_fail_cnt);
+	dst->unsolicited_prb_succ_cnt =
+		le32_to_cpu(src->unsolicited_prb_succ_cnt);
+	dst->unsolicited_prb_fail_cnt =
+		le32_to_cpu(src->unsolicited_prb_fail_cnt);
+	dst->flags = le32_to_cpu(src->flags);
+	dst->vdev_tx_power = le32_to_cpu(src->vdev_tx_power);
 }
 
 static void
@@ -11516,6 +11584,44 @@ static int ath12k_wmi_tlv_rssi_chain_parse(struct ath12k_base *ab,
 	return 0;
 }
 
+static int ath12k_wmi_tlv_vdev_extd_stats(struct ath12k_base *ab,
+					  u16 tag, u16 len,
+					  const void *ptr, void *data)
+{
+	struct wmi_tlv_fw_stats_parse *parse = data;
+	const struct wmi_stats_event *ev = parse->ev;
+	struct ath12k_fw_stats *stats = parse->stats;
+	const struct wmi_vdev_extd_stats_params *src;
+	struct ath12k_fw_stats_vdev_extd *dst;
+	struct ath12k *ar;
+
+	guard(rcu)();
+	stats->pdev_id = le32_to_cpu(ev->pdev_id);
+	ar = ath12k_mac_get_ar_by_pdev_id(ab, stats->pdev_id);
+	if (!ar) {
+		ath12k_warn(ab, "invalid pdev id %d in vdev extd stats event\n",
+			    le32_to_cpu(stats->pdev_id));
+		return -EPROTO;
+	}
+
+	src = (struct wmi_vdev_extd_stats_params *)ptr;
+	if (len < sizeof(*src)) {
+		ath12k_err(ab,
+			   "vdev extd parse failure: %u bytes left, %zu expected\n",
+			   len, sizeof(*src));
+		return -EPROTO;
+	}
+
+	dst = kzalloc(sizeof(*dst), GFP_ATOMIC);
+	if (!dst)
+		return -ENOMEM;
+
+	ath12k_wmi_pull_vdev_extd_stats(src, dst);
+	list_add_tail(&dst->list, &stats->vdev_extds);
+
+	return 0;
+}
+
 static int ath12k_wmi_tlv_fw_stats_parse(struct ath12k_base *ab,
 					 u16 tag, u16 len,
 					 const void *ptr, void *data)
@@ -11544,6 +11650,25 @@ static int ath12k_wmi_tlv_fw_stats_parse(struct ath12k_base *ab,
 				return ret;
 
 			parse->chain_rssi_done = true;
+		} else if (!parse->rssi_stats_done) {
+			parse->rssi_stats_done = true;
+		} else if (!parse->congestion_stats_done) {
+			parse->congestion_stats_done = true;
+		} else if (!parse->peer_extd2_stats_done) {
+			parse->peer_extd2_stats_done = true;
+		} else if (!parse->pmf_bcn_protect_stats_done) {
+			parse->pmf_bcn_protect_stats_done = true;
+		} else if (!parse->vdev_extd_stats_done) {
+			if (len)
+				parse->stats->stats_id = WMI_REQUEST_VDEV_EXTD_STAT;
+
+			ret = ath12k_wmi_tlv_iter(ab, ptr, len,
+						  ath12k_wmi_tlv_vdev_extd_stats,
+						  parse);
+			if (ret)
+				return ret;
+
+			parse->vdev_extd_stats_done = true;
 		}
 		break;
 	default:
@@ -11621,6 +11746,35 @@ static void ath12k_wmi_fw_stats_process(struct ath12k *ar,
 		if (is_end)
 			complete(&ar->fw_stats_done);
 	}
+
+	if (stats->stats_id == WMI_REQUEST_VDEV_EXTD_STAT) {
+		if (list_empty(&stats->vdev_extds)) {
+			ath12k_warn(ab, "empty vdev extd stats");
+			return;
+		}
+		/* FW sends all the active VDEV extd stats irrespective of PDEV,
+		 * hence limit until the count of all VDEVs started
+		 */
+		rcu_read_lock();
+		for (i = 0; i < ab->num_radios; i++) {
+			pdev = rcu_dereference(ab->pdevs_active[i]);
+			if (pdev && pdev->ar)
+				total_vdevs_started += pdev->ar->num_started_vdevs;
+		}
+		rcu_read_unlock();
+
+		if (total_vdevs_started)
+			is_end = ((++ar->fw_stats.num_vdev_extd_recvd) ==
+				  total_vdevs_started);
+
+		list_splice_tail_init(&stats->vdev_extds,
+				      &ar->fw_stats.vdev_extds);
+
+		if (is_end)
+			complete(&ar->fw_stats_done);
+
+		return;
+	}
 }
 
 static void ath12k_update_stats_event(struct ath12k_base *ab, struct sk_buff *skb)
@@ -11632,6 +11786,7 @@ static void ath12k_update_stats_event(struct ath12k_base *ab, struct sk_buff *sk
 	INIT_LIST_HEAD(&stats.pdevs);
 	INIT_LIST_HEAD(&stats.vdevs);
 	INIT_LIST_HEAD(&stats.bcn);
+	INIT_LIST_HEAD(&stats.vdev_extds);
 
 	ret = ath12k_wmi_pull_fw_stats(ab, skb, &stats);
 	if (ret) {

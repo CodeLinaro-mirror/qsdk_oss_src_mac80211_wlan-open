@@ -1108,8 +1108,10 @@ struct ath12k_fw_stats {
 	struct list_head pdevs;
 	struct list_head vdevs;
 	struct list_head bcn;
+	struct list_head vdev_extds;
 	u32 num_vdev_recvd;
 	u32 num_bcn_recvd;
+	u32 num_vdev_extd_recvd;
 	bool en_vdev_stats_ol;
 };
 
@@ -2127,6 +2129,18 @@ struct ath12k_fw_stats_vdev {
 	u32 num_tx_not_acked;
 	u32 tx_rate_history[MAX_TX_RATE_VALUES];
 	u32 beacon_rssi_history[MAX_TX_RATE_VALUES];
+};
+
+struct ath12k_fw_stats_vdev_extd {
+	struct list_head list;
+
+	u32 vdev_id;
+	u32 fd_succ_cnt;
+	u32 fd_fail_cnt;
+	u32 unsolicited_prb_succ_cnt;
+	u32 unsolicited_prb_fail_cnt;
+	u32 flags;
+	s32 vdev_tx_power;
 };
 
 struct ath12k_fw_stats_bcn {
