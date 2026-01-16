@@ -1208,8 +1208,6 @@ enum htt_t2h_msg_type {
 	HTT_T2H_MSG_TYPE_EXT_STATS_CONF = 0x1c,
 	HTT_T2H_MSG_TYPE_BKPRESSURE_EVENT_IND = 0x24,
 	HTT_T2H_MSG_TYPE_MLO_TIMESTAMP_OFFSET_IND = 0x28,
-	HTT_T2H_MSG_TYPE_MLO_RX_PEER_MAP = 0x29,
-	HTT_T2H_MSG_TYPE_MLO_RX_PEER_UNMAP = 0x2a,
 	HTT_T2H_MSG_TYPE_PEER_MAP3	= 0x2b,
 	HTT_T2H_MSG_TYPE_VDEV_TXRX_STATS_PERIODIC_IND = 0x2c,
 	HTT_T2H_MSG_TYPE_QOS_MSDUQ_INFO_IND = 0x2e,
@@ -2260,35 +2258,6 @@ struct htt_h2t_msg_rx_3_tuple_hash_cfg {
 #define HTT_H2T_FLOW_CLASSIFY_3_TUPLE_FIELD_CONFIG   BIT(2)
 
 #define HTT_3_TUPLE_HASH_CFG_REQ_BYTES     8
-
-struct ath12k_htt_mlo_link_peer_info {
-	struct htt_tlv tlv_hdr;
-	u16 sw_peer_id;
-	u8 vdev_id;
-	u8 chip_id;
-} __packed;
-
-#define ATH12K_HTT_MLO_PEER_MAP_INFO0_PEER_ID		GENMASK(23, 8)
-#define ATH12K_HTT_MLO_PEER_MAP_MAC_ADDR_H16		GENMASK(15, 0)
-#define ATH12K_HTT_MLO_PEER_MAP_AST_IDX			GENMASK(15, 0)
-#define ATH12K_HTT_MLO_PEER_MAP_CACHE_SET_NUM		GENMASK(31, 28)
-#define ATH12K_HTT_MAX_MLO_LINKS			3
-
-struct ath12k_htt_mlo_peer_map_msg {
-	u32 info0;
-	struct htt_mac_addr mac_addr;
-	u32 info1;
-	u32 info2;
-	u32 info3;
-	u32 rsvd0;
-	u32 rsvd1;
-	struct ath12k_htt_mlo_link_peer_info link_peer[ATH12K_HTT_MAX_MLO_LINKS];
-} __packed;
-
-#define ATH12K_HTT_MLO_PEER_UNMAP_PEER_ID               GENMASK(23, 8)
-struct ath12k_htt_mlo_peer_unmap_msg {
-	u32 info0;
-} __packed;
 
 #define ATH12K_HTT_PRI_LINK_MIGR_MSG_TYPE		GENMASK(7, 0)
 #define ATH12K_HTT_PRI_LINK_MIGR_CHIP_ID		GENMASK(11, 8)

@@ -2187,14 +2187,8 @@ void ath12k_dp_htt_htc_t2h_msg_handler(struct ath12k_base *ab,
 	case HTT_T2H_MSG_TYPE_PKTLOG:
 		ath12k_htt_pktlog_tx_handler(ab, skb);
 		break;
-	case HTT_T2H_MSG_TYPE_MLO_RX_PEER_MAP:
-		ath12k_peer_mlo_map_event(ab, skb);
-		break;
 	case HTT_T2H_MSG_TYPE_QOS_MSDUQ_INFO_IND:
 		ath12k_peer_qos_queue_ind_handler(ab, skb);
-		break;
-	case HTT_T2H_MSG_TYPE_MLO_RX_PEER_UNMAP:
-		ath12k_peer_mlo_unmap_event(ab, skb);
 		break;
 	case HTT_T2H_MSG_TYPE_PPDU_ID_FMT_IND:
 		ath12k_htt_t2h_ppdu_id_fmt_handler(dp, skb);

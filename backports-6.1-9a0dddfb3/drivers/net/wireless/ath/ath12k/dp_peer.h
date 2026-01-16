@@ -260,15 +260,12 @@ ath12k_dp_link_peer_find_by_ml_peer_vdev_id(struct ath12k_dp *dp,
 					    int peer_id,
 					    int vdev_id);
 
-void ath12k_peer_mlo_map_event(struct ath12k_base *ab, struct sk_buff *skb);
-
 static inline
 enum nl80211_iftype ath12k_peer_get_peer_type(struct ath12k_dp_link_peer *peer)
 {
 	return peer->vif->type;
 }
 
-void ath12k_peer_mlo_unmap_event(struct ath12k_base *ab, struct sk_buff *skb);
 struct ath12k_dp_peer_qos *
 ath12k_dp_peer_qos_get(struct ath12k_dp *dp,
 		       struct ath12k_dp_peer *peer);
