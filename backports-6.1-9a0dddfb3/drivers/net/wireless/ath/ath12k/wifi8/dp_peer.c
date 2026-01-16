@@ -600,3 +600,23 @@ int ath12k_wifi8_get_holq(struct ath12k_dp *dp, struct ath12k_dp_hw *dp_hw,
 	spin_unlock_bh(&dp_hw->peer_lock);
 	return ret;
 }
+
+int ath12k_wifi8_dp_get_peer_init_status(struct ath12k_dp *dp,
+					 struct ath12k_dp_hw *dp_hw,
+					 u8 *addr)
+{
+	struct ath12k_dp_hw_group *dp_hw_grp = dp->dp_hw_grp;
+	struct ath12k_dp_hw_group_wifi8 *dp_hw_grp_wifi8 =
+			ath12k_get_dp_hw_group_wifi8(dp_hw_grp);
+
+	if (!ath12k_wifi8_dp_ase_tx_cache_enabled(dp_hw_grp))
+		return 0;
+
+	if (!wait_for_completion_timeout(&dp_hw_grp_wifi8->peer_init_done, 1 * HZ)) {
+		ath12k_wifi8_invalidate_peer_ase_cache_table(dp_hw_grp);
+		ath12k_warn(dp->ab, "peer init is not completed for %pM", addr);
+		return -ETIMEDOUT;
+	}
+
+	return 0;
+}
