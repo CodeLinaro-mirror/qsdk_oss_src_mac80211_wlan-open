@@ -447,6 +447,7 @@ bool ath12k_dp_umac_reset_in_progress(struct ath12k_base *ab)
 
         return umac_in_progress;
 }
+EXPORT_SYMBOL(ath12k_dp_umac_reset_in_progress);
 
 int ath12k_dp_srng_setup(struct ath12k_base *ab, struct dp_srng *ring,
 			 enum hal_ring_type type, int ring_num,
