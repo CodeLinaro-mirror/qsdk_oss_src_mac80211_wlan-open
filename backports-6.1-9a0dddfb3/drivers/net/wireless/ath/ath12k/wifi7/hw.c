@@ -1526,6 +1526,11 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	} else {
 		mcbc_gsn = atomic_inc_return(&ahvif->dp_vif.mcbc_gsn) & 0xfff;
 
+		if (ahvif->vif->type == NL80211_IFTYPE_AP) {
+			if (!ath12k_dp_me_tx(&ahvif->dp_vif, skb))
+				return;
+		}
+
 		links_map = ahvif->links_map;
 		for_each_set_bit(link_id, &links_map,
 				 IEEE80211_MLD_MAX_NUM_LINKS) {

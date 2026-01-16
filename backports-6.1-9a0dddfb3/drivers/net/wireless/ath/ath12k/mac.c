@@ -18106,6 +18106,11 @@ ppe_vp_config:
 			 "Add interface vif address:%pM netdev:%s",
 			 vif->addr, wdev->netdev->name);
 
+	if (vif->type == NL80211_IFTYPE_AP) {
+		ath12k_me_db_init(&ahvif->dp_vif);
+		ath12k_dbg(NULL, ATH12K_DBG_MAC, "ME Database initialized\n");
+	}
+
 	/* Defer vdev creation until assign_chanctx or hw_scan is initiated as driver
 	 * will not know if this interface is an ML vif at this point.
 	 */
@@ -18314,6 +18319,11 @@ void ath12k_mac_op_remove_interface(struct ieee80211_hw *hw,
 	struct ath12k_hw *ah = hw->priv;
 
 	lockdep_assert_wiphy(hw->wiphy);
+
+	if (vif->type == NL80211_IFTYPE_AP) {
+		ath12k_me_db_deinit(&ahvif->dp_vif);
+		ath12k_dbg(NULL, ATH12K_DBG_MAC, "ME Database deinitialized\n");
+	}
 
 	if (vif->type == NL80211_IFTYPE_AP_VLAN) {
 		if (!ahvif->vlan_iface) {
