@@ -130,7 +130,7 @@ int ath12k_telemetry_ab_peer_agent_create(struct ath12k_base *ab)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!peer || !peer->vif || !peer->sta || !peer->assoc_success)
+		if (!peer->vif || !peer->sta || !peer->assoc_success)
 			continue;
 
 		if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP) {
@@ -276,7 +276,7 @@ int ath12k_telemetry_ab_peer_agent_destroy(struct ath12k_base *ab)
 
 	spin_lock_bh(&ab->dp->dp_lock);
 	list_for_each_entry_safe(peer, tmp, &ab->dp->peers, list) {
-		if (!peer || !peer->vif || !peer->sta)
+		if (!peer->vif || !peer->sta)
 			continue;
 
 		if (ath12k_peer_get_peer_type(peer) != NL80211_IFTYPE_AP)
