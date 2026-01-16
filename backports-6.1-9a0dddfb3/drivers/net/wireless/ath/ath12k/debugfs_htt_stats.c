@@ -2918,8 +2918,14 @@ ath12k_htt_print_tx_pdev_stats_cmn_tlv(const void *tag_buf, u16 tag_len,
 			 le32_to_cpu(htt_stats_buf->ofdma_seq_flush));
 	len += scnprintf(buf + len, buf_len - len, "bytes_sent.low_32 = %u\n",
 			 le32_to_cpu(htt_stats_buf->bytes_sent.low_32));
-	len += scnprintf(buf + len, buf_len - len, "bytes_sent.high_32 = %u\n\n",
+	len += scnprintf(buf + len, buf_len - len, "bytes_sent.high_32 = %u\n",
 			 le32_to_cpu(htt_stats_buf->bytes_sent.high_32));
+	len += scnprintf(buf + len, buf_len - len, "hw_reaped_lpi = %u\n",
+			 le32_to_cpu(htt_stats_buf->hw_reaped_lpi));
+	len += scnprintf(buf + len, buf_len - len, "hw_reaped_sp = %u\n",
+			 le32_to_cpu(htt_stats_buf->hw_reaped_sp));
+	len += scnprintf(buf + len, buf_len - len, "hw_reaped_vlp = %u\n\n",
+			 le32_to_cpu(htt_stats_buf->hw_reaped_vlp));
 
 	stats_req->buf_len = len;
 }
