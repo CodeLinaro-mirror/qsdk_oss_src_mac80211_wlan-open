@@ -2052,7 +2052,7 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	int attr_size, payload_size_pkt, attr_size_pkt, payload_size_user;
 	int attr_size_user, attr_size_type, attr_size_dot11;
 	int payload_size_ppdu_nss, payload_size_ppdu_mcs;
-	int attr_size_ppdu_nss, attr_size_ppdu_mcs;
+	int attr_size_ppdu_nss, attr_size_ppdu_mcs, attr_signal_size;
 	int mcs_size, nss_size, gi_size, bw_size;
 
 	/* Basic counters */
@@ -2226,6 +2226,18 @@ static int ath12k_vendor_get_rx_mon_stats_size(void)
 	attr_size_dot11 = nla_total_size_nested(attr_size_type) *
 			   QCA_WLAN_VENDOR_ATTR_WLAN_TELEMETRY_RX_PKT_TYPE_MAX;
 	total_size += nla_total_size_nested(attr_size_dot11);
+
+	attr_signal_size  = nla_total_size_64bit(sizeof(stats.signal_stats.snr));
+	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.snr_avg));
+	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.snr_dp));
+	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.snr_dp_avg));
+
+	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.rssi));
+	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.rssi_avg));
+	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.rssi_dp));
+	attr_signal_size += nla_total_size_64bit(sizeof(stats.signal_stats.rssi_dp_avg));
+
+	total_size += nla_total_size_nested(attr_signal_size);
 
 	/* Parent RX attr size */
 	total_size = nla_total_size_nested(total_size);
@@ -3208,6 +3220,40 @@ static int ath12k_vendor_fill_rx_wme_ac_stats(struct sk_buff *skb,
 }
 
 /**
+ * ath12k_vendor_fill_rx_mon_stats() - Serialize RX signal statistics
+ * @skb: Socket buffer for netlink message
+ * @signal_stats: Pointer to RX peer signal structure
+ *
+ * Serializes RX signal statistics to netlink attributes.
+ *
+ * Return: 0 on success, -EMSGSIZE if buffer space insufficient
+ */
+static int
+ath12k_vendor_fill_rx_signal_stats(struct sk_buff *skb,
+				   struct ath12k_dp_link_peer_rx_signal_stats *stats)
+{
+	if (nla_put_u8(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_SNR,
+		       stats->snr) ||
+	    nla_put_u16(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_SNR_AVG,
+			stats->snr_avg) ||
+	    nla_put_u8(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_SNR_DP,
+		       stats->snr_dp) ||
+	    nla_put_u16(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_SNR_DP_AVG,
+			stats->snr_dp_avg) ||
+	    nla_put_s8(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_RSSI,
+		       stats->rssi) ||
+	    nla_put_s16(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_RSSI_AVG,
+			stats->rssi_avg) ||
+	    nla_put_s8(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_RSSI_DP,
+		       stats->rssi_dp) ||
+	    nla_put_s16(skb, QCA_VENDOR_ATTR_RX_MON_SIGNAL_STATS_RSSI_DP_AVG,
+			stats->rssi_dp_avg))
+		return -EMSGSIZE;
+
+	return 0;
+}
+
+/**
  * ath12k_vendor_fill_rx_rate_stats() - Serialize RX rate statistics
  * @skb: Socket buffer for netlink message
  * @rate_stats: Pointer to rate statistics structure
@@ -3454,12 +3500,14 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 {
 	struct nlattr *coding_attr, *tid_attr, *pream_attr;
 	struct nlattr *reception_attr, *ru_attr;
-	struct nlattr *pkt_stats_attr, *byte_stats_attr;
+	struct nlattr *pkt_stats_attr, *byte_stats_attr, *signal_stat_attr;
 	struct nlattr *ppdu_nss_attr, *punc_bw_attr, *su_ppdu_cnt_attr;
 	struct nlattr *nla_wme, *rx_mpdu_cnt_attr, *ppdu_cnt_attr;
 	struct nlattr *pkt_type_attr, *mu_stats;
 	struct nlattr *pkt_type_nest, *pkt_type_mu_stats;
 	int i, j;
+	struct ath12k_dp_link_peer_rx_signal_stats *signal_stats =
+							&rx_stats->signal_stats;
 	u32 val;
 
 	/* Basic counters */
@@ -3637,6 +3685,21 @@ static int ath12k_vendor_fill_rx_mon_stats(struct sk_buff *skb,
 		ath12k_err(NULL, "nla nest failure: RX mon retry count stats");
 		return -EMSGSIZE;
 	}
+
+
+	signal_stat_attr = nla_nest_start(skb,
+					  QCA_VENDOR_ATTR_WLAN_TELEMETRY_RX_SIGNAL_STATS);
+	if (!signal_stat_attr) {
+		ath12k_err(NULL, "nla nest failure: RX signal stats");
+		return -EMSGSIZE;
+	}
+
+	if (ath12k_vendor_fill_rx_signal_stats(skb, signal_stats)) {
+		ath12k_err(NULL, "nla put failure: RX signal stats");
+		nla_nest_cancel(skb, signal_stat_attr);
+		return -EMSGSIZE;
+	}
+	nla_nest_end(skb, signal_stat_attr);
 
 	/* Extended stats placeholder */
 	if (!is_extended)
