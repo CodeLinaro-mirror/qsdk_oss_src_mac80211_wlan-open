@@ -6213,6 +6213,17 @@ ath12k_fill_band_to_mac_param(struct ath12k_base  *soc,
 		default:
 			break;
 		}
+
+#ifdef CPTCFG_QCN_EXTN
+		/* Scan radio uses a single PHY name for all bands.
+		 * Detect scan radio via board magic string match.
+		 */
+		bool is_scan_radio = !strncmp(soc->hw_params->board_magic,
+					      ATH12K_SCAN_RADIO,
+					      strlen(ATH12K_SCAN_RADIO));
+		if (is_scan_radio)
+			pdev->phy_name = ATH12K_PHY_SCAN_RADIO;
+#endif
 	}
 }
 
