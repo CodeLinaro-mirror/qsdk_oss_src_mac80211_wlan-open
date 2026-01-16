@@ -204,10 +204,13 @@ ath12k_dp_htt_process_stats_sch_cmd_status_tlv(struct ath12k_pdev_dp *dp_pdev,
 			if (!(tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMMON)))
 				continue;
 
+			rcu_read_lock();
 			spin_lock_bh(&dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+			peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+									peer_id);
 			if (!peer) {
 				spin_unlock_bh(&dp->dp_lock);
+				rcu_read_unlock();
 				continue;
 			}
 
@@ -219,6 +222,7 @@ ath12k_dp_htt_process_stats_sch_cmd_status_tlv(struct ath12k_pdev_dp *dp_pdev,
 				peer->last_delayed_ba_ppduid = ppdu_info->ppdu_id;
 			}
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock();
 		}
 	}
 
@@ -231,10 +235,13 @@ ath12k_dp_htt_process_stats_sch_cmd_status_tlv(struct ath12k_pdev_dp *dp_pdev,
 			if (!(tlv_bitmap & BIT(HTT_PPDU_STATS_TAG_USR_COMMON)))
 				continue;
 
+			rcu_read_lock();
 			spin_lock_bh(&dp->dp_lock);
-			peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+			peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev,
+									peer_id);
 			if (!peer) {
 				spin_unlock_bh(&dp->dp_lock);
+				rcu_read_unlock();
 				continue;
 			}
 
@@ -242,12 +249,14 @@ ath12k_dp_htt_process_stats_sch_cmd_status_tlv(struct ath12k_pdev_dp *dp_pdev,
 			if (usr_stats->cmpltn_cmn.status !=
 					HTT_PPDU_STATS_USER_STATUS_OK) {
 				spin_unlock_bh(&dp->dp_lock);
+				rcu_read_unlock();
 				continue;
 			}
 
 			if (peer->delayba_flag)
 				ath12k_copy_to_bar(peer, usr_stats);
 			spin_unlock_bh(&dp->dp_lock);
+			rcu_read_unlock();
 		}
 	}
 
@@ -1258,7 +1267,8 @@ void ath12k_htt_update_ppdu_stats(struct ath12k_pdev_dp *dp_pdev,
 
 		rcu_read_lock();
 		spin_lock_bh(&dp_pdev->dp->dp_lock);
-		peer = ath12k_dp_link_peer_find_by_id(dp_pdev->dp, usr_stats->peer_id);
+		peer = ath12k_dp_link_peer_find_by_peerid_index(dp_pdev->dp, dp_pdev,
+								usr_stats->peer_id);
 
 		if (!peer || !peer->sta) {
 			spin_unlock_bh(&dp_pdev->dp->dp_lock);
@@ -1766,6 +1776,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 	u8 pdev_id, chip_id;
 	int ret;
 	struct ath12k_sta *ahsta = NULL;
+	struct ath12k_pdev_dp *dp_pdev;
 
 	msg = (struct ath12k_htt_pri_link_migr_ind_msg *)skb->data;
 
@@ -1804,13 +1815,13 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 		rcu_read_unlock();
 		return;
 	}
-	rcu_read_unlock();
 
 	dp = ath12k_ab_to_dp(pri_ab);
+	dp_pdev = &arvif->ar->dp;
 
 	spin_lock_bh(&dp->dp_lock);
 
-	peer = ath12k_dp_link_peer_find_by_id(dp, peer_id);
+	peer = ath12k_dp_link_peer_find_by_peerid_index(dp, dp_pdev, peer_id);
 	if (!peer) {
 		ath12k_warn(pri_ab, "htt can not find peer fo peer id %d\n",
 			    peer_id);
@@ -1847,6 +1858,7 @@ ath12k_htt_pri_link_peer_migrate_indication(struct ath12k_base *ab,
 
 exit_pri_link_migr_ind:
 	spin_unlock_bh(&dp->dp_lock);
+	rcu_read_unlock();
 
 	if (ahsta)
 		ieee80211_queue_work(arvif->ar->ah->hw, &ahsta->migration_wk);
