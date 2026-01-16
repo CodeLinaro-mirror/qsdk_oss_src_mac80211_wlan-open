@@ -2825,9 +2825,15 @@ enum sta_notify_cmd {
  *
  * @sta: station table entry, this sta pointer may be NULL and
  * 	it is not allowed to copy the pointer, due to RCU.
+ * @vlan_vif: AP_VLAN interface for this frame, if different from the
+ *	primary AP interface. This is only set when the hardware advertises
+ *	%IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD and allows the driver
+ *	to select VLAN-specific group keys (GTKs) in hardware. For drivers
+ *	that do not implement VLAN group key offload this field will be %NULL.
  */
 struct ieee80211_tx_control {
 	struct ieee80211_sta *sta;
+	struct ieee80211_vif *vlan_vif;
 };
 
 /**
@@ -3128,6 +3134,12 @@ struct ieee80211_txq {
  * @IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL: Hardware only supports single
  *	channel operation.
  *
+ * @IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD: Hardware/driver supports
+ *	hardware encryption for per-VLAN group keys on AP_VLAN interfaces.
+ *	When this flag is set mac80211 will install GTKs for AP_VLAN interfaces
+ *	in the driver and will also pass the originating AP_VLAN vif to the driver
+ *	in @ieee80211_tx_control.
+ *
  * @NUM_IEEE80211_HW_FLAGS: number of hardware flags, used for sizing arrays
  */
 enum ieee80211_hw_flags {
@@ -3200,6 +3212,7 @@ enum ieee80211_hw_flags {
 	IEEE80211_HW_SUPPORTS_EXT_REMAIN_ON_CHAN,
 	IEEE80211_HW_SUPPORTS_DSCP_TID_MAP,
 	IEEE80211_HW_SUPPORTS_SINGLE_CHANNEL,
+	IEEE80211_HW_VLAN_GROUP_KEY_HW_OFFLOAD,
 
 	/* keep last, obviously */
 	NUM_IEEE80211_HW_FLAGS
