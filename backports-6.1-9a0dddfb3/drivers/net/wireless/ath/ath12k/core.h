@@ -127,6 +127,12 @@
 #define ATH12K_MAX_TID_VALUE 8
 #define ATH12K_FREE_MAP_ID_MASK GENMASK(31, 0)
 
+#define ATH12K_GROUP_KEYS_NUM_MAX	128
+#define ATH12K_GROUP_KEY_SLOT_INVALID	0xff
+#define ATH12K_FREE_GROUP_IDX_MAP_BITS	(BITS_PER_BYTE * (sizeof(long)))
+#define ATH12K_FREE_GROUP_IDX_MAP_MAX	(ATH12K_GROUP_KEYS_NUM_MAX /	\
+					 ATH12K_FREE_GROUP_IDX_MAP_BITS)
+
 /* Chip power state definitions for partner chip notification */
 #define FW_ASSERTED_CHIP_PWR_DOWN 1   /* Partner chip is powering down */
 #define FW_ASSERTED_CHIP_PWR_UP   2   /* Partner chip is powering up */
@@ -696,11 +702,11 @@ struct ath12k_link_vif {
 	int num_peers;
 	struct wiphy_work update_bcn_tx_status_work;
 	struct ath12k_vap_cfg vap_cfg;
-
 	u8 gtk_pn[IEEE80211_MAX_PN_LEN];
 	u8 bigtk_pn[IEEE80211_MAX_PN_LEN];
 	u8 last_installed_gtk_keyix;
 	u8 last_installed_bigtk_keyix;
+	DECLARE_BITMAP(free_groupidx_map, ATH12K_GROUP_KEYS_NUM_MAX);
 };
 
 struct ath12k_dp_link_vif {
@@ -721,6 +727,8 @@ struct ath12k_vlan_iface {
 	struct ieee80211_vif *parent_vif;
 	bool attach_link_done;
 	int ppe_vp_profile_idx[ATH12K_NUM_MAX_LINKS];
+	u8 grp_key_slot_map[ATH12K_NUM_MAX_LINKS][WMI_MAX_KEY_INDEX + 1];
+	bool is_wds_4addr;
 };
 
 struct ath12k_dp_vif {

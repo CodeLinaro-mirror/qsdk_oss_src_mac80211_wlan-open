@@ -74,6 +74,7 @@ void ath12k_wifi7_wmi_init_qcn9274(struct ath12k_base *ab,
 	}
 
 	config->max_beacon_size = ath12k_cfg_get(ab, ATH12K_CFG_AP_MAX_MGMT_FRM_SZ);
+	config->max_num_group_keys = ATH12K_GROUP_KEYS_NUM_MAX;
 
 	if (of_machine_is_compatible("qcom,ipq5424"))
 		config->def_flow_override = true;
@@ -124,4 +125,5 @@ void ath12k_wifi7_wmi_init_wcn7850(struct ath12k_base *ab,
 	config->num_multicast_filter_entries = 0x20;
 	config->num_wow_filters = 0x16;
 	config->num_keep_alive_pattern = 0;
+	config->max_num_group_keys = ATH12K_GROUP_KEYS_NUM_MAX;
 }

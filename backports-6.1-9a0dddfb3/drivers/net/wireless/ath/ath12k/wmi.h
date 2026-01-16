@@ -1456,6 +1456,8 @@ enum wmi_tlv_vdev_param {
 	WMI_VDEV_PARAM_ENABLE_BCAST_PROBE_RESPONSE,
 	WMI_VDEV_PARAM_FILS_MAX_CHANNEL_GUARD_TIME,
 	WMI_VDEV_PARAM_HE_LTF = 0x74,
+	WMI_VDEV_PARAM_ENABLE_MULTI_GROUP_KEY = 0x76,
+	WMI_VDEV_PARAM_NUM_GROUP_KEYS = 0x77,
 	WMI_VDEV_PARAM_ENABLE_DISABLE_RTT_RESPONDER_ROLE = 0x7d,
 	WMI_VDEV_PARAM_BA_MODE = 0x7e,
 	WMI_VDEV_PARAM_AUTORATE_MISC_CFG = 0x80,
@@ -2889,6 +2891,7 @@ struct ath12k_wmi_resource_config_arg {
 	u32 bpf_instruction_size;
 	u32 max_bssid_rx_filters;
 	u32 use_pdev_id;
+	u32 max_num_group_keys;
 	u32 peer_map_unmap_version;
 	u32 sched_params;
 	u32 twt_ap_pdev_count;
@@ -4537,6 +4540,8 @@ struct wmi_vdev_install_key_arg {
 	u32 key_rxmic_len;
 	u64 key_rsc_counter;
 	const void *key_data;
+	u32 is_group_key_id_valid;
+	u32 group_key_id;
 };
 
 #define WMI_MAX_SUPPORTED_RATES			128

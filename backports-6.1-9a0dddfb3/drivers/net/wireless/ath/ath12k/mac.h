@@ -477,9 +477,10 @@ int ath12k_mac_conf_tx(struct ath12k_link_vif *arvif, u16 ac,
 		       const struct ieee80211_tx_queue_params *params);
 
 int ath12k_mac_set_key(struct ath12k *ar, enum set_key_cmd cmd,
-                              struct ath12k_link_vif *arvif,
-                              struct ath12k_link_sta *arsta,
-                              struct ieee80211_key_conf *key);
+		       struct ath12k_link_vif *arvif,
+		       struct ath12k_link_sta *arsta,
+		       struct ieee80211_key_conf *key,
+		       struct ath12k_vif *vlan_ahvif);
 int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 			   bool is_bridge_vdev);
 
