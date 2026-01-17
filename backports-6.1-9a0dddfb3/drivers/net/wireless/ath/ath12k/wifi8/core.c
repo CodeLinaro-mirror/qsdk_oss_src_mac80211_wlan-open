@@ -8,12 +8,15 @@
 #include "../pci.h"
 #include "../erp.h"
 #include "pci.h"
+#include "../ini.h"
 
 static int pci_err;
 
 static int ath12k_wifi8_init(void)
 {
 	ath12k_erp_init();
+
+	ath12k_cfg_global_init();
 
 	pci_err = ath12k_wifi8_pci_init();
 	if (pci_err)
@@ -27,6 +30,8 @@ static void ath12k_wifi8_exit(void)
 {
 	if (!pci_err)
 		ath12k_wifi8_pci_exit();
+
+	ath12k_cfg_global_deinit();
 
 	ath12k_erp_deinit();
 }
