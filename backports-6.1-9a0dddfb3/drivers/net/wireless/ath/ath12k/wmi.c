@@ -1000,13 +1000,14 @@ struct sk_buff *ath12k_wmi_alloc_skb(struct ath12k_wmi_base *wmi_ab, u32 len)
 
 int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 			 struct sk_buff *frame, bool link_agnostic,
-			 bool tx_params_valid)
+			 bool is_cfr)
 {
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
 	struct wmi_mgmt_send_cmd *cmd;
 	struct ieee80211_tx_info *info = IEEE80211_SKB_CB(frame);
 	struct wmi_mlo_mgmt_send_params *ml_params;
 	struct wmi_mgmt_send_params *params;
+	bool tx_params_valid = false;
 	struct wmi_tlv *frame_tlv;
 	struct sk_buff *skb;
 	u32 buf_len;
@@ -1018,12 +1019,14 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 
 	len = sizeof(*cmd) + sizeof(*frame_tlv) + roundup(buf_len, sizeof(u32));
 
-	if (link_agnostic)
-		len += sizeof(struct wmi_mgmt_send_params) +
-				TLV_HDR_SIZE + sizeof(*ml_params);
+	if (is_cfr)
+		tx_params_valid = true;
 
-	if (tx_params_valid)
+	if (tx_params_valid || link_agnostic) {
 		len += sizeof(*params);
+		if (link_agnostic)
+			len += TLV_HDR_SIZE + sizeof(*ml_params);
+	}
 
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
 	if (!skb)
@@ -1046,39 +1049,47 @@ int ath12k_wmi_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 
 	memcpy(frame_tlv->value, frame->data, buf_len);
 
-	if (!link_agnostic)
+	if (!tx_params_valid && !link_agnostic)
 		goto send;
 
 	ptr = skb->data + sizeof(*cmd) + sizeof(*frame_tlv) + roundup(buf_len, sizeof(u32));
 
 	tlv = ptr;
 
-	/* Tx params not used currently */
 	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_TX_SEND_PARAMS) |
 		      FIELD_PREP(WMI_TLV_LEN, sizeof(struct wmi_mgmt_send_params) - TLV_HDR_SIZE);
+
+	if (tx_params_valid) {
+		params = ptr;
+
+		/* WMI_TX_PARAMS_DWORD1_CFR_CAPTURE should be set
+		 * only when CFR is enabled.
+		 */
+		if (is_cfr)
+			params->tx_param_dword1 |= WMI_TX_PARAMS_DWORD1_CFR_CAPTURE;
+	}
+
 	ptr += sizeof(struct wmi_mgmt_send_params);
 
 	tlv = ptr;
-	tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
-		      FIELD_PREP(WMI_TLV_LEN, sizeof(*ml_params));
-	ptr += TLV_HDR_SIZE;
 
-	ml_params = ptr;
-	ml_params->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_MLO_TX_SEND_PARAMS) |
-				FIELD_PREP(WMI_TLV_LEN, sizeof(*ml_params) - TLV_HDR_SIZE);
+	if (link_agnostic) {
+		tlv->header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_ARRAY_STRUCT) |
+			      FIELD_PREP(WMI_TLV_LEN, sizeof(*ml_params));
+		ptr += TLV_HDR_SIZE;
 
-	if (ath12k_hw_group_recovery_in_progress(ar->ab->ag) &&
-	    ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
-		ml_params->hw_link_id = ar->pdev->hw_link_id;
-	} else {
-		ml_params->hw_link_id = WMI_MLO_MGMT_TID;
-	}
+		ml_params = ptr;
+		ml_params->tlv_header = FIELD_PREP(WMI_TLV_TAG,
+						   WMI_TAG_MLO_TX_SEND_PARAMS) |
+					FIELD_PREP(WMI_TLV_LEN,
+						   sizeof(*ml_params) - TLV_HDR_SIZE);
 
-	if (tx_params_valid) {
-		params = (struct wmi_mgmt_send_params *)(skb->data + (len - sizeof(*params)));
-		params->tlv_header = FIELD_PREP(WMI_TLV_TAG, WMI_TAG_TX_SEND_PARAMS) |
-				     FIELD_PREP(WMI_TLV_LEN, sizeof(*params) - TLV_HDR_SIZE);
-		params->tx_param_dword1 |= WMI_TX_PARAMS_DWORD1_CFR_CAPTURE;
+		if (ath12k_hw_group_recovery_in_progress(ar->ab->ag) &&
+		    ar->ab->ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2) {
+			ml_params->hw_link_id = ar->pdev->hw_link_id;
+		} else {
+			ml_params->hw_link_id = WMI_MLO_MGMT_TID;
+		}
 	}
 
 send:

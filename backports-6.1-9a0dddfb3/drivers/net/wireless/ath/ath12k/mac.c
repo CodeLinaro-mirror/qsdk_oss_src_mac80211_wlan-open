@@ -15757,7 +15757,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 	struct ath12k_skb_cb *skb_cb = ATH12K_SKB_CB(skb);
 	struct ath12k_mgmt_frame_stats *stats;
 	enum hal_encrypt_type enctype;
-	bool tx_params_valid = false;
+	bool is_cfr = false;
 	unsigned int mic_len;
 	bool link_agnostic;
 	dma_addr_t paddr;
@@ -15811,7 +15811,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 #ifdef CPTCFG_ATH12K_CFR
 	if (ar->cfr.cfr_enabled && ieee80211_is_probe_resp(hdr->frame_control) &&
 	    peer_is_in_cfr_unassoc_pool(ar, hdr->addr1))
-		tx_params_valid = true;
+		is_cfr = true;
 #endif /* CPTCFG_ATH12K_CFR */
 
 	spin_lock_bh(&ar->data_lock);
@@ -15825,7 +15825,7 @@ static int ath12k_mac_mgmt_tx_wmi(struct ath12k *ar, struct ath12k_link_vif *arv
 		ret = ath12k_wmi_offchan_mgmt_send(ar, arvif->vdev_id, buf_id, skb);
 	else
 		ret = ath12k_wmi_mgmt_send(ar, arvif->vdev_id, buf_id, skb,
-					   link_agnostic, tx_params_valid);
+					   link_agnostic, is_cfr);
 	if (ret) {
 		ath12k_warn(ar->ab, "failed to send mgmt frame: %d\n", ret);
 		goto err_unmap_buf;
