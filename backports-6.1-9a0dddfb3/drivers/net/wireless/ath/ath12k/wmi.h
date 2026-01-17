@@ -78,6 +78,7 @@ static inline s32 a_sle32_to_cpu(a_sle32 val)
 #define WMI_TLV_CMD_UNSUPPORTED 0
 #define WMI_TLV_PDEV_PARAM_UNSUPPORTED 0
 #define WMI_TLV_VDEV_PARAM_UNSUPPORTED 0
+#define HW_QCN9000		3
 
 struct wmi_cmd_hdr {
 	__le32 cmd_id;

@@ -12999,6 +12999,20 @@ static void ath12k_rfkill_state_change_event(struct ath12k_base *ab,
 	kfree(tb);
 }
 
+/* Map ath12k hw_rev to cnss_diag hw_rev for diagnostic logging */
+static u32 ath12k_get_diag_hw_id(struct ath12k_base *ab)
+{
+	switch (ab->hw_params->hw_rev) {
+#ifdef CPTCFG_QCN_EXTN
+	case ATH12K_HW_QCN9074_HW10:
+		return HW_QCN9000;
+#endif
+	default:
+		/* For all other chipsets, use hw_rev + offset */
+		return ab->hw_params->hw_rev + ATH12K_DIAG_HW_ID_OFFSET;
+	}
+}
+
 static void
 ath12k_wmi_diag_event(struct ath12k_base *ab, struct sk_buff *skb)
 {
@@ -13014,7 +13028,7 @@ ath12k_wmi_diag_event(struct ath12k_base *ab, struct sk_buff *skb)
 	if (tlv_tag == WMI_TAG_ARRAY_BYTE) {
 		data = skb->data + sizeof(struct wmi_tlv);
 		dev_id = (uint32_t *)data;
-		*dev_id = ab->hw_params->hw_rev + ATH12K_DIAG_HW_ID_OFFSET;
+		*dev_id = ath12k_get_diag_hw_id(ab);
 	} else {
 		ath12k_warn(ab, "WMI Diag Event missing required tlv\n");
 		return;
