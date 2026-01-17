@@ -14814,6 +14814,27 @@ static int nl80211_tx_mgmt(struct sk_buff *skb, struct genl_info *info)
 	    !(wdev->valid_links & BIT(params.link_id)))
 		return -EINVAL;
 
+	if (info->attrs[NL80211_ATTR_TX_RATES]) {
+		err = nl80211_parse_tx_bitrate_mask(info, info->attrs,
+						    NL80211_ATTR_TX_RATES,
+						    &params.rate,
+						    wdev->netdev, false,
+						    params.link_id,
+						    &chandef);
+		if (err)
+			return err;
+
+		/*
+		 * validate_beacon_tx_rate(), which is used to verify
+		 * beacon rates, is reused to ensure that a single
+		 * valid tx rate is provided.
+		 */
+		err = validate_beacon_tx_rate(rdev, chandef.chan->band,
+					      &params.rate);
+		if (err)
+			return err;
+	}
+
 	params.buf = nla_data(info->attrs[NL80211_ATTR_FRAME]);
 	params.len = nla_len(info->attrs[NL80211_ATTR_FRAME]);
 

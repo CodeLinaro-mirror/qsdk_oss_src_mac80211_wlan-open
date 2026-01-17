@@ -4220,6 +4220,7 @@ struct cfg80211_mgmt_tx_params {
 	int n_csa_offsets;
 	const u16 *csa_offsets;
 	int link_id;
+	struct cfg80211_bitrate_mask rate;
 };
 
 /**
