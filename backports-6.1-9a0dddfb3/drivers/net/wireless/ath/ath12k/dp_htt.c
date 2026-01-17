@@ -14,11 +14,11 @@
 #include "dp_mon.h"
 #include "dp_mon_filter.h"
 
-static void ath12k_dp_htt_htc_tx_complete(struct ath12k_base *ab,
-					  struct sk_buff *skb)
+void ath12k_dp_htt_htc_tx_complete(struct ath12k_base *ab, struct sk_buff *skb)
 {
 	dev_kfree_skb_any(skb);
 }
+EXPORT_SYMBOL(ath12k_dp_htt_htc_tx_complete);
 
 int ath12k_dp_htt_connect(struct ath12k_dp *dp)
 {

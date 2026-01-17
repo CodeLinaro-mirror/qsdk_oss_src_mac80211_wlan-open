@@ -526,6 +526,7 @@ static void ath12k_wifi8_dp_link_vif_configure(struct ath12k_dp *dp,
 static struct ath12k_dp_arch_ops ath12k_wifi8_dp_arch_ops = {
 	.dp_op_device_init = ath12k_wifi8_dp_op_device_init,
 	.dp_op_device_deinit = ath12k_wifi8_dp_op_device_deinit,
+	.dp_msdu_htt_connect = ath12k_wifi8_dp_msdu_htt_connect,
 	.dp_op_mlo_init = ath12k_wifi8_dp_op_mlo_init,
 	.dp_op_mlo_deinit = ath12k_wifi8_dp_op_mlo_deinit,
 	.dp_tx_get_vdev_bank_config = ath12k_wifi8_dp_tx_get_vdev_bank_config,
