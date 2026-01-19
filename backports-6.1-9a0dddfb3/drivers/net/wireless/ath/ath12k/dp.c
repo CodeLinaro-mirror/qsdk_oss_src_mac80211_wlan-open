@@ -3387,3 +3387,31 @@ void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp)
 	}
 }
 EXPORT_SYMBOL(ath12k_dp_clear_link_desc_pool);
+
+static inline u8
+ath12k_dp_get_eapol_keytype(struct sk_buff *skb)
+{
+	enum ath12k_dp_eapol_key_type eapol_subtype;
+
+	if (!skb || !skb->data || skb->len < ETH_HLEN)
+		return 0;
+
+	eapol_subtype = ath12k_dp_get_eapol_subtype(skb->data + ETH_HLEN);
+
+	switch (eapol_subtype) {
+	case DP_EAPOL_KEY_TYPE_M1:
+		return DP_PKT_TYPE_EAPOL_M1;
+	case DP_EAPOL_KEY_TYPE_M2:
+		return DP_PKT_TYPE_EAPOL_M2;
+	case DP_EAPOL_KEY_TYPE_M3:
+		return DP_PKT_TYPE_EAPOL_M3;
+	case DP_EAPOL_KEY_TYPE_M4:
+		return DP_PKT_TYPE_EAPOL_M4;
+	case DP_EAPOL_KEY_TYPE_G1:
+		return DP_PKT_TYPE_EAPOL_G1;
+	case DP_EAPOL_KEY_TYPE_G2:
+		return DP_PKT_TYPE_EAPOL_G2;
+	default:
+		return 0;
+	}
+}
