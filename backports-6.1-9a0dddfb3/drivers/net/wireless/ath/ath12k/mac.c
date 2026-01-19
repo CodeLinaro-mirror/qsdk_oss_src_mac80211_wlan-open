@@ -5642,7 +5642,7 @@ void ath12k_bss_disassoc(struct ath12k *ar,
 	cancel_delayed_work(&ahvif->deflink.connection_loss_work);
 }
 
-static u32 ath12k_mac_get_rate_hw_value(int bitrate)
+u32 ath12k_mac_get_rate_hw_value(int bitrate)
 {
 	u32 preamble;
 	u16 hw_value;

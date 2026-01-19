@@ -746,6 +746,7 @@ void ath12k_mac_ieee80211_free_txskb(struct ieee80211_hw *hw,
 				     enum ath12k_dp_tx_enq_error drop_reason,
 				     bool dev_free);
 bool ath12k_mac_check_err_code_debug_logging(enum ath12k_dp_tx_enq_error err);
+u32 ath12k_mac_get_rate_hw_value(int bitrate);
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 int ath12k_mac_op_create_datapath_offload_if(struct ieee80211_hw *hw,
 					     struct ieee80211_vif *vif,
