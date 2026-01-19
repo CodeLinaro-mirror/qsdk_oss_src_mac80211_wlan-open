@@ -1035,6 +1035,20 @@ int ieee80211_set_monitor_channel(struct wiphy *wiphy,
 			goto done;
 	}
 
+	/*
+	 * If the monitor interface exists but hasn't been fully added to the
+	 * driver yet (IEEE80211_SDATA_IN_DRIVER not set), avoid triggering
+	 * driver ops through channel context assignment. In this case, just
+	 * cache the requested channel; once the monitor sdata is in-driver,
+	 * normal channel handling will apply and the cached request will be
+	 * consistent.
+	 */
+	if (!(sdata->flags & IEEE80211_SDATA_IN_DRIVER)) {
+		pr_err("sdata in driver isn't set for mon chan vif_type: %d\n",
+		       sdata->vif.type);
+		goto done;
+	}
+
 	if (rcu_access_pointer(sdata->deflink.conf->chanctx_conf) &&
 		cfg80211_chandef_identical(&sdata->vif.bss_conf.chanreq.oper,
 				       &chanreq.oper))
