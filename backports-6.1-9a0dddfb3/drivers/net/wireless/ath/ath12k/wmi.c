@@ -1795,7 +1795,7 @@ int ath12k_wmi_send_peer_create_cmd(struct ath12k *ar,
 
 int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 				    const u8 *peer_addr, u8 vdev_id,
-				    u32 mlo_hw_link_id_bitmap)
+				    struct ath12k_sta *ahsta)
 {
 	struct ath12k_hw_group *ag = ar->ab->ag;
 	struct ath12k_wmi_pdev *wmi = ar->wmi;
@@ -1804,7 +1804,11 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 	struct sk_buff *skb;
 	struct wmi_tlv *tlv;
 	void *ptr;
+	u32 mlo_hw_link_id_bitmap = 0;
 	int ret, len;
+
+	if (ahsta)
+		mlo_hw_link_id_bitmap = ahsta->mlo_hw_link_id_bitmap;
 
 	len = sizeof(*cmd) + sizeof(*mlo_params) + TLV_HDR_SIZE;
 	skb = ath12k_wmi_alloc_skb(wmi->wmi_ab, len);
@@ -1829,7 +1833,8 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 	mlo_params->tlv_header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_MLO_PARAMS_PEER_DELETE,
 							sizeof(*mlo_params));
 
-	if (ag && ath12k_hw_group_recovery_in_progress(ag) &&
+	if (ag && (ath12k_hw_group_recovery_in_progress(ag) ||
+	    (ahsta && ahsta->peer_delete_send_mlo_hw_bitmap)) &&
 	    mlo_hw_link_id_bitmap)
 		mlo_hw_link_id_bitmap &= ~BIT(ar->pdev->hw_link_id);
 	else
@@ -1840,6 +1845,12 @@ int ath12k_wmi_send_peer_delete_cmd(struct ath12k *ar,
 	ath12k_dbg(ar->ab, ATH12K_DBG_PEER | ATH12K_DBG_MLME,
 		   "WMI peer delete vdev_id %d peer_addr %pM num_peer : %d hw_link_id_bitmap 0x%x\n",
 		   vdev_id,  peer_addr, ar->num_peers, mlo_hw_link_id_bitmap);
+
+	if (ahsta && ahsta->peer_delete_send_mlo_hw_bitmap) {
+		ath12k_dbg(ar->ab, ATH12K_DBG_PEER,
+			   "WMI peer delete peer_delete_send_mlo_hw_bitmap: 0x%x\n",
+			   ahsta->peer_delete_send_mlo_hw_bitmap);
+	}
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_PEER_DELETE_CMDID);
 	if (ret) {

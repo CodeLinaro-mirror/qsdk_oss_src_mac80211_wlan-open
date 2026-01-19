@@ -86,7 +86,7 @@ int ath12k_wait_for_peer_delete_done(struct ath12k *ar, u32 vdev_id,
 }
 
 static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *addr,
-				   u32 mlo_hw_link_id_bitmap)
+				   struct ath12k_sta *ahsta)
 {
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_dp_link_peer *peer;
@@ -109,7 +109,8 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 		}
 	}
 	 spin_unlock_bh(&ar->ab->dp->dp_lock);
-	ret = ath12k_wmi_send_peer_delete_cmd(ar, addr, vdev_id, mlo_hw_link_id_bitmap);
+
+	ret = ath12k_wmi_send_peer_delete_cmd(ar, addr, vdev_id, ahsta);
 	if (ret) {
 		ath12k_warn(ab,
 			    "failed to delete peer vdev_id %d addr %pM ret %d\n",
@@ -121,7 +122,7 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 }
 
 static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
-				u32 mlo_hw_link_id_bitmap)
+				struct ath12k_sta *ahsta)
 {
 	int ret;
 	struct ath12k_link_vif *arvif = NULL;
@@ -138,7 +139,7 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 		return -EHOSTDOWN;
 	}
 
-	ret = ath12k_peer_delete_send(ar, vdev_id, addr, mlo_hw_link_id_bitmap);
+	ret = ath12k_peer_delete_send(ar, vdev_id, addr, ahsta);
 	if (ret)
 		return ret;
 
@@ -161,13 +162,13 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 }
 
 int ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
-		       u32 mlo_hw_link_id_bitmap)
+		       struct ath12k_sta *ahsta)
 {
 	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	ret = __ath12k_peer_delete(ar, vdev_id, addr, mlo_hw_link_id_bitmap);
+	ret = __ath12k_peer_delete(ar, vdev_id, addr, ahsta);
 	if (ret && ret != -EHOSTDOWN)
 		return ret;
 
@@ -237,8 +238,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 		ath12k_warn(ar->ab, "failed to find peer %pM on vdev %i after creation\n",
 			    arg->peer_addr, arg->vdev_id);
 
-		ret = __ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr,
-					   ahsta->mlo_hw_link_id_bitmap);
+		ret = __ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr, ahsta);
 		if (ret)
 			ath12k_warn(ar->ab, "failed to delete peer vdev_id %d addr %pM\n",
 				    arg->vdev_id, arg->peer_addr);
@@ -300,7 +300,7 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 					 arvif->ahvif->dp_vif.ppe_vp_num);
 
 	if (ret)
-		ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr, false);
+		ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr, NULL);
 
 	return ret;
 }
@@ -359,7 +359,6 @@ int ath12k_peer_mlo_link_peer_delete(struct ath12k_link_vif *arvif,
 {
 	struct ath12k *ar;
 	struct ath12k_sta *ahsta;
-	u32 mlo_hw_link_id_bitmap = 0;
 	int ret;
 
 	if (!arvif || !arsta)
@@ -370,8 +369,6 @@ int ath12k_peer_mlo_link_peer_delete(struct ath12k_link_vif *arvif,
 		return 0;
 
 	ahsta = arsta->ahsta;
-	if (ahsta)
-		mlo_hw_link_id_bitmap = ahsta->mlo_hw_link_id_bitmap;
 
 	ath12k_dp_peer_cleanup(ar, arvif->vdev_id, arsta->addr);
 	ath12k_dp_link_peer_unassign(ar, arvif->vdev_id, arsta->addr);
@@ -383,8 +380,7 @@ int ath12k_peer_mlo_link_peer_delete(struct ath12k_link_vif *arvif,
 		return -EHOSTDOWN;
 	}
 
-	ret = ath12k_peer_delete_send(ar, arvif->vdev_id, arsta->addr,
-				      mlo_hw_link_id_bitmap);
+	ret = ath12k_peer_delete_send(ar, arvif->vdev_id, arsta->addr, ahsta);
 	if (ret) {
 		ath12k_warn(ar->ab,
 			    "failed to delete peer vdev_id %d addr %pM ret %d\n",
@@ -456,6 +452,8 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 			      struct ath12k_sta *ahsta,
 			      enum ath12k_debug_mask debug_mask)
 {
+	struct ath12k_hw_group *ag = ab->ag;
+
 	if (!ahsta->low_ack_sent) {
 		ath12k_dbg(ab, debug_mask, "sending low ack for/disassoc:%pM\n",
 			   sta->addr);
@@ -467,6 +465,11 @@ void ath12k_mac_peer_disassoc(struct ath12k_base *ab, struct ieee80211_sta *sta,
 		 * will be triggerred when umac reset is happening
 		 */
 		ahsta->low_ack_sent = true;
+		/* Track peers marked for deletion during Mode 2 recovery
+		 * to send mlo_hw_link_id_bitmap only for them.
+		 */
+		if (ag && ag->recovery_mode == ATH12K_MLO_RECOVERY_MODE2)
+			ahsta->peer_delete_send_mlo_hw_bitmap = true;
 	}
 }
 

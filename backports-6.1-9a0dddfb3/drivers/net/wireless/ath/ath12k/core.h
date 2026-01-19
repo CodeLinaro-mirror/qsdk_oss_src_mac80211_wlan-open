@@ -1029,6 +1029,7 @@ struct ath12k_sta {
 	/* indicates bitmap of devices where peers are created */
 	u8 device_bitmap;
 	u32 mlo_hw_link_id_bitmap;
+	bool peer_delete_send_mlo_hw_bitmap;
 
 #ifdef CPTCFG_MAC80211_DEBUGFS
 	/* protected by conf_mutex */
