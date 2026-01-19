@@ -2716,10 +2716,14 @@ struct hal_mon_dest_desc {
 #define HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_FLAG		BIT(8)
 #define HAL_TX_MSDU_METADATA_INFO0_ENCRYPT_TYPE		GENMASK(16, 15)
 #define HAL_TX_MSDU_METADATA_INFO0_HOST_TX_DESC_POOL	BIT(31)
+#define HAL_TX_MSDU_METADATA_INFO0_VALID_KEY_FLAGS	BIT(9)
+#define HAL_TX_MSDU_METADATA_INFO2_KEY_FLAGS		GENMASK(15, 8)
 
 struct hal_tx_msdu_metadata {
 	__le32 info0;
-	__le32 rsvd0[6];
+	__le32 info1;
+	__le32 info2;
+	__le32 rsvd0[4];
 } __packed;
 
 /* hal_tx_msdu_metadata

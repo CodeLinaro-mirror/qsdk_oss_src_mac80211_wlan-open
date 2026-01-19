@@ -17,7 +17,7 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 		   struct ath12k_link_vif *arvif,
 		   struct sk_buff *skb, bool gsn_valid, int mcbc_gsn,
 		   bool is_mcast, struct ath12k_link_sta *arsta,
-		   u8 ring_id, u32 qos_nw_delay);
+		   u8 ring_id, u32 qos_nw_delay, int group_slot);
 enum ath12k_dp_tx_enq_error
 ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 			struct ath12k_link_vif *arvif,

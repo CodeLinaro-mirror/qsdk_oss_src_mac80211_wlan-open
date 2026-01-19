@@ -1236,6 +1236,36 @@ static struct ath12k_hw_params ath12k_wifi7_hw_params[] = {
 	},
 };
 
+static int ath12k_get_mcast_group_slot(struct ieee80211_vif *vif,
+				       struct ieee80211_vif *vlan_vif,
+				       struct ath12k_link_vif *arvif,
+				       struct ieee80211_key_conf *hw_key,
+				       u8 link_id)
+{
+	struct ath12k_vif *vlan_ahvif;
+	struct ath12k_vlan_iface *vif_vlan;
+	int group_slot = -1;
+	u8 keyidx;
+
+	if (!hw_key ||
+	    (hw_key->flags & IEEE80211_KEY_FLAG_PAIRWISE))
+		return -1;
+
+	keyidx = hw_key->keyidx;
+
+	if (vlan_vif && vlan_vif->type == NL80211_IFTYPE_AP_VLAN) {
+		vlan_ahvif = ath12k_vif_to_ahvif(vlan_vif);
+		if (!vlan_ahvif)
+			return -1;
+
+		vif_vlan = vlan_ahvif->vlan_iface;
+		if (vif_vlan && !vif_vlan->is_wds_4addr)
+			group_slot = vif_vlan->grp_key_slot_map[link_id][keyidx];
+	}
+
+	return group_slot;
+}
+
 /* Note: called under rcu_read_lock() */
 static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 				   struct ieee80211_tx_control *control,
@@ -1246,6 +1276,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ieee80211_vif *vif = info->control.vif;
 	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 	struct ath12k_link_vif *arvif = &ahvif->deflink;
+	struct ieee80211_vif *vlan_vif = control ? control->vlan_vif : NULL;
 	struct ieee80211_hdr *hdr = (struct ieee80211_hdr *)skb->data;
 	struct ieee80211_key_conf *key = info->control.hw_key;
 	struct ath12k_mgmt_frame_stats *mgmt_stats = &ahvif->mgmt_stats;
@@ -1263,6 +1294,7 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 	struct ath12k_dp *dp = NULL;
 	unsigned long links_map;
 	bool is_mcast = false, is_eth = false;
+	int group_slot = -1;
 	bool is_dvlan = false;
 	struct ethhdr *eth;
 	bool is_prb_rsp;
@@ -1510,8 +1542,13 @@ static void ath12k_wifi7_mac_op_tx(struct ieee80211_hw *hw,
 			return;
 		}
 
+		if (is_mcast && !sta)
+			group_slot = ath12k_get_mcast_group_slot(vif, vlan_vif, arvif,
+								 info->control.hw_key,
+								 arvif->link_id);
+
 		err = ath12k_wifi7_dp_tx(dp_pdev, arvif, skb, false, 0, is_mcast,
-					 arsta, ring_id, qos_nw_delay);
+					 arsta, ring_id, qos_nw_delay, group_slot);
 		if (unlikely(err)) {
 			if (ath12k_mac_check_err_code_debug_logging(err))
 				ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC, ATH12K_DBG_L2,
@@ -1603,6 +1640,12 @@ skip_nwifi:
 				continue;
 			}
 
+			if (is_mcast && !sta)
+				group_slot = ath12k_get_mcast_group_slot(vif, vlan_vif,
+									 tmp_arvif,
+									 key,
+									 link_id);
+
 			key = peer->dp_peer->keys[peer->dp_peer->mcast_keyidx];
 			if (key) {
 				skb_cb->cipher = key->cipher;
@@ -1621,7 +1664,7 @@ skip_peer_find:
 			err = ath12k_wifi7_dp_tx(tmp_dp_pdev, tmp_arvif,
 						 msdu_copied, true, mcbc_gsn,
 						 is_mcast, arsta, ring_id,
-						 qos_nw_delay);
+						 qos_nw_delay, group_slot);
 			if (unlikely(err)) {
 				if (ath12k_mac_check_err_code_debug_logging(err))
 					ath12k_dbg_level(ar->ab, ATH12K_DBG_MAC,

@@ -26,8 +26,9 @@ struct ath12k_pdev_dp;
 
 /* Global sequence number */
 #define HTT_TCL_META_DATA_TYPE_GLOBAL_SEQ_NUM		3
-#define HTT_TCL_META_DATA_GLOBAL_SEQ_HOST_INSPECTED	BIT(2)
+#define HTT_TCL_META_DATA_GSN_INSPECTED			BIT(2)
 #define HTT_TCL_META_DATA_GLOBAL_SEQ_NUM		GENMASK(14, 3)
+#define HTT_TCL_META_DATA_GLOBAL_HTT_EXT_PRESENT	BIT(15)
 #define HTT_TX_MLO_MCAST_HOST_REINJECT_BASE_VDEV_ID	128
 
 /* HTT tx completion is overlaid in wbm_release_ring */
