@@ -8855,6 +8855,8 @@ ath12k_htt_get_punct_pream_type_str(enum ath12k_htt_stats_param_type pream_type)
 		return "ax";
 	case ATH12K_HTT_STATS_PREAM_EHT:
 		return "be";
+	case ATH12K_HTT_STATS_PREAM_UHR:
+		return "bn";
 	default:
 		return "unknown";
 	}
@@ -9654,6 +9656,10 @@ ath12k_htt_print_tx_pdev_rate_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "11be_trigger_type",
 				  htt_stats_buf->trigger_type_11be,
 				  ATH12K_HTT_TX_PDEV_STATS_NUM_11BE_TRIGGER_TYPES, "\n");
+
+	len += print_array_to_buf(buf, len, "11bn_trigger_type",
+				  htt_stats_buf->trigger_type_11bn,
+				  ATH12K_HTT_TX_PDEV_STATS_NUM_11BN_TRIGGER_TYPES, "\n");
 
 	len += scnprintf(buf + len, buf_len - len,
 			 "ax_su_embedded_trigger_data_ppdu_cnt = %u\n",
