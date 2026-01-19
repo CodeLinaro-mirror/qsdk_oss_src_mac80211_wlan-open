@@ -134,6 +134,64 @@ enum ath12k_wbm_err_drop_reason {
 	WBM_ERR_DROP_MAX,
 };
 
+enum ath12k_dp_pkt_l3_proto_type {
+	DP_PKT_TYPE_ARP = 0,
+	DP_PKT_TYPE_IPV4,
+	DP_PKT_TYPE_IPV6,
+	DP_PKT_TYPE_EAPOL,
+	DP_PKT_TYPE_EAPOL_M1,
+	DP_PKT_TYPE_EAPOL_M2,
+	DP_PKT_TYPE_EAPOL_M3,
+	DP_PKT_TYPE_EAPOL_M4,
+	DP_PKT_TYPE_EAPOL_G1,
+	DP_PKT_TYPE_EAPOL_G2,
+	DP_PKT_TYPE_L3_NS,
+	DP_PKT_TYPE_L3_MAX,
+};
+
+enum ath12k_dp_pkt_l4_proto_type {
+	DP_PKT_TYPE_TCP = 0,
+	DP_PKT_TYPE_UDP,
+	DP_PKT_TYPE_ICMP,
+	DP_PKT_TYPE_ICMP_REQ,
+	DP_PKT_TYPE_ICMP_RSP,
+	DP_PKT_TYPE_IGMP,
+	DP_PKT_TYPE_L4_NS,
+	DP_PKT_TYPE_L4_MAX,
+};
+
+enum ath12k_dp_pkt_l5_proto_type {
+	DP_PKT_TYPE_DHCP = 0,
+	DP_PKT_TYPE_DHCP_DIS,
+	DP_PKT_TYPE_DHCP_REQ,
+	DP_PKT_TYPE_DHCP_OFR,
+	DP_PKT_TYPE_DHCP_ACK,
+	DP_PKT_TYPE_DHCP_NS,
+	DP_PKT_TYPE_DNS_QUERY,
+	DP_PKT_TYPE_DNS_RSP,
+	DP_PKT_TYPE_L5_NS,
+	DP_PKT_TYPE_L5_MAX,
+};
+
+enum ath12k_dp_proto_stats_rx_level {
+	RX_RECV_FROM_HW = 0,
+	RX_SENT_TO_STACK,
+	RX_RECV_MAX,
+};
+
+enum ath12k_dp_proto_stats_tx_level {
+	TX_RECV_FROM_STACK = 0,
+	TX_RECV_FROM_STACK_FP,
+	TX_ENQUEUE_HW,
+	TX_ENQUEUE_HW_FP,
+	TX_ENQUEUE_MAX,
+};
+
+enum ath12k_dp_proto_stats_tx_comp_level {
+	TX_COMP = 0,
+	TX_COMP_MAX,
+};
+
 enum ath12k_dp_debug_stats_mask {
 	DP_ENABLE_STATS          = 0x00000001,
 	DP_ENABLE_DEBUG_STATS    = 0x00000002,
@@ -141,6 +199,7 @@ enum ath12k_dp_debug_stats_mask {
 	DP_ENABLE_EXT_RX_STATS   = 0x00000008,
 	DP_ENABLE_TID_STATS      = 0x00000010,
 	DP_ENABLE_ADVANCE_STATS  = 0x00000020,
+	DP_ENABLE_PROTO_STATS    = 0x00000030,
 	DP_ENABLE_QOS_STATS      = 0x80000000,
 };
 
@@ -606,12 +665,24 @@ struct ath12k_tele_qos_delay_ctx {
 	u8 msduq;
 };
 
+struct ath12k_dp_proto_stats {
+	u64 l3[DP_PKT_TYPE_L3_MAX];
+	u64 l4[DP_PKT_TYPE_L4_MAX];
+	u64 l5[DP_PKT_TYPE_L5_MAX];
+};
+
+struct ath12k_dp_proto_stats_peer {
+	struct ath12k_dp_proto_stats tx[DP_TCL_NUM_RING_MAX][TX_COMP_MAX];
+	struct ath12k_dp_proto_stats rx[DP_REO_DST_RING_MAX][RX_RECV_MAX];
+};
+
 struct ath12k_dp_peer_stats {
 	struct ath12k_dp_peer_tx_stats tx[DP_TCL_NUM_RING_MAX];
 	struct ath12k_dp_peer_rx_stats rx[DP_REO_DST_RING_MAX];
 	struct ath12k_wbm_rx_stats wbm_err;
 	struct ath12k_tele_qos_tx_ctx tx_ctx;
 	struct ath12k_tele_qos_delay_ctx delay_ctx;
+	struct ath12k_dp_proto_stats_peer *proto;
 };
 
 struct ath12k_dp_tx_ingress_stats {
@@ -630,8 +701,13 @@ struct ath12k_dp_tx_ingress_stats {
 	u32 drop[DP_TX_ENQ_ERR_MAX];
 };
 
+struct ath12k_dp_proto_stats_vif {
+	struct ath12k_dp_proto_stats tx[TX_ENQUEUE_MAX];
+};
+
 struct ath12k_dp_tx_vif_stats {
 	struct ath12k_dp_tx_ingress_stats tx_i;
+	struct ath12k_dp_proto_stats_vif *proto;
 };
 
 struct ath12k_dp_aggr_vif_stats {
