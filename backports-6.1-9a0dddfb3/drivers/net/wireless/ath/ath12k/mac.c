@@ -5536,6 +5536,8 @@ void ath12k_bss_assoc(struct ath12k *ar,
 	}
 	spin_unlock_bh(&dp->dp_lock);
 
+	ath12k_dp_arch_link_peer_assoc(dp, &ar->ah->dp_hw,
+				       vif->cfg.ap_addr, ar->hw_link_id);
 	ret = ath12k_setup_peer_smps(ar, arvif, bssid,
 				     &ht_cap, &he_cap, &he_6ghz_cap);
 	if (ret) {

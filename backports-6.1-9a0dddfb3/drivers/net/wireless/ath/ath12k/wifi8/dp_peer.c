@@ -417,8 +417,6 @@ void ath12k_dp_peer_cleanup_indication(struct ath12k_dp *dp,
 	spin_unlock_bh(&dp_hw->peer_lock);
 	rcu_read_unlock();
 
-	/* ensure peer is freed only after all RCU readers complete */
-	synchronize_rcu();
 	kfree(dp_peer);
 }
 
