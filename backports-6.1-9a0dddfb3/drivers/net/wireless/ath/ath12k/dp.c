@@ -2528,7 +2528,7 @@ ath12k_dp_update_tx_ext_htt_aggr_stats(struct ath12k *ar,
 	dst_peer_stats->tx_mpdus_tried += src_peer_stats->tx_mpdus_tried;
 	dst_peer_stats->retries_mpdu += src_peer_stats->retries_mpdu;
 
-	if (!ath12k_dp_debug_stats_enabled(&ar->dp))
+	if (!ath12k_dp_advance_stats_enabled(&ar->dp))
 		return;
 
 	/* DEBUG/ADV */
