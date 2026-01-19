@@ -1208,7 +1208,7 @@ int ath12k_wmi_offchan_mgmt_send(struct ath12k *ar, u32 vdev_id, u32 buf_id,
 	/* Tx params not used currently */
 	tlv->header = ath12k_wmi_tlv_cmd_hdr(WMI_TAG_TX_SEND_PARAMS,
 					     sizeof(struct wmi_mgmt_send_params));
-	ptr += sizeof(*tlv);
+
 	ath12k_wmi_prepare_tx_params_extn(ATH12K_SKB_CB(frame)->u.ar, ptr);
 
 	ret = ath12k_wmi_cmd_send(wmi, skb, WMI_OFFCHAN_DATA_TX_SEND_CMDID);
@@ -9268,6 +9268,7 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	struct ath12k_mgmt_frame_stats *mgmt_stats;
 	u16 frm_stype;
 	int num_mgmt;
+	bool is_custom_pkt;
 
 	spin_lock_bh(&ar->data_lock);
 	spin_lock_bh(&ar->txmgmt_idr_lock);
@@ -9285,6 +9286,8 @@ static int wmi_process_mgmt_tx_comp(struct ath12k *ar, u32 desc_id,
 	spin_unlock_bh(&ar->txmgmt_idr_lock);
 
 	skb_cb = ATH12K_SKB_CB(msdu);
+	is_custom_pkt = ATH12K_IS_CUSTOM_PKT(skb_cb);
+
 	ath12k_core_dma_unmap_single(ar->ab->dev, skb_cb->paddr, msdu->len, DMA_TO_DEVICE);
 
 	hdr = (struct ieee80211_hdr *)msdu->data;
@@ -9327,7 +9330,7 @@ skip_mgmt_stats:
 	if ((info->flags & IEEE80211_TX_CTL_NO_ACK) && !status)
 		info->flags |= IEEE80211_TX_STAT_NOACK_TRANSMITTED;
 
-	if (!ATH12K_IS_CUSTOM_PKT(skb_cb))
+	if (!is_custom_pkt)
 		ieee80211_tx_status_irqsafe(ath12k_ar_to_hw(ar), msdu);
 	else
 		ath12k_custom_tx_free_extn(msdu, status);
