@@ -1455,7 +1455,7 @@ ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 
 	if (likely(*fast_rx)) {
 		DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, sent_to_stack_fast, link_id, 1, msdu_len);
-		return DP_RX_SUCCESS;
+		goto out_success;
 	}
 
 	ath12k_wifi7_dp_extract_rx_spd_data(hal, spd_desc_l, rx_desc, 1);
@@ -1470,9 +1470,26 @@ ath12k_wifi7_dp_rx_process_msdu(struct ath12k_pdev_dp *dp_pdev,
 	rx_status->flag |= RX_FLAG_SKIP_MONITOR | RX_FLAG_DUP_VALIDATED;
 	DP_PEER_STATS_PKT_LEN(peer, rx, ring_id, sent_to_stack, link_id, 1, msdu_len);
 
+out_success:
+	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+		if (ath12k_proto_stats_enabled(dp_pdev)) {
+			ath12k_dp_rx_update_protocol_stats(peer, link_id,
+							   msdu, RX_RECV_FROM_HW,
+							   ring_id);
+			ath12k_dp_rx_update_protocol_stats(peer, link_id,
+							   msdu, RX_SENT_TO_STACK,
+							   ring_id);
+		}
+	}
 	return DP_RX_SUCCESS;
 
 free_out:
+	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+		if (ath12k_proto_stats_enabled(dp_pdev))
+			ath12k_dp_rx_update_protocol_stats(peer, link_id,
+							   msdu, RX_RECV_FROM_HW,
+							   ring_id);
+	}
 	return drop_reason;
 }
 

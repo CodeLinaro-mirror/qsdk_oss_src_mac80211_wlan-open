@@ -980,12 +980,21 @@ ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 
 	tx_desc = ath12k_dp_tx_assign_buffer(dp, ring_id);
 	if (unlikely(!tx_desc)) {
-		if (ath12k_dp_stats_enabled(dp_pdev) &&
-		    ath12k_tid_stats_enabled(dp_pdev)) {
-			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-			ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
-						 ATH_TX_BUF_ERR);
+		if (ath12k_dp_stats_enabled(dp_pdev)) {
+			if (ath12k_tid_stats_enabled(dp_pdev)) {
+				tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+				ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
+							 ATH_TX_BUF_ERR);
+			}
+
+			if (ath12k_proto_stats_enabled(dp_pdev)) {
+				ath12k_dp_update_proto_stats_vif(dp_vif, arvif->link_id,
+								 skb,
+								 TX_RECV_FROM_STACK_FP,
+								 ring_id);
+			}
 		}
+
 		dp->device_stats.tx_err.txbuf_na[ring_id]++;
 		return DP_TX_ENQ_DROP_SW_DESC_NA;
 	}
@@ -1014,12 +1023,21 @@ ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 		 */
 		ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
 		dp->device_stats.tx_err.desc_na[ring_id]++;
-		if (ath12k_dp_stats_enabled(dp_pdev) &&
-		    ath12k_tid_stats_enabled(dp_pdev)) {
-			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-			ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
-						 ATH_TX_DESC_ERR);
+		if (ath12k_dp_stats_enabled(dp_pdev)) {
+			if (ath12k_tid_stats_enabled(dp_pdev)) {
+				tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+				ath12k_tid_tx_drop_stats(ahvif, tid, skb->len,
+							 ATH_TX_DESC_ERR);
+			}
+
+			if (ath12k_proto_stats_enabled(dp_pdev)) {
+				ath12k_dp_update_proto_stats_vif(dp_vif, arvif->link_id,
+								 skb,
+								 TX_RECV_FROM_STACK_FP,
+								 ring_id);
+			}
 		}
+
 		ath12k_dp_tx_release_txbuf(dp, tx_desc, ring_id);
 		return DP_TX_ENQ_DROP_TCL_DESC_NA;
 	}
@@ -1030,11 +1048,22 @@ ath12k_wifi7_dp_tx_fast(struct ath12k_pdev_dp *dp_pdev,
 					     tx_desc, qos_nw_delay);
 	dmb(oshst);
 	ath12k_hal_srng_access_umac_src_ring_end_nolock_fast(tcl_ring);
-	if (unlikely(ath12k_dp_stats_enabled(dp_pdev) &&
-		     ath12k_tid_stats_enabled(dp_pdev))) {
-		tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
-		ath12k_tid_tx_stats(ahvif, tid, skb->len,
-				    ATH_TX_FAST_UNICAST);
+	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+		if (ath12k_tid_stats_enabled(dp_pdev)) {
+			tid = skb->priority & IEEE80211_QOS_CTL_TID_MASK;
+			ath12k_tid_tx_stats(ahvif, tid, skb->len,
+					    ATH_TX_FAST_UNICAST);
+		}
+
+		if (ath12k_proto_stats_enabled(dp_pdev)) {
+			ath12k_dp_update_proto_stats_vif(dp_vif, arvif->link_id,
+							 skb,
+							 TX_RECV_FROM_STACK_FP,
+							 ring_id);
+
+			ath12k_dp_update_proto_stats_vif(dp_vif, arvif->link_id, skb,
+							 TX_ENQUEUE_HW_FP, ring_id);
+		}
 	}
 	dp->device_stats.tx_fast_unicast[ring_id]++;
 
@@ -1082,6 +1111,13 @@ ath12k_wifi7_dp_tx(struct ath12k_pdev_dp *dp_pdev,
 	enum ath12k_dp_tx_enq_error err = DP_TX_ENQ_SUCCESS;
 
 	DP_STATS_INC_PKT(dp_vif, tx_i.recv_from_stack, 1, skb->len, ring_id);
+
+	if (unlikely(ath12k_dp_stats_enabled(dp_pdev))) {
+		if (ath12k_proto_stats_enabled(dp_pdev)) {
+			ath12k_dp_update_proto_stats_vif(dp_vif, arvif->link_id, skb,
+							 TX_RECV_FROM_STACK, ring_id);
+		}
+	}
 
 	if (test_bit(ATH12K_FLAG_CRASH_FLUSH, &ab->dev_flags))
 		return DP_TX_ENQ_DROP_CRASH_FLUSH;
@@ -1433,6 +1469,9 @@ skip_htt_metadata:
 				     ti.ring_id);
 			DP_STATS_INC(dp_vif, tx_i.desc_type[ti.type], 1, ti.ring_id);
 		}
+		if (ath12k_proto_stats_enabled(dp_pdev))
+			ath12k_dp_update_proto_stats_vif(dp_vif, arvif->link_id, skb,
+							 TX_ENQUEUE_HW, ring_id);
 	}
 
 	ath12k_wifi7_hal_tx_cmd_desc_setup(ab, hal_tcl_desc, &ti);
@@ -2020,6 +2059,12 @@ static void ath12k_wifi7_dp_tx_complete_msdu(struct ath12k_pdev_dp *dp_pdev,
 				ath12k_qos_stats_update(ar, msdu, ts,
 							dp_pdev,
 							msdu->tstamp);
+
+			/* Update peer level protocol stats at TX completion */
+			if (unlikely(ath12k_proto_stats_enabled(dp_pdev))) {
+				ath12k_dp_tx_peer_update_proto_stats(peer, link_id, msdu,
+								     TX_COMP, ring);
+			}
 		}
 	} else {
 		DP_DEVICE_STATS_INC(dp, tx_err.tx_comp_err[DP_TX_COMP_ERR_INVALID_PEER][ring], 1);
