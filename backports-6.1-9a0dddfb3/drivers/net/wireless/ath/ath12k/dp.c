@@ -3388,6 +3388,68 @@ void ath12k_dp_clear_link_desc_pool(struct ath12k_dp *dp)
 }
 EXPORT_SYMBOL(ath12k_dp_clear_link_desc_pool);
 
+int ath12k_dp_alloc_proto_stats_vif(struct ath12k_dp_vif *dp_vif)
+{
+	u32 size;
+	u8 index;
+	struct ath12k_dp_proto_stats_vif *proto_vif;
+
+	if (dp_vif->stats[0].proto)
+		return 0;
+
+	size = sizeof(struct ath12k_dp_proto_stats_vif) * DP_TCL_NUM_RING_MAX;
+	proto_vif = kzalloc(size, GFP_ATOMIC);
+	if (!proto_vif)
+		return -ENOMEM;
+
+	for (index = 0; index < DP_TCL_NUM_RING_MAX; index++)
+		dp_vif->stats[index].proto = (proto_vif + index);
+
+	return 0;
+}
+
+void ath12k_dp_free_proto_stats_vif(struct ath12k_dp_tx_vif_stats *vif_stats)
+{
+	kfree(vif_stats->proto);
+	vif_stats->proto = NULL;
+}
+
+int ath12k_dp_alloc_proto_stats_peer(struct ath12k *ar,
+				     struct ath12k_dp_peer *dp_peer)
+{
+	u8 index;
+
+	for (index = 0; index < ATH12K_DP_MAX_MLO_LINKS; index++) {
+		struct ath12k_dp_peer_stats *stats = &dp_peer->stats[index];
+
+		if (stats->proto)
+			continue;
+
+		stats->proto = kzalloc(sizeof(struct ath12k_dp_proto_stats_peer),
+				       GFP_ATOMIC);
+
+		if (!stats->proto)
+			goto err_peer_cleanup;
+	}
+	return 0;
+
+err_peer_cleanup:
+	ath12k_dp_free_proto_stats_peer(dp_peer);
+	return -ENOMEM;
+}
+
+void ath12k_dp_free_proto_stats_peer(struct ath12k_dp_peer *dp_peer)
+{
+	u8 index;
+
+	for (index = 0; index < ATH12K_DP_MAX_MLO_LINKS; index++) {
+		struct ath12k_dp_peer_stats *peer_stats = &dp_peer->stats[index];
+
+		kfree(peer_stats->proto);
+		peer_stats->proto = NULL;
+	}
+}
+
 static inline u8
 ath12k_dp_get_eapol_keytype(struct sk_buff *skb)
 {
@@ -3415,3 +3477,141 @@ ath12k_dp_get_eapol_keytype(struct sk_buff *skb)
 		return 0;
 	}
 }
+
+void
+ath12k_dp_tx_peer_update_proto_stats(struct ath12k_dp_peer *dp_peer,
+				     u8 link_id,
+				     struct sk_buff *skb,
+				     u8 level,
+				     int ring_id)
+{
+	u8 field = 0;
+
+	if (unlikely(!dp_peer->stats[link_id].proto))
+		return;
+
+	if (unlikely(skb_is_nonlinear(skb)))
+		return;
+
+	field = ath12k_dp_get_l3_protocol_type(skb);
+	DP_PEER_PROTO_STATS_INC(dp_peer, link_id, tx,
+				ring_id, level, l3[field], 1);
+
+	if (field == DP_PKT_TYPE_IPV4) {
+		field = ath12k_dp_get_l4_protocol_type(skb);
+			DP_PEER_PROTO_STATS_INC(dp_peer, link_id, tx,
+						ring_id, level, l4[field], 1);
+
+		if (field == DP_PKT_TYPE_ICMP) {
+			field = ath12k_dp_get_l4_protocol_subtype(skb);
+				DP_PEER_PROTO_STATS_INC(dp_peer, link_id, tx,
+							ring_id, level, l4[field], 1);
+		}
+		if (field == DP_PKT_TYPE_UDP) {
+			field = ath12k_dp_get_l5_protocol_type(skb);
+				DP_PEER_PROTO_STATS_INC(dp_peer, link_id, tx,
+							ring_id, level, l5[field], 1);
+
+			if (field == DP_PKT_TYPE_DHCP) {
+				field = ath12k_dp_get_l5_protocol_subtype(skb);
+					DP_PEER_PROTO_STATS_INC(dp_peer, link_id, tx,
+								ring_id, level,
+								l5[field], 1);
+			}
+		}
+	}
+
+	if (field == DP_PKT_TYPE_EAPOL) {
+		field = ath12k_dp_get_eapol_keytype(skb);
+		DP_PEER_PROTO_STATS_INC(dp_peer, link_id, tx,
+					ring_id, level, l3[field], 1);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_tx_peer_update_proto_stats);
+
+void ath12k_dp_update_proto_stats_vif(struct ath12k_dp_vif *dp_vif,
+				      u8 link_id,
+				      struct sk_buff *skb,
+				      u8 level,
+				      int ring_id)
+{
+	u8 field = 0;
+
+	if (unlikely(skb_is_nonlinear(skb)))
+		return;
+
+	if (unlikely(!dp_vif->stats[ring_id].proto))
+		return;
+
+	field = ath12k_dp_get_l3_protocol_type(skb);
+
+	DP_STATS_INC(dp_vif, proto->tx[level].l3[field], 1, ring_id);
+
+	if (field == DP_PKT_TYPE_IPV4) {
+		field = ath12k_dp_get_l4_protocol_type(skb);
+		DP_STATS_INC(dp_vif, proto->tx[level].l4[field], 1, ring_id);
+
+		if (field == DP_PKT_TYPE_ICMP) {
+			field = ath12k_dp_get_l4_protocol_subtype(skb);
+			DP_STATS_INC(dp_vif,
+				     proto->tx[level].l4[field], 1, ring_id);
+		}
+
+		if (field == DP_PKT_TYPE_UDP) {
+			field = ath12k_dp_get_l5_protocol_type(skb);
+			DP_STATS_INC(dp_vif, proto->tx[level].l5[field],
+				     1, ring_id);
+
+			if (field == DP_PKT_TYPE_DHCP) {
+				field = ath12k_dp_get_l5_protocol_subtype(skb);
+				DP_STATS_INC(dp_vif, proto->tx[level].l5[field],
+					     1, ring_id);
+			}
+		}
+	}
+
+	if (field == DP_PKT_TYPE_EAPOL) {
+		field = ath12k_dp_get_eapol_keytype(skb);
+		DP_STATS_INC(dp_vif, proto->tx[level].l3[field], 1, ring_id);
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_update_proto_stats_vif);
+
+void ath12k_dp_rx_update_protocol_stats(struct ath12k_dp_peer *dp_peer,
+					u8 link_id, struct sk_buff *skb, u8 level,
+					int ring_id)
+{
+	u8 field = 0;
+
+	if (unlikely(!dp_peer->stats[link_id].proto))
+		return;
+
+	field = ath12k_dp_get_l3_protocol_type(skb);
+	DP_PEER_PROTO_STATS_INC(dp_peer, link_id, rx,
+				ring_id, level, l3[field], 1);
+
+	if (field == DP_PKT_TYPE_IPV4) {
+		field = ath12k_dp_get_l4_protocol_type(skb);
+			DP_PEER_PROTO_STATS_INC(dp_peer, link_id, rx,
+						ring_id, level, l4[field], 1);
+
+		if (field == DP_PKT_TYPE_ICMP) {
+			field = ath12k_dp_get_l4_protocol_subtype(skb);
+				DP_PEER_PROTO_STATS_INC(dp_peer, link_id, rx,
+							ring_id, level, l4[field], 1);
+		}
+		if (field == DP_PKT_TYPE_UDP) {
+			field = ath12k_dp_get_l5_protocol_type(skb);
+				DP_PEER_PROTO_STATS_INC(dp_peer, link_id, rx,
+							ring_id, level, l5[field], 1);
+
+			if (field == DP_PKT_TYPE_DHCP) {
+				field = ath12k_dp_get_l5_protocol_subtype(skb);
+					DP_PEER_PROTO_STATS_INC(dp_peer, link_id, rx,
+								ring_id, level,
+								l5[field], 1);
+			}
+		}
+	}
+}
+EXPORT_SYMBOL(ath12k_dp_rx_update_protocol_stats);

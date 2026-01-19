@@ -6241,6 +6241,37 @@ static const struct file_operations fops_dp_stats_mask = {
 	.open = simple_open,
 };
 
+static void ath12k_dp_vif_reset_proto_stats(struct ath12k_dp_vif *dp_vif)
+{
+	int ring_id;
+
+	if (!dp_vif)
+		return;
+
+	/* Reset TX protocol stats for all rings */
+	for (ring_id = 0; ring_id < DP_TCL_NUM_RING_MAX; ring_id++) {
+		if (dp_vif->stats[ring_id].proto)
+			memset(dp_vif->stats[ring_id].proto, 0,
+			       sizeof(struct ath12k_dp_proto_stats_vif));
+	}
+}
+
+static void ath12k_dp_peer_reset_proto_stats(struct ath12k_dp_peer *dp_peer)
+{
+	u8 index;
+
+	if (!dp_peer)
+		return;
+
+	rcu_read_lock();
+	for (index = 0; index < ATH12K_DP_MAX_MLO_LINKS; index++) {
+		if (dp_peer->stats[index].proto)
+			memset(dp_peer->stats[index].proto, 0,
+			       sizeof(struct ath12k_dp_proto_stats_peer));
+	}
+	rcu_read_unlock();
+}
+
 static void ath12k_dp_peer_clear_qos_stats(struct ath12k_dp_peer *dp_peer)
 {
 	struct ath12k_dp_link_peer *link_peer;
@@ -6305,6 +6336,9 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 			       sizeof(*dp_peer->link_peer_delete_stats));
 		ath12k_dp_peer_clear_qos_stats(dp_peer);
 
+		if (ath12k_proto_stats_enabled(&ar->dp))
+			ath12k_dp_peer_reset_proto_stats(dp_peer);
+
 		struct ath12k_dp_link_peer *tmp_peer = NULL;
 		unsigned long peer_links_map, scan_links_map;
 		u8 link_id;
@@ -6338,6 +6372,9 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 			dp_vif = &arvif->ahvif->dp_vif;
 			memset(&dp_vif->stats, 0, sizeof(dp_vif->stats));
 			ath12k_dp_vif_reset_del_stats(dp_vif, arvif->ahvif->links_map);
+
+			if (ath12k_proto_stats_enabled(&ar->dp))
+				ath12k_dp_vif_reset_proto_stats(dp_vif);
 		}
 	}
 
@@ -6350,6 +6387,63 @@ static const struct file_operations fops_reset_dp_stats = {
 	.open = simple_open,
 };
 
+static ssize_t ath12k_write_reset_proto_stats(struct file *file,
+					      const char __user *ubuf,
+					      size_t count, loff_t *ppos)
+{
+	struct ath12k_hw *ah = file->private_data;
+	struct ath12k *ar;
+	struct ath12k_dp_peer *dp_peer;
+	struct ath12k_link_vif *arvif;
+	struct ath12k_dp_vif *dp_vif;
+	u32 reset;
+	int i = 0;
+
+	if (kstrtou32_from_user(ubuf, count, 0, &reset))
+		return -EINVAL;
+
+	if (!reset)
+		return -EINVAL;
+
+	wiphy_lock(ah->hw->wiphy);
+
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		if (!ar)
+			continue;
+		if (!ath12k_proto_stats_enabled(&ar->dp)) {
+			wiphy_unlock(ah->hw->wiphy);
+			return count;
+		}
+	}
+
+	/* Reset protocol stats for all peers */
+	spin_lock_bh(&ah->dp_hw.peer_lock);
+	list_for_each_entry(dp_peer, &ah->dp_hw.peers, list) {
+		ath12k_dp_peer_reset_proto_stats(dp_peer);
+	}
+	spin_unlock_bh(&ah->dp_hw.peer_lock);
+
+	/* Reset protocol stats for all VIFs */
+	for (i = 0; i < ah->num_radio; i++) {
+		ar = &ah->radio[i];
+		list_for_each_entry(arvif, &ar->arvifs, list) {
+			dp_vif = &arvif->ahvif->dp_vif;
+			ath12k_dp_vif_reset_proto_stats(dp_vif);
+		}
+	}
+
+	wiphy_unlock(ah->hw->wiphy);
+	return count;
+}
+
+static const struct file_operations fops_reset_proto_stats = {
+	.write = ath12k_write_reset_proto_stats,
+	.open = simple_open,
+	.owner = THIS_MODULE,
+	.llseek = default_llseek,
+};
+
 void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 {
 	struct ieee80211_hw *hw = ah->hw;
@@ -6359,6 +6453,9 @@ void ath12k_hw_debugfs_register(struct ath12k_hw *ah)
 
 	debugfs_create_file("reset_dp_stats", 0644, hw->wiphy->debugfsdir, ah,
 			    &fops_reset_dp_stats);
+
+	debugfs_create_file("reset_proto_stats", 0200, hw->wiphy->debugfsdir, ah,
+			    &fops_reset_proto_stats);
 
 	debugfs_create_file("qos_stats", 0644, hw->wiphy->debugfsdir, ah,
 			    &fops_qos_stats);

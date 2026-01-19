@@ -319,6 +319,12 @@ enum ath12k_mu_packet_type {
 		DP_PEER_STATS_FIELD_INC(_handle, stats[_link]._field, _delta); \
 	} while (0)
 
+#define DP_PEER_PROTO_STATS_INC(_handle, _link, _dir, _ring, _lvl, _field, _delta) \
+	do { \
+		if (likely(_handle)) \
+			_handle->stats[_link].proto->_dir[_ring][_lvl]._field += _delta; \
+	} while (0)
+
 struct ath12k_wbm_tx_stats {
 	u64 wbm_tx_comp_stats[HAL_WBM_REL_HTT_TX_COMP_STATUS_MAX];
 };

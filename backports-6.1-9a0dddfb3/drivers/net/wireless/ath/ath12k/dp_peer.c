@@ -619,6 +619,7 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 	u8 *dp_peer_mac = !sta ? addr : sta->addr;
 	bool is_vdev_peer = false;
 	struct ath12k_sta *ahsta = ath12k_sta_to_ahsta(sta);
+	struct ath12k_vif *ahvif = ath12k_vif_to_ahvif(vif);
 
 	spin_lock_bh(&dp->dp_lock);
 
@@ -693,6 +694,11 @@ int ath12k_dp_link_peer_assign(struct ath12k *ar, u8 vdev_id,
 
 	if (!dp_peer->is_vdev_peer)
 		dp_peer->peer_links_map |= BIT(link_id);
+
+	if (ath12k_proto_stats_enabled(dp_pdev) && dp_peer->peer_links_map) {
+		ath12k_dp_alloc_proto_stats_peer(ar, dp_peer);
+		ath12k_dp_alloc_proto_stats_vif(&ahvif->dp_vif);
+	}
 
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], peer);
 
@@ -947,6 +953,7 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 	struct ath12k_link_vif *arvif;
 	struct ath12k_vif *ahvif;
 	struct ath12k_dp_link_vif *link_vif = NULL;
+	struct ath12k_dp_peer *dp_peer;
 
 	arvif = ath12k_mac_get_arvif(ar, vdev_id);
 	if (arvif) {
@@ -962,8 +969,12 @@ void ath12k_dp_link_peer_unassign(struct ath12k *ar, u8 vdev_id, u8 *addr)
 		spin_unlock_bh(&dp->dp_lock);
 		return;
 	}
+	dp_peer = peer->dp_peer;
 
 	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, link_vif, addr);
+
+	/* Delete proto stats when all links are removed */
+	ath12k_dp_free_proto_stats_peer(dp_peer);
 
 	spin_unlock_bh(&dp->dp_lock);
 
