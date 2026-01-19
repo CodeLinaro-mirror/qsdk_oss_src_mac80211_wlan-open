@@ -93,6 +93,7 @@
 
 #define ATH12K_CFG_DP \
 	ATH12K_CFG(ATH12K_CFG_DP_RXDMA_BUF_RING) \
+	ATH12K_CFG(ATH12K_CFG_HTT_LOGGING_ENABLE) \
 
 #define ATH12K_CFG_MAX_DESC \
 	ATH12K_CFG_INI_UINT("max_descs", \
@@ -133,6 +134,10 @@
 	WLAN_ATH12K_CFG_RXDMA_BUF_RING_SIZE_MAX, \
 	WLAN_ATH12K_CFG_RXDMA_BUF_RING_SIZE, \
 	ATH12K_CFG_VALUE_OR_DEFAULT, "DP RXDMA buffer ring size")
+
+#define ATH12K_CFG_HTT_LOGGING_ENABLE \
+	ATH12K_CFG_INI_BOOL("htt_logging_enable", false, \
+	"Enable HTT interface logging at initialization")
 
 #define ATH12K_CFG_REP_UL_RESP \
 	ATH12K_CFG_INI_UINT("rep_ul_resp", \
