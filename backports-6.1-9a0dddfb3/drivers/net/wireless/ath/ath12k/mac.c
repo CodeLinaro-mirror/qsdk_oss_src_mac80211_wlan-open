@@ -16614,7 +16614,8 @@ void ath12k_mac_stop(struct ath12k *ar)
 
 	ath12k_debugfs_nrp_cleanup_all(ar);
 
-	if (!ar->allocated_vdev_map && !ar->pdev_suspend) {
+	if (ath12k_erp_get_sm_state() == ATH12K_ERP_ENTER_COMPLETE &&
+	    !ar->allocated_vdev_map && !ar->pdev_suspend) {
 		ret = ath12k_mac_pdev_suspend(ar);
 		if (ret)
 			ath12k_warn(ar->ab, "pdev suspend command is failed %d\n", ret);
@@ -16634,7 +16635,6 @@ void ath12k_mac_stop(struct ath12k *ar)
 void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 {
 	struct ath12k_hw *ah = ath12k_hw_to_ah(hw);
-	struct ath12k_hw_group *ag = ath12k_ah_to_ag(ah);
 	struct ath12k *ar;
 	int i;
 
@@ -16653,9 +16653,6 @@ void ath12k_mac_op_stop(struct ieee80211_hw *hw, bool suspend)
 	}
 
 	mutex_unlock(&ah->hw_mutex);
-
-	if (ath12k_erp_get_sm_state() != ATH12K_ERP_ENTER_COMPLETE)
-		ath12k_core_cleanup_power_down_q6(ag, false);
 }
 EXPORT_SYMBOL(ath12k_mac_op_stop);
 
