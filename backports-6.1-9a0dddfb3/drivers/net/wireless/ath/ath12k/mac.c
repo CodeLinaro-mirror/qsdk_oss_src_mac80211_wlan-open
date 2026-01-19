@@ -2709,7 +2709,7 @@ static int ath12k_mac_setup_bcn_tmpl(struct ath12k_link_vif *arvif)
 		return 0;
 
 	/* Skip beacon template setup for scan radio */
-	if (ath12k_is_scan_radio(ar)) {
+	if (ath12k_scan_radio_supported(ar->pdev)) {
 		ath12k_dbg(ar->ab, ATH12K_DBG_MAC,
 			   "vdev %d (pdev %d): scan radio skipping beacon template (scan-only operation)\n",
 			   arvif->vdev_id, ar->pdev->pdev_id);
@@ -2924,7 +2924,7 @@ static void ath12k_control_beaconing(struct ath12k_link_vif *arvif,
 	}
 
 	/* Skip VDEV UP command in case of Scan Radio */
-	if (!ath12k_is_scan_radio(ar)) {
+	if (!ath12k_scan_radio_supported(ar->pdev)) {
 		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to bring up vdev %d: %i\n",
@@ -16532,7 +16532,7 @@ int ath12k_mac_start(struct ath12k *ar)
 	 * such as rssi, rx_duration.
 	 */
 	ath12k_dp_mon_rx_stats_config(ar, true, mode);
-	if (!ath12k_is_scan_radio(ar)) {
+	if (!ath12k_scan_radio_supported(ar->pdev)) {
 		ret = ath12k_dp_mon_rx_update_filter(ar);
 		if (ret && (ret != -EOPNOTSUPP)) {
 			ath12k_err(ab, "failed to configure monitor status ring with default rx_filter: (%d)\n",
@@ -17619,7 +17619,7 @@ int ath12k_mac_vdev_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 	/* for scan radio DP attach is not required as there
 	 * is no tx or rx from datapath
 	 */
-	if (!ath12k_is_scan_radio(ar))
+	if (!ath12k_scan_radio_supported(ar->pdev))
 		ath12k_dp_arch_dp_link_vif_configure(ab->dp, ahvif,
 						     arvif->link_id,
 						     ATH12K_DP_OP_INIT);
@@ -18268,7 +18268,7 @@ err_vdev_del:
 		     ath12k_mac_vif_txmgmt_idr_remove, vif);
 	spin_unlock_bh(&ar->data_lock);
 
-	if (!ath12k_is_scan_radio(ar)) {
+	if (!ath12k_scan_radio_supported(ar->pdev)) {
 		dp = ath12k_ab_to_dp(ab);
 		ath12k_mac_vif_unref(dp, vif);
 		ath12k_dp_arch_dp_link_vif_configure(ab->dp, ahvif, arvif->link_id,
@@ -18896,7 +18896,7 @@ ath12k_mac_vdev_config_after_start(struct ath12k_link_vif *arvif,
 	 */
 	if (arvif->ahvif->vdev_type == WMI_VDEV_TYPE_AP && arvif->chanctx.radar_enabled &&
 	    cfg80211_chandef_dfs_usable(ar->ah->hw->wiphy, chandef) &&
-	    !ath12k_is_scan_radio(ar)) {
+	    !ath12k_scan_radio_supported(ar->pdev)) {
 		set_bit(ATH12K_FLAG_CAC_RUNNING, &ar->dev_flags);
 		dfs_cac_time = cfg80211_chandef_dfs_cac_time(ar->ah->hw->wiphy, chandef,
 							     false, false);
@@ -19100,9 +19100,9 @@ ath12k_mac_vdev_start_restart(struct ath12k_link_vif *arvif,
 			 * This prevents host from starting CAC timers on DFS
 			 * channels for Scan Radio
 			 */
-			arg.chan_radar = !ath12k_is_scan_radio(ar) &&
+			arg.chan_radar = !ath12k_scan_radio_supported(ar->pdev) &&
 				!!(chandef->chan->flags & IEEE80211_CHAN_RADAR);
-			arg.freq2_radar = !ath12k_is_scan_radio(ar) &&
+			arg.freq2_radar = !ath12k_scan_radio_supported(ar->pdev) &&
 				ctx->radar_enabled;
 		}
 
@@ -19480,7 +19480,7 @@ beacon_tmpl_setup:
 		rcu_read_unlock();
 	}
 
-	if (!ath12k_is_scan_radio(ar)) {
+	if (!ath12k_scan_radio_supported(ar->pdev)) {
 		ret = ath12k_wmi_vdev_up(arvif->ar, &params);
 		if (ret) {
 			ath12k_warn(ar->ab, "failed to bring vdev up %d: %d\n",
@@ -19602,7 +19602,7 @@ ath12k_mac_multi_vdev_restart(struct ath12k *ar,
 	arg.vdev_start_arg.freq = chandef->chan->center_freq;
 	arg.vdev_start_arg.band_center_freq1 = chandef->center_freq1;
 	arg.vdev_start_arg.band_center_freq2 = chandef->center_freq2;
-	if (ath12k_is_scan_radio(ar)) {
+	if (ath12k_scan_radio_supported(ar->pdev)) {
 		arg.vdev_start_arg.mode =
 			ath12k_ax_phymodes[chandef->chan->band][chandef->width];
 	} else {
@@ -19909,7 +19909,7 @@ ath12k_mac_update_vif_chan_mvr(struct ath12k *ar,
 	}
 
 	/* Do not wait for MVR completion for scan radio channel change */
-	if (!ath12k_is_scan_radio(ar)) {
+	if (!ath12k_scan_radio_supported(ar->pdev)) {
 		time_left = wait_for_completion_timeout(&ar->mvr_complete,
 							WMI_MVR_CMD_TIMEOUT_HZ);
 		if (!time_left) {
@@ -20946,7 +20946,7 @@ ath12k_mac_op_switch_vif_chanctx(struct ieee80211_hw *hw,
 		curr_ar = ath12k_get_ar_by_ctx(hw, vifs[i].old_ctx);
 		if (vifs[i].old_ctx->def.chan->band !=
 		    vifs[i].new_ctx->def.chan->band) {
-			if (!ath12k_is_scan_radio(curr_ar)) {
+			if (!ath12k_scan_radio_supported(curr_ar->pdev)) {
 				WARN_ON(1);
 				ret = -EINVAL;
 				break;
