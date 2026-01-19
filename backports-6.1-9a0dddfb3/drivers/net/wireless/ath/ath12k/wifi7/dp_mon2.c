@@ -15,6 +15,7 @@
 #include "../dp_mon_filter.h"
 #include "dp_mon2.h"
 #include "../trace.h"
+#include "../ath12k_notif.h"
 
 const struct ath12k_dp_arch_mon_ops ath12k_wifi7_dp_arch_mon_dual_ring_ops = {
 	.rx_srng_setup = ath12k_dp_mon_rx_srng_setup,
@@ -1358,6 +1359,42 @@ ath12k_dp_rx_pktlog_process(struct ath12k_pdev_dp *pdev_dp,
 					      log_type, status_desc->buf_len);
 }
 
+static void ath12k_dp_rx_mon_ppdu_notify(struct ath12k_pdev_dp *pdev_dp,
+					 struct hal_rx_mon_ppdu_info *ppdu_info)
+{
+	struct ath12k_ppdu_event event;
+	struct sk_buff *skb;
+	struct ath12k_ppdu_rx_info *ppdu_evt_data;
+	unsigned int len;
+
+	if (ppdu_info->peer_id == HAL_INVALID_PEERID)
+		return;
+
+	/* Early exit if no one is listening for RX events - avoid unnecessary work */
+	if (!ath12k_ppdu_notifier_has_listeners(ATH12K_EVENT_PPDU_RX_COMPLETE))
+		return;
+
+	len = sizeof(*ppdu_evt_data);
+	skb = alloc_skb(len, GFP_ATOMIC);
+	if (!skb) {
+		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+			   "Allocation failed for RX PPDU evt notification data");
+		return;
+	}
+
+	ppdu_evt_data = skb_put_zero(skb, len);
+	memcpy(&ppdu_evt_data->ppdu_info, ppdu_info, sizeof(*ppdu_info));
+	memset(&event, 0, sizeof(event));
+	event.skb = skb;
+
+	ath12k_ppdu_notifier_call_chain(ATH12K_EVENT_PPDU_RX_COMPLETE, &event);
+	if (refcount_read(&skb->users) > 1)
+		ath12k_dbg(NULL, ATH12K_DBG_TELEMETRY,
+			   "SKB ref cnt held by Rx PPDU listener = %d\n",
+			   refcount_read(&skb->users));
+	kfree_skb(skb);
+}
+
 static void
 ath12k_wifi7_dp_mon_rx_h_drop_tlv(struct ath12k_pdev_dp *pdev_dp,
 				  struct hal_rx_mon_ppdu_info *ppdu_info,
@@ -1576,6 +1613,8 @@ ath12k_wifi7_dp_mon_rx_process_ppdu(struct work_struct *work)
 								      ppdu_info);
 #endif
 			}
+			/* Send PPDU notification to registered listeners */
+			ath12k_dp_rx_mon_ppdu_notify(pdev_dp, ppdu_info);
 unlock:
 			spin_unlock_bh(&dp->dp_lock);
 			rcu_read_unlock_bh();
