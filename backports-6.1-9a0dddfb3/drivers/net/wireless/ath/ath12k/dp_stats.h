@@ -11,6 +11,7 @@
 #include "cmn_defs.h"
 #include "dp.h"
 #include <linux/ip.h>
+#include "qcn_extns/ath12k_cmn_extn.h"
 
 struct ath12k_dp_link_peer;
 
@@ -788,6 +789,7 @@ struct ath12k_telemetry_dp_peer {
 struct ath12k_telemetry_dp_vif {
 	bool is_extended;
 	struct ath12k_dp_aggr_vif_stats aggr_vif_stats;
+	struct ath12k_dp_rx_scan_radio_stats rx_scan_radio_stats;
 };
 
 /* Telemetry Radio Stats */
