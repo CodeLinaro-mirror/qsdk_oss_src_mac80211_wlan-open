@@ -2226,6 +2226,106 @@ void ath12k_dp_reoq_lut_addr_reset(struct ath12k_dp *dp)
 	}
 }
 
+static void
+ath12k_dp_update_proto_peer_tx_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
+				     struct ath12k_dp_peer_stats *src_peer_stats,
+				     u8 index)
+{
+	u8 j, k;
+
+	if (!dst_peer_stats->proto || !src_peer_stats->proto)
+		return;
+
+	for (j = 0; j < TX_COMP_MAX; j++) {
+		for (k = 0; k < DP_PKT_TYPE_L3_MAX; k++)
+			dst_peer_stats->proto->tx[index][j].l3[k] =
+				src_peer_stats->proto->tx[index][j].l3[k];
+
+		for (k = 0; k < DP_PKT_TYPE_L4_MAX; k++)
+			dst_peer_stats->proto->tx[index][j].l4[k] =
+				src_peer_stats->proto->tx[index][j].l4[k];
+
+		for (k = 0; k < DP_PKT_TYPE_L5_MAX; k++)
+			dst_peer_stats->proto->tx[index][j].l5[k] =
+				src_peer_stats->proto->tx[index][j].l5[k];
+	}
+}
+
+static void
+ath12k_dp_update_proto_peer_rx_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
+				     struct ath12k_dp_peer_stats *src_peer_stats,
+				     u8 index)
+{
+	u8 j, k;
+
+	if (!dst_peer_stats->proto || !src_peer_stats->proto)
+		return;
+
+	for (j = 0; j < RX_RECV_MAX; j++) {
+		for (k = 0; k < DP_PKT_TYPE_L3_MAX; k++)
+			dst_peer_stats->proto->rx[index][j].l3[k] =
+				src_peer_stats->proto->rx[index][j].l3[k];
+
+		for (k = 0; k < DP_PKT_TYPE_L4_MAX; k++)
+			dst_peer_stats->proto->rx[index][j].l4[k] =
+				src_peer_stats->proto->rx[index][j].l4[k];
+
+		for (k = 0; k < DP_PKT_TYPE_L5_MAX; k++)
+			dst_peer_stats->proto->rx[index][j].l5[k] =
+				src_peer_stats->proto->rx[index][j].l5[k];
+	}
+}
+
+static void
+ath12k_dp_aggr_proto_peer_tx_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
+				   struct ath12k_dp_peer_stats *src_peer_stats,
+				   u8 index)
+{
+	u8 j, k;
+
+	if (!dst_peer_stats->proto || !src_peer_stats->proto)
+		return;
+
+	for (j = 0; j < TX_COMP_MAX; j++) {
+		for (k = 0; k < DP_PKT_TYPE_L3_MAX; k++)
+			dst_peer_stats->proto->tx[index][j].l3[k] +=
+				src_peer_stats->proto->tx[index][j].l3[k];
+
+		for (k = 0; k < DP_PKT_TYPE_L4_MAX; k++)
+			dst_peer_stats->proto->tx[index][j].l4[k] +=
+				src_peer_stats->proto->tx[index][j].l4[k];
+
+		for (k = 0; k < DP_PKT_TYPE_L5_MAX; k++)
+			dst_peer_stats->proto->tx[index][j].l5[k] +=
+				src_peer_stats->proto->tx[index][j].l5[k];
+	}
+}
+
+static void
+ath12k_dp_aggr_proto_peer_rx_stats(struct ath12k_dp_peer_stats *dst_peer_stats,
+				   struct ath12k_dp_peer_stats *src_peer_stats,
+				   u8 index)
+{
+	u8 j, k;
+
+	if (!dst_peer_stats->proto || !src_peer_stats->proto)
+		return;
+
+	for (j = 0; j < RX_RECV_MAX; j++) {
+		for (k = 0; k < DP_PKT_TYPE_L3_MAX; k++)
+			dst_peer_stats->proto->rx[index][j].l3[k] +=
+				src_peer_stats->proto->rx[index][j].l3[k];
+
+		for (k = 0; k < DP_PKT_TYPE_L4_MAX; k++)
+			dst_peer_stats->proto->rx[index][j].l4[k] +=
+				src_peer_stats->proto->rx[index][j].l4[k];
+
+		for (k = 0; k < DP_PKT_TYPE_L5_MAX; k++)
+			dst_peer_stats->proto->rx[index][j].l5[k] +=
+				src_peer_stats->proto->rx[index][j].l5[k];
+	}
+}
+
 static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 					      struct ath12k_dp_peer_stats *dst_peer_stats,
 					      struct ath12k_dp_peer_stats *src_peer_stats,
@@ -2288,6 +2388,9 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						src_peer_stats->tx[i].bcast.bytes;
 				}
 			}
+			if (ath12k_proto_stats_enabled(dp_pdev))
+				ath12k_dp_aggr_proto_peer_tx_stats(dst_peer_stats,
+								   src_peer_stats, i);
 		}
 	}
 
@@ -2327,6 +2430,9 @@ static void ath12k_dp_aggr_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				dst_peer_stats->rx[i].mpdu_retry +=
 					src_peer_stats->rx[i].mpdu_retry;
 			}
+			if (ath12k_proto_stats_enabled(dp_pdev))
+				ath12k_dp_aggr_proto_peer_rx_stats(dst_peer_stats,
+								   src_peer_stats, i);
 		}
 	}
 
@@ -2569,6 +2675,9 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 						src_peer_stats->tx[i].bcast.bytes;
 				}
 			}
+			if (ath12k_proto_stats_enabled(dp_pdev))
+				ath12k_dp_update_proto_peer_tx_stats(dst_peer_stats,
+								     src_peer_stats, i);
 		}
 	}
 
@@ -2607,6 +2716,9 @@ static void ath12k_dp_update_per_pkt_peer_stats(struct ath12k_pdev_dp *dp_pdev,
 				dst_peer_stats->rx[i].mpdu_retry =
 					src_peer_stats->rx[i].mpdu_retry;
 			}
+			if (ath12k_proto_stats_enabled(dp_pdev))
+				ath12k_dp_update_proto_peer_rx_stats(dst_peer_stats,
+								     src_peer_stats, i);
 		}
 	}
 
@@ -2882,6 +2994,14 @@ static void ath12k_dp_aggr_vif_ingress_stats(struct ath12k_pdev_dp *dp_pdev,
 				for (j = 0; j < DP_TCL_DESC_TYPE_MAX; j++)
 					aggr_vif_stats->stats[i].tx_i.desc_type[j] +=
 						vif->stats[i].tx_i.desc_type[j];
+			}
+			if (ath12k_proto_stats_enabled(dp_pdev)) {
+				if (!vif->stats[i].proto)
+					return;
+
+				memcpy(aggr_vif_stats->stats[i].proto,
+				       vif->stats[i].proto,
+				       sizeof(struct ath12k_dp_proto_stats_vif));
 			}
 		}
 	}

@@ -1233,6 +1233,7 @@ ath12k_wlan_telemetry_feat_policy[QCA_VENDOR_ATTR_WLAN_FEAT_MAX + 1] = {
 	[QCA_VENDOR_ATTR_WLAN_FEAT_RX] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFTX] = {.type = NLA_FLAG},
 	[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFDELAY] = {.type = NLA_FLAG},
+	[QCA_VENDOR_ATTR_WLAN_FEAT_PROTO] = {.type = NLA_FLAG},
 };
 
 int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
@@ -1256,6 +1257,9 @@ int ath12k_extract_feat_inputs(struct nlattr *tb_attr,
 
 	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_RX])
 		cmd->feat.feat_rx = true;
+
+	if (feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_PROTO])
+		cmd->feat.feat_proto = true;
 
 	if (cmd->svc_id != INVALID_SVC_ID &&
 	    feat_attr[QCA_VENDOR_ATTR_WLAN_FEAT_SDWFTX])
@@ -1982,6 +1986,33 @@ static int ath12k_get_tx_ext_htt_stats_attr_size(void)
 	return total_size;
 }
 
+static int ath12k_get_feat_proto_peer_attr_size(void)
+{
+	int total_size = 0;
+	int l3_attr_size, l4_attr_size, l5_attr_size, tx_attr_size, rx_attr_size;
+
+	l3_attr_size = sizeof(u64) * DP_PKT_TYPE_L3_MAX;
+	total_size += nla_total_size_nested(l3_attr_size);
+
+	l4_attr_size = sizeof(u64) * DP_PKT_TYPE_L4_MAX;
+	total_size += nla_total_size_nested(l4_attr_size);
+
+	l5_attr_size = sizeof(u64) * DP_PKT_TYPE_L5_MAX;
+	total_size += nla_total_size_nested(l5_attr_size);
+
+	/* Nested Tx and Rx Levels Proto Event */
+	tx_attr_size = nla_total_size_nested(total_size * TX_COMP_MAX);
+	rx_attr_size = nla_total_size_nested(total_size * RX_RECV_MAX);
+
+	/* Nested Tx and Rx Proto Event */
+	total_size += nla_total_size_nested(tx_attr_size);
+	total_size += nla_total_size_nested(rx_attr_size);
+
+	/* Nested Proto Event */
+	total_size += nla_total_size_nested(total_size);
+	return total_size;
+}
+
 static int ath12k_get_feat_tx_peer_attr_size(void)
 {
 	struct ath12k_dp_peer_tx_stats tx_stats;
@@ -2428,12 +2459,40 @@ static int ath12k_get_dp_peer_attr_len(struct ath12k_telemetry_command *cmd)
 		total_size += ath12k_get_tx_ext_htt_stats_attr_size();
 	}
 
+	if (cmd->feat.feat_proto)
+		total_size += ath12k_get_feat_proto_peer_attr_size();
+
 	if (cmd->feat.feat_sdwftx)
 		total_size += ath12k_get_feat_sdwftx_attr_size(cmd);
 
 	if (cmd->feat.feat_sdwfdelay)
 		total_size += ath12k_get_feat_sdwfdelay_attr_size(cmd);
 
+	return total_size;
+}
+
+static int ath12k_get_feat_proto_vap_attr_size(void)
+{
+	int total_size = 0;
+	int l3_attr_size, l4_attr_size, l5_attr_size;
+
+	l3_attr_size = sizeof(u64) * DP_PKT_TYPE_L3_MAX;
+	total_size += nla_total_size_nested(l3_attr_size);
+
+	l4_attr_size = sizeof(u64) * DP_PKT_TYPE_L4_MAX;
+	total_size += nla_total_size_nested(l4_attr_size);
+
+	l5_attr_size = sizeof(u64) * DP_PKT_TYPE_L5_MAX;
+	total_size += nla_total_size_nested(l5_attr_size);
+
+	/* Nested Tx and Rx Levels Proto Event */
+	total_size += nla_total_size_nested(total_size * TX_ENQUEUE_MAX);
+
+	/* Nested Tx and Rx Proto Event */
+	total_size += nla_total_size_nested(total_size);
+
+	/* Nested Proto Event */
+	total_size += nla_total_size_nested(total_size);
 	return total_size;
 }
 
@@ -2489,6 +2548,9 @@ static int ath12k_get_dp_vif_attr_len(struct ath12k_telemetry_command *cmd)
 
 	if (cmd->feat.feat_tx)
 		total_size += ath12k_get_dp_ingress_attr_len();
+
+	if (cmd->feat.feat_proto)
+		total_size += ath12k_get_feat_proto_vap_attr_size();
 
 	/*Aggregated Sta Stats Size */
 	total_size += ath12k_get_dp_peer_attr_len(cmd);
@@ -3380,6 +3442,116 @@ ath12k_fill_peer_tx_ext_stats_wrapper(struct ath12k *ar, struct sk_buff *vendor_
 	return 0;
 }
 
+static int ath12k_fill_peer_proto_rx_stats_attrs(struct sk_buff *vendor_event,
+						 struct ath12k_dp_peer_stats *peer_stats,
+						 u8 level)
+{
+struct nlattr *attr;
+	int i, j;
+	u64 stats = 0;
+
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_L3);
+	for (i = 0; i < QCA_VENDOR_ATTR_PROTO_STATS_L3_MAX; i++) {
+		for (j = 0; j < DP_REO_DST_RING_MAX; j++)
+			stats = stats + peer_stats->proto->rx[j][level].l3[i];
+
+		if (nla_put_u64_64bit(vendor_event,
+				      i + 1, stats, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failed: Rx L3 stats");
+			return -EINVAL;
+		}
+		stats = 0;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	stats = 0;
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_L4);
+	for (i = 0; i < QCA_VENDOR_ATTR_PROTO_STATS_L4_MAX; i++) {
+		for (j = 0; j < DP_REO_DST_RING_MAX; j++)
+			stats = stats + peer_stats->proto->rx[j][level].l4[i];
+
+		if (nla_put_u64_64bit(vendor_event,
+				      i + 1, stats, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failed: Rx L4 stats");
+			return -EINVAL;
+		}
+		stats = 0;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	stats = 0;
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_L5);
+	for (i = 0; i < QCA_VENDOR_ATTR_PROTO_STATS_L5_MAX; i++) {
+		for (j = 0; j < DP_REO_DST_RING_MAX; j++)
+			stats = stats + peer_stats->proto->rx[j][level].l5[i];
+
+		if (nla_put_u64_64bit(vendor_event,
+				      i + 1, stats, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failed: Rx L5 stats");
+			return -EINVAL;
+		}
+		stats = 0;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int ath12k_fill_peer_proto_tx_stats_attrs(struct sk_buff *vendor_event,
+						 struct ath12k_dp_peer_stats *peer_stats,
+						 u8 level)
+{
+	struct nlattr *attr;
+	int i, j;
+	u64 stats = 0;
+
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_L3);
+	for (i = 0; i < QCA_VENDOR_ATTR_PROTO_STATS_L3_MAX; i++) {
+		for (j = 0; j < DP_TCL_NUM_RING_MAX; j++)
+			stats = stats + peer_stats->proto->tx[j][level].l3[i];
+
+		if (nla_put_u64_64bit(vendor_event,
+				      i + 1, stats, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failed: Tx L3 stats");
+			return -EINVAL;
+		}
+		stats = 0;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	stats = 0;
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_L4);
+	for (i = 0; i < QCA_VENDOR_ATTR_PROTO_STATS_L4_MAX; i++) {
+		for (j = 0; j < DP_TCL_NUM_RING_MAX; j++)
+			stats = stats + peer_stats->proto->tx[j][level].l4[i];
+
+		if (nla_put_u64_64bit(vendor_event,
+				      i + 1, stats, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failed: Tx L4 stats");
+			return -EINVAL;
+		}
+		stats = 0;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	stats = 0;
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_L5);
+	for (i = 0; i < QCA_VENDOR_ATTR_PROTO_STATS_L5_MAX; i++) {
+		for (j = 0; j < DP_TCL_NUM_RING_MAX; j++)
+			stats = stats + peer_stats->proto->tx[j][level].l5[i];
+
+		if (nla_put_u64_64bit(vendor_event,
+				      i + 1, stats, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failed: Tx L5 stats");
+			return -EINVAL;
+		}
+		stats = 0;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
 static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 						   struct ath12k_dp_peer_stats *peer_stats,
 						   int ring_num,
@@ -3637,6 +3809,82 @@ static int ath12k_fill_peer_tx_per_pkt_stats_attrs(struct sk_buff *vendor_event,
 	return 0;
 }
 
+static int ath12k_fill_peer_proto_rx_stats(struct ath12k *ar,
+					   struct sk_buff *vendor_event,
+					   struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct nlattr *attr;
+	struct nlattr *attr1;
+	u8 level;
+
+	/*Peer Proto Rx Stats*/
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_EVENT_RX);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: Peer pproto stats");
+		return -EINVAL;
+	}
+
+	for (level = 0; level < QCA_VENDOR_ATTR_PROTO_STATS_RX_MAX; level++) {
+		attr1 = nla_nest_start(vendor_event, level + 1);
+		if (ath12k_fill_peer_proto_rx_stats_attrs(vendor_event, peer_stats,
+							  level)) {
+			ath12k_err(NULL, "Error filling Rx proto stats");
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr1);
+	}
+	nla_nest_end(vendor_event, attr);
+	return 0;
+}
+
+static int ath12k_fill_peer_proto_tx_stats(struct ath12k *ar,
+					   struct sk_buff *vendor_event,
+					   struct ath12k_dp_peer_stats *peer_stats)
+{
+	struct nlattr *attr;
+	struct nlattr *attr1;
+	u8  level;
+
+	/*Peer Proto Tx Stats*/
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_EVENT_TX);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: Peer pproto stats");
+		return -EINVAL;
+	}
+
+	for (level = 0; level < QCA_VENDOR_ATTR_PROTO_STATS_TX_COMP_MAX; level++) {
+		attr1 = nla_nest_start(vendor_event, level + 1);
+		if (ath12k_fill_peer_proto_tx_stats_attrs(vendor_event, peer_stats,
+							  level)) {
+			ath12k_err(NULL, "Error filling Tx proto stats");
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr1);
+	}
+	nla_nest_end(vendor_event, attr);
+	return 0;
+}
+
+static int ath12k_fill_peer_proto_stats(struct ath12k *ar,
+					struct sk_buff *vendor_event,
+					struct ath12k_dp_peer_stats *peer_stats)
+{
+	if (ath12k_fill_peer_proto_tx_stats(ar,
+					    vendor_event,
+					    peer_stats)) {
+		ath12k_err(NULL, "NL failure: Proto tx stats");
+		return -EINVAL;
+	}
+
+	if (ath12k_fill_peer_proto_rx_stats(ar,
+					    vendor_event,
+					    peer_stats)) {
+		ath12k_err(NULL, "NL failure: Proto rx stats");
+		return -EINVAL;
+	}
+	return 0;
+}
+
 static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 				     struct sk_buff *vendor_event,
 				     struct ath12k_dp_peer_stats *peer_stats,
@@ -3686,6 +3934,110 @@ static int ath12k_fill_peer_tx_stats(struct ath12k *ar,
 	}
 
 	return 0;
+}
+
+static int
+ath12k_fill_vap_proto_tx_stats_attrs(struct sk_buff *vendor_event,
+				     struct ath12k_dp_aggr_vif_stats *vif_stats,
+				     u8 level)
+{
+	struct nlattr *attr;
+	int i, j;
+	u64 stats = 0;
+
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_L3);
+	for (i = 0; i < QCA_VENDOR_ATTR_PROTO_STATS_L3_MAX; i++) {
+		for (j = 0; j < DP_TCL_NUM_RING_MAX; j++)
+			stats = stats + vif_stats->stats[j].proto->tx[level].l3[i];
+
+		if (nla_put_u64_64bit(vendor_event,
+				      i + 1, stats, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failed: vap Tx L3 stats");
+			return -EINVAL;
+		}
+		stats = 0;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	stats = 0;
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_L4);
+	for (i = 0; i < QCA_VENDOR_ATTR_PROTO_STATS_L4_MAX; i++) {
+		for (j = 0; j < DP_TCL_NUM_RING_MAX; j++)
+			stats = stats + vif_stats->stats[j].proto->tx[level].l4[i];
+
+		if (nla_put_u64_64bit(vendor_event,
+				      i + 1, stats, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failed: vap Tx L4 stats");
+			return -EINVAL;
+		}
+		stats = 0;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	stats = 0;
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_L5);
+	for (i = 0; i < QCA_VENDOR_ATTR_PROTO_STATS_L5_MAX; i++) {
+		for (j = 0; j < DP_TCL_NUM_RING_MAX; j++)
+			stats = stats + vif_stats->stats[j].proto->tx[level].l5[i];
+
+		if (nla_put_u64_64bit(vendor_event,
+				      i + 1, stats, NL80211_ATTR_PAD)) {
+			ath12k_err(NULL, "nla put failed: vap Tx L5 stats");
+			return -EINVAL;
+		}
+		stats = 0;
+	}
+	nla_nest_end(vendor_event, attr);
+
+	return 0;
+}
+
+static int ath12k_fill_vap_proto_tx_stats(struct ath12k *ar,
+					  struct sk_buff *vendor_event,
+					  struct ath12k_dp_aggr_vif_stats *vif_stats)
+{
+	struct nlattr *attr;
+	struct nlattr *attr1;
+	u8  level;
+
+	/*Peer Proto Tx Stats*/
+	attr = nla_nest_start(vendor_event, QCA_VENDOR_ATTR_PROTO_STATS_EVENT_VAP);
+	if (!attr) {
+		ath12k_err(NULL, "nla nest failure: Peer pproto stats");
+		return -EINVAL;
+	}
+
+	for (level = 0; level < QCA_VENDOR_ATTR_PROTO_STATS_TX_ENQ_MAX; level++) {
+		attr1 = nla_nest_start(vendor_event, level + 1);
+		if (ath12k_fill_vap_proto_tx_stats_attrs(vendor_event, vif_stats,
+		    level)) {
+			ath12k_err(NULL, "Error filling Tx proto stats");
+			return -EINVAL;
+		}
+		nla_nest_end(vendor_event, attr1);
+	}
+	nla_nest_end(vendor_event, attr);
+	return 0;
+}
+
+static int ath12k_fill_vap_proto_stats(struct ath12k *ar,
+				       struct sk_buff *vendor_event,
+				       struct ath12k_telemetry_dp_vif *vif_stats)
+{
+	int ret;
+
+	/* Aggregated Peer Proto  Stats */
+	ret = ath12k_fill_peer_proto_stats(ar, vendor_event,
+					   &(vif_stats->aggr_vif_stats.peer_stats));
+	if (ret) {
+		ath12k_err(NULL, "Error filling vap tx stats");
+		return ret;
+	}
+
+	/* Vap proto stats */
+	ret = ath12k_fill_vap_proto_tx_stats(ar, vendor_event,
+					     &vif_stats->aggr_vif_stats);
+	return ret;
 }
 
 static int ath12k_fill_peer_rx_wbm_err_attrs(struct sk_buff *vendor_event,
@@ -5034,6 +5386,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 	struct ath12k_telemetry_dp_peer *telemetry_peer;
 	struct ath12k_htt_tx_stats *htt_tx_stats;
 	struct ath12k *ar = &ahvif->ah->radio[0];
+	struct ath12k_dp_proto_stats_peer *proto;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
 	struct nlattr *attr;
 	int ret = -EINVAL;
@@ -5063,6 +5416,15 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 	telemetry_peer->peer_type = ATH12K_PEER_INVAL;
 	telemetry_peer->link_peer_stats.tx_stats = htt_tx_stats;
 
+	proto = vzalloc(sizeof(*proto));
+	if (!proto) {
+		vfree(htt_tx_stats);
+		vfree(rx_mon_stats);
+		vfree(telemetry_peer);
+		return -ENOMEM;
+	}
+	telemetry_peer->peer_stats.proto = proto;
+
 	if (ath12k_dp_get_peer_stats(ahvif, telemetry_peer, cmd->mac,
 				     cmd->link_id)) {
 		ath12k_err(NULL, "Error getting peer stats from dp");
@@ -5085,6 +5447,22 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 			nla_nest_end(vendor_event, attr);
 		} else {
 			ath12k_err(NULL, "nla nest failure: Sta tx feat stats");
+			goto out;
+		}
+	}
+	if (cmd->feat.feat_proto) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PROTO_EVENT);
+		if (attr) {
+			if (ath12k_fill_peer_proto_stats(ar,
+							 vendor_event,
+							 &telemetry_peer->peer_stats)) {
+				ath12k_err(NULL, "nla put failure: Proto stats");
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: Sta Proto feat stats");
 			goto out;
 		}
 	}
@@ -5167,6 +5545,7 @@ static int ath12k_prepare_peer_vendor_event(struct sk_buff *vendor_event,
 
 	ret = 0;
 out:
+	vfree(proto);
 	vfree(htt_tx_stats);
 	vfree(rx_mon_stats);
 	vfree(telemetry_peer);
@@ -5580,6 +5959,9 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 	struct nlattr *attr;
 	struct ath12k_htt_tx_stats *htt_tx_stats;
 	struct ath12k_rx_peer_stats *rx_mon_stats;
+	struct ath12k_dp_proto_stats_peer *peer_proto;
+	struct ath12k_dp_proto_stats_vif *vif_proto;
+	u8 index;
 	int ret = -EINVAL;
 
 	telemetry_vif = vmalloc(sizeof(*telemetry_vif));
@@ -5604,6 +5986,27 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 		return -ENOMEM;
 	}
 	telemetry_vif->aggr_vif_stats.link_peer_stats.rx_stats = rx_mon_stats;
+
+	peer_proto = vzalloc(sizeof(*peer_proto));
+	if (!peer_proto) {
+		vfree(rx_mon_stats);
+		vfree(htt_tx_stats);
+		vfree(telemetry_vif);
+			return -ENOMEM;
+	}
+	telemetry_vif->aggr_vif_stats.peer_stats.proto = peer_proto;
+
+	vif_proto = vzalloc(sizeof(*vif_proto) * DP_TCL_NUM_RING_MAX);
+	if (!vif_proto) {
+		vfree(peer_proto);
+		vfree(rx_mon_stats);
+		vfree(htt_tx_stats);
+		vfree(telemetry_vif);
+		return -ENOMEM;
+	}
+
+	for (index = 0; index < DP_TCL_NUM_RING_MAX; index++)
+		telemetry_vif->aggr_vif_stats.stats[index].proto = (vif_proto + index);
 
 	ath12k_dp_get_vif_stats(ahvif, telemetry_vif, cmd->link_id);
 
@@ -5642,8 +6045,27 @@ static int ath12k_prepare_vif_vendor_event(struct sk_buff *vendor_event,
 		}
 	}
 
+	if (cmd->feat.feat_proto) {
+		attr = nla_nest_start(vendor_event,
+				      QCA_VENDOR_ATTR_WLAN_TELEMETRY_PROTO_EVENT);
+		if (attr) {
+			if (ath12k_fill_vap_proto_stats(ar,
+							vendor_event,
+							telemetry_vif)) {
+				ath12k_err(NULL, "nla put failure: vap Proto stats");
+				goto out;
+			}
+			nla_nest_end(vendor_event, attr);
+		} else {
+			ath12k_err(NULL, "nla nest failure: vap Proto feat stats");
+			goto out;
+		}
+	}
+
 	ret = 0;
 out:
+	vfree(vif_proto);
+	vfree(peer_proto);
 	vfree(htt_tx_stats);
 	vfree(rx_mon_stats);
 	vfree(telemetry_vif);
