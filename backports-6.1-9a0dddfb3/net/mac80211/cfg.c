@@ -4440,7 +4440,7 @@ static int __ieee80211_csa_finalize(struct ieee80211_link_data *link_data)
 
 		mon_link = &mon_sdata->deflink;
 		chandef = &mon_sdata->vif.bss_conf.chanreq.oper;
-		if (chandef->chan &&
+		if (!chandef->chan ||
 		    chandef->chan->band != link_conf->chanreq.oper.chan->band)
 			continue;
 
@@ -4774,15 +4774,13 @@ __ieee80211_channel_switch(struct wiphy *wiphy, struct net_device *dev,
 		struct ieee80211_bss_conf *bss_conf = &mon_sdata->vif.bss_conf;
 
 		chandef = &bss_conf->chanreq.oper;
-		if (chandef->chan &&
+		if (!chandef->chan ||
 		    chandef->chan->band != chanreq.oper.chan->band)
 			continue;
 
 		mon_conf = wiphy_dereference(wiphy, bss_conf->chanctx_conf);
-		if (!mon_conf) {
-			err = -EBUSY;
-			goto out;
-		}
+		if (!mon_conf)
+			continue;
 
 		if (!mon_link->reserved_chanctx) {
 			mon_chanctx = container_of(mon_conf,
