@@ -2326,6 +2326,10 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 		    ath12k_tid_stats_enabled(dp_pdev)) {
 			msdu = sw_metadata->skb;
 			skb_cb = ATH12K_SKB_CB(msdu);
+
+			if (!skb_cb->vif)
+				continue;
+
 			ahvif = ath12k_vif_to_ahvif(skb_cb->vif);
 			tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
 			ath12k_tid_tx_stats(ahvif, tid, msdu->len,
@@ -2376,12 +2380,6 @@ int ath12k_wifi7_dp_tx_completion_handler(struct ath12k_dp *dp, int ring_id, int
 			}
 
 			ath12k_wifi7_dp_tx_status_parse(ab, tx_status, &ts);
-			if (ath12k_dp_stats_enabled(dp_pdev) &&
-			    ath12k_tid_stats_enabled(dp_pdev)) {
-				tid = msdu->priority & IEEE80211_QOS_CTL_TID_MASK;
-				ath12k_tid_tx_stats(ahvif, tid, msdu->len,
-						    ATH_TX_COMPLETED_PKTS);
-			}
 			ath12k_wifi7_dp_tx_complete_msdu(dp_pdev, sw_metadata->skb, &ts,
 					sw_metadata, sw_metadata->mac_id,
 					ring_id);
