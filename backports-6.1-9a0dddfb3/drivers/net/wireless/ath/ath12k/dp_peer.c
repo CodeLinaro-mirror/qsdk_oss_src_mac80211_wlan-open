@@ -856,14 +856,18 @@ static void __ath12k_dp_link_peer_unassign(struct ath12k *ar,
 
 	if (!dp_peer->is_vdev_peer) {
 		dp_peer->peer_links_map &= ~BIT(peer->link_id);
-		/* Preserve link peer stats to MLD peer before deletion */
-		ath12k_dp_aggr_link_peer_to_mld_peer(peer, dp_peer, stats_link_id);
-		/* Preserve link peer stats to link VIF before deletion */
-		if (link_vif)
-			ath12k_dp_aggr_link_peer_to_link_vif(link_vif, peer, dp_peer,
+		if (stats_link_id < ATH12K_DP_MAX_MLO_LINKS) {
+			/* Preserve link peer stats to MLD peer before deletion */
+			ath12k_dp_aggr_link_peer_to_mld_peer(peer, dp_peer,
 							     stats_link_id);
-		/* Clear per-packet stats to prevent double-counting on reuse */
-		ath12k_dp_aggr_clear_per_pkt_stats(dp_peer, stats_link_id);
+			/* Preserve link peer stats to link VIF before deletion */
+			if (link_vif)
+				ath12k_dp_aggr_link_peer_to_link_vif(link_vif, peer,
+								     dp_peer,
+								     stats_link_id);
+			/* Clear per-packet stats to prevent double-counting on reuse */
+			ath12k_dp_aggr_clear_per_pkt_stats(dp_peer, stats_link_id);
+		}
 	}
 
 	rcu_assign_pointer(dp_peer->link_peers[peer->link_id], NULL);
