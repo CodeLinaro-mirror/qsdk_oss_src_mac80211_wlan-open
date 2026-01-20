@@ -6336,7 +6336,8 @@ static ssize_t ath12k_write_reset_dp_stats(struct file *file,
 			       sizeof(*dp_peer->link_peer_delete_stats));
 		ath12k_dp_peer_clear_qos_stats(dp_peer);
 
-		if (ath12k_proto_stats_enabled(&ar->dp))
+		ar = &ah->radio[0];
+		if (ar && ath12k_proto_stats_enabled(&ar->dp))
 			ath12k_dp_peer_reset_proto_stats(dp_peer);
 
 		struct ath12k_dp_link_peer *tmp_peer = NULL;
