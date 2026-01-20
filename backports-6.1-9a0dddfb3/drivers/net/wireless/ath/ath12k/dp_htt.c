@@ -456,7 +456,7 @@ ath12k_dp_ppdu_stats_flush_tlv_parse_update(struct ath12k_pdev_dp *dp_pdev,
 					    struct htt_ppdu_stats_info *ppdu_info)
 {
 	struct ath12k_dp_link_peer *peer;
-	u16 sw_peer_id, num_msdu;
+	u16 sw_peer_id, num_msdu, num_mpdu;
 	u32 drop_reason;
 	u8 tid;
 
@@ -495,6 +495,9 @@ ath12k_dp_ppdu_stats_flush_tlv_parse_update(struct ath12k_pdev_dp *dp_pdev,
 
 	DP_STATS_INCR(peer->peer_stats.tx_stats, tx_msdu_flush_rsn[drop_reason],
 		      num_msdu);
+
+	num_mpdu = HTT_PPDU_STATS_FLUSH_GET_NUM_MPDU(msg->info);
+	peer->tx_retry_failed += num_mpdu;
 
 	if (ath12k_extd_tx_stats_enabled(dp_pdev->ar))
 		ath12k_debugfs_sta_update_failure(peer, num_msdu);
@@ -750,7 +753,6 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_vif *ahvif;
 	u32 punc_mode, res_mcs;
 	u32 tlv_bitmap;
-	int ack_rssi;
 
 	if (usr_stats->processed_tlv_bitmap &
 			BIT(HTT_PPDU_STATS_TAG_USR_COMPLTN_ACK_BA_STATUS))
@@ -819,9 +821,9 @@ ath12k_update_extd_tx_stats(struct ath12k_pdev_dp *dp_pdev,
 	DP_STATS_INCR(tx_stats, tx_mpdus_success, peer_stats->succ_mpdu_pkts);
 	DP_STATS_INCR(tx_stats, retries_mpdu,
 		      (peer_stats->mpdu_tried - peer_stats->succ_mpdu_pkts));
-	ack_rssi = le32_to_cpu(usr_stats->cmpltn_cmn.ack_rssi);
 	if (!is_mcast)
-		DP_STATS_UPD(tx_stats, last_ack_rssi, ack_rssi);
+		DP_STATS_UPD(tx_stats, last_ack_rssi,
+			     peer->peer_stats.last_ack_rssi);
 
 	/* Update debugfs stats */
 	ath12k_debugfs_sta_update_success(peer, peer_stats);
@@ -925,7 +927,7 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	struct htt_ppdu_stats *ppdu_stats = &ppdu_info->ppdu_stats;
 	u32 tx_duration = 0, ru_tones, ru_format, tlv_bitmap, rate_flags;
 	struct htt_ppdu_stats_common *common = &ppdu_stats->common;
-	bool resp_type_valid, is_ofdma, fixed_rate_used;
+	bool resp_type_valid, is_ofdma, fixed_rate_used, is_mcast;
 	u8 flags, mcs, nss, bw, sgi, dcm, rate_idx = 0;
 	struct htt_ppdu_stats_user_rate *user_rate;
 	struct htt_ppdu_user_stats *usr_stats;
@@ -934,6 +936,7 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	u32 v, ppdu_type;
 	struct ath12k_base *ab = dp->ab;
+	int ack_rssi;
 	int ret;
 
 	usr_stats = &ppdu_stats->user_stats[user];
@@ -950,11 +953,8 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 		peer_stats->mpdu_tried = __le16_to_cpu(usr_stats->cmpltn_cmn.mpdu_tried);
 		peer_stats->tid = usr_stats->cmpltn_cmn.tid_num;
 
-		peer->tx_retry_failed += peer_stats->mpdu_tried -
+		peer->tx_retry_count += peer_stats->mpdu_tried -
 						peer_stats->succ_mpdu_pkts;
-		peer->tx_retry_count +=
-			HTT_USR_CMPLTN_LONG_RETRY(usr_stats->cmpltn_cmn.flags) +
-			HTT_USR_CMPLTN_SHORT_RETRY(usr_stats->cmpltn_cmn.flags);
 	}
 
 	if (common->fes_duration_us)
@@ -1083,6 +1083,12 @@ ath12k_update_htt_stats_txrate(struct ath12k_pdev_dp *dp_pdev,
 	ppdu_info->usr_nss_sum += nss;
 	peer->txrate.bw = ath12k_mac_bw_to_mac80211_bw(bw);
 	peer->tx_duration += tx_duration;
+
+	is_mcast = HTT_PPDU_STATS_USR_CMN_IS_MCAST(usr_stats->common.info);
+	ack_rssi = le32_to_cpu(usr_stats->cmpltn_cmn.ack_rssi);
+	if (!is_mcast)
+		peer->peer_stats.last_ack_rssi = ack_rssi;
+
 	memcpy(&peer->last_txrate, &peer->txrate, sizeof(struct rate_info));
 
 	if (is_ofdma) {

@@ -1796,8 +1796,13 @@ enum HTT_FLUSH_STATUS_DROP_REASON {
 	HTT_FLUSH_MAX,
 };
 #define HTT_PPDU_STATS_FLUSH_NUM_MSDU_M         GENMASK(30, 17)
+#define HTT_PPDU_STATS_FLUSH_NUM_MPDU_M         GENMASK(16, 8)
+
 #define HTT_PPDU_STATS_FLUSH_GET_NUM_MSDU(_val) \
 	le32_get_bits(_val, HTT_PPDU_STATS_FLUSH_NUM_MSDU_M)
+
+#define HTT_PPDU_STATS_FLUSH_GET_NUM_MPDU(_val) \
+	le32_get_bits(_val, HTT_PPDU_STATS_FLUSH_NUM_MPDU_M)
 /* Flush stats for failed tx completions */
 struct htt_ppdu_stats_cmpltn_flush {
 	__le32 drop_reason;
