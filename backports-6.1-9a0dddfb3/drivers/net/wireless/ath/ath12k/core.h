@@ -620,6 +620,7 @@ struct ath12k_vap_cfg {
 	u8 bcn_tx_power;
 	u32 ampdu_aggr_size;
 	u32 amsdu_aggr_size;
+	u32 ba_bufsize;
 };
 
 struct ath12k_rssi_deauth_config {
