@@ -171,6 +171,7 @@ void ath12k_link_peer_free(struct ath12k_dp_link_peer *peer)
 
 	kfree(peer);
 }
+EXPORT_SYMBOL(ath12k_link_peer_free);
 
 void ath12k_peer_unmap_event(struct ath12k_base *ab, u16 peer_id, bool is_wds)
 {

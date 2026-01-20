@@ -11,6 +11,7 @@
 #include "dp_peer.h"
 #include "dp_tx_queue.h"
 #include "dp_tx_flow_info.h"
+#include "../telemetry_agent_if.h"
 
 static u16 ath12k_wifi8_peer_id_alloc(struct ath12k_dp_hw *dp_hw)
 {
@@ -120,6 +121,16 @@ int ath12k_wifi8_dp_peer_create(struct ath12k_hw *ah, u8 *addr,
 
 	dp_peer->is_vdev_peer = params->is_vdev_peer;
 	dp_peer->is_sta_bss_peer = params->is_sta_bss_peer;
+	dp_peer->link_peer_delete_stats = ath12k_dp_alloc_preserved_stats();
+	if (!dp_peer->link_peer_delete_stats) {
+		spin_lock_bh(&dp_hw->peer_lock);
+		clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
+		clear_bit(dp_peer->sta_id, dp_hw->free_sta_id_map);
+		spin_unlock_bh(&dp_hw->peer_lock);
+		ath12k_err(NULL, "Failed to allocate link peer delete stats");
+		kfree(dp_peer);
+		return -ENOMEM;
+	}
 
 	dp_peer->sec_type = HAL_ENCRYPT_TYPE_OPEN;
 	dp_peer->sec_type_grp = HAL_ENCRYPT_TYPE_OPEN;
@@ -174,8 +185,12 @@ void ath12k_wifi8_dp_peer_delete(struct ath12k_dp *dp, struct ath12k_hw *ah, u8 
 		clear_bit(dp_peer->peer_id, dp_hw->free_peer_id_map);
 		peerid_index = dp_peer->peer_id;
 		rcu_assign_pointer(dp_hw->dp_peer_list[peerid_index], NULL);
+		if (dp_peer->qos && dp_peer->qos->telemetry_peer_ctx)
+			ath12k_telemetry_peer_ctx_free(dp_peer->qos->telemetry_peer_ctx);
 		spin_unlock_bh(&dp_hw->peer_lock);
 		synchronize_rcu();
+		kfree(dp_peer->qos);
+		ath12k_dp_free_preserved_stats(dp_peer->link_peer_delete_stats);
 		kfree(dp_peer);
 		return;
 	}
@@ -340,8 +355,7 @@ void ath12k_wifi8_dp_link_peer_delete(struct ath12k_base *ab, u32 vdev_id, u8 *a
 	if (!peer)
 		goto exit;
 
-	list_del(&peer->list);
-	kfree(peer);
+	ath12k_link_peer_free(peer);
 exit:
 	spin_unlock_bh(&dp->dp_lock);
 }
