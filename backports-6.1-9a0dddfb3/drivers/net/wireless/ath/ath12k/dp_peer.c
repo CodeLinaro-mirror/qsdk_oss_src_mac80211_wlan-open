@@ -891,19 +891,15 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 	struct ath12k_dp *dp = dp_pdev->dp;
 	struct ath12k_dp_hw *dp_hw = &ar->ah->dp_hw;
 	struct ath12k_vif *ahvif;
+	struct ath12k_dp_vif *dp_vif;
 	struct ath12k_dp_link_peer *peer;
-	struct ath12k_dp_link_vif *link_vif = NULL;
+	struct ath12k_dp_link_vif *dp_link_vif = NULL;
 	struct ath12k_base *ab = ar->ab;
 	struct ath12k_link_sta *arsta;
 	struct ath12k_hw *ah = ar->ah;
 	u8 vdev_id = arvif->vdev_id;
 
 	lockdep_assert_wiphy(ah->hw->wiphy);
-
-	ahvif = arvif->ahvif;
-	if (ahvif)
-		link_vif = &ahvif->dp_vif.dp_link_vif[arvif->link_id];
-
 	spin_lock_bh(&dp->dp_lock);
 
 	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp, vdev_id, addr);
@@ -911,8 +907,15 @@ void ath12k_dp_cp_link_peer_unassign(struct ath12k *ar,
 		spin_unlock_bh(&dp->dp_lock);
 		return;
 	}
-
-	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, link_vif, addr);
+	if (peer->vif) {
+		ahvif = ath12k_vif_to_ahvif(peer->vif);
+		if (ahvif) {
+			dp_vif = &ahvif->dp_vif;
+			if (peer->link_id < ATH12K_NUM_MAX_LINKS)
+				dp_link_vif = &dp_vif->dp_link_vif[peer->link_id];
+		}
+	}
+	__ath12k_dp_link_peer_unassign(ar, dp, dp_hw, peer, dp_link_vif, addr);
 
 	spin_unlock_bh(&dp->dp_lock);
 
