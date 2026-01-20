@@ -3142,6 +3142,9 @@ struct ath12k_htt_tx_selfgen_cmn_stats_tlv {
 	__le32 standalone_ax_bsr_trigger_err[ATH12K_HTT_NUM_AC_WMM];
 	__le32 smart_basic_trig_sch_histogram[ATH12K_HTT_MAX_NUM_SBT_INTR];
 	__le32 ru_alloc_mode_cnt[ATH12K_HTT_RU_ALLOC_NUM_MODES];
+	__le32 mu_bar_pipeline_seq_cnt;
+	__le32 mu_bar_pipeline_resume_cnt;
+	__le32 mu_bar_pipeline_resume_fail_cnt;
 } __packed;
 
 struct ath12k_htt_tx_selfgen_ac_stats_tlv {

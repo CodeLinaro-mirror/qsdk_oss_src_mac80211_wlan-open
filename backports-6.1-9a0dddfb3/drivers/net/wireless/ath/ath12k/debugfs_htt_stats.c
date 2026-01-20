@@ -5098,6 +5098,14 @@ ath12k_htt_print_tx_selfgen_cmn_stats_tlv(const void *tag_buf, u16 tag_len,
 	len += print_array_to_buf(buf, len, "ru_alloc_mode_cnt = ",
 			 htt_stats_buf->ru_alloc_mode_cnt,
 			ATH12K_HTT_RU_ALLOC_NUM_MODES, "\n\n");
+	len += scnprintf(buf + len, buf_len - len, "MU BAR_PIPELINING_STATS:\n");
+	len += scnprintf(buf + len, buf_len - len, "mu_bar_pipeline_seq_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->mu_bar_pipeline_seq_cnt));
+	len += scnprintf(buf + len, buf_len - len, "mu_bar_pipeline_resume_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->mu_bar_pipeline_resume_cnt));
+	len += scnprintf(buf + len, buf_len - len,
+			"mu_bar_pipeline_resume_fail_cnt = %u\n",
+			le32_to_cpu(htt_stats_buf->mu_bar_pipeline_resume_fail_cnt));
 
 	stats_req->buf_len = len;
 }
