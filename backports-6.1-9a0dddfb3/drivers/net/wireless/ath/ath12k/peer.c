@@ -463,37 +463,18 @@ void ath12k_peer_cleanup(struct ath12k *ar, u32 vdev_id)
 }
 
 static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *addr,
-				   u32 mlo_hw_link_id_bitmap)
+				   u32 mlo_hw_link_id_bitmap, struct ath12k_sta *ahsta,
+				   u8 link_id)
 {
 	struct ath12k_base *ab = ar->ab;
-	struct ath12k_dp_link_peer *peer;
 	int ret;
-	struct ath12k_sta *ahsta;
 	u16 link_id_mask = 0;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
 
-	spin_lock_bh(&ar->ab->dp->dp_lock);
-
-	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp,
-							    vdev_id, addr);
-	if (peer && !peer->is_bridge_peer) {
-		ret = ath12k_telemetry_peer_agent_delete_handler(ar, vdev_id,
-								 addr);
-		if (ret && ret != -EOPNOTSUPP) {
-			ath12k_dbg(ab, ATH12K_DBG_PEER,
-				   "failed to delete peer reference in TA for vdev_id %d addr %pM ret %d\n",
-				   vdev_id, addr, ret);
-		}
-	}
-	 spin_unlock_bh(&ar->ab->dp->dp_lock);
-
-	if (peer && peer->sta) {
-		ahsta = ath12k_sta_to_ahsta(peer->sta);
-		if (ahsta) {
-			ahsta->peer_delete_cmd_sent_bitmap |= BIT(peer->link_id);
-			link_id_mask = BIT(peer->link_id);
-		}
+	if (ahsta && link_id != -1) {
+		ahsta->peer_delete_cmd_sent_bitmap |= BIT(link_id);
+		link_id_mask = BIT(link_id);
 	}
 
 	if (ar->pdev->peer_del_tracker) {
@@ -509,7 +490,7 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 			    "failed to delete peer vdev_id %d addr %pM ret %d\n",
 			    vdev_id, addr, ret);
 
-		if (link_id_mask)
+		if (ahsta && link_id_mask)
 			ahsta->peer_delete_cmd_sent_bitmap &= ~link_id_mask;
 
 		/* Remove the peer entry from the peer_del tracker when sending the WMI
@@ -526,11 +507,24 @@ static int ath12k_peer_delete_send(struct ath12k *ar, u32 vdev_id, const u8 *add
 static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 				bool skip_peer_del, u32 mlo_hw_link_id_bitmap)
 {
-	int ret;
 	struct ath12k_link_vif *arvif = NULL;
 	struct ath12k_base *ab = ar->ab;
+	struct ath12k_dp_link_peer *peer = NULL;
+	struct ath12k_sta *ahsta = NULL;
+	u8 link_id = -1;
+	int ret;
 
 	lockdep_assert_wiphy(ath12k_ar_to_hw(ar)->wiphy);
+
+	spin_lock_bh(&ar->ab->dp->dp_lock);
+
+	peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(ab->dp,
+							    vdev_id, addr);
+	if (peer && peer->sta) {
+		ahsta = ath12k_sta_to_ahsta(peer->sta);
+		link_id = peer->link_id;
+	}
+	spin_unlock_bh(&ar->ab->dp->dp_lock);
 
 	ath12k_dp_link_peer_unassign(ar, vdev_id, addr);
 
@@ -546,7 +540,8 @@ static int __ath12k_peer_delete(struct ath12k *ar, u32 vdev_id, u8 *addr,
 	if (skip_peer_del)
 		return 0;
 
-	ret = ath12k_peer_delete_send(ar, vdev_id, addr, mlo_hw_link_id_bitmap);
+	ret = ath12k_peer_delete_send(ar, vdev_id, addr, mlo_hw_link_id_bitmap, ahsta,
+				      link_id);
 	if (ret)
 		return ret;
 
@@ -765,15 +760,8 @@ int ath12k_peer_create(struct ath12k *ar, struct ath12k_link_vif *arvif,
 					 arvif->ahvif->dp_vif.ppe_vp_type,
 					 arvif->ahvif->dp_vif.ppe_vp_num);
 
-	if (ret) {
+	if (ret)
 		ath12k_peer_delete(ar, arg->vdev_id, arg->peer_addr, false, 0);
-		spin_lock_bh(&dp->dp_lock);
-		peer = ath12k_dp_link_peer_find_by_vdev_id_and_addr(dp,
-								    arg->vdev_id,
-								    arg->peer_addr);
-		ath12k_link_peer_free(peer);
-		spin_unlock_bh(&dp->dp_lock);
-	}
 
 	return ret;
 }
@@ -816,7 +804,7 @@ int ath12k_peer_dp_cp_link_peer_delete(struct ath12k_link_vif *arvif,
 	}
 
 	ret = ath12k_peer_delete_send(ar, arvif->vdev_id, addr,
-				      mlo_hw_link_id_bitmap);
+				      mlo_hw_link_id_bitmap, ahsta, link_id);
 	if (ret) {
 		ath12k_warn(ar->ab,
 			    "failed to delete peer vdev_id %d addr %pM ret %d\n",
