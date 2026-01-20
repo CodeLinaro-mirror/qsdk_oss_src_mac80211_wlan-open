@@ -6,6 +6,9 @@
 
 #include <linux/inet.h>
 #include "core.h"
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+#include "qcn_extns/ipa/dp_ipa.h"
+#endif
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 #include "ppe.h"
 #endif
@@ -6774,6 +6777,10 @@ void ath12k_debugfs_register(struct ath12k *ar)
 	debugfs_create_file("ofdma_conf", 0600,
 			    ar->debug.debugfs_pdev, ar,
 			    &ofdma_txbf);
+
+#ifdef CPTCFG_EXT_IPA_OFFLOAD
+	ath12k_debugfs_register_ipa_extn(ar);
+#endif
 
 #ifdef CPTCFG_ATH12K_PPE_DS_SUPPORT
 	if (test_bit(ATH12K_FLAG_PPE_DS_ENABLED, &ab->dev_flags))
